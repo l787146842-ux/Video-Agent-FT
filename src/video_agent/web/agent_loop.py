@@ -28,13 +28,24 @@ class AgentLoopResult:
     applied_actions: int = 0
     steps: int = 0
     warnings: List[str] = field(default_factory=list)
+    # LLM 通过 request_confirmation 请求用户确认时的说明文字（非空表示等待确认）
+    confirmation: str = ""
 
 
-def _split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool]:
-    """分离出 continue 信号，返回 (可执行的 actions, 是否请求下一轮)"""
-    executable = [a for a in actions if str(a.get("action", "")).lower() != "continue"]
-    wants_continue = len(executable) != len(actions)
-    return executable, wants_continue
+def _split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool, str]:
+    """分离流程信号，返回 (可执行的 actions, 是否请求下一轮, 确认请求文案)"""
+    executable: List[Dict[str, Any]] = []
+    wants_continue = False
+    confirmation = ""
+    for a in actions:
+        name = str(a.get("action", "")).lower()
+        if name == "continue":
+            wants_continue = True
+        elif name == "request_confirmation":
+            confirmation = str(a.get("message", "") or "请确认以上内容，确认后我将继续。")
+        else:
+            executable.append(a)
+    return executable, wants_continue, confirmation
 
 
 async def run_agent_loop(
@@ -77,7 +88,7 @@ async def run_agent_loop(
                 f"第 {step} 轮的 studio-actions 块解析失败（JSON 无效或被截断），本轮操作已丢弃"
             )
 
-        executable, wants_continue = _split_actions(actions)
+        executable, wants_continue, confirmation = _split_actions(actions)
         if executable:
             await emit({"type": "executing_actions", "step": step, "count": len(executable)})
         applied = executor.execute(executable)
@@ -95,8 +106,13 @@ async def run_agent_loop(
 
         logger.info(
             f"[AgentLoop] step={step} actions={applied}/{len(executable)} "
-            f"continue={wants_continue} finish={finish_reason or '-'}"
+            f"continue={wants_continue} confirm={bool(confirmation)} finish={finish_reason or '-'}"
         )
+
+        if confirmation:
+            # 暂停等待用户确认：终止循环，把确认请求带回给前端
+            result.confirmation = confirmation
+            break
 
         if not wants_continue:
             break

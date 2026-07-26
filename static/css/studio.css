@@ -820,6 +820,117 @@ body, html {
   color: var(--accent-blue);
 }
 
+/* ===== 分镜元素引用 chips ===== */
+.scene-refs {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin: 2px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.scene-ref-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.scene-ref-chip:hover {
+  background: rgba(59, 130, 246, 0.28);
+}
+
+/* ===== 草稿右键菜单 ===== */
+.draft-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 160px;
+  background: var(--bg-secondary, #1b1f2e);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.draft-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary, #e2e8f0);
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.draft-menu button:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.draft-menu button.danger {
+  color: #f87171;
+}
+
+/* ===== 流式执行日志 & 确认门控 ===== */
+.stream-log {
+  margin-top: 4px;
+}
+
+.stream-log-line {
+  font-size: 10px;
+  color: var(--accent-emerald, #34d399);
+  line-height: 1.6;
+}
+
+.confirm-bar {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.confirm-text {
+  font-size: 11px;
+  color: var(--text-primary, #e2e8f0);
+  margin-bottom: 6px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.confirm-btn {
+  padding: 4px 12px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-primary, #e2e8f0);
+  cursor: pointer;
+}
+
+.confirm-btn.primary {
+  background: var(--accent-blue, #3b82f6);
+  border-color: var(--accent-blue, #3b82f6);
+  color: #fff;
+}
+
+.confirm-btn:hover {
+  filter: brightness(1.15);
+}
+
 @keyframes wf-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }

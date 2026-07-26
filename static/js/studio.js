@@ -303,9 +303,10 @@ function renderLeftContent() {
                         <i data-lucide="plus" class="w-4 h-4"></i>
                     </button>
                     ${item.drafts.map(d => `
-                        <div class="draft-card ${state.selectedDraftId === d.id ? 'active' : ''}" 
-                             style="background-image: url('${d.imgUrl}')" 
-                             onclick="selectDraftCard('${d.id}', 'keyElement')">
+                        <div class="draft-card ${state.selectedDraftId === d.id ? 'active' : ''}"
+                             style="background-image: url('${d.imgUrl}')"
+                             onclick="selectDraftCard('${d.id}', 'keyElement')"
+                             oncontextmenu="showDraftMenu(event, '${d.id}', 'keyElement', '${item.id}')">
                             ${d.tag ? `<span class="draft-card-tag">${d.tag}</span>` : ''}
                             <span class="draft-card-label">${d.label}</span>
                         </div>
@@ -328,8 +329,14 @@ function renderLeftContent() {
                         <i data-lucide="video" class="w-4 h-4 text-purple-400"></i>
                         <span>${item.title} (${item.duration})</span>
                     </div>
-                    <span class="sb-badge" style="background:rgba(139, 92, 246, 0.15); color:#a78bfa">分镜</span>
+                    <span class="sb-badge" style="background:rgba(139, 92, 246, 0.15); color:#a78bfa">${escapeHtml(item.shotType || '分镜')}</span>
                 </div>
+                ${(item.sceneRefs && item.sceneRefs.length) ? `
+                    <div class="scene-refs">场景:
+                        ${item.sceneRefs.map(ref => `
+                            <span class="scene-ref-chip" onclick="jumpToElementByTitle('${escapeHtml(String(ref)).replace(/'/g, "\\'")}')" title="点击跳转到该关键元素">${escapeHtml(String(ref))}</span>
+                        `).join('')}
+                    </div>` : ''}
                 <p class="sb-desc">${item.roughDesc}</p>
 
                 <!-- 分镜草稿卡片横排 -->
@@ -338,9 +345,10 @@ function renderLeftContent() {
                         <i data-lucide="plus" class="w-4 h-4"></i>
                     </button>
                     ${item.drafts.map(d => `
-                        <div class="draft-card ${state.selectedDraftId === d.id ? 'active' : ''}" 
-                             style="background-color:#2e3346" 
-                             onclick="selectDraftCard('${d.id}', 'shot')">
+                        <div class="draft-card ${state.selectedDraftId === d.id ? 'active' : ''}"
+                             style="background-color:#2e3346"
+                             onclick="selectDraftCard('${d.id}', 'shot')"
+                             oncontextmenu="showDraftMenu(event, '${d.id}', 'shot', '${item.id}')">
                             ${d.tag ? `<span class="draft-card-tag" style="background:#8b5cf6">${d.tag}</span>` : ''}
                             <span class="draft-card-label">${d.label}</span>
                         </div>
@@ -372,9 +380,10 @@ function renderLeftContent() {
                         <i data-lucide="plus" class="w-4 h-4"></i>
                     </button>
                     ${item.drafts.map(d => `
-                        <div class="draft-card ${state.selectedDraftId === d.id ? 'active' : ''}" 
-                             style="background-color:#1e293b" 
-                             onclick="selectDraftCard('${d.id}', 'audio')">
+                        <div class="draft-card ${state.selectedDraftId === d.id ? 'active' : ''}"
+                             style="background-color:#1e293b"
+                             onclick="selectDraftCard('${d.id}', 'audio')"
+                             oncontextmenu="showDraftMenu(event, '${d.id}', 'audio', '${item.id}')">
                             <span class="draft-card-label">${d.label}</span>
                         </div>
                     `).join('')}
@@ -398,6 +407,101 @@ function selectDraftCard(draftId, type) {
     state.selectedType = type;
     renderLeftContent();
     updateMiddlePreview();
+}
+
+// 按 title 跳转到关键元素（分镜的 sceneRefs chip 点击）
+function jumpToElementByTitle(title) {
+    const el = state.keyElements.find(k => k.title === title);
+    if (!el) { showToast(`未找到关键元素「${title}」`); return; }
+    state.subTab = 'keyElements';
+    document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+    if (el.drafts && el.drafts.length) {
+        state.selectedDraftId = el.drafts[0].id;
+        state.selectedType = 'keyElement';
+    }
+    renderLeftContent();
+    updateMiddlePreview();
+}
+
+// 故事板持久化（草稿删除等前端直改操作后调用）
+async function persistBoard() {
+    try {
+        await fetch('/api/project/state', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                keyElements: state.keyElements,
+                shots: state.shots,
+                audioItems: state.audioItems,
+                assets: state.assets
+            })
+        });
+    } catch (e) {
+        showToast('保存失败：' + (e.message || e));
+    }
+}
+
+// === 草稿右键菜单 ===
+function showDraftMenu(event, draftId, type, groupId) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeDraftMenu();
+    const menu = document.createElement('div');
+    menu.id = 'draftContextMenu';
+    menu.className = 'draft-menu';
+    menu.style.left = Math.min(event.clientX, window.innerWidth - 180) + 'px';
+    menu.style.top = Math.min(event.clientY, window.innerHeight - 140) + 'px';
+    menu.innerHTML = `
+        <button onclick="draftMenuAddToChat('${draftId}', '${type}')"><i data-lucide="message-square-quote" class="w-3.5 h-3.5"></i>添加到对话</button>
+        <button onclick="draftMenuDelete('${draftId}', '${type}', '${groupId}')"><i data-lucide="trash" class="w-3.5 h-3.5"></i>删除此草稿</button>
+        <button class="danger" onclick="draftMenuClearGroup('${type}', '${groupId}')"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i>清空该组草稿</button>`;
+    document.body.appendChild(menu);
+    lucide.createIcons();
+    setTimeout(() => document.addEventListener('click', closeDraftMenu, {once: true}), 0);
+}
+
+function closeDraftMenu() {
+    document.getElementById('draftContextMenu')?.remove();
+}
+
+function _groupsOfType(type) {
+    return type === 'shot' ? state.shots : type === 'audio' ? state.audioItems : state.keyElements;
+}
+
+function draftMenuAddToChat(draftId, type) {
+    closeDraftMenu();
+    selectDraftCard(draftId, type);
+    const input = document.getElementById('chatInput');
+    if (input) {
+        const rec = findDraftRecord(draftId, type);
+        const label = rec?.draft?.label || draftId;
+        input.value = `针对草稿「${label}」：` + input.value;
+        input.focus();
+    }
+}
+
+async function draftMenuDelete(draftId, type, groupId) {
+    closeDraftMenu();
+    const group = _groupsOfType(type).find(g => g.id === groupId);
+    if (!group) return;
+    group.drafts = (group.drafts || []).filter(d => d.id !== draftId);
+    if (state.selectedDraftId === draftId) state.selectedDraftId = group.drafts[0]?.id || '';
+    renderLeftContent();
+    updateMiddlePreview();
+    await persistBoard();
+    showToast('草稿已删除');
+}
+
+async function draftMenuClearGroup(type, groupId) {
+    closeDraftMenu();
+    const group = _groupsOfType(type).find(g => g.id === groupId);
+    if (!group || !(group.drafts || []).length) return;
+    if (!confirm(`确定清空「${group.title}」的全部 ${group.drafts.length} 个草稿？`)) return;
+    group.drafts = [];
+    renderLeftContent();
+    updateMiddlePreview();
+    await persistBoard();
+    showToast('该组草稿已清空');
 }
 
 // 渲染未归类素材
@@ -731,11 +835,20 @@ function renderRightChat() {
     const feed = document.getElementById('chatFeed');
     if (!feed) return;
 
-    feed.innerHTML = state.chatMessages.map(msg => `
+    const lastIdx = state.chatMessages.length - 1;
+    feed.innerHTML = state.chatMessages.map((msg, idx) => `
         <div class="chat-msg ${msg.sender}">
             <span class="msg-author">${msg.sender === 'user' ? '你' : '导演 Agent'}</span>
             <div class="chat-bubble">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>
             ${msg.meta ? `<div class="msg-meta">${escapeHtml(msg.meta)}</div>` : ''}
+            ${(msg.confirm && idx === lastIdx) ? `
+                <div class="confirm-bar">
+                    <div class="confirm-text">${escapeHtml(msg.confirm)}</div>
+                    <div class="confirm-actions">
+                        <button class="confirm-btn primary" onclick="sendAgentMessage('确认')">确认，继续</button>
+                        <button class="confirm-btn" onclick="document.getElementById('chatInput')?.focus()">我要调整</button>
+                    </div>
+                </div>` : ''}
         </div>
     `).join('');
 
@@ -751,6 +864,7 @@ function createStreamingBubble() {
     wrap.innerHTML = `
         <span class="msg-author">导演 Agent</span>
         <div class="chat-bubble"><span class="stream-text"></span><span class="stream-cursor">▍</span></div>
+        <div class="stream-log"></div>
         <div class="msg-meta chat-status">
             <span class="spinner-dot"></span>
             <span class="status-text">正在连接…</span>
@@ -761,18 +875,31 @@ function createStreamingBubble() {
 
     const textEl = wrap.querySelector('.stream-text');
     const statusEl = wrap.querySelector('.status-text');
+    const logEl = wrap.querySelector('.stream-log');
     const elapsedEl = wrap.querySelector('.status-elapsed');
     const t0 = performance.now();
     const timer = setInterval(() => {
         elapsedEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
     }, 100);
 
+    const stageLog = [];
     return {
-        setStatus(text) { statusEl.textContent = text; },
+        setStatus(text) {
+            // 阶段变化时把上一个阶段归档为 ✓ 行（重复状态不归档）
+            const prev = statusEl.textContent;
+            if (prev && prev !== text && prev !== '正在连接…' && prev !== '正在回复…'
+                && stageLog[stageLog.length - 1] !== prev) {
+                stageLog.push(prev);
+                logEl.innerHTML = stageLog.map(s => `<div class="stream-log-line">✓ ${escapeHtml(s)}</div>`).join('');
+            }
+            statusEl.textContent = text;
+            feed.scrollTop = feed.scrollHeight;
+        },
         appendText(piece) {
             textEl.innerHTML += escapeHtml(piece).replace(/\n/g, '<br>');
             feed.scrollTop = feed.scrollHeight;
         },
+        stages() { return stageLog.slice(); },
         remove() { clearInterval(timer); wrap.remove(); },
         elapsedSec() { return (performance.now() - t0) / 1000; }
     };
@@ -882,7 +1009,8 @@ async function sendAgentMessage(forcedText = '') {
                     state.chatMessages.push({
                         sender: 'agent',
                         text: String(p.text || '').trim() || '（空回复）',
-                        meta: metaParts.join(' · ')
+                        meta: metaParts.join(' · '),
+                        confirm: p.confirmation || ''
                     });
                     if (p.state) refreshStateFromBackend(p.state);
                     renderRightChat();

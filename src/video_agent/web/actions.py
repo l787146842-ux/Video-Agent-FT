@@ -114,10 +114,15 @@ class StudioActionExecutor:
             return self._apply_add_draft(action)
         if name in ("add_group", "add_keyElement", "add_shot", "add_audio"):
             return self._apply_add_group(action)
+        if name in ("delete_draft", "remove_draft"):
+            return self._apply_delete_draft(action)
+        if name in ("delete_group", "remove_group"):
+            return self._apply_delete_group(action)
         if name == "bind_asset":
             return self._apply_bind_asset(action)
         if name == "select_draft":
             return True  # 选中操作仅影响前端 UI，后端无需持久化
+        # request_confirmation / continue 是流程信号，由 agent_loop 处理，不算状态变更
         return False
 
     def _find_draft(self, draft_id: str, draft_type: str = ""):
@@ -204,13 +209,43 @@ class StudioActionExecutor:
         if not group:
             return False
 
-        allowed = ["title", "desc", "roughDesc", "duration", "timeRange", "prompt"]
+        allowed = ["title", "desc", "roughDesc", "duration", "timeRange", "prompt",
+                   "shotType", "sceneRefs"]
         changed = False
         for field in allowed:
             if field in patch:
                 group[field] = patch[field]
                 changed = True
         return changed
+
+    def _apply_delete_draft(self, action: Dict) -> bool:
+        draft_id = action.get("draft_id") or action.get("id") or ""
+        draft_type = action.get("draft_type") or action.get("kind") or ""
+        if not draft_id or draft_id == "current":
+            draft_id = self.selected_draft_id
+        if not draft_id:
+            return False
+        for cat_key in self._categories_for_type(draft_type):
+            for group in self.state.get(cat_key, []):
+                drafts = group.get("drafts", [])
+                for i, d in enumerate(drafts):
+                    if d.get("id") == draft_id:
+                        drafts.pop(i)
+                        return True
+        return False
+
+    def _apply_delete_group(self, action: Dict) -> bool:
+        group_id = action.get("group_id") or action.get("id") or ""
+        group_type = action.get("group_type") or action.get("kind") or ""
+        if not group_id:
+            return False
+        for cat_key in self._categories_for_type(group_type):
+            groups = self.state.get(cat_key, [])
+            for i, g in enumerate(groups):
+                if g.get("id") == group_id:
+                    groups.pop(i)
+                    return True
+        return False
 
     def _apply_add_group(self, action: Dict) -> bool:
         """创建新的故事板分组（关键元素 / 分镜 / 音频）"""
@@ -241,11 +276,17 @@ class StudioActionExecutor:
             "desc": desc,
             "drafts": [],
         }
-        # 分镜特有字段
+        # 分镜特有字段（允许放在 action 顶层或 group 子对象里）
+        def pick(field, default=""):
+            return action.get(field) or group_data.get(field) or patch.get(field) or default
+
         if cat_key == "shots":
-            new_group["roughDesc"] = group_data.get("roughDesc") or desc
-            new_group["duration"] = group_data.get("duration") or "5s"
-            new_group["timeRange"] = group_data.get("timeRange") or ""
+            new_group["roughDesc"] = pick("roughDesc", desc)
+            new_group["duration"] = pick("duration", "5s")
+            new_group["timeRange"] = pick("timeRange")
+            new_group["shotType"] = pick("shotType")
+            refs = action.get("sceneRefs") or group_data.get("sceneRefs") or []
+            new_group["sceneRefs"] = refs if isinstance(refs, list) else [refs]
 
         self.state.setdefault(cat_key, []).append(new_group)
 

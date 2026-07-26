@@ -453,6 +453,8 @@ class StudioStateService:
                     "id": g["id"],
                     "title": g.get("title", ""),
                     "duration": g.get("duration", ""),
+                    "shotType": g.get("shotType", ""),
+                    "sceneRefs": g.get("sceneRefs", []),
                     "roughDesc": g.get("roughDesc", ""),
                     "drafts": [
                         {
