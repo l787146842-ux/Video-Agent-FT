@@ -95,17 +95,17 @@ async def agent_chat(body: ChatRequest):
 
     use_studio_context = body.context_mode != "none"
 
-    if use_studio_context:
-        svc.add_chat_message("user", user_text)
-
     # ---------- mock 路径（仅显式选择 mock / 未配置供应商） ----------
     if is_mock_provider(body.provider, body.model):
-        raw_reply = _mock_llm_reply(user_text, svc.build_agent_context(body.asset_mode))
-        actions = executor.parse_actions_from_reply(raw_reply)
-        visible = executor.strip_action_blocks(raw_reply) or raw_reply
-        applied = executor.execute(actions)
-        if use_studio_context:
-            svc.add_chat_message("agent", visible)
+        async with svc.lock:
+            if use_studio_context:
+                svc.add_chat_message("user", user_text)
+            raw_reply = _mock_llm_reply(user_text, svc.build_agent_context(body.asset_mode))
+            actions = executor.parse_actions_from_reply(raw_reply)
+            visible = executor.strip_action_blocks(raw_reply) or raw_reply
+            applied = executor.execute(actions)
+            if use_studio_context:
+                svc.add_chat_message("agent", visible)
         return ChatResponse(
             text=visible,
             applied_actions=applied,
@@ -142,22 +142,26 @@ async def agent_chat(body: ChatRequest):
         for m in body.messages[-10:]
     ]
 
-    try:
-        result = await run_agent_loop(
-            user_text,
-            llm_call=llm_call,
-            context_builder=build_system_prompt,
-            executor=executor,
-            history=history,
-        )
-    except GenerationError as e:
-        logger.warning(f"[Agent] LLM 调用失败: {e}")
+    # 整个多步回合持锁：并发请求会排队而不是交叉改写共享状态（本地单用户场景可接受）
+    async with svc.lock:
         if use_studio_context:
-            svc.add_chat_message("agent", f"[错误] {e}")
-        raise HTTPException(status_code=502, detail=str(e))
+            svc.add_chat_message("user", user_text)
+        try:
+            result = await run_agent_loop(
+                user_text,
+                llm_call=llm_call,
+                context_builder=build_system_prompt,
+                executor=executor,
+                history=history,
+            )
+        except GenerationError as e:
+            logger.warning(f"[Agent] LLM 调用失败: {e}")
+            if use_studio_context:
+                svc.add_chat_message("agent", f"[错误] {e}")
+            raise HTTPException(status_code=502, detail=str(e))
 
-    if use_studio_context:
-        svc.add_chat_message("agent", result.text)
+        if use_studio_context:
+            svc.add_chat_message("agent", result.text)
 
     logger.info(
         f"[Agent] user='{user_text[:50]}...' steps={result.steps} "

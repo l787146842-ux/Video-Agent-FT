@@ -3,6 +3,7 @@ Studio State Service
 统一管理 Studio 前端的内存态数据 + StateManager 持久化。
 所有路由共享同一个 StudioStateService 实例。
 """
+import asyncio
 import json
 import os
 import time
@@ -12,13 +13,12 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from src.video_agent.utils.fileio import atomic_write_text
+
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 WORKSPACE_DIR = PROJECT_ROOT / "workspace"
-STATE_FILE = WORKSPACE_DIR / "studio_state.json"
-PROJECTS_DIR = WORKSPACE_DIR / "projects"
-INDEX_FILE = PROJECTS_DIR / "index.json"
 
 # 默认 demo 数据（首次启动时使用）
 _DEFAULT_STATE: Dict[str, Any] = {
@@ -167,7 +167,17 @@ class StudioStateService:
 
     _instance: Optional["StudioStateService"] = None
 
-    def __init__(self):
+    def __init__(self, base_dir: Optional[Path] = None):
+        # base_dir 可注入（测试用临时目录），默认 workspace/
+        base = Path(base_dir) if base_dir else WORKSPACE_DIR
+        self._workspace_dir = base
+        self._state_file = base / "studio_state.json"          # 兼容旧版单文件
+        self._projects_dir = base / "projects"
+        self._index_file = self._projects_dir / "index.json"
+
+        # 供 async 路由在「变更 + 落盘」临界区使用，避免并发请求交叉写
+        self.lock = asyncio.Lock()
+
         self._state: Dict[str, Any] = {}
         self._active_project_id: str = ""
         self._load()
@@ -190,17 +200,16 @@ class StudioStateService:
 
     def _read_index(self) -> Dict[str, Any]:
         """读取 projects/index.json"""
-        if INDEX_FILE.exists():
+        if self._index_file.exists():
             try:
-                return json.loads(INDEX_FILE.read_text(encoding="utf-8"))
+                return json.loads(self._index_file.read_text(encoding="utf-8"))
             except Exception as e:
                 logger.warning(f"[StudioState] Failed to read index: {e}")
         return {"active_project_id": "", "projects": []}
 
     def _write_index(self, index: Dict[str, Any]):
-        """写入 projects/index.json"""
-        PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-        INDEX_FILE.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+        """写入 projects/index.json（原子写）"""
+        atomic_write_text(self._index_file, json.dumps(index, ensure_ascii=False, indent=2))
 
     def _now_iso(self) -> str:
         from datetime import datetime
@@ -210,8 +219,8 @@ class StudioStateService:
 
     def _load(self):
         """加载：优先从 projects/index.json 找活跃项目，否则迁移旧 studio_state.json"""
-        WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
-        PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+        self._workspace_dir.mkdir(parents=True, exist_ok=True)
+        self._projects_dir.mkdir(parents=True, exist_ok=True)
 
         index = self._read_index()
         active_id = index.get("active_project_id", "")
@@ -225,9 +234,9 @@ class StudioStateService:
                 return
 
         # 迁移旧 studio_state.json 为第一个项目
-        if STATE_FILE.exists():
+        if self._state_file.exists():
             try:
-                old_state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+                old_state = json.loads(self._state_file.read_text(encoding="utf-8"))
                 pid = old_state.get("project_id", f"proj-{int(time.time())}")
                 pname = old_state.get("project_name", "迁移项目")
                 self._state = old_state
@@ -254,14 +263,13 @@ class StudioStateService:
         logger.info("[StudioState] Initialized with default demo project")
 
     def _save_to_project_dir(self, project_id: str):
-        """将内存状态写入对应项目目录"""
-        pdir = PROJECTS_DIR / project_id
-        pdir.mkdir(parents=True, exist_ok=True)
-        (pdir / "state.json").write_text(json.dumps(self._state, ensure_ascii=False, indent=2), encoding="utf-8")
+        """将内存状态写入对应项目目录（原子写）"""
+        pdir = self._projects_dir / project_id
+        atomic_write_text(pdir / "state.json", json.dumps(self._state, ensure_ascii=False, indent=2))
 
     def _load_from_project_dir(self, project_id: str) -> bool:
         """从项目目录加载状态到内存"""
-        sfile = PROJECTS_DIR / project_id / "state.json"
+        sfile = self._projects_dir / project_id / "state.json"
         if not sfile.exists():
             return False
         try:
@@ -272,9 +280,9 @@ class StudioStateService:
             return False
 
     def _save_compat(self):
-        """兼容写入 studio_state.json"""
+        """兼容写入 studio_state.json（原子写）"""
         try:
-            STATE_FILE.write_text(json.dumps(self._state, ensure_ascii=False, indent=2), encoding="utf-8")
+            atomic_write_text(self._state_file, json.dumps(self._state, ensure_ascii=False, indent=2))
         except Exception:
             pass
 
@@ -381,7 +389,7 @@ class StudioStateService:
         else:
             self._write_index(index)
         # 删除目录
-        pdir = PROJECTS_DIR / project_id
+        pdir = self._projects_dir / project_id
         if pdir.exists():
             shutil.rmtree(pdir, ignore_errors=True)
         logger.info(f"[StudioState] Deleted project: {project_id}")

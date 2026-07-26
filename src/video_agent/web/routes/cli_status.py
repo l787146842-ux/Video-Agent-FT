@@ -3,14 +3,27 @@
 前端"检测 CLI"按钮调用，判断本机是否已安装对应 CLI。
 """
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from loguru import logger
 
 router = APIRouter()
+
+# help 端点的 command 参数只允许简单的子命令名，防止把任意参数透传给本机 CLI
+_SAFE_SUBCOMMAND_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{0,30}$")
+
+
+def _help_args(command: str) -> list[str]:
+    """校验并构造 help 参数：空 → --help；子命令 → <sub> --help；其他一律拒绝"""
+    if not command:
+        return ["--help"]
+    if not _SAFE_SUBCOMMAND_RE.match(command):
+        raise HTTPException(status_code=400, detail="command 仅允许字母/数字/连字符的子命令名")
+    return [command, "--help"]
 
 
 def _find_exe(name: str, winget_pattern: str = "") -> str | None:
@@ -73,7 +86,7 @@ async def gemini_cli_help(command: str = ""):
     if not exe:
         return {"output": "agy 未安装", "ok": False}
 
-    args = [command] if command else ["--help"]
+    args = _help_args(command)
     try:
         result = subprocess.run(
             [exe] + args,
@@ -115,7 +128,7 @@ async def codex_cli_help(command: str = ""):
     if not exe:
         return {"output": "codex 未安装", "ok": False}
 
-    args = [command] if command else ["--help"]
+    args = _help_args(command)
     try:
         result = subprocess.run(
             [exe] + args,

@@ -3,6 +3,7 @@ Video Agent Web Application
 FastAPI 主应用 — 挂载 Flova Studio 前端静态服务 + API 网关
 """
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -24,12 +25,9 @@ logger.add(
     level="INFO",
 )
 
-app = FastAPI(title="Video Agent Studio", version="1.0.0")
-
-
-# ---------- 启动事件：注册适配器 + Skills + 初始化状态 ----------
-@app.on_event("startup")
-async def on_startup():
+# ---------- 生命周期：注册适配器 + Skills + 初始化状态 ----------
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     from src.video_agent.web.providers import register_adapters
     from src.video_agent.web.state_service import StudioStateService
     from src.video_agent.skills import register_default_skills
@@ -37,6 +35,10 @@ async def on_startup():
     register_default_skills()
     StudioStateService.get_instance()  # 触发加载/初始化
     logger.info("[Startup] Adapters + Skills registered, state service ready")
+    yield
+
+
+app = FastAPI(title="Video Agent Studio", version="1.0.0", lifespan=lifespan)
 
 # ---------- 静态文件服务 ----------
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
