@@ -6,6 +6,7 @@
 - 真实供应商失败 → 返回真实错误（HTTP 4xx/5xx + detail），绝不回退假图；
 - 视频生成尚未接入真实供应商 → 非 mock 一律 501，明确告知。
 """
+import asyncio
 import time
 import random
 from typing import Any, Dict, List, Optional
@@ -96,32 +97,51 @@ async def generate_image(body: ImageGenRequest):
     if is_mock_provider(body.provider_id, body.model):
         return await _generate_image_mock(body)
 
-    # ---------- 真实供应商 ----------
+    # ---------- 真实供应商：异步任务（立即返回 task_id，前端轮询进度与耗时） ----------
     task_id = f"img-{int(time.time())}-{random.randint(100, 999)}"
-    try:
-        image_url = await generate_image_via_provider(
-            body.provider_id,
-            body.model,
-            body.prompt,
-            size=body.size or "1024x1024",
-            aspect_ratio=body.aspect_ratio,
-        )
-    except GenerationError as e:
-        logger.warning(f"[Generate] 图片生成失败: {e}")
-        raise HTTPException(status_code=502, detail=str(e))
-
     _new_task(
         task_id,
-        status="succeeded",
-        result={"images": [image_url]},
+        status="processing",
         draft_id=body.draft_id,
         draft_type=body.draft_type,
         prompt=body.prompt,
         model=body.model,
+        result=None,
     )
-    _writeback_if_complete(task_id)
-    logger.info(f"[Generate] 图片生成成功: {image_url[:80]}")
-    return {"task_id": task_id}
+
+    async def _run_generation():
+        t0 = time.monotonic()
+        task = _tasks.get(task_id)
+        try:
+            image_url = await generate_image_via_provider(
+                body.provider_id,
+                body.model,
+                body.prompt,
+                size=body.size or "1024x1024",
+                aspect_ratio=body.aspect_ratio,
+            )
+            if task is None:
+                return
+            task["status"] = "succeeded"
+            task["result"] = {"images": [image_url]}
+            task["elapsed"] = round(time.monotonic() - t0, 1)
+            _writeback_if_complete(task_id)
+            logger.info(f"[Generate] 图片生成成功({task['elapsed']}s): {image_url[:80]}")
+        except GenerationError as e:
+            if task is not None:
+                task["status"] = "failed"
+                task["error"] = str(e)
+                task["elapsed"] = round(time.monotonic() - t0, 1)
+            logger.warning(f"[Generate] 图片生成失败: {e}")
+        except Exception as e:
+            if task is not None:
+                task["status"] = "failed"
+                task["error"] = f"服务端异常: {e}"
+                task["elapsed"] = round(time.monotonic() - t0, 1)
+            logger.exception(f"[Generate] 图片生成异常: {e}")
+
+    asyncio.create_task(_run_generation())
+    return {"task_id": task_id, "status": "processing"}
 
 
 async def _generate_image_mock(body: ImageGenRequest):
@@ -209,7 +229,7 @@ async def _poll_task(task_id: str) -> Dict[str, Any]:
         return {"status": "not_found"}
 
     if task["status"] in ("succeeded", "completed", "failed"):
-        return task
+        return {**task, "elapsed": task.get("elapsed") or round(time.time() - task.get("created_at", time.time()), 1)}
 
     adapter_name = task.get("adapter_name", "")
     if adapter_name:
@@ -234,7 +254,7 @@ async def _poll_task(task_id: str) -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"[Generate] Poll error for {task_id}: {e}")
 
-    return task
+    return {**task, "elapsed": task.get("elapsed") or round(time.time() - task.get("created_at", time.time()), 1)}
 
 
 def _writeback_if_complete(task_id: str) -> None:

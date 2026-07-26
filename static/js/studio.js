@@ -459,8 +459,16 @@ function updateMiddlePreview() {
         return;
     }
 
-    // 1. 媒体预览更新
-    if (currentDraft.mediaType === 'image') {
+    // 1. 媒体预览更新（若该草稿正在生成，显示进度与实时耗时）
+    const activeGen = state.activeGenerations[currentDraft.id];
+    if (activeGen) {
+        mediaViewer.innerHTML = `
+            <div class="text-center text-purple-400">
+                <i data-lucide="loader" class="w-10 h-10 animate-spin mx-auto mb-2"></i>
+                <p class="text-xs">${activeGen.kind === 'video' ? '视频' : '图片'}生成中…
+                    <span class="gen-elapsed" data-gen-start="${activeGen.start}">0.0s</span></p>
+            </div>`;
+    } else if (currentDraft.mediaType === 'image') {
         mediaViewer.innerHTML = `<img src="${currentDraft.imgUrl}" alt="Preview Image" class="max-h-full rounded-lg shadow-xl">`;
     } else if (currentDraft.mediaType === 'video') {
         if (currentDraft.videoUrl) {
@@ -471,7 +479,7 @@ function updateMiddlePreview() {
             mediaViewer.innerHTML = `
                 <div class="text-center text-purple-400">
                     <i data-lucide="loader" class="w-10 h-10 animate-spin mx-auto mb-2"></i>
-                    <p class="text-xs">Agent 提交生成任务，等待渲染完成...</p>
+                    <p class="text-xs">尚未生成视频，点击右上角「生成视频」提交任务</p>
                 </div>
             `;
         }
@@ -727,10 +735,47 @@ function renderRightChat() {
         <div class="chat-msg ${msg.sender}">
             <span class="msg-author">${msg.sender === 'user' ? '你' : '导演 Agent'}</span>
             <div class="chat-bubble">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>
+            ${msg.meta ? `<div class="msg-meta">${escapeHtml(msg.meta)}</div>` : ''}
         </div>
     `).join('');
 
     feed.scrollTop = feed.scrollHeight;
+}
+
+// 在聊天流末尾追加一个"流式中"的 Agent 气泡，返回操作句柄
+function createStreamingBubble() {
+    const feed = document.getElementById('chatFeed');
+    if (!feed) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'chat-msg agent streaming';
+    wrap.innerHTML = `
+        <span class="msg-author">导演 Agent</span>
+        <div class="chat-bubble"><span class="stream-text"></span><span class="stream-cursor">▍</span></div>
+        <div class="msg-meta chat-status">
+            <span class="spinner-dot"></span>
+            <span class="status-text">正在连接…</span>
+            <span class="status-elapsed">0.0s</span>
+        </div>`;
+    feed.appendChild(wrap);
+    feed.scrollTop = feed.scrollHeight;
+
+    const textEl = wrap.querySelector('.stream-text');
+    const statusEl = wrap.querySelector('.status-text');
+    const elapsedEl = wrap.querySelector('.status-elapsed');
+    const t0 = performance.now();
+    const timer = setInterval(() => {
+        elapsedEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
+    }, 100);
+
+    return {
+        setStatus(text) { statusEl.textContent = text; },
+        appendText(piece) {
+            textEl.innerHTML += escapeHtml(piece).replace(/\n/g, '<br>');
+            feed.scrollTop = feed.scrollHeight;
+        },
+        remove() { clearInterval(timer); wrap.remove(); },
+        elapsedSec() { return (performance.now() - t0) / 1000; }
+    };
 }
 
 // 发送 Agent 消息与交互循环
@@ -772,13 +817,14 @@ async function sendAgentMessage(forcedText = '') {
     state.agentBusy = true;
     setAgentBusy(true);
     renderRightChat();
+    const bubble = createStreamingBubble();
     try {
         const history = state.chatMessages.slice(-12, -1).map(message => ({
             role: message.sender === 'agent' ? 'assistant' : 'user',
             content: message.text
         }));
         // 上下文与协议提示词由服务端注入；前端只传 skill 角色提示词 + 选中态
-        const response = await fetch('/api/canvas-llm', {
+        const response = await fetch('/api/canvas-llm/stream', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -797,25 +843,60 @@ async function sendAgentMessage(forcedText = '') {
                 attachments
             })
         });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(readApiError(data, 'Agent 请求失败'));
-        const visibleReply = String(data.text || '').trim();
-        if (!visibleReply) throw new Error('Agent 返回了空回复');
-        const appliedCount = data.applied_actions || 0;
-
-        // 后端已执行 studio-actions / 绑定附件并持久化，用返回的 state 快照刷新前端
-        if (data.state) {
-            refreshStateFromBackend(data.state);
+        if (!response.ok || !response.body) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(readApiError(data, 'Agent 请求失败'));
         }
 
-        state.chatMessages.push({sender: 'agent', text: visibleReply});
-        renderRightChat();
-        if (appliedCount > 0) {
-            const stepNote = data.steps > 1 ? `（${data.steps} 轮执行）` : '';
-            showToast(`Agent 已联动更新 ${appliedCount} 项${stepNote}`);
+        // 解析 SSE 流
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let sseBuf = '';
+        let done = false;
+
+        while (!done) {
+            const {value, done: rdDone} = await reader.read();
+            if (rdDone) break;
+            sseBuf += decoder.decode(value, {stream: true});
+            let idx;
+            while ((idx = sseBuf.indexOf('\n\n')) !== -1) {
+                const raw = sseBuf.slice(0, idx).trim();
+                sseBuf = sseBuf.slice(idx + 2);
+                if (!raw.startsWith('data:')) continue;
+                let ev;
+                try { ev = JSON.parse(raw.slice(5).trim()); } catch (_) { continue; }
+
+                if (ev.type === 'status') {
+                    bubble?.setStatus(ev.text || '');
+                } else if (ev.type === 'delta') {
+                    bubble?.setStatus('正在回复…');
+                    bubble?.appendText(ev.text || '');
+                } else if (ev.type === 'done') {
+                    done = true;
+                    const p = ev.payload || {};
+                    const elapsed = ((p.elapsed_ms || 0) / 1000).toFixed(1);
+                    const metaParts = [`耗时 ${elapsed}s`];
+                    if (p.steps > 1) metaParts.push(`${p.steps} 轮`);
+                    if (p.applied_actions > 0) metaParts.push(`更新 ${p.applied_actions} 项`);
+                    bubble?.remove();
+                    state.chatMessages.push({
+                        sender: 'agent',
+                        text: String(p.text || '').trim() || '（空回复）',
+                        meta: metaParts.join(' · ')
+                    });
+                    if (p.state) refreshStateFromBackend(p.state);
+                    renderRightChat();
+                    if (p.applied_actions > 0) showToast(`Agent 已联动更新 ${p.applied_actions} 项（${elapsed}s）`);
+                    (p.warnings || []).forEach(w => showToast('⚠ ' + w));
+                } else if (ev.type === 'error') {
+                    done = true;
+                    throw new Error(ev.detail || 'Agent 处理失败');
+                }
+            }
         }
-        (data.warnings || []).forEach(w => showToast('⚠ ' + w));
+        if (!done) throw new Error('连接中断，未收到完整回复');
     } catch (error) {
+        bubble?.remove();
         state.chatMessages.push({sender: 'agent', text: `请求失败：${error.message || error}`});
         renderRightChat();
     } finally {
@@ -1432,6 +1513,16 @@ state.availableImageModels = DEFAULT_IMAGE_MODELS;
 state.availableVideoModels = DEFAULT_VIDEO_MODELS;
 state.apiProviders = [];
 
+// 进行中的生成任务：draftId → {start: Date.now(), kind: 'image'|'video'}
+state.activeGenerations = {};
+
+// 全局计时器：刷新页面上所有 [data-gen-start] 的耗时显示
+setInterval(() => {
+    document.querySelectorAll('[data-gen-start]').forEach(el => {
+        el.textContent = ((Date.now() - Number(el.dataset.genStart)) / 1000).toFixed(1) + 's';
+    });
+}, 200);
+
 // 从 apiProviders 中按 provider_id 提取模型列表
 function providerModels(providerId, kind) {
     const p = state.apiProviders.find(p => p.id === providerId);
@@ -1643,8 +1734,11 @@ async function generateImage() {
         const data = await res.json();
         if (!res.ok) throw new Error(readApiError(data, '生图请求失败'));
         if (data.task_id) {
-            showToast('生图任务已创建：' + data.task_id);
-            // 异步轮询结果
+            // 标记生成中：预览区出现实时计时
+            state.activeGenerations[draft.id] = {start: Date.now(), kind: 'image'};
+            draft.tag = '生成中';
+            updateMiddlePreview();
+            renderLeftContent();
             pollAndPreviewImage(data.task_id, draft);
         } else if (data.images) {
             draft.imgUrl = data.images[0];
@@ -1659,28 +1753,42 @@ async function generateImage() {
     }
 }
 
+function finishGeneration(draft) {
+    const rec = state.activeGenerations[draft.id];
+    delete state.activeGenerations[draft.id];
+    updateMiddlePreview();
+    renderLeftContent();
+    return rec ? ((Date.now() - rec.start) / 1000).toFixed(1) : null;
+}
+
 async function pollAndPreviewImage(taskId, draft) {
     let attempts = 0;
-    while (attempts < 30) {
+    while (attempts < 150) {   // 150 × 2s = 5 分钟，真实生图可能较慢
         try {
             const res = await fetch('/api/canvas-image-tasks/' + encodeURIComponent(taskId));
-            if (res.status === 404) { showToast('任务丢失，请重试'); return; }
+            if (res.status === 404) { finishGeneration(draft); showToast('任务丢失，请重试'); return; }
             const data = await res.json();
             if (data.status === 'succeeded' && data.result && data.result.images && data.result.images.length) {
                 draft.imgUrl = data.result.images[0];
-                updateMiddlePreview();
-                showToast('图片渲染完成！');
+                draft.tag = data.mock ? 'mock 演示' : '已生成';
+                const sec = data.elapsed || finishGeneration(draft);
+                finishGeneration(draft);
+                showToast(`图片渲染完成！耗时 ${sec}s`);
                 return;
             }
             if (data.status === 'failed') {
-                showToast('生成失败: ' + (data.error || '未知错误'));
+                draft.tag = '生成失败';
+                const sec = data.elapsed || finishGeneration(draft);
+                finishGeneration(draft);
+                showToast(`生成失败（${sec}s）: ` + (data.error || '未知错误'));
                 return;
             }
         } catch (e) { /* 静默重试 */ }
         await new Promise(r => setTimeout(r, 2000));
         attempts++;
     }
-    showToast('轮询超时，请手动刷新');
+    finishGeneration(draft);
+    showToast('轮询超时（5 分钟），请检查供应商状态后重试');
 }
 
 async function generateVideo() {
@@ -1739,13 +1847,50 @@ async function generateVideo() {
             draft.videoUrl = videoUrl;
             updateMiddlePreview();
             showToast('视频已生成！');
+        } else if (data.task_id) {
+            // 标记生成中 + 轮询：预览区出现实时计时
+            state.activeGenerations[draft.id] = {start: Date.now(), kind: 'video'};
+            draft.tag = '生成中';
+            updateMiddlePreview();
+            renderLeftContent();
+            pollAndPreviewVideo(data.task_id, draft);
         } else {
-            showToast(data.task_id ? `视频任务已提交：${data.task_id}` : '视频任务已提交');
+            showToast('视频任务已提交');
         }
     } catch (err) {
         console.error('[Studio] 生成视频失败:', err);
         showToast(err.message || '视频生成请求失败，请检查 API 配置');
     }
+}
+
+async function pollAndPreviewVideo(taskId, draft) {
+    let attempts = 0;
+    while (attempts < 300) {   // 300 × 2s = 10 分钟，视频生成较慢
+        try {
+            const res = await fetch('/api/tasks/' + encodeURIComponent(taskId));
+            const data = await res.json();
+            if (data.status === 'not_found') { finishGeneration(draft); showToast('任务丢失，请重试'); return; }
+            if ((data.status === 'succeeded' || data.status === 'completed') && data.video_url) {
+                draft.videoUrl = data.video_url;
+                draft.tag = data.mock ? 'mock 演示' : '已生成';
+                const sec = data.elapsed || finishGeneration(draft);
+                finishGeneration(draft);
+                showToast(`视频渲染完成！耗时 ${sec}s`);
+                return;
+            }
+            if (data.status === 'failed') {
+                draft.tag = '生成失败';
+                const sec = data.elapsed || finishGeneration(draft);
+                finishGeneration(draft);
+                showToast(`视频生成失败（${sec}s）: ` + (data.error || '未知错误'));
+                return;
+            }
+        } catch (e) { /* 静默重试 */ }
+        await new Promise(r => setTimeout(r, 2000));
+        attempts++;
+    }
+    finishGeneration(draft);
+    showToast('视频轮询超时（10 分钟），请检查供应商状态后重试');
 }
 
 async function generateAudio() {
@@ -1762,6 +1907,7 @@ async function generateAudio() {
         return;
     }
     showToast('正在生成音频规划...');
+    const audioT0 = performance.now();
 
     try {
         const res = await fetch('/api/canvas-llm', {
@@ -1783,7 +1929,7 @@ async function generateAudio() {
         draft.mode = mode;
         draft.timbre = timbre;
         document.getElementById('detailedPromptInput').value = draft.prompt;
-        showToast('音频规划已生成');
+        showToast(`音频规划已生成（耗时 ${((performance.now() - audioT0) / 1000).toFixed(1)}s）`);
     } catch (err) {
         console.error('[Studio] 音频合成失败:', err);
         showToast(err.message || '音频规划失败');

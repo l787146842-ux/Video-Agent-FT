@@ -9,6 +9,7 @@
 """
 import base64
 import binascii
+import json
 import re
 import time
 import random
@@ -119,6 +120,95 @@ async def call_chat_completion(
     if not content:
         raise GenerationError("LLM 返回了空内容")
     finish_reason = choices[0].get("finish_reason", "") or ""
+    return content, finish_reason
+
+
+async def call_chat_completion_stream(
+    provider_id: str,
+    model: str,
+    messages: List[Dict[str, Any]],
+    *,
+    max_tokens: int = 8192,
+    temperature: float = 0.7,
+    timeout: int = 180,
+    on_delta=None,
+) -> Tuple[str, str]:
+    """
+    流式 chat 调用（OpenAI 兼容 SSE）。每收到一段增量文本就 await on_delta(text)。
+    返回 (完整内容, finish_reason)。供应商不支持流式（返回普通 JSON）时自动兼容。
+    失败抛 GenerationError。
+    """
+    base_url, api_key, effective_model = resolve_openai_endpoint(provider_id, model)
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload = {
+        "model": effective_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    logger.info(f"[Generation] chat(stream): provider={provider_id}, model={effective_model}")
+
+    content_parts: List[str] = []
+    finish_reason = ""
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST", f"{base_url}/chat/completions", json=payload, headers=headers
+            ) as resp:
+                if resp.status_code != 200:
+                    body = (await resp.aread()).decode("utf-8", errors="replace")[:200]
+                    raise GenerationError(f"LLM 返回 HTTP {resp.status_code}: {body}")
+
+                ctype = resp.headers.get("content-type", "")
+                if "text/event-stream" not in ctype:
+                    # 供应商忽略了 stream 参数，按普通 JSON 兼容处理
+                    data = json.loads((await resp.aread()).decode("utf-8", errors="replace"))
+                    choices = data.get("choices", [])
+                    if not choices:
+                        raise GenerationError("LLM 返回了空 choices")
+                    content = choices[0].get("message", {}).get("content", "") or ""
+                    if on_delta and content:
+                        await on_delta(content)
+                    return content, choices[0].get("finish_reason", "") or ""
+
+                async for line in resp.aiter_lines():
+                    line = line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    chunk = line[5:].strip()
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(chunk)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = data.get("choices", [])
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {}) or {}
+                    piece = delta.get("content") or ""
+                    if piece:
+                        content_parts.append(piece)
+                        if on_delta:
+                            await on_delta(piece)
+                    if choices[0].get("finish_reason"):
+                        finish_reason = choices[0]["finish_reason"]
+    except GenerationError:
+        raise
+    except httpx.TimeoutException:
+        raise GenerationError(f"LLM 流式请求超时（{timeout}s）")
+    except httpx.HTTPError as e:
+        raise GenerationError(f"LLM 流式请求失败: {e}")
+
+    content = "".join(content_parts)
+    if not content:
+        raise GenerationError("LLM 流式返回了空内容")
     return content, finish_reason
 
 

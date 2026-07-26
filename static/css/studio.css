@@ -780,6 +780,46 @@ body, html {
   opacity: 0.7;
 }
 
+/* ===== 流式聊天 & 生成进度 ===== */
+.msg-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-msg.streaming .chat-bubble {
+  min-height: 18px;
+}
+
+.stream-cursor {
+  display: inline-block;
+  animation: stream-blink 0.8s infinite;
+  color: var(--accent-blue);
+}
+
+@keyframes stream-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.spinner-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent-blue);
+  animation: wf-pulse 1s infinite;
+  flex-shrink: 0;
+}
+
+.status-elapsed,
+.gen-elapsed {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-blue);
+}
+
 @keyframes wf-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }

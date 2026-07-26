@@ -45,12 +45,23 @@ async def run_agent_loop(
     executor: StudioActionExecutor,
     history: List[Dict[str, Any]],
     max_steps: int = MAX_STEPS,
+    on_event=None,
 ) -> AgentLoopResult:
+    """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}"""
+
+    async def emit(event: Dict[str, Any]) -> None:
+        if on_event:
+            try:
+                await on_event(event)
+            except Exception:
+                pass
+
     result = AgentLoopResult()
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
 
     for step in range(1, max_steps + 1):
         result.steps = step
+        await emit({"type": "step_started", "step": step, "max_steps": max_steps})
         system_prompt = context_builder()  # 每轮刷新，让 LLM 看到上一轮执行后的最新状态
 
         content, finish_reason = await llm_call(system_prompt, messages)
@@ -67,8 +78,12 @@ async def run_agent_loop(
             )
 
         executable, wants_continue = _split_actions(actions)
+        if executable:
+            await emit({"type": "executing_actions", "step": step, "count": len(executable)})
         applied = executor.execute(executable)
         result.applied_actions += applied
+        if applied:
+            await emit({"type": "actions_applied", "step": step, "count": applied})
         if executable and applied < len(executable):
             result.warnings.append(
                 f"第 {step} 轮有 {len(executable) - applied} 个操作未匹配到目标（draft/group 不存在？）"

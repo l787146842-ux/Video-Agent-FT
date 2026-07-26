@@ -6,19 +6,26 @@
 - 上下文注入在服务端完成（前端只发消息本体 + 选中态），服务端是唯一事实源；
 - 仅当 provider 为空/mock 时走 mock；真实供应商失败返回 502 + 真实错误。
 """
+import asyncio
+import json
 import time
 import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from loguru import logger
 
 from src.video_agent.web.actions import StudioActionExecutor
 from src.video_agent.web.agent_loop import run_agent_loop
-from src.video_agent.web.generation import GenerationError, call_chat_completion
+from src.video_agent.web.generation import (
+    GenerationError,
+    call_chat_completion,
+    call_chat_completion_stream,
+)
 from src.video_agent.web.provider_config import is_mock_provider
 from src.video_agent.web.state_service import StudioStateService
 
@@ -263,6 +270,208 @@ async def agent_chat(body: ChatRequest):
         steps=result.steps,
         warnings=result.warnings,
         state=svc.get_full_snapshot() if use_studio_context else None,
+    )
+
+
+class _DeltaGate:
+    """
+    流式增量过滤器：可见文本实时转发给前端；
+    一旦出现代码围栏（studio-actions JSON 块开头），停止转发并切换状态提示，
+    避免把大段 JSON 流式喷到聊天气泡里。
+    尾部保留 HOLD 个字符缓冲，防止围栏标记被切在两个 chunk 之间漏出去。
+    """
+    HOLD = 20
+
+    def __init__(self, emit):
+        self._emit = emit
+        self._buf = ""
+        self._stopped = False
+
+    async def feed(self, piece: str) -> None:
+        if self._stopped:
+            return
+        self._buf += piece
+        fence = self._buf.find("```")
+        if fence != -1:
+            visible = self._buf[:fence].rstrip()
+            if visible:
+                await self._emit({"type": "delta", "text": visible})
+            self._stopped = True
+            self._buf = ""
+            await self._emit({"type": "status", "text": "正在生成操作指令…"})
+            return
+        if len(self._buf) > self.HOLD:
+            out, self._buf = self._buf[:-self.HOLD], self._buf[-self.HOLD:]
+            await self._emit({"type": "delta", "text": out})
+
+    async def flush(self) -> None:
+        if not self._stopped and self._buf:
+            await self._emit({"type": "delta", "text": self._buf})
+            self._buf = ""
+
+
+@router.post("/agent/chat/stream")
+@router.post("/canvas-llm/stream")
+async def agent_chat_stream(body: ChatRequest):
+    """
+    流式聊天端点（SSE）。事件类型：
+    - status: 阶段提示（连接/第 N 轮推理/执行操作/生成指令…）
+    - delta:  可见回复的增量文本
+    - done:   最终结果（与非流式 ChatResponse 字段一致 + elapsed_ms）
+    - error:  失败信息
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def emit(event: Dict[str, Any]) -> None:
+        await queue.put(event)
+
+    async def worker() -> None:
+        t0 = time.monotonic()
+        try:
+            svc = StudioStateService.get_instance()
+            executor = StudioActionExecutor(
+                svc,
+                selected_draft_id=body.selected_draft_id,
+                selected_type=body.selected_type,
+            )
+
+            user_text = body.message.strip()
+            if not user_text and not body.attachments:
+                await emit({"type": "error", "detail": "消息不能为空"})
+                return
+            if not user_text:
+                user_text = "请查看我上传的素材"
+
+            use_studio_context = body.context_mode != "none"
+            attachment_note = _attachment_context(body.attachments) if body.attachments else ""
+            llm_user_text = f"{user_text}\n\n{attachment_note}" if attachment_note else user_text
+
+            # ---------- mock：模拟流式，保持一致的交互体验 ----------
+            if is_mock_provider(body.provider, body.model):
+                async with svc.lock:
+                    if use_studio_context:
+                        _bind_attachments(svc, body.attachments)
+                        svc.add_chat_message("user", user_text)
+                    await emit({"type": "status", "text": "mock 模式：本地规则生成…"})
+                    raw_reply = _mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
+                    actions = executor.parse_actions_from_reply(raw_reply)
+                    visible = executor.strip_action_blocks(raw_reply) or raw_reply
+                    for i in range(0, len(visible), 8):
+                        await emit({"type": "delta", "text": visible[i:i + 8]})
+                        await asyncio.sleep(0.02)
+                    applied = executor.execute(actions)
+                    if use_studio_context:
+                        svc.add_chat_message("agent", visible)
+                await emit({"type": "done", "payload": {
+                    "text": visible,
+                    "applied_actions": applied,
+                    "steps": 1,
+                    "warnings": ["当前为 mock 供应商，回复由本地规则生成，未调用真实 LLM"],
+                    "state": svc.get_full_snapshot(),
+                    "elapsed_ms": int((time.monotonic() - t0) * 1000),
+                }})
+                return
+
+            # ---------- 真实供应商：流式多步循环 ----------
+            def build_system_prompt() -> str:
+                parts = [body.system_prompt.strip()] if body.system_prompt.strip() else []
+                if use_studio_context:
+                    parts.append(STUDIO_ACTION_PROTOCOL_PROMPT.strip())
+                    selected_note = ""
+                    if body.selected_draft_id:
+                        selected_note = (
+                            f"\n用户当前选中的草稿：draft_id={body.selected_draft_id}"
+                            f"（类型 {body.selected_type or '未知'}）。studio-actions 里的 \"current\" 指向它。"
+                        )
+                    parts.append(
+                        "当前工作台状态 JSON 如下（每轮自动刷新）：" + selected_note + "\n\n"
+                        + svc.build_agent_context(body.asset_mode)
+                    )
+                return "\n\n".join(parts)
+
+            async def llm_call(system_prompt: str, messages: List[Dict[str, Any]]):
+                gate = _DeltaGate(emit)
+                full = [{"role": "system", "content": system_prompt}] + messages
+                try:
+                    content, finish = await call_chat_completion_stream(
+                        body.provider, body.model, full,
+                        max_tokens=8192, timeout=180, on_delta=gate.feed,
+                    )
+                    await gate.flush()
+                    return content, finish
+                except GenerationError as e:
+                    # 个别供应商不支持流式：回退普通调用（真实错误会在这里再次抛出）
+                    logger.warning(f"[Agent] 流式调用失败({e})，回退非流式")
+                    await emit({"type": "status", "text": "流式不可用，改用普通模式…"})
+                    return await call_chat_completion(
+                        body.provider, body.model, full, max_tokens=8192, timeout=120,
+                    )
+
+            async def on_loop_event(event: Dict[str, Any]) -> None:
+                if event["type"] == "step_started":
+                    label = "正在推理…" if event["step"] == 1 else f"第 {event['step']} 轮推理中…"
+                    await emit({"type": "status", "text": label, "step": event["step"]})
+                elif event["type"] == "executing_actions":
+                    await emit({"type": "status", "text": f"正在执行 {event['count']} 个操作…"})
+                elif event["type"] == "actions_applied":
+                    await emit({"type": "status", "text": f"已应用 {event['count']} 个操作"})
+
+            history = [
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+                for m in body.messages[-10:]
+            ]
+
+            async with svc.lock:
+                if use_studio_context:
+                    _bind_attachments(svc, body.attachments)
+                    svc.add_chat_message("user", user_text)
+                try:
+                    result = await run_agent_loop(
+                        llm_user_text,
+                        llm_call=llm_call,
+                        context_builder=build_system_prompt,
+                        executor=executor,
+                        history=history,
+                        on_event=on_loop_event,
+                    )
+                except GenerationError as e:
+                    logger.warning(f"[Agent] LLM 调用失败: {e}")
+                    if use_studio_context:
+                        svc.add_chat_message("agent", f"[错误] {e}")
+                    await emit({"type": "error", "detail": str(e)})
+                    return
+                if use_studio_context:
+                    svc.add_chat_message("agent", result.text)
+
+            await emit({"type": "done", "payload": {
+                "text": result.text,
+                "applied_actions": result.applied_actions,
+                "steps": result.steps,
+                "warnings": result.warnings,
+                "state": svc.get_full_snapshot() if use_studio_context else None,
+                "elapsed_ms": int((time.monotonic() - t0) * 1000),
+            }})
+        except Exception as e:
+            logger.exception(f"[Agent] 流式处理异常: {e}")
+            await emit({"type": "error", "detail": f"服务端异常: {e}"})
+
+    task = asyncio.create_task(worker())
+
+    async def event_generator():
+        try:
+            while True:
+                event = await queue.get()
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                if event.get("type") in ("done", "error"):
+                    break
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
 
 
