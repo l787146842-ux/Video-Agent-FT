@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m '整改规划书：标记全部 Phase 完成 + 验证结果 *)"
+    ]
+  }
+}
