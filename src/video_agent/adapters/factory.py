@@ -21,24 +21,35 @@ class AdapterFactory:
             raise ValueError(f"Adapter not found for type '{adapter_type}' and provider '{provider}'")
         return adapter
 
+class GenerationTaskFailed(Exception):
+    """生成任务被供应商标记为失败"""
+
+
 async def wait_until_complete(adapter: Any, task_id: str, timeout: int = 1200, poll_interval: int = 5) -> Any:
     """
-    通用长任务轮询辅助函数
+    通用长任务轮询辅助函数。
+    - completed → 返回结果
+    - failed → 立即抛 GenerationTaskFailed（不再空转到超时）
+    - 查询本身出错 → 记录并重试，直到超时
     """
     import time
     start_time = time.time()
-    
+
     while time.time() - start_time < timeout:
         try:
             result = await adapter.fetch_result(task_id)
+        except Exception as e:
+            logger.error(f"Error fetching result for task {task_id}: {e}")
+            result = None
+
+        if result is not None:
             if result.status == "completed":
                 return result
             if result.status == "failed":
-                raise Exception(f"Generation task failed: {result.error_msg}")
-        except Exception as e:
-            logger.error(f"Error fetching result for task {task_id}: {e}")
-            # Depending on error type, might want to raise or retry
-            
+                raise GenerationTaskFailed(
+                    f"Generation task {task_id} failed: {result.error_msg}"
+                )
+
         await asyncio.sleep(poll_interval)
-        
+
     raise TimeoutError(f"Task {task_id} timeout after {timeout} seconds")

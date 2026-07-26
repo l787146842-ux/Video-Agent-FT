@@ -2051,8 +2051,12 @@ function subscribeWorkflowEvents() {
                 phaseStates[data.phase] = data.skipped ? 'skipped' : 'completed';
                 renderWorkflowPhases(phaseStates);
                 showToast(`${data.label}${data.skipped ? '（跳过）' : ' 完成'}：${data.detail || ''}`);
+            } else if (data.event === 'phase_failed') {
+                phaseStates[data.phase] = 'failed';
+                renderWorkflowPhases(phaseStates);
+                showToast(`${data.label || data.phase} 失败：${data.error || ''}`);
             } else if (data.event === 'workflow_done') {
-                showToast('工作流全部完成！');
+                showToast(data.message || '工作流全部完成！');
                 wfEventSource.close();
                 wfEventSource = null;
                 const btn = document.getElementById('workflowRunBtn');

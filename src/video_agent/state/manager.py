@@ -1,8 +1,10 @@
-﻿import json
+import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from loguru import logger
+
+from src.video_agent.utils.fileio import atomic_write_text
 
 from .models import (
     ProjectState,
@@ -34,7 +36,7 @@ class StateManager:
     def initialize_project(self, project_id: str, user_goal: str, project_name: str = "New Project") -> ProjectState:
         if self.state:
             logger.warning("Overwriting existing project state.")
-            
+
         self.state = ProjectState(
             project_id=project_id,
             project_name=project_name,
@@ -43,10 +45,10 @@ class StateManager:
         # Setup metadata directory info
         self.state.metadata.workspace_dir = self.project_dir
         self.state.metadata.output_dir = os.path.join(self.project_dir, "outputs")
-        
+
         # Ensure output dir exists
         os.makedirs(self.state.metadata.output_dir, exist_ok=True)
-        
+
         self.save_state()
         return self.state
 
@@ -54,14 +56,11 @@ class StateManager:
         if not self.state:
             logger.error("No state to save.")
             return
-            
-        self.state.updated_at = datetime.utcnow()
+
+        self.state.updated_at = datetime.now(timezone.utc)
         try:
-            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, 'w', encoding='utf-8') as f:
-                # dump models utilizing Pydantic v2 conventions
-                json_data = self.state.model_dump_json(indent=2)
-                f.write(json_data)
+            # 原子写：进程中途崩溃不会留下损坏的 state.json
+            atomic_write_text(self.state_file, self.state.model_dump_json(indent=2))
             logger.debug(f"State saved to {self.state_file}")
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
@@ -75,12 +74,12 @@ class StateManager:
     def update_task_status(self, task_id: str, status: TaskStatus, output_asset_id: Optional[str] = None, error: Optional[str] = None):
         if not self.state:
             return
-            
+
         for task in self.state.tasks:
             if task.task_id == task_id:
                 task.status = status
                 if status == TaskStatus.completed:
-                    task.completed_at = datetime.utcnow()
+                    task.completed_at = datetime.now(timezone.utc)
                 if output_asset_id:
                     task.output.asset_id = output_asset_id
                 if error:
@@ -100,15 +99,15 @@ class StateManager:
                 self.save_state()
                 logger.debug(f"Asset {asset.asset_id} updated.")
                 return
-                
+
         self.state.assets.append(asset)
         self.save_state()
         logger.debug(f"Asset {asset.asset_id} added.")
-        
+
     def update_asset_status(self, asset_id: str, status: AssetStatus, file_path: Optional[str] = None):
         if not self.state:
             return
-            
+
         for asset in self.state.assets:
             if asset.asset_id == asset_id:
                 asset.status = status
