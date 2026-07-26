@@ -20,8 +20,16 @@ class StudioActionExecutor:
     操作 StudioStateService 共享状态，执行后自动持久化。
     """
 
-    def __init__(self, state_service: Optional[StudioStateService] = None):
+    def __init__(
+        self,
+        state_service: Optional[StudioStateService] = None,
+        selected_draft_id: str = "",
+        selected_type: str = "",
+    ):
         self.svc = state_service or StudioStateService.get_instance()
+        # 前端当前选中的草稿——"current" 的唯一正确解释
+        self.selected_draft_id = selected_draft_id
+        self.selected_type = selected_type
 
     @property
     def state(self) -> Dict[str, Any]:
@@ -40,6 +48,13 @@ class StudioActionExecutor:
                 if parsed:
                     actions.extend(self._normalize(parsed))
         return [a for a in actions if isinstance(a, dict)]
+
+    def has_action_block(self, reply: str) -> bool:
+        """回复中是否存在 studio-actions 块（无论能否解析成功）"""
+        return bool(
+            re.search(r"```(?:studio-actions|studio_action|studioActions)", reply, re.IGNORECASE)
+            or re.search(r"<studio-actions>", reply, re.IGNORECASE)
+        )
 
     def strip_action_blocks(self, reply: str) -> str:
         """移除回复中的 studio-actions 块，返回纯文本"""
@@ -113,8 +128,13 @@ class StudioActionExecutor:
                 for draft in group.get("drafts", []):
                     if draft.get("id") == draft_id:
                         return group, draft
-        # 如果 draft_id 是 "current"，返回第一个可用的 draft
         if draft_id in ("current", ""):
+            # 优先解析为前端当前选中的草稿
+            if self.selected_draft_id:
+                found = self._find_draft(self.selected_draft_id, self.selected_type or draft_type)
+                if found:
+                    return found
+            # 兜底：第一个可用的 draft
             for cat_key in categories:
                 for group in self.state.get(cat_key, []):
                     drafts = group.get("drafts", [])
@@ -128,8 +148,13 @@ class StudioActionExecutor:
             for group in self.state.get(cat_key, []):
                 if group.get("id") == group_id:
                     return group
-        # 如果 group_id 是 "current"，返回第一个可用 group
         if group_id in ("current", ""):
+            # 优先返回包含前端选中草稿的分组
+            if self.selected_draft_id:
+                found = self._find_draft(self.selected_draft_id, self.selected_type or group_type)
+                if found:
+                    return found[0]
+            # 兜底：第一个可用 group
             for cat_key in categories:
                 groups = self.state.get(cat_key, [])
                 if groups:
