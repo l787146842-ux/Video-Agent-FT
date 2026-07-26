@@ -757,19 +757,13 @@ async function sendAgentMessage(forcedText = '') {
         displayText = text ? `${attPrefix}\n${text}` : attPrefix;
     }
 
-    // 将附件绑定到资产库
-    if (hasAttachments) {
-        for (const att of state.pendingAttachments) {
-            state.assets.unshift({
-                id: att.id,
-                name: att.name,
-                type: att.type,
-                isBound: true,
-                url: att.url
-            });
-        }
-        if (state.leftTab === 'uncategorized') renderUncategorizedAssets();
-    }
+    // 附件交给服务端绑定资产 + 读取文档正文注入 LLM（不再只塞前端本地列表）
+    const attachments = state.pendingAttachments.map(att => ({
+        id: att.id,
+        name: att.name,
+        url: att.url,
+        kind: att.type
+    }));
 
     state.chatMessages.push({ sender: 'user', text: displayText });
     input.value = '';
@@ -799,7 +793,8 @@ async function sendAgentMessage(forcedText = '') {
                 selected_draft_id: state.selectedDraftId || '',
                 selected_type: state.selectedType || '',
                 asset_mode: document.getElementById('agentAssetSelect')?.value || 'bound',
-                context_mode: 'studio'
+                context_mode: 'studio',
+                attachments
             })
         });
         const data = await response.json().catch(() => ({}));
@@ -808,8 +803,8 @@ async function sendAgentMessage(forcedText = '') {
         if (!visibleReply) throw new Error('Agent 返回了空回复');
         const appliedCount = data.applied_actions || 0;
 
-        // 后端已执行 studio-actions 并持久化，用返回的 state 快照刷新前端
-        if (data.state && appliedCount > 0) {
+        // 后端已执行 studio-actions / 绑定附件并持久化，用返回的 state 快照刷新前端
+        if (data.state) {
             refreshStateFromBackend(data.state);
         }
 

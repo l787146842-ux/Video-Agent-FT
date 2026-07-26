@@ -6,6 +6,9 @@
 - 上下文注入在服务端完成（前端只发消息本体 + 选中态），服务端是唯一事实源；
 - 仅当 provider 为空/mock 时走 mock；真实供应商失败返回 502 + 真实错误。
 """
+import time
+import random
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -20,6 +23,14 @@ from src.video_agent.web.provider_config import is_mock_provider
 from src.video_agent.web.state_service import StudioStateService
 
 router = APIRouter()
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
+UPLOAD_ASSETS_DIR = PROJECT_ROOT / "workspace" / "assets"
+
+# 文本类素材直接把正文注入给 LLM；单文档上限防止把上下文撑爆
+_TEXT_DOC_EXTS = {".md", ".txt"}
+_MAX_DOC_CHARS = 30000
+_MAX_ATTACHMENTS = 5
 
 # Studio Actions Protocol 系统提示词（服务端唯一权威版本）
 STUDIO_ACTION_PROTOCOL_PROMPT = """
@@ -38,6 +49,7 @@ STUDIO_ACTION_PROTOCOL_PROMPT = """
 patch/draft 可包含：title, desc, roughDesc, timeRange, duration, label, tag, prompt, imgUrl, videoUrl, mode, model, resolution, aspectRatio, size, timbre, refAssets。
 
 重要规则：
+- 用户上传的 .md/.txt 素材正文会由系统直接附在用户消息里（"=== 用户上传的素材文档 === ... === 文档结束 ==="段落）。看到该段落就说明你已经拿到了全文，直接依据它拆解，不要说"我无法读取文件"或要求用户粘贴内容。
 - draft_id/group_id 写 "current" 时，系统会解析为用户当前选中的草稿/分组，所以「确认这个」「修改当前提示词」直接用 current 即可。
 - 当用户要求从文档/素材中拆解关键元素或分镜时，必须使用 add_group 创建新分组，并在其中携带 draft。
 - 不要只说"已创建"而不输出 studio-actions 块，否则前端不会有任何变化。
@@ -63,6 +75,8 @@ class ChatRequest(BaseModel):
     messages: List[Dict[str, str]] = []
     images: List[str] = []
     videos: List[str] = []
+    # 本次消息携带的上传素材（服务端负责绑定资产 + 读取文本正文注入 LLM）
+    attachments: List[Dict[str, str]] = []
     # 前端选中态——"current" 的解析依据
     selected_draft_id: str = ""
     selected_type: str = ""
@@ -79,6 +93,73 @@ class ChatResponse(BaseModel):
     state: Optional[Dict[str, Any]] = None
 
 
+def _bind_attachments(svc: StudioStateService, attachments: List[Dict[str, str]]) -> None:
+    """把本次消息携带的上传素材登记进服务端资产列表（isBound=True）并持久化"""
+    if not attachments:
+        return
+    assets = svc.state.setdefault("assets", [])
+    changed = False
+    for att in attachments[:_MAX_ATTACHMENTS]:
+        url = att.get("url", "")
+        name = att.get("name") or url or "上传素材"
+        if not url:
+            continue
+        existing = next((a for a in assets if a.get("url") == url), None)
+        if existing:
+            existing["isBound"] = True
+        else:
+            assets.insert(0, {
+                "id": att.get("id") or f"ast-{int(time.time())}-{random.randint(100, 999)}",
+                "name": name,
+                "type": att.get("kind") or "file",
+                "isBound": True,
+                "url": url,
+            })
+        changed = True
+    if changed:
+        svc.save()
+
+
+def _attachment_context(attachments: List[Dict[str, str]]) -> str:
+    """
+    为 LLM 构建素材说明：文本类文档（.md/.txt）直接读出正文注入；
+    其他类型给出明确的能力说明，避免 LLM 瞎猜「我看不到素材」或假装看过。
+    """
+    parts: List[str] = []
+    for att in attachments[:_MAX_ATTACHMENTS]:
+        url = att.get("url", "")
+        name = att.get("name") or url or "素材"
+        if not url.startswith("/workspace/assets/"):
+            parts.append(f"（用户提供了外部素材《{name}》，URL: {url}）")
+            continue
+        # 只取 basename，防止路径穿越
+        fpath = UPLOAD_ASSETS_DIR / Path(url).name
+        ext = fpath.suffix.lower()
+        if ext in _TEXT_DOC_EXTS:
+            if not fpath.exists():
+                parts.append(f"（素材文档《{name}》未在服务器上找到，请让用户重新上传）")
+                continue
+            try:
+                content = fpath.read_text(encoding="utf-8", errors="replace")
+            except OSError as e:
+                parts.append(f"（素材文档《{name}》读取失败：{e}）")
+                continue
+            truncated = ""
+            if len(content) > _MAX_DOC_CHARS:
+                content = content[:_MAX_DOC_CHARS]
+                truncated = f"\n……（正文超长，已截断为前 {_MAX_DOC_CHARS} 字）"
+            parts.append(f"=== 用户上传的素材文档《{name}》全文 ===\n{content}{truncated}\n=== 文档结束 ===")
+        elif ext in (".pdf", ".docx"):
+            parts.append(
+                f"（用户上传了 {ext} 文档《{name}》，服务端暂不支持解析该格式正文；"
+                f"请告知用户粘贴关键内容，或改用 .md/.txt）"
+            )
+        else:
+            kind = att.get("kind") or "文件"
+            parts.append(f"（用户上传并绑定了{kind}素材《{name}》，URL: {url}，可作为参考图/引用资产使用）")
+    return "\n\n".join(parts)
+
+
 @router.post("/agent/chat")
 @router.post("/canvas-llm")
 async def agent_chat(body: ChatRequest):
@@ -90,17 +171,24 @@ async def agent_chat(body: ChatRequest):
     )
 
     user_text = body.message.strip()
-    if not user_text:
+    if not user_text and not body.attachments:
         raise HTTPException(status_code=400, detail="消息不能为空")
+    if not user_text:
+        user_text = "请查看我上传的素材"
 
     use_studio_context = body.context_mode != "none"
+
+    # 附件：登记进资产列表 + 把文本文档正文注入给 LLM
+    attachment_note = _attachment_context(body.attachments) if body.attachments else ""
+    llm_user_text = f"{user_text}\n\n{attachment_note}" if attachment_note else user_text
 
     # ---------- mock 路径（仅显式选择 mock / 未配置供应商） ----------
     if is_mock_provider(body.provider, body.model):
         async with svc.lock:
             if use_studio_context:
+                _bind_attachments(svc, body.attachments)
                 svc.add_chat_message("user", user_text)
-            raw_reply = _mock_llm_reply(user_text, svc.build_agent_context(body.asset_mode))
+            raw_reply = _mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
             actions = executor.parse_actions_from_reply(raw_reply)
             visible = executor.strip_action_blocks(raw_reply) or raw_reply
             applied = executor.execute(actions)
@@ -145,10 +233,11 @@ async def agent_chat(body: ChatRequest):
     # 整个多步回合持锁：并发请求会排队而不是交叉改写共享状态（本地单用户场景可接受）
     async with svc.lock:
         if use_studio_context:
+            _bind_attachments(svc, body.attachments)
             svc.add_chat_message("user", user_text)
         try:
             result = await run_agent_loop(
-                user_text,
+                llm_user_text,
                 llm_call=llm_call,
                 context_builder=build_system_prompt,
                 executor=executor,

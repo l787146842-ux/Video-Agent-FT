@@ -72,7 +72,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
 
         results.append({
             "name": f.filename or safe_name,
-            "kind": kind if kind != "doc" else "image",  # 前端资产分类沿用旧行为
+            "kind": kind,  # image / video / audio / doc
             "url": f"/workspace/assets/{safe_name}",
         })
 
