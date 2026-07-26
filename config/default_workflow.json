@@ -1,0 +1,59 @@
+{
+  "workflow_id": "wf_test_demo",
+  "name": "Standard Mock Video Pipeline",
+  "version": "1.0.0",
+  "context": {
+    "max_parallel_tasks": 2,
+    "timeout_seconds": 600,
+    "retry_policy": {
+      "max_retries": 3,
+      "backoff": "linear",
+      "base_delay_seconds": 2
+    }
+  },
+  "phases": [
+    {
+      "phase_id": "phase_write_story",
+      "name": "Generate Story Script",
+      "type": "skill_invoke",
+      "depends_on": [],
+      "execution": {
+        "skill": "story_generator",
+        "params": {}
+      }
+    },
+    {
+      "phase_id": "phase_gen_image1",
+      "name": "Generate Concept Image 1",
+      "type": "skill_invoke",
+      "depends_on": ["phase_write_story"],
+      "execution": {
+        "skill": "image_generator",
+        "adapter": "mock",
+        "params": {"prompt": "A beautiful sci-fi city"}
+      }
+    },
+    {
+      "phase_id": "phase_gen_image2",
+      "name": "Generate Concept Image 2",
+      "type": "skill_invoke",
+      "depends_on": ["phase_write_story"],
+      "execution": {
+        "skill": "image_generator",
+        "adapter": "mock",
+        "params": {"prompt": "A cyber punk car"}
+      }
+    },
+    {
+      "phase_id": "phase_gen_video",
+      "name": "Generate Final Video",
+      "type": "skill_invoke",
+      "depends_on": ["phase_gen_image1", "phase_gen_image2"],
+      "execution": {
+        "skill": "video_generator",
+        "adapter": "mock",
+        "params": {}
+      }
+    }
+  ]
+}

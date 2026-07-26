@@ -1,0 +1,28 @@
+# 密钥与本地配置 — 绝不入库
+.env
+API/.env
+*.env.local
+
+# 运行时数据
+workspace/
+logs/
+data/
+resp.txt
+server_log.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# 大文件截图
+flova_studio_page.png
