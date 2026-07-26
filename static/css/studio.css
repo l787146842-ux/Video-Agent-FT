@@ -774,6 +774,12 @@ body, html {
   color: #ef4444;
 }
 
+.wf-phase.skipped {
+  border-style: dashed;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
 @keyframes wf-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }

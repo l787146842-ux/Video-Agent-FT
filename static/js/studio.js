@@ -779,24 +779,27 @@ async function sendAgentMessage(forcedText = '') {
     setAgentBusy(true);
     renderRightChat();
     try {
-        const context = buildAgentContext();
         const history = state.chatMessages.slice(-12, -1).map(message => ({
             role: message.sender === 'agent' ? 'assistant' : 'user',
             content: message.text
         }));
-        const systemPrompt = [skill?.system_prompt || '', STUDIO_ACTION_PROTOCOL_PROMPT].filter(Boolean).join('\n\n');
+        // 上下文与协议提示词由服务端注入；前端只传 skill 角色提示词 + 选中态
         const response = await fetch('/api/canvas-llm', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                message: [text || '请查看我上传的素材', context].filter(Boolean).join('\n\n'),
-                system_prompt: systemPrompt,
+                message: text || '请查看我上传的素材',
+                system_prompt: skill?.system_prompt || '',
                 provider,
                 model,
                 ms_model: provider === 'modelscope' ? model : '',
                 messages: history,
                 images: selectedAgentAssetUrls('image'),
-                videos: selectedAgentAssetUrls('video')
+                videos: selectedAgentAssetUrls('video'),
+                selected_draft_id: state.selectedDraftId || '',
+                selected_type: state.selectedType || '',
+                asset_mode: document.getElementById('agentAssetSelect')?.value || 'bound',
+                context_mode: 'studio'
             })
         });
         const data = await response.json().catch(() => ({}));
@@ -812,7 +815,11 @@ async function sendAgentMessage(forcedText = '') {
 
         state.chatMessages.push({sender: 'agent', text: visibleReply});
         renderRightChat();
-        if (appliedCount > 0) showToast(`Agent 已联动更新 ${appliedCount} 项`);
+        if (appliedCount > 0) {
+            const stepNote = data.steps > 1 ? `（${data.steps} 轮执行）` : '';
+            showToast(`Agent 已联动更新 ${appliedCount} 项${stepNote}`);
+        }
+        (data.warnings || []).forEach(w => showToast('⚠ ' + w));
     } catch (error) {
         state.chatMessages.push({sender: 'agent', text: `请求失败：${error.message || error}`});
         renderRightChat();
@@ -1421,33 +1428,8 @@ function readApiError(data, fallback) {
 const DEFAULT_CHAT_MODELS = ['gpt-5.5', 'gpt-4o-mini', 'gemini-3.1-flash-image-preview-2k'];
 const DEFAULT_IMAGE_MODELS = ['nano-banana-pro', 'gpt-image-2'];
 const DEFAULT_VIDEO_MODELS = ['veo3-fast', 'sora-2', 'seedance2.0_vip'];
-const STUDIO_ACTION_PROTOCOL_PROMPT = `
-你正在驱动影视 Agent 工作台。用户在右侧 Agent 对话框里确认或修改的事项，如果会影响左侧故事板、中间预览提示词、草稿确认状态或资产绑定，必须在回复末尾追加一个 studio-actions JSON 块。给用户看的文字保持自然简短，JSON 块只给前端读取。
-
-可用 action:
-- add_group: 新建故事板分组（关键元素/分镜/音频）。字段：group_type(keyElement/shot/audio), title, desc, 可选 draft(单个草稿) 或 drafts(草稿数组)。
-- update_draft: 修改草稿。字段：draft_type(keyElement/shot/audio), draft_id/current, patch。
-- update_group: 修改故事板分组。字段：group_type(keyElement/shot/audio), group_id/current, patch。
-- add_draft: 给某个分组新增草稿。字段：group_type, group_id/current, draft。若分组不存在会自动创建。
-- confirm_draft: 确认草稿。字段：draft_type, draft_id/current。
-- bind_asset: 绑定资产。字段：asset_id 或 name/url/type，可选 draft_type/draft_id。
-- select_draft: 选中草稿。字段：draft_type, draft_id。
-
-patch/draft 可包含：title, desc, roughDesc, timeRange, duration, label, tag, prompt, imgUrl, videoUrl, mode, model, resolution, aspectRatio, size, timbre, refAssets。
-
-重要规则：
-- 当用户要求从文档/素材中拆解关键元素或分镜时，必须使用 add_group 创建新分组，并在其中携带 draft。
-- 不要只说“已创建”而不输出 studio-actions 块，否则前端不会有任何变化。
-- 每个关键元素/分镜都应该有具体的 prompt（可执行的图片/视频生成提示词）。
-
-格式示例：
-\`\`\`studio-actions
-[
-  {"action":"add_group","group_type":"keyElement","title":"特效设定：太阳系二维化","desc":"太阳系逐渐被二维化的视觉特效设定","draft":{"label":"概念图","tag":"Agent","mediaType":"image","prompt":"太阳系行星逐渐被压平为二维平面，宇宙背景，科幻特效，8K"}},
-  {"action":"add_group","group_type":"shot","title":"分镜1：全景—太阳系俯瞰","desc":"从远处俯瞰太阳系全貌","draft":{"label":"全景镜头","tag":"Agent","mediaType":"image","prompt":"宇宙深空俯瞰太阳系，行星轨道清晰可见，电影级采光"}}
-]
-\`\`\`
-`;
+// studio-actions 协议提示词与上下文注入已收归服务端（src/video_agent/web/routes/agent.py），
+// 前端只发送消息本体 + 选中态，服务端是唯一事实源。
 
 // 初始化 state 中的模型字段
 state.availableChatModels = DEFAULT_CHAT_MODELS;
@@ -1657,7 +1639,10 @@ async function generateImage() {
                 model,
                 size,
                 aspect_ratio: aspectRatio,
-                reference_images: refs.slice(0, 5)
+                reference_images: refs.slice(0, 5),
+                // 带上 draft 关联，服务端完成后自动回写并持久化
+                draft_id: draft.id || '',
+                draft_type: state.selectedType || 'keyElement'
             })
         });
         const data = await res.json();
@@ -1746,7 +1731,9 @@ async function generateVideo() {
                 aspect_ratio: aspectRatio,
                 images: imageRefs.slice(0, 2),
                 enhance_prompt: mode === '全能参考',
-                multimodal: mode === '对口型数字人'
+                multimodal: mode === '对口型数字人',
+                draft_id: draft.id || '',
+                draft_type: state.selectedType || 'shot'
             })
         });
         const data = await res.json();
@@ -1791,7 +1778,8 @@ async function generateAudio() {
                 provider,
                 model,
                 ms_model: provider === 'modelscope' ? model : '',
-                messages: []
+                messages: [],
+                context_mode: 'none'
             })
         });
         const data = await res.json();
@@ -2004,7 +1992,8 @@ function renderWorkflowPhases(phaseStates = {}) {
     if (!container) return;
     container.innerHTML = WF_PHASES.map(p => {
         const st = phaseStates[p.name] || 'pending';
-        const icon = st === 'completed' ? 'check-circle' : st === 'running' ? 'loader' : st === 'failed' ? 'x-circle' : p.icon;
+        const icon = st === 'completed' ? 'check-circle' : st === 'running' ? 'loader'
+            : st === 'failed' ? 'x-circle' : st === 'skipped' ? 'skip-forward' : p.icon;
         return `<div class="wf-phase ${st}" title="${p.label}: ${st}">
             <i data-lucide="${icon}" class="wf-phase-icon ${st === 'running' ? 'animate-spin' : ''}"></i>
             <span>${p.label}</span>
@@ -2018,10 +2007,17 @@ async function startWorkflow() {
     if (btn) btn.disabled = true;
 
     try {
+        // 把 Agent 面板选中的供应商/模型传给工作流，供 story/storyboard/image 阶段真实调用
         const res = await fetch('/api/workflow/run', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({goal: '自动生成完整影视项目'})
+            body: JSON.stringify({
+                goal: '自动生成完整影视项目',
+                provider: document.getElementById('agentProviderSelect')?.value || '',
+                model: document.getElementById('agentModelSelect')?.value || '',
+                image_provider: document.getElementById('imageProviderSelect')?.value || '',
+                image_model: document.getElementById('modelSelect')?.value || ''
+            })
         });
         const data = await res.json();
         if (!data.ok) {
@@ -2052,9 +2048,9 @@ function subscribeWorkflowEvents() {
                 phaseStates[data.phase] = 'running';
                 renderWorkflowPhases(phaseStates);
             } else if (data.event === 'phase_completed') {
-                phaseStates[data.phase] = 'completed';
+                phaseStates[data.phase] = data.skipped ? 'skipped' : 'completed';
                 renderWorkflowPhases(phaseStates);
-                showToast(`${data.label} 完成：${data.detail || ''}`);
+                showToast(`${data.label}${data.skipped ? '（跳过）' : ' 完成'}：${data.detail || ''}`);
             } else if (data.event === 'workflow_done') {
                 showToast('工作流全部完成！');
                 wfEventSource.close();
