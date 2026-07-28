@@ -7,11 +7,25 @@ import json
 import re
 import time
 import random
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from src.video_agent.web.state_service import StudioStateService
+from src.video_agent.state.models import build_draft_dict, CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES
+from src.video_agent.state.manager import StateManager
+
+
+# ---------- 模块级工具函数（供外部直接导入，无需持有 executor 实例） ----------
+
+def strip_action_blocks(text: str) -> str:
+    """移除 studio-actions 块，返回纯可见文本（唯一实现）"""
+    text = re.sub(
+        r"```(?:studio-actions|studio_action|studioActions)\s*[\s\S]*?```",
+        "", text, flags=re.IGNORECASE,
+    )
+    text = re.sub(r"<studio-actions>[\s\S]*?</studio-actions>", "", text, flags=re.IGNORECASE)
+    return text.strip()
 
 
 class StudioActionExecutor:
@@ -22,18 +36,20 @@ class StudioActionExecutor:
 
     def __init__(
         self,
-        state_service: Optional[StudioStateService] = None,
+        state_service: Optional[StateManager] = None,
         selected_draft_id: str = "",
         selected_type: str = "",
     ):
-        self.svc = state_service or StudioStateService.get_instance()
+        self.svc = state_service or StateManager.get_instance()
         # 前端当前选中的草稿——"current" 的唯一正确解释
         self.selected_draft_id = selected_draft_id
         self.selected_type = selected_type
+        # 本执行器生命周期内写入的文档名（供前端渲染"已完成"卡片）
+        self.documents_written: List[str] = []
 
     @property
     def state(self) -> Dict[str, Any]:
-        return self.svc.state
+        return self.svc.state_dict
 
     def parse_actions_from_reply(self, reply: str) -> List[Dict[str, Any]]:
         """从 Agent 回复文本中提取 studio-actions JSON 块"""
@@ -58,14 +74,7 @@ class StudioActionExecutor:
 
     def strip_action_blocks(self, reply: str) -> str:
         """移除回复中的 studio-actions 块，返回纯文本"""
-        text = re.sub(
-            r"```(?:studio-actions|studio_action|studioActions)\s*[\s\S]*?```",
-            "",
-            reply,
-            flags=re.IGNORECASE,
-        )
-        text = re.sub(r"<studio-actions>[\s\S]*?</studio-actions>", "", text, flags=re.IGNORECASE)
-        return text.strip()
+        return strip_action_blocks(reply)
 
     def execute(self, actions: List[Dict[str, Any]]) -> int:
         """执行操作列表，返回成功执行的数量。执行后自动持久化。"""
@@ -118,8 +127,12 @@ class StudioActionExecutor:
             return self._apply_delete_draft(action)
         if name in ("delete_group", "remove_group"):
             return self._apply_delete_group(action)
+        if name in ("write_document", "write_doc", "save_document"):
+            return self._apply_write_document(action)
         if name == "bind_asset":
             return self._apply_bind_asset(action)
+        if name in ("generate_image", "batch_generate_image", "gen_image"):
+            return self._apply_generate_image(action)
         if name == "select_draft":
             return True  # 选中操作仅影响前端 UI，后端无需持久化
         # request_confirmation / continue 是流程信号，由 agent_loop 处理，不算状态变更
@@ -169,12 +182,12 @@ class StudioActionExecutor:
     def _categories_for_type(self, draft_type: str) -> List[str]:
         t = (draft_type or "").lower().strip()
         if t in ("shot", "shots", "video"):
-            return ["shots", "keyElements", "audioItems"]
+            return [CAT_SHOTS, CAT_KEY_ELEMENTS, CAT_AUDIO_ITEMS]
         if t in ("audio", "audioitem"):
-            return ["audioItems", "keyElements", "shots"]
+            return [CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS]
         if t in ("keyelement", "key-element", "element", "image"):
-            return ["keyElements", "shots", "audioItems"]
-        return ["keyElements", "shots", "audioItems"]
+            return [CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS]
+        return list(ALL_CATEGORIES)
 
     def _apply_draft_patch(self, action: Dict) -> bool:
         draft_id = action.get("draft_id") or action.get("target_id") or action.get("id") or "current"
@@ -256,11 +269,11 @@ class StudioActionExecutor:
 
         # 映射到 state 中的 key
         if group_type in ("shot", "shots", "video", "分镜"):
-            cat_key = "shots"
+            cat_key = CAT_SHOTS
         elif group_type in ("audio", "audioitem", "audioitems", "音频"):
-            cat_key = "audioItems"
+            cat_key = CAT_AUDIO_ITEMS
         else:
-            cat_key = "keyElements"
+            cat_key = CAT_KEY_ELEMENTS
 
         group_data = action.get("group") or action.get("data") or {}
         # 也允许 patch 字段携带 title/desc
@@ -280,7 +293,7 @@ class StudioActionExecutor:
         def pick(field, default=""):
             return action.get(field) or group_data.get(field) or patch.get(field) or default
 
-        if cat_key == "shots":
+        if cat_key == CAT_SHOTS:
             new_group["roughDesc"] = pick("roughDesc", desc)
             new_group["duration"] = pick("duration", "5s")
             new_group["timeRange"] = pick("timeRange")
@@ -305,22 +318,7 @@ class StudioActionExecutor:
 
     def _append_draft_to_group(self, group: Dict, draft_data: Dict) -> Dict:
         """向指定 group 添加一个 draft，返回新建的 draft"""
-        draft = {
-            "id": draft_data.get("id", f"draft-{int(time.time())}-{random.randint(100,999)}"),
-            "label": draft_data.get("label", "Agent 草稿"),
-            "tag": draft_data.get("tag", "Agent"),
-            "mediaType": draft_data.get("mediaType", "image"),
-            "imgUrl": draft_data.get("imgUrl", ""),
-            "videoUrl": draft_data.get("videoUrl", ""),
-            "prompt": draft_data.get("prompt", ""),
-            "model": draft_data.get("model", ""),
-            "mode": draft_data.get("mode", ""),
-            "aspectRatio": draft_data.get("aspectRatio", "16:9"),
-            "resolution": draft_data.get("resolution", "1080p"),
-            "duration": draft_data.get("duration", "5s"),
-            "timbre": draft_data.get("timbre", ""),
-            "refAssets": draft_data.get("refAssets", []),
-        }
+        draft = build_draft_dict(draft_data)
         group.setdefault("drafts", []).append(draft)
         return draft
 
@@ -331,7 +329,7 @@ class StudioActionExecutor:
 
         group = self._find_group(group_id, group_type)
         if not group:
-            for cat_key in ["keyElements", "shots", "audioItems"]:
+            for cat_key in ALL_CATEGORIES:
                 groups = self.state.get(cat_key, [])
                 if groups:
                     group = groups[0]
@@ -343,11 +341,11 @@ class StudioActionExecutor:
             # 取刚创建的分组
             t = (group_type or "").lower().strip()
             if t in ("shot", "shots", "video"):
-                cat_key = "shots"
+                cat_key = CAT_SHOTS
             elif t in ("audio", "audioitem"):
-                cat_key = "audioItems"
+                cat_key = CAT_AUDIO_ITEMS
             else:
-                cat_key = "keyElements"
+                cat_key = CAT_KEY_ELEMENTS
             groups = self.state.get(cat_key, [])
             if groups:
                 group = groups[-1]  # 刚添加的在末尾
@@ -355,6 +353,32 @@ class StudioActionExecutor:
                 return False
 
         self._append_draft_to_group(group, draft_data)
+        return True
+
+    def _apply_write_document(self, action: Dict) -> bool:
+        """写入/更新项目文档工件（如 Final_Video_Spec.md）"""
+        name = str(action.get("name") or action.get("title") or "").strip()
+        content = action.get("content") or action.get("text") or ""
+        if not name or not str(content).strip():
+            return False
+
+        docs = self.state.setdefault("documents", [])
+        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        for d in docs:
+            if d.get("name") == name:
+                d["content"] = content
+                d["updated_at"] = now
+                break
+        else:
+            docs.append({
+                "id": f"doc-{int(time.time())}-{random.randint(100, 999)}",
+                "name": name,
+                "content": content,
+                "created_at": now,
+                "updated_at": now,
+            })
+        if name not in self.documents_written:
+            self.documents_written.append(name)
         return True
 
     def _apply_bind_asset(self, action: Dict) -> bool:
@@ -382,3 +406,121 @@ class StudioActionExecutor:
                 "url": url,
             })
         return True
+
+    # ---------- 图片生成（仅用户明确触发） ----------
+
+    def _apply_generate_image(self, action: Dict) -> bool:
+        """Agent 触发生图（仅当用户明确要求时）。支持批量。"""
+        target = str(action.get("target") or action.get("draft_id") or "all").strip()
+        draft_type = str(action.get("draft_type") or "").strip().lower()
+        provider_id = action.get("provider_id") or action.get("provider") or ""
+        model = action.get("model") or ""
+
+        # 根据 target 确定类型
+        if target in ("all_keyelements", "all_keyElements"):
+            draft_type = "keyelement"
+            target = "all"
+        elif target in ("all_shots", "all_shot"):
+            draft_type = "shot"
+            target = "all"
+
+        pairs = self._collect_drafts(target, draft_type)
+        if not pairs:
+            return False
+
+        submitted = 0
+        for group, draft in pairs:
+            prompt = (draft.get("prompt") or "").strip()
+            if not prompt:
+                continue
+            refs = self._resolve_scene_refs(group) if group else []
+            self._submit_image_task(draft, provider_id, model, refs)
+            submitted += 1
+
+        if submitted:
+            logger.info(f"[StudioActions] generate_image: 已提交 {submitted} 个生图任务")
+        return submitted > 0
+
+    def _collect_drafts(self, target: str, draft_type: str) -> List[tuple]:
+        """收集目标 (group, draft) 对。target='all' 时按类型遍历全部。"""
+        categories = self._categories_for_type(draft_type)
+        results: List[tuple] = []
+
+        if target == "all":
+            for cat_key in categories:
+                for group in self.state.get(cat_key, []):
+                    for draft in group.get("drafts", []):
+                        results.append((group, draft))
+            return results
+
+        # 具体 draft_id
+        for cat_key in categories:
+            for group in self.state.get(cat_key, []):
+                for draft in group.get("drafts", []):
+                    if draft.get("id") == target:
+                        return [(group, draft)]
+        return []
+
+    def _resolve_scene_refs(self, group: Dict) -> List[Dict[str, str]]:
+        """解析分镜的 sceneRefs → 对应关键元素的概念图 URL 作为参考图"""
+        refs: List[Dict[str, str]] = []
+        scene_refs = group.get("sceneRefs") or []
+        if not scene_refs:
+            return refs
+        for ref_title in scene_refs:
+            if not isinstance(ref_title, str):
+                continue
+            for ke_group in self.state.get(CAT_KEY_ELEMENTS, []):
+                if ke_group.get("title") == ref_title:
+                    for d in ke_group.get("drafts", []):
+                        img = d.get("imgUrl") or ""
+                        if img:
+                            refs.append({"url": img, "role": "reference"})
+                            break
+                    break
+        return refs[:5]  # 最多 5 张参考图
+
+    def _submit_image_task(self, draft: Dict, provider_id: str, model: str, refs: List[Dict]) -> None:
+        """提交异步生图任务（复用 generate.py 的任务机制）"""
+        import asyncio
+        from src.video_agent.web.routes.generate import _tasks, _new_task, _writeback_if_complete
+        from src.video_agent.web.generation import generate_image_via_provider
+        from src.video_agent.exceptions import GenerationError
+
+        task_id = f"img-{int(time.time())}-{random.randint(100, 999)}-{draft.get('id', 'x')[-4:]}"
+        _new_task(
+            task_id,
+            status="processing",
+            draft_id=draft.get("id", ""),
+            draft_type="keyElement",
+            prompt=draft.get("prompt", ""),
+            model=model,
+            result=None,
+        )
+        draft["tag"] = "生成中"
+
+        async def _run():
+            t0 = time.time()
+            task = _tasks.get(task_id)
+            try:
+                url = await generate_image_via_provider(
+                    provider_id, model, draft.get("prompt", ""),
+                    size="1280x720", aspect_ratio="16:9",
+                )
+                if task:
+                    task["status"] = "succeeded"
+                    task["result"] = {"images": [url]}
+                    task["elapsed"] = round(time.time() - t0, 1)
+                    _writeback_if_complete(task_id)
+            except (GenerationError, Exception) as e:
+                if task:
+                    task["status"] = "failed"
+                    task["error"] = str(e)
+                    task["elapsed"] = round(time.time() - t0, 1)
+                logger.warning(f"[StudioActions] 生图失败 {draft.get('id')}: {e}")
+
+        try:
+            from src.video_agent.web.routes.generate import _track_task
+            _track_task(_run())
+        except RuntimeError:
+            pass  # 无事件循环时跳过（单元测试场景）

@@ -5,7 +5,6 @@ Provider 可用列表 + 适配器注册。
 - get_available_providers()：给前端下拉框的已启用供应商列表
 - register_adapters()：启动时注册适配器（当前仅 mock；真实适配器接入点在此）
 """
-from pathlib import Path
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
@@ -13,22 +12,23 @@ from loguru import logger
 
 from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.adapters.mock_adapters import MockImageAdapter, MockVideoAdapter
-from src.video_agent.web.provider_config import load_api_providers
+from src.video_agent.utils.paths import PROJECT_ROOT
+from src.video_agent.web.provider_config import load_api_providers, load_merged_providers
 
 # 加载根目录 .env（运行环境变量）
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 
 def get_available_providers() -> List[Dict[str, Any]]:
-    """返回所有已启用的 provider 列表（供 /api/config 等端点使用）"""
+    """返回所有已启用的 provider 列表（合并本地 + 熊布，供 /api/config 等端点使用）"""
     result = []
-    for p in load_api_providers():
+    for p in load_merged_providers():
         if p.get("enabled", True):
             result.append({
                 "id": p.get("id", ""),
                 "name": p.get("name", ""),
                 "enabled": True,
+                "source": p.get("_source", "local"),
                 "chat_models": p.get("chat_models", []),
                 "image_models": p.get("image_models", []),
                 "video_models": p.get("video_models", []),
@@ -39,6 +39,7 @@ def get_available_providers() -> List[Dict[str, Any]]:
             "id": "mock",
             "name": "Mock (本地测试)",
             "enabled": True,
+            "source": "local",
             "chat_models": ["mock-chat"],
             "image_models": ["mock-image"],
             "video_models": ["mock-video"],
@@ -57,11 +58,11 @@ def resolve_adapter_name(provider_id: str, kind: str) -> str:
 
 
 def register_adapters():
-    """启动时注册所有可用适配器到 AdapterFactory"""
+    """启动时注册所有可用适配器到 AdapterFactory（Rule5: 声明式选择）"""
+    # Mock 适配器（开发/演示用）
     AdapterFactory.register("image_generation", "mock_image", MockImageAdapter(delay_seconds=2))
     AdapterFactory.register("video_generation", "mock_video", MockVideoAdapter(delay_seconds=3))
     logger.info("[Providers] Registered mock adapters (image + video)")
 
-    # 真实适配器接入点：
-    # if os.getenv("ARK_API_KEY"):
-    #     AdapterFactory.register("video_generation", "volcengine", VolcEngineVideoAdapter(...))
+    # 真实适配器：根据 data/api_providers.json 动态注册
+    AdapterFactory.register_from_config()

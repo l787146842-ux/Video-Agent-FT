@@ -17,19 +17,42 @@ from pydantic import BaseModel
 from loguru import logger
 
 from src.video_agent.adapters.factory import AdapterFactory
-from src.video_agent.web.generation import GenerationError, generate_image_via_provider
+from src.video_agent.exceptions import GenerationError
+from src.video_agent.web.generation import generate_image_via_provider
 from src.video_agent.web.provider_config import is_mock_provider
 from src.video_agent.web.providers import resolve_adapter_name
-from src.video_agent.web.state_service import StudioStateService
+from src.video_agent.state.manager import StateManager
+from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
+from src.video_agent.config import settings
 
 router = APIRouter()
 
 # 任务存储：task_id → {status, adapter_type, adapter_name, draft_id, draft_type, created_at, ...}
 _tasks: Dict[str, Dict[str, Any]] = {}
 
+# 后台 asyncio.Task 追踪集合（防止火后不管 + 记录未捕获异常）
+_background_tasks: set = set()
+
+
+def _track_task(coro) -> None:
+    """创建并追踪后台任务，异常自动记录到日志"""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    task.add_done_callback(_log_task_exception)
+
+
+def _log_task_exception(task: asyncio.Task) -> None:
+    """done callback：记录未捕获异常"""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc:
+        logger.error(f"[Generate] 后台任务未捕获异常: {exc}")
+
 # 任务保留时长（秒）：超过后在下一次写入时清理，防止内存无限增长
-_TASK_TTL_SECONDS = 24 * 3600
-_TASK_MAX = 500
+_TASK_TTL_SECONDS = settings.task_ttl_seconds
+_TASK_MAX = settings.task_max
 
 # mock 视频用可播放的示例视频，而不是死链
 MOCK_VIDEO_URL = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
@@ -140,7 +163,7 @@ async def generate_image(body: ImageGenRequest):
                 task["elapsed"] = round(time.monotonic() - t0, 1)
             logger.exception(f"[Generate] 图片生成异常: {e}")
 
-    asyncio.create_task(_run_generation())
+    _track_task(_run_generation())
     return {"task_id": task_id, "status": "processing"}
 
 
@@ -217,6 +240,102 @@ async def generate_video(body: VideoGenRequest):
     )
 
 
+class BatchImageGenRequest(BaseModel):
+    target: str = "all_shots"  # "all_keyElements" / "all_shots" / 逗号分隔的 draft_id
+    provider_id: str = ""
+    model: str = ""
+    size: str = "1280x720"
+    aspect_ratio: str = "16:9"
+
+
+@router.post("/generate/batch-image")
+async def batch_generate_image(body: BatchImageGenRequest):
+    """批量提交图片生成（前端“批量生成”按钮 + Agent action 共用）"""
+    svc = StateManager.get_instance()
+    state = svc.state_dict
+
+    # 确定目标 drafts
+    targets: List[tuple] = []  # (group, draft)
+    if body.target in ("all_keyElements", "all_keyelements"):
+        for g in state.get(CAT_KEY_ELEMENTS, []):
+            for d in g.get("drafts", []):
+                if (d.get("prompt") or "").strip():
+                    targets.append((g, d))
+    elif body.target in ("all_shots", "all_shot"):
+        for g in state.get(CAT_SHOTS, []):
+            for d in g.get("drafts", []):
+                if (d.get("prompt") or "").strip():
+                    targets.append((g, d))
+    else:
+        # 逗号分隔的 draft_id
+        ids = [x.strip() for x in body.target.split(",") if x.strip()]
+        for cat in ALL_CATEGORIES_TUPLE:
+            for g in state.get(cat, []):
+                for d in g.get("drafts", []):
+                    if d.get("id") in ids and (d.get("prompt") or "").strip():
+                        targets.append((g, d))
+
+    if not targets:
+        return {"task_ids": [], "count": 0, "detail": "未找到有提示词的草稿"}
+
+    if is_mock_provider(body.provider_id, body.model):
+        return {"task_ids": [], "count": 0, "detail": "mock 供应商不支持批量生成，请逐个操作"}
+
+    task_ids: List[str] = []
+    for group, draft in targets:
+        # 自动注入 sceneRefs 参考图
+        refs: List[Dict[str, str]] = []
+        for ref_title in (group.get("sceneRefs") or []):
+            for ke in state.get(CAT_KEY_ELEMENTS, []):
+                if ke.get("title") == ref_title:
+                    for kd in ke.get("drafts", []):
+                        if kd.get("imgUrl"):
+                            refs.append({"url": kd["imgUrl"], "role": "reference"})
+                            break
+                    break
+
+        task_id = f"img-{int(time.time())}-{random.randint(100, 999)}"
+        _new_task(
+            task_id,
+            status="processing",
+            draft_id=draft.get("id", ""),
+            draft_type="shot" if group in state.get(CAT_SHOTS, []) else "keyElement",
+            prompt=draft.get("prompt", ""),
+            model=body.model,
+            result=None,
+        )
+        task_ids.append(task_id)
+        draft["tag"] = "生成中"
+
+        # 异步执行
+        prompt_text = draft["prompt"]
+        provider_id = body.provider_id
+        model_name = body.model
+        size = body.size
+        aspect_ratio = body.aspect_ratio
+
+        async def _run(tid=task_id, p=prompt_text, pid=provider_id, m=model_name, s=size, ar=aspect_ratio):
+            t0 = time.monotonic()
+            task = _tasks.get(tid)
+            try:
+                url = await generate_image_via_provider(pid, m, p, size=s, aspect_ratio=ar)
+                if task:
+                    task["status"] = "succeeded"
+                    task["result"] = {"images": [url]}
+                    task["elapsed"] = round(time.monotonic() - t0, 1)
+                    _writeback_if_complete(tid)
+            except (GenerationError, Exception) as e:
+                if task:
+                    task["status"] = "failed"
+                    task["error"] = str(e)
+                    task["elapsed"] = round(time.monotonic() - t0, 1)
+
+        _track_task(_run())
+
+    svc.save()
+    return {"task_ids": task_ids, "count": len(task_ids)}
+
+
 @router.get("/tasks/{task_id}")
 async def get_task(task_id: str):
     """通用任务状态查询"""
@@ -278,7 +397,7 @@ def _writeback_if_complete(task_id: str) -> None:
     if not url:
         return
 
-    svc = StudioStateService.get_instance()
+    svc = StateManager.get_instance()
     for category in svc.get_groups().values():
         for group in category:
             for draft in group.get("drafts", []):

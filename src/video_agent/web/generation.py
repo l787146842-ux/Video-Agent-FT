@@ -1,39 +1,36 @@
 """
-真实供应商调用管线（图片生成 + Chat Completions）。
+供应商调用管线 — 薄代理层（Phase 2: Adapter 归位）。
 
-供 routes/generate.py、routes/agent.py、routes/workflow.py 共用，
-之前散落在各路由里的 HTTP 调用逻辑收敛到这里。
+实际 HTTP 调用逻辑已迁移到 adapters/openai_compat.py 和 adapters/agy_cli.py，
+本模块仅负责：
+1. 根据 provider_config 解析端点参数（配置源职责仍在 provider_config）
+2. 构造对应的 Adapter 实例
+3. 将 AdapterError 统一转译为面向用户的 GenerationError
 
-原则：失败就抛 GenerationError（带用户可读的中文信息），
-由调用方决定如何呈现——绝不静默降级成 mock 假成功。
+供 routes/generate.py、routes/agent.py、routes/workflow.py 共用。
 """
-import base64
-import binascii
-import json
-import re
-import time
-import random
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import httpx
 from loguru import logger
 
+from src.video_agent.exceptions import AdapterError, GenerationError
 from src.video_agent.web.provider_config import (
     CLI_PROTOCOLS,
     get_api_key,
+    get_canvas_provider_ids,
     get_provider_config,
 )
+from src.video_agent.adapters.openai_compat import (
+    OpenAICompatChatAdapter,
+    OpenAICompatImageAdapter,
+    extract_base64_image,
+    persist_data_uri,
+)
+from src.video_agent.adapters.agy_cli import AgyCliImageAdapter
+from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-ASSETS_DIR = PROJECT_ROOT / "workspace" / "assets"
 
-
-class GenerationError(Exception):
-    """供应商调用失败——message 面向用户，可直接展示"""
-
-
-# ---------- 端点解析 ----------
+# ---------- 端点解析（配置源：provider_config） ----------
 
 def resolve_openai_endpoint(provider_id: str, model: str) -> Tuple[str, str, str]:
     """
@@ -66,7 +63,7 @@ def resolve_openai_endpoint(provider_id: str, model: str) -> Tuple[str, str, str
     return base_url, api_key, effective_model
 
 
-# ---------- Chat Completions ----------
+# ---------- Chat Completions（委托 OpenAICompatChatAdapter） ----------
 
 async def call_chat_completion(
     provider_id: str,
@@ -79,48 +76,23 @@ async def call_chat_completion(
 ) -> Tuple[str, str]:
     """
     OpenAI 兼容 chat 调用。返回 (content, finish_reason)。
+    内部委托给 OpenAICompatChatAdapter.chat()。
     失败抛 GenerationError。
     """
     base_url, api_key, effective_model = resolve_openai_endpoint(provider_id, model)
+    adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=effective_model)
 
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    payload = {
-        "model": effective_model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
     logger.info(f"[Generation] chat: provider={provider_id}, model={effective_model}")
-
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.TimeoutException:
-        raise GenerationError(f"LLM 请求超时（{timeout}s），请检查网络或供应商状态")
-    except httpx.HTTPStatusError as e:
-        detail = e.response.text[:200]
-        raise GenerationError(f"LLM 返回 HTTP {e.response.status_code}: {detail}")
-    except httpx.HTTPError as e:
-        raise GenerationError(f"LLM 请求失败: {e}")
-
-    choices = data.get("choices", [])
-    if not choices:
-        raise GenerationError("LLM 返回了空 choices")
-    message = choices[0].get("message", {})
-    content = message.get("content", "")
-    if isinstance(content, list):
-        content = " ".join(
-            p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") != "image_url"
+        response = await adapter.chat(
+            messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout
         )
-    if not content:
+    except AdapterError as e:
+        raise GenerationError(str(e)) from e
+
+    if not response.content:
         raise GenerationError("LLM 返回了空内容")
-    finish_reason = choices[0].get("finish_reason", "") or ""
-    return content, finish_reason
+    return response.content, response.finish_reason
 
 
 async def call_chat_completion_stream(
@@ -134,77 +106,29 @@ async def call_chat_completion_stream(
     on_delta=None,
 ) -> Tuple[str, str]:
     """
-    流式 chat 调用（OpenAI 兼容 SSE）。每收到一段增量文本就 await on_delta(text)。
-    返回 (完整内容, finish_reason)。供应商不支持流式（返回普通 JSON）时自动兼容。
-    失败抛 GenerationError。
+    流式 chat 调用。每收到一段增量文本就 await on_delta(text)。
+    内部委托给 OpenAICompatChatAdapter.chat_stream()。
+    返回 (完整内容, finish_reason)。失败抛 GenerationError。
     """
     base_url, api_key, effective_model = resolve_openai_endpoint(provider_id, model)
+    adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=effective_model)
 
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    payload = {
-        "model": effective_model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": True,
-    }
     logger.info(f"[Generation] chat(stream): provider={provider_id}, model={effective_model}")
-
     content_parts: List[str] = []
     finish_reason = ""
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream(
-                "POST", f"{base_url}/chat/completions", json=payload, headers=headers
-            ) as resp:
-                if resp.status_code != 200:
-                    body = (await resp.aread()).decode("utf-8", errors="replace")[:200]
-                    raise GenerationError(f"LLM 返回 HTTP {resp.status_code}: {body}")
-
-                ctype = resp.headers.get("content-type", "")
-                if "text/event-stream" not in ctype:
-                    # 供应商忽略了 stream 参数，按普通 JSON 兼容处理
-                    data = json.loads((await resp.aread()).decode("utf-8", errors="replace"))
-                    choices = data.get("choices", [])
-                    if not choices:
-                        raise GenerationError("LLM 返回了空 choices")
-                    content = choices[0].get("message", {}).get("content", "") or ""
-                    if on_delta and content:
-                        await on_delta(content)
-                    return content, choices[0].get("finish_reason", "") or ""
-
-                async for line in resp.aiter_lines():
-                    line = line.strip()
-                    if not line.startswith("data:"):
-                        continue
-                    chunk = line[5:].strip()
-                    if chunk == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(chunk)
-                    except json.JSONDecodeError:
-                        continue
-                    choices = data.get("choices", [])
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta", {}) or {}
-                    piece = delta.get("content") or ""
-                    if piece:
-                        content_parts.append(piece)
-                        if on_delta:
-                            await on_delta(piece)
-                    if choices[0].get("finish_reason"):
-                        finish_reason = choices[0]["finish_reason"]
-    except GenerationError:
-        raise
-    except httpx.TimeoutException:
-        raise GenerationError(f"LLM 流式请求超时（{timeout}s）")
-    except httpx.HTTPError as e:
-        raise GenerationError(f"LLM 流式请求失败: {e}")
+        async for chunk in adapter.chat_stream(
+            messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout
+        ):
+            if chunk.type == "text_delta" and chunk.text:
+                content_parts.append(chunk.text)
+                if on_delta:
+                    await on_delta(chunk.text)
+            elif chunk.type == "done":
+                finish_reason = "stop"
+    except AdapterError as e:
+        raise GenerationError(str(e)) from e
 
     content = "".join(content_parts)
     if not content:
@@ -212,42 +136,51 @@ async def call_chat_completion_stream(
     return content, finish_reason
 
 
-# ---------- 图片生成 ----------
+# ---------- 图片生成（智能路由：熊布优先 + 本地兜底） ----------
 
-_DATA_URI_RE = re.compile(r"data:image/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)")
-_HTTP_IMAGE_RE = re.compile(r"https?://[^\s\)\"]+\.(?:png|jpg|jpeg|webp|gif)")
+async def _try_canvas_image_generation(
+    provider_id: str,
+    model: str,
+    prompt: str,
+    *,
+    size: str = "1024x1024",
+    aspect_ratio: str = "",
+) -> Optional[str]:
+    """尝试通过熊布执行生图。
+    仅当熊布在线且目标 provider 存在于熊布配置中时才尝试。
+    返回图片 URL，不适用或失败时返回 None。"""
+    # 判断 provider 是否熊布可处理
+    canvas_ids = get_canvas_provider_ids()
+    if provider_id not in canvas_ids:
+        return None  # Agent 独有的 provider，跳过熊布
 
+    adapter = get_canvas_adapter()
+    if not await adapter.is_online():
+        return None  # 熊布离线
 
-def extract_base64_image(text: str) -> str:
-    """从 LLM 回复文本中提取 data URI 图片（Gemini 生图模型返回 markdown 格式）"""
-    m = _DATA_URI_RE.search(text)
-    return m.group(0) if m else ""
+    # 熊布在线且能处理该 provider，发起请求
+    payload: Dict[str, Any] = {
+        "provider_id": provider_id,
+        "model": model,
+        "prompt": prompt,
+    }
+    if size:
+        payload["size"] = size
+    if aspect_ratio:
+        payload["aspect_ratio"] = aspect_ratio
 
-
-def persist_data_uri(data_uri: str) -> str:
-    """
-    把 base64 data URI 落盘到 workspace/assets/，返回可访问的相对 URL。
-    避免几 MB 的 base64 被塞进 state.json。
-    解码失败时抛 GenerationError。
-    """
-    m = _DATA_URI_RE.match(data_uri)
-    if not m:
-        raise GenerationError("无法解析图片 data URI")
-    ext = m.group(1).lower()
-    if ext == "jpeg":
-        ext = "jpg"
-    if ext not in ("png", "jpg", "webp", "gif"):
-        ext = "png"
+    logger.info(f"[Generation] 生图路由到熊布: provider={provider_id}, model={model}")
     try:
-        raw = base64.b64decode(m.group(2), validate=True)
-    except (binascii.Error, ValueError) as e:
-        raise GenerationError(f"图片 base64 解码失败: {e}")
-
-    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-    name = f"gen-{int(time.time())}-{random.randint(1000, 9999)}.{ext}"
-    (ASSETS_DIR / name).write_bytes(raw)
-    logger.info(f"[Generation] base64 图片已落盘: {name} ({len(raw)} bytes)")
-    return f"/workspace/assets/{name}"
+        result = await adapter.generate_image_online(payload)
+        # 熊布 /api/online-image 返回格式: {"images": [...], ...}
+        images = result.get("images") or []
+        if images:
+            return images[0]
+        logger.warning("[Generation] 熊布生图未返回图片，fallthrough 到本地")
+        return None
+    except Exception as e:
+        logger.warning(f"[Generation] 熊布生图失败，fallthrough 到本地: {e}")
+        return None
 
 
 async def generate_image_via_provider(
@@ -259,85 +192,46 @@ async def generate_image_via_provider(
     aspect_ratio: str = "",
 ) -> str:
     """
-    统一图片生成：
-    1. 先尝试 /images/generations（OpenAI 标准）
-    2. 回退 /chat/completions（Gemini 原生图片模型）
-    返回图片 URL（data URI 会先落盘为文件 URL）。失败抛 GenerationError。
+    统一图片生成（智能路由）：
+    1. 熊布在线 + provider 存在于熊布 → 通过熊布 API 执行
+    2. CLI 协议（gemini-cli）→ AgyCliImageAdapter
+    3. 其他供应商 → OpenAICompatImageAdapter 本地直连
+    返回图片 URL。失败抛 GenerationError。
     """
-    base_url, api_key, effective_model = resolve_openai_endpoint(provider_id, model)
-
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    errors: List[str] = []
-
-    # --- 方式 1：/images/generations ---
-    try:
-        payload = {"model": effective_model, "prompt": prompt, "n": 1, "size": size or "1024x1024"}
-        logger.info(f"[Generation] /images/generations: model={effective_model}")
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(f"{base_url}/images/generations", json=payload, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                images_data = data.get("data", [])
-                if images_data:
-                    url = images_data[0].get("url", "")
-                    if not url and images_data[0].get("b64_json"):
-                        return persist_data_uri(
-                            f"data:image/png;base64,{images_data[0]['b64_json']}"
-                        )
-                    if url:
-                        return url
-                errors.append("/images/generations 返回 200 但无图片数据")
-            else:
-                errors.append(f"/images/generations HTTP {resp.status_code}")
-    except httpx.HTTPError as e:
-        errors.append(f"/images/generations 请求失败: {e}")
-
-    # --- 方式 2：/chat/completions（Gemini 原生图片生成） ---
-    aspect_hint = f" Aspect ratio: {aspect_ratio}." if aspect_ratio and aspect_ratio != "1:1" else ""
-    image_prompt = f"Generate an image: {prompt}.{aspect_hint}"
-    payload = {
-        "model": effective_model,
-        "messages": [{"role": "user", "content": image_prompt}],
-        "max_tokens": 8192,
-    }
-    logger.info(f"[Generation] /chat/completions 生图: model={effective_model}")
-    try:
-        async with httpx.AsyncClient(timeout=180) as client:
-            resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.TimeoutException:
-        raise GenerationError("生图请求超时（180s）。" + "；".join(errors))
-    except httpx.HTTPStatusError as e:
-        raise GenerationError(
-            f"生图失败：HTTP {e.response.status_code}: {e.response.text[:200]}。" + "；".join(errors)
-        )
-    except httpx.HTTPError as e:
-        raise GenerationError(f"生图请求失败: {e}。" + "；".join(errors))
-
-    choices = data.get("choices", [])
-    content = choices[0].get("message", {}).get("content", "") if choices else ""
-    if isinstance(content, list):
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "image_url":
-                url = part.get("image_url", {}).get("url", "")
-                if url.startswith("data:image/"):
-                    return persist_data_uri(url)
-                if url:
-                    return url
-        content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
-
-    img_data = extract_base64_image(content)
-    if img_data:
-        return persist_data_uri(img_data)
-
-    url_match = _HTTP_IMAGE_RE.search(content)
-    if url_match:
-        return url_match.group(0)
-
-    raise GenerationError(
-        "供应商没有返回任何图片（模型可能不支持生图，请换用图片模型）。" + "；".join(errors)
+    # ① 尝试熊布路由（熊布在线 + provider 熊布可处理）
+    canvas_result = await _try_canvas_image_generation(
+        provider_id, model, prompt, size=size, aspect_ratio=aspect_ratio
     )
+    if canvas_result:
+        return canvas_result
+
+    # ② 本地直连逻辑（原有路径）
+    cfg = get_provider_config(provider_id)
+
+    # CLI 协议 → AgyCliImageAdapter
+    if cfg and cfg.get("protocol") in CLI_PROTOCOLS:
+        logger.info(f"[Generation] CLI 协议 '{provider_id}' → AgyCliImageAdapter")
+        adapter = AgyCliImageAdapter()
+        try:
+            result = await adapter.generate_image(prompt, aspect_ratio=aspect_ratio)
+        except AdapterError as e:
+            raise GenerationError(str(e)) from e
+        if result.image_urls:
+            return result.image_urls[0]
+        raise GenerationError("agy CLI 未返回图片")
+
+    # 其他供应商 → OpenAICompatImageAdapter
+    base_url, api_key, effective_model = resolve_openai_endpoint(provider_id, model)
+    adapter_img = OpenAICompatImageAdapter(base_url=base_url, api_key=api_key, model=effective_model)
+
+    logger.info(f"[Generation] image(本地): provider={provider_id}, model={effective_model}")
+    try:
+        result = await adapter_img.generate_image(
+            prompt, size=size, aspect_ratio=aspect_ratio
+        )
+    except AdapterError as e:
+        raise GenerationError(str(e)) from e
+
+    if result.image_urls:
+        return result.image_urls[0]
+    raise GenerationError("供应商没有返回任何图片")

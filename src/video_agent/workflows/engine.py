@@ -142,7 +142,7 @@ class WorkflowEngine:
             await asyncio.wait(pending)
 
     async def run(self) -> bool:
-        """执行整个工作流。返回是否全部成功（skipped 计入成功）。"""
+        """执行整个工作流（批处理模式，CLI 用）。返回是否全部成功（skipped 计入成功）。"""
         logger.info(f"Starting workflow: {self.workflow_def.name}")
         max_parallel = max(1, self.workflow_def.context.max_parallel_tasks)
 
@@ -184,3 +184,66 @@ class WorkflowEngine:
         else:
             logger.warning("Workflow finished with failed/unresolved phases.")
         return success
+
+    # ---------- 交互模式（Web 用） ----------
+
+    _awaiting_confirmation: bool = False
+
+    @property
+    def current_phase(self) -> Optional[str]:
+        """返回下一个可执行阶段的 phase_id，全部完成时返回 None"""
+        executable = self._get_executable_phases()
+        if executable:
+            return executable[0].phase_id
+        if len(self.completed_phases) + len(self.failed_phases) >= len(self.phases):
+            return None
+        return None
+
+    @property
+    def is_awaiting_confirmation(self) -> bool:
+        """是否正在等待用户确认"""
+        return self._awaiting_confirmation
+
+    async def step(self) -> Dict[str, Any]:
+        """交互模式：执行当前阶段的下一步，完成后暂停等待确认。
+
+        返回 PhaseResult dict：
+        - {"status": "completed", "phase": "story", "detail": "..."}
+        - {"status": "skipped", "phase": "audio", "detail": "..."}
+        - {"status": "failed", "phase": "image", "error": "..."}
+        - {"status": "done"}  # 所有阶段已完成
+        """
+        if self._awaiting_confirmation:
+            return {"status": "waiting", "detail": "等待用户确认后才能继续"}
+
+        executable = self._get_executable_phases()
+        if not executable:
+            if len(self.completed_phases) + len(self.failed_phases) >= len(self.phases):
+                return {"status": "done", "detail": "所有阶段已完成"}
+            return {"status": "blocked", "detail": "无法确定下一步（依赖未满足或死锁）"}
+
+        phase = executable[0]
+        self.running_phases.add(phase.phase_id)
+        try:
+            await self._run_phase(phase)
+        finally:
+            self.running_phases.discard(phase.phase_id)
+
+        result = self.phase_results.get(phase.phase_id, {})
+        status = result.get("status", "unknown")
+
+        # 执行完成后暂停，等待用户确认
+        self._awaiting_confirmation = True
+        logger.info(f"[Workflow] 交互模式：phase '{phase.phase_id}' {status}，等待确认")
+
+        return {
+            "status": status,
+            "phase": phase.phase_id,
+            "detail": result.get("detail", ""),
+            "error": result.get("error", ""),
+        }
+
+    def advance(self) -> None:
+        """用户确认后调用，推进到下一阶段"""
+        self._awaiting_confirmation = False
+        logger.info("[Workflow] 用户已确认，推进到下一阶段")

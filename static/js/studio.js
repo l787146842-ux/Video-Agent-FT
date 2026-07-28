@@ -2,162 +2,33 @@
  * Flova Studio - 影视创作工作台核心 JavaScript
  */
 
-// 全局状态管理
+// 全局状态管理（初始为空，DOMContentLoaded 时从后端 API 加载）
 const state = {
     leftTab: 'storyboard', // storyboard | uncategorized
     subTab: 'keyElements', // keyElements | shots | audio
     showAllAssets: false,
-    selectedDraftId: 'ke-1-d1',
+    selectedDraftId: '',
     selectedType: 'keyElement', // keyElement | shot | audio
     isPromptCollapsed: false,
     apiProviders: [],
     skills: [],
     agentBusy: false,
     pendingAttachments: [], // 输入框内待发送的附件
-    
-    // 故事板数据（支持 Agent 实时修改与插入）
-    keyElements: [
-        {
-            id: 'ke-1',
-            title: '人物设定：探险队长罗林',
-            desc: '穿着重型外骨骼战甲，眼神坚毅，面部有微小机械疤痕，带高科技全息单镜片。',
-            drafts: [
-                {
-                    id: 'ke-1-d1',
-                    label: '草稿1 - 概念高光',
-                    tag: '推荐',
-                    mediaType: 'image',
-                    imgUrl: 'https://picsum.photos/id/1025/1200/800',
-                    prompt: '超高细节，探险队长罗林特写，正面视角，穿着黑色磨损外骨骼战甲，全息单镜片散发蓝光，眼神坚毅，电影级采光，8k分辨率，赛博朋克现实主义 --ar 16:9 --v 6.0',
-                    model: 'Flux.1',
-                    aspectRatio: '16:9',
-                    size: '1280x720',
-                    refAssets: []
-                },
-                {
-                    id: 'ke-1-d2',
-                    label: '草稿2 - 战甲细节',
-                    tag: '已确认',
-                    mediaType: 'image',
-                    imgUrl: 'https://picsum.photos/id/1062/1200/800',
-                    prompt: '探险队长战甲金属纹理特写，带有微光粒子与机械结构拼合，真实金属光泽，硬核科幻设计 --ar 16:9',
-                    model: 'Midjourney v6',
-                    aspectRatio: '16:9',
-                    size: '1280x720',
-                    refAssets: []
-                }
-            ]
-        },
-        {
-            id: 'ke-2',
-            title: '场景设定：二维化降维星云',
-            desc: '太阳系边缘被二向箔压缩形成的平面星云，颜色绚丽而诡异，毫无厚度的平面质感。',
-            drafts: [
-                {
-                    id: 'ke-2-d1',
-                    label: '草稿1 - 星云全景',
-                    tag: '草稿',
-                    mediaType: 'image',
-                    imgUrl: 'https://picsum.photos/id/1015/1200/800',
-                    prompt: '三体降维打击视觉表现，二维化的太阳系星空，极度绚丽的绚彩平坦漩涡，无深度感，空间折叠美学，高清电影剧照 --ar 21:9',
-                    model: 'Nano Pro',
-                    aspectRatio: '21:9',
-                    size: '1280x544',
-                    refAssets: []
-                }
-            ]
-        }
-    ],
 
-    shots: [
-        {
-            id: 'shot-1',
-            title: '镜头 01',
-            duration: '4.5s',
-            roughDesc: '飞船缓缓穿过降维星云边缘，产生扭曲的光晕与能量涟漪。',
-            drafts: [
-                {
-                    id: 'shot-1-d1',
-                    label: '分镜卡片 1',
-                    tag: '生成中',
-                    mediaType: 'video',
-                    videoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-                    prompt: '镜头向前慢推，探险飞船从左向右穿过炫彩二维漩涡，船体表面泛起金色能量涟漪，流畅电影运镜，60fps，科幻大片质感',
-                    mode: '全能参考',
-                    model: 'Sora',
-                    resolution: '1080p',
-                    duration: '5s',
-                    aspectRatio: '16:9',
-                    refAssets: ['https://picsum.photos/id/1015/400/300']
-                }
-            ]
-        },
-        {
-            id: 'shot-2',
-            title: '镜头 02',
-            duration: '3.0s',
-            roughDesc: '罗林队长推下推进器手柄，仪表盘指针剧烈抖动。',
-            drafts: [
-                {
-                    id: 'shot-2-d1',
-                    label: '分镜卡片 1',
-                    tag: '待确认',
-                    mediaType: 'video',
-                    videoUrl: '',
-                    prompt: '特写镜头：硬朗的大手推下金属推进器手柄，全息控制面板红光闪烁，仪表盘指针快速飙升，镜头轻微震颤',
-                    mode: '图生视频',
-                    model: 'Luma Dream Machine',
-                    resolution: '1080p',
-                    duration: '3s',
-                    aspectRatio: '16:9',
-                    refAssets: []
-                }
-            ]
-        }
-    ],
-
-    audioItems: [
-        {
-            id: 'audio-1',
-            title: '音频层 01 - 旁白与环境音',
-            timeRange: '00:00 - 00:08',
-            prompt: '深沉压抑的宇宙低频震动配乐，伴随着高科技飞船报警蜂鸣声，以及男旁白深邃的声音：“太阳系正在坠入二维...”',
-            drafts: [
-                {
-                    id: 'audio-1-d1',
-                    label: '音频草稿 1',
-                    mediaType: 'audio',
-                    prompt: '深沉压抑宇宙低音 + 高科技报警音 + 男声独白：“太阳系正在坠入二维...”',
-                    mode: '多模态音频生成',
-                    model: 'ElevenLabs',
-                    timbre: '深邃男声 (Deep Narrator)',
-                    refAssets: []
-                }
-            ]
-        }
-    ],
-
-    // 未归类素材
-    assets: [
-        { id: 'ast-1', name: '罗林肖像参考.png', type: 'image', isBound: true, url: 'https://picsum.photos/id/1025/400/300' },
-        { id: 'ast-2', name: '星云纹理背景.jpg', type: 'image', isBound: true, url: 'https://picsum.photos/id/1015/400/300' },
-        { id: 'ast-3', name: '飞船引擎音效.mp3', type: 'audio', isBound: false, url: '' },
-        { id: 'ast-4', name: '二向箔降维渲染.mp4', type: 'video', isBound: false, url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4' },
-        { id: 'ast-5', name: '空间站草图.jpg', type: 'image', isBound: false, url: 'https://picsum.photos/id/1062/400/300' }
-    ],
-
-    // Agent 对话历史
-    chatMessages: [
-        {
-            sender: 'agent',
-            text: '你好！我是你的 AI 编剧与导演助手。我已经根据《深空探险三体》剧本提取出了 2 个关键元素、2 个关键分镜和音频层。你可以点击左侧草稿卡片进行预览，或者直接告诉我需要调整什么！'
-        }
-    ]
+    // 故事板数据（从后端加载）
+    keyElements: [],
+    shots: [],
+    audioItems: [],
+    assets: [],
+    chatMessages: []
 };
 
 // 初始化页面
 document.addEventListener('DOMContentLoaded', async () => {
     initSplitters();
+    initCanvasSplitter();
+    initChatResizeHandle();
+    initPreviewUpload();
     // 从后端加载持久化状态（替代硬编码 demo 数据）
     await loadStateFromBackend();
     renderLeftContent();
@@ -180,6 +51,7 @@ async function loadStateFromBackend() {
         if (serverState.audioItems && serverState.audioItems.length) state.audioItems = serverState.audioItems;
         if (serverState.assets && serverState.assets.length) state.assets = serverState.assets;
         if (serverState.chatMessages && serverState.chatMessages.length) state.chatMessages = serverState.chatMessages;
+        state.documents = Array.isArray(serverState.documents) ? serverState.documents : [];
         // 设置项目名
         if (serverState.project_name) {
             document.getElementById('currentProjectName').textContent = serverState.project_name;
@@ -221,10 +93,12 @@ function initSplitters() {
         colRight.style.width = newWidth + 'px';
     });
 
-    // 中间预览区域上下横向拖拽
+    // 中间预览区域上下横向拖拽（底部栏固定，伸缩提示词区域）
     setupDrag(splitterPreview, (deltaX, deltaY) => {
-        const newHeight = Math.max(120, Math.min(500, previewBottom.offsetHeight - deltaY));
+        if (state.isPromptCollapsed) return;
+        const newHeight = Math.max(100, Math.min(600, previewBottom.offsetHeight - deltaY));
         previewBottom.style.height = newHeight + 'px';
+        previewBottom.style.flex = 'none';
     }, true);
 }
 
@@ -254,6 +128,104 @@ function setupDrag(element, onMove, isVertical = false) {
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
     });
+}
+
+// 初始化中间预览区上传/替换媒体功能
+function initPreviewUpload() {
+    const previewTop = document.getElementById('previewTop');
+    if (!previewTop) return;
+
+    // 双击预览区触发上传
+    previewTop.addEventListener('dblclick', () => triggerPreviewUpload());
+
+    // 拖拽上传支持
+    previewTop.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        previewTop.classList.add('preview-dragover');
+    });
+    previewTop.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        previewTop.classList.remove('preview-dragover');
+    });
+    previewTop.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        previewTop.classList.remove('preview-dragover');
+        const files = Array.from(e.dataTransfer?.files || []);
+        if (files.length) await handlePreviewMediaUpload(files[0]);
+    });
+}
+
+function triggerPreviewUpload() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,video/*,audio/*';
+    input.onchange = async () => {
+        const file = input.files?.[0];
+        if (file) await handlePreviewMediaUpload(file);
+    };
+    input.click();
+}
+
+// 预览区右键菜单：替换媒体
+function showPreviewReplaceMenu(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    document.getElementById('previewReplaceMenu')?.remove();
+    const menu = document.createElement('div');
+    menu.id = 'previewReplaceMenu';
+    menu.className = 'draft-menu';
+    menu.style.left = Math.min(event.clientX, window.innerWidth - 160) + 'px';
+    menu.style.top = Math.min(event.clientY, window.innerHeight - 80) + 'px';
+    menu.innerHTML = `
+        <button onclick="closePreviewReplaceMenu();triggerPreviewUpload()"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>替换媒体文件</button>`;
+    document.body.appendChild(menu);
+    lucide.createIcons();
+    setTimeout(() => document.addEventListener('click', closePreviewReplaceMenu, {once: true}), 0);
+}
+
+function closePreviewReplaceMenu() {
+    document.getElementById('previewReplaceMenu')?.remove();
+}
+
+async function handlePreviewMediaUpload(file) {
+    if (!state.selectedDraftId) {
+        showToast('请先在左侧选择一个草稿卡片');
+        return;
+    }
+    const form = new FormData();
+    form.append('files', file);
+    try {
+        showToast(`正在上传：${file.name}`);
+        const response = await fetch('/api/ai/upload', {method: 'POST', body: form});
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(readApiError(data, '媒体上传失败'));
+        const uploaded = data.files?.[0];
+        if (!uploaded?.url) throw new Error('上传接口没有返回媒体地址');
+
+        // 更新当前草稿的媒体 URL
+        const rec = findDraftRecord(state.selectedDraftId, state.selectedType);
+        if (rec) {
+            const kind = uploaded.kind || 'image';
+            if (kind === 'video') {
+                rec.draft.mediaType = 'video';
+                rec.draft.videoUrl = uploaded.url;
+            } else if (kind === 'audio') {
+                rec.draft.mediaType = 'audio';
+            } else {
+                rec.draft.mediaType = 'image';
+                rec.draft.imgUrl = uploaded.url;
+            }
+            rec.draft.tag = '已上传';
+            renderLeftContent();
+            updateMiddlePreview();
+            await persistBoard();
+            showToast(`已替换媒体：${uploaded.name || file.name}`);
+        }
+    } catch (error) {
+        showToast(error.message || '媒体上传失败');
+    }
 }
 
 // 切换左侧大分类（故事板 vs 未归类素材）
@@ -423,6 +395,278 @@ function jumpToElementByTitle(title) {
     updateMiddlePreview();
 }
 
+// === 文档面板（项目文档 + Skill 文档） ===
+const docsPanelState = { skillDocs: [], current: null, editing: false, viewMode: 'read' };
+
+// 轻量 Markdown → HTML 渲染（无外部依赖）
+function renderMarkdown(src) {
+    if (!src) return '<p class="docs-empty">暂无内容</p>';
+    const lines = src.split('\n');
+    let html = '';
+    let inUl = false, inOl = false, inBlock = false;
+    const inline = (t) => escapeHtml(t)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code>$1</code>');
+    const closeList = () => { if (inUl) { html += '</ul>'; inUl = false; } if (inOl) { html += '</ol>'; inOl = false; } };
+    const closeBlock = () => { if (inBlock) { html += '</blockquote>'; inBlock = false; } };
+    for (const raw of lines) {
+        const line = raw.trimEnd();
+        if (/^### /.test(line)) { closeList(); closeBlock(); html += `<h3>${inline(line.slice(4))}</h3>`; }
+        else if (/^## /.test(line)) { closeList(); closeBlock(); html += `<h2>${inline(line.slice(3))}</h2>`; }
+        else if (/^# /.test(line)) { closeList(); closeBlock(); html += `<h1>${inline(line.slice(2))}</h1>`; }
+        else if (/^> /.test(line)) { closeList(); if (!inBlock) { html += '<blockquote>'; inBlock = true; } html += `<p>${inline(line.slice(2))}</p>`; }
+        else if (/^[-*] /.test(line)) { closeBlock(); if (inOl) { html += '</ol>'; inOl = false; } if (!inUl) { html += '<ul>'; inUl = true; } html += `<li>${inline(line.slice(2))}</li>`; }
+        else if (/^\d+\. /.test(line)) { closeBlock(); if (inUl) { html += '</ul>'; inUl = false; } if (!inOl) { html += '<ol>'; inOl = true; } html += `<li>${inline(line.replace(/^\d+\. /, ''))}</li>`; }
+        else if (line.trim() === '') { closeList(); closeBlock(); }
+        else { closeList(); closeBlock(); html += `<p>${inline(line)}</p>`; }
+    }
+    closeList(); closeBlock();
+    return html;
+}
+
+function setDocsViewMode(mode) {
+    docsPanelState.viewMode = mode;
+    document.getElementById('docsModeRead')?.classList.toggle('active', mode === 'read');
+    document.getElementById('docsModeMd')?.classList.toggle('active', mode === 'md');
+    if (docsPanelState.editing) return; // 编辑模式不受影响
+    const rendered = document.getElementById('docsRendered');
+    const viewer = document.getElementById('docsViewer');
+    if (mode === 'read') {
+        rendered.innerHTML = renderMarkdown(viewer.textContent);
+        rendered.classList.remove('hidden');
+        viewer.classList.add('hidden');
+    } else {
+        rendered.classList.add('hidden');
+        viewer.classList.remove('hidden');
+    }
+}
+
+async function openDocsPanel(targetName = '') {
+    const panel = document.getElementById('docsPanel');
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    try {
+        const res = await fetch('/api/skills/docs');
+        const data = await res.json();
+        docsPanelState.skillDocs = Array.isArray(data.docs) ? data.docs : [];
+    } catch (_) { docsPanelState.skillDocs = []; }
+    renderDocsList();
+
+    // 定位：优先项目文档，其次 Skill 文档，否则第一个
+    if (targetName) {
+        const pd = (state.documents || []).find(d => d.name === targetName);
+        if (pd) { selectDoc('project', targetName); lucide.createIcons(); return; }
+        const sd = docsPanelState.skillDocs.find(d => d.slug === targetName || d.name === targetName);
+        if (sd) { selectDoc('skill', sd.slug); lucide.createIcons(); return; }
+    }
+    const first = (state.documents || [])[0];
+    if (first) selectDoc('project', first.name);
+    else if (docsPanelState.skillDocs[0]) selectDoc('skill', docsPanelState.skillDocs[0].slug);
+    lucide.createIcons();
+}
+
+function closeDocsPanel() {
+    document.getElementById('docsPanel')?.classList.add('hidden');
+    docsPanelState.editing = false;
+}
+
+function renderDocsList() {
+    const list = document.getElementById('docsFileList');
+    if (!list) return;
+    const projDocs = state.documents || [];
+    const cur = docsPanelState.current;
+    // 上传素材（仅文本类）
+    const textAssets = (state.assets || []).filter(a => /\.(md|txt|pdf)$/i.test(a.name || ''));
+    list.innerHTML = `
+        <div class="docs-section-title">📁 项目文档</div>
+        ${projDocs.length ? projDocs.map(d => `
+            <div class="docs-file ${cur?.kind === 'project' && cur?.key === d.name ? 'active' : ''}"
+                 onclick="selectDoc('project', '${escapeHtml(d.name).replace(/'/g, "\\'")}')">
+                <i data-lucide="file-text" class="w-3.5 h-3.5"></i><span>${escapeHtml(d.name)}</span>
+            </div>`).join('') : '<div class="docs-empty">暂无（Agent 拆解时会自动产出）</div>'}
+        <div class="docs-section-title">📎 上传素材</div>
+        ${textAssets.length ? textAssets.map(a => `
+            <div class="docs-file" onclick="openAssetDoc('${escapeHtml(a.name).replace(/'/g, "\\'")}')">
+                <i data-lucide="${/\.pdf$/i.test(a.name) ? 'file-type' : 'file-text'}" class="w-3.5 h-3.5"></i><span>${escapeHtml(a.name)}</span>
+            </div>`).join('') : '<div class="docs-empty">暂无上传的文档素材</div>'}
+        <div class="docs-section-title">🧩 Skill 文档</div>
+        ${(() => {
+            const selId = document.getElementById('agentSkillSelect')?.value || '';
+            const activeSlug = selId.startsWith('doc:') ? selId.slice(4) : '';
+            const visible = activeSlug ? docsPanelState.skillDocs.filter(d => d.slug === activeSlug) : docsPanelState.skillDocs;
+            return visible.length ? visible.map(d => `
+            <div class="docs-file ${cur?.kind === 'skill' && cur?.key === d.slug ? 'active' : ''}"
+                 onclick="selectDoc('skill', '${d.slug}')">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>${escapeHtml(d.name)}</span>
+            </div>`).join('') : '<div class="docs-empty">在聊天框选择 Skill 后显示</div>';
+        })()}
+        <button class="docs-new-btn" onclick="createNewDoc()">+ 新建文档</button>`;
+    lucide.createIcons();
+}
+
+function openAssetDoc(name) {
+    const asset = (state.assets || []).find(a => a.name === name);
+    if (asset?.url) { window.open(asset.url, '_blank'); return; }
+    showToast('该素材无预览内容，仅作为引用资产使用');
+}
+
+async function createNewDoc() {
+    const name = prompt('文档名称：', '无标题.md');
+    if (!name || !name.trim()) return;
+    const docName = name.trim().endsWith('.md') ? name.trim() : name.trim() + '.md';
+    try {
+        const res = await fetch('/api/project/document', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: docName, content: ''})
+        });
+        if (!res.ok) throw new Error('创建失败');
+        const data = await res.json();
+        state.documents = Array.isArray(data.documents) ? data.documents : (state.documents || []);
+        renderDocsList();
+        selectDoc('project', docName);
+        // 自动进入编辑模式
+        toggleDocEdit();
+    } catch (e) {
+        showToast(e.message || '新建文档失败');
+    }
+}
+
+function selectDoc(kind, key) {
+    docsPanelState.current = { kind, key };
+    docsPanelState.editing = false;
+    let name = key, content = '';
+    if (kind === 'project') {
+        const d = (state.documents || []).find(x => x.name === key);
+        content = d?.content || '';
+        name = key + (d?.updated_at ? ` · ${d.updated_at.replace('T', ' ')}` : '');
+    } else {
+        const d = docsPanelState.skillDocs.find(x => x.slug === key);
+        content = d?.content || '';
+        name = d?.name || key;
+    }
+    document.getElementById('docsCurrentName').textContent = name;
+    const viewer = document.getElementById('docsViewer');
+    const rendered = document.getElementById('docsRendered');
+    viewer.textContent = content;
+    // 根据当前视图模式显示
+    if (docsPanelState.viewMode === 'read') {
+        rendered.innerHTML = renderMarkdown(content);
+        rendered.classList.remove('hidden');
+        viewer.classList.add('hidden');
+    } else {
+        rendered.classList.add('hidden');
+        viewer.classList.remove('hidden');
+    }
+    document.getElementById('docsEditor').classList.add('hidden');
+    document.getElementById('docsSaveBtn').classList.add('hidden');
+    document.getElementById('docsEditBtn').textContent = '编辑';
+    renderDocsList();
+}
+
+function toggleDocEdit() {
+    if (!docsPanelState.current) return;
+    const viewer = document.getElementById('docsViewer');
+    const rendered = document.getElementById('docsRendered');
+    const editor = document.getElementById('docsEditor');
+    if (docsPanelState.editing) {
+        // 取消编辑，恢复查看模式
+        docsPanelState.editing = false;
+        editor.classList.add('hidden');
+        if (docsPanelState.viewMode === 'read') {
+            rendered.innerHTML = renderMarkdown(viewer.textContent);
+            rendered.classList.remove('hidden');
+            viewer.classList.add('hidden');
+        } else {
+            rendered.classList.add('hidden');
+            viewer.classList.remove('hidden');
+        }
+        document.getElementById('docsSaveBtn').classList.add('hidden');
+        document.getElementById('docsEditBtn').textContent = '编辑';
+        return;
+    }
+    docsPanelState.editing = true;
+    editor.value = viewer.textContent;
+    rendered.classList.add('hidden');
+    viewer.classList.add('hidden');
+    editor.classList.remove('hidden');
+    document.getElementById('docsSaveBtn').classList.remove('hidden');
+    document.getElementById('docsEditBtn').textContent = '取消';
+}
+
+async function saveCurrentDoc() {
+    const cur = docsPanelState.current;
+    if (!cur || !docsPanelState.editing) return;
+    const content = document.getElementById('docsEditor').value;
+    try {
+        if (cur.kind === 'project') {
+            const res = await fetch('/api/project/document', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: cur.key, content})
+            });
+            if (!res.ok) throw new Error(readApiError(await res.json().catch(() => ({})), '保存失败'));
+            const d = (state.documents || []).find(x => x.name === cur.key);
+            if (d) d.content = content;
+        } else {
+            const res = await fetch('/api/skills/docs/' + encodeURIComponent(cur.key), {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({content})
+            });
+            if (!res.ok) throw new Error(readApiError(await res.json().catch(() => ({})), '保存失败'));
+            const d = docsPanelState.skillDocs.find(x => x.slug === cur.key);
+            if (d) d.content = content;
+            // Skill 内容即流程——同步刷新下拉框数据里的 system_prompt
+            const sk = state.skills.find(s => s.id === 'doc:' + cur.key);
+            if (sk) sk.system_prompt = content;
+        }
+        showToast('文档已保存');
+        selectDoc(cur.kind, cur.key);
+    } catch (e) {
+        showToast(e.message || '保存失败');
+    }
+}
+
+// Skill 下拉旁「查看」按钮：打开当前选中 Skill 的文档
+function viewCurrentSkillDoc() {
+    const skillId = document.getElementById('agentSkillSelect')?.value || '';
+    if (skillId.startsWith('doc:')) openDocsPanel(skillId.slice(4));
+    else openDocsPanel();
+}
+
+// 批量生成（前端按钮触发，调用后端 /api/generate/batch-image）
+async function batchGenerate(target) {
+    const providerSelect = document.getElementById('imageProviderSelect');
+    const modelSelect = document.getElementById('imageModelSelect');
+    const providerId = providerSelect?.value || '';
+    const model = modelSelect?.value || '';
+    if (!providerId || !model) {
+        showToast('请先在中间预览区选择图片 API 和模型');
+        return;
+    }
+    const label = target === 'all_keyElements' ? '概念图' : '关键帧';
+    if (!confirm(`确认为所有${label}提交批量生图任务？`)) return;
+    try {
+        const res = await fetch('/api/generate/batch-image', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ target, provider_id: providerId, model, size: '1280x720', aspect_ratio: '16:9' })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '批量生成失败');
+        if (data.count > 0) {
+            showToast(`已提交 ${data.count} 个${label}生成任务`);
+            renderLeftContent();
+        } else {
+            showToast(data.detail || '没有可生成的草稿（需先有提示词）');
+        }
+    } catch (e) {
+        showToast(e.message || '批量生成请求失败');
+    }
+}
+
 // 故事板持久化（草稿删除等前端直改操作后调用）
 async function persistBoard() {
     try {
@@ -450,11 +694,11 @@ function showDraftMenu(event, draftId, type, groupId) {
     menu.id = 'draftContextMenu';
     menu.className = 'draft-menu';
     menu.style.left = Math.min(event.clientX, window.innerWidth - 180) + 'px';
-    menu.style.top = Math.min(event.clientY, window.innerHeight - 140) + 'px';
+    menu.style.top = Math.min(event.clientY, window.innerHeight - 160) + 'px';
     menu.innerHTML = `
         <button onclick="draftMenuAddToChat('${draftId}', '${type}')"><i data-lucide="message-square-quote" class="w-3.5 h-3.5"></i>添加到对话</button>
         <button onclick="draftMenuDelete('${draftId}', '${type}', '${groupId}')"><i data-lucide="trash" class="w-3.5 h-3.5"></i>删除此草稿</button>
-        <button class="danger" onclick="draftMenuClearGroup('${type}', '${groupId}')"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i>清空该组草稿</button>`;
+        <button onclick="draftMenuMoveToUncategorized('${draftId}', '${type}', '${groupId}')"><i data-lucide="folder-output" class="w-3.5 h-3.5"></i>移除到未归类素材</button>`;
     document.body.appendChild(menu);
     lucide.createIcons();
     setTimeout(() => document.addEventListener('click', closeDraftMenu, {once: true}), 0);
@@ -471,13 +715,59 @@ function _groupsOfType(type) {
 function draftMenuAddToChat(draftId, type) {
     closeDraftMenu();
     selectDraftCard(draftId, type);
-    const input = document.getElementById('chatInput');
-    if (input) {
-        const rec = findDraftRecord(draftId, type);
-        const label = rec?.draft?.label || draftId;
-        input.value = `针对草稿「${label}」：` + input.value;
-        input.focus();
+    const rec = findDraftRecord(draftId, type);
+    if (!rec) return;
+    const draft = rec.draft;
+    const label = draft.label || draftId;
+    const imgUrl = draft.imgUrl || '';
+
+    // 如果草稿有图片，作为图片附件添加到对话（让 LLM 能识别图片）
+    if (imgUrl && !imgUrl.includes('picsum.photos')) {
+        state.pendingAttachments.push({
+            id: `draft-img-${draftId}`,
+            name: `${label}.png`,
+            type: 'image',
+            url: imgUrl
+        });
+        renderPendingAttachments();
+        const input = document.getElementById('chatInput');
+        if (input) {
+            if (!input.value.trim()) input.value = `请分析这张「${label}」的画面内容，给出改进建议：`;
+            input.focus();
+        }
+        showToast(`已将「${label}」的图片添加到对话`);
+    } else {
+        const input = document.getElementById('chatInput');
+        if (input) {
+            input.value = `针对草稿「${label}」：` + input.value;
+            input.focus();
+        }
     }
+}
+
+async function draftMenuMoveToUncategorized(draftId, type, groupId) {
+    closeDraftMenu();
+    const group = _groupsOfType(type).find(g => g.id === groupId);
+    if (!group) return;
+    const draft = (group.drafts || []).find(d => d.id === draftId);
+    if (!draft) return;
+    // 从原分组移除
+    group.drafts = group.drafts.filter(d => d.id !== draftId);
+    // 添加到未归类素材
+    const mediaType = draft.mediaType || 'image';
+    state.assets.unshift({
+        id: `ast-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+        name: draft.label || '未命名素材',
+        type: mediaType,
+        isBound: false,
+        url: draft.imgUrl || draft.videoUrl || ''
+    });
+    if (state.selectedDraftId === draftId) state.selectedDraftId = group.drafts[0]?.id || '';
+    renderLeftContent();
+    renderUncategorizedAssets();
+    updateMiddlePreview();
+    await persistBoard();
+    showToast('已移除到未归类素材');
 }
 
 async function draftMenuDelete(draftId, type, groupId) {
@@ -573,19 +863,28 @@ function updateMiddlePreview() {
                     <span class="gen-elapsed" data-gen-start="${activeGen.start}">0.0s</span></p>
             </div>`;
     } else if (currentDraft.mediaType === 'image') {
-        mediaViewer.innerHTML = `<img src="${currentDraft.imgUrl}" alt="Preview Image" class="max-h-full rounded-lg shadow-xl">`;
+        if (currentDraft.imgUrl) {
+            mediaViewer.innerHTML = `<img src="${currentDraft.imgUrl}" alt="Preview Image" class="max-h-full rounded-lg shadow-xl" oncontextmenu="showPreviewReplaceMenu(event)">`;
+        } else {
+            mediaViewer.innerHTML = `
+                <div class="preview-upload-placeholder" onclick="triggerPreviewUpload()">
+                    <i data-lucide="cloud-upload" class="w-12 h-12 mx-auto mb-3 opacity-60"></i>
+                    <p class="text-sm font-semibold text-gray-300">上传</p>
+                    <p class="text-xs text-gray-500 mt-1">拖拽 / 粘贴 / 点击上传</p>
+                </div>`;
+        }
     } else if (currentDraft.mediaType === 'video') {
         if (currentDraft.videoUrl) {
             mediaViewer.innerHTML = `
-                <video src="${currentDraft.videoUrl}" controls autoplay loop class="max-h-full rounded-lg shadow-xl"></video>
+                <video src="${currentDraft.videoUrl}" controls autoplay loop class="max-h-full rounded-lg shadow-xl" oncontextmenu="showPreviewReplaceMenu(event)"></video>
             `;
         } else {
             mediaViewer.innerHTML = `
-                <div class="text-center text-purple-400">
-                    <i data-lucide="loader" class="w-10 h-10 animate-spin mx-auto mb-2"></i>
-                    <p class="text-xs">尚未生成视频，点击右上角「生成视频」提交任务</p>
-                </div>
-            `;
+                <div class="preview-upload-placeholder" onclick="triggerPreviewUpload()">
+                    <i data-lucide="cloud-upload" class="w-12 h-12 mx-auto mb-3 opacity-60"></i>
+                    <p class="text-sm font-semibold text-gray-300">上传</p>
+                    <p class="text-xs text-gray-500 mt-1">拖拽 / 粘贴 / 点击上传</p>
+                </div>`;
         }
     } else if (currentDraft.mediaType === 'audio') {
         mediaViewer.innerHTML = `
@@ -814,18 +1113,23 @@ function bindDraftApiControls(draft) {
 // 提示词收缩与展开
 function toggleCollapsePrompt() {
     state.isPromptCollapsed = !state.isPromptCollapsed;
-    const promptInput = document.getElementById('detailedPromptInput');
-    const collapseText = document.getElementById('collapseText');
+    const collapseArea = document.getElementById('promptCollapseArea');
+    const toggleBar = document.getElementById('promptToggleBar');
     const collapseIcon = document.getElementById('collapseIcon');
+    const previewBottom = document.getElementById('previewBottom');
 
     if (state.isPromptCollapsed) {
-        promptInput.style.display = 'none';
-        collapseText.innerText = '展开提示词';
-        collapseIcon.setAttribute('data-lucide', 'chevron-down');
-    } else {
-        promptInput.style.display = 'block';
-        collapseText.innerText = '收缩提示词 (只看画面)';
+        collapseArea.classList.add('hidden');
+        toggleBar.classList.add('collapsed');
         collapseIcon.setAttribute('data-lucide', 'chevron-up');
+        previewBottom.style.height = 'auto';
+        previewBottom.style.flex = 'none';
+    } else {
+        collapseArea.classList.remove('hidden');
+        toggleBar.classList.remove('collapsed');
+        collapseIcon.setAttribute('data-lucide', 'chevron-down');
+        previewBottom.style.height = '280px';
+        previewBottom.style.flex = 'none';
     }
     lucide.createIcons();
 }
@@ -836,14 +1140,31 @@ function renderRightChat() {
     if (!feed) return;
 
     const lastIdx = state.chatMessages.length - 1;
-    feed.innerHTML = state.chatMessages.map((msg, idx) => `
+    feed.innerHTML = state.chatMessages.map((msg, idx) => msg.docCard ? `
         <div class="chat-msg ${msg.sender}">
+            <div class="doc-card" onclick="openDocsPanel('${escapeHtml(msg.docCard).replace(/'/g, "\\'")}')">
+                <i data-lucide="file-text" class="w-4 h-4"></i>
+                <span class="doc-card-name">${escapeHtml(msg.docCard)}</span>
+                <span class="doc-card-status">已完成</span>
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5 opacity-50"></i>
+            </div>
+        </div>` : `
+        <div class="chat-msg ${msg.sender}">
+            ${msg.confirm ? `
+            <div class="stage-card">
+                <div class="stage-card-header" onclick="this.parentElement.classList.toggle('expanded')">
+                    <i data-lucide="check-circle" class="w-4 h-4 stage-check"></i>
+                    <span class="stage-card-title">阶段完成</span>
+                    ${msg.appliedActions ? `<span class="stage-card-badge">已执行 ${msg.appliedActions} 个操作</span>` : ''}
+                    <i data-lucide="chevron-down" class="w-3.5 h-3.5 stage-arrow"></i>
+                </div>
+                <div class="stage-card-body">${escapeHtml(msg.confirm)}</div>
+            </div>` : ''}
             <span class="msg-author">${msg.sender === 'user' ? '你' : '导演 Agent'}</span>
             <div class="chat-bubble">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>
             ${msg.meta ? `<div class="msg-meta">${escapeHtml(msg.meta)}</div>` : ''}
             ${(msg.confirm && idx === lastIdx) ? `
                 <div class="confirm-bar">
-                    <div class="confirm-text">${escapeHtml(msg.confirm)}</div>
                     <div class="confirm-actions">
                         <button class="confirm-btn primary" onclick="sendAgentMessage('确认')">确认，继续</button>
                         <button class="confirm-btn" onclick="document.getElementById('chatInput')?.focus()">我要调整</button>
@@ -853,6 +1174,7 @@ function renderRightChat() {
     `).join('');
 
     feed.scrollTop = feed.scrollHeight;
+    lucide.createIcons();
 }
 
 // 在聊天流末尾追加一个"流式中"的 Agent 气泡，返回操作句柄
@@ -1010,7 +1332,12 @@ async function sendAgentMessage(forcedText = '') {
                         sender: 'agent',
                         text: String(p.text || '').trim() || '（空回复）',
                         meta: metaParts.join(' · '),
-                        confirm: p.confirmation || ''
+                        confirm: p.confirmation || '',
+                        appliedActions: p.applied_actions || 0
+                    });
+                    // 本轮产出的文档 → 可点击的"已完成"卡片
+                    (p.documents_written || []).forEach(name => {
+                        state.chatMessages.push({sender: 'agent', docCard: name, text: ''});
                     });
                     if (p.state) refreshStateFromBackend(p.state);
                     renderRightChat();
@@ -1038,6 +1365,9 @@ function setAgentBusy(busy) {
     const input = document.getElementById('chatInput');
     if (button) button.disabled = busy;
     if (input) input.disabled = busy;
+    // 状态圆点：推理中绿色闪烁，停止时灰色
+    const dot = document.getElementById('agentStatusDot');
+    if (dot) dot.classList.toggle('busy', busy);
 }
 
 function buildAgentContext() {
@@ -1395,9 +1725,6 @@ function handleChatKeyDown(e) {
 
 // 手动新建草稿卡片 (+)
 function addNewDraftCard(groupId, type) {
-    const promptText = prompt('请输入新草稿卡片的生成要求或提示词：');
-    if (!promptText) return;
-
     const newId = `draft-${Date.now()}`;
 
     if (type === 'keyElement') {
@@ -1408,9 +1735,9 @@ function addNewDraftCard(groupId, type) {
                 label: `自定义草稿`,
                 tag: '手动',
                 mediaType: 'image',
-                imgUrl: 'https://picsum.photos/id/1069/1200/800',
-                prompt: promptText,
-                model: 'Flux.1',
+                imgUrl: '',
+                prompt: '',
+                model: '',
                 aspectRatio: '16:9'
             });
         }
@@ -1423,15 +1750,27 @@ function addNewDraftCard(groupId, type) {
                 tag: '手动',
                 mediaType: 'video',
                 videoUrl: '',
-                prompt: promptText,
+                prompt: '',
                 mode: '图生视频',
-                model: 'Sora'
+                model: ''
+            });
+        }
+    } else if (type === 'audio') {
+        const item = state.audioItems.find(a => a.id === groupId);
+        if (item) {
+            item.drafts.push({
+                id: newId,
+                label: `自定义音频`,
+                tag: '手动',
+                mediaType: 'audio',
+                prompt: ''
             });
         }
     }
 
     renderLeftContent();
     selectDraftCard(newId, type);
+    persistBoard();
 }
 
 function adjustDraftCardPrompt(groupId, text) {
@@ -1546,6 +1885,7 @@ function applyProjectState(serverState) {
     state.shots = serverState.shots || [];
     state.audioItems = serverState.audioItems || [];
     state.assets = serverState.assets || [];
+    state.documents = serverState.documents || [];
     state.chatMessages = serverState.chatMessages || [];
     state.selectedDraftId = '';
     state.selectedType = 'keyElement';
@@ -1733,8 +2073,22 @@ function populateApiControls() {
         localStorage.setItem('studioAgentProvider', providerSelect.value);
         const model = populateModelSelect(modelSelect, providerSelect.value, 'chat', '');
         localStorage.setItem('studioAgentModel', model);
+        // 同步更新 pill 标签
+        const modelLabel = document.getElementById('modelPillLabel');
+        if (modelLabel) modelLabel.textContent = model || '模型';
     };
     if (modelSelect) modelSelect.onchange = () => localStorage.setItem('studioAgentModel', modelSelect.value);
+
+    // 初始化 pill 标签显示当前选中值
+    const apiLabel = document.getElementById('apiPillLabel');
+    const modelLabel = document.getElementById('modelPillLabel');
+    if (apiLabel && providerSelect && providerSelect.value) {
+        const selectedOpt = providerSelect.options[providerSelect.selectedIndex];
+        if (selectedOpt) apiLabel.textContent = selectedOpt.text;
+    }
+    if (modelLabel && modelSelect && modelSelect.value) {
+        modelLabel.textContent = modelSelect.value;
+    }
 
     const skillSelect = document.getElementById('agentSkillSelect');
     if (skillSelect && state.skills.length) {
@@ -2171,15 +2525,29 @@ function renderPendingAttachments() {
         return;
     }
     container.style.display = 'flex';
-    container.innerHTML = state.pendingAttachments.map((att, idx) => `
-        <div class="attachment-chip">
-            <i data-lucide="${att.type === 'image' ? 'image' : att.type === 'video' ? 'video' : 'file-text'}" class="w-3.5 h-3.5"></i>
-            <span class="attachment-name">${escapeHtml(att.name)}</span>
-            <button class="attachment-remove" onclick="removePendingAttachment(${idx})" title="移除">
-                <i data-lucide="x" class="w-3 h-3"></i>
-            </button>
-        </div>
-    `).join('');
+    container.innerHTML = state.pendingAttachments.map((att, idx) => {
+        if (att.type === 'image' && att.url) {
+            return `
+                <div class="attachment-chip attachment-img-chip">
+                    <div class="attachment-thumb-wrap">
+                        <img src="${att.url}" class="attachment-thumb" alt="${escapeHtml(att.name)}">
+                        <div class="attachment-hover-preview"><img src="${att.url}" alt="preview"></div>
+                    </div>
+                    <span class="attachment-name">${escapeHtml(att.name)}</span>
+                    <button class="attachment-remove" onclick="removePendingAttachment(${idx})" title="移除">
+                        <i data-lucide="x" class="w-3 h-3"></i>
+                    </button>
+                </div>`;
+        }
+        return `
+            <div class="attachment-chip">
+                <i data-lucide="${att.type === 'video' ? 'video' : 'file-text'}" class="w-3.5 h-3.5"></i>
+                <span class="attachment-name">${escapeHtml(att.name)}</span>
+                <button class="attachment-remove" onclick="removePendingAttachment(${idx})" title="移除">
+                    <i data-lucide="x" class="w-3 h-3"></i>
+                </button>
+            </div>`;
+    }).join('');
     lucide.createIcons();
 }
 
@@ -2226,6 +2594,7 @@ function refreshStateFromBackend(serverState) {
     if (Array.isArray(serverState.shots)) state.shots = serverState.shots;
     if (Array.isArray(serverState.audioItems)) state.audioItems = serverState.audioItems;
     if (Array.isArray(serverState.assets)) state.assets = serverState.assets;
+    if (Array.isArray(serverState.documents)) state.documents = serverState.documents;
 
     // 确保当前选中的 draft 仍然存在，否则选中第一个
     const currentStillExists = findDraftRecord(state.selectedDraftId, state.selectedType);
@@ -2349,4 +2718,436 @@ function subscribeWorkflowEvents() {
         const btn = document.getElementById('workflowRunBtn');
         if (btn) btn.disabled = false;
     };
+}
+
+// ========== 双模式切换：影视Agent / 画布 ==========
+
+let _canvasLoaded = false;
+
+let _apiSettingsLoaded = false;
+
+function switchWorkMode(mode) {
+    document.body.classList.toggle('mode-canvas', mode === 'canvas' || mode === 'api');
+    document.body.classList.toggle('mode-api', mode === 'api');
+    document.body.classList.remove('nav-hidden');
+    document.getElementById('modeAgentBtn').classList.toggle('active', mode === 'agent');
+    document.getElementById('modeCanvasBtn').classList.toggle('active', mode === 'canvas');
+    document.getElementById('modeApiBtn').classList.toggle('active', mode === 'api');
+
+    // 画布/API模式下显示导航箭头
+    const isOverlayMode = mode === 'canvas' || mode === 'api';
+    document.getElementById('navToggleArrow').classList.toggle('hidden', !isOverlayMode);
+    document.getElementById('agentToggleHandle').classList.toggle('hidden', mode !== 'canvas');
+
+    // API 配置层显隐
+    document.getElementById('apiSettingsLayer').classList.toggle('hidden', mode !== 'api');
+    document.getElementById('canvasLayer').classList.toggle('hidden', mode !== 'canvas');
+
+    const colRight = document.getElementById('colRight');
+
+    // 切回 agent 模式时恢复侧栏
+    if (mode === 'agent') {
+        colRight.classList.remove('collapsed');
+        colRight.style.transform = '';
+        _updateAgentToggleIcon(false);
+    }
+
+    // API 模式下隐藏 Agent 侧栏
+    if (mode === 'api') {
+        colRight.classList.add('collapsed');
+    }
+
+    // 导航箭头重置为向上（导航栏可见）
+    _updateNavToggleIcon(false);
+
+    // 画布 iframe 懒加载
+    if (mode === 'canvas' && !_canvasLoaded) {
+        document.getElementById('canvasIframe').src = 'http://localhost:3000';
+        _canvasLoaded = true;
+    }
+
+    // API 配置 iframe 懒加载
+    if (mode === 'api' && !_apiSettingsLoaded) {
+        document.getElementById('apiSettingsIframe').src = '/static/api-settings.html';
+        _apiSettingsLoaded = true;
+    }
+}
+
+// 主题切换（使用 StudioTheme API 统一管理）
+function toggleThemeMode() {
+    const isDark = document.documentElement.classList.contains('dark');
+    const next = isDark ? 'light' : 'dark';
+    document.documentElement.classList.toggle('dark', next === 'dark');
+    document.documentElement.classList.toggle('light', next === 'light');
+    if (window.StudioTheme) window.StudioTheme.set(next);
+    const icon = document.getElementById('themeToggleIcon');
+    icon.setAttribute('data-lucide', next === 'dark' ? 'moon' : 'sun');
+    if (window.lucide) lucide.createIcons({ nodes: [icon] });
+    localStorage.setItem('theme', next);
+}
+
+function toggleAgentSidebar() {
+    const col = document.getElementById('colRight');
+    col.classList.toggle('collapsed');
+    const collapsed = col.classList.contains('collapsed');
+    _updateAgentToggleIcon(collapsed);
+}
+
+// 画布模式：在侧栏左边缘检测拖拽（无独立热区元素，始终贴合边框）
+function initCanvasSplitter() {
+    const colRight = document.getElementById('colRight');
+    const EDGE_ZONE = 8; // 左边缘检测区域宽度(px)
+    let startX = 0;
+    let startWidth = 0;
+
+    colRight.addEventListener('mousedown', (e) => {
+        // 仅画布模式且侧栏展开时生效
+        if (!document.body.classList.contains('mode-canvas')) return;
+        if (colRight.classList.contains('collapsed')) return;
+
+        // 检测是否点击在左边缘区域
+        const rect = colRight.getBoundingClientRect();
+        if (e.clientX - rect.left > EDGE_ZONE) return;
+
+        e.preventDefault();
+        startX = e.clientX;
+        startWidth = colRight.offsetWidth;
+        document.body.classList.add('dragging-splitter');
+
+        const onMove = (ev) => {
+            const deltaX = ev.clientX - startX;
+            const newWidth = Math.max(280, Math.min(700, startWidth - deltaX));
+            colRight.style.width = newWidth + 'px';
+        };
+
+        const onUp = () => {
+            document.body.classList.remove('dragging-splitter');
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    });
+}
+
+function toggleHeaderVisibility() {
+    document.body.classList.toggle('nav-hidden');
+    _updateNavToggleIcon(document.body.classList.contains('nav-hidden'));
+}
+
+// 输入区与消息区之间的拖拽调整
+function initChatResizeHandle() {
+    const handle = document.getElementById('chatResizeHandle');
+    const inputArea = document.getElementById('chatInputArea');
+    let startY = 0;
+    let startHeight = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        startY = e.clientY;
+        startHeight = inputArea.offsetHeight;
+        handle.classList.add('dragging');
+
+        const onMove = (ev) => {
+            const deltaY = ev.clientY - startY;
+            const newHeight = Math.max(100, Math.min(400, startHeight - deltaY));
+            inputArea.style.height = newHeight + 'px';
+            inputArea.style.flexShrink = '0';
+        };
+
+        const onUp = () => {
+            handle.classList.remove('dragging');
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    });
+}
+
+// 底部工具栏 pill 按钮弹出下拉菜单
+function togglePillDropdown(type) {
+    // 关闭已有弹出
+    const existing = document.querySelector('.pill-dropdown');
+    if (existing) { existing.remove(); return; }
+
+    const btnMap = { api: 'apiPillBtn', model: 'modelPillBtn', skill: 'skillPillBtn', asset: 'assetPillBtn' };
+    const selectMap = { api: 'agentProviderSelect', model: 'agentModelSelect', skill: 'agentSkillSelect', asset: 'agentAssetSelect' };
+    const select = document.getElementById(selectMap[type]);
+    if (!select) return;
+
+    const btn = document.getElementById(btnMap[type]);
+    const rect = btn.getBoundingClientRect();
+    const parentRect = btn.closest('.col-right').getBoundingClientRect();
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'pill-dropdown';
+    dropdown.style.cssText = `position:absolute; bottom:${parentRect.bottom - rect.top + 6}px; left:${rect.left - parentRect.left}px; z-index:100;`;
+
+    // 素材库特殊处理：模式选择 + 打开熊布素材库面板
+    if (type === 'asset') {
+        const currentMode = document.getElementById('agentAssetSelect').value;
+        let html = '';
+        html += `<div class="pill-option${currentMode === 'all' ? ' selected' : ''}" data-asset-mode="all">素材库</div>`;
+        html += `<div class="pill-option${currentMode === 'bound' ? ' selected' : ''}" data-asset-mode="bound">仅已绑定素材</div>`;
+        html += '<div class="pill-dropdown-section"></div>';
+        html += '<div class="pill-option" data-action="open-library">📂 打开画布素材库</div>';
+        dropdown.innerHTML = html;
+        btn.closest('.col-right').appendChild(dropdown);
+
+        dropdown.addEventListener('click', (e) => {
+            const opt = e.target.closest('.pill-option');
+            if (!opt) return;
+            const mode = opt.dataset.assetMode;
+            const action = opt.dataset.action;
+            if (mode) {
+                const sel = document.getElementById('agentAssetSelect');
+                sel.value = mode;
+                sel.dispatchEvent(new Event('change'));
+                document.getElementById('assetPillLabel').textContent = mode === 'all' ? '素材库' : '已绑定';
+            } else if (action === 'open-library') {
+                openAssetLibrary();
+            }
+            dropdown.remove();
+        });
+        _bindDropdownClose(dropdown, btn);
+        return;
+    }
+
+    const options = Array.from(select.options).filter(o => o.value || type === 'api').map(o =>
+        `<div class="pill-option${select.value === o.value ? ' selected' : ''}" data-val="${o.value}">${o.text || o.value}</div>`
+    ).join('');
+    dropdown.innerHTML = options || '<div class="pill-option disabled">请先选择 API</div>';
+
+    btn.closest('.col-right').appendChild(dropdown);
+
+    // 点击选项
+    dropdown.addEventListener('click', (e) => {
+        const opt = e.target.closest('.pill-option');
+        if (!opt || opt.classList.contains('disabled')) return;
+        const val = opt.dataset.val;
+        select.value = val;
+        select.dispatchEvent(new Event('change'));
+        const labelMap = { api: 'apiPillLabel', model: 'modelPillLabel', skill: 'skillPillLabel', asset: 'assetPillLabel' };
+        document.getElementById(labelMap[type]).textContent = opt.textContent;
+        // 切换 API 后自动更新模型下拉框显示
+        if (type === 'api') {
+            const modelSelect = document.getElementById('agentModelSelect');
+            const modelLabel = document.getElementById('modelPillLabel');
+            if (modelSelect && modelLabel) {
+                modelLabel.textContent = modelSelect.value || '模型';
+            }
+        }
+        dropdown.remove();
+    });
+
+    _bindDropdownClose(dropdown, btn);
+}
+
+// 素材库下拉：从熊布加载素材列表
+async function _loadCanvasAssets(dropdown) {
+    try {
+        const resp = await fetch('/api/canvas-assets');
+        const data = await resp.json();
+        const online = data.canvas_online;
+        const library = data.library;
+
+        let html = '<div class="pill-dropdown-section">模式</div>';
+        html += '<div class="pill-option" data-asset-mode="all">全部素材</div>';
+        html += '<div class="pill-option" data-asset-mode="bound">仅已绑定素材</div>';
+
+        if (!online || !library) {
+            html += '<div class="pill-dropdown-section">熊布素材库</div>';
+            html += `<div class="pill-option disabled">${online ? '素材库为空' : '熊布离线，无法加载'}</div>`;
+        } else {
+            // 解析熊布素材库结构: libraries → categories → items
+            const libraries = library.libraries || [];
+            const activeId = library.active_library_id || '';
+            const activeLib = libraries.find(l => l.id === activeId) || libraries[0];
+            const categories = (activeLib && activeLib.categories) || library.categories || [];
+
+            let totalItems = 0;
+            categories.forEach(cat => {
+                const items = cat.items || [];
+                if (items.length === 0) return;
+                html += `<div class="pill-dropdown-section">${cat.name || '未分类'}</div>`;
+                items.slice(0, 10).forEach(item => {
+                    totalItems++;
+                    const name = item.name || item.id || '未命名素材';
+                    const url = item.url || item.path || '';
+                    html += `<div class="pill-option" data-asset-url="${url}" data-asset-name="${name}">${name}</div>`;
+                });
+                if (items.length > 10) {
+                    html += `<div class="pill-option disabled">… 还有 ${items.length - 10} 个</div>`;
+                }
+            });
+
+            if (totalItems === 0) {
+                html += '<div class="pill-dropdown-section">熊布素材库</div>';
+                html += '<div class="pill-option disabled">素材库为空，请先在熊布中添加素材</div>';
+            }
+        }
+        dropdown.innerHTML = html;
+
+        // 点击事件
+        dropdown.addEventListener('click', (e) => {
+            const opt = e.target.closest('.pill-option');
+            if (!opt || opt.classList.contains('disabled')) return;
+            const mode = opt.dataset.assetMode;
+            const assetUrl = opt.dataset.assetUrl;
+            if (mode) {
+                const sel = document.getElementById('agentAssetSelect');
+                sel.value = mode;
+                sel.dispatchEvent(new Event('change'));
+                document.getElementById('assetPillLabel').textContent = mode === 'all' ? '素材库' : '已绑定';
+            } else if (assetUrl) {
+                _attachCanvasAsset(opt.dataset.assetName, assetUrl);
+            }
+            dropdown.remove();
+        });
+    } catch (err) {
+        dropdown.innerHTML = '<div class="pill-option disabled">加载失败: ' + err.message + '</div>';
+    }
+}
+
+// 将熊布素材作为附件添加到输入框
+function _attachCanvasAsset(name, url) {
+    if (!state.pendingAttachments) state.pendingAttachments = [];
+    state.pendingAttachments.push({
+        id: 'canvas-' + Date.now(),
+        name: name,
+        url: url,
+        type: 'image'
+    });
+    renderPendingAttachments();
+    showToast(`已添加熊布素材: ${name}`);
+}
+
+// 下拉菜单点击外部关闭
+function _bindDropdownClose(dropdown, btn) {
+    setTimeout(() => {
+        const closeHandler = (ev) => {
+            if (!dropdown.contains(ev.target) && !btn.contains(ev.target)) {
+                dropdown.remove();
+                document.removeEventListener('mousedown', closeHandler);
+            }
+        };
+        document.addEventListener('mousedown', closeHandler);
+    }, 0);
+}
+
+// 素材库模态面板：自建选择器
+let _assetPickerItems = [];
+let _assetPickerSelected = new Set();
+let _assetPickerTab = 'image';
+
+function openAssetLibrary() {
+    const modal = document.getElementById('assetLibraryModal');
+    modal.classList.remove('hidden');
+    _assetPickerSelected.clear();
+    _updateAssetFooter();
+    switchAssetTab(_assetPickerTab);
+}
+
+function closeAssetLibrary() {
+    document.getElementById('assetLibraryModal').classList.add('hidden');
+}
+
+function switchAssetTab(type) {
+    _assetPickerTab = type;
+    document.querySelectorAll('.asset-tab').forEach(t => t.classList.toggle('active', t.dataset.type === type));
+    _assetPickerSelected.clear();
+    _updateAssetFooter();
+    _loadAssetPicker(type);
+}
+
+async function _loadAssetPicker(type) {
+    const container = document.getElementById('assetGridContainer');
+    container.innerHTML = '<div class="asset-loading">加载中...</div>';
+    try {
+        const resp = await fetch(`/api/asset-picker?type=${type}`);
+        const data = await resp.json();
+        if (!data.canvas_online) {
+            container.innerHTML = '<div class="asset-empty"><span>熊布离线，无法加载素材库</span><span style="font-size:11px;color:var(--text-dim)">请确认熊布服务已启动 (localhost:3000)</span></div>';
+            return;
+        }
+        _assetPickerItems = data.items || [];
+        _renderAssetGrid(container, _assetPickerItems);
+    } catch (err) {
+        container.innerHTML = `<div class="asset-empty"><span>加载失败: ${err.message}</span></div>`;
+    }
+}
+
+function _renderAssetGrid(container, items) {
+    if (!items.length) {
+        container.innerHTML = '<div class="asset-empty"><span>素材库为空</span><span style="font-size:11px;color:var(--text-dim)">请先在熊布中添加素材</span></div>';
+        return;
+    }
+    // 按 category 分组
+    const groups = {};
+    items.forEach((item, idx) => {
+        const cat = item.category || '未分类';
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push({ ...item, _idx: idx });
+    });
+
+    let html = '';
+    for (const [cat, catItems] of Object.entries(groups)) {
+        html += `<div class="asset-category-title">${cat} (${catItems.length})</div>`;
+        html += '<div class="asset-grid">';
+        catItems.forEach(item => {
+            const thumb = item.thumb || item.url || '';
+            const name = item.name || '未命名';
+            html += `<div class="asset-card" data-idx="${item._idx}" onclick="_toggleAssetCard(this, ${item._idx})" title="${name}">`;
+            if (thumb) {
+                html += `<img src="${thumb}" alt="${name}" loading="lazy" onerror="this.style.display='none'">`;
+            }
+            html += `<div class="asset-card-name">${name}</div></div>`;
+        });
+        html += '</div>';
+    }
+    container.innerHTML = html;
+}
+
+function _toggleAssetCard(el, idx) {
+    if (_assetPickerSelected.has(idx)) {
+        _assetPickerSelected.delete(idx);
+        el.classList.remove('selected');
+    } else {
+        _assetPickerSelected.add(idx);
+        el.classList.add('selected');
+    }
+    _updateAssetFooter();
+}
+
+function _updateAssetFooter() {
+    const count = _assetPickerSelected.size;
+    document.getElementById('assetSelectedCount').textContent = `已选 ${count} 个`;
+    document.getElementById('assetConfirmBtn').disabled = count === 0;
+}
+
+function confirmAssetSelection() {
+    _assetPickerSelected.forEach(idx => {
+        const item = _assetPickerItems[idx];
+        if (item && item.url) {
+            _attachCanvasAsset(item.name || '素材', item.url);
+        }
+    });
+    closeAssetLibrary();
+}
+
+// 侧栏箭头：展开时向右（向里），收缩时向左（向外）
+function _updateAgentToggleIcon(collapsed) {
+    const icon = document.getElementById('agentToggleIcon');
+    icon.setAttribute('data-lucide', collapsed ? 'chevron-left' : 'chevron-right');
+    if (window.lucide) lucide.createIcons({ nodes: [icon] });
+}
+
+// 导航箭头：导航栏可见时向上（点击隐藏），隐藏时向下（点击呼出）
+function _updateNavToggleIcon(hidden) {
+    const icon = document.getElementById('navToggleIcon');
+    icon.setAttribute('data-lucide', hidden ? 'chevron-down' : 'chevron-up');
+    if (window.lucide) lucide.createIcons({ nodes: [icon] });
 }

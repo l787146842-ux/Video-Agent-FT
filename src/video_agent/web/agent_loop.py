@@ -8,16 +8,18 @@ LLM 可以在 studio-actions 末尾输出 {"action": "continue"} 请求下一轮
 llm_call / context_builder 以 callable 注入，便于单元测试。
 """
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Tuple, Union
 
 from loguru import logger
 
+from src.video_agent.config import settings
 from src.video_agent.web.actions import StudioActionExecutor
 
-MAX_STEPS = 3
+MAX_STEPS = settings.max_steps
 
-# llm_call(system_prompt, messages) -> (content, finish_reason)
-LlmCall = Callable[[str, List[Dict[str, Any]]], Awaitable[Tuple[str, str]]]
+# llm_call(system_prompt, messages) -> (content, finish_reason, fc_applied)
+# fc_applied: FC 路径已执行的 tool 数量（可选，默认 0）
+LlmCall = Callable[[str, List[Dict[str, Any]]], Awaitable[Tuple[str, str, int]]]
 # context_builder() -> 最新的 system prompt（协议 + 实时状态）
 ContextBuilder = Callable[[], str]
 
@@ -32,7 +34,7 @@ class AgentLoopResult:
     confirmation: str = ""
 
 
-def _split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool, str]:
+def split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool, str]:
     """分离流程信号，返回 (可执行的 actions, 是否请求下一轮, 确认请求文案)"""
     executable: List[Dict[str, Any]] = []
     wants_continue = False
@@ -48,8 +50,12 @@ def _split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]],
     return executable, wants_continue, confirmation
 
 
+# 向后兼容别名
+_split_actions = split_actions
+
+
 async def run_agent_loop(
-    user_text: str,
+    user_text: Union[str, List[Dict[str, Any]]],
     *,
     llm_call: LlmCall,
     context_builder: ContextBuilder,
@@ -58,7 +64,9 @@ async def run_agent_loop(
     max_steps: int = MAX_STEPS,
     on_event=None,
 ) -> AgentLoopResult:
-    """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}"""
+    """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
+    user_text 可以是纯文本 str，也可以是多模态 content parts 列表（含 image_url）。
+    """
 
     async def emit(event: Dict[str, Any]) -> None:
         if on_event:
@@ -75,13 +83,28 @@ async def run_agent_loop(
         await emit({"type": "step_started", "step": step, "max_steps": max_steps})
         system_prompt = context_builder()  # 每轮刷新，让 LLM 看到上一轮执行后的最新状态
 
-        content, finish_reason = await llm_call(system_prompt, messages)
+        content, finish_reason, fc_applied = await llm_call(system_prompt, messages)
 
         if finish_reason == "length":
             result.warnings.append(
                 f"第 {step} 轮回复被 max_tokens 截断，studio-actions 可能不完整"
             )
 
+        # FC 路径：tool_calls 已在 llm_call 内部执行，跳过文本解析
+        if fc_applied > 0:
+            result.applied_actions += fc_applied
+            await emit({"type": "actions_applied", "step": step, "count": fc_applied})
+            visible = content.strip()
+            if visible:
+                result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
+            logger.info(
+                f"[AgentLoop] step={step} fc_applied={fc_applied} "
+                f"confirm=False finish={finish_reason or '-'}"
+            )
+            # FC 路径不支持 continue/confirmation 信号（待后续增强）
+            break
+
+        # 文本解析路径（非 FC 模型的 fallback）
         actions = executor.parse_actions_from_reply(content)
         if not actions and executor.has_action_block(content):
             result.warnings.append(

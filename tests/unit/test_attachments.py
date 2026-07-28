@@ -2,7 +2,7 @@
 import pytest
 
 import src.video_agent.web.routes.agent as agent_route
-from src.video_agent.web.state_service import StudioStateService
+from src.video_agent.state.manager import StateManager
 
 
 @pytest.fixture
@@ -68,15 +68,15 @@ def test_pdf_capability_notice(assets_dir):
 
 
 def test_bind_attachments_persists(tmp_path):
-    svc = StudioStateService(base_dir=tmp_path)
+    svc = StateManager(str(tmp_path))
     agent_route._bind_attachments(svc, [
         {"id": "ast-1", "name": "story.md", "url": "/workspace/assets/story.md", "kind": "doc"},
     ])
-    asset = next(a for a in svc.state["assets"] if a["url"] == "/workspace/assets/story.md")
+    asset = next(a for a in svc.state_dict["assets"] if a["url"] == "/workspace/assets/story.md")
     assert asset["isBound"] is True
     assert asset["type"] == "doc"
     # 重复绑定不产生重复条目
     agent_route._bind_attachments(svc, [
         {"name": "story.md", "url": "/workspace/assets/story.md", "kind": "doc"},
     ])
-    assert sum(1 for a in svc.state["assets"] if a["url"] == "/workspace/assets/story.md") == 1
+    assert sum(1 for a in svc.state_dict["assets"] if a["url"] == "/workspace/assets/story.md") == 1

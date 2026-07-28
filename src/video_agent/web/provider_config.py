@@ -12,18 +12,16 @@ import json
 import os
 import re
 import threading
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
+import httpx
 from loguru import logger
 
+from src.video_agent.config import settings
 from src.video_agent.utils.fileio import atomic_write_text
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-API_DIR = PROJECT_ROOT / "API"
-PROVIDERS_FILE = DATA_DIR / "api_providers.json"
-ENV_FILE = API_DIR / ".env"
+from src.video_agent.utils.paths import DATA_DIR, API_DIR, PROVIDERS_FILE, ENV_FILE
 
 # 同时保护 providers 文件与 .env 文件的读写
 _config_lock = threading.Lock()
@@ -83,11 +81,83 @@ def save_api_providers(providers: List[Dict[str, Any]]) -> None:
     logger.info(f"[ProviderConfig] 已保存 {len(providers)} 个供应商配置")
 
 
+# ---------- 熊布配置共享（本地兜底 + 熊布增强） ----------
+
+# 缓存熊布 provider id 集合（路由判断用）
+_canvas_ids_cache: Optional[Set[str]] = None
+_canvas_ids_cache_time: float = 0.0
+
+
+def load_canvas_providers() -> List[Dict[str, Any]]:
+    """从熊布读取 provider 配置（HTTP 优先，文件兜底）。
+    任何异常均静默返回 []，不影响 Agent 正常运行。"""
+    # 1. 尝试 HTTP API
+    try:
+        resp = httpx.get(settings.canvas_providers_url, timeout=3.0, trust_env=False)
+        if resp.status_code == 200:
+            data = resp.json()
+            providers = data.get("providers", [])
+            if isinstance(providers, list) and providers:
+                logger.debug(f"[ProviderConfig] 从熊布 HTTP 读取到 {len(providers)} 个 provider")
+                return providers
+    except Exception:
+        pass  # 熊布不在线，静默跳过
+
+    # 2. 兜底：读磁盘文件
+    try:
+        canvas_file = Path(settings.canvas_providers_file)
+        if canvas_file.exists():
+            data = json.loads(canvas_file.read_text(encoding="utf-8"))
+            if isinstance(data, list) and data:
+                logger.debug(f"[ProviderConfig] 从熊布文件读取到 {len(data)} 个 provider")
+                return data
+    except Exception:
+        pass  # 文件不存在或损坏，静默跳过
+
+    return []
+
+
+def load_merged_providers() -> List[Dict[str, Any]]:
+    """合并本地 + 熊布的 provider 列表（按 id 去重，本地优先）。
+    同时更新 canvas_provider_ids 缓存供路由层使用。"""
+    global _canvas_ids_cache, _canvas_ids_cache_time
+
+    local = load_api_providers()
+    canvas = load_canvas_providers()
+
+    local_ids = {p.get("id") for p in local}
+    merged = list(local)
+
+    # 熊布中 id 不在本地的追加到末尾，并标记来源
+    for p in canvas:
+        pid = p.get("id", "")
+        if pid and pid not in local_ids:
+            item = dict(p)
+            item["_source"] = "canvas"
+            merged.append(item)
+
+    # 更新缓存（路由层用于判断 provider 是否熊布可处理）
+    _canvas_ids_cache = {p.get("id") for p in canvas if p.get("id")}
+    _canvas_ids_cache_time = time.time()
+
+    return merged
+
+
+def get_canvas_provider_ids() -> Set[str]:
+    """获取熊布的 provider id 集合（带缓存，供路由层判断用）"""
+    global _canvas_ids_cache, _canvas_ids_cache_time
+    cache_ttl = settings.canvas_health_cache_seconds
+    if _canvas_ids_cache is None or (time.time() - _canvas_ids_cache_time) > cache_ttl:
+        # 重新加载以刷新缓存
+        load_merged_providers()
+    return _canvas_ids_cache or set()
+
+
 def get_provider_config(provider_id: str) -> Optional[Dict[str, Any]]:
-    """按 id 查找单个供应商配置"""
+    """按 id 查找单个供应商配置（从合并列表中查找）"""
     if not provider_id:
         return None
-    for p in load_api_providers():
+    for p in load_merged_providers():
         if p.get("id") == provider_id:
             return p
     return None
@@ -130,13 +200,43 @@ def read_env_keys() -> Dict[str, str]:
     return keys
 
 
+def _read_canvas_env_keys() -> Dict[str, str]:
+    """读取熊布的 API/.env 文件中的键值对（第三级 fallback）"""
+    keys: Dict[str, str] = {}
+    try:
+        canvas_env = Path(settings.canvas_env_file)
+        if canvas_env.exists():
+            for line in canvas_env.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    keys[k.strip()] = v.strip()
+    except Exception:
+        pass
+    return keys
+
+
 def get_api_key(provider_id: str) -> str:
-    """解析某供应商的 API Key：进程环境变量优先，其次 API/.env"""
+    """解析某供应商的 API Key：
+    1. 进程环境变量
+    2. Agent 本地 API/.env
+    3. 熊布 API/.env（仅对来源于熊布的 provider 启用）
+    """
     env_name = provider_key_env(provider_id)
     val = os.getenv(env_name, "")
     if val:
         return val
-    return read_env_keys().get(env_name, "")
+    val = read_env_keys().get(env_name, "")
+    if val:
+        return val
+    # 第三级：如果该 provider 来源于熊布，尝试读熊布的 .env
+    canvas_ids = get_canvas_provider_ids()
+    if provider_id in canvas_ids:
+        val = _read_canvas_env_keys().get(env_name, "")
+        if val:
+            logger.debug(f"[ProviderConfig] Key '{env_name}' 从熊布 .env 解析")
+            return val
+    return ""
 
 
 def resolve_api_key(api_key: str, provider_id: str) -> str:

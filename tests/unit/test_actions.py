@@ -2,12 +2,12 @@
 import pytest
 
 from src.video_agent.web.actions import StudioActionExecutor
-from src.video_agent.web.state_service import StudioStateService
+from src.video_agent.state.manager import StateManager
 
 
 @pytest.fixture
 def svc(tmp_path):
-    return StudioStateService(base_dir=tmp_path)
+    return StateManager(str(tmp_path))
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ def test_strip_action_blocks(executor):
 
 
 def test_add_group_with_draft(svc, executor):
-    before = len(svc.state["keyElements"])
+    before = len(svc.state_dict["keyElements"])
     applied = executor.execute([{
         "action": "add_group",
         "group_type": "keyElement",
@@ -50,7 +50,7 @@ def test_add_group_with_draft(svc, executor):
         "draft": {"label": "概念图", "prompt": "test prompt"},
     }])
     assert applied == 1
-    groups = svc.state["keyElements"]
+    groups = svc.state_dict["keyElements"]
     assert len(groups) == before + 1
     assert groups[-1]["title"] == "测试元素"
     assert groups[-1]["drafts"][0]["prompt"] == "test prompt"
@@ -65,7 +65,7 @@ def test_current_resolves_to_selected_draft(svc):
         "patch": {"tag": "选中测试"},
     }])
     assert applied == 1
-    drafts = svc.state["keyElements"][0]["drafts"]
+    drafts = svc.state_dict["keyElements"][0]["drafts"]
     assert drafts[1]["tag"] == "选中测试"
     assert drafts[0]["tag"] != "选中测试"
 
@@ -78,7 +78,7 @@ def test_current_without_selection_falls_back_to_first(svc):
         "patch": {"tag": "兜底"},
     }])
     assert applied == 1
-    assert svc.state["keyElements"][0]["drafts"][0]["tag"] == "兜底"
+    assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "兜底"
 
 
 def test_unknown_action_not_counted(executor):

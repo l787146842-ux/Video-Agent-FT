@@ -6022,3 +6022,14 @@ html.studio-theme-dark body .recommend-tag.recommend-free-tag svg {
         display:none !important;
     }
 }
+
+/* ---------- 熊布在线状态 & 来源标记 ---------- */
+.canvas-status-bar { margin-top:6px; display:flex; align-items:center; gap:8px; min-height:20px; }
+.canvas-status { font-size:11px; font-weight:700; letter-spacing:.02em; }
+.canvas-status.online { color:#16a34a; }
+.canvas-status.offline { color:var(--faint); }
+.canvas-status-hint { font-size:11px; color:var(--faint); font-weight:500; }
+.source-badge { display:inline-block; font-size:9px; font-weight:800; letter-spacing:.04em; padding:1px 5px; border-radius:4px; vertical-align:middle; margin-left:4px; }
+.source-badge.canvas { background:#dbeafe; color:#1d4ed8; }
+body.studio-theme-dark .source-badge.canvas,
+html.studio-theme-dark body .source-badge.canvas { background:#1e3a5f; color:#93c5fd; }

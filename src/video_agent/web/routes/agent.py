@@ -8,6 +8,7 @@
 """
 import asyncio
 import json
+import os
 import time
 import random
 from pathlib import Path
@@ -20,77 +21,31 @@ from pydantic import BaseModel
 from loguru import logger
 
 from src.video_agent.web.actions import StudioActionExecutor
-from src.video_agent.web.agent_loop import run_agent_loop
-from src.video_agent.web.generation import (
-    GenerationError,
-    call_chat_completion,
-    call_chat_completion_stream,
-)
+from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.provider_config import is_mock_provider
-from src.video_agent.web.state_service import StudioStateService
+from src.video_agent.state.manager import StateManager
+from src.video_agent.utils.prompts import load_prompt
+from src.video_agent.utils.paths import ASSETS_DIR
+from src.video_agent.config import settings
+from src.video_agent.core.planner import Planner, PlannerContext
+from src.video_agent.exceptions import AdapterError, GenerationError
+from src.video_agent.adapters.openai_compat import OpenAICompatChatAdapter
+from src.video_agent.tools.manager import ToolManager
 
 router = APIRouter()
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
-UPLOAD_ASSETS_DIR = PROJECT_ROOT / "workspace" / "assets"
+UPLOAD_ASSETS_DIR = ASSETS_DIR
+
+# 服务端基础 URL（用于将本地路径转为绝对 URL 供 LLM 访问）
+_SERVER_BASE_URL = f"http://127.0.0.1:{os.getenv('PORT', '8000')}"
 
 # 文本类素材直接把正文注入给 LLM；单文档上限防止把上下文撑爆
 _TEXT_DOC_EXTS = {".md", ".txt"}
-_MAX_DOC_CHARS = 30000
-_MAX_ATTACHMENTS = 5
+_MAX_DOC_CHARS = settings.max_doc_chars
+_MAX_ATTACHMENTS = settings.max_attachments
 
-# Studio Actions Protocol 系统提示词（服务端唯一权威版本）
-STUDIO_ACTION_PROTOCOL_PROMPT = """
-你正在驱动影视 Agent 工作台，角色是专业的编剧 + 分镜师 + 视觉总监。用户确认或修改的事项，如果会影响左侧故事板、中间预览提示词、草稿确认状态或资产绑定，必须在回复末尾追加一个 studio-actions JSON 块。给用户看的文字保持自然简短，JSON 块只给前端读取。
-
-可用 action:
-- add_group: 新建故事板分组（关键元素/分镜/音频）。字段：group_type(keyElement/shot/audio), title, desc, 可选 shotType/sceneRefs/duration/timeRange, 可选 draft(单个草稿) 或 drafts(草稿数组)。
-- update_draft: 修改草稿。字段：draft_type(keyElement/shot/audio), draft_id/current, patch。
-- update_group: 修改故事板分组。字段：group_type(keyElement/shot/audio), group_id/current, patch。
-- add_draft: 给某个分组新增草稿。字段：group_type, group_id/current, draft。若分组不存在会自动创建。
-- confirm_draft: 确认草稿。字段：draft_type, draft_id/current。
-- delete_draft: 删除草稿。字段：draft_type, draft_id。
-- delete_group: 删除整个分组（含其全部草稿）。字段：group_type, group_id。
-- bind_asset: 绑定资产。字段：asset_id 或 name/url/type，可选 draft_type/draft_id。
-- select_draft: 选中草稿。字段：draft_type, draft_id。
-- request_confirmation: 暂停并请求用户确认。字段：message（向用户说明已完成什么、接下来要做什么）。用于拆解完成后请用户过目再继续的场景。不要与 continue 同时使用。
-- continue: 请求系统再调用你一轮（分阶段完成复杂任务，最多 3 轮）。放在 actions 数组末尾，字段：reason。系统执行完本轮操作后会带着刷新后的最新状态再次调用你。
-
-patch/draft 可包含：title, desc, roughDesc, timeRange, duration, label, tag, prompt, imgUrl, videoUrl, mode, model, resolution, aspectRatio, size, timbre, refAssets。
-分组（group）级还可包含：shotType（镜头语言，如"长镜头/特写/缓推全景横移/含内部剪辑"）, sceneRefs（本分镜引用的关键元素 title 数组）。
-
-== 拆解质量规范（必须遵守） ==
-1. 命名规范：关键元素 title 用 "Element_中文短名"（如 Element_二维空间平面），分镜 title 用 "Shot_中文短名"（如 Shot_太空艇与宇航员坍缩）。
-2. 关键元素：每个元素 desc 写清视觉本质（材质/形态/物理特性），3-6 个为宜，覆盖主角/载具/场景/核心特效。
-3. 分镜必须包含：
-   - shotType：镜头语言标签（长镜头/特写/中景/远景/全景横移/缓推/含内部剪辑…）
-   - sceneRefs：引用的关键元素 title 数组（如 ["Element_监视太空艇","Element_二维空间平面"]），分镜画面里出现哪个元素就引用哪个
-   - roughDesc：按时间轴分段描述，格式如 "起初(0-4s)：中景，太空艇底部接触二维平面，瞬间失去厚度…然后切至(4-7s)：特写，宇航员双脚触碰平面…最后切至(7-10s)：远景，只剩失谐的太空艇与人体平面图案。"
-   - duration：总时长（如 "10s"）
-4. 提示词（prompt）电影级质量规范：
-   - 结构：先用中文分层描述画面空间与叙事（构图/主体/光源/动态），再以英文风格标签收尾
-   - 英文标签示例：Hard sci-fi realism, inspired by Interstellar and 2001: A Space Odyssey visual language, ultra-precise technical illustration quality, strong chiaroscuro contrast, fine rendering with rich intricate detail, awe-inspiring cosmic scale, no text, no labels, no watermarks
-   - 禁止一句话糊弄；关键元素概念图 prompt 不少于 100 字
-5. 推荐工作流（大任务分轮执行）：
-   - 第 1 轮：拆解关键元素（add_group × N，每个带概念图 draft），末尾 continue
-   - 第 2 轮：拆解分镜（add_group × N，带 shotType/sceneRefs/时间轴 roughDesc 与 draft），末尾 continue
-   - 第 3 轮：审美自检——复读全部 prompt，用 update_draft 优化不合规范的弱提示词，然后 request_confirmation 请用户确认后再生成图片
-
-== 重要规则 ==
-- 用户上传的 .md/.txt 素材正文会由系统直接附在用户消息里（"=== 用户上传的素材文档 === ... === 文档结束 ==="段落）。看到该段落就说明你已经拿到了全文，直接依据它拆解，不要说"我无法读取文件"或要求用户粘贴内容。
-- draft_id/group_id 写 "current" 时，系统会解析为用户当前选中的草稿/分组，所以「确认这个」「修改当前提示词」直接用 current 即可。
-- 当用户要求从文档/素材中拆解关键元素或分镜时，必须使用 add_group 创建新分组，并在其中携带 draft。
-- 不要只说"已创建"而不输出 studio-actions 块，否则前端不会有任何变化。
-
-格式示例：
-```studio-actions
-[
-  {"action":"add_group","group_type":"keyElement","title":"Element_二维空间平面","desc":"绝对无厚度、极其锋利的无形平面，任何三维物质与之接触均瞬间被平摊展开","draft":{"label":"概念图","tag":"Agent","mediaType":"image","prompt":"深空黑背景中，一条绝对水平的冷蓝白色荧光细线横贯画面中央……（分层描述画面空间与叙事）Hard sci-fi realism, ultra-precise technical illustration, strong chiaroscuro contrast, no text, no labels, no watermarks"}},
-  {"action":"add_group","group_type":"shot","title":"Shot_太空艇与宇航员坍缩","shotType":"长镜头","sceneRefs":["Element_监视太空艇","Element_二维空间平面"],"duration":"10s","desc":"太空艇触碰二维平面后逐层坍缩","roughDesc":"起初(0-4s)：中景，太空艇底部接触二维平面，瞬间失去厚度…然后切至(4-7s)：特写，宇航员双脚触碰平面…最后切至(7-10s)：远景，只剩太空艇与人体的平面图案。","draft":{"label":"分镜卡片","tag":"Agent","mediaType":"image","prompt":"……"}},
-  {"action":"continue","reason":"下一轮进行审美自检并优化弱提示词"}
-]
-```
-"""
+## Studio Actions Protocol 系统提示词（Rule4: 从 prompts/ 目录加载，服务端唯一权威版本）
+STUDIO_ACTION_PROTOCOL_PROMPT = load_prompt("planner/system.md")
 
 
 class ChatRequest(BaseModel):
@@ -117,15 +72,16 @@ class ChatResponse(BaseModel):
     applied_actions: int = 0
     steps: int = 1
     warnings: List[str] = []
-    confirmation: str = ""    # 非空 = agent 暂停等待用户确认
+    confirmation: str = ""            # 非空 = agent 暂停等待用户确认
+    documents_written: List[str] = []  # 本轮写入/更新的文档名
     state: Optional[Dict[str, Any]] = None
 
 
-def _bind_attachments(svc: StudioStateService, attachments: List[Dict[str, str]]) -> None:
+def _bind_attachments(svc: StateManager, attachments: List[Dict[str, str]]) -> None:
     """把本次消息携带的上传素材登记进服务端资产列表（isBound=True）并持久化"""
     if not attachments:
         return
-    assets = svc.state.setdefault("assets", [])
+    assets = svc.state_dict.setdefault("assets", [])
     changed = False
     for att in attachments[:_MAX_ATTACHMENTS]:
         url = att.get("url", "")
@@ -151,7 +107,7 @@ def _bind_attachments(svc: StudioStateService, attachments: List[Dict[str, str]]
 def _attachment_context(attachments: List[Dict[str, str]]) -> str:
     """
     为 LLM 构建素材说明：文本类文档（.md/.txt）直接读出正文注入；
-    其他类型给出明确的能力说明，避免 LLM 瞎猜「我看不到素材」或假装看过。
+    其他类型给出明确的能力说明，避免 LLM 瘘猜「我看不到素材」或假装看过。
     """
     parts: List[str] = []
     for att in attachments[:_MAX_ATTACHMENTS]:
@@ -188,10 +144,30 @@ def _attachment_context(attachments: List[Dict[str, str]]) -> str:
     return "\n\n".join(parts)
 
 
+def _collect_image_urls_from_attachments(attachments: List[Dict[str, str]]) -> List[str]:
+    """从附件中提取图片 URL（用于多模态 vision 注入）"""
+    image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+    urls: List[str] = []
+    for att in attachments[:_MAX_ATTACHMENTS]:
+        kind = att.get("kind") or ""
+        url = att.get("url") or ""
+        if not url:
+            continue
+        if kind == "image":
+            urls.append(url)
+        elif kind in ("file", ""):
+            # 根据扩展名判断
+            ext = Path(url).suffix.lower()
+            if ext in image_exts:
+                urls.append(url)
+    return urls
+
+
 @router.post("/agent/chat")
 @router.post("/canvas-llm")
+@router.post("/chat")              # 设计方案路径别名
 async def agent_chat(body: ChatRequest):
-    svc = StudioStateService.get_instance()
+    svc = StateManager.get_instance()
     executor = StudioActionExecutor(
         svc,
         selected_draft_id=body.selected_draft_id,
@@ -230,48 +206,39 @@ async def agent_chat(body: ChatRequest):
             state=svc.get_full_snapshot(),
         )
 
-    # ---------- 真实供应商：多步循环 ----------
-    def build_system_prompt() -> str:
-        parts = [body.system_prompt.strip()] if body.system_prompt.strip() else []
-        if use_studio_context:
-            parts.append(STUDIO_ACTION_PROTOCOL_PROMPT.strip())
-            selected_note = ""
-            if body.selected_draft_id:
-                selected_note = (
-                    f"\n用户当前选中的草稿：draft_id={body.selected_draft_id}"
-                    f"（类型 {body.selected_type or '未知'}）。studio-actions 里的 \"current\" 指向它。"
-                )
-            parts.append(
-                "当前工作台状态 JSON 如下（每轮自动刷新）：" + selected_note + "\n\n"
-                + svc.build_agent_context(body.asset_mode)
-            )
-        return "\n\n".join(parts)
-
-    async def llm_call(system_prompt: str, messages: List[Dict[str, Any]]):
-        full = [{"role": "system", "content": system_prompt}] + messages
-        return await call_chat_completion(
-            body.provider, body.model, full, max_tokens=8192, timeout=120,
-        )
-
+    # ---------- 真实供应商：通过 Planner 处理（Rule1: Planner 是唯一入口） ----------
     history = [
         {"role": m.get("role", "user"), "content": m.get("content", "")}
         for m in body.messages[-10:]
     ]
 
-    # 整个多步回合持锁：并发请求会排队而不是交叉改写共享状态（本地单用户场景可接受）
+    # 构建 LLM Adapter（每次请求根据用户选择的供应商/模型动态创建）
+    try:
+        base_url, api_key, effective_model = resolve_openai_endpoint(body.provider, body.model)
+    except GenerationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    llm_adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=effective_model)
+    planner = Planner(llm_adapter=llm_adapter, tool_manager=ToolManager)
+
+    planner_ctx = PlannerContext(
+        history=history,
+        selected_draft_id=body.selected_draft_id,
+        selected_type=body.selected_type,
+        state_json=svc.build_agent_context(body.asset_mode) if use_studio_context else "",
+        extra_system=body.system_prompt.strip(),
+        use_studio_context=use_studio_context,
+        asset_mode=body.asset_mode,
+    )
+
+    # 整个多步回合持锁：并发请求会排队而不是交叉改写共享状态
     async with svc.lock:
         if use_studio_context:
             _bind_attachments(svc, body.attachments)
             svc.add_chat_message("user", user_text)
         try:
-            result = await run_agent_loop(
-                llm_user_text,
-                llm_call=llm_call,
-                context_builder=build_system_prompt,
-                executor=executor,
-                history=history,
-            )
-        except GenerationError as e:
+            result = await planner.handle_message(llm_user_text, planner_ctx)
+        except (GenerationError, AdapterError) as e:
             logger.warning(f"[Agent] LLM 调用失败: {e}")
             if use_studio_context:
                 svc.add_chat_message("agent", f"[错误] {e}")
@@ -291,49 +258,16 @@ async def agent_chat(body: ChatRequest):
         steps=result.steps,
         warnings=result.warnings,
         confirmation=result.confirmation,
+        documents_written=result.documents_written,
         state=svc.get_full_snapshot() if use_studio_context else None,
     )
 
 
-class _DeltaGate:
-    """
-    流式增量过滤器：可见文本实时转发给前端；
-    一旦出现代码围栏（studio-actions JSON 块开头），停止转发并切换状态提示，
-    避免把大段 JSON 流式喷到聊天气泡里。
-    尾部保留 HOLD 个字符缓冲，防止围栏标记被切在两个 chunk 之间漏出去。
-    """
-    HOLD = 20
-
-    def __init__(self, emit):
-        self._emit = emit
-        self._buf = ""
-        self._stopped = False
-
-    async def feed(self, piece: str) -> None:
-        if self._stopped:
-            return
-        self._buf += piece
-        fence = self._buf.find("```")
-        if fence != -1:
-            visible = self._buf[:fence].rstrip()
-            if visible:
-                await self._emit({"type": "delta", "text": visible})
-            self._stopped = True
-            self._buf = ""
-            await self._emit({"type": "status", "text": "正在生成操作指令…"})
-            return
-        if len(self._buf) > self.HOLD:
-            out, self._buf = self._buf[:-self.HOLD], self._buf[-self.HOLD:]
-            await self._emit({"type": "delta", "text": out})
-
-    async def flush(self) -> None:
-        if not self._stopped and self._buf:
-            await self._emit({"type": "delta", "text": self._buf})
-            self._buf = ""
 
 
 @router.post("/agent/chat/stream")
 @router.post("/canvas-llm/stream")
+@router.post("/chat/stream")       # 设计方案路径别名
 async def agent_chat_stream(body: ChatRequest):
     """
     流式聊天端点（SSE）。事件类型：
@@ -350,7 +284,7 @@ async def agent_chat_stream(body: ChatRequest):
     async def worker() -> None:
         t0 = time.monotonic()
         try:
-            svc = StudioStateService.get_instance()
+            svc = StateManager.get_instance()
             executor = StudioActionExecutor(
                 svc,
                 selected_draft_id=body.selected_draft_id,
@@ -367,6 +301,30 @@ async def agent_chat_stream(body: ChatRequest):
             use_studio_context = body.context_mode != "none"
             attachment_note = _attachment_context(body.attachments) if body.attachments else ""
             llm_user_text = f"{user_text}\n\n{attachment_note}" if attachment_note else user_text
+
+            # 收集图片附件，构建多模态 content（让 LLM 能真正“看到”图片）
+            image_urls = _collect_image_urls_from_attachments(body.attachments) if body.attachments else []
+            # 也包含前端显式传入的 images 字段
+            for img_url in (body.images or []):
+                if img_url and img_url not in image_urls:
+                    image_urls.append(img_url)
+
+            if image_urls:
+                # 多模态消息：文本 + 图片 parts
+                content_parts: List[Dict[str, Any]] = [{"type": "text", "text": llm_user_text}]
+                for img_url in image_urls[:4]:
+                    # 本地路径转为绝对 URL
+                    abs_url = img_url
+                    if img_url.startswith("/workspace/"):
+                        abs_url = f"{_SERVER_BASE_URL}{img_url}"
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": abs_url}
+                    })
+                llm_user_content: Any = content_parts
+                logger.info(f"[Agent] 多模态消息：{len(image_urls)} 张图片已注入 LLM 上下文")
+            else:
+                llm_user_content = llm_user_text
 
             # ---------- mock：模拟流式，保持一致的交互体验 ----------
             if is_mock_provider(body.provider, body.model):
@@ -390,55 +348,13 @@ async def agent_chat_stream(body: ChatRequest):
                     "steps": 1,
                     "warnings": ["当前为 mock 供应商，回复由本地规则生成，未调用真实 LLM"],
                     "confirmation": "",
+                    "documents_written": executor.documents_written,
                     "state": svc.get_full_snapshot(),
                     "elapsed_ms": int((time.monotonic() - t0) * 1000),
                 }})
                 return
 
-            # ---------- 真实供应商：流式多步循环 ----------
-            def build_system_prompt() -> str:
-                parts = [body.system_prompt.strip()] if body.system_prompt.strip() else []
-                if use_studio_context:
-                    parts.append(STUDIO_ACTION_PROTOCOL_PROMPT.strip())
-                    selected_note = ""
-                    if body.selected_draft_id:
-                        selected_note = (
-                            f"\n用户当前选中的草稿：draft_id={body.selected_draft_id}"
-                            f"（类型 {body.selected_type or '未知'}）。studio-actions 里的 \"current\" 指向它。"
-                        )
-                    parts.append(
-                        "当前工作台状态 JSON 如下（每轮自动刷新）：" + selected_note + "\n\n"
-                        + svc.build_agent_context(body.asset_mode)
-                    )
-                return "\n\n".join(parts)
-
-            async def llm_call(system_prompt: str, messages: List[Dict[str, Any]]):
-                gate = _DeltaGate(emit)
-                full = [{"role": "system", "content": system_prompt}] + messages
-                try:
-                    content, finish = await call_chat_completion_stream(
-                        body.provider, body.model, full,
-                        max_tokens=8192, timeout=180, on_delta=gate.feed,
-                    )
-                    await gate.flush()
-                    return content, finish
-                except GenerationError as e:
-                    # 个别供应商不支持流式：回退普通调用（真实错误会在这里再次抛出）
-                    logger.warning(f"[Agent] 流式调用失败({e})，回退非流式")
-                    await emit({"type": "status", "text": "流式不可用，改用普通模式…"})
-                    return await call_chat_completion(
-                        body.provider, body.model, full, max_tokens=8192, timeout=120,
-                    )
-
-            async def on_loop_event(event: Dict[str, Any]) -> None:
-                if event["type"] == "step_started":
-                    label = "正在推理…" if event["step"] == 1 else f"第 {event['step']} 轮推理中…"
-                    await emit({"type": "status", "text": label, "step": event["step"]})
-                elif event["type"] == "executing_actions":
-                    await emit({"type": "status", "text": f"正在执行 {event['count']} 个操作…"})
-                elif event["type"] == "actions_applied":
-                    await emit({"type": "status", "text": f"已应用 {event['count']} 个操作"})
-
+            # ---------- 真实供应商：通过 Planner 流式处理（§5: AsyncGenerator 穿透 SSE） ----------
             history = [
                 {"role": m.get("role", "user"), "content": m.get("content", "")}
                 for m in body.messages[-10:]
@@ -448,33 +364,54 @@ async def agent_chat_stream(body: ChatRequest):
                 if use_studio_context:
                     _bind_attachments(svc, body.attachments)
                     svc.add_chat_message("user", user_text)
+
                 try:
-                    result = await run_agent_loop(
-                        llm_user_text,
-                        llm_call=llm_call,
-                        context_builder=build_system_prompt,
-                        executor=executor,
+                    base_url, api_key, effective_model = resolve_openai_endpoint(body.provider, body.model)
+                    llm_adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=effective_model)
+                    planner = Planner(llm_adapter=llm_adapter, tool_manager=ToolManager)
+
+                    planner_ctx = PlannerContext(
                         history=history,
-                        on_event=on_loop_event,
+                        selected_draft_id=body.selected_draft_id,
+                        selected_type=body.selected_type,
+                        state_json=svc.build_agent_context(body.asset_mode) if use_studio_context else "",
+                        extra_system=body.system_prompt.strip(),
+                        use_studio_context=use_studio_context,
+                        asset_mode=body.asset_mode,
                     )
-                except GenerationError as e:
-                    logger.warning(f"[Agent] LLM 调用失败: {e}")
+
+                    final_text = ""
+                    final_payload: Dict[str, Any] = {}
+
+                    async for event in planner.handle_message_stream(llm_user_content, planner_ctx):
+                        if event.type == "status":
+                            await emit({"type": "status", "text": event.text})
+                        elif event.type == "delta":
+                            await emit({"type": "delta", "text": event.text})
+                        elif event.type == "actions_applied":
+                            await emit({"type": "status", "text": event.text})
+                        elif event.type == "done":
+                            final_payload = event.payload or {}
+                            final_text = final_payload.get("text", "")
+                        elif event.type == "error":
+                            raise AdapterError(event.text)
+
+                    if use_studio_context and final_text:
+                        svc.add_chat_message("agent", final_text)
+
+                    await emit({"type": "done", "payload": {
+                        **final_payload,
+                        "documents_written": [],
+                        "state": svc.get_full_snapshot() if use_studio_context else None,
+                        "elapsed_ms": int((time.monotonic() - t0) * 1000),
+                    }})
+
+                except (GenerationError, AdapterError) as e:
+                    logger.warning(f"[Agent] LLM 流式调用失败: {e}")
                     if use_studio_context:
                         svc.add_chat_message("agent", f"[错误] {e}")
                     await emit({"type": "error", "detail": str(e)})
                     return
-                if use_studio_context:
-                    svc.add_chat_message("agent", result.text)
-
-            await emit({"type": "done", "payload": {
-                "text": result.text,
-                "applied_actions": result.applied_actions,
-                "steps": result.steps,
-                "warnings": result.warnings,
-                "confirmation": result.confirmation,
-                "state": svc.get_full_snapshot() if use_studio_context else None,
-                "elapsed_ms": int((time.monotonic() - t0) * 1000),
-            }})
         except Exception as e:
             logger.exception(f"[Agent] 流式处理异常: {e}")
             await emit({"type": "error", "detail": f"服务端异常: {e}"})

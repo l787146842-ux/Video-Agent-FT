@@ -14,6 +14,11 @@ class ToolManager:
         logger.debug(f"Registered tool: {tool.name}")
 
     @classmethod
+    def reset(cls):
+        """清空注册表（测试用）"""
+        cls._tools = {}
+
+    @classmethod
     def get_tool(cls, name: str) -> BaseTool:
         tool = cls._tools.get(name)
         if not tool:

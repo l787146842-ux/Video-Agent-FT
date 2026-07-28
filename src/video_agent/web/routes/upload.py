@@ -12,10 +12,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
+from src.video_agent.utils.paths import ASSETS_DIR
+
 router = APIRouter()
 
-# 上传目录（相对于项目根）
-UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "workspace" / "assets"
+# 上传目录（统一从 paths.py 导入）
+UPLOAD_DIR = ASSETS_DIR
 
 MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
 _CHUNK = 1024 * 1024

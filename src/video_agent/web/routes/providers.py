@@ -19,11 +19,13 @@ from src.video_agent.web.provider_config import (
     detect_protocol,
     get_key_preview,
     load_api_providers,
+    load_merged_providers,
     provider_key_env,
     resolve_api_key,
     save_api_providers,
     update_env_key,
 )
+from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
 
 router = APIRouter()
 
@@ -42,9 +44,113 @@ def public_provider(p: Dict[str, Any]) -> Dict[str, Any]:
 # ---------- API 端点 ----------
 @router.get("/providers")
 async def get_providers():
-    """获取所有 provider 配置（脱敏）"""
-    providers = load_api_providers()
-    return {"providers": [public_provider(p) for p in providers]}
+    """获取所有 provider 配置（脱敏，合并本地 + 熊布）"""
+    providers = load_merged_providers()
+    adapter = get_canvas_adapter()
+    canvas_online = await adapter.is_online()
+    return {
+        "providers": [public_provider(p) for p in providers],
+        "canvas_online": canvas_online,
+    }
+
+
+@router.get("/canvas-assets")
+async def get_canvas_assets():
+    """代理获取熊布素材库管理系统的完整数据（前端“素材库”按钮调用）"""
+    adapter = get_canvas_adapter()
+    try:
+        library = await adapter.list_asset_library()
+        return {"library": library, "canvas_online": True}
+    except Exception as e:
+        logger.warning(f"[Providers] 获取熊布素材库失败: {e}")
+        return {"library": None, "canvas_online": False, "error": str(e)}
+
+
+@router.get("/asset-picker")
+async def asset_picker(type: str = "image"):
+    """统一素材选择器代理端点。
+    type: image(图片资产) | canvas(画布资产) | local(本地素材)
+    返回标准化结构: {items: [{id, name, url, thumb, category}], canvas_online}
+    """
+    adapter = get_canvas_adapter()
+    base_url = adapter.base_url
+    try:
+        if type == "image":
+            library = await adapter.list_asset_library()
+            items = _flatten_asset_library(library, base_url)
+        elif type == "canvas":
+            raw = await adapter.list_assets()
+            items = _flatten_canvas_assets(raw, base_url)
+        elif type == "local":
+            raw = await adapter.list_local_assets()
+            items = _flatten_local_assets(raw, base_url)
+        else:
+            items = []
+        return {"items": items, "canvas_online": True}
+    except Exception as e:
+        logger.warning(f"[Providers] asset-picker({type}) 失败: {e}")
+        return {"items": [], "canvas_online": False, "error": str(e)}
+
+
+def _flatten_asset_library(library: Any, base_url: str) -> List[Dict[str, Any]]:
+    """将熊布 asset-library 结构平坦化为标准 items"""
+    items: List[Dict[str, Any]] = []
+    if not library or not isinstance(library, dict):
+        return items
+    libraries = library.get("libraries") or []
+    active_id = library.get("active_library_id", "")
+    active_lib = next((l for l in libraries if l.get("id") == active_id), None) or (libraries[0] if libraries else None)
+    categories = (active_lib.get("categories") if active_lib else None) or library.get("categories") or []
+    for cat in categories:
+        cat_name = cat.get("name", "")
+        for item in (cat.get("items") or []):
+            url = item.get("url") or item.get("path") or ""
+            if url and not url.startswith("http"):
+                url = f"{base_url}{url}" if url.startswith("/") else f"{base_url}/{url}"
+            items.append({
+                "id": item.get("id", ""),
+                "name": item.get("name", ""),
+                "url": url,
+                "thumb": url,
+                "category": cat_name,
+            })
+    return items
+
+
+def _flatten_canvas_assets(raw: Any, base_url: str) -> List[Dict[str, Any]]:
+    """将熊布 canvas-assets 平坦化"""
+    items: List[Dict[str, Any]] = []
+    entries = raw if isinstance(raw, list) else (raw.get("items", []) if isinstance(raw, dict) else [])
+    for entry in entries[:200]:
+        url = entry.get("url") or entry.get("image_url") or entry.get("path") or ""
+        if url and not url.startswith("http"):
+            url = f"{base_url}{url}" if url.startswith("/") else f"{base_url}/{url}"
+        items.append({
+            "id": entry.get("id", ""),
+            "name": entry.get("name") or entry.get("title") or "",
+            "url": url,
+            "thumb": url,
+            "category": entry.get("canvas_title") or entry.get("source") or "画布",
+        })
+    return items
+
+
+def _flatten_local_assets(raw: Any, base_url: str) -> List[Dict[str, Any]]:
+    """将熊布 local-assets 平坦化"""
+    items: List[Dict[str, Any]] = []
+    entries = raw if isinstance(raw, list) else []
+    for entry in entries[:200]:
+        url = entry.get("url") or entry.get("path") or ""
+        if url and not url.startswith("http"):
+            url = f"{base_url}{url}" if url.startswith("/") else f"{base_url}/{url}"
+        items.append({
+            "id": entry.get("id") or entry.get("name", ""),
+            "name": entry.get("name") or entry.get("filename") or "",
+            "url": url,
+            "thumb": url,
+            "category": entry.get("folder") or "本地",
+        })
+    return items
 
 
 @router.put("/providers")

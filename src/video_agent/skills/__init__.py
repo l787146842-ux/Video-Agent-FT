@@ -66,6 +66,11 @@ class SkillRegistry:
         """返回所有 Skill 的前端配置列表"""
         return [s.to_config() for s in cls._skills.values()]
 
+    @classmethod
+    def reset(cls):
+        """清空注册表（测试用）"""
+        cls._skills = {}
+
 
 # =======================
 # 具体 Skill 实现

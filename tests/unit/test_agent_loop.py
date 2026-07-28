@@ -3,12 +3,12 @@ import pytest
 
 from src.video_agent.web.actions import StudioActionExecutor
 from src.video_agent.web.agent_loop import run_agent_loop
-from src.video_agent.web.state_service import StudioStateService
+from src.video_agent.state.manager import StateManager
 
 
 @pytest.fixture
 def svc(tmp_path):
-    return StudioStateService(base_dir=tmp_path)
+    return StateManager(str(tmp_path))
 
 
 @pytest.fixture
@@ -24,7 +24,8 @@ def make_llm(replies):
         calls["systems"].append(system_prompt)
         reply = replies[min(calls["n"], len(replies) - 1)]
         calls["n"] += 1
-        return reply
+        # 返回 3 元组 (content, finish_reason, fc_applied)
+        return reply[0], reply[1], 0
 
     return llm_call, calls
 
@@ -55,7 +56,7 @@ async def test_continue_triggers_second_round(svc, executor):
     assert result.steps == 2
     assert result.applied_actions == 2  # continue 本身不计数
     assert calls["n"] == 2
-    titles = [g["title"] for g in svc.state["shots"]]
+    titles = [g["title"] for g in svc.state_dict["shots"]]
     assert "S1" in titles and "S2" in titles
 
 

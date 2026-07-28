@@ -1,5 +1,6 @@
 let providers = [];
 let selectedId = '';
+let canvasOnline = false;
 const providerList = document.getElementById('providerList');
 const editorTitle = document.getElementById('editorTitle');
 const statusEl = document.getElementById('status');
@@ -2422,7 +2423,7 @@ function renderProviderList(){
                 <span class="provider-drag-handle" aria-hidden="true"><i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i></span>
                 <span class="provider-mark"><i data-lucide="${item.has_key ? 'key-round' : 'key'}" class="w-4 h-4"></i></span>
                 <span class="provider-info">
-                    <div class="provider-name">${escapeHtml(item.name || item.id)}</div>
+                    <div class="provider-name">${escapeHtml(item.name || item.id)}${item._source === 'canvas' ? ' <span class="source-badge canvas">熊布</span>' : ''}</div>
                     <div class="provider-meta">${escapeHtml(item.base_url || '未配置地址')}</div>
                 </span>
                 <span class="provider-side-meta">
@@ -3704,12 +3705,23 @@ async function loadProviders(){
     try {
         const data = await fetch('/api/providers').then(r => r.json());
         providers = data.providers || [];
+        canvasOnline = !!data.canvas_online;
         selectedId = sortedProviders()[0]?.id || '';
+        renderCanvasStatus();
         renderEditor();
         openRecommendApi();
         setStatus('');
     } catch(err) {
         setStatus(tr('api.loadFailed'));
+    }
+}
+function renderCanvasStatus(){
+    const el = document.getElementById('canvasStatus');
+    if(!el) return;
+    if(canvasOnline){
+        el.innerHTML = '<span class="canvas-status online">● 熊布在线</span><span class="canvas-status-hint">生图将优先通过熊布执行</span>';
+    } else {
+        el.innerHTML = '<span class="canvas-status offline">○ 熊布离线</span><span class="canvas-status-hint">生图将使用本地配置直连</span>';
     }
 }
 async function saveProviders(){

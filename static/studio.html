@@ -10,23 +10,29 @@
     <script src="/static/js/theme.js?v=2026.07.15.1784204243"></script>
     <script src="/static/js/i18n.js?v=2026.07.15.1784204235"></script>
     <link rel="stylesheet" href="/static/css/theme.css?v=2026.07.15.1784204219">
-    <link rel="stylesheet" href="/static/css/studio.css?v=2026.07.15.1784873763">
+    <link rel="stylesheet" href="/static/css/studio.css?v=2026.07.28.15">
 </head>
 <body>
     <!-- Studio Header -->
     <header class="studio-header">
         <div class="studio-brand">
-            <img src="/static/images/logo.png" alt="Flova Logo" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'28\' height=\'28\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%233b82f6\' stroke-width=\'2\'><rect x=\'2\' y=\'2\' width=\'20\' height=\'20\' rx=\'4\'/><path d=\'M7 12h10M12 7v10\'/></svg>'">
-            <span>Flova Studio</span>
-            <span class="text-xs px-2 py-0.5 rounded bg-blue-900/40 text-blue-400 border border-blue-800">AI Film Studio</span>
+            <svg class="brand-star" width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2l2.9 6.26L21.5 9.27l-4.75 4.28L18.18 20 12 16.77 5.82 20l1.43-6.45L2.5 9.27l6.6-1.01L12 2z" fill="url(#starGrad)" stroke="#b8860b" stroke-width="0.5"/>
+                <defs><linearGradient id="starGrad" x1="2" y1="2" x2="22" y2="22"><stop offset="0%" stop-color="#ffd700"/><stop offset="100%" stop-color="#dc2626"/></linearGradient></defs>
+            </svg>
+            <span class="brand-name">智能体</span>
         </div>
 
         <nav class="studio-nav-links">
-            <a href="/" class="studio-nav-item active">影视 Agent 工作台</a>
-            <a href="/static/api-settings.html" class="studio-nav-item">API 配置</a>
+            <button class="mode-btn active" id="modeAgentBtn" onclick="switchWorkMode('agent')">影视Agent</button>
+            <button class="mode-btn" id="modeCanvasBtn" onclick="switchWorkMode('canvas')">画布</button>
+            <button class="mode-btn" id="modeApiBtn" onclick="switchWorkMode('api')">API 配置</button>
         </nav>
 
         <div class="studio-header-actions">
+            <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleThemeMode()" title="切换主题">
+                <i data-lucide="moon" class="w-4 h-4" id="themeToggleIcon"></i>
+            </button>
             <div class="relative" id="projectSwitcher">
                 <button id="projectInfoBtn" class="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5" onclick="toggleProjectMenu()">
                     <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
@@ -43,9 +49,55 @@
             </div>
         </div>
     </header>
+    <!-- 画布模式下导航栏的收放箭头（始终可见） -->
+    <button class="nav-toggle-arrow hidden" id="navToggleArrow" onclick="toggleHeaderVisibility()" title="收放导航栏">
+        <i data-lucide="chevron-up" class="w-4 h-4" id="navToggleIcon"></i>
+    </button>
+
+    <!-- 文档面板（项目文档 + Skill 文档） -->
+    <div id="docsPanel" class="docs-panel hidden">
+        <div class="docs-panel-inner">
+            <div class="docs-sidebar">
+                <div class="docs-sidebar-header">
+                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                    <span>文档</span>
+                    <button class="docs-close" onclick="closeDocsPanel()" title="关闭">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <div id="docsFileList" class="docs-file-list"></div>
+            </div>
+            <div class="docs-content">
+                <div class="docs-content-header">
+                    <span id="docsCurrentName" class="docs-current-name">选择左侧文档查看</span>
+                    <div class="docs-content-actions">
+                        <div class="docs-mode-toggle">
+                            <button id="docsModeRead" class="active" onclick="setDocsViewMode('read')">易读</button>
+                            <button id="docsModeMd" onclick="setDocsViewMode('md')">Markdown</button>
+                        </div>
+                        <button id="docsEditBtn" class="confirm-btn" onclick="toggleDocEdit()">编辑</button>
+                        <button id="docsSaveBtn" class="confirm-btn primary hidden" onclick="saveCurrentDoc()">保存</button>
+                    </div>
+                </div>
+                <div id="docsRendered" class="docs-rendered"></div>
+                <pre id="docsViewer" class="docs-viewer hidden"></pre>
+                <textarea id="docsEditor" class="docs-editor hidden"></textarea>
+            </div>
+        </div>
+    </div>
 
     <!-- Three-Column Layout Container -->
     <main class="studio-container" id="studioContainer">
+
+        <!-- 画布模式：熊布 iframe 层 -->
+        <div class="canvas-layer hidden" id="canvasLayer">
+            <iframe id="canvasIframe" frameborder="0"></iframe>
+        </div>
+
+        <!-- API 配置模式：内嵌 iframe 层 -->
+        <div class="api-settings-layer hidden" id="apiSettingsLayer">
+            <iframe id="apiSettingsIframe" frameborder="0"></iframe>
+        </div>
         
         <!-- LEFT COLUMN: Assets & Prompts List -->
         <section class="studio-col col-left" id="colLeft">
@@ -71,6 +123,16 @@
                         <button class="sub-nav-btn active" id="subKeyElements" onclick="switchSubTab('keyElements')">关键元素</button>
                         <button class="sub-nav-btn" id="subShots" onclick="switchSubTab('shots')">分镜</button>
                         <button class="sub-nav-btn" id="subAudio" onclick="switchSubTab('audio')">音频层</button>
+                    </div>
+
+                    <!-- 批量生成按钮 -->
+                    <div class="batch-gen-bar" id="batchGenBar">
+                        <button class="batch-gen-btn" onclick="batchGenerate('all_keyElements')" title="为所有关键元素的概念图提交生图任务">
+                            <i data-lucide="image" class="w-3.5 h-3.5"></i> 批量生成概念图
+                        </button>
+                        <button class="batch-gen-btn" onclick="batchGenerate('all_shots')" title="为所有分镜的关键帧提交生图任务（自动注入元素参考图）">
+                            <i data-lucide="clapperboard" class="w-3.5 h-3.5"></i> 批量生成关键帧
+                        </button>
                     </div>
 
                     <!-- Sub Content Container -->
@@ -119,37 +181,36 @@
             <!-- HORIZONTAL SPLITTER (MIDDLE TOP / MIDDLE BOTTOM) -->
             <div class="splitter-h" id="splitterPreview"></div>
 
-            <!-- BOTTOM SECTION: Agent-Reasoned Prompts & Parameters -->
+            <!-- Prompt Collapse Toggle Bar -->
+            <div class="prompt-toggle-bar" id="promptToggleBar" onclick="toggleCollapsePrompt()">
+                <div class="prompt-toggle-line"></div>
+                <button class="prompt-toggle-btn" title="收放提示词窗口">
+                    <i data-lucide="chevron-down" class="w-4 h-4" id="collapseIcon"></i>
+                </button>
+                <div class="prompt-toggle-line"></div>
+            </div>
+
+            <!-- BOTTOM SECTION: Prompts & Parameters -->
             <div class="preview-bottom" id="previewBottom">
                 
-                <!-- Drag & Drop Reference Asset Zone -->
-                <div class="ref-drop-zone" id="refDropZone">
-                    <div class="flex items-center gap-2">
-                        <i data-lucide="image-plus" class="w-4 h-4 text-blue-400"></i>
-                        <span class="text-xs text-gray-300">拖拽/上传素材作为参考输入 (首尾帧 / 风格参考)</span>
-                    </div>
-                    <div class="ref-thumbs" id="refThumbs">
-                        <!-- Reference thumbnails populated dynamically -->
-                    </div>
-                </div>
-
-                <!-- Prompt Container -->
-                <div class="prompt-container">
-                    <div class="prompt-header">
-                        <div class="prompt-title">
-                            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-purple-400"></i>
-                            <span id="promptTypeTitle">Agent 推理的提示词</span>
+                <!-- Collapsible Prompt Area -->
+                <div class="prompt-collapse-area" id="promptCollapseArea">
+                    <!-- Drag & Drop Reference Asset Zone -->
+                    <div class="ref-drop-zone" id="refDropZone">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="image-plus" class="w-4 h-4 text-blue-400"></i>
+                            <span class="text-xs text-gray-300">拖拽/上传素材作为参考输入 (首尾帧 / 风格参考)</span>
                         </div>
-                        <button class="collapse-btn" id="collapsePromptBtn" onclick="toggleCollapsePrompt()">
-                            <i data-lucide="chevron-up" class="w-3.5 h-3.5" id="collapseIcon"></i>
-                            <span id="collapseText">收缩提示词 (只看画面)</span>
-                        </button>
+                        <div class="ref-thumbs" id="refThumbs">
+                            <!-- Reference thumbnails populated dynamically -->
+                        </div>
                     </div>
 
+                    <!-- Prompt Textarea -->
                     <textarea class="prompt-textarea" id="detailedPromptInput" placeholder="Agent 将在此输出推演出的详细提示词..."></textarea>
                 </div>
 
-                <!-- Parameter Controls Toolbar -->
+                <!-- Parameter Controls Toolbar (Fixed at bottom) -->
                 <div class="param-controls-bar" id="paramControlsBar">
                     <!-- Populated dynamically based on draft type (Image / Video / Audio) -->
                 </div>
@@ -162,17 +223,18 @@
 
         <!-- RIGHT COLUMN: Agent Interaction Panel -->
         <section class="studio-col col-right" id="colRight">
-            
+            <!-- 侧栏左边缘的收缩/展开箭头 -->
+            <button class="agent-toggle-handle" id="agentToggleHandle" onclick="toggleAgentSidebar()" title="收缩/展开 Agent">
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5" id="agentToggleIcon"></i>
+            </button>
+
             <!-- Agent Header -->
             <div class="right-header">
                 <div class="agent-title">
                     <i data-lucide="bot" class="w-4 h-4 text-blue-400"></i>
-                    <span>编剧 & 导演 Agent</span>
+                    <span>Agent</span>
                 </div>
-                <div class="flex items-center gap-2 text-xs text-emerald-400">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span>在线推演中</span>
-                </div>
+                <span class="agent-status-dot" id="agentStatusDot"></span>
             </div>
 
             <!-- Chat Feed -->
@@ -180,39 +242,61 @@
                 <!-- Messages populated by JS -->
             </div>
 
-            <!-- Bottom Chat Input Box -->
-            <div class="chat-input-area">
-                <div class="chat-input-toolbar">
-                    <select id="agentProviderSelect" title="Agent API 平台"></select>
+            <!-- 输入区与消息区之间的拖拽分隔线 -->
+            <div class="chat-resize-handle" id="chatResizeHandle"></div>
 
-                    <select id="agentModelSelect" title="Agent 模型" disabled>
-                        <option value="">请先选择 API</option>
-                    </select>
-
-                    <select id="agentSkillSelect" title="技能加载">
-                        <option value="production-agent">制片 Agent</option>
-                    </select>
-
-                    <select id="agentAssetSelect" title="绑定的资产库">
-                        <option value="all">全项目资产库</option>
-                        <option value="bound" selected>仅已绑定素材</option>
-                    </select>
-                </div>
-
+            <!-- Bottom Chat Input Box（一体化容器） -->
+            <div class="chat-input-area" id="chatInputArea">
                 <div class="chat-input-box" id="chatInputBox" ondragover="handleChatDragOver(event)" ondragleave="handleChatDragLeave(event)" ondrop="handleChatDrop(event)">
                     <div class="pending-attachments" id="pendingAttachments"></div>
-                    <div class="chat-input-row">
-                        <button class="input-upload-btn" title="上传参考素材或文档" onclick="triggerChatUpload()">
-                            <i data-lucide="plus" class="w-4 h-4"></i>
-                        </button>
-                        <input type="file" id="chatFileInput" class="hidden" multiple onchange="handleChatFileUpload(event)">
-                        
-                        <textarea id="chatInput" placeholder="给 Agent 发送指令（如：调整场景1氛围、帮我拆分分镜、生成下个动作...）" onkeydown="handleChatKeyDown(event)"></textarea>
-                        
-                        <button class="send-btn" id="agentSendBtn" onclick="sendAgentMessage()" title="发送">
-                            <i data-lucide="send" class="w-4 h-4"></i>
-                        </button>
+                    <textarea id="chatInput" placeholder="给 Agent 发送指令（如：调整场景1氛围、帮我拆分分镜、生成下个动作...）" onkeydown="handleChatKeyDown(event)"></textarea>
+                    <input type="file" id="chatFileInput" class="hidden" multiple onchange="handleChatFileUpload(event)">
+
+                    <!-- 底部工具栏（视觉上属于输入框内部） -->
+                    <div class="chat-input-toolbar">
+                        <div class="toolbar-left">
+                            <button class="toolbar-pill-btn" title="上传参考素材或文档" onclick="triggerChatUpload()">
+                                <i data-lucide="plus" class="w-4 h-4"></i>
+                            </button>
+                            <button class="toolbar-pill-btn" id="apiPillBtn" title="API 平台选择" onclick="togglePillDropdown('api')">
+                                <i data-lucide="globe" class="w-3.5 h-3.5"></i>
+                                <span id="apiPillLabel">API</span>
+                                <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                            </button>
+                            <button class="toolbar-pill-btn" id="modelPillBtn" title="Agent 模型选择" onclick="togglePillDropdown('model')">
+                                <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+                                <span id="modelPillLabel">模型</span>
+                                <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                            </button>
+                            <button class="toolbar-pill-btn" id="skillPillBtn" title="技能加载" onclick="togglePillDropdown('skill')">
+                                <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                                <span id="skillPillLabel">Skill</span>
+                                <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                            </button>
+                            <button class="toolbar-pill-btn" id="assetPillBtn" title="素材库（与熊布打通）" onclick="togglePillDropdown('asset')">
+                                <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
+                                <span id="assetPillLabel">素材库</span>
+                                <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                            </button>
+                            <button class="toolbar-pill-btn" title="查看/编辑当前 Skill 流程文档" onclick="viewCurrentSkillDoc()">
+                                <i data-lucide="book-open" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                        <div class="toolbar-right">
+                            <button class="send-btn" id="agentSendBtn" onclick="sendAgentMessage()" title="发送">
+                                <i data-lucide="arrow-up" class="w-4 h-4"></i>
+                            </button>
+                        </div>
                     </div>
+
+                    <!-- 隐藏的原生 select（保持 JS 兼容） -->
+                    <div class="hidden">
+                        <select id="agentProviderSelect"></select>
+                        <select id="agentModelSelect" disabled><option value="">请先选择 API</option></select>
+                        <select id="agentSkillSelect"><option value="production-agent">制片 Agent</option></select>
+                        <select id="agentAssetSelect"><option value="all">素材库</option><option value="bound" selected>仅已绑定素材</option></select>
+                    </div>
+
                     <div class="drag-overlay" id="chatDragOverlay">松开以添加文件</div>
                 </div>
             </div>
@@ -221,7 +305,35 @@
 
     </main>
 
+    <!-- 素材库模态面板（自建选择器，通过 API 拉取熊布数据） -->
+    <div id="assetLibraryModal" class="asset-modal hidden">
+        <div class="asset-modal-backdrop" onclick="closeAssetLibrary()"></div>
+        <div class="asset-modal-panel">
+            <div class="asset-modal-header">
+                <div class="asset-modal-title">
+                    <i data-lucide="folder-open" class="w-4 h-4"></i>
+                    <span>熊布素材库</span>
+                </div>
+                <div class="asset-modal-tabs">
+                    <button class="asset-tab active" data-type="image" onclick="switchAssetTab('image')">图片资产</button>
+                    <button class="asset-tab" data-type="canvas" onclick="switchAssetTab('canvas')">画布资产</button>
+                    <button class="asset-tab" data-type="local" onclick="switchAssetTab('local')">本地素材</button>
+                </div>
+                <button class="asset-modal-close" onclick="closeAssetLibrary()" title="关闭">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="asset-modal-body" id="assetGridContainer">
+                <div class="asset-loading">加载中...</div>
+            </div>
+            <div class="asset-modal-footer">
+                <span class="asset-selected-count" id="assetSelectedCount">已选 0 个</span>
+                <button class="btn-primary" id="assetConfirmBtn" onclick="confirmAssetSelection()" disabled>添加到对话框</button>
+            </div>
+        </div>
+    </div>
+
     <!-- JS Implementation Script -->
-    <script src="/static/js/studio.js?v=2026.07.15.1784899386"></script>
+    <script src="/static/js/studio.js?v=2026.07.28.15"></script>
 </body>
 </html>

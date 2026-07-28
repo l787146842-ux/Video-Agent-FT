@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner
+from src.video_agent.tools.manager import ToolManager
 from src.video_agent.workflows.parser import WorkflowParser
 from src.video_agent.workflows.engine import WorkflowEngine
 
@@ -13,10 +14,13 @@ class VideoAgent:
         self.workspace_dir = Path(workspace_dir)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
 
-        # StateManager 接收目录（它自己会在其中管理 state.json）；
-        # 旧版误传了 state.json 路径，导致创建出 workspace/state.json/state.json
+        # StateManager 接收目录（它自己会在其中管理 state.json）
         self.state_manager = StateManager(str(self.workspace_dir))
-        self.planner = Planner(self.state_manager)
+        # Planner 持有 StateManager + ToolManager（Rule1: 唯一入口）
+        self.planner = Planner(
+            state_manager=self.state_manager,
+            tool_manager=ToolManager,
+        )
 
         logger.info(f"VideoAgent Initialized in workspace: {self.workspace_dir}")
 

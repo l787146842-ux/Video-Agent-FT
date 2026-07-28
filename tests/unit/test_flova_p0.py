@@ -3,12 +3,12 @@ import pytest
 
 from src.video_agent.web.actions import StudioActionExecutor
 from src.video_agent.web.agent_loop import run_agent_loop
-from src.video_agent.web.state_service import StudioStateService
+from src.video_agent.state.manager import StateManager
 
 
 @pytest.fixture
 def svc(tmp_path):
-    return StudioStateService(base_dir=tmp_path)
+    return StateManager(str(tmp_path))
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def test_add_shot_with_flova_fields(svc, executor):
         "draft": {"label": "分镜卡片", "prompt": "p"},
     }])
     assert applied == 1
-    shot = svc.state["shots"][-1]
+    shot = svc.state_dict["shots"][-1]
     assert shot["shotType"] == "长镜头"
     assert shot["sceneRefs"] == ["Element_监视太空艇", "Element_二维空间平面"]
     assert "0-4s" in shot["roughDesc"]
@@ -36,7 +36,7 @@ def test_add_shot_with_flova_fields(svc, executor):
 
 
 def test_update_group_shot_fields(svc, executor):
-    shot_id = svc.state["shots"][0]["id"]
+    shot_id = svc.state_dict["shots"][0]["id"]
     applied = executor.execute([{
         "action": "update_group",
         "group_type": "shot",
@@ -44,12 +44,12 @@ def test_update_group_shot_fields(svc, executor):
         "patch": {"shotType": "特写", "sceneRefs": ["Element_A"]},
     }])
     assert applied == 1
-    assert svc.state["shots"][0]["shotType"] == "特写"
-    assert svc.state["shots"][0]["sceneRefs"] == ["Element_A"]
+    assert svc.state_dict["shots"][0]["shotType"] == "特写"
+    assert svc.state_dict["shots"][0]["sceneRefs"] == ["Element_A"]
 
 
 def test_delete_draft(svc, executor):
-    group = svc.state["keyElements"][0]
+    group = svc.state_dict["keyElements"][0]
     target = group["drafts"][0]["id"]
     before = len(group["drafts"])
     assert executor.execute([{"action": "delete_draft", "draft_type": "keyElement", "draft_id": target}]) == 1
@@ -58,10 +58,10 @@ def test_delete_draft(svc, executor):
 
 
 def test_delete_group(svc, executor):
-    gid = svc.state["shots"][0]["id"]
-    before = len(svc.state["shots"])
+    gid = svc.state_dict["shots"][0]["id"]
+    before = len(svc.state_dict["shots"])
     assert executor.execute([{"action": "delete_group", "group_type": "shot", "group_id": gid}]) == 1
-    assert len(svc.state["shots"]) == before - 1
+    assert len(svc.state_dict["shots"]) == before - 1
 
 
 def test_delete_missing_returns_zero(executor):
@@ -79,7 +79,7 @@ async def test_request_confirmation_pauses_loop(svc, executor):
 
     async def llm(system, messages):
         calls["n"] += 1
-        return reply
+        return reply[0], reply[1], 0
 
     result = await run_agent_loop(
         "拆解", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],

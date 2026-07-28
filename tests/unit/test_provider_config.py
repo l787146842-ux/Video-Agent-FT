@@ -1,7 +1,9 @@
-"""provider_config：.env 写入消毒、key 读写、mock 判定（全部重定向到临时目录）"""
+"""provider_config：.env 写入消毒、key 读写、mock 判定、熊布配置合并（全部重定向到临时目录）"""
+import json
 import pytest
 
 import src.video_agent.web.provider_config as pc
+from src.video_agent.config import settings
 
 
 @pytest.fixture(autouse=True)
@@ -72,3 +74,108 @@ def test_provider_key_env_sanitized():
 def test_load_providers_fallback_when_missing():
     providers = pc.load_api_providers()
     assert any(p["id"] == "mock" for p in providers)
+
+
+# ---------- 熊布配置合并测试 ----------
+
+@pytest.fixture
+def canvas_env(tmp_path, monkeypatch):
+    """重定向熊布相关配置路径到临时目录（frozen dataclass 用 object.__setattr__）"""
+    object.__setattr__(settings, "canvas_providers_url", "http://127.0.0.1:19999/api/providers")
+    object.__setattr__(settings, "canvas_providers_file", str(tmp_path / "canvas_providers.json"))
+    object.__setattr__(settings, "canvas_env_file", str(tmp_path / "canvas.env"))
+    object.__setattr__(settings, "canvas_health_cache_seconds", 0)
+    # 重置缓存
+    monkeypatch.setattr(pc, "_canvas_ids_cache", None)
+    monkeypatch.setattr(pc, "_canvas_ids_cache_time", 0.0)
+    yield tmp_path
+    # 恢复默认值
+    object.__setattr__(settings, "canvas_providers_url", "http://127.0.0.1:3000/api/providers")
+    object.__setattr__(settings, "canvas_providers_file", r"E:\07 天问\熊布\data\api_providers.json")
+    object.__setattr__(settings, "canvas_env_file", r"E:\07 天问\熊布\API\.env")
+    object.__setattr__(settings, "canvas_health_cache_seconds", 30)
+
+
+def test_load_canvas_providers_file_not_exist(canvas_env):
+    """熊布配置文件不存在时返回空列表"""
+    result = pc.load_canvas_providers()
+    assert result == []
+
+
+def test_load_canvas_providers_from_file(canvas_env):
+    """熊布配置文件存在时正常读取"""
+    canvas_file = canvas_env / "canvas_providers.json"
+    canvas_file.write_text(json.dumps([
+        {"id": "modelscope", "name": "ModelScope", "enabled": True},
+        {"id": "volcengine", "name": "火山引擎", "enabled": True},
+    ]), encoding="utf-8")
+    result = pc.load_canvas_providers()
+    assert len(result) == 2
+    assert result[0]["id"] == "modelscope"
+
+
+def test_merged_providers_dedup_local_priority(canvas_env, tmp_path, monkeypatch):
+    """合并逻辑：同 id 本地优先，熊布独有追加"""
+    # 本地配置
+    local_file = tmp_path / "api_providers.json"
+    local_file.write_text(json.dumps([
+        {"id": "modelscope", "name": "MS-Local", "enabled": True},
+        {"id": "custom-api", "name": "MyCustom", "enabled": True},
+    ]), encoding="utf-8")
+    monkeypatch.setattr(pc, "PROVIDERS_FILE", local_file)
+
+    # 熊布配置
+    canvas_file = canvas_env / "canvas_providers.json"
+    canvas_file.write_text(json.dumps([
+        {"id": "modelscope", "name": "MS-Canvas", "enabled": True},
+        {"id": "volcengine", "name": "火山引擎", "enabled": True},
+    ]), encoding="utf-8")
+
+    merged = pc.load_merged_providers()
+    ids = [p["id"] for p in merged]
+
+    # modelscope 只出现一次（本地优先）
+    assert ids.count("modelscope") == 1
+    ms = next(p for p in merged if p["id"] == "modelscope")
+    assert ms["name"] == "MS-Local"  # 本地优先
+
+    # custom-api 保留（Agent 独有）
+    assert "custom-api" in ids
+
+    # volcengine 从熊布追加
+    assert "volcengine" in ids
+    vc = next(p for p in merged if p["id"] == "volcengine")
+    assert vc.get("_source") == "canvas"
+
+
+def test_get_canvas_provider_ids(canvas_env):
+    """缓存的熊布 provider id 集合正确"""
+    canvas_file = canvas_env / "canvas_providers.json"
+    canvas_file.write_text(json.dumps([
+        {"id": "modelscope", "name": "MS", "enabled": True},
+        {"id": "runninghub", "name": "RH", "enabled": True},
+    ]), encoding="utf-8")
+
+    ids = pc.get_canvas_provider_ids()
+    assert "modelscope" in ids
+    assert "runninghub" in ids
+    assert "custom-api" not in ids
+
+
+def test_get_api_key_canvas_fallback(canvas_env, tmp_path, monkeypatch):
+    """三级 fallback：本地无 key 时从熊布 .env 读取"""
+    # 熊布 .env 有 key
+    canvas_env_file = canvas_env / "canvas.env"
+    canvas_env_file.write_text("MODELSCOPE_API_KEY=sk-from-canvas\n", encoding="utf-8")
+
+    # 熊布 provider 列表含 modelscope
+    canvas_file = canvas_env / "canvas_providers.json"
+    canvas_file.write_text(json.dumps([
+        {"id": "modelscope", "name": "MS", "enabled": True},
+    ]), encoding="utf-8")
+
+    # 确保本地无此 key
+    monkeypatch.delenv("MODELSCOPE_API_KEY", raising=False)
+
+    key = pc.get_api_key("modelscope")
+    assert key == "sk-from-canvas"
