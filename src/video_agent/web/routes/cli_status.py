@@ -2,6 +2,8 @@
 /api/gemini-cli, /api/codex, /api/jimeng — CLI 工具状态检测端点
 前端"检测 CLI"按钮调用，判断本机是否已安装对应 CLI。
 """
+import asyncio
+import glob
 import os
 import re
 import shutil
@@ -35,7 +37,6 @@ def _find_exe(name: str, winget_pattern: str = "") -> str | None:
     if winget_pattern:
         local_app = os.getenv("LOCALAPPDATA", "")
         if local_app:
-            import glob
             pattern = os.path.join(local_app, winget_pattern)
             matches = sorted(glob.glob(pattern), reverse=True)
             if matches:
@@ -43,23 +44,31 @@ def _find_exe(name: str, winget_pattern: str = "") -> str | None:
     return None
 
 
-def _run_version(exe_path: str, args: list[str] | None = None) -> str:
-    """运行 CLI 获取版本号"""
-    cmd = [exe_path] + (args or ["--version"])
+def _run_capture(cmd: list[str], timeout: int = 15) -> tuple[str, int]:
+    """同步运行 CLI 并捕获输出（供 asyncio.to_thread 调用，避免阻塞事件循环）。
+
+    返回 (输出文本, returncode)；异常时返回 ("", -1)。
+    """
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=timeout,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
-        output = (result.stdout or result.stderr or "").strip()
-        # 取第一行作为版本信息
-        return output.splitlines()[0] if output else ""
+        return (result.stdout or result.stderr or "").strip(), result.returncode
     except Exception as e:
-        logger.debug(f"[CLI] 获取版本失败: {e}")
-        return ""
+        logger.debug(f"[CLI] 命令执行失败: {e}")
+        return "", -1
+
+
+def _run_version(exe_path: str, args: list[str] | None = None) -> str:
+    """运行 CLI 获取版本号"""
+    cmd = [exe_path] + (args or ["--version"])
+    output, _ = _run_capture(cmd, timeout=10)
+    # 取第一行作为版本信息
+    return output.splitlines()[0] if output else ""
 
 
 # ---------- Gemini CLI (agy) ----------
@@ -70,7 +79,7 @@ async def gemini_cli_status():
     if not exe:
         return {"installed": False, "version": "", "path": "", "message": "未找到 agy，请先运行 CLI\\windows\\gemini\\1-install_gemini_cli.bat"}
 
-    version = _run_version(exe)
+    version = await asyncio.to_thread(_run_version, exe)
     return {
         "installed": True,
         "version": version,
@@ -87,18 +96,10 @@ async def gemini_cli_help(command: str = ""):
         return {"output": "agy 未安装", "ok": False}
 
     args = _help_args(command)
-    try:
-        result = subprocess.run(
-            [exe] + args,
-            capture_output=True,
-            text=True,
-            timeout=15,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
-        output = result.stdout or result.stderr or "(无输出)"
-        return {"output": output, "ok": True}
-    except Exception as e:
-        return {"output": str(e), "ok": False}
+    output, rc = await asyncio.to_thread(_run_capture, [exe] + args, 15)
+    if rc < 0 and not output:
+        return {"output": "命令执行失败或超时", "ok": False}
+    return {"output": output or "(无输出)", "ok": True}
 
 
 # ---------- Codex CLI ----------
@@ -112,7 +113,7 @@ async def codex_cli_status():
     if not exe:
         return {"installed": False, "version": "", "path": "", "message": "未找到 codex CLI"}
 
-    version = _run_version(exe)
+    version = await asyncio.to_thread(_run_version, exe)
     return {
         "installed": True,
         "version": version,
@@ -129,18 +130,10 @@ async def codex_cli_help(command: str = ""):
         return {"output": "codex 未安装", "ok": False}
 
     args = _help_args(command)
-    try:
-        result = subprocess.run(
-            [exe] + args,
-            capture_output=True,
-            text=True,
-            timeout=15,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
-        output = result.stdout or result.stderr or "(无输出)"
-        return {"output": output, "ok": True}
-    except Exception as e:
-        return {"output": str(e), "ok": False}
+    output, rc = await asyncio.to_thread(_run_capture, [exe] + args, 15)
+    if rc < 0 and not output:
+        return {"output": "命令执行失败或超时", "ok": False}
+    return {"output": output or "(无输出)", "ok": True}
 
 
 # ---------- 即梦 CLI (dreamina) ----------
@@ -151,23 +144,11 @@ async def jimeng_cli_status():
     if not exe:
         return {"installed": False, "logged_in": False, "version": "", "path": "", "message": "未找到 dreamina CLI"}
 
-    version = _run_version(exe)
+    version = await asyncio.to_thread(_run_version, exe)
 
     # 尝试检测登录状态
-    logged_in = False
-    raw = ""
-    try:
-        result = subprocess.run(
-            [exe, "whoami"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
-        raw = (result.stdout or result.stderr or "").strip()
-        logged_in = result.returncode == 0 and "not logged in" not in raw.lower()
-    except Exception:
-        pass
+    raw, rc = await asyncio.to_thread(_run_capture, [exe, "whoami"], 10)
+    logged_in = rc == 0 and "not logged in" not in raw.lower()
 
     return {
         "installed": True,

@@ -70,7 +70,7 @@ class TestSaveCanvas:
     async def test_success(self, adapter):
         mock_resp = _mock_response({"canvas": {"id": "c1", "updated_at": 123}})
         with patch("httpx.AsyncClient.request", new_callable=AsyncMock, return_value=mock_resp):
-            result = await adapter.save_canvas("c1", nodes=[{"id": "n1"}], base_updated_at=100)
+            result = await adapter.save_canvas("c1", nodes=[{"id": "n1", "type": "text"}], base_updated_at=100)
         assert result["updated_at"] == 123
 
     @pytest.mark.asyncio

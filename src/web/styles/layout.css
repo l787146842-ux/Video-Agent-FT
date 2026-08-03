@@ -1,0 +1,42 @@
+/* ===== 布局骨架 + Header（由 app.css 拆分） ===== */
+@layer components {
+  /* ---------- 布局骨架 ---------- */
+  .panel-column { display: flex; flex-direction: column; height: 100%; position: relative; }
+  .layout-main { flex: 1; min-height: 0; display: flex; min-width: 0; position: relative; }
+  .agent-page { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+  .agent-page > .studio-container { flex: 1; min-height: 0; height: auto; }
+
+  .studio-container { display: flex; width: 100%; height: calc(100vh - 52px); position: relative; }
+  .studio-col { height: 100%; display: flex; flex-direction: column; background-color: var(--bg-secondary); position: relative; overflow: hidden; }
+  .col-left { min-width: 240px; max-width: 600px; border-right: 1px solid var(--border-color); }
+  .col-middle { flex: 1; min-width: 380px; background-color: var(--bg-primary); display: flex; flex-direction: column; }
+  .col-right { min-width: 280px; max-width: 650px; border-left: 1px solid var(--border-color); }
+
+  /* 分割线*/
+  .splitter-v { width: var(--splitter-width); height: 100%; cursor: col-resize; background-color: transparent; position: relative; z-index: 10; transition: background-color 0.2s; margin: 0 -3px; }
+  .splitter-v:hover, .splitter-v.dragging { background-color: var(--splitter-hover); }
+  .splitter-h { height: var(--splitter-width); width: 100%; cursor: row-resize; background-color: var(--border-color); position: relative; z-index: 10; transition: background-color 0.2s; margin: -3px 0; }
+  .splitter-h:hover, .splitter-h.dragging { background-color: var(--splitter-hover); }
+
+  /* ---------- Header ---------- */
+  .studio-header { height: 52px; background-color: var(--bg-secondary); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 20; position: relative; }
+  .studio-header:has(.nav-toggle-arrow) { border-bottom: none; }
+  .studio-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; color: var(--text-main); }
+  .brand-star { flex-shrink: 0; filter: drop-shadow(0 1px 3px rgba(220, 38, 38, 0.4)); }
+  .brand-name { font-size: 15px; font-weight: 700; letter-spacing: 1px; }
+  .studio-nav-links { display: flex; align-items: center; gap: 16px; }
+  .studio-header-actions { display: flex; align-items: center; gap: 12px; }
+
+  .mode-btn { display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 13px; font-weight: 500; padding: 6px 14px; border: none; border-radius: var(--radius-sm); background: none; cursor: pointer; transition: all 0.2s ease; text-decoration: none; white-space: nowrap; }
+  .mode-btn:hover { color: var(--text-main); background-color: var(--bg-tertiary); }
+  .mode-btn.active { color: #ffffff; background-color: var(--accent-blue); }
+
+  .theme-toggle-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-muted); cursor: pointer; transition: all 0.2s; }
+  .theme-toggle-btn:hover { color: var(--text-main); border-color: var(--accent-blue); background: var(--bg-hover); }
+  .theme-toggle-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* 导航收放箭头 */
+  .nav-toggle-arrow { position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%); z-index: 21; display: flex; align-items: center; justify-content: center; width: 56px; height: 14px; border: none; border-radius: 0 0 8px 8px; background-color: var(--bg-secondary); color: var(--text-muted); cursor: pointer; transition: background-color 0.2s, color 0.2s; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); }
+  .nav-toggle-arrow:hover { background-color: var(--bg-tertiary); color: var(--text-main); }
+  .nav-toggle-arrow--floating { position: fixed; top: 0; bottom: auto; left: 50%; transform: translateX(-50%); border-radius: 0 0 8px 8px; z-index: 21; background-color: var(--bg-secondary); height: 14px; }
+}

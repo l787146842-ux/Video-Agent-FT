@@ -2,8 +2,8 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime, timezone
-import time
-import random
+
+from src.video_agent.utils import gen_id
 
 # 管线模型从 models_pipeline 导入（Phase 4 拆分）
 from .models_pipeline import (  # noqa: F401
@@ -34,147 +34,13 @@ class ProjectStatus(str, Enum):
     failed = "failed"
     paused = "paused"
 
-class Phase(str, Enum):
-    story = "story"
-    storyboard = "storyboard"
-    image = "image"
-    video = "video"
-    audio = "audio"
-    edit = "edit"
 
-class StepStatus(str, Enum):
-    pending = "pending"
-    running = "running"
-    completed = "completed"
-    failed = "failed"
-    skipped = "skipped"
-
-class StoryStatus(str, Enum):
-    pending = "pending"
-    running = "running"
-    completed = "completed"
-    failed = "failed"
-
-class ShotType(str, Enum):
-    extreme_wide = "extreme_wide"
-    wide = "wide"
-    medium = "medium"
-    close_up = "close_up"
-    extreme_close_up = "extreme_close_up"
-    over_shoulder = "over_shoulder"
-    pov = "pov"
-
-class CameraMovement(str, Enum):
-    static = "static"
-    pan_left = "pan_left"
-    pan_right = "pan_right"
-    tilt_up = "tilt_up"
-    tilt_down = "tilt_down"
-    push_in = "push_in"
-    pull_out = "pull_out"
-    tracking = "tracking"
-    crane = "crane"
-    handheld = "handheld"
-
-class Transition(str, Enum):
-    cut = "cut"
-    fade_in = "fade_in"
-    fade_out = "fade_out"
-    dissolve = "dissolve"
-    wipe = "wipe"
-
-class ShotStatus(str, Enum):
-    pending = "pending"
-    generating_image = "generating_image"
-    image_ready = "image_ready"
-    generating_video = "generating_video"
-    video_ready = "video_ready"
-    failed = "failed"
-
-# =======================
-# Models
-# =======================
-
-class PlanStep(BaseModel):
-    step_id: str
-    phase: Phase
-    description: str
-    status: StepStatus = StepStatus.pending
-    depends_on: List[str] = Field(default_factory=list)
-
-class PlanState(BaseModel):
-    plan_id: Optional[str] = None
-    goal_summary: Optional[str] = None
-    style: Optional[str] = None
-    duration_seconds: Optional[int] = None
-    resolution: Optional[str] = None
-    fps: Optional[int] = None
-    steps: List[PlanStep] = Field(default_factory=list)
-
-class Dialogue(BaseModel):
-    character: str
-    line: str
-    emotion: Optional[str] = None
-
-class Scene(BaseModel):
-    scene_id: str
-    scene_number: int
-    location: str
-    time_of_day: str
-    description: str
-    dialogue: List[Dialogue] = Field(default_factory=list)
-    duration_seconds: float
-    mood: Optional[str] = None
-    notes: Optional[str] = None
-
-class Character(BaseModel):
-    character_id: str
-    name: str
-    role: str
-    description: str
-    visual_reference: Optional[str] = None
-
-class StoryState(BaseModel):
-    story_id: Optional[str] = None
-    title: Optional[str] = None
-    genre: Optional[str] = None
-    synopsis: Optional[str] = None
-    scenes: List[Scene] = Field(default_factory=list)
-    characters: List[Character] = Field(default_factory=list)
-    status: StoryStatus = StoryStatus.pending
-
-class GenerationConfig(BaseModel):
-    image_adapter: Optional[str] = None
-    video_adapter: Optional[str] = None
-    seed: Optional[int] = None
-    guidance_scale: Optional[float] = None
-    steps: Optional[int] = None
-
-class Shot(BaseModel):
-    shot_id: str
-    scene_id: str
-    shot_number: int
-    shot_type: ShotType
-    camera_movement: CameraMovement
-    description: str
-    visual_prompt: Optional[str] = None
-    negative_prompt: Optional[str] = None
-    duration_seconds: float
-    transition: Transition = Transition.cut
-    audio_cue: Optional[str] = None
-    
-    image_asset_id: Optional[str] = None
-    video_asset_id: Optional[str] = None
-    audio_asset_id: Optional[str] = None
-    
-    generation_config: GenerationConfig = Field(default_factory=GenerationConfig)
-    status: ShotStatus = ShotStatus.pending
-    retry_count: int = 0
-
-class StoryboardState(BaseModel):
-    storyboard_id: Optional[str] = None
-    story_id: Optional[str] = None
-    shots: List[Shot] = Field(default_factory=list)
+# CLI 遗留模型（向后兼容，新代码勿使用）
+from .models_legacy import (  # noqa: F401, E402
+    Phase, StepStatus, StoryStatus, ShotType, CameraMovement, Transition, ShotStatus,
+    PlanStep, PlanState, Dialogue, Scene, Character, StoryState,
+    GenerationConfig, Shot, StoryboardState,
+)
 
 # =======================
 # Studio 前端对齐模型
@@ -191,6 +57,7 @@ class DraftRecord(BaseModel):
     label: str = "草稿"
     tag: str = "草稿"  # "推荐" | "已确认" | "草稿" | "生成中" | "Agent"
     media_type: str = Field(alias="mediaType", default="image")  # "image" | "video" | "audio"
+    gen_type: str = Field(alias="genType", default="")  # 当前选中的生成类型（缺省回退 media_type）
     prompt: str = ""
     provider_id: str = Field(alias="providerId", default="")
     model: str = ""
@@ -202,6 +69,7 @@ class DraftRecord(BaseModel):
     timbre: str = ""
     img_url: str = Field(alias="imgUrl", default="")
     video_url: str = Field(alias="videoUrl", default="")
+    audio_url: str = Field(alias="audioUrl", default="")
     ref_assets: List[str] = Field(alias="refAssets", default_factory=list)
     asset_id: Optional[str] = None  # 关联到 AssetState
 
@@ -321,7 +189,7 @@ class InteractionState(BaseModel):
 
 
 class ProjectState(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     version: str = "2.0.0"
     project_id: str
@@ -333,7 +201,7 @@ class ProjectState(BaseModel):
 
     # 原有架构字段（保留以兼容 CLI 和旧 Workflow）
     plan: PlanState = Field(default_factory=PlanState)
-    story: StoryState = Field(default_factory=StoryState)
+    story: StoryState = Field(default_factory=StoryState)  # DEPRECATED: 仅为兼容旧 state.json，新逻辑勿写入
     # 注意：原 storyboard: StoryboardState 已删除，由 key_elements/shots/audio_items 替代（v2.0.0）
     pipeline_assets: List[AssetState] = Field(default_factory=list)  # 生成管线资产（CLI/Workflow 用）
     timeline: TimelineState = Field(default_factory=TimelineState)
@@ -389,8 +257,10 @@ DRAFT_DEFAULT_FIELDS: Dict[str, Any] = {
     "label": "Agent 草稿",
     "tag": "Agent",
     "mediaType": "image",
+    "genType": "",
     "imgUrl": "",
     "videoUrl": "",
+    "audioUrl": "",
     "prompt": "",
     "model": "",
     "mode": "",
@@ -416,7 +286,7 @@ def build_draft_dict(data: Optional[Dict[str, Any]] = None, *, draft_id: str = "
         完整的 draft 字典（含 id 和所有默认字段）
     """
     data = data or {}
-    result: Dict[str, Any] = {"id": draft_id or data.get("id") or f"draft-{int(time.time())}-{random.randint(100, 999)}"}
+    result: Dict[str, Any] = {"id": draft_id or data.get("id") or gen_id("draft")}
     for field_name, default in DRAFT_DEFAULT_FIELDS.items():
         value = data.get(field_name)
         # refAssets 需要拷贝列表避免共享引用

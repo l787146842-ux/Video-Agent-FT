@@ -1,0 +1,8 @@
+/* FTDYB 影视创作工作台 — 样式聚合入口（按域拆分：tokens/layout/left/middle/chat/overlays） */
+@import "tailwindcss";
+@import "./tokens.css";
+@import "./layout.css";
+@import "./left-panel.css";
+@import "./middle-panel.css";
+@import "./chat.css";
+@import "./overlays.css";

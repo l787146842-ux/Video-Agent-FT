@@ -1,0 +1,88 @@
+/* ===== 左面板（故事板 / 未归类素材）（由 app.css 拆分） ===== */
+@layer components {
+  /* ---------- 左面板 ---------- */
+  .left-tabs { display: flex; border-bottom: 1px solid var(--border-color); background-color: var(--bg-secondary); padding: 8px 12px 0 12px; gap: 8px; }
+  .left-tab-btn { padding: 8px 16px; font-size: 13px; font-weight: 600; color: var(--text-muted); border: none; background: none; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+  .left-tab-btn:hover { color: var(--text-main); }
+  .left-tab-btn.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+  .left-content { flex: 1; overflow-y: auto; padding: 6px 12px 12px; }
+
+  .sub-nav { display: flex; gap: 6px; margin-bottom: 8px; background-color: var(--bg-primary); padding: 4px; border-radius: var(--radius-md); }
+  .sub-nav-btn { flex: 1; padding: 6px 10px; font-size: 12px; font-weight: 500; color: var(--text-muted); border: none; background: none; border-radius: var(--radius-sm); cursor: pointer; text-align: center; transition: all 0.2s; }
+  .sub-nav-btn.active { background-color: var(--bg-tertiary); color: var(--text-main); box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+
+  .storyboard-list { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; padding: 0 2px; }
+  .storyboard-section { display: flex; flex-direction: column; gap: 8px; }
+
+  /* 底部添加分组按钮 */
+  .add-group-btn { width: 100%; padding: 10px; margin-top: 6px; border: 1px dashed var(--border-color); border-radius: var(--radius-md); background: transparent; color: var(--text-dim); font-size: 13px; cursor: pointer; transition: all 0.15s; }
+  .add-group-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background: rgba(59, 130, 246, 0.06); }
+
+  /* 文字可复制：分组卡片内容 + 提示词 + 对话框 */
+  .sb-title, .sb-desc, .draft-card, .prompt-textarea, .chat-msg { user-select: text; -webkit-user-select: text; cursor: text; }
+
+  .sb-group { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 10px; transition: border-color 0.2s; cursor: grab; }
+  .sb-group:active { cursor: grabbing; }
+  .sb-group:hover { border-color: rgba(59, 130, 246, 0.4); }
+  .sb-group-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .sb-title { font-size: 14px; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 6px; }
+  .sb-title-input { font-size: 14px; font-weight: 600; color: var(--text-main); background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; padding: 2px 6px; width: 100%; max-width: 200px; outline: none; }
+  .sb-desc-input { font-size: 12px; color: var(--text-main); background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; padding: 3px 6px; width: 100%; outline: none; margin-top: 4px; }
+  .sb-badge { font-size: 11px; padding: 2px 6px; background-color: rgba(59, 130, 246, 0.15); color: var(--accent-blue); border-radius: 4px; cursor: default; }
+  .sb-badge-wrap { display: flex; align-items: center; gap: 5px; }
+  .sb-badge-input { font-size: 11px; padding: 1px 4px; width: 64px; background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; color: var(--text-main); outline: none; }
+  .sb-index { font-size: 12px; font-weight: 700; color: var(--text-dim); min-width: 16px; text-align: center; }
+  .sb-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; margin-top: 4px; }
+
+  .draft-cards-row { display: flex; gap: 8px; align-items: center; overflow-x: auto; padding: 4px 0; }
+  .draft-card { min-width: 100px; height: 64px; border-radius: var(--radius-sm); background-color: var(--bg-tertiary); border: 2px solid transparent; cursor: pointer; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px; background-size: cover; background-position: center; transition: all 0.2s; }
+  .draft-card.active { border-color: var(--accent-blue); box-shadow: 0 0 8px rgba(59, 130, 246, 0.5); }
+  .draft-card-label { font-size: 10px; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); color: #fff; padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .draft-card-tag { position: absolute; top: 4px; right: 4px; font-size: 9px; padding: 1px 4px; border-radius: 3px; background: rgba(59, 130, 246, 0.8); color: #fff; }
+    /* 草稿卡片媒体类型可视化：视频首帧缩略图 / 音频标识 */
+    .draft-card-thumb-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+    .draft-card-media-badge { position: absolute; top: 4px; left: 4px; z-index: 1; display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: rgba(0, 0, 0, 0.6); color: #fff; backdrop-filter: blur(2px); pointer-events: none; }
+    .draft-card-audio-indicator { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #34d399; pointer-events: none; }
+    .draft-card-wave { display: flex; align-items: flex-end; gap: 2px; height: 12px; }
+    .draft-card-wave span { width: 2px; border-radius: 1px; background: #34d399; }
+    .draft-card-wave span:nth-child(1) { height: 5px; }
+    .draft-card-wave span:nth-child(2) { height: 10px; }
+    .draft-card-wave span:nth-child(3) { height: 7px; }
+    .draft-card-wave span:nth-child(4) { height: 12px; }
+    .draft-card-wave span:nth-child(5) { height: 6px; }
+
+  .add-card-btn { width: 40px; height: 64px; min-width: 40px; border: 1px dashed var(--border-color); border-radius: var(--radius-sm); background-color: rgba(255,255,255,0.02); color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
+  .add-card-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background-color: rgba(59, 130, 246, 0.05); }
+
+  .card-adjust-box { margin-top: 6px; display: flex; gap: 6px; align-items: center; }
+  .card-adjust-input { flex: 1; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; color: var(--text-main); outline: none; }
+  .card-adjust-input:focus { border-color: var(--accent-blue); }
+  .card-adjust-btn { padding: 6px 10px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-main); font-size: 12px; cursor: pointer; }
+  .card-adjust-btn:hover { background-color: var(--bg-hover); }
+
+  /* 场景引用 chips */
+  .scene-refs { font-size: 10px; color: var(--text-muted); margin: 2px 0 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .scene-refs-label { font-size: 11px; color: var(--text-dim); }
+  .scene-ref-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.35); color: #93c5fd; cursor: default; transition: background 0.15s; }
+  .scene-ref-chip img { width: 20px; height: 20px; border-radius: 3px; object-fit: cover; }
+  html.light .scene-ref-chip { color: #2563eb; }
+
+  /* 未归类素材 */
+  .uncategorized-view { display: flex; flex-direction: column; gap: 12px; }
+  .uncategorized-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--border-color); }
+  .uncategorized-title { font-size: 12px; font-weight: 600; color: var(--text-main); }
+  .toggle-switch { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); cursor: pointer; padding: 0; border: 0; background: transparent; }
+  .switch-track { width: 36px; height: 20px; background-color: var(--bg-tertiary); border-radius: 10px; position: relative; transition: background-color 0.2s; }
+  .switch-track.active { background-color: var(--accent-blue); }
+  .switch-thumb { width: 16px; height: 16px; background-color: #ffffff; border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: transform 0.2s; }
+  .switch-track.active .switch-thumb { transform: translateX(16px); }
+  /* 未归类素材网格：flex 换行，卡片复用 .draft-card 尺寸（与故事板一致） */
+  .assets-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .uncategorized-section-label { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--border-color); }
+
+  /* 批量生成栏 */
+  .batch-gen-bar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-color); }
+  .batch-gen-bar .batch-gen-btn { flex: 1; justify-content: center; }
+  .batch-gen-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: 11px; border: 1px solid var(--border-color); border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
+  .batch-gen-btn:hover { color: #93c5fd; border-color: #3b82f6; background: rgba(59, 130, 246, 0.08); }
+}

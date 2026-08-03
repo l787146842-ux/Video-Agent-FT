@@ -5,22 +5,26 @@ OpenAI 兼容协议 Adapter — 覆盖 ModelScope / Gemini 反代 / 任何 OpenA
 - OpenAICompatChatAdapter: LLM 对话（支持流式 + function calling）
 - OpenAICompatImageAdapter: 图片生成（/images/generations + /chat/completions fallback）
 """
+import asyncio
 import base64
 import binascii
 import json
 import re
 import time
-import random
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import httpx
 from loguru import logger
 
 from .base_chat import BaseChatAdapter, ChatResponse, StreamChunk
 from .base import BaseImageAdapter, ImageGenerationResponse
+from .retry import with_retry
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils.paths import ASSETS_DIR
+from src.video_agent.utils import gen_id
+from src.video_agent.storage import get_storage
 
 _DATA_URI_RE = re.compile(r"data:image/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)")
 _HTTP_IMAGE_RE = re.compile(r"https?://[^\s\)\"]+\.(?:png|jpg|jpeg|webp|gif)")
@@ -33,7 +37,7 @@ def extract_base64_image(text: str) -> str:
 
 
 def persist_data_uri(data_uri: str) -> str:
-    """把 base64 data URI 落盘到 workspace/assets/，返回相对 URL"""
+    """把 base64 data URI 通过 Storage 接口落盘，返回相对 URL"""
     m = _DATA_URI_RE.match(data_uri)
     if not m:
         raise AdapterError("无法解析图片 data URI")
@@ -47,20 +51,85 @@ def persist_data_uri(data_uri: str) -> str:
     except (binascii.Error, ValueError) as e:
         raise AdapterError(f"图片 base64 解码失败: {e}")
 
-    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-    name = f"gen-{int(time.time())}-{random.randint(1000, 9999)}.{ext}"
-    (ASSETS_DIR / name).write_bytes(raw)
-    logger.info(f"[Adapter] base64 图片已落盘: {name} ({len(raw)} bytes)")
-    return f"/workspace/assets/{name}"
+    name = f"{gen_id('gen', wide=True)}.{ext}"
+    storage = get_storage()
+    url = storage.save(raw, name, f"image/{ext}")
+    return url
+
+
+_MIME_BY_SUFFIX = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp",
+}
+
+
+async def ref_to_data_uri(url: str) -> str:
+    """把参考素材 URL（本地 /assets、http(s)、data:）转为 base64 data URI。
+
+    多模态模型（如 Gemini）无法访问本服务/画布的本地地址，因此将参考图
+    内联为 data URI 随请求发送，保证模型能准确接收到 @ 引用的素材。
+    失败返回空串（调用方跳过该参考图）。
+    """
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if url.startswith("data:"):
+        return url
+    try:
+        if url.startswith(("http://", "https://")):
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                raw = resp.content
+                ctype = resp.headers.get("content-type", "").split(";")[0].strip()
+                if not ctype.startswith("image/"):
+                    ext = Path(urlparse(url).path).suffix.lower()
+                    ctype = _MIME_BY_SUFFIX.get(ext, "image/png")
+        else:
+            # 本地素材：/workspace/assets/xxx 或 /assets/xxx（防目录穿越）
+            path = urlparse(url).path if "://" in url else url
+            fname = path.split("/assets/")[-1].strip("/") if "/assets/" in path else path.strip("/")
+            full = (ASSETS_DIR / fname).resolve()
+            full.relative_to(ASSETS_DIR.resolve())
+            if not full.exists():
+                return ""
+            raw = full.read_bytes()
+            ctype = _MIME_BY_SUFFIX.get(full.suffix.lower(), "image/png")
+        b64 = base64.b64encode(raw).decode("ascii")
+        return f"data:{ctype};base64,{b64}"
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[ImageAdapter] 参考图转 data URI 失败: {e}")
+        return ""
 
 
 class OpenAICompatChatAdapter(BaseChatAdapter):
-    """OpenAI 兼容 Chat Adapter（支持流式 + function calling）"""
+    """OpenAI 兼容 Chat Adapter（支持流式 + function calling）
+
+    连接池复用：实例持有长生命周期 httpx.AsyncClient，避免每次请求重建 TCP 连接。
+    使用完毕后调用 await adapter.close() 释放资源。
+    """
 
     def __init__(self, base_url: str, api_key: str = "", model: str = ""):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self._client: Optional[httpx.AsyncClient] = None
+
+    def _get_client(self, timeout: int = 120) -> httpx.AsyncClient:
+        """Lazy 创建/复用 httpx 客户端（连接池复用）"""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url,
+                timeout=httpx.Timeout(timeout, connect=10.0),
+                headers=self._headers(),
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """释放 HTTP 连接池资源"""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     def _headers(self) -> Dict[str, str]:
         h = {"Content-Type": "application/json"}
@@ -91,12 +160,15 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             payload["tools"] = tools
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    f"{self.base_url}/chat/completions", json=payload, headers=self._headers()
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            client = self._get_client(timeout)
+            resp = await with_retry(
+                lambda: client.post("/chat/completions", json=payload),
+                max_retries=1,
+                base_delay=1.0,
+                context="chat",
+            )
+            resp.raise_for_status()
+            data = resp.json()
         except httpx.TimeoutException:
             raise AdapterError(f"LLM 请求超时（{timeout}s），请检查网络或供应商状态")
         except httpx.HTTPStatusError as e:
@@ -140,59 +212,114 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         if tools:
             payload["tools"] = tools
 
+        # 首块产出前遇瞬时故障（上游 5xx 繁忙 / 连接失败）指数退避重试，
+        # 与非流式路径的 with_retry 对齐；已开始产出内容则不重试（避免内容重复）。
+        max_connect_retries = 2
+        for attempt in range(max_connect_retries + 1):
+            yielded = False
+            try:
+                async for chunk in self._stream_once(payload, timeout):
+                    yielded = True
+                    yield chunk
+                return
+            except AdapterError as e:
+                msg = str(e)
+                retryable = (
+                    msg.startswith("LLM 返回 HTTP 5")
+                    or "流式请求失败" in msg
+                    or "流式请求超时" in msg
+                )
+                if not retryable or yielded or attempt >= max_connect_retries:
+                    raise
+                delay = 1.0 * (2 ** attempt)
+                logger.warning(
+                    f"[OpenAICompat] 流式瞬时故障：{msg[:120]}，"
+                    f"第 {attempt + 1}/{max_connect_retries} 次重试，等待 {delay:.0f}s"
+                )
+                await asyncio.sleep(delay)
+
+    async def _stream_once(
+        self,
+        payload: Dict[str, Any],
+        timeout: int,
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """单次流式请求（连接 + 逐行解析 SSE），异常转译为 AdapterError。"""
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                async with client.stream(
-                    "POST", f"{self.base_url}/chat/completions", json=payload, headers=self._headers()
-                ) as resp:
-                    if resp.status_code != 200:
-                        body = (await resp.aread()).decode("utf-8", errors="replace")[:200]
-                        raise AdapterError(f"LLM 返回 HTTP {resp.status_code}: {body}")
+            client = self._get_client(timeout)
+            async with client.stream(
+                "POST", "/chat/completions", json=payload
+            ) as resp:
+                if resp.status_code != 200:
+                    body = (await resp.aread()).decode("utf-8", errors="replace")[:200]
+                    raise AdapterError(f"LLM 返回 HTTP {resp.status_code}: {body}")
 
-                    ctype = resp.headers.get("content-type", "")
-                    if "text/event-stream" not in ctype:
-                        # 供应商不支持流式，按普通 JSON 处理
-                        data = json.loads((await resp.aread()).decode("utf-8", errors="replace"))
-                        choices = data.get("choices", [])
-                        if choices:
-                            content = choices[0].get("message", {}).get("content", "") or ""
-                            if content:
-                                yield StreamChunk(type="text_delta", text=content)
-                        return
+                ctype = resp.headers.get("content-type", "")
+                if "text/event-stream" not in ctype:
+                    # 供应商不支持流式，按普通 JSON 处理
+                    data = json.loads((await resp.aread()).decode("utf-8", errors="replace"))
+                    choices = data.get("choices", [])
+                    if choices:
+                        content = choices[0].get("message", {}).get("content", "") or ""
+                        if content:
+                            yield StreamChunk(type="text_delta", text=content)
+                        fr = choices[0].get("finish_reason", "") or "stop"
+                        yield StreamChunk(type="done", finish_reason=fr)
+                    return
 
-                    async for line in resp.aiter_lines():
-                        line = line.strip()
-                        if not line.startswith("data:"):
-                            continue
-                        chunk = line[5:].strip()
-                        if chunk == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(chunk)
-                        except json.JSONDecodeError:
-                            continue
-                        choices = data.get("choices", [])
-                        if not choices:
-                            continue
-                        delta = choices[0].get("delta", {}) or {}
-                        piece = delta.get("content") or ""
-                        if piece:
-                            yield StreamChunk(type="text_delta", text=piece)
-                        # function calling 增量（简化处理：完整 tool_calls 通常在最后一个 chunk）
-                        if delta.get("tool_calls"):
-                            for tc in delta["tool_calls"]:
-                                raw_args = tc.get("function", {}).get("arguments", {})
-                                # OpenAI 协议中 arguments 是 JSON 字符串，需解析为 dict
-                                if isinstance(raw_args, str):
-                                    try:
-                                        raw_args = json.loads(raw_args) if raw_args.strip() else {}
-                                    except (json.JSONDecodeError, ValueError):
-                                        raw_args = {}
-                                yield StreamChunk(
-                                    type="tool_call",
-                                    tool_name=tc.get("function", {}).get("name", ""),
-                                    tool_args=raw_args if isinstance(raw_args, dict) else {},
-                                )
+                last_finish = ""
+                # 流式 FC 累积器：OpenAI 协议中 tool_calls 的 arguments 是分片字符串，
+                # 必须按 index 跨 chunk 拼接，流结束后统一解析（逐 chunk 解析必失败）
+                tc_accumulator: Dict[int, Dict[str, str]] = {}
+                async for line in resp.aiter_lines():
+                    line = line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    chunk = line[5:].strip()
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(chunk)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = data.get("choices", [])
+                    if not choices:
+                        continue
+                    # 追踪 finish_reason（通常在最后一个 chunk 中携带）
+                    fr = choices[0].get("finish_reason")
+                    if fr:
+                        last_finish = fr
+                    delta = choices[0].get("delta", {}) or {}
+                    piece = delta.get("content") or ""
+                    if piece:
+                        yield StreamChunk(type="text_delta", text=piece)
+                    # function calling 分片累积（index 标识第几个工具调用）
+                    if delta.get("tool_calls"):
+                        for tc in delta["tool_calls"]:
+                            idx = tc.get("index", 0)
+                            slot = tc_accumulator.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                            if tc.get("id"):
+                                slot["id"] = tc["id"]
+                            fn = tc.get("function", {}) or {}
+                            if fn.get("name"):
+                                slot["name"] += fn["name"]
+                            if fn.get("arguments"):
+                                slot["arguments"] += fn["arguments"]
+                # 流结束：对完整 arguments 统一解析后逐条下发 tool_call chunk
+                for idx in sorted(tc_accumulator):
+                    slot = tc_accumulator[idx]
+                    raw_args = slot["arguments"]
+                    try:
+                        args = json.loads(raw_args) if raw_args.strip() else {}
+                    except (json.JSONDecodeError, ValueError):
+                        logger.warning(f"[OpenAICompat] tool_call arguments 解析失败: {raw_args[:100]}")
+                        args = {}
+                    yield StreamChunk(
+                        type="tool_call",
+                        tool_name=slot["name"],
+                        tool_args=args if isinstance(args, dict) else {},
+                    )
+                # 流结束后 yield done chunk 携带 finish_reason
+                yield StreamChunk(type="done", finish_reason=last_finish or "stop")
         except AdapterError:
             raise
         except httpx.TimeoutException:
@@ -202,12 +329,32 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
 
 
 class OpenAICompatImageAdapter(BaseImageAdapter):
-    """OpenAI 兼容 Image Adapter（/images/generations + /chat/completions fallback）"""
+    """OpenAI 兼容 Image Adapter（/images/generations + /chat/completions fallback）
+
+    连接池复用：同 ChatAdapter，实例持有长生命周期 httpx.AsyncClient。
+    """
 
     def __init__(self, base_url: str, api_key: str = "", model: str = ""):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self._client: Optional[httpx.AsyncClient] = None
+
+    def _get_client(self, timeout: int = 120) -> httpx.AsyncClient:
+        """Lazy 创建/复用 httpx 客户端"""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url,
+                timeout=httpx.Timeout(timeout, connect=10.0),
+                headers=self._headers(),
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """释放 HTTP 连接池资源"""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     def _headers(self) -> Dict[str, str]:
         h = {"Content-Type": "application/json"}
@@ -218,100 +365,138 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
     async def generate_image(
         self, prompt: str, reference_image: Optional[str] = None, **kwargs
     ) -> ImageGenerationResponse:
+        """AI 图片生成：先尝试 /images/generations，失败后 fallback 到 /chat/completions
+
+        带参考图时（reference_images / reference_image）直接走 /chat/completions 多模态路径，
+        因为 /images/generations 无法接收参考图。
+        """
         size = kwargs.get("size", "1024x1024")
         aspect_ratio = kwargs.get("aspect_ratio", "")
+        # 参考图列表（兼容单个 reference_image）
+        reference_images: List[str] = list(kwargs.get("reference_images") or [])
+        if reference_image and reference_image not in reference_images:
+            reference_images.insert(0, reference_image)
         errors: List[str] = []
-        connection_failed = False
+
+        # 带参考图：直接走多模态 chat 路径，保证模型接收到参考素材
+        if reference_images:
+            result = await self._try_chat_fallback(prompt, aspect_ratio, errors, reference_images)
+            if result:
+                return result
+            raise AdapterError("参考图生成失败（模型可能不支持多模态生图）。" + "；".join(errors))
 
         # 方式 1: /images/generations
+        result = await self._try_images_endpoint(prompt, size, errors)
+        if result:
+            return result
+
+        # 方式 2: /chat/completions（Gemini 原生图片生成）
+        result = await self._try_chat_fallback(prompt, aspect_ratio, errors)
+        if result:
+            return result
+
+        raise AdapterError("图片生成失败（模型可能不支持生图，请换用图片模型）。" + "；".join(errors))
+
+    async def _try_images_endpoint(self, prompt: str, size: str, errors: List[str]) -> Optional[ImageGenerationResponse]:
+        """尝试 /images/generations 端点"""
         try:
             payload = {"model": self.model, "prompt": prompt, "n": 1, "size": size or "1024x1024"}
-            async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(
-                    f"{self.base_url}/images/generations", json=payload, headers=self._headers()
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    images_data = data.get("data", [])
-                    if images_data:
-                        url = images_data[0].get("url", "")
-                        if not url and images_data[0].get("b64_json"):
-                            url = persist_data_uri(f"data:image/png;base64,{images_data[0]['b64_json']}")
+            client = self._get_client(120)
+            resp = await client.post("/images/generations", json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                images_data = data.get("data", [])
+                if images_data:
+                    url = images_data[0].get("url", "")
+                    if not url and images_data[0].get("b64_json"):
+                        url = persist_data_uri(f"data:image/png;base64,{images_data[0]['b64_json']}")
+                    if url:
+                        return ImageGenerationResponse(
+                            task_id=f"img-{int(time.time())}", status="completed", image_urls=[url]
+                        )
+                errors.append("/images/generations 返回 200 但无图片数据")
+            else:
+                errors.append(f"/images/generations HTTP {resp.status_code}")
+        except (httpx.ConnectError, httpx.ConnectTimeout, OSError) as e:
+            raise AdapterError(
+                "图片生成失败：API 服务未启动（连接被拒绝）。请检查服务是否运行，或切换到其他可用的图片 API。"
+            ) from e
+        except httpx.HTTPError as e:
+            errors.append(f"/images/generations 请求失败: {e}")
+        return None
+
+    async def _try_chat_fallback(
+        self, prompt: str, aspect_ratio: str, errors: List[str],
+        reference_images: Optional[List[str]] = None,
+    ) -> Optional[ImageGenerationResponse]:
+        """Fallback: 通过 /chat/completions 生成图片（Gemini 原生图片生成，支持参考图）"""
+        aspect_hint = f" Aspect ratio: {aspect_ratio}." if aspect_ratio and aspect_ratio != "1:1" else ""
+        ref_hint = " The attached image(s) are provided as visual references; keep the result consistent with them." if reference_images else ""
+        image_prompt = f"Generate an image: {prompt}.{aspect_hint}{ref_hint}"
+
+        # 有参考图时构建多模态 content（文本 + 图片 data URI）
+        content: Any = image_prompt
+        if reference_images:
+            parts: List[Dict[str, Any]] = [{"type": "text", "text": image_prompt}]
+            for ref in reference_images:
+                du = await ref_to_data_uri(ref)
+                if du:
+                    parts.append({"type": "image_url", "image_url": {"url": du}})
+            if len(parts) > 1:
+                content = parts
+
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": content}],
+            "max_tokens": 8192,
+        }
+        try:
+            client = self._get_client(180)
+            resp = await client.post("/chat/completions", json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+
+            choices = data.get("choices", [])
+            content = choices[0].get("message", {}).get("content", "") if choices else ""
+            if isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "image_url":
+                        url = part.get("image_url", {}).get("url", "")
+                        if url.startswith("data:image/"):
+                            url = persist_data_uri(url)
                         if url:
                             return ImageGenerationResponse(
                                 task_id=f"img-{int(time.time())}", status="completed", image_urls=[url]
                             )
-                    errors.append("/images/generations 返回 200 但无图片数据")
-                else:
-                    errors.append(f"/images/generations HTTP {resp.status_code}")
-        except (httpx.ConnectError, httpx.ConnectTimeout, OSError) as e:
-            connection_failed = True
-            errors.append(f"/images/generations 连接失败: {e}")
-        except httpx.HTTPError as e:
-            errors.append(f"/images/generations 请求失败: {e}")
+                content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
 
-        # 方式 2: /chat/completions（Gemini 原生图片生成）
-        if not connection_failed:
-            aspect_hint = f" Aspect ratio: {aspect_ratio}." if aspect_ratio and aspect_ratio != "1:1" else ""
-            image_prompt = f"Generate an image: {prompt}.{aspect_hint}"
-            payload = {
-                "model": self.model,
-                "messages": [{"role": "user", "content": image_prompt}],
-                "max_tokens": 8192,
-            }
-            try:
-                async with httpx.AsyncClient(timeout=180) as client:
-                    resp = await client.post(
-                        f"{self.base_url}/chat/completions", json=payload, headers=self._headers()
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-
-                choices = data.get("choices", [])
-                content = choices[0].get("message", {}).get("content", "") if choices else ""
-                if isinstance(content, list):
-                    for part in content:
-                        if isinstance(part, dict) and part.get("type") == "image_url":
-                            url = part.get("image_url", {}).get("url", "")
-                            if url.startswith("data:image/"):
-                                url = persist_data_uri(url)
-                            if url:
-                                return ImageGenerationResponse(
-                                    task_id=f"img-{int(time.time())}", status="completed", image_urls=[url]
-                                )
-                    content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
-
-                img_data = extract_base64_image(content)
-                if img_data:
-                    url = persist_data_uri(img_data)
-                    return ImageGenerationResponse(
-                        task_id=f"img-{int(time.time())}", status="completed", image_urls=[url]
-                    )
-
-                url_match = _HTTP_IMAGE_RE.search(content)
-                if url_match:
-                    return ImageGenerationResponse(
-                        task_id=f"img-{int(time.time())}", status="completed", image_urls=[url_match.group(0)]
-                    )
-
-                errors.append("供应商没有返回任何图片")
-            except (httpx.ConnectError, httpx.ConnectTimeout, OSError) as e:
-                connection_failed = True
-                errors.append(f"/chat/completions 连接失败: {e}")
-            except httpx.TimeoutException:
-                raise AdapterError("生图请求超时（180s）。" + "；".join(errors))
-            except httpx.HTTPStatusError as e:
-                raise AdapterError(
-                    f"生图失败：HTTP {e.response.status_code}: {e.response.text[:200]}。" + "；".join(errors)
+            img_data = extract_base64_image(content)
+            if img_data:
+                url = persist_data_uri(img_data)
+                return ImageGenerationResponse(
+                    task_id=f"img-{int(time.time())}", status="completed", image_urls=[url]
                 )
-            except httpx.HTTPError as e:
-                errors.append(f"/chat/completions 请求失败: {e}")
 
-        if connection_failed:
+            url_match = _HTTP_IMAGE_RE.search(content)
+            if url_match:
+                return ImageGenerationResponse(
+                    task_id=f"img-{int(time.time())}", status="completed", image_urls=[url_match.group(0)]
+                )
+
+            errors.append("供应商没有返回任何图片")
+        except (httpx.ConnectError, httpx.ConnectTimeout, OSError) as e:
             raise AdapterError(
                 "图片生成失败：API 服务未启动（连接被拒绝）。请检查服务是否运行，或切换到其他可用的图片 API。"
+            ) from e
+        except httpx.TimeoutException:
+            raise AdapterError("生图请求超时（180s）。" + "；".join(errors))
+        except httpx.HTTPStatusError as e:
+            raise AdapterError(
+                f"生图失败：HTTP {e.response.status_code}: {e.response.text[:200]}。" + "；".join(errors)
             )
-        raise AdapterError("图片生成失败（模型可能不支持生图，请换用图片模型）。" + "；".join(errors))
+        except httpx.HTTPError as e:
+            errors.append(f"/chat/completions 请求失败: {e}")
+        return None
 
     async def fetch_result(self, task_id: str) -> ImageGenerationResponse:
         """OpenAI 兼容接口是同步返回，不需要轮询"""

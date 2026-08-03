@@ -1,0 +1,141 @@
+/**
+ * Agent 消息发送高层封装
+ * 从 stores 收集上下文（供应商/模型/技能/附件/选中草稿/历史），
+ * 对齐旧 chat-streaming.ts 的 sendAgentMessage 行为。
+ */
+import { state, studioActions } from '@/stores/studio';
+import { chatState, chatActions } from '@/stores/chat';
+import { showToast } from '@/stores/toast';
+import { streamAgentChat } from '@/hooks/use-sse';
+import {
+  agentProvider, agentModel, agentSkill, agentAssetMode,
+} from '@/stores/agent-prefs';
+import { openDocsPanel } from '@/stores/docs';
+import { CHAT_HISTORY_WINDOW, uid } from '@/lib/utils';
+import { partsToPlainText } from '@/lib/rich-input';
+import type { AgentChatRequest, AnyGroup, MediaType, RichContentPart } from '@/types';
+
+/**
+ * Agent 可调取的素材 = 故事板全部草稿卡（关键元素/分镜/音频）中已有媒体的 URL。
+ * 未归类素材（state.assets）不参与上下文——它是从故事板移除的素材，agent 不可调取。
+ */
+function selectedAssetUrls(kind: MediaType): string[] {
+  const urls: string[] = [];
+  const boards: AnyGroup[][] = [state.keyElements, state.shots, state.audioItems];
+  for (const groups of boards) {
+    for (const g of groups) {
+      for (const d of g.drafts || []) {
+        const url = kind === 'image' ? d.imgUrl : kind === 'video' ? d.videoUrl : d.audioUrl;
+        if (url) urls.push(url);
+      }
+    }
+  }
+  return urls;
+}
+
+/** 规范化 parts：字符串 → 单个 text 片段；丢弃空 text 片段 */
+function normalizeParts(input: string | RichContentPart[]): RichContentPart[] {
+  if (typeof input === 'string') {
+    const t = input.trim();
+    return t ? [{ type: 'text', text: input }] : [];
+  }
+  return input.filter((p) => (p.type === 'text' ? p.text.trim().length > 0 : !!p.url));
+}
+
+/**
+ * 发送用户消息给 Agent（SSE 流式）
+ * 供聊天输入框与左侧面板微调按钮共用。
+ *
+ * 入参可为：
+ * - string：纯文本（微调按钮 / 确认按钮等纯文字场景）
+ * - RichContentPart[]：有序富文本（文字与内联缩略图交错，来自富文本输入框）
+ *
+ * 返回 true 表示消息已受理发送（调用方可据此清空输入框）；
+ * false 表示被拦截（内容为空 / 未选供应商模型 / Agent 忙碌）。
+ */
+export async function sendUserMessage(input: string | RichContentPart[]): Promise<boolean> {
+  const parts = normalizeParts(input);
+  const mediaParts = parts.filter((p) => p.type !== 'text') as Array<
+    Extract<RichContentPart, { type: 'image' | 'video' | 'audio' }>
+  >;
+  const docAttachments = state.pendingAttachments;
+  const hasContent = parts.length > 0 || docAttachments.length > 0;
+  if (!hasContent || state.agentBusy) return false;
+
+  const provider = agentProvider();
+  const model = agentModel();
+  if (!provider || !model) {
+    showToast('请先选择 Agent API 和对应模型', 'warning');
+    return false;
+  }
+
+  const skill = agentSkill();
+
+  // 纯文本正文：媒体以 [图片:名称] 占位符保留位置（message 字段 / 历史 / mock 用）
+  const message = partsToPlainText(parts).trim() || '请查看我上传的素材';
+
+  // 显示文本：正文 + 附件名（内联媒体已由 parts 在气泡里还原，此处主要是素材库/文档附件）
+  let displayText = message;
+  if (docAttachments.length > 0) {
+    const names = docAttachments.map((a) => a.name).join('、');
+    const prefix = `[已上传并绑定素材] ${names}`;
+    displayText = message && message !== '请查看我上传的素材' ? `${prefix}\n${message}` : prefix;
+  }
+
+  // 附件 = 内联媒体（供后端 bind）+ 文档 chips
+  const attachments = [
+    ...mediaParts.map((p) => ({
+      id: uid('att'),
+      name: p.name,
+      url: p.url,
+      kind: p.type,
+    })),
+    ...docAttachments.map((a) => ({
+      id: a.id,
+      name: a.name,
+      url: a.url,
+      kind: a.type,
+    })),
+  ];
+
+  // 历史（发送前的最近 N 条）
+  const history = chatState.messages.slice(-CHAT_HISTORY_WINDOW).map((m) => ({
+    role: m.sender === 'agent' || m.sender === 'assistant' ? 'assistant' : 'user',
+    content: m.text,
+  }));
+
+  chatActions.addMessage({ sender: 'user', text: displayText, parts });
+  chatActions.setInput('');
+  studioActions.setPendingAttachments([]);
+
+  // Skill 写入文档：仅当消息中携带了 Skill 引用块（名称在消息里）时才登记。
+  // slug 随请求发给后端记入项目 usedSkills（新建项目为空），
+  // 前端乐观更新 + 打开文档面板展示对应 Skill 文档。
+  let skillSlug = '';
+  if (skill && skill.name && message.includes(skill.name) && skill.id.startsWith('doc:')) {
+    skillSlug = skill.id.slice(4);
+    studioActions.markSkillUsed(skillSlug);
+    void openDocsPanel(skillSlug);
+  }
+
+  const request: AgentChatRequest = {
+    message,
+    system_prompt: skill?.system_prompt || '',
+    provider,
+    model,
+    ms_model: provider === 'modelscope' ? model : '',
+    messages: history,
+    images: selectedAssetUrls('image'),
+    videos: selectedAssetUrls('video'),
+    selected_draft_id: state.selectedDraftId || '',
+    selected_type: state.selectedType || '',
+    asset_mode: agentAssetMode(),
+    context_mode: 'studio',
+    attachments,
+    content_parts: parts,
+    skill_slug: skillSlug,
+  };
+
+  await streamAgentChat(request);
+  return true;
+}

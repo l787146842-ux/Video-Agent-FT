@@ -1,4 +1,5 @@
 ﻿import asyncio
+import time
 from typing import Any, Dict, Optional, Type
 
 from loguru import logger
@@ -31,6 +32,25 @@ class AdapterFactory:
         return cls._adapters.get("chat", {}).get(provider)
 
     @classmethod
+    def get_or_create_chat_adapter(
+        cls, provider: str, base_url: str, api_key: str, model: str
+    ) -> BaseChatAdapter:
+        """按 provider+model 获取或创建 chat 适配器（连接池复用）。
+
+        chat 链路的统一入口（Rule4）：同一 provider+model 复用同一实例及其
+        httpx 连接池，避免每次请求新建 AsyncClient 造成连接泄漏；
+        实例统一注册在 _adapters["chat"] 中，由 lifespan 关闭时统一 close()。
+        """
+        key = f"{provider}:{model}" if model else provider
+        existing = cls._adapters.get("chat", {}).get(key)
+        if existing is not None:
+            return existing
+        from .openai_compat import OpenAICompatChatAdapter
+        adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=model)
+        cls.register("chat", key, adapter)
+        return adapter
+
+    @classmethod
     def get_image_adapter(cls, provider: str) -> Optional[BaseImageAdapter]:
         """获取 image 适配器，不存在时返回 None"""
         return cls._adapters.get("image_generation", {}).get(provider)
@@ -46,16 +66,17 @@ class AdapterFactory:
 
     @classmethod
     def register_from_config(cls):
-        """根据 data/api_providers.json 动态注册所有适配器（启动时调用）"""
+        """根据合并后的 provider 配置动态注册所有适配器（启动时调用）"""
         from src.video_agent.web.provider_config import (
             CLI_PROTOCOLS,
             get_api_key,
-            load_api_providers,
+            load_merged_providers,
         )
         from .openai_compat import OpenAICompatChatAdapter, OpenAICompatImageAdapter
         from .agy_cli import AgyCliImageAdapter
+        from .video_compat import OpenAICompatVideoAdapter
 
-        for p in load_api_providers():
+        for p in load_merged_providers():
             if not p.get("enabled", True):
                 continue
             pid = p.get("id", "")
@@ -83,25 +104,38 @@ class AdapterFactory:
                     OpenAICompatImageAdapter(base_url=base_url, api_key=api_key, model=default_model),
                 )
 
+            # Video 适配器（消费 video_models 字段）
+            if base_url and protocol not in CLI_PROTOCOLS:
+                video_models = p.get("video_models", [])
+                if video_models:
+                    default_video_model = video_models[0]
+                    AdapterFactory.register(
+                        "video_generation", pid,
+                        OpenAICompatVideoAdapter(base_url=base_url, api_key=api_key, model=default_video_model),
+                    )
+
         logger.info(
             f"[AdapterFactory] 已注册 "
             f"{len(cls._adapters.get('chat', {}))} chat + "
-            f"{len(cls._adapters.get('image_generation', {}))} image 适配器"
+            f"{len(cls._adapters.get('image_generation', {}))} image + "
+            f"{len(cls._adapters.get('video_generation', {}))} video 适配器"
         )
 
 class GenerationTaskFailed(Exception):
     """生成任务被供应商标记为失败"""
 
 
-async def wait_until_complete(adapter: Any, task_id: str, timeout: int = 1200, poll_interval: int = 5) -> Any:
+async def wait_until_complete(adapter: Any, task_id: str, timeout: int = 1200) -> Any:
     """
-    通用长任务轮询辅助函数。
+    通用长任务轮询辅助函数（渐进退避）。
     - completed → 返回结果
     - failed → 立即抛 GenerationTaskFailed（不再空转到超时）
     - 查询本身出错 → 记录并重试，直到超时
+
+    轮询间隔渐进策略：前 3 次 2s，之后 5s，超过 60s 后 10s。
     """
-    import time
     start_time = time.time()
+    poll_count = 0
 
     while time.time() - start_time < timeout:
         try:
@@ -118,6 +152,15 @@ async def wait_until_complete(adapter: Any, task_id: str, timeout: int = 1200, p
                     f"Generation task {task_id} failed: {result.error_msg}"
                 )
 
-        await asyncio.sleep(poll_interval)
+        # 渐进退避：前 3 次 2s，之后 5s，超过 60s 后 10s
+        elapsed = time.time() - start_time
+        poll_count += 1
+        if poll_count <= 3:
+            interval = 2
+        elif elapsed < 60:
+            interval = 5
+        else:
+            interval = 10
+        await asyncio.sleep(interval)
 
     raise TimeoutError(f"Task {task_id} timeout after {timeout} seconds")

@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
-title Flova Studio + Canvas Launcher
+title FTDYB + Canvas Launcher
 cd /d "%~dp0"
 echo ========================================
-echo   Flova Studio - 影视创作工作台
+echo   FTDYB - 影视创作工作台
 echo   + 熊布画布联合启动
 echo ========================================
 echo.

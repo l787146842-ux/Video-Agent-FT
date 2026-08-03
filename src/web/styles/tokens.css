@@ -1,0 +1,109 @@
+/* ===== 设计 Token / 主题变量 / 全局基础（由 app.css 拆分） ===== */
+/* ===== 暗色模式策略：class ===== */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ===== 设计 Token ===== */
+:root {
+  --bg-primary: #121319;
+  --bg-secondary: #1a1c24;
+  --bg-tertiary: #232633;
+  --bg-hover: #2c3040;
+  --bg-card: #1e212b;
+  --border-color: #2e3346;
+  --border-highlight: #3b82f6;
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
+  --text-dim: #6b7280;
+  --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --splitter-width: 6px;
+  --splitter-hover: #60a5fa;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+html.light {
+  --bg-primary: #f5f6f8;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #eef0f4;
+  --bg-hover: #e4e7ec;
+  --bg-card: #ffffff;
+  --border-color: #d9dce3;
+  --border-highlight: #3b82f6;
+  --text-main: #1f2937;
+  --text-muted: #6b7280;
+  --text-dim: #9ca3af;
+  --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --splitter-hover: #3b82f6;
+}
+
+/* ===== Tailwind 主题扩展 ===== */
+@theme {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-card: var(--bg-card);
+  --color-border-main: var(--border-color);
+  --color-border-highlight: var(--border-highlight);
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
+  --color-text-dim: var(--text-dim);
+  --color-accent-blue: var(--accent-blue);
+  --color-accent-purple: var(--accent-purple);
+  --color-accent-emerald: var(--accent-emerald);
+  --color-accent-amber: var(--accent-amber);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+}
+
+/* ===== @layer base：全局基础 ===== */
+@layer base {
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body, #root { height: 100%; overflow: hidden; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-main);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+  }
+
+  /* 滚动条*/
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+  /* Markdown 内容区基础排版（被 .chat-markdown / .docs-rendered 覆盖） */
+  .chat-markdown p { margin: 6px 0; line-height: 1.5; }
+  .chat-markdown ul, .chat-markdown ol { padding-left: 22px; margin: 6px 0; }
+  .chat-markdown ul { list-style: disc; }
+  .chat-markdown ol { list-style: decimal; }
+  .chat-markdown li { margin: 3px 0; }
+  .chat-markdown code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .chat-markdown pre { background: rgba(0,0,0,0.4); padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+  .chat-markdown pre code { background: transparent; padding: 0; }
+  .chat-markdown strong { color: #fff; font-weight: 600; }
+  .chat-markdown a { color: var(--accent-blue); text-decoration: underline; }
+  .chat-markdown blockquote { padding-left: 12px; margin: 6px 0; border-left: 2px solid var(--border-color); color: var(--text-dim); }
+  .chat-markdown h1 { font-size: 15px; margin: 8px 0 4px; font-weight: 600; }
+  .chat-markdown h2 { font-size: 14px; margin: 8px 0 4px; font-weight: 600; }
+  .chat-markdown h3 { font-size: 13px; margin: 8px 0 4px; font-weight: 600; }
+  .chat-markdown > *:first-child { margin-top: 0; }
+  .chat-markdown > *:last-child { margin-bottom: 0; }
+
+  html.light .chat-markdown strong { color: #111827; }
+  html.light .chat-markdown code { background: rgba(0,0,0,0.06); }
+  html.light .chat-markdown pre { background: rgba(0,0,0,0.05); }
+}

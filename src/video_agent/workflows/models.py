@@ -20,6 +20,12 @@ class PhaseExecution(BaseModel):
     adapter: Optional[str] = Field(None, description="Adapter override")
     params: Dict[str, Any] = Field(default_factory=dict)
 
+class ModelConfig(BaseModel):
+    """阶段级模型配置 — 指定该阶段使用的供应商和模型"""
+    provider: str = Field("", description="供应商 ID")
+    model: str = Field("", description="模型名")
+    adapter_type: str = Field("chat", description="适配器类型: chat | image_generation")
+
 class PhaseValidation(BaseModel):
     rules: List[Dict[str, str]] = Field(default_factory=list)
 
@@ -33,6 +39,14 @@ class PhaseDefinition(BaseModel):
     output_mapping: Dict[str, str] = Field(default_factory=dict)
     validation: Optional[PhaseValidation] = Field(None)
     timeout_seconds: int = Field(3600)
+    llm_config: Optional[ModelConfig] = Field(
+        None,
+        description=(
+            "阶段级模型配置（由 build_executors 中 _resolve_chat/_resolve_image 消费）。"
+            "优先级：phase_configs(API运行时) > llm_config(工作流定义) > 全局默认。"
+            "为空时使用全局默认。"
+        ),
+    )
 
 class WorkflowDefinition(BaseModel):
     workflow_id: str = Field(...)

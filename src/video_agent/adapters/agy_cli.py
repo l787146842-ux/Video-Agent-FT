@@ -5,7 +5,6 @@ import asyncio
 import re
 import shutil
 import time
-import random
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +14,7 @@ from .base import BaseImageAdapter, ImageGenerationResponse
 from src.video_agent.exceptions import AdapterError
 from .openai_compat import extract_base64_image, persist_data_uri, _HTTP_IMAGE_RE
 from src.video_agent.utils.paths import ASSETS_DIR
+from src.video_agent.utils import gen_id
 
 
 class AgyCliImageAdapter(BaseImageAdapter):
@@ -80,7 +80,7 @@ class AgyCliImageAdapter(BaseImageAdapter):
             fpath = Path(file_match.group(1))
             if fpath.exists():
                 ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-                dest = ASSETS_DIR / f"gen-{int(time.time())}-{random.randint(1000,9999)}.{fpath.suffix.lstrip('.')}"
+                dest = ASSETS_DIR / f"{gen_id('gen', wide=True)}.{fpath.suffix.lstrip('.')}"
                 dest.write_bytes(fpath.read_bytes())
                 logger.info(f"[AgyCli] 图片已复制: {dest.name}")
                 return ImageGenerationResponse(
@@ -94,7 +94,7 @@ class AgyCliImageAdapter(BaseImageAdapter):
                 if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
                     if str(f) not in pre_existing_files:
                         ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-                        dest = ASSETS_DIR / f"gen-{int(time.time())}-{random.randint(1000,9999)}{f.suffix}"
+                        dest = ASSETS_DIR / f"{gen_id('gen', wide=True)}{f.suffix}"
                         dest.write_bytes(f.read_bytes())
                         logger.info(f"[AgyCli] 新图片检测到: {f.name} -> {dest.name}")
                         return ImageGenerationResponse(

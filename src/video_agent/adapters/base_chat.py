@@ -23,6 +23,7 @@ class StreamChunk(BaseModel):
     text: str = ""
     tool_name: str = ""
     tool_args: Dict[str, Any] = {}
+    finish_reason: str = ""  # 仅在 type="done" 时携带（stop / length / tool_calls）
 
 
 class BaseChatAdapter(ABC):

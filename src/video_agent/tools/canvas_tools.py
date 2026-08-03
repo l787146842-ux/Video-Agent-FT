@@ -5,7 +5,6 @@
 写操作遵循：读取最新画布 → 修改 nodes → save_canvas 写回。
 """
 import time
-import random
 from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel, Field
@@ -14,6 +13,7 @@ from loguru import logger
 from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
 from src.video_agent.exceptions import AdapterError
+from src.video_agent.utils import gen_id
 
 
 # ---------- Input Schemas ----------
@@ -63,7 +63,28 @@ class CanvasListAssetsInput(BaseModel):
 
 def _gen_node_id() -> str:
     """生成唯一节点 ID"""
-    return f"agent-{int(time.time())}-{random.randint(1000, 9999)}"
+    return gen_id("agent", wide=True)
+
+
+def _build_node_dict(node_id: str, node_type: str, title: str, x: int, y: int,
+                     prompt: str = "", image_url: str = "", content: str = "") -> Dict[str, Any]:
+    """构建画布节点字典（消除 AddNode/BatchUpdate 重复）"""
+    node: Dict[str, Any] = {
+        "id": node_id, "type": node_type,
+        "title": title or node_type, "x": x, "y": y,
+        "created_at": int(time.time() * 1000),
+    }
+    if node_type in ("smart-image", "image"):
+        images = [{"url": image_url, "name": title or "image"}] if image_url else []
+        node["images"] = images
+        if prompt:
+            node["prompt"] = prompt
+    elif node_type == "smart-prompt":
+        node["prompt"] = prompt or content
+        node["images"] = []
+    elif node_type == "text":
+        node["content"] = content or title
+    return node
 
 
 async def _load_and_save(canvas_id: str, mutate_fn, max_retries: int = 3):
@@ -167,38 +188,16 @@ class CanvasAddNodeTool(BaseTool):
 
     async def aexecute(self, params: CanvasAddNodeInput) -> ToolResult:
         node_id = _gen_node_id()
-        new_node: Dict[str, Any] = {
-            "id": node_id,
-            "type": params.node_type,
-            "title": params.title or params.node_type,
-            "x": params.x,
-            "y": params.y,
-            "created_at": int(time.time() * 1000),
-        }
-
-        if params.node_type in ("smart-image", "image"):
-            images = []
-            if params.image_url:
-                images.append({"url": params.image_url, "name": params.title or "image"})
-            new_node["images"] = images
-            if params.prompt:
-                new_node["prompt"] = params.prompt
-
-        elif params.node_type == "smart-prompt":
-            new_node["prompt"] = params.prompt or params.content
-            new_node["images"] = []
-
-        elif params.node_type == "text":
-            new_node["content"] = params.content or params.title
+        new_node = _build_node_dict(
+            node_id, params.node_type, params.title, params.x, params.y,
+            prompt=params.prompt, image_url=params.image_url, content=params.content,
+        )
 
         def mutate(canvas):
             canvas.setdefault("nodes", []).append(new_node)
             return node_id
 
-        try:
-            _, result_id = await _load_and_save(params.canvas_id, mutate)
-        except AdapterError:
-            raise
+        _, result_id = await _load_and_save(params.canvas_id, mutate)
         return ToolResult(success=True, data={"node_id": result_id, "canvas_id": params.canvas_id})
 
 
@@ -232,10 +231,7 @@ class CanvasUpdateNodeTool(BaseTool):
                     return True
             return False
 
-        try:
-            _, _ = await _load_and_save(params.canvas_id, mutate)
-        except AdapterError:
-            raise
+        _, _ = await _load_and_save(params.canvas_id, mutate)
 
         if not found:
             return ToolResult(success=False, error=f"节点 '{params.node_id}' 不存在")
@@ -266,10 +262,7 @@ class CanvasDeleteNodeTool(BaseTool):
             ]
             return found
 
-        try:
-            _, _ = await _load_and_save(params.canvas_id, mutate)
-        except AdapterError:
-            raise
+        _, _ = await _load_and_save(params.canvas_id, mutate)
 
         if not found:
             return ToolResult(success=False, error=f"节点 '{params.node_id}' 不存在")
@@ -319,33 +312,14 @@ class CanvasBatchUpdateTool(BaseTool):
             for n in params.nodes:
                 node_id = _gen_node_id()
                 new_ids.append(node_id)
-                node: Dict[str, Any] = {
-                    "id": node_id,
-                    "type": n.node_type,
-                    "title": n.title or n.node_type,
-                    "x": n.x,
-                    "y": n.y,
-                    "created_at": int(time.time() * 1000),
-                }
-                if n.node_type in ("smart-image", "image"):
-                    images = []
-                    if n.image_url:
-                        images.append({"url": n.image_url, "name": n.title or "image"})
-                    node["images"] = images
-                    if n.prompt:
-                        node["prompt"] = n.prompt
-                elif n.node_type == "smart-prompt":
-                    node["prompt"] = n.prompt or n.content
-                    node["images"] = []
-                elif n.node_type == "text":
-                    node["content"] = n.content or n.title
+                node = _build_node_dict(
+                    node_id, n.node_type, n.title, n.x, n.y,
+                    prompt=n.prompt, image_url=n.image_url, content=n.content,
+                )
                 nodes_list.append(node)
             return len(new_ids)
 
-        try:
-            _, count = await _load_and_save(params.canvas_id, mutate)
-        except AdapterError:
-            raise
+        _, count = await _load_and_save(params.canvas_id, mutate)
         return ToolResult(success=True, data={
             "canvas_id": params.canvas_id,
             "added_count": count,

@@ -1,9 +1,7 @@
 """
 文档 & 生成 Tool — write_document / image_generate / workflow_pause
 """
-import time
-import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel, Field
@@ -11,6 +9,11 @@ from loguru import logger
 
 from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
+from src.video_agent.state.manager import StateManager
+from src.video_agent.exceptions import GenerationError
+from src.video_agent.web.generation import generate_image_via_provider
+from src.video_agent.utils import gen_id
+from src.video_agent.workflows.interactive import get_interactive_engine
 
 
 # ---------- Input Schemas ----------
@@ -44,27 +47,27 @@ class DocumentWriteTool(BaseTool):
         return WriteDocumentInput
 
     async def aexecute(self, params: WriteDocumentInput) -> ToolResult:
-        from src.video_agent.state.manager import StateManager
-
         svc = StateManager.get_instance()
-        docs = svc.state_dict.setdefault("documents", [])
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        for d in docs:
-            if d.get("name") == params.name:
-                d["content"] = params.content
-                d["updated_at"] = now
-                svc.save()
-                return ToolResult(success=True, data={"name": params.name, "action": "updated"})
+        async with svc.lock:
+            docs = svc.state_dict.setdefault("documents", [])
 
-        docs.append({
-            "id": f"doc-{int(time.time())}-{random.randint(100, 999)}",
-            "name": params.name,
-            "content": params.content,
-            "created_at": now,
-            "updated_at": now,
-        })
-        svc.save()
+            for d in docs:
+                if d.get("name") == params.name:
+                    d["content"] = params.content
+                    d["updated_at"] = now
+                    svc.save()
+                    return ToolResult(success=True, data={"name": params.name, "action": "updated"})
+
+            docs.append({
+                "id": gen_id("doc"),
+                "name": params.name,
+                "content": params.content,
+                "created_at": now,
+                "updated_at": now,
+            })
+            svc.save()
         return ToolResult(success=True, data={"name": params.name, "action": "created"})
 
 
@@ -79,14 +82,10 @@ class ImageGenerateTool(BaseTool):
         return GenerateImageInput
 
     async def aexecute(self, params: GenerateImageInput) -> ToolResult:
-        from src.video_agent.state.manager import StateManager
-        from src.video_agent.web.generation import generate_image_via_provider
-        from src.video_agent.exceptions import GenerationError
-
         svc = StateManager.get_instance()
         state = svc.state_dict
 
-        # 收集目标 drafts
+        # 收集目标 drafts（只读，无需加锁）
         targets: List[Dict] = []
         if params.target in ("all_keyElements", "all_keyelements"):
             for g in state.get(CAT_KEY_ELEMENTS, []):
@@ -108,7 +107,9 @@ class ImageGenerateTool(BaseTool):
         if not targets:
             return ToolResult(success=False, error="未找到有提示词的草稿")
 
+        # 生图是耗时 IO，在锁外执行
         ok, failed = 0, []
+        results: List[tuple] = []  # (draft, url)
         for draft in targets:
             try:
                 url = await generate_image_via_provider(
@@ -116,13 +117,18 @@ class ImageGenerateTool(BaseTool):
                     size=draft.get("size", "1280x720"),
                     aspect_ratio=draft.get("aspectRatio", "16:9"),
                 )
-                draft["imgUrl"] = url
-                draft["tag"] = "已生成"
+                results.append((draft, url))
                 ok += 1
             except (GenerationError, Exception) as e:
                 failed.append(str(e))
 
-        svc.save()
+        # 加锁写入结果并持久化
+        async with svc.lock:
+            for draft, url in results:
+                draft["imgUrl"] = url
+                draft["tag"] = "已生成"
+            svc.save()
+
         if ok == 0:
             return ToolResult(success=False, error="全部生成失败: " + "；".join(failed[:2]))
         return ToolResult(success=True, data={"generated": ok, "failed": len(failed)})
@@ -136,12 +142,12 @@ class WorkflowPauseTool(BaseTool):
         return WorkflowPauseInput
 
     async def aexecute(self, params: WorkflowPauseInput) -> ToolResult:
-        from src.video_agent.state.manager import StateManager
         svc = StateManager.get_instance()
-        interaction = svc.state_dict.setdefault("interaction", {})
-        interaction["awaiting_confirmation"] = True
-        interaction["confirmation_message"] = params.message or "请确认以上内容，确认后我将继续。"
-        svc.save()
+        async with svc.lock:
+            interaction = svc.state_dict.setdefault("interaction", {})
+            interaction["awaiting_confirmation"] = True
+            interaction["confirmation_message"] = params.message or "请确认以上内容，确认后我将继续。"
+            svc.save()
         return ToolResult(success=True, data={"paused": True, "message": params.message})
 
 
@@ -157,7 +163,6 @@ class WorkflowStepTool(BaseTool):
         return WorkflowStepInput
 
     async def aexecute(self, params: WorkflowStepInput) -> ToolResult:
-        from src.video_agent.web.routes.workflow import get_interactive_engine
         engine = get_interactive_engine()
         result = await engine.step()
         status = result.get("status", "unknown")

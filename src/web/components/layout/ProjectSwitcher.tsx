@@ -1,0 +1,224 @@
+import { createSignal, onCleanup, For, Show } from 'solid-js';
+import {
+  FiCheck, FiChevronDown, FiFolder, FiFolderPlus, FiTrash2, FiX,
+} from 'solid-icons/fi';
+import {
+  getProjects, switchProject, deleteProject, createProject,
+} from '@/api/project';
+import { studioActions, state as studioState } from '@/stores/studio';
+import { chatActions } from '@/stores/chat';
+import { showToast } from '@/stores/toast';
+import { confirmDialog } from '@/components/shared/ConfirmDialog';
+import { refreshHistoryStatus } from '@/stores/history';
+import type { Project, ServerStateSnapshot } from '@/types';
+
+/**
+ * 项目切换器：Header 右侧下拉
+ * 切换/新建/删除项目 → 后端返回完整状态快照 → 重置前端 store
+ */
+export function ProjectSwitcher() {
+  const [open, setOpen] = createSignal(false);
+  const [projects, setProjects] = createSignal<Project[]>([]);
+  const [activeId, setActiveId] = createSignal('');
+  const [creating, setCreating] = createSignal(false);
+  const [newName, setNewName] = createSignal('');
+
+  let containerRef: HTMLDivElement | undefined;
+
+  async function load() {
+    try {
+      const data = await getProjects();
+      setProjects(data.projects || []);
+      setActiveId(data.active_project_id || '');
+    } catch {
+      showToast('项目列表加载失败', 'error');
+    }
+  }
+
+  function toggle() {
+    const next = !open();
+    setOpen(next);
+    if (next) load();
+    else setCreating(false);
+  }
+
+  /** 项目变更后整体重置前端状态 */
+  function applySnapshot(snapshot?: ServerStateSnapshot | null) {
+    if (!snapshot) return;
+    studioActions.resetForProject(snapshot);
+    chatActions.loadMessages(snapshot.chatMessages || []);
+    // 切换项目会清空后端 undo/redo 栈，同步指示位
+    void refreshHistoryStatus();
+  }
+
+  async function doSwitch(id: string) {
+    if (id === activeId()) {
+      setOpen(false);
+      return;
+    }
+    try {
+      const data = await switchProject(id);
+      if (!data.ok) throw new Error(data.message || '切换失败');
+      applySnapshot(data.state);
+      setOpen(false);
+      showToast(`已切换到项目：${data.state?.project_name || id}`, 'success');
+    } catch (e) {
+      showToast(`切换项目失败：${(e as Error).message}`, 'error');
+    }
+  }
+
+  async function doDelete(id: string, name: string) {
+    const ok = await confirmDialog({
+      title: `删除项目「${name}」？`,
+      message: '项目的全部故事板、素材与对话将被删除，此操作不可撤销。',
+      confirmText: '删除项目',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const data = await deleteProject(id);
+      if (!data.ok) throw new Error(data.message || '删除失败');
+      applySnapshot(data.state);
+      await load();
+      showToast(`已删除项目：${name}`, 'success');
+    } catch (e) {
+      showToast(`删除失败：${(e as Error).message}`, 'error');
+    }
+  }
+
+  async function doCreate() {
+    const name = newName().trim();
+    if (!name) return;
+    try {
+      const data = await createProject(name);
+      if (!data.ok) throw new Error(data.message || '新建项目失败');
+      applySnapshot(data.state);
+      setCreating(false);
+      setNewName('');
+      setOpen(false);
+      showToast(`已创建新项目：${name}`, 'success');
+    } catch (e) {
+      showToast(`新建项目失败：${(e as Error).message}`, 'error');
+    }
+  }
+
+  // 点击外部关闭菜单（用 pointerdown 而非 click，避免 SolidJS 同步 DOM 更新后 contains 失效）
+  function onDocPointerDown(e: PointerEvent) {
+    if (containerRef && !containerRef.contains(e.target as Node)) {
+      setOpen(false);
+      setCreating(false);
+    }
+  }
+  document.addEventListener('pointerdown', onDocPointerDown);
+  onCleanup(() => document.removeEventListener('pointerdown', onDocPointerDown));
+
+  function formatTime(p: Project): string {
+    return p.updated_at ? p.updated_at.replace('T', ' ').slice(5, 16) : '';
+  }
+
+  return (
+    <div class="project-switcher" ref={containerRef}>
+      <button type="button" class="project-switcher-btn" onClick={toggle}>
+        <FiFolder size={14} class="opacity-70" />
+        <span class="project-switcher-name">
+          {studioState.projectName || '未命名项目'}
+        </span>
+        <FiChevronDown size={13} class="opacity-50" />
+      </button>
+
+      <Show when={open()}>
+        <div class="project-dropdown">
+          <div class="project-dropdown-list">
+            <For each={projects()}>
+              {(p) => {
+                const isActive = () => p.id === activeId();
+                return (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    class={`project-option ${isActive() ? 'active' : ''}`}
+                    onClick={() => doSwitch(p.id)}
+                    onKeyDown={(e) => e.key === 'Enter' && doSwitch(p.id)}
+                  >
+                    {isActive() ? (
+                      <FiCheck size={14} class="option-check" />
+                    ) : (
+                      <FiFolder size={14} class="option-folder" />
+                    )}
+                    <span class="project-option-name">{p.name}</span>
+                    <span class="project-option-time">{formatTime(p)}</span>
+                    <Show when={projects().length > 1}>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        class="project-option-delete"
+                        title="删除项目"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          doDelete(p.id, p.name);
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <FiTrash2 size={13} />
+                      </span>
+                    </Show>
+                  </div>
+                );
+              }}
+            </For>
+            <Show when={!projects().length}>
+              <div class="empty-state">暂无项目</div>
+            </Show>
+          </div>
+
+          <div class="project-dropdown-divider" />
+
+          <Show
+            when={creating()}
+            fallback={
+              <button
+                type="button"
+                class="project-create-btn"
+                onClick={(e) => { e.stopPropagation(); setCreating(true); }}
+              >
+                <FiFolderPlus size={14} />
+                <span>新建项目</span>
+              </button>
+            }
+          >
+            <div class="project-create-row">
+              <input
+                type="text"
+                class="project-create-input"
+                placeholder="新项目名称"
+                value={newName()}
+                onInput={(e) => setNewName(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') doCreate();
+                  if (e.key === 'Escape') setCreating(false);
+                }}
+                ref={(el) => setTimeout(() => el.focus())}
+              />
+              <button
+                type="button"
+                class="project-create-action text-accent-emerald"
+                title="确认创建"
+                onClick={doCreate}
+              >
+                <FiCheck size={13} />
+              </button>
+              <button
+                type="button"
+                class="project-create-action text-text-dim"
+                title="取消"
+                onClick={() => setCreating(false)}
+              >
+                <FiX size={13} />
+              </button>
+            </div>
+          </Show>
+        </div>
+      </Show>
+    </div>
+  );
+}

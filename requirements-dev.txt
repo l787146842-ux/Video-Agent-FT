@@ -1,0 +1,9 @@
+# 开发/测试额外依赖（先安装 requirements.txt）
+-r requirements.txt
+
+# HTTP mock（Adapter 单元测试）
+respx==0.22.0
+
+# 代码质量（未来 CI 可用）
+# ruff==0.12.1
+# mypy==1.16.0

@@ -1,35 +1,35 @@
 """
-Skills 系统
-基类 + 注册器 + 具体 Skill 实现。
+Skills 系统 — 纯 prompt 预设。
+
+定位（FIX_PLAN P1-13）：Skill 是前端角色预设的载体，system_prompt 统一外置到
+prompts/skills/*.md（Rule6），经 load_prompt() 加载；不再提供 mock execute()
+假象——真正生效路径是 prompt 经前端 extra_system 注入 Planner。
 """
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from src.video_agent.utils.prompts import load_prompt
 
-class BaseSkill(ABC):
-    """Skill 基类 — 每个 Skill 对应一种 Agent 角色/能力"""
+
+class BaseSkill:
+    """Skill 基类 — 每个 Skill 对应一种 Agent 角色预设（纯数据，无执行逻辑）"""
 
     name: str = ""
     display_name: str = ""
     description: str = ""
-    system_prompt: str = ""
+    # prompt 文件（相对于 prompts/ 目录），如 "skills/story-generator.md"
+    prompt_file: str = ""
 
-    # state 字段 → skill 输入的映射（可选）
+    # state 字段 → skill 输入的映射（可选，预留）
     input_mapping: Dict[str, str] = {}
-    # skill 输出 → state 字段的映射（可选）
+    # skill 输出 → state 字段的映射（可选，预留）
     output_mapping: Dict[str, str] = {}
 
-    @abstractmethod
-    async def execute(self, context: Dict[str, Any], llm_client: Any = None) -> Dict[str, Any]:
-        """
-        执行 Skill 逻辑。
-        context: 从 StateManager 提取的上下文
-        llm_client: LLM 调用客户端（可选）
-        返回: 执行结果 dict
-        """
-        ...
+    @property
+    def system_prompt(self) -> str:
+        """从 prompts/skills/*.md 加载角色提示词（Rule6: prompt 外置）"""
+        return load_prompt(self.prompt_file).strip() if self.prompt_file else ""
 
     def to_config(self) -> Dict[str, str]:
         """返回前端 Skill 下拉框所需的配置"""
@@ -73,7 +73,7 @@ class SkillRegistry:
 
 
 # =======================
-# 具体 Skill 实现
+# 具体 Skill 预设
 # =======================
 
 class StoryGeneratorSkill(BaseSkill):
@@ -82,26 +82,9 @@ class StoryGeneratorSkill(BaseSkill):
     name = "story-generator"
     display_name = "编剧 Agent"
     description = "从用户目标出发，生成完整的故事大纲、场景和角色设定"
-    system_prompt = (
-        "你是一位专业影视编剧 Agent。你的任务是根据用户提供的主题或目标，"
-        "生成完整的故事大纲，包括：场景列表、角色设定、对白要点、情绪曲线。\n"
-        "输出格式要结构化，方便后续分镜拆解。"
-        "当用户确认故事后，使用 studio-actions 更新故事板分组描述。"
-    )
+    prompt_file = "skills/story-generator.md"
     input_mapping = {"user_goal": "goal", "story": "existing_story"}
     output_mapping = {"scenes": "story.scenes", "characters": "story.characters"}
-
-    async def execute(self, context: Dict[str, Any], llm_client: Any = None) -> Dict[str, Any]:
-        goal = context.get("goal", "")
-        # Mock 实现（后续接 LLM）
-        return {
-            "scenes": [
-                {"scene_id": "sc-1", "description": f"开场：{goal[:20]}...", "duration_seconds": 8.0}
-            ],
-            "characters": [
-                {"character_id": "ch-1", "name": "主角", "role": "protagonist"}
-            ],
-        }
 
 
 class ImagePromptSkill(BaseSkill):
@@ -110,17 +93,9 @@ class ImagePromptSkill(BaseSkill):
     name = "image-prompt"
     display_name = "分镜师 Agent"
     description = "将故事场景转化为可执行的图片/视频生成提示词"
-    system_prompt = (
-        "你是一位影视分镜师 Agent。你的任务是将故事场景拆解为具体的镜头，"
-        "并为每个镜头生成可执行的图片/视频生成提示词。\n"
-        "提示词要求：包含画面构图、光影、材质、镜头运动、风格关键词。\n"
-        "使用 studio-actions 的 update_draft 或 add_draft 将提示词写入故事板。"
-    )
+    prompt_file = "skills/image-prompt.md"
     input_mapping = {"storyboard": "current_storyboard"}
     output_mapping = {"prompts": "storyboard.shots[].visual_prompt"}
-
-    async def execute(self, context: Dict[str, Any], llm_client: Any = None) -> Dict[str, Any]:
-        return {"prompts": ["电影级光影，超高细节，8K 分辨率，体积光，景深虚化"]}
 
 
 class DirectorAgentSkill(BaseSkill):
@@ -129,20 +104,9 @@ class DirectorAgentSkill(BaseSkill):
     name = "production-agent"
     display_name = "制片 Agent"
     description = "全局把控项目进度，协调编剧、分镜、生成各环节"
-    system_prompt = (
-        "你是一位资深影视制片人 Agent，擅长从剧本出发拆解关键元素、分镜和音频层，"
-        "并给出可执行的生成提示词。你可以：\n"
-        "- 分析当前故事板状态，给出优化建议\n"
-        "- 修改草稿提示词、确认/否决草稿\n"
-        "- 新增关键元素或分镜\n"
-        "- 绑定参考素材\n"
-        "使用 studio-actions JSON 块来操作故事板。"
-    )
+    prompt_file = "skills/production-agent.md"
     input_mapping = {}
     output_mapping = {}
-
-    async def execute(self, context: Dict[str, Any], llm_client: Any = None) -> Dict[str, Any]:
-        return {"status": "ok", "message": "制片 Agent 就绪"}
 
 
 # =======================

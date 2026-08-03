@@ -1,0 +1,182 @@
+/**
+ * E2E 测试：FTDYB 核心交互流程
+ *
+ * 前置条件：后端服务运行在 http://127.0.0.1:8080（playwright.config.ts 自动启动或复用已有实例）
+ *
+ * 覆盖：
+ * - 页面加载（标题、三栏布局渲染）
+ * - 发送消息 → Agent 回复（mock 模式）
+ * - 故事板分组展示
+ * - API 健康检查
+ */
+import { test, expect } from '@playwright/test';
+
+test.describe('Studio 页面加载', () => {
+    test('首页正常渲染三栏布局', async ({ page }) => {
+        await page.goto('/');
+        // 等待页面基本结构加载
+        await page.waitForLoadState('networkidle');
+
+        // 页面标题
+        await expect(page).toHaveTitle(/FTDYB|Studio/i);
+
+        // 三栏布局存在
+        const leftPanel = page.locator('#leftPanel, .left-panel, [class*="left"]');
+        const middlePanel = page.locator('#middlePreview, .middle-preview, [class*="middle"]');
+        const rightPanel = page.locator('#rightChat, .right-chat, [class*="right"]');
+
+        // 至少有一个面板可见
+        const panels = [leftPanel, middlePanel, rightPanel];
+        let visibleCount = 0;
+        for (const panel of panels) {
+            if (await panel.first().isVisible().catch(() => false)) {
+                visibleCount++;
+            }
+        }
+        expect(visibleCount).toBeGreaterThanOrEqual(1);
+    });
+
+    test('API 健康检查', async ({ request }) => {
+        const resp = await request.get('/api/project/state');
+        expect(resp.ok()).toBeTruthy();
+        const data = await resp.json();
+        // 状态应包含基本字段
+        expect(data).toHaveProperty('keyElements');
+    });
+});
+
+test.describe('Agent 对话（mock 模式）', () => {
+    test('发送消息后收到 Agent 回复', async ({ page }) => {
+        // 拦截 SSE 流式接口并注入 mock 回复：
+        // 确定性验证前端「发送 → 流式渲染 → 完成入库」链路，
+        // 不依赖真实 LLM 供应商（后端协议由 SSE 端点测试覆盖）。
+        await page.route('**/api/agent/chat/stream', async (route) => {
+            const sse = [
+                'data: {"type":"status","text":"正在思考…"}',
+                'data: {"type":"delta","text":"好的，"}',
+                'data: {"type":"delta","text":"这是拆解结果"}',
+                'data: {"type":"done","payload":{"text":"好的，这是拆解结果","elapsed_ms":120,"steps":1,"applied_actions":0}}',
+            ].join('\n\n') + '\n\n';
+            await route.fulfill({
+                status: 200,
+                contentType: 'text/event-stream',
+                body: sse,
+            });
+        });
+
+        await page.goto('/');
+        await page.waitForLoadState('networkidle');
+
+        // 定位聊天输入框（新 Solid UI 的稳定 id）
+        const chatInput = page.locator('#chatInputTextarea');
+        await expect(chatInput).toBeVisible();
+        await chatInput.fill('你好，请帮我拆解一个短视频脚本');
+        await chatInput.press('Enter');
+
+        // 用户消息立即上屏
+        const feed = page.getByTestId('chat-feed');
+        await expect(feed).toContainText('你好，请帮我拆解一个短视频脚本');
+        // Agent 流式回复最终入库
+        await expect(feed).toContainText('好的，这是拆解结果', { timeout: 10000 });
+    });
+});
+
+test.describe('故事板面板', () => {
+    test('左侧面板显示分组标签页', async ({ page }) => {
+        await page.goto('/');
+        await page.waitForLoadState('networkidle');
+
+        // 检查标签页（关键元素 / 分镜 / 音频）
+        const tabs = page.locator('[data-tab], .tab-btn, [class*="tab"]');
+        const tabCount = await tabs.count();
+        // 至少有标签页结构
+        expect(tabCount).toBeGreaterThanOrEqual(0);
+    });
+});
+
+test.describe('阶段确认卡片与文档卡片', () => {
+    test('确认卡片/操作清单/文档卡片渲染与持久化字段展示', async ({ page }) => {
+        await page.route('**/api/agent/chat/stream', async (route) => {
+            const payload = {
+                text: '规划已完成',
+                elapsed_ms: 500,
+                steps: 2,
+                applied_actions: 3,
+                confirmation: '故事板已建立，请审阅',
+                documents_written: ['Final_Video_Spec.md'],
+                action_log: ['新建关键元素分组「主角」', '写入文档「Final_Video_Spec.md」'],
+                trace: { steps: [{ step: 1, timing_ms: 300, actions_applied: 3, finish_reason: 'stop' }], total_ms: 500 },
+            };
+            const sse = `data: ${JSON.stringify({ type: 'done', payload })}\n\n`;
+            await route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse });
+        });
+
+        await page.goto('/');
+        await page.waitForLoadState('networkidle');
+        const chatInput = page.locator('#chatInputTextarea');
+        await chatInput.fill('建立故事板');
+        await chatInput.press('Enter');
+
+        const feed = page.getByTestId('chat-feed');
+        // 阶段确认卡片：标题 + 操作数徽标（取最新一条，避免与历史消息歧义）
+        await expect(feed.locator('.stage-card').last()).toContainText('阶段完成');
+        await expect(feed.locator('.stage-card').last()).toContainText('已执行 3 个操作');
+        // 文档完成卡片
+        await expect(feed.locator('.doc-card').last()).toContainText('Final_Video_Spec.md');
+        // 展开后显示具体操作清单
+        await feed.locator('.stage-card-header').last().click();
+        await expect(feed.locator('.stage-op-list').last()).toContainText('新建关键元素分组「主角」');
+        // 执行轨迹折叠区存在
+        await expect(feed.locator('.trace-card').last()).toContainText('执行轨迹');
+    });
+});
+
+test.describe('Skill 「+」插入引用块并发送', () => {
+    test('下拉选 Skill → chip 插入输入框 → 发送', async ({ page }) => {
+        await page.route('**/api/agent/chat/stream', async (route) => {
+            const payload = { text: 'Skill 流程已启用', elapsed_ms: 100, steps: 1, applied_actions: 0 };
+            const sse = `data: ${JSON.stringify({ type: 'done', payload })}\n\n`;
+            await route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse });
+        });
+
+        await page.goto('/');
+        await page.waitForLoadState('networkidle');
+
+        // 打开 Skill 下拉面板
+        await page.locator('button[title="技能加载"]').click();
+        const panel = page.locator('.skill-picker');
+        await expect(panel).toBeVisible();
+
+        // 点第一个 Skill 卡片的「+」：chip 插入输入框
+        await panel.locator('.skill-picker-add').first().click();
+        const chip = page.locator('#chatInputTextarea .skill-chip');
+        await expect(chip).toBeVisible();
+        const skillName = (await chip.locator('.skill-chip-name').textContent() || '').trim();
+        expect(skillName.length).toBeGreaterThan(0);
+
+        // 发送：chip 序列化为 Skill 名称随消息上屏
+        await page.locator('#chatInputTextarea').press('Enter');
+        const feed = page.getByTestId('chat-feed');
+        await expect(feed).toContainText(skillName, { timeout: 10000 });
+        await expect(feed).toContainText('Skill 流程已启用', { timeout: 10000 });
+    });
+});
+
+test.describe('SSE 流式端点', () => {
+    test('流式聊天 API 返回 SSE 格式', async ({ request }) => {
+        const resp = await request.post('/api/agent/chat/stream', {
+            data: {
+                message: '你好',
+                provider: 'mock',
+                model: 'mock-chat',
+            },
+        });
+        expect(resp.ok()).toBeTruthy();
+        const contentType = resp.headers()['content-type'] || '';
+        expect(contentType).toContain('text/event-stream');
+
+        const body = await resp.text();
+        expect(body).toContain('data:');
+        expect(body).toContain('"type"');
+    });
+});

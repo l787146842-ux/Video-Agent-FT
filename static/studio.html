@@ -1,10 +1,15 @@
 ﻿<!DOCTYPE html>
+<!-- DEPRECATED：旧版 Studio 前端（原生 JS）。新功能一律在新 SPA（src/web + static/dist）实现；
+     本页仅供回退/对照，保留一个版本周期后移除。访问 / 或刷新请使用新 SPA。 -->
 <html lang="zh-CN" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="/static/images/logo.png" type="image/png">
-    <title>Flova Studio - 影视 AI 创作工作台</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/images/logo-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/images/logo-16.png">
+    <link rel="icon" type="image/png" href="/static/images/logo.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/images/logo-180.png">
+    <title>FTDYB - 影视 AI 创作工作台</title>
     <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.07.15.1784204264"></script>
     <script src="/static/vendor/js/lucide.js?v=2026.07.15.1784204260"></script>
     <script src="/static/js/theme.js?v=2026.07.15.1784204243"></script>
@@ -35,7 +40,7 @@
             </button>
             <div class="relative" id="projectSwitcher">
                 <button id="projectInfoBtn" class="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5" onclick="toggleProjectMenu()">
-                    <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
+                    <i data-lucide="folder" class="w-3.5 h-3.5"></i>
                     <span id="currentProjectName">深空探险三体</span>
                     <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
                 </button>
@@ -108,7 +113,7 @@
                     <span>故事板</span>
                 </button>
                 <button class="left-tab-btn" id="tabUncategorized" onclick="switchLeftTab('uncategorized')">
-                    <i data-lucide="folder-git-2" class="w-4 h-4"></i>
+                    <i data-lucide="folder-open" class="w-4 h-4"></i>
                     <span>未归类素材</span>
                 </button>
             </div>
@@ -131,7 +136,7 @@
                             <i data-lucide="image" class="w-3.5 h-3.5"></i> 批量生成概念图
                         </button>
                         <button class="batch-gen-btn" onclick="batchGenerate('all_shots')" title="为所有分镜的关键帧提交生图任务（自动注入元素参考图）">
-                            <i data-lucide="clapperboard" class="w-3.5 h-3.5"></i> 批量生成关键帧
+                            <i data-lucide="film" class="w-3.5 h-3.5"></i> 批量生成关键帧
                         </button>
                     </div>
 
@@ -172,7 +177,7 @@
             <div class="preview-top" id="previewTop">
                 <div class="preview-media-viewer" id="previewMediaViewer">
                     <div class="text-center text-gray-500">
-                        <i data-lucide="clapperboard" class="w-12 h-12 mx-auto mb-2 opacity-50"></i>
+                        <i data-lucide="image" class="w-12 h-12 mx-auto mb-2 opacity-50"></i>
                         <p class="text-sm">请在左侧选择草稿卡片或分镜预览</p>
                     </div>
                 </div>
@@ -185,7 +190,7 @@
             <div class="prompt-toggle-bar" id="promptToggleBar" onclick="toggleCollapsePrompt()">
                 <div class="prompt-toggle-line"></div>
                 <button class="prompt-toggle-btn" title="收放提示词窗口">
-                    <i data-lucide="chevron-down" class="w-4 h-4" id="collapseIcon"></i>
+                    <i data-lucide="chevron-up" class="w-4 h-4" id="collapseIcon"></i>
                 </button>
                 <div class="prompt-toggle-line"></div>
             </div>
@@ -198,7 +203,7 @@
                     <!-- Drag & Drop Reference Asset Zone -->
                     <div class="ref-drop-zone" id="refDropZone">
                         <div class="flex items-center gap-2">
-                            <i data-lucide="image-plus" class="w-4 h-4 text-blue-400"></i>
+                            <i data-lucide="paperclip" class="w-4 h-4 text-blue-400"></i>
                             <span class="text-xs text-gray-300">拖拽/上传素材作为参考输入 (首尾帧 / 风格参考)</span>
                         </div>
                         <div class="ref-thumbs" id="refThumbs">
@@ -256,7 +261,7 @@
                     <div class="chat-input-toolbar">
                         <div class="toolbar-left">
                             <button class="toolbar-pill-btn" title="上传参考素材或文档" onclick="triggerChatUpload()">
-                                <i data-lucide="plus" class="w-4 h-4"></i>
+                                <i data-lucide="paperclip" class="w-4 h-4"></i>
                             </button>
                             <button class="toolbar-pill-btn" id="apiPillBtn" title="API 平台选择" onclick="togglePillDropdown('api')">
                                 <i data-lucide="globe" class="w-3.5 h-3.5"></i>
@@ -274,7 +279,7 @@
                                 <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
                             </button>
                             <button class="toolbar-pill-btn" id="assetPillBtn" title="素材库（与熊布打通）" onclick="togglePillDropdown('asset')">
-                                <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
+                                <i data-lucide="folder" class="w-3.5 h-3.5"></i>
                                 <span id="assetPillLabel">素材库</span>
                                 <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
                             </button>
@@ -284,7 +289,7 @@
                         </div>
                         <div class="toolbar-right">
                             <button class="send-btn" id="agentSendBtn" onclick="sendAgentMessage()" title="发送">
-                                <i data-lucide="arrow-up" class="w-4 h-4"></i>
+                                <i data-lucide="send" class="w-4 h-4"></i>
                             </button>
                         </div>
                     </div>
@@ -311,7 +316,7 @@
         <div class="asset-modal-panel">
             <div class="asset-modal-header">
                 <div class="asset-modal-title">
-                    <i data-lucide="folder-open" class="w-4 h-4"></i>
+                    <i data-lucide="folder" class="w-4 h-4"></i>
                     <span>熊布素材库</span>
                 </div>
                 <div class="asset-modal-tabs">

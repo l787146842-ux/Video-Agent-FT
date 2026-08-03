@@ -8,7 +8,7 @@
         (function(){
             try {
                 document.documentElement.dataset.studioFitScale = 'off';
-                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'light';
+                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || localStorage.getItem('ftdyb-theme') || 'light';
                 if(theme === 'dark') {
                     document.documentElement.classList.add('studio-theme-dark');
                     document.documentElement.classList.add('theme-dark');
@@ -38,6 +38,7 @@
             <div class="layout">
                 <aside class="sidebar">
                     <div class="side-section-title" data-i18n="api.providersTitle">平台列表</div>
+                    <div class="fallback-hint" title="主模型遇 5xx/超时等瞬时故障且尚未执行操作时，自动按「同平台其他对话模型 → 其他已启用平台」顺序切换重试。可在环境变量关闭 MODEL_FALLBACK_ENABLED。">对话模型故障自动切换备用模型</div>
                     <div id="providerList" class="provider-list"></div>
                     <button class="add-btn" type="button" onclick="addProvider()"><i data-lucide="plus" class="w-4 h-4"></i><span data-i18n="api.addProvider">新增平台</span></button>
                     <button class="api-link-btn" type="button" onclick="openRecommendApi()"><i data-lucide="sparkles" class="w-4 h-4"></i><span data-i18n="api.recommendApi">推荐API</span></button>

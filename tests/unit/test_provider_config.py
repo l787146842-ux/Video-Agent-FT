@@ -115,11 +115,12 @@ def test_load_canvas_providers_from_file(canvas_env):
 
 
 def test_merged_providers_dedup_local_priority(canvas_env, tmp_path, monkeypatch):
-    """合并逻辑：同 id 本地优先，熊布独有追加"""
+    """合并逻辑：同 id 熊布优先（连接设置）+ 模型并集，本地独有保留"""
     # 本地配置
     local_file = tmp_path / "api_providers.json"
     local_file.write_text(json.dumps([
-        {"id": "modelscope", "name": "MS-Local", "enabled": True},
+        {"id": "modelscope", "name": "MS-Local", "enabled": True,
+         "image_models": ["img-local"], "video_models": ["vid-local"], "chat_models": []},
         {"id": "custom-api", "name": "MyCustom", "enabled": True},
     ]), encoding="utf-8")
     monkeypatch.setattr(pc, "PROVIDERS_FILE", local_file)
@@ -127,17 +128,23 @@ def test_merged_providers_dedup_local_priority(canvas_env, tmp_path, monkeypatch
     # 熊布配置
     canvas_file = canvas_env / "canvas_providers.json"
     canvas_file.write_text(json.dumps([
-        {"id": "modelscope", "name": "MS-Canvas", "enabled": True},
+        {"id": "modelscope", "name": "MS-Canvas", "enabled": True,
+         "image_models": ["img-canvas"], "video_models": [], "chat_models": ["chat-canvas"]},
         {"id": "volcengine", "name": "火山引擎", "enabled": True},
     ]), encoding="utf-8")
 
     merged = pc.load_merged_providers()
     ids = [p["id"] for p in merged]
 
-    # modelscope 只出现一次（本地优先）
+    # modelscope 只出现一次（熊布优先）
     assert ids.count("modelscope") == 1
     ms = next(p for p in merged if p["id"] == "modelscope")
-    assert ms["name"] == "MS-Local"  # 本地优先
+    assert ms["name"] == "MS-Canvas"  # 熊布优先（连接设置）
+    # 模型列表取并集
+    assert "img-canvas" in ms["image_models"]
+    assert "img-local" in ms["image_models"]
+    assert "vid-local" in ms["video_models"]  # 本地独有模型保留
+    assert "chat-canvas" in ms["chat_models"]
 
     # custom-api 保留（Agent 独有）
     assert "custom-api" in ids

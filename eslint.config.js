@@ -1,0 +1,65 @@
+// @ts-check
+import tseslint from '@typescript-eslint/eslint-plugin';
+import tsparser from '@typescript-eslint/parser';
+import solid from 'eslint-plugin-solid';
+
+export default [
+  {
+    files: ['src/web/**/*.{ts,tsx}'],
+    languageOptions: {
+      parser: tsparser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tseslint,
+      solid,
+    },
+    rules: {
+      // 文件行数硬限（架构铁律 10.1：单文件 ≤ 250 行）
+      'max-lines': ['error', { max: 250, skipBlankLines: true, skipComments: true }],
+
+      // 类型安全
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+
+      // 代码质量
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
+      'no-debugger': 'error',
+      'prefer-const': 'error',
+      'no-var': 'error',
+      'no-redeclare': 'error',
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
+
+      // Solid 响应式规则
+      'solid/reactivity': 'warn',
+      'solid/no-destructure': 'warn',
+      'solid/jsx-no-undef': 'error',
+      'solid/self-closing-comp': 'warn',
+    },
+  },
+
+  // 架构铁律 10.2：组件/stores 不得 import app 入口（禁止循环依赖）
+  {
+    files: ['src/web/components/**/*.tsx', 'src/web/stores/**/*.ts', 'src/web/lib/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: ['**/app', '**/app.ts', '**/app.tsx'],
+      }],
+    },
+  },
+
+  // 架构铁律 10.1：API 调用集中在 api/，组件不直接写 fetch()
+  {
+    files: ['src/web/components/**/*.tsx', 'src/web/lib/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': ['warn', {
+        selector: "CallExpression[callee.name='fetch']",
+        message: '架构铁律 10.1：fetch() 应封装在 api/ 层，组件请调用 api/ 导出的函数。',
+      }],
+    },
+  },
+];

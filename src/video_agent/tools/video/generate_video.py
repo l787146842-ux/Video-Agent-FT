@@ -1,9 +1,8 @@
-﻿import os
-from typing import Type, Optional
+﻿from typing import Type
 from pydantic import BaseModel, Field
 
 from src.video_agent.tools.base import BaseTool, ToolResult
-from src.video_agent.adapters.factory import AdapterFactory
+from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 
 class GenerateVideoParams(BaseModel):
     image_url: str = Field(..., description="首帧图片路径或URL")
@@ -31,7 +30,6 @@ class GenerateVideoTool(BaseTool):
             if result.status == "failed":
                  return ToolResult(success=False, error=result.error_msg)
                  
-            from src.video_agent.adapters.factory import wait_until_complete
             completed_result = await wait_until_complete(adapter, result.task_id)
             
             return ToolResult(

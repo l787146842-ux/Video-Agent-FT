@@ -1,22 +1,25 @@
-﻿from typing import Any, Dict, List, Type
+﻿from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel
 from loguru import logger
 from .base import BaseTool, ToolResult
 
 class ToolManager:
     _tools: Dict[str, BaseTool] = {}
+    _schema_cache: Optional[List[Dict[str, Any]]] = None
 
     @classmethod
     def register(cls, tool: BaseTool):
         if not tool.name:
             raise ValueError("Tool must have a valid 'name' attribute.")
         cls._tools[tool.name] = tool
+        cls._schema_cache = None  # 注册新工具时失效缓存
         logger.debug(f"Registered tool: {tool.name}")
 
     @classmethod
     def reset(cls):
         """清空注册表（测试用）"""
         cls._tools = {}
+        cls._schema_cache = None
 
     @classmethod
     def get_tool(cls, name: str) -> BaseTool:
@@ -27,6 +30,8 @@ class ToolManager:
 
     @classmethod
     def get_all_tool_schemas(cls) -> List[Dict[str, Any]]:
+        if cls._schema_cache is not None:
+            return cls._schema_cache
         schemas = []
         for name, tool in cls._tools.items():
             schema_class = tool.get_input_schema()
@@ -43,6 +48,7 @@ class ToolManager:
                     }
                 }
             })
+        cls._schema_cache = schemas
         return schemas
 
     @classmethod

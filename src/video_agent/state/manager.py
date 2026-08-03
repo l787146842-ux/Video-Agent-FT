@@ -12,9 +12,6 @@ StateManager — Rule3: 唯一状态写入点。支持多项目。
 """
 import asyncio
 import json
-import os
-import random
-import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,17 +19,30 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import WORKSPACE_DIR, DATA_DIR
+from src.video_agent.utils import gen_id
+from src.video_agent.exceptions import StateError
 
-from .models import ProjectState
+from .models import ProjectState, CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 from .models_pipeline import TaskStatus, AssetState, AssetStatus
+from .repository import StateRepository
+from .repository_sqlite import SqliteStateRepository
+from .project_manager import ProjectManager
+from .context_builder import build_agent_context as _build_context
+from .undo_redo import UndoRedoMixin
 
 # 默认工作区目录
 DEFAULT_WORKSPACE_DIR = WORKSPACE_DIR
 
 # 默认 demo 数据（首次启动时使用，从 data/demo_state.json 加载）
 _DEMO_STATE_FILE = DATA_DIR / "demo_state.json"
+
+# 聊天记录保留上限（超出后截断最旧的消息）
+_CHAT_HISTORY_LIMIT = 200
+
+# 落盘防抖窗口（秒）：合并短窗口内的多次变更统一写一次盘，
+# 避免 add_chat_message / Agent 动作等高频路径全量双写阻塞事件循环
+_SAVE_DEBOUNCE_SECONDS = 0.3
 
 
 def _load_default_state() -> Dict[str, Any]:
@@ -42,7 +52,7 @@ def _load_default_state() -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"[StateManager] Failed to load demo state: {e}")
     return {"project_id": "proj_001", "project_name": "Demo", "status": "idle",
-            "keyElements": [], "shots": [], "audioItems": [], "assets": [], "chatMessages": []}
+            CAT_KEY_ELEMENTS: [], CAT_SHOTS: [], CAT_AUDIO_ITEMS: [], "assets": [], "chatMessages": []}
 
 
 # ---------- 内部工具函数 ----------
@@ -103,7 +113,7 @@ def _set_path_pydantic(obj: Any, path: str, value: Any) -> None:
         setattr(current, last, value)
 
 
-class StateManager:
+class StateManager(UndoRedoMixin):
     """Rule3: 唯一状态写入点。支持多项目。
 
     设计 §1.3：多项目管理内置于 StateManager，不另设 service 层。
@@ -135,9 +145,7 @@ class StateManager:
 
     def __init__(self, workspace_dir: str):
         self._workspace_dir = Path(workspace_dir)
-        self._projects_dir = self._workspace_dir / "projects"
-        self._state_file = self._workspace_dir / "studio_state.json"  # 兼容旧版
-        self._index_file = self._projects_dir / "index.json"
+        self._repo = self._build_repo(self._workspace_dir)
 
         # 供 async 路由在「变更 + 落盘」临界区使用
         self.lock = asyncio.Lock()
@@ -150,36 +158,73 @@ class StateManager:
         self._cached_state: Optional[ProjectState] = None
         self._state_dirty: bool = True
 
+        # Agent 上下文缓存（状态未变时复用，避免重复构建 JSON）
+        self._context_cache: Dict[str, str] = {}
+
+        # Undo/Redo（继承自 UndoRedoMixin）
+        self._init_undo_redo(max_undo=20)
+
+        # 防抖落盘状态（save_debounced 用）
+        self._save_dirty = False
+        self._save_flush_task: Optional[asyncio.Task] = None
+
+        # 多项目管理器（委托）
+        self._project_mgr = ProjectManager(
+            repo=self._repo,
+            get_state=lambda: self._raw_state,
+            set_state=self._on_project_switch,
+        )
+
         # 初始化
         self._load()
 
+    @staticmethod
+    def _build_repo(workspace_dir: Path):
+        """按 settings.state_backend 选择状态仓库（json 默认 / sqlite 可选，可回退）。"""
+        from src.video_agent.config import settings
+        backend = (settings.state_backend or "json").strip().lower()
+        if backend == "sqlite":
+            logger.info("[StateManager] 状态后端：SQLite（首次启用自动从 JSON 迁移）")
+            return SqliteStateRepository(workspace_dir)
+        return StateRepository(workspace_dir)
+
+    def _on_project_switch(self, state: Dict[str, Any], project_id: str) -> None:
+        """ProjectManager 回调：切换内部状态"""
+        self._raw_state = state
+        self._active_project_id = project_id
+        self._state_dirty = True
+        self._context_cache.clear()
+        # 切换项目时清空 undo/redo 栈
+        self._clear_undo_redo()
+
     def _load(self):
         """加载：优先从 projects/index.json 找活跃项目，否则迁移旧 studio_state.json"""
-        self._workspace_dir.mkdir(parents=True, exist_ok=True)
-        self._projects_dir.mkdir(parents=True, exist_ok=True)
+        self._repo.ensure_dirs()
 
-        index = self._read_index()
+        index = self._repo.read_index()
         active_id = index.get("active_project_id", "")
         projects = index.get("projects", [])
 
         if active_id and projects:
             self._active_project_id = active_id
-            if self._load_from_project_dir(active_id):
+            loaded = self._repo.load_project(active_id)
+            if loaded is not None:
+                self._raw_state = loaded
                 logger.info(f"[StateManager] Loaded project: {active_id}")
                 return
 
         # 迁移旧 studio_state.json
-        if self._state_file.exists():
+        old_state = self._repo.load_compat()
+        if old_state:
             try:
-                old_state = json.loads(self._state_file.read_text(encoding="utf-8"))
                 pid = old_state.get("project_id", f"proj-{int(time.time())}")
                 pname = old_state.get("project_name", "迁移项目")
                 self._raw_state = old_state
                 self._active_project_id = pid
-                self._save_to_project_dir(pid)
-                self._write_index({
+                self._repo.save_project(pid, self._raw_state)
+                self._repo.write_index({
                     "active_project_id": pid,
-                    "projects": [{"id": pid, "name": pname, "created_at": self._now_iso(), "updated_at": self._now_iso()}]
+                    "projects": [{"id": pid, "name": pname, "created_at": StateRepository.now_iso(), "updated_at": StateRepository.now_iso()}]
                 })
                 logger.info(f"[StateManager] Migrated legacy state to project: {pid}")
                 return
@@ -189,12 +234,12 @@ class StateManager:
         # 全新初始化：创建 demo 项目
         self._raw_state = _load_default_state()
         self._active_project_id = self._raw_state.get("project_id", "proj_001")
-        self._save_to_project_dir(self._active_project_id)
-        self._write_index({
+        self._repo.save_project(self._active_project_id, self._raw_state)
+        self._repo.write_index({
             "active_project_id": self._active_project_id,
-            "projects": [{"id": self._active_project_id, "name": self._raw_state.get("project_name", "Demo"), "created_at": self._now_iso(), "updated_at": self._now_iso()}]
+            "projects": [{"id": self._active_project_id, "name": self._raw_state.get("project_name", "Demo"), "created_at": StateRepository.now_iso(), "updated_at": StateRepository.now_iso()}]
         })
-        self._save_compat()
+        self._repo.save_compat(self._raw_state)
         logger.info("[StateManager] Initialized with default demo project")
 
     # ====== 双视图访问 ======
@@ -213,7 +258,12 @@ class StateManager:
             ps = ProjectState.model_validate(minimal)
             for k, v in self._raw_state.items():
                 if not hasattr(ps, k):
-                    setattr(ps, k, v)
+                    try:
+                        setattr(ps, k, v)
+                    except (ValueError, TypeError):
+                        # extra="ignore" 模型拒绝未知字段（pydantic 抛 ValueError）：
+                        # 静默跳过，降级视图仅用于 CLI 兼容，不影响 raw dict 主路径
+                        continue
             self._cached_state = ps
         self._state_dirty = False
         return self._cached_state
@@ -253,27 +303,90 @@ class StateManager:
 
         同时支持 dict 路径（Web）和 Pydantic 属性路径（CLI）。
         """
+        self._push_undo()
         _set_path_dict(self._raw_state, path, value)
         self._state_dirty = True
         self.save()
 
+    def record_used_skill(self, slug: str) -> None:
+        """记录用户随消息发送给 Agent 的 Skill（按项目持久化）。
+
+        文档面板只展示已发送过的 Skill 文档：新建项目 usedSkills 为空，
+        只有 Skill 引用块随消息发出后才写入，模型据此记住流程规则。
+        不走 update()（避免污染 undo 栈）。
+        """
+        if not slug:
+            return
+        used = self._raw_state.setdefault("usedSkills", [])
+        if slug not in used:
+            used.append(slug)
+            self.save()
+
     def save(self) -> None:
         """持久化：写入当前项目目录 + 兼容文件 + 更新 index 时间戳"""
         try:
-            self._save_to_project_dir(self._active_project_id)
-            self._save_compat()
-            index = self._read_index()
+            self._repo.save_project(self._active_project_id, self._raw_state)
+            self._repo.save_compat(self._raw_state)
+            index = self._repo.read_index()
             for p in index.get("projects", []):
                 if p["id"] == self._active_project_id:
-                    p["updated_at"] = self._now_iso()
+                    p["updated_at"] = StateRepository.now_iso()
                     break
-            self._write_index(index)
+            self._repo.write_index(index)
+            # 状态变更时失效上下文缓存
+            self._context_cache.clear()
             logger.debug("[StateManager] Saved")
         except Exception as e:
             logger.error(f"[StateManager] Save failed: {e}")
+            raise StateError(f"状态持久化失败: {e}") from e
 
     # 向后兼容别名
     save_state = save
+
+    async def save_async(self) -> None:
+        """异步立即落盘：写盘移 worker 线程，避免在 async 链路中阻塞事件循环。
+
+        用于路由层显式保存（用户编辑保存等需要即时持久性保证的路径）。
+        """
+        await asyncio.to_thread(self.save)
+
+    def save_debounced(self) -> None:
+        """防抖落盘：合并 300ms 窗口内的多次变更，统一写一次盘（写盘移 worker 线程）。
+
+        用于 add_chat_message / Agent 动作执行等高频路径。
+        无运行中事件循环时（CLI / 同步测试路径）退化为立即同步落盘，保证持久性语义。
+        """
+        self._save_dirty = True
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._save_dirty = False
+            self.save()
+            return
+        if self._save_flush_task is None or self._save_flush_task.done():
+            self._save_flush_task = loop.create_task(self._debounced_flush())
+
+    async def _debounced_flush(self) -> None:
+        """防抖任务：窗口过后把脏状态一次性落盘（失败仅记录，下次变更会再触发）"""
+        try:
+            await asyncio.sleep(_SAVE_DEBOUNCE_SECONDS)
+            if self._save_dirty:
+                self._save_dirty = False
+                await asyncio.to_thread(self.save)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"[StateManager] 防抖落盘失败: {e}")
+
+    def flush_save(self) -> None:
+        """立即冲刷防抖落盘的挂起变更（服务关闭 / 需要持久性保证时调用）"""
+        was_dirty = self._save_dirty
+        self._save_dirty = False
+        if self._save_flush_task is not None and not self._save_flush_task.done():
+            self._save_flush_task.cancel()
+        self._save_flush_task = None
+        if was_dirty:
+            self.save()
 
     def initialize_project(self, project_id: str, user_goal: str, project_name: str = "New Project") -> ProjectState:
         """初始化一个空项目（CLI 路径向后兼容）。"""
@@ -282,9 +395,9 @@ class StateManager:
             "project_name": project_name,
             "status": "idle",
             "user_goal": user_goal,
-            "keyElements": [],
-            "shots": [],
-            "audioItems": [],
+            CAT_KEY_ELEMENTS: [],
+            CAT_SHOTS: [],
+            CAT_AUDIO_ITEMS: [],
             "assets": [],
             "documents": [],
             "chatMessages": [],
@@ -293,89 +406,33 @@ class StateManager:
         self.save()
         return self.get()
 
-    # ====== 多项目管理 ======
+    # ====== 多项目管理（委托给 ProjectManager） ======
 
     def list_projects(self) -> Dict[str, Any]:
         """返回所有项目列表 + 当前活跃 ID"""
-        index = self._read_index()
-        return {
-            "active_project_id": self._active_project_id,
-            "projects": index.get("projects", []),
-        }
+        return self._project_mgr.list_projects(self._active_project_id)
 
     def create_project(self, name: str) -> str:
         """新建项目：保存当前 → 创建新项目 → 切换 → 返回 project_id"""
-        if self._active_project_id:
-            self._save_to_project_dir(self._active_project_id)
-
-        project_id = f"proj-{int(time.time())}-{random.randint(100, 999)}"
-        self._raw_state = {
-            "project_id": project_id,
-            "project_name": name,
-            "status": "idle",
-            "keyElements": [],
-            "shots": [],
-            "audioItems": [],
-            "assets": [],
-            "documents": [],
-            "chatMessages": [
-                {
-                    "sender": "agent",
-                    "text": f"你好！我是你的 AI 编剧与导演助手。项目《{name}》已创建，告诉我你的创意目标，我来帮你规划关键元素、分镜和音频层！",
-                }
-            ],
-        }
-        self._active_project_id = project_id
-        self._save_to_project_dir(project_id)
-        self._save_compat()
-
-        index = self._read_index()
-        index["active_project_id"] = project_id
-        index.setdefault("projects", []).append({
-            "id": project_id,
-            "name": name,
-            "created_at": self._now_iso(),
-            "updated_at": self._now_iso(),
-        })
-        self._write_index(index)
-        logger.info(f"[StateManager] Created project: {name} ({project_id})")
-        return project_id
+        return self._project_mgr.create_project(name, self._active_project_id)
 
     def switch_project(self, project_id: str) -> bool:
         """切换项目：保存当前 → 加载目标"""
-        if project_id == self._active_project_id:
-            return True
-        if self._active_project_id:
-            self._save_to_project_dir(self._active_project_id)
-        if not self._load_from_project_dir(project_id):
-            return False
-        self._active_project_id = project_id
-        self._save_compat()
-        index = self._read_index()
-        index["active_project_id"] = project_id
-        self._write_index(index)
-        logger.info(f"[StateManager] Switched to project: {project_id}")
-        return True
+        return self._project_mgr.switch_project(project_id, self._active_project_id)
 
     def delete_project(self, project_id: str) -> bool:
         """删除项目（硬删除）"""
-        index = self._read_index()
-        projects = index.get("projects", [])
-        if len(projects) <= 1:
-            return False
-        index["projects"] = [p for p in projects if p["id"] != project_id]
-        if self._active_project_id == project_id:
-            new_active = index["projects"][0]["id"] if index["projects"] else ""
-            index["active_project_id"] = new_active
-            self._write_index(index)
-            self.switch_project(new_active)
-        else:
-            self._write_index(index)
-        pdir = self._projects_dir / project_id
-        if pdir.exists():
-            shutil.rmtree(pdir, ignore_errors=True)
-        logger.info(f"[StateManager] Deleted project: {project_id}")
-        return True
+        # 如果删除的是当前活跃项目，先切换到其他项目
+        if project_id == self._active_project_id:
+            index = self._repo.read_index()
+            others = [p for p in index.get("projects", []) if p["id"] != project_id]
+            if not others:
+                return False
+            # 先切换到第一个其他项目（保存当前状态）
+            self._project_mgr.switch_project(others[0]["id"], self._active_project_id)
+        # 执行删除
+        new_active = self._project_mgr.delete_project(project_id, self._active_project_id)
+        return new_active is not None
 
     def reset(self, project_name: str = "未命名项目", project_id: str = ""):
         """兼容旧接口：内部调用 create_project"""
@@ -385,9 +442,9 @@ class StateManager:
 
     def get_groups(self) -> Dict[str, List[Dict]]:
         return {
-            "keyElements": self._raw_state.get("keyElements", []),
-            "shots": self._raw_state.get("shots", []),
-            "audioItems": self._raw_state.get("audioItems", []),
+            CAT_KEY_ELEMENTS: self._raw_state.get(CAT_KEY_ELEMENTS, []),
+            CAT_SHOTS: self._raw_state.get(CAT_SHOTS, []),
+            CAT_AUDIO_ITEMS: self._raw_state.get(CAT_AUDIO_ITEMS, []),
         }
 
     def get_assets(self) -> List[Dict]:
@@ -396,91 +453,53 @@ class StateManager:
     def get_chat_messages(self) -> List[Dict]:
         return self._raw_state.get("chatMessages", [])
 
-    def add_chat_message(self, sender: str, text: str):
-        self._raw_state.setdefault("chatMessages", []).append({"sender": sender, "text": text})
-        self.save()
+    def add_chat_message(
+        self,
+        sender: str,
+        text: str,
+        model_name: str = "",
+        image_urls: Optional[List[str]] = None,
+        meta: str = "",
+        confirm: str = "",
+        applied_actions: int = 0,
+        action_log: Optional[List[str]] = None,
+        doc_card: str = "",
+        trace: Optional[Dict[str, Any]] = None,
+    ):
+        """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，防止状态文件无上限增长。
+
+        image_urls: generate_image 工具产出的图片 URL 列表，以 imageCard 结构随消息持久化，
+        前端刷新后可从历史记录重建生图卡片。
+        meta/confirm/applied_actions/action_log/doc_card: Agent 回复的附加展示信息
+        （耗时角标/阶段确认卡片/操作数/具体操作清单/文档完成卡片），随消息持久化，
+        保证刷新页面后「阶段完成」卡片与耗时角标不丢失。
+        """
+        msgs = self._raw_state.setdefault("chatMessages", [])
+        entry: Dict[str, Any] = {"sender": sender, "text": text}
+        if model_name:
+            entry["modelName"] = model_name
+        if image_urls:
+            entry["imageCard"] = {"image_urls": list(image_urls)}
+        if meta:
+            entry["meta"] = meta
+        if confirm:
+            entry["confirm"] = confirm
+        if applied_actions:
+            entry["appliedActions"] = applied_actions
+        if action_log:
+            entry["actionLog"] = list(action_log)
+        if doc_card:
+            entry["docCard"] = doc_card
+        if trace and trace.get("steps"):
+            entry["trace"] = trace
+        msgs.append(entry)
+        if len(msgs) > _CHAT_HISTORY_LIMIT:
+            del msgs[: len(msgs) - _CHAT_HISTORY_LIMIT]
+        self.save_debounced()
 
     def build_agent_context(self, asset_mode: str = "bound") -> str:
-        """构建发送给 LLM 的 Studio 状态上下文"""
-        assets = self._raw_state.get("assets", [])
-        if asset_mode != "all":
-            assets = [a for a in assets if a.get("isBound")]
-
-        snapshot = {
-            "keyElements": [
-                {
-                    "id": g["id"],
-                    "title": g.get("title", ""),
-                    "desc": g.get("desc", ""),
-                    "drafts": [
-                        {
-                            "id": d["id"],
-                            "label": d.get("label", ""),
-                            "tag": d.get("tag", ""),
-                            "mediaType": d.get("mediaType", ""),
-                            "prompt": d.get("prompt", ""),
-                            "model": d.get("model", ""),
-                            "imgUrl": (d.get("imgUrl", "") or "")[:200],
-                        }
-                        for d in g.get("drafts", [])
-                    ],
-                }
-                for g in self._raw_state.get("keyElements", [])
-            ],
-            "shots": [
-                {
-                    "id": g["id"],
-                    "title": g.get("title", ""),
-                    "duration": g.get("duration", ""),
-                    "shotType": g.get("shotType", ""),
-                    "sceneRefs": g.get("sceneRefs", []),
-                    "roughDesc": g.get("roughDesc", ""),
-                    "drafts": [
-                        {
-                            "id": d["id"],
-                            "label": d.get("label", ""),
-                            "tag": d.get("tag", ""),
-                            "prompt": d.get("prompt", ""),
-                            "model": d.get("model", ""),
-                            "mode": d.get("mode", ""),
-                        }
-                        for d in g.get("drafts", [])
-                    ],
-                }
-                for g in self._raw_state.get("shots", [])
-            ],
-            "audioItems": [
-                {
-                    "id": g["id"],
-                    "title": g.get("title", ""),
-                    "timeRange": g.get("timeRange", ""),
-                    "prompt": g.get("prompt", ""),
-                    "drafts": [
-                        {
-                            "id": d["id"],
-                            "label": d.get("label", ""),
-                            "prompt": d.get("prompt", ""),
-                            "model": d.get("model", ""),
-                        }
-                        for d in g.get("drafts", [])
-                    ],
-                }
-                for g in self._raw_state.get("audioItems", [])
-            ],
-            "assets": [
-                {"id": a["id"], "name": a.get("name", ""), "type": a.get("type", ""), "isBound": a.get("isBound", False)}
-                for a in assets
-            ],
-            "documents": [
-                {
-                    "name": d.get("name", ""),
-                    "updated_at": d.get("updated_at", ""),
-                    "content": (d.get("content", "") or "")[:4000],
-                }
-                for d in self._raw_state.get("documents", [])
-            ],
-        }
-        return json.dumps(snapshot, ensure_ascii=False, indent=2)
+        """构建发送给 LLM 的 Studio 状态上下文（带缓存，状态未变时复用）"""
+        return _build_context(self._raw_state, asset_mode, self._context_cache)
 
     # ====== CLI 路径向后兼容 ======
 
@@ -534,40 +553,4 @@ class StateManager:
                 return
         logger.warning(f"Asset {asset_id} not found.")
 
-    # ====== 内部持久化 ======
 
-    def _read_index(self) -> Dict[str, Any]:
-        if self._index_file.exists():
-            try:
-                return json.loads(self._index_file.read_text(encoding="utf-8"))
-            except Exception as e:
-                logger.warning(f"[StateManager] Failed to read index: {e}")
-        return {"active_project_id": "", "projects": []}
-
-    def _write_index(self, index: Dict[str, Any]):
-        atomic_write_text(self._index_file, json.dumps(index, ensure_ascii=False, indent=2))
-
-    def _now_iso(self) -> str:
-        return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
-    def _save_to_project_dir(self, project_id: str):
-        pdir = self._projects_dir / project_id
-        pdir.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(pdir / "state.json", json.dumps(self._raw_state, ensure_ascii=False, indent=2))
-
-    def _load_from_project_dir(self, project_id: str) -> bool:
-        sfile = self._projects_dir / project_id / "state.json"
-        if not sfile.exists():
-            return False
-        try:
-            self._raw_state = json.loads(sfile.read_text(encoding="utf-8"))
-            return True
-        except Exception as e:
-            logger.warning(f"[StateManager] Failed to load project {project_id}: {e}")
-            return False
-
-    def _save_compat(self):
-        try:
-            atomic_write_text(self._state_file, json.dumps(self._raw_state, ensure_ascii=False, indent=2))
-        except Exception:
-            pass

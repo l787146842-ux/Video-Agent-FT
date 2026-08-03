@@ -1,5 +1,5 @@
 ﻿/**
- * Flova Studio - 影视创作工作台核心 JavaScript
+ * FTDYB - 影视创作工作台核心 JavaScript
  */
 
 // 全局状态管理（初始为空，DOMContentLoaded 时从后端 API 加载）
@@ -36,7 +36,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateMiddlePreview();
     await loadCanvasApiConfig();
     bindApiConfigUpdates();
-    renderWorkflowPhases();
     lucide.createIcons();
 });
 
@@ -488,7 +487,7 @@ function renderDocsList() {
         <div class="docs-section-title">📎 上传素材</div>
         ${textAssets.length ? textAssets.map(a => `
             <div class="docs-file" onclick="openAssetDoc('${escapeHtml(a.name).replace(/'/g, "\\'")}')">
-                <i data-lucide="${/\.pdf$/i.test(a.name) ? 'file-type' : 'file-text'}" class="w-3.5 h-3.5"></i><span>${escapeHtml(a.name)}</span>
+                <i data-lucide="file" class="w-3.5 h-3.5"></i><span>${escapeHtml(a.name)}</span>
             </div>`).join('') : '<div class="docs-empty">暂无上传的文档素材</div>'}
         <div class="docs-section-title">🧩 Skill 文档</div>
         ${(() => {
@@ -498,7 +497,7 @@ function renderDocsList() {
             return visible.length ? visible.map(d => `
             <div class="docs-file ${cur?.kind === 'skill' && cur?.key === d.slug ? 'active' : ''}"
                  onclick="selectDoc('skill', '${d.slug}')">
-                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>${escapeHtml(d.name)}</span>
+                <i data-lucide="book-open" class="w-3.5 h-3.5"></i><span>${escapeHtml(d.name)}</span>
             </div>`).join('') : '<div class="docs-empty">在聊天框选择 Skill 后显示</div>';
         })()}
         <button class="docs-new-btn" onclick="createNewDoc()">+ 新建文档</button>`;
@@ -696,9 +695,9 @@ function showDraftMenu(event, draftId, type, groupId) {
     menu.style.left = Math.min(event.clientX, window.innerWidth - 180) + 'px';
     menu.style.top = Math.min(event.clientY, window.innerHeight - 160) + 'px';
     menu.innerHTML = `
-        <button onclick="draftMenuAddToChat('${draftId}', '${type}')"><i data-lucide="message-square-quote" class="w-3.5 h-3.5"></i>添加到对话</button>
-        <button onclick="draftMenuDelete('${draftId}', '${type}', '${groupId}')"><i data-lucide="trash" class="w-3.5 h-3.5"></i>删除此草稿</button>
-        <button onclick="draftMenuMoveToUncategorized('${draftId}', '${type}', '${groupId}')"><i data-lucide="folder-output" class="w-3.5 h-3.5"></i>移除到未归类素材</button>`;
+        <button onclick="draftMenuAddToChat('${draftId}', '${type}')"><i data-lucide="message-square" class="w-3.5 h-3.5"></i>添加到对话</button>
+        <button onclick="draftMenuDelete('${draftId}', '${type}', '${groupId}')"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i>删除此草稿</button>
+        <button onclick="draftMenuMoveToUncategorized('${draftId}', '${type}', '${groupId}')"><i data-lucide="folder-minus" class="w-3.5 h-3.5"></i>移除到未归类素材</button>`;
     document.body.appendChild(menu);
     lucide.createIcons();
     setTimeout(() => document.addEventListener('click', closeDraftMenu, {once: true}), 0);
@@ -868,7 +867,7 @@ function updateMiddlePreview() {
         } else {
             mediaViewer.innerHTML = `
                 <div class="preview-upload-placeholder" onclick="triggerPreviewUpload()">
-                    <i data-lucide="cloud-upload" class="w-12 h-12 mx-auto mb-3 opacity-60"></i>
+                    <i data-lucide="upload-cloud" class="w-12 h-12 mx-auto mb-3 opacity-60"></i>
                     <p class="text-sm font-semibold text-gray-300">上传</p>
                     <p class="text-xs text-gray-500 mt-1">拖拽 / 粘贴 / 点击上传</p>
                 </div>`;
@@ -881,7 +880,7 @@ function updateMiddlePreview() {
         } else {
             mediaViewer.innerHTML = `
                 <div class="preview-upload-placeholder" onclick="triggerPreviewUpload()">
-                    <i data-lucide="cloud-upload" class="w-12 h-12 mx-auto mb-3 opacity-60"></i>
+                    <i data-lucide="upload-cloud" class="w-12 h-12 mx-auto mb-3 opacity-60"></i>
                     <p class="text-sm font-semibold text-gray-300">上传</p>
                     <p class="text-xs text-gray-500 mt-1">拖拽 / 粘贴 / 点击上传</p>
                 </div>`;
@@ -889,7 +888,7 @@ function updateMiddlePreview() {
     } else if (currentDraft.mediaType === 'audio') {
         mediaViewer.innerHTML = `
             <div class="audio-preview-card">
-                <i data-lucide="disc" class="w-12 h-12 text-emerald-400 animate-spin"></i>
+                <i data-lucide="loader" class="w-12 h-12 text-emerald-400 animate-spin"></i>
                 <span class="text-sm font-semibold text-gray-200">${currentDraft.label}</span>
                 <audio controls class="w-full mt-2">
                     <source src="" type="audio/mpeg">
@@ -954,7 +953,7 @@ function updateMiddlePreview() {
             <div class="flex gap-2">
                 <button class="btn-secondary" onclick="saveDraftParams()">保存</button>
                 <button class="btn-primary" onclick="generateImage()">
-                    <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> 生成图片
+                    <i data-lucide="image" class="w-3.5 h-3.5"></i> 生成图片
                 </button>
             </div>
         `;
@@ -1013,7 +1012,7 @@ function updateMiddlePreview() {
             <div class="flex gap-2">
                 <button class="btn-secondary" onclick="saveDraftParams()">保存</button>
                 <button class="btn-primary" style="background:#8b5cf6" onclick="generateVideo()">
-                    <i data-lucide="film" class="w-3.5 h-3.5"></i> 生成视频
+                    <i data-lucide="video" class="w-3.5 h-3.5"></i> 生成视频
                 </button>
             </div>
         `;
@@ -1121,13 +1120,13 @@ function toggleCollapsePrompt() {
     if (state.isPromptCollapsed) {
         collapseArea.classList.add('hidden');
         toggleBar.classList.add('collapsed');
-        collapseIcon.setAttribute('data-lucide', 'chevron-up');
+        collapseIcon.setAttribute('data-lucide', 'chevron-down');
         previewBottom.style.height = 'auto';
         previewBottom.style.flex = 'none';
     } else {
         collapseArea.classList.remove('hidden');
         toggleBar.classList.remove('collapsed');
-        collapseIcon.setAttribute('data-lucide', 'chevron-down');
+        collapseIcon.setAttribute('data-lucide', 'chevron-up');
         previewBottom.style.height = '280px';
         previewBottom.style.flex = 'none';
     }
@@ -1160,7 +1159,7 @@ function renderRightChat() {
                 </div>
                 <div class="stage-card-body">${escapeHtml(msg.confirm)}</div>
             </div>` : ''}
-            <span class="msg-author">${msg.sender === 'user' ? '你' : '导演 Agent'}</span>
+            ${msg.sender !== 'user' ? `<span class="msg-author">${escapeHtml(msg.modelName || 'Agent')}</span>` : ''}
             <div class="chat-bubble">${escapeHtml(msg.text).replace(/\n/g, '<br>')}</div>
             ${msg.meta ? `<div class="msg-meta">${escapeHtml(msg.meta)}</div>` : ''}
             ${(msg.confirm && idx === lastIdx) ? `
@@ -1178,13 +1177,13 @@ function renderRightChat() {
 }
 
 // 在聊天流末尾追加一个"流式中"的 Agent 气泡，返回操作句柄
-function createStreamingBubble() {
+function createStreamingBubble(modelName) {
     const feed = document.getElementById('chatFeed');
     if (!feed) return null;
     const wrap = document.createElement('div');
     wrap.className = 'chat-msg agent streaming';
     wrap.innerHTML = `
-        <span class="msg-author">导演 Agent</span>
+        <span class="msg-author">${escapeHtml(modelName || 'Agent')}</span>
         <div class="chat-bubble"><span class="stream-text"></span><span class="stream-cursor">▍</span></div>
         <div class="stream-log"></div>
         <div class="msg-meta chat-status">
@@ -1266,7 +1265,7 @@ async function sendAgentMessage(forcedText = '') {
     state.agentBusy = true;
     setAgentBusy(true);
     renderRightChat();
-    const bubble = createStreamingBubble();
+    const bubble = createStreamingBubble(model);
     try {
         const history = state.chatMessages.slice(-12, -1).map(message => ({
             role: message.sender === 'agent' ? 'assistant' : 'user',
@@ -1333,7 +1332,8 @@ async function sendAgentMessage(forcedText = '') {
                         text: String(p.text || '').trim() || '（空回复）',
                         meta: metaParts.join(' · '),
                         confirm: p.confirmation || '',
-                        appliedActions: p.applied_actions || 0
+                        appliedActions: p.applied_actions || 0,
+                        modelName: model
                     });
                     // 本轮产出的文档 → 可点击的"已完成"卡片
                     (p.documents_written || []).forEach(name => {
@@ -1920,7 +1920,7 @@ async function loadCanvasApiConfig() {
         const [configRes, providersRes, skillsRes] = await Promise.all([
             fetch('/api/config'),
             fetch('/api/providers'),
-            fetch('/api/plugins/flova-agent/config')
+            fetch('/api/plugins/ftdyb-agent/config')
         ]);
         
         if (configRes.ok) {
@@ -2541,11 +2541,11 @@ function renderPendingAttachments() {
         }
         return `
             <div class="attachment-chip">
-                <i data-lucide="${att.type === 'video' ? 'video' : 'file-text'}" class="w-3.5 h-3.5"></i>
+                <i data-lucide="file" class="w-3.5 h-3.5"></i>
                 <span class="attachment-name">${escapeHtml(att.name)}</span>
-                <button class="attachment-remove" onclick="removePendingAttachment(${idx})" title="移除">
-                    <i data-lucide="x" class="w-3 h-3"></i>
-                </button>
+                    <button class="attachment-remove" onclick="removePendingAttachment(${idx})" title="移除">
+                        <i data-lucide="x" class="w-3 h-3"></i>
+                    </button>
             </div>`;
     }).join('');
     lucide.createIcons();
@@ -2615,30 +2615,9 @@ function refreshStateFromBackend(serverState) {
 }
 
 // === 工作流面板 ===
-const WF_PHASES = [
-    {name: 'story', label: '编剧', icon: 'pen-tool'},
-    {name: 'storyboard', label: '分镜', icon: 'layout-grid'},
-    {name: 'image', label: '关键帧', icon: 'image'},
-    {name: 'video', label: '视频', icon: 'film'},
-    {name: 'audio', label: '音频', icon: 'music'},
-    {name: 'edit', label: '剪辑', icon: 'scissors'},
-];
+// 注：阶段步骤条（WF_PHASES/renderWorkflowPhases）已随新版 UI 移除（修复计划书 P0-1），
+// 此处仅保留工作流运行按钮与 SSE 进度 toast。
 let wfEventSource = null;
-
-function renderWorkflowPhases(phaseStates = {}) {
-    const container = document.getElementById('workflowPhases');
-    if (!container) return;
-    container.innerHTML = WF_PHASES.map(p => {
-        const st = phaseStates[p.name] || 'pending';
-        const icon = st === 'completed' ? 'check-circle' : st === 'running' ? 'loader'
-            : st === 'failed' ? 'x-circle' : st === 'skipped' ? 'skip-forward' : p.icon;
-        return `<div class="wf-phase ${st}" title="${p.label}: ${st}">
-            <i data-lucide="${icon}" class="wf-phase-icon ${st === 'running' ? 'animate-spin' : ''}"></i>
-            <span>${p.label}</span>
-        </div>`;
-    }).join('');
-    lucide.createIcons();
-}
 
 async function startWorkflow() {
     const btn = document.getElementById('workflowRunBtn');
@@ -2674,24 +2653,15 @@ async function startWorkflow() {
 function subscribeWorkflowEvents() {
     if (wfEventSource) wfEventSource.close();
 
-    const phaseStates = {};
-    WF_PHASES.forEach(p => phaseStates[p.name] = 'pending');
-    renderWorkflowPhases(phaseStates);
-
     wfEventSource = new EventSource('/api/workflow/events');
     wfEventSource.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
             if (data.event === 'phase_started') {
-                phaseStates[data.phase] = 'running';
-                renderWorkflowPhases(phaseStates);
+                // 阶段步骤条已移除，进度仅以 toast 呈现
             } else if (data.event === 'phase_completed') {
-                phaseStates[data.phase] = data.skipped ? 'skipped' : 'completed';
-                renderWorkflowPhases(phaseStates);
                 showToast(`${data.label}${data.skipped ? '（跳过）' : ' 完成'}：${data.detail || ''}`);
             } else if (data.event === 'phase_failed') {
-                phaseStates[data.phase] = 'failed';
-                renderWorkflowPhases(phaseStates);
                 showToast(`${data.label || data.phase} 失败：${data.error || ''}`);
             } else if (data.event === 'workflow_done') {
                 showToast(data.message || '工作流全部完成！');
@@ -2702,8 +2672,6 @@ function subscribeWorkflowEvents() {
                 // 刷新故事板（工作流可能添加了新 draft）
                 fetch('/api/project/state').then(r => r.json()).then(s => refreshStateFromBackend(s));
             } else if (data.event === 'workflow_failed') {
-                phaseStates[data.phase || ''] = 'failed';
-                renderWorkflowPhases(phaseStates);
                 showToast('工作流失败: ' + (data.error || ''));
                 wfEventSource.close();
                 wfEventSource = null;

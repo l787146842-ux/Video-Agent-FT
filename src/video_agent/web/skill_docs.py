@@ -1,7 +1,7 @@
 """
 Skill 文档化存储层。
 
-对标 Flova：Skill 不是代码里的一段提示词，而是用户可见、可编辑的 Markdown 文档，
+对标 FTDYB：Skill 不是代码里的一段提示词，而是用户可见、可编辑的 Markdown 文档，
 存放在 data/skills/，全文注入 LLM system prompt——"流程即数据"。
 
 文档格式约定：
@@ -11,6 +11,7 @@ Skill 文档化存储层。
     ……正文……
 """
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -20,6 +21,10 @@ from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import SKILL_DOCS_DIR
 
 _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划线/连字符
+
+# 版本历史：保存前把旧版备份到 .history/，每个 slug 保留最近 N 版
+_HISTORY_DIR_NAME = ".history"
+_HISTORY_MAX = 10
 
 DEFAULT_SKILL_SLUG = "script-to-video"
 DEFAULT_SKILL_DOC = """# 剧本生视频（需上传剧本）
@@ -109,6 +114,60 @@ def save_skill_doc(slug: str, content: str) -> Dict[str, Any]:
     if not content.strip():
         raise ValueError("Skill 文档内容不能为空")
     SKILL_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(SKILL_DOCS_DIR / f"{slug}.md", content)
+    target = SKILL_DOCS_DIR / f"{slug}.md"
+    # 覆盖前备份旧版（版本历史，供文档面板查看/回滚）
+    if target.exists():
+        _backup_skill_doc(slug, target)
+    atomic_write_text(target, content)
     logger.info(f"[SkillDocs] 已保存 Skill 文档: {slug}.md")
     return _parse_doc(slug, content)
+
+
+def _backup_skill_doc(slug: str, target: Path) -> None:
+    """把旧版备份到 .history/{slug}-{毫秒时间戳}.md，并只保留最近 _HISTORY_MAX 版。
+
+    用毫秒时间戳命名（位数固定）：字典序 = 时序，同毫秒冲突时递增。
+    """
+    try:
+        hdir = SKILL_DOCS_DIR / _HISTORY_DIR_NAME
+        hdir.mkdir(parents=True, exist_ok=True)
+        stamp = int(time.time() * 1000)
+        backup = hdir / f"{slug}-{stamp}.md"
+        while backup.exists():
+            stamp += 1
+            backup = hdir / f"{slug}-{stamp}.md"
+        backup.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
+        # 裁剪：仅保留最近 _HISTORY_MAX 版（按文件名时间戳排序）
+        versions = sorted(hdir.glob(f"{slug}-*.md"), key=lambda p: p.name)
+        for old in versions[:-_HISTORY_MAX]:
+            old.unlink(missing_ok=True)
+    except OSError as e:
+        logger.warning(f"[SkillDocs] 版本备份失败 {slug}: {e}")
+
+
+def list_skill_doc_history(slug: str) -> List[Dict[str, Any]]:
+    """列出某 Skill 文档的历史版本（新→旧，含全文，供查看/回滚）"""
+    slug = _validate_slug(slug)
+    hdir = SKILL_DOCS_DIR / _HISTORY_DIR_NAME
+    if not hdir.exists():
+        return []
+    items: List[Dict[str, Any]] = []
+    for f in sorted(hdir.glob(f"{slug}-*.md"), key=lambda p: p.name, reverse=True):
+        try:
+            content = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # 版本名 = 文件名去掉 slug 前缀（即时间戳部分）
+        version = f.stem[len(slug) + 1:]
+        items.append({"version": version, "content": content})
+    return items
+
+
+def delete_skill_doc(slug: str) -> None:
+    """删除指定 Skill 文档，不存在时抛出 ValueError"""
+    slug = _validate_slug(slug)
+    f = SKILL_DOCS_DIR / f"{slug}.md"
+    if not f.exists():
+        raise ValueError(f"Skill 文档 '{slug}' 不存在")
+    f.unlink()
+    logger.info(f"[SkillDocs] 已删除 Skill 文档: {slug}.md")

@@ -1,14 +1,32 @@
 ﻿import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel, Field
-from loguru import logger
+
+
+class ToolEvent(BaseModel):
+    """工具执行过程中向前端推送的结构化事件。
+
+    示例：
+        ToolEvent(type="generation_progress", payload={"draft_id": "...", "progress": 0.5})
+        ToolEvent(type="canvas_node_added", payload={"node_id": "...", "canvas_id": "..."})
+    """
+    type: str = ""       # 事件类型标识（前端根据此字段决定如何处理）
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
 
 class ToolResult(BaseModel):
+    """工具执行结果。
+
+    - success: 是否成功
+    - data: 业务数据（供 LLM 或前端使用）
+    - error: 失败时的错误信息
+    - events: 执行过程中产生的结构化事件（可选，供前端实时反馈）
+    """
     success: bool
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-    error_code: Optional[int] = None
+    events: List[ToolEvent] = Field(default_factory=list)
 
 class BaseTool(ABC):
     name: str = ""

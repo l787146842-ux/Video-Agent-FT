@@ -25,6 +25,10 @@
 将指定草稿标记为「已确认」。
 参数：draft_id, draft_type
 
+### storyboard_media_to_chat
+把故事板草稿卡片里的媒体（图片/视频/音频）自动添加到右侧 Agent 对话输入框，供用户确认后发送。
+参数：draft_ids[](与 target 二选一，优先), target(current|all|all_keyElements|all_shots|all_audio), media_type(image|video|audio，可选), limit
+
 ### document_write
 写入/更新项目文档工件（如制作规格、脚本大纲）。已存在同名文档则覆盖。
 参数：name, content

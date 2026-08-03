@@ -15,8 +15,9 @@ from loguru import logger
 
 from .models import PhaseDefinition, WorkflowDefinition
 
-# phase_executor(phase) -> Any；抛异常视为失败；返回 {"skipped": True} 视为跳过
-PhaseExecutor = Callable[[PhaseDefinition], Awaitable[Any]]
+# phase_executor(phase, context) -> Any；抛异常视为失败；返回 {"skipped": True} 视为跳过
+# context 是阶段间共享数据字典，前一阶段的输出存入 context[phase_id]
+PhaseExecutor = Callable[[PhaseDefinition, Dict[str, Any]], Awaitable[Any]]
 # on_event(event: dict) -> None；事件：phase_started / phase_completed / phase_failed
 EventHook = Callable[[Dict[str, Any]], Awaitable[None]]
 
@@ -38,10 +39,12 @@ class WorkflowEngine:
         self.failed_phases: Set[str] = set()
         self.running_phases: Set[str] = set()
         self.phase_results: Dict[str, Dict[str, Any]] = {}
+        self.phase_context: Dict[str, Any] = {}  # 阶段间共享数据（前一阶段输出作为后一阶段输入）
         self._tasks: Dict[str, asyncio.Task] = {}
+        self._awaiting_confirmation: bool = False  # 交互模式：等待用户确认推进
 
     @staticmethod
-    async def _demo_executor(phase: PhaseDefinition) -> Dict[str, Any]:
+    async def _demo_executor(phase: PhaseDefinition, context: Dict[str, Any]) -> Dict[str, Any]:
         """默认执行器——仅用于无 UI 的 CLI 演示，明确标注 demo"""
         logger.info(f"[Workflow] (demo) 模拟执行 phase: {phase.phase_id}")
         await asyncio.sleep(0.2)
@@ -85,13 +88,15 @@ class WorkflowEngine:
                 attempt += 1
                 try:
                     result = await asyncio.wait_for(
-                        self.phase_executor(phase), timeout=phase.timeout_seconds
+                        self.phase_executor(phase, self.phase_context), timeout=phase.timeout_seconds
                     )
                     skipped = isinstance(result, dict) and bool(result.get("skipped"))
                     detail = (result or {}).get("detail", "") if isinstance(result, dict) else ""
                     self.completed_phases.add(phase.phase_id)
                     if skipped:
                         self.skipped_phases.add(phase.phase_id)
+                    # 将阶段输出存入 phase_context，供下游阶段读取
+                    self.phase_context[phase.phase_id] = result
                     self.phase_results[phase.phase_id] = {
                         "status": "skipped" if skipped else "completed",
                         "detail": detail,
@@ -186,8 +191,6 @@ class WorkflowEngine:
         return success
 
     # ---------- 交互模式（Web 用） ----------
-
-    _awaiting_confirmation: bool = False
 
     @property
     def current_phase(self) -> Optional[str]:

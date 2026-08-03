@@ -20,7 +20,7 @@ def make_llm(replies):
     """按次序返回预设回复的假 LLM；记录每轮收到的 system prompt"""
     calls = {"n": 0, "systems": []}
 
-    async def llm_call(system_prompt, messages):
+    async def llm_call(system_prompt, messages, stream_hook=None):
         calls["systems"].append(system_prompt)
         reply = replies[min(calls["n"], len(replies) - 1)]
         calls["n"] += 1

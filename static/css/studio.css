@@ -1,4 +1,4 @@
-﻿/* Flova-style Studio 影视创作工作台 CSS */
+﻿/* FTDYB Studio 影视创作工作台 CSS */
 
 :root {
   --bg-primary: #121319;
@@ -151,6 +151,13 @@ body, html {
   justify-content: space-between;
   padding: 0 16px;
   z-index: 20;
+  position: relative;
+  /* 覆盖层模式下，header 底边需要"延伸"出箭头把手，移除底部 border 让箭头无缝衔接 */
+}
+
+/* 覆盖层模式：header 去掉底部 border，让箭头把手无缝衔接（箭头自己画顶部分隔线） */
+.studio-header:has(.nav-toggle-arrow) {
+  border-bottom: none;
 }
 
 .studio-brand {
@@ -895,6 +902,14 @@ body, html {
   background-color: #2563eb;
 }
 
+.btn-primary:disabled,
+.btn-primary[disabled] {
+  background-color: var(--bg-tertiary);
+  color: var(--text-dim);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .btn-secondary {
   background-color: var(--bg-hover);
   color: var(--text-main);
@@ -918,47 +933,6 @@ body, html {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
-}
-
-.workflow-phases {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.wf-phase {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  background-color: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  transition: all 0.3s;
-}
-
-.wf-phase.running {
-  border-color: var(--accent-blue);
-  color: var(--accent-blue);
-  animation: wf-pulse 1.2s infinite;
-}
-
-.wf-phase.completed {
-  border-color: var(--accent-emerald);
-  color: var(--accent-emerald);
-}
-
-.wf-phase.failed {
-  border-color: #ef4444;
-  color: #ef4444;
-}
-
-.wf-phase.skipped {
-  border-style: dashed;
-  color: var(--text-muted);
-  opacity: 0.7;
 }
 
 /* ===== 流式聊天 & 生成进度 ===== */
@@ -1463,11 +1437,6 @@ body, html {
   50% { opacity: 0.6; }
 }
 
-.wf-phase-icon {
-  width: 12px;
-  height: 12px;
-}
-
 /* RIGHT PANEL: Agent Chat & Loop */
 .right-header {
   padding: 12px 16px;
@@ -1531,10 +1500,10 @@ body, html {
 }
 
 .chat-bubble {
-  padding: 10px 14px;
+  padding: 14px 18px;
   border-radius: var(--radius-md);
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.55;
 }
 
 .chat-msg.user .chat-bubble {
@@ -2043,6 +2012,9 @@ body, html {
 
 /* 模式切换按钮 */
 .mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
@@ -2052,6 +2024,8 @@ body, html {
   background: none;
   cursor: pointer;
   transition: all 0.2s ease;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .mode-btn:hover {
@@ -2190,32 +2164,50 @@ body.mode-canvas .agent-toggle-handle {
   display: flex;
 }
 
-/* 导航栏收放箭头（画布模式下始终可见，紧贴导航栏下方） */
+/* 导航栏底部凸出的收放把手（覆盖层模式可见）
+   - 凸出在 header 底部边缘之外（bottom 负值），与 header 共享背景色
+   - 顶部无圆角，与 header 底边无缝衔接；仅底部圆角，形成"把手"造型
+   - 视觉上是导航栏整体向下延伸的一部分，而非外部覆盖元素
+   - header 隐藏时：fixed 到视口顶部居中 */
 .nav-toggle-arrow {
-  display: none; /* 影视Agent模式下隐藏 */
-  position: relative;
+  position: absolute;
+  bottom: -14px; /* 凸出到 header 底边之外 */
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 21;
-  width: 48px;
-  height: 20px;
-  margin: 0 auto;
+  display: flex;
   align-items: center;
   justify-content: center;
+  width: 56px;
+  height: 14px;
   border: none;
-  border-radius: 0 0 8px 8px;
-  background-color: var(--bg-secondary);
+  border-top: none;
+  border-radius: 0 0 8px 8px; /* 仅底部圆角，顶部与 header 无缝衔接 */
+  background-color: var(--bg-secondary); /* 与 header 共享背景 */
   color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: background-color 0.2s, color 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .nav-toggle-arrow:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-tertiary);
   color: var(--text-main);
 }
 
-body.mode-canvas .nav-toggle-arrow {
-  display: flex;
+/* 导航栏隐藏时的箭头位置：固定到顶部居中（视觉上仍可见以便再次展开） */
+body.nav-hidden .nav-toggle-arrow,
+.nav-toggle-arrow.nav-toggle-arrow--floating {
+  position: fixed;
+  top: 0;
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  border-radius: 0 0 8px 8px;
+  z-index: 21;
+  background-color: var(--bg-secondary);
+  height: 14px;
 }
 
 /* 导航栏隐藏时的布局调整 */
@@ -2439,6 +2431,16 @@ body.mode-canvas.nav-hidden .nav-toggle-arrow {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.asset-card-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  background-color: var(--bg-card);
 }
 
 /* 底部确认栏 */

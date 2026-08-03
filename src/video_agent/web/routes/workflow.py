@@ -10,7 +10,7 @@
 """
 import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -18,29 +18,19 @@ from pydantic import BaseModel
 
 from loguru import logger
 
-from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
-
 from src.video_agent.web.actions import StudioActionExecutor
-from src.video_agent.web.generation import (
-    GenerationError,
-    call_chat_completion,
-    generate_image_via_provider,
-)
-from src.video_agent.web.provider_config import is_mock_provider
-from src.video_agent.web.routes.agent import STUDIO_ACTION_PROTOCOL_PROMPT
 from src.video_agent.state.manager import StateManager
 from src.video_agent.workflows.engine import WorkflowEngine
-from src.video_agent.workflows.models import (
-    PhaseDefinition,
-    PhaseExecution,
-    RetryPolicy,
-    WorkflowContextConfig,
-    WorkflowDefinition,
+from src.video_agent.workflows.interactive import (
+    build_executors,
+    build_workflow_definition,
+    get_interactive_engine,
 )
+from src.video_agent.workflows.models import PhaseDefinition, WorkflowDefinition
 
 router = APIRouter()
 
-# 工作流阶段定义（phase_id 与前端 WF_PHASES 的 name 一致）
+# 工作流阶段定义（phase_id 为后端契约；前端步骤条已随新版 UI 移除，icon 字段保留仅为 API 兼容）
 WORKFLOW_PHASES = [
     {"name": "story", "label": "编剧", "icon": "pen-tool"},
     {"name": "storyboard", "label": "分镜拆解", "icon": "layout-grid"},
@@ -49,9 +39,6 @@ WORKFLOW_PHASES = [
     {"name": "audio", "label": "音频合成", "icon": "music"},
     {"name": "edit", "label": "剪辑合成", "icon": "scissors"},
 ]
-
-# 每次工作流最多真实生成的图片数，防止失控消耗
-MAX_IMAGES_PER_RUN = 4
 
 # 工作流运行状态（/workflow/status 查询用）
 _workflow_state: Dict[str, Any] = {
@@ -71,6 +58,7 @@ class WorkflowRunRequest(BaseModel):
     image_provider: str = ""  # 生图供应商（image 阶段）
     image_model: str = ""
     workflow_config: str = ""
+    phase_configs: Dict[str, Dict[str, str]] = {}  # 阶段级模型配置 {"story": {"provider": "...", "model": "..."}}
 
 
 @router.get("/workflow/status")
@@ -137,33 +125,30 @@ def _phase_state(name: str) -> Optional[Dict[str, Any]]:
 
 
 def _build_definition() -> WorkflowDefinition:
-    """六阶段流水线：story → storyboard → (image, audio) → video → edit"""
-    def phase(pid: str, name: str, deps: List[str]) -> PhaseDefinition:
-        return PhaseDefinition(
-            phase_id=pid,
-            name=name,
-            depends_on=deps,
-            execution=PhaseExecution(skill=pid),
-            timeout_seconds=600,
-        )
+    """六阶段流水线（委托给 workflows.interactive 统一实现）"""
+    return build_workflow_definition()
 
-    return WorkflowDefinition(
-        workflow_id="wf_studio_pipeline",
-        name="Studio Production Pipeline",
-        context=WorkflowContextConfig(
-            max_parallel_tasks=2,
-            timeout_seconds=1800,
-            # LLM/生图失败重试一次即可，避免反复烧钱
-            retry_policy=RetryPolicy(max_retries=1, backoff="linear", base_delay_seconds=2),
-        ),
-        phases=[
-            phase("story", "编剧", []),
-            phase("storyboard", "分镜拆解", ["story"]),
-            phase("image", "关键帧生成", ["storyboard"]),
-            phase("audio", "音频合成", ["storyboard"]),
-            phase("video", "视频生成", ["image"]),
-            phase("edit", "剪辑合成", ["video", "audio"]),
-        ],
+
+def _build_executors(
+    svc: StateManager,
+    executor: StudioActionExecutor,
+    run_ctx: Dict[str, Any],
+    chat_provider: str,
+    chat_model: str,
+    image_provider: str,
+    image_model: str,
+    goal_getter: Callable[[], str],
+    phase_configs: Optional[Dict[str, Dict[str, str]]] = None,
+) -> Dict[str, Callable]:
+    """构建六阶段执行器字典（委托给 workflows.interactive 统一实现）"""
+    return build_executors(
+        svc, executor, run_ctx,
+        chat_provider=chat_provider,
+        chat_model=chat_model,
+        image_provider=image_provider,
+        image_model=image_model,
+        goal_getter=goal_getter,
+        phase_configs=phase_configs,
     )
 
 
@@ -172,109 +157,18 @@ async def _execute_workflow(req: WorkflowRunRequest):
     executor = StudioActionExecutor(svc)
     run_ctx: Dict[str, Any] = {"outline": ""}
 
-    has_llm = not is_mock_provider(req.provider, req.model)
-    has_image = not is_mock_provider(req.image_provider, req.image_model)
+    executors = _build_executors(
+        svc, executor, run_ctx,
+        chat_provider=req.provider,
+        chat_model=req.model,
+        image_provider=req.image_provider,
+        image_model=req.image_model,
+        goal_getter=lambda: req.goal,
+        phase_configs=req.phase_configs,
+    )
 
-    # ---------- 各 phase 的真实执行逻辑 ----------
-
-    async def exec_story(_: PhaseDefinition) -> Dict[str, Any]:
-        if not has_llm:
-            return {"skipped": True, "detail": "未配置真实 LLM 供应商，编剧阶段跳过"}
-        content, _finish = await call_chat_completion(
-            req.provider, req.model,
-            [
-                {"role": "system", "content": (
-                    "你是专业影视编剧。根据用户目标输出一份简洁的故事大纲："
-                    "包含主题、3-6 个场景（每个场景一句话描述 + 时长建议）、整体情绪曲线。"
-                    "只输出大纲文本，不要输出 JSON。"
-                )},
-                {"role": "user", "content": f"创作目标：{req.goal}\n\n当前工作台状态：\n{svc.build_agent_context('bound')}"},
-            ],
-            max_tokens=2048,
-        )
-        run_ctx["outline"] = content.strip()
-        svc.add_chat_message("agent", f"【工作流·编剧】故事大纲：\n\n{run_ctx['outline']}")
-        return {"detail": f"故事大纲已生成（{len(run_ctx['outline'])} 字）"}
-
-    async def exec_storyboard(_: PhaseDefinition) -> Dict[str, Any]:
-        if not has_llm:
-            return {"skipped": True, "detail": "未配置真实 LLM 供应商，分镜拆解跳过"}
-        system = (
-            STUDIO_ACTION_PROTOCOL_PROMPT.strip()
-            + "\n\n当前工作台状态 JSON：\n" + svc.build_agent_context("bound")
-        )
-        user = (
-            f"请根据以下故事大纲拆解关键元素与分镜，用 add_group 创建分组，"
-            f"每个分组携带含可执行 prompt 的 draft。目标：{req.goal}\n\n大纲：\n"
-            + (run_ctx["outline"] or "（无大纲，请直接根据目标拆解）")
-        )
-        content, _finish = await call_chat_completion(
-            req.provider, req.model,
-            [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            max_tokens=8192,
-        )
-        actions = executor.parse_actions_from_reply(content)
-        actions = [a for a in actions if str(a.get("action", "")).lower() != "continue"]
-        applied = executor.execute(actions)
-        if applied == 0:
-            raise GenerationError("LLM 未产出有效的 studio-actions（可能被截断或格式错误）")
-        return {"detail": f"已新增 {applied} 个故事板分组/草稿"}
-
-    async def exec_image(_: PhaseDefinition) -> Dict[str, Any]:
-        if not has_image:
-            return {"skipped": True, "detail": "未配置真实生图供应商，关键帧生成跳过"}
-        # 找出有 prompt 但还没有图的草稿
-        targets = []
-        groups = svc.get_groups()
-        for cat in (CAT_KEY_ELEMENTS, CAT_SHOTS):
-            for group in groups.get(cat, []):
-                for draft in group.get("drafts", []):
-                    if draft.get("prompt") and not draft.get("imgUrl") and draft.get("mediaType") == "image":
-                        targets.append(draft)
-        targets = targets[:MAX_IMAGES_PER_RUN]
-        if not targets:
-            return {"detail": "没有待生成的关键帧（所有草稿已有图片）"}
-
-        ok, failed_msgs = 0, []
-        for draft in targets:
-            try:
-                url = await generate_image_via_provider(
-                    req.image_provider, req.image_model, draft["prompt"],
-                    size=draft.get("size", "1280x720"),
-                    aspect_ratio=draft.get("aspectRatio", "16:9"),
-                )
-                draft["imgUrl"] = url
-                draft["tag"] = "已生成"
-                svc.save()
-                ok += 1
-            except GenerationError as e:
-                failed_msgs.append(str(e))
-        if ok == 0:
-            raise GenerationError("全部关键帧生成失败：" + "；".join(failed_msgs[:2]))
-        detail = f"已真实生成 {ok}/{len(targets)} 张关键帧"
-        if failed_msgs:
-            detail += f"（{len(failed_msgs)} 张失败）"
-        return {"detail": detail}
-
-    async def exec_not_implemented(phase: PhaseDefinition) -> Dict[str, Any]:
-        reasons = {
-            "video": "真实视频供应商尚未接入服务端",
-            "audio": "音频合成尚未接入服务端",
-            "edit": "剪辑合成尚未接入服务端",
-        }
-        return {"skipped": True, "detail": reasons.get(phase.phase_id, "尚未实现") + "，跳过"}
-
-    executors = {
-        "story": exec_story,
-        "storyboard": exec_storyboard,
-        "image": exec_image,
-        "video": exec_not_implemented,
-        "audio": exec_not_implemented,
-        "edit": exec_not_implemented,
-    }
-
-    async def phase_executor(phase: PhaseDefinition):
-        return await executors[phase.phase_id](phase)
+    async def phase_executor(phase: PhaseDefinition, context: Dict[str, Any]):
+        return await executors[phase.phase_id](phase, context)
 
     # ---------- 引擎事件 → 状态表 + SSE ----------
 
@@ -337,140 +231,7 @@ async def _execute_workflow(req: WorkflowRunRequest):
 
 
 # ---------- 交互模式端点（Phase 4/5: step/advance） ----------
-
-_interactive_engine: Optional[WorkflowEngine] = None
-
-
-def _find_first_provider(kind: str) -> tuple:
-    """从 api_providers.json 找第一个可用的非 mock 供应商，返回 (provider_id, model)"""
-    from src.video_agent.web.provider_config import load_api_providers, CLI_PROTOCOLS
-    for p in load_api_providers():
-        if not p.get("enabled", True):
-            continue
-        if p.get("protocol") == "mock":
-            continue
-        pid = p.get("id", "")
-        if kind == "chat":
-            models = p.get("chat_models", [])
-            if models and (p.get("base_url") or p.get("protocol") in CLI_PROTOCOLS):
-                return pid, models[0]
-        elif kind == "image":
-            models = p.get("image_models", [])
-            if models:
-                return pid, models[0]
-    return "", ""
-
-
-def _build_interactive_executors():
-    """为交互式引擎构建真实执行器（使用配置中第一个可用供应商）"""
-    svc = StateManager.get_instance()
-    executor = StudioActionExecutor(svc)
-    run_ctx: Dict[str, Any] = {"outline": ""}
-
-    chat_provider, chat_model = _find_first_provider("chat")
-    image_provider, image_model = _find_first_provider("image")
-    has_llm = bool(chat_provider)
-    has_image = bool(image_provider)
-
-    async def exec_story(_: PhaseDefinition) -> Dict[str, Any]:
-        if not has_llm:
-            return {"skipped": True, "detail": "未配置真实 LLM 供应商，编剧阶段跳过"}
-        goal = svc.state_dict.get("user_goal", "") or svc.state_dict.get("project_name", "")
-        content, _ = await call_chat_completion(
-            chat_provider, chat_model,
-            [
-                {"role": "system", "content": (
-                    "你是专业影视编剧。根据用户目标输出一份简洁的故事大纲："
-                    "包含主题、3-6 个场景、整体情绪曲线。只输出大纲文本。"
-                )},
-                {"role": "user", "content": f"创作目标：{goal}\n\n当前工作台状态：\n{svc.build_agent_context('bound')}"},
-            ],
-            max_tokens=2048,
-        )
-        run_ctx["outline"] = content.strip()
-        svc.add_chat_message("agent", f"【工作流·编剧】故事大纲：\n\n{run_ctx['outline']}")
-        return {"detail": f"故事大纲已生成（{len(run_ctx['outline'])} 字）"}
-
-    async def exec_storyboard(_: PhaseDefinition) -> Dict[str, Any]:
-        if not has_llm:
-            return {"skipped": True, "detail": "未配置真实 LLM 供应商，分镜拆解跳过"}
-        system = (
-            STUDIO_ACTION_PROTOCOL_PROMPT.strip()
-            + "\n\n当前工作台状态 JSON：\n" + svc.build_agent_context("bound")
-        )
-        goal = svc.state_dict.get("user_goal", "") or svc.state_dict.get("project_name", "")
-        user = (
-            f"请根据以下故事大纲拆解关键元素与分镜，用 add_group 创建分组。目标：{goal}\n\n大纲：\n"
-            + (run_ctx["outline"] or "（无大纲，请直接根据目标拆解）")
-        )
-        content, _ = await call_chat_completion(
-            chat_provider, chat_model,
-            [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            max_tokens=8192,
-        )
-        actions = executor.parse_actions_from_reply(content)
-        actions = [a for a in actions if str(a.get("action", "")).lower() != "continue"]
-        applied = executor.execute(actions)
-        if applied == 0:
-            raise GenerationError("LLM 未产出有效的 studio-actions")
-        return {"detail": f"已新增 {applied} 个故事板分组/草稿"}
-
-    async def exec_image(_: PhaseDefinition) -> Dict[str, Any]:
-        if not has_image:
-            return {"skipped": True, "detail": "未配置真实生图供应商，关键帧生成跳过"}
-        targets = []
-        groups = svc.get_groups()
-        for cat in (CAT_KEY_ELEMENTS, CAT_SHOTS):
-            for group in groups.get(cat, []):
-                for draft in group.get("drafts", []):
-                    if draft.get("prompt") and not draft.get("imgUrl") and draft.get("mediaType") == "image":
-                        targets.append(draft)
-        targets = targets[:MAX_IMAGES_PER_RUN]
-        if not targets:
-            return {"detail": "没有待生成的关键帧"}
-        ok, failed = 0, []
-        for draft in targets:
-            try:
-                url = await generate_image_via_provider(
-                    image_provider, image_model, draft["prompt"],
-                    size=draft.get("size", "1280x720"),
-                    aspect_ratio=draft.get("aspectRatio", "16:9"),
-                )
-                draft["imgUrl"] = url
-                draft["tag"] = "已生成"
-                svc.save()
-                ok += 1
-            except GenerationError as e:
-                failed.append(str(e))
-        if ok == 0:
-            raise GenerationError("全部关键帧生成失败：" + "；".join(failed[:2]))
-        return {"detail": f"已生成 {ok}/{len(targets)} 张关键帧"}
-
-    async def exec_not_implemented(phase: PhaseDefinition) -> Dict[str, Any]:
-        reasons = {"video": "视频生成尚未接入", "audio": "音频合成尚未接入", "edit": "剪辑合成尚未接入"}
-        return {"skipped": True, "detail": reasons.get(phase.phase_id, "尚未实现") + "，跳过"}
-
-    return {
-        "story": exec_story,
-        "storyboard": exec_storyboard,
-        "image": exec_image,
-        "video": exec_not_implemented,
-        "audio": exec_not_implemented,
-        "edit": exec_not_implemented,
-    }
-
-
-def get_interactive_engine() -> WorkflowEngine:
-    """获取/创建交互式工作流引擎实例（带真实执行器）"""
-    global _interactive_engine
-    if _interactive_engine is None:
-        executors = _build_interactive_executors()
-
-        async def phase_executor(phase: PhaseDefinition):
-            return await executors[phase.phase_id](phase)
-
-        _interactive_engine = WorkflowEngine(_build_definition(), phase_executor=phase_executor)
-    return _interactive_engine
+# get_interactive_engine 已从 workflows.interactive 导入（消除 tools→routes 循环依赖）
 
 
 @router.post("/workflow/step")

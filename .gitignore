@@ -15,14 +15,38 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.pytest_tmp/
 .venv/
 venv/
+
+# 日志（新日志统一写入 logs/，根目录 *.log 为历史遗留兼容）
+*.log
 
 # 系统与编辑器
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+.codebuddy/
+
+# 历史参考/旧版备份（不入库）
+.ref_old/
+
+# 临时测试目录
+.pytest_tmp/
 
 # 大文件截图
 flova_studio_page.png
+# 根目录散落截图（调试/冒烟产物，统一放 test-results/ 或删除）
+/*.png
+
+# Node/Vite
+node_modules/
+static/dist/
+
+# 测试产物
+coverage/
+test-results/
+playwright-report/
+.playwright/
+.playwright-cli/

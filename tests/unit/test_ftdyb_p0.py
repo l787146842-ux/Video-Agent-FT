@@ -1,4 +1,4 @@
-"""Flova 追赶 P0：分镜新字段、删除 action、request_confirmation 门控"""
+"""FTDYB 追赶 P0：分镜新字段、删除 action、request_confirmation 门控"""
 import pytest
 
 from src.video_agent.web.actions import StudioActionExecutor
@@ -16,7 +16,7 @@ def executor(svc):
     return StudioActionExecutor(svc)
 
 
-def test_add_shot_with_flova_fields(svc, executor):
+def test_add_shot_with_ftdyb_fields(svc, executor):
     applied = executor.execute([{
         "action": "add_group",
         "group_type": "shot",
@@ -77,7 +77,7 @@ async def test_request_confirmation_pauses_loop(svc, executor):
              '{"action":"continue","reason":"should be ignored"}]\n```', "stop")
     calls = {"n": 0}
 
-    async def llm(system, messages):
+    async def llm(system, messages, stream_hook=None):
         calls["n"] += 1
         return reply[0], reply[1], 0
 

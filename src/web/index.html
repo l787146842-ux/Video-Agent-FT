@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/images/logo-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/images/logo-16.png">
+    <link rel="icon" type="image/png" href="/static/images/logo.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/images/logo-180.png">
+    <!-- 旧版 theme.css + studio.css 通过 app.css 的 @import 打包进 index.css（Vite 会丢弃绝对路径 link 标签） -->
+    <title>FTDYB - 影视 AI 创作工作台</title>
+    <script>
+        // 首屏防主题闪烁：在 CSS/JS 加载前应用持久化主题
+        (function () {
+            var t = localStorage.getItem('ftdyb-theme')
+                || localStorage.getItem('studio_theme')
+                || 'dark';
+            var el = document.documentElement;
+            el.classList.remove('dark', 'light');
+            el.classList.add(t);
+        })();
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" src="./app.tsx"></script>
+</body>
+</html>

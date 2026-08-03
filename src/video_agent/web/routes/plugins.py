@@ -6,20 +6,22 @@ Skill 下拉数据 = 文档 Skill（data/skills/*.md，排前、默认选中）+
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from loguru import logger
 
-from src.video_agent.skills import SkillRegistry
 from src.video_agent.web.skill_docs import (
     get_skill_doc,
     list_skill_docs,
+    list_skill_doc_history,
     save_skill_doc,
+    delete_skill_doc,
 )
 
 router = APIRouter()
 
 
-@router.get("/plugins/flova-agent/config")
+@router.get("/plugins/ftdyb-agent/config")
 async def get_agent_config():
-    """前端 agentSkillSelect 下拉框数据源（文档 Skill 优先）"""
+    """前端 agentSkillSelect 下拉框数据源（仅文档 Skill）"""
     doc_skills = [
         {
             "id": d["id"],
@@ -31,8 +33,7 @@ async def get_agent_config():
         }
         for d in list_skill_docs()
     ]
-    code_skills = [{**cfg, "source": "code"} for cfg in SkillRegistry.get_all_configs()]
-    return {"skills": doc_skills + code_skills}
+    return {"skills": doc_skills}
 
 
 @router.get("/skills/docs")
@@ -64,3 +65,69 @@ async def get_one_skill_doc(slug: str):
     if not doc:
         raise HTTPException(status_code=404, detail=f"Skill 文档 '{slug}' 不存在")
     return doc
+
+
+@router.get("/skills/docs/{slug}/history")
+async def get_skill_doc_history(slug: str):
+    """Skill 文档历史版本（新→旧，含全文；前端可查看/回滚）"""
+    try:
+        return {"versions": list_skill_doc_history(slug)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/skills/docs/{slug}")
+async def delete_one_skill_doc(slug: str):
+    """删除指定 Skill 文档"""
+    try:
+        delete_skill_doc(slug)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+class SkillFormatRequest(BaseModel):
+    content: str
+
+
+_FORMAT_SYSTEM = """你是一个 Skill 文档格式化专家。用户会给你一段文本（可能是任意格式的流程说明、提示词、规则等），
+请将其整理为以下标准 Skill Markdown 格式：
+
+# Skill 名称
+
+> 调用规则：一句话说明何时使用本 Skill
+
+## 流程规划
+
+### 步骤一
+...
+
+### 步骤二
+...
+
+要求：
+- 保留原文的核心内容和逻辑，不要编造新内容
+- 用中文输出
+- 只输出整理后的 Markdown，不要加任何解释
+"""
+
+
+@router.post("/skills/format")
+async def format_skill_content(body: SkillFormatRequest):
+    """用 LLM 将任意文本整理为标准 Skill markdown 格式（LLM 不可用时返回原文）"""
+    if not body.content.strip():
+        raise HTTPException(status_code=400, detail="内容不能为空")
+    try:
+        from src.video_agent.adapters.factory import AdapterFactory
+        adapter = AdapterFactory.create("chat")
+        messages = [
+            {"role": "system", "content": _FORMAT_SYSTEM},
+            {"role": "user", "content": body.content},
+        ]
+        result = await adapter.generate(messages, temperature=0.3)
+        formatted = (result.text or "").strip()
+        if formatted:
+            return {"content": formatted}
+    except Exception as e:
+        logger.warning(f"[SkillFormat] LLM 整理失败，返回原文: {e}")
+    return {"content": body.content}

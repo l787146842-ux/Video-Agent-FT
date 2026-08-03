@@ -22,6 +22,7 @@ from loguru import logger
 from src.video_agent.config import settings
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import DATA_DIR, API_DIR, PROVIDERS_FILE, ENV_FILE
+from src.video_agent.web.provider_models import validate_providers
 
 # 同时保护 providers 文件与 .env 文件的读写
 _config_lock = threading.Lock()
@@ -61,13 +62,13 @@ DEFAULT_PROVIDERS: List[Dict[str, Any]] = [
 # ---------- 供应商配置 ----------
 
 def load_api_providers() -> List[Dict[str, Any]]:
-    """从 JSON 文件加载 provider 配置；不存在或损坏时回退默认配置"""
+    """从 JSON 文件加载 provider 配置；不存在或损坏时回退默认配置。加载后进行 Pydantic 校验。"""
     with _config_lock:
         if PROVIDERS_FILE.exists():
             try:
                 data = json.loads(PROVIDERS_FILE.read_text(encoding="utf-8"))
                 if isinstance(data, list):
-                    return data
+                    return validate_providers(data)
                 logger.warning("[ProviderConfig] api_providers.json 不是列表，回退默认配置")
             except Exception as e:
                 logger.warning(f"[ProviderConfig] 读取配置失败: {e}，回退默认配置")
@@ -103,14 +104,15 @@ def load_canvas_providers() -> List[Dict[str, Any]]:
     except Exception:
         pass  # 熊布不在线，静默跳过
 
-    # 2. 兜底：读磁盘文件
+    # 2. 兜底：读磁盘文件（环境变量未配置时跳过）
     try:
-        canvas_file = Path(settings.canvas_providers_file)
-        if canvas_file.exists():
-            data = json.loads(canvas_file.read_text(encoding="utf-8"))
-            if isinstance(data, list) and data:
-                logger.debug(f"[ProviderConfig] 从熊布文件读取到 {len(data)} 个 provider")
-                return data
+        if settings.canvas_providers_file:
+            canvas_file = Path(settings.canvas_providers_file)
+            if canvas_file.exists():
+                data = json.loads(canvas_file.read_text(encoding="utf-8"))
+                if isinstance(data, list) and data:
+                    logger.debug(f"[ProviderConfig] 从熊布文件读取到 {len(data)} 个 provider")
+                    return data
     except Exception:
         pass  # 文件不存在或损坏，静默跳过
 
@@ -118,26 +120,56 @@ def load_canvas_providers() -> List[Dict[str, Any]]:
 
 
 def load_merged_providers() -> List[Dict[str, Any]]:
-    """合并本地 + 熊布的 provider 列表（按 id 去重，本地优先）。
+    """合并本地 + 熊布的 provider 列表（按 id 去重，熊布优先 + 模型并集）。
+
+    合并规则：
+    - 两者 id 相同时，连接设置（base_url/protocol/name）用熊布的（已验证）
+    - 模型列表（image_models/chat_models/video_models）取并集去重
+    - 熊布没有而本地有的 provider，保留本地配置
+    - 本地没有而熊布有的 provider，追加熊布配置
     同时更新 canvas_provider_ids 缓存供路由层使用。"""
     global _canvas_ids_cache, _canvas_ids_cache_time
 
     local = load_api_providers()
     canvas = load_canvas_providers()
 
-    local_ids = {p.get("id") for p in local}
-    merged = list(local)
+    canvas_ids = {p.get("id") for p in canvas if p.get("id")}
+    local_map = {p.get("id"): p for p in local if p.get("id")}
 
-    # 熊布中 id 不在本地的追加到末尾，并标记来源
+    _MODEL_FIELDS = ("image_models", "chat_models", "video_models")
+
+    # 熊布优先：id 相同时用熊布版本，但模型列表取并集
+    merged: List[Dict[str, Any]] = []
     for p in canvas:
         pid = p.get("id", "")
-        if pid and pid not in local_ids:
-            item = dict(p)
-            item["_source"] = "canvas"
-            merged.append(item)
+        if not pid:
+            continue
+        item = dict(p)
+        item["_source"] = "canvas"
+        # 如果本地也有同 id 的 provider，合并模型列表
+        local_p = local_map.get(pid)
+        if local_p:
+            for field in _MODEL_FIELDS:
+                canvas_models = list(item.get(field) or [])
+                local_models = list(local_p.get(field) or [])
+                # 并集去重（保持顺序：熊布在前，本地补充）
+                seen = set(canvas_models)
+                union = list(canvas_models)
+                for m in local_models:
+                    if m not in seen:
+                        union.append(m)
+                        seen.add(m)
+                item[field] = union
+        merged.append(item)
+
+    # 本地中 id 不在熊布的追加（本地独有）
+    for p in local:
+        pid = p.get("id", "")
+        if pid and pid not in canvas_ids:
+            merged.append(p)
 
     # 更新缓存（路由层用于判断 provider 是否熊布可处理）
-    _canvas_ids_cache = {p.get("id") for p in canvas if p.get("id")}
+    _canvas_ids_cache = canvas_ids
     _canvas_ids_cache_time = time.time()
 
     return merged
@@ -203,6 +235,8 @@ def read_env_keys() -> Dict[str, str]:
 def _read_canvas_env_keys() -> Dict[str, str]:
     """读取熊布的 API/.env 文件中的键值对（第三级 fallback）"""
     keys: Dict[str, str] = {}
+    if not settings.canvas_env_file:
+        return keys
     try:
         canvas_env = Path(settings.canvas_env_file)
         if canvas_env.exists():

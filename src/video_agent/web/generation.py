@@ -47,10 +47,17 @@ def resolve_openai_endpoint(provider_id: str, model: str) -> Tuple[str, str, str
     api_key = get_api_key(provider_id)
     effective_model = model
 
+    # OpenAI 协议：base_url 未以 /v1 结尾时自动补全（与熊布 upstream_models_url 逻辑一致）
+    protocol = (cfg.get("protocol") or "openai").lower()
+    if base_url and protocol == "openai" and not base_url.endswith("/v1"):
+        base_url += "/v1"
+
     if not base_url and cfg.get("protocol") in CLI_PROTOCOLS:
         fallback = get_provider_config("custom-api")
         if fallback and fallback.get("base_url"):
             base_url = fallback["base_url"].rstrip("/")
+            if not base_url.endswith("/v1"):
+                base_url += "/v1"
             api_key = get_api_key("custom-api")
             if effective_model in ("auto", ""):
                 effective_model = "gemini-3.1-flash-image"
@@ -89,6 +96,9 @@ async def call_chat_completion(
         )
     except AdapterError as e:
         raise GenerationError(str(e)) from e
+    finally:
+        # 临时实例不复用：必须关闭底层 httpx 连接池，否则每次调用泄漏一个 client
+        await adapter.close()
 
     if not response.content:
         raise GenerationError("LLM 返回了空内容")
@@ -129,6 +139,9 @@ async def call_chat_completion_stream(
                 finish_reason = "stop"
     except AdapterError as e:
         raise GenerationError(str(e)) from e
+    finally:
+        # 临时实例不复用：关闭底层 httpx 连接池，避免每次流式调用泄漏
+        await adapter.close()
 
     content = "".join(content_parts)
     if not content:
@@ -190,26 +203,32 @@ async def generate_image_via_provider(
     *,
     size: str = "1024x1024",
     aspect_ratio: str = "",
+    reference_images: Optional[List[str]] = None,
 ) -> str:
     """
     统一图片生成（智能路由）：
-    1. 熊布在线 + provider 存在于熊布 → 通过熊布 API 执行
-    2. CLI 协议（gemini-cli）→ AgyCliImageAdapter
-    3. 其他供应商 → OpenAICompatImageAdapter 本地直连
+    1. 熊布在线 + provider 存在于熊布 → 通过熊布 API 执行（不带参考图时）
+    2. CLI 协议（gemini-cli）→ AgyCliImageAdapter（不支持参考图）
+    3. 其他供应商 → OpenAICompatImageAdapter 本地直连（支持参考图多模态）
     返回图片 URL。失败抛 GenerationError。
+
+    reference_images：参考素材 URL 列表（@ 引用的素材），会内联发送给多模态模型。
     """
-    # ① 尝试熊布路由（熊布在线 + provider 熊布可处理）
-    canvas_result = await _try_canvas_image_generation(
-        provider_id, model, prompt, size=size, aspect_ratio=aspect_ratio
-    )
-    if canvas_result:
-        return canvas_result
+    refs = reference_images or []
+
+    # ① 尝试熊布路由（熊布在线 + provider 熊布可处理；带参考图时跳过，熊布不接收参考图）
+    if not refs:
+        canvas_result = await _try_canvas_image_generation(
+            provider_id, model, prompt, size=size, aspect_ratio=aspect_ratio
+        )
+        if canvas_result:
+            return canvas_result
 
     # ② 本地直连逻辑（原有路径）
     cfg = get_provider_config(provider_id)
 
-    # CLI 协议 → AgyCliImageAdapter
-    if cfg and cfg.get("protocol") in CLI_PROTOCOLS:
+    # CLI 协议 → AgyCliImageAdapter（不支持参考图；带参考图时降级走反代多模态路径）
+    if cfg and cfg.get("protocol") in CLI_PROTOCOLS and not refs:
         logger.info(f"[Generation] CLI 协议 '{provider_id}' → AgyCliImageAdapter")
         adapter = AgyCliImageAdapter()
         try:
@@ -224,13 +243,16 @@ async def generate_image_via_provider(
     base_url, api_key, effective_model = resolve_openai_endpoint(provider_id, model)
     adapter_img = OpenAICompatImageAdapter(base_url=base_url, api_key=api_key, model=effective_model)
 
-    logger.info(f"[Generation] image(本地): provider={provider_id}, model={effective_model}")
+    logger.info(f"[Generation] image(本地): provider={provider_id}, model={effective_model}, refs={len(refs)}")
     try:
         result = await adapter_img.generate_image(
-            prompt, size=size, aspect_ratio=aspect_ratio
+            prompt, size=size, aspect_ratio=aspect_ratio, reference_images=refs
         )
     except AdapterError as e:
         raise GenerationError(str(e)) from e
+    finally:
+        # 临时实例不复用：关闭底层 httpx 连接池，避免每次生图泄漏
+        await adapter_img.close()
 
     if result.image_urls:
         return result.image_urls[0]

@@ -7,48 +7,52 @@
 - 视频生成尚未接入真实供应商 → 非 mock 一律 501，明确告知。
 """
 import asyncio
+import json
 import time
-import random
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from loguru import logger
 
-from src.video_agent.adapters.factory import AdapterFactory
+from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 from src.video_agent.exceptions import GenerationError
 from src.video_agent.web.generation import generate_image_via_provider
 from src.video_agent.web.provider_config import is_mock_provider
 from src.video_agent.web.providers import resolve_adapter_name
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
+from src.video_agent.utils import gen_id
 from src.video_agent.config import settings
 
 router = APIRouter()
 
-# 任务存储：task_id → {status, adapter_type, adapter_name, draft_id, draft_type, created_at, ...}
-_tasks: Dict[str, Dict[str, Any]] = {}
+# 任务管理：委托给 GenerationTaskManager 单例
+from src.video_agent.web.task_manager import (
+    get_task_manager,
+    writeback_if_complete as _writeback_if_complete,
+)
+_tm = get_task_manager()
 
-# 后台 asyncio.Task 追踪集合（防止火后不管 + 记录未捕获异常）
-_background_tasks: set = set()
+# 向后兼容别名（供 actions.py 等模块导入）
+_tasks = _tm.tasks
+
+
+def _notify_sse(event_data: Dict[str, Any]) -> None:
+    """向所有 SSE 订阅者推送任务完成事件"""
+    _tm.notify(event_data)
 
 
 def _track_task(coro) -> None:
-    """创建并追踪后台任务，异常自动记录到日志"""
-    task = asyncio.create_task(coro)
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-    task.add_done_callback(_log_task_exception)
+    """创建并追踪后台任务"""
+    _tm.track(coro)
 
 
 def _log_task_exception(task: asyncio.Task) -> None:
-    """done callback：记录未捕获异常"""
-    if task.cancelled():
-        return
-    exc = task.exception()
-    if exc:
-        logger.error(f"[Generate] 后台任务未捕获异常: {exc}")
+    """兼容别名"""
+    pass
 
 # 任务保留时长（秒）：超过后在下一次写入时清理，防止内存无限增长
 _TASK_TTL_SECONDS = settings.task_ttl_seconds
@@ -58,25 +62,8 @@ _TASK_MAX = settings.task_max
 MOCK_VIDEO_URL = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
 
 
-def _purge_stale_tasks() -> None:
-    now = time.time()
-    stale = [
-        tid for tid, t in _tasks.items()
-        if now - t.get("created_at", now) > _TASK_TTL_SECONDS
-    ]
-    for tid in stale:
-        _tasks.pop(tid, None)
-    # 兜底：即使没过期也不允许无限增长，按创建时间淘汰最旧的
-    if len(_tasks) > _TASK_MAX:
-        for tid in sorted(_tasks, key=lambda t: _tasks[t].get("created_at", 0))[: len(_tasks) - _TASK_MAX]:
-            _tasks.pop(tid, None)
-
-
 def _new_task(task_id: str, **fields: Any) -> Dict[str, Any]:
-    _purge_stale_tasks()
-    task = {"created_at": time.time(), **fields}
-    _tasks[task_id] = task
-    return task
+    return _tm.create_task(task_id, **fields)
 
 
 class ImageGenRequest(BaseModel):
@@ -121,7 +108,7 @@ async def generate_image(body: ImageGenRequest):
         return await _generate_image_mock(body)
 
     # ---------- 真实供应商：异步任务（立即返回 task_id，前端轮询进度与耗时） ----------
-    task_id = f"img-{int(time.time())}-{random.randint(100, 999)}"
+    task_id = gen_id("img")
     _new_task(
         task_id,
         status="processing",
@@ -135,6 +122,8 @@ async def generate_image(body: ImageGenRequest):
     async def _run_generation():
         t0 = time.monotonic()
         task = _tasks.get(task_id)
+        # 提取参考素材 URL（@ 引用的素材），随请求发送给多模态模型
+        ref_urls = [r.get("url", "") for r in (body.reference_images or []) if r.get("url")]
         try:
             image_url = await generate_image_via_provider(
                 body.provider_id,
@@ -142,6 +131,7 @@ async def generate_image(body: ImageGenRequest):
                 body.prompt,
                 size=body.size or "1024x1024",
                 aspect_ratio=body.aspect_ratio,
+                reference_images=ref_urls,
             )
             if task is None:
                 return
@@ -149,18 +139,21 @@ async def generate_image(body: ImageGenRequest):
             task["result"] = {"images": [image_url]}
             task["elapsed"] = round(time.monotonic() - t0, 1)
             _writeback_if_complete(task_id)
+            _notify_sse({"task_id": task_id, "status": "succeeded", "result": task["result"], "elapsed": task["elapsed"]})
             logger.info(f"[Generate] 图片生成成功({task['elapsed']}s): {image_url[:80]}")
         except GenerationError as e:
             if task is not None:
                 task["status"] = "failed"
                 task["error"] = str(e)
                 task["elapsed"] = round(time.monotonic() - t0, 1)
+                _notify_sse({"task_id": task_id, "status": "failed", "error": str(e), "elapsed": task["elapsed"]})
             logger.warning(f"[Generate] 图片生成失败: {e}")
         except Exception as e:
             if task is not None:
                 task["status"] = "failed"
                 task["error"] = f"服务端异常: {e}"
                 task["elapsed"] = round(time.monotonic() - t0, 1)
+                _notify_sse({"task_id": task_id, "status": "failed", "error": str(e), "elapsed": task["elapsed"]})
             logger.exception(f"[Generate] 图片生成异常: {e}")
 
     _track_task(_run_generation())
@@ -206,8 +199,8 @@ async def poll_image_task(task_id: str):
 async def generate_video(body: VideoGenRequest):
     """
     提交视频生成任务。
-    真实视频供应商尚未接入服务端 → 诚实返回 501，而不是假装生成成功。
-    mock 供应商仍可用于流程演示（结果带 mock 标记）。
+    真实供应商：通过 OpenAICompatVideoAdapter 调用异步视频生成 API。
+    mock 供应商：走 mock 适配器（结果带 mock 标记）。
     """
     if is_mock_provider(body.provider_id, body.model):
         adapter_name = resolve_adapter_name(body.provider_id, "video")
@@ -231,13 +224,75 @@ async def generate_video(body: VideoGenRequest):
         logger.info(f"[Generate] [MOCK] 视频任务已提交: {result.task_id}")
         return {"task_id": result.task_id, "mock": True}
 
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            f"供应商 '{body.provider_id}' 的视频生成尚未接入服务端。"
-            "当前仅 mock 供应商可用于流程演示；真实视频适配器接入后此接口会自动生效。"
-        ),
+    # ---------- 真实供应商：异步任务 ----------
+    adapter_name = body.provider_id or "modelscope"
+    try:
+        adapter = AdapterFactory.get_adapter("video_generation", adapter_name)
+    except ValueError:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                f"供应商 '{adapter_name}' 的视频生成尚未配置。"
+                "请在 API 设置中为该供应商添加 video_models。"
+            ),
+        )
+
+    task_id = gen_id("vid")
+    _new_task(
+        task_id,
+        status="processing",
+        adapter_type="video_generation",
+        adapter_name=adapter_name,
+        draft_id=body.draft_id,
+        draft_type=body.draft_type,
+        prompt=body.prompt,
+        model=body.model,
+        result=None,
     )
+
+    image_url = body.images[0]["url"] if body.images else ""
+
+    async def _run_video_generation():
+        t0 = time.monotonic()
+        task = _tasks.get(task_id)
+        try:
+            result = await adapter.generate(
+                image_url=image_url,
+                prompt=body.prompt,
+                model=body.model or None,
+                duration=body.duration,
+                resolution=body.resolution,
+                aspect_ratio=body.aspect_ratio,
+            )
+            if result.status == "completed" and result.video_url:
+                # 同步返回结果
+                if task:
+                    task["status"] = "succeeded"
+                    task["video_url"] = result.video_url
+                    task["elapsed"] = round(time.monotonic() - t0, 1)
+                    _writeback_if_complete(task_id)
+                    _notify_sse({"task_id": task_id, "status": "succeeded", "video_url": result.video_url, "elapsed": task["elapsed"]})
+                return
+
+            # 异步任务：轮询等待结果
+            completed = await wait_until_complete(adapter, result.task_id, timeout=600)
+            if task:
+                task["status"] = "succeeded"
+                task["video_url"] = completed.video_url
+                task["elapsed"] = round(time.monotonic() - t0, 1)
+                _writeback_if_complete(task_id)
+                _notify_sse({"task_id": task_id, "status": "succeeded", "video_url": completed.video_url, "elapsed": task["elapsed"]})
+                logger.info(f"[Generate] 视频生成成功({task['elapsed']}s): {completed.video_url[:80] if completed.video_url else ''}")
+        except Exception as e:
+            if task:
+                task["status"] = "failed"
+                task["error"] = str(e)
+                task["elapsed"] = round(time.monotonic() - t0, 1)
+                _notify_sse({"task_id": task_id, "status": "failed", "error": str(e), "elapsed": task["elapsed"]})
+            logger.warning(f"[Generate] 视频生成失败: {e}")
+
+    _track_task(_run_video_generation())
+    return {"task_id": task_id, "status": "processing"}
 
 
 class BatchImageGenRequest(BaseModel):
@@ -294,7 +349,7 @@ async def batch_generate_image(body: BatchImageGenRequest):
                             break
                     break
 
-        task_id = f"img-{int(time.time())}-{random.randint(100, 999)}"
+        task_id = gen_id("img")
         _new_task(
             task_id,
             status="processing",
@@ -376,34 +431,30 @@ async def _poll_task(task_id: str) -> Dict[str, Any]:
     return {**task, "elapsed": task.get("elapsed") or round(time.time() - task.get("created_at", time.time()), 1)}
 
 
-def _writeback_if_complete(task_id: str) -> None:
-    """任务完成后，将结果回写到 StudioStateService（更新对应 draft 并持久化）"""
-    task = _tasks.get(task_id)
-    if not task or task["status"] not in ("succeeded", "completed"):
-        return
+# _writeback_if_complete 已下沉至 web/task_manager.py（此处为别名导入）
 
-    draft_id = task.get("draft_id", "")
-    if not draft_id:
-        return
 
-    url = ""
-    field = "imgUrl"
-    if task.get("video_url"):
-        url = task["video_url"]
-        field = "videoUrl"
-    elif task.get("result", {}) and task["result"].get("images"):
-        url = task["result"]["images"][0]
-        field = "imgUrl"
-    if not url:
-        return
+@router.get("/generate/events")
+async def generate_events():
+    """生成任务 SSE 事件流：任务完成/失败时即时推送，替代前端 2s 轮询"""
+    queue = _tm.subscribe()
 
-    svc = StateManager.get_instance()
-    for category in svc.get_groups().values():
-        for group in category:
-            for draft in group.get("drafts", []):
-                if draft.get("id") == draft_id:
-                    draft[field] = url
-                    draft["tag"] = "mock 演示" if task.get("mock") else "已生成"
-                    svc.save()
-                    logger.info(f"[Generate] Writeback: draft {draft_id} → {field}={url[:60]}")
-                    return
+    async def event_stream():
+        try:
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield f"data: {msg}\n\n"
+                except asyncio.TimeoutError:
+                    # 心跳保活
+                    yield ": heartbeat\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            _tm.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

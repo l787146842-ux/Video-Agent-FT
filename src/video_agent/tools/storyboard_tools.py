@@ -4,16 +4,17 @@
 每个 Tool 对应一个前端故事板操作，内部通过 StudioStateService 修改状态。
 后续 Phase 将迁移为直接操作 StateManager。
 """
-import time
-import random
 from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel, Field
 from loguru import logger
 
 from src.video_agent.tools.base import BaseTool, ToolResult
+from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import build_draft_dict, CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
+from src.video_agent.utils import gen_id
+from src.video_agent.web.prompt_refs import media_of_draft
 
 
 # ---------- Input Schemas ----------
@@ -51,6 +52,13 @@ class ConfirmDraftInput(BaseModel):
     draft_type: str = Field("", description="草稿类型")
 
 
+class MediaToChatInput(BaseModel):
+    draft_ids: List[str] = Field(default_factory=list, description="要插入的草稿 ID 数组（与 target 二选一，优先）")
+    target: str = Field("", description="批量目标: current | all | all_keyElements | all_shots | all_audio")
+    media_type: str = Field("", description="媒体类型过滤: image | video | audio（可选）")
+    limit: int = Field(0, description="插入数量上限（0 = 系统默认）")
+
+
 # ---------- Tool 实现 ----------
 
 class StoryboardCreateGroupTool(BaseTool):
@@ -66,7 +74,8 @@ class StoryboardCreateGroupTool(BaseTool):
         cat_map = {"keyelement": CAT_KEY_ELEMENTS, "shot": CAT_SHOTS, "audio": CAT_AUDIO_ITEMS}
         cat_key = cat_map.get(params.group_type.lower(), CAT_KEY_ELEMENTS)
 
-        new_id = f"{'shot' if cat_key == 'shots' else 'ke' if cat_key == 'keyElements' else 'audio'}-{int(time.time())}-{random.randint(100, 999)}"
+        prefix = 'shot' if cat_key == 'shots' else 'ke' if cat_key == 'keyElements' else 'audio'
+        new_id = gen_id(prefix)
         new_group: Dict[str, Any] = {"id": new_id, "title": params.title, "desc": params.desc, "drafts": []}
 
         if cat_key == CAT_SHOTS:
@@ -75,13 +84,14 @@ class StoryboardCreateGroupTool(BaseTool):
             new_group["shotType"] = params.shot_type
             new_group["sceneRefs"] = params.scene_refs
 
-        svc.state_dict.setdefault(cat_key, []).append(new_group)
+        async with svc.lock:
+            svc.state_dict.setdefault(cat_key, []).append(new_group)
 
-        # 附带草稿
-        if params.draft and isinstance(params.draft, dict):
-            new_group["drafts"].append(build_draft_dict(params.draft))
+            # 附带草稿
+            if params.draft and isinstance(params.draft, dict):
+                new_group["drafts"].append(build_draft_dict(params.draft))
 
-        svc.save()
+            svc.save()
         return ToolResult(success=True, data={"group_id": new_id})
 
 
@@ -96,22 +106,23 @@ class StoryboardPatchDraftTool(BaseTool):
         svc = StateManager.get_instance()
 
         allowed = [
-            "label", "tag", "mediaType", "imgUrl", "videoUrl", "prompt", "mode",
+            "label", "tag", "mediaType", "genType", "imgUrl", "videoUrl", "audioUrl", "prompt", "mode",
             "model", "providerId", "resolution", "duration", "aspectRatio",
             "size", "timbre", "refAssets",
         ]
-        for cat_key in ALL_CATEGORIES_TUPLE:
-            for group in svc.state_dict.get(cat_key, []):
-                for draft in group.get("drafts", []):
-                    if draft.get("id") == params.draft_id:
-                        changed = False
-                        for field in allowed:
-                            if field in params.patch:
-                                draft[field] = params.patch[field]
-                                changed = True
-                        if changed:
-                            svc.save()
-                            return ToolResult(success=True, data={"draft_id": params.draft_id})
+        async with svc.lock:
+            for cat_key in ALL_CATEGORIES_TUPLE:
+                for group in svc.state_dict.get(cat_key, []):
+                    for draft in group.get("drafts", []):
+                        if draft.get("id") == params.draft_id:
+                            changed = False
+                            for field in allowed:
+                                if field in params.patch:
+                                    draft[field] = params.patch[field]
+                                    changed = True
+                            if changed:
+                                svc.save()
+                                return ToolResult(success=True, data={"draft_id": params.draft_id})
         return ToolResult(success=False, error=f"Draft '{params.draft_id}' not found")
 
 
@@ -125,30 +136,23 @@ class StoryboardAddDraftTool(BaseTool):
     async def aexecute(self, params: AddDraftInput) -> ToolResult:
         svc = StateManager.get_instance()
 
-        # 查找目标分组
-        target_group = None
-        for cat_key in ALL_CATEGORIES_TUPLE:
-            for group in svc.state_dict.get(cat_key, []):
-                if group.get("id") == params.group_id:
-                    target_group = group
-                    break
-            if target_group:
-                break
-        
-        if not target_group:
-            # 兆底：取第一个可用分组
+        async with svc.lock:
+            # 查找目标分组
+            target_group = None
             for cat_key in ALL_CATEGORIES_TUPLE:
-                groups = svc.state_dict.get(cat_key, [])
-                if groups:
-                    target_group = groups[0]
+                for group in svc.state_dict.get(cat_key, []):
+                    if group.get("id") == params.group_id:
+                        target_group = group
+                        break
+                if target_group:
                     break
 
-        if not target_group:
-            return ToolResult(success=False, error="No group available to add draft")
+            if not target_group:
+                return ToolResult(success=False, error=f"Group '{params.group_id}' not found")
 
-        draft = build_draft_dict(params.draft)
-        target_group.setdefault("drafts", []).append(draft)
-        svc.save()
+            draft = build_draft_dict(params.draft)
+            target_group.setdefault("drafts", []).append(draft)
+            svc.save()
         return ToolResult(success=True, data={"draft_id": draft["id"]})
 
 
@@ -162,13 +166,14 @@ class StoryboardDeleteGroupTool(BaseTool):
     async def aexecute(self, params: DeleteGroupInput) -> ToolResult:
         svc = StateManager.get_instance()
 
-        for cat_key in ALL_CATEGORIES_TUPLE:
-            groups = svc.state_dict.get(cat_key, [])
-            for i, g in enumerate(groups):
-                if g.get("id") == params.group_id:
-                    groups.pop(i)
-                    svc.save()
-                    return ToolResult(success=True, data={"deleted": params.group_id})
+        async with svc.lock:
+            for cat_key in ALL_CATEGORIES_TUPLE:
+                groups = svc.state_dict.get(cat_key, [])
+                for i, g in enumerate(groups):
+                    if g.get("id") == params.group_id:
+                        groups.pop(i)
+                        svc.save()
+                        return ToolResult(success=True, data={"deleted": params.group_id})
         return ToolResult(success=False, error=f"Group '{params.group_id}' not found")
 
 
@@ -182,14 +187,78 @@ class StoryboardConfirmDraftTool(BaseTool):
     async def aexecute(self, params: ConfirmDraftInput) -> ToolResult:
         svc = StateManager.get_instance()
 
-        for cat_key in ALL_CATEGORIES_TUPLE:
-            for group in svc.state_dict.get(cat_key, []):
-                for draft in group.get("drafts", []):
-                    if draft.get("id") == params.draft_id:
-                        draft["tag"] = "已确认"
-                        svc.save()
-                        return ToolResult(success=True, data={"draft_id": params.draft_id, "tag": "已确认"})
+        async with svc.lock:
+            for cat_key in ALL_CATEGORIES_TUPLE:
+                for group in svc.state_dict.get(cat_key, []):
+                    for draft in group.get("drafts", []):
+                        if draft.get("id") == params.draft_id:
+                            draft["tag"] = "已确认"
+                            svc.save()
+                            return ToolResult(success=True, data={"draft_id": params.draft_id, "tag": "已确认"})
         return ToolResult(success=False, error=f"Draft '{params.draft_id}' not found")
+
+
+class StoryboardMediaToChatTool(BaseTool):
+    name = "storyboard_media_to_chat"
+    description = (
+        "把故事板草稿卡片里的媒体（图片/视频/音频）自动添加到右侧 Agent 对话输入框，"
+        "供用户确认后发送。不修改故事板状态。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return MediaToChatInput
+
+    async def aexecute(self, params: MediaToChatInput) -> ToolResult:
+        svc = StateManager.get_instance()
+        media_type = params.media_type.lower().strip()
+        if media_type not in ("", "image", "video", "audio"):
+            media_type = ""
+        limit = params.limit or settings.max_chat_inserts
+        limit = min(limit, settings.max_chat_inserts)
+
+        state = svc.state_dict
+        pairs: List[tuple] = []
+        if params.draft_ids:
+            for did in params.draft_ids:
+                for cat_key in ALL_CATEGORIES_TUPLE:
+                    for group in state.get(cat_key, []):
+                        for draft in group.get("drafts", []):
+                            if draft.get("id") == did:
+                                pairs.append((group, draft))
+        else:
+            target = (params.target or "").lower()
+            cat_keys = {
+                "all_keyelements": (CAT_KEY_ELEMENTS,),
+                "all_shots": (CAT_SHOTS,),
+                "all_audio": (CAT_AUDIO_ITEMS,),
+                "all": ALL_CATEGORIES_TUPLE,
+            }.get(target, ())
+            for cat_key in cat_keys:
+                for group in state.get(cat_key, []):
+                    for draft in group.get("drafts", []):
+                        pairs.append((group, draft))
+
+        inserts: List[Dict[str, Any]] = []
+        seen = set()
+        for group, draft in pairs:
+            if len(inserts) >= limit:
+                break
+            url, kind = media_of_draft(draft)
+            if not url or url in seen:
+                continue
+            if media_type and kind != media_type:
+                continue
+            seen.add(url)
+            inserts.append({
+                "kind": kind,
+                "url": url,
+                "name": draft.get("label") or group.get("title") or draft.get("id", ""),
+                "thumb": (draft.get("imgUrl") or "") if kind == "video" else "",
+            })
+
+        if not inserts:
+            return ToolResult(success=False, error="没有找到带媒体的目标草稿")
+        return ToolResult(success=True, data={"chat_inserts": inserts})
 
 
 # ---------- 注册 ----------
@@ -202,4 +271,5 @@ def register_storyboard_tools():
     ToolManager.register(StoryboardAddDraftTool())
     ToolManager.register(StoryboardDeleteGroupTool())
     ToolManager.register(StoryboardConfirmDraftTool())
-    logger.info("[Tools] 5 storyboard tools registered")
+    ToolManager.register(StoryboardMediaToChatTool())
+    logger.info("[Tools] 6 storyboard tools registered")

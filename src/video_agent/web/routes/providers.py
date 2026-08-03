@@ -4,8 +4,12 @@
 
 配置/Key 的读写、模型分类、协议检测统一走 web/provider_config.py（唯一入口）。
 """
+import glob as glob_mod
+import ipaddress
 import os
+import shutil
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Request
@@ -30,6 +34,73 @@ from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
 router = APIRouter()
 
 
+# ---------- Response Models ----------
+
+class ProvidersResponse(BaseModel):
+    providers: List[Dict[str, Any]] = []
+    canvas_online: bool = False
+
+
+class FetchModelsResponse(BaseModel):
+    all: List[str] = []
+    image_models: List[str] = []
+    chat_models: List[str] = []
+    video_models: List[str] = []
+    total: int = 0
+    protocol: str = "openai"
+    error: str = ""
+
+
+class TestConnectionResponse(BaseModel):
+    ok: bool = False
+    status: int = 0
+    protocol: str = "openai"
+    message: str = ""
+    model_count: int = 0
+    all: List[str] = []
+    image_models: List[str] = []
+    chat_models: List[str] = []
+    video_models: List[str] = []
+    image_request_mode: str = "openai"
+
+
+# ---------- SSRF 防护：内网地址黑名单 ----------
+_BLOCKED_NETWORKS = [
+    # 注意：127.0.0.0/8 不在此列表中——本地反代（如 Gemini 反代 127.0.0.1:8045）
+    # 是合法使用场景，本项目为本地工具，无需阻止回环地址。
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+# 明确允许的本地地址（不受 _BLOCKED_NETWORKS 限制）
+_LOCAL_ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
+def _validate_external_url(url: str) -> None:
+    """校验 URL 不指向内网地址，违反则抛 ValueError。
+    本地回环地址（127.x / localhost / ::1）明确放行，供本地反代等场景使用。"""
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    # 本地地址直接放行
+    if host in _LOCAL_ALLOWED_HOSTS:
+        return
+    try:
+        ip = ipaddress.ip_address(host)
+        # 回环地址放行（127.0.0.0/8 全段）
+        if ip.is_loopback:
+            return
+        for net in _BLOCKED_NETWORKS:
+            if ip in net:
+                raise ValueError(f"禁止访问内网地址: {host}")
+    except ValueError as e:
+        if "禁止" in str(e):
+            raise
+        # host 是域名，允许通过（DNS 解析由 httpx 处理）
+
+
 # ---------- 公开数据（脱敏） ----------
 def public_provider(p: Dict[str, Any]) -> Dict[str, Any]:
     """返回脱敏后的 provider 数据（不含完整 key）"""
@@ -42,7 +113,7 @@ def public_provider(p: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ---------- API 端点 ----------
-@router.get("/providers")
+@router.get("/providers", response_model=ProvidersResponse)
 async def get_providers():
     """获取所有 provider 配置（脱敏，合并本地 + 熊布）"""
     providers = load_merged_providers()
@@ -189,11 +260,20 @@ class ProviderProbeRequest(BaseModel):
     image_request_mode: str = "openai"
 
 
+def _normalize_openai_base_url(base_url: str) -> str:
+    """与熊布保持一致：若 base_url 未以 /v1 结尾则自动补全，避免用户手填时漏掉路径段。"""
+    url = base_url.rstrip("/")
+    if not url.endswith("/v1"):
+        url += "/v1"
+    return url
+
+
 async def _fetch_model_list(base_url: str, api_key: str) -> List[str]:
     """GET {base_url}/models，返回排序后的模型 id 列表（OpenAI 兼容格式）"""
+    url = _normalize_openai_base_url(base_url)
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(f"{base_url}/models", headers=headers)
+        resp = await client.get(f"{url}/models", headers=headers)
         resp.raise_for_status()
         data = resp.json()
     models_data = data.get("data", [])
@@ -208,7 +288,7 @@ _CLI_MODELS = {
 }
 
 
-@router.post("/providers/fetch-models")
+@router.post("/providers/fetch-models", response_model=FetchModelsResponse)
 async def fetch_models(req: ProviderProbeRequest):
     """从供应商 API 拉取可用模型列表并自动分类"""
     base_url = req.base_url.rstrip("/")
@@ -231,6 +311,11 @@ async def fetch_models(req: ProviderProbeRequest):
         return {"error": "缺少 Base URL", "all": [], "total": 0}
 
     try:
+        _validate_external_url(base_url)
+    except ValueError as e:
+        return {"error": str(e), "all": [], "total": 0}
+
+    try:
         all_models = await _fetch_model_list(base_url, api_key)
         classified = classify_models(all_models)
         return {
@@ -249,8 +334,6 @@ async def fetch_models(req: ProviderProbeRequest):
 
 async def _check_cli_protocol(protocol: str) -> Dict[str, Any]:
     """对 CLI 协议执行本机检测，返回 test-connection 兼容格式"""
-    import shutil
-    import glob as glob_mod
 
     def find_exe(name: str, winget_pattern: str = ""):
         exe = shutil.which(name)
@@ -305,7 +388,7 @@ async def _check_cli_protocol(protocol: str) -> Dict[str, Any]:
     }
 
 
-@router.post("/providers/test-connection")
+@router.post("/providers/test-connection", response_model=TestConnectionResponse)
 async def test_connection(req: ProviderProbeRequest):
     """测试与供应商 API 的连接，返回模型列表（前端验证地址按钮调用）"""
     base_url = req.base_url.rstrip("/")
@@ -316,6 +399,11 @@ async def test_connection(req: ProviderProbeRequest):
 
     if not base_url:
         return {"ok": False, "status": 0, "message": "缺少 Base URL", "model_count": 0}
+
+    try:
+        _validate_external_url(base_url)
+    except ValueError as e:
+        return {"ok": False, "status": 0, "message": str(e), "model_count": 0}
 
     api_key = resolve_api_key(req.api_key, req.provider_id)
     try:
@@ -359,11 +447,17 @@ async def probe_async(req: ProviderProbeRequest):
     if not base_url:
         return {"ok": False, "protocol": "openai", "message": "缺少 Base URL", "status_code": 0, "raw": {}}
 
+    try:
+        _validate_external_url(base_url)
+    except ValueError as e:
+        return {"ok": False, "protocol": "openai", "message": str(e), "status_code": 0, "raw": {}}
+
     api_key = resolve_api_key(req.api_key, req.provider_id)
     try:
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        probe_url = _normalize_openai_base_url(base_url)
         async with httpx.AsyncClient(timeout=12) as client:
-            resp = await client.get(f"{base_url}/models", headers=headers)
+            resp = await client.get(f"{probe_url}/models", headers=headers)
             status_code = resp.status_code
             raw = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"text": resp.text[:500]}
 

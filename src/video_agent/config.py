@@ -10,6 +10,14 @@
 import os
 from dataclasses import dataclass, field
 
+from dotenv import load_dotenv
+
+from src.video_agent.utils.paths import PROJECT_ROOT
+
+# .env 必须在 Settings 实例化之前加载（frozen dataclass 导入即定型，
+# 否则 .env 中的 PORT/API_KEY/AGENT_MAX_STEPS 等对 settings 不生效）
+load_dotenv(PROJECT_ROOT / ".env")
+
 
 def _env_int(key: str, default: int) -> int:
     try:
@@ -35,12 +43,20 @@ class Settings:
     port: int = field(default_factory=lambda: _env_int("PORT", 8080))
     host: str = field(default_factory=lambda: os.getenv("HOST", "127.0.0.1"))
 
+    # 安全
+    environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))
+    api_key: str = field(default_factory=lambda: os.getenv("API_KEY", ""))
+
     # Agent 多步循环
     max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 6))
 
     # LLM 超时（秒）
     llm_timeout: int = field(default_factory=lambda: _env_int("LLM_TIMEOUT", 120))
     llm_stream_timeout: int = field(default_factory=lambda: _env_int("LLM_STREAM_TIMEOUT", 180))
+
+    # Token 预算管理
+    context_window_size: int = field(default_factory=lambda: _env_int("CONTEXT_WINDOW_SIZE", 128000))
+    token_budget_ratio: float = field(default_factory=lambda: float(os.getenv("TOKEN_BUDGET_RATIO", "0.8")))
 
     # 图片生成超时（秒）
     image_gen_timeout: int = field(default_factory=lambda: _env_int("IMAGE_GEN_TIMEOUT", 180))
@@ -49,6 +65,17 @@ class Settings:
     max_doc_chars: int = field(default_factory=lambda: _env_int("MAX_DOC_CHARS", 30000))
     max_attachments: int = field(default_factory=lambda: _env_int("MAX_ATTACHMENTS", 5))
 
+    # 多模态模型单次请求可注入的图片上限（多数 vision 模型限制 4~10 张，
+    # 超限会直接报错；超出部分降级为文本清单，LLM 仍可知晓其存在）
+    max_llm_images: int = field(default_factory=lambda: _env_int("MAX_LLM_IMAGES", 4))
+    # Agent 单次回复可插入对话输入框的故事板媒体数量上限（防止一次灌满输入框）
+    max_chat_inserts: int = field(default_factory=lambda: _env_int("MAX_CHAT_INSERTS", 8))
+    # 模型 fallback 链：主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，
+    # 自动切换备用 chat 模型重试（同供应商其他模型 → 其他启用供应商）
+    model_fallback_enabled: bool = field(default_factory=lambda: _env_bool("MODEL_FALLBACK_ENABLED", True))
+    # fallback 候选链总长度（含主模型）
+    model_fallback_max_candidates: int = field(default_factory=lambda: _env_int("MODEL_FALLBACK_MAX_CANDIDATES", 3))
+
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))
     task_max: int = field(default_factory=lambda: _env_int("TASK_MAX", 500))
@@ -56,20 +83,43 @@ class Settings:
     # 上传限制
     max_upload_size_mb: int = field(default_factory=lambda: _env_int("MAX_UPLOAD_SIZE_MB", 50))
 
+    # 请求限流（每分钟每 IP 最大请求数，0 = 不限流）
+    rate_limit_per_minute: int = field(default_factory=lambda: _env_int("RATE_LIMIT_PER_MINUTE", 10))
+
+    # 存储后端（"local" | "s3"）
+    storage_backend: str = field(default_factory=lambda: os.getenv("STORAGE_BACKEND", "local"))
+
+    # 项目状态持久化后端（"json" | "sqlite"）：json 为默认文件方案，
+    # sqlite 提供事务原子性与并发安全，首次启用自动从 JSON 迁移，可随时回退
+    state_backend: str = field(default_factory=lambda: os.getenv("STATE_BACKEND", "json"))
+
     # 熊布画布集成
     canvas_base_url: str = field(default_factory=lambda: os.getenv("CANVAS_BASE_URL", "http://127.0.0.1:3000"))
     canvas_timeout: int = field(default_factory=lambda: _env_int("CANVAS_TIMEOUT", 30))
     canvas_enabled: bool = field(default_factory=lambda: _env_bool("CANVAS_ENABLED", True))
 
+    # Agent 混合记忆系统
+    memory_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_ENABLED", True))
+    memory_vector_backend: str = field(default_factory=lambda: os.getenv("MEMORY_VECTOR_BACKEND", "chromadb"))
+    memory_max_results: int = field(default_factory=lambda: _env_int("MEMORY_MAX_RESULTS", 5))
+    memory_summary_interval: int = field(default_factory=lambda: _env_int("MEMORY_SUMMARY_INTERVAL", 10))
+    memory_time_decay_days: int = field(default_factory=lambda: _env_int("MEMORY_TIME_DECAY_DAYS", 30))
+
     # 熊布 Provider 配置共享（HTTP 优先，文件兜底）
+    # 注意：canvas_providers_file / canvas_env_file 默认为空，需通过环境变量配置；
+    # 为空时画布配置共享功能自动降级（仅通过 HTTP 接口获取）。
     canvas_providers_url: str = field(default_factory=lambda: os.getenv(
         "CANVAS_PROVIDERS_URL", "http://127.0.0.1:3000/api/providers"))
     canvas_providers_file: str = field(default_factory=lambda: os.getenv(
-        "CANVAS_PROVIDERS_FILE", r"E:\07 天问\熊布\data\api_providers.json"))
+        "CANVAS_PROVIDERS_FILE", ""))
     canvas_env_file: str = field(default_factory=lambda: os.getenv(
-        "CANVAS_ENV_FILE", r"E:\07 天问\熊布\API\.env"))
+        "CANVAS_ENV_FILE", ""))
     canvas_health_cache_seconds: int = field(default_factory=lambda: _env_int(
         "CANVAS_HEALTH_CACHE_SECONDS", 30))
+    # 熊布外壳 UI 在画布 iframe 内的偏移估计（侧栏宽 + stage 边距），用于拖放落点换算；
+    # 熊布独立迭代若改了外壳布局，可通过环境变量调整，不影响功能（结果会被夹取到可视区内）
+    canvas_shell_offset_x: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_X", 96))
+    canvas_shell_offset_y: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_Y", 16))
 
 
 # 全局单例（启动时加载一次）

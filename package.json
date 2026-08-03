@@ -1,0 +1,43 @@
+{
+  "name": "ftdyb",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit && eslint src/web/",
+    "lint": "eslint src/web/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0",
+    "@solidjs/testing-library": "^0.8.10",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^26.1.2",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "autoprefixer": "^10.5.4",
+    "eslint": "^10.8.0",
+    "eslint-plugin-solid": "^0.14.5",
+    "jsdom": "^30.0.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.5.0",
+    "vite": "^8.1.5",
+    "vite-plugin-solid": "^2.11.14",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@solidjs/meta": "~0.29.4",
+    "@solidjs/router": "~1.0.0",
+    "markdown-it": "^15.0.0",
+    "solid-icons": "~1.2.0",
+    "solid-js": "~1.9.14"
+  }
+}
