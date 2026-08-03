@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, Show, onCleanup } from 'solid-js';
 import { chatState } from '@/stores/chat';
+import { t } from '@/lib/locale';
 import { ChatMessageItem } from './ChatMessageItem';
 import { StreamingIndicator } from './StreamingIndicator';
 
@@ -60,7 +61,7 @@ export function ChatFeed() {
 
       <Show when={!chatState.messages.length && !chatState.isStreaming}>
         <div class="empty-state centered roomy">
-          和 Agent 聊聊，让它帮你规划故事板
+          {t('rp.feed.empty')}
         </div>
       </Show>
     </div>

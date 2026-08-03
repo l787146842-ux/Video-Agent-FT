@@ -1,6 +1,7 @@
 import { onMount, onCleanup, Show } from 'solid-js';
 import { FiDownload, FiX } from 'solid-icons/fi';
 import { safeUrl } from '@/lib/utils';
+import { t } from '@/lib/locale';
 
 /**
  * 媒体预览灯箱：双击输入框缩略块后放大查看原图/原视频。
@@ -22,7 +23,7 @@ export function MediaLightbox(props: {
   return (
     <div class="image-lightbox" onClick={() => props.onClose()}>
       <Show when={props.kind === 'video'} fallback={
-        <img src={src()} alt="原图预览" onClick={(e) => e.stopPropagation()} />
+        <img src={src()} alt={t('rp.lightbox.alt')} onClick={(e) => e.stopPropagation()} />
       }>
         <video
           src={src()}
@@ -35,12 +36,12 @@ export function MediaLightbox(props: {
         <a
           href={src()}
           download=""
-          title="下载"
+          title={t('rp.lightbox.download')}
           onClick={(e) => e.stopPropagation()}
         >
           <FiDownload size={16} />
         </a>
-        <button type="button" title="关闭 (Esc)" onClick={() => props.onClose()}>
+        <button type="button" title={t('rp.lightbox.close')} onClick={() => props.onClose()}>
           <FiX size={18} />
         </button>
       </div>

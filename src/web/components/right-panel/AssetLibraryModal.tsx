@@ -8,14 +8,18 @@ import {
   type CanvasListItem,
 } from '@/api/canvas';
 import { safeUrl } from '@/lib/utils';
+import { t } from '@/lib/locale';
 
 type Tab = 'image' | 'canvas' | 'local';
 
-const TAB_LABELS: Record<Tab, string> = {
-  image: '图片资产',
-  canvas: '画布资产',
-  local: '本地素材',
-};
+/** tab 文案走 i18n 字典（P2-4），函数形式保持语言切换可扩展 */
+function TAB_LABELS(): Record<Tab, string> {
+  return {
+    image: t('rp.asset.tabImage'),
+    canvas: t('rp.asset.tabCanvas'),
+    local: t('rp.asset.tabLocal'),
+  };
+}
 
 /**
  * "打开画布素材库"模态框（对齐旧版 asset-modal 三 tab）：
@@ -118,7 +122,7 @@ export function AssetLibraryModal(props: {
   }
 
   function canvasKindLabel(kind: string) {
-    return kind === 'smart' ? '智能画布' : '普通画布';
+    return kind === 'smart' ? t('rp.asset.kindSmart') : t('rp.asset.kindNormal');
   }
 
   return (
@@ -129,7 +133,7 @@ export function AssetLibraryModal(props: {
           {/* 头部：3 tab + 跳转画布按钮 + 关闭 */}
           <div class="asset-modal-header">
             <div class="asset-modal-tabs">
-              <For each={Object.entries(TAB_LABELS) as [Tab, string][]}>
+              <For each={Object.entries(TAB_LABELS()) as [Tab, string][]}>
                 {([key, label]) => (
                   <button
                     classList={{ active: tab() === key }}
@@ -138,10 +142,10 @@ export function AssetLibraryModal(props: {
                 )}
               </For>
             </div>
-            <button class="asset-modal-action" title="在画布中打开" onClick={() => { props.onClose(); navigate('/canvas'); }}>
-              <FiExternalLink size={13} /> 画布
+            <button class="asset-modal-action" title={t('rp.asset.openCanvasTitle')} onClick={() => { props.onClose(); navigate('/canvas'); }}>
+              <FiExternalLink size={13} /> {t('rp.asset.canvasJump')}
             </button>
-            <button class="asset-modal-close" onClick={props.onClose} title="关闭">
+            <button class="asset-modal-close" onClick={props.onClose} title={t('rp.asset.close')}>
               <FiX size={16} />
             </button>
           </div>
@@ -154,14 +158,14 @@ export function AssetLibraryModal(props: {
               <div class="canvas-picker-subheader">
                 <div class="canvas-picker-title">
                   <FiGrid size={14} />
-                  <span>画布操作空间</span>
+                  <span>{t('rp.asset.canvasSpace')}</span>
                 </div>
                 <div class="canvas-selector">
                   <button
                     class="canvas-selector-btn"
                     onClick={() => setCanvasDropdownOpen((v) => !v)}
                   >
-                    <Show when={currentCanvas()} fallback={<span>选择画布…</span>}>
+                    <Show when={currentCanvas()} fallback={<span>{t('rp.asset.selectCanvas')}</span>}>
                       <span class="canvas-selector-kind">{canvasKindLabel(currentCanvas()!.kind)}</span>
                       <span class="canvas-selector-name">{currentCanvas()!.title}</span>
                     </Show>
@@ -170,7 +174,7 @@ export function AssetLibraryModal(props: {
                   <Show when={canvasDropdownOpen()}>
                     <div class="canvas-selector-dropdown">
                       <Show when={(canvasList()?.canvases || []).length === 0}>
-                        <div class="canvas-selector-empty">暂无画布</div>
+                        <div class="canvas-selector-empty">{t('rp.asset.noCanvas')}</div>
                       </Show>
                       <For each={canvasList()?.canvases || []}>
                         {(cv: CanvasListItem) => (
@@ -192,32 +196,32 @@ export function AssetLibraryModal(props: {
               <Show when={canvasList.loading || canvasImages.loading}>
                 <div class="asset-modal-status">
                   <FiLoader size={22} class="animate-spin" />
-                  <p>加载中...</p>
+                  <p>{t('rp.asset.loading')}</p>
                 </div>
               </Show>
 
               <Show when={!canvasList.loading && canvasList()?.canvas_online === false}>
                 <div class="asset-modal-status">
                   <FiAlertCircle size={22} />
-                  <p>画布未连接，画布素材功能受限</p>
-                  <p class="asset-modal-status-hint">请检查画布服务是否启动；故事板/未归类素材仍可用</p>
-                  <button type="button" class="btn-secondary" onClick={() => { void refetchCanvasList(); void refetchItems(); }}>重连画布</button>
+                  <p>{t('rp.asset.canvasOffline')}</p>
+                  <p class="asset-modal-status-hint">{t('rp.asset.canvasOfflineHint')}</p>
+                  <button type="button" class="btn-secondary" onClick={() => { void refetchCanvasList(); void refetchItems(); }}>{t('rp.asset.reconnect')}</button>
                 </div>
               </Show>
 
               <Show when={!canvasList.loading && canvasList()?.canvas_online !== false && (canvasList()?.canvases || []).length === 0}>
                 <div class="asset-modal-status">
                   <FiGrid size={28} />
-                  <p>暂无画布</p>
-                  <p class="asset-modal-status-hint">请先在熊布中创建一个画布</p>
+                  <p>{t('rp.asset.noCanvas')}</p>
+                  <p class="asset-modal-status-hint">{t('rp.asset.noCanvasHint')}</p>
                 </div>
               </Show>
 
               <Show when={!canvasImages.loading && canvasImages() && canvasImages()!.canvas_online !== false && (canvasImages()!.items?.length ?? 0) === 0 && selectedCanvasId()}>
                 <div class="asset-modal-status">
                   <FiGrid size={28} />
-                  <p>该画布中暂无图片</p>
-                  <p class="asset-modal-status-hint">在画布上生成的素材会出现在这里</p>
+                  <p>{t('rp.asset.noCanvasImages')}</p>
+                  <p class="asset-modal-status-hint">{t('rp.asset.canvasImagesHint')}</p>
                 </div>
               </Show>
 
@@ -230,7 +234,7 @@ export function AssetLibraryModal(props: {
                       <div
                         class="asset-card"
                         classList={{ selected: isSelected() }}
-                        title={`${item.name} — 点击${isSelected() ? '取消选中' : '选中'}`}
+                        title={t('rp.asset.cardToggle', { name: item.name, action: isSelected() ? t('rp.asset.unselect') : t('rp.asset.select') })}
                         onClick={() => toggleItem(item)}
                       >
                         <Show when={thumbUrl()} fallback={
@@ -251,23 +255,23 @@ export function AssetLibraryModal(props: {
             <Show when={items.loading}>
               <div class="asset-modal-status">
                 <FiLoader size={22} class="animate-spin" />
-                <p>加载中...</p>
+                <p>{t('rp.asset.loading')}</p>
               </div>
             </Show>
 
             <Show when={!items.loading && items.error}>
               <div class="asset-modal-status">
                 <FiAlertCircle size={22} />
-                <p>加载失败：{String(items.error)}</p>
+                <p>{t('rp.asset.loadFailed', { error: String(items.error) })}</p>
               </div>
             </Show>
 
             <Show when={!items.loading && items() && items()!.canvas_online === false}>
               <div class="asset-modal-status">
                 <FiAlertCircle size={22} />
-                <p>画布未连接，功能受限（{items()!.error || '连接失败'}）</p>
-                <p class="asset-modal-status-hint">检查 <code>{location.origin.replace(/\d+$/, '3000')}</code> 是否启动</p>
-                <button type="button" class="btn-secondary" onClick={() => void refetchItems()}>重连画布</button>
+                <p>{t('rp.asset.offlineLimited', { error: items()!.error || t('rp.asset.connectionFailed') })}</p>
+                <p class="asset-modal-status-hint">{t('rp.asset.checkOriginPre')}<code>{location.origin.replace(/\d+$/, '3000')}</code>{t('rp.asset.checkOriginPost')}</p>
+                <button type="button" class="btn-secondary" onClick={() => void refetchItems()}>{t('rp.asset.reconnect')}</button>
               </div>
             </Show>
 
@@ -276,15 +280,15 @@ export function AssetLibraryModal(props: {
                 <Show when={tab() === 'image'}><FiImage size={28} /></Show>
                 <Show when={tab() === 'canvas'}><FiGrid size={28} /></Show>
                 <Show when={tab() === 'local'}><FiHardDrive size={28} /></Show>
-                <p>暂无{TAB_LABELS[tab()]}</p>
+                <p>{t('rp.asset.emptyOf', { label: TAB_LABELS()[tab()] })}</p>
                 <Show when={tab() === 'image'}>
-                  <p class="asset-modal-status-hint">在熊布画布"素材库"里添加图片资产</p>
+                  <p class="asset-modal-status-hint">{t('rp.asset.emptyImageHint')}</p>
                 </Show>
                 <Show when={tab() === 'canvas'}>
-                  <p class="asset-modal-status-hint">在画布上生成的素材会出现在这里</p>
+                  <p class="asset-modal-status-hint">{t('rp.asset.canvasImagesHint')}</p>
                 </Show>
                 <Show when={tab() === 'local'}>
-                  <p class="asset-modal-status-hint">点击底部"添加"上传本地素材</p>
+                  <p class="asset-modal-status-hint">{t('rp.asset.emptyLocalHint')}</p>
                 </Show>
               </div>
             </Show>
@@ -298,7 +302,7 @@ export function AssetLibraryModal(props: {
                     <div
                       class="asset-card"
                       classList={{ selected: isSelected() }}
-                      title={`${item.name} — 点击${isSelected() ? '取消选中' : '选中'}`}
+                      title={t('rp.asset.cardToggle', { name: item.name, action: isSelected() ? t('rp.asset.unselect') : t('rp.asset.select') })}
                       onClick={() => toggleItem(item)}
                     >
                       <Show when={thumbUrl()} fallback={
@@ -317,13 +321,13 @@ export function AssetLibraryModal(props: {
 
           {/* 底部：选中计数 + 确认添加按钮 */}
           <div class="asset-modal-footer">
-            <span class="asset-selected-count">已选 {selectedIds().size} 个</span>
+            <span class="asset-selected-count">{t('rp.asset.selected', { count: selectedIds().size })}</span>
             <button
               class="btn-primary"
               disabled={selectedIds().size === 0}
               onClick={confirmPick}
             >
-              添加到对话框
+              {t('rp.asset.addToChat')}
             </button>
           </div>
         </div>

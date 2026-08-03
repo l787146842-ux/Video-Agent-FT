@@ -9,6 +9,7 @@ import { openDocsPanel } from '@/stores/docs';
 import { endCanvasImageDrag } from '@/stores/canvas';
 import { safeUrl } from '@/lib/utils';
 import { createImageDrag, absUrl } from '@/lib/chat-image-drag';
+import { t } from '@/lib/locale';
 import { RichBubble } from './RichBubble';
 import type { ChatMessage } from '@/types';
 
@@ -54,7 +55,7 @@ export function ChatMessageItem(props: {
         >
           <FiFileText size={15} class="doc-card-icon" />
           <span class="doc-card-name">{String(msg().docCard)}</span>
-          <span class="doc-card-status">已完成</span>
+          <span class="doc-card-status">{t('rp.msg.docDone')}</span>
           <FiChevronRight size={12} class="doc-card-arrow" />
         </button>
       </Show>
@@ -64,7 +65,7 @@ export function ChatMessageItem(props: {
         <div class="image-card">
           <div class="image-card-header">
             <FiImage size={14} />
-            <span>生图结果</span>
+            <span>{t('rp.msg.imageResult')}</span>
             <Show when={msg().imageCard!.provider}>
               <span class="image-card-provider">{msg().imageCard!.provider}</span>
             </Show>
@@ -81,7 +82,7 @@ export function ChatMessageItem(props: {
                     onDragEnd={() => endCanvasImageDrag()}
                     onPointerDown={(e) => drag.onThumbPointerDown(e, url, fname())}
                     onClick={() => { if (!drag.wasMoved()) setLightboxUrl(absUrl(url)); }}
-                    title={`${fname()} — 点击查看原图，按住拖动到画布`}
+                    title={t('rp.msg.imageTip', { name: fname() })}
                   >
                     <img
                       src={safeUrl(url)}
@@ -96,7 +97,7 @@ export function ChatMessageItem(props: {
                     <button
                       type="button"
                       class="image-card-download"
-                      title="下载"
+                      title={t('rp.msg.download')}
                       onClick={(e) => {
                         e.stopPropagation();
                         const a = document.createElement('a');
@@ -120,19 +121,19 @@ export function ChatMessageItem(props: {
         <div class="image-lightbox" onClick={() => setLightboxUrl('')}>
           <img
             src={lightboxUrl()}
-            alt="原图预览"
+            alt={t('rp.msg.lightboxAlt')}
             onClick={(e) => e.stopPropagation()}
           />
           <div class="image-lightbox-actions">
             <a
               href={lightboxUrl()}
               download=""
-              title="下载原图"
+              title={t('rp.msg.downloadOriginal')}
               onClick={(e) => e.stopPropagation()}
             >
               <FiDownload size={16} />
             </a>
-            <button type="button" title="关闭 (Esc)" onClick={() => setLightboxUrl('')}>
+            <button type="button" title={t('rp.msg.closeEsc')} onClick={() => setLightboxUrl('')}>
               <FiX size={18} />
             </button>
           </div>
@@ -148,10 +149,10 @@ export function ChatMessageItem(props: {
             onClick={() => setExpanded(!expanded())}
           >
             <FiCheckCircle size={15} class="stage-check" />
-            <span class="stage-card-title">阶段完成</span>
+            <span class="stage-card-title">{t('rp.msg.stageDone')}</span>
             <Show when={msg().appliedActions}>
               <span class="stage-card-badge">
-                已执行 {msg().appliedActions} 个操作
+                {t('rp.msg.appliedOps', { count: msg().appliedActions ?? 0 })}
               </span>
             </Show>
             <FiChevronDown size={13} class="stage-arrow" />
@@ -176,9 +177,9 @@ export function ChatMessageItem(props: {
             onClick={() => setOpsExpanded(!opsExpanded())}
           >
             <FiCheckCircle size={15} class="stage-check" />
-            <span class="stage-card-title">阶段完成</span>
+            <span class="stage-card-title">{t('rp.msg.stageDone')}</span>
             <span class="stage-card-badge">
-              已执行 {msg().appliedActions} 个操作
+              {t('rp.msg.appliedOps', { count: msg().appliedActions ?? 0 })}
             </span>
             <FiChevronDown size={13} class="stage-arrow" />
           </button>
@@ -232,9 +233,9 @@ export function ChatMessageItem(props: {
             class="trace-card-header"
             onClick={() => setTraceOpen(!traceOpen())}
           >
-            <span class="trace-card-title">执行轨迹</span>
+            <span class="trace-card-title">{t('rp.msg.trace')}</span>
             <span class="trace-card-summary">
-              {msg().trace!.steps!.length} 轮 · 共 {((msg().trace!.total_ms || 0) / 1000).toFixed(1)}s
+              {t('rp.msg.traceSummary', { rounds: msg().trace!.steps!.length, seconds: ((msg().trace!.total_ms || 0) / 1000).toFixed(1) })}
             </span>
             <FiChevronDown size={12} class="trace-arrow" />
           </button>
@@ -242,8 +243,8 @@ export function ChatMessageItem(props: {
             <For each={msg().trace!.steps}>
               {(s) => (
                 <div class="trace-step">
-                  第 {s.step} 轮 · {(s.timing_ms / 1000).toFixed(1)}s
-                  <Show when={s.actions_applied}> · {s.actions_applied} 个操作</Show>
+                  {t('rp.msg.traceStep', { step: s.step, seconds: (s.timing_ms / 1000).toFixed(1) })}
+                  <Show when={s.actions_applied}> · {t('rp.msg.traceOps', { count: s.actions_applied })}</Show>
                   <Show when={s.finish_reason}> · {s.finish_reason}</Show>
                 </div>
               )}
@@ -258,9 +259,9 @@ export function ChatMessageItem(props: {
           <button
             type="button"
             class="confirm-btn primary"
-            onClick={() => void sendUserMessage('确认')}
+            onClick={() => void sendUserMessage(t('rp.msg.confirmText'))}
           >
-            确认，继续
+            {t('rp.msg.confirmContinue')}
           </button>
           <button
             type="button"
@@ -269,7 +270,7 @@ export function ChatMessageItem(props: {
               document.getElementById('chatInputTextarea')?.focus();
             }}
           >
-            我要调整
+            {t('rp.msg.adjust')}
           </button>
         </div>
       </Show>

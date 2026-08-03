@@ -6,6 +6,7 @@ import {
 } from '@/stores/agent-prefs';
 import { createSignal } from 'solid-js';
 import { apiProvidersFor, providerModels } from '@/lib/providers';
+import { t } from '@/lib/locale';
 import { PillDropdown } from './PillDropdown';
 import { SkillPicker } from './SkillPicker';
 import { StudioAssetPickerModal } from './StudioAssetPickerModal';
@@ -39,7 +40,7 @@ export function ChatInputToolbar(props: {
         <button
           type="button"
           class="toolbar-pill-btn"
-          title="上传参考素材或文档"
+          title={t('rp.toolbar.upload')}
           onClick={() => props.onUpload()}
         >
           <FiPaperclip size={13} />
@@ -48,25 +49,25 @@ export function ChatInputToolbar(props: {
           icon={FiGlobe}
           value={agentProvider()}
           options={providerOptions()}
-          title="API 平台选择"
+          title={t('rp.toolbar.providerTitle')}
           onSelect={setAgentProvider}
         />
         <PillDropdown
           icon={FiCpu}
           value={agentModel()}
           options={modelOptions()}
-          title="Agent 模型选择"
+          title={t('rp.toolbar.modelTitle')}
           onSelect={setAgentModel}
         />
         <SkillPicker />
         <button
           type="button"
           class="toolbar-pill-btn"
-          title="素材库：从故事板/未归类素材中选取媒体发送到对话框"
+          title={t('rp.toolbar.assetsTitle')}
           onClick={() => setAssetPickerOpen(true)}
         >
           <FiFolder size={11} />
-          <span class="pill-option-label">素材库</span>
+          <span class="pill-option-label">{t('rp.toolbar.assets')}</span>
         </button>
         <StudioAssetPickerModal
           open={assetPickerOpen()}
@@ -76,7 +77,7 @@ export function ChatInputToolbar(props: {
         <button
           type="button"
           class="toolbar-pill-btn"
-          title="查看/编辑当前 Skill 流程文档"
+          title={t('rp.toolbar.skillDoc')}
           onClick={() => props.onViewSkillDoc()}
         >
           <FiBookOpen size={13} />
@@ -86,7 +87,7 @@ export function ChatInputToolbar(props: {
         <button
           type="button"
           class={`send-btn ${props.busy ? 'send-btn-busy' : ''}`}
-          title={props.busy ? '停止生成' : '发送'}
+          title={props.busy ? t('rp.toolbar.stop') : t('rp.toolbar.send')}
           onClick={() => (props.busy ? props.onStop() : props.onSend())}
         >
           {props.busy ? <FiSquare size={13} /> : <FiArrowUp size={15} />}

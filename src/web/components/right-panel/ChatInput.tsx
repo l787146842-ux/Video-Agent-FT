@@ -11,6 +11,7 @@ import {
 } from '@/lib/rich-input';
 import { uploadAndInsert, handlePasteImages, handleUrlDrop } from '@/lib/chat-input-media';
 import { insertRequestCount, takeInsertRequests } from '@/lib/chat-input-bridge';
+import { t } from '@/lib/locale';
 import { agentSkill } from '@/stores/agent-prefs';
 import { openDocsPanel } from '@/stores/docs';
 import { useCanvasMention } from '@/hooks/use-canvas-mention';
@@ -123,7 +124,7 @@ export function ChatInput() {
     }
     mention.closeMention();
     chatActions.setInput(editorToPlainText(el));
-    showToast(`已添加：${item.name}`, 'success');
+    showToast(t('rp.input.added', { name: item.name }), 'success');
   }
 
   function handleInput() {
@@ -204,8 +205,8 @@ export function ChatInput() {
           classList={{ 'rich-chat-input-disabled': busy() }}
           contentEditable={!busy()}
           role="textbox"
-          aria-label="给 Agent 发送指令"
-          data-placeholder="给 Agent 发送指令（如：调整场景1氛围、帮我拆分分镜、生成下个动作...）"
+          aria-label={t('rp.input.aria')}
+          data-placeholder={t('rp.input.placeholder')}
           onInput={handleInput}
           onKeyDown={onKeyDown}
           onDblClick={handleChipDblClick}

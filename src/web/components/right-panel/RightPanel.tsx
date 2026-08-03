@@ -3,6 +3,7 @@ import { ChatFeed } from './ChatFeed';
 import { ChatInput } from './ChatInput';
 import { state } from '@/stores/studio';
 import { useSplitter } from '@/hooks/use-splitter';
+import { t } from '@/lib/locale';
 
 /**
  * 右侧聊天面板（对齐旧版布局）：
@@ -28,7 +29,7 @@ export default function RightPanel() {
         </div>
         <span
           class={`agent-status-dot ${state.agentBusy ? 'busy' : ''}`}
-          title={state.agentBusy ? 'Agent 工作中' : 'Agent 空闲'}
+          title={state.agentBusy ? t('rp.header.busy') : t('rp.header.idle')}
         />
       </div>
 
@@ -37,7 +38,7 @@ export default function RightPanel() {
       {/* 输入区与消息区之间的拖拽分隔线（旧版 chat-resize-handle） */}
       <div
         class={`chat-resize-handle ${inputSplit.dragging() ? 'dragging' : ''}`}
-        title="拖动调整输入框高度"
+        title={t('rp.header.resizeHint')}
         onMouseDown={(e) => inputSplit.onMouseDown(e)}
       />
 

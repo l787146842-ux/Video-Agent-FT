@@ -5,6 +5,7 @@ import { agentSkillId, setAgentSkill } from '@/stores/agent-prefs';
 import { deleteSkillDoc } from '@/api/docs';
 import { showToast } from '@/stores/toast';
 import { requestInsertSkill } from '@/lib/chat-input-bridge';
+import { t } from '@/lib/locale';
 import { SkillDetailModal } from './SkillDetailModal';
 import { SkillImportModal } from './SkillImportModal';
 import type { Skill } from '@/types';
@@ -60,7 +61,7 @@ export function SkillPicker() {
     setAgentSkill(skill.id);
     requestInsertSkill(skill.name);
     setOpen(false);
-    showToast(`Skill「${skill.name}」已插入输入框，发送后生效并写入文档`, 'success');
+    showToast(t('rp.skill.inserted', { name: skill.name }), 'success');
   }
 
   /** 是否为文档类 Skill（只有 doc 来源可删除） */
@@ -75,9 +76,9 @@ export function SkillPicker() {
       await deleteSkillDoc(slug);
       await refreshSkills();
       if (agentSkillId() === skill.id) setAgentSkill('');
-      showToast(`Skill「${skill.name}」已删除`, 'success');
+      showToast(t('rp.skill.deleted', { name: skill.name }), 'success');
     } catch (err) {
-      showToast(`删除失败：${(err as Error).message}`, 'error');
+      showToast(t('rp.skill.deleteFailed', { error: (err as Error).message }), 'error');
     }
   }
 
@@ -86,7 +87,7 @@ export function SkillPicker() {
       <button
         type="button"
         class="toolbar-pill-btn max-w-36"
-        title="技能加载"
+        title={t('rp.skill.title')}
         ref={btnRef}
         onClick={toggleOpen}
       >
@@ -115,7 +116,7 @@ export function SkillPicker() {
                       <button
                         type="button"
                         class="skill-picker-eye"
-                        title="预览 Skill 详情"
+                        title={t('rp.skill.preview')}
                         onClick={(e) => {
                           e.stopPropagation();
                           setPreviewSkill(skill);
@@ -126,7 +127,7 @@ export function SkillPicker() {
                       <button
                         type="button"
                         class="skill-picker-add"
-                        title="插入 Skill 到输入框，发送后生效"
+                        title={t('rp.skill.insertTip')}
                         onClick={(e) => {
                           e.stopPropagation();
                           insertSkillToInput(skill);
@@ -138,7 +139,7 @@ export function SkillPicker() {
                         <button
                           type="button"
                           class="skill-picker-delete"
-                          title="删除 Skill"
+                          title={t('rp.skill.delete')}
                           onClick={(e) => {
                             e.stopPropagation();
                             setConfirmingId(skill.id);
@@ -152,20 +153,20 @@ export function SkillPicker() {
                 >
                   {/* 内联删除确认 */}
                   <div class="skill-picker-confirm">
-                    <span class="skill-picker-confirm-text">删除「{skill.name}」？</span>
+                    <span class="skill-picker-confirm-text">{t('rp.skill.confirmDelete', { name: skill.name })}</span>
                     <button
                       type="button"
                       class="skill-picker-confirm-yes"
                       onClick={(e) => { e.stopPropagation(); void doDeleteSkill(skill); }}
                     >
-                      确定
+                      {t('rp.skill.confirm')}
                     </button>
                     <button
                       type="button"
                       class="skill-picker-confirm-no"
                       onClick={(e) => { e.stopPropagation(); setConfirmingId(null); }}
                     >
-                      取消
+                      {t('rp.skill.cancel')}
                     </button>
                   </div>
                 </Show>
@@ -173,7 +174,7 @@ export function SkillPicker() {
             )}
           </For>
           <Show when={!state.skills.length}>
-            <div class="empty-state">暂无可用 Skill</div>
+            <div class="empty-state">{t('rp.skill.none')}</div>
           </Show>
           {/* 导入按钮 */}
           <div
@@ -185,7 +186,7 @@ export function SkillPicker() {
             }}
           >
             <FiPlus size={13} />
-            <span>导入 Skill</span>
+            <span>{t('rp.skill.import')}</span>
           </div>
         </div>
       </Show>

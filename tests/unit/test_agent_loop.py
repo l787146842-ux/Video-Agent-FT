@@ -98,3 +98,56 @@ async def test_context_refreshed_each_round(svc, executor):
     )
     # 每轮都要重建上下文，且两轮拿到的不同
     assert calls["systems"] == ["ctx-1", "ctx-2"]
+
+
+# ---------- P2-6：FC 提前终止 ----------
+
+def make_fc_llm(replies):
+    """按次序返回预设回复的假 LLM；fc_applied 从预设元组第三位取"""
+    calls = {"n": 0}
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        reply = replies[min(calls["n"], len(replies) - 1)]
+        calls["n"] += 1
+        return reply[0], reply[1], reply[2]
+
+    return llm_call, calls
+
+
+async def test_fc_stop_with_visible_text_ends_early(svc, executor):
+    """模型明确 stop 且已产出可见文本：单轮即终止，不追加总结轮"""
+    llm, calls = make_fc_llm([("已完成创建", "stop", 1)])
+    result = await run_agent_loop(
+        "创建分镜", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 1
+    assert result.steps == 1
+    assert result.applied_actions == 1
+    assert "已完成创建" in result.text
+
+
+async def test_fc_tool_calls_finish_continues_chain(svc, executor):
+    """finish=tool_calls 表示链路未完：继续下一轮（多步工具链不受影响）"""
+    llm, calls = make_fc_llm([
+        ("处理中", "tool_calls", 1),
+        ("全部完成", "stop", 1),
+    ])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 2
+    assert result.applied_actions == 2
+    assert "全部完成" in result.text
+
+
+async def test_fc_stop_without_text_continues(svc, executor):
+    """stop 但无可见文本（模型可能还想做更多）：继续下一轮"""
+    llm, calls = make_fc_llm([
+        ("", "stop", 1),
+        ("收尾总结", "stop", 0),
+    ])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 2
+    assert result.applied_actions == 1

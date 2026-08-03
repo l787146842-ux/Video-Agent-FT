@@ -120,8 +120,11 @@ async def run_agent_loop(
                 f"[AgentLoop] step={step} fc_applied={fc_applied} "
                 f"confirm=False finish={finish_reason or '-'}"
             )
-            # FC 多步支持：工具执行后允许继续下一轮（LLM 可在下轮选择不再调用工具来结束）
-            # 仅当 finish_reason 为 "stop" 且无可见文本时才继续（表示 LLM 可能还想做更多）
+            # P2-6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
+            # 不再固定追加一轮 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）
+            if finish_reason in ("stop", "end_turn") and visible:
+                tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done")
+                break
             if step == max_steps:
                 result.warnings.append(f"已达到多步上限（{max_steps} 轮），循环终止")
                 tracer.end_step(step, actions_applied=fc_applied, finish_reason="max_steps")

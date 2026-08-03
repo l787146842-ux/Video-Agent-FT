@@ -1,6 +1,7 @@
 import { For, Show } from 'solid-js';
 import { FiFileText, FiVideo, FiX } from 'solid-icons/fi';
 import { state, studioActions } from '@/stores/studio';
+import { t } from '@/lib/locale';
 
 /**
  * 待发送附件 chips（媒体已内联到编辑器，这里主要是文档类附件）。
@@ -23,7 +24,7 @@ export function PendingAttachmentBar() {
               <button
                 type="button"
                 class="attachment-remove"
-                title="移除"
+                title={t('rp.attachment.remove')}
                 onClick={() => studioActions.removePendingAttachment(att.id)}
               >
                 <FiX size={10} />

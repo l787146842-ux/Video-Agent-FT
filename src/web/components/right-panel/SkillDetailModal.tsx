@@ -4,6 +4,7 @@ import { renderMarkdown } from '@/lib/markdown';
 import { saveSkillDoc } from '@/api/docs';
 import { refreshSkills } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
+import { t } from '@/lib/locale';
 import type { Skill } from '@/types';
 
 /** 从 skill 内容中解析 skill_description 字段（简介用） */
@@ -13,7 +14,7 @@ function extractDescription(skill: Skill): string {
   const match = content.match(/skill_description\s*[:=]\s*["']([^"']+)["']/i);
   if (match) return match[1];
   // 回退到 skill.description
-  return skill.description || '暂无简介';
+  return skill.description || t('rp.skillDetail.noIntro');
 }
 
 /** 从 skill 内容中提取纯流程规划部分（去掉 skill_name/skill_description/<planner> 等元数据） */
@@ -50,7 +51,7 @@ export function SkillDetailModal(props: {
     const content = props.skill.system_prompt || '';
     const newDesc = introDraft().trim();
     if (!newDesc) {
-      showToast('简介不能为空', 'error');
+      showToast(t('rp.skillDetail.introEmpty'), 'error');
       return;
     }
     // 替换原文中的 > 引用行（描述行）
@@ -74,9 +75,9 @@ export function SkillDetailModal(props: {
     try {
       await saveSkillDoc(slug, newContent);
       await refreshSkills();
-      showToast('简介已保存', 'success');
+      showToast(t('rp.skillDetail.introSaved'), 'success');
     } catch (err) {
-      showToast(`保存失败：${(err as Error).message}`, 'error');
+      showToast(t('rp.skillDetail.saveFailed', { error: (err as Error).message }), 'error');
     } finally {
       setSavingIntro(false);
     }
@@ -95,14 +96,14 @@ export function SkillDetailModal(props: {
               class={`skill-modal-tab ${tab() === 'intro' ? 'active' : ''}`}
               onClick={() => setTab('intro')}
             >
-              简介
+              {t('rp.skillDetail.tabIntro')}
             </button>
             <button
               type="button"
               class={`skill-modal-tab ${tab() === 'content' ? 'active' : ''}`}
               onClick={() => setTab('content')}
             >
-              内容
+              {t('rp.skillDetail.tabContent')}
             </button>
           </div>
           <button type="button" class="skill-modal-close" onClick={props.onClose}>
@@ -130,7 +131,7 @@ export function SkillDetailModal(props: {
                 onClick={() => void saveIntro()}
               >
                 <FiCheck size={12} />
-                保存简介
+                {t('rp.skillDetail.saveIntro')}
               </button>
             </div>
           </Show>
@@ -139,7 +140,7 @@ export function SkillDetailModal(props: {
               <button
                 type="button"
                 class={`skill-modal-view-btn ${!rawView() ? 'active' : ''}`}
-                title="渲染预览"
+                title={t('rp.skillDetail.renderPreview')}
                 onClick={() => setRawView(false)}
               >
                 <FiEye size={13} />
@@ -147,7 +148,7 @@ export function SkillDetailModal(props: {
               <button
                 type="button"
                 class={`skill-modal-view-btn ${rawView() ? 'active' : ''}`}
-                title="源码"
+                title={t('rp.skillDetail.source')}
                 onClick={() => setRawView(true)}
               >
                 <FiCode size={13} />
@@ -161,7 +162,7 @@ export function SkillDetailModal(props: {
             </Show>
             <Show when={rawView()}>
               <div class="skill-modal-content-raw">
-                {props.skill.system_prompt || '暂无内容'}
+                {props.skill.system_prompt || t('rp.skillDetail.noContent')}
               </div>
             </Show>
           </Show>
@@ -175,7 +176,7 @@ export function SkillDetailModal(props: {
             onClick={() => props.onUse(props.skill)}
           >
             <FiZap size={14} />
-            去使用 Skill
+            {t('rp.skillDetail.use')}
           </button>
         </div>
       </div>

@@ -18,9 +18,21 @@ import { dropImageToCanvas } from '@/api/canvas';
  * 画布模式（路由 /canvas）
  * iframe 已持久化在 LayoutShell（不随路由卸载，保留画布状态）。
  * 本组件仅渲染：错误覆盖层 + 图片拖放层 + 右侧 Agent 面板覆盖层。
+ *
+ * P2-3 样式评估结论：覆盖层保持不透明悬浮（box-shadow 已具备悬浮感）——
+ * 聊天长文本在半透明底上可读性明显下降，故不采用 backdrop 半透明。
  */
+const KEY_OVERLAY_COLLAPSED = 'canvasAgentOverlayCollapsed';
+
 export default function CanvasView() {
-  const [collapsed, setCollapsed] = createSignal(false);
+  // 收起状态记忆：从 localStorage 恢复用户上次偏好（P2-3）
+  const [collapsed, setCollapsedRaw] = createSignal(
+    localStorage.getItem(KEY_OVERLAY_COLLAPSED) === '1',
+  );
+  const setCollapsed = (v: boolean) => {
+    localStorage.setItem(KEY_OVERLAY_COLLAPSED, v ? '1' : '0');
+    setCollapsedRaw(v);
+  };
   const [dropping, setDropping] = createSignal(false);
   const panelSplit = useSplitter(360, { min: 280, max: 700, invert: true, storageKey: 'splitCanvasPanel' });
 

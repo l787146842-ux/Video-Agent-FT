@@ -1,6 +1,7 @@
 import { For, Show } from 'solid-js';
 import { FiImage } from 'solid-icons/fi';
 import { safeUrl } from '@/lib/utils';
+import { t } from '@/lib/locale';
 import type { CanvasNodeImageItem } from '@/api/canvas';
 
 /**
@@ -16,17 +17,17 @@ export function MentionPopup(props: {
   onSelect: (item: CanvasNodeImageItem) => void;
 }) {
   return (
-    <div class="mention-popup" role="listbox" aria-label="画布图片选择">
+    <div class="mention-popup" role="listbox" aria-label={t('rp.mention.aria')}>
       <Show when={props.loading}>
-        <div class="mention-popup-status">加载画布图片中...</div>
+        <div class="mention-popup-status">{t('rp.mention.loading')}</div>
       </Show>
       <Show when={!props.loading && props.canvasOnline === false}>
-        <div class="mention-popup-status">画布未连接，画布图片引用不可用（故事板素材仍可 @ 引用）</div>
+        <div class="mention-popup-status">{t('rp.mention.offline')}</div>
       </Show>
       <Show when={!props.loading && props.items.length === 0 && props.canvasOnline !== false}>
         <div class="mention-popup-status">
-          <Show when={props.query.length > 0} fallback={<>画布内暂无图片</>}>
-            无匹配图片
+          <Show when={props.query.length > 0} fallback={<>{t('rp.mention.none')}</>}>
+            {t('rp.mention.noMatch')}
           </Show>
         </div>
       </Show>

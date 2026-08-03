@@ -3,6 +3,7 @@ import {
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { FiChevronDown } from 'solid-icons/fi';
+import { t } from '@/lib/locale';
 import type { Component } from 'solid-js';
 
 export interface PillOption {
@@ -34,7 +35,7 @@ export function PillDropdown(props: {
   /** 显示选中项的 label（而非原始 value/ID） */
   const displayLabel = () => {
     const match = props.options.find((o) => o.value === props.value);
-    return match?.label || props.value || '未选择';
+    return match?.label || props.value || t('rp.pill.unselected');
   };
 
   return (
@@ -74,7 +75,7 @@ export function PillDropdown(props: {
             )}
           </For>
           <Show when={!props.options.length}>
-            <div class="empty-state">暂无可用选项</div>
+            <div class="empty-state">{t('rp.pill.empty')}</div>
           </Show>
         </div>
       </Show>

@@ -4,6 +4,7 @@ import { state } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { requestInsertMedia } from '@/lib/chat-input-bridge';
 import { safeUrl, uid } from '@/lib/utils';
+import { t } from '@/lib/locale';
 import type { AnyGroup, MediaType } from '@/types';
 
 /** 弹窗内的统一媒体项（故事板草稿 / 未归类素材共用） */
@@ -17,12 +18,15 @@ interface PickerItem {
 
 type Tab = 'keyElement' | 'shot' | 'audio' | 'uncat';
 
-const TAB_LABELS: Record<Tab, string> = {
-  keyElement: '关键元素',
-  shot: '分镜',
-  audio: '音频',
-  uncat: '未归类素材',
-};
+/** tab 文案走 i18n 字典（P2-4） */
+function TAB_LABELS(): Record<Tab, string> {
+  return {
+    keyElement: t('rp.picker.tabKeyElement'),
+    shot: t('rp.picker.tabShot'),
+    audio: t('rp.picker.tabAudio'),
+    uncat: t('rp.picker.tabUncat'),
+  };
+}
 
 /** 故事板某分区的媒体项（仅取已有媒体文件的草稿） */
 function boardItems(field: 'keyElements' | 'shots' | 'audioItems'): PickerItem[] {
@@ -98,7 +102,7 @@ export function StudioAssetPickerModal(props: {
     for (const it of picked) {
       requestInsertMedia({ id: uid('im'), kind: it.kind, url: it.url, name: it.name, thumb: it.thumb });
     }
-    showToast(`已将 ${picked.length} 个素材添加到对话`, 'success');
+    showToast(t('rp.picker.addedToChat', { count: picked.length }), 'success');
     setSelectedIds(new Set<string>());
     props.onClose();
   }
@@ -111,7 +115,7 @@ export function StudioAssetPickerModal(props: {
           {/* 头部：tab + 画布素材库入口 + 关闭 */}
           <div class="asset-modal-header">
             <div class="asset-modal-tabs">
-              <For each={Object.entries(TAB_LABELS) as [Tab, string][]}>
+              <For each={Object.entries(TAB_LABELS()) as [Tab, string][]}>
                 {([key, label]) => (
                   <button
                     classList={{ active: tab() === key }}
@@ -122,12 +126,12 @@ export function StudioAssetPickerModal(props: {
             </div>
             <button
               class="asset-modal-action"
-              title="打开画布素材库"
+              title={t('rp.picker.openCanvasLibrary')}
               onClick={() => { props.onClose(); props.onOpenCanvas(); }}
             >
-              <FiExternalLink size={13} /> 画布素材
+              <FiExternalLink size={13} /> {t('rp.picker.canvasAssets')}
             </button>
-            <button class="asset-modal-close" onClick={props.onClose} title="关闭">
+            <button class="asset-modal-close" onClick={props.onClose} title={t('rp.asset.close')}>
               <FiX size={16} />
             </button>
           </div>
@@ -139,9 +143,9 @@ export function StudioAssetPickerModal(props: {
                 <Show when={tab() === 'uncat'} fallback={<FiImage size={28} />}>
                   <FiImage size={28} />
                 </Show>
-                <p>暂无{TAB_LABELS[tab()]}媒体素材</p>
+                <p>{t('rp.picker.emptyOf', { label: TAB_LABELS()[tab()] })}</p>
                 <p class="asset-modal-status-hint">
-                  {tab() === 'uncat' ? '从故事板移除的素材会出现在这里' : '故事板草稿生成/上传媒体后会出现在这里'}
+                  {tab() === 'uncat' ? t('rp.picker.uncatHint') : t('rp.picker.boardHint')}
                 </p>
               </div>
             }>
@@ -153,7 +157,7 @@ export function StudioAssetPickerModal(props: {
                     <div
                       class="asset-card"
                       classList={{ selected: isSelected() }}
-                      title={`${item.name} — 点击${isSelected() ? '取消选中' : '选中'}`}
+                      title={t('rp.asset.cardToggle', { name: item.name, action: isSelected() ? t('rp.asset.unselect') : t('rp.asset.select') })}
                       onClick={() => toggleItem(item)}
                     >
                       {/* 音频：图标占位；视频无海报：首帧；其余：缩略图 */}
@@ -176,13 +180,13 @@ export function StudioAssetPickerModal(props: {
 
           {/* 底部：选中计数 + 确认添加按钮 */}
           <div class="asset-modal-footer">
-            <span class="asset-selected-count">已选 {selectedIds().size} 个</span>
+            <span class="asset-selected-count">{t('rp.asset.selected', { count: selectedIds().size })}</span>
             <button
               class="btn-primary"
               disabled={selectedIds().size === 0}
               onClick={confirmPick}
             >
-              添加到对话框
+              {t('rp.asset.addToChat')}
             </button>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { FiX, FiUpload, FiZap, FiRefreshCw } from 'solid-icons/fi';
 import { saveSkillDoc } from '@/api/docs';
 import { showToast } from '@/stores/toast';
 import { refreshSkills } from '@/stores/studio';
+import { t } from '@/lib/locale';
 
 /**
  * Skill 导入弹窗
@@ -69,22 +70,22 @@ export function SkillImportModal(props: {
   async function handleSave() {
     const s = sanitizeSlug(slug());
     if (!s) {
-      showToast('请填写有效的 Skill 标识（中文/英文/数字/连字符）', 'error');
+      showToast(t('rp.skillImport.slugInvalid'), 'error');
       return;
     }
     setSlug(s);
     if (!content().trim()) {
-      showToast('内容不能为空', 'error');
+      showToast(t('rp.skillImport.contentEmpty'), 'error');
       return;
     }
     setSaving(true);
     try {
       await saveSkillDoc(s, content());
       await refreshSkills();
-      showToast(`Skill「${s}」已导入`, 'success');
+      showToast(t('rp.skillImport.imported', { name: s }), 'success');
       props.onClose();
     } catch (err) {
-      showToast(`保存失败：${(err as Error).message}`, 'error');
+      showToast(t('rp.skillDetail.saveFailed', { error: (err as Error).message }), 'error');
     } finally {
       setSaving(false);
     }
@@ -97,7 +98,7 @@ export function SkillImportModal(props: {
       <div class="skill-modal skill-import-modal">
         {/* 顶部 */}
         <div class="skill-modal-header">
-          <div class="skill-modal-title" style={{ padding: 0 }}>导入 Skill</div>
+          <div class="skill-modal-title" style={{ padding: 0 }}>{t('rp.skillImport.title')}</div>
           <button type="button" class="skill-modal-close" onClick={props.onClose}>
             <FiX size={16} />
           </button>
@@ -113,7 +114,7 @@ export function SkillImportModal(props: {
               onClick={() => fileRef?.click()}
             >
               <FiUpload size={13} />
-              上传文件
+              {t('rp.skillImport.upload')}
             </button>
             <input
               ref={fileRef}
@@ -126,11 +127,11 @@ export function SkillImportModal(props: {
 
           {/* Slug 输入 */}
           <div class="skill-import-field">
-            <label class="skill-import-label">Skill 标识（文件名）</label>
+            <label class="skill-import-label">{t('rp.skillImport.slugLabel')}</label>
             <input
               type="text"
               class="skill-import-input"
-              placeholder="如 my-skill（英文/数字/连字符）"
+              placeholder={t('rp.skillImport.slugPlaceholder')}
               value={slug()}
               onInput={(e) => setSlug(e.currentTarget.value)}
             />
@@ -138,11 +139,11 @@ export function SkillImportModal(props: {
 
           {/* 内容 textarea */}
           <div class="skill-import-field">
-            <label class="skill-import-label">Skill 内容（Markdown）</label>
+            <label class="skill-import-label">{t('rp.skillImport.contentLabel')}</label>
             <textarea
               class="skill-import-textarea"
               rows={12}
-              placeholder={'粘贴 Skill 内容，或上传 .md 文件。\n\n标准格式：\n# Skill 名称\n> 调用规则：一句话说明\n## 流程规划\n...'}
+              placeholder={t('rp.skillImport.contentPlaceholder')}
               value={content()}
               onInput={(e) => onContentChange(e.currentTarget.value)}
             />
@@ -160,7 +161,7 @@ export function SkillImportModal(props: {
             <Show when={saving()} fallback={<FiZap size={14} />}>
               <FiRefreshCw size={14} class="spin" />
             </Show>
-            保存 Skill
+            {t('rp.skillImport.save')}
           </button>
         </div>
       </div>
