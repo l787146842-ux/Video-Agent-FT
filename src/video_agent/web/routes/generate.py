@@ -19,7 +19,7 @@ from loguru import logger
 
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 from src.video_agent.exceptions import GenerationError
-from src.video_agent.web.generation import generate_image_via_provider
+from src.video_agent.web.generation import generate_image_via_provider, image_size_for
 from src.video_agent.web.provider_config import is_mock_provider
 from src.video_agent.web.providers import resolve_adapter_name
 from src.video_agent.state.manager import StateManager
@@ -72,6 +72,8 @@ class ImageGenRequest(BaseModel):
     model: str = ""
     size: str = "1280x720"
     aspect_ratio: str = "16:9"
+    # 分辨率档位（1K/2K/4K）：CLI 类供应商无 size 参数，靠提示词感知
+    resolution: str = ""
     reference_images: List[Dict[str, str]] = []
     # 关联到哪个 draft（完成后服务端自动回写）
     draft_id: str = ""
@@ -131,6 +133,7 @@ async def generate_image(body: ImageGenRequest):
                 body.prompt,
                 size=body.size or "1024x1024",
                 aspect_ratio=body.aspect_ratio,
+                resolution=body.resolution,
                 reference_images=ref_urls,
             )
             if task is None:
@@ -139,23 +142,52 @@ async def generate_image(body: ImageGenRequest):
             task["result"] = {"images": [image_url]}
             task["elapsed"] = round(time.monotonic() - t0, 1)
             _writeback_if_complete(task_id)
-            _notify_sse({"task_id": task_id, "status": "succeeded", "result": task["result"], "elapsed": task["elapsed"]})
+            _notify_sse({"task_id": task_id, "status": "succeeded", "kind": "image",
+                         "draft_id": body.draft_id, "result": task["result"], "elapsed": task["elapsed"]})
+            _tm.record_gen_log(
+                media_type="image", status="succeeded", provider=body.provider_id, model=body.model,
+                prompt=body.prompt, draft_id=body.draft_id, result_url=image_url,
+                elapsed=task["elapsed"], requested_size=f"{body.size} ({body.aspect_ratio})", source="manual",
+                task_id=task_id,
+            )
             logger.info(f"[Generate] 图片生成成功({task['elapsed']}s): {image_url[:80]}")
         except GenerationError as e:
             if task is not None:
                 task["status"] = "failed"
                 task["error"] = str(e)
                 task["elapsed"] = round(time.monotonic() - t0, 1)
-                _notify_sse({"task_id": task_id, "status": "failed", "error": str(e), "elapsed": task["elapsed"]})
+                _notify_sse({"task_id": task_id, "status": "failed", "kind": "image",
+                             "draft_id": body.draft_id, "error": str(e), "elapsed": task["elapsed"]})
+                _tm.record_gen_log(
+                    media_type="image", status="failed", provider=body.provider_id, model=body.model,
+                    prompt=body.prompt, draft_id=body.draft_id, error=str(e),
+                    elapsed=task["elapsed"], requested_size=f"{body.size} ({body.aspect_ratio})", source="manual",
+                    task_id=task_id,
+                )
             logger.warning(f"[Generate] 图片生成失败: {e}")
         except Exception as e:
             if task is not None:
                 task["status"] = "failed"
                 task["error"] = f"服务端异常: {e}"
                 task["elapsed"] = round(time.monotonic() - t0, 1)
-                _notify_sse({"task_id": task_id, "status": "failed", "error": str(e), "elapsed": task["elapsed"]})
+                _notify_sse({"task_id": task_id, "status": "failed", "kind": "image",
+                             "draft_id": body.draft_id, "error": str(e), "elapsed": task["elapsed"]})
+                _tm.record_gen_log(
+                    media_type="image", status="failed", provider=body.provider_id, model=body.model,
+                    prompt=body.prompt, draft_id=body.draft_id, error=str(e),
+                    elapsed=task["elapsed"], requested_size=f"{body.size} ({body.aspect_ratio})", source="manual",
+                    task_id=task_id,
+                )
             logger.exception(f"[Generate] 图片生成异常: {e}")
 
+    # 生成日志：提交即记录 started；SSE 同步通知前端点亮转圈
+    _tm.record_gen_log(
+        media_type="image", status="started", provider=body.provider_id, model=body.model,
+        prompt=body.prompt, draft_id=body.draft_id,
+        requested_size=f"{body.size} ({body.aspect_ratio})", source="manual",
+        task_id=task_id,
+    )
+    _notify_sse({"task_id": task_id, "status": "started", "kind": "image", "draft_id": body.draft_id})
     _track_task(_run_generation())
     return {"task_id": task_id, "status": "processing"}
 
@@ -221,6 +253,11 @@ async def generate_video(body: VideoGenRequest):
             mock=True,
             video_url=None,
         )
+        _tm.record_gen_log(
+            media_type="video", status="succeeded", provider=body.provider_id, model=body.model or "mock-video",
+            prompt=body.prompt, draft_id=body.draft_id, mock=True, source="manual",
+            task_id=result.task_id,
+        )
         logger.info(f"[Generate] [MOCK] 视频任务已提交: {result.task_id}")
         return {"task_id": result.task_id, "mock": True}
 
@@ -255,6 +292,7 @@ async def generate_video(body: VideoGenRequest):
     async def _run_video_generation():
         t0 = time.monotonic()
         task = _tasks.get(task_id)
+        size_note = f"{body.resolution} ({body.aspect_ratio}, {body.duration}s)"
         try:
             result = await adapter.generate(
                 image_url=image_url,
@@ -271,7 +309,14 @@ async def generate_video(body: VideoGenRequest):
                     task["video_url"] = result.video_url
                     task["elapsed"] = round(time.monotonic() - t0, 1)
                     _writeback_if_complete(task_id)
-                    _notify_sse({"task_id": task_id, "status": "succeeded", "video_url": result.video_url, "elapsed": task["elapsed"]})
+                    _notify_sse({"task_id": task_id, "status": "succeeded", "kind": "video",
+                                 "draft_id": body.draft_id, "video_url": result.video_url, "elapsed": task["elapsed"]})
+                    _tm.record_gen_log(
+                        media_type="video", status="succeeded", provider=body.provider_id, model=body.model,
+                        prompt=body.prompt, draft_id=body.draft_id, result_url=result.video_url,
+                        elapsed=task["elapsed"], requested_size=size_note, source="manual",
+                        task_id=task_id,
+                    )
                 return
 
             # 异步任务：轮询等待结果
@@ -281,16 +326,37 @@ async def generate_video(body: VideoGenRequest):
                 task["video_url"] = completed.video_url
                 task["elapsed"] = round(time.monotonic() - t0, 1)
                 _writeback_if_complete(task_id)
-                _notify_sse({"task_id": task_id, "status": "succeeded", "video_url": completed.video_url, "elapsed": task["elapsed"]})
+                _notify_sse({"task_id": task_id, "status": "succeeded", "kind": "video",
+                             "draft_id": body.draft_id, "video_url": completed.video_url, "elapsed": task["elapsed"]})
+                _tm.record_gen_log(
+                    media_type="video", status="succeeded", provider=body.provider_id, model=body.model,
+                    prompt=body.prompt, draft_id=body.draft_id, result_url=completed.video_url or "",
+                    elapsed=task["elapsed"], requested_size=size_note, source="manual",
+                    task_id=task_id,
+                )
                 logger.info(f"[Generate] 视频生成成功({task['elapsed']}s): {completed.video_url[:80] if completed.video_url else ''}")
         except Exception as e:
             if task:
                 task["status"] = "failed"
                 task["error"] = str(e)
                 task["elapsed"] = round(time.monotonic() - t0, 1)
-                _notify_sse({"task_id": task_id, "status": "failed", "error": str(e), "elapsed": task["elapsed"]})
+                _notify_sse({"task_id": task_id, "status": "failed", "kind": "video",
+                             "draft_id": body.draft_id, "error": str(e), "elapsed": task["elapsed"]})
+                _tm.record_gen_log(
+                    media_type="video", status="failed", provider=body.provider_id, model=body.model,
+                    prompt=body.prompt, draft_id=body.draft_id, error=str(e),
+                    elapsed=task["elapsed"], requested_size=size_note, source="manual",
+                    task_id=task_id,
+                )
             logger.warning(f"[Generate] 视频生成失败: {e}")
 
+    _tm.record_gen_log(
+        media_type="video", status="started", provider=body.provider_id, model=body.model,
+        prompt=body.prompt, draft_id=body.draft_id,
+        requested_size=f"{body.resolution} ({body.aspect_ratio}, {body.duration}s)", source="manual",
+        task_id=task_id,
+    )
+    _notify_sse({"task_id": task_id, "status": "started", "kind": "video", "draft_id": body.draft_id})
     _track_task(_run_video_generation())
     return {"task_id": task_id, "status": "processing"}
 
@@ -366,25 +432,54 @@ async def batch_generate_image(body: BatchImageGenRequest):
         prompt_text = draft["prompt"]
         provider_id = body.provider_id
         model_name = body.model
-        size = body.size
-        aspect_ratio = body.aspect_ratio
+        # 按草稿自身 比例 + 分辨率档位 计算尺寸（缺失时回退请求参数）
+        aspect_ratio = (draft.get("aspectRatio") or "").strip() or body.aspect_ratio
+        resolution = (draft.get("imageResolution") or "").strip().upper()
+        if resolution not in ("1K", "2K", "4K"):
+            resolution = "1K"
+        size = image_size_for(aspect_ratio, resolution)
+        size_note = f"{size} ({aspect_ratio}, {resolution})"
 
-        async def _run(tid=task_id, p=prompt_text, pid=provider_id, m=model_name, s=size, ar=aspect_ratio):
+        async def _run(tid=task_id, p=prompt_text, pid=provider_id, m=model_name, s=size, ar=aspect_ratio, res=resolution, sn=size_note, did=draft.get("id", "")):
             t0 = time.monotonic()
             task = _tasks.get(tid)
             try:
-                url = await generate_image_via_provider(pid, m, p, size=s, aspect_ratio=ar)
+                url = await generate_image_via_provider(pid, m, p, size=s, aspect_ratio=ar, resolution=res)
                 if task:
                     task["status"] = "succeeded"
                     task["result"] = {"images": [url]}
                     task["elapsed"] = round(time.monotonic() - t0, 1)
                     _writeback_if_complete(tid)
+                    _notify_sse({"task_id": tid, "status": "succeeded", "kind": "image",
+                                 "draft_id": did, "result": {"images": [url]}, "elapsed": task["elapsed"]})
+                    _tm.record_gen_log(
+                        media_type="image", status="succeeded", provider=pid, model=m, prompt=p,
+                        draft_id=did, result_url=url, elapsed=task["elapsed"],
+                        requested_size=sn, source="batch",
+                        task_id=tid,
+                    )
             except (GenerationError, Exception) as e:
                 if task:
                     task["status"] = "failed"
                     task["error"] = str(e)
                     task["elapsed"] = round(time.monotonic() - t0, 1)
+                    _notify_sse({"task_id": tid, "status": "failed", "kind": "image",
+                                 "draft_id": did, "error": str(e), "elapsed": task["elapsed"]})
+                    _tm.record_gen_log(
+                        media_type="image", status="failed", provider=pid, model=m, prompt=p,
+                        draft_id=did, error=str(e), elapsed=task["elapsed"],
+                        requested_size=sn, source="batch",
+                        task_id=tid,
+                    )
 
+        # 批量提交即记录 started 并通知前端点亮转圈
+        _tm.record_gen_log(
+            media_type="image", status="started", provider=provider_id, model=model_name,
+            prompt=prompt_text, draft_id=draft.get("id", ""),
+            requested_size=size_note, source="batch",
+            task_id=task_id,
+        )
+        _notify_sse({"task_id": task_id, "status": "started", "kind": "image", "draft_id": draft.get("id", "")})
         _track_task(_run())
 
     svc.save()
@@ -395,6 +490,61 @@ async def batch_generate_image(body: BatchImageGenRequest):
 async def get_task(task_id: str):
     """通用任务状态查询"""
     return await _poll_task(task_id)
+
+
+@router.get("/generate/active")
+async def get_active_tasks():
+    """查询仍在处理中的生成任务（前端刷新页面后恢复卡片/预览框读秒用）。
+
+    activeGenerations 仅存于前端内存，刷新即丢；本端点返回后端权威的
+    processing 任务列表，前端据此重新点亮转圈（并按 created_at 恢复已耗时）。
+    """
+    active = []
+    for tid, t in _tm.tasks.items():
+        if t.get("status") in ("processing", "pending"):
+            active.append({
+                "task_id": tid,
+                "draft_id": t.get("draft_id", ""),
+                "kind": "video" if tid.startswith("vid") else "image",
+                "created_at": t.get("created_at", time.time()),
+            })
+    return {"tasks": active}
+
+
+# ---------- 生成日志（顶部导航「生成日志」面板数据源） ----------
+
+class GenLogRequest(BaseModel):
+    media_type: str  # image | video | audio
+    status: str      # started | succeeded | failed
+    provider: str = ""
+    model: str = ""
+    prompt: str = ""
+    draft_id: str = ""
+    error: str = ""
+    result_url: str = ""
+    elapsed: float = 0.0
+    requested_size: str = ""
+    source: str = "manual"
+
+
+@router.get("/generation-logs")
+async def get_generation_logs(limit: int = 100):
+    """生成日志查询：图/视频/音频每次生成的成败记录（时间倒序）"""
+    return {"logs": _tm.get_gen_logs(limit)}
+
+
+@router.post("/generation-logs")
+async def add_generation_log(body: GenLogRequest):
+    """前端补录生成日志（如音频规划等未走后绔任务通道的生成行为）"""
+    if body.media_type not in ("image", "video", "audio"):
+        raise HTTPException(status_code=400, detail="media_type 必须为 image/video/audio")
+    entry = _tm.record_gen_log(
+        media_type=body.media_type, status=body.status, provider=body.provider,
+        model=body.model, prompt=body.prompt, draft_id=body.draft_id,
+        error=body.error, result_url=body.result_url, elapsed=body.elapsed,
+        requested_size=body.requested_size, source=body.source,
+    )
+    return {"ok": True, "log": entry}
 
 
 async def _poll_task(task_id: str) -> Dict[str, Any]:

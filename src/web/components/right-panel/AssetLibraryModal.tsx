@@ -23,7 +23,7 @@ function TAB_LABELS(): Record<Tab, string> {
 
 /**
  * "打开画布素材库"模态框（对齐旧版 asset-modal 三 tab）：
- * - 图片资产：熊布 asset library 里的图片库
+ * - 图片资产：画布 asset library 里的图片库
  * - 画布资产：当前画布上已经生成的素材
  * - 本地素材：用户本地 /workspace/assets/ 上传的素材
  *
@@ -128,7 +128,7 @@ export function AssetLibraryModal(props: {
   return (
     <Show when={props.open}>
       <div class="asset-modal">
-        <div class="asset-modal-backdrop" onClick={props.onClose} />
+        <div class="asset-modal-backdrop" onClick={() => props.onClose()} />
         <div class="asset-modal-panel">
           {/* 头部：3 tab + 跳转画布按钮 + 关闭 */}
           <div class="asset-modal-header">
@@ -145,7 +145,7 @@ export function AssetLibraryModal(props: {
             <button class="asset-modal-action" title={t('rp.asset.openCanvasTitle')} onClick={() => { props.onClose(); navigate('/canvas'); }}>
               <FiExternalLink size={13} /> {t('rp.asset.canvasJump')}
             </button>
-            <button class="asset-modal-close" onClick={props.onClose} title={t('rp.asset.close')}>
+            <button class="asset-modal-close" onClick={() => props.onClose()} title={t('rp.asset.close')}>
               <FiX size={16} />
             </button>
           </div>

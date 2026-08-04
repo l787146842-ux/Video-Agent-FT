@@ -2,8 +2,8 @@
  * 纯工具函数
  */
 
-/** 聊天历史窗口：发送给 Agent 的最近消息条数 */
-export const CHAT_HISTORY_WINDOW = 11;
+/** 聊天历史窗口：发送给 Agent 的最近消息条数（与后端 messages[-10:] 对齐） */
+export const CHAT_HISTORY_WINDOW = 10;
 
 /** HTML 转义，防止 XSS */
 export function escapeHtml(str: string): string {
@@ -39,10 +39,11 @@ export function uid(prefix = ''): string {
   return prefix ? `${prefix}-${ts}-${rand}` : `${ts}-${rand}`;
 }
 
-/** 防抖（带 flush/cancel）：flush 立即执行挂起的调用，供"保存"按钮等场景强制落盘 */
+/** 防抖（带 flush/cancel）：flush 立即执行挂起的调用，并等待"仍在飞行中"的上一次调用完成，
+ * 供"保存"按钮/项目切换前强制落盘（否则已发出未返回的请求会带着旧数据落到新项目上） */
 export interface DebouncedFn<T extends (...args: unknown[]) => void> {
   (...args: Parameters<T>): void;
-  flush: () => void;
+  flush: () => Promise<void>;
   cancel: () => void;
 }
 
@@ -52,22 +53,33 @@ export function debounce<T extends (...args: unknown[]) => void>(
 ): DebouncedFn<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pendingArgs: Parameters<T> | undefined;
+  /** 已发出、尚未完成的调用（异步 fn 的 Promise 链） */
+  let inflight: Promise<void> | undefined;
+  const invoke = (args: Parameters<T>) => {
+    const p = Promise.resolve(fn(...args) as unknown).then(
+      () => { if (inflight === p) inflight = undefined; },
+      () => { if (inflight === p) inflight = undefined; },
+    );
+    inflight = p;
+  };
   const wrapped = (...args: Parameters<T>) => {
     pendingArgs = args;
     clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
       pendingArgs = undefined;
-      fn(...args);
+      invoke(args);
     }, ms);
   };
-  wrapped.flush = () => {
-    if (timer === undefined || pendingArgs === undefined) return;
-    clearTimeout(timer);
-    timer = undefined;
-    const args = pendingArgs;
-    pendingArgs = undefined;
-    fn(...args);
+  wrapped.flush = async (): Promise<void> => {
+    if (timer !== undefined && pendingArgs !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+      const args = pendingArgs;
+      pendingArgs = undefined;
+      invoke(args);
+    }
+    await inflight;
   };
   wrapped.cancel = () => {
     clearTimeout(timer);

@@ -3,7 +3,6 @@
     const scripts = [
         '/static/js/i18n-core.js',
         '/static/js/i18n/common.js',
-        '/static/js/i18n/studio.js',
         '/static/js/i18n/api-settings.js',
     ];
     const tags = scripts.map(src => '<script src="' + src + '?v=' + VERSION + '"></script>').join('');

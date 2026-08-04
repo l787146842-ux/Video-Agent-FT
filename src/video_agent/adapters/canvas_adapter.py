@@ -1,7 +1,7 @@
 """
-CanvasAdapter — 熊布画布 HTTP API 封装（Rule4: 外部调用走 Adapter）。
+CanvasAdapter — 画布画布 HTTP API 封装（Rule4: 外部调用走 Adapter）。
 
-所有对熊布画布服务的 HTTP 请求集中在此，Tool 层不直接出现 httpx 调用。
+所有对画布画布服务的 HTTP 请求集中在此，Tool 层不直接出现 httpx 调用。
 失败统一抛 AdapterError。
 """
 import json
@@ -16,7 +16,7 @@ from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils import gen_id
 from src.video_agent.utils.paths import DATA_DIR
 
-# smart-image 节点默认缩放（与熊布 MEDIA_NODE_DEFAULT_SCALE 一致）
+# smart-image 节点默认缩放（与画布 MEDIA_NODE_DEFAULT_SCALE 一致）
 SMART_IMAGE_NODE_SCALE = 2
 # 单图节点在 scale=2 下的近似半宽/半高，用于让节点中心对准落点
 SMART_IMAGE_NODE_HALF = 224
@@ -26,7 +26,7 @@ DROP_CLAMP_MARGIN = 80
 # 节点间最小间距（世界坐标 px）
 NODE_GAP = 50
 
-# 画布版本漂移记录文件（P1-5：对接的熊布版本，供更新后比对告警）
+# 画布版本漂移记录文件（P1-5：对接的画布版本，供更新后比对告警）
 _CANVAS_VERSION_FILE = DATA_DIR / "canvas_integration.json"
 
 
@@ -37,8 +37,8 @@ def _validate_write_payload(
 ) -> None:
     """画布写回前的结构校验（P1-5）。
 
-    adapter 硬编码了熊布内部 schema（smart-image 的 images[]、viewport x/y/scale 等），
-    熊布是快速迭代的第三方项目，schema 漂移时宁可抛 AdapterError 也不写坏画布（Rule 7 边界自保）。
+    adapter 硬编码了画布内部 schema（smart-image 的 images[]、viewport x/y/scale 等），
+    画布是快速迭代的第三方项目，schema 漂移时宁可抛 AdapterError 也不写坏画布（Rule 7 边界自保）。
     只校验本项目写入路径所依赖的字段，不做全量 schema 校验。
     """
     for i, n in enumerate(nodes):
@@ -127,7 +127,7 @@ def _resolve_drop_world_point(
     """把落点的屏幕坐标换算为画布世界坐标。
 
     viewport: 画布保存的 {x, y, scale}（世界→屏幕：screen = world * scale + viewport）。
-    drop_point 相对画布 iframe 左上角的屏幕坐标，需扣除熊布外壳 UI 偏移（可配置估计值）。
+    drop_point 相对画布 iframe 左上角的屏幕坐标，需扣除画布外壳 UI 偏移（可配置估计值）。
     缺省/越界时回退到当前视口中心，保证节点始终落在用户视野内。
     """
     viewport = canvas.get("viewport") or {}
@@ -156,7 +156,7 @@ def _resolve_drop_world_point(
 
 
 class CanvasAdapter:
-    """熊布画布 API 客户端"""
+    """画布画布 API 客户端"""
 
     def __init__(self, base_url: str = "", timeout: int = 0):
         self.base_url = (base_url or settings.canvas_base_url).rstrip("/")
@@ -183,7 +183,7 @@ class CanvasAdapter:
             raise
         except httpx.ConnectError as exc:
             raise AdapterError(
-                f"无法连接画布服务 ({self.base_url})，请确认熊布已启动: {exc}"
+                f"无法连接画布服务 ({self.base_url})，请确认画布已启动: {exc}"
             ) from exc
         except httpx.TimeoutException as exc:
             raise AdapterError(f"画布服务响应超时 ({self.timeout}s): {exc}") from exc
@@ -221,7 +221,7 @@ class CanvasAdapter:
         _max_retries: int = 3,
     ) -> Dict[str, Any]:
         """保存画布（PUT 全量写入），409 冲突时自动 re-read + re-apply（最多 _max_retries 次）"""
-        # 写前校验：熊布 schema 漂移时在此拦截，避免写坏画布数据
+        # 写前校验：画布 schema 漂移时在此拦截，避免写坏画布数据
         _validate_write_payload(nodes or [], connections or [], viewport or {})
         payload = {
             "title": title,
@@ -284,7 +284,7 @@ class CanvasAdapter:
             raise
         except httpx.ConnectError as exc:
             raise AdapterError(
-                f"无法连接画布服务 ({self.base_url})，请确认熊布已启动: {exc}"
+                f"无法连接画布服务 ({self.base_url})，请确认画布已启动: {exc}"
             ) from exc
         except httpx.TimeoutException as exc:
             raise AdapterError(f"画布服务响应超时 ({self.timeout}s): {exc}") from exc
@@ -403,12 +403,12 @@ class CanvasAdapter:
         return {"node_id": node["id"], "canvas_id": canvas_id, "canvas_title": canvas.get("title", "")}
 
     async def list_asset_library(self) -> Any:
-        """获取熊布素材库管理系统完整数据（libraries/categories/items）"""
+        """获取画布素材库管理系统完整数据（libraries/categories/items）"""
         data = await self._request("GET", "/api/asset-library")
         return data.get("library", data)
 
     async def list_local_assets(self) -> Any:
-        """获取熊布本地上传素材列表"""
+        """获取画布本地上传素材列表"""
         data = await self._request("GET", "/api/local-assets")
         return data.get("items", [])
 
@@ -425,7 +425,7 @@ class CanvasAdapter:
     # ---------- 在线检测与智能路由 ----------
 
     async def is_online(self) -> bool:
-        """检测熊布是否在线（带缓存，避免高频探测）"""
+        """检测画布是否在线（带缓存，避免高频探测）"""
         global _health_cache, _health_cache_time
         cache_ttl = settings.canvas_health_cache_seconds
         if _health_cache is not None and (time.time() - _health_cache_time) < cache_ttl:
@@ -439,24 +439,24 @@ class CanvasAdapter:
         _health_cache = online
         _health_cache_time = time.time()
         if not online:
-            logger.debug("[CanvasAdapter] 熊布离线")
+            logger.debug("[CanvasAdapter] 画布离线")
         return online
 
     async def generate_image_online(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """通过熊布的 /api/online-image 接口同步生图。
+        """通过画布的 /api/online-image 接口同步生图。
         失败抛 AdapterError。"""
         return await self._request("POST", "/api/online-image", json=payload)
 
     # ---------- 版本漂移探测（P1-5） ----------
 
     async def get_app_info(self) -> Dict[str, Any]:
-        """读取熊布 /api/app-info（含 version 字段）"""
+        """读取画布 /api/app-info（含 version 字段）"""
         return await self._request("GET", "/api/app-info")
 
     async def check_version_drift(self) -> Optional[str]:
-        """比对熊布版本与上次记录，漂移时记录并返回告警信息（无漂移/离线返回 None）。
+        """比对画布版本与上次记录，漂移时记录并返回告警信息（无漂移/离线返回 None）。
 
-        adapter 硬编码了熊布内部 schema，熊布更新后需重新验证集成（跑契约测试），
+        adapter 硬编码了画布内部 schema，画布更新后需重新验证集成（跑契约测试），
         故启动时探测一次版本并在漂移时 warning。记录持久化到 data/canvas_integration.json。
         """
         try:
@@ -477,7 +477,7 @@ class CanvasAdapter:
         drift_msg: Optional[str] = None
         if recorded and recorded != version:
             drift_msg = (
-                f"熊布画布已更新: {recorded} → {version}。"
+                f"画布画布已更新: {recorded} → {version}。"
                 "集成依赖其内部 schema，请重新验证（运行 tests/integration 画布契约测试）"
             )
             logger.warning(f"[CanvasAdapter] {drift_msg}")

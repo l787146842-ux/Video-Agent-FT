@@ -122,7 +122,7 @@ export function RefAssetPickerModal(props: {
   return (
     <Show when={props.open}>
       <div class="asset-modal canvas-picker-modal">
-        <div class="asset-modal-backdrop" onClick={props.onClose} />
+        <div class="asset-modal-backdrop" onClick={() => props.onClose()} />
         <div class="asset-modal-panel">
           {/* 头部：标题 + 源选择器 + 关闭 */}
           <div class="asset-modal-header">
@@ -186,7 +186,7 @@ export function RefAssetPickerModal(props: {
               </Show>
             </div>
 
-            <button class="asset-modal-close" onClick={props.onClose} title="关闭">
+            <button class="asset-modal-close" onClick={() => props.onClose()} title="关闭">
               <FiX size={16} />
             </button>
           </div>
@@ -253,7 +253,7 @@ export function RefAssetPickerModal(props: {
           {/* 底部提示 */}
           <div class="asset-modal-footer">
             <span class="asset-selected-count">点击素材卡片即可添加到参考素材</span>
-            <button class="btn-secondary" onClick={props.onClose}>完成</button>
+            <button class="btn-secondary" onClick={() => props.onClose()}>完成</button>
           </div>
         </div>
       </div>

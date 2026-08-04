@@ -115,7 +115,7 @@ def public_provider(p: Dict[str, Any]) -> Dict[str, Any]:
 # ---------- API 端点 ----------
 @router.get("/providers", response_model=ProvidersResponse)
 async def get_providers():
-    """获取所有 provider 配置（脱敏，合并本地 + 熊布）"""
+    """获取所有 provider 配置（脱敏，合并本地 + 画布）"""
     providers = load_merged_providers()
     adapter = get_canvas_adapter()
     canvas_online = await adapter.is_online()
@@ -127,13 +127,13 @@ async def get_providers():
 
 @router.get("/canvas-assets")
 async def get_canvas_assets():
-    """代理获取熊布素材库管理系统的完整数据（前端“素材库”按钮调用）"""
+    """代理获取画布素材库管理系统的完整数据（前端“素材库”按钮调用）"""
     adapter = get_canvas_adapter()
     try:
         library = await adapter.list_asset_library()
         return {"library": library, "canvas_online": True}
     except Exception as e:
-        logger.warning(f"[Providers] 获取熊布素材库失败: {e}")
+        logger.warning(f"[Providers] 获取画布素材库失败: {e}")
         return {"library": None, "canvas_online": False, "error": str(e)}
 
 
@@ -164,7 +164,7 @@ async def asset_picker(type: str = "image"):
 
 
 def _flatten_asset_library(library: Any, base_url: str) -> List[Dict[str, Any]]:
-    """将熊布 asset-library 结构平坦化为标准 items"""
+    """将画布 asset-library 结构平坦化为标准 items"""
     items: List[Dict[str, Any]] = []
     if not library or not isinstance(library, dict):
         return items
@@ -189,7 +189,7 @@ def _flatten_asset_library(library: Any, base_url: str) -> List[Dict[str, Any]]:
 
 
 def _flatten_canvas_assets(raw: Any, base_url: str) -> List[Dict[str, Any]]:
-    """将熊布 canvas-assets 平坦化"""
+    """将画布 canvas-assets 平坦化"""
     items: List[Dict[str, Any]] = []
     entries = raw if isinstance(raw, list) else (raw.get("items", []) if isinstance(raw, dict) else [])
     for entry in entries[:200]:
@@ -207,7 +207,7 @@ def _flatten_canvas_assets(raw: Any, base_url: str) -> List[Dict[str, Any]]:
 
 
 def _flatten_local_assets(raw: Any, base_url: str) -> List[Dict[str, Any]]:
-    """将熊布 local-assets 平坦化"""
+    """将画布 local-assets 平坦化"""
     items: List[Dict[str, Any]] = []
     entries = raw if isinstance(raw, list) else []
     for entry in entries[:200]:
@@ -261,7 +261,7 @@ class ProviderProbeRequest(BaseModel):
 
 
 def _normalize_openai_base_url(base_url: str) -> str:
-    """与熊布保持一致：若 base_url 未以 /v1 结尾则自动补全，避免用户手填时漏掉路径段。"""
+    """与画布保持一致：若 base_url 未以 /v1 结尾则自动补全，避免用户手填时漏掉路径段。"""
     url = base_url.rstrip("/")
     if not url.endswith("/v1"):
         url += "/v1"

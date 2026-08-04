@@ -1,11 +1,13 @@
 import {
-  FiArrowUp, FiBookOpen, FiCpu, FiFolder, FiGlobe, FiPaperclip, FiSquare,
+  FiArrowUp, FiBookOpen, FiCpu, FiDatabase, FiFolder, FiGlobe, FiPaperclip, FiSquare,
 } from 'solid-icons/fi';
 import {
   agentProvider, setAgentProvider, agentModel, setAgentModel,
 } from '@/stores/agent-prefs';
-import { createSignal } from 'solid-js';
+import { createSignal, createEffect, onMount } from 'solid-js';
 import { apiProvidersFor, providerModels } from '@/lib/providers';
+import { getContextUsage, type ContextUsage } from '@/api/agent';
+import { chatState } from '@/stores/chat';
 import { t } from '@/lib/locale';
 import { PillDropdown } from './PillDropdown';
 import { SkillPicker } from './SkillPicker';
@@ -33,6 +35,23 @@ export function ChatInputToolbar(props: {
     providerModels(agentProvider(), 'chat').map((m) => ({ value: m, label: m }));
   /** 「素材库」选择弹窗开关 */
   const [assetPickerOpen, setAssetPickerOpen] = createSignal(false);
+
+  /** 上下文用量（发送按钮旁状态图标，悬停显示已用多少K） */
+  const [usage, setUsage] = createSignal<ContextUsage | null>(null);
+  function refreshUsage() {
+    void getContextUsage().then(setUsage).catch(() => { /* 后端未就绪静默 */ });
+  }
+  onMount(refreshUsage);
+  // 消息数量变化（发送/回复完成）后刷新用量
+  createEffect(() => {
+    void chatState.messages.length;
+    refreshUsage();
+  });
+  const usageLabel = () => {
+    const u = usage();
+    if (!u) return '…';
+    return `${(u.est_tokens / 1024).toFixed(1)}K`;
+  };
 
   return (
     <div class="chat-input-toolbar">
@@ -84,6 +103,21 @@ export function ChatInputToolbar(props: {
         </button>
       </div>
       <div class="toolbar-right">
+        {/* 上下文用量状态图标：悬停显示已用多少K上下文 */}
+        <div class="context-usage-wrap">
+          <button
+            type="button"
+            class="context-usage-btn"
+            aria-label="上下文用量"
+            onClick={refreshUsage}
+          >
+            <FiDatabase size={12} />
+            <span class="context-usage-value">{usageLabel()}</span>
+          </button>
+          <div class="context-usage-tip" role="tooltip">
+            {usage() ? `${(usage()!.est_tokens / 1024).toFixed(1)}K 上下文已使用` : '统计中…'}
+          </div>
+        </div>
         <button
           type="button"
           class={`send-btn ${props.busy ? 'send-btn-busy' : ''}`}

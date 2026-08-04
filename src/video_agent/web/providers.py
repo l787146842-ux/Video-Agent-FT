@@ -20,7 +20,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 
 def get_available_providers() -> List[Dict[str, Any]]:
-    """返回所有已启用的 provider 列表（合并本地 + 熊布，供 /api/config 等端点使用）"""
+    """返回所有已启用的 provider 列表（合并本地 + 画布，供 /api/config 等端点使用）"""
     result = []
     for p in load_merged_providers():
         if p.get("enabled", True):

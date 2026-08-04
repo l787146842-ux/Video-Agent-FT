@@ -1,7 +1,8 @@
+/* eslint-disable max-lines -- 新增删除媒体后超行，待后续拆分；新增代码仍受规则约束 */
 import {
   createSignal, createEffect, onCleanup, Show, Switch, Match,
 } from 'solid-js';
-import { FiRefreshCw, FiGrid, FiX, FiZoomIn } from 'solid-icons/fi';
+import { FiRefreshCw, FiGrid, FiX, FiTrash2, FiNavigation } from 'solid-icons/fi';
 import { state, findDraftRecord, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { showContextMenu } from '@/components/shared/ContextMenu';
@@ -60,7 +61,9 @@ function MediaContent(props: { draft: Draft; url: string; onImageClick?: () => v
         />
       }>
         <Match when={props.draft.mediaType === 'video'}>
-          <video src={props.url} controls />
+          {/* preload=metadata：切卡片时只加载首帧/元数据，避免每次点卡片
+              都后台全量下载视频（大文件时会明显卡顿）；点击播放时照常加载 */}
+          <video src={props.url} controls preload="metadata" />
         </Match>
         <Match when={props.draft.mediaType === 'audio'}>
           <div class="preview-audio-wrap">
@@ -154,10 +157,27 @@ export function MediaViewer() {
     input.click();
   }
 
+  /** 删除当前预览媒体（清空图片/视频/音频地址，保留提示词与参数） */
+  function deleteMedia() {
+    const current = rec();
+    if (!current) {
+      showToast('请先在左侧选择一个草稿卡片', 'warning');
+      return;
+    }
+    const { draft: d, type } = current;
+    if (!d.imgUrl && !d.videoUrl && !d.audioUrl) {
+      showToast('当前草稿没有可删除的媒体', 'warning');
+      return;
+    }
+    studioActions.updateDraftLocal(type, d.id, { imgUrl: '', videoUrl: '', audioUrl: '' });
+    showToast(`已删除「${d.label || '草稿'}」的媒体（Ctrl+Z 可撤销）`, 'success');
+  }
+
   function onContextMenu(e: MouseEvent) {
     showContextMenu(e, [
       { label: '替换媒体文件', icon: FiRefreshCw, onClick: triggerUpload },
       { label: '导入画布内的图片', icon: FiGrid, onClick: () => setPickerOpen(true) },
+      { label: '删除媒体', icon: FiTrash2, danger: true, onClick: deleteMedia },
     ]);
   }
 
@@ -204,8 +224,8 @@ export function MediaViewer() {
           <p>选择左侧草稿卡片开始创作</p>
         </div>
       }>
-        {/* 生成中优先显示进度环（不改动已有媒体）；否则显示已有媒体或空态 */}
-        <Show when={genRec()} fallback={
+        {/* 生成中且尚未出图：显示进度环；已出图（含刷新恢复/写回先于收尾）：优先显示媒体 */}
+        <Show when={genRec() && !mediaUrl()} fallback={
           <Show when={mediaUrl()} fallback={
             <PreviewEmpty hint={emptyHint()} />
           }>
@@ -220,14 +240,48 @@ export function MediaViewer() {
         </Show>
       </Show>
 
-      {/* 图片放大查看 lightbox（支持滚轮缩放） */}
+      {/* 图片放大查看 lightbox（支持滚轮缩放 + 鼠标按住拖拽平移） */}
       <Show when={lightboxUrl()}>
         {(() => {
           const [zoom, setZoom] = createSignal(1);
+          const [pan, setPan] = createSignal({ x: 0, y: 0 });
+          const [dragging, setDragging] = createSignal(false);
+          let startX = 0;
+          let startY = 0;
+          let baseX = 0;
+          let baseY = 0;
+
+          const closeLightbox = () => {
+            setLightboxUrl('');
+            setZoom(1);
+            setPan({ x: 0, y: 0 });
+          };
+
+          /** 按住图片拖动：上下左右平移（window 级监听，拖出图片不丢手势） */
+          function onImgMouseDown(e: MouseEvent) {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragging(true);
+            startX = e.clientX;
+            startY = e.clientY;
+            baseX = pan().x;
+            baseY = pan().y;
+            const onMove = (ev: MouseEvent) => {
+              setPan({ x: baseX + (ev.clientX - startX), y: baseY + (ev.clientY - startY) });
+            };
+            const onUp = () => {
+              setDragging(false);
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+          }
+
           return (
             <div
               class="preview-lightbox"
-              onClick={() => { setLightboxUrl(''); setZoom(1); }}
+              onClick={() => closeLightbox()}
               onWheel={(e) => {
                 e.preventDefault();
                 setZoom((z) => Math.min(5, Math.max(0.2, z - e.deltaY * 0.001)));
@@ -236,15 +290,17 @@ export function MediaViewer() {
               <img
                 src={lightboxUrl()}
                 alt="放大预览"
-                class="preview-lightbox-img"
-                style={{ transform: `scale(${zoom()})` }}
+                class={`preview-lightbox-img ${dragging() ? 'preview-lightbox-img-dragging' : ''}`}
+                style={{ transform: `translate(${pan().x}px, ${pan().y}px) scale(${zoom()})` }}
                 onClick={(e) => e.stopPropagation()}
+                onMouseDown={onImgMouseDown}
+                title="按住拖动移动，滚轮缩放"
               />
               <span class="preview-lightbox-zoom">{Math.round(zoom() * 100)}%</span>
               <button
                 type="button"
                 class="preview-lightbox-close"
-                onClick={() => { setLightboxUrl(''); setZoom(1); }}
+                onClick={() => closeLightbox()}
                 title="关闭 (Esc)"
               >
                 <FiX size={20} />
@@ -252,6 +308,21 @@ export function MediaViewer() {
             </div>
           );
         })()}
+      </Show>
+
+      {/* 导航定位按钮（右下角）：左面板自动定位到当前预览对应的
+          关键元素/分镜/音频页签及卡片（选中态 + 滚动高亮） */}
+      <Show when={draft()}>
+        <button
+          type="button"
+          class="preview-locate-btn"
+          title="在左侧故事板中定位当前预览卡片"
+          onClick={() => studioActions.locateSelectedInBoard()}
+          onDblClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.stopPropagation()}
+        >
+          <FiNavigation size={15} />
+        </button>
       </Show>
 
       {/* 画布图片导入弹窗 */}

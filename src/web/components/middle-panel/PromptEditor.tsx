@@ -1,13 +1,14 @@
-import { For, Show, createEffect } from 'solid-js';
+import { For, Show, createEffect, createSignal } from 'solid-js';
 import { FiChevronDown, FiChevronUp, FiImage, FiVideo, FiMusic } from 'solid-icons/fi';
 import {
-  state, studioActions, findDraftRecord, persistBoard,
+  state, setState, studioActions, findDraftRecord, persistBoard,
 } from '@/stores/studio';
 import { safeUrl } from '@/lib/utils';
 import {
   buildRefAssetMap, renderPromptToDOM, serializeDOMToText,
 } from '@/lib/prompt-ref-utils';
 import { usePromptMention } from '@/hooks/use-prompt-mention';
+import { MediaLightbox } from '@/components/right-panel/MediaLightbox';
 import { RefAssetBar } from './RefAssetBar';
 
 /**
@@ -22,6 +23,36 @@ export function PromptEditor() {
   const collapsed = () => state.isPromptCollapsed;
 
   let editorRef: HTMLDivElement | undefined;
+  /** 编辑器当前已渲染的草稿 id（识别“草稿切换”，保证切换后必刷新内容） */
+  let renderedDraftId = '';
+
+  /** 把当前选中草稿的提示词渲染进指定编辑器（@引用 chip 化） */
+  function renderInto(el: HTMLElement) {
+    const text = draft()?.prompt || '';
+    renderPromptToDOM(el, text, buildRefAssetMap(refAssets(), state.keyElements));
+  }
+
+  /** 回调用 ref：编辑器节点挂载/重新挂载（草稿切换、折叠展开、项目切换）时
+   * 立即渲染内容，消除“渲染 effect 与节点重建时序竞争”导致提示词不显示、
+   * 刷新页面才恢复的问题。 */
+  function attachEditor(el: HTMLDivElement) {
+    editorRef = el;
+    renderedDraftId = state.selectedDraftId;
+    if (document.activeElement !== el) renderInto(el);
+  }
+
+  /** 点击 @ 缩略块放大预览（url + 类型） */
+  const [preview, setPreview] = createSignal<{ url: string; kind: string } | null>(null);
+
+  /** 点击编辑器内的 @ 缩略块（图片/视频/音频）→ 灯箱放大查看 */
+  function handleChipClick(e: MouseEvent) {
+    const chip = (e.target as HTMLElement).closest('.mention-chip') as HTMLElement | null;
+    if (!chip) return;
+    const url = chip.dataset.url || '';
+    if (!url) return;
+    e.preventDefault();
+    setPreview({ url, kind: chip.dataset.kind || 'image' });
+  }
 
   const refAssets = () => draft()?.refAssets || [];
   const maxRefs = () => (state.selectedType === 'shot' ? 2 : 5);
@@ -61,14 +92,24 @@ export function PromptEditor() {
 
   // 外部更新（切换草稿 / Agent 写入 / 折叠展开）时，把纯文本重新渲染为缩略块
   createEffect(() => {
-    state.selectedDraftId; // 跟踪草稿切换
+    const id = state.selectedDraftId; // 跟踪草稿切换
     collapsed(); // 跟踪折叠展开（重新挂载编辑器）
-    const text = draft()?.prompt || '';
+    const storePrompt = draft()?.prompt; // 跟踪提示词外部更新（Agent 写回等）
     const el = editorRef;
-    if (!el) return;
-    if (document.activeElement !== el) {
-      renderPromptToDOM(el, text, buildRefAssetMap(refAssets(), state.keyElements));
+    // 未挂载/已脱离文档：重新挂载时回调 ref 会负责渲染，这里不处理
+    if (!el || !el.isConnected) return;
+    const draftChanged = id !== renderedDraftId;
+    renderedDraftId = id;
+    if (document.activeElement === el) {
+      if (!draftChanged) {
+        // 同草稿编辑中：store 值与编辑器内容一致（自己输入的回声）则跳过，不打断输入；
+        // 不一致说明被外部覆盖（Agent done 快照/撤销重做），失焦后按最新值渲染
+        if (serializeDOMToText(el) === (storePrompt || '')) return;
+      }
+      // 切到别的草稿/项目/被外部覆盖：先失焦（避免旧内容被后续输入写进新草稿），再渲染新内容
+      el.blur();
     }
+    renderInto(el);
   });
 
   return (
@@ -97,12 +138,14 @@ export function PromptEditor() {
             {/* 提示词输入框（contenteditable，@ 插入缩略块）+ 提及弹层 */}
             <div class="prompt-textarea-wrap">
               <div
-                ref={editorRef}
+                ref={attachEditor}
                 class="prompt-textarea prompt-editor-input"
                 contentEditable={true}
                 role="textbox"
                 data-placeholder="Agent 将在此输出推演出的详细提示词…（输入 @ 引用参考素材或故事板媒体）"
                 onInput={handleEditorInput}
+                onFocus={() => setState('editingDraftId', state.selectedDraftId)}
+                onClick={handleChipClick}
                 onPaste={(e) => {
                   // 粘贴统一转为纯文本，避免富文本格式污染提示词
                   e.preventDefault();
@@ -135,6 +178,7 @@ export function PromptEditor() {
                   }
                 }}
                 onBlur={() => {
+                  setState('editingDraftId', '');
                   persistPrompt();
                   setTimeout(() => {
                     const el = document.activeElement;
@@ -182,6 +226,15 @@ export function PromptEditor() {
               </Show>
             </div>
           </div>
+        </Show>
+
+        {/* @ 缩略块点击放大预览 */}
+        <Show when={preview()}>
+          <MediaLightbox
+            url={preview()!.url}
+            kind={preview()!.kind}
+            onClose={() => setPreview(null)}
+          />
         </Show>
       </div>
     </Show>

@@ -20,7 +20,7 @@ from src.video_agent.state.manager import StateManager
 
 
 class GenerationTaskManager:
-    """生成任务管理器 — 统一管理图片/视频生成任务的生命周期。"""
+    """生成任务管理器 — 统一管理图片/视频生成任务的生命周期与生成日志。"""
 
     def __init__(self):
         self._tasks: Dict[str, Dict[str, Any]] = {}
@@ -28,6 +28,9 @@ class GenerationTaskManager:
         self._sse_subscribers: List[asyncio.Queue] = []
         self._task_ttl = settings.task_ttl_seconds
         self._task_max = settings.task_max
+        # 生成日志环形缓冲（最新在前）：图/视频/音频每次生成的成败记录，
+        # 供顶部导航「生成日志」面板展示（照搬画布日志风格）
+        self._gen_logs: List[Dict[str, Any]] = []
 
     # ====== 任务 CRUD ======
 
@@ -100,6 +103,74 @@ class GenerationTaskManager:
         for q in dead:
             self._sse_subscribers.remove(q)
 
+    # ====== 生成日志（图/视频/音频，无论成败均记录） ======
+
+    def record_gen_log(
+        self,
+        *,
+        media_type: str,
+        status: str,
+        provider: str = "",
+        model: str = "",
+        prompt: str = "",
+        draft_id: str = "",
+        error: str = "",
+        result_url: str = "",
+        elapsed: float = 0.0,
+        requested_size: str = "",
+        mock: bool = False,
+        source: str = "",
+        task_id: str = "",
+    ) -> Dict[str, Any]:
+        """追加/合并生成日志（最新在前，上限 _GEN_LOG_MAX 条）。
+
+        media_type: image | video | audio
+        status: started | succeeded | failed
+        source: 触发来源（agent / manual / batch），便于排查
+        task_id: 同一任务的 started 与终态（succeeded/failed）按 task_id
+        合并为同一条记录（原地更新），避免任务成功后日志里仍残留「进行中」。
+        """
+        # 终态合并：找到同 task_id 的 started 条目则原地更新
+        if task_id and status in ("succeeded", "failed"):
+            for entry in self._gen_logs:
+                if entry.get("task_id") == task_id and entry.get("status") == "started":
+                    entry["status"] = status
+                    entry["error"] = error
+                    entry["result_url"] = result_url
+                    entry["elapsed"] = round(elapsed, 1)
+                    if model:
+                        entry["model"] = model
+                    return entry
+
+        entry: Dict[str, Any] = {
+            "id": f"gl-{int(time.time() * 1000)}-{len(self._gen_logs) % 1000}",
+            "task_id": task_id,
+            "media_type": media_type,
+            "status": status,
+            "provider": provider,
+            # 供应商显示名（API 配置页的名称，如 Grsai/Antigravity CLI），
+            # 前端优先展示它；内部 id（如 custom-api）仅留作排查
+            "provider_name": _resolve_provider_display_name(provider),
+            "model": model,
+            "prompt": (prompt or "")[:300],
+            "draft_id": draft_id,
+            "error": error,
+            "result_url": result_url,
+            "elapsed": round(elapsed, 1),
+            "requested_size": requested_size,
+            "mock": mock,
+            "source": source,
+            "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        self._gen_logs.insert(0, entry)
+        if len(self._gen_logs) > _GEN_LOG_MAX:
+            del self._gen_logs[_GEN_LOG_MAX:]
+        return entry
+
+    def get_gen_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """返回最近 N 条生成日志（时间倒序）"""
+        return self._gen_logs[: max(1, min(limit, _GEN_LOG_MAX))]
+
     # ====== 内部清理 ======
 
     def _purge_stale(self) -> None:
@@ -122,6 +193,27 @@ class GenerationTaskManager:
 
 
 # ====== 全局单例 ======
+
+# 生成日志保留上限（内存环形缓冲，不落盘；重启后清空属预期行为）
+_GEN_LOG_MAX = 200
+
+
+def _resolve_provider_display_name(provider_id: str) -> str:
+    """供应商内部 id → API 配置页的显示名（如 custom-api → Grsai）。
+
+    日志面板展示用；解析失败回退内部 id。懒加载导入避免模块循环。
+    """
+    if not provider_id:
+        return ""
+    try:
+        from src.video_agent.web.provider_config import get_provider_config
+        cfg = get_provider_config(provider_id)
+        if cfg and cfg.get("name"):
+            return str(cfg["name"])
+    except Exception:
+        pass
+    return provider_id
+
 
 _instance: Optional[GenerationTaskManager] = None
 

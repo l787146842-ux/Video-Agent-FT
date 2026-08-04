@@ -13,9 +13,10 @@
 - **禁止**在 route 中直接调用 LLM Adapter 或自行实现多步循环
 
 ### Rule 2: 多步循环唯一实现
-- `web/agent_loop.py` 中的 `run_agent_loop()` 是多步循环的**唯一实现**
+- `core/agent_loop.py` 中的 `run_agent_loop()` 是多步循环的**唯一实现**（原 web/agent_loop.py 已下沉，旧路径仅为 DEPRECATED 兼容壳）
 - Planner 非流式路径委托给它，不得在其他地方复制循环逻辑
 - `MAX_STEPS` 从 `config.py settings.max_steps` 读取
+- **层级例外登记**：`web/action_executor.py`（StudioActionExecutor）因依赖 web 层生成管线暂留 web 层，core.planner 对它的引用是唯一允许的 core→web 依赖，后续重构时以依赖注入消除
 
 ### Rule 3: StateManager 唯一写入点
 - `state/manager.py` 中的 `StateManager` 是状态的**唯一写入点**
@@ -44,8 +45,8 @@
 - 通过 `utils/prompts.py::load_prompt()` 加载
 - **禁止**在代码中硬编码超过 3 行的 prompt 字符串
 
-### Rule 7: 画布（熊布）边界 — 任何时候都禁止修改
-- 画布（熊布）是**独立迭代的项目**，其代码不在本仓库内，**任何时候都禁止修改其任何文件**
+### Rule 7: 画布（画布）边界 — 任何时候都禁止修改
+- 画布（画布）是**独立迭代的项目**，其代码不在本仓库内，**任何时候都禁止修改其任何文件**
 - 双向独立：本项目扩展功能**不得要求改动画布**；画布更新也**不应影响**本项目
 - 与画布的所有交互（读素材、写节点、在线检测等）只能走其**既有公开接口**（HTTP API / WebSocket / iframe 嵌入），统一封装在 `adapters/canvas_adapter.py`
 - 画布既有接口能力之外的需求（例：读取画布内选中状态）一律视为**不可实现**，**禁止**通过修改画布源码、注入脚本、读取其本地文件等方式补齐
@@ -139,7 +140,7 @@
 - 作为 Tool 接入（继承 BaseTool），不作为 route 内联逻辑
 - 外部 HTTP 调用封装在 Adapter 中
 - 操作结果通过 StateManager 持久化
-- **边界**：熊布画布代码任何时候禁止修改（Rule 7），只能消费其既有公开接口
+- **边界**：画布画布代码任何时候禁止修改（Rule 7），只能消费其既有公开接口
 
 ### 4.3 接入 CLI 工具（如 Codex CLI / Gemini CLI）
 - 参考 `adapters/agy_cli.py` 的模式
@@ -196,11 +197,11 @@ python -m pytest tests/integration/ -q  # 仅集成
 ```
 src/video_agent/
 ├── core/planner.py          ← Agent 唯一入口（Rule1）
+├── core/agent_loop.py       ← 多步循环唯一实现（Rule2）
 ├── web/
-│   ├── agent_loop.py        ← 多步循环唯一实现（Rule2）
-│   ├── actions.py           ← studio-actions 解析执行
+│   ├── agent_loop.py        ← DEPRECATED 兼容壳，re-export core.agent_loop
+│   ├── actions.py           ← studio-actions 解析执行（re-export 入口）
 │   ├── app.py               ← FastAPI 主应用 + 路由注册
-│   ├── state_service.py     ← DEPRECATED，用 StateManager
 │   └── routes/              ← API 端点（薄层，不放业务逻辑）
 ├── state/
 │   ├── manager.py           ← 唯一写入点（Rule3）
@@ -239,7 +240,7 @@ src/video_agent/
 
 完成任何修改后，逐项确认：
 
-- [ ] 没有修改画布（熊布）项目的任何文件（Rule 7）
+- [ ] 没有修改画布（画布）项目的任何文件（Rule 7）
 - [ ] 没有在 routes/ 中直接调用 httpx/requests
 - [ ] 没有绕过 Planner 直接处理用户消息
 - [ ] 没有绕过 StateManager 直接写状态文件

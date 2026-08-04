@@ -32,6 +32,7 @@ export interface CanvasDropImageRequest {
 export interface ChatRequest {
   message: string;
   system_prompt?: string;
+  request_id?: string;
   provider?: string;
   model?: string;
   ms_model?: string;
@@ -45,6 +46,7 @@ export interface ChatRequest {
   context_mode?: string;
   asset_mode?: string;
   skill_slug?: string;
+  skill_name?: string;
 }
 
 export interface ChatResponse {
@@ -54,7 +56,14 @@ export interface ChatResponse {
   warnings?: string[];
   confirmation?: string;
   documents_written?: string[];
+  image_urls?: string[];
+  chat_inserts?: Record<string, unknown>[];
+  action_log?: string[];
   state?: Record<string, unknown> | unknown;
+}
+
+export interface CreateConversationRequest {
+  title?: string;
 }
 
 export interface DeleteProjectRequest {
@@ -114,6 +123,20 @@ export interface FetchModelsResponse {
   error?: string;
 }
 
+export interface GenLogRequest {
+  media_type: string;
+  status: string;
+  provider?: string;
+  model?: string;
+  prompt?: string;
+  draft_id?: string;
+  error?: string;
+  result_url?: string;
+  elapsed?: number;
+  requested_size?: string;
+  source?: string;
+}
+
 export interface GroupPatch {
   title?: string | unknown;
   desc?: string | unknown;
@@ -131,6 +154,7 @@ export interface ImageGenRequest {
   model?: string;
   size?: string;
   aspect_ratio?: string;
+  resolution?: string;
   reference_images?: Record<string, unknown>[];
   draft_id?: string;
   draft_type?: string;

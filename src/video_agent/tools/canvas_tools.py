@@ -1,5 +1,5 @@
 """
-画布操作 Tool 集 — 通过 CanvasAdapter 操作熊布画布（Rule5: 统一注册）。
+画布操作 Tool 集 — 通过 CanvasAdapter 操作画布画布（Rule5: 统一注册）。
 
 每个 Tool 继承 BaseTool，内部只调 CanvasAdapter（不碰 httpx）。
 写操作遵循：读取最新画布 → 修改 nodes → save_canvas 写回。
@@ -271,7 +271,7 @@ class CanvasDeleteNodeTool(BaseTool):
 
 class CanvasListAssetsTool(BaseTool):
     name = "canvas_list_assets"
-    description = "列出熊布素材库中的所有素材（图片/工作流等）"
+    description = "列出画布素材库中的所有素材（图片/工作流等）"
 
     def get_input_schema(self) -> Type[BaseModel]:
         return CanvasListAssetsInput

@@ -2,7 +2,8 @@
 Skill 文档化存储层。
 
 对标 FTDYB：Skill 不是代码里的一段提示词，而是用户可见、可编辑的 Markdown 文档，
-存放在 data/skills/，全文注入 LLM system prompt——"流程即数据"。
+存放在 data/skills/。渐进式披露：上下文只注入 Skill 目录（名称+摘要），
+全文由模型调 read_skill 按需加载——"流程即数据"。
 
 文档格式约定：
     # Skill 名称
@@ -22,6 +23,42 @@ from src.video_agent.utils.paths import SKILL_DOCS_DIR
 
 _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划线/连字符
 
+# 外来 Skill 常见工具名 → 本系统动作对照表（第三方平台工作流直译的 Skill
+# 常引用本系统不存在的工具名，模型只能「近似映射」导致阶段纪律失真；
+# 注入时检测到这些名称就自动追加对照说明，把映射从模型猜测变成显式指令）
+FOREIGN_TOOL_MAP: Dict[str, str] = {
+    "resource_prepare_and_analyze": "read_uploaded_doc（读取上传文档全文）",
+    "multimodal_analyze_tool": "read_uploaded_doc + 直接分析总结",
+    "text_editor": "document_write（写入/更新项目文档，文本模式 write_document）",
+    "storyboard_designer": "storyboard_create_group / storyboard_add_draft / storyboard_patch_draft（故事板结构操作）",
+    "write_media_prompt": "storyboard_patch_draft / update_draft 的 patch.prompt（写入草稿提示词）",
+    "media_generator": "generate_image / generate_video（图片/视频生成，危险操作需用户明确指令）",
+    "reply_to_user": "workflow_pause（Tool 模式）/ request_confirmation（文本模式）",
+    "video_assembler": "本系统暂无最终剪辑工具：引导用户在画布中按分镜与时间轴组装导出",
+}
+
+
+def build_foreign_tool_note(content: str) -> str:
+    """检测 Skill 正文中出现的外来工具名，返回映射对照说明块；无则返回空串。
+
+    只匹配 FOREIGN_TOOL_MAP 已知的词汇表（不做开放式 snake_case 扫描，
+    避免把 element_id/shot_id 这类字段名误判为工具）。
+    """
+    if not content:
+        return ""
+    found = [
+        name for name in FOREIGN_TOOL_MAP
+        if re.search(rf"\b{re.escape(name)}\b", content, re.IGNORECASE)
+    ]
+    if not found:
+        return ""
+    lines = [f"- {name} → {FOREIGN_TOOL_MAP[name]}" for name in found]
+    return (
+        "== 外来工具名映射（本文档引用了本系统不存在的工具名，必须按下表映射为本系统动作执行，"
+        "不得假装调用不存在的工具）==\n" + "\n".join(lines)
+        + "\n文中未在上表列出的其他英文工具名一律视为描述性文字，不得当作必须调用的工具。"
+    )
+
 # 版本历史：保存前把旧版备份到 .history/，每个 slug 保留最近 N 版
 _HISTORY_DIR_NAME = ".history"
 _HISTORY_MAX = 10
@@ -35,7 +72,9 @@ DEFAULT_SKILL_DOC = """# 剧本生视频（需上传剧本）
 ## 流程规划（三段式：规划 → 提示词草案 → 生成）
 
 ### 第一段：规划结构
-1. 分析素材 → write_document(Final_Video_Spec.md) → request_confirmation
+1. 剧本正文不会自动注入上下文：先用 read_uploaded_doc 读取剧本全文；
+   若 documents 清单里已有规格文档，先用 read_project_doc 读取并遵守；
+   然后分析素材 → write_document(Final_Video_Spec.md) → request_confirmation
 2. 规划故事板：add_group keyElement(只写 title+desc) + add_group shot(只写 title+shotType+sceneRefs+roughDesc+duration)
    此阶段不写详细提示词 → request_confirmation "故事板已建立，请审阅"
 
@@ -171,3 +210,52 @@ def delete_skill_doc(slug: str) -> None:
         raise ValueError(f"Skill 文档 '{slug}' 不存在")
     f.unlink()
     logger.info(f"[SkillDocs] 已删除 Skill 文档: {slug}.md")
+
+
+def _norm_skill_name(s: str) -> str:
+    """Skill 名称归一化：去空格/后缀/大小写"""
+    s = (s or "").strip().casefold()
+    for ext in (".md", ".txt"):
+        if s.endswith(ext):
+            s = s[: -len(ext)]
+    return s.replace(" ", "")
+
+
+def resolve_skill_content(wanted: str) -> tuple:
+    """按名称解析 Skill 全文（仅文档 Skill，模糊匹配）。
+
+    read_skill 工具与 Planner 选中项硬注入共用同一套解析，保证两处行为一致。
+    代码内置 Skill（编剧/分镜师/制片）已彻底移除，不再是解析来源。
+    返回 (display_name, content)，未命中返回 ("", "")。
+    """
+    wanted = (wanted or "").strip()
+    wn = _norm_skill_name(wanted)
+    if not wn:
+        return "", ""
+
+    candidates: List[Dict[str, Any]] = []
+    try:
+        candidates += [
+            {"name": d.get("name", ""), "alias": d.get("slug", ""), "content": d.get("content", "")}
+            for d in list_skill_docs()
+        ]
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[SkillDocs] Skill 目录读取失败: {e}")
+
+    def names(c: Dict[str, Any]) -> List[str]:
+        return [str(c.get("name", "")), str(c.get("alias", ""))]
+
+    # 1. 精确 → 2. 归一化相等 → 3. 双向包含（防单字误匹配）
+    for c in candidates:
+        if wanted in names(c):
+            return str(c.get("name", "")), str(c.get("content", ""))
+    for c in candidates:
+        if any(_norm_skill_name(n) == wn for n in names(c) if n):
+            return str(c.get("name", "")), str(c.get("content", ""))
+    if len(wn) >= 2:
+        for c in candidates:
+            for n in names(c):
+                nn = _norm_skill_name(n)
+                if nn and len(nn) >= 2 and (wn in nn or nn in wn):
+                    return str(c.get("name", "")), str(c.get("content", ""))
+    return "", ""

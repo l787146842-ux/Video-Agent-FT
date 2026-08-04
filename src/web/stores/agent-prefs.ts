@@ -17,7 +17,7 @@ export const KEY_ASSET_MODE = 'studioAgentAssetMode';
 
 const [provider, setProviderSig] = createSignal(localStorage.getItem(KEY_PROVIDER) || '');
 const [model, setModelSig] = createSignal(localStorage.getItem(KEY_MODEL) || '');
-const [skillId, setSkillSig] = createSignal(localStorage.getItem(KEY_SKILL) || 'production-agent');
+const [skillId, setSkillSig] = createSignal(localStorage.getItem(KEY_SKILL) || '');
 const [assetMode, setAssetModeSig] = createSignal(localStorage.getItem(KEY_ASSET_MODE) || 'bound');
 
 /** 有效供应商（localStorage 值失效时回退到首选可用项） */
@@ -46,11 +46,16 @@ export function setAgentModel(v: string) {
 }
 
 export function agentSkillId(): string {
-  return skillId();
+  // 代码内置 Skill（如 production-agent）已彻底移除；若旧 localStorage 里残留
+  // 无效 id，回退到第一个可用文档 Skill，避免选中一个不存在的项。
+  const id = skillId();
+  if (id && state.skills.some((s) => s.id === id)) return id;
+  return state.skills.length ? state.skills[0].id : '';
 }
 
 export function agentSkill() {
-  return state.skills.find((s) => s.id === skillId());
+  const id = agentSkillId();
+  return state.skills.find((s) => s.id === id);
 }
 
 export function setAgentSkill(v: string) {

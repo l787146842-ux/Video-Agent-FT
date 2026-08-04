@@ -4,6 +4,7 @@
  */
 import { createSignal, For, Show } from 'solid-js';
 import { FiFileText, FiPlus, FiX, FiZap } from 'solid-icons/fi';
+import { fetchResourceText } from '@/api/client';
 import { state } from '@/stores/studio';
 import {
   visibleSkillDocs, current, selectDoc, closeDocsPanel, createDoc, setAssetContent,
@@ -23,8 +24,7 @@ export function DocsSidebar() {
     const asset = (state.assets || []).find((a) => a.name === name);
     if (!asset?.url) return;
     // 在面板内显示素材文档内容（而非跳转新页面）
-    fetch(asset.url)
-      .then((r) => r.ok ? r.text() : Promise.reject(new Error('加载失败')))
+    fetchResourceText(asset.url)
       .then((text) => {
         setAssetContent(text);
         selectDoc('project', `__asset__:${name}`);

@@ -1,14 +1,14 @@
 # FTDYB — 影视创作 Agent 工作台（Video Agent Studio）
 
 对话式影视创作 Agent：以自然语言驱动「故事 → 剧本 → 分镜 → 关键帧 → 视频/音频」全流程，
-与第三方画布项目**熊布**（大熊画布，端口 3000）配合，素材与节点直接落到画布上。
+与第三方画布项目**画布**（大熊画布，端口 3000）配合，素材与节点直接落到画布上。
 
-## 与熊布的关系与边界
+## 与画布的关系与边界
 
-- 熊布是**独立迭代的第三方项目**，代码不在本仓库内。
-- **架构铁律 Rule 7**：任何时候禁止修改熊布的任何文件；所有交互只走其既有公开接口
+- 画布是**独立迭代的第三方项目**，代码不在本仓库内。
+- **架构铁律 Rule 7**：任何时候禁止修改画布的任何文件；所有交互只走其既有公开接口
   （HTTP API / iframe 嵌入），统一封装在 `src/video_agent/adapters/canvas_adapter.py`。
-- 熊布侧的新能力需求一律写入 [docs/对熊布的需求清单.md](docs/对熊布的需求清单.md)，不做单边侵入。
+- 画布侧的新能力需求一律写入 [docs/对画布的需求清单.md](docs/对画布的需求清单.md)，不做单边侵入。
 - 完整约束见 [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md)（AI 协作最高优先级约束）。
 
 ## 技术栈
@@ -16,15 +16,14 @@
 | 层 | 技术 |
 |---|---|
 | 后端 | Python 3.11+ / FastAPI / Pydantic v2 / httpx / loguru |
-| 前端（现行） | SolidJS + TypeScript + Vite + TailwindCSS（`src/web/`） |
-| 前端（legacy，待移除） | 原生 JS 单页 `static/studio.html`（见 [兼容层移除计划](docs/兼容层移除计划.md)） |
+| 前端（现行） | SolidJS + TypeScript + Vite + TailwindCSS（`src/web/`；API 配置页暂以 iframe 嵌入 `static/api-settings.html`，待重写） |
 | Agent 核心 | Planner 唯一入口 + 多步工具循环（function calling / 文本动作双路径） |
 | 记忆 | 自研记忆系统（chromadb 向量检索，可降级 JSON 关键词检索） |
 | 测试 | pytest（单元 + 集成）/ vitest / Playwright（e2e 冒烟） |
 
 ## 启动方式
 
-需要**两个服务**：熊布（端口 3000）+ 本项目（端口 8080）。
+需要**两个服务**：画布（端口 3000）+ 本项目（端口 8080）。
 
 ### 一键启动（Windows）
 
@@ -32,12 +31,12 @@
 启动服务.bat
 ```
 
-依次拉起熊布 → 本项目 → 打开 http://localhost:8080/ 。
+依次拉起画布 → 本项目 → 打开 http://localhost:8080/ 。
 
 ### 手动启动
 
 ```bash
-# 1. 熊布（画布，先行）
+# 1. 画布（画布，先行）
 cd E:\07 天问\熊布
 python main.py            # http://127.0.0.1:3000
 
@@ -46,7 +45,7 @@ pip install -r requirements.txt
 python -m src.video_agent.web   # http://127.0.0.1:8080
 ```
 
-熊布离线时本项目仍可运行（画布相关功能降级，前端显示离线提示）。
+画布离线时本项目仍可运行（画布相关功能降级，前端显示离线提示）。
 
 CLI 路径（无 Web）：
 
@@ -87,8 +86,8 @@ src/video_agent/          后端（FastAPI 应用）
 ├── workflows/            六阶段工作流引擎 + SSE
 └── config.py             集中配置（环境变量驱动）
 
-src/web/                  新前端（SolidJS SPA）
-static/                   legacy 前端 + 构建产物 dist/ + 共享 CSS/JS
+src/web/                  前端（SolidJS SPA）
+static/                   构建产物 dist/ + images/ + api-settings 嵌入页（待重写进 SPA）
 prompts/                  外置 Prompt（Rule 6）
 config/                   CLI 工作流定义
 data/                     供应商配置 / 技能文档 / 记忆 fallback（gitignore）
@@ -102,14 +101,13 @@ workspace/                运行时状态与资产（gitignore）
 |---|---|
 | [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) | 架构铁律（AI 协作强制约束） |
 | [docs/配置说明.md](docs/配置说明.md) | 各配置文件的权威关系与加载优先级 |
-| [docs/对熊布的需求清单.md](docs/对熊布的需求清单.md) | 需要熊布侧实现的能力（postMessage 协议等） |
-| [docs/兼容层移除计划.md](docs/兼容层移除计划.md) | legacy 前端 / 别名端点 / DEPRECATED 模块的移除时间表 |
-| [docs/修复改进计划书-2026-08.md](docs/修复改进计划书-2026-08.md) | 2026-08 全面审查后的三批次修复计划 |
-| [tests/fixtures/canvas/README.md](tests/fixtures/canvas/README.md) | 熊布 API 契约夹具的录制与刷新方法 |
+| [docs/对画布的需求清单.md](docs/对画布的需求清单.md) | 需要画布侧实现的能力（postMessage 协议等） |
+| [docs/兼容层移除计划.md](docs/兼容层移除计划.md) | 别名端点 / DEPRECATED 模块的移除时间表（legacy 前端已移除） |
+| [tests/fixtures/canvas/README.md](tests/fixtures/canvas/README.md) | 画布 API 契约夹具的录制与刷新方法 |
 
 ## 环境与安全
 
-- 复制 `.env.example` 为根目录 `.env` 配置运行参数（端口、熊布地址、记忆后端等），
+- 复制 `.env.example` 为根目录 `.env` 配置运行参数（端口、画布地址、记忆后端等），
   各配置项的完整说明见 [docs/配置说明.md](docs/配置说明.md)。
 - API Key 统一存放于 `API/.env`（已 gitignore，勿提交）。
 - `ENVIRONMENT=production` 时所有 `/api/` 请求需携带 `X-API-Key` 头。

@@ -12,12 +12,22 @@ import type { Draft, DraftType } from '@/types';
 
 /**
  * 单张草稿卡片：缩略图背景 / 标签 / 选中态 / 生成中动画
+ * 卡片下方显示小标编号（组号-卡序号，如 1-2，与 Agent 上下文对齐）；
+ * 卡片可拖动排序（拖放事件由 GroupCard 协调），排序后编号自动重排。
  * 右键菜单：添加到对话、删除、移除到未归类
  */
 export function DraftCard(props: {
   draft: Draft;
   type: DraftType;
   groupId: string;
+  /** 小标编号（如 1-2） */
+  cardCode?: string;
+  dragOver?: boolean;
+  onDragStart?: (e: DragEvent) => void;
+  onDragOver?: (e: DragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: DragEvent) => void;
+  onDragEnd?: () => void;
 }) {
   const selected = () => state.selectedDraftId === props.draft.id;
   const generating = () => !!state.activeGenerations[props.draft.id];
@@ -101,55 +111,74 @@ export function DraftCard(props: {
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      class={`draft-card ${selected() ? 'active' : ''} ${generating() ? 'animate-pulse' : ''}`}
-      style={bgStyle()}
-      onClick={() => studioActions.selectDraft(props.draft.id, props.type)}
-      onKeyDown={(e) => e.key === 'Enter' && studioActions.selectDraft(props.draft.id, props.type)}
-      onContextMenu={onContextMenu}
+      class="draft-card-col"
+      draggable={!!props.onDragStart}
+      onDragStart={(e) => {
+        e.stopPropagation();
+        e.dataTransfer!.setData('application/x-draft-id', props.draft.id);
+        e.dataTransfer!.effectAllowed = 'move';
+        props.onDragStart?.(e);
+      }}
+      onDragOver={(e) => props.onDragOver?.(e)}
+      onDragLeave={() => props.onDragLeave?.()}
+      onDrop={(e) => props.onDrop?.(e)}
+      onDragEnd={() => props.onDragEnd?.()}
     >
+      <div
+        role="button"
+        tabIndex={0}
+        class={`draft-card ${selected() ? 'active' : ''} ${generating() ? 'animate-pulse' : ''} ${props.dragOver ? 'drag-over' : ''}`}
+        style={bgStyle()}
+        onClick={() => studioActions.selectDraft(props.draft.id, props.type)}
+        onKeyDown={(e) => e.key === 'Enter' && studioActions.selectDraft(props.draft.id, props.type)}
+        onContextMenu={onContextMenu}
+      >
       {/* 视频媒体：首帧缩略图 + 类型角标 */}
-      <Show when={props.draft.mediaType === 'video' && props.draft.videoUrl}>
-        <video
-          class="draft-card-thumb-video"
-          src={videoThumbUrl()}
-          muted
-          playsinline
-          preload="metadata"
-        />
-      </Show>
-      <Show when={props.draft.mediaType === 'video'}>
-        <span class="draft-card-media-badge" title="视频">
-          <FiVideo size={11} />
-        </span>
-      </Show>
-      {/* 音频媒体：音符 + 波形标识 */}
-      <Show when={props.draft.mediaType === 'audio'}>
-        <div class="draft-card-audio-indicator" title="音频">
-          <FiMusic size={15} />
-          <div class="draft-card-wave">
-            <span /><span /><span /><span /><span />
-          </div>
-        </div>
-      </Show>
-      {/* 文字标识（状态标签 + 名称）仅在空卡片时显示；有媒体后隐藏 */}
-      <Show when={!hasMedia()}>
-        <Show when={props.draft.tag}>
-          <span
-            class="draft-card-tag"
-            style={{
-              background: props.type === 'shot'
-                ? 'rgba(139, 92, 246, 0.85)'
-                : 'rgba(59, 130, 246, 0.85)',
-            }}
-          >
-            {props.draft.tag}
+        <Show when={props.draft.mediaType === 'video' && props.draft.videoUrl}>
+          <video
+            class="draft-card-thumb-video"
+            src={videoThumbUrl()}
+            muted
+            playsinline
+            preload="metadata"
+          />
+        </Show>
+        <Show when={props.draft.mediaType === 'video'}>
+          <span class="draft-card-media-badge" title="视频">
+            <FiVideo size={11} />
           </span>
         </Show>
-        <span class="draft-card-label">
-          {props.draft.label}
-        </span>
+        {/* 音频媒体：音符 + 波形标识 */}
+        <Show when={props.draft.mediaType === 'audio'}>
+          <div class="draft-card-audio-indicator" title="音频">
+            <FiMusic size={15} />
+            <div class="draft-card-wave">
+              <span /><span /><span /><span /><span />
+            </div>
+          </div>
+        </Show>
+        {/* 文字标识（状态标签 + 名称）仅在空卡片时显示；有媒体后隐藏 */}
+        <Show when={!hasMedia()}>
+          <Show when={props.draft.tag}>
+            <span
+              class="draft-card-tag"
+              style={{
+                background: props.type === 'shot'
+                  ? 'rgba(139, 92, 246, 0.85)'
+                  : 'rgba(59, 130, 246, 0.85)',
+              }}
+            >
+              {props.draft.tag}
+            </span>
+          </Show>
+          <span class="draft-card-label">
+            {props.draft.label}
+          </span>
+        </Show>
+      </div>
+      {/* 小标编号：组号-卡序号（拖动排序后自动重排，Agent 可按此定位） */}
+      <Show when={props.cardCode}>
+        <span class="draft-card-code" title="卡片编号（组号-卡序号），可拖动排序">{props.cardCode}</span>
       </Show>
     </div>
   );

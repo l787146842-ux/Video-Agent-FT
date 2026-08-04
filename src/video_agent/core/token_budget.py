@@ -60,29 +60,34 @@ def truncate_messages(
     - 从中间开始删除最早的消息，直到估算 token 数 <= max_tokens
 
     返回截断后的消息列表（不修改原列表）。
+    实现注：每条消息的 token 只估算一次，删除时用增量减法维护总量，
+    避免旧版 while 循环里每删一条都全量重估的 O(n²) 开销。
     """
     if not messages:
         return messages
 
-    current_tokens = estimate_messages_tokens(messages)
+    per_msg_tokens = [estimate_messages_tokens([m]) for m in messages]
+    current_tokens = sum(per_msg_tokens)
     if current_tokens <= max_tokens:
         return messages
 
     # 需要截断
     result = list(messages)
+    token_list = list(per_msg_tokens)
+    total = current_tokens
     # 保护边界：首条 + 最近 keep_recent 条
     min_keep = 1 + min(keep_recent, len(result) - 1)
 
-    while estimate_messages_tokens(result) > max_tokens and len(result) > min_keep:
+    while total > max_tokens and len(result) > min_keep:
         # 删除第 2 条（索引 1），即最早的非保护消息
         removed = result.pop(1)
+        total -= token_list.pop(1)
         preview = str(removed.get("content", ""))[:40]
         logger.debug(f"[TokenBudget] 截断历史消息: {preview}...")
 
-    final_tokens = estimate_messages_tokens(result)
     if current_tokens > max_tokens:
         logger.info(
-            f"[TokenBudget] 消息截断: {current_tokens} -> {final_tokens} tokens "
+            f"[TokenBudget] 消息截断: {current_tokens} -> {total} tokens "
             f"({len(messages)} -> {len(result)} 条)"
         )
     return result

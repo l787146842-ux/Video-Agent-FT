@@ -25,6 +25,8 @@ export interface Draft {
   aspectRatio?: string;
   duration?: string;
   resolution?: string;
+  /** 图片分辨率档位（1K/2K/4K），关键元素生图用 */
+  imageResolution?: string;
   size?: string;
   timbre?: string;
   refAssets?: string[];
@@ -149,12 +151,22 @@ export interface ChatMessage {
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
+export interface TraceAction {
+  name: string;
+  summary: string;
+  elapsed_ms: number;
+  ok: boolean;
+}
 export interface AgentTraceStep {
   step: number;
   timing_ms: number;
   token_usage: number;
   actions_applied: number;
   finish_reason: string;
+  /** 本轮执行的操作明细（过程时间线逐条展示） */
+  actions?: TraceAction[];
+  /** 本轮 reasoning（深度思考）文本摘要（仅展示，不进下次上下文） */
+  reasoning?: string;
 }
 export interface AgentTrace {
   trace_id?: string;
@@ -209,6 +221,18 @@ export interface TaskResult {
 // ===== SSE 事件（Agent 聊天流） =====
 export interface SseStatusEvent { type: 'status'; text: string; }
 export interface SseDeltaEvent { type: 'delta'; text: string; }
+/** 深度思考（reasoning）增量：仅 UI 展示，不进下次 LLM 上下文 */
+export interface SseReasoningEvent { type: 'reasoning_delta'; text: string; }
+/** 过程时间线：工具/操作开始 */
+export interface SseToolStartedEvent { type: 'tool_started'; id: string; name: string; summary: string; }
+/** 过程时间线：工具/操作完成 */
+export interface SseToolFinishedEvent {
+  type: 'tool_finished';
+  id: string;
+  ok: boolean;
+  elapsed_ms: number;
+  result_summary?: string;
+}
 export interface SseDonePayload {
   text: string;
   elapsed_ms: number;
@@ -231,10 +255,26 @@ export interface SseDonePayload {
 export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }
 /** 后端 error 事件使用 detail 字段（chat_service.py emit({"type":"error","detail":...})），可携带 error_code 供 i18n 翻译 */
 export interface SseErrorEvent { type: 'error'; detail?: string; text?: string; error_code?: string; }
-export type SseEvent = SseStatusEvent | SseDeltaEvent | SseDoneEvent | SseErrorEvent;
+export type SseEvent =
+  | SseStatusEvent
+  | SseDeltaEvent
+  | SseReasoningEvent
+  | SseToolStartedEvent
+  | SseToolFinishedEvent
+  | SseDoneEvent
+  | SseErrorEvent;
 
 // ===== 后端状态快照 =====
+/** 单个对话（同一项目支持多对话窗口） */
+export interface Conversation {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+}
+
 export interface ServerStateSnapshot {
+  /** 快照所属项目 ID（持久化请求回传，后端据此丢弃跨项目的过期写入） */
+  project_id?: string;
   keyElements?: KeyElementGroup[];
   shots?: ShotGroup[];
   audioItems?: AudioGroup[];
@@ -244,6 +284,10 @@ export interface ServerStateSnapshot {
   project_name?: string;
   /** 当前项目已发送给 Agent 的 Skill slug 列表（文档面板只展示这些 Skill 文档） */
   usedSkills?: string[];
+  /** 多对话列表（含消息），活跃对话与 chatMessages 一致 */
+  conversations?: Conversation[];
+  /** 活跃对话 ID */
+  activeConversationId?: string;
 }
 
 // ===== 查询辅助 =====
@@ -261,7 +305,8 @@ export interface GroupRecord {
 // ===== Agent 聊天请求 =====
 export interface AgentChatRequest {
   message: string;
-  system_prompt?: string;
+  /** 幂等键：后端同 id 处理中时拒绝重复提交 */
+  request_id?: string;
   provider?: string;
   model?: string;
   ms_model?: string;
@@ -278,6 +323,8 @@ export interface AgentChatRequest {
   asset_mode?: string;
   /** 本次消息携带的 Skill slug（仅当消息含 Skill 引用块时传，后端记入项目 usedSkills） */
   skill_slug?: string;
+  /** 前端当前选中的 Skill 名称（渐进式披露：仅作相关性标注，不注入全文） */
+  skill_name?: string;
 }
 
 // ===== 项目 =====

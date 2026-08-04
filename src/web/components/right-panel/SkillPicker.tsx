@@ -32,8 +32,7 @@ export function SkillPicker() {
   document.addEventListener('click', onDocClick);
   onCleanup(() => document.removeEventListener('click', onDocClick));
 
-  const currentLabel = () =>
-    state.skills.find((s) => s.id === agentSkillId())?.name || agentSkillId() || 'Skill';
+  const currentLabel = () => t('rp.toolbar.skill');
 
   function toggleOpen() {
     if (!open() && btnRef) {

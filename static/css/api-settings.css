@@ -6024,7 +6024,7 @@ html.studio-theme-dark body .recommend-tag.recommend-free-tag svg {
     }
 }
 
-/* ---------- 熊布在线状态 & 来源标记 ---------- */
+/* ---------- 画布在线状态 & 来源标记 ---------- */
 .canvas-status-bar { margin-top:6px; display:flex; align-items:center; gap:8px; min-height:20px; }
 .canvas-status { font-size:11px; font-weight:700; letter-spacing:.02em; }
 .canvas-status.online { color:#16a34a; }

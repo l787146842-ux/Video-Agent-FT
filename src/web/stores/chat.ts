@@ -1,6 +1,16 @@
 import { createStore, produce } from 'solid-js/store';
 import type { ChatMessage, SseDonePayload } from '@/types';
 
+/** 过程时间线条目（流式期间的工具/操作运行态，完成后从消息 trace 重建） */
+export interface TimelineToolEntry {
+  id: string;
+  name: string;
+  summary: string;
+  status: 'running' | 'done' | 'failed';
+  elapsed_ms?: number;
+  result_summary?: string;
+}
+
 /**
  * 聊天状态管理
  * 管理消息列表、流式输出、Agent 忙碌状态
@@ -15,6 +25,10 @@ export interface ChatState {
   inputText: string;
   /** 当前流式回复对应的模型名称 */
   streamingModel: string;
+  /** 流式深度思考（reasoning）累积文本（仅 UI 展示，不进下次上下文） */
+  streamingReasoning: string;
+  /** 流式过程时间线条目（tool_started/tool_finished 实时追加） */
+  streamingTools: TimelineToolEntry[];
 }
 
 const defaultChatState: ChatState = {
@@ -24,6 +38,8 @@ const defaultChatState: ChatState = {
   isStreaming: false,
   inputText: '',
   streamingModel: '',
+  streamingReasoning: '',
+  streamingTools: [],
 };
 
 const [chatState, setChatState] = createStore<ChatState>(defaultChatState);
@@ -44,6 +60,34 @@ export const chatActions = {
       s.streamingText = '';
       s.streamingStatus = '正在连接…';
       s.streamingModel = modelName || '';
+      s.streamingReasoning = '';
+      s.streamingTools = [];
+    }));
+  },
+
+  /** 追加深度思考（reasoning）增量 */
+  appendReasoning(text: string) {
+    setChatState('streamingReasoning', (prev) => prev + text);
+    setChatState('streamingStatus', '深度思考中…');
+  },
+
+  /** 过程时间线：工具/操作开始（运行态条目） */
+  toolStarted(id: string, name: string, summary: string) {
+    setChatState(produce((s) => {
+      s.streamingTools.push({ id, name, summary, status: 'running' });
+      s.streamingStatus = `正在执行：${summary || name}`;
+    }));
+  },
+
+  /** 过程时间线：工具/操作完成（对勾/失败态） */
+  toolFinished(id: string, ok: boolean, elapsedMs: number, resultSummary?: string) {
+    setChatState(produce((s) => {
+      const entry = s.streamingTools.find((t) => t.id === id);
+      if (entry) {
+        entry.status = ok ? 'done' : 'failed';
+        entry.elapsed_ms = elapsedMs;
+        entry.result_summary = resultSummary;
+      }
     }));
   },
 
@@ -93,6 +137,8 @@ export const chatActions = {
       s.streamingText = '';
       s.streamingStatus = '';
       s.streamingModel = '';
+      s.streamingReasoning = '';
+      s.streamingTools = [];
     }));
   },
 
@@ -104,6 +150,8 @@ export const chatActions = {
       s.streamingText = '';
       s.streamingStatus = '';
       s.streamingModel = '';
+      s.streamingReasoning = '';
+      s.streamingTools = [];
     }));
   },
 
@@ -117,6 +165,8 @@ export const chatActions = {
       s.streamingText = '';
       s.streamingStatus = '';
       s.streamingModel = '';
+      s.streamingReasoning = '';
+      s.streamingTools = [];
     }));
   },
 

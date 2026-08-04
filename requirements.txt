@@ -21,3 +21,8 @@ pyyaml==6.0.3
 # 测试相关（开发环境也可用 requirements-dev.txt）
 pytest==9.1.1
 pytest-asyncio>=0.24.0
+
+# 可选：Agent 记忆系统向量检索后端（MEMORY_VECTOR_BACKEND 默认 chromadb）。
+# 未安装时自动诚实降级为 JSON 关键词检索，功能不中断；
+# 需要语义检索时执行：pip install chromadb
+# chromadb>=0.5

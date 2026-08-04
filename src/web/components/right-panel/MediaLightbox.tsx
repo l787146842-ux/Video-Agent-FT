@@ -1,10 +1,10 @@
-import { onMount, onCleanup, Show } from 'solid-js';
+import { onMount, onCleanup, Switch, Match } from 'solid-js';
 import { FiDownload, FiX } from 'solid-icons/fi';
 import { safeUrl } from '@/lib/utils';
 import { t } from '@/lib/locale';
 
 /**
- * 媒体预览灯箱：双击输入框缩略块后放大查看原图/原视频。
+ * 媒体预览灯箱：点击/双击输入框缩略块后放大查看原图/原视频/播放音频。
  * 点击背景或按 Esc 关闭。
  */
 export function MediaLightbox(props: {
@@ -22,16 +22,24 @@ export function MediaLightbox(props: {
 
   return (
     <div class="image-lightbox" onClick={() => props.onClose()}>
-      <Show when={props.kind === 'video'} fallback={
+      <Switch fallback={
         <img src={src()} alt={t('rp.lightbox.alt')} onClick={(e) => e.stopPropagation()} />
       }>
-        <video
-          src={src()}
-          controls
-          autoplay
-          onClick={(e) => e.stopPropagation()}
-        />
-      </Show>
+        <Match when={props.kind === 'video'}>
+          <video
+            src={src()}
+            controls
+            autoplay
+            onClick={(e) => e.stopPropagation()}
+          />
+        </Match>
+        <Match when={props.kind === 'audio'}>
+          {/* 音频无画面：居中播放器 */}
+          <div class="image-lightbox-audio" onClick={(e) => e.stopPropagation()}>
+            <audio src={src()} controls autoplay />
+          </div>
+        </Match>
+      </Switch>
       <div class="image-lightbox-actions">
         <a
           href={src()}

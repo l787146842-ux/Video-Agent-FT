@@ -19,7 +19,7 @@ class ChatResponse(BaseModel):
 
 class StreamChunk(BaseModel):
     """流式增量块"""
-    type: str = "text_delta"  # text_delta | tool_call | done
+    type: str = "text_delta"  # text_delta | reasoning_delta | tool_call | done
     text: str = ""
     tool_name: str = ""
     tool_args: Dict[str, Any] = {}

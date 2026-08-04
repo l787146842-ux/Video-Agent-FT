@@ -2423,7 +2423,7 @@ function renderProviderList(){
                 <span class="provider-drag-handle" aria-hidden="true"><i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i></span>
                 <span class="provider-mark"><i data-lucide="${item.has_key ? 'key-round' : 'key'}" class="w-4 h-4"></i></span>
                 <span class="provider-info">
-                    <div class="provider-name">${escapeHtml(item.name || item.id)}${item._source === 'canvas' ? ' <span class="source-badge canvas">熊布</span>' : ''}</div>
+                    <div class="provider-name">${escapeHtml(item.name || item.id)}${item._source === 'canvas' ? ' <span class="source-badge canvas">画布</span>' : ''}</div>
                     <div class="provider-meta">${escapeHtml(item.base_url || '未配置地址')}</div>
                 </span>
                 <span class="provider-side-meta">
@@ -3719,9 +3719,9 @@ function renderCanvasStatus(){
     const el = document.getElementById('canvasStatus');
     if(!el) return;
     if(canvasOnline){
-        el.innerHTML = '<span class="canvas-status online">● 熊布在线</span><span class="canvas-status-hint">生图将优先通过熊布执行</span>';
+        el.innerHTML = '<span class="canvas-status online">● 画布在线</span><span class="canvas-status-hint">生图将优先通过画布执行</span>';
     } else {
-        el.innerHTML = '<span class="canvas-status offline">○ 熊布离线</span><span class="canvas-status-hint">生图将使用本地配置直连</span>';
+        el.innerHTML = '<span class="canvas-status offline">○ 画布离线</span><span class="canvas-status-hint">生图将使用本地配置直连</span>';
     }
 }
 async function saveProviders(){

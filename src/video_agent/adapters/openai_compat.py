@@ -170,11 +170,15 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             resp.raise_for_status()
             data = resp.json()
         except httpx.TimeoutException:
-            raise AdapterError(f"LLM 请求超时（{timeout}s），请检查网络或供应商状态")
+            raise AdapterError(f"LLM 请求超时（{timeout}s），请检查网络或供应商状态", retryable=True)
         except httpx.HTTPStatusError as e:
-            raise AdapterError(f"LLM 返回 HTTP {e.response.status_code}: {e.response.text[:200]}")
+            raise AdapterError(
+                f"LLM 返回 HTTP {e.response.status_code}: {e.response.text[:200]}",
+                retryable=e.response.status_code >= 500,
+                http_status=e.response.status_code,
+            )
         except httpx.HTTPError as e:
-            raise AdapterError(f"LLM 请求失败: {e}")
+            raise AdapterError(f"LLM 请求失败: {e}", retryable=True)
 
         choices = data.get("choices", [])
         if not choices:
@@ -223,17 +227,20 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     yield chunk
                 return
             except AdapterError as e:
-                msg = str(e)
-                retryable = (
-                    msg.startswith("LLM 返回 HTTP 5")
-                    or "流式请求失败" in msg
-                    or "流式请求超时" in msg
-                )
-                if not retryable or yielded or attempt >= max_connect_retries:
+                # 结构化判定（P0-2）：优先用 retryable 标记，兼容无标记旧异常回退文案匹配
+                flag = getattr(e, "retryable", None)
+                if flag is None:
+                    msg = str(e)
+                    flag = (
+                        msg.startswith("LLM 返回 HTTP 5")
+                        or "流式请求失败" in msg
+                        or "流式请求超时" in msg
+                    )
+                if not flag or yielded or attempt >= max_connect_retries:
                     raise
                 delay = 1.0 * (2 ** attempt)
                 logger.warning(
-                    f"[OpenAICompat] 流式瞬时故障：{msg[:120]}，"
+                    f"[OpenAICompat] 流式瞬时故障：{str(e)[:120]}，"
                     f"第 {attempt + 1}/{max_connect_retries} 次重试，等待 {delay:.0f}s"
                 )
                 await asyncio.sleep(delay)
@@ -251,7 +258,11 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             ) as resp:
                 if resp.status_code != 200:
                     body = (await resp.aread()).decode("utf-8", errors="replace")[:200]
-                    raise AdapterError(f"LLM 返回 HTTP {resp.status_code}: {body}")
+                    raise AdapterError(
+                        f"LLM 返回 HTTP {resp.status_code}: {body}",
+                        retryable=resp.status_code >= 500,
+                        http_status=resp.status_code,
+                    )
 
                 ctype = resp.headers.get("content-type", "")
                 if "text/event-stream" not in ctype:
@@ -289,6 +300,11 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     if fr:
                         last_finish = fr
                     delta = choices[0].get("delta", {}) or {}
+                    # 推理模型（DeepSeek-R1 / Gemini thinking 等）的 reasoning 增量：
+                    # 各家字段名不同（reasoning_content / reasoning），有则透传，无则静默
+                    reasoning_piece = delta.get("reasoning_content") or delta.get("reasoning") or ""
+                    if reasoning_piece:
+                        yield StreamChunk(type="reasoning_delta", text=reasoning_piece)
                     piece = delta.get("content") or ""
                     if piece:
                         yield StreamChunk(type="text_delta", text=piece)
@@ -323,9 +339,9 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         except AdapterError:
             raise
         except httpx.TimeoutException:
-            raise AdapterError(f"LLM 流式请求超时（{timeout}s）")
+            raise AdapterError(f"LLM 流式请求超时（{timeout}s）", retryable=True)
         except httpx.HTTPError as e:
-            raise AdapterError(f"LLM 流式请求失败: {e}")
+            raise AdapterError(f"LLM 流式请求失败: {e}", retryable=True)
 
 
 class OpenAICompatImageAdapter(BaseImageAdapter):

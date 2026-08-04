@@ -196,6 +196,8 @@ class StateManager(UndoRedoMixin):
         self._context_cache.clear()
         # 切换项目时清空 undo/redo 栈
         self._clear_undo_redo()
+        # 多对话不变式：chatMessages 始终指向活跃对话的消息列表
+        self._ensure_conversations()
 
     def _load(self):
         """加载：优先从 projects/index.json 找活跃项目，否则迁移旧 studio_state.json"""
@@ -210,6 +212,7 @@ class StateManager(UndoRedoMixin):
             loaded = self._repo.load_project(active_id)
             if loaded is not None:
                 self._raw_state = loaded
+                self._ensure_conversations()
                 logger.info(f"[StateManager] Loaded project: {active_id}")
                 return
 
@@ -221,6 +224,7 @@ class StateManager(UndoRedoMixin):
                 pname = old_state.get("project_name", "迁移项目")
                 self._raw_state = old_state
                 self._active_project_id = pid
+                self._ensure_conversations()
                 self._repo.save_project(pid, self._raw_state)
                 self._repo.write_index({
                     "active_project_id": pid,
@@ -234,6 +238,7 @@ class StateManager(UndoRedoMixin):
         # 全新初始化：创建 demo 项目
         self._raw_state = _load_default_state()
         self._active_project_id = self._raw_state.get("project_id", "proj_001")
+        self._ensure_conversations()
         self._repo.save_project(self._active_project_id, self._raw_state)
         self._repo.write_index({
             "active_project_id": self._active_project_id,
@@ -293,8 +298,13 @@ class StateManager(UndoRedoMixin):
             return dict(self._raw_state)
 
     def get_full_snapshot(self) -> Dict[str, Any]:
-        """返回完整状态快照（raw dict，供前端刷新）。"""
-        return self._raw_state
+        """返回完整状态快照（供前端刷新/SSE done payload）。
+
+        P2 修复：返回深拷贝（json round-trip），调用方可任意使用不会回写
+        污染内部状态；旧版浅拷贝共享嵌套引用的契约仅靠注释约束，过于脆弱。
+        快照仅在聊天完成/mock 路径低频调用，序列化开销可接受。
+        """
+        return json.loads(json.dumps(self._raw_state, ensure_ascii=False))
 
     # ====== 写入（Rule3: 唯一写入点） ======
 
@@ -302,11 +312,14 @@ class StateManager(UndoRedoMixin):
         """按点号路径更新状态并持久化（Rule3: 唯一写入点入口）。
 
         同时支持 dict 路径（Web）和 Pydantic 属性路径（CLI）。
+        落盘走防抖合并（P2）：避免高频路径同步全量写盘阻塞事件循环；
+        无运行中事件循环时（CLI/同步测试）退化为立即同步落盘，
+        项目切换/服务关闭前由 flush_save() 保证持久性。
         """
         self._push_undo()
         _set_path_dict(self._raw_state, path, value)
         self._state_dirty = True
-        self.save()
+        self.save_debounced()
 
     def record_used_skill(self, slug: str) -> None:
         """记录用户随消息发送给 Agent 的 Skill（按项目持久化）。
@@ -390,6 +403,7 @@ class StateManager(UndoRedoMixin):
 
     def initialize_project(self, project_id: str, user_goal: str, project_name: str = "New Project") -> ProjectState:
         """初始化一个空项目（CLI 路径向后兼容）。"""
+        # 多对话结构：既有聊天记录迁入首个对话
         self._raw_state = {
             "project_id": project_id,
             "project_name": project_name,
@@ -403,6 +417,7 @@ class StateManager(UndoRedoMixin):
             "chatMessages": [],
         }
         self._active_project_id = project_id
+        self._ensure_conversations()
         self.save()
         return self.get()
 
@@ -453,6 +468,84 @@ class StateManager(UndoRedoMixin):
     def get_chat_messages(self) -> List[Dict]:
         return self._raw_state.get("chatMessages", [])
 
+    # ====== 多对话管理（同一项目多个对话窗口） ======
+
+    def _ensure_conversations(self) -> List[Dict[str, Any]]:
+        """确保多对话结构存在并维护不变式：
+        chatMessages 始终是活跃对话 messages 的同一引用，
+        使 add_chat_message / 快照等既有路径无需改动。
+        旧项目首次访问时把既有 chatMessages 迁入首个对话。
+        """
+        convs = self._raw_state.get("conversations")
+        if not isinstance(convs, list) or not convs:
+            convs = [{
+                "id": "conv-main",
+                "title": "会话 1",
+                "messages": self._raw_state.get("chatMessages") or [],
+            }]
+            self._raw_state["conversations"] = convs
+            self._raw_state["activeConversationId"] = "conv-main"
+        active_id = self._raw_state.get("activeConversationId") or ""
+        active = next((c for c in convs if c.get("id") == active_id), None)
+        if active is None:
+            active = convs[0]
+            self._raw_state["activeConversationId"] = active["id"]
+        msgs = active.setdefault("messages", [])
+        if self._raw_state.get("chatMessages") is not msgs:
+            self._raw_state["chatMessages"] = msgs
+        return convs
+
+    def _conversations_payload(self) -> Dict[str, Any]:
+        """多对话完整响应（含全部消息，供前端切换时直接装载）"""
+        convs = self._ensure_conversations()
+        return {
+            "conversations": [
+                {"id": c.get("id", ""), "title": c.get("title", ""), "messages": c.get("messages", [])}
+                for c in convs
+            ],
+            "active_conversation_id": self._raw_state.get("activeConversationId", ""),
+        }
+
+    def list_conversations(self) -> Dict[str, Any]:
+        """列出当前项目的全部对话 + 活跃对话 ID"""
+        return self._conversations_payload()
+
+    def create_conversation(self, title: str = "") -> Dict[str, Any]:
+        """新建对话并设为活跃（chatMessages 重新绑定到空列表）"""
+        convs = self._ensure_conversations()
+        cid = gen_id("conv")
+        conv = {"id": cid, "title": title.strip() or f"新会话 {len(convs) + 1}", "messages": []}
+        convs.append(conv)
+        self._raw_state["activeConversationId"] = cid
+        self._raw_state["chatMessages"] = conv["messages"]
+        self.save()
+        return self._conversations_payload()
+
+    def switch_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+        """切换活跃对话；不存在返回 None"""
+        convs = self._ensure_conversations()
+        target = next((c for c in convs if c.get("id") == conversation_id), None)
+        if target is None:
+            return None
+        self._raw_state["activeConversationId"] = conversation_id
+        self._raw_state["chatMessages"] = target.setdefault("messages", [])
+        self.save()
+        return self._conversations_payload()
+
+    def delete_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+        """删除对话；仅剩一个时不允许删除；不存在返回 None"""
+        convs = self._ensure_conversations()
+        if len(convs) <= 1:
+            return None
+        target = next((c for c in convs if c.get("id") == conversation_id), None)
+        if target is None:
+            return None
+        convs.remove(target)
+        if self._raw_state.get("activeConversationId") == conversation_id:
+            return self.switch_conversation(convs[0]["id"])
+        self.save()
+        return self._conversations_payload()
+
     def add_chat_message(
         self,
         sender: str,
@@ -474,7 +567,8 @@ class StateManager(UndoRedoMixin):
         （耗时角标/阶段确认卡片/操作数/具体操作清单/文档完成卡片），随消息持久化，
         保证刷新页面后「阶段完成」卡片与耗时角标不丢失。
         """
-        msgs = self._raw_state.setdefault("chatMessages", [])
+        self._ensure_conversations()
+        msgs = self._raw_state["chatMessages"]
         entry: Dict[str, Any] = {"sender": sender, "text": text}
         if model_name:
             entry["modelName"] = model_name

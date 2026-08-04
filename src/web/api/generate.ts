@@ -14,6 +14,8 @@ export interface GenerateImageRequest {
   model: string;
   size: string;
   aspect_ratio: string;
+  /** 分辨率档位（1K/2K/4K）：CLI 类供应商无 size 参数，靠提示词感知 */
+  resolution?: string;
   reference_images?: Array<{ url: string; role: string }>;
   draft_id: string;
   draft_type: string;
@@ -65,6 +67,20 @@ export function submitVideoTask(body: GenerateVideoRequest) {
 /** 查询视频任务状态 */
 export function getVideoTaskStatus(taskId: string) {
   return apiFetch<TaskResult>(`/api/tasks/${encodeURIComponent(taskId)}`);
+}
+
+// ===== 处理中任务（刷新后恢复读秒用） =====
+
+export interface ActiveGenTask {
+  task_id: string;
+  draft_id: string;
+  kind: 'image' | 'video';
+  created_at: number;
+}
+
+/** 查询后端仍在处理中的生成任务（刷新页面后恢复转圈读秒） */
+export function getActiveGenTasks() {
+  return apiFetch<{ tasks: ActiveGenTask[] }>('/api/generate/active');
 }
 
 // ===== 批量生成 =====
@@ -136,6 +152,38 @@ export function waitForTaskViaSSE(
       }
     };
   });
+}
+
+// ===== 生成日志（顶部导航「生成日志」面板） =====
+
+export interface GenerationLogEntry {
+  id: string;
+  task_id: string;
+  media_type: 'image' | 'video' | 'audio';
+  status: 'started' | 'succeeded' | 'failed';
+  provider: string;
+  /** 供应商显示名（API 配置页名称，如 Grsai），优先展示 */
+  provider_name: string;
+  model: string;
+  prompt: string;
+  draft_id: string;
+  error: string;
+  result_url: string;
+  elapsed: number;
+  requested_size: string;
+  mock: boolean;
+  source: string;
+  ts: string;
+}
+
+/** 查询生成日志（时间倒序，图/视频/音频无论成败均有记录） */
+export function getGenerationLogs(limit = 100) {
+  return apiFetch<{ logs: GenerationLogEntry[] }>(`/api/generation-logs?limit=${limit}`);
+}
+
+/** 前端补录生成日志（如音频规划等未走后端任务通道的生成行为） */
+export function addGenerationLog(body: Partial<GenerationLogEntry> & { media_type: string; status: string }) {
+  return apiPost<{ ok: boolean }>('/api/generation-logs', body);
 }
 
 // ===== 图片尺寸工具 =====

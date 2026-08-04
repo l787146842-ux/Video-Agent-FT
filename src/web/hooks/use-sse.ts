@@ -1,7 +1,8 @@
 import { createSignal } from 'solid-js';
 import type { SseEvent, SseDonePayload, AgentChatRequest } from '@/types';
 import { chatActions } from '@/stores/chat';
-import { studioActions } from '@/stores/studio';
+import { convActions } from '@/stores/conversations';
+import { studioActions, getProjectSession } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { refreshHistoryStatus } from '@/stores/history';
 import { resolveErrorMessage } from '@/lib/i18n';
@@ -11,7 +12,7 @@ import { uid } from '@/lib/utils';
 
 /**
  * Agent 流式聊天（模块级单例）
- * 匹配后端 SSE 协议：type = status | delta | done | error
+ * 匹配后端 SSE 协议：type = status | delta | reasoning_delta | tool_started | tool_finished | done | error
  * 端点：POST /api/agent/chat/stream
  *
  * 任何组件/面板均可直接调用 streamAgentChat / stopAgentStream；
@@ -23,10 +24,16 @@ const [error, setError] = createSignal<string | null>(null);
 
 let abortController: AbortController | null = null;
 
+/** 发起流时捕获项目会话纪元；流期间项目被切换后，
+ * 旧项目的事件（尤其 done 携带的状态快照）一律丢弃，
+ * 避免旧项目快照覆盖新项目故事板、旧回复流入新对话。 */
+let streamSession = 0;
+
 export async function streamAgentChat(request: AgentChatRequest): Promise<void> {
   if (streaming()) return;
   setStreaming(true);
   setError(null);
+  streamSession = getProjectSession();
   studioActions.setAgentBusy(true);
   chatActions.startStream(request.model || '');
   abortController = new AbortController();
@@ -95,12 +102,24 @@ export function stopAgentStream(): void {
 }
 
 function handleEvent(ev: SseEvent) {
+  // 项目已切换：旧项目流的全部事件直接丢弃
+  if (streamSession !== getProjectSession()) return;
   switch (ev.type) {
     case 'status':
       chatActions.setStatus(ev.text || '');
       break;
     case 'delta':
       chatActions.appendDelta(ev.text || '');
+      break;
+    case 'reasoning_delta':
+      // 深度思考增量：仅 UI 展示，不进下次上下文
+      chatActions.appendReasoning(ev.text || '');
+      break;
+    case 'tool_started':
+      chatActions.toolStarted(ev.id, ev.name, ev.summary);
+      break;
+    case 'tool_finished':
+      chatActions.toolFinished(ev.id, ev.ok, ev.elapsed_ms || 0, ev.result_summary);
       break;
     case 'done':
       handleDone(ev.payload);
@@ -120,6 +139,8 @@ function handleDone(payload: SseDonePayload) {
   // 同步后端状态快照到全局 store
   if (payload.state) {
     studioActions.syncFromServer(payload.state);
+    // 多对话标签栏：刷新各对话消息与活跃态
+    convActions.syncFromServer(payload.state);
   }
   // Agent 动作会压入后端 undo 栈，刷新撤销/重做指示位
   void refreshHistoryStatus();

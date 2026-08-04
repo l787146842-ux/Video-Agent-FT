@@ -76,12 +76,16 @@ export function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** 创建一个 @提及 缩略块 chip（图片显示缩略图，视频/音频显示图标） */
+/** 创建一个 @提及 缩略块 chip（图片显示缩略图，视频/音频显示图标）。
+ *  dataset 携带 url/kind，供编辑器点击 chip 放大预览。 */
 export function makeChip(name: string, info: { url: string; type: MediaKind }): HTMLSpanElement {
   const span = document.createElement('span');
   span.className = 'mention-chip';
   span.contentEditable = 'false';
   span.dataset.name = name;
+  span.dataset.url = info.url || '';
+  span.dataset.kind = info.type;
+  span.title = '点击放大查看';
   if (info.type === 'image' && info.url) {
     const img = document.createElement('img');
     img.src = safeUrl(info.url);

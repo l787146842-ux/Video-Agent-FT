@@ -1,4 +1,4 @@
-import { createSignal, Show } from 'solid-js';
+import { createSignal, Show, untrack } from 'solid-js';
 import { FiX, FiZap, FiEye, FiCode, FiCheck } from 'solid-icons/fi';
 import { renderMarkdown } from '@/lib/markdown';
 import { saveSkillDoc } from '@/api/docs';
@@ -42,7 +42,8 @@ export function SkillDetailModal(props: {
 }) {
   const [tab, setTab] = createSignal<'intro' | 'content'>('intro');
   const [rawView, setRawView] = createSignal(false);
-  const [introDraft, setIntroDraft] = createSignal(extractDescription(props.skill));
+  // 初始值只取打开时的 skill，不需响应式跟踪（untrack 显式声明非跟踪读取）
+  const [introDraft, setIntroDraft] = createSignal(untrack(() => extractDescription(props.skill)));
   const [savingIntro, setSavingIntro] = createSignal(false);
 
   /** 保存简介编辑：更新 skill 文档中的 > 引用行 */
@@ -106,7 +107,7 @@ export function SkillDetailModal(props: {
               {t('rp.skillDetail.tabContent')}
             </button>
           </div>
-          <button type="button" class="skill-modal-close" onClick={props.onClose}>
+          <button type="button" class="skill-modal-close" onClick={() => props.onClose()}>
             <FiX size={16} />
           </button>
         </div>

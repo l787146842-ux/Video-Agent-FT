@@ -126,8 +126,8 @@ test.describe('阶段确认卡片与文档卡片', () => {
         // 展开后显示具体操作清单
         await feed.locator('.stage-card-header').last().click();
         await expect(feed.locator('.stage-op-list').last()).toContainText('新建关键元素分组「主角」');
-        // 执行轨迹折叠区存在
-        await expect(feed.locator('.trace-card').last()).toContainText('执行轨迹');
+        // 过程时间线（已处理操作折叠面板）存在，标题含操作数
+        await expect(feed.locator('.agent-timeline').last()).toContainText('已处理 2 个操作');
     });
 });
 

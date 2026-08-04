@@ -1,7 +1,8 @@
 """
 /api/plugins + /api/skills — 技能配置端点
 
-Skill 下拉数据 = 文档 Skill（data/skills/*.md，排前、默认选中）+ 代码 Skill（SkillRegistry）。
+Skill 下拉数据 = 仅文档 Skill（data/skills/*.md）。
+代码内置 Skill（编剧/分镜师/制片）已按用户要求彻底移除，不得再回到下拉框。
 文档 Skill 的 system_prompt 即文档全文——用户改文档就是改流程。
 """
 from fastapi import APIRouter, HTTPException
@@ -21,7 +22,11 @@ router = APIRouter()
 
 @router.get("/plugins/ftdyb-agent/config")
 async def get_agent_config():
-    """前端 agentSkillSelect 下拉框数据源（仅文档 Skill）"""
+    """前端 agentSkillSelect 下拉框数据源：仅文档 Skill（用户可见可编辑）。
+
+    历史教训：代码 Skill（SkillRegistry）曾在改造计划中被加回下拉，
+    导致用户删过的「编剧/分镜师/制片 Agent」复活。现永久移除。
+    """
     doc_skills = [
         {
             "id": d["id"],

@@ -44,7 +44,7 @@ export default function CanvasView() {
 
   /**
    * 对话栏图片拖进画布：原生拖拽事件无法投递进跨域 iframe（实证），
-   * 故用本站放置层捕获落点，再经后端走熊布公开 HTTP API 写入图片节点。
+   * 故用本站放置层捕获落点，再经后端走画布公开 HTTP API 写入图片节点。
    */
   async function handleDropImage(e: DragEvent) {
     e.preventDefault();
@@ -106,7 +106,7 @@ export default function CanvasView() {
           <FiImage size={48} />
           <p>画布加载失败</p>
           <p class="canvas-fallback-hint">
-            检查熊布画布是否在 <code>{state.canvasUrl}</code> 启动，
+            检查画布画布是否在 <code>{state.canvasUrl}</code> 启动，
             且 X-Frame-Options 允许被嵌入
           </p>
           <div class="canvas-fallback-actions">

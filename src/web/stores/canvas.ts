@@ -22,7 +22,7 @@ export const [canvasError, setCanvasError] = createSignal(false);
 /**
  * 探测画布服务是否在线（修复计划书 P0-3）。
  * 走本项目后端 GET /api/canvas/list（其返回 canvas_online 标志），
- * 不依赖 postMessage 握手（熊布当前不发送 canvas:ready，Rule 7 不可改）。
+ * 不依赖 postMessage 握手（画布当前不发送 canvas:ready，Rule 7 不可改）。
  * 离线或请求失败时置 canvasError=true，驱动 CanvasView 的错误覆盖层。
  */
 export async function probeCanvasOnline(): Promise<boolean> {

@@ -59,6 +59,11 @@ class MediaToChatInput(BaseModel):
     limit: int = Field(0, description="插入数量上限（0 = 系统默认）")
 
 
+class ReadDraftInput(BaseModel):
+    draft_id: str = Field(..., description="草稿编号（如 '1-2' 表示第 1 组第 2 张卡）或草稿 ID")
+    draft_type: str = Field("", description="草稿类型: keyElement | shot | audio（编号在各类别独立计数，建议指定以消除歧义）")
+
+
 # ---------- Tool 实现 ----------
 
 class StoryboardCreateGroupTool(BaseTool):
@@ -261,6 +266,62 @@ class StoryboardMediaToChatTool(BaseTool):
         return ToolResult(success=True, data={"chat_inserts": inserts})
 
 
+_CAT_BY_TYPE = {
+    "keyelement": CAT_KEY_ELEMENTS,
+    "shot": CAT_SHOTS,
+    "audio": CAT_AUDIO_ITEMS,
+}
+
+
+class StoryboardReadDraftTool(BaseTool):
+    name = "read_draft"
+    description = (
+        "按需读取指定故事板草稿卡的提示词全文。上下文里草稿只有目录信息（编号/label/字数），"
+        "审阅或修改提示词前必须先调用本工具读取全文；触发生成时系统会自动取提示词，无需先读。"
+        "draft_id 支持「组号-卡序号」编号（如 '1-2'），编号在关键元素/分镜/音频各类别独立从 1 计数。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return ReadDraftInput
+
+    async def aexecute(self, params: ReadDraftInput) -> ToolResult:
+        svc = StateManager.get_instance()
+        state = svc.state_dict
+        wanted = (params.draft_id or "").strip()
+        dtype = (params.draft_type or "").strip().lower()
+        cats = (_CAT_BY_TYPE[dtype],) if dtype in _CAT_BY_TYPE else ALL_CATEGORIES_TUPLE
+
+        matches: List[Dict[str, Any]] = []
+        for cat_key in cats:
+            for gi, group in enumerate(state.get(cat_key, []) or []):
+                for di, draft in enumerate(group.get("drafts", []) or []):
+                    if draft.get("id") == wanted or wanted == f"{gi + 1}-{di + 1}":
+                        matches.append({
+                            "category": cat_key,
+                            "group_title": group.get("title", ""),
+                            "group_desc": group.get("desc", "") or group.get("roughDesc", ""),
+                            "draft_id": draft.get("id", ""),
+                            "index": f"{gi + 1}-{di + 1}",
+                            "label": draft.get("label", ""),
+                            "tag": draft.get("tag", ""),
+                            "model": draft.get("model", ""),
+                            "prompt": draft.get("prompt", "") or "",
+                        })
+        if not matches:
+            return ToolResult(
+                success=False,
+                error=f"未找到草稿「{wanted}」。编号格式为「组号-卡序号」（如 '1-2'），"
+                      f"各类别（关键元素/分镜/音频）独立从 1 计数，可传 draft_type 消除歧义",
+            )
+        # 全文上限截断（与其他 read_* 工具一致，防单次返回撑爆上下文）
+        max_chars = settings.max_doc_chars
+        for m in matches:
+            if len(m["prompt"]) > max_chars:
+                m["prompt"] = m["prompt"][:max_chars] + f"\n……（提示词超长，已截断为前 {max_chars} 字）"
+        # 同编号在多类别重复时全部返回，由模型确认具体目标
+        return ToolResult(success=True, data={"drafts": matches})
+
+
 # ---------- 注册 ----------
 
 def register_storyboard_tools():
@@ -272,4 +333,5 @@ def register_storyboard_tools():
     ToolManager.register(StoryboardDeleteGroupTool())
     ToolManager.register(StoryboardConfirmDraftTool())
     ToolManager.register(StoryboardMediaToChatTool())
-    logger.info("[Tools] 6 storyboard tools registered")
+    ToolManager.register(StoryboardReadDraftTool())
+    logger.info("[Tools] 7 storyboard tools registered")

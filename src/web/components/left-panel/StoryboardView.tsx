@@ -1,8 +1,11 @@
 import { createSignal, createEffect, For, Show } from 'solid-js';
+import { FiArrowDown, FiArrowUp, FiPlus, FiTrash2 } from 'solid-icons/fi';
 import {
   state, studioActions, categoryForSubTab,
 } from '@/stores/studio';
 import { reorderGroups } from '@/api/storyboard';
+import { showContextMenu } from '@/components/shared/ContextMenu';
+import { confirmDialog } from '@/components/shared/ConfirmDialog';
 import { BatchGenBar } from './BatchGenBar';
 import { GroupCard } from './GroupCard';
 import type { AnyGroup, DraftType, SubTab } from '@/types';
@@ -12,6 +15,11 @@ const SUB_TABS: Array<{ key: SubTab; label: string }> = [
   { key: 'shots', label: '分镜' },
   { key: 'audio', label: '音频' },
 ];
+
+/** 当前 subTab 对应的分组名称（右键菜单文案用） */
+function groupKindLabel(subTab: SubTab): string {
+  return subTab === 'keyElements' ? '关键元素' : subTab === 'shots' ? '分镜' : '音频';
+}
 
 /**
  * 故事板视图：SubTab 切换 + 批量生成 + 分组列表（<For> keyed diff）
@@ -50,6 +58,38 @@ export function StoryboardView() {
     resetDrag();
   }
 
+  // ===== 列表右键菜单：向上/向下插入、删除 =====
+
+  /** 删除分组（带二次确认） */
+  async function deleteGroup(group: AnyGroup) {
+    const ok = await confirmDialog({
+      title: `删除「${group.title || '未命名分组'}」？`,
+      message: '分组内的全部草稿将一并删除，删除后可通过 Ctrl+Z 撤销恢复。',
+      confirmText: '删除',
+      danger: true,
+    });
+    if (ok) studioActions.removeGroupLocal(state.subTab, group.id);
+  }
+
+  /** 分组卡片右键：基于该分组位置插入 / 删除 */
+  function onGroupContextMenu(e: MouseEvent, group: AnyGroup, idx: number) {
+    const label = groupKindLabel(state.subTab);
+    showContextMenu(e, [
+      { label: `向上插入${label}`, icon: FiArrowUp, onClick: () => studioActions.insertGroupLocal(state.subTab, idx) },
+      { label: `向下插入${label}`, icon: FiArrowDown, onClick: () => studioActions.insertGroupLocal(state.subTab, idx + 1) },
+      { label: '删除', icon: FiTrash2, danger: true, onClick: () => void deleteGroup(group) },
+    ]);
+  }
+
+  /** 列表空白处右键：末尾新增（卡片上的右键由 onGroupContextMenu 处理，已阻止冒泡） */
+  function onListContextMenu(e: MouseEvent) {
+    if (e.target !== e.currentTarget) return; // 只响应容器本身的空白区
+    const label = groupKindLabel(state.subTab);
+    showContextMenu(e, [
+      { label: `新增${label}（末尾）`, icon: FiPlus, onClick: () => studioActions.addGroupLocal(state.subTab) },
+    ]);
+  }
+
   // ===== Agent 联动更新后的闪烁提示 =====
   let containerRef: HTMLDivElement | undefined;
   createEffect(() => {
@@ -59,27 +99,45 @@ export function StoryboardView() {
     containerRef.classList.add('board-flash');
   });
 
+  // ===== 预览框导航按钮：滚动定位到选中卡片并闪烁高亮 =====
+  createEffect(() => {
+    const tick = state.locateTick;
+    if (!tick) return;
+    // 等 subTab 切换后的重渲染完成，再查找选中卡片 DOM
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const card = containerRef?.querySelector('.draft-card.active') as HTMLElement | null;
+      if (!card) return;
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.remove('locate-flash');
+      void card.offsetWidth;
+      card.classList.add('locate-flash');
+      setTimeout(() => card.classList.remove('locate-flash'), 1500);
+    }));
+  });
+
   return (
     <div class="storyboard-section">
-      {/* SubTab 导航 */}
-      <div class="sub-nav">
-        <For each={SUB_TABS}>
-          {(tab) => (
-            <button
-              type="button"
-              class={`sub-nav-btn ${state.subTab === tab.key ? 'active' : ''}`}
-              onClick={() => studioActions.setSubTab(tab.key)}
-            >
-              {tab.label}
-            </button>
-          )}
-        </For>
+      {/* SubTab 导航（吸顶：列表滚动时始终固定在顶部） */}
+      <div class="sub-nav-sticky">
+        <div class="sub-nav">
+          <For each={SUB_TABS}>
+            {(tab) => (
+              <button
+                type="button"
+                class={`sub-nav-btn ${state.subTab === tab.key ? 'active' : ''}`}
+                onClick={() => studioActions.setSubTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            )}
+          </For>
+        </div>
       </div>
 
       <BatchGenBar />
 
-      {/* 分组列表 */}
-      <div ref={containerRef} class="storyboard-list">
+      {/* 分组列表（空白处右键可在末尾新增） */}
+      <div ref={containerRef} class="storyboard-list" onContextMenu={onListContextMenu}>
         <For each={groups()}>
           {(group, idx) => (
             <GroupCard
@@ -87,6 +145,7 @@ export function StoryboardView() {
               type={draftType()}
               index={idx() + 1}
               dragOver={dragOverId() === group.id}
+              onContextMenu={(e) => onGroupContextMenu(e, group, idx())}
               onDragStart={(e) => {
                 setDragSrcId(group.id);
                 e.dataTransfer!.effectAllowed = 'move';

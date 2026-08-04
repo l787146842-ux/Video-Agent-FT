@@ -3,15 +3,18 @@ import { FiZap } from 'solid-icons/fi';
 import { generateImage } from '@/lib/generate-actions';
 import {
   ParamGroup, ParamSelect, ProviderModelSelects,
-  btnPrimary, ExportButton, persistParams,
+  btnPrimary, ExportButton,
 } from './ParamBase';
-import { state, studioActions } from '@/stores/studio';
+import { studioActions } from '@/stores/studio';
 import type { Draft } from '@/types';
 
 const ASPECT_OPTIONS = ['1:1', '16:9', '9:16', '3:4', '4:3', '2:3', '3:2', '21:9', '9:21']
   .map((v) => ({ value: v, label: v }));
 
-/** 图片参数：API/模型/比例（含自定义宽高）+ 保存/生成 */
+/** 分辨率档位：1K=基准尺寸，2K/4K 按比例放大（尺寸映射见 image-sizes.ts） */
+const RESOLUTION_OPTIONS = ['1K', '2K', '4K'].map((v) => ({ value: v, label: v }));
+
+/** 图片参数：API/模型/比例（含自定义宽高）/分辨率 + 保存/生成 */
 export function ImageParams(props: { draft: Draft }) {
   const d = () => props.draft;
 
@@ -33,6 +36,14 @@ export function ImageParams(props: { draft: Draft }) {
           value={d().aspectRatio || '1:1'}
           options={[...ASPECT_OPTIONS, { value: 'custom', label: '自定义' }]}
           onChange={(v) => updateField({ aspectRatio: v })}
+        />
+      </ParamGroup>
+      <ParamGroup label="分辨率:">
+        <ParamSelect
+          ariaLabel="图片分辨率"
+          value={d().imageResolution || '1K'}
+          options={RESOLUTION_OPTIONS}
+          onChange={(v) => updateField({ imageResolution: v })}
         />
       </ParamGroup>
       <Show when={d().aspectRatio === 'custom'}>

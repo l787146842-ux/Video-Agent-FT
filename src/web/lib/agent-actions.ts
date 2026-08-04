@@ -10,7 +10,6 @@ import { streamAgentChat } from '@/hooks/use-sse';
 import {
   agentProvider, agentModel, agentSkill, agentAssetMode,
 } from '@/stores/agent-prefs';
-import { openDocsPanel } from '@/stores/docs';
 import { CHAT_HISTORY_WINDOW, uid } from '@/lib/utils';
 import { partsToPlainText } from '@/lib/rich-input';
 import type { AgentChatRequest, AnyGroup, MediaType, RichContentPart } from '@/types';
@@ -109,18 +108,18 @@ export async function sendUserMessage(input: string | RichContentPart[]): Promis
   studioActions.setPendingAttachments([]);
 
   // Skill 写入文档：仅当消息中携带了 Skill 引用块（名称在消息里）时才登记。
-  // slug 随请求发给后端记入项目 usedSkills（新建项目为空），
-  // 前端乐观更新 + 打开文档面板展示对应 Skill 文档。
+  // slug 随请求发给后端记入项目 usedSkills（新建项目为空），前端乐观更新；
+  // 不自动弹出文档面板（发送后停留在对话页，用户可手动打开）。
   let skillSlug = '';
   if (skill && skill.name && message.includes(skill.name) && skill.id.startsWith('doc:')) {
     skillSlug = skill.id.slice(4);
     studioActions.markSkillUsed(skillSlug);
-    void openDocsPanel(skillSlug);
   }
 
   const request: AgentChatRequest = {
     message,
-    system_prompt: skill?.system_prompt || '',
+    // 幂等键：后端同 id 处理中时拒绝重复提交（防断连重发/双标签页重复落盘）
+    request_id: uid('req'),
     provider,
     model,
     ms_model: provider === 'modelscope' ? model : '',
@@ -134,6 +133,8 @@ export async function sendUserMessage(input: string | RichContentPart[]): Promis
     attachments,
     content_parts: parts,
     skill_slug: skillSlug,
+    // 渐进式披露：后端只注入 Skill 目录，选中项仅作相关性标注
+    skill_name: skill?.name || '',
   };
 
   await streamAgentChat(request);

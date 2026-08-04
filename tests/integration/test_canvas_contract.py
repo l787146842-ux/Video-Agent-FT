@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
-"""画布（熊布）API 契约测试（修复计划书 P1-4）。
+"""画布（画布）API 契约测试（修复计划书 P1-4）。
 
-背景：CanvasAdapter 硬编码了熊布内部 schema（smart-image 的 images[]、viewport、
-乐观锁 base_updated_at 等）。熊布是快速迭代的第三方项目，schema 漂移会让本项目
+背景：CanvasAdapter 硬编码了画布内部 schema（smart-image 的 images[]、viewport、
+乐观锁 base_updated_at 等）。画布是快速迭代的第三方项目，schema 漂移会让本项目
 静默产生坏数据。本测试用录制的真实响应夹具（tests/fixtures/canvas/）守住契约：
 
 - 夹具结构断言：adapter 依赖的字段必须存在且类型正确；
 - adapter 读路径：用 httpx.MockTransport 重放夹具，验证解析逻辑；
 - 写前校验：真实夹具节点必须能通过 _validate_write_payload，坏数据必须被拦截。
 
-夹具刷新：对接新版熊布后，重新录制 GET /api/app-info、/api/canvases、
+夹具刷新：对接新版画布后，重新录制 GET /api/app-info、/api/canvases、
 /api/canvases/{id}（智能画布）到 tests/fixtures/canvas/，diff 即风险清单。
-本测试不需要熊布在线。
+本测试不需要画布在线。
 """
 import json
 from pathlib import Path
@@ -151,7 +151,7 @@ class TestAdapterReadPaths:
 class TestWriteValidation:
     def test_real_fixture_nodes_pass(self, canvas_detail):
         canvas = canvas_detail["canvas"]
-        # 真实熊布数据必须能通过写前校验（否则说明校验规则与现网 schema 漂移）
+        # 真实画布数据必须能通过写前校验（否则说明校验规则与现网 schema 漂移）
         _validate_write_payload(canvas["nodes"], canvas["connections"], canvas["viewport"])
 
     def test_smart_image_without_images_rejected(self):

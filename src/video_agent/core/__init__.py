@@ -1,4 +1,9 @@
-﻿"""core 包入口：惰性导出（PEP 562），避免 web.agent_loop ↔ core.planner 循环导入。"""
+﻿"""core 包入口：惰性导出（PEP 562），避免循环导入。
+
+多步循环已下沉至 core.agent_loop（P1-1）；
+StudioActionExecutor 因依赖 web 层生成管线仍留在 web.action_executor，
+属已登记的层级例外（见 ARCHITECTURE_RULES.md Rule2 注记）。
+"""
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

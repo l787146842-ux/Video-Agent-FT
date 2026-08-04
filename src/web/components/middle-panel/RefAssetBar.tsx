@@ -90,10 +90,9 @@ export function RefAssetBar(props: {
         onDrop={onRefDrop}
       >
         <div class="ref-thumbs flex-wrap">
-          {/* 分镜：绑定元素参考（只读 chips） */}
+          {/* 分镜：绑定元素参考（只读 chips，不显示标题文字） */}
           <Show when={state.selectedType === 'shot'}>
             <div class="scene-refs">
-              <span class="scene-refs-label">绑定元素参考:</span>
               <For each={props.refAssets().filter((u) => boundAssetTitle(u, state.keyElements))}>
                 {(url) => (
                   <span class="scene-ref-chip">

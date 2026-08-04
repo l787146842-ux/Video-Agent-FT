@@ -1,3 +1,4 @@
+import { Show } from 'solid-js';
 import { useSplitter } from '@/hooks/use-splitter';
 import { state } from '@/stores/studio';
 import { Splitter } from '@/components/layout/Splitter';
@@ -9,6 +10,7 @@ import { ParamControls } from './ParamControls';
  * 中间预览面板（对齐旧版布局）：
  * 预览区（flex-1）→ 水平分割线（拖动只调 Prompt 区高度）
  * → Prompt 区（定高）→ 参数控制栏（固定在底部不动）
+ * 收缩时：提示词输入区与底部参数栏一起折叠，仅保留展开按钮条。
  */
 export default function MiddlePanel() {
   // Prompt 区高度：100-600px，向上拖变高（invert），旧版默认 280px
@@ -24,7 +26,10 @@ export default function MiddlePanel() {
   return (
     <div class="panel-column">
       <MediaViewer />
-      <Splitter split={promptSplit} direction="horizontal" />
+      {/* 收缩后分割线与参数栏随提示词区一起折叠 */}
+      <Show when={!state.isPromptCollapsed}>
+        <Splitter split={promptSplit} direction="horizontal" />
+      </Show>
       {/* 旧版 preview-bottom：统一 bg-secondary 底色的 Prompt 区 + 固定底部参数栏 */}
       <div class="preview-bottom-shell">
         <div
@@ -35,8 +40,10 @@ export default function MiddlePanel() {
         >
           <PromptEditor />
         </div>
-        {/* 参数控制栏：固定底部，不随 Prompt 高度变化 */}
-        <ParamControls />
+        {/* 参数控制栏：固定底部，不随 Prompt 高度变化；收缩时一并隐藏 */}
+        <Show when={!state.isPromptCollapsed}>
+          <ParamControls />
+        </Show>
       </div>
     </div>
   );

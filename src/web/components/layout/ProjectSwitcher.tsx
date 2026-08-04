@@ -5,8 +5,10 @@ import {
 import {
   getProjects, switchProject, deleteProject, createProject,
 } from '@/api/project';
-import { studioActions, state as studioState } from '@/stores/studio';
+import { studioActions, state as studioState, persistBoard } from '@/stores/studio';
 import { chatActions } from '@/stores/chat';
+import { convActions } from '@/stores/conversations';
+import { stopAgentStream } from '@/hooks/use-sse';
 import { showToast } from '@/stores/toast';
 import { confirmDialog } from '@/components/shared/ConfirmDialog';
 import { refreshHistoryStatus } from '@/stores/history';
@@ -47,8 +49,21 @@ export function ProjectSwitcher() {
     if (!snapshot) return;
     studioActions.resetForProject(snapshot);
     chatActions.loadMessages(snapshot.chatMessages || []);
+    // 项目切换后多对话标签栏随之重置
+    convActions.loadFromSnapshot(snapshot);
     // 切换项目会清空后端 undo/redo 栈，同步指示位
     void refreshHistoryStatus();
+  }
+
+  /** 变更项目前的统一前置动作：
+   * 1) 中止旧项目正在进行的 Agent 流（防止旧回复/旧快照串入新项目）；
+   * 2) 冲刷当前项目挂起的防抖保存（确保旧项目最新修改先落盘，
+   *    避免切换后残留 PUT 把旧数据写进新项目）。 */
+  async function beforeProjectMutation() {
+    stopAgentStream();
+    try {
+      await persistBoard.flush();
+    } catch { /* 保存失败不阻断项目操作 */ }
   }
 
   async function doSwitch(id: string) {
@@ -57,6 +72,7 @@ export function ProjectSwitcher() {
       return;
     }
     try {
+      await beforeProjectMutation();
       const data = await switchProject(id);
       if (!data.ok) throw new Error(data.message || '切换失败');
       applySnapshot(data.state);
@@ -76,6 +92,7 @@ export function ProjectSwitcher() {
     });
     if (!ok) return;
     try {
+      await beforeProjectMutation();
       const data = await deleteProject(id);
       if (!data.ok) throw new Error(data.message || '删除失败');
       applySnapshot(data.state);
@@ -90,6 +107,7 @@ export function ProjectSwitcher() {
     const name = newName().trim();
     if (!name) return;
     try {
+      await beforeProjectMutation();
       const data = await createProject(name);
       if (!data.ok) throw new Error(data.message || '新建项目失败');
       applySnapshot(data.state);

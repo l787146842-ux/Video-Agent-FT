@@ -18,13 +18,14 @@ from loguru import logger
 
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse, StreamChunk
 from src.video_agent.config import settings
-from src.video_agent.core.token_budget import truncate_messages
+from src.video_agent.core.token_budget import estimate_messages_tokens, truncate_messages
 from src.video_agent.memory import MemoryManager
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.utils.prompts import load_prompt, render_prompt
+from src.video_agent.core.agent_loop import MAX_STEPS, run_agent_loop
+from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.web.actions import StudioActionExecutor
-from src.video_agent.web.agent_loop import MAX_STEPS, run_agent_loop
 from src.video_agent.workflows.engine import WorkflowEngine
 
 
@@ -35,7 +36,11 @@ class PlannerContext:
     selected_draft_id: str = ""
     selected_type: str = ""
     state_json: str = ""
-    extra_system: str = ""       # 前端 skill 的角色提示词
+    # 状态 JSON 的惰性构建器（P0 修复）：多步循环每一轮都会调用一次，
+    # 保证模型在每轮看到上一轮执行后的最新工作台状态。
+    # 传入 state_json 字符串是旧调用方式的兼容降级（整段固定不变）。
+    state_builder: Optional[Callable[[], str]] = None
+    skill_name: str = ""         # 前端当前选中的 Skill 名称（目录标注用，提高相关性判断准确率）
     use_studio_context: bool = True
     asset_mode: str = "bound"    # 资产过滤模式
     image_generation_provider: str = ""  # 选中草稿的生图 provider，用于强制注入
@@ -209,6 +214,13 @@ class Planner:
             if on_event is not None:
                 await on_event({"type": "status", "text": text})
 
+        async def _emit_event(event: Dict[str, Any]) -> None:
+            """过程时间线事件透传（tool_started/tool_finished）"""
+            if on_event is not None:
+                await on_event(event)
+
+        tracer = AgentTracer.get_instance()
+
         async def llm_call(system_prompt: str, messages: List[Dict[str, Any]], hook=None) -> tuple:
             # 流式路径：使用 chat_stream + hook 回调
             if hook:
@@ -223,6 +235,11 @@ class Planner:
                         out = suppressor.feed(chunk.text)
                         if out:
                             await hook(out)
+                    elif chunk.type == "reasoning_delta" and chunk.text:
+                        # 深度思考：记入 trace（持久化展示）+ 实时推给前端，不进 LLM 上下文
+                        tracer.record_reasoning(chunk.text)
+                        if on_event is not None:
+                            await on_event({"type": "reasoning_delta", "text": chunk.text})
                     elif chunk.type == "tool_call":
                         stream_tool_calls.append({
                             "id": f"call_stream_{len(stream_tool_calls)}",
@@ -242,7 +259,7 @@ class Planner:
             else:
                 response = await self._call_llm(system_prompt, messages)
 
-            return await self._handle_fc_response(
+            content, finish, fc_applied, tool_results = await self._handle_fc_response(
                 response,
                 image_urls_collector=image_urls_collector,
                 chat_inserts_collector=chat_inserts_collector,
@@ -250,7 +267,26 @@ class Planner:
                 image_provider=context.image_generation_provider,
                 image_aspect_ratio=context.image_generation_aspect_ratio,
                 on_status=_emit_status,
+                on_event=_emit_event,
             )
+            # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
+            # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
+            if tool_results:
+                feedback = Planner._format_tool_results(tool_results)
+                if feedback:
+                    if context.skill_name:
+                        feedback += (
+                            "\n【提醒】当前有选中 Skill：遵守其阶段划分与暂停点，"
+                            "到达确认点时用 request_confirmation / workflow_pause 真正停下，不要一口气做完全部阶段。"
+                        )
+                    # token 治理（P1）：新一轮回喂入库前，把更早轮次的 read_* 全文
+                    # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
+                    # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
+                    # 短对话保留全文；选中 Skill 不受影响（它硬注入在 system prompt 里）
+                    if Planner._should_compress_feedback(messages):
+                        Planner._compress_prior_feedback(messages)
+                    messages.append({"role": "user", "content": feedback})
+            return content, finish, fc_applied
 
         # 构建 context_builder
         def context_builder() -> str:
@@ -289,10 +325,11 @@ class Planner:
             trace=loop_result.trace,
         )
 
-        # 记忆系统：后台异步记录本轮对话（不阻塞响应流）
+        # 记忆系统：后台异步记录本轮对话（不阻塞响应流），按项目隔离
         if settings.memory_enabled:
             MemoryManager.get_instance().record_dialog_background(
-                user_message, loop_result.text, self._make_summarize_fn()
+                user_message, loop_result.text, self._make_summarize_fn(),
+                project_id=StateManager.get_instance().active_project_id,
             )
 
         return response
@@ -331,10 +368,13 @@ class Planner:
                 await queue.put(PlannerEvent(type="actions_applied", text=f"已应用 {count} 个操作"))
             elif etype == "executing_actions":
                 await queue.put(PlannerEvent(type="status", text="正在执行操作…"))
+            elif etype in ("reasoning_delta", "tool_started", "tool_finished"):
+                # 过程时间线事件穿透（前端渲染深度思考/工具条目）
+                await queue.put(PlannerEvent(type=etype, text=event.get("text", ""), payload=event))
 
         # 在后台任务中运行统一循环，通过 queue 穿透事件
         result_holder: List[PlannerResponse] = []
-        error_holder: List[str] = []
+        error_holder: List[Exception] = []
 
         async def _run():
             try:
@@ -342,23 +382,35 @@ class Planner:
                     user_message, context, stream_hook=on_delta, on_event=on_event
                 )
                 result_holder.append(resp)
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
-                error_holder.append(str(e))
+                error_holder.append(e)
             finally:
                 await queue.put(None)  # 哨兵：结束
 
         task = asyncio.create_task(_run())
 
-        # 消费队列事件并 yield
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            yield item
+        # 消费队列事件并 yield；消费方提前关闭（如 SSE 客户端断连）时
+        # 必须取消后台任务，否则孤儿任务继续烧 token 并写状态（P0-1）
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                yield item
+        finally:
+            if not task.done():
+                task.cancel()
 
         # 处理结果
         if error_holder:
-            yield PlannerEvent(type="error", text=error_holder[0])
+            exc = error_holder[0]
+            yield PlannerEvent(type="error", text=str(exc), payload={
+                "error_code": getattr(exc, "error_code", "INTERNAL_ERROR"),
+                "retryable": getattr(exc, "retryable", None),
+                "http_status": getattr(exc, "http_status", None),
+            })
             return
 
         result = result_holder[0] if result_holder else PlannerResponse()
@@ -380,38 +432,156 @@ class Planner:
 
     # ---------- 内部方法 ----------
 
+    # 回喂消息的识别前缀（与 _format_tool_results 首行保持一致）
+    _FEEDBACK_MARKER = "（系统）本轮调用的工具已执行完毕，结果如下："
+    # 旧轮回喂被压缩后的占位文案
+    _FEEDBACK_COMPRESSED = (
+        "（系统）此前轮次工具读回的文档全文已从上下文移除以节约空间；"
+        "其中的流程与约束仍须遵守，如确需复核原文请重新调用对应 read_* 工具。"
+    )
+
+    @staticmethod
+    def _should_compress_feedback(messages: List[Dict[str, Any]]) -> bool:
+        """惰性压缩决策：消息估算总量达到 token 预算的 feedback_compress_ratio
+        才压缩旧轮全文回喂；未达到则保留全文保质量（短对话零损失）"""
+        ratio = min(max(settings.feedback_compress_ratio, 0.0), 1.0)
+        if ratio >= 1.0:
+            return False
+        budget = int(settings.context_window_size * settings.token_budget_ratio)
+        threshold = int(budget * ratio)
+        return estimate_messages_tokens(messages) >= threshold
+
+    @staticmethod
+    def _compress_prior_feedback(messages: List[Dict[str, Any]]) -> None:
+        """把 messages 里已有的工具结果回喂消息压缩为占位文案（原地修改）。
+
+        时机：新一轮回喂 append 之前调用，因此现存的所有回喂消息都属「旧轮」。
+        read_* 全文只保留最近一轮，更早的以一句话占位——约束效力靠提示词延续，
+        全文本身已写入草稿/文档，需要时模型可重新 read。
+        """
+        for m in messages:
+            content = m.get("content", "")
+            if m.get("role") == "user" and isinstance(content, str) \
+                    and content.startswith(Planner._FEEDBACK_MARKER):
+                m["content"] = Planner._FEEDBACK_COMPRESSED
+
     def _build_system_prompt(self, context: PlannerContext) -> str:
-        """构建 system prompt：从 prompts/ 加载 + 注入状态上下文"""
+        """构建 system prompt：从 prompts/ 加载 + 注入状态上下文。
+
+        段落顺序为前缀缓存（P1）优化：稳定内容（协议/Skill 目录/选中 Skill/
+        草稿说明/记忆）在前，逐轮变化的工作台状态 JSON 殿后，
+        使多步循环内各轮的前缀逐字节稳定，命中供应商 prompt 前缀缓存。
+        """
         parts: List[str] = []
 
-        # 前端 skill 角色提示词
-        if context.extra_system:
-            parts.append(context.extra_system.strip())
-
         if context.use_studio_context:
-            # Rule4: 从 prompts/ 目录加载
+            # Rule4: 从 prompts/ 目录加载（稳定前缀第一段）
             protocol = load_prompt("planner/system.md")
             if protocol:
                 parts.append(protocol)
 
-            # 注入状态上下文
+        # 渐进式披露：不再注入全部 Skill 全文，
+        # 改为注入 Skill 目录（名称+摘要），全文由模型按需调 read_skill 加载
+        catalog = self._build_skill_catalog(context)
+        if catalog:
+            parts.append(catalog)
+
+        # 硬保障：用户在前端选中的 Skill 强制全文注入。
+        # 原因：模型不一定主动调 read_skill，非 FC 通道（如 gemini-cli）根本调不了；
+        # 选中项是用户明确指定的任务依据，丢了它产出质量直接劣化。
+        # 未选中的 Skill 仍保持目录 + 按需加载，token 治理不回退。
+        if context.skill_name:
+            selected_block = self._build_selected_skill_block(context.skill_name)
+            if selected_block:
+                parts.append(selected_block)
+
+        if context.use_studio_context:
             if context.selected_draft_id:
                 parts.append(
                     f"\n用户当前选中的草稿：draft_id={context.selected_draft_id}"
                     f"（类型 {context.selected_type or '未知'}）。studio-actions 里的 \"current\" 指向它。"
                 )
-            if context.state_json:
-                parts.append("当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + context.state_json)
 
-            # 混合记忆检索注入（语义 + 关键词 + 时间衰减）
+            # 混合记忆检索注入（语义 + 关键词 + 时间衰减），按项目隔离
             if settings.memory_enabled:
                 query = self._last_user_text(context)
                 if query:
-                    memory_ctx = MemoryManager.get_instance().build_context(query)
+                    project_id = StateManager.get_instance().active_project_id
+                    memory_ctx = MemoryManager.get_instance().build_context(query, project_id=project_id)
                     if memory_ctx:
                         parts.append(memory_ctx)
 
+            # 状态上下文殿后（每轮变化最大）：优先用惰性构建器按轮刷新，
+            # 让 LLM 在每一轮都看到上一轮执行后的最新状态（P0 修复）
+            if context.state_builder is not None:
+                state_json = context.state_builder()
+            else:
+                state_json = context.state_json
+            if state_json:
+                parts.append("当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + state_json)
+
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _build_skill_catalog(context: PlannerContext) -> str:
+        """构建 Skill 目录（渐进式披露的「目录」）：全部文档 Skill 的名称+摘要常驻，
+        全文不注入，模型判断相关性后调 read_skill 按需加载。
+        代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
+        # 延迟导入，避免 core 层与 web/skills 的循环依赖
+        from src.video_agent.web.skill_docs import list_skill_docs
+
+        lines: List[str] = []
+        try:
+            for d in list_skill_docs():
+                name = d.get("name") or d.get("slug") or ""
+                desc = (d.get("description") or "").strip() or "未提供摘要"
+                lines.append(f"- {name}：{desc}")
+        except Exception:  # 文档目录读取失败不阻断对话
+            pass
+        if not lines:
+            return ""
+        header = (
+            "== Skill 目录（渐进式披露：上下文只有各 Skill 的名称与摘要。"
+            "执行任务前必须先调用 read_skill（name=Skill 名称）加载对应 Skill 的完整流程，"
+            "不要凭目录摘要自行推测流程细节）==\n" + "\n".join(lines)
+        )
+        if context.skill_name:
+            header += (
+                f"\n用户当前在前端选中了「{context.skill_name}」，其全文已另行注入下方"
+                f"（无需再对它调 read_skill）；其他 Skill 需要时仍要先 read_skill。"
+            )
+        return header
+
+    @staticmethod
+    def _build_selected_skill_block(skill_name: str) -> str:
+        """选中 Skill 的全文注入块（硬保障，不依赖模型自觉调 read_skill）"""
+        from src.video_agent.web.skill_docs import build_foreign_tool_note, resolve_skill_content
+        try:
+            display, content = resolve_skill_content(skill_name)
+        except Exception:  # 解析失败不阻断对话
+            logger.warning(f"[Planner] 选中 Skill「{skill_name}」解析失败，降级为仅目录")
+            return ""
+        content = (content or "").strip()
+        if not content:
+            return ""
+        if len(content) > settings.max_doc_chars:
+            content = content[:settings.max_doc_chars] + "\n……（Skill 全文超长，已截断）"
+        # 外来工作流直译的 Skill 常引用本系统不存在的工具名，
+        # 检测到已知外来词汇时自动追加对照表，把映射从模型猜测变成显式指令
+        mapping_note = build_foreign_tool_note(content)
+        mapping_block = f"\n\n{mapping_note}" if mapping_note else ""
+        return (
+            f"== 当前选中 Skill「{display or skill_name}」全文（已直接注入，必须严格遵守"
+            f"其中的流程与规范；不要再对它调用 read_skill）==\n{content}{mapping_block}\n\n"
+            "【Skill 流程纪律 — 最高优先级】\n"
+            "1. 本 Skill 规定的阶段划分与暂停点必须逐段执行：严禁把多个阶段（规格文档、故事板结构、"
+            "提示词草案、生成）合并到同一轮回复里一口气做完。\n"
+            "2. Skill 里每一个「确认/暂停/审阅」点，都必须用 request_confirmation（文本模式）或 "
+            "workflow_pause（Tool 模式）真正停下等待用户；只在正文里写「请确认」而不发暂停信号是无效的。\n"
+            "3. 要求分批次确认的（如先元素图草案、确认后再镜头视频草案），必须真的分批："
+            "本批完成→暂停等确认，下一批等用户确认后的新消息再做。\n"
+            "4. 本轮若已到达某个暂停点：立即发出暂停信号并结束本轮，不要顺手把下一阶段也做完。"
+        )
 
     @staticmethod
     def _last_user_text(context: PlannerContext) -> str:
@@ -491,12 +661,16 @@ class Planner:
         image_provider: str = "",
         image_aspect_ratio: str = "",
         on_status=None,
+        on_event=None,
     ) -> Tuple:
-        """处理 LLM 响应中的 FC tool_calls，返回 (content, finish_reason, fc_applied)"""
+        """处理 LLM 响应中的 FC tool_calls。
+        返回 (content, finish_reason, fc_applied, tool_results)，
+        tool_results: [{name, ok, data, error}] 供回喂进对话上下文"""
         if response.tool_calls:
-            fc_applied, fc_confirmation, image_urls, chat_inserts, fc_action_log = await self._execute_fc_tools(
+            (fc_applied, fc_confirmation, image_urls,
+             chat_inserts, fc_action_log, fc_tool_results) = await self._execute_fc_tools(
                 response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
-                on_status=on_status,
+                on_status=on_status, on_event=on_event,
             )
             if image_urls_collector is not None:
                 image_urls_collector.extend(image_urls)
@@ -510,22 +684,24 @@ class Planner:
                     ensure_ascii=False,
                 )
                 content = response.content + f"\n```studio-actions\n{confirm_block}\n```"
-                return content, response.finish_reason, 0
-            return response.content, response.finish_reason, fc_applied
-        return response.content, response.finish_reason, 0
+                return content, response.finish_reason, 0, fc_tool_results
+            return response.content, response.finish_reason, fc_applied, fc_tool_results
+        return response.content, response.finish_reason, 0, []
 
     async def _execute_fc_tools(
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",
-        on_status=None,
-    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str]]:
+        on_status=None, on_event=None,
+    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
         """执行 Function Calling 返回的 tool_calls。
-        返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log)"""
+        返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log, tool_results)"""
         applied = 0
         confirmation = ""
         image_urls: List[str] = []
         chat_inserts: List[Dict[str, Any]] = []
         action_log: List[str] = []
-        for call in response.tool_calls:
+        tool_results: List[Dict[str, Any]] = []
+        tracer = AgentTracer.get_instance()
+        for ci, call in enumerate(response.tool_calls):
             func = call.get("function", {}) if isinstance(call, dict) else {}
             name = func.get("name", "")
             args_raw = func.get("arguments", "{}")
@@ -533,6 +709,18 @@ class Planner:
                 args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
             except json.JSONDecodeError:
                 args = {}
+
+            # 过程时间线：工具开始（前端渲染运行态条目）
+            tool_event_id = str(call.get("id") or f"fc-{ci}") if isinstance(call, dict) else f"fc-{ci}"
+            start_summary = self._describe_fc_tool(name, args)
+            if on_event is not None:
+                await on_event({
+                    "type": "tool_started",
+                    "id": tool_event_id,
+                    "name": name,
+                    "summary": start_summary,
+                })
+            _tool_t0 = time.monotonic()
 
             # --- 生图模型强制注入：用中间面板选中的 provider 覆盖 mock ---
             if name == "generate_image" and image_provider:
@@ -548,6 +736,7 @@ class Planner:
                                 image_aspect_ratio)
 
             result = await self.tool_manager.invoke_tool(name, args)
+            _tool_ms = (time.monotonic() - _tool_t0) * 1000
             if result.success:
                 applied += 1
                 if name == "workflow_pause":
@@ -557,6 +746,17 @@ class Planner:
                 # 推理过程可视化：每完成一个工具就推一条状态
                 if on_status is not None:
                     await on_status(f"已完成：{desc}")
+                # 过程时间线：工具完成 + trace 记录
+                if on_event is not None:
+                    await on_event({
+                        "type": "tool_finished",
+                        "id": tool_event_id,
+                        "ok": True,
+                        "elapsed_ms": round(_tool_ms, 1),
+                        "result_summary": desc,
+                    })
+                tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True)
+                tool_results.append({"name": name, "ok": True, "data": getattr(result, "data", None)})
                 # --- 收集 generate_image 产出的图片 URL ---
                 data = getattr(result, "data", None)
                 if data and "image_urls" in data:
@@ -570,7 +770,72 @@ class Planner:
                         chat_inserts.extend(inserts)
             else:
                 logger.warning(f"[Planner] Tool '{name}' failed: {getattr(result, 'error', '')}")
-        return applied, confirmation, image_urls, chat_inserts, action_log
+                if on_event is not None:
+                    await on_event({
+                        "type": "tool_finished",
+                        "id": tool_event_id,
+                        "ok": False,
+                        "elapsed_ms": round(_tool_ms, 1),
+                        "result_summary": str(getattr(result, "error", "") or "执行失败")[:120],
+                    })
+                tracer.record_action(
+                    name=name, summary=start_summary, elapsed_ms=_tool_ms, ok=False,
+                )
+                tool_results.append({
+                    "name": name, "ok": False,
+                    "error": str(getattr(result, "error", "") or "执行失败")[:200],
+                })
+        return applied, confirmation, image_urls, chat_inserts, action_log, tool_results
+
+    # read_* 系列：读回的全文必须完整回喂进上下文（渐进式披露的「借阅归还」）；
+    # 其他写入类工具只回报成功与否，避免重复携带大 JSON 膨胀上下文
+    _FEEDBACK_FULL_TOOLS = {"read_skill", "read_project_doc", "read_uploaded_doc", "read_draft"}
+    # 单次回喂总量保险丝（read_* 各自已有 max_doc_chars 截断，这里防多文档叠加）
+    _FEEDBACK_MAX_TOTAL_CHARS = 100000
+
+    @staticmethod
+    def _format_tool_results(tool_results: List[Dict[str, Any]]) -> str:
+        """把本轮 FC 工具执行结果格式化为回喂消息。
+
+        read_* 工具携带读回的全文（Skill 流程/规格/剧本/草稿提示词），
+        必须让模型在后续轮次真正看到，否则按需加载形同虚设。
+        """
+        lines: List[str] = ["（系统）本轮调用的工具已执行完毕，结果如下："]
+        total = 0
+        for tr in tool_results:
+            name = str(tr.get("name", ""))
+            if not tr.get("ok"):
+                lines.append(f"- {name}：执行失败 —— {tr.get('error') or '未知错误'}")
+                continue
+            if name not in Planner._FEEDBACK_FULL_TOOLS:
+                lines.append(f"- {name}：执行成功")
+                continue
+            data = tr.get("data") or {}
+            body = Planner._render_read_result(name, data)
+            if total + len(body) > Planner._FEEDBACK_MAX_TOTAL_CHARS:
+                lines.append(f"- {name}：执行成功（全文因总量超限未附，请勿重复读取，按已有信息继续）")
+                continue
+            total += len(body)
+            lines.append(
+                f"- {name} 执行成功，以下是读回的全文（后续任务必须遵守其中流程与约束，"
+                f"不要重复调用同一工具）：\n{body}"
+            )
+        return "\n".join(lines) if len(lines) > 1 else ""
+
+    @staticmethod
+    def _render_read_result(name: str, data: Dict[str, Any]) -> str:
+        """按 read_* 工具类型渲染读回全文"""
+        if name == "read_draft":
+            parts: List[str] = []
+            for d in (data.get("drafts") or []):
+                parts.append(
+                    f"【草稿 {d.get('index', '')}「{d.get('label', '')}」"
+                    f"（{d.get('group_title', '')}，draft_id={d.get('draft_id', '')}）】\n{d.get('prompt', '')}"
+                )
+            return "\n\n".join(parts) if parts else "（无内容）"
+        doc_name = data.get("name", "")
+        content = data.get("content", "") or "（空）"
+        return f"【{doc_name}】\n{content}"
 
     @staticmethod
     def _describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
@@ -591,8 +856,16 @@ class Planner:
             return f"确认草稿「{label or draft_id or '当前草稿'}」"
         if name == "storyboard_media_to_chat":
             return "插入故事板媒体到对话输入框"
+        if name == "read_draft":
+            return f"读取草稿「{str(args.get('draft_id') or '未知')}」提示词全文"
         if name == "document_write":
             return f"写入文档「{doc or '未命名'}」"
+        if name == "read_uploaded_doc":
+            return f"读取上传文档「{str(args.get('name') or args.get('doc_id') or '未知')}」"
+        if name == "read_skill":
+            return f"加载 Skill「{str(args.get('name') or '未知')}」完整流程"
+        if name == "read_project_doc":
+            return f"读取规格文档「{str(args.get('name') or '未知')}」"
         if name in ("generate_image", "image_generate"):
             return "发起生图"
         if name == "generate_video":

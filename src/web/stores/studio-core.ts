@@ -32,10 +32,16 @@ export interface StudioState {
   canvasUrl: string;
   activeGenerations: Record<string, ActiveGeneration>;
   projectName: string;
+  /** 当前项目 ID（来自后端快照 project_id，persistBoard 回传供后端校验防止跨项目写入） */
+  projectId: string;
+  /** 提示词编辑器聚焦中的草稿 ID（SSE done 快照同步时保护其 prompt 不被覆盖） */
+  editingDraftId: string;
   /** 当前项目已发送给 Agent 的 Skill slug（文档面板只展示这些 Skill 文档） */
   usedSkills: string[];
   /** Agent 联动更新故事板的时间戳（驱动左面板闪烁动画） */
   lastAppliedAt: number;
+  /** 预览框导航按钮触发左面板定位的计数（驱动滚动到选中卡片并闪烁） */
+  locateTick: number;
 }
 
 const defaultState: StudioState = {
@@ -61,8 +67,11 @@ const defaultState: StudioState = {
   canvasUrl: 'http://localhost:3000',
   activeGenerations: {},
   projectName: '',
+  projectId: '',
+  editingDraftId: '',
   usedSkills: [],
   lastAppliedAt: 0,
+  locateTick: 0,
 };
 
 const [state, setState] = createStore<StudioState>(defaultState);

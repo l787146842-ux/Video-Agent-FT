@@ -15,6 +15,10 @@ export default defineConfig({
     solidPlugin(),
     tailwindcss(),
   ],
+  define: {
+    // 构建时间戳：排查"浏览器跑的是不是最新构建"时一眼可查（控制台/BUILD_ID）
+    __BUILD_ID__: JSON.stringify(new Date().toISOString()),
+  },
   // root 设为 src/web：让 HTML 入口输出到 dist 根目录（而非 dist/src/web/）
   root: resolve(__dirname, 'src/web'),
   // 所有构建产物 URL 加 /static/dist/ 前缀（后端 mount 在此路径）

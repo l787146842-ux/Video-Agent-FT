@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ApiProvider } from '@/types';
+import type { ApiProvider, Skill } from '@/types';
 
 /**
  * P2-2：输入区 pill 选择持久化 —— API/模型/Skill 记住上次选择（localStorage），
  * 默认值预填，供应商失效时回退首选可用项。
+ * 代码内置 Skill（production-agent 等）已彻底移除：默认不再预填，
+ * 残留无效 id 时回退到第一个文档 Skill。
  */
 
 const PROVIDERS: ApiProvider[] = [
@@ -11,23 +13,33 @@ const PROVIDERS: ApiProvider[] = [
   { id: 'volcengine', name: '火山', protocol: 'openai', image_models: [], video_models: [], chat_models: ['vc-1'] },
 ];
 
+const DOC_SKILLS: Skill[] = [
+  { id: 'doc:demo', name: '测试 Skill', description: '', system_prompt: '', source: 'doc', slug: 'demo' },
+  { id: 'doc:other', name: '另一个 Skill', description: '', system_prompt: '', source: 'doc', slug: 'other' },
+];
+
 /** agent-prefs 在模块加载时读取 localStorage，需按用例重置模块缓存后动态导入；
- * 重置后必须在同一新模块图内注入 apiProviders，否则被测模块看不到供应商列表 */
-async function loadPrefs(stored: Record<string, string>, providers: ApiProvider[] = PROVIDERS) {
+ * 重置后必须在同一新模块图内注入 apiProviders/skills，否则被测模块看不到列表 */
+async function loadPrefs(
+  stored: Record<string, string>,
+  providers: ApiProvider[] = PROVIDERS,
+  skills: Skill[] = [],
+) {
   localStorage.clear();
   Object.entries(stored).forEach(([k, v]) => localStorage.setItem(k, v));
   vi.resetModules();
   const core = await import('@/stores/studio-core');
   core.setState('apiProviders', providers);
+  core.setState('skills', skills);
   return import('@/stores/agent-prefs');
 }
 
 describe('stores/agent-prefs（P2-2 pill 持久化）', () => {
-  it('无记录时使用默认预填（首选 chat 供应商 + 其首个模型 + 默认 skill）', async () => {
+  it('无记录时不再预填已删除的代码 Skill（默认空）', async () => {
     const prefs = await loadPrefs({});
     expect(prefs.agentProvider()).toBe('custom-api');
     expect(prefs.agentModel()).toBe('chat-a');
-    expect(prefs.agentSkillId()).toBe('production-agent');
+    expect(prefs.agentSkillId()).toBe('');
     expect(prefs.agentAssetMode()).toBe('bound');
   });
 
@@ -35,13 +47,18 @@ describe('stores/agent-prefs（P2-2 pill 持久化）', () => {
     const prefs = await loadPrefs({
       studioAgentProvider: 'volcengine',
       studioAgentModel: 'vc-1',
-      studioAgentSkill: 'story-generator',
+      studioAgentSkill: 'doc:demo',
       studioAgentAssetMode: 'all',
-    });
+    }, PROVIDERS, DOC_SKILLS);
     expect(prefs.agentProvider()).toBe('volcengine');
     expect(prefs.agentModel()).toBe('vc-1');
-    expect(prefs.agentSkillId()).toBe('story-generator');
+    expect(prefs.agentSkillId()).toBe('doc:demo');
     expect(prefs.agentAssetMode()).toBe('all');
+  });
+
+  it('残留的已删除代码 Skill id（production-agent）回退到第一个文档 Skill', async () => {
+    const prefs = await loadPrefs({ studioAgentSkill: 'production-agent' }, PROVIDERS, DOC_SKILLS);
+    expect(prefs.agentSkillId()).toBe('doc:demo');
   });
 
   it('选择即写入 localStorage', async () => {
@@ -50,8 +67,8 @@ describe('stores/agent-prefs（P2-2 pill 持久化）', () => {
     expect(localStorage.getItem('studioAgentProvider')).toBe('volcengine');
     prefs.setAgentModel('vc-1');
     expect(localStorage.getItem('studioAgentModel')).toBe('vc-1');
-    prefs.setAgentSkill('story-generator');
-    expect(localStorage.getItem('studioAgentSkill')).toBe('story-generator');
+    prefs.setAgentSkill('doc:other');
+    expect(localStorage.getItem('studioAgentSkill')).toBe('doc:other');
     prefs.setAgentAssetMode('all');
     expect(localStorage.getItem('studioAgentAssetMode')).toBe('all');
   });

@@ -1,6 +1,6 @@
-# 画布（熊布）API 契约夹具
+# 画布（画布）API 契约夹具
 
-本目录存放从真实熊布服务录制的只读响应（GET），供 `tests/integration/test_canvas_contract.py` 使用。
+本目录存放从真实画布服务录制的只读响应（GET），供 `tests/integration/test_canvas_contract.py` 使用。
 
 ## 文件
 
@@ -12,12 +12,12 @@
 
 ## 何时刷新
 
-对接新版熊布后（`data/canvas_integration.json` 记录版本，启动时漂移会 warning），重新录制本目录文件。
+对接新版画布后（`data/canvas_integration.json` 记录版本，启动时漂移会 warning），重新录制本目录文件。
 **刷新后的 git diff 即 schema 风险清单**：凡是被删除/改名的字段，若 adapter 有依赖，必须同步修改。
 
 ## 如何刷新
 
-熊布运行中执行（纯 GET，不写入任何数据）：
+画布运行中执行（纯 GET，不写入任何数据）：
 
 ```bash
 python -c "

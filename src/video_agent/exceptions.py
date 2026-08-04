@@ -10,6 +10,7 @@
 路由层通过 @app.exception_handler(VideoAgentError) 统一处理。
 每个异常携带 error_code 供前端国际化翻译用（消息本身保持中文）。
 """
+from typing import Optional
 
 
 class VideoAgentError(Exception):
@@ -27,9 +28,27 @@ class VideoAgentError(Exception):
 
 
 class AdapterError(VideoAgentError):
-    """Adapter 调用失败（LLM / 图片 / 视频供应商）"""
+    """Adapter 调用失败（LLM / 图片 / 视频供应商）
+
+    结构化故障信息（替代脆弱的错误文案字符串匹配）：
+    - retryable: 是否为瞬时故障（5xx / 超时 / 连接失败），可重试/切备用模型
+    - http_status: 上游 HTTP 状态码（如有），供日志与监控分档
+    """
     status_code = 502
     error_code = "ADAPTER_ERROR"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int = 0,
+        error_code: str = "",
+        retryable: Optional[bool] = None,
+        http_status: Optional[int] = None,
+    ):
+        super().__init__(message, status_code=status_code, error_code=error_code)
+        self.retryable = retryable
+        self.http_status = http_status
 
 
 class GenerationError(VideoAgentError):

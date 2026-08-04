@@ -68,3 +68,28 @@ export async function fetchImageAsFile(url: string, filename: string): Promise<F
     return null;
   }
 }
+
+/**
+ * 抓取静态资源文本（文档面板展示上传的 md/txt 素材用，铁律 10.1：fetch 收口 api 层）。
+ * 失败时抛错，由调用方决定降级行为（如新窗口打开）。
+ */
+export async function fetchResourceText(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`加载失败 (HTTP ${res.status})`);
+  return res.text();
+}
+
+/**
+ * 抓取媒体为 Blob（导出下载用，铁律 10.1：fetch 收口 api 层）。
+ * 跨域资源自动走后端 /api/image-proxy 代理。
+ */
+export async function fetchMediaBlob(url: string): Promise<Blob> {
+  const fullUrl = url;
+  const isCrossOrigin = fullUrl.startsWith('http') && !fullUrl.startsWith(location.origin);
+  const fetchUrl = isCrossOrigin
+    ? `/api/image-proxy?url=${encodeURIComponent(fullUrl)}`
+    : fullUrl;
+  const res = await fetch(fetchUrl);
+  if (!res.ok) throw new Error(`媒体下载失败 (HTTP ${res.status})`);
+  return res.blob();
+}

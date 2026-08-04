@@ -58,15 +58,27 @@ class MemoryManager:
 
     # ---------- 读取：构建注入上下文 ----------
 
-    def retrieve(self, user_message: str, top_k: Optional[int] = None) -> List[MemoryRecord]:
-        """混合检索相关记忆"""
+    @staticmethod
+    def _project_visible(record: MemoryRecord, project_id: str) -> bool:
+        """项目隔离过滤：未指定项目时全部可见；记录无项目标记（历史遗留）时不隔离"""
+        if not project_id or not record.project_id:
+            return True
+        return record.project_id == project_id
+
+    def retrieve(
+        self, user_message: str, top_k: Optional[int] = None, project_id: str = "",
+    ) -> List[MemoryRecord]:
+        """混合检索相关记忆（按项目隔离，P1 修复）"""
         top_k = top_k or settings.memory_max_results
         semantic = self._store.search_semantic(user_message, top_k * 2)
         if semantic is not None:
+            semantic = [(r, s) for r, s in semantic if self._project_visible(r, project_id)]
             records = [r for r, _ in semantic]
             scores = {r.id: s for r, s in semantic}
         else:
-            records = self._store.all_records()
+            records = [
+                r for r in self._store.all_records() if self._project_visible(r, project_id)
+            ]
             scores = None
         return hybrid_rank(
             records,
@@ -76,14 +88,14 @@ class MemoryManager:
             semantic_scores=scores,
         )
 
-    def build_context(self, user_message: str) -> str:
+    def build_context(self, user_message: str, project_id: str = "") -> str:
         """检索相关记忆并渲染注入模板；无相关记忆返回空串"""
         if not settings.memory_enabled:
             return ""
         if not user_message or not user_message.strip():
             return ""
         try:
-            records = self.retrieve(user_message)
+            records = self.retrieve(user_message, project_id=project_id)
         except Exception as e:
             logger.warning(f"[Memory] 检索失败: {e}")
             return ""
@@ -102,6 +114,7 @@ class MemoryManager:
         user_message: str,
         agent_reply: str,
         summarize_fn: Optional[SummarizeFn] = None,
+        project_id: str = "",
     ) -> Optional[MemoryRecord]:
         """
         记录一轮对话（按 memory_summary_interval 间隔触发摘要写入）。
@@ -121,6 +134,7 @@ class MemoryManager:
             content=content,
             source=str(user_message)[:40],
             keywords=tokenize(content)[:10],
+            project_id=project_id,
         )
         async with self._write_lock:
             try:
@@ -136,6 +150,7 @@ class MemoryManager:
         user_message,
         agent_reply: str,
         summarize_fn: Optional[SummarizeFn] = None,
+        project_id: str = "",
     ) -> None:
         """fire-and-forget 后台记录（不阻塞 SSE 响应流）"""
         if not settings.memory_enabled:
@@ -146,7 +161,8 @@ class MemoryManager:
 
         async def _safe():
             try:
-                await self.record_dialog(user_message, agent_reply, summarize_fn)
+                await self.record_dialog(user_message, agent_reply, summarize_fn,
+                                         project_id=project_id)
             except Exception as e:
                 logger.warning(f"[Memory] 后台记录失败: {e}")
 

@@ -3,7 +3,7 @@ import { createSignal, createEffect } from 'solid-js';
 /**
  * 主题切换 Hook
  * 操作 html.dark / html.light class + localStorage 持久化。
- * 兼容旧版 studio.html 的 storage key，保证 iframe 内旧页面
+ * 回写 studio_theme / canvas_theme 旧 key：iframe 嵌入页
  * （api-settings.html / 画布）通过 storage 事件同步主题。
  */
 const STORAGE_KEY = 'ftdyb-theme';

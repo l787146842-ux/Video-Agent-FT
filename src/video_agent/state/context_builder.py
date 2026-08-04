@@ -29,6 +29,10 @@ def build_agent_context(raw_state: Dict[str, Any], asset_mode: str = "bound", ca
     def _u(v: Any) -> str:
         return (str(v) if v else "")[:200]
 
+    # 渐进式披露：草稿 prompt 全文不注入，只给字数；模型需要时调 read_draft 按需读取
+    def _pc(d: Dict[str, Any]) -> int:
+        return len(d.get("prompt", "") or "")
+
     assets = raw_state.get("assets", [])
     if asset_mode != "all":
         assets = [a for a in assets if a.get("isBound")]
@@ -37,28 +41,33 @@ def build_agent_context(raw_state: Dict[str, Any], asset_mode: str = "bound", ca
         CAT_KEY_ELEMENTS: [
             {
                 "id": g["id"],
+                # 编号与前端卡片小标一致：组号 index，卡号 组号-卡序号（如 1-2），
+                # action 里的 draft_id 可直接用卡号定位
+                "index": gi + 1,
                 "title": g.get("title", ""),
                 "desc": g.get("desc", ""),
                 "drafts": [
                     {
                         "id": d["id"],
+                        "index": f"{gi + 1}-{di + 1}",
                         "label": d.get("label", ""),
                         "tag": d.get("tag", ""),
                         "mediaType": d.get("mediaType", ""),
-                        "prompt": d.get("prompt", ""),
+                        "prompt_chars": _pc(d),
                         "model": d.get("model", ""),
                         "imgUrl": _u(d.get("imgUrl", "")),
                         "videoUrl": _u(d.get("videoUrl", "")),
                         "audioUrl": _u(d.get("audioUrl", "")),
                     }
-                    for d in g.get("drafts", [])
+                    for di, d in enumerate(g.get("drafts", []))
                 ],
             }
-            for g in raw_state.get(CAT_KEY_ELEMENTS, [])
+            for gi, g in enumerate(raw_state.get(CAT_KEY_ELEMENTS, []))
         ],
         CAT_SHOTS: [
             {
                 "id": g["id"],
+                "index": gi + 1,
                 "title": g.get("title", ""),
                 "duration": g.get("duration", ""),
                 "shotType": g.get("shotType", ""),
@@ -67,9 +76,10 @@ def build_agent_context(raw_state: Dict[str, Any], asset_mode: str = "bound", ca
                 "drafts": [
                     {
                         "id": d["id"],
+                        "index": f"{gi + 1}-{di + 1}",
                         "label": d.get("label", ""),
                         "tag": d.get("tag", ""),
-                        "prompt": d.get("prompt", ""),
+                        "prompt_chars": _pc(d),
                         "model": d.get("model", ""),
                         "mode": d.get("mode", ""),
                         "imgUrl": _u(d.get("imgUrl", "")),
@@ -77,44 +87,61 @@ def build_agent_context(raw_state: Dict[str, Any], asset_mode: str = "bound", ca
                         "audioUrl": _u(d.get("audioUrl", "")),
                         "refAssets": [_u(u) for u in (d.get("refAssets") or [])],
                     }
-                    for d in g.get("drafts", [])
+                    for di, d in enumerate(g.get("drafts", []))
                 ],
             }
-            for g in raw_state.get(CAT_SHOTS, [])
+            for gi, g in enumerate(raw_state.get(CAT_SHOTS, []))
         ],
         CAT_AUDIO_ITEMS: [
             {
                 "id": g["id"],
+                "index": gi + 1,
                 "title": g.get("title", ""),
                 "timeRange": g.get("timeRange", ""),
-                "prompt": g.get("prompt", ""),
+                "prompt_chars": len(g.get("prompt", "") or ""),
                 "drafts": [
                     {
                         "id": d["id"],
+                        "index": f"{gi + 1}-{di + 1}",
                         "label": d.get("label", ""),
-                        "prompt": d.get("prompt", ""),
+                        "prompt_chars": _pc(d),
                         "model": d.get("model", ""),
                         "imgUrl": _u(d.get("imgUrl", "")),
                         "videoUrl": _u(d.get("videoUrl", "")),
                         "audioUrl": _u(d.get("audioUrl", "")),
                     }
-                    for d in g.get("drafts", [])
+                    for di, d in enumerate(g.get("drafts", []))
                 ],
             }
-            for g in raw_state.get(CAT_AUDIO_ITEMS, [])
+            for gi, g in enumerate(raw_state.get(CAT_AUDIO_ITEMS, []))
         ],
         "assets": [
             {"id": a["id"], "name": a.get("name", ""), "type": a.get("type", ""),
              "isBound": a.get("isBound", False), "url": _u(a.get("url", ""))}
             for a in assets
         ],
+        # 规格文档清单（渐进式披露）：仅名称/时间/字数/前 200 字预览，
+        # 全文不注入，模型开工前调 read_project_doc 按需读取
         "documents": [
             {
                 "name": d.get("name", ""),
                 "updated_at": d.get("updated_at", ""),
-                "content": (d.get("content", "") or "")[:4000],
+                "char_count": len(d.get("content", "") or ""),
+                "preview": ((d.get("content", "") or "")[:200]).replace("\n", " "),
             }
             for d in raw_state.get("documents", [])
+        ],
+        # 上传附件文档清单（故事/剧本）：仅名称/类型/字数，正文不注入，
+        # 模型需要全文时调用 read_uploaded_doc 按需检索
+        "uploadedDocs": [
+            {
+                "id": d.get("id", ""),
+                "name": d.get("name", ""),
+                "kind": d.get("kind", ""),
+                "char_count": d.get("char_count", 0),
+                "uploaded_at": d.get("uploaded_at", ""),
+            }
+            for d in raw_state.get("uploadedDocs", [])
         ],
     }
     result = json.dumps(snapshot, ensure_ascii=False, indent=2)

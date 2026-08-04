@@ -4,6 +4,7 @@ Studio Actions 执行器 — 从 actions.py 抽离。
 职责：执行 studio-actions JSON 中的操作列表，操作 StateManager 共享状态并自动持久化。
 解析逻辑在 action_parser.py，本文件仅负责执行。
 """
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -15,7 +16,8 @@ from src.video_agent.exceptions import GenerationError
 from src.video_agent.state.models import build_draft_dict, CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES
 from src.video_agent.state.manager import StateManager
 from src.video_agent.utils import gen_id
-from src.video_agent.web.generation import generate_image_via_provider
+from src.video_agent.web.generation import generate_image_via_provider, image_size_for
+from src.video_agent.web.provider_config import resolve_provider_ref
 from src.video_agent.web.prompt_refs import (
     build_storyboard_media_map, media_of_draft, resolve_prompt_mentions,
 )
@@ -131,6 +133,11 @@ class StudioActionExecutor:
             return f"新增草稿「{label or '未命名'}」"
         if name in ("delete_draft", "remove_draft"):
             return f"删除草稿 {action.get('draft_id', '')}"
+        if name in ("clear_media", "delete_media", "remove_media"):
+            target = str(action.get("draft_id") or "").strip()
+            found = self._find_draft(target, str(action.get("draft_type") or "")) if target else None
+            t_label = str(found[1].get("label") or "") if found else target
+            return f"清空草稿「{t_label or '当前草稿'}」内的媒体"
         if name in ("delete_group", "remove_group"):
             return f"删除分组 {action.get('group_id', '')}"
         if name in ("write_document", "write_doc", "save_document"):
@@ -147,6 +154,26 @@ class StudioActionExecutor:
 
     # ---------- 内部方法 ----------
 
+    # 卡片小标编号：组号-卡序号（如 "1-2"，与前端卡片下方小标/上下文 index 一致）
+    _INDEX_REF_RE = re.compile(r"^(\d+)\s*[-－.·]\s*(\d+)$")
+
+    def _resolve_index_ref(self, ref: str, draft_type: str = ""):
+        """解析卡片编号（如 "1-2" = 第 1 组第 2 张卡）→ (group, draft)；
+        编号按类别（关键元素/分镜/音频）各自从 1 开始，与前端小标一致。"""
+        m = self._INDEX_REF_RE.match((ref or "").strip())
+        if not m:
+            return None
+        gi, di = int(m.group(1)) - 1, int(m.group(2)) - 1
+        if gi < 0 or di < 0:
+            return None
+        for cat_key in self._categories_for_type(draft_type):
+            groups = self.state.get(cat_key, [])
+            if gi < len(groups):
+                drafts = groups[gi].get("drafts", [])
+                if di < len(drafts):
+                    return groups[gi], drafts[di]
+        return None
+
     def _apply(self, action: Dict[str, Any]) -> bool:
         name = str(action.get("action") or action.get("type") or "").strip()
         if not name:
@@ -154,6 +181,8 @@ class StudioActionExecutor:
 
         if name in ("update_draft", "patch_draft", "update_current_draft", "set_prompt"):
             return self._apply_draft_patch(action)
+        if name in ("clear_media", "delete_media", "remove_media"):
+            return self._apply_clear_media(action)
         if name in ("confirm_draft", "confirm_current_draft"):
             return self._apply_draft_patch({**action, "patch": {"tag": action.get("tag", "已确认")}})
         if name in ("update_group", "patch_group"):
@@ -180,7 +209,12 @@ class StudioActionExecutor:
         return False
 
     def _find_draft(self, draft_id: str, draft_type: str = ""):
-        """在 state 中查找 draft，返回 (group, draft) 或 None"""
+        """在 state 中查找 draft，返回 (group, draft) 或 None。
+        draft_id 支持真实 ID、"current" 或卡片编号（如 "1-2"）。"""
+        # 卡片编号定位（与前端卡片下方小标一致）
+        idx_ref = self._resolve_index_ref(draft_id, draft_type)
+        if idx_ref:
+            return idx_ref
         categories = self._categories_for_type(draft_type)
         for cat_key in categories:
             for group in self.state.get(cat_key, []):
@@ -220,15 +254,22 @@ class StudioActionExecutor:
                     return groups[0]
         return None
 
-    def _categories_for_type(self, draft_type: str) -> List[str]:
+    def _categories_for_type(self, draft_type: str, strict: bool = False) -> List[str]:
+        """draft_type → 状态类别键。
+
+        strict=True（批量收集路径）：严格单类别，杜绝 all_keyElements
+        批量生图时级联兑底把音频草稿也拉去生图；
+        strict=False（查找/删除路径）：保留类型缺失时的全类别兑底，
+        保证 LLM 未传类型时 find/delete 仍可用。
+        """
         t = (draft_type or "").lower().strip()
         if t in ("shot", "shots", "video"):
-            return [CAT_SHOTS, CAT_KEY_ELEMENTS, CAT_AUDIO_ITEMS]
+            return [CAT_SHOTS] if strict else [CAT_SHOTS, CAT_KEY_ELEMENTS, CAT_AUDIO_ITEMS]
         if t in ("audio", "audioitem"):
-            return [CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS]
+            return [CAT_AUDIO_ITEMS] if strict else [CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS]
         if t in ("keyelement", "key-element", "element", "image"):
-            return [CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS]
-        return list(ALL_CATEGORIES)
+            return [CAT_KEY_ELEMENTS] if strict else [CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS]
+        return [] if strict else list(ALL_CATEGORIES)
 
     def _apply_draft_patch(self, action: Dict) -> bool:
         draft_id = action.get("draft_id") or action.get("target_id") or action.get("id") or "current"
@@ -244,7 +285,7 @@ class StudioActionExecutor:
 
         allowed = [
             "label", "tag", "mediaType", "genType", "imgUrl", "videoUrl", "audioUrl", "prompt", "mode",
-            "model", "providerId", "resolution", "duration", "aspectRatio",
+            "model", "providerId", "resolution", "duration", "aspectRatio", "imageResolution",
             "size", "timbre", "refAssets",
         ]
         changed = False
@@ -362,6 +403,22 @@ class StudioActionExecutor:
         draft = build_draft_dict(draft_data)
         group.setdefault("drafts", []).append(draft)
         return draft
+
+    def _apply_clear_media(self, action: Dict) -> bool:
+        """清空卡片内的媒体内容（图片/视频/音频地址），保留提示词与参数。
+        draft_id 支持真实 ID、"current" 或卡片编号（如 "1-2"）。"""
+        draft_id = action.get("draft_id") or action.get("target_id") or action.get("id") or "current"
+        draft_type = action.get("draft_type") or action.get("kind") or action.get("target_type") or ""
+        result = self._find_draft(str(draft_id), draft_type)
+        if not result:
+            return False
+        _, draft = result
+        changed = False
+        for field in ("imgUrl", "videoUrl", "audioUrl"):
+            if draft.get(field):
+                draft[field] = ""
+                changed = True
+        return changed
 
     def _apply_add_draft(self, action: Dict) -> bool:
         group_id = action.get("group_id") or "current"
@@ -527,23 +584,41 @@ class StudioActionExecutor:
     }
 
     def _selected_draft_media_config(self) -> tuple:
-        """解析中间预览面板选中草稿的 (providerId, aspectRatio)，作为生图缺省配置。"""
+        """解析中间预览面板选中草稿的 (providerId, aspectRatio, imageResolution)，作为生图缺省配置。"""
         cat = self._SELECTED_TYPE_TO_CAT.get(self.selected_type, self.selected_type)
         for group in self.state.get(cat, []):
             for draft in group.get("drafts", []):
                 if draft.get("id") == self.selected_draft_id:
-                    return (draft.get("providerId") or "", draft.get("aspectRatio") or "")
-        return "", ""
+                    return (
+                        draft.get("providerId") or "",
+                        draft.get("aspectRatio") or "",
+                        draft.get("imageResolution") or "",
+                    )
+        return "", "", ""
 
     def _apply_generate_image(self, action: Dict) -> bool:
-        """Agent 触发生图（仅当用户明确要求时）。支持批量。"""
+        """Agent 触发生图（仅当用户明确要求时）。支持批量。
+
+        LLM 指定的供应商/模型/比例/分辨率会同步回写到目标草稿，
+        使中间预览框底部的参数选择跳转到对应配置。
+        """
         target = str(action.get("target") or action.get("draft_id") or "all").strip()
         draft_type = str(action.get("draft_type") or "").strip().lower()
-        provider_id = action.get("provider_id") or action.get("provider") or ""
+        # 供应商兼容显示名（LLM 常传界面上的名称如 Grsai）→ 内部 id
+        provider_id = resolve_provider_ref(
+            str(action.get("provider_id") or action.get("provider") or "")
+        )
         model = action.get("model") or ""
+        # LLM 显式指定的比例/分辨率（可选）：命中时回写草稿并优先使用
+        act_ratio = str(action.get("aspect_ratio") or action.get("ratio") or "").strip()
+        act_resolution = str(
+            action.get("image_resolution") or action.get("resolution") or ""
+        ).strip().upper()
+        if act_resolution not in ("1K", "2K", "4K"):
+            act_resolution = ""
 
-        # 中间面板选中草稿的生图配置（provider/比例回退链的最后一级）
-        sel_provider, sel_ratio = self._selected_draft_media_config()
+        # 中间面板选中草稿的生图配置（provider/比例/分辨率回退链的最后一级）
+        sel_provider, sel_ratio, sel_resolution = self._selected_draft_media_config()
 
         # 根据 target 确定类型
         if target in ("all_keyelements", "all_keyElements"):
@@ -563,19 +638,32 @@ class StudioActionExecutor:
             if not prompt:
                 continue
             refs = self._resolve_scene_refs(group) if group else []
-            # provider 回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿
+            # provider 回退链：LLM 指定 → 目标草稿自身（预览框已选参数）→ 中间面板选中草稿
             eff_provider = provider_id or (draft.get("providerId") or "") or sel_provider
-            # 比例回退链：目标草稿自身 → 中间面板选中草稿 → 16:9
-            eff_ratio = (draft.get("aspectRatio") or "") or sel_ratio or "16:9"
-            self._submit_image_task(draft, eff_provider, model, refs, aspect_ratio=eff_ratio)
+            # model 回退链：LLM 指定 → 目标草稿自身（预览框已选参数）→ 供应商默认模型（generation 层兑底）
+            eff_model = model or (draft.get("model") or "")
+            # 比例回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 16:9
+            eff_ratio = act_ratio or (draft.get("aspectRatio") or "") or sel_ratio or "16:9"
+            # 分辨率回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 1K
+            eff_resolution = act_resolution or (draft.get("imageResolution") or "") or sel_resolution or "1K"
+            # 参数回写草稿：中间预览框底部参数选择跳转到对应供应商/模型/比例/分辨率
+            draft["providerId"] = eff_provider
+            if eff_model:
+                draft["model"] = eff_model
+            draft["aspectRatio"] = eff_ratio
+            draft["imageResolution"] = eff_resolution
+            self._submit_image_task(
+                draft, eff_provider, eff_model, refs,
+                aspect_ratio=eff_ratio, resolution=eff_resolution,
+            )
             submitted += 1
         if submitted:
             logger.info(f"[StudioActions] generate_image: 已提交 {submitted} 个生图任务")
         return submitted > 0
 
     def _collect_drafts(self, target: str, draft_type: str) -> List[tuple]:
-        """收集目标 (group, draft) 对。target='all' 时按类型遍历全部。"""
-        categories = self._categories_for_type(draft_type)
+        """收集目标 (group, draft) 对。target='all' 时按类型严格遍历（不跨类别）。"""
+        categories = self._categories_for_type(draft_type, strict=True)
         results: List[tuple] = []
 
         if target == "all":
@@ -585,8 +673,13 @@ class StudioActionExecutor:
                         results.append((group, draft))
             return results
 
-        # 具体 draft_id
-        for cat_key in categories:
+        # 具体 draft_id：先按卡片编号解析，再按类型类别找，找不到再跨全部类别兑底
+        # （仅限具体 ID，不影响 all 批量路径的严格类型约束）
+        idx_ref = self._resolve_index_ref(target, draft_type)
+        if idx_ref:
+            return [idx_ref]
+        cats = categories or list(ALL_CATEGORIES)
+        for cat_key in cats:
             for group in self.state.get(cat_key, []):
                 for draft in group.get("drafts", []):
                     if draft.get("id") == target:
@@ -612,14 +705,17 @@ class StudioActionExecutor:
                     break
         return refs[:5]  # 最多 5 张参考图
 
-    def _submit_image_task(self, draft: Dict, provider_id: str, model: str, refs: List[Dict], aspect_ratio: str = "16:9") -> None:
+    def _submit_image_task(self, draft: Dict, provider_id: str, model: str, refs: List[Dict], aspect_ratio: str = "16:9", resolution: str = "1K") -> None:
         """提交异步生图任务（通过 GenerationTaskManager 统一管理）。
 
+        尺寸由 比例 + 分辨率档位（1K/2K/4K）计算，确保生图模型感知分辨率。
         提示词中的 @引用会被解析为位置标记，被引用的素材（refAssets +
         sceneRefs 参考图）随请求发送给多模态生图模型。
         """
         tm = get_task_manager()
         task_id = f"{gen_id('img')}-{draft.get('id', 'x')[-4:]}"
+        size = image_size_for(aspect_ratio, resolution)
+        size_note = f"{size} ({aspect_ratio}, {resolution})"
 
         # --- 解析 @引用：重写提示词 + 汇总参考图（草稿自身 refAssets 优先，sceneRefs 其次）---
         base_ref_urls: List[str] = [u for u in (draft.get("refAssets") or []) if u]
@@ -643,6 +739,16 @@ class StudioActionExecutor:
         )
         prev_tag = draft.get("tag") or ""
         draft["tag"] = "生成中"
+        # 生成日志：提交即记录 started；前端据此立即点亮卡片转圈（改进2）
+        tm.record_gen_log(
+            media_type="image", status="started", provider=provider_id, model=model,
+            prompt=eff_prompt, draft_id=draft.get("id", ""), requested_size=size_note,
+            source="agent", task_id=task_id,
+        )
+        tm.notify({
+            "task_id": task_id, "status": "started", "kind": "image",
+            "draft_id": draft.get("id", ""),
+        })
 
         async def _run():
             t0 = time.time()
@@ -650,18 +756,39 @@ class StudioActionExecutor:
             try:
                 url = await generate_image_via_provider(
                     provider_id, model, eff_prompt,
-                    size="1280x720", aspect_ratio=aspect_ratio,
+                    size=size, aspect_ratio=aspect_ratio, resolution=resolution,
                     reference_images=final_refs,
                 )
                 if task:
-                    tm.update_task(task_id, status="succeeded", result={"images": [url]}, elapsed=round(time.time() - t0, 1))
-                    tm.notify({"task_id": task_id, "status": "succeeded", "result": {"images": [url]}})
+                    elapsed = round(time.time() - t0, 1)
+                    tm.update_task(task_id, status="succeeded", result={"images": [url]}, elapsed=elapsed)
+                    tm.notify({
+                        "task_id": task_id, "status": "succeeded", "kind": "image",
+                        "draft_id": draft.get("id", ""),
+                        "result": {"images": [url]}, "elapsed": elapsed,
+                    })
+                    tm.record_gen_log(
+                        media_type="image", status="succeeded", provider=provider_id, model=model,
+                        prompt=eff_prompt, draft_id=draft.get("id", ""), result_url=url,
+                        elapsed=elapsed, requested_size=size_note, source="agent",
+                        task_id=task_id,
+                    )
                     writeback_if_complete(task_id)
             except (GenerationError, Exception) as e:
                 draft["tag"] = prev_tag  # 失败时恢复原标签，避免卡片永远卡在"生成中"
                 self.svc.save_debounced()
-                tm.update_task(task_id, status="failed", error=str(e), elapsed=round(time.time() - t0, 1))
-                tm.notify({"task_id": task_id, "status": "failed", "error": str(e)})
+                elapsed = round(time.time() - t0, 1)
+                tm.update_task(task_id, status="failed", error=str(e), elapsed=elapsed)
+                tm.notify({
+                    "task_id": task_id, "status": "failed", "kind": "image",
+                    "draft_id": draft.get("id", ""), "error": str(e), "elapsed": elapsed,
+                })
+                tm.record_gen_log(
+                    media_type="image", status="failed", provider=provider_id, model=model,
+                    prompt=eff_prompt, draft_id=draft.get("id", ""), error=str(e),
+                    elapsed=elapsed, requested_size=size_note, source="agent",
+                    task_id=task_id,
+                )
                 logger.warning(f"[StudioActions] 生图失败 {draft.get('id')}: {e}")
 
         try:

@@ -1,10 +1,10 @@
 """
-画布交互路由 — 对话栏生成的图片拖放进熊布画布。
+画布交互路由 — 对话栏生成的图片拖放进画布画布。
 
-背景：本项目与熊布画布跨域（iframe 嵌入），浏览器原生 HTML5 拖拽事件
+背景：本项目与画布画布跨域（iframe 嵌入），浏览器原生 HTML5 拖拽事件
 不会投递进跨域 iframe（实证：同源 iframe 可投递，跨域完全不投递），
 因此前端在拖拽时显示自有放置层捕获落点，再调本接口经 CanvasAdapter
-走熊布既有公开 HTTP API 写入图片节点（Rule 4: 只走 Adapter；Rule 7: 不改画布）。
+走画布既有公开 HTTP API 写入图片节点（Rule 4: 只走 Adapter；Rule 7: 不改画布）。
 """
 from pathlib import Path
 from typing import Optional, Tuple
@@ -263,7 +263,7 @@ async def drop_image_to_canvas(body: CanvasDropImageRequest, request: Request):
         target = await adapter.find_active_canvas()
     if not target:
         raise AdapterError(
-            "未找到可用的画布，请先在熊布中创建一个画布",
+            "未找到可用的画布，请先在画布中创建一个画布",
             status_code=404,
             error_code="CANVAS_NOT_FOUND",
         )

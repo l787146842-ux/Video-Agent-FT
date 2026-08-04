@@ -5,6 +5,7 @@ import { showToast } from '@/stores/toast';
 import { apiProvidersFor, providerModels } from '@/lib/providers';
 import { studioImageSizeForRatio } from '@/lib/image-sizes';
 import { dropImageToCanvas, fetchCanvasList, type CanvasListItem } from '@/api/canvas';
+import { fetchMediaBlob } from '@/api/client';
 import { safeUrl } from '@/lib/utils';
 import type { Draft, DraftType } from '@/types';
 
@@ -164,14 +165,8 @@ export function ExportButton() {
     const rec = findDraftRecord(state.selectedDraftId, state.selectedType);
     const fileName = rec?.draft.label || 'image.png';
     try {
-      const fullUrl = safeUrl(url);
-      const isCrossOrigin = fullUrl.startsWith('http') && !fullUrl.startsWith(location.origin);
-      const fetchUrl = isCrossOrigin
-        ? `/api/image-proxy?url=${encodeURIComponent(fullUrl)}`
-        : fullUrl;
-      const resp = await fetch(fetchUrl);
-      if (!resp.ok) throw new Error(`图片下载失败 (HTTP ${resp.status})`);
-      const blob = await resp.blob();
+      // 跨域代理逻辑已收口 api 层（铁律 10.1）
+      const blob = await fetchMediaBlob(safeUrl(url));
       const objUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = objUrl;

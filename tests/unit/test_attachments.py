@@ -1,8 +1,10 @@
-"""附件链路：文档正文注入 LLM、资产绑定、路径穿越防护"""
+"""附件链路：文档清单注入（正文按需检索）、资产绑定、路径穿越防护"""
 import pytest
 
 import src.video_agent.web.attachments as attachments_mod
-from src.video_agent.web.attachments import attachment_context, bind_attachments
+from src.video_agent.web.attachments import (
+    attachment_context, bind_attachments, store_uploaded_docs,
+)
 from src.video_agent.state.manager import StateManager
 
 
@@ -14,23 +16,44 @@ def assets_dir(tmp_path, monkeypatch):
     return d
 
 
-def test_md_content_injected(assets_dir):
+def test_md_manifest_injected_not_full_text(assets_dir):
+    """新契约：文本附件只注入清单（名称/字数/预览），正文靠 read_uploaded_doc 检索"""
     (assets_dir / "story.md").write_text("# 太阳系二维化\n二向箔来袭。", encoding="utf-8")
     ctx = attachment_context([
         {"name": "太阳系逐渐二维化.md", "url": "/workspace/assets/story.md", "kind": "doc"},
     ])
-    assert "太阳系二维化" in ctx
-    assert "二向箔来袭" in ctx
-    assert "素材文档《太阳系逐渐二维化.md》全文" in ctx
+    assert "太阳系逐渐二维化.md" in ctx
+    assert "已存档" in ctx and "read_uploaded_doc" in ctx
+    # 不再以「=== 全文 ===」段落形式注入正文
+    assert "=== 文档结束 ===" not in ctx
 
 
-def test_long_doc_truncated(assets_dir):
+def test_long_doc_manifest_small(assets_dir):
+    """超大文档的清单注入体积恒定（预览 200 字上限），不再随正文长度膨胀"""
     (assets_dir / "big.txt").write_text("x" * 50000, encoding="utf-8")
     ctx = attachment_context([
         {"name": "big.txt", "url": "/workspace/assets/big.txt", "kind": "doc"},
     ])
-    assert "已截断" in ctx
-    assert len(ctx) < 50000
+    assert "50000 字" in ctx
+    assert len(ctx) < 1000
+
+
+def test_store_uploaded_docs_persists_content(assets_dir, tmp_path):
+    """文本附件正文存入 state.uploadedDocs（同名覆盖），供按需检索"""
+    (assets_dir / "story.md").write_text("剧本正文 A", encoding="utf-8")
+    svc = StateManager(str(tmp_path))
+    store_uploaded_docs(svc, [
+        {"id": "att-1", "name": "剧本.md", "url": "/workspace/assets/story.md", "kind": "doc"},
+    ])
+    docs = svc.state_dict["uploadedDocs"]
+    assert len(docs) == 1 and docs[0]["content"] == "剧本正文 A"
+    # 同名重传：覆盖不新增
+    (assets_dir / "story.md").write_text("剧本正文 B", encoding="utf-8")
+    store_uploaded_docs(svc, [
+        {"name": "剧本.md", "url": "/workspace/assets/story.md", "kind": "doc"},
+    ])
+    assert len(svc.state_dict["uploadedDocs"]) == 1
+    assert svc.state_dict["uploadedDocs"][0]["content"] == "剧本正文 B"
 
 
 def test_missing_doc_reported(assets_dir):

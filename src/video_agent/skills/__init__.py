@@ -1,9 +1,10 @@
 """
 Skills 系统 — 纯 prompt 预设。
 
-定位（FIX_PLAN P1-13）：Skill 是前端角色预设的载体，system_prompt 统一外置到
-prompts/skills/*.md（Rule6），经 load_prompt() 加载；不再提供 mock execute()
-假象——真正生效路径是 prompt 经前端 extra_system 注入 Planner。
+重要变更（用户要求）：代码内置 Skill（编剧/分镜师/制片 Agent）已彻底移除，
+不再提供类定义与默认注册；下拉框、Skill 目录、read_skill 均只认
+data/skills/*.md 文档 Skill（用户可见可编辑，改文档即改流程）。
+本模块仅保留 BaseSkill/SkillRegistry 基础设施，当前无任何内置注册项。
 """
 from typing import Any, Dict, List, Optional
 
@@ -42,7 +43,12 @@ class BaseSkill:
 
 
 class SkillRegistry:
-    """Skill 注册器 — 单例"""
+    """Skill 注册器 — 单例。
+
+    注意：当前无任何内置注册项。编剧/分镜师/制片三个代码 Skill 已按用户
+    要求彻底删除（类定义、默认注册、提示词文件均已移除），
+    请勿重新添加内置 Skill 到前端下拉。
+    """
 
     _skills: Dict[str, BaseSkill] = {}
 
@@ -70,52 +76,3 @@ class SkillRegistry:
     def reset(cls):
         """清空注册表（测试用）"""
         cls._skills = {}
-
-
-# =======================
-# 具体 Skill 预设
-# =======================
-
-class StoryGeneratorSkill(BaseSkill):
-    """编剧 Skill — 从目标/剧本生成故事结构"""
-
-    name = "story-generator"
-    display_name = "编剧 Agent"
-    description = "从用户目标出发，生成完整的故事大纲、场景和角色设定"
-    prompt_file = "skills/story-generator.md"
-    input_mapping = {"user_goal": "goal", "story": "existing_story"}
-    output_mapping = {"scenes": "story.scenes", "characters": "story.characters"}
-
-
-class ImagePromptSkill(BaseSkill):
-    """分镜师 Skill — 生成可执行的图片/视频提示词"""
-
-    name = "image-prompt"
-    display_name = "分镜师 Agent"
-    description = "将故事场景转化为可执行的图片/视频生成提示词"
-    prompt_file = "skills/image-prompt.md"
-    input_mapping = {"storyboard": "current_storyboard"}
-    output_mapping = {"prompts": "storyboard.shots[].visual_prompt"}
-
-
-class DirectorAgentSkill(BaseSkill):
-    """导演 Skill — 全局把控与决策"""
-
-    name = "production-agent"
-    display_name = "制片 Agent"
-    description = "全局把控项目进度，协调编剧、分镜、生成各环节"
-    prompt_file = "skills/production-agent.md"
-    input_mapping = {}
-    output_mapping = {}
-
-
-# =======================
-# 默认注册
-# =======================
-
-def register_default_skills():
-    """注册所有内置 Skill"""
-    SkillRegistry.register(StoryGeneratorSkill())
-    SkillRegistry.register(ImagePromptSkill())
-    SkillRegistry.register(DirectorAgentSkill())
-    logger.info(f"[Skills] {len(SkillRegistry.get_all())} skills registered")

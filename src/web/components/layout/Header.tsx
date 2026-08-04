@@ -1,17 +1,18 @@
 import { A, useLocation } from '@solidjs/router';
 import { Show } from 'solid-js';
 import {
-  FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiMoon, FiSun,
+  FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiList, FiMoon, FiSun,
 } from 'solid-icons/fi';
 import { useTheme } from '@/hooks/use-theme';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import {
   historyState, performRedo, performUndo,
 } from '@/stores/history';
+import { toggleGenLog, genLogUnread } from '@/stores/generation-log';
 
 /**
  * 全局 Header：品牌 Logo + 模式导航（URL 路由）+ 主题切换 + 项目切换
- * 画布 / API 配置 是 SPA 路由入口（带下拉/切换语义），影视 Agent 是主页面（无下拉）
+ * 画布 / API 配置 是 SPA 路由入口（带下拉/切换语义），影视工作台是主页面（无下拉）
  *
  * Header 内部底部居中位置有一个收放箭头，仅在画布 / API 配置模式可见。
  * - header 显示时：箭头绝对定位"骑"在 header 底部边缘下方（导航栏中下方）
@@ -57,13 +58,26 @@ export function Header(props: {
 
       {/* 模式导航（URL 路由，支持前进/后退/深链接）。三个按钮样式统一，无下拉。 */}
       <nav class="studio-nav-links">
-        <A href="/" class={navClass('/', true)}>影视Agent</A>
+        <A href="/" class={navClass('/', true)}>影视工作台</A>
         <A href="/canvas" class={navClass('/canvas')}>画布</A>
         <A href="/settings" class={navClass('/settings')}>API 配置</A>
       </nav>
 
       {/* 右侧操作区 */}
       <div class="studio-header-actions">
+        {/* 生成日志入口：图/视频/音频每次生成的成败记录（照搬画布日志） */}
+        <button
+          type="button"
+          class="theme-toggle-btn genlog-entry"
+          title="生成日志"
+          aria-label="生成日志"
+          onClick={() => toggleGenLog()}
+        >
+          <FiList size={16} />
+          <Show when={genLogUnread() > 0}>
+            <span class="genlog-unread">{genLogUnread() > 99 ? '99+' : genLogUnread()}</span>
+          </Show>
+        </button>
         <button
           type="button"
           class="theme-toggle-btn"
@@ -102,7 +116,7 @@ export function Header(props: {
           type="button"
           class="nav-toggle-arrow"
           title="收放导航栏"
-          onClick={props.onToggleHeader}
+          onClick={() => props.onToggleHeader()}
         >
           <FiChevronUp size={14} />
         </button>

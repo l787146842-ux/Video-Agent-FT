@@ -1,0 +1,32 @@
+/**
+ * 多对话管理 API（同一项目多个对话窗口）
+ * 端点：/api/conversations（GET/POST/DELETE/{id}/activate）
+ * 所有响应统一为 ConversationsPayload，前端据此整体刷新标签栏。
+ */
+import { apiFetch, apiPost, apiDelete } from './client';
+import type { Conversation } from '@/types';
+
+export interface ConversationsPayload {
+  conversations: Conversation[];
+  active_conversation_id: string;
+}
+
+/** 列出当前项目全部对话（含消息）+ 活跃对话 ID */
+export function getConversations(): Promise<ConversationsPayload> {
+  return apiFetch<ConversationsPayload>('/api/conversations');
+}
+
+/** 新建对话并设为活跃 */
+export function createConversation(title = ''): Promise<ConversationsPayload> {
+  return apiPost<ConversationsPayload>('/api/conversations', { title });
+}
+
+/** 切换活跃对话 */
+export function activateConversation(id: string): Promise<ConversationsPayload> {
+  return apiPost<ConversationsPayload>(`/api/conversations/${encodeURIComponent(id)}/activate`, {});
+}
+
+/** 删除对话（仅剩一个时后端拒绝，抛 ApiError） */
+export function deleteConversation(id: string): Promise<ConversationsPayload> {
+  return apiDelete<ConversationsPayload>(`/api/conversations/${encodeURIComponent(id)}`);
+}

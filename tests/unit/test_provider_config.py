@@ -1,4 +1,4 @@
-"""provider_config：.env 写入消毒、key 读写、mock 判定、熊布配置合并（全部重定向到临时目录）"""
+"""provider_config：.env 写入消毒、key 读写、mock 判定、画布配置合并（全部重定向到临时目录）"""
 import json
 import pytest
 
@@ -76,11 +76,11 @@ def test_load_providers_fallback_when_missing():
     assert any(p["id"] == "mock" for p in providers)
 
 
-# ---------- 熊布配置合并测试 ----------
+# ---------- 画布配置合并测试 ----------
 
 @pytest.fixture
 def canvas_env(tmp_path, monkeypatch):
-    """重定向熊布相关配置路径到临时目录（frozen dataclass 用 object.__setattr__）"""
+    """重定向画布相关配置路径到临时目录（frozen dataclass 用 object.__setattr__）"""
     object.__setattr__(settings, "canvas_providers_url", "http://127.0.0.1:19999/api/providers")
     object.__setattr__(settings, "canvas_providers_file", str(tmp_path / "canvas_providers.json"))
     object.__setattr__(settings, "canvas_env_file", str(tmp_path / "canvas.env"))
@@ -97,13 +97,13 @@ def canvas_env(tmp_path, monkeypatch):
 
 
 def test_load_canvas_providers_file_not_exist(canvas_env):
-    """熊布配置文件不存在时返回空列表"""
+    """画布配置文件不存在时返回空列表"""
     result = pc.load_canvas_providers()
     assert result == []
 
 
 def test_load_canvas_providers_from_file(canvas_env):
-    """熊布配置文件存在时正常读取"""
+    """画布配置文件存在时正常读取"""
     canvas_file = canvas_env / "canvas_providers.json"
     canvas_file.write_text(json.dumps([
         {"id": "modelscope", "name": "ModelScope", "enabled": True},
@@ -115,7 +115,7 @@ def test_load_canvas_providers_from_file(canvas_env):
 
 
 def test_merged_providers_dedup_local_priority(canvas_env, tmp_path, monkeypatch):
-    """合并逻辑：同 id 熊布优先（连接设置）+ 模型并集，本地独有保留"""
+    """合并逻辑：同 id 画布优先（连接设置）+ 模型并集，本地独有保留"""
     # 本地配置
     local_file = tmp_path / "api_providers.json"
     local_file.write_text(json.dumps([
@@ -125,7 +125,7 @@ def test_merged_providers_dedup_local_priority(canvas_env, tmp_path, monkeypatch
     ]), encoding="utf-8")
     monkeypatch.setattr(pc, "PROVIDERS_FILE", local_file)
 
-    # 熊布配置
+    # 画布配置
     canvas_file = canvas_env / "canvas_providers.json"
     canvas_file.write_text(json.dumps([
         {"id": "modelscope", "name": "MS-Canvas", "enabled": True,
@@ -136,10 +136,10 @@ def test_merged_providers_dedup_local_priority(canvas_env, tmp_path, monkeypatch
     merged = pc.load_merged_providers()
     ids = [p["id"] for p in merged]
 
-    # modelscope 只出现一次（熊布优先）
+    # modelscope 只出现一次（画布优先）
     assert ids.count("modelscope") == 1
     ms = next(p for p in merged if p["id"] == "modelscope")
-    assert ms["name"] == "MS-Canvas"  # 熊布优先（连接设置）
+    assert ms["name"] == "MS-Canvas"  # 画布优先（连接设置）
     # 模型列表取并集
     assert "img-canvas" in ms["image_models"]
     assert "img-local" in ms["image_models"]
@@ -149,14 +149,14 @@ def test_merged_providers_dedup_local_priority(canvas_env, tmp_path, monkeypatch
     # custom-api 保留（Agent 独有）
     assert "custom-api" in ids
 
-    # volcengine 从熊布追加
+    # volcengine 从画布追加
     assert "volcengine" in ids
     vc = next(p for p in merged if p["id"] == "volcengine")
     assert vc.get("_source") == "canvas"
 
 
 def test_get_canvas_provider_ids(canvas_env):
-    """缓存的熊布 provider id 集合正确"""
+    """缓存的画布 provider id 集合正确"""
     canvas_file = canvas_env / "canvas_providers.json"
     canvas_file.write_text(json.dumps([
         {"id": "modelscope", "name": "MS", "enabled": True},
@@ -170,12 +170,12 @@ def test_get_canvas_provider_ids(canvas_env):
 
 
 def test_get_api_key_canvas_fallback(canvas_env, tmp_path, monkeypatch):
-    """三级 fallback：本地无 key 时从熊布 .env 读取"""
-    # 熊布 .env 有 key
+    """三级 fallback：本地无 key 时从画布 .env 读取"""
+    # 画布 .env 有 key
     canvas_env_file = canvas_env / "canvas.env"
     canvas_env_file.write_text("MODELSCOPE_API_KEY=sk-from-canvas\n", encoding="utf-8")
 
-    # 熊布 provider 列表含 modelscope
+    # 画布 provider 列表含 modelscope
     canvas_file = canvas_env / "canvas_providers.json"
     canvas_file.write_text(json.dumps([
         {"id": "modelscope", "name": "MS", "enabled": True},

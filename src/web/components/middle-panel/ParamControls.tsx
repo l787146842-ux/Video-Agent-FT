@@ -35,7 +35,7 @@ export function ParamControls() {
     // 跟踪选中状态 + 生成媒体类型（mediaType）+ 供应商加载
     const draftId = state.selectedDraftId;
     const type = state.selectedType;
-    const providers = state.apiProviders; // 供应商加载后触发校正
+    void state.apiProviders; // 读取以建立响应式跟踪：供应商加载后触发校正
     if (!draftId || !type) return;
     const r0 = findDraftRecord(draftId, type);
     // 生成类型（genType 优先，回退 mediaType）决定供应商种类

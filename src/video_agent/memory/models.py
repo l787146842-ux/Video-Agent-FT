@@ -16,6 +16,8 @@ class MemoryRecord(BaseModel):
     content: str = ""
     # 来源描述（如用户消息前 40 字，便于追溯）
     source: str = ""
+    # 所属项目 ID（P1 修复：多项目记忆隔离）；空串为历史遗留记录，检索时不隔离
+    project_id: str = ""
     created_at: float = Field(default_factory=time.time)
     keywords: List[str] = Field(default_factory=list)
     # 检索阶段填充的临时得分（不持久化语义）

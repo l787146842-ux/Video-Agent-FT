@@ -58,12 +58,12 @@ export function deleteProjectDocument(name: string) {
   );
 }
 
-/** 前端局部字段整体保存 */
+/** 前端局部字段整体保存（project_id 供后端校验：与活跃项目不一致时返回 409，调用方丢弃该过期写入） */
 export function putProjectState(
   patch: Partial<
     Pick<
       ServerStateSnapshot,
-      'keyElements' | 'shots' | 'audioItems' | 'assets' | 'chatMessages'
+      'project_id' | 'keyElements' | 'shots' | 'audioItems' | 'assets' | 'chatMessages'
     >
   >,
 ) {

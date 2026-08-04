@@ -1,10 +1,9 @@
 import { FiFilm } from 'solid-icons/fi';
 import { generateVideo } from '@/lib/generate-actions';
 import { studioActions } from '@/stores/studio';
-import { state } from '@/stores/studio';
 import {
   ParamGroup, ParamSelect, ProviderModelSelects,
-  btnPrimary, ExportButton, persistParams,
+  btnPrimary, ExportButton,
 } from './ParamBase';
 import type { Draft, DraftType } from '@/types';
 

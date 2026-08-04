@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 新增拖拽门控/卡片排序后超行，待后续拆分；新增代码仍受规则约束 */
 import { createSignal, For, Show, Switch, Match } from 'solid-js';
 import { FiImage, FiMusic, FiPlus, FiVideo } from 'solid-icons/fi';
 import { studioActions } from '@/stores/studio';
@@ -22,6 +23,8 @@ export function GroupCard(props: {
   onDragLeave: () => void;
   onDrop: (e: DragEvent) => void;
   onDragEnd: () => void;
+  /** 右键菜单（向上/向下插入、删除），由 StoryboardView 统一提供 */
+  onContextMenu: (e: MouseEvent) => void;
 }) {
   const [adjustText, setAdjustText] = createSignal('');
   const [editingTitle, setEditingTitle] = createSignal(false);
@@ -30,6 +33,33 @@ export function GroupCard(props: {
   const [titleVal, setTitleVal] = createSignal('');
   const [descVal, setDescVal] = createSignal('');
   const [badgeVal, setBadgeVal] = createSignal('');
+
+  /** 分组拖拽门控：仅当按下点在空白区域（非文字/按钮/卡片等）才允许拖动整个分组，
+   * 其他区域（尤其文字）保留鼠标选中复制能力 */
+  const [dragEnabled, setDragEnabled] = createSignal(false);
+  function isBlankDragArea(t: EventTarget | null): boolean {
+    const el = t as HTMLElement | null;
+    if (!el || typeof el.closest !== 'function') return false;
+    // 文字/徽标/按钮/卡片/输入框等交互与内容区域不可拖（用于选中复制与各自交互）
+    if (el.closest('input, textarea, button, a, select, video, audio, img, .sb-title, .sb-desc, .sb-badge-wrap, .sb-index, .draft-card-col, .scene-refs, .card-adjust-box')) return false;
+    // 已有选中文字时优先复制
+    const sel = window.getSelection();
+    if (sel && sel.type === 'Range') return false;
+    return true;
+  }
+
+  // ===== 组内草稿卡片拖拽排序（小标编号随位置重排） =====
+  const [dragDraftId, setDragDraftId] = createSignal('');
+  const [dragOverDraftId, setDragOverDraftId] = createSignal('');
+
+  function handleDraftDrop(targetDraftId: string) {
+    const srcId = dragDraftId();
+    if (srcId && srcId !== targetDraftId) {
+      studioActions.reorderDraftLocal(props.type, props.group.id, srcId, targetDraftId);
+    }
+    setDragDraftId('');
+    setDragOverDraftId('');
+  }
 
   const meta = () => {
     switch (props.type) {
@@ -110,12 +140,14 @@ export function GroupCard(props: {
   return (
     <div
       class={`sb-group ${props.dragOver ? 'border-accent-blue' : ''}`}
-      draggable="true"
+      draggable={dragEnabled()}
+      onMouseDown={(e) => setDragEnabled(isBlankDragArea(e.target))}
+      onContextMenu={(e) => props.onContextMenu(e)}
       onDragStart={(e) => { e.dataTransfer!.setData('text/plain', props.group.id); e.dataTransfer!.effectAllowed = 'move'; props.onDragStart(e); }}
       onDragOver={(e) => props.onDragOver(e)}
       onDragLeave={() => props.onDragLeave()}
       onDrop={(e) => props.onDrop(e)}
-      onDragEnd={() => props.onDragEnd()}
+      onDragEnd={() => { setDragEnabled(false); props.onDragEnd(); }}
     >
       {/* 分组头：标题 + 徽标编号 */}
       <div class="sb-group-header">
@@ -216,7 +248,7 @@ export function GroupCard(props: {
         />
       </Show>
 
-      {/* 草稿卡片行 */}
+      {/* 草稿卡片行（小标编号：组号-卡序号，可拖动排序） */}
       <div class="draft-cards-row">
         <button
           type="button"
@@ -227,8 +259,30 @@ export function GroupCard(props: {
           <FiPlus size={15} />
         </button>
         <For each={props.group.drafts || []}>
-          {(draft) => (
-            <DraftCard draft={draft} type={props.type} groupId={props.group.id} />
+          {(draft, di) => (
+            <DraftCard
+              draft={draft}
+              type={props.type}
+              groupId={props.group.id}
+              cardCode={`${props.index}-${di() + 1}`}
+              dragOver={dragOverDraftId() === draft.id}
+              onDragStart={() => setDragDraftId(draft.id)}
+              onDragOver={(e) => {
+                if (!dragDraftId() || dragDraftId() === draft.id) return;
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverDraftId(draft.id);
+              }}
+              onDragLeave={() => {
+                if (dragOverDraftId() === draft.id) setDragOverDraftId('');
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDraftDrop(draft.id);
+              }}
+              onDragEnd={() => { setDragDraftId(''); setDragOverDraftId(''); }}
+            />
           )}
         </For>
       </div>

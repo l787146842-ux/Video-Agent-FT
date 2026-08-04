@@ -10,10 +10,11 @@ export function useCanvasMention() {
   const [mentionQuery, setMentionQuery] = createSignal('');
   const [mentionIdx, setMentionIdx] = createSignal(0);
 
-  /** 获取画布节点图片——只读当前画布内的图片，而非全部素材库 */
+  /** 获取画布节点图片——只读当前画布内的图片，而非全部素材库。
+   * source 为 mentionActive：仅在弹层激活时拉取，fetcher 内不再重复读信号 */
   const [canvasNodeImages] = createResource(
-    mentionActive,
-    () => (mentionActive() ? fetchCanvasNodeImages() : null),
+    () => mentionActive(),
+    () => fetchCanvasNodeImages(),
     { initialValue: { items: [] as CanvasNodeImageItem[], canvas_online: true } },
   );
 

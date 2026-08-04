@@ -82,15 +82,15 @@ def save_api_providers(providers: List[Dict[str, Any]]) -> None:
     logger.info(f"[ProviderConfig] 已保存 {len(providers)} 个供应商配置")
 
 
-# ---------- 熊布配置共享（本地兜底 + 熊布增强） ----------
+# ---------- 画布配置共享（本地兜底 + 画布增强） ----------
 
-# 缓存熊布 provider id 集合（路由判断用）
+# 缓存画布 provider id 集合（路由判断用）
 _canvas_ids_cache: Optional[Set[str]] = None
 _canvas_ids_cache_time: float = 0.0
 
 
 def load_canvas_providers() -> List[Dict[str, Any]]:
-    """从熊布读取 provider 配置（HTTP 优先，文件兜底）。
+    """从画布读取 provider 配置（HTTP 优先，文件兜底）。
     任何异常均静默返回 []，不影响 Agent 正常运行。"""
     # 1. 尝试 HTTP API
     try:
@@ -99,10 +99,10 @@ def load_canvas_providers() -> List[Dict[str, Any]]:
             data = resp.json()
             providers = data.get("providers", [])
             if isinstance(providers, list) and providers:
-                logger.debug(f"[ProviderConfig] 从熊布 HTTP 读取到 {len(providers)} 个 provider")
+                logger.debug(f"[ProviderConfig] 从画布 HTTP 读取到 {len(providers)} 个 provider")
                 return providers
     except Exception:
-        pass  # 熊布不在线，静默跳过
+        pass  # 画布不在线，静默跳过
 
     # 2. 兜底：读磁盘文件（环境变量未配置时跳过）
     try:
@@ -111,7 +111,7 @@ def load_canvas_providers() -> List[Dict[str, Any]]:
             if canvas_file.exists():
                 data = json.loads(canvas_file.read_text(encoding="utf-8"))
                 if isinstance(data, list) and data:
-                    logger.debug(f"[ProviderConfig] 从熊布文件读取到 {len(data)} 个 provider")
+                    logger.debug(f"[ProviderConfig] 从画布文件读取到 {len(data)} 个 provider")
                     return data
     except Exception:
         pass  # 文件不存在或损坏，静默跳过
@@ -120,13 +120,13 @@ def load_canvas_providers() -> List[Dict[str, Any]]:
 
 
 def load_merged_providers() -> List[Dict[str, Any]]:
-    """合并本地 + 熊布的 provider 列表（按 id 去重，熊布优先 + 模型并集）。
+    """合并本地 + 画布的 provider 列表（按 id 去重，画布优先 + 模型并集）。
 
     合并规则：
-    - 两者 id 相同时，连接设置（base_url/protocol/name）用熊布的（已验证）
+    - 两者 id 相同时，连接设置（base_url/protocol/name）用画布的（已验证）
     - 模型列表（image_models/chat_models/video_models）取并集去重
-    - 熊布没有而本地有的 provider，保留本地配置
-    - 本地没有而熊布有的 provider，追加熊布配置
+    - 画布没有而本地有的 provider，保留本地配置
+    - 本地没有而画布有的 provider，追加画布配置
     同时更新 canvas_provider_ids 缓存供路由层使用。"""
     global _canvas_ids_cache, _canvas_ids_cache_time
 
@@ -138,7 +138,7 @@ def load_merged_providers() -> List[Dict[str, Any]]:
 
     _MODEL_FIELDS = ("image_models", "chat_models", "video_models")
 
-    # 熊布优先：id 相同时用熊布版本，但模型列表取并集
+    # 画布优先：id 相同时用画布版本，但模型列表取并集
     merged: List[Dict[str, Any]] = []
     for p in canvas:
         pid = p.get("id", "")
@@ -152,7 +152,7 @@ def load_merged_providers() -> List[Dict[str, Any]]:
             for field in _MODEL_FIELDS:
                 canvas_models = list(item.get(field) or [])
                 local_models = list(local_p.get(field) or [])
-                # 并集去重（保持顺序：熊布在前，本地补充）
+                # 并集去重（保持顺序：画布在前，本地补充）
                 seen = set(canvas_models)
                 union = list(canvas_models)
                 for m in local_models:
@@ -162,13 +162,13 @@ def load_merged_providers() -> List[Dict[str, Any]]:
                 item[field] = union
         merged.append(item)
 
-    # 本地中 id 不在熊布的追加（本地独有）
+    # 本地中 id 不在画布的追加（本地独有）
     for p in local:
         pid = p.get("id", "")
         if pid and pid not in canvas_ids:
             merged.append(p)
 
-    # 更新缓存（路由层用于判断 provider 是否熊布可处理）
+    # 更新缓存（路由层用于判断 provider 是否画布可处理）
     _canvas_ids_cache = canvas_ids
     _canvas_ids_cache_time = time.time()
 
@@ -176,7 +176,7 @@ def load_merged_providers() -> List[Dict[str, Any]]:
 
 
 def get_canvas_provider_ids() -> Set[str]:
-    """获取熊布的 provider id 集合（带缓存，供路由层判断用）"""
+    """获取画布的 provider id 集合（带缓存，供路由层判断用）"""
     global _canvas_ids_cache, _canvas_ids_cache_time
     cache_ttl = settings.canvas_health_cache_seconds
     if _canvas_ids_cache is None or (time.time() - _canvas_ids_cache_time) > cache_ttl:
@@ -193,6 +193,30 @@ def get_provider_config(provider_id: str) -> Optional[Dict[str, Any]]:
         if p.get("id") == provider_id:
             return p
     return None
+
+
+def resolve_provider_ref(ref: str) -> str:
+    """解析供应商标识：优先内部 id 精确匹配；未命中时按显示名
+    （API 配置页名称，如 Grsai / Antigravity CLI）忽略大小写匹配并返回其 id。
+
+    LLM 在 action 中传供应商时常用界面上看到的显示名而非内部 id，
+    不解析会报「供应商未配置」。
+    """
+    if not ref:
+        return ""
+    ref = str(ref).strip()
+    providers = load_merged_providers()
+    for p in providers:
+        if p.get("id") == ref:
+            return ref
+    rl = ref.lower()
+    for p in providers:
+        if str(p.get("name") or "").strip().lower() == rl:
+            pid = str(p.get("id") or "")
+            if pid:
+                logger.info(f"[ProviderConfig] 供应商显示名 '{ref}' → 内部 id '{pid}'")
+                return pid
+    return ref
 
 
 def is_mock_provider(provider_id: str, model: str = "") -> bool:
@@ -233,7 +257,7 @@ def read_env_keys() -> Dict[str, str]:
 
 
 def _read_canvas_env_keys() -> Dict[str, str]:
-    """读取熊布的 API/.env 文件中的键值对（第三级 fallback）"""
+    """读取画布的 API/.env 文件中的键值对（第三级 fallback）"""
     keys: Dict[str, str] = {}
     if not settings.canvas_env_file:
         return keys
@@ -254,7 +278,7 @@ def get_api_key(provider_id: str) -> str:
     """解析某供应商的 API Key：
     1. 进程环境变量
     2. Agent 本地 API/.env
-    3. 熊布 API/.env（仅对来源于熊布的 provider 启用）
+    3. 画布 API/.env（仅对来源于画布的 provider 启用）
     """
     env_name = provider_key_env(provider_id)
     val = os.getenv(env_name, "")
@@ -263,12 +287,12 @@ def get_api_key(provider_id: str) -> str:
     val = read_env_keys().get(env_name, "")
     if val:
         return val
-    # 第三级：如果该 provider 来源于熊布，尝试读熊布的 .env
+    # 第三级：如果该 provider 来源于画布，尝试读画布的 .env
     canvas_ids = get_canvas_provider_ids()
     if provider_id in canvas_ids:
         val = _read_canvas_env_keys().get(env_name, "")
         if val:
-            logger.debug(f"[ProviderConfig] Key '{env_name}' 从熊布 .env 解析")
+            logger.debug(f"[ProviderConfig] Key '{env_name}' 从画布 .env 解析")
             return val
     return ""
 

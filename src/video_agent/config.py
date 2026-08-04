@@ -53,10 +53,17 @@ class Settings:
     # LLM 超时（秒）
     llm_timeout: int = field(default_factory=lambda: _env_int("LLM_TIMEOUT", 120))
     llm_stream_timeout: int = field(default_factory=lambda: _env_int("LLM_STREAM_TIMEOUT", 180))
+    # CLI 协议（如 gemini-cli/Antigravity CLI）路由到 custom-api 反代时 auto 的回退模型：
+    # 聊天已对齐画布行为改走本机 agy CLI，此值仅影响带参考图的生图编辑等
+    # 必须走反代的残留路径；反代报 model not register 时用 CLI_AUTO_CHAT_MODEL 覆盖
+    cli_auto_chat_model: str = field(default_factory=lambda: os.getenv("CLI_AUTO_CHAT_MODEL", "gemini-3.1-flash-image"))
 
     # Token 预算管理
     context_window_size: int = field(default_factory=lambda: _env_int("CONTEXT_WINDOW_SIZE", 128000))
     token_budget_ratio: float = field(default_factory=lambda: float(os.getenv("TOKEN_BUDGET_RATIO", "0.8")))
+    # 旧轮 read_* 回喂全文的惰性压缩阈值：消息总量达到预算的该比例才压缩，
+    # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）
+    feedback_compress_ratio: float = field(default_factory=lambda: float(os.getenv("FEEDBACK_COMPRESS_RATIO", "0.5")))
 
     # 图片生成超时（秒）
     image_gen_timeout: int = field(default_factory=lambda: _env_int("IMAGE_GEN_TIMEOUT", 180))
@@ -85,6 +92,12 @@ class Settings:
 
     # 请求限流（每分钟每 IP 最大请求数，0 = 不限流）
     rate_limit_per_minute: int = field(default_factory=lambda: _env_int("RATE_LIMIT_PER_MINUTE", 10))
+    # 生成类端点（/api/generate*）单独配额：批量生图/生视频会连续提交多个任务，
+    # 与聊天共用低配额会误伤正常批量操作（P0-3）
+    rate_limit_generate_per_minute: int = field(default_factory=lambda: _env_int("RATE_LIMIT_GENERATE_PER_MINUTE", 60))
+    # 是否信任 X-Forwarded-For 头提取客户端 IP（仅在可信反向代理后置 true；
+    # 本机直连部署下该头可被伪造，用于绕过 IP 级限流）
+    trust_proxy: bool = field(default_factory=lambda: _env_bool("TRUST_PROXY", False))
 
     # 存储后端（"local" | "s3"）
     storage_backend: str = field(default_factory=lambda: os.getenv("STORAGE_BACKEND", "local"))
@@ -93,7 +106,7 @@ class Settings:
     # sqlite 提供事务原子性与并发安全，首次启用自动从 JSON 迁移，可随时回退
     state_backend: str = field(default_factory=lambda: os.getenv("STATE_BACKEND", "json"))
 
-    # 熊布画布集成
+    # 画布画布集成
     canvas_base_url: str = field(default_factory=lambda: os.getenv("CANVAS_BASE_URL", "http://127.0.0.1:3000"))
     canvas_timeout: int = field(default_factory=lambda: _env_int("CANVAS_TIMEOUT", 30))
     canvas_enabled: bool = field(default_factory=lambda: _env_bool("CANVAS_ENABLED", True))
@@ -105,7 +118,7 @@ class Settings:
     memory_summary_interval: int = field(default_factory=lambda: _env_int("MEMORY_SUMMARY_INTERVAL", 10))
     memory_time_decay_days: int = field(default_factory=lambda: _env_int("MEMORY_TIME_DECAY_DAYS", 30))
 
-    # 熊布 Provider 配置共享（HTTP 优先，文件兜底）
+    # 画布 Provider 配置共享（HTTP 优先，文件兜底）
     # 注意：canvas_providers_file / canvas_env_file 默认为空，需通过环境变量配置；
     # 为空时画布配置共享功能自动降级（仅通过 HTTP 接口获取）。
     canvas_providers_url: str = field(default_factory=lambda: os.getenv(
@@ -116,8 +129,8 @@ class Settings:
         "CANVAS_ENV_FILE", ""))
     canvas_health_cache_seconds: int = field(default_factory=lambda: _env_int(
         "CANVAS_HEALTH_CACHE_SECONDS", 30))
-    # 熊布外壳 UI 在画布 iframe 内的偏移估计（侧栏宽 + stage 边距），用于拖放落点换算；
-    # 熊布独立迭代若改了外壳布局，可通过环境变量调整，不影响功能（结果会被夹取到可视区内）
+    # 画布外壳 UI 在画布 iframe 内的偏移估计（侧栏宽 + stage 边距），用于拖放落点换算；
+    # 画布独立迭代若改了外壳布局，可通过环境变量调整，不影响功能（结果会被夹取到可视区内）
     canvas_shell_offset_x: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_X", 96))
     canvas_shell_offset_y: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_Y", 16))
 

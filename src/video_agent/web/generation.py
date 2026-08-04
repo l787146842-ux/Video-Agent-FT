@@ -14,11 +14,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 from src.video_agent.exceptions import AdapterError, GenerationError
+from src.video_agent.config import settings
 from src.video_agent.web.provider_config import (
     CLI_PROTOCOLS,
     get_api_key,
     get_canvas_provider_ids,
     get_provider_config,
+    is_mock_provider,
+    resolve_provider_ref,
 )
 from src.video_agent.adapters.openai_compat import (
     OpenAICompatChatAdapter,
@@ -47,7 +50,7 @@ def resolve_openai_endpoint(provider_id: str, model: str) -> Tuple[str, str, str
     api_key = get_api_key(provider_id)
     effective_model = model
 
-    # OpenAI 协议：base_url 未以 /v1 结尾时自动补全（与熊布 upstream_models_url 逻辑一致）
+    # OpenAI 协议：base_url 未以 /v1 结尾时自动补全（与画布 upstream_models_url 逻辑一致）
     protocol = (cfg.get("protocol") or "openai").lower()
     if base_url and protocol == "openai" and not base_url.endswith("/v1"):
         base_url += "/v1"
@@ -60,7 +63,13 @@ def resolve_openai_endpoint(provider_id: str, model: str) -> Tuple[str, str, str
                 base_url += "/v1"
             api_key = get_api_key("custom-api")
             if effective_model in ("auto", ""):
-                effective_model = "gemini-3.1-flash-image"
+                # 可配置回退模型（CLI_AUTO_CHAT_MODEL）：反代未注册默认模型时
+                # 无需改代码，改环境变量即可（曾硬编码 gemini-3.1-flash-image 导致 400）
+                effective_model = settings.cli_auto_chat_model
+                logger.info(
+                    "[Generation] 提示：若反代报 model not register，请在 .env 设置 "
+                    "CLI_AUTO_CHAT_MODEL=<反代已注册的模型名> 后重启服务"
+                )
             logger.info(f"[Generation] CLI 协议 '{provider_id}' 路由到反代, model={effective_model}")
 
     if not base_url:
@@ -149,7 +158,30 @@ async def call_chat_completion_stream(
     return content, finish_reason
 
 
-# ---------- 图片生成（智能路由：熊布优先 + 本地兜底） ----------
+# ---------- 图片生成（智能路由：画布优先 + 本地兜底） ----------
+
+# 比例 → 1K 基准尺寸（与前端 image-sizes.ts 保持一致）
+_IMAGE_1K_SIZES: Dict[str, str] = {
+    "1:1": "1024x1024", "2:3": "1024x1536", "3:2": "1536x1024",
+    "3:4": "1008x1344", "4:3": "1344x1008", "9:16": "720x1280",
+    "16:9": "1280x720", "21:9": "1280x544", "9:21": "544x1280",
+}
+# 分辨率档位 → 尺寸倍率（1K=基准，2K=2 倍，4K=4 倍）
+_RESOLUTION_MULTIPLIERS: Dict[str, int] = {"1K": 1, "2K": 2, "4K": 4}
+
+
+def image_size_for(aspect_ratio: str, resolution: str = "1K") -> str:
+    """按 比例 + 分辨率档位 计算生图尺寸（如 16:9 + 2K → 2560x1440）"""
+    base = _IMAGE_1K_SIZES.get((aspect_ratio or "").strip(), _IMAGE_1K_SIZES["16:9"])
+    mult = _RESOLUTION_MULTIPLIERS.get((resolution or "1K").strip().upper(), 1)
+    if mult == 1:
+        return base
+    try:
+        w, h = (int(x) for x in base.split("x"))
+        return f"{w * mult}x{h * mult}"
+    except (ValueError, AttributeError):
+        return base
+
 
 async def _try_canvas_image_generation(
     provider_id: str,
@@ -159,19 +191,19 @@ async def _try_canvas_image_generation(
     size: str = "1024x1024",
     aspect_ratio: str = "",
 ) -> Optional[str]:
-    """尝试通过熊布执行生图。
-    仅当熊布在线且目标 provider 存在于熊布配置中时才尝试。
+    """尝试通过画布执行生图。
+    仅当画布在线且目标 provider 存在于画布配置中时才尝试。
     返回图片 URL，不适用或失败时返回 None。"""
-    # 判断 provider 是否熊布可处理
+    # 判断 provider 是否画布可处理
     canvas_ids = get_canvas_provider_ids()
     if provider_id not in canvas_ids:
-        return None  # Agent 独有的 provider，跳过熊布
+        return None  # Agent 独有的 provider，跳过画布
 
     adapter = get_canvas_adapter()
     if not await adapter.is_online():
-        return None  # 熊布离线
+        return None  # 画布离线
 
-    # 熊布在线且能处理该 provider，发起请求
+    # 画布在线且能处理该 provider，发起请求
     payload: Dict[str, Any] = {
         "provider_id": provider_id,
         "model": model,
@@ -182,17 +214,17 @@ async def _try_canvas_image_generation(
     if aspect_ratio:
         payload["aspect_ratio"] = aspect_ratio
 
-    logger.info(f"[Generation] 生图路由到熊布: provider={provider_id}, model={model}")
+    logger.info(f"[Generation] 生图路由到画布: provider={provider_id}, model={model}")
     try:
         result = await adapter.generate_image_online(payload)
-        # 熊布 /api/online-image 返回格式: {"images": [...], ...}
+        # 画布 /api/online-image 返回格式: {"images": [...], ...}
         images = result.get("images") or []
         if images:
             return images[0]
-        logger.warning("[Generation] 熊布生图未返回图片，fallthrough 到本地")
+        logger.warning("[Generation] 画布生图未返回图片，fallthrough 到本地")
         return None
     except Exception as e:
-        logger.warning(f"[Generation] 熊布生图失败，fallthrough 到本地: {e}")
+        logger.warning(f"[Generation] 画布生图失败，fallthrough 到本地: {e}")
         return None
 
 
@@ -203,20 +235,34 @@ async def generate_image_via_provider(
     *,
     size: str = "1024x1024",
     aspect_ratio: str = "",
+    resolution: str = "",
     reference_images: Optional[List[str]] = None,
 ) -> str:
     """
     统一图片生成（智能路由）：
-    1. 熊布在线 + provider 存在于熊布 → 通过熊布 API 执行（不带参考图时）
+    1. 画布在线 + provider 存在于画布 → 通过画布 API 执行（不带参考图时）
     2. CLI 协议（gemini-cli）→ AgyCliImageAdapter（不支持参考图）
     3. 其他供应商 → OpenAICompatImageAdapter 本地直连（支持参考图多模态）
     返回图片 URL。失败抛 GenerationError。
 
     reference_images：参考素材 URL 列表（@ 引用的素材），会内联发送给多模态模型。
+    resolution：分辨率档位（1K/2K/4K），CLI 类适配器会写进提示词让模型感知。
     """
+    # 供应商兼容显示名（LLM action 常传界面上的名称如 Grsai）→ 内部 id
+    provider_id = resolve_provider_ref(provider_id)
     refs = reference_images or []
 
-    # ① 尝试熊布路由（熊布在线 + provider 熊布可处理；带参考图时跳过，熊布不接收参考图）
+    # 空模型兑底（彻底修复「model not register: ''/MissingParameter」）：
+    # 模型解析优先级：规格文档指定（LLM action 参数）→ 预览框草稿参数
+    # （action_executor 已按此链传入）→ 供应商配置的第一个图片模型
+    cfg0 = get_provider_config(provider_id)
+    if cfg0 and not model and not is_mock_provider(provider_id, model):
+        defaults = [m for m in (cfg0.get("image_models") or []) if m]
+        if defaults:
+            model = defaults[0]
+            logger.info(f"[Generation] 模型未指定，回退供应商 '{provider_id}' 默认模型: {model}")
+
+    # ① 尝试画布路由（画布在线 + provider 画布可处理；带参考图时跳过，画布不接收参考图）
     if not refs:
         canvas_result = await _try_canvas_image_generation(
             provider_id, model, prompt, size=size, aspect_ratio=aspect_ratio
@@ -232,7 +278,7 @@ async def generate_image_via_provider(
         logger.info(f"[Generation] CLI 协议 '{provider_id}' → AgyCliImageAdapter")
         adapter = AgyCliImageAdapter()
         try:
-            result = await adapter.generate_image(prompt, aspect_ratio=aspect_ratio)
+            result = await adapter.generate_image(prompt, aspect_ratio=aspect_ratio, resolution=resolution)
         except AdapterError as e:
             raise GenerationError(str(e)) from e
         if result.image_urls:

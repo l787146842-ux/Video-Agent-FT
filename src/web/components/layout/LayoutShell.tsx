@@ -10,11 +10,14 @@ import { ConfirmDialogHost } from '@/components/shared/ConfirmDialog';
 import { SplashScreen } from '@/components/shared/SplashScreen';
 import { DocsPanel } from '@/components/docs/DocsPanel';
 import { AssetLibraryModal } from '@/components/right-panel/AssetLibraryModal';
+import { GenerationLogPanel } from './GenerationLogPanel';
+import { initGenerationEvents, restoreActiveGenerations } from '@/lib/generation-events';
 import { getProjectState } from '@/api/project';
 import { getAppConfig, getProviders } from '@/api/providers';
 import { getSkills } from '@/api/agent';
 import { state, studioActions } from '@/stores/studio';
 import { chatActions } from '@/stores/chat';
+import { convActions } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
 import {
   performRedo, performUndo, refreshHistoryStatus,
@@ -86,6 +89,9 @@ export function LayoutShell(props: ParentProps) {
     onCleanup(() => document.removeEventListener('keydown', onGlobalKeyDown));
     void refreshHistoryStatus();
 
+    // 全局生成事件总线：agent/批量生成驱动卡片转圈 + 生成日志联动
+    initGenerationEvents();
+
     // 画布 iframe 持久化：监听握手消息（用于状态同步，不再作为加载失败判据）
     window.addEventListener('message', onCanvasMessage);
     onCleanup(() => {
@@ -104,7 +110,14 @@ export function LayoutShell(props: ParentProps) {
     if (snapshot) {
       studioActions.loadFullState(snapshot);
       chatActions.loadMessages(snapshot.chatMessages || []);
+      // 多对话标签栏：从快照装载（后端已保证 chatMessages = 活跃对话）
+      convActions.loadFromSnapshot(snapshot);
+    } else {
+      convActions.loadFromSnapshot(null);
     }
+
+    // 刷新后恢复读秒：后端仍在处理的生成任务重新点亮卡片/预览框转圈
+    void restoreActiveGenerations();
 
     studioActions.setApiConfig({
       chatModels: cfg?.chat_models,
@@ -160,7 +173,7 @@ export function LayoutShell(props: ParentProps) {
       </Show>
 
       {/* 导航栏已收起时，单独渲染一个 fixed 箭头到视口顶部中央（用于再次展开）
-         仅覆盖层模式显示；影视Agent 模式从不显示箭头 */}
+         仅覆盖层模式显示；影视工作台模式从不显示箭头 */}
       <Show when={overlayMode() && headerHidden()}>
         <button
           type="button"
@@ -198,6 +211,7 @@ export function LayoutShell(props: ParentProps) {
       <ContextMenuHost />
       <ConfirmDialogHost />
       <DocsPanel />
+      <GenerationLogPanel />
 
       {/* 全局"画布素材库"模态框（左栏 AssetCard 和 ChatInput 工具栏共用） */}
       <AssetLibraryModal

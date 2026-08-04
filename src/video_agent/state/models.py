@@ -266,6 +266,7 @@ DRAFT_DEFAULT_FIELDS: Dict[str, Any] = {
     "mode": "",
     "aspectRatio": "16:9",
     "resolution": "1080p",
+    "imageResolution": "1K",
     "duration": "5s",
     "timbre": "",
     "refAssets": [],

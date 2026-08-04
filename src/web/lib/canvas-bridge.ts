@@ -1,19 +1,19 @@
 /**
  * 画布 postMessage 双向通信桥接
  *
- * 【协议现状 — 2026-08 审查确认，详见 docs/对熊布的需求清单.md】
- * 本项目与画布（熊布）为跨源 iframe 集成，postMessage 协议大部分为【预留协议】：
+ * 【协议现状 — 2026-08 审查确认，详见 docs/对画布的需求清单.md】
+ * 本项目与画布（画布）为跨源 iframe 集成，postMessage 协议大部分为【预留协议】：
  *
  * 接收方向（CanvasToStudioMessage）：
  * - canvas:ready / canvas:selection / canvas:node-select / canvas:node-update
- *   熊布当前【从未发送】这些消息。监听代码保留——属预留协议，熊布未来实现后零改动生效。
+ *   画布当前【从未发送】这些消息。监听代码保留——属预留协议，画布未来实现后零改动生效。
  *   选中态读取受 Rule 7 限制（选中仅存于画布浏览器端内存，无 API），只能等画布侧广播。
  *
  * 发送方向（StudioToCanvasMessage）：
- * - 'studio-theme'：熊布 theme.js 实际监听的消息名（无 origin 校验，跨源可达）——【唯一当前生效】
- * - studio:draft-select / studio:state-sync：熊布画布页不认识这两个消息名，
+ * - 'studio-theme'：画布 theme.js 实际监听的消息名（无 origin 校验，跨源可达）——【唯一当前生效】
+ * - studio:draft-select / studio:state-sync：画布画布页不认识这两个消息名，
  *   且其 message 监听对跨源消息直接丢弃（event.origin !== location.origin 时 return），
- *   当前发送无效，保留为预留协议，待熊布支持后生效。
+ *   当前发送无效，保留为预留协议，待画布支持后生效。
  */
 import { state, setState, findDraftRecord } from '@/stores/studio';
 import { applyCanvasSelection, clearCanvasSelection } from '@/stores/canvas';
@@ -25,9 +25,9 @@ export type CanvasToStudioMessage =
   | { type: 'canvas:ready' };
 
 export type StudioToCanvasMessage =
-  // 熊布 theme.js 实际监听的消息名（当前唯一生效的发送消息）
+  // 画布 theme.js 实际监听的消息名（当前唯一生效的发送消息）
   | { type: 'studio-theme'; theme: string }
-  // 以下为预留协议：熊布当前不认识且会丢弃跨源消息，待其支持后生效
+  // 以下为预留协议：画布当前不认识且会丢弃跨源消息，待其支持后生效
   | { type: 'studio:draft-select'; draftId: string; draftType: string }
   | { type: 'studio:state-sync'; groups: unknown[] };
 
@@ -126,7 +126,7 @@ export function broadcastStateSync(): void {
   postToCanvas({ type: 'studio:state-sync', groups: allGroups() });
 }
 
-/** 主题变更通知（熊布 theme.js 监听 'studio-theme'，无 origin 校验，跨源可达） */
+/** 主题变更通知（画布 theme.js 监听 'studio-theme'，无 origin 校验，跨源可达） */
 export function broadcastThemeChange(theme: string): void {
   postToCanvas({ type: 'studio-theme', theme });
 }

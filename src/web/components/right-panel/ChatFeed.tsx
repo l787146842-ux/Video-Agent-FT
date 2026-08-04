@@ -3,6 +3,7 @@ import { chatState } from '@/stores/chat';
 import { t } from '@/lib/locale';
 import { ChatMessageItem } from './ChatMessageItem';
 import { StreamingIndicator } from './StreamingIndicator';
+import { AgentTimeline } from './AgentTimeline';
 
 /** 判断是否接近底部（阈值 80px） */
 function isNearBottom(el: HTMLElement): boolean {
@@ -48,6 +49,17 @@ export function ChatFeed() {
           />
         )}
       </For>
+
+      {/* 流式过程时间线：深度思考/工具操作实时追加（完成并入消息 trace，不重复展示） */}
+      <Show when={chatState.isStreaming}>
+        <div class="chat-msg agent">
+          <AgentTimeline
+            reasoning={() => chatState.streamingReasoning}
+            items={chatState.streamingTools}
+            live
+          />
+        </div>
+      </Show>
 
       {/* 流式中的临时 agent 消息 */}
       <Show when={chatState.isStreaming && chatState.streamingText}>

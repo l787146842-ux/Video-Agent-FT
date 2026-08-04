@@ -3,9 +3,11 @@
 
 职责：
 1. 将上传素材登记进服务端资产列表（bind）
-2. 为 LLM 构建素材上下文说明（文本注入 / 能力说明）
-3. 从附件中提取图片 URL（多模态 vision 注入）
+2. 文本类附件文档（故事/剧本）正文存入 state.uploadedDocs，供 read_uploaded_doc 按需检索
+3. 为 LLM 构建素材上下文说明（文档只注入清单+预览，其他类型能力说明）
+4. 从附件中提取图片 URL（多模态 vision 注入）
 """
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -16,10 +18,62 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.utils import gen_id
 from src.video_agent.utils.paths import ASSETS_DIR
 
-# 文本类素材直接把正文注入给 LLM；单文档上限防止把上下文撑爆
+# 文本类素材：正文不再全量注入，改存 uploadedDocs 由模型按需检索
 _TEXT_DOC_EXTS = {".md", ".txt"}
 _MAX_DOC_CHARS = settings.max_doc_chars
 _MAX_ATTACHMENTS = settings.max_attachments
+# 清单预览长度：让模型能判断文档内容性质，全文靠 read_uploaded_doc
+_DOC_PREVIEW_CHARS = 200
+
+
+def _read_text_doc(url: str) -> str:
+    """读取本地文本附件正文（防目录穿越）；失败返回空串"""
+    if not url.startswith("/workspace/assets/"):
+        return ""
+    fpath = ASSETS_DIR / Path(url).name
+    if fpath.suffix.lower() not in _TEXT_DOC_EXTS or not fpath.exists():
+        return ""
+    try:
+        return fpath.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        logger.warning(f"[Attachments] 附件文档读取失败 {url}: {e}")
+        return ""
+
+
+def store_uploaded_docs(svc: StateManager, attachments: List[Dict[str, str]]) -> None:
+    """把本次消息携带的文本附件正文存入 state.uploadedDocs（按需检索源）。
+
+    同名文档覆盖更新；仅存 .md/.txt，其他格式由 attachment_context 说明能力限制。
+    必须在 svc.lock 内调用（与 bind_attachments 同一短锁段）。
+    """
+    if not attachments:
+        return
+    changed = False
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    docs = svc.state_dict.setdefault("uploadedDocs", [])
+    for att in attachments[:_MAX_ATTACHMENTS]:
+        url = att.get("url", "")
+        name = att.get("name") or url or "文档"
+        content = _read_text_doc(url)
+        if not content:
+            continue
+        entry = next((d for d in docs if d.get("name") == name), None)
+        if entry:
+            entry["content"] = content
+            entry["char_count"] = len(content)
+            entry["uploaded_at"] = now
+        else:
+            docs.insert(0, {
+                "id": att.get("id") or gen_id("udoc"),
+                "name": name,
+                "kind": att.get("kind") or "file",
+                "content": content,
+                "char_count": len(content),
+                "uploaded_at": now,
+            })
+        changed = True
+    if changed:
+        svc.save()
 
 
 def bind_attachments(svc: StateManager, attachments: List[Dict[str, str]]) -> None:
@@ -49,10 +103,15 @@ def bind_attachments(svc: StateManager, attachments: List[Dict[str, str]]) -> No
         svc.save()
 
 
-def attachment_context(attachments: List[Dict[str, str]]) -> str:
+def attachment_context(attachments: List[Dict[str, str]], full_text: bool = False) -> str:
     """
-    为 LLM 构建素材说明：文本类文档（.md/.txt）直接读出正文注入；
-    其他类型给出明确的能力说明，避免 LLM 瘘猜「我看不到素材」或假装看过。
+    为 LLM 构建素材说明：文本类文档（.md/.txt）默认只注入清单（名称+字数+前 200 字预览），
+    正文已存入 uploadedDocs，需要全文时调用 read_uploaded_doc 按需检索；
+    其他类型给出明确的能力说明，避免 LLM 乱猜「我看不到素材」或假装看过。
+
+    full_text=True（降级路径）：当前通道不支持 Function Calling（如 gemini-cli），
+    模型根本调不了 read_uploaded_doc，此时直接注入截断后的全文，
+    否则模型只能看到 200 字预览就开始创作，产出必偏。
     """
     parts: List[str] = []
     for att in attachments[:_MAX_ATTACHMENTS]:
@@ -65,19 +124,27 @@ def attachment_context(attachments: List[Dict[str, str]]) -> str:
         fpath = ASSETS_DIR / Path(url).name
         ext = fpath.suffix.lower()
         if ext in _TEXT_DOC_EXTS:
-            if not fpath.exists():
+            content = _read_text_doc(url)
+            if not content:
                 parts.append(f"（素材文档《{name}》未在服务器上找到，请让用户重新上传）")
                 continue
-            try:
-                content = fpath.read_text(encoding="utf-8", errors="replace")
-            except OSError as e:
-                parts.append(f"（素材文档《{name}》读取失败：{e}）")
+            if full_text:
+                body = content[:_MAX_DOC_CHARS]
+                trunc_note = (
+                    f"\n……（正文超长，已截断为前 {_MAX_DOC_CHARS} 字）" if len(content) > _MAX_DOC_CHARS else ""
+                )
+                parts.append(
+                    f"（用户上传了素材文档《{name}》，共 {len(content)} 字，全文如下，"
+                    f"必须基于它创作，不得虚构原文没有的内容）\n{body}{trunc_note}"
+                )
                 continue
-            truncated = ""
-            if len(content) > _MAX_DOC_CHARS:
-                content = content[:_MAX_DOC_CHARS]
-                truncated = f"\n……（正文超长，已截断为前 {_MAX_DOC_CHARS} 字）"
-            parts.append(f"=== 用户上传的素材文档《{name}》全文 ===\n{content}{truncated}\n=== 文档结束 ===")
+            preview = content[:_DOC_PREVIEW_CHARS].replace("\n", " ")
+            parts.append(
+                f"（用户上传了素材文档《{name}》，共 {len(content)} 字，已存档。"
+                f"开头预览：{preview}…"
+                f"正文未自动注入上下文，需要全文时调用 read_uploaded_doc（name=\"{name}\"）读取，"
+                f"不要声称看不到该文档。）"
+            )
         elif ext in (".pdf", ".docx"):
             parts.append(
                 f"（用户上传了 {ext} 文档《{name}》，服务端暂不支持解析该格式正文；"

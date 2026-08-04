@@ -19,7 +19,7 @@ from loguru import logger
 
 from src.video_agent.web.actions import StudioActionExecutor
 from src.video_agent.config import settings
-from src.video_agent.web.attachments import bind_attachments, attachment_context
+from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.mock_llm import mock_llm_reply
 from src.video_agent.web.multimodal_builder import (
@@ -33,9 +33,109 @@ from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.factory import AdapterFactory
+from src.video_agent.adapters.agy_cli import AgyCliChatAdapter
 from src.video_agent.tools.manager import ToolManager
 
 __all__ = ["stream_worker", "non_stream_worker", "sse_event_generator", "build_multimodal_content"]
+
+# 请求幂等防护（P2）：同一 request_id 正在处理中时拒绝重复提交，
+# 防止 SSE 断连重发/双标签页重复发送导致操作重复落盘。
+# 完成后即移除，不影响断线重连后的正常重发。
+_INFLIGHT_REQUESTS: set = set()
+
+
+def _acquire_request_slot(request_id: str) -> bool:
+    """尝试占用请求槽位：未携 id 直接放行；已占用返回 False"""
+    if not request_id:
+        return True
+    if request_id in _INFLIGHT_REQUESTS:
+        return False
+    _INFLIGHT_REQUESTS.add(request_id)
+    return True
+
+
+def _release_request_slot(request_id: str) -> None:
+    if request_id:
+        _INFLIGHT_REQUESTS.discard(request_id)
+
+
+_HISTORY_ASSISTANT_MAX_CHARS = 600          # 非最新 assistant 回复的总上限（头+尾合计）
+# 历史消息截断（token 浪费治理）：assistant 回复的有价值内容（草稿 prompt/规格文档）
+# 已在工作台状态 JSON 里，旧回复全文重复注入毫无意义；user 消息是用户指令，保持全文。
+_HISTORY_ASSISTANT_RECENT_MAX_CHARS = 2000  # 最新一条 assistant 回复的上限（紧邻决策与下一步计划最相关，保真度优先）
+_HISTORY_HEAD_CHARS = 300                   # 旧回复保留头部（开头常是结论/总结）
+_HISTORY_TAIL_CHARS = 300                   # 旧回复保留尾部（结尾常是下一步建议/待办决策）
+
+
+def truncate_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """组装发给 LLM 的历史：assistant 超长消息截断，user 消息全文保留。
+
+    截断策略（质量优化版）：
+    - 最新一条 assistant 回复：保留前 2000 字（上一轮的决策/下一步与当前追问最相关）；
+    - 更早的 assistant 回复：保留头 300 + 尾 300（旧版只留头部，
+      会丢掉结尾的下一步建议与待确认事项）；
+    - 截断处附说明，让模型知道完整内容可从工作台状态 JSON 获取。
+    """
+    last_assistant_idx = -1
+    for i, m in enumerate(messages):
+        if m.get("role", "user") == "assistant":
+            last_assistant_idx = i
+
+    out: List[Dict[str, Any]] = []
+    for i, m in enumerate(messages):
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        if not isinstance(content, str):
+            out.append({"role": role, "content": content})
+            continue
+        if role == "assistant":
+            if i == last_assistant_idx:
+                if len(content) > _HISTORY_ASSISTANT_RECENT_MAX_CHARS:
+                    content = (
+                        content[:_HISTORY_ASSISTANT_RECENT_MAX_CHARS]
+                        + "\n…（最新回复超长已截断，完整内容见工作台状态 JSON 与项目文档）"
+                    )
+            elif len(content) > _HISTORY_ASSISTANT_MAX_CHARS:
+                head = content[:_HISTORY_HEAD_CHARS]
+                tail = content[-_HISTORY_TAIL_CHARS:]
+                content = (
+                    head
+                    + "\n…（历史回复中部已省略，只保留首尾）…\n"
+                    + tail
+                    + "\n…（历史回复已截断，最新完整内容见工作台状态 JSON）"
+                )
+        out.append({"role": role, "content": content})
+    return out
+
+
+def _channel_supports_fc(provider_id: str) -> bool:
+    """判断供应商的聊天通道是否支持 Function Calling。
+
+    gemini-cli 协议走 AgyCliChatAdapter（无 FC），其他协议走 OpenAI 兼容
+    chat adapter（支持 FC）。非 FC 通道调不了 read_* 工具，
+    附件文档与选中 Skill 必须降级为全文直接注入，否则模型根本看不到。
+    """
+    try:
+        cfg = get_provider_config(provider_id) or {}
+    except Exception:
+        cfg = {}
+    return (cfg.get("protocol") or "openai") != "gemini-cli"
+
+
+def _create_chat_adapter(provider_id: str, model: str):
+    """按供应商协议创建 chat adapter。
+
+    Antigravity CLI（gemini-cli 协议）对齐画布行为：聊天走本机 agy CLI
+    登录态，不走反代；model=auto 时不传 --model，由 agy 自行路由
+    （曾硬路由到 custom-api 反代导致 400 model not register）。
+    其他供应商维持原 OpenAI 兼容端点解析路径。
+    """
+    cfg = get_provider_config(provider_id)
+    if cfg and cfg.get("protocol") == "gemini-cli":
+        logger.info(f"[ChatService] Antigravity CLI 聊天走本机 agy: model={model}")
+        return AgyCliChatAdapter(model=model)
+    base_url, api_key, effective_model = resolve_openai_endpoint(provider_id, model)
+    return AdapterFactory.get_or_create_chat_adapter(provider_id, base_url, api_key, effective_model)
 
 
 def _build_meta_note(elapsed_secs: float, steps: int, applied: int) -> str:
@@ -56,6 +156,11 @@ async def stream_worker(body: Any, emit) -> None:
         emit: async callable(event_dict) 用于向队列推送 SSE 事件
     """
     t0 = time.monotonic()
+    request_id = getattr(body, "request_id", "") or ""
+    if not _acquire_request_slot(request_id):
+        await emit({"type": "error", "detail": "相同请求正在处理中，请勿重复发送",
+                    "error_code": "DUPLICATE_REQUEST"})
+        return
     try:
         svc = StateManager.get_instance()
         executor = StudioActionExecutor(
@@ -72,7 +177,11 @@ async def stream_worker(body: Any, emit) -> None:
             user_text = "请查看我上传的素材"
 
         use_studio_context = body.context_mode != "none"
-        attachment_note = attachment_context(body.attachments) if body.attachments else ""
+        # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
+        attachment_note = (
+            attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
+            if body.attachments else ""
+        )
         llm_user_text = f"{user_text}\n\n{attachment_note}" if attachment_note else user_text
 
         # Skill 写入文档：消息携带 Skill 引用块时（前端此时才传 skill_slug），
@@ -102,6 +211,8 @@ async def stream_worker(body: Any, emit) -> None:
         # VideoAgentError 携带 error_code 供前端 i18n 翻译；未知异常按 INTERNAL_ERROR
         code = getattr(e, "error_code", None) or "INTERNAL_ERROR"
         await emit({"type": "error", "detail": f"服务端异常: {e}", "error_code": code})
+    finally:
+        _release_request_slot(request_id)
 
 
 async def _mock_stream(svc, executor, body, user_text, llm_user_text, use_studio_context, emit, t0) -> None:
@@ -109,6 +220,7 @@ async def _mock_stream(svc, executor, body, user_text, llm_user_text, use_studio
     async with svc.lock:
         if use_studio_context:
             bind_attachments(svc, body.attachments)
+            store_uploaded_docs(svc, body.attachments)
             svc.add_chat_message("user", user_text)
         await emit({"type": "status", "text": "mock 模式：本地规则生成…"})
         raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
@@ -170,8 +282,13 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
 def _is_retryable_adapter_error(e: Exception) -> bool:
     """判定 AdapterError 是否为可切换备用模型重试的瞬时故障。
 
-    仅 5xx / 连接失败 / 超时可重试；4xx（鉴权/参数错误）重试无意义。
+    优先使用结构化标记（P0-2）：AdapterError.retryable 由 Adapter 层在抛错时
+    填充（5xx / 超时 / 连接失败 → True，4xx → False）；无标记的旧异常回退
+    文案匹配。仅瞬时故障可重试，4xx（鉴权/参数错误）重试无意义。
     """
+    flag = getattr(e, "retryable", None)
+    if flag is not None:
+        return bool(flag)
     msg = str(e)
     return (
         "HTTP 5" in msg
@@ -222,17 +339,22 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
     主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，自动切换备用模型重试
     （避免重复执行已落盘的操作）；成功时 done payload 携带 fallback_model 供前端标注。
     """
-    history = [
+    history = truncate_history([
         {"role": m.get("role", "user"), "content": m.get("content", "")}
         for m in body.messages[-10:]
-    ]
+    ])
 
-    # 短锁：绑定附件 + 记录用户消息 + 构建上下文（仅一次，不随 fallback 重复）
+    # 短锁：绑定附件 + 附件文档存档 + 记录用户消息（仅一次，不随 fallback 重复）；
+    # 状态 JSON 改为惰性构建器（P0）：多步循环每一轮重新构建，模型每轮看到最新状态
     async with svc.lock:
         if use_studio_context:
             bind_attachments(svc, body.attachments)
+            store_uploaded_docs(svc, body.attachments)
             svc.add_chat_message("user", user_text)
-        state_json = svc.build_agent_context(body.asset_mode) if use_studio_context else ""
+
+    state_builder = (
+        (lambda: svc.build_agent_context(body.asset_mode)) if use_studio_context else None
+    )
 
     # --- 解析中间面板选中的生图 provider + 画面比例（注入 generate_image 工具用）---
     image_provider, image_aspect_ratio = _resolve_selected_draft_media_config(
@@ -247,7 +369,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
 
     for idx, (cand_provider, cand_model) in enumerate(candidates):
         try:
-            base_url, api_key, effective_model = resolve_openai_endpoint(cand_provider, cand_model)
+            llm_adapter = _create_chat_adapter(cand_provider, cand_model)
         except GenerationError as e:
             logger.warning(f"[ChatService] fallback 候选 {cand_provider}/{cand_model} 端点解析失败: {e}")
             if idx == len(candidates) - 1:
@@ -255,14 +377,13 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 return
             continue
 
-        llm_adapter = AdapterFactory.get_or_create_chat_adapter(cand_provider, base_url, api_key, effective_model)
         planner = Planner(llm_adapter=llm_adapter, tool_manager=ToolManager)
         planner_ctx = PlannerContext(
             history=history,
             selected_draft_id=body.selected_draft_id,
             selected_type=body.selected_type,
-            state_json=state_json,
-            extra_system=body.system_prompt.strip(),
+            state_builder=state_builder,
+            skill_name=getattr(body, "skill_name", "") or "",
             use_studio_context=use_studio_context,
             asset_mode=body.asset_mode,
             image_generation_provider=image_provider,
@@ -281,11 +402,21 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 elif event.type == "actions_applied":
                     applied_seen = True
                     await emit({"type": "status", "text": event.text})
+                elif event.type in ("reasoning_delta", "tool_started", "tool_finished"):
+                    # 过程时间线事件透传（深度思考增量 / 工具开始与完成），
+                    # 仅 UI 展示用，不进下次 LLM 上下文
+                    await emit(event.payload or {"type": event.type, "text": event.text})
                 elif event.type == "done":
                     final_payload = event.payload or {}
                     final_text = final_payload.get("text", "")
                 elif event.type == "error":
-                    raise AdapterError(event.text)
+                    # 透传上游结构化故障标记（P0-2）：保证 fallback 链判定不依赖文案
+                    p = event.payload or {}
+                    raise AdapterError(
+                        event.text,
+                        retryable=p.get("retryable"),
+                        http_status=p.get("http_status"),
+                    )
         except (GenerationError, AdapterError) as e:
             # 已执行过操作 → 不得重试（避免重复写入）；不可重试/候选用尽 → 报错
             if applied_seen or not _is_retryable_adapter_error(e) or idx == len(candidates) - 1:
@@ -332,6 +463,11 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         }
         if idx > 0:
             done_payload["fallback_model"] = cand_model
+            # 降级显式告警：备用模型的产出质量可能不同于主模型，
+            # 必须让用户可见（随消息持久化到 warnings），不做静默降级
+            warnings = list(done_payload.get("warnings") or [])
+            warnings.append(f"主模型瞬时故障，本次回复由备用模型 {cand_model} 生成，质量可能与主模型不同")
+            done_payload["warnings"] = warnings
         await emit({"type": "done", "payload": done_payload})
         return
 
@@ -350,6 +486,25 @@ async def non_stream_worker(body: Any) -> Dict[str, Any]:
     路由层仅做参数校验 + 调用本函数 + 响应包装。
     返回 dict：{text, applied_actions, steps, warnings, confirmation, documents_written, state}
     """
+    user_text = body.message.strip()
+    if not user_text and not body.attachments:
+        raise VideoAgentError("消息不能为空", status_code=400, error_code="EMPTY_MESSAGE")
+    if not user_text:
+        user_text = "请查看我上传的素材"
+
+    # 请求幂等防护（P2）：同一 request_id 处理中时拒绝重复提交
+    request_id = getattr(body, "request_id", "") or ""
+    if not _acquire_request_slot(request_id):
+        raise VideoAgentError("相同请求正在处理中，请勿重复发送", status_code=409,
+                              error_code="DUPLICATE_REQUEST")
+    try:
+        return await _non_stream_inner(body, user_text)
+    finally:
+        _release_request_slot(request_id)
+
+
+async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
+    """非流式聊天主体（幂等槽位由 non_stream_worker 管理）"""
     svc = StateManager.get_instance()
     executor = StudioActionExecutor(
         svc,
@@ -357,14 +512,12 @@ async def non_stream_worker(body: Any) -> Dict[str, Any]:
         selected_type=body.selected_type,
     )
 
-    user_text = body.message.strip()
-    if not user_text and not body.attachments:
-        raise VideoAgentError("消息不能为空", status_code=400, error_code="EMPTY_MESSAGE")
-    if not user_text:
-        user_text = "请查看我上传的素材"
-
     use_studio_context = body.context_mode != "none"
-    attachment_note = attachment_context(body.attachments) if body.attachments else ""
+    # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
+    attachment_note = (
+        attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
+        if body.attachments else ""
+    )
     llm_user_text = f"{user_text}\n\n{attachment_note}" if attachment_note else user_text
 
     # Skill 写入文档：同 stream_worker（仅消息携带 Skill 引用块时前端才传 slug）
@@ -392,9 +545,10 @@ async def non_stream_worker(body: Any) -> Dict[str, Any]:
         }
 
     # 真实供应商
-    history = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in body.messages[-10:]]
-    base_url, api_key, effective_model = resolve_openai_endpoint(body.provider, body.model)
-    llm_adapter = AdapterFactory.get_or_create_chat_adapter(body.provider, base_url, api_key, effective_model)
+    history = truncate_history([
+        {"role": m.get("role", "user"), "content": m.get("content", "")} for m in body.messages[-10:]
+    ])
+    llm_adapter = _create_chat_adapter(body.provider, body.model)
     planner = Planner(llm_adapter=llm_adapter, tool_manager=ToolManager)
 
     # 多模态内容构建（有 content_parts 时按排版顺序交错；
@@ -408,8 +562,13 @@ async def non_stream_worker(body: Any) -> Dict[str, Any]:
     async with svc.lock:
         if use_studio_context:
             bind_attachments(svc, body.attachments)
+            store_uploaded_docs(svc, body.attachments)
             svc.add_chat_message("user", user_text)
-        state_json = svc.build_agent_context(body.asset_mode) if use_studio_context else ""
+
+    # 状态惰性构建器（P0）：多步循环每轮刷新
+    state_builder = (
+        (lambda: svc.build_agent_context(body.asset_mode)) if use_studio_context else None
+    )
 
     # --- 解析中间面板选中的生图 provider + 画面比例 ---
     image_provider2, image_aspect_ratio2 = _resolve_selected_draft_media_config(
@@ -418,7 +577,8 @@ async def non_stream_worker(body: Any) -> Dict[str, Any]:
 
     planner_ctx = PlannerContext(
         history=history, selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
-        state_json=state_json, extra_system=body.system_prompt.strip(),
+        state_builder=state_builder,
+        skill_name=getattr(body, "skill_name", "") or "",
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
         image_generation_provider=image_provider2,
         image_generation_aspect_ratio=image_aspect_ratio2,

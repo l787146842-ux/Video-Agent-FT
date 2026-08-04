@@ -76,7 +76,7 @@ export function CanvasImagePickerModal(props: {
   return (
     <Show when={props.open}>
       <div class="asset-modal canvas-picker-modal">
-        <div class="asset-modal-backdrop" onClick={props.onClose} />
+        <div class="asset-modal-backdrop" onClick={() => props.onClose()} />
         <div class="asset-modal-panel">
           {/* 头部：标题 + 画布选择器 + 关闭 */}
           <div class="asset-modal-header">
@@ -118,7 +118,7 @@ export function CanvasImagePickerModal(props: {
               </Show>
             </div>
 
-            <button class="asset-modal-close" onClick={props.onClose} title="关闭">
+            <button class="asset-modal-close" onClick={() => props.onClose()} title="关闭">
               <FiX size={16} />
             </button>
           </div>
@@ -145,7 +145,7 @@ export function CanvasImagePickerModal(props: {
               <div class="asset-modal-status">
                 <FiImage size={28} />
                 <p>暂无画布</p>
-                <p class="asset-modal-status-hint">请先在熊布中创建一个画布</p>
+                <p class="asset-modal-status-hint">请先在画布中创建一个画布</p>
               </div>
             </Show>
 

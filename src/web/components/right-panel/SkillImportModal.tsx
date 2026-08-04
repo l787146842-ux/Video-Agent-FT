@@ -99,7 +99,7 @@ export function SkillImportModal(props: {
         {/* 顶部 */}
         <div class="skill-modal-header">
           <div class="skill-modal-title" style={{ padding: 0 }}>{t('rp.skillImport.title')}</div>
-          <button type="button" class="skill-modal-close" onClick={props.onClose}>
+          <button type="button" class="skill-modal-close" onClick={() => props.onClose()}>
             <FiX size={16} />
           </button>
         </div>

@@ -1,5 +1,5 @@
 import { Show, For, createSignal, createMemo } from 'solid-js';
-import { FiX, FiImage, FiVideo, FiMusic, FiExternalLink } from 'solid-icons/fi';
+import { FiX, FiImage, FiMusic, FiExternalLink } from 'solid-icons/fi';
 import { state } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { requestInsertMedia } from '@/lib/chat-input-bridge';
@@ -110,7 +110,7 @@ export function StudioAssetPickerModal(props: {
   return (
     <Show when={props.open}>
       <div class="asset-modal">
-        <div class="asset-modal-backdrop" onClick={props.onClose} />
+        <div class="asset-modal-backdrop" onClick={() => props.onClose()} />
         <div class="asset-modal-panel">
           {/* 头部：tab + 画布素材库入口 + 关闭 */}
           <div class="asset-modal-header">
@@ -131,7 +131,7 @@ export function StudioAssetPickerModal(props: {
             >
               <FiExternalLink size={13} /> {t('rp.picker.canvasAssets')}
             </button>
-            <button class="asset-modal-close" onClick={props.onClose} title={t('rp.asset.close')}>
+            <button class="asset-modal-close" onClick={() => props.onClose()} title={t('rp.asset.close')}>
               <FiX size={16} />
             </button>
           </div>

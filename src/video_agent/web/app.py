@@ -2,6 +2,7 @@
 Video Agent Web Application
 FastAPI 主应用 — 挂载 FTDYB 前端静态服务 + API 网关
 """
+import asyncio
 import os
 import re
 import sys
@@ -10,7 +11,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +25,7 @@ from src.video_agent.web.routes.providers import router as providers_router
 from src.video_agent.web.routes.project import router as project_router
 from src.video_agent.web.routes.storyboard import router as storyboard_router
 from src.video_agent.web.routes.agent import router as agent_router
+from src.video_agent.web.routes.conversations import router as conversations_router
 from src.video_agent.web.routes.generate import router as generate_router
 from src.video_agent.web.routes.workflow import router as workflow_router
 from src.video_agent.web.routes.plugins import router as plugins_router
@@ -59,24 +61,23 @@ async def lifespan(_app: FastAPI):
     from src.video_agent.web.providers import register_adapters
     from src.video_agent.web.skill_docs import ensure_default_skill_docs
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.skills import register_default_skills
     from src.video_agent.config import settings
     register_adapters()
-    register_default_skills()
+    # 代码内置 Skill（编剧/分镜师/制片）已按用户要求彻底移除，不再注册；
+    # 下拉框与 Skill 目录只保留 data/skills/*.md 文档 Skill。
     ensure_default_skill_docs()
     StateManager.get_instance()  # 触发加载/初始化
     # 画布 Tool 注册（可通过 CANVAS_ENABLED=false 关闭）
     if settings.canvas_enabled:
         from src.video_agent.tools.canvas_tools import register_canvas_tools
         register_canvas_tools()
-        # 熊布版本漂移探测（P1-5）：fire-and-forget，失败/离线不阻塞启动
-        import asyncio as _asyncio
+        # 画布版本漂移探测（P1-5）：fire-and-forget，失败/离线不阻塞启动
 
         async def _check_canvas_version():
             from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
             await get_canvas_adapter().check_version_drift()
 
-        _asyncio.create_task(_check_canvas_version())
+        asyncio.create_task(_check_canvas_version())
     logger.info("[Startup] Adapters + Skills + Skill docs ready, state service loaded")
     # 安全提醒：生产环境未配置 API_KEY 时所有 /api/ 请求将被拒绝
     if settings.environment != "development" and not settings.api_key:
@@ -120,8 +121,15 @@ app.add_middleware(
 # ---------- 请求限流中间件 ----------
 if settings.rate_limit_per_minute > 0:
     from src.video_agent.web.middleware.rate_limit import RateLimitMiddleware
-    app.add_middleware(RateLimitMiddleware, rate=settings.rate_limit_per_minute)
-    logger.info(f"[Startup] 限流已启用: {settings.rate_limit_per_minute} req/min/IP")
+    app.add_middleware(
+        RateLimitMiddleware,
+        rate=settings.rate_limit_per_minute,
+        generate_rate=settings.rate_limit_generate_per_minute,
+    )
+    logger.info(
+        f"[Startup] 限流已启用: 聊天 {settings.rate_limit_per_minute} req/min/IP，"
+        f"生成 {settings.rate_limit_generate_per_minute} req/min/IP"
+    )
 
 
 # ---------- development 模式本机写保护 ----------
@@ -199,8 +207,8 @@ async def static_cache_headers(request: Request, call_next):
 
 
 # ---------- 静态文件服务 ----------
+# 单一 mount 即可服务 static/ 下所有子目录（含 dist/），无需重复挂载
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-app.mount("/static/dist", StaticFiles(directory=str(STATIC_DIR / "dist")), name="static-dist")
 
 # 上传素材的静态访问（workspace/assets/）
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)
@@ -208,32 +216,22 @@ app.mount("/workspace/assets", StaticFiles(directory=str(ASSETS_DIR)), name="upl
 
 
 def _studio_page() -> FileResponse:
-    """新前端页面（方案 A-5）：dist 已构建返回新版 SPA，否则回退旧版页面（DEPRECATED 回退路径）"""
+    """新前端页面（唯一前端，SolidJS SPA）；dist 未构建时明确报错（启动脚本会自动补构建）。
+
+    Cache-Control: no-cache —— index.html 是带 hash 资源引用的入口，
+    每次加载都向服务器重新校验（未变则 304，开销极小），
+    避免浏览器启发式缓存把旧入口（引用旧 hash JS）留在用户标签页里。
+    """
     dist_index = STATIC_DIR / "dist" / "index.html"
-    if dist_index.exists():
-        return FileResponse(str(dist_index))
-    logger.warning("[DEPRECATED] dist 未构建，回退旧版 studio.html；请执行 npm run build")
-    return FileResponse(str(STATIC_DIR / "studio.html"))
+    if not dist_index.exists():
+        raise HTTPException(status_code=503, detail="前端产物缺失，请执行 npm run build 后重启服务")
+    return FileResponse(str(dist_index), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/", include_in_schema=False)
 async def index():
-    """根路径返回新前端页面（方案 A-5）；dist 未构建时回退旧版页面"""
+    """根路径返回新前端页面"""
     return _studio_page()
-
-
-@app.get("/legacy", include_in_schema=False)
-async def legacy():
-    """旧版 Studio 前端（DEPRECATED：仅供回退/对照，新功能一律在新 SPA 实现，保留一个版本周期后移除）"""
-    logger.warning("[DEPRECATED] 访问了旧版 Studio 前端 /legacy，请迁移到新 SPA（/）")
-    return FileResponse(str(STATIC_DIR / "studio.html"))
-
-
-@app.get("/studio.html", include_in_schema=False)
-async def studio_html():
-    """Studio 前端页面（DEPRECATED：.html 后缀兼容，供旧 launcher iframe 使用）"""
-    logger.warning("[DEPRECATED] 访问了旧版 /studio.html，请迁移到新 SPA（/）")
-    return FileResponse(str(STATIC_DIR / "studio.html"))
 
 
 @app.get("/canvas", include_in_schema=False)
@@ -261,6 +259,7 @@ app.include_router(providers_router, prefix="/api", tags=["providers"])
 app.include_router(project_router, prefix="/api", tags=["project"])
 app.include_router(storyboard_router, prefix="/api", tags=["storyboard"])
 app.include_router(agent_router, prefix="/api", tags=["agent"])
+app.include_router(conversations_router, prefix="/api", tags=["conversations"])
 app.include_router(generate_router, prefix="/api", tags=["generate"])
 app.include_router(workflow_router, prefix="/api", tags=["workflow"])
 app.include_router(plugins_router, prefix="/api", tags=["plugins"])

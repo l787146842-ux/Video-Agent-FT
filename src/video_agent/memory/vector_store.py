@@ -72,6 +72,7 @@ class VectorStore:
                         "kind": record.kind,
                         "source": record.source,
                         "created_at": record.created_at,
+                        "project_id": record.project_id,
                     }],
                 )
                 return
@@ -100,6 +101,7 @@ class VectorStore:
                     kind=(metas[i] or {}).get("kind", "summary"),
                     source=(metas[i] or {}).get("source", ""),
                     created_at=(metas[i] or {}).get("created_at", 0.0),
+                    project_id=(metas[i] or {}).get("project_id", ""),
                 )
                 # cosine distance → 相似度得分（越大越相关）
                 score = 1.0 / (1.0 + (dists[i] if i < len(dists) else 1.0))

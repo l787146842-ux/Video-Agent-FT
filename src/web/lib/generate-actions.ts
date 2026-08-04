@@ -5,12 +5,13 @@
 import { state, findDraftRecord } from '@/stores/studio';
 import { studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
-import { submitImageTask, submitVideoTask } from '@/api/generate';
+import { submitImageTask, submitVideoTask, addGenerationLog } from '@/api/generate';
 import { canvasLlm } from '@/api/agent';
 import { studioImageSizeForRatio } from '@/lib/image-sizes';
 import {
   patchDraft, pollAndPreviewImage, pollAndPreviewVideo,
 } from '@/lib/generate-polling';
+import { registerManualTask } from '@/lib/generation-events';
 import { resolvePromptForGeneration } from '@/lib/prompt-mentions';
 
 // ---------- 生图 ----------
@@ -26,7 +27,8 @@ export async function generateImage(): Promise<void> {
   const ratioSelection = draft.aspectRatio || '1:1';
   const customWidth = draft.customRatioWidth || '';
   const customHeight = draft.customRatioHeight || '';
-  const size = studioImageSizeForRatio(ratioSelection, customWidth, customHeight);
+  const imageResolution = draft.imageResolution || '1K';
+  const size = studioImageSizeForRatio(ratioSelection, customWidth, customHeight, imageResolution);
   const aspectRatio = ratioSelection === 'custom' ? `${customWidth}:${customHeight}` : ratioSelection;
 
   // @引用解析：提示词里的 @名称 重写为位置标记，被引用的素材自动纳入参考图
@@ -42,7 +44,7 @@ export async function generateImage(): Promise<void> {
 
   patchDraft(draft.id, draftType, {
     aspectRatio: ratioSelection, customRatioWidth: customWidth,
-    customRatioHeight: customHeight, size,
+    customRatioHeight: customHeight, imageResolution, size,
   });
   showToast('正在提交生图任务...', 'info');
 
@@ -53,11 +55,13 @@ export async function generateImage(): Promise<void> {
       model,
       size,
       aspect_ratio: aspectRatio,
+      resolution: imageResolution,
       reference_images: refs.slice(0, 5),
       draft_id: draft.id,
       draft_type: draftType,
     });
     if (data.task_id) {
+      registerManualTask(data.task_id); // 手动路径自行轮询写回，全局事件总线跳过
       studioActions.startGeneration(draft.id, 'image');
       patchDraft(draft.id, draftType, { genType: 'image', tag: '生成中' });
       void pollAndPreviewImage(data.task_id, draft.id);
@@ -115,6 +119,7 @@ export async function generateVideo(): Promise<void> {
       patchDraft(draft.id, draftType, { mediaType: 'video', genType: 'video', videoUrl, imgUrl: '', audioUrl: '', tag: '已生成' });
       showToast('视频已生成！', 'success');
     } else if (data.task_id) {
+      registerManualTask(data.task_id); // 手动路径自行轮询写回，全局事件总线跳过
       studioActions.startGeneration(draft.id, 'video');
       patchDraft(draft.id, draftType, { genType: 'video', tag: '生成中' });
       void pollAndPreviewVideo(data.task_id, draft.id);
@@ -145,19 +150,32 @@ export async function generateAudio(): Promise<void> {
   try {
     const data = await canvasLlm({
       message: `请根据以下内容生成可执行的音频规划，生成模式：${mode}，目标音色：${timbre}。包含旁白、对白、环境音、音乐、时间点和音色建议。不要声称已经生成音频文件。\n\n${draft.prompt || ''}`,
-      system_prompt: state.skills.find((s) => s.id === 'production-agent')?.system_prompt || '',
+      // 后端 system_prompt 字段已废弃不再使用（Skill 全文由服务端按 skill_name 硬注入），不再随请求携带
       provider,
       model,
       ms_model: provider === 'modelscope' ? model : '',
       messages: [],
       context_mode: 'none',
     });
+    const elapsedSec = (performance.now() - t0) / 1000;
     patchDraft(draft.id, draftType, {
       mediaType: 'audio', genType: 'audio', imgUrl: '', videoUrl: '',
       prompt: String(data.text || draft.prompt), mode, timbre,
     });
-    showToast(`音频规划已生成（耗时 ${((performance.now() - t0) / 1000).toFixed(1)}s）`, 'success');
+    // 生成日志：音频规划无论成败都要有记录（未走后端任务通道，前端补录）
+    void addGenerationLog({
+      media_type: 'audio', status: 'succeeded', provider, model,
+      prompt: draft.prompt || '', draft_id: draft.id,
+      elapsed: Math.round(elapsedSec * 10) / 10, source: 'manual',
+    });
+    showToast(`音频规划已生成（耗时 ${elapsedSec.toFixed(1)}s）`, 'success');
   } catch (err) {
+    void addGenerationLog({
+      media_type: 'audio', status: 'failed', provider, model,
+      prompt: draft.prompt || '', draft_id: draft.id,
+      error: (err as Error).message || '音频规划失败',
+      elapsed: Math.round(((performance.now() - t0) / 1000) * 10) / 10, source: 'manual',
+    });
     showToast((err as Error).message || '音频规划失败', 'error');
   }
 }
