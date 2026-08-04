@@ -502,6 +502,17 @@ _health_cache: Optional[bool] = None
 _health_cache_time: float = 0.0
 
 
+def canvas_online_cached() -> Optional[bool]:
+    """返回最近一次画布健康探测的缓存结果（不触发网络请求）。
+
+    None = 尚未探测过（调用方应保持现状，不做裁剪）；
+    True/False = 最近一次探测结果（可能已过 TTL，仅作尽力而为的提示）。
+    """
+    if _health_cache_time <= 0:
+        return None
+    return _health_cache
+
+
 def get_canvas_adapter() -> CanvasAdapter:
     """获取全局 CanvasAdapter 单例"""
     global _adapter_instance

@@ -20,7 +20,7 @@ class FakeToolManager:
         cls.invoked = []
 
     @classmethod
-    def get_all_tool_schemas(cls) -> list:
+    def get_all_tool_schemas(cls, exclude=None) -> list:
         return [{"type": "function", "function": {"name": "fake_tool", "parameters": {}}}]
 
     @classmethod

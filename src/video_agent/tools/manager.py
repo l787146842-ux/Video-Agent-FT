@@ -29,7 +29,20 @@ class ToolManager:
         return tool
 
     @classmethod
-    def get_all_tool_schemas(cls) -> List[Dict[str, Any]]:
+    def get_all_tool_schemas(cls, exclude=None) -> List[Dict[str, Any]]:
+        """返回全部工具的 schema（全集结果缓存，注册变化时失效）。
+
+        exclude: 可选工具名集合，按上下文动态裁剪下发给 LLM 的工具列表
+        （如工作台上下文关闭时不发 storyboard/document 工具、画布离线时不发 canvas_*），
+        直接减少每轮 payload 的 schema token。裁剪在全集缓存之上过滤，不污染缓存。
+        """
+        full = cls._full_schemas()
+        if not exclude:
+            return full
+        return [s for s in full if s.get("function", {}).get("name") not in exclude]
+
+    @classmethod
+    def _full_schemas(cls) -> List[Dict[str, Any]]:
         if cls._schema_cache is not None:
             return cls._schema_cache
         schemas = []

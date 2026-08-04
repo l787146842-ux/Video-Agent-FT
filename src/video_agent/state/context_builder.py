@@ -7,23 +7,46 @@ Agent 上下文构建器 — 从 StateManager 抽离。
 import json
 from typing import Any, Dict
 
+from src.video_agent.config import settings
+
 from .models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 
 
-def build_agent_context(raw_state: Dict[str, Any], asset_mode: str = "bound", cache: Dict[str, str] | None = None) -> str:
+def _dumps(snapshot: Dict[str, Any]) -> str:
+    """状态 JSON 序列化：默认紧凑格式（模型读紧凑 JSON 无损，省 20-30% token）；
+    CONTEXT_JSON_COMPACT=false 回退 indent=2 便于人工排查日志"""
+    if settings.context_json_compact:
+        return json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(snapshot, ensure_ascii=False, indent=2)
+
+
+def build_agent_context(
+    raw_state: Dict[str, Any],
+    asset_mode: str = "bound",
+    cache: Dict[str, str] | None = None,
+    degraded: bool = False,
+) -> str:
     """构建发送给 LLM 的 Studio 状态上下文。
 
     Args:
         raw_state: StateManager 内部的 raw dict
         asset_mode: "bound" 仅已绑定资产 / "all" 全部
         cache: 可选缓存字典（状态变更时由 StateManager 清空）
+        degraded: 降级模式（system 超预算保险丝用）——草稿细节不注入，
+                  只留组标题/编号/草稿计数，大幅压缩 system 段体积
 
     Returns:
         JSON 字符串
     """
-    cache_key = asset_mode
+    cache_key = f"{asset_mode}:degraded" if degraded else asset_mode
     if cache is not None and cache_key in cache:
         return cache[cache_key]
+
+    if degraded:
+        result = _dumps(_build_degraded_snapshot(raw_state))
+        if cache is not None:
+            cache[cache_key] = result
+        return result
 
     # 媒体 URL 截断：只保留前 200 字符（足够定位，避免 base64/长 URL 撑爆上下文）
     def _u(v: Any) -> str:
@@ -144,7 +167,34 @@ def build_agent_context(raw_state: Dict[str, Any], asset_mode: str = "bound", ca
             for d in raw_state.get("uploadedDocs", [])
         ],
     }
-    result = json.dumps(snapshot, ensure_ascii=False, indent=2)
+    result = _dumps(snapshot)
     if cache is not None:
         cache[cache_key] = result
     return result
+
+
+def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:
+    """降级快照：只保留组标题/编号/草稿计数（system 超预算保险丝的第二道防线）。
+    模型看到后可调 read_draft / read_project_doc 按需取细节。"""
+
+    def _groups(cat_key: str) -> list:
+        return [
+            {
+                "id": g["id"],
+                "index": gi + 1,
+                "title": g.get("title", ""),
+                "draft_count": len(g.get("drafts", [])),
+            }
+            for gi, g in enumerate(raw_state.get(cat_key, []))
+        ]
+
+    return {
+        "degraded": True,
+        "note": "状态已降级：草稿细节未注入，请用 read_draft/read_project_doc 按需读取",
+        CAT_KEY_ELEMENTS: _groups(CAT_KEY_ELEMENTS),
+        CAT_SHOTS: _groups(CAT_SHOTS),
+        CAT_AUDIO_ITEMS: _groups(CAT_AUDIO_ITEMS),
+        "asset_count": len(raw_state.get("assets", [])),
+        "documents": [d.get("name", "") for d in raw_state.get("documents", [])],
+        "uploadedDocs": [d.get("name", "") for d in raw_state.get("uploadedDocs", [])],
+    }

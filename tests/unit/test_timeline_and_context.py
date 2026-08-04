@@ -1,4 +1,5 @@
 """回复机制改造回归：过程时间线事件、reasoning 透传、历史截断、文档按需检索"""
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -152,7 +153,7 @@ class FakeToolManager:
         cls.invoked = []
 
     @classmethod
-    def get_all_tool_schemas(cls) -> list:
+    def get_all_tool_schemas(cls, exclude=None) -> list:
         return []
 
     @classmethod
@@ -240,11 +241,14 @@ def test_context_builder_manifests_no_full_text(svc):
         "uploaded_at": "2026-08-04T00:00:00Z",
     }]
     ctx = build_agent_context(svc.state_dict, "bound")
+    parsed = json.loads(ctx)
     # 规格文档仅清单：名称/字数/预览，全文不注入
-    assert "Final_Video_Spec.md" in ctx and '"char_count": 4000' in ctx
+    doc = next(d for d in parsed["documents"] if d["name"] == "Final_Video_Spec.md")
+    assert doc["char_count"] == 4000
     assert "规格内容" * 1000 not in ctx
     # 附件文档仅清单：有名称与字数，无正文
-    assert "剧本.md" in ctx and "1200" in ctx
+    udoc = next(d for d in parsed["uploadedDocs"] if d["name"] == "剧本.md")
+    assert udoc["char_count"] == 1200
     assert "剧本正文不应进入上下文" not in ctx
 
 
@@ -312,8 +316,10 @@ def test_context_builder_draft_catalog_no_prompt(svc):
     """草稿卡只注入目录（编号/label/字数），提示词全文不进上下文"""
     _seed_storyboard(svc)
     ctx = build_agent_context(svc.state_dict, "bound")
-    assert '"prompt_chars": 550' in ctx  # 11 字 x 50
-    assert '"index": "1-1"' in ctx and "Element_测试元素" in ctx
+    parsed = json.loads(ctx)
+    draft = parsed["keyElements"][0]["drafts"][0]
+    assert draft["prompt_chars"] == 550  # 11 字 x 50
+    assert draft["index"] == "1-1" and "Element_测试元素" in ctx
     assert "深空背景中一条发光细线" * 50 not in ctx
 
 

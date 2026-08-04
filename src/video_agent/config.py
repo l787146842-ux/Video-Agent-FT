@@ -67,6 +67,15 @@ class Settings:
     # 旧轮 read_* 回喂全文的惰性压缩阈值：消息总量达到预算的该比例才压缩，
     # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）
     feedback_compress_ratio: float = field(default_factory=lambda: float(os.getenv("FEEDBACK_COMPRESS_RATIO", "0.5")))
+    # 工作台状态 JSON 紧凑序列化（模型读紧凑 JSON 无损，约省 20-30% token）；
+    # 置 false 回退 indent=2 便于人工排查日志
+    context_json_compact: bool = field(default_factory=lambda: _env_bool("CONTEXT_JSON_COMPACT", True))
+    # 注入 LLM 的图片长边上限（px）：vision 模型内部会重采样，原图内联纯浪费 token；
+    # 注入前用 Pillow 缩放到此长边（0 = 不缩放）
+    llm_image_max_edge: int = field(default_factory=lambda: _env_int("LLM_IMAGE_MAX_EDGE", 1024))
+    # 记忆摘要专用模型（格式 "provider:model"，仅 provider 则用其默认模型）：
+    # 摘要无需主模型能力，固定走便宜模型省 token；空 = 走 fallback 链末位（无链则主模型）
+    memory_summary_model: str = field(default_factory=lambda: os.getenv("MEMORY_SUMMARY_MODEL", ""))
 
     # 图片生成超时（秒）
     image_gen_timeout: int = field(default_factory=lambda: _env_int("IMAGE_GEN_TIMEOUT", 180))

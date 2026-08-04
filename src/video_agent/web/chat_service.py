@@ -32,6 +32,7 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
+from src.video_agent.adapters.base_chat import BaseChatAdapter
 from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.adapters.agy_cli import AgyCliChatAdapter
 from src.video_agent.tools.manager import ToolManager
@@ -120,6 +121,25 @@ def _channel_supports_fc(provider_id: str) -> bool:
     except Exception:
         cfg = {}
     return (cfg.get("protocol") or "openai") != "gemini-cli"
+
+
+def _resolve_summary_adapter(body, candidates: List[tuple]) -> Optional[BaseChatAdapter]:
+    """解析记忆摘要专用 adapter：摘要无需主模型能力，固定走便宜模型省 token。
+
+    优先级：settings.memory_summary_model（"provider:model"）> fallback 链末位 > None（跟随主模型）。
+    解析失败静默回落 None（摘要仍走主模型，功能不中断）。
+    """
+    try:
+        spec = (settings.memory_summary_model or "").strip()
+        if spec:
+            prov, _, mdl = spec.partition(":")
+            return _create_chat_adapter(prov or body.provider, mdl or body.model)
+        if settings.model_fallback_enabled and len(candidates) > 1:
+            cand_provider, cand_model = candidates[-1]
+            return _create_chat_adapter(cand_provider, cand_model)
+    except Exception as e:
+        logger.warning(f"[ChatService] 记忆摘要模型解析失败，回落主模型: {e}")
+    return None
 
 
 def _create_chat_adapter(provider_id: str, model: str):
@@ -382,12 +402,16 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StudioActionExecutor,
+            summary_adapter=_resolve_summary_adapter(body, candidates),
         )
         planner_ctx = PlannerContext(
             history=history,
             selected_draft_id=body.selected_draft_id,
             selected_type=body.selected_type,
             state_builder=state_builder,
+            degraded_state_builder=(
+                (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
+            ),
             skill_name=body.skill_name or "",
             use_studio_context=use_studio_context,
             asset_mode=body.asset_mode,
@@ -581,6 +605,9 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     planner_ctx = PlannerContext(
         history=history, selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
         state_builder=state_builder,
+        degraded_state_builder=(
+            (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
+        ),
         skill_name=body.skill_name or "",
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
         image_generation_provider=image_provider2,
@@ -609,6 +636,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StudioActionExecutor,
+            summary_adapter=_resolve_summary_adapter(body, candidates),
         )
         applied_seen = False
 

@@ -595,6 +595,10 @@ class StateManager(UndoRedoMixin):
         """构建发送给 LLM 的 Studio 状态上下文（带缓存，状态未变时复用）"""
         return _build_context(self._raw_state, asset_mode, self._context_cache)
 
+    def build_agent_context_degraded(self, asset_mode: str = "bound") -> str:
+        """降级状态上下文（system 超预算保险丝）：只留组标题/编号/草稿计数"""
+        return _build_context(self._raw_state, asset_mode, self._context_cache, degraded=True)
+
     # ====== CLI 路径向后兼容 ======
 
     def update_task_status(self, task_id: str, status: TaskStatus, output_asset_id: Optional[str] = None, error: Optional[str] = None):

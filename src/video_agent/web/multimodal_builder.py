@@ -30,11 +30,52 @@ _MANIFEST_MAX_ITEMS = 30
 _TYPE_TO_CATEGORY = {"keyElement": CAT_KEY_ELEMENTS, "shot": CAT_SHOTS, "audio": CAT_AUDIO_ITEMS}
 
 
+def _downscale_image(raw: bytes, suffix: str) -> tuple:
+    """注入前把图片缩放到长边 ≤ settings.llm_image_max_edge。
+
+    Vision 模型内部会重采样，内联原图纯属浪费 token（单张可达数千）。
+    返回 (bytes, mime)；缩放失败/未装 Pillow/未超限时返回 (raw, "") 表示沿用原图。
+    """
+    max_edge = settings.llm_image_max_edge
+    if max_edge <= 0:
+        return raw, ""
+    try:
+        import io
+
+        from PIL import Image
+    except ImportError:
+        return raw, ""
+    try:
+        img = Image.open(io.BytesIO(raw))
+        w, h = img.size
+        if max(w, h) <= max_edge:
+            return raw, ""
+        scale = max_edge / max(w, h)
+        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+        # PNG（含透明通道）保持 PNG，其余统一 JPEG q85
+        keep_png = suffix == ".png" or img.mode in ("RGBA", "LA", "P")
+        buf = io.BytesIO()
+        if keep_png:
+            img.save(buf, format="PNG", optimize=True)
+            return buf.getvalue(), "image/png"
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.save(buf, format="JPEG", quality=85)
+        out = buf.getvalue()
+        logger.info(f"[Multimodal] 图片已缩放 {w}x{h} → {img.size[0]}x{img.size[1]} "
+                    f"({len(raw) // 1024}KB → {len(out) // 1024}KB)")
+        return out, "image/jpeg"
+    except Exception as e:
+        logger.warning(f"[Multimodal] 图片缩放失败，沿用原图: {e}")
+        return raw, ""
+
+
 def _read_image_data_uri(img_url: str) -> str:
     """读取 /workspace/ 本地图片并转为 base64 data URI（同步，供 to_thread 调用）。
 
     云端 LLM 无法访问 127.0.0.1，本地图片必须内联为 data URI 才能被供应商读取。
     路径越界 / 文件不存在 / 超过大小上限时返回空串（跳过该图片）。
+    注入前按 llm_image_max_edge 缩放（vision token 优化）。
     """
     rel = img_url[len("/workspace/"):]
     path = (WORKSPACE_DIR / rel).resolve()
@@ -49,8 +90,9 @@ def _read_image_data_uri(img_url: str) -> str:
     if path.stat().st_size > _MAX_IMAGE_BYTES:
         logger.warning(f"[Multimodal] 图片超过 10MB，已跳过: {img_url}")
         return ""
-    mime = mimetypes.guess_type(path.name)[0] or "image/png"
-    b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+    raw, mime_override = _downscale_image(path.read_bytes(), path.suffix.lower())
+    mime = mime_override or mimetypes.guess_type(path.name)[0] or "image/png"
+    b64 = base64.b64encode(raw).decode("ascii")
     return f"data:{mime};base64,{b64}"
 
 

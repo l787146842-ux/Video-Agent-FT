@@ -11,21 +11,36 @@ Planner — 对话式 Agent 的唯一入口（Rule1）。
 import asyncio
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dc_replace
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple, Union
 
 from loguru import logger
 
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse, StreamChunk
 from src.video_agent.config import settings
-from src.video_agent.core.token_budget import estimate_messages_tokens, truncate_messages
+from src.video_agent.core.token_budget import context_window_for_model, estimate_messages_tokens, truncate_messages
 from src.video_agent.memory import MemoryManager
 from src.video_agent.state.manager import StateManager
+from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.utils.prompts import load_prompt, render_prompt
 from src.video_agent.core.agent_loop import MAX_STEPS, run_agent_loop
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.workflows.engine import WorkflowEngine
+
+
+# 绑定工作台状态的工具集：use_studio_context=False 时不下发（节省 schema token）
+_STUDIO_STATE_TOOLS = frozenset({
+    "storyboard_create_group", "storyboard_patch_draft", "storyboard_add_draft",
+    "storyboard_delete_group", "storyboard_confirm_draft", "storyboard_media_to_chat",
+    "read_draft", "document_write", "read_uploaded_doc", "read_project_doc",
+})
+
+# 画布工具集：画布离线/未启用时不下发（节省 schema token）
+_CANVAS_TOOLS = frozenset({
+    "canvas_list", "canvas_read_nodes", "canvas_add_node", "canvas_update_node",
+    "canvas_delete_node", "canvas_list_assets", "canvas_batch_add_nodes",
+})
 
 
 @dataclass
@@ -44,6 +59,9 @@ class PlannerContext:
     asset_mode: str = "bound"    # 资产过滤模式
     image_generation_provider: str = ""  # 选中草稿的生图 provider，用于强制注入
     image_generation_aspect_ratio: str = ""  # 选中草稿的画面比例（如 16:9），用于强制注入
+    # 降级状态构建器（token 保险丝）：system 段超预算时用「只留组标题/计数」的
+    # 降级状态 JSON 重建 system prompt，保证请求不超窗发出
+    degraded_state_builder: Optional[Callable[[], str]] = None
 
 
 @dataclass
@@ -174,6 +192,7 @@ class Planner:
         workflow_engine: Optional[WorkflowEngine] = None,
         executor_factory: Optional[Callable[..., Any]] = None,
         skill_docs: Optional[Any] = None,
+        summary_adapter: Optional[BaseChatAdapter] = None,
     ):
         # state_manager 缺省回落单例（Rule3）；core 层不绕过它直接碰状态
         self.state_manager = state_manager or StateManager.get_instance()
@@ -185,6 +204,13 @@ class Planner:
         self.executor_factory = executor_factory
         # skill_docs: Skill 文档目录提供者（web.skill_docs 模块或等价对象），None 时延迟导入
         self._skill_docs = skill_docs
+        # 记忆摘要专用 adapter（None = 跟随主模型）；由 web 层按
+        # settings.memory_summary_model / fallback 链末位装配
+        self.summary_adapter = summary_adapter
+        # 按上下文裁剪的工具集合（handle_message 时计算）
+        self._excluded_tools: frozenset = frozenset()
+        # system 超预算时的降级重建器（handle_message 时按 context 装配）
+        self._system_degrader: Optional[Callable[[str], str]] = None
 
     def _get_skill_docs(self):
         """Skill 文档提供者：优先注入实例，缺省延迟导入 web.skill_docs（Rule2 登记例外）"""
@@ -192,6 +218,41 @@ class Planner:
             from src.video_agent.web import skill_docs as sd
             self._skill_docs = sd
         return self._skill_docs
+
+    def _compute_excluded_tools(self, context: PlannerContext) -> frozenset:
+        """按上下文计算本轮不下发的工具集（token 治理：schema 全量常驻是每轮固定开销）"""
+        excluded = set()
+        if not context.use_studio_context:
+            excluded |= _STUDIO_STATE_TOOLS
+        if not settings.canvas_enabled:
+            excluded |= _CANVAS_TOOLS
+        else:
+            # 已探测过且离线才裁剪；从未探测（None）保持现状
+            from src.video_agent.adapters.canvas_adapter import canvas_online_cached
+            if canvas_online_cached() is False:
+                excluded |= _CANVAS_TOOLS
+        return frozenset(excluded)
+
+    def _make_system_degrader(self, context: PlannerContext) -> Optional[Callable[[str], str]]:
+        """system 超预算保险丝：用降级状态 JSON（只留组标题/计数）重建 system prompt。
+        未提供 degraded_state_builder 时返回 None（truncate 维持原策略）。"""
+        if context.degraded_state_builder is None:
+            return None
+
+        def _degrade(_system_text: str) -> str:
+            degraded_ctx = dc_replace(
+                context,
+                state_builder=context.degraded_state_builder,
+                state_json=context.degraded_state_builder(),
+            )
+            return self._build_system_prompt(degraded_ctx)
+
+        return _degrade
+
+    def _context_window(self) -> int:
+        """当前模型的上下文窗口（按模型名查表，缺省回落全局配置）"""
+        model = getattr(self.llm_adapter, "model", "") if self.llm_adapter else ""
+        return context_window_for_model(model)
 
     # ---------- 核心对话入口 ----------
 
@@ -207,6 +268,10 @@ class Planner:
         委托给 run_agent_loop 统一循环骨架，内部通过 llm_call 包装器处理双模式（FC / 文本解析）。
         stream_hook: 可选 async callable(text)，流式模式下每段 LLM 增量文本回调。
         """
+        # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
+        self._excluded_tools = self._compute_excluded_tools(context)
+        self._system_degrader = self._make_system_degrader(context)
+
         # 构建 executor（文本解析路径用）：优先注入的工厂，缺省延迟导入 web 层实现
         factory = self.executor_factory
         if factory is None:
@@ -285,6 +350,7 @@ class Planner:
                 image_aspect_ratio=context.image_generation_aspect_ratio,
                 on_status=_emit_status,
                 on_event=_emit_event,
+                injected_skill=context.skill_name,
             )
             # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
             # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
@@ -615,15 +681,28 @@ class Planner:
         return ""
 
     def _make_summarize_fn(self):
-        """用当前 LLM adapter 包装摘要调用；无 adapter 返回 None（降级截取）"""
-        if self.llm_adapter is None:
+        """包装摘要调用：优先用注入的便宜模型 adapter（摘要无需主模型能力），
+        未配置时回落主模型；无 adapter 返回 None（降级截取）"""
+        adapter = self.summary_adapter or self.llm_adapter
+        if adapter is None:
             return None
+        use_main = adapter is self.llm_adapter
 
         async def _fn(prompt: str) -> str:
-            resp = await self._call_llm(
-                "你是记忆整理助手。",
-                [{"role": "user", "content": prompt}],
-            )
+            if use_main:
+                resp = await self._call_llm(
+                    "你是记忆整理助手。",
+                    [{"role": "user", "content": prompt}],
+                )
+            else:
+                # 摘要专用模型：直接裸调用（无工具、无状态注入），成本最小化
+                resp = await adapter.chat(
+                    [
+                        {"role": "system", "content": "你是记忆整理助手。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    timeout=settings.llm_timeout,
+                )
             return resp.content or ""
 
         return _fn
@@ -635,17 +714,17 @@ class Planner:
         - 模式 B：不支持 → 纯文本调用，从回复中解析 studio-actions
         """
         full_messages = [{"role": "system", "content": system}] + messages
-        # Token 预算截断：超过上下文窗口比例时自动截断历史
-        max_tokens = int(settings.context_window_size * settings.token_budget_ratio)
-        full_messages = truncate_messages(full_messages, max_tokens)
+        # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
+        max_tokens = int(self._context_window() * settings.token_budget_ratio)
+        full_messages = truncate_messages(full_messages, max_tokens, system_degrader=self._system_degrader)
 
         if self.llm_adapter is None:
             # 无 adapter 时返回空响应（mock 路径由上层处理）
             return ChatResponse(content="", finish_reason="stop")
 
         if self.llm_adapter.supports_function_calling:
-            # 模式 A：标准 function calling
-            tools_schema = self.tool_manager.get_all_tool_schemas()
+            # 模式 A：标准 function calling（工具集按上下文裁剪）
+            tools_schema = self.tool_manager.get_all_tool_schemas(exclude=self._excluded_tools)
             return await self.llm_adapter.chat(
                 full_messages, tools=tools_schema, timeout=settings.llm_timeout
             )
@@ -656,16 +735,16 @@ class Planner:
     async def _call_llm_stream(self, system: str, messages: List[Dict[str, Any]]) -> AsyncGenerator[StreamChunk, None]:
         """流式 LLM 调用"""
         full_messages = [{"role": "system", "content": system}] + messages
-        # Token 预算截断
-        max_tokens = int(settings.context_window_size * settings.token_budget_ratio)
-        full_messages = truncate_messages(full_messages, max_tokens)
+        # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
+        max_tokens = int(self._context_window() * settings.token_budget_ratio)
+        full_messages = truncate_messages(full_messages, max_tokens, system_degrader=self._system_degrader)
 
         if self.llm_adapter is None:
             return
 
         tools_schema = None
         if self.llm_adapter.supports_function_calling:
-            tools_schema = self.tool_manager.get_all_tool_schemas()
+            tools_schema = self.tool_manager.get_all_tool_schemas(exclude=self._excluded_tools)
 
         async for chunk in self.llm_adapter.chat_stream(
             full_messages, tools=tools_schema, timeout=settings.llm_stream_timeout
@@ -682,6 +761,7 @@ class Planner:
         image_aspect_ratio: str = "",
         on_status=None,
         on_event=None,
+        injected_skill: str = "",
     ) -> Tuple:
         """处理 LLM 响应中的 FC tool_calls。
         返回 (content, finish_reason, fc_applied, tool_results)，
@@ -690,7 +770,7 @@ class Planner:
             (fc_applied, fc_confirmation, image_urls,
              chat_inserts, fc_action_log, fc_tool_results) = await self._execute_fc_tools(
                 response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
-                on_status=on_status, on_event=on_event,
+                on_status=on_status, on_event=on_event, injected_skill=injected_skill,
             )
             if image_urls_collector is not None:
                 image_urls_collector.extend(image_urls)
@@ -710,7 +790,7 @@ class Planner:
 
     async def _execute_fc_tools(
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",
-        on_status=None, on_event=None,
+        on_status=None, on_event=None, injected_skill: str = "",
     ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
         """执行 Function Calling 返回的 tool_calls。
         返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log, tool_results)"""
@@ -755,7 +835,20 @@ class Planner:
                     logger.info("[Planner] Injected image gen aspect ratio from draft: %s",
                                 image_aspect_ratio)
 
-            result = await self.tool_manager.invoke_tool(name, args)
+            # read_skill 短路：选中 Skill 全文已硬注入 system prompt，重复 read 只是
+            # 浪费一轮工具往返 + 全文回喂 token（prompt 里的「不要再 read」靠模型自觉，此处硬保障）
+            if name == "read_skill" and injected_skill:
+                wanted_skill = str(args.get("name") or "").strip()
+                if wanted_skill and wanted_skill == injected_skill.strip():
+                    result = ToolResult(success=True, data={
+                        "content": f"Skill「{wanted_skill}」全文已在本轮 system prompt 中注入，无需重复读取，直接遵循其中的规则即可。",
+                        "already_injected": True,
+                    })
+                    logger.info(f"[Planner] read_skill 短路：「{wanted_skill}」已注入，跳过工具调用")
+                else:
+                    result = await self.tool_manager.invoke_tool(name, args)
+            else:
+                result = await self.tool_manager.invoke_tool(name, args)
             _tool_ms = (time.monotonic() - _tool_t0) * 1000
             if result.success:
                 applied += 1
