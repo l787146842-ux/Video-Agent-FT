@@ -219,6 +219,8 @@ export interface TaskResult {
 }
 
 // ===== SSE 事件（Agent 聊天流） =====
+// 契约锚点：事件名以后端 src/video_agent/core/sse_events.py 的 SSE_* 常量为唯一权威；
+// 新增/改名事件时两侧必须同步（后端常量 → 本联合类型 → use-sse.ts 的 switch）。
 export interface SseStatusEvent { type: 'status'; text: string; }
 export interface SseDeltaEvent { type: 'delta'; text: string; }
 /** 深度思考（reasoning）增量：仅 UI 展示，不进下次 LLM 上下文 */

@@ -18,6 +18,14 @@ import time
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.core.sse_events import (
+    SSE_ACTIONS_APPLIED,
+    SSE_EXECUTING_ACTIONS,
+    SSE_STATUS,
+    SSE_STEP_STARTED,
+    SSE_TOOL_FINISHED,
+    SSE_TOOL_STARTED,
+)
 from src.video_agent.core.tracer import AgentTracer
 
 if TYPE_CHECKING:
@@ -100,7 +108,7 @@ async def run_agent_loop(
     for step in range(1, max_steps + 1):
         result.steps = step
         tracer.start_step()
-        await emit({"type": "step_started", "step": step, "max_steps": max_steps})
+        await emit({"type": SSE_STEP_STARTED, "step": step, "max_steps": max_steps})
         system_prompt = context_builder()  # 每轮刷新，让 LLM 看到上一轮执行后的最新状态
 
         content, finish_reason, fc_applied = await llm_call(system_prompt, messages, stream_hook)
@@ -109,7 +117,7 @@ async def run_agent_loop(
         # 上游瞬时抖动）时自动重试一次，避免直接落为「没有返回可见回复」。
         if not content.strip() and fc_applied == 0:
             logger.warning(f"[AgentLoop] 第 {step} 轮模型返回空响应，自动重试一次")
-            await emit({"type": "status", "text": f"第 {step} 轮响应为空，重试中…"})
+            await emit({"type": SSE_STATUS, "text": f"第 {step} 轮响应为空，重试中…"})
             content, finish_reason, fc_applied = await llm_call(system_prompt, messages, stream_hook)
 
         if finish_reason == "length":
@@ -120,7 +128,7 @@ async def run_agent_loop(
         # FC 路径：tool_calls 已在 llm_call 内部执行，跳过文本解析
         if fc_applied > 0:
             result.applied_actions += fc_applied
-            await emit({"type": "actions_applied", "step": step, "count": fc_applied})
+            await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": fc_applied})
             visible = content.strip()
             if visible:
                 result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
@@ -158,7 +166,7 @@ async def run_agent_loop(
 
         executable, wants_continue, confirmation = _split_actions(actions)
         if executable:
-            await emit({"type": "executing_actions", "step": step, "count": len(executable)})
+            await emit({"type": SSE_EXECUTING_ACTIONS, "step": step, "count": len(executable)})
             # 过程时间线：逐个预告即将执行的操作（前端渲染运行态条目）
             for i, action in enumerate(executable):
                 aname = str(action.get("action", "") or "")
@@ -167,7 +175,7 @@ async def run_agent_loop(
                 except Exception:
                     preview = aname
                 await emit({
-                    "type": "tool_started",
+                    "type": SSE_TOOL_STARTED,
                     "id": f"s{step}-{i}",
                     "name": aname,
                     "summary": preview,
@@ -178,15 +186,15 @@ async def run_agent_loop(
         _batch_ms = (time.monotonic() - _t0) * 1000
         result.applied_actions += applied
         if applied:
-            await emit({"type": "actions_applied", "step": step, "count": applied})
+            await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": applied})
         # 推理过程可视化：实时把本轮刚完成的操作描述推给前端状态栏 + 时间线
         new_logs = executor.action_log[_log_before:]
         if new_logs:
-            await emit({"type": "status", "text": "已完成：" + "；".join(new_logs[-3:])})
+            await emit({"type": SSE_STATUS, "text": "已完成：" + "；".join(new_logs[-3:])})
         for i, desc in enumerate(new_logs):
             per_ms = _batch_ms / len(new_logs) if new_logs else 0.0
             await emit({
-                "type": "tool_finished",
+                "type": SSE_TOOL_FINISHED,
                 "id": f"s{step}-{i}",
                 "ok": True,
                 "elapsed_ms": round(per_ms, 1),
@@ -202,7 +210,7 @@ async def run_agent_loop(
             for i in range(len(new_logs), len(executable)):
                 action = executable[i]
                 await emit({
-                    "type": "tool_finished",
+                    "type": SSE_TOOL_FINISHED,
                     "id": f"s{step}-{i}",
                     "ok": False,
                     "elapsed_ms": 0.0,

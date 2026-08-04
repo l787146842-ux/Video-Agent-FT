@@ -6,6 +6,7 @@
 import asyncio
 import time
 
+from src.video_agent.core.sse_events import SSE_DELTA, SSE_DONE, SSE_STATUS
 from src.video_agent.memory import MemoryManager
 from src.video_agent.web.attachments import bind_attachments, store_uploaded_docs
 from src.video_agent.web.mock_llm import mock_llm_reply
@@ -24,12 +25,12 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
             bind_attachments(svc, body.attachments)
             store_uploaded_docs(svc, body.attachments)
             svc.add_chat_message("user", user_text)
-        await emit({"type": "status", "text": "mock 模式：本地规则生成…"})
+        await emit({"type": SSE_STATUS, "text": "mock 模式：本地规则生成…"})
         raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
         actions = executor.parse_actions_from_reply(raw_reply)
         visible = executor.strip_action_blocks(raw_reply) or raw_reply
         for i in range(0, len(visible), 8):
-            await emit({"type": "delta", "text": visible[i:i + 8]})
+            await emit({"type": SSE_DELTA, "text": visible[i:i + 8]})
             await asyncio.sleep(0.02)
         applied = executor.execute(actions)
         if use_studio_context:
@@ -42,7 +43,7 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
             # 文档完成卡片：独立条目持久化，刷新后可重建
             for doc_name in executor.documents_written:
                 svc.add_chat_message("agent", "", doc_card=doc_name)
-    await emit({"type": "done", "payload": {
+    await emit({"type": SSE_DONE, "payload": {
         "text": visible,
         "applied_actions": applied,
         "steps": 1,

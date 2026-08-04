@@ -38,6 +38,7 @@ from src.video_agent.core.fc_tool_runner import (
     should_compress_feedback,
 )
 from src.video_agent.core.prompt_builder import PromptBuilder
+from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS
 from src.video_agent.core.stream_suppressor import StreamActionSuppressor  # re-export 兼容旧导入
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.workflows.engine import WorkflowEngine
@@ -230,7 +231,7 @@ class Planner:
         async def _emit_status(text: str) -> None:
             """推理过程可视化：把 FC 工具执行进度实时推给前端状态栏"""
             if on_event is not None:
-                await on_event({"type": "status", "text": text})
+                await on_event({"type": SSE_STATUS, "text": text})
 
         async def _emit_event(event: Dict[str, Any]) -> None:
             """过程时间线事件透传（tool_started/tool_finished）"""
@@ -257,7 +258,7 @@ class Planner:
                         # 深度思考：记入 trace（持久化展示）+ 实时推给前端，不进 LLM 上下文
                         tracer.record_reasoning(chunk.text)
                         if on_event is not None:
-                            await on_event({"type": "reasoning_delta", "text": chunk.text})
+                            await on_event({"type": SSE_REASONING_DELTA, "text": chunk.text})
                     elif chunk.type == "tool_call":
                         stream_tool_calls.append({
                             "id": f"call_stream_{len(stream_tool_calls)}",

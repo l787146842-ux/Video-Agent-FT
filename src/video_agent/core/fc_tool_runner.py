@@ -14,6 +14,7 @@ from loguru import logger
 
 from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.config import settings
+from src.video_agent.core.sse_events import SSE_TOOL_FINISHED, SSE_TOOL_STARTED
 from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.tools.base import ToolResult
@@ -172,7 +173,7 @@ class FCToolRunner:
             start_summary = describe_fc_tool(name, args)
             if on_event is not None:
                 await on_event({
-                    "type": "tool_started",
+                    "type": SSE_TOOL_STARTED,
                     "id": tool_event_id,
                     "name": name,
                     "summary": start_summary,
@@ -219,7 +220,7 @@ class FCToolRunner:
                 # 过程时间线：工具完成 + trace 记录
                 if on_event is not None:
                     await on_event({
-                        "type": "tool_finished",
+                        "type": SSE_TOOL_FINISHED,
                         "id": tool_event_id,
                         "ok": True,
                         "elapsed_ms": round(_tool_ms, 1),
@@ -242,7 +243,7 @@ class FCToolRunner:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
                 if on_event is not None:
                     await on_event({
-                        "type": "tool_finished",
+                        "type": SSE_TOOL_FINISHED,
                         "id": tool_event_id,
                         "ok": False,
                         "elapsed_ms": round(_tool_ms, 1),

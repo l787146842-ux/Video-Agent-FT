@@ -31,6 +31,13 @@ from src.video_agent.web.provider_config import is_mock_provider, load_merged_pr
 from src.video_agent.web.sse import sse_event_generator  # noqa: F401  （re-export，路由层从此导入）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner, PlannerContext
+from src.video_agent.core.sse_events import (
+    SSE_ACTIONS_APPLIED,
+    SSE_DELTA,
+    SSE_DONE,
+    SSE_ERROR,
+    SSE_STATUS,
+)
 from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.base_chat import BaseChatAdapter
@@ -179,7 +186,7 @@ async def stream_worker(body: Any, emit) -> None:
     t0 = time.monotonic()
     request_id = body.request_id or ""
     if not _acquire_request_slot(request_id):
-        await emit({"type": "error", "detail": "相同请求正在处理中，请勿重复发送",
+        await emit({"type": SSE_ERROR, "detail": "相同请求正在处理中，请勿重复发送",
                     "error_code": "DUPLICATE_REQUEST"})
         return
     try:
@@ -192,7 +199,7 @@ async def stream_worker(body: Any, emit) -> None:
 
         user_text = body.message.strip()
         if not user_text and not body.attachments:
-            await emit({"type": "error", "detail": "消息不能为空", "error_code": "EMPTY_MESSAGE"})
+            await emit({"type": SSE_ERROR, "detail": "消息不能为空", "error_code": "EMPTY_MESSAGE"})
             return
         if not user_text:
             user_text = "请查看我上传的素材"
@@ -234,7 +241,7 @@ async def stream_worker(body: Any, emit) -> None:
         logger.exception(f"[ChatService] 流式处理异常: {e}")
         # VideoAgentError 携带 error_code 供前端 i18n 翻译；未知异常按 INTERNAL_ERROR
         code = getattr(e, "error_code", None) or "INTERNAL_ERROR"
-        await emit({"type": "error", "detail": f"服务端异常: {e}", "error_code": code})
+        await emit({"type": SSE_ERROR, "detail": f"服务端异常: {e}", "error_code": code})
     finally:
         _release_request_slot(request_id)
 
@@ -387,12 +394,12 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         try:
             async for event in planner.handle_message_stream(llm_user_content, planner_ctx):
                 if event.type == "status":
-                    await emit({"type": "status", "text": event.text})
+                    await emit({"type": SSE_STATUS, "text": event.text})
                 elif event.type == "delta":
-                    await emit({"type": "delta", "text": event.text})
+                    await emit({"type": SSE_DELTA, "text": event.text})
                 elif event.type == "actions_applied":
                     applied_seen = True
-                    await emit({"type": "status", "text": event.text})
+                    await emit({"type": SSE_STATUS, "text": event.text})
                 elif event.type in ("reasoning_delta", "tool_started", "tool_finished"):
                     # 过程时间线事件透传（深度思考增量 / 工具开始与完成），
                     # 仅 UI 展示用，不进下次 LLM 上下文
@@ -418,7 +425,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             logger.warning(
                 f"[ChatService] 模型 {cand_model} 瞬时故障（{str(e)[:80]}），fallback 到 {next_model}"
             )
-            await emit({"type": "status", "text": f"模型 {cand_model} 繁忙/异常，已切换 {next_model} 重试…"})
+            await emit({"type": SSE_STATUS, "text": f"模型 {cand_model} 繁忙/异常，已切换 {next_model} 重试…"})
             continue
 
         # --- 成功路径：持久化 + done ---
@@ -459,7 +466,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             warnings = list(done_payload.get("warnings") or [])
             warnings.append(f"主模型瞬时故障，本次回复由备用模型 {cand_model} 生成，质量可能与主模型不同")
             done_payload["warnings"] = warnings
-        await emit({"type": "done", "payload": done_payload})
+        await emit({"type": SSE_DONE, "payload": done_payload})
         return
 
 
@@ -468,7 +475,7 @@ async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: 
     if use_studio_context:
         async with svc.lock:
             svc.add_chat_message("agent", f"[错误] {e}", model_name=body.model or "")
-    await emit({"type": "error", "detail": str(e), "error_code": getattr(e, "error_code", "INTERNAL_ERROR")})
+    await emit({"type": SSE_ERROR, "detail": str(e), "error_code": getattr(e, "error_code", "INTERNAL_ERROR")})
 
 
 async def non_stream_worker(body: Any) -> Dict[str, Any]:
@@ -604,7 +611,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
 
         async def _on_event(ev: Dict[str, Any]) -> None:
             nonlocal applied_seen
-            if ev.get("type") == "actions_applied":
+            if ev.get("type") == SSE_ACTIONS_APPLIED:
                 applied_seen = True
 
         try:
