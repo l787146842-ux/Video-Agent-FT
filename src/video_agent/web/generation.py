@@ -303,3 +303,118 @@ async def generate_image_via_provider(
     if result.image_urls:
         return result.image_urls[0]
     raise GenerationError("供应商没有返回任何图片")
+
+
+def submit_image_task(
+    state_dict: Dict[str, Any],
+    draft: Dict[str, Any],
+    provider_id: str,
+    model: str,
+    refs: List[Dict],
+    aspect_ratio: str = "16:9",
+    resolution: str = "1K",
+    on_failure_save=None,
+) -> str:
+    """提交异步生图任务（通过 GenerationTaskManager 统一管理）。
+
+    从 action_executor 下沉（批次5）：Agent 与路由层共用的生图提交管线。
+    尺寸由 比例 + 分辨率档位（1K/2K/4K）计算，确保生图模型感知分辨率。
+    提示词中的 @引用会被解析为位置标记，被引用的素材（refAssets +
+    sceneRefs 参考图）随请求发送给多模态生图模型。
+    on_failure_save: 失败时调用的持久化回调（通常为 svc.save_debounced）。
+    返回 task_id。
+    """
+    import time
+
+    from src.video_agent.utils import gen_id
+    from src.video_agent.web.prompt_refs import (
+        build_storyboard_media_map,
+        resolve_prompt_mentions,
+    )
+    from src.video_agent.web.task_manager import get_task_manager, writeback_if_complete
+
+    tm = get_task_manager()
+    task_id = f"{gen_id('img')}-{draft.get('id', 'x')[-4:]}"
+    size = image_size_for(aspect_ratio, resolution)
+    size_note = f"{size} ({aspect_ratio}, {resolution})"
+
+    # --- 解析 @引用：重写提示词 + 汇总参考图（草稿自身 refAssets 优先，sceneRefs 其次）---
+    base_ref_urls: List[str] = [u for u in (draft.get("refAssets") or []) if u]
+    for r in refs:
+        u = r.get("url") if isinstance(r, dict) else ""
+        if u and u not in base_ref_urls:
+            base_ref_urls.append(u)
+    media_map = build_storyboard_media_map(state_dict)
+    eff_prompt, final_refs = resolve_prompt_mentions(
+        draft.get("prompt", ""), base_ref_urls, media_map, max_refs=5
+    )
+
+    tm.create_task(
+        task_id,
+        status="processing",
+        draft_id=draft.get("id", ""),
+        draft_type="keyElement",
+        prompt=eff_prompt,
+        model=model,
+        result=None,
+    )
+    prev_tag = draft.get("tag") or ""
+    draft["tag"] = "生成中"
+    # 生成日志：提交即记录 started；前端据此立即点亮卡片转圈（改进2）
+    tm.record_gen_log(
+        media_type="image", status="started", provider=provider_id, model=model,
+        prompt=eff_prompt, draft_id=draft.get("id", ""), requested_size=size_note,
+        source="agent", task_id=task_id,
+    )
+    tm.notify({
+        "task_id": task_id, "status": "started", "kind": "image",
+        "draft_id": draft.get("id", ""),
+    })
+
+    async def _run():
+        t0 = time.time()
+        task = tm.get_task(task_id)
+        try:
+            url = await generate_image_via_provider(
+                provider_id, model, eff_prompt,
+                size=size, aspect_ratio=aspect_ratio, resolution=resolution,
+                reference_images=final_refs,
+            )
+            if task:
+                elapsed = round(time.time() - t0, 1)
+                tm.update_task(task_id, status="succeeded", result={"images": [url]}, elapsed=elapsed)
+                tm.notify({
+                    "task_id": task_id, "status": "succeeded", "kind": "image",
+                    "draft_id": draft.get("id", ""),
+                    "result": {"images": [url]}, "elapsed": elapsed,
+                })
+                tm.record_gen_log(
+                    media_type="image", status="succeeded", provider=provider_id, model=model,
+                    prompt=eff_prompt, draft_id=draft.get("id", ""), result_url=url,
+                    elapsed=elapsed, requested_size=size_note, source="agent",
+                    task_id=task_id,
+                )
+                writeback_if_complete(task_id)
+        except Exception as e:  # 统一兜底（含 GenerationError），保证任务状态闭环
+            draft["tag"] = prev_tag  # 失败时恢复原标签，避免卡片永远卡在"生成中"
+            if on_failure_save is not None:
+                on_failure_save()
+            elapsed = round(time.time() - t0, 1)
+            tm.update_task(task_id, status="failed", error=str(e), elapsed=elapsed)
+            tm.notify({
+                "task_id": task_id, "status": "failed", "kind": "image",
+                "draft_id": draft.get("id", ""), "error": str(e), "elapsed": elapsed,
+            })
+            tm.record_gen_log(
+                media_type="image", status="failed", provider=provider_id, model=model,
+                prompt=eff_prompt, draft_id=draft.get("id", ""), error=str(e),
+                elapsed=elapsed, requested_size=size_note, source="agent",
+                task_id=task_id,
+            )
+            logger.warning(f"[StudioActions] 生图失败 {draft.get('id')}: {e}")
+
+    try:
+        tm.track(_run())
+    except RuntimeError:
+        pass  # 无事件循环时跳过（单元测试场景）
+    return task_id

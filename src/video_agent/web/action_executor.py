@@ -4,7 +4,6 @@ Studio Actions 执行器 — 从 actions.py 抽离。
 职责：执行 studio-actions JSON 中的操作列表，操作 StateManager 共享状态并自动持久化。
 解析逻辑在 action_parser.py，本文件仅负责执行。
 """
-import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -15,12 +14,10 @@ from src.video_agent.state.models import CAT_SHOTS, ALL_CATEGORIES
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.utils import gen_id
-from src.video_agent.web.generation import generate_image_via_provider, image_size_for
+from src.video_agent.web.generation import submit_image_task
 from src.video_agent.web.provider_config import resolve_provider_ref
-from src.video_agent.web.prompt_refs import (
-    build_storyboard_media_map, media_of_draft, resolve_prompt_mentions,
-)
-from src.video_agent.web.task_manager import get_task_manager, writeback_if_complete
+from src.video_agent.web.prompt_refs import media_of_draft
+from src.video_agent.web.action_descriptions import describe_action
 from src.video_agent.web.action_parser import (
     strip_action_blocks,
     has_action_block as _has_action_block,
@@ -101,55 +98,8 @@ class StudioActionExecutor:
         return name not in ("", "select_draft", "request_confirmation", "continue", "insert_chat_media")
 
     def _describe_action(self, action: Dict[str, Any]) -> str:
-        """生成操作的中文简述（供前端展示具体做了什么，尽量解析出真实名称）"""
-        name = str(action.get("action") or action.get("type") or "").strip()
-        title = str(action.get("title") or "").strip()
-        label = str(action.get("label") or "").strip()
-        doc = str(action.get("name") or action.get("doc_name") or action.get("key") or "").strip()
-        patch = action.get("patch") if isinstance(action.get("patch"), dict) else {}
-        # 更新类操作：优先从状态里解析出草稿真实 label
-        draft_id = str(action.get("draft_id") or "")
-        if draft_id and not label:
-            found = self._find_draft(draft_id, str(action.get("draft_type") or ""))
-            if found:
-                label = str(found[1].get("label") or "")
-        if name in ("add_group", "add_keyElement", "add_shot", "add_audio"):
-            kind = {"keyElement": "关键元素", "shot": "分镜", "audio": "音频"}.get(
-                str(action.get("group_type") or action.get("type_hint") or ""), "分组"
-            )
-            return f"新建{kind}分组「{title or '未命名'}」"
-        if name in ("update_draft", "patch_draft", "update_current_draft", "set_prompt", "confirm_draft", "confirm_current_draft"):
-            target = label or draft_id or "当前草稿"
-            fields = list(patch.keys()) if patch else []
-            if "prompt" in fields or name == "set_prompt":
-                return f"更新草稿「{target}」的提示词"
-            if fields:
-                return f"更新草稿「{target}」（{'/'.join(fields[:3])}）"
-            return f"确认草稿「{target}」"
-        if name in ("update_group", "patch_group"):
-            return f"更新分组「{title or action.get('group_id', '')}」"
-        if name == "add_draft":
-            return f"新增草稿「{label or '未命名'}」"
-        if name in ("delete_draft", "remove_draft"):
-            return f"删除草稿 {action.get('draft_id', '')}"
-        if name in ("clear_media", "delete_media", "remove_media"):
-            target = str(action.get("draft_id") or "").strip()
-            found = self._find_draft(target, str(action.get("draft_type") or "")) if target else None
-            t_label = str(found[1].get("label") or "") if found else target
-            return f"清空草稿「{t_label or '当前草稿'}」内的媒体"
-        if name in ("delete_group", "remove_group"):
-            return f"删除分组 {action.get('group_id', '')}"
-        if name in ("write_document", "write_doc", "save_document"):
-            return f"写入文档「{doc or '未命名'}」"
-        if name == "bind_asset":
-            return f"绑定素材「{str(action.get('name') or action.get('url', ''))[:24]}」"
-        if name in ("insert_chat_media", "send_to_chat", "add_to_chat_input"):
-            return "插入故事板媒体到对话输入框"
-        if name in ("generate_image", "batch_generate_image", "gen_image"):
-            return f"发起生图（{str(action.get('target', ''))}）"
-        if name == "select_draft":
-            return "选中草稿"
-        return f"执行操作 {name}"
+        """生成操作的中文简述（委托 web.action_descriptions）"""
+        return describe_action(action, find_draft=self._find_draft)
 
     async def execute_locked(self, actions: List[Dict[str, Any]]) -> int:
         """持 svc.lock 执行（与 FC Tool 路径的并发契约对齐）。
@@ -547,92 +497,9 @@ class StudioActionExecutor:
         return ops.resolve_scene_refs(self.state, group)
 
     def _submit_image_task(self, draft: Dict, provider_id: str, model: str, refs: List[Dict], aspect_ratio: str = "16:9", resolution: str = "1K") -> None:
-        """提交异步生图任务（通过 GenerationTaskManager 统一管理）。
-
-        尺寸由 比例 + 分辨率档位（1K/2K/4K）计算，确保生图模型感知分辨率。
-        提示词中的 @引用会被解析为位置标记，被引用的素材（refAssets +
-        sceneRefs 参考图）随请求发送给多模态生图模型。
-        """
-        tm = get_task_manager()
-        task_id = f"{gen_id('img')}-{draft.get('id', 'x')[-4:]}"
-        size = image_size_for(aspect_ratio, resolution)
-        size_note = f"{size} ({aspect_ratio}, {resolution})"
-
-        # --- 解析 @引用：重写提示词 + 汇总参考图（草稿自身 refAssets 优先，sceneRefs 其次）---
-        base_ref_urls: List[str] = [u for u in (draft.get("refAssets") or []) if u]
-        for r in refs:
-            u = r.get("url") if isinstance(r, dict) else ""
-            if u and u not in base_ref_urls:
-                base_ref_urls.append(u)
-        media_map = build_storyboard_media_map(self.state)
-        eff_prompt, final_refs = resolve_prompt_mentions(
-            draft.get("prompt", ""), base_ref_urls, media_map, max_refs=5
+        """提交异步生图任务（委托 generation 层的 submit_image_task，批次5 下沉）"""
+        submit_image_task(
+            self.state, draft, provider_id, model, refs,
+            aspect_ratio=aspect_ratio, resolution=resolution,
+            on_failure_save=self.svc.save_debounced,
         )
-
-        tm.create_task(
-            task_id,
-            status="processing",
-            draft_id=draft.get("id", ""),
-            draft_type="keyElement",
-            prompt=eff_prompt,
-            model=model,
-            result=None,
-        )
-        prev_tag = draft.get("tag") or ""
-        draft["tag"] = "生成中"
-        # 生成日志：提交即记录 started；前端据此立即点亮卡片转圈（改进2）
-        tm.record_gen_log(
-            media_type="image", status="started", provider=provider_id, model=model,
-            prompt=eff_prompt, draft_id=draft.get("id", ""), requested_size=size_note,
-            source="agent", task_id=task_id,
-        )
-        tm.notify({
-            "task_id": task_id, "status": "started", "kind": "image",
-            "draft_id": draft.get("id", ""),
-        })
-
-        async def _run():
-            t0 = time.time()
-            task = tm.get_task(task_id)
-            try:
-                url = await generate_image_via_provider(
-                    provider_id, model, eff_prompt,
-                    size=size, aspect_ratio=aspect_ratio, resolution=resolution,
-                    reference_images=final_refs,
-                )
-                if task:
-                    elapsed = round(time.time() - t0, 1)
-                    tm.update_task(task_id, status="succeeded", result={"images": [url]}, elapsed=elapsed)
-                    tm.notify({
-                        "task_id": task_id, "status": "succeeded", "kind": "image",
-                        "draft_id": draft.get("id", ""),
-                        "result": {"images": [url]}, "elapsed": elapsed,
-                    })
-                    tm.record_gen_log(
-                        media_type="image", status="succeeded", provider=provider_id, model=model,
-                        prompt=eff_prompt, draft_id=draft.get("id", ""), result_url=url,
-                        elapsed=elapsed, requested_size=size_note, source="agent",
-                        task_id=task_id,
-                    )
-                    writeback_if_complete(task_id)
-            except Exception as e:  # GenerationError 是 Exception 子类，此处统一兜底保证任务状态闭环
-                draft["tag"] = prev_tag  # 失败时恢复原标签，避免卡片永远卡在"生成中"
-                self.svc.save_debounced()
-                elapsed = round(time.time() - t0, 1)
-                tm.update_task(task_id, status="failed", error=str(e), elapsed=elapsed)
-                tm.notify({
-                    "task_id": task_id, "status": "failed", "kind": "image",
-                    "draft_id": draft.get("id", ""), "error": str(e), "elapsed": elapsed,
-                })
-                tm.record_gen_log(
-                    media_type="image", status="failed", provider=provider_id, model=model,
-                    prompt=eff_prompt, draft_id=draft.get("id", ""), error=str(e),
-                    elapsed=elapsed, requested_size=size_note, source="agent",
-                    task_id=task_id,
-                )
-                logger.warning(f"[StudioActions] 生图失败 {draft.get('id')}: {e}")
-
-        try:
-            tm.track(_run())
-        except RuntimeError:
-            pass  # 无事件循环时跳过（单元测试场景）
