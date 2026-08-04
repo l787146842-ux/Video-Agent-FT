@@ -630,10 +630,12 @@ class Planner:
         if self.llm_adapter.supports_function_calling:
             # 模式 A：标准 function calling
             tools_schema = self.tool_manager.get_all_tool_schemas()
-            return await self.llm_adapter.chat(full_messages, tools=tools_schema)
+            return await self.llm_adapter.chat(
+                full_messages, tools=tools_schema, timeout=settings.llm_timeout
+            )
         else:
             # 模式 B：纯文本（fallback 到 studio-actions 文本解析）
-            return await self.llm_adapter.chat(full_messages)
+            return await self.llm_adapter.chat(full_messages, timeout=settings.llm_timeout)
 
     async def _call_llm_stream(self, system: str, messages: List[Dict[str, Any]]) -> AsyncGenerator[StreamChunk, None]:
         """流式 LLM 调用"""
@@ -649,7 +651,9 @@ class Planner:
         if self.llm_adapter.supports_function_calling:
             tools_schema = self.tool_manager.get_all_tool_schemas()
 
-        async for chunk in self.llm_adapter.chat_stream(full_messages, tools=tools_schema):
+        async for chunk in self.llm_adapter.chat_stream(
+            full_messages, tools=tools_schema, timeout=settings.llm_stream_timeout
+        ):
             yield chunk
 
     async def _handle_fc_response(

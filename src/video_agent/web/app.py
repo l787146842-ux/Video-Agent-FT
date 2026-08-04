@@ -91,13 +91,13 @@ async def lifespan(_app: FastAPI):
     StateManager.get_instance().flush_save()
     from src.video_agent.adapters.factory import AdapterFactory
     for adapter_type in ("chat", "image_generation", "video_generation"):
-        for provider, adapter in AdapterFactory._adapters.get(adapter_type, {}).items():
+        for provider, adapter in AdapterFactory.iter_adapters(adapter_type):
             if hasattr(adapter, "close"):
                 try:
                     await adapter.close()
                 except Exception:
                     pass
-    AdapterFactory._adapters.clear()
+    AdapterFactory.clear_all()
     logger.info("[Shutdown] Adapter 连接池已释放")
 
 

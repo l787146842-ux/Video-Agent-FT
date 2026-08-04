@@ -44,6 +44,10 @@ class UndoRedoMixin:
         if self._undo_stack:
             self._undo_stack.pop()
 
+    def discard_last_undo(self) -> None:
+        """公开的丢弃快照入口（等价于 _discard_last_undo，供 executor 等外部调用）"""
+        self._discard_last_undo()
+
     def undo(self) -> bool:
         """撤销上一步操作，返回是否成功"""
         if not self._undo_stack:

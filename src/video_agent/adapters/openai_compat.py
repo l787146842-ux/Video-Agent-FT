@@ -21,6 +21,7 @@ from loguru import logger
 from .base_chat import BaseChatAdapter, ChatResponse, StreamChunk
 from .base import BaseImageAdapter, ImageGenerationResponse
 from .retry import with_retry
+from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils.paths import ASSETS_DIR
 from src.video_agent.utils import gen_id
@@ -146,10 +147,16 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         messages: List[Dict[str, Any]],
         *,
         tools: Optional[List[Dict[str, Any]]] = None,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
-        timeout: int = 120,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        timeout: Optional[int] = None,
     ) -> ChatResponse:
+        if max_tokens is None:
+            max_tokens = settings.llm_max_tokens
+        if temperature is None:
+            temperature = settings.llm_temperature
+        if timeout is None:
+            timeout = settings.llm_timeout
         payload: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -202,10 +209,16 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         messages: List[Dict[str, Any]],
         *,
         tools: Optional[List[Dict[str, Any]]] = None,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
-        timeout: int = 180,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        timeout: Optional[int] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
+        if max_tokens is None:
+            max_tokens = settings.llm_max_tokens
+        if temperature is None:
+            temperature = settings.llm_temperature
+        if timeout is None:
+            timeout = settings.llm_stream_timeout
         payload: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -417,7 +430,7 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
         """尝试 /images/generations 端点"""
         try:
             payload = {"model": self.model, "prompt": prompt, "n": 1, "size": size or "1024x1024"}
-            client = self._get_client(120)
+            client = self._get_client(settings.image_gen_timeout)
             resp = await client.post("/images/generations", json=payload)
             if resp.status_code == 200:
                 data = resp.json()
@@ -464,10 +477,10 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": content}],
-            "max_tokens": 8192,
+            "max_tokens": settings.llm_max_tokens,
         }
         try:
-            client = self._get_client(180)
+            client = self._get_client(settings.image_gen_timeout)
             resp = await client.post("/chat/completions", json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -505,7 +518,7 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
                 "图片生成失败：API 服务未启动（连接被拒绝）。请检查服务是否运行，或切换到其他可用的图片 API。"
             ) from e
         except httpx.TimeoutException:
-            raise AdapterError("生图请求超时（180s）。" + "；".join(errors))
+            raise AdapterError(f"生图请求超时（{settings.image_gen_timeout}s）。" + "；".join(errors))
         except httpx.HTTPStatusError as e:
             raise AdapterError(
                 f"生图失败：HTTP {e.response.status_code}: {e.response.text[:200]}。" + "；".join(errors)

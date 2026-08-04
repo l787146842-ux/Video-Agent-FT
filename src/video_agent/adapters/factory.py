@@ -60,6 +60,16 @@ class AdapterFactory:
         return provider in cls._adapters.get(adapter_type, {})
 
     @classmethod
+    def iter_adapters(cls, adapter_type: str):
+        """公开遍历某类型下所有 (provider, adapter)（如 lifespan 关闭时统一 close）"""
+        return list(cls._adapters.get(adapter_type, {}).items())
+
+    @classmethod
+    def clear_all(cls):
+        """清空所有已注册适配器（lifespan 关闭时用）"""
+        cls._adapters.clear()
+
+    @classmethod
     def reset(cls):
         """清空所有已注册适配器（测试用）"""
         cls._adapters = {}

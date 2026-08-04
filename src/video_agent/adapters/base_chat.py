@@ -35,11 +35,11 @@ class BaseChatAdapter(ABC):
         messages: List[Dict[str, Any]],
         *,
         tools: Optional[List[Dict[str, Any]]] = None,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
-        timeout: int = 120,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        timeout: Optional[int] = None,
     ) -> ChatResponse:
-        """非流式 chat 调用"""
+        """非流式 chat 调用。max_tokens/temperature/timeout 为 None 时回落到全局 settings。"""
         ...
 
     @abstractmethod
@@ -48,11 +48,11 @@ class BaseChatAdapter(ABC):
         messages: List[Dict[str, Any]],
         *,
         tools: Optional[List[Dict[str, Any]]] = None,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
-        timeout: int = 180,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        timeout: Optional[int] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
-        """流式 chat 调用（SSE）"""
+        """流式 chat 调用（SSE）。max_tokens/temperature/timeout 为 None 时回落到全局 settings。"""
         ...
         yield  # pragma: no cover
 

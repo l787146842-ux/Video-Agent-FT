@@ -143,9 +143,9 @@ class AgyCliChatAdapter(BaseChatAdapter):
         messages: List[Dict[str, Any]],
         *,
         tools: Optional[List[Dict[str, Any]]] = None,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
-        timeout: int = 0,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        timeout: Optional[int] = None,
     ) -> ChatResponse:
         exe = _agy_executable()
         if not exe:
@@ -188,9 +188,9 @@ class AgyCliChatAdapter(BaseChatAdapter):
         messages: List[Dict[str, Any]],
         *,
         tools: Optional[List[Dict[str, Any]]] = None,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
-        timeout: int = 0,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        timeout: Optional[int] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
         """流式：逐行读取 agy 输出实时下发（print 模式下通常末尾一次性产出）"""
         exe = _agy_executable()

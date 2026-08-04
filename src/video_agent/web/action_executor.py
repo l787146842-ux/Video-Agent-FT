@@ -72,12 +72,12 @@ class StudioActionExecutor:
     def execute(self, actions: List[Dict[str, Any]]) -> int:
         """执行操作列表，返回成功执行的数量。执行后自动持久化。
 
-        Agent 主路径统一在此 _push_undo()，使 Agent 改动与手动 update 一样可撤销；
+        Agent 主路径统一在此 push_undo()，使 Agent 改动与手动 update 一样可撤销；
         纯信号操作（select/确认/continue）或全部失败时不污染 undo 栈。
         """
         mutating = [a for a in actions if self._is_mutating(a)]
         if mutating:
-            self.svc._push_undo()
+            self.svc.push_undo()
         applied = 0
         for action in actions:
             try:
@@ -92,7 +92,7 @@ class StudioActionExecutor:
             logger.info(f"[StudioActions] Applied {applied} action(s), state persisted")
         elif mutating:
             # 全部失败：丢弃预先压入的 undo 快照
-            self.svc._discard_last_undo()
+            self.svc.discard_last_undo()
         return applied
 
     @staticmethod
