@@ -13,7 +13,7 @@ routes/agent.py 仅保留路由定义和请求/响应模型。
 """
 import asyncio
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -156,7 +156,7 @@ async def stream_worker(body: Any, emit) -> None:
         emit: async callable(event_dict) 用于向队列推送 SSE 事件
     """
     t0 = time.monotonic()
-    request_id = getattr(body, "request_id", "") or ""
+    request_id = body.request_id or ""
     if not _acquire_request_slot(request_id):
         await emit({"type": "error", "detail": "相同请求正在处理中，请勿重复发送",
                     "error_code": "DUPLICATE_REQUEST"})
@@ -186,7 +186,7 @@ async def stream_worker(body: Any, emit) -> None:
 
         # Skill 写入文档：消息携带 Skill 引用块时（前端此时才传 skill_slug），
         # 记入当前项目 usedSkills，文档面板只展示已发送过的 Skill 文档。
-        if getattr(body, "skill_slug", ""):
+        if body.skill_slug:
             async with svc.lock:
                 svc.record_used_skill(body.skill_slug)
 
@@ -251,8 +251,10 @@ async def _mock_stream(svc, executor, body, user_text, llm_user_text, use_studio
         "state": svc.get_full_snapshot(),
         "elapsed_ms": int((time.monotonic() - t0) * 1000),
     }})
-    # 记忆系统：mock 路径同样记录（无 LLM 摘要，降级截取）
-    MemoryManager.get_instance().record_dialog_background(user_text, visible)
+    # 记忆系统：mock 路径同样记录（无 LLM 摘要，降级截取），按项目隔离（与 planner 真实路径对齐）
+    MemoryManager.get_instance().record_dialog_background(
+        user_text, visible, project_id=svc.active_project_id
+    )
 
 
 def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_type: str) -> tuple:
@@ -377,13 +379,16 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 return
             continue
 
-        planner = Planner(llm_adapter=llm_adapter, tool_manager=ToolManager)
+        planner = Planner(
+            state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
+            executor_factory=StudioActionExecutor,
+        )
         planner_ctx = PlannerContext(
             history=history,
             selected_draft_id=body.selected_draft_id,
             selected_type=body.selected_type,
             state_builder=state_builder,
-            skill_name=getattr(body, "skill_name", "") or "",
+            skill_name=body.skill_name or "",
             use_studio_context=use_studio_context,
             asset_mode=body.asset_mode,
             image_generation_provider=image_provider,
@@ -493,7 +498,7 @@ async def non_stream_worker(body: Any) -> Dict[str, Any]:
         user_text = "请查看我上传的素材"
 
     # 请求幂等防护（P2）：同一 request_id 处理中时拒绝重复提交
-    request_id = getattr(body, "request_id", "") or ""
+    request_id = body.request_id or ""
     if not _acquire_request_slot(request_id):
         raise VideoAgentError("相同请求正在处理中，请勿重复发送", status_code=409,
                               error_code="DUPLICATE_REQUEST")
@@ -521,7 +526,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     llm_user_text = f"{user_text}\n\n{attachment_note}" if attachment_note else user_text
 
     # Skill 写入文档：同 stream_worker（仅消息携带 Skill 引用块时前端才传 slug）
-    if getattr(body, "skill_slug", ""):
+    if body.skill_slug:
         async with svc.lock:
             svc.record_used_skill(body.skill_slug)
 
@@ -548,8 +553,6 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     history = truncate_history([
         {"role": m.get("role", "user"), "content": m.get("content", "")} for m in body.messages[-10:]
     ])
-    llm_adapter = _create_chat_adapter(body.provider, body.model)
-    planner = Planner(llm_adapter=llm_adapter, tool_manager=ToolManager)
 
     # 多模态内容构建（有 content_parts 时按排版顺序交错；
     # 传入选中草稿信息用于素材超限时的优先级注入）
@@ -578,19 +581,69 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     planner_ctx = PlannerContext(
         history=history, selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
         state_builder=state_builder,
-        skill_name=getattr(body, "skill_name", "") or "",
+        skill_name=body.skill_name or "",
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
         image_generation_provider=image_provider2,
         image_generation_aspect_ratio=image_aspect_ratio2,
     )
 
-    result = await planner.handle_message(llm_user_content, planner_ctx)
+    # 非流式复用与 _real_stream 相同的 fallback 链：主模型瞬时故障（5xx/超时/连接失败）
+    # 且尚未执行任何操作时，自动切换备用模型重试；已执行操作则不重试（避免重复落盘）
+    candidates = (
+        _fallback_candidates(body.provider, body.model)
+        if settings.model_fallback_enabled
+        else [(body.provider, body.model)]
+    )
+    result = None
+    used_model = body.model
+    last_err: Optional[Exception] = None
+    for idx, (cand_provider, cand_model) in enumerate(candidates):
+        try:
+            llm_adapter = _create_chat_adapter(cand_provider, cand_model)
+        except GenerationError as e:
+            logger.warning(f"[ChatService] fallback 候选 {cand_provider}/{cand_model} 端点解析失败: {e}")
+            last_err = e
+            if idx == len(candidates) - 1:
+                raise
+            continue
+        planner = Planner(
+            state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
+            executor_factory=StudioActionExecutor,
+        )
+        applied_seen = False
+
+        async def _on_event(ev: Dict[str, Any]) -> None:
+            nonlocal applied_seen
+            if ev.get("type") == "actions_applied":
+                applied_seen = True
+
+        try:
+            result = await planner.handle_message(llm_user_content, planner_ctx, on_event=_on_event)
+            used_model = cand_model
+            break
+        except (GenerationError, AdapterError) as e:
+            last_err = e
+            if applied_seen or not _is_retryable_adapter_error(e) or idx == len(candidates) - 1:
+                raise
+            logger.warning(
+                f"[ChatService] 模型 {cand_model} 瞬时故障（{str(e)[:80]}），"
+                f"非流式 fallback 到 {candidates[idx + 1][1]}"
+            )
+            continue
+    if result is None:  # 理论不可达（最后候选失败已 raise），防御兜底
+        raise last_err or GenerationError("无可用聊天模型")
+
+    # 降级显式告警（与流式路径一致）：备用模型产出必须让用户可见，不做静默降级
+    if used_model != body.model and body.model:
+        result.warnings.append(
+            f"主模型瞬时故障，本次回复由备用模型 {used_model} 生成，质量可能与主模型不同"
+        )
 
     if use_studio_context:
         async with svc.lock:
             if result.text:
                 svc.add_chat_message(
-                    "agent", result.text, model_name=body.model or "",
+                    "agent", result.text, model_name=used_model or "",
                     confirm=result.confirmation,
                     applied_actions=result.applied_actions,
                     action_log=result.action_log,

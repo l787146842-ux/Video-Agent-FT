@@ -174,7 +174,7 @@ async def run_agent_loop(
                 })
         _log_before = len(executor.action_log)
         _t0 = time.monotonic()
-        applied = executor.execute(executable)
+        applied = await executor.execute_locked(executable)
         _batch_ms = (time.monotonic() - _t0) * 1000
         result.applied_actions += applied
         if applied:

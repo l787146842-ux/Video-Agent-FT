@@ -12,8 +12,8 @@ from loguru import logger
 from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
-from src.video_agent.state.models import build_draft_dict, CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
-from src.video_agent.utils import gen_id
+from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
+from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.web.prompt_refs import media_of_draft
 
 
@@ -75,12 +75,9 @@ class StoryboardCreateGroupTool(BaseTool):
 
     async def aexecute(self, params: CreateGroupInput) -> ToolResult:
         svc = StateManager.get_instance()
+        cat_key = ops.category_for_group_type(params.group_type)
 
-        cat_map = {"keyelement": CAT_KEY_ELEMENTS, "shot": CAT_SHOTS, "audio": CAT_AUDIO_ITEMS}
-        cat_key = cat_map.get(params.group_type.lower(), CAT_KEY_ELEMENTS)
-
-        prefix = 'shot' if cat_key == 'shots' else 'ke' if cat_key == 'keyElements' else 'audio'
-        new_id = gen_id(prefix)
+        new_id = ops.new_group_id(cat_key)
         new_group: Dict[str, Any] = {"id": new_id, "title": params.title, "desc": params.desc, "drafts": []}
 
         if cat_key == CAT_SHOTS:
@@ -94,7 +91,7 @@ class StoryboardCreateGroupTool(BaseTool):
 
             # 附带草稿
             if params.draft and isinstance(params.draft, dict):
-                new_group["drafts"].append(build_draft_dict(params.draft))
+                ops.append_draft(new_group, params.draft)
 
             svc.save()
         return ToolResult(success=True, data={"group_id": new_id})
@@ -110,24 +107,14 @@ class StoryboardPatchDraftTool(BaseTool):
     async def aexecute(self, params: PatchDraftInput) -> ToolResult:
         svc = StateManager.get_instance()
 
-        allowed = [
-            "label", "tag", "mediaType", "genType", "imgUrl", "videoUrl", "audioUrl", "prompt", "mode",
-            "model", "providerId", "resolution", "duration", "aspectRatio",
-            "size", "timbre", "refAssets",
-        ]
         async with svc.lock:
-            for cat_key in ALL_CATEGORIES_TUPLE:
-                for group in svc.state_dict.get(cat_key, []):
-                    for draft in group.get("drafts", []):
-                        if draft.get("id") == params.draft_id:
-                            changed = False
-                            for field in allowed:
-                                if field in params.patch:
-                                    draft[field] = params.patch[field]
-                                    changed = True
-                            if changed:
-                                svc.save()
-                                return ToolResult(success=True, data={"draft_id": params.draft_id})
+            found = ops.find_draft(svc.state_dict, params.draft_id, params.draft_type)
+            if found:
+                _, draft = found
+                # 统一白名单（含 imageResolution/genType，与文本轨一致）
+                if ops.patch_draft(draft, params.patch):
+                    svc.save()
+                    return ToolResult(success=True, data={"draft_id": draft.get("id", params.draft_id)})
         return ToolResult(success=False, error=f"Draft '{params.draft_id}' not found")
 
 
@@ -142,21 +129,11 @@ class StoryboardAddDraftTool(BaseTool):
         svc = StateManager.get_instance()
 
         async with svc.lock:
-            # 查找目标分组
-            target_group = None
-            for cat_key in ALL_CATEGORIES_TUPLE:
-                for group in svc.state_dict.get(cat_key, []):
-                    if group.get("id") == params.group_id:
-                        target_group = group
-                        break
-                if target_group:
-                    break
-
+            target_group = ops.find_group(svc.state_dict, params.group_id, params.group_type)
             if not target_group:
                 return ToolResult(success=False, error=f"Group '{params.group_id}' not found")
 
-            draft = build_draft_dict(params.draft)
-            target_group.setdefault("drafts", []).append(draft)
+            draft = ops.append_draft(target_group, params.draft)
             svc.save()
         return ToolResult(success=True, data={"draft_id": draft["id"]})
 
@@ -172,13 +149,9 @@ class StoryboardDeleteGroupTool(BaseTool):
         svc = StateManager.get_instance()
 
         async with svc.lock:
-            for cat_key in ALL_CATEGORIES_TUPLE:
-                groups = svc.state_dict.get(cat_key, [])
-                for i, g in enumerate(groups):
-                    if g.get("id") == params.group_id:
-                        groups.pop(i)
-                        svc.save()
-                        return ToolResult(success=True, data={"deleted": params.group_id})
+            if ops.delete_group(svc.state_dict, params.group_id, params.group_type):
+                svc.save()
+                return ToolResult(success=True, data={"deleted": params.group_id})
         return ToolResult(success=False, error=f"Group '{params.group_id}' not found")
 
 
@@ -193,13 +166,12 @@ class StoryboardConfirmDraftTool(BaseTool):
         svc = StateManager.get_instance()
 
         async with svc.lock:
-            for cat_key in ALL_CATEGORIES_TUPLE:
-                for group in svc.state_dict.get(cat_key, []):
-                    for draft in group.get("drafts", []):
-                        if draft.get("id") == params.draft_id:
-                            draft["tag"] = "已确认"
-                            svc.save()
-                            return ToolResult(success=True, data={"draft_id": params.draft_id, "tag": "已确认"})
+            found = ops.find_draft(svc.state_dict, params.draft_id, params.draft_type)
+            if found:
+                _, draft = found
+                ops.patch_draft(draft, {"tag": "已确认"})
+                svc.save()
+                return ToolResult(success=True, data={"draft_id": draft.get("id", params.draft_id), "tag": "已确认"})
         return ToolResult(success=False, error=f"Draft '{params.draft_id}' not found")
 
 
@@ -266,13 +238,6 @@ class StoryboardMediaToChatTool(BaseTool):
         return ToolResult(success=True, data={"chat_inserts": inserts})
 
 
-_CAT_BY_TYPE = {
-    "keyelement": CAT_KEY_ELEMENTS,
-    "shot": CAT_SHOTS,
-    "audio": CAT_AUDIO_ITEMS,
-}
-
-
 class StoryboardReadDraftTool(BaseTool):
     name = "read_draft"
     description = (
@@ -286,27 +251,8 @@ class StoryboardReadDraftTool(BaseTool):
 
     async def aexecute(self, params: ReadDraftInput) -> ToolResult:
         svc = StateManager.get_instance()
-        state = svc.state_dict
         wanted = (params.draft_id or "").strip()
-        dtype = (params.draft_type or "").strip().lower()
-        cats = (_CAT_BY_TYPE[dtype],) if dtype in _CAT_BY_TYPE else ALL_CATEGORIES_TUPLE
-
-        matches: List[Dict[str, Any]] = []
-        for cat_key in cats:
-            for gi, group in enumerate(state.get(cat_key, []) or []):
-                for di, draft in enumerate(group.get("drafts", []) or []):
-                    if draft.get("id") == wanted or wanted == f"{gi + 1}-{di + 1}":
-                        matches.append({
-                            "category": cat_key,
-                            "group_title": group.get("title", ""),
-                            "group_desc": group.get("desc", "") or group.get("roughDesc", ""),
-                            "draft_id": draft.get("id", ""),
-                            "index": f"{gi + 1}-{di + 1}",
-                            "label": draft.get("label", ""),
-                            "tag": draft.get("tag", ""),
-                            "model": draft.get("model", ""),
-                            "prompt": draft.get("prompt", "") or "",
-                        })
+        matches = ops.find_draft_matches(svc.state_dict, wanted, params.draft_type)
         if not matches:
             return ToolResult(
                 success=False,

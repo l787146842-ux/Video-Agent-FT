@@ -4,7 +4,6 @@ Studio Actions 执行器 — 从 actions.py 抽离。
 职责：执行 studio-actions JSON 中的操作列表，操作 StateManager 共享状态并自动持久化。
 解析逻辑在 action_parser.py，本文件仅负责执行。
 """
-import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -12,8 +11,8 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.exceptions import GenerationError
-from src.video_agent.state.models import build_draft_dict, CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES
+from src.video_agent.state.models import CAT_SHOTS, ALL_CATEGORIES
+from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.utils import gen_id
 from src.video_agent.web.generation import generate_image_via_provider, image_size_for
@@ -152,27 +151,20 @@ class StudioActionExecutor:
             return "选中草稿"
         return f"执行操作 {name}"
 
+    async def execute_locked(self, actions: List[Dict[str, Any]]) -> int:
+        """持 svc.lock 执行（与 FC Tool 路径的并发契约对齐）。
+
+        调用方已持有 svc.lock 时（如 chat_service mock 路径）必须改用同步 execute()，
+        asyncio.Lock 不可重入，嵌套获取会死锁。
+        """
+        async with self.svc.lock:
+            return self.execute(actions)
+
     # ---------- 内部方法 ----------
 
-    # 卡片小标编号：组号-卡序号（如 "1-2"，与前端卡片下方小标/上下文 index 一致）
-    _INDEX_REF_RE = re.compile(r"^(\d+)\s*[-－.·]\s*(\d+)$")
-
     def _resolve_index_ref(self, ref: str, draft_type: str = ""):
-        """解析卡片编号（如 "1-2" = 第 1 组第 2 张卡）→ (group, draft)；
-        编号按类别（关键元素/分镜/音频）各自从 1 开始，与前端小标一致。"""
-        m = self._INDEX_REF_RE.match((ref or "").strip())
-        if not m:
-            return None
-        gi, di = int(m.group(1)) - 1, int(m.group(2)) - 1
-        if gi < 0 or di < 0:
-            return None
-        for cat_key in self._categories_for_type(draft_type):
-            groups = self.state.get(cat_key, [])
-            if gi < len(groups):
-                drafts = groups[gi].get("drafts", [])
-                if di < len(drafts):
-                    return groups[gi], drafts[di]
-        return None
+        """解析卡片编号（如 "1-2"）→ (group, draft)；委托领域层唯一实现"""
+        return ops.resolve_index_ref(self.state, ref, draft_type)
 
     def _apply(self, action: Dict[str, Any]) -> bool:
         name = str(action.get("action") or action.get("type") or "").strip()
@@ -209,67 +201,22 @@ class StudioActionExecutor:
         return False
 
     def _find_draft(self, draft_id: str, draft_type: str = ""):
-        """在 state 中查找 draft，返回 (group, draft) 或 None。
-        draft_id 支持真实 ID、"current" 或卡片编号（如 "1-2"）。"""
-        # 卡片编号定位（与前端卡片下方小标一致）
-        idx_ref = self._resolve_index_ref(draft_id, draft_type)
-        if idx_ref:
-            return idx_ref
-        categories = self._categories_for_type(draft_type)
-        for cat_key in categories:
-            for group in self.state.get(cat_key, []):
-                for draft in group.get("drafts", []):
-                    if draft.get("id") == draft_id:
-                        return group, draft
-        if draft_id in ("current", ""):
-            # 优先解析为前端当前选中的草稿
-            if self.selected_draft_id:
-                found = self._find_draft(self.selected_draft_id, self.selected_type or draft_type)
-                if found:
-                    return found
-            # 兜底：第一个可用的 draft
-            for cat_key in categories:
-                for group in self.state.get(cat_key, []):
-                    drafts = group.get("drafts", [])
-                    if drafts:
-                        return group, drafts[0]
-        return None
+        """在 state 中查找 draft（真实 ID / "current" / 卡片编号）；委托领域层唯一实现"""
+        return ops.find_draft(
+            self.state, draft_id, draft_type,
+            selected_draft_id=self.selected_draft_id, selected_type=self.selected_type,
+        )
 
     def _find_group(self, group_id: str, group_type: str = ""):
-        categories = self._categories_for_type(group_type)
-        for cat_key in categories:
-            for group in self.state.get(cat_key, []):
-                if group.get("id") == group_id:
-                    return group
-        if group_id in ("current", ""):
-            # 优先返回包含前端选中草稿的分组
-            if self.selected_draft_id:
-                found = self._find_draft(self.selected_draft_id, self.selected_type or group_type)
-                if found:
-                    return found[0]
-            # 兜底：第一个可用 group
-            for cat_key in categories:
-                groups = self.state.get(cat_key, [])
-                if groups:
-                    return groups[0]
-        return None
+        """在 state 中查找 group；委托领域层唯一实现"""
+        return ops.find_group(
+            self.state, group_id, group_type,
+            selected_draft_id=self.selected_draft_id, selected_type=self.selected_type,
+        )
 
     def _categories_for_type(self, draft_type: str, strict: bool = False) -> List[str]:
-        """draft_type → 状态类别键。
-
-        strict=True（批量收集路径）：严格单类别，杜绝 all_keyElements
-        批量生图时级联兑底把音频草稿也拉去生图；
-        strict=False（查找/删除路径）：保留类型缺失时的全类别兑底，
-        保证 LLM 未传类型时 find/delete 仍可用。
-        """
-        t = (draft_type or "").lower().strip()
-        if t in ("shot", "shots", "video"):
-            return [CAT_SHOTS] if strict else [CAT_SHOTS, CAT_KEY_ELEMENTS, CAT_AUDIO_ITEMS]
-        if t in ("audio", "audioitem"):
-            return [CAT_AUDIO_ITEMS] if strict else [CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS]
-        if t in ("keyelement", "key-element", "element", "image"):
-            return [CAT_KEY_ELEMENTS] if strict else [CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS]
-        return [] if strict else list(ALL_CATEGORIES)
+        """draft_type → 状态类别键；委托领域层唯一实现"""
+        return ops.categories_for_type(draft_type, strict=strict)
 
     def _apply_draft_patch(self, action: Dict) -> bool:
         draft_id = action.get("draft_id") or action.get("target_id") or action.get("id") or "current"
@@ -282,18 +229,7 @@ class StudioActionExecutor:
         if not result:
             return False
         _, draft = result
-
-        allowed = [
-            "label", "tag", "mediaType", "genType", "imgUrl", "videoUrl", "audioUrl", "prompt", "mode",
-            "model", "providerId", "resolution", "duration", "aspectRatio", "imageResolution",
-            "size", "timbre", "refAssets",
-        ]
-        changed = False
-        for field in allowed:
-            if field in patch:
-                draft[field] = patch[field]
-                changed = True
-        return changed
+        return ops.patch_draft(draft, patch)
 
     def _apply_group_patch(self, action: Dict) -> bool:
         group_id = action.get("group_id") or action.get("target_id") or action.get("id") or "current"
@@ -303,44 +239,19 @@ class StudioActionExecutor:
         group = self._find_group(group_id, group_type)
         if not group:
             return False
-
-        allowed = ["title", "desc", "roughDesc", "duration", "timeRange", "prompt",
-                   "shotType", "sceneRefs"]
-        changed = False
-        for field in allowed:
-            if field in patch:
-                group[field] = patch[field]
-                changed = True
-        return changed
+        return ops.patch_group(group, patch)
 
     def _apply_delete_draft(self, action: Dict) -> bool:
         draft_id = action.get("draft_id") or action.get("id") or ""
         draft_type = action.get("draft_type") or action.get("kind") or ""
         if not draft_id or draft_id == "current":
             draft_id = self.selected_draft_id
-        if not draft_id:
-            return False
-        for cat_key in self._categories_for_type(draft_type):
-            for group in self.state.get(cat_key, []):
-                drafts = group.get("drafts", [])
-                for i, d in enumerate(drafts):
-                    if d.get("id") == draft_id:
-                        drafts.pop(i)
-                        return True
-        return False
+        return ops.delete_draft(self.state, draft_id, draft_type)
 
     def _apply_delete_group(self, action: Dict) -> bool:
         group_id = action.get("group_id") or action.get("id") or ""
         group_type = action.get("group_type") or action.get("kind") or ""
-        if not group_id:
-            return False
-        for cat_key in self._categories_for_type(group_type):
-            groups = self.state.get(cat_key, [])
-            for i, g in enumerate(groups):
-                if g.get("id") == group_id:
-                    groups.pop(i)
-                    return True
-        return False
+        return ops.delete_group(self.state, group_id, group_type)
 
     def _apply_add_group(self, action: Dict) -> bool:
         """创建新的故事板分组（关键元素 / 分镜 / 音频）"""
@@ -349,13 +260,8 @@ class StudioActionExecutor:
             or action.get("kind") or action.get("target_type") or ""
         ).lower().strip()
 
-        # 映射到 state 中的 key
-        if group_type in ("shot", "shots", "video", "分镜"):
-            cat_key = CAT_SHOTS
-        elif group_type in ("audio", "audioitem", "audioitems", "音频"):
-            cat_key = CAT_AUDIO_ITEMS
-        else:
-            cat_key = CAT_KEY_ELEMENTS
+        # 映射到 state 中的 key（含中文别名，与 FC 轨同一映射）
+        cat_key = ops.category_for_group_type(group_type)
 
         group_data = action.get("group") or action.get("data") or {}
         # 也允许 patch 字段携带 title/desc
@@ -400,9 +306,7 @@ class StudioActionExecutor:
 
     def _append_draft_to_group(self, group: Dict, draft_data: Dict) -> Dict:
         """向指定 group 添加一个 draft，返回新建的 draft"""
-        draft = build_draft_dict(draft_data)
-        group.setdefault("drafts", []).append(draft)
-        return draft
+        return ops.append_draft(group, draft_data)
 
     def _apply_clear_media(self, action: Dict) -> bool:
         """清空卡片内的媒体内容（图片/视频/音频地址），保留提示词与参数。
@@ -413,12 +317,7 @@ class StudioActionExecutor:
         if not result:
             return False
         _, draft = result
-        changed = False
-        for field in ("imgUrl", "videoUrl", "audioUrl"):
-            if draft.get(field):
-                draft[field] = ""
-                changed = True
-        return changed
+        return ops.clear_draft_media(draft)
 
     def _apply_add_draft(self, action: Dict) -> bool:
         group_id = action.get("group_id") or "current"
@@ -436,14 +335,8 @@ class StudioActionExecutor:
         if not group:
             auto_action = {**action, "group_type": group_type, "title": draft_data.get("label", "Agent 新建分组")}
             self._apply_add_group(auto_action)
-            # 取刚创建的分组
-            t = (group_type or "").lower().strip()
-            if t in ("shot", "shots", "video"):
-                cat_key = CAT_SHOTS
-            elif t in ("audio", "audioitem"):
-                cat_key = CAT_AUDIO_ITEMS
-            else:
-                cat_key = CAT_KEY_ELEMENTS
+            # 取刚创建的分组（与 _apply_add_group 同一类别映射）
+            cat_key = ops.category_for_group_type(group_type)
             groups = self.state.get(cat_key, [])
             if groups:
                 group = groups[-1]  # 刚添加的在末尾
@@ -576,25 +469,9 @@ class StudioActionExecutor:
 
     # ---------- 图片生成（仅用户明确触发） ----------
 
-    # selected_type（前端 DraftType）→ 快照类别键
-    _SELECTED_TYPE_TO_CAT = {
-        "keyElement": CAT_KEY_ELEMENTS,
-        "shot": CAT_SHOTS,
-        "audio": CAT_AUDIO_ITEMS,
-    }
-
     def _selected_draft_media_config(self) -> tuple:
         """解析中间预览面板选中草稿的 (providerId, aspectRatio, imageResolution)，作为生图缺省配置。"""
-        cat = self._SELECTED_TYPE_TO_CAT.get(self.selected_type, self.selected_type)
-        for group in self.state.get(cat, []):
-            for draft in group.get("drafts", []):
-                if draft.get("id") == self.selected_draft_id:
-                    return (
-                        draft.get("providerId") or "",
-                        draft.get("aspectRatio") or "",
-                        draft.get("imageResolution") or "",
-                    )
-        return "", "", ""
+        return ops.selected_draft_media_config(self.state, self.selected_draft_id, self.selected_type)
 
     def _apply_generate_image(self, action: Dict) -> bool:
         """Agent 触发生图（仅当用户明确要求时）。支持批量。
@@ -662,48 +539,12 @@ class StudioActionExecutor:
         return submitted > 0
 
     def _collect_drafts(self, target: str, draft_type: str) -> List[tuple]:
-        """收集目标 (group, draft) 对。target='all' 时按类型严格遍历（不跨类别）。"""
-        categories = self._categories_for_type(draft_type, strict=True)
-        results: List[tuple] = []
-
-        if target == "all":
-            for cat_key in categories:
-                for group in self.state.get(cat_key, []):
-                    for draft in group.get("drafts", []):
-                        results.append((group, draft))
-            return results
-
-        # 具体 draft_id：先按卡片编号解析，再按类型类别找，找不到再跨全部类别兑底
-        # （仅限具体 ID，不影响 all 批量路径的严格类型约束）
-        idx_ref = self._resolve_index_ref(target, draft_type)
-        if idx_ref:
-            return [idx_ref]
-        cats = categories or list(ALL_CATEGORIES)
-        for cat_key in cats:
-            for group in self.state.get(cat_key, []):
-                for draft in group.get("drafts", []):
-                    if draft.get("id") == target:
-                        return [(group, draft)]
-        return []
+        """收集目标 (group, draft) 对；委托领域层唯一实现"""
+        return ops.collect_drafts(self.state, target, draft_type)
 
     def _resolve_scene_refs(self, group: Dict) -> List[Dict[str, str]]:
         """解析分镜的 sceneRefs → 对应关键元素的概念图 URL 作为参考图"""
-        refs: List[Dict[str, str]] = []
-        scene_refs = group.get("sceneRefs") or []
-        if not scene_refs:
-            return refs
-        for ref_title in scene_refs:
-            if not isinstance(ref_title, str):
-                continue
-            for ke_group in self.state.get(CAT_KEY_ELEMENTS, []):
-                if ke_group.get("title") == ref_title:
-                    for d in ke_group.get("drafts", []):
-                        img = d.get("imgUrl") or ""
-                        if img:
-                            refs.append({"url": img, "role": "reference"})
-                            break
-                    break
-        return refs[:5]  # 最多 5 张参考图
+        return ops.resolve_scene_refs(self.state, group)
 
     def _submit_image_task(self, draft: Dict, provider_id: str, model: str, refs: List[Dict], aspect_ratio: str = "16:9", resolution: str = "1K") -> None:
         """提交异步生图任务（通过 GenerationTaskManager 统一管理）。
@@ -774,7 +615,7 @@ class StudioActionExecutor:
                         task_id=task_id,
                     )
                     writeback_if_complete(task_id)
-            except (GenerationError, Exception) as e:
+            except Exception as e:  # GenerationError 是 Exception 子类，此处统一兜底保证任务状态闭环
                 draft["tag"] = prev_tag  # 失败时恢复原标签，避免卡片永远卡在"生成中"
                 self.svc.save_debounced()
                 elapsed = round(time.time() - t0, 1)

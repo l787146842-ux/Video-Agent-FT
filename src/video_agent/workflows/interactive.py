@@ -163,7 +163,7 @@ def build_executors(
         )
         actions = executor.parse_actions_from_reply(content)
         actions = [a for a in actions if str(a.get("action", "")).lower() != "continue"]
-        applied = executor.execute(actions)
+        applied = await executor.execute_locked(actions)
         if applied == 0:
             raise GenerationError("LLM 未产出有效的 studio-actions（可能被截断或格式错误）")
         return {"detail": f"已新增 {applied} 个故事板分组/草稿"}

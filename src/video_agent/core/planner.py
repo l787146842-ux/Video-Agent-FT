@@ -25,7 +25,6 @@ from src.video_agent.tools.manager import ToolManager
 from src.video_agent.utils.prompts import load_prompt, render_prompt
 from src.video_agent.core.agent_loop import MAX_STEPS, run_agent_loop
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.web.actions import StudioActionExecutor
 from src.video_agent.workflows.engine import WorkflowEngine
 
 
@@ -173,11 +172,26 @@ class Planner:
         tool_manager: Optional[type] = None,   # ToolManager 是类级别注册，传类引用
         llm_adapter: Optional[BaseChatAdapter] = None,
         workflow_engine: Optional[WorkflowEngine] = None,
+        executor_factory: Optional[Callable[..., Any]] = None,
+        skill_docs: Optional[Any] = None,
     ):
-        self.state_manager = state_manager
+        # state_manager 缺省回落单例（Rule3）；core 层不绕过它直接碰状态
+        self.state_manager = state_manager or StateManager.get_instance()
         self.tool_manager = tool_manager or ToolManager
         self.llm_adapter = llm_adapter
         self.workflow_engine = workflow_engine
+        # executor_factory: 文本解析路径的执行器工厂（web 层装配时显式注入，
+        # 消除 core→web 顶层依赖；None 时延迟导入兼容测试/CLI 调用方）
+        self.executor_factory = executor_factory
+        # skill_docs: Skill 文档目录提供者（web.skill_docs 模块或等价对象），None 时延迟导入
+        self._skill_docs = skill_docs
+
+    def _get_skill_docs(self):
+        """Skill 文档提供者：优先注入实例，缺省延迟导入 web.skill_docs（Rule2 登记例外）"""
+        if self._skill_docs is None:
+            from src.video_agent.web import skill_docs as sd
+            self._skill_docs = sd
+        return self._skill_docs
 
     # ---------- 核心对话入口 ----------
 
@@ -193,10 +207,13 @@ class Planner:
         委托给 run_agent_loop 统一循环骨架，内部通过 llm_call 包装器处理双模式（FC / 文本解析）。
         stream_hook: 可选 async callable(text)，流式模式下每段 LLM 增量文本回调。
         """
-        # 构建 executor（文本解析路径用）
-        svc = StateManager.get_instance()
-        executor = StudioActionExecutor(
-            svc,
+        # 构建 executor（文本解析路径用）：优先注入的工厂，缺省延迟导入 web 层实现
+        factory = self.executor_factory
+        if factory is None:
+            from src.video_agent.web.actions import StudioActionExecutor
+            factory = StudioActionExecutor
+        executor = factory(
+            self.state_manager,
             selected_draft_id=context.selected_draft_id,
             selected_type=context.selected_type,
         )
@@ -329,7 +346,7 @@ class Planner:
         if settings.memory_enabled:
             MemoryManager.get_instance().record_dialog_background(
                 user_message, loop_result.text, self._make_summarize_fn(),
-                project_id=StateManager.get_instance().active_project_id,
+                project_id=self.state_manager.active_project_id,
             )
 
         return response
@@ -506,7 +523,7 @@ class Planner:
             if settings.memory_enabled:
                 query = self._last_user_text(context)
                 if query:
-                    project_id = StateManager.get_instance().active_project_id
+                    project_id = self.state_manager.active_project_id
                     memory_ctx = MemoryManager.get_instance().build_context(query, project_id=project_id)
                     if memory_ctx:
                         parts.append(memory_ctx)
@@ -522,13 +539,11 @@ class Planner:
 
         return "\n\n".join(parts)
 
-    @staticmethod
-    def _build_skill_catalog(context: PlannerContext) -> str:
+    def _build_skill_catalog(self, context: PlannerContext) -> str:
         """构建 Skill 目录（渐进式披露的「目录」）：全部文档 Skill 的名称+摘要常驻，
         全文不注入，模型判断相关性后调 read_skill 按需加载。
         代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
-        # 延迟导入，避免 core 层与 web/skills 的循环依赖
-        from src.video_agent.web.skill_docs import list_skill_docs
+        list_skill_docs = self._get_skill_docs().list_skill_docs
 
         lines: List[str] = []
         try:
@@ -552,10 +567,11 @@ class Planner:
             )
         return header
 
-    @staticmethod
-    def _build_selected_skill_block(skill_name: str) -> str:
+    def _build_selected_skill_block(self, skill_name: str) -> str:
         """选中 Skill 的全文注入块（硬保障，不依赖模型自觉调 read_skill）"""
-        from src.video_agent.web.skill_docs import build_foreign_tool_note, resolve_skill_content
+        sd = self._get_skill_docs()
+        build_foreign_tool_note = sd.build_foreign_tool_note
+        resolve_skill_content = sd.resolve_skill_content
         try:
             display, content = resolve_skill_content(skill_name)
         except Exception:  # 解析失败不阻断对话

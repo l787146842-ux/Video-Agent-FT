@@ -16,7 +16,8 @@
 - `core/agent_loop.py` 中的 `run_agent_loop()` 是多步循环的**唯一实现**（原 web/agent_loop.py 已下沉，旧路径仅为 DEPRECATED 兼容壳）
 - Planner 非流式路径委托给它，不得在其他地方复制循环逻辑
 - `MAX_STEPS` 从 `config.py settings.max_steps` 读取
-- **层级例外登记**：`web/action_executor.py`（StudioActionExecutor）因依赖 web 层生成管线暂留 web 层，core.planner 对它的引用是唯一允许的 core→web 依赖，后续重构时以依赖注入消除
+- **层级例外（已收敛）**：`web/action_executor.py`（StudioActionExecutor）因依赖 web 层生成管线暂留 web 层；core.planner 已通过构造注入消除顶层依赖（`executor_factory` / `skill_docs` 参数由 web 层装配传入，缺省时延迟导入兼容旧调用方）。新增 core→web 顶层 import 一律禁止
+- **动作语义唯一实现**：故事板增删改查的领域逻辑统一在 `state/storyboard_ops.py`，FC Tool（tools/storyboard_tools.py）与文本 executor（web/action_executor.py）必须委托它，禁止各自重写查找/字段白名单/类别映射
 
 ### Rule 3: StateManager 唯一写入点
 - `state/manager.py` 中的 `StateManager` 是状态的**唯一写入点**
