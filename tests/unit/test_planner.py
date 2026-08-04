@@ -80,7 +80,7 @@ class TestPlannerMultiStep:
         planner = Planner(llm_adapter=adapter)
         result = await planner.handle_message("无限循环", context)
 
-        from src.video_agent.web.agent_loop import MAX_STEPS
+        from src.video_agent.core.agent_loop import MAX_STEPS
         assert result.steps == MAX_STEPS
         assert any("上限" in w for w in result.warnings)
 

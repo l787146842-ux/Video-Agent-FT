@@ -2,7 +2,7 @@
 import pytest
 
 from src.video_agent.web.actions import StudioActionExecutor
-from src.video_agent.web.agent_loop import run_agent_loop
+from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.state.manager import StateManager
 
 

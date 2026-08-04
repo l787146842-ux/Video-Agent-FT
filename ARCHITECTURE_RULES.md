@@ -13,7 +13,7 @@
 - **禁止**在 route 中直接调用 LLM Adapter 或自行实现多步循环
 
 ### Rule 2: 多步循环唯一实现
-- `core/agent_loop.py` 中的 `run_agent_loop()` 是多步循环的**唯一实现**（原 web/agent_loop.py 已下沉，旧路径仅为 DEPRECATED 兼容壳）
+- `core/agent_loop.py` 中的 `run_agent_loop()` 是多步循环的**唯一实现**（web/agent_loop.py 兼容壳已于 2026-08 修复批次移除）
 - Planner 非流式路径委托给它，不得在其他地方复制循环逻辑
 - `MAX_STEPS` 从 `config.py settings.max_steps` 读取
 - **层级例外（已收敛）**：`web/action_executor.py`（StudioActionExecutor）因依赖 web 层生成管线暂留 web 层；core.planner 已通过构造注入消除顶层依赖（`executor_factory` / `skill_docs` 参数由 web 层装配传入，缺省时延迟导入兼容旧调用方）。新增 core→web 顶层 import 一律禁止
