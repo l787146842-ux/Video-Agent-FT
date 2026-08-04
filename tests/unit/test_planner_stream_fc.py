@@ -26,7 +26,7 @@ class FakeToolManager:
     @classmethod
     async def invoke_tool(cls, name: str, args: dict):
         cls.invoked.append((name, args))
-        return SimpleNamespace(success=True, error="")
+        return SimpleNamespace(success=True, error="", data=None)
 
 
 class FakeStreamFCAdapter(BaseChatAdapter):

@@ -458,7 +458,7 @@ async def batch_generate_image(body: BatchImageGenRequest):
                         requested_size=sn, source="batch",
                         task_id=tid,
                     )
-            except (GenerationError, Exception) as e:
+            except Exception as e:  # 统一兜底（GenerationError 是 Exception 子类），保证任务状态闭环
                 if task:
                     task["status"] = "failed"
                     task["error"] = str(e)
@@ -562,6 +562,8 @@ async def _poll_task(task_id: str) -> Dict[str, Any]:
             result = await adapter.fetch_result(task_id)
             if result.status == "completed":
                 task["status"] = "succeeded"
+                # result 可能是 VideoGenerationResponse 或 ImageGenerationResponse，
+                # 两者字段不重叠，getattr 是跨类型的合理探测（非冗余防御）
                 if getattr(result, "video_url", None):
                     # mock 视频适配器返回的是演示占位地址，替换为可播放的示例视频
                     task["video_url"] = MOCK_VIDEO_URL if task.get("mock") else result.video_url

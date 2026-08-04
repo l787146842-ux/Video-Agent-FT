@@ -306,7 +306,7 @@ class ImageGenerateTool(BaseTool):
                 )
                 results.append((draft, url))
                 ok += 1
-            except (GenerationError, Exception) as e:
+            except Exception as e:  # 统一兜底（GenerationError 是 Exception 子类），单卡失败不中断批量
                 failed.append(str(e))
 
         # 加锁写入结果并持久化

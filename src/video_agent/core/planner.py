@@ -869,9 +869,9 @@ class Planner:
                         "result_summary": desc,
                     })
                 tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True)
-                tool_results.append({"name": name, "ok": True, "data": getattr(result, "data", None)})
+                tool_results.append({"name": name, "ok": True, "data": result.data})
                 # --- 收集 generate_image 产出的图片 URL ---
-                data = getattr(result, "data", None)
+                data = result.data
                 if data and "image_urls" in data:
                     urls = data["image_urls"]
                     if isinstance(urls, list):
@@ -882,21 +882,21 @@ class Planner:
                     if isinstance(inserts, list):
                         chat_inserts.extend(inserts)
             else:
-                logger.warning(f"[Planner] Tool '{name}' failed: {getattr(result, 'error', '')}")
+                logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
                 if on_event is not None:
                     await on_event({
                         "type": "tool_finished",
                         "id": tool_event_id,
                         "ok": False,
                         "elapsed_ms": round(_tool_ms, 1),
-                        "result_summary": str(getattr(result, "error", "") or "执行失败")[:120],
+                        "result_summary": str(result.error or "执行失败")[:120],
                     })
                 tracer.record_action(
                     name=name, summary=start_summary, elapsed_ms=_tool_ms, ok=False,
                 )
                 tool_results.append({
                     "name": name, "ok": False,
-                    "error": str(getattr(result, "error", "") or "执行失败")[:200],
+                    "error": str(result.error or "执行失败")[:200],
                 })
         return applied, confirmation, image_urls, chat_inserts, action_log, tool_results
 
