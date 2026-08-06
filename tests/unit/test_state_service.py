@@ -25,11 +25,12 @@ def test_create_and_switch_project(svc):
     new_id = svc.create_project("新项目")
     assert svc.active_project_id == new_id
     assert svc.state_dict["project_name"] == "新项目"
-    # 产品意图：新建项目自带三分区默认占位分组（Element/Shot/Audio 各一个）
-    kes = svc.state_dict["keyElements"]
-    assert len(kes) == 1 and kes[0]["title"] == "Element_未命名"
-    assert len(svc.state_dict["shots"]) == 1
-    assert len(svc.state_dict["audioItems"]) == 1
+    # 产品意图：新建项目不预建任何占位分组与欢迎消息，
+    # 全部由 Agent 按任务拆解结果创建，避免执行任务前先删一遍空组
+    assert svc.state_dict["keyElements"] == []
+    assert svc.state_dict["shots"] == []
+    assert svc.state_dict["audioItems"] == []
+    assert svc.state_dict["chatMessages"] == []
 
     assert svc.switch_project(original) is True
     assert svc.active_project_id == original

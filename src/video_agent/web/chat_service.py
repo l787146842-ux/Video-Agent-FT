@@ -117,6 +117,25 @@ def truncate_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _resolve_skill_name_for_injection(skill_name: str, skill_slug: str) -> str:
+    """Skill 全文硬注入的键名兜底：前端选中项（skill_name）优先；
+    选中项为空但消息携带了 Skill 引用块（skill_slug）时，按 slug 解析出 Skill 名称，
+    保证「随消息发送过的 Skill 必定全文注入」，不依赖前端选中态与模型自觉 read_skill。
+    """
+    if skill_name:
+        return skill_name
+    if not skill_slug:
+        return ""
+    try:
+        from src.video_agent.web import skill_docs as sd
+        doc = sd.get_skill_doc(skill_slug)
+        if doc:
+            return str(doc.get("name") or skill_slug)
+    except Exception as e:
+        logger.warning(f"[ChatService] Skill slug({skill_slug}) 解析名称失败: {e}")
+    return skill_slug
+
+
 def _channel_supports_fc(provider_id: str) -> bool:
     """判断供应商的聊天通道是否支持 Function Calling。
 
@@ -176,6 +195,70 @@ def _build_meta_note(elapsed_secs: float, steps: int, applied: int) -> str:
     return " · ".join(parts)
 
 
+def _consume_pending_confirmation(svc) -> str:
+    """消费「等待确认」暂停态：用户的新消息即是对上一轮暂停的回应。
+
+    暂停态只写不清会让模型永远停在上一阶段；只清不带则模型看不到
+    「用户已确认」的信号，两者都会导致从头重复同一套操作（读同一文档→
+    写同一文档→再次请求确认）。此处同时完成：清除状态 + 把暂停说明
+    以系统提示形式附在本轮用户消息后，返回附加提示（无暂停时返回空串）。
+    调用方需持有 svc.lock。
+    """
+    interaction = svc.state_dict.get("interaction") or {}
+    # 故事板待确认窗口（步骤3→步骤4 分界）：不依赖 awaiting_confirmation，
+    # 用户任何新消息到达即视为已审阅故事板，解除提示词写入封锁
+    if interaction.get("storyboard_pending"):
+        interaction["storyboard_pending"] = False
+        svc.save()
+    # 确认闭环：上一轮展示过提示词草案（drafts_presented）且用户新消息到达，
+    # 将未被重写过的草稿晋升为「已确认」（生成闸的前置条件）；
+    # 期间被重写的草稿 tag 已在写入时重置，不会被误晋升
+    presented = [d for d in (interaction.get("drafts_presented") or []) if d]
+    if presented:
+        promoted = 0
+        presented_set = set(presented)
+        for cat in ("keyElements", "shots", "audioItems"):
+            for group in svc.state_dict.get(cat, []) or []:
+                for draft in group.get("drafts", []) or []:
+                    tag = str(draft.get("tag") or "").strip()
+                    if draft.get("id") in presented_set and tag in ("", "Agent", "草稿", "推荐"):
+                        draft["tag"] = "已确认"
+                        promoted += 1
+        interaction["drafts_presented"] = []
+        svc.save()
+        if promoted:
+            logger.info(f"[ConfirmFlow] 用户回应到达：{promoted} 个已展示的 Prompt Draft 晋升为「已确认」")
+    # 晋升兜底（8888 事故）：处于暂停态但 presented 记录缺失（记录链路异常或
+    # 草稿经未记录路径写入）时，用户对暂停的回应即视为对当前带提示词草稿的确认，
+    # 否则 tag 永远停在 Agent，生成闸反复拦截造成「确认了也出不了图」
+    if not presented and interaction.get("awaiting_confirmation"):
+        fallback_promoted = 0
+        for cat in ("keyElements", "shots", "audioItems"):
+            for group in svc.state_dict.get(cat, []) or []:
+                for draft in group.get("drafts", []) or []:
+                    tag = str(draft.get("tag") or "").strip()
+                    if (draft.get("prompt") or "").strip() and tag in ("", "Agent", "草稿", "推荐"):
+                        draft["tag"] = "已确认"
+                        fallback_promoted += 1
+        if fallback_promoted:
+            svc.save()
+            logger.info(f"[ConfirmFlow] presented 缺失兜底：{fallback_promoted} 个带提示词草稿晋升为「已确认」")
+    if not interaction.get("awaiting_confirmation"):
+        return ""
+    paused_msg = str(interaction.get("confirmation_message") or "")[:300]
+    interaction["awaiting_confirmation"] = False
+    interaction["confirmation_message"] = ""
+    svc.save()
+    return (
+        "\n\n（系统提示：上一轮 Agent 已通过 request_confirmation/workflow_pause 暂停并等待用户确认，"
+        f"暂停内容：{paused_msg}。用户本条消息即是对该暂停的回应（用户可能选择了候选项，也可能给出了自定义要求）："
+        "若用户表示确认/继续/没问题或给出了本阶段所需的选择，请先把当前阶段的产出物做完再暂停"
+        "（如规格选择收齐后必须先写入规格文档，严禁跳过直接去做下一阶段的拆分/生成）；"
+        "严禁重复已完成的步骤（如重新读取已读过的文档、重写已写入的规格文档）；"
+        "若用户提出修改意见或新需求，则按要求执行，完成后重新请求确认。）"
+    )
+
+
 async def stream_worker(body: Any, emit) -> None:
     """流式聊天的后台 worker（mock + 真实供应商）。
 
@@ -205,12 +288,20 @@ async def stream_worker(body: Any, emit) -> None:
             user_text = "请查看我上传的素材"
 
         use_studio_context = body.context_mode != "none"
+        # 确认闭环：上一轮停在「等待确认」时，本条消息即是对暂停的回应，
+        # 清除暂停态并把暂停说明带给模型，防止从头重复同一套操作
+        pending_confirm_note = ""
+        if use_studio_context:
+            async with svc.lock:
+                pending_confirm_note = _consume_pending_confirmation(svc)
         # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
         attachment_note = (
             attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
             if body.attachments else ""
         )
-        llm_user_text = f"{user_text}\n\n{attachment_note}" if attachment_note else user_text
+        llm_user_text = user_text + pending_confirm_note
+        if attachment_note:
+            llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
 
         # Skill 写入文档：消息携带 Skill 引用块时（前端此时才传 skill_slug），
         # 记入当前项目 usedSkills，文档面板只展示已发送过的 Skill 文档。
@@ -341,7 +432,11 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         if use_studio_context:
             bind_attachments(svc, body.attachments)
             store_uploaded_docs(svc, body.attachments)
-            svc.add_chat_message("user", user_text)
+            svc.add_chat_message(
+                "user", user_text,
+                doc_blocks=getattr(body, "doc_blocks", None) or None,
+                skill_blocks=getattr(body, "skill_blocks", None) or None,
+            )
 
     state_builder = (
         (lambda: svc.build_agent_context(body.asset_mode)) if use_studio_context else None
@@ -381,7 +476,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             degraded_state_builder=(
                 (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
             ),
-            skill_name=body.skill_name or "",
+            skill_name=_resolve_skill_name_for_injection(body.skill_name or "", body.skill_slug or ""),
             use_studio_context=use_studio_context,
             asset_mode=body.asset_mode,
             image_generation_provider=image_provider,
@@ -400,6 +495,16 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 elif event.type == "actions_applied":
                     applied_seen = True
                     await emit({"type": SSE_STATUS, "text": event.text})
+                    # 逐步可见：每批操作落盘后立即下发最新状态快照，
+                    # 前端不必等全部完成，推理中就能看到新建的分组/提示词
+                    if use_studio_context:
+                        await emit({
+                            "type": SSE_ACTIONS_APPLIED,
+                            "payload": {
+                                "count": (event.payload or {}).get("count", 0),
+                                "state": svc.get_full_snapshot(),
+                            },
+                        })
                 elif event.type in ("reasoning_delta", "tool_started", "tool_finished"):
                     # 过程时间线事件透传（深度思考增量 / 工具开始与完成），
                     # 仅 UI 展示用，不进下次 LLM 上下文
@@ -444,6 +549,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                         applied_actions=applied,
                         action_log=final_payload.get("action_log") or [],
                         trace=final_payload.get("trace") or {},
+                        confirm_options=final_payload.get("confirmation_options") or None,
                     )
                 # 文档完成卡片：独立条目持久化，刷新后可重建
                 for doc_name in (final_payload.get("documents_written") or []):
@@ -511,12 +617,19 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     )
 
     use_studio_context = body.context_mode != "none"
+    # 确认闭环（同流式路径）：消费上一轮的「等待确认」暂停态
+    pending_confirm_note = ""
+    if use_studio_context:
+        async with svc.lock:
+            pending_confirm_note = _consume_pending_confirmation(svc)
     # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
     attachment_note = (
         attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
         if body.attachments else ""
     )
-    llm_user_text = f"{user_text}\n\n{attachment_note}" if attachment_note else user_text
+    llm_user_text = user_text + pending_confirm_note
+    if attachment_note:
+        llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
 
     # Skill 写入文档：同 stream_worker（仅消息携带 Skill 引用块时前端才传 slug）
     if body.skill_slug:
@@ -528,7 +641,11 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         async with svc.lock:
             if use_studio_context:
                 bind_attachments(svc, body.attachments)
-                svc.add_chat_message("user", user_text)
+                svc.add_chat_message(
+                    "user", user_text,
+                    doc_blocks=getattr(body, "doc_blocks", None) or None,
+                    skill_blocks=getattr(body, "skill_blocks", None) or None,
+                )
             raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
             actions = executor.parse_actions_from_reply(raw_reply)
             visible = executor.strip_action_blocks(raw_reply) or raw_reply
@@ -559,7 +676,11 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         if use_studio_context:
             bind_attachments(svc, body.attachments)
             store_uploaded_docs(svc, body.attachments)
-            svc.add_chat_message("user", user_text)
+            svc.add_chat_message(
+                "user", user_text,
+                doc_blocks=getattr(body, "doc_blocks", None) or None,
+                skill_blocks=getattr(body, "skill_blocks", None) or None,
+            )
 
     # 状态惰性构建器（P0）：多步循环每轮刷新
     state_builder = (
@@ -577,7 +698,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         degraded_state_builder=(
             (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
         ),
-        skill_name=body.skill_name or "",
+        skill_name=_resolve_skill_name_for_injection(body.skill_name or "", body.skill_slug or ""),
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
         image_generation_provider=image_provider2,
         image_generation_aspect_ratio=image_aspect_ratio2,
@@ -644,6 +765,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     confirm=result.confirmation,
                     applied_actions=result.applied_actions,
                     action_log=result.action_log,
+                    confirm_options=result.confirmation_options or None,
                 )
             if result.image_urls:
                 svc.add_chat_message("agent", "", image_urls=result.image_urls)

@@ -31,7 +31,8 @@ export async function uploadAndInsert(file: File, insertMedia: InsertMedia): Pro
     } else {
       studioActions.addPendingAttachment({ id: uid('ast'), name, type: kind, url: uploaded.url });
     }
-    showToast(`已添加：${name}`, 'success');
+    // 发送前只是放进输入框，随下一条消息发送才真正附加给 Agent，文案不能误导为「已添加」
+    showToast(`已放入输入框：${name}，发送消息时一并附加`, 'success');
   } catch (e) {
     showToast((e as Error).message || '素材上传失败', 'error');
   }
@@ -73,7 +74,7 @@ export async function handlePasteImages(e: ClipboardEvent, insertMedia: InsertMe
     if (urls.length > 0) {
       e.preventDefault();
       urls.forEach((url) => insertMedia(imageMediaFromUrl(url)));
-      showToast(`已添加 ${urls.length} 张图片`, 'success');
+      showToast(`已放入输入框 ${urls.length} 张图片，发送消息时一并附加`, 'success');
     }
   }
 }
@@ -104,6 +105,6 @@ export function handleUrlDrop(dt: DataTransfer, insertMedia: InsertMedia): boole
   }
   if (urls.length === 0) return false;
   urls.slice(0, 8).forEach((url) => insertMedia(imageMediaFromUrl(url)));
-  showToast(`已添加 ${urls.length} 张图片`, 'success');
+  showToast(`已放入输入框 ${urls.length} 张图片，发送消息时一并附加`, 'success');
   return true;
 }

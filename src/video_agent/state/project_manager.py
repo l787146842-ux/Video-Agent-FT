@@ -58,75 +58,19 @@ class ProjectManager:
             self._repo.save_project(active_id, self._get_state())
 
         project_id = gen_id("proj")
+        # 新建项目不预建任何占位分组/欢迎消息：
+        # 关键元素/分镜/音频全部为空，由 Agent 按任务拆解结果创建，
+        # 避免每次执行任务还得先删一遍空占位组。
         new_state: Dict[str, Any] = {
             "project_id": project_id,
             "project_name": name,
             "status": "idle",
-            CAT_KEY_ELEMENTS: [
-                {
-                    "id": gen_id("grp"),
-                    "title": "Element_未命名",
-                    "desc": "",
-                    "drafts": [
-                        {
-                            "id": gen_id("draft"),
-                            "label": "草稿 1",
-                            "tag": "手动",
-                            "mediaType": "image",
-                            "imgUrl": "",
-                            "prompt": "",
-                            "model": "",
-                            "aspectRatio": "1:1",
-                        }
-                    ],
-                }
-            ],
-            CAT_SHOTS: [
-                {
-                    "id": gen_id("grp"),
-                    "title": "Shot_未命名",
-                    "duration": "5s",
-                    "roughDesc": "",
-                    "drafts": [
-                        {
-                            "id": gen_id("draft"),
-                            "label": "分镜 1",
-                            "tag": "手动",
-                            "mediaType": "video",
-                            "videoUrl": "",
-                            "prompt": "",
-                            "mode": "全能参考",
-                            "model": "",
-                        }
-                    ],
-                }
-            ],
-            CAT_AUDIO_ITEMS: [
-                {
-                    "id": gen_id("grp"),
-                    "title": "Audio_未命名",
-                    "timeRange": "",
-                    "prompt": "",
-                    "drafts": [
-                        {
-                            "id": gen_id("draft"),
-                            "label": "音频 1",
-                            "tag": "手动",
-                            "mediaType": "audio",
-                            "audioUrl": "",
-                            "prompt": "",
-                        }
-                    ],
-                }
-            ],
+            CAT_KEY_ELEMENTS: [],
+            CAT_SHOTS: [],
+            CAT_AUDIO_ITEMS: [],
             "assets": [],
             "documents": [],
-            "chatMessages": [
-                {
-                    "sender": "agent",
-                    "text": f"你好！我是你的 AI 编剧与导演助手。项目《{name}》已创建，告诉我你的创意目标，我来帮你规划关键元素、分镜和音频！",
-                }
-            ],
+            "chatMessages": [],
         }
 
         # 持久化新项目

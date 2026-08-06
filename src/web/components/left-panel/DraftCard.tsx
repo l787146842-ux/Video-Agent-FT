@@ -1,4 +1,4 @@
-import { Show } from 'solid-js';
+import { Show, createSignal, onMount, onCleanup } from 'solid-js';
 import { FiLogOut, FiMessageSquare, FiTrash2, FiVideo, FiMusic } from 'solid-icons/fi';
 import { state, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
@@ -29,8 +29,32 @@ export function DraftCard(props: {
   onDrop?: (e: DragEvent) => void;
   onDragEnd?: () => void;
 }) {
-  const selected = () => state.selectedDraftId === props.draft.id;
+  // 选中判定必须同时匹配 id 与类型：防止跨 tab 同 id 卡双高亮
+  const selected = () => state.selectedDraftId === props.draft.id && state.selectedType === props.type;
   const generating = () => !!state.activeGenerations[props.draft.id];
+
+  // 视频缩略图懒加载：进入视口才设置 src，避免切 tab/列表重建时
+  // 并发发起大量 metadata 请求撞浏览器每源 6 连接上限造成卡顿
+  const [inView, setInView] = createSignal(false);
+  let rootEl: HTMLDivElement | undefined;
+  let observer: IntersectionObserver | undefined;
+  onMount(() => {
+    if (!rootEl || typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setInView(true);
+          observer?.disconnect();
+        }
+      },
+      { rootMargin: '100px' },
+    );
+    observer.observe(rootEl);
+  });
+  onCleanup(() => observer?.disconnect());
 
   const bgStyle = () => {
     const d = props.draft;
@@ -111,6 +135,7 @@ export function DraftCard(props: {
 
   return (
     <div
+      ref={rootEl}
       class="draft-card-col"
       draggable={!!props.onDragStart}
       onDragStart={(e) => {
@@ -134,7 +159,7 @@ export function DraftCard(props: {
         onContextMenu={onContextMenu}
       >
       {/* 视频媒体：首帧缩略图 + 类型角标 */}
-        <Show when={props.draft.mediaType === 'video' && props.draft.videoUrl}>
+        <Show when={props.draft.mediaType === 'video' && props.draft.videoUrl && inView()}>
           <video
             class="draft-card-thumb-video"
             src={videoThumbUrl()}

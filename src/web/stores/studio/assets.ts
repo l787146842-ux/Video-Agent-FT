@@ -6,9 +6,15 @@ import { state, setState, groupsForType } from '../studio-core';
 import { storyboardActions, persistBoard } from './storyboard';
 
 export const assetActions = {
-  /** 选中未归类素材：只在中间预览区展示媒体，不切换故事板 subTab */
+  /** 选中未归类素材：只在中间预览区展示媒体，不切换故事板 subTab。
+   * 同步设置 selectedType（按素材媒体类型映射），与故事板选中语义保持一致。 */
   selectAsset(assetId: string) {
+    const asset = state.assets.find((a) => a.id === assetId);
+    const type: DraftType =
+      asset?.type === 'video' ? 'shot' : asset?.type === 'audio' ? 'audio' : 'keyElement';
     setState('selectedDraftId', assetId);
+    setState('selectedType', type);
+    setState('selectTick', (v) => v + 1);
   },
 
   /** 删除未归类素材（未归类面板右键菜单） */

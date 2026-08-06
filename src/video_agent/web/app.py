@@ -274,7 +274,10 @@ def main():
     logger.info(f"Static dir:   {STATIC_DIR}")
     logger.info(f"Workspace:    {WORKSPACE_DIR}")
     WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
-    uvicorn.run(app, host=settings.host, port=settings.port)
+    # timeout_graceful_shutdown：关停时浏览器 SSE/keep-alive 连接不会主动关闭，
+    # 不设超时进程会永远卡在 "Waiting for connections to close" 无法重启；
+    # 3 秒后强制断开剩余连接退出。
+    uvicorn.run(app, host=settings.host, port=settings.port, timeout_graceful_shutdown=3)
 
 
 if __name__ == "__main__":

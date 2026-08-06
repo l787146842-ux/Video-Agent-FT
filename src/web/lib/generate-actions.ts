@@ -90,12 +90,21 @@ export async function generateVideo(): Promise<void> {
   const resolution = draft.resolution || '1080p';
   const duration = parseInt(draft.duration || '5s', 10) || 5;
   const aspectRatio = draft.aspectRatio || '16:9';
-  // @引用解析：视频生成参考图上限 2（首帧/尾帧），@命中的素材自动纳入
-  const resolved = resolvePromptForGeneration(draft.prompt || '', draft.refAssets || [], 2);
-  const imageRefs = resolved.refs.map((url, index) => ({
-    url,
-    role: index === 0 ? 'first_frame' : index === 1 ? 'last_frame' : 'reference',
-  }));
+  // @引用解析：视频支持多参考图（元素概念图）+ 音色参考音频，上限 5
+  // 后端会再自动补充分镜 sceneRefs 元素图与 refAssets 音频（去重）
+  const resolved = resolvePromptForGeneration(draft.prompt || '', draft.refAssets || [], 5);
+  const imageRefs: Array<{ url: string; role: string }> = [];
+  const audioRefs: Array<{ url: string; role: string }> = [];
+  resolved.refs.forEach((url, index) => {
+    const kind = resolved.refKinds[index] || 'image';
+    if (kind === 'audio') {
+      audioRefs.push({ url, role: 'reference_audio' });
+    } else {
+      // 图片角色按图片自身序号：第一/二张兼容首/尾帧模式，其余为多参考图
+      const role = imageRefs.length === 0 ? 'first_frame' : imageRefs.length === 1 ? 'last_frame' : 'reference';
+      imageRefs.push({ url, role });
+    }
+  });
 
   if (!providerId || !model) { showToast('请先选择视频 API 和对应模型', 'warning'); return; }
   showToast('正在提交视频生成任务...', 'info');
@@ -108,7 +117,8 @@ export async function generateVideo(): Promise<void> {
       duration,
       resolution,
       aspect_ratio: aspectRatio,
-      images: imageRefs.slice(0, 2),
+      images: imageRefs.slice(0, 5),
+      audios: audioRefs.slice(0, 2),
       enhance_prompt: mode === '全能参考',
       multimodal: mode === '对口型数字人',
       draft_id: draft.id,

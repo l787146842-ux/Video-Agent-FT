@@ -28,16 +28,57 @@
   .chat-msg.agent .chat-bubble { background-color: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main); border-bottom-left-radius: 2px; }
   .msg-author { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; }
   .msg-meta { font-size: 10px; color: var(--text-muted); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
+
+  /* 无消息时（新建项目等）左上角淡显提示：只给大概能力说明，不占完整消息卡片 */
+  .chat-feed-hint { align-self: flex-start; margin: 2px 0 0 2px; font-size: 12px; line-height: 1.6; color: var(--text-dim); opacity: 0.55; max-width: 72%; pointer-events: none; }
+
+  /* 用户消息引用块（文档附件 / Skill）：发送后才附加，点击查看对应文档 */
+  .msg-ref-blocks { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .msg-ref-block { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 8px; font-size: 12px; line-height: 1.3; cursor: pointer; border: 1px solid transparent; max-width: 16em; }
+  .msg-ref-block .msg-ref-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msg-ref-doc { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.45); color: #93c5fd; }
+  .msg-ref-doc:hover { background: rgba(59, 130, 246, 0.25); }
+  .msg-ref-skill { background: rgba(139, 92, 246, 0.14); border-color: rgba(139, 92, 246, 0.5); color: #c4b5fd; }
+  .msg-ref-skill:hover { background: rgba(139, 92, 246, 0.25); }
   .chat-markdown { box-sizing: border-box; }
 
   /* 确认操作 */
   .confirm-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
   .chat-msg > .confirm-actions { margin-top: 8px; }
+
+  /* 确认卡片的候选选项（单选卡片，点击即把选项作为回复发送） */
+  .confirm-options { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .confirm-option-card { display: flex; align-items: flex-start; gap: 9px; text-align: left; padding: 9px 12px; border-radius: 8px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); transition: border-color 0.12s ease, background 0.12s ease; }
+  .confirm-option-card:hover { border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.08); }
+  .confirm-option-radio { flex-shrink: 0; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--text-muted); }
+  .confirm-option-card:hover .confirm-option-radio { border-color: var(--accent-blue); box-shadow: inset 0 0 0 3.5px var(--accent-blue); }
+  .confirm-option-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .confirm-option-label { font-size: 13px; font-weight: 600; color: var(--text-main); line-height: 1.4; }
+  .confirm-option-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
   .confirm-btn { padding: 4px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); }
   .confirm-btn.primary { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
   .confirm-btn.secondary { background: var(--bg-tertiary); color: var(--text-muted); }
   .confirm-btn.secondary:hover { color: var(--text-main); }
+  .confirm-btn.secondary.active { color: #93c5fd; border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.10); }
   .confirm-btn:hover { filter: brightness(1.15); }
+  .confirm-btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+
+  /* 分页选择向导（多维度一次性收集：逐页选择，末页发送） */
+  .confirm-wizard { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(255, 255, 255, 0.02); }
+  .confirm-wizard-question { font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; }
+  .confirm-option-card.selected { border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.10); }
+  .confirm-option-card.selected .confirm-option-radio { border-color: var(--accent-blue); box-shadow: inset 0 0 0 3.5px var(--accent-blue); }
+  .confirm-wizard-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  .confirm-wizard-actions { display: flex; align-items: center; gap: 6px; }
+  .confirm-wizard-hint { font-size: 11px; color: var(--text-dim); }
+  /* 组内自定义输入框（「其它（自定义输入）」展开后在组内直接输入，支持 Ctrl+Enter 发送） */
+  .confirm-custom-input { display: block; width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-main); font-size: 12.5px; line-height: 1.6; font-family: inherit; resize: vertical; outline: none; }
+  .confirm-custom-input:focus { border-color: var(--accent-blue); }
+  .confirm-custom-input::placeholder { color: var(--text-dim); }
+  .confirm-wizard-pager { display: flex; align-items: center; gap: 8px; }
+  .confirm-wizard-arrow { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); cursor: pointer; font-size: 14px; line-height: 1; }
+  .confirm-wizard-arrow:disabled { opacity: 0.35; cursor: not-allowed; }
+  .confirm-wizard-indicator { font-size: 12px; color: var(--text-muted); }
 
   /* 文档卡片 */
   .doc-card { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(255, 255, 255, 0.03); cursor: pointer; max-width: 92%; }
@@ -78,6 +119,10 @@
   .tl-icon-thinking { color: #f0a94b; flex-shrink: 0; }
   .tl-icon-done { color: #34d399; flex-shrink: 0; }
   .tl-reasoning { font-size: 11px; color: var(--text-muted); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+  /* 流式深度思考定高视窗：新文字顶上来、旧文字隐藏，无需手动滚轮追输出 */
+  .tl-reasoning-live { max-height: 102px; overflow: hidden; }
+  /* 深度思考完成后的耗时角标 */
+  .tl-panel-elapsed { font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
   .tl-item-list { margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; list-style: none; }
   .tl-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.7; }
   .tl-item-icon { flex-shrink: 0; }
@@ -119,6 +164,28 @@
   .send-btn:hover { background-color: var(--accent-blue); border-color: var(--accent-blue); color: #ffffff; }
   .send-btn-busy { background-color: rgba(239, 68, 68, 0.8); border-color: #ef4444; color: #ffffff; }
   .send-btn-busy:hover { background-color: #ef4444; }
+  /* 推理中的独立停止键（发送键保持可用，消息进排队） */
+  .send-btn-stop { background-color: rgba(239, 68, 68, 0.8); border-color: #ef4444; color: #ffffff; }
+  .send-btn-stop:hover { background-color: #ef4444; }
+
+  /* 排队引导区（推理中继续发送的消息，Agent 完成后自动发出） */
+  .queued-bar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; padding: 7px 9px; border: 1px dashed rgba(59, 130, 246, 0.45); border-radius: 8px; background: rgba(59, 130, 246, 0.05); }
+  .queued-bar-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .queued-bar-title { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queued-bar-clear { flex-shrink: 0; background: none; border: none; font-size: 11px; color: var(--text-dim); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+  .queued-bar-clear:hover { color: #ef4444; background: rgba(239, 68, 68, 0.08); }
+  .queued-chip { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; background: var(--bg-tertiary); border: 1px solid var(--border-color); }
+  .queued-chip-text { flex: 1; min-width: 0; font-size: 12px; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queued-chip-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .queued-action { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: 11px; color: var(--text-muted); background: none; border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .queued-action:hover { color: var(--text-main); border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.08); }
+  .queued-action-guide:hover { color: #ffffff; background-color: var(--accent-blue); border-color: var(--accent-blue); }
+  .queued-more-wrap { position: relative; display: inline-flex; }
+  .queued-more-btn { padding: 3px 5px; }
+  .queued-more-menu { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 90; display: flex; flex-direction: column; min-width: 150px; padding: 4px; background: #1f2430; border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); }
+  html.light .queued-more-menu { background: #ffffff; }
+  .queued-more-menu button { display: flex; align-items: center; gap: 7px; padding: 6px 9px; background: none; border: none; border-radius: 5px; font-size: 12px; color: var(--text-main); text-align: left; cursor: pointer; }
+  .queued-more-menu button:hover { background: rgba(59, 130, 246, 0.1); }
 
   /* 上下文用量状态图标（发送按钮旁）：悬停显示已用多少K上下文 */
   .context-usage-wrap { position: relative; display: flex; align-items: center; }
@@ -441,8 +508,8 @@
   .skill-modal-tab.active { color: var(--text-main); border-bottom: 2px solid var(--accent-blue); border-radius: 6px 6px 0 0; }
   .skill-modal-close { width: 30px; height: 30px; border-radius: 8px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.12s; }
   .skill-modal-close:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-main); }
-  .skill-modal-title { padding: 12px 18px 0; font-size: 16px; font-weight: 600; color: var(--text-main); }
-  .skill-modal-body { flex: 1; overflow-y: auto; padding: 14px 18px; min-height: 120px; }
+  .skill-modal-title { padding: 12px 18px 0; font-size: 16px; font-weight: 600; color: var(--text-main); user-select: text; -webkit-user-select: text; }
+  .skill-modal-body { flex: 1; overflow-y: auto; padding: 14px 18px; min-height: 120px; user-select: text; -webkit-user-select: text; cursor: text; }
   .skill-modal-intro { font-size: 13px; line-height: 1.7; color: var(--text-secondary); display: flex; flex-direction: column; gap: 10px; }
   .skill-modal-intro-editor { width: 100%; min-height: 80px; resize: vertical; padding: 10px 12px; font-size: 13px; line-height: 1.7; color: var(--text-main); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; font-family: inherit; transition: border-color 0.15s; }
   .skill-modal-intro-editor:focus { outline: none; border-color: rgba(59, 130, 246, 0.5); }
@@ -451,7 +518,9 @@
   .skill-modal-intro-save:disabled { opacity: 0.5; cursor: not-allowed; }
   .skill-modal-content { font-size: 12.5px; line-height: 1.7; }
   .skill-modal-content-raw { font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; font-family: 'Consolas', 'Monaco', monospace; color: var(--text-secondary); background: var(--bg-tertiary); border-radius: 8px; padding: 14px; }
-  .skill-modal-view-toggle { display: flex; gap: 4px; margin-bottom: 10px; justify-content: flex-end; }
+  .skill-modal-view-toggle { display: flex; gap: 4px; margin-bottom: 10px; justify-content: flex-end; align-items: center; }
+  .skill-modal-copy-btn { display: flex; align-items: center; gap: 5px; margin-right: auto; padding: 5px 12px; font-size: 12px; border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 6px; background: rgba(59, 130, 246, 0.12); color: #93c5fd; cursor: pointer; transition: background 0.12s; }
+  .skill-modal-copy-btn:hover { background: rgba(59, 130, 246, 0.22); }
   .skill-modal-view-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.12s, color 0.12s; }
   .skill-modal-view-btn:hover { background: rgba(59, 130, 246, 0.12); color: #93c5fd; }
   .skill-modal-view-btn.active { background: rgba(59, 130, 246, 0.15); color: #93c5fd; border-color: rgba(59, 130, 246, 0.4); }

@@ -62,6 +62,53 @@ _MIME_BY_SUFFIX = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp",
 }
+_MIME_TO_SUFFIX = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+
+
+async def persist_remote_image(url: str, max_bytes: int = 20 * 1024 * 1024) -> str:
+    """把供应商返回的远程图片立即落盘到本地存储，返回本地 URL。
+
+    部分图片中转站返回的是有时效的临时托管链接（如 aitohumanize.com），
+    几小时后即失效，导致后续视频生成把死链发给下游 API 报 400。
+    生成成功时立刻下载内联，之后统一使用本地素材。
+    下载失败时保留原 URL（浏览器可能仍可访问），仅记录告警。
+    """
+    url = (url or "").strip()
+    if not url.lower().startswith(("http://", "https://")):
+        return url
+    try:
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200 or not resp.content:
+            logger.warning(
+                f"[ImageAdapter] 远程图片下载失败(HTTP {resp.status_code})，保留原 URL: {url}"
+            )
+            return url
+        raw = resp.content
+        if len(raw) > max_bytes:
+            logger.warning(
+                f"[ImageAdapter] 远程图片 {len(raw) // 1024}KB 超过 {max_bytes // 1024}KB，保留原 URL: {url}"
+            )
+            return url
+        ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+        ext = Path(urlparse(url).path).suffix.lower()
+        if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+            ext = _MIME_TO_SUFFIX.get(ctype, ".png")
+        if ext == ".jpeg":
+            ext = ".jpg"
+        storage = get_storage()
+        name = f"{gen_id('gen', wide=True)}{ext}"
+        saved = storage.save(raw, name, ctype or f"image/{ext.lstrip('.')}")
+        logger.info(f"[ImageAdapter] 远程图片已落盘: {url} -> {saved} ({len(raw)} bytes)")
+        return saved
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[ImageAdapter] 远程图片落盘失败，保留原 URL: {url} ({e})")
+        return url
 
 
 async def ref_to_data_uri(url: str) -> str:
@@ -142,6 +189,17 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
     def supports_function_calling(self) -> bool:
         return True
 
+    def _apply_thinking_level(self, payload: Dict[str, Any]) -> None:
+        """按配置透传 thinking/reasoning 档位。
+
+        缺省（空配置）不下发任何字段，保持端点默认行为；
+        配置 low/medium/high 时按 OpenAI 兼容 reasoning_effort 透传，
+        用于缩短推理模型的思考静默期。不支持的端点静默忽略或报 400（此时应置空配置）。
+        """
+        level = (settings.llm_thinking_level or "").strip().lower()
+        if level in ("low", "medium", "high"):
+            payload["reasoning_effort"] = level
+
     async def chat(
         self,
         messages: List[Dict[str, Any]],
@@ -165,6 +223,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         }
         if tools:
             payload["tools"] = tools
+        self._apply_thinking_level(payload)
 
         try:
             client = self._get_client(timeout)
@@ -228,6 +287,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         }
         if tools:
             payload["tools"] = tools
+        self._apply_thinking_level(payload)
 
         # 首块产出前遇瞬时故障（上游 5xx 繁忙 / 连接失败）指数退避重试，
         # 与非流式路径的 with_retry 对齐；已开始产出内容则不重试（避免内容重复）。
@@ -439,6 +499,9 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
                     url = images_data[0].get("url", "")
                     if not url and images_data[0].get("b64_json"):
                         url = persist_data_uri(f"data:image/png;base64,{images_data[0]['b64_json']}")
+                    elif url.lower().startswith(("http://", "https://")):
+                        # 临时托管链立即落盘，避免过期后成为下游死链
+                        url = await persist_remote_image(url)
                     if url:
                         return ImageGenerationResponse(
                             task_id=f"img-{int(time.time())}", status="completed", image_urls=[url]
@@ -493,6 +556,8 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
                         url = part.get("image_url", {}).get("url", "")
                         if url.startswith("data:image/"):
                             url = persist_data_uri(url)
+                        elif url.lower().startswith(("http://", "https://")):
+                            url = await persist_remote_image(url)
                         if url:
                             return ImageGenerationResponse(
                                 task_id=f"img-{int(time.time())}", status="completed", image_urls=[url]
@@ -508,8 +573,9 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
 
             url_match = _HTTP_IMAGE_RE.search(content)
             if url_match:
+                url = await persist_remote_image(url_match.group(0))
                 return ImageGenerationResponse(
-                    task_id=f"img-{int(time.time())}", status="completed", image_urls=[url_match.group(0)]
+                    task_id=f"img-{int(time.time())}", status="completed", image_urls=[url]
                 )
 
             errors.append("供应商没有返回任何图片")

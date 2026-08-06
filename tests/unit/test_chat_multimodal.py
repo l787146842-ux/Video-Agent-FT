@@ -5,8 +5,19 @@ P1-6 拆分后多模态构建逻辑位于 multimodal_builder 模块。
 import src.video_agent.web.multimodal_builder as cs
 
 
-async def test_interleaved_text_image_order():
-    """文字-图片-文字按顺序交错，图片插在文字之间而非全部追加到末尾"""
+def _fake_fetch(url: str):
+    """造一个 fetch_remote_image_data_uri 替身：模拟服务端代下载成功"""
+    async def _fetch(u: str) -> str:
+        if u == url:
+            stem = u.rsplit("/", 1)[-1].split(".")[0]
+            return f"data:image/png;base64,{stem}"
+        return ""
+    return _fetch
+
+
+async def test_interleaved_text_image_order(monkeypatch):
+    """文字-图片-文字按顺序交错，图片插在文字之间而非全部追加在末尾"""
+    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/a.png"))
     parts = [
         {"type": "text", "text": "请看"},
         {"type": "image", "url": "https://cdn/a.png", "name": "图A"},
@@ -16,7 +27,7 @@ async def test_interleaved_text_image_order():
     assert isinstance(result, list)
     assert result[0] == {"type": "text", "text": "请看"}
     assert result[1]["type"] == "image_url"
-    assert result[1]["image_url"]["url"] == "https://cdn/a.png"
+    assert result[1]["image_url"]["url"] == "data:image/png;base64,a"
     assert result[2] == {"type": "text", "text": "的画面"}
 
 
@@ -34,16 +45,17 @@ async def test_video_audio_become_text_markers():
     assert "[audio: 配乐]" in result
 
 
-async def test_video_with_poster_injects_frame_image():
+async def test_video_with_poster_injects_frame_image(monkeypatch):
     """视频带首帧海报图时，除标记外额外注入 image_url，让模型「看到」画面"""
+    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/frame.png"))
     parts = [
         {"type": "text", "text": "看这个"},
         {"type": "video", "url": "/workspace/v.mp4", "name": "分镜1", "thumb": "https://cdn/frame.png"},
     ]
     result = await cs._build_interleaved_content(parts)
     assert isinstance(result, list)
-    # 标记文本 + 首帧图片都被注入
-    assert any(p.get("type") == "image_url" and p["image_url"]["url"] == "https://cdn/frame.png" for p in result)
+    # 标记文本 + 首帧图片（服务端代下载后的 data URI）都被注入
+    assert any(p.get("type") == "image_url" and p["image_url"]["url"] == "data:image/png;base64,frame" for p in result)
     assert any(p.get("type") == "text" and "[video: 分镜1]" in p.get("text", "") for p in result)
 
 
@@ -70,8 +82,9 @@ async def test_local_image_converted_to_data_uri(monkeypatch):
     assert result[0]["image_url"]["url"] == "data:image/png;base64,AAA"
 
 
-async def test_build_multimodal_prefers_content_parts():
+async def test_build_multimodal_prefers_content_parts(monkeypatch):
     """build_multimodal_content 有 content_parts 时优先走交错路径"""
+    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/x.png"))
     parts = [
         {"type": "text", "text": "图"},
         {"type": "image", "url": "https://cdn/x.png", "name": "X"},
@@ -87,25 +100,28 @@ async def test_build_multimodal_fallback_without_parts():
     assert result == "你好"
 
 
-async def test_extra_bound_images_appended():
-    """已绑定素材图片追加到交错内容末尾"""
+async def test_extra_bound_images_appended(monkeypatch):
+    """已绑定素材图片追加到交错内容末尾（远程图服务端代下载后内联）"""
+    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/bound.png"))
     parts = [{"type": "text", "text": "你好"}]
     result = await cs._build_interleaved_content(parts, "", ["https://cdn/bound.png"])
     assert isinstance(result, list)
     assert result[-1]["type"] == "image_url"
-    assert result[-1]["image_url"]["url"] == "https://cdn/bound.png"
+    assert result[-1]["image_url"]["url"] == "data:image/png;base64,bound"
 
 
-async def test_build_multimodal_merges_bound_images():
+async def test_build_multimodal_merges_bound_images(monkeypatch):
     """content_parts 路径仍注入 images 参数（已绑定素材），不丢失原有能力"""
+    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/bound.png"))
     parts = [{"type": "text", "text": "你好"}]
     result = await cs.build_multimodal_content("x", [], ["https://cdn/bound.png"], parts)
     assert isinstance(result, list)
     assert any(p.get("type") == "image_url" for p in result)
 
 
-async def test_build_multimodal_dedupes_inline_and_bound():
+async def test_build_multimodal_dedupes_inline_and_bound(monkeypatch):
     """内联图片与已绑定素材重复时不重复注入"""
+    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/a.png"))
     parts = [{"type": "image", "url": "https://cdn/a.png", "name": "A"}]
     result = await cs.build_multimodal_content("x", [], ["https://cdn/a.png"], parts)
     img_count = sum(1 for p in result if p.get("type") == "image_url")

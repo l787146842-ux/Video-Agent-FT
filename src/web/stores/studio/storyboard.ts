@@ -10,7 +10,7 @@ import { debounce, uid } from '@/lib/utils';
 import {
   state, setState,
   fieldForType, fieldForSubTab, groupsForType,
-  subTabForType, findDraftRecord, selectFirstDraft,
+  findDraftRecord, selectFirstDraft,
 } from '../studio-core';
 import { uiActions } from './ui';
 
@@ -283,15 +283,16 @@ export const storyboardActions = {
    * 每次点卡片/输入提示词都全量重渲染左栏（含视频缩略图重新加载），造成明显卡顿。 */
   updateDraftLocal(type: DraftType, draftId: string, patch: Partial<Draft>) {
     const field = fieldForType(type);
-    setState(field, (prev: AnyGroup[]) =>
-      prev.map((g) => {
-        if (!(g.drafts || []).some((d) => d.id === draftId)) return g;
-        return {
-          ...g,
-          drafts: (g.drafts || []).map((d) => (d.id === draftId ? { ...d, ...patch } : d)),
-        };
-      }),
-    );
+    // 无实际变化直接返回：不替换数组、不触发 persistBoard，
+    // 避免整组级联重算与无效 PUT（点击卡片时的校正 effect 是主要调用源）
+    const target = (state[field] as AnyGroup[]).flatMap((g) => g.drafts || []).find((d) => d.id === draftId);
+    if (!target) return;
+    const changed = (Object.keys(patch) as Array<keyof Draft>).some((k) => target[k] !== patch[k]);
+    if (!changed) return;
+    setState(field, (prev: AnyGroup[]) => prev.map((g) => {
+      if (!(g.drafts || []).some((d) => d.id === draftId)) return g;
+      return { ...g, drafts: g.drafts!.map((d) => (d.id === draftId ? { ...d, ...patch } : d)) };
+    }));
     persistBoard();
   },
 };

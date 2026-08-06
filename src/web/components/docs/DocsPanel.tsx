@@ -1,83 +1,86 @@
-import { createSignal, createEffect, Show } from 'solid-js';
+import { createSignal, createEffect, Show, type JSX } from 'solid-js';
 import {
-  FiEdit2, FiSave, FiTrash2,
+  FiEdit2, FiSave, FiTrash2, FiX,
 } from 'solid-icons/fi';
 import {
   docsPanelOpen, closeDocsPanel, current,
   editing, viewMode, setViewMode, startEdit, cancelEdit,
   saveCurrentDoc, deleteDoc, currentContent, currentDisplayName,
-  draftContent, setDraftContent, rollbackSkillDoc,
+  draftContent, setDraftContent,
 } from '@/stores/docs';
-import { getSkillDocHistory, type SkillDocVersion } from '@/api/docs';
 import { renderMarkdown } from '@/lib/markdown';
-import { SkillHistoryControls } from './SkillHistoryControls';
 import { DocsSidebar } from './DocsSidebar';
 
 /**
- * 文档面板（右侧覆盖层）
+ * 文档面板（可拖拽浮窗）
+ * - 非模态：无遮罩背板，打开后仍可正常操作影视工作台；只能点右上角 × 关闭
+ * - 顶部栏（左栏头 + 右栏头）按住可用鼠标拖动整个窗口
  * 三段列表：项目文档 / 上传素材 / Skill 文档
  * 查看器：read（渲染）/ md（源码）切换 + 编辑保存
  */
 export function DocsPanel() {
-  // ===== Skill 文档历史版本（查看/回滚） =====
-  const [historyVersions, setHistoryVersions] = createSignal<SkillDocVersion[]>([]);
-  const [selectedVersion, setSelectedVersion] = createSignal('');
+  // ===== 拖拽定位：null = 默认居中，拖动后记录窗口左上角坐标 =====
+  const [pos, setPos] = createSignal<{ x: number; y: number } | null>(null);
+  let panelEl: HTMLDivElement | undefined;
+  let dragOffset: { dx: number; dy: number } | null = null;
 
-  // 切换到 Skill 文档时加载历史版本；其他文档清空
+  // 每次重新打开面板时回到默认居中位置
   createEffect(() => {
-    const cur = current();
-    setSelectedVersion('');
-    if (cur?.kind === 'skill') {
-      getSkillDocHistory(cur.key)
-        .then(setHistoryVersions)
-        .catch(() => setHistoryVersions([]));
-    } else {
-      setHistoryVersions([]);
-    }
+    if (docsPanelOpen()) setPos(null);
   });
 
-  /** 当前展示内容：选中历史版本时展示旧版，否则展示当前版 */
-  const displayContent = () => {
-    const sel = selectedVersion();
-    if (sel) {
-      const hit = historyVersions().find((v) => v.version === sel);
-      if (hit) return hit.content;
-    }
-    return currentContent();
+  /** 顶部栏按下开始拖拽（忽略按钮/下拉等可交互元素上的按下） */
+  const startDrag = (e: PointerEvent & { currentTarget: HTMLElement }) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, select, input, textarea, a')) return;
+    const el = panelEl;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragOffset = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    e.preventDefault();
+    const onMove = (ev: PointerEvent) => {
+      if (!dragOffset || !panelEl) return;
+      const w = panelEl.offsetWidth;
+      const x = Math.min(
+        Math.max(ev.clientX - dragOffset.dx, 8),
+        Math.max(8, window.innerWidth - w - 8),
+      );
+      const y = Math.min(
+        Math.max(ev.clientY - dragOffset.dy, 8),
+        Math.max(8, window.innerHeight - 60),
+      );
+      setPos({ x, y });
+    };
+    const onUp = () => {
+      dragOffset = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const panelStyle = (): JSX.CSSProperties | undefined => {
+    const p = pos();
+    return p ? { position: 'fixed', left: `${p.x}px`, top: `${p.y}px` } : undefined;
   };
 
   return (
     <Show when={docsPanelOpen()}>
-      {/* 旧版 docs-panel：居中模态（点击背板关闭） */}
-      <div
-        class="docs-panel"
-        onClick={(e) => e.target === e.currentTarget && closeDocsPanel()}
-      >
-        <div class="docs-panel-inner">
+      {/* 非模态浮窗容器：无背板，pointer-events 仅窗口本体生效 */}
+      <div class="docs-panel">
+        <div class="docs-panel-inner" ref={panelEl} style={panelStyle()}>
           {/* 文档列表（拆出子组件） */}
-          <DocsSidebar />
+          <DocsSidebar onHeaderDrag={startDrag} />
 
           {/* 查看器 */}
           <div class="docs-content">
-            {/* 头部：文件名 + 模式切换 + 编辑/保存 */}
-            <div class="docs-content-header">
+            {/* 头部：文件名 + 模式切换 + 编辑/保存 + 右上角关闭 */}
+            <div class="docs-content-header" onPointerDown={startDrag}>
               <span class="docs-current-name">
                 {currentDisplayName() || '未选择文档'}
               </span>
               <div class="docs-content-actions">
-                {/* Skill 文档历史版本（查看/回滚，后端保存时自动备份最近 10 版） */}
-                <Show when={!editing() && current()?.kind === 'skill' && historyVersions().length > 0}>
-                  <SkillHistoryControls
-                    versions={historyVersions()}
-                    selected={selectedVersion()}
-                    onSelect={setSelectedVersion}
-                    onRollback={(v) => {
-                      if (current()) {
-                        void rollbackSkillDoc(current()!.key, v.content).then(() => setSelectedVersion(''));
-                      }
-                    }}
-                  />
-                </Show>
                 <Show when={!editing()}>
                   <div class="docs-mode-toggle">
                     <button
@@ -137,6 +140,15 @@ export function DocsPanel() {
                     </button>
                   </Show>
                 </Show>
+                {/* 关闭按钮：界面右上角，手动点 × 才关闭 */}
+                <button
+                  type="button"
+                  class="docs-panel-close"
+                  title="关闭"
+                  onClick={closeDocsPanel}
+                >
+                  <FiX size={16} />
+                </button>
               </div>
             </div>
 
@@ -151,12 +163,12 @@ export function DocsPanel() {
                   <Show
                     when={viewMode() === 'read'}
                     fallback={
-                      <pre class="docs-viewer">{displayContent()}</pre>
+                      <pre class="docs-viewer">{currentContent()}</pre>
                     }
                   >
                     <div
                       class="docs-rendered"
-                      innerHTML={renderMarkdown(displayContent())}
+                      innerHTML={renderMarkdown(currentContent())}
                     />
                   </Show>
                 }

@@ -30,31 +30,32 @@ export function ParamControls() {
     return d?.genType || d?.mediaType || 'image';
   };
 
-  // 供应商/模型兌底：仅在切换草稿、切换类型或切换生成媒体类型时校正
+  // 供应商/模型兌底：仅在切换草稿、切换类型或供应商加载完成时校正
   createEffect(() => {
-    // 跟踪选中状态 + 生成媒体类型（mediaType）+ 供应商加载
+    // 跟踪选中状态 + 供应商加载（draft 数据读取全部移入 untrack，
+    // 避免校正写回又触发本 effect 的级联循环）
     const draftId = state.selectedDraftId;
     const type = state.selectedType;
     void state.apiProviders; // 读取以建立响应式跟踪：供应商加载后触发校正
     if (!draftId || !type) return;
-    const r0 = findDraftRecord(draftId, type);
-    // 生成类型（genType 优先，回退 mediaType）决定供应商种类
-    const genType = r0?.draft.genType || r0?.draft.mediaType || 'image';
-  
-    // 以下读取用 untrack 包裹，避免 effect 跟踪 draft 数据变更导致无限循环
+
     untrack(() => {
       const r = findDraftRecord(draftId, type);
       if (!r) return;
+      // 生成类型（genType 优先，回退 mediaType）决定供应商种类
+      const genType = r.draft.genType || r.draft.mediaType || 'image';
       const kind = providerKindFor(type, genType);
       let pid = r.draft.providerId || '';
       if (!providerModels(pid, kind).length) {
         pid = preferredProviderIdForKind(kind, apiProvidersFor(kind));
       }
       const models = providerModels(pid, kind);
+      // 模型列表为空（供应商未就绪）时跳过：patch.model='' 会永不收敛地循环写回
+      if (!models.length) return;
       const currentModel = r.draft.model || '';
       const patch: Record<string, string> = {};
       if (pid && pid !== r.draft.providerId) patch.providerId = pid;
-      if (!models.includes(currentModel)) patch.model = models[0] || '';
+      if (!models.includes(currentModel) && models[0] !== currentModel) patch.model = models[0];
       if (Object.keys(patch).length) {
         studioActions.updateDraftLocal(type, r.draft.id, patch);
       }

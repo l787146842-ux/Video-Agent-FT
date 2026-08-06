@@ -49,8 +49,11 @@ function normalizeParts(input: string | RichContentPart[]): RichContentPart[] {
  * - string：纯文本（微调按钮 / 确认按钮等纯文字场景）
  * - RichContentPart[]：有序富文本（文字与内联缩略图交错，来自富文本输入框）
  *
- * 返回 true 表示消息已受理发送（调用方可据此清空输入框）；
- * false 表示被拦截（内容为空 / 未选供应商模型 / Agent 忙碌）。
+ * 返回 true 表示消息已受理发送或已入队（调用方可据此清空输入框）；
+ * false 表示被拦截（内容为空 / 未选供应商模型）。
+ *
+ * Agent 忙碌（推理中）时不拦截：消息进入排队引导区（输入框顶部），
+ * 当前任务完成后由 ChatInput 的自动出队逻辑按序发出。
  */
 export async function sendUserMessage(input: string | RichContentPart[]): Promise<boolean> {
   const parts = normalizeParts(input);
@@ -59,7 +62,7 @@ export async function sendUserMessage(input: string | RichContentPart[]): Promis
   >;
   const docAttachments = state.pendingAttachments;
   const hasContent = parts.length > 0 || docAttachments.length > 0;
-  if (!hasContent || state.agentBusy) return false;
+  if (!hasContent) return false;
 
   const provider = agentProvider();
   const model = agentModel();
@@ -73,12 +76,18 @@ export async function sendUserMessage(input: string | RichContentPart[]): Promis
   // 纯文本正文：媒体以 [图片:名称] 占位符保留位置（message 字段 / 历史 / mock 用）
   const message = partsToPlainText(parts).trim() || '请查看我上传的素材';
 
-  // 显示文本：正文 + 附件名（内联媒体已由 parts 在气泡里还原，此处主要是素材库/文档附件）
-  let displayText = message;
-  if (docAttachments.length > 0) {
-    const names = docAttachments.map((a) => a.name).join('、');
-    const prefix = `[已上传并绑定素材] ${names}`;
-    displayText = message && message !== '请查看我上传的素材' ? `${prefix}\n${message}` : prefix;
+  // 文档/Skill 引用块：发送后才真正附加，消息里以可点击的块状展示（不再拼纯文本前缀）
+  const docBlocks = docAttachments.map((a) => a.name);
+
+  // Agent 推理中：不阻断用户，消息进入排队引导区，当前任务完成后自动发送
+  if (state.agentBusy) {
+    const queuedDisplay = docBlocks.length
+      ? `${message}（附件：${docBlocks.join('、')}）`
+      : message;
+    chatActions.enqueueMessage({ id: uid('q'), text: message, displayText: queuedDisplay, parts });
+    chatActions.setInput('');
+    showToast('已加入排队，Agent 完成当前任务后自动发送（可点「引导」立即接管）', 'info');
+    return true;
   }
 
   // 附件 = 内联媒体（供后端 bind）+ 文档 chips
@@ -103,10 +112,6 @@ export async function sendUserMessage(input: string | RichContentPart[]): Promis
     content: m.text,
   }));
 
-  chatActions.addMessage({ sender: 'user', text: displayText, parts });
-  chatActions.setInput('');
-  studioActions.setPendingAttachments([]);
-
   // Skill 写入文档：仅当消息中携带了 Skill 引用块（名称在消息里）时才登记。
   // slug 随请求发给后端记入项目 usedSkills（新建项目为空），前端乐观更新；
   // 不自动弹出文档面板（发送后停留在对话页，用户可手动打开）。
@@ -115,6 +120,15 @@ export async function sendUserMessage(input: string | RichContentPart[]): Promis
     skillSlug = skill.id.slice(4);
     studioActions.markSkillUsed(skillSlug);
   }
+  const skillBlocks = skillSlug ? [skill!.name] : [];
+
+  chatActions.addMessage({
+    sender: 'user', text: message, parts,
+    docBlocks: docBlocks.length ? docBlocks : undefined,
+    skillBlocks: skillBlocks.length ? skillBlocks : undefined,
+  });
+  chatActions.setInput('');
+  studioActions.setPendingAttachments([]);
 
   const request: AgentChatRequest = {
     message,
@@ -135,8 +149,13 @@ export async function sendUserMessage(input: string | RichContentPart[]): Promis
     skill_slug: skillSlug,
     // 渐进式披露：后端只注入 Skill 目录，选中项仅作相关性标注
     skill_name: skill?.name || '',
+    // 引用块随消息持久化，刷新后气泡里的文档/Skill 块可重建
+    doc_blocks: docBlocks,
+    skill_blocks: skillBlocks,
   };
 
-  await streamAgentChat(request);
+  // 即发即返：不阻塞等待整个推理流结束，输入框（含 Skill/媒体块）发送后立即清空；
+  // 流的错误/结果由 streamAgentChat 内部处理（失败也会落为错误消息）
+  void streamAgentChat(request);
   return true;
 }

@@ -15,7 +15,11 @@ import type { Asset } from '@/types';
  * 右键菜单：添加到对话、删除素材。
  */
 export function AssetCard(props: { asset: Asset }) {
-  const selected = () => state.selectedDraftId === props.asset.id;
+  // 选中判定匹配 id + 映射类型（selectAsset 会按素材媒体类型设置 selectedType）
+  const selected = () => {
+    const t = props.asset.type === 'video' ? 'shot' : props.asset.type === 'audio' ? 'audio' : 'keyElement';
+    return state.selectedDraftId === props.asset.id && state.selectedType === t;
+  };
   const url = () => safeUrl(props.asset.url);
 
   const bgStyle = () =>

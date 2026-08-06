@@ -56,6 +56,10 @@ class Settings:
     # LLM 生成参数（adapter 未显式传参时的回落值）
     llm_max_tokens: int = field(default_factory=lambda: _env_int("LLM_MAX_TOKENS", 8192))
     llm_temperature: float = field(default_factory=lambda: float(os.getenv("LLM_TEMPERATURE", "0.7")))
+    # LLM 思考（thinking/reasoning）档位：空 = 不下发该字段（保持端点默认行为，推荐）；
+    # low/medium/high = 按 OpenAI 兼容 reasoning_effort 透传，用于缩短思考静默期。
+    # 注意：对字段严格的端点若因此报 400，请置空回退。
+    llm_thinking_level: str = field(default_factory=lambda: os.getenv("LLM_THINKING_LEVEL", ""))
     # CLI 协议（如 gemini-cli/Antigravity CLI）路由到 custom-api 反代时 auto 的回退模型：
     # 聊天已对齐画布行为改走本机 agy CLI，此值仅影响带参考图的生图编辑等
     # 必须走反代的残留路径；反代报 model not register 时用 CLI_AUTO_CHAT_MODEL 覆盖
@@ -70,6 +74,10 @@ class Settings:
     # 工作台状态 JSON 紧凑序列化（模型读紧凑 JSON 无损，约省 20-30% token）；
     # 置 false 回退 indent=2 便于人工排查日志
     context_json_compact: bool = field(default_factory=lambda: _env_bool("CONTEXT_JSON_COMPACT", True))
+    # 提示词结构闸机（Skill 流程激活时生效）：
+    # strict = 不合格直接拒绝写入，模型自行补齐重写（默认）；
+    # warn = 照存但把警告带回给模型；off = 关闭
+    prompt_gate_mode: str = field(default_factory=lambda: os.getenv("PROMPT_GATE_MODE", "strict"))
     # 注入 LLM 的图片长边上限（px）：vision 模型内部会重采样，原图内联纯浪费 token；
     # 注入前用 Pillow 缩放到此长边（0 = 不缩放）
     llm_image_max_edge: int = field(default_factory=lambda: _env_int("LLM_IMAGE_MAX_EDGE", 1024))
@@ -86,7 +94,7 @@ class Settings:
 
     # 多模态模型单次请求可注入的图片上限（多数 vision 模型限制 4~10 张，
     # 超限会直接报错；超出部分降级为文本清单，LLM 仍可知晓其存在）
-    max_llm_images: int = field(default_factory=lambda: _env_int("MAX_LLM_IMAGES", 4))
+    max_llm_images: int = field(default_factory=lambda: _env_int("MAX_LLM_IMAGES", 9))
     # Agent 单次回复可插入对话输入框的故事板媒体数量上限（防止一次灌满输入框）
     max_chat_inserts: int = field(default_factory=lambda: _env_int("MAX_CHAT_INSERTS", 8))
     # 模型 fallback 链：主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，

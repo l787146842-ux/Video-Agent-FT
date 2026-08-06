@@ -61,6 +61,19 @@ export interface ResolvedPrompt {
   prompt: string;
   /** 最终随请求发送的参考素材 URL 列表（原 refAssets 优先，@命中的补足） */
   refs: string[];
+  /** 与 refs 逐项对应的素材类型（图片/视频/音频），供生视频时拆分参考项 */
+  refKinds: MediaType[];
+}
+
+const AUDIO_EXTS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'];
+
+/** 推断 URL 的素材类型：故事板映射优先，其次按音频扩展名兑底 */
+function kindOfUrl(url: string, map: Record<string, MediaRef>): MediaType {
+  for (const info of Object.values(map)) {
+    if (info.url === url) return info.kind;
+  }
+  const clean = url.split('?')[0].split('#')[0].toLowerCase();
+  return AUDIO_EXTS.some((ext) => clean.endsWith(ext)) ? 'audio' : 'image';
 }
 
 /**
@@ -89,5 +102,9 @@ export function resolvePromptForGeneration(
     return `[${KIND_LABEL[info.kind]}${idx + 1}：${name}]`;
   });
 
-  return { prompt: resolved, refs };
+  return {
+    prompt: resolved,
+    refs,
+    refKinds: refs.map((url) => kindOfUrl(url, map)),
+  };
 }

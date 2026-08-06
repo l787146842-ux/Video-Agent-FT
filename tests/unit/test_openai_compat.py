@@ -19,6 +19,7 @@ from src.video_agent.adapters.openai_compat import (
     OpenAICompatChatAdapter,
     extract_base64_image,
     persist_data_uri,
+    persist_remote_image,
 )
 from src.video_agent.adapters.base_chat import ChatResponse, StreamChunk
 from src.video_agent.exceptions import AdapterError
@@ -329,6 +330,44 @@ class TestBase64Image:
         url = persist_data_uri(data_uri)
         assert url.startswith("/workspace/assets/gen-")
         assert url.endswith(".png")
+
+    @respx.mock
+    async def test_persist_remote_image_downloads_and_saves(self, monkeypatch):
+        """远程临时外链应立即下载落盘，返回本地素材 URL"""
+        import src.video_agent.adapters.openai_compat as mod
+
+        class FakeStorage:
+            def __init__(self):
+                self.saved = []
+
+            def save(self, data, filename, content_type):
+                self.saved.append((data, filename, content_type))
+                return f"/workspace/assets/{filename}"
+
+        fake = FakeStorage()
+        monkeypatch.setattr(mod, "get_storage", lambda: fake)
+
+        png = b"\x89PNG\r\n\x1a\nfake-png"
+        respx.get("https://tmp.example.com/a.png").mock(
+            return_value=httpx.Response(
+                200, content=png, headers={"content-type": "image/png"}
+            )
+        )
+
+        url = await mod.persist_remote_image("https://tmp.example.com/a.png")
+        assert url.startswith("/workspace/assets/gen-")
+        assert url.endswith(".png")
+        assert fake.saved and fake.saved[0][0] == png
+
+    @respx.mock
+    async def test_persist_remote_image_keeps_url_on_404(self):
+        """远程外链已失效（404）时保留原 URL，不阻塞图片生成"""
+        import src.video_agent.adapters.openai_compat as mod
+        respx.get("https://tmp.example.com/dead.png").mock(
+            return_value=httpx.Response(404)
+        )
+        url = await mod.persist_remote_image("https://tmp.example.com/dead.png")
+        assert url == "https://tmp.example.com/dead.png"
 
 
 # ---------- 连接池管理 ----------

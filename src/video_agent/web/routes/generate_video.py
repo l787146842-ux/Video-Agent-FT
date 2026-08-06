@@ -4,13 +4,17 @@
 mock 供应商：走 mock 适配器（结果带 mock 标记）。
 """
 import time
+from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException
 
 from loguru import logger
 
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
+from src.video_agent.state.manager import StateManager
+from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.utils import gen_id
+from src.video_agent.web.generation import collect_shot_video_refs
 from src.video_agent.web.provider_config import is_mock_provider
 from src.video_agent.web.providers import resolve_adapter_name
 
@@ -88,7 +92,46 @@ async def generate_video(body: VideoGenRequest):
         result=None,
     )
 
-    image_url = body.images[0]["url"] if body.images else ""
+    # --- 参考素材汇总：显式传入 + 分镜自动挂接（sceneRefs 元素图 + 音色参考音频）---
+    image_refs: List[Dict[str, str]] = [
+        {"url": i.get("url", ""), "role": i.get("role", "reference")}
+        for i in body.images if i.get("url")
+    ]
+    audio_refs: List[Dict[str, str]] = [
+        {"url": a.get("url", ""), "role": "reference_audio"}
+        for a in body.audios if a.get("url")
+    ]
+    if body.draft_id:
+        try:
+            svc = StateManager.get_instance()
+            found = ops.find_draft(svc.state_dict, body.draft_id, body.draft_type)
+            if found:
+                group, draft = found
+                auto_imgs, auto_audios = collect_shot_video_refs(svc.state_dict, group, draft)
+                seen_img = {r["url"] for r in image_refs}
+                for r in auto_imgs:
+                    if r["url"] not in seen_img:
+                        image_refs.append(r)
+                        seen_img.add(r["url"])
+                seen_aud = {r["url"] for r in audio_refs}
+                for r in auto_audios:
+                    if r["url"] not in seen_aud:
+                        audio_refs.append(r)
+                        seen_aud.add(r["url"])
+        except Exception as e:  # 参考挂接失败不阻断生成主链路
+            logger.warning(f"[Generate] 分镜参考自动挂接失败: {e}")
+    audio_refs = audio_refs[:2]
+    media_refs = image_refs + audio_refs
+
+    # 首帧：显式 first_frame 标注优先，否则取第一张图（兼容旧行为）
+    image_url = next(
+        (r["url"] for r in image_refs if r.get("role") == "first_frame"),
+        image_refs[0]["url"] if image_refs else "",
+    )
+    if media_refs:
+        logger.info(
+            f"[Generate] 视频任务参考素材: 图片 {len(image_refs)} 张 + 音频 {len(audio_refs)} 条"
+        )
 
     async def _run_video_generation():
         t0 = time.monotonic()
@@ -102,6 +145,7 @@ async def generate_video(body: VideoGenRequest):
                 duration=body.duration,
                 resolution=body.resolution,
                 aspect_ratio=body.aspect_ratio,
+                media_refs=media_refs or None,
             )
             if result.status == "completed" and result.video_url:
                 # 同步返回结果
@@ -120,8 +164,8 @@ async def generate_video(body: VideoGenRequest):
                     )
                 return
 
-            # 异步任务：轮询等待结果
-            completed = await wait_until_complete(adapter, result.task_id, timeout=600)
+            # 异步任务：轮询等待结果（MMG 文档建议整体预算至少 30 分钟）
+            completed = await wait_until_complete(adapter, result.task_id, timeout=1800)
             if task:
                 task["status"] = "succeeded"
                 task["video_url"] = completed.video_url

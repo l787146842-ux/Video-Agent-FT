@@ -50,6 +50,8 @@ Group-level may additionally include: shotType (cinematography language, e.g. "l
 - draft_id also accepts the card index format "groupNo-cardNo" (e.g. "1-2" = 2nd card of group 1), matching the small label under each card and the index fields in the state JSON. When the user refers to a card by index (e.g. "delete the image of 1-2", "change the prompt of 2-1"), use that index directly as draft_id; use clear_media to remove media inside a card, and update_draft with patch.prompt to change prompts. Indexes restart from 1 per category (keyElement/shot/audio), so pass the correct draft_type too.
 - When the user requests breakdown of key elements or shots from documents/materials, you MUST use add_group to create new groups with drafts included.
 - Do NOT just say "created" without outputting a studio-actions block, otherwise the frontend will not reflect any changes.
+- [Stage pause rule] When pausing after structural breakdown (key element/shot/audio groups), the body and confirmation options may only say "breakdown complete, please review the split plan" with the next step being writing prompt drafts. NEVER claim prompt drafts have been written, and NEVER guide directly to "confirm drafts, start generation" — the structure stage only builds skeletons; detailed prompts must be written separately after the user confirms the split plan.
+- [Shot prompt duration rule] When writing shot video prompts, you MUST state the shot's total duration in the prompt body (e.g. "镜头总时长：15秒", taken from the shot structure's duration) and set the patch duration field to the same value; the video model can only perceive shot length from the prompt and duration parameter.
 
 Format example:
 ```studio-actions

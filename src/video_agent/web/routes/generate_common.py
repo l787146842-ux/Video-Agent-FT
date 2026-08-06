@@ -74,6 +74,8 @@ class VideoGenRequest(BaseModel):
     resolution: str = "1080p"
     aspect_ratio: str = "16:9"
     images: List[Dict[str, str]] = []
+    # 音色参考音频列表（Seedance 2.0 MultiModalToVideo 参考项，每项 {url, name?}）
+    audios: List[Dict[str, str]] = []
     enhance_prompt: bool = False
     multimodal: bool = False
     draft_id: str = ""

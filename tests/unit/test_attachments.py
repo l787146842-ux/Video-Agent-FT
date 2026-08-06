@@ -84,11 +84,46 @@ def test_image_attachment_noted(assets_dir):
 
 
 def test_pdf_capability_notice(assets_dir):
+    """无效/损坏 PDF：抽取出空时降级提示用户，不假装读到内容"""
     (assets_dir / "doc.pdf").write_bytes(b"%PDF")
     ctx = attachment_context([
         {"name": "剧本.pdf", "url": "/workspace/assets/doc.pdf", "kind": "doc"},
     ])
-    assert "暂不支持解析" in ctx
+    assert "未抽取出文本内容" in ctx
+    assert "剧本.pdf" in ctx
+
+
+# 手工构造的最小合法 PDF（含文本层 "HELLO PDF"），验证真实抽取链路
+_MINIMAL_PDF = (
+    b"%PDF-1.4\n"
+    b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+    b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+    b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+    b"/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n"
+    b"4 0 obj << /Length 44 >> stream\n"
+    b"BT /F1 12 Tf 50 100 Td (HELLO PDF) Tj ET\n"
+    b"endstream\nendobj\n"
+    b"5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n"
+    b"trailer << /Root 1 0 R /Size 6 >>\n%%EOF"
+)
+
+
+def test_pdf_text_extracted_and_archived(assets_dir, tmp_path):
+    """PDF 剧本：服务端抽取文本层，与 .md/.txt 同等对待（清单注入 + uploadedDocs 存档）"""
+    (assets_dir / "script.pdf").write_bytes(_MINIMAL_PDF)
+    ctx = attachment_context([
+        {"name": "剧本.pdf", "url": "/workspace/assets/script.pdf", "kind": "doc"},
+    ])
+    assert "已存档" in ctx and "read_uploaded_doc" in ctx
+    assert "未抽取出文本内容" not in ctx
+
+    svc = StateManager(str(tmp_path))
+    store_uploaded_docs(svc, [
+        {"name": "剧本.pdf", "url": "/workspace/assets/script.pdf", "kind": "doc"},
+    ])
+    docs = svc.state_dict["uploadedDocs"]
+    assert len(docs) == 1
+    assert "HELLO PDF" in docs[0]["content"]
 
 
 def test_bind_attachments_persists(tmp_path):

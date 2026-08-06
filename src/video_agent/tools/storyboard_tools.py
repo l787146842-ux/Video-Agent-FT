@@ -64,6 +64,12 @@ class ReadDraftInput(BaseModel):
     draft_type: str = Field("", description="草稿类型: keyElement | shot | audio（编号在各类别独立计数，建议指定以消除歧义）")
 
 
+class ViewStoryboardMediaInput(BaseModel):
+    draft_ids: List[str] = Field(default_factory=list, description="要查看的草稿 ID 或「组号-卡序号」编号数组（与 target 二选一，优先）")
+    target: str = Field("", description="批量目标: all | all_keyElements | all_shots | all_audio（与 draft_ids 二选一）")
+    limit: int = Field(0, description="本次加载图片数量上限（0 = 系统默认上限）")
+
+
 # ---------- Tool 实现 ----------
 
 class StoryboardCreateGroupTool(BaseTool):
@@ -110,9 +116,11 @@ class StoryboardPatchDraftTool(BaseTool):
         async with svc.lock:
             found = ops.find_draft(svc.state_dict, params.draft_id, params.draft_type)
             if found:
-                _, draft = found
+                group, draft = found
                 # 统一白名单（含 imageResolution/genType，与文本轨一致）
                 if ops.patch_draft(draft, params.patch):
+                    # 时长参数同步：分镜提示词写入时把分镜时长补印到草稿时长参数
+                    ops.sync_shot_duration(group, draft, params.patch)
                     svc.save()
                     return ToolResult(success=True, data={"draft_id": draft.get("id", params.draft_id)})
         return ToolResult(success=False, error=f"Draft '{params.draft_id}' not found")
@@ -134,6 +142,13 @@ class StoryboardAddDraftTool(BaseTool):
                 return ToolResult(success=False, error=f"Group '{params.group_id}' not found")
 
             draft = ops.append_draft(target_group, params.draft)
+            # 时长参数同步：分镜草稿的时长参数与分镜结构对齐（客观兜底）
+            ops.sync_shot_duration(target_group, draft)
+            # 规格偏好补印：草稿未自带供应商时按规格文档设定填充，
+            # 防前端默认首选供应商回填污染（参数栏与规格设定不一致）
+            from src.video_agent.web.provider_config import stamp_draft_spec_preference
+            cat = ops.category_for_group_type(str(params.group_type or ""))
+            stamp_draft_spec_preference(svc.state_dict, draft, cat)
             svc.save()
         return ToolResult(success=True, data={"draft_id": draft["id"]})
 
@@ -268,6 +283,97 @@ class StoryboardReadDraftTool(BaseTool):
         return ToolResult(success=True, data={"drafts": matches})
 
 
+class ViewStoryboardMediaTool(BaseTool):
+    name = "view_storyboard_media"
+    description = (
+        "按需把故事板草稿卡的图片加载进你的上下文（服务端转 base64 内联，你能直接看到画面）。"
+        "编写/修改某条提示词草案前，先调用本工具加载对应草稿的图片再动笔；"
+        "每轮只加载当前正在处理的那几张，不要一次拉全部（单次数量有上限，超限报错）。"
+        "draft_ids 支持真实 ID 与「组号-卡序号」编号（如 '1-2'）。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return ViewStoryboardMediaInput
+
+    async def aexecute(self, params: ViewStoryboardMediaInput) -> ToolResult:
+        from src.video_agent.web.multimodal_builder import _resolve_injectable_url
+
+        svc = StateManager.get_instance()
+        state = svc.state_dict
+        limit = params.limit or settings.max_llm_images
+        limit = min(limit, settings.max_llm_images)
+
+        # --- 解析目标草稿（去重，保留顺序） ---
+        pairs: List[tuple] = []
+        seen_ids = set()
+
+        def _collect(group: Dict[str, Any], draft: Dict[str, Any]) -> None:
+            did = draft.get("id", "")
+            if did and did not in seen_ids:
+                seen_ids.add(did)
+                pairs.append((group, draft))
+
+        if params.draft_ids:
+            for wanted in params.draft_ids:
+                w = (wanted or "").strip()
+                if not w:
+                    continue
+                hit = False
+                for cat_key in ALL_CATEGORIES_TUPLE:
+                    for gi, group in enumerate(state.get(cat_key, []) or []):
+                        for di, draft in enumerate(group.get("drafts", []) or []):
+                            if draft.get("id") == w or w == f"{gi + 1}-{di + 1}":
+                                _collect(group, draft)
+                                hit = True
+                if not hit:
+                    logger.warning(f"[Tools] view_storyboard_media 未找到草稿: {w}")
+        else:
+            cat_keys = {
+                "all_keyelements": (CAT_KEY_ELEMENTS,),
+                "all_shots": (CAT_SHOTS,),
+                "all_audio": (CAT_AUDIO_ITEMS,),
+                "all": ALL_CATEGORIES_TUPLE,
+            }.get((params.target or "").lower(), ())
+            if not cat_keys:
+                return ToolResult(
+                    success=False,
+                    error="参数无效：请传 draft_ids（草稿 ID 或 '组号-卡序号' 编号）或 "
+                          "target（all | all_keyElements | all_shots | all_audio）",
+                )
+            for cat_key in cat_keys:
+                for group in state.get(cat_key, []) or []:
+                    for draft in group.get("drafts", []) or []:
+                        _collect(group, draft)
+
+        if not pairs:
+            return ToolResult(success=False, error="没有找到目标草稿")
+
+        # --- 逐张解析图片（本地读盘 / 远程代下载 → data URI） ---
+        images: List[Dict[str, str]] = []
+        notes: List[str] = []
+        for group, draft in pairs:
+            if len(images) >= limit:
+                notes.append(f"已达单次加载上限（{limit} 张），草稿「{draft.get('label') or draft.get('id')}」未加载，可下轮再调")
+                break
+            url = draft.get("imgUrl") or ""
+            label = draft.get("label") or group.get("title") or draft.get("id", "")
+            did = draft.get("id", "")
+            if not url:
+                notes.append(f"草稿「{label}」（draft_id={did}）没有图片媒体")
+                continue
+            data_uri = await _resolve_injectable_url(url)
+            if not data_uri:
+                notes.append(f"草稿「{label}」（draft_id={did}）的图片无法加载（文件缺失或外链已失效），URL: {url}")
+                continue
+            images.append({"label": label, "draft_id": did, "data_uri": data_uri})
+
+        if not images:
+            detail = "；".join(notes[:3]) if notes else "目标草稿均无图片"
+            return ToolResult(success=False, error=f"没有可加载的图片：{detail}")
+        logger.info(f"[Tools] view_storyboard_media 加载 {len(images)} 张图片进上下文")
+        return ToolResult(success=True, data={"images": images, "notes": notes})
+
+
 # ---------- 注册 ----------
 
 def register_storyboard_tools():
@@ -280,4 +386,5 @@ def register_storyboard_tools():
     ToolManager.register(StoryboardConfirmDraftTool())
     ToolManager.register(StoryboardMediaToChatTool())
     ToolManager.register(StoryboardReadDraftTool())
-    logger.info("[Tools] 7 storyboard tools registered")
+    ToolManager.register(ViewStoryboardMediaTool())
+    logger.info("[Tools] 8 storyboard tools registered")

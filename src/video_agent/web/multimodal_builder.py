@@ -11,8 +11,11 @@
 import asyncio
 import base64
 import mimetypes
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
+import httpx
 from loguru import logger
 
 from src.video_agent.config import settings
@@ -25,6 +28,8 @@ from src.video_agent.utils.paths import WORKSPACE_DIR
 _MAX_IMAGE_BYTES = 10 * 1024 * 1024
 # 文本清单里最多列出的未注入素材条数（防止素材极多时撑爆上下文）
 _MANIFEST_MAX_ITEMS = 30
+# 远程图片服务端代下载的超时（秒）
+_REMOTE_FETCH_TIMEOUT = 20.0
 
 # selected_type（前端 DraftType）→ 快照列表键
 _TYPE_TO_CATEGORY = {"keyElement": CAT_KEY_ELEMENTS, "shot": CAT_SHOTS, "audio": CAT_AUDIO_ITEMS}
@@ -96,6 +101,51 @@ def _read_image_data_uri(img_url: str) -> str:
     return f"data:{mime};base64,{b64}"
 
 
+async def fetch_remote_image_data_uri(url: str) -> str:
+    """服务端代下载远程图片 → base64 data URI。
+
+    云端 LLM 网关经常无法抓取外部临时托管链接（时效过期/防盗链/内网），
+    把 URL 原样透传会导致整个请求被供应商 400 拒绝；统一改为服务端先
+    下载内联。失败（404/超时/超限/非图片）返回空串，调用方降级为文本清单。
+    """
+    if not url.lower().startswith(("http://", "https://")):
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=_REMOTE_FETCH_TIMEOUT, follow_redirects=True) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            logger.warning(f"[Multimodal] 远程图片拉取失败 HTTP {resp.status_code}，跳过注入: {url}")
+            return ""
+        raw = resp.content
+    except Exception as e:
+        logger.warning(f"[Multimodal] 远程图片拉取失败，跳过注入: {url} ({e})")
+        return ""
+    if len(raw) > _MAX_IMAGE_BYTES:
+        logger.warning(f"[Multimodal] 远程图片超过 10MB，跳过注入: {url}")
+        return ""
+    suffix = Path(urlparse(url).path).suffix.lower() or ".png"
+    raw, mime_override = _downscale_image(raw, suffix)
+    ct = (resp.headers.get("content-type") or "").split(";")[0].strip()
+    mime = mime_override or (ct if ct.startswith("image/") else "") or mimetypes.guess_type(url)[0] or "image/png"
+    b64 = base64.b64encode(raw).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
+async def _resolve_injectable_url(url: str) -> str:
+    """把待注入 LLM 的媒体 URL 统一转为可被供应商直读的形式：
+
+    - /workspace/ 本地文件 → 读盘转 data URI（越界/不存在返回空）
+    - http(s) 远程链接 → 服务端代下载转 data URI（失败返回空）
+    - 其他（已是 data: URI 等）→ 原样透传
+    返回空串表示该图片本次无法注入，调用方应跳过（素材清单仍会列出）。
+    """
+    if url.startswith("/workspace/"):
+        return await asyncio.to_thread(_read_image_data_uri, url)
+    if url.lower().startswith(("http://", "https://")):
+        return await fetch_remote_image_data_uri(url)
+    return url
+
+
 async def build_multimodal_content(
     text: str,
     attachments: List[Dict[str, str]],
@@ -107,7 +157,8 @@ async def build_multimodal_content(
 ) -> Any:
     """构建多模态 LLM 输入（文本 + 图片 parts）。无图片时返回纯文本。
 
-    /workspace/ 本地图片转 base64 data URI 注入；http(s) 远程图片原样透传。
+    /workspace/ 本地图片转 base64 data URI 注入；http(s) 远程图片由服务端
+    代下载后同样内联（云端网关抓不到外部临时链接，透传 URL 会被供应商 400 拒绝）。
 
     content_parts（可选）：前端富文本输入框按用户排版顺序序列化的有序片段。
     存在时优先走交错构建路径，保证 LLM 精确识别「文字 ↔ 媒体」的对应关系。
@@ -157,11 +208,9 @@ async def build_multimodal_content(
     content_parts_list: List[Dict[str, Any]] = [{"type": "text", "text": text}]
     injected_urls: List[str] = []
     for img_url in image_urls[:max_images]:
-        url = img_url
-        if img_url.startswith("/workspace/"):
-            url = await asyncio.to_thread(_read_image_data_uri, img_url)
-            if not url:
-                continue
+        url = await _resolve_injectable_url(img_url)
+        if not url:
+            continue
         content_parts_list.append({"type": "image_url", "image_url": {"url": url}})
         injected_urls.append(img_url)
     logger.info(f"[Multimodal] 多模态消息：{len(injected_urls)}/{len(image_urls)} 张图片已注入 LLM 上下文（上限 {max_images}）")
@@ -247,6 +296,7 @@ def _storyboard_media_inventory(svc: StateManager) -> List[Dict[str, str]]:
                         "section": label,
                         "kind": kind,
                         "url": url,
+                        "draft_id": draft.get("id", ""),
                     })
     return items
 
@@ -288,12 +338,12 @@ def _build_asset_manifest_note(
 
     lines: List[str] = []
     listed = 0
-    # 1) 故事板媒体中未被注入的
+    # 1) 故事板媒体中未被注入的（带 draft_id，供 view_storyboard_media 按需调图）
     for it in inventory:
         if it["url"] in injected_set:
             continue
         marker = "★" if it["url"] in related else ""
-        lines.append(f"- [{it['section']}/{it['kind']}]{marker} {it['name']}: {it['url']}")
+        lines.append(f"- [{it['section']}/{it['kind']}]{marker} {it['name']}: {it['url']} (draft_id={it['draft_id']})")
         listed += 1
         if listed >= _MANIFEST_MAX_ITEMS:
             break
@@ -310,8 +360,10 @@ def _build_asset_manifest_note(
     return (
         f"（系统说明：多模态模型单次请求可上传的图片数量有限，本次已注入 {len(injected_set)} 张，"
         f"优先注入了与当前选中草稿相关的素材（★标记）。以下素材真实存在但未上传，"
-        f"你仍可在回复中引用它们的 URL，或用 insert_chat_media / storyboard_media_to_chat "
-        f"把指定草稿的媒体插入用户对话输入框后再处理，不要声称看不到它们：\n" + "\n".join(lines) + "）"
+        f"编写某条提示词前若需要看到对应画面，调用 view_storyboard_media(draft_ids=[...]) "
+        f"按条目加载图片（每轮只调当前需要的那几张，不要一次拉全部）；"
+        f"也可用 insert_chat_media / storyboard_media_to_chat 把指定草稿的媒体插入用户对话输入框，"
+        f"或在回复中引用它们的 URL，不要声称看不到它们：\n" + "\n".join(lines) + "）"
     )
 
 
@@ -359,11 +411,9 @@ async def _build_interleaved_content(
                 # 超出模型单次上传上限：保留位置标记但不注入，避免请求报错
                 text_buf.append(f"[图片: {name}]（超出单次上传上限，未发送给模型）")
                 continue
-            img = url
-            if url.startswith("/workspace/"):
-                img = await asyncio.to_thread(_read_image_data_uri, url)
-                if not img:
-                    continue
+            img = await _resolve_injectable_url(url)
+            if not img:
+                continue
             flush_text()
             result.append({"type": "image_url", "image_url": {"url": img}})
             injected += 1
@@ -373,9 +423,7 @@ async def _build_interleaved_content(
             text_buf.append(f"[{ptype}: {name}]")
             thumb = part.get("thumb", "") if ptype == "video" else ""
             if thumb and injected < max_images:
-                img = thumb
-                if thumb.startswith("/workspace/"):
-                    img = await asyncio.to_thread(_read_image_data_uri, thumb)
+                img = await _resolve_injectable_url(thumb)
                 if img:
                     flush_text()
                     result.append({"type": "image_url", "image_url": {"url": img}})
@@ -384,11 +432,9 @@ async def _build_interleaved_content(
     for img_url in (extra_images or []):
         if injected >= max_images:
             break
-        url = img_url
-        if img_url.startswith("/workspace/"):
-            url = await asyncio.to_thread(_read_image_data_uri, img_url)
-            if not url:
-                continue
+        url = await _resolve_injectable_url(img_url)
+        if not url:
+            continue
         flush_text()
         result.append({"type": "image_url", "image_url": {"url": url}})
         injected += 1

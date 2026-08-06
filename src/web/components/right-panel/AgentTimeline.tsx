@@ -1,9 +1,14 @@
-import { For, Show, createSignal } from 'solid-js';
+import { For, Show, createEffect, createSignal } from 'solid-js';
 import {
   FiCheckCircle, FiChevronDown, FiLoader, FiXCircle, FiZap,
 } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
 import type { ChatMessage, TraceAction } from '@/types';
+
+/** 耗时格式化：<0.1s 显示毫秒（本地状态操作很快，0.0s 看着像没计时） */
+export function formatElapsed(ms: number): string {
+  return ms < 100 ? `${Math.max(1, Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
 
 /** 时间线单条操作条目（流式运行态与历史重建共用） */
 export interface TimelineItem {
@@ -52,8 +57,13 @@ export function AgentTimeline(props: {
   items: TimelineItem[];
   /** 流式中：操作面板默认展开，运行项显示旋转图标 */
   live?: boolean;
+  /** 深度思考总耗时（毫秒，完成后展示在卡片角标） */
+  thinkingMs?: number;
 }) {
-  const [thinkOpen, setThinkOpen] = createSignal(false);
+  // 深度思考面板：流式中自动展开（实时看思考流），完成后自动折叠（live 卸载后
+  // 消息重建时初始值为 false）；展开/折叠始终可由用户手动切换
+  // eslint-disable-next-line solid/reactivity
+  const [thinkOpen, setThinkOpen] = createSignal(!!props.live);
   // live 仅取一次性初始值（流式入场时默认展开操作面板），后续展开态由用户控制
   // eslint-disable-next-line solid/reactivity
   const [opsOpen, setOpsOpen] = createSignal(!!props.live);
@@ -63,6 +73,17 @@ export function AgentTimeline(props: {
   const hasReasoning = () => !!reasoningText();
   const hasItems = () => props.items.length > 0;
   const doneCount = () => props.items.filter((i) => i.status !== 'running').length;
+
+  // 流式思考视窗自动跟随：定高视窗 + 新文字顶上来，无需手动滚轮追输出
+  let reasoningRef: HTMLDivElement | undefined;
+  createEffect(() => {
+    void reasoningText();
+    if (props.live && reasoningRef) {
+      requestAnimationFrame(() => {
+        if (reasoningRef) reasoningRef.scrollTop = reasoningRef.scrollHeight;
+      });
+    }
+  });
 
   return (
     <Show when={hasReasoning() || hasItems()}>
@@ -77,10 +98,24 @@ export function AgentTimeline(props: {
             >
               <FiZap size={13} class="tl-icon-thinking" />
               <span class="tl-panel-title">{t('rp.timeline.thinking')}</span>
+              {/* 思考完成后的耗时角标（流式中不显示） */}
+              <Show when={!props.live && props.thinkingMs}>
+                <span class="tl-panel-elapsed">· {formatElapsed(props.thinkingMs || 0)}</span>
+              </Show>
               <FiChevronDown size={12} class="tl-arrow" />
             </button>
             <div class="tl-panel-body">
-              <div class="tl-reasoning">{reasoningText()}</div>
+              <Show
+                when={!props.live}
+                fallback={
+                  // 流式中：定高视窗，旧文字随滚动隐藏，只显示最新几行
+                  <div ref={reasoningRef} class="tl-reasoning tl-reasoning-live">
+                    {reasoningText()}
+                  </div>
+                }
+              >
+                <div class="tl-reasoning">{reasoningText()}</div>
+              </Show>
             </div>
           </div>
         </Show>
@@ -118,9 +153,9 @@ export function AgentTimeline(props: {
                         </Show>
                       </Show>
                       <span class="tl-item-summary">{item.summary}</span>
-                      <Show when={item.elapsed_ms != null && item.elapsed_ms > 0}>
+                      <Show when={item.elapsed_ms != null}>
                         <span class="tl-item-elapsed">
-                          · {((item.elapsed_ms || 0) / 1000).toFixed(1)}s
+                          · {formatElapsed(item.elapsed_ms || 0)}
                         </span>
                       </Show>
                     </li>

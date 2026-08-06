@@ -262,6 +262,7 @@ DRAFT_DEFAULT_FIELDS: Dict[str, Any] = {
     "videoUrl": "",
     "audioUrl": "",
     "prompt": "",
+    "providerId": "",
     "model": "",
     "mode": "",
     "aspectRatio": "16:9",

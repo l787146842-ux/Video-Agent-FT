@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js';
 import { state, setState } from '@/stores/studio';
 import { saveProjectDocument, deleteProjectDocument } from '@/api/project';
 import { getSkillDocs, saveSkillDoc, type SkillDoc } from '@/api/docs';
+import { fetchResourceText } from '@/api/client';
 import { showToast } from '@/stores/toast';
 import type { DocRecord } from '@/types';
 
@@ -46,10 +47,23 @@ export async function openDocsPanel(targetName = ''): Promise<void> {
   } else {
     setSkillDocs([]);
   }
-  // 定位：优先项目文档，其次指定的 Skill 文档（仅限已发送过的）
+  // 定位：优先项目文档，其次上传素材文档，再其次指定的 Skill 文档（仅限已发送过的）
   if (targetName) {
     if ((state.documents || []).some((d) => d.name === targetName)) {
       selectDoc('project', targetName);
+      return;
+    }
+    // 上传素材文档（消息里的文档块点击进来）：拉取全文在面板内展示
+    const asset = (state.assets || []).find(
+      (a) => a.name === targetName && /\.(md|txt|pdf)$/i.test(a.name || '') && a.url,
+    );
+    if (asset) {
+      try {
+        setAssetContent(await fetchResourceText(asset.url));
+        selectDoc('project', `__asset__:${targetName}`);
+      } catch {
+        window.open(asset.url, '_blank');
+      }
       return;
     }
     const sd = visibleSkillDocs().find((d) => d.slug === targetName || d.name === targetName);

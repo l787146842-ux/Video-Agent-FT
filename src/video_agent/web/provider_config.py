@@ -195,6 +195,129 @@ def get_provider_config(provider_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def first_available_image_provider() -> Tuple[str, str]:
+    """返回第一个可用的非 mock 生图供应商 (id, model)，无则返回空串。
+
+    供调用方（如 image_generate 工具）在未指定供应商时兜底解析，
+    避免 LLM 传空 provider 导致「供应商 '' 未配置」的生图失败。
+    """
+    for p in load_merged_providers():
+        if not p.get("enabled", True):
+            continue
+        if p.get("protocol") == "mock":
+            continue
+        models = [m for m in (p.get("image_models") or []) if m]
+        if models:
+            return str(p.get("id") or ""), models[0]
+    return "", ""
+
+
+# ---------- 规格文档媒体偏好 ----------
+
+_MEDIA_PREF_PATTERNS: Dict[str, re.Pattern] = {
+    "image": re.compile(r"(?:图像生成|生图|图片生成)[:：]?\s*([^，,。;；\n]+)"),
+    "video": re.compile(r"(?:视频生成|生成视频)[:：]?\s*([^，,。;；\n]+)"),
+}
+_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*")
+
+
+def extract_media_preference(text: str, kind: str = "image") -> Tuple[str, str]:
+    """从规格文档正文（如「制作偏好」字段）解析媒体生成偏好。
+
+    例：「图像生成 Antigravity CLI auto 模型」→ ('gemini-cli', 'auto')。
+    供应商按配置中的显示名包含匹配（忽略大小写，最长名优先防短名误命中）；
+    模型在该供应商的模型列表中匹配（容忍一个字符的笔误，如 aotu→auto），
+    未命中返回空模型由下层回退链解决。
+    """
+    pat = _MEDIA_PREF_PATTERNS.get(kind)
+    if not pat or not text:
+        return "", ""
+    m = pat.search(text)
+    if not m:
+        return "", ""
+    seg = m.group(1).strip()
+    if not seg:
+        return "", ""
+    low = seg.lower()
+    best_pid, best_name_len = "", 0
+    for p in load_merged_providers():
+        name = str(p.get("name") or "").strip()
+        pid = str(p.get("id") or "")
+        if not name or not pid:
+            continue
+        if name.lower() in low and len(name) > best_name_len:
+            best_pid, best_name_len = pid, len(name)
+    if not best_pid:
+        return "", ""
+    cfg = get_provider_config(best_pid) or {}
+    models = [x for x in (cfg.get("image_models" if kind == "image" else "video_models") or []) if x]
+    model = ""
+    for md in models:
+        mdl = md.lower()
+        if mdl in low:
+            model = md
+            break
+    if not model:  # 笔误容忍：编辑距离≤1 或字符重排（aotu↔auto）
+        for token in _TOKEN_RE.findall(low):
+            for md in models:
+                mdl = md.lower()
+                if abs(len(token) - len(mdl)) > 1 or len(mdl) < 3:
+                    continue
+                diffs = sum(1 for a, b in zip(token, mdl) if a != b)
+                if diffs + abs(len(token) - len(mdl)) <= 1 or sorted(token) == sorted(mdl):
+                    model = md
+                    break
+            if model:
+                break
+    return best_pid, model
+
+
+def spec_media_preference(raw_state: Dict[str, Any], kind: str = "image") -> Tuple[str, str]:
+    """扫描项目状态中的规格文档（documents），解析出生成偏好 (provider_id, model)。
+
+    优先级：规格文档是用户意志的结构化落盘，高于草稿自动回填的默认供应商；
+    多个规格文档取首个命中；无命中返回空串。
+    """
+    try:
+        from src.video_agent.core import prompt_gates
+    except Exception:
+        return "", ""
+    for doc in (raw_state.get("documents") or []):
+        if not isinstance(doc, dict):
+            continue
+        if not prompt_gates.is_spec_doc_name(str(doc.get("name") or "")):
+            continue
+        pid, model = extract_media_preference(str(doc.get("content") or ""), kind)
+        if pid:
+            return pid, model
+    return "", ""
+
+
+def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any], cat_key: str) -> bool:
+    """新建草稿时按规格文档偏好补印 providerId/model（8888 事故：草稿无值时被
+    前端硬编码首选供应商回填污染，导致参数栏与实际设定不符）。
+
+    仅当草稿未自带 providerId 时补印；audioItems 跳过；shots 按 mediaType
+    区分视频/图像偏好。返回是否发生补印。
+    """
+    if not isinstance(draft, dict):
+        return False
+    if str(draft.get("providerId") or "").strip():
+        return False
+    if cat_key == "audioItems":
+        return False
+    kind = "image"
+    if cat_key == "shots" and str(draft.get("mediaType") or "").strip().lower() == "video":
+        kind = "video"
+    pid, model = spec_media_preference(raw_state, kind)
+    if not pid:
+        return False
+    draft["providerId"] = pid
+    if model and not str(draft.get("model") or "").strip():
+        draft["model"] = model
+    return True
+
+
 def resolve_provider_ref(ref: str) -> str:
     """解析供应商标识：优先内部 id 精确匹配；未命中时按显示名
     （API 配置页名称，如 Grsai / Antigravity CLI）忽略大小写匹配并返回其 id。

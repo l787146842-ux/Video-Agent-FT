@@ -1,9 +1,8 @@
 import { For, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import {
-  FiCheckCircle, FiChevronDown, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
+  FiCheckCircle, FiChevronDown, FiChevronRight, FiDownload, FiFileText, FiImage, FiX, FiZap,
 } from 'solid-icons/fi';
 import { renderMarkdown } from '@/lib/markdown';
-import { sendUserMessage } from '@/lib/agent-actions';
 import { openDocsPanel } from '@/stores/docs';
 import { endCanvasImageDrag } from '@/stores/canvas';
 import { safeUrl } from '@/lib/utils';
@@ -11,6 +10,7 @@ import { createImageDrag, absUrl } from '@/lib/chat-image-drag';
 import { t } from '@/lib/locale';
 import { RichBubble } from './RichBubble';
 import { AgentTimeline, timelineFromMessage } from './AgentTimeline';
+import { ConfirmActions } from './ConfirmActions';
 import type { ChatMessage } from '@/types';
 
 /**
@@ -24,7 +24,8 @@ export function ChatMessageItem(props: {
 }) {
   const msg = () => props.message;
   const isUser = () => msg().sender === 'user';
-  const [expanded, setExpanded] = createSignal(false);
+  // 阶段完成卡默认展开（任务完成后直接可见结果），仅用户主动点击才折叠
+  const [expanded, setExpanded] = createSignal(true);
   /** 原图预览（lightbox）当前打开的图片地址 */
   const [lightboxUrl, setLightboxUrl] = createSignal('');
 
@@ -169,7 +170,43 @@ export function ChatMessageItem(props: {
 
       {/* 过程时间线（深度思考 + 已处理操作，折叠面板；内容不进下次 LLM 上下文） */}
       <Show when={!isUser()}>
-        <AgentTimeline reasoning={timeline().reasoning} items={timeline().items} />
+        <AgentTimeline
+          reasoning={timeline().reasoning}
+          items={timeline().items}
+          thinkingMs={msg().thinkingMs}
+        />
+      </Show>
+
+      {/* 用户消息引用块：文档附件 / Skill（发送后才附加，点击查看对应文档） */}
+      <Show when={isUser() && ((msg().docBlocks || []).length > 0 || (msg().skillBlocks || []).length > 0)}>
+        <div class="msg-ref-blocks">
+          <For each={msg().skillBlocks || []}>
+            {(name) => (
+              <button
+                type="button"
+                class="msg-ref-block msg-ref-skill"
+                title={`查看 Skill：${name}`}
+                onClick={() => void openDocsPanel(name)}
+              >
+                <FiZap size={12} />
+                <span class="msg-ref-name">{name}</span>
+              </button>
+            )}
+          </For>
+          <For each={msg().docBlocks || []}>
+            {(name) => (
+              <button
+                type="button"
+                class="msg-ref-block msg-ref-doc"
+                title={`查看文档：${name}`}
+                onClick={() => void openDocsPanel(name)}
+              >
+                <FiFileText size={12} />
+                <span class="msg-ref-name">{name}</span>
+              </button>
+            )}
+          </For>
+        </div>
       </Show>
 
       {/* 消息气泡（旧版 chat-bubble + msg-author） */}
@@ -206,26 +243,9 @@ export function ChatMessageItem(props: {
         <div class="msg-meta">{msg().meta}</div>
       </Show>
 
-      {/* 确认操作条（仅最后一条带 confirm 的消息，旧版 confirm-actions + confirm-btn） */}
+      {/* 确认操作区（仅最后一条带 confirm 的消息：候选项单选卡片 / 确认按钮） */}
       <Show when={msg().confirm && props.isLast}>
-        <div class="confirm-actions">
-          <button
-            type="button"
-            class="confirm-btn primary"
-            onClick={() => void sendUserMessage(t('rp.msg.confirmText'))}
-          >
-            {t('rp.msg.confirmContinue')}
-          </button>
-          <button
-            type="button"
-            class="confirm-btn secondary"
-            onClick={() => {
-              document.getElementById('chatInputTextarea')?.focus();
-            }}
-          >
-            {t('rp.msg.adjust')}
-          </button>
-        </div>
+        <ConfirmActions message={msg()} />
       </Show>
     </div>
   );

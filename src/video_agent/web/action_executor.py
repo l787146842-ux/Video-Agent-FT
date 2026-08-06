@@ -5,17 +5,23 @@ Studio Actions 执行器 — 从 actions.py 抽离。
 解析逻辑在 action_parser.py，本文件仅负责执行。
 """
 from datetime import datetime, timezone
+import re
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.state.models import CAT_SHOTS, ALL_CATEGORIES
+from src.video_agent.core import prompt_gates
+from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, ALL_CATEGORIES
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.utils import gen_id
-from src.video_agent.web.generation import submit_image_task
-from src.video_agent.web.provider_config import resolve_provider_ref
+from src.video_agent.web.generation import submit_image_task, submit_video_task
+from src.video_agent.web.provider_config import (
+    resolve_provider_ref,
+    spec_media_preference,
+    stamp_draft_spec_preference,
+)
 from src.video_agent.web.prompt_refs import media_of_draft
 from src.video_agent.web.action_descriptions import describe_action
 from src.video_agent.web.action_parser import (
@@ -36,11 +42,14 @@ class StudioActionExecutor:
         state_service: Optional[StateManager] = None,
         selected_draft_id: str = "",
         selected_type: str = "",
+        gate_enabled: bool = False,
     ):
         self.svc = state_service or StateManager.get_instance()
         # 前端当前选中的草稿——"current" 的唯一正确解释
         self.selected_draft_id = selected_draft_id
         self.selected_type = selected_type
+        # 提示词结构闸机开关（Skill 流程激活时由 Planner 打开，日常微调/mock 不拦截）
+        self.gate_enabled = gate_enabled
         # 本执行器生命周期内写入的文档名（供前端渲染"已完成"卡片）
         self.documents_written: List[str] = []
         # 待插入前端对话输入框的媒体（insert_chat_media 产出，随 done payload 带回）
@@ -48,6 +57,29 @@ class StudioActionExecutor:
         self.chat_inserts: List[Dict[str, str]] = []
         # 已执行操作的中文描述清单（供前端「阶段完成」卡片展开查看具体操作，随消息持久化）
         self.action_log: List[str] = []
+        # 本批次被流程闸机拦截的原因清单（每次 execute 重置）：
+        # 供 agent_loop 回喂模型自愈（对齐 Tool 模式错误回传闭环），
+        # 避免操作被拦后模型正文虚报「已写入/已创建」
+        self.gate_rejections: List[str] = []
+        # 本批次实际搭建的结构分组类别（keyElement/shot/audio，每次 execute 重置）：
+        # 供 agent_loop 在结构首建时把确认卡片强制换成「审阅拆分方案」系统文案
+        self.structure_kinds_created: set = set()
+        # 本批次被结构纯净闸剥离的内联详细提示词条数（每次 execute 重置）：
+        # 剥离后草稿无提示词，正文追加更正说明防虚报
+        self.prompts_stripped: int = 0
+        # 流式增量执行（边写边填）计数：由 planner 流式路径维护，
+        # agent_loop 据此把已预执行的动作从重复执行中剔除
+        self.stream_preapplied: int = 0
+        self.stream_consumed: int = 0
+        # 流式批次是否已压入 undo 快照（整批只压一次，随非累加批次复位）
+        self._stream_undo_pushed: bool = False
+        # 流式批次是否已开始（首拆判定整个流式轮只算一次，与普通批次语义对齐）
+        self._stream_batch_started: bool = False
+
+    def _reject(self, reason: str) -> None:
+        """记录一条闸机拦截原因（去重）"""
+        if reason and reason not in self.gate_rejections:
+            self.gate_rejections.append(reason)
 
     @property
     def state(self) -> Dict[str, Any]:
@@ -65,15 +97,42 @@ class StudioActionExecutor:
         """移除回复中的 studio-actions 块，返回纯文本"""
         return strip_action_blocks(reply)
 
-    def execute(self, actions: List[Dict[str, Any]]) -> int:
+    def execute(self, actions: List[Dict[str, Any]], accumulate: bool = False) -> int:
         """执行操作列表，返回成功执行的数量。执行后自动持久化。
 
         Agent 主路径统一在此 push_undo()，使 Agent 改动与手动 update 一样可撤销；
         纯信号操作（select/确认/continue）或全部失败时不污染 undo 栈。
+
+        accumulate=True（流式边写边填批次）：不重置闸机拦截/结构搭建等
+        批次记录（整个流式轮视为同一批），undo 快照整批只压一次。
         """
         mutating = [a for a in actions if self._is_mutating(a)]
-        if mutating:
-            self.svc.push_undo()
+        if not accumulate:
+            if mutating:
+                self.svc.push_undo()
+            self.gate_rejections = []  # 每批次重置拦截原因记录
+            self.structure_kinds_created = set()
+            self.prompts_stripped = 0
+            self._stream_undo_pushed = False
+            self._stream_batch_started = False
+            # 首次搭建批次判定：批开始时故事板完全为空，则本批只允许先拆关键元素
+            self._first_structure_batch = (
+                self.gate_enabled
+                and prompt_gates.gate_mode() == "strict"
+                and prompt_gates.storyboard_is_empty(self.state)
+            )
+        else:
+            if mutating and not self._stream_undo_pushed:
+                self.svc.push_undo()
+                self._stream_undo_pushed = True
+            if not self._stream_batch_started:
+                # 流式轮首个变动动作时判定（与普通批次「批开始时刻」语义一致）
+                self._stream_batch_started = True
+                self._first_structure_batch = (
+                    self.gate_enabled
+                    and prompt_gates.gate_mode() == "strict"
+                    and prompt_gates.storyboard_is_empty(self.state)
+                )
         applied = 0
         for action in actions:
             try:
@@ -86,8 +145,8 @@ class StudioActionExecutor:
             # 防抖落盘：多步循环中合并连续变更，避免每轮全量双写阻塞事件循环
             self.svc.save_debounced()
             logger.info(f"[StudioActions] Applied {applied} action(s), state persisted")
-        elif mutating:
-            # 全部失败：丢弃预先压入的 undo 快照
+        elif mutating and not accumulate:
+            # 全部失败：丢弃预先压入的 undo 快照（累加批次的快照属整个流式批，不在此丢）
             self.svc.discard_last_undo()
         return applied
 
@@ -101,14 +160,91 @@ class StudioActionExecutor:
         """生成操作的中文简述（委托 web.action_descriptions）"""
         return describe_action(action, find_draft=self._find_draft)
 
-    async def execute_locked(self, actions: List[Dict[str, Any]]) -> int:
+    # ---------- 提示词结构闸机 ----------
+
+    @staticmethod
+    def _kind_of_group(group: Optional[Dict[str, Any]]) -> str:
+        """按分组 ID 前缀推断类别：keyElement | shot | audio | ''"""
+        gid = str((group or {}).get("id") or "")
+        if gid.startswith("ke-"):
+            return "keyElement"
+        if gid.startswith("shot-"):
+            return "shot"
+        if gid.startswith("audio-"):
+            return "audio"
+        return ""
+
+    @staticmethod
+    def _sync_shot_duration(group: Dict[str, Any], draft: Dict[str, Any], patch: Optional[Dict] = None) -> bool:
+        """时长参数同步：委托领域层唯一实现（与 FC 轨同规则）"""
+        return ops.sync_shot_duration(group, draft, patch)
+
+    def _gate_check(self, prompt: str, kind: str) -> bool:
+        """写入前闸机。返回 True = 放行。闸机未启用 / 模式非 strict 时恒放行；
+        strict 拦截的写入返回 False，模型下一轮看到状态缺失后自行补写（自愈）。"""
+        if not self.gate_enabled or kind not in ("shot", "keyElement") or not str(prompt or "").strip():
+            return True
+        mode = prompt_gates.gate_mode()
+        if mode == "off":
+            return True
+        # 流程时序硬闸（strict）：元素图像未就绪严禁写分镜提示词（Skill 分批确认前置）
+        if kind == "shot" and mode == "strict" and prompt_gates.element_images_missing(self.state):
+            logger.info("[PromptGate] 拦截分镜提示词写入（元素图像未就绪）")
+            self._reject(prompt_gates.SHOT_SEQUENCE_GATE_ERROR)
+            return False
+        ok, hard, soft = prompt_gates.validate_prompt_write(str(prompt), kind, self.state)
+        for w in soft:
+            logger.warning(f"[PromptGate] 软提醒（{kind}）: {w}")
+        if ok:
+            return True
+        if mode != "strict":
+            logger.warning(f"[PromptGate] warn 模式放行（{kind}）: {hard}")
+            return True
+        logger.info(f"[PromptGate] 拦截不合格提示词写入（{kind}）: {hard}")
+        self._reject(prompt_gates.format_gate_errors(hard))
+        return False
+
+    def _spec_gate_ok(self) -> bool:
+        """阶段前置闸机：Skill 流程激活且 strict 时，规格文档未写入则拒绝搭建
+        故事板结构（add_group/add_draft），逼模型先写 Final_Video_Spec.md。"""
+        if not self.gate_enabled or prompt_gates.gate_mode() != "strict":
+            return True
+        if prompt_gates.has_spec_document(self.state):
+            return True
+        logger.info("[FlowGate] 拦截故事板结构搭建（规格文档未写入）")
+        self._reject(prompt_gates.SPEC_GATE_ERROR)
+        return False
+
+    def _record_presented(self, draft_id: str) -> None:
+        """记录本轮写入过提示词的草稿：用户下一条消息到达时晋升为「已确认」（确认闭环）"""
+        if not draft_id or not self.gate_enabled:
+            return
+        interaction = self.state.setdefault("interaction", {})
+        presented = interaction.setdefault("drafts_presented", [])
+        if draft_id not in presented:
+            presented.append(draft_id)
+
+    def _gen_confirm_gate(self, pairs: List[tuple]) -> List[tuple]:
+        """生成确认闸：Skill 激活且 strict 时，只允许对已经用户确认（tag=已确认）的
+        草稿触发生成；全部未确认时返回空列表（调用方拒绝执行），未确认项跳过。"""
+        if not self.gate_enabled or prompt_gates.gate_mode() != "strict":
+            return pairs
+        confirmed = [(g, d) for g, d in pairs if str(d.get("tag") or "").strip() == "已确认"]
+        skipped = len(pairs) - len(confirmed)
+        if skipped:
+            logger.info(f"[GenGate] 跳过 {skipped} 个未经用户确认的草稿（生成需先确认 Prompt Draft）")
+        if not confirmed:
+            logger.info("[GenGate] 拦截生成：目标草稿 Prompt Draft 均未经用户确认")
+        return confirmed
+
+    async def execute_locked(self, actions: List[Dict[str, Any]], accumulate: bool = False) -> int:
         """持 svc.lock 执行（与 FC Tool 路径的并发契约对齐）。
 
         调用方已持有 svc.lock 时（如 chat_service mock 路径）必须改用同步 execute()，
         asyncio.Lock 不可重入，嵌套获取会死锁。
         """
         async with self.svc.lock:
-            return self.execute(actions)
+            return self.execute(actions, accumulate=accumulate)
 
     # ---------- 内部方法 ----------
 
@@ -145,6 +281,8 @@ class StudioActionExecutor:
             return self._apply_insert_chat_media(action)
         if name in ("generate_image", "batch_generate_image", "gen_image"):
             return self._apply_generate_image(action)
+        if name in ("generate_video", "batch_generate_video", "gen_video"):
+            return self._apply_generate_video(action)
         if name == "select_draft":
             return True  # 选中操作仅影响前端 UI，后端无需持久化
         # request_confirmation / continue 是流程信号，由 agent_loop 处理，不算状态变更
@@ -178,8 +316,26 @@ class StudioActionExecutor:
         result = self._find_draft(draft_id, draft_type)
         if not result:
             return False
-        _, draft = result
-        return ops.patch_draft(draft, patch)
+        group, draft = result
+        # 闸机：strict 模式拒绝结构不合格的提示词写入（不含提示词的其它字段 patch 不受影响）
+        if "prompt" in patch:
+            # 故事板待确认窗口（步骤3→步骤4 分界）：用户确认结构前严禁写提示词
+            if self.gate_enabled and prompt_gates.gate_mode() == "strict" \
+                    and prompt_gates.storyboard_pending(self.state):
+                logger.info("[FlowGate] 拦截提示词写入（故事板待用户确认）")
+                self._reject(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
+                return False
+            if not self._gate_check(
+                str(patch.get("prompt") or ""), self._kind_of_group(group)
+            ):
+                return False
+        ok = ops.patch_draft(draft, patch)
+        if ok and str(patch.get("prompt") or "").strip():
+            self._record_presented(draft.get("id", ""))
+        # 时长参数同步：写入分镜提示词时把分镜时长补印到草稿时长参数（客观兜底）
+        if ok and self._kind_of_group(group) == "shot":
+            self._sync_shot_duration(group, draft, patch)
+        return ok
 
     def _apply_group_patch(self, action: Dict) -> bool:
         group_id = action.get("group_id") or action.get("target_id") or action.get("id") or "current"
@@ -205,6 +361,39 @@ class StudioActionExecutor:
 
     def _apply_add_group(self, action: Dict) -> bool:
         """创建新的故事板分组（关键元素 / 分镜 / 音频）"""
+        if not self._spec_gate_ok():
+            return False
+        # 首拆只允许关键元素：首次搭建批次内创建 shot/audio 分组直接拒绝
+        group_type = str(
+            action.get("group_type") or action.get("draft_type")
+            or action.get("kind") or action.get("target_type") or ""
+        ).strip()
+        if (
+            getattr(self, "_first_structure_batch", False)
+            and group_type
+            and ops.category_for_group_type(group_type) != CAT_KEY_ELEMENTS
+        ):
+            logger.info("[FlowGate] 拦截首次搭建批次的分镜/音频分组创建（应先拆关键元素）")
+            self._reject(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
+            return False
+        return self._apply_add_group_inner(action)
+
+    def _apply_add_group_inner(self, action: Dict) -> bool:
+        ok = self._add_group_core(action)
+        if ok:
+            kind = prompt_gates.normalize_structure_kind(
+                action.get("group_type") or action.get("draft_type")
+                or action.get("kind") or action.get("target_type") or ""
+            )
+            if kind:
+                self.structure_kinds_created.add(kind)
+        # 结构首次建立 → 即时置位故事板待确认标记（阶段分界，随用户回应清除）
+        if ok and self.gate_enabled and prompt_gates.gate_mode() == "strict":
+            interaction = self.state.setdefault("interaction", {})
+            interaction["storyboard_pending"] = True
+        return ok
+
+    def _add_group_core(self, action: Dict) -> bool:
         group_type = (
             action.get("group_type") or action.get("draft_type")
             or action.get("kind") or action.get("target_type") or ""
@@ -254,9 +443,35 @@ class StudioActionExecutor:
 
         return True
 
-    def _append_draft_to_group(self, group: Dict, draft_data: Dict) -> Dict:
-        """向指定 group 添加一个 draft，返回新建的 draft"""
-        return ops.append_draft(group, draft_data)
+    def _append_draft_to_group(self, group: Dict, draft_data: Dict) -> Optional[Dict]:
+        """向指定 group 添加一个 draft，返回新建的 draft；闸机拒绝其提示词时不添加（返回 None）。
+
+        结构纯净闸（步骤3）：Skill 激活且 strict 时，内联草稿的详细提示词
+        （> STRUCTURE_INLINE_PROMPT_MAX 字）被剥离后照常建卡，详细提示词留到步骤4。"""
+        data = draft_data
+        if self.gate_enabled and prompt_gates.gate_mode() == "strict":
+            inline_prompt = str(data.get("prompt") or "").strip()
+            if len(inline_prompt) > prompt_gates.STRUCTURE_INLINE_PROMPT_MAX:
+                data = {**data, "prompt": ""}
+                self.prompts_stripped += 1
+                logger.info(
+                    f"[FlowGate] 剥离 add_draft 内联详细提示词（{len(inline_prompt)} 字，"
+                    "结构阶段只建骨架）"
+                )
+        if not self._gate_check(str(data.get("prompt") or ""), self._kind_of_group(group)):
+            return None
+        draft = ops.append_draft(group, data)
+        # 规格偏好补印：草稿未自带供应商时按规格文档设定填充，
+        # 防前端默认首选供应商回填污染（参数栏与规格设定不一致）
+        cat = ops.category_for_group_type(self._kind_of_group(group))
+        if stamp_draft_spec_preference(self.state, draft, cat):
+            logger.info(
+                f"[StudioActions] 新建草稿按规格偏好补印供应商: "
+                f"{draft.get('providerId')}/{draft.get('model') or ''}"
+            )
+        if str(data.get("prompt") or "").strip():
+            self._record_presented(draft.get("id", ""))
+        return draft
 
     def _apply_clear_media(self, action: Dict) -> bool:
         """清空卡片内的媒体内容（图片/视频/音频地址），保留提示词与参数。
@@ -270,8 +485,19 @@ class StudioActionExecutor:
         return ops.clear_draft_media(draft)
 
     def _apply_add_draft(self, action: Dict) -> bool:
+        if not self._spec_gate_ok():
+            return False
         group_id = action.get("group_id") or "current"
         group_type = action.get("group_type") or action.get("draft_type") or action.get("kind") or ""
+        # 首拆只允许关键元素：首次搭建批次内新建 shot/audio 草稿直接拒绝
+        if (
+            getattr(self, "_first_structure_batch", False)
+            and str(group_type).strip()
+            and ops.category_for_group_type(str(group_type)) != CAT_KEY_ELEMENTS
+        ):
+            logger.info("[FlowGate] 拦截首次搭建批次的分镜/音频草稿创建（应先拆关键元素）")
+            self._reject(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
+            return False
         draft_data = action.get("draft") or {}
 
         group = self._find_group(group_id, group_type)
@@ -284,7 +510,7 @@ class StudioActionExecutor:
         # 如果仍然找不到分组，自动创建一个
         if not group:
             auto_action = {**action, "group_type": group_type, "title": draft_data.get("label", "Agent 新建分组")}
-            self._apply_add_group(auto_action)
+            self._apply_add_group_inner(auto_action)
             # 取刚创建的分组（与 _apply_add_group 同一类别映射）
             cat_key = ops.category_for_group_type(group_type)
             groups = self.state.get(cat_key, [])
@@ -293,10 +519,16 @@ class StudioActionExecutor:
             if not group:
                 return False
 
-        self._append_draft_to_group(group, draft_data)
-        return True
+        appended = self._append_draft_to_group(group, draft_data)
+        if appended is not None:
+            kind = prompt_gates.normalize_structure_kind(group_type) or self._kind_of_group(group)
+            if kind:
+                self.structure_kinds_created.add(kind)
+            if kind == "shot":
+                self._sync_shot_duration(group, appended)
+        return appended is not None
 
-    def _apply_write_document(self, action: Dict) -> bool:
+    def _apply_write_document(self, action: Dict[str, Any]) -> bool:
         """写入/更新项目文档工件（如 Final_Video_Spec.md）"""
         name = str(action.get("name") or action.get("title") or "").strip()
         content = action.get("content") or action.get("text") or ""
@@ -459,16 +691,27 @@ class StudioActionExecutor:
         if not pairs:
             return False
 
+        # 生成确认闸（混合形态硬边界）：未经用户确认的 Prompt Draft 不得生成
+        pairs = self._gen_confirm_gate(pairs)
+        if not pairs:
+            return False
+
+        # 规格文档偏好（用户意志落盘）：LLM 未指定供应商时优先于草稿自动回填的默认值，
+        # 防前端默认首选供应商（如 Grsai）覆盖规格中设定的生图渠道
+        spec_pid, spec_model = ("", "")
+        if not provider_id:
+            spec_pid, spec_model = spec_media_preference(self.state)
+
         submitted = 0
         for group, draft in pairs:
             prompt = (draft.get("prompt") or "").strip()
             if not prompt:
                 continue
             refs = self._resolve_scene_refs(group) if group else []
-            # provider 回退链：LLM 指定 → 目标草稿自身（预览框已选参数）→ 中间面板选中草稿
-            eff_provider = provider_id or (draft.get("providerId") or "") or sel_provider
-            # model 回退链：LLM 指定 → 目标草稿自身（预览框已选参数）→ 供应商默认模型（generation 层兑底）
-            eff_model = model or (draft.get("model") or "")
+            # provider 回退链：LLM 指定 → 规格文档偏好 → 目标草稿自身（预览框已选参数）→ 中间面板选中草稿
+            eff_provider = provider_id or spec_pid or (draft.get("providerId") or "") or sel_provider
+            # model 回退链：LLM 指定 → 规格偏好（仅当供应商来自规格）→ 目标草稿自身 → 供应商默认模型（generation 层兑底）
+            eff_model = model or (spec_model if eff_provider == spec_pid else "") or (draft.get("model") or "")
             # 比例回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 16:9
             eff_ratio = act_ratio or (draft.get("aspectRatio") or "") or sel_ratio or "16:9"
             # 分辨率回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 1K
@@ -495,6 +738,79 @@ class StudioActionExecutor:
     def _resolve_scene_refs(self, group: Dict) -> List[Dict[str, str]]:
         """解析分镜的 sceneRefs → 对应关键元素的概念图 URL 作为参考图"""
         return ops.resolve_scene_refs(self.state, group)
+
+    # ---------- 分镜视频生成（仅用户明确触发） ----------
+
+    def _apply_generate_video(self, action: Dict) -> bool:
+        """Agent 触发分镜视频生成（仅当用户明确要求时）。支持批量。
+
+        参考素材自动挂接（对齐 Skill 步骤6）：
+        - sceneRefs 引用的关键元素概念图 → 多参考图（MultiModalToVideo）；
+        - 草稿 refAssets/audioUrl 中的音色参考音频 → reference_audio；
+        - 提示词 @引用 → 位置标记重写 + 对应素材随请求发送。
+        供应商/模型/分辨率回退链与生图一致（LLM 指定 → 草稿自身参数）。
+        """
+        from src.video_agent.web.generation import collect_shot_video_refs
+
+        target = str(action.get("target") or action.get("draft_id") or "all").strip()
+        draft_type = str(action.get("draft_type") or "shot").strip().lower()
+        provider_id = resolve_provider_ref(
+            str(action.get("provider_id") or action.get("provider") or "")
+        )
+        model = action.get("model") or ""
+        act_resolution = str(action.get("resolution") or "").strip().lower()
+        try:
+            act_duration = int(action.get("duration") or 0)
+        except (TypeError, ValueError):
+            act_duration = 0
+
+        if target in ("all_shots", "all_shot"):
+            draft_type = "shot"
+            target = "all"
+
+        pairs = self._collect_drafts(target, draft_type)
+        if not pairs:
+            return False
+
+        # 生成确认闸（混合形态硬边界）：未经用户确认的 Prompt Draft 不得生成
+        pairs = self._gen_confirm_gate(pairs)
+        if not pairs:
+            return False
+
+        submitted = 0
+        for group, draft in pairs:
+            prompt = (draft.get("prompt") or "").strip()
+            if not prompt:
+                continue
+            # 参数回退链：LLM 指定 → 目标草稿自身参数 → 默认值
+            eff_provider = provider_id or (draft.get("providerId") or "")
+            eff_model = model or (draft.get("model") or "")
+            eff_ratio = (draft.get("aspectRatio") or "16:9")
+            eff_resolution = act_resolution or (draft.get("resolution") or "720p")
+            dur_raw = str(draft.get("duration") or "").strip().lower()
+            try:
+                eff_duration = act_duration or int(re.sub(r"[^0-9]", "", dur_raw) or 5)
+            except ValueError:
+                eff_duration = 5
+            eff_duration = max(1, min(eff_duration, 15))  # 模型单镜头上限 15s
+
+            # 参数回写草稿：预览框参数区同步跳转
+            if eff_provider:
+                draft["providerId"] = eff_provider
+            if eff_model:
+                draft["model"] = eff_model
+
+            image_refs, audio_refs = collect_shot_video_refs(self.state, group, draft)
+            submit_video_task(
+                self.state, draft, "shot", eff_provider, eff_model,
+                duration=eff_duration, resolution=eff_resolution, aspect_ratio=eff_ratio,
+                image_refs=image_refs, audio_refs=audio_refs,
+                source="agent", on_failure_save=self.svc.save_debounced,
+            )
+            submitted += 1
+        if submitted:
+            logger.info(f"[StudioActions] generate_video: 已提交 {submitted} 个视频生成任务")
+        return submitted > 0
 
     def _submit_image_task(self, draft: Dict, provider_id: str, model: str, refs: List[Dict], aspect_ratio: str = "16:9", resolution: str = "1K") -> None:
         """提交异步生图任务（委托 generation 层的 submit_image_task，批次5 下沉）"""

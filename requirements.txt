@@ -29,3 +29,7 @@ pytest-asyncio>=0.24.0
 
 # 图片注入 LLM 前缩放（LLM_IMAGE_MAX_EDGE，默认 1024px 长边）
 Pillow>=10.0
+
+# 上传剧本 PDF 文本抽取（read_uploaded_doc 支持 PDF 格式）；
+# 未安装时诚实降级：提示用户改用 .md/.txt
+pdfplumber>=0.11

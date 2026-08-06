@@ -18,6 +18,7 @@ import time
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.core import prompt_gates
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
     SSE_EXECUTING_ACTIONS,
@@ -50,24 +51,40 @@ class AgentLoopResult:
     warnings: List[str] = field(default_factory=list)
     # LLM 通过 request_confirmation 请求用户确认时的说明文字（非空表示等待确认）
     confirmation: str = ""
+    # 确认卡片的候选选项（每项 {label, description}，前端渲染为单选卡片）
+    confirmation_options: List[Dict[str, Any]] = field(default_factory=list)
     # 执行轨迹（每轮 step/耗时/操作数/finish_reason），前端「执行轨迹」折叠区展示
     trace: Dict[str, Any] = field(default_factory=dict)
 
 
-def split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool, str]:
-    """分离流程信号，返回 (可执行的 actions, 是否请求下一轮, 确认请求文案)"""
+def split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool, str, List[Dict[str, Any]]]:
+    """分离流程信号，返回 (可执行的 actions, 是否请求下一轮, 确认请求文案, 确认候选选项)"""
     executable: List[Dict[str, Any]] = []
     wants_continue = False
     confirmation = ""
+    confirmation_options: List[Dict[str, Any]] = []
     for a in actions:
         name = str(a.get("action", "")).lower()
         if name == "continue":
             wants_continue = True
         elif name == "request_confirmation":
             confirmation = str(a.get("message", "") or "请确认以上内容，确认后我将继续。")
+            opts = a.get("options")
+            if isinstance(opts, list):
+                for o in opts:
+                    if isinstance(o, dict) and str(o.get("label") or "").strip():
+                        item = {
+                            "label": str(o.get("label")).strip(),
+                            "description": str(o.get("description") or "").strip(),
+                        }
+                        if str(o.get("group") or "").strip():
+                            item["group"] = str(o.get("group")).strip()
+                        confirmation_options.append(item)
+                    elif isinstance(o, str) and o.strip():
+                        confirmation_options.append({"label": o.strip(), "description": ""})
         else:
             executable.append(a)
-    return executable, wants_continue, confirmation
+    return executable, wants_continue, confirmation, confirmation_options
 
 
 # 向后兼容别名
@@ -109,6 +126,13 @@ async def run_agent_loop(
         result.steps = step
         tracer.start_step()
         await emit({"type": SSE_STEP_STARTED, "step": step, "max_steps": max_steps})
+        if step > 1:
+            # 多轮循环"静默期"提示：上一轮工具执行完到本轮首 token 之间可能耗时数十秒，
+            # 前端状态栏需明确告知正在进行第几轮思考（status 事件全链路已透传）
+            await emit({
+                "type": SSE_STATUS,
+                "text": f"第 {step - 1} 轮操作已完成，继续思考中（第 {step}/{max_steps} 轮）…",
+            })
         system_prompt = context_builder()  # 每轮刷新，让 LLM 看到上一轮执行后的最新状态
 
         content, finish_reason, fc_applied = await llm_call(system_prompt, messages, stream_hook)
@@ -164,7 +188,20 @@ async def run_agent_loop(
                 f"第 {step} 轮的 studio-actions 块解析失败（JSON 无效或被截断），本轮操作已丢弃"
             )
 
-        executable, wants_continue, confirmation = _split_actions(actions)
+        executable, wants_continue, confirmation, confirmation_options = _split_actions(actions)
+        # 本轮全部可执行操作数（含流式已预执行部分）：gate_heal 判定用
+        total_exec = len(executable)
+        # 流式增量执行（边写边填）：planner 流式路径已逐条预执行的动作
+        # 计入已应用并从待执行列表剔除，严禁重复执行（add_group 重复会建重分组）
+        stream_consumed = int(getattr(executor, "stream_consumed", 0) or 0)
+        stream_preapplied = int(getattr(executor, "stream_preapplied", 0) or 0)
+        if stream_consumed:
+            executable = executable[stream_consumed:]
+            executor.stream_consumed = 0
+            executor.stream_preapplied = 0
+            logger.info(
+                f"[AgentLoop] step={step} 流式边写边填已预执行 {stream_preapplied}/{stream_consumed} 个操作"
+            )
         if executable:
             await emit({"type": SSE_EXECUTING_ACTIONS, "step": step, "count": len(executable)})
             # 过程时间线：逐个预告即将执行的操作（前端渲染运行态条目）
@@ -182,7 +219,8 @@ async def run_agent_loop(
                 })
         _log_before = len(executor.action_log)
         _t0 = time.monotonic()
-        applied = await executor.execute_locked(executable)
+        applied = await executor.execute_locked(executable, accumulate=stream_consumed > 0)
+        applied += stream_preapplied  # 流式预执行成功数计入本轮应用量
         _batch_ms = (time.monotonic() - _t0) * 1000
         result.applied_actions += applied
         if applied:
@@ -220,23 +258,85 @@ async def run_agent_loop(
                     name=str(action.get("action", "")),
                     summary="未匹配到目标或执行失败", elapsed_ms=0.0, ok=False,
                 )
-        if executable and applied < len(executable):
+        gate_rejections = list(getattr(executor, "gate_rejections", None) or [])
+        if total_exec and applied < total_exec:
+            if gate_rejections:
+                result.warnings.append(
+                    f"第 {step} 轮有 {total_exec - applied} 个操作被流程闸机拦截"
+                    f"（原因：{gate_rejections[0][:60]}…）"
+                )
+            elif stream_consumed == 0:
+                result.warnings.append(
+                    f"第 {step} 轮有 {total_exec - applied} 个操作未匹配到目标（draft/group 不存在？）"
+                )
+
+        # 流程闸机自愈（对齐 Tool 模式错误回传闭环）：本轮有操作被闸机拦截（全部或
+        # 部分）时，不接受本轮文本自带的暂停信号——模型常同时虚报「已写入/已创建 N 组」，
+        # 直接暂停会把虚假成功展示给用户（8888 事故：9 条提示词写入 8 条被拦，
+        # 却引导用户确认提示词）。丢弃本轮正文，把拦截原因回喂给模型，
+        # 逼其补做正确操作（重写被拦的提示词）后再暂停。
+        gate_heal = bool(gate_rejections) and total_exec > 0 and applied < total_exec
+        if gate_heal:
+            blocked_n = total_exec - applied
+            confirmation = ""
+            confirmation_options = []
+            wants_continue = True
             result.warnings.append(
-                f"第 {step} 轮有 {len(executable) - applied} 个操作未匹配到目标（draft/group 不存在？）"
+                f"第 {step} 轮 {blocked_n} 个操作被流程闸机拦截，已回喂模型修正"
             )
+            await emit({
+                "type": SSE_STATUS,
+                "text": f"系统闸机拦截了本轮 {blocked_n} 个流程操作，正在要求模型按流程修正…",
+            })
+
+        # 阶段硬边界：写入规格/阶段文档后必须停下等审阅，不给模型顺手把后续阶段
+        # （拆结构/写提示词）也打包做完的机会（模型未自行暂停时由系统强制）
+        if (
+            applied > 0
+            and not confirmation
+            and not wants_continue
+            and any(
+                str(a.get("action", "")).lower() in ("write_document", "write_doc", "save_document", "document_write")
+                for a in executable
+            )
+        ):
+            confirmation = "规格/阶段文档已写入，请审阅；确认无误后我再推进下一阶段。"
+
+        # 流程闸机硬边界（对齐 FC 轨）：本批刚搭建故事板结构时，确认卡片统一换成
+        # 「审阅拆分方案」的系统文案——结构阶段闸机只建骨架不写详细提示词，
+        # 模型自拟的「提示词已写好/开始生成」类文案属虚报，一律覆盖
+        # （8888 事故：拆完分镜即引导「确认分镜与草案，开始生成视频」）。
+        structure_kinds = set(getattr(executor, "structure_kinds_created", None) or set())
+        if (
+            structure_kinds
+            and getattr(executor, "gate_enabled", False)
+            and prompt_gates.gate_mode() == "strict"
+        ):
+            confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
+            logger.info(f"[FlowGate] 结构搭建后覆盖确认文案（kinds={sorted(structure_kinds)}）")
 
         visible = executor.strip_action_blocks(content)
-        if visible:
+        if visible and not gate_heal:
+            # 结构纯净闸剥离了内联详细提示词：正文追加更正说明，
+            # 避免持久化消息只剩模型「已编写提示词草案」的虚报文字
+            stripped_n = int(getattr(executor, "prompts_stripped", 0) or 0)
+            if stripped_n and getattr(executor, "gate_enabled", False):
+                visible = (
+                    visible
+                    + f"\n\n【系统说明】本轮只搭建了故事板骨架，{stripped_n} 条内联详细提示词已被流程闸机剥离，"
+                    "提示词草案尚未编写；确认拆分方案后再逐条编写。"
+                )
             result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
 
         logger.info(
-            f"[AgentLoop] step={step} actions={applied}/{len(executable)} "
+            f"[AgentLoop] step={step} actions={applied}/{total_exec} "
             f"continue={wants_continue} confirm={bool(confirmation)} finish={finish_reason or '-'}"
         )
 
         if confirmation:
-            # 暂停等待用户确认：终止循环，把确认请求带回给前端
+            # 暂停等待用户确认：终止循环，把确认请求（含候选选项）带回给前端
             result.confirmation = confirmation
+            result.confirmation_options = confirmation_options
             tracer.end_step(step, actions_applied=applied, finish_reason=finish_reason or "confirmation")
             break
 
@@ -252,16 +352,37 @@ async def run_agent_loop(
 
         # 回喂：让下一轮 LLM 知道上一轮说了什么、执行结果如何
         messages.append({"role": "assistant", "content": content})
-        messages.append({
-            "role": "user",
-            "content": (
+        if gate_heal:
+            reasons = "\n".join(f"- {r}" for r in gate_rejections)
+            blocked_n = total_exec - applied
+            if applied:
+                head = (
+                    f"（系统）第 {step} 轮的 {total_exec} 个操作中有 {applied} 个成功、"
+                    f"{blocked_n} 个被系统流程闸机拦截（被拦截的写入没有生效）。"
+                )
+            else:
+                head = (
+                    f"（系统）第 {step} 轮的 {total_exec} 个操作全部被系统流程闸机拦截（0 个成功），"
+                    "本轮你声称已完成的写入/创建实际上都没有生效。"
+                )
+            feedback = (
+                f"{head}\n拦截原因：\n{reasons}\n"
+                "请严格按上述要求修正后重新执行被拦截的操作（操作未全部成功前，严禁向用户声称已完成，"
+                "也严禁请求用户确认未写入的内容）。"
+            )
+        else:
+            feedback = (
                 f"（系统）第 {step} 轮的 {applied} 个操作已执行，最新工作台状态已刷新到 system prompt。"
                 "请继续完成任务；全部完成后不要再输出 continue。"
-            ),
-        })
+            )
+        messages.append({"role": "user", "content": feedback})
 
     if not result.text:
-        if result.applied_actions:
+        if result.confirmation:
+            # 暂停轮无正文兜底：用暂停说明作为可见回复，
+            # 永远不向用户展示「模型返回了空内容」这类误导文案
+            result.text = result.confirmation
+        elif result.applied_actions:
             # 操作已在各轮实时写入工作台，只是模型没输出总结文字：
             # 明确告知操作数量，避免用户误以为什么都没发生。
             result.text = (

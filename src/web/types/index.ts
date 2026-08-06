@@ -15,8 +15,7 @@ export interface Draft {
   label: string;
   tag?: string;
   mediaType: MediaType;
-  /** 当前选中的生成类型（图片/视频/音频生成标签）；缺省时回退 mediaType。
-   *  与 mediaType 解耦：切换生成标签不清空已有预览媒体 */
+  /** 当前选中的生成类型；缺省回退 mediaType（切换生成标签不清空已有预览媒体） */
   genType?: MediaType;
   prompt?: string;
   model?: string;
@@ -107,10 +106,7 @@ export interface PendingAttachment {
 }
 
 // ===== 内联媒体缩略块（输入框 / 消息气泡 / 插入请求共用） =====
-/**
- * 内联媒体：插入到 Agent 输入框光标处的缩略块。
- * 图片显示缩略图，视频显示首帧，音频显示图标块；均略大于文字、可混排。
- */
+/** 内联媒体：图片显示缩略图，视频显示首帧，音频显示图标块；均略大于文字、可混排 */
 export interface InlineMedia {
   id: string;
   name: string;
@@ -120,10 +116,7 @@ export interface InlineMedia {
   thumb?: string;
 }
 
-/**
- * 有序富文本片段：文字与媒体按用户排版顺序交错排列。
- * 原样发送给后端，LLM 据此精确识别「文字 ↔ 媒体」的对应关系。
- */
+/** 有序富文本片段：文字与媒体按用户排版顺序交错，原样发送给后端供 LLM 识别对应关系 */
 export type RichContentPart =
   | { type: 'text'; text: string }
   | { type: 'image'; url: string; name: string }
@@ -140,23 +133,26 @@ export interface ChatMessage {
   docCard?: boolean | string;
   /** 回复时使用的模型名称（agent 消息） */
   modelName?: string;
+  /** 深度思考耗时（毫秒，完成后展示在「深度思考」卡片角标） */
+  thinkingMs?: number;
   /** 生图结果图片卡片 */
   imageCard?: ImageCardData;
   /** 用户消息的有序富文本片段（文字 + 内联缩略图交错），用于气泡还原排版 */
   parts?: RichContentPart[];
+  /** 用户消息携带的文档附件块（点击可查看文档，发送后才真正附加） */
+  docBlocks?: string[];
+  /** 用户消息携带的 Skill 引用块（点击查看 Skill 文档） */
+  skillBlocks?: string[];
   /** 本轮已执行操作的中文描述清单（「阶段完成」卡片展开查看具体操作） */
   actionLog?: string[];
+  /** 确认卡片的候选选项（单选卡片，点击即把 label 作为回复发送） */
+  confirmOptions?: Array<{ label: string; description?: string; group?: string }>;
   /** 执行轨迹（每轮 step/耗时/操作数，「执行轨迹」折叠区展示） */
   trace?: AgentTrace;
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
-export interface TraceAction {
-  name: string;
-  summary: string;
-  elapsed_ms: number;
-  ok: boolean;
-}
+export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; }
 export interface AgentTraceStep {
   step: number;
   timing_ms: number;
@@ -178,8 +174,7 @@ export interface AgentTrace {
 // ===== 生图卡片（Agent 生图结果展示 + 拖拽） =====
 export interface ImageCardData {
   image_urls: string[];
-  /** 生成模型/供应商标识 */
-  provider?: string;
+  /** 生成模型/供应商标识 */ provider?: string;
 }
 
 // ===== 文档 =====
@@ -248,6 +243,8 @@ export interface SseDonePayload {
   chat_inserts?: Array<{ kind: MediaType; url: string; name: string; thumb?: string }>;
   /** 本轮已执行操作的中文描述清单（前端展示具体操作内容） */
   action_log?: string[];
+  /** 确认卡片的候选选项（单选卡片，点击即把 label 作为回复发送） */
+  confirmation_options?: Array<{ label: string; description?: string }>;
   /** 主模型故障时 fallback 实际使用的模型名（供气泡标注） */
   fallback_model?: string;
   /** 执行轨迹（每轮 step/耗时/操作数） */
@@ -255,7 +252,9 @@ export interface SseDonePayload {
   state?: ServerStateSnapshot | null;
 }
 export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }
-/** 后端 error 事件使用 detail 字段（chat_service.py emit({"type":"error","detail":...})），可携带 error_code 供 i18n 翻译 */
+/** 操作已执行（携带最新状态快照）：推理中逐步刷新故事板，不必等全部完成 */
+export interface SseActionsAppliedEvent { type: 'actions_applied'; payload?: { count?: number; state?: ServerStateSnapshot | null }; }
+/** 后端 error 事件用 detail 字段，可携带 error_code 供前端 i18n 翻译 */
 export interface SseErrorEvent { type: 'error'; detail?: string; text?: string; error_code?: string; }
 export type SseEvent =
   | SseStatusEvent
@@ -263,16 +262,13 @@ export type SseEvent =
   | SseReasoningEvent
   | SseToolStartedEvent
   | SseToolFinishedEvent
+  | SseActionsAppliedEvent
   | SseDoneEvent
   | SseErrorEvent;
 
 // ===== 后端状态快照 =====
 /** 单个对话（同一项目支持多对话窗口） */
-export interface Conversation {
-  id: string;
-  title: string;
-  messages: ChatMessage[];
-}
+export interface Conversation { id: string; title: string; messages: ChatMessage[]; }
 
 export interface ServerStateSnapshot {
   /** 快照所属项目 ID（持久化请求回传，后端据此丢弃跨项目的过期写入） */
@@ -327,6 +323,10 @@ export interface AgentChatRequest {
   skill_slug?: string;
   /** 前端当前选中的 Skill 名称（渐进式披露：仅作相关性标注，不注入全文） */
   skill_name?: string;
+  /** 用户消息携带的文档附件块名称（展示用，随消息持久化） */
+  doc_blocks?: string[];
+  /** 用户消息携带的 Skill 引用块名称（展示用，随消息持久化） */
+  skill_blocks?: string[];
 }
 
 // ===== 项目 =====

@@ -29,6 +29,8 @@ export interface GenerateVideoRequest {
   resolution: string;
   aspect_ratio: string;
   images?: Array<{ url: string; role: string }>;
+  /** 音色参考音频（Seedance MultiModalToVideo 参考项） */
+  audios?: Array<{ url: string; role?: string }>;
   enhance_prompt?: boolean;
   multimodal?: boolean;
   draft_id: string;

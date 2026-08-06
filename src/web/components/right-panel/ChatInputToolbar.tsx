@@ -4,7 +4,7 @@ import {
 import {
   agentProvider, setAgentProvider, agentModel, setAgentModel,
 } from '@/stores/agent-prefs';
-import { createSignal, createEffect, onMount } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Show } from 'solid-js';
 import { apiProvidersFor, providerModels } from '@/lib/providers';
 import { getContextUsage, type ContextUsage } from '@/api/agent';
 import { chatState } from '@/stores/chat';
@@ -46,6 +46,14 @@ export function ChatInputToolbar(props: {
   createEffect(() => {
     void chatState.messages.length;
     refreshUsage();
+  });
+  // 推理中持续刷新：Agent 边执行边消耗上下文（每批操作落盘后用量都在变），
+  // 不能只在推理完成后刷一次，流式期间每 2 秒轮询一次
+  createEffect(() => {
+    if (!chatState.isStreaming) return;
+    refreshUsage();
+    const timer = setInterval(refreshUsage, 2000);
+    onCleanup(() => clearInterval(timer));
   });
   const usageLabel = () => {
     const u = usage();
@@ -118,13 +126,24 @@ export function ChatInputToolbar(props: {
             {usage() ? `${(usage()!.est_tokens / 1024).toFixed(1)}K 上下文已使用` : '统计中…'}
           </div>
         </div>
+        {/* 推理中：停止键与发送键分离——发送继续可用（消息进排队引导区） */}
+        <Show when={props.busy}>
+          <button
+            type="button"
+            class="send-btn send-btn-stop"
+            title={t('rp.toolbar.stop')}
+            onClick={() => props.onStop()}
+          >
+            <FiSquare size={13} />
+          </button>
+        </Show>
         <button
           type="button"
-          class={`send-btn ${props.busy ? 'send-btn-busy' : ''}`}
-          title={props.busy ? t('rp.toolbar.stop') : t('rp.toolbar.send')}
-          onClick={() => (props.busy ? props.onStop() : props.onSend())}
+          class="send-btn"
+          title={props.busy ? '发送（排队，完成后自动发出）' : t('rp.toolbar.send')}
+          onClick={() => props.onSend()}
         >
-          {props.busy ? <FiSquare size={13} /> : <FiArrowUp size={15} />}
+          <FiArrowUp size={15} />
         </button>
       </div>
     </div>

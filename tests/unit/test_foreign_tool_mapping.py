@@ -8,7 +8,7 @@
 - build_foreign_tool_note 检测/不误判字段名
 - 选中 Skill 硬注入块附带映射表
 - read_skill 工具返回内容附带映射表
-- 已本地化的真实 Skill 文档：标题行可解析、不再含外来工具名
+- 真实 Skill 文档：已恢复 flova 原版文字，标题行可解析、外来工具名自动映射
 """
 import pytest
 
@@ -84,20 +84,31 @@ class TestReadSkillToolWithMapping:
         assert "media_generator" in content
 
 
-class TestRealSkillDocLocalized:
-    """改写后的真实 Skill（data/skills/剧本生视频需上传剧本.md）验收"""
+class TestRealSkillDocVerbatim:
+    """真实 Skill（data/skills/剧本生视频需上传剧本.md）验收：
+    应用户要求已恢复为 flova 平台原版文字（便于对齐测试），
+    外来工具名由注入时自动追加的映射表对接本系统动作。"""
 
     def test_title_line_parseable(self):
         doc = get_skill_doc("剧本生视频需上传剧本")
         assert doc is not None
-        # 标题行修复：_parse_doc 从 "# xxx" 取显示名（此前缺失只能回退 slug）
+        # 标题行：_parse_doc 从 "# xxx" 取显示名
         assert doc["name"] == "剧本生视频（需上传剧本）"
 
-    def test_no_foreign_tool_names_remain(self):
+    def test_foreign_tool_names_get_mapping(self):
         doc = get_skill_doc("剧本生视频需上传剧本")
         assert doc is not None
-        # 工具名已本地化：不应再触发外来映射
-        assert build_foreign_tool_note(doc["content"]) == ""
-        # 铁律就位
-        assert "严禁写详细提示词" in doc["content"]
-        assert "分两批" in doc["content"]
+        # 原版保留 flova 工具名：注入时必须自动追加外来映射表
+        note = build_foreign_tool_note(doc["content"])
+        assert "外来工具名映射" in note
+        for kw in ("write_media_prompt", "media_generator", "reply_to_user", "storyboard_designer"):
+            assert kw in note
+
+    def test_flova_stage_discipline_present(self):
+        doc = get_skill_doc("剧本生视频需上传剧本")
+        assert doc is not None
+        # 原版阶段纪律关键条款就位（分批确认 + 强制暂停点）
+        assert "分批次确认" in doc["content"]
+        assert "【强制暂停点】" in doc["content"]
+        # flova 原生 tag 章节保留（分阶段聚焦注入按 tag 解析）
+        assert "<write_the_prompt>" in doc["content"]

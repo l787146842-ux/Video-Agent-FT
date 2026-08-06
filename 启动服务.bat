@@ -8,9 +8,13 @@ echo   + 画布画布联合启动
 echo ========================================
 echo.
 
-REM 前端产物前置检查：dist 是唯一前端，缺失时自动补构建（构建失败则终止，后端不再有任何回退页面）
-if not exist "static\dist\index.html" (
-  echo [build] 前端产物缺失，正在执行 npm run build ...
+REM 前端产物前置检查：dist 是唯一前端，缺失时自动补构建；
+REM 前端源码（src/web）比产物新时自动重建，防止改了前端代码却还在服务旧产物（构建失败则终止，后端不再有任何回退页面）
+set "NEED_BUILD=0"
+if not exist "static\dist\index.html" set "NEED_BUILD=1"
+if exist "static\dist\index.html" for /f %%i in ('powershell -NoProfile -Command "if (@(Get-ChildItem -Path 'src/web' -Recurse -File | Where-Object { $_.LastWriteTime -gt (Get-Item 'static/dist/index.html').LastWriteTime }).Count) { 1 } else { 0 }"') do set "NEED_BUILD=%%i"
+if "%NEED_BUILD%"=="1" (
+  echo [build] 前端产物缺失或源码已更新，正在执行 npm run build ...
   call npm run build
   if not exist "static\dist\index.html" (
     echo [build] 构建失败，请手动执行 npm run build 排查后重启

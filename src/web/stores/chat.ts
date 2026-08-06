@@ -1,5 +1,5 @@
 import { createStore, produce } from 'solid-js/store';
-import type { ChatMessage, SseDonePayload } from '@/types';
+import type { ChatMessage, SseDonePayload, RichContentPart } from '@/types';
 
 /** 过程时间线条目（流式期间的工具/操作运行态，完成后从消息 trace 重建） */
 export interface TimelineToolEntry {
@@ -9,6 +9,17 @@ export interface TimelineToolEntry {
   status: 'running' | 'done' | 'failed';
   elapsed_ms?: number;
   result_summary?: string;
+}
+
+/** 排队中的引导消息（Agent 推理中用户继续发送，当前任务完成后自动发出） */
+export interface QueuedMessage {
+  id: string;
+  /** 纯文本正文（实际发给后端） */
+  text: string;
+  /** 展示文本（含附件说明） */
+  displayText: string;
+  /** 富文本片段（重发时优先用） */
+  parts: RichContentPart[];
 }
 
 /**
@@ -29,6 +40,10 @@ export interface ChatState {
   streamingReasoning: string;
   /** 流式过程时间线条目（tool_started/tool_finished 实时追加） */
   streamingTools: TimelineToolEntry[];
+  /** 深度思考开始时刻（首条 reasoning 增量到达时记录，用于完成后的耗时角标） */
+  streamingReasoningStartMs: number;
+  /** 排队中的引导消息（推理中发送 → 当前任务完成后自动发出） */
+  queuedMessages: QueuedMessage[];
 }
 
 const defaultChatState: ChatState = {
@@ -40,6 +55,8 @@ const defaultChatState: ChatState = {
   streamingModel: '',
   streamingReasoning: '',
   streamingTools: [],
+  streamingReasoningStartMs: 0,
+  queuedMessages: [],
 };
 
 const [chatState, setChatState] = createStore<ChatState>(defaultChatState);
@@ -62,20 +79,24 @@ export const chatActions = {
       s.streamingModel = modelName || '';
       s.streamingReasoning = '';
       s.streamingTools = [];
+      s.streamingReasoningStartMs = 0;
     }));
   },
 
   /** 追加深度思考（reasoning）增量 */
   appendReasoning(text: string) {
-    setChatState('streamingReasoning', (prev) => prev + text);
-    setChatState('streamingStatus', '深度思考中…');
+    setChatState(produce((s) => {
+      if (!s.streamingReasoningStartMs) s.streamingReasoningStartMs = Date.now();
+      s.streamingReasoning += text;
+      s.streamingStatus = '深度思考中…';
+    }));
   },
 
   /** 过程时间线：工具/操作开始（运行态条目） */
   toolStarted(id: string, name: string, summary: string) {
     setChatState(produce((s) => {
       s.streamingTools.push({ id, name, summary, status: 'running' });
-      s.streamingStatus = `正在执行：${summary || name}`;
+      s.streamingStatus = `正在执行第 ${s.streamingTools.length} 项操作：${summary || name}`;
     }));
   },
 
@@ -109,6 +130,10 @@ export const chatActions = {
     if (payload.steps > 1) metaParts.push(`${payload.steps} 轮`);
     if (payload.applied_actions > 0) metaParts.push(`更新 ${payload.applied_actions} 项`);
 
+    // 深度思考耗时角标：首条 reasoning 增量 → 完成时刻（无思考时 0）
+    const startMs = chatState.streamingReasoningStartMs;
+    const thinkingMs = startMs ? Date.now() - startMs : 0;
+
     setChatState(produce((s) => {
       s.messages.push({
         sender: 'agent',
@@ -117,9 +142,12 @@ export const chatActions = {
         confirm: payload.confirmation || '',
         appliedActions: payload.applied_actions || 0,
         actionLog: (payload.action_log || []).length ? payload.action_log : undefined,
+        // 确认卡片的候选选项（单选卡片，点击即把 label 作为回复发送）
+        confirmOptions: (payload.confirmation_options || []).length ? payload.confirmation_options : undefined,
         // 主模型故障 fallback 时标注实际生效的模型
         modelName: payload.fallback_model || s.streamingModel || undefined,
         trace: payload.trace && (payload.trace.steps || []).length ? payload.trace : undefined,
+        thinkingMs: thinkingMs || undefined,
       });
       // 文档卡片
       (payload.documents_written || []).forEach((name) => {
@@ -139,6 +167,7 @@ export const chatActions = {
       s.streamingModel = '';
       s.streamingReasoning = '';
       s.streamingTools = [];
+      s.streamingReasoningStartMs = 0;
     }));
   },
 
@@ -152,6 +181,7 @@ export const chatActions = {
       s.streamingModel = '';
       s.streamingReasoning = '';
       s.streamingTools = [];
+      s.streamingReasoningStartMs = 0;
     }));
   },
 
@@ -167,12 +197,36 @@ export const chatActions = {
       s.streamingModel = '';
       s.streamingReasoning = '';
       s.streamingTools = [];
+      s.streamingReasoningStartMs = 0;
     }));
   },
 
   /** 从后端加载历史消息 */
   loadMessages(msgs: ChatMessage[]) {
     setChatState('messages', msgs);
+  },
+
+  // ====== 排队引导消息（推理中继续发送，任务完成后自动发出） ======
+
+  enqueueMessage(msg: QueuedMessage) {
+    setChatState('queuedMessages', (prev) => [...prev, msg]);
+  },
+
+  removeQueuedMessage(id: string) {
+    setChatState('queuedMessages', (prev) => prev.filter((m) => m.id !== id));
+  },
+
+  /** 移到队首（「引导」：当前任务一结束就优先发送这条） */
+  moveQueuedToFront(id: string) {
+    setChatState('queuedMessages', (prev) => {
+      const target = prev.find((m) => m.id === id);
+      if (!target) return prev;
+      return [target, ...prev.filter((m) => m.id !== id)];
+    });
+  },
+
+  clearQueuedMessages() {
+    setChatState('queuedMessages', []);
   },
 };
 

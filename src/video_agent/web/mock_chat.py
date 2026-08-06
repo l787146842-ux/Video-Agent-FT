@@ -24,7 +24,11 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
         if use_studio_context:
             bind_attachments(svc, body.attachments)
             store_uploaded_docs(svc, body.attachments)
-            svc.add_chat_message("user", user_text)
+            svc.add_chat_message(
+                "user", user_text,
+                doc_blocks=getattr(body, "doc_blocks", None) or None,
+                skill_blocks=getattr(body, "skill_blocks", None) or None,
+            )
         await emit({"type": SSE_STATUS, "text": "mock 模式：本地规则生成…"})
         raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
         actions = executor.parse_actions_from_reply(raw_reply)

@@ -12,7 +12,11 @@ from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
 from src.video_agent.state.manager import StateManager
 from src.video_agent.exceptions import GenerationError
-from src.video_agent.web.generation import generate_image_via_provider
+from src.video_agent.web.provider_config import (
+    first_available_image_provider,
+    resolve_provider_ref,
+    spec_media_preference,
+)
 from src.video_agent.utils import gen_id
 from src.video_agent.workflows.interactive import get_interactive_engine
 
@@ -41,12 +45,21 @@ class ReadProjectDocInput(BaseModel):
 
 class GenerateImageInput(BaseModel):
     target: str = Field("all_keyElements", description="目标: all_keyElements | all_shots | 具体 draft_id")
-    provider_id: str = Field("", description="生图供应商 ID")
-    model: str = Field("", description="生图模型名")
+    provider_id: str = Field("", description="生图供应商 ID（可留空，系统自动回退草稿自带供应商或配置中首个可用生图供应商）")
+    model: str = Field("", description="生图模型名（可留空，自动用供应商默认模型）")
 
 
 class WorkflowPauseInput(BaseModel):
     message: str = Field("", description="向用户说明已完成什么、接下来要做什么")
+    options: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="引导选项（前端渲染为选择卡片，用户选择后作为回复发送），暂停时原则上必须提供："
+        "每项 {label: 选项名, description: 一句话说明, group: 所属问题/维度标题（可选）}。"
+        "label 必须如实描述用户确认后立即执行的下一步动作（如关键元素拆分确认后是「编写关键元素提示词」，"
+        "不是「生成概念图」），严禁超前承诺。"
+        "多个维度一次性收集时（如成片规格：时长/画幅/风格/声音），每项带上 group 字段，"
+        "前端会渲染为分页向导卡片，用户逐页选完后一次性发送全部选择，避免逐题多轮往返",
+    )
 
 
 class WorkflowStepInput(BaseModel):
@@ -269,53 +282,93 @@ class ImageGenerateTool(BaseTool):
         return GenerateImageInput
 
     async def aexecute(self, params: GenerateImageInput) -> ToolResult:
+        from src.video_agent.state import storyboard_ops as ops
+        from src.video_agent.web.generation import submit_image_task, wait_image_task
+
         svc = StateManager.get_instance()
         state = svc.state_dict
 
-        # 收集目标 drafts（只读，无需加锁）
-        targets: List[Dict] = []
+        # 收集目标 (group, draft, draft_type) 三元组（只读，无需加锁）
+        targets: List[tuple] = []
         if params.target in ("all_keyElements", "all_keyelements"):
             for g in state.get(CAT_KEY_ELEMENTS, []):
                 for d in g.get("drafts", []):
                     if (d.get("prompt") or "").strip():
-                        targets.append(d)
+                        targets.append((g, d, "keyElement"))
         elif params.target in ("all_shots", "all_shot"):
             for g in state.get(CAT_SHOTS, []):
                 for d in g.get("drafts", []):
                     if (d.get("prompt") or "").strip():
-                        targets.append(d)
+                        targets.append((g, d, "shot"))
         else:
             for cat in ALL_CATEGORIES_TUPLE:
                 for g in state.get(cat, []):
                     for d in g.get("drafts", []):
                         if d.get("id") == params.target and (d.get("prompt") or "").strip():
-                            targets.append(d)
+                            targets.append((g, d, "shot" if cat == CAT_SHOTS else "keyElement"))
 
         if not targets:
             return ToolResult(success=False, error="未找到有提示词的草稿")
 
-        # 生图是耗时 IO，在锁外执行
+        # 供应商回退链（8888 事故修复）：LLM 参数 → 规格文档偏好 → 草稿自带 providerId
+        # → 配置中首个可用生图供应商；LLM 常传空 provider，不回退会报「供应商 '' 未配置」
+        provider_id = resolve_provider_ref(str(params.provider_id or "").strip())
+        model = str(params.model or "").strip()
+        if not provider_id:
+            spec_pid, spec_model = spec_media_preference(state)
+            if spec_pid:
+                provider_id = spec_pid
+                model = model or spec_model
+                logger.info(f"[image_generate] provider 未指定，按规格文档偏好回退: {spec_pid}/{model}")
+        if not provider_id:
+            for _g, d, _t in targets:
+                pid = resolve_provider_ref(str(d.get("providerId") or "").strip())
+                if pid:
+                    provider_id = pid
+                    logger.info(f"[image_generate] provider 未指定，回退草稿自带供应商: {pid}")
+                    break
+        if not provider_id:
+            provider_id, fb_model = first_available_image_provider()
+            if provider_id:
+                model = model or fb_model
+                logger.info(f"[image_generate] provider 未指定，回退配置首个可用生图供应商: {provider_id}/{model}")
+        if not provider_id:
+            return ToolResult(success=False, error=(
+                "当前工作区未配置任何可用的生图供应商，请先在 API 配置页添加供应商与 API Key。"
+            ))
+
+        # 统一任务管线提交：提交即记录生成日志 + SSE 点亮前端卡片读秒，
+        # 与手动/批量生图行为一致；全部提交后再逐个等结果（任务是并发的）
+        submitted: List[tuple] = []  # (draft, task_id)
+        for group, draft, dtype in targets:
+            refs = ops.resolve_scene_refs(state, group) if group else []
+            task_id = submit_image_task(
+                state, draft, provider_id, model, refs,
+                aspect_ratio=(draft.get("aspectRatio") or "16:9"),
+                resolution=(draft.get("imageResolution") or "1K"),
+                on_failure_save=svc.save_debounced,
+                draft_type=dtype,
+            )
+            submitted.append((draft, task_id))
+        svc.save()  # 持久化「生成中」标签与草稿参数回写
+        
         ok, failed = 0, []
-        results: List[tuple] = []  # (draft, url)
-        for draft in targets:
-            try:
-                url = await generate_image_via_provider(
-                    params.provider_id, params.model, draft["prompt"],
-                    size=draft.get("size", "1280x720"),
-                    aspect_ratio=draft.get("aspectRatio", "16:9"),
-                )
-                results.append((draft, url))
+        for draft, task_id in submitted:
+            success, payload = await wait_image_task(task_id, timeout=600)
+            if success:
                 ok += 1
-            except Exception as e:  # 统一兜底（GenerationError 是 Exception 子类），单卡失败不中断批量
-                failed.append(str(e))
-
-        # 加锁写入结果并持久化
+            else:
+                failed.append(payload[:200])
+        
+        # 实际使用的供应商/模型回写草稿（imgUrl/tag 已由任务管线 writeback 处理）
         async with svc.lock:
-            for draft, url in results:
-                draft["imgUrl"] = url
-                draft["tag"] = "已生成"
+            for draft, _ in submitted:
+                if provider_id:
+                    draft["providerId"] = provider_id
+                if model:
+                    draft["model"] = model
             svc.save()
-
+        
         if ok == 0:
             return ToolResult(success=False, error="全部生成失败: " + "；".join(failed[:2]))
         return ToolResult(success=True, data={"generated": ok, "failed": len(failed)})

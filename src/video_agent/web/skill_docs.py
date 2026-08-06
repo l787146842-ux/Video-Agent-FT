@@ -63,6 +63,80 @@ def build_foreign_tool_note(content: str) -> str:
 _HISTORY_DIR_NAME = ".history"
 _HISTORY_MAX = 10
 
+# ---------- Skill 章节分阶段解析（分段聚焦注入用） ----------
+# 外来 Skill（如 flova 导出）原生就是「每个工具一节」的结构（<planner>/<write_the_prompt>…），
+# 它们的运行时把各节分别注入对应阶段的子工具；本系统把全文一次性注入单一编排模型，
+# 只能靠「识别当前阶段 → 重复强调对应章节」来逼近同等遵循度。
+SECTION_TAG_STAGES: Dict[str, str] = {
+    "planner": "planning",
+    "resource_prepare_and_analyze": "planning",
+    "multimodal_analyze_tool": "planning",
+    "text_editor": "planning",
+    "storyboard_designer": "storyboard",
+    "write_media_prompt": "prompt_draft",
+    "write_the_prompt": "prompt_draft",
+    "media_generator": "generation",
+    "video_assembler": "assembly",
+    "reply_to_user": "",
+}
+
+# 本地改写版 Skill（标题式）的标题关键字 → 阶段兜底映射
+_HEADING_STAGE_HINTS = [
+    (("提示词写法", "提示词规范", "prompt 编写", "prompt编写"), "prompt_draft"),
+    (("故事板设计", "故事板规范", "分镜设计"), "storyboard"),
+    (("生成规范", "元素生成", "视频生成"), "generation"),
+    (("组装", "导出"), "assembly"),
+    (("流程规划", "阶段逻辑", "依赖关系"), "planning"),
+]
+
+
+def _stage_from_heading(heading: str) -> str:
+    """标题关键字 → 阶段；未命中返回空串"""
+    h = (heading or "").strip()
+    for hints, stage in _HEADING_STAGE_HINTS:
+        if any(k in h for k in hints):
+            return stage
+    return ""
+
+
+def split_skill_sections(content: str) -> Dict[str, str]:
+    """把 Skill 全文拆成 阶段 → 章节文本（同阶段多节合并）。
+
+    支持两种格式：
+    1. flova 原生 <tag>…</tag> 章节（tag 按 SECTION_TAG_STAGES 映射到阶段）；
+    2. 本地改写的 Markdown 标题式（按 _HEADING_STAGE_HINTS 关键字兜底，
+       未映射标题下的正文沿用上一个已识别阶段）。
+    未识别章节不返回（全文本就整体注入，本函数只服务于分阶段聚焦再强调）。
+    """
+    content = content or ""
+    collected: Dict[str, List[str]] = {}
+
+    def _add(stage: str, body: str) -> None:
+        body = (body or "").strip()
+        if not stage or not body:
+            return
+        collected.setdefault(stage, []).append(body)
+
+    # 1) <tag> 章节（flova 原生格式）
+    tag_alt = "|".join(re.escape(t) for t in SECTION_TAG_STAGES)
+    tag_re = re.compile(rf"<(?P<tag>{tag_alt})>(?P<body>.*?)</(?P=tag)>", re.S | re.I)
+    found_tag = False
+    for m in tag_re.finditer(content):
+        found_tag = True
+        _add(SECTION_TAG_STAGES.get(m.group("tag").lower(), ""), m.group("body"))
+    if found_tag:
+        return {k: "\n\n".join(v) for k, v in collected.items()}
+
+    # 2) Markdown 标题兜底
+    parts = re.split(r"(?m)^(#{1,4}[^\n]*)$", content)
+    stage_now = ""
+    for i in range(1, len(parts), 2):
+        heading = parts[i].lstrip("#").strip()
+        body = parts[i + 1] if i + 1 < len(parts) else ""
+        stage_now = _stage_from_heading(heading) or stage_now
+        _add(stage_now, body)
+    return {k: "\n\n".join(v) for k, v in collected.items()}
+
 DEFAULT_SKILL_SLUG = "script-to-video"
 DEFAULT_SKILL_DOC = """# 剧本生视频（需上传剧本）
 

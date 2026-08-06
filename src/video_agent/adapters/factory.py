@@ -121,7 +121,12 @@ class AdapterFactory:
                     default_video_model = video_models[0]
                     AdapterFactory.register(
                         "video_generation", pid,
-                        OpenAICompatVideoAdapter(base_url=base_url, api_key=api_key, model=default_video_model),
+                        OpenAICompatVideoAdapter(
+                            base_url=base_url,
+                            api_key=api_key,
+                            model=default_video_model,
+                            video_request_mode=p.get("video_request_mode") or "classic",
+                        ),
                     )
 
         logger.info(

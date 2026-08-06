@@ -15,12 +15,13 @@ const zhCN: Record<string, string> = {
   'rp.header.idle': 'Agent 空闲',
   'rp.header.resizeHint': '拖动调整输入框高度',
   'rp.feed.empty': '和 Agent 聊聊，让它帮你规划故事板',
+  'rp.feed.hint': '我能把创意/剧本拆解成关键元素、分镜与音频，并逐步规划生成——告诉我你的创意目标即可',
   'rp.streaming.thinking': '正在思考…',
 
   // ---------- 输入区 ----------
   'rp.input.aria': '给 Agent 发送指令',
   'rp.input.placeholder': '给 Agent 发送指令（如：调整场景1氛围、帮我拆分分镜、生成下个动作...）',
-  'rp.input.added': '已添加：{name}',
+  'rp.input.added': '已放入输入框：{name}',
   'rp.toolbar.upload': '上传参考素材或文档',
   'rp.toolbar.providerTitle': 'API 平台选择',
   'rp.toolbar.modelTitle': 'Agent 模型选择',
@@ -65,6 +66,9 @@ const zhCN: Record<string, string> = {
   'rp.skillDetail.renderPreview': '渲染预览',
   'rp.skillDetail.source': '源码',
   'rp.skillDetail.noContent': '暂无内容',
+  'rp.skillDetail.copy': '复制全文',
+  'rp.skillDetail.copied': 'Skill 内容已复制到剪贴板',
+  'rp.skillDetail.copyFailed': '复制失败，请手动选择文本复制',
   'rp.skillDetail.use': '去使用 Skill',
   'rp.skillImport.title': '导入 Skill',
   'rp.skillImport.slugInvalid': '请填写有效的 Skill 标识（中文/英文/数字/连字符）',
@@ -95,6 +99,18 @@ const zhCN: Record<string, string> = {
   'rp.msg.confirmContinue': '确认，继续',
   'rp.msg.confirmText': '确认',
   'rp.msg.adjust': '我要调整',
+
+  // ---------- 排队引导消息（推理中继续发送） ----------
+  'rp.queue.title': '排队中的引导消息（Agent 完成后自动发送）',
+  'rp.queue.guide': '引导',
+  'rp.queue.guideTitle': '停止当前推理，优先用这条消息引导下一步',
+  'rp.queue.delete': '删除',
+  'rp.queue.more': '更多操作',
+  'rp.queue.edit': '编辑消息',
+  'rp.queue.openSide': '在侧边聊天中打开',
+  'rp.queue.closeQueue': '关闭排队',
+  'rp.queue.closeQueueTitle': '清空全部排队消息',
+  'rp.queue.openSideBusy': 'Agent 忙碌中，无法新建对话，消息已保留在排队',
 
   // ---------- 素材库（画布资产弹窗） ----------
   'rp.asset.tabImage': '图片资产',

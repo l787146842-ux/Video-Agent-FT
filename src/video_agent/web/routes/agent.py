@@ -21,8 +21,27 @@ from src.video_agent.exceptions import AdapterError, GenerationError
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.token_budget import estimate_tokens
 from src.video_agent.state.manager import StateManager
+from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 
 router = APIRouter()
+
+# 空项目状态骨架的基线 token：新建项目即使没有任何内容，状态 JSON 也有固定骨架
+# （空列表/interaction 节），这部分不计入「已用」，避免新项目一创建就显示 0.3K
+_EMPTY_STATE_BASELINE_TOKENS: Optional[int] = None
+
+
+def _empty_state_baseline() -> int:
+    global _EMPTY_STATE_BASELINE_TOKENS
+    if _EMPTY_STATE_BASELINE_TOKENS is None:
+        empty = {
+            CAT_KEY_ELEMENTS: [], CAT_SHOTS: [], CAT_AUDIO_ITEMS: [],
+            "assets": [], "documents": [], "uploadedDocs": [],
+            "interaction": {"awaiting_confirmation": False, "confirmation_message": ""},
+        }
+        _EMPTY_STATE_BASELINE_TOKENS = estimate_tokens(
+            json.dumps(empty, ensure_ascii=False, separators=(",", ":"))
+        )
+    return _EMPTY_STATE_BASELINE_TOKENS
 
 
 class ChatRequest(BaseModel):
@@ -53,6 +72,10 @@ class ChatRequest(BaseModel):
     # 前端当前选中的 Skill 名称（渐进式披露：system prompt 只注入 Skill 目录，
     # 选中项仅作相关性标注，不注入全文）
     skill_name: str = ""
+    # 用户消息携带的引用块（展示用，随消息持久化，刷新后可重建）：
+    # doc_blocks = 随消息发送的文档附件名称；skill_blocks = 随消息发送的 Skill 名称
+    doc_blocks: List[str] = []
+    skill_blocks: List[str] = []
 
 
 class ChatResponse(BaseModel):
@@ -124,10 +147,14 @@ async def get_context_usage():
         logger.warning(f"[Agent] 上下文用量统计失败: {e}")
         state_json = ""
     history_json = json.dumps(svc.get_chat_messages(), ensure_ascii=False)
+    # 状态段扣除空项目基线：新项目（无分组/无历史）显示 0，
+    # 用量只随真实内容（分组/草稿/文档/聊天记录）增长
+    state_tokens = max(0, estimate_tokens(state_json) - _empty_state_baseline())
+    history_tokens = estimate_tokens(history_json)
     chars = len(state_json) + len(history_json)
     return {
         "chars": chars,
-        "est_tokens": estimate_tokens(state_json) + estimate_tokens(history_json),
+        "est_tokens": state_tokens + history_tokens,
         "state_chars": len(state_json),
         "history_chars": len(history_json),
     }

@@ -1,6 +1,6 @@
 import { createSignal, createEffect, Show, onMount, onCleanup } from 'solid-js';
 import { state, studioActions } from '@/stores/studio';
-import { chatActions } from '@/stores/chat';
+import { chatState, chatActions } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { sendUserMessage } from '@/lib/agent-actions';
 import { stopAgentStream } from '@/hooks/use-sse';
@@ -12,12 +12,13 @@ import {
 import { uploadAndInsert, handlePasteImages, handleUrlDrop } from '@/lib/chat-input-media';
 import { insertRequestCount, takeInsertRequests } from '@/lib/chat-input-bridge';
 import { t } from '@/lib/locale';
-import { agentSkill } from '@/stores/agent-prefs';
+import { agentSkill, agentProvider, agentModel } from '@/stores/agent-prefs';
 import { openDocsPanel } from '@/stores/docs';
 import { useCanvasMention } from '@/hooks/use-canvas-mention';
 import { ChatInputToolbar } from './ChatInputToolbar';
 import { MentionPopup } from './MentionPopup';
 import { PendingAttachmentBar } from './PendingAttachmentBar';
+import { QueuedMessagesBar } from './QueuedMessagesBar';
 import { MediaLightbox } from './MediaLightbox';
 import type { CanvasNodeImageItem } from '@/api/canvas';
 import type { InlineMedia } from '@/types';
@@ -134,6 +135,26 @@ export function ChatInput() {
     mention.detectMention();
   }
 
+  /** 排队消息「编辑」：文本追加回填输入框（换行分隔，不冲掉正在输入的内容） */
+  function handleEditQueued(text: string) {
+    const el = editorRef;
+    if (!el || !text) return;
+    insertTextAtCursor(el, (el.textContent ? '\n' : '') + text, savedRange);
+    chatActions.setInput(editorToPlainText(el));
+    el.focus();
+  }
+
+  // 排队自动出队：Agent 一空闲就把队首引导消息按序发出（未选供应商时留在队里不丢）
+  createEffect(() => {
+    if (state.agentBusy) return;
+    if (!agentProvider() || !agentModel()) return;
+    const q = chatState.queuedMessages;
+    if (!q.length) return;
+    const first = q[0];
+    chatActions.removeQueuedMessage(first.id);
+    void sendUserMessage(first.parts.length ? first.parts : first.text);
+  });
+
   /** 序列化编辑器并发送；成功后清空 */
   function doSend() {
     const el = editorRef;
@@ -195,15 +216,16 @@ export function ChatInput() {
           Array.from(dt.files || []).forEach((f) => void uploadAndInsert(f, insertMedia));
         }}
       >
+        <QueuedMessagesBar onEdit={handleEditQueued} />
+
         <PendingAttachmentBar />
 
-        {/* 富文本编辑器（contenteditable，文字与缩略块混排） */}
+        {/* 富文本编辑器（contenteditable，文字与缩略块混排；推理中仍可输入，发送进排队） */}
         <div
           id="chatInputTextarea"
           ref={editorRef}
           class="rich-chat-input"
-          classList={{ 'rich-chat-input-disabled': busy() }}
-          contentEditable={!busy()}
+          contentEditable
           role="textbox"
           aria-label={t('rp.input.aria')}
           data-placeholder={t('rp.input.placeholder')}

@@ -1,4 +1,5 @@
 /** Studio store · UI 域（批次6 从 studio.ts 拆出）：选中态/页签/弹窗/附件/生成态/配置 */
+import { produce } from 'solid-js/store';
 import type {
   DraftType, LeftTab, SubTab, ApiProvider, Skill, PendingAttachment,
 } from '@/types';
@@ -10,6 +11,8 @@ export const uiActions = {
     setState('selectedDraftId', id);
     setState('selectedType', type);
     setState('subTab', subTabForType(type));
+    // 强制通知：同 id 同 type 重复点击也让所有预览派生重算（store 同值零通知的兜底）
+    setState('selectTick', (v) => v + 1);
   },
 
   setLeftTab(tab: LeftTab) {
@@ -81,11 +84,11 @@ export const uiActions = {
 
   finishGeneration(draftId: string): number | null {
     const rec = state.activeGenerations[draftId];
-    setState('activeGenerations', (prev) => {
-      const next = { ...prev };
+    // Solid store 对象赋值是合并语义：返回删掉 key 的新对象不会移除旧 key，
+    // 会导致读秒条目残留（生成报错后进度环永远转圈）。必须用 produce 真删。
+    setState('activeGenerations', produce((next) => {
       delete next[draftId];
-      return next;
-    });
+    }));
     return rec ? (Date.now() - rec.start) / 1000 : null;
   },
 
@@ -128,6 +131,7 @@ export const uiActions = {
     if (el.drafts?.length) {
       setState('selectedDraftId', el.drafts[0].id);
       setState('selectedType', 'keyElement');
+      setState('selectTick', (v) => v + 1);
     }
   },
 };

@@ -26,6 +26,10 @@ class StreamActionSuppressor:
         self.emit_upto = 0  # 已推送（或已整块跳过）的位置
         self.in_actions = False
         self._post_fence = False  # 闭合围栏恰在缓冲末尾，待确认下一个字符是否为换行
+        # 边写边填：捕获被抑制的 studio-actions 块内容（不含围栏），
+        # 供 StreamingActionExtractor 增量提取；消费方读取后自行置空
+        self.suppressed = ""
+        self._supp_upto = 0  # 已捕获到的缓冲位置
 
     def feed(self, delta: str) -> str:
         """追加增量文本，返回本次可推送的部分（可能为空串）"""
@@ -59,12 +63,22 @@ class StreamActionSuppressor:
                     self.in_actions = True
                     self.pos = nl + 1
                     self.emit_upto = nl + 1  # 开栏行进入抑制区，不推送
+                    self._supp_upto = nl + 1  # 块内容捕获起点
                 else:
                     self.pos = nl + 1  # 普通代码块，围栏行照常放行
             else:
                 j = self.buf.find(self.FENCE, self.pos)
                 if j == -1:
+                    # 闭合围栏未到：增量捕获块内容（尾部保留 2 字符防截断围栏混入）
+                    safe = max(self._supp_upto, len(self.buf) - (len(self.FENCE) - 1))
+                    if safe > self._supp_upto:
+                        self.suppressed += self.buf[self._supp_upto:safe]
+                        self._supp_upto = safe
                     break
+                # 闭合围栏已确定：捕获剩余块内容（不含围栏本身）
+                if j > self._supp_upto:
+                    self.suppressed += self.buf[self._supp_upto:j]
+                self._supp_upto = j
                 end = j + len(self.FENCE)
                 if end < len(self.buf):
                     if self.buf[end] == "\n":

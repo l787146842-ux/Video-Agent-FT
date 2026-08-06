@@ -166,11 +166,25 @@ def build_agent_context(
             }
             for d in raw_state.get("uploadedDocs", [])
         ],
+        # 交互阶段状态：让模型看到上一轮是否停在「等待确认」暂停点，
+        # 避免用户回复确认后模型感知不到进度、从头重复同一套操作
+        "interaction": _build_interaction(raw_state),
     }
     result = _dumps(snapshot)
     if cache is not None:
         cache[cache_key] = result
     return result
+
+
+def _build_interaction(raw_state: Dict[str, Any]) -> Dict[str, Any]:
+    """交互阶段状态快照（暂停说明截断防撑爆上下文）"""
+    inter = raw_state.get("interaction") or {}
+    return {
+        "awaiting_confirmation": bool(inter.get("awaiting_confirmation")),
+        "confirmation_message": (str(inter.get("confirmation_message") or ""))[:300],
+        # 故事板结构待用户确认窗口：此时严禁写入提示词草案，须先等用户回应
+        "storyboard_pending_review": bool(inter.get("storyboard_pending")),
+    }
 
 
 def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -197,4 +211,5 @@ def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         "asset_count": len(raw_state.get("assets", [])),
         "documents": [d.get("name", "") for d in raw_state.get("documents", [])],
         "uploadedDocs": [d.get("name", "") for d in raw_state.get("uploadedDocs", [])],
+        "interaction": _build_interaction(raw_state),
     }

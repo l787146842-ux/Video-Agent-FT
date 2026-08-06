@@ -42,6 +42,10 @@ export interface StudioState {
   lastAppliedAt: number;
   /** 预览框导航按钮触发左面板定位的计数（驱动滚动到选中卡片并闪烁） */
   locateTick: number;
+  /** 选中操作单调序号：每次 selectDraft/selectAsset 自增。
+   * findDraftRecord 响应式读取它，保证"重复点击同一张卡"也能强制所有预览派生重算，
+   * 规避 Solid store 同值零通知导致的预览停留问题。 */
+  selectTick: number;
 }
 
 const defaultState: StudioState = {
@@ -72,6 +76,7 @@ const defaultState: StudioState = {
   usedSkills: [],
   lastAppliedAt: 0,
   locateTick: 0,
+  selectTick: 0,
 };
 
 const [state, setState] = createStore<StudioState>(defaultState);
@@ -110,10 +115,15 @@ export function groupsForType(type: DraftType | string): AnyGroup[] {
 }
 
 export function findDraftRecord(draftId?: string, type?: DraftType | string): DraftRecord | null {
-  const normalized = normalizeDraftType(type) || state.selectedType || 'keyElement';
+  // 订阅选中序号：任何 selectDraft/selectAsset 调用（含同值重复点击）都强制派生重算
+  void state.selectTick;
+  // 显式传入类型时严格限定该类型查找，不跨类型兜底命中同 id 卡；
+  // 未传类型（如按 id 反查的轮询/事件路径）保持原有优先级回退。
+  const explicit = normalizeDraftType(type);
+  const normalized = explicit || state.selectedType || 'keyElement';
   const targetId = (draftId && draftId !== 'current') ? draftId : state.selectedDraftId;
   if (!targetId) return null;
-  const types = [normalized, 'keyElement', 'shot', 'audio'] as const;
+  const types = explicit ? [explicit] : [normalized, 'keyElement', 'shot', 'audio'] as const;
   const seen = new Set<string>();
   for (const t of types) {
     if (!t || seen.has(t)) continue;
@@ -176,6 +186,7 @@ export function selectFirstDraft() {
     setState('selectedDraftId', firstGroup.drafts[0].id);
     setState('selectedType', type);
     setState('subTab', subTabForType(type));
+    setState('selectTick', (v) => v + 1);
   }
 }
 

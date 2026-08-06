@@ -558,6 +558,9 @@ class StateManager(UndoRedoMixin):
         action_log: Optional[List[str]] = None,
         doc_card: str = "",
         trace: Optional[Dict[str, Any]] = None,
+        doc_blocks: Optional[List[str]] = None,
+        skill_blocks: Optional[List[str]] = None,
+        confirm_options: Optional[List[Dict[str, Any]]] = None,
     ):
         """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，防止状态文件无上限增长。
 
@@ -566,6 +569,8 @@ class StateManager(UndoRedoMixin):
         meta/confirm/applied_actions/action_log/doc_card: Agent 回复的附加展示信息
         （耗时角标/阶段确认卡片/操作数/具体操作清单/文档完成卡片），随消息持久化，
         保证刷新页面后「阶段完成」卡片与耗时角标不丢失。
+        doc_blocks/skill_blocks: 用户消息携带的文档/Skill 引用块名称，
+        前端以可点击的块状形式展示（点击可查看对应文档）。
         """
         self._ensure_conversations()
         msgs = self._raw_state["chatMessages"]
@@ -586,6 +591,12 @@ class StateManager(UndoRedoMixin):
             entry["docCard"] = doc_card
         if trace and trace.get("steps"):
             entry["trace"] = trace
+        if doc_blocks:
+            entry["docBlocks"] = list(doc_blocks)
+        if skill_blocks:
+            entry["skillBlocks"] = list(skill_blocks)
+        if confirm_options:
+            entry["confirmOptions"] = list(confirm_options)
         msgs.append(entry)
         if len(msgs) > _CHAT_HISTORY_LIMIT:
             del msgs[: len(msgs) - _CHAT_HISTORY_LIMIT]

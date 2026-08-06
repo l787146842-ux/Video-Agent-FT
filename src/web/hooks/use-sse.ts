@@ -121,6 +121,17 @@ function handleEvent(ev: SseEvent) {
     case 'tool_finished':
       chatActions.toolFinished(ev.id, ev.ok, ev.elapsed_ms || 0, ev.result_summary);
       break;
+    case 'actions_applied': {
+      // 逐步可见：每批操作执行完就同步最新状态快照，
+      // 推理中就能看到新建的分组/写入的提示词，不必等全部完成
+      const snapshot = ev.payload?.state;
+      if (snapshot) {
+        studioActions.syncFromServer(snapshot);
+        convActions.syncFromServer(snapshot);
+        studioActions.markBoardApplied();
+      }
+      break;
+    }
     case 'done':
       handleDone(ev.payload);
       break;

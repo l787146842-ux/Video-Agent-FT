@@ -10,7 +10,7 @@ describe('lib/locale（P2-4 i18n 基础）', () => {
   });
 
   it('占位符插值（多处同名占位不残留）', () => {
-    expect(t('rp.input.added', { name: '图A' })).toBe('已添加：图A');
+    expect(t('rp.input.added', { name: '图A' })).toBe('已放入输入框：图A');
     expect(t('rp.msg.appliedOps', { count: 3 })).toBe('已执行 3 个操作');
     expect(t('rp.asset.cardToggle', { name: 'x.png', action: '选中' }))
       .toBe('x.png — 点击选中');

@@ -1,5 +1,5 @@
 import { createSignal, Show, untrack } from 'solid-js';
-import { FiX, FiZap, FiEye, FiCode, FiCheck } from 'solid-icons/fi';
+import { FiX, FiZap, FiEye, FiCode, FiCheck, FiCopy } from 'solid-icons/fi';
 import { renderMarkdown } from '@/lib/markdown';
 import { saveSkillDoc } from '@/api/docs';
 import { refreshSkills } from '@/stores/studio';
@@ -45,6 +45,32 @@ export function SkillDetailModal(props: {
   // 初始值只取打开时的 skill，不需响应式跟踪（untrack 显式声明非跟踪读取）
   const [introDraft, setIntroDraft] = createSignal(untrack(() => extractDescription(props.skill)));
   const [savingIntro, setSavingIntro] = createSignal(false);
+
+  /** 复制 Skill 全文到剪贴板（优先 Clipboard API，降级 execCommand） */
+  async function copyContent() {
+    const text = props.skill.system_prompt || '';
+    if (!text) {
+      showToast(t('rp.skillDetail.noContent'), 'warning');
+      return;
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      showToast(t('rp.skillDetail.copied'), 'success');
+    } catch {
+      showToast(t('rp.skillDetail.copyFailed'), 'error');
+    }
+  }
 
   /** 保存简介编辑：更新 skill 文档中的 > 引用行 */
   async function saveIntro() {
@@ -138,6 +164,15 @@ export function SkillDetailModal(props: {
           </Show>
           <Show when={tab() === 'content'}>
             <div class="skill-modal-view-toggle">
+              <button
+                type="button"
+                class="skill-modal-copy-btn"
+                title={t('rp.skillDetail.copy')}
+                onClick={() => void copyContent()}
+              >
+                <FiCopy size={13} />
+                {t('rp.skillDetail.copy')}
+              </button>
               <button
                 type="button"
                 class={`skill-modal-view-btn ${!rawView() ? 'active' : ''}`}

@@ -2,7 +2,12 @@
 
 供前端「已执行操作」卡片展示具体做了什么。纯展示文案逻辑，无副作用。
 """
-from typing import Any, Callable, Dict, Optional
+import re
+from typing import Any, Callable, Dict, List, Optional
+
+# 描述里的目标名称（「…」）与实体 ID（ke-/sh-/au-…）——聚合时剔除，只留动词+对象类别
+_TITLE_RE = re.compile(r"「[^」]*」")
+_ID_RE = re.compile(r"\b(?:ke|sh|au|grp|draft)-[A-Za-z0-9-]+")
 
 
 def describe_action(
@@ -59,6 +64,40 @@ def describe_action(
         return "插入故事板媒体到对话输入框"
     if name in ("generate_image", "batch_generate_image", "gen_image"):
         return f"发起生图（{str(action.get('target', ''))}）"
+    if name in ("generate_video", "batch_generate_video", "gen_video"):
+        return f"发起分镜视频生成（{str(action.get('target', ''))}）"
     if name == "select_draft":
         return "选中草稿"
     return f"执行操作 {name}"
+
+
+def _action_group_key(desc: str) -> str:
+    """聚合键：剔除描述里的具体名称/ID，只保留动词+对象类别（如「新建关键元素分组」）"""
+    key = _TITLE_RE.sub("", desc)
+    key = _ID_RE.sub("", key)
+    key = re.sub(r"\s+", "", key)
+    return key.strip("：: ") or desc.strip()
+
+
+def aggregate_action_log(logs: List[str]) -> List[str]:
+    """粗粒度聚合操作清单（「阶段完成」卡片展示用）。
+
+    用户不需要逐条看到每张卡片：连续同类操作合并为一条，
+    如 3 条「新建关键元素分组「X」」→「新建关键元素分组 ×3」。
+    仅合并连续的同类项，保持时间顺序；不连续的同类操作分开展示。
+    """
+    texts: List[str] = []
+    counts: List[int] = []
+    keys: List[str] = []
+    for desc in logs:
+        d = str(desc or "").strip()
+        if not d:
+            continue
+        key = _action_group_key(d)
+        if keys and keys[-1] == key:
+            counts[-1] += 1
+        else:
+            keys.append(key)
+            counts.append(1)
+            texts.append(key)
+    return [t if n == 1 else f"{t} ×{n}" for t, n in zip(texts, counts)]

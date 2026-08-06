@@ -152,12 +152,25 @@ def find_group(
 
 
 def patch_draft(draft: Dict[str, Any], patch: Dict[str, Any]) -> bool:
-    """按 ALLOWED_DRAFT_FIELDS 白名单就地更新 draft，返回是否有字段被修改。"""
+    """按 ALLOWED_DRAFT_FIELDS 白名单就地更新 draft，返回是否有字段被修改。
+
+    确认状态闭环：提示词被重写（值变化且非空）时，「已确认」标记作废
+    （tag 重置为 Agent）——用户提修改 → 模型重写 → 需重新经用户确认，
+    避免旧确认被静默继承到新版本提示词。
+    """
+    new_prompt = patch.get("prompt")
+    prompt_changed = (
+        "prompt" in patch
+        and str(new_prompt or "").strip()
+        and str(new_prompt or "") != str(draft.get("prompt") or "")
+    )
     changed = False
     for field in ALLOWED_DRAFT_FIELDS:
         if field in patch:
             draft[field] = patch[field]
             changed = True
+    if prompt_changed and "tag" not in patch and draft.get("tag") == "已确认":
+        draft["tag"] = "Agent"
     return changed
 
 
@@ -169,6 +182,25 @@ def patch_group(group: Dict[str, Any], patch: Dict[str, Any]) -> bool:
             group[field] = patch[field]
             changed = True
     return changed
+
+
+def sync_shot_duration(group: Dict[str, Any], draft: Dict[str, Any], patch: Optional[Dict[str, Any]] = None) -> bool:
+    """时长参数同步（分镜专用）：草稿的生视频时长参数必须与分镜结构时长一致。
+
+    客观兜底（不依赖模型自觉）：本次 patch 未带 duration 且草稿时长仍为
+    空/默认 5s 时，用分组 duration 补印，确保生成参数里的时长就是分镜时长；
+    用户手动设过的非默认值不覆盖。返回是否发生补印。
+    """
+    if (patch or {}).get("duration"):
+        return False
+    gd = str((group or {}).get("duration") or "").strip()
+    if not gd:
+        return False
+    dd = str((draft or {}).get("duration") or "").strip()
+    if dd and dd != "5s":
+        return False
+    draft["duration"] = gd
+    return True
 
 
 def delete_draft(state: Dict[str, Any], draft_id: str, draft_type: str = "") -> bool:

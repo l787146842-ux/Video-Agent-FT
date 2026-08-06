@@ -1,16 +1,19 @@
 /**
  * 文档面板侧边栏（从 DocsPanel 拆出）：
  * 三段列表（项目文档 / 上传素材 / Skill 文档）+ 新建文档入口。
+ * 关闭按钮已移至面板右上角（DocsPanel），栏头按住可拖拽窗口。
  */
 import { createSignal, For, Show } from 'solid-js';
-import { FiFileText, FiPlus, FiX, FiZap } from 'solid-icons/fi';
+import { FiFileText, FiPlus, FiZap } from 'solid-icons/fi';
 import { fetchResourceText } from '@/api/client';
 import { state } from '@/stores/studio';
 import {
-  visibleSkillDocs, current, selectDoc, closeDocsPanel, createDoc, setAssetContent,
+  visibleSkillDocs, current, selectDoc, createDoc, setAssetContent,
 } from '@/stores/docs';
 
-export function DocsSidebar() {
+export function DocsSidebar(props: {
+  onHeaderDrag?: (e: PointerEvent & { currentTarget: HTMLElement }) => void;
+}) {
   const [creating, setCreating] = createSignal(false);
   const [newName, setNewName] = createSignal('');
 
@@ -39,16 +42,8 @@ export function DocsSidebar() {
 
   return (
     <div class="docs-sidebar">
-      <div class="docs-sidebar-header">
+      <div class="docs-sidebar-header" onPointerDown={(e) => props.onHeaderDrag?.(e)}>
         <FiFileText size={14} /> 文档
-        <button
-          type="button"
-          class="docs-close"
-          title="关闭"
-          onClick={closeDocsPanel}
-        >
-          <FiX size={14} />
-        </button>
       </div>
 
       <div class="docs-file-list">
@@ -116,7 +111,8 @@ export function DocsSidebar() {
             class="docs-new-btn"
             onClick={() => setCreating(true)}
           >
-            <FiPlus size={12} /> 新建文档
+            <FiPlus size={11} />
+            <span>新建文档</span>
           </button>
         }
       >

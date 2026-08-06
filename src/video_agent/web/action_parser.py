@@ -101,3 +101,62 @@ def normalize_actions(parsed: Any) -> List[Dict]:
         if parsed.get("action"):
             return [parsed]
     return []
+
+
+# ---------- 流式增量提取（边写边填） ----------
+
+class StreamingActionExtractor:
+    """studio-actions 块的流式增量提取器。
+
+    喂入被 StreamActionSuppressor 抑制的动作块内容（不含围栏），
+    用括号深度 + 字符串状态机检测顶层 JSON 对象闭合，
+    每闭合一个立即解析返回——支持模型边生成、系统边执行，
+    草稿卡片逐张填充，而不是等全部写完一次性弹出。
+    解析失败的片段静默丢弃（流尾由 parse_actions_from_reply 全量兜底）。
+    """
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._obj_start = -1
+        self._depth = 0
+        self._in_str = False
+        self._esc = False
+
+    def feed(self, chunk: str) -> List[Dict[str, Any]]:
+        """追加增量内容，返回本次新闭合的 action dict 列表"""
+        out: List[Dict[str, Any]] = []
+        for ch in chunk:
+            if self._obj_start == -1:
+                if ch == "{":
+                    self._obj_start = len(self._buf)
+                    self._depth = 1
+                    self._in_str = False
+                    self._esc = False
+                # 数组括号/逗号/空白跳过（对象内嵌套数组在深度计数内处理）
+                self._buf += ch
+                continue
+            self._buf += ch
+            if self._in_str:
+                if self._esc:
+                    self._esc = False
+                elif ch == "\\":
+                    self._esc = True
+                elif ch == '"':
+                    self._in_str = False
+                continue
+            if ch == '"':
+                self._in_str = True
+            elif ch in "{[":
+                self._depth += 1
+            elif ch in "}]":
+                self._depth -= 1
+                if self._depth == 0:
+                    raw = self._buf[self._obj_start:]
+                    self._obj_start = -1
+                    self._in_str = False
+                    self._esc = False
+                    parsed = parse_json_tolerant(raw)
+                    for a in normalize_actions(parsed):
+                        if isinstance(a, dict):
+                            out.append(a)
+        return out

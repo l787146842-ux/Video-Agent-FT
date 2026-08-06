@@ -14,7 +14,8 @@ from src.video_agent.web.actions import StudioActionExecutor
 from src.video_agent.web.generation import (
     GenerationError,
     call_chat_completion,
-    generate_image_via_provider,
+    submit_image_task,
+    wait_image_task,
 )
 from src.video_agent.web.provider_config import is_mock_provider
 from src.video_agent.utils.prompts import load_prompt
@@ -178,25 +179,31 @@ def build_executors(
             for group in groups.get(cat, []):
                 for draft in group.get("drafts", []):
                     if draft.get("prompt") and not draft.get("imgUrl") and draft.get("mediaType") == "image":
-                        targets.append(draft)
+                        targets.append((group, draft, "shot" if cat == CAT_SHOTS else "keyElement"))
         targets = targets[:MAX_IMAGES_PER_RUN]
         if not targets:
             return {"detail": "没有待生成的关键帧（所有草稿已有图片）"}
 
+        # 统一任务管线提交（生成日志 + 前端卡片读秒），全部提交后再等结果
+        submitted = []
+        for group, draft, dtype in targets:
+            task_id = submit_image_task(
+                svc.state_dict, draft, img_p, img_m, [],
+                aspect_ratio=(draft.get("aspectRatio") or "16:9"),
+                resolution=(draft.get("imageResolution") or "1K"),
+                on_failure_save=svc.save_debounced,
+                draft_type=dtype,
+            )
+            submitted.append(task_id)
+        svc.save()
+
         ok, failed_msgs = 0, []
-        for draft in targets:
-            try:
-                url = await generate_image_via_provider(
-                    img_p, img_m, draft["prompt"],
-                    size=draft.get("size", "1280x720"),
-                    aspect_ratio=draft.get("aspectRatio", "16:9"),
-                )
-                draft["imgUrl"] = url
-                draft["tag"] = "已生成"
-                svc.save()
+        for task_id in submitted:
+            success, payload = await wait_image_task(task_id, timeout=600)
+            if success:
                 ok += 1
-            except GenerationError as e:
-                failed_msgs.append(str(e))
+            else:
+                failed_msgs.append(payload[:200])
         if ok == 0:
             raise GenerationError("全部关键帧生成失败：" + "；".join(failed_msgs[:2]))
         detail = f"已生成 {ok}/{len(targets)} 张关键帧"
