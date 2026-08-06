@@ -36,9 +36,11 @@ from src.video_agent.core.fc_tool_runner import (
     format_tool_results,
     render_read_result,
     should_compress_feedback,
+    strip_prior_feedback_images,
 )
 from src.video_agent.core.prompt_builder import PromptBuilder
-from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS
+from src.video_agent.core import prompt_gates
+from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_REASONING_DELTA, SSE_STATUS
 from src.video_agent.core.stream_suppressor import StreamActionSuppressor  # re-export 兼容旧导入
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.workflows.engine import WorkflowEngine
@@ -48,6 +50,7 @@ from src.video_agent.workflows.engine import WorkflowEngine
 _STUDIO_STATE_TOOLS = frozenset({
     "storyboard_create_group", "storyboard_patch_draft", "storyboard_add_draft",
     "storyboard_delete_group", "storyboard_confirm_draft", "storyboard_media_to_chat",
+    "view_storyboard_media",
     "read_draft", "document_write", "read_uploaded_doc", "read_project_doc",
 })
 
@@ -93,6 +96,8 @@ class PlannerResponse:
     chat_inserts: List[Dict[str, Any]] = field(default_factory=list)
     # 已执行操作的中文描述清单（前端「阶段完成」卡片展开用，随消息持久化）
     action_log: List[str] = field(default_factory=list)
+    # 确认卡片的候选选项（每项 {label, description}，前端渲染为单选卡片）
+    confirmation_options: List[Dict[str, Any]] = field(default_factory=list)
     # 执行轨迹（每轮 step/耗时/操作数），前端「执行轨迹」折叠区展示
     trace: Dict[str, Any] = field(default_factory=dict)
 
@@ -145,7 +150,10 @@ class Planner:
         self._system_degrader: Optional[Callable[[str], str]] = None
         # 拆出的协作臂（批次5）：prompt 组装与 FC 执行，Planner 保留同名委托
         self._prompt_builder = PromptBuilder(
-            self._get_skill_docs, lambda: self.state_manager.active_project_id
+            self._get_skill_docs,
+            lambda: self.state_manager.active_project_id,
+            # 分阶段聚焦注入：实时读取工作台状态推断当前制作阶段
+            lambda: self.state_manager.state_dict,
         )
         self._fc_runner = FCToolRunner(self.tool_manager)
 
@@ -168,6 +176,17 @@ class Planner:
             from src.video_agent.adapters.canvas_adapter import canvas_online_cached
             if canvas_online_cached() is False:
                 excluded |= _CANVAS_TOOLS
+        # 混合形态第一层：阶段探测驱动的工具裁剪（仅 Skill 激活 + strict），
+        # 用工具可见性隔离阶段；第二层由既有闸机兑底（文本轨不受裁剪影响）
+        if context.skill_name and context.use_studio_context \
+                and prompt_gates.gate_mode() == "strict":
+            try:
+                stage_excluded, _ = prompt_gates.stage_tool_restrictions(
+                    self.state_manager.state_dict
+                )
+                excluded |= set(stage_excluded)
+            except Exception:
+                pass  # 裁剪失败不阻断对话，闸机层仍生效
         return frozenset(excluded)
 
     def _make_system_degrader(self, context: PlannerContext) -> Optional[Callable[[str], str]]:
@@ -218,7 +237,20 @@ class Planner:
             self.state_manager,
             selected_draft_id=context.selected_draft_id,
             selected_type=context.selected_type,
+            # Skill 流程激活时打开提示词结构闸机（写入即校验，不合格打回重写）；
+            # 旧工厂签名不认 gate_enabled 时静默回退（兼容测试 stub）
         )
+        if context.skill_name:
+            try:
+                executor.gate_enabled = True
+            except Exception:
+                pass
+        # 流式增量执行计数重置（边写边填：上次调用的残留不得带入本次）
+        try:
+            executor.stream_preapplied = 0
+            executor.stream_consumed = 0
+        except Exception:
+            pass
 
         # 包装 llm_call：处理 FC tool_calls 后返回 (content, finish_reason, fc_applied)
         # image_urls_collector 用于跨多步收集生图产物
@@ -227,6 +259,10 @@ class Planner:
         chat_inserts_collector: List[Dict[str, Any]] = []
         # action_log_collector 用于跨多步收集 FC 工具的操作描述
         action_log_collector: List[str] = []
+        # confirmation_options_collector 用于跨多步收集确认卡片的候选选项
+        confirmation_options_collector: List[Dict[str, Any]] = []
+        # docs_written_collector 用于跨多步收集 FC 轨写入的文档名（渲染文档卡片）
+        docs_written_collector: List[str] = []
 
         async def _emit_status(text: str) -> None:
             """推理过程可视化：把 FC 工具执行进度实时推给前端状态栏"""
@@ -247,6 +283,10 @@ class Planner:
                 finish = ""
                 stream_tool_calls: List[Dict[str, Any]] = []
                 suppressor = StreamActionSuppressor()
+                # 边写边填：studio-actions 块内每个 JSON 对象一流式闭合就立即执行，
+                # 草稿卡片逐张填充，不等全部写完一次性弹出
+                from src.video_agent.web.action_parser import StreamingActionExtractor
+                extractor = StreamingActionExtractor()
                 async for chunk in self._call_llm_stream(system_prompt, messages):
                     if chunk.type == "text_delta" and chunk.text:
                         content_parts.append(chunk.text)
@@ -254,6 +294,24 @@ class Planner:
                         out = suppressor.feed(chunk.text)
                         if out:
                             await hook(out)
+                        # 被抑制的动作块内容喂给增量提取器，闭合即执行
+                        if suppressor.suppressed:
+                            for act in extractor.feed(suppressor.suppressed):
+                                # 流程信号（continue/确认）不预执行，留待循环末尾统一处理
+                                if not executor._is_mutating(act):
+                                    continue
+                                executor.stream_consumed += 1
+                                try:
+                                    if executor.execute([act], accumulate=True):
+                                        executor.stream_preapplied += 1
+                                        if on_event is not None:
+                                            await on_event({
+                                                "type": SSE_ACTIONS_APPLIED,
+                                                "count": 1,
+                                            })
+                                except Exception as e:
+                                    logger.warning(f"[Planner] 流式增量执行失败: {act} -> {e}")
+                            suppressor.suppressed = ""
                     elif chunk.type == "reasoning_delta" and chunk.text:
                         # 深度思考：记入 trace（持久化展示）+ 实时推给前端，不进 LLM 上下文
                         tracer.record_reasoning(chunk.text)
@@ -283,11 +341,15 @@ class Planner:
                 image_urls_collector=image_urls_collector,
                 chat_inserts_collector=chat_inserts_collector,
                 action_log_collector=action_log_collector,
+                confirmation_options_collector=confirmation_options_collector,
+                docs_written_collector=docs_written_collector,
                 image_provider=context.image_generation_provider,
                 image_aspect_ratio=context.image_generation_aspect_ratio,
                 on_status=_emit_status,
                 on_event=_emit_event,
                 injected_skill=context.skill_name,
+                selected_draft_id=context.selected_draft_id,
+                selected_type=context.selected_type,
             )
             # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
             # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
@@ -295,16 +357,24 @@ class Planner:
                 feedback = Planner._format_tool_results(tool_results)
                 if feedback:
                     if context.skill_name:
-                        feedback += (
+                        reminder = (
                             "\n【提醒】当前有选中 Skill：遵守其阶段划分与暂停点，"
                             "到达确认点时用 request_confirmation / workflow_pause 真正停下，不要一口气做完全部阶段。"
                         )
+                        if isinstance(feedback, list):
+                            feedback = feedback + [{"type": "text", "text": reminder}]
+                        else:
+                            feedback += reminder
                     # token 治理（P1）：新一轮回喂入库前，把更早轮次的 read_* 全文
                     # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
                     # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
                     # 短对话保留全文；选中 Skill 不受影响（它硬注入在 system prompt 里）
                     if Planner._should_compress_feedback(messages):
                         Planner._compress_prior_feedback(messages)
+                    # 按需调图：新回喂带图片时，先剥离旧轮已加载的图片，
+                    # 上下文始终只保留最新一轮的画面（vision token 治理）
+                    if isinstance(feedback, list):
+                        strip_prior_feedback_images(messages)
                     messages.append({"role": "user", "content": feedback})
             return content, finish, fc_applied
 
@@ -324,6 +394,20 @@ class Planner:
             on_event=on_event,
         )
 
+        # 纯工具轮无总结文字时，用实际操作清单替换无信息量的占位文案：
+        # 占位文案进入历史后模型看不出上一轮做了什么（读文档/写文档/请求确认），
+        # 用户下一条「确认」进来就会失去参照、从头重复同一套操作
+        # 粗粒度聚合（Rule: 阶段反馈不逐卡罗列）：延迟导入 web 层描述工具（同 executor_factory 回落模式）
+        from src.video_agent.web.action_descriptions import aggregate_action_log
+        if loop_result.applied_actions and (
+            not loop_result.text.strip() or "模型未输出总结文字" in loop_result.text
+        ):
+            merged_log = aggregate_action_log(action_log_collector + executor.action_log)
+            if merged_log:
+                loop_result.text = (
+                    f"已执行 {loop_result.applied_actions} 个操作：" + "；".join(merged_log[:12])
+                )
+
         # 转换为 PlannerResponse（chat_inserts：FC 路径收集 + 文本解析路径 executor 收集，按 URL 去重）
         merged_inserts: List[Dict[str, Any]] = []
         seen_urls = set()
@@ -332,16 +416,26 @@ class Planner:
             if u and u not in seen_urls:
                 seen_urls.add(u)
                 merged_inserts.append(it)
+        # 文档卡片：文本轨 executor.documents_written + FC 轨 docs_written_collector，去重保序
+        merged_docs: List[str] = []
+        seen_docs = set()
+        for dn in (executor.documents_written + docs_written_collector):
+            if dn and dn not in seen_docs:
+                seen_docs.add(dn)
+                merged_docs.append(dn)
         response = PlannerResponse(
             text=loop_result.text,
             applied_actions=loop_result.applied_actions,
             steps=loop_result.steps,
             warnings=loop_result.warnings,
             confirmation=loop_result.confirmation,
-            documents_written=executor.documents_written,
+            documents_written=merged_docs,
             image_urls=image_urls_collector,
             chat_inserts=merged_inserts,
-            action_log=action_log_collector + executor.action_log,
+            # 阶段完成卡片粗粒度展示：连续同类操作合并（如「新建关键元素分组 ×3」），
+            # 不逐张卡片罗列；随消息持久化与 done payload 一并下发
+            action_log=aggregate_action_log(action_log_collector + executor.action_log),
+            confirmation_options=loop_result.confirmation_options or confirmation_options_collector,
             trace=loop_result.trace,
         )
 
@@ -385,7 +479,11 @@ class Planner:
                 ))
             elif etype == "actions_applied":
                 count = event.get("count", 0)
-                await queue.put(PlannerEvent(type="actions_applied", text=f"已应用 {count} 个操作"))
+                # payload 携带 count：web 层据此下发最新状态快照，前端逐步刷新故事板
+                await queue.put(PlannerEvent(
+                    type="actions_applied", text=f"已应用 {count} 个操作",
+                    payload={"count": count},
+                ))
             elif etype == "executing_actions":
                 await queue.put(PlannerEvent(type="status", text="正在执行操作…"))
             elif etype in ("reasoning_delta", "tool_started", "tool_finished"):
@@ -447,6 +545,7 @@ class Planner:
             "image_urls": result.image_urls,
             "chat_inserts": result.chat_inserts,
             "action_log": result.action_log,
+            "confirmation_options": result.confirmation_options,
             "trace": result.trace,
         })
 
@@ -561,20 +660,26 @@ class Planner:
         image_urls_collector: Optional[List[str]] = None,
         chat_inserts_collector: Optional[List[Dict[str, Any]]] = None,
         action_log_collector: Optional[List[str]] = None,
+        confirmation_options_collector: Optional[List[Dict[str, Any]]] = None,
+        docs_written_collector: Optional[List[str]] = None,
         image_provider: str = "",
         image_aspect_ratio: str = "",
         on_status=None,
         on_event=None,
         injected_skill: str = "",
+        selected_draft_id: str = "",
+        selected_type: str = "",
     ) -> Tuple:
         """处理 LLM 响应中的 FC tool_calls。
         返回 (content, finish_reason, fc_applied, tool_results)，
         tool_results: [{name, ok, data, error}] 供回喂进对话上下文"""
         if response.tool_calls:
             (fc_applied, fc_confirmation, image_urls,
-             chat_inserts, fc_action_log, fc_tool_results) = await self._execute_fc_tools(
+             chat_inserts, fc_action_log, fc_confirmation_options,
+             fc_tool_results, fc_docs_written) = await self._execute_fc_tools(
                 response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
                 on_status=on_status, on_event=on_event, injected_skill=injected_skill,
+                selected_draft_id=selected_draft_id, selected_type=selected_type,
             )
             if image_urls_collector is not None:
                 image_urls_collector.extend(image_urls)
@@ -582,12 +687,23 @@ class Planner:
                 chat_inserts_collector.extend(chat_inserts)
             if action_log_collector is not None:
                 action_log_collector.extend(fc_action_log)
+            if confirmation_options_collector is not None:
+                confirmation_options_collector.extend(fc_confirmation_options)
+            if docs_written_collector is not None:
+                docs_written_collector.extend(fc_docs_written)
             if fc_confirmation:
-                confirm_block = json.dumps(
-                    [{"action": "request_confirmation", "message": fc_confirmation}],
-                    ensure_ascii=False,
-                )
-                content = response.content + f"\n```studio-actions\n{confirm_block}\n```"
+                confirm_action: Dict[str, Any] = {
+                    "action": "request_confirmation", "message": fc_confirmation,
+                }
+                if fc_confirmation_options:
+                    confirm_action["options"] = fc_confirmation_options
+                confirm_block = json.dumps([confirm_action], ensure_ascii=False)
+                # 空正文兜底处理：FC 模型常只发暂停工具不带正文，若不补可见文字，
+                # 用户会看到「模型返回了空内容」而非完成总结（事情干完了却像失败了）
+                visible = (response.content or "").strip()
+                if not visible:
+                    visible = fc_confirmation
+                content = visible + f"\n```studio-actions\n{confirm_block}\n```"
                 return content, response.finish_reason, 0, fc_tool_results
             return response.content, response.finish_reason, fc_applied, fc_tool_results
         return response.content, response.finish_reason, 0, []
@@ -595,12 +711,15 @@ class Planner:
     async def _execute_fc_tools(
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",
         on_status=None, on_event=None, injected_skill: str = "",
-    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
+        selected_draft_id: str = "", selected_type: str = "",
+    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
         """执行 Function Calling 返回的 tool_calls（委托 FCToolRunner）。
-        返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log, tool_results)"""
+        返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
+        confirmation_options, tool_results, docs_written)"""
         return await self._fc_runner.execute(
             response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
             on_status=on_status, on_event=on_event, injected_skill=injected_skill,
+            selected_draft_id=selected_draft_id, selected_type=selected_type,
         )
 
     # read_* 系列：读回的全文必须完整回喂进上下文（渐进式披露的「借阅归还」）；
@@ -610,7 +729,7 @@ class Planner:
     _FEEDBACK_MAX_TOTAL_CHARS = FEEDBACK_MAX_TOTAL_CHARS
 
     @staticmethod
-    def _format_tool_results(tool_results: List[Dict[str, Any]]) -> str:
+    def _format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[Dict[str, Any]]]:
         """把本轮 FC 工具执行结果格式化为回喂消息（委托 fc_tool_runner）"""
         return format_tool_results(tool_results)
 

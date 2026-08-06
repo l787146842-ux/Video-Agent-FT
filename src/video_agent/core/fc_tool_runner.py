@@ -8,15 +8,23 @@ planner.py 对下列符号保留同名委托，既有调用/测试路径不变�
 """
 import json
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from loguru import logger
 
 from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.config import settings
-from src.video_agent.core.sse_events import SSE_TOOL_FINISHED, SSE_TOOL_STARTED
+from src.video_agent.core import prompt_gates
+from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
 from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.state import storyboard_ops as ops
+from src.video_agent.state.manager import StateManager
+from src.video_agent.state.models import (
+    ALL_CATEGORIES_TUPLE,
+    CAT_KEY_ELEMENTS,
+    CAT_SHOTS,
+)
 from src.video_agent.tools.base import ToolResult
 
 # 回喂消息的识别前缀（与 format_tool_results 首行保持一致）
@@ -30,6 +38,8 @@ FEEDBACK_COMPRESSED = (
 # read_* 系列：读回的全文必须完整回喂进上下文（渐进式披露的「借阅归还」）；
 # 其他写入类工具只回报成功与否，避免重复携带大 JSON 膨胀上下文
 FEEDBACK_FULL_TOOLS = {"read_skill", "read_project_doc", "read_uploaded_doc", "read_draft"}
+# 按需调图工具：读回的图片以多模态 parts 回喂（模型真正「看到」画面）
+FEEDBACK_IMAGE_TOOL = "view_storyboard_media"
 # 单次回喂总量保险丝（read_* 各自已有 max_doc_chars 截断，这里防多文档叠加）
 FEEDBACK_MAX_TOTAL_CHARS = 100000
 
@@ -51,12 +61,45 @@ def compress_prior_feedback(messages: List[Dict[str, Any]]) -> None:
     时机：新一轮回喂 append 之前调用，因此现存的所有回喂消息都属「旧轮」。
     read_* 全文只保留最近一轮，更早的以一句话占位——约束效力靠提示词延续，
     全文本身已写入草稿/文档，需要时模型可重新 read。
+    多模态回喂（含图片 parts 的 list content）同样压成纯文本占位，
+    旧轮图片不再占用 vision token。
     """
     for m in messages:
         content = m.get("content", "")
-        if m.get("role") == "user" and isinstance(content, str) \
-                and content.startswith(FEEDBACK_MARKER):
+        if m.get("role") != "user":
+            continue
+        if isinstance(content, str) and content.startswith(FEEDBACK_MARKER):
             m["content"] = FEEDBACK_COMPRESSED
+        elif isinstance(content, list):
+            first_text = next(
+                (p.get("text", "") for p in content
+                 if isinstance(p, dict) and p.get("type") == "text"),
+                "",
+            )
+            if first_text.startswith(FEEDBACK_MARKER):
+                m["content"] = FEEDBACK_COMPRESSED
+
+
+def strip_prior_feedback_images(messages: List[Dict[str, Any]]) -> None:
+    """把旧轮多模态回喂里的图片 parts 移除，只保留文本（原地修改）。
+
+    时机：新一轮含图片的回喂 append 之前。上下文里始终只保留最新一轮
+    加载的图片：模型逐条草稿「调图 → 写提示词 → 调下一批图」，旧图对后续
+    推理无价值且 vision token 昂贵，剥离后模型需要时可重新调用加载。
+    """
+    for m in messages:
+        content = m.get("content", "")
+        if m.get("role") != "user" or not isinstance(content, list):
+            continue
+        if not any(isinstance(p, dict) and p.get("type") == "image_url" for p in content):
+            continue
+        kept = [p for p in content if not (isinstance(p, dict) and p.get("type") == "image_url")]
+        kept.append({
+            "type": "text",
+            "text": "（系统）此前轮次加载的故事板图片已从上下文移除以节约空间；"
+                     "如后续仍需看到它们，重新调用 view_storyboard_media 加载。",
+        })
+        m["content"] = kept
 
 
 def render_read_result(name: str, data: Dict[str, Any]) -> str:
@@ -74,18 +117,36 @@ def render_read_result(name: str, data: Dict[str, Any]) -> str:
     return f"【{doc_name}】\n{content}"
 
 
-def format_tool_results(tool_results: List[Dict[str, Any]]) -> str:
+def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[Dict[str, Any]]]:
     """把本轮 FC 工具执行结果格式化为回喂消息。
 
     read_* 工具携带读回的全文（Skill 流程/规格/剧本/草稿提示词），
     必须让模型在后续轮次真正看到，否则按需加载形同虚设。
+    view_storyboard_media 携带读回的图片（data URI）时，返回多模态
+    content parts（文本 + image_url），让模型真正「看到」画面。
     """
     lines: List[str] = [FEEDBACK_MARKER]
+    image_parts: List[Dict[str, Any]] = []
     total = 0
     for tr in tool_results:
         name = str(tr.get("name", ""))
         if not tr.get("ok"):
             lines.append(f"- {name}：执行失败 —— {tr.get('error') or '未知错误'}")
+            continue
+        if name == FEEDBACK_IMAGE_TOOL:
+            data = tr.get("data") or {}
+            imgs = data.get("images") or []
+            for im in imgs:
+                if not isinstance(im, dict) or not im.get("data_uri"):
+                    continue
+                image_parts.append({
+                    "type": "text",
+                    "text": f"[图片：{im.get('label', '')}]（draft_id={im.get('draft_id', '')}）",
+                })
+                image_parts.append({"type": "image_url", "image_url": {"url": im["data_uri"]}})
+            lines.append(f"- {name}：执行成功，已加载 {len(imgs)} 张图片（紧随本段文字之后，可直接看到画面）")
+            for n in (data.get("notes") or []):
+                lines.append(f"  · {n}")
             continue
         if name not in FEEDBACK_FULL_TOOLS:
             lines.append(f"- {name}：执行成功")
@@ -100,7 +161,23 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> str:
             f"- {name} 执行成功，以下是读回的全文（后续任务必须遵守其中流程与约束，"
             f"不要重复调用同一工具）：\n{body}"
         )
-    return "\n".join(lines) if len(lines) > 1 else ""
+    if len(lines) <= 1:
+        return ""
+    text = "\n".join(lines)
+    if not image_parts:
+        return text
+    return (
+        [{"type": "text", "text": text}]
+        + image_parts
+        + [{
+            "type": "text",
+            "text": (
+                "（系统）以上图片仅供当前正在处理的草稿使用；写完对应提示词后，"
+                "处理下一条草稿时请重新调用 view_storyboard_media 加载需要的图片，"
+                "不要凭记忆描述已不在上下文中的画面。"
+            ),
+        }]
+    )
 
 
 def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
@@ -121,6 +198,9 @@ def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
         return f"确认草稿「{label or draft_id or '当前草稿'}」"
     if name == "storyboard_media_to_chat":
         return "插入故事板媒体到对话输入框"
+    if name == "view_storyboard_media":
+        n = len(args.get("draft_ids") or []) if isinstance(args.get("draft_ids"), list) else 0
+        return f"加载故事板图片进上下文（{n} 个目标）" if n else "加载故事板图片进上下文"
     if name == "read_draft":
         return f"读取草稿「{str(args.get('draft_id') or '未知')}」提示词全文"
     if name == "document_write":
@@ -145,19 +225,228 @@ class FCToolRunner:
 
     def __init__(self, tool_manager) -> None:
         self.tool_manager = tool_manager
+        # 前端当前选中的草稿（对齐文本轨 "current" 语义）；execute 时按请求注入
+        self._selected_draft_id = ""
+        self._selected_type = ""
+
+    # ---------- 提示词结构闸机 ----------
+
+    @staticmethod
+    def _raw_state() -> Dict[str, Any]:
+        try:
+            return StateManager.get_instance().state_dict
+        except Exception:
+            return {}
+
+    def _resolve_current_refs(self, name: str, args: Dict[str, Any]) -> None:
+        """把 FC 工具参数里的 "current"/空 引用解析为真实 id（对齐文本轨语义）：
+        前端选中草稿优先，未选中时回落第一个可用对象（与 ops.find_draft 兜底一致）。
+        必须在闸机与工具调用之前执行，否则闸机/回写会命中错误的卡片。"""
+        if name in ("storyboard_patch_draft", "storyboard_confirm_draft"):
+            if str(args.get("draft_id") or "").strip() in ("", "current"):
+                found = ops.find_draft(
+                    self._raw_state(), "current", str(args.get("draft_type") or ""),
+                    selected_draft_id=self._selected_draft_id,
+                    selected_type=self._selected_type,
+                )
+                if found:
+                    args["draft_id"] = found[1].get("id") or ""
+        elif name == "storyboard_add_draft":
+            if str(args.get("group_id") or "").strip() in ("", "current"):
+                group = ops.find_group(
+                    self._raw_state(), "current", str(args.get("group_type") or ""),
+                    selected_draft_id=self._selected_draft_id,
+                    selected_type=self._selected_type,
+                )
+                if group:
+                    args["group_id"] = group.get("id") or ""
+        elif name == "storyboard_media_to_chat":
+            if str(args.get("target") or "").strip() == "current":
+                found = ops.find_draft(
+                    self._raw_state(), "current", "",
+                    selected_draft_id=self._selected_draft_id,
+                    selected_type=self._selected_type,
+                )
+                if found and found[1].get("id"):
+                    ids = list(args.get("draft_ids") or [])
+                    if found[1]["id"] not in ids:
+                        ids.append(found[1]["id"])
+                    args["draft_ids"] = ids
+                    args["target"] = ""
+
+    def _prompt_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
+        """写入前闸机：Skill 流程激活时校验待写入的提示词结构。
+        返回非 None = strict 模式硬拒绝（工具不执行，错误文案带回给模型重写）。"""
+        if not injected_skill or prompt_gates.gate_mode() == "off":
+            return None
+        prompt, kind = "", ""
+        if name == "storyboard_patch_draft":
+            patch = args.get("patch") if isinstance(args.get("patch"), dict) else {}
+            prompt = str(patch.get("prompt") or "").strip()
+            kind = str(args.get("draft_type") or "").strip()
+            if prompt and kind not in ("shot", "keyElement", "audio"):
+                kind = prompt_gates.resolve_kind_by_draft_id(
+                    self._raw_state(), str(args.get("draft_id") or ""),
+                    str(args.get("draft_type") or ""),
+                    self._selected_draft_id, self._selected_type,
+                )
+        elif name in ("storyboard_create_group", "storyboard_add_draft"):
+            draft = args.get("draft")
+            prompt = str(draft.get("prompt") or "").strip() if isinstance(draft, dict) else ""
+            gt = str(args.get("group_type") or "").strip().lower()
+            kind = {"keyelement": "keyElement", "shot": "shot", "audio": "audio"}.get(gt, "")
+        else:
+            return None
+        if not prompt or kind not in ("shot", "keyElement"):
+            return None
+        # 流程时序硬闸（strict）：元素图像未就绪严禁写分镜提示词（Skill 分批确认前置）
+        if kind == "shot" and prompt_gates.gate_mode() == "strict" \
+                and prompt_gates.element_images_missing(self._raw_state()):
+            logger.info("[PromptGate] 拦截分镜提示词写入（元素图像未就绪）")
+            return prompt_gates.SHOT_SEQUENCE_GATE_ERROR
+        # 故事板待确认窗口（步骤3→步骤4 分界）：用户确认结构前严禁写提示词
+        if prompt_gates.gate_mode() == "strict" \
+                and prompt_gates.storyboard_pending(self._raw_state()):
+            logger.info("[FlowGate] 拦截提示词写入（故事板待用户确认）")
+            return prompt_gates.STORYBOARD_PENDING_GATE_ERROR
+        ok, hard, soft = prompt_gates.validate_prompt_write(prompt, kind, self._raw_state())
+        for w in soft:
+            logger.warning(f"[PromptGate] 软提醒（{kind}）: {w}")
+        if ok:
+            return None
+        if prompt_gates.gate_mode() != "strict":
+            logger.warning(f"[PromptGate] warn 模式放行（{kind}）: {hard}")
+            return None
+        logger.info(f"[PromptGate] 拦截不合格提示词写入（{kind}）: {hard}")
+        return prompt_gates.format_gate_errors(hard)
+
+    def _flow_gate(self, name: str, injected_skill: str) -> Optional[str]:
+        """阶段前置闸机：Skill 流程激活且 strict 时，规格文档未写入则拒绝
+        搭建故事板结构（create_group/add_draft），逼模型先走步骤2。
+        返回非 None = 硬拒绝（错误文案带回给模型）。"""
+        if not injected_skill or prompt_gates.gate_mode() != "strict":
+            return None
+        if name not in ("storyboard_create_group", "storyboard_add_draft"):
+            return None
+        if prompt_gates.has_spec_document(self._raw_state()):
+            return None
+        logger.info(f"[FlowGate] 拦截 {name}（规格文档未写入）")
+        return prompt_gates.SPEC_GATE_ERROR
+
+    def _strip_structure_prompt(self, name: str, args: Dict[str, Any], injected_skill: str) -> bool:
+        """结构纯净闸（步骤3）：Skill 激活且 strict 时，create_group/add_draft 携带的
+        内联草稿若带详细提示词（> STRUCTURE_INLINE_PROMPT_MAX 字），剥离 prompt 字段
+        后放行建结构（不丢分组、不造成虚报），详细提示词留到用户确认后的步骤4。
+        返回 True = 发生了剥离（回喂时附说明）。"""
+        if not injected_skill or prompt_gates.gate_mode() != "strict":
+            return False
+        if name not in ("storyboard_create_group", "storyboard_add_draft"):
+            return False
+        draft = args.get("draft")
+        if not isinstance(draft, dict):
+            return False
+        prompt = str(draft.get("prompt") or "").strip()
+        if len(prompt) <= prompt_gates.STRUCTURE_INLINE_PROMPT_MAX:
+            return False
+        draft["prompt"] = ""
+        logger.info(f"[FlowGate] 剥离 {name} 内联详细提示词（{len(prompt)} 字，结构阶段只建骨架）")
+        return True
+
+    def _record_presented(self, name: str, args: Dict[str, Any]) -> None:
+        """FC 轨记录本轮写入过提示词的草稿：patch_draft 带非空 prompt 成功时，
+        解析实际 draft_id 记入 interaction.drafts_presented（用户回应时晋升已确认）"""
+        if name != "storyboard_patch_draft":
+            return
+        patch = args.get("patch") if isinstance(args.get("patch"), dict) else {}
+        if not str(patch.get("prompt") or "").strip():
+            return
+        try:
+            found = ops.find_draft(
+                self._raw_state(), str(args.get("draft_id") or ""),
+                str(args.get("draft_type") or ""),
+                selected_draft_id=self._selected_draft_id,
+                selected_type=self._selected_type,
+            )
+            if not found:
+                return
+            _, draft = found
+            draft_id = draft.get("id") or ""
+            if not draft_id:
+                return
+            svc = StateManager.get_instance()
+            interaction = svc.state_dict.setdefault("interaction", {})
+            presented = interaction.setdefault("drafts_presented", [])
+            if draft_id not in presented:
+                presented.append(draft_id)
+                svc.save()
+        except Exception as e:  # 记录失败不影响主链路
+            logger.debug(f"[FlowGate] drafts_presented 记录失败: {e}")
+
+    def _gen_confirm_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
+        """生成确认闸（FC 轨）：Skill 激活且 strict 时，image_generate 的目标草稿
+        必须全部已经用户确认（tag=已确认），否则拒绝并引导先展示草案等确认。
+        返回非 None = 硬拒绝。"""
+        if not injected_skill or prompt_gates.gate_mode() != "strict":
+            return None
+        if name != "image_generate":
+            return None
+        state = self._raw_state()
+        target = str(args.get("target") or "all_keyElements").strip()
+        targets: List[Dict[str, Any]] = []
+        if target in ("all_keyElements", "all_keyelements"):
+            for g in state.get(CAT_KEY_ELEMENTS, []):
+                for d in g.get("drafts", []):
+                    if (d.get("prompt") or "").strip():
+                        targets.append(d)
+        elif target in ("all_shots", "all_shot"):
+            for g in state.get(CAT_SHOTS, []):
+                for d in g.get("drafts", []):
+                    if (d.get("prompt") or "").strip():
+                        targets.append(d)
+        else:
+            for cat in ALL_CATEGORIES_TUPLE:
+                for g in state.get(cat, []):
+                    for d in g.get("drafts", []):
+                        if d.get("id") == target and (d.get("prompt") or "").strip():
+                            targets.append(d)
+        if not targets:
+            return None  # 无目标：交给工具自身报「未找到有提示词的草稿」
+        if prompt_gates.drafts_confirmed(state, targets):
+            return None
+        logger.info(f"[GenGate] 拦截 image_generate：{len(targets)} 个目标草稿存在未确认 Prompt Draft")
+        return prompt_gates.GENERATION_CONFIRM_GATE_ERROR
 
     async def execute(
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",
         on_status=None, on_event=None, injected_skill: str = "",
-    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
+        selected_draft_id: str = "", selected_type: str = "",
+    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
         """执行 Function Calling 返回的 tool_calls。
-        返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log, tool_results)"""
+        返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
+        confirmation_options, tool_results, docs_written)"""
+        self._selected_draft_id = selected_draft_id or ""
+        self._selected_type = selected_type or ""
         applied = 0
         confirmation = ""
+        confirmation_options: List[Dict[str, Any]] = []
         image_urls: List[str] = []
         chat_inserts: List[Dict[str, Any]] = []
         action_log: List[str] = []
         tool_results: List[Dict[str, Any]] = []
+        doc_written = False
+        docs_written: List[str] = []  # 本批写入的文档名（供前端渲染文档卡片）
+        # 结构纯净闸/故事板强制暂停用的批内标志
+        structure_created = False
+        structure_kinds: set = set()  # 本批搭建的结构类别（shot 优先决定暂停文案）
+        prompt_stripped = False
+        # 本批被提示词闸机拦截的写入次数（防虚报：拦截后暂停文案不得引导确认未写入的提示词）
+        prompt_gate_blocked = 0
+        # 首次搭建批次判定：批开始时故事板完全为空，则本批只允许先拆关键元素
+        skill_strict = bool(injected_skill) and prompt_gates.gate_mode() == "strict"
+        first_structure_batch = skill_strict and prompt_gates.storyboard_is_empty(self._raw_state())
+        # 生成类工具本批成败跟踪（防虚报：同批失败后暂停文案不得声称已触发生成）
+        gen_failed_err = ""
+        gen_succeeded = False
         tracer = AgentTracer.get_instance()
         for ci, call in enumerate(response.tool_calls):
             func = call.get("function", {}) if isinstance(call, dict) else {}
@@ -167,6 +456,8 @@ class FCToolRunner:
                 args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
             except json.JSONDecodeError:
                 args = {}
+            # current/空引用 → 真实 id（闸机与工具调用前，防命中错误卡片/绕过闸机）
+            self._resolve_current_refs(name, args)
 
             # 过程时间线：工具开始（前端渲染运行态条目）
             tool_event_id = str(call.get("id") or f"fc-{ci}") if isinstance(call, dict) else f"fc-{ci}"
@@ -180,9 +471,16 @@ class FCToolRunner:
                 })
             _tool_t0 = time.monotonic()
 
-            # --- 生图模型强制注入：用中间面板选中的 provider 覆盖 mock ---
-            if name == "generate_image" and image_provider:
-                if "adapter_provider" not in args or args.get("adapter_provider") in ("mock", "", None):
+            # --- 生图模型强制注入：规格文档偏好（用户意志）优先，其次中间面板选中的 provider 覆盖 mock ---
+            if name == "generate_image" and (
+                "adapter_provider" not in args or args.get("adapter_provider") in ("mock", "", None)
+            ):
+                from src.video_agent.web.provider_config import spec_media_preference as _spec_pref
+                _sp, _sm = _spec_pref(self._raw_state())
+                if _sp:
+                    args["adapter_provider"] = _sp
+                    logger.info("[Planner] Injected image gen provider from spec doc: %s", _sp)
+                elif image_provider:
                     args["adapter_provider"] = image_provider
                     logger.info("[Planner] Injected image gen provider from draft: %s",
                                 image_provider)
@@ -192,10 +490,47 @@ class FCToolRunner:
                     args["aspect_ratio"] = image_aspect_ratio
                     logger.info("[Planner] Injected image gen aspect ratio from draft: %s",
                                 image_aspect_ratio)
+            # --- image_generate（批量工具）同轨注入：LLM 未传 provider 时依次回退
+            # 规格文档偏好（用户意志）→ 中间面板选中供应商，防传空导致
+            # 「供应商 '' 未配置」（8888 事故），也防草稿自动回填的默认供应商覆盖规格设定 ---
+            if name == "image_generate" and not str(args.get("provider_id") or "").strip():
+                from src.video_agent.web.provider_config import spec_media_preference
+                spec_pid, spec_model = spec_media_preference(self._raw_state())
+                if spec_pid:
+                    args["provider_id"] = spec_pid
+                    if spec_model and not str(args.get("model") or "").strip():
+                        args["model"] = spec_model
+                    logger.info("[Planner] Injected image_generate provider from spec doc: %s/%s",
+                                spec_pid, spec_model)
+                elif image_provider:
+                    args["provider_id"] = image_provider
+                    logger.info("[Planner] Injected image_generate provider from draft: %s",
+                                image_provider)
 
             # read_skill 短路：选中 Skill 全文已硬注入 system prompt，重复 read 只是
             # 浪费一轮工具往返 + 全文回喂 token（prompt 里的「不要再 read」靠模型自觉，此处硬保障）
-            if name == "read_skill" and injected_skill:
+            if self._strip_structure_prompt(name, args, injected_skill):
+                prompt_stripped = True
+            # 闸机链：规格前置 → 首拆只允关键元素 → 生成确认 → 提示词结构/时序
+            gate_error = self._flow_gate(name, injected_skill)
+            if (
+                gate_error is None
+                and first_structure_batch
+                and name in ("storyboard_create_group", "storyboard_add_draft")
+                and ops.category_for_group_type(str(args.get("group_type") or "")) != "keyElements"
+                and str(args.get("group_type") or "").strip()
+            ):
+                gate_error = prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR
+            if gate_error is None:
+                gate_error = self._gen_confirm_gate(name, args, injected_skill)
+                if gate_error is None:
+                    pg_err = self._prompt_gate(name, args, injected_skill)
+                    if pg_err:
+                        prompt_gate_blocked += 1
+                        gate_error = pg_err
+            if gate_error is not None:
+                result = ToolResult(success=False, error=gate_error)
+            elif name == "read_skill" and injected_skill:
                 wanted_skill = str(args.get("name") or "").strip()
                 if wanted_skill and wanted_skill == injected_skill.strip():
                     result = ToolResult(success=True, data={
@@ -208,15 +543,64 @@ class FCToolRunner:
             else:
                 result = await self.tool_manager.invoke_tool(name, args)
             _tool_ms = (time.monotonic() - _tool_t0) * 1000
+            # 生成类工具成败记录（批末防虚报校验用）
+            if name in ("image_generate", "generate_image", "generate_video"):
+                if result.success:
+                    gen_succeeded = True
+                elif not gen_failed_err:
+                    gen_failed_err = str(result.error or "执行失败")
             if result.success:
                 applied += 1
+                self._record_presented(name, args)
+                if name in ("storyboard_create_group", "storyboard_add_draft"):
+                    structure_created = True
+                    kind = prompt_gates.normalize_structure_kind(args.get("group_type") or "")
+                    if kind:
+                        structure_kinds.add(kind)
+                    # 待确认标记即时置位（不等批结束）：同批后续的提示词写入
+                    # 会被 _prompt_gate 的 storyboard_pending 检查拦住（防 3+4 合并）
+                    if skill_strict:
+                        try:
+                            svc_now = StateManager.get_instance()
+                            inter_now = svc_now.state_dict.setdefault("interaction", {})
+                            if not inter_now.get("storyboard_pending"):
+                                inter_now["storyboard_pending"] = True
+                                svc_now.save()
+                        except Exception:
+                            pass
                 if name == "workflow_pause":
                     confirmation = args.get("message", "请确认以上内容。")
+                    # 候选选项（前端渲染为单选卡片，点击即发送选择；带 group 时分页向导）
+                    opts = args.get("options")
+                    if isinstance(opts, list):
+                        for o in opts:
+                            if isinstance(o, dict) and str(o.get("label") or "").strip():
+                                item = {
+                                    "label": str(o.get("label")).strip(),
+                                    "description": str(o.get("description") or "").strip(),
+                                }
+                                if str(o.get("group") or "").strip():
+                                    item["group"] = str(o.get("group")).strip()
+                                confirmation_options.append(item)
+                            elif isinstance(o, str) and o.strip():
+                                confirmation_options.append({"label": o.strip(), "description": ""})
+                if name in ("document_write", "write_document"):
+                    doc_written = True
+                    doc_name = str(args.get("name") or args.get("key") or "").strip()
+                    if doc_name:
+                        docs_written.append(doc_name)
                 desc = describe_fc_tool(name, args)
                 action_log.append(desc)
                 # 推理过程可视化：每完成一个工具就推一条状态
                 if on_status is not None:
                     await on_status(f"已完成：{desc}")
+                # 边写边填（FC 轨）：每完成一个变动类工具就下发状态快照，
+                # 草稿卡片逐张刷新，不等整批完成才一次性弹出
+                if on_event is not None and name not in (
+                    "read_skill", "read_draft", "read_uploaded_doc", "read_project_doc",
+                    "view_storyboard_media",
+                ):
+                    await on_event({"type": SSE_ACTIONS_APPLIED, "count": 1})
                 # 过程时间线：工具完成 + trace 记录
                 if on_event is not None:
                     await on_event({
@@ -256,4 +640,74 @@ class FCToolRunner:
                     "name": name, "ok": False,
                     "error": str(result.error or "执行失败")[:200],
                 })
-        return applied, confirmation, image_urls, chat_inserts, action_log, tool_results
+        # 阶段硬边界：写入了规格/阶段文档但模型未自行暂停时，由系统强制暂停等审阅，
+        # 不给它顺手把后续阶段（拆结构/写提示词）也打包做完的机会；
+        # 写入规格文档时用专属文案（带文档卡片提示与下一步指引）
+        if doc_written and not confirmation:
+            spec_hit = any(prompt_gates.is_spec_doc_name(n) for n in docs_written)
+            if spec_hit:
+                confirmation = (
+                    "成片规格文档已写入（见下方文档卡片），请审阅其中的标题/时长/画幅/风格等条目；"
+                    "确认无误后，我将按 Skill 开始拆分关键元素（仅拆元素并暂停等你确认）。"
+                )
+            else:
+                confirmation = "规格/阶段文档已写入，请审阅；确认无误后我再推进下一阶段。"
+        # 规格文档写入后的引导选项（每步完成必有引导；模型自带 options 时不覆盖）
+        if doc_written and not confirmation_options:
+            if any(prompt_gates.is_spec_doc_name(n) for n in docs_written):
+                confirmation_options = list(prompt_gates.SPEC_DOC_OPTIONS)
+        # 故事板结构首次建立的硬暂停（阶段分界）：待确认标记已在批内即时置位；
+        # 暂停文案统一由系统按客观结构类别生成（含 shot → 分镜拆分审阅文案，
+        # 否则 → 关键元素拆分审阅文案）——结构阶段不产出提示词草案，
+        # 模型自拟文案（声称「提示词已写好/开始生成」）属虚报，一律覆盖。
+        if structure_created and skill_strict:
+            confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
+        # 结构阶段剥离了内联详细提示词：回喂中显式告知，防止模型虚报「提示词已写好」
+        if prompt_stripped:
+            tool_results.append({
+                "name": "系统闸机",
+                "ok": False,
+                "error": (
+                    "结构搭建阶段只建骨架：内联草稿中的详细提示词已被剥离，当前草稿无提示词。"
+                    "严禁向用户声称提示词已写好；请等用户确认故事板后，再用 storyboard_patch_draft "
+                    "逐条编写提示词草案。"
+                ),
+            })
+        # 防虚报硬拦截（8888 事故）：同批生成类工具失败但模型暂停文案声称已触发/已生成
+        # → 覆盖为诚实文案（对齐文本轨 gate_heal 的「拦截后不接受虚报」原则）
+        if gen_failed_err and not gen_succeeded and confirmation:
+            _claim_markers = (
+                "已触发", "已为您触发", "开始生成", "正在生成", "生成中",
+                "已生成", "已完成", "生成完毕", "出图进度",
+            )
+            if any(mk in confirmation for mk in _claim_markers):
+                logger.warning("[Planner] 防虚报拦截：生成工具失败但暂停文案声称已触发，已覆盖为诚实文案")
+                confirmation = (
+                    "出图尚未执行：本次生成被系统闸机拦截（"
+                    f"{gen_failed_err[:80]}）。提示词草案已就绪，请在左侧故事板审阅；"
+                    "确认后我将按规格文档设定的供应商触发生成。"
+                )
+                confirmation_options = [{
+                    "label": "确认提示词草案，开始生成概念图",
+                    "description": "将目标草稿标记为已确认并重新触发生成",
+                }, {
+                    "label": "先调整提示词",
+                    "description": "告诉我需要修改的草稿与修改意见",
+                }]
+        # 暂停防虚报（问题2）：本批有提示词写入被质量闸拦截（未写入卡片），
+        # 模型却仍暂停引导用户「确认提示词」→ 覆盖为诚实文案
+        # （对齐生成失败防虚报闸；结构刚建立时已由上方结构暂停文案接管，不重复覆盖）
+        if prompt_gate_blocked and confirmation and not structure_created:
+            logger.warning(f"[Planner] 暂停防虚报：{prompt_gate_blocked} 条提示词写入被拦，覆盖暂停文案")
+            confirmation = (
+                f"部分提示词写入被系统质量闸拦截（{prompt_gate_blocked} 条未通过校验、未写入卡片），"
+                "请先在左侧故事板审阅已成功写入的草案；确认后我将按 Skill 规范重写被拦截的提示词并再次请您确认。"
+            )
+            confirmation_options = [{
+                "label": "确认已写入的草案，继续重写被拦截的提示词",
+                "description": "把已审阅草案标记为已确认，并重写被闸机拦截的提示词",
+            }, {
+                "label": "先调整提示词",
+                "description": "告诉我需要修改的草稿与修改意见",
+            }]
+        return applied, confirmation, image_urls, chat_inserts, action_log, confirmation_options, tool_results, docs_written
