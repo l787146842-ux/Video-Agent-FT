@@ -88,6 +88,7 @@
     .mention-chip { display: inline-flex; align-items: center; gap: 3px; vertical-align: middle; background: rgba(59, 130, 246, 0.16); border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 5px; padding: 1px 6px 1px 2px; margin: 0 2px; line-height: 1.3; user-select: all; -webkit-user-select: all; cursor: zoom-in; }
     .mention-chip:hover { background: rgba(59, 130, 246, 0.28); }
     .mention-chip img { width: 1.4em; height: 1.4em; object-fit: cover; border-radius: 3px; flex-shrink: 0; }
+      .mention-chip video { width: 1.4em; height: 1.4em; object-fit: cover; border-radius: 3px; flex-shrink: 0; background: #000; }
     .mention-chip-icon { display: inline-flex; align-items: center; justify-content: center; width: 1.4em; height: 1.4em; border-radius: 3px; background: #1e293b; color: #34d399; font-size: 0.8em; flex-shrink: 0; }
     .mention-chip-name { font-size: 0.95em; color: var(--text-main); }
     /* 参考素材选择弹窗：网格卡片媒体 */
@@ -102,7 +103,7 @@
   .param-controls-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; background-color: var(--bg-tertiary); padding: 8px 10px; border-radius: var(--radius-md); flex-shrink: 0; margin: 0 14px 10px; }
   .param-group { display: flex; align-items: center; gap: 4px; }
   .param-label { font-size: 11px; color: var(--text-muted); }
-  .param-select { background-color: var(--bg-primary); color: var(--text-main); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 3px 22px 3px 8px; font-size: 12px; outline: none; }
+  .param-select { background-color: var(--bg-primary); color: var(--text-main); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 3px 22px 3px 8px; font-size: 12px; outline: none; field-sizing: content; min-width: 56px; max-width: 200px; } /* 宽度跟随所选文字（含箭头占位），不支持 field-sizing 的浏览器回落自动宽 */
   .param-select:focus { border-color: var(--accent-blue); }
   .custom-ratio-input { width: 48px; min-width: 0; padding: 3px 6px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); outline: none; background-color: var(--bg-primary); color: var(--text-main); font-size: 12px; text-align: center; }
   .custom-ratio-input:focus { border-color: var(--accent-blue); }

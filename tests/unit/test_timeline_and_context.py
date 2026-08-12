@@ -114,9 +114,9 @@ async def test_agent_loop_emits_tool_events(executor):
     )
     types = [e["type"] for e in events]
     assert "tool_started" in types and "tool_finished" in types
-    # 顺序：先 started 后 finished，且 id 对应
-    started = next(e for e in events if e["type"] == "tool_started")
-    finished = next(e for e in events if e["type"] == "tool_finished")
+    # 顺序：先 started 后 finished，且 id 对应（排除模型推理轮条目 llm-*）
+    started = next(e for e in events if e["type"] == "tool_started" and not str(e["id"]).startswith("llm-"))
+    finished = next(e for e in events if e["type"] == "tool_finished" and not str(e["id"]).startswith("llm-"))
     assert types.index("tool_started") < types.index("tool_finished")
     assert started["id"] == finished["id"]
     assert finished["ok"] is True
@@ -219,8 +219,8 @@ async def test_fc_tool_timeline_events(svc):
         "执行", PlannerContext(use_studio_context=False),
         stream_hook=make_hook(), on_event=on_event,
     )
-    started = [e for e in events if e["type"] == "tool_started"]
-    finished = [e for e in events if e["type"] == "tool_finished"]
+    started = [e for e in events if e["type"] == "tool_started" and not str(e["id"]).startswith("llm-")]
+    finished = [e for e in events if e["type"] == "tool_finished" and not str(e["id"]).startswith("llm-")]
     assert len(started) == 1 and len(finished) == 1
     assert started[0]["name"] == "fake_tool"
     assert finished[0]["ok"] is True

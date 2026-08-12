@@ -56,6 +56,40 @@ export function storyboardMediaMap(): Record<string, MediaRef> {
   return map;
 }
 
+/** 故事板媒体分类列表（@面板上区分：关键元素/分镜/音频） */
+export interface BoardMediaItem {
+  url: string;
+  name: string;
+  kind: MediaType;
+  category: 'keyElement' | 'shot' | 'audio';
+}
+
+export function storyboardMediaList(): BoardMediaItem[] {
+  const out: BoardMediaItem[] = [];
+  const seen = new Set<string>();
+  const push = (name: string, url: string, kind: MediaType, category: BoardMediaItem['category']) => {
+    const n = (name || '').trim();
+    const key = `${url}|${n}`;
+    if (!n || !url || seen.has(key)) return;
+    seen.add(key);
+    out.push({ url, name: n, kind, category });
+  };
+  const walk = (groups: AnyGroup[], category: BoardMediaItem['category']) => {
+    for (const g of groups) {
+      for (const d of g.drafts || []) {
+        const prefer = category === 'keyElement' ? g.title : (d.label || g.title);
+        if (d.imgUrl) push(prefer, d.imgUrl, 'image', category);
+        if (d.videoUrl) push(prefer, d.videoUrl, 'video', category);
+        if (d.audioUrl) push(prefer, d.audioUrl, 'audio', category);
+      }
+    }
+  };
+  walk(state.keyElements, 'keyElement');
+  walk(state.shots, 'shot');
+  walk(state.audioItems, 'audio');
+  return out;
+}
+
 export interface ResolvedPrompt {
   /** 重写后的提示词（@名称 → [参考图N：名称]） */
   prompt: string;

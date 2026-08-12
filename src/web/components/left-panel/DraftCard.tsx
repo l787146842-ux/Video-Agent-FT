@@ -28,6 +28,8 @@ export function DraftCard(props: {
   onDragLeave?: () => void;
   onDrop?: (e: DragEvent) => void;
   onDragEnd?: () => void;
+  /** 悬停回调（分组级微调框定位用） */
+  onHover?: (hovering: boolean) => void;
 }) {
   // 选中判定必须同时匹配 id 与类型：防止跨 tab 同 id 卡双高亮
   const selected = () => state.selectedDraftId === props.draft.id && state.selectedType === props.type;
@@ -148,6 +150,8 @@ export function DraftCard(props: {
       onDragLeave={() => props.onDragLeave?.()}
       onDrop={(e) => props.onDrop?.(e)}
       onDragEnd={() => props.onDragEnd?.()}
+      onMouseEnter={() => props.onHover?.(true)}
+      onMouseLeave={() => props.onHover?.(false)}
     >
       <div
         role="button"

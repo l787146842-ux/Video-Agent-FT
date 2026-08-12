@@ -130,7 +130,7 @@ export function ChatInputToolbar(props: {
           >
             <svg class={`ctx-ring ${ringClass()}`} width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
               <circle class="ctx-ring-bg" cx="7" cy="7" r="5.5" />
-              <circle class="ctx-ring-fg" cx="7" cy="7" r="5.5" stroke-dasharray={`${(ratio() * 34.56).toFixed(1)} 34.56`} />
+              <circle class="ctx-ring-fg" cx="7" cy="7" r="5.5" />
             </svg>
             <span class="context-usage-value">{usageLabel()}</span>
           </button>
@@ -149,14 +149,17 @@ export function ChatInputToolbar(props: {
             <FiSquare size={13} />
           </button>
         </Show>
-        <button
-          type="button"
-          class={`send-btn ${props.busy ? 'busy' : ''}`}
-          title={props.busy ? '发送（排队，完成后自动发出）' : t('rp.toolbar.send')}
-          onClick={() => props.onSend()}
-        >
-          <FiArrowUp size={15} />
-        </button>
+        {/* Agent 运行时隐藏发送键（用户决策：只保留停止键） */}
+        <Show when={!props.busy}>
+          <button
+            type="button"
+            class="send-btn"
+            title={t('rp.toolbar.send')}
+            onClick={() => props.onSend()}
+          >
+            <FiArrowUp size={15} />
+          </button>
+        </Show>
       </div>
     </div>
   );

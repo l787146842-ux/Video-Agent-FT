@@ -1,13 +1,13 @@
 import { For, Show, createEffect, createSignal } from 'solid-js';
-import { FiChevronDown, FiChevronUp, FiImage, FiVideo, FiMusic } from 'solid-icons/fi';
+import { FiChevronDown, FiChevronUp, FiImage, FiMusic } from 'solid-icons/fi';
 import {
   state, setState, studioActions, findDraftRecord, persistBoard,
 } from '@/stores/studio';
 import { safeUrl } from '@/lib/utils';
 import {
-  buildRefAssetMap, renderPromptToDOM, serializeDOMToText,
+  buildRefAssetMap, renderPromptToDOM, serializeDOMToText, videoThumb,
 } from '@/lib/prompt-ref-utils';
-import { usePromptMention } from '@/hooks/use-prompt-mention';
+import { usePromptMention, type MentionItem } from '@/hooks/use-prompt-mention';
 import { MediaLightbox } from '@/components/right-panel/MediaLightbox';
 import { RefAssetBar } from './RefAssetBar';
 
@@ -15,8 +15,14 @@ import { RefAssetBar } from './RefAssetBar';
  * Prompt 编辑器：折叠/展开 + 参考素材横条（RefAssetBar）
  * + contenteditable 提示词框（@ 引用参考素材，插入为内联缩略块 chip；
  *   提及逻辑见 usePromptMention，DOM/文本互转见 prompt-ref-utils）
- * keyElement：可增删参考素材（≤5）；shot：绑定元素参考（只读 chips）+ 首尾帧（≤2）
+ * keyElement：可增删参考素材（≤5）；shot：绑定元素参考（只读 chips）+ 首尾帧（不设上限）
  */
+/** @面板故事板分类页签 */
+const MENTION_CATS: Array<{ id: 'keyElement' | 'shot' | 'audio'; label: string }> = [
+  { id: 'keyElement', label: '关键元素' },
+  { id: 'shot', label: '分镜' },
+  { id: 'audio', label: '音频' },
+];
 export function PromptEditor() {
   const rec = () => findDraftRecord(state.selectedDraftId, state.selectedType) ?? undefined;
   const draft = () => rec()?.draft;
@@ -55,7 +61,8 @@ export function PromptEditor() {
   }
 
   const refAssets = () => draft()?.refAssets || [];
-  const maxRefs = () => (state.selectedType === 'shot' ? 2 : 5);
+  /** 参考素材上限：keyElement≤5；shot 不设上限（用户决策） */
+  const maxRefs = () => (state.selectedType === 'shot' ? Infinity : 5);
 
   function updatePrompt(value: string) {
     const r = rec();
@@ -84,6 +91,39 @@ export function PromptEditor() {
     maxRefs,
     syncPrompt,
   });
+
+  /** @面板故事板分类当前页签 */
+  const [mentionCat, setMentionCat] = createSignal<'keyElement' | 'shot' | 'audio'>('keyElement');
+
+  /** @面板候选条目：图片缩略图 / 视频首帧 / 音频图标 */
+  function renderMentionItem(item: MentionItem) {
+    const active = () => {
+      const cur = mention.mentionItems()[mention.mentionIdx()];
+      return !!cur && cur.url === item.url && cur.name === item.name;
+    };
+    return (
+      <div
+        class={`mention-item${active() ? ' mention-item-active' : ''}`}
+        role="option"
+        aria-selected={active()}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => mention.insertMentionChip(item)}
+      >
+        <Show when={item.type === 'image' && safeUrl(item.url)} fallback={
+          <Show when={item.type === 'video' && safeUrl(item.url)} fallback={
+            <span class="mention-item-placeholder">
+              {item.type === 'audio' ? <FiMusic size={18} /> : <FiImage size={18} />}
+            </span>
+          }>
+            <video src={videoThumb(item.url)} muted playsinline preload="metadata" class="mention-item-thumb" />
+          </Show>
+        }>
+          <img src={safeUrl(item.url)} alt={item.name} class="mention-item-thumb" />
+        </Show>
+        <span class="mention-item-name">{item.name}</span>
+      </div>
+    );
+  }
 
   function handleEditorInput() {
     syncPrompt();
@@ -199,29 +239,47 @@ export function PromptEditor() {
                     width: `${mention.mentionPos()!.width}px`,
                   }}
                 >
-                  <Show when={mention.mentionItems().length === 0}>
-                    <div class="mention-popup-status">无匹配的参考素材</div>
-                  </Show>
-                  <For each={mention.mentionItems()}>
-                    {(item, idx) => (
-                      <div
-                        class={`mention-item${idx() === mention.mentionIdx() ? ' mention-item-active' : ''}`}
-                        role="option"
-                        aria-selected={idx() === mention.mentionIdx()}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => mention.insertMentionChip(item)}
-                      >
-                        <Show when={item.type === 'image' && safeUrl(item.url)} fallback={
-                          <span class="mention-item-placeholder">
-                            {item.type === 'video' ? <FiVideo size={18} /> : item.type === 'audio' ? <FiMusic size={18} /> : <FiImage size={18} />}
-                          </span>
-                        }>
-                          <img src={safeUrl(item.url)} alt={item.name} class="mention-item-thumb" />
-                        </Show>
-                        <span class="mention-item-name">{item.name}</span>
-                      </div>
-                    )}
-                  </For>
+                  {/* 搜索框：过滤故事板素材与参考栏素材 */}
+                  <input
+                    class="mention-search"
+                    placeholder="搜索素材..."
+                    value={mention.mentionQuery()}
+                    onInput={(e) => mention.setMentionQuery(e.currentTarget.value)}
+                    onMouseDown={(e) => e.preventDefault()}
+                  />
+                  {/* 上区：故事板素材（分类页签） */}
+                  <div class="mention-tabs">
+                    <For each={MENTION_CATS}>
+                      {(c) => (
+                        <button
+                          type="button"
+                          class={`mention-tab ${mentionCat() === c.id ? 'active' : ''}`}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => setMentionCat(c.id)}
+                        >
+                          {c.label}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                  <div class="mention-section">
+                    <For each={mention.boardItems().filter((i) => i.category === mentionCat())}>
+                      {(item) => renderMentionItem(item)}
+                    </For>
+                    <Show when={mention.boardItems().filter((i) => i.category === mentionCat()).length === 0}>
+                      <div class="mention-popup-status">该分类暂无故事板素材</div>
+                    </Show>
+                  </div>
+                  {/* 下区：中间预览框参考栏素材 */}
+                  <div class="mention-section-title">参考栏素材</div>
+                  <div class="mention-section">
+                    <For each={mention.refItems()}>
+                      {(item) => renderMentionItem(item)}
+                    </For>
+                    <Show when={mention.refItems().length === 0}>
+                      <div class="mention-popup-status">参考栏暂无素材</div>
+                    </Show>
+                  </div>
                 </div>
               </Show>
             </div>

@@ -8,6 +8,9 @@ import type {
   AnyGroup, AudioGroup, DraftType, KeyElementGroup, ShotGroup,
 } from '@/types';
 
+/** 草稿 tag 中的状态类值（不作为元素类型展示） */
+const STATUS_TAGS = new Set(['已上传', '已确认', '手动', '待确认', '生成失败']);
+
 /**
  * 单个故事板分组卡片
  * 按类型渲染：关键元素（蓝）/ 分镜（紫，含场景引用 chips）/ 音频（绿）
@@ -27,6 +30,23 @@ export function GroupCard(props: {
   onContextMenu: (e: MouseEvent) => void;
 }) {
   const [adjustText, setAdjustText] = createSignal('');
+  // ===== 微调框：仅悬停某张草稿卡片时延迟弹出，且针对该卡片 =====
+  const [adjustDraft, setAdjustDraft] = createSignal<{ label: string; code: string } | null>(null);
+  let showTimer: ReturnType<typeof setTimeout> | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  function hoverDraft(label: string, code: string) {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = undefined; }
+    if (showTimer) clearTimeout(showTimer);
+    // 300ms 延迟：掠过不弹，停下才弹
+    showTimer = setTimeout(() => setAdjustDraft({ label, code }), 300);
+  }
+  function leaveDraft() {
+    if (showTimer) { clearTimeout(showTimer); showTimer = undefined; }
+    if (hideTimer) clearTimeout(hideTimer);
+    // 200ms 宽限：允许鼠标移入输入框继续编辑
+    hideTimer = setTimeout(() => setAdjustDraft(null), 200);
+  }
+  function enterAdjust() { if (hideTimer) { clearTimeout(hideTimer); hideTimer = undefined; } }
   const [editingTitle, setEditingTitle] = createSignal(false);
   const [editingDesc, setEditingDesc] = createSignal(false);
   const [editingBadge, setEditingBadge] = createSignal(false);
@@ -66,7 +86,9 @@ export function GroupCard(props: {
       case 'keyElement': {
         const g = props.group as KeyElementGroup;
         return {
-          badge: g.badgeLabel || '关键元素',
+          // 右上角：拆分元素类型（人物/场景/道具…）——扫描卡片 tag 跳过状态类值（已上传/已确认等）
+          badge: (g.drafts || []).map((d) => d.tag).find((tg) => !!tg && !STATUS_TAGS.has(tg))
+            || g.badgeLabel || '关键元素',
           badgeStyle: undefined as Record<string, string> | undefined,
           desc: g.desc || '',
           addTitle: '手动新建/上传草稿',
@@ -107,10 +129,11 @@ export function GroupCard(props: {
 
   function sendAdjust() {
     const text = adjustText().trim();
-    if (!text) return;
-    // 用分组标题 + 编号，让 Agent 能准确定位
+    const target = adjustDraft();
+    if (!text || !target) return;
+    // 精确定位到悬停的那张卡片
     sendUserMessage(
-      `对${meta().adjustLabel}列表${props.index}「${props.group.title}」的当前草稿提出微调意见：${text}`,
+      `对${meta().adjustLabel}列表${props.index}「${props.group.title}」的草稿卡片${target.code}「${target.label}」提出微调意见：${text}`,
     );
     setAdjustText('');
   }
@@ -136,6 +159,14 @@ export function GroupCard(props: {
     props.type === 'shot' && (props.group as ShotGroup).duration
       ? ` (${(props.group as ShotGroup).duration})`
       : '';
+
+  /** 左上角标题：剥离 Element_/Shot_ 等英文前缀与非中文字符，纯中文展示（无中文时回退原文） */
+  const displayTitle = () => {
+    const raw = props.group.title || '';
+    const stripped = raw.replace(/^[A-Za-z]+[_\-\s]?/, '').trim();
+    const chineseOnly = stripped.replace(/[A-Za-z0-9_\-.\s]+/g, '').trim();
+    return chineseOnly || stripped || raw;
+  };
 
   return (
     <div
@@ -168,7 +199,7 @@ export function GroupCard(props: {
               title="双击编辑标题"
               onDblClick={() => { setTitleVal(props.group.title); setEditingTitle(true); }}
             >
-              {props.group.title}
+              {displayTitle()}
               {titleSuffix()}
             </span>
           }>
@@ -265,6 +296,9 @@ export function GroupCard(props: {
               type={props.type}
               groupId={props.group.id}
               cardCode={`${props.index}-${di() + 1}`}
+              onHover={(h) => (h
+                ? hoverDraft(draft.label || '未命名', `${props.index}-${di() + 1}`)
+                : leaveDraft())}
               dragOver={dragOverDraftId() === draft.id}
               onDragStart={() => setDragDraftId(draft.id)}
               onDragOver={(e) => {
@@ -287,24 +321,26 @@ export function GroupCard(props: {
         </For>
       </div>
 
-      {/* 微调输入框（旧版 card-adjust-box） */}
-      <div class="card-adjust-box">
-        <input
-          type="text"
-          class="card-adjust-input"
-          placeholder={meta().placeholder}
-          value={adjustText()}
-          onInput={(e) => setAdjustText(e.currentTarget.value)}
-          onKeyDown={(e) => e.key === 'Enter' && sendAdjust()}
-        />
-        <button
-          type="button"
-          class="card-adjust-btn"
-          onClick={sendAdjust}
-        >
-          微调
-        </button>
-      </div>
+      {/* 微调输入框：仅悬停卡片时弹出，针对该卡片 */}
+      <Show when={adjustDraft()}>
+        <div class="card-adjust-box" onMouseEnter={enterAdjust} onMouseLeave={leaveDraft}>
+          <input
+            type="text"
+            class="card-adjust-input"
+            placeholder={`对卡片${adjustDraft()!.code}「${adjustDraft()!.label}」提出修改意见...`}
+            value={adjustText()}
+            onInput={(e) => setAdjustText(e.currentTarget.value)}
+            onKeyDown={(e) => e.key === 'Enter' && sendAdjust()}
+          />
+          <button
+            type="button"
+            class="card-adjust-btn"
+            onClick={sendAdjust}
+          >
+            微调
+          </button>
+        </div>
+      </Show>
     </div>
   );
 }

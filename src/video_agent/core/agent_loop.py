@@ -135,7 +135,22 @@ async def run_agent_loop(
             })
         system_prompt = context_builder()  # 每轮刷新，让 LLM 看到上一轮执行后的最新状态
 
+        # 过程时间线：模型推理轮本身也作为操作条目可见（读文档/调执行器之外的“思考”动作）
+        _llm_t0 = time.monotonic()
+        await emit({
+            "type": SSE_TOOL_STARTED,
+            "id": f"llm-s{step}",
+            "name": "model_reasoning",
+            "summary": f"模型推理规划（第 {step} 轮）",
+        })
         content, finish_reason, fc_applied = await llm_call(system_prompt, messages, stream_hook)
+        await emit({
+            "type": SSE_TOOL_FINISHED,
+            "id": f"llm-s{step}",
+            "ok": True,
+            "elapsed_ms": round((time.monotonic() - _llm_t0) * 1000, 1),
+            "result_summary": f"模型推理规划（第 {step} 轮）完成",
+        })
 
         # 空响应防护：模型返回了完全空的响应（无文本且无工具调用，常见于
         # 上游瞬时抖动）时自动重试一次，避免直接落为「没有返回可见回复」。

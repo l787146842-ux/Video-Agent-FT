@@ -76,7 +76,7 @@ export function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** 创建一个 @提及 缩略块 chip（图片显示缩略图，视频/音频显示图标）。
+/** 创建一个 @提及 缩略块 chip（图片缩略图 / 视频首帧 / 音频图标）。
  *  dataset 携带 url/kind，供编辑器点击 chip 放大预览。 */
 export function makeChip(name: string, info: { url: string; type: MediaKind }): HTMLSpanElement {
   const span = document.createElement('span');
@@ -91,6 +91,14 @@ export function makeChip(name: string, info: { url: string; type: MediaKind }): 
     img.src = safeUrl(info.url);
     img.alt = name;
     span.appendChild(img);
+  } else if (info.type === 'video' && info.url) {
+    // 视频首帧缩略（#t=0.1 定位首帧）
+    const vid = document.createElement('video');
+    vid.src = videoThumb(info.url);
+    vid.muted = true;
+    vid.setAttribute('playsinline', '');
+    vid.setAttribute('preload', 'metadata');
+    span.appendChild(vid);
   } else {
     const icon = document.createElement('span');
     icon.className = 'mention-chip-icon';

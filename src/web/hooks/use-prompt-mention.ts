@@ -7,14 +7,14 @@
 import { createSignal } from 'solid-js';
 import { state, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
-import { storyboardMediaMap } from '@/lib/prompt-mentions';
+import { storyboardMediaList } from '@/lib/prompt-mentions';
 import {
   makeChip, refAssetName, refAssetType, type MediaKind,
 } from '@/lib/prompt-ref-utils';
 import type { DraftRecord } from '@/types';
 
 /** @提及候选项（参考素材栏 + 全故事板媒体统一结构） */
-export interface MentionItem { url: string; name: string; type: MediaKind }
+export interface MentionItem { url: string; name: string; type: MediaKind; category?: 'keyElement' | 'shot' | 'audio' }
 
 export interface PromptMentionOptions {
   /** contenteditable 编辑器元素 */
@@ -53,8 +53,18 @@ export function usePromptMention(opts: PromptMentionOptions) {
     });
   }
 
-  /** @提及候选：参考素材栏优先 + 全故事板媒体（关键元素/分镜/音频），按 URL 去重 */
-  const mentionItems = (): MentionItem[] => {
+  /** 上区：故事板素材（带分类，供面板分区/搜索） */
+  const boardItems = (): MentionItem[] => {
+    const q = mentionQuery().toLowerCase();
+    const list: MentionItem[] = storyboardMediaList().map((b) => ({
+      url: b.url, name: b.name, type: b.kind, category: b.category,
+    }));
+    if (!q) return list;
+    return list.filter((it) => it.name.toLowerCase().includes(q));
+  };
+
+  /** 下区：当前草稿参考素材栏 */
+  const refItems = (): MentionItem[] => {
     const q = mentionQuery().toLowerCase();
     const list: MentionItem[] = [];
     const seen = new Set<string>();
@@ -63,13 +73,20 @@ export function usePromptMention(opts: PromptMentionOptions) {
       seen.add(url);
       list.push({ url, name: refAssetName(url, i, state.keyElements), type: refAssetType(url, state.keyElements) });
     });
-    for (const [name, info] of Object.entries(storyboardMediaMap())) {
-      if (seen.has(info.url)) continue;
-      seen.add(info.url);
-      list.push({ url: info.url, name, type: info.kind });
-    }
     if (!q) return list;
     return list.filter((it) => it.name.toLowerCase().includes(q));
+  };
+
+  /** 键盘导航用合并列表（参考栏优先 + 故事板，URL 去重） */
+  const mentionItems = (): MentionItem[] => {
+    const seen = new Set<string>();
+    const merged: MentionItem[] = [];
+    for (const it of [...refItems(), ...boardItems()]) {
+      if (seen.has(it.url)) continue;
+      seen.add(it.url);
+      merged.push(it);
+    }
+    return merged;
   };
 
   function closeMention() {
@@ -81,7 +98,7 @@ export function usePromptMention(opts: PromptMentionOptions) {
   /** 根据当前光标所在文本节点检测 @ 触发（兼容半角@与全角＠） */
   function detectMention() {
     // 参考栏与故事板都没有可引用媒体时才直接关闭
-    if (!opts.refAssets().length && !Object.keys(storyboardMediaMap()).length) {
+    if (!opts.refAssets().length && !storyboardMediaList().length) {
       if (mentionActive()) closeMention();
       return;
     }
@@ -159,7 +176,7 @@ export function usePromptMention(opts: PromptMentionOptions) {
   }
 
   return {
-    mentionActive, mentionQuery, mentionIdx, setMentionIdx, mentionPos,
-    mentionItems, closeMention, detectMention, insertMentionChip,
+    mentionActive, mentionQuery, setMentionQuery, mentionIdx, setMentionIdx, mentionPos,
+    mentionItems, boardItems, refItems, closeMention, detectMention, insertMentionChip,
   };
 }
