@@ -49,7 +49,7 @@ export function usePromptMention(opts: PromptMentionOptions) {
     setMentionPos({
       bottom: window.innerHeight - rect.top + 6,
       left: rect.left,
-      width: 300,
+      width: 600,
     });
   }
 

@@ -24,8 +24,6 @@ export function ChatMessageItem(props: {
 }) {
   const msg = () => props.message;
   const isUser = () => msg().sender === 'user';
-  // 阶段完成卡默认展开（任务完成后直接可见结果），仅用户主动点击才折叠
-  const [expanded, setExpanded] = createSignal(true);
   /** 原图预览（lightbox）当前打开的图片地址 */
   const [lightboxUrl, setLightboxUrl] = createSignal('');
 
@@ -45,6 +43,13 @@ export function ChatMessageItem(props: {
   const hasInlineMedia = () => !!msg().parts && msg().parts!.some((p) => p.type !== 'text');
     /** 用户消息是否携带引用块（文档/Skill）——决定气泡内嵌渲染 */
     const hasRefBlocks = () => (msg().docBlocks || []).length > 0 || (msg().skillBlocks || []).length > 0;
+    
+    /** 发送 Skill 后正文若只是重复 Skill 名，不再冗余显示（chip 已代表） */
+    const displayText = () => {
+      const txt = (msg().text || '').trim();
+      if (isUser() && txt && (msg().skillBlocks || []).some((n) => n.trim() === txt)) return '';
+      return msg().text || '';
+    };
 
   return (
     <div class={`chat-msg ${isUser() ? 'user' : 'agent'}`}>
@@ -142,29 +147,16 @@ export function ChatMessageItem(props: {
         </div>
       </Show>
 
-      {/* 阶段确认卡片（旧版 stage-card） */}
+      {/* 阶段完成卡片：只显示大项（标题+操作数徽标），正文/操作明细在下方的「已处理 X 个操作」时间线展开 */}
       <Show when={msg().confirm}>
-        <div class={`stage-card ${expanded() ? 'expanded' : ''}`}>
-          <button
-            type="button"
-            class="stage-card-header"
-            onClick={() => setExpanded(!expanded())}
-          >
+        <div class="stage-card">
+          <div class="stage-card-header">
             <FiCheckCircle size={15} class="stage-check" />
             <span class="stage-card-title">{t('rp.msg.stageDone')}</span>
             <Show when={msg().appliedActions}>
               <span class="stage-card-badge">
                 {t('rp.msg.appliedOps', { count: msg().appliedActions ?? 0 })}
               </span>
-            </Show>
-            <FiChevronDown size={13} class="stage-arrow" />
-          </button>
-          <div class="stage-card-body">
-            {msg().confirm}
-            <Show when={(msg().actionLog || []).length}>
-              <ul class="stage-op-list">
-                <For each={msg().actionLog}>{(op) => <li class="stage-op-item">{op}</li>}</For>
-              </ul>
             </Show>
           </div>
         </div>
@@ -180,7 +172,7 @@ export function ChatMessageItem(props: {
       </Show>
 
       {/* 消息气泡（旧版 chat-bubble + msg-author）；用户引用块（文档/Skill）内嵌气泡顶部 */}
-      <Show when={msg().text || hasRefBlocks()}>
+      <Show when={displayText() || hasRefBlocks()}>
         <Show when={!isUser()}>
           <span class="msg-author">
             {msg().modelName || 'Agent'}
@@ -227,11 +219,11 @@ export function ChatMessageItem(props: {
                 </For>
               </div>
             </Show>
-            <Show when={msg().text}>
+            <Show when={displayText()}>
               {/* 含内联媒体时按文字+缩略图交错还原排版 */}
               <Show
                 when={hasInlineMedia()}
-                fallback={<div class="user-bubble-text">{msg().text}</div>}
+                fallback={<div class="user-bubble-text">{displayText()}</div>}
               >
                 <RichBubble
                   parts={msg().parts!}

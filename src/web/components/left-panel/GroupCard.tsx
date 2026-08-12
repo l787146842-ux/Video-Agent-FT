@@ -321,13 +321,17 @@ export function GroupCard(props: {
         </For>
       </div>
 
-      {/* 微调输入框：仅悬停卡片时弹出，针对该卡片 */}
-      <Show when={adjustDraft()}>
-        <div class="card-adjust-box" onMouseEnter={enterAdjust} onMouseLeave={leaveDraft}>
+      {/* 微调输入框：仅悬停卡片时缓缓浮现（opacity/max-height 过渡），针对该卡片 */}
+      <div
+        class={`card-adjust-box ${adjustDraft() ? 'visible' : ''}`}
+        aria-hidden={!adjustDraft()}
+        onMouseEnter={enterAdjust}
+        onMouseLeave={leaveDraft}
+      >
           <input
             type="text"
             class="card-adjust-input"
-            placeholder={`对卡片${adjustDraft()!.code}「${adjustDraft()!.label}」提出修改意见...`}
+            placeholder={adjustDraft() ? `对卡片${adjustDraft()!.code}「${adjustDraft()!.label}」提出修改意见...` : meta().placeholder}
             value={adjustText()}
             onInput={(e) => setAdjustText(e.currentTarget.value)}
             onKeyDown={(e) => e.key === 'Enter' && sendAdjust()}
@@ -339,8 +343,7 @@ export function GroupCard(props: {
           >
             微调
           </button>
-        </div>
-      </Show>
+      </div>
     </div>
   );
 }

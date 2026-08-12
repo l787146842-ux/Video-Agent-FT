@@ -115,7 +115,10 @@ export function PromptEditor() {
               {item.type === 'audio' ? <FiMusic size={18} /> : <FiImage size={18} />}
             </span>
           }>
-            <video src={videoThumb(item.url)} muted playsinline preload="metadata" class="mention-item-thumb" />
+            <span class="mention-thumb-wrap">
+              <video src={videoThumb(item.url)} muted playsinline preload="metadata" class="mention-item-thumb" />
+              <span class="mention-video-badge">▶</span>
+            </span>
           </Show>
         }>
           <img src={safeUrl(item.url)} alt={item.name} class="mention-item-thumb" />
@@ -214,6 +217,32 @@ export function PromptEditor() {
                     if (e.key === 'Escape') {
                       e.preventDefault();
                       mention.closeMention();
+                    }
+                  }
+                  // @ 缩略块删除：Backspace/Delete 紧邻 chip 时整体删除（视频 chip 等原生难删）
+                  if (e.key === 'Backspace' || e.key === 'Delete') {
+                    const sel = window.getSelection();
+                    if (sel && sel.isCollapsed && sel.rangeCount) {
+                      const range = sel.getRangeAt(0);
+                      const node = range.startContainer;
+                      let chip: HTMLElement | null = null;
+                      if (node.nodeType === Node.TEXT_NODE) {
+                        if (e.key === 'Backspace' && range.startOffset === 0) {
+                          const prev = node.previousSibling as HTMLElement | null;
+                          if (prev && prev.classList && prev.classList.contains('mention-chip')) chip = prev;
+                        }
+                      } else {
+                        const idx2 = e.key === 'Backspace' ? range.startOffset - 1 : range.startOffset;
+                        const child = (node as HTMLElement).childNodes
+                          ? ((node as HTMLElement).childNodes[idx2] as HTMLElement | undefined)
+                          : undefined;
+                        if (child && child.classList && child.classList.contains('mention-chip')) chip = child;
+                      }
+                      if (chip) {
+                        e.preventDefault();
+                        chip.remove();
+                        syncPrompt();
+                      }
                     }
                   }
                 }}

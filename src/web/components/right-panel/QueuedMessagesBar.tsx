@@ -26,12 +26,14 @@ export function QueuedMessagesBar(props: {
 }) {
   /** 当前展开 ⋯ 菜单的排队条目 id */
   const [menuId, setMenuId] = createSignal('');
+  /** 已点「引导」的条目 id：该条原位转圈圈等待接管（不再顶部 toast 提醒） */
+  const [guidedId, setGuidedId] = createSignal('');
 
   /** 引导：队首优先 + 停止当前推理（停止后自动出队发送这条） */
   function guide(item: QueuedMessage) {
     chatActions.moveQueuedToFront(item.id);
+    setGuidedId(item.id);
     stopAgentStream();
-    showToast('已置顶排队，当前推理停止后将优先发送这条引导', 'info');
   }
 
   /** 在侧边聊天中打开：新建对话窗口并把这条消息发过去（Agent 忙碌时禁止新建对话） */
@@ -73,6 +75,9 @@ export function QueuedMessagesBar(props: {
         <For each={chatState.queuedMessages}>
           {(item) => (
             <div class="queued-chip">
+              <Show when={guidedId() === item.id}>
+                <span class="queued-spin" title="排队中，当前推理停止后优先发送" />
+              </Show>
               <span class="queued-chip-text" title={item.displayText}>
                 {item.displayText}
               </span>

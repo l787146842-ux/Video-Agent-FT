@@ -67,8 +67,9 @@
   .add-card-btn { width: 40px; height: 64px; min-width: 40px; border: 1px dashed var(--border-color); border-radius: var(--radius-sm); background-color: rgba(255,255,255,0.02); color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
   .add-card-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background-color: rgba(59, 130, 246, 0.05); }
 
-  /* 微调输入框：仅悬停草稿卡片时由 GroupCard 渲染弹出（300ms 延迟防误触） */
-  .card-adjust-box { margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  /* 微调输入框：悬停卡片时缓缓浮现（opacity/max-height 过渡，不一下子弹出） */
+  .card-adjust-box { margin-top: 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; opacity: 0; max-height: 0; overflow: hidden; transition: opacity 0.35s ease, max-height 0.35s ease, margin-top 0.35s ease; }
+  .card-adjust-box.visible { opacity: 1; max-height: 90px; margin-top: 6px; }
   .card-adjust-input { flex: 1 1 160px; min-width: 120px; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; color: var(--text-main); outline: none; }
   .card-adjust-input:focus { border-color: var(--accent-blue); }
   .card-adjust-btn { padding: 6px 10px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-main); font-size: 12px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }

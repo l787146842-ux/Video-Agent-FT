@@ -92,13 +92,20 @@ export function makeChip(name: string, info: { url: string; type: MediaKind }): 
     img.alt = name;
     span.appendChild(img);
   } else if (info.type === 'video' && info.url) {
-    // 视频首帧缩略（#t=0.1 定位首帧）
+    // 视频首帧缩略（#t=0.1 定位首帧）+ 右下角视频角标
+    const wrap = document.createElement('span');
+    wrap.className = 'mention-thumb-wrap';
     const vid = document.createElement('video');
     vid.src = videoThumb(info.url);
     vid.muted = true;
     vid.setAttribute('playsinline', '');
     vid.setAttribute('preload', 'metadata');
-    span.appendChild(vid);
+    const badge = document.createElement('span');
+    badge.className = 'mention-video-badge';
+    badge.textContent = '▶';
+    wrap.appendChild(vid);
+    wrap.appendChild(badge);
+    span.appendChild(wrap);
   } else {
     const icon = document.createElement('span');
     icon.className = 'mention-chip-icon';
