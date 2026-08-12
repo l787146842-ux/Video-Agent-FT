@@ -274,7 +274,6 @@ export function PromptEditor() {
                     placeholder="搜索素材..."
                     value={mention.mentionQuery()}
                     onInput={(e) => mention.setMentionQuery(e.currentTarget.value)}
-                    onMouseDown={(e) => e.preventDefault()}
                   />
                   {/* 上区：故事板素材（分类页签） */}
                   <div class="mention-tabs">

@@ -5,8 +5,7 @@
  * 选中后把 @query 替换为缩略块 chip，并自动把素材纳入参考栏。
  */
 import { createSignal } from 'solid-js';
-import { state, studioActions } from '@/stores/studio';
-import { showToast } from '@/stores/toast';
+import { state } from '@/stores/studio';
 import { storyboardMediaList } from '@/lib/prompt-mentions';
 import {
   makeChip, refAssetName, refAssetType, type MediaKind,
@@ -130,18 +129,9 @@ export function usePromptMention(opts: PromptMentionOptions) {
     if (mentionActive()) closeMention();
   }
 
-  /** 选中提及项：把光标处的 @query 替换为缩略块 chip；
-   *  若素材不在参考栏且还有空位，自动纳入参考素材（保证生成时随请求发送） */
+  /** 选中提及项：把光标处的 @query 替换为缩略块 chip。
+   *  用户决策：@ 故事板素材不自动加入参考素材栏（生成时由后端按 @ 解析随请求发送）。 */
   function insertMentionChip(item: MentionItem) {
-    const r = opts.rec();
-    if (r && item.url && !(r.draft.refAssets || []).includes(item.url)) {
-      const refs = r.draft.refAssets || [];
-      if (refs.length < opts.maxRefs()) {
-        studioActions.updateDraftLocal(r.type, r.draft.id, { refAssets: [...refs, item.url] });
-      } else {
-        showToast(`参考素材栏已满（${opts.maxRefs()} 个）：生成时将优先发送已有参考，该提及仅保留文字`, 'warning');
-      }
-    }
     const el = opts.editor();
     const sel = window.getSelection();
     if (!el || !sel || !sel.rangeCount) { closeMention(); return; }

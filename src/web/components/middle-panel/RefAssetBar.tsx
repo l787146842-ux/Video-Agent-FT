@@ -109,7 +109,10 @@ export function RefAssetBar(props: {
             {(url, idx) => (
               <div class="ref-thumb-wrap" title={refAssetName(url, idx(), state.keyElements)}>
                 <Show when={refAssetType(url, state.keyElements) === 'video'}>
-                  <video src={videoThumb(url)} class="ref-thumb" muted playsinline preload="metadata" />
+                  <span class="ref-video-wrap">
+                    <video src={videoThumb(url)} class="ref-thumb" muted playsinline preload="metadata" />
+                    <span class="ref-video-badge">▶</span>
+                  </span>
                 </Show>
                 <Show when={refAssetType(url, state.keyElements) === 'audio'}>
                   <div class="ref-thumb ref-thumb-audio"><FiMusic size={16} /></div>

@@ -24,14 +24,13 @@
   .studio-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; color: var(--text-main); }
   .brand-star { flex-shrink: 0; filter: drop-shadow(0 1px 3px rgba(220, 38, 38, 0.4)); }
   .brand-name { font-size: 15px; font-weight: 700; letter-spacing: 1px; }
-    /* 「飞天」品牌艺术字：白色行楷 + 斜切飘逸感，垂直居中于导航栏 */
+    /* 「飞天」品牌字：毛笔行楷笔形（如图样），白色、垂直居中，不加人工斜切 */
     .brand-art {
       font-family: 'Xingkai SC', 'STXingkai', '华文行楷', 'KaiTi', '楷体', 'STKaiti', cursive;
-      font-size: 20px; font-weight: 700; letter-spacing: 8px; font-style: italic;
+      font-size: 22px; font-weight: 400; letter-spacing: 6px;
       color: #ffffff;
       display: inline-flex; align-items: center; line-height: 1;
-      transform: skewX(-8deg) translateY(1px);
-      filter: drop-shadow(0 0 6px rgba(255, 200, 90, 0.45));
+      filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.25));
     }
   /* 导航按钮绝对居中：两侧内容增减不影响居中 */
   .studio-nav-links { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 16px; }

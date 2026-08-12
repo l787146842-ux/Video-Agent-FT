@@ -89,6 +89,9 @@
     .mention-chip:hover { background: rgba(59, 130, 246, 0.28); }
     .mention-chip img { width: 1.4em; height: 1.4em; object-fit: cover; border-radius: 3px; flex-shrink: 0; }
       .mention-chip video { width: 1.4em; height: 1.4em; object-fit: cover; border-radius: 3px; flex-shrink: 0; background: #000; }
+      /* 参考素材栏视频左上角角标 */
+      .ref-video-wrap { position: relative; display: inline-flex; }
+      .ref-video-badge { position: absolute; left: -3px; top: -3px; width: 16px; height: 16px; border-radius: 4px; background: rgba(0, 0, 0, 0.78); color: #fff; font-size: 8px; line-height: 1; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 255, 255, 0.4); z-index: 2; }
     .mention-chip-icon { display: inline-flex; align-items: center; justify-content: center; width: 1.4em; height: 1.4em; border-radius: 3px; background: #1e293b; color: #34d399; font-size: 0.8em; flex-shrink: 0; }
     .mention-chip-name { font-size: 0.95em; color: var(--text-main); }
     /* 参考素材选择弹窗：网格卡片媒体 */
