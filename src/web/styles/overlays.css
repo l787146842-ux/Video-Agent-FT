@@ -117,6 +117,8 @@
   .docs-rendered h3 { font-size: 14px; font-weight: 600; margin: 12px 0 4px; }
   .docs-rendered p { margin: 6px 0; }
   .docs-rendered ul, .docs-rendered ol { margin: 6px 0; padding-left: 22px; }
+  .docs-rendered ol { list-style: decimal; } /* 阅读模式流程序号（全局 reset 吃掉后在此补回） */
+  .docs-rendered ul { list-style: disc; }
   .docs-rendered li { margin: 3px 0; }
   .docs-rendered blockquote { margin: 8px 0; padding: 8px 14px; border-left: 3px solid #3b82f6; background: rgba(59, 130, 246, 0.06); border-radius: 0 6px 6px 0; color: var(--text-muted); }
   .docs-rendered strong { color: var(--text-main); }

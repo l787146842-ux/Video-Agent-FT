@@ -228,6 +228,8 @@ class FCToolRunner:
         # 前端当前选中的草稿（对齐文本轨 "current" 语义）；execute 时按请求注入
         self._selected_draft_id = ""
         self._selected_type = ""
+        # 闸机校准：(kind+原因签名) 连续相同拦截计数，用于升级重写指引文案
+        self._gate_repeat: Dict[str, int] = {}
 
     # ---------- 提示词结构闸机 ----------
 
@@ -318,7 +320,26 @@ class FCToolRunner:
             logger.warning(f"[PromptGate] warn 模式放行（{kind}）: {hard}")
             return None
         logger.info(f"[PromptGate] 拦截不合格提示词写入（{kind}）: {hard}")
-        return prompt_gates.format_gate_errors(hard)
+        # 错误日志入账：闸机拦截写入生成日志（顶栏日志面板可见，恢复错误日志可见性）
+        try:
+            from src.video_agent.web.task_manager import get_task_manager
+            get_task_manager().record_gen_log(
+                media_type="prompt", status="failed", prompt=prompt,
+                error="; ".join(hard), source="agent",
+            )
+        except Exception:  # 记录失败不影响主链路
+            pass
+        # 闸机校准：连续相同拦截升级指引，防模型陷入「拦截-重写-再拦截」空转
+        sig = f"{kind}|{'|'.join(sorted(hard))}"
+        n = self._gate_repeat.get(sig, 0) + 1
+        self._gate_repeat[sig] = n
+        text = prompt_gates.format_gate_errors(hard)
+        if n > 1:
+            text += (
+                f"\n[连续第 {n} 次因相同原因被拦截] 上一次重写未修正上述问题，"
+                "请逐条对照原因彻底改写（不是换措辞：中文占比/字数/镜头语言标记必须实质达标），禁止再次提交相似文本。"
+            )
+        return text
 
     def _flow_gate(self, name: str, injected_skill: str) -> Optional[str]:
         """阶段前置闸机：Skill 流程激活且 strict 时，规格文档未写入则拒绝

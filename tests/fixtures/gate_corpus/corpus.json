@@ -1,0 +1,141 @@
+[
+  {
+    "id": "shot_ok_default",
+    "kind": "shot",
+    "prompt": "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。",
+    "manifest": null,
+    "expect_blocked": false,
+    "note": "结构齐全的合规分镜（默认策略放行）"
+  },
+  {
+    "id": "shot_missing_duration",
+    "kind": "shot",
+    "prompt": "缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.require_duration",
+    "note": "缺镜头时长（生视频模型无法感知镜头长短）"
+  },
+  {
+    "id": "shot_missing_subtitle",
+    "kind": "shot",
+    "prompt": "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music。",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.require_subtitle",
+    "note": "缺负面约束 no subtitles（字幕后期添加）"
+  },
+  {
+    "id": "shot_missing_audio",
+    "kind": "shot",
+    "prompt": "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，no subtitles。",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.require_audio_layer",
+    "note": "缺音频层（无对白/音效包装符且无 no music）"
+  },
+  {
+    "id": "shot_missing_camera",
+    "kind": "shot",
+    "prompt": "总时长：12秒。主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.require_camera_language",
+    "note": "缺镜头语言（景别/角度/运动均未写明）"
+  },
+  {
+    "id": "shot_too_short",
+    "kind": "shot",
+    "prompt": "推入中景，<风声>，no music，no subtitles，镜头总时长：5秒",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.shot_min_chars",
+    "note": "过短敷衍（低于平台地板 80 字）"
+  },
+  {
+    "id": "shot_english_body",
+    "kind": "shot",
+    "prompt": "Camera: Slow push-in wide shot, subject runs across the ice plain holding the relic, background collapsing into flat planes. Duration 12s. <low rumbling sound effects>, no music, no subtitles.",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.cjk_min_ratio",
+    "note": "8888 事故形态：结构齐全但正文整段英文"
+  },
+  {
+    "id": "shot_english_body_cjk_zero",
+    "kind": "shot",
+    "prompt": "Camera: Slow push-in wide shot, subject runs across the ice plain holding the relic, background collapsing into flat planes. Duration 12s. <low rumbling sound effects>, no music, no subtitles.",
+    "manifest": { "gates": { "cjk_min_ratio": 0 } },
+    "expect_blocked": false,
+    "note": "宣言式概念短片形态：manifest 关闭中文占比检查后放行"
+  },
+  {
+    "id": "documentary_relaxed",
+    "kind": "shot",
+    "prompt": "缓慢横移全景，清晨的草原上牧人赶着羊群缓缓走过远山脚下，炊烟从毡房升起，自然光，长焦压缩空间，镜头持续跟随队伍移动直至消失在山口，色调写实克制，no subtitles。",
+    "manifest": { "gates": { "require_duration": false, "require_audio_layer": false } },
+    "expect_blocked": false,
+    "note": "人文纪录短片形态：无音频层/时长在其 manifest 下放行"
+  },
+  {
+    "id": "documentary_default_blocked",
+    "kind": "shot",
+    "prompt": "缓慢横移全景，清晨的草原上牧人赶着羊群缓缓走过远山脚下，炊烟从毡房升起，自然光，长焦压缩空间，镜头持续跟随队伍移动直至消失在山口，色调写实克制，no subtitles。",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.require_duration",
+    "note": "同一样本在默认策略下应拦（证明差异来自 manifest 而非语料漂移）"
+  },
+  {
+    "id": "at_ref_missing",
+    "kind": "shot",
+    "prompt": "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。",
+    "manifest": { "gates": { "require_at_ref": true } },
+    "expect_blocked": true,
+    "expect_rule": "skill.require_at_ref",
+    "note": "未来科幻真人电影形态：加严规则缺 @元素引用"
+  },
+  {
+    "id": "at_ref_present",
+    "kind": "shot",
+    "prompt": "镜头总时长：12秒。缓慢推入中景，@Element_主角 在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。",
+    "manifest": { "gates": { "require_at_ref": true } },
+    "expect_blocked": false,
+    "note": "加严规则带 @元素引用后放行"
+  },
+  {
+    "id": "ke_too_short",
+    "kind": "keyElement",
+    "prompt": "老者白发",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.element_min_chars",
+    "note": "关键元素提示词过短"
+  },
+  {
+    "id": "ke_ok",
+    "kind": "keyElement",
+    "prompt": "白发老者罗辑，地球文明最后的守墓人，身穿深色厚重古典大衣，手持拐杖，神情平静从容，冷峻光影下的宿命感。",
+    "manifest": null,
+    "expect_blocked": false,
+    "note": "合规关键元素提示词（默认策略放行）"
+  },
+  {
+    "id": "camera_false_positive_fixed",
+    "kind": "shot",
+    "prompt": "总时长：12秒。他对这个推断感到惊讶，影子被夕阳拉长，神情复杂地望向远方，色调深青克制，<风声低鸣>，no music，no subtitles。",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.require_camera_language",
+    "note": "批次7 精化验证：含「推断/拉长」但无真实镜头语言——旧版单字推/拉会误放行，新版正确拦截"
+  },
+  {
+    "id": "audio_false_positive_fixed",
+    "kind": "shot",
+    "prompt": "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，数学成绩<及格线让他沮丧，光影克制，色调深青，no subtitles。",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.require_audio_layer",
+    "note": "批次7 精化验证：裸 < 不成对不再视为音频层——旧版会误放行，新版正确拦截"
+  }
+]

@@ -67,10 +67,12 @@
   .add-card-btn { width: 40px; height: 64px; min-width: 40px; border: 1px dashed var(--border-color); border-radius: var(--radius-sm); background-color: rgba(255,255,255,0.02); color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
   .add-card-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background-color: rgba(59, 130, 246, 0.05); }
 
-  .card-adjust-box { margin-top: 6px; display: flex; gap: 6px; align-items: center; }
-  .card-adjust-input { flex: 1; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; color: var(--text-main); outline: none; }
+  /* 微调输入框：默认隐藏，悬停分组或框内聚焦时出现（恢复旧版交互） */
+  .card-adjust-box { margin-top: 6px; display: none; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .sb-group:hover .card-adjust-box, .card-adjust-box:focus-within { display: flex; }
+  .card-adjust-input { flex: 1 1 160px; min-width: 120px; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; color: var(--text-main); outline: none; }
   .card-adjust-input:focus { border-color: var(--accent-blue); }
-  .card-adjust-btn { padding: 6px 10px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-main); font-size: 12px; cursor: pointer; }
+  .card-adjust-btn { padding: 6px 10px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-main); font-size: 12px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
   .card-adjust-btn:hover { background-color: var(--bg-hover); }
 
   /* 场景引用 chips */

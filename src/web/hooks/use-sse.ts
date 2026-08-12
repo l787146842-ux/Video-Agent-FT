@@ -7,6 +7,7 @@ import { showToast } from '@/stores/toast';
 import { refreshHistoryStatus } from '@/stores/history';
 import { resolveErrorMessage } from '@/lib/i18n';
 import { postAgentChatStream } from '@/api/sse';
+import { stopAgentTask } from '@/api/agent';
 import { requestInsertMedia } from '@/lib/chat-input-bridge';
 import { uid } from '@/lib/utils';
 
@@ -99,6 +100,8 @@ export function stopAgentStream(): void {
     abortController = null;
     chatActions.cancelStream();
   }
+  // 显式通知后端取消 worker（仅停止按钮路径；刷新不调用此函数，worker 续跑）
+  void stopAgentTask().catch(() => { /* 后端未就绪静默 */ });
 }
 
 function handleEvent(ev: SseEvent) {

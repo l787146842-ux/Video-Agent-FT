@@ -1,5 +1,5 @@
 import { A, useLocation } from '@solidjs/router';
-import { Show } from 'solid-js';
+import { createSignal, onMount, Show } from 'solid-js';
 import {
   FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiList, FiMoon, FiSun,
 } from 'solid-icons/fi';
@@ -9,6 +9,43 @@ import {
   historyState, performRedo, performUndo,
 } from '@/stores/history';
 import { toggleGenLog, genLogUnread } from '@/stores/generation-log';
+import { getRuntimeSettings, setRuntimeSettings } from '@/api/agent';
+
+/**
+ * 顶栏模型 fallback 开关（用户定义的「模型切换开关」）：
+ * 开 = 模型联不通/出不了图视频时自动换同模型其他 API 厂商；关 = 直接按上游报错。
+ * 状态后端热生效 + 持久化，不重启。
+ */
+function FallbackToggle() {
+  const [on, setOn] = createSignal(true);
+  onMount(() => {
+    getRuntimeSettings().then((r) => setOn(r.model_fallback_enabled)).catch(() => { /* 后端未就绪静默 */ });
+  });
+  async function toggle() {
+    const next = !on();
+    setOn(next);
+    try {
+      const r = await setRuntimeSettings({ model_fallback_enabled: next });
+      setOn(r.model_fallback_enabled);
+    } catch {
+      setOn(!next); // 失败回滚
+    }
+  }
+  return (
+    <button
+      type="button"
+      class={`fallback-toggle ${on() ? 'on' : 'off'}`}
+      title={on()
+        ? '模型切换：开（联不通自动换同模型其他厂商）'
+        : '模型切换：关（联不通直接按上游报错）'}
+      aria-label="模型切换开关"
+      onClick={() => void toggle()}
+    >
+      <span class="fallback-toggle-dot" />
+      <span class="fallback-toggle-label">切换</span>
+    </button>
+  );
+}
 
 /**
  * 全局 Header：品牌 Logo + 模式导航（URL 路由）+ 主题切换 + 项目切换
@@ -53,7 +90,7 @@ export function Header(props: {
             </linearGradient>
           </defs>
         </svg>
-        <span class="brand-name">智能体</span>
+        <span class="brand-name brand-art">飞天</span>
       </div>
 
       {/* 模式导航（URL 路由，支持前进/后退/深链接）。三个按钮样式统一，无下拉。 */}
@@ -106,6 +143,7 @@ export function Header(props: {
         >
           {theme() === 'dark' ? <FiMoon size={16} /> : <FiSun size={16} />}
         </button>
+        <FallbackToggle />
         <ProjectSwitcher />
       </div>
 

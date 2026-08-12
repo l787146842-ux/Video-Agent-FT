@@ -14,7 +14,7 @@ import { GenerationLogPanel } from './GenerationLogPanel';
 import { initGenerationEvents, restoreActiveGenerations } from '@/lib/generation-events';
 import { getProjectState } from '@/api/project';
 import { getAppConfig, getProviders } from '@/api/providers';
-import { getSkills } from '@/api/agent';
+import { getSkills, getAgentRunning } from '@/api/agent';
 import { state, studioActions } from '@/stores/studio';
 import { chatActions } from '@/stores/chat';
 import { convActions } from '@/stores/conversations';
@@ -89,6 +89,9 @@ export function LayoutShell(props: ParentProps) {
     onCleanup(() => document.removeEventListener('keydown', onGlobalKeyDown));
     void refreshHistoryStatus();
 
+    // 刷新存活：后端 worker 仍在跑（刷新不中断）则显示忙态并轮询，完成后同步成果
+    void reattachRunningAgent();
+
     // 全局生成事件总线：agent/批量生成驱动卡片转圈 + 生成日志联动
     initGenerationEvents();
 
@@ -130,6 +133,27 @@ export function LayoutShell(props: ParentProps) {
     });
     setLoading(false);
   });
+
+  /** 重载后探测后台 Agent：running 时置忙态轮询，结束后重拉快照同步消息/故事板 */
+  async function reattachRunningAgent() {
+    try {
+      let st = await getAgentRunning();
+      if (!st.running) return;
+      studioActions.setAgentBusy(true);
+      while (st.running) {
+        await new Promise((r) => setTimeout(r, 2000));
+        st = await getAgentRunning().catch(() => ({ running: false }));
+      }
+      const snap = await getProjectState().catch(() => null);
+      if (snap) {
+        studioActions.syncFromServer(snap);
+        convActions.syncFromServer(snap);
+        chatActions.loadMessages(snap.chatMessages || []);
+        convActions.loadFromSnapshot(snap);
+      }
+      studioActions.setAgentBusy(false);
+    } catch { /* 后端未就绪静默 */ }
+  }
 
   // 画布 iframe 初始化：等待 loading 结束后 DOM 就绪，设置 src 并启动桥接
   let bridgeInitialized = false;

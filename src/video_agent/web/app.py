@@ -32,6 +32,7 @@ from src.video_agent.web.routes.plugins import router as plugins_router
 from src.video_agent.web.routes.upload import router as upload_router
 from src.video_agent.web.routes.canvas import router as canvas_router
 from src.video_agent.web.routes.cli_status import router as cli_status_router
+from src.video_agent.web.routes.runtime_settings import router as runtime_settings_router, load_runtime_settings
 
 # 日志配置
 logger.remove()
@@ -63,6 +64,7 @@ async def lifespan(_app: FastAPI):
     from src.video_agent.state.manager import StateManager
     from src.video_agent.config import settings
     register_adapters()
+    load_runtime_settings()  # 运行时设置（fallback 开关等）持久化覆盖，热生效
     # 代码内置 Skill（编剧/分镜师/制片）已按用户要求彻底移除，不再注册；
     # 下拉框与 Skill 目录只保留 data/skills/*.md 文档 Skill。
     ensure_default_skill_docs()
@@ -266,6 +268,7 @@ app.include_router(plugins_router, prefix="/api", tags=["plugins"])
 app.include_router(upload_router, prefix="/api", tags=["upload"])
 app.include_router(canvas_router, prefix="/api", tags=["canvas"])
 app.include_router(cli_status_router, prefix="/api", tags=["cli-status"])
+app.include_router(runtime_settings_router, prefix="/api", tags=["runtime-settings"])
 
 
 # ---------- 启动入口 ----------

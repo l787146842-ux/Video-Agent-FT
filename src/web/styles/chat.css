@@ -34,6 +34,9 @@
 
   /* 用户消息引用块（文档附件 / Skill）：发送后才附加，点击查看对应文档 */
   .msg-ref-blocks { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+    /* 气泡内嵌引用块：气泡顶部左对齐，与下方文字留间距 */
+    .user-bubble .msg-ref-blocks { justify-content: flex-start; margin-bottom: 6px; }
+    .user-bubble-text { white-space: pre-wrap; }
   .msg-ref-block { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 8px; font-size: 12px; line-height: 1.3; cursor: pointer; border: 1px solid transparent; max-width: 16em; }
   .msg-ref-block .msg-ref-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .msg-ref-doc { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.45); color: #93c5fd; }
@@ -60,6 +63,12 @@
   .confirm-btn.secondary { background: var(--bg-tertiary); color: var(--text-muted); }
   .confirm-btn.secondary:hover { color: var(--text-main); }
   .confirm-btn.secondary.active { color: #93c5fd; border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.10); }
+    /* 确认卡片配色重配：翡翠绿为主确认色，与全局信息蓝区分；选中态绿光反馈 */
+    .confirm-wizard { margin-top: 8px; padding: 10px 12px; border: 1px solid rgba(52, 199, 89, 0.35); border-radius: 10px; background: linear-gradient(180deg, rgba(52, 199, 89, 0.07), rgba(52, 199, 89, 0.02)); }
+    .confirm-option-card.selected { border-color: rgba(52, 199, 89, 0.6); background: rgba(52, 199, 89, 0.10); }
+    .confirm-option-card.selected .confirm-option-radio { border-color: var(--accent-emerald); box-shadow: inset 0 0 0 3.5px var(--accent-emerald); }
+    .confirm-btn.primary { background: linear-gradient(135deg, var(--accent-emerald), #2aa14d); border-color: transparent; color: #fff; box-shadow: 0 2px 8px rgba(52, 199, 89, 0.35); }
+    .confirm-btn.primary:hover { filter: brightness(1.08); }
   .confirm-btn:hover { filter: brightness(1.15); }
   .confirm-btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
 
@@ -554,5 +563,18 @@
   .chat-resize-handle::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 36px; height: 3px; border-radius: 2px; background-color: var(--border-color); transition: background-color 0.2s, width 0.2s; }
   .chat-resize-handle:hover, .chat-resize-handle.dragging { background-color: rgba(96, 165, 250, 0.06); }
   .chat-resize-handle:hover::after, .chat-resize-handle.dragging::after { background-color: var(--splitter-hover); width: 52px; }
+
+  /* 上下文用量小圆圈：环填充比 = 已用/窗口，色随水位（蓝→琥珀→红） */
+  .ctx-ring { transform: rotate(-90deg); flex-shrink: 0; }
+  .ctx-ring circle { fill: none; stroke-width: 2; }
+  .ctx-ring-bg { stroke: var(--border-color); opacity: 0.6; }
+  .ctx-ring-fg { stroke: var(--accent-blue); stroke-linecap: round; transition: stroke-dasharray 0.3s, stroke 0.3s; }
+  .ctx-ring.warn .ctx-ring-fg { stroke: var(--accent-amber); }
+  .ctx-ring.hot .ctx-ring-fg { stroke: #ef4444; }
+
+  /* 引导发送转圈圈：推理中发送键外环旋转 */
+  .send-btn { position: relative; }
+  .send-btn.busy::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid transparent; border-top-color: var(--accent-blue); animation: send-spin 0.9s linear infinite; }
+  @keyframes send-spin { to { transform: rotate(360deg); } }
 
 }

@@ -1,10 +1,10 @@
 import {
-  FiArrowUp, FiBookOpen, FiCpu, FiDatabase, FiFolder, FiGlobe, FiPaperclip, FiSquare,
+  FiArrowUp, FiBookOpen, FiCpu, FiFolder, FiGlobe, FiPaperclip, FiSquare,
 } from 'solid-icons/fi';
 import {
   agentProvider, setAgentProvider, agentModel, setAgentModel,
 } from '@/stores/agent-prefs';
-import { createSignal, createEffect, onMount, onCleanup, Show } from 'solid-js';
+import { createSignal, createEffect, onMount, Show } from 'solid-js';
 import { apiProvidersFor, providerModels } from '@/lib/providers';
 import { getContextUsage, type ContextUsage } from '@/api/agent';
 import { chatState } from '@/stores/chat';
@@ -36,10 +36,10 @@ export function ChatInputToolbar(props: {
   /** 「素材库」选择弹窗开关 */
   const [assetPickerOpen, setAssetPickerOpen] = createSignal(false);
 
-  /** 上下文用量（发送按钮旁状态图标，悬停显示已用多少K） */
+  /** 上下文用量（发送按钮旁小圆圈，悬停显示已用多少K） */
   const [usage, setUsage] = createSignal<ContextUsage | null>(null);
   function refreshUsage() {
-    void getContextUsage().then(setUsage).catch(() => { /* 后端未就绪静默 */ });
+    void getContextUsage(agentModel()).then(setUsage).catch(() => { /* 后端未就绪静默 */ });
   }
   onMount(refreshUsage);
   // 消息数量变化（发送/回复完成）后刷新用量
@@ -48,17 +48,26 @@ export function ChatInputToolbar(props: {
     refreshUsage();
   });
   // 推理中持续刷新：Agent 边执行边消耗上下文（每批操作落盘后用量都在变），
-  // 不能只在推理完成后刷一次，流式期间每 2 秒轮询一次
+  // 由 tool_started/tool_finished 事件（streamingTools 变化）驱动，不再固定轮询
   createEffect(() => {
     if (!chatState.isStreaming) return;
+    void chatState.streamingTools.length;
     refreshUsage();
-    const timer = setInterval(refreshUsage, 2000);
-    onCleanup(() => clearInterval(timer));
   });
   const usageLabel = () => {
     const u = usage();
     if (!u) return '…';
     return `${(u.est_tokens / 1024).toFixed(1)}K`;
+  };
+  /** 圆环填充比 = 已用 / 窗口；未传模型时回退 0（纯数字展示） */
+  const ratio = () => {
+    const u = usage();
+    if (!u || !u.window_tokens) return 0;
+    return Math.min(1, u.est_tokens / u.window_tokens);
+  };
+  const ringClass = () => {
+    const r = ratio();
+    return r >= 0.85 ? 'hot' : r >= 0.6 ? 'warn' : 'ok';
   };
 
   return (
@@ -119,7 +128,10 @@ export function ChatInputToolbar(props: {
             aria-label="上下文用量"
             onClick={refreshUsage}
           >
-            <FiDatabase size={12} />
+            <svg class={`ctx-ring ${ringClass()}`} width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <circle class="ctx-ring-bg" cx="7" cy="7" r="5.5" />
+              <circle class="ctx-ring-fg" cx="7" cy="7" r="5.5" stroke-dasharray={`${(ratio() * 34.56).toFixed(1)} 34.56`} />
+            </svg>
             <span class="context-usage-value">{usageLabel()}</span>
           </button>
           <div class="context-usage-tip" role="tooltip">
@@ -139,7 +151,7 @@ export function ChatInputToolbar(props: {
         </Show>
         <button
           type="button"
-          class="send-btn"
+          class={`send-btn ${props.busy ? 'busy' : ''}`}
           title={props.busy ? '发送（排队，完成后自动发出）' : t('rp.toolbar.send')}
           onClick={() => props.onSend()}
         >

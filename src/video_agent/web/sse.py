@@ -39,5 +39,9 @@ async def sse_event_generator(queue: asyncio.Queue, task: asyncio.Task, request:
                 break
     finally:
         if not task.done():
-            task.cancel()
-            logger.debug("[SSE] worker task 已取消")
+            if await request.is_disconnected():
+                # 刷新/关标签：worker 转后台跑完（成果落盘），前端重载后轮询 /agent/running 同步
+                logger.info("[SSE] 客户端已断开，worker 转后台执行至完成（刷新不中断 Agent）")
+            else:
+                task.cancel()
+                logger.debug("[SSE] worker task 已取消")

@@ -24,8 +24,22 @@
   .studio-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; color: var(--text-main); }
   .brand-star { flex-shrink: 0; filter: drop-shadow(0 1px 3px rgba(220, 38, 38, 0.4)); }
   .brand-name { font-size: 15px; font-weight: 700; letter-spacing: 1px; }
+    /* 「飞天」品牌艺术字：行楷字体 + 金→绯渐变，与星徽渐变呼应 */
+    .brand-art {
+      font-family: 'Xingkai SC', 'STXingkai', '华文行楷', 'KaiTi', '楷体', 'STKaiti', cursive;
+      font-size: 19px; font-weight: 700; letter-spacing: 5px;
+      background: linear-gradient(135deg, #ffd700 0%, #ff9a3d 48%, #ff5e5e 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      filter: drop-shadow(0 0 6px rgba(255, 170, 60, 0.35));
+    }
   .studio-nav-links { display: flex; align-items: center; gap: 16px; }
   .studio-header-actions { display: flex; align-items: center; gap: 12px; }
+    /* 顶栏模型 fallback 开关：圆点+文字胶囊，开=绿光点，关=灰点 */
+    .fallback-toggle { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-muted); font-size: 11px; cursor: pointer; transition: all 0.2s; }
+    .fallback-toggle-dot { width: 8px; height: 8px; border-radius: 50%; background: #6b7280; transition: all 0.2s; }
+    .fallback-toggle.on { border-color: rgba(52, 199, 89, 0.45); background: rgba(52, 199, 89, 0.10); color: #34c759; }
+    .fallback-toggle.on .fallback-toggle-dot { background: #34c759; box-shadow: 0 0 6px rgba(52, 199, 89, 0.6); }
+    .fallback-toggle:hover { border-color: var(--accent-blue); }
 
   .mode-btn { display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 13px; font-weight: 500; padding: 6px 14px; border: none; border-radius: var(--radius-sm); background: none; cursor: pointer; transition: all 0.2s ease; text-decoration: none; white-space: nowrap; }
   .mode-btn:hover { color: var(--text-main); background-color: var(--bg-tertiary); }

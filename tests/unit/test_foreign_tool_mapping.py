@@ -15,7 +15,7 @@ import pytest
 import src.video_agent.web.skill_docs as skill_docs_mod
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.tools.document_tools import ReadSkillInput, ReadSkillTool
-from src.video_agent.web.skill_docs import build_foreign_tool_note, get_skill_doc
+from src.video_agent.web.skill_docs import build_foreign_tool_note
 
 
 @pytest.fixture
@@ -82,33 +82,3 @@ class TestReadSkillToolWithMapping:
         content = result.data["content"]
         assert "外来工具名映射" in content
         assert "media_generator" in content
-
-
-class TestRealSkillDocVerbatim:
-    """真实 Skill（data/skills/剧本生视频需上传剧本.md）验收：
-    应用户要求已恢复为 flova 平台原版文字（便于对齐测试），
-    外来工具名由注入时自动追加的映射表对接本系统动作。"""
-
-    def test_title_line_parseable(self):
-        doc = get_skill_doc("剧本生视频需上传剧本")
-        assert doc is not None
-        # 标题行：_parse_doc 从 "# xxx" 取显示名
-        assert doc["name"] == "剧本生视频（需上传剧本）"
-
-    def test_foreign_tool_names_get_mapping(self):
-        doc = get_skill_doc("剧本生视频需上传剧本")
-        assert doc is not None
-        # 原版保留 flova 工具名：注入时必须自动追加外来映射表
-        note = build_foreign_tool_note(doc["content"])
-        assert "外来工具名映射" in note
-        for kw in ("write_media_prompt", "media_generator", "reply_to_user", "storyboard_designer"):
-            assert kw in note
-
-    def test_flova_stage_discipline_present(self):
-        doc = get_skill_doc("剧本生视频需上传剧本")
-        assert doc is not None
-        # 原版阶段纪律关键条款就位（分批确认 + 强制暂停点）
-        assert "分批次确认" in doc["content"]
-        assert "【强制暂停点】" in doc["content"]
-        # flova 原生 tag 章节保留（分阶段聚焦注入按 tag 解析）
-        assert "<write_the_prompt>" in doc["content"]

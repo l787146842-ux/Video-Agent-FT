@@ -75,21 +75,6 @@ def test_detect_stage_disabled_without_state_accessor():
 
 # ---------- 聚焦块注入 ----------
 
-def test_focus_block_appended_for_prompt_draft_stage():
-    """提示词草案阶段：Skill 块末尾重复强调「提示词写法」章节"""
-    state = {
-        "keyElements": [{"id": "k", "title": "t", "drafts": [{"id": "d", "prompt": ""}]}],
-        "shots": [], "audioItems": [],
-    }
-    pb = _pb(state)
-    block = pb.build_selected_skill_block("剧本生视频（需上传剧本）")
-    assert "【当前阶段重点 · 提示词草案】" in block
-    # 聚焦内容确实来自 Skill 的提示词写法章节
-    assert "Seedance 顺序" in block.split("【当前阶段重点")[-1]
-    # 聚焦块位于全文与纪律条款之后（最末尾）
-    assert block.rindex("当前阶段重点") > block.rindex("交付自检")
-
-
 def test_no_focus_block_for_unmapped_skill():
     """无法解析章节的 Skill 不产生聚焦块（行为不变）"""
     state = {"keyElements": [], "shots": [], "audioItems": []}

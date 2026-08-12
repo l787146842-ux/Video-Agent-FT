@@ -43,6 +43,8 @@ export function ChatMessageItem(props: {
 
   /** 用户消息是否含内联媒体（有则用富文本气泡还原排版） */
   const hasInlineMedia = () => !!msg().parts && msg().parts!.some((p) => p.type !== 'text');
+    /** 用户消息是否携带引用块（文档/Skill）——决定气泡内嵌渲染 */
+    const hasRefBlocks = () => (msg().docBlocks || []).length > 0 || (msg().skillBlocks || []).length > 0;
 
   return (
     <div class={`chat-msg ${isUser() ? 'user' : 'agent'}`}>
@@ -177,40 +179,8 @@ export function ChatMessageItem(props: {
         />
       </Show>
 
-      {/* 用户消息引用块：文档附件 / Skill（发送后才附加，点击查看对应文档） */}
-      <Show when={isUser() && ((msg().docBlocks || []).length > 0 || (msg().skillBlocks || []).length > 0)}>
-        <div class="msg-ref-blocks">
-          <For each={msg().skillBlocks || []}>
-            {(name) => (
-              <button
-                type="button"
-                class="msg-ref-block msg-ref-skill"
-                title={`查看 Skill：${name}`}
-                onClick={() => void openDocsPanel(name)}
-              >
-                <FiZap size={12} />
-                <span class="msg-ref-name">{name}</span>
-              </button>
-            )}
-          </For>
-          <For each={msg().docBlocks || []}>
-            {(name) => (
-              <button
-                type="button"
-                class="msg-ref-block msg-ref-doc"
-                title={`查看文档：${name}`}
-                onClick={() => void openDocsPanel(name)}
-              >
-                <FiFileText size={12} />
-                <span class="msg-ref-name">{name}</span>
-              </button>
-            )}
-          </For>
-        </div>
-      </Show>
-
-      {/* 消息气泡（旧版 chat-bubble + msg-author） */}
-      <Show when={msg().text}>
+      {/* 消息气泡（旧版 chat-bubble + msg-author）；用户引用块（文档/Skill）内嵌气泡顶部 */}
+      <Show when={msg().text || hasRefBlocks()}>
         <Show when={!isUser()}>
           <span class="msg-author">
             {msg().modelName || 'Agent'}
@@ -225,16 +195,51 @@ export function ChatMessageItem(props: {
             />
           }
         >
-          {/* 用户气泡：含内联媒体时按文字+缩略图交错还原排版 */}
-          <Show
-            when={hasInlineMedia()}
-            fallback={<div class="chat-bubble">{msg().text}</div>}
-          >
-            <RichBubble
-              parts={msg().parts!}
-              onImageClick={(url) => setLightboxUrl(absUrl(url))}
-            />
-          </Show>
+          {/* 用户气泡：引用块在气泡内，文字/媒体在其下 */}
+          <div class="chat-bubble user-bubble">
+            <Show when={hasRefBlocks()}>
+              <div class="msg-ref-blocks">
+                <For each={msg().skillBlocks || []}>
+                  {(name) => (
+                    <button
+                      type="button"
+                      class="msg-ref-block msg-ref-skill"
+                      title={`查看 Skill：${name}`}
+                      onClick={() => void openDocsPanel(name)}
+                    >
+                      <FiZap size={12} />
+                      <span class="msg-ref-name">{name}</span>
+                    </button>
+                  )}
+                </For>
+                <For each={msg().docBlocks || []}>
+                  {(name) => (
+                    <button
+                      type="button"
+                      class="msg-ref-block msg-ref-doc"
+                      title={`查看文档：${name}`}
+                      onClick={() => void openDocsPanel(name)}
+                    >
+                      <FiFileText size={12} />
+                      <span class="msg-ref-name">{name}</span>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <Show when={msg().text}>
+              {/* 含内联媒体时按文字+缩略图交错还原排版 */}
+              <Show
+                when={hasInlineMedia()}
+                fallback={<div class="user-bubble-text">{msg().text}</div>}
+              >
+                <RichBubble
+                  parts={msg().parts!}
+                  onImageClick={(url) => setLightboxUrl(absUrl(url))}
+                />
+              </Show>
+            </Show>
+          </div>
         </Show>
       </Show>
 

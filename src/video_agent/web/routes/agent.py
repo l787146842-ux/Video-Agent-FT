@@ -19,11 +19,15 @@ from loguru import logger
 from src.video_agent.web.chat_service import stream_worker, non_stream_worker, sse_event_generator
 from src.video_agent.exceptions import AdapterError, GenerationError
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.core.token_budget import estimate_tokens
+from src.video_agent.core.token_budget import context_window_for_model, estimate_tokens
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 
 router = APIRouter()
+
+# 后台聊天 worker 单槽注册表：客户端断连（刷新/关标签）后 worker 转后台跑完，
+# 前端重载后轮询 /agent/running 同步结果；/agent/stop 显式取消（停止按钮专用）。
+_CHAT_TASKS: Dict[str, asyncio.Task] = {}
 
 # 空项目状态骨架的基线 token：新建项目即使没有任何内容，状态 JSON 也有固定骨架
 # （空列表/interaction 节），这部分不计入「已用」，避免新项目一创建就显示 0.3K
@@ -117,6 +121,8 @@ async def agent_chat_stream(body: ChatRequest, request: Request):
         await queue.put(event)
 
     task = asyncio.create_task(stream_worker(body, emit))
+    _CHAT_TASKS["bound"] = task
+    task.add_done_callback(lambda _t: _CHAT_TASKS.pop("bound", None))
 
     return StreamingResponse(
         sse_event_generator(queue, task, request),
@@ -132,13 +138,37 @@ async def get_agent_traces(limit: int = 50):
     return {"traces": tracer.get_recent_traces(min(limit, 50))}
 
 
+@router.get("/agent/running")
+async def agent_running():
+    """是否有聊天 worker 仍在运行（含客户端断连后转后台的）。
+
+    前端刷新/切换回来后轮询此端点：running=true 时显示忙态，
+    转 false 后重拉项目快照同步 Agent 成果。
+    """
+    return {"running": any(not t.done() for t in _CHAT_TASKS.values())}
+
+
+@router.post("/agent/stop")
+async def agent_stop():
+    """显式停止当前聊天 worker（停止按钮调用；刷新不触发此端点，worker 续跑）"""
+    cancelled = 0
+    for key in list(_CHAT_TASKS.keys()):
+        t = _CHAT_TASKS.pop(key, None)
+        if t is not None and not t.done():
+            t.cancel()
+            cancelled += 1
+    logger.info(f"[Agent] stop 请求，取消 worker 数={cancelled}")
+    return {"ok": True, "cancelled": cancelled}
+
+
 @router.get("/agent/context-usage")
-async def get_context_usage():
+async def get_context_usage(model: str = ""):
     """估算当前会话将发送给 LLM 的上下文用量（Studio 状态上下文 + 聊天记录）。
 
-    前端在发送按钮旁展示「已用多少K上下文」：
+    前端在发送按钮旁展示「已用多少K上下文」小圆圈：
     - chars: 上下文字符总数
     - est_tokens: 估算 token 数（与 token_budget 截断同口径：中文约1.5字/token）
+    - window_tokens: 当前模型上下文窗口（供前端算圆环填充比）
     """
     svc = StateManager.get_instance()
     try:
@@ -157,4 +187,5 @@ async def get_context_usage():
         "est_tokens": state_tokens + history_tokens,
         "state_chars": len(state_json),
         "history_chars": len(history_json),
+        "window_tokens": context_window_for_model(model) if model else 0,
     }
