@@ -78,3 +78,29 @@ def test_dual_track_same_verdict_for_good_prompt(tmp_path):
         injected_skill="任意 Skill",
     )
     assert err is None
+
+
+def test_fc_flow_gate_s1_warning_only(tmp_path, monkeypatch):
+    """FC 轨规格前置与文本轨对齐：声明 spec_gate 的 Skill 只提示不硬拦。"""
+    import src.video_agent.web.skill_docs as sd
+    from src.video_agent.skill_runtime import registry
+
+    skill_dir = tmp_path / "skills"
+    skill_dir.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", skill_dir)
+    registry.reset_registry()
+    sd.save_skill_doc(
+        "有规格闸",
+        '# A\n```json skill_manifest\n' '{"flow": {"spec_gate": true}}\n' "```\n正文",
+    )
+    sd.save_skill_doc("无规格闸", "# B\n> 调用规则：测试\n正文")
+    try:
+        runner = FCToolRunner(tool_manager=None)
+        runner._raw_state = staticmethod(lambda: {})
+        assert runner._flow_gate("storyboard_create_group", "有规格闸") is None
+        assert runner._spec_gate_warned is True
+        runner._spec_gate_warned = False
+        assert runner._flow_gate("storyboard_create_group", "无规格闸") is None
+        assert runner._spec_gate_warned is False
+    finally:
+        registry.reset_registry()

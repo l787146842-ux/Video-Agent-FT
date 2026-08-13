@@ -260,7 +260,14 @@ async def run_agent_loop(
                 })
         _log_before = len(executor.action_log)
         _t0 = time.monotonic()
-        applied = await executor.execute_locked(executable, accumulate=stream_consumed > 0)
+        # 文本轨异步执行器动作（script_analyze/storyboard_* 等）走 execute_async
+        # （独立 LLM 调用 + 结构化校验）；其余走同步 execute_locked
+        if any(executor._is_async_action(a) for a in executable):
+            applied = await executor.execute_async_locked(
+                executable, accumulate=stream_consumed > 0,
+            )
+        else:
+            applied = await executor.execute_locked(executable, accumulate=stream_consumed > 0)
         applied += stream_preapplied  # 流式预执行成功数计入本轮应用量
         _batch_ms = (time.monotonic() - _t0) * 1000
         result.applied_actions += applied

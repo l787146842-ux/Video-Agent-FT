@@ -134,6 +134,43 @@ def test_is_async_action():
 
 
 @pytest.mark.asyncio
+async def test_execute_async_dispatches_executor_action(monkeypatch):
+    """文本轨执行器动作走 execute_async：按动作名构造执行器并等待独立 LLM 结果。"""
+    import tempfile
+
+    from src.video_agent.skill_runtime import executors as ex_mod
+    from src.video_agent.skill_runtime.executors import (
+        ScriptAnalyzeInput,
+        SkillToolResult,
+    )
+    from src.video_agent.state.manager import StateManager
+
+    svc = StateManager(tempfile.mkdtemp())
+    called = {}
+
+    class FakeTool:
+        name = "script_analyze"
+
+        def get_input_schema(self):
+            return ScriptAnalyzeInput
+
+        async def aexecute(self, params):
+            called["skill"] = params.skill_name
+            return SkillToolResult(success=True, data={"detail": "已分析（必须展示）"})
+
+    monkeypatch.setattr(
+        ex_mod, "build_executor_tool",
+        lambda name: FakeTool() if name == "script_analyze" else None,
+    )
+    ex = StudioActionExecutor(svc, gate_enabled=False)
+    applied = await ex.execute_async_locked([
+        {"action": "script_analyze", "skill_name": "演示", "doc_name": "剧本.md"},
+    ])
+    assert applied == 1
+    assert called["skill"] == "演示"
+
+
+@pytest.mark.asyncio
 async def test_script_analyze_awaits_llm_call(monkeypatch, tmp_path):
     """回归：执行器内 LLM 调用必须 await（曾把协程当结果解包导致解析素材报错）。"""
     import tempfile

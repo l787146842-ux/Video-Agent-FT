@@ -22,6 +22,15 @@ def _reset_registry():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_skills(tmp_path, monkeypatch):
+    """隔离 data/skills：防止测试 _write 污染真实 skill 目录（ke-prog 覆盖事故）。"""
+    d = tmp_path / "skills"
+    d.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _bridge_stream_calls(monkeypatch):
     """流式拆解桥接：call_chat_completion_stream 转发到测试 patch 的
     call_chat_completion（整段一次性回放），适配 Q5 流式逐条落盘改造。"""

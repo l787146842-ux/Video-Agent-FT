@@ -259,6 +259,74 @@ def _consume_pending_confirmation(svc) -> str:
     )
 
 
+def _consume_spec_wizard(svc, user_text: str) -> str:
+    """规格向导消费（6666/1111 事故）：用户回应是规格收集暂停的候选项时，
+    机械落盘为规格文档（系统拼装，模型不手写），返回附加系统提示。
+
+    仅当：项目尚无规格文档 + 用户回应含可解析的制作参数/渠道选择或明确确认意图。
+    调用方需持有 svc.lock。
+    """
+    import re
+    from datetime import datetime, timezone
+
+    from src.video_agent.core import prompt_gates
+    from src.video_agent.utils import gen_id
+
+    state = svc.state_dict
+    if prompt_gates.has_spec_document(state):
+        return ""
+    text = str(user_text or "").strip()
+    if not text:
+        return ""
+    used = state.get("usedSkills") or []
+    skill_name = str(used[-1] or "") if used else ""
+    # 硬五项 + Skill 软维度 + 渠道选择（向导逐行回传格式「键：值」）
+    selections = prompt_gates.parse_hard_selections(text)
+    dims = prompt_gates.skill_spec_dimensions(skill_name)
+    selections.update(prompt_gates.parse_dim_selections(text, dims))
+    m_img = re.search(r"出图渠道\s*[:：]\s*([^；;\n]+)", text)
+    if m_img:
+        selections["图像生成"] = m_img.group(1).strip()[:60]
+    m_vid = re.search(r"出视频渠道\s*[:：]\s*([^；;\n]+)", text)
+    if m_vid:
+        selections["视频生成"] = m_vid.group(1).strip()[:60]
+    if not selections:
+        return ""
+    # 软维度未选时用模型出题的候选首项兜底（不拦人，4444）
+    model_filled: Dict[str, str] = {}
+    cands = ((state.get("interaction") or {}).get("spec_soft_candidates") or {})
+    for dim in dims:
+        vals = cands.get(dim) or []
+        if vals:
+            model_filled[dim] = str(vals[0])
+    content = prompt_gates.assemble_spec_doc(
+        skill_name, selections, model_filled=model_filled,
+    )
+    if not content.strip():
+        return ""
+    docs = state.setdefault("documents", [])
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    name = "Final_Video_Spec.md"
+    for d in docs:
+        if d.get("name") == name:
+            d["content"] = content
+            d["updated_at"] = now
+            break
+    else:
+        docs.insert(0, {
+            "id": gen_id("doc"), "name": name, "content": content,
+            "created_at": now, "updated_at": now,
+        })
+    inter = state.setdefault("interaction", {})
+    inter["spec_collected"] = True
+    svc.save()
+    logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md")
+    return (
+        "\n\n（系统：已按你的选择拼装并写入 Final_Video_Spec.md 规格文档；"
+        "接下来请按 Skill 流程开始拆分关键元素，并暂停等用户确认拆分方案。）"
+    )
+
+
 async def stream_worker(body: Any, emit) -> None:
     """流式聊天的后台 worker（mock + 真实供应商）。
 
@@ -294,12 +362,15 @@ async def stream_worker(body: Any, emit) -> None:
         if use_studio_context:
             async with svc.lock:
                 pending_confirm_note = _consume_pending_confirmation(svc)
+                spec_wizard_note = _consume_spec_wizard(svc, user_text)
+        else:
+            spec_wizard_note = ""
         # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
         attachment_note = (
             attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
             if body.attachments else ""
         )
-        llm_user_text = user_text + pending_confirm_note
+        llm_user_text = user_text + pending_confirm_note + spec_wizard_note
         if attachment_note:
             llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
 
@@ -623,12 +694,15 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     if use_studio_context:
         async with svc.lock:
             pending_confirm_note = _consume_pending_confirmation(svc)
+            spec_wizard_note = _consume_spec_wizard(svc, user_text)
+    else:
+        spec_wizard_note = ""
     # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
     attachment_note = (
         attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
         if body.attachments else ""
     )
-    llm_user_text = user_text + pending_confirm_note
+    llm_user_text = user_text + pending_confirm_note + spec_wizard_note
     if attachment_note:
         llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
 

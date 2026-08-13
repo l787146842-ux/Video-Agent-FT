@@ -248,14 +248,15 @@ def test_executor_spec_gate_inactive_without_skill(svc):
     assert applied == 1
 
 
-def test_fc_flow_gate_blocks_create_group_without_spec(monkeypatch):
+def test_fc_flow_gate_no_hard_block_without_spec(monkeypatch):
+    """FC 轨规格前置（S1）：不硬拦（用户指令优先），声明 Skill 只追加可视线索。"""
     runner = FCToolRunner(tool_manager=None)
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {"documents": []}))
-    err = runner._flow_gate("storyboard_create_group", injected_skill="剧本生视频（需上传剧本）")
-    assert err and "规格文档" in err
+    assert runner._flow_gate("storyboard_create_group", injected_skill="剧本生视频（需上传剧本）") is None
     # 无 Skill / 非结构工具不拦
     assert runner._flow_gate("storyboard_create_group", injected_skill="") is None
     assert runner._flow_gate("storyboard_patch_draft", injected_skill="任意") is None
+    assert runner._spec_gate_warned is False
 
 
 def test_fc_flow_gate_passes_with_spec(monkeypatch):

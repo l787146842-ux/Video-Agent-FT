@@ -340,6 +340,13 @@ class StudioActionExecutor:
         async with self.svc.lock:
             return self.execute(actions, accumulate=accumulate)
 
+    async def execute_async_locked(
+        self, actions: List[Dict[str, Any]], accumulate: bool = False,
+    ) -> int:
+        """持 svc.lock 执行异步执行器动作（对齐 execute_locked 并发契约）。"""
+        async with self.svc.lock:
+            return await self.execute_async(actions, accumulate=accumulate)
+
     # ---------- 内部方法 ----------
 
     def _resolve_index_ref(self, ref: str, draft_type: str = ""):

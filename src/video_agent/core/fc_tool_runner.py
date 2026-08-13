@@ -248,6 +248,9 @@ class FCToolRunner:
         # 由 chat_service/planner 注入，执行器工具缺省时使用）
         self.chat_provider: str = ""
         self.chat_model: str = ""
+        # 规格前置警告标记（S1：声明 spec_gate 的 Skill 未写规格时置位，
+        # 批末追加到操作时间线，不硬拦）
+        self._spec_gate_warned = False
         # 前端当前选中的草稿（对齐文本轨 "current" 语义）；execute 时按请求注入
         self._selected_draft_id = ""
         self._selected_type = ""
@@ -365,17 +368,27 @@ class FCToolRunner:
         return text
 
     def _flow_gate(self, name: str, injected_skill: str) -> Optional[str]:
-        """阶段前置闸机：Skill 流程激活且 strict 时，规格文档未写入则拒绝
-        搭建故事板结构（create_group/add_draft），逼模型先走步骤2。
-        返回非 None = 硬拒绝（错误文案带回给模型）。"""
+        """规格前置（S1，与文本轨对齐）：只对显式声明 flow.spec_gate 的 Skill
+        生效，且不硬拦——规格未写入时追加一条可视线索到操作时间线，
+        模型下一轮自行决定补写（用户指令优先）。返回恒 None（不再硬拒绝）。"""
         if not injected_skill or prompt_gates.gate_mode() != "strict":
             return None
         if name not in ("storyboard_create_group", "storyboard_add_draft"):
             return None
         if prompt_gates.has_spec_document(self._raw_state()):
             return None
-        logger.info(f"[FlowGate] 拦截 {name}（规格文档未写入）")
-        return prompt_gates.SPEC_GATE_ERROR
+        declared = False
+        try:
+            from src.video_agent.skill_runtime.registry import skill_flow_enabled
+
+            declared = skill_flow_enabled(injected_skill, "spec_gate")
+        except Exception:
+            declared = False
+        if not declared:
+            return None
+        logger.info(f"[FlowGate] {name}：规格文档未写入（Skill 声明 spec_gate，追加建议补写线索）")
+        self._spec_gate_warned = True
+        return None
 
     def _strip_structure_prompt(self, name: str, args: Dict[str, Any], injected_skill: str) -> bool:
         """结构纯净闸（步骤3）：Skill 激活且 strict 时，create_group/add_draft 携带的
@@ -703,6 +716,10 @@ class FCToolRunner:
                 )
             else:
                 confirmation = "规格/阶段文档已写入，请审阅；确认无误后我再推进下一阶段。"
+        # 规格前置警告（S1）：未硬拦，但必须在时间线留下可视线索
+        if self._spec_gate_warned:
+            action_log.append("【流程警告】" + prompt_gates.SPEC_GATE_ERROR)
+            self._spec_gate_warned = False
         # 规格文档写入后的引导选项（每步完成必有引导；模型自带 options 时不覆盖）
         if doc_written and not confirmation_options:
             if any(prompt_gates.is_spec_doc_name(n) for n in docs_written):

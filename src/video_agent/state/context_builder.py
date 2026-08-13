@@ -169,6 +169,9 @@ def build_agent_context(
         # 交互阶段状态：让模型看到上一轮是否停在「等待确认」暂停点，
         # 避免用户回复确认后模型感知不到进度、从头重复同一套操作
         "interaction": _build_interaction(raw_state),
+        # 剧本分析摘要（script_analyze 产出）：一句话总结 + 关键要点，
+        # 拆解/提示词阶段主模型必须看到，否则会凭空概括（6666 事故）
+        "analysis": _build_analysis(raw_state),
     }
     result = _dumps(snapshot)
     if cache is not None:
@@ -184,7 +187,27 @@ def _build_interaction(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         "confirmation_message": (str(inter.get("confirmation_message") or ""))[:300],
         # 故事板结构待用户确认窗口：此时严禁写入提示词草案，须先等用户回应
         "storyboard_pending_review": bool(inter.get("storyboard_pending")),
+        # 流程事件账本（截断/部分完成等；只带最近 3 条，防膨胀）
+        "flowEvents": [
+            {"kind": e.get("kind", ""), "detail": str(e.get("detail") or "")[:200]}
+            for e in (raw_state.get("flowEvents") or [])[-3:]
+        ],
     }
+
+
+def _build_analysis(raw_state: Dict[str, Any]) -> Dict[str, Any]:
+    """剧本分析摘要（script_analyze 产出）紧凑注入。"""
+    analysis = raw_state.get("analysis")
+    if not isinstance(analysis, dict):
+        return {}
+    out: Dict[str, Any] = {}
+    summary = str(analysis.get("summary") or "").strip()
+    if summary:
+        out["summary"] = summary[:500]
+    kp = [str(k) for k in (analysis.get("key_points") or []) if str(k or "").strip()]
+    if kp:
+        out["key_points"] = kp[:6]
+    return out
 
 
 def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -212,4 +235,5 @@ def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         "documents": [d.get("name", "") for d in raw_state.get("documents", [])],
         "uploadedDocs": [d.get("name", "") for d in raw_state.get("uploadedDocs", [])],
         "interaction": _build_interaction(raw_state),
+        "analysis": _build_analysis(raw_state),
     }
