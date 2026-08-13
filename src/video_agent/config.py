@@ -56,6 +56,10 @@ class Settings:
     # LLM 生成参数（adapter 未显式传参时的回落值）
     llm_max_tokens: int = field(default_factory=lambda: _env_int("LLM_MAX_TOKENS", 8192))
     llm_temperature: float = field(default_factory=lambda: float(os.getenv("LLM_TEMPERATURE", "0.7")))
+    # 单次输出 token 上限（执行器/工具 LLM 调用查表回落值）
+    llm_output_limit: int = field(default_factory=lambda: _env_int("LLM_OUTPUT_LIMIT", 8192))
+    # 执行器 LLM JSON 调用超时（秒）
+    llm_json_timeout: float = field(default_factory=lambda: float(os.getenv("LLM_JSON_TIMEOUT", "120")))
     # LLM 思考（thinking/reasoning）档位：空 = 不下发该字段（保持端点默认行为，推荐）；
     # low/medium/high = 按 OpenAI 兼容 reasoning_effort 透传，用于缩短思考静默期。
     # 注意：对字段严格的端点若因此报 400，请置空回退。
@@ -95,6 +99,14 @@ class Settings:
     # 多模态模型单次请求可注入的图片上限（多数 vision 模型限制 4~10 张，
     # 超限会直接报错；超出部分降级为文本清单，LLM 仍可知晓其存在）
     max_llm_images: int = field(default_factory=lambda: _env_int("MAX_LLM_IMAGES", 9))
+    # 生成参考素材数量上限（图片/视频/音频参考注入）：
+    # 并发过高会撞供应商 429（4444 现场），参考过多会撑爆请求体
+    image_ref_limit: int = field(default_factory=lambda: _env_int("IMAGE_REF_LIMIT", 4))
+    image_gen_concurrency: int = field(default_factory=lambda: _env_int("IMAGE_GEN_CONCURRENCY", 4))
+    video_ref_limit_image: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_IMAGE", 4))
+    video_ref_limit_video: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_VIDEO", 2))
+    video_ref_limit_audio: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_AUDIO", 2))
+    video_ref_limit_total: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_TOTAL", 9))
     # Agent 单次回复可插入对话输入框的故事板媒体数量上限（防止一次灌满输入框）
     max_chat_inserts: int = field(default_factory=lambda: _env_int("MAX_CHAT_INSERTS", 8))
     # 模型 fallback 链：主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，
@@ -115,6 +127,14 @@ class Settings:
     default_video_resolution: str = "1080p"
     # 分镜最大时长（秒）：Agent 自拆分镜单镜时长上限与新建分镜默认时长
     max_shot_duration: int = 5
+
+    # Skill 执行器运行时模式：auto = 按 Skill 能否解析出执行器章节自动选择；
+    # executors = 全部走执行器；legacy = 全部走全文+阶段聚焦
+    skill_runtime: str = field(default_factory=lambda: os.getenv("SKILL_RUNTIME", "auto"))
+    # 执行器誊写批的快模型（"provider" 或 "provider:model"）；空 = 回落主模型
+    executor_fast_model: str = field(default_factory=lambda: os.getenv("EXECUTOR_FAST_MODEL", ""))
+    # 执行器机械调用的思考档位（low/medium/high）；空 = 沿用全局 llm_thinking_level
+    executor_thinking_level: str = field(default_factory=lambda: os.getenv("EXECUTOR_THINKING_LEVEL", ""))
 
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))

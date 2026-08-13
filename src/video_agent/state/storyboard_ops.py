@@ -31,6 +31,7 @@ ALLOWED_DRAFT_FIELDS = (
 # group patch 允许写入的字段全集
 ALLOWED_GROUP_FIELDS = (
     "title", "desc", "roughDesc", "duration", "timeRange", "prompt", "shotType", "sceneRefs",
+    "badgeLabel",
 )
 
 # 卡片小标编号：组号-卡序号（如 "1-2"，与前端卡片下方小标/上下文 index 一致）
@@ -281,8 +282,10 @@ def collect_drafts(
     return []
 
 
-def resolve_scene_refs(state: Dict[str, Any], group: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:
-    """解析分镜的 sceneRefs → 对应关键元素的概念图 URL 作为参考图（最多 5 张）"""
+def resolve_scene_refs(
+    state: Dict[str, Any], group: Optional[Dict[str, Any]], limit: int = 5,
+) -> List[Dict[str, str]]:
+    """解析分镜的 sceneRefs → 对应关键元素的概念图 URL 作为参考图（默认最多 5 张）"""
     refs: List[Dict[str, str]] = []
     if not group:
         return refs
@@ -300,7 +303,7 @@ def resolve_scene_refs(state: Dict[str, Any], group: Optional[Dict[str, Any]]) -
                         refs.append({"url": img, "role": "reference"})
                         break
                 break
-    return refs[:5]
+    return refs[:limit]
 
 
 def selected_draft_media_config(

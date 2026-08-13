@@ -335,6 +335,37 @@ class StateManager(UndoRedoMixin):
             used.append(slug)
             self.save()
 
+    def record_flow_event(self, kind: str, detail: str) -> None:
+        """记录一条流程事件（截断/部分完成等事实进账本）。
+
+        只写 raw state 的 flowEvents 列表（chat_service 用 get_full_snapshot
+        构建模型可见状态 JSON，模型下一轮能直接看到「上次只完成一半」），
+        不走 update()（避免污染 undo 栈）。
+        """
+        events = self._raw_state.get("flowEvents")
+        if not isinstance(events, list):
+            events = []
+            self._raw_state["flowEvents"] = events
+        events.append({
+            "kind": kind,
+            "detail": detail,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        self._state_dirty = True
+
+    def clear_flow_events(self, prefix: str = "") -> None:
+        """按 kind 前缀清除流程事件（全部完成/未截断时消解历史记录）。"""
+        events = self._raw_state.get("flowEvents")
+        if not isinstance(events, list):
+            return
+        if not prefix:
+            self._raw_state["flowEvents"] = []
+            return
+        kept = [e for e in events if not str(e.get("kind") or "").startswith(prefix)]
+        if len(kept) != len(events):
+            self._raw_state["flowEvents"] = kept
+            self._state_dirty = True
+
     def save(self) -> None:
         """持久化：写入当前项目目录 + 兼容文件 + 更新 index 时间戳"""
         try:

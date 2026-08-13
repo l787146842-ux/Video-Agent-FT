@@ -50,6 +50,18 @@ class StudioActionExecutor:
         self.selected_type = selected_type
         # 提示词结构闸机开关（Skill 流程激活时由 Planner 打开，日常微调/mock 不拦截）
         self.gate_enabled = gate_enabled
+        # 执行器/闸机规则（skill_runtime executors 注入 parse_gate_rules 结果；
+        # None = 用平台默认规则，保证无 Skill 场景不炸）
+        self.gate_rules: Optional[Dict[str, Any]] = None
+        # 决策 D：用户坚持（user_override）时硬伤降为警告照常放行
+        self.gate_override: bool = False
+        # 本批次闸机警告（executors._apply_actions 读取后随结果回喂）
+        self.gate_warnings: List[str] = []
+        # 当前激活的 Skill 名称（执行器/agent_loop 注入；S1：平台行为按 Skill 声明驱动）
+        self.skill_name: str = ""
+        # 结构阶段开关：True = add_draft 内联详细提示词被剥离（默认，主模型直出结构路径）；
+        # 执行器按阶段设置（write_media_prompt 等提示词阶段必须关闭）
+        self.structure_phase: bool = True
         # 本执行器生命周期内写入的文档名（供前端渲染"已完成"卡片）
         self.documents_written: List[str] = []
         # 待插入前端对话输入框的媒体（insert_chat_media 产出，随 done payload 带回）
@@ -80,6 +92,8 @@ class StudioActionExecutor:
         """记录一条闸机拦截原因（去重）"""
         if reason and reason not in self.gate_rejections:
             self.gate_rejections.append(reason)
+        if reason and reason not in self.gate_warnings:
+            self.gate_warnings.append(reason)
 
     @property
     def state(self) -> Dict[str, Any]:
@@ -111,6 +125,7 @@ class StudioActionExecutor:
             if mutating:
                 self.svc.push_undo()
             self.gate_rejections = []  # 每批次重置拦截原因记录
+            self.gate_warnings = []
             self.structure_kinds_created = set()
             self.prompts_stripped = 0
             self._stream_undo_pushed = False
@@ -149,6 +164,65 @@ class StudioActionExecutor:
             # 全部失败：丢弃预先压入的 undo 快照（累加批次的快照属整个流式批，不在此丢）
             self.svc.discard_last_undo()
         return applied
+
+    # 文本动作轨的异步执行器动作（skill_runtime.executors 注册的工具）
+    _ASYNC_EXECUTOR_ACTIONS = frozenset({
+        "script_analyze",
+        "storyboard_key_elements",
+        "storyboard_shots",
+        "storyboard_audio",
+        "write_media_prompt",
+        "audio_generate",
+        "video_assembler",
+    })
+
+    @staticmethod
+    def _is_async_action(action: Dict[str, Any]) -> bool:
+        """判断是否为需要独立 LLM 调用的执行器动作（文本轨据此走 execute_async）。"""
+        return str(action.get("action") or action.get("type") or "").strip() in \
+            StudioActionExecutor._ASYNC_EXECUTOR_ACTIONS
+
+    async def execute_async(
+        self, actions: List[Dict[str, Any]], accumulate: bool = False
+    ) -> int:
+        """文本动作轨执行含异步执行器的操作列表。
+
+        异步动作 → skill_runtime 执行器（独立 LLM 调用 + 结构化校验）；
+        其余动作 → 同步 execute（同一闸机/undo/持久化语义）。
+        返回成功执行的条数。
+        """
+        applied = 0
+        sync_actions: List[Dict[str, Any]] = []
+        for act in actions or []:
+            if self._is_async_action(act):
+                result = await self._dispatch_async_action(act)
+                if result is not None and result.success:
+                    applied += 1
+                    detail = str((result.data or {}).get("detail") or "")
+                    if detail:
+                        self.action_log.append(detail)
+            else:
+                sync_actions.append(act)
+        if sync_actions:
+            applied += self.execute(sync_actions, accumulate=accumulate)
+        if applied > 0:
+            self.svc.save_debounced()
+        return applied
+
+    async def _dispatch_async_action(self, action: Dict[str, Any]):
+        """按动作名构造执行器实例并执行；未注册/参数不合返回 None。"""
+        from src.video_agent.skill_runtime.executors import build_executor_tool
+
+        tool = build_executor_tool(str(action.get("action") or ""))
+        if tool is None:
+            return None
+        payload = {k: v for k, v in action.items() if k not in ("action", "type")}
+        try:
+            params = tool.get_input_schema()(**payload)
+        except Exception:
+            logger.warning(f"[SkillExec] 执行器参数构造失败: {action.get('action')} {payload}")
+            return None
+        return await tool.aexecute(params)
 
     @staticmethod
     def _is_mutating(action: Dict[str, Any]) -> bool:
@@ -192,10 +266,16 @@ class StudioActionExecutor:
             logger.info("[PromptGate] 拦截分镜提示词写入（元素图像未就绪）")
             self._reject(prompt_gates.SHOT_SEQUENCE_GATE_ERROR)
             return False
-        ok, hard, soft = prompt_gates.validate_prompt_write(str(prompt), kind, self.state)
+        ok, hard, soft = prompt_gates.validate_prompt_write(
+            str(prompt), kind, self.state, rules=self.gate_rules,
+        )
         for w in soft:
             logger.warning(f"[PromptGate] 软提醒（{kind}）: {w}")
         if ok:
+            return True
+        if self.gate_override:
+            # 决策 D：用户坚持时硬伤降为警告照常放行
+            logger.warning(f"[PromptGate] 用户坚持放行（{kind}）: {hard}")
             return True
         if mode != "strict":
             logger.warning(f"[PromptGate] warn 模式放行（{kind}）: {hard}")
@@ -205,15 +285,29 @@ class StudioActionExecutor:
         return False
 
     def _spec_gate_ok(self) -> bool:
-        """阶段前置闸机：Skill 流程激活且 strict 时，规格文档未写入则拒绝搭建
-        故事板结构（add_group/add_draft），逼模型先写 Final_Video_Spec.md。"""
+        """规格前置警告（S1：只对显式声明 flow.spec_gate 的 Skill 生效）。
+
+        声明了但规格文档未写入：不硬拦（用户指令优先），只追加
+        「建议补写规格」警告随 gate_warnings 回喂；未声明的 Skill 完全静默。
+        """
         if not self.gate_enabled or prompt_gates.gate_mode() != "strict":
             return True
         if prompt_gates.has_spec_document(self.state):
             return True
-        logger.info("[FlowGate] 拦截故事板结构搭建（规格文档未写入）")
+        skill_name = getattr(self, "skill_name", "") or ""
+        declared = False
+        if skill_name:
+            try:
+                from src.video_agent.skill_runtime.registry import skill_flow_enabled
+
+                declared = skill_flow_enabled(skill_name, "spec_gate")
+            except Exception:
+                declared = False
+        if not declared:
+            return True
+        logger.info("[FlowGate] 规格文档未写入（Skill 声明 spec_gate，追加建议补写警告）")
         self._reject(prompt_gates.SPEC_GATE_ERROR)
-        return False
+        return True
 
     def _record_presented(self, draft_id: str) -> None:
         """记录本轮写入过提示词的草稿：用户下一条消息到达时晋升为「已确认」（确认闭环）"""
@@ -405,7 +499,13 @@ class StudioActionExecutor:
         group_data = action.get("group") or action.get("data") or {}
         # 也允许 patch 字段携带 title/desc
         patch = action.get("patch") or {}
-        title = action.get("title") or group_data.get("title") or patch.get("title") or "Agent 新建分组"
+        # 标题兜底链（8888 事故）：title → name → element_id → element_name → group_title
+        title = (
+            action.get("title") or group_data.get("title") or patch.get("title")
+            or action.get("name") or group_data.get("name")
+            or action.get("element_id") or action.get("element_name")
+            or action.get("group_title") or "Agent 新建分组"
+        )
         desc = action.get("desc") or group_data.get("desc") or patch.get("desc") or ""
 
         new_id = group_data.get("id") or gen_id('shot' if cat_key == 'shots' else 'ke' if cat_key == 'keyElements' else 'audio')
@@ -421,13 +521,20 @@ class StudioActionExecutor:
             return action.get(field) or group_data.get(field) or patch.get(field) or default
 
         if cat_key == CAT_SHOTS:
-            new_group["roughDesc"] = pick("roughDesc", desc)
+            rough = pick("roughDesc")
+            new_group["roughDesc"] = rough
+            if not desc and rough:
+                desc = rough  # 只写 roughDesc 不写 desc 时自动同步，前端卡片不显示空白
+            new_group["desc"] = desc
             # 全局设置：分镜默认时长（Agent 自拆按 max_shot_duration 控制）
             new_group["duration"] = pick("duration", f"{settings.max_shot_duration}s")
             new_group["timeRange"] = pick("timeRange")
             new_group["shotType"] = pick("shotType")
             refs = action.get("sceneRefs") or group_data.get("sceneRefs") or []
             new_group["sceneRefs"] = refs if isinstance(refs, list) else [refs]
+        badge = pick("badgeLabel")
+        if badge:
+            new_group["badgeLabel"] = badge
 
         self.state.setdefault(cat_key, []).append(new_group)
 
@@ -450,7 +557,7 @@ class StudioActionExecutor:
         结构纯净闸（步骤3）：Skill 激活且 strict 时，内联草稿的详细提示词
         （> STRUCTURE_INLINE_PROMPT_MAX 字）被剥离后照常建卡，详细提示词留到步骤4。"""
         data = draft_data
-        if self.gate_enabled and prompt_gates.gate_mode() == "strict":
+        if self.structure_phase and self.gate_enabled and prompt_gates.gate_mode() == "strict":
             inline_prompt = str(data.get("prompt") or "").strip()
             if len(inline_prompt) > prompt_gates.STRUCTURE_INLINE_PROMPT_MAX:
                 data = {**data, "prompt": ""}
@@ -500,8 +607,21 @@ class StudioActionExecutor:
             self._reject(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
             return False
         draft_data = action.get("draft") or {}
+        if not draft_data and action.get("patch"):
+            # 898 事故回归：模型把建卡字段放进 patch/fields 而非 draft 时
+            # 不得静默落成空默认草稿，提示词必须写入
+            draft_data = action.get("patch") or {}
 
-        group = self._find_group(group_id, group_type)
+        label = str(draft_data.get("label") or "").strip()
+        group = None
+        if str(group_id) in ("", "current") and label:
+            # 未指定有效分组时按 label 名称智能匹配（proj-1786169643 事故），
+            # 优先于「current → 第一个分组」的旧兜底
+            group = self._match_group_by_label(label)
+        if group is None:
+            group = self._find_group(group_id, group_type)
+        if group is None and label:
+            group = self._match_group_by_label(label)
         if not group:
             for cat_key in ALL_CATEGORIES:
                 groups = self.state.get(cat_key, [])
@@ -528,6 +648,24 @@ class StudioActionExecutor:
             if kind == "shot":
                 self._sync_shot_duration(group, appended)
         return appended is not None
+
+    def _match_group_by_label(self, label: str) -> Optional[Dict[str, Any]]:
+        """按草稿 label 名称模糊匹配目标分组（proj-1786169643 事故：
+        add_draft 未携带有效 group_id 时盲捡第一个分组，导致提示词全进程心组）。
+
+        取 label 第一段（按 - / — 切分，如「艾AA - 角色概念图」→「艾AA」），
+        与分组标题（剥 [Element_X] 前缀后）双向包含匹配。
+        """
+        key = re.split(r"[-—–]", label or "")[0].strip()
+        if not key or len(key) < 2:
+            return None
+        for cat_key in ALL_CATEGORIES:
+            for g in self.state.get(cat_key, []):
+                title = str(g.get("title") or "")
+                core = re.sub(r"\[[^\]]*\]", "", title).strip()
+                if key in title or key in core or (core and core in key):
+                    return g
+        return None
 
     def _apply_write_document(self, action: Dict[str, Any]) -> bool:
         """写入/更新项目文档工件（如 Final_Video_Spec.md）"""

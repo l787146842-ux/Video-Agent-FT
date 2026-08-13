@@ -22,21 +22,24 @@ def test_shot_prompt_complete_passes():
 
 def test_shot_prompt_missing_no_subtitles():
     ok, hard, _ = prompt_gates.validate_prompt_write(
-        "缓慢推入中景，主体奔跑，空间崩裂，<音效轰鸣>，no music。", "shot")
+        "缓慢推入中景，主体奔跑，空间崩裂，<音效轰鸣>，no music。", "shot",
+        rules={"require_subtitle": True})
     assert not ok
     assert any("no subtitles" in e for e in hard)
 
 
 def test_shot_prompt_missing_audio_layer():
     ok, hard, _ = prompt_gates.validate_prompt_write(
-        "缓慢推入中景，主体在冰原上奔跑，背景崩裂成平面，光影克制，no subtitles。", "shot")
+        "缓慢推入中景，主体在冰原上奔跑，背景崩裂成平面，光影克制，no subtitles。", "shot",
+        rules={"require_audio_layer": True})
     assert not ok
     assert any("音频层" in e for e in hard)
 
 
 def test_shot_prompt_missing_camera():
     ok, hard, _ = prompt_gates.validate_prompt_write(
-        "程心怀抱文物奔向舱门，背景冥王星冰原崩裂，<呼吸声与轰鸣>，no music，no subtitles。", "shot")
+        "程心怀抱文物奔向舱门，背景冥王星冰原崩裂，<呼吸声与轰鸣>，no music，no subtitles。", "shot",
+        rules={"require_camera_language": True})
     assert not ok
     assert any("镜头语言" in e for e in hard)
 
@@ -50,7 +53,8 @@ def test_shot_prompt_too_short():
 def test_shot_prompt_missing_duration():
     """镜头时长强制条款：提示词未写明本镜头总时长即打回"""
     ok, hard, _ = prompt_gates.validate_prompt_write(
-        "缓慢推入中景，主体奔跑，空间崩裂，<音效轰鸣>，no music，no subtitles。", "shot")
+        "缓慢推入中景，主体奔跑，空间崩裂，<音效轰鸣>，no music，no subtitles。", "shot",
+        rules={"require_duration": True})
     assert not ok
     assert any("时长" in e for e in hard)
 
@@ -196,14 +200,35 @@ def test_has_spec_document_variants():
         {"documents": [{"name": "Final_Video_Spec.md", "content": "  "}]}) is False
 
 
-def test_executor_spec_gate_blocks_add_group(svc):
+def test_executor_spec_gate_warns_when_declared(svc, tmp_path, monkeypatch):
+    """规格前置警告（S1）：只对显式声明 flow.spec_gate 的 Skill 生效，
+    且不硬拦（用户指令优先，警告随 gate_warnings 回喂）。"""
+    import src.video_agent.web.skill_docs as sd
+
+    skill_dir = tmp_path / "skills"
+    skill_dir.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", skill_dir)
+    sd.save_skill_doc(
+        "有规格闸",
+        '# A\n```json skill_manifest\n' '{"flow": {"spec_gate": true}}\n' "```\n正文",
+    )
     before = len(svc.state_dict.get("keyElements") or [])
     ex = StudioActionExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "add_group", "group_type": "keyElement", "title": "Element_测试",
     }])
-    assert applied == 0
-    assert len(svc.state_dict.get("keyElements") or []) == before  # 未新增分组
+    # 未声明 spec_gate 的 Skill：完全静默，照常搭建
+    assert applied == 1
+    assert ex.gate_warnings == []
+    # 声明了 spec_gate 的 Skill：照常搭建 + 追加「建议补写规格」警告
+    ex2 = StudioActionExecutor(svc, gate_enabled=True)
+    ex2.skill_name = "有规格闸"
+    applied = ex2.execute([{
+        "action": "add_group", "group_type": "keyElement", "title": "Element_测试2",
+    }])
+    assert applied == 1
+    assert any("规格" in w for w in ex2.gate_warnings)
+    assert len(svc.state_dict.get("keyElements") or []) == before + 2
 
 
 def test_executor_spec_gate_allows_after_spec_written(svc):

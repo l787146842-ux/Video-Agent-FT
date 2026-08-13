@@ -17,7 +17,9 @@ def test_split_sections_flova_tag_format():
     )
     sections = skill_docs.split_skill_sections(content)
     assert "阶段逻辑" in sections["planning"]
-    assert "故事板结构规范" in sections["storyboard"]
+    assert "故事板结构规范" in sections["storyboard_ke"]
+    assert "故事板结构规范" in sections["storyboard_shot"]
+    assert "故事板结构规范" in sections["storyboard_audio"]
     assert "摄像机" in sections["prompt_draft"]
     assert "元素生成规范" in sections["generation"]
     assert "组装导出" in sections["assembly"]
@@ -33,7 +35,9 @@ def test_split_sections_heading_fallback():
     )
     sections = skill_docs.split_skill_sections(content)
     assert "流程正文" in sections["planning"]
-    assert "分组规范" in sections["storyboard"]
+    assert "分组规范" in sections["storyboard_ke"]
+    assert "分组规范" in sections["storyboard_shot"]
+    assert "分组规范" in sections["storyboard_audio"]
     assert "写法正文" in sections["prompt_draft"]
     assert "生成正文" in sections["generation"]
     assert "组装正文" in sections["assembly"]

@@ -8,6 +8,7 @@ _get_provider_config / _get_api_key / 模型分类逻辑，已全部收敛到这
 - API Key：进程环境变量优先，其次 API/.env
 - .env 写入带消毒（去换行）与线程锁，防止 value 注入其他键
 """
+import asyncio
 import json
 import os
 import re
@@ -175,6 +176,11 @@ def load_merged_providers() -> List[Dict[str, Any]]:
     return merged
 
 
+async def load_merged_providers_async() -> List[Dict[str, Any]]:
+    """异步入口（聊天/工具/生成链路）：合并含画布 HTTP 拉取，事件循环内不阻塞。"""
+    return await asyncio.to_thread(load_merged_providers)
+
+
 def get_canvas_provider_ids() -> Set[str]:
     """获取画布的 provider id 集合（带缓存，供路由层判断用）"""
     global _canvas_ids_cache, _canvas_ids_cache_time
@@ -185,11 +191,27 @@ def get_canvas_provider_ids() -> Set[str]:
     return _canvas_ids_cache or set()
 
 
+async def get_canvas_provider_ids_async() -> Set[str]:
+    """异步版：获取画布 provider id 集合（带缓存，事件循环内不阻塞）"""
+    await load_merged_providers_async()
+    return _canvas_ids_cache or set()
+
+
 def get_provider_config(provider_id: str) -> Optional[Dict[str, Any]]:
     """按 id 查找单个供应商配置（从合并列表中查找）"""
     if not provider_id:
         return None
     for p in load_merged_providers():
+        if p.get("id") == provider_id:
+            return p
+    return None
+
+
+async def get_provider_config_async(provider_id: str) -> Optional[Dict[str, Any]]:
+    """异步版：按 id 查找单个供应商配置（从合并列表中查找）"""
+    if not provider_id:
+        return None
+    for p in await load_merged_providers_async():
         if p.get("id") == provider_id:
             return p
     return None
@@ -293,6 +315,17 @@ def spec_media_preference(raw_state: Dict[str, Any], kind: str = "image") -> Tup
     return "", ""
 
 
+def spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
+    """从规格文档解析制作参数（图片分辨率/视频分辨率/分镜最大时长）。
+
+    规格交互中用户选定的结构化落盘；agent 执行生图/出视频/拆分镜时
+    据此主动填入对应参数栏（7777 二轮）。缺失项为空/None。
+    """
+    from src.video_agent.state.provider_prefs import resolve_spec_production_params
+
+    return resolve_spec_production_params(raw_state)
+
+
 def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any], cat_key: str) -> bool:
     """新建草稿时补印全局默认（8888 事故：草稿无值时被前端硬编码首选供应商回填污染）。
 
@@ -360,6 +393,11 @@ def resolve_provider_ref(ref: str) -> str:
     return ref
 
 
+async def resolve_provider_ref_async(ref: str) -> str:
+    """异步版：解析供应商标识（显示名 → 内部 id）"""
+    return resolve_provider_ref(ref)
+
+
 def is_mock_provider(provider_id: str, model: str = "") -> bool:
     """判定是否应走 mock 路径：仅当用户显式选择 mock（或什么都没配）"""
     if not provider_id or provider_id == "mock":
@@ -368,6 +406,11 @@ def is_mock_provider(provider_id: str, model: str = "") -> bool:
         return True
     cfg = get_provider_config(provider_id)
     return bool(cfg and cfg.get("protocol") == "mock")
+
+
+async def is_mock_provider_async(provider_id: str, model: str = "") -> bool:
+    """异步版：判断是否为 mock 供应商"""
+    return is_mock_provider(provider_id, model)
 
 
 # ---------- API Key 管理 ----------
@@ -434,6 +477,23 @@ def get_api_key(provider_id: str) -> str:
         val = _read_canvas_env_keys().get(env_name, "")
         if val:
             logger.debug(f"[ProviderConfig] Key '{env_name}' 从画布 .env 解析")
+            return val
+    return ""
+
+
+async def get_api_key_async(provider_id: str) -> str:
+    """异步版：解析某供应商的 API Key（画布 id 集合走异步缓存路径）"""
+    env_name = provider_key_env(provider_id)
+    val = os.getenv(env_name, "")
+    if val:
+        return val
+    val = read_env_keys().get(env_name, "")
+    if val:
+        return val
+    canvas_ids = await get_canvas_provider_ids_async()
+    if provider_id in canvas_ids:
+        val = _read_canvas_env_keys().get(env_name, "")
+        if val:
             return val
     return ""
 

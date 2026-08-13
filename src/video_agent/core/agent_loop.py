@@ -204,6 +204,32 @@ async def run_agent_loop(
             )
 
         executable, wants_continue, confirmation, confirmation_options = _split_actions(actions)
+        # 规格向导闸机（S1）：声明 spec_wizard 的 Skill，规格文档由系统按向导
+        # 拼装，模型手写规格一律不落盘，改为系统规格收集/审阅暂停卡
+        spec_wizard_pending = False
+        if executable:
+            try:
+                from src.video_agent.skill_runtime.registry import spec_wizard_active
+
+                skill_name = str(getattr(executor, "skill_name", "") or "")
+                if not skill_name:
+                    used = (getattr(executor, "state", None) or {}).get("usedSkills") or []
+                    skill_name = str(used[-1] or "") if used else ""
+                if spec_wizard_active(skill_name):
+                    spec_writes = [
+                        a for a in executable
+                        if str(a.get("action", "")).lower()
+                        in ("write_document", "write_doc", "save_document", "document_write")
+                        and prompt_gates.is_spec_doc_name(
+                            str(a.get("name") or a.get("title") or "")
+                        )
+                    ]
+                    if spec_writes:
+                        executable = [a for a in executable if a not in spec_writes]
+                        spec_wizard_pending = True
+                        result.warnings.append("规格文档由系统按向导拼装，模型手写规格已忽略")
+            except Exception:
+                spec_wizard_pending = False
         # 本轮全部可执行操作数（含流式已预执行部分）：gate_heal 判定用
         total_exec = len(executable)
         # 流式增量执行（边写边填）：planner 流式路径已逐条预执行的动作
@@ -316,6 +342,11 @@ async def run_agent_loop(
             )
         ):
             confirmation = "规格/阶段文档已写入，请审阅；确认无误后我再推进下一阶段。"
+
+        # 规格向导激活：模型手写规格已被忽略，必须转系统向导暂停卡等用户选参
+        if spec_wizard_pending and not confirmation:
+            confirmation, confirmation_options = prompt_gates.spec_pause_card(executor.state)
+            logger.info("[FlowGate] 规格向导激活，模型手写规格已忽略，转系统规格向导暂停卡")
 
         # 流程闸机硬边界（对齐 FC 轨）：本批刚搭建故事板结构时，确认卡片统一换成
         # 「审阅拆分方案」的系统文案——结构阶段闸机只建骨架不写详细提示词，

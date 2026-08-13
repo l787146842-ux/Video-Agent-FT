@@ -45,7 +45,7 @@ from src.video_agent.state import storyboard_ops as ops
 
 # ---------- 端点解析（配置源：provider_config） ----------
 
-async def resolve_openai_endpoint_async(provider_id: str, model: str) -> Tuple[str, str, str]:
+async def resolve_openai_endpoint(provider_id: str, model: str) -> Tuple[str, str, str]:
     """
     解析 (base_url, api_key, effective_model)。
     CLI 协议（gemini-cli / codex / jimeng）没有 base_url，
@@ -89,52 +89,6 @@ async def resolve_openai_endpoint_async(provider_id: str, model: str) -> Tuple[s
     return base_url, api_key, effective_model
 
 
-def resolve_openai_endpoint(provider_id: str, model: str) -> Tuple[str, str, str]:
-    """同步版端点解析（供 chat_service 等非事件循环路径使用）。
-
-    语义与 resolve_openai_endpoint_async 完全一致，只把异步 provider_config
-    访问换成同步版（画布 HTTP 拉取在调用方线程内执行）。
-    """
-    from src.video_agent.web.provider_config import (
-        CLI_PROTOCOLS,
-        get_api_key,
-        get_provider_config,
-    )
-
-    cfg = get_provider_config(provider_id)
-    if not cfg:
-        raise GenerationError(f"供应商 '{provider_id}' 未配置，请先在 API 设置页添加")
-
-    base_url = (cfg.get("base_url") or "").strip().rstrip("/")
-    api_key = get_api_key(provider_id)
-    effective_model = model
-
-    protocol = (cfg.get("protocol") or "openai").lower()
-    if base_url and protocol == "openai" and not base_url.endswith("/v1"):
-        base_url += "/v1"
-
-    if not base_url and cfg.get("protocol") in CLI_PROTOCOLS:
-        fallback = get_provider_config("custom-api")
-        if fallback and fallback.get("base_url"):
-            base_url = fallback["base_url"].rstrip("/")
-            if not base_url.endswith("/v1"):
-                base_url += "/v1"
-            api_key = get_api_key("custom-api")
-            if effective_model in ("auto", ""):
-                effective_model = settings.cli_auto_chat_model
-                logger.info(
-                    "[Generation] 提示：若反代报 model not register，请在 .env 设置 "
-                    "CLI_AUTO_CHAT_MODEL=<反代已注册的模型名> 后重启服务"
-                )
-            logger.info(f"[Generation] CLI 协议 '{provider_id}' 路由到反代, model={effective_model}")
-
-    if not base_url:
-        raise GenerationError(
-            f"供应商 '{provider_id}' 缺少 Base URL（CLI 协议需要先配置 custom-api 反代）"
-        )
-    return base_url, api_key, effective_model
-
-
 # ---------- Chat Completions（委托 OpenAICompatChatAdapter） ----------
 
 async def call_chat_completion(
@@ -153,7 +107,7 @@ async def call_chat_completion(
     thinking_level：本次调用思考档位覆盖（None=沿用全局配置，2222 二轮）。
     失败抛 GenerationError。
     """
-    base_url, api_key, effective_model = await resolve_openai_endpoint_async(provider_id, model)
+    base_url, api_key, effective_model = await resolve_openai_endpoint(provider_id, model)
     adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=effective_model)
 
     logger.info(f"[Generation] chat: provider={provider_id}, model={effective_model}")
@@ -193,7 +147,7 @@ async def call_chat_completion_stream(
     reasoning_sink（可选）：传入 list 则累积推理模型的思考增量（黑匣子取证用，
     888 事故），不进上下文。
     """
-    base_url, api_key, effective_model = await resolve_openai_endpoint_async(provider_id, model)
+    base_url, api_key, effective_model = await resolve_openai_endpoint(provider_id, model)
     adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=effective_model)
 
     logger.info(f"[Generation] chat(stream): provider={provider_id}, model={effective_model}")
@@ -412,7 +366,7 @@ async def generate_image_via_provider(
         raise GenerationError("agy CLI 未返回图片")
 
     # 其他供应商 → OpenAICompatImageAdapter
-    base_url, api_key, effective_model = await resolve_openai_endpoint_async(provider_id, model)
+    base_url, api_key, effective_model = await resolve_openai_endpoint(provider_id, model)
     adapter_img = OpenAICompatImageAdapter(base_url=base_url, api_key=api_key, model=effective_model)
 
     logger.info(f"[Generation] image(本地): provider={provider_id}, model={effective_model}, refs={len(refs)}")

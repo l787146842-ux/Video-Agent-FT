@@ -159,10 +159,14 @@ async def test_fc_stop_without_text_continues(svc, executor):
 async def test_all_gate_blocked_heals_and_retries(svc):
     """文本轨操作全被闸机拦截：不接受虚报暂停，回喂拦截原因让模型补做后重试"""
     ex = StudioActionExecutor(svc, gate_enabled=True)
-    # 第1轮：无规格文档直拆关键元素 + 虚报成功并请求确认 → 全部被拦
-    r1 = ('已完成关键元素拆解，共创建 2 个分组。\n```studio-actions\n'
-          '[{"action":"add_group","group_type":"keyElement","title":"Element_A","draft":{"label":"d"}},'
-          '{"action":"add_group","group_type":"keyElement","title":"Element_B","draft":{"label":"d"}},'
+    # 清空 demo 故事板：确保「首次搭建」硬闸生效（首拆只允许关键元素）
+    svc.state_dict["keyElements"] = []
+    svc.state_dict["shots"] = []
+    svc.state_dict["audioItems"] = []
+    # 第1轮：首次搭建直接拆分镜 + 虚报成功并请求确认 → 被首拆硬闸全部拦截
+    r1 = ('已完成分镜拆解，共创建 2 个镜头。\n```studio-actions\n'
+          '[{"action":"add_group","group_type":"shot","title":"Shot_A","draft":{"label":"d"}},'
+          '{"action":"add_group","group_type":"shot","title":"Shot_B","draft":{"label":"d"}},'
           '{"action":"request_confirmation","message":"已拆好，请确认"}]\n```', "stop")
     # 第2轮（自愈）：先写规格文档再暂停
     r2 = ('规格已写入。\n```studio-actions\n'
@@ -177,24 +181,27 @@ async def test_all_gate_blocked_heals_and_retries(svc):
     assert result.confirmation == "规格文档已写入，请审阅"
     assert "已拆好" not in result.confirmation
     # 虚报正文被丢弃，最终正文只有修正轮产出
-    assert "已完成关键元素拆解" not in result.text
+    assert "已完成分镜拆解" not in result.text
     assert "规格已写入" in result.text
     # 规格文档真正写入了
     assert any(d.get("name") == "Final_Video_Spec.md" for d in svc.state_dict["documents"])
-    # 关键元素并未被虚假创建（只查本用例试图创建的分组，避免单例残留数据干扰）
-    titles = [g.get("title") for g in (svc.state_dict.get("keyElements") or [])]
-    assert "Element_A" not in titles and "Element_B" not in titles
+    # 分镜并未被虚假创建（只查本用例试图创建的分组，避免单例残留数据干扰）
+    titles = [g.get("title") for g in (svc.state_dict.get("shots") or [])]
+    assert "Shot_A" not in titles and "Shot_B" not in titles
 
 
 def test_executor_records_gate_rejections(svc):
     """执行器记录闸机拦截原因（供 agent_loop 回喂），下批次重置"""
     ex = StudioActionExecutor(svc, gate_enabled=True)
+    svc.state_dict["keyElements"] = []
+    svc.state_dict["shots"] = []
+    svc.state_dict["audioItems"] = []
     applied = ex.execute([
-        {"action": "add_group", "group_type": "keyElement", "title": "E1", "draft": {"label": "d"}},
-        {"action": "add_group", "group_type": "keyElement", "title": "E2", "draft": {"label": "d"}},
+        {"action": "add_group", "group_type": "shot", "title": "S1", "draft": {"label": "d"}},
+        {"action": "add_group", "group_type": "shot", "title": "S2", "draft": {"label": "d"}},
     ])
     assert applied == 0
-    assert ex.gate_rejections and "规格文档" in ex.gate_rejections[0]
+    assert ex.gate_rejections and "关键元素" in ex.gate_rejections[0]
     assert len(ex.gate_rejections) == 1  # 同批同原因去重
     # 写入规格文档后再执行：放行且拦截记录重置
     svc.state_dict["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格正文"}]

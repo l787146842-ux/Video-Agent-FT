@@ -11,10 +11,11 @@ Skill 文档化存储层。
     ## 流程规划
     ……正文……
 """
+import json
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from loguru import logger
 
@@ -27,14 +28,20 @@ _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划�
 # 常引用本系统不存在的工具名，模型只能「近似映射」导致阶段纪律失真；
 # 注入时检测到这些名称就自动追加对照说明，把映射从模型猜测变成显式指令）
 FOREIGN_TOOL_MAP: Dict[str, str] = {
-    "resource_prepare_and_analyze": "read_uploaded_doc（读取上传文档全文）",
-    "multimodal_analyze_tool": "read_uploaded_doc + 直接分析总结",
+    "resource_prepare_and_analyze": "script_analyze（解析上传素材并输出一句话总结，内部读取 read_uploaded_doc）",
+    "multimodal_analyze_tool": "script_analyze（解析上传素材并输出一句话总结）",
     "text_editor": "document_write（写入/更新项目文档，文本模式 write_document）",
-    "storyboard_designer": "storyboard_create_group / storyboard_add_draft / storyboard_patch_draft（故事板结构操作）",
-    "write_media_prompt": "storyboard_patch_draft / update_draft 的 patch.prompt（写入草稿提示词）",
-    "media_generator": "generate_image / generate_video（图片/视频生成，危险操作需用户明确指令）",
+    "script_analyze": "script_analyze（解析上传素材并输出一句话总结 + 关键要点）",
+    "storyboard_designer": "storyboard_key_elements / storyboard_shots / storyboard_audio（故事板三拆执行器，按阶段逐个调用）",
+    "storyboard_key_elements": "storyboard_key_elements（只建关键元素结构）",
+    "storyboard_shots": "storyboard_shots（只建分镜结构）",
+    "storyboard_audio": "storyboard_audio（只建音频结构）",
+    "write_media_prompt": "write_media_prompt（按 Skill 提示词写法分批编写草稿提示词，文本轨 update_draft 的 patch.prompt）",
+    "media_generator": "image_generate / generate_image / generate_video / audio_generate（图片/视频/音频，危险操作需用户明确指令）",
     "reply_to_user": "workflow_pause（Tool 模式）/ request_confirmation（文本模式）",
-    "video_assembler": "本系统暂无最终剪辑工具：引导用户在画布中按分镜与时间轴组装导出",
+    "auditory_designer": "audio_generate（音频规划/绑定）",
+    "audio_generate": "audio_generate（音频规划/绑定用户已上传音频）",
+    "video_assembler": "video_assembler（素材清单 + 时间轴顺序 + 组装建议）",
 }
 
 
@@ -67,31 +74,42 @@ _HISTORY_MAX = 10
 # 外来 Skill（如 flova 导出）原生就是「每个工具一节」的结构（<planner>/<write_the_prompt>…），
 # 它们的运行时把各节分别注入对应阶段的子工具；本系统把全文一次性注入单一编排模型，
 # 只能靠「识别当前阶段 → 重复强调对应章节」来逼近同等遵循度。
-SECTION_TAG_STAGES: Dict[str, str] = {
+# 值支持一对多：旧 tag（如 storyboard_designer）三拆重构后同时映射到全部拆分 stage，
+# 保证存量 Skill 的整节内容对三个拆解执行器同等注入（与旧执行器语义一致）
+SECTION_TAG_STAGES: Dict[str, Union[str, Tuple[str, ...]]] = {
     "planner": "planning",
     "resource_prepare_and_analyze": "planning",
     "multimodal_analyze_tool": "planning",
+    "script_analyze": "planning",
     "text_editor": "planning",
-    "storyboard_designer": "storyboard",
+    "storyboard_designer": ("storyboard_ke", "storyboard_shot", "storyboard_audio"),
+    "storyboard_key_elements": "storyboard_ke",
+    "storyboard_shots": "storyboard_shot",
+    "storyboard_audio": "storyboard_audio",
     "write_media_prompt": "prompt_draft",
     "write_the_prompt": "prompt_draft",
     "media_generator": "generation",
+    "generation": "generation",
     "video_assembler": "assembly",
     "reply_to_user": "",
 }
 
-# 本地改写版 Skill（标题式）的标题关键字 → 阶段兜底映射
-_HEADING_STAGE_HINTS = [
+# 本地改写版 Skill（标题式）的标题关键字 → 阶段兜底映射（按顺序首个命中生效：
+# 精确子标题优先于笼统的「故事板设计」；值支持一对多，同 tag 映射语义）
+_HEADING_STAGE_HINTS: List[Tuple[Tuple[str, ...], Union[str, Tuple[str, ...]]]] = [
     (("提示词写法", "提示词规范", "prompt 编写", "prompt编写"), "prompt_draft"),
-    (("故事板设计", "故事板规范", "分镜设计"), "storyboard"),
+    (("关键元素",), "storyboard_ke"),
+    (("分镜设计", "镜头列表", "镜头设计", "分镜"), "storyboard_shot"),
+    (("音频层", "音频设计"), "storyboard_audio"),
+    (("故事板设计", "故事板规范"), ("storyboard_ke", "storyboard_shot", "storyboard_audio")),
     (("生成规范", "元素生成", "视频生成"), "generation"),
     (("组装", "导出"), "assembly"),
     (("流程规划", "阶段逻辑", "依赖关系"), "planning"),
 ]
 
 
-def _stage_from_heading(heading: str) -> str:
-    """标题关键字 → 阶段；未命中返回空串"""
+def _stage_from_heading(heading: str) -> Union[str, Tuple[str, ...]]:
+    """标题关键字 → 阶段（可为 tuple 一对多）；未命中返回空串"""
     h = (heading or "").strip()
     for hints, stage in _HEADING_STAGE_HINTS:
         if any(k in h for k in hints):
@@ -111,11 +129,14 @@ def split_skill_sections(content: str) -> Dict[str, str]:
     content = content or ""
     collected: Dict[str, List[str]] = {}
 
-    def _add(stage: str, body: str) -> None:
+    def _add(stage: Union[str, Tuple[str, ...]], body: str) -> None:
         body = (body or "").strip()
-        if not stage or not body:
+        if not body:
             return
-        collected.setdefault(stage, []).append(body)
+        stages = stage if isinstance(stage, tuple) else (stage,)
+        for s in stages:
+            if s:
+                collected.setdefault(s, []).append(body)
 
     # 1) <tag> 章节（flova 原生格式）
     tag_alt = "|".join(re.escape(t) for t in SECTION_TAG_STAGES)
@@ -140,6 +161,27 @@ def split_skill_sections(content: str) -> Dict[str, str]:
 DEFAULT_SKILL_SLUG = "script-to-video"
 DEFAULT_SKILL_DOC = """# 剧本生视频（需上传剧本）
 
+```json skill_manifest
+{
+  "gates": {
+    "require_duration": true,
+    "require_subtitle": true,
+    "require_camera_language": true,
+    "require_audio_layer": true,
+    "require_at_ref": true
+  },
+  "flow": {
+    "spec_wizard": true,
+    "spec_stage_trim": true,
+    "channels_block": true,
+    "spec_gate": true
+  },
+  "pause": {
+    "stage_pause": true
+  }
+}
+```
+
 > 调用规则：用户上传剧本/故事文档以生成视频时使用。在关键阶段暂停以供用户确认；
 > 所有图片/视频/音频生成必须经用户明确指令才能执行，Agent 不得自动触发。
 
@@ -148,7 +190,7 @@ DEFAULT_SKILL_DOC = """# 剧本生视频（需上传剧本）
 ### 第一段：规划结构
 1. 剧本正文不会自动注入上下文：先用 read_uploaded_doc 读取剧本全文；
    若 documents 清单里已有规格文档，先用 read_project_doc 读取并遵守；
-   然后分析素材 → write_document(Final_Video_Spec.md) → request_confirmation
+   然后分析素材 → write_document(制片规格.md) → request_confirmation
 2. 规划故事板：add_group keyElement(只写 title+desc) + add_group shot(只写 title+shotType+sceneRefs+roughDesc+duration)
    此阶段不写详细提示词 → request_confirmation "故事板已建立，请审阅"
 
@@ -179,6 +221,17 @@ def ensure_default_skill_docs() -> None:
     if not any(SKILL_DOCS_DIR.glob("*.md")):
         atomic_write_text(SKILL_DOCS_DIR / f"{DEFAULT_SKILL_SLUG}.md", DEFAULT_SKILL_DOC)
         logger.info(f"[SkillDocs] 已生成默认 Skill 文档: {DEFAULT_SKILL_SLUG}.md")
+    _refresh_runtime_registry()
+
+
+def _refresh_runtime_registry() -> None:
+    """把 data/skills 与 skill_runtime 注册表同步（上传/编辑/删除/启动均调用）。"""
+    try:
+        from src.video_agent.skill_runtime.registry import sync_all
+
+        sync_all()
+    except Exception as e:  # 注册失败不阻断文档系统
+        logger.warning(f"[SkillDocs] Skill 执行器注册表同步失败: {e}")
 
 
 def _parse_doc(slug: str, content: str) -> Dict[str, Any]:
@@ -233,6 +286,12 @@ def save_skill_doc(slug: str, content: str) -> Dict[str, Any]:
         _backup_skill_doc(slug, target)
     atomic_write_text(target, content)
     logger.info(f"[SkillDocs] 已保存 Skill 文档: {slug}.md")
+    try:
+        from src.video_agent.skill_runtime.registry import refresh_skill
+
+        refresh_skill(slug)
+    except Exception as e:
+        logger.warning(f"[SkillDocs] Skill 执行器注册刷新失败 {slug}: {e}")
     return _parse_doc(slug, content)
 
 
@@ -284,6 +343,189 @@ def delete_skill_doc(slug: str) -> None:
         raise ValueError(f"Skill 文档 '{slug}' 不存在")
     f.unlink()
     logger.info(f"[SkillDocs] 已删除 Skill 文档: {slug}.md")
+    try:
+        from src.video_agent.skill_runtime.registry import unregister_skill
+
+        unregister_skill(slug)
+    except Exception as e:
+        logger.warning(f"[SkillDocs] Skill 执行器注销失败 {slug}: {e}")
+
+
+# Skill 暂停点显式声明（可选 fenced json 块，info string = pause_rules）：
+# 判定优先级由 guard.skill_requires_stage_pause 掌握（manifest > 显式声明 > 关键词兜底）
+_PAUSE_RULES_BLOCK_RE = re.compile(
+    r"```(?:json|js)?\s*pause_rules\s*\n(.*?)```", re.S | re.I
+)
+# gate_rules 块格式校验用（与 prompt_gates.parse_gate_rules 的正则保持一致）
+_GATE_RULES_LINT_RE = re.compile(
+    r"```(?:json|js)?\s*gate_rules\s*\n(.*?)```", re.S | re.I
+)
+
+# Skill 平台行为统一声明块（S1 清偿：引擎对业务流程一无所知，
+# 闸机/向导/工具裁剪等平台行为由本块声明驱动，未声明 = 只保留客观结构防护）；
+# 与旧 gate_rules/pause_rules 块并存时 manifest 优先（冲突键覆盖）
+_SKILL_MANIFEST_BLOCK_RE = re.compile(
+    r"```(?:json|js)?\s*skill_manifest\s*\n(.*?)```", re.S | re.I
+)
+
+# manifest 白名单（键 → 类型），非白名单键静默丢弃，防止用户文档破坏平台行为
+_MANIFEST_GATE_KEYS: Dict[str, Any] = {
+    "shot_min_chars": 0,           # int >0
+    "element_min_chars": 0,        # int >0
+    "cjk_min_ratio": 0.0,          # float (0,1]
+    "require_duration": False,     # bool
+    "require_subtitle": False,     # bool
+    "require_camera_language": False,  # bool
+    "require_audio_layer": False,  # bool
+    "require_at_ref": False,       # bool：分镜提示词写入时系统按 sceneRefs 自动补 @引用
+}
+_MANIFEST_FLOW_KEYS: Dict[str, Any] = {
+    "spec_wizard": False,      # script_analyze 后规格参数向导 + 规格审阅卡升级
+    "spec_stage_trim": False,  # 无规格文档时裁剪故事板/生成工具
+    "channels_block": False,   # 每轮注入「已配置生成渠道」块
+    "spec_gate": False,        # 无规格文档时搭建故事板附「建议补写规格」警告
+}
+_MANIFEST_PAUSE_KEYS: Dict[str, Any] = {"stage_pause": False}
+
+
+def _coerce_manifest_value(val: Any, default: Any) -> Optional[Any]:
+    """按白名单默认值的类型校验 manifest 单键；类型不合法返回 None（丢弃）。"""
+    if isinstance(default, bool):
+        if isinstance(val, (bool, int)):
+            return bool(val)
+        return None
+    if isinstance(default, int):
+        if isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
+            return int(val)
+        return None
+    if isinstance(default, float):
+        # 允许 0：如 cjk_min_ratio=0 等效关闭语言闸（英文锁定 Skill，S1）
+        if isinstance(val, (int, float)) and not isinstance(val, bool) and 0 <= val <= 1:
+            return float(val)
+        return None
+    return None
+
+
+def _parse_manifest_section(data: Dict[str, Any], whitelist: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    section = data
+    if not isinstance(section, dict):
+        return out
+    for key, default in whitelist.items():
+        if key not in section:
+            continue
+        coerced = _coerce_manifest_value(section[key], default)
+        if coerced is not None:
+            out[key] = coerced
+    return out
+
+
+def parse_skill_manifest(content: str) -> Optional[Dict[str, Any]]:
+    """解析可选的 skill_manifest 声明块；未声明/格式非法返回 None。
+
+    返回 {"gates": {...}, "flow": {...}, "pause": {...}}（各节只含显式声明的键）。
+    语义：未声明 = 引擎只保留客观结构防护（业务闸/向导/裁剪全部关闭）。
+    """
+    m = _SKILL_MANIFEST_BLOCK_RE.search(content or "")
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return {
+        "gates": _parse_manifest_section(data.get("gates") or {}, _MANIFEST_GATE_KEYS),
+        "flow": _parse_manifest_section(data.get("flow") or {}, _MANIFEST_FLOW_KEYS),
+        "pause": _parse_manifest_section(data.get("pause") or {}, _MANIFEST_PAUSE_KEYS),
+    }
+
+
+def parse_pause_rules(content: str) -> Optional[Dict[str, Any]]:
+    """解析可选的 pause_rules 声明块；未声明/格式非法返回 None。
+
+    白名单键类型校验：stage_pause(bool)。显式声明优先于
+    「何时暂停/强制暂停点」关键词检测（换表述不再静默失效）。
+    """
+    m = _PAUSE_RULES_BLOCK_RE.search(content or "")
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    out: Dict[str, Any] = {}
+    if isinstance(data.get("stage_pause"), (bool, int)):
+        out["stage_pause"] = bool(data["stage_pause"])
+    return out
+
+
+def lint_skill_content(content: str) -> Dict[str, Any]:
+    """Skill 文档保存时 lint：把注册结果/规则合法性提示前移到编辑时。
+
+    返回 {"available_tools": [...], "warnings": [...]}；不阻断保存，
+    由路由层随 PUT 响应下发，前端以 toast/详情展示。
+    """
+    from src.video_agent.skill_runtime.registry import SKILL_EXECUTOR_TOOLS, TOOL_STAGES
+
+    warnings: List[str] = []
+    content = content or ""
+    sections = split_skill_sections(content)
+    available = [
+        t for t in SKILL_EXECUTOR_TOOLS
+        if any((sections.get(s) or "").strip() for s in TOOL_STAGES.get(t, ()))
+    ]
+    if not available:
+        warnings.append(
+            "未识别到任何执行器章节：选中该 Skill 时将回退全文注入模式，无独立执行器可用"
+        )
+    # 三拆部分缺失：故事板章节只覆盖了部分拆解执行器
+    split_tools = ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
+    present = [t for t in split_tools if t in available]
+    if present and len(present) < 3:
+        missing = [t for t in split_tools if t not in available]
+        warnings.append("故事板章节仅覆盖部分拆解执行器，未注册：" + "、".join(missing))
+    # gate_rules 块格式校验（非法时 prompt_gates 静默回落默认，这里显式告知）
+    gm = _GATE_RULES_LINT_RE.search(content)
+    if gm:
+        try:
+            data = json.loads(gm.group(1))
+            if not isinstance(data, dict):
+                warnings.append("gate_rules 不是 JSON 对象，已回落默认闸机规则")
+        except Exception:
+            warnings.append("gate_rules JSON 解析失败，已回落默认闸机规则")
+    # skill_manifest 块格式校验（同 gate_rules：非法时静默回落最小闸，这里显式告知）
+    mm = _SKILL_MANIFEST_BLOCK_RE.search(content)
+    if mm:
+        try:
+            data = json.loads(mm.group(1))
+            if not isinstance(data, dict):
+                warnings.append("skill_manifest 不是 JSON 对象，已回落最小闸配置")
+        except Exception:
+            warnings.append("skill_manifest JSON 解析失败，已回落最小闸配置")
+    elif gm or _PAUSE_RULES_BLOCK_RE.search(content):
+        warnings.append(
+            "检测到旧式 gate_rules/pause_rules 块：建议迁移为统一的 skill_manifest 声明块"
+            "（并存时 manifest 优先，两块各自表述属于指令分身）"
+        )
+    # 暂停声明检测（仅提示不阻断；skill_manifest 的 pause.stage_pause 也是有效声明，S1）
+    _manifest_pause = bool(
+        ((parse_skill_manifest(content) or {}).get("pause") or {}).get("stage_pause")
+    )
+    if (
+        not _manifest_pause
+        and parse_pause_rules(content) is None
+        and "何时暂停" not in content
+        and "强制暂停点" not in content
+    ):
+        warnings.append(
+            "未检测到阶段暂停声明（可加 ```json pause_rules {\"stage_pause\": true}``` 或写明「何时暂停」），"
+            "执行器完成后将不会主动邀请用户确认"
+        )
+    return {"available_tools": available, "warnings": warnings}
 
 
 def _norm_skill_name(s: str) -> str:
