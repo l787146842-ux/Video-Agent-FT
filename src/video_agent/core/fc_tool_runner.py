@@ -36,6 +36,8 @@ _EXECUTOR_TOOL_NAMES = frozenset({
     "audio_generate",
     "video_assembler",
 })
+# 关键步骤工具（6666 事故）：这些失败时模型不得声称“已完成/已写入”
+_CRITICAL_TOOL_NAMES = frozenset(_EXECUTOR_TOOL_NAMES | {"document_write"})
 from src.video_agent.tools.base import ToolResult
 
 # 回喂消息的识别前缀（与 format_tool_results 首行保持一致）
@@ -563,6 +565,9 @@ class FCToolRunner:
         # 生成类工具本批成败跟踪（防虚报：同批失败后暂停文案不得声称已触发生成）
         gen_failed_err = ""
         gen_succeeded = False
+        # 关键执行器/文档写入成败跟踪（6666：script_analyze/document_write 失败仍声称完成）
+        key_tool_succeeded = False
+        key_tool_failed: List[str] = []
         tracer = AgentTracer.get_instance()
         for ci, call in enumerate(response.tool_calls):
             func = call.get("function", {}) if isinstance(call, dict) else {}
@@ -581,6 +586,10 @@ class FCToolRunner:
                     args["chat_provider"] = self.chat_provider
                 if not str(args.get("chat_model") or "").strip() and self.chat_model:
                     args["chat_model"] = self.chat_model
+                # 6666 事故：模型不带 skill_name 时，强制注入系统已确认的当前 Skill，
+                # 否则执行器注册检查拿到空名 → 「未指定」未注册
+                if not str(args.get("skill_name") or "").strip() and injected_skill:
+                    args["skill_name"] = injected_skill
 
             # 过程时间线：工具开始（前端渲染运行态条目）
             tool_event_id = str(call.get("id") or f"fc-{ci}") if isinstance(call, dict) else f"fc-{ci}"
@@ -676,6 +685,8 @@ class FCToolRunner:
                     gen_failed_err = str(result.error or "执行失败")
             if result.success:
                 applied += 1
+                if name in _CRITICAL_TOOL_NAMES:
+                    key_tool_succeeded = True
                 self._record_presented(name, args)
                 if name in ("storyboard_create_group", "storyboard_add_draft"):
                     structure_created = True
@@ -765,6 +776,8 @@ class FCToolRunner:
                         chat_inserts.extend(inserts)
             else:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
+                if name in _CRITICAL_TOOL_NAMES:
+                    key_tool_failed.append(name)
                 if on_event is not None:
                     await on_event({
                         "type": SSE_TOOL_FINISHED,
@@ -856,5 +869,17 @@ class FCToolRunner:
             }, {
                 "label": "先调整提示词",
                 "description": "告诉我需要修改的草稿与修改意见",
+            }]
+        # 6666 事故：关键执行器/文档写入全失败但模型仍带确认声称完成 → 覆盖为诚实文案
+        if confirmation and not key_tool_succeeded and key_tool_failed:
+            _failed = "、".join(dict.fromkeys(key_tool_failed))[:160]
+            logger.warning(f"[Planner] 关键步骤防虚报：{_failed} 失败但模型声称完成，已覆盖")
+            confirmation = (
+                f"关键步骤未实际完成：{_failed} 均执行失败，工作台状态未按预期更新；"
+                "请按系统提示重新执行，不要声称已完成。"
+            )
+            confirmation_options = [{
+                "label": "重试",
+                "description": "重新执行未完成的关键步骤（Skill 绑定/执行器/规格向导已就绪）",
             }]
         return applied, confirmation, image_urls, chat_inserts, action_log, confirmation_options, tool_results, docs_written

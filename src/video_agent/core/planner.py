@@ -83,6 +83,8 @@ class PlannerContext:
     degraded_state_builder: Optional[Callable[[], str]] = None
     # 本轮记忆检索命中明细（4.7：随 done payload 下发前端可视化）
     memory_hits: List[Dict[str, Any]] = field(default_factory=list)
+    # 前奏时间线（Q8/6666）：任务开始时的 system 动作（加载 Skill 流程 / 读取存档上传文档）
+    prelude_notes: List[tuple] = field(default_factory=list)
 
 
 @dataclass
@@ -412,6 +414,7 @@ class Planner:
             max_steps=MAX_STEPS,
             stream_hook=stream_hook,
             on_event=on_event,
+            prelude_notes=context.prelude_notes,
         )
 
         # 纯工具轮无总结文字时，用实际操作清单替换无信息量的占位文案：

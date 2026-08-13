@@ -127,11 +127,13 @@ def truncate_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _resolve_skill_name_for_injection(
     skill_name: str, skill_slug: str, raw_state: Optional[Dict[str, Any]] = None,
+    user_text: str = "",
 ) -> str:
     """Skill 全文硬注入的键名兜底：前端选中项（skill_name）优先；
     选中项为空但消息携带了 Skill 引用块（skill_slug）时，按 slug 解析出 Skill 名称，
-    保证「随消息发送过的 Skill 必定全文注入」；两者皆空时回退项目 usedSkills 末位
-    （7777 事故：后续轮次不带 Skill 导致执行器「未注册」，见 registry.fallback_skill_from_state）。
+    保证「随消息发送过的 Skill 必定全文注入」；两者皆空时先按消息文本匹配已注册 Skill
+    （6666 事故：直接发 Skill 名也要能绑定），再回退项目 usedSkills 末位
+    （7777 事故：后续轮次不带 Skill 导致执行器「未注册」）。
     """
     if skill_name:
         return skill_name
@@ -144,8 +146,14 @@ def _resolve_skill_name_for_injection(
         except Exception as e:
             logger.warning(f"[ChatService] Skill slug({skill_slug}) 解析名称失败: {e}")
         return skill_slug
-    from src.video_agent.skill_runtime.registry import fallback_skill_from_state
+    from src.video_agent.skill_runtime.registry import (
+        fallback_skill_from_state,
+        match_skill_name_from_text,
+    )
 
+    text_match = match_skill_name_from_text(user_text)
+    if text_match:
+        return text_match
     return fallback_skill_from_state(raw_state)
 
 
@@ -417,6 +425,14 @@ async def stream_worker(body: Any, emit) -> None:
 
 async def _stream_worker_impl(body: Any, svc: StateManager, emit) -> None:
     """流式处理公共实现（mock + 真实供应商）；供 SSE worker 与后台任务 worker 复用。"""
+    # 铁律文档每轮确保存在（宪法 D2）：项目级生产契约唯一表述源，
+    # 真实聊天/任务路径同样生效，不能只在 mock 路径创建
+    from src.video_agent.core.spec_rules import ensure_iron_rules_doc
+    try:
+        ensure_iron_rules_doc(svc.state_dict)
+    except Exception:
+        pass
+
     t0 = time.monotonic()
     executor = StudioActionExecutor(
         svc,
@@ -653,6 +669,17 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             summary_adapter=_resolve_summary_adapter(body, candidates),
             chat_provider=cand_provider, chat_model=cand_model,
         )
+        resolved_skill = _resolve_skill_name_for_injection(
+            body.skill_name or "", body.skill_slug or "", svc.state_dict, user_text,
+        )
+        prelude_notes: List[tuple] = []
+        if resolved_skill:
+            prelude_notes.append(("system", f"加载 Skill「{resolved_skill}」流程规范进上下文"))
+        for _name in list(body.doc_blocks or []) + [
+            str(a.get("name") or "") for a in (body.attachments or []) if isinstance(a, dict)
+        ]:
+            if _name:
+                prelude_notes.append(("system", f"读取并存档上传文档《{_name}》"))
         planner_ctx = PlannerContext(
             history=history,
             selected_draft_id=body.selected_draft_id,
@@ -661,9 +688,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             degraded_state_builder=(
                 (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
             ),
-            skill_name=_resolve_skill_name_for_injection(
-                body.skill_name or "", body.skill_slug or "", svc.state_dict,
-            ),
+            skill_name=resolved_skill,
+            prelude_notes=prelude_notes,
             use_studio_context=use_studio_context,
             asset_mode=body.asset_mode,
             image_generation_provider=image_provider,
@@ -805,6 +831,12 @@ async def non_stream_worker(body: Any) -> Dict[str, Any]:
 async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     """非流式聊天主体（幂等槽位由 non_stream_worker 管理）"""
     svc = StateManager.get_instance()
+    # 铁律文档每轮确保存在（宪法 D2），非流式路径同样生效
+    from src.video_agent.core.spec_rules import ensure_iron_rules_doc
+    try:
+        ensure_iron_rules_doc(svc.state_dict)
+    except Exception:
+        pass
     executor = StudioActionExecutor(
         svc,
         selected_draft_id=body.selected_draft_id,
@@ -892,15 +924,25 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         svc, body.selected_draft_id, body.selected_type
     )
 
+    resolved_skill = _resolve_skill_name_for_injection(
+        body.skill_name or "", body.skill_slug or "", svc.state_dict, user_text,
+    )
+    prelude_notes: List[tuple] = []
+    if resolved_skill:
+        prelude_notes.append(("system", f"加载 Skill「{resolved_skill}」流程规范进上下文"))
+    for _name in list(body.doc_blocks or []) + [
+        str(a.get("name") or "") for a in (body.attachments or []) if isinstance(a, dict)
+    ]:
+        if _name:
+            prelude_notes.append(("system", f"读取并存档上传文档《{_name}》"))
     planner_ctx = PlannerContext(
         history=history, selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
         state_builder=state_builder,
         degraded_state_builder=(
             (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
         ),
-        skill_name=_resolve_skill_name_for_injection(
-            body.skill_name or "", body.skill_slug or "", svc.state_dict,
-        ),
+        skill_name=resolved_skill,
+        prelude_notes=prelude_notes,
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
         image_generation_provider=image_provider2,
         image_generation_aspect_ratio=image_aspect_ratio2,

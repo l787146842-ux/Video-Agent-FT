@@ -267,6 +267,26 @@ def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
     return str(used[-1] or "") if used else ""
 
 
+def match_skill_name_from_text(text: str) -> str:
+    """消息文本里出现已注册 Skill 名时自动绑定（6666 事故：用户直接发 Skill 名/文档按钮引用，
+    但请求未带 skill_slug；确定性匹配，不依赖模型自觉）。
+
+    按名称/标识匹配：命中多个时取最后一个（用户最新提到的 Skill 更可能是当前意图）。
+    """
+    body = str(text or "")
+    if not body:
+        return ""
+    matched = ""
+    for entry in list_entries():
+        name = str(entry.name or "")
+        slug = str(entry.slug or "")
+        if name and name in body:
+            matched = name
+        elif slug and slug in body:
+            matched = str(entry.name or slug)
+    return matched
+
+
 def register_doc_hooks() -> None:
     """挂到 skill_docs 保存/删除路径的刷新函数（由 skill_docs 调用）。"""
     # 占位：实际钩子在 skill_docs.save_skill_doc / delete_skill_doc 中调用 refresh_skill / unregister_skill
