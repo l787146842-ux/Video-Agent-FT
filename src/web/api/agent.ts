@@ -74,3 +74,8 @@ export function getAgentRunning(): Promise<{ running: boolean }> {
 export function stopAgentTask(): Promise<{ ok: boolean; cancelled: number }> {
   return apiPost<{ ok: boolean; cancelled: number }>('/api/agent/stop', {});
 }
+
+/** 登记一条任务执行期间的用户引导（7777 三轮：轮间注入，不打断当前操作） */
+export function sendGuidance(id: string, message: string) {
+  return apiPost<{ ok: boolean; project_id: string }>('/api/agent/guidance', { id, message });
+}

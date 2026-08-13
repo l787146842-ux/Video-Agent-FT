@@ -10,6 +10,7 @@ import { postAgentChatStream } from '@/api/sse';
 import { stopAgentTask } from '@/api/agent';
 import { requestInsertMedia } from '@/lib/chat-input-bridge';
 import { uid } from '@/lib/utils';
+import { applyFallbackModel } from '@/stores/agent-prefs';
 
 /**
  * Agent 流式聊天（模块级单例）
@@ -145,6 +146,15 @@ function handleEvent(ev: SseEvent) {
       chatActions.streamError(msg);
       break;
     }
+    case 'model_fallback':
+      // 降级即时联动（7777）：切换时刻就跳选择器，不等整轮成功
+      applyFallbackModel(ev.provider, ev.model);
+      break;
+    case 'guidance_injected':
+      // 引导消息轮间注入成功（7777 三轮）：渲染用户气泡并从排队区移除对应条目
+      if (ev.text) chatActions.addMessage({ sender: 'user', text: ev.text });
+      if (ev.id) chatActions.removeQueuedMessage(ev.id);
+      break;
   }
 }
 

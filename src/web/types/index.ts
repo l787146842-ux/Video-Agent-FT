@@ -255,6 +255,8 @@ export interface SseDonePayload {
   fallback_model?: string;
   /** 执行轨迹（每轮 step/耗时/操作数） */
   trace?: AgentTrace;
+  /** 本轮 Agent 参考的长期记忆命中（4.7：前端「记忆参考」折叠展示） */
+  memory_hits?: Array<{ id?: string; date?: string; content: string }>;
   state?: ServerStateSnapshot | null;
 }
 export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }
@@ -262,6 +264,10 @@ export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }
 export interface SseActionsAppliedEvent { type: 'actions_applied'; payload?: { count?: number; state?: ServerStateSnapshot | null }; }
 /** 后端 error 事件用 detail 字段，可携带 error_code 供前端 i18n 翻译 */
 export interface SseErrorEvent { type: 'error'; detail?: string; text?: string; error_code?: string; }
+/** 模型降级即时联动（7777）：切换时刻即下发，前端立即把选择器跳到实际生效的组合 */
+export interface SseModelFallbackEvent { type: 'model_fallback'; provider?: string; model?: string; }
+/** 引导消息轮间注入成功（7777 三轮）：渲染用户气泡并从排队区移除对应条目 */
+export interface SseGuidanceInjectedEvent { type: 'guidance_injected'; id?: string; text?: string; }
 export type SseEvent =
   | SseStatusEvent
   | SseDeltaEvent
@@ -270,7 +276,9 @@ export type SseEvent =
   | SseToolFinishedEvent
   | SseActionsAppliedEvent
   | SseDoneEvent
-  | SseErrorEvent;
+  | SseErrorEvent
+  | SseModelFallbackEvent
+  | SseGuidanceInjectedEvent;
 
 // ===== 后端状态快照 =====
 /** 单个对话（同一项目支持多对话窗口） */

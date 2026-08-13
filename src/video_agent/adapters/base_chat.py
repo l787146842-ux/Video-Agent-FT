@@ -38,8 +38,10 @@ class BaseChatAdapter(ABC):
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         timeout: Optional[int] = None,
+        thinking_level: Optional[str] = None,
     ) -> ChatResponse:
-        """非流式 chat 调用。max_tokens/temperature/timeout 为 None 时回落到全局 settings。"""
+        """非流式 chat 调用。max_tokens/temperature/timeout 为 None 时回落到全局 settings。
+        thinking_level：本次调用的思考档位覆盖（None=沿用全局配置，2222 二轮）。"""
         ...
 
     @abstractmethod
@@ -51,8 +53,10 @@ class BaseChatAdapter(ABC):
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         timeout: Optional[int] = None,
+        thinking_level: Optional[str] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
-        """流式 chat 调用（SSE）。max_tokens/temperature/timeout 为 None 时回落到全局 settings。"""
+        """流式 chat 调用（SSE）。max_tokens/temperature/timeout 为 None 时回落到全局 settings。
+        thinking_level：本次调用的思考档位覆盖（None=沿用全局配置，2222 二轮）。"""
         ...
         yield  # pragma: no cover
 

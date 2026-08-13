@@ -155,3 +155,62 @@ def test_build_context_empty_query(mem_dir):
     mgr = MemoryManager(persist_dir=mem_dir, backend="json", summary_interval=1)
     assert mgr.build_context("") == ""
     assert mgr.build_context("   ") == ""
+
+
+# ---------- 4.7：写入去重 / 命中可视化 / 管理 API 底座 ----------
+
+@pytest.mark.asyncio
+async def test_record_dialog_dedup_skips_similar_summary(mem_dir):
+    """写入去重：与已有记忆关键词高度重叠的摘要不再重复堆积"""
+    mgr = MemoryManager(persist_dir=mem_dir, backend="json", summary_interval=1)
+    r1 = await mgr.record_dialog("我要做赛博朋克风格的短片", "好的")
+    assert r1 is not None
+    assert mgr.count() == 1
+    # 同类对话再次触发几乎相同的摘要 → 被去重跳过
+    r2 = await mgr.record_dialog("我要做赛博朋克风格的短片", "好的，已为你规划")
+    assert r2 is None
+    assert mgr.count() == 1
+
+
+@pytest.mark.asyncio
+async def test_build_context_with_hits_returns_hit_details(mem_dir):
+    """命中可视化：检索结果同时返回注入块与命中明细"""
+    mgr = MemoryManager(persist_dir=mem_dir, backend="json", summary_interval=1)
+    await mgr.record_dialog("我要做赛博朋克风格的短片", "好的")
+    ctx, hits = mgr.build_context_with_hits("赛博朋克短片继续")
+    assert "赛博朋克" in ctx
+    assert hits and "content" in hits[0] and "date" in hits[0]
+    # 无命中时两者均为空
+    ctx2, hits2 = mgr.build_context_with_hits("")
+    assert ctx2 == "" and hits2 == []
+
+
+@pytest.mark.asyncio
+async def test_list_and_delete_records(mem_dir):
+    """管理底座：清单按项目过滤 + 删除（不存在返回 False）"""
+    mgr = MemoryManager(persist_dir=mem_dir, backend="json", summary_interval=1)
+    await mgr.record_dialog("项目甲的对话", "回复", project_id="proj-a")
+    await mgr.record_dialog("项目乙完全不相关的对话", "回复", project_id="proj-b")
+    assert len(mgr.list_records()) == 2
+    only_a = mgr.list_records(project_id="proj-a")
+    assert len(only_a) == 1 and only_a[0].project_id == "proj-a"
+    assert mgr.delete_record(only_a[0].id) is True
+    assert mgr.delete_record("mem-not-exist") is False
+    assert len(mgr.list_records()) == 1
+
+
+@pytest.mark.asyncio
+async def test_pin_record_orders_first(mem_dir):
+    """置顶（M4）：置顶记忆永远排在清单最前，不存在返回 False"""
+    mgr = MemoryManager(persist_dir=mem_dir, backend="json", summary_interval=1)
+    r1 = await mgr.record_dialog("项目甲的对话内容", "回复", project_id="proj-a")
+    r2 = await mgr.record_dialog("项目乙完全不同的对话", "回复", project_id="proj-b")
+    assert r1 is not None and r2 is not None
+    # 置顶较早的 r1 → 排到最新写入的 r2 前面
+    assert mgr.pin_record(r1.id, True) is True
+    ordered = mgr.list_records()
+    assert ordered[0].id == r1.id and ordered[0].pinned is True
+    # 取消置顶 → 恢复时间序（r2 更新在前）
+    assert mgr.pin_record(r1.id, False) is True
+    assert mgr.list_records()[0].id == r2.id
+    assert mgr.pin_record("mem-not-exist", True) is False

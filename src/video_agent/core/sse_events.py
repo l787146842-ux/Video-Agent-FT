@@ -19,6 +19,13 @@ SSE_REASONING_DELTA = "reasoning_delta"
 SSE_TOOL_STARTED = "tool_started"
 # 过程时间线：工具/操作完成（携带 id/ok/elapsed_ms/result_summary）
 SSE_TOOL_FINISHED = "tool_finished"
+# 文档写入即显（携带 name）：文档卡片不等整轮结束立即渲染（3333 事故：
+# 规格卡被同轮的长耗时拆解压在轮末才出现）
+SSE_DOC_WRITTEN = "doc_written"
+# 模型降级即时联动（携带 provider/model）：切换时刻即下发，前端立即把
+# 输入框选择器跳到实际生效的组合（7777 事故：轮被停止时 done 永不到达，
+# 仅靠 done payload 的 fallback_model 会漏跳）
+SSE_MODEL_FALLBACK = "model_fallback"
 # 本轮结束（携带完整 payload，含状态快照）
 SSE_DONE = "done"
 # 错误（携带 detail，可携带 error_code 供前端 i18n）
@@ -29,6 +36,9 @@ SSE_ACTIONS_APPLIED = "actions_applied"
 SSE_STEP_STARTED = "step_started"
 # 即将执行解析出的操作（agent_loop 内部事件，前端目前忽略）
 SSE_EXECUTING_ACTIONS = "executing_actions"
+# 引导消息轮间注入成功（携带 id/text，7777 三轮）：前端据此渲染用户气泡
+# 并从排队区移除对应条目（未被注入的条目由排队区兜底在任务结束后发出）
+SSE_GUIDANCE_INJECTED = "guidance_injected"
 
 __all__ = [
     "SSE_STATUS",
@@ -36,9 +46,12 @@ __all__ = [
     "SSE_REASONING_DELTA",
     "SSE_TOOL_STARTED",
     "SSE_TOOL_FINISHED",
+    "SSE_DOC_WRITTEN",
+    "SSE_MODEL_FALLBACK",
     "SSE_DONE",
     "SSE_ERROR",
     "SSE_ACTIONS_APPLIED",
     "SSE_STEP_STARTED",
     "SSE_EXECUTING_ACTIONS",
+    "SSE_GUIDANCE_INJECTED",
 ]

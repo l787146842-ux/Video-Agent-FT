@@ -181,6 +181,10 @@ export interface OkWithStateResponse {
   project_id?: string;
 }
 
+export interface PinBody {
+  pinned?: boolean;
+}
+
 export interface ProjectListResponse {
   projects?: Record<string, unknown>[];
   active_project_id?: string;

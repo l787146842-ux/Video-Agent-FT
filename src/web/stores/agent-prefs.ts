@@ -1,7 +1,7 @@
 import { createSignal } from 'solid-js';
 import { state } from '@/stores/studio-core';
 import {
-  preferredProviderIdForKind, providerModels,
+  apiProvidersFor, preferredProviderIdForKind, providerModels,
 } from '@/lib/providers';
 
 /**
@@ -70,4 +70,17 @@ export function agentAssetMode(): 'bound' | 'all' {
 export function setAgentAssetMode(v: 'bound' | 'all') {
   localStorage.setItem(KEY_ASSET_MODE, v);
   setAssetModeSig(v);
+}
+
+/** 模型降级即时联动（7777 事故）：切换时刻就把输入框选择器跳到实际生效的组合 */
+export function applyFallbackModel(providerId: string | undefined, modelName: string | undefined) {
+  const name = (modelName || '').trim();
+  if (!name) return;
+  const chats = apiProvidersFor('chat');
+  // 优先按后端给定的供应商 id 匹配；对不上再遍历找同名模型的供应商
+  let target = chats.find((p) => p.id === providerId && providerModels(p.id, 'chat').includes(name));
+  if (!target) target = chats.find((p) => providerModels(p.id, 'chat').includes(name));
+  if (!target) return;
+  if (agentProvider() !== target.id) setAgentProvider(target.id);
+  setAgentModel(name);
 }

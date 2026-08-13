@@ -73,6 +73,7 @@ class VectorStore:
                         "source": record.source,
                         "created_at": record.created_at,
                         "project_id": record.project_id,
+                        "pinned": bool(record.pinned),
                     }],
                 )
                 return
@@ -112,8 +113,71 @@ class VectorStore:
             return None
 
     def all_records(self) -> List[MemoryRecord]:
-        """全量记录（fallback 检索用）"""
+        """全量记录（fallback 检索用；ChromaDB 后端同样支持，管理 API 用）"""
+        if self._col is not None:
+            try:
+                res = self._col.get(include=["documents", "metadatas"])
+                ids = res.get("ids", []) or []
+                docs = res.get("documents", []) or []
+                metas = res.get("metadatas", []) or []
+                out: List[MemoryRecord] = []
+                for i, rid in enumerate(ids):
+                    m = metas[i] if i < len(metas) and metas[i] else {}
+                    out.append(MemoryRecord(
+                        id=rid,
+                        content=docs[i] if i < len(docs) else "",
+                        kind=m.get("kind", "summary"),
+                        source=m.get("source", ""),
+                        created_at=m.get("created_at", 0.0),
+                        project_id=m.get("project_id", ""),
+                        pinned=bool(m.get("pinned", False)),
+                    ))
+                return out
+            except Exception as e:
+                logger.warning(f"[Memory] ChromaDB 全量读取失败: {e}")
+                return []
         return list(self._records.values())
+
+    def set_pinned(self, record_id: str, pinned: bool) -> bool:
+        """置顶/取消置顶（M4 管理 API 用）；不存在返回 False"""
+        if self._col is not None:
+            try:
+                existing = self._col.get(ids=[record_id], include=["metadatas"])
+                if not existing.get("ids"):
+                    return False
+                meta = dict((existing.get("metadatas") or [{}])[0] or {})
+                meta["pinned"] = bool(pinned)
+                self._col.update(ids=[record_id], metadatas=[meta])
+                return True
+            except Exception as e:
+                logger.warning(f"[Memory] ChromaDB 置顶更新失败，降级 JSON: {e}")
+                self._col = None
+                self._load_fallback()
+        rec = self._records.get(record_id)
+        if rec is None:
+            return False
+        rec.pinned = bool(pinned)
+        self._save_fallback()
+        return True
+
+    def delete(self, record_id: str) -> bool:
+        """删除一条记忆（管理 API 用）；不存在返回 False"""
+        if self._col is not None:
+            try:
+                existing = self._col.get(ids=[record_id])
+                if not existing.get("ids"):
+                    return False
+                self._col.delete(ids=[record_id])
+                return True
+            except Exception as e:
+                logger.warning(f"[Memory] ChromaDB 删除失败，降级 JSON: {e}")
+                self._col = None
+                self._load_fallback()
+        if record_id in self._records:
+            del self._records[record_id]
+            self._save_fallback()
+            return True
+        return False
 
     def count(self) -> int:
         if self._col is not None:

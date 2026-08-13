@@ -33,6 +33,7 @@ from src.video_agent.web.routes.upload import router as upload_router
 from src.video_agent.web.routes.canvas import router as canvas_router
 from src.video_agent.web.routes.cli_status import router as cli_status_router
 from src.video_agent.web.routes.runtime_settings import router as runtime_settings_router, load_runtime_settings
+from src.video_agent.web.routes.memory import router as memory_router
 
 # 日志配置
 logger.remove()
@@ -236,6 +237,35 @@ async def index():
     return _studio_page()
 
 
+@app.get("/health", include_in_schema=False)
+async def health():
+    """健康检查（根路径，不进 /api 前缀 → 生产环境免 API Key，探针可用）。
+
+    画布在线状态只读探测缓存（不主动发请求），避免健康检查引发副作用。"""
+    from src.video_agent.adapters.canvas_adapter import canvas_online_cached
+    from src.video_agent.state.manager import StateManager
+
+    canvas_online = None
+    if settings.canvas_enabled:
+        try:
+            canvas_online = canvas_online_cached()
+        except Exception:
+            canvas_online = None
+    else:
+        canvas_online = False
+    try:
+        active_project = StateManager.get_instance().active_project_id
+    except Exception:
+        active_project = ""
+    return {
+        "status": "ok",
+        "version": app.version,
+        "canvas_enabled": settings.canvas_enabled,
+        "canvas_online": canvas_online,
+        "active_project_id": active_project,
+    }
+
+
 @app.get("/canvas", include_in_schema=False)
 @app.get("/settings", include_in_schema=False)
 async def spa_fallback():
@@ -269,6 +299,7 @@ app.include_router(upload_router, prefix="/api", tags=["upload"])
 app.include_router(canvas_router, prefix="/api", tags=["canvas"])
 app.include_router(cli_status_router, prefix="/api", tags=["cli-status"])
 app.include_router(runtime_settings_router, prefix="/api", tags=["runtime-settings"])
+app.include_router(memory_router, prefix="/api", tags=["memory"])
 
 
 # ---------- 启动入口 ----------

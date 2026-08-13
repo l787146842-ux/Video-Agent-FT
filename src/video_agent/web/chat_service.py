@@ -42,6 +42,8 @@ from src.video_agent.core.sse_events import (
     SSE_DELTA,
     SSE_DONE,
     SSE_ERROR,
+    SSE_GUIDANCE_INJECTED,
+    SSE_MODEL_FALLBACK,
     SSE_STATUS,
 )
 from src.video_agent.memory import MemoryManager
@@ -637,7 +639,9 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                                 "state": svc.get_full_snapshot(),
                             },
                         })
-                elif event.type in ("reasoning_delta", "tool_started", "tool_finished"):
+                elif event.type in (
+                    "reasoning_delta", "tool_started", "tool_finished", SSE_GUIDANCE_INJECTED,
+                ):
                     # 过程时间线事件透传（深度思考增量 / 工具开始与完成），
                     # 仅 UI 展示用，不进下次 LLM 上下文
                     await emit(event.payload or {"type": event.type, "text": event.text})
@@ -663,6 +667,12 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 f"[ChatService] 模型 {cand_model} 瞬时故障（{str(e)[:80]}），fallback 到 {next_model}"
             )
             await emit({"type": SSE_STATUS, "text": f"模型 {cand_model} 繁忙/异常，已切换 {next_model} 重试…"})
+            # 降级即时联动（7777）：切换时刻就下发，前端立即把选择器跳到实际生效的组合
+            await emit({
+                "type": SSE_MODEL_FALLBACK,
+                "provider": cand_provider,
+                "model": next_model,
+            })
             continue
 
         # --- 成功路径：持久化 + done ---
@@ -914,4 +924,5 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         "documents_written": result.documents_written,
         "image_urls": result.image_urls,
         "state": svc.get_full_snapshot() if use_studio_context else None,
+        "memory_hits": getattr(planner_ctx, "memory_hits", None) or [],
     }

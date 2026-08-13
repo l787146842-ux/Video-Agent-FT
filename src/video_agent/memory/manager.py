@@ -22,6 +22,10 @@ from src.video_agent.utils.prompts import render_prompt
 
 SummarizeFn = Callable[[str], Awaitable[str]]
 
+# 写入去重阈值（4.7）：新旧记忆关键词集 Jaccard 重叠 ≥ 此值视为同一条，
+# 跳过写入防同类摘要反复堆积
+_DUP_KEYWORD_JACCARD = 0.6
+
 
 class MemoryManager:
     """Agent 混合记忆系统入口（线程安全单例）"""
@@ -90,22 +94,72 @@ class MemoryManager:
 
     def build_context(self, user_message: str, project_id: str = "") -> str:
         """检索相关记忆并渲染注入模板；无相关记忆返回空串"""
+        ctx, _hits = self.build_context_with_hits(user_message, project_id=project_id)
+        return ctx
+
+    def build_context_with_hits(
+        self, user_message: str, project_id: str = "",
+    ) -> "tuple[str, list]":
+        """检索 + 渲染注入模板，返回 (上下文块, 命中明细)（4.7 命中可视化：
+        命中项随 done payload 下发前端展示，记忆不再是黑盒注入）"""
         if not settings.memory_enabled:
-            return ""
+            return "", []
         if not user_message or not user_message.strip():
-            return ""
+            return "", []
         try:
             records = self.retrieve(user_message, project_id=project_id)
         except Exception as e:
             logger.warning(f"[Memory] 检索失败: {e}")
-            return ""
+            return "", []
         if not records:
-            return ""
+            return "", []
         lines = []
+        hits = []
         for r in records:
             day = datetime.fromtimestamp(r.created_at).strftime("%m-%d") if r.created_at else "----"
             lines.append(f"- [{day}] {r.content}")
-        return render_prompt("memory/context_template.md", memories="\n".join(lines))
+            hits.append({"id": r.id, "date": day, "content": r.content})
+        return render_prompt("memory/context_template.md", memories="\n".join(lines)), hits
+
+    # ---------- 写入去重与管理 ----------
+
+    def _find_duplicate(self, content: str, project_id: str) -> Optional[MemoryRecord]:
+        """写入去重检测（4.7）：与已有记忆的关键词集 Jaccard 重叠 ≥ 阈值视为同一条"""
+        new_kw = set(tokenize(content)[:10])
+        if not new_kw:
+            return None
+        try:
+            candidates = self.retrieve(content, top_k=3, project_id=project_id)
+        except Exception:
+            return None
+        for r in candidates:
+            old_kw = set(r.keywords or tokenize(r.content)[:10])
+            if not old_kw:
+                continue
+            inter = len(new_kw & old_kw)
+            union = len(new_kw | old_kw)
+            if union and inter / union >= _DUP_KEYWORD_JACCARD:
+                return r
+        return None
+
+    def list_records(self, project_id: str = "") -> List[MemoryRecord]:
+        """全量记忆清单（管理 API 用）；指定项目时只返回该项目的记忆；
+        排序：置顶优先，其余按时间新→旧（M4）"""
+        records = self._store.all_records()
+        if project_id:
+            records = [r for r in records if r.project_id == project_id]
+        return sorted(
+            records,
+            key=lambda r: (not r.pinned, -(r.created_at or 0.0)),
+        )
+
+    def pin_record(self, record_id: str, pinned: bool) -> bool:
+        """置顶/取消置顶一条记忆（M4 管理 API 用）；不存在返回 False"""
+        return self._store.set_pinned(record_id, pinned)
+
+    def delete_record(self, record_id: str) -> bool:
+        """删除一条记忆（管理 API 用）；不存在返回 False"""
+        return self._store.delete(record_id)
 
     # ---------- 写入：对话摘要 ----------
 
@@ -128,6 +182,12 @@ class MemoryManager:
 
         content = await summarize_dialog(user_message, agent_reply, summarize_fn)
         if not content:
+            return None
+
+        # 写入去重（4.7）：同类对话反复触发相似摘要时不再重复堆积
+        dup = self._find_duplicate(content, project_id)
+        if dup is not None:
+            logger.info(f"[Memory] 跳过重复记忆（与 {dup.id} 高度相似）: {content[:40]}…")
             return None
 
         record = MemoryRecord(

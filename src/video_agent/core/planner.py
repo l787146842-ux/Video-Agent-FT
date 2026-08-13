@@ -80,6 +80,8 @@ class PlannerContext:
     # 降级状态构建器（token 保险丝）：system 段超预算时用「只留组标题/计数」的
     # 降级状态 JSON 重建 system prompt，保证请求不超窗发出
     degraded_state_builder: Optional[Callable[[], str]] = None
+    # 本轮记忆检索命中明细（4.7：随 done payload 下发前端可视化）
+    memory_hits: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -100,6 +102,8 @@ class PlannerResponse:
     confirmation_options: List[Dict[str, Any]] = field(default_factory=list)
     # 执行轨迹（每轮 step/耗时/操作数），前端「执行轨迹」折叠区展示
     trace: Dict[str, Any] = field(default_factory=dict)
+    # 本轮记忆检索命中明细（4.7：随 done payload 下发前端可视化）
+    memory_hits: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -455,6 +459,7 @@ class Planner:
                 user_message, loop_result.text, self._make_summarize_fn(),
                 project_id=self.state_manager.active_project_id,
             )
+        response.memory_hits = list(getattr(context, "memory_hits", None) or [])
 
         return response
 
@@ -496,7 +501,7 @@ class Planner:
                 ))
             elif etype == "executing_actions":
                 await queue.put(PlannerEvent(type="status", text="正在执行操作…"))
-            elif etype in ("reasoning_delta", "tool_started", "tool_finished"):
+            elif etype in ("reasoning_delta", "tool_started", "tool_finished", "guidance_injected"):
                 # 过程时间线事件穿透（前端渲染深度思考/工具条目）
                 await queue.put(PlannerEvent(type=etype, text=event.get("text", ""), payload=event))
 
@@ -557,6 +562,7 @@ class Planner:
             "action_log": result.action_log,
             "confirmation_options": result.confirmation_options,
             "trace": result.trace,
+            "memory_hits": result.memory_hits,
         })
 
     # ---------- 内部方法 ----------

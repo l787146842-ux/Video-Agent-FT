@@ -20,5 +20,7 @@ class MemoryRecord(BaseModel):
     project_id: str = ""
     created_at: float = Field(default_factory=time.time)
     keywords: List[str] = Field(default_factory=list)
+    # 置顶（M4）：清单永远排在最前，且为将来的自动清理/遗忘机制豁免位
+    pinned: bool = False
     # 检索阶段填充的临时得分（不持久化语义）
     score: float = 0.0

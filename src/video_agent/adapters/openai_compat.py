@@ -211,6 +211,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         timeout: Optional[int] = None,
+        thinking_level: Optional[str] = None,
     ) -> ChatResponse:
         if max_tokens is None:
             max_tokens = settings.llm_max_tokens
@@ -226,7 +227,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         }
         if tools:
             payload["tools"] = tools
-        self._apply_thinking_level(payload)
+        self._apply_thinking_level(payload, thinking_level)
 
         try:
             client = self._get_client(timeout)
@@ -274,6 +275,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         timeout: Optional[int] = None,
+        thinking_level: Optional[str] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
         if max_tokens is None:
             max_tokens = settings.llm_max_tokens
@@ -290,7 +292,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         }
         if tools:
             payload["tools"] = tools
-        self._apply_thinking_level(payload)
+        self._apply_thinking_level(payload, thinking_level)
 
         # 首块产出前遇瞬时故障（上游 5xx 繁忙 / 连接失败）指数退避重试，
         # 与非流式路径的 with_retry 对齐；已开始产出内容则不重试（避免内容重复）。

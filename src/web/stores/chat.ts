@@ -147,6 +147,8 @@ export const chatActions = {
         // 主模型故障 fallback 时标注实际生效的模型
         modelName: payload.fallback_model || s.streamingModel || undefined,
         trace: payload.trace && (payload.trace.steps || []).length ? payload.trace : undefined,
+        // 记忆命中可视化（4.7）：随 done payload 下发
+        memoryHits: (payload.memory_hits || []).length ? payload.memory_hits : undefined,
         thinkingMs: thinkingMs || undefined,
       });
       // 文档卡片
