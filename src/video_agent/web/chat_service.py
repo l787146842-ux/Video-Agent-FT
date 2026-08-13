@@ -467,6 +467,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StudioActionExecutor,
             summary_adapter=_resolve_summary_adapter(body, candidates),
+            chat_provider=cand_provider, chat_model=cand_model,
         )
         planner_ctx = PlannerContext(
             history=history,
@@ -727,6 +728,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StudioActionExecutor,
             summary_adapter=_resolve_summary_adapter(body, candidates),
+            chat_provider=cand_provider, chat_model=cand_model,
         )
         applied_seen = False
 

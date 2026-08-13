@@ -25,6 +25,17 @@ from src.video_agent.state.models import (
     CAT_KEY_ELEMENTS,
     CAT_SHOTS,
 )
+
+# 执行器工具名集合（skill_runtime 注册；FC 轨据此注入聊天供应商）
+_EXECUTOR_TOOL_NAMES = frozenset({
+    "script_analyze",
+    "storyboard_key_elements",
+    "storyboard_shots",
+    "storyboard_audio",
+    "write_media_prompt",
+    "audio_generate",
+    "video_assembler",
+})
 from src.video_agent.tools.base import ToolResult
 
 # 回喂消息的识别前缀（与 format_tool_results 首行保持一致）
@@ -149,6 +160,14 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
                 lines.append(f"  · {n}")
             continue
         if name not in FEEDBACK_FULL_TOOLS:
+            # 执行器类工具（script_analyze 等）的 detail 必须随回喂传给模型
+            # （3333 事故：一句话总结只报「执行成功」被模型吞掉）
+            data = tr.get("data") or {}
+            detail = str(data.get("detail") or "").strip()
+            if detail and total + len(detail) <= FEEDBACK_MAX_TOTAL_CHARS:
+                total += len(detail)
+                lines.append(f"- {name}：执行成功，{detail}")
+                continue
             lines.append(f"- {name}：执行成功")
             continue
         data = tr.get("data") or {}
@@ -225,6 +244,10 @@ class FCToolRunner:
 
     def __init__(self, tool_manager) -> None:
         self.tool_manager = tool_manager
+        # 当前对话使用的聊天供应商/模型（决策 E：与主模型一致，
+        # 由 chat_service/planner 注入，执行器工具缺省时使用）
+        self.chat_provider: str = ""
+        self.chat_model: str = ""
         # 前端当前选中的草稿（对齐文本轨 "current" 语义）；execute 时按请求注入
         self._selected_draft_id = ""
         self._selected_type = ""
@@ -479,6 +502,13 @@ class FCToolRunner:
                 args = {}
             # current/空引用 → 真实 id（闸机与工具调用前，防命中错误卡片/绕过闸机）
             self._resolve_current_refs(name, args)
+
+            # 执行器工具缺省注入聊天供应商（决策 E：与主模型一致）
+            if name in _EXECUTOR_TOOL_NAMES:
+                if not str(args.get("chat_provider") or "").strip() and self.chat_provider:
+                    args["chat_provider"] = self.chat_provider
+                if not str(args.get("chat_model") or "").strip() and self.chat_model:
+                    args["chat_model"] = self.chat_model
 
             # 过程时间线：工具开始（前端渲染运行态条目）
             tool_event_id = str(call.get("id") or f"fc-{ci}") if isinstance(call, dict) else f"fc-{ci}"

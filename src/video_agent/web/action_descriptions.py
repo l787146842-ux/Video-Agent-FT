@@ -20,6 +20,20 @@ def describe_action(
     用于把 draft_id 解析为草稿真实 label；不传则退回显示 ID。
     """
     name = str(action.get("action") or action.get("type") or "").strip()
+    if name in ("script_analyze",):
+        return "解析上传素材并输出一句话总结与关键要点"
+    if name in ("storyboard_key_elements",):
+        return "拆解关键元素分组（只建结构）"
+    if name in ("storyboard_shots",):
+        return "拆解分镜分组（只建结构）"
+    if name in ("storyboard_audio",):
+        return "拆解音频层分组（只建结构）"
+    if name in ("write_media_prompt",):
+        return "按 Skill 提示词写法分批编写草稿提示词"
+    if name in ("audio_generate",):
+        return "生成音频规划或绑定用户已上传音频"
+    if name in ("video_assembler",):
+        return "输出最终成片组装方案（素材清单+时间轴）"
     title = str(action.get("title") or "").strip()
     label = str(action.get("label") or "").strip()
     doc = str(action.get("name") or action.get("doc_name") or action.get("key") or "").strip()

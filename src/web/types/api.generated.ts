@@ -47,6 +47,8 @@ export interface ChatRequest {
   asset_mode?: string;
   skill_slug?: string;
   skill_name?: string;
+  doc_blocks?: string[];
+  skill_blocks?: string[];
 }
 
 export interface ChatResponse {
@@ -183,6 +185,7 @@ export interface ProjectStateResponse {
 }
 
 export interface ProjectStateUpdate {
+  project_id?: string | unknown;
   keyElements?: unknown[] | unknown;
   shots?: unknown[] | unknown;
   audioItems?: unknown[] | unknown;
@@ -206,6 +209,18 @@ export interface ProvidersResponse {
 export interface ReorderRequest {
   category: string;
   group_ids: string[];
+}
+
+export interface RuntimeSettingsUpdate {
+  model_fallback_enabled?: boolean | unknown;
+  chat_image_enabled?: boolean | unknown;
+  default_image_provider_id?: string | unknown;
+  default_image_model?: string | unknown;
+  default_video_provider_id?: string | unknown;
+  default_video_model?: string | unknown;
+  default_image_resolution?: string | unknown;
+  default_video_resolution?: string | unknown;
+  max_shot_duration?: number | unknown;
 }
 
 export interface SkillDocSave {
@@ -246,6 +261,7 @@ export interface VideoGenRequest {
   resolution?: string;
   aspect_ratio?: string;
   images?: Record<string, unknown>[];
+  audios?: Record<string, unknown>[];
   enhance_prompt?: boolean;
   multimodal?: boolean;
   draft_id?: string;

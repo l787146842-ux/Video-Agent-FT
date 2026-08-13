@@ -130,6 +130,8 @@ class Planner:
         executor_factory: Optional[Callable[..., Any]] = None,
         skill_docs: Optional[Any] = None,
         summary_adapter: Optional[BaseChatAdapter] = None,
+        chat_provider: str = "",
+        chat_model: str = "",
     ):
         # state_manager 缺省回落单例（Rule3）；core 层不绕过它直接碰状态
         self.state_manager = state_manager or StateManager.get_instance()
@@ -144,6 +146,9 @@ class Planner:
         # 记忆摘要专用 adapter（None = 跟随主模型）；由 web 层按
         # settings.memory_summary_model / fallback 链末位装配
         self.summary_adapter = summary_adapter
+        # 当前对话聊天供应商（决策 E：执行器与主模型一致；web 层注入）
+        self.chat_provider = chat_provider
+        self.chat_model = chat_model
         # 按上下文裁剪的工具集合（handle_message 时计算）
         self._excluded_tools: frozenset = frozenset()
         # system 超预算时的降级重建器（handle_message 时按 context 装配）
@@ -156,6 +161,8 @@ class Planner:
             lambda: self.state_manager.state_dict,
         )
         self._fc_runner = FCToolRunner(self.tool_manager)
+        self._fc_runner.chat_provider = self.chat_provider
+        self._fc_runner.chat_model = self.chat_model
 
     def _get_skill_docs(self):
         """Skill 文档提供者：优先注入实例，缺省延迟导入 web.skill_docs（Rule2 登记例外）"""
