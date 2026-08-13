@@ -43,6 +43,8 @@ class TestSelectedSkillHardInjection:
         # 流程纪律强化段：针对 888 项目事故（模型读到了 Skill 却一口气做完全部阶段）
         assert "Skill 流程纪律" in prompt
         assert "workflow_pause" in prompt
+        # 纪律条款必须来自外置文件（宪法 Rule 6 单一事实源），而不是代码硬编码
+        assert "不默认" in prompt
 
     def test_fuzzy_selected_name_still_injected(self, doc_skill):
         planner = Planner()
