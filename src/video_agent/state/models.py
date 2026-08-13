@@ -266,9 +266,12 @@ DRAFT_DEFAULT_FIELDS: Dict[str, Any] = {
     "model": "",
     "mode": "",
     "aspectRatio": "16:9",
-    "resolution": "1080p",
-    "imageResolution": "1K",
-    "duration": "5s",
+    # 6666 二轮：分辨率/时长等硬参数唯一来源为顶部「全局设置」，
+    # 草稿默认留空，由 stamp_draft_spec_preference 按全局设置补印，
+    # 不再用硬编码默认值挡住补印（生成时也不得偏离全局设置）
+    "resolution": "",
+    "imageResolution": "",
+    "duration": "",
     "timbre": "",
     "refAssets": [],
 }

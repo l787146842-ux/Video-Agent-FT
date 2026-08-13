@@ -615,9 +615,9 @@ SPEC_DOC_OPTIONS = [
 # 4444 方案乙：收集完成后规格文档由系统机械拼装，模型不再手写。
 SPEC_COLLECT_PAUSED_MSG = (
     "剧本读完了，一句话故事总结见上。接下来系统会为这部片子拼装一份制片规格，"
-    "先请您选定以下关键参数（点选即可；不选的由模型按剧本拟定后给您过目）："
-    "出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长，"
-    "以及当前 Skill 规格步骤声明的各维度。选完发给我，系统自动拼装规格并请您审阅。"
+    "先请您按当前 Skill 声明的各维度逐项选定（点选或自定义输入；不选的由模型按剧本拟定后给您过目）。"
+    "出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长一律以顶部「全局设置」为准，不在本交互中。"
+    "选完发给我，系统自动拼装规格并请您审阅。"
 )
 
 SPEC_COLLECT_KIND = "collect"
@@ -627,8 +627,7 @@ SPEC_COLLECT_KIND = "collect"
 # 下一步不写死具体阶段（启用条件按规格流程客观特征自动检测，2222 二轮；后续阶段以各自流程为准）；
 # 模型自填项必须逐条过目（888 事故：风格类参数模型拍板用户不知情）
 SPEC_DOC_PAUSED_MSG = (
-    "制片规格已按您的选定拼装完成，请审阅规格条目：硬参数（出图/出视频渠道、"
-    "分辨率、分镜最大时长）已经交互选定；未选维度由模型根据剧本拟定自填，请逐条过目，"
+    "制片规格已按您的选定拼装完成，请审阅规格条目；未选维度由模型根据剧本拟定自填，请逐条过目，"
     "如需调整直接告诉我。确认后按当前 Skill 流程推进下一阶段。"
 )
 
@@ -703,13 +702,43 @@ def parse_hard_selections(user_text: str) -> Dict[str, str]:
 # 平台固定六维及「声音风格/目标观众」文案已于 4444 二轮整体删除。
 _SPEC_WRITE_ENUM_RE = re.compile(r"[（(]([^（）()]+)[）)]")
 _SPEC_WRITE_VERB_RE = re.compile(r"写入|编写|初始化|拟定")
+# 规格维度优先解析「建议条目：…」整段（去掉括号注解后按 /、，、；切分）
+_SPEC_SUGGESTED_RE = re.compile(r"建议条目\s*[:：]\s*([^）)；。\n]+)")
+
+# 硬参数维度黑名单（6666 二轮：出图/出视频渠道、分辨率、分镜最大时长
+# 由顶部「全局设置」唯一提供，规格向导与规格文档均不再承载；总时长等
+# 创作性「时长」维度不在黑名单内）
+_HARD_PARAM_DIM_HINTS = (
+    "分辨率", "分镜最大时长", "单镜头最大时长", "单镜头时长",
+    "出图", "出视频", "图像生成", "视频生成", "模型偏好", "渠道",
+)
+_PLACEHOLDER_DIM_VALUE = "（待定）"
+
+
+def _is_hard_param_dim(dim: str) -> bool:
+    return any(h in str(dim or "") for h in _HARD_PARAM_DIM_HINTS)
+
+
+def _clean_dim_token(token: str) -> str:
+    return re.sub(r"[（(][^（）()]*[）)]", "", str(token or "")).strip(" \t-*")
+
+
+def _dedupe(items) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for it in items:
+        if it and it not in seen:
+            seen.add(it)
+            out.append(it)
+    return out
 
 
 def skill_spec_dimensions(skill_name: str) -> List[str]:
     """客观提取 Skill 规格编写步骤声明的维度清单（10.12-G1：不改 skill）。
 
-    在 Skill 正文中找「含规格文档名 + 写入动词」的行，解析其括号/方括号内
-    的枚举项；提取失败返回空列表（向导只出硬五项，平台不替 Skill 造维度）。
+    优先解析「建议条目：…」整段（去括号注解后按 /、，、；切分，不截断）；
+    无建议条目时回退解析括号枚举；硬参数维度（渠道/分辨率/分镜最大时长）
+    由全局设置提供，一律剔除；提取失败返回空列表（平台不替 Skill 造维度）。
     """
     try:
         from src.video_agent.skill_runtime.registry import resolve_entry
@@ -723,11 +752,18 @@ def skill_spec_dimensions(skill_name: str) -> List[str]:
             continue
         if not _SPEC_WRITE_VERB_RE.search(line):
             continue
+        m = _SPEC_SUGGESTED_RE.search(line)
+        if m:
+            dims = [
+                _clean_dim_token(x)
+                for x in re.split(r"[、，,;；/]+", m.group(1))
+            ]
+            return _dedupe(d for d in dims if not _is_hard_param_dim(d))
         m = _SPEC_WRITE_ENUM_RE.search(line)
         if not m:
             continue
         dims = [d.strip() for d in re.split(r"[、，,;；]", m.group(1)) if d.strip()]
-        return dims[:8]
+        return _dedupe(d for d in dims if not _is_hard_param_dim(d))
     return []
 
 
@@ -739,7 +775,11 @@ def parse_dim_selections(user_text: str, dims: List[str]) -> Dict[str, str]:
         m = re.search(re.escape(dim) + r"\s*[:：]\s*([^；;\n]+)", text)
         if m:
             v = m.group(1).strip()
-            if v and len(v) <= 40:
+            if (
+                v and len(v) <= 40
+                and v != _PLACEHOLDER_DIM_VALUE
+                and not any(k in v for k in SPEC_PARAM_UNCONFIRMED_MARKERS)
+            ):
                 out[dim] = v
     return out
 
@@ -811,68 +851,42 @@ def _current_skill_of(state: Optional[Dict[str, Any]]) -> str:
 def build_spec_param_options(
     spec_content: str, state: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, List[Dict[str, Any]]]:
-    """规格交互候选项向导：三项硬制作参数（仅未定稿项）+ 出图/出视频渠道
-    （6666 事故：渠道必须用户选定，模型不得自行拍板；渠道组恒定 included）
-    + Skill 规格步骤声明的软维度（4444：维度来自 Skill，平台不预设；
-    候选由模型按剧本出题，不足两个候选的维度不渲染、留给模型自填）。
+    """规格交互候选项向导（6666 二轮：出图/出视频渠道、图片分辨率、
+    视频分辨率、分镜最大时长由顶部「全局设置」唯一提供，向导不再渲染）。
 
+    只渲染 Skill 规格步骤声明的软维度（4444：维度来自 Skill，平台不预设）；
+    每个维度至少渲染一个入口——候选 >=2 渲染候选卡，候选不足时渲染占位卡
+    + 组内「其它（自定义输入）」，保证「模型不能增删维度」。
     选项 label 采用「键：值」格式（前端向导按 group 分页，发送时逐行拼接，
     chat_service 据此机械存档/拼装，不依赖模型自觉）。全部无需交互时返回空。
     """
-    unconfirmed = spec_unconfirmed_params(spec_content)
     opts: List[Dict[str, Any]] = []
-    if "图片分辨率" in unconfirmed:
-        # label 统一「键：值」格式：前端向导逐行拼接回传，
-        # 机械解析据此落盘（1111 事故：模型自造「1K（更快）」式 label 无法落盘）
-        for v in ("1K", "2K", "4K"):
-            opts.append({
-                "label": f"图片分辨率：{v}" + ("（推荐）" if v == "2K" else ""),
-                "description": "关键元素概念图的出图分辨率",
-                "group": "图片分辨率",
-            })
-    if "视频分辨率" in unconfirmed:
-        for v in ("480p", "720p", "1080p"):
-            opts.append({
-                "label": f"视频分辨率：{v}" + ("（推荐）" if v == "720p" else ""),
-                "description": "分镜成片的出视频分辨率",
-                "group": "视频分辨率",
-            })
-    if "分镜最大时长" in unconfirmed:
-        # 推荐档随出视频模型而定（Seedance 2.5 建议 12s），其余兜底 10s
-        _low = (spec_content or "").lower()
-        rec = "12" if "seedance" in _low else "10"
-        for v in ("5", "8", "10", "12", "15"):
-            opts.append({
-                "label": f"分镜最大时长：{v} 秒" + ("（推荐）" if v == rec else ""),
-                "description": "单镜头时长上限，须匹配出视频模型能力",
-                "group": "分镜最大时长",
-            })
-    channel_opts = _channel_groups()
-    # 软维度（4444）：Skill 声明维度 + 模型出题候选；无候选的维度不渲染
     dims = skill_spec_dimensions(_current_skill_of(state))
     cands = ((state or {}).get("interaction") or {}).get("spec_soft_candidates") or {}
     rendered_dims: List[str] = []
     for dim in dims:
         vals = [str(v).strip() for v in (cands.get(dim) or []) if str(v or "").strip()]
+        if vals:
+            for v in vals[:4]:
+                opts.append({
+                    "label": f"{dim}：{v}",
+                    "description": "模型根据剧本拟定的候选（点选；不选则由模型自填）",
+                    "group": dim,
+                })
         if len(vals) < 2:
-            continue
-        rendered_dims.append(dim)
-        for v in vals[:4]:
+            # 候选不足仍渲染该维度（占位卡 + 自定义输入），不允许悄悄隐藏
             opts.append({
-                "label": f"{dim}：{v}",
-                "description": "模型根据剧本拟定的候选（点选；不选则由模型自填）",
+                "label": f"{dim}：{_PLACEHOLDER_DIM_VALUE}",
+                "description": "点「其它（自定义输入）」填写；不填则由模型按剧本拟定",
                 "group": dim,
             })
-    opts = channel_opts + opts
+        rendered_dims.append(dim)
     if not opts:
         return "", []
-    pending = list(unconfirmed)
-    if channel_opts:
-        pending = ["出图/出视频渠道"] + pending
-    pending += rendered_dims
     msg = (
-        "以下关键制作参数尚待您选定：" + "、".join(pending)
-        + "。请逐项选择后发送（直接点选即可），系统将拼装规格并开始拆分关键元素。"
+        "以下规格维度尚待您选定：" + "、".join(rendered_dims)
+        + "。请逐项选择或自定义输入后发送（直接点选即可），"
+        "系统将拼装规格并开始拆分关键元素。"
     )
     return msg, opts
 
@@ -918,7 +932,7 @@ def merge_spec_param_wizard(
 
 def spec_pause_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
     """规格文档写入后的暂停卡：收集向导已交互过时沿用常规审阅暂停卡；
-    否则升级为候选项向导（未定稿参数 + 出图/出视频渠道，6666 事故）。"""
+    否则升级为 Skill 软维度候选项向导（6666 二轮：不再含渠道/分辨率/时长）。"""
     if _consume_spec_collected(state):
         return SPEC_DOC_PAUSED_MSG, list(SPEC_DOC_OPTIONS)
     msg, opts = build_spec_param_options(_spec_doc_content(state), state)
@@ -929,8 +943,7 @@ def spec_pause_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
 
 def spec_collect_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
     """script_analyze 后的规格收集向导（6666 事故：交互收集必须在规格文档
-    写入之前；无文档时参数全部视为待选，渠道组恒定 included；软参数候选
-    由模型按剧本出题，888 豪华版）。"""
+    写入之前；只渲染 Skill 声明的软维度，硬参数由顶部「全局设置」提供）。"""
     _msg, opts = build_spec_param_options("", state)
     return SPEC_COLLECT_PAUSED_MSG, opts
 
@@ -992,18 +1005,14 @@ def apply_spec_param_selections(
 
 # ---------- 规格文档系统拼装（4444 方案乙：模型不手写规格） ----------
 
-# 硬五项键名（与 provider_prefs 解析正则同源，保证下游填参读得到）
-HARD_SPEC_KEYS: Tuple[str, ...] = (
-    "图像生成", "视频生成", "图片分辨率", "视频分辨率", "分镜最大时长",
-)
-
-
 def assemble_spec_doc(
     skill_name: str,
     selections: Dict[str, str],
     model_filled: Optional[Dict[str, str]] = None,
 ) -> str:
-    """按「Skill 维度 + 硬五项」机械拼装键值清单规格文档（方案乙）。
+    """按「Skill 维度」机械拼装键值清单规格文档（方案乙；6666 二轮：
+    出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长由顶部
+    「全局设置」唯一提供，不再写入规格文档）。
 
     选定值优先；未选维度用模型自填值；都没有则该行不出现（下游按
     Skill 章节默认值兜底）。结构确定、无剧本分析等杂项——膨胀在结构上不可能。
@@ -1014,10 +1023,6 @@ def assemble_spec_doc(
         v = str(selections.get(dim) or model_filled.get(dim) or "").strip()
         if v:
             lines.append(f"- {dim}：{v}")
-    for key in HARD_SPEC_KEYS:
-        v = str(selections.get(key) or "").strip()
-        if v:
-            lines.append(f"- {key}：{v}")
     return "\n".join(lines) + "\n"
 
 # 4444（C3/P4）：提示词草案写入后 Skill 要求暂停审阅，模型该停没停时

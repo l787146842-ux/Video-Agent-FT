@@ -121,6 +121,11 @@ class StoryboardPatchDraftTool(BaseTool):
                 if ops.patch_draft(draft, params.patch):
                     # 时长参数同步：分镜提示词写入时把分镜时长补印到草稿时长参数
                     ops.sync_shot_duration(group, draft, params.patch)
+                    # 全局设置补印（6666 二轮：与文本轨一致，草稿缺分辨率/时长时
+                    # 按顶部「全局设置」填充，硬参数不依赖规格文档）
+                    from src.video_agent.web.provider_config import stamp_draft_spec_preference
+                    cat = ops.category_for_group_type(str(group.get("group_type") or ""))
+                    stamp_draft_spec_preference(svc.state_dict, draft, cat)
                     svc.save()
                     return ToolResult(success=True, data={"draft_id": draft.get("id", params.draft_id)})
         return ToolResult(success=False, error=f"Draft '{params.draft_id}' not found")

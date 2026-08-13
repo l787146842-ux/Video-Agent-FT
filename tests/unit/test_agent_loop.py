@@ -262,7 +262,7 @@ async def test_keyelement_structure_keeps_model_pause(svc):
 
 async def test_spec_doc_written_injects_pause_and_blocks_continue(svc, monkeypatch):
     """写完规格后模型输出 continue 想直冲下一步：系统强制停在规格审阅。
-    9999 事故升级：三项制作参数缺失时暂停卡升级为候选项向导。
+    6666 二轮：硬参数由全局设置提供，规格审阅卡不再升级为候选项向导。
     （4444：无 usedSkills 时模型写规格不拒收——拒收仅对真实选中的 Skill 生效）"""
     from src.video_agent.skill_runtime import registry
 
@@ -281,10 +281,9 @@ async def test_spec_doc_written_injects_pause_and_blocks_continue(svc, monkeypat
         "确认规格", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
     assert calls["n"] == 1  # continue 被暂停兜底压住，没有进第二轮
-    assert "尚待您选定" in result.confirmation
-    groups = {o.get("group") for o in result.confirmation_options}
-    # 4444：软维度来自 Skill 客观提取（测试 Skill 无规格行）→ 只出硬参数三组
-    assert groups == {"图片分辨率", "视频分辨率", "分镜最大时长"}
+    assert result.confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG
+    # 6666 二轮：测试 Skill 无软维度、硬参数不再向导化 → 常规审阅卡（无分页组）
+    assert not any(o.get("group") for o in result.confirmation_options)
     # 规格文档已真实写入
     assert any(d["name"] == "制片规格.md" for d in svc.state_dict["documents"])
 

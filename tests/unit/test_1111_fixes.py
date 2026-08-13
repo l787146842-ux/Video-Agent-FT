@@ -45,11 +45,14 @@ def svc(tmp_path):
 # ---------- 文本轨：script_analyze 后规格收集闸（6666 起替代原总结闸） ----------
 
 async def test_collect_gate_injects_wizard_when_no_spec_doc(svc, monkeypatch):
-    """解析成功且尚无规格文档：注入规格收集向导（含渠道组占位）"""
-    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [
-        {"label": "出图渠道：下拉选择厂商+模型", "description": "", "group": "出图渠道（API 厂商/模型）"},
-    ])
+    """解析成功且尚无规格文档：注入规格收集向导（只含 Skill 软维度，无硬参数）"""
+    monkeypatch.setattr(prompt_gates, "skill_spec_dimensions", lambda skill: ["视觉风格", "画幅"])
     svc.state_dict["documents"] = []  # demo 状态自带规格文档，先清掉
+    svc.state_dict["usedSkills"] = ["测试流程Skill"]
+    svc.state_dict.setdefault("interaction", {})["spec_soft_candidates"] = {
+        "视觉风格": ["写实", "赛博朋克"],
+        "画幅": ["16:9", "2.35:1"],
+    }
     ex = StudioActionExecutor(svc, gate_enabled=True)
     ex.skill_name = "测试流程Skill"
 
@@ -61,10 +64,10 @@ async def test_collect_gate_injects_wizard_when_no_spec_doc(svc, monkeypatch):
         "继续", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
     assert result.confirmation == prompt_gates.SPEC_COLLECT_PAUSED_MSG
-    labels = [o["label"] for o in result.confirmation_options]
-    assert any(l.startswith("图片分辨率：") for l in labels)
     groups = {o.get("group") for o in result.confirmation_options}
-    assert "出图渠道（API 厂商/模型）" in groups
+    assert groups == {"视觉风格", "画幅"}
+    assert not any(g in ("图片分辨率", "视频分辨率", "分镜最大时长") for g in groups)
+    assert not any("渠道" in str(g or "") for g in groups)
 
 
 async def test_collect_gate_skipped_when_spec_written_same_batch(svc):
@@ -119,11 +122,19 @@ async def test_collect_gate_skipped_when_model_paused(svc):
 
 # ---------- 向导合并：模型自造选项替换为标准「键：值」格式 ----------
 
-def test_merge_wizard_replaces_model_options_same_group():
-    state = {"documents": [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}]}
+def test_merge_wizard_replaces_model_options_same_group(monkeypatch):
+    """6666 二轮：合并只针对 Skill 软维度；硬参数（渠道/分辨率/时长）不再向导化。"""
+    monkeypatch.setattr(prompt_gates, "skill_spec_dimensions", lambda skill: ["视觉风格", "画幅"])
+    state = {
+        "usedSkills": ["测试Skill"],
+        "documents": [{"name": "制片规格.md", "content": "- 视觉风格：（待定）\n- 画幅：（待定）"}],
+        "interaction": {"spec_soft_candidates": {
+            "视觉风格": ["写实", "赛博朋克"],
+            "画幅": ["16:9", "2.35:1"],
+        }},
+    }
     model_opts = [
-        {"label": "1K（更快）", "group": "图片分辨率", "description": ""},
-        {"label": "2K（推荐）", "group": "图片分辨率", "description": ""},
+        {"label": "风格A", "group": "视觉风格", "description": ""},
         {"label": "确认规格并开始拆分关键元素", "group": "下一步", "description": ""},
     ]
     msg, opts, merged = prompt_gates.merge_spec_param_wizard(
@@ -131,24 +142,18 @@ def test_merge_wizard_replaces_model_options_same_group():
     )
     assert merged
     labels = [o["label"] for o in opts]
-    # 自造 label 被标准版替换
-    assert "1K（更快）" not in labels
-    assert "图片分辨率：2K（推荐）" in labels
-    assert "视频分辨率：720p（推荐）" in labels
-    assert "分镜最大时长：12 秒（推荐）" in labels or any(
-        l.startswith("分镜最大时长：") for l in labels
-    )
+    # 自造软维度 label 被标准版替换
+    assert "风格A" not in labels
+    assert "视觉风格：写实" in labels
+    assert "画幅：16:9" in labels
     # 非参数维度选项保留
     assert "确认规格并开始拆分关键元素" in labels
-    # 向导回传可机械落盘
-    reply = "\n".join(
-        o["label"] for o in opts
-        if o.get("group") in ("图片分辨率", "视频分辨率", "分镜最大时长")
-        and ("推荐" in o["label"])
-    )
-    new_content, applied = prompt_gates.apply_spec_param_selections(_SPEC_UNCONFIRMED, reply)
-    assert len(applied) == 3
-    assert "待确认" not in new_content
+    # 硬参数维度不再并入向导
+    assert not any(o.get("group") in ("图片分辨率", "视频分辨率", "分镜最大时长") for o in opts)
+    # 向导回传可被软维度解析器机械落盘
+    reply = "\n".join(o["label"] for o in opts if o.get("group") in ("视觉风格", "画幅"))
+    sels = prompt_gates.parse_dim_selections(reply, ["视觉风格", "画幅"])
+    assert sels["视觉风格"].startswith("写实")
 
 
 def test_merge_wizard_noop_without_spec_doc():
@@ -177,20 +182,30 @@ class _StubToolManager:
 
 
 def test_fc_model_pause_merged_with_wizard(monkeypatch):
-    """FC 轨：模型同批写规格 + 自发暂停但选项为自造 label → 并入标准向导"""
+    """FC 轨：模型同批写规格 + 自发暂停 → 软维度并入标准向导；
+    硬参数不再向导化（模型自造分辨率 label 原样保留，不影响全局设置）"""
+    monkeypatch.setattr(prompt_gates, "skill_spec_dimensions", lambda skill: ["视觉风格", "画幅"])
     runner = FCToolRunner(tool_manager=_StubToolManager())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
-        lambda: {"documents": [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}]}
+        lambda: {
+            "usedSkills": ["测试Skill"],
+            "documents": [{"name": "制片规格.md", "content": "- 视觉风格：（待定）\n- 画幅：（待定）"}],
+            "interaction": {"spec_soft_candidates": {
+                "视觉风格": ["写实", "赛博朋克"],
+                "画幅": ["16:9", "2.35:1"],
+            }},
+        }
     ))
     response = ChatResponse(content="", tool_calls=[
         {"id": "c1", "type": "function", "function": {
             "name": "document_write",
-            "arguments": json.dumps({"name": "制片规格.md", "content": _SPEC_UNCONFIRMED})}},
+            "arguments": json.dumps({"name": "制片规格.md", "content": "- 视觉风格：（待定）"})}},
         {"id": "c2", "type": "function", "function": {
             "name": "workflow_pause",
             "arguments": json.dumps({
                 "message": "请选定参数",
                 "options": [
+                    {"label": "风格A", "group": "视觉风格"},
                     {"label": "1K（更快）", "group": "图片分辨率"},
                     {"label": "确认规格并开始拆分关键元素", "group": "下一步"},
                 ],
@@ -199,8 +214,9 @@ def test_fc_model_pause_merged_with_wizard(monkeypatch):
     applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     labels = [o["label"] for o in conf_opts]
-    assert "1K（更快）" not in labels
-    assert "图片分辨率：2K（推荐）" in labels
+    assert "风格A" not in labels
+    assert "视觉风格：写实" in labels
+    assert "1K（更快）" in labels  # 硬参数不再向导化，模型选项保留
     assert "确认规格并开始拆分关键元素" in labels
 
 
@@ -292,10 +308,18 @@ def test_fc_summary_gate_exempt_when_override_all(monkeypatch):
 
 
 def test_fc_collect_gate_fires_when_no_spec_doc(monkeypatch):
-    """FC 轨：script_analyze 成功且无规格文档 → 注入规格收集向导"""
-    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
+    """FC 轨：script_analyze 成功且无规格文档 → 注入规格收集向导（只含 Skill 软维度）"""
+    monkeypatch.setattr(prompt_gates, "skill_spec_dimensions", lambda skill: ["视觉风格", "画幅"])
     runner = FCToolRunner(tool_manager=_StubToolManager())
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
+        lambda: {
+            "usedSkills": ["测试Skill"],
+            "interaction": {"spec_soft_candidates": {
+                "视觉风格": ["写实", "赛博朋克"],
+                "画幅": ["16:9", "2.35:1"],
+            }},
+        }
+    ))
 
     class _AnalyzeToolManager:
         async def invoke_tool(self, name, args):
@@ -313,8 +337,9 @@ def test_fc_collect_gate_fires_when_no_spec_doc(monkeypatch):
     applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     assert confirmation == prompt_gates.SPEC_COLLECT_PAUSED_MSG
-    labels = [o["label"] for o in conf_opts]
-    assert any(l.startswith("图片分辨率：") for l in labels)
+    groups = {o.get("group") for o in conf_opts}
+    assert groups == {"视觉风格", "画幅"}
+    assert not any(g in ("图片分辨率", "视频分辨率", "分镜最大时长") for g in groups)
 
 
 # ---------- 6666：渠道选择落盘 + spec_collected 防重复向导 ----------

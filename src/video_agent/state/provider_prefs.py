@@ -1,12 +1,13 @@
-"""制片规格偏好解析（规格文档 → 生成渠道/分辨率/时长）。
+"""制作参数单一事实源（6666 二轮：顶部「全局设置」→ 渠道/分辨率/时长）。
 
-规格文档（Final_Video_Spec.md 等）是用户确认后落盘的结构化键值清单，
-本模块是「规格偏好」的单一事实源：执行器与 provider_config 都从这里取
-渠道/分辨率/分镜最大时长，避免各处自行解析产生两套说辞。
+出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长由顶部「全局设置」
+唯一提供，规格文档只承载 Skill 声明的创作性软维度；本模块是这些硬参数的
+单一事实源：执行器与 provider_config 都从这里取，避免各处自行解析。
 """
 import re
 from typing import Any, Dict, Optional, Tuple
 
+from src.video_agent.config import settings
 from src.video_agent.web.provider_config import spec_media_preference
 
 # 规格文档中「未确认占位」标记（9999 事故：三项参数标着「待确认」就放行）。
@@ -19,82 +20,45 @@ def resolve_spec_media_preference(
     providers: list,
     kind: str = "image",
 ) -> Tuple[str, str]:
-    """解析规格文档声明的生成渠道 (provider_id, model)。
+    """解析生成渠道 (provider_id, model)——唯一来源为顶部「全局设置」。
 
-    优先级：
-    1. 规格文档中的「图像生成/视频生成」偏好（spec_media_preference）；
-    2. 回退第一个可用的非 mock 供应商（按 kind 取 image_models / video_models）。
-    规格声明了渠道但对应供应商已禁用/不存在时，回退到可用供应商。
-    返回 (provider_id, model)，均无命中返回 ("", "")。
+    全局设置未配置，或指向的供应商已禁用/不存在时返回 ("", "")，
+    由调用方提示用户配置；绝不自动选第一个可用供应商（防串线）。
     """
     pid, model = spec_media_preference(raw_state, kind)
-    if pid:
-        for p in providers or []:
-            if str(p.get("id") or "") == pid and p.get("enabled", True):
-                if not model:
-                    models = _models_of(p, kind)
-                    model = models[0] if models else ""
-                return pid, model
+    if not pid:
+        return "", ""
     for p in providers or []:
-        if not p.get("enabled", True):
-            continue
-        if (p.get("protocol") or "") == "mock":
-            continue
-        models = _models_of(p, kind)
-        if models:
-            return str(p.get("id") or ""), models[0]
+        if str(p.get("id") or "") == pid and p.get("enabled", True):
+            if not model:
+                models = _models_of(p, kind)
+                model = models[0] if models else ""
+            return pid, model
     return "", ""
 
 
 def resolve_spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
-    """从规格文档解析制作参数。
+    """制作参数单一事实源（6666 二轮：顶部「全局设置」，不再扫描规格文档）。
 
-    规格文档为精简键值清单（每行「键：值」），本函数只取执行器/生成管线
-    关心的三个键：
+    返回执行器/生成管线关心的三个键：
     - image_resolution：图片分辨率（如 1K/2K/4K）
     - video_resolution：视频分辨率（如 480p/720p/1080p）
     - shot_max_duration：分镜最大时长（秒，解析「N 秒/Ns」）
-    未命中返回空 dict（调用方按 Skill/系统默认兜底）。
+    规格文档不再承载这些硬参数，旧文档残留行也不参与决策。
     """
-    for doc in raw_state.get("documents") or []:
-        if not isinstance(doc, dict):
-            continue
-        if not str(doc.get("content") or "").strip():
-            continue
-        from src.video_agent.core.prompt_gates import is_spec_doc_name
-
-        if not is_spec_doc_name(str(doc.get("name") or "")):
-            continue
-        params = _parse_spec_params(str(doc.get("content") or ""))
-        if params:
-            return params
-    return {}
+    return {
+        "image_resolution": settings.default_image_resolution,
+        "video_resolution": settings.default_video_resolution,
+        "shot_max_duration": settings.max_shot_duration,
+    }
 
 
 def extract_production_params(content: str) -> Dict[str, Any]:
-    """从规格文档正文（键值清单）解析制作参数；含「待确认」标记的行跳过。
+    """制作参数单一事实源（6666 二轮：全局设置；content 仅保留签名兼容）。
 
-    与 resolve_spec_production_params 同源解析，供纯文本场景直接调用。
-    返回键：image_resolution / video_resolution / shot_max_duration。
+    旧版本按规格文档正文解析，现统一改为全局设置，避免两套说辞。
     """
-    defaults: Dict[str, Any] = {
-        "image_resolution": "",
-        "video_resolution": "",
-        "shot_max_duration": None,
-    }
-    params = _parse_spec_params(str(content or ""))
-    if any(k in str(content or "") for k in SPEC_PARAM_UNCONFIRMED_MARKERS):
-        # 含待确认标记的行不采信：逐行重扫，跳过标记行
-        confirmed: Dict[str, Any] = {}
-        for line in str(content or "").splitlines():
-            if any(k in line for k in SPEC_PARAM_UNCONFIRMED_MARKERS):
-                continue
-            line_params = _parse_spec_params(line)
-            confirmed.update(line_params)
-        defaults.update(confirmed)
-        return defaults
-    defaults.update(params)
-    return defaults
+    return resolve_spec_production_params({})
 
 
 _DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:秒|s)", re.I)

@@ -400,8 +400,7 @@ class _StubToolManager:
 
 def test_fc_spec_doc_written_injects_system_pause(monkeypatch):
     """写入规格文档且模型未自发暂停：系统注入规格审阅暂停卡（5555 事故兜底）。
-    9999 事故升级：无状态可读写（规格正文拿不到）时三项制作参数视为未选定，
-    暂停卡升级为候选项向导。"""
+    6666 二轮：硬参数由全局设置提供，规格审阅卡不再升级为候选项向导。"""
     import asyncio
     from src.video_agent.skill_runtime import registry
 
@@ -418,7 +417,7 @@ def test_fc_spec_doc_written_injects_system_pause(monkeypatch):
         runner.execute(response, injected_skill="任意 Skill"))
     assert applied == 1
     assert docs_written == ["制片规格.md"]
-    assert "尚待您选定" in confirmation
+    assert confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG
 
 
 def test_fc_spec_doc_written_keeps_model_pause(monkeypatch):
@@ -587,21 +586,27 @@ def test_extract_media_preference_antigravity_with_typo():
     assert pid == "gemini-cli" and model == "auto"
 
 
-def test_spec_media_preference_scans_spec_doc_only():
-    """仅扫描规格文档；非规格文档中的偏好不生效"""
+def test_spec_media_preference_global_settings_sole_source(set_global_setting):
+    """6666 二轮：生成渠道唯一来源为顶部全局设置，规格文档不再参与。"""
     from src.video_agent.web.provider_config import spec_media_preference
+
+    set_global_setting("default_image_provider_id", "gemini-cli")
+    set_global_setting("default_image_model", "auto")
     state = {"documents": [
         {"name": "随想笔记.md", "content": "- 制作偏好: 图像生成 Grsai gpt-image-2"},
         {"name": "制片规格.md", "content": _SPEC_PREF_DOC},
     ]}
     pid, model = spec_media_preference(state, "image")
     assert pid == "gemini-cli" and model == "auto"
-    assert spec_media_preference({"documents": []}, "image") == ("", "")
+    assert spec_media_preference({"documents": []}, "image") == ("gemini-cli", "auto")
 
 
-def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch):
-    """image_generate 注入：规格偏好优先于中间面板选中草稿的供应商"""
+def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch, set_global_setting):
+    """image_generate 注入：全局设置渠道优先于中间面板选中草稿的供应商"""
     import asyncio
+
+    set_global_setting("default_image_provider_id", "gemini-cli")
+    set_global_setting("default_image_model", "auto")
     tm = _CaptureToolManager()
     runner = FCToolRunner(tool_manager=tm)
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
@@ -616,13 +621,15 @@ def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch):
     assert args.get("provider_id") == "gemini-cli" and args.get("model") == "auto"
 
 
-async def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch):
-    """草稿被前端回填 Grsai，但规格设定 Antigravity CLI → 实际生图走规格"""
+async def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch, set_global_setting):
+    """草稿被前端回填 Grsai，但全局设置设定 Antigravity CLI → 实际生图走全局设置"""
     import asyncio
     from src.video_agent.web import generation as gen_mod
     from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
 
     monkeypatch.setattr(StateManager, "_instance", svc)
+    set_global_setting("default_image_provider_id", "gemini-cli")
+    set_global_setting("default_image_model", "auto")
     svc.state_dict["shots"] = []
     svc.state_dict["documents"] = [
         {"name": "制片规格.md", "content": _SPEC_PREF_DOC}]
@@ -692,12 +699,14 @@ def test_honest_pause_kept_when_generation_failed(monkeypatch):
 
 # ---------- 新建草稿按规格偏好补印供应商（防前端默认回填污染） ----------
 
-def test_fc_add_draft_stamps_spec_preference(svc, monkeypatch):
-    """FC 轨新增草稿：规格设定 Antigravity CLI → 草稿自动带上 gemini-cli/auto"""
+def test_fc_add_draft_stamps_spec_preference(svc, monkeypatch, set_global_setting):
+    """FC 轨新增草稿：全局设置设定 Antigravity CLI → 草稿自动带上 gemini-cli/auto"""
     import asyncio
     from src.video_agent.tools.storyboard_tools import AddDraftInput, StoryboardAddDraftTool
 
     monkeypatch.setattr(StateManager, "_instance", svc)
+    set_global_setting("default_image_provider_id", "gemini-cli")
+    set_global_setting("default_image_model", "auto")
     svc.state_dict["documents"] = [
         {"name": "制片规格.md", "content": _SPEC_PREF_DOC}]
     svc.state_dict["keyElements"] = [{"id": "g1", "title": "G", "drafts": []}]
@@ -708,8 +717,10 @@ def test_fc_add_draft_stamps_spec_preference(svc, monkeypatch):
     assert d["providerId"] == "gemini-cli" and d["model"] == "auto"
 
 
-def test_text_track_add_draft_stamps_spec_preference(svc):
-    """文本轨 add_draft 同样补印；草稿自带 providerId 时不覆盖"""
+def test_text_track_add_draft_stamps_spec_preference(svc, monkeypatch, set_global_setting):
+    """文本轨 add_draft 同样补印（来源为全局设置）；草稿自带 providerId 时不覆盖"""
+    set_global_setting("default_image_provider_id", "gemini-cli")
+    set_global_setting("default_image_model", "auto")
     ex = StudioActionExecutor(svc, gate_enabled=False)
     svc.state_dict["documents"] = [
         {"name": "制片规格.md", "content": _SPEC_PREF_DOC}]

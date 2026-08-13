@@ -302,24 +302,15 @@ def extract_media_preference(text: str, kind: str = "image") -> Tuple[str, str]:
 
 
 def spec_media_preference(raw_state: Dict[str, Any], kind: str = "image") -> Tuple[str, str]:
-    """扫描项目状态中的规格文档（documents），解析出生成偏好 (provider_id, model)。
+    """生成渠道单一事实源（6666 二轮：顶部「全局设置」，不再扫描规格文档）。
 
-    优先级：规格文档是用户意志的结构化落盘，高于草稿自动回填的默认供应商；
-    多个规格文档取首个命中；无命中返回空串。
+    出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长由全局设置唯一
+    提供，规格文档不再承载这些硬参数；旧规格文档里的残留行也不参与决策。
+    未配置返回 ("", "")，调用方提示用户在顶部「全局设置」配置。
     """
-    try:
-        from src.video_agent.core import prompt_gates
-    except Exception:
-        return "", ""
-    for doc in (raw_state.get("documents") or []):
-        if not isinstance(doc, dict):
-            continue
-        if not prompt_gates.is_spec_doc_name(str(doc.get("name") or "")):
-            continue
-        pid, model = extract_media_preference(str(doc.get("content") or ""), kind)
-        if pid:
-            return pid, model
-    return "", ""
+    if kind == "video":
+        return str(settings.default_video_provider_id or ""), str(settings.default_video_model or "")
+    return str(settings.default_image_provider_id or ""), str(settings.default_image_model or "")
 
 
 async def first_available_image_provider_async() -> Tuple[str, str]:
@@ -328,10 +319,10 @@ async def first_available_image_provider_async() -> Tuple[str, str]:
 
 
 def spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
-    """从规格文档解析制作参数（图片分辨率/视频分辨率/分镜最大时长）。
+    """制作参数单一事实源（6666 二轮：顶部「全局设置」，不再扫描规格文档）。
 
-    规格交互中用户选定的结构化落盘；agent 执行生图/出视频/拆分镜时
-    据此主动填入对应参数栏（7777 二轮）。缺失项为空/None。
+    agent 执行生图/出视频/拆分镜时据此主动填入对应参数栏（7777 二轮）；
+    规格文档不再承载这些硬参数，旧文档残留行也不参与决策。
     """
     from src.video_agent.state.provider_prefs import resolve_spec_production_params
 

@@ -245,32 +245,43 @@ _SPEC_TEXT = (
 
 
 class TestSpecProductionParams:
-    """规格文档键值行 → 制作参数解析"""
+    """制作参数唯一来源：顶部全局设置（6666 二轮，规格文档不再参与）"""
 
-    def test_parse_key_value_lines(self):
+    def test_global_settings_sole_source(self, set_global_setting):
         from src.video_agent.state.provider_prefs import extract_production_params
 
+        set_global_setting("default_image_resolution", "2K")
+        set_global_setting("default_video_resolution", "720p")
+        set_global_setting("max_shot_duration", 12)
         p = extract_production_params(_SPEC_TEXT)
-        assert p["image_resolution"] == "2K"
-        assert p["video_resolution"] == "720p"
-        assert p["shot_max_duration"] == 12
+        assert p == {
+            "image_resolution": "2K",
+            "video_resolution": "720p",
+            "shot_max_duration": 12,
+        }
 
-    def test_alias_keys(self):
+    def test_legacy_spec_rows_ignored(self, set_global_setting):
         from src.video_agent.state.provider_prefs import extract_production_params
 
+        set_global_setting("default_image_resolution", "4K")
+        set_global_setting("max_shot_duration", 8)
         p = extract_production_params("- 图像分辨率：4K\n- 单镜头最大时长：8 秒\n")
         assert p["image_resolution"] == "4K"
         assert p["shot_max_duration"] == 8
 
-    def test_missing_returns_empty(self):
+    def test_unconfigured_uses_global_defaults(self, set_global_setting):
         from src.video_agent.state.provider_prefs import extract_production_params
 
+        set_global_setting("default_image_resolution", "")
+        set_global_setting("default_video_resolution", "")
+        set_global_setting("max_shot_duration", 0)
         p = extract_production_params("- 视频标题：无参数\n")
-        assert p == {"image_resolution": "", "video_resolution": "", "shot_max_duration": None}
+        assert p == {"image_resolution": "", "video_resolution": "", "shot_max_duration": 0}
 
-    def test_resolve_from_state_spec_doc(self):
+    def test_resolve_from_state_uses_global_settings(self, set_global_setting):
         from src.video_agent.state.provider_prefs import resolve_spec_production_params
 
+        set_global_setting("max_shot_duration", 12)
         state = {"documents": [{"name": "制片规格.md", "content": _SPEC_TEXT}]}
         p = resolve_spec_production_params(state)
         assert p["shot_max_duration"] == 12
@@ -306,16 +317,28 @@ class TestNewWizardDimensions:
 class TestProductionParamNote:
     """提示词草案执行器：制作参数注入（推荐模型/分辨率/时长上限）"""
 
-    def test_note_contains_duration_cap(self):
+    def test_note_contains_duration_cap(self, set_global_setting):
         from src.video_agent.skill_runtime.executors import _production_param_note
 
+        set_global_setting("max_shot_duration", 12)
+        set_global_setting("default_image_provider_id", "img-prov")
+        set_global_setting("default_image_model", "img-model")
+        set_global_setting("default_video_provider_id", "vid-prov")
+        set_global_setting("default_video_model", "vid-model")
+        set_global_setting("default_image_resolution", "2K")
+        set_global_setting("default_video_resolution", "720p")
         state = {"documents": [{"name": "制片规格.md", "content": _SPEC_TEXT}]}
         note = _production_param_note(state, has_ke=False, has_shots=True)
         assert "12 秒" in note
 
-    def test_note_empty_without_params(self):
+    def test_note_empty_without_params(self, set_global_setting):
         from src.video_agent.skill_runtime.executors import _production_param_note
 
+        set_global_setting("default_image_provider_id", "")
+        set_global_setting("default_video_provider_id", "")
+        set_global_setting("default_image_resolution", "")
+        set_global_setting("default_video_resolution", "")
+        set_global_setting("max_shot_duration", 0)
         assert _production_param_note({"documents": []}, True, True) == ""
 
 

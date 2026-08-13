@@ -321,25 +321,25 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
         return ""
     used = state.get("usedSkills") or []
     skill_name = str(used[-1] or "") if used else ""
-    # 硬五项 + Skill 软维度 + 渠道选择（向导逐行回传格式「键：值」）
-    selections = prompt_gates.parse_hard_selections(text)
+    # Skill 软维度（向导逐行回传格式「键：值」；出图/出视频渠道、图片分辨率、
+    # 视频分辨率、分镜最大时长由顶部「全局设置」唯一提供，规格文档不再承载）
     dims = prompt_gates.skill_spec_dimensions(skill_name)
-    selections.update(prompt_gates.parse_dim_selections(text, dims))
-    m_img = re.search(r"出图渠道\s*[:：]\s*([^；;\n]+)", text)
-    if m_img:
-        selections["图像生成"] = m_img.group(1).strip()[:60]
-    m_vid = re.search(r"出视频渠道\s*[:：]\s*([^；;\n]+)", text)
-    if m_vid:
-        selections["视频生成"] = m_vid.group(1).strip()[:60]
-    if not selections:
+    selections = prompt_gates.parse_dim_selections(text, dims)
+    # 用户可能整页点过占位卡（「维度：（待定）」）后发送：也算回应了向导，
+    # 不能因此不落盘（否则 document_write 被拒 → 再次接管 → 死循环）
+    responded = bool(selections) or any(
+        re.search(re.escape(dim) + r"\s*[:：]", text) for dim in dims
+    )
+    if not responded:
         return ""
-    # 软维度未选时用模型出题的候选首项兜底（不拦人，4444）
+    # 未选维度用模型出题的候选首项兜底；无候选时以「（待定）」占位，
+    # 保证规格文档维度与 Skill 声明完全一致（模型不能增删维度）
     model_filled: Dict[str, str] = {}
     cands = ((state.get("interaction") or {}).get("spec_soft_candidates") or {})
     for dim in dims:
         vals = cands.get(dim) or []
-        if vals:
-            model_filled[dim] = str(vals[0])
+        if dim not in selections:
+            model_filled[dim] = str(vals[0]) if vals else prompt_gates._PLACEHOLDER_DIM_VALUE
     content = prompt_gates.assemble_spec_doc(
         skill_name, selections, model_filled=model_filled,
     )

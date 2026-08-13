@@ -440,8 +440,8 @@ def test_feedback_template_no_contradiction():
 # ---------- B8 豪华版：软参数模型出题 + 点选 + 机械回写 ----------
 
 def test_collect_wizard_renders_skill_dim_candidates(monkeypatch):
-    """4444：收集向导软维度来自 Skill 客观提取；候选由模型出题；
-    不足两个候选的维度不渲染；硬参数组仍在。"""
+    """4444 + 6666 二轮：收集向导软维度来自 Skill 客观提取；候选由模型出题；
+    候选不足的维度仍渲染占位卡；硬参数（渠道/分辨率/分镜最大时长）不再出现。"""
     monkeypatch.setattr(
         prompt_gates, "skill_spec_dimensions",
         lambda skill: ["视觉风格", "画幅"],
@@ -457,15 +457,18 @@ def test_collect_wizard_renders_skill_dim_candidates(monkeypatch):
     style_labels = [o["label"] for o in opts if o["group"] == "视觉风格"]
     assert "视觉风格：硬核写实科幻" in style_labels
     assert "视觉风格：赛博朋克" in style_labels
-    assert not any(o["group"] == "画幅" for o in opts)
+    # 候选不足的维度仍渲染（占位卡 + 自定义输入），不允许悄悄隐藏
+    assert any(o["group"] == "画幅" for o in opts)
     # 平台不预设维度：未声明的维度（旧六维）不出现
     assert not any(o["group"] == "叙事驱动" for o in opts)
-    # 硬参数与渠道维度仍在
-    assert any(o["group"] == "图片分辨率" for o in opts)
+    # 硬参数与渠道维度不再出现（6666 二轮：由顶部「全局设置」唯一提供）
+    assert not any(o["group"] in ("图片分辨率", "视频分辨率", "分镜最大时长") for o in opts)
+    assert not any("渠道" in str(o.get("group") or "") for o in opts)
 
 
 def test_parse_dim_selections_and_assemble_spec_doc(monkeypatch):
-    """4444 方案乙：选择解析 + 系统拼装键值清单（选定优先、模型填值补空）。"""
+    """4444 方案乙 + 6666 二轮：选择解析 + 系统拼装键值清单；
+    规格文档只含 Skill 软维度，不写渠道/分辨率/分镜最大时长。"""
     monkeypatch.setattr(
         prompt_gates, "skill_spec_dimensions",
         lambda skill: ["画幅比例", "目标时长", "影像风格基调", "输出语言"],
@@ -482,8 +485,10 @@ def test_parse_dim_selections_and_assemble_spec_doc(monkeypatch):
     assert "- 目标时长：约 90 秒" in doc      # 未选维度用模型填值
     assert "- 影像风格基调：暗调高对比" in doc
     assert "- 输出语言：中文原声" in doc
-    assert "- 图片分辨率：2K" in doc          # 硬五项追加
-    assert "- 图像生成：Antigravity CLI auto" in doc
+    # 硬参数不再写入规格文档（全局设置唯一提供）
+    assert "- 图片分辨率：2K" not in doc
+    assert "- 分镜最大时长：15 秒" not in doc
+    assert "- 图像生成：Antigravity CLI auto" not in doc
     assert "剧本分析" not in doc and "##" not in doc  # 纯键值清单，无杂项
 
 

@@ -253,9 +253,14 @@ _SPEC_TEXT_2222 = (
 )
 
 
-def test_2222_spec_override_clauses_by_kind():
-    """规格已定参数按 kinds 精确注入覆盖句；kinds 之外的参数不串味。"""
-    state = {"documents": [{"name": "制片规格.md", "content": _SPEC_TEXT_2222}]}
+def test_2222_spec_override_clauses_by_kind(set_global_setting):
+    """6666 二轮：覆盖句来自顶部全局设置，按 kinds 精确注入；kinds 之外不串味。"""
+    set_global_setting("default_image_resolution", "2K")
+    set_global_setting("default_video_resolution", "720p")
+    set_global_setting("max_shot_duration", 12)
+    set_global_setting("default_image_provider_id", "")
+    set_global_setting("default_video_provider_id", "")
+    state = {"documents": []}
     shots = ex_mod._spec_override_clauses(
         state, ("duration", "video_resolution", "video_channel"))
     assert "12 秒" in shots and "720p" in shots
@@ -266,8 +271,13 @@ def test_2222_spec_override_clauses_by_kind():
     assert "分镜最大时长" not in ke and "视频分辨率" not in ke
 
 
-def test_2222_spec_override_empty_when_unset():
-    """规格未定（行缺失）→ 不注入，Skill 章节默认值照常兜底。"""
+def test_2222_spec_override_empty_when_unset(set_global_setting):
+    """全局设置未配置 → 不注入，Skill 章节默认值照常兜底。"""
+    set_global_setting("default_image_resolution", "")
+    set_global_setting("default_video_resolution", "")
+    set_global_setting("max_shot_duration", 0)
+    set_global_setting("default_image_provider_id", "")
+    set_global_setting("default_video_provider_id", "")
     assert ex_mod._spec_override_clauses({"documents": []},
                                          ("duration", "image_resolution")) == ""
 

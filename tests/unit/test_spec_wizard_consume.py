@@ -26,19 +26,26 @@ def skills_dir(tmp_path, monkeypatch):
     return d
 
 
-def test_selections_write_spec_doc(svc, skills_dir):
+def test_selections_write_spec_doc(svc, skills_dir, monkeypatch):
+    """6666 二轮：向导只消费 Skill 软维度，规格文档不再写入硬参数。"""
+    monkeypatch.setattr(
+        prompt_gates, "skill_spec_dimensions",
+        lambda skill: ["视频标题", "视觉风格"],
+    )
     svc.state_dict["usedSkills"] = ["向导技能"]
     note = _consume_spec_wizard(
         svc,
-        "图片分辨率：2K 视频分辨率：720p 分镜最大时长：10 秒",
+        "视觉风格：赛博朋克",
     )
     assert note and "Final_Video_Spec.md" in note
     docs = svc.state_dict.get("documents") or []
     assert any(prompt_gates.is_spec_doc_name(d.get("name") or "") for d in docs)
     content = next(d["content"] for d in docs if d.get("name") == "Final_Video_Spec.md")
-    assert "图片分辨率：2K" in content
-    assert "视频分辨率：720p" in content
-    assert "分镜最大时长：10 秒" in content
+    assert "- 视觉风格：赛博朋克" in content
+    assert "- 视频标题：" + prompt_gates._PLACEHOLDER_DIM_VALUE in content  # 未选维度占位
+    assert "图片分辨率" not in content
+    assert "视频分辨率" not in content
+    assert "分镜最大时长" not in content
     assert svc.state_dict["interaction"].get("spec_collected") is True
 
 

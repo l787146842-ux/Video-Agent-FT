@@ -81,31 +81,24 @@ def test_unconfirmed_params_missing_lines():
     }
 
 
-def test_extract_production_params_skips_unconfirmed_lines():
+def test_extract_production_params_global_settings_sole_source(set_global_setting):
+    """6666 二轮：制作参数唯一来源为顶部全局设置，规格文档行不再参与决策。"""
+    set_global_setting("default_image_resolution", "4K")
+    set_global_setting("default_video_resolution", "480p")
+    set_global_setting("max_shot_duration", 5)
     params = extract_production_params(_SPEC_UNCONFIRMED)
-    assert params["image_resolution"] == ""
-    assert params["video_resolution"] == ""
-    assert params["shot_max_duration"] is None
-    confirmed = extract_production_params(_SPEC_CONFIRMED)
-    assert confirmed["image_resolution"] == "2K"
-    assert confirmed["video_resolution"] == "1080p"
-    assert confirmed["shot_max_duration"] == 8
+    assert params == {
+        "image_resolution": "4K",
+        "video_resolution": "480p",
+        "shot_max_duration": 5,
+    }
 
 
-def test_build_spec_param_options_wizard_groups(monkeypatch):
-    # 渠道组由真实 API 配置驱动，单测钉死为空保证确定性（6666 后渠道组恒定 included）
+def test_build_spec_param_options_no_hard_params_without_skill(monkeypatch):
+    """6666 二轮：无 Skill 软维度时向导为空，硬参数组不再兜底出现。"""
     monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
     msg, opts = prompt_gates.build_spec_param_options(_SPEC_UNCONFIRMED)
-    assert msg and opts
-    groups = {o["group"] for o in opts}
-    # 4444：软维度来自 Skill 客观提取（无 state/skill 时不渲染），
-    # 无状态调用只出硬参数三组
-    assert groups == {"图片分辨率", "视频分辨率", "分镜最大时长"}
-    # 向导渲染门槛：≥5 选项
-    assert len(opts) >= 5
-    # Seedance 出视频模型 → 分镜最大时长推荐 12 秒
-    dur_labels = [o["label"] for o in opts if o["group"] == "分镜最大时长"]
-    assert any("12 秒（推荐）" in l for l in dur_labels)
+    assert msg == "" and opts == []
 
 
 def test_build_spec_param_options_empty_when_confirmed(monkeypatch):
@@ -113,16 +106,13 @@ def test_build_spec_param_options_empty_when_confirmed(monkeypatch):
     assert prompt_gates.build_spec_param_options(_SPEC_CONFIRMED) == ("", [])
 
 
-def test_spec_pause_card_upgrades_when_unconfirmed(monkeypatch):
+def test_spec_pause_card_uses_review_card_when_no_skill_dims(monkeypatch):
+    """6666 二轮：规格文档硬参数行不再触发候选项向导（全局设置唯一来源）。"""
     monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
     state = {"documents": [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}]}
     msg, opts = prompt_gates.spec_pause_card(state)
-    assert opts and "尚待您选定" in msg
-    # 全部定稿时回退常规审阅暂停卡
-    state2 = {"documents": [{"name": "制片规格.md", "content": _SPEC_CONFIRMED}]}
-    msg2, opts2 = prompt_gates.spec_pause_card(state2)
-    assert msg2 == prompt_gates.SPEC_DOC_PAUSED_MSG
-    assert [o["label"] for o in opts2] == [o["label"] for o in prompt_gates.SPEC_DOC_OPTIONS]
+    assert msg == prompt_gates.SPEC_DOC_PAUSED_MSG
+    assert [o["label"] for o in opts] == [o["label"] for o in prompt_gates.SPEC_DOC_OPTIONS]
 
 
 def test_apply_spec_param_selections_wizard_reply(monkeypatch):
@@ -134,9 +124,11 @@ def test_apply_spec_param_selections_wizard_reply(monkeypatch):
     assert "- 视频分辨率：720p" in new_content
     assert "- 分镜最大时长：12 秒" in new_content
     assert "待确认" not in new_content
-    # 定稿后可被正常解析
+    # 制作参数唯一来源为全局设置（extract 不再解析规格文档行）
+    from src.video_agent.config import settings
+
     params = extract_production_params(new_content)
-    assert params["shot_max_duration"] == 12
+    assert params["shot_max_duration"] == settings.max_shot_duration
 
 
 def test_apply_spec_param_selections_confirm_intent_keeps_displayed_values():
@@ -177,8 +169,9 @@ def _write_spec(svc, content):
     ]
 
 
-def test_add_draft_stamps_image_resolution_from_spec(svc, executor):
-    _write_spec(svc, _SPEC_CONFIRMED)
+def test_add_draft_stamps_image_resolution_from_global_settings(svc, executor, set_global_setting):
+    set_global_setting("default_image_resolution", "4K")
+    _write_spec(svc, _SPEC_CONFIRMED)  # 规格文档内容不再参与决策
     executor.execute([{
         "action": "add_group",
         "group_type": "keyElement",
@@ -186,10 +179,11 @@ def test_add_draft_stamps_image_resolution_from_spec(svc, executor):
         "draft": {"label": "概念图", "prompt": "角色概念图提示词……"},
     }])
     draft = svc.state_dict["keyElements"][-1]["drafts"][-1]
-    assert draft.get("imageResolution") == "2K"
+    assert draft.get("imageResolution") == "4K"
 
 
-def test_add_shot_draft_stamps_video_resolution_from_spec(svc, executor):
+def test_add_shot_draft_stamps_video_resolution_from_global_settings(svc, executor, set_global_setting):
+    set_global_setting("default_video_resolution", "720p")
     _write_spec(svc, _SPEC_CONFIRMED)
     executor.execute([{
         "action": "add_group",
@@ -198,10 +192,11 @@ def test_add_shot_draft_stamps_video_resolution_from_spec(svc, executor):
         "draft": {"label": "分镜视频", "prompt": "镜头提示词…… no subtitles no music"},
     }])
     draft = svc.state_dict["shots"][-1]["drafts"][-1]
-    assert draft.get("resolution") == "1080p"
+    assert draft.get("resolution") == "720p"
 
 
-def test_update_draft_stamps_resolution_from_spec(svc, executor):
+def test_update_draft_stamps_resolution_from_global_settings(svc, executor, set_global_setting):
+    set_global_setting("default_image_resolution", "4K")
     _write_spec(svc, _SPEC_CONFIRMED)
     executor.execute([{
         "action": "add_group",
@@ -215,13 +210,13 @@ def test_update_draft_stamps_resolution_from_spec(svc, executor):
         "draft": {"label": "概念图", "prompt": ""},
     }])
     draft = group["drafts"][-1]
-    assert draft.get("imageResolution") in ("", None, "2K")
+    assert draft.get("imageResolution") in ("", None, "4K")
     executor.execute([{
         "action": "update_draft",
         "draft_id": draft["id"],
         "patch": {"prompt": "补充的提示词正文……"},
     }])
-    assert draft.get("imageResolution") == "2K"
+    assert draft.get("imageResolution") == "4K"
 
 
 def test_draft_explicit_resolution_not_overridden(svc, executor):
