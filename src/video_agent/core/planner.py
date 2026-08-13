@@ -43,6 +43,7 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_REASONING_DELTA, SSE_STATUS
 from src.video_agent.core.stream_suppressor import StreamActionSuppressor  # re-export 兼容旧导入
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 from src.video_agent.workflows.engine import WorkflowEngine
 
 
@@ -238,6 +239,11 @@ class Planner:
         委托给 run_agent_loop 统一循环骨架，内部通过 llm_call 包装器处理双模式（FC / 文本解析）。
         stream_hook: 可选 async callable(text)，流式模式下每段 LLM 增量文本回调。
         """
+        # 当前 Skill 归属（7777 事故）：请求未携带 Skill 时回退项目 usedSkills 末位，
+        # 保证后续轮次仍绑定同一执行器；单一实现见 registry.fallback_skill_from_state。
+        if not context.skill_name:
+            context.skill_name = fallback_skill_from_state(self.state_manager.state_dict)
+
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
         self._excluded_tools = self._compute_excluded_tools(context)
         self._system_degrader = self._make_system_degrader(context)

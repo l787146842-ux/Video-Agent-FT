@@ -271,6 +271,7 @@ export interface VideoGenRequest {
   resolution?: string;
   aspect_ratio?: string;
   images?: Record<string, unknown>[];
+  videos?: Record<string, unknown>[];
   audios?: Record<string, unknown>[];
   enhance_prompt?: boolean;
   multimodal?: boolean;

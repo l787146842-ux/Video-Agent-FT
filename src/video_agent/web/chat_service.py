@@ -125,23 +125,28 @@ def truncate_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-def _resolve_skill_name_for_injection(skill_name: str, skill_slug: str) -> str:
+def _resolve_skill_name_for_injection(
+    skill_name: str, skill_slug: str, raw_state: Optional[Dict[str, Any]] = None,
+) -> str:
     """Skill 全文硬注入的键名兜底：前端选中项（skill_name）优先；
     选中项为空但消息携带了 Skill 引用块（skill_slug）时，按 slug 解析出 Skill 名称，
-    保证「随消息发送过的 Skill 必定全文注入」，不依赖前端选中态与模型自觉 read_skill。
+    保证「随消息发送过的 Skill 必定全文注入」；两者皆空时回退项目 usedSkills 末位
+    （7777 事故：后续轮次不带 Skill 导致执行器「未注册」，见 registry.fallback_skill_from_state）。
     """
     if skill_name:
         return skill_name
-    if not skill_slug:
-        return ""
-    try:
-        from src.video_agent.web import skill_docs as sd
-        doc = sd.get_skill_doc(skill_slug)
-        if doc:
-            return str(doc.get("name") or skill_slug)
-    except Exception as e:
-        logger.warning(f"[ChatService] Skill slug({skill_slug}) 解析名称失败: {e}")
-    return skill_slug
+    if skill_slug:
+        try:
+            from src.video_agent.web import skill_docs as sd
+            doc = sd.get_skill_doc(skill_slug)
+            if doc:
+                return str(doc.get("name") or skill_slug)
+        except Exception as e:
+            logger.warning(f"[ChatService] Skill slug({skill_slug}) 解析名称失败: {e}")
+        return skill_slug
+    from src.video_agent.skill_runtime.registry import fallback_skill_from_state
+
+    return fallback_skill_from_state(raw_state)
 
 
 def _channel_supports_fc(provider_id: str) -> bool:
@@ -610,7 +615,9 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             degraded_state_builder=(
                 (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
             ),
-            skill_name=_resolve_skill_name_for_injection(body.skill_name or "", body.skill_slug or ""),
+            skill_name=_resolve_skill_name_for_injection(
+                body.skill_name or "", body.skill_slug or "", svc.state_dict,
+            ),
             use_studio_context=use_studio_context,
             asset_mode=body.asset_mode,
             image_generation_provider=image_provider,
@@ -845,7 +852,9 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         degraded_state_builder=(
             (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
         ),
-        skill_name=_resolve_skill_name_for_injection(body.skill_name or "", body.skill_slug or ""),
+        skill_name=_resolve_skill_name_for_injection(
+            body.skill_name or "", body.skill_slug or "", svc.state_dict,
+        ),
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
         image_generation_provider=image_provider2,
         image_generation_aspect_ratio=image_aspect_ratio2,

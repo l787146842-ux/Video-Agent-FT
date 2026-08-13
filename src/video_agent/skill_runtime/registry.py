@@ -5,7 +5,7 @@ Skill 文档（data/skills/*.md）仍是唯一数据源与下拉框数据源；
 执行器调用时据此只注入自己对应的章节。
 """
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -252,6 +252,19 @@ def spec_wizard_active(skill_name: str) -> bool:
     from src.video_agent.core.prompt_gates import text_mentions_spec_doc
 
     return text_mentions_spec_doc(entry.content)
+
+
+def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
+    """项目最近使用的 Skill 兜底（7777 事故）：请求未携带 Skill 名时，
+    回退 usedSkills 末位，保证后续轮次（继续/拆分分镜）仍绑定同一执行器。
+
+    这是「当前 Skill 归属」的单一实现：chat_service / planner / agent_loop
+    统一走这里，禁止各自再写一份 usedSkills 兜底（P1 单一事实源）。
+    """
+    if not isinstance(raw_state, dict):
+        return ""
+    used = raw_state.get("usedSkills") or []
+    return str(used[-1] or "") if used else ""
 
 
 def register_doc_hooks() -> None:

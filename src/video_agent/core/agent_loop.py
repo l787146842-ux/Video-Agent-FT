@@ -29,6 +29,7 @@ from src.video_agent.core.sse_events import (
     SSE_TOOL_STARTED,
 )
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 
 if TYPE_CHECKING:
     # 仅类型标注用：执行器实现依赖 web 层生成管线，运行时不做硬依赖
@@ -208,8 +209,8 @@ async def run_agent_loop(
 
     skill = str(getattr(executor, "skill_name", "") or "")
     if not skill:
-        used = (getattr(executor, "state", None) or {}).get("usedSkills") or []
-        skill = str(used[-1] or "") if used else ""
+        # 7777 事故：请求未携带 Skill 时回退项目 usedSkills 末位（单一实现）
+        skill = fallback_skill_from_state(getattr(executor, "state", None) or {})
     selected_skills = list((getattr(executor, "state", None) or {}).get("usedSkills") or [])
 
     # 链路追踪：记录本次对话执行过程
