@@ -157,6 +157,18 @@ def _resolve_skill_name_for_injection(
     return fallback_skill_from_state(raw_state)
 
 
+def _build_prelude_notes(resolved_skill: str) -> List[tuple]:
+    """前奏时间线（只登记真实发生的事件，8888 事故：不得用假操作冒充工具动作）。
+
+    只保留「加载 Skill 流程基线」——它对应 prompt_builder 每轮真实注入当前 Skill 的
+    <planner> 章节；「读取/存档上传文档」由 read_uploaded_doc 工具真实发生时记录，
+    前奏不冒充读取。"""
+    notes: List[tuple] = []
+    if resolved_skill:
+        notes.append(("system", f"加载 Skill「{resolved_skill}」流程规范进上下文"))
+    return notes
+
+
 def _channel_supports_fc(provider_id: str) -> bool:
     """判断供应商的聊天通道是否支持 Function Calling。
 
@@ -672,14 +684,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         resolved_skill = _resolve_skill_name_for_injection(
             body.skill_name or "", body.skill_slug or "", svc.state_dict, user_text,
         )
-        prelude_notes: List[tuple] = []
-        if resolved_skill:
-            prelude_notes.append(("system", f"加载 Skill「{resolved_skill}」流程规范进上下文"))
-        for _name in list(body.doc_blocks or []) + [
-            str(a.get("name") or "") for a in (body.attachments or []) if isinstance(a, dict)
-        ]:
-            if _name:
-                prelude_notes.append(("system", f"读取并存档上传文档《{_name}》"))
+        prelude_notes = _build_prelude_notes(resolved_skill)
         planner_ctx = PlannerContext(
             history=history,
             selected_draft_id=body.selected_draft_id,
@@ -927,14 +932,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     resolved_skill = _resolve_skill_name_for_injection(
         body.skill_name or "", body.skill_slug or "", svc.state_dict, user_text,
     )
-    prelude_notes: List[tuple] = []
-    if resolved_skill:
-        prelude_notes.append(("system", f"加载 Skill「{resolved_skill}」流程规范进上下文"))
-    for _name in list(body.doc_blocks or []) + [
-        str(a.get("name") or "") for a in (body.attachments or []) if isinstance(a, dict)
-    ]:
-        if _name:
-            prelude_notes.append(("system", f"读取并存档上传文档《{_name}》"))
+    prelude_notes = _build_prelude_notes(resolved_skill)
     planner_ctx = PlannerContext(
         history=history, selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
         state_builder=state_builder,

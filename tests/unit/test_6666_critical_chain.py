@@ -7,6 +7,7 @@ import json
 import pytest
 
 from src.video_agent.adapters.base_chat import ChatResponse
+from src.video_agent.core import prompt_gates
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.base import ToolResult
@@ -60,8 +61,18 @@ def test_6666_message_text_skill_match():
     assert _resolve_skill_name_for_injection("", "", {}, "请帮我跑 AI-短剧一站式生成") == "AI-短剧一站式生成"
 
 
-def test_6666_false_claim_overridden_when_critical_tools_fail(monkeypatch):
-    """script_analyze/document_write 失败但模型带确认声称完成 → 覆盖为诚实文案。"""
+def test_6666_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypatch):
+    """script_analyze/document_write(规格) 失败但模型带确认声称完成 →
+    8888 升级后由规格向导卡接管（不允许假完成文案）。"""
+    import asyncio
+
+    from src.video_agent.state.manager import StateManager
+
+    tmp_svc = StateManager(str(tmp_path / "ws"))
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: tmp_svc))
+    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
+    raw = {"documents": [], "usedSkills": ["AI-短剧一站式生成"], "interaction": {}}
+
     class _TM:
         async def invoke_tool(self, name, args):
             if name == "script_analyze":
@@ -73,7 +84,7 @@ def test_6666_false_claim_overridden_when_critical_tools_fail(monkeypatch):
             return ToolResult(success=True, data={})
 
     runner = FCToolRunner(tool_manager=_TM())
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: raw))
     response = ChatResponse(content="", tool_calls=[
         {"id": "c1", "type": "function", "function": {
             "name": "script_analyze", "arguments": "{}"}},
@@ -84,10 +95,10 @@ def test_6666_false_claim_overridden_when_critical_tools_fail(monkeypatch):
             "name": "workflow_pause",
             "arguments": json.dumps({"message": "剧本分析与全局参数设定已完成，请审阅"})}},
     ])
-    import asyncio
     _applied, confirmation, *_rest = asyncio.run(runner.execute(response, injected_skill="AI-短剧一站式生成"))
-    assert "关键步骤未实际完成" in confirmation
+    assert "尚待您选定" in confirmation
     assert "剧本分析与全局参数设定已完成" not in confirmation
+    assert raw["interaction"].get("pending_pause_kind") == "spec"
 
 
 @pytest.mark.asyncio

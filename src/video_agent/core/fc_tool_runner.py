@@ -566,8 +566,9 @@ class FCToolRunner:
         gen_failed_err = ""
         gen_succeeded = False
         # 关键执行器/文档写入成败跟踪（6666：script_analyze/document_write 失败仍声称完成）
-        key_tool_succeeded = False
         key_tool_failed: List[str] = []
+        # 规格写入被向导拒收（8888：拒收后必须接管为规格向导卡，模型不得跳过规格交互）
+        spec_write_rejected = False
         tracer = AgentTracer.get_instance()
         for ci, call in enumerate(response.tool_calls):
             func = call.get("function", {}) if isinstance(call, dict) else {}
@@ -685,8 +686,6 @@ class FCToolRunner:
                     gen_failed_err = str(result.error or "执行失败")
             if result.success:
                 applied += 1
-                if name in _CRITICAL_TOOL_NAMES:
-                    key_tool_succeeded = True
                 self._record_presented(name, args)
                 if name in ("storyboard_create_group", "storyboard_add_draft"):
                     structure_created = True
@@ -778,6 +777,10 @@ class FCToolRunner:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
                 if name in _CRITICAL_TOOL_NAMES:
                     key_tool_failed.append(name)
+                if name == "document_write" and prompt_gates.is_spec_doc_name(
+                    str(args.get("name") or args.get("key") or "")
+                ):
+                    spec_write_rejected = True
                 if on_event is not None:
                     await on_event({
                         "type": SSE_TOOL_FINISHED,
@@ -870,13 +873,27 @@ class FCToolRunner:
                 "label": "先调整提示词",
                 "description": "告诉我需要修改的草稿与修改意见",
             }]
-        # 6666 事故：关键执行器/文档写入全失败但模型仍带确认声称完成 → 覆盖为诚实文案
-        if confirmation and not key_tool_succeeded and key_tool_failed:
+        # 8888 事故：规格写入被向导拒收 → 系统接管为规格向导卡（与文本轨一致），
+        # 模型不得用「请求阶段确认」跳过规格交互，也不得声称已生成规格
+        if spec_write_rejected:
+            _spec_state = self._raw_state()
+            confirmation, confirmation_options = prompt_gates.spec_pause_card(_spec_state)
+            try:
+                inter = _spec_state.setdefault("interaction", {})
+                inter["pending_pause_kind"] = "spec"
+                StateManager.get_instance().save()
+            except Exception:
+                pass
+            logger.warning("[Planner] 规格写入被向导拒收，已接管为规格向导卡")
+
+        # 6666/8888 事故：关键执行器/文档写入存在失败且模型带确认声称完成 → 覆盖为诚实文案
+        # （部分成功、部分失败同样覆盖，堵住「script_analyze 成功就放行假规格文案」的盲区）
+        if confirmation and key_tool_failed and not spec_write_rejected:
             _failed = "、".join(dict.fromkeys(key_tool_failed))[:160]
             logger.warning(f"[Planner] 关键步骤防虚报：{_failed} 失败但模型声称完成，已覆盖")
             confirmation = (
-                f"关键步骤未实际完成：{_failed} 均执行失败，工作台状态未按预期更新；"
-                "请按系统提示重新执行，不要声称已完成。"
+                f"关键步骤未全部完成：{_failed} 执行失败，工作台状态未按预期更新；"
+                "请按系统提示重试，不要声称已完成。"
             )
             confirmation_options = [{
                 "label": "重试",

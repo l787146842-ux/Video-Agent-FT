@@ -83,7 +83,8 @@ class PlannerContext:
     degraded_state_builder: Optional[Callable[[], str]] = None
     # 本轮记忆检索命中明细（4.7：随 done payload 下发前端可视化）
     memory_hits: List[Dict[str, Any]] = field(default_factory=list)
-    # 前奏时间线（Q8/6666）：任务开始时的 system 动作（加载 Skill 流程 / 读取存档上传文档）
+    # 前奏时间线（Q8/6666/8888）：只登记真实发生的 system 动作（加载 Skill 流程基线），
+    # 读取/存档由对应工具真实发生时记录，前奏不得冒充工具操作
     prelude_notes: List[tuple] = field(default_factory=list)
 
 
