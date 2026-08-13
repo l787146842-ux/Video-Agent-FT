@@ -612,3 +612,30 @@
   .queued-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--accent-blue); border-top-color: transparent; animation: send-spin 0.9s linear infinite; flex-shrink: 0; }
 
 }
+
+/* ===== 恢复的对话栏组件样式（8/12 前终版；历史快照未覆盖，按设计令牌补齐） ===== */
+.confirm-select-row { display: flex; gap: 8px; align-items: center; }
+.confirm-select {
+  flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--bg-tertiary);
+  color: var(--text-main); font-size: 12px;
+}
+.confirm-select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.msg-warnings { margin: 6px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.msg-warning-line {
+  font-size: 11px; line-height: 1.5; color: var(--accent-amber);
+  background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 6px; padding: 5px 8px;
+}
+
+.msg-memory-hits { margin: 6px 0 0; font-size: 11px; color: var(--text-muted); }
+.msg-memory-hits summary { cursor: pointer; user-select: none; }
+.memory-hit-line { display: flex; gap: 6px; padding: 3px 0; line-height: 1.5; }
+.memory-hit-date { color: var(--text-dim); white-space: nowrap; }
+
+.skill-modal-manifest {
+  margin-top: 10px; border-top: 1px dashed var(--border-color);
+  padding-top: 8px; font-size: 11px; color: var(--text-muted);
+}
+.skill-modal-manifest summary { cursor: pointer; user-select: none; }

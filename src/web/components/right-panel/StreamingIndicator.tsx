@@ -5,12 +5,14 @@ import { t } from '@/lib/locale';
 
 /**
  * 流式状态指示器：头像 + 打字点动画 + 状态文本。
- * 流式期间（无正文输出时）常显：多步 FC 循环中工具执行、下一轮思考等
- * 静默阶段都靠它让用户感知进度（时间线默认折叠，不能作为唯一进度载体）。
+ * 时间线已有条目（深度思考/工具操作）时不再重复显示打字动画，
+ * 避免与 AgentTimeline 的运行态条目视觉冲突。
  */
 export function StreamingIndicator() {
+  const noTimelineYet = () =>
+    !chatState.streamingTools.length && !chatState.streamingReasoning;
   return (
-    <Show when={chatState.isStreaming && !chatState.streamingText}>
+    <Show when={chatState.isStreaming && !chatState.streamingText && noTimelineYet()}>
       <div class="chat-msg agent">
         <div class="chat-bubble streaming-bubble">
           <div class="streaming-indicator">

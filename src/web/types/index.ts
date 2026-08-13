@@ -149,6 +149,10 @@ export interface ChatMessage {
   actionLog?: string[];
   /** 确认卡片的候选选项（单选卡片，点击即把 label 作为回复发送） */
   confirmOptions?: Array<{ label: string; description?: string; group?: string }>;
+  /** 模型降级等警示行（常驻展示在 agent 气泡上，刷新后仍可见） */
+  warnings?: string[];
+  /** 本轮 Agent 参考的长期记忆命中（折叠展示） */
+  memoryHits?: Array<{ date?: string; content: string }>;
   /** 执行轨迹（每轮 step/耗时/操作数，「执行轨迹」折叠区展示） */
   trace?: AgentTrace;
 }

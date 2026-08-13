@@ -7,7 +7,7 @@ import { t } from '@/lib/locale';
 
 /**
  * Skill 导入弹窗
- * 支持粘贴 markdown 内容或上传 .md/.txt 文件，可选 AI 整理格式，保存后即时生效。
+ * 支持粘贴 markdown 内容或上传 .md/.txt 文件，保存后即时生效。
  */
 export function SkillImportModal(props: {
   onClose: () => void;
@@ -80,9 +80,11 @@ export function SkillImportModal(props: {
     }
     setSaving(true);
     try {
-      await saveSkillDoc(s, content());
+      const res = await saveSkillDoc(s, content());
       await refreshSkills();
       showToast(t('rp.skillImport.imported', { name: s }), 'success');
+      // 保存时 lint：注册断点前移到编辑时（执行器缺失/规则非法等显式告知）
+      (res?.lint?.warnings || []).forEach((w) => showToast(`⚠ ${w}`, 'warning'));
       props.onClose();
     } catch (err) {
       showToast(t('rp.skillDetail.saveFailed', { error: (err as Error).message }), 'error');

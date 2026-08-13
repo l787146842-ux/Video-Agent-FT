@@ -1,14 +1,16 @@
-import { For, Show } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 import { safeUrl } from '@/lib/utils';
 import type { RichContentPart } from '@/types';
 
 /**
  * 用户消息富文本气泡：按 parts 顺序交错渲染文字与内联缩略图，
  * 还原用户在输入框里的排版，让对话记录与发送给 LLM 的顺序一致。
+ * before（可选）：渲染在气泡内、parts 之前的内容（如 Skill/文档引用块，Q5）。
  */
 export function RichBubble(props: {
   parts: RichContentPart[];
   onImageClick: (url: string) => void;
+  before?: JSX.Element;
 }) {
   function renderPart(part: RichContentPart) {
     if (part.type === 'text') {
@@ -53,6 +55,7 @@ export function RichBubble(props: {
 
   return (
     <div class="chat-bubble chat-bubble-rich">
+      <Show when={props.before != null}>{props.before}</Show>
       <For each={props.parts}>
         {(part) => renderPart(part)}
       </For>

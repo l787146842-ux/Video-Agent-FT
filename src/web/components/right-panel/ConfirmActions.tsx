@@ -2,40 +2,29 @@ import { For, Show, createMemo, createSignal } from 'solid-js';
 import { sendUserMessage } from '@/lib/agent-actions';
 import { t } from '@/lib/locale';
 import type { ChatMessage } from '@/types';
-
-interface ConfirmOption {
-  label: string;
-  description?: string;
-  group?: string;
-}
+import { pickDimension, kindForDim, ConfigProviderModelSelect, type ConfirmOptionItem } from './ConfirmPicker';
 
 /** 无 group 的普通选项组使用的内部键 */
 const SINGLE_KEY = '__single__';
 
 /**
- * 确认操作区（当前待回应的 confirm 消息渲染）：
- * 所有引导交互统一放进一个组容器（confirm-wizard）：
- * - 选项带 group（维度问题）时渲染分页向导：逐页选择（‹ 1/N ›，非末页为
- *   「下一步」，末页为「发送」），发送时把各维度选择合并为一条消息，
- *   避免逐题多轮推理往返（对齐 flova 的规格收集交互）。
- * - 无 group 的普通选项渲染单选卡片：先选中，再点右下角「发送」。
- * - 「其它（自定义输入）」在组内展开输入框，输入内容作为该组的选择直接发送，
- *   不需要借用底部对话输入框（避免与本次引导选择互相覆盖）。
- * - 无候选选项时渲染「确认，继续 / 我要调整」按钮。
+ * 确认操作区（当前待回应的 confirm 消息渲染）：所有引导交互统一放进
+ * confirm-wizard 组容器：带 group 的选项渲染分页向导（逐页选择，末页发送，
+ * 各维度合并为一条消息）；无 group 的渲染单选卡片；厂商/模型维度改用下拉框
+ * （ConfirmPicker，888 反馈）；「其它（自定义输入）」在组内展开输入框直接发送；
+ * 无候选选项时渲染「确认，继续 / 我要调整」按钮。
  */
 export function ConfirmActions(props: { message: ChatMessage }) {
   const msg = () => props.message;
-  const options = () => (msg().confirmOptions || []) as ConfirmOption[];
+  const options = () => (msg().confirmOptions || []) as ConfirmOptionItem[];
 
-  const focusChatInput = () => {
-    document.getElementById('chatInputTextarea')?.focus();
-  };
+  const focusChatInput = () => document.getElementById('chatInputTextarea')?.focus();
 
   // ---------- 分页向导 / 选择状态 ----------
   const hasGroups = createMemo(() => options().some((o) => (o.group || '').trim() !== ''));
   const groups = createMemo(() => {
     const order: string[] = [];
-    const map = new Map<string, ConfirmOption[]>();
+    const map = new Map<string, ConfirmOptionItem[]>();
     for (const o of options()) {
       const g = (o.group || '').trim() || '其它';
       if (!map.has(g)) {
@@ -56,6 +45,9 @@ export function ConfirmActions(props: { message: ChatMessage }) {
   const [customOpen, setCustomOpen] = createSignal<Record<string, boolean>>({});
 
   const curGroup = () => groups()[Math.min(page(), groups().length - 1)];
+  /** 当前向导页/单组是否为厂商/模型维度（渲染下拉框而非选项卡，888 反馈） */
+  const wizardDim = () => pickDimension(curGroup()?.title || '', curGroup()?.opts || []);
+  const singleDim = () => pickDimension('', options());
   /** 某组当前生效的选择：自定义输入非空时优先，否则取卡片选择 */
   const effective = (key: string) => {
     const txt = (customText()[key] || '').trim();
@@ -136,27 +128,39 @@ export function ConfirmActions(props: { message: ChatMessage }) {
         <Show
           when={hasGroups()}
           fallback={
-            /* 无翻页的单组选项：选中卡片后点右下角「发送」 */
+            /* 无翻页的单组选项：选中卡片后点右下角「发送」；
+               厂商/模型维度直接下拉选择（888 反馈） */
             <div class="confirm-wizard">
-              <div class="confirm-options">
-                <For each={options()}>
-                  {(opt) => (
-                    <button
-                      type="button"
-                      class={`confirm-option-card${picks()[SINGLE_KEY] === opt.label ? ' selected' : ''}`}
-                      onClick={() => pickCard(SINGLE_KEY, opt.label)}
-                    >
-                      <span class="confirm-option-radio" />
-                      <span class="confirm-option-body">
-                        <span class="confirm-option-label">{opt.label}</span>
-                        <Show when={opt.description}>
-                          <span class="confirm-option-desc">{opt.description}</span>
-                        </Show>
-                      </span>
-                    </button>
-                  )}
-                </For>
-              </div>
+              <Show
+                when={singleDim()}
+                fallback={
+                  <div class="confirm-options">
+                    <For each={options()}>
+                      {(opt) => (
+                        <button
+                          type="button"
+                          class={`confirm-option-card${picks()[SINGLE_KEY] === opt.label ? ' selected' : ''}`}
+                          onClick={() => pickCard(SINGLE_KEY, opt.label)}
+                        >
+                          <span class="confirm-option-radio" />
+                          <span class="confirm-option-body">
+                            <span class="confirm-option-label">{opt.label}</span>
+                            <Show when={opt.description}>
+                              <span class="confirm-option-desc">{opt.description}</span>
+                            </Show>
+                          </span>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                }
+              >
+                <ConfigProviderModelSelect
+                  kind={kindForDim(singleDim(), '')}
+                  value={picks()[SINGLE_KEY] || ''}
+                  onPick={(v) => pickCard(SINGLE_KEY, v)}
+                />
+              </Show>
               {customBlock(SINGLE_KEY)}
               <div class="confirm-wizard-footer">
                 <span class="confirm-wizard-hint">
@@ -176,25 +180,36 @@ export function ConfirmActions(props: { message: ChatMessage }) {
         >
           <div class="confirm-wizard">
             <div class="confirm-wizard-question">{curGroup().title}</div>
-            <div class="confirm-options">
-              <For each={curGroup().opts}>
-                {(opt) => (
-                  <button
-                    type="button"
-                    class={`confirm-option-card${picks()[curGroup().title] === opt.label ? ' selected' : ''}`}
-                    onClick={() => pickCard(curGroup().title, opt.label)}
-                  >
-                    <span class="confirm-option-radio" />
-                    <span class="confirm-option-body">
-                      <span class="confirm-option-label">{opt.label}</span>
-                      <Show when={opt.description}>
-                        <span class="confirm-option-desc">{opt.description}</span>
-                      </Show>
-                    </span>
-                  </button>
-                )}
-              </For>
-            </div>
+            <Show
+              when={wizardDim()}
+              fallback={
+                <div class="confirm-options">
+                  <For each={curGroup().opts}>
+                    {(opt) => (
+                      <button
+                        type="button"
+                        class={`confirm-option-card${picks()[curGroup().title] === opt.label ? ' selected' : ''}`}
+                        onClick={() => pickCard(curGroup().title, opt.label)}
+                      >
+                        <span class="confirm-option-radio" />
+                        <span class="confirm-option-body">
+                          <span class="confirm-option-label">{opt.label}</span>
+                          <Show when={opt.description}>
+                            <span class="confirm-option-desc">{opt.description}</span>
+                          </Show>
+                        </span>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              }
+            >
+              <ConfigProviderModelSelect
+                kind={kindForDim(wizardDim(), curGroup().title)}
+                value={picks()[curGroup().title] || ''}
+                onPick={(v) => pickCard(curGroup().title, v)}
+              />
+            </Show>
             {customBlock(curGroup().title)}
             <div class="confirm-wizard-footer">
               <div class="confirm-wizard-pager">

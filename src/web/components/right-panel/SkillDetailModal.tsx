@@ -17,9 +17,19 @@ function extractDescription(skill: Skill): string {
   return skill.description || t('rp.skillDetail.noIntro');
 }
 
-/** 从 skill 内容中提取纯流程规划部分（去掉 skill_name/skill_description/<planner> 等元数据） */
+/** skill_manifest 声明块（机器读的系统配置，888 事故：对外封装时不该让人看到） */
+const MANIFEST_BLOCK_RE = /```(?:json|js)?\s*skill_manifest\s*\n[\s\S]*?```/i;
+
+/** 提取 skill_manifest 声明块原文（无则返回空串） */
+function extractManifest(content: string): string {
+  const m = content.match(MANIFEST_BLOCK_RE);
+  return m ? m[0] : '';
+}
+
+/** 从 skill 内容中提取纯流程规划部分（去掉 skill_name/skill_description/<planner> 等元数据，
+ * 并隐藏 skill_manifest 声明块——它是给系统读的参数铭牌，正文视图默认折叠） */
 function extractPlannerContent(skill: Skill): string {
-  const content = skill.system_prompt || '';
+  const content = (skill.system_prompt || '').replace(MANIFEST_BLOCK_RE, '');
   // 去掉 skill_name: ... 和 skill_description: ... 行
   const cleaned = content
     .replace(/^\s*skill_name\s*[:=].*$/gim, '')
@@ -45,6 +55,8 @@ export function SkillDetailModal(props: {
   // 初始值只取打开时的 skill，不需响应式跟踪（untrack 显式声明非跟踪读取）
   const [introDraft, setIntroDraft] = createSignal(untrack(() => extractDescription(props.skill)));
   const [savingIntro, setSavingIntro] = createSignal(false);
+  // manifest 声明块（打开时快照）：默认折叠，只在展开时可见
+  const manifestBlock = untrack(() => extractManifest(props.skill.system_prompt || ''));
 
   /** 复制 Skill 全文到剪贴板（优先 Clipboard API，降级 execCommand） */
   async function copyContent() {
@@ -100,9 +112,11 @@ export function SkillDetailModal(props: {
     const newContent = lines.join('\n');
     setSavingIntro(true);
     try {
-      await saveSkillDoc(slug, newContent);
+      const res = await saveSkillDoc(slug, newContent);
       await refreshSkills();
       showToast(t('rp.skillDetail.introSaved'), 'success');
+      // 保存时 lint：注册断点前移到编辑时（执行器缺失/规则非法等显式告知）
+      (res?.lint?.warnings || []).forEach((w) => showToast(`⚠ ${w}`, 'warning'));
     } catch (err) {
       showToast(t('rp.skillDetail.saveFailed', { error: (err as Error).message }), 'error');
     } finally {
@@ -195,6 +209,13 @@ export function SkillDetailModal(props: {
                 class="skill-modal-content chat-markdown"
                 innerHTML={renderMarkdown(extractPlannerContent(props.skill))}
               />
+              {/* 高级声明折叠区（888 事故）：机器读的配置铭牌，默认隐藏，文件内容不受影响 */}
+              <Show when={manifestBlock}>
+                <details class="skill-modal-manifest">
+                  <summary>高级声明（skill_manifest，系统自动维护，无需编辑）</summary>
+                  <div class="skill-modal-content-raw">{manifestBlock}</div>
+                </details>
+              </Show>
             </Show>
             <Show when={rawView()}>
               <div class="skill-modal-content-raw">

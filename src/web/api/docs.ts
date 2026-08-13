@@ -32,7 +32,7 @@ export async function getSkillDocs(): Promise<SkillDoc[]> {
 
 /** 保存 Skill 文档（新建或覆盖） */
 export function saveSkillDoc(slug: string, content: string) {
-  return apiPut<{ ok: boolean; doc: SkillDoc }>(
+  return apiPut<{ ok: boolean; doc: SkillDoc; lint?: { warnings?: string[] } }>(
     `/api/skills/docs/${encodeURIComponent(slug)}`,
     { content },
   );
