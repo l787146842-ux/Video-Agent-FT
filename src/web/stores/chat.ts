@@ -203,6 +203,43 @@ export const chatActions = {
     }));
   },
 
+  /** 恢复流式状态（任务式传输重连：先回放服务端累计状态，再收实时增量） */
+  restoreStreamingState(p: {
+    reasoning?: string; text?: string; statusText?: string;
+    tools?: TimelineToolEntry[]; model?: string;
+  }) {
+    setChatState(produce((s) => {
+      s.isStreaming = true;
+      s.streamingReasoning = p.reasoning || '';
+      s.streamingText = p.text || '';
+      s.streamingStatus = p.statusText || '';
+      s.streamingTools = p.tools || [];
+      s.streamingModel = p.model || '';
+      s.streamingReasoningStartMs = 0;
+    }));
+  },
+
+  /** 清空流式状态（重连后发现任务已完成，直接收尾，不追加「已停止」消息） */
+  clearStreaming() {
+    setChatState(produce((s) => {
+      s.isStreaming = false;
+      s.streamingText = '';
+      s.streamingStatus = '';
+      s.streamingModel = '';
+      s.streamingReasoning = '';
+      s.streamingTools = [];
+      s.streamingReasoningStartMs = 0;
+    }));
+  },
+
+  /** 文档写入即显（doc_written 事件）：独立文档卡片立即渲染，不等整轮 done */
+  docWritten(name: string) {
+    if (!name) return;
+    setChatState(produce((s) => {
+      s.messages.push({ sender: 'agent', text: '', docCard: name });
+    }));
+  },
+
   /** 从后端加载历史消息 */
   loadMessages(msgs: ChatMessage[]) {
     setChatState('messages', msgs);

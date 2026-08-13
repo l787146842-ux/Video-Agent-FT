@@ -161,6 +161,63 @@ async def agent_stop():
     return {"ok": True, "cancelled": cancelled}
 
 
+@router.post("/agent/tasks")
+async def create_agent_task(body: ChatRequest):
+    """任务式传输：提交 Agent 聊天任务，立即返回 task_id（worker 后台运行）。"""
+    from src.video_agent.web.chat_service import start_agent_task
+
+    return start_agent_task(body)
+
+
+@router.get("/agent/tasks")
+async def list_agent_tasks(project_id: str = ""):
+    """查询某项目仍在运行的后台 Agent 任务（刷新/切回后重连用）。"""
+    from src.video_agent.web.agent_task_manager import get_agent_task_manager
+
+    return {"tasks": get_agent_task_manager().list_running(project_id)}
+
+
+@router.get("/agent/tasks/{task_id}/events")
+async def agent_task_events(task_id: str, request: Request):
+    """订阅后台任务事件流：先回放累计状态（replay），再增量推送；断线只断订阅。"""
+    from src.video_agent.web.agent_task_manager import get_agent_task_manager
+
+    tm = get_agent_task_manager()
+    q = tm.subscribe(task_id)
+    if q is None:
+        raise HTTPException(status_code=404, detail=f"任务 '{task_id}' 不存在")
+
+    async def gen():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+                if ev.get("type") in ("done", "error", "task_status"):
+                    break
+        finally:
+            tm.unsubscribe(task_id, q)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/agent/tasks/{task_id}/stop")
+async def stop_agent_task(task_id: str):
+    """真正停止后台任务（停止按钮调用）；刷新/切项目不调用。"""
+    from src.video_agent.web.agent_task_manager import get_agent_task_manager
+
+    ok = get_agent_task_manager().stop(task_id)
+    return {"ok": ok, "cancelled": 1 if ok else 0}
+
+
 @router.get("/agent/context-usage")
 async def get_context_usage(model: str = ""):
     """估算当前会话将发送给 LLM 的上下文用量（Studio 状态上下文 + 聊天记录）。

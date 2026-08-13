@@ -13,6 +13,7 @@ StateManager — Rule3: 唯一状态写入点。支持多项目。
 import asyncio
 import json
 import time
+from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -30,6 +31,12 @@ from .repository_sqlite import SqliteStateRepository
 from .project_manager import ProjectManager
 from .context_builder import build_agent_context as _build_context
 from .undo_redo import UndoRedoMixin
+
+# 后台 Agent 任务的按任务隔离实例（D 批）：worker 上下文内 get_instance()
+# 返回任务专属 StateManager，切项目/刷新不串写（7777 事故根因：旧状态覆盖新项目）。
+_task_state_var: ContextVar[Optional["StateManager"]] = ContextVar(
+    "agent_task_state", default=None,
+)
 
 # 默认工作区目录
 DEFAULT_WORKSPACE_DIR = WORKSPACE_DIR
@@ -137,7 +144,10 @@ class StateManager(UndoRedoMixin):
 
     @classmethod
     def get_instance(cls) -> "StateManager":
-        """获取全局单例（替代原 StudioStateService.get_instance()）"""
+        """获取状态管理器：后台任务上下文内返回任务专属实例，其余返回全局单例。"""
+        bound = _task_state_var.get()
+        if bound is not None:
+            return bound
         if cls._instance is None:
             cls._instance = cls(str(DEFAULT_WORKSPACE_DIR))
         return cls._instance
@@ -146,6 +156,26 @@ class StateManager(UndoRedoMixin):
     def reset_instance(cls) -> None:
         """重置单例（测试用）"""
         cls._instance = None
+
+    @classmethod
+    def create_task_bound(
+        cls, project_id: str, workspace_dir: str = str(DEFAULT_WORKSPACE_DIR),
+    ) -> "tuple[StateManager, Token]":
+        """为后台 Agent 任务创建专属实例并绑定到当前 context（任务级隔离）。
+
+        任务提交时锁定所属项目：即使之后用户切换项目/刷新页面，
+        worker 内所有 StateManager.get_instance() 都命中本实例，不串写。
+        """
+        svc = cls(workspace_dir)
+        if svc.active_project_id != project_id:
+            svc.switch_project(project_id)
+        token = _task_state_var.set(svc)
+        return svc, token
+
+    @staticmethod
+    def release_task_bound(token: Token) -> None:
+        """解除任务上下文绑定（worker finally 调用）。"""
+        _task_state_var.reset(token)
 
     # ====== 构造 & 加载 ======
 

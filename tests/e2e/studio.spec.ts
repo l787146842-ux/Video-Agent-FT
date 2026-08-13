@@ -11,6 +11,41 @@
  */
 import { test, expect } from '@playwright/test';
 
+/** 任务式传输 mock：提交任务返回 task_id，事件端点回放状态/增量 + done */
+async function mockAgentTask(page: import('@playwright/test').Page, payload: Record<string, unknown>, withDelta = false) {
+  await page.route('**/api/agent/tasks', async (route) => {
+    const req = route.request();
+    if (req.method() === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ task_id: 'e2e-task', project_id: 'e2e-p' }),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ tasks: [] }),
+      });
+    }
+  });
+  await page.route('**/api/agent/tasks/*/events', async (route) => {
+    const parts: string[] = [];
+    if (withDelta) {
+      parts.push(
+        'data: {"type":"status","text":"正在思考…"}',
+        'data: {"type":"delta","text":"好的，"}',
+      );
+    }
+    parts.push(`data: ${JSON.stringify({ type: 'done', payload })}`);
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: parts.join('\n\n') + '\n\n',
+    });
+  });
+}
+
 test.describe('Studio 页面加载', () => {
     test('首页正常渲染三栏布局', async ({ page }) => {
         await page.goto('/');
@@ -50,19 +85,12 @@ test.describe('Agent 对话（mock 模式）', () => {
         // 拦截 SSE 流式接口并注入 mock 回复：
         // 确定性验证前端「发送 → 流式渲染 → 完成入库」链路，
         // 不依赖真实 LLM 供应商（后端协议由 SSE 端点测试覆盖）。
-        await page.route('**/api/agent/chat/stream', async (route) => {
-            const sse = [
-                'data: {"type":"status","text":"正在思考…"}',
-                'data: {"type":"delta","text":"好的，"}',
-                'data: {"type":"delta","text":"这是拆解结果"}',
-                'data: {"type":"done","payload":{"text":"好的，这是拆解结果","elapsed_ms":120,"steps":1,"applied_actions":0}}',
-            ].join('\n\n') + '\n\n';
-            await route.fulfill({
-                status: 200,
-                contentType: 'text/event-stream',
-                body: sse,
-            });
-        });
+        await mockAgentTask(page, {
+            text: '好的，这是拆解结果',
+            elapsed_ms: 120,
+            steps: 1,
+            applied_actions: 0,
+        }, true);
 
         await page.goto('/');
         await page.waitForLoadState('networkidle');
@@ -96,19 +124,15 @@ test.describe('故事板面板', () => {
 
 test.describe('阶段确认卡片与文档卡片', () => {
     test('确认卡片/操作清单/文档卡片渲染与持久化字段展示', async ({ page }) => {
-        await page.route('**/api/agent/chat/stream', async (route) => {
-            const payload = {
-                text: '规划已完成',
-                elapsed_ms: 500,
-                steps: 2,
-                applied_actions: 3,
-                confirmation: '故事板已建立，请审阅',
-                documents_written: ['Final_Video_Spec.md'],
-                action_log: ['新建关键元素分组「主角」', '写入文档「Final_Video_Spec.md」'],
-                trace: { steps: [{ step: 1, timing_ms: 300, actions_applied: 3, finish_reason: 'stop' }], total_ms: 500 },
-            };
-            const sse = `data: ${JSON.stringify({ type: 'done', payload })}\n\n`;
-            await route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse });
+        await mockAgentTask(page, {
+            text: '规划已完成',
+            elapsed_ms: 500,
+            steps: 2,
+            applied_actions: 3,
+            confirmation: '故事板已建立，请审阅',
+            documents_written: ['Final_Video_Spec.md'],
+            action_log: ['新建关键元素分组「主角」', '写入文档「Final_Video_Spec.md」'],
+            trace: { steps: [{ step: 1, timing_ms: 300, actions_applied: 3, finish_reason: 'stop' }], total_ms: 500 },
         });
 
         await page.goto('/');
@@ -133,10 +157,11 @@ test.describe('阶段确认卡片与文档卡片', () => {
 
 test.describe('Skill 「+」插入引用块并发送', () => {
     test('下拉选 Skill → chip 插入输入框 → 发送', async ({ page }) => {
-        await page.route('**/api/agent/chat/stream', async (route) => {
-            const payload = { text: 'Skill 流程已启用', elapsed_ms: 100, steps: 1, applied_actions: 0 };
-            const sse = `data: ${JSON.stringify({ type: 'done', payload })}\n\n`;
-            await route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse });
+        await mockAgentTask(page, {
+            text: 'Skill 流程已启用',
+            elapsed_ms: 100,
+            steps: 1,
+            applied_actions: 0,
         });
 
         await page.goto('/');

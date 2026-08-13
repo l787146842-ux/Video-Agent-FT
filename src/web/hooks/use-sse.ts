@@ -1,87 +1,80 @@
+/* eslint-disable max-lines */ // 后台任务订阅协调中枢，事件类型多、行数超限属合理
 import { createSignal } from 'solid-js';
 import type { SseEvent, SseDonePayload, AgentChatRequest } from '@/types';
-import { chatActions } from '@/stores/chat';
+import { chatActions, type TimelineToolEntry } from '@/stores/chat';
 import { convActions } from '@/stores/conversations';
-import { studioActions, getProjectSession } from '@/stores/studio';
+import { state, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { refreshHistoryStatus } from '@/stores/history';
 import { resolveErrorMessage } from '@/lib/i18n';
-import { postAgentChatStream } from '@/api/sse';
-import { stopAgentTask } from '@/api/agent';
+import {
+  startAgentTask, fetchAgentTaskEvents, stopAgentTask, listAgentTasks,
+  type AgentTaskInfo,
+} from '@/api/sse';
 import { requestInsertMedia } from '@/lib/chat-input-bridge';
-import { uid } from '@/lib/utils';
 import { applyFallbackModel } from '@/stores/agent-prefs';
+import { uid } from '@/lib/utils';
 
-/**
- * Agent 流式聊天（模块级单例）
- * 匹配后端 SSE 协议：type = status | delta | reasoning_delta | tool_started | tool_finished | done | error
- * 端点：POST /api/agent/chat/stream
- *
- * 任何组件/面板均可直接调用 streamAgentChat / stopAgentStream；
- * useAgentStream() 仅是响应式状态的薄封装。
- */
-
+/** Agent 后台任务流式订阅（D 批）：POST 取 task_id → 订阅事件（先 replay 再增量）。
+ * 刷新/切项目只断开订阅，后台任务继续；切回时 resumeAgentTasks() 重连；停止才取消。 */
 const [streaming, setStreaming] = createSignal(false);
 const [error, setError] = createSignal<string | null>(null);
 
 let abortController: AbortController | null = null;
+let currentTask: { taskId: string; projectId: string; recovering: boolean } | null = null;
+/** 每个项目仍在后台运行的任务（切走后记住，切回时恢复订阅） */
+const projectTasks = new Map<string, string>();
 
-/** 发起流时捕获项目会话纪元；流期间项目被切换后，
- * 旧项目的事件（尤其 done 携带的状态快照）一律丢弃，
- * 避免旧项目快照覆盖新项目故事板、旧回复流入新对话。 */
-let streamSession = 0;
-
-export async function streamAgentChat(request: AgentChatRequest): Promise<void> {
-  if (streaming()) return;
-  setStreaming(true);
-  setError(null);
-  streamSession = getProjectSession();
-  studioActions.setAgentBusy(true);
-  chatActions.startStream(request.model || '');
-  abortController = new AbortController();
-
-  try {
-    const res = await postAgentChatStream(request, abortController.signal);
-
-    if (!res.ok || !res.body) {
-      const data = await res.json().catch(() => ({}));
-      const body = data as Record<string, string>;
-      // error_code → 中文友好提示（P2-17），无 code 回退 detail
-      throw new Error(
-        resolveErrorMessage(body.error_code, body.detail || `请求失败 (${res.status})`),
-      );
-    }
-
-    const reader = res.body.getReader();
+function parseSSE(res: Response, onEvent: (ev: SseEvent) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      // SSE 以 \n\n 分隔事件
-      let idx: number;
-      while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const raw = buffer.slice(0, idx).trim();
-        buffer = buffer.slice(idx + 2);
-
-        if (!raw.startsWith('data:')) continue;
-        const jsonStr = raw.slice(5).trim();
-        if (jsonStr === '[DONE]') continue;
-
-        let ev: SseEvent;
-        try {
-          ev = JSON.parse(jsonStr);
-        } catch {
-          continue;
+    (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buffer.indexOf('\n\n')) !== -1) {
+            const raw = buffer.slice(0, idx).trim();
+            buffer = buffer.slice(idx + 2);
+            if (!raw.startsWith('data:')) continue;
+            const jsonStr = raw.slice(5).trim();
+            if (jsonStr === '[DONE]') continue;
+            try {
+              onEvent(JSON.parse(jsonStr) as SseEvent);
+            } catch { /* 忽略解析错误 */ }
+          }
         }
-
-        handleEvent(ev);
+        resolve();
+      } catch (err) {
+        reject(err);
       }
+    })();
+  });
+}
+
+/** 关闭当前订阅（不取消后台任务） */
+function closeSubscription() {
+  abortController?.abort();
+  abortController = null;
+}
+
+async function connectToTask(taskId: string, projectId: string, recovering: boolean): Promise<void> {
+  setStreaming(true);
+  studioActions.setAgentBusy(true);
+  currentTask = { taskId, projectId, recovering };
+  abortController = new AbortController();
+
+  try {
+    const res = await fetchAgentTaskEvents(taskId, abortController.signal);
+    if (!res.ok || !res.body) {
+      throw new Error(`事件订阅失败 (${res.status})`);
     }
+    await parseSSE(res, (ev) => handleEvent(ev));
   } catch (err) {
     if ((err as Error).name !== 'AbortError') {
       const msg = (err as Error).message || '未知错误';
@@ -89,26 +82,141 @@ export async function streamAgentChat(request: AgentChatRequest): Promise<void> 
       chatActions.streamError(msg);
     }
   } finally {
-    setStreaming(false);
-    studioActions.setAgentBusy(false);
-    abortController = null;
+    // 仅当仍订阅本任务时清理（disconnectAgentStream 已把 currentTask 置空）
+    if (currentTask?.taskId === taskId) {
+      setStreaming(false);
+      studioActions.setAgentBusy(false);
+      currentTask = null;
+      abortController = null;
+      if (projectTasks.get(projectId) === taskId) projectTasks.delete(projectId);
+    }
   }
 }
 
-export function stopAgentStream(): void {
-  if (abortController) {
-    abortController.abort();
-    abortController = null;
-    chatActions.cancelStream();
+/** 发起 Agent 聊天：后台建任务 + 订阅事件流 */
+export async function streamAgentChat(request: AgentChatRequest): Promise<void> {
+  if (streaming()) return;
+  const projectId = state.projectId || '';
+  setError(null);
+  studioActions.setAgentBusy(true);
+  chatActions.startStream(request.model || '');
+  try {
+    const started = await startAgentTask(request);
+    projectTasks.set(started.project_id || projectId, started.task_id);
+    await connectToTask(started.task_id, started.project_id || projectId, false);
+  } catch (err) {
+    const msg = (err as Error).message || '未知错误';
+    setError(msg);
+    chatActions.streamError(msg);
+    studioActions.setAgentBusy(false);
   }
-  // 显式通知后端取消 worker（仅停止按钮路径；刷新不调用此函数，worker 续跑）
-  void stopAgentTask().catch(() => { /* 后端未就绪静默 */ });
+}
+
+/** 断开订阅但保留后台任务（切项目/离开页面时调用） */
+export function disconnectAgentStream(): void {
+  if (currentTask) {
+    projectTasks.set(currentTask.projectId, currentTask.taskId);
+    currentTask = null;
+  }
+  closeSubscription();
+  setStreaming(false);
+  studioActions.setAgentBusy(false);
+}
+
+/** 真正停止后台任务（停止按钮） */
+export function stopAgentStream(): void {
+  const task = currentTask;
+  if (task) {
+    void stopAgentTask(task.taskId).catch(() => { /* 任务可能已结束 */ });
+    projectTasks.delete(task.projectId);
+  }
+  closeSubscription();
+  chatActions.cancelStream();
+  setStreaming(false);
+  studioActions.setAgentBusy(false);
+  currentTask = null;
+}
+
+/** 刷新 / 切回项目后恢复进行中的后台任务 */
+export async function resumeAgentTasks(projectId: string): Promise<void> {
+  if (!projectId || streaming()) return;
+  let tasks: AgentTaskInfo[] = [];
+  try {
+    tasks = await listAgentTasks(projectId);
+  } catch { /* 后端未就绪时静默 */ }
+  if (!tasks.length) return;
+  const task = tasks[0]; // 最新任务
+  projectTasks.set(projectId, task.task_id);
+  chatActions.restoreStreamingState({
+    reasoning: '',
+    text: '',
+    statusText: '正在恢复 Agent 进度…',
+    tools: [],
+  });
+  await connectToTask(task.task_id, projectId, true);
 }
 
 function handleEvent(ev: SseEvent) {
-  // 项目已切换：旧项目流的全部事件直接丢弃
-  if (streamSession !== getProjectSession()) return;
   switch (ev.type) {
+    case 'replay': {
+      const p = ev.payload;
+      if (!p) break;
+      // 断连期间发生过降级：重连即把选择器补跳到实际生效的组合
+      if (p.fallback?.model) applyFallbackModel(p.fallback.provider, p.fallback.model);
+      // 任务已结束（断连期间完成）：直接采用服务端快照，避免消息重复
+      if (p.status === 'done' && p.done_payload) {
+        if (currentTask?.recovering) {
+          if (p.snapshot) {
+            studioActions.syncFromServer(p.snapshot);
+            convActions.syncFromServer(p.snapshot);
+          }
+          if (p.snapshot?.chatMessages) chatActions.loadMessages(p.snapshot.chatMessages);
+          chatActions.clearStreaming();
+          setStreaming(false);
+          studioActions.setAgentBusy(false);
+          currentTask = null;
+          if (p.project_id) projectTasks.delete(p.project_id);
+          closeSubscription();
+          showToast('后台 Agent 任务已完成', 'success');
+        } else {
+          handleDone(p.done_payload);
+        }
+        break;
+      }
+      if (p.status === 'error') {
+        chatActions.streamError(p.error || '任务已中断');
+        setStreaming(false);
+        studioActions.setAgentBusy(false);
+        if (p.project_id) projectTasks.delete(p.project_id);
+        currentTask = null;
+        closeSubscription();
+        break;
+      }
+      // 运行中：恢复累积状态后继续收实时增量
+  chatActions.restoreStreamingState({
+    reasoning: p.reasoning || '',
+    text: p.text || '',
+    statusText: p.status_text || '正在处理…',
+    tools: (p.tools || []).map((t) => ({
+      id: t.id || '',
+      name: t.name || '',
+      summary: t.summary || '',
+      status: (
+        t.status === 'running' || t.status === 'done' || t.status === 'failed'
+          ? t.status
+          : 'running'
+      ),
+      elapsed_ms: t.elapsed_ms ?? undefined,
+      result_summary: t.result_summary || '',
+    })),
+    model: p.model || '',
+  });
+      if (p.snapshot) {
+        studioActions.syncFromServer(p.snapshot);
+        convActions.syncFromServer(p.snapshot);
+      }
+      break;
+    }
     case 'status':
       chatActions.setStatus(ev.text || '');
       break;
@@ -116,7 +224,6 @@ function handleEvent(ev: SseEvent) {
       chatActions.appendDelta(ev.text || '');
       break;
     case 'reasoning_delta':
-      // 深度思考增量：仅 UI 展示，不进下次上下文
       chatActions.appendReasoning(ev.text || '');
       break;
     case 'tool_started':
@@ -125,9 +232,19 @@ function handleEvent(ev: SseEvent) {
     case 'tool_finished':
       chatActions.toolFinished(ev.id, ev.ok, ev.elapsed_ms || 0, ev.result_summary);
       break;
+    case 'doc_written':
+      if (ev.name) chatActions.docWritten(ev.name);
+      break;
+    case 'model_fallback':
+      // 降级即时联动（7777 事故）：切换时刻就跳选择器，不等整轮成功
+      applyFallbackModel(ev.provider, ev.model);
+      break;
+    case 'guidance_injected':
+      // 引导消息轮间注入成功（7777 三轮）：渲染用户气泡并从排队区移除对应条目
+      if (ev.text) chatActions.addMessage({ sender: 'user', text: ev.text });
+      if (ev.id) chatActions.removeQueuedMessage(ev.id);
+      break;
     case 'actions_applied': {
-      // 逐步可见：每批操作执行完就同步最新状态快照，
-      // 推理中就能看到新建的分组/写入的提示词，不必等全部完成
       const snapshot = ev.payload?.state;
       if (snapshot) {
         studioActions.syncFromServer(snapshot);
@@ -140,35 +257,24 @@ function handleEvent(ev: SseEvent) {
       handleDone(ev.payload);
       break;
     case 'error': {
-      // error_code → 中文友好提示（P2-17），未知 code 回退原始 detail
       const msg = resolveErrorMessage(ev.error_code, ev.detail || ev.text || '服务端错误');
       setError(msg);
       chatActions.streamError(msg);
+      closeSubscription();
       break;
     }
-    case 'model_fallback':
-      // 降级即时联动（7777）：切换时刻就跳选择器，不等整轮成功
-      applyFallbackModel(ev.provider, ev.model);
-      break;
-    case 'guidance_injected':
-      // 引导消息轮间注入成功（7777 三轮）：渲染用户气泡并从排队区移除对应条目
-      if (ev.text) chatActions.addMessage({ sender: 'user', text: ev.text });
-      if (ev.id) chatActions.removeQueuedMessage(ev.id);
+    default:
       break;
   }
 }
 
 function handleDone(payload: SseDonePayload) {
   chatActions.finishStream(payload);
-  // 同步后端状态快照到全局 store
   if (payload.state) {
     studioActions.syncFromServer(payload.state);
-    // 多对话标签栏：刷新各对话消息与活跃态
     convActions.syncFromServer(payload.state);
   }
-  // Agent 动作会压入后端 undo 栈，刷新撤销/重做指示位
   void refreshHistoryStatus();
-  // Agent 把故事板媒体自动添加到对话输入框（insert_chat_media / storyboard_media_to_chat）
   const inserts = payload.chat_inserts || [];
   if (inserts.length) {
     const seen = new Set<string>();
@@ -182,13 +288,15 @@ function handleDone(payload: SseDonePayload) {
     }
     showToast(`Agent 已添加 ${seen.size} 个素材到对话输入框，确认后可发送`, 'success');
   }
-  // Agent 联动更新了故事板：提示 + 触发左面板高亮闪烁
   if ((payload.applied_actions || 0) > 0) {
     const elapsed = ((payload.elapsed_ms || 0) / 1000).toFixed(1);
     showToast(`Agent 已联动更新 ${payload.applied_actions} 项（${elapsed}s）`, 'success');
     studioActions.markBoardApplied();
   }
   (payload.warnings || []).forEach((w) => showToast(`⚠ ${w}`, 'warning'));
+  // 任务已结束，关闭订阅（后台任务本身已完成，无需保留连接）
+  if (currentTask) projectTasks.delete(currentTask.projectId);
+  closeSubscription();
 }
 
 /** 组件内使用的响应式封装 */

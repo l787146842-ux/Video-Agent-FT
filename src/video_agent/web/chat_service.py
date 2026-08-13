@@ -403,7 +403,6 @@ async def stream_worker(body: Any, emit) -> None:
         body: ChatRequest 实例
         emit: async callable(event_dict) 用于向队列推送 SSE 事件
     """
-    t0 = time.monotonic()
     request_id = body.request_id or ""
     if not _acquire_request_slot(request_id):
         await emit({"type": SSE_ERROR, "detail": "相同请求正在处理中，请勿重复发送",
@@ -411,72 +410,119 @@ async def stream_worker(body: Any, emit) -> None:
         return
     try:
         svc = StateManager.get_instance()
-        executor = StudioActionExecutor(
-            svc,
-            selected_draft_id=body.selected_draft_id,
-            selected_type=body.selected_type,
-        )
-
-        user_text = body.message.strip()
-        if not user_text and not body.attachments:
-            await emit({"type": SSE_ERROR, "detail": "消息不能为空", "error_code": "EMPTY_MESSAGE"})
-            return
-        if not user_text:
-            user_text = "请查看我上传的素材"
-
-        use_studio_context = body.context_mode != "none"
-        # 确认闭环：上一轮停在「等待确认」时，本条消息即是对暂停的回应，
-        # 清除暂停态并把暂停说明带给模型，防止从头重复同一套操作
-        pending_confirm_note = ""
-        if use_studio_context:
-            async with svc.lock:
-                pending_confirm_note = _consume_pending_confirmation(svc)
-                spec_finalize_note = _finalize_spec_params(svc, user_text)
-                spec_wizard_note = _consume_spec_wizard(svc, user_text)
-        else:
-            spec_finalize_note = ""
-            spec_wizard_note = ""
-        # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
-        attachment_note = (
-            attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
-            if body.attachments else ""
-        )
-        llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
-        if attachment_note:
-            llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
-
-        # Skill 写入文档：消息携带 Skill 引用块时（前端此时才传 skill_slug），
-        # 记入当前项目 usedSkills，文档面板只展示已发送过的 Skill 文档。
-        if body.skill_slug:
-            async with svc.lock:
-                svc.record_used_skill(body.skill_slug)
-
-        # 多模态内容构建（有 content_parts 时按排版顺序交错；
-        # 传入选中草稿信息用于素材超限时的优先级注入）
-        llm_user_content = await build_multimodal_content(
-            llm_user_text, body.attachments, body.images or [], body.content_parts or None,
-            selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
-            videos=body.videos or [],
-        )
-
-        # ---------- mock：模拟流式 ----------
-        if is_mock_provider(body.provider, body.model):
-            await mock_stream(
-                svc, executor, body, user_text, llm_user_text,
-                use_studio_context, emit, t0, meta_builder=_build_meta_note,
-            )
-            return
-
-        # ---------- 真实供应商 ----------
-        await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0)
-
-    except Exception as e:
-        logger.exception(f"[ChatService] 流式处理异常: {e}")
-        # VideoAgentError 携带 error_code 供前端 i18n 翻译；未知异常按 INTERNAL_ERROR
-        code = getattr(e, "error_code", None) or "INTERNAL_ERROR"
-        await emit({"type": SSE_ERROR, "detail": f"服务端异常: {e}", "error_code": code})
+        await _stream_worker_impl(body, svc, emit)
     finally:
         _release_request_slot(request_id)
+
+
+async def _stream_worker_impl(body: Any, svc: StateManager, emit) -> None:
+    """流式处理公共实现（mock + 真实供应商）；供 SSE worker 与后台任务 worker 复用。"""
+    t0 = time.monotonic()
+    executor = StudioActionExecutor(
+        svc,
+        selected_draft_id=body.selected_draft_id,
+        selected_type=body.selected_type,
+    )
+
+    user_text = body.message.strip()
+    if not user_text and not body.attachments:
+        await emit({"type": SSE_ERROR, "detail": "消息不能为空", "error_code": "EMPTY_MESSAGE"})
+        return
+    if not user_text:
+        user_text = "请查看我上传的素材"
+
+    use_studio_context = body.context_mode != "none"
+    # 确认闭环：上一轮停在「等待确认」时，本条消息即是对暂停的回应，
+    # 清除暂停态并把暂停说明带给模型，防止从头重复同一套操作
+    pending_confirm_note = ""
+    if use_studio_context:
+        async with svc.lock:
+            pending_confirm_note = _consume_pending_confirmation(svc)
+            spec_finalize_note = _finalize_spec_params(svc, user_text)
+            spec_wizard_note = _consume_spec_wizard(svc, user_text)
+    else:
+        spec_finalize_note = ""
+        spec_wizard_note = ""
+    # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
+    attachment_note = (
+        attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
+        if body.attachments else ""
+    )
+    llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
+    if attachment_note:
+        llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
+
+    # Skill 写入文档：消息携带 Skill 引用块时（前端此时才传 skill_slug），
+    # 记入当前项目 usedSkills，文档面板只展示已发送过的 Skill 文档。
+    if body.skill_slug:
+        async with svc.lock:
+            svc.record_used_skill(body.skill_slug)
+
+    # 多模态内容构建（有 content_parts 时按排版顺序交错；
+    # 传入选中草稿信息用于素材超限时的优先级注入）
+    llm_user_content = await build_multimodal_content(
+        llm_user_text, body.attachments, body.images or [], body.content_parts or None,
+        selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
+        videos=body.videos or [],
+    )
+
+    # ---------- mock：模拟流式 ----------
+    if is_mock_provider(body.provider, body.model):
+        await mock_stream(
+            svc, executor, body, user_text, llm_user_text,
+            use_studio_context, emit, t0, meta_builder=_build_meta_note,
+        )
+        return
+
+    # ---------- 真实供应商 ----------
+    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0)
+
+
+def start_agent_task(body: Any) -> Dict[str, Any]:
+    """任务式传输（D 批）：提交即返回 task_id，worker 后台运行。
+
+    刷新/切项目只断订阅不杀任务；worker 绑定提交时所属项目（任务级 StateManager），
+    不会把旧项目状态写进新项目（7777 事故根因之一）。
+    """
+    from src.video_agent.utils import gen_id
+    from src.video_agent.web.agent_task_manager import get_agent_task_manager
+
+    submission_svc = StateManager.get_instance()
+    project_id = submission_svc.active_project_id or ""
+    workspace_dir = str(submission_svc._workspace_dir)
+    task_id = gen_id("agt")
+    tm = get_agent_task_manager()
+    record = tm.create(
+        project_id,
+        lambda: _run_agent_task(body, project_id, task_id, workspace_dir),
+        task_id=task_id,
+        model=getattr(body, "model", "") or "",
+    )
+    return {"task_id": record["task_id"], "project_id": project_id}
+
+
+async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_dir: str) -> None:
+    """后台任务 worker：绑定任务专属 StateManager，事件经 task_manager.emit 下发。"""
+    from src.video_agent.web.agent_task_manager import get_agent_task_manager
+
+    tm = get_agent_task_manager()
+    svc, token = StateManager.create_task_bound(project_id, workspace_dir)
+    try:
+        async def emit(event: Dict[str, Any]) -> None:
+            tm.emit(task_id, event)
+
+        await _stream_worker_impl(body, svc, emit)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.exception(f"[AgentTask] {task_id} 处理异常: {e}")
+        tm.emit(task_id, {
+            "type": SSE_ERROR,
+            "detail": f"服务端异常: {e}",
+            "error_code": getattr(e, "error_code", None) or "INTERNAL_ERROR",
+        })
+    finally:
+        StateManager.release_task_bound(token)
 
 
 def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_type: str) -> tuple:

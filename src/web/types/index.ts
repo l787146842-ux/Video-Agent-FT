@@ -268,6 +268,27 @@ export interface SseErrorEvent { type: 'error'; detail?: string; text?: string; 
 export interface SseModelFallbackEvent { type: 'model_fallback'; provider?: string; model?: string; }
 /** 引导消息轮间注入成功（7777 三轮）：渲染用户气泡并从排队区移除对应条目 */
 export interface SseGuidanceInjectedEvent { type: 'guidance_injected'; id?: string; text?: string; }
+/** 文档写入即显（3333）：独立文档卡片立即渲染，不等整轮 done */
+export interface SseDocWrittenEvent { type: 'doc_written'; name?: string; }
+/** 任务式传输：订阅时先回放累计状态（刷新/切项目重连后恢复进度） */
+export interface AgentTaskReplayPayload {
+  task_id?: string;
+  project_id?: string;
+  model?: string;
+  status?: string;
+  status_text?: string;
+  reasoning?: string;
+  text?: string;
+  tools?: Array<{
+    id?: string; name?: string; summary?: string; status?: string;
+    elapsed_ms?: number | null; result_summary?: string;
+  }>;
+  snapshot?: ServerStateSnapshot | null;
+  done_payload?: SseDonePayload | null;
+  fallback?: { provider?: string; model?: string } | null;
+  error?: string | null;
+}
+export interface SseReplayEvent { type: 'replay'; payload?: AgentTaskReplayPayload; }
 export type SseEvent =
   | SseStatusEvent
   | SseDeltaEvent
@@ -278,7 +299,9 @@ export type SseEvent =
   | SseDoneEvent
   | SseErrorEvent
   | SseModelFallbackEvent
-  | SseGuidanceInjectedEvent;
+  | SseGuidanceInjectedEvent
+  | SseDocWrittenEvent
+  | SseReplayEvent;
 
 // ===== 后端状态快照 =====
 /** 单个对话（同一项目支持多对话窗口） */

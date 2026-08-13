@@ -15,10 +15,11 @@ import { MemoryPanel } from './MemoryPanel';
 import { initGenerationEvents, restoreActiveGenerations } from '@/lib/generation-events';
 import { getProjectState } from '@/api/project';
 import { getAppConfig, getProviders } from '@/api/providers';
-import { getSkills, getAgentRunning } from '@/api/agent';
+import { getSkills } from '@/api/agent';
 import { ensureGlobalSettings } from '@/stores/global-settings';
 import { state, studioActions } from '@/stores/studio';
 import { chatActions } from '@/stores/chat';
+import { resumeAgentTasks } from '@/hooks/use-sse';
 import { convActions } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
 import {
@@ -142,24 +143,21 @@ export function LayoutShell(props: ParentProps) {
 
   /** 重载后探测后台 Agent：running 时置忙态轮询，结束后重拉快照同步消息/故事板 */
   async function reattachRunningAgent() {
+    // 任务式传输（D 批）：刷新后按项目重连后台任务事件流（replay 恢复进度），
+    // 不再依赖轮询 /agent/running；任务已完成时 resumeAgentTasks 内部静默返回。
+    const pid = state.projectId || '';
+    if (!pid) return;
     try {
-      let st = await getAgentRunning();
-      if (!st.running) return;
-      studioActions.setAgentBusy(true);
-      while (st.running) {
-        await new Promise((r) => setTimeout(r, 2000));
-        st = await getAgentRunning().catch(() => ({ running: false }));
-      }
-      const snap = await getProjectState().catch(() => null);
-      if (snap) {
-        studioActions.syncFromServer(snap);
-        convActions.syncFromServer(snap);
-        chatActions.loadMessages(snap.chatMessages || []);
-        convActions.loadFromSnapshot(snap);
-      }
-      studioActions.setAgentBusy(false);
+      await resumeAgentTasks(pid);
     } catch { /* 后端未就绪静默 */ }
   }
+
+  // 项目切换后也自动恢复该项目的后台任务订阅（刷新/切回都能继续看到进度）
+  createEffect(() => {
+    const pid = state.projectId;
+    if (!pid) return;
+    void resumeAgentTasks(pid);
+  });
 
   // 画布 iframe 初始化：等待 loading 结束后 DOM 就绪，设置 src 并启动桥接
   let bridgeInitialized = false;

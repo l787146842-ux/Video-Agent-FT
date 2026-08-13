@@ -4,6 +4,7 @@
  * hooks/use-sse.ts 只负责事件分发与状态管理。
  */
 import type { AgentChatRequest } from '@/types';
+import { apiFetch, apiPost } from './client';
 
 export interface SseStreamHandle {
   reader: ReadableStreamDefaultReader<Uint8Array>;
@@ -25,4 +26,36 @@ export async function postAgentChatStream(
     signal,
   });
   return res;
+}
+
+// ===== 任务式传输（D 批）：后台任务 + 事件订阅，刷新/切项目不中断 =====
+
+export interface AgentTaskInfo {
+  task_id: string;
+  project_id: string;
+  status: string;
+  created_at: number;
+  status_text?: string;
+}
+
+export function startAgentTask(request: AgentChatRequest) {
+  return apiPost<{ task_id: string; project_id: string }>('/api/agent/tasks', request);
+}
+
+export async function fetchAgentTaskEvents(taskId: string, signal: AbortSignal): Promise<Response> {
+  return fetch(`/api/agent/tasks/${encodeURIComponent(taskId)}/events`, { signal });
+}
+
+export async function listAgentTasks(projectId: string): Promise<AgentTaskInfo[]> {
+  const data = await apiFetch<{ tasks: AgentTaskInfo[] }>(
+    `/api/agent/tasks?project_id=${encodeURIComponent(projectId)}`,
+  );
+  return data.tasks || [];
+}
+
+export function stopAgentTask(taskId: string) {
+  return apiPost<{ ok: boolean; cancelled: number }>(
+    `/api/agent/tasks/${encodeURIComponent(taskId)}/stop`,
+    {},
+  );
 }
