@@ -1,4 +1,5 @@
-"""Skill 分阶段聚焦注入：章节解析、阶段探测、聚焦块生成"""
+"""Skill 章节解析与执行器注入块（M5：legacy 全文注入/阶段聚焦已移除，
+本文件只保留章节解析与 executors 注入块的回归测试）"""
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.web import skill_docs
 
@@ -10,23 +11,22 @@ def test_split_sections_flova_tag_format():
     content = (
         "skill_name: demo\n"
         "<planner>\n阶段逻辑与依赖关系\n</planner>\n"
-        "<storyboard_designer>\n故事板结构规范\n</storyboard_designer>\n"
+        "<storyboard_shots>\n故事板结构规范\n</storyboard_shots>\n"
         "<write_the_prompt>\n摄像机 → 主体 → 空间 → 音频\n</write_the_prompt>\n"
         "<media_generator>\n元素生成规范\n</media_generator>\n"
         "<video_assembler>\n组装导出\n</video_assembler>\n"
     )
     sections = skill_docs.split_skill_sections(content)
     assert "阶段逻辑" in sections["planning"]
-    assert "故事板结构规范" in sections["storyboard_ke"]
     assert "故事板结构规范" in sections["storyboard_shot"]
-    assert "故事板结构规范" in sections["storyboard_audio"]
     assert "摄像机" in sections["prompt_draft"]
     assert "元素生成规范" in sections["generation"]
     assert "组装导出" in sections["assembly"]
 
 
 def test_split_sections_heading_fallback():
-    """本地改写的标题式 Skill 按标题关键字兜底映射"""
+    """本地改写的标题式 Skill 按标题关键字兜底映射；
+    「故事板设计」一对多映射到三个拆解 stage（三拆注册断层修复）"""
     content = (
         "# 剧本生视频\n\n## 本系统动作约定\n动作清单\n\n"
         "## 流程规划（阶段逻辑与依赖关系）\n流程正文\n\n"
@@ -35,9 +35,8 @@ def test_split_sections_heading_fallback():
     )
     sections = skill_docs.split_skill_sections(content)
     assert "流程正文" in sections["planning"]
-    assert "分组规范" in sections["storyboard_ke"]
-    assert "分组规范" in sections["storyboard_shot"]
-    assert "分组规范" in sections["storyboard_audio"]
+    for stage in ("storyboard_ke", "storyboard_shot", "storyboard_audio"):
+        assert "分组规范" in sections[stage]
     assert "写法正文" in sections["prompt_draft"]
     assert "生成正文" in sections["generation"]
     assert "组装正文" in sections["assembly"]
@@ -47,7 +46,7 @@ def test_split_sections_empty():
     assert skill_docs.split_skill_sections("") == {}
 
 
-# ---------- 阶段探测 ----------
+# ---------- 执行器注入块（executors 唯一形态） ----------
 
 def _pb(raw_state):
     return PromptBuilder(
@@ -57,31 +56,23 @@ def _pb(raw_state):
     )
 
 
-def test_detect_stage_transitions():
-    # 无分组 → 规格规划
-    assert _pb({"keyElements": [], "shots": [], "audioItems": []}).detect_stage() == "planning"
-    # 有分组无草稿 → 故事板结构
-    state = {"keyElements": [{"id": "k", "title": "t", "drafts": []}], "shots": [], "audioItems": []}
-    assert _pb(state).detect_stage() == "storyboard"
-    # 草稿缺提示词 → 提示词草案
-    state["keyElements"][0]["drafts"] = [{"id": "d", "prompt": ""}]
-    assert _pb(state).detect_stage() == "prompt_draft"
-    # 全部就绪 → 素材生成
-    state["keyElements"][0]["drafts"][0]["prompt"] = "完整提示词"
-    assert _pb(state).detect_stage() == "generation"
+def test_executor_runtime_block_instead_of_full_text():
+    """只注入已注册执行器清单 + 流程基线，不注入 Skill 全文"""
+    from src.video_agent.skill_runtime import registry
 
-
-def test_detect_stage_disabled_without_state_accessor():
-    pb = PromptBuilder(lambda: skill_docs, lambda: "proj")
-    assert pb.detect_stage() == ""
-    assert pb.build_stage_focus_block("任意内容") == ""
-
-
-# ---------- 聚焦块注入 ----------
-
-def test_no_focus_block_for_unmapped_skill():
-    """无法解析章节的 Skill 不产生聚焦块（行为不变）"""
+    registry.reset_registry()  # 隔离：确保按真实 data/skills 目录重新注册
     state = {"keyElements": [], "shots": [], "audioItems": []}
     pb = _pb(state)
-    focus = pb.build_stage_focus_block("# 随便一个文档\n没有任何可识别章节")
-    assert focus == ""
+    block = pb.build_selected_skill_block("AI-短剧一站式生成")
+    assert "已注册独立执行器" in block
+    for tool in ("script_analyze", "storyboard_key_elements", "storyboard_shots",
+                 "storyboard_audio", "write_media_prompt", "audio_generate", "video_assembler"):
+        assert tool in block
+    # 全文不注入（章节在执行器调用时自动注入）
+    assert "Seedance 顺序" not in block
+
+
+def test_unsectioned_skill_block_is_empty():
+    """无可识别章节的 Skill 返回空串（目录仍常驻，模型可 read_skill）"""
+    pb = _pb({"keyElements": [], "shots": [], "audioItems": []})
+    assert pb.build_selected_skill_block("不存在的 Skill") == ""

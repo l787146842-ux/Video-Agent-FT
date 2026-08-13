@@ -13,7 +13,13 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
+import json
 from typing import Any, Deque, Dict, List, Optional
+
+from loguru import logger
+
+from src.video_agent.config import settings
+from src.video_agent.utils.paths import DATA_DIR
 
 # reasoning 文本持久化上限（仅展示用，防 trace 膨胀）
 _REASONING_MAX_CHARS = 500
@@ -67,8 +73,8 @@ class TraceRecord:
 
 class AgentTracer:
     """
-    内存追踪器（单例）—— 保留最近 N 条 trace，无持久化开销。
-    生产环境可通过配置关闭。
+    追踪器（单例）—— 内存保留最近 N 条 + JSONL 文件持久化（W22）。
+    文件超限自动轮转（保留 trace_rotation_keep 份），重载按 trace_id 去重。
     """
 
     _instance: Optional["AgentTracer"] = None
@@ -78,6 +84,7 @@ class AgentTracer:
         self._traces: Deque[TraceRecord] = deque(maxlen=self.MAX_TRACES)
         self._current: Optional[TraceRecord] = None
         self._step_start: float = 0.0
+        self._persist_path = DATA_DIR / "agent_traces.jsonl"
 
     @classmethod
     def get_instance(cls) -> "AgentTracer":
@@ -171,9 +178,62 @@ class AgentTracer:
         record = self._current.to_dict()
         self._traces.append(self._current)
         self._current = None
+        self._persist_record(record)
         return record
 
+    def _persist_record(self, record: Dict[str, Any]) -> None:
+        """追加一条 trace 到 JSONL；文件超限时轮转（.1/.2…，超过保留份数丢弃最旧）。"""
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            line = json.dumps(record, ensure_ascii=False)
+            self._rotate_if_needed()
+            with open(self._persist_path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception as e:
+            logger.warning(f"[Tracer] trace 落盘失败（不影响主流程）: {e}")
+
+    def _rotate_if_needed(self) -> None:
+        max_bytes = int(getattr(settings, "trace_file_max_bytes", 2_000_000))
+        keep = int(getattr(settings, "trace_rotation_keep", 3))
+        try:
+            if not self._persist_path.exists():
+                return
+            if self._persist_path.stat().st_size <= max_bytes:
+                return
+            # .N 依次后移；超过保留份数的最旧一份丢弃
+            for n in range(keep - 1, 0, -1):
+                src = self._persist_path.with_suffix(f".jsonl.{n}")
+                dst = self._persist_path.with_suffix(f".jsonl.{n + 1}")
+                if src.exists():
+                    if dst.exists():
+                        dst.unlink()
+                    src.rename(dst)
+            first = self._persist_path.with_suffix(".jsonl.1")
+            if first.exists():
+                first.unlink()
+            self._persist_path.rename(first)
+        except Exception as e:
+            logger.warning(f"[Tracer] trace 轮转失败（不影响主流程）: {e}")
+
     def get_recent_traces(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """获取最近 N 条追踪记录"""
-        traces = list(self._traces)[-limit:]
-        return [t.to_dict() for t in reversed(traces)]
+        """获取最近 N 条追踪记录（内存 + 文件，按 trace_id 去重，新→旧）。"""
+        by_id: Dict[str, Dict[str, Any]] = {}
+        # 文件（重启恢复）在前，内存覆盖同 id（同 id 以新为准）
+        try:
+            if self._persist_path.exists():
+                for line in self._persist_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        continue
+                    if isinstance(rec, dict) and rec.get("trace_id"):
+                        by_id[str(rec["trace_id"])] = rec
+        except Exception:
+            pass
+        for t in self._traces:
+            by_id[t.trace_id] = t.to_dict()
+        ordered = sorted(by_id.values(), key=lambda r: float(r.get("timestamp", 0) or 0), reverse=True)
+        return ordered[:limit]

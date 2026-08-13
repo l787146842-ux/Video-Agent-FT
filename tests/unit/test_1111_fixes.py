@@ -1,0 +1,388 @@
+"""1111 项目流程断点修复回归：
+1) script_analyze 完成后必须停下交互确认总结，不得直冲规格编写（双轨兜底闸）；
+2) 制作参数未选定时，任意来源的暂停卡都并入标准「键：值」候选项向导
+   （模型自造 label 如「1K（更快）」无法机械落盘）；
+3) 确认意图定稿仅在上一轮暂停确为规格暂停时生效（总结暂停的「确认」
+   不得误定稿规格待确认参数）。
+"""
+import asyncio
+import json
+
+import pytest
+
+from src.video_agent.core import prompt_gates
+from src.video_agent.core.agent_loop import run_agent_loop
+from src.video_agent.core.fc_tool_runner import FCToolRunner
+from src.video_agent.adapters.base_chat import ChatResponse
+from src.video_agent.state.manager import StateManager
+from src.video_agent.web.actions import StudioActionExecutor
+from src.video_agent.web.chat_service import _finalize_spec_params
+
+
+_SPEC_UNCONFIRMED = (
+    "- 视频标题：测试\n"
+    "- 图片分辨率：2K（待确认）\n"
+    "- 视频分辨率：1080p（待确认）\n"
+    "- 分镜最大时长：8 秒（待确认）\n"
+)
+
+
+@pytest.fixture(autouse=True)
+def _declare_spec_wizard(monkeypatch):
+    """本文件验证规格向导机械本身：给全部用例开启 manifest flow 开关
+    （S1：默认关闭，门控行为由 tests/unit/test_skill_manifest.py 覆盖）。"""
+    from src.video_agent.skill_runtime import registry
+
+    monkeypatch.setattr(registry, "skill_flow_enabled", lambda skill, key: True)
+    monkeypatch.setattr(registry, "spec_wizard_active", lambda skill: True)
+
+
+@pytest.fixture
+def svc(tmp_path):
+    return StateManager(str(tmp_path))
+
+
+# ---------- 文本轨：script_analyze 后规格收集闸（6666 起替代原总结闸） ----------
+
+async def test_collect_gate_injects_wizard_when_no_spec_doc(svc, monkeypatch):
+    """解析成功且尚无规格文档：注入规格收集向导（含渠道组占位）"""
+    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [
+        {"label": "出图渠道：下拉选择厂商+模型", "description": "", "group": "出图渠道（API 厂商/模型）"},
+    ])
+    svc.state_dict["documents"] = []  # demo 状态自带规格文档，先清掉
+    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex.skill_name = "测试流程Skill"
+
+    async def llm(system_prompt, messages, stream_hook=None):
+        ex.skill_stages_done.add("script_analyze")
+        return ("**剧本一句话总结**：测试总结。", "stop", 0)
+
+    result = await run_agent_loop(
+        "继续", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert result.confirmation == prompt_gates.SPEC_COLLECT_PAUSED_MSG
+    labels = [o["label"] for o in result.confirmation_options]
+    assert any(l.startswith("图片分辨率：") for l in labels)
+    groups = {o.get("group") for o in result.confirmation_options}
+    assert "出图渠道（API 厂商/模型）" in groups
+
+
+async def test_collect_gate_skipped_when_spec_written_same_batch(svc):
+    """同批已写规格文档：规格写入兜底接管，收集闸不重复注入"""
+    svc.state_dict["documents"] = []
+    ex = StudioActionExecutor(svc, gate_enabled=True)
+
+    async def llm(system_prompt, messages, stream_hook=None):
+        ex.skill_stages_done.add("script_analyze")
+        ex.documents_written.append("制片规格.md")
+        return ("**剧本一句话总结**：测试总结。", "stop", 0)
+
+    result = await run_agent_loop(
+        "继续", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert result.confirmation != prompt_gates.SPEC_COLLECT_PAUSED_MSG
+
+
+async def test_collect_gate_skipped_when_spec_doc_exists(svc):
+    """工作台已有规格文档（老项目重跑）：收集闸不触发"""
+    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "- 画幅：16:9"}]
+    ex = StudioActionExecutor(svc, gate_enabled=True)
+
+    async def llm(system_prompt, messages, stream_hook=None):
+        ex.skill_stages_done.add("script_analyze")
+        return ("**剧本一句话总结**：测试总结。", "stop", 0)
+
+    result = await run_agent_loop(
+        "继续", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert result.confirmation != prompt_gates.SPEC_COLLECT_PAUSED_MSG
+
+
+async def test_collect_gate_skipped_when_model_paused(svc):
+    """模型已自发暂停：系统不覆盖（永不没收模型的暂停）"""
+    svc.state_dict["documents"] = []
+    ex = StudioActionExecutor(svc, gate_enabled=True)
+
+    async def llm(system_prompt, messages, stream_hook=None):
+        ex.skill_stages_done.add("script_analyze")
+        return (
+            "总结如上。\n```studio-actions\n"
+            '[{"action":"request_confirmation","message":"请确认总结"}]\n```',
+            "stop", 0,
+        )
+
+    result = await run_agent_loop(
+        "继续", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert result.confirmation == "请确认总结"
+
+
+# ---------- 向导合并：模型自造选项替换为标准「键：值」格式 ----------
+
+def test_merge_wizard_replaces_model_options_same_group():
+    state = {"documents": [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}]}
+    model_opts = [
+        {"label": "1K（更快）", "group": "图片分辨率", "description": ""},
+        {"label": "2K（推荐）", "group": "图片分辨率", "description": ""},
+        {"label": "确认规格并开始拆分关键元素", "group": "下一步", "description": ""},
+    ]
+    msg, opts, merged = prompt_gates.merge_spec_param_wizard(
+        state, "请选定参数", model_opts,
+    )
+    assert merged
+    labels = [o["label"] for o in opts]
+    # 自造 label 被标准版替换
+    assert "1K（更快）" not in labels
+    assert "图片分辨率：2K（推荐）" in labels
+    assert "视频分辨率：720p（推荐）" in labels
+    assert "分镜最大时长：12 秒（推荐）" in labels or any(
+        l.startswith("分镜最大时长：") for l in labels
+    )
+    # 非参数维度选项保留
+    assert "确认规格并开始拆分关键元素" in labels
+    # 向导回传可机械落盘
+    reply = "\n".join(
+        o["label"] for o in opts
+        if o.get("group") in ("图片分辨率", "视频分辨率", "分镜最大时长")
+        and ("推荐" in o["label"])
+    )
+    new_content, applied = prompt_gates.apply_spec_param_selections(_SPEC_UNCONFIRMED, reply)
+    assert len(applied) == 3
+    assert "待确认" not in new_content
+
+
+def test_merge_wizard_noop_without_spec_doc():
+    msg, opts, merged = prompt_gates.merge_spec_param_wizard(
+        {"documents": []}, "请确认", [{"label": "继续", "description": ""}],
+    )
+    assert not merged and msg == "请确认"
+
+
+def test_merge_wizard_noop_when_params_confirmed(monkeypatch):
+    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
+    # 完整规格：硬参数 + 软参数行齐备 → 无待选 → 不合并向导
+    state = {"documents": [{"name": "制片规格.md", "content": (
+        "- 图片分辨率：2K\n- 视频分辨率：720p\n- 分镜最大时长：12 秒\n"
+        "- 视频类型：叙事短片\n- 输出语言：中文\n- 时长：约 60 秒\n"
+        "- 画幅：16:9 横屏\n- 叙事驱动：故事驱动\n- 视觉风格：写实\n"
+    )}]}
+    msg, opts, merged = prompt_gates.merge_spec_param_wizard(state, "请确认", [])
+    assert not merged
+
+
+class _StubToolManager:
+    async def invoke_tool(self, name, args):
+        from src.video_agent.tools.base import ToolResult
+        return ToolResult(success=True, data={})
+
+
+def test_fc_model_pause_merged_with_wizard(monkeypatch):
+    """FC 轨：模型同批写规格 + 自发暂停但选项为自造 label → 并入标准向导"""
+    runner = FCToolRunner(tool_manager=_StubToolManager())
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
+        lambda: {"documents": [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}]}
+    ))
+    response = ChatResponse(content="", tool_calls=[
+        {"id": "c1", "type": "function", "function": {
+            "name": "document_write",
+            "arguments": json.dumps({"name": "制片规格.md", "content": _SPEC_UNCONFIRMED})}},
+        {"id": "c2", "type": "function", "function": {
+            "name": "workflow_pause",
+            "arguments": json.dumps({
+                "message": "请选定参数",
+                "options": [
+                    {"label": "1K（更快）", "group": "图片分辨率"},
+                    {"label": "确认规格并开始拆分关键元素", "group": "下一步"},
+                ],
+            })}},
+    ])
+    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written = asyncio.run(
+        runner.execute(response, injected_skill="任意 Skill"))
+    labels = [o["label"] for o in conf_opts]
+    assert "1K（更快）" not in labels
+    assert "图片分辨率：2K（推荐）" in labels
+    assert "确认规格并开始拆分关键元素" in labels
+
+
+# ---------- 确认意图定稿的暂停类型门槛 ----------
+
+def test_finalize_confirm_intent_requires_spec_pause_kind(svc):
+    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}]
+    inter = svc.state_dict.setdefault("interaction", {})
+    # 总结暂停的「确认」不得定稿规格参数
+    inter["pending_pause_kind"] = "summary"
+    note = _finalize_spec_params(svc, "确认总结，开始编写制片规格")
+    assert note == ""
+    assert "待确认" in svc.state_dict["documents"][0]["content"]
+    # 规格暂停的「确认」按展示值定稿
+    inter["pending_pause_kind"] = "spec"
+    note = _finalize_spec_params(svc, "确认成片规格，开始拆分关键元素")
+    assert note and "待确认" not in svc.state_dict["documents"][0]["content"]
+
+
+def test_finalize_explicit_selection_works_without_kind(svc):
+    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}]
+    note = _finalize_spec_params(svc, "图片分辨率：4K\n视频分辨率：480p\n分镜最大时长：5 秒")
+    assert note
+    content = svc.state_dict["documents"][0]["content"]
+    assert "- 图片分辨率：4K" in content
+    assert "- 视频分辨率：480p" in content
+    assert "- 分镜最大时长：5 秒" in content
+
+
+# ---------- 用户坚持全速推进（scope=all）豁免暂停卡 ----------
+
+async def test_summary_gate_exempt_when_user_insists_all(svc):
+    """scope=all：收集闸豁免注入，只附警告；流程不被打断"""
+    svc.state_dict["documents"] = []
+    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex.skill_name = "测试流程Skill"
+    ex.gate_override = "all"
+
+    async def llm(system_prompt, messages, stream_hook=None):
+        ex.skill_stages_done.add("script_analyze")
+        return ("**剧本一句话总结**：测试总结。", "stop", 0)
+
+    result = await run_agent_loop(
+        "坚持一口气干完", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert not result.confirmation
+    assert any("全速推进" in w for w in result.warnings)
+
+
+async def test_summary_gate_still_fires_for_element_image_scope(svc):
+    """scope=element_image（只想跳过概念图）：不涵盖流程暂停闸，照常暂停"""
+    svc.state_dict["documents"] = []
+    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex.skill_name = "测试流程Skill"
+    ex.gate_override = "element_image"
+
+    async def llm(system_prompt, messages, stream_hook=None):
+        ex.skill_stages_done.add("script_analyze")
+        return ("**剧本一句话总结**：测试总结。", "stop", 0)
+
+    result = await run_agent_loop(
+        "跳过概念图", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert result.confirmation == prompt_gates.SPEC_COLLECT_PAUSED_MSG
+
+
+def test_fc_summary_gate_exempt_when_override_all(monkeypatch):
+    """FC 轨 scope=all：收集闸豁免，confirmation 保持为空且附覆盖警告"""
+    runner = FCToolRunner(tool_manager=_StubToolManager())
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+
+    class _AnalyzeToolManager:
+        async def invoke_tool(self, name, args):
+            from src.video_agent.tools.base import ToolResult
+            if name == "script_analyze":
+                return ToolResult(success=True, data={"summary": "测试总结"})
+            return ToolResult(success=True, data={})
+
+    runner.tool_manager = _AnalyzeToolManager()
+    response = ChatResponse(content="", tool_calls=[
+        {"id": "c1", "type": "function", "function": {
+            "name": "script_analyze",
+            "arguments": json.dumps({"doc_name": "剧本.md"})}},
+    ])
+    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written = asyncio.run(
+        runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
+    assert not confirmation
+    assert any("全速推进" in w for w in runner.gate_warnings)
+
+
+def test_fc_collect_gate_fires_when_no_spec_doc(monkeypatch):
+    """FC 轨：script_analyze 成功且无规格文档 → 注入规格收集向导"""
+    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
+    runner = FCToolRunner(tool_manager=_StubToolManager())
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+
+    class _AnalyzeToolManager:
+        async def invoke_tool(self, name, args):
+            from src.video_agent.tools.base import ToolResult
+            if name == "script_analyze":
+                return ToolResult(success=True, data={"summary": "测试总结"})
+            return ToolResult(success=True, data={})
+
+    runner.tool_manager = _AnalyzeToolManager()
+    response = ChatResponse(content="", tool_calls=[
+        {"id": "c1", "type": "function", "function": {
+            "name": "script_analyze",
+            "arguments": json.dumps({"doc_name": "剧本.md"})}},
+    ])
+    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written = asyncio.run(
+        runner.execute(response, injected_skill="任意 Skill"))
+    assert confirmation == prompt_gates.SPEC_COLLECT_PAUSED_MSG
+    labels = [o["label"] for o in conf_opts]
+    assert any(l.startswith("图片分辨率：") for l in labels)
+
+
+# ---------- 6666：渠道选择落盘 + spec_collected 防重复向导 ----------
+
+def test_spec_pause_card_consumes_spec_collected_flag():
+    """收集向导已交互过：规格写入后的暂停用常规卡，且标记被消费"""
+    state = {
+        "documents": [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}],
+        "interaction": {"spec_collected": True},
+    }
+    msg, opts = prompt_gates.spec_pause_card(state)
+    assert msg == prompt_gates.SPEC_DOC_PAUSED_MSG
+    assert not state["interaction"].get("spec_collected")
+
+
+def test_merge_wizard_skipped_when_spec_collected():
+    state = {
+        "documents": [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}],
+        "interaction": {"spec_collected": True},
+    }
+    msg, opts, merged = prompt_gates.merge_spec_param_wizard(state, "模型暂停文案", [])
+    assert not merged and msg == "模型暂停文案"
+
+
+def test_channel_groups_from_providers(monkeypatch):
+    from src.video_agent.web import provider_config
+
+    monkeypatch.setattr(provider_config, "load_merged_providers", lambda: [
+        {"id": "p1", "name": "即梦", "image_models": ["jm-5.0"], "video_models": []},
+        {"id": "p2", "name": "火山引擎", "image_models": [], "video_models": ["seedance-2.0"]},
+    ])
+    groups = prompt_gates._channel_groups()
+    titles = [g["group"] for g in groups]
+    assert "出图渠道（API 厂商/模型）" in titles
+    assert "出视频渠道（API 厂商/模型）" in titles
+
+
+def test_apply_spec_channel_selections_routes_by_model_list(monkeypatch):
+    from src.video_agent.web import provider_config
+
+    monkeypatch.setattr(provider_config, "load_merged_providers", lambda: [
+        {"id": "p1", "name": "即梦", "image_models": ["jm-5.0"], "video_models": ["jm-video"]},
+        {"id": "p2", "name": "火山引擎", "image_models": [], "video_models": ["seedance-2.0"]},
+    ])
+    content = "- 视频标题：测试\n- 图像生成：旧渠道 old-model\n- 视频生成：旧渠道 old-video\n"
+    reply = "即梦 / jm-5.0\n火山引擎 / seedance-2.0"
+    new_content, applied = provider_config.apply_spec_channel_selections(content, reply)
+    assert "- 图像生成：即梦 jm-5.0" in new_content
+    assert "- 视频生成：火山引擎 seedance-2.0" in new_content
+    assert len(applied) == 2
+
+
+def test_apply_spec_channel_selections_unknown_provider_noop(monkeypatch):
+    from src.video_agent.web import provider_config
+
+    monkeypatch.setattr(provider_config, "load_merged_providers", lambda: [
+        {"id": "p1", "name": "即梦", "image_models": ["jm-5.0"], "video_models": []},
+    ])
+    content = "- 图像生成：旧渠道\n"
+    new_content, applied = provider_config.apply_spec_channel_selections(content, "不存在厂商 / xxx")
+    assert new_content == content and applied == []
+
+
+def test_consume_confirmation_sets_spec_collected_for_collect_kind(svc):
+    from src.video_agent.web.chat_service import _consume_pending_confirmation
+
+    svc.state_dict.setdefault("interaction", {})["pending_pause_kind"] = "collect"
+    _consume_pending_confirmation(svc, "图片分辨率：2K\n视频分辨率：720p")
+    inter = svc.state_dict["interaction"]
+    assert inter.get("spec_collected") is True
+    assert not inter.get("pending_pause_kind")

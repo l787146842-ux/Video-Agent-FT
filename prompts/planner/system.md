@@ -30,6 +30,7 @@
 【数量严格限制】每轮对话最多调用一次 generate_image（即一次只出一张图）。
 严禁为"给多个方案/多个角度"自行连发多次调用；只有当用户明确说"生成 N 张/多来几张/几个方案"时，才允许按用户指定的数量调用。
 - request_confirmation: 暂停并请求用户确认。字段：message（向用户说明已完成什么、接下来要做什么），可选 options（候选选项数组，每项 {label, description}，前端渲染为单选卡片，用户点击即把 label 作为回复发送）。需要用户在多个方案中选择时（如成片规格、声音与语言方向）必须给 options，而不是只让用户自由输入。用于拆解完成后请用户过目再继续的场景。不要与 continue 同时使用。
+- 阶段确认唯一通道：需要暂停时只能通过 workflow_pause（Tool 模式）/ request_confirmation（文本模式）发起；只在正文写「请确认」无效。
 - continue: 请求系统再调用你一轮（分阶段完成复杂任务，最多 6 轮）。放在 actions 数组末尾，字段：reason。系统执行完本轮操作后会带着刷新后的最新状态再次调用你。
 
 patch/draft 可包含：title, desc, roughDesc, timeRange, duration, label, tag, prompt, imgUrl, videoUrl, mode, model, resolution, aspectRatio, size, timbre, refAssets。

@@ -1,0 +1,202 @@
+"""Skill 章节映射回归测试（阶段一 1.6：消灭三拆重构遗留的注册断层）。
+
+覆盖：
+- 旧 tag <storyboard_designer> 一对多映射到三个拆解 stage
+- 标题式「故事板设计」一对多 + 关键元素/分镜/音频层精确子标题映射
+- 未知 tag/标题不报错不注册
+- lint_skill_content 警告项（空章节/三拆部分缺失/坏 gate_rules/无暂停声明）
+- parse_pause_rules 解析与 skill_requires_stage_pause 判定优先级
+"""
+import pytest
+
+import src.video_agent.web.skill_docs as sd
+from src.video_agent.skill_runtime import registry
+from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
+from src.video_agent.web.skill_docs import (
+    lint_skill_content,
+    parse_pause_rules,
+    split_skill_sections,
+)
+
+_SPLIT_TOOLS = ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
+
+
+@pytest.fixture(autouse=True)
+def isolate(tmp_path, monkeypatch):
+    """每个测试独立 Skill 目录 + 清空运行时注册表。"""
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", tmp_path / "skills")
+    registry.reset_registry()
+    yield
+    registry.reset_registry()
+
+
+# ---------- 1. 旧 tag 一对多映射 ----------
+
+def test_legacy_storyboard_designer_tag_maps_to_all_split_stages():
+    content = (
+        "skill_name: \"demo\"\n"
+        "<storyboard_designer>\n故事板整节规范\n</storyboard_designer>\n"
+    )
+    secs = split_skill_sections(content)
+    for stage in ("storyboard_ke", "storyboard_shot", "storyboard_audio"):
+        assert "故事板整节规范" in secs.get(stage, "")
+
+
+def test_new_split_tags_map_independently():
+    content = (
+        "<storyboard_key_elements>\n元素节\n</storyboard_key_elements>\n"
+        "<storyboard_shots>\n分镜节\n</storyboard_shots>\n"
+        "<storyboard_audio>\n音频节\n</storyboard_audio>\n"
+    )
+    secs = split_skill_sections(content)
+    assert "元素节" in secs["storyboard_ke"] and "分镜节" not in secs["storyboard_ke"]
+    assert "分镜节" in secs["storyboard_shot"] and "元素节" not in secs["storyboard_shot"]
+    assert "音频节" in secs["storyboard_audio"]
+
+
+# ---------- 2. 标题式映射 ----------
+
+def test_heading_storyboard_design_maps_to_all_split_stages():
+    content = (
+        "# 标题式\n> 调用规则：测试\n\n"
+        "## 流程规划\n流程正文\n\n"
+        "## 故事板设计\n故事板正文\n\n"
+        "## 提示词写法\n写法正文\n"
+    )
+    secs = split_skill_sections(content)
+    for stage in ("storyboard_ke", "storyboard_shot", "storyboard_audio"):
+        assert "故事板正文" in secs.get(stage, "")
+    assert "流程正文" in secs.get("planning", "")
+    assert "写法正文" in secs.get("prompt_draft", "")
+
+
+def test_heading_exact_subheadings_map_precisely():
+    content = (
+        "# 精确子标题\n\n"
+        "## 关键元素\n元素正文\n\n"
+        "## 分镜\n分镜正文\n\n"
+        "## 音频层\n音频正文\n"
+    )
+    secs = split_skill_sections(content)
+    assert "元素正文" in secs["storyboard_ke"] and "分镜正文" not in secs["storyboard_ke"]
+    assert "分镜正文" in secs["storyboard_shot"]
+    assert "音频正文" in secs["storyboard_audio"]
+
+
+def test_prompt_heading_wins_over_storyboard_keyword():
+    """「分镜提示词写法」应归 prompt_draft 而非 storyboard_shot（提示词关键字优先）"""
+    content = "# x\n\n## 分镜提示词写法\n提示词正文\n"
+    secs = split_skill_sections(content)
+    assert "提示词正文" in secs.get("prompt_draft", "")
+    assert "提示词正文" not in secs.get("storyboard_shot", "")
+
+
+# ---------- 3. 注册结果（available_tools 完整性） ----------
+
+def test_legacy_tag_skill_registers_all_split_executors():
+    sd.save_skill_doc(
+        "legacy-demo",
+        "skill_name: \"旧标签演示\"\n"
+        "<planner>\n流程\n</planner>\n"
+        "<storyboard_designer>\n故事板整节\n</storyboard_designer>\n"
+        "<write_the_prompt>\n写法\n</write_the_prompt>\n",
+    )
+    entry = registry.get_entry("legacy-demo")
+    assert entry is not None
+    for tool in _SPLIT_TOOLS:
+        assert tool in entry.available_tools
+    # 整节对三个执行器同等注入
+    for tool in _SPLIT_TOOLS:
+        assert "故事板整节" in registry.tool_sections("legacy-demo", tool)
+
+
+def test_heading_skill_registers_all_split_executors():
+    sd.save_skill_doc(
+        "heading-demo",
+        "# 标题式演示\n> 调用规则：测试\n\n## 故事板设计\n故事板正文\n",
+    )
+    entry = registry.get_entry("heading-demo")
+    assert entry is not None
+    for tool in _SPLIT_TOOLS:
+        assert tool in entry.available_tools
+
+
+def test_unknown_tag_or_heading_registers_nothing_without_error():
+    content = "<unknown_tool>\n正文\n</unknown_tool>\n"
+    assert split_skill_sections(content) == {}
+    sd.save_skill_doc("unknown-demo", "# 未知\n> 调用规则：测试\n<unknown_tool>\n正文\n</unknown_tool>\n")
+    entry = registry.get_entry("unknown-demo")
+    assert entry is not None and entry.available_tools == []
+
+
+# ---------- 4. lint_skill_content ----------
+
+def test_lint_empty_sections_warns():
+    lint = lint_skill_content("# 空\n> 调用规则：无章节\n纯正文\n")
+    assert lint["available_tools"] == []
+    assert any("未识别到任何执行器章节" in w for w in lint["warnings"])
+
+
+def test_lint_partial_split_warns_missing_executors():
+    content = (
+        "<storyboard_key_elements>\n元素节\n</storyboard_key_elements>\n"
+    )
+    lint = lint_skill_content(content)
+    assert "storyboard_key_elements" in lint["available_tools"]
+    assert any(
+        "storyboard_shots" in w and "storyboard_audio" in w
+        for w in lint["warnings"]
+    )
+
+
+def test_lint_bad_gate_rules_warns():
+    content = (
+        "<planner>\n流程\n</planner>\n"
+        "```json gate_rules\n{shot_min_chars: 坏JSON}\n```\n"
+        "**何时暂停**：每阶段后\n"
+    )
+    lint = lint_skill_content(content)
+    assert any("gate_rules" in w for w in lint["warnings"])
+
+
+def test_lint_no_pause_declaration_warns():
+    lint = lint_skill_content("<planner>\n流程（无任何暂停表述）\n</planner>")
+    assert any("暂停" in w for w in lint["warnings"])
+
+
+def test_lint_full_flova_skill_has_no_structural_warnings():
+    content = (
+        "<planner>\n流程\n**何时暂停**：每阶段后\n</planner>\n"
+        "<storyboard_designer>\n故事板\n</storyboard_designer>\n"
+    )
+    lint = lint_skill_content(content)
+    for tool in _SPLIT_TOOLS:
+        assert tool in lint["available_tools"]
+    assert lint["warnings"] == []
+
+
+# ---------- 5. pause_rules 解析与暂停判定优先级 ----------
+
+def test_parse_pause_rules_valid_invalid_missing():
+    assert parse_pause_rules("```json pause_rules\n{\"stage_pause\": true}\n```") == {"stage_pause": True}
+    assert parse_pause_rules("```json pause_rules\n{\"stage_pause\": false}\n```") == {"stage_pause": False}
+    assert parse_pause_rules("```json pause_rules\n{坏JSON}\n```") is None
+    assert parse_pause_rules("无声明块") is None
+
+
+def test_pause_rules_overrides_keyword_detection():
+    """显式声明 false 时，即使正文含「何时暂停」关键词也不暂停（声明优先）"""
+    sd.save_skill_doc(
+        "pause-demo",
+        "# 暂停演示\n\n```json pause_rules\n{\"stage_pause\": false}\n```\n\n"
+        "**何时暂停**：每阶段后暂停\n<planner>\n流程\n</planner>\n",
+    )
+    assert skill_requires_stage_pause("暂停演示") is False
+
+
+def test_pause_keyword_fallback_without_declaration():
+    sd.save_skill_doc(
+        "pause-demo2",
+        "# 关键词兜底\n<planner>\n**何时暂停**：每阶段后\n</planner>\n",
+    )
+    assert skill_requires_stage_pause("关键词兜底") is True

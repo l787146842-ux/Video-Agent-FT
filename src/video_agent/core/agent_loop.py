@@ -11,6 +11,7 @@ LLM 可以在 studio-actions 末尾输出 {"action": "continue"} 请求下一轮
 llm_call / context_builder 以 callable 注入，便于单元测试。
 """
 from dataclasses import dataclass, field
+import re
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import time
@@ -63,32 +64,107 @@ def split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], 
     wants_continue = False
     confirmation = ""
     confirmation_options: List[Dict[str, Any]] = []
+    confirm_names = ("request_confirmation", "confirm", "confirmation", "pause", "workflow_pause")
     for a in actions:
-        name = str(a.get("action", "")).lower()
+        name = str(a.get("action") or a.get("tool") or a.get("type") or "").lower()
         if name == "continue":
             wants_continue = True
-        elif name == "request_confirmation":
-            confirmation = str(a.get("message", "") or "请确认以上内容，确认后我将继续。")
-            opts = a.get("options")
-            if isinstance(opts, list):
-                for o in opts:
-                    if isinstance(o, dict) and str(o.get("label") or "").strip():
-                        item = {
-                            "label": str(o.get("label")).strip(),
-                            "description": str(o.get("description") or "").strip(),
-                        }
-                        if str(o.get("group") or "").strip():
-                            item["group"] = str(o.get("group")).strip()
-                        confirmation_options.append(item)
-                    elif isinstance(o, str) and o.strip():
-                        confirmation_options.append({"label": o.strip(), "description": ""})
+        elif name in confirm_names or "confirmation" in a or "request_confirmation" in a:
+            confirmation = (
+                _extract_confirmation(a)
+                or str(a.get("confirmation") or a.get("request_confirmation") or "").strip()
+                or "请确认以上内容，确认后我将继续。"
+            )
+            opts = a.get("options") or []
+            if not isinstance(opts, list):
+                opts = []
+            for o in opts:
+                if isinstance(o, dict) and str(o.get("label") or "").strip():
+                    item = {
+                        "label": str(o.get("label")).strip(),
+                        "description": str(o.get("description") or "").strip(),
+                    }
+                    if str(o.get("group") or "").strip():
+                        item["group"] = str(o.get("group")).strip()
+                    confirmation_options.append(item)
+                elif isinstance(o, str) and o.strip():
+                    confirmation_options.append({"label": o.strip(), "description": ""})
         else:
             executable.append(a)
     return executable, wants_continue, confirmation, confirmation_options
 
 
+def _extract_confirmation(action: Dict[str, Any]) -> str:
+    """从动作里提取暂停确认文案（兼容 tool/type 键与 message/confirmation 字段）。"""
+    if not isinstance(action, dict):
+        return ""
+    name = str(action.get("action") or action.get("tool") or action.get("type") or "").lower()
+    if name not in ("request_confirmation", "confirm", "confirmation", "pause", "workflow_pause"):
+        return ""
+    return str(action.get("message") or action.get("confirmation") or "").strip()
+
+
+# 防虚报：模型在未真实执行结构操作时声称「已拆解/已建组/已写入故事板」。
+# 每段独立判定（跨文本拼接不误报）；含未来/预告措辞（确认后/接下来/之后…）
+# 一律不算声称（4444 误伤措辞豁免）。
+_STRUCTURE_CLAIM_RE = re.compile(
+    r"(?:已完成|完成|已创建|已拆解|已写入)\s*(?:关键元素)?(?:拆解|拆分|分组|故事板)"
+    r"|(?:关键元素)?(?:拆解|拆分)完成|已创建\s*\d+\s*个分组并写入故事板",
+)
+_FUTURE_MARKER_RE = re.compile(r"确认后|接下来|之后|即将|下一步|先确认|先将")
+
+
+def _claims_structure_done(*texts: str) -> bool:
+    """判定文本是否声称已完成故事板结构搭建（防虚报闸的文本检测）。
+
+    - 每个文本段独立判定（2222 事故：正文结尾与暂停文案开头跨文本拼接不得误报）；
+    - 含未来/预告措辞的段落不算声称（4444 误伤措辞豁免）。
+    """
+    for t in texts:
+        text = str(t or "")
+        if _FUTURE_MARKER_RE.search(text):
+            continue
+        if _STRUCTURE_CLAIM_RE.search(text):
+            return True
+    return False
+
+
 # 向后兼容别名
 _split_actions = split_actions
+
+
+# 自检回喂模板（888 事故：拆解覆盖完整性的表述源在铁律第 2 条）
+SELF_CHECK_FEEDBACK = "（系统）自检提醒：拆解需覆盖完整（按《执行铁律》第 2 条自检核对）。"
+
+
+def _compact_old_step_feedback(messages: List[Dict[str, Any]], keep_pairs: int = 2) -> int:
+    """轮内 compaction（C3）：把超过最近 keep_pairs 轮的「工具已执行完毕」反馈
+    折叠为摘要，旧 assistant 轮次原地压缩；用户消息与首条消息不碰。
+
+    返回被折叠的反馈条数。
+    """
+    if not messages:
+        return 0
+    feedback_idx = [
+        i for i, m in enumerate(messages)
+        if isinstance(m.get("content"), str)
+        and m.get("content", "").startswith("（系统）第")
+        and "已执行完毕" in m.get("content", "")
+    ]
+    if len(feedback_idx) <= keep_pairs:
+        return 0
+    collapse = feedback_idx[:-keep_pairs]
+    for i in collapse:
+        # 压缩其紧邻的前一条 assistant 轮次（保留用户引导与首条用户消息）
+        if i > 0 and messages[i - 1].get("role") == "assistant":
+            messages[i - 1] = {
+                **messages[i - 1],
+                "content": "（历史轮次摘要：该轮工具反馈已折叠，详情以当前工作台状态为准）",
+            }
+    # 移除被折叠的反馈消息本身
+    for i in sorted(collapse, reverse=True):
+        messages.pop(i)
+    return len(collapse)
 
 
 async def run_agent_loop(
@@ -101,6 +177,8 @@ async def run_agent_loop(
     max_steps: int = MAX_STEPS,
     on_event=None,
     stream_hook: Optional[Callable[[str], Awaitable[None]]] = None,
+    prelude_notes: Optional[List[tuple]] = None,
+    pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None,
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
@@ -116,6 +194,23 @@ async def run_agent_loop(
 
     result = AgentLoopResult()
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
+    structure_self_check_pending = False
+    structure_self_check_round = 0
+
+    def _wizard_active() -> bool:
+        """当前 Skill 是否启用规格向导（manifest/正文客观检测，S1 单一事实源）。"""
+        try:
+            from src.video_agent.skill_runtime.registry import spec_wizard_active
+
+            return bool(spec_wizard_active(skill))
+        except Exception:
+            return False
+
+    skill = str(getattr(executor, "skill_name", "") or "")
+    if not skill:
+        used = (getattr(executor, "state", None) or {}).get("usedSkills") or []
+        skill = str(used[-1] or "") if used else ""
+    selected_skills = list((getattr(executor, "state", None) or {}).get("usedSkills") or [])
 
     # 链路追踪：记录本次对话执行过程
     tracer = AgentTracer.get_instance()
@@ -125,6 +220,10 @@ async def run_agent_loop(
     for step in range(1, max_steps + 1):
         result.steps = step
         tracer.start_step()
+        if step == 1:
+            # 前奏明细（Q8）：读 Skill/文档等准备动作记入第一步时间线
+            for name, summary in (prelude_notes or []):
+                tracer.record_action(str(name), str(summary), 0.0, True)
         await emit({"type": SSE_STEP_STARTED, "step": step, "max_steps": max_steps})
         if step > 1:
             # 多轮循环"静默期"提示：上一轮工具执行完到本轮首 token 之间可能耗时数十秒，
@@ -133,6 +232,30 @@ async def run_agent_loop(
                 "type": SSE_STATUS,
                 "text": f"第 {step - 1} 轮操作已完成，继续思考中（第 {step}/{max_steps} 轮）…",
             })
+        # 轮间注入（7777 三轮）：任务执行期间收到的用户引导消息在上一轮操作完成、
+        # 本轮 LLM 调用之前送达；首轮尚无操作可打断，一律不注入
+        if step > 1 and pending_injector is not None:
+            try:
+                pending_items = pending_injector() or []
+            except Exception:
+                pending_items = []
+            for item in pending_items:
+                gid = str(item.get("id") or "")
+                gtext = str(item.get("text") or "").strip()
+                if not gtext:
+                    continue
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"（任务执行期间收到您的指令：{gtext}）"
+                        "请优先处理；若为提问先回答，处理完继续原任务。"
+                    ),
+                })
+                await emit({
+                    "type": "guidance_injected",
+                    "id": gid,
+                    "text": gtext,
+                })
         system_prompt = context_builder()  # 每轮刷新，让 LLM 看到上一轮执行后的最新状态
 
         # 过程时间线：模型推理轮本身也作为操作条目可见（读文档/调执行器之外的“思考”动作）
@@ -152,12 +275,25 @@ async def run_agent_loop(
             "result_summary": f"模型推理规划（第 {step} 轮）完成",
         })
 
-        # 空响应防护：模型返回了完全空的响应（无文本且无工具调用，常见于
-        # 上游瞬时抖动）时自动重试一次，避免直接落为「没有返回可见回复」。
-        if not content.strip() and fc_applied == 0:
-            logger.warning(f"[AgentLoop] 第 {step} 轮模型返回空响应，自动重试一次")
-            await emit({"type": SSE_STATUS, "text": f"第 {step} 轮响应为空，重试中…"})
+        # 空/畸形响应防护：空响应或 MALFORMED_FUNCTION_CALL 连续发生 → 重试至多 2 次，
+        # 达到上限后以明确故障文案收尾（不再静默落为「没有返回可见回复」）。
+        bad_retries = 0
+        while not str(content or "").strip() and fc_applied == 0 and bad_retries < 2:
+            bad_retries += 1
+            logger.warning(f"[AgentLoop] 第 {step} 轮输出异常（空/畸形），重试 {bad_retries}/2")
+            await emit({"type": SSE_STATUS, "text": f"第 {step} 轮输出异常，重试中…"})
+            tracer.record_action(
+                name="auto_retry",
+                summary=f"模型输出异常（空/畸形），自动重做（第 {bad_retries} 次）",
+                elapsed_ms=0.0,
+                ok=True,
+            )
             content, finish_reason, fc_applied = await llm_call(system_prompt, messages, stream_hook)
+        if bad_retries == 2 and not str(content or "").strip() and fc_applied == 0:
+            result.text = "输出异常：模型连续返回空/畸形输出，已重试 2 次；请重试或检查模型配置。"
+            result.warnings.append("模型连续 3 次输出异常（空/畸形），已终止本轮")
+            tracer.end_step(step, actions_applied=0, finish_reason="bad_output")
+            break
 
         if finish_reason == "length":
             result.warnings.append(
@@ -191,7 +327,7 @@ async def run_agent_loop(
                 "role": "user",
                 "content": (
                     f"（系统）第 {step} 轮的 {fc_applied} 个 Tool 已执行完毕，工作台状态已刷新到 system prompt。"
-                    "请继续完成任务；全部完成后直接回复文本即可（不要再调用 Tool）。"
+                    "请继续完成任务；全部完成后直接回复文本即可。"
                 ),
             })
             continue
@@ -204,18 +340,25 @@ async def run_agent_loop(
             )
 
         executable, wants_continue, confirmation, confirmation_options = _split_actions(actions)
+        # 模型自发暂停 + 规格参数未定稿：把模型自造 label 并入标准「键：值」向导
+        # （1111 事故：自造「1K（更快）」无法机械落盘；系统永不没收模型的暂停文案）
+        if confirmation and _wizard_active():
+            try:
+                _m, _opts, _merged = prompt_gates.merge_spec_param_wizard(
+                    executor.state, confirmation, confirmation_options,
+                )
+                if _merged:
+                    confirmation, confirmation_options = _m, _opts
+            except Exception:
+                pass
         # 规格向导闸机（S1）：声明 spec_wizard 的 Skill，规格文档由系统按向导
         # 拼装，模型手写规格一律不落盘，改为系统规格收集/审阅暂停卡
         spec_wizard_pending = False
         if executable:
             try:
-                from src.video_agent.skill_runtime.registry import spec_wizard_active
-
-                skill_name = str(getattr(executor, "skill_name", "") or "")
-                if not skill_name:
-                    used = (getattr(executor, "state", None) or {}).get("usedSkills") or []
-                    skill_name = str(used[-1] or "") if used else ""
-                if spec_wizard_active(skill_name):
+                # 拒收仅对「真实选中」的 Skill 生效（4444）：无 usedSkills 时
+                # 模型手写规格照常落盘，避免引擎预设流程误伤
+                if _wizard_active() and skill in selected_skills:
                     spec_writes = [
                         a for a in executable
                         if str(a.get("action", "")).lower()
@@ -268,6 +411,12 @@ async def run_agent_loop(
             )
         else:
             applied = await executor.execute_locked(executable, accumulate=stream_consumed > 0)
+        # 阶段账本：script_analyze 成功 → 标记已完成（总结/收集闸判定）
+        if applied > 0 and any(
+            str(a.get("action") or a.get("tool") or "").strip() == "script_analyze"
+            for a in executable
+        ):
+            getattr(executor, "skill_stages_done", set()).add("script_analyze")
         applied += stream_preapplied  # 流式预执行成功数计入本轮应用量
         _batch_ms = (time.monotonic() - _t0) * 1000
         result.applied_actions += applied
@@ -314,8 +463,16 @@ async def run_agent_loop(
                     f"（原因：{gate_rejections[0][:60]}…）"
                 )
             elif stream_consumed == 0:
+                failed_desc = ""
+                try:
+                    failed_desc = "；".join(
+                        executor._describe_action(a) for a in executable[applied:][:3]
+                    )
+                except Exception:
+                    failed_desc = ""
                 result.warnings.append(
-                    f"第 {step} 轮有 {total_exec - applied} 个操作未匹配到目标（draft/group 不存在？）"
+                    f"第 {step} 轮有 {total_exec - applied} 个操作未执行成功"
+                    + (f"（{failed_desc}）" if failed_desc else "（目标不存在或执行失败）")
                 )
 
         # 流程闸机自愈（对齐 Tool 模式错误回传闭环）：本轮有操作被闸机拦截（全部或
@@ -337,23 +494,54 @@ async def run_agent_loop(
                 "text": f"系统闸机拦截了本轮 {blocked_n} 个流程操作，正在要求模型按流程修正…",
             })
 
-        # 阶段硬边界：写入规格/阶段文档后必须停下等审阅，不给模型顺手把后续阶段
-        # （拆结构/写提示词）也打包做完的机会（模型未自行暂停时由系统强制）
-        if (
-            applied > 0
-            and not confirmation
-            and not wants_continue
-            and any(
-                str(a.get("action", "")).lower() in ("write_document", "write_doc", "save_document", "document_write")
-                for a in executable
-            )
-        ):
-            confirmation = "规格/阶段文档已写入，请审阅；确认无误后我再推进下一阶段。"
+        # 阶段硬边界：写入规格/阶段文档后必须停下等审阅（9999 事故：写完规格
+        # 输出 continue 想直冲下一步 → 系统强制停在规格审阅，无视 continue）
+        doc_written_names = [
+            str(a.get("name") or a.get("key") or "")
+            for a in executable
+            if str(a.get("action") or a.get("tool") or "").lower()
+            in ("write_document", "write_doc", "save_document", "document_write")
+        ]
+        if doc_written_names and not confirmation and _wizard_active():
+            spec_hit = any(prompt_gates.is_spec_doc_name(n) for n in doc_written_names)
+            if spec_hit:
+                confirmation, confirmation_options = prompt_gates.spec_pause_card(executor.state)
+                interaction = executor.state.setdefault("interaction", {})
+                interaction["pending_pause_kind"] = "spec"
+                logger.info("[FlowGate] 规格文档已写入，强制暂停审阅")
+
+        # 系统拼装规格已落盘待审阅（spec_review_pending）：轮末注入审阅卡
+        interaction = executor.state.setdefault("interaction", {})
+        if interaction.get("spec_review_pending") and not confirmation:
+            interaction.pop("spec_review_pending", None)
+            confirmation, confirmation_options = prompt_gates.spec_pause_card(executor.state)
+            logger.info("[FlowGate] 系统拼装规格待审阅，注入审阅卡")
 
         # 规格向导激活：模型手写规格已被忽略，必须转系统向导暂停卡等用户选参
         if spec_wizard_pending and not confirmation:
             confirmation, confirmation_options = prompt_gates.spec_pause_card(executor.state)
+            interaction = executor.state.setdefault("interaction", {})
+            interaction["pending_pause_kind"] = "spec"
             logger.info("[FlowGate] 规格向导激活，模型手写规格已忽略，转系统规格向导暂停卡")
+
+        # 总结/规格收集闸（层9 兜底，1111/6666 事故）：script_analyze 已成功
+        # 且无规格文档且模型未自发暂停 → 注入规格收集向导；scope=all 豁免只附警告
+        if (
+            "script_analyze" in getattr(executor, "skill_stages_done", set())
+            and not prompt_gates.has_spec_document(executor.state)
+            and not any(
+                prompt_gates.is_spec_doc_name(n)
+                for n in getattr(executor, "documents_written", []) or []
+            )
+            and not confirmation
+        ):
+            if getattr(executor, "gate_override", False) in ("all", True):
+                result.warnings.append("用户已要求全速推进，已豁免规格收集暂停（仅附警告）")
+            else:
+                confirmation, confirmation_options = prompt_gates.spec_collect_card(executor.state)
+                interaction = executor.state.setdefault("interaction", {})
+                interaction["pending_pause_kind"] = "collect"
+                logger.info("[FlowGate] script_analyze 完成且无规格文档，注入规格收集向导")
 
         # 流程闸机硬边界（对齐 FC 轨）：本批刚搭建故事板结构时，确认卡片统一换成
         # 「审阅拆分方案」的系统文案——结构阶段闸机只建骨架不写详细提示词，
@@ -361,30 +549,80 @@ async def run_agent_loop(
         # （8888 事故：拆完分镜即引导「确认分镜与草案，开始生成视频」）。
         structure_kinds = set(getattr(executor, "structure_kinds_created", None) or set())
         if (
-            structure_kinds
+            not confirmation
+            and structure_kinds
+            and not structure_self_check_pending
             and getattr(executor, "gate_enabled", False)
             and prompt_gates.gate_mode() == "strict"
         ):
+            # 结构首建后强制再跑一轮自检补漏（8888 事故）：不直接弹系统暂停卡，
+            # 先让模型按铁律第 2 条自检；第二轮若模型仍未暂停，再落系统结构审阅卡
+            structure_self_check_pending = True
+            structure_self_check_round = step
+            logger.info(f"[FlowGate] 结构首建，强制自检轮（kinds={sorted(structure_kinds)}）")
+        if (
+            not confirmation
+            and structure_self_check_pending
+            and step > structure_self_check_round
+            and getattr(executor, "gate_enabled", False)
+            and prompt_gates.gate_mode() == "strict"
+        ):
+            # 自检轮模型仍未暂停：系统落结构审阅卡，不再无限追加自检轮
             confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
-            logger.info(f"[FlowGate] 结构搭建后覆盖确认文案（kinds={sorted(structure_kinds)}）")
+            structure_self_check_pending = False
+            logger.info(f"[FlowGate] 自检轮后仍未暂停，注入结构审阅卡（kinds={sorted(structure_kinds)}）")
+
+        # 阶段完成引导兜底（5555 事故）：执行器跑完但模型没发确认卡时，
+        # 系统客观补一张下一步引导卡（不覆盖模型自发的暂停）
+        if (
+            not confirmation
+            and not gate_heal
+            and applied > 0
+            and any(
+                str(a.get("action") or a.get("tool") or "").strip()
+                in ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
+                for a in executable
+            )
+        ):
+            confirmation = "阶段执行完成，请审阅左侧故事板结果"
+            confirmation_options = [
+                {"label": "继续下一步", "description": "确认当前阶段产出，推进到下一阶段"},
+                {"label": "我要调整", "description": "告诉我需要增删改的内容"},
+            ]
+            logger.info("[FlowGate] 阶段执行完成且模型未暂停，注入下一步引导卡")
 
         visible = executor.strip_action_blocks(content)
         if visible and not gate_heal:
+            # 虚报警告（7777 × 4444）：声称完成结构搭建但故事板实际为空 → 只警告不拦人
+            if (
+                confirmation
+                and _claims_structure_done(visible)
+                and prompt_gates.storyboard_is_empty(executor.state)
+            ):
+                result.warnings.append(
+                    "检测到虚报：正文声称已完成结构搭建，但故事板实际仍为空；"
+                    "已按用户确认语义保留当前暂停（系统不没收模型暂停）。"
+                )
+            # 规格收集暂停的正文没带剧本总结：从 analysis.summary 补到开头（Q1）
+            interaction = executor.state.get("interaction") or {}
+            if (
+                confirmation
+                and interaction.get("pending_pause_kind") == prompt_gates.SPEC_COLLECT_KIND
+            ):
+                summary = str((executor.state.get("analysis") or {}).get("summary") or "").strip()
+                if summary and summary not in visible:
+                    visible = f"**剧本一句话总结**：{summary}\n\n{visible}"
             # 结构纯净闸剥离了内联详细提示词：正文追加更正说明，
             # 避免持久化消息只剩模型「已编写提示词草案」的虚报文字
-            stripped_n = int(getattr(executor, "prompts_stripped", 0) or 0)
-            if stripped_n and getattr(executor, "gate_enabled", False):
-                visible = (
-                    visible
-                    + f"\n\n【系统说明】本轮只搭建了故事板骨架，{stripped_n} 条内联详细提示词已被流程闸机剥离，"
-                    "提示词草案尚未编写；确认拆分方案后再逐条编写。"
-                )
             result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
 
         logger.info(
             f"[AgentLoop] step={step} actions={applied}/{total_exec} "
             f"continue={wants_continue} confirm={bool(confirmation)} finish={finish_reason or '-'}"
         )
+
+        if structure_self_check_pending and not confirmation:
+            wants_continue = True
 
         if confirmation:
             # 暂停等待用户确认：终止循环，把确认请求（含候选选项）带回给前端
@@ -426,8 +664,10 @@ async def run_agent_loop(
         else:
             feedback = (
                 f"（系统）第 {step} 轮的 {applied} 个操作已执行，最新工作台状态已刷新到 system prompt。"
-                "请继续完成任务；全部完成后不要再输出 continue。"
+                "请继续完成任务；全部完成后直接结束本轮回复。"
             )
+            if structure_self_check_pending:
+                feedback += "\n" + SELF_CHECK_FEEDBACK
         messages.append({"role": "user", "content": feedback})
 
     if not result.text:

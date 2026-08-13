@@ -296,13 +296,15 @@ def resolve_scene_refs(
         if not isinstance(ref_title, str):
             continue
         for ke_group in state.get(CAT_KEY_ELEMENTS, []):
-            if ke_group.get("title") == ref_title:
-                for d in ke_group.get("drafts", []):
-                    img = d.get("imgUrl") or ""
-                    if img:
-                        refs.append({"url": img, "role": "reference"})
-                        break
-                break
+            # sceneRefs 兼容关键元素 ID（ke-xxx）与标题两种写法
+            if str(ke_group.get("id") or "") != ref_title and str(ke_group.get("title") or "") != ref_title:
+                continue
+            for d in ke_group.get("drafts", []):
+                img = d.get("imgUrl") or ""
+                if img:
+                    refs.append({"url": img, "role": "reference"})
+                    break
+            break
     return refs[:limit]
 
 

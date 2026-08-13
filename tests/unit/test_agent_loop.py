@@ -2,7 +2,7 @@
 import pytest
 
 from src.video_agent.web.actions import StudioActionExecutor
-from src.video_agent.core.agent_loop import run_agent_loop
+from src.video_agent.core.agent_loop import run_agent_loop, _claims_structure_done
 from src.video_agent.core import prompt_gates
 from src.video_agent.state.manager import StateManager
 
@@ -156,55 +156,56 @@ async def test_fc_stop_without_text_continues(svc, executor):
 
 # ---------- 流程闸机自愈（8888 事故：操作全被拦但正文虚报成功并暂停） ----------
 
-async def test_all_gate_blocked_heals_and_retries(svc):
-    """文本轨操作全被闸机拦截：不接受虚报暂停，回喂拦截原因让模型补做后重试"""
+async def test_all_gate_bypassed_writes_and_keeps_model_pause(svc, monkeypatch):
+    """文本轨操作不再被闸机拦截：分组照常创建，模型自带的暂停原样保留"""
+    from src.video_agent.skill_runtime import registry
+
+    monkeypatch.setattr(
+        registry, "skill_flow_enabled", lambda skill, key: key == "spec_gate",
+    )
     ex = StudioActionExecutor(svc, gate_enabled=True)
-    # 清空 demo 故事板：确保「首次搭建」硬闸生效（首拆只允许关键元素）
-    svc.state_dict["keyElements"] = []
-    svc.state_dict["shots"] = []
-    svc.state_dict["audioItems"] = []
-    # 第1轮：首次搭建直接拆分镜 + 虚报成功并请求确认 → 被首拆硬闸全部拦截
-    r1 = ('已完成分镜拆解，共创建 2 个镜头。\n```studio-actions\n'
-          '[{"action":"add_group","group_type":"shot","title":"Shot_A","draft":{"label":"d"}},'
-          '{"action":"add_group","group_type":"shot","title":"Shot_B","draft":{"label":"d"}},'
+    ex.skill_name = "测试流程Skill"
+    # 第1轮：无规格文档直拆关键元素 + 请求确认 → 照常执行并附警告
+    r1 = ('已完成关键元素拆解，共创建 2 个分组。\n```studio-actions\n'
+          '[{"action":"add_group","group_type":"keyElement","title":"Element_A","draft":{"label":"d"}},'
+          '{"action":"add_group","group_type":"keyElement","title":"Element_B","draft":{"label":"d"}},'
           '{"action":"request_confirmation","message":"已拆好，请确认"}]\n```', "stop")
-    # 第2轮（自愈）：先写规格文档再暂停
-    r2 = ('规格已写入。\n```studio-actions\n'
-          '[{"action":"write_document","name":"Final_Video_Spec.md","content":"标题：测试"},'
-          '{"action":"request_confirmation","message":"规格文档已写入，请审阅"}]\n```', "stop")
-    llm, calls = make_llm([r1, r2])
+    llm, calls = make_llm([r1])
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
-    assert calls["n"] == 2  # 拦截后触发了修正轮
-    # 暂停文案来自修正轮，不是虚报的「已拆好」
-    assert result.confirmation == "规格文档已写入，请审阅"
-    assert "已拆好" not in result.confirmation
-    # 虚报正文被丢弃，最终正文只有修正轮产出
-    assert "已完成分镜拆解" not in result.text
-    assert "规格已写入" in result.text
-    # 规格文档真正写入了
-    assert any(d.get("name") == "Final_Video_Spec.md" for d in svc.state_dict["documents"])
-    # 分镜并未被虚假创建（只查本用例试图创建的分组，避免单例残留数据干扰）
-    titles = [g.get("title") for g in (svc.state_dict.get("shots") or [])]
-    assert "Shot_A" not in titles and "Shot_B" not in titles
+    assert calls["n"] == 1  # 无拦截，不需要修正轮
+    # 模型自带的暂停原样保留（系统不再强制覆盖）
+    assert result.confirmation == "已拆好，请确认"
+    # 正文保留模型总结
+    assert "已完成关键元素拆解" in result.text
+    # 规格文档未写入但操作已执行，警告已记录
+    assert not any(d.get("name") == "制片规格.md" for d in (svc.state_dict.get("documents") or []))
+    assert ex.gate_warnings and "规格文档" in ex.gate_warnings[0]
+    # 关键元素已真实创建
+    titles = [g.get("title") for g in (svc.state_dict.get("keyElements") or [])]
+    assert "Element_A" in titles and "Element_B" in titles
 
 
-def test_executor_records_gate_rejections(svc):
-    """执行器记录闸机拦截原因（供 agent_loop 回喂），下批次重置"""
+def test_executor_records_gate_warnings(svc, monkeypatch):
+    """执行器记录流程警告（不再拦截），下批次重置"""
+    from src.video_agent.skill_runtime import registry
+
+    monkeypatch.setattr(
+        registry, "skill_flow_enabled", lambda skill, key: key == "spec_gate",
+    )
     ex = StudioActionExecutor(svc, gate_enabled=True)
-    svc.state_dict["keyElements"] = []
-    svc.state_dict["shots"] = []
-    svc.state_dict["audioItems"] = []
+    ex.skill_name = "测试流程Skill"
     applied = ex.execute([
-        {"action": "add_group", "group_type": "shot", "title": "S1", "draft": {"label": "d"}},
-        {"action": "add_group", "group_type": "shot", "title": "S2", "draft": {"label": "d"}},
+        {"action": "add_group", "group_type": "keyElement", "title": "E1", "draft": {"label": "d"}},
+        {"action": "add_group", "group_type": "keyElement", "title": "E2", "draft": {"label": "d"}},
     ])
-    assert applied == 0
-    assert ex.gate_rejections and "关键元素" in ex.gate_rejections[0]
-    assert len(ex.gate_rejections) == 1  # 同批同原因去重
-    # 写入规格文档后再执行：放行且拦截记录重置
-    svc.state_dict["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格正文"}]
+    assert applied == 2
+    assert ex.gate_rejections == []
+    assert ex.gate_warnings and "规格文档" in ex.gate_warnings[0]
+    # 写入规格文档后再执行：放行；拦截记录（rejections）按批次重置，
+    # 警告（gate_warnings）按任务累积供回复展示，不要求清空
+    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     applied = ex.execute([
         {"action": "add_group", "group_type": "keyElement", "title": "E1", "draft": {"label": "d"}},
     ])
@@ -214,11 +215,14 @@ def test_executor_records_gate_rejections(svc):
 
 # ---------- 8888 事故回归：拆完分镜虚报「提示词已写好」并引导开始生成 ----------
 
-async def test_structure_pause_overrides_false_confirmation(svc):
-    """拆完分镜后：确认卡片强制换成分镜拆分审阅文案，正文附更正说明"""
+async def test_structure_strips_inline_prompt_keeps_model_confirmation(svc):
+    """拆完分镜后：模型确认文案保留；结构阶段内联提示词被剥离（P0-2）"""
     ex = StudioActionExecutor(svc, gate_enabled=True)
-    svc.state_dict["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格正文"}]
-    long_prompt = "详细的视频生成提示词草案内容" * 10  # >40 字，会被结构纯净闸剥离
+    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
+    svc.state_dict["keyElements"] = []
+    svc.state_dict["shots"] = []
+    svc.state_dict["audioItems"] = []
+    long_prompt = "详细的视频生成提示词草案内容" * 10
     r1 = ('已拆解 1 个分镜并编写了视频生成提示词草案。\n```studio-actions\n'
           '[{"action":"add_group","group_type":"shot","title":"Shot_A",'
           '"draft":{"label":"d","prompt":"' + long_prompt + '"}},'
@@ -229,22 +233,20 @@ async def test_structure_pause_overrides_false_confirmation(svc):
         "拆解分镜", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
     assert calls["n"] == 1
-    # 确认文案被系统覆盖为分镜拆分审阅（而非虚报的「确认草案，开始生成」）
-    assert result.confirmation == prompt_gates.SHOT_STRUCTURE_PAUSED_MSG
-    assert result.confirmation_options == prompt_gates.SHOT_STRUCTURE_OPTIONS
-    assert "开始生成视频" not in result.confirmation
-    assert any("继续编写视频提示词" in o["label"] for o in result.confirmation_options)
-    # 内联详细提示词被剥离，卡片只有骨架（按标题定位本用例新建的分组，避开 demo 残留）
+    # 模型自带的确认文案与选项原样保留（系统不再强制覆盖）
+    assert result.confirmation == "确认分镜与音频草案，开始生成视频"
+    assert result.confirmation_options == [{"label": "确认草案，开始生成视频", "description": ""}]
+    # 结构阶段内联提示词被剥离，草稿卡仍建立
     shot_group = next(g for g in svc.state_dict["shots"] if g.get("title") == "Shot_A")
     assert shot_group["drafts"][0]["prompt"] == ""
-    # 正文附带更正说明，不再只剩虚报文字
-    assert "系统说明" in result.text
+    assert ex.prompts_stripped == 1
+    assert "系统说明" not in result.text
 
 
-async def test_keyelement_structure_pause_wording(svc):
-    """只建关键元素时：暂停文案用关键元素拆分审阅版（下一步写生图提示词）"""
+async def test_keyelement_structure_keeps_model_pause(svc):
+    """只建关键元素时：模型自带的暂停文案原样保留"""
     ex = StudioActionExecutor(svc, gate_enabled=True)
-    svc.state_dict["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格正文"}]
+    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     r1 = ('拆好了。\n```studio-actions\n'
           '[{"action":"add_group","group_type":"keyElement","title":"Element_A","draft":{"label":"d"}},'
           '{"action":"request_confirmation","message":"确认草案，开始生成"}]\n```', "stop")
@@ -252,8 +254,128 @@ async def test_keyelement_structure_pause_wording(svc):
     result = await run_agent_loop(
         "拆关键元素", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
-    assert result.confirmation == prompt_gates.STORYBOARD_STRUCTURE_PAUSED_MSG
-    assert result.confirmation_options == prompt_gates.STORYBOARD_STRUCTURE_OPTIONS
+    assert result.confirmation == "确认草案，开始生成"
+    assert result.confirmation_options == []
+
+
+# ---------- 5555 事故回归：规格文档写入后的系统级暂停兜底（文本轨） ----------
+
+async def test_spec_doc_written_injects_pause_and_blocks_continue(svc, monkeypatch):
+    """写完规格后模型输出 continue 想直冲下一步：系统强制停在规格审阅。
+    9999 事故升级：三项制作参数缺失时暂停卡升级为候选项向导。
+    （4444：无 usedSkills 时模型写规格不拒收——拒收仅对真实选中的 Skill 生效）"""
+    from src.video_agent.skill_runtime import registry
+
+    monkeypatch.setattr(registry, "skill_flow_enabled", lambda skill, key: True)
+    monkeypatch.setattr(
+        registry, "spec_wizard_active", lambda skill: skill == "测试流程Skill")
+    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
+    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex.skill_name = "测试流程Skill"
+    r1 = ('规格已保存，接下来开始拆解。\n```studio-actions\n'
+          '[{"action":"write_document","name":"制片规格.md","content":"画幅：16:9"},'
+          '{"action":"continue","reason":"拆解关键元素"}]\n```', "stop")
+    r2 = ("不该走到这一轮", "stop")
+    llm, calls = make_llm([r1, r2])
+    result = await run_agent_loop(
+        "确认规格", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert calls["n"] == 1  # continue 被暂停兜底压住，没有进第二轮
+    assert "尚待您选定" in result.confirmation
+    groups = {o.get("group") for o in result.confirmation_options}
+    # 4444：软维度来自 Skill 客观提取（测试 Skill 无规格行）→ 只出硬参数三组
+    assert groups == {"图片分辨率", "视频分辨率", "分镜最大时长"}
+    # 规格文档已真实写入
+    assert any(d["name"] == "制片规格.md" for d in svc.state_dict["documents"])
+
+
+async def test_spec_doc_confirmed_params_uses_plain_pause_card(svc, monkeypatch):
+    """三项制作参数已定稿：沿用常规审阅暂停卡（9999 事故升级的分母场景）"""
+    import json as _json
+    from src.video_agent.skill_runtime import registry
+
+    monkeypatch.setattr(registry, "skill_flow_enabled", lambda skill, key: True)
+    monkeypatch.setattr(
+        registry, "spec_wizard_active", lambda skill: skill == "测试流程Skill")
+    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
+    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex.skill_name = "测试流程Skill"
+    spec = ("画幅：16:9\n图片分辨率：2K\n视频分辨率：720p\n分镜最大时长：12 秒\n"
+            "视频类型：叙事短片\n输出语言：中文\n时长：约 60 秒\n"
+            "叙事驱动：故事驱动\n视觉风格：写实")
+    block = _json.dumps([
+        {"action": "write_document", "name": "制片规格.md", "content": spec},
+        {"action": "continue", "reason": "拆解关键元素"},
+    ], ensure_ascii=False)
+    r1 = (f'规格已保存。\n```studio-actions\n{block}\n```', "stop")
+    llm, calls = make_llm([r1])
+    result = await run_agent_loop(
+        "确认规格", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert calls["n"] == 1
+    assert result.confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG
+    labels = [o["label"] for o in result.confirmation_options]
+    assert "确认成片规格，按流程继续" in labels
+
+
+async def test_spec_doc_written_keeps_model_confirmation(svc):
+    """写完规格且模型已自发 request_confirmation：不覆盖模型的暂停"""
+    ex = StudioActionExecutor(svc, gate_enabled=True)
+    r1 = ('规格已保存。\n```studio-actions\n'
+          '[{"action":"write_document","name":"制片规格.md","content":"画幅：16:9"},'
+          '{"action":"request_confirmation","message":"请审阅规格条目"}]\n```', "stop")
+    llm, _ = make_llm([r1])
+    result = await run_agent_loop(
+        "确认规格", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert result.confirmation == "请审阅规格条目"
+
+
+async def test_non_spec_doc_written_keeps_continue(svc):
+    """写入普通文档：不注入暂停，continue 照常生效"""
+    ex = StudioActionExecutor(svc, gate_enabled=True)
+    r1 = ('先写个大纲。\n```studio-actions\n'
+          '[{"action":"write_document","name":"大纲.md","content":"正文"},'
+          '{"action":"continue","reason":"继续"}]\n```', "stop")
+    r2 = ("大纲写完收工", "stop")
+    llm, calls = make_llm([r1, r2])
+    result = await run_agent_loop(
+        "写大纲", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert calls["n"] == 2
+    assert result.confirmation == ""
+
+
+# ---------- 8888 事故回归：暂停轮正文缺总结时从工作台状态补 ----------
+
+async def test_confirmation_turn_prepends_analysis_summary(svc):
+    """解析阶段的暂停（pause_kind=collect）正文没带总结：从 analysis.summary 补到开头"""
+    svc.state_dict["analysis"] = {"summary": "太阳系逐渐二维化"}
+    svc.state_dict.setdefault("interaction", {})["pending_pause_kind"] = (
+        prompt_gates.SPEC_COLLECT_KIND
+    )
+    ex = StudioActionExecutor(svc, gate_enabled=False)
+    r1 = ("请确认制片规格参数。\n```studio-actions\n"
+          '[{"action":"request_confirmation","message":"请确认规格"}]\n```', "stop")
+    llm, _ = make_llm([r1])
+    result = await run_agent_loop(
+        "开始", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert result.confirmation == "请确认规格"
+    assert result.text.startswith("**剧本一句话总结**：太阳系逐渐二维化")
+
+
+async def test_confirmation_turn_no_duplicate_summary(svc):
+    """模型正文已带总结：不重复注入"""
+    svc.state_dict["analysis"] = {"summary": "太阳系逐渐二维化"}
+    ex = StudioActionExecutor(svc, gate_enabled=False)
+    r1 = ("一句话总结：太阳系逐渐二维化。请确认规格。\n```studio-actions\n"
+          '[{"action":"request_confirmation","message":"请确认规格"}]\n```', "stop")
+    llm, _ = make_llm([r1])
+    result = await run_agent_loop(
+        "开始", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
+    )
+    assert result.text.count("太阳系逐渐二维化") == 1
 
 
 # ---------- 8888 事故回归：部分提示词被闸机拦截仍引导确认 ----------
@@ -264,11 +386,11 @@ _GOOD_SHOT_PROMPT = (
 )
 
 
-async def test_partial_gate_blocked_heals_before_confirmation(svc):
-    """9 写 8 拦类事故：部分提示词被拦时不接受确认，回喂重写后再暂停"""
+async def test_partial_bad_prompt_rejected_and_healed(svc):
+    """决策 D（质量优先）：不合格提示词被拒绝并回喂模型修正，确认被撤销"""
     ex = StudioActionExecutor(svc, gate_enabled=True)
     st = svc.state_dict
-    st["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格正文"}]
+    st["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     # 关键元素已有概念图（解除分镜提示词时序闸）
     st["keyElements"] = [{"id": "ke-1", "title": "E1",
                           "drafts": [{"id": "draft-ke1", "imgUrl": "http://x/y.png"}]}]
@@ -277,31 +399,23 @@ async def test_partial_gate_blocked_heals_before_confirmation(svc):
         {"id": "shot-2", "title": "S2", "drafts": [{"id": "draft-s2", "tag": "Agent", "prompt": ""}]},
     ]
     bad = _GOOD_SHOT_PROMPT.replace("no subtitles", "")  # 缺负面约束 → 被质量闸拦截
-    # 第1轮：一条写入成功、一条被拦，模型却请求确认提示词 → 不接受，回喂重写
+    # 第1轮：一条合格、一条不合格 → 合格写入，不合格拒绝并触发修正循环
     r1 = ('提示词已全部写好。\n```studio-actions\n'
           '[{"action":"update_draft","draft_type":"shot","draft_id":"draft-s1","patch":{"prompt":"'
           + _GOOD_SHOT_PROMPT + '"}},'
           '{"action":"update_draft","draft_type":"shot","draft_id":"draft-s2","patch":{"prompt":"'
           + bad + '"}},'
           '{"action":"request_confirmation","message":"请确认提示词草案"}]\n```', "stop")
-    # 第2轮（自愈）：补齐被拦的那条后再请求确认
-    r2 = ('已补齐重写。\n```studio-actions\n'
-          '[{"action":"update_draft","draft_type":"shot","draft_id":"draft-s2","patch":{"prompt":"'
-          + _GOOD_SHOT_PROMPT + '"}},'
-          '{"action":"request_confirmation","message":"提示词已全部写入卡片，请确认"}]\n```', "stop")
-    llm, calls = make_llm([r1, r2])
+    llm, calls = make_llm([r1])
     result = await run_agent_loop(
         "编写分镜的视频提示词", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
-    assert calls["n"] == 2  # 拦截后触发了修正轮
-    # 暂停来自修正轮，不是第1轮的虚假确认
-    assert result.confirmation == "提示词已全部写入卡片，请确认"
-    # 第1轮虚报正文被丢弃
-    assert "提示词已全部写好" not in result.text
-    # 两条提示词最终都写入了卡片
+    assert calls["n"] > 1  # 触发 gate_heal 修正循环
+    assert result.confirmation == ""  # 存在被拦操作时不接受暂停/确认
+    # 合格提示词写入，不合格提示词保持为空
     assert st["shots"][0]["drafts"][0]["prompt"] == _GOOD_SHOT_PROMPT
-    assert st["shots"][1]["drafts"][0]["prompt"] == _GOOD_SHOT_PROMPT
-    assert any("拦截" in w for w in result.warnings)
+    assert st["shots"][1]["drafts"][0]["prompt"] == ""
+    assert ex.gate_rejections
 
 
 # ---------- 边写边填：流式增量提取器 + 预执行去重 ----------
@@ -325,7 +439,7 @@ async def test_streaming_extractor_emits_objects_incrementally():
 async def test_stream_preapplied_actions_not_reexecuted(svc):
     """流式预执行过的动作在批末不得重复执行（add_group 重复会建重分组）"""
     ex = StudioActionExecutor(svc, gate_enabled=True)
-    svc.state_dict["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格正文"}]
+    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     # 模拟 planner 流式路径：逐条预执行（accumulate）
     act = {"action": "add_group", "group_type": "keyElement", "title": "Element_S", "draft": {"label": "d"}}
     assert ex.execute([act], accumulate=True) == 1
@@ -334,11 +448,135 @@ async def test_stream_preapplied_actions_not_reexecuted(svc):
     # 模拟 agent_loop：同一动作再次出现在解析结果里 → 应被剔除，不重复建组
     reply = ('完成\n```studio-actions\n'
              '[{"action":"add_group","group_type":"keyElement","title":"Element_S","draft":{"label":"d"}}]\n```', "stop")
-    llm, calls = make_llm([reply])
+    # 结构首建后系统会强制再跑一轮自检补漏：第二轮模型暂停审阅
+    pause = ('自检完成\n```studio-actions\n'
+             '[{"action":"request_confirmation","message":"自检完成"}]\n```', "stop")
+    llm, calls = make_llm([reply, pause])
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
-    assert calls["n"] == 1
+    assert calls["n"] == 2
     assert result.applied_actions == 1  # 只计流式预执行的那一次
+    assert result.confirmation  # 结构自检后统一暂停
     titles = [g.get("title") for g in svc.state_dict["keyElements"] if g.get("title") == "Element_S"]
     assert len(titles) == 1  # 没有重复建组
+
+
+async def test_bad_output_malformed_retried_then_ok(svc, executor):
+    """回归（5555 事故）：MALFORMED_FUNCTION_CALL 视为坏输出自动重试，重试成功则正常推进，
+    用户不再需要手动发「继续」。"""
+    bad = ("", "MALFORMED_FUNCTION_CALL")
+    good = ("已完成", "stop")
+    llm, calls = make_llm([bad, good])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 2  # 首调失败 + 重试一次成功
+    assert "已完成" in result.text
+
+
+async def test_bad_output_exhausts_retries_with_clear_message(svc, executor):
+    """空响应+畸形连续发生：重试上限 2 次，最终文案写明故障性质与重试次数。"""
+    llm, calls = make_llm([
+        ("", ""),                                # 首调空响应
+        ("", "MALFORMED_FUNCTION_CALL"),          # 重试 1 畸形
+        ("", "MALFORMED_FUNCTION_CALL"),          # 重试 2 仍畸形 → 达到上限
+    ])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 3  # 首调 + 2 次重试，不多不少
+    assert "输出异常" in result.text
+    assert "重试 2 次" in result.text
+
+
+async def test_false_claim_warns_but_keeps_pause(svc, executor):
+    """回归（7777 事故 × 4444 改造）：声称拆解完成但故事板为空 →
+    只附警告不拦人：暂停照常递给用户，不强制补跑第二轮（用户拍板的
+    闸机哲学：永不拦截只警告，系统不没收模型的暂停）。"""
+    # 清空 demo 项目自带分组，构造「新项目故事板为空」场景
+    svc.state_dict["keyElements"] = []
+    svc.state_dict["shots"] = []
+    svc.state_dict["audioItems"] = []
+    claim_pause = (
+        '已完成关键元素穷尽拆解，各分组已写入故事板\n```studio-actions\n'
+        '[{"action":"request_confirmation","message":"请审阅关键元素"}]\n```', "stop")
+    llm, calls = make_llm([claim_pause])
+    result = await run_agent_loop(
+        "拆解关键元素", llm_call=llm, context_builder=lambda: "ctx",
+        executor=executor, history=[],
+    )
+    assert calls["n"] == 1                       # 只跑一轮，不打回重做
+    assert result.confirmation == "请审阅关键元素"  # 暂停原样递给用户
+    assert len(svc.state_dict["keyElements"]) == 0  # 客观事实：确实没拆
+    assert "穷尽拆解" in result.text              # 正文不再被丢弃（附警告交用户核验）
+    assert any("故事板实际仍为空" in w for w in result.warnings)
+
+
+async def test_future_tense_pause_no_warning_empty_board(svc, executor):
+    """回归（4444 事故）：规格阶段的合法暂停文案带将来时（总结已完成…
+    将拆解关键元素），故事板为空也不得触发虚报警告，暂停照常递给用户。"""
+    svc.state_dict["keyElements"] = []
+    svc.state_dict["shots"] = []
+    svc.state_dict["audioItems"] = []
+    legit_pause = (
+        '剧本总结已完成，请确认制作规格，确认后我将拆解关键元素\n```studio-actions\n'
+        '[{"action":"request_confirmation","message":"请确认制作规格"}]\n```', "stop")
+    llm, calls = make_llm([legit_pause])
+    result = await run_agent_loop(
+        "开始", llm_call=llm, context_builder=lambda: "ctx",
+        executor=executor, history=[],
+    )
+    assert calls["n"] == 1
+    assert result.confirmation == "请确认制作规格"
+    assert result.warnings == []
+
+
+# ---------- 疑似虚报识别：邻近窗口 + 将来时豁免（4444 事故改造） ----------
+
+def test_claims_adjacency_and_future_exemption():
+    # 真声称（拆解与完成紧邻）：仍要识别出来附警告
+    assert _claims_structure_done("已完成拆解，请验收")
+    assert _claims_structure_done("拆解完成，请审阅")
+    assert _claims_structure_done("关键元素拆解完成并写入故事板")
+    assert _claims_structure_done("已创建 30 个分组并写入故事板")
+    # 将来时/流程预告：不算声称（4444 误伤措辞）
+    assert not _claims_structure_done("总结已完成，请确认规格，确认后将拆解关键元素")
+    assert not _claims_structure_done("确认后进入关键元素拆解阶段，请确认规格")
+    assert not _claims_structure_done("规格确认后、关键元素拆分后暂停")
+    assert not _claims_structure_done("接下来拆解关键元素，先确认规格")
+    # 完成与拆解距离过远（各说各的）：不算声称
+    assert not _claims_structure_done(
+        "规格文档已完成定稿写入，涵盖画幅与风格。接下来我们做关键元素的穷尽式拆解工作。"
+    )
+
+
+def test_claims_no_cross_text_seam_false_positive():
+    """回归（2222 事故）：正文结尾「…关键元素拆解。」与暂停文案开头「剧本解析完成」
+    跨文本拼接会产生假相邻——每段必须独立判定，不得误报。"""
+    text = (
+        "请在下方规格向导中选择或确认成片制作参数，"
+        "确认后将为您生成《制作规格说明书》并开启故事板关键元素拆解。"
+    )
+    confirm = "### 剧本解析完成：《太阳系二维化》\n请在下方规格向导中选择或确认成片制作参数。"
+    assert not _claims_structure_done(text, confirm)
+    assert not _claims_structure_done(text)
+    assert not _claims_structure_done(confirm)
+    # 真谎报仍要识别（不受跨文本改造影响）
+    assert _claims_structure_done("已完成关键元素拆解并写入故事板，请验收")
+
+
+async def test_legit_pause_not_blocked(svc, executor):
+    """真实拆解后的暂停不被虚报闸误伤：故事板非空时照常递给用户。"""
+    real_split = (
+        '已完成关键元素拆解并录入故事板\n```studio-actions\n'
+        '[{"action":"add_group","group_type":"keyElement","title":"Element_A","desc":"角色"},'
+        '{"action":"request_confirmation","message":"请审阅"}]\n```', "stop")
+    llm, calls = make_llm([real_split])
+    result = await run_agent_loop(
+        "拆解关键元素", llm_call=llm, context_builder=lambda: "ctx",
+        executor=executor, history=[],
+    )
+    assert calls["n"] == 1  # 一轮到位，无拦截
+    assert result.confirmation
+    assert not any("虚报" in w for w in result.warnings)

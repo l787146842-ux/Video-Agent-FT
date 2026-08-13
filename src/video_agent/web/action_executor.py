@@ -55,6 +55,8 @@ class StudioActionExecutor:
         self.gate_rules: Optional[Dict[str, Any]] = None
         # 决策 D：用户坚持（user_override）时硬伤降为警告照常放行
         self.gate_override: bool = False
+        # 已完成阶段集合（script_analyze 等；总结/收集闸判定用，会话级状态）
+        self.skill_stages_done: set = set()
         # 本批次闸机警告（executors._apply_actions 读取后随结果回喂）
         self.gate_warnings: List[str] = []
         # 当前激活的 Skill 名称（执行器/agent_loop 注入；S1：平台行为按 Skill 声明驱动）
@@ -253,7 +255,7 @@ class StudioActionExecutor:
         """时长参数同步：委托领域层唯一实现（与 FC 轨同规则）"""
         return ops.sync_shot_duration(group, draft, patch)
 
-    def _gate_check(self, prompt: str, kind: str) -> bool:
+    def _gate_check(self, prompt: str, kind: str, group: Optional[Dict[str, Any]] = None) -> bool:
         """写入前闸机。返回 True = 放行。闸机未启用 / 模式非 strict 时恒放行；
         strict 拦截的写入返回 False，模型下一轮看到状态缺失后自行补写（自愈）。"""
         if not self.gate_enabled or kind not in ("shot", "keyElement") or not str(prompt or "").strip():
@@ -261,11 +263,25 @@ class StudioActionExecutor:
         mode = prompt_gates.gate_mode()
         if mode == "off":
             return True
-        # 流程时序硬闸（strict）：元素图像未就绪严禁写分镜提示词（Skill 分批确认前置）
-        if kind == "shot" and mode == "strict" and prompt_gates.element_images_missing(self.state):
-            logger.info("[PromptGate] 拦截分镜提示词写入（元素图像未就绪）")
-            self._reject(prompt_gates.SHOT_SEQUENCE_GATE_ERROR)
-            return False
+        # 元素概念图前置（流程闸，只警告不拦人，4444 语义）：
+        # 用户坚持跳过时落盘覆盖声明（有规格文档时）
+        if (
+            kind == "shot" and mode == "strict"
+            and prompt_gates.shot_references_missing_element_images(self.state, group=group)
+        ):
+            if prompt_gates.override_covers(self.gate_override, prompt_gates.GATE_ELEMENT_IMAGE):
+                self.gate_warnings.append(
+                    "用户坚持跳过元素概念图前置（仅警告）：" + prompt_gates.SHOT_SEQUENCE_GATE_ERROR
+                )
+                try:
+                    from src.video_agent.core.spec_rules import apply_element_image_override
+
+                    apply_element_image_override(self.state)
+                except Exception:
+                    pass
+            else:
+                self.gate_warnings.append(prompt_gates.SHOT_SEQUENCE_GATE_ERROR)
+            logger.info("[PromptGate] 元素图像未就绪（警告，不拦人）")
         ok, hard, soft = prompt_gates.validate_prompt_write(
             str(prompt), kind, self.state, rules=self.gate_rules,
         )
@@ -273,8 +289,12 @@ class StudioActionExecutor:
             logger.warning(f"[PromptGate] 软提醒（{kind}）: {w}")
         if ok:
             return True
-        if self.gate_override:
+        if prompt_gates.override_covers(self.gate_override, prompt_gates.GATE_STRUCTURE):
             # 决策 D：用户坚持时硬伤降为警告照常放行
+            lines = "\n".join(f"- {e}" for e in hard)
+            self.gate_warnings.append(
+                f"用户坚持写入，提示词结构校验未通过（本条仅为警告）：\n{lines}"
+            )
             logger.warning(f"[PromptGate] 用户坚持放行（{kind}）: {hard}")
             return True
         if mode != "strict":
@@ -306,7 +326,8 @@ class StudioActionExecutor:
         if not declared:
             return True
         logger.info("[FlowGate] 规格文档未写入（Skill 声明 spec_gate，追加建议补写警告）")
-        self._reject(prompt_gates.SPEC_GATE_ERROR)
+        if prompt_gates.SPEC_GATE_ERROR not in self.gate_warnings:
+            self.gate_warnings.append(prompt_gates.SPEC_GATE_ERROR)
         return True
 
     def _record_presented(self, draft_id: str) -> None:
@@ -321,14 +342,19 @@ class StudioActionExecutor:
     def _gen_confirm_gate(self, pairs: List[tuple]) -> List[tuple]:
         """生成确认闸：Skill 激活且 strict 时，只允许对已经用户确认（tag=已确认）的
         草稿触发生成；全部未确认时返回空列表（调用方拒绝执行），未确认项跳过。"""
+        if self.gate_override in ("all", True):
+            self.gate_warnings.append("用户坚持跳过生成确认闸（仅警告），照常生成")
+            return pairs
         if not self.gate_enabled or prompt_gates.gate_mode() != "strict":
             return pairs
         confirmed = [(g, d) for g, d in pairs if str(d.get("tag") or "").strip() == "已确认"]
         skipped = len(pairs) - len(confirmed)
         if skipped:
             logger.info(f"[GenGate] 跳过 {skipped} 个未经用户确认的草稿（生成需先确认 Prompt Draft）")
+            self.gate_warnings.append(f"生成确认闸拦截：{skipped} 个草稿未经用户确认，已跳过")
         if not confirmed:
             logger.info("[GenGate] 拦截生成：目标草稿 Prompt Draft 均未经用户确认")
+            self.gate_warnings.append("生成确认闸拦截：" + prompt_gates.GENERATION_CONFIRM_GATE_ERROR)
         return confirmed
 
     async def execute_locked(self, actions: List[Dict[str, Any]], accumulate: bool = False) -> int:
@@ -420,23 +446,65 @@ class StudioActionExecutor:
         group, draft = result
         # 闸机：strict 模式拒绝结构不合格的提示词写入（不含提示词的其它字段 patch 不受影响）
         if "prompt" in patch:
-            # 故事板待确认窗口（步骤3→步骤4 分界）：用户确认结构前严禁写提示词
+            # 故事板待确认窗口（步骤3→步骤4 分界）：流程闸，只警告不拦人
             if self.gate_enabled and prompt_gates.gate_mode() == "strict" \
                     and prompt_gates.storyboard_pending(self.state):
-                logger.info("[FlowGate] 拦截提示词写入（故事板待用户确认）")
-                self._reject(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
-                return False
+                logger.info("[FlowGate] 提示词写入时故事板待确认（警告，不拦人）")
+                self.gate_warnings.append(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
+            # 客观补全（888 事故）：@引用与镜头时长可从 sceneRefs/duration 算出来，
+            # 写入前按 Skill 声明的规则自动补印，不指望模型自觉、也不重复拒绝重写
+            if self._kind_of_group(group) == "shot":
+                filled_refs = prompt_gates.autofill_at_refs(
+                    str(patch.get("prompt") or ""), "shot", group,
+                    self.state, rules=self.gate_rules,
+                )
+                if filled_refs != patch.get("prompt"):
+                    patch["prompt"] = filled_refs
+                filled_dur = prompt_gates.autofill_shot_duration(
+                    str(patch.get("prompt") or ""), "shot", group,
+                    rules=self.gate_rules,
+                )
+                if filled_dur and filled_dur != patch.get("prompt"):
+                    patch["prompt"] = filled_dur
             if not self._gate_check(
-                str(patch.get("prompt") or ""), self._kind_of_group(group)
+                str(patch.get("prompt") or ""), self._kind_of_group(group), group=group,
             ):
                 return False
         ok = ops.patch_draft(draft, patch)
+        self._stamp_spec_resolution(group, draft)
         if ok and str(patch.get("prompt") or "").strip():
             self._record_presented(draft.get("id", ""))
         # 时长参数同步：写入分镜提示词时把分镜时长补印到草稿时长参数（客观兜底）
         if ok and self._kind_of_group(group) == "shot":
             self._sync_shot_duration(group, draft, patch)
         return ok
+
+    def _stamp_spec_resolution(self, group: Dict[str, Any], draft: Dict[str, Any]) -> None:
+        """规格分辨率补印（9999 需求）：草稿缺分辨率时按规格文档填充，
+        参数栏与规格设定一致，防前端硬编码回填污染。"""
+        if not isinstance(draft, dict):
+            return
+        try:
+            from src.video_agent.web.provider_config import spec_production_params
+
+            params = spec_production_params(self.state) or {}
+        except Exception:
+            return
+        cat = ops.category_for_group_type(self._kind_of_group(group))
+        cur_img = str(draft.get("imageResolution") or "").strip()
+        if cat == CAT_KEY_ELEMENTS and (
+            not cur_img or cur_img == settings.default_image_resolution
+        ):
+            v = str(params.get("image_resolution") or "").strip()
+            if v:
+                draft["imageResolution"] = v
+        cur_vid = str(draft.get("resolution") or "").strip()
+        if cat == CAT_SHOTS and (
+            not cur_vid or cur_vid == settings.default_video_resolution
+        ):
+            v = str(params.get("video_resolution") or "").strip()
+            if v:
+                draft["resolution"] = v
 
     def _apply_group_patch(self, action: Dict) -> bool:
         group_id = action.get("group_id") or action.get("target_id") or action.get("id") or "current"
@@ -474,9 +542,9 @@ class StudioActionExecutor:
             and group_type
             and ops.category_for_group_type(group_type) != CAT_KEY_ELEMENTS
         ):
-            logger.info("[FlowGate] 拦截首次搭建批次的分镜/音频分组创建（应先拆关键元素）")
-            self._reject(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
-            return False
+            logger.info("[FlowGate] 首次搭建建议先拆关键元素（警告，不拦人）")
+            if prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR not in self.gate_warnings:
+                self.gate_warnings.append(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
         return self._apply_add_group_inner(action)
 
     def _apply_add_group_inner(self, action: Dict) -> bool:
@@ -529,6 +597,9 @@ class StudioActionExecutor:
 
         if cat_key == CAT_SHOTS:
             rough = pick("roughDesc")
+            if isinstance(rough, str) and len(rough) > 200:
+                # 概述截断（888 事故）：超长 roughDesc 撑爆卡片/上下文
+                rough = rough[:200] + "…"
             new_group["roughDesc"] = rough
             if not desc and rough:
                 desc = rough  # 只写 roughDesc 不写 desc 时自动同步，前端卡片不显示空白
@@ -566,16 +637,30 @@ class StudioActionExecutor:
         data = draft_data
         if self.structure_phase and self.gate_enabled and prompt_gates.gate_mode() == "strict":
             inline_prompt = str(data.get("prompt") or "").strip()
-            if len(inline_prompt) > prompt_gates.STRUCTURE_INLINE_PROMPT_MAX:
+            if inline_prompt:
                 data = {**data, "prompt": ""}
                 self.prompts_stripped += 1
                 logger.info(
                     f"[FlowGate] 剥离 add_draft 内联详细提示词（{len(inline_prompt)} 字，"
                     "结构阶段只建骨架）"
                 )
-        if not self._gate_check(str(data.get("prompt") or ""), self._kind_of_group(group)):
+        if self._kind_of_group(group) == "shot" and str(data.get("prompt") or "").strip():
+            filled_refs = prompt_gates.autofill_at_refs(
+                str(data.get("prompt") or ""), "shot", group,
+                self.state, rules=self.gate_rules,
+            )
+            if filled_refs != data.get("prompt"):
+                data = {**data, "prompt": filled_refs}
+            filled_dur = prompt_gates.autofill_shot_duration(
+                str(data.get("prompt") or ""), "shot", group,
+                rules=self.gate_rules,
+            )
+            if filled_dur and filled_dur != data.get("prompt"):
+                data = {**data, "prompt": filled_dur}
+        if not self._gate_check(str(data.get("prompt") or ""), self._kind_of_group(group), group=group):
             return None
         draft = ops.append_draft(group, data)
+        self._stamp_spec_resolution(group, draft)
         # 规格偏好补印：草稿未自带供应商时按规格文档设定填充，
         # 防前端默认首选供应商回填污染（参数栏与规格设定不一致）
         cat = ops.category_for_group_type(self._kind_of_group(group))
@@ -602,18 +687,21 @@ class StudioActionExecutor:
     def _apply_add_draft(self, action: Dict) -> bool:
         if not self._spec_gate_ok():
             return False
-        group_id = action.get("group_id") or "current"
-        group_type = action.get("group_type") or action.get("draft_type") or action.get("kind") or ""
+        group_id = action.get("group_id") or action.get("groupId") or "current"
+        group_type = (
+            action.get("group_type") or action.get("groupType")
+            or action.get("draft_type") or action.get("kind") or ""
+        )
         # 首拆只允许关键元素：首次搭建批次内新建 shot/audio 草稿直接拒绝
         if (
             getattr(self, "_first_structure_batch", False)
             and str(group_type).strip()
             and ops.category_for_group_type(str(group_type)) != CAT_KEY_ELEMENTS
         ):
-            logger.info("[FlowGate] 拦截首次搭建批次的分镜/音频草稿创建（应先拆关键元素）")
-            self._reject(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
-            return False
-        draft_data = action.get("draft") or {}
+            logger.info("[FlowGate] 首次搭建建议先拆关键元素（警告，不拦人）")
+            if prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR not in self.gate_warnings:
+                self.gate_warnings.append(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
+        draft_data = action.get("draft") or action.get("payload") or {}
         if not draft_data and action.get("patch"):
             # 898 事故回归：模型把建卡字段放进 patch/fields 而非 draft 时
             # 不得静默落成空默认草稿，提示词必须写入
@@ -625,16 +713,43 @@ class StudioActionExecutor:
             # 未指定有效分组时按 label 名称智能匹配（proj-1786169643 事故），
             # 优先于「current → 第一个分组」的旧兜底
             group = self._match_group_by_label(label)
-        if group is None:
+        # 显式 group_id 或前端已选中草稿时才走 find_group；
+        # 「current + 无选中」会盲捡第一个分组（888 事故），交给下方多分组防护
+        if group is None and (
+            str(group_id) not in ("", "current")
+            or str(getattr(self, "selected_draft_id", "") or "").strip()
+        ):
             group = self._find_group(group_id, group_type)
+            if group is None and str(group_id) not in ("", "current"):
+                # 显式 group_id 但未带 group_type：跨全类别按 id 定位
+                # （888 别名归一化场景：type/groupId/payload 驼峰 schema）
+                for cat_key in ALL_CATEGORIES:
+                    group = next(
+                        (g for g in self.state.get(cat_key, [])
+                         if isinstance(g, dict) and g.get("id") == group_id),
+                        None,
+                    )
+                    if group:
+                        break
         if group is None and label:
             group = self._match_group_by_label(label)
         if not group:
-            for cat_key in ALL_CATEGORIES:
-                groups = self.state.get(cat_key, [])
-                if groups:
-                    group = groups[0]
-                    break
+            all_groups = [
+                g for cat_key in ALL_CATEGORIES
+                for g in self.state.get(cat_key, [])
+                if isinstance(g, dict)
+            ]
+            if len(all_groups) > 1:
+                # 888 事故：未携带有效 group_id 且 label 无法定位时盲捡第一个分组，
+                # 提示词全污染进程心组——多分组场景直接拒绝并回喂模型纠正
+                self.gate_rejections.append(
+                    "add_draft 未指定有效分组且 label 无法定位；"
+                    "当前存在多个分组，已拒绝盲捡，请携带正确的 group_id 或分组标题重试"
+                )
+                logger.warning("[StudioActions] add_draft 多分组盲捡被拒（888 事故回归）")
+                return False
+            if all_groups:
+                group = all_groups[0]
         # 如果仍然找不到分组，自动创建一个
         if not group:
             auto_action = {**action, "group_type": group_type, "title": draft_data.get("label", "Agent 新建分组")}

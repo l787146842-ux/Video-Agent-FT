@@ -472,13 +472,20 @@ class OpenAICompatVideoAdapter(BaseVideoAdapter):
                 continue
             seen.add(url)
             kind = str(ref.get("kind") or "").strip().lower()
-            if kind not in ("image", "audio"):
+            if kind not in ("image", "audio", "video"):
                 kind = "audio" if any(
                     url.lower().split("?")[0].endswith(ext)
                     for ext in (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg")
-                ) else "image"
+                ) else (
+                    "video" if any(
+                        url.lower().split("?")[0].endswith(ext)
+                        for ext in (".mp4", ".mov", ".webm", ".mkv")
+                    ) else "image"
+                )
             if kind == "audio":
                 role = "reference_audio"
+            elif kind == "video" or str(ref.get("role") or "").lower() == "reference_video":
+                role = "reference_video"
             else:
                 role = _IMAGE_ROLES.get(str(ref.get("role") or "reference").lower(), "reference_image")
             norm.append({"url": url, "kind": kind, "role": role})
@@ -496,6 +503,12 @@ class OpenAICompatVideoAdapter(BaseVideoAdapter):
                 content.append({
                     "type": "audio_url",
                     "audio_url": {"url": ref["url"]},
+                    "role": ref["role"],
+                })
+            elif ref["kind"] == "video":
+                content.append({
+                    "type": "video_url",
+                    "video_url": {"url": ref["url"]},
                     "role": ref["role"],
                 })
             else:

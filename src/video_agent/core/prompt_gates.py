@@ -544,8 +544,8 @@ SPEC_GATE_ERROR = (
 STRUCTURE_INLINE_PROMPT_MAX = 40
 
 STORYBOARD_PENDING_GATE_ERROR = (
-    "流程闸机：故事板结构尚未经用户确认。按 Skill 流程应先请用户审阅拆分方案，"
-    "请等待用户审阅后再写提示词；本次提示词写入已被拒绝。"
+    "流程警告：故事板结构尚未经用户确认。按 Skill 流程建议先请用户审阅拆分方案再写提示词；"
+    "本次提示词已按用户要求照常写入，请同时在回复中提示用户审阅左侧故事板。"
 )
 
 STORYBOARD_STRUCTURE_PAUSED_MSG = (
@@ -604,8 +604,8 @@ def structure_paused_confirmation(kinds) -> Tuple[str, List[Dict[str, str]]]:
 # 规格文档写入后的引导选项（审阅分界：确认后按 Skill 流程推进，S1：不写死下一步）
 SPEC_DOC_OPTIONS = [
     {
-        "label": "确认成片规格，继续拆分关键元素",
-        "description": "规格内容无误，下一步为关键元素拆解（仅建元素分组并暂停等你确认）",
+        "label": "确认成片规格，按流程继续",
+        "description": "规格内容无误，按当前 Skill 流程推进下一阶段",
     },
     {"label": "调整成片规格", "description": "告诉我需要修改的规格条目"},
 ]
@@ -1039,8 +1039,8 @@ def drafts_review_card() -> Tuple[str, List[Dict[str, str]]]:
 
 
 KEY_ELEMENT_FIRST_GATE_ERROR = (
-    "流程闸机：首次搭建故事板应先拆分关键元素（角色/场景/道具）并请用户审阅，"
-    "本次分镜/音频分组创建已被拒绝，请先拆分关键元素。"
+    "流程警告：首次搭建故事板通常应先拆分关键元素（角色/场景/道具）并请用户审阅，"
+    "再创建分镜与音频；本次分镜/音频已按用户要求照常创建，请同时提示用户审阅拆分完整性。"
 )
 
 
@@ -1133,7 +1133,7 @@ def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
     return frozenset(), ""
 
 SHOT_SEQUENCE_GATE_ERROR = (
-    "流程闸机：关键元素还没有任何概念图（生成或上传）。本次分镜提示词写入已被拒绝——"
-    "按 Skill 流程应先引导用户生成/上传元素概念图，就绪后再编制分镜提示词"
-    "（镜头要参考元素图像）。"
+    "流程警告：关键元素还没有任何概念图（生成或上传）。按 Skill 流程建议先让元素概念图就绪"
+    "再编制分镜提示词（镜头可参考元素图像）；本次分镜提示词已按用户要求照常写入，"
+    "若后续生成视频需要参考图，请先补足元素图像。"
 )

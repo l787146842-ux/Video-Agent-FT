@@ -30,6 +30,7 @@ class ProjectStateResponse(BaseModel):
 
 class OkResponse(BaseModel):
     ok: bool = True
+    board_version: Optional[int] = None
 
 
 class OkWithStateResponse(BaseModel):
@@ -47,6 +48,7 @@ class ProjectStateUpdate(BaseModel):
     # 前端发起保存时的项目 ID：与后端活跃项目不一致说明是跨项目的过期写入
     # （如防抖 PUT 在途期间用户切换了项目），必须拒绝，否则旧项目数据会污染新项目
     project_id: Optional[str] = None
+    base_version: Optional[int] = None
     keyElements: Optional[list] = None
     shots: Optional[list] = None
     audioItems: Optional[list] = None
@@ -172,6 +174,12 @@ async def put_project_state(body: ProjectStateUpdate):
     """前端整体保存状态"""
     svc = StateManager.get_instance()
     async with svc.lock:
+        # 乐观锁（9999 事故）：陈旧 PUT 必须被拒，前端采纳响应版本跟进
+        if body.base_version is not None and body.base_version != svc.board_version:
+            raise HTTPException(
+                status_code=409,
+                detail="版本冲突：状态已被其他窗口更新，请刷新后重试",
+            )
         # 过期写入防护：请求在途期间项目已切换，拒绝落盘（前端收到 409 静默丢弃）
         if body.project_id and body.project_id != svc.active_project_id:
             raise HTTPException(
@@ -192,7 +200,7 @@ async def put_project_state(body: ProjectStateUpdate):
             state["chatMessages"] = body.chatMessages
 
         await svc.save_async()
-    return {"ok": True}
+    return {"ok": True, "board_version": svc.board_version}
 
 
 # ---------- Undo/Redo ----------

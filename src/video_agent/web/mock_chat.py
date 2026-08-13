@@ -24,6 +24,11 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
         if use_studio_context:
             bind_attachments(svc, body.attachments)
             store_uploaded_docs(svc, body.attachments)
+            # 铁律自动加载（Q5a）：每轮确保「执行铁律.md」独立文档存在（幂等）
+            from src.video_agent.core import spec_rules
+
+            if spec_rules.ensure_iron_rules_doc(svc.state_dict):
+                svc.save_debounced()
             svc.add_chat_message(
                 "user", user_text,
                 doc_blocks=getattr(body, "doc_blocks", None) or None,

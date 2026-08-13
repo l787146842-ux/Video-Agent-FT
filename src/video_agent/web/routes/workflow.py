@@ -1,5 +1,13 @@
 """
-/api/workflow — 工作流控制端点
+/api/workflow — 工作流控制端点（定位见下方「定位声明」）
+
+【定位声明（4.6 收敛）】本端点是早期「一键六阶段流水线」的遗留路径，
+已进入冻结态（只维护不新增能力）：
+- 主路径是对话式 Agent（Rule 1 Planner 多步循环 + Skill 阶段纪律），
+  新能力一律在主路径上迭代；
+- CLI 批处理（cli.py）继续使用 workflows.engine 的 DAG 调度，那是引擎的
+  唯一积极使用方；
+- 交互模式（step/advance）与前端步骤条已随新版 UI 移除，不再投入。
 
 由修复后的 WorkflowEngine 驱动真实执行：
 - story / storyboard：真实 LLM 调用（未配置真实供应商 → 诚实标记 skipped）

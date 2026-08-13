@@ -248,9 +248,17 @@ class FCToolRunner:
         # 由 chat_service/planner 注入，执行器工具缺省时使用）
         self.chat_provider: str = ""
         self.chat_model: str = ""
+        # 用户坚持作用域（False / True / "all" / "element_image"）：覆盖对应闸机
+        self.gate_override: Any = False
+        # 本批闸机警告（随 execute 返回/时间线可见）
+        self.gate_warnings: List[str] = []
+        # 已完成阶段集合（script_analyze 等；总结/收集闸判定用）
+        self.skill_stages_done: set = set()
         # 规格前置警告标记（S1：声明 spec_gate 的 Skill 未写规格时置位，
         # 批末追加到操作时间线，不硬拦）
         self._spec_gate_warned = False
+        # Skill 可配置闸机规则（测试/执行器注入 parse_gate_rules 结果）
+        self._gate_rules: Optional[Dict[str, Any]] = None
         # 前端当前选中的草稿（对齐文本轨 "current" 语义）；execute 时按请求注入
         self._selected_draft_id = ""
         self._selected_type = ""
@@ -325,22 +333,65 @@ class FCToolRunner:
             kind = {"keyelement": "keyElement", "shot": "shot", "audio": "audio"}.get(gt, "")
         else:
             return None
+        # 客观补全（888 事故）：@引用与镜头时长可从 sceneRefs/duration 算出来，
+        # 写入前按 Skill 声明的规则自动补印回待写入参数，不指望模型自觉
+        if kind == "shot" and prompt:
+            group: Optional[Dict[str, Any]] = None
+            if name == "storyboard_patch_draft":
+                found = ops.find_draft(
+                    self._raw_state(), str(args.get("draft_id") or ""),
+                    str(args.get("draft_type") or ""),
+                    selected_draft_id=self._selected_draft_id,
+                    selected_type=self._selected_type,
+                )
+                if found:
+                    group = found[0]
+            else:
+                group = {
+                    "id": str(args.get("group_id") or ""),
+                    "title": str(args.get("title") or ""),
+                    "sceneRefs": args.get("sceneRefs") or [],
+                    "duration": str(args.get("duration") or ""),
+                }
+            if group is not None:
+                target = patch if name == "storyboard_patch_draft" else draft
+                if isinstance(target, dict):
+                    filled_refs = prompt_gates.autofill_at_refs(
+                        prompt, "shot", group, self._raw_state(), rules=self._gate_rules,
+                    )
+                    if filled_refs != prompt:
+                        target["prompt"] = filled_refs
+                        prompt = filled_refs
+                    filled_dur = prompt_gates.autofill_shot_duration(
+                        prompt, "shot", group, rules=self._gate_rules,
+                    )
+                    if filled_dur and filled_dur != prompt:
+                        target["prompt"] = filled_dur
+                        prompt = filled_dur
         if not prompt or kind not in ("shot", "keyElement"):
             return None
-        # 流程时序硬闸（strict）：元素图像未就绪严禁写分镜提示词（Skill 分批确认前置）
+        # 元素概念图前置（流程闸，只警告不拦人，4444 语义）
         if kind == "shot" and prompt_gates.gate_mode() == "strict" \
                 and prompt_gates.element_images_missing(self._raw_state()):
-            logger.info("[PromptGate] 拦截分镜提示词写入（元素图像未就绪）")
-            return prompt_gates.SHOT_SEQUENCE_GATE_ERROR
-        # 故事板待确认窗口（步骤3→步骤4 分界）：用户确认结构前严禁写提示词
+            self.gate_warnings.append(prompt_gates.SHOT_SEQUENCE_GATE_ERROR)
+            logger.info("[PromptGate] 元素图像未就绪（警告，不拦人）")
+        # 故事板待确认窗口（步骤3→步骤4 分界）：流程闸，只警告不拦人
         if prompt_gates.gate_mode() == "strict" \
                 and prompt_gates.storyboard_pending(self._raw_state()):
-            logger.info("[FlowGate] 拦截提示词写入（故事板待用户确认）")
-            return prompt_gates.STORYBOARD_PENDING_GATE_ERROR
-        ok, hard, soft = prompt_gates.validate_prompt_write(prompt, kind, self._raw_state())
+            self.gate_warnings.append(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
+            logger.info("[FlowGate] 提示词写入时故事板待确认（警告，不拦人）")
+        ok, hard, soft = prompt_gates.validate_prompt_write(
+            prompt, kind, self._raw_state(), rules=self._gate_rules,
+        )
         for w in soft:
             logger.warning(f"[PromptGate] 软提醒（{kind}）: {w}")
         if ok:
+            return None
+        if prompt_gates.override_covers(self.gate_override, prompt_gates.GATE_STRUCTURE):
+            lines = "\n".join(f"- {e}" for e in hard)
+            self.gate_warnings.append(
+                f"用户坚持写入，提示词结构校验未通过（本条仅为警告）：\n{lines}"
+            )
             return None
         if prompt_gates.gate_mode() != "strict":
             logger.warning(f"[PromptGate] warn 模式放行（{kind}）: {hard}")
@@ -388,11 +439,12 @@ class FCToolRunner:
             return None
         logger.info(f"[FlowGate] {name}：规格文档未写入（Skill 声明 spec_gate，追加建议补写线索）")
         self._spec_gate_warned = True
+        self.gate_warnings.append(prompt_gates.SPEC_GATE_ERROR)
         return None
 
     def _strip_structure_prompt(self, name: str, args: Dict[str, Any], injected_skill: str) -> bool:
         """结构纯净闸（步骤3）：Skill 激活且 strict 时，create_group/add_draft 携带的
-        内联草稿若带详细提示词（> STRUCTURE_INLINE_PROMPT_MAX 字），剥离 prompt 字段
+        内联草稿带提示词时，剥离 prompt 字段
         后放行建结构（不丢分组、不造成虚报），详细提示词留到用户确认后的步骤4。
         返回 True = 发生了剥离（回喂时附说明）。"""
         if not injected_skill or prompt_gates.gate_mode() != "strict":
@@ -403,7 +455,7 @@ class FCToolRunner:
         if not isinstance(draft, dict):
             return False
         prompt = str(draft.get("prompt") or "").strip()
-        if len(prompt) <= prompt_gates.STRUCTURE_INLINE_PROMPT_MAX:
+        if not prompt:
             return False
         draft["prompt"] = ""
         logger.info(f"[FlowGate] 剥离 {name} 内联详细提示词（{len(prompt)} 字，结构阶段只建骨架）")
@@ -443,6 +495,9 @@ class FCToolRunner:
         """生成确认闸（FC 轨）：Skill 激活且 strict 时，image_generate 的目标草稿
         必须全部已经用户确认（tag=已确认），否则拒绝并引导先展示草案等确认。
         返回非 None = 硬拒绝。"""
+        if self.gate_override in ("all", True):
+            self.gate_warnings.append("用户坚持跳过生成确认闸（仅警告），照常生成")
+            return None
         if not injected_skill or prompt_gates.gate_mode() != "strict":
             return None
         if name != "image_generate":
@@ -471,18 +526,22 @@ class FCToolRunner:
         if prompt_gates.drafts_confirmed(state, targets):
             return None
         logger.info(f"[GenGate] 拦截 image_generate：{len(targets)} 个目标草稿存在未确认 Prompt Draft")
-        return prompt_gates.GENERATION_CONFIRM_GATE_ERROR
+        self.gate_warnings.append("生成确认闸拦截：" + prompt_gates.GENERATION_CONFIRM_GATE_ERROR)
+        return "生成确认闸拦截：" + prompt_gates.GENERATION_CONFIRM_GATE_ERROR
 
     async def execute(
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",
         on_status=None, on_event=None, injected_skill: str = "",
         selected_draft_id: str = "", selected_type: str = "",
+        gate_override: Any = False,
     ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
         """执行 Function Calling 返回的 tool_calls。
         返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
         confirmation_options, tool_results, docs_written)"""
         self._selected_draft_id = selected_draft_id or ""
         self._selected_type = selected_type or ""
+        self.gate_override = gate_override
+        self.gate_warnings = []
         applied = 0
         confirmation = ""
         confirmation_options: List[Dict[str, Any]] = []
@@ -584,7 +643,9 @@ class FCToolRunner:
                 and ops.category_for_group_type(str(args.get("group_type") or "")) != "keyElements"
                 and str(args.get("group_type") or "").strip()
             ):
-                gate_error = prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR
+                logger.info("[FlowGate] 首次搭建建议先拆关键元素（警告，不拦人）")
+                if prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR not in self.gate_warnings:
+                    self.gate_warnings.append(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
             if gate_error is None:
                 gate_error = self._gen_confirm_gate(name, args, injected_skill)
                 if gate_error is None:
@@ -648,6 +709,19 @@ class FCToolRunner:
                                 confirmation_options.append(item)
                             elif isinstance(o, str) and o.strip():
                                 confirmation_options.append({"label": o.strip(), "description": ""})
+                    # 1111 事故：模型自造「1K（更快）」式 label 无法机械落盘，
+                    # 同 group 选项替换为标准「键：值」向导（系统永不没收模型的暂停文案）
+                    try:
+                        from src.video_agent.skill_runtime.registry import spec_wizard_active
+
+                        if spec_wizard_active(injected_skill):
+                            _m, _opts, _merged = prompt_gates.merge_spec_param_wizard(
+                                self._raw_state(), confirmation, confirmation_options,
+                            )
+                            if _merged:
+                                confirmation, confirmation_options = _m, _opts
+                    except Exception:
+                        pass
                 if name in ("document_write", "write_document"):
                     doc_written = True
                     doc_name = str(args.get("name") or args.get("key") or "").strip()
@@ -676,6 +750,8 @@ class FCToolRunner:
                     })
                 tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True)
                 tool_results.append({"name": name, "ok": True, "data": result.data})
+                if name == "script_analyze":
+                    self.skill_stages_done.add("script_analyze")
                 # --- 收集 generate_image 产出的图片 URL ---
                 data = result.data
                 if data and "image_urls" in data:
@@ -710,25 +786,28 @@ class FCToolRunner:
         if doc_written and not confirmation:
             spec_hit = any(prompt_gates.is_spec_doc_name(n) for n in docs_written)
             if spec_hit:
-                confirmation = (
-                    "成片规格文档已写入（见下方文档卡片），请审阅其中的标题/时长/画幅/风格等条目；"
-                    "确认无误后，我将按 Skill 开始拆分关键元素（仅拆元素并暂停等你确认）。"
-                )
-            else:
-                confirmation = "规格/阶段文档已写入，请审阅；确认无误后我再推进下一阶段。"
+                confirmation, confirmation_options = prompt_gates.spec_pause_card(self._raw_state())
         # 规格前置警告（S1）：未硬拦，但必须在时间线留下可视线索
         if self._spec_gate_warned:
             action_log.append("【流程警告】" + prompt_gates.SPEC_GATE_ERROR)
             self._spec_gate_warned = False
-        # 规格文档写入后的引导选项（每步完成必有引导；模型自带 options 时不覆盖）
-        if doc_written and not confirmation_options:
-            if any(prompt_gates.is_spec_doc_name(n) for n in docs_written):
-                confirmation_options = list(prompt_gates.SPEC_DOC_OPTIONS)
+
+        # 总结/规格收集闸（层9 兜底）：script_analyze 成功且无规格文档且模型未暂停
+        if (
+            "script_analyze" in self.skill_stages_done
+            and not prompt_gates.has_spec_document(self._raw_state())
+            and not confirmation
+        ):
+            if self.gate_override in ("all", True):
+                self.gate_warnings.append("用户已要求全速推进，已豁免规格收集暂停（仅附警告）")
+            else:
+                confirmation, confirmation_options = prompt_gates.spec_collect_card(self._raw_state())
+                logger.info("[FlowGate] FC script_analyze 完成且无规格文档，注入规格收集向导")
         # 故事板结构首次建立的硬暂停（阶段分界）：待确认标记已在批内即时置位；
         # 暂停文案统一由系统按客观结构类别生成（含 shot → 分镜拆分审阅文案，
         # 否则 → 关键元素拆分审阅文案）——结构阶段不产出提示词草案，
         # 模型自拟文案（声称「提示词已写好/开始生成」）属虚报，一律覆盖。
-        if structure_created and skill_strict:
+        if not confirmation and structure_created and skill_strict:
             confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
         # 结构阶段剥离了内联详细提示词：回喂中显式告知，防止模型虚报「提示词已写好」
         if prompt_stripped:

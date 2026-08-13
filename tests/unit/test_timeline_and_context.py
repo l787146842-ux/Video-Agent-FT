@@ -114,9 +114,11 @@ async def test_agent_loop_emits_tool_events(executor):
     )
     types = [e["type"] for e in events]
     assert "tool_started" in types and "tool_finished" in types
-    # 顺序：先 started 后 finished，且 id 对应（排除模型推理轮条目 llm-*）
-    started = next(e for e in events if e["type"] == "tool_started" and not str(e["id"]).startswith("llm-"))
-    finished = next(e for e in events if e["type"] == "tool_finished" and not str(e["id"]).startswith("llm-"))
+    # 顺序：先 started 后 finished，且 id 对应
+    started = next(e for e in events
+                   if e["type"] == "tool_started" and e.get("name") != "model_reasoning")
+    finished = next(e for e in events
+                    if e["type"] == "tool_finished" and e.get("id") == started["id"])
     assert types.index("tool_started") < types.index("tool_finished")
     assert started["id"] == finished["id"]
     assert finished["ok"] is True
@@ -219,8 +221,10 @@ async def test_fc_tool_timeline_events(svc):
         "执行", PlannerContext(use_studio_context=False),
         stream_hook=make_hook(), on_event=on_event,
     )
-    started = [e for e in events if e["type"] == "tool_started" and not str(e["id"]).startswith("llm-")]
-    finished = [e for e in events if e["type"] == "tool_finished" and not str(e["id"]).startswith("llm-")]
+    started = [e for e in events
+               if e["type"] == "tool_started" and e.get("name") != "model_reasoning"]
+    finished = [e for e in events
+                if e["type"] == "tool_finished" and e.get("id") == started[0]["id"]]
     assert len(started) == 1 and len(finished) == 1
     assert started[0]["name"] == "fake_tool"
     assert finished[0]["ok"] is True
@@ -232,7 +236,7 @@ async def test_fc_tool_timeline_events(svc):
 
 def test_context_builder_manifests_no_full_text(svc):
     svc.state_dict["documents"] = [{
-        "name": "Final_Video_Spec.md", "updated_at": "",
+        "name": "制片规格.md", "updated_at": "",
         "content": "规格内容" * 1000,  # 4000 字，全文不应进上下文
     }]
     svc.state_dict["uploadedDocs"] = [{
@@ -243,7 +247,7 @@ def test_context_builder_manifests_no_full_text(svc):
     ctx = build_agent_context(svc.state_dict, "bound")
     parsed = json.loads(ctx)
     # 规格文档仅清单：名称/字数/预览，全文不注入
-    doc = next(d for d in parsed["documents"] if d["name"] == "Final_Video_Spec.md")
+    doc = next(d for d in parsed["documents"] if d["name"] == "制片规格.md")
     assert doc["char_count"] == 4000
     assert "规格内容" * 1000 not in ctx
     # 附件文档仅清单：有名称与字数，无正文
@@ -270,17 +274,17 @@ async def test_read_uploaded_doc_tool(svc):
 
 async def test_read_project_doc_tool(svc):
     svc.state_dict["documents"] = [{
-        "name": "Final_Video_Spec.md", "updated_at": "",
+        "name": "制片规格.md", "updated_at": "",
         "content": "规格全文：全片 90 秒……",
     }]
     tool = ReadProjectDocTool()
-    ok = await tool.aexecute(ReadProjectDocInput(name="Final_Video_Spec.md"))
+    ok = await tool.aexecute(ReadProjectDocInput(name="制片规格.md"))
     assert ok.success and "规格全文" in ok.data["content"]
-    # 前缀模糊匹配
-    ok2 = await tool.aexecute(ReadProjectDocInput(name="Final_Video"))
+    # 模糊匹配（包含）
+    ok2 = await tool.aexecute(ReadProjectDocInput(name="规格"))
     assert ok2.success
     miss = await tool.aexecute(ReadProjectDocInput(name="没有这篇"))
-    assert not miss.success and "Final_Video_Spec.md" in miss.error
+    assert not miss.success and "制片规格.md" in miss.error
 
 
 async def test_read_skill_tool(tmp_path, monkeypatch, svc):

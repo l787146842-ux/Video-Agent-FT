@@ -27,7 +27,13 @@ from src.video_agent.web.multimodal_builder import (
     build_multimodal_content,
     _TYPE_TO_CATEGORY,
 )
-from src.video_agent.web.provider_config import is_mock_provider, load_merged_providers, get_provider_config
+from src.video_agent.web.provider_config import (
+    get_provider_config,
+    is_mock_provider,
+    is_mock_provider_async,
+    load_merged_providers,
+    load_merged_providers_async,
+)
 from src.video_agent.web.sse import sse_event_generator  # noqa: F401  （re-export，路由层从此导入）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner, PlannerContext
@@ -195,7 +201,7 @@ def _build_meta_note(elapsed_secs: float, steps: int, applied: int) -> str:
     return " · ".join(parts)
 
 
-def _consume_pending_confirmation(svc) -> str:
+def _consume_pending_confirmation(svc, user_text: str = "") -> str:
     """消费「等待确认」暂停态：用户的新消息即是对上一轮暂停的回应。
 
     暂停态只写不清会让模型永远停在上一阶段；只清不带则模型看不到
@@ -205,6 +211,14 @@ def _consume_pending_confirmation(svc) -> str:
     调用方需持有 svc.lock。
     """
     interaction = svc.state_dict.get("interaction") or {}
+    pause_kind = interaction.get("pending_pause_kind")
+    if pause_kind == "collect":
+        # 规格收集暂停的回应：视为已进入收集环节（后续由 _consume_spec_wizard 拼装）
+        interaction["spec_collected"] = True
+    # 暂停语义标记（summary/spec/collect）随回应消费清除，避免残留影响下一轮
+    interaction.pop("pending_pause_kind", None)
+    # 暂停语义标记（summary/spec）随回应消费清除，避免残留影响下一轮
+    interaction.pop("pending_pause_kind", None)
     # 故事板待确认窗口（步骤3→步骤4 分界）：不依赖 awaiting_confirmation，
     # 用户任何新消息到达即视为已审阅故事板，解除提示词写入封锁
     if interaction.get("storyboard_pending"):
@@ -327,6 +341,54 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
     )
 
 
+def _finalize_spec_params(svc, user_text: str) -> str:
+    """规格暂停回应定稿（1111 事故）：summary 暂停的「确认」不得定稿规格；
+    spec 暂停的「确认」按展示值定稿；显式选择（分辨率/时长）任意情况下生效。"""
+    from src.video_agent.core import prompt_gates
+
+    inter = svc.state_dict.get("interaction") or {}
+    if inter.get("pending_pause_kind") == "summary":
+        return ""
+    spec = None
+    for d in svc.state_dict.get("documents") or []:
+        if prompt_gates.is_spec_doc_name(str(d.get("name") or "")):
+            spec = d
+            break
+    if spec is None:
+        return ""
+    allow_confirm = inter.get("pending_pause_kind") == "spec"
+    new_content, applied = prompt_gates.apply_spec_param_selections(
+        str(spec.get("content") or ""),
+        str(user_text or ""),
+        allow_confirm_intent=allow_confirm,
+    )
+    if not applied:
+        return ""
+    spec["content"] = new_content
+    svc.save()
+    return "（系统：已按你的选择/确认定稿规格参数：" + "、".join(applied[:6]) + "）"
+
+
+def _compact_card_enumeration(text: str) -> str:
+    """把「N 组 M 卡（名称）：…」式逐卡枚举压缩为一行（8888 事故：正文逐卡罗列
+    既耗 token 又撑长卡片）。少于 3 行枚举不触发。"""
+    import re
+
+    text = str(text or "")
+    line_re = re.compile(r"(?m)^\s*-\s*\*\*\d+\s*组\s*\d+\s*卡（[^）]*）\*\*：.*$")
+    matches = list(line_re.finditer(text))
+    if len(matches) < 3:
+        return text
+    # 保留首行前的引导语与末行后的收尾（如「请在左侧故事板审阅」）
+    head = text[:matches[0].start()]
+    tail = text[matches[-1].end():]
+    return (
+        head.rstrip()
+        + "\n- **逐卡明细已写入左侧故事板**（详见左侧草稿卡，正文不再逐卡罗列）。\n"
+        + tail.lstrip()
+    )
+
+
 async def stream_worker(body: Any, emit) -> None:
     """流式聊天的后台 worker（mock + 真实供应商）。
 
@@ -362,15 +424,17 @@ async def stream_worker(body: Any, emit) -> None:
         if use_studio_context:
             async with svc.lock:
                 pending_confirm_note = _consume_pending_confirmation(svc)
+                spec_finalize_note = _finalize_spec_params(svc, user_text)
                 spec_wizard_note = _consume_spec_wizard(svc, user_text)
         else:
+            spec_finalize_note = ""
             spec_wizard_note = ""
         # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
         attachment_note = (
             attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
             if body.attachments else ""
         )
-        llm_user_text = user_text + pending_confirm_note + spec_wizard_note
+        llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
         if attachment_note:
             llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
 
@@ -451,38 +515,34 @@ def _is_retryable_adapter_error(e: Exception) -> bool:
     )
 
 
-def _fallback_candidates(provider_id: str, model: str) -> List[tuple]:
-    """构建 fallback 候选链：主模型 → 同供应商其他 chat 模型 → 其他启用供应商的 chat 模型。
+async def _fallback_candidates(provider_id: str, model: str) -> List[tuple]:
+    """构建 fallback 候选链（7777 二轮新语义）：同模型跨厂商，模型永不换。
 
-    总长度受 settings.model_fallback_max_candidates 限制；mock 供应商不入链。
+    主 (provider, model) → 其他启用供应商中明确在 chat_models 里列出
+    同名模型的供应商。模型列表为空的供应商无法验证是否提供该模型，不入链；
+    mock 供应商不入链；总长度受 settings.model_fallback_max_candidates 限制。
     """
     limit = max(1, settings.model_fallback_max_candidates)
     candidates: List[tuple] = [(provider_id, model)]
-    # 供应商未配置属于配置错误（非瞬时故障），不跨供应商切换
-    if get_provider_config(provider_id) is None:
+    if not str(model or "").strip():
+        return candidates[:limit]
+    if await is_mock_provider_async(provider_id, model):
         return candidates[:limit]
     try:
-        providers = load_merged_providers()
+        providers = await load_merged_providers_async()
     except Exception:
         return candidates[:limit]
-    current = next((p for p in providers if p.get("id") == provider_id), None)
-    if current:
-        for m in (current.get("chat_models") or []):
-            if m and m != model:
-                candidates.append((provider_id, m))
     for p in providers:
         if len(candidates) >= limit:
             break
         pid = p.get("id") or ""
         if not pid or pid == provider_id or not p.get("enabled", True):
             continue
-        if is_mock_provider(pid):
+        if await is_mock_provider_async(pid):
             continue
-        for m in (p.get("chat_models") or []):
-            if m and (pid, m) not in candidates:
-                candidates.append((pid, m))
-                if len(candidates) >= limit:
-                    break
+        models = [str(m or "").strip() for m in (p.get("chat_models") or [])]
+        if model in models and (pid, model) not in candidates:
+            candidates.append((pid, model))
     return candidates[:limit]
 
 
@@ -519,7 +579,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
     )
 
     candidates = (
-        _fallback_candidates(body.provider, body.model)
+        await _fallback_candidates(body.provider, body.model)
         if settings.model_fallback_enabled
         else [(body.provider, body.model)]
     )
@@ -694,15 +754,17 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     if use_studio_context:
         async with svc.lock:
             pending_confirm_note = _consume_pending_confirmation(svc)
+            spec_finalize_note = _finalize_spec_params(svc, user_text)
             spec_wizard_note = _consume_spec_wizard(svc, user_text)
     else:
+        spec_finalize_note = ""
         spec_wizard_note = ""
     # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
     attachment_note = (
         attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
         if body.attachments else ""
     )
-    llm_user_text = user_text + pending_confirm_note + spec_wizard_note
+    llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
     if attachment_note:
         llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
 
@@ -782,7 +844,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     # 非流式复用与 _real_stream 相同的 fallback 链：主模型瞬时故障（5xx/超时/连接失败）
     # 且尚未执行任何操作时，自动切换备用模型重试；已执行操作则不重试（避免重复落盘）
     candidates = (
-        _fallback_candidates(body.provider, body.model)
+        await _fallback_candidates(body.provider, body.model)
         if settings.model_fallback_enabled
         else [(body.provider, body.model)]
     )

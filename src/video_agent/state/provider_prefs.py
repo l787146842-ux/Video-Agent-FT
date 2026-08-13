@@ -71,7 +71,42 @@ def resolve_spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     return {}
 
 
+def extract_production_params(content: str) -> Dict[str, Any]:
+    """从规格文档正文（键值清单）解析制作参数；含「待确认」标记的行跳过。
+
+    与 resolve_spec_production_params 同源解析，供纯文本场景直接调用。
+    返回键：image_resolution / video_resolution / shot_max_duration。
+    """
+    defaults: Dict[str, Any] = {
+        "image_resolution": "",
+        "video_resolution": "",
+        "shot_max_duration": None,
+    }
+    params = _parse_spec_params(str(content or ""))
+    if any(k in str(content or "") for k in SPEC_PARAM_UNCONFIRMED_MARKERS):
+        # 含待确认标记的行不采信：逐行重扫，跳过标记行
+        confirmed: Dict[str, Any] = {}
+        for line in str(content or "").splitlines():
+            if any(k in line for k in SPEC_PARAM_UNCONFIRMED_MARKERS):
+                continue
+            line_params = _parse_spec_params(line)
+            confirmed.update(line_params)
+        defaults.update(confirmed)
+        return defaults
+    defaults.update(params)
+    return defaults
+
+
 _DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:秒|s)", re.I)
+
+
+def _fmt_duration(value) -> int:
+    """时长解析为整数秒（「12 秒」→ 12；12.0 同样归整，避免「12.0 秒」穿帮）。"""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return value
+    return int(f) if f.is_integer() else f
 
 
 def _parse_spec_params(content: str) -> Dict[str, Any]:
@@ -90,10 +125,10 @@ def _parse_spec_params(content: str) -> Dict[str, Any]:
             out["image_resolution"] = val
         elif key in ("视频分辨率", "videoresolution"):
             out["video_resolution"] = val
-        elif key in ("分镜最大时长", "分镜最大时长(单镜头秒数上限)", "shotmaxduration"):
+        elif key in ("分镜最大时长", "分镜最大时长(单镜头秒数上限)", "单镜头最大时长", "单镜头时长", "shotmaxduration"):
             m = _DURATION_RE.search(val)
             if m:
-                out["shot_max_duration"] = float(m.group(1))
+                out["shot_max_duration"] = _fmt_duration(m.group(1))
     return out
 
 

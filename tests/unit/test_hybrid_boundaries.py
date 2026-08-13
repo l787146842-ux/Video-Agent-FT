@@ -10,6 +10,22 @@ from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web import provider_config as pc
+
+
+def _async_return(value):
+    """构造返回固定值的 async callable（monkeypatch 异步函数用）"""
+    async def _f():
+        return value
+    return _f
+
+
+@pytest.fixture(autouse=True)
+def reset_provider_cache():
+    """供应商合并结果带 TTL 缓存：每个用例前清空，避免串用其他夹具的临时配置。"""
+    pc.reset_provider_caches()
+    yield
+    pc.reset_provider_caches()
 
 
 @pytest.fixture
@@ -64,7 +80,7 @@ def test_presented_record_and_promote_on_user_reply(svc):
     assert applied == 1
     assert svc.state_dict["interaction"]["drafts_presented"] == ["d-ke1"]
     # 用户回应到达 → 晋升
-    _consume_pending_confirmation(svc)
+    _consume_pending_confirmation(svc, "确认")
     assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "已确认"
     assert svc.state_dict["interaction"]["drafts_presented"] == []
 
@@ -77,12 +93,60 @@ def test_rewritten_draft_not_promoted(svc):
     # 模拟：展示后又被重写（tag 重置为 Agent，仍在 presented 中）
     # 用户回应前没有再展示 → 依然晋升（因为重写后的版本也属于本轮交付物）；
     # 真正的保护是：重写发生在"用户回应之后"时 tag 重置，生成闸重新拦截
-    _consume_pending_confirmation(svc)
+    _consume_pending_confirmation(svc, "继续")
     assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "已确认"
     # 确认后再次重写 → 作废，需重新确认
     ops.patch_draft(svc.state_dict["keyElements"][0]["drafts"][0],
                     {"prompt": "艾 AA 短发干练，深蓝色轻型宇航服，顶侧冷白主光，坚毅神情。"})
     assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "Agent"
+
+
+def test_unrelated_message_consumes_pending_and_promotes(svc):
+    """执行优先：任何用户消息都消费暂停态并晋升已展示草稿（不再拦截）"""
+    from src.video_agent.web.chat_service import _consume_pending_confirmation
+    draft_id = _seed_ke_draft(svc, tag="Agent")
+    inter = svc.state_dict.setdefault("interaction", {})
+    inter["storyboard_pending"] = True
+    inter["drafts_presented"] = [draft_id]
+    inter["awaiting_confirmation"] = True
+    inter["confirmation_message"] = "请审阅"
+
+    note = _consume_pending_confirmation(svc, "今天天气如何？")
+    assert "暂停" in note
+    assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "已确认"
+    assert inter["storyboard_pending"] is False
+    assert inter["awaiting_confirmation"] is False
+    assert inter["drafts_presented"] == []
+
+
+def test_review_signal_unlocks_pending_and_promotes(svc):
+    """调整意见同样解除 pending 并晋升草稿（用户新指令即继续）"""
+    from src.video_agent.web.chat_service import _consume_pending_confirmation
+    draft_id = _seed_ke_draft(svc, tag="Agent")
+    inter = svc.state_dict.setdefault("interaction", {})
+    inter["storyboard_pending"] = True
+    inter["drafts_presented"] = [draft_id]
+    inter["awaiting_confirmation"] = True
+    inter["confirmation_message"] = "请审阅"
+
+    note = _consume_pending_confirmation(svc, "把主角改成红色")
+    assert "上一轮 Agent" in note
+    assert inter["storyboard_pending"] is False
+    assert inter["awaiting_confirmation"] is False
+    assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "已确认"
+    assert inter["drafts_presented"] == []
+
+
+def test_select_signal_promotes(svc):
+    """选择候选项属于确认信号：晋升草稿并清空 presented"""
+    from src.video_agent.web.chat_service import _consume_pending_confirmation
+    draft_id = _seed_ke_draft(svc, tag="Agent")
+    inter = svc.state_dict.setdefault("interaction", {})
+    inter["drafts_presented"] = [draft_id]
+
+    _consume_pending_confirmation(svc, "选择第 2 个方案")
+    assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "已确认"
+    assert inter["drafts_presented"] == []
 
 
 def test_manual_confirm_draft_still_works(svc):
@@ -98,8 +162,9 @@ def test_manual_confirm_draft_still_works(svc):
 
 # ---------- 生成确认闸（文本轨） ----------
 
-def test_gen_gate_blocks_unconfirmed_text_track(svc, monkeypatch):
-    """未确认的 Prompt Draft 不得生成；确认后放行"""
+def test_gen_gate_blocks_model_self_skip_text_track(svc, monkeypatch):
+    """4444：未确认草稿——本轮无跳过指令 → 拒收；用户本轮要求（gate_override）
+    → 照常生成+警告；确认后放行。"""
     _seed_ke_draft(svc, tag="Agent")
     ex = StudioActionExecutor(svc, gate_enabled=True)
     submitted = []
@@ -107,17 +172,29 @@ def test_gen_gate_blocks_unconfirmed_text_track(svc, monkeypatch):
     applied = ex.execute([{
         "action": "generate_image", "target": "all_keyElements",
     }])
-    assert applied == 0 and submitted == []
-    # 确认后放行
-    svc.state_dict["keyElements"][0]["drafts"][0]["tag"] = "已确认"
-    applied = ex.execute([{
+    assert applied == 0 and not submitted  # 模型自发跳确认被拒收
+    assert any("拦截" in w for w in ex.gate_warnings)
+    # 用户本轮明确要求跳过 → 放行+警告
+    ex2 = StudioActionExecutor(svc, gate_enabled=True)
+    ex2.gate_override = "all"
+    monkeypatch.setattr(ex2, "_submit_image_task", lambda *a, **k: submitted.append(a))
+    applied = ex2.execute([{
         "action": "generate_image", "target": "all_keyElements",
     }])
     assert applied == 1 and len(submitted) == 1
+    assert any("确认" in w for w in ex2.gate_warnings)
+    # 确认后同样放行
+    svc.state_dict["keyElements"][0]["drafts"][0]["tag"] = "已确认"
+    ex3 = StudioActionExecutor(svc, gate_enabled=True)
+    monkeypatch.setattr(ex3, "_submit_image_task", lambda *a, **k: submitted.append(a))
+    applied = ex3.execute([{
+        "action": "generate_image", "target": "all_keyElements",
+    }])
+    assert applied == 1 and len(submitted) == 2
 
 
-def test_gen_gate_filters_partial_confirmed(svc, monkeypatch):
-    """部分确认：只生成已确认项，跳过未确认项"""
+def test_gen_gate_partial_confirmed_filters_unconfirmed(svc, monkeypatch):
+    """4444：部分确认且无跳过指令 → 只提交已确认项，未确认项拒收"""
     _seed_ke_draft(svc, tag="已确认")
     svc.state_dict["keyElements"].append({
         "id": "ke-2", "title": "Element_乙",
@@ -128,7 +205,8 @@ def test_gen_gate_filters_partial_confirmed(svc, monkeypatch):
     submitted = []
     monkeypatch.setattr(ex, "_submit_image_task", lambda *a, **k: submitted.append(a))
     applied = ex.execute([{"action": "generate_image", "target": "all_keyElements"}])
-    assert applied == 1 and len(submitted) == 1  # 仅已确认的 d-ke1
+    assert applied == 1 and len(submitted) == 1  # 仅已确认项提交
+    assert ex.gate_warnings
 
 
 def test_gen_gate_inactive_without_skill(svc, monkeypatch):
@@ -142,7 +220,9 @@ def test_gen_gate_inactive_without_skill(svc, monkeypatch):
 
 # ---------- 生成确认闸（FC 轨） ----------
 
-def test_fc_gen_gate_blocks_image_generate(monkeypatch):
+def test_fc_gen_gate_blocks_without_user_insist(monkeypatch):
+    """4444：FC 轨未确认草稿——本轮无跳过指令 → 返回拒收错误；
+    用户本轮要求（gate_override）→ 放行+警告；确认后放行。"""
     runner = FCToolRunner(tool_manager=None)
     state = {"keyElements": [{
         "id": "ke-1", "title": "E", "drafts": [
@@ -151,8 +231,15 @@ def test_fc_gen_gate_blocks_image_generate(monkeypatch):
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
     err = runner._gen_confirm_gate(
         "image_generate", {"target": "all_keyElements"}, injected_skill="任意 Skill")
-    assert err and "确认" in err
-    # 全部确认后放行
+    assert err and "拦截" in err  # 模型自发跳确认被拒收
+    # 用户本轮明确要求 → 放行+警告
+    runner2 = FCToolRunner(tool_manager=None)
+    runner2.gate_override = "all"
+    monkeypatch.setattr(runner2, "_raw_state", staticmethod(lambda: state))
+    assert runner2._gen_confirm_gate(
+        "image_generate", {"target": "all_keyElements"}, injected_skill="任意 Skill") is None
+    assert runner2.gate_warnings and "确认" in runner2.gate_warnings[0]
+    # 全部确认后同样放行
     state["keyElements"][0]["drafts"][0]["tag"] = "已确认"
     assert runner._gen_confirm_gate(
         "image_generate", {"target": "all_keyElements"}, injected_skill="任意 Skill") is None
@@ -186,7 +273,7 @@ def test_stage_restrictions_no_spec():
 
 def test_stage_restrictions_spec_but_no_storyboard():
     excluded, note = prompt_gates.stage_tool_restrictions({
-        "documents": [{"name": "Final_Video_Spec.md", "content": "正文"}],
+        "documents": [{"name": "制片规格.md", "content": "正文"}],
         "keyElements": [], "shots": [], "audioItems": [],
     })
     assert excluded == prompt_gates.GENERATION_STAGE_TOOLS
@@ -196,16 +283,22 @@ def test_stage_restrictions_spec_but_no_storyboard():
 
 def test_stage_restrictions_storyboard_ready():
     excluded, note = prompt_gates.stage_tool_restrictions({
-        "documents": [{"name": "Final_Video_Spec.md", "content": "正文"}],
+        "documents": [{"name": "制片规格.md", "content": "正文"}],
         "keyElements": [{"id": "ke-1", "drafts": []}], "shots": [], "audioItems": [],
     })
     assert excluded == frozenset() and note == ""
 
 
 def test_planner_stage_pruning(svc, monkeypatch):
-    """planner._compute_excluded_tools：Skill 激活 + strict 时按阶段裁剪"""
+    """planner._compute_excluded_tools：Skill 激活 + strict + 声明 spec_stage_trim 时按阶段裁剪"""
     from src.video_agent.core.planner import Planner, PlannerContext
+    from src.video_agent.skill_runtime import registry
 
+    # S1：裁剪只对声明 spec_stage_trim 的 Skill 生效，本用例显式开启
+    monkeypatch.setattr(
+        registry, "skill_flow_enabled",
+        lambda skill, key: key == "spec_stage_trim",
+    )
     planner = Planner.__new__(Planner)  # 绕过重量级构造，只测裁剪逻辑
     planner.state_manager = svc
 
@@ -233,25 +326,26 @@ def _clear_storyboard(svc):
 
 
 def test_ke_first_gate_text_track(svc):
-    """文本轨：首次搭建批次内 shot/audio 分组被拒，keyElement 放行"""
+    """文本轨：首次搭建批次内 shot/audio 分组照常创建并附警告"""
     _clear_storyboard(svc)
-    svc.state_dict["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格正文"}]
+    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     ex = StudioActionExecutor(svc, gate_enabled=True)
     applied = ex.execute([
         {"action": "add_group", "group_type": "shot", "title": "Shot_1"},
         {"action": "add_group", "group_type": "audio", "title": "Audio_1"},
         {"action": "add_group", "group_type": "keyElement", "title": "Element_A"},
     ])
-    assert applied == 1  # 只有 keyElement 成功
-    assert len(svc.state_dict["shots"]) == 0
-    assert len(svc.state_dict["audioItems"]) == 0
+    assert applied == 3  # 全部创建成功
+    assert len(svc.state_dict["shots"]) == 1
+    assert len(svc.state_dict["audioItems"]) == 1
     assert [g["title"] for g in svc.state_dict["keyElements"]][-1] == "Element_A"
+    assert ex.gate_warnings and "首次" in ex.gate_warnings[0]
 
 
 def test_ke_first_gate_allows_shots_after_elements_exist(svc):
     """关键元素已存在（非首次搭建）后，创建分镜/音频不再被拦"""
     _clear_storyboard(svc)
-    svc.state_dict["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格正文"}]
+    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     _seed_ke_draft(svc)
     ex = StudioActionExecutor(svc, gate_enabled=True)
     applied = ex.execute([
@@ -261,11 +355,11 @@ def test_ke_first_gate_allows_shots_after_elements_exist(svc):
 
 
 def test_ke_first_gate_fc_track(monkeypatch):
-    """FC 轨：首次搭建批次内建 shot 分组被拒并返回引导文案"""
+    """FC 轨：首次搭建批次内建 shot 分组照常执行并记录警告"""
     import asyncio
-    runner = FCToolRunner(tool_manager=None)
+    runner = FCToolRunner(tool_manager=_StubToolManager())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {
-        "documents": [{"name": "Final_Video_Spec.md", "content": "规格正文"}],
+        "documents": [{"name": "制片规格.md", "content": "规格正文"}],
         "keyElements": [], "shots": [], "audioItems": [],
     }))
     response = ChatResponse(content="", tool_calls=[
@@ -274,15 +368,16 @@ def test_ke_first_gate_fc_track(monkeypatch):
             "arguments": json.dumps({"group_type": "shot", "title": "Shot_1"})}},
     ])
     applied, *_rest = asyncio.run(runner.execute(response, injected_skill="任意 Skill"))
-    assert applied == 0
+    assert applied == 1
+    assert runner.gate_warnings and "首次" in runner.gate_warnings[0]
 
 
 # ---------- pending 批内即时置位（8888 事故：同批建结构又写提示词） ----------
 
-def test_pending_immediate_blocks_same_batch_prompt_write(svc):
-    """同一批：建结构后立刻写提示词 → 提示词被待确认窗口拦住（pending 即时生效）"""
+def test_pending_immediate_rejects_short_prompt_in_same_batch(svc):
+    """同一批：建结构成功，但过短提示词被质量闸拒绝（决策 D）"""
     _clear_storyboard(svc)
-    svc.state_dict["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格正文"}]
+    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     ex = StudioActionExecutor(svc, gate_enabled=True)
     applied = ex.execute([
         {"action": "add_group", "group_type": "keyElement", "title": "Element_A",
@@ -290,10 +385,10 @@ def test_pending_immediate_blocks_same_batch_prompt_write(svc):
         {"action": "update_draft", "draft_id": "current", "draft_type": "keyElement",
          "patch": {"prompt": "白发老者站在冥王星冰原上，手持拐杖，伦勃朗式光影，宿命感与沧桑。"}},
     ])
-    assert applied == 1  # 只有建分组成功
-    assert svc.state_dict["interaction"]["storyboard_pending"] is True
+    assert applied == 1
     draft = svc.state_dict["keyElements"][-1]["drafts"][0]
-    assert not (draft.get("prompt") or "").strip()
+    assert not draft.get("prompt")
+    assert ex.gate_rejections
 
 
 # ---------- FC 轨文档收集与规格暂停文案（8888 事故：无文档卡片无下一步指引） ----------
@@ -303,25 +398,63 @@ class _StubToolManager:
         return ToolResult(success=True, data={})
 
 
-def test_fc_doc_written_pause_message_and_collection(monkeypatch):
-    """写入规格文档：强制暂停文案带文档卡片与下一步指引，文档名被收集"""
+def test_fc_spec_doc_written_injects_system_pause(monkeypatch):
+    """写入规格文档且模型未自发暂停：系统注入规格审阅暂停卡（5555 事故兜底）。
+    9999 事故升级：无状态可读写（规格正文拿不到）时三项制作参数视为未选定，
+    暂停卡升级为候选项向导。"""
+    import asyncio
+    from src.video_agent.skill_runtime import registry
+
+    monkeypatch.setattr(registry, "skill_flow_enabled", lambda skill, key: True)
+    monkeypatch.setattr(registry, "spec_wizard_active", lambda skill: True)
+    runner = FCToolRunner(tool_manager=_StubToolManager())
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+    response = ChatResponse(content="", tool_calls=[
+        {"id": "c1", "type": "function", "function": {
+            "name": "document_write",
+            "arguments": json.dumps({"name": "制片规格.md", "content": "标题：测试"})}},
+    ])
+    applied, confirmation, *_rest, tool_results, docs_written = asyncio.run(
+        runner.execute(response, injected_skill="任意 Skill"))
+    assert applied == 1
+    assert docs_written == ["制片规格.md"]
+    assert "尚待您选定" in confirmation
+
+
+def test_fc_spec_doc_written_keeps_model_pause(monkeypatch):
+    """同批已自发 workflow_pause：模型暂停不被系统规格卡覆盖（永不没收暂停）"""
     import asyncio
     runner = FCToolRunner(tool_manager=_StubToolManager())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
     response = ChatResponse(content="", tool_calls=[
         {"id": "c1", "type": "function", "function": {
             "name": "document_write",
-            "arguments": json.dumps({"name": "Final_Video_Spec.md", "content": "标题：测试"})}},
+            "arguments": json.dumps({"name": "制片规格.md", "content": "标题：测试"})}},
+        {"id": "c2", "type": "function", "function": {
+            "name": "workflow_pause",
+            "arguments": json.dumps({"message": "请审阅规格"})}},
+    ])
+    applied, confirmation, *_rest, tool_results, docs_written = asyncio.run(
+        runner.execute(response, injected_skill="任意 Skill"))
+    assert docs_written == ["制片规格.md"]
+    assert confirmation == "请审阅规格"  # 模型自发暂停原样保留
+
+
+def test_fc_non_spec_doc_written_no_pause(monkeypatch):
+    """写入普通文档（非规格）：不注入暂停，照常继续"""
+    import asyncio
+    runner = FCToolRunner(tool_manager=_StubToolManager())
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+    response = ChatResponse(content="", tool_calls=[
+        {"id": "c1", "type": "function", "function": {
+            "name": "document_write",
+            "arguments": json.dumps({"name": "大纲.md", "content": "正文"})}},
     ])
     applied, confirmation, *_rest, tool_results, docs_written = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     assert applied == 1
-    assert docs_written == ["Final_Video_Spec.md"]
-    assert "文档卡片" in confirmation and "拆分关键元素" in confirmation
-    # 规格文档完成后必带引导选项（确认规格→拆关键元素 / 调整规格）
-    opts = _rest[3]  # confirmation_options 位置
-    labels = [o.get("label") for o in opts]
-    assert any("拆分关键元素" in l for l in labels) and any("调整" in l for l in labels)
+    assert docs_written == ["大纲.md"]
+    assert confirmation == ""
 
 
 def test_options_group_passthrough_fc(monkeypatch):
@@ -398,7 +531,7 @@ def test_image_generate_fallback_to_draft_provider(svc, monkeypatch):
     assert result.success and captured == [("custom-api", "")]
 
 
-def test_image_generate_fallback_to_first_configured_provider(svc, monkeypatch):
+async def test_image_generate_fallback_to_first_configured_provider(svc, monkeypatch):
     """草稿也无 providerId 时回退配置中首个可用生图供应商；完全无配置时报明确错误"""
     import asyncio
     from src.video_agent.tools import document_tools
@@ -418,26 +551,30 @@ def test_image_generate_fallback_to_first_configured_provider(svc, monkeypatch):
         return "http://fake/img.png"
 
     monkeypatch.setattr(gen_mod, "generate_image_via_provider", fake_gen)
-    monkeypatch.setattr(document_tools, "first_available_image_provider",
-                        lambda: ("modelscope", "Z-Image-Turbo"))
-    result = asyncio.run(ImageGenerateTool().aexecute(
-        GenerateImageInput(target="all_keyElements")))
-    assert result.success and captured == [("modelscope", "Z-Image-Turbo")]
+    monkeypatch.setattr(
+        pc, "first_available_image_provider_async",
+        _async_return(("modelscope", "Z-Image-Turbo")),
+    )
+    result = await ImageGenerateTool().aexecute(GenerateImageInput(target="all_keyElements"))
+    assert result.success and result.data["submitted"] == 1
+    await asyncio.sleep(0.3)  # 后台任务完成 fake_gen 调用
+    assert captured == [("modelscope", "Z-Image-Turbo")]
 
     # 完全无可用生图供应商 → 返回明确错误而非「供应商 '' 未配置」
     # （首轮成功后供应商已回写草稿，此处清空以验证纯回退链末端）
     svc.state_dict["keyElements"][0]["drafts"][0]["providerId"] = ""
-    monkeypatch.setattr(document_tools, "first_available_image_provider",
-                        lambda: ("", ""))
-    result2 = asyncio.run(ImageGenerateTool().aexecute(
-        GenerateImageInput(target="all_keyElements")))
+    monkeypatch.setattr(
+        pc, "first_available_image_provider_async",
+        _async_return(("", "")),
+    )
+    result2 = await ImageGenerateTool().aexecute(GenerateImageInput(target="all_keyElements"))
     assert not result2.success and "未配置任何可用的生图供应商" in (result2.error or "")
 
 
 # ---------- 规格文档媒体偏好（8888 事故：规格设定 Antigravity CLI 却走了 Grsai） ----------
 
 _SPEC_PREF_DOC = (
-    "# 制作规格 (Final_Video_Spec)\n\n"
+    "# 制作规格 (制片规格)\n\n"
     "- 画幅比例: 16:9\n"
     "- 制作偏好: 图像生成 Antigravity CLI aotu 模型，视频生成 Seedance 2.0\n"
 )
@@ -455,7 +592,7 @@ def test_spec_media_preference_scans_spec_doc_only():
     from src.video_agent.web.provider_config import spec_media_preference
     state = {"documents": [
         {"name": "随想笔记.md", "content": "- 制作偏好: 图像生成 Grsai gpt-image-2"},
-        {"name": "Final_Video_Spec.md", "content": _SPEC_PREF_DOC},
+        {"name": "制片规格.md", "content": _SPEC_PREF_DOC},
     ]}
     pid, model = spec_media_preference(state, "image")
     assert pid == "gemini-cli" and model == "auto"
@@ -468,7 +605,7 @@ def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch):
     tm = _CaptureToolManager()
     runner = FCToolRunner(tool_manager=tm)
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
-        lambda: {"documents": [{"name": "Final_Video_Spec.md", "content": _SPEC_PREF_DOC}]}))
+        lambda: {"documents": [{"name": "制片规格.md", "content": _SPEC_PREF_DOC}]}))
     response = ChatResponse(content="", tool_calls=[
         {"id": "c1", "type": "function", "function": {
             "name": "image_generate",
@@ -479,7 +616,7 @@ def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch):
     assert args.get("provider_id") == "gemini-cli" and args.get("model") == "auto"
 
 
-def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch):
+async def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch):
     """草稿被前端回填 Grsai，但规格设定 Antigravity CLI → 实际生图走规格"""
     import asyncio
     from src.video_agent.web import generation as gen_mod
@@ -488,7 +625,7 @@ def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch):
     monkeypatch.setattr(StateManager, "_instance", svc)
     svc.state_dict["shots"] = []
     svc.state_dict["documents"] = [
-        {"name": "Final_Video_Spec.md", "content": _SPEC_PREF_DOC}]
+        {"name": "制片规格.md", "content": _SPEC_PREF_DOC}]
     svc.state_dict["keyElements"] = [{
         "id": "ke-1", "title": "Element_A",
         "drafts": [{"id": "d1", "tag": "已确认", "prompt": "提示词",
@@ -501,9 +638,10 @@ def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch):
         return "http://fake/img.png"
 
     monkeypatch.setattr(gen_mod, "generate_image_via_provider", fake_gen)
-    result = asyncio.run(ImageGenerateTool().aexecute(
-        GenerateImageInput(target="all_keyElements")))
-    assert result.success and captured == [("gemini-cli", "auto")]
+    result = await ImageGenerateTool().aexecute(GenerateImageInput(target="all_keyElements"))
+    assert result.success and result.data["submitted"] == 1
+    await asyncio.sleep(0.3)
+    assert captured == [("gemini-cli", "auto")]
 
 
 # ---------- 防虚报硬拦截（8888 事故：image_generate 被拦后模型仍声称「已触发生成」） ----------
@@ -561,7 +699,7 @@ def test_fc_add_draft_stamps_spec_preference(svc, monkeypatch):
 
     monkeypatch.setattr(StateManager, "_instance", svc)
     svc.state_dict["documents"] = [
-        {"name": "Final_Video_Spec.md", "content": _SPEC_PREF_DOC}]
+        {"name": "制片规格.md", "content": _SPEC_PREF_DOC}]
     svc.state_dict["keyElements"] = [{"id": "g1", "title": "G", "drafts": []}]
     r = asyncio.run(StoryboardAddDraftTool().aexecute(
         AddDraftInput(group_id="g1", group_type="keyElement", draft={"label": "概念图"})))
@@ -574,7 +712,7 @@ def test_text_track_add_draft_stamps_spec_preference(svc):
     """文本轨 add_draft 同样补印；草稿自带 providerId 时不覆盖"""
     ex = StudioActionExecutor(svc, gate_enabled=False)
     svc.state_dict["documents"] = [
-        {"name": "Final_Video_Spec.md", "content": _SPEC_PREF_DOC}]
+        {"name": "制片规格.md", "content": _SPEC_PREF_DOC}]
     svc.state_dict["keyElements"] = [{"id": "g1", "title": "G", "drafts": []}]
     applied = ex.execute([
         {"action": "add_draft", "draft_type": "keyElement", "group_id": "g1",
@@ -606,7 +744,7 @@ def test_confirm_fallback_promotes_when_presented_missing(svc):
     inter["awaiting_confirmation"] = True
     inter["confirmation_message"] = "请审阅提示词草案"
     inter["drafts_presented"] = []
-    _consume_pending_confirmation(svc)
+    _consume_pending_confirmation(svc, "确认")
     assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "已确认"
 
 
@@ -618,7 +756,7 @@ def test_confirm_fallback_not_triggered_without_pause(svc):
         "drafts": [{"id": "d1", "tag": "Agent", "prompt": "提示词内容足够长。"}],
     }]
     svc.state_dict.setdefault("interaction", {})["awaiting_confirmation"] = False
-    _consume_pending_confirmation(svc)
+    _consume_pending_confirmation(svc, "确认")
     assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "Agent"
 
 
@@ -637,8 +775,8 @@ def _fc_state_with_two_ke_groups():
     }
 
 
-def test_fc_patch_current_gate_blocks_bad_prompt(monkeypatch):
-    """strict 下 patch \"current\" 必须经过提示词闸机（审查修复：此前可绕过）"""
+def test_fc_patch_current_rejects_bad_prompt(monkeypatch):
+    """strict 下 patch \"current\" 经过提示词校验，不合格被拒绝（决策 D）"""
     import asyncio
     tm = _CaptureToolManager()
     runner = FCToolRunner(tool_manager=tm)
@@ -652,8 +790,17 @@ def test_fc_patch_current_gate_blocks_bad_prompt(monkeypatch):
         runner.execute(response, injected_skill="任意 Skill",
                        selected_draft_id="d2", selected_type="keyElement"))
     assert applied == 0
-    assert tm.captured == []  # 被闸机拦截，工具未执行
-    assert any("闸机拦截" in str(tr.get("error") or "") for tr in tool_results)
+    assert not tm.captured  # 工具未执行
+    assert tool_results and tool_results[0]["ok"] is False
+    # 用户坚持 → 照常执行并警告
+    runner2 = FCToolRunner(tool_manager=_CaptureToolManager())
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(_fc_state_with_two_ke_groups))
+    applied2, *_rest2 = asyncio.run(
+        runner2.execute(response, injected_skill="任意 Skill",
+                        selected_draft_id="d2", selected_type="keyElement",
+                        gate_override=True))
+    assert applied2 == 1
+    assert runner2.gate_warnings and "警告" in runner2.gate_warnings[0]
 
 
 def test_fc_patch_current_resolves_selected_draft(monkeypatch):

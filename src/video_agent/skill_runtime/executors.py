@@ -111,6 +111,15 @@ def _executor_thinking() -> Optional[str]:
     return settings.executor_thinking_level or None
 
 
+def _fmt_num(value) -> str:
+    """数字规整：12.0 → "12"，避免注入文案出现「12.0 秒」。"""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return str(int(f)) if f.is_integer() else str(f)
+
+
 def _spec_override_clauses(raw_state: Dict[str, Any], kinds: Tuple[str, ...]) -> str:
     """五项制片规格覆盖注入（2222 二轮，【时长硬约束】模式扩展为统一实现点）。
 
@@ -127,7 +136,7 @@ def _spec_override_clauses(raw_state: Dict[str, Any], kinds: Tuple[str, ...]) ->
     if "duration" in kinds:
         cap = params.get("shot_max_duration")
         if cap:
-            items.append(f"分镜最大时长为 {cap} 秒（所有分镜 duration ≤ {cap} 秒）")
+            items.append(f"分镜最大时长为 {_fmt_num(cap)} 秒（所有分镜 duration ≤ {_fmt_num(cap)} 秒）")
     if "image_resolution" in kinds:
         v = params.get("image_resolution")
         if v:
@@ -1501,7 +1510,10 @@ def _production_param_note(state: Dict[str, Any], has_ke: bool, has_shots: bool)
         if rec:
             notes.append(f"分镜视频提示词末尾附一行「推荐模型与分辨率：{rec}」")
         if cap:
-            notes.append(f"分镜最大时长已由制片规格定为 {cap} 秒，提示词标注的镜头时长不得超过 {cap} 秒")
+            notes.append(
+                f"分镜最大时长已由制片规格定为 {_fmt_num(cap)} 秒，"
+                f"提示词标注的镜头时长不得超过 {_fmt_num(cap)} 秒"
+            )
     if not notes:
         return ""
     return (

@@ -101,12 +101,12 @@ class Settings:
     max_llm_images: int = field(default_factory=lambda: _env_int("MAX_LLM_IMAGES", 9))
     # 生成参考素材数量上限（图片/视频/音频参考注入）：
     # 并发过高会撞供应商 429（4444 现场），参考过多会撑爆请求体
-    image_ref_limit: int = field(default_factory=lambda: _env_int("IMAGE_REF_LIMIT", 4))
+    image_ref_limit: int = field(default_factory=lambda: _env_int("IMAGE_REF_LIMIT", 10))
     image_gen_concurrency: int = field(default_factory=lambda: _env_int("IMAGE_GEN_CONCURRENCY", 4))
-    video_ref_limit_image: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_IMAGE", 4))
-    video_ref_limit_video: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_VIDEO", 2))
-    video_ref_limit_audio: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_AUDIO", 2))
-    video_ref_limit_total: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_TOTAL", 9))
+    video_ref_limit_image: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_IMAGE", 30))
+    video_ref_limit_video: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_VIDEO", 10))
+    video_ref_limit_audio: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_AUDIO", 10))
+    video_ref_limit_total: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_TOTAL", 50))
     # Agent 单次回复可插入对话输入框的故事板媒体数量上限（防止一次灌满输入框）
     max_chat_inserts: int = field(default_factory=lambda: _env_int("MAX_CHAT_INSERTS", 8))
     # 模型 fallback 链：主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，
@@ -134,11 +134,14 @@ class Settings:
     # 执行器誊写批的快模型（"provider" 或 "provider:model"）；空 = 回落主模型
     executor_fast_model: str = field(default_factory=lambda: os.getenv("EXECUTOR_FAST_MODEL", ""))
     # 执行器机械调用的思考档位（low/medium/high）；空 = 沿用全局 llm_thinking_level
-    executor_thinking_level: str = field(default_factory=lambda: os.getenv("EXECUTOR_THINKING_LEVEL", ""))
+    executor_thinking_level: str = field(default_factory=lambda: os.getenv("EXECUTOR_THINKING_LEVEL", "low"))
 
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))
     task_max: int = field(default_factory=lambda: _env_int("TASK_MAX", 500))
+    # Agent trace JSONL 体积轮转（W22/3.1）
+    trace_file_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_FILE_MAX_BYTES", 2_000_000))
+    trace_rotation_keep: int = field(default_factory=lambda: _env_int("TRACE_ROTATION_KEEP", 3))
 
     # 上传限制
     max_upload_size_mb: int = field(default_factory=lambda: _env_int("MAX_UPLOAD_SIZE_MB", 50))

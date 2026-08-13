@@ -21,6 +21,9 @@ from typing import Any, Awaitable, Callable, TypeVar
 import httpx
 from loguru import logger
 
+from src.video_agent.exceptions import AdapterError
+from src.video_agent.utils.stream_notify import notify_stream
+
 T = TypeVar("T")
 
 # 可重试的 httpx 异常类型
@@ -75,8 +78,20 @@ async def with_retry(
                         f"[Retry] {context} HTTP {result.status_code}，"
                         f"第 {attempt + 1}/{max_retries} 次重试，等待 {delay:.1f}s"
                     )
+                    # 超时重试可视化（7777 事故）：静默重试 → 前端状态栏实时可见
+                    await notify_stream(
+                        f"⏳ {context or '上游'}繁忙（HTTP {result.status_code}），"
+                        f"{delay:.0f}s 后自动重试（{attempt + 1}/{max_retries}）…"
+                    )
                     await asyncio.sleep(delay)
                     continue
+                # 末次尝试仍收到 5xx：绝不把失败响应当成功返回（P0-2 契约修复）
+                raise AdapterError(
+                    f"[Retry] {context} HTTP {result.status_code}：服务端错误，"
+                    f"已重试 {max_retries} 次仍失败",
+                    retryable=True,
+                    http_status=result.status_code,
+                )
             return result
         except RETRYABLE_EXCEPTIONS as e:
             last_exc = e
@@ -85,6 +100,10 @@ async def with_retry(
                 logger.warning(
                     f"[Retry] {context} {type(e).__name__}: {e}，"
                     f"第 {attempt + 1}/{max_retries} 次重试，等待 {delay:.1f}s"
+                )
+                await notify_stream(
+                    f"⏳ {context or '上游'}无响应（{type(e).__name__}），"
+                    f"{delay:.0f}s 后自动重试（{attempt + 1}/{max_retries}）…"
                 )
                 await asyncio.sleep(delay)
             else:
@@ -96,6 +115,10 @@ async def with_retry(
                 logger.warning(
                     f"[Retry] {context} HTTP {e.response.status_code}，"
                     f"第 {attempt + 1}/{max_retries} 次重试，等待 {delay:.1f}s"
+                )
+                await notify_stream(
+                    f"⏳ {context or '上游'}繁忙（HTTP {e.response.status_code}），"
+                    f"{delay:.0f}s 后自动重试（{attempt + 1}/{max_retries}）…"
                 )
                 await asyncio.sleep(delay)
                 last_exc = e

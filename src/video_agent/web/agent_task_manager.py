@@ -1,0 +1,306 @@
+"""Agent 聊天后台任务管理（D 批）。
+
+目标：Agent 运行与 HTTP 连接解耦——
+- 提交后立即返回 task_id，worker 在后台运行；
+- 前端通过 /api/agent/events/{task_id} 订阅（新订阅先回放累计状态）；
+- 页面刷新 / 切换项目只是断开订阅，不会取消 worker；
+- 每个任务绑定所属项目的 StateManager（contextvar），多项目并发互不串写。
+"""
+import asyncio
+import json
+import time
+from typing import Any, Awaitable, Callable, Dict, List, Optional
+
+from loguru import logger
+
+from src.video_agent.utils import gen_id
+from src.video_agent.utils.fileio import atomic_write_text
+from src.video_agent.utils.paths import DATA_DIR
+
+_TASK_MAX = 50
+
+
+class AgentTaskManager:
+    def __init__(self) -> None:
+        self._tasks: Dict[str, Dict[str, Any]] = {}
+        self._persist_path = DATA_DIR / "agent_tasks.json"
+        self._load_persisted()
+
+    # ====== 创建 / 生命周期 ======
+
+    def create(
+        self,
+        project_id: str,
+        worker_factory: Callable[[], Awaitable[None]],
+        task_id: str = "",
+        model: str = "",
+    ) -> Dict[str, Any]:
+        """创建后台任务并启动 worker，返回任务记录。"""
+        self._purge_stale()
+        task_id = task_id or gen_id("agt")
+        record: Dict[str, Any] = {
+            "task_id": task_id,
+            "project_id": project_id,
+            "model": model,
+            "status": "running",
+            "created_at": time.time(),
+            "reasoning": "",
+            "text": "",
+            "status_text": "正在连接…",
+            "tools": [],
+            "snapshot": None,
+            "done_payload": None,
+            # 降级即时联动（D-A）：最近一次 fallback 切换实际生效的厂商/模型，
+            # 随 replay 下发，刷新重连后前端仍能把选择器跳到正确组合
+            "fallback": None,
+            "error": None,
+            "_subscribers": [],
+            "_task": None,
+        }
+        record["_task"] = asyncio.create_task(worker_factory())
+        record["_task"].add_done_callback(lambda t: self._on_done(task_id, t))
+        self._tasks[task_id] = record
+        self._persist()
+        logger.info(f"[AgentTask] created task_id={task_id} project={project_id}")
+        return record
+
+    def stop(self, task_id: str) -> bool:
+        """取消后台任务（用户点击停止）。"""
+        record = self._tasks.get(task_id)
+        if not record:
+            return False
+        task = record.get("_task")
+        if task and not task.done():
+            task.cancel()
+        record["status"] = "cancelled"
+        self._persist()
+        self._notify(record, {"type": "task_status", "status": "cancelled"})
+        return True
+
+    def cancel_project(self, project_id: str) -> int:
+        """取消某项目的全部后台任务（项目删除时调用），返回取消数量。"""
+        n = 0
+        for record in list(self._tasks.values()):
+            if record.get("project_id") != project_id or record.get("status") != "running":
+                continue
+            self.stop(record["task_id"])
+            n += 1
+        return n
+
+    def _on_done(self, task_id: str, task: asyncio.Task) -> None:
+        record = self._tasks.get(task_id)
+        if not record:
+            return
+        if task.cancelled():
+            record["status"] = "cancelled"
+        elif task.exception():
+            exc = task.exception()
+            record["status"] = "error"
+            record["error"] = str(exc)
+            logger.error(f"[AgentTask] {task_id} 后台异常: {exc}")
+        self._persist()
+
+    # ====== 事件写入 / 订阅 ======
+
+    def emit(self, task_id: str, event: Dict[str, Any]) -> None:
+        """worker 事件入口：更新累计状态 + 推送给所有订阅者。"""
+        record = self._tasks.get(task_id)
+        if not record:
+            return
+        self._apply_event(record, event)
+        self._notify(record, event)
+
+    def subscribe(self, task_id: str) -> Optional[asyncio.Queue]:
+        """订阅任务事件流；新订阅者立即收到一条 replay（累计状态）。"""
+        record = self._tasks.get(task_id)
+        if not record:
+            return None
+        q: asyncio.Queue = asyncio.Queue(maxsize=500)
+        record.setdefault("_subscribers", []).append(q)
+        q.put_nowait({
+            "type": "replay",
+            "payload": {
+                "task_id": task_id,
+                "project_id": record["project_id"],
+                "model": record.get("model", ""),
+                "status": record["status"],
+                "status_text": record["status_text"],
+                "reasoning": record["reasoning"],
+                "text": record["text"],
+                "tools": record["tools"],
+                "snapshot": record["snapshot"],
+                "done_payload": record["done_payload"],
+                "fallback": record.get("fallback"),
+                "error": record["error"],
+            },
+        })
+        return q
+
+    def unsubscribe(self, task_id: str, q: asyncio.Queue) -> None:
+        record = self._tasks.get(task_id)
+        if record:
+            subs = record.get("_subscribers") or []
+            if q in subs:
+                subs.remove(q)
+
+    def _notify(self, record: Dict[str, Any], event: Dict[str, Any]) -> None:
+        dead: List[asyncio.Queue] = []
+        for q in list(record.get("_subscribers") or []):
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                dead.append(q)
+        for q in dead:
+            record["_subscribers"].remove(q)
+
+    def _apply_event(self, record: Dict[str, Any], event: Dict[str, Any]) -> None:
+        etype = event.get("type", "")
+        if etype == "status":
+            record["status_text"] = str(event.get("text") or "")
+        elif etype == "delta":
+            record["text"] += str(event.get("text") or "")
+        elif etype == "reasoning_delta":
+            record["reasoning"] += str(event.get("text") or "")
+        elif etype == "tool_started":
+            record["tools"].append({
+                "id": event.get("id", ""),
+                "name": event.get("name", ""),
+                "summary": event.get("summary", ""),
+                "status": "running",
+                "elapsed_ms": None,
+                "result_summary": "",
+            })
+        elif etype == "tool_finished":
+            tid = event.get("id", "")
+            for t in record["tools"]:
+                if t.get("id") == tid:
+                    t["status"] = "done" if event.get("ok") else "failed"
+                    t["elapsed_ms"] = event.get("elapsed_ms")
+                    t["result_summary"] = str(event.get("result_summary") or "")
+                    break
+        elif etype == "actions_applied":
+            payload = event.get("payload") or {}
+            if payload.get("state"):
+                record["snapshot"] = payload["state"]
+        elif etype == "model_fallback":
+            # 降级切换时刻累计：刷新/重连后 replay 携带，前端补跳选择器
+            record["fallback"] = {
+                "provider": str(event.get("provider") or ""),
+                "model": str(event.get("model") or ""),
+            }
+        elif etype == "done":
+            payload = event.get("payload") or {}
+            record["status"] = "done"
+            record["done_payload"] = payload
+            if payload.get("state"):
+                record["snapshot"] = payload["state"]
+        elif etype == "error":
+            record["status"] = "error"
+            record["error"] = str(event.get("detail") or event.get("text") or "")
+
+    # ====== 查询 ======
+
+    def get(self, task_id: str) -> Optional[Dict[str, Any]]:
+        record = self._tasks.get(task_id)
+        if not record:
+            return None
+        return {
+            k: v for k, v in record.items()
+            if not k.startswith("_")
+        }
+
+    def list_running(self, project_id: str = "") -> List[Dict[str, Any]]:
+        out = []
+        for record in self._tasks.values():
+            if record.get("status") != "running":
+                continue
+            if project_id and record.get("project_id") != project_id:
+                continue
+            out.append({
+                "task_id": record["task_id"],
+                "project_id": record["project_id"],
+                "status": record["status"],
+                "created_at": record["created_at"],
+                "status_text": record["status_text"],
+            })
+        return sorted(out, key=lambda t: t["created_at"], reverse=True)
+
+    # ====== 清理 / 落盘 ======
+
+    def _purge_stale(self) -> None:
+        now = time.time()
+        stale = [
+            tid for tid, r in self._tasks.items()
+            if r.get("status") != "running" and now - r.get("created_at", now) > 3600
+        ]
+        for tid in stale:
+            self._tasks.pop(tid, None)
+        if len(self._tasks) > _TASK_MAX:
+            # 保留最新的（创建时间倒序），运行中的不清理
+            running = [tid for tid, r in self._tasks.items() if r.get("status") == "running"]
+            done_sorted = sorted(
+                (tid for tid, r in self._tasks.items() if tid not in running),
+                key=lambda tid: self._tasks[tid].get("created_at", 0),
+                reverse=True,
+            )
+            for tid in done_sorted[len(self._tasks) - len(running) - _TASK_MAX:]:
+                self._tasks.pop(tid, None)
+
+    def _persist(self) -> None:
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "tasks": [
+                    {
+                        "task_id": r["task_id"],
+                        "project_id": r["project_id"],
+                        "status": r["status"],
+                        "created_at": r["created_at"],
+                    }
+                    for r in self._tasks.values()
+                ]
+            }
+            atomic_write_text(self._persist_path, json.dumps(payload, ensure_ascii=False))
+        except Exception as e:
+            logger.warning(f"[AgentTask] 任务表落盘失败: {e}")
+
+    def _load_persisted(self) -> None:
+        try:
+            if not self._persist_path.exists():
+                return
+            data = json.loads(self._persist_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.warning(f"[AgentTask] 恢复任务表失败: {e}")
+            return
+        for t in (data.get("tasks") or []):
+            if not isinstance(t, dict) or not t.get("task_id"):
+                continue
+            # 重启后无 worker：running 任务标记为 interrupted（产出已持久化在项目里）
+            status = "interrupted" if t.get("status") == "running" else t.get("status", "interrupted")
+            self._tasks[t["task_id"]] = {
+                "task_id": t["task_id"],
+                "project_id": t.get("project_id", ""),
+                "status": status,
+                "created_at": t.get("created_at", time.time()),
+                "reasoning": "",
+                "text": "",
+                "status_text": "已中断",
+                "tools": [],
+                "snapshot": None,
+                "done_payload": None,
+                "fallback": None,
+                "error": "服务重启中断",
+                "_subscribers": [],
+                "_task": None,
+            }
+
+
+_instance: Optional[AgentTaskManager] = None
+
+
+def get_agent_task_manager() -> AgentTaskManager:
+    """全局单例"""
+    global _instance
+    if _instance is None:
+        _instance = AgentTaskManager()
+    return _instance

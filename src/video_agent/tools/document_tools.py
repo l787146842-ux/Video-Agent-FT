@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.core import prompt_gates
+from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
 from src.video_agent.state.manager import StateManager
@@ -117,24 +119,49 @@ class DocumentWriteTool(BaseTool):
     async def aexecute(self, params: WriteDocumentInput) -> ToolResult:
         svc = StateManager.get_instance()
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        content = str(params.content or "")
+        is_spec = prompt_gates.is_spec_doc_name(params.name)
+        # 铁律文档保护（888 事故）：铁律由系统维护 + 用户在文档面板手改，
+        # 模型只读不得整篇重写（会盖掉用户编辑）
+        if IRON_RULES_HEADING in str(params.name or ""):
+            return ToolResult(
+                success=False,
+                error=("《执行铁律.md》由系统维护、用户在文档面板手动编辑，模型不得整篇重写"
+                       "（会盖掉用户的修改）。如需调整流程开关，按用户指令由系统幂等合并对应声明行即可。"),
+            )
+        # 规格向导拒收模型手写规格（方案乙 4444）：规格由系统按向导选定拼装
+        if is_spec:
+            from src.video_agent.skill_runtime.registry import spec_wizard_active
+
+            _used = svc.state_dict.get("usedSkills") or []
+            if spec_wizard_active(str(_used[-1] or "") if _used else ""):
+                return ToolResult(
+                    success=False,
+                    error=("《制片规格》由系统按向导选定自动拼装，无需手写"
+                           "（手写易混入剧本分析等杂项）。参数调整请用户在文档面板直接修改，或重发选择项。"),
+                )
 
         async with svc.lock:
             docs = svc.state_dict.setdefault("documents", [])
 
             for d in docs:
                 if d.get("name") == params.name:
-                    d["content"] = params.content
+                    d["content"] = content
                     d["updated_at"] = now
+                    if is_spec:
+                        ensure_iron_rules_doc(svc.state_dict)
                     svc.save()
                     return ToolResult(success=True, data={"name": params.name, "action": "updated"})
 
             docs.append({
                 "id": gen_id("doc"),
                 "name": params.name,
-                "content": params.content,
+                "content": content,
                 "created_at": now,
                 "updated_at": now,
             })
+            if is_spec:
+                ensure_iron_rules_doc(svc.state_dict)
             svc.save()
         return ToolResult(success=True, data={"name": params.name, "action": "created"})
 
@@ -340,7 +367,9 @@ class ImageGenerateTool(BaseTool):
                 model = model or settings.default_image_model
                 logger.info(f"[image_generate] provider 未指定，回退全局设置默认出图渠道: {provider_id}/{model}")
         if not provider_id:
-            provider_id, fb_model = first_available_image_provider()
+            from src.video_agent.web.provider_config import first_available_image_provider_async
+
+            provider_id, fb_model = await first_available_image_provider_async()
             if provider_id:
                 model = model or fb_model
                 logger.info(f"[image_generate] provider 未指定，回退配置首个可用生图供应商: {provider_id}/{model}")
@@ -349,28 +378,31 @@ class ImageGenerateTool(BaseTool):
                 "当前工作区未配置任何可用的生图供应商，请先在 API 配置页添加供应商与 API Key。"
             ))
 
+        # 规格制作参数（7777 二轮）：图片分辨率由规格文档优先，
+        # 其次草稿自带，最后全局默认（回退链与供应商链口径一致）
+        from src.video_agent.web.provider_config import spec_production_params
+
+        spec_image_res = str(spec_production_params(state).get("image_resolution") or "")
+
         # 统一任务管线提交：提交即记录生成日志 + SSE 点亮前端卡片读秒，
         # 与手动/批量生图行为一致；全部提交后再逐个等结果（任务是并发的）
         submitted: List[tuple] = []  # (draft, task_id)
         for group, draft, dtype in targets:
             refs = ops.resolve_scene_refs(state, group) if group else []
+            eff_resolution = (
+                spec_image_res or str(draft.get("imageResolution") or "")
+                or settings.default_image_resolution or "1K"
+            )
+            draft["imageResolution"] = eff_resolution  # 参数栏同步可见
             task_id = submit_image_task(
                 state, draft, provider_id, model, refs,
                 aspect_ratio=(draft.get("aspectRatio") or "16:9"),
-                resolution=(draft.get("imageResolution") or "1K"),
+                resolution=eff_resolution,
                 on_failure_save=svc.save_debounced,
                 draft_type=dtype,
             )
             submitted.append((draft, task_id))
         svc.save()  # 持久化「生成中」标签与草稿参数回写
-        
-        ok, failed = 0, []
-        for draft, task_id in submitted:
-            success, payload = await wait_image_task(task_id, timeout=600)
-            if success:
-                ok += 1
-            else:
-                failed.append(payload[:200])
         
         # 实际使用的供应商/模型回写草稿（imgUrl/tag 已由任务管线 writeback 处理）
         async with svc.lock:
@@ -380,10 +412,14 @@ class ImageGenerateTool(BaseTool):
                 if model:
                     draft["model"] = model
             svc.save()
-        
-        if ok == 0:
-            return ToolResult(success=False, error="全部生成失败: " + "；".join(failed[:2]))
-        return ToolResult(success=True, data={"generated": ok, "failed": len(failed)})
+
+        # 提交即返回（W12/P2）：结果由前端 SSE + 轮询跟踪，
+        # 避免 N×600s 工具轮阻塞 agent 循环
+        return ToolResult(success=True, data={
+            "submitted": len(submitted),
+            "task_ids": [tid for _, tid in submitted],
+            "detail": f"已提交 {len(submitted)} 个生图任务，结果将通过 SSE/轮询通知",
+        })
 
 
 class WorkflowPauseTool(BaseTool):

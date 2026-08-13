@@ -17,6 +17,8 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
+from src.video_agent.utils.fileio import atomic_write_text
+from src.video_agent.utils.paths import DATA_DIR
 
 
 class GenerationTaskManager:
@@ -31,6 +33,9 @@ class GenerationTaskManager:
         # 生成日志环形缓冲（最新在前）：图/视频/音频每次生成的成败记录，
         # 供顶部导航「生成日志」面板展示（照搬画布日志风格）
         self._gen_logs: List[Dict[str, Any]] = []
+        # 任务表 + 生成日志落盘（W13）：重启后 processing 任务不再永久丢失回调
+        self._persist_path = DATA_DIR / "generation_tasks.json"
+        self._load_persisted()
 
     # ====== 任务 CRUD ======
 
@@ -39,6 +44,7 @@ class GenerationTaskManager:
         self._purge_stale()
         task = {"created_at": time.time(), **fields}
         self._tasks[task_id] = task
+        self._persist()
         return task
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
@@ -50,6 +56,7 @@ class GenerationTaskManager:
         task = self._tasks.get(task_id)
         if task:
             task.update(fields)
+            self._persist()
 
     def list_tasks(self, limit: int = 50) -> List[Dict[str, Any]]:
         """返回最近的任务列表（按创建时间倒序）"""
@@ -140,6 +147,7 @@ class GenerationTaskManager:
                     entry["elapsed"] = round(elapsed, 1)
                     if model:
                         entry["model"] = model
+                    self._persist()
                     return entry
 
         entry: Dict[str, Any] = {
@@ -165,11 +173,27 @@ class GenerationTaskManager:
         self._gen_logs.insert(0, entry)
         if len(self._gen_logs) > _GEN_LOG_MAX:
             del self._gen_logs[_GEN_LOG_MAX:]
+        self._persist()
         return entry
 
     def get_gen_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
         """返回最近 N 条生成日志（时间倒序）"""
         return self._gen_logs[: max(1, min(limit, _GEN_LOG_MAX))]
+
+    def record_error_log(self, label: str, message: str, model: str = "") -> None:
+        """错误事件记入生成日志（9999 需求）：保存被拒/工具失败/流中断等
+        原本只在右上角 toast 一闪而过的报错，事后可在「错误」页签回看。"""
+        try:
+            self.record_gen_log(
+                media_type="error",
+                status="failed",
+                provider=label,
+                model=model,
+                error=(message or "")[:500],
+                source="system",
+            )
+        except Exception:
+            pass  # 记日志不得影响主流程
 
     # ====== 内部清理 ======
 
@@ -190,6 +214,55 @@ class GenerationTaskManager:
             ]
             for tid in purgeable[:len(self._tasks) - self._task_max]:
                 self._tasks.pop(tid, None)
+        self._persist()
+
+    # ====== 落盘与恢复（W13） ======
+
+    def _load_persisted(self) -> None:
+        """启动恢复：加载落盘任务与生成日志；processing/pending 标记为 failed。"""
+        try:
+            if not self._persist_path.exists():
+                return
+            data = json.loads(self._persist_path.read_text(encoding="utf-8"))
+            tasks = data.get("tasks") or []
+            logs = data.get("logs") or []
+        except Exception as e:
+            logger.warning(f"[TaskManager] 恢复任务表失败: {e}")
+            return
+        recovered = 0
+        for t in tasks:
+            if not isinstance(t, dict) or not t.get("task_id"):
+                continue
+            if t.get("status") in ("processing", "pending"):
+                t["status"] = "failed"
+                t["error"] = "服务重启中断，任务未完成"
+            self._tasks[t["task_id"]] = t
+            recovered += 1
+        if isinstance(logs, list):
+            self._gen_logs = [l for l in logs if isinstance(l, dict)]
+        if recovered:
+            logger.info(f"[TaskManager] 已恢复 {recovered} 个任务（中断任务已标记 failed）")
+        self._persist()
+
+    def _persist(self) -> None:
+        """任务表 + 生成日志原子落盘（供重启恢复；跳过不可序列化的运行时字段）。"""
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "tasks": [
+                    {"task_id": tid, **{
+                        k: v for k, v in t.items() if not k.startswith("_")
+                    }}
+                    for tid, t in self._tasks.items()
+                ],
+                "logs": self._gen_logs,
+            }
+            atomic_write_text(
+                self._persist_path,
+                json.dumps(payload, ensure_ascii=False),
+            )
+        except Exception as e:
+            logger.warning(f"[TaskManager] 任务表落盘失败: {e}")
 
 
 # ====== 全局单例 ======

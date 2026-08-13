@@ -162,12 +162,17 @@ export interface ImageGenRequest {
   draft_type?: string;
 }
 
+export interface ModelFallbackPatch {
+  enabled: boolean;
+}
+
 export interface NewProjectRequest {
   name?: string;
 }
 
 export interface OkResponse {
   ok?: boolean;
+  board_version?: number | unknown;
 }
 
 export interface OkWithStateResponse {
@@ -186,6 +191,7 @@ export interface ProjectStateResponse {
 
 export interface ProjectStateUpdate {
   project_id?: string | unknown;
+  base_version?: number | unknown;
   keyElements?: unknown[] | unknown;
   shots?: unknown[] | unknown;
   audioItems?: unknown[] | unknown;

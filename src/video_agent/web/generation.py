@@ -580,13 +580,13 @@ def submit_image_task(
         # 同模型跨厂商降级（7777 二轮）：仅当主厂商失败且为可重试故障时，
         # 才换提供同一模型的其他厂商；首个成功即止，模型永不换
         candidates = [(provider_id, model)]
-        if settings.model_fallback_enabled:
-            candidates = await _gen_fallback_candidates(provider_id, model, "image")
         try:
             url = None
             used_pid, used_model = provider_id, model
             last_err: Optional[Exception] = None
-            for idx, (pid, mdl) in enumerate(candidates):
+            idx = 0
+            while True:
+                pid, mdl = candidates[idx]
                 try:
                     url = await _gen_image_throttled(
                         pid, mdl, eff_prompt,
@@ -597,12 +597,21 @@ def submit_image_task(
                     break
                 except Exception as e:
                     last_err = e
-                    if idx == len(candidates) - 1 or not _is_retryable_gen_error(e):
+                    if not _is_retryable_gen_error(e) or not settings.model_fallback_enabled:
                         raise
+                    if idx == len(candidates) - 1:
+                        # 首次失败才拉取同模型跨厂商候选，避免主厂商成功时
+                        # 无事加载供应商配置/画布（阻塞生图提交）
+                        fallback = await _gen_fallback_candidates(provider_id, model, "image")
+                        extra = [c for c in fallback if c not in candidates]
+                        if not extra:
+                            raise
+                        candidates.extend(extra)
                     logger.warning(
                         f"[Generation] 生图厂商 {pid} 失败（{str(e)[:60]}），"
                         f"同模型 {mdl} 切换厂商 {candidates[idx + 1][0]} 重试"
                     )
+                    idx += 1
             if url is None:  # 理论不可达（成功 break / 失败 raise），防御兜底
                 raise last_err or GenerationError("生图失败")
             # 降级后实际生效的厂商回写草稿参数栏 + 持久化（与提交时预选一致）
@@ -860,14 +869,14 @@ def submit_video_task(
         # 同模型跨厂商降级（7777 二轮）：仅当主厂商失败且为可重试故障时，
         # 才换提供同一模型的其他厂商；首个成功即止，模型永不换
         candidates = [(provider_id, model)]
-        if settings.model_fallback_enabled:
-            candidates = await _gen_fallback_candidates(provider_id, model, "video")
         try:
             first_frame = out_images[0]["url"] if out_images and out_images[0].get("role") == "first_frame" else ""
             result = None
             used_pid, used_model = provider_id, model
             last_err: Optional[Exception] = None
-            for idx, (pid, mdl) in enumerate(candidates):
+            idx = 0
+            while True:
+                pid, mdl = candidates[idx]
                 try:
                     if idx == 0:
                         adapter_c = adapter
@@ -895,12 +904,21 @@ def submit_video_task(
                     break
                 except Exception as e:
                     last_err = e
-                    if idx == len(candidates) - 1 or not _is_retryable_gen_error(e):
+                    if not _is_retryable_gen_error(e) or not settings.model_fallback_enabled:
                         raise
+                    if idx == len(candidates) - 1:
+                        # 首次失败才拉取同模型跨厂商候选，避免主厂商成功时
+                        # 无事加载供应商配置/画布（阻塞出视频提交）
+                        fallback = await _gen_fallback_candidates(provider_id, model, "video")
+                        extra = [c for c in fallback if c not in candidates]
+                        if not extra:
+                            raise
+                        candidates.extend(extra)
                     logger.warning(
                         f"[Generation] 视频厂商 {pid} 失败（{str(e)[:60]}），"
                         f"同模型 {mdl} 切换厂商 {candidates[idx + 1][0]} 重试"
                     )
+                    idx += 1
             if result is None:  # 理论不可达（成功 break / 失败 raise），防御兜底
                 raise last_err or GenerationError("视频生成失败")
             # 降级后实际生效的厂商回写草稿参数栏 + 持久化

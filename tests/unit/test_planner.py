@@ -139,3 +139,71 @@ class TestPlannerNoAdapter:
         assert result.steps >= 1
         # 无 adapter 时 _call_llm 返回空 content
         assert result.applied_actions == 0
+
+
+class TestStageGuideFallback:
+    """5555 兜底：阶段执行器跑完但模型没发确认卡时，系统补下一步引导卡"""
+
+    async def test_stage_done_without_pause_gets_guide_card(self, svc, monkeypatch):
+        from src.video_agent.skill_runtime import executors as ex_mod
+        from src.video_agent.skill_runtime.executors import (
+            SkillToolResult, StoryboardSplitInput,
+        )
+
+        class _FakeStageTool:
+            name = "storyboard_key_elements"
+
+            def get_input_schema(self):
+                return StoryboardSplitInput
+
+            async def aexecute(self, params):
+                return SkillToolResult(success=True, data={"applied": 3})
+
+        monkeypatch.setattr(ex_mod, "build_executor_tool", lambda n: _FakeStageTool())
+        ctx = PlannerContext(use_studio_context=False, skill_name="剧本生视频")
+        reply = '已完成关键元素拆解\n```studio-actions\n[{"action":"storyboard_key_elements"}]\n```'
+        adapter = FakeChatAdapter([reply])
+        planner = Planner(llm_adapter=adapter)
+        result = await planner.handle_message("拆解关键元素", ctx)
+
+        assert result.applied_actions == 1
+        # 模型没发确认卡 → 系统客观补一张下一步引导卡
+        assert result.confirmation
+        labels = [o.get("label") for o in result.confirmation_options]
+        assert "继续下一步" in labels and "我要调整" in labels
+
+    async def test_model_pause_not_duplicated(self, svc, monkeypatch):
+        """模型自己发了确认卡时，兜底不得覆盖模型文案"""
+        from src.video_agent.skill_runtime import executors as ex_mod
+        from src.video_agent.skill_runtime.executors import (
+            SkillToolResult, StoryboardSplitInput,
+        )
+
+        class _FakeStageTool:
+            name = "storyboard_key_elements"
+
+            def get_input_schema(self):
+                return StoryboardSplitInput
+
+            async def aexecute(self, params):
+                return SkillToolResult(success=True, data={"applied": 3})
+
+        monkeypatch.setattr(ex_mod, "build_executor_tool", lambda n: _FakeStageTool())
+        ctx = PlannerContext(use_studio_context=False, skill_name="剧本生视频")
+        reply = (
+            '拆解完成\n```studio-actions\n'
+            '[{"action":"storyboard_key_elements"},'
+            '{"action":"request_confirmation","message":"模型自己的暂停文案"}]\n```'
+        )
+        adapter = FakeChatAdapter([reply])
+        planner = Planner(llm_adapter=adapter)
+        result = await planner.handle_message("拆解关键元素", ctx)
+
+        assert result.confirmation == "模型自己的暂停文案"
+
+    async def test_no_stage_no_guide_card(self, svc, context):
+        """日常对话（无阶段执行器）不补引导卡"""
+        adapter = FakeChatAdapter(["好的，已收到。"])
+        planner = Planner(llm_adapter=adapter)
+        result = await planner.handle_message("你好", context)
+        assert not result.confirmation

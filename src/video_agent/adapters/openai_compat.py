@@ -189,14 +189,17 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
     def supports_function_calling(self) -> bool:
         return True
 
-    def _apply_thinking_level(self, payload: Dict[str, Any]) -> None:
+    def _apply_thinking_level(self, payload: Dict[str, Any], level: Optional[str] = None) -> None:
         """按配置透传 thinking/reasoning 档位。
 
-        缺省（空配置）不下发任何字段，保持端点默认行为；
+        level 参数（本次调用档位）优先于全局配置：执行器机械调用注入
+        low/medium/high 覆盖全局；None/空 = 沿用全局 llm_thinking_level；
+        非法值不下发。缺省（空配置）不下发任何字段，保持端点默认行为；
         配置 low/medium/high 时按 OpenAI 兼容 reasoning_effort 透传，
         用于缩短推理模型的思考静默期。不支持的端点静默忽略或报 400（此时应置空配置）。
         """
-        level = (settings.llm_thinking_level or "").strip().lower()
+        effective = level if level is not None else settings.llm_thinking_level
+        level = str(effective or "").strip().lower()
         if level in ("low", "medium", "high"):
             payload["reasoning_effort"] = level
 
@@ -316,6 +319,14 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     f"[OpenAICompat] 流式瞬时故障：{str(e)[:120]}，"
                     f"第 {attempt + 1}/{max_connect_retries} 次重试，等待 {delay:.0f}s"
                 )
+                try:
+                    from src.video_agent.utils.stream_notify import notify_stream
+
+                    await notify_stream(
+                        f"模型连接瞬时故障，正在重试（第 {attempt + 1}/{max_connect_retries} 次）…"
+                    )
+                except Exception:
+                    pass
                 await asyncio.sleep(delay)
 
     async def _stream_once(

@@ -171,6 +171,9 @@ class Planner:
             self._skill_docs = sd
         return self._skill_docs
 
+    # 阶段完成引导兜底（agent_loop 层 9）：执行器跑完但模型未暂停时，
+    # 系统客观补下一步引导卡；本文件不承载流程 prose（归属见第十三章 13.3）
+
     def _compute_excluded_tools(self, context: PlannerContext) -> frozenset:
         """按上下文计算本轮不下发的工具集（token 治理：schema 全量常驻是每轮固定开销）"""
         excluded = set()
@@ -766,3 +769,26 @@ class Planner:
         """兼容旧 CLI 入口"""
         logger.info(f"[Planner] Resolving workflow blueprint: {workflow_name}")
         return workflow_name
+
+
+def _prepend_script_summary(visible: str, tool_results) -> str:
+    """总结强制入正文（Q1：script_analyze 与暂停同批时一句话总结不得丢失）。
+
+    若本轮 script_analyze 成功产出 summary 且正文尚未包含它，就在正文最前
+    拼一段「剧本一句话总结」；已包含或无可信结果时原样返回。
+    """
+    summary = ""
+    for tr in tool_results or []:
+        if not isinstance(tr, dict):
+            continue
+        if str(tr.get("name") or "") == "script_analyze" and tr.get("ok"):
+            s = str((tr.get("data") or {}).get("summary") or "").strip()
+            if s:
+                summary = s
+                break
+    if not summary:
+        return str(visible or "")
+    norm = lambda s: str(s or "").replace("“", "").replace("”", "").replace("'", "").replace('"', "")
+    if norm(summary) in norm(visible):
+        return str(visible or "")
+    return f"**剧本一句话总结**：{summary}\n\n{visible}"

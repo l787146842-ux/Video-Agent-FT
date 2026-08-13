@@ -90,6 +90,13 @@ _canvas_ids_cache: Optional[Set[str]] = None
 _canvas_ids_cache_time: float = 0.0
 
 
+def reset_provider_caches() -> None:
+    """清空供应商/画布缓存（测试隔离与配置热更新用）。"""
+    global _canvas_ids_cache, _canvas_ids_cache_time
+    _canvas_ids_cache = None
+    _canvas_ids_cache_time = 0.0
+
+
 def load_canvas_providers() -> List[Dict[str, Any]]:
     """从画布读取 provider 配置（HTTP 优先，文件兜底）。
     任何异常均静默返回 []，不影响 Agent 正常运行。"""
@@ -315,6 +322,11 @@ def spec_media_preference(raw_state: Dict[str, Any], kind: str = "image") -> Tup
     return "", ""
 
 
+async def first_available_image_provider_async() -> Tuple[str, str]:
+    """异步版：第一个可用的非 mock 生图供应商 (id, model)。"""
+    return first_available_image_provider()
+
+
 def spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     """从规格文档解析制作参数（图片分辨率/视频分辨率/分镜最大时长）。
 
@@ -324,6 +336,59 @@ def spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     from src.video_agent.state.provider_prefs import resolve_spec_production_params
 
     return resolve_spec_production_params(raw_state)
+
+
+def apply_spec_channel_selections(content: str, reply: str) -> Tuple[str, List[str]]:
+    """把用户回应里的渠道选择（「厂商显示名 / 模型名」逐行）落盘到规格文档。
+
+    按供应商显示名匹配（大小写不敏感），模型名命中 image_models → 图像生成、
+    video_models → 视频生成；未命中供应商或模型一律 noop。返回 (新正文, 已定稿项)。
+    """
+    providers = load_merged_providers()
+    new_content = str(content or "")
+    applied: List[str] = []
+    for line in str(reply or "").splitlines():
+        line = line.strip()
+        if "/" not in line:
+            continue
+        name, _, model = line.partition("/")
+        name = name.strip()
+        model = model.strip()
+        prov = next(
+            (p for p in providers
+             if str(p.get("name") or "").strip().lower() == name.lower()),
+            None,
+        )
+        if not prov:
+            continue
+        kind = ""
+        if model and model in (prov.get("image_models") or []):
+            kind = "图像生成"
+        elif model and model in (prov.get("video_models") or []):
+            kind = "视频生成"
+        elif not model:
+            if prov.get("image_models"):
+                kind = "图像生成"
+                model = str((prov.get("image_models") or [""])[0])
+            elif prov.get("video_models"):
+                kind = "视频生成"
+                model = str((prov.get("video_models") or [""])[0])
+        if not kind:
+            continue
+        label = f"{name} {model}".strip()
+        key_re = re.compile(rf"(?im)^(\s*(?:[-*]\s*)?{kind}\s*[:：]).*$")
+        replaced = False
+
+        def _sub(m):
+            nonlocal replaced
+            replaced = True
+            return f"{m.group(1)}{label}"
+
+        new_content = key_re.sub(_sub, new_content)
+        if not replaced:
+            new_content = new_content.rstrip() + f"\n- {kind}：{label}\n"
+        applied.append(f"{kind} {label}")
+    return new_content, applied
 
 
 def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any], cat_key: str) -> bool:

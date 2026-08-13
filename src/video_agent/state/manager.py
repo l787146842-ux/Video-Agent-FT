@@ -116,6 +116,10 @@ def _set_path_pydantic(obj: Any, path: str, value: Any) -> None:
 class StateManager(UndoRedoMixin):
     """Rule3: 唯一状态写入点。支持多项目。
 
+    版本账本（888 事故：双实例各算各的号导致正常保存被拒）：
+    `_board_versions` 类级共享（同项目所有实例同一本账），
+    随项目文件落盘，进程重启后从落盘值继承，不断号。
+
     设计 §1.3：多项目管理内置于 StateManager，不另设 service 层。
 
     双视图：
@@ -125,6 +129,8 @@ class StateManager(UndoRedoMixin):
     多项目：
     - list_projects / create_project / switch_project / delete_project
     """
+
+    _board_versions: Dict[str, int] = {}
 
     # 单例（替代原 StudioStateService）
     _instance: Optional["StateManager"] = None
@@ -304,7 +310,10 @@ class StateManager(UndoRedoMixin):
         污染内部状态；旧版浅拷贝共享嵌套引用的契约仅靠注释约束，过于脆弱。
         快照仅在聊天完成/mock 路径低频调用，序列化开销可接受。
         """
-        return json.loads(json.dumps(self._raw_state, ensure_ascii=False))
+        snap = json.loads(json.dumps(self._raw_state, ensure_ascii=False))
+        # 乐观锁版本号随快照下发（不写入状态 JSON 本体，避免污染 undo/快照）
+        snap["board_version"] = self.board_version
+        return snap
 
     # ====== 写入（Rule3: 唯一写入点） ======
 
@@ -349,9 +358,11 @@ class StateManager(UndoRedoMixin):
         events.append({
             "kind": kind,
             "detail": detail,
+            "text": detail,
             "ts": datetime.now(timezone.utc).isoformat(),
         })
         self._state_dirty = True
+        self._context_cache.clear()
 
     def clear_flow_events(self, prefix: str = "") -> None:
         """按 kind 前缀清除流程事件（全部完成/未截断时消解历史记录）。"""
@@ -360,11 +371,13 @@ class StateManager(UndoRedoMixin):
             return
         if not prefix:
             self._raw_state["flowEvents"] = []
+            self._context_cache.clear()
             return
         kept = [e for e in events if not str(e.get("kind") or "").startswith(prefix)]
         if len(kept) != len(events):
             self._raw_state["flowEvents"] = kept
             self._state_dirty = True
+            self._context_cache.clear()
 
     def save(self) -> None:
         """持久化：写入当前项目目录 + 兼容文件 + 更新 index 时间戳"""
@@ -375,6 +388,10 @@ class StateManager(UndoRedoMixin):
             for p in index.get("projects", []):
                 if p["id"] == self._active_project_id:
                     p["updated_at"] = StateRepository.now_iso()
+                    # 版号 +1 并随索引落盘（重启继承；读取/加载不触发递增）
+                    v = self.board_version + 1
+                    StateManager._board_versions[p["id"]] = v
+                    p["board_version"] = v
                     break
             self._repo.write_index(index)
             # 状态变更时失效上下文缓存
@@ -383,6 +400,24 @@ class StateManager(UndoRedoMixin):
         except Exception as e:
             logger.error(f"[StateManager] Save failed: {e}")
             raise StateError(f"状态持久化失败: {e}") from e
+
+    @property
+    def board_version(self) -> int:
+        """当前项目版本号（同项目所有实例共享一本账，重启从落盘继承）。"""
+        pid = self._active_project_id
+        if pid in StateManager._board_versions:
+            return StateManager._board_versions[pid]
+        try:
+            index = self._repo.read_index()
+            v = int(next(
+                (p.get("board_version") for p in index.get("projects", [])
+                 if p.get("id") == pid),
+                0,
+            ) or 0)
+        except (TypeError, ValueError):
+            v = 0
+        StateManager._board_versions[pid] = v
+        return v
 
     # 向后兼容别名
     save_state = save
