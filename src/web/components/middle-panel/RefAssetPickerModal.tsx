@@ -1,6 +1,6 @@
 import { Show, For, createSignal, createResource, createEffect } from 'solid-js';
 import {
-  FiX, FiImage, FiMusic, FiLoader, FiAlertCircle, FiPlus, FiChevronDown, FiLayers, FiCheck,
+  FiX, FiImage, FiMusic, FiVideo, FiLoader, FiAlertCircle, FiPlus, FiChevronDown, FiLayers, FiCheck,
 } from 'solid-icons/fi';
 import {
   fetchAllCanvasNodeImages, fetchCanvasList, type CanvasListItem,
@@ -197,11 +197,13 @@ export function RefAssetPickerModal(props: {
                     >
                       <Show when={item.type === 'video'}>
                         <video class="ref-asset-media" src={videoThumb(item.url)} muted playsinline preload="metadata" />
+                        <span class="ref-asset-badge"><FiVideo size={11} /></span>
                       </Show>
                       <Show when={item.type === 'audio'}>
                         <div class="ref-asset-audio">
                           <FiMusic size={22} />
                         </div>
+                        <span class="ref-asset-badge"><FiMusic size={11} /></span>
                       </Show>
                       <Show when={item.type === 'image'}>
                         <Show when={safeUrl(item.thumb)} fallback={

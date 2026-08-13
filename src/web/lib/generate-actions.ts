@@ -13,6 +13,7 @@ import {
 } from '@/lib/generate-polling';
 import { registerManualTask } from '@/lib/generation-events';
 import { resolvePromptForGeneration } from '@/lib/prompt-mentions';
+import { IMAGE_GEN_LIMIT, VIDEO_GEN_LIMITS } from '@/lib/ref-limits';
 
 // ---------- 生图 ----------
 
@@ -32,9 +33,13 @@ export async function generateImage(): Promise<void> {
   const aspectRatio = ratioSelection === 'custom' ? `${customWidth}:${customHeight}` : ratioSelection;
 
   // @引用解析：提示词里的 @名称 重写为位置标记，被引用的素材自动纳入参考图
-  // （最多 5 张，与后端/模型单次上传限制对齐）
-  const resolved = resolvePromptForGeneration(draft.prompt || '', draft.refAssets || [], 5);
-  const refs = resolved.refs.map((url) => ({ url, role: 'reference' }));
+  // （上限 IMAGE_GEN_LIMIT，与后端/模型单次上传限制对齐）
+  const resolved = resolvePromptForGeneration(draft.prompt || '', draft.refAssets || [], IMAGE_GEN_LIMIT);
+  const allRefs = resolved.refs.map((url) => ({ url, role: 'reference' }));
+  if (allRefs.length > IMAGE_GEN_LIMIT) {
+    showToast(`参考图超出上限，仅前 ${IMAGE_GEN_LIMIT} 张生效`, 'warning');
+  }
+  const refs = allRefs.slice(0, IMAGE_GEN_LIMIT);
 
   if (!providerId || !model) { showToast('请先选择图片 API 和对应模型', 'warning'); return; }
   if (!size || (ratioSelection === 'custom' && (!Number(customWidth) || !Number(customHeight)))) {
@@ -56,7 +61,7 @@ export async function generateImage(): Promise<void> {
       size,
       aspect_ratio: aspectRatio,
       resolution: imageResolution,
-      reference_images: refs.slice(0, 5),
+      reference_images: refs,
       draft_id: draft.id,
       draft_type: draftType,
     });
@@ -90,21 +95,34 @@ export async function generateVideo(): Promise<void> {
   const resolution = draft.resolution || '1080p';
   const duration = parseInt(draft.duration || '5s', 10) || 5;
   const aspectRatio = draft.aspectRatio || '16:9';
-  // @引用解析：视频支持多参考图（元素概念图）+ 音色参考音频，上限 5
-  // 后端会再自动补充分镜 sceneRefs 元素图与 refAssets 音频（去重）
-  const resolved = resolvePromptForGeneration(draft.prompt || '', draft.refAssets || [], 5);
+  // @引用解析（C3）：参考素材对齐 Seedance 2.5 能力（图30/视频10/音频10，共50）；
+  // 后端会再自动补充分镜 sceneRefs 元素图与音色参考音频（去重）
+  const resolved = resolvePromptForGeneration(draft.prompt || '', draft.refAssets || [], VIDEO_GEN_LIMITS.total);
   const imageRefs: Array<{ url: string; role: string }> = [];
+  const videoRefs: Array<{ url: string; role: string }> = [];
   const audioRefs: Array<{ url: string; role: string }> = [];
   resolved.refs.forEach((url, index) => {
     const kind = resolved.refKinds[index] || 'image';
     if (kind === 'audio') {
       audioRefs.push({ url, role: 'reference_audio' });
+    } else if (kind === 'video') {
+      // 修复：视频类参考原先被塞进图片列表/后端静默丢弃，现走独立视频参考通道
+      videoRefs.push({ url, role: 'reference_video' });
     } else {
       // 图片角色按图片自身序号：第一/二张兼容首/尾帧模式，其余为多参考图
       const role = imageRefs.length === 0 ? 'first_frame' : imageRefs.length === 1 ? 'last_frame' : 'reference';
       imageRefs.push({ url, role });
     }
   });
+  // 超限按类型取前 N，明示用户哪类被截断（栏存储本身已无上限）
+  const imgs = imageRefs.slice(0, VIDEO_GEN_LIMITS.image);
+  const vids = videoRefs.slice(0, VIDEO_GEN_LIMITS.video);
+  const auds = audioRefs.slice(0, VIDEO_GEN_LIMITS.audio);
+  const overNotes: string[] = [];
+  if (imageRefs.length > imgs.length) overNotes.push(`图 ${imgs.length}/${imageRefs.length}`);
+  if (videoRefs.length > vids.length) overNotes.push(`视频 ${vids.length}/${videoRefs.length}`);
+  if (audioRefs.length > auds.length) overNotes.push(`音频 ${auds.length}/${audioRefs.length}`);
+  if (overNotes.length) showToast(`参考素材超出上限，仅前 N 个生效（${overNotes.join('、')}）`, 'warning');
 
   if (!providerId || !model) { showToast('请先选择视频 API 和对应模型', 'warning'); return; }
   showToast('正在提交视频生成任务...', 'info');
@@ -117,8 +135,9 @@ export async function generateVideo(): Promise<void> {
       duration,
       resolution,
       aspect_ratio: aspectRatio,
-      images: imageRefs.slice(0, 5),
-      audios: audioRefs.slice(0, 2),
+      images: imgs,
+      videos: vids,
+      audios: auds,
       enhance_prompt: mode === '全能参考',
       multimodal: mode === '对口型数字人',
       draft_id: draft.id,

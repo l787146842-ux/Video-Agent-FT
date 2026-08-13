@@ -29,6 +29,8 @@ export interface GenerateVideoRequest {
   resolution: string;
   aspect_ratio: string;
   images?: Array<{ url: string; role: string }>;
+  /** 视频参考素材（C3：Seedance 2.5 支持 ≤10 段视频参考） */
+  videos?: Array<{ url: string; role?: string }>;
   /** 音色参考音频（Seedance MultiModalToVideo 参考项） */
   audios?: Array<{ url: string; role?: string }>;
   enhance_prompt?: boolean;
@@ -161,7 +163,7 @@ export function waitForTaskViaSSE(
 export interface GenerationLogEntry {
   id: string;
   task_id: string;
-  media_type: 'image' | 'video' | 'audio';
+  media_type: 'image' | 'video' | 'audio' | 'error';
   status: 'started' | 'succeeded' | 'failed';
   provider: string;
   /** 供应商显示名（API 配置页名称，如 Grsai），优先展示 */

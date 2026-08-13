@@ -97,6 +97,10 @@ async def generate_video(body: VideoGenRequest):
         {"url": i.get("url", ""), "role": i.get("role", "reference")}
         for i in body.images if i.get("url")
     ]
+    video_refs: List[Dict[str, str]] = [
+        {"url": v.get("url", ""), "role": v.get("role", "reference_video")}
+        for v in body.videos if v.get("url")
+    ]
     audio_refs: List[Dict[str, str]] = [
         {"url": a.get("url", ""), "role": "reference_audio"}
         for a in body.audios if a.get("url")
@@ -120,8 +124,12 @@ async def generate_video(body: VideoGenRequest):
                         seen_aud.add(r["url"])
         except Exception as e:  # 参考挂接失败不阻断生成主链路
             logger.warning(f"[Generate] 分镜参考自动挂接失败: {e}")
-    audio_refs = audio_refs[:2]
-    media_refs = image_refs + audio_refs
+    # 按 Seedance 2.5 多模态参考能力收口（图片 ≤30 / 视频 ≤10 / 音频 ≤10，共 50）
+    from src.video_agent.config import settings
+    image_refs = image_refs[: settings.video_ref_limit_image]
+    video_refs = video_refs[: settings.video_ref_limit_video]
+    audio_refs = audio_refs[: settings.video_ref_limit_audio]
+    media_refs = image_refs + video_refs + audio_refs
 
     # 首帧：显式 first_frame 标注优先，否则取第一张图（兼容旧行为）
     image_url = next(

@@ -4,11 +4,11 @@
  * 请求规格、提示词描述、右侧缩略图。图/视频/音频无论成败均有记录。
  */
 import { For, Show, createSignal } from 'solid-js';
-import { FiX, FiImage, FiVideo, FiMusic } from 'solid-icons/fi';
+import { FiX, FiImage, FiVideo, FiMusic, FiAlertTriangle } from 'solid-icons/fi';
 import { genLogs, genLogOpen, closeGenLog } from '@/stores/generation-log';
 import { safeUrl } from '@/lib/utils';
 
-type FilterKind = 'all' | 'image' | 'video' | 'audio';
+type FilterKind = 'all' | 'image' | 'video' | 'audio' | 'error';
 
 function StatusBadge(props: { status: string }) {
   return (
@@ -31,7 +31,11 @@ function StatusBadge(props: { status: string }) {
 function KindIcon(props: { kind: string }) {
   return (
     <Show when={props.kind === 'video'} fallback={
-      <Show when={props.kind === 'audio'} fallback={<FiImage size={13} />}>
+      <Show when={props.kind === 'audio'} fallback={
+        <Show when={props.kind === 'error'} fallback={<FiImage size={13} />}>
+          <FiAlertTriangle size={13} />
+        </Show>
+      }>
         <FiMusic size={13} />
       </Show>
     }>
@@ -46,7 +50,10 @@ export function GenerationLogPanel() {
   const logs = () => {
     const all = genLogs();
     const f = filter();
-    return f === 'all' ? all : all.filter((l) => l.media_type === f);
+    if (f === 'all') return all;
+    // 「错误」页签：系统错误事件 + 各类生成失败，一闪而过的报错可回看
+    if (f === 'error') return all.filter((l) => l.media_type === 'error' || l.status === 'failed');
+    return all.filter((l) => l.media_type === f);
   };
 
   const filterBtn = (kind: FilterKind, label: string) => (
@@ -70,6 +77,7 @@ export function GenerationLogPanel() {
               {filterBtn('image', '图片')}
               {filterBtn('video', '视频')}
               {filterBtn('audio', '音频')}
+              {filterBtn('error', '错误')}
             </div>
             <button type="button" class="genlog-close" title="关闭" onClick={() => closeGenLog()}>
               <FiX size={16} />
@@ -78,7 +86,7 @@ export function GenerationLogPanel() {
 
           <div class="genlog-list">
             <Show when={logs().length === 0}>
-              <div class="genlog-empty">暂无生成记录</div>
+              <div class="genlog-empty">{filter() === 'error' ? '暂无错误记录' : '暂无生成记录'}</div>
             </Show>
             <For each={logs()}>
               {(log) => (

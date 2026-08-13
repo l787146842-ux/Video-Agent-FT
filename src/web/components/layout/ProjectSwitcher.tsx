@@ -24,16 +24,20 @@ export function ProjectSwitcher() {
   const [activeId, setActiveId] = createSignal('');
   const [creating, setCreating] = createSignal(false);
   const [newName, setNewName] = createSignal('');
+  const [loading, setLoading] = createSignal(false);
 
   let containerRef: HTMLDivElement | undefined;
 
   async function load() {
+    setLoading(true);
     try {
       const data = await getProjects();
       setProjects(data.projects || []);
       setActiveId(data.active_project_id || '');
     } catch {
       showToast('项目列表加载失败', 'error');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -181,10 +185,17 @@ export function ProjectSwitcher() {
                       </span>
                     </Show>
                   </div>
-                );
-              }}
+              );
+            }}
             </For>
-            <Show when={!projects().length}>
+            <Show when={loading() && !projects().length}>
+              <div class="project-skeleton">
+                <span class="skeleton-bar" style={{ width: '70%' }} />
+                <span class="skeleton-bar" style={{ width: '55%' }} />
+                <span class="skeleton-bar" style={{ width: '65%' }} />
+              </div>
+            </Show>
+            <Show when={!loading() && !projects().length}>
               <div class="empty-state">暂无项目</div>
             </Show>
           </div>

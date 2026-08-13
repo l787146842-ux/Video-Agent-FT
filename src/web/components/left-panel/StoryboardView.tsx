@@ -99,19 +99,29 @@ export function StoryboardView() {
     containerRef.classList.add('board-flash');
   });
 
-  // ===== 预览框导航按钮：滚动定位到选中卡片并闪烁高亮 =====
+  // ===== 预览框导航按钮 / 分镜引用跳转：滚动定位到目标卡片并闪烁高亮 =====
   createEffect(() => {
     const tick = state.locateTick;
     if (!tick) return;
-    // 等 subTab 切换后的重渲染完成，再查找选中卡片 DOM
+    // 等 subTab 切换后的重渲染完成，再查找目标 DOM
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      const card = containerRef?.querySelector('.draft-card.active') as HTMLElement | null;
-      if (!card) return;
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      card.classList.remove('locate-flash');
-      void card.offsetWidth;
-      card.classList.add('locate-flash');
-      setTimeout(() => card.classList.remove('locate-flash'), 1500);
+      // 优先按分组定位（分镜 sceneRefs 跳转：目标元素没有草稿卡时也能看到）
+      const gid = state.locateGroupId;
+      let target: HTMLElement | null = null;
+      if (gid) {
+        target = Array.from(containerRef?.querySelectorAll<HTMLElement>('.sb-group') || [])
+          .find((g) => g.dataset.groupId === gid) || null;
+      }
+      if (!target) {
+        target = containerRef?.querySelector('.draft-card.active') as HTMLElement | null;
+      }
+      if (!target) return;
+      const el = target;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.remove('locate-flash');
+      void el.offsetWidth;
+      el.classList.add('locate-flash');
+      setTimeout(() => el.classList.remove('locate-flash'), 1500);
     }));
   });
 
