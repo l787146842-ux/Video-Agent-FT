@@ -63,7 +63,7 @@ def test_6666_message_text_skill_match():
 
 def test_6666_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypatch):
     """script_analyze/document_write(规格) 失败但模型带确认声称完成 →
-    8888 升级后由规格向导卡接管（不允许假完成文案）。"""
+    6666 二轮：明确提示「剧本分析未完成」并洗掉假完成文案（不允许假完成）。"""
     import asyncio
 
     from src.video_agent.state.manager import StateManager
@@ -96,9 +96,43 @@ def test_6666_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypa
             "arguments": json.dumps({"message": "剧本分析与全局参数设定已完成，请审阅"})}},
     ])
     _applied, confirmation, *_rest = asyncio.run(runner.execute(response, injected_skill="AI-短剧一站式生成"))
-    assert "尚待您选定" in confirmation
+    assert "剧本分析未完成" in confirmation
+    assert "script_analyze 执行失败" in confirmation
     assert "剧本分析与全局参数设定已完成" not in confirmation
-    assert raw["interaction"].get("pending_pause_kind") == "spec"
+    assert raw["interaction"].get("pending_pause_kind") == ""
+    assert raw["interaction"].get("awaiting_confirmation") is True
+    assert raw["interaction"].get("confirmation_message") == confirmation
+
+
+def test_executor_force_main_chat_model(monkeypatch):
+    """6666 二轮：执行器 chat_provider/chat_model 强制覆盖为主对话模型，
+    模型自行填写 modelscope/千问 一律无效（防串线 429/余额错误）。"""
+    import asyncio
+
+    captured = []
+
+    class _CaptureTM:
+        async def invoke_tool(self, name, args):
+            captured.append((name, dict(args)))
+            return ToolResult(success=True, data={"summary": "测试总结", "key_points": []})
+
+    runner = FCToolRunner(tool_manager=_CaptureTM())
+    runner.chat_provider = "custom-api-2"
+    runner.chat_model = "gemini-3.1-pro"
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+    response = ChatResponse(content="", tool_calls=[
+        {"id": "c1", "type": "function", "function": {
+            "name": "script_analyze",
+            "arguments": json.dumps({
+                "doc_name": "剧本.md",
+                "chat_provider": "modelscope",
+                "chat_model": "Qwen/Qwen3-235B-A22B",
+            })}},
+    ])
+    asyncio.run(runner.execute(response, injected_skill="AI-短剧一站式生成"))
+    _name, args = captured[0]
+    assert args["chat_provider"] == "custom-api-2"
+    assert args["chat_model"] == "gemini-3.1-pro"
 
 
 @pytest.mark.asyncio

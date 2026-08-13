@@ -567,6 +567,7 @@ class FCToolRunner:
         gen_succeeded = False
         # 关键执行器/文档写入成败跟踪（6666：script_analyze/document_write 失败仍声称完成）
         key_tool_failed: List[str] = []
+        key_tool_errors: Dict[str, str] = {}
         # 规格写入被向导拒收（8888：拒收后必须接管为规格向导卡，模型不得跳过规格交互）
         spec_write_rejected = False
         tracer = AgentTracer.get_instance()
@@ -581,11 +582,13 @@ class FCToolRunner:
             # current/空引用 → 真实 id（闸机与工具调用前，防命中错误卡片/绕过闸机）
             self._resolve_current_refs(name, args)
 
-            # 执行器工具缺省注入聊天供应商（决策 E：与主模型一致）
+            # 执行器工具强制绑定主对话模型（决策 E：与主模型一致；6666 二轮：
+            # 模型自行填写 chat_provider/chat_model 一律覆盖，防止串线到其他供应商
+            # 导致 429/余额错误，也让「执行器与主模型一致」成为硬约束而非缺省兜底）
             if name in _EXECUTOR_TOOL_NAMES:
-                if not str(args.get("chat_provider") or "").strip() and self.chat_provider:
+                if self.chat_provider:
                     args["chat_provider"] = self.chat_provider
-                if not str(args.get("chat_model") or "").strip() and self.chat_model:
+                if self.chat_model:
                     args["chat_model"] = self.chat_model
                 # 6666 事故：模型不带 skill_name 时，强制注入系统已确认的当前 Skill，
                 # 否则执行器注册检查拿到空名 → 「未指定」未注册
@@ -777,6 +780,7 @@ class FCToolRunner:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
                 if name in _CRITICAL_TOOL_NAMES:
                     key_tool_failed.append(name)
+                    key_tool_errors[name] = str(result.error or "执行失败")[:200]
                 if name == "document_write" and prompt_gates.is_spec_doc_name(
                     str(args.get("name") or args.get("key") or "")
                 ):
@@ -877,10 +881,28 @@ class FCToolRunner:
         # 模型不得用「请求阶段确认」跳过规格交互，也不得声称已生成规格
         if spec_write_rejected:
             _spec_state = self._raw_state()
-            confirmation, confirmation_options = prompt_gates.spec_pause_card(_spec_state)
-            try:
-                inter = _spec_state.setdefault("interaction", {})
+            inter = _spec_state.setdefault("interaction", {})
+            if "script_analyze" in key_tool_failed:
+                # 6666 二轮：剧本分析本身失败（如 API 余额不足/超时）时，
+                # 不能装成已读完剧本弹规格向导，必须把失败原因明确交给用户
+                _err = key_tool_errors.get("script_analyze", "执行失败")
+                confirmation = (
+                    f"剧本分析未完成（script_analyze 执行失败）：{_err}。"
+                    "规格尚未交互与写入，请重试剧本分析；不要声称已完成或已生成规格。"
+                )
+                confirmation_options = [{
+                    "label": "重试剧本分析",
+                    "description": "重新执行 script_analyze（已绑定当前对话模型）",
+                }]
+                inter["pending_pause_kind"] = ""
+            else:
+                confirmation, confirmation_options = prompt_gates.spec_pause_card(_spec_state)
                 inter["pending_pause_kind"] = "spec"
+            try:
+                # 8888 二轮：接管时必须同时洗掉 workflow_pause 写入的假完成文案，
+                # 否则下一轮会把「已完成…写入项目文档」当作暂停内容回喂给模型
+                inter["awaiting_confirmation"] = True
+                inter["confirmation_message"] = confirmation
                 StateManager.get_instance().save()
             except Exception:
                 pass

@@ -60,6 +60,9 @@ def test_8888_fc_spec_reject_takes_over_with_wizard(tmp_path, monkeypatch):
     assert "尚待您选定" in confirmation
     assert "已生成初步的《制作规格》" not in confirmation
     assert raw_state["interaction"].get("pending_pause_kind") == "spec"
+    # 8888 二轮：接管时同步洗掉 workflow_pause 写入的假完成文案
+    assert raw_state["interaction"].get("awaiting_confirmation") is True
+    assert raw_state["interaction"].get("confirmation_message") == confirmation
 
 
 def test_8888_general_mixed_failure_override(tmp_path, monkeypatch):
