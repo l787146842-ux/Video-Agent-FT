@@ -1,6 +1,6 @@
 import { Show, For, createSignal, createResource, createEffect } from 'solid-js';
 import {
-  FiX, FiImage, FiMusic, FiLoader, FiAlertCircle, FiPlus, FiChevronDown, FiLayers,
+  FiX, FiImage, FiMusic, FiLoader, FiAlertCircle, FiPlus, FiChevronDown, FiLayers, FiCheck,
 } from 'solid-icons/fi';
 import {
   fetchAllCanvasNodeImages, fetchCanvasList, type CanvasListItem,
@@ -17,16 +17,35 @@ export interface RefAssetItem {
 }
 
 /**
- * 参考素材选择弹窗：源下拉仅画布列表（故事板分区/关键元素已按用户要求移除），
- * 网格展示所选画布的素材，点击即加入参考素材横条。
+ * 参考素材选择弹窗：源下拉仅画布列表（故事板分区/关键元素按用户审定不恢复），
+ * 网格展示所选画布的素材；多选 → 「添加选中」批量加入参考素材横条。
  */
 export function RefAssetPickerModal(props: {
   open: boolean;
   onClose: () => void;
-  onPick: (item: RefAssetItem) => void;
+  onPick: (items: RefAssetItem[]) => void;
 }) {
   const [source, setSource] = createSignal<string>('');
   const [dropdownOpen, setDropdownOpen] = createSignal(false);
+  /** 多选暂存（确认时批量添加） */
+  const [picked, setPicked] = createSignal<RefAssetItem[]>([]);
+
+  // 每次打开重置选择
+  createEffect(() => { if (props.open) setPicked([]); });
+
+  const isPicked = (item: RefAssetItem) => picked().some((p) => p.url === item.url);
+  function togglePick(item: RefAssetItem) {
+    setPicked((prev) =>
+      prev.some((p) => p.url === item.url)
+        ? prev.filter((p) => p.url !== item.url)
+        : [...prev, item]);
+  }
+  function confirmPick() {
+    if (!picked().length) return;
+    props.onPick(picked());
+    setPicked([]);
+    props.onClose();
+  }
 
   // 画布列表（用于源下拉分类）
   const [canvasList] = createResource(
@@ -155,7 +174,7 @@ export function RefAssetPickerModal(props: {
             <Show when={!loading() && source() !== '' && canvasImages()?.canvas_online === false}>
               <div class="asset-modal-status">
                 <FiAlertCircle size={22} />
-                <p>画布未连接，画布源不可用</p>
+                <p>画布未连接，画布源不可用（仍可用参考栏已有素材或 + 本地上传）</p>
                 <button type="button" class="btn-secondary" onClick={() => void refetchCanvasImages()}>重连画布</button>
               </div>
             </Show>
@@ -172,9 +191,9 @@ export function RefAssetPickerModal(props: {
                 <For each={items()}>
                   {(item) => (
                     <div
-                      class="asset-card ref-asset-card"
-                      title={`${item.name} — 点击添加到参考素材`}
-                      onClick={() => props.onPick(item)}
+                      class={`asset-card ref-asset-card${isPicked(item) ? ' selected' : ''}`}
+                      title={`${item.name} — 点击选中，确认后加入参考素材`}
+                      onClick={() => togglePick(item)}
                     >
                       <Show when={item.type === 'video'}>
                         <video class="ref-asset-media" src={videoThumb(item.url)} muted playsinline preload="metadata" />
@@ -192,7 +211,7 @@ export function RefAssetPickerModal(props: {
                         </Show>
                       </Show>
                       <div class="asset-card-name">{item.name}</div>
-                      <span class="ref-asset-add"><FiPlus size={13} /></span>
+                      <span class="ref-asset-add">{isPicked(item) ? <FiCheck size={13} /> : <FiPlus size={13} />}</span>
                     </div>
                   )}
                 </For>
@@ -202,7 +221,15 @@ export function RefAssetPickerModal(props: {
 
           {/* 底部提示 */}
           <div class="asset-modal-footer">
-            <span class="asset-selected-count">点击素材卡片即可添加到参考素材</span>
+            <span class="asset-selected-count">
+              {picked().length ? `已选 ${picked().length} 个` : '勾选多个素材后一次加入参考栏'}
+            </span>
+            <Show when={picked().length > 0}>
+              <button class="btn-secondary" onClick={() => setPicked([])}>清空</button>
+            </Show>
+            <button class="btn-secondary" disabled={picked().length === 0} onClick={confirmPick}>
+              添加选中{picked().length ? ` (${picked().length})` : ''}
+            </button>
             <button class="btn-secondary" onClick={() => props.onClose()}>完成</button>
           </div>
         </div>

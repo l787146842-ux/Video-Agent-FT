@@ -11,6 +11,7 @@ import { SplashScreen } from '@/components/shared/SplashScreen';
 import { DocsPanel } from '@/components/docs/DocsPanel';
 import { AssetLibraryModal } from '@/components/right-panel/AssetLibraryModal';
 import { GenerationLogPanel } from './GenerationLogPanel';
+import { MemoryPanel } from './MemoryPanel';
 import { initGenerationEvents, restoreActiveGenerations } from '@/lib/generation-events';
 import { getProjectState } from '@/api/project';
 import { getAppConfig, getProviders } from '@/api/providers';
@@ -241,6 +242,8 @@ export function LayoutShell(props: ParentProps) {
       <ConfirmDialogHost />
       <DocsPanel />
       <GenerationLogPanel />
+      {/* 记忆管理面板（Header 数据库图标入口，4.7） */}
+      <MemoryPanel />
 
       {/* 全局"画布素材库"模态框（左栏 AssetCard 和 ChatInput 工具栏共用） */}
       <AssetLibraryModal

@@ -1,7 +1,7 @@
 import { A, useLocation } from '@solidjs/router';
 import { Show } from 'solid-js';
 import {
-  FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiList, FiMoon, FiSettings, FiSun,
+  FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiDatabase, FiList, FiMoon, FiSettings, FiSun,
 } from 'solid-icons/fi';
 import { useTheme } from '@/hooks/use-theme';
 import { ProjectSwitcher } from './ProjectSwitcher';
@@ -9,6 +9,7 @@ import {
   historyState, performRedo, performUndo,
 } from '@/stores/history';
 import { toggleGenLog, genLogUnread } from '@/stores/generation-log';
+import { toggleMemoryPanel } from './MemoryPanel';
 
 /**
  * 顶栏「全局设置」入口（替代旧自动切换按钮）：
@@ -83,6 +84,16 @@ export function Header(props: {
 
       {/* 右侧操作区 */}
       <div class="studio-header-actions">
+        {/* 记忆管理入口：查看/置顶/删除 Agent 长期记忆（4.7） */}
+        <button
+          type="button"
+          class="theme-toggle-btn"
+          title="Agent 记忆"
+          aria-label="Agent 记忆"
+          onClick={() => toggleMemoryPanel()}
+        >
+          <FiDatabase size={16} />
+        </button>
         {/* 生成日志入口：图/视频/音频每次生成的成败记录（照搬画布日志） */}
         <button
           type="button"

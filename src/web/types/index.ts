@@ -287,6 +287,8 @@ export interface Conversation { id: string; title: string; messages: ChatMessage
 export interface ServerStateSnapshot {
   /** 快照所属项目 ID（持久化请求回传，后端据此丢弃跨项目的过期写入） */
   project_id?: string;
+  /** 故事板乐观锁版本（整板保存回携，防陈旧覆盖，D2） */
+  board_version?: number;
   keyElements?: KeyElementGroup[];
   shots?: ShotGroup[];
   audioItems?: AudioGroup[];

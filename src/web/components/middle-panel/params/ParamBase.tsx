@@ -24,21 +24,51 @@ export function ParamGroup(props: ParentProps<{ label: string }>) {
   );
 }
 
-/** 通用下拉样式（旧版 .param-select） */
-const selectClass = 'param-select';
-
-/** 通用下拉 */
+/** 通用下拉（动态宽度：框宽随当前选中文本的实际长度变化——紧凑且不截断。
+ * 原理：克隆只含当前选项的同样式 select，量浏览器算出的自然宽度（原生箭头
+ * 占位已被计入，不同系统/浏览器都不会估错）再写回；widthPx：传入时强制固定宽度） */
 export function ParamSelect(props: {
   value: string;
   options: Array<{ value: string; label: string; disabled?: boolean }>;
   ariaLabel: string;
   onChange: (value: string) => void;
+  widthPx?: number;
 }) {
+  let selectRef: HTMLSelectElement | undefined;
+  const currentLabel = () =>
+    props.options.find((o) => o.value === props.value)?.label || props.value || '';
+  // 选中项变化时重新测量：短名字框就短，长名字框跟着变长，永不裁半截。
+  // rAF 延后到下一帧再量：组件处于 <Show>/<Switch> 动态分支内时，effect 首跑时
+  // 元素尚未插入文档，测得的宽度恒为 0（曾导致宽度永远落在 64px 下限，文字被裁）
+  createEffect(() => {
+    const txt = currentLabel(); // 跟踪选中项变化
+    if (props.widthPx) return;
+    requestAnimationFrame(() => {
+      const el = selectRef;
+      if (!el) return;
+      // 克隆一个只含当前选项的同样式 select 量自然宽度：width:auto 时浏览器
+      // 按文本 + 原生箭头占位自行计算（直接量原框会取最长选项宽度，不够紧凑；
+      // 隐藏 span 测文本宽再手动加箭头位则各系统差异大，实测每框差十几像素）
+      const probe = document.createElement('select');
+      probe.className = el.className;
+      probe.style.cssText = 'position:absolute;visibility:hidden;width:auto;';
+      const opt = document.createElement('option');
+      opt.textContent = txt;
+      probe.appendChild(opt);
+      document.body.appendChild(probe);
+      const natural = probe.getBoundingClientRect().width;
+      probe.remove();
+      // 下限 64px：空值/超短值时保持最小可点击宽度
+      el.style.width = `${Math.max(Math.ceil(natural), 64)}px`;
+    });
+  });
   return (
     <select
-      class={selectClass}
+      ref={selectRef}
+      class="param-select"
       aria-label={props.ariaLabel}
       value={props.value}
+      style={props.widthPx ? { width: `${props.widthPx}px` } : undefined}
       onChange={(e) => props.onChange(e.currentTarget.value)}
     >
       <For each={props.options}>

@@ -42,10 +42,16 @@ export interface StudioState {
   lastAppliedAt: number;
   /** 预览框导航按钮触发左面板定位的计数（驱动滚动到选中卡片并闪烁） */
   locateTick: number;
+  /** 定位目标分组 ID（分镜 sceneRefs 点击跳转用；无草稿卡可选时按分组定位） */
+  locateGroupId: string;
   /** 选中操作单调序号：每次 selectDraft/selectAsset 自增。
    * findDraftRecord 响应式读取它，保证"重复点击同一张卡"也能强制所有预览派生重算，
    * 规避 Solid store 同值零通知导致的预览停留问题。 */
   selectTick: number;
+  /** 故事板保存状态（D1）：saving=PUT 在途；saved=最近一次保存成功；error=保存失败（顶部常驻提示） */
+  boardSaveStatus: 'saving' | 'saved' | 'error';
+  /** 故事板乐观锁版本（D2）：来自后端快照 board_version，整板保存回携防陈旧覆盖 */
+  boardVersion: number;
 }
 
 const defaultState: StudioState = {
@@ -76,7 +82,10 @@ const defaultState: StudioState = {
   usedSkills: [],
   lastAppliedAt: 0,
   locateTick: 0,
+  locateGroupId: '',
   selectTick: 0,
+  boardSaveStatus: 'saved',
+  boardVersion: 0,
 };
 
 const [state, setState] = createStore<StudioState>(defaultState);

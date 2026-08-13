@@ -81,8 +81,10 @@ export function RefAssetBar(props: {
     showToast(`已添加参考素材${name ? `：${name}` : ''}`, 'success');
   }
 
-  function handlePick(item: RefAssetItem) {
-    addRefUrl(item.url, item.name);
+  function handlePick(items: RefAssetItem[]) {
+    for (const item of items) {
+      addRefUrl(item.url, item.name);
+    }
   }
 
   function handleRefUpload(file: File) {

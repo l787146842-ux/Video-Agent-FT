@@ -67,7 +67,7 @@ export function putProjectState(
     >
   >,
 ) {
-  return apiPut<{ ok: boolean }>('/api/project/state', patch);
+  return apiPut<{ ok: boolean; board_version?: number }>('/api/project/state', patch);
 }
 
 export function undoAction() {

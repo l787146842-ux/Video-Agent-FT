@@ -28,6 +28,12 @@ export default function LeftPanel() {
             <span>{tab.label}</span>
           </button>
         ))}
+        {/* 故事板保存状态（D1）：保存中 / 已保存 / 保存失败 */}
+        <span class={`board-save-status ${state.boardSaveStatus}`}>
+          {state.boardSaveStatus === 'saving' ? '保存中…'
+            : state.boardSaveStatus === 'error' ? '保存失败'
+              : '已保存'}
+        </span>
       </div>
 
       {/* 内容区 */}

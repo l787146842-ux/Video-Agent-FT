@@ -39,6 +39,7 @@ export const uiActions = {
     setState('leftTab', 'storyboard');
     setState('subTab', subTabForType(rec.type));
     setState('selectedType', rec.type);
+    setState('locateGroupId', ''); // 按选中草稿定位，清除分组定位目标
     setState('locateTick', (v) => v + 1);
   },
 
@@ -119,19 +120,23 @@ export const uiActions = {
     setState('lastAppliedAt', Date.now());
   },
 
-  /** 按标题跳转到关键元素（分镜 sceneRefs chip 点击） */
+  /** 按标题或分组 id 跳转到关键元素（分镜 sceneRefs chip 点击；
+   * sceneRefs 存的是 ke-xxx id，需同时支持 id 命中，888 事故：只匹配标题报「未找到」）。
+   * 跳转效果与预览框「定位」一致：滚动到目标分组卡并闪烁，没有草稿卡也能看到。 */
   jumpToElementByTitle(title: string) {
-    const el = state.keyElements.find((k) => k.title === title);
+    const el = state.keyElements.find((k) => k.title === title || k.id === title);
     if (!el) {
       showToast(`未找到关键元素「${title}」`, 'warning');
       return;
     }
     setState('leftTab', 'storyboard');
     setState('subTab', 'keyElements');
+    setState('locateGroupId', el.id);
     if (el.drafts?.length) {
       setState('selectedDraftId', el.drafts[0].id);
       setState('selectedType', 'keyElement');
       setState('selectTick', (v) => v + 1);
     }
+    setState('locateTick', (v) => v + 1);
   },
 };

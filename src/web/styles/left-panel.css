@@ -29,12 +29,13 @@
   .sb-group-header { display: flex; justify-content: space-between; align-items: flex-start; }
   .sb-title { font-size: 14px; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 6px; }
   .sb-title-input { font-size: 14px; font-weight: 600; color: var(--text-main); background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; padding: 2px 6px; width: 100%; max-width: 200px; outline: none; }
-  .sb-desc-input { font-size: 12px; color: var(--text-main); background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; padding: 3px 6px; width: 100%; outline: none; margin-top: 4px; }
+    /* 描述编辑框：多行 textarea，高度随内容自适应（与展示区同等占位，长文不截断） */
+    .sb-desc-input { font-size: 12px; color: var(--text-main); background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; padding: 3px 6px; width: 100%; outline: none; margin-top: 4px; display: block; resize: none; line-height: 1.4; font-family: inherit; min-height: 28px; overflow: hidden; }
   .sb-badge { font-size: 11px; padding: 2px 6px; background-color: rgba(59, 130, 246, 0.15); color: var(--accent-blue); border-radius: 4px; cursor: default; }
   .sb-badge-wrap { display: flex; align-items: center; gap: 5px; }
   .sb-badge-input { font-size: 11px; padding: 1px 4px; width: 64px; background: var(--bg-tertiary); border: 1px solid var(--accent-blue); border-radius: 4px; color: var(--text-main); outline: none; }
   .sb-index { font-size: 12px; font-weight: 700; color: var(--text-dim); min-width: 16px; text-align: center; }
-  .sb-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; margin-top: 4px; }
+  .sb-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
   .draft-cards-row { display: flex; gap: 8px; align-items: flex-start; overflow-x: auto; padding: 4px 0; }
   /* 卡片列：卡片 + 下方小标编号；整列可拖动排序 */
@@ -42,10 +43,14 @@
   .draft-card-col:active { cursor: grabbing; }
   .draft-card-code { font-size: 10px; color: var(--text-dim); line-height: 1; font-variant-numeric: tabular-nums; user-select: none; }
   .draft-card.drag-over { border-color: var(--accent-blue); box-shadow: 0 0 8px rgba(59, 130, 246, 0.5); }
-  .draft-card { min-width: 100px; height: 64px; border-radius: var(--radius-sm); background-color: var(--bg-tertiary); border: 2px solid transparent; cursor: pointer; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px; background-size: cover; background-position: center; transition: all 0.2s; }
+  /* 卡片定宽（6666 二轮反馈）：长 label 不得把卡片撑长，省略号截断；
+     描述区 2 行 clamp，组卡高度不再随长文增长 */
+  .draft-card { width: 116px; min-width: 116px; height: 64px; border-radius: var(--radius-sm); background-color: var(--bg-tertiary); border: 2px solid transparent; cursor: pointer; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px; background-size: cover; background-position: center; transition: all 0.2s; }
   .draft-card.active { border-color: var(--accent-blue); box-shadow: 0 0 8px rgba(59, 130, 246, 0.5); }
   /* 预览框导航按钮定位时的闪烁高亮 */
   .draft-card.locate-flash { animation: draft-card-locate-flash 1.4s ease; }
+  /* 分组卡定位闪烁（分镜 sceneRefs 跳转，与草稿卡定位同效果） */
+  .sb-group.locate-flash { animation: draft-card-locate-flash 1.4s ease; }
   @keyframes draft-card-locate-flash {
     0%, 100% { box-shadow: 0 0 8px rgba(59, 130, 246, 0.5); }
     25%, 65% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.75), 0 0 18px rgba(59, 130, 246, 0.9); }
@@ -67,10 +72,17 @@
   .add-card-btn { width: 40px; height: 64px; min-width: 40px; border: 1px dashed var(--border-color); border-radius: var(--radius-sm); background-color: rgba(255,255,255,0.02); color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
   .add-card-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background-color: rgba(59, 130, 246, 0.05); }
 
-  /* 微调输入框：悬停卡片时缓缓浮现（opacity/max-height 过渡，不一下子弹出） */
-  .card-adjust-box { margin-top: 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; opacity: 0; max-height: 0; overflow: hidden; transition: opacity 0.35s ease, max-height 0.35s ease, margin-top 0.35s ease; }
-  .card-adjust-box.visible { opacity: 1; max-height: 90px; margin-top: 6px; }
-  .card-adjust-input { flex: 1 1 160px; min-width: 120px; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; color: var(--text-main); outline: none; }
+  /* 卡列包裹：每张草稿卡的列容器（悬停追踪由组件 onMouseEnter 处理） */
+  .draft-card-wrap { display: flex; flex-direction: column; }
+  /* 组级微调输入行（7777 四轮）：挂在分组底部占满组宽，悬停卡片时原位展开
+     （max-height 动画，分组高度随之自然增加）；收起时零占位且 pointer-events:none，
+     底部不残留可悬停的隐形占位条（只有悬停卡片才能触发展开） */
+  .card-adjust-box { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; padding: 0 4px; max-height: 0; margin-top: 0; overflow: hidden; opacity: 0; box-sizing: border-box; background-color: var(--bg-secondary); border: 1px solid transparent; border-radius: var(--radius-sm); pointer-events: none; transition: max-height 0.16s ease, opacity 0.16s ease, margin-top 0.16s ease, padding 0.16s ease; }
+  /* 展开触发：悬停在卡片上（组件 JS 控 open 类）或输入框聚焦中；
+     悬停分组标题/描述/底部占位区不触发 */
+  .card-adjust-box.open, .card-adjust-box:focus-within { max-height: 48px; opacity: 1; margin-top: 6px; padding: 4px; border-color: var(--border-color); pointer-events: auto; }
+  html.light .card-adjust-box { background-color: #ffffff; }
+  .card-adjust-input { flex: 1 1 auto; min-width: 0; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 5px 8px; font-size: 12px; color: var(--text-main); outline: none; }
   .card-adjust-input:focus { border-color: var(--accent-blue); }
   .card-adjust-btn { padding: 6px 10px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-main); font-size: 12px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
   .card-adjust-btn:hover { background-color: var(--bg-hover); }
@@ -81,6 +93,20 @@
   .scene-ref-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.35); color: #93c5fd; cursor: default; transition: background 0.15s; }
   .scene-ref-chip img { width: 20px; height: 20px; border-radius: 3px; object-fit: cover; }
   html.light .scene-ref-chip { color: #2563eb; }
+  
+    /* 场景引用增删（C4）：chip 内跳转按钮 + × 删除；行尾 + 添加候选弹层 */
+    .scene-ref-editable { padding-right: 3px; }
+    .scene-ref-jump { border: 0; background: transparent; color: inherit; font-size: inherit; padding: 0; cursor: pointer; }
+    .scene-ref-jump:hover { text-decoration: underline; }
+    .scene-ref-remove { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: inherit; opacity: 0.55; cursor: pointer; padding: 1px; border-radius: 50%; }
+    .scene-ref-remove:hover { opacity: 1; color: #f87171; }
+    .scene-ref-add { cursor: pointer; gap: 2px; opacity: 0.75; }
+    .scene-ref-add:hover { opacity: 1; background: rgba(59, 130, 246, 0.22); }
+    .scene-ref-add-wrap { position: relative; display: inline-flex; }
+    .scene-ref-picker { position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; min-width: 160px; max-width: 240px; max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
+    .scene-ref-picker-item { border: 0; background: transparent; color: var(--text-main); font-size: 11px; text-align: left; padding: 5px 8px; border-radius: 5px; cursor: pointer; }
+    .scene-ref-picker-item:hover { background: var(--bg-hover); color: #93c5fd; }
+    .scene-ref-picker-empty { font-size: 11px; color: var(--text-dim); padding: 5px 8px; }
 
   /* 未归类素材 */
   .uncategorized-view { display: flex; flex-direction: column; gap: 12px; }
@@ -101,3 +127,12 @@
   .batch-gen-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: 11px; border: 1px solid var(--border-color); border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
   .batch-gen-btn:hover { color: #93c5fd; border-color: #3b82f6; background: rgba(59, 130, 246, 0.08); }
 }
+
+/* ===== 故事板保存状态小标识（D1，恢复任务追加） ===== */
+.board-save-status {
+  margin-left: auto; align-self: center; font-size: 10px; white-space: nowrap;
+  padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border-color);
+  color: var(--text-dim); background: var(--bg-tertiary);
+}
+.board-save-status.saving { color: var(--accent-blue); border-color: rgba(59, 130, 246, 0.4); }
+.board-save-status.error { color: #ef4444; border-color: rgba(239, 68, 68, 0.5); background: rgba(239, 68, 68, 0.08); }
