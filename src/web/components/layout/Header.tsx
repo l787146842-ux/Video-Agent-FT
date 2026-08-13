@@ -1,7 +1,7 @@
 import { A, useLocation } from '@solidjs/router';
-import { createSignal, onMount, Show } from 'solid-js';
+import { Show } from 'solid-js';
 import {
-  FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiList, FiMoon, FiSun,
+  FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiList, FiMoon, FiSettings, FiSun,
 } from 'solid-icons/fi';
 import { useTheme } from '@/hooks/use-theme';
 import { ProjectSwitcher } from './ProjectSwitcher';
@@ -9,41 +9,22 @@ import {
   historyState, performRedo, performUndo,
 } from '@/stores/history';
 import { toggleGenLog, genLogUnread } from '@/stores/generation-log';
-import { getRuntimeSettings, setRuntimeSettings } from '@/api/agent';
 
 /**
- * 顶栏模型 fallback 开关（用户定义的「模型切换开关」）：
- * 开 = 模型联不通/出不了图视频时自动换同模型其他 API 厂商；关 = 直接按上游报错。
- * 状态后端热生效 + 持久化，不重启。
+ * 顶栏「全局设置」入口（替代旧自动切换按钮）：
+ * 全局模型选择设置页（出图/出视频模型、分辨率、分镜最大时长、聊天出图开关、自动切换开关）。
  */
-function FallbackToggle() {
-  const [on, setOn] = createSignal(true);
-  onMount(() => {
-    getRuntimeSettings().then((r) => setOn(r.model_fallback_enabled)).catch(() => { /* 后端未就绪静默 */ });
-  });
-  async function toggle() {
-    const next = !on();
-    setOn(next);
-    try {
-      const r = await setRuntimeSettings({ model_fallback_enabled: next });
-      setOn(r.model_fallback_enabled);
-    } catch {
-      setOn(!next); // 失败回滚
-    }
-  }
+function FallbackToggleEntry() {
   return (
-    <button
-      type="button"
-      class={`fallback-toggle ${on() ? 'on' : 'off'}`}
-      title={on()
-        ? '模型切换：开（联不通自动换同模型其他厂商）'
-        : '模型切换：关（联不通直接按上游报错）'}
-      aria-label="模型切换开关"
-      onClick={() => void toggle()}
+    <A
+      href="/global-settings"
+      class="fallback-toggle"
+      title="全局模型选择设置（出图/出视频模型、分辨率、分镜最大时长、自动切换）"
+      aria-label="全局模型选择设置"
     >
-      <span class="fallback-toggle-dot" />
-      <span class="fallback-toggle-label">切换</span>
-    </button>
+      <FiSettings size={12} />
+      <span class="fallback-toggle-label">全局设置</span>
+    </A>
   );
 }
 
@@ -143,7 +124,7 @@ export function Header(props: {
         >
           {theme() === 'dark' ? <FiMoon size={16} /> : <FiSun size={16} />}
         </button>
-        <FallbackToggle />
+        <FallbackToggleEntry />
         <ProjectSwitcher />
       </div>
 

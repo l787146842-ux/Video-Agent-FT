@@ -73,6 +73,8 @@ export interface Asset {
   type: MediaType;
   isBound: boolean;
   url: string;
+  /** 来源信息（从故事板移除到未归类时记录，供右键「还原」）：类型/分组ID/草稿快照 */
+  sourceType?: DraftType; sourceGroupId?: string; sourceDraft?: Draft;
 }
 
 // ===== API 供应商 =====

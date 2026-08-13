@@ -1,28 +1,24 @@
-import { For, Show, createEffect, createSignal } from 'solid-js';
-import { FiChevronDown, FiChevronUp, FiImage, FiMusic } from 'solid-icons/fi';
+import { Show, createEffect, createSignal } from 'solid-js';
+import { FiChevronDown, FiChevronUp } from 'solid-icons/fi';
 import {
   state, setState, studioActions, findDraftRecord, persistBoard,
 } from '@/stores/studio';
-import { safeUrl } from '@/lib/utils';
 import {
-  buildRefAssetMap, renderPromptToDOM, serializeDOMToText, videoThumb,
+  buildRefAssetMap, renderPromptToDOM, serializeDOMToText,
 } from '@/lib/prompt-ref-utils';
 import { usePromptMention, type MentionItem } from '@/hooks/use-prompt-mention';
+import { usePromptMediaDrop } from '@/hooks/use-prompt-media-drop';
 import { MediaLightbox } from '@/components/right-panel/MediaLightbox';
 import { RefAssetBar } from './RefAssetBar';
+import { PromptMentionPopup } from './PromptMentionPopup';
 
 /**
  * Prompt 编辑器：折叠/展开 + 参考素材横条（RefAssetBar）
  * + contenteditable 提示词框（@ 引用参考素材，插入为内联缩略块 chip；
- *   提及逻辑见 usePromptMention，DOM/文本互转见 prompt-ref-utils）
+ *   提及逻辑见 usePromptMention，粘贴/拖入媒体见 usePromptMediaDrop，
+ *   @ 弹层见 PromptMentionPopup，DOM/文本互转见 prompt-ref-utils）
  * keyElement：可增删参考素材（≤5）；shot：绑定元素参考（只读 chips）+ 首尾帧（不设上限）
  */
-/** @面板故事板分类页签 */
-const MENTION_CATS: Array<{ id: 'keyElement' | 'shot' | 'audio'; label: string }> = [
-  { id: 'keyElement', label: '关键元素' },
-  { id: 'shot', label: '分镜' },
-  { id: 'audio', label: '音频' },
-];
 export function PromptEditor() {
   const rec = () => findDraftRecord(state.selectedDraftId, state.selectedType) ?? undefined;
   const draft = () => rec()?.draft;
@@ -64,6 +60,9 @@ export function PromptEditor() {
   /** 参考素材上限：keyElement≤5；shot 不设上限（用户决策） */
   const maxRefs = () => (state.selectedType === 'shot' ? Infinity : 5);
 
+  /** 粘贴/拖入媒体文件进参考素材栏（高亮态 + 上传） */
+  const drop = usePromptMediaDrop({ rec, maxRefs });
+
   function updatePrompt(value: string) {
     const r = rec();
     if (!r) return;
@@ -92,41 +91,11 @@ export function PromptEditor() {
     syncPrompt,
   });
 
-  /** @面板故事板分类当前页签 */
-  const [mentionCat, setMentionCat] = createSignal<'keyElement' | 'shot' | 'audio'>('keyElement');
-
-  /** @面板候选条目：图片缩略图 / 视频首帧 / 音频图标 */
-  function renderMentionItem(item: MentionItem) {
-    const active = () => {
-      const cur = mention.mentionItems()[mention.mentionIdx()];
-      return !!cur && cur.url === item.url && cur.name === item.name;
-    };
-    return (
-      <div
-        class={`mention-item${active() ? ' mention-item-active' : ''}`}
-        role="option"
-        aria-selected={active()}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => mention.insertMentionChip(item)}
-      >
-        <Show when={item.type === 'image' && safeUrl(item.url)} fallback={
-          <Show when={item.type === 'video' && safeUrl(item.url)} fallback={
-            <span class="mention-item-placeholder">
-              {item.type === 'audio' ? <FiMusic size={18} /> : <FiImage size={18} />}
-            </span>
-          }>
-            <span class="mention-thumb-wrap">
-              <video src={videoThumb(item.url)} muted playsinline preload="metadata" class="mention-item-thumb" />
-              <span class="mention-video-badge">▶</span>
-            </span>
-          </Show>
-        }>
-          <img src={safeUrl(item.url)} alt={item.name} class="mention-item-thumb" />
-        </Show>
-        <span class="mention-item-name">{item.name}</span>
-      </div>
-    );
-  }
+  /** 键盘导航当前高亮项判定（供 @ 弹层渲染 active 态） */
+  const isMentionActive = (item: MentionItem) => {
+    const cur = mention.mentionItems()[mention.mentionIdx()];
+    return !!cur && cur.url === item.url && cur.name === item.name;
+  };
 
   function handleEditorInput() {
     syncPrompt();
@@ -178,8 +147,8 @@ export function PromptEditor() {
               <RefAssetBar rec={rec} refAssets={refAssets} maxRefs={maxRefs} />
             </Show>
 
-            {/* 提示词输入框（contenteditable，@ 插入缩略块）+ 提及弹层 */}
-            <div class="prompt-textarea-wrap">
+            {/* 提示词输入框（contenteditable，@ 插入缩略块；粘贴/拖入媒体进参考栏）+ 提及弹层 */}
+            <div class={`prompt-textarea-wrap${drop.dragOver() ? ' drag-over' : ''}`}>
               <div
                 ref={attachEditor}
                 class="prompt-textarea prompt-editor-input"
@@ -190,10 +159,22 @@ export function PromptEditor() {
                 onFocus={() => setState('editingDraftId', state.selectedDraftId)}
                 onClick={handleChipClick}
                 onPaste={(e) => {
+                  // 粘贴媒体文件（截图/复制的视频音频等）→ 上传进参考素材栏，不插入提示词
+                  const files = drop.handlePaste(e);
+                  if (files.length) {
+                    void drop.addFiles(files);
+                    return;
+                  }
                   // 粘贴统一转为纯文本，避免富文本格式污染提示词
                   e.preventDefault();
                   const text = e.clipboardData?.getData('text/plain') || '';
                   if (text) document.execCommand('insertText', false, text);
+                }}
+                onDragOver={(e) => drop.onDragOver(e)}
+                onDragLeave={() => drop.onDragLeave()}
+                onDrop={(e) => {
+                  const files = drop.onDrop(e);
+                  if (files.length) void drop.addFiles(files);
                 }}
                 onKeyDown={(e) => {
                   if (mention.mentionActive()) {
@@ -256,59 +237,15 @@ export function PromptEditor() {
                 }}
               />
               <Show when={mention.mentionActive() && mention.mentionPos()}>
-                <div
-                  class="mention-popup prompt-mention-popup"
-                  role="listbox"
-                  aria-label="参考素材选择"
-                  style={{
-                    position: 'fixed',
-                    right: 'auto',
-                    bottom: `${mention.mentionPos()!.bottom}px`,
-                    left: `${mention.mentionPos()!.left}px`,
-                    width: `${mention.mentionPos()!.width}px`,
-                  }}
-                >
-                  {/* 搜索框：过滤故事板素材与参考栏素材 */}
-                  <input
-                    class="mention-search"
-                    placeholder="搜索素材..."
-                    value={mention.mentionQuery()}
-                    onInput={(e) => mention.setMentionQuery(e.currentTarget.value)}
-                  />
-                  {/* 上区：故事板素材（分类页签） */}
-                  <div class="mention-tabs">
-                    <For each={MENTION_CATS}>
-                      {(c) => (
-                        <button
-                          type="button"
-                          class={`mention-tab ${mentionCat() === c.id ? 'active' : ''}`}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => setMentionCat(c.id)}
-                        >
-                          {c.label}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                  <div class="mention-section">
-                    <For each={mention.boardItems().filter((i) => i.category === mentionCat())}>
-                      {(item) => renderMentionItem(item)}
-                    </For>
-                    <Show when={mention.boardItems().filter((i) => i.category === mentionCat()).length === 0}>
-                      <div class="mention-popup-status">该分类暂无故事板素材</div>
-                    </Show>
-                  </div>
-                  {/* 下区：中间预览框参考栏素材 */}
-                  <div class="mention-section-title">参考栏素材</div>
-                  <div class="mention-section">
-                    <For each={mention.refItems()}>
-                      {(item) => renderMentionItem(item)}
-                    </For>
-                    <Show when={mention.refItems().length === 0}>
-                      <div class="mention-popup-status">参考栏暂无素材</div>
-                    </Show>
-                  </div>
-                </div>
+                <PromptMentionPopup
+                  pos={mention.mentionPos()!}
+                  query={mention.mentionQuery()}
+                  onQuery={mention.setMentionQuery}
+                  boardItems={mention.boardItems}
+                  refItems={mention.refItems}
+                  isActive={isMentionActive}
+                  onPick={(item) => mention.insertMentionChip(item)}
+                />
               </Show>
             </div>
           </div>

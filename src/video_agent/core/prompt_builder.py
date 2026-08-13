@@ -78,6 +78,12 @@ class PromptBuilder:
                     f"（类型 {context.selected_type or '未知'}）。studio-actions 里的 \"current\" 指向它。"
                 )
 
+            # 全局生成设置（前端「全局设置」页用户配置，热生效）：
+            # 分镜时长上限 + 默认生成渠道，Agent 拆镜/生成必须遵守
+            note = self.build_global_settings_note()
+            if note:
+                parts.append(note)
+
             # 混合记忆检索注入（语义 + 关键词 + 时间衰减），按项目隔离
             if settings.memory_enabled:
                 query = self.last_user_text(context)
@@ -113,6 +119,28 @@ class PromptBuilder:
             parts.append(selected_block)
 
         return "\n\n".join(parts)
+
+    def build_global_settings_note(self) -> str:
+        """全局生成设置注入块：分镜最大时长 + 默认出图/出视频渠道 + 聊天出图开关。"""
+        lines = [
+            f"- 分镜最大时长：{settings.max_shot_duration} 秒"
+            "（自己拆分镜时单个分镜时长不得超过该值，duration 字段与提示词内总时长描述与其一致）"
+        ]
+        if settings.default_image_provider_id:
+            model = f" / 模型 {settings.default_image_model}" if settings.default_image_model else ""
+            lines.append(
+                f"- 默认出图渠道：供应商 {settings.default_image_provider_id}{model}，"
+                f"图片分辨率 {settings.default_image_resolution}（草稿自身未配置时按其填写参数）"
+            )
+        if settings.default_video_provider_id:
+            model = f" / 模型 {settings.default_video_model}" if settings.default_video_model else ""
+            lines.append(
+                f"- 默认出视频渠道：供应商 {settings.default_video_provider_id}{model}，"
+                f"视频分辨率 {settings.default_video_resolution}（草稿自身未配置时按其填写参数）"
+            )
+        if not settings.chat_image_enabled:
+            lines.append("- 聊天框出图当前关闭：不要主动触发 generate_image / image_generate")
+        return "== 全局生成设置（用户在「全局设置」页配置，必须遵守）==\n" + "\n".join(lines)
 
     def build_skill_catalog(self, context: "PlannerContext") -> str:
         """构建 Skill 目录（渐进式披露的「目录」）：全部文档 Skill 的名称+摘要常驻，

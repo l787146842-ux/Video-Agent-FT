@@ -1,5 +1,5 @@
-import { Show } from 'solid-js';
-import { FiMessageSquare, FiTrash2, FiVideo, FiMusic } from 'solid-icons/fi';
+import { For, Show, createSignal } from 'solid-js';
+import { FiMessageSquare, FiRotateCcw, FiTrash2, FiVideo, FiMusic, FiX } from 'solid-icons/fi';
 import { state, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { showContextMenu } from '@/components/shared/ContextMenu';
@@ -7,14 +7,28 @@ import { confirmDialog } from '@/components/shared/ConfirmDialog';
 import { checkpointHistory, performUndo } from '@/stores/history';
 import { requestInsertMedia } from '@/lib/chat-input-bridge';
 import { safeUrl, uid } from '@/lib/utils';
-import type { Asset } from '@/types';
+import type { Asset, AnyGroup, DraftType } from '@/types';
+
+/** 故事板三个分区（还原目标分组选择弹窗用） */
+const RESTORE_SECTIONS: Array<{
+  type: DraftType;
+  field: 'keyElements' | 'shots' | 'audioItems';
+  label: string;
+}> = [
+  { type: 'keyElement', field: 'keyElements', label: '关键元素' },
+  { type: 'shot', field: 'shots', label: '分镜' },
+  { type: 'audio', field: 'audioItems', label: '音频' },
+];
 
 /**
  * 未归类素材卡片：与故事板草稿卡片同尺寸（复用 .draft-card 样式）。
  * 点击 → 在中间预览区展示媒体（findDraftRecord 资产回退合成只读草稿）；
- * 右键菜单：添加到对话、删除素材。
+ * 右键菜单：添加到对话、还原到原分组（有来源信息时）、删除素材。
  */
 export function AssetCard(props: { asset: Asset }) {
+  /** 还原目标分组选择弹窗（无来源快照的旧素材右键还原时打开） */
+  const [pickerOpen, setPickerOpen] = createSignal(false);
+
   // 选中判定匹配 id + 映射类型（selectAsset 会按素材媒体类型设置 selectedType）
   const selected = () => {
     const t = props.asset.type === 'video' ? 'shot' : props.asset.type === 'audio' ? 'audio' : 'keyElement';
@@ -61,9 +75,29 @@ export function AssetCard(props: { asset: Asset }) {
     });
   }
 
+  /** 还原：有来源快照且原分组还在 → 直接还原；否则弹目标分组选择（旧素材无来源记录） */
+  async function handleRestore() {
+    const a = props.asset;
+    if (a.sourceType && a.sourceGroupId && a.sourceDraft) {
+      await checkpointHistory();
+      if (studioActions.restoreAssetToSource(a.id)) return;
+    }
+    setPickerOpen(true);
+  }
+
+  /** 选择目标分组还原（以素材信息合成草稿放入） */
+  async function pickRestore(type: DraftType, groupId: string) {
+    setPickerOpen(false);
+    await checkpointHistory();
+    if (!studioActions.restoreAssetToGroup(props.asset.id, type, groupId)) {
+      showToast('目标分组不存在，无法还原', 'warning');
+    }
+  }
+
   function onContextMenu(e: MouseEvent) {
     showContextMenu(e, [
       { label: '添加到对话', icon: FiMessageSquare, onClick: addToChat },
+      { label: '还原', icon: FiRotateCcw, onClick: () => void handleRestore() },
       { label: '删除素材', icon: FiTrash2, danger: true, onClick: handleDelete },
     ]);
   }
@@ -105,6 +139,47 @@ export function AssetCard(props: { asset: Asset }) {
       </Show>
       {/* 名称常显（未归类素材没有分组上下文，隐藏名称将无法辨认卡片） */}
       <span class="draft-card-label">{props.asset.name}</span>
+
+      {/* 还原目标分组选择弹窗：按 关键元素/分镜/音频 分区列出分组 */}
+      <Show when={pickerOpen()}>
+        <div class="asset-modal restore-picker-modal">
+          <div class="asset-modal-backdrop" onClick={() => setPickerOpen(false)} />
+          <div class="asset-modal-panel restore-picker-panel">
+            <div class="asset-modal-header">
+              <div class="canvas-picker-title">
+                <FiRotateCcw size={15} />
+                <span>选择还原到的分组</span>
+              </div>
+              <button class="asset-modal-close" onClick={() => setPickerOpen(false)} title="关闭">
+                <FiX size={16} />
+              </button>
+            </div>
+            <div class="restore-picker-body">
+              <For each={RESTORE_SECTIONS}>
+                {(sec) => (
+                  <Show when={(state[sec.field] as AnyGroup[]).length > 0}>
+                    <div class="restore-picker-label">{sec.label}</div>
+                    <div class="restore-picker-groups">
+                      <For each={state[sec.field] as AnyGroup[]}>
+                        {(g) => (
+                          <button
+                            type="button"
+                            class="restore-picker-group"
+                            title={g.title}
+                            onClick={() => void pickRestore(sec.type, g.id)}
+                          >
+                            {g.title}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                )}
+              </For>
+            </div>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 }

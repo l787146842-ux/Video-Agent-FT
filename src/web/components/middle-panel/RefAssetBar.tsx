@@ -1,15 +1,16 @@
 /**
  * 参考素材横条（从 PromptEditor.tsx 拆出）
  *
- * 缩略图列表 + 分镜绑定元素参考 chips + 「+」添加菜单（本地上传 / 故事板选取）
- * + 拖拽上传 + RefAssetPickerModal。
+ * 缩略图列表 + 分镜绑定元素参考 chips + 「+」添加菜单（本地上传 / 画布）
+ * + 拖拽上传 + RefAssetPickerModal + 右侧实时素材计数徽章。
  */
-import { For, Show, createSignal } from 'solid-js';
-import { FiImage, FiX, FiMusic, FiLayers, FiUpload } from 'solid-icons/fi';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
+import { FiImage, FiVideo, FiX, FiMusic, FiLayers, FiUpload } from 'solid-icons/fi';
 import { state, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
-import { uploadFiles } from '@/api/upload';
 import { safeUrl } from '@/lib/utils';
+import { storyboardMediaMap } from '@/lib/prompt-mentions';
+import { uploadRefFile } from '@/lib/ref-upload';
 import {
   boundAssetTitle, refAssetType, refAssetName, videoThumb,
 } from '@/lib/prompt-ref-utils';
@@ -27,6 +28,41 @@ export function RefAssetBar(props: {
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [addMenuOpen, setAddMenuOpen] = createSignal(false);
   let fileInputRef: HTMLInputElement | undefined;
+
+  /** +号菜单打开时，点击菜单外部任意位置即关闭 */
+  createEffect(() => {
+    if (!addMenuOpen()) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('.ref-add-wrap')) setAddMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    onCleanup(() => document.removeEventListener('pointerdown', onDown));
+  });
+
+  /** 右侧计数：参考栏素材 + 提示词中 @ 引用的故事板素材（URL 去重，按类型统计） */
+  const refCounts = createMemo(() => {
+    const counts: Record<'image' | 'video' | 'audio', number> = { image: 0, video: 0, audio: 0 };
+    const seen = new Set<string>();
+    for (const url of props.refAssets()) {
+      counts[refAssetType(url, state.keyElements)] += 1;
+      seen.add(url);
+    }
+    const prompt = props.rec()?.draft.prompt || '';
+    if (prompt.includes('@') || prompt.includes('＠')) {
+      const map = storyboardMediaMap();
+      const re = /[@＠]([^\s@＠]+)/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(prompt))) {
+        const info = map[m[1]];
+        if (!info || seen.has(info.url)) continue;
+        seen.add(info.url);
+        counts[info.kind] += 1;
+      }
+    }
+    return counts;
+  });
+  const refTotal = () => refCounts().image + refCounts().video + refCounts().audio;
 
   /** 添加参考素材（去重 + 上限） */
   function addRefUrl(url: string, name?: string) {
@@ -49,22 +85,9 @@ export function RefAssetBar(props: {
     addRefUrl(item.url, item.name);
   }
 
-  async function handleRefUpload(file: File) {
-    const r = props.rec();
-    if (!r) return;
-    if ((r.draft.refAssets || []).length >= props.maxRefs()) {
-      showToast(`参考素材最多 ${props.maxRefs()} 个，请先删除再上传`, 'warning');
-      return;
-    }
-    try {
-      showToast(`正在上传：${file.name}`, 'info');
-      const files = await uploadFiles([file]);
-      const url = files[0]?.url;
-      if (!url) throw new Error('上传接口没有返回素材地址');
-      addRefUrl(url, file.name);
-    } catch (e) {
-      showToast((e as Error).message || '参考素材上传失败', 'error');
-    }
+  function handleRefUpload(file: File) {
+    return uploadRefFile(props.rec(), props.maxRefs(), file)
+      .catch((e) => showToast((e as Error).message || '参考素材上传失败', 'error'));
   }
 
   function removeRef(url: string) {
@@ -132,16 +155,15 @@ export function RefAssetBar(props: {
                 >
                   <FiX size={14} />
                 </button>
+                {/* 首尾帧功能暂未实现：统一显示“参考”，不标注首帧/尾帧 */}
                 <Show when={state.selectedType === 'shot'}>
-                  <span class="ref-thumb-badge">
-                    {idx() === 0 ? '首帧' : idx() === 1 ? '尾帧' : '参考'}
-                  </span>
+                  <span class="ref-thumb-badge">参考</span>
                 </Show>
               </div>
             )}
           </For>
 
-          {/* 添加按钮（+号菜单：本地上传 / 画布·关键元素） */}
+          {/* 添加按钮（+号菜单：本地上传 / 画布；点击外部关闭） */}
           <Show when={props.refAssets().length < props.maxRefs()}>
             <div class="ref-add-wrap">
               <button
@@ -166,7 +188,7 @@ export function RefAssetBar(props: {
                     class="ref-add-menu-item"
                     onClick={() => { setAddMenuOpen(false); setPickerOpen(true); }}
                   >
-                    <FiLayers size={13} /> 画布 / 关键元素
+                    <FiLayers size={13} /> 画布
                   </button>
                 </div>
               </Show>
@@ -188,7 +210,17 @@ export function RefAssetBar(props: {
         {/* 拖放提示文字 */}
         <div class="ref-drop-hint">
           <FiImage size={16} />
-          <span>拖拽/上传素材，或点 + 从故事板/画布选取（提示词中按 @ 引用关键元素/分镜/音频素材）</span>
+          <span>拖拽/上传素材，或点 + 从画布选取（提示词中按 @ 引用关键元素/分镜/音频素材）</span>
+        </div>
+
+        {/* 右侧实时计数：已加载参考素材（含 @ 引用故事板素材） */}
+        <div
+          class="ref-count-badge"
+          title={`已加载参考素材 ${refTotal()} 个（图片 ${refCounts().image} / 视频 ${refCounts().video} / 音频 ${refCounts().audio}，含 @ 引用）`}
+        >
+          <span class="ref-count-item"><FiImage size={12} />{refCounts().image}</span>
+          <span class="ref-count-item"><FiVideo size={12} />{refCounts().video}</span>
+          <span class="ref-count-item"><FiMusic size={12} />{refCounts().audio}</span>
         </div>
       </div>
 

@@ -294,25 +294,43 @@ def spec_media_preference(raw_state: Dict[str, Any], kind: str = "image") -> Tup
 
 
 def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any], cat_key: str) -> bool:
-    """新建草稿时按规格文档偏好补印 providerId/model（8888 事故：草稿无值时被
-    前端硬编码首选供应商回填污染，导致参数栏与实际设定不符）。
+    """新建草稿时补印全局默认（8888 事故：草稿无值时被前端硬编码首选供应商回填污染）。
 
-    仅当草稿未自带 providerId 时补印；audioItems 跳过；shots 按 mediaType
-    区分视频/图像偏好。返回是否发生补印。
-    """
+    补印顺序：分辨率/时长全局默认（草稿自带不覆盖）→ 供应商/模型
+    （规格文档偏好优先，其次全局设置默认；仅当草稿未自带 providerId 时补印，
+    audioItems 跳过供应商补印）。返回是否发生补印。"""
     if not isinstance(draft, dict):
         return False
+    stamped = False
+    # 分辨率/时长全局默认（与供应商无关，先补）
+    if cat_key == "keyElements" and not str(draft.get("imageResolution") or "").strip():
+        draft["imageResolution"] = settings.default_image_resolution
+        stamped = True
+    if cat_key == "shots" and str(draft.get("mediaType") or "").strip().lower() == "video":
+        if not str(draft.get("resolution") or "").strip():
+            draft["resolution"] = settings.default_video_resolution
+            stamped = True
+        if not str(draft.get("duration") or "").strip():
+            draft["duration"] = f"{settings.max_shot_duration}s"
+            stamped = True
     if str(draft.get("providerId") or "").strip():
-        return False
+        return stamped
     if cat_key == "audioItems":
-        return False
+        return stamped
     kind = "image"
     if cat_key == "shots" and str(draft.get("mediaType") or "").strip().lower() == "video":
         kind = "video"
     pid, model = spec_media_preference(raw_state, kind)
     if not pid:
-        return False
+        # 规格文档无偏好 → 全局设置默认渠道
+        if kind == "image":
+            pid, model = settings.default_image_provider_id, settings.default_image_model
+        else:
+            pid, model = settings.default_video_provider_id, settings.default_video_model
+    if not pid:
+        return stamped
     draft["providerId"] = pid
+    stamped = True
     if model and not str(draft.get("model") or "").strip():
         draft["model"] = model
     return True

@@ -1,5 +1,6 @@
 import { Show, Switch, Match, createEffect, untrack } from 'solid-js';
 import { state, findDraftRecord, studioActions } from '@/stores/studio';
+import { globalSettings } from '@/stores/global-settings';
 import {
   apiProvidersFor, providerModels, preferredProviderIdForKind,
 } from '@/lib/providers';
@@ -37,6 +38,7 @@ export function ParamControls() {
     const draftId = state.selectedDraftId;
     const type = state.selectedType;
     void state.apiProviders; // 读取以建立响应式跟踪：供应商加载后触发校正
+    const gs = globalSettings(); // 全局设置加载后同样触发一次自动填充
     if (!draftId || !type) return;
 
     untrack(() => {
@@ -47,15 +49,34 @@ export function ParamControls() {
       const kind = providerKindFor(type, genType);
       let pid = r.draft.providerId || '';
       if (!providerModels(pid, kind).length) {
-        pid = preferredProviderIdForKind(kind, apiProvidersFor(kind));
+        // 全局设置默认渠道优先于首选供应商回填（草稿无值时参数栏按全局设置跳转）
+        const gpid = kind === 'image'
+          ? (gs?.default_image_provider_id || '')
+          : kind === 'video' ? (gs?.default_video_provider_id || '') : '';
+        pid = (gpid && providerModels(gpid, kind).length ? gpid : '')
+          || preferredProviderIdForKind(kind, apiProvidersFor(kind));
       }
       const models = providerModels(pid, kind);
       // 模型列表为空（供应商未就绪）时跳过：patch.model='' 会永不收敛地循环写回
       if (!models.length) return;
       const currentModel = r.draft.model || '';
+      const gmodel = kind === 'image'
+        ? (gs?.default_image_model || '')
+        : kind === 'video' ? (gs?.default_video_model || '') : '';
       const patch: Record<string, string> = {};
       if (pid && pid !== r.draft.providerId) patch.providerId = pid;
-      if (!models.includes(currentModel) && models[0] !== currentModel) patch.model = models[0];
+      if (!models.includes(currentModel) && models[0] !== currentModel) {
+        // 全局设置默认模型优先，未配置时回退供应商首个模型
+        patch.model = (gmodel && models.includes(gmodel)) ? gmodel : models[0];
+      }
+      // 分辨率/时长为空时按全局设置自动填入参数栏
+      if (kind === 'image' && !r.draft.imageResolution && gs?.default_image_resolution) {
+        patch.imageResolution = gs.default_image_resolution;
+      }
+      if (kind === 'video') {
+        if (!r.draft.resolution && gs?.default_video_resolution) patch.resolution = gs.default_video_resolution;
+        if (!r.draft.duration && gs?.max_shot_duration) patch.duration = `${gs.max_shot_duration}s`;
+      }
       if (Object.keys(patch).length) {
         studioActions.updateDraftLocal(type, r.draft.id, patch);
       }

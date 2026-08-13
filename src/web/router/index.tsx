@@ -13,6 +13,7 @@ import { LayoutShell } from '@/components/layout/LayoutShell';
 const AgentLayout = lazy(() => import('@/components/layout/AgentLayout'));
 const CanvasView = lazy(() => import('@/components/layout/CanvasView'));
 const SettingsView = lazy(() => import('@/components/layout/SettingsView'));
+const GlobalSettingsView = lazy(() => import('@/components/layout/GlobalSettingsView'));
 
 export function AppRouter() {
   return (
@@ -20,6 +21,7 @@ export function AppRouter() {
       <Route path="/" component={AgentLayout} />
       <Route path="/canvas" component={CanvasView} />
       <Route path="/settings" component={SettingsView} />
+      <Route path="/global-settings" component={GlobalSettingsView} />
       <Route path="*" component={AgentLayout} />
     </Router>
   );

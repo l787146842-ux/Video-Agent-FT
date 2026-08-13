@@ -345,7 +345,7 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
     provider_id = ""
     aspect_ratio = ""
     if not selected_draft_id:
-        return provider_id, aspect_ratio
+        return settings.default_image_provider_id, aspect_ratio
     category = _TYPE_TO_CATEGORY.get(selected_type, selected_type)
     raw_state = svc.get_full_snapshot()
     for group in (raw_state.get(category) or []):
@@ -355,8 +355,8 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
             if isinstance(draft, dict) and draft.get("id") == selected_draft_id:
                 provider_id = draft.get("providerId", "") or ""
                 aspect_ratio = draft.get("aspectRatio", "") or ""
-                return provider_id, aspect_ratio
-    return provider_id, aspect_ratio
+                return provider_id or settings.default_image_provider_id, aspect_ratio
+    return settings.default_image_provider_id, aspect_ratio
 
 
 # ---------- 模型 fallback 链 ----------

@@ -422,7 +422,8 @@ class StudioActionExecutor:
 
         if cat_key == CAT_SHOTS:
             new_group["roughDesc"] = pick("roughDesc", desc)
-            new_group["duration"] = pick("duration", "5s")
+            # 全局设置：分镜默认时长（Agent 自拆按 max_shot_duration 控制）
+            new_group["duration"] = pick("duration", f"{settings.max_shot_duration}s")
             new_group["timeRange"] = pick("timeRange")
             new_group["shotType"] = pick("shotType")
             refs = action.get("sceneRefs") or group_data.get("sceneRefs") or []
@@ -661,6 +662,12 @@ class StudioActionExecutor:
         LLM 指定的供应商/模型/比例/分辨率会同步回写到目标草稿，
         使中间预览框底部的参数选择跳转到对应配置。
         """
+        # 聊天框出图开关：关 = Agent 在对话中不主动触发生图
+        if not settings.chat_image_enabled:
+            self._reject(
+                "聊天框出图已在全局设置中关闭，如需生图请先在顶栏「全局设置」开启「聊天框出图」。"
+            )
+            return False
         target = str(action.get("target") or action.get("draft_id") or "all").strip()
         draft_type = str(action.get("draft_type") or "").strip().lower()
         # 供应商兼容显示名（LLM 常传界面上的名称如 Grsai）→ 内部 id
@@ -708,14 +715,14 @@ class StudioActionExecutor:
             if not prompt:
                 continue
             refs = self._resolve_scene_refs(group) if group else []
-            # provider 回退链：LLM 指定 → 规格文档偏好 → 目标草稿自身（预览框已选参数）→ 中间面板选中草稿
-            eff_provider = provider_id or spec_pid or (draft.get("providerId") or "") or sel_provider
-            # model 回退链：LLM 指定 → 规格偏好（仅当供应商来自规格）→ 目标草稿自身 → 供应商默认模型（generation 层兑底）
-            eff_model = model or (spec_model if eff_provider == spec_pid else "") or (draft.get("model") or "")
+            # provider 回退链：LLM 指定 → 规格文档偏好 → 目标草稿自身（预览框已选参数）→ 中间面板选中草稿 → 全局设置
+            eff_provider = provider_id or spec_pid or (draft.get("providerId") or "") or sel_provider or settings.default_image_provider_id
+            # model 回退链：LLM 指定 → 规格偏好（仅当供应商来自规格）→ 目标草稿自身 → 全局设置（仅当供应商一致）→ 供应商默认模型（generation 层兖底）
+            eff_model = model or (spec_model if eff_provider == spec_pid else "") or (draft.get("model") or "") or (settings.default_image_model if eff_provider == settings.default_image_provider_id else "")
             # 比例回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 16:9
             eff_ratio = act_ratio or (draft.get("aspectRatio") or "") or sel_ratio or "16:9"
-            # 分辨率回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 1K
-            eff_resolution = act_resolution or (draft.get("imageResolution") or "") or sel_resolution or "1K"
+            # 分辨率回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 全局设置 → 1K
+            eff_resolution = act_resolution or (draft.get("imageResolution") or "") or sel_resolution or settings.default_image_resolution or "1K"
             # 参数回写草稿：中间预览框底部参数选择跳转到对应供应商/模型/比例/分辨率
             draft["providerId"] = eff_provider
             if eff_model:
@@ -782,16 +789,16 @@ class StudioActionExecutor:
             prompt = (draft.get("prompt") or "").strip()
             if not prompt:
                 continue
-            # 参数回退链：LLM 指定 → 目标草稿自身参数 → 默认值
-            eff_provider = provider_id or (draft.get("providerId") or "")
-            eff_model = model or (draft.get("model") or "")
+            # 参数回退链：LLM 指定 → 目标草稿自身参数 → 全局设置默认
+            eff_provider = provider_id or (draft.get("providerId") or "") or settings.default_video_provider_id
+            eff_model = model or (draft.get("model") or "") or (settings.default_video_model if eff_provider == settings.default_video_provider_id else "")
             eff_ratio = (draft.get("aspectRatio") or "16:9")
-            eff_resolution = act_resolution or (draft.get("resolution") or "720p")
+            eff_resolution = act_resolution or (draft.get("resolution") or "") or settings.default_video_resolution or "720p"
             dur_raw = str(draft.get("duration") or "").strip().lower()
             try:
-                eff_duration = act_duration or int(re.sub(r"[^0-9]", "", dur_raw) or 5)
+                eff_duration = act_duration or int(re.sub(r"[^0-9]", "", dur_raw) or settings.max_shot_duration)
             except ValueError:
-                eff_duration = 5
+                eff_duration = settings.max_shot_duration
             eff_duration = max(1, min(eff_duration, 15))  # 模型单镜头上限 15s
 
             # 参数回写草稿：预览框参数区同步跳转

@@ -15,6 +15,7 @@ import { initGenerationEvents, restoreActiveGenerations } from '@/lib/generation
 import { getProjectState } from '@/api/project';
 import { getAppConfig, getProviders } from '@/api/providers';
 import { getSkills, getAgentRunning } from '@/api/agent';
+import { ensureGlobalSettings } from '@/stores/global-settings';
 import { state, studioActions } from '@/stores/studio';
 import { chatActions } from '@/stores/chat';
 import { convActions } from '@/stores/conversations';
@@ -45,9 +46,10 @@ export function LayoutShell(props: ParentProps) {
   const [headerHidden, setHeaderHidden] = createSignal(false);
   const [loading, setLoading] = createSignal(true);
 
-  /** 覆盖层模式（画布 / API 配置）才显示收放箭头 */
+  /** 覆盖层模式（画布 / API 配置 / 全局设置）才显示收放箭头 */
   const overlayMode = () =>
-    location.pathname === '/canvas' || location.pathname === '/settings';
+    location.pathname === '/canvas' || location.pathname === '/settings'
+    || location.pathname === '/global-settings';
 
   /** 当前是否在画布路由 */
   const onCanvasRoute = () => location.pathname === '/canvas';
@@ -101,6 +103,9 @@ export function LayoutShell(props: ParentProps) {
       window.removeEventListener('message', onCanvasMessage);
       setCanvasIframe(undefined);
     });
+
+    // 全局生成设置（顶栏入口/参数栏自动填充共用）预热加载
+    void ensureGlobalSettings();
 
     // 后端未就绪时静默降级为默认空状态
     const [snapshot, cfg, provs, skills] = await Promise.all([

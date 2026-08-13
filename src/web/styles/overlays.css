@@ -145,6 +145,13 @@
   .asset-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
   .asset-modal-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px); }
   .asset-modal-panel { position: relative; width: 720px; max-width: 90vw; max-height: 78vh; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); }
+  /* 未归类素材右键「还原」目标分组选择弹窗 */
+  .restore-picker-panel { width: 420px; }
+  .restore-picker-body { padding: 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  .restore-picker-label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+  .restore-picker-groups { display: flex; flex-wrap: wrap; gap: 6px; }
+  .restore-picker-group { padding: 6px 10px; font-size: 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-tertiary); color: var(--text-main); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: border-color 0.12s, color 0.12s; }
+  .restore-picker-group:hover { border-color: var(--accent-blue); color: #93c5fd; }
   .asset-modal-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); }
   .asset-modal-tabs { display: flex; gap: 2px; flex: 1; }
   .asset-modal-tabs button { padding: 6px 14px; background: transparent; border: 0; color: var(--text-dim); font-size: 13px; cursor: pointer; border-radius: 4px; transition: all 0.15s; }

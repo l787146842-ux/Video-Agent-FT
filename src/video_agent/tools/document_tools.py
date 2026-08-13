@@ -282,8 +282,15 @@ class ImageGenerateTool(BaseTool):
         return GenerateImageInput
 
     async def aexecute(self, params: GenerateImageInput) -> ToolResult:
+        from src.video_agent.config import settings
         from src.video_agent.state import storyboard_ops as ops
         from src.video_agent.web.generation import submit_image_task, wait_image_task
+
+        # 聊天框出图开关：关 = Agent 在对话中不主动触发生图
+        if not settings.chat_image_enabled:
+            return ToolResult(success=False, error=(
+                "聊天框出图已在全局设置中关闭，如需生图请先在顶栏「全局设置」开启「聊天框出图」。"
+            ))
 
         svc = StateManager.get_instance()
         state = svc.state_dict
@@ -327,6 +334,11 @@ class ImageGenerateTool(BaseTool):
                     provider_id = pid
                     logger.info(f"[image_generate] provider 未指定，回退草稿自带供应商: {pid}")
                     break
+        if not provider_id:
+            if settings.default_image_provider_id:
+                provider_id = settings.default_image_provider_id
+                model = model or settings.default_image_model
+                logger.info(f"[image_generate] provider 未指定，回退全局设置默认出图渠道: {provider_id}/{model}")
         if not provider_id:
             provider_id, fb_model = first_available_image_provider()
             if provider_id:

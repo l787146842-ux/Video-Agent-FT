@@ -103,6 +103,19 @@ class Settings:
     # fallback 候选链总长度（含主模型）
     model_fallback_max_candidates: int = field(default_factory=lambda: _env_int("MODEL_FALLBACK_MAX_CANDIDATES", 3))
 
+    # 全局生成默认（前端「全局设置」页经 /api/settings/runtime 热更新并持久化）：
+    # 出图/出视频渠道与分辨率默认值，新建草稿与 Agent 生成回退链共用
+    default_image_provider_id: str = ""
+    default_image_model: str = ""
+    default_video_provider_id: str = ""
+    default_video_model: str = ""
+    # 聊天框出图开关：关 = Agent 在对话中不主动触发生图
+    chat_image_enabled: bool = True
+    default_image_resolution: str = "1K"
+    default_video_resolution: str = "1080p"
+    # 分镜最大时长（秒）：Agent 自拆分镜单镜时长上限与新建分镜默认时长
+    max_shot_duration: int = 5
+
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))
     task_max: int = field(default_factory=lambda: _env_int("TASK_MAX", 500))

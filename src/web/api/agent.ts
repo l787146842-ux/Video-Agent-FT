@@ -42,16 +42,26 @@ export function getContextUsage(model?: string): Promise<ContextUsage> {
   return apiFetch<ContextUsage>(`/api/agent/context-usage${qs}`);
 }
 
-/** 运行时设置：模型 fallback 开关（开=联不通换同模型其他厂商；关=按上游报错） */
+/** 运行时设置：全局生成默认 + 模型 fallback 开关（热生效，持久化于后端） */
 export interface RuntimeSettings {
   model_fallback_enabled: boolean;
+  /** 聊天框出图开关：关 = Agent 在对话中不主动触发生图 */
+  chat_image_enabled: boolean;
+  default_image_provider_id: string;
+  default_image_model: string;
+  default_video_provider_id: string;
+  default_video_model: string;
+  default_image_resolution: string;
+  default_video_resolution: string;
+  /** 分镜最大时长（秒）：Agent 自拆分镜单镜上限 */
+  max_shot_duration: number;
 }
 
 export function getRuntimeSettings(): Promise<RuntimeSettings> {
   return apiFetch<RuntimeSettings>('/api/settings/runtime');
 }
 
-export function setRuntimeSettings(body: RuntimeSettings): Promise<RuntimeSettings> {
+export function setRuntimeSettings(body: Partial<RuntimeSettings>): Promise<RuntimeSettings> {
   return apiPut<RuntimeSettings>('/api/settings/runtime', body);
 }
 
