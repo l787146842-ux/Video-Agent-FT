@@ -30,12 +30,12 @@ def test_verdict_user_override_allows_with_warning():
     assert v.message  # 硬伤已降为警告文案（仍随结果展示）
 
 
-def test_verdict_element_image_gate_is_platform():
+def test_verdict_element_image_gate_warn_only():
+    """4444 语义：元素概念图前置只警告不拦人（裁决权归用户）"""
     state = {"keyElements": [{"drafts": [{"imgUrl": ""}]}]}
     v = prompt_write_verdict(GOOD_SHOT, "shot", state, gate_enabled=True)
-    assert not v.ok
-    assert v.rule_id == "platform.shot_sequence"
-    assert v.layer == "platform"
+    assert v.ok, "元素图缺失不得硬拦截（4444：只警告不拦人）"
+    assert prompt_gates.SHOT_SEQUENCE_GATE_ERROR in v.message
 
 
 def test_verdict_audio_and_empty_skip():

@@ -15,6 +15,7 @@
 """
 import json
 import re
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.video_agent.config import settings
@@ -23,6 +24,82 @@ from src.video_agent.state.models import (
     CAT_AUDIO_ITEMS,
     CAT_KEY_ELEMENTS,
 )
+from src.video_agent.utils.prompts import load_prompt_section
+
+# ---------- 闸机规则注册表（Policy-as-Data，宪法 §2.3；814R2 恢复） ----------
+
+LAYER_PLATFORM = "platform"
+LAYER_SKILL = "skill"
+LAYER_SESSION = "session"
+
+
+@dataclass(frozen=True)
+class GateRuleMeta:
+    """闸机规则元信息（注册表条目）：稳定 rule_id + 层归属 + 中文描述"""
+    rule_id: str
+    layer: str
+    description: str
+
+
+# 规则注册表：平台层为硬边界（manifest 无权关闭，仅可经用户一次性申诉放行）；
+# Skill 层为内容结构/流程规则（manifest 可关/放宽/加严；流程闸只警告不拦人，4444）。
+GATE_RULES: Dict[str, GateRuleMeta] = {
+    r.rule_id: r for r in (
+        GateRuleMeta("platform.prompt_write", LAYER_PLATFORM,
+                     "提示词写入统一判定入口（结构闸 + 流程闸组合）"),
+        GateRuleMeta("platform.shot_min_chars", LAYER_PLATFORM,
+                     "分镜提示词最短字数地板（防敷衍，不可被 Skill 降低）"),
+        GateRuleMeta("platform.element_min_chars", LAYER_PLATFORM,
+                     "关键元素提示词最短字数地板（防敷衍，不可被 Skill 降低）"),
+        GateRuleMeta("platform.gen_confirm", LAYER_PLATFORM,
+                     "生成确认闸：未经用户确认的 Prompt Draft 不得触发生成"),
+        GateRuleMeta("skill.require_duration", LAYER_SKILL,
+                     "分镜提示词须写明镜头总时长"),
+        GateRuleMeta("skill.require_subtitle", LAYER_SKILL,
+                     "分镜提示词须含负面约束 no subtitles"),
+        GateRuleMeta("skill.require_camera_language", LAYER_SKILL,
+                     "分镜提示词须含镜头语言（景别/角度/运动）"),
+        GateRuleMeta("skill.require_audio_layer", LAYER_SKILL,
+                     "分镜提示词须含音频层（对白/音效/音乐或 no music）"),
+        GateRuleMeta("skill.cjk_min_ratio", LAYER_SKILL,
+                     "提示词正文中文占比下限（0 = 关闭该检查）"),
+        GateRuleMeta("skill.shot_min_chars", LAYER_SKILL,
+                     "分镜提示词最短字数（可被 manifest 抬高，不低于平台地板）"),
+        GateRuleMeta("skill.element_min_chars", LAYER_SKILL,
+                     "关键元素提示词最短字数（可被 manifest 抬高，不低于平台地板）"),
+        GateRuleMeta("skill.require_at_ref", LAYER_SKILL,
+                     "分镜提示词须含 @元素引用（加严规则，默认关闭）"),
+        GateRuleMeta("skill.flow.spec_gate", LAYER_SKILL,
+                     "规格文档前置闸：未写规格时附警告（只警告不拦人）"),
+        GateRuleMeta("skill.flow.element_image", LAYER_SKILL,
+                     "元素概念图前置闸：元素无图时附警告（只警告不拦人，4444）"),
+        GateRuleMeta("skill.flow.storyboard_pending", LAYER_SKILL,
+                     "故事板待确认窗口闸：结构未确认时附警告（只警告不拦人，4444）"),
+    )
+}
+
+
+# ---------- 闸机文案外置（宪法 §2.3；814R2 恢复） ----------
+#
+# prompts/gates/messages.md 是闸机文案单一事实源；代码内置文案仅作分节
+# 缺失时的兜底（行为不回退）。回喂模型与展示用户用同一源，防两套说辞。
+_GATE_MSG_FILE = "gates/messages.md"
+
+
+def _gate_msg(section: str, fallback: str) -> str:
+    """文案分节加载：messages.md 优先，缺失回落内置兜底"""
+    return load_prompt_section(_GATE_MSG_FILE, section) or fallback
+
+
+def _gate_json(section: str, fallback: Any) -> Any:
+    """JSON 分节加载（暂停卡 message/options）；解析失败回落内置兜底"""
+    raw = load_prompt_section(_GATE_MSG_FILE, section)
+    if not raw:
+        return fallback
+    try:
+        return json.loads(raw)
+    except Exception:
+        return fallback
 
 # 镜头语言客观标记（提示词里出现任一即视为含摄像机层）
 _CAMERA_MARKERS = (
@@ -533,50 +610,58 @@ def format_gate_errors(errors: List[str]) -> str:
     )
 
 
-SPEC_GATE_ERROR = (
+SPEC_GATE_ERROR = _gate_msg("SPEC_GATE", (
     "流程警告：规格文档尚未写入。建议先调用 document_write 写入规格文档"
     "（标题、类型、画幅、时长、视觉风格、语言、模型偏好等制作参数）并请用户审阅；"
     "本次故事板结构已按用户要求照常搭建，规格文档仍建议补写。"
-)
+))
 
 # 结构搭建阶段内联提示词的容忍上限（字符）：保留兼容常量，
 # 当前策略下不再剥离内联提示词，详细内容随建卡一并写入
 STRUCTURE_INLINE_PROMPT_MAX = 40
 
-STORYBOARD_PENDING_GATE_ERROR = (
+STORYBOARD_PENDING_GATE_ERROR = _gate_msg("STORYBOARD_PENDING", (
     "流程警告：故事板结构尚未经用户确认。按 Skill 流程建议先请用户审阅拆分方案再写提示词；"
     "本次提示词已按用户要求照常写入，请同时在回复中提示用户审阅左侧故事板。"
-)
+))
 
-STORYBOARD_STRUCTURE_PAUSED_MSG = (
-    "关键元素拆分已建立，请审阅左侧故事板的元素拆分结果（数量/命名/描述）；"
-    "确认无误后按当前 Skill 流程推进下一阶段。"
-)
+_STORYBOARD_STRUCTURE_PAUSED = _gate_json("STORYBOARD_STRUCTURE_PAUSED", {
+    "message": (
+        "关键元素拆分已建立，请审阅左侧故事板的元素拆分结果（数量/命名/描述）；"
+        "确认无误后按当前 Skill 流程推进下一阶段。"
+    ),
+    "options": [
+        {
+            "label": "确认关键元素拆解，继续编写元素生图提示词草案",
+            "description": "元素拆分无误，下一步为各关键元素编写生图提示词草案",
+        },
+        {"label": "调整关键元素拆分", "description": "告诉我需要增删改的元素"},
+    ],
+})
+STORYBOARD_STRUCTURE_PAUSED_MSG = str(_STORYBOARD_STRUCTURE_PAUSED.get("message", ""))
 
-STORYBOARD_STRUCTURE_OPTIONS = [
-    {
-        "label": "确认关键元素拆解，继续编写元素生图提示词草案",
-        "description": "元素拆分无误，下一步为各关键元素编写生图提示词草案",
-    },
-    {"label": "调整关键元素拆分", "description": "告诉我需要增删改的元素"},
-]
+STORYBOARD_STRUCTURE_OPTIONS = list(_STORYBOARD_STRUCTURE_PAUSED.get("options") or [])
 
 # 分镜拆解完成后的暂停文案（结构 → 提示词 分界）：
 # 结构阶段只建骨架、不写详细提示词，确认卡片必须引导用户审阅拆分方案，
 # 而不是声称提示词已写好或直接引导生成（8888 事故：拆完分镜即引导「确认草案，开始生成视频」）；
 # 下一步文案不写死具体阶段（S1：不同 Skill 的下一步不同，以各自流程为准）
-SHOT_STRUCTURE_PAUSED_MSG = (
-    "分镜拆解已完成，请在左侧故事板审阅分镜拆分方案（镜头数量/时间轴/镜头语言）；"
-    "确认无误后按当前 Skill 流程推进下一阶段。"
-)
+_SHOT_STRUCTURE_PAUSED = _gate_json("SHOT_STRUCTURE_PAUSED", {
+    "message": (
+        "分镜拆解已完成，请在左侧故事板审阅分镜拆分方案（镜头数量/时间轴/镜头语言）；"
+        "确认无误后按当前 Skill 流程推进下一阶段。"
+    ),
+    "options": [
+        {
+            "label": "确认分镜拆分方案，继续编写视频提示词草案",
+            "description": "分镜拆分无误，下一步为各分镜编写视频提示词草案",
+        },
+        {"label": "调整分镜拆分", "description": "告诉我需要增删改的镜头"},
+    ],
+})
+SHOT_STRUCTURE_PAUSED_MSG = str(_SHOT_STRUCTURE_PAUSED.get("message", ""))
 
-SHOT_STRUCTURE_OPTIONS = [
-    {
-        "label": "确认分镜拆分方案，继续编写视频提示词草案",
-        "description": "分镜拆分无误，下一步为各分镜编写视频提示词草案",
-    },
-    {"label": "调整分镜拆分", "description": "告诉我需要增删改的镜头"},
-]
+SHOT_STRUCTURE_OPTIONS = list(_SHOT_STRUCTURE_PAUSED.get("options") or [])
 
 _STRUCTURE_KIND_ALIAS = {
     "keyelement": "keyElement", "keyelements": "keyElement",
@@ -602,13 +687,13 @@ def structure_paused_confirmation(kinds) -> Tuple[str, List[Dict[str, str]]]:
     return STORYBOARD_STRUCTURE_PAUSED_MSG, list(STORYBOARD_STRUCTURE_OPTIONS)
 
 # 规格文档写入后的引导选项（8888 二轮：下一步客观具体，不再「按流程继续」黑盒）
-SPEC_DOC_OPTIONS = [
+SPEC_DOC_OPTIONS = _gate_json("SPEC_DOC_OPTIONS", [
     {
         "label": "确认成片规格，按流程继续",
         "description": "规格内容无误，按当前 Skill 流程推进下一阶段",
     },
     {"label": "调整成片规格", "description": "告诉我需要修改的规格条目"},
-]
+])
 
 
 def spec_review_options(state: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
@@ -1116,10 +1201,10 @@ def drafts_review_card() -> Tuple[str, List[Dict[str, str]]]:
     return DRAFTS_REVIEW_MSG, list(DRAFTS_REVIEW_OPTIONS)
 
 
-KEY_ELEMENT_FIRST_GATE_ERROR = (
+KEY_ELEMENT_FIRST_GATE_ERROR = _gate_msg("KEY_ELEMENT_FIRST", (
     "流程警告：首次搭建故事板通常应先拆分关键元素（角色/场景/道具）并请用户审阅，"
     "再创建分镜与音频；本次分镜/音频已按用户要求照常创建，请同时提示用户审阅拆分完整性。"
-)
+))
 
 
 def storyboard_is_empty(raw_state: Dict[str, Any]) -> bool:
@@ -1136,19 +1221,19 @@ def storyboard_pending(raw_state: Dict[str, Any]) -> bool:
     return bool(interaction.get("storyboard_pending"))
 
 
-GENERATION_CONFIRM_GATE_ERROR = (
+GENERATION_CONFIRM_GATE_ERROR = _gate_msg("GENERATION_CONFIRM", (
     "流程警告：目标草稿的 Prompt Draft 尚未经用户审阅确认（tag 非「已确认」）。"
     "按 Skill 流程建议先展示草案并等待确认；本次生成已按用户要求照常触发，"
     "请同时在回复中提示用户审阅草稿。"
-)
+))
 
 # 4444：模型自发跳确认（本轮用户消息无跳过指令）→ 拒收而非放行。
 # 「只警告不拦人」保护的是用户意志；模型违反 Skill 暂停语义不属用户意志。
-GENERATION_CONFIRM_GATE_BLOCKED = (
+GENERATION_CONFIRM_GATE_BLOCKED = _gate_msg("GENERATION_CONFIRM_BLOCKED", (
     "流程拦截：目标草稿的 Prompt Draft 尚未经用户审阅确认。请先展示草案并调用"
     "暂停工具请求用户审阅；仅当用户在本次消息中明确要求「直接生成/不用确认」"
     "时才可直接触发生成。"
-)
+))
 
 
 def drafts_confirmed(raw_state: Dict[str, Any], drafts: List[Dict[str, Any]]) -> bool:
@@ -1210,8 +1295,8 @@ def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
         )
     return frozenset(), ""
 
-SHOT_SEQUENCE_GATE_ERROR = (
+SHOT_SEQUENCE_GATE_ERROR = _gate_msg("SHOT_SEQUENCE", (
     "流程警告：关键元素还没有任何概念图（生成或上传）。按 Skill 流程建议先让元素概念图就绪"
     "再编制分镜提示词（镜头可参考元素图像）；本次分镜提示词已按用户要求照常写入，"
     "若后续生成视频需要参考图，请先补足元素图像。"
-)
+))

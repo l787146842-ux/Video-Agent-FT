@@ -35,6 +35,8 @@ class StepTrace:
     finish_reason: str = ""
     # 本轮执行的操作明细（工具/ studio-actions），供前端时间线逐条展示
     actions: List[Dict[str, Any]] = field(default_factory=list)
+    # 本轮闸机判定明细（814R2 恢复：rule_id/层/结果/是否被申诉放行），供审计与前端展示
+    gates: List[Dict[str, Any]] = field(default_factory=list)
     # 本轮 reasoning（深度思考）文本摘要（截断后）
     reasoning: str = ""
 
@@ -64,6 +66,7 @@ class TraceRecord:
                     "actions_applied": s.actions_applied,
                     "finish_reason": s.finish_reason,
                     "actions": s.actions,
+                    "gates": s.gates,
                     "reasoning": s.reasoning,
                 }
                 for s in self.steps
@@ -84,6 +87,8 @@ class AgentTracer:
         self._traces: Deque[TraceRecord] = deque(maxlen=self.MAX_TRACES)
         self._current: Optional[TraceRecord] = None
         self._step_start: float = 0.0
+        # 全局闸机判定流（814R2 恢复审计）：不依附单次 trace，供 /api/agent/gates 调试端点
+        self._recent_gates: Deque[Dict[str, Any]] = deque(maxlen=100)
         self._persist_path = DATA_DIR / "agent_traces.jsonl"
 
     @classmethod
@@ -108,6 +113,7 @@ class AgentTracer:
         self._step_start = time.monotonic()
         # 当前 step 期间收集的操作明细与 reasoning（end_step 时归档）
         self._pending_actions: List[Dict[str, Any]] = []
+        self._pending_gates: List[Dict[str, Any]] = []
         self._pending_reasoning: List[str] = []
         return trace_id
 
@@ -115,6 +121,7 @@ class AgentTracer:
         """标记一步的开始（计时起点）"""
         self._step_start = time.monotonic()
         self._pending_actions = []
+        self._pending_gates = []
         self._pending_reasoning = []
 
     def record_action(
@@ -140,6 +147,33 @@ class AgentTracer:
             return
         self._pending_reasoning.append(text)
 
+    def record_gate(
+        self,
+        rule_id: str,
+        layer: str,
+        ok: bool,
+        skill_name: str = "",
+        action: str = "",
+        draft_id: str = "",
+        overridden: bool = False,
+        message: str = "",
+    ) -> None:
+        """记录一条闸机判定（814R2 恢复审计）：归档到当前 step + 全局调试流"""
+        entry = {
+            "ts": time.time(),
+            "rule_id": rule_id,
+            "layer": layer,
+            "ok": ok,
+            "overridden": overridden,
+            "skill_name": skill_name,
+            "action": action,
+            "draft_id": draft_id,
+            "message": str(message or "")[:200],
+        }
+        self._recent_gates.append(entry)
+        if self._current is not None:
+            self._pending_gates.append(entry)
+
     def end_step(
         self,
         step: int,
@@ -161,9 +195,11 @@ class AgentTracer:
             actions_applied=actions_applied,
             finish_reason=finish_reason,
             actions=list(self._pending_actions),
+            gates=list(self._pending_gates),
             reasoning=reasoning,
         ))
         self._pending_actions = []
+        self._pending_gates = []
         self._pending_reasoning = []
 
     def finish_trace(self, total_actions: int = 0) -> Dict[str, Any]:
@@ -237,3 +273,7 @@ class AgentTracer:
             by_id[t.trace_id] = t.to_dict()
         ordered = sorted(by_id.values(), key=lambda r: float(r.get("timestamp", 0) or 0), reverse=True)
         return ordered[:limit]
+
+    def get_recent_gates(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """获取最近 N 条闸机判定（新→旧），供 /api/agent/gates 调试端点"""
+        return list(reversed(list(self._recent_gates)))[:limit]

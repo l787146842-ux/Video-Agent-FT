@@ -14,7 +14,7 @@ from loguru import logger
 
 from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.config import settings
-from src.video_agent.core import prompt_gates
+from src.video_agent.core import guard_pipeline, prompt_gates
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
 from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.core.tracer import AgentTracer
@@ -381,32 +381,26 @@ class FCToolRunner:
                         prompt = filled_dur
         if not prompt or kind not in ("shot", "keyElement"):
             return None
-        # 元素概念图前置（流程闸，只警告不拦人，4444 语义）
-        if kind == "shot" and prompt_gates.gate_mode() == "strict" \
-                and prompt_gates.element_images_missing(self._raw_state()):
-            self.gate_warnings.append(prompt_gates.SHOT_SEQUENCE_GATE_ERROR)
-            logger.info("[PromptGate] 元素图像未就绪（警告，不拦人）")
         # 故事板待确认窗口（步骤3→步骤4 分界）：流程闸，只警告不拦人
         if prompt_gates.gate_mode() == "strict" \
                 and prompt_gates.storyboard_pending(self._raw_state()):
             self.gate_warnings.append(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
             logger.info("[FlowGate] 提示词写入时故事板待确认（警告，不拦人）")
-        ok, hard, soft = prompt_gates.validate_prompt_write(
-            prompt, kind, self._raw_state(), rules=self._gate_rules,
+        # 统一闸机管线（宪法 §2.0 单一组合实现；814R2 恢复接线，与文本轨同源判定）
+        outcome = guard_pipeline.evaluate_prompt_write(
+            prompt, kind, self._raw_state(),
+            gate_rules=self._gate_rules,
+            gate_override=self.gate_override,
+            element_image_missing=prompt_gates.element_images_missing(self._raw_state()),
         )
-        for w in soft:
-            logger.warning(f"[PromptGate] 软提醒（{kind}）: {w}")
-        if ok:
+        self.gate_warnings.extend(outcome.warnings)
+        guard_pipeline.audit_verdicts(
+            outcome.verdicts, skill_name=injected_skill, action=name,
+            overridden=outcome.overridden,
+        )
+        if outcome.ok:
             return None
-        if prompt_gates.override_covers(self.gate_override, prompt_gates.GATE_STRUCTURE):
-            lines = "\n".join(f"- {e}" for e in hard)
-            self.gate_warnings.append(
-                f"用户坚持写入，提示词结构校验未通过（本条仅为警告）：\n{lines}"
-            )
-            return None
-        if prompt_gates.gate_mode() != "strict":
-            logger.warning(f"[PromptGate] warn 模式放行（{kind}）: {hard}")
-            return None
+        hard = outcome.hard_errors
         logger.info(f"[PromptGate] 拦截不合格提示词写入（{kind}）: {hard}")
         # 错误日志入账：闸机拦截写入生成日志（顶栏日志面板可见，恢复错误日志可见性）
         try:
@@ -421,7 +415,7 @@ class FCToolRunner:
         sig = f"{kind}|{'|'.join(sorted(hard))}"
         n = self._gate_repeat.get(sig, 0) + 1
         self._gate_repeat[sig] = n
-        text = prompt_gates.format_gate_errors(hard)
+        text = outcome.reject_message
         if n > 1:
             text += (
                 f"\n[连续第 {n} 次因相同原因被拦截] 上一次重写未修正上述问题，"

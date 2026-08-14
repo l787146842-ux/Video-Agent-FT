@@ -138,6 +138,23 @@ async def get_agent_traces(limit: int = 50):
     return {"traces": tracer.get_recent_traces(min(limit, 50))}
 
 
+@router.get("/agent/gates")
+async def get_agent_gates(limit: int = 50):
+    """814R2 恢复：获取最近 N 条闸机判定（rule_id/层/结果/是否被申诉放行）+ 规则注册表概览。
+
+    与 /agent/traces 并列的调试端点：闸机策略分层的审计入口，
+    平台层规则（platform.*）不可被 Skill manifest 配置（地板模型强制不变量）。"""
+    from src.video_agent.core import prompt_gates
+    tracer = AgentTracer.get_instance()
+    return {
+        "recent": tracer.get_recent_gates(min(limit, 50)),
+        "rules": [
+            {"rule_id": meta.rule_id, "layer": meta.layer, "description": meta.description}
+            for meta in prompt_gates.GATE_RULES.values()
+        ],
+    }
+
+
 @router.get("/agent/running")
 async def agent_running():
     """是否有聊天 worker 仍在运行（含客户端断连后转后台的）。

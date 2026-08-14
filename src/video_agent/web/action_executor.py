@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core import prompt_gates
+from src.video_agent.core import guard_pipeline, prompt_gates
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, ALL_CATEGORIES
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
@@ -256,52 +256,43 @@ class StudioActionExecutor:
         return ops.sync_shot_duration(group, draft, patch)
 
     def _gate_check(self, prompt: str, kind: str, group: Optional[Dict[str, Any]] = None) -> bool:
-        """写入前闸机。返回 True = 放行。闸机未启用 / 模式非 strict 时恒放行；
+        """写入前闸机（委托统一闸机管线，宪法 §2.0；814R2 恢复接线，与 FC 轨同源判定）。
+
+        返回 True = 放行。闸机未启用 / 模式非 strict 时恒放行；
         strict 拦截的写入返回 False，模型下一轮看到状态缺失后自行补写（自愈）。"""
         if not self.gate_enabled or kind not in ("shot", "keyElement") or not str(prompt or "").strip():
             return True
-        mode = prompt_gates.gate_mode()
-        if mode == "off":
+        if prompt_gates.gate_mode() == "off":
             return True
-        # 元素概念图前置（流程闸，只警告不拦人，4444 语义）：
-        # 用户坚持跳过时落盘覆盖声明（有规格文档时）
-        if (
-            kind == "shot" and mode == "strict"
+        # 元素概念图前置判定（引用感知，与 FC 轨的全量判定各自算好传入统一管线）
+        element_missing = (
+            kind == "shot"
             and prompt_gates.shot_references_missing_element_images(self.state, group=group)
-        ):
-            if prompt_gates.override_covers(self.gate_override, prompt_gates.GATE_ELEMENT_IMAGE):
-                self.gate_warnings.append(
-                    "用户坚持跳过元素概念图前置（仅警告）：" + prompt_gates.SHOT_SEQUENCE_GATE_ERROR
-                )
-                try:
-                    from src.video_agent.core.spec_rules import apply_element_image_override
-
-                    apply_element_image_override(self.state)
-                except Exception:
-                    pass
-            else:
-                self.gate_warnings.append(prompt_gates.SHOT_SEQUENCE_GATE_ERROR)
-            logger.info("[PromptGate] 元素图像未就绪（警告，不拦人）")
-        ok, hard, soft = prompt_gates.validate_prompt_write(
-            str(prompt), kind, self.state, rules=self.gate_rules,
         )
-        for w in soft:
-            logger.warning(f"[PromptGate] 软提醒（{kind}）: {w}")
-        if ok:
+        outcome = guard_pipeline.evaluate_prompt_write(
+            str(prompt), kind, self.state,
+            gate_rules=self.gate_rules,
+            gate_override=self.gate_override,
+            element_image_missing=element_missing,
+        )
+        self.gate_warnings.extend(outcome.warnings)
+        guard_pipeline.audit_verdicts(
+            outcome.verdicts,
+            skill_name=str(getattr(self, "skill_name", "") or ""),
+            overridden=outcome.overridden,
+        )
+        # 元素概念图前置被用户覆盖：落盘铁律覆盖声明（有规格文档时）
+        if outcome.element_image_override_hit:
+            try:
+                from src.video_agent.core.spec_rules import apply_element_image_override
+
+                apply_element_image_override(self.state)
+            except Exception:
+                pass
+        if outcome.ok:
             return True
-        if prompt_gates.override_covers(self.gate_override, prompt_gates.GATE_STRUCTURE):
-            # 决策 D：用户坚持时硬伤降为警告照常放行
-            lines = "\n".join(f"- {e}" for e in hard)
-            self.gate_warnings.append(
-                f"用户坚持写入，提示词结构校验未通过（本条仅为警告）：\n{lines}"
-            )
-            logger.warning(f"[PromptGate] 用户坚持放行（{kind}）: {hard}")
-            return True
-        if mode != "strict":
-            logger.warning(f"[PromptGate] warn 模式放行（{kind}）: {hard}")
-            return True
-        logger.info(f"[PromptGate] 拦截不合格提示词写入（{kind}）: {hard}")
-        self._reject(prompt_gates.format_gate_errors(hard))
+        logger.info(f"[PromptGate] 拦截不合格提示词写入（{kind}）: {outcome.hard_errors}")
+        self._reject(outcome.reject_message)
         return False
 
     def _spec_gate_ok(self) -> bool:
