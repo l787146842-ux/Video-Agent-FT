@@ -32,10 +32,14 @@ class ProjectManager:
         repo: StateRepository,
         get_state: Callable[[], Dict[str, Any]],
         set_state: Callable[[Dict[str, Any], str], None],
+        flush_state: Optional[Callable[[], None]] = None,
     ):
         self._repo = repo
         self._get_state = get_state
         self._set_state = set_state  # (state_dict, project_id) -> None
+        # 切换/新建前只冲刷挂起变更（8888 二轮：不得用内存全量状态回写，
+        # 任务级隔离后本实例可能过期，全量回写会抹掉后台任务的新数据）
+        self._flush_state = flush_state or (lambda: None)
 
     @property
     def active_project_id(self) -> str:
@@ -52,10 +56,10 @@ class ProjectManager:
         }
 
     def create_project(self, name: str, active_id: str) -> str:
-        """新建项目：保存当前 → 创建新项目 → 更新索引 → 返回 project_id"""
-        # 保存当前项目
+        """新建项目：冲刷当前挂起变更 → 创建新项目 → 更新索引 → 返回 project_id"""
+        # 冲刷当前项目挂起变更（不脏不写；8888 二轮：不再内存全量回写）
         if active_id:
-            self._repo.save_project(active_id, self._get_state())
+            self._flush_state()
 
         project_id = gen_id("proj")
         # 新建项目不预建任何占位分组/欢迎消息：
@@ -95,13 +99,13 @@ class ProjectManager:
         return project_id
 
     def switch_project(self, project_id: str, active_id: str) -> bool:
-        """切换项目：保存当前 → 加载目标 → 更新索引"""
+        """切换项目：冲刷当前挂起变更 → 加载目标 → 更新索引"""
         if project_id == active_id:
             return True
 
-        # 保存当前
+        # 冲刷当前项目挂起变更（不脏不写；8888 二轮：不再内存全量回写）
         if active_id:
-            self._repo.save_project(active_id, self._get_state())
+            self._flush_state()
 
         # 加载目标
         loaded = self._repo.load_project(project_id)

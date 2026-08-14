@@ -204,11 +204,16 @@ class StateManager(UndoRedoMixin):
         self._save_dirty = False
         self._save_flush_task: Optional[asyncio.Task] = None
 
+        # 本实例已知的项目落盘版本号（8888 二轮版本闸：磁盘账本比它新
+        # 说明别的实例写过更新数据，本实例的保存必须放弃，防旧盖新）
+        self._known_version: Optional[int] = None
+
         # 多项目管理器（委托）
         self._project_mgr = ProjectManager(
             repo=self._repo,
             get_state=lambda: self._raw_state,
             set_state=self._on_project_switch,
+            flush_state=self.flush_save,
         )
 
         # 初始化
@@ -228,6 +233,7 @@ class StateManager(UndoRedoMixin):
         """ProjectManager 回调：切换内部状态"""
         self._raw_state = state
         self._active_project_id = project_id
+        self._known_version = self._disk_board_version(project_id)
         self._state_dirty = True
         self._context_cache.clear()
         # 切换项目时清空 undo/redo 栈
@@ -248,6 +254,7 @@ class StateManager(UndoRedoMixin):
             loaded = self._repo.load_project(active_id)
             if loaded is not None:
                 self._raw_state = loaded
+                self._known_version = self._disk_board_version(active_id)
                 self._ensure_conversations()
                 logger.info(f"[StateManager] Loaded project: {active_id}")
                 return
@@ -410,26 +417,60 @@ class StateManager(UndoRedoMixin):
             self._context_cache.clear()
 
     def save(self) -> None:
-        """持久化：写入当前项目目录 + 兼容文件 + 更新 index 时间戳"""
+        """持久化：写入当前项目目录 + 兼容文件 + 更新 index 时间戳
+
+        版本账本闸（8888 二轮：任务级隔离后全局单例在任务期间不刷新，
+        切换/保存若用过期内存回写会抹掉后台任务的新数据）：磁盘账本比
+        本实例已知号新 → 别的实例已写更新，放弃本次写入，防旧实例盖新实例。
+        """
+        pid = self._active_project_id
         try:
-            self._repo.save_project(self._active_project_id, self._raw_state)
-            self._repo.save_compat(self._raw_state)
             index = self._repo.read_index()
+            disk_v = 0
             for p in index.get("projects", []):
-                if p["id"] == self._active_project_id:
+                if p["id"] == pid:
+                    try:
+                        disk_v = int(p.get("board_version") or 0)
+                    except (TypeError, ValueError):
+                        disk_v = 0
+                    break
+            if self._known_version is not None and disk_v > self._known_version:
+                logger.warning(
+                    f"[StateManager] 放弃过期写入：项目 {pid} 磁盘账本 {disk_v} "
+                    f"新于本实例已知 {self._known_version}（别的实例写过更新数据）"
+                )
+                self._known_version = disk_v
+                return
+            self._repo.save_project(pid, self._raw_state)
+            self._repo.save_compat(self._raw_state)
+            # 版号 +1 并随索引落盘（重启继承；读取/加载不触发递增）；
+            # 取磁盘与进程内账本的较大者，保证两本不分裂（9 项目乐观锁契约）
+            v = max(disk_v, StateManager._board_versions.get(pid, 0)) + 1
+            for p in index.get("projects", []):
+                if p["id"] == pid:
                     p["updated_at"] = StateRepository.now_iso()
-                    # 版号 +1 并随索引落盘（重启继承；读取/加载不触发递增）
-                    v = self.board_version + 1
                     StateManager._board_versions[p["id"]] = v
                     p["board_version"] = v
                     break
             self._repo.write_index(index)
+            self._known_version = v
             # 状态变更时失效上下文缓存
             self._context_cache.clear()
             logger.debug("[StateManager] Saved")
         except Exception as e:
             logger.error(f"[StateManager] Save failed: {e}")
             raise StateError(f"状态持久化失败: {e}") from e
+
+    def _disk_board_version(self, project_id: str) -> int:
+        """索引落盘的项目版本号（读不到为 0）。"""
+        try:
+            index = self._repo.read_index()
+            for p in index.get("projects", []):
+                if p["id"] == project_id:
+                    return int(p.get("board_version") or 0)
+        except (TypeError, ValueError):
+            pass
+        return 0
 
     @property
     def board_version(self) -> int:
@@ -513,6 +554,7 @@ class StateManager(UndoRedoMixin):
             "chatMessages": [],
         }
         self._active_project_id = project_id
+        self._known_version = self._disk_board_version(project_id)
         self._ensure_conversations()
         self.save()
         return self.get()
