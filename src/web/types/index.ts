@@ -193,16 +193,6 @@ export interface DocRecord {
   updated_at?: string;
 }
 
-// ===== 工作流 =====
-export type PhaseState = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
-
-export interface WorkflowPhaseInfo {
-  name: string;
-  label: string;
-  icon: string;
-  state: PhaseState;
-}
-
 // ===== 生成任务 =====
 export interface ActiveGeneration {
   start: number;

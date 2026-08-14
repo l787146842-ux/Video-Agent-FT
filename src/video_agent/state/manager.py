@@ -65,7 +65,8 @@ def _load_default_state() -> Dict[str, Any]:
 # ---------- 内部工具函数 ----------
 
 def _set_path_dict(obj: Any, path: str, value: Any) -> None:
-    """按点号路径设置 dict/list 元素（Web 路径用）。"""
+    """按点号路径设置 dict/list 元素（纯 dict 路径，814F3 后续：CLI 下线后
+    Pydantic 对象分支已移除，非 dict/list 中间节点显式报错而非静默 setattr）。"""
     parts = path.split(".")
     current = obj
     for i, part in enumerate(parts[:-1]):
@@ -79,9 +80,7 @@ def _set_path_dict(obj: Any, path: str, value: Any) -> None:
             if isinstance(current, dict):
                 current = current.setdefault(part, {})
             else:
-                current = getattr(current, part, None)
-                if current is None:
-                    return
+                raise StateError(f"update() 路径 '{path}' 中间节点非 dict/list：{type(current).__name__}")
     last = parts[-1]
     if last.isdigit():
         idx = int(last)
@@ -96,28 +95,7 @@ def _set_path_dict(obj: Any, path: str, value: Any) -> None:
         if isinstance(current, dict):
             current[last] = value
         else:
-            setattr(current, last, value)
-
-
-def _set_path_pydantic(obj: Any, path: str, value: Any) -> None:
-    """按点号路径设置 Pydantic 模型属性（CLI 路径用）。"""
-    parts = path.split(".")
-    current = obj
-    for i, part in enumerate(parts[:-1]):
-        if part.isdigit():
-            idx = int(part)
-            current = current[idx]
-        else:
-            current = getattr(current, part)
-    last = parts[-1]
-    if last.isdigit():
-        idx = int(last)
-        if idx == len(current):
-            current.append(value)
-        else:
-            current[idx] = value
-    else:
-        setattr(current, last, value)
+            raise StateError(f"update() 路径 '{path}' 末端节点非 dict/list：{type(current).__name__}")
 
 
 class StateManager(UndoRedoMixin):

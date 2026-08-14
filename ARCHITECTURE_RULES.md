@@ -426,6 +426,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 814E3 | 风格偏好无跨会话连续性 | 记忆系统未分层 | summarize.md 约定「风格偏好：」前缀抽取；执行器 system prompt 注入项目风格记忆块（按项目隔离） |
 | 814E5 | 黄金语料无校准测试（宪法 §2.6 宣称存在但实际缺失）；语料期望停在前 S1 语义 | 评测驱动空心化 | scripts/run_eval_pipeline.py（语料回归+管线可解析性，退出码入 CI Job5）；语料按 S1 语义重校准（6 条）；test_gate_corpus_calibration 钉死 |
 | 814E6 | 多用户无归属链路；json 后端并发安全弱 | 扩展基础缺失 | state_backend 默认 sqlite（STATE_BACKEND=json 可回退，测试基线钉 json）；ChatRequest.user_id → trace 审计；完整鉴权另行立项 |
+| 814F3b | 核查发现：CLI 下线后 models_legacy re-export 与 _set_path_pydantic 仍残留（兼容层计划 §4/§5 未随动）；前端 WorkflowPhaseInfo 死类型；.env.example 缺新配置项 | 连锁债务 | models_legacy 降为 models.py 私有导入（仅兼容旧 state.json）；state/__init__ 停止对外 re-export legacy 枚举；_set_path_pydantic 删除、_set_path_dict 非 dict 显式 StateError；死类型删除；.env.example 补 STATE_BACKEND/HISTORY_COMPACT_THRESHOLD；兼容层计划文档标已执行 |
 
 ### 13.9 模型分层原则（速度治理）
 

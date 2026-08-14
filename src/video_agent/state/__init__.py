@@ -10,7 +10,7 @@ from .models import (
     CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS,
     ALL_CATEGORIES, ALL_CATEGORIES_TUPLE,
     # 枚举
-    ProjectStatus, Phase, StepStatus, StoryStatus, ShotType,
+    ProjectStatus,
     # 模型
     ProjectState, KeyElementGroup, ShotGroup, AudioGroup,
     # 工厂
@@ -28,7 +28,7 @@ __all__ = [
     "StateManager",
     "CAT_KEY_ELEMENTS", "CAT_SHOTS", "CAT_AUDIO_ITEMS",
     "ALL_CATEGORIES", "ALL_CATEGORIES_TUPLE",
-    "ProjectStatus", "Phase", "StepStatus", "StoryStatus", "ShotType",
+    "ProjectStatus",
     "ProjectState", "KeyElementGroup", "ShotGroup", "AudioGroup",
     "build_draft_dict", "DRAFT_DEFAULT_FIELDS",
     "AssetType", "AssetStatus", "AudioCategory",

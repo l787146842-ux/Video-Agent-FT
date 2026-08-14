@@ -35,12 +35,10 @@ class ProjectStatus(str, Enum):
     paused = "paused"
 
 
-# CLI 遗留模型（向后兼容，新代码勿使用）
-from .models_legacy import (  # noqa: F401, E402
-    Phase, StepStatus, StoryStatus, ShotType, CameraMovement, Transition, ShotStatus,
-    PlanStep, PlanState, Dialogue, Scene, Character, StoryState,
-    GenerationConfig, Shot, StoryboardState,
-)
+# 仅 ProjectState 兼容旧 state.json 的 plan/story 字段使用（814F3：
+# CLI 下线后不再对外 re-export，新代码勿用）
+from .models_legacy import PlanState, StoryState  # noqa: E402
+
 
 # =======================
 # Studio 前端对齐模型
