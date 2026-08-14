@@ -144,7 +144,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
                         >
                           <span class="confirm-option-radio" />
                           <span class="confirm-option-body">
-                            <span class="confirm-option-label">{opt.label}</span>
+                            <span class="confirm-option-label">{opt.display || opt.label}</span>
                             <Show when={opt.description}>
                               <span class="confirm-option-desc">{opt.description}</span>
                             </Show>
@@ -193,7 +193,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
                       >
                         <span class="confirm-option-radio" />
                         <span class="confirm-option-body">
-                          <span class="confirm-option-label">{opt.label}</span>
+                          <span class="confirm-option-label">{opt.display || opt.label}</span>
                           <Show when={opt.description}>
                             <span class="confirm-option-desc">{opt.description}</span>
                           </Show>

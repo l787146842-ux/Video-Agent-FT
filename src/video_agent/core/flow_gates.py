@@ -56,12 +56,15 @@ OP_WRITE_KEYELEMENT_PROMPT = "write_keyelement_prompt"
 OP_WRITE_SHOT_PROMPT = "write_shot_prompt"
 OP_WRITE_AUDIO_PROMPT = "write_audio_prompt"
 OP_GENERATE = "generate"
+# 814G5：结构拆解（建分组/草稿骨架，执行器整包拆解同属此类）
+OP_BUILD_STRUCTURE = "build_structure"
 
 OP_LABELS = {
     OP_WRITE_KEYELEMENT_PROMPT: "写入关键元素提示词",
     OP_WRITE_SHOT_PROMPT: "写入分镜提示词",
     OP_WRITE_AUDIO_PROMPT: "写入音频提示词",
     OP_GENERATE: "触发生成",
+    OP_BUILD_STRUCTURE: "拆解结构（建分组/草稿）",
 }
 
 _SECTION_MARKERS = ("== 流程检查点", "【流程检查点", "## 流程检查点")
@@ -76,7 +79,12 @@ def _all_drafts(state: Dict[str, Any], cat: str) -> List[Dict[str, Any]]:
 
 
 def _cond_spec_doc_exists(state):
-    return bool(state.get("documents"))
+    # 814G5：只认规格命名文档（项目默认文档/铁律不得冒充规格）
+    try:
+        from src.video_agent.core import prompt_gates
+        return bool(prompt_gates.has_spec_document(state))
+    except Exception:
+        return bool(state.get("documents"))
 
 
 def _cond_prompts_written(state, cat):
@@ -138,6 +146,9 @@ def _classify_op_from_text(desc: str) -> Set[str]:
             ops.add(OP_WRITE_AUDIO_PROMPT)
     if ("生成" in desc) or ("generate" in d):
         ops.add(OP_GENERATE)
+    # 814G5：拆解/建立结构类描述（不含提示词写入语义）
+    if not ops and any(k in desc for k in ("拆解", "拆分", "建立", "创建", "登记")):
+        ops.add(OP_BUILD_STRUCTURE)
     return ops
 
 
@@ -212,6 +223,21 @@ class FlowGateSet:
         gates = parse_flow_gates(skill_content)
         return cls(gates) if gates else None
 
+    @classmethod
+    def ensure_spec_gate(cls, existing: Optional["FlowGateSet"]) -> "FlowGateSet":
+        """814G5：规格向导启用时追加「拆解结构 需要 规格文档已写入」门禁。
+
+        执行侧强制（拦 agent 越阶工具调用，不拦用户输入；
+        用户「本次放行」/坚持时 planner 不构建门禁，照做并附警告）。"""
+        gates = list(existing.gates) if existing else []
+        if not any(OP_BUILD_STRUCTURE in g.ops and "spec_doc_exists" in g.requires for g in gates):
+            gates.append(Gate(
+                ops={OP_BUILD_STRUCTURE},
+                requires=["spec_doc_exists"],
+                raw="系统：规格文档未写入前不得拆解结构",
+            ))
+        return cls(gates)
+
     # ---------- 操作分类 ----------
 
     @staticmethod
@@ -220,6 +246,9 @@ class FlowGateSet:
         name = str(action.get("action", "")).lower()
         if name in ("generate_image", "generate_video"):
             return OP_GENERATE
+        # 814G5：执行器整包拆解同属结构操作
+        if name in ("storyboard_key_elements", "storyboard_shots", "storyboard_audio"):
+            return OP_BUILD_STRUCTURE
         if name in ("update_draft", "add_draft"):
             prompt = ""
             patch = action.get("patch") or {}
@@ -239,7 +268,7 @@ class FlowGateSet:
             drafts = action.get("drafts") or ([action["draft"]] if action.get("draft") else [])
             has_prompt = any((d.get("prompt") or "").strip() for d in drafts)
             if not has_prompt:
-                return None
+                return OP_BUILD_STRUCTURE  # 814G5：纯建骨架也是结构操作
             gtype = str(action.get("group_type") or "").lower()
             if gtype.startswith("key"):
                 return OP_WRITE_KEYELEMENT_PROMPT
@@ -255,6 +284,9 @@ class FlowGateSet:
         """FC 工具调用的操作分类"""
         if name in ("generate_image", "image_generate", "generate_video"):
             return OP_GENERATE
+        # 814G5：执行器整包拆解同属结构操作（规格未定稿时执行侧拦截）
+        if name in ("storyboard_key_elements", "storyboard_shots", "storyboard_audio"):
+            return OP_BUILD_STRUCTURE
         if name in ("storyboard_patch_draft",):
             prompt = str((args.get("patch") or {}).get("prompt") or "")
             if not prompt.strip():
@@ -271,7 +303,7 @@ class FlowGateSet:
             draft = args.get("draft") or {}
             drafts = args.get("drafts") or ([draft] if draft else [])
             if not any((d.get("prompt") or "").strip() for d in drafts):
-                return None
+                return OP_BUILD_STRUCTURE  # 814G5：纯建骨架也是结构操作
             gtype = str(args.get("group_type") or args.get("draft_type") or "").lower()
             if gtype.startswith("key"):
                 return OP_WRITE_KEYELEMENT_PROMPT

@@ -435,11 +435,17 @@ async def run_agent_loop(
                     if spec_writes:
                         executable = [a for a in executable if a not in spec_writes]
                         if prompt_gates.spec_doc_finalized(executor.state):
-                            # 8888 二轮：规格已定稿 → 冗余手写只拒收警告，不接管暂停卡
-                            result.warnings.append("规格已定稿，模型冗余规格写入已拒收（不接管暂停卡）")
+                            # 8888 二轮：规格已定稿 → 冗余手写只拒收，不接管暂停卡；
+                            # 814G3：拒收只喂模型（下轮上下文），不再作为 ⚠ 展示给用户
+                            messages.append({"role": "user", "content": (
+                                "（系统）规格文档已定稿，你本次的冗余规格写入已被拒收（未落盘）；"
+                                "如需调整规格请引导用户在文档面板修改，不要重复手写。")})
                         else:
                             spec_wizard_pending = True
-                            result.warnings.append("规格文档由系统按向导拼装，模型手写规格已忽略")
+                            # 814G3：接管静默——用户只看到随后的向导卡，不看报错
+                            messages.append({"role": "user", "content": (
+                                "（系统）规格文档由系统按向导拼装，你手写的规格未落盘；"
+                                "请立即暂停，等待用户完成规格交互，严禁声称已写入规格。")})
             except Exception:
                 spec_wizard_pending = False
         # 本轮全部可执行操作数（含流式已预执行部分）：gate_heal 判定用

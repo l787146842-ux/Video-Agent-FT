@@ -306,6 +306,9 @@ def test_executor_spec_gate_inactive_without_skill(svc):
 
 
 def test_fc_flow_gate_warns_and_allows_create_group_without_spec(monkeypatch):
+    """814G5：规格前置改为执行侧强制——_flow_gate 不再向用户追加 ⚠，
+    越阶拦截由 FlowGateSet.ensure_spec_gate 在执行前完成。"""
+    from src.video_agent.core.flow_gates import FlowGateSet
     from src.video_agent.skill_runtime import registry
 
     monkeypatch.setattr(
@@ -314,11 +317,15 @@ def test_fc_flow_gate_warns_and_allows_create_group_without_spec(monkeypatch):
     runner = FCToolRunner(tool_manager=None)
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {"documents": []}))
     err = runner._flow_gate("storyboard_create_group", injected_skill="剧本生视频（需上传剧本）")
-    assert err is None  # 照常放行
-    assert runner.gate_warnings and "规格文档" in runner.gate_warnings[0]
-    # 无 Skill / 非结构工具不警告
-    assert runner._flow_gate("storyboard_create_group", injected_skill="") is None
-    assert runner._flow_gate("storyboard_patch_draft", injected_skill="任意") is None
+    assert err is None
+    assert not runner.gate_warnings  # 814G5：不再向用户追加警告
+    # 执行侧门禁：无规格文档时结构操作被拦，有规格文档时放行
+    fs = FlowGateSet.ensure_spec_gate(None)
+    op = fs.classify_fc("storyboard_create_group", {})
+    ok, missing = fs.check_op(op, {"documents": []})
+    assert not ok and missing
+    ok2, _ = fs.check_op(op, {"documents": [{"name": "Final_Video_Spec.md", "content": "x"}]})
+    assert ok2
 
 
 def test_fc_flow_gate_passes_with_spec(monkeypatch):

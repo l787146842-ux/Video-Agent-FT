@@ -4,6 +4,8 @@ import { apiProvidersFor, providerModels, type ProviderKind } from '@/lib/provid
 
 export interface ConfirmOptionItem {
   label: string;
+  /** 814G4：卡片展示文字（缺省用 label）；label 保留「键：值」回传格式 */
+  display?: string;
   description?: string;
   group?: string;
 }

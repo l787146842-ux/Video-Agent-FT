@@ -824,10 +824,9 @@ _HARD_PARAM_DIM_HINTS = (
 )
 _PLACEHOLDER_DIM_VALUE = "（待定）"
 
-# 平台层维度说明补注（8888 二轮：Skill 维度名歧义时由平台补客观说明，G1 不改 Skill）
-_DIM_DESCRIPTION_OVERRIDES = {
-    "输出语言": "分镜脚本与生成提示词使用的语言（成片对白随剧本）",
-}
+# 平台层维度说明补注已停用（814G4：说明文字改为逐项差异化白话，
+# 维度含义由页头/问题行承载；保留空表防外部引用报错）
+_DIM_DESCRIPTION_OVERRIDES: Dict[str, str] = {}
 
 
 def _is_hard_param_dim(dim: str) -> bool:
@@ -1023,16 +1022,18 @@ def build_spec_param_options(
             for v in vals[:4]:
                 opts.append({
                     "label": f"{dim}：{v}",
-                    "description": _DIM_DESCRIPTION_OVERRIDES.get(
-                        dim, "模型根据剧本拟定的候选（点选；不选则由模型自填）"),
+                    # 814G4：卡片文字不重复维度名（维度名已在页头/问题行），
+                    # 说明文字逐项差异化白话（防整组说明雷同成天书）
+                    "display": v,
+                    "description": f"若选此项，成片将按「{v}」制作",
                     "group": dim,
                 })
         if len(vals) < 2:
             # 候选不足仍渲染该维度（占位卡 + 自定义输入），不允许悄悄隐藏
             opts.append({
                 "label": f"{dim}：{_PLACEHOLDER_DIM_VALUE}",
-                "description": _DIM_DESCRIPTION_OVERRIDES.get(
-                    dim, "点「其它（自定义输入）」填写；不填则由模型按剧本拟定"),
+                "display": _PLACEHOLDER_DIM_VALUE,
+                "description": "点「其它（自定义输入）」填写；不填则由模型按剧本拟定",
                 "group": dim,
             })
         rendered_dims.append(dim)

@@ -79,10 +79,19 @@ def test_2222_thinking_override_wins_over_global():
     payload: dict = {}
     adapter._apply_thinking_level(payload, "low")
     assert payload.get("reasoning_effort") == "low"
-    # 覆盖为 None 且全局为空 → 不下发字段（保持端点默认）
+    # 覆盖为 None 时沿用全局（814G7 起全局默认 low）
     payload2: dict = {}
     adapter._apply_thinking_level(payload2, None)
-    assert "reasoning_effort" not in payload2
+    assert payload2.get("reasoning_effort") == "low"
+    # 全局置空 + 覆盖 None → 不下发字段（保持端点默认）
+    old = settings.llm_thinking_level
+    object.__setattr__(settings, "llm_thinking_level", "")
+    try:
+        payload2b: dict = {}
+        adapter._apply_thinking_level(payload2b, None)
+        assert "reasoning_effort" not in payload2b
+    finally:
+        object.__setattr__(settings, "llm_thinking_level", old)
     # 覆盖值非法 → 不下发
     payload3: dict = {}
     adapter._apply_thinking_level(payload3, "xhigh")

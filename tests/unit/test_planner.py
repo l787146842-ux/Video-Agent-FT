@@ -160,6 +160,8 @@ class TestStageGuideFallback:
                 return SkillToolResult(success=True, data={"applied": 3})
 
         monkeypatch.setattr(ex_mod, "build_executor_tool", lambda n: _FakeStageTool())
+        # 814G5：规格门禁执行侧强制——本用例聚焦引导卡兜底，先补规格文档过门禁
+        svc.state_dict["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格"}]
         ctx = PlannerContext(use_studio_context=False, skill_name="剧本生视频")
         reply = '已完成关键元素拆解\n```studio-actions\n[{"action":"storyboard_key_elements"}]\n```'
         adapter = FakeChatAdapter([reply])

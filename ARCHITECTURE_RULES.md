@@ -427,6 +427,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 814E5 | 黄金语料无校准测试（宪法 §2.6 宣称存在但实际缺失）；语料期望停在前 S1 语义 | 评测驱动空心化 | scripts/run_eval_pipeline.py（语料回归+管线可解析性，退出码入 CI Job5）；语料按 S1 语义重校准（6 条）；test_gate_corpus_calibration 钉死 |
 | 814E6 | 多用户无归属链路；json 后端并发安全弱 | 扩展基础缺失 | state_backend 默认 sqlite（STATE_BACKEND=json 可回退，测试基线钉 json）；ChatRequest.user_id → trace 审计；完整鉴权另行立项 |
 | 814F3b | 核查发现：CLI 下线后 models_legacy re-export 与 _set_path_pydantic 仍残留（兼容层计划 §4/§5 未随动）；前端 WorkflowPhaseInfo 死类型；.env.example 缺新配置项 | 连锁债务 | models_legacy 降为 models.py 私有导入（仅兼容旧 state.json）；state/__init__ 停止对外 re-export legacy 枚举；_set_path_pydantic 删除、_set_path_dict 非 dict 显式 StateError；死类型删除；.env.example 补 STATE_BACKEND/HISTORY_COMPACT_THRESHOLD；兼容层计划文档标已执行 |
+| 814G | 9999 实测 12 条体验回退：阶段卡不可展开；时间线 live/持久化不同构（无走秒/顺序反/运行中无展开）；规格拒收先报错后交互；向导选项天书；规格未定稿就拆结构；写规格无卡片无交代；慢（历史膨胀+压缩默认关+主模型满档思考）；提示词不流式亮卡；深度思考窗不可滚；正文过少 | 8/13 重建丢的体验层接线 + 814F6 照过期规范改 + 814R4 压缩默认关 | G1 阶段卡恢复可展开（规范同步修订）；G2 规划条目入 trace+子挂父后+走秒+前奏 live 事件；G3 规格拒收静默（只喂模型，用户只看向导卡）；G4 选项 display 去维度名+说明差异化白话；G5 FlowGateSet.ensure_spec_gate 执行侧强制（拦 agent 不拦用户，override/坚持旁路）；G6 写文档正文交代系统保证；G7 compaction 默认 12+反馈压缩 0.35+主模型思考默认 low；G8 bind_progress_emitter 循环级双轨绑定；G9 思考窗 overflow-y:auto+底部跟随；G10 输出纪律改结构化短交代 |
 
 ### 13.9 模型分层原则（速度治理）
 

@@ -130,10 +130,17 @@ class DocumentWriteTool(BaseTool):
 
             _used = svc.state_dict.get("usedSkills") or []
             if spec_wizard_active(str(_used[-1] or "") if _used else ""):
+                if prompt_gates.has_spec_document(svc.state_dict):
+                    return ToolResult(
+                        success=False,
+                        error=("规格已按您的选择生成，无需重复写入；"
+                               "要调整请在文档面板修改或重发选择。"),
+                    )
+                # 814G3：规格尚未交互时文案不得说「已生成」（模型/用户都未交互过）
                 return ToolResult(
                     success=False,
-                    error=("规格已按您的选择生成，无需重复写入；"
-                           "要调整请在文档面板修改或重发选择。"),
+                    error=("规格文档尚未生成：系统将按用户在向导中的选择统一拼装，"
+                           "模型不得手写；请暂停等待规格交互完成后再继续。"),
                 )
 
         async with svc.lock:

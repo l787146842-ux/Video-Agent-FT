@@ -81,8 +81,12 @@ def test_dual_track_same_verdict_for_good_prompt(tmp_path):
 
 
 def test_fc_flow_gate_s1_warning_only(tmp_path, monkeypatch):
-    """FC 轨规格前置与文本轨对齐：声明 spec_gate 的 Skill 只提示不硬拦。"""
+    """814G5：规格前置从「只警告」升级为执行侧强制（拦 agent 不拦用户）。
+
+    _flow_gate 本身不再追加用户警告；越阶拦截由 FlowGateSet.ensure_spec_gate
+    在工具执行前完成，用户「本次放行」/坚持时 planner 不构建门禁。"""
     import src.video_agent.web.skill_docs as sd
+    from src.video_agent.core.flow_gates import FlowGateSet
     from src.video_agent.skill_runtime import registry
 
     skill_dir = tmp_path / "skills"
@@ -93,14 +97,18 @@ def test_fc_flow_gate_s1_warning_only(tmp_path, monkeypatch):
         "有规格闸",
         '# A\n```json skill_manifest\n' '{"flow": {"spec_gate": true}}\n' "```\n正文",
     )
-    sd.save_skill_doc("无规格闸", "# B\n> 调用规则：测试\n正文")
     try:
         runner = FCToolRunner(tool_manager=None)
         runner._raw_state = staticmethod(lambda: {})
         assert runner._flow_gate("storyboard_create_group", "有规格闸") is None
-        assert runner._spec_gate_warned is True
-        runner._spec_gate_warned = False
-        assert runner._flow_gate("storyboard_create_group", "无规格闸") is None
-        assert runner._spec_gate_warned is False
+        assert not runner.gate_warnings  # 用户侧无 ⚠
+        # 执行侧门禁客观生效：结构操作无规格被拦 / 执行器整包拆解同属结构操作
+        fs = FlowGateSet.ensure_spec_gate(None)
+        assert not fs.check_op(fs.classify_fc("storyboard_create_group", {}), {})[0]
+        assert not fs.check_op(fs.classify_fc("storyboard_key_elements", {}), {})[0]
+        assert fs.check_op(
+            fs.classify_fc("storyboard_key_elements", {}),
+            {"documents": [{"name": "Final_Video_Spec.md", "content": "x"}]},
+        )[0]
     finally:
         registry.reset_registry()

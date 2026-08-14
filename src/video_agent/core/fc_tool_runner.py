@@ -265,9 +265,6 @@ class FCToolRunner:
         self.gate_warnings: List[str] = []
         # 已完成阶段集合（script_analyze 等；总结/收集闸判定用）
         self.skill_stages_done: set = set()
-        # 规格前置警告标记（S1：声明 spec_gate 的 Skill 未写规格时置位，
-        # 批末追加到操作时间线，不硬拦）
-        self._spec_gate_warned = False
         # Skill 可配置闸机规则（测试/执行器注入 parse_gate_rules 结果）
         self._gate_rules: Optional[Dict[str, Any]] = None
         # 前端当前选中的草稿（对齐文本轨 "current" 语义）；execute 时按请求注入
@@ -442,9 +439,9 @@ class FCToolRunner:
             declared = False
         if not declared:
             return None
-        logger.info(f"[FlowGate] {name}：规格文档未写入（Skill 声明 spec_gate，追加建议补写线索）")
-        self._spec_gate_warned = True
-        self.gate_warnings.append(prompt_gates.SPEC_GATE_ERROR)
+        # 814G5：执行侧强制已接管（ensure_spec_gate 拦截越阶工具调用），
+        # 此处不再向用户追加 ⚠ 警告（只记日志，模型侧由拦截回喂知晓）
+        logger.info(f"[FlowGate] {name}：规格文档未写入（Skill 声明 spec_gate，执行侧门禁生效）")
         return None
 
     def _strip_structure_prompt(self, name: str, args: Dict[str, Any], injected_skill: str) -> bool:
@@ -619,6 +616,9 @@ class FCToolRunner:
                 if not gate_ok:
                     reason = flow_gates.block_reason(gate_op, gate_missing)
                     logger.warning(f"[FlowGate] 拦截工具 '{name}': {'、'.join(gate_missing)}")
+                    # 814G5：拦截对用户透明（⚠ + 「本次放行」按钮），
+                    # 但这是 agent 侧执行强制——用户输入永不被拦
+                    self.gate_warnings.append(reason)
                     if on_event is not None:
                         await on_event({
                             "type": SSE_TOOL_FINISHED,
@@ -814,16 +814,29 @@ class FCToolRunner:
                     str(args.get("name") or args.get("key") or "")
                 ):
                     spec_write_rejected = True
+                # 814G3：规格拒收静默——用户侧用中性系统提示（无失败红叉/⚠），
+                # 拒收原因仍经 tool_results 回喂模型（模型知道未落盘）
+                spec_silent_summary = ""
+                if (
+                    name == "document_write"
+                    and prompt_gates.is_spec_doc_name(str(args.get("name") or args.get("key") or ""))
+                ):
+                    spec_silent_summary = (
+                        "规格写入由系统向导接管（模型手写未落盘）"
+                        if not prompt_gates.spec_doc_finalized(self._raw_state())
+                        else "规格已定稿，冗余写入被拒收（未落盘）"
+                    )
                 if on_event is not None:
                     await on_event({
                         "type": SSE_TOOL_FINISHED,
                         "id": tool_event_id,
-                        "ok": False,
+                        "ok": bool(spec_silent_summary),
                         "elapsed_ms": round(_tool_ms, 1),
-                        "result_summary": str(result.error or "执行失败")[:120],
+                        "result_summary": spec_silent_summary or str(result.error or "执行失败")[:120],
                     })
                 tracer.record_action(
-                    name=name, summary=start_summary, elapsed_ms=_tool_ms, ok=False,
+                    name=name, summary=spec_silent_summary or start_summary,
+                    elapsed_ms=_tool_ms, ok=not spec_silent_summary,
                 )
                 tool_results.append({
                     "name": name, "ok": False,
@@ -836,11 +849,6 @@ class FCToolRunner:
             spec_hit = any(prompt_gates.is_spec_doc_name(n) for n in docs_written)
             if spec_hit:
                 confirmation, confirmation_options = prompt_gates.spec_pause_card(self._raw_state())
-        # 规格前置警告（S1）：未硬拦，但必须在时间线留下可视线索
-        if self._spec_gate_warned:
-            action_log.append("【流程警告】" + prompt_gates.SPEC_GATE_ERROR)
-            self._spec_gate_warned = False
-
         # 总结/规格收集闸（层9 兜底）：script_analyze 成功且无规格文档且模型未暂停
         if (
             "script_analyze" in self.skill_stages_done

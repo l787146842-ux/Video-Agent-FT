@@ -325,6 +325,14 @@ class Planner:
 
                 _skill_display, _skill_content = resolve_skill_content(context.skill_name)
                 self._flow_gates = FlowGateSet.from_skill(_skill_content or "")
+                # 814G5 执行侧强制：规格向导启用时，拆解结构必须等规格文档
+                # （只拦 agent 越阶工具调用，不拦用户输入；override 时本段不构建）
+                try:
+                    from src.video_agent.skill_runtime.registry import spec_wizard_active
+                    if spec_wizard_active(context.skill_name):
+                        self._flow_gates = FlowGateSet.ensure_spec_gate(self._flow_gates)
+                except Exception as e:
+                    logger.warning(f"[Planner] spec_gate 装配失败（降级）: {e}")
             except Exception as e:  # 解析失败不阻断对话，降级为无门禁
                 logger.warning(f"[Planner] 流程检查点解析失败（降级为无门禁）: {e}")
                 self._flow_gates = None
@@ -528,6 +536,18 @@ class Planner:
             if dn and dn not in seen_docs:
                 seen_docs.add(dn)
                 merged_docs.append(dn)
+        # 814G6：写入文档必须正文交代（系统保证，不依赖模型自觉）：
+        # 正文未提及的文档名补一句结构化交代（卡片由 chat_service 渲染）
+        if merged_docs:
+            _missing = [d for d in merged_docs if d not in (loop_result.text or "")]
+            if _missing:
+                _doc_note = (
+                    "本轮已写入文档：" + "、".join(f"《{d}》" for d in _missing)
+                    + "（文档面板可打开审阅与修改）。"
+                )
+                loop_result.text = (
+                    f"{_doc_note}\n\n{loop_result.text}" if (loop_result.text or "").strip() else _doc_note
+                )
         response = PlannerResponse(
             text=loop_result.text,
             applied_actions=loop_result.applied_actions,

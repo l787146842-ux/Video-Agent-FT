@@ -49,11 +49,24 @@ class TestChatServiceFixes:
         assert "_consume_spec_wizard(svc, user_text)" not in stream_src
         assert "_consume_spec_wizard(svc, user_text)" not in non_stream_src
 
-    async def test_compaction_disabled_by_default(self):
-        """阈值 0（默认）时 compaction 不触发"""
-        hist = [{"role": "user", "content": f"m{i}"} for i in range(30)]
-        out = await chat_service._maybe_compact_history(hist, None, None)
-        assert out is hist
+    async def test_compaction_disabled_when_threshold_zero(self):
+        """阈值 0 = 关闭（814G7 起默认 12 开启，此处显式置 0 验证关闭开关）"""
+        from src.video_agent.config import settings
+
+        old = settings.history_compact_threshold
+        object.__setattr__(settings, "history_compact_threshold", 0)
+        try:
+            hist = [{"role": "user", "content": f"m{i}"} for i in range(30)]
+            out = await chat_service._maybe_compact_history(hist, None, None)
+            assert out is hist
+        finally:
+            object.__setattr__(settings, "history_compact_threshold", old)
+
+    def test_compaction_default_on(self):
+        """814G7：会话级 compaction 默认开（历史是上下文膨胀大头）"""
+        from src.video_agent.config import settings
+
+        assert settings.history_compact_threshold >= 12
 
 
 class TestMaybeCompactHistory:

@@ -60,10 +60,11 @@ class Settings:
     llm_output_limit: int = field(default_factory=lambda: _env_int("LLM_OUTPUT_LIMIT", 8192))
     # 执行器 LLM JSON 调用超时（秒）
     llm_json_timeout: float = field(default_factory=lambda: float(os.getenv("LLM_JSON_TIMEOUT", "120")))
-    # LLM 思考（thinking/reasoning）档位：空 = 不下发该字段（保持端点默认行为，推荐）；
-    # low/medium/high = 按 OpenAI 兼容 reasoning_effort 透传，用于缩短思考静默期。
+    # LLM 思考（thinking/reasoning）档位：low/medium/high = 按 OpenAI 兼容
+    # reasoning_effort 透传；814G7 起默认 low（主模型深度思考是每轮 60-90s 的
+    # 主要成本，low 档显著缩短思考静默期）；置空 = 不下发该字段（端点默认）。
     # 注意：对字段严格的端点若因此报 400，请置空回退。
-    llm_thinking_level: str = field(default_factory=lambda: os.getenv("LLM_THINKING_LEVEL", ""))
+    llm_thinking_level: str = field(default_factory=lambda: os.getenv("LLM_THINKING_LEVEL", "low"))
     # CLI 协议（如 gemini-cli/Antigravity CLI）路由到 custom-api 反代时 auto 的回退模型：
     # 聊天已对齐画布行为改走本机 agy CLI，此值仅影响带参考图的生图编辑等
     # 必须走反代的残留路径；反代报 model not register 时用 CLI_AUTO_CHAT_MODEL 覆盖
@@ -73,11 +74,12 @@ class Settings:
     context_window_size: int = field(default_factory=lambda: _env_int("CONTEXT_WINDOW_SIZE", 128000))
     token_budget_ratio: float = field(default_factory=lambda: float(os.getenv("TOKEN_BUDGET_RATIO", "0.8")))
     # 旧轮 read_* 回喂全文的惰性压缩阈值：消息总量达到预算的该比例才压缩，
-    # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）
-    feedback_compress_ratio: float = field(default_factory=lambda: float(os.getenv("FEEDBACK_COMPRESS_RATIO", "0.5")))
-    # 会话级 compaction（814R4 恢复）：history 条数达该阈值时用便宜模型把较早
-    # 对话压成摘要+最近几条（0 = 关闭，仅靠 truncate_history 头尾截断）
-    history_compact_threshold: int = field(default_factory=lambda: _env_int("HISTORY_COMPACT_THRESHOLD", 0))
+    # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）；
+    # 814G7 收紧 0.5→0.35（历史是上下文膨胀大头，提早压缩）
+    feedback_compress_ratio: float = field(default_factory=lambda: float(os.getenv("FEEDBACK_COMPRESS_RATIO", "0.35")))
+    # 会话级 compaction（814R4 恢复、814G7 默认开）：history 条数达该阈值时用
+    # 便宜模型把较早对话压成摘要+最近几条（0 = 关闭，仅靠 truncate_history 头尾截断）
+    history_compact_threshold: int = field(default_factory=lambda: _env_int("HISTORY_COMPACT_THRESHOLD", 12))
     # 工作台状态 JSON 紧凑序列化（模型读紧凑 JSON 无损，约省 20-30% token）；
     # 置 false 回退 indent=2 便于人工排查日志
     context_json_compact: bool = field(default_factory=lambda: _env_bool("CONTEXT_JSON_COMPACT", True))

@@ -168,7 +168,7 @@ def test_8888_duration_candidates_dedup_by_value():
 
 
 def test_8888_output_language_dim_description(monkeypatch):
-    """B6：输出语言维度带平台补注说明（消歧义）。"""
+    """B6/814G4：维度选项卡片文字不重复维度名（display），说明逐项差异化白话。"""
     from src.video_agent.core import prompt_gates
 
     monkeypatch.setattr(
@@ -177,7 +177,10 @@ def test_8888_output_language_dim_description(monkeypatch):
     state = {"interaction": {"spec_soft_candidates": {"输出语言": ["中文普通话", "中英双语"]}}}
     _msg, opts = prompt_gates.build_spec_param_options("", state)
     assert opts
-    assert all("分镜脚本与生成提示词使用的语言" in o["description"] for o in opts)
+    assert all(o["display"] in ("中文普通话", "中英双语") for o in opts)
+    assert all("若选此项，成片将按「" in o["description"] for o in opts)
+    # label 保留「键：值」回传格式（chat_service 机械解析）
+    assert all(o["label"].startswith("输出语言：") for o in opts)
 
 
 def test_8888_badge_normalize_from_desc_anchors():
