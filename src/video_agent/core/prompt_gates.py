@@ -601,7 +601,7 @@ def structure_paused_confirmation(kinds) -> Tuple[str, List[Dict[str, str]]]:
         return SHOT_STRUCTURE_PAUSED_MSG, list(SHOT_STRUCTURE_OPTIONS)
     return STORYBOARD_STRUCTURE_PAUSED_MSG, list(STORYBOARD_STRUCTURE_OPTIONS)
 
-# 规格文档写入后的引导选项（审阅分界：确认后按 Skill 流程推进，S1：不写死下一步）
+# 规格文档写入后的引导选项（8888 二轮：下一步客观具体，不再「按流程继续」黑盒）
 SPEC_DOC_OPTIONS = [
     {
         "label": "确认成片规格，按流程继续",
@@ -610,14 +610,39 @@ SPEC_DOC_OPTIONS = [
     {"label": "调整成片规格", "description": "告诉我需要修改的规格条目"},
 ]
 
+
+def spec_review_options(state: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
+    """规格审阅卡的下一步选项（8888 二轮）：按故事板客观状态递推，
+    用户一眼知道确认后做什么；结构已越过分拆阶段时回落通用选项。"""
+    raw = state or {}
+    if not raw.get("keyElements"):
+        return [
+            {
+                "label": "确认规格，开始拆解关键元素",
+                "description": "规格无误，下一步提取剧本中的角色/场景/关键道具",
+            },
+            {"label": "我还要修改规格", "description": "告诉我需要修改的规格条目"},
+        ]
+    if not raw.get("shots"):
+        return [
+            {
+                "label": "确认规格，开始拆解分镜",
+                "description": "规格无误，下一步基于关键元素拆分镜头列表",
+            },
+            {"label": "我还要修改规格", "description": "告诉我需要修改的规格条目"},
+        ]
+    return list(SPEC_DOC_OPTIONS)
+
 # script_analyze 后的规格收集暂停卡（6666 事故：原「确认总结」闸被用户判定多余——
 # 规格交互本身就是暂停点；改为解析完成后直接进入规格收集向导）。
 # 4444 方案乙：收集完成后规格文档由系统机械拼装，模型不再手写。
+# 8888 二轮：总结直接内嵌表述（不再「见上」）；删除开发者视角的
+# 「按 Skill 声明」与全局设置解释句（用户审定）。
 SPEC_COLLECT_PAUSED_MSG = (
-    "剧本读完了，一句话故事总结见上。接下来系统会为这部片子拼装一份制片规格，"
-    "先请您按当前 Skill 声明的各维度逐项选定（点选或自定义输入；不选的由模型按剧本拟定后给您过目）。"
-    "出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长一律以顶部「全局设置」为准，不在本交互中。"
-    "选完发给我，系统自动拼装规格并请您审阅。"
+    "剧本读完了。一句话故事总结：{summary}\n"
+    "接下来我为这部片子拼装一份制片规格，请逐项选定以下维度"
+    "（点选或自定义输入；不选的由我按剧本拟定后给您过目）。"
+    "选完发给我，自动拼装规格并请您审阅。"
 )
 
 SPEC_COLLECT_KIND = "collect"
@@ -713,6 +738,11 @@ _HARD_PARAM_DIM_HINTS = (
     "出图", "出视频", "图像生成", "视频生成", "模型偏好", "渠道",
 )
 _PLACEHOLDER_DIM_VALUE = "（待定）"
+
+# 平台层维度说明补注（8888 二轮：Skill 维度名歧义时由平台补客观说明，G1 不改 Skill）
+_DIM_DESCRIPTION_OVERRIDES = {
+    "输出语言": "分镜脚本与生成提示词使用的语言（成片对白随剧本）",
+}
 
 
 def _is_hard_param_dim(dim: str) -> bool:
@@ -867,6 +897,20 @@ def _spec_dim_unresolved(content: str, dim: str) -> bool:
     return any(k in val for k in SPEC_PARAM_UNCONFIRMED_MARKERS)
 
 
+def spec_doc_finalized(state: Dict[str, Any]) -> bool:
+    """规格文档已存在且 Skill 软维度全部定稿（8888 二轮客观闸门）。
+
+    用于规格拒收接管路径：规格已定稿时模型的冗余手写只需拒收警告，
+    不得接管暂停卡（否则拆解阶段又被换回「确认规格」卡）。"""
+    content = _spec_doc_content(state)
+    if not content.strip():
+        return False
+    for dim in skill_spec_dimensions(_current_skill_of(state)):
+        if _spec_dim_unresolved(content, dim):
+            return False
+    return True
+
+
 def build_spec_param_options(
     spec_content: str, state: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, List[Dict[str, Any]]]:
@@ -894,14 +938,16 @@ def build_spec_param_options(
             for v in vals[:4]:
                 opts.append({
                     "label": f"{dim}：{v}",
-                    "description": "模型根据剧本拟定的候选（点选；不选则由模型自填）",
+                    "description": _DIM_DESCRIPTION_OVERRIDES.get(
+                        dim, "模型根据剧本拟定的候选（点选；不选则由模型自填）"),
                     "group": dim,
                 })
         if len(vals) < 2:
             # 候选不足仍渲染该维度（占位卡 + 自定义输入），不允许悄悄隐藏
             opts.append({
                 "label": f"{dim}：{_PLACEHOLDER_DIM_VALUE}",
-                "description": "点「其它（自定义输入）」填写；不填则由模型按剧本拟定",
+                "description": _DIM_DESCRIPTION_OVERRIDES.get(
+                    dim, "点「其它（自定义输入）」填写；不填则由模型按剧本拟定"),
                 "group": dim,
             })
         rendered_dims.append(dim)
@@ -956,20 +1002,23 @@ def merge_spec_param_wizard(
 
 def spec_pause_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
     """规格文档写入后的暂停卡：收集向导已交互过时沿用常规审阅暂停卡；
-    否则升级为 Skill 软维度候选项向导（6666 二轮：不再含渠道/分辨率/时长）。"""
+    否则升级为 Skill 软维度候选项向导（6666 二轮：不再含渠道/分辨率/时长）。
+    审阅卡下一步选项客观具体（8888 二轮）。"""
     if _consume_spec_collected(state):
-        return SPEC_DOC_PAUSED_MSG, list(SPEC_DOC_OPTIONS)
+        return SPEC_DOC_PAUSED_MSG, spec_review_options(state)
     msg, opts = build_spec_param_options(_spec_doc_content(state), state)
     if opts:
         return msg, opts
-    return SPEC_DOC_PAUSED_MSG, list(SPEC_DOC_OPTIONS)
+    return SPEC_DOC_PAUSED_MSG, spec_review_options(state)
 
 
 def spec_collect_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
     """script_analyze 后的规格收集向导（6666 事故：交互收集必须在规格文档
-    写入之前；只渲染 Skill 声明的软维度，硬参数由顶部「全局设置」提供）。"""
-    _msg, opts = build_spec_param_options("", state)
-    return SPEC_COLLECT_PAUSED_MSG, opts
+    写入之前；只渲染 Skill 声明的软维度）。总结内嵌表述（8888 二轮）。"""
+    summary = str(((state or {}).get("analysis") or {}).get("summary") or "").strip()
+    msg = SPEC_COLLECT_PAUSED_MSG.format(summary=summary or "（见剧本分析要点）")
+    _m, opts = build_spec_param_options("", state)
+    return msg, opts
 
 
 def apply_spec_param_selections(

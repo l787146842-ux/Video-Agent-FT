@@ -731,4 +731,4 @@ async def test_script_analyze_detail_carries_summary(monkeypatch, tmp_path):
     )
     assert result.success, result.error
     assert "太阳系被二维化的一曲悲歌" in result.data["detail"]
-    assert "展示" in result.data["detail"]
+    assert "讲给用户" in result.data["detail"]

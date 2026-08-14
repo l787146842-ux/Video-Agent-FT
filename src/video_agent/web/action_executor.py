@@ -611,6 +611,9 @@ class StudioActionExecutor:
             refs = action.get("sceneRefs") or group_data.get("sceneRefs") or []
             new_group["sceneRefs"] = refs if isinstance(refs, list) else [refs]
         badge = pick("badgeLabel")
+        if cat_key != CAT_SHOTS:
+            # 8888 二轮：角标归一（泛化「关键元素」/缺省 → 按 desc 锚点映射人物/场景/道具/声音特征）
+            badge = ops.normalize_badge_label(badge, str(desc or ""), group_type=group_type)
         if badge:
             new_group["badgeLabel"] = badge
 

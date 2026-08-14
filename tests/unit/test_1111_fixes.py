@@ -63,7 +63,7 @@ async def test_collect_gate_injects_wizard_when_no_spec_doc(svc, monkeypatch):
     result = await run_agent_loop(
         "继续", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
-    assert result.confirmation == prompt_gates.SPEC_COLLECT_PAUSED_MSG
+    assert result.confirmation.startswith("剧本读完了。一句话故事总结：")
     groups = {o.get("group") for o in result.confirmation_options}
     assert groups == {"视觉风格", "画幅"}
     assert not any(g in ("图片分辨率", "视频分辨率", "分镜最大时长") for g in groups)
@@ -280,7 +280,7 @@ async def test_summary_gate_still_fires_for_element_image_scope(svc):
     result = await run_agent_loop(
         "跳过概念图", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
-    assert result.confirmation == prompt_gates.SPEC_COLLECT_PAUSED_MSG
+    assert result.confirmation.startswith("剧本读完了。一句话故事总结：")
 
 
 def test_fc_summary_gate_exempt_when_override_all(monkeypatch):
@@ -336,7 +336,7 @@ def test_fc_collect_gate_fires_when_no_spec_doc(monkeypatch):
     ])
     applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
-    assert confirmation == prompt_gates.SPEC_COLLECT_PAUSED_MSG
+    assert confirmation.startswith("剧本读完了。一句话故事总结：")
     groups = {o.get("group") for o in conf_opts}
     assert groups == {"视觉风格", "画幅"}
     assert not any(g in ("图片分辨率", "视频分辨率", "分镜最大时长") for g in groups)

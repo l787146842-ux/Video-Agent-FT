@@ -815,6 +815,10 @@ async def _generate_soft_spec_candidates(
                         if mins and mins > dur_cap_min:
                             continue
                     vs.append(s)
+            if dur_cap_min and "时长" in dim:
+                # 8888 二轮：时长候选按分钟值去重（「约 2 分钟」≈「约 120 秒」
+                # 是同一档），表述归一，不再给用户出重复选项
+                vs = _dedupe_duration_candidates(vs)
             if _is_aspect_dim(dim):
                 # 画幅是渠道能力参数（确定性题）：模型自造的电影规格
                 # （如 1.43:1 IMAX）生成渠道出不了，归一到标准画幅白名单
@@ -841,6 +845,30 @@ def _candidate_minutes(text: str) -> float:
     n = float(m.group(1))
     unit = m.group(2)
     return n * 60 if unit == "小时" else n / 60 if unit == "秒" else n
+
+
+def _dedupe_duration_candidates(vals: List[str]) -> List[str]:
+    """8888 二轮：时长候选按分钟值去重（同值留首个）并归一表述
+    （<1 分钟用「约 N 秒」，其余「约 N 分钟」）；解析不出分钟的原样保留。"""
+    out: List[str] = []
+    seen: set = set()
+    for v in vals:
+        mins = _candidate_minutes(v)
+        if mins <= 0:
+            if v not in seen:
+                seen.add(v)
+                out.append(v)
+            continue
+        key = round(mins * 4) / 4
+        if key in seen:
+            continue
+        seen.add(key)
+        if key < 1:
+            label = f"约 {int(key * 60)} 秒"
+        else:
+            label = f"约 {int(key)} 分钟" if key == int(key) else f"约 {key} 分钟"
+        out.append(label)
+    return out
 
 
 # ---------- 画幅候选客观归一（9999 二轮） ----------
@@ -1096,7 +1124,7 @@ class ScriptAnalyzeTool:
             "key_points": key_points,
             "detail": (
                 f"已分析《{doc.get('name')}》。一句话总结：{summary} "
-                "（必须在回复正文中原样展示该总结给用户，不得吞掉或省略）"
+                "（请在回复正文中把这句总结原样讲给用户）"
             ),
         })
 

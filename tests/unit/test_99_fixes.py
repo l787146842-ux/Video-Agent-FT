@@ -87,8 +87,8 @@ def test_99_fc_spec_review_card_not_remerged_with_wizard(monkeypatch):
     # 审阅卡（下一步引导）而不是收集向导
     assert confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG
     labels = [o["label"] for o in conf_opts]
-    assert "确认成片规格，按流程继续" in labels
-    assert "调整成片规格" in labels
+    assert "确认规格，开始拆解关键元素" in labels
+    assert "我还要修改规格" in labels
     groups = {o.get("group") for o in conf_opts}
     assert "出图渠道（API 厂商/模型）" not in groups
     assert "出视频渠道（API 厂商/模型）" not in groups
@@ -121,7 +121,7 @@ async def test_99_text_spec_review_card_not_remerged_with_wizard(svc, monkeypatc
     assert calls["n"] == 1
     assert result.confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG
     labels = [o["label"] for o in result.confirmation_options]
-    assert "确认成片规格，按流程继续" in labels
+    assert labels == [o["label"] for o in prompt_gates.spec_review_options(svc.state_dict)]
     groups = {o.get("group") for o in result.confirmation_options}
     assert "出图渠道（API 厂商/模型）" not in groups
 
@@ -172,8 +172,8 @@ async def test_99_summary_not_prepended_on_spec_review_pause(svc):
     assert "太阳系逐渐二维化" not in result.text
 
 
-async def test_99_summary_still_prepended_on_collect_pause(svc):
-    """对照组（8888 能力不回退）：解析阶段的收集暂停缺总结时仍从状态补"""
+async def test_99_collect_card_embeds_summary(svc):
+    """8888 二轮：收集卡直接内嵌一句话总结（不再「见上」），正文不重复补拼。"""
     svc.state_dict["analysis"] = {"summary": "太阳系逐渐二维化"}
     svc.state_dict["documents"] = []
     ex = StudioActionExecutor(svc, gate_enabled=True)
@@ -186,5 +186,6 @@ async def test_99_summary_still_prepended_on_collect_pause(svc):
     result = await run_agent_loop(
         "开始", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
-    assert result.confirmation == prompt_gates.SPEC_COLLECT_PAUSED_MSG
-    assert result.text.startswith("**剧本一句话总结**：太阳系逐渐二维化")
+    assert "一句话故事总结：太阳系逐渐二维化" in result.confirmation
+    assert "见上" not in result.confirmation
+    assert not result.text.startswith("**剧本一句话总结**")

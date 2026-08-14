@@ -34,6 +34,35 @@ ALLOWED_GROUP_FIELDS = (
     "badgeLabel",
 )
 
+# ---------- 关键元素角标归一（8888 二轮） ----------
+# 模型偷懒写泛化「关键元素」或缺省角标时，按 desc 类型锚点确定映射
+# （模型自己的 desc 通常带 prop element/element scene 等锚点）；映射不到才保留原值。
+_BADGE_ANCHORS: Tuple[Tuple[str, str], ...] = (
+    ("prop element", "道具"), ("关键道具", "道具"), ("道具", "道具"),
+    ("element scene", "场景"), ("关键场景", "场景"), ("场景", "场景"), ("空间结构", "场景"),
+    ("character", "人物"), ("主要角色", "人物"), ("角色", "人物"),
+    ("服装", "人物"), ("发型", "人物"), ("男性", "人物"), ("女性", "人物"),
+    ("音色", "声音特征"), ("音频", "声音特征"), ("声音", "声音特征"),
+)
+_GENERIC_BADGES = ("", "关键元素")
+
+
+def normalize_badge_label(badge: str, desc: str = "", group_type: str = "") -> str:
+    """角标归一到分类体系（人物/场景/道具/声音特征）。
+
+    8888 二轮：Skill 要求按剧本分类登记，模型却写泛化「关键元素」；
+    平台层确定性映射（P2），audio 组缺省补「声音特征」。"""
+    b = str(badge or "").strip()
+    if str(group_type or "").strip().lower() == "audio":
+        return b or "声音特征"
+    if b and b not in _GENERIC_BADGES:
+        return b
+    d = str(desc or "")
+    for anchor, label in _BADGE_ANCHORS:
+        if anchor in d:
+            return label
+    return b
+
 # 卡片小标编号：组号-卡序号（如 "1-2"，与前端卡片下方小标/上下文 index 一致）
 INDEX_REF_RE = re.compile(r"^(\d+)\s*[-－.·]\s*(\d+)$")
 

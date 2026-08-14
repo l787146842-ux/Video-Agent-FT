@@ -137,8 +137,8 @@ class DocumentWriteTool(BaseTool):
             if spec_wizard_active(str(_used[-1] or "") if _used else ""):
                 return ToolResult(
                     success=False,
-                    error=("《制片规格》由系统按向导选定自动拼装，无需手写"
-                           "（手写易混入剧本分析等杂项）。参数调整请用户在文档面板直接修改，或重发选择项。"),
+                    error=("规格已按您的选择生成，无需重复写入；"
+                           "要调整请在文档面板修改或重发选择。"),
                 )
 
         async with svc.lock:

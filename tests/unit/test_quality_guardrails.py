@@ -84,7 +84,7 @@ class TestLazyFeedbackCompression:
 
     def test_huge_conversation_triggers_compression(self):
         """逼近 token 预算（默认预算 128000*0.8 的 50% ≈ 51200 token）：触发压缩"""
-        msgs = [{"role": "user", "content": "x" * 300000}]  # ≈75000 token
+        msgs = [{"role": "user", "content": "x" * 600000}]  # tiktoken≈75000/启发式≈150000 token，双估算器都超阈
         assert Planner._should_compress_feedback(msgs) is True
 
     def test_compression_still_works_when_triggered(self):

@@ -81,3 +81,112 @@ def test_8888_normal_single_instance_save_still_works(tmp_path):
     svc.save()
     fresh = _fresh(ws, pid)
     assert fresh.state_dict["keyElements"][0]["title"] == "AA"
+
+
+# ---------- B：流程体验带 ----------
+
+_SPEC_FULL = (
+    "- **画幅比例**：16:9\n- **目标时长**：约 2 分钟\n"
+    "- **影像风格基调**：冷峻写实\n- **输出语言**：中文普通话\n"
+)
+
+
+def test_8888_takeover_skipped_when_spec_finalized(monkeypatch):
+    """B1 钉死现场：规格已定稿时模型冗余手写规格 → 只拒收警告，
+    不接管暂停卡（拆解阶段不再被换回「确认规格」卡）。"""
+    import asyncio
+    import json
+
+    from src.video_agent.core import prompt_gates
+    from src.video_agent.core.fc_tool_runner import FCToolRunner
+    from src.video_agent.adapters.base_chat import ChatResponse
+    from src.video_agent.tools.base import ToolResult
+
+    raw_state = {
+        "usedSkills": ["AI-短剧一站式生成"],
+        "documents": [{"name": "Final_Video_Spec.md", "content": _SPEC_FULL}],
+        "interaction": {},
+    }
+
+    class _TM:
+        async def invoke_tool(self, name, args):
+            if name == "document_write":
+                return ToolResult(success=False, error="规格已按您的选择生成，无需重复写入")
+            return ToolResult(success=True, data={})
+
+    runner = FCToolRunner(tool_manager=_TM())
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: raw_state))
+    response = ChatResponse(content="", tool_calls=[
+        {"id": "c1", "type": "function", "function": {
+            "name": "storyboard_key_elements", "arguments": "{}"}},
+        {"id": "c2", "type": "function", "function": {
+            "name": "document_write",
+            "arguments": json.dumps({"name": "Final_Video_Spec.md", "content": "x"})}},
+        {"id": "c3", "type": "function", "function": {
+            "name": "workflow_pause",
+            "arguments": json.dumps({"message": "关键元素拆解完成，请审阅"})}},
+    ])
+    _applied, confirmation, *_rest = asyncio.run(
+        runner.execute(response, injected_skill="AI-短剧一站式生成"))
+    # 模型暂停文案保留，不被规格卡接管
+    assert confirmation == "关键元素拆解完成，请审阅"
+    assert raw_state["interaction"].get("pending_pause_kind") != "spec"
+
+
+def test_8888_review_options_concrete_next_step():
+    """B3：审阅卡下一步按客观状态递推，不再「按流程继续」黑盒。"""
+    from src.video_agent.core import prompt_gates
+
+    opts = prompt_gates.spec_review_options({})
+    assert opts[0]["label"] == "确认规格，开始拆解关键元素"
+    opts = prompt_gates.spec_review_options({"keyElements": [{"id": "k"}]})
+    assert opts[0]["label"] == "确认规格，开始拆解分镜"
+    opts = prompt_gates.spec_review_options({"keyElements": [{"id": "k"}], "shots": [{"id": "s"}]})
+    assert opts[0]["label"] == "确认成片规格，按流程继续"
+
+
+def test_8888_collect_card_embeds_summary_and_no_dev_talk():
+    """B4：收集卡内嵌总结、无「见上」/「按 Skill 声明」/全局设置解释句。"""
+    from src.video_agent.core import prompt_gates
+
+    state = {"analysis": {"summary": "人类在太阳系边缘拦截到神秘薄片"}}
+    msg, _opts = prompt_gates.spec_collect_card(state)
+    assert "一句话故事总结：人类在太阳系边缘拦截到神秘薄片" in msg
+    assert "见上" not in msg
+    assert "Skill 声明" not in msg
+    assert "全局设置" not in msg
+
+
+def test_8888_duration_candidates_dedup_by_value():
+    """B5：「约 2 分钟」与「约 120 秒」同档去重，表述归一。"""
+    from src.video_agent.skill_runtime import executors as ex_mod
+
+    out = ex_mod._dedupe_duration_candidates(["约 2 分钟", "约 120 秒", "约 90 秒"])
+    assert out == ["约 2 分钟", "约 1.5 分钟"]
+    out = ex_mod._dedupe_duration_candidates(["约 45 秒", "约 45 秒"])
+    assert out == ["约 45 秒"]
+
+
+def test_8888_output_language_dim_description(monkeypatch):
+    """B6：输出语言维度带平台补注说明（消歧义）。"""
+    from src.video_agent.core import prompt_gates
+
+    monkeypatch.setattr(
+        prompt_gates, "skill_spec_dimensions", lambda skill: ["输出语言"],
+    )
+    state = {"interaction": {"spec_soft_candidates": {"输出语言": ["中文普通话", "中英双语"]}}}
+    _msg, opts = prompt_gates.build_spec_param_options("", state)
+    assert opts
+    assert all("分镜脚本与生成提示词使用的语言" in o["description"] for o in opts)
+
+
+def test_8888_badge_normalize_from_desc_anchors():
+    """B7：泛化「关键元素」/缺省角标按 desc 锚点确定映射。"""
+    from src.video_agent.state import storyboard_ops as ops
+
+    assert ops.normalize_badge_label("关键元素", "关键道具（prop element）。一艘小型无人太空探测器") == "道具"
+    assert ops.normalize_badge_label("", "关键场景（element scene）。空间结构：无垠开放深空") == "场景"
+    assert ops.normalize_badge_label("关键元素", "青年女性，约20-30岁。外貌：清秀") == "人物"
+    assert ops.normalize_badge_label("", "音色：温柔但坚定", group_type="audio") == "声音特征"
+    # 已有具体角标不覆盖
+    assert ops.normalize_badge_label("人物", "任意描述") == "人物"

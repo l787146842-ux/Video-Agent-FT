@@ -107,12 +107,13 @@ def test_build_spec_param_options_empty_when_confirmed(monkeypatch):
 
 
 def test_spec_pause_card_uses_review_card_when_no_skill_dims(monkeypatch):
-    """6666 二轮：规格文档硬参数行不再触发候选项向导（全局设置唯一来源）。"""
+    """6666 二轮：规格文档硬参数行不再触发候选项向导（全局设置唯一来源）；
+    8888 二轮：审阅选项客观具体。"""
     monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
     state = {"documents": [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}]}
     msg, opts = prompt_gates.spec_pause_card(state)
     assert msg == prompt_gates.SPEC_DOC_PAUSED_MSG
-    assert [o["label"] for o in opts] == [o["label"] for o in prompt_gates.SPEC_DOC_OPTIONS]
+    assert [o["label"] for o in opts] == [o["label"] for o in prompt_gates.spec_review_options(state)]
 
 
 def test_apply_spec_param_selections_wizard_reply(monkeypatch):

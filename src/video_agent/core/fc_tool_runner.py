@@ -829,6 +829,10 @@ class FCToolRunner:
         # 模型自拟文案（声称「提示词已写好/开始生成」）属虚报，一律覆盖。
         if not confirmation and structure_created and skill_strict:
             confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
+        # 8888 二轮：结构阶段模型自发暂停时文案保留、选项换成系统阶段卡
+        # （消除「开始编写提示词草案」不说是谁家提示词的含糊选项）
+        if confirmation and structure_created and skill_strict:
+            _sys_msg, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
         # 结构阶段剥离了内联详细提示词：回喂中显式告知，防止模型虚报「提示词已写好」
         if prompt_stripped:
             tool_results.append({
@@ -882,6 +886,7 @@ class FCToolRunner:
         if spec_write_rejected:
             _spec_state = self._raw_state()
             inter = _spec_state.setdefault("interaction", {})
+            took_over = False
             if "script_analyze" in key_tool_failed:
                 # 6666 二轮：剧本分析本身失败（如 API 余额不足/超时）时，
                 # 不能装成已读完剧本弹规格向导，必须把失败原因明确交给用户
@@ -895,18 +900,25 @@ class FCToolRunner:
                     "description": "重新执行 script_analyze（已绑定当前对话模型）",
                 }]
                 inter["pending_pause_kind"] = ""
+                took_over = True
+            elif prompt_gates.spec_doc_finalized(_spec_state):
+                # 8888 二轮：规格已定稿时模型的冗余手写只拒收警告，
+                # 不接管暂停卡——拆解阶段的阶段卡正常出现，不再叫用户确认规格
+                logger.info("[Planner] 规格已定稿，模型冗余规格写入仅拒收警告，不接管暂停卡")
             else:
                 confirmation, confirmation_options = prompt_gates.spec_pause_card(_spec_state)
                 inter["pending_pause_kind"] = "spec"
-            try:
-                # 8888 二轮：接管时必须同时洗掉 workflow_pause 写入的假完成文案，
-                # 否则下一轮会把「已完成…写入项目文档」当作暂停内容回喂给模型
-                inter["awaiting_confirmation"] = True
-                inter["confirmation_message"] = confirmation
-                StateManager.get_instance().save()
-            except Exception:
-                pass
-            logger.warning("[Planner] 规格写入被向导拒收，已接管为规格向导卡")
+                took_over = True
+            if took_over:
+                try:
+                    # 8888 二轮：接管时必须同时洗掉 workflow_pause 写入的假完成文案，
+                    # 否则下一轮会把「已完成…写入项目文档」当作暂停内容回喂给模型
+                    inter["awaiting_confirmation"] = True
+                    inter["confirmation_message"] = confirmation
+                    StateManager.get_instance().save()
+                except Exception:
+                    pass
+                logger.warning("[Planner] 规格写入被向导拒收，已接管为规格向导卡")
 
         # 6666/8888 事故：关键执行器/文档写入存在失败且模型带确认声称完成 → 覆盖为诚实文案
         # （部分成功、部分失败同样覆盖，堵住「script_analyze 成功就放行假规格文案」的盲区）

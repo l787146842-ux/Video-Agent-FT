@@ -265,7 +265,7 @@ async def run_agent_loop(
             "type": SSE_TOOL_STARTED,
             "id": f"llm-s{step}",
             "name": "model_reasoning",
-            "summary": f"模型推理规划（第 {step} 轮）",
+            "summary": f"Agent 正在规划本步动作（第 {step} 轮）",
         })
         content, finish_reason, fc_applied = await llm_call(system_prompt, messages, stream_hook)
         await emit({
@@ -273,7 +273,7 @@ async def run_agent_loop(
             "id": f"llm-s{step}",
             "ok": True,
             "elapsed_ms": round((time.monotonic() - _llm_t0) * 1000, 1),
-            "result_summary": f"模型推理规划（第 {step} 轮）完成",
+            "result_summary": f"Agent 规划完成（第 {step} 轮）",
         })
 
         # 空/畸形响应防护：空响应或 MALFORMED_FUNCTION_CALL 连续发生 → 重试至多 2 次，
@@ -370,8 +370,12 @@ async def run_agent_loop(
                     ]
                     if spec_writes:
                         executable = [a for a in executable if a not in spec_writes]
-                        spec_wizard_pending = True
-                        result.warnings.append("规格文档由系统按向导拼装，模型手写规格已忽略")
+                        if prompt_gates.spec_doc_finalized(executor.state):
+                            # 8888 二轮：规格已定稿 → 冗余手写只拒收警告，不接管暂停卡
+                            result.warnings.append("规格已定稿，模型冗余规格写入已拒收（不接管暂停卡）")
+                        else:
+                            spec_wizard_pending = True
+                            result.warnings.append("规格文档由系统按向导拼装，模型手写规格已忽略")
             except Exception:
                 spec_wizard_pending = False
         # 本轮全部可执行操作数（含流式已预执行部分）：gate_heal 判定用
@@ -572,6 +576,14 @@ async def run_agent_loop(
             confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
             structure_self_check_pending = False
             logger.info(f"[FlowGate] 自检轮后仍未暂停，注入结构审阅卡（kinds={sorted(structure_kinds)}）")
+        # 8888 二轮：结构阶段模型自发暂停时文案保留、选项换成系统阶段卡
+        if (
+            confirmation
+            and structure_kinds
+            and getattr(executor, "gate_enabled", False)
+            and prompt_gates.gate_mode() == "strict"
+        ):
+            _sys_msg, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
 
         # 阶段完成引导兜底（5555 事故）：执行器跑完但模型没发确认卡时，
         # 系统客观补一张下一步引导卡（不覆盖模型自发的暂停）
@@ -604,15 +616,8 @@ async def run_agent_loop(
                     "检测到虚报：正文声称已完成结构搭建，但故事板实际仍为空；"
                     "已按用户确认语义保留当前暂停（系统不没收模型暂停）。"
                 )
-            # 规格收集暂停的正文没带剧本总结：从 analysis.summary 补到开头（Q1）
-            interaction = executor.state.get("interaction") or {}
-            if (
-                confirmation
-                and interaction.get("pending_pause_kind") == prompt_gates.SPEC_COLLECT_KIND
-            ):
-                summary = str((executor.state.get("analysis") or {}).get("summary") or "").strip()
-                if summary and summary not in visible:
-                    visible = f"**剧本一句话总结**：{summary}\n\n{visible}"
+            # 8888 二轮：收集卡已内嵌一句话总结（spec_collect_card 模板），
+            # 正文不再重复补拼，避免总结出现两遍
             # 结构纯净闸剥离了内联详细提示词：正文追加更正说明，
             # 避免持久化消息只剩模型「已编写提示词草案」的虚报文字
             result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible

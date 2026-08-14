@@ -233,9 +233,10 @@ async def test_structure_strips_inline_prompt_keeps_model_confirmation(svc):
         "拆解分镜", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
     assert calls["n"] == 1
-    # 模型自带的确认文案与选项原样保留（系统不再强制覆盖）
+    # 模型自带的确认文案保留；选项换成系统阶段卡（8888 二轮 B8）
     assert result.confirmation == "确认分镜与音频草案，开始生成视频"
-    assert result.confirmation_options == [{"label": "确认草案，开始生成视频", "description": ""}]
+    assert [o["label"] for o in result.confirmation_options] == [
+        o["label"] for o in prompt_gates.SHOT_STRUCTURE_OPTIONS]
     # 结构阶段内联提示词被剥离，草稿卡仍建立
     shot_group = next(g for g in svc.state_dict["shots"] if g.get("title") == "Shot_A")
     assert shot_group["drafts"][0]["prompt"] == ""
@@ -255,7 +256,8 @@ async def test_keyelement_structure_keeps_model_pause(svc):
         "拆关键元素", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
     assert result.confirmation == "确认草案，开始生成"
-    assert result.confirmation_options == []
+    assert [o["label"] for o in result.confirmation_options] == [
+        o["label"] for o in prompt_gates.STORYBOARD_STRUCTURE_OPTIONS]
 
 
 # ---------- 5555 事故回归：规格文档写入后的系统级暂停兜底（文本轨） ----------
@@ -314,7 +316,7 @@ async def test_spec_doc_confirmed_params_uses_plain_pause_card(svc, monkeypatch)
     assert calls["n"] == 1
     assert result.confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG
     labels = [o["label"] for o in result.confirmation_options]
-    assert "确认成片规格，按流程继续" in labels
+    assert labels == [o["label"] for o in prompt_gates.spec_review_options(svc.state_dict)]
 
 
 async def test_spec_doc_written_keeps_model_confirmation(svc):
@@ -347,8 +349,8 @@ async def test_non_spec_doc_written_keeps_continue(svc):
 
 # ---------- 8888 事故回归：暂停轮正文缺总结时从工作台状态补 ----------
 
-async def test_confirmation_turn_prepends_analysis_summary(svc):
-    """解析阶段的暂停（pause_kind=collect）正文没带总结：从 analysis.summary 补到开头"""
+async def test_confirmation_turn_summary_not_prepended_anymore(svc):
+    """8888 二轮：总结由收集卡模板内嵌，正文不再补拼（防总结两遍）。"""
     svc.state_dict["analysis"] = {"summary": "太阳系逐渐二维化"}
     svc.state_dict.setdefault("interaction", {})["pending_pause_kind"] = (
         prompt_gates.SPEC_COLLECT_KIND
@@ -361,7 +363,7 @@ async def test_confirmation_turn_prepends_analysis_summary(svc):
         "开始", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
     assert result.confirmation == "请确认规格"
-    assert result.text.startswith("**剧本一句话总结**：太阳系逐渐二维化")
+    assert not result.text.startswith("**剧本一句话总结**")
 
 
 async def test_confirmation_turn_no_duplicate_summary(svc):

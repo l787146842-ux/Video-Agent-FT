@@ -360,6 +360,9 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
         })
     inter = state.setdefault("interaction", {})
     inter["spec_collected"] = True
+    # 8888 二轮：机械落盘也发文档卡片（持久化消息条 + 收尾快照携带），
+    # 否则用户永远看不到规格卡
+    svc.add_chat_message("agent", "", doc_card=name)
     svc.save()
     logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md")
     return (
