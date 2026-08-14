@@ -51,6 +51,7 @@ export interface ChatRequest {
   skill_blocks?: string[];
   gate_overrides?: string[];
   user_id?: string;
+  thinking_level?: string;
 }
 
 export interface ChatResponse {
@@ -233,6 +234,8 @@ export interface RuntimeSettingsUpdate {
   default_image_resolution?: string | unknown;
   default_video_resolution?: string | unknown;
   max_shot_duration?: number | unknown;
+  executor_thinking_level?: string | unknown;
+  aux_thinking_level?: string | unknown;
 }
 
 export interface SkillDocSave {

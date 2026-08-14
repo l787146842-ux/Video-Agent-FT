@@ -55,6 +55,10 @@ export interface RuntimeSettings {
   default_video_resolution: string;
   /** 分镜最大时长（秒）：Agent 自拆分镜单镜上限 */
   max_shot_duration: number;
+  /** 814H7：执行器机械调用推理档位（''=默认/原生） */
+  executor_thinking_level: string;
+  /** 814H7：辅助摘要（记忆摘要/会话压缩）推理档位（''=默认/原生） */
+  aux_thinking_level: string;
 }
 
 export function getRuntimeSettings(): Promise<RuntimeSettings> {

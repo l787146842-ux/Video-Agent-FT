@@ -31,6 +31,9 @@ _STR_KEYS = (
     "default_image_resolution", "default_video_resolution",
 )
 _INT_KEYS = ("max_shot_duration",)
+# 814H7：推理档位键（""=默认/原生，low/medium/high 透传 reasoning_effort）
+_THINKING_KEYS = ("executor_thinking_level", "aux_thinking_level")
+_THINKING_VALUES = ("", "low", "medium", "high")
 
 
 class RuntimeSettingsUpdate(BaseModel):
@@ -43,6 +46,9 @@ class RuntimeSettingsUpdate(BaseModel):
     default_image_resolution: Optional[str] = None
     default_video_resolution: Optional[str] = None
     max_shot_duration: Optional[int] = None
+    # 814H7：推理档位（""=默认/原生）
+    executor_thinking_level: Optional[str] = None
+    aux_thinking_level: Optional[str] = None
 
 
 def _current_dict() -> Dict[str, Any]:
@@ -56,6 +62,8 @@ def _current_dict() -> Dict[str, Any]:
         "default_image_resolution": settings.default_image_resolution,
         "default_video_resolution": settings.default_video_resolution,
         "max_shot_duration": settings.max_shot_duration,
+        "executor_thinking_level": settings.executor_thinking_level,
+        "aux_thinking_level": settings.aux_thinking_level,
     }
 
 
@@ -80,6 +88,10 @@ async def put_runtime_settings(body: RuntimeSettingsUpdate):
                 continue
         elif key in _STR_KEYS:
             value = str(value or "").strip()
+        elif key in _THINKING_KEYS:
+            value = str(value or "").strip().lower()
+            if value not in _THINKING_VALUES:
+                value = ""
         else:
             continue
         object.__setattr__(settings, key, value)
@@ -117,5 +129,9 @@ def load_runtime_settings() -> None:
                     object.__setattr__(settings, key, max(1, min(int(data[key]), 60)))
                 except (TypeError, ValueError):
                     pass
+        for key in _THINKING_KEYS:
+            if key in data:
+                v = str(data[key] or "").strip().lower()
+                object.__setattr__(settings, key, v if v in _THINKING_VALUES else "")
     except Exception as e:
         logger.warning(f"[RuntimeSettings] 启动加载失败，使用默认值: {e}")

@@ -32,6 +32,13 @@ export default function GlobalSettingsView() {
     { value: '', label: '未设置' },
     ...providerModels(gs()?.default_video_provider_id || '', 'video').map((m) => ({ value: m, label: m })),
   ];
+  /** 814H7 推理档位四档：默认=模型原生 */
+  const thinkingOpts = () => [
+    { value: '', label: '默认（原生）' },
+    { value: 'high', label: '高' },
+    { value: 'medium', label: '中' },
+    { value: 'low', label: '低' },
+  ];
 
   function set(patch: Partial<RuntimeSettings>) {
     void updateGlobalSettings(patch);
@@ -163,6 +170,34 @@ export default function GlobalSettingsView() {
               <span>开</span>
             </button>
             <p class="gs-hint">开启时模型联不通/出不了图视频自动换同模型其他 API 厂商；关闭则直接按上游报错。</p>
+          </section>
+
+          {/* 814H7：推理档位（执行器/辅助摘要；主模型档位在对话栏模型胶囊里按会话选） */}
+          <section class="gs-section">
+            <h3>推理档位</h3>
+            <div class="gs-row">
+              <ParamGroup label="执行器机械调用:">
+                <ParamSelect
+                  ariaLabel="执行器推理档位"
+                  value={gs()!.executor_thinking_level || ''}
+                  options={thinkingOpts()}
+                  onChange={(v) => set({ executor_thinking_level: v })}
+                />
+              </ParamGroup>
+              <ParamGroup label="辅助摘要:">
+                <ParamSelect
+                  ariaLabel="辅助摘要推理档位"
+                  value={gs()!.aux_thinking_level || ''}
+                  options={thinkingOpts()}
+                  onChange={(v) => set({ aux_thinking_level: v })}
+                />
+              </ParamGroup>
+            </div>
+            <p class="gs-hint">
+              执行器机械调用 = 拆关键元素/分镜/写提示词/出题等批量产出；辅助摘要 = 记忆摘要与会话压缩。
+              默认 = 模型原生能力；高/中/低按 reasoning_effort 透传，端点不认时自动忽略或降级重试。
+              主模型（对话规划）的档位在对话栏「模型」胶囊里按会话选择。
+            </p>
           </section>
         </Show>
       </div>

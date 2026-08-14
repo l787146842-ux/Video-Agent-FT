@@ -103,6 +103,8 @@ class PlannerContext:
     prelude_notes: List[tuple] = field(default_factory=list)
     # 多用户归属（814E6 基础）：可选用户标识，入 trace 审计
     user_id: str = ""
+    # 814H7：会话级推理档位（对话栏「推理等级」选择器下发；""=模型原生能力）
+    thinking_level: str = ""
 
 
 @dataclass
@@ -264,6 +266,8 @@ class Planner:
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
         self._excluded_tools = self._compute_excluded_tools(context)
         self._system_degrader = self._make_system_degrader(context)
+        # 814H7：会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
+        self._chat_thinking_level = context.thinking_level or ""
 
         # 构建 executor（文本解析路径用）：优先注入的工厂，缺省延迟导入 web 层实现
         factory = self.executor_factory
@@ -737,13 +741,15 @@ class Planner:
                     [{"role": "user", "content": prompt}],
                 )
             else:
-                # 摘要专用模型：直接裸调用（无工具、无状态注入），成本最小化
+                # 摘要专用模型：直接裸调用（无工具、无状态注入），成本最小化；
+                # 814H7：辅助摘要档位独立于主模型（全局设置页可调）
                 resp = await adapter.chat(
                     [
                         {"role": "system", "content": "你是记忆整理助手。"},
                         {"role": "user", "content": prompt},
                     ],
                     timeout=settings.llm_timeout,
+                    thinking_level=getattr(settings, "aux_thinking_level", "") or "",
                 )
             return resp.content or ""
 
@@ -768,11 +774,15 @@ class Planner:
             # 模式 A：标准 function calling（工具集按上下文裁剪）
             tools_schema = self.tool_manager.get_all_tool_schemas(exclude=self._excluded_tools)
             return await self.llm_adapter.chat(
-                full_messages, tools=tools_schema, timeout=settings.llm_timeout
+                full_messages, tools=tools_schema, timeout=settings.llm_timeout,
+                thinking_level=getattr(self, "_chat_thinking_level", "") or "",
             )
         else:
             # 模式 B：纯文本（fallback 到 studio-actions 文本解析）
-            return await self.llm_adapter.chat(full_messages, timeout=settings.llm_timeout)
+            return await self.llm_adapter.chat(
+                full_messages, timeout=settings.llm_timeout,
+                thinking_level=getattr(self, "_chat_thinking_level", "") or "",
+            )
 
     async def _call_llm_stream(self, system: str, messages: List[Dict[str, Any]]) -> AsyncGenerator[StreamChunk, None]:
         """流式 LLM 调用"""
@@ -789,7 +799,8 @@ class Planner:
             tools_schema = self.tool_manager.get_all_tool_schemas(exclude=self._excluded_tools)
 
         async for chunk in self.llm_adapter.chat_stream(
-            full_messages, tools=tools_schema, timeout=settings.llm_stream_timeout
+            full_messages, tools=tools_schema, timeout=settings.llm_stream_timeout,
+            thinking_level=getattr(self, "_chat_thinking_level", "") or "",
         ):
             yield chunk
 

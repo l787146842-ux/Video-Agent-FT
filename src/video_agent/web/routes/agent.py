@@ -86,6 +86,9 @@ class ChatRequest(BaseModel):
     gate_overrides: List[str] = []
     # 多用户归属（814E6 基础）：可选用户标识，入 trace 审计；完整鉴权另行立项
     user_id: str = ""
+    # 会话级推理档位（814H7 对话栏「推理等级」选择器）：low/medium/high；
+    # ""=默认（模型原生能力，不下发 reasoning_effort）
+    thinking_level: str = ""
 
 
 class ChatResponse(BaseModel):

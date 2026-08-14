@@ -483,6 +483,10 @@
   /* Pill 下拉 */
   .pill-anchor { position: relative; }
   .pill-dropdown { position: absolute; bottom: 100%; left: 0; z-index: 50; margin-bottom: 4px; width: 208px; min-width: 150px; max-width: 220px; max-height: 240px; overflow-y: auto; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+    /* 814H7：模型+推理等级组合下拉（两节面板，比单列略宽略高） */
+    .pill-dropdown-wide { width: 240px; max-width: 260px; max-height: 340px; }
+    .pill-section-title { padding: 6px 10px 3px; font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.04em; }
+    .pill-section-scroll { max-height: 150px; overflow-y: auto; }
   .pill-option { padding: 7px 10px; font-size: 12px; color: var(--text-main); border-radius: 6px; cursor: pointer; transition: background 0.12s; }
   .pill-option:hover { background: rgba(59, 130, 246, 0.1); }
   .pill-option.selected { color: #93c5fd; background: rgba(59, 130, 246, 0.12); display: flex; align-items: center; justify-content: space-between; }

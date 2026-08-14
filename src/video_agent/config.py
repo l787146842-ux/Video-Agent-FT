@@ -61,10 +61,13 @@ class Settings:
     # 执行器 LLM JSON 调用超时（秒）
     llm_json_timeout: float = field(default_factory=lambda: float(os.getenv("LLM_JSON_TIMEOUT", "120")))
     # LLM 思考（thinking/reasoning）档位：low/medium/high = 按 OpenAI 兼容
-    # reasoning_effort 透传；814G7 起默认 low（主模型深度思考是每轮 60-90s 的
-    # 主要成本，low 档显著缩短思考静默期）；置空 = 不下发该字段（端点默认）。
-    # 注意：对字段严格的端点若因此报 400，请置空回退。
-    llm_thinking_level: str = field(default_factory=lambda: os.getenv("LLM_THINKING_LEVEL", "low"))
+    # reasoning_effort 透传；空 = 不下发该字段（模型原生能力，默认）。
+    # 814H7：主模型档位改由对话栏「推理等级」选择器按会话下发（默认=原生），
+    # 本全局值仅作未携带会话档位时的回落（env 可覆写）。
+    # 注意：对字段严格的端点会自动去掉该字段重试一次（400 优雅降级）。
+    llm_thinking_level: str = field(default_factory=lambda: os.getenv("LLM_THINKING_LEVEL", ""))
+    # 辅助摘要调用档位（记忆摘要/会话压缩；814H7 全局设置页可调，默认=原生）
+    aux_thinking_level: str = field(default_factory=lambda: os.getenv("AUX_THINKING_LEVEL", ""))
     # CLI 协议（如 gemini-cli/Antigravity CLI）路由到 custom-api 反代时 auto 的回退模型：
     # 聊天已对齐画布行为改走本机 agy CLI，此值仅影响带参考图的生图编辑等
     # 必须走反代的残留路径；反代报 model not register 时用 CLI_AUTO_CHAT_MODEL 覆盖

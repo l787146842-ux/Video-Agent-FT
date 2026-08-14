@@ -308,6 +308,7 @@ async def _maybe_compact_history(
                     {"role": "user", "content": prompt},
                 ],
                 timeout=settings.llm_timeout,
+                thinking_level=getattr(settings, "aux_thinking_level", "") or "",
             )
             summary = (resp.content or "").strip()
         except Exception as e:
@@ -789,6 +790,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             image_generation_provider=image_provider,
             image_generation_aspect_ratio=image_aspect_ratio,
             user_id=getattr(body, "user_id", "") or "",
+            # 814H7：会话级推理档位（对话栏选择器下发；""=模型原生）
+            thinking_level=getattr(body, "thinking_level", "") or "",
         )
 
         applied_seen = False
@@ -1026,6 +1029,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         image_generation_provider=image_provider2,
         image_generation_aspect_ratio=image_aspect_ratio2,
         user_id=getattr(body, "user_id", "") or "",
+        thinking_level=getattr(body, "thinking_level", "") or "",
     )
 
     # 非流式复用与 _real_stream 相同的 fallback 链：主模型瞬时故障（5xx/超时/连接失败）

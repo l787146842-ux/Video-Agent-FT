@@ -14,11 +14,38 @@ export const KEY_PROVIDER = 'studioAgentProvider';
 export const KEY_MODEL = 'studioAgentModel';
 export const KEY_SKILL = 'studioAgentSkill';
 export const KEY_ASSET_MODE = 'studioAgentAssetMode';
+export const KEY_THINKING = 'studioAgentThinkingLevel';
 
 const [provider, setProviderSig] = createSignal(localStorage.getItem(KEY_PROVIDER) || '');
 const [model, setModelSig] = createSignal(localStorage.getItem(KEY_MODEL) || '');
 const [skillId, setSkillSig] = createSignal(localStorage.getItem(KEY_SKILL) || '');
 const [assetMode, setAssetModeSig] = createSignal(localStorage.getItem(KEY_ASSET_MODE) || 'bound');
+const [thinkingLevel, setThinkingLevelSig] = createSignal(localStorage.getItem(KEY_THINKING) || '');
+
+/** 814H7 会话级推理档位：''=默认（模型原生）；low/medium/high 透传 reasoning_effort */
+export type ThinkingLevel = '' | 'low' | 'medium' | 'high';
+export const THINKING_LEVEL_OPTIONS: Array<{ value: ThinkingLevel; label: string }> = [
+  { value: 'high', label: '高' },
+  { value: 'medium', label: '中' },
+  { value: 'low', label: '低' },
+  { value: '', label: '默认' },
+];
+
+export function agentThinkingLevel(): ThinkingLevel {
+  const v = thinkingLevel();
+  return v === 'low' || v === 'medium' || v === 'high' ? v : '';
+}
+
+export function setAgentThinkingLevel(v: string) {
+  const norm: ThinkingLevel = v === 'low' || v === 'medium' || v === 'high' ? v : '';
+  localStorage.setItem(KEY_THINKING, norm);
+  setThinkingLevelSig(norm);
+}
+
+export function thinkingLevelLabel(): string {
+  const opt = THINKING_LEVEL_OPTIONS.find((o) => o.value === agentThinkingLevel());
+  return opt?.label || '默认';
+}
 
 /** 有效供应商（localStorage 值失效时回退到首选可用项） */
 export function agentProvider(): string {

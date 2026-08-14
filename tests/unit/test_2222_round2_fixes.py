@@ -74,22 +74,25 @@ def test_2222_migrated_spec_section_strips_block_clause():
 # ---------- 思考档位按调用覆盖（executor_thinking_level） ----------
 
 def test_2222_thinking_override_wins_over_global():
-    """本次调用档位覆盖全局配置；覆盖值非法/为空时回落全局。"""
+    """本次调用档位覆盖全局配置；覆盖值非法时不下发；显式空串=原生（814H7）。"""
     adapter = OpenAICompatChatAdapter(base_url="http://x", api_key="k", model="m")
     payload: dict = {}
     adapter._apply_thinking_level(payload, "low")
     assert payload.get("reasoning_effort") == "low"
-    # 覆盖为 None 时沿用全局（814G7 起全局默认 low）
+    # 814H7：全局默认空（原生）→ 覆盖 None 时不下发字段
     payload2: dict = {}
     adapter._apply_thinking_level(payload2, None)
-    assert payload2.get("reasoning_effort") == "low"
-    # 全局置空 + 覆盖 None → 不下发字段（保持端点默认）
+    assert "reasoning_effort" not in payload2
+    # 全局置 high + 覆盖 None → 回落全局 high；显式 "" → 原生不下发（UI「默认」档）
     old = settings.llm_thinking_level
-    object.__setattr__(settings, "llm_thinking_level", "")
+    object.__setattr__(settings, "llm_thinking_level", "high")
     try:
         payload2b: dict = {}
         adapter._apply_thinking_level(payload2b, None)
-        assert "reasoning_effort" not in payload2b
+        assert payload2b.get("reasoning_effort") == "high"
+        payload2c: dict = {}
+        adapter._apply_thinking_level(payload2c, "")
+        assert "reasoning_effort" not in payload2c
     finally:
         object.__setattr__(settings, "llm_thinking_level", old)
     # 覆盖值非法 → 不下发

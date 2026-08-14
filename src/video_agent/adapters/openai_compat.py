@@ -242,11 +242,29 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         except httpx.TimeoutException:
             raise AdapterError(f"LLM 请求超时（{timeout}s），请检查网络或供应商状态", retryable=True)
         except httpx.HTTPStatusError as e:
-            raise AdapterError(
-                f"LLM 返回 HTTP {e.response.status_code}: {e.response.text[:200]}",
-                retryable=e.response.status_code >= 500,
-                http_status=e.response.status_code,
-            )
+            # 814H7 优雅降级：严格端点不认 reasoning_effort 报 400 → 去掉字段重试一次
+            if e.response.status_code == 400 and "reasoning_effort" in payload:
+                logger.warning("[OpenAICompat] 端点不认 reasoning_effort（400），去掉字段重试一次")
+                payload.pop("reasoning_effort", None)
+                try:
+                    client = self._get_client(timeout)
+                    resp = await client.post("/chat/completions", json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                except httpx.HTTPStatusError as e2:
+                    raise AdapterError(
+                        f"LLM 返回 HTTP {e2.response.status_code}: {e2.response.text[:200]}",
+                        retryable=e2.response.status_code >= 500,
+                        http_status=e2.response.status_code,
+                    )
+                except httpx.HTTPError as e2:
+                    raise AdapterError(f"LLM 请求失败: {e2}", retryable=True)
+            else:
+                raise AdapterError(
+                    f"LLM 返回 HTTP {e.response.status_code}: {e.response.text[:200]}",
+                    retryable=e.response.status_code >= 500,
+                    http_status=e.response.status_code,
+                )
         except httpx.HTTPError as e:
             raise AdapterError(f"LLM 请求失败: {e}", retryable=True)
 
@@ -305,6 +323,18 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     yield chunk
                 return
             except AdapterError as e:
+                # 814H7 优雅降级：严格端点不认 reasoning_effort 报 400 → 去掉字段重试
+                if (
+                    not yielded
+                    and "reasoning_effort" in payload
+                    and (
+                        getattr(e, "http_status", None) == 400
+                        or str(e).startswith("LLM 返回 HTTP 400")
+                    )
+                ):
+                    payload.pop("reasoning_effort", None)
+                    logger.warning("[OpenAICompat] 流式端点不认 reasoning_effort（400），去掉字段重试")
+                    continue
                 # 结构化判定（P0-2）：优先用 retryable 标记，兼容无标记旧异常回退文案匹配
                 flag = getattr(e, "retryable", None)
                 if flag is None:

@@ -1,15 +1,16 @@
 import {
-  FiArrowUp, FiBookOpen, FiCpu, FiFolder, FiGlobe, FiPaperclip, FiSquare,
+  FiArrowUp, FiBookOpen, FiFolder, FiGlobe, FiPaperclip, FiSquare,
 } from 'solid-icons/fi';
 import {
-  agentProvider, setAgentProvider, agentModel, setAgentModel,
+  agentProvider, setAgentProvider, agentModel,
 } from '@/stores/agent-prefs';
 import { createSignal, createEffect, onMount, Show } from 'solid-js';
-import { apiProvidersFor, providerModels } from '@/lib/providers';
+import { apiProvidersFor } from '@/lib/providers';
 import { getContextUsage, type ContextUsage } from '@/api/agent';
 import { chatState } from '@/stores/chat';
 import { t } from '@/lib/locale';
 import { PillDropdown } from './PillDropdown';
+import { ModelThinkingPill } from './ModelThinkingPill';
 import { SkillPicker } from './SkillPicker';
 import { StudioAssetPickerModal } from './StudioAssetPickerModal';
 
@@ -31,8 +32,6 @@ export function ChatInputToolbar(props: {
       label: p.name || p.id,
       hint: p.protocol,
     }));
-  const modelOptions = () =>
-    providerModels(agentProvider(), 'chat').map((m) => ({ value: m, label: m }));
   /** 「素材库」选择弹窗开关 */
   const [assetPickerOpen, setAssetPickerOpen] = createSignal(false);
 
@@ -88,13 +87,8 @@ export function ChatInputToolbar(props: {
           title={t('rp.toolbar.providerTitle')}
           onSelect={setAgentProvider}
         />
-        <PillDropdown
-          icon={FiCpu}
-          value={agentModel()}
-          options={modelOptions()}
-          title={t('rp.toolbar.modelTitle')}
-          onSelect={setAgentModel}
-        />
+        {/* 814H7：模型+推理等级组合胶囊（Codex 样式两节下拉） */}
+        <ModelThinkingPill />
         <SkillPicker />
         <button
           type="button"

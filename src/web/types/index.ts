@@ -356,6 +356,8 @@ export interface AgentChatRequest {
   doc_blocks?: string[];
   /** 用户消息携带的 Skill 引用块名称（展示用，随消息持久化） */
   skill_blocks?: string[];
+  /** 814H7 会话级推理档位：''=默认（模型原生）；low/medium/high */
+  thinking_level?: string;
 }
 
 // ===== 项目 =====

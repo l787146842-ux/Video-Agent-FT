@@ -8,7 +8,7 @@ import { chatState, chatActions } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { streamAgentChat } from '@/hooks/use-sse';
 import {
-  agentProvider, agentModel, agentSkill, agentAssetMode,
+  agentProvider, agentModel, agentSkill, agentAssetMode, agentThinkingLevel,
 } from '@/stores/agent-prefs';
 import { CHAT_HISTORY_WINDOW, uid } from '@/lib/utils';
 import { partsToPlainText } from '@/lib/rich-input';
@@ -157,6 +157,8 @@ export async function sendUserMessage(
     skill_blocks: skillBlocks,
     // 会话层一次性闸机豁免（814F7）：「本次放行」按钮携带，后端单次消费即清除
     ...(opts?.gateOverrides?.length ? { gate_overrides: opts.gateOverrides } : {}),
+    // 814H7：会话级推理档位（''=默认/模型原生）
+    thinking_level: agentThinkingLevel(),
   };
 
   // 即发即返：不阻塞等待整个推理流结束，输入框（含 Skill/媒体块）发送后立即清空；
