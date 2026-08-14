@@ -23,7 +23,7 @@ from src.video_agent.memory import MemoryManager
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
-from src.video_agent.utils.prompts import load_prompt, render_prompt
+from src.video_agent.utils.prompts import load_prompt, load_prompt_section, render_prompt
 from src.video_agent.core.agent_loop import MAX_STEPS, run_agent_loop
 from src.video_agent.core.fc_tool_runner import (
     FEEDBACK_COMPRESSED,
@@ -61,6 +61,19 @@ _CANVAS_TOOLS = frozenset({
     "canvas_delete_node", "canvas_list_assets", "canvas_batch_add_nodes",
 })
 
+# 814R1 恢复：Skill 流程闸启用时不允许参与流式「边写边填」预执行的阶段边界动作。
+# 它们若被预执行，会被 agent_loop 从 executable 切片移除，导致阶段硬边界/
+# 规格闸/结构暂停全部失效（同轮跨阶段缝隙）；一旦出现被延迟的动作，
+# 其后续动作也一并延迟（保证 stream_consumed 的前缀语义不被打乱）。
+_STREAM_GATE_DEFER_ACTIONS = frozenset({
+    "write_document", "write_doc", "save_document", "add_group", "add_draft",
+})
+
+# 选中 Skill 时的流程提醒（814R1 恢复外置：prompts/planner/feedback.md 单一事实源）
+_SKILL_REMINDER = load_prompt_section("planner/feedback.md", "SKILL_REMINDER") or (
+    "【提醒】当前有选中 Skill：遵守其阶段划分与暂停点，到达确认点时用 "
+    "request_confirmation / workflow_pause 真正停下，不要一口气做完全部阶段。")
+
 
 @dataclass
 class PlannerContext:
@@ -75,6 +88,9 @@ class PlannerContext:
     state_builder: Optional[Callable[[], str]] = None
     skill_name: str = ""         # 前端当前选中的 Skill 名称（目录标注用，提高相关性判断准确率）
     use_studio_context: bool = True
+    # 文本协议注入开关（814R1 恢复）：非 FC 通道（如 agy CLI）由 chat_service 置 True，
+    # prompt_builder 据此追加 text_actions.md 全量动作定义
+    text_protocol: bool = False
     asset_mode: str = "bound"    # 资产过滤模式
     image_generation_provider: str = ""  # 选中草稿的生图 provider，用于强制注入
     image_generation_aspect_ratio: str = ""  # 选中草稿的画面比例（如 16:9），用于强制注入
@@ -310,6 +326,10 @@ class Planner:
                 # 草稿卡片逐张填充，不等全部写完一次性弹出
                 from src.video_agent.web.action_parser import StreamingActionExtractor
                 extractor = StreamingActionExtractor()
+                # 814R1 恢复：Skill 流程闸启用时阶段边界动作延迟到批末执行
+                _gate_strict = bool(getattr(executor, "gate_enabled", False)) \
+                    and prompt_gates.gate_mode() == "strict"
+                _preexec_stopped = False
                 async for chunk in self._call_llm_stream(system_prompt, messages):
                     if chunk.type == "text_delta" and chunk.text:
                         content_parts.append(chunk.text)
@@ -322,6 +342,13 @@ class Planner:
                             for act in extractor.feed(suppressor.suppressed):
                                 # 流程信号（continue/确认）不预执行，留待循环末尾统一处理
                                 if not executor._is_mutating(act):
+                                    continue
+                                _aname = str(act.get("action", "") or "").lower()
+                                if _gate_strict and (
+                                    _preexec_stopped or _aname in _STREAM_GATE_DEFER_ACTIONS
+                                ):
+                                    # 阶段边界动作（或其后继）延迟到批末：恢复阶段硬边界/规格闸/结构暂停
+                                    _preexec_stopped = True
                                     continue
                                 executor.stream_consumed += 1
                                 try:
@@ -380,10 +407,7 @@ class Planner:
                 feedback = Planner._format_tool_results(tool_results)
                 if feedback:
                     if context.skill_name:
-                        reminder = (
-                            "\n【提醒】当前有选中 Skill：遵守其阶段划分与暂停点，"
-                            "到达确认点时用 request_confirmation / workflow_pause 真正停下，不要一口气做完全部阶段。"
-                        )
+                        reminder = "\n" + _SKILL_REMINDER
                         if isinstance(feedback, list):
                             feedback = feedback + [{"type": "text", "text": reminder}]
                         else:
@@ -392,7 +416,7 @@ class Planner:
                     # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
                     # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
                     # 短对话保留全文；选中 Skill 不受影响（它硬注入在 system prompt 里）
-                    if Planner._should_compress_feedback(messages):
+                    if Planner._should_compress_feedback(messages, self._context_window()):
                         Planner._compress_prior_feedback(messages)
                     # 按需调图：新回喂带图片时，先剥离旧轮已加载的图片，
                     # 上下文始终只保留最新一轮的画面（vision token 治理）
@@ -583,9 +607,10 @@ class Planner:
     _FEEDBACK_COMPRESSED = FEEDBACK_COMPRESSED
 
     @staticmethod
-    def _should_compress_feedback(messages: List[Dict[str, Any]]) -> bool:
-        """惰性压缩决策（委托 fc_tool_runner.should_compress_feedback）"""
-        return should_compress_feedback(messages)
+    def _should_compress_feedback(messages: List[Dict[str, Any]], context_window: int = 0) -> bool:
+        """惰性压缩决策（委托 fc_tool_runner.should_compress_feedback；
+        814R1 恢复：传入当前模型窗口，阈值随模型而非全局配置）"""
+        return should_compress_feedback(messages, context_window)
 
     @staticmethod
     def _compress_prior_feedback(messages: List[Dict[str, Any]]) -> None:
@@ -593,8 +618,13 @@ class Planner:
         compress_prior_feedback(messages)
 
     def _build_system_prompt(self, context: PlannerContext) -> str:
-        """构建 system prompt（委托 PromptBuilder；段落顺序为前缀缓存优化）"""
-        return self._prompt_builder.build_system_prompt(context)
+        """构建 system prompt（委托 PromptBuilder；段落顺序为前缀缓存优化）。
+        814R1 恢复双协议瘦身：FC 通道注入瘦身版协议（system_fc.md），文本通道用完整协议。"""
+        fc_mode = bool(
+            self.llm_adapter is not None
+            and getattr(self.llm_adapter, "supports_function_calling", False)
+        )
+        return self._prompt_builder.build_system_prompt(context, fc_mode=fc_mode)
 
     def _build_skill_catalog(self, context: PlannerContext) -> str:
         """构建 Skill 目录（委托 PromptBuilder）"""

@@ -42,10 +42,15 @@ def load_prompt(relative_path: str, use_cache: bool = True, lang: str = "") -> s
     return _load_file(relative_path, use_cache)
 
 
-def _load_file(relative_path: str, use_cache: bool = True) -> str:
-    """内部文件加载（带缓存）"""
-    if use_cache and relative_path in _cache:
-        return _cache[relative_path]
+def _load_file(relative_path: str, use_cache: bool = True, _depth: int = 0) -> str:
+    """内部文件加载（带缓存）。
+
+    批次5：支持 {{include:path}} 组装指令——把 prompts/ 下另一文件的全文
+    嵌入当前位置（共有段落单一事实源，防多处复制漂移）；递归深度限制防环。
+    """
+    cache_key = relative_path
+    if use_cache and cache_key in _cache:
+        return _cache[cache_key]
 
     fpath = PROMPTS_DIR / relative_path
     if not fpath.exists():
@@ -58,9 +63,32 @@ def _load_file(relative_path: str, use_cache: bool = True) -> str:
         logger.error(f"[Prompts] 读取失败: {fpath} - {e}")
         return ""
 
+    if _depth < 4 and "{{include:" in text:
+        def _sub(m: re.Match) -> str:
+            inc_path = m.group(1).strip()
+            return _load_file(inc_path, use_cache=False, _depth=_depth + 1)
+        text = re.sub(r"\{\{include:([^}]+)\}\}", _sub, text)
+
     if use_cache:
-        _cache[relative_path] = text
+        _cache[cache_key] = text
     return text
+
+
+def load_prompt_section(relative_path: str, section: str) -> str:
+    """加载文件的指定分节（批次5：系统文案外置的读取入口）。
+
+    分节格式：`## KEY` 标题到下一个 `## ` 标题（或文件末尾）之间的正文。
+    未找到分节时返回空串并告警（调用方应有内置兜底）。"""
+    text = load_prompt(relative_path)
+    if not text:
+        return ""
+    pattern = re.compile(
+        rf"(?m)^##\s+{re.escape(section)}\s*\n(.*?)(?=^##\s+|\Z)", re.S)
+    m = pattern.search(text)
+    if not m:
+        logger.warning(f"[Prompts] 分节不存在: {relative_path} :: {section}")
+        return ""
+    return m.group(1).strip()
 
 
 def render_prompt(relative_path: str, **kwargs: Any) -> str:

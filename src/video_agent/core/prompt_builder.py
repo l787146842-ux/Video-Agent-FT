@@ -32,18 +32,21 @@ class PromptBuilder:
         # 当前工作台 raw state（分阶段聚焦注入探测用；缺省不启用聚焦）
         self._get_raw_state = get_raw_state
 
-    def build_system_prompt(self, context: "PlannerContext") -> str:
+    def build_system_prompt(self, context: "PlannerContext", fc_mode: bool = False) -> str:
         """构建 system prompt：从 prompts/ 加载 + 注入状态上下文。
 
-        段落顺序为前缀缓存（P1）优化：稳定内容（协议/Skill 目录/选中 Skill/
-        草稿说明/记忆）在前，逐轮变化的工作台状态 JSON 殿后，
-        使多步循环内各轮的前缀逐字节稳定，命中供应商 prompt 前缀缓存。
+        段落顺序为前缀缓存（P1）优化：稳定内容在前，状态 JSON 殿后；
+        选中 Skill 全文放在最末尾（近生成端，遵循度最高，避免被大段状态 JSON 淹没）。
+
+        fc_mode（814R1 恢复双协议瘦身）：True 时协议段用 planner/system_fc.md
+        （Tool 优先瘦身协议，共有段经 {{include}} 从 shared/ 拼装），
+        False 时用 planner/system.md 完整协议（含 studio-actions 动作清单）。
         """
         parts: List[str] = []
 
         if context.use_studio_context:
             # Rule4: 从 prompts/ 目录加载（稳定前缀第一段）
-            protocol = load_prompt("planner/system.md")
+            protocol = load_prompt("planner/system_fc.md" if fc_mode else "planner/system.md")
             if protocol:
                 parts.append(protocol)
             # 协议拆分（4.2）：仅非 FC 通道注入 studio-actions 文本协议全文

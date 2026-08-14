@@ -699,6 +699,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             skill_name=resolved_skill,
             prelude_notes=prelude_notes,
             use_studio_context=use_studio_context,
+            # 814R1 恢复：非 FC 通道（如 agy CLI）注入 text_actions.md 文本协议全文
+            text_protocol=not _channel_supports_fc(body.provider),
             asset_mode=body.asset_mode,
             image_generation_provider=image_provider,
             image_generation_aspect_ratio=image_aspect_ratio,
@@ -944,6 +946,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         ),
         skill_name=resolved_skill,
         prelude_notes=prelude_notes,
+        # 814R1 恢复：非 FC 通道（如 agy CLI）注入 text_actions.md 文本协议全文
+        text_protocol=not _channel_supports_fc(body.provider),
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
         image_generation_provider=image_provider2,
         image_generation_aspect_ratio=image_aspect_ratio2,

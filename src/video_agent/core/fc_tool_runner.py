@@ -25,6 +25,7 @@ from src.video_agent.state.models import (
     CAT_KEY_ELEMENTS,
     CAT_SHOTS,
 )
+from src.video_agent.utils.prompts import load_prompt_section
 
 # 执行器工具名集合（skill_runtime 注册；FC 轨据此注入聊天供应商）
 _EXECUTOR_TOOL_NAMES = frozenset({
@@ -40,10 +41,14 @@ _EXECUTOR_TOOL_NAMES = frozenset({
 _CRITICAL_TOOL_NAMES = frozenset(_EXECUTOR_TOOL_NAMES | {"document_write"})
 from src.video_agent.tools.base import ToolResult
 
+# 回喂模板外置（814R1 恢复）：prompts/planner/feedback.md 为单一事实源，代码留内置兜底
+_FEEDBACK_FILE = "planner/feedback.md"
+
 # 回喂消息的识别前缀（与 format_tool_results 首行保持一致）
-FEEDBACK_MARKER = "（系统）本轮调用的工具已执行完毕，结果如下："
+FEEDBACK_MARKER = load_prompt_section(_FEEDBACK_FILE, "FEEDBACK_MARKER") or (
+    "（系统）本轮调用的工具已执行完毕，结果如下：")
 # 旧轮回喂被压缩后的占位文案
-FEEDBACK_COMPRESSED = (
+FEEDBACK_COMPRESSED = load_prompt_section(_FEEDBACK_FILE, "FEEDBACK_COMPRESSED") or (
     "（系统）此前轮次工具读回的文档全文已从上下文移除以节约空间；"
     "其中的流程与约束仍须遵守，如确需复核原文请重新调用对应 read_* 工具。"
 )
@@ -57,13 +62,17 @@ FEEDBACK_IMAGE_TOOL = "view_storyboard_media"
 FEEDBACK_MAX_TOTAL_CHARS = 100000
 
 
-def should_compress_feedback(messages: List[Dict[str, Any]]) -> bool:
+def should_compress_feedback(messages: List[Dict[str, Any]], context_window: int = 0) -> bool:
     """惰性压缩决策：消息估算总量达到 token 预算的 feedback_compress_ratio
-    才压缩旧轮全文回喂；未达到则保留全文保质量（短对话零损失）"""
+    才压缩旧轮全文回喂；未达到则保留全文保质量（短对话零损失）。
+
+    814R1 恢复：预算按当前模型窗口计算（传 context_window），
+    未传/传 0 回落全局 settings.context_window_size（兼容旧调用）。"""
     ratio = min(max(settings.feedback_compress_ratio, 0.0), 1.0)
     if ratio >= 1.0:
         return False
-    budget = int(settings.context_window_size * settings.token_budget_ratio)
+    window = context_window if context_window and context_window > 0 else settings.context_window_size
+    budget = int(window * settings.token_budget_ratio)
     threshold = int(budget * ratio)
     return estimate_messages_tokens(messages) >= threshold
 

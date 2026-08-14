@@ -414,6 +414,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | S1 | 切换 Skill 指令打架 | 违反 P1：测试 Skill 规则复述进五层 | skill_manifest 声明块（层 3）：业务闸默认全关，流程闸/裁剪/渠道块按声明启停，暂停卡文案中立化，16 存量 Skill 迁移 + 快照回归 |
 | S2 | AI 助手方案连续走捷径 | 违 P1/P2/13.5 | 设立 13.12 方案纪律；配套修复（executor_thinking_level 降档、截断保险全局化、边界自适应、规格覆盖注入、向导客观检测） |
 | 2026-08-13 恢复 | Qoder 损坏回退 8/6，整套执行器运行时丢失 | 未提交改动 + 救火回滚 | 现场冻结 + Qoder/QoderCN 历史快照归档恢复 + 宪法 v3 融合（本行即台账续记） |
+| 814R1 | 双协议瘦身/include 加载/feedback 外置/text_protocol 全部断线（8/14 深度审核发现，快照取证证实为 8/12 回退丢失接线） | 层 1/层 8 接线丢失，md 幸存但代码无人读 | 从 Qoder 快照恢复：{{include}} 展开 + load_prompt_section + fc_mode 双协议选择 + 回喂模板外置 + 窗口感知压缩 + text_protocol 闭环（test_814_prompt_protocol_restore 钉死） |
 
 ### 13.9 模型分层原则（速度治理）
 
