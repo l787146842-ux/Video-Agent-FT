@@ -300,6 +300,20 @@ app.include_router(runtime_settings_router, prefix="/api", tags=["runtime-settin
 app.include_router(memory_router, prefix="/api", tags=["memory"])
 
 
+# ---------- SPA 兜底（814H8） ----------
+@app.get("/{full_path:path}", include_in_schema=False)
+async def spa_catch_all(full_path: str):
+    """前端路由硬敲/刷新/书签（如 /global-settings）统一返回 index.html，
+    浏览器 JS 路由器按 URL 渲染对应页面（SPA fallback）。
+
+    注册在所有 API 路由与静态 mount 之后：/static、/workspace/assets、
+    /health、/、/canvas、/settings 等先匹配不受影响；
+    /api 排除：未知接口保持 JSON 404，前端 fetch 报错语义不被 HTML 200 污染。"""
+    if full_path == "api" or full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    return _studio_page()
+
+
 # ---------- 启动入口 ----------
 def main():
     logger.info(f"Project root: {PROJECT_ROOT}")

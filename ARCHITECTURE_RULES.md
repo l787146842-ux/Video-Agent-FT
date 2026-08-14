@@ -430,6 +430,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 814G | 9999 实测 12 条体验回退：阶段卡不可展开；时间线 live/持久化不同构（无走秒/顺序反/运行中无展开）；规格拒收先报错后交互；向导选项天书；规格未定稿就拆结构；写规格无卡片无交代；慢（历史膨胀+压缩默认关+主模型满档思考）；提示词不流式亮卡；深度思考窗不可滚；正文过少 | 8/13 重建丢的体验层接线 + 814F6 照过期规范改 + 814R4 压缩默认关 | G1 阶段卡恢复可展开（规范同步修订）；G2 规划条目入 trace+子挂父后+走秒+前奏 live 事件；G3 规格拒收静默（只喂模型，用户只看向导卡）；G4 选项 display 去维度名+说明差异化白话；G5 FlowGateSet.ensure_spec_gate 执行侧强制（拦 agent 不拦用户，override/坚持旁路）；G6 写文档正文交代系统保证；G7 compaction 默认 12+反馈压缩 0.35+主模型思考默认 low；G8 bind_progress_emitter 循环级双轨绑定；G9 思考窗 overflow-y:auto+底部跟随；G10 输出纪律改结构化短交代 |
 | 814Gb | 核查发现两处半吊子：文本轨 executor._spec_gate_ok 仍向用户追加 SPEC_GATE_ERROR ⚠（与 G3 静默语义打架）；ensure_spec_gate 只认 wizard 不认 manifest spec_gate 声明（两种声明风格强制不对齐） | 双轨语义漂移 | _spec_gate_ok 改只记日志（用户侧静默，恒 True 不硬拦）；ensure_spec_gate 条件扩为 wizard 客观启用 OR manifest spec_gate；3 个旧 warn 语义测试更新为静默断言 |
 | 814H7 | 推理档位不可选：全局 low 一刀切（814G7）既压主模型质量又不尊重端点原生；用户要求 Codex 式按会话选档 | 档位治理缺 UI 层 | 对话栏模型胶囊改两节下拉（模型+推理等级 高/中/低/默认，默认=原生不下发字段，localStorage 持久化，随 ChatRequest.thinking_level 透传主模型）；全局设置页新增「推理档位」卡（执行器机械调用/辅助摘要两档，runtime_settings 热生效）；主模型全局默认回空（原生）；适配器 400 优雅降级（端点不认 reasoning_effort 自动去字段重试，流式/非流式双路径）；浏览器实测两节下拉与设置卡通过 |
+| 814H8 | 前端路由硬敲/刷新（如 /global-settings）404：服务端只把 index.html 绑死在 /、/canvas、/settings，无 SPA fallback | 部署层缺兜底 | app.py 末尾加 catch-all（注册于全部 API 路由与静态 mount 之后）：未识别非 /api GET 路径一律返回 index.html；/api 排除保持 JSON 404；test_spa_fallback 四条集成测试钉死 |
 
 ### 13.9 模型分层原则（速度治理）
 
