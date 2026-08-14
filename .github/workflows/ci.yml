@@ -97,3 +97,19 @@ jobs:
         run: npx playwright install chromium --with-deps
       - name: Run E2E smoke tests
         run: npx playwright test
+
+  # ---------- Job 5: 评测流水线（814E5：黄金语料回归 + Skill 管线可解析性） ----------
+  eval-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run eval pipeline
+        run: python scripts/run_eval_pipeline.py

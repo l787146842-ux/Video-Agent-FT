@@ -181,6 +181,7 @@ async def run_agent_loop(
     prelude_notes: Optional[List[tuple]] = None,
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None,
     flow_gates=None,
+    user_id: str = "",
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
@@ -219,7 +220,7 @@ async def run_agent_loop(
     # 链路追踪：记录本次对话执行过程
     tracer = AgentTracer.get_instance()
     user_preview = user_text if isinstance(user_text, str) else str(user_text)[:80]
-    tracer.start_trace(user_preview)
+    tracer.start_trace(user_preview, user_id=user_id)
 
     for step in range(1, max_steps + 1):
         result.steps = step

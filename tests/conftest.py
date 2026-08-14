@@ -12,6 +12,18 @@ def _disable_blackbox(monkeypatch):
     monkeypatch.setattr(blackbox, "dump_case", lambda *a, **k: "")
 
 
+@pytest.fixture(autouse=True)
+def _state_backend_json():
+    """测试期状态后端钉 json（814E6：生产默认 sqlite，测试基线保持 json；
+    sqlite 行为由 test_repository_sqlite 直测覆盖）。"""
+    from src.video_agent.config import settings
+
+    old = settings.state_backend
+    object.__setattr__(settings, "state_backend", "json")
+    yield
+    object.__setattr__(settings, "state_backend", old)
+
+
 @pytest.fixture
 def set_global_setting():
     """定点突破 frozen Settings（与 runtime_settings 热更新同法），测试结束恢复。"""

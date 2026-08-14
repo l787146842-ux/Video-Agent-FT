@@ -84,6 +84,8 @@ class ChatRequest(BaseModel):
     # 携带 rule_id 列表（或 "all"）；后端写入 interaction.gate_overrides，
     # 由本次请求的 Planner 消费一次即清除（单次生效、留痕于用户消息）
     gate_overrides: List[str] = []
+    # 多用户归属（814E6 基础）：可选用户标识，入 trace 审计；完整鉴权另行立项
+    user_id: str = ""
 
 
 class ChatResponse(BaseModel):

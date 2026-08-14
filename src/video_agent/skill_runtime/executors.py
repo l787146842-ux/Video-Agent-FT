@@ -277,6 +277,30 @@ def _prompt_language_rule(skill_name: str) -> str:
     )
 
 
+def _style_memory_block(limit: int = 5) -> str:
+    """项目风格记忆注入（814E3）：只认「风格偏好：」前缀条目（摘要提示词约定），
+    按项目隔离，注入执行器 system prompt，保证跨会话风格连续性。"""
+    try:
+        if not settings.memory_enabled:
+            return ""
+        from src.video_agent.memory import MemoryManager
+
+        pid = StateManager.get_instance().active_project_id or ""
+        recs = MemoryManager.get_instance().list_records(project_id=pid)
+    except Exception:
+        return ""
+    lines = [
+        f"- {r.content}" for r in recs
+        if (r.content or "").strip().startswith("风格偏好：")
+    ][:limit]
+    if not lines:
+        return ""
+    return (
+        "\n== 项目风格记忆（用户确认过的风格偏好，提示词必须体现）==\n"
+        + "\n".join(lines)
+    )
+
+
 def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_override: Optional[str] = None) -> str:
     """执行器 system prompt：平台精简协议 + Skill 对应章节（只注入自己那一节）+ 铁律全文。
 
@@ -303,6 +327,10 @@ def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_ov
             parts += ["", "== 项目《执行铁律》（生产契约，与章节冲突时以铁律为准）==", iron_content]
     except Exception:
         pass
+    # 风格记忆注入（814E3）：跨会话风格连续性
+    style_block = _style_memory_block()
+    if style_block:
+        parts.append(style_block)
     # 冲突裁决总则（888 事故：章节内中英规则打架、章节与规格时长数字并存，
     # 推理模型反复权衡耗掉万字思考）：把两处常见冲突收敛成一条确定规则，
     # 模型不再需要自行裁决。

@@ -421,6 +421,11 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 814F3 | skill_baseline.md 与 skill_discipline.md 九条同构但语义相反并存（P1 隐患）；settings.skill_runtime 开关无消费点；workflows 引擎已批准下线但 4 处残留引用 | 恢复残留 + 死配置 + 债务未落地 | baseline 归档 docs/archive（禁重接线）；skill_runtime auto/executors/legacy 三态落地 prompt_builder；workflows/ + routes/workflow + core/agent + cli.py + workflow_step 工具整体移出主线（备份分支可捞，实现体仍在 backup 分支）；README/配置说明/契约同步 |
 | 814F6 | 阶段完成卡显示正文（与前端体验规范打架）；左栏页签文字竖排；窄视口顶栏重叠/右栏不可达；ConfirmActions 硬编码中文 | 实现与规范漂移 + 样式缺陷 | 阶段卡只留标题+徽标，确认文案转正文气泡（判重防双显），操作明细归时间线；页签 white-space:nowrap；工作台 min-width 940 + 横向滚动兜底；i18n 补齐 rp.confirm.*；浏览器实测截图验证（verify-*.png） |
 | 814F7 | 会话层「本次放行」无输入端（§2.4 只靠正则猜意图）；warnings 不落消息；system prompt 组装无可观测性 | 设计未闭环 | ChatRequest.gate_overrides 字段 + interaction 登记 + Planner 单次消费；拦截警告附「本次放行」按钮（gateWarningTargetIdx 挂载，e2e 钉死）；finishStream 落 warnings；prompt_builder 组装超阈预警（60000 字符） |
+| 814E1 | 执行器家族固定 7 个白名单，自定义章节 Skill 只能走全文兜底 | 架构弹性不足 | skill_section_run 通用章节执行器（stage key/flova tag/标题关键字/任意 <tag> 四级解析）注册为平台级工具 |
+| 814E2 | Skill <planner> 依赖关系声明无人消费，执行顺序全靠模型自觉 | P2 违例（可计算调度交给模型） | skill_runtime/dag.py 解析步骤+依赖→拓扑并行批次；skill_pipeline_plan 客观返回下一可执行批次 |
+| 814E3 | 风格偏好无跨会话连续性 | 记忆系统未分层 | summarize.md 约定「风格偏好：」前缀抽取；执行器 system prompt 注入项目风格记忆块（按项目隔离） |
+| 814E5 | 黄金语料无校准测试（宪法 §2.6 宣称存在但实际缺失）；语料期望停在前 S1 语义 | 评测驱动空心化 | scripts/run_eval_pipeline.py（语料回归+管线可解析性，退出码入 CI Job5）；语料按 S1 语义重校准（6 条）；test_gate_corpus_calibration 钉死 |
+| 814E6 | 多用户无归属链路；json 后端并发安全弱 | 扩展基础缺失 | state_backend 默认 sqlite（STATE_BACKEND=json 可回退，测试基线钉 json）；ChatRequest.user_id → trace 审计；完整鉴权另行立项 |
 
 ### 13.9 模型分层原则（速度治理）
 

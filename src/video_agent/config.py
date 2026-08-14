@@ -161,9 +161,9 @@ class Settings:
     # 存储后端（"local" | "s3"）
     storage_backend: str = field(default_factory=lambda: os.getenv("STORAGE_BACKEND", "local"))
 
-    # 项目状态持久化后端（"json" | "sqlite"）：json 为默认文件方案，
-    # sqlite 提供事务原子性与并发安全，首次启用自动从 JSON 迁移，可随时回退
-    state_backend: str = field(default_factory=lambda: os.getenv("STATE_BACKEND", "json"))
+    # 项目状态持久化后端（"json" | "sqlite"）：814E6 起默认 sqlite（事务原子性
+    # 与并发安全，多用户基础）；首次启用自动从 JSON 迁移，STATE_BACKEND=json 可随时回退
+    state_backend: str = field(default_factory=lambda: os.getenv("STATE_BACKEND", "sqlite"))
 
     # 画布画布集成
     canvas_base_url: str = field(default_factory=lambda: os.getenv("CANVAS_BASE_URL", "http://127.0.0.1:3000"))

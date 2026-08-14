@@ -11,37 +11,37 @@
     "id": "shot_missing_duration",
     "kind": "shot",
     "prompt": "缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。",
-    "manifest": null,
+    "manifest": { "gates": { "require_duration": true } },
     "expect_blocked": true,
     "expect_rule": "skill.require_duration",
-    "note": "缺镜头时长（生视频模型无法感知镜头长短）"
+    "note": "814E5 校准（S1）：技能闸须 manifest 声明后生效；缺镜头时长应拦"
   },
   {
     "id": "shot_missing_subtitle",
     "kind": "shot",
     "prompt": "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music。",
-    "manifest": null,
+    "manifest": { "gates": { "require_subtitle": true } },
     "expect_blocked": true,
     "expect_rule": "skill.require_subtitle",
-    "note": "缺负面约束 no subtitles（字幕后期添加）"
+    "note": "814E5 校准（S1）：缺负面约束 no subtitles 应拦"
   },
   {
     "id": "shot_missing_audio",
     "kind": "shot",
     "prompt": "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，no subtitles。",
-    "manifest": null,
+    "manifest": { "gates": { "require_audio_layer": true } },
     "expect_blocked": true,
     "expect_rule": "skill.require_audio_layer",
-    "note": "缺音频层（无对白/音效包装符且无 no music）"
+    "note": "814E5 校准（S1）：缺音频层应拦"
   },
   {
     "id": "shot_missing_camera",
     "kind": "shot",
     "prompt": "总时长：12秒。主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。",
-    "manifest": null,
+    "manifest": { "gates": { "require_camera_language": true } },
     "expect_blocked": true,
     "expect_rule": "skill.require_camera_language",
-    "note": "缺镜头语言（景别/角度/运动均未写明）"
+    "note": "814E5 校准（S1）：缺镜头语言应拦"
   },
   {
     "id": "shot_too_short",
@@ -82,18 +82,16 @@
     "kind": "shot",
     "prompt": "缓慢横移全景，清晨的草原上牧人赶着羊群缓缓走过远山脚下，炊烟从毡房升起，自然光，长焦压缩空间，镜头持续跟随队伍移动直至消失在山口，色调写实克制，no subtitles。",
     "manifest": null,
-    "expect_blocked": true,
-    "expect_rule": "skill.require_duration",
-    "note": "同一样本在默认策略下应拦（证明差异来自 manifest 而非语料漂移）"
+    "expect_blocked": false,
+    "note": "814E5 校准（S1 语义）：业务闸默认全关，未声明 manifest 时仅平台地板生效；同样本在声明默认闸的 Skill 下应拦（见 documentary_relaxed 反向验证）"
   },
   {
     "id": "at_ref_missing",
     "kind": "shot",
     "prompt": "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。",
     "manifest": { "gates": { "require_at_ref": true } },
-    "expect_blocked": true,
-    "expect_rule": "skill.require_at_ref",
-    "note": "未来科幻真人电影形态：加严规则缺 @元素引用"
+    "expect_blocked": false,
+    "note": "814E5 校准：require_at_ref 走客观补印（autofill_at_refs）不拦截——确定性任务收归系统，不出题给模型"
   },
   {
     "id": "at_ref_present",

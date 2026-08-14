@@ -65,7 +65,8 @@ def test_trace_file_rotation_on_size_limit(tmp_path, monkeypatch):
     _finish_one(t)
 
     # 轮转后：旧主文件 → .1，旧 .1 → .2，旧 .2（最旧）被丢弃；新主文件只含新记录
-    assert base.exists() and base.stat().st_size < 300
+    # （阈值 400：814E6 记录新增 user_id 字段后单条约 303 字节）
+    assert base.exists() and base.stat().st_size < 400
     assert (tmp_path / "agent_traces.jsonl.1").read_text(encoding="utf-8").startswith("x")
     assert (tmp_path / "agent_traces.jsonl.2").read_text(encoding="utf-8") == "old1"
     assert not (tmp_path / "agent_traces.jsonl.3").exists()

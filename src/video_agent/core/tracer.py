@@ -50,6 +50,7 @@ class TraceRecord:
     steps: List[StepTrace] = field(default_factory=list)
     total_actions: int = 0
     user_message_preview: str = ""  # 前 80 字符
+    user_id: str = ""  # 多用户归属（814E6 基础，完整鉴权另行立项）
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -58,6 +59,7 @@ class TraceRecord:
             "total_ms": round(self.total_ms, 1),
             "total_actions": self.total_actions,
             "user_message_preview": self.user_message_preview,
+            "user_id": self.user_id,
             "steps": [
                 {
                     "step": s.step,
@@ -102,13 +104,14 @@ class AgentTracer:
         """测试用：重置单例"""
         cls._instance = None
 
-    def start_trace(self, user_message: str = "") -> str:
+    def start_trace(self, user_message: str = "", user_id: str = "") -> str:
         """开始一次新追踪，返回 trace_id"""
         trace_id = uuid.uuid4().hex[:12]
         self._current = TraceRecord(
             trace_id=trace_id,
             timestamp=time.time(),
             user_message_preview=user_message[:80],
+            user_id=user_id or "",
         )
         self._step_start = time.monotonic()
         # 当前 step 期间收集的操作明细与 reasoning（end_step 时归档）

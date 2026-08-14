@@ -101,6 +101,8 @@ class PlannerContext:
     # 前奏时间线（Q8/6666/8888）：只登记真实发生的 system 动作（加载 Skill 流程基线），
     # 读取/存档由对应工具真实发生时记录，前奏不得冒充工具操作
     prelude_notes: List[tuple] = field(default_factory=list)
+    # 多用户归属（814E6 基础）：可选用户标识，入 trace 审计
+    user_id: str = ""
 
 
 @dataclass
@@ -482,6 +484,7 @@ class Planner:
             on_event=on_event,
             prelude_notes=context.prelude_notes,
             flow_gates=self._flow_gates,
+            user_id=context.user_id,
         )
 
         # 总结强制入正文（文本轨，1111/Q1；814R4 接线）：本次请求执行过

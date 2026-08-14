@@ -788,6 +788,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             asset_mode=body.asset_mode,
             image_generation_provider=image_provider,
             image_generation_aspect_ratio=image_aspect_ratio,
+            user_id=getattr(body, "user_id", "") or "",
         )
 
         applied_seen = False
@@ -1024,6 +1025,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
         image_generation_provider=image_provider2,
         image_generation_aspect_ratio=image_aspect_ratio2,
+        user_id=getattr(body, "user_id", "") or "",
     )
 
     # 非流式复用与 _real_stream 相同的 fallback 链：主模型瞬时故障（5xx/超时/连接失败）
