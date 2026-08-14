@@ -228,6 +228,88 @@ def _build_meta_note(elapsed_secs: float, steps: int, applied: int) -> str:
     return " · ".join(parts)
 
 
+async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_context: bool) -> str:
+    """开场公共编排（814F2：流式/非流式双路径单一实现，消除双份复制）。
+
+    暂停闭环（消费上轮暂停态）+ 规格定稿/向导消费 + 附件降级注入，
+    返回拼好的 LLM 用户消息文本。调用方需保证同一请求只调一次。
+    """
+    pending_confirm_note = ""
+    spec_finalize_note = ""
+    spec_wizard_note = ""
+    if use_studio_context:
+        async with svc.lock:
+            pending_confirm_note = _consume_pending_confirmation(svc)
+            spec_finalize_note = _finalize_spec_params(svc, user_text)
+            spec_wizard_note = _consume_spec_wizard(svc, user_text)
+    # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
+    attachment_note = (
+        attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
+        if body.attachments else ""
+    )
+    llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
+    if attachment_note:
+        llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
+    return llm_user_text
+
+
+# 会话级 compaction（814R4 恢复）：压缩后仍完整保留的最近消息条数
+_HISTORY_COMPACT_KEEP = 4
+
+
+async def _maybe_compact_history(
+    history: List[Dict[str, Any]], svc, adapter,
+) -> List[Dict[str, Any]]:
+    """会话级 compaction（814R4 恢复）：历史超阈值时用便宜模型把较早消息压成摘要。
+
+    对齐 Anthropic compaction 实践：保留决策与约束、丢弃冗余过程；
+    摘要按对话消息数缓存于 interaction.session_summary（消息数变化即失效重建），
+    失败静默回落原 history（compaction 是优化不是前置条件）。"""
+    threshold = int(getattr(settings, "history_compact_threshold", 0) or 0)
+    if threshold <= 0 or adapter is None or len(history) < threshold:
+        return history
+    interaction = svc.state_dict.setdefault("interaction", {})
+    cached = interaction.get("session_summary") or {}
+    msg_count = len(svc.get_chat_messages())
+    summary = ""
+    if cached.get("count") == msg_count and str(cached.get("text") or "").strip():
+        summary = str(cached["text"])
+    else:
+        keep = _HISTORY_COMPACT_KEEP
+        older = history[:-keep] if len(history) > keep else []
+        if not older:
+            return history
+        dialog = "\n".join(
+            f"{'user' if m.get('role') == 'user' else 'agent'}: {str(m.get('content', ''))[:300]}"
+            for m in older[-20:]
+        )
+        from src.video_agent.utils.prompts import load_prompt_section
+
+        tpl = load_prompt_section("planner/session_compact.md", "TEMPLATE")
+        prompt = tpl.replace("{{dialog}}", dialog) if tpl else (
+            "请把以下对话压缩为不超过 300 字的摘要，保留决策与约束：\n" + dialog)
+        try:
+            resp = await adapter.chat(
+                [
+                    {"role": "system", "content": "你是会话摘要助手。"},
+                    {"role": "user", "content": prompt},
+                ],
+                timeout=settings.llm_timeout,
+            )
+            summary = (resp.content or "").strip()
+        except Exception as e:
+            logger.warning(f"[ChatService] 会话 compaction 失败，保留原 history: {e}")
+            return history
+        if not summary:
+            return history
+        interaction["session_summary"] = {"count": msg_count, "text": summary[:1000]}
+        svc.save_debounced()
+        logger.info(f"[ChatService] 会话 compaction：{len(history)} 条 history 压缩为摘要+{keep} 条")
+    return [
+        {"role": "user", "content": f"（会话摘要，较早对话已压缩；工作台状态 JSON 仍是最新事实源）{summary}"},
+    ] + history[-_HISTORY_COMPACT_KEEP:]
+
+
 def _consume_pending_confirmation(svc, user_text: str = "") -> str:
     """消费「等待确认」暂停态：用户的新消息即是对上一轮暂停的回应。
 
@@ -243,8 +325,6 @@ def _consume_pending_confirmation(svc, user_text: str = "") -> str:
         # 规格收集暂停的回应：视为已进入收集环节（后续由 _consume_spec_wizard 拼装）
         interaction["spec_collected"] = True
     # 暂停语义标记（summary/spec/collect）随回应消费清除，避免残留影响下一轮
-    interaction.pop("pending_pause_kind", None)
-    # 暂停语义标记（summary/spec）随回应消费清除，避免残留影响下一轮
     interaction.pop("pending_pause_kind", None)
     # 故事板待确认窗口（步骤3→步骤4 分界）：不依赖 awaiting_confirmation，
     # 用户任何新消息到达即视为已审阅故事板，解除提示词写入封锁
@@ -463,25 +543,8 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit) -> None:
         user_text = "请查看我上传的素材"
 
     use_studio_context = body.context_mode != "none"
-    # 确认闭环：上一轮停在「等待确认」时，本条消息即是对暂停的回应，
-    # 清除暂停态并把暂停说明带给模型，防止从头重复同一套操作
-    pending_confirm_note = ""
-    if use_studio_context:
-        async with svc.lock:
-            pending_confirm_note = _consume_pending_confirmation(svc)
-            spec_finalize_note = _finalize_spec_params(svc, user_text)
-            spec_wizard_note = _consume_spec_wizard(svc, user_text)
-    else:
-        spec_finalize_note = ""
-        spec_wizard_note = ""
-    # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
-    attachment_note = (
-        attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
-        if body.attachments else ""
-    )
-    llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
-    if attachment_note:
-        llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
+    # 开场公共编排（814F2）：暂停闭环 + 规格定稿/向导 + 附件降级注入
+    llm_user_text = await _prepare_chat_opening(svc, body, user_text, use_studio_context)
 
     # Skill 写入文档：消息携带 Skill 引用块时（前端此时才传 skill_slug），
     # 记入当前项目 usedSkills，文档面板只展示已发送过的 Skill 文档。
@@ -667,6 +730,9 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         if settings.model_fallback_enabled
         else [(body.provider, body.model)]
     )
+    # 会话级 compaction（814R4 恢复）：历史超阈值时便宜模型压成摘要+最近几条
+    summary_adapter = _resolve_summary_adapter(body, candidates)
+    history = await _maybe_compact_history(history, svc, summary_adapter)
 
     for idx, (cand_provider, cand_model) in enumerate(candidates):
         try:
@@ -681,7 +747,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StudioActionExecutor,
-            summary_adapter=_resolve_summary_adapter(body, candidates),
+            summary_adapter=summary_adapter,
             chat_provider=cand_provider, chat_model=cand_model,
         )
         resolved_skill = _resolve_skill_name_for_injection(
@@ -854,24 +920,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     )
 
     use_studio_context = body.context_mode != "none"
-    # 确认闭环（同流式路径）：消费上一轮的「等待确认」暂停态
-    pending_confirm_note = ""
-    if use_studio_context:
-        async with svc.lock:
-            pending_confirm_note = _consume_pending_confirmation(svc)
-            spec_finalize_note = _finalize_spec_params(svc, user_text)
-            spec_wizard_note = _consume_spec_wizard(svc, user_text)
-    else:
-        spec_finalize_note = ""
-        spec_wizard_note = ""
-    # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
-    attachment_note = (
-        attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
-        if body.attachments else ""
-    )
-    llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
-    if attachment_note:
-        llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
+    # 开场公共编排（814F2）：同流式路径（暂停闭环 + 规格定稿/向导 + 附件降级）
+    llm_user_text = await _prepare_chat_opening(svc, body, user_text, use_studio_context)
 
     # Skill 写入文档：同 stream_worker（仅消息携带 Skill 引用块时前端才传 slug）
     if body.skill_slug:
@@ -960,6 +1010,9 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         if settings.model_fallback_enabled
         else [(body.provider, body.model)]
     )
+    # 会话级 compaction（814R4 恢复）：同流式路径
+    summary_adapter = _resolve_summary_adapter(body, candidates)
+    history = await _maybe_compact_history(history, svc, summary_adapter)
     result = None
     used_model = body.model
     last_err: Optional[Exception] = None
@@ -975,7 +1028,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StudioActionExecutor,
-            summary_adapter=_resolve_summary_adapter(body, candidates),
+            summary_adapter=summary_adapter,
             chat_provider=cand_provider, chat_model=cand_model,
         )
         applied_seen = False

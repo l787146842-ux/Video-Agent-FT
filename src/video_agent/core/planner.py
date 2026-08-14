@@ -443,6 +443,9 @@ class Planner:
                 gate_override=gate_override_scope,
                 flow_gates=self._flow_gates,
             )
+            # 总结强制入正文（1111/Q1；814R4 接线）：script_analyze 同批产出
+            # summary 且正文尚未包含时拼在最前，防暂停同批时总结丢失
+            content = _prepend_script_summary(content, tool_results)
             # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
             # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
             if tool_results:
@@ -484,6 +487,18 @@ class Planner:
             prelude_notes=context.prelude_notes,
             flow_gates=self._flow_gates,
         )
+
+        # 总结强制入正文（文本轨，1111/Q1；814R4 接线）：本次请求执行过
+        # script_analyze 且停在暂停时，一句话总结不得丢失（判重由函数内置）
+        if loop_result.confirmation and "script_analyze" in getattr(executor, "skill_stages_done", set()):
+            _ana_summary = str(
+                ((self.state_manager.state_dict or {}).get("analysis") or {}).get("summary") or ""
+            ).strip()
+            if _ana_summary:
+                _tr = [{"name": "script_analyze", "ok": True, "data": {"summary": _ana_summary}}]
+                loop_result.confirmation = _prepend_script_summary(loop_result.confirmation, _tr)
+                if loop_result.text:
+                    loop_result.text = _prepend_script_summary(loop_result.text, _tr)
 
         # 纯工具轮无总结文字时，用实际操作清单替换无信息量的占位文案：
         # 占位文案进入历史后模型看不出上一轮做了什么（读文档/写文档/请求确认），

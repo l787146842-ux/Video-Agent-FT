@@ -75,6 +75,9 @@ class Settings:
     # 旧轮 read_* 回喂全文的惰性压缩阈值：消息总量达到预算的该比例才压缩，
     # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）
     feedback_compress_ratio: float = field(default_factory=lambda: float(os.getenv("FEEDBACK_COMPRESS_RATIO", "0.5")))
+    # 会话级 compaction（814R4 恢复）：history 条数达该阈值时用便宜模型把较早
+    # 对话压成摘要+最近几条（0 = 关闭，仅靠 truncate_history 头尾截断）
+    history_compact_threshold: int = field(default_factory=lambda: _env_int("HISTORY_COMPACT_THRESHOLD", 0))
     # 工作台状态 JSON 紧凑序列化（模型读紧凑 JSON 无损，约省 20-30% token）；
     # 置 false 回退 indent=2 便于人工排查日志
     context_json_compact: bool = field(default_factory=lambda: _env_bool("CONTEXT_JSON_COMPACT", True))
