@@ -30,7 +30,12 @@ from src.video_agent.skill_runtime.progress import (
     emit_timeline_note,
     format_eta,
 )
-from src.video_agent.skill_runtime.registry import resolve_entry, tool_available, tool_sections
+from src.video_agent.skill_runtime.registry import (
+    fallback_skill_from_state,
+    resolve_entry,
+    tool_available,
+    tool_sections,
+)
 
 
 class SkillToolResult(BaseModel):
@@ -272,9 +277,12 @@ def _prompt_language_rule(skill_name: str) -> str:
     )
 
 
-def _skill_system_prompt(tool: str, skill_name: str, extra: str = "") -> str:
-    """执行器 system prompt：平台精简协议 + Skill 对应章节（只注入自己那一节）+ 铁律全文。"""
-    section = tool_sections(skill_name, tool)
+def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_override: Optional[str] = None) -> str:
+    """执行器 system prompt：平台精简协议 + Skill 对应章节（只注入自己那一节）+ 铁律全文。
+
+    section_override（814E1）：通用章节执行器直接注入任意章节文本，
+    不经 tool_sections 的固定映射。"""
+    section = section_override if section_override is not None else tool_sections(skill_name, tool)
     parts = [
         "你是本影视 Agent 工作台的独立执行器。",
         f"当前选中 Skill：「{skill_name or '未指定'}」。",
@@ -972,9 +980,10 @@ async def _executor_actions_from_llm(
     model: str = "",
     system_extra: str = "",
     only_group_type: str = "",
+    section_override: Optional[str] = None,
 ) -> Tuple[int, List[str]]:
     """通用执行器：注入章节 → LLM 产出 studio-actions → 应用并校验。"""
-    system = _skill_system_prompt(tool, skill_name, system_extra)
+    system = _skill_system_prompt(tool, skill_name, system_extra, section_override=section_override)
     provider, model = _resolve_chat_provider(provider, model)
     if not provider:
         return 0, ["当前工作区未配置可用的聊天供应商，请先在 API 配置页添加"]
@@ -2034,6 +2043,106 @@ class VideoAssemblerTool:
         return SkillToolResult(success=True, data={
             "plan": plan,
             "detail": "已生成组装方案（素材清单 + 时间轴顺序），可在画布中按此组装导出",
+        })
+
+
+# ---------- 814E1/E2：通用章节执行器 + 依赖图调度 ----------
+
+
+def _resolve_section_text(entry: Optional[Any], section: str) -> str:
+    """通用章节解析（814E1）：stage key → flova tag → 标题关键字 → 任意 <tag>。
+
+    未解析返回空串（调用方报错并附可用章节清单）。
+    """
+    if entry is None or not (section or "").strip():
+        return ""
+    sec = section.strip()
+    if sec in (entry.sections or {}):
+        return entry.sections[sec]
+    from src.video_agent.web.skill_docs import SECTION_TAG_STAGES, _stage_from_heading
+
+    low = sec.lower()
+    for mapper in (SECTION_TAG_STAGES.get(low, ""), _stage_from_heading(sec)):
+        stages = mapper if isinstance(mapper, tuple) else (mapper,)
+        for s in stages:
+            if s and s in (entry.sections or {}):
+                return entry.sections[s]
+    # 任意 <tag> 章节直取（通用：白名单外的自定义 tag 也能跑）
+    m = re.search(rf"<{re.escape(low)}>(.*?)</{re.escape(low)}>", entry.content or "", re.S | re.I)
+    if m:
+        return m.group(1).strip()
+    return ""
+
+
+class SkillSectionRunInput(SkillToolInput):
+    section: str = Field(..., description="章节标识：stage key（如 storyboard_ke）/ flova tag（如 write_the_prompt）/ 任意自定义 <tag> / 标题关键字")
+    task: str = Field(..., description="本章节要执行的具体任务描述（系统自动附工作台状态 JSON）")
+
+
+class SkillSectionRunTool:
+    name = "skill_section_run"
+    description = (
+        "通用章节执行器（814E1）：把当前 Skill 的任意章节作为唯一依据注入独立执行器，"
+        "LLM 产出 studio-actions 后由系统应用并校验。适用于没有专属执行器的章节"
+        "（自定义 tag / 本地改写标题）。返回 applied 数量与警告。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return SkillSectionRunInput
+
+    async def aexecute(self, params: SkillSectionRunInput) -> SkillToolResult:
+        svc = StateManager.get_instance()
+        skill = params.skill_name or fallback_skill_from_state(svc.state_dict)
+        entry = resolve_entry(skill)
+        if entry is None:
+            return SkillToolResult(success=False, error=f"Skill「{skill or '未指定'}」未注册，请先选中 Skill")
+        section_text = _resolve_section_text(entry, params.section)
+        if not section_text:
+            avail = ", ".join(sorted((entry.sections or {}).keys())) or "（无）"
+            return SkillToolResult(
+                success=False,
+                error=f"章节「{params.section}」未解析；可用 stage：{avail}",
+            )
+        user_prompt = (
+            f"任务：{params.task}\n\n== 当前工作台状态 JSON ==\n{_build_state_context(svc)}"
+        )
+        applied, warnings = await _executor_actions_from_llm(
+            self.name, skill, user_prompt, entry.content, svc,
+            section_override=section_text,
+            provider=params.chat_provider, model=params.chat_model,
+        )
+        if applied:
+            return SkillToolResult(success=True, data={"applied": applied, "warnings": warnings})
+        return SkillToolResult(success=False, error="; ".join(warnings or ["执行器未产出有效操作"]))
+
+
+class SkillPipelinePlanTool:
+    name = "skill_pipeline_plan"
+    description = (
+        "依赖图调度（814E2）：解析当前 Skill <planner> 的步骤与依赖关系，"
+        "结合工作台状态客观返回各步骤完成度与下一可执行批次（同批可并行）。"
+        "按返回的 ready 批次推进，不要跳步。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return SkillToolInput
+
+    async def aexecute(self, params: SkillToolInput) -> SkillToolResult:
+        from src.video_agent.skill_runtime import dag
+        from src.video_agent.skill_runtime.guard import skill_planner_flow
+
+        svc = StateManager.get_instance()
+        skill = params.skill_name or fallback_skill_from_state(svc.state_dict)
+        flow = skill_planner_flow(skill)
+        if not flow:
+            return SkillToolResult(success=False, error=f"Skill「{skill or '未指定'}」无 <planner> 流程章节")
+        status = dag.pipeline_status(flow, svc.state_dict)
+        ready = [s for s in status if s["ready"]]
+        batches = dag.topo_batches(dag.parse_steps(flow), dag.parse_dependencies(flow))
+        return SkillToolResult(success=True, data={
+            "steps": status,
+            "ready_batch": ready,
+            "parallel_batches": batches,
         })
 
 

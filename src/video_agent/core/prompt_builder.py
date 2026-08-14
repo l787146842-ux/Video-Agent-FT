@@ -382,6 +382,8 @@ class PromptBuilder:
             "【阶段边界与确认】各执行器的产出由系统按 Skill 章节校验（结构阶段只建分组、"
             "提示词阶段只写提示词）；阶段暂停点以本 Skill『何时暂停』为准，需暂停时用 "
             "workflow_pause/request_confirmation 邀请确认，用户要求连续执行时照做并在回复末尾附警告。",
+            "【通用能力】无专属执行器的章节用 skill_section_run（section=章节标识）执行；"
+            "推进顺序先调 skill_pipeline_plan 拿下一可执行批次（同批可并行），不要跳步。"
             "只调用上面列出的执行器与系统既有工具（document_write / read_uploaded_doc / image_generate / generate_video / workflow_pause 等）；"
             "不要调用本清单之外的 Skill 工具名，也不要对当前 Skill 调用 read_skill（执行器内部已注入对应章节）。",
         ]

@@ -8,6 +8,8 @@ def register_skill_runtime_tools() -> None:
     from src.video_agent.skill_runtime.executors import (
         AudioGenerateTool,
         ScriptAnalyzeTool,
+        SkillPipelinePlanTool,
+        SkillSectionRunTool,
         StoryboardAudioTool,
         StoryboardKeyElementsTool,
         StoryboardShotsTool,
@@ -24,6 +26,9 @@ def register_skill_runtime_tools() -> None:
         WriteMediaPromptTool,
         AudioGenerateTool,
         VideoAssemblerTool,
+        # 814E1/E2：通用章节执行器 + 依赖图调度（平台级，任何 Skill 可用）
+        SkillSectionRunTool,
+        SkillPipelinePlanTool,
     ):
         ToolManager.register(cls())
-    logger.info("[SkillRuntime] 已注册 7 个 Skill 独立执行器工具")
+    logger.info("[SkillRuntime] 已注册 9 个 Skill 执行器/调度工具")
