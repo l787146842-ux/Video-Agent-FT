@@ -770,20 +770,29 @@ async def _generate_soft_spec_candidates(
         provider, model = _resolve_chat_provider(chat_provider, chat_model)
         if not provider:
             return
-        # 剧本体量客观边界（4444：1197 字剧本出 10 分钟候选的闹剧）：
-        # 时长类维度的候选上限由剧本字数粗估（约 3 字/秒），注入出题词并在收卷时过滤
-        script_len = len(_build_script_hint(svc.state_dict) or "")
-        dur_cap_min = max(1, round(script_len / 3 / 60)) if script_len else 0
+        # 剧本体量客观边界（4444：1197 字剧本出 10 分钟候选的闹剧；
+        # 9999 二轮：旧 3 字/秒是旁白朗读速率，1197 字微剧本算出 7 分钟
+        # 上限仍不合理）——剧情类成片约 600 字剧本/分钟；按剧本正文实测，
+        # 收卷时超限候选剔除，全超则回落确定性梯度（不再出题给模型）
+        script_len = len(str(script_content or "").strip())
+        dur_cap_min = max(1, round(script_len / 600)) if script_len else 0
         dur_note = (
-            f"（剧本约 {script_len} 字，成片合理时长上限约 {dur_cap_min} 分钟；"
+            f"（剧本约 {script_len} 字，剧情类成片约 600 字剧本/分钟，"
+            f"合理成片时长上限约 {dur_cap_min} 分钟；"
             "含「时长」维度的候选必须落在该上限内，用「约 N 秒/分钟」表述）"
             if dur_cap_min else ""
+        )
+        aspect_note = (
+            "（含「画幅」的维度候选只能从标准画幅比例中选："
+            "16:9、9:16、1:1、4:3、2.35:1，可附不超过 4 字的修饰）"
+            if any(_is_aspect_dim(d) for d in dims) else ""
         )
         data = await _llm_json_call(
             "你是制片规格助手，只输出 JSON，不输出推理过程。",
             (
                 "根据以下剧本，为下列制片维度各提出 2~4 个贴合题材与基调的候选值，"
-                "每个候选不超过 12 字。维度：" + "、".join(dims) + "。" + dur_note + "\n"
+                "每个候选不超过 12 字。维度：" + "、".join(dims) + "。"
+                + dur_note + aspect_note + "\n"
                 "输出 JSON 对象，键为维度名，值为候选字符串数组。\n\n"
                 f"一句话总结：{summary}\n剧本开头：{script_content[:4000]}"
             ),
@@ -806,6 +815,13 @@ async def _generate_soft_spec_candidates(
                         if mins and mins > dur_cap_min:
                             continue
                     vs.append(s)
+            if _is_aspect_dim(dim):
+                # 画幅是渠道能力参数（确定性题）：模型自造的电影规格
+                # （如 1.43:1 IMAX）生成渠道出不了，归一到标准画幅白名单
+                vs = _normalize_aspect_candidates(vs)
+            elif dur_cap_min and "时长" in dim and len(vs) < 2:
+                # 模型候选全部超限：确定性梯度兜底（系统算，不再问模型）
+                vs = _duration_ladder(dur_cap_min)
             if len(vs) >= 2:
                 cleaned[dim] = vs[:4]
         if cleaned:
@@ -825,6 +841,59 @@ def _candidate_minutes(text: str) -> float:
     n = float(m.group(1))
     unit = m.group(2)
     return n * 60 if unit == "小时" else n / 60 if unit == "秒" else n
+
+
+# ---------- 画幅候选客观归一（9999 二轮） ----------
+# 画幅比例是生成渠道的能力参数，属确定性题（13.5 三问 1+2）：
+# 候选只能命中标准画幅白名单，模型只选不造；有效候选不足时兜底平台标准集。
+_ASPECT_RATIO_WHITELIST: Tuple[str, ...] = (
+    "16:9", "9:16", "1:1", "4:3", "3:4", "2.35:1", "21:9",
+)
+_ASPECT_RATIO_LABELS: Dict[str, str] = {
+    "16:9": "16:9 横屏", "9:16": "9:16 竖屏", "1:1": "1:1 方形",
+    "4:3": "4:3 经典", "3:4": "3:4 竖屏", "2.35:1": "2.35:1 宽银幕",
+    "21:9": "21:9 宽银幕",
+}
+_ASPECT_DIM_HINTS = ("画幅", "比例", "aspect")
+_ASPECT_RATIO_RE = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*[:：]\s*(\d{1,2}(?:\.\d+)?)")
+
+
+def _is_aspect_dim(dim: str) -> bool:
+    low = str(dim or "").lower()
+    return any(h in low for h in _ASPECT_DIM_HINTS)
+
+
+def _normalize_aspect_candidates(vals: List[str]) -> List[str]:
+    """归一画幅候选到标准比例；有效命中不足 2 个时兜底平台标准四选。"""
+    out: List[str] = []
+    for v in vals:
+        m = _ASPECT_RATIO_RE.search(str(v or ""))
+        if not m:
+            continue
+        ratio = f"{m.group(1)}:{m.group(2)}"
+        if ratio not in _ASPECT_RATIO_WHITELIST:
+            continue
+        label = _ASPECT_RATIO_LABELS.get(ratio, ratio)
+        if label not in out:
+            out.append(label)
+        if len(out) >= 4:
+            break
+    if len(out) < 2:
+        out = ["16:9 横屏", "9:16 竖屏", "1:1 方形", "4:3 经典"]
+    return out
+
+
+def _duration_ladder(cap_min: int) -> List[str]:
+    """时长确定性候选（模型候选全部超上限时兜底）：上限以下均匀取档。"""
+    if cap_min <= 1:
+        return ["约 30 秒", "约 60 秒"]
+    out: List[str] = []
+    for v in (cap_min / 2, cap_min * 0.75, float(cap_min)):
+        v = round(v * 2) / 2
+        label = f"约 {int(v)} 分钟" if v == int(v) else f"约 {v} 分钟"
+        if label not in out:
+            out.append(label)
+    return out
 
 
 async def _fill_spec_values(

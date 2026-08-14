@@ -848,6 +848,25 @@ def _current_skill_of(state: Optional[Dict[str, Any]]) -> str:
     return str(used[-1] or "") if used else ""
 
 
+def _spec_dim_unresolved(content: str, dim: str) -> bool:
+    """规格文档里某软维度是否未定稿（行缺失/值空/含待确认标记，兼容加粗行）。
+
+    向导渲染的客观闸门（9999 二轮：拆解阶段暂停卡混回规格向导）：
+    维度已在规格里定稿就不再渲染，不依赖 spec_collected 一次性标记的
+    消费时序——标记被规格审阅暂停消费后，后续任何暂停都重弹向导。
+    """
+    pat = re.compile(
+        r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?" + re.escape(dim) + r"(?:\*\*)?\s*[:：]\s*(.*)$"
+    )
+    m = pat.search(content or "")
+    if not m:
+        return True
+    val = m.group(1).strip().strip("*").strip()
+    if not val or val == _PLACEHOLDER_DIM_VALUE:
+        return True
+    return any(k in val for k in SPEC_PARAM_UNCONFIRMED_MARKERS)
+
+
 def build_spec_param_options(
     spec_content: str, state: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, List[Dict[str, Any]]]:
@@ -855,6 +874,7 @@ def build_spec_param_options(
     视频分辨率、分镜最大时长由顶部「全局设置」唯一提供，向导不再渲染）。
 
     只渲染 Skill 规格步骤声明的软维度（4444：维度来自 Skill，平台不预设）；
+    规格文档已存在时只渲染未定稿维度（9999 二轮：客观状态闸门）；
     每个维度至少渲染一个入口——候选 >=2 渲染候选卡，候选不足时渲染占位卡
     + 组内「其它（自定义输入）」，保证「模型不能增删维度」。
     选项 label 采用「键：值」格式（前端向导按 group 分页，发送时逐行拼接，
@@ -863,8 +883,12 @@ def build_spec_param_options(
     opts: List[Dict[str, Any]] = []
     dims = skill_spec_dimensions(_current_skill_of(state))
     cands = ((state or {}).get("interaction") or {}).get("spec_soft_candidates") or {}
+    has_content = bool(str(spec_content or "").strip())
     rendered_dims: List[str] = []
     for dim in dims:
+        # 规格文档里已定稿的维度不再渲染（收集阶段无文档时全量渲染）
+        if has_content and not _spec_dim_unresolved(spec_content, dim):
+            continue
         vals = [str(v).strip() for v in (cands.get(dim) or []) if str(v or "").strip()]
         if vals:
             for v in vals[:4]:
