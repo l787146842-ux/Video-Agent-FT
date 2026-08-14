@@ -271,7 +271,7 @@ export interface AgentTaskReplayPayload {
   text?: string;
   tools?: Array<{
     id?: string; name?: string; summary?: string; status?: string;
-    elapsed_ms?: number | null; result_summary?: string;
+    elapsed_ms?: number | null; result_summary?: string; started_at_ms?: number;
   }>;
   snapshot?: ServerStateSnapshot | null;
   done_payload?: SseDonePayload | null;

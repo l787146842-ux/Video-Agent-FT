@@ -109,15 +109,19 @@
   .doc-card-name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .doc-card-status { margin-left: auto; font-size: 10px; color: var(--accent-emerald); flex-shrink: 0; }
 
-  /* 阶段卡片（814F6：按前端体验规范只留大项，不再展开正文） */
+  /* 阶段卡片（814G1 恢复可展开：标题+徽标，展开正文=本轮概述+执行清单） */
   .stage-card { border: 1px solid rgba(52, 211, 153, 0.3); border-radius: 8px; background: rgba(52, 211, 153, 0.05); margin-bottom: 6px; overflow: hidden; }
-  .stage-card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; user-select: none; cursor: default; }
+  .stage-card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; user-select: none; cursor: pointer; width: 100%; border: none; background: none; font: inherit; text-align: left; }
+  .stage-card-header:hover { background: rgba(52, 211, 153, 0.06); }
   .stage-check { color: #34d399; flex-shrink: 0; }
   .stage-card-title { font-size: 12px; font-weight: 600; color: #34d399; }
   .stage-card-badge { font-size: 10px; color: var(--text-muted); background: rgba(255, 255, 255, 0.06); padding: 2px 7px; border-radius: 4px; }
-  /* 确认说明文案气泡（814F6）：与阶段卡同色系描边，不发光；
-     特异性需高于 .chat-msg.agent .chat-bubble 才能生效 */
-  .chat-msg.agent .chat-bubble.stage-confirm-text { border: 1px solid rgba(52, 211, 153, 0.25); background: rgba(52, 211, 153, 0.04); margin-bottom: 6px; }
+  .stage-card-arrow { margin-left: auto; color: var(--text-dim); transition: transform 0.15s; }
+  .stage-card-arrow.open { transform: rotate(180deg); }
+  .stage-card-body { border-top: 1px solid rgba(52, 211, 153, 0.18); padding: 8px 12px; }
+  .stage-card-confirm { font-size: 12px; color: var(--text-primary); }
+  .stage-card-ops { margin: 6px 0 0; padding-left: 18px; list-style: disc; }
+  .stage-card-ops li { font-size: 11px; color: var(--text-muted); line-height: 1.7; }
 
   /* 过程时间线（agent 消息：深度思考 + 已处理操作折叠面板） */
   .agent-timeline { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; max-width: 100%; }
@@ -132,8 +136,9 @@
   .tl-icon-thinking { color: #f0a94b; flex-shrink: 0; }
   .tl-icon-done { color: #34d399; flex-shrink: 0; }
   .tl-reasoning { font-size: 11px; color: var(--text-muted); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
-  /* 流式深度思考定高视窗：新文字顶上来、旧文字隐藏，无需手动滚轮追输出 */
-  .tl-reasoning-live { max-height: 102px; overflow: hidden; }
+  /* 流式深度思考定高视窗（814G9）：overflow-y:auto 可滚轮回看上文；
+     自动跟随改为「用户在底部才追」（见 AgentTimeline） */
+  .tl-reasoning-live { max-height: 102px; overflow-y: auto; }
   /* 深度思考完成后的耗时角标 */
   .tl-panel-elapsed { font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
   .tl-item-list { margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; list-style: none; }

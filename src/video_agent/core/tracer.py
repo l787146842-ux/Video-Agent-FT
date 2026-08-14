@@ -118,6 +118,9 @@ class AgentTracer:
         self._pending_actions: List[Dict[str, Any]] = []
         self._pending_gates: List[Dict[str, Any]] = []
         self._pending_reasoning: List[str] = []
+        # 执行器子步骤缓冲（814G2）：子步骤先于父工具完成时暂存，
+        # 待父工具 record_action 时挂到父条目之后（持久化顺序 = live 顺序）
+        self._pending_subs: List[Dict[str, Any]] = []
         return trace_id
 
     def start_step(self) -> None:
@@ -126,6 +129,7 @@ class AgentTracer:
         self._pending_actions = []
         self._pending_gates = []
         self._pending_reasoning = []
+        self._pending_subs = []
 
     def record_action(
         self,
@@ -133,11 +137,38 @@ class AgentTracer:
         summary: str = "",
         elapsed_ms: float = 0.0,
         ok: bool = True,
+    ) -> Dict[str, Any]:
+        """记录当前 step 内的一个操作/工具调用（供前端时间线逐条展示）。
+
+        返回条目 dict（调用方可事后补填 elapsed_ms，如规划条目先占位后计时）；
+        同时把缓冲的执行器子步骤挂到本条目之后（814G2 顺序一致性）。
+        """
+        entry = {
+            "name": name,
+            "summary": summary,
+            "elapsed_ms": round(elapsed_ms, 1),
+            "ok": ok,
+        }
+        if self._current is None:
+            return entry
+        self._pending_actions.append(entry)
+        if self._pending_subs:
+            self._pending_actions.extend(self._pending_subs)
+            self._pending_subs = []
+        return entry
+
+    def record_subaction(
+        self,
+        name: str,
+        summary: str = "",
+        elapsed_ms: float = 0.0,
+        ok: bool = True,
     ) -> None:
-        """记录当前 step 内的一个操作/工具调用（供前端时间线逐条展示）"""
+        """执行器子步骤（814G2）：缓冲到 _pending_subs，随下一个父 record_action
+        挂到父条目之后；step 结束仍无父条目时由 end_step 兜底落盘。"""
         if self._current is None:
             return
-        self._pending_actions.append({
+        self._pending_subs.append({
             "name": name,
             "summary": summary,
             "elapsed_ms": round(elapsed_ms, 1),
@@ -191,6 +222,10 @@ class AgentTracer:
         reasoning = "".join(self._pending_reasoning)
         if len(reasoning) > _REASONING_MAX_CHARS:
             reasoning = reasoning[:_REASONING_MAX_CHARS] + "…"
+        # 814G2：step 结束仍无父条目承接的子步骤兜底落盘（防丢）
+        if self._pending_subs:
+            self._pending_actions.extend(self._pending_subs)
+            self._pending_subs = []
         self._current.steps.append(StepTrace(
             step=step,
             timing_ms=timing_ms,

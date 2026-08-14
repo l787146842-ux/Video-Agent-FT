@@ -221,15 +221,21 @@ async def test_fc_tool_timeline_events(svc):
         "执行", PlannerContext(use_studio_context=False),
         stream_hook=make_hook(), on_event=on_event,
     )
-    started = [e for e in events
-               if e["type"] == "tool_started" and e.get("name") != "model_reasoning"]
+    started = [e for e in events if e["type"] == "tool_started"]
     finished = [e for e in events
-                if e["type"] == "tool_finished" and e.get("id") == started[0]["id"]]
-    assert len(started) == 1 and len(finished) == 1
-    assert started[0]["name"] == "fake_tool"
+                if e["type"] == "tool_finished" and e.get("name") != "model_reasoning"
+                and e.get("result_summary") != f"Agent 规划完成（第 1 轮）"]
+    # 814G2：规划轮也进 live 事件流（运行中视图与持久化视图同条目）
+    assert [e["name"] for e in started] == ["model_reasoning", "fake_tool"]
+    tool_finished = [e for e in events if e["type"] == "tool_finished"]
+    assert len(tool_finished) == 2
+    assert started[1]["name"] == "fake_tool"
     assert finished[0]["ok"] is True
     step = result.trace["steps"][0]
-    assert step["actions"][0]["name"] == "fake_tool"
+    # 814G2 顺序：规划条目在前、工具在后，且规划耗时已补填
+    assert step["actions"][0]["name"] == "model_reasoning"
+    assert step["actions"][0]["elapsed_ms"] >= 0
+    assert step["actions"][1]["name"] == "fake_tool"
 
 
 # ---------- 知识渐进式披露：规格清单 / 附件清单 / 按需检索 ----------

@@ -169,6 +169,8 @@ class AgentTaskManager:
                 "status": "running",
                 "elapsed_ms": None,
                 "result_summary": "",
+                # 814G2：运行中走秒起点（replay/重连后前端继续计时）
+                "started_at_ms": round(time.time() * 1000),
             })
         elif etype == "tool_finished":
             tid = event.get("id", "")

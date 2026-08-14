@@ -9,6 +9,8 @@ export interface TimelineToolEntry {
   status: 'running' | 'done' | 'failed';
   elapsed_ms?: number;
   result_summary?: string;
+  /** 814G2：运行态走秒计时起点（刷新/重连无起点时以恢复时刻为准） */
+  started_at_ms?: number;
 }
 
 /** 排队中的引导消息（Agent 推理中用户继续发送，当前任务完成后自动发出） */
@@ -95,7 +97,7 @@ export const chatActions = {
   /** 过程时间线：工具/操作开始（运行态条目） */
   toolStarted(id: string, name: string, summary: string) {
     setChatState(produce((s) => {
-      s.streamingTools.push({ id, name, summary, status: 'running' });
+      s.streamingTools.push({ id, name, summary, status: 'running', started_at_ms: Date.now() });
       s.streamingStatus = `正在执行第 ${s.streamingTools.length} 项操作：${summary || name}`;
     }));
   },

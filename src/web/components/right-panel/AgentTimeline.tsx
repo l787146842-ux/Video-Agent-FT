@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal } from 'solid-js';
+import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import {
   FiCheckCircle, FiChevronDown, FiLoader, FiXCircle, FiZap,
 } from 'solid-icons/fi';
@@ -16,6 +16,8 @@ export interface TimelineItem {
   summary: string;
   status: 'running' | 'done' | 'failed';
   elapsed_ms?: number;
+  /** 814G2：运行态走秒起点 */
+  started_at_ms?: number;
 }
 
 /**
@@ -74,16 +76,35 @@ export function AgentTimeline(props: {
   const hasItems = () => props.items.length > 0;
   const doneCount = () => props.items.filter((i) => i.status !== 'running').length;
 
-  // 流式思考视窗自动跟随：定高视窗 + 新文字顶上来，无需手动滚轮追输出
+  // 流式思考视窗自动跟随（814G9）：overflow-y:auto 可滚轮回看上文；
+  // 仅当用户停在底部附近时才自动追新文字，滚上去看历史不被打断
   let reasoningRef: HTMLDivElement | undefined;
   createEffect(() => {
     void reasoningText();
     if (props.live && reasoningRef) {
       requestAnimationFrame(() => {
-        if (reasoningRef) reasoningRef.scrollTop = reasoningRef.scrollHeight;
+        if (!reasoningRef) return;
+        const nearBottom =
+          reasoningRef.scrollHeight - reasoningRef.scrollTop - reasoningRef.clientHeight < 60;
+        if (nearBottom) reasoningRef.scrollTop = reasoningRef.scrollHeight;
       });
     }
   });
+
+  // 814G2：运行中条目走秒计时（有 running 条目时每 500ms 刷新一次 now）
+  const [now, setNow] = createSignal(Date.now());
+  const hasRunning = () => props.items.some((i) => i.status === 'running');
+  let tickTimer: ReturnType<typeof setInterval> | undefined;
+  createEffect(() => {
+    const running = hasRunning();
+    if (running && tickTimer === undefined) {
+      tickTimer = setInterval(() => setNow(Date.now()), 500);
+    } else if (!running && tickTimer !== undefined) {
+      clearInterval(tickTimer);
+      tickTimer = undefined;
+    }
+  });
+  onCleanup(() => { if (tickTimer !== undefined) clearInterval(tickTimer); });
 
   return (
     <Show when={hasReasoning() || hasItems()}>
@@ -153,9 +174,15 @@ export function AgentTimeline(props: {
                         </Show>
                       </Show>
                       <span class="tl-item-summary">{item.summary}</span>
-                      <Show when={item.elapsed_ms != null}>
+                      {/* 814G2：完成态显示最终耗时；运行态走秒（有起点才显示） */}
+                      <Show when={item.status !== 'running' && item.elapsed_ms != null}>
                         <span class="tl-item-elapsed">
                           · {formatElapsed(item.elapsed_ms || 0)}
+                        </span>
+                      </Show>
+                      <Show when={item.status === 'running' && item.started_at_ms != null}>
+                        <span class="tl-item-elapsed">
+                          · {formatElapsed(Math.max(0, now() - (item.started_at_ms || 0)))}
                         </span>
                       </Show>
                     </li>

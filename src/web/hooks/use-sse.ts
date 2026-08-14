@@ -208,6 +208,8 @@ function handleEvent(ev: SseEvent) {
       ),
       elapsed_ms: t.elapsed_ms ?? undefined,
       result_summary: t.result_summary || '',
+      // 814G2：运行中走秒起点（replay 无原始起点时以恢复时刻为准）
+      started_at_ms: t.started_at_ms ?? Date.now(),
     })),
     model: p.model || '',
   });

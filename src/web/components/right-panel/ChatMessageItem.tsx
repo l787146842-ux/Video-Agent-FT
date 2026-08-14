@@ -1,6 +1,6 @@
 import { For, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import {
-  FiCheckCircle, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
+  FiCheckCircle, FiChevronDown, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
 } from 'solid-icons/fi';
 import { renderMarkdown } from '@/lib/markdown';
 import { sendUserMessage } from '@/lib/agent-actions';
@@ -28,6 +28,8 @@ export function ChatMessageItem(props: {
 }) {
   const msg = () => props.message;
   const isUser = () => msg().sender === 'user';
+  // 814G1：阶段卡恢复可展开（用户调教版：默认展开，正文=本轮概述+执行清单）
+  const [stageOpen, setStageOpen] = createSignal(true);
   /** 原图预览（lightbox）当前打开的图片地址 */
   const [lightboxUrl, setLightboxUrl] = createSignal('');
 
@@ -50,15 +52,9 @@ export function ChatMessageItem(props: {
   const hasRefBlocks = () =>
     ((msg().docBlocks || []).length > 0) || ((msg().skillBlocks || []).length > 0);
 
-  /** 确认文案是否需要单独渲染（814F6）：正文已含其首行时不重复 */
+  /** 确认文案（814G1：作为阶段卡展开正文的本轮概述） */
   const confirmText = () =>
     typeof msg().confirm === 'string' ? (msg().confirm as string).trim() : '';
-  const confirmShownSeparately = () => {
-    const c = confirmText();
-    if (!c) return false;
-    const head = c.split('\n')[0].slice(0, 24);
-    return !(msg().text || '').includes(head);
-  };
 
   /** 是否含闸机拦截类警告（814F7：显示「本次放行」按钮的触发条件） */
   const hasGateWarning = () =>
@@ -173,11 +169,14 @@ export function ChatMessageItem(props: {
         </div>
       </Show>
 
-      {/* 阶段完成卡（814F6：按前端体验规范只留大项——标题+操作数徽标；
-          正文与操作明细分别在下方确认气泡与「已处理 X 个操作」时间线展示） */}
+      {/* 阶段完成卡（814G1 恢复可展开：标题+操作数徽标，展开正文=本轮概述+执行清单） */}
       <Show when={msg().confirm}>
         <div class="stage-card">
-          <div class="stage-card-header">
+          <button
+            type="button"
+            class="stage-card-header"
+            onClick={() => setStageOpen(!stageOpen())}
+          >
             <FiCheckCircle size={15} class="stage-check" />
             <span class="stage-card-title">{t('rp.msg.stageDone')}</span>
             <Show when={msg().appliedActions}>
@@ -185,15 +184,29 @@ export function ChatMessageItem(props: {
                 {t('rp.msg.appliedOps', { count: msg().appliedActions ?? 0 })}
               </span>
             </Show>
-          </div>
+            <FiChevronDown
+              size={12}
+              class={`stage-card-arrow${stageOpen() ? ' open' : ''}`}
+            />
+          </button>
+          <Show when={stageOpen()}>
+            <div class="stage-card-body">
+              <Show when={confirmText()}>
+                <div
+                  class="chat_markdown stage-card-confirm"
+                  innerHTML={renderMarkdown(confirmText())}
+                />
+              </Show>
+              <Show when={(msg().actionLog || []).length > 0}>
+                <ul class="stage-card-ops">
+                  <For each={msg().actionLog || []}>
+                    {(op) => <li>{op}</li>}
+                  </For>
+                </ul>
+              </Show>
+            </div>
+          </Show>
         </div>
-      </Show>
-      {/* 确认说明文案（814F6：不再藏进阶段卡正文，作为正文气泡常驻可见） */}
-      <Show when={confirmShownSeparately()}>
-        <div
-          class="chat-bubble chat_markdown stage-confirm-text"
-          innerHTML={renderMarkdown(confirmText())}
-        />
       </Show>
 
       {/* 过程时间线（深度思考 + 已处理操作，折叠面板；内容不进下次 LLM 上下文） */}

@@ -60,7 +60,8 @@ async def emit_timeline_note(
         return
     try:
         from src.video_agent.core.tracer import AgentTracer
-        AgentTracer.get_instance().record_action(
+        # 814G2：子步骤缓冲挂到父工具条目之后（持久化顺序 = live 顺序）
+        AgentTracer.get_instance().record_subaction(
             name=name, summary=summary, elapsed_ms=elapsed_ms, ok=ok,
         )
     except Exception:

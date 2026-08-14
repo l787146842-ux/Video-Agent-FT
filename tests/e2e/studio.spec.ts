@@ -123,7 +123,7 @@ test.describe('故事板面板', () => {
 });
 
 test.describe('阶段确认卡片与文档卡片', () => {
-    test('阶段卡只留大项、确认文案转气泡、明细归时间线（814F6）', async ({ page }) => {
+    test('阶段卡可展开：默认展开正文=本轮概述+执行清单（814G1）', async ({ page }) => {
         await mockAgentTask(page, {
             text: '规划已完成',
             elapsed_ms: 500,
@@ -142,13 +142,14 @@ test.describe('阶段确认卡片与文档卡片', () => {
         await chatInput.press('Enter');
 
         const feed = page.getByTestId('chat-feed');
-        // 阶段完成卡：只有标题 + 操作数徽标（规范：不显示正文）
+        // 阶段完成卡：标题 + 操作数徽标，默认展开正文（本轮概述+执行清单）
         const stageCard = feed.locator('.stage-card').last();
         await expect(stageCard).toContainText('阶段完成');
         await expect(stageCard).toContainText('已执行 3 个操作');
+        await expect(stageCard.locator('.stage-card-body')).toContainText('故事板已建立，请审阅');
+        // 点击头部可折叠
+        await stageCard.locator('.stage-card-header').click();
         await expect(stageCard.locator('.stage-card-body')).toHaveCount(0);
-        // 确认说明文案作为独立气泡展示（正文未含其首行时）
-        await expect(feed.locator('.stage-confirm-text').last()).toContainText('故事板已建立，请审阅');
         // 文档完成卡片
         await expect(feed.locator('.doc-card').last()).toContainText('Final_Video_Spec.md');
         // 操作明细在「已处理 X 个操作」时间线里（展开后可见）

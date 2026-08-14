@@ -222,13 +222,27 @@ async def run_agent_loop(
     user_preview = user_text if isinstance(user_text, str) else str(user_text)[:80]
     tracer.start_trace(user_preview, user_id=user_id)
 
+    # 814G8 恢复：执行器进度通道双轨接线（统一循环级绑定，FC/文本轨同覆盖）。
+    # 执行器内部批次边界（emit_timeline_note/emit_state_refresh/emit_progress）
+    # 经此通道实时推时间线子项与故事板刷新——卡片一张张流式亮，不再结束才一把出现。
+    # contextvar 任务级隔离：异常路径随任务消亡，正常路径在循环结束后解绑。
+    from src.video_agent.skill_runtime.progress import (
+        bind_progress_emitter,
+        unbind_progress_emitter,
+    )
+    _progress_token = bind_progress_emitter(emit)
+
     for step in range(1, max_steps + 1):
         result.steps = step
         tracer.start_step()
         if step == 1:
             # 前奏明细（Q8）：读 Skill/文档等准备动作记入第一步时间线
-            for name, summary in (prelude_notes or []):
+            # （814G2：同时发 live 事件，运行中视图与持久化视图同条目）
+            for pi, (name, summary) in enumerate(prelude_notes or []):
                 tracer.record_action(str(name), str(summary), 0.0, True)
+                pid = f"pre-{pi}"
+                await emit({"type": SSE_TOOL_STARTED, "id": pid, "name": str(name), "summary": str(summary)})
+                await emit({"type": SSE_TOOL_FINISHED, "id": pid, "ok": True, "elapsed_ms": 0.0, "result_summary": str(summary)})
         await emit({"type": SSE_STEP_STARTED, "step": step, "max_steps": max_steps})
         if step > 1:
             # 多轮循环"静默期"提示：上一轮工具执行完到本轮首 token 之间可能耗时数十秒，
@@ -271,6 +285,11 @@ async def run_agent_loop(
             "name": "model_reasoning",
             "summary": f"Agent 正在规划本步动作（第 {step} 轮）",
         })
+        # 814G2：规划条目先占位入 trace（保证持久化顺序 = live 顺序：规划→工具），
+        # 耗时在 llm_call 返回后补填
+        _plan_rec = tracer.record_action(
+            "model_reasoning", f"Agent 正在规划本步动作（第 {step} 轮）", 0.0, True,
+        )
         content, finish_reason, fc_applied = await llm_call(system_prompt, messages, stream_hook)
         await emit({
             "type": SSE_TOOL_FINISHED,
@@ -294,6 +313,8 @@ async def run_agent_loop(
                 ok=True,
             )
             content, finish_reason, fc_applied = await llm_call(system_prompt, messages, stream_hook)
+        # 814G2：规划条目耗时补填（含重试总耗时，与 live 视图口径一致）
+        _plan_rec["elapsed_ms"] = round((time.monotonic() - _llm_t0) * 1000, 1)
         if bad_retries == 2 and not str(content or "").strip() and fc_applied == 0:
             result.text = "输出异常：模型连续返回空/畸形输出，已重试 2 次；请重试或检查模型配置。"
             result.warnings.append("模型连续 3 次输出异常（空/畸形），已终止本轮")
@@ -731,6 +752,8 @@ async def run_agent_loop(
                 feedback += "\n" + SELF_CHECK_FEEDBACK
         messages.append({"role": "user", "content": feedback})
 
+    # 814G8：正常路径解绑进度通道（异常路径 contextvar 随任务消亡）
+    unbind_progress_emitter(_progress_token)
     if not result.text:
         if result.confirmation:
             # 暂停轮无正文兜底：用暂停说明作为可见回复，
