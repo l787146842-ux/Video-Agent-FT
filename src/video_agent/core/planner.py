@@ -327,9 +327,15 @@ class Planner:
                 self._flow_gates = FlowGateSet.from_skill(_skill_content or "")
                 # 814G5 执行侧强制：规格向导启用时，拆解结构必须等规格文档
                 # （只拦 agent 越阶工具调用，不拦用户输入；override 时本段不构建）
+                # 814Gb 核查：两种声明风格对齐——wizard 客观启用 或 manifest 显式 spec_gate
                 try:
-                    from src.video_agent.skill_runtime.registry import spec_wizard_active
-                    if spec_wizard_active(context.skill_name):
+                    from src.video_agent.skill_runtime.registry import (
+                        skill_flow_enabled,
+                        spec_wizard_active,
+                    )
+                    if spec_wizard_active(context.skill_name) or skill_flow_enabled(
+                        context.skill_name, "spec_gate"
+                    ):
                         self._flow_gates = FlowGateSet.ensure_spec_gate(self._flow_gates)
                 except Exception as e:
                     logger.warning(f"[Planner] spec_gate 装配失败（降级）: {e}")

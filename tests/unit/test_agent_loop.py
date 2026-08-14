@@ -179,16 +179,17 @@ async def test_all_gate_bypassed_writes_and_keeps_model_pause(svc, monkeypatch):
     assert result.confirmation == "已拆好，请确认"
     # 正文保留模型总结
     assert "已完成关键元素拆解" in result.text
-    # 规格文档未写入但操作已执行，警告已记录
+    # 规格文档未写入但操作已执行（flow_gates=None 时不强制）；
+    # 814Gb：规格前置用户侧静默，不再进 gate_warnings
     assert not any(d.get("name") == "制片规格.md" for d in (svc.state_dict.get("documents") or []))
-    assert ex.gate_warnings and "规格文档" in ex.gate_warnings[0]
+    assert not any("规格文档" in w for w in ex.gate_warnings)
     # 关键元素已真实创建
     titles = [g.get("title") for g in (svc.state_dict.get("keyElements") or [])]
     assert "Element_A" in titles and "Element_B" in titles
 
 
 def test_executor_records_gate_warnings(svc, monkeypatch):
-    """执行器记录流程警告（不再拦截），下批次重置"""
+    """814Gb：规格前置用户侧静默（执行侧强制由 FlowGateSet 承担），下批次重置"""
     from src.video_agent.skill_runtime import registry
 
     monkeypatch.setattr(
@@ -202,7 +203,7 @@ def test_executor_records_gate_warnings(svc, monkeypatch):
     ])
     assert applied == 2
     assert ex.gate_rejections == []
-    assert ex.gate_warnings and "规格文档" in ex.gate_warnings[0]
+    assert not any("规格文档" in w for w in ex.gate_warnings)
     # 写入规格文档后再执行：放行；拦截记录（rejections）按批次重置，
     # 警告（gate_warnings）按任务累积供回复展示，不要求清空
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]

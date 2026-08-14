@@ -271,9 +271,10 @@ def test_has_spec_document_variants():
 
 
 def test_executor_spec_gate_warns_and_allows_add_group(svc, monkeypatch):
+    """814Gb：文本轨规格前置与 FC 轨对齐——executor 不再向用户追加 ⚠，
+    执行侧强制由 FlowGateSet.ensure_spec_gate 承担（planner 装配）。"""
     from src.video_agent.skill_runtime import registry
 
-    # S1：规格前置警告仅对声明 spec_gate 的 Skill 生效，本用例显式开启
     monkeypatch.setattr(
         registry, "skill_flow_enabled", lambda skill, key: key == "spec_gate",
     )
@@ -285,7 +286,8 @@ def test_executor_spec_gate_warns_and_allows_add_group(svc, monkeypatch):
     }])
     assert applied == 1
     assert len(svc.state_dict.get("keyElements") or []) == before + 1
-    assert ex.gate_warnings and "规格文档" in ex.gate_warnings[0]
+    # 用户侧静默：规格前置不再进 gate_warnings（不展示 ⚠）
+    assert not any("规格文档" in w for w in ex.gate_warnings)
 
 
 def test_executor_spec_gate_allows_after_spec_written(svc):

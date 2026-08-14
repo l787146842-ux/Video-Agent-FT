@@ -296,11 +296,9 @@ class StudioActionExecutor:
         return False
 
     def _spec_gate_ok(self) -> bool:
-        """规格前置警告（S1：只对显式声明 flow.spec_gate 的 Skill 生效）。
-
-        声明了但规格文档未写入：不硬拦（用户指令优先），只追加
-        「建议补写规格」警告随 gate_warnings 回喂；未声明的 Skill 完全静默。
-        """
+        """规格前置（814Gb 核查：与 FC 轨 _flow_gate 对齐——只记日志，
+        不再向用户追加 ⚠；执行侧强制由 FlowGateSet.ensure_spec_gate 承担，
+        用户输入永不被拦）。恒返回 True（不硬拦）。"""
         if not self.gate_enabled or prompt_gates.gate_mode() != "strict":
             return True
         if prompt_gates.has_spec_document(self.state):
@@ -316,9 +314,7 @@ class StudioActionExecutor:
                 declared = False
         if not declared:
             return True
-        logger.info("[FlowGate] 规格文档未写入（Skill 声明 spec_gate，追加建议补写警告）")
-        if prompt_gates.SPEC_GATE_ERROR not in self.gate_warnings:
-            self.gate_warnings.append(prompt_gates.SPEC_GATE_ERROR)
+        logger.info("[FlowGate] 规格文档未写入（Skill 声明 spec_gate；执行侧门禁已承担强制，此处仅日志）")
         return True
 
     def _record_presented(self, draft_id: str) -> None:

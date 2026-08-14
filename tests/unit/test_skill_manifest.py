@@ -154,7 +154,8 @@ async def test_spec_pause_gate_fires_with_manifest(svc, monkeypatch):
 # ---------- 端到端：规格前置警告只对声明 spec_gate 的 Skill 生效 ----------
 
 def test_spec_gate_warning_requires_declaration(svc):
-    """无规格文档时搭建故事板：声明 spec_gate 才附「建议补写规格」警告"""
+    """814Gb：规格前置用户侧静默——无论是否声明 spec_gate，executor 都不再
+    向用户追加 ⚠（执行侧强制由 planner 装配的 FlowGateSet.ensure_spec_gate 承担）。"""
     sd.save_skill_doc(
         "有规格闸",
         "# A\n```json skill_manifest\n" '{"flow": {"spec_gate": true}}\n' "```\n正文",
@@ -165,7 +166,7 @@ def test_spec_gate_warning_requires_declaration(svc):
     ex = StudioActionExecutor(svc, gate_enabled=True)
     ex.skill_name = "有规格闸"
     assert ex._spec_gate_ok() is True
-    assert any("规格" in w for w in ex.gate_warnings)
+    assert not ex.gate_warnings
 
     ex2 = StudioActionExecutor(svc, gate_enabled=True)
     ex2.skill_name = "无规格闸"
