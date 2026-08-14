@@ -283,13 +283,3 @@ export interface ViewSize {
   width: number;
   height: number;
 }
-
-export interface WorkflowRunRequest {
-  goal: string;
-  provider?: string;
-  model?: string;
-  image_provider?: string;
-  image_model?: string;
-  workflow_config?: string;
-  phase_configs?: Record<string, unknown>;
-}

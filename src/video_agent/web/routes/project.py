@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 from src.video_agent.utils import gen_id
-from src.video_agent.workflows.interactive import reset_interactive_engine
 
 router = APIRouter()
 
@@ -90,7 +89,6 @@ async def create_new_project(body: NewProjectRequest):
     async with svc.lock:
         project_id = svc.create_project(body.name.strip() or "未命名项目")
         snapshot = svc.get_full_snapshot()
-    reset_interactive_engine()
     return {"ok": True, "project_id": project_id, "state": snapshot}
 
 
@@ -103,7 +101,6 @@ async def switch_project(body: SwitchProjectRequest):
         if not ok:
             raise HTTPException(status_code=404, detail=f"项目 '{body.project_id}' 不存在")
         snapshot = svc.get_full_snapshot()
-    reset_interactive_engine()
     return {"ok": True, "project_id": body.project_id, "state": snapshot}
 
 
@@ -116,7 +113,6 @@ async def delete_project(body: DeleteProjectRequest):
         if not ok:
             raise HTTPException(status_code=400, detail="无法删除（至少保留一个项目）")
         snapshot = svc.get_full_snapshot()
-    reset_interactive_engine()
     return {"ok": True, "state": snapshot}
 
 

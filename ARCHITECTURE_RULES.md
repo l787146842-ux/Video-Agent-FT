@@ -418,6 +418,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 814R2 | §2.0 统一闸机管线空心化：prompt_write_verdict 无调用方，双轨各自内联组装判定；闸机文案硬编码；无闸机审计 | 接线丢失 + 语义漂移风险（死代码版硬拦与活路径只警告并存） | guard_pipeline.evaluate_prompt_write 成双轨唯一组合实现（4444 只警告不拦人对齐）；messages.md 文案外置（现行为准）；GATE_RULES 注册表 + tracer.record_gate + /api/agent/gates 审计闭环（test_814_gate_pipeline_restore 钉死） |
 | 814R3 | flow_gates.py（Skill 声明式流程检查点）整体无调用；会话层 gate_overrides 消费链断线 | 8/12 回退丢失 planner/agent_loop/fc_tool_runner 三处接线 | 从 8-04 快照恢复三处接线（FC 拦截+文本剔除+强制补发暂停）；恢复 interaction.gate_overrides 单次消费（按钮化输入端待 814 批次7）；正则意图识别作兜底；用户坚持 scope=all 旁路硬门禁（test_flow_gates 9+2 钉死） |
 | 814R4 | _prepend_script_summary 有定义有测试无生产调用（1111 台账「总结强制入正文」断线）；重复 pop；开场编排双份复制；session_compact 无人消费 | 回退丢失接线 + 重构残留 | FC 轨 llm_call 与文本轨暂停补拼双接线；_prepare_chat_opening 单一实现；会话级 compaction 恢复（阈值配置默认关，摘要缓存于 interaction）（test_814_summary_and_chatservice 钉死） |
+| 814F3 | skill_baseline.md 与 skill_discipline.md 九条同构但语义相反并存（P1 隐患）；settings.skill_runtime 开关无消费点；workflows 引擎已批准下线但 4 处残留引用 | 恢复残留 + 死配置 + 债务未落地 | baseline 归档 docs/archive（禁重接线）；skill_runtime auto/executors/legacy 三态落地 prompt_builder；workflows/ + routes/workflow + core/agent + cli.py + workflow_step 工具整体移出主线（备份分支可捞，实现体仍在 backup 分支）；README/配置说明/契约同步 |
 
 ### 13.9 模型分层原则（速度治理）
 
@@ -427,7 +428,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 
 ### 13.10 存量债务清单（清一条删一条）
 
-已清偿（保留记录供审计）：D1 system.md 内嵌铁律（已归位）、D2 铁律未全文注入（已注入）、D3 runtime 块 5 条款重复（已压至 3 条）、D5 执行器任务词复述章节（已只留目标+锚点）、D6 工具描述带流程暗示（已纯功能化）、D7 system.md 超预算（已达标）、阶段边界 prose（已下沉代码校验）、S1 通用层被单一 Skill 污染（已 skill_manifest 清偿）。
+已清偿（保留记录供审计）：D1 system.md 内嵌铁律（已归位）、D2 铁律未全文注入（已注入）、D3 runtime 块 5 条款重复（已压至 3 条）、D5 执行器任务词复述章节（已只留目标+锚点）、D6 工具描述带流程暗示（已纯功能化）、D7 system.md 超预算（已达标）、阶段边界 prose（已下沉代码校验）、S1 通用层被单一 Skill 污染（已 skill_manifest 清偿）、814 批次：双协议/统一闸机/flow_gates/总结接线/compaction 恢复（R1-R4），baseline 归档/skill_runtime 落地/workflows 移除（F3）。
 
 未清偿：
 

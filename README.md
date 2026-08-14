@@ -47,12 +47,6 @@ python -m src.video_agent.web   # http://127.0.0.1:8080
 
 画布离线时本项目仍可运行（画布相关功能降级，前端显示离线提示）。
 
-CLI 路径（无 Web）：
-
-```bash
-python cli.py "你的创作目标" --workflow config/default_workflow.json
-```
-
 ## 开发命令
 
 ```bash
@@ -82,14 +76,13 @@ src/video_agent/          后端（FastAPI 应用）
 ├── state/                StateManager 唯一状态写入点（Rule 3）+ Pydantic 模型
 ├── adapters/             外部调用统一层（Rule 4），含 canvas_adapter
 ├── tools/                业务 Tool 体系（Rule 5）
+├── skill_runtime/        Skill 执行器运行时（章节→执行器，agent-as-tool）
 ├── memory/               长期记忆系统
-├── workflows/            六阶段工作流引擎 + SSE
 └── config.py             集中配置（环境变量驱动）
 
 src/web/                  前端（SolidJS SPA）
 static/                   构建产物 dist/ + images/ + api-settings 嵌入页（待重写进 SPA）
 prompts/                  外置 Prompt（Rule 6）
-config/                   CLI 工作流定义
 data/                     供应商配置 / 技能文档 / 记忆 fallback（gitignore）
 tests/                    unit / integration / e2e / fixtures/canvas（契约夹具）
 workspace/                运行时状态与资产（gitignore）

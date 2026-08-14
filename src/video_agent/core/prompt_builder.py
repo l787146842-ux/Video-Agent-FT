@@ -270,14 +270,22 @@ class PromptBuilder:
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 的注入块（executors 唯一形态，M5：legacy 全文注入已移除）。
+        """选中 Skill 的注入块（814F3：settings.skill_runtime 开关落地）。
 
-        有章节：只注入「已注册执行器清单 + 流程基线」，章节在执行器调用时自动注入；
-        无章节：全文兜底直注（非 FC 通道调不了 read_skill，888 事故保障不降级）。
+        - auto（默认）：有章节→执行器清单+流程基线；无章节→全文兜底直注；
+        - executors：只走执行器形态，无章节时不注入全文（返回空串）；
+        - legacy：强制全文直注 + 阶段聚焦（非 FC 通道/无执行器 Skill 的保底形态）。
+        无章节全文兜底：非 FC 通道调不了 read_skill，888 事故保障不降级。
         """
+        mode = str(getattr(settings, "skill_runtime", "auto") or "auto").strip().lower()
+        if mode == "legacy":
+            return self._build_unsectioned_skill_block(skill_name)
         runtime_block = self.build_executor_runtime_block(skill_name)
         if runtime_block:
             return runtime_block
+        if mode == "executors":
+            logger.info(f"[Planner] Skill「{skill_name}」无可执行章节（executors 模式不注入全文）")
+            return ""
         return self._build_unsectioned_skill_block(skill_name)
 
     def _build_unsectioned_skill_block(self, skill_name: str) -> str:

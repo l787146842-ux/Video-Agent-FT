@@ -27,7 +27,6 @@ from src.video_agent.web.routes.storyboard import router as storyboard_router
 from src.video_agent.web.routes.agent import router as agent_router
 from src.video_agent.web.routes.conversations import router as conversations_router
 from src.video_agent.web.routes.generate import router as generate_router
-from src.video_agent.web.routes.workflow import router as workflow_router
 from src.video_agent.web.routes.plugins import router as plugins_router
 from src.video_agent.web.routes.upload import router as upload_router
 from src.video_agent.web.routes.canvas import router as canvas_router
@@ -293,7 +292,6 @@ app.include_router(storyboard_router, prefix="/api", tags=["storyboard"])
 app.include_router(agent_router, prefix="/api", tags=["agent"])
 app.include_router(conversations_router, prefix="/api", tags=["conversations"])
 app.include_router(generate_router, prefix="/api", tags=["generate"])
-app.include_router(workflow_router, prefix="/api", tags=["workflow"])
 app.include_router(plugins_router, prefix="/api", tags=["plugins"])
 app.include_router(upload_router, prefix="/api", tags=["upload"])
 app.include_router(canvas_router, prefix="/api", tags=["canvas"])

@@ -44,7 +44,6 @@ from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_REASONING_D
 from src.video_agent.core.stream_suppressor import StreamActionSuppressor  # re-export 兼容旧导入
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
-from src.video_agent.workflows.engine import WorkflowEngine
 
 
 # 绑定工作台状态的工具集：use_studio_context=False 时不下发（节省 schema token）
@@ -142,7 +141,6 @@ class Planner:
     - llm_adapter: LLM 对话能力（直接持有，不经 ToolManager）
     - tool_manager: 业务 Tool 注册表（故事板 CRUD、生图、文档等）
     - state_manager: 状态写入唯一入口（Rule3）
-    - workflow_engine: 工作流推进（可选）
     """
 
     def __init__(
@@ -150,7 +148,6 @@ class Planner:
         state_manager: Optional[StateManager] = None,
         tool_manager: Optional[type] = None,   # ToolManager 是类级别注册，传类引用
         llm_adapter: Optional[BaseChatAdapter] = None,
-        workflow_engine: Optional[WorkflowEngine] = None,
         executor_factory: Optional[Callable[..., Any]] = None,
         skill_docs: Optional[Any] = None,
         summary_adapter: Optional[BaseChatAdapter] = None,
@@ -161,7 +158,6 @@ class Planner:
         self.state_manager = state_manager or StateManager.get_instance()
         self.tool_manager = tool_manager or ToolManager
         self.llm_adapter = llm_adapter
-        self.workflow_engine = workflow_engine
         # executor_factory: 文本解析路径的执行器工厂（web 层装配时显式注入，
         # 消除 core→web 顶层依赖；None 时延迟导入兼容测试/CLI 调用方）
         self.executor_factory = executor_factory
@@ -861,23 +857,6 @@ class Planner:
     def _describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
         """FC 工具的中文简述（委托 fc_tool_runner）"""
         return describe_fc_tool(name, args)
-
-    # ---------- 兼容旧接口（CLI 用） ----------
-
-    async def analyze_request(self, user_goal: str) -> None:
-        """兼容旧 CLI 入口 — 通过 StateManager.update() 写入（Rule3）"""
-        if not self.state_manager:
-            return
-        self.state_manager.update("user_goal", user_goal)
-        self.state_manager.update("plan.style", "Cinematic")
-        self.state_manager.update("plan.duration_seconds", 10)
-        self.state_manager.update("status", "in_progress")
-        logger.info("[Planner] Planning complete (legacy mode).")
-
-    async def auto_resolve_workflow(self, workflow_name: str = "default_video_line") -> str:
-        """兼容旧 CLI 入口"""
-        logger.info(f"[Planner] Resolving workflow blueprint: {workflow_name}")
-        return workflow_name
 
 
 def _prepend_script_summary(visible: str, tool_results) -> str:

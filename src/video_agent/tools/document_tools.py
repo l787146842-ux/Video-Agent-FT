@@ -20,7 +20,6 @@ from src.video_agent.web.provider_config import (
     spec_media_preference,
 )
 from src.video_agent.utils import gen_id
-from src.video_agent.workflows.interactive import get_interactive_engine
 
 
 # ---------- Input Schemas ----------
@@ -62,10 +61,6 @@ class WorkflowPauseInput(BaseModel):
         "多个维度一次性收集时（如成片规格：时长/画幅/风格/声音），每项带上 group 字段，"
         "前端会渲染为分页向导卡片，用户逐页选完后一次性发送全部选择，避免逐题多轮往返",
     )
-
-
-class WorkflowStepInput(BaseModel):
-    pass
 
 
 # ---------- Tool 实现 ----------
@@ -439,32 +434,10 @@ class WorkflowPauseTool(BaseTool):
         return ToolResult(success=True, data={"paused": True, "message": params.message})
 
 
-class WorkflowStepTool(BaseTool):
-    name = "workflow_step"
-    description = (
-        "推进工作流到下一阶段（三段式：规划→提示词草案→生成）。"
-        "执行当前阶段的 Skill，完成后暂停等待用户确认。"
-        "当用户要求“开始制作”“推进”“执行工作流”时调用。"
-    )
-
-    def get_input_schema(self) -> Type[BaseModel]:
-        return WorkflowStepInput
-
-    async def aexecute(self, params: WorkflowStepInput) -> ToolResult:
-        engine = get_interactive_engine()
-        result = await engine.step()
-        status = result.get("status", "unknown")
-        if status == "waiting":
-            return ToolResult(success=False, error=result.get("detail", "等待用户确认中"))
-        if status == "blocked":
-            return ToolResult(success=False, error=result.get("detail", "工作流被阻塞"))
-        return ToolResult(success=True, data=result)
-
-
 # ---------- 注册 ----------
 
 def register_document_tools():
-    """注册文档 & 生成 & 工作流 Tool"""
+    """注册文档 & 生成 & 暂停 Tool（workflow_step 随 workflows 引擎下线，814F3）"""
     from src.video_agent.tools.manager import ToolManager
     ToolManager.register(DocumentWriteTool())
     ToolManager.register(ReadUploadedDocTool())
@@ -472,5 +445,4 @@ def register_document_tools():
     ToolManager.register(ReadProjectDocTool())
     ToolManager.register(ImageGenerateTool())
     ToolManager.register(WorkflowPauseTool())
-    ToolManager.register(WorkflowStepTool())
     logger.info("[Tools] 7 document/generation/workflow tools registered")
