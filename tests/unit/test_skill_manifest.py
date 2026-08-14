@@ -246,3 +246,27 @@ def test_real_skills_manifest_snapshot(monkeypatch):
         # ke-prog 测试残留：允许无 manifest
     finally:
         registry.reset_registry()
+
+
+# 814H9 影响面快照（13.7 登记）：客观检测只命中流程含「上传/分析剧本」的 Skill
+_SCRIPT_REQUIRED_ON = (
+    "3D国漫古装精品短剧", "AI-短剧一站式生成", "剧情短片音色参考",
+    "剧本生视频需上传剧本", "豪华技能",
+)
+_SCRIPT_REQUIRED_OFF = ("宣言式概念短片", "音乐MV需上传音乐", "商品宣传短片")
+
+
+def test_script_required_snapshot(monkeypatch):
+    """814H9：script_required 客观检测影响面快照——需剧本 Skill 命中、其余零影响。"""
+    from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
+
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", REAL_DIR)
+    registry.reset_registry()
+    try:
+        registry.sync_all(force=True)
+        for slug in _SCRIPT_REQUIRED_ON:
+            assert registry.script_required_active(slug), f"{slug} 应检测为需剧本"
+        for slug in _SCRIPT_REQUIRED_OFF:
+            assert not registry.script_required_active(slug), f"{slug} 不应检测为需剧本"
+    finally:
+        registry.reset_registry()
