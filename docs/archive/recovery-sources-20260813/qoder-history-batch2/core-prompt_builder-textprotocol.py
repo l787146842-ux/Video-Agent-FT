@@ -1,0 +1,341 @@
+"""system prompt 组装（从 planner.py 拆出，批次5 文件瘦身）。
+
+承载：协议/Skill 目录/选中草稿/记忆检索/状态 JSON/选中 Skill 全文（含分阶段聚焦块）的组装。
+段落顺序：稳定内容在前，状态 JSON 殿后；选中 Skill 全文放在最末尾（近生成端，
+遵循度最高，避免被大段状态 JSON 淹没）。
+
+planner.py 保留 _build_system_prompt 等同名委托，既有调用/测试路径不变。
+"""
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+
+from loguru import logger
+
+from src.video_agent.config import settings
+from src.video_agent.core import prompt_gates
+from src.video_agent.memory import MemoryManager
+from src.video_agent.utils.prompts import load_prompt
+
+if TYPE_CHECKING:
+    from src.video_agent.core.planner import PlannerContext
+
+class PromptBuilder:
+    """system prompt 组装器：依赖通过 callable 注入，不与 Planner 循环引用"""
+
+    def __init__(
+        self,
+        get_skill_docs: Callable[[], Any],
+        get_project_id: Callable[[], str],
+        get_raw_state: Optional[Callable[[], Dict[str, Any]]] = None,
+    ) -> None:
+        self._get_skill_docs = get_skill_docs
+        self._get_project_id = get_project_id
+        # 当前工作台 raw state（分阶段聚焦注入探测用；缺省不启用聚焦）
+        self._get_raw_state = get_raw_state
+
+    def build_system_prompt(self, context: "PlannerContext") -> str:
+        """构建 system prompt：从 prompts/ 加载 + 注入状态上下文。
+
+        段落顺序为前缀缓存（P1）优化：稳定内容（协议/Skill 目录/选中 Skill/
+        草稿说明/记忆）在前，逐轮变化的工作台状态 JSON 殿后，
+        使多步循环内各轮的前缀逐字节稳定，命中供应商 prompt 前缀缓存。
+        """
+        parts: List[str] = []
+
+        if context.use_studio_context:
+            # Rule4: 从 prompts/ 目录加载（稳定前缀第一段）
+            protocol = load_prompt("planner/system.md")
+            if protocol:
+                parts.append(protocol)
+            # 协议拆分（4.2）：仅非 FC 通道注入 studio-actions 文本协议全文
+            if getattr(context, "text_protocol", False):
+                text_protocol = load_prompt("planner/text_actions.md")
+                if text_protocol:
+                    parts.append(text_protocol)
+
+        # 渐进式披露：不再注入全部 Skill 全文，
+        # 改为注入 Skill 目录（名称+摘要），全文由模型按需调 read_skill 加载
+        catalog = self.build_skill_catalog(context)
+        if catalog:
+            parts.append(catalog)
+
+        # 铁律全文注入（宪法 D2）：项目级生产契约的唯一表述源——
+        # 铁律文档在每轮对话开始时由系统 ensure，存在即注入，不与 Skill 激活绑定
+        # （system.md 不再重复业务规则，铁律不能缺位）
+        if self._get_raw_state is not None:
+            iron_block = self.build_iron_rules_block()
+            if iron_block:
+                parts.append(iron_block)
+
+        # 选中 Skill 全文块的硬保障说明：实际拼接移到状态 JSON 之后（靠末尾近生成端，
+        # 遵循度更高；避免被大段状态 JSON「淹没在中间」）
+        selected_block = ""
+        if context.skill_name:
+            selected_block = self.build_selected_skill_block(context.skill_name)
+
+        if context.use_studio_context:
+            if context.selected_draft_id:
+                parts.append(
+                    f"\n用户当前选中的草稿：draft_id={context.selected_draft_id}"
+                    f"（类型 {context.selected_type or '未知'}）。studio-actions 里的 \"current\" 指向它。"
+                )
+
+            # 混合记忆检索注入（语义 + 关键词 + 时间衰减），按项目隔离；
+            # 命中明细写入 context.memory_hits（4.7：随 done payload 下发前端可视化）
+            if settings.memory_enabled:
+                query = self.last_user_text(context)
+                if query:
+                    project_id = self._get_project_id()
+                    mm = MemoryManager.get_instance()
+                    memory_ctx, hits = mm.build_context_with_hits(query, project_id=project_id)
+                    if memory_ctx:
+                        parts.append(memory_ctx)
+                        try:
+                            context.memory_hits = hits
+                        except Exception as e:
+                            logger.debug(f"[Planner] memory_hits 写入跳过: {e}")
+
+            # 本项目已配置的生成渠道（仅当 Skill 在 manifest 声明 channels_block：
+            # 规格向导「制作渠道」维度的候选来源，S1：不预设所有 Skill 都要收集渠道）
+            channels = self.build_generation_channels_block(context.skill_name)
+            if channels:
+                parts.append(channels)
+
+            # 状态上下文殿后（每轮变化最大）：优先用惰性构建器按轮刷新，
+            # 让 LLM 在每一轮都看到上一轮执行后的最新状态（P0 修复）
+            if context.state_builder is not None:
+                state_json = context.state_builder()
+            else:
+                state_json = context.state_json
+            if state_json:
+                parts.append("当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + state_json)
+
+            # 混合形态工具边界的可见性说明（裁剪生效时告诉模型哪些工具未开放、
+            # 应先完成什么，防止幻觉调用；放在状态 JSON 之后，不破坏稳定前缀缓存）；
+            # 仅对声明 spec_stage_trim 的 Skill 生效（S1：与 planner 裁剪条件对齐）
+            if context.skill_name and self._get_raw_state is not None \
+                    and prompt_gates.gate_mode() == "strict":
+                try:
+                    from src.video_agent.skill_runtime.registry import skill_flow_enabled
+
+                    stage_note = ""
+                    if skill_flow_enabled(context.skill_name, "spec_stage_trim"):
+                        _, stage_note = prompt_gates.stage_tool_restrictions(self._get_raw_state())
+                except Exception:
+                    stage_note = ""
+                if stage_note:
+                    parts.append(stage_note)
+
+        # 选中 Skill 全文放在最后（近生成端）：长 system prompt 中部的指令遵循度
+        # 会衰减，而产出规范（提示词写法/分组规则）恰恰是最需要被严格执行的部分
+        if selected_block:
+            parts.append(selected_block)
+
+        return "\n\n".join(parts)
+
+    def build_iron_rules_block(self) -> str:
+        """当前项目「执行铁律.md」全文注入块（宪法 D2：项目级契约唯一表述源）。
+
+        无铁律文档（未开工的新项目）或读取失败时返回空串，不阻断对话。
+        """
+        try:
+            from src.video_agent.core.spec_rules import find_iron_rules_doc
+
+            iron = find_iron_rules_doc(self._get_raw_state() or {})
+            content = str((iron or {}).get("content") or "").strip()
+        except Exception:
+            return ""
+        if not content:
+            return ""
+        return (
+            "== 当前项目《执行铁律》全文（项目级生产契约，必须完整遵守；"
+            "优先级：用户最新指令 > 本文档 + 制片规格 > Skill/系统默认）==\n" + content
+        )
+
+    def build_generation_channels_block(self, skill_name: str = "") -> str:
+        """本项目已配置的出图/出视频渠道清单（规格向导候选来源）。
+
+        仅当 Skill 在 manifest 声明 channels_block 时注入（S1：渠道收集是
+        特定 Skill 的规格交互维度，不是平台默认行为）。
+        仅列出启用且对应模型列表非空的供应商（mock 除外）；聊天模型不在此列。
+        """
+        if skill_name:
+            try:
+                from src.video_agent.skill_runtime.registry import skill_flow_enabled
+
+                if not skill_flow_enabled(skill_name, "channels_block"):
+                    return ""
+            except Exception:
+                return ""
+        else:
+            return ""
+        try:
+            from src.video_agent.web.provider_config import load_merged_providers
+            providers = load_merged_providers()
+        except Exception:
+            return ""
+        image_lines: List[str] = []
+        video_lines: List[str] = []
+        for p in providers:
+            if not p.get("enabled", True):
+                continue
+            if (p.get("protocol") or "") == "mock":
+                continue
+            name = str(p.get("name") or "").strip()
+            pid = str(p.get("id") or "").strip()
+            if not name or not pid:
+                continue
+            imgs = [m for m in (p.get("image_models") or []) if m]
+            vids = [m for m in (p.get("video_models") or []) if m]
+            if imgs:
+                image_lines.append(f"- {name}（内部 id: {pid}）：{'、'.join(imgs)}")
+            if vids:
+                video_lines.append(f"- {name}（内部 id: {pid}）：{'、'.join(vids)}")
+        if not image_lines and not video_lines:
+            return ""
+        parts: List[str] = [
+            "== 本项目已配置的生成渠道（规格向导「制作渠道」维度候选来源，严禁编造未列出的厂商/模型）=="
+        ]
+        if image_lines:
+            parts.append("【出图（image）】\n" + "\n".join(image_lines))
+        if video_lines:
+            parts.append("【出视频（video）】\n" + "\n".join(video_lines))
+        parts.append(
+            "规格文档中必须写明生成渠道（空格分隔、不要用逗号）："
+            "「图像生成：<厂商显示名> <模型名>」「视频生成：<厂商显示名> <模型名>」；"
+            "系统会据此自动绑定出图/出视频渠道。"
+        )
+        return "\n\n".join(parts)
+
+    def build_skill_catalog(self, context: "PlannerContext") -> str:
+        """构建 Skill 目录（渐进式披露的「目录」）：全部文档 Skill 的名称+摘要常驻，
+        全文不注入，模型判断相关性后调 read_skill 按需加载。
+        代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
+        list_skill_docs = self._get_skill_docs().list_skill_docs
+
+        lines: List[str] = []
+        try:
+            for d in list_skill_docs():
+                name = d.get("name") or d.get("slug") or ""
+                desc = (d.get("description") or "").strip() or "未提供摘要"
+                lines.append(f"- {name}：{desc}")
+        except Exception:  # 文档目录读取失败不阻断对话
+            pass
+        if not lines:
+            return ""
+        header = (
+            "== Skill 目录（渐进式披露：上下文只有各 Skill 的名称与摘要。"
+            "执行任务前必须先调用 read_skill（name=Skill 名称）加载对应 Skill 的完整流程，"
+            "不要凭目录摘要自行推测流程细节）==\n" + "\n".join(lines)
+        )
+        if context.skill_name:
+            header += (
+                f"\n用户当前在前端选中了「{context.skill_name}」，其已注册执行器清单另行注入下方；"
+                "调用执行器时系统自动注入对应章节（全文不注入）。如确需全文可调用 read_skill；"
+                "其他 Skill 需要时仍要先 read_skill。"
+            )
+        return header
+
+    def build_selected_skill_block(self, skill_name: str) -> str:
+        """选中 Skill 的注入块（executors 唯一形态，M5：legacy 全文注入已移除）。
+
+        有章节：只注入「已注册执行器清单 + 流程基线」，章节在执行器调用时自动注入；
+        无章节：全文兜底直注（非 FC 通道调不了 read_skill，888 事故保障不降级）。
+        """
+        runtime_block = self.build_executor_runtime_block(skill_name)
+        if runtime_block:
+            return runtime_block
+        return self._build_unsectioned_skill_block(skill_name)
+
+    def _build_unsectioned_skill_block(self, skill_name: str) -> str:
+        """无可识别章节的 Skill：全文直注兜底。
+
+        非 FC 通道（如 agy CLI）调不了 read_skill，若只给目录，模型等于看不到
+        流程规范（888 项目事故保障）；外来工具名映射对照表同步追加。
+        """
+        sd = self._get_skill_docs()
+        try:
+            display, content = sd.resolve_skill_content(skill_name)
+        except Exception:  # 解析失败不阻断对话
+            logger.warning(f"[Planner] 选中 Skill「{skill_name}」解析失败，降级为仅目录")
+            return ""
+        content = (content or "").strip()
+        if not content:
+            return ""
+        if len(content) > settings.max_doc_chars:
+            content = content[:settings.max_doc_chars] + "\n……（Skill 全文超长，已截断）"
+        mapping_note = sd.build_foreign_tool_note(content)
+        mapping_block = f"\n\n{mapping_note}" if mapping_note else ""
+        return (
+            f"== 当前选中 Skill「{display or skill_name}」全文（本 Skill 无注册执行器章节，"
+            f"全文直接注入，必须严格遵守其中的流程与规范）==\n"
+            f"{content}{mapping_block}"
+        )
+
+    def build_executor_runtime_block(self, skill_name: str) -> str:
+        """executors 模式：注册执行器清单（不再注入全文，章节在执行器内注入）。"""
+        try:
+            from src.video_agent.skill_runtime.registry import resolve_entry
+
+            entry = resolve_entry(skill_name)
+        except Exception:
+            entry = None
+        if entry is None:
+            return ""
+        tools = entry.available_tools
+        if not tools:
+            return ""
+        # P0-2：流程基线 = 当前 Skill 的 <planner> 章节（切换 Skill 即切换流程）
+        flow = ""
+        try:
+            from src.video_agent.skill_runtime.guard import skill_planner_flow
+
+            flow = skill_planner_flow(skill_name)
+        except Exception:
+            flow = ""
+        lines = [
+            f"== 当前选中 Skill「{entry.name}」已注册独立执行器（上传即注册）==",
+            "本 Skill 全文不在此处注入；执行器已注册，系统会按对应章节自动校验你的产出：",
+        ]
+        lines += [f"- {t}" for t in tools]
+        if flow:
+            lines += [
+                "",
+                "== 当前 Skill 的流程基线（<planner>，必须按此顺序与阶段边界执行）==",
+                flow,
+            ]
+            # 流程章节常引用外来工具名（flova 原生命名如 text_editor/media_generator）：
+            # 映射对照随基线一并注入，避免同一 system prompt 内两套工具名打架（S1）
+            try:
+                foreign_note = self._get_skill_docs().build_foreign_tool_note(flow)
+            except Exception:
+                foreign_note = ""
+            if foreign_note:
+                lines += ["", foreign_note]
+        lines += [
+            "",
+            "【执行方式】每个拆解/编写步骤必须真的执行了其中一种（调对应执行器，或直接输出 "
+            "studio-actions）后才可声称完成；"
+            "未调用任何执行器、也未输出任何 studio-actions 时，严禁声称「已拆解/已完成/已写入故事板」；"
+            "执行器失败时请重试或停下说明，不得虚报结果。",
+            "【阶段边界与确认】各执行器的产出由系统按 Skill 章节校验（结构阶段只建分组、"
+            "提示词阶段只写提示词）；阶段暂停点以本 Skill『何时暂停』为准，需暂停时用 "
+            "workflow_pause/request_confirmation 邀请确认，用户要求连续执行时照做并在回复末尾附警告。",
+            "只调用上面列出的执行器与系统既有工具（document_write / read_uploaded_doc / image_generate / generate_video / workflow_pause 等）；"
+            "不要调用本清单之外的 Skill 工具名，也不要对当前 Skill 调用 read_skill（执行器内部已注入对应章节）。",
+        ]
+        return "\n".join(lines)
+
+    @staticmethod
+    def last_user_text(context: "PlannerContext") -> str:
+        """从历史中取最近一条用户消息作为记忆检索 query"""
+        for msg in reversed(context.history or []):
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    return content
+                if isinstance(content, list):
+                    return " ".join(
+                        str(p.get("text", "")) for p in content
+                        if isinstance(p, dict) and p.get("type") == "text"
+                    )
+        return ""
