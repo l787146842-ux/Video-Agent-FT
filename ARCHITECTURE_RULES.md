@@ -416,6 +416,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 2026-08-13 恢复 | Qoder 损坏回退 8/6，整套执行器运行时丢失 | 未提交改动 + 救火回滚 | 现场冻结 + Qoder/QoderCN 历史快照归档恢复 + 宪法 v3 融合（本行即台账续记） |
 | 814R1 | 双协议瘦身/include 加载/feedback 外置/text_protocol 全部断线（8/14 深度审核发现，快照取证证实为 8/12 回退丢失接线） | 层 1/层 8 接线丢失，md 幸存但代码无人读 | 从 Qoder 快照恢复：{{include}} 展开 + load_prompt_section + fc_mode 双协议选择 + 回喂模板外置 + 窗口感知压缩 + text_protocol 闭环（test_814_prompt_protocol_restore 钉死） |
 | 814R2 | §2.0 统一闸机管线空心化：prompt_write_verdict 无调用方，双轨各自内联组装判定；闸机文案硬编码；无闸机审计 | 接线丢失 + 语义漂移风险（死代码版硬拦与活路径只警告并存） | guard_pipeline.evaluate_prompt_write 成双轨唯一组合实现（4444 只警告不拦人对齐）；messages.md 文案外置（现行为准）；GATE_RULES 注册表 + tracer.record_gate + /api/agent/gates 审计闭环（test_814_gate_pipeline_restore 钉死） |
+| 814R3 | flow_gates.py（Skill 声明式流程检查点）整体无调用；会话层 gate_overrides 消费链断线 | 8/12 回退丢失 planner/agent_loop/fc_tool_runner 三处接线 | 从 8-04 快照恢复三处接线（FC 拦截+文本剔除+强制补发暂停）；恢复 interaction.gate_overrides 单次消费（按钮化输入端待 814 批次7）；正则意图识别作兜底；用户坚持 scope=all 旁路硬门禁（test_flow_gates 9+2 钉死） |
 
 ### 13.9 模型分层原则（速度治理）
 

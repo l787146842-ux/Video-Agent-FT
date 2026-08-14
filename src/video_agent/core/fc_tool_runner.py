@@ -539,8 +539,10 @@ class FCToolRunner:
         on_status=None, on_event=None, injected_skill: str = "",
         selected_draft_id: str = "", selected_type: str = "",
         gate_override: Any = False,
+        flow_gates=None,
     ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
         """执行 Function Calling 返回的 tool_calls。
+        flow_gates（可选，814R3 复活）：Skill 声明式流程门禁，越阶工具调用直接拦截。
         返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
         confirmation_options, tool_results, docs_written)"""
         self._selected_draft_id = selected_draft_id or ""
@@ -609,6 +611,30 @@ class FCToolRunner:
                     "summary": start_summary,
                 })
             _tool_t0 = time.monotonic()
+
+            # --- Skill 声明式流程门禁（814R3 复活）：拦截越阶工具调用（硬校验，不依赖模型自觉） ---
+            if flow_gates is not None:
+                gate_op = flow_gates.classify_fc(name, args)
+                gate_ok, gate_missing = flow_gates.check_op(gate_op, self._raw_state())
+                if not gate_ok:
+                    reason = flow_gates.block_reason(gate_op, gate_missing)
+                    logger.warning(f"[FlowGate] 拦截工具 '{name}': {'、'.join(gate_missing)}")
+                    if on_event is not None:
+                        await on_event({
+                            "type": SSE_TOOL_FINISHED,
+                            "id": tool_event_id,
+                            "ok": False,
+                            "elapsed_ms": 0.0,
+                            "result_summary": "被流程门禁拦截",
+                        })
+                    tracer.record_action(name=name, summary="被流程门禁拦截", elapsed_ms=0.0, ok=False)
+                    tracer.record_gate(
+                        "skill.flow.checkpoint", "skill", False,
+                        skill_name=injected_skill, action=name, message=reason,
+                    )
+                    tool_results.append({"name": name, "ok": False, "error": reason})
+                    flow_gates.mark_blocked(reason)
+                    continue
 
             # --- 生图模型强制注入：规格文档偏好（用户意志）优先，其次中间面板选中的 provider 覆盖 mock ---
             if name == "generate_image" and (

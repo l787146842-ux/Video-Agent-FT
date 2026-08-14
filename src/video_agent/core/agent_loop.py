@@ -180,10 +180,13 @@ async def run_agent_loop(
     stream_hook: Optional[Callable[[str], Awaitable[None]]] = None,
     prelude_notes: Optional[List[tuple]] = None,
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None,
+    flow_gates=None,
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
     user_text 可以是纯文本 str，也可以是多模态 content parts 列表（含 image_url）。
+    flow_gates（可选，814R3 复活）：Skill 声明式流程门禁（FlowGateSet）；
+    越阶操作被拦截后本轮强制补发确认暂停，不依赖模型自觉。
     """
 
     async def emit(event: Dict[str, Any]) -> None:
@@ -296,6 +299,18 @@ async def run_agent_loop(
             tracer.end_step(step, actions_applied=0, finish_reason="bad_output")
             break
 
+        # Skill 声明式流程门禁（814R3 复活，FC 轨）：本轮有越阶拦截 → 强制补发确认暂停
+        if flow_gates is not None:
+            fc_gate_blocked = flow_gates.consume_blocked()
+            if fc_gate_blocked:
+                result.confirmation = flow_gates.pause_message()
+                visible_fc = str(content or "").strip()
+                if visible_fc:
+                    result.text = visible_fc
+                await emit({"type": SSE_STATUS, "text": "越阶操作被流程门禁拦截，已强制暂停"})
+                tracer.end_step(step, actions_applied=fc_applied, finish_reason="gate_pause")
+                break
+
         if finish_reason == "length":
             result.warnings.append(
                 f"第 {step} 轮回复被 max_tokens 截断，studio-actions 可能不完整"
@@ -341,6 +356,33 @@ async def run_agent_loop(
             )
 
         executable, wants_continue, confirmation, confirmation_options = _split_actions(actions)
+        # Skill 声明式流程门禁（814R3 复活，文本轨）：执行前逐个校验，越阶操作直接剔除并记录拦截
+        if executable and flow_gates is not None:
+            _gate_state = getattr(executor, "state", None) or {}
+            kept: List[Dict[str, Any]] = []
+            for gi, action in enumerate(executable):
+                gop = flow_gates.classify_action(action)
+                gok, gmissing = flow_gates.check_op(gop, _gate_state)
+                if gok:
+                    kept.append(action)
+                    continue
+                greason = flow_gates.block_reason(gop, gmissing)
+                result.warnings.append(greason)
+                flow_gates.mark_blocked(greason)
+                tracer.record_action(
+                    name=str(action.get("action", "")), summary="被流程门禁拦截",
+                    elapsed_ms=0.0, ok=False,
+                )
+                tracer.record_gate(
+                    "skill.flow.checkpoint", "skill", False,
+                    action=str(action.get("action", "")), message=greason,
+                )
+                await emit({
+                    "type": SSE_TOOL_FINISHED, "id": f"s{step}-gate{gi}",
+                    "ok": False, "elapsed_ms": 0.0,
+                    "result_summary": "被流程门禁拦截",
+                })
+            executable = kept
         # 模型自发暂停 + 规格参数未定稿：把模型自造 label 并入标准「键：值」向导
         # （1111 事故：自造「1K（更快）」无法机械落盘；系统永不没收模型的暂停文案）
         if confirmation and _wizard_active():
@@ -461,6 +503,18 @@ async def run_agent_loop(
                     summary="未匹配到目标或执行失败", elapsed_ms=0.0, ok=False,
                 )
         gate_rejections = list(getattr(executor, "gate_rejections", None) or [])
+        # Skill 声明式流程门禁（814R3 复活，文本轨）：本轮有拦截 → 强制补发确认暂停
+        if flow_gates is not None:
+            txt_gate_blocked = flow_gates.consume_blocked()
+            if txt_gate_blocked:
+                result.confirmation = confirmation or flow_gates.pause_message()
+                result.confirmation_options = []
+                visible_txt = executor.strip_action_blocks(content)
+                if visible_txt:
+                    result.text = f"{result.text}\n\n{visible_txt}".strip() if result.text else visible_txt
+                await emit({"type": SSE_STATUS, "text": "越阶操作被流程门禁拦截，已强制暂停"})
+                tracer.end_step(step, actions_applied=applied, finish_reason="gate_pause")
+                break
         if total_exec and applied < total_exec:
             if gate_rejections:
                 result.warnings.append(

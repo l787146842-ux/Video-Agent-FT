@@ -35,6 +35,12 @@ GATE_SKILL = """# 门禁测试 Skill
 
 NO_GATE_SKILL = "# 无门禁 Skill\n> 调用规则：测试用\n正文……"
 
+# 结构合规的长提示词（814R3 适配：现行结构闸要求 ≥80 字，短夹具会被结构闸误拦）
+VALID_SHOT_PROMPT = (
+    "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，"
+    "背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。"
+)
+
 
 @pytest.fixture
 def svc(tmp_path):
@@ -128,7 +134,6 @@ class FcPatchShotAdapter(BaseChatAdapter):
 
     async def chat(self, messages, **kwargs) -> ChatResponse:
         self.calls += 1
-        prompt = getattr(self, "long_prompt", "越阶的分镜提示词")
         if self.calls == 1:
             return ChatResponse(
                 content="正在写入分镜提示词。",
@@ -138,7 +143,7 @@ class FcPatchShotAdapter(BaseChatAdapter):
                     "function": {
                         "name": "storyboard_patch_draft",
                         "arguments": json.dumps(
-                            {"draft_id": "d2", "draft_type": "shot", "patch": {"prompt": prompt}},
+                            {"draft_id": "d2", "draft_type": "shot", "patch": {"prompt": VALID_SHOT_PROMPT}},
                             ensure_ascii=False,
                         ),
                     },
@@ -153,44 +158,30 @@ class FcPatchShotAdapter(BaseChatAdapter):
 
 
 class TestGateEnforcementFcPath:
-    """FC 路径（宪法 v3 语义）：流程闸只警告不拦人，结构提示词照常写入"""
+    """FC 路径：越阶工具被拦截 + 强制暂停"""
 
-    async def test_shot_prompt_warns_when_keyelements_not_ready(self, svc, gate_skill):
+    async def test_shot_prompt_blocked_when_keyelements_not_ready(self, svc, gate_skill):
         register_storyboard_tools()
-        svc.state_dict["keyElements"] = [{
-            "id": "g1", "title": "Element_X",
-            "drafts": [{"id": "d1", "label": "概念图", "prompt": "", "imgUrl": ""}],
-        }]
-        svc.state_dict["shots"] = [{
-            "id": "g2", "title": "Shot_Y", "sceneRefs": ["Element_X"],
-            "drafts": [{"id": "d2", "label": "分镜卡", "prompt": ""}],
-        }]
+        _seed_shot_target(svc)  # 关键元素为空 → 前置条件不满足
         planner = Planner(llm_adapter=FcPatchShotAdapter(), tool_manager=ToolManager)
         result = await planner.handle_message(
             "写分镜提示词", PlannerContext(use_studio_context=False, skill_name=gate_skill),
         )
-        # 只警告不拦人（4444 语义）：提示词照常写入
-        long_prompt = "越阶的分镜提示词 " + "画面与镜头描述" * 20
-        adapter = FcPatchShotAdapter()
-        adapter.long_prompt = long_prompt
-        planner = Planner(llm_adapter=adapter, tool_manager=ToolManager)
-        result = await planner.handle_message(
-            "写分镜提示词", PlannerContext(use_studio_context=False, skill_name=gate_skill),
-        )
-        assert svc.state_dict["shots"][0]["drafts"][0].get("prompt") == long_prompt
-        assert result.applied_actions == 1
+        # 拦截：分镜提示词没写进状态
+        assert svc.state_dict["shots"][0]["drafts"][0].get("prompt") == ""
+        # 强制暂停：confirmation 由系统补发
+        assert result.confirmation and "强制暂停" in result.confirmation
+        assert result.applied_actions == 0
 
     async def test_shot_prompt_allowed_when_keyelements_ready(self, svc, gate_skill):
         register_storyboard_tools()
         _seed_keyelements_ready(svc)
         _seed_shot_target(svc)
-        adapter = FcPatchShotAdapter()
-        adapter.long_prompt = "越阶的分镜提示词 " + "画面与镜头描述" * 20
-        planner = Planner(llm_adapter=adapter, tool_manager=ToolManager)
+        planner = Planner(llm_adapter=FcPatchShotAdapter(), tool_manager=ToolManager)
         result = await planner.handle_message(
             "写分镜提示词", PlannerContext(use_studio_context=False, skill_name=gate_skill),
         )
-        assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == adapter.long_prompt
+        assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == VALID_SHOT_PROMPT
         assert result.confirmation == ""
 
     async def test_no_gate_skill_no_blocking(self, svc, tmp_path, monkeypatch):
@@ -201,24 +192,22 @@ class TestGateEnforcementFcPath:
         monkeypatch.setattr(skill_docs_mod, "SKILL_DOCS_DIR", skill_dir)
         skill_docs_mod.save_skill_doc("plain", NO_GATE_SKILL)
         _seed_shot_target(svc)
-        adapter = FcPatchShotAdapter()
-        adapter.long_prompt = "越阶的分镜提示词 " + "画面与镜头描述" * 20
-        planner = Planner(llm_adapter=adapter, tool_manager=ToolManager)
+        planner = Planner(llm_adapter=FcPatchShotAdapter(), tool_manager=ToolManager)
         result = await planner.handle_message(
             "写分镜提示词", PlannerContext(use_studio_context=False, skill_name="无门禁 Skill"),
         )
         # 未声明检查点 → 完全不拦截
-        assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == adapter.long_prompt
+        assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == VALID_SHOT_PROMPT
         assert result.confirmation == ""
 
 
 class TextActionsAdapter(BaseChatAdapter):
-    """文本模式：直接输出 studio-actions 建分镜分组（带内联提示词）"""
+    """文本模式：直接输出 studio-actions 写分镜提示词"""
 
     REPLY = (
-        "好的，已建立分镜。\n```studio-actions\n"
-        '[{"action":"add_group","group_type":"shot","title":"Shot_Y",'
-        '"draft":{"label":"分镜卡","prompt":"越阶的分镜提示词"}}]\n```'
+        "好的。\n```studio-actions\n"
+        '[{"action":"update_draft","draft_type":"shot","draft_id":"d2",'
+        f'"patch":{{"prompt":"{VALID_SHOT_PROMPT}"}}}}]\n```'
     )
 
     @property
@@ -234,18 +223,39 @@ class TextActionsAdapter(BaseChatAdapter):
 
 
 class TestGateEnforcementTextPath:
-    """文本路径（宪法 v3 语义）：结构内联提示词被剥离，分组照常建立"""
+    """文本路径：越阶 action 被剔除 + 强制暂停"""
 
     async def test_text_action_blocked_and_forced_pause(self, svc, gate_skill):
-        # 预置关键元素：避免「首次搭建只允许关键元素」硬闸拦下分镜分组
-        svc.state_dict["keyElements"] = [{
-            "id": "k1", "title": "Element_X",
-            "drafts": [{"id": "k1-d", "label": "概念图", "prompt": "x" * 60}],
-        }]
-        svc.state_dict["shots"] = []
+        _seed_shot_target(svc)
         planner = Planner(llm_adapter=TextActionsAdapter())
         result = await planner.handle_message(
-            "建分镜", PlannerContext(use_studio_context=False, skill_name=gate_skill),
+            "写分镜提示词", PlannerContext(use_studio_context=False, skill_name=gate_skill),
         )
         assert svc.state_dict["shots"][0]["drafts"][0].get("prompt") == ""
-        assert result.confirmation  # 结构阶段完成后系统补引导/审阅卡
+        assert result.confirmation and "强制暂停" in result.confirmation
+        assert any("流程门禁拦截" in w for w in result.warnings)
+
+
+class TestUserOverrideBypass:
+    """用户第一（814R3）：用户明确坚持跳过时，流程门禁不硬拦"""
+
+    async def test_user_insist_bypasses_flow_gate(self, svc, gate_skill):
+        _seed_shot_target(svc)
+        planner = Planner(llm_adapter=TextActionsAdapter())
+        result = await planner.handle_message(
+            "按我说的直接写分镜提示词", PlannerContext(use_studio_context=False, skill_name=gate_skill),
+        )
+        assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == VALID_SHOT_PROMPT
+        assert "强制暂停" not in (result.confirmation or "")
+
+    async def test_session_override_consumed_once(self, svc, gate_skill):
+        """interaction.gate_overrides 单次生效：消费即清除"""
+        _seed_shot_target(svc)
+        svc.state_dict.setdefault("interaction", {})["gate_overrides"] = ["all"]
+        svc.save()
+        planner = Planner(llm_adapter=TextActionsAdapter())
+        await planner.handle_message(
+            "写分镜提示词", PlannerContext(use_studio_context=False, skill_name=gate_skill),
+        )
+        assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == VALID_SHOT_PROMPT
+        assert (svc.state_dict.get("interaction") or {}).get("gate_overrides") == []

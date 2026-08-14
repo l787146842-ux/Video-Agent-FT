@@ -291,6 +291,46 @@ class Planner:
         except Exception:
             pass
 
+        # 会话层一次性豁免（814R3 恢复，§2.4）：用户「本次放行」写入
+        # interaction.gate_overrides，本次消费即清除（单次生效、全程留痕）；
+        # 无显式豁免时回落正则意图识别兜底（按钮化上线前保留）
+        gate_override_scope: Any = False
+        try:
+            interaction = self.state_manager.state_dict.get("interaction") or {}
+            taken = [r for r in (interaction.get("gate_overrides") or []) if r]
+            if taken:
+                interaction["gate_overrides"] = []
+                self.state_manager.save()
+                gate_override_scope = (
+                    "all" if any(str(r) == "all" or str(r).startswith("platform.") for r in taken)
+                    else "element_image"
+                )
+                logger.info(f"[GateOverride] 消费 {len(taken)} 条一次性豁免，作用域={gate_override_scope}")
+        except Exception:
+            pass
+        if not gate_override_scope and isinstance(user_message, str):
+            gate_override_scope = prompt_gates.user_insists_override(user_message) or False
+        try:
+            executor.gate_override = gate_override_scope
+        except Exception:
+            pass
+
+        # Skill 声明式流程门禁（814R3 复活）：解析选中 Skill 声明的检查点，
+        # 由代码强制执行——越阶操作直接拦截并强制暂停，不依赖模型自觉。
+        # 未声明检查点的 Skill 不受影响（_flow_gates 为 None）；
+        # 用户坚持全速推进（scope=all）时本次不启用硬门禁（用户第一）。
+        self._flow_gates = None
+        if context.skill_name and not prompt_gates.override_covers(gate_override_scope, "flow"):
+            try:
+                from src.video_agent.web.skill_docs import resolve_skill_content
+                from src.video_agent.core.flow_gates import FlowGateSet
+
+                _skill_display, _skill_content = resolve_skill_content(context.skill_name)
+                self._flow_gates = FlowGateSet.from_skill(_skill_content or "")
+            except Exception as e:  # 解析失败不阻断对话，降级为无门禁
+                logger.warning(f"[Planner] 流程检查点解析失败（降级为无门禁）: {e}")
+                self._flow_gates = None
+
         # 包装 llm_call：处理 FC tool_calls 后返回 (content, finish_reason, fc_applied)
         # image_urls_collector 用于跨多步收集生图产物
         image_urls_collector: List[str] = []
@@ -400,6 +440,8 @@ class Planner:
                 injected_skill=context.skill_name,
                 selected_draft_id=context.selected_draft_id,
                 selected_type=context.selected_type,
+                gate_override=gate_override_scope,
+                flow_gates=self._flow_gates,
             )
             # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
             # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
@@ -440,6 +482,7 @@ class Planner:
             stream_hook=stream_hook,
             on_event=on_event,
             prelude_notes=context.prelude_notes,
+            flow_gates=self._flow_gates,
         )
 
         # 纯工具轮无总结文字时，用实际操作清单替换无信息量的占位文案：
@@ -725,6 +768,8 @@ class Planner:
         injected_skill: str = "",
         selected_draft_id: str = "",
         selected_type: str = "",
+        gate_override: Any = False,
+        flow_gates=None,
     ) -> Tuple:
         """处理 LLM 响应中的 FC tool_calls。
         返回 (content, finish_reason, fc_applied, tool_results)，
@@ -736,6 +781,7 @@ class Planner:
                 response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
                 on_status=on_status, on_event=on_event, injected_skill=injected_skill,
                 selected_draft_id=selected_draft_id, selected_type=selected_type,
+                gate_override=gate_override, flow_gates=flow_gates,
             )
             if image_urls_collector is not None:
                 image_urls_collector.extend(image_urls)
@@ -768,6 +814,7 @@ class Planner:
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",
         on_status=None, on_event=None, injected_skill: str = "",
         selected_draft_id: str = "", selected_type: str = "",
+        gate_override: Any = False, flow_gates=None,
     ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
         """执行 Function Calling 返回的 tool_calls（委托 FCToolRunner）。
         返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
@@ -776,6 +823,7 @@ class Planner:
             response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
             on_status=on_status, on_event=on_event, injected_skill=injected_skill,
             selected_draft_id=selected_draft_id, selected_type=selected_type,
+            gate_override=gate_override, flow_gates=flow_gates,
         )
 
     # read_* 系列：读回的全文必须完整回喂进上下文（渐进式披露的「借阅归还」）；
