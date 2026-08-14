@@ -392,7 +392,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 新增暂停点 | Skill「何时暂停」+ 层 9 兜底注入（Skill 管引导，兜底管强制） |
 | 新增 SSE 事件 | 工具层 emit → planner 白名单 → chat_service 透传 → 前端 handler（四段缺一即静默失效） |
 | 新增 FC 工具 | tool description（层 10）+ 阶段裁剪集 + 测试 |
-| skill_manifest 白名单键 | 消费点：prompt_gates.parse_gate_rules/validate_prompt_write、agent_loop、fc_tool_runner、planner._compute_excluded_tools、prompt_builder、action_executor._spec_gate_ok；pause 节另由 guard.skill_requires_stage_pause 与 lint 消费；同步 test_skill_manifest.py 快照登记；**spec_wizard 例外：统一走 registry.spec_wizard_active** |
+| skill_manifest 白名单键 | 消费点：prompt_gates.parse_gate_rules/validate_prompt_write、agent_loop、fc_tool_runner、planner._compute_excluded_tools、prompt_builder、action_executor._spec_gate_ok；pause 节另由 guard.skill_requires_stage_pause 与 lint 消费；同步 test_skill_manifest.py 快照登记；**spec_wizard 例外：统一走 registry.spec_wizard_active；script_required 同模式统一走 registry.script_required_active（814H9）** |
 
 ### 13.8 事故台账（规则漂移的活证据，只增不删）
 
@@ -431,6 +431,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 814Gb | 核查发现两处半吊子：文本轨 executor._spec_gate_ok 仍向用户追加 SPEC_GATE_ERROR ⚠（与 G3 静默语义打架）；ensure_spec_gate 只认 wizard 不认 manifest spec_gate 声明（两种声明风格强制不对齐） | 双轨语义漂移 | _spec_gate_ok 改只记日志（用户侧静默，恒 True 不硬拦）；ensure_spec_gate 条件扩为 wizard 客观启用 OR manifest spec_gate；3 个旧 warn 语义测试更新为静默断言 |
 | 814H7 | 推理档位不可选：全局 low 一刀切（814G7）既压主模型质量又不尊重端点原生；用户要求 Codex 式按会话选档 | 档位治理缺 UI 层 | 对话栏模型胶囊改两节下拉（模型+推理等级 高/中/低/默认，默认=原生不下发字段，localStorage 持久化，随 ChatRequest.thinking_level 透传主模型）；全局设置页新增「推理档位」卡（执行器机械调用/辅助摘要两档，runtime_settings 热生效）；主模型全局默认回空（原生）；适配器 400 优雅降级（端点不认 reasoning_effort 自动去字段重试，流式/非流式双路径）；浏览器实测两节下拉与设置卡通过 |
 | 814H8 | 前端路由硬敲/刷新（如 /global-settings）404：服务端只把 index.html 绑死在 /、/canvas、/settings，无 SPA fallback | 部署层缺兜底 | app.py 末尾加 catch-all（注册于全部 API 路由与静态 mount 之后）：未识别非 /api GET 路径一律返回 index.html；/api 排除保持 JSON 404；test_spa_fallback 四条集成测试钉死 |
+| 814H9 | 1111 实测：剧本缺失是客观事实却出题给模型——27.8s 规划轮"发现"没剧本+必错的 read_uploaded_doc+空输出重试；无剧本仍被引导进下游流程 | 违 13.5 确定性三问（可算/可判/无创作空间却交模型）+ 层 9 缺原料闸 | registry.script_required_active（manifest 优先+客观特征，同 spec_wizard 模式）；prompt_gates 剧本闸助手（script_present/豁免意图/短路准入/提醒卡文案外置 messages.md）；planner 编排：S7 零思考直出提醒卡（推进意图且非提问）、「我去上传」秒回等待回执、提问落回 LLM+轮末强制提醒卡（反复提醒）、豁免记账 script_waived；FlowGateSet.ensure_script_gate 执行侧拦越阶结构操作（双轨同条件，不拦用户，override/坚持旁路）；GATE_RULES 注册 skill.script_required + record_gate 审计；test_814_script_gate 八条钉死 |
 
 ### 13.9 模型分层原则（速度治理）
 

@@ -347,6 +347,72 @@ class Planner:
                 logger.warning(f"[Planner] 流程检查点解析失败（降级为无门禁）: {e}")
                 self._flow_gates = None
 
+        # ---------- 814H9 剧本原料闸（层 9 兜底 + S7 零思考直出；1111 事故收归系统） ----------
+        # 原料是否已交是确定性事实（uploadedDocs/analysis），不再出题给模型。
+        # 只拦 agent 越阶/只提醒用户，不拦用户输入（P2 校验作用域）；
+        # 豁免（script_waived）/一次性申诉（override）/坚持话术 → 不构建门禁（用户第一）。
+        self._script_pending_card = None
+        if context.skill_name and not prompt_gates.override_covers(gate_override_scope, "flow"):
+            try:
+                from src.video_agent.skill_runtime.registry import script_required_active
+                from src.video_agent.core.flow_gates import FlowGateSet as _FGS
+
+                if script_required_active(context.skill_name):
+                    _st = self.state_manager.state_dict
+                    _inter = _st.setdefault("interaction", {})
+                    if prompt_gates.script_present(_st) or _inter.get("script_waived"):
+                        pass  # 原料已交或已豁免：不提醒
+                    elif (
+                        isinstance(user_message, str)
+                        and prompt_gates.script_waive_intent(user_message)
+                    ):
+                        _inter["script_waived"] = True
+                        self.state_manager.save()
+                        logger.info("[ScriptGate] 用户显式豁免（无剧本原创），记账 script_waived")
+                    else:
+                        # 原料缺失：执行侧拦越阶结构操作 + 提醒卡
+                        self._script_pending_card = prompt_gates.script_remind_card()
+                        self._flow_gates = _FGS.ensure_script_gate(self._flow_gates)
+            except Exception as e:
+                logger.warning(f"[Planner] script_gate 装配失败（降级）: {e}")
+
+        if self._script_pending_card:
+            _sc_msg, _sc_opts = self._script_pending_card
+            _tracer = AgentTracer.get_instance()
+            # S7 零思考直出分支 a：用户回应「我去上传」→ 秒回等待回执，不重复弹卡
+            if isinstance(user_message, str) and prompt_gates.script_upload_ack_intent(
+                user_message
+            ):
+                _tracer.record_gate(
+                    "skill.script_required", "skill", False,
+                    skill_name=context.skill_name, message="原料缺失，用户表示去上传，回等待回执",
+                )
+                return PlannerResponse(text=prompt_gates.SCRIPT_UPLOAD_ACK, steps=1)
+            # S7 零思考直出分支 b：推进意图且非提问 → 跳过规划轮，秒发提醒卡（省 27.8s 式浪费）
+            if isinstance(user_message, str) and prompt_gates.script_short_circuit_eligible(
+                user_message
+            ):
+                _tracer.record_gate(
+                    "skill.script_required", "skill", False,
+                    skill_name=context.skill_name, message="原料缺失，零思考直出提醒卡",
+                )
+                return PlannerResponse(
+                    text=_sc_msg,
+                    steps=1,
+                    confirmation=_sc_msg,
+                    confirmation_options=_sc_opts,
+                )
+            # 落回正常 LLM：注入当轮短指令（层 8 ≤2 句），轮末强制提醒卡（反复提醒）
+            _note = f"\n\n（系统）{prompt_gates.SCRIPT_MODEL_NOTE}"
+            if isinstance(user_message, str):
+                user_message = user_message + _note
+            else:
+                user_message = list(user_message) + [{"type": "text", "text": _note}]
+            _tracer.record_gate(
+                "skill.script_required", "skill", False,
+                skill_name=context.skill_name, message="原料缺失，提醒卡随轮末强制下发",
+            )
+
         # 包装 llm_call：处理 FC tool_calls 后返回 (content, finish_reason, fc_applied)
         # image_urls_collector 用于跨多步收集生图产物
         image_urls_collector: List[str] = []
@@ -558,6 +624,12 @@ class Planner:
                 loop_result.text = (
                     f"{_doc_note}\n\n{loop_result.text}" if (loop_result.text or "").strip() else _doc_note
                 )
+        # 814H9 反复提醒：原料缺失且未豁免时，轮末强制下发提醒卡
+        # （优先级高于模型自拟暂停/规格向导卡——原料关先于规格关）
+        if self._script_pending_card:
+            _sc_msg, _sc_opts = self._script_pending_card
+            loop_result.confirmation = _sc_msg
+            loop_result.confirmation_options = _sc_opts
         response = PlannerResponse(
             text=loop_result.text,
             applied_actions=loop_result.applied_actions,

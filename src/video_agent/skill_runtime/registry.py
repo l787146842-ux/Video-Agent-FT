@@ -254,6 +254,26 @@ def spec_wizard_active(skill_name: str) -> bool:
     return text_mentions_spec_doc(entry.content)
 
 
+def script_required_active(skill_name: str) -> bool:
+    """剧本原料闸启用判定（814H9，与 spec_wizard_active 同模式）。
+
+    manifest 显式 `"script_required": true/false` 优先（逃生门）；
+    未声明时按客观文本特征：Skill 流程含「上传/分析剧本」环节即视为需剧本。
+    判定依据是 Skill 客观文本而非平台预设，不违反 S1；不修改任何 Skill 文件（13.12 G1）。
+    """
+    entry = resolve_entry(skill_name)
+    if entry is None:
+        return False
+    declared = ((entry.manifest or {}).get("flow") or {}).get("script_required")
+    if declared is True:
+        return True
+    if declared is False:
+        return False
+    from src.video_agent.core.prompt_gates import text_mentions_script
+
+    return text_mentions_script(entry.content)
+
+
 def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
     """项目最近使用的 Skill 兜底（7777 事故）：请求未携带 Skill 名时，
     回退 usedSkills 末位，保证后续轮次（继续/拆分分镜）仍绑定同一执行器。

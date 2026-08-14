@@ -26,6 +26,7 @@ from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_
 # key → (中文标签, 判定函数名)。判定函数统一签名 cond_xxx(state) -> bool。
 COND_LABELS = {
     "spec_doc_exists": "规格文档已写入",
+    "script_present": "剧本原料已提供（上传文档或分析摘要）",
     "keyelement_prompts_written": "关键元素提示词已写入",
     "keyelements_confirmed": "关键元素已确认",
     "keyelements_generated": "关键元素已生成图像",
@@ -106,6 +107,13 @@ def evaluate_condition(cond_key: str, state: Dict[str, Any]) -> bool:
     """按条件 key 实时判定工作台状态"""
     if cond_key == "spec_doc_exists":
         return _cond_spec_doc_exists(state)
+    if cond_key == "script_present":
+        # 814H9：剧本原料客观判定（uploadedDocs 或 analysis 摘要）
+        try:
+            from src.video_agent.core.prompt_gates import script_present
+            return script_present(state)
+        except Exception:
+            return bool((state or {}).get("uploadedDocs"))
     if cond_key == "keyelement_prompts_written":
         return _cond_prompts_written(state, CAT_KEY_ELEMENTS)
     if cond_key == "keyelements_confirmed":
@@ -222,6 +230,21 @@ class FlowGateSet:
     def from_skill(cls, skill_content: str) -> Optional["FlowGateSet"]:
         gates = parse_flow_gates(skill_content)
         return cls(gates) if gates else None
+
+    @classmethod
+    def ensure_script_gate(cls, existing: Optional["FlowGateSet"]) -> "FlowGateSet":
+        """814H9 剧本原料闸：需剧本 Skill 原料缺失时，拆解结构必须等原料。
+
+        执行侧强制（拦 agent 越阶工具调用，不拦用户输入；
+        用户豁免/坚持时 planner 不构建本门禁）。"""
+        gates = list(existing.gates) if existing else []
+        if not any(OP_BUILD_STRUCTURE in g.ops and "script_present" in g.requires for g in gates):
+            gates.append(Gate(
+                ops={OP_BUILD_STRUCTURE},
+                requires=["script_present"],
+                raw="系统：剧本原料未提供前不得拆解结构",
+            ))
+        return cls(gates)
 
     @classmethod
     def ensure_spec_gate(cls, existing: Optional["FlowGateSet"]) -> "FlowGateSet":
