@@ -3,6 +3,7 @@ import {
   FiCheckCircle, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
 } from 'solid-icons/fi';
 import { renderMarkdown } from '@/lib/markdown';
+import { sendUserMessage } from '@/lib/agent-actions';
 import { openDocsPanel } from '@/stores/docs';
 import { endCanvasImageDrag } from '@/stores/canvas';
 import { safeUrl } from '@/lib/utils';
@@ -22,6 +23,8 @@ import type { ChatMessage } from '@/types';
 export function ChatMessageItem(props: {
   message: ChatMessage;
   isLast: boolean;
+  /** 814F7：是否为最后一条含闸机拦截警告的消息（「本次放行」按钮挂载点） */
+  isGateTarget?: boolean;
 }) {
   const msg = () => props.message;
   const isUser = () => msg().sender === 'user';
@@ -55,6 +58,15 @@ export function ChatMessageItem(props: {
     if (!c) return false;
     const head = c.split('\n')[0].slice(0, 24);
     return !(msg().text || '').includes(head);
+  };
+
+  /** 是否含闸机拦截类警告（814F7：显示「本次放行」按钮的触发条件） */
+  const hasGateWarning = () =>
+    (msg().warnings || []).some((w) => w.includes('拦截') || w.includes('闸机') || w.includes('闸'));
+
+  /** 本次放行（§2.4）：显式用户指令 + gate_overrides 随消息留痕，后端单次消费 */
+  const overrideOnce = () => {
+    void sendUserMessage('放行本次拦截，继续任务', { gateOverrides: ['all'] });
   };
 
   /** 用户气泡正文：纯 Skill 唤起时正文与 Skill 块重名，隐藏正文只留块 */
@@ -204,6 +216,12 @@ export function ChatMessageItem(props: {
             <For each={msg().warnings || []}>
               {(w) => <div class="msg-warning-line">⚠ {w}</div>}
             </For>
+            {/* 814F7：拦截类警告附「本次放行」按钮（仅最新一条，单次生效留痕） */}
+            <Show when={props.isGateTarget && hasGateWarning()}>
+              <button type="button" class="gate-override-btn" onClick={overrideOnce}>
+                {t('rp.msg.gateOverride')}
+              </button>
+            </Show>
           </div>
         </Show>
         {/* 记忆命中可视化（4.7）：本轮 Agent 参考了哪些长期记忆（折叠展示） */}

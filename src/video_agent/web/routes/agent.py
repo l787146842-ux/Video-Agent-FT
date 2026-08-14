@@ -80,6 +80,10 @@ class ChatRequest(BaseModel):
     # doc_blocks = 随消息发送的文档附件名称；skill_blocks = 随消息发送的 Skill 名称
     doc_blocks: List[str] = []
     skill_blocks: List[str] = []
+    # 会话层一次性闸机豁免（814F7，§2.4）：前端拦截提示上的「本次放行」按钮
+    # 携带 rule_id 列表（或 "all"）；后端写入 interaction.gate_overrides，
+    # 由本次请求的 Planner 消费一次即清除（单次生效、留痕于用户消息）
+    gate_overrides: List[str] = []
 
 
 class ChatResponse(BaseModel):

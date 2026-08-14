@@ -55,7 +55,10 @@ function normalizeParts(input: string | RichContentPart[]): RichContentPart[] {
  * Agent 忙碌（推理中）时不拦截：消息进入排队引导区（输入框顶部），
  * 当前任务完成后由 ChatInput 的自动出队逻辑按序发出。
  */
-export async function sendUserMessage(input: string | RichContentPart[]): Promise<boolean> {
+export async function sendUserMessage(
+  input: string | RichContentPart[],
+  opts?: { gateOverrides?: string[] },
+): Promise<boolean> {
   const parts = normalizeParts(input);
   const mediaParts = parts.filter((p) => p.type !== 'text') as Array<
     Extract<RichContentPart, { type: 'image' | 'video' | 'audio' }>
@@ -152,6 +155,8 @@ export async function sendUserMessage(input: string | RichContentPart[]): Promis
     // 引用块随消息持久化，刷新后气泡里的文档/Skill 块可重建
     doc_blocks: docBlocks,
     skill_blocks: skillBlocks,
+    // 会话层一次性闸机豁免（814F7）：「本次放行」按钮携带，后端单次消费即清除
+    ...(opts?.gateOverrides?.length ? { gate_overrides: opts.gateOverrides } : {}),
   };
 
   // 即发即返：不阻塞等待整个推理流结束，输入框（含 Skill/媒体块）发送后立即清空；

@@ -420,6 +420,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 814R4 | _prepend_script_summary 有定义有测试无生产调用（1111 台账「总结强制入正文」断线）；重复 pop；开场编排双份复制；session_compact 无人消费 | 回退丢失接线 + 重构残留 | FC 轨 llm_call 与文本轨暂停补拼双接线；_prepare_chat_opening 单一实现；会话级 compaction 恢复（阈值配置默认关，摘要缓存于 interaction）（test_814_summary_and_chatservice 钉死） |
 | 814F3 | skill_baseline.md 与 skill_discipline.md 九条同构但语义相反并存（P1 隐患）；settings.skill_runtime 开关无消费点；workflows 引擎已批准下线但 4 处残留引用 | 恢复残留 + 死配置 + 债务未落地 | baseline 归档 docs/archive（禁重接线）；skill_runtime auto/executors/legacy 三态落地 prompt_builder；workflows/ + routes/workflow + core/agent + cli.py + workflow_step 工具整体移出主线（备份分支可捞，实现体仍在 backup 分支）；README/配置说明/契约同步 |
 | 814F6 | 阶段完成卡显示正文（与前端体验规范打架）；左栏页签文字竖排；窄视口顶栏重叠/右栏不可达；ConfirmActions 硬编码中文 | 实现与规范漂移 + 样式缺陷 | 阶段卡只留标题+徽标，确认文案转正文气泡（判重防双显），操作明细归时间线；页签 white-space:nowrap；工作台 min-width 940 + 横向滚动兜底；i18n 补齐 rp.confirm.*；浏览器实测截图验证（verify-*.png） |
+| 814F7 | 会话层「本次放行」无输入端（§2.4 只靠正则猜意图）；warnings 不落消息；system prompt 组装无可观测性 | 设计未闭环 | ChatRequest.gate_overrides 字段 + interaction 登记 + Planner 单次消费；拦截警告附「本次放行」按钮（gateWarningTargetIdx 挂载，e2e 钉死）；finishStream 落 warnings；prompt_builder 组装超阈预警（60000 字符） |
 
 ### 13.9 模型分层原则（速度治理）
 

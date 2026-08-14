@@ -107,3 +107,21 @@ class TestMaybeCompactHistory:
         out = await chat_service._maybe_compact_history(hist, svc, adapter)
         assert adapter.calls == 0, "命中缓存不得再调模型"
         assert "缓存摘要" in out[0]["content"]
+
+
+class TestGateOverridesStore:
+    def test_store_gate_overrides_writes_interaction(self, tmp_path):
+        """814F7：「本次放行」登记入 interaction，供 Planner 单次消费（§2.4 留痕）"""
+        from src.video_agent.state.manager import StateManager
+
+        svc = StateManager(str(tmp_path))
+        chat_service._store_gate_overrides(svc, ["all", "  ", 123])
+        inter = svc.state_dict.get("interaction") or {}
+        assert inter.get("gate_overrides") == ["all"], "非法/空条目应被过滤"
+
+    def test_store_gate_overrides_empty_noop(self, tmp_path):
+        from src.video_agent.state.manager import StateManager
+
+        svc = StateManager(str(tmp_path))
+        chat_service._store_gate_overrides(svc, [])
+        assert "gate_overrides" not in (svc.state_dict.get("interaction") or {})

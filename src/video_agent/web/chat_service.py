@@ -253,6 +253,19 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
     return llm_user_text
 
 
+def _store_gate_overrides(svc, overrides) -> None:
+    """814F7（§2.4）：把用户「本次放行」的 rule_id 列表写入 interaction，
+    由本次请求的 Planner 消费一次即清除（单次生效、全程留痕）。
+    调用方需持有 svc.lock。"""
+    cleaned = [r for r in (overrides or []) if isinstance(r, str) and r.strip()]
+    if not cleaned:
+        return
+    interaction = svc.state_dict.setdefault("interaction", {})
+    interaction["gate_overrides"] = cleaned
+    svc.save()
+    logger.info(f"[GateOverride] 已登记 {len(cleaned)} 条一次性闸机豁免: {cleaned}")
+
+
 # 会话级 compaction（814R4 恢复）：压缩后仍完整保留的最近消息条数
 _HISTORY_COMPACT_KEEP = 4
 
@@ -545,6 +558,11 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit) -> None:
     use_studio_context = body.context_mode != "none"
     # 开场公共编排（814F2）：暂停闭环 + 规格定稿/向导 + 附件降级注入
     llm_user_text = await _prepare_chat_opening(svc, body, user_text, use_studio_context)
+
+    # 会话层一次性豁免（814F7）：随消息登记，Planner 本次消费
+    if getattr(body, "gate_overrides", None) and use_studio_context:
+        async with svc.lock:
+            _store_gate_overrides(svc, body.gate_overrides)
 
     # Skill 写入文档：消息携带 Skill 引用块时（前端此时才传 skill_slug），
     # 记入当前项目 usedSkills，文档面板只展示已发送过的 Skill 文档。
@@ -922,6 +940,11 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     use_studio_context = body.context_mode != "none"
     # 开场公共编排（814F2）：同流式路径（暂停闭环 + 规格定稿/向导 + 附件降级）
     llm_user_text = await _prepare_chat_opening(svc, body, user_text, use_studio_context)
+
+    # 会话层一次性豁免（814F7）：同流式路径
+    if getattr(body, "gate_overrides", None) and use_studio_context:
+        async with svc.lock:
+            _store_gate_overrides(svc, body.gate_overrides)
 
     # Skill 写入文档：同 stream_worker（仅消息携带 Skill 引用块时前端才传 slug）
     if body.skill_slug:

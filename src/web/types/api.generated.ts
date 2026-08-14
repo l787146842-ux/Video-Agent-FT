@@ -49,6 +49,7 @@ export interface ChatRequest {
   skill_name?: string;
   doc_blocks?: string[];
   skill_blocks?: string[];
+  gate_overrides?: string[];
 }
 
 export interface ChatResponse {

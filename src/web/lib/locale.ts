@@ -99,6 +99,7 @@ const zhCN: Record<string, string> = {
   'rp.msg.confirmContinue': '确认，继续',
   'rp.msg.confirmText': '确认',
   'rp.msg.adjust': '我要调整',
+  'rp.msg.gateOverride': '本次放行（仅本次生效）',
 
   // ---------- 确认向导（814F6 i18n 补齐） ----------
   'rp.confirm.customBtn': '其它（自定义输入）',

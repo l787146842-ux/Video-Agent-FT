@@ -123,7 +123,7 @@ test.describe('故事板面板', () => {
 });
 
 test.describe('阶段确认卡片与文档卡片', () => {
-    test('确认卡片/操作清单/文档卡片渲染与持久化字段展示', async ({ page }) => {
+    test('阶段卡只留大项、确认文案转气泡、明细归时间线（814F6）', async ({ page }) => {
         await mockAgentTask(page, {
             text: '规划已完成',
             elapsed_ms: 500,
@@ -142,16 +142,71 @@ test.describe('阶段确认卡片与文档卡片', () => {
         await chatInput.press('Enter');
 
         const feed = page.getByTestId('chat-feed');
-        // 阶段确认卡片：标题 + 操作数徽标（取最新一条，避免与历史消息歧义）
-        await expect(feed.locator('.stage-card').last()).toContainText('阶段完成');
-        await expect(feed.locator('.stage-card').last()).toContainText('已执行 3 个操作');
+        // 阶段完成卡：只有标题 + 操作数徽标（规范：不显示正文）
+        const stageCard = feed.locator('.stage-card').last();
+        await expect(stageCard).toContainText('阶段完成');
+        await expect(stageCard).toContainText('已执行 3 个操作');
+        await expect(stageCard.locator('.stage-card-body')).toHaveCount(0);
+        // 确认说明文案作为独立气泡展示（正文未含其首行时）
+        await expect(feed.locator('.stage-confirm-text').last()).toContainText('故事板已建立，请审阅');
         // 文档完成卡片
         await expect(feed.locator('.doc-card').last()).toContainText('Final_Video_Spec.md');
-        // 展开后显示具体操作清单
-        await feed.locator('.stage-card-header').last().click();
-        await expect(feed.locator('.stage-op-list').last()).toContainText('新建关键元素分组「主角」');
-        // 过程时间线（已处理操作折叠面板）存在，标题含操作数
-        await expect(feed.locator('.agent-timeline').last()).toContainText('已处理 2 个操作');
+        // 操作明细在「已处理 X 个操作」时间线里（展开后可见）
+        await expect(feed.locator('.agent-timeline').last()).toContainText('已处理');
+    });
+});
+
+test.describe('闸机「本次放行」（814F7）', () => {
+    test('拦截类警告携带放行按钮，点击后消息携带 gate_overrides 发送', async ({ page }) => {
+        const capturedBodies: Array<Record<string, unknown>> = [];
+        await page.route('**/api/agent/tasks', async (route) => {
+            const req = route.request();
+            if (req.method() === 'POST') {
+                capturedBodies.push(req.postDataJSON());
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ task_id: 'e2e-task', project_id: 'e2e-p' }),
+                });
+            } else {
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ tasks: [] }),
+                });
+            }
+        });
+        await page.route('**/api/agent/tasks/*/events', async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'text/event-stream',
+                body: `data: ${JSON.stringify({
+                    type: 'done',
+                    payload: {
+                        text: '写入被拦截',
+                        warnings: ['流程闸机拦截：分镜提示词结构校验未通过'],
+                        elapsed_ms: 10, steps: 1, applied_actions: 0,
+                    },
+                })}\n\n`,
+            });
+        });
+
+        await page.goto('/');
+        await page.waitForLoadState('networkidle');
+        const chatInput = page.locator('#chatInputTextarea');
+        await chatInput.fill('触发拦截');
+        await chatInput.press('Enter');
+
+        const feed = page.getByTestId('chat-feed');
+        // 拦截警告出现后附带「本次放行」按钮（仅最新一条）
+        const btn = feed.locator('.gate-override-btn').last();
+        await expect(btn).toBeVisible({ timeout: 10000 });
+        await btn.click();
+        // 放行消息是第二次 POST：携带 gate_overrides（单次生效留痕）
+        await expect.poll(() => capturedBodies.length, { timeout: 10000 }).toBeGreaterThanOrEqual(2);
+        const overrideReq = capturedBodies[capturedBodies.length - 1];
+        expect(overrideReq.message).toContain('放行');
+        expect(overrideReq.gate_overrides).toEqual(['all']);
     });
 });
 

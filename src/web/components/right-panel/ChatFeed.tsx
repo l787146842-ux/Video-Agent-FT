@@ -56,6 +56,17 @@ export function ChatFeed() {
     return -1;
   };
 
+  /** 814F7：最后一条含闸机拦截警告的消息（「本次放行」按钮挂载点） */
+  const gateWarningTargetIdx = () => {
+    if (chatState.isStreaming) return -1;
+    const msgs = chatState.messages;
+    for (let i = msgs.length - 1; i >= 0; i -= 1) {
+      const w = msgs[i].warnings || [];
+      if (w.some((s) => s.includes('拦截') || s.includes('闸'))) return i;
+    }
+    return -1;
+  };
+
   return (
     <div ref={feedRef} data-testid="chat-feed" class="chat-feed" onScroll={onScroll}>
       <For each={chatState.messages}>
@@ -63,6 +74,7 @@ export function ChatFeed() {
           <ChatMessageItem
             message={msg}
             isLast={idx() === confirmTargetIdx()}
+            isGateTarget={idx() === gateWarningTargetIdx()}
           />
         )}
       </For>

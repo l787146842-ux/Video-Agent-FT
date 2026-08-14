@@ -18,6 +18,11 @@ from src.video_agent.utils.prompts import load_prompt
 if TYPE_CHECKING:
     from src.video_agent.core.planner import PlannerContext
 
+# 814F7 遥测：system prompt 组装总长预警阈值（字符）——超过即 warning，
+# 提醒清理草稿/缩短 Skill 全文（token 治理的组装层可观测性）
+_SYSTEM_PROMPT_WARN_CHARS = 60000
+
+
 class PromptBuilder:
     """system prompt 组装器：依赖通过 callable 注入，不与 Planner 循环引用"""
 
@@ -142,7 +147,16 @@ class PromptBuilder:
         if selected_block:
             parts.append(selected_block)
 
-        return "\n\n".join(parts)
+        text = "\n\n".join(parts)
+        # 814F7 遥测：组装超限预警（各段字符数入账，便于定位臃胀来源）
+        if len(text) > _SYSTEM_PROMPT_WARN_CHARS:
+            logger.warning(
+                f"[PromptBuilder] system prompt 组装超阈值：总长 {len(text)} 字符 > "
+                f"{_SYSTEM_PROMPT_WARN_CHARS}（选中Skill块={len(selected_block)}，"
+                f"状态JSON≈{len(state_json) if context.use_studio_context else 0}）；"
+                "建议清理草稿/缩短 Skill 全文或依赖降级保险丝"
+            )
+        return text
 
     def build_global_settings_note(self) -> str:
         """全局生成设置注入块：分镜最大时长 + 默认出图/出视频渠道 + 聊天出图开关。"""

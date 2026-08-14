@@ -621,6 +621,13 @@
   background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25);
   border-radius: 6px; padding: 5px 8px;
 }
+/* 814F7：拦截类警告的「本次放行」按钮（单次生效留痕，不发光） */
+.gate-override-btn {
+  align-self: flex-start; font-size: 11px; padding: 4px 10px; border-radius: 6px;
+  border: 1px solid rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.12);
+  color: var(--accent-amber); cursor: pointer; transition: background 0.15s;
+}
+.gate-override-btn:hover { background: rgba(245, 158, 11, 0.2); }
 
 .msg-memory-hits { margin: 6px 0 0; font-size: 11px; color: var(--text-muted); }
 .msg-memory-hits summary { cursor: pointer; user-select: none; }
