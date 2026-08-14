@@ -100,6 +100,14 @@ const zhCN: Record<string, string> = {
   'rp.msg.confirmText': '确认',
   'rp.msg.adjust': '我要调整',
 
+  // ---------- 确认向导（814F6 i18n 补齐） ----------
+  'rp.confirm.customBtn': '其它（自定义输入）',
+  'rp.confirm.customPlaceholder': '输入你的想法，发送后作为本组的选择…',
+  'rp.confirm.send': '发送',
+  'rp.confirm.next': '下一步',
+  'rp.confirm.hintCustom': '将发送自定义内容',
+  'rp.confirm.hintPick': '选择后点击发送',
+
   // ---------- 排队引导消息（推理中继续发送） ----------
   'rp.queue.title': '排队中的引导消息（Agent 完成后自动发送）',
   'rp.queue.guide': '引导',

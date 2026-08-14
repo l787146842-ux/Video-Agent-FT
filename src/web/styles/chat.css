@@ -109,22 +109,15 @@
   .doc-card-name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .doc-card-status { margin-left: auto; font-size: 10px; color: var(--accent-emerald); flex-shrink: 0; }
 
-  /* 阶段卡片 */
+  /* 阶段卡片（814F6：按前端体验规范只留大项，不再展开正文） */
   .stage-card { border: 1px solid rgba(52, 211, 153, 0.3); border-radius: 8px; background: rgba(52, 211, 153, 0.05); margin-bottom: 6px; overflow: hidden; }
-  .stage-card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; user-select: none; }
-  button.stage-card-header { width: 100%; background: none; border: none; font: inherit; text-align: left; }
-  .stage-card-header:hover { background: rgba(52, 211, 153, 0.08); }
+  .stage-card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; user-select: none; cursor: default; }
   .stage-check { color: #34d399; flex-shrink: 0; }
   .stage-card-title { font-size: 12px; font-weight: 600; color: #34d399; }
   .stage-card-badge { font-size: 10px; color: var(--text-muted); background: rgba(255, 255, 255, 0.06); padding: 2px 7px; border-radius: 4px; }
-  .stage-arrow { margin-left: auto; color: var(--text-muted); transition: transform 0.2s; }
-  .stage-card.expanded .stage-arrow { transform: rotate(180deg); }
-  .stage-card-body { display: none; padding: 0 12px 10px; font-size: 12px; line-height: 1.6; color: var(--text-muted); border-top: 1px solid rgba(52, 211, 153, 0.15); padding-top: 8px; margin: 0 12px 10px; }
-  .stage-card.expanded .stage-card-body { display: block; }
-  /* 「阶段完成」卡片展开后的具体操作清单 */
-  .stage-op-list { margin: 6px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
-  .stage-op-item { font-size: 12px; line-height: 1.5; color: var(--text-main); list-style: disc; }
-  .stage-op-item::marker { color: rgba(52, 211, 153, 0.7); }
+  /* 确认说明文案气泡（814F6）：与阶段卡同色系描边，不发光；
+     特异性需高于 .chat-msg.agent .chat-bubble 才能生效 */
+  .chat-msg.agent .chat-bubble.stage-confirm-text { border: 1px solid rgba(52, 211, 153, 0.25); background: rgba(52, 211, 153, 0.04); margin-bottom: 6px; }
 
   /* 过程时间线（agent 消息：深度思考 + 已处理操作折叠面板） */
   .agent-timeline { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; max-width: 100%; }

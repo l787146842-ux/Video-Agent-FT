@@ -91,13 +91,13 @@ export function ConfirmActions(props: { message: ChatMessage }) {
         class={`confirm-btn secondary${customOpen()[key] || (customText()[key] || '').trim() ? ' active' : ''}`}
         onClick={(e) => toggleCustom(key, e.currentTarget)}
       >
-        其它（自定义输入）
+        {t('rp.confirm.customBtn')}
       </button>
       <Show when={customOpen()[key]}>
         <textarea
           class="confirm-custom-input"
           rows={2}
-          placeholder="输入你的想法，发送后作为本组的选择…"
+          placeholder={t('rp.confirm.customPlaceholder')}
           value={customText()[key] || ''}
           onInput={(e) => {
             const v = e.currentTarget.value;
@@ -164,7 +164,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
               {customBlock(SINGLE_KEY)}
               <div class="confirm-wizard-footer">
                 <span class="confirm-wizard-hint">
-                  {(customText()[SINGLE_KEY] || '').trim() ? '将发送自定义内容' : '选择后点击发送'}
+                  {(customText()[SINGLE_KEY] || '').trim() ? t('rp.confirm.hintCustom') : t('rp.confirm.hintPick')}
                 </span>
                 <button
                   type="button"
@@ -172,7 +172,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
                   disabled={!effective(SINGLE_KEY)}
                   onClick={sendSingle}
                 >
-                  发送
+                  {t('rp.confirm.send')}
                 </button>
               </div>
             </div>
@@ -243,7 +243,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
                       disabled={!allPicked()}
                       onClick={sendAll}
                     >
-                      发送
+                      {t('rp.confirm.send')}
                     </button>
                   }
                 >
@@ -253,7 +253,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
                     disabled={!effective(curGroup().title)}
                     onClick={() => setPage(page() + 1)}
                   >
-                    下一步
+                    {t('rp.confirm.next')}
                   </button>
                 </Show>
               </div>

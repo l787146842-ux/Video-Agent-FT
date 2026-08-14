@@ -419,6 +419,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 814R3 | flow_gates.py（Skill 声明式流程检查点）整体无调用；会话层 gate_overrides 消费链断线 | 8/12 回退丢失 planner/agent_loop/fc_tool_runner 三处接线 | 从 8-04 快照恢复三处接线（FC 拦截+文本剔除+强制补发暂停）；恢复 interaction.gate_overrides 单次消费（按钮化输入端待 814 批次7）；正则意图识别作兜底；用户坚持 scope=all 旁路硬门禁（test_flow_gates 9+2 钉死） |
 | 814R4 | _prepend_script_summary 有定义有测试无生产调用（1111 台账「总结强制入正文」断线）；重复 pop；开场编排双份复制；session_compact 无人消费 | 回退丢失接线 + 重构残留 | FC 轨 llm_call 与文本轨暂停补拼双接线；_prepare_chat_opening 单一实现；会话级 compaction 恢复（阈值配置默认关，摘要缓存于 interaction）（test_814_summary_and_chatservice 钉死） |
 | 814F3 | skill_baseline.md 与 skill_discipline.md 九条同构但语义相反并存（P1 隐患）；settings.skill_runtime 开关无消费点；workflows 引擎已批准下线但 4 处残留引用 | 恢复残留 + 死配置 + 债务未落地 | baseline 归档 docs/archive（禁重接线）；skill_runtime auto/executors/legacy 三态落地 prompt_builder；workflows/ + routes/workflow + core/agent + cli.py + workflow_step 工具整体移出主线（备份分支可捞，实现体仍在 backup 分支）；README/配置说明/契约同步 |
+| 814F6 | 阶段完成卡显示正文（与前端体验规范打架）；左栏页签文字竖排；窄视口顶栏重叠/右栏不可达；ConfirmActions 硬编码中文 | 实现与规范漂移 + 样式缺陷 | 阶段卡只留标题+徽标，确认文案转正文气泡（判重防双显），操作明细归时间线；页签 white-space:nowrap；工作台 min-width 940 + 横向滚动兜底；i18n 补齐 rp.confirm.*；浏览器实测截图验证（verify-*.png） |
 
 ### 13.9 模型分层原则（速度治理）
 
