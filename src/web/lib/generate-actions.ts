@@ -23,8 +23,8 @@ export async function generateImage(): Promise<void> {
   if (!draft) { showToast('请先在左侧选中一个关键元素草稿卡片', 'warning'); return; }
   const draftType = rec?.type || 'keyElement';
 
-  const providerId = draft.providerId || '';
-  const model = draft.model || '';
+  const providerId = draft.imageProviderId || draft.providerId || '';
+  const model = draft.imageModel || draft.model || '';
   const ratioSelection = draft.aspectRatio || '1:1';
   const customWidth = draft.customRatioWidth || '';
   const customHeight = draft.customRatioHeight || '';
@@ -90,11 +90,11 @@ export async function generateVideo(): Promise<void> {
   const draftType = rec?.type || 'shot';
 
   const mode = draft.mode || '全能参考';
-  const providerId = draft.providerId || '';
-  const model = draft.model || '';
+  const providerId = draft.videoProviderId || draft.providerId || '';
+  const model = draft.videoModel || draft.model || '';
   const resolution = draft.resolution || '1080p';
   const duration = parseInt(draft.duration || '5s', 10) || 5;
-  const aspectRatio = draft.aspectRatio || '16:9';
+  const aspectRatio = draft.videoAspectRatio || draft.aspectRatio || '16:9';
   // @引用解析（C3）：参考素材对齐 Seedance 2.5 能力（图30/视频10/音频10，共50）；
   // 后端会再自动补充分镜 sceneRefs 元素图与音色参考音频（去重）
   const resolved = resolvePromptForGeneration(draft.prompt || '', draft.refAssets || [], VIDEO_GEN_LIMITS.total);
@@ -168,9 +168,9 @@ export async function generateAudio(): Promise<void> {
   if (!draft) { showToast('请先在左侧选中一个音频草稿卡片', 'warning'); return; }
   const draftType = rec?.type || 'audio';
 
-  const provider = draft.providerId || '';
-  const model = draft.model || '';
-  const mode = draft.mode || '多模态音频生成';
+  const provider = draft.audioProviderId || draft.providerId || '';
+  const model = draft.audioModel || draft.model || '';
+  const mode = draft.audioMode || draft.mode || '多模态音频生成';
   const timbre = draft.timbre || '深邃男声 (Deep Narrator)';
   if (!provider || !model) { showToast('请先选择音频规划 API 和对应模型', 'warning'); return; }
   showToast('正在生成音频规划...', 'info');

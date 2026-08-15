@@ -7,7 +7,7 @@ import {
 import { ImageParams } from './params/ImageParams';
 import { VideoParams } from './params/VideoParams';
 import { AudioParams } from './params/AudioParams';
-import type { DraftType } from '@/types';
+import type { Draft, DraftType } from '@/types';
 
 /** 根据草稿类型与生成类型推导供应商种类（image/video/chat） */
 function providerKindFor(type: DraftType, genType: string): 'image' | 'video' | 'chat' {
@@ -47,7 +47,14 @@ export function ParamControls() {
       // 生成类型（genType 优先，回退 mediaType）决定供应商种类
       const genType = r.draft.genType || r.draft.mediaType || 'image';
       const kind = providerKindFor(type, genType);
-      let pid = r.draft.providerId || '';
+      // 按种类参数隔离（2026-08-15）：三个生成器各自读写本种类字段；
+      // 旧数据无本种类字段时回退旧共享字段（仅当其对当前种类有效），
+      // 选中即愈合写回本种类字段
+      const curPid = kind === 'image'
+        ? (r.draft.imageProviderId || '')
+        : kind === 'video' ? (r.draft.videoProviderId || '') : (r.draft.audioProviderId || '');
+      const legacyPid = r.draft.providerId || '';
+      let pid = curPid || (providerModels(legacyPid, kind).length ? legacyPid : '');
       if (!providerModels(pid, kind).length) {
         // 全局设置默认渠道优先于首选供应商回填（草稿无值时参数栏按全局设置跳转）
         const gpid = kind === 'image'
@@ -59,15 +66,26 @@ export function ParamControls() {
       const models = providerModels(pid, kind);
       // 模型列表为空（供应商未就绪）时跳过：patch.model='' 会永不收敛地循环写回
       if (!models.length) return;
-      const currentModel = r.draft.model || '';
+      const curModel = kind === 'image'
+        ? (r.draft.imageModel || '')
+        : kind === 'video' ? (r.draft.videoModel || '') : (r.draft.audioModel || '');
+      const legacyModel = providerModels(r.draft.model || '', kind).length ? (r.draft.model || '') : '';
+      const currentModel = curModel || legacyModel;
       const gmodel = kind === 'image'
         ? (gs?.default_image_model || '')
         : kind === 'video' ? (gs?.default_video_model || '') : '';
-      const patch: Record<string, string> = {};
-      if (pid && pid !== r.draft.providerId) patch.providerId = pid;
+      const patch: Partial<Draft> = {};
+      if (pid && pid !== (curPid || legacyPid)) {
+        if (kind === 'image') patch.imageProviderId = pid;
+        else if (kind === 'video') patch.videoProviderId = pid;
+        else patch.audioProviderId = pid;
+      }
       if (!models.includes(currentModel) && models[0] !== currentModel) {
         // 全局设置默认模型优先，未配置时回退供应商首个模型
-        patch.model = (gmodel && models.includes(gmodel)) ? gmodel : models[0];
+        const m = (gmodel && models.includes(gmodel)) ? gmodel : models[0];
+        if (kind === 'image') patch.imageModel = m;
+        else if (kind === 'video') patch.videoModel = m;
+        else patch.audioModel = m;
       }
       // 分辨率/时长为空时按全局设置自动填入参数栏
       if (kind === 'image' && !r.draft.imageResolution && gs?.default_image_resolution) {

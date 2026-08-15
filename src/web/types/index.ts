@@ -22,6 +22,19 @@ export interface Draft {
   model?: string;
   mode?: string;
   providerId?: string;
+  /** 按种类参数隔离（2026-08-15）：三个生成器各自读写本种类字段，
+   *  消除共享字段互相污染（选项集不匹配时下拉空值/塌缩）；
+   *  旧共享字段保留，仅作旧数据回退 */
+  imageProviderId?: string;
+  imageModel?: string;
+  videoProviderId?: string;
+  videoModel?: string;
+  /** 视频画幅比例（独立于图片 aspectRatio） */
+  videoAspectRatio?: string;
+  audioProviderId?: string;
+  audioModel?: string;
+  /** 音频生成模式（独立于视频 mode） */
+  audioMode?: string;
   aspectRatio?: string;
   duration?: string;
   resolution?: string;

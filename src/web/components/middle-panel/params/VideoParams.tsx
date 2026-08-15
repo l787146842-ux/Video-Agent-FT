@@ -34,6 +34,7 @@ export function VideoParams(props: { draft: Draft; type?: DraftType }) {
       </ParamGroup>
       <ProviderModelSelects
         kind="video"
+        bucket="video"
         providerLabel="视频 API:"
         modelLabel="视频模型:"
         draft={d()}
@@ -61,9 +62,9 @@ export function VideoParams(props: { draft: Draft; type?: DraftType }) {
       <ParamGroup label="画幅比例:">
         <ParamSelect
           ariaLabel="视频画幅比例"
-          value={d().aspectRatio || '16:9'}
+          value={d().videoAspectRatio || d().aspectRatio || '16:9'}
           options={['16:9', '9:16', '1:1', '21:9'].map((v) => ({ value: v, label: v }))}
-          onChange={(v) => update({ aspectRatio: v })}
+          onChange={(v) => update({ videoAspectRatio: v })}
         />
       </ParamGroup>
       <div class="param-actions">

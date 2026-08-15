@@ -26,6 +26,7 @@ export function ImageParams(props: { draft: Draft }) {
     <>
       <ProviderModelSelects
         kind="image"
+        bucket="image"
         providerLabel="图片 API:"
         modelLabel="生成模型:"
         draft={d()}

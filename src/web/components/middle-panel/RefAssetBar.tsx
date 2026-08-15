@@ -28,7 +28,6 @@ export function RefAssetBar(props: {
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [addMenuOpen, setAddMenuOpen] = createSignal(false);
   let fileInputRef: HTMLInputElement | undefined;
-  let audioInputRef: HTMLInputElement | undefined;
 
   /** +号菜单打开时，点击菜单外部任意位置即关闭 */
   createEffect(() => {
@@ -189,13 +188,6 @@ export function RefAssetBar(props: {
                   <button
                     type="button"
                     class="ref-add-menu-item"
-                    onClick={() => { setAddMenuOpen(false); audioInputRef?.click(); }}
-                  >
-                    <FiMusic size={13} /> 上传音频
-                  </button>
-                  <button
-                    type="button"
-                    class="ref-add-menu-item"
                     onClick={() => { setAddMenuOpen(false); setPickerOpen(true); }}
                   >
                     <FiLayers size={13} /> 画布
@@ -206,17 +198,6 @@ export function RefAssetBar(props: {
                 ref={fileInputRef}
                 type="file"
                 accept="image/*,video/*,audio/*"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const file = e.currentTarget.files?.[0];
-                  if (file) void handleRefUpload(file);
-                  e.currentTarget.value = '';
-                }}
-              />
-              <input
-                ref={audioInputRef}
-                type="file"
-                accept="audio/*"
                 style={{ display: 'none' }}
                 onChange={(e) => {
                   const file = e.currentTarget.files?.[0];

@@ -21,13 +21,14 @@ export function AudioParams(props: { draft: Draft; type?: DraftType }) {
       <ParamGroup label="生成模式:">
         <ParamSelect
           ariaLabel="音频生成模式"
-          value={d().mode || '多模态音频生成'}
+          value={d().audioMode || d().mode || '多模态音频生成'}
           options={['多模态音频生成', '旁白语音合成'].map((v) => ({ value: v, label: v }))}
-          onChange={(v) => updateField({ mode: v })}
+          onChange={(v) => updateField({ audioMode: v })}
         />
       </ParamGroup>
       <ProviderModelSelects
         kind="chat"
+        bucket="audio"
         providerLabel="规划 API:"
         modelLabel="规划模型:"
         draft={d()}
