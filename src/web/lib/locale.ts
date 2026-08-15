@@ -24,6 +24,7 @@ const zhCN: Record<string, string> = {
   'rp.streaming.processing': '正在处理…',
   'rp.conv.close': '关闭对话',
   'rp.conv.create': '新建对话',
+  'rp.conv.branch': '分支当前对话（快照并派生新对话）',
   'rp.conv.busyGuard': 'Agent 正在回复，请稍后再操作对话窗口',
 
   // ---------- 输入区 ----------

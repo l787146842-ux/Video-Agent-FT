@@ -63,6 +63,11 @@ export const convActions = {
     }));
   },
 
+  /** B11：分支操作后整体应用后端 payload（含消息装载） */
+  applyPayload(payload: ConversationsPayload) {
+    applyPayload(payload, true);
+  },
+
   /** 新建对话（+ 号）：成功后切换到空白新对话 */
   async create(): Promise<boolean> {
     try {

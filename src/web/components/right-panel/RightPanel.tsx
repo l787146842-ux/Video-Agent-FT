@@ -1,11 +1,12 @@
 import { For, Show } from 'solid-js';
-import { FiPlus, FiX } from 'solid-icons/fi';
+import { FiGitBranch, FiPlus, FiX } from 'solid-icons/fi';
 import { ChatFeed } from './ChatFeed';
 import { ChatInput } from './ChatInput';
 import { state } from '@/stores/studio';
 import { convState, convActions } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
 import { useSplitter } from '@/hooks/use-splitter';
+import { createSnapshot, branchSnapshot } from '@/api/conversations';
 import { t } from '@/lib/locale';
 
 /**
@@ -47,6 +48,19 @@ export default function RightPanel() {
     void convActions.close(id);
   }
 
+  /** B11：分支当前对话——打快照 → 派生新对话（原对话与状态不动） */
+  async function handleBranch() {
+    if (busyGuard()) return;
+    try {
+      const snap = await createSnapshot();
+      const payload = await branchSnapshot(snap.snap_id);
+      convActions.applyPayload(payload);
+      showToast('已从当前对话创建分支', 'success');
+    } catch (e) {
+      showToast(`创建分支失败：${(e as Error).message}`, 'error');
+    }
+  }
+
   return (
     <div class="panel-column">
       {/* 顶部单栏：多对话标签选择 + 新建对话 + 状态点（已去掉 Agent 标题行） */}
@@ -75,6 +89,9 @@ export default function RightPanel() {
           )}
         </For>
         <div class="conv-tabs-actions">
+          <button type="button" class="conv-tabs-add" title={t('rp.conv.branch')} onClick={() => void handleBranch()}>
+            <FiGitBranch size={13} />
+          </button>
           <button type="button" class="conv-tabs-add" title={t('rp.conv.create')} onClick={handleCreate}>
             <FiPlus size={13} />
           </button>

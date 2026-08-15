@@ -30,3 +30,15 @@ export function activateConversation(id: string): Promise<ConversationsPayload> 
 export function deleteConversation(id: string): Promise<ConversationsPayload> {
   return apiDelete<ConversationsPayload>(`/api/conversations/${encodeURIComponent(id)}`);
 }
+
+/** B11：把当前活跃对话打为不可变快照 */
+export function createSnapshot(): Promise<{ snap_id: string; title: string }> {
+  return apiPost<{ snap_id: string; title: string }>('/api/conversations/snapshot', {});
+}
+
+/** B11：从快照派生分支对话（新对话装载快照消息并设为活跃） */
+export function branchSnapshot(snapId: string, title = ''): Promise<ConversationsPayload> {
+  return apiPost<ConversationsPayload>(
+    `/api/conversations/snapshots/${encodeURIComponent(snapId)}/branch`, { title },
+  );
+}

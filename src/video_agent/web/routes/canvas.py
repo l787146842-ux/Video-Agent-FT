@@ -15,6 +15,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
+from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils.paths import ASSETS_DIR
 
@@ -280,3 +281,63 @@ async def drop_image_to_canvas(body: CanvasDropImageRequest, request: Request):
         canvas_kind=canvas_kind,
     )
     return {**result, "image_url": image_url}
+
+
+class TimelinePushRequest(BaseModel):
+    """B9b：时间线回画布——把分镜组的媒体/提示词批量建为 smart-image 节点（网格排列）。"""
+    shot_group_id: str = ""
+    canvas_id: str = ""
+
+
+@router.post("/canvas/push-timeline")
+async def push_timeline_to_canvas(body: TimelinePushRequest):
+    """把指定分镜组（或全部分镜）的时间线批量推送到画布。
+
+    只走画布既有公开接口（Rule 7）：批量建 smart-image 节点（x 递增 400 / y 递增 300，
+    与 system.md 画布操作规则同口径）。画布离线/未启用时诚实报错（不降级假装成功）。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.tools.canvas_tools import CanvasBatchUpdateTool
+    from src.video_agent.tools.base import ToolResult
+
+    if not settings.canvas_enabled:
+        raise AdapterError("画布功能未启用（CANVAS_ENABLED=false）", status_code=503, error_code="CANVAS_DISABLED")
+    state = StateManager.get_instance().state_dict
+    nodes = []
+    idx = 0
+    for group in state.get("shots") or []:
+        if not isinstance(group, dict):
+            continue
+        if body.shot_group_id and str(group.get("id") or "") != body.shot_group_id:
+            continue
+        for draft in (group.get("drafts") or []):
+            if not isinstance(draft, dict):
+                continue
+            nodes.append({
+                "node_type": "smart-image",
+                "title": str(draft.get("label") or group.get("title") or ""),
+                "x": 100 + (idx % 4) * 400,
+                "y": 100 + (idx // 4) * 300,
+                "prompt": str(draft.get("prompt") or "")[:2000],
+                "image_url": str(draft.get("imgUrl") or ""),
+                "content": "",
+            })
+            idx += 1
+    if not nodes:
+        raise AdapterError("故事板没有可推送的分镜（先拆解分镜）", status_code=400, error_code="NO_SHOTS")
+
+    canvas_id = body.canvas_id
+    if not canvas_id:
+        target = await get_canvas_adapter().find_active_canvas()
+        if not target:
+            raise AdapterError("未找到可用的画布，请先在画布中创建一个画布", status_code=404, error_code="CANVAS_NOT_FOUND")
+        canvas_id = str(target.get("id") or "")
+
+    result: ToolResult = await CanvasBatchUpdateTool().aexecute(
+        type("Params", (), {
+            "canvas_id": canvas_id,
+            "nodes": [type("Node", (), n)() for n in nodes],
+        })()
+    )
+    if not result.success:
+        raise AdapterError(str(result.error or "推送画布失败"), status_code=502, error_code="CANVAS_PUSH_FAILED")
+    return {"ok": True, "canvas_id": canvas_id, "pushed": idx, "detail": result.data or {}}
