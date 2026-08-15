@@ -149,6 +149,12 @@ async def get_agent_traces(limit: int = 50):
     return {"traces": tracer.get_recent_traces(min(limit, 50))}
 
 
+@router.get("/agent/metrics")
+async def get_agent_metrics():
+    """B10：成本看板聚合——轨迹数/平均耗时/轮次/操作数/闸机拦截率/降级频率。"""
+    return AgentTracer.get_instance().metrics()
+
+
 @router.get("/agent/gates")
 async def get_agent_gates(limit: int = 50):
     """814R2 恢复：获取最近 N 条闸机判定（rule_id/层/结果/是否被申诉放行）+ 规则注册表概览。

@@ -71,6 +71,23 @@ export function setRuntimeSettings(body: Partial<RuntimeSettings>): Promise<Runt
   return apiPut<RuntimeSettings>('/api/settings/runtime', body);
 }
 
+/** B10：成本看板聚合指标 */
+export interface AgentMetrics {
+  traces_count: number;
+  avg_turn_ms: number;
+  total_steps: number;
+  total_actions: number;
+  gate_total: number;
+  gate_intercepts: number;
+  gate_intercept_rate: number;
+  fallback_count: number;
+  recent_fallbacks: Array<{ ts: number; provider: string; model: string }>;
+}
+
+export function getAgentMetrics(): Promise<AgentMetrics> {
+  return apiFetch<AgentMetrics>('/api/agent/metrics');
+}
+
 /** 是否有聊天 worker 仍在运行（含刷新后转后台的） */
 export function getAgentRunning(): Promise<{ running: boolean }> {
   return apiFetch<{ running: boolean }>('/api/agent/running');

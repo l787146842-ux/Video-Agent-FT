@@ -1,10 +1,10 @@
-import { Show, onMount, For } from 'solid-js';
+import { Show, onMount, For, createSignal } from 'solid-js';
 import { A } from '@solidjs/router';
 import { FiArrowLeft, FiSettings } from 'solid-icons/fi';
 import { ensureGlobalSettings, globalSettings, updateGlobalSettings } from '@/stores/global-settings';
 import { apiProvidersFor, providerModels } from '@/lib/providers';
 import { ParamGroup, ParamSelect } from '@/components/middle-panel/params/ParamBase';
-import type { RuntimeSettings } from '@/api/agent';
+import { getAgentMetrics, type AgentMetrics, type RuntimeSettings } from '@/api/agent';
 
 /** B8：模型分层策略表四角色（编排/生成/摘要/执行器） */
 const MODEL_POLICY_ROLES = [
@@ -65,6 +65,13 @@ export default function GlobalSettingsView() {
     policy[roleKey] = { ...cur, ...patch };
     set({ model_policy: policy });
   }
+
+  /** B10：运行指标（成本看板） */
+  const [metrics, setMetrics] = createSignal<AgentMetrics | null>(null);
+  function refreshMetrics() {
+    return getAgentMetrics().then(setMetrics).catch(() => { /* 后端未就绪静默 */ });
+  }
+  onMount(() => { void refreshMetrics(); });
 
   return (
     <div class="global-settings-view">
@@ -261,6 +268,28 @@ export default function GlobalSettingsView() {
               编排规划 = 主对话/规划轮；生成 = 执行器长文生成与纠正重试；摘要 = 记忆摘要与会话压缩；
               执行器机械 = 拆解/提示词批量誊写（快模型先试，零进展自动升级）。
               「跟随主模型」= 不覆盖（沿用对话栏所选模型与既有回落链）；改动即时生效。
+            </p>
+          </section>
+          {/* B10：成本看板（轮次/耗时/闸机拦截率/降级频率） */}
+          <section class="gs-section">
+            <h3>运行成本</h3>
+            <Show when={metrics()} fallback={<div class="gs-loading">加载指标…</div>}>
+              <div class="gs-row">
+                <ParamGroup label="轨迹数:"><span class="gs-metric-value">{metrics()!.traces_count}</span></ParamGroup>
+                <ParamGroup label="平均耗时:"><span class="gs-metric-value">{(metrics()!.avg_turn_ms / 1000).toFixed(1)}s</span></ParamGroup>
+                <ParamGroup label="总轮次:"><span class="gs-metric-value">{metrics()!.total_steps}</span></ParamGroup>
+                <ParamGroup label="闸机拦截率:">
+                  <span class="gs-metric-value">
+                    {metrics()!.gate_intercepts} / {metrics()!.gate_total}（{(metrics()!.gate_intercept_rate * 100).toFixed(1)}%）
+                  </span>
+                </ParamGroup>
+                <ParamGroup label="降级切换:"><span class="gs-metric-value">{metrics()!.fallback_count} 次</span></ParamGroup>
+              </div>
+              <button type="button" class="btn-secondary" onClick={() => void refreshMetrics()}>刷新指标</button>
+            </Show>
+            <p class="gs-hint">
+              基于最近 200 条执行轨迹聚合（agent_traces.jsonl）：轮次/操作数/闸机拦截率/模型降级频率。
+              用于成本与质量跟踪；明细见生成日志面板与 /api/agent/traces。
             </p>
           </section>
         </Show>

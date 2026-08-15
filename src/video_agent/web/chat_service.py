@@ -54,6 +54,7 @@ from src.video_agent.adapters.base_chat import BaseChatAdapter
 from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.adapters.agy_cli import AgyCliChatAdapter
 from src.video_agent.tools.manager import ToolManager
+from src.video_agent.core.tracer import AgentTracer
 
 __all__ = ["stream_worker", "non_stream_worker", "build_multimodal_content"]
 
@@ -912,6 +913,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             # 降级即时联动（7777）：切换时刻就下发，前端立即把选择器跳到实际生效的组合。
             # B0/F4 修正：provider 必须为「下一候选」的供应商（同模型跨厂商降级时
             # 真正变化的是厂商），此前误发失败方供应商导致前端跳转失效
+            AgentTracer.get_instance().record_fallback(next_provider, next_model)
             await emit({"type": SSE_MODEL_FALLBACK, **_fallback_switch_payload(candidates, idx)})
             continue
 

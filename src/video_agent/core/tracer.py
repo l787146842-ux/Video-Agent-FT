@@ -91,6 +91,8 @@ class AgentTracer:
         self._step_start: float = 0.0
         # 全局闸机判定流（814R2 恢复审计）：不依附单次 trace，供 /api/agent/gates 调试端点
         self._recent_gates: Deque[Dict[str, Any]] = deque(maxlen=100)
+        # B10：模型降级事件计数（fallback 频率指标；record_fallback 写入）
+        self._fallback_events: Deque[Dict[str, Any]] = deque(maxlen=200)
         self._persist_path = DATA_DIR / "agent_traces.jsonl"
 
     @classmethod
@@ -211,6 +213,32 @@ class AgentTracer:
         self._recent_gates.append(entry)
         if self._current is not None:
             self._pending_gates.append(entry)
+
+    def record_fallback(self, provider: str, model: str) -> None:
+        """B10：记录一次模型降级切换（fallback 频率指标；内存滚动保留）。"""
+        self._fallback_events.append({
+            "ts": time.time(), "provider": provider, "model": model,
+        })
+
+    def metrics(self) -> Dict[str, Any]:
+        """B10：成本看板聚合（内存 + 文件 trace，按 trace_id 去重）。"""
+        traces = self.get_recent_traces(limit=200)
+        total_ms = sum(float(t.get("total_ms") or 0) for t in traces)
+        steps = sum(len(t.get("steps") or []) for t in traces)
+        actions = sum(int(t.get("total_actions") or 0) for t in traces)
+        gates = [g for t in traces for s in (t.get("steps") or []) for g in (s.get("gates") or [])]
+        intercepts = sum(1 for g in gates if not g.get("ok"))
+        return {
+            "traces_count": len(traces),
+            "avg_turn_ms": round(total_ms / len(traces), 1) if traces else 0.0,
+            "total_steps": steps,
+            "total_actions": actions,
+            "gate_total": len(gates),
+            "gate_intercepts": intercepts,
+            "gate_intercept_rate": round(intercepts / len(gates), 3) if gates else 0.0,
+            "fallback_count": len(self._fallback_events),
+            "recent_fallbacks": list(reversed(list(self._fallback_events)))[:10],
+        }
 
     def end_step(
         self,
