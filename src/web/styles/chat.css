@@ -169,7 +169,10 @@
   @keyframes typingBounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-3px); opacity: 1; } }
 
   /* 聊天输入区*/
-  .chat-input-shell { flex-shrink: 0; }
+  /* 2026-08-15：shell 固定高度（拖拽把手控制）+ flex 填充链，
+     拉高分界线时编辑器同步伸展，不再只多出死空间 */
+  .chat-input-shell { flex-shrink: 0; display: flex; flex-direction: column; }
+  .chat-input-shell .chat-input-area { flex: 1; min-height: 0; }
   .chat-input-area { padding: 0 12px 12px; background-color: var(--bg-secondary); display: flex; flex-direction: column; flex-shrink: 0; }
   .chat-input-area .chat-input-box { flex: 1; min-height: 0; }
   .chat-input-box { display: flex; flex-direction: column; gap: 0; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 12px; position: relative; transition: border-color 0.2s; }

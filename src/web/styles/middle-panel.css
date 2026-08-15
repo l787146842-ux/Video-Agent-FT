@@ -66,7 +66,7 @@
   .ref-thumb-remove { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.6); color: #fff; border: none; border-radius: 4px; cursor: pointer; }
   .ref-thumb-wrap:hover .ref-thumb-remove { display: flex; }
   .ref-thumb-badge { position: absolute; bottom: 0; left: 0; border-top-right-radius: 4px; background: rgba(0, 0, 0, 0.7); padding: 0 4px; font-size: 8px; color: #fff; line-height: 1.5; }
-  .ref-upload-btn { display: flex; width: 40px; height: 40px; cursor: pointer; align-items: center; justify-content: center; border-radius: 4px; border: 1px dashed var(--border-color); color: var(--text-dim); font-size: 16px; line-height: 1; transition: color 0.15s, border-color 0.15s; }
+  .ref-upload-btn { display: flex; width: 40px; height: 40px; cursor: pointer; background: transparent; align-items: center; justify-content: center; border-radius: 4px; border: 1px dashed var(--border-color); color: var(--text-dim); font-size: 16px; line-height: 1; transition: color 0.15s, border-color 0.15s; }
   .ref-upload-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
   .ref-upload-btn input[type="file"] { display: none; }
     /* +号添加菜单（本地上传 / 画布·关键元素） */

@@ -107,3 +107,7 @@ html.light {
   html.light .chat-markdown code { background: rgba(0,0,0,0.06); }
   html.light .chat-markdown pre { background: rgba(0,0,0,0.05); }
 }
+
+/* ===== 工具类（2026-08-15：补齐旧版 Tailwind 移除后缺失的 .hidden，
+   原生 file input 等依赖它隐藏，否则浏览器渲染「选择文件」控件） ===== */
+.hidden { display: none !important; }
