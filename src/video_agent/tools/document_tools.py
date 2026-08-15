@@ -355,7 +355,7 @@ class ImageGenerateTool(BaseTool):
             if spec_pid:
                 provider_id = spec_pid
                 model = model or spec_model
-                logger.info(f"[image_generate] provider 未指定，按规格文档偏好回退: {spec_pid}/{model}")
+                logger.info(f"[image_generate] provider 未指定，按全局设置回退: {spec_pid}/{model}")
         if not provider_id:
             for _g, d, _t in targets:
                 pid = resolve_provider_ref(str(d.get("providerId") or "").strip())

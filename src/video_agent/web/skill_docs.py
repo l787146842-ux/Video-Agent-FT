@@ -368,6 +368,14 @@ _SKILL_MANIFEST_BLOCK_RE = re.compile(
     r"```(?:json|js)?\s*skill_manifest\s*\n(.*?)```", re.S | re.I
 )
 
+# B7 用户裁决：Skill 内写死的模型能力参数检测（厂商/模型/分辨率/时长），
+# 保存/导入时 lint 提示「已作废，以全局设置为准」；运行时一律忽略
+_MODEL_PARAM_LINT_RE = re.compile(
+    r"(Seedance|GPT\s*Image|Kling|可灵|即梦|Midjourney|Flux|SDXL|"
+    r"Runway|Vidu|Sora|Veo|Pika|Hailuo|海螺|万相|通义|1K|2K|4K|"
+    r"480p|720p|1080p|4K高清|60fps|24fps)"
+)
+
 # manifest 白名单（键 → 类型），非白名单键静默丢弃，防止用户文档破坏平台行为
 _MANIFEST_GATE_KEYS: Dict[str, Any] = {
     "shot_min_chars": 0,           # int >0
@@ -541,6 +549,15 @@ def lint_skill_content(content: str) -> Dict[str, Any]:
         warnings.append(
             "未检测到阶段暂停声明（可加 ```json pause_rules {\"stage_pause\": true}``` 或写明「何时暂停」），"
             "执行器完成后将不会主动邀请用户确认"
+        )
+    # B7 用户裁决：模型能力参数唯一权威源 = 全局设置——Skill 内写死的
+    # 厂商/模型/分辨率/时长参数一律作废（运行时忽略，仅提示迁移）
+    _hard_params = _MODEL_PARAM_LINT_RE.findall(content)
+    if _hard_params:
+        warnings.append(
+            "检测到写死的模型能力参数（" + "、".join(sorted(set(_hard_params))[:6])
+            + " 等）：已作废——出图/出视频渠道、分辨率、时长以「全局设置」为唯一权威源，"
+            "运行时不会采用本文档中的这些参数"
         )
     return {"available_tools": available, "warnings": warnings}
 

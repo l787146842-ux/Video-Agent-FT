@@ -149,8 +149,8 @@ class StoryboardAddDraftTool(BaseTool):
             draft = ops.append_draft(target_group, params.draft)
             # 时长参数同步：分镜草稿的时长参数与分镜结构对齐（客观兜底）
             ops.sync_shot_duration(target_group, draft)
-            # 规格偏好补印：草稿未自带供应商时按规格文档设定填充，
-            # 防前端默认首选供应商回填污染（参数栏与规格设定不一致）
+            # 全局设置补印（B7 唯一权威源）：草稿未自带供应商时按全局设置填充，
+            # 防前端默认首选供应商回填污染（参数栏与全局设置不一致）
             from src.video_agent.web.provider_config import stamp_draft_spec_preference
             cat = ops.category_for_group_type(str(params.group_type or ""))
             stamp_draft_spec_preference(svc.state_dict, draft, cat)

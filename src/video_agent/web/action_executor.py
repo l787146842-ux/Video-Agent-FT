@@ -474,8 +474,8 @@ class StudioActionExecutor:
         return ok
 
     def _stamp_spec_resolution(self, group: Dict[str, Any], draft: Dict[str, Any]) -> None:
-        """规格分辨率补印（9999 需求）：草稿缺分辨率时按规格文档填充，
-        参数栏与规格设定一致，防前端硬编码回填污染。"""
+        """分辨率补印（9999 需求；B7 唯一权威源=全局设置）：草稿缺分辨率时按全局设置填充，
+        参数栏与全局设置一致，防前端硬编码回填污染。"""
         if not isinstance(draft, dict):
             return
         try:
@@ -658,8 +658,8 @@ class StudioActionExecutor:
             return None
         draft = ops.append_draft(group, data)
         self._stamp_spec_resolution(group, draft)
-        # 规格偏好补印：草稿未自带供应商时按规格文档设定填充，
-        # 防前端默认首选供应商回填污染（参数栏与规格设定不一致）
+        # 全局设置补印：草稿未自带供应商时按全局设置填充（B7 唯一权威源），
+        # 防前端默认首选供应商回填污染（参数栏与全局设置不一致）
         cat = ops.category_for_group_type(self._kind_of_group(group))
         if stamp_draft_spec_preference(self.state, draft, cat):
             logger.info(
@@ -960,8 +960,9 @@ class StudioActionExecutor:
         if not pairs:
             return False
 
-        # 规格文档偏好（用户意志落盘）：LLM 未指定供应商时优先于草稿自动回填的默认值，
-        # 防前端默认首选供应商（如 Grsai）覆盖规格中设定的生图渠道
+        # B7 用户裁决：模型能力参数唯一权威源 = 全局设置；优先级 =
+        # LLM 指定 > 草稿自身（用户在预览框的直接选择）> 全局设置 > 平台默认。
+        # 防前端默认首选供应商（如 Grsai）覆盖全局设置中配置的生图渠道
         spec_pid, spec_model = ("", "")
         if not provider_id:
             spec_pid, spec_model = spec_media_preference(self.state)
@@ -972,10 +973,10 @@ class StudioActionExecutor:
             if not prompt:
                 continue
             refs = self._resolve_scene_refs(group) if group else []
-            # provider 回退链：LLM 指定 → 规格文档偏好 → 目标草稿自身（预览框已选参数）→ 中间面板选中草稿 → 全局设置
-            eff_provider = provider_id or spec_pid or (draft.get("providerId") or "") or sel_provider or settings.default_image_provider_id
-            # model 回退链：LLM 指定 → 规格偏好（仅当供应商来自规格）→ 目标草稿自身 → 全局设置（仅当供应商一致）→ 供应商默认模型（generation 层兖底）
-            eff_model = model or (spec_model if eff_provider == spec_pid else "") or (draft.get("model") or "") or (settings.default_image_model if eff_provider == settings.default_image_provider_id else "")
+            # provider 回退链（B7）：LLM 指定 → 草稿自身（预览框已选）→ 全局设置 → 中间面板选中草稿 → 平台默认
+            eff_provider = provider_id or (draft.get("providerId") or "") or spec_pid or sel_provider or settings.default_image_provider_id
+            # model 回退链（B7）：LLM 指定 → 草稿自身 → 全局设置（仅当供应商一致）→ 供应商默认模型（generation 层兜底）
+            eff_model = model or (draft.get("model") or "") or (spec_model if eff_provider == spec_pid else "") or (settings.default_image_model if eff_provider == settings.default_image_provider_id else "")
             # 比例回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 16:9
             eff_ratio = act_ratio or (draft.get("aspectRatio") or "") or sel_ratio or "16:9"
             # 分辨率回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 全局设置 → 1K

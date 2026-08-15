@@ -646,13 +646,15 @@ class FCToolRunner:
             ):
                 from src.video_agent.web.provider_config import spec_media_preference as _spec_pref
                 _sp, _sm = _spec_pref(self._raw_state())
-                if _sp:
-                    args["adapter_provider"] = _sp
-                    logger.info("[Planner] Injected image gen provider from spec doc: %s", _sp)
-                elif image_provider:
+                # B7 用户裁决：模型能力参数唯一权威源 = 全局设置；优先级 =
+                # 草稿自身（用户在中间面板的直接选择）> 全局设置 > 平台默认
+                if image_provider:
                     args["adapter_provider"] = image_provider
                     logger.info("[Planner] Injected image gen provider from draft: %s",
                                 image_provider)
+                elif _sp:
+                    args["adapter_provider"] = _sp
+                    logger.info("[Planner] Injected image gen provider from global settings: %s", _sp)
             # --- 画面比例注入：用中间面板选中的比例 ---
             if name == "generate_image" and image_aspect_ratio:
                 if not args.get("aspect_ratio"):
@@ -660,21 +662,21 @@ class FCToolRunner:
                     logger.info("[Planner] Injected image gen aspect ratio from draft: %s",
                                 image_aspect_ratio)
             # --- image_generate（批量工具）同轨注入：LLM 未传 provider 时依次回退
-            # 规格文档偏好（用户意志）→ 中间面板选中供应商，防传空导致
-            # 「供应商 '' 未配置」（8888 事故），也防草稿自动回填的默认供应商覆盖规格设定 ---
+            # B7 用户裁决：草稿自身（用户直接选择）> 全局设置 > 平台默认；
+            # 防传空导致「供应商 '' 未配置」（8888 事故）---
             if name == "image_generate" and not str(args.get("provider_id") or "").strip():
                 from src.video_agent.web.provider_config import spec_media_preference
                 spec_pid, spec_model = spec_media_preference(self._raw_state())
-                if spec_pid:
-                    args["provider_id"] = spec_pid
-                    if spec_model and not str(args.get("model") or "").strip():
-                        args["model"] = spec_model
-                    logger.info("[Planner] Injected image_generate provider from spec doc: %s/%s",
-                                spec_pid, spec_model)
-                elif image_provider:
+                if image_provider:
                     args["provider_id"] = image_provider
                     logger.info("[Planner] Injected image_generate provider from draft: %s",
                                 image_provider)
+                elif spec_pid:
+                    args["provider_id"] = spec_pid
+                    if spec_model and not str(args.get("model") or "").strip():
+                        args["model"] = spec_model
+                    logger.info("[Planner] Injected image_generate provider from global settings: %s/%s",
+                                spec_pid, spec_model)
 
             # read_skill 短路：选中 Skill 全文已硬注入 system prompt，重复 read 只是
             # 浪费一轮工具往返 + 全文回喂 token（prompt 里的「不要再 read」靠模型自觉，此处硬保障）
@@ -916,7 +918,7 @@ class FCToolRunner:
                 confirmation = (
                     "出图尚未执行：本次生成被系统闸机拦截（"
                     f"{gen_failed_err[:80]}）。提示词草案已就绪，请在左侧故事板审阅；"
-                    "确认后我将按规格文档设定的供应商触发生成。"
+                    "确认后我将按全局设置中的生成渠道触发生成。"
                 )
                 confirmation_options = [{
                     "label": "确认提示词草案，开始生成概念图",
