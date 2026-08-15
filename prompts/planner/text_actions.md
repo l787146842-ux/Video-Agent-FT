@@ -14,10 +14,10 @@
 - select_draft: 选中草稿。字段：draft_type, draft_id。
 - write_document: 写入/更新项目文档工件。字段：name（如 "Final_Video_Spec.md"）, content（Markdown 全文）。用于产出制作规格、脚本大纲等文档；已存在同名文档则覆盖更新。
 - generate_image: 触发图片生成。字段：target("all_keyElements"/"all_shots"/具体 draft_id), provider_id, model。
-  草稿未确认时也会照常执行，但系统会在回复中附加提醒；正常流程建议先展示草案并请用户确认。
+  系统会在执行前自动校验目标 Prompt Draft 是否已经用户确认，未确认会被拦截（用户明确要求生成且草稿已确认时调用即可）。
   系统会自动将 sceneRefs 引用的关键元素概念图作为参考图注入。
 - generate_video: 触发分镜视频生成。字段：target("all_shots"/具体 draft_id), provider_id, model, resolution, duration。
-  确认校验同上（未确认的 Prompt Draft 也会照常执行并附提醒）。
+  确认校验同上（未确认的 Prompt Draft 会被系统拦截）。
   系统会自动将 sceneRefs 引用的关键元素概念图（多参考图）与草稿 refAssets/audioUrl 中的音色参考音频随请求发送给视频模型（Seedance MultiModalToVideo 媒体列表格式）。
   【API/模型来源规则】若规格文档（documents 里的制作规格，用 read_project_doc 读取）明确指明了生成用的 API 和模型，
   必须把指定的 provider_id 和 model 传入本操作；若规格文档未指定，则不传这两个字段，

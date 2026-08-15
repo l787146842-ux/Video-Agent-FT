@@ -54,8 +54,11 @@ class PromptBuilder:
             protocol = load_prompt("planner/system_fc.md" if fc_mode else "planner/system.md")
             if protocol:
                 parts.append(protocol)
-            # 协议拆分（4.2）：仅非 FC 通道注入 studio-actions 文本协议全文
-            if getattr(context, "text_protocol", False):
+            # B1 修正：动作定义唯一源 = text_actions.md。
+            # 注入条件以 adapter 真实能力（fc_mode=False）为准——任何不支持
+            # Function Calling 的通道都需要文本协议，不依赖 chat_service 的
+            # 通道猜测（text_protocol 字段保留为兼容标记，不再作注入开关）。
+            if not fc_mode:
                 text_protocol = load_prompt("planner/text_actions.md")
                 if text_protocol:
                     parts.append(text_protocol)
@@ -162,7 +165,7 @@ class PromptBuilder:
         """全局生成设置注入块：分镜最大时长 + 默认出图/出视频渠道 + 聊天出图开关。"""
         lines = [
             f"- 分镜最大时长：{settings.max_shot_duration} 秒"
-            "（自己拆分镜时单个分镜时长不得超过该值，duration 字段与提示词内总时长描述与其一致）"
+            "（自己拆分镜时单个分镜时长不超该值——超限会被系统校正；duration 字段与提示词内总时长描述与其一致）"
         ]
         if settings.default_image_provider_id:
             model = f" / 模型 {settings.default_image_model}" if settings.default_image_model else ""
@@ -241,7 +244,7 @@ class PromptBuilder:
         if not image_lines and not video_lines:
             return ""
         parts: List[str] = [
-            "== 本项目已配置的生成渠道（规格向导「制作渠道」维度候选来源，严禁编造未列出的厂商/模型）=="
+            "== 本项目已配置的生成渠道（规格向导「制作渠道」维度候选来源；系统会校验：未列出的厂商/模型无法使用）=="
         ]
         if image_lines:
             parts.append("【出图（image）】\n" + "\n".join(image_lines))
@@ -272,7 +275,7 @@ class PromptBuilder:
             return ""
         header = (
             "== Skill 目录（渐进式披露：上下文只有各 Skill 的名称与摘要。"
-            "执行任务前必须先调用 read_skill（name=Skill 名称）加载对应 Skill 的完整流程，"
+            "未选中的 Skill 执行任务前先调用 read_skill（name=Skill 名称）加载其完整流程，"
             "不要凭目录摘要自行推测流程细节）==\n" + "\n".join(lines)
         )
         if context.skill_name:
@@ -377,8 +380,9 @@ class PromptBuilder:
             "",
             "【执行方式】每个拆解/编写步骤必须真的执行了其中一种（调对应执行器，或直接输出 "
             "studio-actions）后才可声称完成；"
-            "未调用任何执行器、也未输出任何 studio-actions 时，严禁声称「已拆解/已完成/已写入故事板」；"
-            "执行器失败时请重试或停下说明，不得虚报结果。",
+            "未调用任何执行器、也未输出任何 studio-actions 时，系统会判定本步未完成"
+            "（声称「已拆解/已完成/已写入故事板」与状态对账不符）；"
+            "执行器失败时请重试或停下说明，虚报结果会被状态对账识破。",
             "【阶段边界与确认】各执行器的产出由系统按 Skill 章节校验（结构阶段只建分组、"
             "提示词阶段只写提示词）；阶段暂停点以本 Skill『何时暂停』为准，需暂停时用 "
             "workflow_pause/request_confirmation 邀请确认，用户要求连续执行时照做并在回复末尾附警告。",

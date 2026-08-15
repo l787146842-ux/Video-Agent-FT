@@ -52,7 +52,7 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
         GateRuleMeta("platform.element_min_chars", LAYER_PLATFORM,
                      "关键元素提示词最短字数地板（防敷衍，不可被 Skill 降低）"),
         GateRuleMeta("platform.gen_confirm", LAYER_PLATFORM,
-                     "生成确认闸：未经用户确认的 Prompt Draft 不得触发生成"),
+                     "生成确认闸：未经用户确认的 Prompt Draft 不触发生成"),
         GateRuleMeta("skill.require_duration", LAYER_SKILL,
                      "分镜提示词须写明镜头总时长"),
         GateRuleMeta("skill.require_subtitle", LAYER_SKILL,

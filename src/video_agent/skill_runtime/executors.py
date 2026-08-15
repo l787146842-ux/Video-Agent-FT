@@ -1197,7 +1197,7 @@ _SHOT_TASK = (
     "基于已确认的关键元素拆解分镜（镜头列表）。每项为 add_group，group_type=shot，"
     "携带 title/shotType/sceneRefs/duration/roughDesc；sceneRefs 必须引用已有关键元素的 element_id。"
     "title 简洁概括本镜头（不超过 20 字）；roughDesc 只写一句话大概描述（不超过 80 字），"
-    "严禁把逐条时间轴、对白、子镜头明细堆进 roughDesc——细节留给提示词编写阶段。"
+    "逐条时间轴、对白、子镜头明细不放进 roughDesc——细节留给提示词编写阶段。"
 )
 _SHOT_BOUNDARY = (
     "【本阶段边界】本阶段只创建分镜（shot）分组；"
@@ -1338,7 +1338,7 @@ async def _run_storyboard_split(
     # 只给关键元素拆解钉死示例，分镜/音频字段不同不适用
     if tool_name == "storyboard_key_elements":
         user += (
-            "\n\n【输出格式锚点】每项动作必须长这样（title 字段不得缺失）：\n"
+            "\n\n【输出格式锚点】每项动作格式如下（title 字段必须存在）：\n"
             '[{"action":"add_group","group_type":"keyElement","title":"程心",'
             '"badgeLabel":"人物","desc":"外观与声音描述…"}]'
         )
@@ -1663,7 +1663,7 @@ def _production_param_note(state: Dict[str, Any], has_ke: bool, has_shots: bool)
         if cap:
             notes.append(
                 f"分镜最大时长已由制片规格定为 {_fmt_num(cap)} 秒，"
-                f"提示词标注的镜头时长不得超过 {_fmt_num(cap)} 秒"
+                f"提示词标注的镜头时长上限为 {_fmt_num(cap)} 秒"
             )
     if not notes:
         return ""
@@ -1729,7 +1729,7 @@ async def _write_prompt_batch(
     # 此处显式注入，与主模型路径口径一致
     at_rule = (
         "\n【@引用规则】分镜视频提示词中出场的角色/场景/道具，必须写成 @元素标题"
-        "（如 @罗辑）；元素标题以每行「本镜头出场元素」清单为准，严禁自造名称。"
+        "（如 @罗辑）；元素标题以每行「本镜头出场元素」清单为准，自造名称会被系统判定为无引用。"
         "系统生成时会自动把对应素材作为参考素材随请求发送，并把 @名称 改写为"
         "[参考图N：元素标题] 位置标记，无需你手动处理参考素材。"
     ) if has_shots else ""
@@ -1739,20 +1739,20 @@ async def _write_prompt_batch(
         tool_name, skill_name,
         "【分批任务边界】本轮只为本批列出的分组编写提示词：只输出 update_draft"
         "（缺卡片用 add_draft），每个 patch 必须含非空 prompt；"
-        "严禁为本批之外的分组写入，严禁新建故事板结构分组，严禁触发生成动作。"
+        "本批之外的分组、新建故事板结构分组、触发生成都不属于本任务范围。"
         # 誊写任务直出指令（888 事故：推理模型把输出额度耗在思考上致零产出）：
         # 提示词编写是按规矩翻译的誊写题，推理收益极小，直出优先
         "\n【输出要求】直接输出 studio-actions JSON 结果，"
         "禁止先输出长篇分析/推理过程。"
         + ("\n【纠正】上一批输出只建了空草稿卡或未写入任何提示词，被判不合格；"
-           "本次每个动作的 draft/patch 必须携带实际提示词全文，不得留空。"
+           "本次每个动作的 draft/patch 携带实际提示词全文（留空会被判不合格）。"
            if corrective else "")
         + ("\n【拒因回喂】上一批写入被系统校验拒收，原因如下，本次必须逐条修复：\n"
            + "\n".join(f"- {r}" for r in (corrective_reasons or [])[:6])
            if corrective and corrective_reasons else "")
         + "\n【卡片面纪律】draft 的 label 只允许 ≤12 字短语（如「程心三视图」「太空艇参考图」），"
-        "严禁把分组标题拼成长句；提示词正文必须相对分组描述增加增量信息"
-        "（视角布局/背景与光效/一致性约束等模板结构），不得逐字誊写分组描述。"
+        "分组标题不拼成长句；提示词正文相对分组描述增加增量信息"
+        "（视角布局/背景与光效/一致性约束等模板结构），逐字誊写分组描述不符合要求。"
         + at_rule
         + prod_note,
     )
@@ -1790,7 +1790,7 @@ class WriteMediaPromptTool:
         "写入草稿卡并走结构校验。补写语义（默认）：只写还没有提示词的分组。"
         "重写语义：用户说重写/重新编写/重写一遍时，必须传 overwrite=true 并用 target 定范围："
         "全量重写传 all_shots/all_keyElements；单张/部分重写传具体 group_id、draft_id；"
-        "范围含糊（未指明哪张/全部）时先问用户确认，不得擅自扩到全部。"
+        "范围含糊（未指明哪张/全部）时先问用户确认，再决定范围。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

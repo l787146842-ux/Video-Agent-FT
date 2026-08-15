@@ -242,7 +242,7 @@ class FlowGateSet:
             gates.append(Gate(
                 ops={OP_BUILD_STRUCTURE},
                 requires=["script_present"],
-                raw="系统：剧本原料未提供前不得拆解结构",
+                raw="系统：剧本原料未提供，结构操作已被拦截（本次未执行）",
             ))
         return cls(gates)
 
@@ -257,7 +257,7 @@ class FlowGateSet:
             gates.append(Gate(
                 ops={OP_BUILD_STRUCTURE},
                 requires=["spec_doc_exists"],
-                raw="系统：规格文档未写入前不得拆解结构",
+                raw="系统：规格文档未写入，结构操作已被拦截（本次未执行）",
             ))
         return cls(gates)
 

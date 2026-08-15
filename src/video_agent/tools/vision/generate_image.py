@@ -1,4 +1,4 @@
-﻿from typing import Type, Optional
+from typing import Type, Optional
 from pydantic import BaseModel, Field
 
 from src.video_agent.tools.base import BaseTool, ToolResult
@@ -14,7 +14,8 @@ class GenerateImageTool(BaseTool):
     name = "generate_image"
     description = (
         "根据传入的提示词和可选的参考图片，生成一张图片并返回图片地址。"
-        "每次调用只产出一张图；除非用户明确要求多张，否则每轮对话最多调用一次本工具。"
+        "每次调用只产出一张图；需要多张图片时请改用 image_generate 批量工具"
+        "（本工具每轮调用次数由系统限制）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

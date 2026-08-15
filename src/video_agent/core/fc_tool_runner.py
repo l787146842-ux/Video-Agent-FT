@@ -548,6 +548,8 @@ class FCToolRunner:
         self._selected_type = selected_type or ""
         self.gate_override = gate_override
         self.gate_warnings = []
+        # B1/F10-1：对话内单图工具每批调用次数（prose 禁令下沉工具层，13.6 审计清偿）
+        self._gen_image_calls = 0
         applied = 0
         confirmation = ""
         confirmation_options: List[Dict[str, Any]] = []
@@ -697,6 +699,15 @@ class FCToolRunner:
                     if pg_err:
                         prompt_gate_blocked += 1
                         gate_error = pg_err
+            # B1/F10-1：对话内单图工具每批最多一次（prose 下沉工具层，13.6 审计清偿）。
+            # 需要多张时模型改用 image_generate 批量工具（两者分工互斥，见 system_fc.md）
+            if gate_error is None and name == "generate_image":
+                self._gen_image_calls += 1
+                if self._gen_image_calls > 1:
+                    gate_error = (
+                        "generate_image 每轮只调用一次；"
+                        "需要多张图片时改用 image_generate 批量工具（明确 target 范围）。"
+                    )
             if gate_error is not None:
                 result = ToolResult(success=False, error=gate_error)
             elif name == "read_skill" and injected_skill:
@@ -883,9 +894,9 @@ class FCToolRunner:
                 "name": "系统闸机",
                 "ok": False,
                 "error": (
-                    "结构搭建阶段只建骨架：内联草稿中的详细提示词已被剥离，当前草稿无提示词。"
-                    "严禁向用户声称提示词已写好；请等用户确认故事板后，再用 storyboard_patch_draft "
-                    "逐条编写提示词草案。"
+                    "结构搭建阶段只建骨架：内联草稿中的详细提示词已被剥离，当前草稿无提示词（事实）。"
+                    "请等用户确认故事板后，再用 storyboard_patch_draft 逐条编写提示词草案；"
+                    "向用户陈述需与此一致。"
                 ),
             })
         # 防虚报硬拦截（8888 事故）：同批生成类工具失败但模型暂停文案声称已触发/已生成
