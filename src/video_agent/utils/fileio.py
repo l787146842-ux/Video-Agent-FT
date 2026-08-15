@@ -1,6 +1,7 @@
 """
 文件写入工具：原子写，避免进程中途崩溃留下损坏的 JSON。
 """
+from loguru import logger
 import os
 import tempfile
 from pathlib import Path
@@ -24,6 +25,6 @@ def atomic_write_text(path: Union[str, Path], text: str, encoding: str = "utf-8"
     except BaseException:
         try:
             os.unlink(tmp_path)
-        except OSError:
-            pass
+        except OSError as _e:
+            logger.debug("[fileio] 忽略异常: {}", _e)
         raise

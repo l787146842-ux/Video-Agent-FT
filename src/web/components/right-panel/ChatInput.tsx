@@ -205,9 +205,9 @@ export function ChatInput() {
   const busy = () => state.agentBusy;
 
   return (
-    <div class="chat-input-area h-full">
+    <div class="chat-input-area">
       <div
-        class={`chat-input-box h-full min-h-0 ${dragOver() ? 'drag-over' : ''}`}
+        class={`chat-input-box ${dragOver() ? 'drag-over' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={(e) => {
           e.preventDefault();

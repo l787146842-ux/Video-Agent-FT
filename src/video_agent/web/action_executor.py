@@ -294,8 +294,8 @@ class StudioActionExecutor:
                 from src.video_agent.core.spec_rules import apply_element_image_override
 
                 apply_element_image_override(self.state)
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("[action_executor] 忽略异常: {}", _e)
         if outcome.ok:
             return True
         logger.info(f"[PromptGate] 拦截不合格提示词写入（{kind}）: {outcome.hard_errors}")

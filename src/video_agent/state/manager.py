@@ -446,8 +446,8 @@ class StateManager(UndoRedoMixin):
             for p in index.get("projects", []):
                 if p["id"] == project_id:
                     return int(p.get("board_version") or 0)
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as _e:
+            logger.debug("[manager] 忽略异常: {}", _e)
         return 0
 
     def reload_if_stale(self) -> bool:

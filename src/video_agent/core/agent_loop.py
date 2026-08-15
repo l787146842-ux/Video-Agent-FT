@@ -176,8 +176,8 @@ async def run_agent_loop(
         if on_event:
             try:
                 await on_event(event)
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("[agent_loop] 忽略异常: {}", _e)
 
     result = AgentLoopResult()
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
@@ -405,8 +405,8 @@ async def run_agent_loop(
                 )
                 if _merged:
                     confirmation, confirmation_options = _m, _opts
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("[agent_loop] 忽略异常: {}", _e)
         # 规格向导闸机（S1）：声明 spec_wizard 的 Skill，规格文档由系统按向导
         # 拼装，模型手写规格一律不落盘，改为系统规格收集/审阅暂停卡
         spec_wizard_pending = False

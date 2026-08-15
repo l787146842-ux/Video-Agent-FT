@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */ // 消息流元素聚合（卡片/时间线/闸机 chips），拆分另行立项
 import { For, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import {
   FiCheckCircle, FiChevronDown, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,

@@ -11,6 +11,7 @@
 - 真实供应商失败 → 返回真实错误（HTTP 4xx/5xx + detail），绝不回退假图；
 - 视频生成尚未接入真实供应商 → 非 mock 一律 501，明确告知。
 """
+from loguru import logger
 import asyncio
 import time
 
@@ -93,8 +94,8 @@ async def generate_events():
                 except asyncio.TimeoutError:
                     # 心跳保活
                     yield ": heartbeat\n\n"
-        except asyncio.CancelledError:
-            pass
+        except asyncio.CancelledError as _e:
+            logger.debug("[generate] 忽略异常: {}", _e)
         finally:
             _tm.unsubscribe(queue)
 

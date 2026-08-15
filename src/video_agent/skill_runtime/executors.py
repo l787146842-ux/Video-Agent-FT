@@ -333,8 +333,8 @@ def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_ov
         iron_content = str((iron or {}).get("content") or "").strip()
         if iron_content:
             parts += ["", "== 项目《执行铁律》（生产契约，与章节冲突时以铁律为准）==", iron_content]
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[executors] 忽略异常: {}", _e)
     # 风格记忆注入（814E3）：跨会话风格连续性
     style_block = _style_memory_block()
     if style_block:
@@ -432,8 +432,8 @@ def _parse_actions_from_text(text: str) -> List[Dict[str, Any]]:
             data = json.loads(m.group(0))
             if isinstance(data, list):
                 return data
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("[executors] 忽略异常: {}", _e)
     return []
 
 

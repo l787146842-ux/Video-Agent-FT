@@ -255,8 +255,8 @@ class ReadSkillTool(BaseTool):
             available: List[str] = []
             try:
                 available += [d.get("name", "") for d in list_skill_docs()]
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("[document_tools] 忽略异常: {}", _e)
             return ToolResult(
                 success=False,
                 error=f"未找到 Skill「{wanted}」。可用 Skill：{'、'.join(available) or '无'}",

@@ -63,6 +63,8 @@
 
   /* ---------- 画布 / 设置视图 ---------- */
   .canvas-view { position: relative; width: 100%; height: 100%; overflow: hidden; z-index: 1; pointer-events: none; }
+  /* R2：Tailwind 残留清偿——画布模式 Agent 侧栏容器（原 h-full w-full overflow-hidden 语义） */
+  .canvas-agent-panel { width: 100%; height: 100%; overflow: hidden; }
   .canvas-view .canvas-fallback,
   .canvas-view .canvas-drop-overlay,
   .canvas-view .canvas-agent-overlay { pointer-events: auto; }

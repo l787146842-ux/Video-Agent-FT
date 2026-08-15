@@ -289,8 +289,8 @@ def _resolve_provider_display_name(provider_id: str) -> str:
         cfg = get_provider_config(provider_id)
         if cfg and cfg.get("name"):
             return str(cfg["name"])
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[task_manager] 忽略异常: {}", _e)
     return provider_id
 
 

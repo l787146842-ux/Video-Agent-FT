@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */ // 前后端契约类型集中于单文件便于对照
 /**
  * FTDYB 全局类型定义
  * 精确匹配后端 API 数据模型（从旧 studio/types.ts 迁移 + 规范化）

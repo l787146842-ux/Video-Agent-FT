@@ -339,8 +339,8 @@ class AgentTracer:
                         continue
                     if isinstance(rec, dict) and rec.get("trace_id"):
                         by_id[str(rec["trace_id"])] = rec
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("[tracer] 忽略异常: {}", _e)
         for t in self._traces:
             by_id[t.trace_id] = t.to_dict()
         ordered = sorted(by_id.values(), key=lambda r: float(r.get("timestamp", 0) or 0), reverse=True)

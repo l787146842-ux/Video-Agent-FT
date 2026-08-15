@@ -177,8 +177,8 @@ async def list_all_canvas_node_images(canvas_id: str = ""):
             meta = next((c for c in canvases if c.get("id") == canvas_id), None)
             if meta:
                 target = meta
-        except AdapterError:
-            pass
+        except AdapterError as _e:
+            logger.debug("[canvas] 忽略异常: {}", _e)
     if not target:
         try:
             target = await adapter.find_active_canvas()
@@ -258,8 +258,8 @@ async def drop_image_to_canvas(body: CanvasDropImageRequest, request: Request):
         try:
             canvases = await adapter.list_canvases()
             target = next((c for c in canvases if c.get("id") == body.canvas_id and not c.get("deleted_at")), None)
-        except AdapterError:
-            pass
+        except AdapterError as _e:
+            logger.debug("[canvas] 忽略异常: {}", _e)
     if not target:
         target = await adapter.find_active_canvas()
     if not target:

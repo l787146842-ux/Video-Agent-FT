@@ -510,8 +510,8 @@ def _read_canvas_env_keys() -> Dict[str, str]:
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
                     keys[k.strip()] = v.strip()
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[provider_config] 忽略异常: {}", _e)
     return keys
 
 

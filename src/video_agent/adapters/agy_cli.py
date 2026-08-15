@@ -168,8 +168,8 @@ class AgyCliChatAdapter(BaseChatAdapter):
                 try:
                     proc.kill()
                     await proc.wait()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("[agy_cli] 忽略异常: {}", _e)
             raise AdapterError(f"agy CLI 聊天超时（{timeout_seconds}s）", retryable=True)
         except OSError as e:
             raise AdapterError(f"agy CLI 启动失败: {e}")
@@ -237,8 +237,8 @@ class AgyCliChatAdapter(BaseChatAdapter):
                     try:
                         proc.kill()
                         await proc.wait()
-                    except Exception:
-                        pass
+                    except Exception as _e:
+                        logger.debug("[agy_cli] 忽略异常: {}", _e)
                 raise AdapterError(f"agy CLI 聊天超时（{timeout_seconds}s）", retryable=True)
 
             if proc.returncode != 0:

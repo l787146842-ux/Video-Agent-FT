@@ -339,8 +339,8 @@ def prune_all_skill_history() -> int:
             try:
                 old.unlink(missing_ok=True)
                 removed += 1
-            except OSError:
-                pass
+            except OSError as _e:
+                logger.debug("[skill_docs] 忽略异常: {}", _e)
     if removed:
         logger.info(f"[SkillDocs] 历史版本收敛：删除 {removed} 个过期备份")
     return removed

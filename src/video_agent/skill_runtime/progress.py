@@ -5,6 +5,7 @@
 执行器内部在批次边界调用 emit_progress("...")；未绑定时静默无操作
 （单测/CLI/无前端场景不受影响）。
 """
+from loguru import logger
 import contextvars
 import uuid
 from typing import Any, Awaitable, Callable, Dict, Optional
@@ -44,8 +45,8 @@ async def emit_progress(text: str) -> None:
         return
     try:
         await emitter({"type": SSE_STATUS, "text": text})
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[progress] 忽略异常: {}", _e)
 
 
 async def emit_timeline_note(
@@ -64,8 +65,8 @@ async def emit_timeline_note(
         AgentTracer.get_instance().record_subaction(
             name=name, summary=summary, elapsed_ms=elapsed_ms, ok=ok,
         )
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[progress] 忽略异常: {}", _e)
     emitter = _progress_var.get()
     if emitter is None:
         return
@@ -76,8 +77,8 @@ async def emit_timeline_note(
             "type": SSE_TOOL_FINISHED, "id": nid, "ok": ok,
             "elapsed_ms": round(elapsed_ms, 1), "result_summary": summary,
         })
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[progress] 忽略异常: {}", _e)
 
 
 async def emit_state_refresh(count: int = 1) -> None:
@@ -89,8 +90,8 @@ async def emit_state_refresh(count: int = 1) -> None:
         return
     try:
         await emitter({"type": SSE_ACTIONS_APPLIED, "count": max(1, count)})
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[progress] 忽略异常: {}", _e)
 
 
 def format_eta(seconds: float) -> str:

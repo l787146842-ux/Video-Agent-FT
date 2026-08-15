@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */ // 后台任务订阅协调中枢，事件类型多、行数超限属合理
 import { createSignal } from 'solid-js';
 import type { SseEvent, SseDonePayload, AgentChatRequest } from '@/types';
-import { chatActions, type TimelineToolEntry } from '@/stores/chat';
+import { chatActions } from '@/stores/chat';
 import { convActions } from '@/stores/conversations';
 import { state, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';

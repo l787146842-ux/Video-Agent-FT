@@ -8,7 +8,7 @@ vi.mock('@/api/project', () => ({
   getProjectState: vi.fn(async () => ({})),
 }));
 
-import { setState, studioActions } from '@/stores/studio';
+import { studioActions } from '@/stores/studio';
 import { persistBoard } from '@/stores/studio';
 import { storyboardActions } from '@/stores/studio/storyboard';
 import type { KeyElementGroup } from '@/types';

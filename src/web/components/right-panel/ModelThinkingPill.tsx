@@ -36,7 +36,7 @@ export function ModelThinkingPill() {
     <div class="pill-anchor" ref={ref}>
       <button
         type="button"
-        class="toolbar-pill-btn max-w-36"
+        class="toolbar-pill-btn pill-bounded"
         title={`模型：${agentModel()}；推理等级：${thinkingLevelLabel()}`}
         onClick={() => setOpen(!open())}
       >
@@ -53,7 +53,7 @@ export function ModelThinkingPill() {
               {(opt) => (
                 <button
                   type="button"
-                  class={`pill-option w-full text-left ${opt.value === agentModel() ? 'selected' : ''}`}
+                  class={`pill-option ${opt.value === agentModel() ? 'selected' : ''}`}
                   onClick={() => setAgentModel(opt.value)}
                 >
                   <span class="pill-option-text">
@@ -71,7 +71,7 @@ export function ModelThinkingPill() {
             {(opt) => (
               <button
                 type="button"
-                class={`pill-option w-full text-left ${opt.value === agentThinkingLevel() ? 'selected' : ''}`}
+                class={`pill-option ${opt.value === agentThinkingLevel() ? 'selected' : ''}`}
                 title={opt.value === '' ? '按模型原生能力，不下发推理档位' : `请求推理档位：${opt.value}`}
                 onClick={() => setAgentThinkingLevel(opt.value)}
               >

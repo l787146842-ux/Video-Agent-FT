@@ -14,6 +14,7 @@ verdict 结构化（GateVerdict），回喂模型与展示用户用同一源；
 - 结构闸（字数/语言/时长/字幕/音频/镜头语言）strict 模式拒收重写；
 - 用户坚持（gate_override 作用域覆盖）时硬伤降为警告放行。
 """
+from loguru import logger
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -79,8 +80,8 @@ def audit_verdicts(
                 overridden=overridden,
                 message=v.message,
             )
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[guard_pipeline] 忽略异常: {}", _e)
 
 
 def evaluate_prompt_write(

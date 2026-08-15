@@ -183,6 +183,6 @@ class VectorStore:
         if self._col is not None:
             try:
                 return int(self._col.count())
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("[vector_store] 忽略异常: {}", _e)
         return len(self._records)

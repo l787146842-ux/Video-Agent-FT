@@ -328,8 +328,8 @@ class OpenAICompatVideoAdapter(BaseVideoAdapter):
                             error_msg="成片准备中，稍后重试下载",
                         )
                     return result
-            except httpx.HTTPError:
-                pass
+            except httpx.HTTPError as _e:
+                logger.debug("[video_compat] 忽略异常: {}", _e)
             return VideoGenerationResponse(
                 task_id=task_id, status="processing", error_msg="轮询中（暂无结果）"
             )
@@ -339,24 +339,24 @@ class OpenAICompatVideoAdapter(BaseVideoAdapter):
             resp = await client.get(f"/tasks/{task_id}")
             if resp.status_code == 200:
                 return self._parse_task_response(resp.json(), task_id)
-        except httpx.HTTPError:
-            pass
+        except httpx.HTTPError as _e:
+            logger.debug("[video_compat] 忽略异常: {}", _e)
 
         # 路径 2: /video/generations/{task_id}
         try:
             resp = await client.get(f"/video/generations/{task_id}")
             if resp.status_code == 200:
                 return self._parse_task_response(resp.json(), task_id)
-        except httpx.HTTPError:
-            pass
+        except httpx.HTTPError as _e:
+            logger.debug("[video_compat] 忽略异常: {}", _e)
 
         # 路径 3: /contents/generations/tasks/{task_id}（Seedance）
         try:
             resp = await client.get(f"/contents/generations/tasks/{task_id}")
             if resp.status_code == 200:
                 return self._parse_task_response(resp.json(), task_id)
-        except httpx.HTTPError:
-            pass
+        except httpx.HTTPError as _e:
+            logger.debug("[video_compat] 忽略异常: {}", _e)
 
         # 三种路径都失败
         return VideoGenerationResponse(

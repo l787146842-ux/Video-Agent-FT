@@ -6,6 +6,7 @@ import { AppErrorBoundary } from './components/shared/ErrorBoundary';
 
 declare const __BUILD_ID__: string;
 // 启动即打印构建时间：用户反馈前端异常时，先核对浏览器跑的是否最新构建
+// eslint-disable-next-line no-console -- 诊断用途（核对部署版本），非常规日志
 console.info(`[FTDYB] build: ${__BUILD_ID__}`);
 
 function App() {

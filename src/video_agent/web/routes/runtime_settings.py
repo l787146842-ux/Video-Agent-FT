@@ -137,8 +137,8 @@ def load_runtime_settings() -> None:
             if key in data:
                 try:
                     object.__setattr__(settings, key, max(1, min(int(data[key]), 60)))
-                except (TypeError, ValueError):
-                    pass
+                except (TypeError, ValueError) as _e:
+                    logger.debug("[runtime_settings] 忽略异常: {}", _e)
         for key in _THINKING_KEYS:
             if key in data:
                 v = str(data[key] or "").strip().lower()

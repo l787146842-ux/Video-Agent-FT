@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */ // 全局设置页多设置卡聚合，拆分另行立项
 import { Show, onMount, For, createSignal } from 'solid-js';
 import { A } from '@solidjs/router';
 import { FiArrowLeft, FiSettings } from 'solid-icons/fi';

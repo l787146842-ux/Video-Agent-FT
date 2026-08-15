@@ -160,8 +160,8 @@ class SqliteStateRepository:
         try:
             from src.video_agent.utils.fileio import atomic_write_text
             atomic_write_text(self._state_file, json.dumps(state, ensure_ascii=False, indent=2))
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("[repository_sqlite] 忽略异常: {}", _e)
 
     def load_compat(self) -> Optional[Dict[str, Any]]:
         if self._state_file.exists():

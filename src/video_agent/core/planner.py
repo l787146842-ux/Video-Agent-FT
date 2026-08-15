@@ -289,14 +289,14 @@ class Planner:
         if context.skill_name:
             try:
                 executor.gate_enabled = True
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("[planner] 忽略异常: {}", _e)
         # 流式增量执行计数重置（边写边填：上次调用的残留不得带入本次）
         try:
             executor.stream_preapplied = 0
             executor.stream_consumed = 0
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("[planner] 忽略异常: {}", _e)
 
         # 会话层一次性豁免（814R3 恢复，§2.4）：用户「本次放行」写入
         # interaction.gate_overrides，本次消费即清除（单次生效、全程留痕）；
@@ -313,14 +313,14 @@ class Planner:
                     else "element_image"
                 )
                 logger.info(f"[GateOverride] 消费 {len(taken)} 条一次性豁免，作用域={gate_override_scope}")
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.warning("[GateOverride] 豁免消费失败（本次放行可能未生效，回落意图识别兑底）: {}", _e)
         if not gate_override_scope and isinstance(user_message, str):
             gate_override_scope = prompt_gates.user_insists_override(user_message) or False
         try:
             executor.gate_override = gate_override_scope
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.warning("[GateOverride] gate_override 装配失败（豁免未传达执行器）: {}", _e)
 
         # Skill 声明式流程门禁（814R3 复活）：解析选中 Skill 声明的检查点，
         # 由代码强制执行——越阶操作直接拦截并强制暂停，不依赖模型自觉。

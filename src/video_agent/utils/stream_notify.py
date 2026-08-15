@@ -8,6 +8,7 @@ notify_stream(text)——首块产出前的漫长等待（最长 180s 超时 + �
 通知器签名是「文本 → 协程」，本模块不依赖 SSE 常量（保持 utils 底层纯净，
 事件类型由绑定方负责包装）。未绑定时静默无操作（单测/CLI/无前端不受影响）。
 """
+from loguru import logger
 import contextvars
 from typing import Awaitable, Callable, Optional
 
@@ -35,5 +36,5 @@ async def notify_stream(text: str) -> None:
         return
     try:
         await notifier(text)
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[stream_notify] 忽略异常: {}", _e)

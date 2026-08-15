@@ -140,7 +140,7 @@ export default function CanvasView() {
             class="canvas-agent-drag"
             onMouseDown={(e) => panelSplit.onMouseDown(e)}
           />
-          <div class="h-full w-full overflow-hidden">
+          <div class="canvas-agent-panel">
             <RightPanel />
           </div>
         </Show>

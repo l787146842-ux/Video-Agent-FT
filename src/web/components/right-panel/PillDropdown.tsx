@@ -42,7 +42,7 @@ export function PillDropdown(props: {
     <div class="pill-anchor" ref={ref}>
       <button
         type="button"
-        class="toolbar-pill-btn max-w-36"
+        class="toolbar-pill-btn pill-bounded"
         title={props.title || props.value}
         onClick={() => setOpen(!open())}
       >
@@ -57,7 +57,7 @@ export function PillDropdown(props: {
             {(opt) => (
               <button
                 type="button"
-                class={`pill-option w-full text-left ${
+                class={`pill-option ${
                   opt.value === props.value ? 'selected' : ''
                 }`}
                 onClick={() => {

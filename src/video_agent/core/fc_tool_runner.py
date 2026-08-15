@@ -748,8 +748,8 @@ class FCToolRunner:
                             if not inter_now.get("storyboard_pending"):
                                 inter_now["storyboard_pending"] = True
                                 svc_now.save()
-                        except Exception:
-                            pass
+                        except Exception as _e:
+                            logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
                 if name == "workflow_pause":
                     confirmation = args.get("message", "请确认以上内容。")
                     # 候选选项（前端渲染为单选卡片，点击即发送选择；带 group 时分页向导）
@@ -780,8 +780,8 @@ class FCToolRunner:
                             )
                             if _merged:
                                 confirmation, confirmation_options = _m, _opts
-                    except Exception:
-                        pass
+                    except Exception as _e:
+                        logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
                 if name in ("document_write", "write_document"):
                     doc_written = True
                     doc_name = str(args.get("name") or args.get("key") or "").strip()
@@ -978,8 +978,8 @@ class FCToolRunner:
                     inter["awaiting_confirmation"] = True
                     inter["confirmation_message"] = confirmation
                     StateManager.get_instance().save()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.warning("[Planner] 规格接管暂停态落盘失败（下轮可能重复接管）: {}", _e)
                 logger.warning("[Planner] 规格写入被向导拒收，已接管为规格向导卡")
 
         # 6666/8888 事故：关键执行器/文档写入存在失败且模型带确认声称完成 → 覆盖为诚实文案

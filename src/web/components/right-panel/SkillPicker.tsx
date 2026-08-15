@@ -87,7 +87,7 @@ export function SkillPicker() {
     <div class="pill-anchor" ref={ref}>
       <button
         type="button"
-        class="toolbar-pill-btn max-w-36"
+        class="toolbar-pill-btn pill-bounded"
         title={t('rp.skill.title')}
         ref={btnRef}
         onClick={toggleOpen}

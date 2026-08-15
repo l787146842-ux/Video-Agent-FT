@@ -357,8 +357,8 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     await notify_stream(
                         f"模型连接瞬时故障，正在重试（第 {attempt + 1}/{max_connect_retries} 次）…"
                     )
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("[openai_compat] 忽略异常: {}", _e)
                 await asyncio.sleep(delay)
 
     async def _stream_once(

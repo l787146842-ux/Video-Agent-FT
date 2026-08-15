@@ -4,6 +4,7 @@ Studio Actions 解析器 — 从 actions.py 抽离。
 职责：从 Agent 回复文本中提取 / 解析 / 修复 studio-actions JSON 块。
 纯函数实现，无状态依赖，可独立测试。
 """
+from loguru import logger
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -206,14 +207,14 @@ def parse_json_tolerant(raw: str) -> Any:
     text = raw.strip()
     try:
         return json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        pass
+    except (json.JSONDecodeError, ValueError) as _e:
+        logger.debug("[action_parser] 忽略异常: {}", _e)
     repaired = repair_json(text)
     if repaired != text:
         try:
             return json.loads(repaired)
-        except (json.JSONDecodeError, ValueError):
-            pass
+        except (json.JSONDecodeError, ValueError) as _e:
+            logger.debug("[action_parser] 忽略异常: {}", _e)
     return None
 
 

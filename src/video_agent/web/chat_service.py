@@ -580,8 +580,8 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
     from src.video_agent.core.spec_rules import ensure_iron_rules_doc
     try:
         ensure_iron_rules_doc(svc.state_dict)
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[chat_service] 忽略异常: {}", _e)
 
     t0 = time.monotonic()
     executor = StudioActionExecutor(
@@ -1020,8 +1020,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     from src.video_agent.core.spec_rules import ensure_iron_rules_doc
     try:
         ensure_iron_rules_doc(svc.state_dict)
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[chat_service] 忽略异常: {}", _e)
     executor = StudioActionExecutor(
         svc,
         selected_draft_id=body.selected_draft_id,

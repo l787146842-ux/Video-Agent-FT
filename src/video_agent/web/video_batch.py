@@ -216,8 +216,8 @@ class VideoBatchManager:
         由调用方显式驱动 _run_worker。"""
         try:
             asyncio.get_running_loop().create_task(self._run_worker(batch_id))
-        except RuntimeError:
-            pass
+        except RuntimeError as _e:
+            logger.debug("[video_batch] 忽略异常: {}", _e)
 
     def _touch(self, record: Dict[str, Any]) -> None:
         record["updated_at"] = time.time()

@@ -101,8 +101,8 @@ class StateRepository:
         """写入旧版 studio_state.json（向后兼容）"""
         try:
             atomic_write_text(self._state_file, json.dumps(state, ensure_ascii=False, indent=2))
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("[repository] 忽略异常: {}", _e)
 
     def load_compat(self) -> Optional[Dict[str, Any]]:
         """读取旧版 studio_state.json"""

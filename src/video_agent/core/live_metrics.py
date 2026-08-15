@@ -5,6 +5,7 @@
 context-usage 接口优先取新鲜 live 值，静态估算作兜底——推理中 5s 轮询即可
 看到用量随步骤增长。
 """
+from loguru import logger
 import time
 from typing import Any, Dict, List, Optional
 
@@ -25,8 +26,8 @@ def record_live_context(project_id: str, messages: List[Dict[str, Any]]) -> None
             "est_tokens": estimate_messages_tokens(messages),
             "ts": time.time(),
         }
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug("[live_metrics] 忽略异常: {}", _e)
 
 
 # B6/F36：system prompt 组装明细（prompt_builder 写入，context-usage 返回）

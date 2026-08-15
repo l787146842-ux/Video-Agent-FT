@@ -66,5 +66,5 @@ def _rotate() -> None:
     for f in files[:-_KEEP_MAX]:
         try:
             f.unlink()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("[blackbox] 忽略异常: {}", _e)

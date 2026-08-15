@@ -249,9 +249,10 @@ def test_real_skills_manifest_snapshot(monkeypatch):
 
 
 # 814H9 影响面快照（13.7 登记）：客观检测只命中流程含「上传/分析剧本」的 Skill
+# （豪华技能为测试桩，R2 已迁 tests/fixtures/skills，不再占生产快照名额）
 _SCRIPT_REQUIRED_ON = (
     "3D国漫古装精品短剧", "AI-短剧一站式生成", "剧情短片音色参考",
-    "剧本生视频需上传剧本", "豪华技能",
+    "剧本生视频需上传剧本",
 )
 _SCRIPT_REQUIRED_OFF = ("宣言式概念短片", "音乐MV需上传音乐", "商品宣传短片")
 

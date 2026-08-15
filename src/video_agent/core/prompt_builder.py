@@ -168,8 +168,8 @@ class PromptBuilder:
                     "total": len(text),
                 },
             )
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("[prompt_builder] 忽略异常: {}", _e)
         # 814F7 遥测：组装超限预警（各段字符数入账，便于定位臃胀来源）
         if len(text) > _SYSTEM_PROMPT_WARN_CHARS:
             logger.warning(

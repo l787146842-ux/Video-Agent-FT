@@ -107,8 +107,8 @@ async def lifespan(_app: FastAPI):
             if hasattr(adapter, "close"):
                 try:
                     await adapter.close()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("[app] 忽略异常: {}", _e)
     AdapterFactory.clear_all()
     logger.info("[Shutdown] Adapter 连接池已释放")
 
