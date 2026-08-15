@@ -1,6 +1,7 @@
 """
 /api/gemini-cli, /api/codex, /api/jimeng — CLI 工具状态检测端点
 前端"检测 CLI"按钮调用，判断本机是否已安装对应 CLI。
+即梦另含与画布同路径的登录/登出/积分端点（login/start、login/status、logout、credit）。
 """
 import asyncio
 import glob
@@ -8,6 +9,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -158,3 +161,77 @@ async def jimeng_cli_status():
         "raw": raw,
         "message": "已登录" if logged_in else "未登录，请执行 dreamina login",
     }
+
+
+# ---------- 即梦登录会话（扫码登录输出捕获，画布同路径端点） ----------
+_JIMENG_LOGIN_SESSION: dict = {"proc": None, "lines": [], "started_at": 0.0}
+
+
+def _jimeng_exe() -> str | None:
+    return _find_exe("dreamina") or _find_exe("dreamina.cmd")
+
+
+def _jimeng_login_reader(proc: subprocess.Popen) -> None:
+    """后台读取 dreamina login 输出（含二维码/URL）入会话缓冲"""
+    try:
+        for line in iter(proc.stdout.readline, ""):
+            if not line:
+                break
+            _JIMENG_LOGIN_SESSION["lines"].append(line.rstrip("\n"))
+    except Exception as e:
+        logger.debug(f"[CLI] jimeng login 读取失败: {e}")
+
+
+@router.post("/jimeng/login/start")
+async def jimeng_login_start():
+    """启动 dreamina login 并捕获输出（前端弹窗展示扫码/链接）"""
+    exe = _jimeng_exe()
+    if not exe:
+        return {"ok": False, "message": "未找到 dreamina CLI，请先安装"}
+    proc = _JIMENG_LOGIN_SESSION.get("proc")
+    if proc is not None and proc.poll() is None:
+        return {"ok": True, "message": "登录流程已在进行", "running": True}
+    try:
+        new_proc = subprocess.Popen(
+            [exe, "login"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except Exception as e:
+        return {"ok": False, "message": f"启动登录失败: {e}"}
+    _JIMENG_LOGIN_SESSION.update({"proc": new_proc, "lines": [], "started_at": time.time()})
+    threading.Thread(target=_jimeng_login_reader, args=(new_proc,), daemon=True).start()
+    return {"ok": True, "message": "已启动 dreamina login，按输出提示扫码", "running": True}
+
+
+@router.get("/jimeng/login/status")
+async def jimeng_login_status():
+    """返回登录输出文本与运行状态（前端轮询展示二维码/URL）"""
+    proc = _JIMENG_LOGIN_SESSION.get("proc")
+    running = bool(proc is not None and proc.poll() is None)
+    text = "\n".join(_JIMENG_LOGIN_SESSION["lines"])
+    qr_url = ""
+    m = re.search(r"https?://\S+", text)
+    if m:
+        qr_url = m.group(0)
+    return {"running": running, "text": text, "qr_url": qr_url}
+
+
+@router.post("/jimeng/logout")
+async def jimeng_logout():
+    """登出 dreamina（画布同路径）"""
+    exe = _jimeng_exe()
+    if not exe:
+        return {"ok": False, "message": "未找到 dreamina CLI"}
+    raw, rc = await asyncio.to_thread(_run_capture, [exe, "logout"], 15)
+    return {"ok": rc == 0, "message": raw or ("已登出" if rc == 0 else "登出失败")}
+
+
+@router.get("/jimeng/credit")
+async def jimeng_credit():
+    """查询即梦账户积分（dreamina user_credit，画布同路径）"""
+    exe = _jimeng_exe()
+    if not exe:
+        return {"ok": False, "message": "未找到 dreamina CLI，请先安装"}
+    raw, rc = await asyncio.to_thread(_run_capture, [exe, "user_credit"], 30)
+    return {"ok": rc == 0, "text": raw, "message": "" if rc == 0 else "查询失败，请确认已登录"}

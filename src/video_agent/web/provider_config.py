@@ -490,6 +490,11 @@ def provider_key_env(provider_id: str) -> str:
     return f"API_PROVIDER_{sanitized}_KEY"
 
 
+def runninghub_wallet_key_env() -> str:
+    """RunningHub 账户余额 Key 的环境变量名（与画布一致：标准模型/视频模型走余额）"""
+    return "RUNNINGHUB_WALLET_API_KEY"
+
+
 def read_env_keys() -> Dict[str, str]:
     """读取 .env 文件中所有键值对"""
     keys: Dict[str, str] = {}

@@ -26,6 +26,7 @@ from src.video_agent.web.provider_config import (
     load_merged_providers,
     provider_key_env,
     resolve_api_key,
+    runninghub_wallet_key_env,
     save_api_providers,
     update_env_key,
 )
@@ -103,12 +104,20 @@ def _validate_external_url(url: str) -> None:
 
 # ---------- 公开数据（脱敏） ----------
 def public_provider(p: Dict[str, Any]) -> Dict[str, Any]:
-    """返回脱敏后的 provider 数据（不含完整 key）"""
+    """返回脱敏后的 provider 数据（不含完整 key；与画布字段对齐：
+    key_env/has_key/key_preview，runninghub 另带 wallet 三字段）"""
     env_name = provider_key_env(p.get("id", ""))
     has_key, preview = get_key_preview(env_name)
-    result = {k: v for k, v in p.items() if k not in ("api_key", "clear_key")}
+    result = {k: v for k, v in p.items() if k not in ("api_key", "clear_key", "wallet_api_key", "clear_wallet_key")}
     result["has_key"] = has_key
     result["key_preview"] = preview
+    result["key_env"] = env_name
+    if p.get("id") == "runninghub":
+        w_env = runninghub_wallet_key_env()
+        w_has, w_prev = get_key_preview(w_env)
+        result["has_wallet_key"] = w_has
+        result["wallet_key_preview"] = w_prev
+        result["wallet_key_env"] = w_env
     return result
 
 
@@ -241,11 +250,21 @@ async def save_providers(request: Request):
                 update_env_key(env_name, p["api_key"])
             if p.get("clear_key"):
                 clear_env_key(env_name)
+            # RunningHub 账户余额 Key（画布同款双 Key）
+            if pid == "runninghub":
+                w_env = runninghub_wallet_key_env()
+                if p.get("wallet_api_key"):
+                    update_env_key(w_env, p["wallet_api_key"])
+                if p.get("clear_wallet_key"):
+                    clear_env_key(w_env)
         except ValueError as e:
             logger.warning(f"[Providers] key 写入被拒绝: {e}")
 
         # 存储配置（不含敏感字段）
-        clean = {k: v for k, v in p.items() if k not in ("api_key", "clear_key", "has_key", "key_preview")}
+        clean = {k: v for k, v in p.items() if k not in (
+            "api_key", "clear_key", "has_key", "key_preview", "key_env",
+            "wallet_api_key", "clear_wallet_key", "has_wallet_key", "wallet_key_preview", "wallet_key_env",
+        )}
         saved.append(clean)
 
     save_api_providers(saved)
