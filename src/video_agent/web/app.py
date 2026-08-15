@@ -272,18 +272,6 @@ async def spa_fallback():
     return _studio_page()
 
 
-@app.get("/launcher", include_in_schema=False)
-async def launcher():
-    """已废弃：重定向到 Studio 主页（画布模式已内置）"""
-    return RedirectResponse("/")
-
-
-@app.get("/launcher.html", include_in_schema=False)
-async def launcher_html():
-    """已废弃：重定向到 Studio 主页"""
-    return RedirectResponse("/")
-
-
 # ---------- 注册 API 路由 ----------
 app.include_router(config_router, prefix="/api", tags=["config"])
 app.include_router(providers_router, prefix="/api", tags=["providers"])

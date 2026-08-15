@@ -30,7 +30,8 @@ def load_prompt(relative_path: str, use_cache: bool = True, lang: str = "") -> s
     Returns:
         文件文本内容；文件不存在时返回空字符串并记录警告。
     """
-    # 如果指定了 lang，尝试加载本地化版本
+    # 如果指定了 lang，尝试加载本地化版本（如 "planner/system" → "planner/system_en.md"；
+    # 该机制为能力保留，当前无调用方——新增本地化时启用）
     if lang:
         stem = relative_path.rsplit(".", 1)[0]  # "planner/system"
         ext = relative_path.rsplit(".", 1)[1] if "." in relative_path else "md"

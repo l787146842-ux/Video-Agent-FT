@@ -325,9 +325,3 @@ def match_skill_name_from_text(text: str) -> str:
         elif slug and slug in body:
             matched = str(entry.name or slug)
     return matched
-
-
-def register_doc_hooks() -> None:
-    """挂到 skill_docs 保存/删除路径的刷新函数（由 skill_docs 调用）。"""
-    # 占位：实际钩子在 skill_docs.save_skill_doc / delete_skill_doc 中调用 refresh_skill / unregister_skill
-    return None

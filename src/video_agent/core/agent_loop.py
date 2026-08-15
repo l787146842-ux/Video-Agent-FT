@@ -150,36 +150,6 @@ _split_actions = split_actions
 SELF_CHECK_FEEDBACK = "（系统）自检提醒：拆解需覆盖完整（按《执行铁律》第 2 条自检核对）。"
 
 
-def _compact_old_step_feedback(messages: List[Dict[str, Any]], keep_pairs: int = 2) -> int:
-    """轮内 compaction（C3）：把超过最近 keep_pairs 轮的「工具已执行完毕」反馈
-    折叠为摘要，旧 assistant 轮次原地压缩；用户消息与首条消息不碰。
-
-    返回被折叠的反馈条数。
-    """
-    if not messages:
-        return 0
-    feedback_idx = [
-        i for i, m in enumerate(messages)
-        if isinstance(m.get("content"), str)
-        and m.get("content", "").startswith("（系统）第")
-        and "已执行完毕" in m.get("content", "")
-    ]
-    if len(feedback_idx) <= keep_pairs:
-        return 0
-    collapse = feedback_idx[:-keep_pairs]
-    for i in collapse:
-        # 压缩其紧邻的前一条 assistant 轮次（保留用户引导与首条用户消息）
-        if i > 0 and messages[i - 1].get("role") == "assistant":
-            messages[i - 1] = {
-                **messages[i - 1],
-                "content": "（历史轮次摘要：该轮工具反馈已折叠，详情以当前工作台状态为准）",
-            }
-    # 移除被折叠的反馈消息本身
-    for i in sorted(collapse, reverse=True):
-        messages.pop(i)
-    return len(collapse)
-
-
 async def run_agent_loop(
     user_text: Union[str, List[Dict[str, Any]]],
     *,

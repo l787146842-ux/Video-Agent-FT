@@ -35,7 +35,7 @@ from src.video_agent.web.provider_config import (
     load_merged_providers,
     load_merged_providers_async,
 )
-from src.video_agent.web.sse import sse_event_generator  # noqa: F401  （re-export，路由层从此导入）
+from src.video_agent.web.sse import sse_event_generator  # noqa: F401  （B6 保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.sse_events import (
@@ -55,7 +55,7 @@ from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.adapters.agy_cli import AgyCliChatAdapter
 from src.video_agent.tools.manager import ToolManager
 
-__all__ = ["stream_worker", "non_stream_worker", "sse_event_generator", "build_multimodal_content"]
+__all__ = ["stream_worker", "non_stream_worker", "build_multimodal_content"]
 
 # 请求幂等防护（P2）：同一 request_id 正在处理中时拒绝重复提交，
 # 防止 SSE 断连重发/双标签页重复发送导致操作重复落盘。

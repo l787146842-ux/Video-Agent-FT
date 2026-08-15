@@ -811,25 +811,7 @@ def test_fc_runner_user_override_allows(monkeypatch):
     assert runner.gate_warnings
 
 
-# ---------- 操作记录聚合（trace 时间线：列全但同类合并） ----------
-
-def test_aggregate_action_records():
-    from src.video_agent.core.action_aggregate import aggregate_action_records
-
-    records = [
-        {"name": "read_uploaded_doc", "summary": "读取上传文档「剧本.md」", "elapsed_ms": 1.0, "ok": True},
-        {"name": "update_draft", "summary": "更新草稿「Element_程心」的提示词", "elapsed_ms": 2.0, "ok": True},
-        {"name": "update_draft", "summary": "更新草稿「Element_AA」的提示词", "elapsed_ms": 3.0, "ok": True},
-        {"name": "update_draft", "summary": "更新草稿「Element_罗辑」的提示词", "elapsed_ms": 4.0, "ok": False},
-    ]
-    merged = aggregate_action_records(records)
-    assert len(merged) == 2
-    assert merged[0]["summary"] == "读取上传文档「剧本.md」"
-    assert merged[1]["summary"] == "更新草稿的提示词 ×3"
-    assert merged[1]["count"] == 3
-    assert merged[1]["elapsed_ms"] == 9.0
-    assert merged[1]["ok"] is False
-
+# ---------- 卡片枚举压缩（8888 事故：正文逐卡罗列既耗 token 又撑长卡片） ----------
 
 def test_compact_card_enumeration():
     from src.video_agent.web.chat_service import _compact_card_enumeration

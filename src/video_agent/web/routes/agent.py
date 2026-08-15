@@ -16,7 +16,8 @@ from pydantic import BaseModel
 
 from loguru import logger
 
-from src.video_agent.web.chat_service import stream_worker, non_stream_worker, sse_event_generator
+from src.video_agent.web.chat_service import stream_worker, non_stream_worker
+from src.video_agent.web.sse import sse_event_generator
 from src.video_agent.exceptions import AdapterError, GenerationError
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.live_metrics import get_live_context

@@ -3,7 +3,6 @@
 覆盖：
 - LocalStorageAdapter CRUD（save/read/delete/exists/get_url）
 - 工厂函数 get_storage() 默认返回 LocalStorageAdapter
-- S3StorageAdapter 骨架抛 NotImplementedError
 - persist_data_uri 通过 Storage 接口落盘
 """
 import base64
@@ -13,7 +12,6 @@ import pytest
 from src.video_agent.storage import get_storage, reset_storage
 from src.video_agent.storage.base import BaseStorageAdapter
 from src.video_agent.storage.local import LocalStorageAdapter
-from src.video_agent.storage.s3 import S3StorageAdapter
 
 
 @pytest.fixture(autouse=True)
@@ -65,21 +63,6 @@ class TestLocalStorageAdapter:
         adapter = LocalStorageAdapter(tmp_path, url_prefix="https://cdn.example.com/assets")
         url = adapter.save(b"x", "a.png")
         assert url == "https://cdn.example.com/assets/a.png"
-
-
-class TestS3StorageAdapter:
-    def test_all_methods_raise_not_implemented(self):
-        s3 = S3StorageAdapter(bucket="test-bucket", region="us-east-1")
-        with pytest.raises(NotImplementedError, match="S3 存储尚未实现"):
-            s3.save(b"data", "file.png")
-        with pytest.raises(NotImplementedError):
-            s3.read("file.png")
-        with pytest.raises(NotImplementedError):
-            s3.delete("file.png")
-        with pytest.raises(NotImplementedError):
-            s3.exists("file.png")
-        with pytest.raises(NotImplementedError):
-            s3.get_url("file.png")
 
 
 class TestGetStorageFactory:

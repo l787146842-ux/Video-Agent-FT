@@ -187,39 +187,3 @@ def test_iron_rules_clause2_single_sentence():
     assert "2. 拆解覆盖完整（自检核对）。\n" in body
     assert "严禁把多位配角" not in body
     assert "宁缺毋滥" not in body
-
-
-# ---------- C3：轮内 compaction ----------
-
-def test_compact_old_step_feedback_collapses_old_pairs_only():
-    msgs = [
-        {"role": "user", "content": "开始任务"},
-        {"role": "assistant", "content": "第一轮长回复 " + "x" * 200},
-        {"role": "user", "content": "（系统）第 1 轮的 2 个 Tool 已执行完毕，工作台状态已刷新到 system prompt。"},
-        {"role": "assistant", "content": "第二轮长回复 " + "y" * 200},
-        {"role": "user", "content": "（系统）第 2 轮的 1 个 Tool 已执行完毕，工作台状态已刷新到 system prompt。"},
-        {"role": "user", "content": "（系统）用户在任务执行期间发来以下消息：插话"},
-        {"role": "assistant", "content": "第三轮回复"},
-        {"role": "user", "content": "（系统）第 3 轮的 1 个 Tool 已执行完毕，工作台状态已刷新到 system prompt。"},
-    ]
-    n = agent_loop._compact_old_step_feedback(msgs, keep_pairs=2)
-    assert n == 1
-    # 旧对被折叠成一条摘要
-    assert any("历史轮次摘要" in str(m.get("content")) for m in msgs)
-    # 最近两轮反馈保留原文
-    assert sum(str(m.get("content")).startswith("（系统）第") for m in msgs) == 2
-    # 用户引导消息与首轮用户消息不碰
-    assert any("插话" in str(m.get("content")) for m in msgs)
-    assert msgs[0]["content"] == "开始任务"
-
-
-def test_compact_noop_when_few_pairs():
-    msgs = [
-        {"role": "user", "content": "开始"},
-        {"role": "assistant", "content": "a"},
-        {"role": "user", "content": "（系统）第 1 轮反馈"},
-        {"role": "assistant", "content": "b"},
-        {"role": "user", "content": "（系统）第 2 轮反馈"},
-    ]
-    assert agent_loop._compact_old_step_feedback(msgs) == 0
-    assert len(msgs) == 5
