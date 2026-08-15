@@ -8,6 +8,7 @@ from src.video_agent.config import settings
 from src.video_agent.core.token_budget import output_limit_for_model
 from src.video_agent.exceptions import GenerationError
 from src.video_agent.skill_runtime import executors as ex_mod
+from src.video_agent.web import generation as gen_mod
 
 
 # ---------- 输出上限查表 ----------
@@ -36,7 +37,7 @@ def _patch_chat(monkeypatch, responses):
             raise item
         return item
 
-    monkeypatch.setattr(ex_mod, "call_chat_completion", fake)
+    monkeypatch.setattr(gen_mod, "call_chat_completion", fake)
     monkeypatch.setattr(
         ex_mod, "_resolve_chat_provider", lambda p="", m="": ("custom", "deepseek-v4-flash")
     )

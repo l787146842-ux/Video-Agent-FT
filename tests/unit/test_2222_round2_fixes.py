@@ -14,6 +14,8 @@ from src.video_agent.adapters.openai_compat import OpenAICompatChatAdapter
 from src.video_agent.config import settings
 from src.video_agent.core import spec_rules
 from src.video_agent.skill_runtime import executors as ex_mod
+from src.video_agent.skill_runtime import exec_common
+from src.video_agent.web import generation as gen_mod
 
 
 # ---------- 铁律删句（模板 + 存量自动升级） ----------
@@ -112,11 +114,15 @@ def test_2222_executor_thinking_default_low_and_empty_falls_back():
 
 
 def test_2222_all_executor_llm_calls_pass_thinking_level():
-    """G4 全局化：执行器全部 4 个 LLM 调用点都传思考档位，不许漏路径。"""
-    src = inspect.getsource(ex_mod)
-    n_calls = src.count("await call_chat_completion(") + src.count("await call_chat_completion_stream(")
+    """G4 全局化：执行器全部 4 个 LLM 调用点都传思考档位，不许漏路径。
+    R4a 拆分后扫描三个实现模块；调用统一经 _gen.（web.generation）模块属性。"""
+    from src.video_agent.skill_runtime import exec_common, exec_spec, exec_tools
+
+    src = inspect.getsource(exec_common) + inspect.getsource(exec_spec) + inspect.getsource(exec_tools)
+    n_calls = src.count("await _gen.call_chat_completion(") + src.count("await _gen.call_chat_completion_stream(")
     assert n_calls == 4, "执行器 LLM 调用点数量变化时必须同步本断言"
-    assert src.count("thinking_level=_executor_thinking()") == n_calls
+    # 调用点 4 处 + _executor_thinking 定义本身 1 处
+    assert src.count("_executor_thinking()") == n_calls + 1
 
 
 # ---------- 截断保险全局化（流式拆解回滚 + 扩额整体重试） ----------
@@ -240,8 +246,8 @@ async def test_2222_split_truncation_retry_success_path(monkeypatch, tmp_path):
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["shots"] = []
-    monkeypatch.setattr(ex_mod, "call_chat_completion_stream", fake_stream)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     result = await StoryboardShotsTool().aexecute(
@@ -351,15 +357,19 @@ def test_2222_spec_wizard_manifest_false_escape_hatch():
 
 
 def test_2222_spec_wizard_consumers_use_objective_detection():
-    """G4：三个消费点统一走 spec_wizard_active，不留直读声明的分身。"""
+    """G4：三个消费点统一走 spec_wizard_active，不留直读声明的分身。
+    R4a 拆分后 ex_mod 为 re-export 壳，实现扫描三个子模块。"""
     from src.video_agent.core import agent_loop as al
     from src.video_agent.core import fc_tool_runner as fcr
+    from src.video_agent.skill_runtime import exec_common, exec_spec, exec_tools
 
     al_src = inspect.getsource(al)
     fcr_src = inspect.getsource(fcr)
+    ex_src = (inspect.getsource(exec_common) + inspect.getsource(exec_spec)
+              + inspect.getsource(exec_tools))
     assert "spec_wizard_active(skill)" in al_src
     assert "spec_wizard_active(injected_skill)" in fcr_src
-    assert "spec_wizard_active(skill_name)" in inspect.getsource(ex_mod)
+    assert "spec_wizard_active(skill_name)" in ex_src
     assert 'skill_flow_enabled(skill, "spec_wizard")' not in al_src
     assert 'skill_flow_enabled(injected_skill, "spec_wizard")' not in fcr_src
 

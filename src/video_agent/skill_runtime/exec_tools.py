@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.config import settings
+from src.video_agent.web import generation as _gen
 from src.video_agent.web.generation import (
     GenerationError,
     call_chat_completion,
@@ -37,1049 +38,37 @@ from src.video_agent.skill_runtime.registry import (
     tool_sections,
 )
 
-
-class SkillToolResult(BaseModel):
-    """执行器工具结果（与 tools.base.ToolResult 同构，避免 tools 包循环导入）。"""
-
-    success: bool
-    data: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+from src.video_agent.skill_runtime import exec_common
+from src.video_agent.skill_runtime import exec_spec
 
 
-# ---------- 通用工具函数 ----------
 
-def _resolve_chat_provider(provider: str = "", model: str = "") -> Tuple[str, str]:
-    """聊天供应商解析（决策 E：优先用主模型一致的供应商/模型，缺失回退首个可用）。"""
-    from src.video_agent.web.provider_config import (
-        CLI_PROTOCOLS,
-        get_provider_config,
-        load_merged_providers,
-    )
-
-    if provider:
-        cfg = get_provider_config(provider)
-        if cfg and cfg.get("enabled", True) and (cfg.get("protocol") or "") != "mock":
-            if model:
-                return provider, model
-            models = cfg.get("chat_models") or []
-            if models:
-                return provider, str(models[0])
-
-    for p in load_merged_providers():
-        if not p.get("enabled", True):
-            continue
-        if (p.get("protocol") or "") == "mock":
-            continue
-        models = p.get("chat_models") or []
-        if models and (p.get("base_url") or (p.get("protocol") or "") in CLI_PROTOCOLS):
-            return str(p.get("id") or ""), str(models[0])
-    return "", ""
-
-
-def _resolve_cascade_fast(main_provider: str, main_model: str) -> Tuple[str, str]:
-    """誊写批级联快模型解析（业界基准 C5；B8 策略表化）。
-
-    优先级：模型策略表 executor 角色（热更新可编辑）> settings.executor_fast_model
-    （"provider" 或 "provider:model"，旧配置兼容）> 主模型（不级联）。
-    零进展/被拒收的纠正重试由调用方升级回主推理模型；解析失败绝不阻断主流程。
-    """
-    from src.video_agent.core import model_policy
-
-    role = model_policy.resolve_role("executor")
-    if role:
-        return role["provider"], role["model"]
-    spec = str(getattr(settings, "executor_fast_model", "") or "").strip()
-    if not spec:
-        return main_provider, main_model
-    try:
-        from src.video_agent.web.provider_config import load_merged_providers
-
-        pid, _, mdl = spec.partition(":")
-        prov = next(
-            (p for p in load_merged_providers()
-             if str(p.get("id") or "") == pid and p.get("enabled", True)),
-            None,
-        )
-        if not prov:
-            return main_provider, main_model
-        mdl = mdl.strip() or str((prov.get("chat_models") or [""])[0])
-        if not mdl:
-            return main_provider, main_model
-        return pid, mdl
-    except Exception:
-        return main_provider, main_model
-
-
-def _executor_thinking() -> Optional[str]:
-    """执行器机械调用的思考档位（2222 二轮，10.9 模型分层；B8 策略表化）：
-
-    拆解/提示词编写/自检/软参数出题等「照章办事」的结构化产出不需要深推理；
-    降档缩短思考静默期，也防思考吃光输出预算导致截断（deepseek-v4-flash
-    曾单次思考 2.6 万字把 16384 预算耗光、正文只出 7 个分镜）。
-    优先级：策略表 executor 角色档位 > settings.executor_thinking_level > None。
-    主聊天不受影响。
-    """
-    from src.video_agent.core import model_policy
-
-    return model_policy.thinking_for("executor", settings.executor_thinking_level) or None
-
-
-def _fmt_num(value) -> str:
-    """数字规整：12.0 → "12"，避免注入文案出现「12.0 秒」。"""
-    try:
-        f = float(value)
-    except (TypeError, ValueError):
-        return str(value)
-    return str(int(f)) if f.is_integer() else str(f)
-
-
-def _spec_override_clauses(raw_state: Dict[str, Any], kinds: Tuple[str, ...]) -> str:
-    """五项制片规格覆盖注入（2222 二轮，【时长硬约束】模式扩展为统一实现点）。
-
-    制片规格里已定的参数 → 注入一条覆盖句压过 Skill 章节写死的默认值
-    （优先级链：制片规格 > Skill，由系统注入执行而非 prose 说教，10.12-G3）。
-    kinds 取值：duration / image_resolution / video_resolution /
-    image_channel / video_channel；规格未定的项不注入（章节默认值照常兜底）。
-    """
-    from src.video_agent.state.provider_prefs import resolve_spec_media_preference
-    from src.video_agent.web.provider_config import load_merged_providers, spec_production_params
-
-    params = spec_production_params(raw_state) or {}
-    items: List[str] = []
-    if "duration" in kinds:
-        cap = params.get("shot_max_duration")
-        if cap:
-            items.append(f"分镜最大时长为 {_fmt_num(cap)} 秒（所有分镜 duration ≤ {_fmt_num(cap)} 秒）")
-    if "image_resolution" in kinds:
-        v = params.get("image_resolution")
-        if v:
-            items.append(f"图片分辨率为 {v}")
-    if "video_resolution" in kinds:
-        v = params.get("video_resolution")
-        if v:
-            items.append(f"视频分辨率为 {v}")
-    if "image_channel" in kinds or "video_channel" in kinds:
-        try:
-            providers = load_merged_providers()
-        except Exception:
-            providers = []
-        if providers:
-            for kind, label in (("image", "出图渠道"), ("video", "出视频渠道")):
-                if f"{kind}_channel" not in kinds:
-                    continue
-                pid, mdl = resolve_spec_media_preference(raw_state, providers, kind)
-                if pid:
-                    name = next(
-                        (str(p.get("name") or p.get("id") or "") for p in providers
-                         if p.get("id") == pid),
-                        pid,
-                    )
-                    items.append(label + "为 " + " / ".join(x for x in (name, mdl) if x))
-    if not items:
-        return ""
-    return (
-        "\n\n【制片规格覆盖】" + "；".join(items)
-        + "。注入章节里的对应条款与此冲突时以本条为准。"
-    )
-
-
-def _rollback_split_groups(svc: StateManager, split_kind: str, ids_before: set) -> int:
-    """截断回滚（2222 二轮）：删除本次拆解新建的分组，恢复拆解前状态。
-
-    与「拆解前 ID 快照」配套：流式首拆撞上限时已落盘的残品全部撤销，
-    随后扩额整体重试，避免「首拆 7 个 + 补拆 6 个」式拼接结果。
-    split_kind 支持逗号分隔多类别（边界自适应放行多类时同步回滚）。
-    """
-    removed = 0
-    for kind in (str(split_kind or "").split(",") if split_kind else []):
-        kind = kind.strip()
-        cat = ops.category_for_group_type(kind) if kind else ""
-        if not cat:
-            continue
-        added = [
-            g for g in (svc.state_dict.get(cat) or [])
-            if isinstance(g, dict) and g.get("id") not in ids_before
-        ]
-        for g in added:
-            ops.delete_group(svc.state_dict, str(g.get("id") or ""), kind)
-        removed += len(added)
-    if removed:
-        svc.save_debounced()
-    return removed
-
-
-# 拆解边界自适应（2222 二轮）：允许的分组类别以注入章节的客观文本为准
-# （与 _skill_system_prompt 注入源唯一，不依赖 Skill 声明改动，10.12-G1）。
-# 优先级：① 章节「本节职责：只创建 X 分组」显式边界声明（Skill 层 3 唯一源）；
-# ② 无声明的合并章节按职责关键词检测（如「AI-短剧」storyboard_designer）。
-_RESP_SCOPE_RE = re.compile(r"本节职责[^：:]*[:：]\s*只创建([^，。；;\n]*?)分组")
-_KIND_DETECTORS: Tuple[Tuple[str, re.Pattern], ...] = (
-    ("keyElement", re.compile(r"key_?element", re.I)),
-    ("shot", re.compile(r"\bshots?\b|分镜|镜头列表", re.I)),
-    ("audio", re.compile(r"audio_?layers?\b|音频层|\baudio\b", re.I)),
-)
-_KIND_SPAN_DETECTORS: Tuple[Tuple[str, re.Pattern], ...] = (
-    ("keyElement", re.compile(r"key_?element|关键元素", re.I)),
-    ("shot", re.compile(r"\bshots?\b|分镜", re.I)),
-    ("audio", re.compile(r"\baudio\b|音频", re.I)),
+from src.video_agent.skill_runtime.exec_common import (
+    SkillToolResult,
+    _apply_actions,
+    _build_script_hint,
+    _executor_thinking,
+    _find_uploaded_doc,
+    _fmt_num,
+    _is_truncated,
+    _parse_actions_from_text,
+    _read_spec_doc,
+    _resolve_cascade_fast,
+    _resolve_chat_provider,
+    _rollback_split_groups,
+    _skill_system_prompt,
+    _spec_override_clauses,
+    _split_kinds_for_section,
+    _stream_actions_progressive,
 )
 
-
-def _split_kinds_for_section(tool_name: str, skill_name: str) -> List[str]:
-    """执行器允许收进的分组类别，按注入章节的客观结构自适应。
-
-    章节带「本节职责：只创建 X 分组」声明（如「剧本生视频」三个独立章节）→
-    按声明精确放行，句内提到的其它类别是禁令不是职责；
-    无声明的合并章节（如「AI-短剧」storyboard_designer 同含三块职责）→
-    Skill 语义即"一起设计"，按关键词检测放行对应多类一次收进。
-    本执行器自身类别恒定包含（检测漏判也不越权收紧）。
-    """
-    base = {
-        "storyboard_key_elements": "keyElement",
-        "storyboard_shots": "shot",
-        "storyboard_audio": "audio",
-    }.get(tool_name, "")
-    if not base:
-        return []
-    try:
-        section = tool_sections(skill_name, tool_name)
-    except Exception:
-        section = ""
-    if not section:
-        return [base]
-    m = _RESP_SCOPE_RE.search(section)
-    if m:
-        span = m.group(1)
-        kinds = [k for k, pat in _KIND_SPAN_DETECTORS if pat.search(span)]
-        if kinds:
-            if base not in kinds:
-                kinds.append(base)
-            return kinds
-    kinds = [k for k, pat in _KIND_DETECTORS if pat.search(section)]
-    if base not in kinds:
-        kinds.append(base)
-    return kinds
-
-
-def _prompt_language_rule(skill_name: str) -> str:
-    """提示词正文语言的单一事实源（业界基准 C1）。
-
-    与 PromptGate 语言闸读同一份 parse_gate_rules 结果：cjk_min_ratio>0 =
-    语言闸生效（中文正文），=0 = Skill 声明英文锁定。注入句是「事实陈述」
-    而非待权衡的规则，章节英文模板只借结构不借语言。
-    """
-    lang = "中文"
-    try:
-        entry = resolve_entry(skill_name)
-        rules = prompt_gates.parse_gate_rules(entry.content if entry else "")
-        if float(rules.get("cjk_min_ratio", 0.15)) <= 0:
-            lang = "英文"
-    except Exception:
-        lang = "中文"
-    if lang == "英文":
-        return "1. 提示词正文语言：英文（本 Skill 声明英文锁定、平台语言闸关闭，按章节模板书写）。"
-    return (
-        "1. 提示词正文语言：中文（平台语言闸生效，写入校验同此一源）。"
-        "章节里的英文模板只借结构（三视图/四视图排布、一致性约束等），"
-        "正文一律用中文书写，仅专业风格/光影/构图/渲染技术术语可保留英文原词。"
-    )
-
-
-def _style_memory_block(limit: int = 5) -> str:
-    """项目风格记忆注入（814E3）：只认「风格偏好：」前缀条目（摘要提示词约定），
-    按项目隔离，注入执行器 system prompt，保证跨会话风格连续性。"""
-    try:
-        if not settings.memory_enabled:
-            return ""
-        from src.video_agent.memory import MemoryManager
-
-        pid = StateManager.get_instance().active_project_id or ""
-        recs = MemoryManager.get_instance().list_records(project_id=pid)
-    except Exception:
-        return ""
-    lines = [
-        f"- {r.content}" for r in recs
-        if (r.content or "").strip().startswith("风格偏好：")
-    ][:limit]
-    if not lines:
-        return ""
-    return (
-        "\n== 项目风格记忆（用户确认过的风格偏好，提示词必须体现）==\n"
-        + "\n".join(lines)
-    )
-
-
-def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_override: Optional[str] = None) -> str:
-    """执行器 system prompt：平台精简协议 + Skill 对应章节（只注入自己那一节）+ 铁律全文。
-
-    section_override（814E1）：通用章节执行器直接注入任意章节文本，
-    不经 tool_sections 的固定映射。"""
-    section = section_override if section_override is not None else tool_sections(skill_name, tool)
-    parts = [
-        "你是本影视 Agent 工作台的独立执行器。",
-        f"当前选中 Skill：「{skill_name or '未指定'}」。",
-        "下面是该 Skill 中与本执行器唯一对应的章节，必须严格按它执行；"
-        "不要调用本章节之外的其他 Skill 规则，也不要输出与任务无关的内容。",
-        "",
-        "== Skill 对应章节 ==",
-        section or "（该 Skill 未提供本执行器对应章节）",
-    ]
-    # 铁律全文注入（宪法 D2/D5）：拆解粒度等生产契约的表述源在铁律，
-    # 任务词不再复述；无铁律文档（测试/未开工项目）时静默跳过
-    try:
-        from src.video_agent.core.spec_rules import find_iron_rules_doc
-
-        iron = find_iron_rules_doc(StateManager.get_instance().state_dict)
-        iron_content = str((iron or {}).get("content") or "").strip()
-        if iron_content:
-            parts += ["", "== 项目《执行铁律》（生产契约，与章节冲突时以铁律为准）==", iron_content]
-    except Exception as _e:
-        logger.debug("[executors] 忽略异常: {}", _e)
-    # 风格记忆注入（814E3）：跨会话风格连续性
-    style_block = _style_memory_block()
-    if style_block:
-        parts.append(style_block)
-    # 冲突裁决总则（888 事故：章节内中英规则打架、章节与规格时长数字并存，
-    # 推理模型反复权衡耗掉万字思考）：把两处常见冲突收敛成一条确定规则，
-    # 模型不再需要自行裁决。
-    # 语言单一事实源（业界基准 C1，6666 二轮事故）：注入句与 PromptGate 校验
-    # 读同一份 parse_gate_rules 结果——「章节模板是英文」不再构成例外，
-    # 模型无需仲裁，两条平台表述 by construction 不可能再打架。
-    parts += [
-        "",
-        "== 冲突裁决（无需自行权衡，直接按此执行）==",
-        _prompt_language_rule(skill_name),
-        "2. 时长/数量等硬参数：后续任务消息里的【制作参数】【时长硬约束】来自用户确认的"
-        "制片规格，与章节数字冲突时以任务消息为准。",
-    ]
-    if extra:
-        parts.append("")
-        parts.append(extra)
-    return "\n".join(parts)
-
-
-def _find_uploaded_doc(state: Dict[str, Any], name: str = "", doc_id: str = "") -> Optional[Dict[str, Any]]:
-    """按名称/ID 模糊查找上传文档（与 read_uploaded_doc 同语义）。"""
-    docs = state.get("uploadedDocs") or []
-
-    def norm(s: str) -> str:
-        return (s or "").strip().casefold().replace(" ", "")
-
-    target = None
-    if name:
-        nn = norm(name)
-        for d in docs:
-            if norm(d.get("name") or "") == nn:
-                target = d
-                break
-        if target is None:
-            for d in docs:
-                if nn and nn in norm(d.get("name") or ""):
-                    target = d
-                    break
-    if target is None and doc_id:
-        target = next((d for d in docs if d.get("id") == doc_id), None)
-    if target is None and docs:
-        target = docs[0]
-    return target
-
-
-def _read_spec_doc(state: Dict[str, Any]) -> str:
-    """读取规格文档全文（制片规格 等）。"""
-    for d in state.get("documents") or []:
-        if prompt_gates.is_spec_doc_name(str(d.get("name") or "")):
-            return str(d.get("content") or "")
-    return ""
-
-
-# 剧本正文注入上限（拆解/提示词阶段需按剧本忠实产出，仅摘要不足以覆盖台词与场次）
-_SCRIPT_INJECT_LIMIT = 10000
-
-
-def _build_script_hint(state: Dict[str, Any]) -> str:
-    """剧本理解锚点：一句话总结 + 剧本正文（超长截断）。
-
-    故事板拆解与提示词编写都要求忠实于剧本（台词/旁白/场景顺序），
-    仅注入摘要会迫使模型凭空概括，故正文恒注入；摘要只作理解锚点。
-    """
-    parts: List[str] = []
-    analysis = state.get("analysis") or {}
-    if analysis.get("summary"):
-        parts.append(f"剧本一句话总结：{analysis.get('summary')}")
-    doc = _find_uploaded_doc(state)
-    if doc:
-        content = str(doc.get("content") or "")
-        if content:
-            body = content[:_SCRIPT_INJECT_LIMIT]
-            suffix = (
-                "\n……（剧本超长已截断，请优先保证已见内容的忠实度）"
-                if len(content) > _SCRIPT_INJECT_LIMIT else ""
-            )
-            parts.append(f"剧本《{doc.get('name')}》正文：\n{body}{suffix}")
-    return "\n\n".join(parts)
-
-
-def _parse_actions_from_text(text: str) -> List[Dict[str, Any]]:
-    """从 LLM 回复中提取 studio-actions JSON 数组（兼容围栏与裸 JSON）。"""
-    from src.video_agent.web.action_parser import parse_actions_from_reply
-
-    actions = parse_actions_from_reply(text)
-    if actions:
-        return actions
-    m = re.search(r"\[[\s\S]*\]", text)
-    if m:
-        try:
-            data = json.loads(m.group(0))
-            if isinstance(data, list):
-                return data
-        except Exception as _e:
-            logger.debug("[executors] 忽略异常: {}", _e)
-    return []
-
-
-# 流式逐条落盘参数（Q5：做好一个立即填入左侧故事板，不等整批生成完）
-_PROGRESSIVE_FLUSH_N = 4        # 累积 N 个完整动作即应用一批
-_PROGRESSIVE_FLUSH_SECS = 1.5   # 或距上次落盘超过该间隔（防尾部少量动作长期不刷新）
-
-
-def _extract_complete_objects(buf: str, pos: int) -> Tuple[List[str], int]:
-    """从流式累积文本的 JSON 数组内部（pos 起）提取已闭合的对象文本。
-
-    返回 (对象文本列表, 新扫描位置)：对象未闭合时停在原地，
-    等后续增量补齐再续扫；字符串内的花括号不计入层级。
-    """
-    objects: List[str] = []
-    n = len(buf)
-    while True:
-        while pos < n and buf[pos] in " \t\r\n,":
-            pos += 1
-        if pos >= n or buf[pos] != "{":
-            break
-        depth, in_str, esc = 0, False, False
-        start = i = pos
-        complete = False
-        while i < n:
-            c = buf[i]
-            if in_str:
-                if esc:
-                    esc = False
-                elif c == "\\":
-                    esc = True
-                elif c == '"':
-                    in_str = False
-            elif c == '"':
-                in_str = True
-            elif c == "{":
-                depth += 1
-            elif c == "}":
-                depth -= 1
-                if depth == 0:
-                    objects.append(buf[start:i + 1])
-                    pos = i + 1
-                    complete = True
-                    break
-            i += 1
-        if not complete:
-            break
-    return objects, pos
-
-
-def _is_truncated(finish: str) -> bool:
-    """finish_reason 是否为撞输出上限被截断（888 事故：截断残品被当成品收下）。"""
-    return (finish or "").strip().lower() in (
-        "length", "max_tokens", "max_output_tokens", "content_filter",
-    )
-
-
-async def _stream_actions_progressive(
-    tool_name: str,
-    skill_name: str,
-    system: str,
-    user: str,
-    svc: StateManager,
-    skill_content: str,
-    *,
-    provider: str,
-    model: str,
-    max_tokens: int,
-    strip_prompts: bool = False,
-    flush_n: int = _PROGRESSIVE_FLUSH_N,
-    only_group_type: str = "",
-) -> Tuple[int, List[str], str, str]:
-    """流式生成 studio-actions 并逐批落盘（Q5）：模型每吐完几个完整动作就立即
-    写入故事板并下发快照，左侧卡片逐个亮出来，不再干等整次调用结束。
-
-    返回 (applied, warnings, 完整文本, finish_reason)；零产出时由调用方回退整体解析重试。
-    finish_reason 供截断检测（length=撞输出上限，888 事故）。
-    截断/零产出时自动落黑匣子档案（完整指令+输出+思考，888 事故）。
-    """
-    buf_parts: List[str] = []
-    scan = {"pos": 0, "arr_started": False}
-    pending: List[Dict[str, Any]] = []
-    counters = {"applied": 0, "last_flush": time.monotonic(), "last_note": time.monotonic()}
-    warnings: List[str] = []
-
-    async def flush(force: bool = False) -> None:
-        if not pending:
-            return
-        if (
-            not force
-            and len(pending) < flush_n
-            and time.monotonic() - counters["last_flush"] < _PROGRESSIVE_FLUSH_SECS
-        ):
-            return
-        batch, pending[:] = pending[:], []
-        n, warns = _apply_actions(
-            svc, batch, skill_content, strip_prompts=strip_prompts,
-            only_group_type=only_group_type,
-        )
-        warnings.extend(warns)
-        counters["applied"] += n
-        counters["last_flush"] = time.monotonic()
-        svc.save_debounced()
-        if n:
-            await emit_state_refresh(n)
-            await emit_progress(f"已写入 {counters['applied']} 条，模型继续生成中…")
-            # 子步骤细分（2222 反馈）：每批流式落盘在时间线记一条子项，
-            # 长拆解过程不再只有「首拆完成」一个粗粒度节点
-            _note_ms = (time.monotonic() - counters["last_note"]) * 1000
-            counters["last_note"] = time.monotonic()
-            await emit_timeline_note(
-                f"流式落盘：本批写入 {n} 个分组（累计 {counters['applied']}）",
-                elapsed_ms=_note_ms,
-            )
-
-    async def on_delta(text: str) -> None:
-        buf_parts.append(text)
-        buf = "".join(buf_parts)
-        pos = scan["pos"]
-        if not scan["arr_started"]:
-            i = buf.find("[")
-            if i < 0:
-                return
-            scan["arr_started"] = True
-            pos = i + 1
-        objs, pos = _extract_complete_objects(buf, pos)
-        scan["pos"] = pos
-        for obj_text in objs:
-            try:
-                obj = json.loads(obj_text)
-            except json.JSONDecodeError:
-                continue  # 单条格式坏不影响其余条目（结尾整体回退兑底）
-            if isinstance(obj, dict):
-                pending.append(obj)
-        await flush()
-
-    _reasoning: List[str] = []
-    content, finish = await call_chat_completion_stream(
-        provider,
-        model,
-        [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        max_tokens=max_tokens,
-        timeout=180,
-        on_delta=on_delta,
-        reasoning_sink=_reasoning,
-        thinking_level=_executor_thinking(),
-    )
-    await flush(force=True)
-    # 黑匣子（888 事故）：截断/零产出时完整取证落盘，事后可直接看模型在纠结什么
-    if _is_truncated(finish) or counters["applied"] == 0:
-        from src.video_agent.skill_runtime.blackbox import dump_case
-
-        dump_case(
-            kind=tool_name,
-            reason=("output_truncated" if _is_truncated(finish) else "zero_output"),
-            system=system,
-            user=user,
-            content=content or "",
-            finish=finish,
-            reasoning=_reasoning,
-            extra={
-                "applied": counters["applied"],
-                "max_tokens": max_tokens,
-                "skill": skill_name,
-                "reasoning_chars": sum(len(r) for r in _reasoning),
-            },
-        )
-    return counters["applied"], warnings, content or "", finish
-
-
-# 执行器批次可识别的标题字段（与 action_executor 兜底链同义）：
-# 模型用这些键之外的字段名携带标题时，执行器直接拒收而非静默落默认标题
-_TITLE_KEYS = (
-    "title", "name", "label", "element_id", "element_name", "element_title",
-    "group_name", "group_title",
+from src.video_agent.skill_runtime.exec_spec import (
+    _build_state_context,
+    _executor_actions_from_llm,
+    _generate_soft_spec_candidates,
+    _llm_json_call,
 )
 
-
-def _action_has_title(action: Dict[str, Any]) -> bool:
-    """add_group 是否携带可识别的标题字段（含嵌套 group/data/patch）。"""
-    nested = action.get("group") or action.get("data") or {}
-    patch = action.get("patch") or {}
-    for src in (action, nested, patch):
-        if any(str(src.get(k) or "").strip() for k in _TITLE_KEYS):
-            return True
-    return False
-
-
-def _apply_actions(
-    svc: StateManager,
-    actions: List[Dict[str, Any]],
-    skill_content: str,
-    strip_prompts: bool = False,
-    only_group_type: str = "",
-) -> Tuple[int, List[str]]:
-    """执行 LLM 产出的 studio-actions（走既有闸机与持久化，未命中返回警告）。
-
-    only_group_type（非空时）：阶段边界的代码校验（宪法 P2 下沉）——
-    只允许指定类别的 add_group，越界分组拒收并回喂，替代 boundary prose 说服。
-    支持逗号分隔多类别（2222 二轮边界自适应）：Skill 章节同时覆盖多类分组
-    职责时放行对应类别，单一职责章节仍传单类别。
-    """
-    from src.video_agent.web.action_executor import StudioActionExecutor
-
-    if not actions:
-        return 0, ["执行器未产出有效操作（JSON 缺失或格式错误）"]
-    warnings: List[str] = []
-    # 阶段边界拒收（宪法 P2）：KE 执行器里建分镜/音频等越界分组直接丢弃
-    if only_group_type:
-        _wants = {
-            prompt_gates.normalize_structure_kind(k)
-            for k in str(only_group_type).split(",") if k.strip()
-        }
-        _wants.discard("")
-        _off = [
-            a for a in actions
-            if str(a.get("action") or "") == "add_group"
-            and prompt_gates.normalize_structure_kind(a.get("group_type") or "") not in _wants
-        ]
-        if _off:
-            actions = [a for a in actions if a not in _off]
-            warnings.append(
-                f"{len(_off)} 个越界分组被拒收（本阶段只允许 {only_group_type} 类别，请重新执行对应阶段执行器）"
-            )
-            logger.warning(f"[SkillExec] 拒收越界 add_group {len(_off)} 个（只允许 {only_group_type}）")
-    # 分镜完整度校验（4444 P7，require_at_ref 同款机械模式）：shot 的 sceneRefs
-    # 必须非空且覆盖标题提及的关键元素（标题点名的角色漏引 = 跨镜一致性断链）
-    if only_group_type and "shot" in {
-        prompt_gates.normalize_structure_kind(k)
-        for k in str(only_group_type).split(",") if k.strip()
-    }:
-        _ke_map = [
-            (str(k.get("title") or "").strip(), str(k.get("id") or ""))
-            for k in (svc.state_dict.get("keyElements") or [])
-            if isinstance(k, dict)
-        ]
-        _bad: List[Dict[str, Any]] = []
-        _bad_detail: List[str] = []
-        for a in actions:
-            if str(a.get("action") or "") != "add_group":
-                continue
-            if prompt_gates.normalize_structure_kind(a.get("group_type") or "") != "shot":
-                continue
-            src = a.get("group") or a.get("data") or a
-            refs = [str(r) for r in (src.get("sceneRefs") or []) if r]
-            title = str(src.get("title") or a.get("title") or "")
-            missing = [t for t, kid in _ke_map if t and t in title and kid not in refs]
-            if not refs or missing:
-                _bad.append(a)
-                _bad_detail.append(
-                    f"「{title[:12]}」缺 sceneRefs" if not refs
-                    else f"「{title[:12]}」漏引 {'、'.join(missing[:3])}"
-                )
-        if _bad:
-            actions = [a for a in actions if a not in _bad]
-            warnings.append(
-                f"{len(_bad)} 个分镜分组因 sceneRefs 缺失/漏引被拒收"
-                f"（{'；'.join(_bad_detail[:4])}）。sceneRefs 须非空并覆盖标题提及的"
-                "角色/场景，请补全引用后重试。"
-            )
-            logger.warning(f"[SkillExec] 分镜完整度校验拒收 {len(_bad)} 个：{'；'.join(_bad_detail[:4])}")
-    # 无标题 add_group 拒收（8888 事故：首拆 20 组全落默认标题「Agent 新建分组」，
-    # 自检按标题去重又完全失效导致重复建卡）：宁缺毋滥，零产出时由
-    # 调用方的回退重试路径带「必须携带 title」提示重新生成
-    untitled = [
-        a for a in actions
-        if str(a.get("action") or "") == "add_group" and not _action_has_title(a)
-    ]
-    if untitled:
-        actions = [a for a in actions if a not in untitled]
-        warnings.append(f"{len(untitled)} 个分组因未携带 title 字段被丢弃（将要求模型重试）")
-        logger.warning(f"[SkillExec] 拒收无标题 add_group {len(untitled)} 个")
-    if not actions:
-        return 0, warnings or ["执行器产出的分组全部缺失 title 字段"]
-    if strip_prompts:
-        from src.video_agent.skill_runtime.guard import strip_structure_actions
-
-        stripped = strip_structure_actions(actions)
-        if stripped:
-            warnings.append(f"已剥离结构阶段内联提示词 {stripped} 条（提示词由 write_media_prompt 阶段编写）")
-    ex = StudioActionExecutor(svc, gate_enabled=True)
-    # 结构阶段内联提示词剥离只在结构执行器启用（write_media_prompt 等
-    # 提示词阶段必须让 prompt 原样落盘，不能被结构纯净闸误剥）
-    ex.structure_phase = bool(strip_prompts)
-    ex.gate_rules = prompt_gates.parse_gate_rules(skill_content)
-    ex.gate_override = False
-    applied = ex.execute(actions)
-    warnings += list(ex.gate_warnings)
-    if applied < len(actions):
-        warnings.append(f"{len(actions) - applied} 个操作未匹配到目标或执行失败")
-    return applied, warnings
-
-
-async def _llm_json_call(
-    system: str,
-    user: str,
-    max_tokens: int = 4096,
-    provider: str = "",
-    model: str = "",
-) -> Dict[str, Any]:
-    """独立 LLM 调用并解析 JSON 输出（无 function calling 依赖）。
-
-    预算策略（1111 事故：推理模型思考占满 2048 额度，四次连续截断失败）：
-    - 初始预算先钳到模型输出上限（output_limit_for_model 查表）；
-    - finish_reason 撞上限被截断、或思考耗尽预算返回空内容 → 自动翻倍扩额重试一次；
-    - 扩到上限仍截断 → 抛明确的截断错误，不把残品 JSON 塞给解析器。
-    """
-    provider, model = _resolve_chat_provider(provider, model)
-    if not provider:
-        raise RuntimeError("当前工作区未配置可用的聊天供应商，请先在 API 配置页添加")
-    ceiling = output_limit_for_model(model)
-    budget = max(min(int(max_tokens or ceiling), ceiling), 1024)
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
-    content = ""
-    for attempt in (1, 2):
-        try:
-            content, finish = await call_chat_completion(
-                provider,
-                model,
-                messages,
-                max_tokens=budget,
-                timeout=settings.llm_json_timeout,
-                thinking_level=_executor_thinking(),
-            )
-        except GenerationError as e:
-            # 空内容多为推理模型思考吃光预算；预算未到顶就扩额重试一次
-            if attempt == 1 and "空内容" in str(e) and budget < ceiling:
-                budget = min(budget * 2, ceiling)
-                logger.warning(
-                    f"[SkillExec] LLM 返回空内容（疑输出预算耗尽），自动扩额至 {budget} 重试"
-                )
-                continue
-            raise
-        if _is_truncated(finish):
-            if attempt == 1 and budget < ceiling:
-                budget = min(budget * 2, ceiling)
-                logger.warning(
-                    f"[SkillExec] LLM 输出被截断（finish={finish}），自动扩额至 {budget} 重试"
-                )
-                continue
-            raise RuntimeError(
-                f"执行器 LLM 输出在模型输出上限（{budget} tokens）处被截断，"
-                "请缩短素材或改用输出上限更大的模型"
-            )
-        break
-    m = re.search(r"\{[\s\S]*\}", content or "")
-    if not m:
-        raise RuntimeError("执行器 LLM 未返回 JSON 结果")
-    try:
-        data = json.loads(m.group(0))
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"执行器 LLM 返回的 JSON 无法解析: {e}") from e
-    if not isinstance(data, dict):
-        raise RuntimeError("执行器 LLM 返回的 JSON 不是对象")
-    return data
-
-
-async def _generate_soft_spec_candidates(
-    svc: StateManager,
-    skill_name: str,
-    chat_provider: str,
-    chat_model: str,
-    summary: str,
-    script_content: str,
-) -> None:
-    """软制作参数候选出题（888 豪华版）：内层模型按剧本给六个维度各出
-    2~4 个候选，校验后落 interaction.spec_soft_candidates 供收集向导渲染。
-
-    规格流程按客观特征自动检测启用（2222 二轮）；维度来自 Skill 规格步骤
-    客观提取（4444：平台不预设维度）；任何失败静默回落（向导不渲染该维度）。
-    """
-    try:
-        from src.video_agent.skill_runtime.registry import spec_wizard_active
-
-        if not spec_wizard_active(skill_name):
-            return
-        dims = prompt_gates.skill_spec_dimensions(skill_name)
-        if not dims:
-            return
-        provider, model = _resolve_chat_provider(chat_provider, chat_model)
-        if not provider:
-            return
-        # 剧本体量客观边界（4444：1197 字剧本出 10 分钟候选的闹剧；
-        # 9999 二轮：旧 3 字/秒是旁白朗读速率，1197 字微剧本算出 7 分钟
-        # 上限仍不合理）——剧情类成片约 600 字剧本/分钟；按剧本正文实测，
-        # 收卷时超限候选剔除，全超则回落确定性梯度（不再出题给模型）
-        script_len = len(str(script_content or "").strip())
-        dur_cap_min = max(1, round(script_len / 600)) if script_len else 0
-        dur_note = (
-            f"（剧本约 {script_len} 字，剧情类成片约 600 字剧本/分钟，"
-            f"合理成片时长上限约 {dur_cap_min} 分钟；"
-            "含「时长」维度的候选必须落在该上限内，用「约 N 秒/分钟」表述）"
-            if dur_cap_min else ""
-        )
-        aspect_note = (
-            "（含「画幅」的维度候选只能从标准画幅比例中选："
-            "16:9、9:16、1:1、4:3、2.35:1，可附不超过 4 字的修饰）"
-            if any(_is_aspect_dim(d) for d in dims) else ""
-        )
-        # 长任务进度上报（2222 反馈）：内层候选出题 LLM 调用常耗时数十秒，
-        # 与 script_analyze 主调用一样先告知用户在等什么
-        await emit_progress("正在生成制片规格候选（独立 LLM 调用，预计数十秒）…")
-        data = await _llm_json_call(
-            "你是制片规格助手，只输出 JSON，不输出推理过程。",
-            (
-                "根据以下剧本，为下列制片维度各提出 2~4 个贴合题材与基调的候选值，"
-                "每个候选不超过 12 字。维度：" + "、".join(dims) + "。"
-                + dur_note + aspect_note + "\n"
-                "输出 JSON 对象，键为维度名，值为候选字符串数组。\n\n"
-                f"一句话总结：{summary}\n剧本开头：{script_content[:4000]}"
-            ),
-            max_tokens=4096,
-            provider=chat_provider,
-            model=chat_model,
-        )
-        cleaned: Dict[str, List[str]] = {}
-        for dim in dims:
-            vals = data.get(dim)
-            if not isinstance(vals, list):
-                continue
-            vs: List[str] = []
-            for v in vals:
-                s = str(v or "").strip()
-                if 1 < len(s) <= 24 and s not in vs:
-                    # 时长类维度体量过滤：候选分钟数超剧本粗估上限则剔除
-                    if dur_cap_min and "时长" in dim:
-                        mins = _candidate_minutes(s)
-                        if mins and mins > dur_cap_min:
-                            continue
-                    vs.append(s)
-            if dur_cap_min and "时长" in dim:
-                # 8888 二轮：时长候选按分钟值去重（「约 2 分钟」≈「约 120 秒」
-                # 是同一档），表述归一，不再给用户出重复选项
-                vs = _dedupe_duration_candidates(vs)
-            if _is_aspect_dim(dim):
-                # 画幅是渠道能力参数（确定性题）：模型自造的电影规格
-                # （如 1.43:1 IMAX）生成渠道出不了，归一到标准画幅白名单
-                vs = _normalize_aspect_candidates(vs)
-            elif dur_cap_min and "时长" in dim and len(vs) < 2:
-                # 模型候选全部超限：确定性梯度兜底（系统算，不再问模型）
-                vs = _duration_ladder(dur_cap_min)
-            if len(vs) >= 2:
-                cleaned[dim] = vs[:4]
-        if cleaned:
-            inter = svc.state_dict.setdefault("interaction", {})
-            inter["spec_soft_candidates"] = cleaned
-            svc.save_debounced()
-            logger.info(f"[SkillExec] 软参数候选已出题：{'、'.join(cleaned)}")
-    except Exception as e:
-        logger.warning(f"[SkillExec] 软参数候选出题失败（回落：向导不渲染软维度）: {e}")
-
-
-def _candidate_minutes(text: str) -> float:
-    """候选文案里的时长分钟数（「90 秒」→1.5，「10 分钟」→10）；解析不出返回 0。"""
-    m = re.search(r"(\d+(?:\.\d+)?)\s*(分钟|分|小时|秒)", str(text or ""))
-    if not m:
-        return 0.0
-    n = float(m.group(1))
-    unit = m.group(2)
-    return n * 60 if unit == "小时" else n / 60 if unit == "秒" else n
-
-
-def _dedupe_duration_candidates(vals: List[str]) -> List[str]:
-    """8888 二轮：时长候选按分钟值去重（同值留首个）并归一表述
-    （<1 分钟用「约 N 秒」，其余「约 N 分钟」）；解析不出分钟的原样保留。"""
-    out: List[str] = []
-    seen: set = set()
-    for v in vals:
-        mins = _candidate_minutes(v)
-        if mins <= 0:
-            if v not in seen:
-                seen.add(v)
-                out.append(v)
-            continue
-        key = round(mins * 4) / 4
-        if key in seen:
-            continue
-        seen.add(key)
-        if key < 1:
-            label = f"约 {int(key * 60)} 秒"
-        else:
-            label = f"约 {int(key)} 分钟" if key == int(key) else f"约 {key} 分钟"
-        out.append(label)
-    return out
-
-
-# ---------- 画幅候选客观归一（9999 二轮） ----------
-# 画幅比例是生成渠道的能力参数，属确定性题（13.5 三问 1+2）：
-# 候选只能命中标准画幅白名单，模型只选不造；有效候选不足时兜底平台标准集。
-_ASPECT_RATIO_WHITELIST: Tuple[str, ...] = (
-    "16:9", "9:16", "1:1", "4:3", "3:4", "2.35:1", "21:9",
-)
-_ASPECT_RATIO_LABELS: Dict[str, str] = {
-    "16:9": "16:9 横屏", "9:16": "9:16 竖屏", "1:1": "1:1 方形",
-    "4:3": "4:3 经典", "3:4": "3:4 竖屏", "2.35:1": "2.35:1 宽银幕",
-    "21:9": "21:9 宽银幕",
-}
-_ASPECT_DIM_HINTS = ("画幅", "比例", "aspect")
-_ASPECT_RATIO_RE = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*[:：]\s*(\d{1,2}(?:\.\d+)?)")
-
-
-def _is_aspect_dim(dim: str) -> bool:
-    low = str(dim or "").lower()
-    return any(h in low for h in _ASPECT_DIM_HINTS)
-
-
-def _normalize_aspect_candidates(vals: List[str]) -> List[str]:
-    """归一画幅候选到标准比例；有效命中不足 2 个时兜底平台标准四选。"""
-    out: List[str] = []
-    for v in vals:
-        m = _ASPECT_RATIO_RE.search(str(v or ""))
-        if not m:
-            continue
-        ratio = f"{m.group(1)}:{m.group(2)}"
-        if ratio not in _ASPECT_RATIO_WHITELIST:
-            continue
-        label = _ASPECT_RATIO_LABELS.get(ratio, ratio)
-        if label not in out:
-            out.append(label)
-        if len(out) >= 4:
-            break
-    if len(out) < 2:
-        out = ["16:9 横屏", "9:16 竖屏", "1:1 方形", "4:3 经典"]
-    return out
-
-
-def _duration_ladder(cap_min: int) -> List[str]:
-    """时长确定性候选（模型候选全部超上限时兜底）：上限以下均匀取档。"""
-    if cap_min <= 1:
-        return ["约 30 秒", "约 60 秒"]
-    out: List[str] = []
-    for v in (cap_min / 2, cap_min * 0.75, float(cap_min)):
-        v = round(v * 2) / 2
-        label = f"约 {int(v)} 分钟" if v == int(v) else f"约 {v} 分钟"
-        if label not in out:
-            out.append(label)
-    return out
-
-
-async def _fill_spec_values(
-    skill_name: str, dims: List[str], raw_state: Dict[str, Any],
-) -> Dict[str, str]:
-    """方案乙：未选软维度由模型按剧本填值（只出值、不出文档，4444）。"""
-    if not dims:
-        return {}
-    provider, model = _resolve_chat_provider("", "")
-    if not provider:
-        return {}
-    hint = _build_script_hint(raw_state)
-    data = await _llm_json_call(
-        "你是制片规格助手，只输出 JSON，不输出推理过程。",
-        (
-            "根据以下剧本，为每个制片维度填一个简洁值（≤20 字）。"
-            "维度：" + "、".join(dims) + "。输出 JSON 对象，键为维度名。\n\n"
-            f"剧本概要：{hint[:2000]}"
-        ),
-        max_tokens=1024,
-        provider=provider,
-        model=model,
-    )
-    return {
-        d: str(data.get(d) or "").strip()[:40]
-        for d in dims if str(data.get(d) or "").strip()
-    }
-
-
-def _build_state_context(svc: StateManager, limit: int = 12000) -> str:
-    """工作台状态 JSON（紧凑注入，超长截断）。"""
-    try:
-        ctx = svc.build_agent_context("bound") or ""
-    except Exception:
-        ctx = ""
-    return ctx[:limit] + ("\n……（状态超长已截断）" if len(ctx) > limit else "")
-
-
-async def _executor_actions_from_llm(
-    tool: str,
-    skill_name: str,
-    user_prompt: str,
-    skill_content: str,
-    svc: StateManager,
-    max_tokens: int = 8192,
-    strip_prompts: bool = False,
-    provider: str = "",
-    model: str = "",
-    system_extra: str = "",
-    only_group_type: str = "",
-    section_override: Optional[str] = None,
-) -> Tuple[int, List[str]]:
-    """通用执行器：注入章节 → LLM 产出 studio-actions → 应用并校验。"""
-    system = _skill_system_prompt(tool, skill_name, system_extra, section_override=section_override)
-    provider, model = _resolve_chat_provider(provider, model)
-    if not provider:
-        return 0, ["当前工作区未配置可用的聊天供应商，请先在 API 配置页添加"]
-    warnings: List[str] = []
-    last_content, last_finish = "", ""
-    for attempt in (1, 2):
-        content, finish = await call_chat_completion(
-            provider,
-            model,
-            [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=max_tokens,
-            timeout=180,
-            thinking_level=_executor_thinking(),
-        )
-        last_content, last_finish = content or "", finish or ""
-        actions = _parse_actions_from_text(content or "")
-        applied, warns = _apply_actions(
-            svc, actions, skill_content, strip_prompts=strip_prompts,
-            only_group_type=only_group_type,
-        )
-        warnings += warns
-        if applied:
-            return applied, warnings
-        # 自动重试一次（P0-4：失败兜底，禁止让主模型绕过执行器手动代拆）
-        user_prompt = (
-            user_prompt
-            + "\n\n（系统）上一次执行器输出未通过校验或未产出有效操作，"
-            "请严格按注入章节重新输出 studio-actions JSON；不要输出正文解释。"
-        )
-    # 黑匣子（888 事故）：非流式兜底路径异常也存档，取证链不留死角
-    from src.video_agent.skill_runtime.blackbox import dump_case
-    
-    dump_case(
-        kind=tool,
-        reason=("fallback_truncated" if _is_truncated(last_finish)
-                else "fallback_zero_output"),
-        system=system,
-        user=user_prompt,
-        content=last_content,
-        finish=last_finish,
-        extra={"skill": skill_name, "max_tokens": max_tokens},
-    )
-    return 0, warnings or ["执行器两次尝试均未产出有效操作"]
-
-
-# ---------- 输入 Schema ----------
 
 class SkillToolInput(BaseModel):
     skill_name: str = Field("", description="当前选中 Skill 名称（系统自动注入，一般无需填写）")
@@ -1117,8 +106,6 @@ class VideoAssemblerInput(SkillToolInput):
     user_text: str = Field("", description="用户附加要求（可选）")
 
 
-# ---------- 执行器实现 ----------
-
 class ScriptAnalyzeTool:
     name = "script_analyze"
     description = (
@@ -1131,14 +118,14 @@ class ScriptAnalyzeTool:
 
     async def aexecute(self, params: ScriptAnalyzeInput) -> SkillToolResult:
         if not tool_available(params.skill_name, self.name):
-            return SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 script_analyze 执行器")
+            return exec_common.SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 script_analyze 执行器")
         svc = StateManager.get_instance()
-        doc = _find_uploaded_doc(svc.state_dict, params.doc_name, params.doc_id)
+        doc = exec_common._find_uploaded_doc(svc.state_dict, params.doc_name, params.doc_id)
         if doc is None:
-            return SkillToolResult(success=False, error="未找到上传的剧本/素材文档，请先上传文件（txt/md/pdf 或图片）")
+            return exec_common.SkillToolResult(success=False, error="未找到上传的剧本/素材文档，请先上传文件（txt/md/pdf 或图片）")
         content = str(doc.get("content") or "")
         if not content:
-            return SkillToolResult(success=False, error="上传文档没有可解析的文本内容（扫描版 PDF 需改用文本/图片上传）")
+            return exec_common.SkillToolResult(success=False, error="上传文档没有可解析的文本内容（扫描版 PDF 需改用文本/图片上传）")
         user = (
             f"请分析以下上传素材《{doc.get('name')}》并输出 JSON：\n"
             "{\"summary\": \"一句话故事总结\", \"key_points\": [\"关键信息要点...\"]}\n\n"
@@ -1148,19 +135,19 @@ class ScriptAnalyzeTool:
         # 长任务进度上报（M6）：独立 LLM 调用前告知用户在等什么
         await emit_progress("正在解析剧本素材（独立 LLM 分析，预计数十秒）…")
         try:
-            data = await _llm_json_call(
-                _skill_system_prompt(self.name, params.skill_name),
+            data = await exec_spec._llm_json_call(
+                exec_common._skill_system_prompt(self.name, params.skill_name),
                 user,
                 max_tokens=4096,
                 provider=params.chat_provider,
                 model=params.chat_model,
             )
         except Exception as e:
-            return SkillToolResult(success=False, error=str(e))
+            return exec_common.SkillToolResult(success=False, error=str(e))
         summary = str(data.get("summary") or "")
         key_points = data.get("key_points") or []
         if not summary:
-            return SkillToolResult(success=False, error="执行器未返回故事总结")
+            return exec_common.SkillToolResult(success=False, error="执行器未返回故事总结")
         svc.state_dict["analysis"] = {
             "doc_name": doc.get("name"),
             "summary": summary,
@@ -1175,7 +162,7 @@ class ScriptAnalyzeTool:
             svc, params.skill_name, params.chat_provider, params.chat_model,
             summary, content,
         )
-        return SkillToolResult(success=True, data={
+        return exec_common.SkillToolResult(success=True, data={
             "summary": summary,
             "key_points": key_points,
             "detail": (
@@ -1185,21 +172,24 @@ class ScriptAnalyzeTool:
         })
 
 
-# ---------- 故事板三拆：关键元素 / 分镜 / 音频（原 storyboard_designer 拆分） ----------
-
 _KE_TASK = (
     "把项目拆解为关键元素（角色/场景/道具）。每项为 add_group，group_type=keyElement，"
     "携带 title/desc/badgeLabel（字段规范与拆解粒度以注入章节和《执行铁律》为准）。"
 )
+
+
 _KE_BOUNDARY = (
     "【本阶段边界】本阶段只创建关键元素（keyElement）分组（title/desc）。"
     "（越界分组与内联提示词由系统自动拒收/剥离，无需自行克制）"
 )
+
+
 _KE_SELFCHECK_BOUNDARY = (
     "【自检任务边界】本轮是已完成的关键元素拆解的第二遍逐场核对："
     "只输出遗漏元素的 add_group keyElement 动作（带 title/desc）；没有遗漏时只输出空数组 []。"
     "（重复元素与越界分组由系统自动去重/拒收）"
 )
+
 
 _SHOT_TASK = (
     "基于已确认的关键元素拆解分镜（镜头列表）。每项为 add_group，group_type=shot，"
@@ -1207,16 +197,21 @@ _SHOT_TASK = (
     "title 简洁概括本镜头（不超过 20 字）；roughDesc 只写一句话大概描述（不超过 80 字），"
     "逐条时间轴、对白、子镜头明细不放进 roughDesc——细节留给提示词编写阶段。"
 )
+
+
 _SHOT_BOUNDARY = (
     "【本阶段边界】本阶段只创建分镜（shot）分组；"
     "分镜的对话/旁白/动作结果与场景顺序必须忠实于剧本。"
     "（越界分组与内联提示词由系统自动拒收/剥离）"
 )
 
+
 _AUDIO_TASK = (
     "基于故事板拆解音频层（背景音乐/旁白/音效）。每项为 add_group，group_type=audio，"
     "携带 title/desc（风格、节奏、音色与时间范围）。"
 )
+
+
 _AUDIO_BOUNDARY = (
     "【本阶段边界】本阶段只创建音频（audio）分组。"
     "（越界分组与内联提示词由系统自动拒收/剥离）"
@@ -1243,7 +238,7 @@ async def _selfcheck_key_elements(
         str(g.get("title") or "").strip()
         for g in (svc.state_dict.get("keyElements") or [])
     ]
-    system = _skill_system_prompt(tool_name, skill_name, _KE_SELFCHECK_BOUNDARY)
+    system = exec_common._skill_system_prompt(tool_name, skill_name, _KE_SELFCHECK_BOUNDARY)
     user = (
         "以下是本项目已拆出的关键元素分组：\n"
         + ("\n".join(f"- {t}" for t in existing) if existing else "（暂无）")
@@ -1254,15 +249,15 @@ async def _selfcheck_key_elements(
         "badgeLabel 必填：人物/场景/关键道具/载具 等类别标签）；"
         "没有遗漏时只输出 []。不要输出正文解释。"
     )
-    content, _ = await call_chat_completion(
+    content, _ = await _gen.call_chat_completion(
         provider,
         model,
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
         max_tokens=8192,
         timeout=180,
-        thinking_level=_executor_thinking(),
+        thinking_level=exec_common._executor_thinking(),
     )
-    actions = _parse_actions_from_text(content or "")
+    actions = exec_common._parse_actions_from_text(content or "")
     if not actions:
         return 0, []
     # 客观去重：模型未对照已拆清单时，重复输出已有元素也不得重复建组
@@ -1277,7 +272,7 @@ async def _selfcheck_key_elements(
     if not actions:
         return 0, []
     # 阶段边界：自检轮只允许补建关键元素分组（代码校验，宪法 P2）
-    applied, warnings = _apply_actions(
+    applied, warnings = exec_common._apply_actions(
         svc, actions, skill_content, strip_prompts=True, only_group_type="keyElement",
     )
     if applied:
@@ -1328,8 +323,8 @@ async def _run_storyboard_split(
     （穷举 30+ 元素的 JSON 容易顶到 8192 导致模型提前收尾）。
     """
     svc = StateManager.get_instance()
-    spec = _read_spec_doc(svc.state_dict)
-    script_hint = _build_script_hint(svc.state_dict)
+    spec = exec_common._read_spec_doc(svc.state_dict)
+    script_hint = exec_common._build_script_hint(svc.state_dict)
     state_ctx = _build_state_context(svc)
     # 剧本放在提示词靠后位置（近生成端）：模型对首尾注意力最高，
     # 全文贴近末尾可提升拆解穷举度；任务指令殿后确保输出格式不被稀释
@@ -1357,7 +352,7 @@ async def _run_storyboard_split(
         "storyboard_shots": ("duration", "video_resolution", "video_channel"),
         "storyboard_audio": (),
     }.get(tool_name, ())
-    user += _spec_override_clauses(svc.state_dict, _override_kinds)
+    user += exec_common._spec_override_clauses(svc.state_dict, _override_kinds)
     entry = resolve_entry(params.skill_name)
     skill_content = entry.content if entry else ""
     # 输出预算（9999 事故：分镜拆解只给 8192，推理模型思考占满额度后零产出）：
@@ -1366,16 +361,16 @@ async def _run_storyboard_split(
     # 阶段边界的代码校验（宪法 P2）：允许的分组类别按注入章节结构自适应
     # （2222 二轮）——合并章节（Skill 说"一起设计"）放行对应多类，
     # 单一职责章节维持单类边界；逗号分隔串直接传 _apply_actions
-    _split_kind = ",".join(_split_kinds_for_section(tool_name, params.skill_name))
+    _split_kind = ",".join(exec_common._split_kinds_for_section(tool_name, params.skill_name))
     # 拆解前 ID 快照（回执实际建成清单 / 截断回滚用；覆盖全部放行类别）
     _ids_before = set()
     for _k in (_split_kind.split(",") if _split_kind else []):
         _cat_k = ops.category_for_group_type(_k) if _k else ""
         if _cat_k:
             _ids_before |= {g.get("id") for g in (svc.state_dict.get(_cat_k) or [])}
-    provider, model = _resolve_chat_provider(params.chat_provider, params.chat_model)
+    provider, model = exec_common._resolve_chat_provider(params.chat_provider, params.chat_model)
     if not provider:
-        return SkillToolResult(success=False, error="当前工作区未配置可用的聊天供应商，请先在 API 配置页添加")
+        return exec_common.SkillToolResult(success=False, error="当前工作区未配置可用的聊天供应商，请先在 API 配置页添加")
     # 长任务进度上报（M6）：拆解执行器单次 LLM 调用通常 30~90s，先告知在等什么
     await emit_progress(f"正在拆解故事板结构（{tool_name}，预计 30~90 秒）…")
     # 子步骤细分（2222 反馈）：时间线先记「首拆开始」，配合流式落盘批次子项
@@ -1385,9 +380,9 @@ async def _run_storyboard_split(
     await emit_timeline_note(f"首拆开始：模型流式生成{_split_cn}分组（边生成边写入）…")
     _t_first = time.monotonic()
     # 流式逐条落盘（Q5）：做好一个分组立即写入左侧，不等整次调用结束
-    system = _skill_system_prompt(tool_name, params.skill_name, boundary)
+    system = exec_common._skill_system_prompt(tool_name, params.skill_name, boundary)
     try:
-        applied, warnings, _content, _finish = await _stream_actions_progressive(
+        applied, warnings, _content, _finish = await exec_common._stream_actions_progressive(
             tool_name, params.skill_name, system, user, svc, skill_content,
             provider=provider, model=model, max_tokens=max_tokens, strip_prompts=True,
             only_group_type=_split_kind,
@@ -1398,7 +393,7 @@ async def _run_storyboard_split(
     # 流式路径撞 finish=length 不再收「部分成功」——回滚已写入残品，
     # 扩额整体重试一次；重试仍截断才记警告并走对账流程
     if _is_truncated(_finish):
-        _rolled = _rollback_split_groups(svc, _split_kind, _ids_before)
+        _rolled = exec_common._rollback_split_groups(svc, _split_kind, _ids_before)
         logger.warning(
             f"[SkillExec] {tool_name} 输出被截断（finish={_finish}，已写入 {applied}）："
             f"回滚 {_rolled} 个残品分组，扩额整体重试"
@@ -1406,7 +401,7 @@ async def _run_storyboard_split(
         await emit_state_refresh(0)
         await emit_progress("拆解输出撞上限被截断，已回退写入部分，正在扩额重试…")
         try:
-            applied, warnings, _content, _finish = await _stream_actions_progressive(
+            applied, warnings, _content, _finish = await exec_common._stream_actions_progressive(
                 tool_name, params.skill_name, system,
                 user + "\n\n（系统）上一次输出撞上限被截断。本次请更紧凑地输出："
                 "只保留必需字段、压缩每条描述篇幅，务必把所有分组完整输出，不要遗漏。",
@@ -1439,9 +434,9 @@ async def _run_storyboard_split(
             )
             warnings += warnings2
         except Exception as e:
-            return SkillToolResult(success=False, error=str(e))
+            return exec_common.SkillToolResult(success=False, error=str(e))
     if not applied:
-        return SkillToolResult(success=False, error="；".join(warnings) or "本次故事板拆解未产出任何分组")
+        return exec_common.SkillToolResult(success=False, error="；".join(warnings) or "本次故事板拆解未产出任何分组")
     # 首拆即显（Q3）：落盘后立即下发状态快照，左栏分组当场亮出来，
     # 不等后续自检轮跑完；同时在时间线记一条子步骤明细（Q2）
     _first_ms = (time.monotonic() - _t_first) * 1000
@@ -1455,7 +450,7 @@ async def _run_storyboard_split(
     # 大量背景杂物元素；长剧本漏项可由用户审阅后口头补）
     if tool_name == "storyboard_key_elements":
         try:
-            provider, model = _resolve_chat_provider(params.chat_provider, params.chat_model)
+            provider, model = exec_common._resolve_chat_provider(params.chat_provider, params.chat_model)
             if provider:
                 await emit_progress("首拆完成，正在对照剧本逐场自检补漏…")
                 _sc_t0 = time.monotonic()
@@ -1513,7 +508,7 @@ async def _run_storyboard_split(
         detail += f"（警告：本次输出被截断，已写入 {applied} 个疑似不完整，请对账补齐）"
     else:
         svc.clear_flow_events(f"{tool_name}_truncated")
-    return SkillToolResult(success=True, data={
+    return exec_common.SkillToolResult(success=True, data={
         "applied": applied,
         "detail": detail,
         "warnings": warnings,
@@ -1532,7 +527,7 @@ class StoryboardKeyElementsTool:
 
     async def aexecute(self, params: StoryboardSplitInput) -> SkillToolResult:
         if not tool_available(params.skill_name, self.name):
-            return SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 {self.name} 执行器")
+            return exec_common.SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 {self.name} 执行器")
         return await _run_storyboard_split(self.name, params, _KE_TASK, _KE_BOUNDARY)
 
 
@@ -1548,7 +543,7 @@ class StoryboardShotsTool:
 
     async def aexecute(self, params: StoryboardSplitInput) -> SkillToolResult:
         if not tool_available(params.skill_name, self.name):
-            return SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 {self.name} 执行器")
+            return exec_common.SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 {self.name} 执行器")
         return await _run_storyboard_split(self.name, params, _SHOT_TASK, _SHOT_BOUNDARY)
 
 
@@ -1564,7 +559,7 @@ class StoryboardAudioTool:
 
     async def aexecute(self, params: StoryboardSplitInput) -> SkillToolResult:
         if not tool_available(params.skill_name, self.name):
-            return SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 {self.name} 执行器")
+            return exec_common.SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 {self.name} 执行器")
         return await _run_storyboard_split(self.name, params, _AUDIO_TASK, _AUDIO_BOUNDARY)
 
 
@@ -1610,7 +605,11 @@ def _prompt_coverage_note(state: Dict[str, Any], target: str) -> str:
 # 888 事故复盘：每批 8 条长提示词+思考挤爆 8192 输出额度 → 缩到 4 条（甜点位：
 # 每批输出三四千 token 不爆额度，失败时浪费更少、续写更顺；调用次数仅翻倍）
 _PROMPT_BATCH_SIZE = 4    # 每批编写的分组数：单次调用输出小不超时，且每批落盘可中途审阅
+
+
 _PROMPT_BATCH_MAX_TOKENS = 16384  # 批次输出预算（与拆解执行器同档；8192 是 888 事故遗漏）
+
+
 _PROMPT_MAX_BATCHES = 48  # 分批循环上限（防无进展死循环；缩批后同步放宽）
 
 
@@ -1670,8 +669,8 @@ def _production_param_note(state: Dict[str, Any], has_ke: bool, has_shots: bool)
             notes.append(f"分镜视频提示词末尾附一行「推荐模型与分辨率：{rec}」")
         if cap:
             notes.append(
-                f"分镜最大时长已由制片规格定为 {_fmt_num(cap)} 秒，"
-                f"提示词标注的镜头时长上限为 {_fmt_num(cap)} 秒"
+                f"分镜最大时长已由制片规格定为 {exec_common._fmt_num(cap)} 秒，"
+                f"提示词标注的镜头时长上限为 {exec_common._fmt_num(cap)} 秒"
             )
     if not notes:
         return ""
@@ -1743,7 +742,7 @@ async def _write_prompt_batch(
     ) if has_shots else ""
     # 制作参数注入（7777 二轮）：推荐模型/分辨率/时长上限取自规格文档
     prod_note = _production_param_note(svc.state_dict, has_ke, has_shots)
-    system = _skill_system_prompt(
+    system = exec_common._skill_system_prompt(
         tool_name, skill_name,
         "【分批任务边界】本轮只为本批列出的分组编写提示词：只输出 update_draft"
         "（缺卡片用 add_draft），每个 patch 必须含非空 prompt；"
@@ -1775,7 +774,7 @@ async def _write_prompt_batch(
         f"当前工作台状态：\n{state_ctx}"
     )
     # 流式逐卡落盘（Q5）：写好一张提示词卡立即写入左侧，不等本批全部生成完
-    applied, warnings, content, finish = await _stream_actions_progressive(
+    applied, warnings, content, finish = await exec_common._stream_actions_progressive(
         tool_name, skill_name, system, user, svc, skill_content,
         provider=provider, model=model, max_tokens=max_tokens, flush_n=2,
     )
@@ -1784,8 +783,8 @@ async def _write_prompt_batch(
         warnings.append("本批输出撞上限被截断，已写入部分疑似不完整")
     if not applied:
         # 流式零产出回退整体解析（兼容非数组围栏输出）
-        actions = _parse_actions_from_text(content or "")
-        applied, warnings = _apply_actions(svc, actions, skill_content)
+        actions = exec_common._parse_actions_from_text(content or "")
+        applied, warnings = exec_common._apply_actions(svc, actions, skill_content)
     if applied:
         logger.info(f"[SkillExec] 提示词分批写入：本批 {applied} 条已落盘")
     return applied, warnings, truncated
@@ -1806,28 +805,28 @@ class WriteMediaPromptTool:
 
     async def aexecute(self, params: WriteMediaPromptInput) -> SkillToolResult:
         if not tool_available(params.skill_name, self.name):
-            return SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 write_media_prompt 执行器")
+            return exec_common.SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 write_media_prompt 执行器")
         svc = StateManager.get_instance()
-        spec = _read_spec_doc(svc.state_dict)
+        spec = exec_common._read_spec_doc(svc.state_dict)
         analysis = svc.state_dict.get("analysis") or {}
-        analysis_hint = _build_script_hint(svc.state_dict)
+        analysis_hint = exec_common._build_script_hint(svc.state_dict)
         kp = analysis.get("key_points") or []
         if kp:
             analysis_hint += f"\n关键要点：{'；'.join(str(k) for k in kp[:6])}"
         try:
-            provider, model = _resolve_chat_provider(params.chat_provider, params.chat_model)
+            provider, model = exec_common._resolve_chat_provider(params.chat_provider, params.chat_model)
         except Exception:
             provider, model = "", ""
         if not provider:
-            return SkillToolResult(success=False, error="当前工作区未配置可用的聊天供应商，请先在 API 配置页添加")
+            return exec_common.SkillToolResult(success=False, error="当前工作区未配置可用的聊天供应商，请先在 API 配置页添加")
         # 级联（业界基准 C5）：常规批先走快模型，纠正重试升级回主推理模型
-        fast_provider, fast_model = _resolve_cascade_fast(provider, model)
+        fast_provider, fast_model = exec_common._resolve_cascade_fast(provider, model)
         entry = resolve_entry(params.skill_name)
         skill_content = entry.content if entry else ""
 
         pending = _pending_prompt_groups(svc.state_dict, params.target, overwrite=params.overwrite)
         if not pending:
-            return SkillToolResult(success=True, data={
+            return exec_common.SkillToolResult(success=True, data={
                 "applied": 0,
                 "detail": ("目标范围内没有可重写的分组"
                            if params.overwrite else "目标范围内所有草稿均已持有提示词，无需编写"),
@@ -1973,7 +972,7 @@ class WriteMediaPromptTool:
             # 重写模式下续写必须再带 overwrite，否则剩余分组（持旧提示词）会被补写语义跳过
             again = ("请再次调用 write_media_prompt（重写任务需再带 overwrite=true），"
                      if params.overwrite else "请再次调用 write_media_prompt，")
-            return SkillToolResult(
+            return exec_common.SkillToolResult(
                 success=False,
                 error=(f"提示词编写未完成：{note}。已写入部分已落盘不会丢失；"
                        f"{again}将从缺失分组自动续写"),
@@ -1982,7 +981,7 @@ class WriteMediaPromptTool:
         svc.clear_flow_events("write_media_prompt_partial")
         verb = "重写" if params.overwrite else "写入"
         detail = f"已按 Skill 提示词写法分 {batch_no} 批{verb} {applied} 张草稿提示词（每批落盘，可在故事板逐批审阅）"
-        return SkillToolResult(success=True, data={
+        return exec_common.SkillToolResult(success=True, data={
             "applied": applied,
             "detail": detail,
             "warnings": warnings,
@@ -2001,7 +1000,7 @@ class AudioGenerateTool:
 
     async def aexecute(self, params: AudioGenerateInput) -> SkillToolResult:
         if not tool_available(params.skill_name, self.name):
-            return SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 audio_generate 执行器")
+            return exec_common.SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name or '未指定'}」未注册 audio_generate 执行器")
         svc = StateManager.get_instance()
         state_ctx = _build_state_context(svc)
         user = (
@@ -2026,10 +1025,10 @@ class AudioGenerateTool:
                 system_extra=extra,
             )
         except Exception as e:
-            return SkillToolResult(success=False, error=str(e))
+            return exec_common.SkillToolResult(success=False, error=str(e))
         if not applied:
-            return SkillToolResult(success=False, error="；".join(warnings) or "音频规划未产出任何更新")
-        return SkillToolResult(success=True, data={
+            return exec_common.SkillToolResult(success=False, error="；".join(warnings) or "音频规划未产出任何更新")
+        return exec_common.SkillToolResult(success=True, data={
             "applied": applied,
             "detail": f"已生成音频规划（{applied} 个更新；未生成音频文件）",
             "warnings": warnings,
@@ -2049,7 +1048,7 @@ class VideoAssemblerTool:
     async def aexecute(self, params: VideoAssemblerInput) -> SkillToolResult:
         section = tool_sections(params.skill_name, self.name)
         if not section and params.skill_name:
-            return SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name}」未注册 video_assembler 执行器")
+            return exec_common.SkillToolResult(success=False, error=f"当前 Skill「{params.skill_name}」未注册 video_assembler 执行器")
         svc = StateManager.get_instance()
         state = svc.state_dict
         lines: List[str] = []
@@ -2093,13 +1092,10 @@ class VideoAssemblerTool:
                 if l:
                     lines.append(f"  - {l}")
         plan = "\n".join(lines)
-        return SkillToolResult(success=True, data={
+        return exec_common.SkillToolResult(success=True, data={
             "plan": plan,
             "detail": "已生成组装方案（素材清单 + 时间轴顺序），可在画布中按此组装导出",
         })
-
-
-# ---------- 814E1/E2：通用章节执行器 + 依赖图调度 ----------
 
 
 def _resolve_section_text(entry: Optional[Any], section: str) -> str:
@@ -2148,11 +1144,11 @@ class SkillSectionRunTool:
         skill = params.skill_name or fallback_skill_from_state(svc.state_dict)
         entry = resolve_entry(skill)
         if entry is None:
-            return SkillToolResult(success=False, error=f"Skill「{skill or '未指定'}」未注册，请先选中 Skill")
+            return exec_common.SkillToolResult(success=False, error=f"Skill「{skill or '未指定'}」未注册，请先选中 Skill")
         section_text = _resolve_section_text(entry, params.section)
         if not section_text:
             avail = ", ".join(sorted((entry.sections or {}).keys())) or "（无）"
-            return SkillToolResult(
+            return exec_common.SkillToolResult(
                 success=False,
                 error=f"章节「{params.section}」未解析；可用 stage：{avail}",
             )
@@ -2165,8 +1161,8 @@ class SkillSectionRunTool:
             provider=params.chat_provider, model=params.chat_model,
         )
         if applied:
-            return SkillToolResult(success=True, data={"applied": applied, "warnings": warnings})
-        return SkillToolResult(success=False, error="; ".join(warnings or ["执行器未产出有效操作"]))
+            return exec_common.SkillToolResult(success=True, data={"applied": applied, "warnings": warnings})
+        return exec_common.SkillToolResult(success=False, error="; ".join(warnings or ["执行器未产出有效操作"]))
 
 
 class SkillPipelinePlanTool:
@@ -2188,7 +1184,7 @@ class SkillPipelinePlanTool:
         skill = params.skill_name or fallback_skill_from_state(svc.state_dict)
         flow = skill_planner_flow(skill)
         if not flow:
-            return SkillToolResult(success=False, error=f"Skill「{skill or '未指定'}」无 <planner> 流程章节")
+            return exec_common.SkillToolResult(success=False, error=f"Skill「{skill or '未指定'}」无 <planner> 流程章节")
         # B4b/F32：manifest 声明的 step_done_conditions（确定性评估优先于关键字猜测）
         from src.video_agent.skill_runtime.registry import resolve_entry
         conditions = None
@@ -2198,7 +1194,7 @@ class SkillPipelinePlanTool:
         status = dag.pipeline_status(flow, svc.state_dict, conditions)
         ready = [s for s in status if s["ready"]]
         batches = dag.topo_batches(dag.parse_steps(flow), dag.parse_dependencies(flow))
-        return SkillToolResult(success=True, data={
+        return exec_common.SkillToolResult(success=True, data={
             "steps": status,
             "ready_batch": ready,
             "parallel_batches": batches,

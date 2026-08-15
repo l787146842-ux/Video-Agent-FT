@@ -5,6 +5,9 @@ import src.video_agent.web.skill_docs as sd
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.skill_runtime import registry
 from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.skill_runtime import exec_common
+from src.video_agent.skill_runtime import exec_tools
+from src.video_agent.web import generation as gen_mod
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +36,7 @@ def _bridge_stream_calls(monkeypatch):
             await on_delta(content)
         return content, finish
 
-    monkeypatch.setattr(ex_mod, "call_chat_completion_stream", fake_stream)
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
 
 
 def _write(slug: str, content: str):
@@ -199,8 +202,8 @@ async def test_script_analyze_awaits_llm_call(monkeypatch, tmp_path):
     svc.state_dict["uploadedDocs"] = [
         {"id": "d1", "name": "剧本.md", "content": "剧本正文"}
     ]
-    monkeypatch.setattr(ex_mod, "call_chat_completion", fake_chat)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", fake_resolve)
+    monkeypatch.setattr(gen_mod, "call_chat_completion", fake_chat)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", fake_resolve)
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     tool = ScriptAnalyzeTool()
@@ -294,8 +297,8 @@ async def test_key_elements_selfcheck_fills_missing(monkeypatch, tmp_path):
     svc.state_dict["uploadedDocs"] = [
         {"id": "d1", "name": "剧本.md", "content": "剧本正文：关一帆与程心在蓝星"}
     ]
-    monkeypatch.setattr(ex_mod, "call_chat_completion", fake_chat)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", fake_resolve)
+    monkeypatch.setattr(gen_mod, "call_chat_completion", fake_chat)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", fake_resolve)
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     tool = StoryboardKeyElementsTool()
@@ -543,8 +546,8 @@ async def test_write_media_prompt_batched_fill(monkeypatch, tmp_path):
         ]
         return ('```studio-actions\n' + json.dumps(acts, ensure_ascii=False) + '\n```', "stop")
 
-    monkeypatch.setattr(ex_mod, "call_chat_completion", fake_chat)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     tool = WriteMediaPromptTool()
@@ -592,10 +595,10 @@ async def test_write_media_prompt_batches_split_by_size(monkeypatch, tmp_path):
         ]
         return ('```studio-actions\n' + json.dumps(acts, ensure_ascii=False) + '\n```', "stop")
 
-    monkeypatch.setattr(ex_mod, "call_chat_completion", fake_chat)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-    monkeypatch.setattr(ex_mod, "_PROMPT_BATCH_SIZE", 2)
+    monkeypatch.setattr(exec_tools, "_PROMPT_BATCH_SIZE", 2)
 
     tool = WriteMediaPromptTool()
     result = await tool.aexecute(
@@ -630,8 +633,8 @@ async def test_write_media_prompt_fails_when_no_progress(monkeypatch, tmp_path):
         return ('```studio-actions\n[{"action":"add_draft","group_id":"ke-1"},'
                 '{"action":"add_draft","group_id":"ke-2"}]\n```', "stop")
 
-    monkeypatch.setattr(ex_mod, "call_chat_completion", fake_chat)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     tool = WriteMediaPromptTool()
@@ -679,8 +682,8 @@ async def test_write_media_prompt_corrective_retry_after_empty_batch(monkeypatch
             ]
         return ('```studio-actions\n' + json.dumps(acts, ensure_ascii=False) + '\n```', "stop")
 
-    monkeypatch.setattr(ex_mod, "call_chat_completion", fake_chat)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     tool = WriteMediaPromptTool()
@@ -724,8 +727,8 @@ async def test_script_analyze_detail_carries_summary(monkeypatch, tmp_path):
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["uploadedDocs"] = [{"id": "d1", "name": "剧本.md", "content": "正文"}]
-    monkeypatch.setattr(ex_mod, "call_chat_completion", fake_chat)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
+    monkeypatch.setattr(gen_mod, "call_chat_completion", fake_chat)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     tool = ScriptAnalyzeTool()

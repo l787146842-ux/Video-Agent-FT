@@ -9,6 +9,9 @@ from src.video_agent.core import prompt_gates, spec_rules
 from src.video_agent.core.live_metrics import get_live_context, record_live_context
 from src.video_agent.skill_runtime import executors as ex_mod
 from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.skill_runtime import exec_common
+from src.video_agent.skill_runtime import exec_spec
+from src.video_agent.web import generation as gen_mod
 
 
 # ---------- item 6：分镜提示词时长客观补全 ----------
@@ -194,7 +197,7 @@ async def test_stream_progressive_applies_in_batches(monkeypatch, tmp_path):
                 await on_delta(c)
         return content, "stop"
 
-    monkeypatch.setattr(ex_mod, "call_chat_completion_stream", fake_stream)
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
 
     applied, warnings, content, finish = await ex_mod._stream_actions_progressive(
         "storyboard_key_elements", "技能", "system", "user", svc, "",
@@ -390,8 +393,8 @@ async def test_split_truncation_marks_incomplete_and_records_event(monkeypatch, 
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["shots"] = []
-    monkeypatch.setattr(ex_mod, "call_chat_completion_stream", fake_stream)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     result = await StoryboardShotsTool().aexecute(
@@ -559,8 +562,8 @@ async def test_script_analyze_generates_soft_candidates(monkeypatch, tmp_path):
     svc.state_dict["uploadedDocs"] = [
         {"id": "d1", "name": "剧本.md", "content": "程心看着二向箔展开。"},
     ]
-    monkeypatch.setattr(ex_mod, "_llm_json_call", fake_json)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
+    monkeypatch.setattr(exec_spec, "_llm_json_call", fake_json)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     result = await ScriptAnalyzeTool().aexecute(

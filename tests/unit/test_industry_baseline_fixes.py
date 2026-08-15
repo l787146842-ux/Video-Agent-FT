@@ -8,6 +8,7 @@ from src.video_agent.core import spec_rules
 from src.video_agent.skill_runtime import executors as ex_mod
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager
+from src.video_agent.skill_runtime import exec_common
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +59,7 @@ async def test_corrective_retry_carries_rejection_reasons_and_card_discipline(tm
         captured["system"] = system
         return 0, [], "[]", "stop"
 
-    monkeypatch.setattr(ex_mod, "_stream_actions_progressive", fake_stream)
+    monkeypatch.setattr(exec_common, "_stream_actions_progressive", fake_stream)
     svc = StateManager(str(tmp_path / "ws"))
     batch = [("keyElements", {"id": "ke-1", "title": "程心", "drafts": []})]
     await ex_mod._write_prompt_batch(
@@ -82,7 +83,7 @@ async def test_normal_batch_has_no_reason_block(tmp_path, monkeypatch):
         captured["system"] = system
         return 0, [], "[]", "stop"
 
-    monkeypatch.setattr(ex_mod, "_stream_actions_progressive", fake_stream)
+    monkeypatch.setattr(exec_common, "_stream_actions_progressive", fake_stream)
     svc = StateManager(str(tmp_path / "ws"))
     batch = [("keyElements", {"id": "ke-1", "title": "程心", "drafts": []})]
     await ex_mod._write_prompt_batch(

@@ -6,6 +6,8 @@ import pytest
 import src.video_agent.web.skill_docs as sd
 from src.video_agent.skill_runtime import dag, executors as ex_mod, registry
 from src.video_agent.state.manager import StateManager
+from src.video_agent.skill_runtime import exec_common
+from src.video_agent.web import generation as gen_mod
 
 PLANNER_TEXT = """**全流程阶段与依赖关系**
 
@@ -90,7 +92,7 @@ class TestGenericSectionExecutor:
         sd.save_skill_doc("custom", CUSTOM_SKILL)
         svc = StateManager(str(tmp_path))
         monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-        monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("mockp", "mockm"))
+        monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("mockp", "mockm"))
 
         actions_json = json.dumps([
             {"action": "add_group", "group_type": "keyElement",
@@ -101,7 +103,7 @@ class TestGenericSectionExecutor:
         async def fake_chat(provider, model, messages, **kwargs):
             return f"```studio-actions\n{actions_json}\n```", "stop"
 
-        monkeypatch.setattr(ex_mod, "call_chat_completion", fake_chat)
+        monkeypatch.setattr(gen_mod, "call_chat_completion", fake_chat)
         tool = ex_mod.SkillSectionRunTool()
         result = await tool.aexecute(ex_mod.SkillSectionRunInput(
             skill_name="自定义章节 Skill", section="my_custom_tool", task="拆关键元素",

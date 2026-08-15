@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.video_agent.state.manager import StateManager
+from src.video_agent.skill_runtime import exec_common
 
 
 @pytest.fixture
@@ -98,7 +99,7 @@ async def test_write_prompt_batch_shot_injects_at_rule(monkeypatch, tmp_path):
         captured["user"] = user
         return (0, [], "", "stop")
 
-    monkeypatch.setattr(ex_mod, "_stream_actions_progressive", fake_stream)
+    monkeypatch.setattr(exec_common, "_stream_actions_progressive", fake_stream)
     await ex_mod._write_prompt_batch(
         "write_media_prompt", "测试技能", "", svc, "prov", "model",
         [("shots", shot)], "规格", "摘要",
@@ -122,7 +123,7 @@ async def test_write_prompt_batch_keyelement_no_at_rule(monkeypatch, tmp_path):
         captured["system"] = system
         return (0, [], "", "stop")
 
-    monkeypatch.setattr(ex_mod, "_stream_actions_progressive", fake_stream)
+    monkeypatch.setattr(exec_common, "_stream_actions_progressive", fake_stream)
     await ex_mod._write_prompt_batch(
         "write_media_prompt", "测试技能", "", svc, "prov", "model",
         [("keyElements", svc.state_dict["keyElements"][0])], "规格", "摘要",
@@ -322,7 +323,7 @@ def wmp_env(tmp_path, monkeypatch):
     svc.state_dict["audioItems"] = []
     svc.state_dict["shots"] = _SHOTS_WITH_PROMPTS()
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
     yield svc
     registry.reset_registry()
 
@@ -353,7 +354,7 @@ async def test_write_media_prompt_overwrite_full_replaces_all(monkeypatch, wmp_e
     from src.video_agent.skill_runtime.executors import WriteMediaPromptInput, WriteMediaPromptTool
 
     svc = wmp_env
-    monkeypatch.setattr(ex_mod, "_stream_actions_progressive", _make_fake_stream(svc, write=True))
+    monkeypatch.setattr(exec_common, "_stream_actions_progressive", _make_fake_stream(svc, write=True))
     result = await WriteMediaPromptTool().aexecute(
         WriteMediaPromptInput(skill_name="重写技能", target="all_shots", overwrite=True)
     )
@@ -372,7 +373,7 @@ async def test_write_media_prompt_overwrite_interrupt_keeps_old_and_resumes(monk
 
     svc = wmp_env
     # 第一次：全部批次零产出（模拟内层调用挂死/被停止）
-    monkeypatch.setattr(ex_mod, "_stream_actions_progressive", _make_fake_stream(svc, write=False))
+    monkeypatch.setattr(exec_common, "_stream_actions_progressive", _make_fake_stream(svc, write=False))
     result1 = await WriteMediaPromptTool().aexecute(
         WriteMediaPromptInput(skill_name="重写技能", target="all_shots", overwrite=True)
     )
@@ -383,7 +384,7 @@ async def test_write_media_prompt_overwrite_interrupt_keeps_old_and_resumes(monk
     assert olds == ["旧提示词1", "旧提示词2", ""]
 
     # 第二次：恢复正常写入，断点续写补齐全部
-    monkeypatch.setattr(ex_mod, "_stream_actions_progressive", _make_fake_stream(svc, write=True))
+    monkeypatch.setattr(exec_common, "_stream_actions_progressive", _make_fake_stream(svc, write=True))
     result2 = await WriteMediaPromptTool().aexecute(
         WriteMediaPromptInput(skill_name="重写技能", target="all_shots", overwrite=True)
     )
@@ -399,7 +400,7 @@ async def test_write_media_prompt_overwrite_single_shot_scope(monkeypatch, wmp_e
     from src.video_agent.skill_runtime.executors import WriteMediaPromptInput, WriteMediaPromptTool
 
     svc = wmp_env
-    monkeypatch.setattr(ex_mod, "_stream_actions_progressive", _make_fake_stream(svc, write=True))
+    monkeypatch.setattr(exec_common, "_stream_actions_progressive", _make_fake_stream(svc, write=True))
     result = await WriteMediaPromptTool().aexecute(
         WriteMediaPromptInput(skill_name="重写技能", target="d2", overwrite=True)
     )

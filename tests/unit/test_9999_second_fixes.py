@@ -11,6 +11,8 @@ import pytest
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import executors as ex_mod
 from src.video_agent.state.manager import StateManager
+from src.video_agent.skill_runtime import exec_common
+from src.video_agent.skill_runtime import exec_spec
 
 _SPEC_FULL = (
     "- **画幅比例**：16:9\n- **目标时长**：约 4 分钟\n"
@@ -132,8 +134,8 @@ async def test_script_analyze_9999_candidates_objective(monkeypatch, tmp_path):
     svc.state_dict["uploadedDocs"] = [
         {"id": "d1", "name": "三体简短版.md", "content": script},
     ]
-    monkeypatch.setattr(ex_mod, "_llm_json_call", fake_json)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
+    monkeypatch.setattr(exec_spec, "_llm_json_call", fake_json)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     result = await ScriptAnalyzeTool().aexecute(

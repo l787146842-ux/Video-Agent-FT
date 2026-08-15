@@ -12,6 +12,8 @@ from src.video_agent.skill_runtime.progress import (
 from src.video_agent.state.manager import StateManager
 from src.video_agent.web import skill_docs as sd
 from src.video_agent.skill_runtime import registry
+from src.video_agent.skill_runtime import exec_common
+from src.video_agent.web import generation as gen_mod
 
 
 @pytest.fixture(autouse=True)
@@ -44,7 +46,7 @@ def _bridge_stream_calls(monkeypatch):
             await on_delta(content)
         return content, finish
 
-    monkeypatch.setattr(ex_mod, "call_chat_completion_stream", fake_stream)
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
 
 
 def _write(slug: str, content: str):
@@ -123,8 +125,8 @@ async def test_split_emits_notes_and_snapshots_and_sorts(monkeypatch, tmp_path):
     svc.state_dict["uploadedDocs"] = [
         {"id": "d1", "name": "剧本.md", "content": "剧本正文：罗辑在冥王星"}
     ]
-    monkeypatch.setattr(ex_mod, "call_chat_completion", fake_chat)
-    monkeypatch.setattr(ex_mod, "_resolve_chat_provider", fake_resolve)
+    monkeypatch.setattr(gen_mod, "call_chat_completion", fake_chat)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", fake_resolve)
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
     events = []
