@@ -83,7 +83,7 @@ src/video_agent/          后端（FastAPI 应用）
 src/web/                  前端（SolidJS SPA）
 static/                   构建产物 dist/ + images/ + api-settings 嵌入页（待重写进 SPA）
 prompts/                  外置 Prompt（Rule 6）
-data/                     供应商配置 / 技能文档 / 记忆 fallback（gitignore）
+data/                     供应商配置 / 技能文档 / 记忆 fallback（data/ 整体 gitignore；技能文档 data/skills/*.md 例外入库，是产品数据源）
 tests/                    unit / integration / e2e / fixtures/canvas（契约夹具）
 workspace/                运行时状态与资产（gitignore）
 ```
