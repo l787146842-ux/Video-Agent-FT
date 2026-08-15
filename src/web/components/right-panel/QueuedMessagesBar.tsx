@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from 'solid-js';
+import { For, Show, createSignal, createEffect } from 'solid-js';
 import {
   FiEdit2, FiExternalLink, FiMoreHorizontal, FiNavigation, FiTrash2,
 } from 'solid-icons/fi';
@@ -31,6 +31,12 @@ export function QueuedMessagesBar(props: {
   const [menuId, setMenuId] = createSignal('');
   /** 已点「引导」的条目 id：该条原位转圈圈等待轮间注入（不再顶部 toast 提醒） */
   const [guidedId, setGuidedId] = createSignal('');
+
+  // N5（三轮审核）：条目出队/清空后 spinner 终止，防转圈悬挂
+  createEffect(() => {
+    const id = guidedId();
+    if (id && !chatState.queuedMessages.some((m) => m.id === id)) setGuidedId('');
+  });
 
   /** 引导：队首优先 + 登记轮间注入（不打断当前操作；B0/F2 通道，G2 复用） */
   function guide(item: QueuedMessage) {

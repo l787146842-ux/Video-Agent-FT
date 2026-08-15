@@ -79,6 +79,10 @@ html.light {
     user-select: none;
   }
 
+  /* U3（三轮审核 D4）：button 基线重置——Tailwind 摘除后 preflight 消失，
+     浏览器默认白底/边框曾漏进暗色主题（文档面板白块）；根因修复，同类隐患一并清偿 */
+  button { background: transparent; border: none; font: inherit; color: inherit; }
+
   /* 滚动条*/
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }

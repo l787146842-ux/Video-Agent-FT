@@ -108,7 +108,7 @@ export default function SettingsView() {
 
         <Show when={!loading()} fallback={<div class="gs-loading">加载供应商…</div>}>
           <section class="gs-section">
-            <div class="gs-row">
+            <div class="gs-actions">
               <button type="button" class="btn-secondary" onClick={() => setProviders((prev) => [...prev, newProvider()])}>
                 添加供应商
               </button>
@@ -119,39 +119,10 @@ export default function SettingsView() {
             <For each={providers()}>
               {(p, idx) => (
                 <div class="provider-edit-card">
-                  <div class="gs-row">
-                    <label class="provider-field">
-                      <span>名称</span>
-                      <input
-                        class="custom-ratio-input" value={p.name || ''}
-                        onInput={(e) => patch(idx(), 'name', e.currentTarget.value)}
-                      />
-                    </label>
-                    <label class="provider-field">
-                      <span>标识(id)</span>
-                      <input
-                        class="custom-ratio-input" value={p.id || ''} placeholder="如 openai"
-                        onInput={(e) => patch(idx(), 'id', e.currentTarget.value.trim())}
-                      />
-                    </label>
-                    <label class="provider-field">
-                      <span>协议</span>
-                      <select
-                        class="custom-ratio-input" value={p.protocol || 'openai'}
-                        onChange={(e) => patch(idx(), 'protocol', e.currentTarget.value)}
-                      >
-                        <For each={PROTOCOL_OPTIONS}>
-                          {(o) => <option value={o.value}>{o.label}</option>}
-                        </For>
-                      </select>
-                    </label>
-                    <label class="provider-field provider-field-wide">
-                      <span>Base URL</span>
-                      <input
-                        class="custom-ratio-input" value={p.base_url || ''}
-                        onInput={(e) => patch(idx(), 'base_url', e.currentTarget.value.trim())}
-                      />
-                    </label>
+                  {/* U5（三轮审核 D1）：卡头=名称+id 徽标+启用+删除，视觉层级清晰 */}
+                  <div class="pv-head">
+                    <span class="pv-name">{p.name || '未命名供应商'}</span>
+                    <Show when={p.id}><span class="pv-id">{p.id}</span></Show>
                     <label class="provider-toggle">
                       <input
                         type="checkbox" checked={!!p.enabled}
@@ -159,52 +130,88 @@ export default function SettingsView() {
                       />
                       <span>启用</span>
                     </label>
+                    <button
+                      type="button" class="pv-delete" title="删除该供应商"
+                      onClick={() => setProviders((prev) => prev.filter((_, i) => i !== idx()))}
+                    >
+                      <FiTrash2 size={13} />
+                    </button>
                   </div>
-                  <div class="gs-row">
-                    <label class="provider-field provider-field-wide">
+                  <div class="pv-grid">
+                    <label class="pv-field">
+                      <span>名称</span>
+                      <input
+                        class="pv-input" value={p.name || ''} placeholder="供应商显示名"
+                        onInput={(e) => patch(idx(), 'name', e.currentTarget.value)}
+                      />
+                    </label>
+                    <label class="pv-field">
+                      <span>标识(id)</span>
+                      <input
+                        class="pv-input" value={p.id || ''} placeholder="如 openai"
+                        onInput={(e) => patch(idx(), 'id', e.currentTarget.value.trim())}
+                      />
+                    </label>
+                    <label class="pv-field">
+                      <span>协议</span>
+                      <select
+                        class="pv-input" value={p.protocol || 'openai'}
+                        onChange={(e) => patch(idx(), 'protocol', e.currentTarget.value)}
+                      >
+                        <Show when={!PROTOCOL_OPTIONS.some((o) => o.value === (p.protocol || 'openai'))}>
+                          <option value={p.protocol || ''}>{p.protocol ? `其它：${p.protocol}` : '请选择协议'}</option>
+                        </Show>
+                        <For each={PROTOCOL_OPTIONS}>
+                          {(o) => <option value={o.value}>{o.label}</option>}
+                        </For>
+                      </select>
+                    </label>
+                    <label class="pv-field">
+                      <span>Base URL</span>
+                      <input
+                        class="pv-input" value={p.base_url || ''} placeholder="https://…"
+                        onInput={(e) => patch(idx(), 'base_url', e.currentTarget.value.trim())}
+                      />
+                    </label>
+                    <label class="pv-field pv-span2">
                       <span>聊天模型（逗号分隔）</span>
                       <input
-                        class="custom-ratio-input" value={(p.chat_models || []).join(', ')}
+                        class="pv-input" value={(p.chat_models || []).join(', ')}
                         onInput={(e) => patch(idx(), 'chat_models', splitModels(e.currentTarget.value))}
                       />
                     </label>
-                  </div>
-                  <div class="gs-row">
-                    <label class="provider-field">
+                    <label class="pv-field">
                       <span>图片模型</span>
                       <input
-                        class="custom-ratio-input" value={(p.image_models || []).join(', ')}
+                        class="pv-input" value={(p.image_models || []).join(', ')}
                         onInput={(e) => patch(idx(), 'image_models', splitModels(e.currentTarget.value))}
                       />
                     </label>
-                    <label class="provider-field">
+                    <label class="pv-field">
                       <span>视频模型</span>
                       <input
-                        class="custom-ratio-input" value={(p.video_models || []).join(', ')}
+                        class="pv-input" value={(p.video_models || []).join(', ')}
                         onInput={(e) => patch(idx(), 'video_models', splitModels(e.currentTarget.value))}
                       />
                     </label>
-                    <label class="provider-field">
+                    <label class="pv-field pv-span2">
                       <span>API Key（留空保持现状）</span>
-                      <input
-                        type="password" class="custom-ratio-input" value={p.api_key || ''}
-                        placeholder={p.has_key ? '已配置（不回显）' : '未配置'}
-                        onInput={(e) => patch(idx(), 'api_key', e.currentTarget.value)}
-                      />
+                      <div class="pv-keyrow">
+                        <input
+                          type="password" class="pv-input" value={p.api_key || ''}
+                          placeholder={p.has_key ? '已配置（不回显）' : '未配置'}
+                          onInput={(e) => patch(idx(), 'api_key', e.currentTarget.value)}
+                        />
+                        <span class={`pv-keybadge ${p.has_key ? 'on' : ''}`}>{p.has_key ? '已配置' : '未配置'}</span>
+                      </div>
                     </label>
                   </div>
-                  <div class="gs-row">
+                  <div class="pv-foot">
                     <button type="button" class="btn-secondary" onClick={() => void fetchModels(idx())}>
                       <FiDownload size={12} /> 拉取模型
                     </button>
                     <button type="button" class="btn-secondary" onClick={() => void testConnection(idx())}>
                       <FiZap size={12} /> 测试连接
-                    </button>
-                    <button
-                      type="button" class="btn-secondary"
-                      onClick={() => setProviders((prev) => prev.filter((_, i) => i !== idx()))}
-                    >
-                      <FiTrash2 size={12} /> 删除
                     </button>
                   </div>
                 </div>
@@ -215,11 +222,11 @@ export default function SettingsView() {
 
         <section class="gs-section">
           <h3>安全说明（生产环境）</h3>
-          <div class="gs-row">
-            <label class="provider-field">
+          <div class="pv-grid">
+            <label class="pv-field pv-span2">
               <span>全局 X-API-Key（生产环境访问密钥；留空=不携带）</span>
               <input
-                type="password" class="custom-ratio-input"
+                type="password" class="pv-input"
                 value={getGlobalApiKey()}
                 placeholder="与后端 API_KEY 环境变量一致"
                 onInput={(e) => setGlobalApiKey(e.currentTarget.value)}

@@ -29,7 +29,13 @@ export function SkillPicker() {
   let btnRef: HTMLButtonElement | undefined;
 
   function onDocClick(e: MouseEvent) {
-    if (ref && !ref.contains(e.target as Node)) setOpen(false);
+    if (!ref) return;
+    // U4（三轮审核）：composedPath 取派发瞬间路径——删除按钮点击会同步换卡重渲染，
+    // 旧 e.target 脱 DOM 后 ref.contains 误判「面板外」导致面板误关
+    const path = e.composedPath();
+    if (path.includes(ref)) return;
+    if (confirmingId()) return; // 双保险：确认删除态不关面板
+    setOpen(false);
   }
   document.addEventListener('click', onDocClick);
   onCleanup(() => document.removeEventListener('click', onDocClick));
