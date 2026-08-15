@@ -4,8 +4,9 @@ import type { ApiProvider, Skill } from '@/types';
 /**
  * P2-2：输入区 pill 选择持久化 —— API/模型/Skill 记住上次选择（localStorage），
  * 默认值预填，供应商失效时回退首选可用项。
- * 代码内置 Skill（production-agent 等）已彻底移除：默认不再预填，
- * 残留无效 id 时回退到第一个文档 Skill。
+ * 代码内置 Skill（production-agent 等）已彻底移除：默认不再预填。
+ * B4/F28·D2 基线：默认无技能——残留无效 Skill id 同样返回空
+ * （不自动回落第一个文档 Skill），由「不使用技能」卡承载默认态。
  */
 
 const PROVIDERS: ApiProvider[] = [
@@ -56,9 +57,9 @@ describe('stores/agent-prefs（P2-2 pill 持久化）', () => {
     expect(prefs.agentAssetMode()).toBe('all');
   });
 
-  it('残留的已删除代码 Skill id（production-agent）回退到第一个文档 Skill', async () => {
+  it('残留的已删除代码 Skill id（production-agent）回退到默认无技能（D2 基线）', async () => {
     const prefs = await loadPrefs({ studioAgentSkill: 'production-agent' }, PROVIDERS, DOC_SKILLS);
-    expect(prefs.agentSkillId()).toBe('doc:demo');
+    expect(prefs.agentSkillId()).toBe('');
   });
 
   it('选择即写入 localStorage', async () => {

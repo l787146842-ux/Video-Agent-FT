@@ -94,8 +94,11 @@ def test_executor_runtime_block_forbids_false_claims():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("演示防虚报")
-    assert "严禁声称" in block
+    # 新基线（模型可见严禁清零后）：防虚报语义改客观表述——
+    # 「真的执行后才可声称完成」+「虚报会被状态对账识破」，行为约束不变
     assert "必须真的执行" in block
+    assert "才可声称完成" in block
+    assert "虚报结果会被状态对账识破" in block
     assert "无需手动调用" not in block
 
 

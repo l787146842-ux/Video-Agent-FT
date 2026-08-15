@@ -71,7 +71,7 @@ async def test_corrective_retry_carries_rejection_reasons_and_card_discipline(tm
     assert "提示词正文几乎全是英文" in sysp
     # 卡片面纪律：label 限长 + 增量信息（防介绍==提示词）
     assert "≤12 字短语" in sysp
-    assert "不得逐字誊写分组描述" in sysp
+    assert "逐字誊写分组描述不符合要求" in sysp
 
 
 async def test_normal_batch_has_no_reason_block(tmp_path, monkeypatch):
@@ -169,7 +169,10 @@ def test_system_md_no_anti_pause_sentence():
     txt = (PROJECT_ROOT / "prompts" / "planner" / "system.md").read_text(encoding="utf-8")
     assert "不要在每个阶段完成后都暂停" not in txt
     assert "用户已给出明确指令时不要使用" not in txt
-    assert "阶段确认唯一通道" in txt
+    # 新基线（双协议瘦身后）：暂停通道协议表述改为
+    # 「只能通过 request_confirmation 动作发起，只在正文写『请确认』无效」
+    assert "只能通过 request_confirmation 动作发起" in txt
+    assert "无效" in txt
 
 
 def test_pause_label_protocol_scoped_to_confirmation():

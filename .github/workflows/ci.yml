@@ -26,6 +26,8 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Run pytest
         run: python -m pytest tests/ -q --tb=short
+      - name: Prompt budget gate (宪法 §13.6：模型可见严禁数量 + system.md 体量)
+        run: python scripts/check_prompt_budget.py
       - name: API contract check (OpenAPI -> TS types)
         run: python scripts/gen_api_types.py --check
 

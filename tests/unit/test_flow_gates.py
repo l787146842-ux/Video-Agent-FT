@@ -233,7 +233,16 @@ class TestGateEnforcementTextPath:
         )
         assert svc.state_dict["shots"][0]["drafts"][0].get("prompt") == ""
         assert result.confirmation and "强制暂停" in result.confirmation
-        assert any("流程门禁拦截" in w for w in result.warnings)
+        # B2/F13 新基线：拦截原因入结构化 trace（前端渲染 chips），
+        # 不再重复写纯文本 warnings（防同屏双显）
+        from src.video_agent.core.tracer import AgentTracer
+
+        recent = AgentTracer.get_instance().get_recent_gates(20)
+        assert any(
+            g.get("rule_id") == "skill.flow.checkpoint" and not g.get("ok")
+            and "流程门禁拦截" in (g.get("message") or "")
+            for g in recent
+        )
 
 
 class TestUserOverrideBypass:

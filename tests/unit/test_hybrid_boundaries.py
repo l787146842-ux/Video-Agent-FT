@@ -130,7 +130,8 @@ def test_review_signal_unlocks_pending_and_promotes(svc):
     inter["confirmation_message"] = "请审阅"
 
     note = _consume_pending_confirmation(svc, "把主角改成红色")
-    assert "上一轮 Agent" in note
+    # 新基线（客观账本式文案）：注入上一轮暂停事实 + 本条消息即对该暂停的回应
+    assert "暂停等待确认" in note and "请审阅" in note
     assert inter["storyboard_pending"] is False
     assert inter["awaiting_confirmation"] is False
     assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "已确认"
@@ -413,7 +414,7 @@ def test_fc_spec_doc_written_injects_system_pause(monkeypatch):
             "name": "document_write",
             "arguments": json.dumps({"name": "制片规格.md", "content": "标题：测试"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written = asyncio.run(
+    applied, confirmation, *_rest, tool_results, docs_written, _warnings = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     assert applied == 1
     assert docs_written == ["制片规格.md"]
@@ -433,7 +434,7 @@ def test_fc_spec_doc_written_keeps_model_pause(monkeypatch):
             "name": "workflow_pause",
             "arguments": json.dumps({"message": "请审阅规格"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written = asyncio.run(
+    applied, confirmation, *_rest, tool_results, docs_written, _warnings = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     assert docs_written == ["制片规格.md"]
     assert confirmation == "请审阅规格"  # 模型自发暂停原样保留
@@ -449,7 +450,7 @@ def test_fc_non_spec_doc_written_no_pause(monkeypatch):
             "name": "document_write",
             "arguments": json.dumps({"name": "大纲.md", "content": "正文"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written = asyncio.run(
+    applied, confirmation, *_rest, tool_results, docs_written, _warnings = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     assert applied == 1
     assert docs_written == ["大纲.md"]
@@ -602,15 +603,18 @@ def test_spec_media_preference_global_settings_sole_source(set_global_setting):
 
 
 def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch, set_global_setting):
-    """image_generate 注入：全局设置渠道优先于中间面板选中草稿的供应商"""
+    """image_generate 注入优先级（B7 用户裁决基线）：草稿自身（中间面板直接选择）
+    > 全局设置；未带草稿供应商时才回落全局设置渠道。"""
     import asyncio
 
     set_global_setting("default_image_provider_id", "gemini-cli")
     set_global_setting("default_image_model", "auto")
-    tm = _CaptureToolManager()
-    runner = FCToolRunner(tool_manager=tm)
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
         lambda: {"documents": [{"name": "制片规格.md", "content": _SPEC_PREF_DOC}]}))
+
+    # 带草稿供应商：草稿自身优先（B7 优先级链首位）
+    tm = _CaptureToolManager()
+    runner = FCToolRunner(tool_manager=tm)
     response = ChatResponse(content="", tool_calls=[
         {"id": "c1", "type": "function", "function": {
             "name": "image_generate",
@@ -618,7 +622,14 @@ def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch, set_global_s
     ])
     asyncio.run(runner.execute(response, image_provider="custom-api"))
     _name, args = tm.captured[0]
-    assert args.get("provider_id") == "gemini-cli" and args.get("model") == "auto"
+    assert args.get("provider_id") == "custom-api"
+
+    # 未带草稿供应商：回落全局设置（唯一硬参数事实源）
+    tm2 = _CaptureToolManager()
+    runner2 = FCToolRunner(tool_manager=tm2)
+    asyncio.run(runner2.execute(response, image_provider=""))
+    _name2, args2 = tm2.captured[0]
+    assert args2.get("provider_id") == "gemini-cli" and args2.get("model") == "auto"
 
 
 async def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch, set_global_setting):
@@ -797,7 +808,7 @@ def test_fc_patch_current_rejects_bad_prompt(monkeypatch):
             "name": "storyboard_patch_draft",
             "arguments": json.dumps({"draft_id": "current", "patch": {"prompt": "x"}})}},
     ])
-    applied, confirmation, *_rest, tool_results, _docs = asyncio.run(
+    applied, confirmation, *_rest, tool_results, _docs, _warnings = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill",
                        selected_draft_id="d2", selected_type="keyElement"))
     assert applied == 0

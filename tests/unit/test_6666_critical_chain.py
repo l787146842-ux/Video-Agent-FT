@@ -96,8 +96,10 @@ def test_6666_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypa
             "arguments": json.dumps({"message": "剧本分析与全局参数设定已完成，请审阅"})}},
     ])
     _applied, confirmation, *_rest = asyncio.run(runner.execute(response, injected_skill="AI-短剧一站式生成"))
+    # 新基线（客观账本式文案）：关键步骤失败 → 诚实文案
+    # 「剧本分析未完成（执行失败）：<具体原因>」，不再出现「已完成」假声称
     assert "剧本分析未完成" in confirmation
-    assert "script_analyze 执行失败" in confirmation
+    assert "执行失败" in confirmation
     assert "剧本分析与全局参数设定已完成" not in confirmation
     assert raw["interaction"].get("pending_pause_kind") == ""
     assert raw["interaction"].get("awaiting_confirmation") is True
