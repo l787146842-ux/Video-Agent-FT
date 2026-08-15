@@ -386,7 +386,8 @@ def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any]
     """新建草稿时补印全局默认（8888 事故：草稿无值时被前端硬编码首选供应商回填污染）。
 
     补印顺序：分辨率/时长全局默认（草稿自带不覆盖）→ 供应商/模型
-    （规格文档偏好优先，其次全局设置默认；仅当草稿未自带 providerId 时补印，
+    （B7 唯一权威源=全局设置；仅当草稿未自带 providerId 时补印，
+    防前端默认首选供应商回填污染——参数栏与全局设置不一致；
     audioItems 跳过供应商补印）。返回是否发生补印。"""
     if not isinstance(draft, dict):
         return False

@@ -640,7 +640,7 @@ class FCToolRunner:
                     flow_gates.mark_blocked(reason)
                     continue
 
-            # --- 生图模型强制注入：规格文档偏好（用户意志）优先，其次中间面板选中的 provider 覆盖 mock ---
+            # --- 生图模型强制注入（B7）：草稿自身（中间面板直接选择）> 全局设置 > 平台默认 ---
             if name == "generate_image" and (
                 "adapter_provider" not in args or args.get("adapter_provider") in ("mock", "", None)
             ):

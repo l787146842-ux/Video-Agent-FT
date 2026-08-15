@@ -346,7 +346,7 @@ class ImageGenerateTool(BaseTool):
         if not targets:
             return ToolResult(success=False, error="未找到有提示词的草稿")
 
-        # 供应商回退链（8888 事故修复）：LLM 参数 → 规格文档偏好 → 草稿自带 providerId
+        # 供应商回退链（8888 事故修复；B7 唯一权威源=全局设置）：LLM 参数 → 全局设置 → 草稿自带 providerId
         # → 配置中首个可用生图供应商；LLM 常传空 provider，不回退会报「供应商 '' 未配置」
         provider_id = resolve_provider_ref(str(params.provider_id or "").strip())
         model = str(params.model or "").strip()

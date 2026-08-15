@@ -90,7 +90,16 @@ async def upload_files(files: list[UploadFile] = File(...)):
 
 @router.get("/image-proxy")
 async def image_proxy(url: str = Query(..., description="图片 URL")):
-    """后端代理下载图片，返回原始字节（供前端 Canvas 格式转换用，绕过 CORS）。"""
+    """后端代理下载图片，返回原始字节（供前端 Canvas 格式转换用，绕过 CORS）。
+
+    B6/F37：协议白名单 + 内网/回环校验（url_safety.validate_external_url 单一事实源，
+    防 SSRF/DNS rebinding）。"""
+    from src.video_agent.web.url_safety import validate_external_url
+
+    try:
+        validate_external_url(url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="仅支持 http/https URL")
     try:

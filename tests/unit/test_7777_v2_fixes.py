@@ -359,24 +359,51 @@ def executor(svc):
 
 
 class TestGuidanceQueue:
-    """待注入引导队列：登记/取走/项目隔离"""
+    """轮间引导登记/取走（B0 新机制：任务级队列，agent_task_manager；
+    原 web/guidance.py 队列为死代码，B6/F42 删除，测试迁移至新 API）"""
 
     def test_enqueue_drain_roundtrip(self):
-        from src.video_agent.web import guidance
+        import asyncio
 
-        assert guidance.enqueue_guidance("proj-x", "m1", "先回答我一个问题") is True
-        assert guidance.drain_guidance("proj-x") == [{"id": "m1", "text": "先回答我一个问题"}]
-        assert guidance.drain_guidance("proj-x") == []  # 取走即清空
+        from src.video_agent.web.agent_task_manager import get_agent_task_manager
 
-    def test_empty_rejected_and_project_isolated(self):
-        from src.video_agent.web import guidance
+        async def main():
+            tm = get_agent_task_manager()
 
-        assert guidance.enqueue_guidance("proj-y", "m2", "") is False
-        assert guidance.enqueue_guidance("", "m3", "hi") is False
-        guidance.enqueue_guidance("proj-a", "m4", "A")
-        guidance.enqueue_guidance("proj-b", "m5", "B")
-        assert [i["text"] for i in guidance.drain_guidance("proj-a")] == ["A"]
-        assert [i["text"] for i in guidance.drain_guidance("proj-b")] == ["B"]
+            async def noop():
+                return None
+
+            tm.create("proj-x", noop, task_id="gq-1")
+            assert tm.add_pending_guidance("gq-1", {"id": "m1", "text": "先回答我一个问题"}) is True
+            assert tm.drain_pending_guidance("gq-1") == [{"id": "m1", "text": "先回答我一个问题"}]
+            assert tm.drain_pending_guidance("gq-1") == []  # 取走即清空
+            tm.stop("gq-1")
+
+        asyncio.run(main())
+
+    def test_empty_rejected_and_task_isolated(self):
+        import asyncio
+
+        from src.video_agent.web.agent_task_manager import get_agent_task_manager
+
+        async def main():
+            tm = get_agent_task_manager()
+
+            async def noop():
+                return None
+
+            tm.create("proj-a", noop, task_id="gq-a")
+            tm.create("proj-b", noop, task_id="gq-b")
+            assert tm.add_pending_guidance("gq-a", {"id": "m2", "text": ""}) is False  # 空文本拒绝
+            assert tm.add_pending_guidance("", {"id": "m3", "text": "hi"}) is False     # 任务不存在拒绝
+            tm.add_pending_guidance("gq-a", {"id": "m4", "text": "A"})
+            tm.add_pending_guidance("gq-b", {"id": "m5", "text": "B"})
+            assert [i["text"] for i in tm.drain_pending_guidance("gq-a")] == ["A"]  # 任务级隔离
+            assert [i["text"] for i in tm.drain_pending_guidance("gq-b")] == ["B"]
+            tm.stop("gq-a")
+            tm.stop("gq-b")
+
+        asyncio.run(main())
 
 
 class TestGuidanceRoundInjection:

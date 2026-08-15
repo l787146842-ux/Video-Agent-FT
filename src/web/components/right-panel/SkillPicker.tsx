@@ -2,6 +2,8 @@ import { createSignal, For, Show, onCleanup } from 'solid-js';
 import { FiEye, FiZap, FiChevronDown, FiPlus, FiTrash2 } from 'solid-icons/fi';
 import { state, refreshSkills } from '@/stores/studio';
 import { agentSkillId, setAgentSkill } from '@/stores/agent-prefs';
+import { chatActions } from '@/stores/chat';
+import { editorToPlainText } from '@/lib/rich-input';
 import { deleteSkillDoc } from '@/api/docs';
 import { showToast } from '@/stores/toast';
 import { requestInsertSkill } from '@/lib/chat-input-bridge';
@@ -97,11 +99,17 @@ export function SkillPicker() {
 
       <Show when={open()}>
         <div class="skill-picker" style={panelStyle()}>
-          {/* B4/F28·D2：「不使用技能」卡——默认态，显式选择才激活 Skill 流程/闸机 */}
+          {/* B4/F28·D2：「不使用技能」卡——默认态，显式选择才激活 Skill 流程/闸机。
+              同时清空输入框里已插入的 Skill 引用块（防正文匹配回退重新绑定） */}
           <div
             class={`skill-picker-card skill-picker-none ${agentSkillId() === '' ? 'active' : ''}`}
             onClick={() => {
               setAgentSkill('');
+              const editor = document.getElementById('chatInputTextarea');
+              if (editor) {
+                editor.querySelectorAll('.skill-chip').forEach((n) => n.remove());
+                chatActions.setInput(editorToPlainText(editor as HTMLDivElement));
+              }
               setOpen(false);
             }}
           >
