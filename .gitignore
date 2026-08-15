@@ -32,6 +32,9 @@ Thumbs.db
 # 历史参考/旧版备份（不入库）
 .ref_old/
 
+# B6/F45：恢复现场归档副本不入库（本地保留，备份盘另存）
+docs/archive/
+
 # 临时测试目录
 .pytest_tmp/
 
