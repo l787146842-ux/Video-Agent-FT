@@ -12,6 +12,7 @@ Agent Chat Service — 聊天业务编排（从 routes/agent.py 抽离）。
 routes/agent.py 仅保留路由定义和请求/响应模型。
 """
 import asyncio
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -897,10 +898,31 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
 
 async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: bool) -> None:
     """流式失败统一出口：持久化错误消息 + 发 error 事件（透传上游原文）"""
+    text = _friendly_stream_error_text(e)
     if use_studio_context:
         async with svc.lock:
-            svc.add_chat_message("agent", f"[错误] {e}", model_name=body.model or "")
-    await emit({"type": SSE_ERROR, "detail": str(e), "error_code": getattr(e, "error_code", "INTERNAL_ERROR")})
+            svc.add_chat_message("agent", f"[错误] {text}", model_name=body.model or "")
+    await emit({"type": SSE_ERROR, "detail": text, "error_code": getattr(e, "error_code", "INTERNAL_ERROR")})
+
+
+def _friendly_stream_error_text(e: Exception) -> str:
+    """上游错误人话翻译（2222 反馈：裸 JSON 报错看不懂）。
+
+    预扣费额度不足等常见上游故障给出可操作提示；其余错误保持原文透传。
+    """
+    msg = str(e)
+    if "insufficient_user_quota" in msg or "预扣费" in msg:
+        m_remain = re.search(r"剩余额度[:：]\s*＄?\$?([\d.]+)", msg)
+        m_need = re.search(r"需要预扣费额度[:：]\s*＄?\$?([\d.]+)", msg)
+        detail = ""
+        if m_remain and m_need:
+            detail = f"（账户剩余 ${m_remain.group(1)}，本次需预扣 ${m_need.group(1)}）"
+        return (
+            f"上游供应商账户额度不足{detail}，无法预扣本次调用费用——这不是上下文超限。"
+            "上下文越长预扣越高，故常在任务后半程触发。"
+            "请为上游账户充值，或在 API 设置页切换其他供应商/模型后重试。"
+        )
+    return msg
 
 
 async def non_stream_worker(body: Any) -> Dict[str, Any]:

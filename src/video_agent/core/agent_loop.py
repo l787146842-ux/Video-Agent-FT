@@ -37,12 +37,20 @@ if TYPE_CHECKING:
 
 MAX_STEPS = settings.max_steps
 
-# llm_call(system_prompt, messages, stream_hook?) -> (content, finish_reason, fc_applied)
+# llm_call(system_prompt, messages, stream_hook?) -> (content, finish_reason, fc_applied[, plan_ms])
 # fc_applied: FC 路径已执行的 tool 数量（可选，默认 0）
+# plan_ms: 纯模型规划耗时（可选；缺省 0，兼容旧 3 元组实现/测试桩）
 # stream_hook: 可选流式增量回调，每段文本 await stream_hook(text)
-LlmCall = Callable[..., Awaitable[Tuple[str, str, int]]]
+LlmCall = Callable[..., Awaitable[Tuple[str, str, int, float]]]
 # context_builder() -> 最新的 system prompt（协议 + 实时状态）
 ContextBuilder = Callable[[], str]
+
+
+def _unpack_llm(ret: Tuple) -> Tuple[str, str, int, float]:
+    """解包 llm_call 返回值：4 元组 (content, finish, fc_applied, plan_ms)；
+    旧 3 元组实现 plan_ms 记 0（测试桩兼容）。"""
+    plan = float(ret[3]) if len(ret) > 3 else 0.0
+    return str(ret[0]), str(ret[1]), int(ret[2]), plan
 
 
 @dataclass
@@ -278,7 +286,6 @@ async def run_agent_loop(
         system_prompt = context_builder()  # 每轮刷新，让 LLM 看到上一轮执行后的最新状态
 
         # 过程时间线：模型推理轮本身也作为操作条目可见（读文档/调执行器之外的“思考”动作）
-        _llm_t0 = time.monotonic()
         await emit({
             "type": SSE_TOOL_STARTED,
             "id": f"llm-s{step}",
@@ -290,14 +297,10 @@ async def run_agent_loop(
         _plan_rec = tracer.record_action(
             "model_reasoning", f"Agent 正在规划本步动作（第 {step} 轮）", 0.0, True,
         )
-        content, finish_reason, fc_applied = await llm_call(system_prompt, messages, stream_hook)
-        await emit({
-            "type": SSE_TOOL_FINISHED,
-            "id": f"llm-s{step}",
-            "ok": True,
-            "elapsed_ms": round((time.monotonic() - _llm_t0) * 1000, 1),
-            "result_summary": f"Agent 规划完成（第 {step} 轮）",
-        })
+        content, finish_reason, fc_applied, plan_ms = _unpack_llm(
+            await llm_call(system_prompt, messages, stream_hook)
+        )
+        plan_total = float(plan_ms or 0.0)
 
         # 空/畸形响应防护：空响应或 MALFORMED_FUNCTION_CALL 连续发生 → 重试至多 2 次，
         # 达到上限后以明确故障文案收尾（不再静默落为「没有返回可见回复」）。
@@ -312,9 +315,20 @@ async def run_agent_loop(
                 elapsed_ms=0.0,
                 ok=True,
             )
-            content, finish_reason, fc_applied = await llm_call(system_prompt, messages, stream_hook)
-        # 814G2：规划条目耗时补填（含重试总耗时，与 live 视图口径一致）
-        _plan_rec["elapsed_ms"] = round((time.monotonic() - _llm_t0) * 1000, 1)
+            content, finish_reason, fc_applied, plan_ms = _unpack_llm(
+                await llm_call(system_prompt, messages, stream_hook)
+            )
+            plan_total += float(plan_ms or 0.0)
+        # 规划耗时只算纯模型规划（2222 反馈）：FC 工具执行时间由各工具条目独立展示，
+        # 不再把工具耗时叠进规划行导致「规划很慢」的错觉
+        await emit({
+            "type": SSE_TOOL_FINISHED,
+            "id": f"llm-s{step}",
+            "ok": True,
+            "elapsed_ms": round(plan_total, 1),
+            "result_summary": f"Agent 规划完成（第 {step} 轮）",
+        })
+        _plan_rec["elapsed_ms"] = round(plan_total, 1)
         if bad_retries == 2 and not str(content or "").strip() and fc_applied == 0:
             result.text = "输出异常：模型连续返回空/畸形输出，已重试 2 次；请重试或检查模型配置。"
             result.warnings.append("模型连续 3 次输出异常（空/畸形），已终止本轮")

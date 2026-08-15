@@ -49,6 +49,34 @@ export function timelineFromMessage(msg: ChatMessage): { reasoning: string; item
   return { reasoning, items };
 }
 
+/** 执行器工具 → 大阶段名（阶段完成卡只展示大阶段，不重复正文细节） */
+const STAGE_TOOL_LABELS: Array<[string, string]> = [
+  ['script_analyze', '剧本分析'],
+  ['storyboard_key_elements', '关键元素拆解'],
+  ['storyboard_shots', '分镜设计'],
+  ['storyboard_audio', '音频层设计'],
+  ['write_media_prompt', '媒体提示词编写'],
+  ['image_generate', '设定图生成'],
+  ['audio_generate', '音频生成'],
+  ['video_assembler', '时间线组装'],
+];
+
+/**
+ * 推导本轮完成的「大阶段」名：按执行顺序取最后一个命中的阶段执行器。
+ * 无阶段执行器（如纯确认轮）返回空串，卡片回退通用「阶段完成」。
+ */
+export function stageLabelFromMessage(msg: ChatMessage): string {
+  const steps = msg.trace?.steps || [];
+  let label = '';
+  steps.forEach((s) => {
+    (s.actions || []).forEach((a: TraceAction) => {
+      const hit = STAGE_TOOL_LABELS.find(([tool]) => a.name === tool);
+      if (hit) label = hit[1];
+    });
+  });
+  return label;
+}
+
 /**
  * Agent 过程时间线（深度思考 + 已处理操作，两个折叠面板）。
  * 内容全部来自 SSE 一次性事件 / 消息 trace 字段，不进下次 LLM 上下文。

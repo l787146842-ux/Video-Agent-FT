@@ -508,7 +508,7 @@ async def _stream_actions_progressive(
     buf_parts: List[str] = []
     scan = {"pos": 0, "arr_started": False}
     pending: List[Dict[str, Any]] = []
-    counters = {"applied": 0, "last_flush": time.monotonic()}
+    counters = {"applied": 0, "last_flush": time.monotonic(), "last_note": time.monotonic()}
     warnings: List[str] = []
 
     async def flush(force: bool = False) -> None:
@@ -532,6 +532,14 @@ async def _stream_actions_progressive(
         if n:
             await emit_state_refresh(n)
             await emit_progress(f"已写入 {counters['applied']} 条，模型继续生成中…")
+            # 子步骤细分（2222 反馈）：每批流式落盘在时间线记一条子项，
+            # 长拆解过程不再只有「首拆完成」一个粗粒度节点
+            _note_ms = (time.monotonic() - counters["last_note"]) * 1000
+            counters["last_note"] = time.monotonic()
+            await emit_timeline_note(
+                f"流式落盘：本批写入 {n} 个分组（累计 {counters['applied']}）",
+                elapsed_ms=_note_ms,
+            )
 
     async def on_delta(text: str) -> None:
         buf_parts.append(text)
@@ -823,6 +831,9 @@ async def _generate_soft_spec_candidates(
             "16:9、9:16、1:1、4:3、2.35:1，可附不超过 4 字的修饰）"
             if any(_is_aspect_dim(d) for d in dims) else ""
         )
+        # 长任务进度上报（2222 反馈）：内层候选出题 LLM 调用常耗时数十秒，
+        # 与 script_analyze 主调用一样先告知用户在等什么
+        await emit_progress("正在生成制片规格候选（独立 LLM 调用，预计数十秒）…")
         data = await _llm_json_call(
             "你是制片规格助手，只输出 JSON，不输出推理过程。",
             (
@@ -1231,7 +1242,8 @@ async def _selfcheck_key_elements(
         + "\n\n" + script_hint + "\n\n"
         "请按剧本逐场/逐段核对是否有遗漏的关键元素（补建粒度与克制要求按《执行铁律》第 2 条）。\n"
         "只输出遗漏元素的 studio-actions JSON 数组"
-        "（add_group，group_type=keyElement，带 title/desc）；"
+        "（add_group，group_type=keyElement，带 title/desc/badgeLabel；"
+        "badgeLabel 必填：人物/场景/关键道具/载具 等类别标签）；"
         "没有遗漏时只输出 []。不要输出正文解释。"
     )
     content, _ = await call_chat_completion(
@@ -1358,6 +1370,11 @@ async def _run_storyboard_split(
         return SkillToolResult(success=False, error="当前工作区未配置可用的聊天供应商，请先在 API 配置页添加")
     # 长任务进度上报（M6）：拆解执行器单次 LLM 调用通常 30~90s，先告知在等什么
     await emit_progress(f"正在拆解故事板结构（{tool_name}，预计 30~90 秒）…")
+    # 子步骤细分（2222 反馈）：时间线先记「首拆开始」，配合流式落盘批次子项
+    # 与「首拆完成/自检」构成完整细分链路
+    _split_cn = {"storyboard_key_elements": "关键元素",
+                 "storyboard_shots": "分镜", "storyboard_audio": "音频"}.get(tool_name, "结构")
+    await emit_timeline_note(f"首拆开始：模型流式生成{_split_cn}分组（边生成边写入）…")
     _t_first = time.monotonic()
     # 流式逐条落盘（Q5）：做好一个分组立即写入左侧，不等整次调用结束
     system = _skill_system_prompt(tool_name, params.skill_name, boundary)

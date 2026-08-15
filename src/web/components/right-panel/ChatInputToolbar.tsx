@@ -4,7 +4,7 @@ import {
 import {
   agentProvider, setAgentProvider, agentModel,
 } from '@/stores/agent-prefs';
-import { createSignal, createEffect, onMount, Show } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Show } from 'solid-js';
 import { apiProvidersFor } from '@/lib/providers';
 import { getContextUsage, type ContextUsage } from '@/api/agent';
 import { chatState } from '@/stores/chat';
@@ -52,6 +52,13 @@ export function ChatInputToolbar(props: {
     if (!chatState.isStreaming) return;
     void chatState.streamingTools.length;
     refreshUsage();
+  });
+  // 推理中 5s 轮询兜底（2222 反馈：长规划轮没有工具事件，用量几分钟不动）；
+  // 后端 live 度量在每次 LLM 调用前更新，轮询即可看到用量随步骤增长
+  createEffect(() => {
+    if (!chatState.isStreaming) return;
+    const timer = setInterval(refreshUsage, 5000);
+    onCleanup(() => clearInterval(timer));
   });
   const usageLabel = () => {
     const u = usage();

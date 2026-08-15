@@ -1,6 +1,6 @@
 import { For, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import {
-  FiCheckCircle, FiChevronDown, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
+  FiCheckCircle, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
 } from 'solid-icons/fi';
 import { renderMarkdown } from '@/lib/markdown';
 import { sendUserMessage } from '@/lib/agent-actions';
@@ -10,7 +10,7 @@ import { safeUrl } from '@/lib/utils';
 import { createImageDrag, absUrl } from '@/lib/chat-image-drag';
 import { t } from '@/lib/locale';
 import { RichBubble } from './RichBubble';
-import { AgentTimeline, timelineFromMessage } from './AgentTimeline';
+import { AgentTimeline, timelineFromMessage, stageLabelFromMessage } from './AgentTimeline';
 import { ConfirmActions } from './ConfirmActions';
 import { UserRefBlocks } from './UserRefBlocks';
 import type { ChatMessage } from '@/types';
@@ -28,8 +28,6 @@ export function ChatMessageItem(props: {
 }) {
   const msg = () => props.message;
   const isUser = () => msg().sender === 'user';
-  // 814G1：阶段卡恢复可展开（用户调教版：默认展开，正文=本轮概述+执行清单）
-  const [stageOpen, setStageOpen] = createSignal(true);
   /** 原图预览（lightbox）当前打开的图片地址 */
   const [lightboxUrl, setLightboxUrl] = createSignal('');
 
@@ -51,10 +49,6 @@ export function ChatMessageItem(props: {
   /** 用户消息是否带 Skill / 文档引用块（Q5：渲染进气泡内部） */
   const hasRefBlocks = () =>
     ((msg().docBlocks || []).length > 0) || ((msg().skillBlocks || []).length > 0);
-
-  /** 确认文案（814G1：作为阶段卡展开正文的本轮概述） */
-  const confirmText = () =>
-    typeof msg().confirm === 'string' ? (msg().confirm as string).trim() : '';
 
   /** 是否含闸机拦截类警告（814F7：显示「本次放行」按钮的触发条件） */
   const hasGateWarning = () =>
@@ -169,43 +163,23 @@ export function ChatMessageItem(props: {
         </div>
       </Show>
 
-      {/* 阶段完成卡（814G1 恢复可展开：标题+操作数徽标，展开正文=本轮概述+执行清单） */}
+      {/* 阶段完成卡（2222 反馈：只展示大阶段名，不重复正文细节；
+          具体操作明细在下方过程时间线查看） */}
       <Show when={msg().confirm}>
         <div class="stage-card">
-          <button
-            type="button"
-            class="stage-card-header"
-            onClick={() => setStageOpen(!stageOpen())}
-          >
+          <div class="stage-card-header">
             <FiCheckCircle size={15} class="stage-check" />
-            <span class="stage-card-title">{t('rp.msg.stageDone')}</span>
+            <span class="stage-card-title">
+              {stageLabelFromMessage(msg())
+                ? `${stageLabelFromMessage(msg())} · ${t('rp.msg.stageDone')}`
+                : t('rp.msg.stageDone')}
+            </span>
             <Show when={msg().appliedActions}>
               <span class="stage-card-badge">
                 {t('rp.msg.appliedOps', { count: msg().appliedActions ?? 0 })}
               </span>
             </Show>
-            <FiChevronDown
-              size={12}
-              class={`stage-card-arrow${stageOpen() ? ' open' : ''}`}
-            />
-          </button>
-          <Show when={stageOpen()}>
-            <div class="stage-card-body">
-              <Show when={confirmText()}>
-                <div
-                  class="chat_markdown stage-card-confirm"
-                  innerHTML={renderMarkdown(confirmText())}
-                />
-              </Show>
-              <Show when={(msg().actionLog || []).length > 0}>
-                <ul class="stage-card-ops">
-                  <For each={msg().actionLog || []}>
-                    {(op) => <li>{op}</li>}
-                  </For>
-                </ul>
-              </Show>
-            </div>
-          </Show>
+          </div>
         </div>
       </Show>
 

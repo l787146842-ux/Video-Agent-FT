@@ -19,6 +19,7 @@ from loguru import logger
 from src.video_agent.web.chat_service import stream_worker, non_stream_worker, sse_event_generator
 from src.video_agent.exceptions import AdapterError, GenerationError
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.core.live_metrics import get_live_context
 from src.video_agent.core.token_budget import context_window_for_model, estimate_tokens
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
@@ -254,6 +255,9 @@ async def get_context_usage(model: str = ""):
     - window_tokens: 当前模型上下文窗口（供前端算圆环填充比）
     """
     svc = StateManager.get_instance()
+    # 后台任务专属实例写盘后，全局单例内存可能陈旧（2222 反馈：用量一直 0）；
+    # 磁盘账本更新时先重载，保证静态估算不返回过期空值
+    svc.reload_if_stale()
     try:
         state_json = svc.build_agent_context("bound")
     except Exception as e:  # 上下文构建失败不应阻断用量展示
@@ -265,9 +269,13 @@ async def get_context_usage(model: str = ""):
     state_tokens = max(0, estimate_tokens(state_json) - _empty_state_baseline())
     history_tokens = estimate_tokens(history_json)
     chars = len(state_json) + len(history_json)
+    # 推理中实时值优先（2222 反馈）：主循环每次 LLM 调用前记录截断后的真实
+    # 上下文规模，180s 有效期内直接采用，静态估算作兜底
+    live = get_live_context(svc.active_project_id)
+    est_tokens = int(live["est_tokens"]) if live else state_tokens + history_tokens
     return {
         "chars": chars,
-        "est_tokens": state_tokens + history_tokens,
+        "est_tokens": est_tokens,
         "state_chars": len(state_json),
         "history_chars": len(history_json),
         "window_tokens": context_window_for_model(model) if model else 0,

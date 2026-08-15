@@ -40,6 +40,7 @@ from src.video_agent.core.fc_tool_runner import (
 )
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core import prompt_gates
+from src.video_agent.core.live_metrics import record_live_context
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_REASONING_DELTA, SSE_STATUS
 from src.video_agent.core.stream_suppressor import StreamActionSuppressor  # re-export 兼容旧导入
 from src.video_agent.core.tracer import AgentTracer
@@ -438,6 +439,9 @@ class Planner:
         tracer = AgentTracer.get_instance()
 
         async def llm_call(system_prompt: str, messages: List[Dict[str, Any]], hook=None) -> tuple:
+            # 纯规划计时（2222 反馈）：只量模型流/调用本身，FC 工具执行时间
+            # 不计入「Agent 正在规划本步动作」条目，避免规划行虚高掩盖工具耗时
+            _t_plan = time.monotonic()
             # 流式路径：使用 chat_stream + hook 回调
             if hook:
                 content_parts: List[str] = []
@@ -505,8 +509,10 @@ class Planner:
                     await hook(tail)
                 content = "".join(content_parts)
                 response = ChatResponse(content=content, finish_reason=finish, tool_calls=stream_tool_calls)
+                plan_ms = (time.monotonic() - _t_plan) * 1000
             else:
                 response = await self._call_llm(system_prompt, messages)
+                plan_ms = (time.monotonic() - _t_plan) * 1000
 
             content, finish, fc_applied, tool_results = await self._handle_fc_response(
                 response,
@@ -550,7 +556,7 @@ class Planner:
                     if isinstance(feedback, list):
                         strip_prior_feedback_images(messages)
                     messages.append({"role": "user", "content": feedback})
-            return content, finish, fc_applied
+            return content, finish, fc_applied, plan_ms
 
         # 构建 context_builder
         def context_builder() -> str:
@@ -837,6 +843,9 @@ class Planner:
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
         max_tokens = int(self._context_window() * settings.token_budget_ratio)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=self._system_degrader)
+        # 实时上下文度量（2222 反馈）：截断后的真实消息记入 live 注册表，
+        # context-usage 接口推理中即可看到用量随轮次增长
+        record_live_context(self.state_manager.active_project_id, full_messages)
 
         if self.llm_adapter is None:
             # 无 adapter 时返回空响应（mock 路径由上层处理）
@@ -862,6 +871,8 @@ class Planner:
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
         max_tokens = int(self._context_window() * settings.token_budget_ratio)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=self._system_degrader)
+        # 实时上下文度量（2222 反馈）：同 _call_llm，推理中用量可见
+        record_live_context(self.state_manager.active_project_id, full_messages)
 
         if self.llm_adapter is None:
             return

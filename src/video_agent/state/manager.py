@@ -450,6 +450,32 @@ class StateManager(UndoRedoMixin):
             pass
         return 0
 
+    def reload_if_stale(self) -> bool:
+        """磁盘账本比本实例已知号新（别的实例——如后台任务专属实例——写过
+        更新数据）时，从磁盘重载活跃项目状态，保证只读路径（context-usage
+        等）不返回陈旧值。返回是否重载。
+
+        本实例尚有防抖挂起写（_save_dirty）时跳过，避免冲掉未落盘的本地变更。
+        """
+        if self._save_dirty:
+            return False
+        pid = self._active_project_id
+        if not pid:
+            return False
+        disk_v = self._disk_board_version(pid)
+        if self._known_version is not None and disk_v <= self._known_version:
+            return False
+        loaded = self._repo.load_project(pid)
+        if loaded is None:
+            return False
+        self._raw_state = loaded
+        self._known_version = disk_v
+        self._state_dirty = True
+        self._context_cache.clear()
+        self._clear_undo_redo()
+        self._ensure_conversations()
+        return True
+
     @property
     def board_version(self) -> int:
         """当前项目版本号（同项目所有实例共享一本账，重启从落盘继承）。"""
