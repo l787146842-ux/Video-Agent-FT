@@ -5,7 +5,7 @@ Skill 的 <planner> 章节常带「依赖关系：3→1,2；4→3」式声明。
 输出「下一步可执行批次」——调度由代码计算（P2 约束下沉），主模型只执行。
 """
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # 步骤行：1. / 1、 / 1) 开头的编号行
 _STEP_RE = re.compile(r"(?m)^\s*(\d+)\s*[\.、)]\s*(.+)$")
