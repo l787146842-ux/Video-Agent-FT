@@ -151,6 +151,25 @@ class PromptBuilder:
             parts.append(selected_block)
 
         text = "\n\n".join(parts)
+        # B6/F36：组装明细入 live 注册表（context-usage 调试端点可读各段字符数）
+        try:
+            from src.video_agent.core import live_metrics
+
+            live_metrics.record_sections(
+                self._get_project_id(),
+                {
+                    "protocol": len(protocol) if context.use_studio_context else 0,
+                    "catalog": len(catalog),
+                    "iron_rules": len(parts[2]) if len(parts) > 2 and "执行铁律" in parts[2] else 0,
+                    "memory": sum(len(p) for p in parts if "历史记忆" in p),
+                    "channels": sum(len(p) for p in parts if "已配置的生成渠道" in p),
+                    "state": len(state_json) if context.use_studio_context else 0,
+                    "skill": len(selected_block),
+                    "total": len(text),
+                },
+            )
+        except Exception:
+            pass
         # 814F7 遥测：组装超限预警（各段字符数入账，便于定位臃胀来源）
         if len(text) > _SYSTEM_PROMPT_WARN_CHARS:
             logger.warning(

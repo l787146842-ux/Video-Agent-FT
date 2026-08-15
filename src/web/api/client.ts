@@ -13,6 +13,25 @@ export class ApiError extends Error {
   }
 }
 
+/** B6/F39：生产环境 X-API-Key 前端闭环——API 配置页写入 localStorage，
+ * 每次 /api 请求自动携带（开发模式后端不校验，头被忽略无害）。 */
+export const GLOBAL_API_KEY_STORAGE = 'ftdyb-api-key';
+
+export function getGlobalApiKey(): string {
+  try {
+    return localStorage.getItem(GLOBAL_API_KEY_STORAGE) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function setGlobalApiKey(key: string): void {
+  try {
+    if (key.trim()) localStorage.setItem(GLOBAL_API_KEY_STORAGE, key.trim());
+    else localStorage.removeItem(GLOBAL_API_KEY_STORAGE);
+  } catch { /* 隐私模式等场景静默 */ }
+}
+
 async function readError(res: Response): Promise<string> {
   try {
     const body = await res.json();
@@ -23,8 +42,11 @@ async function readError(res: Response): Promise<string> {
 }
 
 export async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+  const key = getGlobalApiKey();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (key) headers['X-API-Key'] = key;
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     ...opts,
   });
   if (!res.ok) {

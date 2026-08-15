@@ -29,6 +29,20 @@ def record_live_context(project_id: str, messages: List[Dict[str, Any]]) -> None
         pass
 
 
+# B6/F36：system prompt 组装明细（prompt_builder 写入，context-usage 返回）
+_SECTIONS: Dict[str, Dict[str, int]] = {}
+
+
+def record_sections(project_id: str, sections: Dict[str, int]) -> None:
+    """记录最近一次 system prompt 各段字符数（组装层可观测性，调试端点用）。"""
+    if project_id:
+        _SECTIONS[project_id] = dict(sections)
+
+
+def get_sections(project_id: str) -> Dict[str, int]:
+    return dict(_SECTIONS.get(project_id or "", {}))
+
+
 def get_live_context(project_id: str) -> Optional[Dict[str, Any]]:
     """取最近一次 live 记录；过期或不存在返回 None。"""
     rec = _LIVE.get(project_id or "")

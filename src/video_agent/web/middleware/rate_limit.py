@@ -48,10 +48,17 @@ class _TokenBucket:
         return False
 
 
-# 受限路径前缀 → 端点组（chat 严格配额 / generate 批量配额）
+# 受限路径前缀 → 端点组（chat 严格配额 / generate 批量配额 / write 普通写端点）
+# B6/F38：写端点扩面——上传/项目/故事板/对话/技能写操作纳入限流（防上传与
+# 状态写入类 DoS；此前仅 /api/agent/chat* 与 /api/generate* 受限）
 _LIMITED_PREFIXES: Tuple[Tuple[str, str], ...] = (
     ("/api/agent/chat", "chat"),
     ("/api/generate", "generate"),
+    ("/api/upload", "write"),
+    ("/api/project", "write"),
+    ("/api/storyboard", "write"),
+    ("/api/conversations", "write"),
+    ("/api/skills", "write"),
 )
 
 # 桶清理间隔（秒）：超过此时间未访问的 IP 桶会被回收
@@ -116,7 +123,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not group:
             return await call_next(request)
 
-        rate = self.generate_rate if group == "generate" else self.rate
+        rate = self.generate_rate if group in ("generate", "write") else self.rate
         client_ip = self._get_client_ip(request)
         key = (client_ip, group)
         bucket = self._buckets.get(key)

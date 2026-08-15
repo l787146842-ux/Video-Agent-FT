@@ -53,11 +53,12 @@ export function ChatInputToolbar(props: {
     void chatState.streamingTools.length;
     refreshUsage();
   });
-  // 推理中 5s 轮询兜底（2222 反馈：长规划轮没有工具事件，用量几分钟不动）；
+  // 推理中 15s 轮询兜底（2222 反馈：长规划轮没有工具事件，用量几分钟不动；
+  // B3/F27 降频合并：事件驱动为主，轮询仅作低频兜底）。
   // 后端 live 度量在每次 LLM 调用前更新，轮询即可看到用量随步骤增长
   createEffect(() => {
     if (!chatState.isStreaming) return;
-    const timer = setInterval(refreshUsage, 5000);
+    const timer = setInterval(refreshUsage, 15000);
     onCleanup(() => clearInterval(timer));
   });
   const usageLabel = () => {

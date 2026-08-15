@@ -2,7 +2,7 @@ import { createSignal, For, Show, onMount } from 'solid-js';
 import { A } from '@solidjs/router';
 import { FiArrowLeft, FiCheck, FiDownload, FiKey, FiSettings, FiTrash2, FiZap } from 'solid-icons/fi';
 import { getProviders } from '@/api/providers';
-import { apiPut, apiPost } from '@/api/client';
+import { apiPut, apiPost, getGlobalApiKey, setGlobalApiKey } from '@/api/client';
 import { showToast } from '@/stores/toast';
 import type { ApiProvider } from '@/types';
 
@@ -214,11 +214,22 @@ export default function SettingsView() {
         </Show>
 
         <section class="gs-section">
-          <h3>安全说明</h3>
+          <h3>安全说明（生产环境）</h3>
+          <div class="gs-row">
+            <label class="provider-field">
+              <span>全局 X-API-Key（生产环境访问密钥；留空=不携带）</span>
+              <input
+                type="password" class="custom-ratio-input"
+                value={getGlobalApiKey()}
+                placeholder="与后端 API_KEY 环境变量一致"
+                onInput={(e) => setGlobalApiKey(e.currentTarget.value)}
+              />
+            </label>
+          </div>
           <p class="gs-hint">
             <FiKey size={12} /> API Key 统一写入项目 API/.env（不入库、不回显）；
-            生产环境（ENVIRONMENT=production）下 /api/ 请求需携带 X-API-Key 头。
-            供应商列表保存于 data/api_providers.json，与画布侧 GET /api/providers 合并（本项目条目优先）。
+            生产环境（ENVIRONMENT=production）下 /api/ 请求需携带 X-API-Key 头——本页填写的
+            全局密钥会被前端所有 /api 请求自动携带（存于浏览器 localStorage）。
           </p>
         </section>
       </div>
