@@ -6,10 +6,9 @@ import { chatState, chatActions } from '@/stores/chat';
 import type { QueuedMessage } from '@/stores/chat';
 import { state as studioState } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
-import { stopAgentStream } from '@/hooks/use-sse';
+import { sendGuidanceToTask } from '@/hooks/use-sse';
 import { convActions } from '@/stores/conversations';
 import { sendUserMessage } from '@/lib/agent-actions';
-import { confirmDialog } from '@/components/shared/ConfirmDialog';
 import { t } from '@/lib/locale';
 
 /**
@@ -17,7 +16,10 @@ import { t } from '@/lib/locale';
  * 当前任务完成后由 ChatInput 的出队逻辑按序自动发出。
  *
  * 每条排队消息的操作：
- * - 引导：移到队首并停止当前推理 → 任务一结束立即用这条引导下一步
+ * - 引导（R3 不打断语义）：移到队首并登记到运行中任务的轮间注入队列，
+ *   后端在当前操作完成后的最近轮边界注入（不打断执行中的操作）；
+ *   注入成功由 guidance_injected 事件渲染气泡并出队；
+ *   任务不存在/已结束时保留队首，回落「任务结束后自动出队发送」。
  * - 删除：移出队列
  * - ⋯ 菜单：编辑消息（回填输入框）/ 在侧边聊天中打开（新建对话并发送）/ 关闭排队（清空队列）
  */
@@ -27,22 +29,14 @@ export function QueuedMessagesBar(props: {
 }) {
   /** 当前展开 ⋯ 菜单的排队条目 id */
   const [menuId, setMenuId] = createSignal('');
-  /** 已点「引导」的条目 id：该条原位转圈圈等待接管（不再顶部 toast 提醒） */
+  /** 已点「引导」的条目 id：该条原位转圈圈等待轮间注入（不再顶部 toast 提醒） */
   const [guidedId, setGuidedId] = createSignal('');
 
-  /** 引导：队首优先 + 停止当前推理（停止后自动出队发送这条）。
-   *  B0/F61：中断当前任务不可逆，加二次确认防误触 */
-  async function guide(item: QueuedMessage) {
-    const ok = await confirmDialog({
-      title: t('rp.queue.guideConfirmTitle'),
-      message: t('rp.queue.guideConfirmMessage', { text: item.displayText }),
-      confirmText: t('rp.queue.guideConfirmOk'),
-      danger: true,
-    });
-    if (!ok) return;
+  /** 引导：队首优先 + 登记轮间注入（不打断当前操作；B0/F2 通道，G2 复用） */
+  function guide(item: QueuedMessage) {
     chatActions.moveQueuedToFront(item.id);
     setGuidedId(item.id);
-    stopAgentStream();
+    sendGuidanceToTask(item.id, item.text);
   }
 
   /** 在侧边聊天中打开：新建对话窗口并把这条消息发过去（Agent 忙碌时禁止新建对话） */
