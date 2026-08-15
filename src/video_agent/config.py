@@ -155,6 +155,8 @@ class Settings:
     # Agent trace JSONL 体积轮转（W22/3.1）
     trace_file_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_FILE_MAX_BYTES", 2_000_000))
     trace_rotation_keep: int = field(default_factory=lambda: _env_int("TRACE_ROTATION_KEEP", 3))
+    # N6/L2（三轮审核）：trace 总容量上限（主文件+.N 合计，超则从最旧丢弃）
+    trace_total_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_TOTAL_MAX_BYTES", 20_000_000))
 
     # 上传限制
     max_upload_size_mb: int = field(default_factory=lambda: _env_int("MAX_UPLOAD_SIZE_MB", 50))

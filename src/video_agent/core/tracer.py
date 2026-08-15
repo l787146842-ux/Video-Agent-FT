@@ -51,6 +51,7 @@ class TraceRecord:
     total_actions: int = 0
     user_message_preview: str = ""  # 前 80 字符
     user_id: str = ""  # 多用户归属（814E6 基础，完整鉴权另行立项）
+    llm_calls: int = 0  # N6：本 trace 含模型调用次数（成本看板口径用）
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -60,6 +61,7 @@ class TraceRecord:
             "total_actions": self.total_actions,
             "user_message_preview": self.user_message_preview,
             "user_id": self.user_id,
+            "llm_calls": self.llm_calls,
             "steps": [
                 {
                     "step": s.step,
@@ -220,17 +222,33 @@ class AgentTracer:
             "ts": time.time(), "provider": provider, "model": model,
         })
 
+    def record_llm_call(self) -> None:
+        """N6（三轮审核）：当前 trace 模型调用 +1——成本看板平均耗时仅聚合含模型调用的轮。"""
+        if self._current is not None:
+            self._current.llm_calls += 1
+
     def metrics(self) -> Dict[str, Any]:
-        """B10：成本看板聚合（内存 + 文件 trace，按 trace_id 去重）。"""
+        """B10：成本看板聚合（内存 + 文件 trace，按 trace_id 去重）。
+
+        N6：平均耗时仅聚合 llm_calls>0 的 trace（零模型调用的引导卡/直出卡
+        不再拉低均值）；旧 trace 无 llm_calls 字段时回落全量口径。
+        """
         traces = self.get_recent_traces(limit=200)
-        total_ms = sum(float(t.get("total_ms") or 0) for t in traces)
+        llm_traces = [t for t in traces if int(t.get("llm_calls") or 0) > 0]
+        scope = "llm_rounds" if llm_traces else "all"
+        avg_base = llm_traces or traces
+        avg_ms = (
+            sum(float(t.get("total_ms") or 0) for t in avg_base) / len(avg_base)
+            if avg_base else 0.0
+        )
         steps = sum(len(t.get("steps") or []) for t in traces)
         actions = sum(int(t.get("total_actions") or 0) for t in traces)
         gates = [g for t in traces for s in (t.get("steps") or []) for g in (s.get("gates") or [])]
         intercepts = sum(1 for g in gates if not g.get("ok"))
         return {
             "traces_count": len(traces),
-            "avg_turn_ms": round(total_ms / len(traces), 1) if traces else 0.0,
+            "avg_turn_ms": round(avg_ms, 1),
+            "avg_turn_scope": scope,
             "total_steps": steps,
             "total_actions": actions,
             "gate_total": len(gates),
@@ -320,6 +338,18 @@ class AgentTracer:
             if first.exists():
                 first.unlink()
             self._persist_path.rename(first)
+            # N6/L2：总容量上限——合计超 cap 时从编号最大（最旧）的 .N 丢弃
+            cap = int(getattr(settings, "trace_total_max_bytes", 20_000_000))
+            for n in range(keep + 1, 0, -1):
+                files = [self._persist_path] + [
+                    self._persist_path.with_suffix(f".jsonl.{i}") for i in range(1, keep + 2)
+                ]
+                total = sum(f.stat().st_size for f in files if f.exists())
+                if total <= cap:
+                    break
+                oldest = self._persist_path.with_suffix(f".jsonl.{n}")
+                if oldest.exists():
+                    oldest.unlink()
         except Exception as e:
             logger.warning(f"[Tracer] trace 轮转失败（不影响主流程）: {e}")
 

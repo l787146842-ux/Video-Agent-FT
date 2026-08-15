@@ -21,6 +21,8 @@ from loguru import logger
 
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import SKILL_DOCS_DIR
+# N7（三轮审核）：pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
+from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: F401
 
 _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划线/连字符
 
@@ -380,11 +382,7 @@ def delete_skill_doc(slug: str) -> None:
         logger.warning(f"[SkillDocs] Skill 执行器注销失败 {slug}: {e}")
 
 
-# Skill 暂停点显式声明（可选 fenced json 块，info string = pause_rules）：
-# 判定优先级由 guard.skill_requires_stage_pause 掌握（manifest > 显式声明 > 关键词兜底）
-_PAUSE_RULES_BLOCK_RE = re.compile(
-    r"```(?:json|js)?\s*pause_rules\s*\n(.*?)```", re.S | re.I
-)
+# Skill 暂停点显式声明解析已下沉 skill_runtime.registry（N7），本文件经顶部 import re-export。
 # gate_rules 块格式校验用（与 prompt_gates.parse_gate_rules 的正则保持一致）
 _GATE_RULES_LINT_RE = re.compile(
     r"```(?:json|js)?\s*gate_rules\s*\n(.*?)```", re.S | re.I
@@ -494,27 +492,6 @@ def parse_skill_manifest(content: str) -> Optional[Dict[str, Any]]:
         "flow": flow,
         "pause": _parse_manifest_section(data.get("pause") or {}, _MANIFEST_PAUSE_KEYS),
     }
-
-
-def parse_pause_rules(content: str) -> Optional[Dict[str, Any]]:
-    """解析可选的 pause_rules 声明块；未声明/格式非法返回 None。
-
-    白名单键类型校验：stage_pause(bool)。显式声明优先于
-    「何时暂停/强制暂停点」关键词检测（换表述不再静默失效）。
-    """
-    m = _PAUSE_RULES_BLOCK_RE.search(content or "")
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(1))
-    except Exception:
-        return None
-    if not isinstance(data, dict):
-        return None
-    out: Dict[str, Any] = {}
-    if isinstance(data.get("stage_pause"), (bool, int)):
-        out["stage_pause"] = bool(data["stage_pause"])
-    return out
 
 
 def lint_skill_content(content: str) -> Dict[str, Any]:

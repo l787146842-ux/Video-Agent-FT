@@ -277,7 +277,7 @@ export default function GlobalSettingsView() {
             <Show when={metrics()} fallback={<div class="gs-loading">加载指标…</div>}>
               <div class="gs-row">
                 <ParamGroup label="轨迹数:"><span class="gs-metric-value">{metrics()!.traces_count}</span></ParamGroup>
-                <ParamGroup label="平均耗时:"><span class="gs-metric-value">{(metrics()!.avg_turn_ms / 1000).toFixed(1)}s</span></ParamGroup>
+                <ParamGroup label="平均耗时(模型轮):"><span class="gs-metric-value">{(metrics()!.avg_turn_ms / 1000).toFixed(1)}s</span></ParamGroup>
                 <ParamGroup label="总轮次:"><span class="gs-metric-value">{metrics()!.total_steps}</span></ParamGroup>
                 <ParamGroup label="闸机拦截率:">
                   <span class="gs-metric-value">

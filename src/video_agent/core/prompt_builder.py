@@ -12,6 +12,9 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
+# N7（三轮审核）：顶层化（registry 顶层不依赖 core，无环；live_metrics 同包）
+from src.video_agent.core import live_metrics
+from src.video_agent.skill_runtime.registry import skill_flow_enabled
 from src.video_agent.memory import MemoryManager
 from src.video_agent.utils.prompts import load_prompt
 
@@ -135,8 +138,6 @@ class PromptBuilder:
             if context.skill_name and self._get_raw_state is not None \
                     and prompt_gates.gate_mode() == "strict":
                 try:
-                    from src.video_agent.skill_runtime.registry import skill_flow_enabled
-
                     stage_note = ""
                     if skill_flow_enabled(context.skill_name, "spec_stage_trim"):
                         _, stage_note = prompt_gates.stage_tool_restrictions(self._get_raw_state())
@@ -153,8 +154,6 @@ class PromptBuilder:
         text = "\n\n".join(parts)
         # B6/F36：组装明细入 live 注册表（context-usage 调试端点可读各段字符数）
         try:
-            from src.video_agent.core import live_metrics
-
             live_metrics.record_sections(
                 self._get_project_id(),
                 {

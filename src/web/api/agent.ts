@@ -75,6 +75,8 @@ export function setRuntimeSettings(body: Partial<RuntimeSettings>): Promise<Runt
 export interface AgentMetrics {
   traces_count: number;
   avg_turn_ms: number;
+  /** N6：平均耗时口径（llm_rounds=仅含模型调用轮；all=旧数据回落全量） */
+  avg_turn_scope?: string;
   total_steps: number;
   total_actions: number;
   gate_total: number;

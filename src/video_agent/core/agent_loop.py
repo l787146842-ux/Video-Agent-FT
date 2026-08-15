@@ -31,6 +31,8 @@ from src.video_agent.core.sse_events import (
 )
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state, stage_label_for_tool
+# N7（三轮审核）：pause 声明消费顶层化（guard 依赖图与本文件既有导入重合，无环）
+from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
 
 if TYPE_CHECKING:
     # 仅类型标注用：执行器实现依赖 web 层生成管线，运行时不做硬依赖
@@ -678,8 +680,6 @@ async def run_agent_loop(
         _stage_pause_declared = False
         if skill:
             try:
-                from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
-
                 _stage_pause_declared = skill_requires_stage_pause(skill)
             except Exception:
                 _stage_pause_declared = False

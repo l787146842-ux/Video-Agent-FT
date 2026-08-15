@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.guard_pipeline import prompt_write_verdict
-from src.video_agent.skill_runtime.registry import resolve_entry
+from src.video_agent.skill_runtime.registry import resolve_entry, parse_pause_rules
 
 
 def strip_draft_prompt(draft: Dict[str, Any]) -> bool:
@@ -86,8 +86,6 @@ def skill_requires_stage_pause(skill_name: str) -> bool:
     if "stage_pause" in manifest_pause:
         return bool(manifest_pause["stage_pause"])
     content = entry.content or ""
-    from src.video_agent.web.skill_docs import parse_pause_rules
-
     rules = parse_pause_rules(content)
     if rules is not None and "stage_pause" in rules:
         return bool(rules["stage_pause"])

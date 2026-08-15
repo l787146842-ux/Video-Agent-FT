@@ -446,6 +446,8 @@ class Planner:
         tracer = AgentTracer.get_instance()
 
         async def llm_call(system_prompt: str, messages: List[Dict[str, Any]], hook=None) -> tuple:
+            # N6：主模型调用计数（成本看板平均耗时口径）
+            tracer.record_llm_call()
             # 纯规划计时（2222 反馈）：只量模型流/调用本身，FC 工具执行时间
             # 不计入「Agent 正在规划本步动作」条目，避免规划行虚高掩盖工具耗时
             _t_plan = time.monotonic()
