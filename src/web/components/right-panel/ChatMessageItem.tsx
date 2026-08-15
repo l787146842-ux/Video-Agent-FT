@@ -1,5 +1,6 @@
 /* eslint-disable max-lines */ // 消息流元素聚合（卡片/时间线/闸机 chips），拆分另行立项
 import { For, createSignal, Show, onMount, onCleanup } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
 import {
   FiCheckCircle, FiChevronDown, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
 } from 'solid-icons/fi';
@@ -29,6 +30,7 @@ export function ChatMessageItem(props: {
 }) {
   const msg = () => props.message;
   const isUser = () => msg().sender === 'user';
+  const navigate = useNavigate();
   /** 原图预览（lightbox）当前打开的图片地址 */
   const [lightboxUrl, setLightboxUrl] = createSignal('');
 
@@ -243,6 +245,16 @@ export function ChatMessageItem(props: {
           class="chat-bubble chat-markdown"
           innerHTML={renderMarkdown(msg().text)}
         />
+        {/* U1：鉴权/供应商类错误气泡附「检查 API 配置」跳转 */}
+        <Show when={msg().settingsHint}>
+          <button
+            type="button"
+            class="gate-override-btn"
+            onClick={() => navigate('/settings')}
+          >
+            {t('rp.msg.checkSettings')}
+          </button>
+        </Show>
       </Show>
 
       {/* 用户气泡：Skill 块/文档块与正文、内联媒体同一个气泡展示（Q5） */}

@@ -19,9 +19,7 @@
 - generate_video: 触发分镜视频生成。字段：target("all_shots"/具体 draft_id), provider_id, model, resolution, duration。
   确认校验同上（未确认的 Prompt Draft 会被系统拦截）。
   系统会自动将 sceneRefs 引用的关键元素概念图（多参考图）与草稿 refAssets/audioUrl 中的音色参考音频随请求发送给视频模型（Seedance MultiModalToVideo 媒体列表格式）。
-  【API/模型来源规则】若规格文档（documents 里的制作规格，用 read_project_doc 读取）明确指明了生成用的 API 和模型，
-  必须把指定的 provider_id 和 model 传入本操作；若规格文档未指定，则不传这两个字段，
-  系统会自动采用中间预览框已选的 API 与模型（草稿自身参数），绝不自行臆造模型名。
+{{include:shared/gen_channel_rules.md}}
 - script_analyze: 调用 Skill 独立执行器解析上传素材（剧本/图片/PDF），输出一句话总结并保存。字段：可选 doc_name/doc_id。
 - storyboard_key_elements: 调用 Skill 独立执行器按当前 Skill 的「故事板设计·关键元素」章节拆解关键元素（角色/场景/道具）并写入故事板。只建关键元素结构，不建分镜与音频。
 - storyboard_shots: 调用 Skill 独立执行器按当前 Skill 的「故事板设计·镜头」章节基于已确认的关键元素拆解分镜（镜头列表）。只建分镜结构，不改关键元素与音频。

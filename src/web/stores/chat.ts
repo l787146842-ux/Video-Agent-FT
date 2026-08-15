@@ -195,7 +195,9 @@ export const chatActions = {
   /** 流式错误 */
   streamError(message: string) {
     setChatState(produce((s) => {
-      s.messages.push({ sender: 'agent', text: `⚠️ ${message}`, modelName: s.streamingModel || undefined });
+      // U1：鉴权/供应商类错误附「检查 API 配置」跳转（非此类不显示，防噪音）
+      const settingsHint = /401|403|令牌|token|api\s*key|鉴权|unauthorized|authentication/i.test(message);
+      s.messages.push({ sender: 'agent', text: `⚠️ ${message}`, modelName: s.streamingModel || undefined, settingsHint });
       s.isStreaming = false;
       s.streamingText = '';
       s.streamingStatus = '';

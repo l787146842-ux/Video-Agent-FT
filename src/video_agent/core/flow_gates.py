@@ -372,7 +372,8 @@ class FlowGateSet:
         return n
 
     def pause_message(self) -> str:
-        reasons = "；".join(self._last_reasons[:3]) or "存在越阶操作"
+        # N3（三轮审核）：block_reason 自带尾句号，拼接前归一化去重，防「。。」
+        reasons = "；".join(str(r).rstrip("。") for r in self._last_reasons[:3]) or "存在越阶操作"
         self._last_reasons = []
         return (
             f"（系统强制暂停）本轮有操作被流程门禁拦截：{reasons}。"

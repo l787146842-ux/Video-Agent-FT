@@ -169,6 +169,8 @@ export interface ChatMessage {
   memoryHits?: Array<{ date?: string; content: string }>;
   /** 执行轨迹（每轮 step/耗时/操作数，「执行轨迹」折叠区展示） */
   trace?: AgentTrace;
+  /** U1：鉴权/供应商类错误气泡附「检查 API 配置」跳转按钮 */
+  settingsHint?: boolean;
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
