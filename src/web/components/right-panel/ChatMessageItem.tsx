@@ -205,7 +205,9 @@ export function ChatMessageItem(props: {
               {(g) => (
                 <div class="gate-chip-row">
                   <span class={`gate-chip gate-chip-${g.layer === 'platform' ? 'platform' : 'skill'}`}>
-                    {g.layer === 'platform' ? '平台' : `Skill『${g.skill_name || ''}』`}
+                    {g.layer === 'platform'
+                      ? t('rp.msg.gatePlatform')
+                      : t('rp.msg.gateSkill', { name: g.skill_name || '' })}
                   </span>
                   <span class="gate-chip-msg">{g.message || g.rule_id}</span>
                 </div>
@@ -225,7 +227,7 @@ export function ChatMessageItem(props: {
         {/* 记忆命中可视化（4.7）：本轮 Agent 参考了哪些长期记忆（折叠展示） */}
         <Show when={(msg().memoryHits || []).length > 0}>
           <details class="msg-memory-hits">
-            <summary>记忆参考 {(msg().memoryHits || []).length} 条</summary>
+            <summary>{t('rp.msg.memoryRefs', { count: (msg().memoryHits || []).length })}</summary>
             <For each={msg().memoryHits || []}>
               {(h) => (
                 <div class="memory-hit-line">

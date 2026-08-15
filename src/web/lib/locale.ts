@@ -17,6 +17,14 @@ const zhCN: Record<string, string> = {
   'rp.feed.empty': '和 Agent 聊聊，让它帮你规划故事板',
   'rp.feed.hint': '我能把创意/剧本拆解成关键元素、分镜与音频，并逐步规划生成——告诉我你的创意目标即可',
   'rp.streaming.thinking': '正在思考…',
+  'rp.streaming.connecting': '正在连接…',
+  'rp.streaming.reasoning': '深度思考中…',
+  'rp.streaming.replying': '正在回复…',
+  'rp.streaming.restoring': '正在恢复 Agent 进度…',
+  'rp.streaming.processing': '正在处理…',
+  'rp.conv.close': '关闭对话',
+  'rp.conv.create': '新建对话',
+  'rp.conv.busyGuard': 'Agent 正在回复，请稍后再操作对话窗口',
 
   // ---------- 输入区 ----------
   'rp.input.aria': '给 Agent 发送指令',
@@ -31,8 +39,14 @@ const zhCN: Record<string, string> = {
   'rp.toolbar.skillDoc': '查看/编辑当前 Skill 流程文档',
   'rp.toolbar.send': '发送',
   'rp.toolbar.stop': '停止生成',
+  'rp.toolbar.contextUsage': '上下文用量',
+  'rp.toolbar.contextTip': '{usage}K 上下文已使用',
+  'rp.toolbar.contextLoading': '统计中…',
   'rp.pill.unselected': '未选择',
   'rp.pill.empty': '暂无可用选项',
+  'rp.pill.model': '模型',
+  'rp.pill.thinking': '推理等级',
+  'rp.pill.noModel': '未配置模型',
   'rp.attachment.remove': '移除',
   'rp.mention.aria': '画布图片选择',
   'rp.mention.loading': '加载画布图片中...',
@@ -91,6 +105,12 @@ const zhCN: Record<string, string> = {
   'rp.msg.closeEsc': '关闭 (Esc)',
   'rp.msg.stageDone': '阶段完成',
   'rp.msg.appliedOps': '已执行 {count} 个操作',
+  'rp.msg.stopped': '已停止',
+  'rp.msg.emptyReply': '（空回复）',
+  'rp.msg.memoryRefs': '记忆参考 {count} 条',
+  'rp.msg.mediaInserted': 'Agent 已添加 {count} 个素材到对话输入框，确认后可发送',
+  'rp.msg.gatePlatform': '平台',
+  'rp.msg.gateSkill': 'Skill『{name}』',
 
   // ---------- 过程时间线（深度思考 + 已处理操作） ----------
   'rp.timeline.thinking': '深度思考',
@@ -108,6 +128,7 @@ const zhCN: Record<string, string> = {
   'rp.confirm.next': '下一步',
   'rp.confirm.hintCustom': '将发送自定义内容',
   'rp.confirm.hintPick': '选择后点击发送',
+  'rp.confirm.pickProvider': '请选择 API 厂商…',
 
   // ---------- 排队引导消息（推理中继续发送） ----------
   'rp.queue.title': '排队中的引导消息（Agent 完成后自动发送）',
@@ -123,6 +144,12 @@ const zhCN: Record<string, string> = {
   'rp.queue.guideConfirmTitle': '中断当前任务？',
   'rp.queue.guideConfirmMessage': '点「引导」会立即停止 Agent 正在执行的任务，并优先发送这条消息：{text}',
   'rp.queue.guideConfirmOk': '停止并引导',
+  'rp.queue.guideSpinner': '排队中，当前推理停止后优先发送',
+  'rp.queue.enqueued': '已加入排队，Agent 完成当前任务后自动发送（可点「引导」立即接管）',
+  'rp.queue.cleared': '已清空排队消息',
+  'rp.task.done': '后台 Agent 任务已完成',
+  'rp.send.noProvider': '请先选择 Agent API 和对应模型',
+  'rp.skill.manifestHint': '高级声明（skill_manifest，系统自动维护，无需编辑）',
 
   // ---------- 素材库（画布资产弹窗） ----------
   'rp.asset.tabImage': '图片资产',

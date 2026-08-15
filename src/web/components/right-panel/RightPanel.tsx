@@ -26,7 +26,7 @@ export default function RightPanel() {
   /** Agent 回复中禁止新建/切换/关闭对话（后端写入活跃对话，避免串话） */
   function busyGuard(): boolean {
     if (state.agentBusy) {
-      showToast('Agent 正在回复，请稍后再操作对话窗口', 'warning');
+      showToast(t('rp.conv.busyGuard'), 'warning');
       return true;
     }
     return false;
@@ -65,7 +65,7 @@ export default function RightPanel() {
                 <button
                   type="button"
                   class="conv-tab-close"
-                  title="关闭对话"
+                  title={t('rp.conv.close')}
                   onClick={(e) => { e.stopPropagation(); handleClose(conv.id); }}
                 >
                   <FiX size={12} />
@@ -75,7 +75,7 @@ export default function RightPanel() {
           )}
         </For>
         <div class="conv-tabs-actions">
-          <button type="button" class="conv-tabs-add" title="新建对话" onClick={handleCreate}>
+          <button type="button" class="conv-tabs-add" title={t('rp.conv.create')} onClick={handleCreate}>
             <FiPlus size={13} />
           </button>
           <span

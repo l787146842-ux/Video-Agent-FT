@@ -1,6 +1,7 @@
 import { For, createSignal } from 'solid-js';
 import { state } from '@/stores/studio';
 import { apiProvidersFor, providerModels, type ProviderKind } from '@/lib/providers';
+import { t } from '@/lib/locale';
 
 export interface ConfirmOptionItem {
   label: string;
@@ -94,7 +95,7 @@ export function ConfigProviderModelSelect(props: {
           props.onPick(v ? provLabel(v) : '');
         }}
       >
-        <option value="" disabled>请选择 API 厂商…</option>
+        <option value="" disabled>{t('rp.confirm.pickProvider')}</option>
         <For each={providers()}>
           {(p) => <option value={p.id}>{p.name || p.id}</option>}
         </For>

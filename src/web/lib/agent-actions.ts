@@ -12,6 +12,7 @@ import {
 } from '@/stores/agent-prefs';
 import { CHAT_HISTORY_WINDOW, uid } from '@/lib/utils';
 import { partsToPlainText } from '@/lib/rich-input';
+import { t } from '@/lib/locale';
 import type { AgentChatRequest, AnyGroup, MediaType, RichContentPart } from '@/types';
 
 /**
@@ -70,7 +71,7 @@ export async function sendUserMessage(
   const provider = agentProvider();
   const model = agentModel();
   if (!provider || !model) {
-    showToast('请先选择 Agent API 和对应模型', 'warning');
+    showToast(t('rp.send.noProvider'), 'warning');
     return false;
   }
 
@@ -93,7 +94,7 @@ export async function sendUserMessage(
     // B0/F2 恢复：同时登记到服务端运行中任务，轮间注入成功即渲染用户气泡并出队；
     // 任务已结束则回落「任务完成后自动出队重发」
     sendGuidanceToTask(qid, message);
-    showToast('已加入排队，Agent 完成当前任务后自动发送（可点「引导」立即接管）', 'info');
+    showToast(t('rp.queue.enqueued'), 'info');
     return true;
   }
 

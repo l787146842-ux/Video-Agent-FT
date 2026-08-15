@@ -7,6 +7,7 @@ import { state, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { refreshHistoryStatus } from '@/stores/history';
 import { resolveErrorMessage } from '@/lib/i18n';
+import { t } from '@/lib/locale';
 import {
   startAgentTask, fetchAgentTaskEvents, stopAgentTask, listAgentTasks,
   postAgentTaskGuidance,
@@ -159,7 +160,7 @@ export async function resumeAgentTasks(projectId: string): Promise<void> {
   chatActions.restoreStreamingState({
     reasoning: '',
     text: '',
-    statusText: '正在恢复 Agent 进度…',
+    statusText: t('rp.streaming.restoring'),
     tools: [],
   });
   await connectToTask(task.task_id, projectId, true);
@@ -186,7 +187,7 @@ function handleEvent(ev: SseEvent) {
           currentTask = null;
           if (p.project_id) projectTasks.delete(p.project_id);
           closeSubscription();
-          showToast('后台 Agent 任务已完成', 'success');
+          showToast(t('rp.task.done'), 'success');
         } else {
           handleDone(p.done_payload);
         }
@@ -205,7 +206,7 @@ function handleEvent(ev: SseEvent) {
   chatActions.restoreStreamingState({
     reasoning: p.reasoning || '',
     text: p.text || '',
-    statusText: p.status_text || '正在处理…',
+    statusText: p.status_text || t('rp.streaming.processing'),
     tools: (p.tools || []).map((t) => ({
       id: t.id || '',
       name: t.name || '',
@@ -297,7 +298,7 @@ function handleDone(payload: SseDonePayload) {
         name: it.name || it.url, thumb: it.thumb || undefined,
       });
     }
-    showToast(`Agent 已添加 ${seen.size} 个素材到对话输入框，确认后可发送`, 'success');
+    showToast(t('rp.msg.mediaInserted', { count: seen.size }), 'success');
   }
   if ((payload.applied_actions || 0) > 0) {
     studioActions.markBoardApplied();

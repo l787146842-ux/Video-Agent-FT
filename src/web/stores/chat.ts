@@ -1,5 +1,6 @@
 import { createStore, produce } from 'solid-js/store';
 import type { ChatMessage, SseDonePayload, RichContentPart } from '@/types';
+import { t } from '@/lib/locale';
 
 /** 过程时间线条目（流式期间的工具/操作运行态，完成后从消息 trace 重建） */
 export interface TimelineToolEntry {
@@ -83,11 +84,12 @@ export const chatActions = {
     setChatState(produce((s) => {
       s.isStreaming = true;
       s.streamingText = '';
-      s.streamingStatus = '正在连接…';
+      s.streamingStatus = t('rp.streaming.connecting');
       s.streamingModel = modelName || '';
       s.streamingReasoning = '';
       s.streamingTools = [];
       s.streamingReasoningStartMs = 0;
+      s.streamingReasoningEndMs = 0;
       s.renderedDocCards = [];
     }));
   },
@@ -99,7 +101,7 @@ export const chatActions = {
       // B2/F20：结束时刻随每条增量推进（思考与工具执行交错，角标只算思考区间）
       s.streamingReasoningEndMs = Date.now();
       s.streamingReasoning += text;
-      s.streamingStatus = '深度思考中…';
+      s.streamingStatus = t('rp.streaming.reasoning');
     }));
   },
 
@@ -126,7 +128,7 @@ export const chatActions = {
   /** 追加流式文本片段 */
   appendDelta(text: string) {
     setChatState('streamingText', (prev) => prev + text);
-    setChatState('streamingStatus', '正在回复…');
+    setChatState('streamingStatus', t('rp.streaming.replying'));
   },
 
   /** 设置状态提示 */
@@ -149,7 +151,7 @@ export const chatActions = {
     setChatState(produce((s) => {
       s.messages.push({
         sender: 'agent',
-        text: (payload.text || '').trim() || '（空回复）',
+        text: (payload.text || '').trim() || t('rp.msg.emptyReply'),
         meta: metaParts.join(' · '),
         confirm: payload.confirmation || '',
         appliedActions: payload.applied_actions || 0,
@@ -208,7 +210,7 @@ export const chatActions = {
   cancelStream() {
     setChatState(produce((s) => {
       if (s.streamingText) {
-        s.messages.push({ sender: 'agent', text: s.streamingText, meta: '已停止', modelName: s.streamingModel || undefined });
+        s.messages.push({ sender: 'agent', text: s.streamingText, meta: t('rp.msg.stopped'), modelName: s.streamingModel || undefined });
       }
       s.isStreaming = false;
       s.streamingText = '';

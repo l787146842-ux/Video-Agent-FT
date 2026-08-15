@@ -1,5 +1,5 @@
-/* FTDYB 影视创作工作台 — 样式聚合入口（按域拆分：tokens/layout/left/middle/chat/overlays） */
-@import "tailwindcss";
+/* FTDYB 影视创作工作台 — 样式聚合入口（按域拆分：tokens/layout/left/middle/chat/overlays）。
+   B3/F25：Tailwind 已摘除（工具类使用率 ~0，纯构建开销），手写 CSS + tokens.css 为唯一样式系统。 */
 @import "./tokens.css";
 @import "./layout.css";
 @import "./left-panel.css";

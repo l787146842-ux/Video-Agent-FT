@@ -126,7 +126,7 @@ export function ChatInputToolbar(props: {
           <button
             type="button"
             class="context-usage-btn"
-            aria-label="上下文用量"
+            aria-label={t('rp.toolbar.contextUsage')}
             onClick={refreshUsage}
           >
             <svg class={`ctx-ring ${ringClass()}`} width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
@@ -136,7 +136,7 @@ export function ChatInputToolbar(props: {
             <span class="context-usage-value">{usageLabel()}</span>
           </button>
           <div class="context-usage-tip" role="tooltip">
-            {usage() ? `${(usage()!.est_tokens / 1024).toFixed(1)}K 上下文已使用` : '统计中…'}
+            {usage() ? t('rp.toolbar.contextTip', { usage: (usage()!.est_tokens / 1024).toFixed(1) }) : t('rp.toolbar.contextLoading')}
           </div>
         </div>
         {/* 推理中：停止键与发送键分离——发送继续可用（消息进排队引导区） */}

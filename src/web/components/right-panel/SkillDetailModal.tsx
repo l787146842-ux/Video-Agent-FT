@@ -212,7 +212,7 @@ export function SkillDetailModal(props: {
               {/* 高级声明折叠区（888 事故）：机器读的配置铭牌，默认隐藏，文件内容不受影响 */}
               <Show when={manifestBlock}>
                 <details class="skill-modal-manifest">
-                  <summary>高级声明（skill_manifest，系统自动维护，无需编辑）</summary>
+                  <summary>{t('rp.skill.manifestHint')}</summary>
                   <div class="skill-modal-content-raw">{manifestBlock}</div>
                 </details>
               </Show>

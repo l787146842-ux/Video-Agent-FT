@@ -5,6 +5,7 @@ import {
   setAgentThinkingLevel, thinkingLevelLabel, THINKING_LEVEL_OPTIONS,
 } from '@/stores/agent-prefs';
 import { providerModels } from '@/lib/providers';
+import { t } from '@/lib/locale';
 
 /**
  * 模型+推理等级组合胶囊（814H7，Codex 样式）：
@@ -46,7 +47,7 @@ export function ModelThinkingPill() {
 
       <Show when={open()}>
         <div class="pill-dropdown pill-dropdown-wide">
-          <div class="pill-section-title">模型</div>
+          <div class="pill-section-title">{t('rp.pill.model')}</div>
           <div class="pill-section-scroll">
             <For each={modelOptions()}>
               {(opt) => (
@@ -62,10 +63,10 @@ export function ModelThinkingPill() {
               )}
             </For>
             <Show when={!modelOptions().length}>
-              <div class="empty-state">未配置模型</div>
+              <div class="empty-state">{t('rp.pill.noModel')}</div>
             </Show>
           </div>
-          <div class="pill-section-title">推理等级</div>
+          <div class="pill-section-title">{t('rp.pill.thinking')}</div>
           <For each={THINKING_LEVEL_OPTIONS}>
             {(opt) => (
               <button

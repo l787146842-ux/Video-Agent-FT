@@ -64,7 +64,7 @@ export function QueuedMessagesBar(props: {
   function closeQueue() {
     chatActions.clearQueuedMessages();
     setMenuId('');
-    showToast('已清空排队消息', 'info');
+    showToast(t('rp.queue.cleared'), 'info');
   }
 
   return (
@@ -85,7 +85,7 @@ export function QueuedMessagesBar(props: {
           {(item) => (
             <div class="queued-chip">
               <Show when={guidedId() === item.id}>
-                <span class="queued-spin" title="排队中，当前推理停止后优先发送" />
+                <span class="queued-spin" title={t('rp.queue.guideSpinner')} />
               </Show>
               <span class="queued-chip-text" title={item.displayText}>
                 {item.displayText}

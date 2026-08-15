@@ -1,6 +1,5 @@
 import { defineConfig } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
-import tailwindcss from '@tailwindcss/vite';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -11,9 +10,10 @@ const API_PORT = process.env.VITE_API_PORT || '8080';
 const API_TARGET = `http://127.0.0.1:${API_PORT}`;
 
 export default defineConfig({
+  // B3/F25：Tailwind 已摘除（组件实际使用手写语义 CSS + tokens.css，
+  // 工具类使用率 ~0，纯构建开销），样式系统唯一化为 styles/*.css
   plugins: [
     solidPlugin(),
-    tailwindcss(),
   ],
   define: {
     // 构建时间戳：排查"浏览器跑的是不是最新构建"时一眼可查（控制台/BUILD_ID）
