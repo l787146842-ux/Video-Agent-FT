@@ -495,14 +495,8 @@ class FCToolRunner:
             logger.debug(f"[FlowGate] drafts_presented 记录失败: {e}")
 
     def _gen_confirm_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
-        """生成确认闸（FC 轨）：Skill 激活且 strict 时，image_generate 的目标草稿
-        必须全部已经用户确认（tag=已确认），否则拒绝并引导先展示草案等确认。
-        返回非 None = 硬拒绝。"""
-        if self.gate_override in ("all", True):
-            self.gate_warnings.append("用户坚持跳过生成确认闸（仅警告），照常生成")
-            return None
-        if not injected_skill or prompt_gates.gate_mode() != "strict":
-            return None
+        """生成确认闸（FC 轨，B4 双轨收敛一期）：判定唯一实现 =
+        guard_pipeline.evaluate_gen_confirm（与文本轨逐字节一致）。"""
         if name != "image_generate":
             return None
         state = self._raw_state()
@@ -526,11 +520,18 @@ class FCToolRunner:
                             targets.append(d)
         if not targets:
             return None  # 无目标：交给工具自身报「未找到有提示词的草稿」
-        if prompt_gates.drafts_confirmed(state, targets):
-            return None
-        logger.info(f"[GenGate] 拦截 image_generate：{len(targets)} 个目标草稿存在未确认 Prompt Draft")
-        self.gate_warnings.append("生成确认闸拦截：" + prompt_gates.GENERATION_CONFIRM_GATE_ERROR)
-        return "生成确认闸拦截：" + prompt_gates.GENERATION_CONFIRM_GATE_ERROR
+        err, warns = guard_pipeline.evaluate_gen_confirm(
+            targets,
+            active=bool(injected_skill) and prompt_gates.gate_mode() == "strict",
+            override=self.gate_override,
+            action=name,
+        )
+        for w in warns:
+            if w not in self.gate_warnings:
+                self.gate_warnings.append(w)
+        if err:
+            logger.info(f"[GenGate] 拦截 image_generate：{len(targets)} 个目标草稿存在未确认 Prompt Draft")
+        return err
 
     async def execute(
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",

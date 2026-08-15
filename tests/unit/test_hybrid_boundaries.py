@@ -195,7 +195,8 @@ def test_gen_gate_blocks_model_self_skip_text_track(svc, monkeypatch):
 
 
 def test_gen_gate_partial_confirmed_filters_unconfirmed(svc, monkeypatch):
-    """4444：部分确认且无跳过指令 → 只提交已确认项，未确认项拒收"""
+    """B4 双轨收敛：部分确认且无跳过指令 → 整批硬拒（与 FC 轨一致，
+    取代旧文本轨「跳过未确认项」镜像语义；4444：模型跳确认非用户意志）。"""
     _seed_ke_draft(svc, tag="已确认")
     svc.state_dict["keyElements"].append({
         "id": "ke-2", "title": "Element_乙",
@@ -206,8 +207,8 @@ def test_gen_gate_partial_confirmed_filters_unconfirmed(svc, monkeypatch):
     submitted = []
     monkeypatch.setattr(ex, "_submit_image_task", lambda *a, **k: submitted.append(a))
     applied = ex.execute([{"action": "generate_image", "target": "all_keyElements"}])
-    assert applied == 1 and len(submitted) == 1  # 仅已确认项提交
-    assert ex.gate_warnings
+    assert applied == 0 and not submitted  # 整批拒收，不再部分提交
+    assert ex.gate_warnings and "生成确认闸拦截" in ex.gate_warnings[0]
 
 
 def test_gen_gate_inactive_without_skill(svc, monkeypatch):

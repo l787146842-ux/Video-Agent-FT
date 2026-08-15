@@ -161,6 +161,41 @@ def evaluate_prompt_write(
     return out
 
 
+def evaluate_gen_confirm(
+    drafts: List[Dict[str, Any]],
+    *,
+    active: bool,
+    override: Any = False,
+    action: str = "",
+) -> "tuple[Optional[str], List[str]]":
+    """生成确认闸统一判定（B4 双轨收敛一期：platform.gen_confirm 唯一实现）。
+
+    drafts：目标草稿（已含提示词者由调用方筛好）；active：Skill 激活且 strict；
+    override：用户坚持作用域。返回 (硬拒原因, warnings)，双轨语义逐字节一致：
+    - override 命中 → 不拒，附豁免警告；
+    - 未激活/空目标 → 不拒（空目标交工具自身报「未找到」）；
+    - 全部已确认 → 不拒；
+    - 存在未确认 → 硬拒（4444：模型跳确认非用户意志），拒因用 BLOCKED 文案。
+    判定经 tracer.record_gate 入审计（前端 chips 同源）。
+    """
+    warns: List[str] = []
+    if override in ("all", True):
+        w = "用户坚持跳过生成确认闸（仅警告），照常生成"
+        warns.append(w)
+        audit_verdicts([GateVerdict("platform.gen_confirm", "platform", True, w)],
+                       action=action, overridden=True)
+        return None, warns
+    if not active or not drafts:
+        return None, warns
+    if prompt_gates.drafts_confirmed({}, drafts):
+        audit_verdicts([GateVerdict("platform.gen_confirm", "platform", True)], action=action)
+        return None, warns
+    msg = "生成确认闸拦截：" + prompt_gates.GENERATION_CONFIRM_GATE_BLOCKED
+    warns.append(msg)
+    audit_verdicts([GateVerdict("platform.gen_confirm", "platform", False, msg)], action=action)
+    return msg, warns
+
+
 def prompt_write_verdict(
     prompt: str,
     kind: str,

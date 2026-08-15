@@ -334,22 +334,25 @@ class StudioActionExecutor:
             presented.append(draft_id)
 
     def _gen_confirm_gate(self, pairs: List[tuple]) -> List[tuple]:
-        """生成确认闸：Skill 激活且 strict 时，只允许对已经用户确认（tag=已确认）的
-        草稿触发生成；全部未确认时返回空列表（调用方拒绝执行），未确认项跳过。"""
-        if self.gate_override in ("all", True):
-            self.gate_warnings.append("用户坚持跳过生成确认闸（仅警告），照常生成")
-            return pairs
-        if not self.gate_enabled or prompt_gates.gate_mode() != "strict":
-            return pairs
-        confirmed = [(g, d) for g, d in pairs if str(d.get("tag") or "").strip() == "已确认"]
-        skipped = len(pairs) - len(confirmed)
-        if skipped:
-            logger.info(f"[GenGate] 跳过 {skipped} 个未经用户确认的草稿（生成需先确认 Prompt Draft）")
-            self.gate_warnings.append(f"生成确认闸拦截：{skipped} 个草稿未经用户确认，已跳过")
-        if not confirmed:
-            logger.info("[GenGate] 拦截生成：目标草稿 Prompt Draft 均未经用户确认")
-            self.gate_warnings.append("生成确认闸拦截：" + prompt_gates.GENERATION_CONFIRM_GATE_ERROR)
-        return confirmed
+        """生成确认闸（文本轨，B4 双轨收敛一期）：判定唯一实现 =
+        guard_pipeline.evaluate_gen_confirm（与 FC 轨逐字节一致）。
+
+        目标草稿存在未确认即整批硬拒（4444 语义：模型跳确认非用户意志；
+        override/未激活放行）；不再各自手写「跳过未确认项」镜像判定。"""
+        drafts = [d for _, d in pairs]
+        err, warns = guard_pipeline.evaluate_gen_confirm(
+            drafts,
+            active=self.gate_enabled and prompt_gates.gate_mode() == "strict",
+            override=self.gate_override,
+            action="generate(text-track)",
+        )
+        for w in warns:
+            if w not in self.gate_warnings:
+                self.gate_warnings.append(w)
+        if err:
+            logger.info("[GenGate] 拦截生成：目标草稿 Prompt Draft 未全部经用户确认")
+            return []
+        return pairs
 
     async def execute_locked(self, actions: List[Dict[str, Any]], accumulate: bool = False) -> int:
         """持 svc.lock 执行（与 FC Tool 路径的并发契约对齐）。
