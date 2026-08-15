@@ -14,28 +14,10 @@ from src.video_agent.web.mock_chat import mock_stream
 from src.video_agent.web.mock_llm import mock_llm_reply
 from src.video_agent.web.multimodal_builder import (
     build_multimodal_content,
-    _TYPE_TO_CATEGORY,
-)
-from src.video_agent.web.provider_config import (
-    get_provider_config,
-    is_mock_provider,
-    is_mock_provider_async,
-    load_merged_providers,
-    load_merged_providers_async,
 )
 from src.video_agent.web.sse import sse_event_generator  # noqa: F401  （B6 保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner, PlannerContext
-from src.video_agent.core.sse_events import (
-    SSE_ACTIONS_APPLIED,
-    SSE_DELTA,
-    SSE_DOC_WRITTEN,
-    SSE_DONE,
-    SSE_ERROR,
-    SSE_GUIDANCE_INJECTED,
-    SSE_MODEL_FALLBACK,
-    SSE_STATUS,
-)
 from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.base_chat import BaseChatAdapter

@@ -19,9 +19,7 @@ from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.config import settings
 from src.video_agent.web import generation as _gen
 from src.video_agent.web.generation import (
-    GenerationError,
     call_chat_completion,
-    call_chat_completion_stream,
 )
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.token_budget import output_limit_for_model

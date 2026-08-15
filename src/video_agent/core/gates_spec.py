@@ -7,11 +7,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.video_agent.config import settings
-from src.video_agent.state.models import (
-    ALL_CATEGORIES,
-    CAT_AUDIO_ITEMS,
-    CAT_KEY_ELEMENTS,
-)
 from src.video_agent.core import prompt_gates as _pg
 from src.video_agent.state.provider_prefs import SPEC_PARAM_UNCONFIRMED_MARKERS
 from src.video_agent.core.prompt_gates import (
