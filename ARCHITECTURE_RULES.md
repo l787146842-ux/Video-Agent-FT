@@ -374,7 +374,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 项 | 预算 | 超限处理 |
 |----|------|---------|
 | system.md / system_fc.md | ≤ 7KB（纯协议） | 继续压缩或拆分按需注入 |
-| 全链路“严禁/不得/禁止”总数 | ≤ 8 处 | 逐条审计（13.6 命令），可机械校验者下沉 |
+| 全链路“严禁/不得/禁止”总数 | ≤ 8 处 | 逐条审计（13.6 命令），可机械校验者下沉；**CI 门禁 `scripts/check_prompt_budget.py`（B1 落地：md 全文 + 代码字符串字面量，排除 docstring/注释/正则白名单）** |
 | 单执行器 system+user 提示词 | ≤ 25K 字符（含剧本/状态注入） | 缩减注入而非删任务词 |
 | 回喂话术单条 | ≤ 3 句 | 超出说明在回喂里写规则，迁回归属层 |
 | 同一规则的定义处数量 | 恒等于 1 | 立即清理分身 |
@@ -391,6 +391,10 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 执行器输出格式 | action_executor 兜底链 + 自检去重键（去重依赖标题有效，8888 事故） |
 | 新增暂停点 | Skill「何时暂停」+ 层 9 兜底注入（Skill 管引导，兜底管强制） |
 | 新增 SSE 事件 | 工具层 emit → planner 白名单 → chat_service 透传 → 前端 handler（四段缺一即静默失效） |
+| doc_written 即显（B0 恢复） | fc_tool_runner/agent_loop 发射（按名称去重）→ planner 白名单 → chat_service 透传 → 前端 docWritten + done 双通道去重（前端 renderedDocCards） |
+| 模型策略表角色（B8） | core/model_policy.resolve_role/thinking_for；消费点 chat_service._resolve_summary_adapter、executors._resolve_cascade_fast/_executor_thinking、planner._make_summarize_fn；写入点 runtime_settings PUT/GET；UI 全局设置页 |
+| 快照/分支（B11） | routes/snapshots.py + conversations 创建 + _meta.branched_from + 前端 RightPanel 分支按钮 |
+| 窗口表元数据（B6/F52） | api_providers.json chat_models_meta.context_window → token_budget.context_window_for_model(provider_id) → planner 传递 chat_provider |
 | 新增 FC 工具 | tool description（层 10）+ 阶段裁剪集 + 测试 |
 | skill_manifest 白名单键 | 消费点：prompt_gates.parse_gate_rules/validate_prompt_write、agent_loop、fc_tool_runner、planner._compute_excluded_tools、prompt_builder、action_executor._spec_gate_ok；pause 节另由 guard.skill_requires_stage_pause 与 lint 消费；同步 test_skill_manifest.py 快照登记；**spec_wizard 例外：统一走 registry.spec_wizard_active；script_required 同模式统一走 registry.script_required_active（814H9）** |
 
@@ -432,6 +436,8 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 814H7 | 推理档位不可选：全局 low 一刀切（814G7）既压主模型质量又不尊重端点原生；用户要求 Codex 式按会话选档 | 档位治理缺 UI 层 | 对话栏模型胶囊改两节下拉（模型+推理等级 高/中/低/默认，默认=原生不下发字段，localStorage 持久化，随 ChatRequest.thinking_level 透传主模型）；全局设置页新增「推理档位」卡（执行器机械调用/辅助摘要两档，runtime_settings 热生效）；主模型全局默认回空（原生）；适配器 400 优雅降级（端点不认 reasoning_effort 自动去字段重试，流式/非流式双路径）；浏览器实测两节下拉与设置卡通过 |
 | 814H8 | 前端路由硬敲/刷新（如 /global-settings）404：服务端只把 index.html 绑死在 /、/canvas、/settings，无 SPA fallback | 部署层缺兜底 | app.py 末尾加 catch-all（注册于全部 API 路由与静态 mount 之后）：未识别非 /api GET 路径一律返回 index.html；/api 排除保持 JSON 404；test_spa_fallback 四条集成测试钉死 |
 | 814H9 | 1111 实测：剧本缺失是客观事实却出题给模型——27.8s 规划轮"发现"没剧本+必错的 read_uploaded_doc+空输出重试；无剧本仍被引导进下游流程 | 违 13.5 确定性三问（可算/可判/无创作空间却交模型）+ 层 9 缺原料闸 | registry.script_required_active（manifest 优先+客观特征，同 spec_wizard 模式）；prompt_gates 剧本闸助手（script_present/豁免意图/短路准入/提醒卡文案外置 messages.md）；planner 编排：S7 零思考直出提醒卡（推进意图且非提问）、「我去上传」秒回等待回执、提问落回 LLM+轮末强制提醒卡（反复提醒）、豁免记账 script_waived；FlowGateSet.ensure_script_gate 执行侧拦越阶结构操作（双轨同条件，不拦用户，override/坚持旁路）；GATE_RULES 注册 skill.script_required + record_gate 审计；test_814_script_gate 八条钉死 |
+| B0-B12 整改 | 2026-08-15 全面审核暴露的全部问题（P0 接线四件、提示词预算违约与分身漂移、交互体验漂移、前端双轨资产、测试桩污染、臃肿七型）+ 用户裁决（模型能力参数唯一权威源=全局设置）+ 五新功能 | 补丁沉积 + 双轨复制 + 8/13 回退接线未恢复 + 台账宣称≠代码事实 | 一次性整改（19 commits，docs/修复改进计划书-2026-08-15.md 附录记录批次→commit→验收）：P0 接线四件（doc_written 四段链/轮间注入/FC 警告外发/fallback 载荷）；提示词治理（system.md 14.3KB→774B、模型可见严禁 45→0、预算 CI 门禁）；交互整改（阶段卡可展开默认展开、闸机 chips 结构化、toast 收敛、真实性六项）；前端一致性（i18n 全量、Tailwind 摘除、api-settings 入 SPA 退役 iframe）；流程与 Skill（无技能路径、Skill 暂停点运行时消费、三本账收敛、测试桩迁 fixtures、dag 声明化）；速度（compaction 预热、请求体瘦身）；工程卫生（死代码 8 文件、归档出库、数据 TTL、窗口表元数据化、记忆分桶）；模型参数治理（注入优先级草稿>全局设置、Skill lint、迁移脚本）；模型分层策略表；视频批量队列/断点续跑/时间线回画布；成本看板；对话分支/快照 |
+| B13（登记未清） | 存量 38 处 `except Exception: pass` 静默站点；executors/prompt_gates/chat_service 大文件拆分；OTLP 可选导出；事故编号测试命名归档（保留编号=§13.5 溯源约定，重命名反而破坏溯源，故不动） | 整改批次内风险评估后延后（改动面大收益边际） | ① `grep -rn "except Exception:" src/video_agent | grep -A1 pass` 逐条 logger 化；② 拆分按新增「文件行数红线」机制立项；③ OTLP env 导出按 B10 设计补齐；④ 命名归档以本台账行清偿 |
 
 ### 13.9 模型分层原则（速度治理）
 
@@ -458,7 +464,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 |---|------|-------------|-----------|
 | C1 | 语言单一事实源：注入句与 PromptGate 读同一份 parse_gate_rules | `executors._prompt_language_rule` + `prompt_gates` 语言闸 | 仲裁条款里写「从其要求」类例外 |
 | C2 | 结构化拒因回喂：纠正重试携带闸门拒因原文逐条修复 | `_write_prompt_batch(corrective_reasons=…)` | 只给「不得留空」式笼统纠正 |
-| C3 | 轮内 compaction：旧轮对折叠成摘要，最近两轮保留原文 | agent_loop 历史压缩 | 每轮全量重发旧轮原文 |
+| C3 | 轮内 compaction：旧轮对折叠成摘要，最近两轮保留原文 | fc_tool_runner 惰性反馈压缩 + 旧轮图片剥离（planner 接线；原「agent_loop 历史压缩」落点为死代码，B6 已删） | 每轮全量重发旧轮原文 |
 | C4 | 读不触发写：未变更不保存 + 内容级脏检查 | 前端编辑 handler + 保存基线 | blur/查看调度整板 PUT |
 | C5 | 模型级联：誊写批快模型先试，零进展/拒收升级推理模型 | `executors._resolve_cascade_fast` + 纠正升级 | 硬换模型无升级保险 |
 | C6 | 铁律最小化 + 暂停语义唯一源 = Skill 文本 | `spec_rules._IRON_RULES_DOC_BODY`；planner 提醒只留执行器失败禁令/总结强展 | 把可校验约束或暂停条款写回铁律/平台提醒 |
