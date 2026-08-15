@@ -1,26 +1,41 @@
+import shutil
+
 import pytest
 
 from pathlib import Path
 
 
-@pytest.fixture(autouse=True)
-def _test_skill_stubs(monkeypatch):
-    """B4/F31：测试桩 Skill 从 data/skills 迁至 tests/fixtures/skills。
+@pytest.fixture(scope="session")
+def _skill_mirror_dir(tmp_path_factory):
+    """R2：测试期 Skill 目录镜像——生产 data/skills 与夹具桩拷入临时镜像，
+    测试读写全部落镜像（含 .history 备份机制原样工作），生产目录零污染。"""
+    from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
 
-    注册表按 slug 解析时优先查夹具目录（生产技能仍走 data/skills），
-    测试按名称引用测试桩无需触碰生产目录；技能下拉框/目录不再含测试桩。"""
+    mirror = tmp_path_factory.mktemp("skills_mirror")
+    for f in Path(REAL_DIR).glob("*.md"):
+        shutil.copy2(f, mirror / f.name)
+    fixture_dir = Path(__file__).parent / "fixtures" / "skills"
+    for f in fixture_dir.glob("*.md"):
+        if f.name != "README.md":
+            shutil.copy2(f, mirror / f.name)
+    return mirror
+
+
+@pytest.fixture(autouse=True)
+def _test_skill_stubs(monkeypatch, _skill_mirror_dir):
+    """测试期 SKILL_DOCS_DIR 指向镜像目录：save/delete/list/history 全路径
+    与生产语义一致，但不触碰真实 data/skills（桩复活事故根因清偿）。"""
     from src.video_agent.web import skill_docs as sd
 
-    fixture_dir = Path(__file__).parent / "fixtures" / "skills"
-    orig = sd.get_skill_doc
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", _skill_mirror_dir)
+    # 注册表可能已按真实目录同步过（模块级缓存）：强制按镜像重同步
+    from src.video_agent.skill_runtime import registry
 
-    def patched(slug):
-        f = fixture_dir / f"{slug}.md"
-        if f.exists():
-            return sd._parse_doc(slug, f.read_text(encoding="utf-8"))
-        return orig(slug)
+    registry.reset_registry()
+    registry.sync_all(force=True)
+    yield
+    registry.reset_registry()
 
-    monkeypatch.setattr(sd, "get_skill_doc", patched)
 
 
 @pytest.fixture(autouse=True)
