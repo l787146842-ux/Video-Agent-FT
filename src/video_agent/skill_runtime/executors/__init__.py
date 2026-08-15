@@ -85,3 +85,9 @@ from src.video_agent.skill_runtime.exec_tools import (
     EXECUTOR_TOOL_CLASSES,
     build_executor_tool,
 )
+# R4a 补：角标排序家族移入 exec_common 后保持既有引用路径
+from src.video_agent.skill_runtime.exec_common import (
+    _BADGE_CATEGORY_KEYS,
+    _badge_category_rank,
+    _sort_key_elements_by_badge,
+)

@@ -8,7 +8,7 @@
 import inspect
 
 from src.video_agent.core.planner import Planner, _prepend_script_summary
-from src.video_agent.web import chat_service
+from src.video_agent.web import chat_consume, chat_service
 
 
 class TestScriptSummaryWiring:
@@ -86,7 +86,7 @@ class TestMaybeCompactHistory:
         from src.video_agent.state.manager import StateManager
 
         monkeypatch.setattr(
-            chat_service, "settings",
+            chat_consume, "settings",
             SimpleNamespace(history_compact_threshold=6, llm_timeout=10),
         )
         svc = StateManager(str(tmp_path))
@@ -106,7 +106,7 @@ class TestMaybeCompactHistory:
         from src.video_agent.state.manager import StateManager
 
         monkeypatch.setattr(
-            chat_service, "settings",
+            chat_consume, "settings",
             SimpleNamespace(history_compact_threshold=2, llm_timeout=10),
         )
         svc = StateManager(str(tmp_path))

@@ -280,35 +280,10 @@ async def _selfcheck_key_elements(
     return applied, warnings
 
 
-# 关键元素类别排序（Q4 补漏元素不垫底）：人物→场景→道具→载具，其余保持原相对位置
-_BADGE_CATEGORY_KEYS = (
-    ("人物", "角色"),
-    ("场景", "地点", "环境"),
-    ("道具", "物品", "器物"),
-    ("载具", "交通工具", "飞船", "车辆"),
-)
 
 
-def _badge_category_rank(label: str) -> int:
-    """按徽标文案推断类别序；未命中的排在已知类别之后（稳定排序保序）。"""
-    text = str(label or "")
-    for i, keys in enumerate(_BADGE_CATEGORY_KEYS):
-        if any(k in text for k in keys):
-            return i
-    return len(_BADGE_CATEGORY_KEYS)
 
 
-def _sort_key_elements_by_badge(svc: StateManager) -> bool:
-    """对关键元素列表按类别稳定排序（同类内部保持原有先后）。
-    返回是否发生了顺序变化（无变化时不动状态，避免无谓重绘）。"""
-    groups = svc.state_dict.get("keyElements") or []
-    if len(groups) < 2:
-        return False
-    ordered = sorted(groups, key=lambda g: _badge_category_rank(str(g.get("badgeLabel") or "")))
-    if [g.get("id") for g in ordered] == [g.get("id") for g in groups]:
-        return False
-    svc.state_dict["keyElements"] = ordered
-    return True
 
 
 async def _run_storyboard_split(
@@ -467,7 +442,7 @@ async def _run_storyboard_split(
                     )
                 else:
                     # 补漏元素不垫底（Q4）：按类别稳定排序归入同类，再快照即显
-                    _sort_key_elements_by_badge(svc)
+                    exec_common._sort_key_elements_by_badge(svc)
                     svc.save_debounced()
                     applied += filled
                     detail += f"；自检对照剧本补建了 {filled} 个遗漏元素"
@@ -1216,3 +1191,9 @@ def build_executor_tool(name: str):
     """按动作名构造执行器实例（文本动作轨用）；未知名返回 None。"""
     cls = EXECUTOR_TOOL_CLASSES.get(name)
     return cls() if cls else None
+# R4a 补：角标排序家族实现体在 exec_common，此处 re-export 保持既有直引
+from src.video_agent.skill_runtime.exec_common import (
+    _BADGE_CATEGORY_KEYS,
+    _badge_category_rank,
+    _sort_key_elements_by_badge,
+)

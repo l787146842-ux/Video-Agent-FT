@@ -11,6 +11,7 @@ import pytest
 
 import src.video_agent.web.attachments as attachments_mod
 import src.video_agent.web.chat_service as chat_service_mod
+import src.video_agent.web.chat_opening as chat_opening_mod
 import src.video_agent.web.skill_docs as skill_docs_mod
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.web.attachments import attachment_context
@@ -106,7 +107,7 @@ class TestNonFcChannelFallback:
 
     def test_channel_fc_detection(self, monkeypatch):
         monkeypatch.setattr(
-            chat_service_mod, "get_provider_config",
+            chat_opening_mod, "get_provider_config",
             lambda pid: {"protocol": "gemini-cli"} if pid == "agy-x" else {"protocol": "openai"},
         )
         assert _channel_supports_fc("agy-x") is False

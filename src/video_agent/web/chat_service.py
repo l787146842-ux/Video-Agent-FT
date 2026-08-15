@@ -58,497 +58,46 @@ from src.video_agent.core.tracer import AgentTracer
 
 __all__ = ["stream_worker", "non_stream_worker", "build_multimodal_content"]
 
-# 请求幂等防护（P2）：同一 request_id 正在处理中时拒绝重复提交，
-# 防止 SSE 断连重发/双标签页重复发送导致操作重复落盘。
-# 完成后即移除，不影响断线重连后的正常重发。
-_INFLIGHT_REQUESTS: set = set()
 
 
-def _acquire_request_slot(request_id: str) -> bool:
-    """尝试占用请求槽位：未携 id 直接放行；已占用返回 False"""
-    if not request_id:
-        return True
-    if request_id in _INFLIGHT_REQUESTS:
-        return False
-    _INFLIGHT_REQUESTS.add(request_id)
-    return True
 
 
-def _release_request_slot(request_id: str) -> None:
-    if request_id:
-        _INFLIGHT_REQUESTS.discard(request_id)
 
 
-_HISTORY_ASSISTANT_MAX_CHARS = 600          # 非最新 assistant 回复的总上限（头+尾合计）
-# 历史消息截断（token 浪费治理）：assistant 回复的有价值内容（草稿 prompt/规格文档）
-# 已在工作台状态 JSON 里，旧回复全文重复注入毫无意义；user 消息是用户指令，保持全文。
-_HISTORY_ASSISTANT_RECENT_MAX_CHARS = 2000  # 最新一条 assistant 回复的上限（紧邻决策与下一步计划最相关，保真度优先）
-_HISTORY_HEAD_CHARS = 300                   # 旧回复保留头部（开头常是结论/总结）
-_HISTORY_TAIL_CHARS = 300                   # 旧回复保留尾部（结尾常是下一步建议/待办决策）
 
 
-def truncate_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """组装发给 LLM 的历史：assistant 超长消息截断，user 消息全文保留。
-
-    截断策略（质量优化版）：
-    - 最新一条 assistant 回复：保留前 2000 字（上一轮的决策/下一步与当前追问最相关）；
-    - 更早的 assistant 回复：保留头 300 + 尾 300（旧版只留头部，
-      会丢掉结尾的下一步建议与待确认事项）；
-    - 截断处附说明，让模型知道完整内容可从工作台状态 JSON 获取。
-    """
-    last_assistant_idx = -1
-    for i, m in enumerate(messages):
-        if m.get("role", "user") == "assistant":
-            last_assistant_idx = i
-
-    out: List[Dict[str, Any]] = []
-    for i, m in enumerate(messages):
-        role = m.get("role", "user")
-        content = m.get("content", "")
-        if not isinstance(content, str):
-            out.append({"role": role, "content": content})
-            continue
-        if role == "assistant":
-            if i == last_assistant_idx:
-                if len(content) > _HISTORY_ASSISTANT_RECENT_MAX_CHARS:
-                    content = (
-                        content[:_HISTORY_ASSISTANT_RECENT_MAX_CHARS]
-                        + "\n…（最新回复超长已截断，完整内容见工作台状态 JSON 与项目文档）"
-                    )
-            elif len(content) > _HISTORY_ASSISTANT_MAX_CHARS:
-                head = content[:_HISTORY_HEAD_CHARS]
-                tail = content[-_HISTORY_TAIL_CHARS:]
-                content = (
-                    head
-                    + "\n…（历史回复中部已省略，只保留首尾）…\n"
-                    + tail
-                    + "\n…（历史回复已截断，最新完整内容见工作台状态 JSON）"
-                )
-        out.append({"role": role, "content": content})
-    return out
 
 
-def _resolve_skill_name_for_injection(
-    skill_name: str, skill_slug: str, raw_state: Optional[Dict[str, Any]] = None,
-    user_text: str = "",
-) -> str:
-    """Skill 全文硬注入的键名兜底：前端选中项（skill_name）优先；
-    选中项为空但消息携带了 Skill 引用块（skill_slug）时，按 slug 解析出 Skill 名称，
-    保证「随消息发送过的 Skill 必定全文注入」；两者皆空时先按消息文本匹配已注册 Skill
-    （6666 事故：直接发 Skill 名也要能绑定），再回退项目 usedSkills 末位
-    （7777 事故：后续轮次不带 Skill 导致执行器「未注册」）。
-    """
-    if skill_name:
-        return skill_name
-    if skill_slug:
-        try:
-            from src.video_agent.web import skill_docs as sd
-            doc = sd.get_skill_doc(skill_slug)
-            if doc:
-                return str(doc.get("name") or skill_slug)
-        except Exception as e:
-            logger.warning(f"[ChatService] Skill slug({skill_slug}) 解析名称失败: {e}")
-        return skill_slug
-    from src.video_agent.skill_runtime.registry import (
-        fallback_skill_from_state,
-        match_skill_name_from_text,
-    )
-
-    text_match = match_skill_name_from_text(user_text)
-    if text_match:
-        return text_match
-    return fallback_skill_from_state(raw_state)
 
 
-def _build_prelude_notes(resolved_skill: str) -> List[tuple]:
-    """前奏时间线（只登记真实发生的事件，8888 事故：不得用假操作冒充工具动作）。
-
-    只保留「加载 Skill 流程基线」——它对应 prompt_builder 每轮真实注入当前 Skill 的
-    <planner> 章节；「读取/存档上传文档」由 read_uploaded_doc 工具真实发生时记录，
-    前奏不冒充读取。"""
-    notes: List[tuple] = []
-    if resolved_skill:
-        notes.append(("system", f"加载 Skill「{resolved_skill}」流程规范进上下文"))
-    return notes
 
 
-def _channel_supports_fc(provider_id: str) -> bool:
-    """判断供应商的聊天通道是否支持 Function Calling。
-
-    gemini-cli 协议走 AgyCliChatAdapter（无 FC），其他协议走 OpenAI 兼容
-    chat adapter（支持 FC）。非 FC 通道调不了 read_* 工具，
-    附件文档与选中 Skill 必须降级为全文直接注入，否则模型根本看不到。
-    """
-    try:
-        cfg = get_provider_config(provider_id) or {}
-    except Exception:
-        cfg = {}
-    return (cfg.get("protocol") or "openai") != "gemini-cli"
 
 
-def _summary_thinking_level() -> str:
-    """摘要/压缩调用思考档位（B8 策略表化）：策略 summary 角色 > settings.aux_thinking_level。"""
-    from src.video_agent.core import model_policy
-
-    return model_policy.thinking_for("summary", getattr(settings, "aux_thinking_level", "") or "")
 
 
-def _resolve_summary_adapter(body, candidates: List[tuple]) -> Optional[BaseChatAdapter]:
-    """解析记忆摘要专用 adapter：摘要无需主模型能力，固定走便宜模型省 token。
-
-    优先级（B8 策略表化）：模型策略表 summary 角色（provider:model）>
-    settings.memory_summary_model > fallback 链末位 > None（跟随主模型）。
-    解析失败静默回落 None（摘要仍走主模型，功能不中断）。
-    """
-    try:
-        from src.video_agent.core import model_policy
-
-        role = model_policy.resolve_role("summary")
-        if role and role.get("model"):
-            return _create_chat_adapter(role["provider"], role["model"])
-        if role:
-            return _create_chat_adapter(role["provider"], body.model)
-        spec = (settings.memory_summary_model or "").strip()
-        if spec:
-            prov, _, mdl = spec.partition(":")
-            return _create_chat_adapter(prov or body.provider, mdl or body.model)
-        if settings.model_fallback_enabled and len(candidates) > 1:
-            cand_provider, cand_model = candidates[-1]
-            return _create_chat_adapter(cand_provider, cand_model)
-    except Exception as e:
-        logger.warning(f"[ChatService] 记忆摘要模型解析失败，回落主模型: {e}")
-    return None
 
 
-def _create_chat_adapter(provider_id: str, model: str):
-    """按供应商协议创建 chat adapter。
-
-    Antigravity CLI（gemini-cli 协议）对齐画布行为：聊天走本机 agy CLI
-    登录态，不走反代；model=auto 时不传 --model，由 agy 自行路由
-    （曾硬路由到 custom-api 反代导致 400 model not register）。
-    其他供应商维持原 OpenAI 兼容端点解析路径。
-    """
-    cfg = get_provider_config(provider_id)
-    if cfg and cfg.get("protocol") == "gemini-cli":
-        logger.info(f"[ChatService] Antigravity CLI 聊天走本机 agy: model={model}")
-        return AgyCliChatAdapter(model=model)
-    base_url, api_key, effective_model = resolve_openai_endpoint(provider_id, model)
-    return AdapterFactory.get_or_create_chat_adapter(provider_id, base_url, api_key, effective_model)
 
 
-def _build_meta_note(elapsed_secs: float, steps: int, applied: int) -> str:
-    """生成消息耗时角标文案（与前端 finishStream 的 meta 格式一致），随消息持久化"""
-    parts = [f"耗时 {elapsed_secs:.1f}s"]
-    if steps > 1:
-        parts.append(f"{steps} 轮")
-    if applied > 0:
-        parts.append(f"更新 {applied} 项")
-    return " · ".join(parts)
 
 
-def _record_active_skill(svc, body: Any) -> None:
-    """B4/F30：当前技能三本账收敛——本轮实际激活了 Skill（skill_name/skill_slug
-    可解析到已注册 Skill）就记入项目 usedSkills，不再依赖消息携带 chip；
-    usedSkills 是唯一持久事实源（localStorage 仅作跨会话记忆）。"""
-    name = str(getattr(body, "skill_name", "") or "").strip()
-    slug = str(getattr(body, "skill_slug", "") or "").strip()
-    if not name and not slug:
-        return
-    if not slug:
-        try:
-            from src.video_agent.web import skill_docs as sd
-
-            for d in sd.list_skill_docs():
-                if str(d.get("name") or "") == name:
-                    slug = str(d.get("slug") or "")
-                    break
-        except Exception as e:
-            logger.warning(f"[ChatService] 按名称解析 Skill slug 失败: {e}")
-    if slug:
-        svc.record_used_skill(slug)
 
 
-async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_context: bool) -> str:
-    """开场公共编排（814F2：流式/非流式双路径单一实现，消除双份复制）。
-
-    暂停闭环（消费上轮暂停态）+ 规格定稿/向导消费 + 附件降级注入，
-    返回拼好的 LLM 用户消息文本。调用方需保证同一请求只调一次。
-    """
-    pending_confirm_note = ""
-    spec_finalize_note = ""
-    spec_wizard_note = ""
-    if use_studio_context:
-        async with svc.lock:
-            pending_confirm_note = _consume_pending_confirmation(svc)
-            spec_finalize_note = _finalize_spec_params(svc, user_text)
-            spec_wizard_note = _consume_spec_wizard(svc, user_text)
-    # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
-    attachment_note = (
-        attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
-        if body.attachments else ""
-    )
-    llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
-    if attachment_note:
-        llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
-    return llm_user_text
 
 
-def _store_gate_overrides(svc, overrides) -> None:
-    """814F7（§2.4）：把用户「本次放行」的 rule_id 列表写入 interaction，
-    由本次请求的 Planner 消费一次即清除（单次生效、全程留痕）。
-    调用方需持有 svc.lock。"""
-    cleaned = [r for r in (overrides or []) if isinstance(r, str) and r.strip()]
-    if not cleaned:
-        return
-    interaction = svc.state_dict.setdefault("interaction", {})
-    interaction["gate_overrides"] = cleaned
-    svc.save()
-    logger.info(f"[GateOverride] 已登记 {len(cleaned)} 条一次性闸机豁免: {cleaned}")
 
 
-# 会话级 compaction（814R4 恢复）：压缩后仍完整保留的最近消息条数
-_HISTORY_COMPACT_KEEP = 4
 
 
-async def _maybe_compact_history(
-    history: List[Dict[str, Any]], svc, adapter,
-) -> List[Dict[str, Any]]:
-    """会话级 compaction（814R4 恢复）：历史超阈值时用便宜模型把较早消息压成摘要。
-
-    对齐 Anthropic compaction 实践：保留决策与约束、丢弃冗余过程；
-    摘要按对话消息数缓存于 interaction.session_summary（消息数变化即失效重建），
-    失败静默回落原 history（compaction 是优化不是前置条件）。"""
-    threshold = int(getattr(settings, "history_compact_threshold", 0) or 0)
-    if threshold <= 0 or adapter is None or len(history) < threshold:
-        return history
-    interaction = svc.state_dict.setdefault("interaction", {})
-    cached = interaction.get("session_summary") or {}
-    msg_count = len(svc.get_chat_messages())
-    summary = ""
-    if cached.get("count") == msg_count and str(cached.get("text") or "").strip():
-        summary = str(cached["text"])
-    else:
-        keep = _HISTORY_COMPACT_KEEP
-        older = history[:-keep] if len(history) > keep else []
-        if not older:
-            return history
-        dialog = "\n".join(
-            f"{'user' if m.get('role') == 'user' else 'agent'}: {str(m.get('content', ''))[:300]}"
-            for m in older[-20:]
-        )
-        from src.video_agent.utils.prompts import load_prompt_section
-
-        tpl = load_prompt_section("planner/session_compact.md", "TEMPLATE")
-        prompt = tpl.replace("{{dialog}}", dialog) if tpl else (
-            "请把以下对话压缩为不超过 300 字的摘要，保留决策与约束：\n" + dialog)
-        try:
-            resp = await adapter.chat(
-                [
-                    {"role": "system", "content": "你是会话摘要助手。"},
-                    {"role": "user", "content": prompt},
-                ],
-                timeout=settings.llm_timeout,
-                thinking_level=_summary_thinking_level(),
-            )
-            summary = (resp.content or "").strip()
-        except Exception as e:
-            logger.warning(f"[ChatService] 会话 compaction 失败，保留原 history: {e}")
-            return history
-        if not summary:
-            return history
-        interaction["session_summary"] = {"count": msg_count, "text": summary[:1000]}
-        svc.save_debounced()
-        logger.info(f"[ChatService] 会话 compaction：{len(history)} 条 history 压缩为摘要+{keep} 条")
-    return [
-        {"role": "user", "content": f"（会话摘要，较早对话已压缩；工作台状态 JSON 仍是最新事实源）{summary}"},
-    ] + history[-_HISTORY_COMPACT_KEEP:]
 
 
-def _consume_pending_confirmation(svc, user_text: str = "") -> str:
-    """消费「等待确认」暂停态：用户的新消息即是对上一轮暂停的回应。
-
-    暂停态只写不清会让模型永远停在上一阶段；只清不带则模型看不到
-    「用户已确认」的信号，两者都会导致从头重复同一套操作（读同一文档→
-    写同一文档→再次请求确认）。此处同时完成：清除状态 + 把暂停说明
-    以系统提示形式附在本轮用户消息后，返回附加提示（无暂停时返回空串）。
-    调用方需持有 svc.lock。
-    """
-    interaction = svc.state_dict.get("interaction") or {}
-    pause_kind = interaction.get("pending_pause_kind")
-    if pause_kind == "collect":
-        # 规格收集暂停的回应：视为已进入收集环节（后续由 _consume_spec_wizard 拼装）
-        interaction["spec_collected"] = True
-    # 暂停语义标记（summary/spec/collect）随回应消费清除，避免残留影响下一轮
-    interaction.pop("pending_pause_kind", None)
-    # 故事板待确认窗口（步骤3→步骤4 分界）：不依赖 awaiting_confirmation，
-    # 用户任何新消息到达即视为已审阅故事板，解除提示词写入封锁
-    if interaction.get("storyboard_pending"):
-        interaction["storyboard_pending"] = False
-        svc.save()
-    # 确认闭环：上一轮展示过提示词草案（drafts_presented）且用户新消息到达，
-    # 将未被重写过的草稿晋升为「已确认」（生成闸的前置条件）；
-    # 期间被重写的草稿 tag 已在写入时重置，不会被误晋升
-    presented = [d for d in (interaction.get("drafts_presented") or []) if d]
-    if presented:
-        promoted = 0
-        presented_set = set(presented)
-        for cat in ("keyElements", "shots", "audioItems"):
-            for group in svc.state_dict.get(cat, []) or []:
-                for draft in group.get("drafts", []) or []:
-                    tag = str(draft.get("tag") or "").strip()
-                    if draft.get("id") in presented_set and tag in ("", "Agent", "草稿", "推荐"):
-                        draft["tag"] = "已确认"
-                        promoted += 1
-        interaction["drafts_presented"] = []
-        svc.save()
-        if promoted:
-            logger.info(f"[ConfirmFlow] 用户回应到达：{promoted} 个已展示的 Prompt Draft 晋升为「已确认」")
-    # 晋升兜底（8888 事故）：处于暂停态但 presented 记录缺失（记录链路异常或
-    # 草稿经未记录路径写入）时，用户对暂停的回应即视为对当前带提示词草稿的确认，
-    # 否则 tag 永远停在 Agent，生成闸反复拦截造成「确认了也出不了图」
-    if not presented and interaction.get("awaiting_confirmation"):
-        fallback_promoted = 0
-        for cat in ("keyElements", "shots", "audioItems"):
-            for group in svc.state_dict.get(cat, []) or []:
-                for draft in group.get("drafts", []) or []:
-                    tag = str(draft.get("tag") or "").strip()
-                    if (draft.get("prompt") or "").strip() and tag in ("", "Agent", "草稿", "推荐"):
-                        draft["tag"] = "已确认"
-                        fallback_promoted += 1
-        if fallback_promoted:
-            svc.save()
-            logger.info(f"[ConfirmFlow] presented 缺失兜底：{fallback_promoted} 个带提示词草稿晋升为「已确认」")
-    if not interaction.get("awaiting_confirmation"):
-        return ""
-    paused_msg = str(interaction.get("confirmation_message") or "")[:300]
-    interaction["awaiting_confirmation"] = False
-    interaction["confirmation_message"] = ""
-    svc.save()
-    return (
-        "\n\n（系统提示：上一轮已通过 request_confirmation/workflow_pause 暂停等待确认，"
-        f"暂停内容：{paused_msg}。本条消息即对该暂停的回应：表示确认时，先把当前阶段产出物做完再暂停"
-        "（如规格选择收齐后先写入规格文档，再进入下一阶段）；已完成的步骤（已读文档/已写规格）不必重复；"
-        "提出修改意见时按新要求执行，完成后重新请求确认。）"
-    )
 
 
-def _consume_spec_wizard(svc, user_text: str) -> str:
-    """规格向导消费（6666/1111 事故）：用户回应是规格收集暂停的候选项时，
-    机械落盘为规格文档（系统拼装，模型不手写），返回附加系统提示。
-
-    仅当：项目尚无规格文档 + 用户回应含可解析的制作参数/渠道选择或明确确认意图。
-    调用方需持有 svc.lock。
-    """
-    import re
-    from datetime import datetime, timezone
-
-    from src.video_agent.core import prompt_gates
-    from src.video_agent.utils import gen_id
-
-    state = svc.state_dict
-    if prompt_gates.has_spec_document(state):
-        return ""
-    text = str(user_text or "").strip()
-    if not text:
-        return ""
-    used = state.get("usedSkills") or []
-    skill_name = str(used[-1] or "") if used else ""
-    # Skill 软维度（向导逐行回传格式「键：值」；出图/出视频渠道、图片分辨率、
-    # 视频分辨率、分镜最大时长由顶部「全局设置」唯一提供，规格文档不再承载）
-    dims = prompt_gates.skill_spec_dimensions(skill_name)
-    selections = prompt_gates.parse_dim_selections(text, dims)
-    # 用户可能整页点过占位卡（「维度：（待定）」）后发送：也算回应了向导，
-    # 不能因此不落盘（否则 document_write 被拒 → 再次接管 → 死循环）
-    responded = bool(selections) or any(
-        re.search(re.escape(dim) + r"\s*[:：]", text) for dim in dims
-    )
-    if not responded:
-        return ""
-    # 未选维度用模型出题的候选首项兜底；无候选时以「（待定）」占位，
-    # 保证规格文档维度与 Skill 声明完全一致（模型不能增删维度）
-    model_filled: Dict[str, str] = {}
-    cands = ((state.get("interaction") or {}).get("spec_soft_candidates") or {})
-    for dim in dims:
-        vals = cands.get(dim) or []
-        if dim not in selections:
-            model_filled[dim] = str(vals[0]) if vals else prompt_gates._PLACEHOLDER_DIM_VALUE
-    content = prompt_gates.assemble_spec_doc(
-        skill_name, selections, model_filled=model_filled,
-    )
-    if not content.strip():
-        return ""
-    docs = state.setdefault("documents", [])
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    name = "Final_Video_Spec.md"
-    for d in docs:
-        if d.get("name") == name:
-            d["content"] = content
-            d["updated_at"] = now
-            break
-    else:
-        docs.insert(0, {
-            "id": gen_id("doc"), "name": name, "content": content,
-            "created_at": now, "updated_at": now,
-        })
-    inter = state.setdefault("interaction", {})
-    inter["spec_collected"] = True
-    # 8888 二轮：机械落盘也发文档卡片（持久化消息条 + 收尾快照携带），
-    # 否则用户永远看不到规格卡
-    svc.add_chat_message("agent", "", doc_card=name)
-    svc.save()
-    logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md")
-    return (
-        "\n\n（系统：已按你的选择拼装并写入 Final_Video_Spec.md 规格文档；"
-        "接下来请按 Skill 流程开始拆分关键元素，并暂停等用户确认拆分方案。）"
-    )
 
 
-def _finalize_spec_params(svc, user_text: str) -> str:
-    """规格暂停回应定稿（1111 事故）：summary 暂停的「确认」不得定稿规格；
-    spec 暂停的「确认」按展示值定稿；显式选择（分辨率/时长）任意情况下生效。"""
-    from src.video_agent.core import prompt_gates
-
-    inter = svc.state_dict.get("interaction") or {}
-    if inter.get("pending_pause_kind") == "summary":
-        return ""
-    spec = None
-    for d in svc.state_dict.get("documents") or []:
-        if prompt_gates.is_spec_doc_name(str(d.get("name") or "")):
-            spec = d
-            break
-    if spec is None:
-        return ""
-    allow_confirm = inter.get("pending_pause_kind") == "spec"
-    new_content, applied = prompt_gates.apply_spec_param_selections(
-        str(spec.get("content") or ""),
-        str(user_text or ""),
-        allow_confirm_intent=allow_confirm,
-    )
-    if not applied:
-        return ""
-    spec["content"] = new_content
-    svc.save()
-    return "（系统：已按你的选择/确认定稿规格参数：" + "、".join(applied[:6]) + "）"
 
 
-def _compact_card_enumeration(text: str) -> str:
-    """把「N 组 M 卡（名称）：…」式逐卡枚举压缩为一行（8888 事故：正文逐卡罗列
-    既耗 token 又撑长卡片）。少于 3 行枚举不触发。"""
-    import re
-
-    text = str(text or "")
-    line_re = re.compile(r"(?m)^\s*-\s*\*\*\d+\s*组\s*\d+\s*卡（[^）]*）\*\*：.*$")
-    matches = list(line_re.finditer(text))
-    if len(matches) < 3:
-        return text
-    # 保留首行前的引导语与末行后的收尾（如「请在左侧故事板审阅」）
-    head = text[:matches[0].start()]
-    tail = text[matches[-1].end():]
-    return (
-        head.rstrip()
-        + "\n- **逐卡明细已写入左侧故事板**（详见左侧草稿卡，正文不再逐卡罗列）。\n"
-        + tail.lstrip()
-    )
 
 
 async def stream_worker(body: Any, emit) -> None:
@@ -1201,3 +750,34 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         "state": svc.get_full_snapshot() if use_studio_context else None,
         "memory_hits": getattr(planner_ctx, "memory_hits", None) or [],
     }
+
+
+# R4c：开场编排域/消费压缩域实现体在 chat_opening.py / chat_consume.py，re-export 保持既有引用不变
+from src.video_agent.web.chat_opening import (
+    _HISTORY_ASSISTANT_MAX_CHARS,
+    _HISTORY_ASSISTANT_RECENT_MAX_CHARS,
+    _HISTORY_HEAD_CHARS,
+    _HISTORY_TAIL_CHARS,
+    _INFLIGHT_REQUESTS,
+    _acquire_request_slot,
+    _build_meta_note,
+    _build_prelude_notes,
+    _channel_supports_fc,
+    _create_chat_adapter,
+    _prepare_chat_opening,
+    _record_active_skill,
+    _release_request_slot,
+    _resolve_skill_name_for_injection,
+    _resolve_summary_adapter,
+    _store_gate_overrides,
+    truncate_history,
+)
+from src.video_agent.web.chat_consume import (
+    _summary_thinking_level,
+    _HISTORY_COMPACT_KEEP,
+    _compact_card_enumeration,
+    _consume_pending_confirmation,
+    _consume_spec_wizard,
+    _finalize_spec_params,
+    _maybe_compact_history,
+)

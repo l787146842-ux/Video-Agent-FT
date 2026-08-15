@@ -737,3 +737,35 @@ def _apply_actions(
     if applied < len(actions):
         warnings.append(f"{len(actions) - applied} 个操作未匹配到目标或执行失败")
     return applied, warnings
+
+
+# R4a 补：关键元素角标排序（自 exec_tools 移入，控制文件行数红线）
+# 关键元素类别排序（Q4 补漏元素不垫底）：人物→场景→道具→载具，其余保持原相对位置
+_BADGE_CATEGORY_KEYS = (
+    ("人物", "角色"),
+    ("场景", "地点", "环境"),
+    ("道具", "物品", "器物"),
+    ("载具", "交通工具", "飞船", "车辆"),
+)
+
+
+def _badge_category_rank(label: str) -> int:
+    """按徽标文案推断类别序；未命中的排在已知类别之后（稳定排序保序）。"""
+    text = str(label or "")
+    for i, keys in enumerate(_BADGE_CATEGORY_KEYS):
+        if any(k in text for k in keys):
+            return i
+    return len(_BADGE_CATEGORY_KEYS)
+
+
+def _sort_key_elements_by_badge(svc: StateManager) -> bool:
+    """对关键元素列表按类别稳定排序（同类内部保持原有先后）。
+    返回是否发生了顺序变化（无变化时不动状态，避免无谓重绘）。"""
+    groups = svc.state_dict.get("keyElements") or []
+    if len(groups) < 2:
+        return False
+    ordered = sorted(groups, key=lambda g: _badge_category_rank(str(g.get("badgeLabel") or "")))
+    if [g.get("id") for g in ordered] == [g.get("id") for g in groups]:
+        return False
+    svc.state_dict["keyElements"] = ordered
+    return True
