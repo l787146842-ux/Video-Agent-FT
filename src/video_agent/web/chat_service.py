@@ -230,6 +230,28 @@ def _build_meta_note(elapsed_secs: float, steps: int, applied: int) -> str:
     return " · ".join(parts)
 
 
+def _record_active_skill(svc, body: Any) -> None:
+    """B4/F30：当前技能三本账收敛——本轮实际激活了 Skill（skill_name/skill_slug
+    可解析到已注册 Skill）就记入项目 usedSkills，不再依赖消息携带 chip；
+    usedSkills 是唯一持久事实源（localStorage 仅作跨会话记忆）。"""
+    name = str(getattr(body, "skill_name", "") or "").strip()
+    slug = str(getattr(body, "skill_slug", "") or "").strip()
+    if not name and not slug:
+        return
+    if not slug:
+        try:
+            from src.video_agent.web import skill_docs as sd
+
+            for d in sd.list_skill_docs():
+                if str(d.get("name") or "") == name:
+                    slug = str(d.get("slug") or "")
+                    break
+        except Exception as e:
+            logger.warning(f"[ChatService] 按名称解析 Skill slug 失败: {e}")
+    if slug:
+        svc.record_used_skill(slug)
+
+
 async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_context: bool) -> str:
     """开场公共编排（814F2：流式/非流式双路径单一实现，消除双份复制）。
 
@@ -568,11 +590,10 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
         async with svc.lock:
             _store_gate_overrides(svc, body.gate_overrides)
 
-    # Skill 写入文档：消息携带 Skill 引用块时（前端此时才传 skill_slug），
-    # 记入当前项目 usedSkills，文档面板只展示已发送过的 Skill 文档。
-    if body.skill_slug:
-        async with svc.lock:
-            svc.record_used_skill(body.skill_slug)
+    # Skill 写入文档（B4/F30）：本轮激活了 Skill 即记入当前项目 usedSkills
+    #（不再依赖消息携带 chip/slug；文档面板只展示已发送过的 Skill 文档）
+    async with svc.lock:
+        _record_active_skill(svc, body)
 
     # 多模态内容构建（有 content_parts 时按排版顺序交错；
     # 传入选中草稿信息用于素材超限时的优先级注入）
@@ -991,10 +1012,9 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         async with svc.lock:
             _store_gate_overrides(svc, body.gate_overrides)
 
-    # Skill 写入文档：同 stream_worker（仅消息携带 Skill 引用块时前端才传 slug）
-    if body.skill_slug:
-        async with svc.lock:
-            svc.record_used_skill(body.skill_slug)
+    # Skill 写入文档（B4/F30）：同 stream_worker——本轮激活了 Skill 即记入 usedSkills
+    async with svc.lock:
+        _record_active_skill(svc, body)
 
     # mock 路径
     if is_mock_provider(body.provider, body.model):

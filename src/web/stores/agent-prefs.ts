@@ -73,11 +73,11 @@ export function setAgentModel(v: string) {
 }
 
 export function agentSkillId(): string {
-  // 代码内置 Skill（如 production-agent）已彻底移除；若旧 localStorage 里残留
-  // 无效 id，回退到第一个可用文档 Skill，避免选中一个不存在的项。
+  // B4/F28·D2：默认无技能——localStorage 无值/失效时返回空（不自动回落第一个技能），
+  // 用户显式选择 Skill 才激活流程/闸机；SkillPicker 提供「不使用技能」卡。
   const id = skillId();
   if (id && state.skills.some((s) => s.id === id)) return id;
-  return state.skills.length ? state.skills[0].id : '';
+  return '';
 }
 
 export function agentSkill() {

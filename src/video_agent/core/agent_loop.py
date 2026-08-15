@@ -702,14 +702,35 @@ async def run_agent_loop(
             _sys_msg, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
 
         # 阶段完成引导兜底（5555 事故）：执行器跑完但模型没发确认卡时，
-        # 系统客观补一张下一步引导卡（不覆盖模型自发的暂停）
+        # 系统客观补一张下一步引导卡（不覆盖模型自发的暂停）。
+        # B4/F29：Skill 声明「何时暂停/阶段暂停」（pause.stage_pause）时同样消费——
+        # 任何执行器批次完成后模型未自发暂停即补卡（声明驱动 + 平台兜底双语义）。
+        _stage_pause_declared = False
+        if skill:
+            try:
+                from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
+
+                _stage_pause_declared = skill_requires_stage_pause(skill)
+            except Exception:
+                _stage_pause_declared = False
+        _executor_actions = (
+            "script_analyze", "storyboard_key_elements", "storyboard_shots",
+            "storyboard_audio", "write_media_prompt", "audio_generate", "video_assembler",
+        )
         if (
             not confirmation
             and not gate_heal
             and applied > 0
+            and (
+                _stage_pause_declared
+                or any(
+                    str(a.get("action") or a.get("tool") or "").strip()
+                    in ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
+                    for a in executable
+                )
+            )
             and any(
-                str(a.get("action") or a.get("tool") or "").strip()
-                in ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
+                str(a.get("action") or a.get("tool") or "").strip() in _executor_actions
                 for a in executable
             )
         ):

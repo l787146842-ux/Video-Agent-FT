@@ -97,6 +97,19 @@ export function SkillPicker() {
 
       <Show when={open()}>
         <div class="skill-picker" style={panelStyle()}>
+          {/* B4/F28·D2：「不使用技能」卡——默认态，显式选择才激活 Skill 流程/闸机 */}
+          <div
+            class={`skill-picker-card skill-picker-none ${agentSkillId() === '' ? 'active' : ''}`}
+            onClick={() => {
+              setAgentSkill('');
+              setOpen(false);
+            }}
+          >
+            <div class="skill-picker-info">
+              <span class="skill-picker-name">{t('rp.skill.noneOption')}</span>
+              <span class="skill-picker-desc">{t('rp.skill.noneOptionHint')}</span>
+            </div>
+          </div>
           <For each={state.skills}>
             {(skill) => (
               <div
