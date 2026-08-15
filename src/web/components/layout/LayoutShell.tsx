@@ -188,7 +188,7 @@ export function LayoutShell(props: ParentProps) {
   });
 
   return (
-    <div class="panel-column">
+    <div class="panel-column" classList={{ 'overlay-shell': overlayMode() }}>
       <Show when={loading()}>
         <SplashScreen />
       </Show>

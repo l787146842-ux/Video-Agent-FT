@@ -2,6 +2,8 @@
 @layer components {
   /* ---------- 布局骨架 ---------- */
   .panel-column { display: flex; flex-direction: column; height: 100%; position: relative; }
+    /* 覆盖层路由（画布/API 配置/全局设置）窄视口兑底：顶栏 min-width 超宽时整壳横向滚动 */
+    .overlay-shell { overflow-x: auto; }
   /* 814F6 窄视口保护：三栏总宽约 912px，窗口更窄时界面不再压缩重叠，
      改为横向滚动兜底（桌面优先，不做响应式重排） */
   .layout-main { flex: 1; min-height: 0; display: flex; min-width: 0; position: relative; overflow-x: auto; }
@@ -34,6 +36,8 @@
       display: inline-flex; align-items: center; line-height: 1;
       filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.25));
     }
+  /* 亮色主题：规范白色品牌字仅适暗色，亮色下白底白字不可见 → 随主题变量转深色 */
+  html.light .brand-art { color: var(--text-main); filter: none; }
   /* 导航按钮绝对居中：两侧内容增减不影响居中 */
   .studio-nav-links { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 16px; }
   .studio-header-actions { display: flex; align-items: center; gap: 12px; }
@@ -76,26 +80,54 @@
   .gs-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .gs-hint { margin: 0; font-size: 11px; line-height: 1.6; color: var(--text-dim); }
 
-  /* ===== API 配置页（/settings，B3b SPA 原生实现；U5 三轮审核视觉重做） ===== */
-  .gs-actions { display: flex; justify-content: flex-end; gap: 10px; }
-  .provider-edit-card { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-card); }
-  .pv-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .pv-name { font-size: 13px; font-weight: 600; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pv-id { flex-shrink: 0; font-size: 10px; color: var(--text-dim); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 999px; padding: 1px 8px; font-family: Consolas, monospace; }
-  .pv-head .provider-toggle { padding-top: 0; margin-left: auto; }
-  .provider-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
-  .pv-delete { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; color: var(--text-dim); cursor: pointer; transition: all 0.15s; }
-  .pv-delete:hover { color: #f87171; background: rgba(239, 68, 68, 0.12); }
-  .pv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
-  .pv-span2 { grid-column: 1 / -1; }
-  .pv-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .pv-field > span { font-size: 11px; color: var(--text-muted); }
-  .pv-input { width: 100%; box-sizing: border-box; padding: 6px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-main); font-size: 12px; text-align: left; outline: none; transition: border-color 0.15s; }
-  .pv-input:focus { border-color: var(--accent-blue); }
-  .pv-keyrow { display: flex; align-items: center; gap: 8px; }
-  .pv-keybadge { flex-shrink: 0; font-size: 10px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-color); color: var(--text-dim); }
-  .pv-keybadge.on { color: #34d399; border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.08); }
-  .pv-foot { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px dashed var(--border-color); padding-top: 10px; }
+  /* ===== API 配置页（/settings）——画布 API 设置风格（用户裁决 2026-08-16：
+     左平台列表 + 右分区卡片；去「推荐API」；CLI 区不照搬） ===== */
+  .aps-wrap { width: min(1180px, 100%); display: flex; flex-direction: column; gap: 14px; position: relative; }
+  .aps-wrap > .gs-back { position: absolute; top: -2px; right: 0; }
+  .aps-page-head h1 { font-size: 22px; font-weight: 700; color: var(--text-main); }
+  .aps-page-head p { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+  .aps-cols { display: flex; gap: 16px; align-items: flex-start; }
+  .aps-side { width: 280px; flex-shrink: 0; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .aps-side-label { font-size: 11px; color: var(--text-dim); margin: 2px 4px 4px; }
+  .aps-item { display: flex; align-items: center; gap: 8px; padding: 10px; border-radius: 10px; border: 1px solid transparent; background: transparent; cursor: pointer; text-align: left; transition: background 0.12s, border-color 0.12s; }
+  .aps-item:hover { background: var(--bg-tertiary); }
+  .aps-item.active { background: var(--bg-tertiary); border-color: var(--border-highlight); }
+  .aps-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .aps-item-name { font-size: 13px; font-weight: 600; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .aps-item-sub { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .aps-badge { flex-shrink: 0; font-size: 9px; letter-spacing: 0.5px; color: var(--text-muted); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 5px; text-transform: uppercase; }
+  .aps-add { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 6px; padding: 9px; border-radius: 10px; border: 1px dashed var(--border-color); background: transparent; color: var(--text-muted); font-size: 12px; cursor: pointer; transition: color 0.12s, border-color 0.12s; }
+  .aps-add:hover { color: var(--text-main); border-color: var(--border-highlight); }
+  .aps-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  .aps-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px 18px; }
+  .aps-head-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .aps-title { font-size: 16px; font-weight: 700; color: var(--text-main); }
+  .aps-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .aps-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .aps-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); transition: filter 0.12s, background 0.12s; }
+  .aps-btn:hover { filter: brightness(1.12); }
+  .aps-btn.light { background: var(--text-main); color: var(--bg-primary); border-color: transparent; }
+  .aps-btn.light:hover { filter: brightness(0.92); }
+  .aps-btn.danger { background: transparent; color: #f87171; border-color: rgba(239, 68, 68, 0.35); }
+  .aps-btn.danger:hover { background: rgba(239, 68, 68, 0.1); filter: none; }
+  .aps-sec-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-main); }
+  .aps-sec-desc { font-size: 11px; color: var(--text-muted); margin: 4px 0 12px; }
+  .aps-card-head .aps-sec-desc { margin-bottom: 0; }
+  .aps-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .aps-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; min-width: 0; }
+  .aps-field > span { font-size: 11px; color: var(--text-muted); }
+  .aps-input { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-main); font-size: 12px; outline: none; transition: border-color 0.15s; }
+  .aps-input:focus { border-color: var(--border-highlight); }
+  .aps-input.mono { font-family: Consolas, monospace; }
+  .aps-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .aps-toggle-field { justify-content: flex-end; }
+  .aps-toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); padding: 9px 0; cursor: pointer; }
+  .aps-keynote { font-size: 10px; color: var(--text-dim); margin: -4px 0 10px; }
+  .aps-verify-row { display: flex; gap: 8px; }
+  .aps-model-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .aps-icon-btn { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 34px; border-radius: 8px; border: 1px solid var(--border-color); background: transparent; color: var(--text-dim); cursor: pointer; transition: color 0.12s, background 0.12s; }
+  .aps-icon-btn:hover { color: #f87171; background: rgba(239, 68, 68, 0.1); }
+  .aps-empty { border: 1px dashed var(--border-color); border-radius: 8px; padding: 18px; text-align: center; font-size: 11px; color: var(--text-dim); }
   .btn-primary, .btn-secondary { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); }
   .btn-primary { border-color: var(--accent-blue); background: var(--accent-blue); color: #fff; }
   .btn-primary:hover { filter: brightness(1.1); }
