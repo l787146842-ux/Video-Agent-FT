@@ -71,6 +71,14 @@ async def lifespan(_app: FastAPI):
     # 下拉框与 Skill 目录只保留 data/skills/*.md 文档 Skill。
     ensure_default_skill_docs()
     StateManager.get_instance()  # 触发加载/初始化
+    # B6/F44：数据 TTL 启动清理——技能历史版本全量收敛（每 slug 保留最近 N 版）；
+    # 生成任务表 TTL 清理由 task_manager._load_persisted 末尾自动执行
+    try:
+        from src.video_agent.web.skill_docs import prune_all_skill_history
+
+        prune_all_skill_history()
+    except Exception as e:
+        logger.warning(f"[Startup] 技能历史收敛失败（不影响主流程）: {e}")
     # 画布 Tool 注册（可通过 CANVAS_ENABLED=false 关闭）
     if settings.canvas_enabled:
         from src.video_agent.tools.canvas_tools import register_canvas_tools

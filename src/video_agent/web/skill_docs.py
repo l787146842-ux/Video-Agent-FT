@@ -317,6 +317,35 @@ def _backup_skill_doc(slug: str, target: Path) -> None:
         logger.warning(f"[SkillDocs] 版本备份失败 {slug}: {e}")
 
 
+def prune_all_skill_history() -> int:
+    """B6/F44：启动时裁剪全部 Skill 历史——每 slug 只保留最近 _HISTORY_MAX 版。
+
+    历史文件的堆积来自保存时的增量裁剪与旧版本遗留；此函数按 slug 分组
+    （文件名 `{slug}-{毫秒时间戳}.md`）做一次全量收敛，返回删除数。"""
+    hdir = SKILL_DOCS_DIR / _HISTORY_DIR_NAME
+    if not hdir.exists():
+        return 0
+    removed = 0
+    by_slug: Dict[str, List[Any]] = {}
+    for f in hdir.glob("*.md"):
+        base = f.name
+        if "-" not in base:
+            continue
+        slug = base.rsplit("-", 1)[0]
+        by_slug.setdefault(slug, []).append(f)
+    for slug, files in by_slug.items():
+        files.sort(key=lambda p: p.name, reverse=True)
+        for old in files[_HISTORY_MAX:]:
+            try:
+                old.unlink(missing_ok=True)
+                removed += 1
+            except OSError:
+                pass
+    if removed:
+        logger.info(f"[SkillDocs] 历史版本收敛：删除 {removed} 个过期备份")
+    return removed
+
+
 def list_skill_doc_history(slug: str) -> List[Dict[str, Any]]:
     """列出某 Skill 文档的历史版本（新→旧，含全文，供查看/回滚）"""
     slug = _validate_slug(slug)

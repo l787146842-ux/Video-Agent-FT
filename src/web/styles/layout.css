@@ -75,4 +75,16 @@
   .gs-section h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-muted); }
   .gs-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .gs-hint { margin: 0; font-size: 11px; line-height: 1.6; color: var(--text-dim); }
+
+  /* ===== API 配置页（/settings，B3b SPA 原生实现） ===== */
+  .provider-edit-card { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-tertiary); }
+  .provider-field { display: flex; flex-direction: column; gap: 4px; min-width: 160px; flex: 1; }
+  .provider-field-wide { min-width: 260px; flex: 2; }
+  .provider-field span { font-size: 11px; color: var(--text-muted); }
+  .provider-field input, .provider-field select { width: 100%; box-sizing: border-box; }
+  .provider-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); padding-top: 16px; }
+  .btn-primary, .btn-secondary { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); }
+  .btn-primary { border-color: var(--accent-blue); background: var(--accent-blue); color: #fff; }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-secondary:hover { border-color: var(--accent-blue); }
 }

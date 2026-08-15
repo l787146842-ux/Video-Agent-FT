@@ -62,9 +62,24 @@ _MODEL_CONTEXT_WINDOWS = {
 }
 
 
-def context_window_for_model(model: str) -> int:
-    """按模型名查上下文窗口；未收录的模型回落 settings.context_window_size。"""
+def context_window_for_model(model: str, provider_id: str = "") -> int:
+    """按模型名查上下文窗口；未收录的模型回落 settings.context_window_size。
+
+    B6/F52：供应商元数据（api_providers.json 的模型条目 context_window）优先，
+    硬编码子串表仅作兜底（同族不同型号窗口可表达，不因表过期而失真）。"""
     m = (model or "").lower()
+    if provider_id:
+        try:
+            from src.video_agent.web.provider_config import get_provider_config
+
+            cfg = get_provider_config(provider_id) or {}
+            for entry in (cfg.get("chat_models_meta") or []):
+                if isinstance(entry, dict) and str(entry.get("model") or "").lower() == m:
+                    win = int(entry.get("context_window") or 0)
+                    if win > 0:
+                        return win
+        except Exception:
+            pass  # 元数据不可用：回落查表（B6/F50 已日志化的降级路径）
     for key, window in _MODEL_CONTEXT_WINDOWS.items():
         if key in m:
             return window

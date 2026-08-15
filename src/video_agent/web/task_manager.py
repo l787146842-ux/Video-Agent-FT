@@ -242,6 +242,12 @@ class GenerationTaskManager:
             self._gen_logs = [l for l in logs if isinstance(l, dict)]
         if recovered:
             logger.info(f"[TaskManager] 已恢复 {recovered} 个任务（中断任务已标记 failed）")
+        # B6/F44：数据 TTL——启动恢复后立即清理过期/超量任务（此前仅创建时清理，
+        # 历史任务记录只进不出；gen 日志保留，任务表按 TTL 收敛）
+        try:
+            self._purge_stale()
+        except Exception as e:
+            logger.warning(f"[TaskManager] 启动 TTL 清理失败: {e}")
         self._persist()
 
     def _persist(self) -> None:

@@ -247,7 +247,7 @@ class Planner:
     def _context_window(self) -> int:
         """当前模型的上下文窗口（按模型名查表，缺省回落全局配置）"""
         model = getattr(self.llm_adapter, "model", "") if self.llm_adapter else ""
-        return context_window_for_model(model)
+        return context_window_for_model(model, provider_id=getattr(self, "chat_provider", "") or "")
 
     # ---------- 核心对话入口 ----------
 
