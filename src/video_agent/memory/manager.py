@@ -8,7 +8,7 @@ import asyncio
 import threading
 import time
 from datetime import datetime
-from typing import Awaitable, Callable, List, Optional
+from typing import Awaitable, Callable, Dict, List, Optional
 
 from loguru import logger
 
@@ -41,7 +41,7 @@ class MemoryManager:
     ):
         base = persist_dir or (DATA_DIR / "memory")
         self._store = VectorStore(base, backend or settings.memory_vector_backend)
-        self._dialog_count = 0
+        self._dialog_counts: Dict[str, int] = {}  # B6/F51：按 project_id 分桶
         self._write_lock = asyncio.Lock()
         # 实例级覆盖（测试友好）；默认读全局配置
         self._summary_interval = summary_interval or settings.memory_summary_interval
@@ -176,8 +176,11 @@ class MemoryManager:
         """
         if not settings.memory_enabled:
             return None
-        self._dialog_count += 1
-        if self._dialog_count % max(1, self._summary_interval) != 0:
+        # B6/F51：摘要触发计数按项目分桶（此前全局单例计数，跨项目混合触发：
+        # A 项目 2 条 + B 项目 1 条会触发第 3 条的摘要）
+        self._dialog_counts[str(project_id or "")] = \
+            self._dialog_counts.get(str(project_id or ""), 0) + 1
+        if self._dialog_counts[str(project_id or "")] % max(1, self._summary_interval) != 0:
             return None
 
         content = await summarize_dialog(user_message, agent_reply, summarize_fn)
@@ -243,4 +246,4 @@ class MemoryManager:
 
     @property
     def dialog_count(self) -> int:
-        return self._dialog_count
+        return sum(self._dialog_counts.values())
