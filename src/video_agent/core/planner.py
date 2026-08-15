@@ -828,14 +828,18 @@ class Planner:
                 )
             else:
                 # 摘要专用模型：直接裸调用（无工具、无状态注入），成本最小化；
-                # 814H7：辅助摘要档位独立于主模型（全局设置页可调）
+                # 814H7/B8：辅助摘要档位独立于主模型（策略表 summary 角色 > 全局设置）
+                from src.video_agent.core import model_policy
+
                 resp = await adapter.chat(
                     [
                         {"role": "system", "content": "你是记忆整理助手。"},
                         {"role": "user", "content": prompt},
                     ],
                     timeout=settings.llm_timeout,
-                    thinking_level=getattr(settings, "aux_thinking_level", "") or "",
+                    thinking_level=model_policy.thinking_for(
+                        "summary", getattr(settings, "aux_thinking_level", "") or ""
+                    ),
                 )
             return resp.content or ""
 

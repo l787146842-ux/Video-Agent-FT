@@ -77,12 +77,17 @@ def _resolve_chat_provider(provider: str = "", model: str = "") -> Tuple[str, st
 
 
 def _resolve_cascade_fast(main_provider: str, main_model: str) -> Tuple[str, str]:
-    """誊写批级联快模型解析（业界基准 C5）。
+    """誊写批级联快模型解析（业界基准 C5；B8 策略表化）。
 
-    settings.executor_fast_model（"provider" 或 "provider:model"）配置后，
-    常规批先走快模型；零进展/被拒收的纠正重试由调用方升级回主推理模型。
-    空配置或解析不到 → 回落主模型（等效不级联），绝不因此阻断主流程。
+    优先级：模型策略表 executor 角色（热更新可编辑）> settings.executor_fast_model
+    （"provider" 或 "provider:model"，旧配置兼容）> 主模型（不级联）。
+    零进展/被拒收的纠正重试由调用方升级回主推理模型；解析失败绝不阻断主流程。
     """
+    from src.video_agent.core import model_policy
+
+    role = model_policy.resolve_role("executor")
+    if role:
+        return role["provider"], role["model"]
     spec = str(getattr(settings, "executor_fast_model", "") or "").strip()
     if not spec:
         return main_provider, main_model
@@ -106,14 +111,17 @@ def _resolve_cascade_fast(main_provider: str, main_model: str) -> Tuple[str, str
 
 
 def _executor_thinking() -> Optional[str]:
-    """执行器机械调用的思考档位（2222 二轮，10.9 模型分层）：
+    """执行器机械调用的思考档位（2222 二轮，10.9 模型分层；B8 策略表化）：
 
     拆解/提示词编写/自检/软参数出题等「照章办事」的结构化产出不需要深推理；
     降档缩短思考静默期，也防思考吃光输出预算导致截断（deepseek-v4-flash
     曾单次思考 2.6 万字把 16384 预算耗光、正文只出 7 个分镜）。
-    空配置 = 不覆盖，沿用全局 llm_thinking_level。主聊天不受影响。
+    优先级：策略表 executor 角色档位 > settings.executor_thinking_level > None。
+    主聊天不受影响。
     """
-    return settings.executor_thinking_level or None
+    from src.video_agent.core import model_policy
+
+    return model_policy.thinking_for("executor", settings.executor_thinking_level) or None
 
 
 def _fmt_num(value) -> str:

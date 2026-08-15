@@ -185,13 +185,28 @@ def _channel_supports_fc(provider_id: str) -> bool:
     return (cfg.get("protocol") or "openai") != "gemini-cli"
 
 
+def _summary_thinking_level() -> str:
+    """摘要/压缩调用思考档位（B8 策略表化）：策略 summary 角色 > settings.aux_thinking_level。"""
+    from src.video_agent.core import model_policy
+
+    return model_policy.thinking_for("summary", getattr(settings, "aux_thinking_level", "") or "")
+
+
 def _resolve_summary_adapter(body, candidates: List[tuple]) -> Optional[BaseChatAdapter]:
     """解析记忆摘要专用 adapter：摘要无需主模型能力，固定走便宜模型省 token。
 
-    优先级：settings.memory_summary_model（"provider:model"）> fallback 链末位 > None（跟随主模型）。
+    优先级（B8 策略表化）：模型策略表 summary 角色（provider:model）>
+    settings.memory_summary_model > fallback 链末位 > None（跟随主模型）。
     解析失败静默回落 None（摘要仍走主模型，功能不中断）。
     """
     try:
+        from src.video_agent.core import model_policy
+
+        role = model_policy.resolve_role("summary")
+        if role and role.get("model"):
+            return _create_chat_adapter(role["provider"], role["model"])
+        if role:
+            return _create_chat_adapter(role["provider"], body.model)
         spec = (settings.memory_summary_model or "").strip()
         if spec:
             prov, _, mdl = spec.partition(":")
@@ -332,7 +347,7 @@ async def _maybe_compact_history(
                     {"role": "user", "content": prompt},
                 ],
                 timeout=settings.llm_timeout,
-                thinking_level=getattr(settings, "aux_thinking_level", "") or "",
+                thinking_level=_summary_thinking_level(),
             )
             summary = (resp.content or "").strip()
         except Exception as e:

@@ -49,9 +49,13 @@ class RuntimeSettingsUpdate(BaseModel):
     # 814H7：推理档位（""=默认/原生）
     executor_thinking_level: Optional[str] = None
     aux_thinking_level: Optional[str] = None
+    # B8：模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型）
+    model_policy: Optional[Dict[str, Any]] = None
 
 
 def _current_dict() -> Dict[str, Any]:
+    from src.video_agent.core import model_policy as mp
+
     return {
         "model_fallback_enabled": settings.model_fallback_enabled,
         "chat_image_enabled": settings.chat_image_enabled,
@@ -64,6 +68,7 @@ def _current_dict() -> Dict[str, Any]:
         "max_shot_duration": settings.max_shot_duration,
         "executor_thinking_level": settings.executor_thinking_level,
         "aux_thinking_level": settings.aux_thinking_level,
+        "model_policy": mp.current_policy(),
     }
 
 
@@ -92,6 +97,11 @@ async def put_runtime_settings(body: RuntimeSettingsUpdate):
             value = str(value or "").strip().lower()
             if value not in _THINKING_VALUES:
                 value = ""
+        elif key == "model_policy":
+            # B8：策略表结构白名单清洗（4 角色 × 3 键）
+            from src.video_agent.core import model_policy as mp
+
+            value = mp.normalize_policy(value)
         else:
             continue
         object.__setattr__(settings, key, value)
@@ -133,5 +143,9 @@ def load_runtime_settings() -> None:
             if key in data:
                 v = str(data[key] or "").strip().lower()
                 object.__setattr__(settings, key, v if v in _THINKING_VALUES else "")
+        if "model_policy" in data:
+            from src.video_agent.core import model_policy as mp
+
+            object.__setattr__(settings, "model_policy", mp.normalize_policy(data["model_policy"]))
     except Exception as e:
         logger.warning(f"[RuntimeSettings] 启动加载失败，使用默认值: {e}")

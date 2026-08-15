@@ -1,10 +1,18 @@
-import { Show, onMount } from 'solid-js';
+import { Show, onMount, For } from 'solid-js';
 import { A } from '@solidjs/router';
 import { FiArrowLeft, FiSettings } from 'solid-icons/fi';
 import { ensureGlobalSettings, globalSettings, updateGlobalSettings } from '@/stores/global-settings';
 import { apiProvidersFor, providerModels } from '@/lib/providers';
 import { ParamGroup, ParamSelect } from '@/components/middle-panel/params/ParamBase';
 import type { RuntimeSettings } from '@/api/agent';
+
+/** B8：模型分层策略表四角色（编排/生成/摘要/执行器） */
+const MODEL_POLICY_ROLES = [
+  { key: 'orchestration', label: '编排规划' },
+  { key: 'generation_strong', label: '生成' },
+  { key: 'summary', label: '摘要' },
+  { key: 'executor', label: '执行器机械' },
+] as const;
 
 /**
  * 全局模型选择设置页（路由 /global-settings，替代旧顶栏自动切换按钮）：
@@ -48,6 +56,14 @@ export default function GlobalSettingsView() {
   function setMaxDuration(v: string) {
     const n = Math.max(1, Math.min(15, parseInt(v, 10) || 5));
     set({ max_shot_duration: n });
+  }
+
+  /** B8：单角色策略局部更新（保留其他角色与其他键） */
+  function setPolicyRole(roleKey: string, patch: { provider?: string; model?: string; thinking_level?: string }) {
+    const policy = { ...(gs()?.model_policy || {}) };
+    const cur = { ...(policy[roleKey] || { provider: '', model: '', thinking_level: '' }) };
+    policy[roleKey] = { ...cur, ...patch };
+    set({ model_policy: policy });
   }
 
   return (
@@ -197,6 +213,54 @@ export default function GlobalSettingsView() {
               执行器机械调用 = 拆关键元素/分镜/写提示词/出题等批量产出；辅助摘要 = 记忆摘要与会话压缩。
               默认 = 模型原生能力；高/中/低按 reasoning_effort 透传，端点不认时自动忽略或降级重试。
               主模型（对话规划）的档位在对话栏「模型」胶囊里按会话选择。
+            </p>
+          </section>
+          {/* B8：模型分层策略表（四角色自动路由；空 = 跟随主模型） */}
+          <section class="gs-section">
+            <h3>模型分层策略</h3>
+            <div class="gs-role-list">
+              <For each={MODEL_POLICY_ROLES}>
+                {(role) => (
+                  <div class="gs-row">
+                    <ParamGroup label={role.label + ':'}>
+                      <ParamSelect
+                        ariaLabel={`${role.label}供应商`}
+                        value={gs()!.model_policy?.[role.key]?.provider || ''}
+                        options={[
+                          { value: '', label: '跟随主模型' },
+                          ...apiProvidersFor('chat').map((p) => ({ value: p.id, label: p.name || p.id })),
+                        ]}
+                        onChange={(v) => setPolicyRole(role.key, { provider: v, model: '' })}
+                      />
+                    </ParamGroup>
+                    <ParamGroup label="模型:">
+                      <ParamSelect
+                        ariaLabel={`${role.label}模型`}
+                        value={gs()!.model_policy?.[role.key]?.model || ''}
+                        options={[
+                          { value: '', label: '默认' },
+                          ...providerModels(gs()!.model_policy?.[role.key]?.provider || '', 'chat')
+                            .map((m) => ({ value: m, label: m })),
+                        ]}
+                        onChange={(v) => setPolicyRole(role.key, { model: v })}
+                      />
+                    </ParamGroup>
+                    <ParamGroup label="推理:">
+                      <ParamSelect
+                        ariaLabel={`${role.label}推理档位`}
+                        value={gs()!.model_policy?.[role.key]?.thinking_level || ''}
+                        options={thinkingOpts()}
+                        onChange={(v) => setPolicyRole(role.key, { thinking_level: v })}
+                      />
+                    </ParamGroup>
+                  </div>
+                )}
+              </For>
+            </div>
+            <p class="gs-hint">
+              编排规划 = 主对话/规划轮；生成 = 执行器长文生成与纠正重试；摘要 = 记忆摘要与会话压缩；
+              执行器机械 = 拆解/提示词批量誊写（快模型先试，零进展自动升级）。
+              「跟随主模型」= 不覆盖（沿用对话栏所选模型与既有回落链）；改动即时生效。
             </p>
           </section>
         </Show>

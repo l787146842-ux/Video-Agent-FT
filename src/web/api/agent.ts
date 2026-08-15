@@ -59,6 +59,8 @@ export interface RuntimeSettings {
   executor_thinking_level: string;
   /** 814H7：辅助摘要（记忆摘要/会话压缩）推理档位（''=默认/原生） */
   aux_thinking_level: string;
+  /** B8：模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型） */
+  model_policy: Record<string, { provider: string; model: string; thinking_level: string }>;
 }
 
 export function getRuntimeSettings(): Promise<RuntimeSettings> {

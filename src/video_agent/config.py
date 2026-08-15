@@ -141,6 +141,9 @@ class Settings:
     # Skill 执行器运行时模式：auto = 按 Skill 能否解析出执行器章节自动选择；
     # executors = 全部走执行器；legacy = 全部走全文+阶段聚焦
     skill_runtime: str = field(default_factory=lambda: os.getenv("SKILL_RUNTIME", "auto"))
+    # B8：模型分层策略表（编排/生成/摘要/执行器四角色，热更新于 runtime_settings.json；
+    # 字段语义见 core/model_policy.py；空 = 跟随主模型/既有回落链）
+    model_policy: dict = field(default_factory=dict)
     # 执行器誊写批的快模型（"provider" 或 "provider:model"）；空 = 回落主模型
     executor_fast_model: str = field(default_factory=lambda: os.getenv("EXECUTOR_FAST_MODEL", ""))
     # 执行器机械调用的思考档位（low/medium/high）；空 = 沿用全局 llm_thinking_level
