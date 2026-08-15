@@ -561,8 +561,10 @@ async def test_image_generate_fallback_to_first_configured_provider(svc, monkeyp
     assert captured == [("modelscope", "Z-Image-Turbo")]
 
     # 完全无可用生图供应商 → 返回明确错误而非「供应商 '' 未配置」
-    # （首轮成功后供应商已回写草稿，此处清空以验证纯回退链末端）
+    # （首轮成功后供应商已回写草稿，此处清空以验证纯回退链末端；
+    #   2026-08-15 参数隔离后需同时清空本种类字段与旧共享字段）
     svc.state_dict["keyElements"][0]["drafts"][0]["providerId"] = ""
+    svc.state_dict["keyElements"][0]["drafts"][0]["imageProviderId"] = ""
     monkeypatch.setattr(
         pc, "first_available_image_provider_async",
         _async_return(("", "")),

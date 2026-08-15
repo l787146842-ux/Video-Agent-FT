@@ -403,13 +403,16 @@ def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any]
         if not str(draft.get("duration") or "").strip():
             draft["duration"] = f"{settings.max_shot_duration}s"
             stamped = True
-    if str(draft.get("providerId") or "").strip():
-        return stamped
     if cat_key == "audioItems":
         return stamped
     kind = "image"
     if cat_key == "shots" and str(draft.get("mediaType") or "").strip().lower() == "video":
         kind = "video"
+    # 按种类参数隔离（2026-08-15）：补印写本种类字段，旧共享字段同步保留供旧链路回退
+    pid_field = "imageProviderId" if kind == "image" else "videoProviderId"
+    model_field = "imageModel" if kind == "image" else "videoModel"
+    if str(draft.get(pid_field) or draft.get("providerId") or "").strip():
+        return stamped
     pid, model = spec_media_preference(raw_state, kind)
     if not pid:
         # 规格文档无偏好 → 全局设置默认渠道
@@ -419,9 +422,11 @@ def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any]
             pid, model = settings.default_video_provider_id, settings.default_video_model
     if not pid:
         return stamped
+    draft[pid_field] = pid
     draft["providerId"] = pid
     stamped = True
-    if model and not str(draft.get("model") or "").strip():
+    if model and not str(draft.get(model_field) or draft.get("model") or "").strip():
+        draft[model_field] = model
         draft["model"] = model
     return True
 

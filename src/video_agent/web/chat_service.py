@@ -250,7 +250,7 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
             continue
         for draft in (group.get("drafts") or []):
             if isinstance(draft, dict) and draft.get("id") == selected_draft_id:
-                provider_id = draft.get("providerId", "") or ""
+                provider_id = draft.get("imageProviderId", "") or draft.get("providerId", "") or ""
                 aspect_ratio = draft.get("aspectRatio", "") or ""
                 return provider_id or settings.default_image_provider_id, aspect_ratio
     return settings.default_image_provider_id, aspect_ratio

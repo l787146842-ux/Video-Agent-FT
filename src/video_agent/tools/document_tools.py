@@ -358,7 +358,7 @@ class ImageGenerateTool(BaseTool):
                 logger.info(f"[image_generate] provider 未指定，按全局设置回退: {spec_pid}/{model}")
         if not provider_id:
             for _g, d, _t in targets:
-                pid = resolve_provider_ref(str(d.get("providerId") or "").strip())
+                pid = resolve_provider_ref(str(d.get("imageProviderId") or d.get("providerId") or "").strip())
                 if pid:
                     provider_id = pid
                     logger.info(f"[image_generate] provider 未指定，回退草稿自带供应商: {pid}")
@@ -410,8 +410,10 @@ class ImageGenerateTool(BaseTool):
         async with svc.lock:
             for draft, _ in submitted:
                 if provider_id:
+                    draft["imageProviderId"] = provider_id
                     draft["providerId"] = provider_id
                 if model:
+                    draft["imageModel"] = model
                     draft["model"] = model
             svc.save()
 

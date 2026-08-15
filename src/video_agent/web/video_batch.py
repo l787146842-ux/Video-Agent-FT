@@ -183,7 +183,7 @@ class VideoBatchManager:
                         state, draft, "shot", record["provider_id"], record["model"],
                         duration=int(record.get("duration") or settings.max_shot_duration),
                         resolution=record.get("resolution") or settings.default_video_resolution,
-                        aspect_ratio=str(draft.get("aspectRatio") or "16:9"),
+                        aspect_ratio=str(draft.get("videoAspectRatio") or draft.get("aspectRatio") or "16:9"),
                         image_refs=image_refs, audio_refs=audio_refs,
                         source="batch",
                     )

@@ -974,16 +974,18 @@ class StudioActionExecutor:
                 continue
             refs = self._resolve_scene_refs(group) if group else []
             # provider 回退链（B7）：LLM 指定 → 草稿自身（预览框已选）→ 全局设置 → 中间面板选中草稿 → 平台默认
-            eff_provider = provider_id or (draft.get("providerId") or "") or spec_pid or sel_provider or settings.default_image_provider_id
+            eff_provider = provider_id or (draft.get("imageProviderId") or draft.get("providerId") or "") or spec_pid or sel_provider or settings.default_image_provider_id
             # model 回退链（B7）：LLM 指定 → 草稿自身 → 全局设置（仅当供应商一致）→ 供应商默认模型（generation 层兜底）
-            eff_model = model or (draft.get("model") or "") or (spec_model if eff_provider == spec_pid else "") or (settings.default_image_model if eff_provider == settings.default_image_provider_id else "")
+            eff_model = model or (draft.get("imageModel") or draft.get("model") or "") or (spec_model if eff_provider == spec_pid else "") or (settings.default_image_model if eff_provider == settings.default_image_provider_id else "")
             # 比例回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 16:9
             eff_ratio = act_ratio or (draft.get("aspectRatio") or "") or sel_ratio or "16:9"
             # 分辨率回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 全局设置 → 1K
             eff_resolution = act_resolution or (draft.get("imageResolution") or "") or sel_resolution or settings.default_image_resolution or "1K"
             # 参数回写草稿：中间预览框底部参数选择跳转到对应供应商/模型/比例/分辨率
+            draft["imageProviderId"] = eff_provider
             draft["providerId"] = eff_provider
             if eff_model:
+                draft["imageModel"] = eff_model
                 draft["model"] = eff_model
             draft["aspectRatio"] = eff_ratio
             draft["imageResolution"] = eff_resolution
@@ -1048,9 +1050,9 @@ class StudioActionExecutor:
             if not prompt:
                 continue
             # 参数回退链：LLM 指定 → 目标草稿自身参数 → 全局设置默认
-            eff_provider = provider_id or (draft.get("providerId") or "") or settings.default_video_provider_id
-            eff_model = model or (draft.get("model") or "") or (settings.default_video_model if eff_provider == settings.default_video_provider_id else "")
-            eff_ratio = (draft.get("aspectRatio") or "16:9")
+            eff_provider = provider_id or (draft.get("videoProviderId") or draft.get("providerId") or "") or settings.default_video_provider_id
+            eff_model = model or (draft.get("videoModel") or draft.get("model") or "") or (settings.default_video_model if eff_provider == settings.default_video_provider_id else "")
+            eff_ratio = (draft.get("videoAspectRatio") or draft.get("aspectRatio") or "16:9")
             eff_resolution = act_resolution or (draft.get("resolution") or "") or settings.default_video_resolution or "720p"
             dur_raw = str(draft.get("duration") or "").strip().lower()
             try:
@@ -1061,8 +1063,10 @@ class StudioActionExecutor:
 
             # 参数回写草稿：预览框参数区同步跳转
             if eff_provider:
+                draft["videoProviderId"] = eff_provider
                 draft["providerId"] = eff_provider
             if eff_model:
+                draft["videoModel"] = eff_model
                 draft["model"] = eff_model
 
             image_refs, audio_refs = collect_shot_video_refs(self.state, group, draft)
