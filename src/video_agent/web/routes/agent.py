@@ -245,6 +245,23 @@ async def stop_agent_task(task_id: str):
     return {"ok": ok, "cancelled": 1 if ok else 0}
 
 
+class GuidanceItem(BaseModel):
+    """B0/F2：排队消息登记体（id=前端排队条目 id，text=纯文本正文）。"""
+    id: str
+    text: str
+
+
+@router.post("/agent/tasks/{task_id}/guidance")
+async def register_task_guidance(task_id: str, item: GuidanceItem):
+    """把用户推理中发送的排队消息登记到运行中任务，供轮间注入（B0/F2 恢复）。
+
+    任务不存在/已结束时返回 ok=False，前端回落「任务结束后自动出队重发」。"""
+    from src.video_agent.web.agent_task_manager import get_agent_task_manager
+
+    ok = get_agent_task_manager().add_pending_guidance(task_id, item.model_dump())
+    return {"ok": ok}
+
+
 @router.get("/agent/context-usage")
 async def get_context_usage(model: str = ""):
     """估算当前会话将发送给 LLM 的上下文用量（Studio 状态上下文 + 聊天记录）。

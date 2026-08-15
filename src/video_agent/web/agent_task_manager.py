@@ -54,6 +54,8 @@ class AgentTaskManager:
             # 随 replay 下发，刷新重连后前端仍能把选择器跳到正确组合
             "fallback": None,
             "error": None,
+            # B0/F2：轮间引导注入队列（用户推理中发送的排队消息，planner 逐轮消费）
+            "pending_guidance": [],
             "_subscribers": [],
             "_task": None,
         }
@@ -76,6 +78,42 @@ class AgentTaskManager:
         self._persist()
         self._notify(record, {"type": "task_status", "status": "cancelled"})
         return True
+
+    # ====== 轮间引导注入（B0/F2 恢复：7777 三轮机制重新接线） ======
+
+    def add_pending_guidance(self, task_id: str, item: Dict[str, Any]) -> bool:
+        """把用户排队消息登记到运行中任务，供 planner 轮间注入。
+
+        item: {id, text}。任务不存在/已结束返回 False（前端回落自动出队重发）。
+        上限 20 条防灌爆；注入后由 drain 消费，任务结束由 clear 清空。"""
+        record = self._tasks.get(task_id)
+        if not record or record.get("status") != "running":
+            return False
+        gid = str(item.get("id") or "")
+        gtext = str(item.get("text") or "").strip()
+        if not gid or not gtext:
+            return False
+        pending = record.setdefault("pending_guidance", [])
+        if len(pending) >= 20 or any(p.get("id") == gid for p in pending):
+            return False
+        pending.append({"id": gid, "text": gtext})
+        logger.info(f"[AgentTask] {task_id} 登记轮间引导: {gid}")
+        return True
+
+    def drain_pending_guidance(self, task_id: str) -> List[Dict[str, Any]]:
+        """取出并清空任务的排队引导项（planner 每轮调用，单次消费语义）。"""
+        record = self._tasks.get(task_id)
+        if not record:
+            return []
+        pending = record.get("pending_guidance") or []
+        record["pending_guidance"] = []
+        return pending
+
+    def clear_pending_guidance(self, task_id: str) -> None:
+        """任务结束时清空未注入项（前端 done 后自动重发为普通请求，防双注入）。"""
+        record = self._tasks.get(task_id)
+        if record:
+            record["pending_guidance"] = []
 
     def cancel_project(self, project_id: str) -> int:
         """取消某项目的全部后台任务（项目删除时调用），返回取消数量。"""
@@ -292,6 +330,7 @@ class AgentTaskManager:
                 "done_payload": None,
                 "fallback": None,
                 "error": "服务重启中断",
+                "pending_guidance": [],
                 "_subscribers": [],
                 "_task": None,
             }

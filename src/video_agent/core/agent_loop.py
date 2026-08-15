@@ -22,6 +22,7 @@ from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
+    SSE_DOC_WRITTEN,
     SSE_EXECUTING_ACTIONS,
     SSE_STATUS,
     SSE_STEP_STARTED,
@@ -209,6 +210,8 @@ async def run_agent_loop(
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
     structure_self_check_pending = False
     structure_self_check_round = 0
+    # B0/F1：文本轨已发射过 doc_written 的文档名（防重复发射；FC 轨在 fc_tool_runner 内发射）
+    _emitted_docs: set = set()
 
     def _wizard_active() -> bool:
         """当前 Skill 是否启用规格向导（manifest/正文客观检测，S1 单一事实源）。"""
@@ -511,6 +514,12 @@ async def run_agent_loop(
         result.applied_actions += applied
         if applied:
             await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": applied})
+        # B0/F1：文本轨文档卡片即写即显（3333 修复四段链：发射 → planner 白名单 →
+        # chat_service 透传 → 前端 handler；FC 轨由 fc_tool_runner 发射）
+        for dn in (getattr(executor, "documents_written", None) or []):
+            if dn and dn not in _emitted_docs:
+                _emitted_docs.add(dn)
+                await emit({"type": SSE_DOC_WRITTEN, "name": str(dn)})
         # 推理过程可视化：实时把本轮刚完成的操作描述推给前端状态栏 + 时间线
         new_logs = executor.action_log[_log_before:]
         if new_logs:

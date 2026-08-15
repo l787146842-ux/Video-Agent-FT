@@ -46,6 +46,8 @@ export interface ChatState {
   streamingReasoningStartMs: number;
   /** 排队中的引导消息（推理中发送 → 当前任务完成后自动发出） */
   queuedMessages: QueuedMessage[];
+  /** B0/F1：本轮流已渲染过文档卡片的名称（doc_written 即显与 done 全量清单去重用） */
+  renderedDocCards: string[];
 }
 
 const defaultChatState: ChatState = {
@@ -59,6 +61,7 @@ const defaultChatState: ChatState = {
   streamingTools: [],
   streamingReasoningStartMs: 0,
   queuedMessages: [],
+  renderedDocCards: [],
 };
 
 const [chatState, setChatState] = createStore<ChatState>(defaultChatState);
@@ -82,6 +85,7 @@ export const chatActions = {
       s.streamingReasoning = '';
       s.streamingTools = [];
       s.streamingReasoningStartMs = 0;
+      s.renderedDocCards = [];
     }));
   },
 
@@ -155,8 +159,11 @@ export const chatActions = {
         memoryHits: (payload.memory_hits || []).length ? payload.memory_hits : undefined,
         thinkingMs: thinkingMs || undefined,
       });
-      // 文档卡片
+      // 文档卡片（B0/F1：doc_written 事件已即显过的按名称去重，不重复渲染；
+      // 服务端持久化仍按 documents_written 全量落盘，刷新后由快照重建）
       (payload.documents_written || []).forEach((name) => {
+        if (s.renderedDocCards.includes(name)) return;
+        s.renderedDocCards.push(name);
         s.messages.push({ sender: 'agent', docCard: name, text: '' });
       });
       // 生图结果图片卡片
@@ -236,10 +243,13 @@ export const chatActions = {
     }));
   },
 
-  /** 文档写入即显（doc_written 事件）：独立文档卡片立即渲染，不等整轮 done */
+  /** 文档写入即显（doc_written 事件，B0/F1 恢复四段链）：独立文档卡片立即渲染，
+   * 不等整轮 done；同轮重复名称去重（done 全量清单与事件双通道防双显） */
   docWritten(name: string) {
     if (!name) return;
     setChatState(produce((s) => {
+      if (s.renderedDocCards.includes(name)) return;
+      s.renderedDocCards.push(name);
       s.messages.push({ sender: 'agent', text: '', docCard: name });
     }));
   },

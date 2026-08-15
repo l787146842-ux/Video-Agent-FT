@@ -9,6 +9,7 @@ import { showToast } from '@/stores/toast';
 import { stopAgentStream } from '@/hooks/use-sse';
 import { convActions } from '@/stores/conversations';
 import { sendUserMessage } from '@/lib/agent-actions';
+import { confirmDialog } from '@/components/shared/ConfirmDialog';
 import { t } from '@/lib/locale';
 
 /**
@@ -29,8 +30,16 @@ export function QueuedMessagesBar(props: {
   /** 已点「引导」的条目 id：该条原位转圈圈等待接管（不再顶部 toast 提醒） */
   const [guidedId, setGuidedId] = createSignal('');
 
-  /** 引导：队首优先 + 停止当前推理（停止后自动出队发送这条） */
-  function guide(item: QueuedMessage) {
+  /** 引导：队首优先 + 停止当前推理（停止后自动出队发送这条）。
+   *  B0/F61：中断当前任务不可逆，加二次确认防误触 */
+  async function guide(item: QueuedMessage) {
+    const ok = await confirmDialog({
+      title: t('rp.queue.guideConfirmTitle'),
+      message: t('rp.queue.guideConfirmMessage', { text: item.displayText }),
+      confirmText: t('rp.queue.guideConfirmOk'),
+      danger: true,
+    });
+    if (!ok) return;
     chatActions.moveQueuedToFront(item.id);
     setGuidedId(item.id);
     stopAgentStream();

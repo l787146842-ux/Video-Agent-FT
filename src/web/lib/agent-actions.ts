@@ -6,7 +6,7 @@
 import { state, studioActions } from '@/stores/studio';
 import { chatState, chatActions } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
-import { streamAgentChat } from '@/hooks/use-sse';
+import { streamAgentChat, sendGuidanceToTask } from '@/hooks/use-sse';
 import {
   agentProvider, agentModel, agentSkill, agentAssetMode, agentThinkingLevel,
 } from '@/stores/agent-prefs';
@@ -87,8 +87,12 @@ export async function sendUserMessage(
     const queuedDisplay = docBlocks.length
       ? `${message}（附件：${docBlocks.join('、')}）`
       : message;
-    chatActions.enqueueMessage({ id: uid('q'), text: message, displayText: queuedDisplay, parts });
+    const qid = uid('q');
+    chatActions.enqueueMessage({ id: qid, text: message, displayText: queuedDisplay, parts });
     chatActions.setInput('');
+    // B0/F2 恢复：同时登记到服务端运行中任务，轮间注入成功即渲染用户气泡并出队；
+    // 任务已结束则回落「任务完成后自动出队重发」
+    sendGuidanceToTask(qid, message);
     showToast('已加入排队，Agent 完成当前任务后自动发送（可点「引导」立即接管）', 'info');
     return true;
   }

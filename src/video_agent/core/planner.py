@@ -1,4 +1,4 @@
-﻿"""
+"""
 Planner — 对话式 Agent 的唯一入口（Rule1）。
 
 设计方案核心：
@@ -41,7 +41,7 @@ from src.video_agent.core.fc_tool_runner import (
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.live_metrics import record_live_context
-from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_REASONING_DELTA, SSE_STATUS
+from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_REASONING_DELTA, SSE_STATUS
 from src.video_agent.core.stream_suppressor import StreamActionSuppressor  # re-export 兼容旧导入
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
@@ -106,6 +106,10 @@ class PlannerContext:
     user_id: str = ""
     # 814H7：会话级推理档位（对话栏「推理等级」选择器下发；""=模型原生能力）
     thinking_level: str = ""
+    # B0/F2 恢复：轮间引导注入器（任务式传输注册的排队消息，逐轮消费）。
+    # 由 web 层按 task_id 装配（agent_task_manager.drain_pending_guidance）；
+    # None = 无注入（非任务路径）。
+    pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None
 
 
 @dataclass
@@ -425,6 +429,9 @@ class Planner:
         confirmation_options_collector: List[Dict[str, Any]] = []
         # docs_written_collector 用于跨多步收集 FC 轨写入的文档名（渲染文档卡片）
         docs_written_collector: List[str] = []
+        # B0/F3：FC 轨闸机拦截/豁免文案收集器（每批 execute() 返回的 warnings），
+        # 循环结束后并入 loop_result.warnings，与文本轨拦截可见性对齐
+        fc_warnings_collector: List[str] = []
 
         async def _emit_status(text: str) -> None:
             """推理过程可视化：把 FC 工具执行进度实时推给前端状态栏"""
@@ -514,13 +521,14 @@ class Planner:
                 response = await self._call_llm(system_prompt, messages)
                 plan_ms = (time.monotonic() - _t_plan) * 1000
 
-            content, finish, fc_applied, tool_results = await self._handle_fc_response(
+            content, finish, fc_applied, tool_results, fc_warnings = await self._handle_fc_response(
                 response,
                 image_urls_collector=image_urls_collector,
                 chat_inserts_collector=chat_inserts_collector,
                 action_log_collector=action_log_collector,
                 confirmation_options_collector=confirmation_options_collector,
                 docs_written_collector=docs_written_collector,
+                fc_warnings_collector=fc_warnings_collector,
                 image_provider=context.image_generation_provider,
                 image_aspect_ratio=context.image_generation_aspect_ratio,
                 on_status=_emit_status,
@@ -575,7 +583,17 @@ class Planner:
             prelude_notes=context.prelude_notes,
             flow_gates=self._flow_gates,
             user_id=context.user_id,
+            pending_injector=context.pending_injector,
         )
+
+        # B0/F3：FC 轨闸机文案并入结果 warnings（文本轨由 agent_loop 直接写入），
+        # 前端据此渲染常驻警告行 +「本次放行」按钮（§2.4 拦截可见，双轨对齐）
+        if fc_warnings_collector:
+            seen = set(loop_result.warnings)
+            for w in fc_warnings_collector:
+                if w and w not in seen:
+                    loop_result.warnings.append(w)
+                    seen.add(w)
 
         # 总结强制入正文（文本轨，1111/Q1；814R4 接线）：本次请求执行过
         # script_analyze 且停在暂停时，一句话总结不得丢失（判重由函数内置）
@@ -700,7 +718,7 @@ class Planner:
                 ))
             elif etype == "executing_actions":
                 await queue.put(PlannerEvent(type="status", text="正在执行操作…"))
-            elif etype in ("reasoning_delta", "tool_started", "tool_finished", "guidance_injected"):
+            elif etype in ("reasoning_delta", "tool_started", "tool_finished", "guidance_injected", "doc_written"):
                 # 过程时间线事件穿透（前端渲染深度思考/工具条目）
                 await queue.put(PlannerEvent(type=etype, text=event.get("text", ""), payload=event))
 
@@ -895,6 +913,7 @@ class Planner:
         action_log_collector: Optional[List[str]] = None,
         confirmation_options_collector: Optional[List[Dict[str, Any]]] = None,
         docs_written_collector: Optional[List[str]] = None,
+        fc_warnings_collector: Optional[List[str]] = None,
         image_provider: str = "",
         image_aspect_ratio: str = "",
         on_status=None,
@@ -906,12 +925,13 @@ class Planner:
         flow_gates=None,
     ) -> Tuple:
         """处理 LLM 响应中的 FC tool_calls。
-        返回 (content, finish_reason, fc_applied, tool_results)，
-        tool_results: [{name, ok, data, error}] 供回喂进对话上下文"""
+        返回 (content, finish_reason, fc_applied, tool_results, fc_warnings)，
+        tool_results: [{name, ok, data, error}] 供回喂进对话上下文；
+        fc_warnings: 本批闸机拦截/豁免的用户可见文案（B0/F3，双轨对齐）。"""
         if response.tool_calls:
             (fc_applied, fc_confirmation, image_urls,
              chat_inserts, fc_action_log, fc_confirmation_options,
-             fc_tool_results, fc_docs_written) = await self._execute_fc_tools(
+             fc_tool_results, fc_docs_written, fc_warnings) = await self._execute_fc_tools(
                 response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
                 on_status=on_status, on_event=on_event, injected_skill=injected_skill,
                 selected_draft_id=selected_draft_id, selected_type=selected_type,
@@ -927,6 +947,8 @@ class Planner:
                 confirmation_options_collector.extend(fc_confirmation_options)
             if docs_written_collector is not None:
                 docs_written_collector.extend(fc_docs_written)
+            if fc_warnings_collector is not None:
+                fc_warnings_collector.extend(fc_warnings)
             if fc_confirmation:
                 confirm_action: Dict[str, Any] = {
                     "action": "request_confirmation", "message": fc_confirmation,
@@ -940,19 +962,19 @@ class Planner:
                 if not visible:
                     visible = fc_confirmation
                 content = visible + f"\n```studio-actions\n{confirm_block}\n```"
-                return content, response.finish_reason, 0, fc_tool_results
-            return response.content, response.finish_reason, fc_applied, fc_tool_results
-        return response.content, response.finish_reason, 0, []
+                return content, response.finish_reason, 0, fc_tool_results, fc_warnings
+            return response.content, response.finish_reason, fc_applied, fc_tool_results, fc_warnings
+        return response.content, response.finish_reason, 0, [], []
 
     async def _execute_fc_tools(
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",
         on_status=None, on_event=None, injected_skill: str = "",
         selected_draft_id: str = "", selected_type: str = "",
         gate_override: Any = False, flow_gates=None,
-    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str], List[str]]:
         """执行 Function Calling 返回的 tool_calls（委托 FCToolRunner）。
         返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
-        confirmation_options, tool_results, docs_written)"""
+        confirmation_options, tool_results, docs_written, warnings)"""
         return await self._fc_runner.execute(
             response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
             on_status=on_status, on_event=on_event, injected_skill=injected_skill,

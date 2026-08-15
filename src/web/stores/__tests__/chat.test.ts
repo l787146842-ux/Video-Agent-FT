@@ -86,4 +86,27 @@ describe('chatActions 流式状态机', () => {
     expect(chatState.messages.length).toBe(1);
     expect(chatState.messages[0].text).toBe('新消息');
   });
+
+  // ---------- B0/F1：docCard 双通道去重 ----------
+
+  it('docWritten 即显后 finishStream 不重复渲染同名文档卡', () => {
+    chatActions.startStream();
+    chatActions.docWritten('大纲.md');
+    chatActions.finishStream({
+      text: '完成',
+      elapsed_ms: 1000,
+      steps: 1,
+      applied_actions: 0,
+      documents_written: ['大纲.md', '规格.md'],
+    });
+    const docs = chatState.messages.filter((m) => m.docCard);
+    expect(docs.map((m) => m.docCard)).toEqual(['大纲.md', '规格.md']);
+  });
+
+  it('docWritten 同轮重复名称只渲染一次', () => {
+    chatActions.startStream();
+    chatActions.docWritten('大纲.md');
+    chatActions.docWritten('大纲.md');
+    expect(chatState.messages.filter((m) => m.docCard).length).toBe(1);
+  });
 });

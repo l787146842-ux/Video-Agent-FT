@@ -211,7 +211,7 @@ def test_fc_model_pause_merged_with_wizard(monkeypatch):
                 ],
             })}},
     ])
-    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written = asyncio.run(
+    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written, _warnings = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     labels = [o["label"] for o in conf_opts]
     assert "风格A" not in labels
@@ -301,7 +301,7 @@ def test_fc_summary_gate_exempt_when_override_all(monkeypatch):
             "name": "script_analyze",
             "arguments": json.dumps({"doc_name": "剧本.md"})}},
     ])
-    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written = asyncio.run(
+    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written, _warnings = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
     assert not confirmation
     assert any("全速推进" in w for w in runner.gate_warnings)
@@ -334,7 +334,7 @@ def test_fc_collect_gate_fires_when_no_spec_doc(monkeypatch):
             "name": "script_analyze",
             "arguments": json.dumps({"doc_name": "剧本.md"})}},
     ])
-    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written = asyncio.run(
+    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written, _warnings = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     assert confirmation.startswith("剧本读完了。一句话故事总结：")
     groups = {o.get("group") for o in conf_opts}

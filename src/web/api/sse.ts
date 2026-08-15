@@ -59,3 +59,11 @@ export function stopAgentTask(taskId: string) {
     {},
   );
 }
+
+/** B0/F2：把排队消息登记到运行中任务，供后端轮间注入（任务已结束则后端拒绝）。 */
+export function postAgentTaskGuidance(taskId: string, id: string, text: string) {
+  return apiPost<{ ok: boolean }>(
+    `/api/agent/tasks/${encodeURIComponent(taskId)}/guidance`,
+    { id, text },
+  );
+}

@@ -41,6 +41,7 @@ from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
     SSE_DELTA,
+    SSE_DOC_WRITTEN,
     SSE_DONE,
     SSE_ERROR,
     SSE_GUIDANCE_INJECTED,
@@ -533,8 +534,11 @@ async def stream_worker(body: Any, emit) -> None:
         _release_request_slot(request_id)
 
 
-async def _stream_worker_impl(body: Any, svc: StateManager, emit) -> None:
-    """流式处理公共实现（mock + 真实供应商）；供 SSE worker 与后台任务 worker 复用。"""
+async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_injector=None) -> None:
+    """流式处理公共实现（mock + 真实供应商）；供 SSE worker 与后台任务 worker 复用。
+
+    pending_injector（B0/F2）：可选 callable → List[{id, text}]，轮间引导注入器，
+    由后台任务路径装配（agent_task_manager.drain_pending_guidance）。"""
     # 铁律文档每轮确保存在（宪法 D2）：项目级生产契约唯一表述源，
     # 真实聊天/任务路径同样生效，不能只在 mock 路径创建
     from src.video_agent.core.spec_rules import ensure_iron_rules_doc
@@ -589,7 +593,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit) -> None:
         return
 
     # ---------- 真实供应商 ----------
-    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0)
+    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector)
 
 
 def start_agent_task(body: Any) -> Dict[str, Any]:
@@ -625,7 +629,12 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
         async def emit(event: Dict[str, Any]) -> None:
             tm.emit(task_id, event)
 
-        await _stream_worker_impl(body, svc, emit)
+        # B0/F2 恢复：轮间引导注入器——注册到本任务的排队消息逐轮被消费
+        # （agent_loop 第 2 轮起调用），注入成功即 guidance_injected 事件下发。
+        def pending_injector() -> List[Dict[str, Any]]:
+            return tm.drain_pending_guidance(task_id)
+
+        await _stream_worker_impl(body, svc, emit, pending_injector=pending_injector)
     except asyncio.CancelledError:
         raise
     except Exception as e:
@@ -636,6 +645,8 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
             "error_code": getattr(e, "error_code", None) or "INTERNAL_ERROR",
         })
     finally:
+        # 任务结束：清空未注入的排队项（前端 done 后会自动重发为普通请求，防双注入）
+        tm.clear_pending_guidance(task_id)
         StateManager.release_task_bound(token)
 
 
@@ -713,11 +724,20 @@ async def _fallback_candidates(provider_id: str, model: str) -> List[tuple]:
     return candidates[:limit]
 
 
-async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0) -> None:
+def _fallback_switch_payload(candidates: List[tuple], idx: int) -> Dict[str, str]:
+    """降级事件应下发的 (provider, model) —— 实际生效的下一候选（B0/F4 修正）。
+
+    此前误发失败方供应商（cand_provider），同模型跨厂商降级时前端选择器跳转失效。"""
+    nxt = candidates[idx + 1]
+    return {"provider": nxt[0], "model": nxt[1]}
+
+
+async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None) -> None:
     """真实供应商的流式处理（含模型 fallback 链）。
 
     主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，自动切换备用模型重试
     （避免重复执行已落盘的操作）；成功时 done payload 携带 fallback_model 供前端标注。
+    pending_injector（B0/F2）：轮间引导注入器，经 PlannerContext 传入循环。
     """
     history = truncate_history([
         {"role": m.get("role", "user"), "content": m.get("content", "")}
@@ -793,6 +813,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             user_id=getattr(body, "user_id", "") or "",
             # 814H7：会话级推理档位（对话栏选择器下发；""=模型原生）
             thinking_level=getattr(body, "thinking_level", "") or "",
+            # B0/F2：轮间引导注入器（任务式传输路径；非任务路径为 None）
+            pending_injector=pending_injector,
         )
 
         applied_seen = False
@@ -818,9 +840,9 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                             },
                         })
                 elif event.type in (
-                    "reasoning_delta", "tool_started", "tool_finished", SSE_GUIDANCE_INJECTED,
+                    "reasoning_delta", "tool_started", "tool_finished", SSE_GUIDANCE_INJECTED, SSE_DOC_WRITTEN,
                 ):
-                    # 过程时间线事件透传（深度思考增量 / 工具开始与完成），
+                    # 过程时间线事件透传（深度思考增量 / 工具开始与完成 / 文档即显 / 引导注入），
                     # 仅 UI 展示用，不进下次 LLM 上下文
                     await emit(event.payload or {"type": event.type, "text": event.text})
                 elif event.type == "done":
@@ -842,15 +864,13 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 return
             next_model = candidates[idx + 1][1]
             logger.warning(
-                f"[ChatService] 模型 {cand_model} 瞬时故障（{str(e)[:80]}），fallback 到 {next_model}"
+                f"[ChatService] 模型 {cand_model} 瞬时故障（{str(e)[:80]}），fallback 到 {candidates[idx + 1][0]}/{next_model}"
             )
             await emit({"type": SSE_STATUS, "text": f"模型 {cand_model} 繁忙/异常，已切换 {next_model} 重试…"})
-            # 降级即时联动（7777）：切换时刻就下发，前端立即把选择器跳到实际生效的组合
-            await emit({
-                "type": SSE_MODEL_FALLBACK,
-                "provider": cand_provider,
-                "model": next_model,
-            })
+            # 降级即时联动（7777）：切换时刻就下发，前端立即把选择器跳到实际生效的组合。
+            # B0/F4 修正：provider 必须为「下一候选」的供应商（同模型跨厂商降级时
+            # 真正变化的是厂商），此前误发失败方供应商导致前端跳转失效
+            await emit({"type": SSE_MODEL_FALLBACK, **_fallback_switch_payload(candidates, idx)})
             continue
 
         # --- 成功路径：持久化 + done ---

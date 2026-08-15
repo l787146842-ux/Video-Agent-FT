@@ -144,7 +144,8 @@ export function ChatInput() {
     el.focus();
   }
 
-  // 排队自动出队：Agent 一空闲就把队首引导消息按序发出（未选供应商时留在队里不丢）
+  // 排队自动出队：Agent 一空闲就把队首引导消息按序发出（未选供应商时留在队里不丢）。
+  // B0/F60：发送失败（网络/被拦截）时把消息放回队首，不丢失
   createEffect(() => {
     if (state.agentBusy) return;
     if (!agentProvider() || !agentModel()) return;
@@ -152,7 +153,12 @@ export function ChatInput() {
     if (!q.length) return;
     const first = q[0];
     chatActions.removeQueuedMessage(first.id);
-    void sendUserMessage(first.parts.length ? first.parts : first.text);
+    void sendUserMessage(first.parts.length ? first.parts : first.text).then((ok) => {
+      if (!ok) {
+        chatActions.enqueueMessage(first);
+        chatActions.moveQueuedToFront(first.id);
+      }
+    });
   });
 
   /** 序列化编辑器并发送；成功后清空 */

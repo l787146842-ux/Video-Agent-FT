@@ -9,6 +9,7 @@ import { refreshHistoryStatus } from '@/stores/history';
 import { resolveErrorMessage } from '@/lib/i18n';
 import {
   startAgentTask, fetchAgentTaskEvents, stopAgentTask, listAgentTasks,
+  postAgentTaskGuidance,
   type AgentTaskInfo,
 } from '@/api/sse';
 import { requestInsertMedia } from '@/lib/chat-input-bridge';
@@ -121,6 +122,14 @@ export function disconnectAgentStream(): void {
   closeSubscription();
   setStreaming(false);
   studioActions.setAgentBusy(false);
+}
+
+/** B0/F2：排队消息登记到运行中任务（轮间注入）；任务不存在/已结束静默回落
+ * 前端「任务结束后自动出队重发」路径，不丢失用户消息。 */
+export function sendGuidanceToTask(id: string, text: string): void {
+  const task = currentTask;
+  if (!task || !text.trim()) return;
+  void postAgentTaskGuidance(task.taskId, id, text).catch(() => { /* 回落自动出队 */ });
 }
 
 /** 真正停止后台任务（停止按钮） */

@@ -15,7 +15,7 @@ from loguru import logger
 from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline, prompt_gates
-from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
+from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
 from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.state import storyboard_ops as ops
@@ -537,11 +537,13 @@ class FCToolRunner:
         selected_draft_id: str = "", selected_type: str = "",
         gate_override: Any = False,
         flow_gates=None,
-    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str], List[str]]:
         """执行 Function Calling 返回的 tool_calls。
         flow_gates（可选，814R3 复活）：Skill 声明式流程门禁，越阶工具调用直接拦截。
         返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
-        confirmation_options, tool_results, docs_written)"""
+        confirmation_options, tool_results, docs_written, warnings)。
+        warnings（B0/F3）：本批闸机拦截/豁免的用户可见文案，由 planner 并入
+        loop_result.warnings —— FC 轨与文本轨拦截可见性对齐（§2.0/§2.4）。"""
         self._selected_draft_id = selected_draft_id or ""
         self._selected_type = selected_type or ""
         self.gate_override = gate_override
@@ -769,6 +771,11 @@ class FCToolRunner:
                     doc_name = str(args.get("name") or args.get("key") or "").strip()
                     if doc_name:
                         docs_written.append(doc_name)
+                        # 3333 修复（B0/F1 恢复四段链）：文档卡片即写即显，不等整轮 done。
+                        # 前端按名称去重，done payload 的 documents_written 仍携带全量
+                        # 供服务端持久化与刷新重建。
+                        if on_event is not None:
+                            await on_event({"type": SSE_DOC_WRITTEN, "name": doc_name})
                 desc = describe_fc_tool(name, args)
                 action_log.append(desc)
                 # 推理过程可视化：每完成一个工具就推一条状态
@@ -970,4 +977,4 @@ class FCToolRunner:
                 "label": "重试",
                 "description": "重新执行未完成的关键步骤（Skill 绑定/执行器/规格向导已就绪）",
             }]
-        return applied, confirmation, image_urls, chat_inserts, action_log, confirmation_options, tool_results, docs_written
+        return applied, confirmation, image_urls, chat_inserts, action_log, confirmation_options, tool_results, docs_written, list(self.gate_warnings)

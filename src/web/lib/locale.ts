@@ -120,6 +120,9 @@ const zhCN: Record<string, string> = {
   'rp.queue.closeQueue': '关闭排队',
   'rp.queue.closeQueueTitle': '清空全部排队消息',
   'rp.queue.openSideBusy': 'Agent 忙碌中，无法新建对话，消息已保留在排队',
+  'rp.queue.guideConfirmTitle': '中断当前任务？',
+  'rp.queue.guideConfirmMessage': '点「引导」会立即停止 Agent 正在执行的任务，并优先发送这条消息：{text}',
+  'rp.queue.guideConfirmOk': '停止并引导',
 
   // ---------- 素材库（画布资产弹窗） ----------
   'rp.asset.tabImage': '图片资产',
