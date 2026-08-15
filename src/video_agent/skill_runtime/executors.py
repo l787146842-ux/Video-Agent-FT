@@ -2181,7 +2181,13 @@ class SkillPipelinePlanTool:
         flow = skill_planner_flow(skill)
         if not flow:
             return SkillToolResult(success=False, error=f"Skill「{skill or '未指定'}」无 <planner> 流程章节")
-        status = dag.pipeline_status(flow, svc.state_dict)
+        # B4b/F32：manifest 声明的 step_done_conditions（确定性评估优先于关键字猜测）
+        from src.video_agent.skill_runtime.registry import resolve_entry
+        conditions = None
+        entry = resolve_entry(skill)
+        if entry and entry.manifest:
+            conditions = ((entry.manifest.get("flow") or {}).get("step_done_conditions")) or None
+        status = dag.pipeline_status(flow, svc.state_dict, conditions)
         ready = [s for s in status if s["ready"]]
         batches = dag.topo_batches(dag.parse_steps(flow), dag.parse_dependencies(flow))
         return SkillToolResult(success=True, data={

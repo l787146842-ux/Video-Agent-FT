@@ -789,9 +789,11 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         if settings.model_fallback_enabled
         else [(body.provider, body.model)]
     )
-    # 会话级 compaction（814R4 恢复）：历史超阈值时便宜模型压成摘要+最近几条
+    # 会话级 compaction（814R4 恢复；B5/F33：预热后台——便宜模型摘要与
+    # fallback 候选的 adapter 创建/端点解析并行，首 token 不被摘要往返阻塞；
+    # 命中缓存时任务即刻完成，语义与同步等待完全一致）
     summary_adapter = _resolve_summary_adapter(body, candidates)
-    history = await _maybe_compact_history(history, svc, summary_adapter)
+    _compact_task = asyncio.create_task(_maybe_compact_history(history, svc, summary_adapter))
 
     for idx, (cand_provider, cand_model) in enumerate(candidates):
         try:
@@ -799,9 +801,15 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         except GenerationError as e:
             logger.warning(f"[ChatService] fallback 候选 {cand_provider}/{cand_model} 端点解析失败: {e}")
             if idx == len(candidates) - 1:
+                if _compact_task is not None and not _compact_task.done():
+                    _compact_task.cancel()
                 await _emit_stream_error(svc, body, e, emit, use_studio_context)
                 return
             continue
+        # 进入候选前取回压缩结果（预热失败/超时由 _maybe_compact_history 内部回落原 history）
+        if _compact_task is not None:
+            history = await _compact_task
+            _compact_task = None
 
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
@@ -1100,9 +1108,9 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         if settings.model_fallback_enabled
         else [(body.provider, body.model)]
     )
-    # 会话级 compaction（814R4 恢复）：同流式路径
+    # 会话级 compaction（814R4 恢复；B5/F33：同流式路径——预热后台）
     summary_adapter = _resolve_summary_adapter(body, candidates)
-    history = await _maybe_compact_history(history, svc, summary_adapter)
+    _compact_task = asyncio.create_task(_maybe_compact_history(history, svc, summary_adapter))
     result = None
     used_model = body.model
     last_err: Optional[Exception] = None
@@ -1113,8 +1121,13 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             logger.warning(f"[ChatService] fallback 候选 {cand_provider}/{cand_model} 端点解析失败: {e}")
             last_err = e
             if idx == len(candidates) - 1:
+                if _compact_task is not None and not _compact_task.done():
+                    _compact_task.cancel()
                 raise
             continue
+        if _compact_task is not None:
+            history = await _compact_task
+            _compact_task = None
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StudioActionExecutor,

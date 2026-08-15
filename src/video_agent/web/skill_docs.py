@@ -387,6 +387,12 @@ _MANIFEST_FLOW_KEYS: Dict[str, Any] = {
 }
 _MANIFEST_PAUSE_KEYS: Dict[str, Any] = {"stage_pause": False}
 
+# B4b/F32：step_done_conditions 的合法客观状态键（DAG 完成度声明化评估）
+_STEP_DONE_STATE_KEYS = frozenset({
+    "spec", "analysis", "keyElements", "ke_media",
+    "shots", "audio", "shot_video", "assembly",
+})
+
 
 def _coerce_manifest_value(val: Any, default: Any) -> Optional[Any]:
     """按白名单默认值的类型校验 manifest 单键；类型不合法返回 None（丢弃）。"""
@@ -435,9 +441,20 @@ def parse_skill_manifest(content: str) -> Optional[Dict[str, Any]]:
         return None
     if not isinstance(data, dict):
         return None
+    flow = _parse_manifest_section(data.get("flow") or {}, _MANIFEST_FLOW_KEYS)
+    # B4b/F32：step_done_conditions（步骤号 → 客观状态键）声明化——
+    # DAG 完成度判定由关键字猜测改为按声明评估（确定性题归系统）
+    sdc = (data.get("flow") or {}).get("step_done_conditions")
+    if isinstance(sdc, dict):
+        cleaned = {
+            str(k): str(v) for k, v in sdc.items()
+            if str(v) in _STEP_DONE_STATE_KEYS
+        }
+        if cleaned:
+            flow["step_done_conditions"] = cleaned
     return {
         "gates": _parse_manifest_section(data.get("gates") or {}, _MANIFEST_GATE_KEYS),
-        "flow": _parse_manifest_section(data.get("flow") or {}, _MANIFEST_FLOW_KEYS),
+        "flow": flow,
         "pause": _parse_manifest_section(data.get("pause") or {}, _MANIFEST_PAUSE_KEYS),
     }
 

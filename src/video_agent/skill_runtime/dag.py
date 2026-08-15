@@ -56,8 +56,38 @@ def topo_batches(steps: Dict[int, str], deps: Dict[int, List[int]]) -> List[List
     return batches
 
 
-def step_done(no: int, text: str, state: Dict[str, Any]) -> bool:
-    """步骤完成度客观判定（只认状态事实，认不出的视为未完成）。"""
+def step_done(no: int, text: str, state: Dict[str, Any], conditions: Optional[Dict[str, str]] = None) -> bool:
+    """步骤完成度客观判定（只认状态事实，认不出的视为未完成）。
+
+    B4b/F32：manifest 声明 step_done_conditions（步骤号→状态键）时按声明评估
+    （确定性题归系统）；未声明回落关键字猜测（兼容存量 Skill）。"""
+    if conditions and str(no) in conditions:
+        key = conditions[str(no)]
+        ke = state.get("keyElements") or []
+        shots = state.get("shots") or []
+        audio = state.get("audioItems") or []
+        if key == "spec":
+            from src.video_agent.core.prompt_gates import has_spec_document
+            return has_spec_document(state)
+        if key == "analysis":
+            return bool((state.get("analysis") or {}).get("summary"))
+        if key == "keyElements":
+            return bool(ke)
+        if key == "ke_media":
+            return bool(ke) and any(
+                (d.get("imgUrl") or "").strip()
+                for g in ke for d in (g.get("drafts") or []) if isinstance(d, dict)
+            )
+        if key == "shots":
+            return bool(shots)
+        if key == "audio":
+            return bool(audio)
+        if key in ("shot_video", "assembly", "video"):
+            return bool(shots) and any(
+                (d.get("videoUrl") or "").strip()
+                for g in shots for d in (g.get("drafts") or []) if isinstance(d, dict)
+            )
+        return False
     t = (text or "").lower()
     ke = state.get("keyElements") or []
     shots = state.get("shots") or []
@@ -90,14 +120,14 @@ def step_done(no: int, text: str, state: Dict[str, Any]) -> bool:
     return False
 
 
-def pipeline_status(planner_text: str, state: Dict[str, Any]) -> List[Dict[str, Any]]:
+def pipeline_status(planner_text: str, state: Dict[str, Any], conditions: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
     """全步骤状态 + 下一可执行批次（依赖满足且未完成）。"""
     steps = parse_steps(planner_text)
     deps = parse_dependencies(planner_text)
     status = []
     done_nos = set()
     for no in sorted(steps):
-        d = step_done(no, steps[no], state)
+        d = step_done(no, steps[no], state, conditions)
         if d:
             done_nos.add(no)
         status.append({"step": no, "title": steps[no][:60], "done": d, "ready": False})

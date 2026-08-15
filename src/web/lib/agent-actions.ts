@@ -18,6 +18,8 @@ import type { AgentChatRequest, AnyGroup, MediaType, RichContentPart } from '@/t
 /**
  * Agent 可调取的素材 = 故事板全部草稿卡（关键元素/分镜/音频）中已有媒体的 URL。
  * 未归类素材（state.assets）不参与上下文——它是从故事板移除的素材，agent 不可调取。
+ * B5/F35：请求体瘦身——按「选中草稿优先」排序并封顶（图 9=MAX_LLM_IMAGES、视频 10），
+ * 素材数百张时不再全量上行；服务端参考注入本就按状态/规格解析，与列表长度无关。
  */
 function selectedAssetUrls(kind: MediaType): string[] {
   const urls: string[] = [];
@@ -26,11 +28,14 @@ function selectedAssetUrls(kind: MediaType): string[] {
     for (const g of groups) {
       for (const d of g.drafts || []) {
         const url = kind === 'image' ? d.imgUrl : kind === 'video' ? d.videoUrl : d.audioUrl;
-        if (url) urls.push(url);
+        if (url) {
+          if (d.id === state.selectedDraftId) urls.unshift(url);
+          else urls.push(url);
+        }
       }
     }
   }
-  return urls;
+  return urls.slice(0, kind === 'image' ? 9 : 10);
 }
 
 /** 规范化 parts：字符串 → 单个 text 片段；丢弃空 text 片段 */
