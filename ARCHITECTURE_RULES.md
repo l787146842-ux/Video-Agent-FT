@@ -227,13 +227,22 @@ src/video_agent/
 │   ├── planner.py          ← Agent 唯一入口（Rule1）
 │   ├── agent_loop.py       ← 多步循环唯一实现（Rule2，含推理轮时间线事件）
 │   ├── fc_tool_runner.py   ← FC 轨执行臂（闸机接入、工具时间线）
-│   ├── prompt_gates.py     ← 闸机规则注册表（§2）
+│   ├── prompt_gates.py     ← 闸机规则注册表 + 结构/流程判定（§2）
+│   ├── gates_spec.py       ← 规格向导家族（R4b 自 prompt_gates 切出）
 │   ├── prompt_builder.py   ← 上下文/纪律条款组装（外置加载）
 │   ├── token_budget.py     ← 窗口表/估算/截断
 │   └── tracer.py           ← 审计链路（含 record_gate）
+├── skill_runtime/
+│   ├── executors/          ← re-export 壳（R4a：import 路径不变）
+│   ├── exec_common.py      ← 执行器公共件/流式批应用（R4a 切出）
+│   ├── exec_spec.py        ← 规格候选生成家族（R4a 切出）
+│   ├── exec_tools.py       ← Schema/任务词/工具类/调度（R4a 切出）
+│   ├── dag.py / registry.py / guard.py / progress.py / blackbox.py
 ├── web/
 │   ├── app.py              ← FastAPI 主应用 + 路由注册 + 静态缓存策略
-│   ├── chat_service.py     ← 聊天业务（SSE worker）
+│   ├── chat_service.py     ← 聊天主流程 worker/fallback（R4c 瘦身后）
+│   ├── chat_opening.py     ← 开场编排域（R4c 切出）
+│   ├── chat_consume.py     ← 消费/压缩域（R4c 切出）
 │   ├── sse.py              ← SSE 推送（断连转后台，刷新不中断 Agent）
 │   ├── task_manager.py     ← 生成任务 + 生成日志（成败均记录）
 │   ├── routes/             ← 薄层端点（含 runtime_settings 热配置）
@@ -257,6 +266,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 - [ ] 没有修改画布项目的任何文件（Rule 7）
 - [ ] 没有绕过 Planner / StateManager / Adapter / Tool 体系（Rule 1-5）
 - [ ] 没有硬编码 prompt >3 行；提示词迁移带快照测试（Rule 6）
+- [ ] 提示词/文案治理迁移同批更新了锁旧文案的断言测试（二审教训：迁移≠只改 md，锁语义的测试必须同步迁到新基线）
 - [ ] 没有 manifest 削弱平台硬边界；触碰项有负面用例（§2.2）
 - [ ] 工具已声明 risk 分级；high 级工具带平台闸机与确认（§2.7）
 - [ ] Skill 保存/删除后执行器注册表已同步；执行器失败未绕过回喂（§2.8）
@@ -264,6 +274,9 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 - [ ] UI 改动符合 §3 交互规范表，且浏览器实测截图对照
 - [ ] 没有 box-shadow/发光出现在确认卡片；品牌仍为「飞天」
 - [ ] 没有裸 restore/checkout -- .；本批已 commit；未跟踪文件已核对（§5）
+- [ ] 没有新增 >1200 行的 src/*.py（`python scripts/check_file_lines.py` 红线，CI 门禁）
+- [ ] 拆分模块新增顶层符号已同步登记 re-export 壳清单（executors/__init__、prompt_gates 尾部、chat_service 尾部），测试 patch 目标为调用方命名空间
+- [ ] 测试不得写生产 data/skills（conftest session 级镜像目录保障；新增 Skill 写入类测试走夹具）
 - [ ] 没有硬编码路径/数字/状态 Key；没有方法内 import；没有同名类覆盖
 - [ ] 没有 `datetime.utcnow()` / `time.sleep()` / `print()`
 - [ ] 验收四件套全绿：pytest + vitest + tsc + gen_api_types --check
@@ -396,6 +409,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 快照/分支（B11） | routes/snapshots.py + conversations 创建 + _meta.branched_from + 前端 RightPanel 分支按钮 |
 | 窗口表元数据（B6/F52） | api_providers.json chat_models_meta.context_window → token_budget.context_window_for_model(provider_id) → planner 传递 chat_provider |
 | 新增 FC 工具 | tool description（层 10）+ 阶段裁剪集 + 测试 |
+| 拆分模块新增顶层符号（R4 系列） | re-export 壳清单（skill_runtime/executors/__init__.py、core/prompt_gates.py 尾部、web/chat_service.py 尾部）+ 测试 patch 目标改为调用方命名空间；LLM 调用统一经 `_gen.`（web.generation）模块属性，patch 点=web.generation 模块 |
 | skill_manifest 白名单键 | 消费点：prompt_gates.parse_gate_rules/validate_prompt_write、agent_loop、fc_tool_runner、planner._compute_excluded_tools、prompt_builder、action_executor._spec_gate_ok；pause 节另由 guard.skill_requires_stage_pause 与 lint 消费；同步 test_skill_manifest.py 快照登记；**spec_wizard 例外：统一走 registry.spec_wizard_active；script_required 同模式统一走 registry.script_required_active（814H9）** |
 
 ### 13.8 事故台账（规则漂移的活证据，只增不删）
@@ -436,8 +450,9 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 814H7 | 推理档位不可选：全局 low 一刀切（814G7）既压主模型质量又不尊重端点原生；用户要求 Codex 式按会话选档 | 档位治理缺 UI 层 | 对话栏模型胶囊改两节下拉（模型+推理等级 高/中/低/默认，默认=原生不下发字段，localStorage 持久化，随 ChatRequest.thinking_level 透传主模型）；全局设置页新增「推理档位」卡（执行器机械调用/辅助摘要两档，runtime_settings 热生效）；主模型全局默认回空（原生）；适配器 400 优雅降级（端点不认 reasoning_effort 自动去字段重试，流式/非流式双路径）；浏览器实测两节下拉与设置卡通过 |
 | 814H8 | 前端路由硬敲/刷新（如 /global-settings）404：服务端只把 index.html 绑死在 /、/canvas、/settings，无 SPA fallback | 部署层缺兜底 | app.py 末尾加 catch-all（注册于全部 API 路由与静态 mount 之后）：未识别非 /api GET 路径一律返回 index.html；/api 排除保持 JSON 404；test_spa_fallback 四条集成测试钉死 |
 | 814H9 | 1111 实测：剧本缺失是客观事实却出题给模型——27.8s 规划轮"发现"没剧本+必错的 read_uploaded_doc+空输出重试；无剧本仍被引导进下游流程 | 违 13.5 确定性三问（可算/可判/无创作空间却交模型）+ 层 9 缺原料闸 | registry.script_required_active（manifest 优先+客观特征，同 spec_wizard 模式）；prompt_gates 剧本闸助手（script_present/豁免意图/短路准入/提醒卡文案外置 messages.md）；planner 编排：S7 零思考直出提醒卡（推进意图且非提问）、「我去上传」秒回等待回执、提问落回 LLM+轮末强制提醒卡（反复提醒）、豁免记账 script_waived；FlowGateSet.ensure_script_gate 执行侧拦越阶结构操作（双轨同条件，不拦用户，override/坚持旁路）；GATE_RULES 注册 skill.script_required + record_gate 审计；test_814_script_gate 八条钉死 |
-| B0-B12 整改 | 2026-08-15 全面审核暴露的全部问题（P0 接线四件、提示词预算违约与分身漂移、交互体验漂移、前端双轨资产、测试桩污染、臃肿七型）+ 用户裁决（模型能力参数唯一权威源=全局设置）+ 五新功能 | 补丁沉积 + 双轨复制 + 8/13 回退接线未恢复 + 台账宣称≠代码事实 | 一次性整改（19 commits，docs/修复改进计划书-2026-08-15.md 附录记录批次→commit→验收）：P0 接线四件（doc_written 四段链/轮间注入/FC 警告外发/fallback 载荷）；提示词治理（system.md 14.3KB→774B、模型可见严禁 45→0、预算 CI 门禁）；交互整改（阶段卡可展开默认展开、闸机 chips 结构化、toast 收敛、真实性六项）；前端一致性（i18n 全量、Tailwind 摘除、api-settings 入 SPA 退役 iframe）；流程与 Skill（无技能路径、Skill 暂停点运行时消费、三本账收敛、测试桩迁 fixtures、dag 声明化）；速度（compaction 预热、请求体瘦身）；工程卫生（死代码 8 文件、归档出库、数据 TTL、窗口表元数据化、记忆分桶）；模型参数治理（注入优先级草稿>全局设置、Skill lint、迁移脚本）；模型分层策略表；视频批量队列/断点续跑/时间线回画布；成本看板；对话分支/快照 |
-| B13（登记未清） | 存量 38 处 `except Exception: pass` 静默站点；executors/prompt_gates/chat_service 大文件拆分；OTLP 可选导出；事故编号测试命名归档（保留编号=§13.5 溯源约定，重命名反而破坏溯源，故不动）；卡注入决策树收敛（F47：agent_loop 8 注入点收敛为单一路径状态机）；生成域整理（F63：generation.py 与 routes/generate* 边界确认）；dag 拓扑并行批次（F65：同批执行器并发）；DEPRECATED 到期机制（F43：兼容层带到期版本号，CI 到期报错）；防复发脚本补齐（F58：check_dead_code/check_duplication/check_ledger_tests/check_file_lines 红线） | 整改批次内风险评估后延后（改动面大收益边际；均已在本文档登记，逐项带独立立项号） | ① `grep -rn "except Exception:" src/video_agent | grep -A1 pass` 逐条 logger 化；② 拆分按「文件行数红线」机制立项；③ OTLP env 导出按 B10 设计补齐；④ 命名归档以本台账行清偿；⑤⑥⑦⑧ 各自立项时按 13.5 决策树定位归属层后实施 |
+| B0-B12 整改 | 2026-08-15 全面审核暴露的全部问题（P0 接线四件、提示词预算违约与分身漂移、交互体验漂移、前端双轨资产、测试桩污染、臃肿七型）+ 用户裁决（模型能力参数唯一权威源=全局设置）+ 五新功能 | 补丁沉积 + 双轨复制 + 8/13 回退接线未恢复 + 台账宣称≠代码事实 | 一次性整改（19 commits，docs/修复改进计划书-2026-08-15.md 附录记录批次→commit→验收）：P0 接线四件（doc_written 四段链/轮间注入/FC 警告外发/fallback 载荷）；提示词治理（system.md 14.3KB→774B、模型可见严禁 45→0、预算 CI 门禁）；交互整改（阶段卡可展开默认展开、闸机 chips 结构化、toast 收敛、真实性六项）；前端一致性（i18n 全量、Tailwind 摘除、api-settings 入 SPA 退役 iframe）；流程与 Skill（无技能路径、Skill 暂停点运行时消费、三本账收敛、测试桩迁 fixtures、dag 声明化）；速度（compaction 预热、请求体瘦身）；工程卫生（死代码 8 文件、归档出库、数据 TTL、窗口表元数据化、记忆分桶）；模型参数治理（注入优先级草稿>全局设置、Skill lint、迁移脚本）；模型分层策略表；视频批量队列/断点续跑/时间线回画布；成本看板；对话分支/快照。**勘误（二审整改行登记）**：①「测试桩迁 fixtures」在 0a73bc9 仅完成夹具副本+conftest 读 patch，data/skills 桩未删且测试经 save_skill_doc 每次运行复活桩——实际清偿于二审 R2/R2b（删桩+conftest session 级镜像目录杜绝写污染）；②「Tailwind 摘除」遗留 6 处无效类名+pill-option 缺 button 重置（未选中项灰盒白字）——实际清偿于二审 R2/R2c |
+| 二审整改（2026-08-15 下午） | 二审实测暴露：验收四件套 13 红（九元组解包×4/断言锁旧文案×8/D2 基线×1）、台账漂移三件（测试桩复活/Tailwind 残留/预算门禁缺 CI）、except-pass 48 处、三大文件超红线、「引导」打断当前任务 | 8/15 上午整改后未复跑全量验收 + 半吊子迁移 + 测试写污染生产目录 | R0 备份分支；R1 验收回绿（execute 九元组解包修复、断言迁移至结构化 chips/客观账本新基线、CI 补预算门禁，94adbe8）；R2 台账漂移清偿（桩迁出+.history 清理、Tailwind 语义类替换、except-pass 全日志化，ee548a8/2687400/657b429）；R2b 桩复活根因（conftest session 级镜像目录，测试读写零污染生产）；R3 引导改不打断语义（用户审定：登记轮间注入队列，当前操作完成后最近轮边界注入，复用 B0/F2 通道，8ed3a2b）；R4a/R4b/R4c 三大文件拆分（4f65984/f2b1c78/61604c8，全部 ≤1200 行，check_file_lines 红线入 CI）；教训：①提示词治理迁移必须同批更新锁文案的断言测试；②拆分后 monkeypatch 目标=调用方命名空间（LLM 调用统一收敛 _gen. 模块属性，patch 点=web.generation）；③git stash 期间不得并行改动（曾致桩删除丢失） |
+| B13（部分清偿） | 存量 38 处 `except Exception: pass` 静默站点；executors/prompt_gates/chat_service 大文件拆分；OTLP 可选导出；事故编号测试命名归档（保留编号=§13.5 溯源约定，重命名反而破坏溯源，故不动）；卡注入决策树收敛（F47：agent_loop 8 注入点收敛为单一路径状态机）；生成域整理（F63：generation.py 与 routes/generate* 边界确认）；dag 拓扑并行批次（F65：同批执行器并发）；DEPRECATED 到期机制（F43：兼容层带到期版本号，CI 到期报错）；防复发脚本补齐（F58：check_dead_code/check_duplication/check_ledger_tests/check_file_lines 红线） | 整改批次内风险评估后延后（改动面大收益边际；均已在本文档登记，逐项带独立立项号） | **2026-08-15 二审整改已清偿**：except-pass 48 处全日志化（R2，关键链路升 warning）；三大文件拆分（R4a/R4b/R4c：executors→exec_common/exec_spec/exec_tools+壳、prompt_gates→+gates_spec、chat_service→+chat_opening/chat_consume，全部 ≤1200 行）；check_file_lines.py 红线 1200 入 CI（R4c）。剩余未清偿：OTLP 导出、F47/F63/F65/F43、check_dead_code/check_duplication/check_ledger_tests |
 
 ### 13.9 模型分层原则（速度治理）
 
