@@ -130,6 +130,10 @@
   .aps-verify-result.err { color: #f87171; }
   .aps-model-row { display: flex; gap: 8px; margin-bottom: 8px; }
   .aps-icon-btn { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 34px; border-radius: 8px; border: 1px solid var(--border-color); background: transparent; color: var(--text-dim); cursor: pointer; transition: color 0.12s, background 0.12s; }
+    /* Key 行（画布同款）：外框包裹 input + 右侧 ✓/🗑 方形按钮 */
+    .aps-keyrow { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); padding: 8px; }
+    .aps-keyrow .aps-input { flex: 1; border: none; background: var(--bg-primary); }
+    .aps-keyrow .aps-icon-btn { width: 34px; height: 34px; }
   .aps-icon-btn:hover { color: #f87171; background: rgba(239, 68, 68, 0.1); }
   .aps-empty { border: 1px dashed var(--border-color); border-radius: 8px; padding: 18px; text-align: center; font-size: 11px; color: var(--text-dim); }
   /* 侧栏平台列表滚轮滑动 + CLI 设置区 */

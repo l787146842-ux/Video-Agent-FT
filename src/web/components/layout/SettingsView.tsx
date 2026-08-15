@@ -6,6 +6,7 @@ import {
 import { getProviders } from '@/api/providers';
 import { apiFetch, apiPost, apiPut, getGlobalApiKey, setGlobalApiKey } from '@/api/client';
 import { showToast } from '@/stores/toast';
+import { studioActions } from '@/stores/studio';
 import type { ApiProvider } from '@/types';
 
 /**
@@ -130,6 +131,10 @@ export default function SettingsView() {
   const [checked, setChecked] = createSignal<Set<string>>(new Set());
   const [mSearch, setMSearch] = createSignal('');
   const [mTab, setMTab] = createSignal<'all' | ModelCat>('all');
+  // 已配置模型分类集合（画布同款：类别以已配置优先，默认勾选=已在配置里）
+  const [savedCats, setSavedCats] = createSignal<{ image: Set<string>; chat: Set<string>; video: Set<string> }>(
+    { image: new Set(), chat: new Set(), video: new Set() },
+  );
 
   onMount(async () => {
     await reload();
@@ -188,7 +193,8 @@ export default function SettingsView() {
   async function saveAll(overrides?: Record<string, unknown>) {
     const list = providers().map((p, i) => {
       const base: Record<string, unknown> = {
-        id: p.id, name: p.name, protocol: p.protocol, base_url: p.base_url, enabled: p.enabled,
+        // 用户裁决：去掉「启用」开关——配置并保存即参与生成渠道候选
+        id: p.id, name: p.name, protocol: p.protocol, base_url: p.base_url, enabled: true,
         image_request_mode: String(p.image_request_mode || 'openai'),
         chat_models: (p.chat_models || []).map((s) => s.trim()).filter(Boolean),
         image_models: (p.image_models || []).map((s) => s.trim()).filter(Boolean),
@@ -202,6 +208,11 @@ export default function SettingsView() {
       setProviders(saved.providers.map((p) => ({ ...p, api_key: '' })));
       setSel(Math.max(0, Math.min(keepSel, saved.providers.length - 1)));
       showToast('供应商配置已保存', 'success');
+      // 实时刷新生成渠道候选（全局设置/参数栏下拉同源 store）
+      try {
+        const provs = await getProviders();
+        studioActions.setApiConfig({ providers: provs.providers.filter((p) => p.enabled !== false) });
+      } catch { /* 静默 */ }
       return true;
     } catch (e) {
       showToast(`保存失败：${(e as Error).message}`, 'error');
@@ -363,8 +374,18 @@ export default function SettingsView() {
         showToast(`拉取模型失败：${data.error || '上游未返回模型'}`, 'error');
         return;
       }
-      setFetched(data);
-      setChecked(new Set(data.all));
+      // 画布同款：清单 = 上游 ∪ 已配置（字典序），默认勾选 = 已在配置里的
+      const saved = {
+        image: new Set((p.image_models || []).map((s) => s.trim()).filter(Boolean)),
+        chat: new Set((p.chat_models || []).map((s) => s.trim()).filter(Boolean)),
+        video: new Set((p.video_models || []).map((s) => s.trim()).filter(Boolean)),
+      };
+      setSavedCats(saved);
+      const all = Array.from(new Set([
+        ...(data.all || []), ...saved.image, ...saved.chat, ...saved.video,
+      ])).sort();
+      setFetched({ ...data, all, total: all.length });
+      setChecked(new Set([...saved.image, ...saved.chat, ...saved.video]));
       setMSearch('');
       setMTab('all');
     } catch (e) {
@@ -373,6 +394,10 @@ export default function SettingsView() {
   }
 
   const catOf = (m: string): ModelCat => {
+    const s = savedCats();
+    if (s.image.has(m)) return 'image';
+    if (s.video.has(m)) return 'video';
+    if (s.chat.has(m)) return 'chat';
     const f = fetched();
     if (!f) return 'chat';
     if (f.image_models.includes(m)) return 'image';
@@ -722,17 +747,6 @@ export default function SettingsView() {
                       </For>
                     </Show>
                   </Show>
-
-                  <label class="aps-field">
-                    <span>启用状态</span>
-                    <label class="aps-toggle">
-                      <input
-                        type="checkbox" checked={!!current()!.enabled}
-                        onChange={(e) => patch('enabled', e.currentTarget.checked)}
-                      />
-                      {current()!.enabled ? '已启用（参与生成渠道候选）' : '已停用'}
-                    </label>
-                  </label>
 
                   {/* 验证行（画布同款）：验证地址/验证协议 + 协议下拉 + 图片接口模式下拉 */}
                   <div class="aps-verify-row">
