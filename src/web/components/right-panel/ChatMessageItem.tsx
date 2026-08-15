@@ -1,6 +1,6 @@
 import { For, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import {
-  FiCheckCircle, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
+  FiCheckCircle, FiChevronDown, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
 } from 'solid-icons/fi';
 import { renderMarkdown } from '@/lib/markdown';
 import { sendUserMessage } from '@/lib/agent-actions';
@@ -50,9 +50,23 @@ export function ChatMessageItem(props: {
   const hasRefBlocks = () =>
     ((msg().docBlocks || []).length > 0) || ((msg().skillBlocks || []).length > 0);
 
-  /** 是否含闸机拦截类警告（814F7：显示「本次放行」按钮的触发条件） */
-  const hasGateWarning = () =>
-    (msg().warnings || []).some((w) => w.includes('拦截') || w.includes('闸机') || w.includes('闸'));
+  /** 是否含闸机拦截类警告（B2/F13：结构化判定——trace.gates 存在 ok=false 条目，
+   * 不再对文案做 includes('拦截') 字符串匹配） */
+  const gateRecords = () => {
+    const out: Array<{ rule_id: string; layer: string; message: string; skill_name?: string }> = [];
+    (msg().trace?.steps || []).forEach((s) => {
+      (s.gates || []).forEach((g) => {
+        if (!g.ok) out.push({
+          rule_id: g.rule_id,
+          layer: g.layer,
+          message: g.message || '',
+          skill_name: g.skill_name,
+        });
+      });
+    });
+    return out;
+  };
+  const hasGateWarning = () => gateRecords().length > 0;
 
   /** 本次放行（§2.4）：显式用户指令 + gate_overrides 随消息留痕，后端单次消费 */
   const overrideOnce = () => {
@@ -163,24 +177,10 @@ export function ChatMessageItem(props: {
         </div>
       </Show>
 
-      {/* 阶段完成卡（2222 反馈：只展示大阶段名，不重复正文细节；
-          具体操作明细在下方过程时间线查看） */}
+      {/* 阶段完成卡（B2/F12·D4：可展开、默认展开；正文=本轮概述（确认文案）+执行清单。
+          确认文案与模型正文判重防双显；历史消息同样可展开，暂停点回看不丢失） */}
       <Show when={msg().confirm}>
-        <div class="stage-card">
-          <div class="stage-card-header">
-            <FiCheckCircle size={15} class="stage-check" />
-            <span class="stage-card-title">
-              {stageLabelFromMessage(msg())
-                ? `${stageLabelFromMessage(msg())} · ${t('rp.msg.stageDone')}`
-                : t('rp.msg.stageDone')}
-            </span>
-            <Show when={msg().appliedActions}>
-              <span class="stage-card-badge">
-                {t('rp.msg.appliedOps', { count: msg().appliedActions ?? 0 })}
-              </span>
-            </Show>
-          </div>
-        </div>
+        <StageCard msg={msg} />
       </Show>
 
       {/* 过程时间线（深度思考 + 已处理操作，折叠面板；内容不进下次 LLM 上下文） */}
@@ -198,12 +198,23 @@ export function ChatMessageItem(props: {
           {msg().modelName || 'Agent'}
         </span>
         {/* 模型降级等警示：常驻展示在 agent 气泡上（刷新后仍可见） */}
-        <Show when={(msg().warnings || []).length > 0}>
+        <Show when={(msg().warnings || []).length > 0 || hasGateWarning()}>
           <div class="msg-warnings">
+            {/* B2/F13：闸机判定 chips（结构化来源标注：「平台」/「Skill『xxx』」） */}
+            <For each={gateRecords()}>
+              {(g) => (
+                <div class="gate-chip-row">
+                  <span class={`gate-chip gate-chip-${g.layer === 'platform' ? 'platform' : 'skill'}`}>
+                    {g.layer === 'platform' ? '平台' : `Skill『${g.skill_name || ''}』`}
+                  </span>
+                  <span class="gate-chip-msg">{g.message || g.rule_id}</span>
+                </div>
+              )}
+            </For>
             <For each={msg().warnings || []}>
               {(w) => <div class="msg-warning-line">⚠ {w}</div>}
             </For>
-            {/* 814F7：拦截类警告附「本次放行」按钮（仅最新一条，单次生效留痕） */}
+            {/* 814F7/B2：拦截类警告附「本次放行」按钮（结构化挂载，仅最新一条，单次生效留痕） */}
             <Show when={props.isGateTarget && hasGateWarning()}>
               <button type="button" class="gate-override-btn" onClick={overrideOnce}>
                 {t('rp.msg.gateOverride')}
@@ -266,6 +277,69 @@ export function ChatMessageItem(props: {
       {/* 确认操作区（仅最后一条带 confirm 的消息：候选项单选卡片 / 确认按钮） */}
       <Show when={msg().confirm && props.isLast}>
         <ConfirmActions message={msg()} />
+      </Show>
+    </div>
+  );
+}
+
+/**
+ * 阶段完成卡（B2/F12·D4）：可展开、默认展开。
+ * 正文=本轮概述（确认文案，与模型正文判重防双显）+ 执行清单（actionLog）。
+ * 历史消息同样可展开——暂停点回看不丢失（吸收 Qoder 问题 12）。
+ */
+function StageCard(props: { msg: () => ChatMessage }) {
+  const [open, setOpen] = createSignal(true);
+  const msg = () => props.msg();
+  const confirmText = () => {
+    const c = msg().confirm;
+    return typeof c === 'string' ? c : '';
+  };
+  /** 确认文案与模型正文判重：正文已包含同样句子时卡片只留执行清单 */
+  const bodyText = () => {
+    const c = confirmText().trim();
+    if (!c) return '';
+    const norm = (s: string) => s.replace(/[\s“”'"]/g, '');
+    if (norm(msg().text || '').includes(norm(c))) return '';
+    return c;
+  };
+  const hasBody = () => !!bodyText() || (msg().actionLog || []).length > 0;
+
+  return (
+    <div class={`stage-card ${open() ? 'expanded' : ''}`}>
+      <button
+        type="button"
+        class="stage-card-header"
+        onClick={() => setOpen(!open())}
+        aria-expanded={open()}
+      >
+        <FiCheckCircle size={15} class="stage-check" />
+        <span class="stage-card-title">
+          {stageLabelFromMessage(msg())
+            ? `${stageLabelFromMessage(msg())} · ${t('rp.msg.stageDone')}`
+            : t('rp.msg.stageDone')}
+        </span>
+        <Show when={msg().appliedActions}>
+          <span class="stage-card-badge">
+            {t('rp.msg.appliedOps', { count: msg().appliedActions ?? 0 })}
+          </span>
+        </Show>
+        <Show when={hasBody()}>
+          {open() ? <FiChevronDown size={13} class="stage-card-arrow" /> : <FiChevronRight size={13} class="stage-card-arrow" />}
+        </Show>
+      </button>
+      <Show when={open() && hasBody()}>
+        <div class="stage-card-body">
+          <Show when={bodyText()}>
+            <p class="stage-card-summary">{bodyText()}</p>
+          </Show>
+          <Show when={(msg().actionLog || []).length > 0}>
+            <ul class="stage-card-ops">
+              <For each={msg().actionLog || []}>
+                {(op) => <li>{op}</li>}
+              </For>
+            </ul>
+          </Show>
+        </div>
       </Show>
     </div>
   );

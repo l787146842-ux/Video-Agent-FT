@@ -6,6 +6,7 @@ Studio Actions 执行器 — 从 actions.py 抽离。
 """
 from datetime import datetime, timezone
 import re
+import time
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -71,6 +72,9 @@ class StudioActionExecutor:
         self.chat_inserts: List[Dict[str, str]] = []
         # 已执行操作的中文描述清单（供前端「阶段完成」卡片展开查看具体操作，随消息持久化）
         self.action_log: List[str] = []
+        # B2/F21：成功动作的逐动作实测耗时（ms），与 action_log 下标对齐；
+        # agent_loop 用其替换时间线均摊耗时（文本轨此前均摊是白谎）
+        self.last_action_durations: List[float] = []
         # 本批次被流程闸机拦截的原因清单（每次 execute 重置）：
         # 供 agent_loop 回喂模型自愈（对齐 Tool 模式错误回传闭环），
         # 避免操作被拦后模型正文虚报「已写入/已创建」
@@ -128,6 +132,7 @@ class StudioActionExecutor:
                 self.svc.push_undo()
             self.gate_rejections = []  # 每批次重置拦截原因记录
             self.gate_warnings = []
+            self.last_action_durations = []  # B2/F21：每批次重置逐动作耗时
             self.structure_kinds_created = set()
             self.prompts_stripped = 0
             self._stream_undo_pushed = False
@@ -153,9 +158,11 @@ class StudioActionExecutor:
         applied = 0
         for action in actions:
             try:
+                _t0 = time.monotonic()
                 if self._apply(action):
                     applied += 1
                     self.action_log.append(self._describe_action(action))
+                    self.last_action_durations.append((time.monotonic() - _t0) * 1000)
             except Exception as e:
                 logger.warning(f"Studio action failed: {action} -> {e}")
         if applied > 0:

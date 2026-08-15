@@ -8,6 +8,8 @@ export interface ConfirmOptionItem {
   display?: string;
   description?: string;
   group?: string;
+  /** B2/F16：点击发送的机械值（后端确定性消费）；缺省发送 label */
+  value?: string;
 }
 
 /** 引导交互可识别的选择维度 */

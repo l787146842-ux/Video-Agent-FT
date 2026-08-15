@@ -44,6 +44,8 @@ export interface ChatState {
   streamingTools: TimelineToolEntry[];
   /** 深度思考开始时刻（首条 reasoning 增量到达时记录，用于完成后的耗时角标） */
   streamingReasoningStartMs: number;
+  /** B2/F20：深度思考结束时刻（末条 reasoning 增量）；耗时角标 = 末-首，不混入工具执行时间 */
+  streamingReasoningEndMs: number;
   /** 排队中的引导消息（推理中发送 → 当前任务完成后自动发出） */
   queuedMessages: QueuedMessage[];
   /** B0/F1：本轮流已渲染过文档卡片的名称（doc_written 即显与 done 全量清单去重用） */
@@ -60,6 +62,7 @@ const defaultChatState: ChatState = {
   streamingReasoning: '',
   streamingTools: [],
   streamingReasoningStartMs: 0,
+  streamingReasoningEndMs: 0,
   queuedMessages: [],
   renderedDocCards: [],
 };
@@ -93,6 +96,8 @@ export const chatActions = {
   appendReasoning(text: string) {
     setChatState(produce((s) => {
       if (!s.streamingReasoningStartMs) s.streamingReasoningStartMs = Date.now();
+      // B2/F20：结束时刻随每条增量推进（思考与工具执行交错，角标只算思考区间）
+      s.streamingReasoningEndMs = Date.now();
       s.streamingReasoning += text;
       s.streamingStatus = '深度思考中…';
     }));
@@ -136,9 +141,10 @@ export const chatActions = {
     if (payload.steps > 1) metaParts.push(`${payload.steps} 轮`);
     if (payload.applied_actions > 0) metaParts.push(`更新 ${payload.applied_actions} 项`);
 
-    // 深度思考耗时角标：首条 reasoning 增量 → 完成时刻（无思考时 0）
+    // 深度思考耗时角标（B2/F20：末条 reasoning - 首条 reasoning；无思考时 0）
     const startMs = chatState.streamingReasoningStartMs;
-    const thinkingMs = startMs ? Date.now() - startMs : 0;
+    const endMs = chatState.streamingReasoningEndMs;
+    const thinkingMs = startMs && endMs && endMs >= startMs ? endMs - startMs : 0;
 
     setChatState(produce((s) => {
       s.messages.push({

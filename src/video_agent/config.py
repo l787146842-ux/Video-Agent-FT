@@ -68,6 +68,8 @@ class Settings:
     llm_thinking_level: str = field(default_factory=lambda: os.getenv("LLM_THINKING_LEVEL", ""))
     # 辅助摘要调用档位（记忆摘要/会话压缩；814H7 全局设置页可调，默认=原生）
     aux_thinking_level: str = field(default_factory=lambda: os.getenv("AUX_THINKING_LEVEL", ""))
+    # trace 持久化的 reasoning 尾部保留字符数（B2/F19·D11：头部截断，仅展示用）
+    trace_reasoning_max_chars: int = field(default_factory=lambda: _env_int("TRACE_REASONING_MAX_CHARS", 2000))
     # CLI 协议（如 gemini-cli/Antigravity CLI）路由到 custom-api 反代时 auto 的回退模型：
     # 聊天已对齐画布行为改走本机 agy CLI，此值仅影响带参考图的生图编辑等
     # 必须走反代的残留路径；反代报 model not register 时用 CLI_AUTO_CHAT_MODEL 覆盖

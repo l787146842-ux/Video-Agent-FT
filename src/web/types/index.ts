@@ -147,8 +147,8 @@ export interface ChatMessage {
   skillBlocks?: string[];
   /** 本轮已执行操作的中文描述清单（「阶段完成」卡片展开查看具体操作） */
   actionLog?: string[];
-  /** 确认卡片的候选选项（单选卡片，点击即把 label 作为回复发送） */
-  confirmOptions?: Array<{ label: string; description?: string; group?: string }>;
+  /** 确认卡片的候选选项（单选卡片，点击即把 value||label 作为回复发送；B2/F16 value 机械消费） */
+  confirmOptions?: Array<{ label: string; description?: string; group?: string; value?: string }>;
   /** 模型降级等警示行（常驻展示在 agent 气泡上，刷新后仍可见） */
   warnings?: string[];
   /** 本轮 Agent 参考的长期记忆命中（折叠展示） */
@@ -158,7 +158,18 @@ export interface ChatMessage {
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
-export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; }
+export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** B2/F15：大阶段标签（后端权威下发） */ stage?: string; }
+/** 闸机判定明细（后端 tracer.record_gate 产出，B2/F13：前端按结构渲染来源标注 chips） */
+export interface GateRecord {
+  rule_id: string;
+  layer: 'platform' | 'skill' | 'session' | string;
+  ok: boolean;
+  overridden?: boolean;
+  skill_name?: string;
+  action?: string;
+  draft_id?: string;
+  message?: string;
+}
 export interface AgentTraceStep {
   step: number;
   timing_ms: number;
@@ -169,6 +180,8 @@ export interface AgentTraceStep {
   actions?: TraceAction[];
   /** 本轮 reasoning（深度思考）文本摘要（仅展示，不进下次上下文） */
   reasoning?: string;
+  /** 本轮闸机判定明细（814R2；B2/F13 前端渲染来源标注 chips） */
+  gates?: GateRecord[];
 }
 export interface AgentTrace {
   trace_id?: string;
@@ -239,8 +252,8 @@ export interface SseDonePayload {
   chat_inserts?: Array<{ kind: MediaType; url: string; name: string; thumb?: string }>;
   /** 本轮已执行操作的中文描述清单（前端展示具体操作内容） */
   action_log?: string[];
-  /** 确认卡片的候选选项（单选卡片，点击即把 label 作为回复发送） */
-  confirmation_options?: Array<{ label: string; description?: string }>;
+  /** 确认卡片的候选选项（单选卡片，点击即把 value||label 作为回复发送） */
+  confirmation_options?: Array<{ label: string; description?: string; group?: string; value?: string }>;
   /** 主模型故障时 fallback 实际使用的模型名（供气泡标注） */
   fallback_model?: string;
   /** 执行轨迹（每轮 step/耗时/操作数） */

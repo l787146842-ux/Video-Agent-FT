@@ -55,12 +55,16 @@ export function ConfirmActions(props: { message: ChatMessage }) {
   };
   const allPicked = () => groups().every((g) => Boolean(effective(g.title)));
 
+  /** B2/F16：选项携带 value 时发送 value（后端确定性消费），否则发送 label */
+  const valueFor = (label: string) =>
+    (options() || []).find((o) => (o.label === label && (o.value || '').trim()))?.value || label;
+
   const sendAll = () => {
-    const lines = groups().map((g) => effective(g.title)).filter(Boolean);
+    const lines = groups().map((g) => valueFor(effective(g.title))).filter(Boolean);
     if (lines.length) void sendUserMessage(lines.join('\n'));
   };
   const sendSingle = () => {
-    const v = effective(SINGLE_KEY);
+    const v = valueFor(effective(SINGLE_KEY));
     if (v) void sendUserMessage(v);
   };
 

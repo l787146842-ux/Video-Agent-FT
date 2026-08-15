@@ -52,8 +52,8 @@
 {
   "message": "这个 Skill 的创作以剧本为原料，当前还没收到剧本文件。请先上传剧本（.txt/.docx）或直接把剧本文字粘贴发给我；若本次想做无剧本从零原创，请点选确认。",
   "options": [
-    {"label": "确认从零原创（无需剧本）", "description": "记账豁免，之后按原创流程推进，不再提醒"},
-    {"label": "我去上传/粘贴剧本", "description": "系统等你发送剧本，原料一到自动开工"}
+    {"label": "确认从零原创（无需剧本）", "description": "记账豁免，之后按原创流程推进，不再提醒", "value": "waive_script"},
+    {"label": "我去上传/粘贴剧本", "description": "系统等你发送剧本，原料一到自动开工", "value": "upload_script"}
   ]
 }
 

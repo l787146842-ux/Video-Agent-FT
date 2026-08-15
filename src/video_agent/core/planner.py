@@ -636,18 +636,8 @@ class Planner:
             if dn and dn not in seen_docs:
                 seen_docs.add(dn)
                 merged_docs.append(dn)
-        # 814G6：写入文档必须正文交代（系统保证，不依赖模型自觉）：
-        # 正文未提及的文档名补一句结构化交代（卡片由 chat_service 渲染）
-        if merged_docs:
-            _missing = [d for d in merged_docs if d not in (loop_result.text or "")]
-            if _missing:
-                _doc_note = (
-                    "本轮已写入文档：" + "、".join(f"《{d}》" for d in _missing)
-                    + "（文档面板可打开审阅与修改）。"
-                )
-                loop_result.text = (
-                    f"{_doc_note}\n\n{loop_result.text}" if (loop_result.text or "").strip() else _doc_note
-                )
+        # B2/F18：文档卡片（docCard）已即时可见并随消息持久化，正文不再重复
+        # 补「本轮已写入文档」交代（814G6 的「用户可见」由 docCard 满足，避免同屏双显）
         # 814H9 反复提醒：原料缺失且未豁免时，轮末强制下发提醒卡
         # （优先级高于模型自拟暂停/规格向导卡——原料关先于规格关）
         if self._script_pending_card:
@@ -764,8 +754,8 @@ class Planner:
             return
 
         result = result_holder[0] if result_holder else PlannerResponse()
-        if not result.text:
-            result.text = "已更新。" if result.applied_actions else "（无回复）"
+        # B2/F17：空回复占位统一由前端渲染（「（空回复）」单一形态），
+        # 后端流式 done 不再替换占位文案（非流式路径仍以 result.text 原样返回）
 
         yield PlannerEvent(type="done", payload={
             "text": result.text,

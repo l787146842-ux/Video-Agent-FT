@@ -21,8 +21,8 @@ from loguru import logger
 from src.video_agent.config import settings
 from src.video_agent.utils.paths import DATA_DIR
 
-# reasoning 文本持久化上限（仅展示用，防 trace 膨胀）
-_REASONING_MAX_CHARS = 500
+# reasoning 文本持久化长度（仅展示用，防 trace 膨胀；D11：保留尾部，头部省略）
+_REASONING_HEAD_NOTE = "…（前文思考已截断）"
 
 
 @dataclass
@@ -137,9 +137,11 @@ class AgentTracer:
         summary: str = "",
         elapsed_ms: float = 0.0,
         ok: bool = True,
+        stage: str = "",
     ) -> Dict[str, Any]:
         """记录当前 step 内的一个操作/工具调用（供前端时间线逐条展示）。
 
+        stage（B2/F15）：大阶段标签（后端权威下发，前端不再按工具名推断）。
         返回条目 dict（调用方可事后补填 elapsed_ms，如规划条目先占位后计时）；
         同时把缓冲的执行器子步骤挂到本条目之后（814G2 顺序一致性）。
         """
@@ -149,6 +151,8 @@ class AgentTracer:
             "elapsed_ms": round(elapsed_ms, 1),
             "ok": ok,
         }
+        if stage:
+            entry["stage"] = stage
         if self._current is None:
             return entry
         self._pending_actions.append(entry)
@@ -220,8 +224,10 @@ class AgentTracer:
             return
         timing_ms = (time.monotonic() - self._step_start) * 1000
         reasoning = "".join(self._pending_reasoning)
-        if len(reasoning) > _REASONING_MAX_CHARS:
-            reasoning = reasoning[:_REASONING_MAX_CHARS] + "…"
+        # D11：保留尾部（最新思考最有回看价值），头部省略
+        max_chars = int(getattr(settings, "trace_reasoning_max_chars", 0) or 2000)
+        if len(reasoning) > max_chars:
+            reasoning = _REASONING_HEAD_NOTE + reasoning[-max_chars:]
         # 814G2：step 结束仍无父条目承接的子步骤兜底落盘（防丢）
         if self._pending_subs:
             self._pending_actions.extend(self._pending_subs)

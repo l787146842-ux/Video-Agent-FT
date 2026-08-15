@@ -38,6 +38,26 @@ TOOL_STAGES: Dict[str, tuple] = {
     "video_assembler": ("assembly",),
 }
 
+# B2/F15：大阶段展示标签（后端权威下发，随 trace 条目 stage 字段持久化；
+# 前端不再按工具名硬编码推断，工具改名不会导致卡片退化）
+STAGE_LABELS: Dict[str, str] = {
+    "script_analyze": "剧本分析",
+    "storyboard_key_elements": "关键元素拆解",
+    "storyboard_shots": "分镜设计",
+    "storyboard_audio": "音频层设计",
+    "write_media_prompt": "媒体提示词编写",
+    "audio_generate": "音频生成",
+    "video_assembler": "时间线组装",
+    "image_generate": "设定图生成",
+    "generate_image": "对话出图",
+    "generate_video": "视频生成",
+}
+
+
+def stage_label_for_tool(tool: str) -> str:
+    """工具名 → 大阶段标签（未登记返回空串，前端回退「阶段完成」）。"""
+    return STAGE_LABELS.get(str(tool or "").strip(), "")
+
 
 @dataclass
 class SkillEntry:

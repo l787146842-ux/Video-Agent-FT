@@ -18,6 +18,7 @@ from src.video_agent.core import guard_pipeline, prompt_gates
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
 from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.skill_runtime.registry import stage_label_for_tool
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import (
@@ -620,9 +621,8 @@ class FCToolRunner:
                 if not gate_ok:
                     reason = flow_gates.block_reason(gate_op, gate_missing)
                     logger.warning(f"[FlowGate] 拦截工具 '{name}': {'、'.join(gate_missing)}")
-                    # 814G5：拦截对用户透明（⚠ + 「本次放行」按钮），
-                    # 但这是 agent 侧执行强制——用户输入永不被拦
-                    self.gate_warnings.append(reason)
+                    # 814G5：拦截对用户透明（结构化 chips 由 record_gate 入 trace，
+                    # B2/F13 起不再重复写纯文本 warnings；「本次放行」按钮按结构挂载）
                     if on_event is not None:
                         await on_event({
                             "type": SSE_TOOL_FINISHED,
@@ -761,6 +761,9 @@ class FCToolRunner:
                                 }
                                 if str(o.get("group") or "").strip():
                                     item["group"] = str(o.get("group")).strip()
+                                # B2/F16：选项 value 机械消费
+                                if str(o.get("value") or "").strip():
+                                    item["value"] = str(o.get("value")).strip()
                                 confirmation_options.append(item)
                             elif isinstance(o, str) and o.strip():
                                 confirmation_options.append({"label": o.strip(), "description": ""})
@@ -808,7 +811,8 @@ class FCToolRunner:
                         "elapsed_ms": round(_tool_ms, 1),
                         "result_summary": desc,
                     })
-                tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True)
+                tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True,
+                                     stage=stage_label_for_tool(name))
                 tool_results.append({"name": name, "ok": True, "data": result.data})
                 if name == "script_analyze":
                     self.skill_stages_done.add("script_analyze")
@@ -855,6 +859,7 @@ class FCToolRunner:
                 tracer.record_action(
                     name=name, summary=spec_silent_summary or start_summary,
                     elapsed_ms=_tool_ms, ok=not spec_silent_summary,
+                    stage=stage_label_for_tool(name),
                 )
                 tool_results.append({
                     "name": name, "ok": False,
@@ -947,7 +952,7 @@ class FCToolRunner:
                 # 不能装成已读完剧本弹规格向导，必须把失败原因明确交给用户
                 _err = key_tool_errors.get("script_analyze", "执行失败")
                 confirmation = (
-                    f"剧本分析未完成（script_analyze 执行失败）：{_err}。"
+                    f"剧本分析未完成（执行失败）：{_err}。"
                     "规格尚未交互与写入，请重试剧本分析；不要声称已完成或已生成规格。"
                 )
                 confirmation_options = [{
@@ -978,7 +983,10 @@ class FCToolRunner:
         # 6666/8888 事故：关键执行器/文档写入存在失败且模型带确认声称完成 → 覆盖为诚实文案
         # （部分成功、部分失败同样覆盖，堵住「script_analyze 成功就放行假规格文案」的盲区）
         if confirmation and key_tool_failed and not spec_write_rejected:
-            _failed = "、".join(dict.fromkeys(key_tool_failed))[:160]
+            # B2/F23：失败工具名映射为用户友好名（内部英文名不出现在用户文案）
+            _failed = "、".join(
+                dict.fromkeys(stage_label_for_tool(n) or n for n in key_tool_failed)
+            )[:160]
             logger.warning(f"[Planner] 关键步骤防虚报：{_failed} 失败但模型声称完成，已覆盖")
             confirmation = (
                 f"关键步骤未全部完成：{_failed} 执行失败，工作台状态未按预期更新；"

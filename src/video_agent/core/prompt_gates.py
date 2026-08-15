@@ -359,8 +359,14 @@ _SCRIPT_WAIVE_RE = re.compile(
 
 
 def script_waive_intent(text: str) -> bool:
-    """用户消息是否表达「无剧本豁免」意图（Context≠Consent：只认显式话术）。"""
-    return bool(_SCRIPT_WAIVE_RE.search(str(text or "")))
+    """用户消息是否表达「无剧本豁免」意图（Context≠Consent：只认显式话术）。
+
+    B2/F16：提醒卡选项携带 value（waive_script），点击即机械消费——意图识别
+    不再依赖正则猜话术（正则仅作手工输入的兜底）。"""
+    t = str(text or "").strip()
+    if t == "waive_script":
+        return True
+    return bool(_SCRIPT_WAIVE_RE.search(t))
 
 
 # 推进意图（短路触发条件之一）：用户在推进任务而非提问
@@ -388,8 +394,8 @@ def script_remind_card() -> Tuple[str, List[Dict[str, Any]]]:
     data = _gate_json("SCRIPT_REMIND_CARD", {
         "message": "这个 Skill 的创作以剧本为原料，当前还没收到剧本文件。请先上传剧本或粘贴剧本文字。",
         "options": [
-            {"label": "确认从零原创（无需剧本）", "description": "记账豁免，不再提醒"},
-            {"label": "我去上传/粘贴剧本", "description": "原料一到自动开工"},
+            {"label": "确认从零原创（无需剧本）", "description": "记账豁免，不再提醒", "value": "waive_script"},
+            {"label": "我去上传/粘贴剧本", "description": "原料一到自动开工", "value": "upload_script"},
         ],
     })
     return str(data.get("message") or ""), list(data.get("options") or [])
@@ -412,7 +418,11 @@ _SCRIPT_UPLOAD_ACK_RE = re.compile(r"^(我去上传|好的，?我去|马上去|�
 
 
 def script_upload_ack_intent(text: str) -> bool:
-    """用户回应了「我去上传」类话术 → 回等待回执而非再弹提醒卡。"""
+    """用户回应了「我去上传」类话术 → 回等待回执而非再弹提醒卡。
+
+    B2/F16：提醒卡选项 value=upload_script 点击即机械消费；正则仅作手工输入兜底。"""
+    if str(text or "").strip() == "upload_script":
+        return True
     return bool(_SCRIPT_UPLOAD_ACK_RE.search(str(text or "")))
 
 

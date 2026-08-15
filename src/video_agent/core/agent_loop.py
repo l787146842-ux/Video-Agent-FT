@@ -30,7 +30,7 @@ from src.video_agent.core.sse_events import (
     SSE_TOOL_STARTED,
 )
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.skill_runtime.registry import fallback_skill_from_state
+from src.video_agent.skill_runtime.registry import fallback_skill_from_state, stage_label_for_tool
 
 if TYPE_CHECKING:
     # 仅类型标注用：执行器实现依赖 web 层生成管线，运行时不做硬依赖
@@ -96,6 +96,9 @@ def split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], 
                     }
                     if str(o.get("group") or "").strip():
                         item["group"] = str(o.get("group")).strip()
+                    # B2/F16：选项 value 机械消费（点击即发送 value，后端确定性处理）
+                    if str(o.get("value") or "").strip():
+                        item["value"] = str(o.get("value")).strip()
                     confirmation_options.append(item)
                 elif isinstance(o, str) and o.strip():
                     confirmation_options.append({"label": o.strip(), "description": ""})
@@ -406,7 +409,8 @@ async def run_agent_loop(
                     kept.append(action)
                     continue
                 greason = flow_gates.block_reason(gop, gmissing)
-                result.warnings.append(greason)
+                # B2/F13：拦截原因已由 record_gate 入 trace（前端渲染结构化 chips），
+                # 不再重复写入纯文本 warnings（避免同屏双显）
                 flow_gates.mark_blocked(greason)
                 tracer.record_action(
                     name=str(action.get("action", "")), summary="被流程门禁拦截",
@@ -526,6 +530,11 @@ async def run_agent_loop(
             await emit({"type": SSE_STATUS, "text": "已完成：" + "；".join(new_logs[-3:])})
         for i, desc in enumerate(new_logs):
             per_ms = _batch_ms / len(new_logs) if new_logs else 0.0
+            # B2/F21：按动作实测耗时（文本轨此前均摊是白谎；执行器逐动作计时，
+            # 缺失时回落均摊）
+            _durations = getattr(executor, "last_action_durations", None) or []
+            if i < len(_durations):
+                per_ms = _durations[i]
             await emit({
                 "type": SSE_TOOL_FINISHED,
                 "id": f"s{step}-{i}",
@@ -536,6 +545,7 @@ async def run_agent_loop(
             tracer.record_action(
                 name=str(executable[i].get("action", "")) if i < len(executable) else "",
                 summary=desc, elapsed_ms=per_ms, ok=True,
+                stage=stage_label_for_tool(str(executable[i].get("action", ""))) if i < len(executable) else "",
             )
         # 部分操作未成功（未匹配到目标/执行异常）：剩余条目补发失败态，
         # 避免前端时间线条目永远停在「运行中」
@@ -552,6 +562,7 @@ async def run_agent_loop(
                 tracer.record_action(
                     name=str(action.get("action", "")),
                     summary="未匹配到目标或执行失败", elapsed_ms=0.0, ok=False,
+                    stage=stage_label_for_tool(str(action.get("action", ""))),
                 )
         gate_rejections = list(getattr(executor, "gate_rejections", None) or [])
         # Skill 声明式流程门禁（814R3 复活，文本轨）：本轮有拦截 → 强制补发确认暂停

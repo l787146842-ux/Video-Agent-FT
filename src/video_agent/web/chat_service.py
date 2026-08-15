@@ -919,7 +919,8 @@ async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: 
     text = _friendly_stream_error_text(e)
     if use_studio_context:
         async with svc.lock:
-            svc.add_chat_message("agent", f"[错误] {text}", model_name=body.model or "")
+            # B2/F22：错误前缀统一为 ⚠️（与前端 streamError 渲染一致，刷新后不跳变）
+            svc.add_chat_message("agent", f"⚠️ {text}", model_name=body.model or "")
     await emit({"type": SSE_ERROR, "detail": text, "error_code": getattr(e, "error_code", "INTERNAL_ERROR")})
 
 

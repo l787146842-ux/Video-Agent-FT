@@ -56,13 +56,14 @@ export function ChatFeed() {
     return -1;
   };
 
-  /** 814F7：最后一条含闸机拦截警告的消息（「本次放行」按钮挂载点） */
+  /** B2/F13：最后一条含闸机拦截判定（trace.gates ok=false）的消息（「本次放行」按钮挂载点）。
+   * 结构化判定替代文案 includes('拦截') 字符串匹配——文案/措辞改动不再影响按钮。 */
   const gateWarningTargetIdx = () => {
     if (chatState.isStreaming) return -1;
     const msgs = chatState.messages;
     for (let i = msgs.length - 1; i >= 0; i -= 1) {
-      const w = msgs[i].warnings || [];
-      if (w.some((s) => s.includes('拦截') || s.includes('闸'))) return i;
+      const gates = (msgs[i].trace?.steps || []).flatMap((s) => s.gates || []);
+      if (gates.some((g) => !g.ok)) return i;
     }
     return -1;
   };

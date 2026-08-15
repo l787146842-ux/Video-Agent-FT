@@ -300,11 +300,10 @@ function handleDone(payload: SseDonePayload) {
     showToast(`Agent 已添加 ${seen.size} 个素材到对话输入框，确认后可发送`, 'success');
   }
   if ((payload.applied_actions || 0) > 0) {
-    const elapsed = ((payload.elapsed_ms || 0) / 1000).toFixed(1);
-    showToast(`Agent 已联动更新 ${payload.applied_actions} 项（${elapsed}s）`, 'success');
     studioActions.markBoardApplied();
   }
-  (payload.warnings || []).forEach((w) => showToast(`⚠ ${w}`, 'warning'));
+  // B2/F14：toast 收敛——操作数已由阶段卡徽标/meta 展示、警告已常驻消息内，
+  // 不再重复弹 toast（信息已在对话内可见的只展示一处）
   // 任务已结束，关闭订阅（后台任务本身已完成，无需保留连接）
   if (currentTask) projectTasks.delete(currentTask.projectId);
   closeSubscription();

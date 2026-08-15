@@ -49,29 +49,19 @@ export function timelineFromMessage(msg: ChatMessage): { reasoning: string; item
   return { reasoning, items };
 }
 
-/** 执行器工具 → 大阶段名（阶段完成卡只展示大阶段，不重复正文细节） */
-const STAGE_TOOL_LABELS: Array<[string, string]> = [
-  ['script_analyze', '剧本分析'],
-  ['storyboard_key_elements', '关键元素拆解'],
-  ['storyboard_shots', '分镜设计'],
-  ['storyboard_audio', '音频层设计'],
-  ['write_media_prompt', '媒体提示词编写'],
-  ['image_generate', '设定图生成'],
-  ['audio_generate', '音频生成'],
-  ['video_assembler', '时间线组装'],
-];
+/** 执行器工具 → 大阶段名：B2/F15 起改为后端权威下发（trace 条目 stage 字段），
+ * 前端不再硬编码推断，工具改名不会导致卡片退化（13.7 登记）。 */
 
 /**
- * 推导本轮完成的「大阶段」名：按执行顺序取最后一个命中的阶段执行器。
- * 无阶段执行器（如纯确认轮）返回空串，卡片回退通用「阶段完成」。
+ * 推导本轮完成的「大阶段」名：取 trace 条目携带的 stage（后端权威）；
+ * 无 stage（旧消息）回退空串，卡片显示通用「阶段完成」。
  */
 export function stageLabelFromMessage(msg: ChatMessage): string {
   const steps = msg.trace?.steps || [];
   let label = '';
   steps.forEach((s) => {
     (s.actions || []).forEach((a: TraceAction) => {
-      const hit = STAGE_TOOL_LABELS.find(([tool]) => a.name === tool);
-      if (hit) label = hit[1];
+      if (a.stage) label = a.stage;
     });
   });
   return label;
