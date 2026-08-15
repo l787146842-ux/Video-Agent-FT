@@ -33,6 +33,7 @@ from src.video_agent.web.routes.canvas import router as canvas_router
 from src.video_agent.web.routes.cli_status import router as cli_status_router
 from src.video_agent.web.routes.runtime_settings import router as runtime_settings_router, load_runtime_settings
 from src.video_agent.web.routes.memory import router as memory_router
+from src.video_agent.web.routes.video_batch import router as video_batch_router
 
 # 日志配置
 logger.remove()
@@ -286,6 +287,7 @@ app.include_router(canvas_router, prefix="/api", tags=["canvas"])
 app.include_router(cli_status_router, prefix="/api", tags=["cli-status"])
 app.include_router(runtime_settings_router, prefix="/api", tags=["runtime-settings"])
 app.include_router(memory_router, prefix="/api", tags=["memory"])
+app.include_router(video_batch_router, prefix="/api", tags=["video-batch"])
 
 
 # ---------- SPA 兜底（814H8） ----------
