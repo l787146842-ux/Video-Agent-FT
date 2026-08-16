@@ -2,7 +2,21 @@
 /**
  * FTDYB 全局类型定义
  * 精确匹配后端 API 数据模型（从旧 studio/types.ts 迁移 + 规范化）
+ *
+ * 契约来源纪律（六轮 S2 路线 a，D1 用户终裁）：
+ * API 边界请求/响应类型以 api.generated.ts（FastAPI OpenAPI schema 生成）为唯一来源，
+ * 本文件只保留别名 re-export 与视图态类型；tsc 编译期即契约门禁。
+ * 豁免清单（后端未建模为 Pydantic、OpenAPI 无对应 schema，留手写并在此登记）：
+ * - SSE 事件族（SseStatusEvent/SseDonePayload 等）：SSE 流式载荷，后端 dict 直发；
+ * - TaskResult / AgentTaskReplayPayload：任务式传输载荷，同上；
+ * - ServerStateSnapshot / ChatMessage / Draft 等视图态：前端渲染形态，非 API 模型；
+ * - 手写响应类型比生成物更精确的站点（生成物对 Dict 响应只能给出
+ *   Record<string, unknown>）：ProjectListResponse/ProvidersResponse/
+ *   UndoStatusResponse/OkWithStateResponse（api/project.ts、api/providers.ts）、
+ *   整板保存 payload（stores/studio/storyboard.ts，后端 ProjectStateUpdate 为粗粒度
+ *   unknown 字段）——保留手写强类型，后端建模精细化后再迁。
  */
+import type { ChatRequest } from './api.generated';
 
 // ===== 基础枚举 =====
 export type DraftType = 'keyElement' | 'shot' | 'audio';
@@ -373,36 +387,10 @@ export interface GroupRecord {
   group: AnyGroup;
 }
 
-// ===== Agent 聊天请求 =====
-export interface AgentChatRequest {
-  message: string;
-  /** 幂等键：后端同 id 处理中时拒绝重复提交 */
-  request_id?: string;
-  provider?: string;
-  model?: string;
-  ms_model?: string;
-  messages?: Array<{ role: string; content: string }>;
-  images?: string[];
-  videos?: string[];
-  /** 对齐后端 List[Dict[str, str]]：{id, name, url, kind} */
-  attachments?: Array<Record<string, string>>;
-  /** 有序富文本片段（文字/图片/视频/音频交错），后端据此构建交错多模态内容 */
-  content_parts?: RichContentPart[];
-  selected_draft_id?: string;
-  selected_type?: string;
-  context_mode?: string;
-  asset_mode?: string;
-  /** 本次消息携带的 Skill slug（仅当消息含 Skill 引用块时传，后端记入项目 usedSkills） */
-  skill_slug?: string;
-  /** 前端当前选中的 Skill 名称（渐进式披露：仅作相关性标注，不注入全文） */
-  skill_name?: string;
-  /** 用户消息携带的文档附件块名称（展示用，随消息持久化） */
-  doc_blocks?: string[];
-  /** 用户消息携带的 Skill 引用块名称（展示用，随消息持久化） */
-  skill_blocks?: string[];
-  /** 814H7 会话级推理档位：''=默认（模型原生）；low/medium/high */
-  thinking_level?: string;
-}
+// ===== Agent 聊天请求（六轮 S2 路线 a：以生成物 ChatRequest 为唯一来源） =====
+// 字段语义注释以后端 routes/agent.py::ChatRequest 为准；本别名使 tsc 编译期
+// 直接校验请求体与后端 schema 的字段一致性（漂移即编译错）。
+export type AgentChatRequest = ChatRequest;
 
 // ===== 项目 =====
 export interface Project {

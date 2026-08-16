@@ -42,6 +42,15 @@ export default [
     },
   },
 
+  // 生成物豁免：api.generated.ts 由 scripts/gen_api_types.py 生成（六轮 S2 路线 a），
+  // 行数随后端 schema 自然增长，不适用人工文件的 250 行红线
+  {
+    files: ['src/web/types/api.generated.ts'],
+    rules: {
+      'max-lines': 'off',
+    },
+  },
+
   // 架构铁律 10.2：组件/stores 不得 import app 入口（禁止循环依赖）
   {
     files: ['src/web/components/**/*.tsx', 'src/web/stores/**/*.ts', 'src/web/lib/**/*.ts'],

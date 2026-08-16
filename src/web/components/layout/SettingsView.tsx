@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */ // 五轮 S10 已切出 settings-meta 数据域；剩余页签子组件拆分登记债务 T23（六轮 S2 发现存量超限，ChatMessageItem 同模式）
 import { createSignal, For, Show, onMount, onCleanup } from 'solid-js';
 import { A } from '@solidjs/router';
 import {
