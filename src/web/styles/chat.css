@@ -44,6 +44,11 @@
   .answered-option-check { color: var(--accent-emerald); flex-shrink: 0; }
   .answered-option-tag { font-size: 10px; color: var(--accent-emerald); }
 
+  /* 五轮 S3/#3：建议动作按钮（重试/继续，确定性交互替代手打） */
+  .suggested-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .suggested-action-btn { padding: 5px 14px; font-size: 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(59, 130, 246, 0.5); background: rgba(59, 130, 246, 0.1); color: var(--text-main); transition: background 0.12s ease, border-color 0.12s ease; }
+  .suggested-action-btn:hover { background: rgba(59, 130, 246, 0.2); border-color: var(--accent-blue); }
+
 
   /* 无消息时（新建项目等）左上角淡显提示：只给大概能力说明，不占完整消息卡片 */
   .chat-feed-hint { align-self: flex-start; margin: 2px 0 0 2px; font-size: 12px; line-height: 1.6; color: var(--text-dim); opacity: 0.55; max-width: 72%; pointer-events: none; }

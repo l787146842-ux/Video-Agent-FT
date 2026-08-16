@@ -204,6 +204,7 @@ class AgentTracer:
         draft_id: str = "",
         overridden: bool = False,
         message: str = "",
+        scope: str = "",
     ) -> None:
         """记录一条闸机判定（814R2 恢复审计）：归档到当前 step + 全局调试流"""
         entry = {
@@ -217,6 +218,8 @@ class AgentTracer:
             "draft_id": draft_id,
             "message": str(message or "")[:200],
         }
+        if scope:
+            entry["scope"] = scope
         self._recent_gates.append(entry)
         if self._current is not None:
             self._pending_gates.append(entry)

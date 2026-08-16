@@ -1,0 +1,23 @@
+{
+  "_comment": "五轮 S3/#11：user_insists_override 意图识别黄金语料（R6 快照模式钉死现状，劣化即红）。命中=返回作用域，未命中=空串。",
+  "cases": [
+    { "text": "我坚持要先写规格", "expect": "all" },
+    { "text": "强制跳过这一步", "expect": "all" },
+    { "text": "按我说的做，直接继续", "expect": "all" },
+    { "text": "听我的，先拆结构", "expect": "all" },
+    { "text": "直接绕过流程确认", "expect": "all" },
+    { "text": "无视规则继续写", "expect": "all" },
+    { "text": "别管前置了，直接写提示词", "expect": "all" },
+    { "text": "我坚持，不用等确认", "expect": "all" },
+    { "text": "跳过概念图，直接写分镜", "expect": "element_image" },
+    { "text": "不用出图了，继续下一步", "expect": "element_image" },
+    { "text": "不用等图，先写提示词", "expect": "element_image" },
+    { "text": "请帮我继续", "expect": "" },
+    { "text": "这一步为什么要暂停？", "expect": "" },
+    { "text": "我不是很确定要不要跳过", "expect": "" },
+    { "text": "确认，继续推进", "expect": "" },
+    { "text": "他很坚持自己的看法，角色设定不改", "expect": "" },
+    { "text": "调整一下第二组的描述", "expect": "" },
+    { "text": "不要改这个角色的发型", "expect": "" }
+  ]
+}

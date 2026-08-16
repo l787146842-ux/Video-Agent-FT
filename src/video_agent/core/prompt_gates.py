@@ -233,6 +233,13 @@ GATE_ELEMENT_IMAGE = "element_image"    # 元素概念图前置闸
 GATE_FLOW_PAUSE = "flow_pause"          # 流程暂停兜底闸（总结/规格暂停卡）：仅 scope=all 豁免，
 # 「跳过概念图」等特定意图不涵盖（用户只是不想等图，不是不要交互分界）
 
+# 五轮 S3/#13：一次性放行作用域枚举——前端按钮/后端消费/trace 记录三端引用同一语义。
+# 值与上方闸域常量同源（P1 单一表述源：ELEMENT_IMAGE 即 GATE_ELEMENT_IMAGE 别名），
+# 此前 planner 消费逻辑「非 all 即 element_image」的隐式映射只有两处代码可懂。
+GATE_OVERRIDE_SCOPE_ALL = "all"                          # 本轮闸机全部豁免（单次生效）
+GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE = GATE_ELEMENT_IMAGE   # 仅元素概念图前置闸豁免
+GATE_OVERRIDE_SCOPE_FLOW = "flow"                        # 流程门禁豁免（用户坚持全速推进）
+
 # 特定意图：跳过元素概念图前置（只降级 GATE_ELEMENT_IMAGE）
 _USER_INSIST_IMAGE_PATTERNS = tuple(
     re.compile(p) for p in (

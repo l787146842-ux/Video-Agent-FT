@@ -174,6 +174,9 @@ export const chatActions = {
         memoryHits: (payload.memory_hits || []).length ? payload.memory_hits : undefined,
         thinkingMs: thinkingMs || undefined,
         turnId,
+        // 五轮 S3/#3：建议动作按钮（重试/继续，确定性交互；仅最后一条消息渲染）
+        suggestedActions: (payload.suggested_actions || []).length
+          ? payload.suggested_actions : undefined,
       });
       // 文档卡片（B0/F1：doc_written 事件已即显过的按名称去重，不重复渲染；
       // 服务端持久化仍按 documents_written 全量落盘，刷新后由快照重建）

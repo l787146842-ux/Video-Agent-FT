@@ -82,6 +82,10 @@ class AgentLoopResult:
     confirmation_options: List[Dict[str, Any]] = field(default_factory=list)
     # 执行轨迹（每轮 step/耗时/操作数/finish_reason），前端「执行轨迹」折叠区展示
     trace: Dict[str, Any] = field(default_factory=dict)
+    # 五轮 S3/#3：建议动作按钮（确定性交互，P2 三问全中收归系统）：
+    # retry=机械重发上一条用户消息（value 空，前端取历史原文）；
+    # continue=发送固定文本推进新一轮
+    suggested_actions: List[Dict[str, str]] = field(default_factory=list)
 
 
 def split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool, str, List[Dict[str, Any]]]:
@@ -301,6 +305,8 @@ async def run_agent_loop(
         if bad_retries == 2 and not str(content or "").strip() and fc_applied == 0:
             result.text = "输出异常：模型连续返回空/畸形输出，已重试 2 次；请重试或检查模型配置。"
             result.warnings.append("模型连续 3 次输出异常（空/畸形），已终止本轮")
+            # 五轮 S3/#3：一键重试按钮（机械重发上一条用户消息，零模型猜测）
+            result.suggested_actions.append({"kind": "retry", "label": "重试", "value": ""})
             tracer.end_step(step, actions_applied=0, finish_reason="bad_output")
             break
 
@@ -339,6 +345,8 @@ async def run_agent_loop(
                 break
             if step == max_steps:
                 result.warnings.append(f"已达到多步上限（{max_steps} 轮），循环终止")
+                result.suggested_actions.append(
+                    {"kind": "continue", "label": "继续完成", "value": "继续完成"})
                 tracer.end_step(step, actions_applied=fc_applied, finish_reason="max_steps")
                 break
             tracer.end_step(step, actions_applied=fc_applied, finish_reason=finish_reason or "fc_continue")
@@ -589,6 +597,8 @@ async def run_agent_loop(
             break
         if step == max_steps:
             result.warnings.append(f"已达到多步上限（{max_steps} 轮），循环终止")
+            result.suggested_actions.append(
+                {"kind": "continue", "label": "继续完成", "value": "继续完成"})
             tracer.end_step(step, actions_applied=applied, finish_reason="max_steps")
             break
 
@@ -643,5 +653,7 @@ async def run_agent_loop(
                 "这一轮没有生成可见回复（上游可能瞬时抖动）——请直接说「重试」，我再来一次；"
                 "若连续出现可尝试切换模型。"
             )
+            # 五轮 S3/#3：一键重试按钮替代手打「重试」（机械重发上一条用户消息）
+            result.suggested_actions.append({"kind": "retry", "label": "重试", "value": ""})
     result.trace = tracer.finish_trace(total_actions=result.applied_actions)
     return result

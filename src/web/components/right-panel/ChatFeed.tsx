@@ -69,6 +69,16 @@ export function ChatFeed() {
     return -1;
   };
 
+  /** 五轮 S3/#3：最后一条携带建议动作的消息（重试/继续按钮挂载点） */
+  const suggestedTargetIdx = () => {
+    if (chatState.isStreaming) return -1;
+    const msgs = chatState.messages;
+    for (let i = msgs.length - 1; i >= 0; i -= 1) {
+      if ((msgs[i].suggestedActions || []).length) return i;
+    }
+    return -1;
+  };
+
   /** 四轮 R3/#10：暂停卡生命周期状态（回看时可知旧卡是否仍有效）。
    * active=当前待回应；answered=其后已有用户消息（已回应）；expired=被更新的暂停取代。 */
   const confirmStateFor = (idx: number): 'active' | 'answered' | 'expired' | 'none' => {
@@ -119,6 +129,7 @@ export function ChatFeed() {
                 message={chatState.messages[g.indices[0]]}
                 isLast={g.indices[0] === confirmTargetIdx()}
                 isGateTarget={g.indices[0] === gateWarningTargetIdx()}
+                isSuggestedTarget={g.indices[0] === suggestedTargetIdx()}
                 confirmState={confirmStateFor(g.indices[0])}
                 answeredValue={answeredValueFor(g.indices[0])}
               />
@@ -139,6 +150,7 @@ export function ChatFeed() {
                     message={chatState.messages[idx]}
                     isLast={idx === confirmTargetIdx()}
                     isGateTarget={idx === gateWarningTargetIdx()}
+                    isSuggestedTarget={idx === suggestedTargetIdx()}
                     confirmState={confirmStateFor(idx)}
                     answeredValue={answeredValueFor(idx)}
                     hideChrome

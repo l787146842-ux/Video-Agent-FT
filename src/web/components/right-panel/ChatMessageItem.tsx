@@ -6,6 +6,7 @@ import {
 } from 'solid-icons/fi';
 import { renderMarkdown } from '@/lib/markdown';
 import { sendUserMessage } from '@/lib/agent-actions';
+import { chatState } from '@/stores/chat';
 import { openDocsPanel } from '@/stores/docs';
 import { endCanvasImageDrag } from '@/stores/canvas';
 import { safeUrl } from '@/lib/utils';
@@ -33,12 +34,31 @@ export function ChatMessageItem(props: {
   hideChrome?: boolean;
   /** 五轮 S2/#12：已回应暂停卡的「当时所选值」（其后首条用户消息文本） */
   answeredValue?: string;
+  /** 五轮 S3/#3：是否为最后一条携带建议动作的消息（重试/继续按钮挂载点） */
+  isSuggestedTarget?: boolean;
 }) {
   const msg = () => props.message;
   const isUser = () => msg().sender === 'user';
   const navigate = useNavigate();
   /** 原图预览（lightbox）当前打开的图片地址 */
   const [lightboxUrl, setLightboxUrl] = createSignal('');
+
+  /** 五轮 S3/#3（D4 终裁）：重试 = 机械重发上一条用户消息原内容（含富文本附件），
+   * 零模型猜测；continue = 发送后端下发的固定 value 文本 */
+  const runSuggested = (act: { kind: 'retry' | 'continue'; value: string }) => {
+    if (act.kind === 'retry') {
+      const msgs = chatState.messages;
+      for (let i = msgs.length - 1; i >= 0; i -= 1) {
+        const m = msgs[i];
+        if (m.sender !== 'user') continue;
+        const parts = (m.parts || []).filter((p) => (p.type === 'text' ? !!p.text.trim() : !!p.url));
+        void sendUserMessage(parts.length ? parts : (m.text || ''));
+        return;
+      }
+      return;
+    }
+    if (act.value) void sendUserMessage(act.value);
+  };
 
   /** 过程时间线数据（从消息 trace/actionLog 重建，刷新后不丢） */
   const timeline = () => timelineFromMessage(msg());
@@ -288,6 +308,22 @@ export function ChatMessageItem(props: {
           >
             {t('rp.msg.checkSettings')}
           </button>
+        </Show>
+        {/* 五轮 S3/#3：建议动作按钮（重试=机械重发上一条用户消息；继续=固定文本） */}
+        <Show when={props.isSuggestedTarget && (msg().suggestedActions || []).length > 0}>
+          <div class="suggested-actions">
+            <For each={msg().suggestedActions || []}>
+              {(act) => (
+                <button
+                  type="button"
+                  class="suggested-action-btn"
+                  onClick={() => runSuggested(act)}
+                >
+                  {act.kind === 'retry' ? t('rp.msg.retry') : t('rp.msg.continueTask')}
+                </button>
+              )}
+            </For>
+          </div>
         </Show>
       </Show>
 

@@ -132,6 +132,8 @@ class PlannerResponse:
     trace: Dict[str, Any] = field(default_factory=dict)
     # 本轮记忆检索命中明细（4.7：随 done payload 下发前端可视化）
     memory_hits: List[Dict[str, Any]] = field(default_factory=list)
+    # 五轮 S3/#3：建议动作按钮（重试/继续，确定性交互；详见 agent_loop 同名字段）
+    suggested_actions: List[Dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -308,11 +310,20 @@ class Planner:
             if taken:
                 interaction["gate_overrides"] = []
                 self.state_manager.save()
+                # 五轮 S3/#13：作用域显式枚举判定（原「非 all 即 element_image」隐式映射）
                 gate_override_scope = (
-                    "all" if any(str(r) == "all" or str(r).startswith("platform.") for r in taken)
-                    else "element_image"
+                    prompt_gates.GATE_OVERRIDE_SCOPE_ALL
+                    if any(str(r) == prompt_gates.GATE_OVERRIDE_SCOPE_ALL
+                           or str(r).startswith("platform.") for r in taken)
+                    else prompt_gates.GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE
                 )
                 logger.info(f"[GateOverride] 消费 {len(taken)} 条一次性豁免，作用域={gate_override_scope}")
+                # 审计留痕（§2.4 全程留痕）：实际消费 scope 入 trace
+                AgentTracer.get_instance().record_gate(
+                    "platform.gate_override", "session", True,
+                    overridden=True, message=f"一次性放行生效，作用域={gate_override_scope}",
+                    scope=str(gate_override_scope),
+                )
         except Exception as _e:
             logger.warning("[GateOverride] 豁免消费失败（本次放行可能未生效，回落意图识别兑底）: {}", _e)
         if not gate_override_scope and isinstance(user_message, str):
@@ -667,6 +678,7 @@ class Planner:
             action_log=aggregate_action_log(action_log_collector + executor.action_log),
             confirmation_options=loop_result.confirmation_options or confirmation_options_collector,
             trace=loop_result.trace,
+            suggested_actions=loop_result.suggested_actions,
         )
 
         # 记忆系统：后台异步记录本轮对话（不阻塞响应流），按项目隔离
@@ -790,6 +802,7 @@ class Planner:
             "confirmation_options": result.confirmation_options,
             "trace": result.trace,
             "memory_hits": result.memory_hits,
+            "suggested_actions": result.suggested_actions,
         })
 
     # ---------- 内部方法 ----------
