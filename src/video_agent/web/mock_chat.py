@@ -5,6 +5,7 @@
 """
 import asyncio
 import time
+import uuid
 
 from src.video_agent.core.sse_events import SSE_DELTA, SSE_DONE, SSE_STATUS
 from src.video_agent.memory import MemoryManager
@@ -42,16 +43,19 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
             await emit({"type": SSE_DELTA, "text": visible[i:i + 8]})
             await asyncio.sleep(0.02)
         applied = executor.execute(actions)
+        # 五轮 S2/#2：mock 路径同样携带轮次标识（G4 同类全覆盖）
+        turn_id = uuid.uuid4().hex[:12]
         if use_studio_context:
             svc.add_chat_message(
                 "agent", visible, model_name=body.model or "",
                 meta=meta_builder(time.monotonic() - t0, 1, applied),
                 applied_actions=applied,
                 action_log=executor.action_log,
+                turn_id=turn_id,
             )
-            # 文档完成卡片：独立条目持久化，刷新后可重建
+            # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合，S2）
             for doc_name in executor.documents_written:
-                svc.add_chat_message("agent", "", doc_card=doc_name)
+                svc.add_chat_message("agent", "", doc_card=doc_name, turn_id=turn_id)
     await emit({"type": SSE_DONE, "payload": {
         "text": visible,
         "applied_actions": applied,
@@ -62,6 +66,7 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
         "chat_inserts": executor.chat_inserts,
         "state": svc.get_full_snapshot(),
         "elapsed_ms": int((time.monotonic() - t0) * 1000),
+        "turn_id": turn_id,
     }})
     # 记忆系统：mock 路径同样记录（无 LLM 摘要，降级截取），按项目隔离（与 planner 真实路径对齐）
     MemoryManager.get_instance().record_dialog_background(

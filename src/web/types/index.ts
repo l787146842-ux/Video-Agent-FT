@@ -171,6 +171,8 @@ export interface ChatMessage {
   trace?: AgentTrace;
   /** U1：鉴权/供应商类错误气泡附「检查 API 配置」跳转按钮 */
   settingsHint?: boolean;
+  /** 五轮 S2/#2：轮次唯一标识（同轮正文/文档卡/图片卡共用，渲染层聚合为轮次容器） */
+  turnId?: string;
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
@@ -283,6 +285,8 @@ export interface SseDonePayload {
   trace?: AgentTrace;
   /** 本轮 Agent 参考的长期记忆命中（4.7：前端「记忆参考」折叠展示） */
   memory_hits?: Array<{ id?: string; date?: string; content: string }>;
+  /** 五轮 S2/#2：轮次唯一标识（前端同轮消息聚合为轮次容器） */
+  turn_id?: string;
   state?: ServerStateSnapshot | null;
 }
 export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }

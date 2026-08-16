@@ -14,6 +14,7 @@ routes/agent.py 仅保留路由定义和请求/响应模型。
 import asyncio
 import re
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -329,6 +330,11 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         for m in body.messages[-10:]
     ])
 
+    # 五轮 S2/#2：轮次唯一标识——本轮持久化的正文/文档卡/图片卡共用同一 turnId，
+    # 前端据此把一轮产出聚合进同一轮次容器（消除消息流碎片化）；随 done payload
+    # 下发，流式端与历史重载端同构
+    turn_id = uuid.uuid4().hex[:12]
+
     # 短锁：绑定附件 + 附件文档存档 + 记录用户消息（仅一次，不随 fallback 重复）；
     # 状态 JSON 改为惰性构建器（P0）：多步循环每一轮重新构建，模型每轮看到最新状态
     async with svc.lock:
@@ -491,20 +497,22 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                         action_log=final_payload.get("action_log") or [],
                         trace=final_payload.get("trace") or {},
                         confirm_options=final_payload.get("confirmation_options") or None,
+                        turn_id=turn_id,
                     )
-                # 文档完成卡片：独立条目持久化，刷新后可重建
+                # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合，S2）
                 for doc_name in (final_payload.get("documents_written") or []):
-                    svc.add_chat_message("agent", "", doc_card=doc_name)
+                    svc.add_chat_message("agent", "", doc_card=doc_name, turn_id=turn_id)
                 # 生图卡片随历史持久化（独立消息条目，与前端 finishStream 的两条消息结构一致，
                 # 否则刷新页面后聊天记录里的图片卡片会丢失）
                 image_urls = final_payload.get("image_urls") or []
                 if image_urls:
-                    svc.add_chat_message("agent", "", image_urls=image_urls)
+                    svc.add_chat_message("agent", "", image_urls=image_urls, turn_id=turn_id)
 
         done_payload: Dict[str, Any] = {
             **final_payload,
             "state": svc.get_full_snapshot() if use_studio_context else None,
             "elapsed_ms": int((time.monotonic() - t0) * 1000),
+            "turn_id": turn_id,
         }
         if idx > 0:
             done_payload["fallback_model"] = cand_model
@@ -738,6 +746,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         )
 
     if use_studio_context:
+        # 五轮 S2/#2：非流式路径同样携带轮次标识（G4 同类全覆盖）
+        ns_turn_id = uuid.uuid4().hex[:12]
         async with svc.lock:
             if result.text:
                 svc.add_chat_message(
@@ -746,9 +756,10 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     applied_actions=result.applied_actions,
                     action_log=result.action_log,
                     confirm_options=result.confirmation_options or None,
+                    turn_id=ns_turn_id,
                 )
             if result.image_urls:
-                svc.add_chat_message("agent", "", image_urls=result.image_urls)
+                svc.add_chat_message("agent", "", image_urls=result.image_urls, turn_id=ns_turn_id)
 
     return {
         "text": result.text, "applied_actions": result.applied_actions, "steps": result.steps,

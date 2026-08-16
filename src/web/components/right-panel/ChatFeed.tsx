@@ -1,6 +1,7 @@
-import { createEffect, createSignal, For, Show, onCleanup } from 'solid-js';
+import { createEffect, createSignal, createMemo, For, Show, onCleanup } from 'solid-js';
 import { chatState } from '@/stores/chat';
 import { t } from '@/lib/locale';
+import { groupTurns } from '@/lib/turn-groups';
 import { ChatMessageItem } from './ChatMessageItem';
 import { StreamingIndicator } from './StreamingIndicator';
 import { StreamingBubble } from './StreamingBubble';
@@ -80,16 +81,72 @@ export function ChatFeed() {
     return 'expired';
   };
 
+  /** 五轮 S2/#12：已回应暂停卡的「当时选了哪项」——其后首条用户消息文本
+   * （选项 value/label 机械消费，回复内容即所选值；无匹配时返回空串防误标） */
+  const answeredValueFor = (idx: number): string => {
+    if (confirmStateFor(idx) !== 'answered') return '';
+    const msgs = chatState.messages;
+    for (let i = idx + 1; i < msgs.length; i += 1) {
+      if (msgs[i].sender === 'user') return (msgs[i].text || '').trim();
+    }
+    return '';
+  };
+
+  /** 五轮 S2/#2：轮次分组（同 turnId 聚合，旧消息相邻兜底）——一轮的
+   * 正文/文档卡/图片卡收进同一容器，消除消息流碎片化 */
+  const groups = createMemo(() => groupTurns(chatState.messages));
+
+  /** 轮次组头部信息：模型名 + 耗时 meta 上提（组内逐条不再重复渲染） */
+  const turnHeader = (indices: number[]) => {
+    const msgs = chatState.messages;
+    let modelName = '';
+    let meta = '';
+    indices.forEach((i) => {
+      if (!modelName && msgs[i].modelName) modelName = msgs[i].modelName || '';
+      if (!meta && msgs[i].meta) meta = msgs[i].meta || '';
+    });
+    return { modelName: modelName || 'Agent', meta };
+  };
+
   return (
     <div ref={feedRef} data-testid="chat-feed" class="chat-feed" onScroll={onScroll}>
-      <For each={chatState.messages}>
-        {(msg, idx) => (
-          <ChatMessageItem
-            message={msg}
-            isLast={idx() === confirmTargetIdx()}
-            isGateTarget={idx() === gateWarningTargetIdx()}
-            confirmState={confirmStateFor(idx())}
-          />
+      <For each={groups()}>
+        {(g) => (
+          <Show
+            when={g.kind === 'turn'}
+            fallback={
+              <ChatMessageItem
+                message={chatState.messages[g.indices[0]]}
+                isLast={g.indices[0] === confirmTargetIdx()}
+                isGateTarget={g.indices[0] === gateWarningTargetIdx()}
+                confirmState={confirmStateFor(g.indices[0])}
+                answeredValue={answeredValueFor(g.indices[0])}
+              />
+            }
+          >
+            <div class="turn-group">
+              <Show when={turnHeader(g.indices).meta || g.indices.length > 1}>
+                <div class="turn-group-header">
+                  <span class="turn-group-model">{turnHeader(g.indices).modelName}</span>
+                  <Show when={turnHeader(g.indices).meta}>
+                    <span class="turn-group-meta">{turnHeader(g.indices).meta}</span>
+                  </Show>
+                </div>
+              </Show>
+              <For each={g.indices}>
+                {(idx) => (
+                  <ChatMessageItem
+                    message={chatState.messages[idx]}
+                    isLast={idx === confirmTargetIdx()}
+                    isGateTarget={idx === gateWarningTargetIdx()}
+                    confirmState={confirmStateFor(idx)}
+                    answeredValue={answeredValueFor(idx)}
+                    hideChrome
+                  />
+                )}
+              </For>
+            </div>
+          </Show>
         )}
       </For>
 

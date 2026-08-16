@@ -1,0 +1,44 @@
+/**
+ * 轮次分组（五轮 S2/#2：消息流碎片化清偿）。
+ *
+ * 一轮 Agent 回复会产出多条消息条目（正文气泡 / 文档卡 / 图片卡），
+ * 渲染层按轮次聚合进同一容器（turn group），消除「一轮产出散落多条消息」
+ * 的碎片化观感。
+ *
+ * 聚合规则（D3 终裁）：
+ * - 后端显式下发 turnId（同轮正文/文档卡/图片卡共用）为主；
+ * - 无 turnId 的旧消息回落「相邻 agent 消息同组」兜底；
+ * - 用户消息永远独立成组（一问一答一坨的心智）。
+ */
+import type { ChatMessage } from '@/types';
+
+export interface TurnGroup {
+  kind: 'user' | 'turn';
+  /** 组内消息在原数组中的下标（顺序不变） */
+  indices: number[];
+  turnId?: string;
+}
+
+/** 把消息列表分组为轮次容器序列（纯函数，渲染层消费） */
+export function groupTurns(messages: ChatMessage[]): TurnGroup[] {
+  const groups: TurnGroup[] = [];
+  let cur: TurnGroup | null = null;
+  messages.forEach((m, i) => {
+    if (m.sender === 'user') {
+      groups.push({ kind: 'user', indices: [i] });
+      cur = null;
+      return;
+    }
+    // 可并入当前轮次组：turnId 一致，或任一侧无 turnId（旧消息相邻兜底）
+    const canMerge = cur !== null
+      && (!m.turnId || !cur.turnId || m.turnId === cur.turnId);
+    if (canMerge && cur) {
+      cur.indices.push(i);
+      if (m.turnId) cur.turnId = m.turnId;
+    } else {
+      cur = { kind: 'turn', indices: [i], turnId: m.turnId };
+      groups.push(cur);
+    }
+  });
+  return groups;
+}

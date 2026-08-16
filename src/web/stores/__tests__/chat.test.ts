@@ -60,6 +60,25 @@ describe('chatActions 流式状态机', () => {
     expect(chatState.messages[0].meta).toBe('耗时 2.0s · 3 轮 · 更新 2 项');
   });
 
+  it('finishStream 同轮消息共用 turnId（五轮 S2/#2 轮次容器）', () => {
+    chatActions.startStream();
+    chatActions.finishStream({
+      text: '正文',
+      elapsed_ms: 1000,
+      steps: 1,
+      applied_actions: 0,
+      turn_id: 'turn-abc',
+      documents_written: ['规格.md'],
+      image_urls: ['img.png'],
+    });
+    // 正文 + 文档卡 + 图片卡三条同轮消息均携带同一 turnId
+    expect(chatState.messages.length).toBe(3);
+    chatState.messages.forEach((m) => {
+      expect(m.sender).toBe('agent');
+      expect(m.turnId).toBe('turn-abc');
+    });
+  });
+
   it('streamError 写入错误消息并清除流式状态', () => {
     chatActions.startStream();
     chatActions.streamError('网络超时');

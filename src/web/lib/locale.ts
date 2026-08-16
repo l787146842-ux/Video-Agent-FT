@@ -118,6 +118,7 @@ const zhCN: Record<string, string> = {
   'rp.msg.metaTime': '耗时 {s}s',
   'rp.msg.metaRounds': '{n} 轮',
   'rp.msg.metaUpdated': '更新 {n} 项',
+  'rp.msg.chosen': '已选',
   'rp.msg.imageResult': '生图结果',
   'rp.msg.imageTip': '{name} — 点击查看原图，按住拖动到画布',
   'rp.msg.download': '下载',

@@ -703,6 +703,7 @@ class StateManager(UndoRedoMixin):
         doc_blocks: Optional[List[str]] = None,
         skill_blocks: Optional[List[str]] = None,
         confirm_options: Optional[List[Dict[str, Any]]] = None,
+        turn_id: str = "",
     ):
         """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，防止状态文件无上限增长。
 
@@ -713,6 +714,8 @@ class StateManager(UndoRedoMixin):
         保证刷新页面后「阶段完成」卡片与耗时角标不丢失。
         doc_blocks/skill_blocks: 用户消息携带的文档/Skill 引用块名称，
         前端以可点击的块状形式展示（点击可查看对应文档）。
+        turn_id（五轮 S2/#2）：轮次唯一标识（同轮的正文/文档卡/图片卡共用），
+        前端据此把一轮产出聚合进同一轮次容器，消除消息流碎片化。
         """
         self._ensure_conversations()
         msgs = self._raw_state["chatMessages"]
@@ -739,6 +742,8 @@ class StateManager(UndoRedoMixin):
             entry["skillBlocks"] = list(skill_blocks)
         if confirm_options:
             entry["confirmOptions"] = list(confirm_options)
+        if turn_id:
+            entry["turnId"] = turn_id
         msgs.append(entry)
         if len(msgs) > _CHAT_HISTORY_LIMIT:
             del msgs[: len(msgs) - _CHAT_HISTORY_LIMIT]

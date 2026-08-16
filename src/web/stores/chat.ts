@@ -154,6 +154,8 @@ export const chatActions = {
     const thinkingMs = startMs && endMs && endMs >= startMs ? endMs - startMs : 0;
 
     setChatState(produce((s) => {
+      // 五轮 S2/#2：同轮消息共用 turnId（渲染层聚合为轮次容器，消除碎片化）
+      const turnId = payload.turn_id || undefined;
       s.messages.push({
         sender: 'agent',
         text: (payload.text || '').trim() || t('rp.msg.emptyReply'),
@@ -171,13 +173,14 @@ export const chatActions = {
         // 记忆命中可视化（4.7）：随 done payload 下发
         memoryHits: (payload.memory_hits || []).length ? payload.memory_hits : undefined,
         thinkingMs: thinkingMs || undefined,
+        turnId,
       });
       // 文档卡片（B0/F1：doc_written 事件已即显过的按名称去重，不重复渲染；
       // 服务端持久化仍按 documents_written 全量落盘，刷新后由快照重建）
       (payload.documents_written || []).forEach((name) => {
         if (s.renderedDocCards.includes(name)) return;
         s.renderedDocCards.push(name);
-        s.messages.push({ sender: 'agent', docCard: name, text: '' });
+        s.messages.push({ sender: 'agent', docCard: name, text: '', turnId });
       });
       // 生图结果图片卡片
       if (payload.image_urls && payload.image_urls.length > 0) {
@@ -185,6 +188,7 @@ export const chatActions = {
           sender: 'agent',
           text: '',
           imageCard: { image_urls: payload.image_urls },
+          turnId,
         });
       }
       s.isStreaming = false;

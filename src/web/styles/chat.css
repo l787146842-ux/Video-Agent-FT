@@ -29,6 +29,22 @@
   .msg-author { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; }
   .msg-meta { font-size: 10px; color: var(--text-muted); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
 
+  /* 五轮 S2/#2：轮次容器——同轮的正文/文档卡/图片卡聚合进同一组，
+     组头显示模型名 + 耗时 meta（逐条不再重复），消除消息流碎片化 */
+  .turn-group { display: flex; flex-direction: column; gap: 6px; align-self: flex-start; max-width: 88%; padding: 8px 10px; border-radius: var(--radius-md); border: 1px dashed var(--border-color); background: rgba(255, 255, 255, 0.015); }
+  .turn-group > .chat-msg { max-width: 100%; align-self: stretch; }
+  .turn-group-header { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--text-dim); }
+  .turn-group-model { font-weight: 600; }
+  .turn-group-meta { color: var(--text-muted); }
+
+  /* 五轮 S2/#12：已回应暂停卡的「当时所选」只读标注（回看对勾） */
+  .answered-options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .answered-option { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: 11px; color: var(--text-muted); border: 1px solid var(--border-color); background: var(--bg-tertiary); opacity: 0.7; }
+  .answered-option.chosen { opacity: 1; color: var(--text-main); border-color: rgba(52, 211, 153, 0.55); background: rgba(52, 211, 153, 0.1); }
+  .answered-option-check { color: var(--accent-emerald); flex-shrink: 0; }
+  .answered-option-tag { font-size: 10px; color: var(--accent-emerald); }
+
+
   /* 无消息时（新建项目等）左上角淡显提示：只给大概能力说明，不占完整消息卡片 */
   .chat-feed-hint { align-self: flex-start; margin: 2px 0 0 2px; font-size: 12px; line-height: 1.6; color: var(--text-dim); opacity: 0.55; max-width: 72%; pointer-events: none; }
 

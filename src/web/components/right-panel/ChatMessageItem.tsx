@@ -29,6 +29,10 @@ export function ChatMessageItem(props: {
   isGateTarget?: boolean;
   /** 四轮 R3/#10：暂停卡生命周期（answered/expired 时阶段卡挂徽标，回看不迷惑） */
   confirmState?: 'active' | 'answered' | 'expired' | 'none';
+  /** 五轮 S2/#2：轮次容器内渲染——作者名/meta 上提到组头，本条不再重复 */
+  hideChrome?: boolean;
+  /** 五轮 S2/#12：已回应暂停卡的「当时所选值」（其后首条用户消息文本） */
+  answeredValue?: string;
 }) {
   const msg = () => props.message;
   const isUser = () => msg().sender === 'user';
@@ -188,6 +192,31 @@ export function ChatMessageItem(props: {
         <StageCard msg={msg} state={props.confirmState || 'none'} />
       </Show>
 
+      {/* 五轮 S2/#12：已回应暂停卡的「当时选了哪项」对勾标注（只读回看）。
+          匹配规则：所选值 = 其后首条用户消息文本，与选项 value/label 相等即命中；
+          无匹配只灰显不标对勾（防误标） */}
+      <Show when={msg().confirm && (props.answeredValue || '') && (msg().confirmOptions || []).length > 0}>
+        <div class="answered-options">
+          <For each={msg().confirmOptions || []}>
+            {(opt) => {
+              const chosen = () =>
+                opt.value === props.answeredValue || opt.label === props.answeredValue;
+              return (
+                <span class={`answered-option${chosen() ? ' chosen' : ''}`}>
+                  <Show when={chosen()}>
+                    <FiCheckCircle size={12} class="answered-option-check" />
+                  </Show>
+                  {opt.label}
+                  <Show when={chosen()}>
+                    <span class="answered-option-tag">{t('rp.msg.chosen')}</span>
+                  </Show>
+                </span>
+              );
+            }}
+          </For>
+        </div>
+      </Show>
+
       {/* 过程时间线（深度思考 + 已处理操作，折叠面板；内容不进下次 LLM 上下文） */}
       <Show when={!isUser()}>
         <AgentTimeline
@@ -199,9 +228,12 @@ export function ChatMessageItem(props: {
 
       {/* 消息气泡：agent 用 markdown 渲染；用户的 Skill/文档块也进气泡内（Q5） */}
       <Show when={!isUser() && msg().text}>
-        <span class="msg-author">
-          {msg().modelName || 'Agent'}
-        </span>
+        {/* 五轮 S2/#2：轮次容器内作者名已上提到组头，不重复渲染 */}
+        <Show when={!props.hideChrome}>
+          <span class="msg-author">
+            {msg().modelName || 'Agent'}
+          </span>
+        </Show>
         {/* 模型降级等警示：常驻展示在 agent 气泡上（刷新后仍可见） */}
         <Show when={(msg().warnings || []).length > 0 || hasGateWarning()}>
           <div class="msg-warnings">
@@ -286,8 +318,8 @@ export function ChatMessageItem(props: {
         </Show>
       </Show>
 
-      {/* 元信息（旧版 msg-meta） */}
-      <Show when={msg().meta}>
+      {/* 元信息（旧版 msg-meta；五轮 S2/#2：轮次容器内已上提到组头） */}
+      <Show when={msg().meta && !props.hideChrome}>
         <div class="msg-meta">{msg().meta}</div>
       </Show>
 
