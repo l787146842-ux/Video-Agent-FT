@@ -21,6 +21,8 @@ from loguru import logger
 
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import SKILL_DOCS_DIR
+# 五轮 S6：标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
+from src.video_agent.core import live_metrics
 # N7（三轮审核）：pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
 from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: F401
 
@@ -173,11 +175,7 @@ def split_skill_sections(content: str) -> Dict[str, str]:
                     f"[SkillDocs] 标题式章节解析连续 {_inherit_run} 节未命中阶段关键字"
                     f"（沿用「{stage_now}」），章节可能归错阶段：请核查该 Skill 的标题体系"
                 )
-                try:
-                    from src.video_agent.core import live_metrics
-                    live_metrics.record_degradation("skill_docs.heading_fallback")
-                except Exception:
-                    pass
+                live_metrics.record_degradation("skill_docs.heading_fallback")
         _add(stage_now, body)
     return {k: "\n\n".join(v) for k, v in collected.items()}
 

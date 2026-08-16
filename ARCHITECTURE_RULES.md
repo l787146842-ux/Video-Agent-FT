@@ -443,15 +443,15 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 
 ### 13.10 存量债务清单（清一条删一条）
 
-已清偿（保留记录供审计）：D1 system.md 内嵌铁律（已归位）、D2 铁律未全文注入（已注入）、D3 runtime 块 5 条款重复（已压至 3 条）、D4 全链路严禁偏多（四轮实测模型可见严禁 1 处/预算 8，check_prompt_budget 门禁防反弹）、D5 执行器任务词复述章节（已只留目标+锚点）、D6 工具描述带流程暗示（已纯功能化）、D7 system.md 超预算（已达标）、阶段边界 prose（已下沉代码校验）、S1 通用层被单一 Skill 污染（已 skill_manifest 清偿）、F47 轮末注入点收敛（四轮 R1：round_end_policies 策略状态机）、814 批次：双协议/统一闸机/flow_gates/总结接线/compaction 恢复（R1-R4），baseline 归档/skill_runtime 落地/workflows 移除（F3）。
+已清偿（保留记录供审计）：D1 system.md 内嵌铁律（已归位）、D2 铁律未全文注入（已注入）、D3 runtime 块 5 条款重复（已压至 3 条）、D4 全链路严禁偏多（四轮实测模型可见严禁 1 处/预算 8，check_prompt_budget 门禁防反弹）、D5 执行器任务词复述章节（已只留目标+锚点）、D6 工具描述带流程暗示（已纯功能化）、D7 system.md 超预算（已达标）、阶段边界 prose（已下沉代码校验）、S1 通用层被单一 Skill 污染（已 skill_manifest 清偿）、F47 轮末注入点收敛（四轮 R1：round_end_policies 策略状态机）、814 批次：双协议/统一闸机/flow_gates/总结接线/compaction 恢复（R1-R4），baseline 归档/skill_runtime 落地/workflows 移除（F3）。**五轮（2026-08-16）**：D8 老项目铁律缺体量条款（归位裁决：粒度裁量归模型+Skill 属 C6 基线，铁律刻意不承载；存量项目铁律已删重建，老新不一致消除）、N1 兼容层台账漂移两处（移除计划按磁盘事实重写）、未登记壳全量清偿（state_service/web/actions/planner 委托壳/models_legacy/别名两枚）、i18n 残留（planner 队列级 status key 化 + chat.ts meta 走 locale）、指令归位迁移（产出形态+质量条款迁铁律模板，skill_discipline 标题客观化）、临界文件拆分（gates_script/exec_split）、文档分层（docs/audit-history）。
 
 未清偿：
 
 | 编号 | 债务 | 违反条款 | 清偿动作 |
 |------|------|---------|---------|
-| D8 | 老项目铁律文档无“体量相称/宁缺毋滥”条款 | 层 4 | 用户手动同步或删文档重建 |
 | T16 | 存量 Skill 正文写死渠道参数（如「Seedance 2.5 480p」）与 gen_channel_rules「已作废」并存——**可接受张力**（四轮 #16）：闭环已存在（渠道规则注入时明示不得读取），G1 禁改 Skill，不动；仅登记防未来审核重复发现 | — | 不处理（登记即结论） |
 | T17 | 暂停点自然语言解析上限（四轮 #15）：古风甜宠短剧等正文含「必须暂停」语义但不命中兜底关键词，黄金快照判 false | 层 3 | 如需生效按 S1 在 manifest 声明 pause.stage_pause（改 Skill 需用户裁决）；现行值已由 skill_pause_golden.json 钉死 |
+| T20 | 13.7 耦合表机器可读化缓做（五轮 M6 用户裁决）：sse_protocol 注册表模式已证明可行，推广到其余耦合行待再出断链事故后立项 | — | 缓做登记 |
 
 ### 13.11 业界基准六模式（C1-C6）
 
