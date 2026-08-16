@@ -1,7 +1,7 @@
 """run_agent_loop：多步 continue 协议、截断告警、上限终止"""
 import pytest
 
-from src.video_agent.web.actions import StudioActionExecutor
+from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.core.agent_loop import run_agent_loop, _claims_structure_done
 from src.video_agent.core import prompt_gates
 from src.video_agent.state.manager import StateManager

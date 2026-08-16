@@ -2,7 +2,7 @@
 """6666 项目事故回归：确认解析兜底 / 报错可读化 / 过程明细 / 总结强制入正文"""
 import pytest
 
-from src.video_agent.web.actions import StudioActionExecutor
+from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.core.agent_loop import run_agent_loop, split_actions
 from src.video_agent.core.planner import _prepend_script_summary
 from src.video_agent.state.manager import StateManager

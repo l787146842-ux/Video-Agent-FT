@@ -1,7 +1,7 @@
 """StudioActionExecutor：解析、别名、截断、选中态解析"""
 import pytest
 
-from src.video_agent.web.actions import StudioActionExecutor
+from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.state.manager import StateManager
 
 

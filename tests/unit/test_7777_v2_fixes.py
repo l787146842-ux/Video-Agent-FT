@@ -353,7 +353,7 @@ def svc(tmp_path):
 
 @pytest.fixture
 def executor(svc):
-    from src.video_agent.web.actions import StudioActionExecutor
+    from src.video_agent.web.action_executor import StudioActionExecutor
 
     return StudioActionExecutor(svc)
 

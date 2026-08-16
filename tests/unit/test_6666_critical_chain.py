@@ -142,7 +142,7 @@ async def test_6666_prelude_notes_recorded_in_trace(tmp_path):
     """prelude（加载 Skill 流程/读取存档文档）进入执行轨迹，前端时间线可见。"""
     from src.video_agent.core.agent_loop import run_agent_loop
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.actions import StudioActionExecutor
+    from src.video_agent.web.action_executor import StudioActionExecutor
 
     svc = StateManager(str(tmp_path / "ws"))
     ex = StudioActionExecutor(svc, gate_enabled=False)

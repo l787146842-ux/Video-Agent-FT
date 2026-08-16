@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from src.video_agent.web.actions import StudioActionExecutor
+from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.config import settings
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint

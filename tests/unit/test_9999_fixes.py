@@ -10,7 +10,7 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.core.planner import _prepend_script_summary
 from src.video_agent.state.provider_prefs import extract_production_params
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.actions import StudioActionExecutor
+from src.video_agent.web.action_executor import StudioActionExecutor
 
 
 # ---------- 问题1：总结去重 ----------

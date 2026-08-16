@@ -1,7 +1,7 @@
 """FTDYB 追赶 P0：分镜新字段、删除 action、request_confirmation 门控"""
 import pytest
 
-from src.video_agent.web.actions import StudioActionExecutor
+from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.state.manager import StateManager
 

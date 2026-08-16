@@ -9,7 +9,7 @@ from src.video_agent.tools.storyboard_tools import (
     StoryboardConfirmDraftTool,
     ConfirmDraftInput,
 )
-from src.video_agent.web.actions import StudioActionExecutor
+from src.video_agent.web.action_executor import StudioActionExecutor
 
 
 @pytest.fixture

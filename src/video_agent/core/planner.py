@@ -279,7 +279,7 @@ class Planner:
         # 构建 executor（文本解析路径用）：优先注入的工厂，缺省延迟导入 web 层实现
         factory = self.executor_factory
         if factory is None:
-            from src.video_agent.web.actions import StudioActionExecutor
+            from src.video_agent.web.action_executor import StudioActionExecutor
             factory = StudioActionExecutor
         executor = factory(
             self.state_manager,

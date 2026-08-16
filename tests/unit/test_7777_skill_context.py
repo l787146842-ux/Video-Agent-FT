@@ -49,7 +49,7 @@ async def test_7777_agent_loop_falls_back_to_used_skills(tmp_path, monkeypatch):
     """文本轨：executor.skill_name 为空时，agent_loop 用 usedSkills 末位解析当前 Skill。"""
     from src.video_agent.core.agent_loop import run_agent_loop
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.actions import StudioActionExecutor
+    from src.video_agent.web.action_executor import StudioActionExecutor
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]

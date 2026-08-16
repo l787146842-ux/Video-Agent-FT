@@ -2,7 +2,7 @@
 import pytest
 
 import src.video_agent.web.skill_docs as sd
-from src.video_agent.web.actions import StudioActionExecutor
+from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.state.manager import StateManager
 
 
