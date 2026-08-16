@@ -12,6 +12,12 @@
 """
 import pytest
 
+from src.video_agent.core.fc_tool_runner import (
+    FEEDBACK_COMPRESSED,
+    FEEDBACK_MARKER,
+    compress_prior_feedback,
+    should_compress_feedback,
+)
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.token_budget import truncate_messages
 from src.video_agent.memory.manager import MemoryManager
@@ -96,7 +102,7 @@ def test_planner_context_has_no_extra_system():
 # ---------- P1-5：旧轮回喂压缩 ----------
 
 class TestFeedbackCompression:
-    MARKER = Planner._FEEDBACK_MARKER
+    MARKER = FEEDBACK_MARKER
 
     def test_prior_feedback_compressed(self):
         messages = [
@@ -104,15 +110,15 @@ class TestFeedbackCompression:
             {"role": "user", "content": self.MARKER + "\n- read_skill：……三万字全文……"},
             {"role": "assistant", "content": "好的"},
         ]
-        Planner._compress_prior_feedback(messages)
+        compress_prior_feedback(messages)
         assert messages[0]["content"] == "用户原始消息"
-        assert messages[1]["content"] == Planner._FEEDBACK_COMPRESSED
+        assert messages[1]["content"] == FEEDBACK_COMPRESSED
         assert "三万字全文" not in messages[1]["content"]
         assert messages[2]["content"] == "好的"
 
     def test_non_feedback_messages_untouched(self):
         messages = [{"role": "user", "content": "（系统）第 1 轮的 2 个 Tool 已执行完毕"}]
-        Planner._compress_prior_feedback(messages)
+        compress_prior_feedback(messages)
         assert messages[0]["content"].startswith("（系统）第 1 轮")
 
 

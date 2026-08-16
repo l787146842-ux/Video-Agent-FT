@@ -6,6 +6,12 @@
 """
 import pytest
 
+from src.video_agent.core.fc_tool_runner import (
+    FEEDBACK_COMPRESSED,
+    FEEDBACK_MARKER,
+    compress_prior_feedback,
+    should_compress_feedback,
+)
 from src.video_agent.core.planner import Planner
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.document_tools import (
@@ -80,17 +86,17 @@ class TestLazyFeedbackCompression:
     def test_small_conversation_keeps_full_text(self):
         """短对话远未达预算：不压缩，保质量"""
         msgs = [{"role": "user", "content": "短消息"}]
-        assert Planner._should_compress_feedback(msgs) is False
+        assert should_compress_feedback(msgs) is False
 
     def test_huge_conversation_triggers_compression(self):
         """逼近 token 预算（默认预算 128000*0.8 的 50% ≈ 51200 token）：触发压缩"""
         msgs = [{"role": "user", "content": "x" * 600000}]  # tiktoken≈75000/启发式≈150000 token，双估算器都超阈
-        assert Planner._should_compress_feedback(msgs) is True
+        assert should_compress_feedback(msgs) is True
 
     def test_compression_still_works_when_triggered(self):
         """触发压缩后旧轮全文确实被替换为占位"""
         msgs = [
-            {"role": "user", "content": Planner._FEEDBACK_MARKER + "\n- read_skill：三万字全文"},
+            {"role": "user", "content": FEEDBACK_MARKER + "\n- read_skill：三万字全文"},
         ]
-        Planner._compress_prior_feedback(msgs)
-        assert msgs[0]["content"] == Planner._FEEDBACK_COMPRESSED
+        compress_prior_feedback(msgs)
+        assert msgs[0]["content"] == FEEDBACK_COMPRESSED

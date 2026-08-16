@@ -13,6 +13,7 @@ import pytest
 
 import src.video_agent.web.skill_docs as skill_docs_mod
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
+from src.video_agent.core.fc_tool_runner import format_tool_results
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.document_tools import (
@@ -106,7 +107,7 @@ class TestFormatToolResults:
     """回喂消息格式：read_* 携带全文，写入类只报成功，失败携带原因"""
 
     def test_read_tool_full_text_and_write_tool_brief(self):
-        msg = Planner._format_tool_results([
+        msg = format_tool_results([
             {"name": "read_skill", "ok": True, "data": {"name": "测试流程 Skill", "content": "SKILL_FULL_TEXT"}},
             {"name": "storyboard_patch_draft", "ok": True, "data": {"draft_id": "x"}},
             {"name": "read_project_doc", "ok": False, "error": "未找到文档"},
@@ -116,7 +117,7 @@ class TestFormatToolResults:
         assert "read_project_doc：执行失败" in msg
 
     def test_read_draft_renders_each_card(self):
-        msg = Planner._format_tool_results([{
+        msg = format_tool_results([{
             "name": "read_draft", "ok": True,
             "data": {"drafts": [
                 {"index": "1-2", "label": "概念图", "group_title": "元素组",
@@ -126,7 +127,7 @@ class TestFormatToolResults:
         assert "1-2" in msg and "PROMPT_FULL_TEXT" in msg
 
     def test_empty_results_no_feedback(self):
-        assert Planner._format_tool_results([]) == ""
+        assert format_tool_results([]) == ""
 
 
 class TestFuzzyPick:

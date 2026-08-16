@@ -26,15 +26,9 @@ from src.video_agent.tools.manager import ToolManager
 from src.video_agent.utils.prompts import load_prompt, load_prompt_section, render_prompt
 from src.video_agent.core.agent_loop import MAX_STEPS, run_agent_loop
 from src.video_agent.core.fc_tool_runner import (
-    FEEDBACK_COMPRESSED,
-    FEEDBACK_FULL_TOOLS,
-    FEEDBACK_MARKER,
-    FEEDBACK_MAX_TOTAL_CHARS,
     FCToolRunner,
     compress_prior_feedback,
-    describe_fc_tool,
     format_tool_results,
-    render_read_result,
     should_compress_feedback,
     strip_prior_feedback_images,
 )
@@ -42,7 +36,7 @@ from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.live_metrics import record_degradation, record_live_context
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_REASONING_DELTA, SSE_STATUS, status_event
-from src.video_agent.core.stream_suppressor import StreamActionSuppressor  # re-export 兼容旧导入
+from src.video_agent.core.stream_suppressor import StreamActionSuppressor
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 
@@ -565,7 +559,7 @@ class Planner:
             # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
             # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
             if tool_results:
-                feedback = Planner._format_tool_results(tool_results)
+                feedback = format_tool_results(tool_results)
                 if feedback:
                     if context.skill_name:
                         reminder = "\n" + _SKILL_REMINDER
@@ -577,8 +571,8 @@ class Planner:
                     # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
                     # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
                     # 短对话保留全文；选中 Skill 不受影响（它硬注入在 system prompt 里）
-                    if Planner._should_compress_feedback(messages, self._context_window()):
-                        Planner._compress_prior_feedback(messages)
+                    if should_compress_feedback(messages, self._context_window()):
+                        compress_prior_feedback(messages)
                     # 按需调图：新回喂带图片时，先剥离旧轮已加载的图片，
                     # 上下文始终只保留最新一轮的画面（vision token 治理）
                     if isinstance(feedback, list):
@@ -807,22 +801,6 @@ class Planner:
 
     # ---------- 内部方法 ----------
 
-    # 回喂消息的识别前缀（与 format_tool_results 首行保持一致）
-    _FEEDBACK_MARKER = FEEDBACK_MARKER
-    # 旧轮回喂被压缩后的占位文案
-    _FEEDBACK_COMPRESSED = FEEDBACK_COMPRESSED
-
-    @staticmethod
-    def _should_compress_feedback(messages: List[Dict[str, Any]], context_window: int = 0) -> bool:
-        """惰性压缩决策（委托 fc_tool_runner.should_compress_feedback；
-        814R1 恢复：传入当前模型窗口，阈值随模型而非全局配置）"""
-        return should_compress_feedback(messages, context_window)
-
-    @staticmethod
-    def _compress_prior_feedback(messages: List[Dict[str, Any]]) -> None:
-        """压缩旧轮回喂全文为占位文案（委托 fc_tool_runner.compress_prior_feedback）"""
-        compress_prior_feedback(messages)
-
     def _build_system_prompt(self, context: PlannerContext) -> str:
         """构建 system prompt（委托 PromptBuilder；段落顺序为前缀缓存优化）。
         814R1 恢复双协议瘦身：FC 通道注入瘦身版协议（system_fc.md），文本通道用完整协议。"""
@@ -831,19 +809,6 @@ class Planner:
             and getattr(self.llm_adapter, "supports_function_calling", False)
         )
         return self._prompt_builder.build_system_prompt(context, fc_mode=fc_mode)
-
-    def _build_skill_catalog(self, context: PlannerContext) -> str:
-        """构建 Skill 目录（委托 PromptBuilder）"""
-        return self._prompt_builder.build_skill_catalog(context)
-
-    def _build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 的全文注入块（委托 PromptBuilder）"""
-        return self._prompt_builder.build_selected_skill_block(skill_name)
-
-    @staticmethod
-    def _last_user_text(context: PlannerContext) -> str:
-        """从历史中取最近一条用户消息作为记忆检索 query（委托 PromptBuilder）"""
-        return PromptBuilder.last_user_text(context)
 
     def _make_summarize_fn(self):
         """包装摘要调用：优先用注入的便宜模型 adapter（摘要无需主模型能力），
@@ -1008,27 +973,6 @@ class Planner:
             selected_draft_id=selected_draft_id, selected_type=selected_type,
             gate_override=gate_override, flow_gates=flow_gates,
         )
-
-    # read_* 系列：读回的全文必须完整回喂进上下文（渐进式披露的「借阅归还」）；
-    # 其他写入类工具只回报成功与否，避免重复携带大 JSON 膨胀上下文
-    _FEEDBACK_FULL_TOOLS = FEEDBACK_FULL_TOOLS
-    # 单次回喂总量保险丝（read_* 各自已有 max_doc_chars 截断，这里防多文档叠加）
-    _FEEDBACK_MAX_TOTAL_CHARS = FEEDBACK_MAX_TOTAL_CHARS
-
-    @staticmethod
-    def _format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[Dict[str, Any]]]:
-        """把本轮 FC 工具执行结果格式化为回喂消息（委托 fc_tool_runner）"""
-        return format_tool_results(tool_results)
-
-    @staticmethod
-    def _render_read_result(name: str, data: Dict[str, Any]) -> str:
-        """按 read_* 工具类型渲染读回全文（委托 fc_tool_runner）"""
-        return render_read_result(name, data)
-
-    @staticmethod
-    def _describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
-        """FC 工具的中文简述（委托 fc_tool_runner）"""
-        return describe_fc_tool(name, args)
 
 
 def _prepend_script_summary(visible: str, tool_results) -> str:

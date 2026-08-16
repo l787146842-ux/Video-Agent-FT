@@ -2,7 +2,8 @@
 import pytest
 
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse, StreamChunk
-from src.video_agent.core.planner import Planner, PlannerContext, StreamActionSuppressor
+from src.video_agent.core.planner import Planner, PlannerContext
+from src.video_agent.core.stream_suppressor import StreamActionSuppressor
 from src.video_agent.state.manager import StateManager
 
 
