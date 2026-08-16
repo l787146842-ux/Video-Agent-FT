@@ -46,6 +46,10 @@ class Settings:
     # 安全
     environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))
     api_key: str = field(default_factory=lambda: os.getenv("API_KEY", ""))
+    # 日志文件落盘开关（六轮 S4/N2）：服务进程默认开；测试/验收子进程经
+    # conftest / scripts/acceptance.py 置 false，避免多进程争用同一日志文件
+    # 触发 loguru rotation rename 失败（WinError 32）
+    log_file_enabled: bool = field(default_factory=lambda: _env_bool("LOG_FILE_ENABLED", True))
 
     # Agent 多步循环
     max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 6))

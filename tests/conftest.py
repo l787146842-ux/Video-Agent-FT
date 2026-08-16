@@ -1,8 +1,14 @@
+import os
 import shutil
 
 import pytest
 
 from pathlib import Path
+
+# 六轮 S4/N2：测试进程不落生产日志文件——必须在任何项目模块导入（config
+# settings 实例化）之前设置；避免 pytest 与运行中的服务争用同一日志文件
+# 触发 loguru rotation rename 失败（WinError 32）。外部显式设置时从其值。
+os.environ.setdefault("LOG_FILE_ENABLED", "false")
 
 
 @pytest.fixture(scope="session")

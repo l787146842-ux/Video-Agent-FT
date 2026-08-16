@@ -47,16 +47,20 @@ else:
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
         level="INFO",
     )
-# 日志落盘（排障用）：滚动 10MB × 保留 5 份；enqueue 避免阻塞事件循环
+# 日志落盘（排障用）：滚动 10MB × 保留 5 份；enqueue 避免阻塞事件循环。
+# 六轮 S4/N2：文件 sink 受 settings.log_file_enabled 开关控制——测试/验收子进程
+# （conftest / scripts/acceptance.py 注入 LOG_FILE_ENABLED=false）不写生产日志
+# 文件，避免与服务进程争用同一文件触发 rotation rename 失败（WinError 32）
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
-logger.add(
-    LOGS_DIR / "agent-{time:YYYYMMDD}.log",
-    rotation="10 MB",
-    retention=5,
-    encoding="utf-8",
-    enqueue=True,
-    level="INFO",
-)
+if settings.log_file_enabled:
+    logger.add(
+        LOGS_DIR / "agent-{time:YYYYMMDD}.log",
+        rotation="10 MB",
+        retention=5,
+        encoding="utf-8",
+        enqueue=True,
+        level="INFO",
+    )
 
 # ---------- 生命周期：注册适配器 + Skills + 初始化状态 ----------
 @asynccontextmanager

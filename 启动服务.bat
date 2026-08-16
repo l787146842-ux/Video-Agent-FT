@@ -23,6 +23,17 @@ if "%NEED_BUILD%"=="1" (
   )
 )
 
+REM 六轮 S4/N2：启动前按 PID 杀净占用 8080/3000 的旧进程（宪法 §5.4 机制化）——
+REM 防旧服务残留导致端口冲突与日志文件多进程争用（loguru rotation WinError 32）
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8080 " ^| findstr LISTENING') do (
+  echo [cleanup] 结束占用 8080 的旧进程 PID %%p
+  taskkill /F /PID %%p >nul 2>&1
+)
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":3000 " ^| findstr LISTENING') do (
+  echo [cleanup] 结束占用 3000 的旧进程 PID %%p
+  taskkill /F /PID %%p >nul 2>&1
+)
+
 REM 启动画布画布服务（端口 3000）
 echo [1/2] 正在启动画布画布服务 (port 3000)...
 start "Canvas Server" cmd /c "cd /d E:\07 天问\熊布 && python main.py"
