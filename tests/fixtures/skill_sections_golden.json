@@ -5,27 +5,27 @@
       "head": "**启动协议**\n用户触发本Skill时，首先判断用户属于以下哪种场景，并据此选"
     },
     "storyboard_ke": {
-      "chars": 11026,
+      "chars": 11008,
       "head": "**全局风格锁定**\n所有视觉设计统一采用3D建模风格：以3D CGI渲染质感呈"
     },
     "storyboard_shot": {
-      "chars": 11026,
+      "chars": 11008,
       "head": "**全局风格锁定**\n所有视觉设计统一采用3D建模风格：以3D CGI渲染质感呈"
     },
     "storyboard_audio": {
-      "chars": 11026,
+      "chars": 11008,
       "head": "**全局风格锁定**\n所有视觉设计统一采用3D建模风格：以3D CGI渲染质感呈"
     },
     "generation": {
-      "chars": 5371,
+      "chars": 5270,
       "head": "**key_element设定图生成**\n- **角色设定图：** 使用 **T"
     },
     "prompt_draft": {
-      "chars": 17285,
+      "chars": 17253,
       "head": "**全局提示词撰写原则（适用于所有提示词类型）**\n- **风格关键词强制写入（"
     },
     "assembly": {
-      "chars": 942,
+      "chars": 934,
       "head": "**跨镜空间一致性策略**\n- 跨镜空间一致性在视频生成阶段（**media_g"
     }
   },
@@ -35,33 +35,33 @@
       "head": "**启动协议**\n\n用户触发本 Skill 时，按顺序确认以下信息后再推进：\n\n"
     },
     "storyboard_ke": {
-      "chars": 1805,
+      "chars": 1774,
       "head": "**设计 key_element**\n\n- 登记所有**主要角色**（eleme"
     },
     "storyboard_shot": {
-      "chars": 1805,
+      "chars": 1774,
       "head": "**设计 key_element**\n\n- 登记所有**主要角色**（eleme"
     },
     "storyboard_audio": {
-      "chars": 1805,
+      "chars": 1774,
       "head": "**设计 key_element**\n\n- 登记所有**主要角色**（eleme"
     },
     "generation": {
-      "chars": 1090,
+      "chars": 1042,
       "head": "**key_element 设定图生成**\n\n- 使用 **TextToImag"
     },
     "prompt_draft": {
-      "chars": 3303,
+      "chars": 3264,
       "head": "**内切镜时长估算（视频提示词撰写前）**\n\n若 Storyboard shot"
     },
     "assembly": {
-      "chars": 1042,
+      "chars": 1033,
       "head": "**首尾帧衔接策略**\n\n- 第一个 shot：以对应场景 key_elemen"
     }
   },
   "人文纪录短片": {
     "planning": {
-      "chars": 1263,
+      "chars": 1230,
       "head": "**全片流程与阶段依赖：**\n1. 和用户确认并建立 Final_Video_S"
     },
     "storyboard_ke": {
@@ -77,7 +77,7 @@
       "head": "**全球人文纪录片剧本与剧情规划规范**\n一、 核心叙事理念：观察生活，而非“拍"
     },
     "generation": {
-      "chars": 537,
+      "chars": 510,
       "head": "**元素图/首帧图生成（每个镜头的 start_frame）**\n- 工具：**"
     },
     "prompt_draft": {
@@ -91,7 +91,7 @@
   },
   "剧情短片音色参考": {
     "planning": {
-      "chars": 2385,
+      "chars": 2353,
       "head": "**完整视频的阶段逻辑和依赖关系：**\n\n1. **剧本获取（二选一）：**\n "
     },
     "storyboard_ke": {
@@ -107,7 +107,7 @@
       "head": "**脚本忠实度（最高优先级）**\n\n- **用户上传了剧本时：** 分镜中的**"
     },
     "generation": {
-      "chars": 1006,
+      "chars": 916,
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
@@ -137,11 +137,11 @@
       "head": "**本节职责（最高优先级）**：只创建音频（audio）分组，**不得**创建或"
     },
     "generation": {
-      "chars": 718,
+      "chars": 655,
       "head": "**制作参数基准：** 分辨率与单镜头时长上限以制片规格写入的「图片分辨率/视频"
     },
     "prompt_draft": {
-      "chars": 4402,
+      "chars": 4391,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     },
     "assembly": {
@@ -167,11 +167,11 @@
       "head": "**如何设计关键元素**\n- 务必包含**关键主体**（角色、物体等）、**关键"
     },
     "generation": {
-      "chars": 1297,
+      "chars": 1274,
       "head": "**元素图像生成（Midjourney V7 — 风格基准测试）**\n目的：构建"
     },
     "prompt_draft": {
-      "chars": 4911,
+      "chars": 4907,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     },
     "assembly": {
@@ -181,7 +181,7 @@
   },
   "古风甜宠短剧": {
     "planning": {
-      "chars": 2220,
+      "chars": 2193,
       "head": "**整体流程与里程碑节点**\n按以下阶段顺序推进，每个里程碑结束后必须暂停并获得"
     },
     "storyboard_ke": {
@@ -197,11 +197,11 @@
       "head": "**设计 key elements**\n- 必须包含：**男主**、**女主**"
     },
     "generation": {
-      "chars": 1581,
+      "chars": 1536,
       "head": "**角色形象图生成（阶段 2）**\n- 使用 **ImageToImage**，"
     },
     "prompt_draft": {
-      "chars": 2438,
+      "chars": 2399,
       "head": "**全局最高优先级：** 所有提示词均使用**中文**撰写。视频中人物台词与旁白"
     },
     "assembly": {
@@ -227,11 +227,11 @@
       "head": "**如何设计关键元素**\n- 始终包含关键主体：产品对象、关键场景（使用环境）和"
     },
     "generation": {
-      "chars": 286,
+      "chars": 226,
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage** "
     },
     "prompt_draft": {
-      "chars": 4336,
+      "chars": 4332,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     }
   },
@@ -253,7 +253,7 @@
       "head": "**如何设计关键元素**\n- 始终包含**关键主体**（人物、物体等）、**关键"
     },
     "generation": {
-      "chars": 662,
+      "chars": 556,
       "head": "**元素图像生成**\n- 使用 **TextToImage**。对于处于不同状态"
     },
     "prompt_draft": {
@@ -267,7 +267,7 @@
   },
   "宣言式概念短片": {
     "planning": {
-      "chars": 1885,
+      "chars": 1879,
       "head": "两条硬规则：\n1. 文本命名化：每句文案是一个新定义或本体命名，可引用可复述。禁"
     },
     "storyboard_ke": {
@@ -283,8 +283,8 @@
       "head": "把已确认 Manifesto 文本拆为画面序列。文本先在，镜头数时长节奏全由文本"
     },
     "generation": {
-      "chars": 2047,
-      "head": "模型锁定：关键帧 Nano Banana Pro，视频 Kling 3.0 Au"
+      "chars": 1999,
+      "head": "模型以全局设置的默认渠道为准（关键帧/视频/旁白/音乐）。 画幅：21:9；每次"
     },
     "prompt_draft": {
       "chars": 1880,
@@ -313,11 +313,11 @@
       "head": "**如何设计关键元素**\n- 确保包含**关键主体**（角色、物体等）、**关键"
     },
     "generation": {
-      "chars": 499,
+      "chars": 439,
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
-      "chars": 3670,
+      "chars": 3666,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     }
   },
@@ -339,7 +339,7 @@
       "head": "## 故事与段落结构\n- 先输出 100–200 字故事核心梗概，再按时间轴输出"
     },
     "generation": {
-      "chars": 2035,
+      "chars": 1998,
       "head": "## 资产生成与绑定顺序\n- 先绑定用户已提供的资源。人物参考图直接注册并绑定为"
     },
     "prompt_draft": {
@@ -353,23 +353,23 @@
   },
   "李安美学风格短片": {
     "planning": {
-      "chars": 5736,
+      "chars": 5658,
       "head": "**全局视频参数建立与风格选择：**\n\n1. **构思引导与子风格自动匹配**："
     },
     "storyboard_ke": {
-      "chars": 4408,
+      "chars": 4382,
       "head": "**关键元素（Elements）设计：**\n\n- **角色（element ch"
     },
     "storyboard_shot": {
-      "chars": 4408,
+      "chars": 4382,
       "head": "**关键元素（Elements）设计：**\n\n- **角色（element ch"
     },
     "storyboard_audio": {
-      "chars": 4408,
+      "chars": 4382,
       "head": "**关键元素（Elements）设计：**\n\n- **角色（element ch"
     },
     "generation": {
-      "chars": 3421,
+      "chars": 3127,
       "head": "**元素、图像与音色资产生成：**\n\n- **模型锁定与唯一性规范**：\n  -"
     },
     "prompt_draft": {
@@ -383,23 +383,23 @@
   },
   "水墨风格武侠短片": {
     "planning": {
-      "chars": 3972,
+      "chars": 3953,
       "head": "**全流程阶段逻辑与协同编排：**\n\n1. **确立全局规格**：在生成任务启动"
     },
     "storyboard_ke": {
-      "chars": 12722,
+      "chars": 12701,
       "head": "**设计 key_element（核心元素）：**\n- **element ch"
     },
     "storyboard_shot": {
-      "chars": 12722,
+      "chars": 12701,
       "head": "**设计 key_element（核心元素）：**\n- **element ch"
     },
     "storyboard_audio": {
-      "chars": 12722,
+      "chars": 12701,
       "head": "**设计 key_element（核心元素）：**\n- **element ch"
     },
     "generation": {
-      "chars": 3890,
+      "chars": 3701,
       "head": "**视觉元素生成策略（GPT Image 2）：**\n- **核心指令**：\n "
     },
     "prompt_draft": {
@@ -429,7 +429,7 @@
       "head": "**如何设计关键元素**\n- 始终包含**关键主体**（角色、物体等）、**关键"
     },
     "generation": {
-      "chars": 735,
+      "chars": 675,
       "head": "**元素生成**\n- **图像：** 如果用户已指定了元素的资产（例如产品图像、"
     },
     "prompt_draft": {
@@ -459,7 +459,7 @@
       "head": "**如何设计关键元素**\n- 始终包含**关键主体**（角色、物体等）、**关键"
     },
     "generation": {
-      "chars": 688,
+      "chars": 575,
       "head": "**元素图像生成**\n- 使用 **TextToImage**。对于不同外观或年"
     },
     "prompt_draft": {
