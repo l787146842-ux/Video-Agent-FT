@@ -9,6 +9,9 @@
   },
   "flow": {
     "spec_gate": true
+  },
+  "pause": {
+    "stage_pause": true
   }
 }
 ```

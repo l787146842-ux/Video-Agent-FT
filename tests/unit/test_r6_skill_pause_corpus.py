@@ -5,9 +5,10 @@
 本测试把 16 个存量 Skill 的现行判定值钉成黄金快照（tests/fixtures/skill_pause_golden.json），
 任何变化（含「改进」）都必须显式裁决并刷新快照，不许静默漂移。
 
-已知边界案例（快照内 false 但正文含暂停语义）：古风甜宠短剧等——其 <planner>
-用「必须暂停并获得用户确认」表述，不命中兜底关键词；如未来需要生效，
-按 S1 机制在 manifest 声明 pause.stage_pause（需用户裁决，G1 约束）。
+已知边界案例已清偿（八轮 T17，用户裁决）：古风甜宠短剧等 9 个 Skill 原正文含
+暂停语义但不命中兜底关键词（快照 false），现已按 S1 机制在其 manifest 声明
+pause.stage_pause=true，快照全量刷新为 true——显式声明优先于关键词检测，
+换表述不再静默失效。
 """
 import json
 from pathlib import Path
