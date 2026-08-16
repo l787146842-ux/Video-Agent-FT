@@ -11,7 +11,9 @@
 > 3. **评测驱动（Evaluation-Driven）**：闸机行为由黄金语料库校准，误杀/漏放计数劣化即测试失败；提示词迁移由快照测试锁语义。
 > 4. **deny-overrides 分层合并**：平台硬边界永远优先，Skill 配置只能加强或持平，不能削弱。
 > 5. **小批交付、即时提交**：每批独立 commit、独立验收；禁止攒大批未提交改动（本仓库已因此丢过整批工作，见 §5）。
-> 6. **验收四件套 + 浏览器目测**：`pytest` + `vitest` + `tsc --noEmit` + `gen_api_types --check` 全绿，UI 变更必须浏览器实测截图对照，缺一项不算完成。
+> 6. **验收四件套 + 门禁 + 用户目测**：`pytest` + `vitest` + `tsc --noEmit` + `gen_api_types --check` 全绿，
+>    且 `check_prompt_budget` / `check_file_lines` / `check_func_imports` 门禁 PASS；UI 变更必须构建后由
+>    **用户目测反馈**确认（2026-08-16 用户裁决：不派浏览器子代理截图目测，可做轻量定点代码级验证），缺一项不算完成。
 > 7. **第十三章（指令治理层）与本总纲同权**：任何规则只有一个家（P1）、约束下沉代码层（P2）、
 >    状态即数据（P3）；修改前必须按 10.5 决策树定位归属层，禁止在事故现场就近补条款。
 
@@ -115,7 +117,7 @@
 
 ### 3.1 体验基线不退化
 - **2026-08-12 02:00 前的系统状态为可接受基准线（baseline）**；任何变更不得导致基线功能/交互/视觉退化
-- UI 变更必须浏览器实测（截图对照）后交付；「测试全绿」不等于「UI 正确」
+- UI 变更必须构建后经**用户目测反馈**确认交付（2026-08-16 修订：禁止浏览器子代理截图目测——动作慢、截不到目标图且浪费算力；可做轻量、定点、快速的代码级验证）；「测试全绿」不等于「UI 正确」
 - **品牌、视觉与交互细节规范（飞天品牌、确认卡片样式、@面板、分组卡片等）**见 `docs/前端体验规范.md`，同样为强制约束，由前端工程按批次执行
 
 ### 3.4 前端工程
@@ -139,7 +141,7 @@
 2. **救火先留现场**：回滚前先把现场 commit 到 archive 分支；**禁止裸 `git restore .` / `git checkout -- .`**（reflog 不留痕的销毁式操作）
 3. **备份切回核对**：从含未跟踪文件的备份分支切回后，必须 `git diff --diff-filter=A -z` 核对并恢复被 git 删除的未跟踪文件
 4. **端口清理**：重启服务前先按 PID 杀净旧进程（`netstat -ano | findstr :8080`），防旧代码假象
-5. **验收四件套**：`python -m pytest tests/ -q` + `npx vitest run` + `npx tsc --noEmit` + `python scripts/gen_api_types.py --check` 全绿才可提交；pre-commit 钩子强制执行
+5. **验收四件套 + 门禁**：`python -m pytest tests/ -q` + `npx vitest run` + `npx tsc --noEmit` + `python scripts/gen_api_types.py --check` 全绿，且 `check_prompt_budget.py` / `check_file_lines.py` / `check_func_imports.py` PASS 才可提交；pre-commit 钩子强制执行
 6. **分支现状（记录，非强制条款，随合并更新）**：`fix/audit-2026-08` 为当前主线；`backup/pre-repair-0812` 保存整改后端批次，待 UI 稳定后**选择性再合并**；`rescue/deepseek-v2-0806` 为 8/6 快照保护分支；`backup/pre-restore-20260813` 为 8/13 恢复现场冻结分支；`fix/restore-20260813` 为 8/13 恢复执行分支（完成后合并回主线）
 7. **CLI 旧线处置**：workflows 引擎下线为已批准决策，实现体在 backup 分支；落地前新代码**禁止新增依赖**旧线
 
@@ -209,12 +211,15 @@
 ## 十、测试要求
 
 - 新增 Tool→单测；新增路由→集成测试（TestClient）；新增 Adapter→mock 测试；改核心（Planner/StateManager/agent_loop/闸机）→回归测试
-- 闸机改动→黄金语料校准测试；提示词迁移→快照测试；双轨改动→双轨一致性测试
+- 闸机改动→黄金语料校准测试；提示词迁移→快照测试；双轨改动→双轨一致性测试；新增 SSE 事件→sse_protocol 注册表登记（四轮 R4）
 ```bash
 python -m pytest tests/ -q      # 全量
 npx vitest run                  # 前端
 npx tsc --noEmit                # 类型
 python scripts/gen_api_types.py --check  # 契约
+python scripts/check_prompt_budget.py    # 提示词预算（宪法 §13.6）
+python scripts/check_file_lines.py       # 单文件 1200 行红线（§5/F58）
+python scripts/check_func_imports.py     # 方法内 import 防新增（四轮 R0/N7 勘误）
 ```
 
 ---
@@ -271,7 +276,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 - [ ] 工具已声明 risk 分级；high 级工具带平台闸机与确认（§2.7）
 - [ ] Skill 保存/删除后执行器注册表已同步；执行器失败未绕过回喂（§2.8）
 - [ ] 闸机改动带黄金语料校准；连续拦截有升级指引（§2.6）
-- [ ] UI 改动符合 §3 交互规范表，且浏览器实测截图对照
+- [ ] UI 改动符合 §3 交互规范表，且构建后经用户目测反馈确认（禁止浏览器子代理截图目测）
 - [ ] 没有 box-shadow/发光出现在确认卡片；品牌仍为「飞天」
 - [ ] 没有裸 restore/checkout -- .；本批已 commit；未跟踪文件已核对（§5）
 - [ ] 没有新增 >1200 行的 src/*.py（`python scripts/check_file_lines.py` 红线，CI 门禁）
@@ -279,7 +284,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 - [ ] 测试不得写生产 data/skills（conftest session 级镜像目录保障；新增 Skill 写入类测试走夹具）
 - [ ] 没有硬编码路径/数字/状态 Key；没有方法内 import；没有同名类覆盖
 - [ ] 没有 `datetime.utcnow()` / `time.sleep()` / `print()`
-- [ ] 验收四件套全绿：pytest + vitest + tsc + gen_api_types --check
+- [ ] 验收四件套全绿：pytest + vitest + tsc + gen_api_types --check；门禁 PASS：check_prompt_budget + check_file_lines + check_func_imports
 - [ ] 修改前已按第十三章 10.5 决策树定位归属层；没有在事故现场就近补条款（P1/P2）
 - [ ] 没有在 Skill 文件里改系统层缺口；没有用 prose 教模型配合既有机制（G1/G3）
 
@@ -417,50 +422,13 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | pause_rules 解析落点（三轮 B3/N7） | `skill_runtime.registry.parse_pause_rules` 为定义源；web/skill_docs 顶层 re-export 保留兼容导入；guard 顶层消费（方法内 import 清零） |
 | button 基线重置（三轮 B2/U3） | tokens.css `@layer base` 的 `button{...}` 重置为根因唯一落点（Tailwind 摘除后 preflight 替代）；新增按钮类不得依赖 UA 默认背景/边框 |
 
-### 13.8 事故台账（规则漂移的活证据，只增不删）
+### 13.8 事故台账（已归档 → `docs/archive/incident-ledger.md`）
 
-| 事故 | 症状 | 根因层 | 修复落点 |
-|------|------|--------|---------|
-| 2222/3333 | 总结不可见 | 回喂链路丢 payload | 工具结果带 detail + 层 9 状态兜底 |
-| 4444 | 硬拦截误伤合法暂停 | 闸机越权 | 改“只警告不拦人”，裁决权归用户 |
-| 5555 | 规格写完不暂停直冲拆解 | 层 9 缺失 + 回喂推波 | 规格暂停兜底注入（双轨） |
-| 6666 | 文档卡片延迟渲染 | SSE 透传白名单断链 | 四段链路补齐 |
-| 7777 | 提示词覆盖/超时 | 批量单次全量输出 | 分批断点续写 |
-| 8888 | 默认标题×20、元素爆炸、253s | 执行器验收缺失 + 单向穷举 + 层间冲突 | 拒收重试 + 克制条款 + 本节 |
-| 9999 | 总结正文两遍；规格参数「待确认」放行；参数栏无分辨率；拆解零产出 | 层 9 判重/兜底/补印/预算 | 归一化判重 + 规格参数向导兜底 + 分辨率补印 + 拆解预算 16384/重试翻倍 |
-| 1111 | 总结后不停顿直冲规格；模型自造向导选项无法落盘 | 层 3 无暂停点 + 层 9 无总结闸 | Skill 步骤1 加暂停点 + 双轨总结闸 + merge_spec_param_wizard 选项标准化 |
-| 6666（二轮） | 「确认总结」暂停多余；向导缺渠道；规格先于交互写入 | 层 9 闸设置与预期不符；向导维度不全 | 总结闸改规格收集闸；向导恒定含渠道组；渠道按供应商模型客观落盘；spec_collected 标记防重复 |
-| 99 | 规格写完后正文又拼剧本总结；收集向导重复弹出 | 层 9 总结兜底无阶段边界；spec_collected 双重消费 | 总结兜底限解析阶段注入；系统注入审阅卡后同批跳过 merge |
-| 9999（二轮） | 1197 字微剧本时长候选到 7 分钟；画幅候选自造电影规格（无 16:9）；关键元素拆解后暂停卡混回规格向导 | 层 6 上限公式用旁白速率（3 字/秒）；画幅确定性题出题给模型；层 9 向导渲染不看规格文档客观状态、只靠一次性标记 | 剧情速率上限（600 字/分钟）+ 超限确定性梯度兜底；画幅标准白名单归一；向导只渲染规格文档未定稿维度（客观闸门，双轨同入口） |
-| 8888（二轮） | 切换项目旧单例全量回写抹掉任务数据；拆解阶段被接管换回「确认规格」卡且规格卡不弹；收集卡开发者腔/总结「见上」；2 分钟≈120 秒重复候选；角标泛化「关键元素」；下一步黑盒 | 层 9 切换保存用内存全量回写（任务级隔离后单例过期）；拒收接管缺客观闸门；层 9/8 文案开发者视角；层 6 收卷不按值去重；角标无校验 | 切换/新建改 flush + save 版本账本闸（磁盘账本新于已知号即放弃写入）；spec_doc_finalized 客观闸门双轨；机械落盘补发 docCard；收集卡 {summary} 模板；时长按值去重归一；角标 desc 锚点归一；审阅卡/阶段卡选项客观具体 |
-| 888 | 推理模型万字思考；截断残品当成品；@引用缺失；删图复活；只拆 4 个却被删了重拆 | 层 8 模板自相矛盾 + 预算/截断/确定性任务/版本双账本 | 回话模板纳入治理；工具结果回执+对账；流程事件账本；批次提额/缩批/撞线扩额；@引用按 sceneRefs 补写；版本账本统一；黑匣子存档 |
-| S1 | 切换 Skill 指令打架 | 违反 P1：测试 Skill 规则复述进五层 | skill_manifest 声明块（层 3）：业务闸默认全关，流程闸/裁剪/渠道块按声明启停，暂停卡文案中立化，16 存量 Skill 迁移 + 快照回归 |
-| S2 | AI 助手方案连续走捷径 | 违 P1/P2/13.5 | 设立 13.12 方案纪律；配套修复（executor_thinking_level 降档、截断保险全局化、边界自适应、规格覆盖注入、向导客观检测） |
-| 2026-08-13 恢复 | Qoder 损坏回退 8/6，整套执行器运行时丢失 | 未提交改动 + 救火回滚 | 现场冻结 + Qoder/QoderCN 历史快照归档恢复 + 宪法 v3 融合（本行即台账续记） |
-| 814R1 | 双协议瘦身/include 加载/feedback 外置/text_protocol 全部断线（8/14 深度审核发现，快照取证证实为 8/12 回退丢失接线） | 层 1/层 8 接线丢失，md 幸存但代码无人读 | 从 Qoder 快照恢复：{{include}} 展开 + load_prompt_section + fc_mode 双协议选择 + 回喂模板外置 + 窗口感知压缩 + text_protocol 闭环（test_814_prompt_protocol_restore 钉死） |
-| 814R2 | §2.0 统一闸机管线空心化：prompt_write_verdict 无调用方，双轨各自内联组装判定；闸机文案硬编码；无闸机审计 | 接线丢失 + 语义漂移风险（死代码版硬拦与活路径只警告并存） | guard_pipeline.evaluate_prompt_write 成双轨唯一组合实现（4444 只警告不拦人对齐）；messages.md 文案外置（现行为准）；GATE_RULES 注册表 + tracer.record_gate + /api/agent/gates 审计闭环（test_814_gate_pipeline_restore 钉死） |
-| 814R3 | flow_gates.py（Skill 声明式流程检查点）整体无调用；会话层 gate_overrides 消费链断线 | 8/12 回退丢失 planner/agent_loop/fc_tool_runner 三处接线 | 从 8-04 快照恢复三处接线（FC 拦截+文本剔除+强制补发暂停）；恢复 interaction.gate_overrides 单次消费（按钮化输入端待 814 批次7）；正则意图识别作兜底；用户坚持 scope=all 旁路硬门禁（test_flow_gates 9+2 钉死） |
-| 814R4 | _prepend_script_summary 有定义有测试无生产调用（1111 台账「总结强制入正文」断线）；重复 pop；开场编排双份复制；session_compact 无人消费 | 回退丢失接线 + 重构残留 | FC 轨 llm_call 与文本轨暂停补拼双接线；_prepare_chat_opening 单一实现；会话级 compaction 恢复（阈值配置默认关，摘要缓存于 interaction）（test_814_summary_and_chatservice 钉死） |
-| 814F3 | skill_baseline.md 与 skill_discipline.md 九条同构但语义相反并存（P1 隐患）；settings.skill_runtime 开关无消费点；workflows 引擎已批准下线但 4 处残留引用 | 恢复残留 + 死配置 + 债务未落地 | baseline 归档 docs/archive（禁重接线）；skill_runtime auto/executors/legacy 三态落地 prompt_builder；workflows/ + routes/workflow + core/agent + cli.py + workflow_step 工具整体移出主线（备份分支可捞，实现体仍在 backup 分支）；README/配置说明/契约同步 |
-| 814F6 | 阶段完成卡显示正文（与前端体验规范打架）；左栏页签文字竖排；窄视口顶栏重叠/右栏不可达；ConfirmActions 硬编码中文 | 实现与规范漂移 + 样式缺陷 | 阶段卡只留标题+徽标，确认文案转正文气泡（判重防双显），操作明细归时间线；页签 white-space:nowrap；工作台 min-width 940 + 横向滚动兜底；i18n 补齐 rp.confirm.*；浏览器实测截图验证（verify-*.png） |
-| 814F7 | 会话层「本次放行」无输入端（§2.4 只靠正则猜意图）；warnings 不落消息；system prompt 组装无可观测性 | 设计未闭环 | ChatRequest.gate_overrides 字段 + interaction 登记 + Planner 单次消费；拦截警告附「本次放行」按钮（gateWarningTargetIdx 挂载，e2e 钉死）；finishStream 落 warnings；prompt_builder 组装超阈预警（60000 字符） |
-| 814E1 | 执行器家族固定 7 个白名单，自定义章节 Skill 只能走全文兜底 | 架构弹性不足 | skill_section_run 通用章节执行器（stage key/flova tag/标题关键字/任意 <tag> 四级解析）注册为平台级工具 |
-| 814E2 | Skill <planner> 依赖关系声明无人消费，执行顺序全靠模型自觉 | P2 违例（可计算调度交给模型） | skill_runtime/dag.py 解析步骤+依赖→拓扑并行批次；skill_pipeline_plan 客观返回下一可执行批次 |
-| 814E3 | 风格偏好无跨会话连续性 | 记忆系统未分层 | summarize.md 约定「风格偏好：」前缀抽取；执行器 system prompt 注入项目风格记忆块（按项目隔离） |
-| 814E5 | 黄金语料无校准测试（宪法 §2.6 宣称存在但实际缺失）；语料期望停在前 S1 语义 | 评测驱动空心化 | scripts/run_eval_pipeline.py（语料回归+管线可解析性，退出码入 CI Job5）；语料按 S1 语义重校准（6 条）；test_gate_corpus_calibration 钉死 |
-| 814E6 | 多用户无归属链路；json 后端并发安全弱 | 扩展基础缺失 | state_backend 默认 sqlite（STATE_BACKEND=json 可回退，测试基线钉 json）；ChatRequest.user_id → trace 审计；完整鉴权另行立项 |
-| 814F3b | 核查发现：CLI 下线后 models_legacy re-export 与 _set_path_pydantic 仍残留（兼容层计划 §4/§5 未随动）；前端 WorkflowPhaseInfo 死类型；.env.example 缺新配置项 | 连锁债务 | models_legacy 降为 models.py 私有导入（仅兼容旧 state.json）；state/__init__ 停止对外 re-export legacy 枚举；_set_path_pydantic 删除、_set_path_dict 非 dict 显式 StateError；死类型删除；.env.example 补 STATE_BACKEND/HISTORY_COMPACT_THRESHOLD；兼容层计划文档标已执行 |
-| 814G | 9999 实测 12 条体验回退：阶段卡不可展开；时间线 live/持久化不同构（无走秒/顺序反/运行中无展开）；规格拒收先报错后交互；向导选项天书；规格未定稿就拆结构；写规格无卡片无交代；慢（历史膨胀+压缩默认关+主模型满档思考）；提示词不流式亮卡；深度思考窗不可滚；正文过少 | 8/13 重建丢的体验层接线 + 814F6 照过期规范改 + 814R4 压缩默认关 | G1 阶段卡恢复可展开（规范同步修订）；G2 规划条目入 trace+子挂父后+走秒+前奏 live 事件；G3 规格拒收静默（只喂模型，用户只看向导卡）；G4 选项 display 去维度名+说明差异化白话；G5 FlowGateSet.ensure_spec_gate 执行侧强制（拦 agent 不拦用户，override/坚持旁路）；G6 写文档正文交代系统保证；G7 compaction 默认 12+反馈压缩 0.35+主模型思考默认 low；G8 bind_progress_emitter 循环级双轨绑定；G9 思考窗 overflow-y:auto+底部跟随；G10 输出纪律改结构化短交代 |
-| 814Gb | 核查发现两处半吊子：文本轨 executor._spec_gate_ok 仍向用户追加 SPEC_GATE_ERROR ⚠（与 G3 静默语义打架）；ensure_spec_gate 只认 wizard 不认 manifest spec_gate 声明（两种声明风格强制不对齐） | 双轨语义漂移 | _spec_gate_ok 改只记日志（用户侧静默，恒 True 不硬拦）；ensure_spec_gate 条件扩为 wizard 客观启用 OR manifest spec_gate；3 个旧 warn 语义测试更新为静默断言 |
-| 814H7 | 推理档位不可选：全局 low 一刀切（814G7）既压主模型质量又不尊重端点原生；用户要求 Codex 式按会话选档 | 档位治理缺 UI 层 | 对话栏模型胶囊改两节下拉（模型+推理等级 高/中/低/默认，默认=原生不下发字段，localStorage 持久化，随 ChatRequest.thinking_level 透传主模型）；全局设置页新增「推理档位」卡（执行器机械调用/辅助摘要两档，runtime_settings 热生效）；主模型全局默认回空（原生）；适配器 400 优雅降级（端点不认 reasoning_effort 自动去字段重试，流式/非流式双路径）；浏览器实测两节下拉与设置卡通过 |
-| 814H8 | 前端路由硬敲/刷新（如 /global-settings）404：服务端只把 index.html 绑死在 /、/canvas、/settings，无 SPA fallback | 部署层缺兜底 | app.py 末尾加 catch-all（注册于全部 API 路由与静态 mount 之后）：未识别非 /api GET 路径一律返回 index.html；/api 排除保持 JSON 404；test_spa_fallback 四条集成测试钉死 |
-| 814H9 | 1111 实测：剧本缺失是客观事实却出题给模型——27.8s 规划轮"发现"没剧本+必错的 read_uploaded_doc+空输出重试；无剧本仍被引导进下游流程 | 违 13.5 确定性三问（可算/可判/无创作空间却交模型）+ 层 9 缺原料闸 | registry.script_required_active（manifest 优先+客观特征，同 spec_wizard 模式）；prompt_gates 剧本闸助手（script_present/豁免意图/短路准入/提醒卡文案外置 messages.md）；planner 编排：S7 零思考直出提醒卡（推进意图且非提问）、「我去上传」秒回等待回执、提问落回 LLM+轮末强制提醒卡（反复提醒）、豁免记账 script_waived；FlowGateSet.ensure_script_gate 执行侧拦越阶结构操作（双轨同条件，不拦用户，override/坚持旁路）；GATE_RULES 注册 skill.script_required + record_gate 审计；test_814_script_gate 八条钉死 |
-| B0-B12 整改 | 2026-08-15 全面审核暴露的全部问题（P0 接线四件、提示词预算违约与分身漂移、交互体验漂移、前端双轨资产、测试桩污染、臃肿七型）+ 用户裁决（模型能力参数唯一权威源=全局设置）+ 五新功能 | 补丁沉积 + 双轨复制 + 8/13 回退接线未恢复 + 台账宣称≠代码事实 | 一次性整改（19 commits，docs/修复改进计划书-2026-08-15.md 附录记录批次→commit→验收）：P0 接线四件（doc_written 四段链/轮间注入/FC 警告外发/fallback 载荷）；提示词治理（system.md 14.3KB→774B、模型可见严禁 45→0、预算 CI 门禁）；交互整改（阶段卡可展开默认展开、闸机 chips 结构化、toast 收敛、真实性六项）；前端一致性（i18n 全量、Tailwind 摘除、api-settings 入 SPA 退役 iframe）；流程与 Skill（无技能路径、Skill 暂停点运行时消费、三本账收敛、测试桩迁 fixtures、dag 声明化）；速度（compaction 预热、请求体瘦身）；工程卫生（死代码 8 文件、归档出库、数据 TTL、窗口表元数据化、记忆分桶）；模型参数治理（注入优先级草稿>全局设置、Skill lint、迁移脚本）；模型分层策略表；视频批量队列/断点续跑/时间线回画布；成本看板；对话分支/快照。**勘误（二审整改行登记）**：①「测试桩迁 fixtures」在 0a73bc9 仅完成夹具副本+conftest 读 patch，data/skills 桩未删且测试经 save_skill_doc 每次运行复活桩——实际清偿于二审 R2/R2b（删桩+conftest session 级镜像目录杜绝写污染）；②「Tailwind 摘除」遗留 6 处无效类名+pill-option 缺 button 重置（未选中项灰盒白字）——实际清偿于二审 R2/R2c |
-| 二审整改（2026-08-15 下午） | 二审实测暴露：验收四件套 13 红（九元组解包×4/断言锁旧文案×8/D2 基线×1）、台账漂移三件（测试桩复活/Tailwind 残留/预算门禁缺 CI）、except-pass 48 处、三大文件超红线、「引导」打断当前任务 | 8/15 上午整改后未复跑全量验收 + 半吊子迁移 + 测试写污染生产目录 | R0 备份分支；R1 验收回绿（execute 九元组解包修复、断言迁移至结构化 chips/客观账本新基线、CI 补预算门禁，94adbe8）；R2 台账漂移清偿（桩迁出+.history 清理、Tailwind 语义类替换、except-pass 全日志化，ee548a8/2687400/657b429）；R2b 桩复活根因（conftest session 级镜像目录，测试读写零污染生产）；R3 引导改不打断语义（用户审定：登记轮间注入队列，当前操作完成后最近轮边界注入，复用 B0/F2 通道，8ed3a2b）；R4a/R4b/R4c 三大文件拆分（4f65984/f2b1c78/61604c8，全部 ≤1200 行，check_file_lines 红线入 CI）；教训：①提示词治理迁移必须同批更新锁文案的断言测试；②拆分后 monkeypatch 目标=调用方命名空间（LLM 调用统一收敛 _gen. 模块属性，patch 点=web.generation）；③git stash 期间不得并行改动（曾致桩删除丢失） |
-| B13（部分清偿） | 存量 38 处 `except Exception: pass` 静默站点；executors/prompt_gates/chat_service 大文件拆分；OTLP 可选导出；事故编号测试命名归档（保留编号=§13.5 溯源约定，重命名反而破坏溯源，故不动）；卡注入决策树收敛（F47：agent_loop 8 注入点收敛为单一路径状态机）；生成域整理（F63：generation.py 与 routes/generate* 边界确认）；dag 拓扑并行批次（F65：同批执行器并发）；DEPRECATED 到期机制（F43：兼容层带到期版本号，CI 到期报错）；防复发脚本补齐（F58：check_dead_code/check_duplication/check_ledger_tests/check_file_lines 红线） | 整改批次内风险评估后延后（改动面大收益边际；均已在本文档登记，逐项带独立立项号） | **2026-08-15 二审整改已清偿**：except-pass 48 处全日志化（R2，关键链路升 warning）；三大文件拆分（R4a/R4b/R4c：executors→exec_common/exec_spec/exec_tools+壳、prompt_gates→+gates_spec、chat_service→+chat_opening/chat_consume，全部 ≤1200 行）；check_file_lines.py 红线 1200 入 CI（R4c）。剩余未清偿：OTLP 导出、F47/F63/F65/F43、check_dead_code/check_duplication/check_ledger_tests |
+> 完整台账（2222 至四轮 R0-R7 全部事故行）见 `docs/archive/incident-ledger.md`（只增不删原则不变）；
+> 事故编号引用不变，按编号到归档文件检索。此处只留最近两轮摘要：
 
-| 三轮审核整改（2026-08-15 夜） | 三轮独立审核+用户实测反馈 15 项：N1 协议层渠道规则与 B7 裁决冲突且双表述、N3 暂停文案双句号、N2 规范引导条目漂移、N4 顶栏重叠半清偿、N5 spinner 悬挂、N6 成本口径误导、N7 方法内 import、N8 未提交、U1 鉴权错误无跳转、U3 文档白块（preflight 摘除残留）、U4 技能删除误关、U5 配置页视觉债、L1 双轨镜像语义漂移、L2 trace 总量、L3 拦截率校准 | 补丁沉积 + Tailwind 摘除残留 + outside-click 缺陷 + 双轨手写镜像 | B0-B5 一次性清偿：渠道规则共源段+双协议 include、pause_message 归一、规范修订、min-width 1120、spinner 终止态、llm_calls 口径、pause 解析下沉+顶层化、分批提交、错误气泡跳转、button 基线重置全局化、composedPath 防误关、配置页视觉重做（栅格+徽标，不复用画布视觉）、evaluate_gen_confirm 双轨单一实现（统一整批硬拒 4444 语义）、trace 20MB 总容量轮转；语料回归全一致+真实拦截核误杀零调闸；commit：B0×3/B1/B2/B3/B4 |
-| 四轮审核整改（2026-08-16） | 四轮深度审核 16 项：轮末闸机上帝函数（F47 未清偿）、**台账漂移实测**——N7 宣称方法内 import 清零但 AST 实测存量 177 处（绝大多数为防循环依赖合法 lazy import）、二审 R2 宣称 .history 清理但空目录残留、卡片仲裁不可见、SSE 文案 i18n 断裂缝、双轨 flow gate/提示词闸镜像、SSE 四段链无机器校验、truncate 拆 FC 消息对、放行按钮 scope 无提示、过期 confirm 无状态、异常静默降级掩盖断线、空响应文案开发者腔、台账自膨胀、e2e CI 不阻塞、暂停点语料、Skill 写死渠道张力 | 台账宣称≠代码事实（再次验证 814R 模式）+ 轮末分支沉积 + 双轨收敛半途 | R0-R7 分批清偿（docs/修复改进计划书-2026-08-16.md 审定版）：R0 漂移清偿（agent_loop 两处顶层化+.history 删除+**N7 勘误：存量 177 处白名单化，check_func_imports.py 防新增门禁入 CI，杜绝再次宣称清零**）；R1 轮末策略状态机 round_end_policies（F47）+卡片仲裁入 trace；R2 双轨 flow gate/提示词闸沉入 guard_pipeline；R3 SSE i18n/放行文案/过期卡徽标/兜底文案；R4 SSE 协议注册表+四段链自动测试；R5 按轮原子截断+核心探测点降级遥测；R6 暂停点语料扩展；R7 台账归档+宪法修订+终验 |
+- **三轮审核整改（2026-08-15 夜）**：15 项体验/协议漂移一次性清偿（渠道规则共源段、生成确认闸单一实现 B4、button 基线重置等）；详见归档「三轮审核整改」行。
+- **四轮审核整改（2026-08-16）**：16 项分 R0-R7 清偿——轮末策略状态机（F47）、台账漂移三件（N7 勘误机制化 check_func_imports）、双轨 flow gate 单一实现、SSE i18n/过期卡/放行文案、四段链注册表、按轮截断、降级遥测、暂停点黄金语料、本归档；详见归档「四轮审核整改」行。
 
 ### 13.9 模型分层原则（速度治理）
 
@@ -470,14 +438,15 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 
 ### 13.10 存量债务清单（清一条删一条）
 
-已清偿（保留记录供审计）：D1 system.md 内嵌铁律（已归位）、D2 铁律未全文注入（已注入）、D3 runtime 块 5 条款重复（已压至 3 条）、D5 执行器任务词复述章节（已只留目标+锚点）、D6 工具描述带流程暗示（已纯功能化）、D7 system.md 超预算（已达标）、阶段边界 prose（已下沉代码校验）、S1 通用层被单一 Skill 污染（已 skill_manifest 清偿）、814 批次：双协议/统一闸机/flow_gates/总结接线/compaction 恢复（R1-R4），baseline 归档/skill_runtime 落地/workflows 移除（F3）。
+已清偿（保留记录供审计）：D1 system.md 内嵌铁律（已归位）、D2 铁律未全文注入（已注入）、D3 runtime 块 5 条款重复（已压至 3 条）、D4 全链路严禁偏多（四轮实测模型可见严禁 1 处/预算 8，check_prompt_budget 门禁防反弹）、D5 执行器任务词复述章节（已只留目标+锚点）、D6 工具描述带流程暗示（已纯功能化）、D7 system.md 超预算（已达标）、阶段边界 prose（已下沉代码校验）、S1 通用层被单一 Skill 污染（已 skill_manifest 清偿）、F47 轮末注入点收敛（四轮 R1：round_end_policies 策略状态机）、814 批次：双协议/统一闸机/flow_gates/总结接线/compaction 恢复（R1-R4），baseline 归档/skill_runtime 落地/workflows 移除（F3）。
 
 未清偿：
 
 | 编号 | 债务 | 违反条款 | 清偿动作 |
 |------|------|---------|---------|
-| D4 | 全链路“严禁/不得”数量偏多 | P2 | 逐条审计（13.6 命令），可机械校验者继续下沉 |
 | D8 | 老项目铁律文档无“体量相称/宁缺毋滥”条款 | 层 4 | 用户手动同步或删文档重建 |
+| T16 | 存量 Skill 正文写死渠道参数（如「Seedance 2.5 480p」）与 gen_channel_rules「已作废」并存——**可接受张力**（四轮 #16）：闭环已存在（渠道规则注入时明示不得读取），G1 禁改 Skill，不动；仅登记防未来审核重复发现 | — | 不处理（登记即结论） |
+| T17 | 暂停点自然语言解析上限（四轮 #15）：古风甜宠短剧等正文含「必须暂停」语义但不命中兜底关键词，黄金快照判 false | 层 3 | 如需生效按 S1 在 manifest 声明 pause.stage_pause（改 Skill 需用户裁决）；现行值已由 skill_pause_golden.json 钉死 |
 
 ### 13.11 业界基准六模式（C1-C6）
 
