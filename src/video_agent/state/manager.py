@@ -494,8 +494,7 @@ class StateManager(UndoRedoMixin):
         StateManager._board_versions[pid] = v
         return v
 
-    # 向后兼容别名
-    save_state = save
+    # 五轮 S4g：save_state 兼容别名已清偿（全仓零调用方）
 
     async def save_async(self) -> None:
         """异步立即落盘：写盘移 worker 线程，避免在 async 链路中阻塞事件循环。

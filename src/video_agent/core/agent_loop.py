@@ -139,10 +139,7 @@ def _extract_confirmation(action: Dict[str, Any]) -> str:
 
 # 防虚报检测（_STRUCTURE_CLAIM_RE/_claims_structure_done）四轮 R1 随唯一消费点
 # 迁入 round_end_policies；本文件顶部保留 re-export 壳，测试导入路径不变。
-
-
-# 向后兼容别名
-_split_actions = split_actions
+# 五轮 S4g：_split_actions 兼容别名已清偿（唯一消费点改直调 split_actions）。
 
 
 # 自检回喂模板（888 事故：拆解覆盖完整性的表述源在铁律第 2 条）
@@ -368,7 +365,7 @@ async def run_agent_loop(
                 f"第 {step} 轮的 studio-actions 块解析失败（JSON 无效或被截断），本轮操作已丢弃"
             )
 
-        executable, wants_continue, confirmation, confirmation_options = _split_actions(actions)
+        executable, wants_continue, confirmation, confirmation_options = split_actions(actions)
         # Skill 声明式流程门禁（814R3 复活，文本轨；R2 收敛：判定经
         # guard_pipeline.evaluate_flow_gate 唯一实现）：执行前逐个校验，越阶操作直接剔除并记录拦截
         if executable and flow_gates is not None:

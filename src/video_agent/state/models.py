@@ -35,11 +35,6 @@ class ProjectStatus(str, Enum):
     paused = "paused"
 
 
-# 仅 ProjectState 兼容旧 state.json 的 plan/story 字段使用（814F3：
-# CLI 下线后不再对外 re-export，新代码勿用）
-from .models_legacy import PlanState, StoryState  # noqa: E402
-
-
 # =======================
 # Studio 前端对齐模型
 # =======================
@@ -197,9 +192,9 @@ class ProjectState(BaseModel):
     status: ProjectStatus = ProjectStatus.idle
     user_goal: str = ""
 
-    # 原有架构字段（保留以兼容 CLI 和旧 Workflow）
-    plan: PlanState = Field(default_factory=PlanState)
-    story: StoryState = Field(default_factory=StoryState)  # DEPRECATED: 仅为兼容旧 state.json，新逻辑勿写入
+    # 五轮 S4g/N2：CLI 遗留 plan/story 字段已清偿（旧模型文件已删除）。
+    # ProjectState extra="ignore" 保证旧 state.json 里残留的 plan/story 键加载时
+    # 被静默忽略、不报错（2026-08-16 实测：存量文件该两键仅空壳默认值）。
     # 注意：原 storyboard: StoryboardState 已删除，由 key_elements/shots/audio_items 替代（v2.0.0）
     pipeline_assets: List[AssetState] = Field(default_factory=list)  # 生成管线资产（CLI/Workflow 用）
     timeline: TimelineState = Field(default_factory=TimelineState)
