@@ -34,6 +34,12 @@ from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state, stage_label_for_tool
 # N7（三轮审核）：pause 声明消费顶层化（guard 依赖图与本文件既有导入重合，无环）
 from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
+# 四轮 R1（F47 清偿）：轮末闸机分支收敛为声明式策略表（层 9 唯一落点）
+from src.video_agent.core.round_end_policies import (
+    RoundEndContext,
+    _claims_structure_done,  # noqa: F401  re-export 壳（测试导入路径不变，13.7 惯例）
+    run_round_end_policies,
+)
 # 四轮 R0（N7 漂移清偿）：进度通道绑定顶层化；spec_wizard_active 经模块属性访问
 # （测试 patch 目标=registry 命名空间，顶层 from-import 会冻结绑定导致 patch 失效）
 from src.video_agent.skill_runtime.progress import (
@@ -126,29 +132,8 @@ def _extract_confirmation(action: Dict[str, Any]) -> str:
     return str(action.get("message") or action.get("confirmation") or "").strip()
 
 
-# 防虚报：模型在未真实执行结构操作时声称「已拆解/已建组/已写入故事板」。
-# 每段独立判定（跨文本拼接不误报）；含未来/预告措辞（确认后/接下来/之后…）
-# 一律不算声称（4444 误伤措辞豁免）。
-_STRUCTURE_CLAIM_RE = re.compile(
-    r"(?:已完成|完成|已创建|已拆解|已写入)\s*(?:关键元素)?(?:拆解|拆分|分组|故事板)"
-    r"|(?:关键元素)?(?:拆解|拆分)完成|已创建\s*\d+\s*个分组并写入故事板",
-)
-_FUTURE_MARKER_RE = re.compile(r"确认后|接下来|之后|即将|下一步|先确认|先将")
-
-
-def _claims_structure_done(*texts: str) -> bool:
-    """判定文本是否声称已完成故事板结构搭建（防虚报闸的文本检测）。
-
-    - 每个文本段独立判定（2222 事故：正文结尾与暂停文案开头跨文本拼接不得误报）；
-    - 含未来/预告措辞的段落不算声称（4444 误伤措辞豁免）。
-    """
-    for t in texts:
-        text = str(t or "")
-        if _FUTURE_MARKER_RE.search(text):
-            continue
-        if _STRUCTURE_CLAIM_RE.search(text):
-            return True
-    return False
+# 防虚报检测（_STRUCTURE_CLAIM_RE/_claims_structure_done）四轮 R1 随唯一消费点
+# 迁入 round_end_policies；本文件顶部保留 re-export 壳，测试导入路径不变。
 
 
 # 向后兼容别名
@@ -538,197 +523,45 @@ async def run_agent_loop(
                     stage=stage_label_for_tool(str(action.get("action", ""))),
                 )
         gate_rejections = list(getattr(executor, "gate_rejections", None) or [])
-        # Skill 声明式流程门禁（814R3 复活，文本轨）：本轮有拦截 → 强制补发确认暂停
-        if flow_gates is not None:
-            txt_gate_blocked = flow_gates.consume_blocked()
-            if txt_gate_blocked:
-                result.confirmation = confirmation or flow_gates.pause_message()
-                result.confirmation_options = []
-                visible_txt = executor.strip_action_blocks(content)
-                if visible_txt:
-                    result.text = f"{result.text}\n\n{visible_txt}".strip() if result.text else visible_txt
-                await emit({"type": SSE_STATUS, "text": "越阶操作被流程门禁拦截，已强制暂停"})
-                tracer.end_step(step, actions_applied=applied, finish_reason="gate_pause")
-                break
-        if total_exec and applied < total_exec:
-            if gate_rejections:
-                result.warnings.append(
-                    f"第 {step} 轮有 {total_exec - applied} 个操作被流程闸机拦截"
-                    f"（原因：{gate_rejections[0][:60]}…）"
-                )
-            elif stream_consumed == 0:
-                failed_desc = ""
-                try:
-                    failed_desc = "；".join(
-                        executor._describe_action(a) for a in executable[applied:][:3]
-                    )
-                except Exception:
-                    failed_desc = ""
-                result.warnings.append(
-                    f"第 {step} 轮有 {total_exec - applied} 个操作未执行成功"
-                    + (f"（{failed_desc}）" if failed_desc else "（目标不存在或执行失败）")
-                )
-
-        # 流程闸机自愈（对齐 Tool 模式错误回传闭环）：本轮有操作被闸机拦截（全部或
-        # 部分）时，不接受本轮文本自带的暂停信号——模型常同时虚报「已写入/已创建 N 组」，
-        # 直接暂停会把虚假成功展示给用户（8888 事故：9 条提示词写入 8 条被拦，
-        # 却引导用户确认提示词）。丢弃本轮正文，把拦截原因回喂给模型，
-        # 逼其补做正确操作（重写被拦的提示词）后再暂停。
-        gate_heal = bool(gate_rejections) and total_exec > 0 and applied < total_exec
-        if gate_heal:
-            blocked_n = total_exec - applied
-            confirmation = ""
-            confirmation_options = []
-            wants_continue = True
-            result.warnings.append(
-                f"第 {step} 轮 {blocked_n} 个操作被流程闸机拦截，已回喂模型修正"
-            )
-            await emit({
-                "type": SSE_STATUS,
-                "text": f"系统闸机拦截了本轮 {blocked_n} 个流程操作，正在要求模型按流程修正…",
-            })
-
-        # 阶段硬边界：写入规格/阶段文档后必须停下等审阅（9999 事故：写完规格
-        # 输出 continue 想直冲下一步 → 系统强制停在规格审阅，无视 continue）
-        doc_written_names = [
-            str(a.get("name") or a.get("key") or "")
-            for a in executable
-            if str(a.get("action") or a.get("tool") or "").lower()
-            in ("write_document", "write_doc", "save_document", "document_write")
-        ]
-        if doc_written_names and not confirmation and _wizard_active():
-            spec_hit = any(prompt_gates.is_spec_doc_name(n) for n in doc_written_names)
-            if spec_hit:
-                confirmation, confirmation_options = prompt_gates.spec_pause_card(executor.state)
-                interaction = executor.state.setdefault("interaction", {})
-                interaction["pending_pause_kind"] = "spec"
-                logger.info("[FlowGate] 规格文档已写入，强制暂停审阅")
-
-        # 系统拼装规格已落盘待审阅（spec_review_pending）：轮末注入审阅卡
-        interaction = executor.state.setdefault("interaction", {})
-        if interaction.get("spec_review_pending") and not confirmation:
-            interaction.pop("spec_review_pending", None)
-            confirmation, confirmation_options = prompt_gates.spec_pause_card(executor.state)
-            logger.info("[FlowGate] 系统拼装规格待审阅，注入审阅卡")
-
-        # 规格向导激活：模型手写规格已被忽略，必须转系统向导暂停卡等用户选参
-        if spec_wizard_pending and not confirmation:
-            confirmation, confirmation_options = prompt_gates.spec_pause_card(executor.state)
-            interaction = executor.state.setdefault("interaction", {})
-            interaction["pending_pause_kind"] = "spec"
-            logger.info("[FlowGate] 规格向导激活，模型手写规格已忽略，转系统规格向导暂停卡")
-
-        # 总结/规格收集闸（层9 兜底，1111/6666 事故）：script_analyze 已成功
-        # 且无规格文档且模型未自发暂停 → 注入规格收集向导；scope=all 豁免只附警告
-        if (
-            "script_analyze" in getattr(executor, "skill_stages_done", set())
-            and not prompt_gates.has_spec_document(executor.state)
-            and not any(
-                prompt_gates.is_spec_doc_name(n)
-                for n in getattr(executor, "documents_written", []) or []
-            )
-            and not confirmation
-        ):
-            if getattr(executor, "gate_override", False) in ("all", True):
-                result.warnings.append("用户已要求全速推进，已豁免规格收集暂停（仅附警告）")
-            else:
-                confirmation, confirmation_options = prompt_gates.spec_collect_card(executor.state)
-                interaction = executor.state.setdefault("interaction", {})
-                interaction["pending_pause_kind"] = "collect"
-                logger.info("[FlowGate] script_analyze 完成且无规格文档，注入规格收集向导")
-
-        # 流程闸机硬边界（对齐 FC 轨）：本批刚搭建故事板结构时，确认卡片统一换成
-        # 「审阅拆分方案」的系统文案——结构阶段闸机只建骨架不写详细提示词，
-        # 模型自拟的「提示词已写好/开始生成」类文案属虚报，一律覆盖
-        # （8888 事故：拆完分镜即引导「确认分镜与草案，开始生成视频」）。
-        structure_kinds = set(getattr(executor, "structure_kinds_created", None) or set())
-        if (
-            not confirmation
-            and structure_kinds
-            and not structure_self_check_pending
-            and getattr(executor, "gate_enabled", False)
-            and prompt_gates.gate_mode() == "strict"
-        ):
-            # 结构首建后强制再跑一轮自检补漏（8888 事故）：不直接弹系统暂停卡，
-            # 先让模型按铁律第 2 条自检；第二轮若模型仍未暂停，再落系统结构审阅卡
-            structure_self_check_pending = True
-            structure_self_check_round = step
-            logger.info(f"[FlowGate] 结构首建，强制自检轮（kinds={sorted(structure_kinds)}）")
-        if (
-            not confirmation
-            and structure_self_check_pending
-            and step > structure_self_check_round
-            and getattr(executor, "gate_enabled", False)
-            and prompt_gates.gate_mode() == "strict"
-        ):
-            # 自检轮模型仍未暂停：系统落结构审阅卡，不再无限追加自检轮
-            confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
-            structure_self_check_pending = False
-            logger.info(f"[FlowGate] 自检轮后仍未暂停，注入结构审阅卡（kinds={sorted(structure_kinds)}）")
-        # 8888 二轮：结构阶段模型自发暂停时文案保留、选项换成系统阶段卡
-        if (
-            confirmation
-            and structure_kinds
-            and getattr(executor, "gate_enabled", False)
-            and prompt_gates.gate_mode() == "strict"
-        ):
-            _sys_msg, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
-
-        # 阶段完成引导兜底（5555 事故）：执行器跑完但模型没发确认卡时，
-        # 系统客观补一张下一步引导卡（不覆盖模型自发的暂停）。
-        # B4/F29：Skill 声明「何时暂停/阶段暂停」（pause.stage_pause）时同样消费——
-        # 任何执行器批次完成后模型未自发暂停即补卡（声明驱动 + 平台兜底双语义）。
-        _stage_pause_declared = False
-        if skill:
-            try:
-                _stage_pause_declared = skill_requires_stage_pause(skill)
-            except Exception:
-                _stage_pause_declared = False
-        _executor_actions = (
-            "script_analyze", "storyboard_key_elements", "storyboard_shots",
-            "storyboard_audio", "write_media_prompt", "audio_generate", "video_assembler",
+        # 轮末策略状态机（四轮 R1，F47 清偿）：原 10+ 个竞争 if 块（流程门禁暂停/
+        # 失败警告/闸机自愈/规格文档暂停/规格审阅卡/向导接管/规格收集/结构自检/
+        # 结构卡覆盖/阶段兜底卡/虚报检测）收敛为 round_end_policies 声明式策略表
+        # 单一路径——优先级逐字节复制现行顺序（零行为变更，D1 裁决）；
+        # 仲裁候选与胜出者经 tracer.record_card_decision 入 trace（#4 可观测）。
+        _re_ctx = RoundEndContext(
+            step=step,
+            executor=executor,
+            content=content,
+            skill=skill,
+            flow_gates=flow_gates,
+            confirmation=confirmation,
+            confirmation_options=confirmation_options,
+            wants_continue=wants_continue,
+            total_exec=total_exec,
+            applied=applied,
+            stream_consumed=stream_consumed,
+            executable=executable,
+            gate_rejections=gate_rejections,
+            spec_wizard_pending=spec_wizard_pending,
+            structure_self_check_pending=structure_self_check_pending,
+            structure_self_check_round=structure_self_check_round,
+            result_text=result.text,
         )
-        if (
-            not confirmation
-            and not gate_heal
-            and applied > 0
-            and (
-                _stage_pause_declared
-                or any(
-                    str(a.get("action") or a.get("tool") or "").strip()
-                    in ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
-                    for a in executable
-                )
-            )
-            and any(
-                str(a.get("action") or a.get("tool") or "").strip() in _executor_actions
-                for a in executable
-            )
-        ):
-            confirmation = "阶段执行完成，请审阅左侧故事板结果"
-            confirmation_options = [
-                {"label": "继续下一步", "description": "确认当前阶段产出，推进到下一阶段"},
-                {"label": "我要调整", "description": "告诉我需要增删改的内容"},
-            ]
-            logger.info("[FlowGate] 阶段执行完成且模型未暂停，注入下一步引导卡")
-
-        visible = executor.strip_action_blocks(content)
-        if visible and not gate_heal:
-            # 虚报警告（7777 × 4444）：声称完成结构搭建但故事板实际为空 → 只警告不拦人
-            if (
-                confirmation
-                and _claims_structure_done(visible)
-                and prompt_gates.storyboard_is_empty(executor.state)
-            ):
-                result.warnings.append(
-                    "检测到虚报：正文声称已完成结构搭建，但故事板实际仍为空；"
-                    "已按用户确认语义保留当前暂停（系统不没收模型暂停）。"
-                )
-            # 8888 二轮：收集卡已内嵌一句话总结（spec_collect_card 模板），
-            # 正文不再重复补拼，避免总结出现两遍
-            # 结构纯净闸剥离了内联详细提示词：正文追加更正说明，
-            # 避免持久化消息只剩模型「已编写提示词草案」的虚报文字
-            result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
+        await run_round_end_policies(_re_ctx, emit, tracer=tracer)
+        confirmation = _re_ctx.confirmation
+        confirmation_options = _re_ctx.confirmation_options
+        wants_continue = _re_ctx.wants_continue
+        gate_heal = _re_ctx.gate_heal
+        structure_self_check_pending = _re_ctx.structure_self_check_pending
+        structure_self_check_round = _re_ctx.structure_self_check_round
+        if _re_ctx.result_warnings:
+            result.warnings.extend(_re_ctx.result_warnings)
+        result.text = _re_ctx.result_text
+        if _re_ctx.hard_break:
+            result.confirmation = confirmation
+            result.confirmation_options = confirmation_options
+            tracer.end_step(step, actions_applied=applied, finish_reason=_re_ctx.hard_break_finish)
+            break
 
         logger.info(
             f"[AgentLoop] step={step} actions={applied}/{total_exec} "

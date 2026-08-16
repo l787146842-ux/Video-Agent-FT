@@ -37,6 +37,8 @@ class StepTrace:
     actions: List[Dict[str, Any]] = field(default_factory=list)
     # 本轮闸机判定明细（814R2 恢复：rule_id/层/结果/是否被申诉放行），供审计与前端展示
     gates: List[Dict[str, Any]] = field(default_factory=list)
+    # 本轮轮末卡片仲裁明细（四轮 R1/#4：候选策略/胜出者），供 /api/agent/traces 审计
+    card_decisions: List[Dict[str, Any]] = field(default_factory=list)
     # 本轮 reasoning（深度思考）文本摘要（截断后）
     reasoning: str = ""
 
@@ -71,6 +73,7 @@ class TraceRecord:
                     "finish_reason": s.finish_reason,
                     "actions": s.actions,
                     "gates": s.gates,
+                    "card_decisions": s.card_decisions,
                     "reasoning": s.reasoning,
                 }
                 for s in self.steps
@@ -121,6 +124,7 @@ class AgentTracer:
         # 当前 step 期间收集的操作明细与 reasoning（end_step 时归档）
         self._pending_actions: List[Dict[str, Any]] = []
         self._pending_gates: List[Dict[str, Any]] = []
+        self._pending_cards: List[Dict[str, Any]] = []
         self._pending_reasoning: List[str] = []
         # 执行器子步骤缓冲（814G2）：子步骤先于父工具完成时暂存，
         # 待父工具 record_action 时挂到父条目之后（持久化顺序 = live 顺序）
@@ -132,6 +136,7 @@ class AgentTracer:
         self._step_start = time.monotonic()
         self._pending_actions = []
         self._pending_gates = []
+        self._pending_cards = []
         self._pending_reasoning = []
         self._pending_subs = []
 
@@ -216,6 +221,23 @@ class AgentTracer:
         if self._current is not None:
             self._pending_gates.append(entry)
 
+    def record_card_decision(
+        self,
+        step: int,
+        candidates: List[str],
+        winner: str,
+    ) -> None:
+        """四轮 R1（#4 仲裁可观测）：记录一次轮末卡片仲裁——
+        全部命中候选策略 + 胜出者，随 step 归档，/api/agent/traces 可审计。"""
+        if self._current is None:
+            return
+        self._pending_cards.append({
+            "ts": time.time(),
+            "step": step,
+            "candidates": list(candidates or []),
+            "winner": str(winner or ""),
+        })
+
     def record_fallback(self, provider: str, model: str) -> None:
         """B10：记录一次模型降级切换（fallback 频率指标；内存滚动保留）。"""
         self._fallback_events.append({
@@ -286,10 +308,12 @@ class AgentTracer:
             finish_reason=finish_reason,
             actions=list(self._pending_actions),
             gates=list(self._pending_gates),
+            card_decisions=list(self._pending_cards),
             reasoning=reasoning,
         ))
         self._pending_actions = []
         self._pending_gates = []
+        self._pending_cards = []
         self._pending_reasoning = []
 
     def finish_trace(self, total_actions: int = 0) -> Dict[str, Any]:
