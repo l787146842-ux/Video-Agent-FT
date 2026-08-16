@@ -8,6 +8,23 @@ import { apiFetch, apiPost, apiPut, getGlobalApiKey, setGlobalApiKey } from '@/a
 import { showToast } from '@/stores/toast';
 import { studioActions } from '@/stores/studio';
 import type { ApiProvider } from '@/types';
+// 五轮 S10：类型/常量/纯工厂切出至 settings-meta.ts（文件瘦身，零行为变更）
+import {
+  BUILTIN_IDS,
+  CLI_ENTRIES,
+  CLI_META,
+  CLI_PROTOCOLS,
+  IMAGE_MODE_OPTIONS,
+  PLATFORM_META,
+  PROTOCOL_OPTIONS,
+  RH_GUIDE,
+  imageModeLabel,
+  newProvider,
+  type EditableProvider,
+  type FetchedModels,
+  type ModelCat,
+  type ModelKind,
+} from './settings-meta';
 
 /**
  * API 配置页（画布同款功能与布局，用户裁决 2026-08-16：modelscope/runninghub/
@@ -16,98 +33,6 @@ import type { ApiProvider } from '@/types';
  * fetch-models（自动分类）、test-connection（验证地址）、probe-async（验证协议）、
  * /api/{gemini-cli,codex,jimeng}/status|help、/api/jimeng/login/*|logout|credit。
  */
-
-interface EditableProvider extends ApiProvider {
-  api_key?: string;
-  has_key?: boolean;
-  key_preview?: string;
-  key_env?: string;
-  has_wallet_key?: boolean;
-  wallet_key_preview?: string;
-  wallet_key_env?: string;
-}
-
-const PROTOCOL_OPTIONS = [
-  { value: 'openai', label: 'OpenAI 兼容 / 直连' },
-  { value: 'apimart', label: '异步协议 (APIMart)' },
-  { value: 'gemini', label: 'Gemini 协议' },
-  { value: 'volcengine', label: '方舟/Ark 任务协议' },
-  { value: 'runninghub', label: 'RunningHub OpenAPI' },
-  { value: 'jimeng', label: '即梦 CLI' },
-  { value: 'codex', label: 'OpenAI Codex CLI' },
-  { value: 'gemini-cli', label: 'Antigravity CLI' },
-  { value: 'mock', label: 'Mock（本地演示）' },
-];
-
-const CLI_PROTOCOLS = new Set(['jimeng', 'codex', 'gemini-cli']);
-/** 图片接口模式（画布同款五档，持久化在 provider.image_request_mode） */
-const IMAGE_MODE_OPTIONS = [
-  { value: 'openai', label: '图片: OpenAI 标准' },
-  { value: 'openai-json', label: '图片: OpenAI JSON' },
-  { value: 'openai-video-proxy', label: '图片: OpenAI 中转' },
-  { value: 'openai-responses', label: '图片: OpenAI RS' },
-  { value: 'tudou-async', label: '图片: 土豆 GPT-Image-2 异步' },
-];
-const imageModeLabel = (v: string) => IMAGE_MODE_OPTIONS.find((o) => o.value === v)?.label || v;
-/** 内置平台（画布不显示删除按钮） */
-const BUILTIN_IDS = new Set(['modelscope', 'runninghub', 'volcengine', 'mock']);
-
-const CLI_ENTRIES = [
-  { key: 'jimeng', label: '即梦 CLI', protocol: 'jimeng', statusPath: '/api/jimeng/status', helpPath: '/api/jimeng/help' },
-  { key: 'codex', label: 'GPT CLI (Codex)', protocol: 'codex', statusPath: '/api/codex/status', helpPath: '/api/codex/help' },
-  { key: 'agy', label: 'Antigravity CLI', protocol: 'gemini-cli', statusPath: '/api/gemini-cli/status', helpPath: '/api/gemini-cli/help' },
-];
-
-const CLI_META: Record<string, { title: string; desc: string }> = {
-  'gemini-cli': { title: 'Antigravity CLI 账户', desc: '使用本机 agy 登录态，无需在本项目保存 API Key。需要先安装 CLI 文件夹中的依赖。' },
-  codex: { title: 'OpenAI CLI 账户', desc: '使用本机 codex 登录态，无需在本项目保存 API Key。' },
-  jimeng: { title: '即梦 CLI 账户', desc: '使用本机 dreamina 登录态，无需 API Key。' },
-};
-
-/** 画布同款平台定制内容 */
-const PLATFORM_META: Record<string, {
-  defaultUrls?: Array<[string, string]>;
-  tokenLinks?: Array<[string, string]>;
-  note?: string;
-}> = {
-  modelscope: {
-    defaultUrls: [
-      ['国内默认请求地址', 'https://api-inference.modelscope.cn/v1'],
-      ['国外使用请求地址', 'https://api-inference.modelscope.ai/v1'],
-    ],
-    tokenLinks: [
-      ['获取 Token · 国内', 'https://www.modelscope.cn/my/access/token'],
-      ['获取 Token · 国外', 'https://www.modelscope.ai/my/access/token'],
-    ],
-  },
-  volcengine: {
-    defaultUrls: [['方舟默认请求地址', 'https://ark.cn-beijing.volces.com/api/v3']],
-    note: 'Seedance 视频生成使用方舟 API Key，验证会请求 /api/v3/models。',
-  },
-};
-
-const RH_GUIDE = {
-  title: 'RunningHub 新手引导',
-  desc: 'RH 有 RH币和账户余额两种 Key：应用/工作流可用 RH币，标准模型只能走账户余额。',
-  coinUrl: 'https://www.runninghub.ai/enterprise-api/consumerApi?inviteCode=rh-v1331',
-  walletUrl: 'https://www.runninghub.ai/enterprise-api/sharedApi?inviteCode=rh-v1331',
-};
-
-type ModelKind = 'chat_models' | 'image_models' | 'video_models';
-type ModelCat = 'image' | 'chat' | 'video';
-
-interface FetchedModels {
-  all: string[]; image_models: string[]; chat_models: string[]; video_models: string[];
-  total: number; protocol: string;
-}
-
-function newProvider(id: string): EditableProvider {
-  return {
-    id, name: '', protocol: 'openai', base_url: '',
-    enabled: true, chat_models: [], image_models: [], video_models: [],
-    api_key: '', has_key: false,
-  };
-}
 
 export default function SettingsView() {
   const [providers, setProviders] = createSignal<EditableProvider[]>([]);
