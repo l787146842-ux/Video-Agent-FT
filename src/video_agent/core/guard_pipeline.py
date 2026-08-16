@@ -196,6 +196,35 @@ def evaluate_gen_confirm(
     return msg, warns
 
 
+def evaluate_flow_gate(
+    flow_gates: Any,
+    op: str,
+    state: Dict[str, Any],
+    *,
+    action_name: str = "",
+    skill_name: str = "",
+) -> Optional[GateVerdict]:
+    """Skill 声明式流程门禁统一判定（四轮 R2 双轨收敛二期：唯一实现）。
+
+    文本轨（agent_loop 执行前逐动作）与 FC 轨（fc_tool_runner 逐工具）共用：
+    两轨各自完成轨道特化的动作分类（classify_action / classify_fc）后，
+    把 op 交给本函数裁定——判定语义、reason 组装、审计记录单一来源。
+
+    返回 None = 放行；GateVerdict(ok=False) = 拦截（message=拦截原因）。
+    拦截经 tracer.record_gate 入审计（前端 chips 同源，rule_id=skill.flow.checkpoint）。
+    调用方负责轨道特化动作（剔除动作/回喂 error/mark_blocked/SSE 事件）。
+    """
+    if flow_gates is None:
+        return None
+    ok, missing = flow_gates.check_op(op, state)
+    if ok:
+        return None
+    reason = flow_gates.block_reason(op, missing)
+    verdict = GateVerdict("skill.flow.checkpoint", "skill", False, reason)
+    audit_verdicts([verdict], skill_name=skill_name, action=action_name)
+    return verdict
+
+
 def prompt_write_verdict(
     prompt: str,
     kind: str,

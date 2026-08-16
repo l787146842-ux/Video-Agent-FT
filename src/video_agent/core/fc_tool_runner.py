@@ -615,13 +615,17 @@ class FCToolRunner:
                 })
             _tool_t0 = time.monotonic()
 
-            # --- Skill 声明式流程门禁（814R3 复活）：拦截越阶工具调用（硬校验，不依赖模型自觉） ---
+            # --- Skill 声明式流程门禁（814R3 复活；R2 收敛：判定经
+            # guard_pipeline.evaluate_flow_gate 唯一实现）：拦截越阶工具调用（硬校验，不依赖模型自觉） ---
             if flow_gates is not None:
                 gate_op = flow_gates.classify_fc(name, args)
-                gate_ok, gate_missing = flow_gates.check_op(gate_op, self._raw_state())
-                if not gate_ok:
-                    reason = flow_gates.block_reason(gate_op, gate_missing)
-                    logger.warning(f"[FlowGate] 拦截工具 '{name}': {'、'.join(gate_missing)}")
+                gate_verdict = guard_pipeline.evaluate_flow_gate(
+                    flow_gates, gate_op, self._raw_state(),
+                    action_name=name, skill_name=injected_skill,
+                )
+                if gate_verdict is not None:
+                    reason = gate_verdict.message
+                    logger.warning(f"[FlowGate] 拦截工具 '{name}': {reason}")
                     # 814G5：拦截对用户透明（结构化 chips 由 record_gate 入 trace，
                     # B2/F13 起不再重复写纯文本 warnings；「本次放行」按钮按结构挂载）
                     if on_event is not None:
@@ -633,10 +637,6 @@ class FCToolRunner:
                             "result_summary": "被流程门禁拦截",
                         })
                     tracer.record_action(name=name, summary="被流程门禁拦截", elapsed_ms=0.0, ok=False)
-                    tracer.record_gate(
-                        "skill.flow.checkpoint", "skill", False,
-                        skill_name=injected_skill, action=name, message=reason,
-                    )
                     tool_results.append({"name": name, "ok": False, "error": reason})
                     flow_gates.mark_blocked(reason)
                     continue

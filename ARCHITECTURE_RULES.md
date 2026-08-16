@@ -413,6 +413,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | skill_manifest 白名单键 | 消费点：prompt_gates.parse_gate_rules/validate_prompt_write、agent_loop、fc_tool_runner、planner._compute_excluded_tools、prompt_builder、action_executor._spec_gate_ok；pause 节另由 guard.skill_requires_stage_pause 与 lint 消费；同步 test_skill_manifest.py 快照登记；**spec_wizard 例外：统一走 registry.spec_wizard_active；script_required 同模式统一走 registry.script_required_active（814H9）** |
 | 渠道来源规则共源段（三轮 B1/N1） | `prompts/shared/gen_channel_rules.md` 为唯一表述源；system_fc.md 与 text_actions.md 均经 `{{include}}` 引用（禁止复述）；test_round3_governance 快照锁语义 |
 | 生成确认闸单一实现（三轮 B4） | `guard_pipeline.evaluate_gen_confirm` 为 platform.gen_confirm 唯一判定；fc_tool_runner._gen_confirm_gate 与 action_executor._gen_confirm_gate 只注入参数；双轨一致测试 test_b4_dual_track_gen_confirm 钉死 |
+| 流程门禁单一实现（四轮 R2） | `guard_pipeline.evaluate_flow_gate` 为 skill.flow.checkpoint 唯一判定（check_op+block_reason 组装+审计记录）；两轨只做轨道特化分类（classify_action/classify_fc）与处置（剔除/回喂/mark_blocked/SSE）；双轨一致测试 test_r2_dual_track_flow_gate 钉死（含防镜像回潮源码断言） |
 | pause_rules 解析落点（三轮 B3/N7） | `skill_runtime.registry.parse_pause_rules` 为定义源；web/skill_docs 顶层 re-export 保留兼容导入；guard 顶层消费（方法内 import 清零） |
 | button 基线重置（三轮 B2/U3） | tokens.css `@layer base` 的 `button{...}` 重置为根因唯一落点（Tailwind 摘除后 preflight 替代）；新增按钮类不得依赖 UA 默认背景/边框 |
 

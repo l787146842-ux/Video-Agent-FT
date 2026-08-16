@@ -19,7 +19,7 @@ import time
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core import prompt_gates
+from src.video_agent.core import guard_pipeline, prompt_gates
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
     SSE_DOC_WRITTEN,
@@ -356,27 +356,27 @@ async def run_agent_loop(
             )
 
         executable, wants_continue, confirmation, confirmation_options = _split_actions(actions)
-        # Skill 声明式流程门禁（814R3 复活，文本轨）：执行前逐个校验，越阶操作直接剔除并记录拦截
+        # Skill 声明式流程门禁（814R3 复活，文本轨；R2 收敛：判定经
+        # guard_pipeline.evaluate_flow_gate 唯一实现）：执行前逐个校验，越阶操作直接剔除并记录拦截
         if executable and flow_gates is not None:
             _gate_state = getattr(executor, "state", None) or {}
             kept: List[Dict[str, Any]] = []
             for gi, action in enumerate(executable):
                 gop = flow_gates.classify_action(action)
-                gok, gmissing = flow_gates.check_op(gop, _gate_state)
-                if gok:
+                gverdict = guard_pipeline.evaluate_flow_gate(
+                    flow_gates, gop, _gate_state,
+                    action_name=str(action.get("action", "")), skill_name=skill,
+                )
+                if gverdict is None:
                     kept.append(action)
                     continue
-                greason = flow_gates.block_reason(gop, gmissing)
+                greason = gverdict.message
                 # B2/F13：拦截原因已由 record_gate 入 trace（前端渲染结构化 chips），
                 # 不再重复写入纯文本 warnings（避免同屏双显）
                 flow_gates.mark_blocked(greason)
                 tracer.record_action(
                     name=str(action.get("action", "")), summary="被流程门禁拦截",
                     elapsed_ms=0.0, ok=False,
-                )
-                tracer.record_gate(
-                    "skill.flow.checkpoint", "skill", False,
-                    action=str(action.get("action", "")), message=greason,
                 )
                 await emit({
                     "type": SSE_TOOL_FINISHED, "id": f"s{step}-gate{gi}",
