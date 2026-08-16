@@ -135,8 +135,14 @@ def estimate_messages_tokens(messages: List[Dict[str, Any]]) -> int:
         elif isinstance(content, list):
             # 多模态 content parts
             for part in content:
-                if isinstance(part, dict) and part.get("type") == "text":
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "text":
                     total += estimate_tokens(part.get("text", ""))
+                elif part.get("type") == "image_url":
+                    # 五轮 S9/#15b：vision token 计入预算（此前漏计，带图历史
+                    # 的截断决策失真）；固定成本取 settings.image_token_estimate
+                    total += settings.image_token_estimate
         # 每条消息的 role/metadata 开销约 4 token
         total += 4
     return total

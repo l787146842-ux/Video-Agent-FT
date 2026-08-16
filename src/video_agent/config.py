@@ -78,6 +78,9 @@ class Settings:
     # Token 预算管理
     context_window_size: int = field(default_factory=lambda: _env_int("CONTEXT_WINDOW_SIZE", 128000))
     token_budget_ratio: float = field(default_factory=lambda: float(os.getenv("TOKEN_BUDGET_RATIO", "0.8")))
+    # 五轮 S9/#15b：单张图片的 vision token 固定估算（此前多模态消息的 image_url
+    # 部分不计入预算，截断决策对带图历史失真）；取常见高分辨率档保守值
+    image_token_estimate: int = field(default_factory=lambda: _env_int("IMAGE_TOKEN_ESTIMATE", 1200))
     # 旧轮 read_* 回喂全文的惰性压缩阈值：消息总量达到预算的该比例才压缩，
     # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）；
     # 814G7 收紧 0.5→0.35（历史是上下文膨胀大头，提早压缩）
