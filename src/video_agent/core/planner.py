@@ -40,7 +40,7 @@ from src.video_agent.core.fc_tool_runner import (
 )
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core import prompt_gates
-from src.video_agent.core.live_metrics import record_live_context
+from src.video_agent.core.live_metrics import record_degradation, record_live_context
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_REASONING_DELTA, SSE_STATUS, status_event
 from src.video_agent.core.stream_suppressor import StreamActionSuppressor  # re-export 兼容旧导入
 from src.video_agent.core.tracer import AgentTracer
@@ -347,8 +347,10 @@ class Planner:
                     ):
                         self._flow_gates = FlowGateSet.ensure_spec_gate(self._flow_gates)
                 except Exception as e:
+                    record_degradation("planner.spec_gate_assembly")
                     logger.warning(f"[Planner] spec_gate 装配失败（降级）: {e}")
             except Exception as e:  # 解析失败不阻断对话，降级为无门禁
+                record_degradation("planner.flow_gates_parse")
                 logger.warning(f"[Planner] 流程检查点解析失败（降级为无门禁）: {e}")
                 self._flow_gates = None
 
@@ -379,6 +381,7 @@ class Planner:
                         self._script_pending_card = prompt_gates.script_remind_card()
                         self._flow_gates = _FGS.ensure_script_gate(self._flow_gates)
             except Exception as e:
+                record_degradation("planner.script_gate_assembly")
                 logger.warning(f"[Planner] script_gate 装配失败（降级）: {e}")
 
         if self._script_pending_card:

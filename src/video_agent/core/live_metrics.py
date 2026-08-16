@@ -50,3 +50,41 @@ def get_live_context(project_id: str) -> Optional[Dict[str, Any]]:
     if not rec or time.time() - rec["ts"] > _VALID_SECS:
         return None
     return rec
+
+
+# 四轮 R5/#11：核心探测点「预期外降级」遥测——接线断裂从静默 False 变为可观测计数
+# （814R 事故模式：md 幸存但代码无人读，探测点异常降级 False 无人察觉）。
+# point → {"count": int, "first_ts": float, "last_ts": float}
+_DEGRADATIONS: Dict[str, Dict[str, Any]] = {}
+# 滚动上限：点位过多时丢弃最旧（防遥测自身膨胀）
+_DEGRADATION_MAX_POINTS = 200
+
+
+def record_degradation(point: str, project_id: str = "") -> None:
+    """记录一次核心探测点的意外降级（异常捕获回落默认值时调用）。
+
+    point 命名约定：`模块.探测点名`（如 agent_loop._wizard_active）；
+    project_id 可空（空记全局桶）。只计数不落盘——这是运行期健康信号。
+    """
+    key = f"{point}@{project_id or '_global'}"
+    rec = _DEGRADATIONS.get(key)
+    now = time.time()
+    if rec:
+        rec["count"] += 1
+        rec["last_ts"] = now
+    else:
+        if len(_DEGRADATIONS) >= _DEGRADATION_MAX_POINTS:
+            oldest = min(_DEGRADATIONS.items(), key=lambda kv: kv[1]["last_ts"])[0]
+            _DEGRADATIONS.pop(oldest, None)
+        _DEGRADATIONS[key] = {"point": point, "project_id": project_id or "",
+                              "count": 1, "first_ts": now, "last_ts": now}
+
+
+def get_degradations() -> List[Dict[str, Any]]:
+    """全部降级计数（按最近触发时间倒序），调试端点暴露用。"""
+    return sorted(_DEGRADATIONS.values(), key=lambda r: r["last_ts"], reverse=True)
+
+
+def reset_degradations() -> None:
+    """测试用：清空降级计数。"""
+    _DEGRADATIONS.clear()

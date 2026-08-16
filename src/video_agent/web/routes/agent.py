@@ -20,7 +20,7 @@ from src.video_agent.web.chat_service import stream_worker, non_stream_worker
 from src.video_agent.web.sse import sse_event_generator
 from src.video_agent.exceptions import AdapterError, GenerationError
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.core.live_metrics import get_live_context
+from src.video_agent.core.live_metrics import get_degradations, get_live_context
 from src.video_agent.core.token_budget import context_window_for_model, estimate_tokens
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
@@ -170,6 +170,15 @@ async def get_agent_gates(limit: int = 50):
             for meta in prompt_gates.GATE_RULES.values()
         ],
     }
+
+
+@router.get("/agent/degradations")
+async def get_agent_degradations():
+    """四轮 R5/#11：核心探测点意外降级计数（接线断裂可观测，814R 事故防复发）。
+
+    与 /agent/traces、/agent/gates 并列的调试端点：探测点（规格向导探测/
+    闸机装配/流程检查点解析等）异常回落默认值时计数 +1，运行期健康信号。"""
+    return {"degradations": get_degradations()}
 
 
 @router.get("/agent/running")

@@ -19,7 +19,7 @@ import time
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core import guard_pipeline, prompt_gates
+from src.video_agent.core import guard_pipeline, live_metrics, prompt_gates
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
     SSE_DOC_WRITTEN,
@@ -185,7 +185,10 @@ async def run_agent_loop(
         """当前 Skill 是否启用规格向导（manifest/正文客观检测，S1 单一事实源）。"""
         try:
             return bool(skill_registry.spec_wizard_active(skill))
-        except Exception:
+        except Exception as _e:
+            # 四轮 R5/#11：意外降级入遥测（接线断裂不再静默）
+            live_metrics.record_degradation("agent_loop._wizard_active")
+            logger.warning(f"[agent_loop] _wizard_active 探测失败（降级 False）: {_e}")
             return False
 
     skill = str(getattr(executor, "skill_name", "") or "")

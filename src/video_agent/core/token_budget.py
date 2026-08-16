@@ -142,6 +142,24 @@ def estimate_messages_tokens(messages: List[Dict[str, Any]]) -> int:
     return total
 
 
+def _is_real_user_msg(msg: Dict[str, Any]) -> bool:
+    """判定 user 消息是否为用户真实输入（与系统合成的回喂/注入相对）。
+
+    四轮 R5/#8：截断按「轮组」原子删除——轮组 = 真实用户消息 + 其后的
+    assistant/（系统）回喂，延续到下一条真实用户消息为止。FC 轨
+    assistant(tool_calls) 与随后的（系统）回喂是配对消息，拆半边会被供应商 400。
+    """
+    if msg.get("role") != "user":
+        return False
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        return True  # 多模态 content parts = 真实用户消息
+    text = str(content)
+    if text.startswith("（系统") or text.startswith("（任务执行期间收到您的指令"):
+        return False
+    return True
+
+
 def truncate_messages(
     messages: List[Dict[str, Any]],
     max_tokens: int,
@@ -154,7 +172,9 @@ def truncate_messages(
     策略：
     - 保留首条消息（通常是 system prompt）
     - 保留最近 keep_recent 条消息
-    - 从中间开始删除最早的消息，直到估算 token 数 <= max_tokens
+    - 从中间按「轮组」整组删除最早的消息，直到估算 token 数 <= max_tokens；
+      轮组 = 一条消息 + 紧随其后的合成回喂消息（四轮 R5/#8：FC 轨
+      assistant(tool_calls) 与（系统）回喂配对完整，拆半边会被供应商 400）
     - 保险丝：删无可删仍超预算且首条为 system 时，调用 system_degrader
       降级重建 system 段（如状态 JSON 只留组标题/计数），避免超限请求发出
 
@@ -178,11 +198,22 @@ def truncate_messages(
     min_keep = 1 + min(keep_recent, len(result) - 1)
 
     while total > max_tokens and len(result) > min_keep:
-        # 删除第 2 条（索引 1），即最早的非保护消息
-        removed = result.pop(1)
-        total -= token_list.pop(1)
-        preview = str(removed.get("content", ""))[:40]
-        logger.debug(f"[TokenBudget] 截断历史消息: {preview}...")
+        # 保护起点：最近 keep_recent 条不得删除
+        protect_start = len(result) - min(keep_recent, len(result) - 1)
+        if protect_start <= 1:
+            break
+        # 轮组边界：从索引 1 起，到下一条真实用户消息（不含）或保护起点为止
+        g_end = 2
+        while g_end < protect_start and not _is_real_user_msg(result[g_end]):
+            g_end += 1
+        del_end = min(g_end, protect_start)
+        if del_end <= 1:
+            break
+        for _ in range(del_end - 1):
+            removed = result.pop(1)
+            total -= token_list.pop(1)
+            preview = str(removed.get("content", ""))[:40]
+            logger.debug(f"[TokenBudget] 截断历史消息: {preview}...")
 
     if current_tokens > max_tokens:
         logger.info(

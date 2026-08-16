@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 
 from loguru import logger
 
-from src.video_agent.core import prompt_gates
+from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
@@ -130,6 +130,8 @@ async def run_round_end_policies(
         try:
             hit = policy.condition(ctx)
         except Exception as e:
+            # 四轮 R5/#11：策略条件求值失败入遥测（防闸机接线静默断裂）
+            live_metrics.record_degradation(f"round_end.{policy.policy_id}")
             logger.warning(f"[RoundEnd] 策略 {policy.policy_id} 条件求值失败（跳过）: {e}")
             continue
         if not hit:
@@ -357,6 +359,7 @@ def _cond_stage_done_fallback(ctx: RoundEndContext) -> bool:
         try:
             stage_pause_declared = skill_requires_stage_pause(ctx.skill)
         except Exception:
+            live_metrics.record_degradation("round_end.stage_pause_declared")
             stage_pause_declared = False
     names = [str(a.get("action") or a.get("tool") or "").strip() for a in ctx.executable]
     return (
