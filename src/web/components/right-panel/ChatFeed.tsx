@@ -1,7 +1,7 @@
 import { createEffect, createSignal, createMemo, For, Show, onCleanup } from 'solid-js';
 import { chatState } from '@/stores/chat';
 import { t } from '@/lib/locale';
-import { groupTurns } from '@/lib/turn-groups';
+import { groupTurns, suggestedTargetIndex } from '@/lib/turn-groups';
 import { ChatMessageItem } from './ChatMessageItem';
 import { StreamingIndicator } from './StreamingIndicator';
 import { StreamingBubble } from './StreamingBubble';
@@ -69,15 +69,12 @@ export function ChatFeed() {
     return -1;
   };
 
-  /** 五轮 S3/#3：最后一条携带建议动作的消息（重试/继续按钮挂载点） */
-  const suggestedTargetIdx = () => {
-    if (chatState.isStreaming) return -1;
-    const msgs = chatState.messages;
-    for (let i = msgs.length - 1; i >= 0; i -= 1) {
-      if ((msgs[i].suggestedActions || []).length) return i;
-    }
-    return -1;
-  };
+  /** 五轮 S3/#3：携带建议动作的消息（重试/继续按钮挂载点）。
+   * 六轮 S5/N4c 边界锐化：候选消息之后出现新「用户消息」即视为已处置
+   * （用户已用别的方式继续），旧按钮失效——同轮的 doc 卡/图片卡等 agent
+   * 派生条目不构成失效（判定纯函数在 lib/turn-groups，vitest 钉死）。 */
+  const suggestedTargetIdx = () =>
+    suggestedTargetIndex(chatState.messages, chatState.isStreaming);
 
   /** 四轮 R3/#10：暂停卡生命周期状态（回看时可知旧卡是否仍有效）。
    * active=当前待回应；answered=其后已有用户消息（已回应）；expired=被更新的暂停取代。 */

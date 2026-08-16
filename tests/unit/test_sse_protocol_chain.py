@@ -57,7 +57,10 @@ def test_r4_emitter_segment(spec):
     ids=lambda s: s.event_type,
 )
 def test_r4_transport_segment(spec):
-    """透传段：passthrough 事件在 chat_service 透传白名单元组内。"""
+    """透传段：passthrough 事件在 chat_service 存在消费分支——
+    白名单元组形态 或 专属分支形态（六轮 S5：doc_written 移出白名单改为
+    `event.type == SSE_DOC_WRITTEN` 专属分支打戳 turn_id，透传语义等价，
+    两种形态都算链完整；两者皆无才是断链）。"""
     # 白名单形如 event.type in ("reasoning_delta", "tool_started", ...)；
     # 常量形态（SSE_GUIDANCE_INJECTED）与字面量形态都接受
     const_name = next(
@@ -72,11 +75,19 @@ def test_r4_transport_segment(spec):
         rf"event\.type in \(([^)]*\b{re.escape(const_name)}\b[^)]*)\)",
         _chat_service_src,
     ) if const_name else None
-    assert in_whitelist_literal or in_whitelist_const, (
-        f"四段链断链（透传段）：chat_service 白名单缺 {spec.event_type}"
+    # 专属分支形态：event.type == SSE_XXX / event.type == "xxx"
+    dedicated_const = re.search(
+        rf"event\.type\s*==\s*{re.escape(const_name)}\b", _chat_service_src,
+    ) if const_name else None
+    dedicated_literal = re.search(
+        rf"event\.type\s*==\s*[\"']{re.escape(spec.event_type)}[\"']",
+        _chat_service_src,
+    )
+    assert in_whitelist_literal or in_whitelist_const or dedicated_const or dedicated_literal, (
+        f"四段链断链（透传段）：chat_service 缺 {spec.event_type} 的消费分支"
         f"（事故溯源：{spec.incident}——6666 即此段断链导致文档卡片延迟）"
     )
-    # 注册表侧的透传清单与白名单交叉核对
+    # 注册表侧的透传清单与消费分支交叉核对
     assert spec.event_type in PASSTHROUGH_EVENT_TYPES
 
 

@@ -318,6 +318,18 @@ def _fallback_switch_payload(candidates: List[tuple], idx: int) -> Dict[str, str
     return {"provider": nxt[0], "model": nxt[1]}
 
 
+def _stamp_doc_written(payload: Optional[Dict[str, Any]], turn_id: str) -> Dict[str, Any]:
+    """六轮 S5/N4a：doc_written 即显事件打戳本轮 turn_id。
+
+    发射端（agent_loop/fc_tool_runner）无 turn_id 概念，打戳归透传层
+    （turn_id 在 _real_stream 起始生成）；前端即显卡据此与 done 主消息
+    同 turnId 严格归组（D3 显式 id 原则延伸，不再依赖相邻兜底）。
+    """
+    out = dict(payload or {"type": SSE_DOC_WRITTEN})
+    out["turn_id"] = turn_id
+    return out
+
+
 async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None) -> None:
     """真实供应商的流式处理（含模型 fallback 链）。
 
@@ -441,10 +453,14 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                                 "state": svc.get_full_snapshot(),
                             },
                         })
+                elif event.type == SSE_DOC_WRITTEN:
+                    # 六轮 S5/N4a：即显事件透传时打戳本轮 turn_id（打戳逻辑
+                    # 抽 _stamp_doc_written 便于单测钉死）
+                    await emit(_stamp_doc_written(event.payload, turn_id))
                 elif event.type in (
-                    "reasoning_delta", "tool_started", "tool_finished", SSE_GUIDANCE_INJECTED, SSE_DOC_WRITTEN,
+                    "reasoning_delta", "tool_started", "tool_finished", SSE_GUIDANCE_INJECTED,
                 ):
-                    # 过程时间线事件透传（深度思考增量 / 工具开始与完成 / 文档即显 / 引导注入），
+                    # 过程时间线事件透传（深度思考增量 / 工具开始与完成 / 引导注入），
                     # 仅 UI 展示用，不进下次 LLM 上下文
                     await emit(event.payload or {"type": event.type, "text": event.text})
                 elif event.type == "done":

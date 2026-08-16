@@ -248,7 +248,8 @@ function handleEvent(ev: SseEvent) {
       chatActions.toolFinished(ev.id, ev.ok, ev.elapsed_ms || 0, ev.result_summary);
       break;
     case 'doc_written':
-      if (ev.name) chatActions.docWritten(ev.name);
+      // 六轮 S5/N4a：携带后端打戳的 turn_id，即显卡与 done 主消息严格同组
+      if (ev.name) chatActions.docWritten(ev.name, ev.turn_id);
       break;
     case 'model_fallback':
       // 降级即时联动（7777 事故）：切换时刻就跳选择器，不等整轮成功

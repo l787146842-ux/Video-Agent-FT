@@ -266,13 +266,14 @@ export const chatActions = {
   },
 
   /** 文档写入即显（doc_written 事件，B0/F1 恢复四段链）：独立文档卡片立即渲染，
-   * 不等整轮 done；同轮重复名称去重（done 全量清单与事件双通道防双显） */
-  docWritten(name: string) {
+   * 不等整轮 done；同轮重复名称去重（done 全量清单与事件双通道防双显）。
+   * 六轮 S5/N4a：携带后端透传层打戳的 turn_id，即显卡严格归入轮次容器 */
+  docWritten(name: string, turnId?: string) {
     if (!name) return;
     setChatState(produce((s) => {
       if (s.renderedDocCards.includes(name)) return;
       s.renderedDocCards.push(name);
-      s.messages.push({ sender: 'agent', text: '', docCard: name });
+      s.messages.push({ sender: 'agent', text: '', docCard: name, turnId });
     }));
   },
 

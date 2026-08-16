@@ -42,3 +42,23 @@ export function groupTurns(messages: ChatMessage[]): TurnGroup[] {
   });
   return groups;
 }
+
+/** 六轮 S5/N4c：建议动作按钮挂载点（ChatFeed 消费）。
+ * 规则：最后一条携带 suggestedActions 的消息为候选；其后出现新「用户消息」
+ * 即视为已处置（用户已用别的方式继续）→ 返回 -1（旧按钮失效）。
+ * 同轮的 agent 派生条目（doc 卡/图片卡）不构成失效。 */
+export function suggestedTargetIndex(
+  messages: ChatMessage[],
+  isStreaming: boolean,
+): number {
+  if (isStreaming) return -1;
+  let candidate = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if ((messages[i].suggestedActions || []).length) { candidate = i; break; }
+  }
+  if (candidate < 0) return -1;
+  for (let i = candidate + 1; i < messages.length; i += 1) {
+    if (messages[i].sender === 'user') return -1;
+  }
+  return candidate;
+}
