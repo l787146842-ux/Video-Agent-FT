@@ -205,6 +205,8 @@
 - **先读懂再动手**，不得"重写一遍"；修改范围最小化；不为"觉得更好"重构无关代码
 - 删除前全局搜索确认无引用；DEPRECATED 保留别名导入不立即删；删除后跑测试
 - 禁止提交 `print()` / `# TODO: remove` / `# HACK`；调试用 `logger.debug()`；临时 mock 不得覆盖正式实现
+- **事故注释约定（五轮 S8）**：新注释只写结论（这里为什么这么做），不写事故过程；
+  事故叙事的唯一载体是台账（`docs/archive/incident-ledger.md`），代码里引用事故编号即可
 
 ---
 
@@ -414,7 +416,10 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 快照/分支（B11） | routes/snapshots.py + conversations 创建 + _meta.branched_from + 前端 RightPanel 分支按钮 |
 | 窗口表元数据（B6/F52） | api_providers.json chat_models_meta.context_window → token_budget.context_window_for_model(provider_id) → planner 传递 chat_provider |
 | 新增 FC 工具 | tool description（层 10）+ 阶段裁剪集 + 测试 |
+| FC 确认回环（五轮 S8/#14 登记） | planner._handle_fc_response 把 workflow_pause 结果**合成 studio-actions JSON** 拼回正文 → agent_loop 文本解析路径统一消费（确认处理单路径的刻意设计）；改动该回环必须双轨同测（FC 轨暂停语义与文本轨 request_confirmation 语义对齐） |
 | 拆分模块新增顶层符号（R4 系列） | re-export 壳清单（skill_runtime/executors/__init__.py、core/prompt_gates.py 尾部、web/chat_service.py 尾部）+ 测试 patch 目标改为调用方命名空间；LLM 调用统一经 `_gen.`（web.generation）模块属性，patch 点=web.generation 模块 |
+| 壳到期制（五轮 S4 设立） | 新增 re-export 壳必须在注释中登记清偿属性：「长期保留·架构承重」（宪法 §12 登记壳清单）或「预计清偿轮次」（逾期即立案）；五轮已清偿未登记壳：web/state_service、web/actions、planner 委托壳、models_legacy、_split_actions/save_state 别名；承重壳保留：executors/__init__、prompt_gates 尾部（gates_spec+gates_script）、chat_service 尾部、exec_tools 尾部（exec_split） |
+| 五轮 S5 拆分模块 | core/gates_script.py（剧本闸家族，prompt_gates 尾部 re-export）+ skill_runtime/exec_split.py（拆解域任务词与三拆逻辑，exec_tools 尾部 re-export）；消费方经旧命名空间访问不变；LLM 调用点扫描测试（test_2222_round2_fixes）已纳入 exec_split |
 | skill_manifest 白名单键 | 消费点：prompt_gates.parse_gate_rules/validate_prompt_write、agent_loop、fc_tool_runner、planner._compute_excluded_tools、prompt_builder、action_executor._spec_gate_ok；pause 节另由 guard.skill_requires_stage_pause 与 lint 消费；同步 test_skill_manifest.py 快照登记；**spec_wizard 例外：统一走 registry.spec_wizard_active；script_required 同模式统一走 registry.script_required_active（814H9）** |
 | 渠道来源规则共源段（三轮 B1/N1） | `prompts/shared/gen_channel_rules.md` 为唯一表述源；system_fc.md 与 text_actions.md 均经 `{{include}}` 引用（禁止复述）；test_round3_governance 快照锁语义 |
 | 生成确认闸单一实现（三轮 B4） | `guard_pipeline.evaluate_gen_confirm` 为 platform.gen_confirm 唯一判定；fc_tool_runner._gen_confirm_gate 与 action_executor._gen_confirm_gate 只注入参数；双轨一致测试 test_b4_dual_track_gen_confirm 钉死 |

@@ -90,12 +90,17 @@ workspace/                运行时状态与资产（gitignore）
 
 ## 文档索引
 
+> 文档分层（五轮 S8）：`docs/` 根目录只放**现行有效规范**；
+> 历史审核报告/整改计划书/恢复文书归档于 `docs/audit-history/`（按轮次检索）。
+
 | 文档 | 内容 |
 |---|---|
 | [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) | 架构铁律（AI 协作强制约束） |
 | [docs/配置说明.md](docs/配置说明.md) | 各配置文件的权威关系与加载优先级 |
+| [docs/前端体验规范.md](docs/前端体验规范.md) | 品牌/视觉/交互细节强制规范 |
 | [docs/对画布的需求清单.md](docs/对画布的需求清单.md) | 需要画布侧实现的能力（postMessage 协议等） |
-| [docs/兼容层移除计划.md](docs/兼容层移除计划.md) | 别名端点 / DEPRECATED 模块的移除时间表（legacy 前端已移除） |
+| [docs/兼容层移除计划.md](docs/兼容层移除计划.md) | 兼容层清偿台账（含承重壳登记，五轮 S4 终态） |
+| [docs/audit-history/](docs/audit-history/) | 历轮审核报告与整改计划书归档 |
 | [tests/fixtures/canvas/README.md](tests/fixtures/canvas/README.md) | 画布 API 契约夹具的录制与刷新方法 |
 
 ## 环境与安全
