@@ -1,7 +1,8 @@
 /**
  * 自动生成 —— 请勿手工编辑。
  * 来源：FastAPI OpenAPI schema（python scripts/gen_api_types.py）
- * 用途：与手写 src/web/types/index.ts 对照，保证前后端请求/响应字段契约一致。
+ * 用途：前端 API 边界类型的唯一来源（六轮 S2 路线 a）；
+ * 视图态类型（ChatMessage 等纯 UI 形态）见手写 src/web/types/index.ts。
  */
 
 export interface BatchImageGenRequest {
@@ -14,6 +15,10 @@ export interface BatchImageGenRequest {
 
 export interface Body_upload_files_api_ai_upload_post {
   files: string[];
+}
+
+export interface BranchRequest {
+  title?: string;
 }
 
 export interface CanvasDropImageRequest {
@@ -153,6 +158,11 @@ export interface GroupPatch {
   prompt?: string | unknown;
 }
 
+export interface GuidanceItem {
+  id: string;
+  text: string;
+}
+
 export interface ImageGenRequest {
   prompt: string;
   provider_id?: string;
@@ -236,6 +246,7 @@ export interface RuntimeSettingsUpdate {
   max_shot_duration?: number | unknown;
   executor_thinking_level?: string | unknown;
   aux_thinking_level?: string | unknown;
+  model_policy?: Record<string, unknown> | unknown;
 }
 
 export interface SkillDocSave {
@@ -263,9 +274,22 @@ export interface TestConnectionResponse {
   image_request_mode?: string;
 }
 
+export interface TimelinePushRequest {
+  shot_group_id?: string;
+  canvas_id?: string;
+}
+
 export interface UndoStatusResponse {
   can_undo?: boolean;
   can_redo?: boolean;
+}
+
+export interface VideoBatchCreate {
+  provider_id?: string;
+  model?: string;
+  resolution?: string;
+  duration?: number;
+  shot_group_ids?: string[] | unknown;
 }
 
 export interface VideoGenRequest {

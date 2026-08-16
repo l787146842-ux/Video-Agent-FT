@@ -4,9 +4,12 @@
     python scripts/gen_api_types.py          # 生成 src/web/types/api.generated.ts
     python scripts/gen_api_types.py --check  # 校验已有生成物与 schema 一致（CI 用，不一致退出码 1）
 
-生成的类型仅覆盖路由层请求/响应模型（components.schemas）；
-手写 types/index.ts 中的业务视图类型（ChatMessage/Draft 等）继续手工维护，
-两者通过字段对照共存，迁移期不强制替换引用。
+生成的类型覆盖路由层请求/响应模型（components.schemas）；六轮 S2（路线 a）后
+前端 API 边界类型以本生成物为唯一来源（tsc 编译期即契约门禁），视图态类型
+（ChatMessage/Draft 等纯 UI 形态）继续手工维护于 types/index.ts。
+
+输出约定（六轮 S1/N1②）：成败信息一律带 ASCII 前缀（OK: / FAIL:），
+防 Windows GBK 终端乱码把失败误读成通过——验收只认退出码，不人眼读文案。
 """
 import sys
 from pathlib import Path
@@ -78,7 +81,8 @@ def build_output() -> str:
         "/**",
         " * 自动生成 —— 请勿手工编辑。",
         " * 来源：FastAPI OpenAPI schema（python scripts/gen_api_types.py）",
-        " * 用途：与手写 src/web/types/index.ts 对照，保证前后端请求/响应字段契约一致。",
+        " * 用途：前端 API 边界类型的唯一来源（六轮 S2 路线 a）；",
+        " * 视图态类型（ChatMessage 等纯 UI 形态）见手写 src/web/types/index.ts。",
         " */",
         "",
     ]
@@ -93,23 +97,23 @@ def build_output() -> str:
     return "\n".join(chunks)
 
 
-def main() -> int:
+def main(out_path: str = OUT_PATH) -> int:
     expected = build_output()
     if "--check" in sys.argv:
         try:
-            with open(OUT_PATH, encoding="utf-8") as f:
+            with open(out_path, encoding="utf-8") as f:
                 current = f.read()
         except FileNotFoundError:
-            print(f"[gen_api_types] {OUT_PATH} 不存在，请先运行生成")
+            print(f"[gen_api_types] FAIL: {out_path} missing - run without --check first")
             return 1
         if current.strip() != expected.strip():
-            print("[gen_api_types] 契约不一致：请运行 python scripts/gen_api_types.py 更新生成物")
+            print("[gen_api_types] FAIL: contract drift - run python scripts/gen_api_types.py")
             return 1
-        print("[gen_api_types] 契约一致")
+        print("[gen_api_types] OK: contract consistent")
         return 0
-    with open(OUT_PATH, "w", encoding="utf-8") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         f.write(expected)
-    print(f"[gen_api_types] 已生成 {OUT_PATH}")
+    print(f"[gen_api_types] OK: generated {out_path}")
     return 0
 
 
