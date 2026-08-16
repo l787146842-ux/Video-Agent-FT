@@ -7,7 +7,7 @@ import asyncio
 import time
 import uuid
 
-from src.video_agent.core.sse_events import SSE_DELTA, SSE_DONE, SSE_STATUS
+from src.video_agent.core.sse_events import SSE_DELTA, SSE_DONE, SSE_STATUS, status_event
 from src.video_agent.memory import MemoryManager
 from src.video_agent.web.attachments import bind_attachments, store_uploaded_docs
 from src.video_agent.web.mock_llm import mock_llm_reply
@@ -35,7 +35,8 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
                 doc_blocks=getattr(body, "doc_blocks", None) or None,
                 skill_blocks=getattr(body, "skill_blocks", None) or None,
             )
-        await emit({"type": SSE_STATUS, "text": "mock 模式：本地规则生成…"})
+        # 五轮自查补漏：mock 路径 status 同走 key 化（#1 G4 同类全覆盖）
+        await emit(status_event("agent.mockRunning", "mock 模式：本地规则生成…", {}))
         raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
         actions = executor.parse_actions_from_reply(raw_reply)
         visible = executor.strip_action_blocks(raw_reply) or raw_reply

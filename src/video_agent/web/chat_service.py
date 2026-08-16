@@ -745,9 +745,10 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             f"主模型瞬时故障，本次回复由备用模型 {used_model} 生成，质量可能与主模型不同"
         )
 
+    # 五轮自查补漏：turn_id 提升到 if 外，非流式返回体与流式 done payload
+    # 契约对齐（turn_id + suggested_actions 同构，G4 一致性）
+    ns_turn_id = uuid.uuid4().hex[:12]
     if use_studio_context:
-        # 五轮 S2/#2：非流式路径同样携带轮次标识（G4 同类全覆盖）
-        ns_turn_id = uuid.uuid4().hex[:12]
         async with svc.lock:
             if result.text:
                 svc.add_chat_message(
@@ -768,6 +769,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         "image_urls": result.image_urls,
         "state": svc.get_full_snapshot() if use_studio_context else None,
         "memory_hits": getattr(planner_ctx, "memory_hits", None) or [],
+        "turn_id": ns_turn_id,
+        "suggested_actions": result.suggested_actions,
     }
 
 

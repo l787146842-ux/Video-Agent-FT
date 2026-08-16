@@ -31,6 +31,7 @@ const zhCN: Record<string, string> = {
   'agent.opsDone': '已完成：{ops}',
   'agent.gateHeal': '系统闸机拦截了本轮 {count} 个流程操作，正在要求模型按流程修正…',
   'agent.modelFallback': '模型 {from} 繁忙/异常，已切换 {to} 重试…',
+  'agent.mockRunning': 'mock 模式：本地规则生成…',
   // 五轮 S1/#1：planner 队列级 status 收编（原硬编码中文，i18n 残留清偿）
   'agent.roundStart': '第 {step} 轮推理中…（执行上轮操作后继续规划）',
   'agent.planning': '正在推理…（模型正在读状态并规划操作）',
