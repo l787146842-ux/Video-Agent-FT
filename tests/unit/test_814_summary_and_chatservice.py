@@ -18,9 +18,14 @@ class TestScriptSummaryWiring:
         assert "_prepend_script_summary(content, tool_results)" in src
 
     def test_text_track_wired(self):
-        """文本轨：执行过 script_analyze 且暂停时补拼总结"""
-        src = inspect.getsource(Planner.handle_message)
-        assert "skill_stages_done" in src and "_prepend_script_summary(loop_result.confirmation" in src
+        """文本轨：执行过 script_analyze 且暂停时补拼总结。
+        八轮 B2：接线随组装域迁入 planner_output.assemble_response，
+        断言基线同步迁移（锁语义不变：handle_message 必须走该组装路径）。"""
+        from src.video_agent.core.planner_output import assemble_response
+        src = inspect.getsource(assemble_response)
+        assert "skill_stages_done" in src and "prepend_script_summary(loop_result.confirmation" in src
+        caller = inspect.getsource(Planner.handle_message)
+        assert "assemble_response(" in caller
 
     def test_no_dup_when_already_shown(self):
         tr = [{"name": "script_analyze", "ok": True, "data": {"summary": "少年踏上复仇路"}}]

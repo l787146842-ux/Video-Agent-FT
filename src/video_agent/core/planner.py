@@ -33,6 +33,11 @@ from src.video_agent.core.fc_tool_runner import (
     strip_prior_feedback_images,
 )
 from src.video_agent.core.prompt_builder import PromptBuilder
+# 八轮 B2：轮末组装域切入 planner_output（_prepend_script_summary 保留 re-export 壳）
+from src.video_agent.core.planner_output import (
+    assemble_response,
+    prepend_script_summary as _prepend_script_summary,  # noqa: F401 壳：既有引用路径不变
+)
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.live_metrics import record_degradation, record_live_context
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_REASONING_DELTA, SSE_STATUS, status_event
@@ -600,79 +605,25 @@ class Planner:
             pending_injector=context.pending_injector,
         )
 
-        # B0/F3：FC 轨闸机文案并入结果 warnings（文本轨由 agent_loop 直接写入），
-        # 前端据此渲染常驻警告行 +「本次放行」按钮（§2.4 拦截可见，双轨对齐）
-        if fc_warnings_collector:
-            seen = set(loop_result.warnings)
-            for w in fc_warnings_collector:
-                if w and w not in seen:
-                    loop_result.warnings.append(w)
-                    seen.add(w)
-
-        # 总结强制入正文（文本轨，1111/Q1；814R4 接线）：本次请求执行过
-        # script_analyze 且停在暂停时，一句话总结不得丢失（判重由函数内置）
-        if loop_result.confirmation and "script_analyze" in getattr(executor, "skill_stages_done", set()):
-            _ana_summary = str(
-                ((self.state_manager.state_dict or {}).get("analysis") or {}).get("summary") or ""
-            ).strip()
-            if _ana_summary:
-                _tr = [{"name": "script_analyze", "ok": True, "data": {"summary": _ana_summary}}]
-                loop_result.confirmation = _prepend_script_summary(loop_result.confirmation, _tr)
-                if loop_result.text:
-                    loop_result.text = _prepend_script_summary(loop_result.text, _tr)
-
-        # 纯工具轮无总结文字时，用实际操作清单替换无信息量的占位文案：
-        # 占位文案进入历史后模型看不出上一轮做了什么（读文档/写文档/请求确认），
-        # 用户下一条「确认」进来就会失去参照、从头重复同一套操作
-        # 粗粒度聚合（Rule: 阶段反馈不逐卡罗列）：延迟导入 web 层描述工具（同 executor_factory 回落模式）
+        # 轮末组装委托 planner_output（八轮 B2 切出）：warnings 并入/总结强入/
+        # 占位替换/双轨收集器去重/原料提醒卡覆盖/响应构造，行为不变。
+        # web 层聚合工具延迟导入（同 executor_factory 回落模式；patch 目标=本命名空间）
         from src.video_agent.web.action_descriptions import aggregate_action_log
-        if loop_result.applied_actions and (
-            not loop_result.text.strip() or "模型未输出总结文字" in loop_result.text
-        ):
-            merged_log = aggregate_action_log(action_log_collector + executor.action_log)
-            if merged_log:
-                loop_result.text = (
-                    f"已执行 {loop_result.applied_actions} 个操作：" + "；".join(merged_log[:12])
-                )
-
-        # 转换为 PlannerResponse（chat_inserts：FC 路径收集 + 文本解析路径 executor 收集，按 URL 去重）
-        merged_inserts: List[Dict[str, Any]] = []
-        seen_urls = set()
-        for it in (chat_inserts_collector + executor.chat_inserts):
-            u = it.get("url")
-            if u and u not in seen_urls:
-                seen_urls.add(u)
-                merged_inserts.append(it)
-        # 文档卡片：文本轨 executor.documents_written + FC 轨 docs_written_collector，去重保序
-        merged_docs: List[str] = []
-        seen_docs = set()
-        for dn in (executor.documents_written + docs_written_collector):
-            if dn and dn not in seen_docs:
-                seen_docs.add(dn)
-                merged_docs.append(dn)
-        # B2/F18：文档卡片（docCard）已即时可见并随消息持久化，正文不再重复
-        # 补「本轮已写入文档」交代（814G6 的「用户可见」由 docCard 满足，避免同屏双显）
-        # 814H9 反复提醒：原料缺失且未豁免时，轮末强制下发提醒卡
-        # （优先级高于模型自拟暂停/规格向导卡——原料关先于规格关）
-        if self._script_pending_card:
-            _sc_msg, _sc_opts = self._script_pending_card
-            loop_result.confirmation = _sc_msg
-            loop_result.confirmation_options = _sc_opts
-        response = PlannerResponse(
-            text=loop_result.text,
-            applied_actions=loop_result.applied_actions,
-            steps=loop_result.steps,
-            warnings=loop_result.warnings,
-            confirmation=loop_result.confirmation,
-            documents_written=merged_docs,
-            image_urls=image_urls_collector,
-            chat_inserts=merged_inserts,
-            # 阶段完成卡片粗粒度展示：连续同类操作合并（如「新建关键元素分组 ×3」），
-            # 不逐张卡片罗列；随消息持久化与 done payload 一并下发
-            action_log=aggregate_action_log(action_log_collector + executor.action_log),
-            confirmation_options=loop_result.confirmation_options or confirmation_options_collector,
-            trace=loop_result.trace,
-            suggested_actions=loop_result.suggested_actions,
+        response = assemble_response(
+            loop_result,
+            executor=executor,
+            response_factory=PlannerResponse,
+            fc_warnings_collector=fc_warnings_collector,
+            action_log_collector=action_log_collector,
+            chat_inserts_collector=chat_inserts_collector,
+            docs_written_collector=docs_written_collector,
+            image_urls_collector=image_urls_collector,
+            confirmation_options_collector=confirmation_options_collector,
+            analysis_summary=str(
+                ((self.state_manager.state_dict or {}).get("analysis") or {}).get("summary") or ""
+            ).strip(),
+            script_pending_card=self._script_pending_card,
+            aggregate_action_log=aggregate_action_log,
         )
 
         # 记忆系统：后台异步记录本轮对话（不阻塞响应流），按项目隔离
@@ -975,24 +926,5 @@ class Planner:
         )
 
 
-def _prepend_script_summary(visible: str, tool_results) -> str:
-    """总结强制入正文（Q1：script_analyze 与暂停同批时一句话总结不得丢失）。
-
-    若本轮 script_analyze 成功产出 summary 且正文尚未包含它，就在正文最前
-    拼一段「剧本一句话总结」；已包含或无可信结果时原样返回。
-    """
-    summary = ""
-    for tr in tool_results or []:
-        if not isinstance(tr, dict):
-            continue
-        if str(tr.get("name") or "") == "script_analyze" and tr.get("ok"):
-            s = str((tr.get("data") or {}).get("summary") or "").strip()
-            if s:
-                summary = s
-                break
-    if not summary:
-        return str(visible or "")
-    norm = lambda s: str(s or "").replace("“", "").replace("”", "").replace("'", "").replace('"', "")
-    if norm(summary) in norm(visible):
-        return str(visible or "")
-    return f"**剧本一句话总结**：{summary}\n\n{visible}"
+# _prepend_script_summary 定义源 = core/planner_output.py（八轮 B2 切出）；
+# 本文件顶部以别名保留 re-export 壳，既有引用/测试路径不变。
