@@ -201,7 +201,12 @@ def _norm_name(s: str) -> str:
 
 
 def resolve_entry(wanted: str) -> Optional[SkillEntry]:
-    """按 Skill 名称/别名模糊定位注册条目（精确 → 归一化相等 → 双向包含）。"""
+    """按 Skill 名称/别名模糊定位注册条目（精确 → 归一化相等 → 双向包含）。
+
+    五轮 S6/#7：包含匹配收紧为**唯一命中才返回**——近似名 Skill 并存时
+    （如「古风甜宠短剧」vs「古风短剧」）多命中记 warning 并返回 None，
+    宁可要求选准也不静默错配。
+    """
     _ensure_synced()
     wanted = (wanted or "").strip()
     if not wanted:
@@ -215,11 +220,20 @@ def resolve_entry(wanted: str) -> Optional[SkillEntry]:
         if _norm_name(e.name) == wn or _norm_name(e.slug) == wn:
             return e
     if len(wn) >= 2:
+        hits: List[SkillEntry] = []
         for e in entries:
             for n in (e.name, e.slug):
                 nn = _norm_name(n)
                 if nn and len(nn) >= 2 and (wn in nn or nn in wn):
-                    return e
+                    hits.append(e)
+                    break
+        if len(hits) == 1:
+            return hits[0]
+        if len(hits) > 1:
+            logger.warning(
+                f"[SkillRuntime] resolve_entry({wanted!r}) 模糊匹配多命中"
+                f"（{[e.name for e in hits]}），拒绝错配返回 None，请精确选择 Skill"
+            )
     return None
 
 

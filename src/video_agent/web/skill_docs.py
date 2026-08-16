@@ -153,10 +153,31 @@ def split_skill_sections(content: str) -> Dict[str, str]:
     # 2) Markdown 标题兜底
     parts = re.split(r"(?m)^(#{1,4}[^\n]*)$", content)
     stage_now = ""
+    # 五轮 S6/#6：静默沿用告警——连续 ≥3 节未命中关键字而沿用上一阶段时，
+    # 说明该 Skill 的标题体系可能整体未映射（章节会被静默归错阶段），
+    # 记 warning + 降级遥测供排查（不阻断解析）
+    _inherit_run = 0
+    _inherit_warned = False
     for i in range(1, len(parts), 2):
         heading = parts[i].lstrip("#").strip()
         body = parts[i + 1] if i + 1 < len(parts) else ""
-        stage_now = _stage_from_heading(heading) or stage_now
+        mapped = _stage_from_heading(heading)
+        if mapped:
+            stage_now = mapped
+            _inherit_run = 0
+        elif stage_now:
+            _inherit_run += 1
+            if _inherit_run >= 3 and not _inherit_warned:
+                _inherit_warned = True
+                logger.warning(
+                    f"[SkillDocs] 标题式章节解析连续 {_inherit_run} 节未命中阶段关键字"
+                    f"（沿用「{stage_now}」），章节可能归错阶段：请核查该 Skill 的标题体系"
+                )
+                try:
+                    from src.video_agent.core import live_metrics
+                    live_metrics.record_degradation("skill_docs.heading_fallback")
+                except Exception:
+                    pass
         _add(stage_now, body)
     return {k: "\n\n".join(v) for k, v in collected.items()}
 
