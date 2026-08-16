@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 // 直接测试 chatActions 的状态转换逻辑（不依赖 DOM）
 // 由于 solid-js store 在 node 环境可用，直接 import
 import { chatState, chatActions } from '../chat';
+import { t } from '@/lib/locale';
 
 describe('chatActions 流式状态机', () => {
   beforeEach(() => {
@@ -47,6 +48,16 @@ describe('chatActions 流式状态机', () => {
     expect(chatState.messages[0].text).toBe('最终回复');
     expect(chatState.messages[0].meta).toContain('1.5s');
     expect(chatState.messages[0].meta).toContain('2 轮');
+  });
+
+  it('finishStream meta 走 locale 字典（五轮 S1/#1 i18n 残留清偿）', () => {
+    // 键存在于字典：t() 返回文案而非 key 本身（缺失时 t 回退 key，可检出）
+    expect(t('rp.msg.metaTime', { s: '1.0' })).toBe('耗时 1.0s');
+    expect(t('rp.msg.metaRounds', { n: 3 })).toBe('3 轮');
+    expect(t('rp.msg.metaUpdated', { n: 2 })).toBe('更新 2 项');
+    chatActions.startStream();
+    chatActions.finishStream({ text: 'ok', elapsed_ms: 2000, steps: 3, applied_actions: 2 });
+    expect(chatState.messages[0].meta).toBe('耗时 2.0s · 3 轮 · 更新 2 项');
   });
 
   it('streamError 写入错误消息并清除流式状态', () => {

@@ -702,21 +702,32 @@ class Planner:
         async def on_event(event: Dict[str, Any]) -> None:
             etype = event.get("type", "")
             if etype == "step_started":
+                # 五轮 S1/#1：队列级 status 走 status_event key+params（i18n 残留清偿，
+                # 同四轮 R3/#5 模式）；payload 携带完整 status 事件，chat_service 透传
                 step = event.get("step", 1)
-                await queue.put(PlannerEvent(
-                    type="status",
-                    text=(f"第 {step} 轮推理中…（执行上轮操作后继续规划）" if step > 1
-                          else "正在推理…（模型正在阅读状态并规划操作）"),
-                ))
+                max_steps = event.get("max_steps", MAX_STEPS)
+                if step > 1:
+                    sev = status_event(
+                        "agent.roundStart",
+                        f"第 {step} 轮推理中…（执行上轮操作后继续规划）",
+                        {"step": step, "max": max_steps},
+                    )
+                else:
+                    sev = status_event(
+                        "agent.planning", "正在推理…（模型正在读状态并规划操作）", {},
+                    )
+                await queue.put(PlannerEvent(type="status", text=sev["text"], payload=sev))
             elif etype == "actions_applied":
                 count = event.get("count", 0)
+                sev = status_event("agent.actionsApplied", f"已应用 {count} 个操作", {"count": count})
                 # payload 携带 count：web 层据此下发最新状态快照，前端逐步刷新故事板
                 await queue.put(PlannerEvent(
-                    type="actions_applied", text=f"已应用 {count} 个操作",
-                    payload={"count": count},
+                    type="actions_applied", text=sev["text"],
+                    payload={"count": count, "status_event": sev},
                 ))
             elif etype == "executing_actions":
-                await queue.put(PlannerEvent(type="status", text="正在执行操作…"))
+                sev = status_event("agent.executing", "正在执行操作…", {})
+                await queue.put(PlannerEvent(type="status", text=sev["text"], payload=sev))
             elif etype in ("reasoning_delta", "tool_started", "tool_finished", "guidance_injected", "doc_written"):
                 # 过程时间线事件穿透（前端渲染深度思考/工具条目）
                 await queue.put(PlannerEvent(type=etype, text=event.get("text", ""), payload=event))

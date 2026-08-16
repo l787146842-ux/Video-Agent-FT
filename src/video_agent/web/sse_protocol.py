@@ -47,8 +47,9 @@ class SseEventSpec:
 SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
     SseEventSpec(
         SSE_STATUS,
-        ("core/agent_loop.py", "core/round_end_policies.py", "web/chat_service.py"),
-        "direct", "status", "初始协议；四轮 R3 key+params i18n 化",
+        ("core/agent_loop.py", "core/round_end_policies.py", "core/planner.py",
+         "web/chat_service.py"),
+        "direct", "status", "初始协议；四轮 R3 key+params i18n 化；五轮 S1 planner 队列级 status 收编",
     ),
     SseEventSpec(
         SSE_DELTA, ("web/chat_service.py",),

@@ -416,12 +416,15 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         try:
             async for event in planner.handle_message_stream(llm_user_content, planner_ctx):
                 if event.type == "status":
-                    await emit({"type": SSE_STATUS, "text": event.text})
+                    # 五轮 S1/#1：payload 携带完整 status_event（key+params）时原样透传，
+                    # 前端按 locale 翻译；无 payload 回落纯 text（动态自由文本路径）
+                    await emit(event.payload or {"type": SSE_STATUS, "text": event.text})
                 elif event.type == "delta":
                     await emit({"type": SSE_DELTA, "text": event.text})
                 elif event.type == "actions_applied":
                     applied_seen = True
-                    await emit({"type": SSE_STATUS, "text": event.text})
+                    _ap = event.payload or {}
+                    await emit(_ap.get("status_event") or {"type": SSE_STATUS, "text": event.text})
                     # 逐步可见：每批操作落盘后立即下发最新状态快照，
                     # 前端不必等全部完成，推理中就能看到新建的分组/提示词
                     if use_studio_context:

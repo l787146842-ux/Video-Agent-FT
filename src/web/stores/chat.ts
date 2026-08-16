@@ -143,9 +143,10 @@ export const chatActions = {
   /** 流式完成：将结果写入消息列表 */
   finishStream(payload: SseDonePayload) {
     const elapsed = ((payload.elapsed_ms || 0) / 1000).toFixed(1);
-    const metaParts = [`耗时 ${elapsed}s`];
-    if (payload.steps > 1) metaParts.push(`${payload.steps} 轮`);
-    if (payload.applied_actions > 0) metaParts.push(`更新 ${payload.applied_actions} 项`);
+    // 五轮 S1/#1：meta 行走 locale（原硬编码中文，i18n 残留清偿）
+    const metaParts = [t('rp.msg.metaTime', { s: elapsed })];
+    if (payload.steps > 1) metaParts.push(t('rp.msg.metaRounds', { n: payload.steps }));
+    if (payload.applied_actions > 0) metaParts.push(t('rp.msg.metaUpdated', { n: payload.applied_actions }));
 
     // 深度思考耗时角标（B2/F20：末条 reasoning - 首条 reasoning；无思考时 0）
     const startMs = chatState.streamingReasoningStartMs;
