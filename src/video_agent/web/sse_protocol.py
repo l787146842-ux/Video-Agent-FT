@@ -69,7 +69,9 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
     ),
     SseEventSpec(
         SSE_DOC_WRITTEN, ("core/agent_loop.py", "core/fc_tool_runner.py"),
-        "passthrough", "doc_written", "3333/6666 事故（四段链补齐）",
+        "passthrough", "doc_written",
+        "3333/6666 事故（四段链补齐）；六轮 S5：透传段改 chat_service 专属分支"
+        "并打戳本轮 turn_id（_stamp_doc_written），链测试识别该形态",
     ),
     SseEventSpec(
         SSE_MODEL_FALLBACK, ("web/chat_service.py",),
