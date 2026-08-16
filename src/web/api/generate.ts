@@ -5,39 +5,38 @@
  */
 import { apiPost, apiFetch } from './client';
 import type { TaskResult } from '@/types';
+import type {
+  BatchImageGenRequest, GenLogRequest, ImageGenRequest, VideoGenRequest,
+} from '@/types/api.generated';
 
-// ===== 请求体 =====
+// ===== 请求体（七轮 S2/F1：以生成物为唯一来源；必填收窄与精化字段用交集登记） =====
 
-export interface GenerateImageRequest {
-  prompt: string;
+export type GenerateImageRequest = ImageGenRequest & {
   provider_id: string;
   model: string;
   size: string;
   aspect_ratio: string;
-  /** 分辨率档位（1K/2K/4K）：CLI 类供应商无 size 参数，靠提示词感知 */
-  resolution?: string;
+  /** 生成物此处为 Record 粗型，精化为强类型（豁免清单登记） */
   reference_images?: Array<{ url: string; role: string }>;
   draft_id: string;
   draft_type: string;
-}
+};
 
-export interface GenerateVideoRequest {
-  prompt: string;
+export type GenerateVideoRequest = VideoGenRequest & {
   provider_id: string;
   model: string;
   duration: number;
   resolution: string;
   aspect_ratio: string;
+  /** 生成物此处为 Record 粗型，精化为强类型（豁免清单登记） */
   images?: Array<{ url: string; role: string }>;
   /** 视频参考素材（C3：Seedance 2.5 支持 ≤10 段视频参考） */
   videos?: Array<{ url: string; role?: string }>;
   /** 音色参考音频（Seedance MultiModalToVideo 参考项） */
   audios?: Array<{ url: string; role?: string }>;
-  enhance_prompt?: boolean;
-  multimodal?: boolean;
   draft_id: string;
   draft_type: string;
-}
+};
 
 export interface ImageTaskResponse {
   task_id?: string;
@@ -89,14 +88,8 @@ export function getActiveGenTasks() {
 
 // ===== 批量生成 =====
 
-export interface BatchImageRequest {
-  /** "all_keyElements" / "all_shots" / 逗号分隔的 draft_id */
-  target: string;
-  provider_id: string;
-  model: string;
-  size: string;
-  aspect_ratio: string;
-}
+/** 生成物字段全可选，前端语义全必填 → Required 收窄（七轮 S2/F1） */
+export type BatchImageRequest = Required<BatchImageGenRequest>;
 
 export interface BatchImageResponse {
   count?: number;
@@ -186,7 +179,7 @@ export function getGenerationLogs(limit = 100) {
 }
 
 /** 前端补录生成日志（如音频规划等未走后端任务通道的生成行为） */
-export function addGenerationLog(body: Partial<GenerationLogEntry> & { media_type: string; status: string }) {
+export function addGenerationLog(body: GenLogRequest) {
   return apiPost<{ ok: boolean }>('/api/generation-logs', body);
 }
 

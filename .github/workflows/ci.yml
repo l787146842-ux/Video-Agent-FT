@@ -32,6 +32,8 @@ jobs:
         run: python scripts/check_file_lines.py
       - name: Func-import gate (四轮 R0：方法内 import 防新增，宪法第六章)
         run: python scripts/check_func_imports.py
+      - name: Governance refs gate (七轮 S3/F3：治理叙事标记预算棘轮，宪法 §9 兜底)
+        run: python scripts/check_governance_refs.py
       - name: API contract check (OpenAPI -> TS types)
         run: python scripts/gen_api_types.py --check
 

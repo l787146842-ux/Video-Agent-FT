@@ -3,18 +3,32 @@
  * FTDYB 全局类型定义
  * 精确匹配后端 API 数据模型（从旧 studio/types.ts 迁移 + 规范化）
  *
- * 契约来源纪律（六轮 S2 路线 a，D1 用户终裁）：
+ * 契约来源纪律（六轮 S2 路线 a，D1 用户终裁；七轮 S2/F1 消费面补齐）：
  * API 边界请求/响应类型以 api.generated.ts（FastAPI OpenAPI schema 生成）为唯一来源，
  * 本文件只保留别名 re-export 与视图态类型；tsc 编译期即契约门禁。
- * 豁免清单（后端未建模为 Pydantic、OpenAPI 无对应 schema，留手写并在此登记）：
+ * 消费覆盖防回退由 vitest 桥接测试 api-contract.test.ts 机械断言（只升不降）。
+ *
+ * 豁免清单（后端未建模为 Pydantic、OpenAPI 无对应 schema，或手写显著更精，留手写并登记）：
  * - SSE 事件族（SseStatusEvent/SseDonePayload 等）：SSE 流式载荷，后端 dict 直发；
  * - TaskResult / AgentTaskReplayPayload：任务式传输载荷，同上；
  * - ServerStateSnapshot / ChatMessage / Draft 等视图态：前端渲染形态，非 API 模型；
  * - 手写响应类型比生成物更精确的站点（生成物对 Dict 响应只能给出
  *   Record<string, unknown>）：ProjectListResponse/ProvidersResponse/
  *   UndoStatusResponse/OkWithStateResponse（api/project.ts、api/providers.ts）、
+ *   ChatResponse/OkResponse/TestConnectionResponse/FetchModelsResponse、
+ *   ConversationsPayload（api/conversations.ts）、画布读取结果族
+ *   CanvasDropImageResult/CanvasNodeImagesResult/AllCanvasImagesResult（api/canvas.ts）、
+ *   GenerationLogEntry（api/generate.ts 读形态）、MemoryRecordView（api/memory.ts）、
+ *   SkillDoc/SkillDocVersion（api/docs.ts）、RuntimeSettings（api/agent.ts 读形态）、
  *   整板保存 payload（stores/studio/storyboard.ts，后端 ProjectStateUpdate 为粗粒度
  *   unknown 字段）——保留手写强类型，后端建模精细化后再迁。
+ * - 生成物消费基座站点（生成物为类型来源，手写只做收窄/精化，七轮 S2/F1 登记）：
+ *   GenerateImageRequest/GenerateVideoRequest（交集精化，api/generate.ts）、
+ *   BatchImageRequest（Required 收窄必填）、CanvasDropImagePayload（交集精化，api/canvas.ts）。
+ * - 前端无消费路径的生成物（后端端点专用/前端走通用端点）：ModelFallbackPatch
+ *   （前端开关走通用 runtime PUT）、TimelinePushRequest（B9b 时间线回画布走 Agent
+ *   工具路径）、Body_upload_files_api_ai_upload_post（multipart 上传）、
+ *   DraftCreate/DraftPatch/GroupPatch（草稿操作走整板保存通道）、ProjectStateResponse（空 schema）。
  */
 import type { ChatRequest } from './api.generated';
 

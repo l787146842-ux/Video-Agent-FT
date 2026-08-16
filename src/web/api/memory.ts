@@ -3,6 +3,7 @@
  * 对齐后端 routes/memory.py 契约
  */
 import { apiFetch, apiDelete, apiPost } from './client';
+import type { PinBody } from '@/types/api.generated';
 
 export interface MemoryRecordView {
   id: string;
@@ -32,5 +33,6 @@ export function deleteMemory(id: string): Promise<{ ok: boolean }> {
 
 /** 置顶/取消置顶（M4） */
 export function pinMemory(id: string, pinned: boolean): Promise<{ ok: boolean }> {
-  return apiPost<{ ok: boolean }>(`/api/memory/${encodeURIComponent(id)}/pin`, { pinned });
+  const body: PinBody = { pinned };
+  return apiPost<{ ok: boolean }>(`/api/memory/${encodeURIComponent(id)}/pin`, body);
 }

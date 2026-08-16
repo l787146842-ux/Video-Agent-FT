@@ -4,6 +4,9 @@
 # HTTP mock（Adapter 单元测试）
 respx==0.22.0
 
+# 测试超时护栏（七轮 S4/F5：防慢测试/死循环拖垮套件；宽松值配 pytest.ini timeout）
+pytest-timeout>=2.3.1
+
 # 代码质量（未来 CI 可用）
 # ruff==0.12.1
 # mypy==1.16.0

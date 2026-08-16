@@ -97,3 +97,47 @@ export function newProvider(id: string): EditableProvider {
     api_key: '', has_key: false,
   };
 }
+
+/** CLI 安装状态表（平台 key → 检测结果） */
+export type CliStatusMap = Record<string, { installed: boolean; message: string }>;
+
+/**
+ * SettingsView 子组件共享 API（七轮 S1/T23 切分设立）：
+ * 状态全部留在父组件，子组件经此对象消费 accessor 与动作——
+ * 单一 prop 传入，避免 20+ 个离散 props 钻透。
+ */
+export interface SettingsApi {
+  current: () => EditableProvider | undefined;
+  providers: () => EditableProvider[];
+  sel: () => number;
+  proto: () => string;
+  isCli: () => boolean;
+  imageMode: () => string;
+  keyInput: () => string;
+  setKeyInput: (v: string) => void;
+  rhCoin: () => string;
+  setRhCoin: (v: string) => void;
+  rhWallet: () => string;
+  setRhWallet: (v: string) => void;
+  verifyResult: () => { ok: boolean; text: string } | null;
+  cliStatus: () => CliStatusMap;
+  patch: (field: string, value: unknown) => void;
+  saveAll: (overrides?: Record<string, unknown>) => Promise<boolean>;
+  switchSel: (i: number) => void;
+  addProvider: () => void;
+  selectOrAddCli: (protocol: string, label: string) => void;
+  removeCurrent: () => void;
+  commitKey: () => void;
+  clearKey: () => void;
+  verifyAddress: () => void;
+  verifyProtocol: () => void;
+  patchModel: (kind: ModelKind, idx: number, value: string) => void;
+  removeModel: (kind: ModelKind, idx: number) => void;
+  addModel: (kind: ModelKind) => void;
+  fetchModels: () => void;
+  jimengLogin: () => void;
+  jimengCredit: () => void;
+  jimengLogout: () => void;
+  refreshCliStatus: (key: string, statusPath: string) => Promise<boolean>;
+  cliHelp: (title: string, helpPath: string) => void;
+}

@@ -3,6 +3,7 @@
  * 对齐后端 routes/plugins.py 契约
  */
 import { apiFetch, apiPut, apiPost, apiDelete } from './client';
+import type { SkillDocSave, SkillFormatRequest } from '@/types/api.generated';
 
 export interface SkillDoc {
   slug: string;
@@ -32,15 +33,17 @@ export async function getSkillDocs(): Promise<SkillDoc[]> {
 
 /** 保存 Skill 文档（新建或覆盖） */
 export function saveSkillDoc(slug: string, content: string) {
+  const body: SkillDocSave = { content };
   return apiPut<{ ok: boolean; doc: SkillDoc; lint?: { warnings?: string[] } }>(
     `/api/skills/docs/${encodeURIComponent(slug)}`,
-    { content },
+    body,
   );
 }
 
 /** 用 LLM 将任意文本整理为标准 Skill markdown 格式 */
 export function formatSkillContent(content: string): Promise<{ content: string }> {
-  return apiPost<{ content: string }>('/api/skills/format', { content });
+  const body: SkillFormatRequest = { content };
+  return apiPost<{ content: string }>('/api/skills/format', body);
 }
 
 /** 删除 Skill 文档 */

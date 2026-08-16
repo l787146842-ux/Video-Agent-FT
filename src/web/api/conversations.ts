@@ -5,6 +5,7 @@
  */
 import { apiFetch, apiPost, apiDelete } from './client';
 import type { Conversation } from '@/types';
+import type { BranchRequest, CreateConversationRequest } from '@/types/api.generated';
 
 export interface ConversationsPayload {
   conversations: Conversation[];
@@ -18,7 +19,8 @@ export function getConversations(): Promise<ConversationsPayload> {
 
 /** 新建对话并设为活跃 */
 export function createConversation(title = ''): Promise<ConversationsPayload> {
-  return apiPost<ConversationsPayload>('/api/conversations', { title });
+  const body: CreateConversationRequest = { title };
+  return apiPost<ConversationsPayload>('/api/conversations', body);
 }
 
 /** 切换活跃对话 */
@@ -38,7 +40,8 @@ export function createSnapshot(): Promise<{ snap_id: string; title: string }> {
 
 /** B11：从快照派生分支对话（新对话装载快照消息并设为活跃） */
 export function branchSnapshot(snapId: string, title = ''): Promise<ConversationsPayload> {
+  const body: BranchRequest = { title };
   return apiPost<ConversationsPayload>(
-    `/api/conversations/snapshots/${encodeURIComponent(snapId)}/branch`, { title },
+    `/api/conversations/snapshots/${encodeURIComponent(snapId)}/branch`, body,
   );
 }

@@ -4,6 +4,7 @@
  * hooks/use-sse.ts 只负责事件分发与状态管理。
  */
 import type { AgentChatRequest } from '@/types';
+import type { GuidanceItem } from '@/types/api.generated';
 import { apiFetch, apiPost } from './client';
 
 export interface SseStreamHandle {
@@ -62,8 +63,9 @@ export function stopAgentTask(taskId: string) {
 
 /** B0/F2：把排队消息登记到运行中任务，供后端轮间注入（任务已结束则后端拒绝）。 */
 export function postAgentTaskGuidance(taskId: string, id: string, text: string) {
+  const body: GuidanceItem = { id, text };
   return apiPost<{ ok: boolean }>(
     `/api/agent/tasks/${encodeURIComponent(taskId)}/guidance`,
-    { id, text },
+    body,
   );
 }

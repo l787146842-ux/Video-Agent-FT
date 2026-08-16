@@ -2,6 +2,13 @@
  * 画布交互 API（对话栏图片拖入画布 + @ 菜单读取画布节点图片）
  */
 import { apiPost, apiFetch } from './client';
+import type { CanvasDropImageRequest, DropPoint, ViewSize } from '@/types/api.generated';
+
+/** 生成物 drop/view 为 unknown 粗型，精化为坐标/尺寸强类型（豁免清单登记；七轮 S2/F1） */
+export type CanvasDropImagePayload = CanvasDropImageRequest & {
+  drop?: DropPoint;
+  view?: ViewSize;
+};
 
 export interface CanvasDropImageResult {
   node_id: string;
@@ -25,13 +32,7 @@ export interface CanvasNodeImagesResult {
 }
 
 /** 把一张图片写入指定画布（或当前活跃画布），根据画布类型创建对应节点 */
-export function dropImageToCanvas(payload: {
-  url: string;
-  name?: string;
-  canvas_id?: string;
-  drop?: { x: number; y: number };
-  view?: { width: number; height: number };
-}): Promise<CanvasDropImageResult> {
+export function dropImageToCanvas(payload: CanvasDropImagePayload): Promise<CanvasDropImageResult> {
   return apiPost<CanvasDropImageResult>('/api/canvas/drop-image', payload);
 }
 

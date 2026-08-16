@@ -231,7 +231,8 @@ python scripts/acceptance.py --with-eval # 终验：追加评测管线
 单组件命令（acceptance 内部同构，调试用）：`python -m pytest tests/ -q` / `npx vitest run` /
 `npx tsc --noEmit` / `npx eslint src/web/` / `python scripts/gen_api_types.py --check` /
 `python scripts/check_prompt_budget.py`（宪法 §13.6）/ `python scripts/check_file_lines.py`
-（单文件 1200 行红线，§5/F58）/ `python scripts/check_func_imports.py`（方法内 import 防新增）
+（单文件 1200 行红线，§5/F58）/ `python scripts/check_func_imports.py`（方法内 import 防新增）/
+`python scripts/check_governance_refs.py`（治理叙事标记预算棘轮，七轮 S3/F3，§9 兜底）
 
 ---
 
@@ -296,6 +297,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 - [ ] 没有硬编码路径/数字/状态 Key；没有方法内 import；没有同名类覆盖
 - [ ] 没有 `datetime.utcnow()` / `time.sleep()` / `print()`
 - [ ] 验收一键全绿：`python scripts/acceptance.py` exit 0（六轮 N4d 勘误：原「四件套 + gen_api_types --check 全绿」的人眼判定已被乱码欺骗过一次，**只认脚本退出码**）
+- [ ] 治理叙事标记未新增（check_governance_refs 预算棘轮；新注释只写结论，事故叙事归台账，§9）
 - [ ] 修改前已按第十三章 10.5 决策树定位归属层；没有在事故现场就近补条款（P1/P2）
 - [ ] 没有在 Skill 文件里改系统层缺口；没有用 prose 教模型配合既有机制（G1/G3）
 
@@ -436,9 +438,10 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | pause_rules 解析落点（三轮 B3/N7） | `skill_runtime.registry.parse_pause_rules` 为定义源；web/skill_docs 顶层 re-export 保留兼容导入；guard 顶层消费（方法内 import 清零） |
 | button 基线重置（三轮 B2/U3） | tokens.css `@layer base` 的 `button{...}` 重置为根因唯一落点（Tailwind 摘除后 preflight 替代）；新增按钮类不得依赖 UA 默认背景/边框 |
 | acceptance.py 组件清单（六轮 S3） | 新增/修改验收组件（四件套或门禁脚本改名/新增）必须同步 `scripts/acceptance.py` 的 GATES/SUITES/EVAL 表；CI Job 与本地脚本组件保持同构 |
+| 治理叙事门禁（七轮 S3/F3） | 消费点：scripts/acceptance.py GATES 表 + .github/workflows/ci.yml Job1；预算 BUDGET 在 `scripts/check_governance_refs.py` 内棘轮下调（存量清偿后随降，禁止上调）；新注释叙事约束见 §9 事故注释约定 |
 | LOG_FILE_ENABLED 日志开关（六轮 S4） | 消费点：config.settings.log_file_enabled → app.py 文件 sink 装配；注入点：tests/conftest.py 顶层 setdefault false + scripts/acceptance.py 子进程 env；启动服务.bat 杀旧进程防多进程争用（§5.4 机制化） |
 | doc_written turn_id 打戳（六轮 S5） | chat_service._stamp_doc_written 透传层打戳（发射端无 turn_id 概念）→ 前端 use-sse 携带 → chat.docWritten(name, turnId) 落消息；改打戳位置须同测 groupTurns 严格归组用例 |
-| 前端契约消费（六轮 S2 路线 a） | api.generated.ts 为前端 API 边界类型唯一来源；豁免清单在 types/index.ts 文件头登记；后端路由模型改名/删字段 → 重生成 → tsc 编译期报前端消费点；生成物 eslint max-lines 豁免 |
+| 前端契约消费（六轮 S2 路线 a；七轮 S2/F1 消费面补齐） | api.generated.ts 为前端 API 边界类型唯一来源；豁免/交集精化清单在 types/index.ts 文件头登记；后端路由模型改名/删字段 → 重生成 → tsc 编译期报前端消费点；生成物 eslint max-lines 豁免；**消费覆盖防回退由 vitest 桥接测试 api-contract.test.ts 机械断言（schema 无消费方且未豁免即红）** |
 
 ### 13.8 事故台账（已归档 → `docs/archive/incident-ledger.md`）
 
@@ -456,7 +459,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 
 ### 13.10 存量债务清单（清一条删一条）
 
-已清偿（保留记录供审计）：D1 system.md 内嵌铁律（已归位）、D2 铁律未全文注入（已注入）、D3 runtime 块 5 条款重复（已压至 3 条）、D4 全链路严禁偏多（四轮实测模型可见严禁 1 处/预算 8，check_prompt_budget 门禁防反弹）、D5 执行器任务词复述章节（已只留目标+锚点）、D6 工具描述带流程暗示（已纯功能化）、D7 system.md 超预算（已达标）、阶段边界 prose（已下沉代码校验）、S1 通用层被单一 Skill 污染（已 skill_manifest 清偿）、F47 轮末注入点收敛（四轮 R1：round_end_policies 策略状态机）、814 批次：双协议/统一闸机/flow_gates/总结接线/compaction 恢复（R1-R4），baseline 归档/skill_runtime 落地/workflows 移除（F3）。**五轮（2026-08-16）**：D8 老项目铁律缺体量条款（归位裁决：粒度裁量归模型+Skill 属 C6 基线，铁律刻意不承载；存量项目铁律已删重建，老新不一致消除）、N1 兼容层台账漂移两处（移除计划按磁盘事实重写）、未登记壳全量清偿（state_service/web/actions/planner 委托壳/models_legacy/别名两枚）、i18n 残留（planner 队列级 status key 化 + chat.ts meta 走 locale）、指令归位迁移（产出形态+质量条款迁铁律模板，skill_discipline 标题客观化）、临界文件拆分（gates_script/exec_split）、文档分层（docs/audit-history）。**六轮（2026-08-16）**：N1 契约门禁形式化（实测 FAIL 被乱码伪装成 PASS + 生成物零消费——ASCII 化输出 + 重生成清偿 + 路线 a 前端全量迁移使 tsc 编译期即契约门禁）、N2 Windows 日志轮转互斥（LOG_FILE_ENABLED 开关 + conftest/acceptance 隔离 + 启动脚本杀旧进程）、N3 治理膨胀之验收一键化（acceptance.py 落地，五轮 M6 核销）、N4a doc_written turn_id 打戳、N4c 建议按钮边界锐化（suggestedTargetIndex 纯函数）。
+已清偿（保留记录供审计）：D1 system.md 内嵌铁律（已归位）、D2 铁律未全文注入（已注入）、D3 runtime 块 5 条款重复（已压至 3 条）、D4 全链路严禁偏多（四轮实测模型可见严禁 1 处/预算 8，check_prompt_budget 门禁防反弹）、D5 执行器任务词复述章节（已只留目标+锚点）、D6 工具描述带流程暗示（已纯功能化）、D7 system.md 超预算（已达标）、阶段边界 prose（已下沉代码校验）、S1 通用层被单一 Skill 污染（已 skill_manifest 清偿）、F47 轮末注入点收敛（四轮 R1：round_end_policies 策略状态机）、814 批次：双协议/统一闸机/flow_gates/总结接线/compaction 恢复（R1-R4），baseline 归档/skill_runtime 落地/workflows 移除（F3）。**五轮（2026-08-16）**：D8 老项目铁律缺体量条款（归位裁决：粒度裁量归模型+Skill 属 C6 基线，铁律刻意不承载；存量项目铁律已删重建，老新不一致消除）、N1 兼容层台账漂移两处（移除计划按磁盘事实重写）、未登记壳全量清偿（state_service/web/actions/planner 委托壳/models_legacy/别名两枚）、i18n 残留（planner 队列级 status key 化 + chat.ts meta 走 locale）、指令归位迁移（产出形态+质量条款迁铁律模板，skill_discipline 标题客观化）、临界文件拆分（gates_script/exec_split）、文档分层（docs/audit-history）。**六轮（2026-08-16）**：N1 契约门禁形式化（实测 FAIL 被乱码伪装成 PASS + 生成物零消费——ASCII 化输出 + 重生成清偿 + 路线 a 前端全量迁移使 tsc 编译期即契约门禁）、N2 Windows 日志轮转互斥（LOG_FILE_ENABLED 开关 + conftest/acceptance 隔离 + 启动脚本杀旧进程）、N3 治理膨胀之验收一键化（acceptance.py 落地，五轮 M6 核销）、N4a doc_written turn_id 打戳、N4c 建议按钮边界锐化（suggestedTargetIndex 纯函数）。**七轮（2026-08-16）**：F1 契约消费面补齐（生成物消费 2→20+ 站点 + api-contract.test.ts 消费覆盖桥接测试 + 豁免/精化清单登记）、F6 sendGuidance 死代码删除、F3 治理叙事门禁（check_governance_refs.py 预算 752 棘轮 + acceptance/CI 注册）、F2 文书归档（六轮文书入 audit-history，docs 根只剩现行规范）、F5 pytest-timeout 护栏、T23 SettingsView 切分清偿（6 子组件 + use-cli-ops/use-model-fetch 两 hook，max-lines 豁免移除）。
 
 未清偿：
 
@@ -466,7 +469,8 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | T17 | 暂停点自然语言解析上限（四轮 #15）：古风甜宠短剧等正文含「必须暂停」语义但不命中兜底关键词，黄金快照判 false | 层 3 | 如需生效按 S1 在 manifest 声明 pause.stage_pause（改 Skill 需用户裁决）；现行值已由 skill_pause_golden.json 钉死 |
 | T20 | 13.7 耦合表机器可读化缓做（五轮 M6 用户裁决）：sse_protocol 注册表模式已证明可行，推广到其余耦合行待再出断链事故后立项 | — | 缓做登记 |
 | T22 | cancelStream（用户手动停止）部分消息无 turnId（六轮 N4b，D3 裁决登记）：前端停止时后端 turn_id 不存在，groupTurns 相邻兜底已覆盖渲染聚合；强行前端造 id 会引入双 id 源 | — | 触发条件：出现刷新后停止消息错位才立项 |
-| T23 | SettingsView 840 行超 eslint 250 红线（六轮 S2 发现存量超限，五轮 S10 已切 settings-meta 数据域），挂 disable 豁免 | 前端工程 | 按页签再切子组件（ChatMessageItem 同模式，用户目测批） |
+| T24 | planner/fc_tool_runner/exec_tools 逼近 1200 行红线（999/958/804，七轮 F4 观察项）：红线内合法，拆分属独立立项 | 前端/后端工程 | 触发条件：任一文件越 1100 行即立项拆分 |
+| T25 | 前端 max-lines 豁免存量九处（eslint-disable 挂豁免须登记，防失管；T23 清偿后盘点设立）：**待拆分**（用户目测批）：GroupCard/MediaViewer/AssetLibraryModal/GlobalSettingsView/ParamBase/ChatMessageItem；**合理豁免**（结构属性，不拆）：use-sse（事件协调中枢）、storyboard.ts（域聚合）、types/index.ts（契约对照集中）；api.generated.ts 经 eslint.config 配置豁免（生成物随 schema 增长） | 前端工程 | 待拆分六件按 T23 同模式逐件清偿（切子组件+目测批）；合理豁免三件每年审计复核一次 |
 
 ### 13.11 业界基准六模式（C1-C6）
 

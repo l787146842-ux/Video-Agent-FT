@@ -4,6 +4,7 @@
  */
 import { apiPost, apiFetch, apiPut } from './client';
 import type { AgentChatRequest, Skill } from '@/types';
+import type { RuntimeSettingsUpdate } from '@/types/api.generated';
 
 /** 非流式聊天响应 */
 export interface AgentChatResponse {
@@ -67,7 +68,7 @@ export function getRuntimeSettings(): Promise<RuntimeSettings> {
   return apiFetch<RuntimeSettings>('/api/settings/runtime');
 }
 
-export function setRuntimeSettings(body: Partial<RuntimeSettings>): Promise<RuntimeSettings> {
+export function setRuntimeSettings(body: RuntimeSettingsUpdate): Promise<RuntimeSettings> {
   return apiPut<RuntimeSettings>('/api/settings/runtime', body);
 }
 
@@ -100,7 +101,5 @@ export function stopAgentTask(): Promise<{ ok: boolean; cancelled: number }> {
   return apiPost<{ ok: boolean; cancelled: number }>('/api/agent/stop', {});
 }
 
-/** 登记一条任务执行期间的用户引导（7777 三轮：轮间注入，不打断当前操作） */
-export function sendGuidance(id: string, message: string) {
-  return apiPost<{ ok: boolean; project_id: string }>('/api/agent/guidance', { id, message });
-}
+// 七轮 S2/F6：原 sendGuidance（POST /api/agent/guidance）为死代码——后端无该端点
+// （真实链路为 sse.ts::postAgentTaskGuidance → /api/agent/tasks/{id}/guidance），已删除。

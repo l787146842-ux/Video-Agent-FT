@@ -4,6 +4,9 @@
  */
 import { apiFetch, apiPost, apiPut } from './client';
 import type { Project, ServerStateSnapshot, DocRecord } from '@/types';
+import type {
+  DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, SwitchProjectRequest,
+} from '@/types/api.generated';
 
 export interface ProjectListResponse {
   projects: Project[];
@@ -32,29 +35,34 @@ export function getProjectState() {
 }
 
 export function createProject(name: string) {
-  return apiPost<OkWithStateResponse>('/api/project/new', { name });
+  const body: NewProjectRequest = { name };
+  return apiPost<OkWithStateResponse>('/api/project/new', body);
 }
 
 export function switchProject(projectId: string) {
-  return apiPost<OkWithStateResponse>('/api/project/switch', { project_id: projectId });
+  const body: SwitchProjectRequest = { project_id: projectId };
+  return apiPost<OkWithStateResponse>('/api/project/switch', body);
 }
 
 export function deleteProject(projectId: string) {
-  return apiPost<OkWithStateResponse>('/api/project/delete', { project_id: projectId });
+  const body: DeleteProjectRequest = { project_id: projectId };
+  return apiPost<OkWithStateResponse>('/api/project/delete', body);
 }
 
 /** 文档面板编辑保存（upsert 到 state.documents） */
 export function saveProjectDocument(name: string, content: string) {
+  const body: DocumentSave = { name, content };
   return apiPut<{ ok: boolean; documents: DocRecord[] }>(
     '/api/project/document',
-    { name, content },
+    body,
   );
 }
 
 export function deleteProjectDocument(name: string) {
+  const body: DocumentDelete = { name };
   return apiPost<{ ok: boolean; documents: DocRecord[] }>(
     '/api/project/document/delete',
-    { name },
+    body,
   );
 }
 
