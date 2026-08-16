@@ -30,9 +30,16 @@ from src.video_agent.core.sse_events import (
     SSE_TOOL_STARTED,
 )
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state, stage_label_for_tool
 # N7（三轮审核）：pause 声明消费顶层化（guard 依赖图与本文件既有导入重合，无环）
 from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
+# 四轮 R0（N7 漂移清偿）：进度通道绑定顶层化；spec_wizard_active 经模块属性访问
+# （测试 patch 目标=registry 命名空间，顶层 from-import 会冻结绑定导致 patch 失效）
+from src.video_agent.skill_runtime.progress import (
+    bind_progress_emitter,
+    unbind_progress_emitter,
+)
 
 if TYPE_CHECKING:
     # 仅类型标注用：执行器实现依赖 web 层生成管线，运行时不做硬依赖
@@ -191,9 +198,7 @@ async def run_agent_loop(
     def _wizard_active() -> bool:
         """当前 Skill 是否启用规格向导（manifest/正文客观检测，S1 单一事实源）。"""
         try:
-            from src.video_agent.skill_runtime.registry import spec_wizard_active
-
-            return bool(spec_wizard_active(skill))
+            return bool(skill_registry.spec_wizard_active(skill))
         except Exception:
             return False
 
@@ -212,10 +217,6 @@ async def run_agent_loop(
     # 执行器内部批次边界（emit_timeline_note/emit_state_refresh/emit_progress）
     # 经此通道实时推时间线子项与故事板刷新——卡片一张张流式亮，不再结束才一把出现。
     # contextvar 任务级隔离：异常路径随任务消亡，正常路径在循环结束后解绑。
-    from src.video_agent.skill_runtime.progress import (
-        bind_progress_emitter,
-        unbind_progress_emitter,
-    )
     _progress_token = bind_progress_emitter(emit)
 
     for step in range(1, max_steps + 1):

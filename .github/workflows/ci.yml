@@ -30,6 +30,8 @@ jobs:
         run: python scripts/check_prompt_budget.py
       - name: File lines gate (宪法 §5/F58：单文件 1200 行红线)
         run: python scripts/check_file_lines.py
+      - name: Func-import gate (四轮 R0：方法内 import 防新增，宪法第六章)
+        run: python scripts/check_func_imports.py
       - name: API contract check (OpenAPI -> TS types)
         run: python scripts/gen_api_types.py --check
 
