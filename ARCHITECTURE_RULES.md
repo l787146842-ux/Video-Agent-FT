@@ -11,9 +11,11 @@
 > 3. **评测驱动（Evaluation-Driven）**：闸机行为由黄金语料库校准，误杀/漏放计数劣化即测试失败；提示词迁移由快照测试锁语义。
 > 4. **deny-overrides 分层合并**：平台硬边界永远优先，Skill 配置只能加强或持平，不能削弱。
 > 5. **小批交付、即时提交**：每批独立 commit、独立验收；禁止攒大批未提交改动（本仓库已因此丢过整批工作，见 §5）。
-> 6. **验收四件套 + 门禁 + 用户目测**：`pytest` + `vitest` + `tsc --noEmit` + `gen_api_types --check` 全绿，
->    且 `check_prompt_budget` / `check_file_lines` / `check_func_imports` 门禁 PASS；UI 变更必须构建后由
->    **用户目测反馈**确认（2026-08-16 用户裁决：不派浏览器子代理截图目测，可做轻量定点代码级验证），缺一项不算完成。
+> 6. **验收 = 一键脚本 + 用户目测**：`python scripts/acceptance.py` 全 PASS
+>    （六轮 S3：四件套 pytest/vitest/tsc/eslint + 四门禁 contract/prompt_budget/
+>    file_lines/func_imports，**只认进程退出码**——Windows 终端乱码曾把契约门禁
+>    失败伪装成通过，人眼读输出不算验收；`--with-eval` 补评测管线）；
+>    UI 变更必须构建后由 **用户目测反馈**确认（2026-08-16 用户裁决：不派浏览器子代理截图目测，可做轻量定点代码级验证），缺一项不算完成。
 > 7. **第十三章（指令治理层）与本总纲同权**：任何规则只有一个家（P1）、约束下沉代码层（P2）、
 >    状态即数据（P3）；修改前必须按 10.5 决策树定位归属层，禁止在事故现场就近补条款。
 
@@ -122,7 +124,11 @@
 
 ### 3.4 前端工程
 - 唯一前端为 `src/web` SolidJS SPA，构建产物 `static/dist`；启动脚本自动补构建；**禁止**复活旧 studio 页面
-- 前端类型以 `scripts/gen_api_types.py` 生成物为契约，`--check` 纳入每批验收，防前后端契约漂移
+- 前端类型以 `scripts/gen_api_types.py` 生成物为契约，`--check` 纳入每批验收，防前后端契约漂移；
+  **六轮 S2（路线 a，用户裁决）：前端 API 边界类型以 `api.generated.ts` 为唯一来源**
+  （`AgentChatRequest` 等改别名消费生成物，tsc 编译期即契约门禁）；豁免清单登记于
+  `types/index.ts` 文件头（SSE 事件族/任务载荷/视图态/生成物粗于手写处）；
+  生成物豁免 eslint max-lines（行数随 schema 自然增长）
 
 ---
 
@@ -141,7 +147,10 @@
 2. **救火先留现场**：回滚前先把现场 commit 到 archive 分支；**禁止裸 `git restore .` / `git checkout -- .`**（reflog 不留痕的销毁式操作）
 3. **备份切回核对**：从含未跟踪文件的备份分支切回后，必须 `git diff --diff-filter=A -z` 核对并恢复被 git 删除的未跟踪文件
 4. **端口清理**：重启服务前先按 PID 杀净旧进程（`netstat -ano | findstr :8080`），防旧代码假象
-5. **验收四件套 + 门禁**：`python -m pytest tests/ -q` + `npx vitest run` + `npx tsc --noEmit` + `python scripts/gen_api_types.py --check` 全绿，且 `check_prompt_budget.py` / `check_file_lines.py` / `check_func_imports.py` PASS 才可提交；pre-commit 钩子强制执行
+5. **验收 = acceptance.py 全 PASS**（六轮 S3）：`python scripts/acceptance.py` 串联
+pytest/vitest/tsc/eslint + 四门禁（contract/prompt_budget/file_lines/func_imports），
+**只认进程退出码，人眼读终端输出不算验收**（六轮 N1 教训：Windows GBK 乱码把
+「契约不一致」伪装成「一致」）；`--with-eval` 终验补评测管线；pre-commit 钩子强制执行
 6. **分支现状（记录，非强制条款，随合并更新）**：`fix/audit-2026-08` 为当前主线；`backup/pre-repair-0812` 保存整改后端批次，待 UI 稳定后**选择性再合并**；`rescue/deepseek-v2-0806` 为 8/6 快照保护分支；`backup/pre-restore-20260813` 为 8/13 恢复现场冻结分支；`fix/restore-20260813` 为 8/13 恢复执行分支（完成后合并回主线）
 7. **CLI 旧线处置**：workflows 引擎下线为已批准决策，实现体在 backup 分支；落地前新代码**禁止新增依赖**旧线
 
@@ -215,14 +224,14 @@
 - 新增 Tool→单测；新增路由→集成测试（TestClient）；新增 Adapter→mock 测试；改核心（Planner/StateManager/agent_loop/闸机）→回归测试
 - 闸机改动→黄金语料校准测试；提示词迁移→快照测试；双轨改动→双轨一致性测试；新增 SSE 事件→sse_protocol 注册表登记（四轮 R4）
 ```bash
-python -m pytest tests/ -q      # 全量
-npx vitest run                  # 前端
-npx tsc --noEmit                # 类型
-python scripts/gen_api_types.py --check  # 契约
-python scripts/check_prompt_budget.py    # 提示词预算（宪法 §13.6）
-python scripts/check_file_lines.py       # 单文件 1200 行红线（§5/F58）
-python scripts/check_func_imports.py     # 方法内 import 防新增（四轮 R0/N7 勘误）
+python scripts/acceptance.py             # 一键验收（六轮 S3）：四件套+四门禁，只认 exit code
+python scripts/acceptance.py --quick     # 快验：仅四门禁 + tsc
+python scripts/acceptance.py --with-eval # 终验：追加评测管线
 ```
+单组件命令（acceptance 内部同构，调试用）：`python -m pytest tests/ -q` / `npx vitest run` /
+`npx tsc --noEmit` / `npx eslint src/web/` / `python scripts/gen_api_types.py --check` /
+`python scripts/check_prompt_budget.py`（宪法 §13.6）/ `python scripts/check_file_lines.py`
+（单文件 1200 行红线，§5/F58）/ `python scripts/check_func_imports.py`（方法内 import 防新增）
 
 ---
 
@@ -286,7 +295,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 - [ ] 测试不得写生产 data/skills（conftest session 级镜像目录保障；新增 Skill 写入类测试走夹具）
 - [ ] 没有硬编码路径/数字/状态 Key；没有方法内 import；没有同名类覆盖
 - [ ] 没有 `datetime.utcnow()` / `time.sleep()` / `print()`
-- [ ] 验收四件套全绿：pytest + vitest + tsc + gen_api_types --check；门禁 PASS：check_prompt_budget + check_file_lines + check_func_imports
+- [ ] 验收一键全绿：`python scripts/acceptance.py` exit 0（六轮 N4d 勘误：原「四件套 + gen_api_types --check 全绿」的人眼判定已被乱码欺骗过一次，**只认脚本退出码**）
 - [ ] 修改前已按第十三章 10.5 决策树定位归属层；没有在事故现场就近补条款（P1/P2）
 - [ ] 没有在 Skill 文件里改系统层缺口；没有用 prose 教模型配合既有机制（G1/G3）
 
@@ -426,6 +435,10 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 流程门禁单一实现（四轮 R2） | `guard_pipeline.evaluate_flow_gate` 为 skill.flow.checkpoint 唯一判定（check_op+block_reason 组装+审计记录）；两轨只做轨道特化分类（classify_action/classify_fc）与处置（剔除/回喂/mark_blocked/SSE）；双轨一致测试 test_r2_dual_track_flow_gate 钉死（含防镜像回潮源码断言） |
 | pause_rules 解析落点（三轮 B3/N7） | `skill_runtime.registry.parse_pause_rules` 为定义源；web/skill_docs 顶层 re-export 保留兼容导入；guard 顶层消费（方法内 import 清零） |
 | button 基线重置（三轮 B2/U3） | tokens.css `@layer base` 的 `button{...}` 重置为根因唯一落点（Tailwind 摘除后 preflight 替代）；新增按钮类不得依赖 UA 默认背景/边框 |
+| acceptance.py 组件清单（六轮 S3） | 新增/修改验收组件（四件套或门禁脚本改名/新增）必须同步 `scripts/acceptance.py` 的 GATES/SUITES/EVAL 表；CI Job 与本地脚本组件保持同构 |
+| LOG_FILE_ENABLED 日志开关（六轮 S4） | 消费点：config.settings.log_file_enabled → app.py 文件 sink 装配；注入点：tests/conftest.py 顶层 setdefault false + scripts/acceptance.py 子进程 env；启动服务.bat 杀旧进程防多进程争用（§5.4 机制化） |
+| doc_written turn_id 打戳（六轮 S5） | chat_service._stamp_doc_written 透传层打戳（发射端无 turn_id 概念）→ 前端 use-sse 携带 → chat.docWritten(name, turnId) 落消息；改打戳位置须同测 groupTurns 严格归组用例 |
+| 前端契约消费（六轮 S2 路线 a） | api.generated.ts 为前端 API 边界类型唯一来源；豁免清单在 types/index.ts 文件头登记；后端路由模型改名/删字段 → 重生成 → tsc 编译期报前端消费点；生成物 eslint max-lines 豁免 |
 
 ### 13.8 事故台账（已归档 → `docs/archive/incident-ledger.md`）
 
@@ -443,7 +456,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 
 ### 13.10 存量债务清单（清一条删一条）
 
-已清偿（保留记录供审计）：D1 system.md 内嵌铁律（已归位）、D2 铁律未全文注入（已注入）、D3 runtime 块 5 条款重复（已压至 3 条）、D4 全链路严禁偏多（四轮实测模型可见严禁 1 处/预算 8，check_prompt_budget 门禁防反弹）、D5 执行器任务词复述章节（已只留目标+锚点）、D6 工具描述带流程暗示（已纯功能化）、D7 system.md 超预算（已达标）、阶段边界 prose（已下沉代码校验）、S1 通用层被单一 Skill 污染（已 skill_manifest 清偿）、F47 轮末注入点收敛（四轮 R1：round_end_policies 策略状态机）、814 批次：双协议/统一闸机/flow_gates/总结接线/compaction 恢复（R1-R4），baseline 归档/skill_runtime 落地/workflows 移除（F3）。**五轮（2026-08-16）**：D8 老项目铁律缺体量条款（归位裁决：粒度裁量归模型+Skill 属 C6 基线，铁律刻意不承载；存量项目铁律已删重建，老新不一致消除）、N1 兼容层台账漂移两处（移除计划按磁盘事实重写）、未登记壳全量清偿（state_service/web/actions/planner 委托壳/models_legacy/别名两枚）、i18n 残留（planner 队列级 status key 化 + chat.ts meta 走 locale）、指令归位迁移（产出形态+质量条款迁铁律模板，skill_discipline 标题客观化）、临界文件拆分（gates_script/exec_split）、文档分层（docs/audit-history）。
+已清偿（保留记录供审计）：D1 system.md 内嵌铁律（已归位）、D2 铁律未全文注入（已注入）、D3 runtime 块 5 条款重复（已压至 3 条）、D4 全链路严禁偏多（四轮实测模型可见严禁 1 处/预算 8，check_prompt_budget 门禁防反弹）、D5 执行器任务词复述章节（已只留目标+锚点）、D6 工具描述带流程暗示（已纯功能化）、D7 system.md 超预算（已达标）、阶段边界 prose（已下沉代码校验）、S1 通用层被单一 Skill 污染（已 skill_manifest 清偿）、F47 轮末注入点收敛（四轮 R1：round_end_policies 策略状态机）、814 批次：双协议/统一闸机/flow_gates/总结接线/compaction 恢复（R1-R4），baseline 归档/skill_runtime 落地/workflows 移除（F3）。**五轮（2026-08-16）**：D8 老项目铁律缺体量条款（归位裁决：粒度裁量归模型+Skill 属 C6 基线，铁律刻意不承载；存量项目铁律已删重建，老新不一致消除）、N1 兼容层台账漂移两处（移除计划按磁盘事实重写）、未登记壳全量清偿（state_service/web/actions/planner 委托壳/models_legacy/别名两枚）、i18n 残留（planner 队列级 status key 化 + chat.ts meta 走 locale）、指令归位迁移（产出形态+质量条款迁铁律模板，skill_discipline 标题客观化）、临界文件拆分（gates_script/exec_split）、文档分层（docs/audit-history）。**六轮（2026-08-16）**：N1 契约门禁形式化（实测 FAIL 被乱码伪装成 PASS + 生成物零消费——ASCII 化输出 + 重生成清偿 + 路线 a 前端全量迁移使 tsc 编译期即契约门禁）、N2 Windows 日志轮转互斥（LOG_FILE_ENABLED 开关 + conftest/acceptance 隔离 + 启动脚本杀旧进程）、N3 治理膨胀之验收一键化（acceptance.py 落地，五轮 M6 核销）、N4a doc_written turn_id 打戳、N4c 建议按钮边界锐化（suggestedTargetIndex 纯函数）。
 
 未清偿：
 
@@ -452,6 +465,8 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | T16 | 存量 Skill 正文写死渠道参数（如「Seedance 2.5 480p」）与 gen_channel_rules「已作废」并存——**可接受张力**（四轮 #16）：闭环已存在（渠道规则注入时明示不得读取），G1 禁改 Skill，不动；仅登记防未来审核重复发现 | — | 不处理（登记即结论） |
 | T17 | 暂停点自然语言解析上限（四轮 #15）：古风甜宠短剧等正文含「必须暂停」语义但不命中兜底关键词，黄金快照判 false | 层 3 | 如需生效按 S1 在 manifest 声明 pause.stage_pause（改 Skill 需用户裁决）；现行值已由 skill_pause_golden.json 钉死 |
 | T20 | 13.7 耦合表机器可读化缓做（五轮 M6 用户裁决）：sse_protocol 注册表模式已证明可行，推广到其余耦合行待再出断链事故后立项 | — | 缓做登记 |
+| T22 | cancelStream（用户手动停止）部分消息无 turnId（六轮 N4b，D3 裁决登记）：前端停止时后端 turn_id 不存在，groupTurns 相邻兜底已覆盖渲染聚合；强行前端造 id 会引入双 id 源 | — | 触发条件：出现刷新后停止消息错位才立项 |
+| T23 | SettingsView 840 行超 eslint 250 红线（六轮 S2 发现存量超限，五轮 S10 已切 settings-meta 数据域），挂 disable 豁免 | 前端工程 | 按页签再切子组件（ChatMessageItem 同模式，用户目测批） |
 
 ### 13.11 业界基准六模式（C1-C6）
 
