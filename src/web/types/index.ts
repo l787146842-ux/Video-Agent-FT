@@ -241,7 +241,14 @@ export interface TaskResult {
 // ===== SSE 事件（Agent 聊天流） =====
 // 契约锚点：事件名以后端 src/video_agent/core/sse_events.py 的 SSE_* 常量为唯一权威；
 // 新增/改名事件时两侧必须同步（后端常量 → 本联合类型 → use-sse.ts 的 switch）。
-export interface SseStatusEvent { type: 'status'; text: string; }
+export interface SseStatusEvent {
+  type: 'status';
+  text: string;
+  /** 四轮 R3/#5：固定文案 i18n 键（前端 locale 字典同键翻译；缺失时回退 text） */
+  key?: string;
+  /** key 的插值参数 */
+  params?: Record<string, string | number>;
+}
 export interface SseDeltaEvent { type: 'delta'; text: string; }
 /** 深度思考（reasoning）增量：仅 UI 展示，不进下次 LLM 上下文 */
 export interface SseReasoningEvent { type: 'reasoning_delta'; text: string; }

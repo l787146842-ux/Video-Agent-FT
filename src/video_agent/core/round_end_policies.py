@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 from loguru import logger
 
 from src.video_agent.core import prompt_gates
-from src.video_agent.core.sse_events import SSE_STATUS
+from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
 
@@ -167,7 +167,7 @@ async def _apply_flow_gate_pause(ctx: RoundEndContext, emit: Callable) -> None:
         ctx.result_text = (
             f"{ctx.result_text}\n\n{visible_txt}".strip() if ctx.result_text else visible_txt
         )
-    await emit({"type": SSE_STATUS, "text": "越阶操作被流程门禁拦截，已强制暂停"})
+    await emit(status_event("agent.flowGatePause", "越阶操作被流程门禁拦截，已强制暂停"))
     ctx.hard_break = True
     ctx.hard_break_finish = "gate_pause"
 
@@ -210,10 +210,11 @@ async def _apply_gate_heal(ctx: RoundEndContext, emit: Callable) -> None:
     ctx.result_warnings.append(
         f"第 {ctx.step} 轮 {blocked_n} 个操作被流程闸机拦截，已回喂模型修正"
     )
-    await emit({
-        "type": SSE_STATUS,
-        "text": f"系统闸机拦截了本轮 {blocked_n} 个流程操作，正在要求模型按流程修正…",
-    })
+    await emit(status_event(
+        "agent.gateHeal",
+        f"系统闸机拦截了本轮 {blocked_n} 个流程操作，正在要求模型按流程修正…",
+        {"count": blocked_n},
+    ))
 
 
 def _doc_written_names(ctx: RoundEndContext) -> List[str]:

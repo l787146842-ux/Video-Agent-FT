@@ -68,6 +68,18 @@ export function ChatFeed() {
     return -1;
   };
 
+  /** 四轮 R3/#10：暂停卡生命周期状态（回看时可知旧卡是否仍有效）。
+   * active=当前待回应；answered=其后已有用户消息（已回应）；expired=被更新的暂停取代。 */
+  const confirmStateFor = (idx: number): 'active' | 'answered' | 'expired' | 'none' => {
+    const msgs = chatState.messages;
+    if (!msgs[idx].confirm) return 'none';
+    if (idx === confirmTargetIdx()) return 'active';
+    for (let i = idx + 1; i < msgs.length; i += 1) {
+      if (msgs[i].sender === 'user') return 'answered';
+    }
+    return 'expired';
+  };
+
   return (
     <div ref={feedRef} data-testid="chat-feed" class="chat-feed" onScroll={onScroll}>
       <For each={chatState.messages}>
@@ -76,6 +88,7 @@ export function ChatFeed() {
             message={msg}
             isLast={idx() === confirmTargetIdx()}
             isGateTarget={idx() === gateWarningTargetIdx()}
+            confirmState={confirmStateFor(idx())}
           />
         )}
       </For>

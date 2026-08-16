@@ -27,6 +27,8 @@ export function ChatMessageItem(props: {
   isLast: boolean;
   /** 814F7：是否为最后一条含闸机拦截警告的消息（「本次放行」按钮挂载点） */
   isGateTarget?: boolean;
+  /** 四轮 R3/#10：暂停卡生命周期（answered/expired 时阶段卡挂徽标，回看不迷惑） */
+  confirmState?: 'active' | 'answered' | 'expired' | 'none';
 }) {
   const msg = () => props.message;
   const isUser = () => msg().sender === 'user';
@@ -183,7 +185,7 @@ export function ChatMessageItem(props: {
       {/* 阶段完成卡（B2/F12·D4：可展开、默认展开；正文=本轮概述（确认文案）+执行清单。
           确认文案与模型正文判重防双显；历史消息同样可展开，暂停点回看不丢失） */}
       <Show when={msg().confirm}>
-        <StageCard msg={msg} />
+        <StageCard msg={msg} state={props.confirmState || 'none'} />
       </Show>
 
       {/* 过程时间线（深度思考 + 已处理操作，折叠面板；内容不进下次 LLM 上下文） */}
@@ -302,7 +304,7 @@ export function ChatMessageItem(props: {
  * 正文=本轮概述（确认文案，与模型正文判重防双显）+ 执行清单（actionLog）。
  * 历史消息同样可展开——暂停点回看不丢失（吸收 Qoder 问题 12）。
  */
-function StageCard(props: { msg: () => ChatMessage }) {
+function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'answered' | 'expired' | 'none' }) {
   const [open, setOpen] = createSignal(true);
   const msg = () => props.msg();
   const confirmText = () => {
@@ -336,6 +338,12 @@ function StageCard(props: { msg: () => ChatMessage }) {
         <Show when={msg().appliedActions}>
           <span class="stage-card-badge">
             {t('rp.msg.appliedOps', { count: msg().appliedActions ?? 0 })}
+          </span>
+        </Show>
+        {/* 四轮 R3/#10：非当前待回应的暂停卡标注生命周期（已回应/已过期），回看不迷惑 */}
+        <Show when={props.state === 'answered' || props.state === 'expired'}>
+          <span class="stage-card-badge stage-card-badge-stale">
+            {props.state === 'answered' ? t('rp.msg.confirmAnswered') : t('rp.msg.confirmExpired')}
           </span>
         </Show>
         <Show when={hasBody()}>

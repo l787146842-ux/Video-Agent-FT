@@ -40,6 +40,22 @@ SSE_EXECUTING_ACTIONS = "executing_actions"
 # 并从排队区移除对应条目（未被注入的条目由排队区兜底在任务结束后发出）
 SSE_GUIDANCE_INJECTED = "guidance_injected"
 
+
+def status_event(key: str, text: str, params: dict | None = None) -> dict:
+    """状态事件统一构造（四轮 R3/#5：i18n 断裂缝清偿）。
+
+    固定文案的状态事件必须经本函数发射：key+params 供前端按 locale 翻译
+    （前端字典键与 key 一致），text 为中文兜底（过渡期保留，前端 key 优先、
+    无 key 或字典缺失时回退 text）。动态内容（执行器进度等自由文本）
+    不经本函数，直接发 {"type": SSE_STATUS, "text": ...}。
+    """
+    return {
+        "type": SSE_STATUS,
+        "key": key,
+        "text": text,
+        "params": params or {},
+    }
+
 __all__ = [
     "SSE_STATUS",
     "SSE_DELTA",
@@ -54,4 +70,5 @@ __all__ = [
     "SSE_STEP_STARTED",
     "SSE_EXECUTING_ACTIONS",
     "SSE_GUIDANCE_INJECTED",
+    "status_event",
 ]

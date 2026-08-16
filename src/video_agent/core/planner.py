@@ -41,7 +41,7 @@ from src.video_agent.core.fc_tool_runner import (
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.live_metrics import record_live_context
-from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_REASONING_DELTA, SSE_STATUS
+from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_REASONING_DELTA, SSE_STATUS, status_event
 from src.video_agent.core.stream_suppressor import StreamActionSuppressor  # re-export 兼容旧导入
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
@@ -433,10 +433,14 @@ class Planner:
         # 循环结束后并入 loop_result.warnings，与文本轨拦截可见性对齐
         fc_warnings_collector: List[str] = []
 
-        async def _emit_status(text: str) -> None:
-            """推理过程可视化：把 FC 工具执行进度实时推给前端状态栏"""
+        async def _emit_status(text: str, key: str = "", params: Optional[Dict[str, Any]] = None) -> None:
+            """推理过程可视化：把 FC 工具执行进度实时推给前端状态栏。
+            固定文案携带 key+params（四轮 R3/#5：前端按 locale 翻译，text 兜底）。"""
             if on_event is not None:
-                await on_event({"type": SSE_STATUS, "text": text})
+                if key:
+                    await on_event(status_event(key, text, params))
+                else:
+                    await on_event({"type": SSE_STATUS, "text": text})
 
         async def _emit_event(event: Dict[str, Any]) -> None:
             """过程时间线事件透传（tool_started/tool_finished）"""

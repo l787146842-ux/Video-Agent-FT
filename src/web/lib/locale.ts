@@ -22,6 +22,15 @@ const zhCN: Record<string, string> = {
   'rp.streaming.replying': '正在回复…',
   'rp.streaming.restoring': '正在恢复 Agent 进度…',
   'rp.streaming.processing': '正在处理…',
+  'rp.streaming.executing': '正在执行第 {n} 项操作：{summary}',
+
+  // ---------- 后端 SSE status 事件固定文案（四轮 R3/#5，键与后端 status_event key 一致） ----------
+  'agent.roundThinking': '第 {prev} 轮操作已完成，继续思考中（第 {step}/{max} 轮）…',
+  'agent.badRetry': '第 {step} 轮输出异常，重试中…',
+  'agent.flowGatePause': '越阶操作被流程门禁拦截，已强制暂停',
+  'agent.opsDone': '已完成：{ops}',
+  'agent.gateHeal': '系统闸机拦截了本轮 {count} 个流程操作，正在要求模型按流程修正…',
+  'agent.modelFallback': '模型 {from} 繁忙/异常，已切换 {to} 重试…',
   'rp.conv.close': '关闭对话',
   'rp.conv.create': '新建对话',
   'rp.conv.branch': '分支当前对话（快照并派生新对话）',
@@ -108,6 +117,8 @@ const zhCN: Record<string, string> = {
   'rp.msg.closeEsc': '关闭 (Esc)',
   'rp.msg.stageDone': '阶段完成',
   'rp.msg.appliedOps': '已执行 {count} 个操作',
+  'rp.msg.confirmAnswered': '已回应',
+  'rp.msg.confirmExpired': '已过期',
   'rp.msg.stopped': '已停止',
   'rp.msg.emptyReply': '（空回复）',
   'rp.msg.memoryRefs': '记忆参考 {count} 条',
@@ -122,7 +133,7 @@ const zhCN: Record<string, string> = {
   'rp.msg.confirmContinue': '确认，继续',
   'rp.msg.confirmText': '确认',
   'rp.msg.adjust': '我要调整',
-  'rp.msg.gateOverride': '本次放行（仅本次生效）',
+  'rp.msg.gateOverride': '放行本次拦截（本轮闸机全部豁免，仅本次生效）',
   'rp.msg.checkSettings': '检查 API 配置',
 
   // ---------- 确认向导（814F6 i18n 补齐） ----------

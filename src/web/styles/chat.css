@@ -116,6 +116,8 @@
   .stage-check { color: #34d399; flex-shrink: 0; }
   .stage-card-title { font-size: 12px; font-weight: 600; color: #34d399; }
   .stage-card-badge { font-size: 10px; color: var(--text-muted); background: rgba(255, 255, 255, 0.06); padding: 2px 7px; border-radius: 4px; }
+    /* 四轮 R3/#10：过期/已回应暂停卡徽标（降饱和虚线框，弱化但可读） */
+    .stage-card-badge-stale { color: var(--text-dim); background: transparent; border: 1px dashed var(--border-color); }
   .stage-card-arrow { margin-left: auto; color: var(--text-dim); flex-shrink: 0; }
   .stage-card-body { padding: 2px 12px 10px; border-top: 1px dashed rgba(52, 211, 153, 0.25); }
   .stage-card-summary { margin: 6px 0; font-size: 12px; line-height: 1.6; color: var(--text-color); }

@@ -109,7 +109,11 @@ export const chatActions = {
   toolStarted(id: string, name: string, summary: string) {
     setChatState(produce((s) => {
       s.streamingTools.push({ id, name, summary, status: 'running', started_at_ms: Date.now() });
-      s.streamingStatus = `正在执行第 ${s.streamingTools.length} 项操作：${summary || name}`;
+      // 四轮 R3/#5：i18n 键替换硬编码中文
+      s.streamingStatus = t('rp.streaming.executing', {
+        n: s.streamingTools.length,
+        summary: summary || name,
+      });
     }));
   },
 

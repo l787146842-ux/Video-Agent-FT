@@ -229,9 +229,12 @@ function handleEvent(ev: SseEvent) {
       }
       break;
     }
-    case 'status':
-      chatActions.setStatus(ev.text || '');
+    case 'status': {
+      // 四轮 R3/#5：固定文案按 key 走 locale 翻译（key 优先、字典缺失回退 text）
+      const keyed = ev.key ? t(ev.key, ev.params) : '';
+      chatActions.setStatus(keyed && keyed !== ev.key ? keyed : (ev.text || ''));
       break;
+    }
     case 'delta':
       chatActions.appendDelta(ev.text || '');
       break;

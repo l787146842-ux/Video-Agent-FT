@@ -47,6 +47,7 @@ from src.video_agent.core.sse_events import (
     SSE_GUIDANCE_INJECTED,
     SSE_MODEL_FALLBACK,
     SSE_STATUS,
+    status_event,
 )
 from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
@@ -458,7 +459,11 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             logger.warning(
                 f"[ChatService] 模型 {cand_model} 瞬时故障（{str(e)[:80]}），fallback 到 {candidates[idx + 1][0]}/{next_model}"
             )
-            await emit({"type": SSE_STATUS, "text": f"模型 {cand_model} 繁忙/异常，已切换 {next_model} 重试…"})
+            await emit(status_event(
+                "agent.modelFallback",
+                f"模型 {cand_model} 繁忙/异常，已切换 {next_model} 重试…",
+                {"from": cand_model, "to": next_model},
+            ))
             # 降级即时联动（7777）：切换时刻就下发，前端立即把选择器跳到实际生效的组合。
             # B0/F4 修正：provider 必须为「下一候选」的供应商（同模型跨厂商降级时
             # 真正变化的是厂商），此前误发失败方供应商导致前端跳转失效

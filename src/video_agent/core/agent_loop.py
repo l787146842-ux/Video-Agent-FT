@@ -28,6 +28,7 @@ from src.video_agent.core.sse_events import (
     SSE_STEP_STARTED,
     SSE_TOOL_FINISHED,
     SSE_TOOL_STARTED,
+    status_event,
 )
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime import registry as skill_registry
@@ -219,10 +220,11 @@ async def run_agent_loop(
         if step > 1:
             # 多轮循环"静默期"提示：上一轮工具执行完到本轮首 token 之间可能耗时数十秒，
             # 前端状态栏需明确告知正在进行第几轮思考（status 事件全链路已透传）
-            await emit({
-                "type": SSE_STATUS,
-                "text": f"第 {step - 1} 轮操作已完成，继续思考中（第 {step}/{max_steps} 轮）…",
-            })
+            await emit(status_event(
+                "agent.roundThinking",
+                f"第 {step - 1} 轮操作已完成，继续思考中（第 {step}/{max_steps} 轮）…",
+                {"prev": step - 1, "step": step, "max": max_steps},
+            ))
         # 轮间注入（7777 三轮）：任务执行期间收到的用户引导消息在上一轮操作完成、
         # 本轮 LLM 调用之前送达；首轮尚无操作可打断，一律不注入
         if step > 1 and pending_injector is not None:
@@ -272,7 +274,7 @@ async def run_agent_loop(
         while not str(content or "").strip() and fc_applied == 0 and bad_retries < 2:
             bad_retries += 1
             logger.warning(f"[AgentLoop] 第 {step} 轮输出异常（空/畸形），重试 {bad_retries}/2")
-            await emit({"type": SSE_STATUS, "text": f"第 {step} 轮输出异常，重试中…"})
+            await emit(status_event("agent.badRetry", f"第 {step} 轮输出异常，重试中…", {"step": step}))
             tracer.record_action(
                 name="auto_retry",
                 summary=f"模型输出异常（空/畸形），自动重做（第 {bad_retries} 次）",
@@ -307,7 +309,7 @@ async def run_agent_loop(
                 visible_fc = str(content or "").strip()
                 if visible_fc:
                     result.text = visible_fc
-                await emit({"type": SSE_STATUS, "text": "越阶操作被流程门禁拦截，已强制暂停"})
+                await emit(status_event("agent.flowGatePause", "越阶操作被流程门禁拦截，已强制暂停"))
                 tracer.end_step(step, actions_applied=fc_applied, finish_reason="gate_pause")
                 break
 
@@ -485,7 +487,8 @@ async def run_agent_loop(
         # 推理过程可视化：实时把本轮刚完成的操作描述推给前端状态栏 + 时间线
         new_logs = executor.action_log[_log_before:]
         if new_logs:
-            await emit({"type": SSE_STATUS, "text": "已完成：" + "；".join(new_logs[-3:])})
+            _ops_desc = "；".join(new_logs[-3:])
+            await emit(status_event("agent.opsDone", "已完成：" + _ops_desc, {"ops": _ops_desc}))
         for i, desc in enumerate(new_logs):
             per_ms = _batch_ms / len(new_logs) if new_logs else 0.0
             # B2/F21：按动作实测耗时（文本轨此前均摊是白谎；执行器逐动作计时，
@@ -632,6 +635,10 @@ async def run_agent_loop(
                 f"已执行 {result.applied_actions} 个操作，故事板与当前预览已更新（模型未输出总结文字）。"
             )
         else:
-            result.text = "（Agent 没有返回可见回复：模型返回了空内容，可能是上游瞬时抖动，请重试或换模型）"
+            # 四轮 R3/#12：用户腔兜底（空响应不是用户的错，给出明确下一步）
+            result.text = (
+                "这一轮没有生成可见回复（上游可能瞬时抖动）——请直接说「重试」，我再来一次；"
+                "若连续出现可尝试切换模型。"
+            )
     result.trace = tracer.finish_trace(total_actions=result.applied_actions)
     return result

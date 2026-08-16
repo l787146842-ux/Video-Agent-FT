@@ -797,7 +797,7 @@ class FCToolRunner:
                 action_log.append(desc)
                 # 推理过程可视化：每完成一个工具就推一条状态
                 if on_status is not None:
-                    await on_status(f"已完成：{desc}")
+                    await on_status(f"已完成：{desc}", key="agent.opsDone", params={"ops": desc})
                 # 边写边填（FC 轨）：每完成一个变动类工具就下发状态快照，
                 # 草稿卡片逐张刷新，不等整批完成才一次性弹出
                 if on_event is not None and name not in (
