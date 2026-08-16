@@ -403,7 +403,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus 黄金语料
 | 规格文档改名/字段 | `prompt_gates._SPEC_NAME_HINTS` + provider_prefs 解析 + 执行器参数回退链 |
 | 执行器输出格式 | action_executor 兜底链 + 自检去重键（去重依赖标题有效，8888 事故） |
 | 新增暂停点 | Skill「何时暂停」+ 层 9 兜底注入（Skill 管引导，兜底管强制） |
-| 新增 SSE 事件 | 工具层 emit → planner 白名单 → chat_service 透传 → 前端 handler（四段缺一即静默失效） |
+| 新增 SSE 事件 | 工具层 emit → planner 白名单 → chat_service 透传 → 前端 handler（四段缺一即静默失效）；**四轮 R4：机器可读注册表 `web/sse_protocol.py` + test_sse_protocol_chain 四段链遍历断言（新增事件不登记即红），本行降为索引** |
 | doc_written 即显（B0 恢复） | fc_tool_runner/agent_loop 发射（按名称去重）→ planner 白名单 → chat_service 透传 → 前端 docWritten + done 双通道去重（前端 renderedDocCards） |
 | 模型策略表角色（B8） | core/model_policy.resolve_role/thinking_for；消费点 chat_service._resolve_summary_adapter、executors._resolve_cascade_fast/_executor_thinking、planner._make_summarize_fn；写入点 runtime_settings PUT/GET；UI 全局设置页 |
 | 快照/分支（B11） | routes/snapshots.py + conversations 创建 + _meta.branched_from + 前端 RightPanel 分支按钮 |
