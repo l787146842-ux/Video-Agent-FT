@@ -40,6 +40,7 @@ from src.video_agent.core.round_end_policies import (
     RoundEndContext,
     _claims_structure_done,  # noqa: F401  re-export 壳（测试导入路径不变，13.7 惯例）
     run_round_end_policies,
+    suggest_next_actions,
 )
 # 四轮 R0（N7 漂移清偿）：进度通道绑定顶层化；spec_wizard_active 经模块属性访问
 # （测试 patch 目标=registry 命名空间，顶层 from-import 会冻结绑定导致 patch 失效）
@@ -338,6 +339,9 @@ async def run_agent_loop(
             # P2-6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
             # 不再固定追加一轮 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）
             if finish_reason in ("stop", "end_turn") and visible:
+                # 状态驱动下一步建议（八轮 B4）：收尾且无既有建议时按客观状态下发
+                if not result.suggested_actions:
+                    result.suggested_actions.extend(suggest_next_actions(executor.state))
                 tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done")
                 break
             if step == max_steps:
@@ -590,6 +594,9 @@ async def run_agent_loop(
             break
 
         if not wants_continue:
+            # 状态驱动下一步建议（八轮 B4）：正常收尾且无既有建议时按客观状态下发
+            if not result.suggested_actions:
+                result.suggested_actions.extend(suggest_next_actions(executor.state))
             tracer.end_step(step, actions_applied=applied, finish_reason=finish_reason or "stop")
             break
         if step == max_steps:

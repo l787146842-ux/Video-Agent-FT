@@ -400,6 +400,58 @@ async def _apply_false_claim_audit(ctx: RoundEndContext, emit: Callable) -> None
         )
 
 
+# ---------- 状态驱动的下一步建议（八轮 B4：确定性交互收归系统，层 9） ----------
+
+# 判定表语义：客观状态特征 → 唯一一条下一步建议（kind=next，点击机械发送 value）。
+# 只读状态不写状态；生成类建议的点击本身构成「针对当前动作的显式用户指令」，
+# 仍须过 platform.gen_confirm 闸（建议不绕过任何闸机）。
+_SUGGEST_CONFIRMED_TAG = "已确认"
+
+
+def _iter_storyboard_drafts(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    drafts: List[Dict[str, Any]] = []
+    for cat_key in ("keyElements", "shots", "audioItems"):
+        for group in state.get(cat_key, []) or []:
+            if not isinstance(group, dict):
+                continue
+            for d in group.get("drafts", []) or []:
+                if isinstance(d, dict):
+                    drafts.append(d)
+    return drafts
+
+
+def suggest_next_actions(state: Dict[str, Any]) -> List[Dict[str, str]]:
+    """按工作台客观状态返回下一步建议（空列表 = 不建议）。
+
+    阶梯（前一阶梯未满足才看下一级）：
+    1. 结构存在但仍有草稿未确认 → 确认结构；
+    2. 全部已确认但仍有草稿缺提示词 → 开始写提示词；
+    3. 提示词就绪但仍有草稿未生成 → 开始生成。
+    """
+    try:
+        drafts = _iter_storyboard_drafts(state or {})
+    except Exception:
+        return []
+    if not drafts:
+        return []
+    confirmed = [d for d in drafts if str(d.get("tag") or "") == _SUGGEST_CONFIRMED_TAG]
+    if len(confirmed) < len(drafts):
+        return [{"kind": "next", "label": "确认结构",
+                 "value": "请确认当前故事板结构（把全部草稿标记为已确认）"}]
+    has_prompt = [d for d in confirmed if str(d.get("prompt") or "").strip()]
+    if len(has_prompt) < len(confirmed):
+        return [{"kind": "next", "label": "开始写提示词",
+                 "value": "开始为已确认的故事板结构编写草稿提示词"}]
+    generated = [
+        d for d in confirmed
+        if d.get("imgUrl") or d.get("videoUrl") or d.get("audioUrl")
+    ]
+    if len(generated) < len(confirmed):
+        return [{"kind": "next", "label": "开始生成",
+                 "value": "开始为提示词已就绪的草稿生成"}]
+    return []
+
+
 # 策略表（优先级 = 重构前代码书写顺序；15 为失败警告块，原位于 flow_gate 早返之后）
 ROUND_END_POLICIES: List[RoundEndPolicy] = [
     RoundEndPolicy("flow_gate_pause", KIND_HARD_BREAK, 10,

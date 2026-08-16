@@ -45,8 +45,9 @@ export function ChatMessageItem(props: {
   const [lightboxUrl, setLightboxUrl] = createSignal('');
 
   /** 五轮 S3/#3（D4 终裁）：重试 = 机械重发上一条用户消息原内容（含富文本附件），
-   * 零模型猜测；continue = 发送后端下发的固定 value 文本 */
-  const runSuggested = (act: { kind: 'retry' | 'continue'; value: string }) => {
+   * 零模型猜测；continue/next = 发送后端下发的固定 value 文本
+   * （next=状态驱动下一步建议，八轮 B4，点击即显式用户指令） */
+  const runSuggested = (act: { kind: 'retry' | 'continue' | 'next'; value: string }) => {
     if (act.kind === 'retry') {
       const msgs = chatState.messages;
       for (let i = msgs.length - 1; i >= 0; i -= 1) {
@@ -320,7 +321,9 @@ export function ChatMessageItem(props: {
                   class="suggested-action-btn"
                   onClick={() => runSuggested(act)}
                 >
-                  {act.kind === 'retry' ? t('rp.msg.retry') : t('rp.msg.continueTask')}
+                  {act.kind === 'retry'
+                    ? t('rp.msg.retry')
+                    : (act.kind === 'next' && act.label ? act.label : t('rp.msg.continueTask'))}
                 </button>
               )}
             </For>

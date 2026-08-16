@@ -201,8 +201,9 @@ export interface ChatMessage {
   settingsHint?: boolean;
   /** 五轮 S2/#2：轮次唯一标识（同轮正文/文档卡/图片卡共用，渲染层聚合为轮次容器） */
   turnId?: string;
-  /** 五轮 S3/#3：建议动作按钮（随 done payload 落消息，仅最后一条渲染） */
-  suggestedActions?: Array<{ kind: 'retry' | 'continue'; label: string; value: string }>;
+  /** 五轮 S3/#3：建议动作按钮（随 done payload 落消息，仅最后一条渲染；
+   * 八轮 B4 扩 next=状态驱动下一步建议，点击机械发送 value） */
+  suggestedActions?: Array<{ kind: 'retry' | 'continue' | 'next'; label: string; value: string }>;
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
@@ -317,8 +318,9 @@ export interface SseDonePayload {
   memory_hits?: Array<{ id?: string; date?: string; content: string }>;
   /** 五轮 S2/#2：轮次唯一标识（前端同轮消息聚合为轮次容器） */
   turn_id?: string;
-  /** 五轮 S3/#3：建议动作按钮（retry=机械重发上一条用户消息；continue=发送固定文本） */
-  suggested_actions?: Array<{ kind: 'retry' | 'continue'; label: string; value: string }>;
+  /** 五轮 S3/#3：建议动作按钮（retry=机械重发上一条用户消息；continue=发送固定文本；
+   * next=状态驱动下一步建议，八轮 B4） */
+  suggested_actions?: Array<{ kind: 'retry' | 'continue' | 'next'; label: string; value: string }>;
   state?: ServerStateSnapshot | null;
 }
 export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }
