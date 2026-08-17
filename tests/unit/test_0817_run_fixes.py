@@ -198,6 +198,49 @@ def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
     assert svc.state_dict["keyElements"][0]["title"] == "瓦西里"
 
 
+# ---------- 0817 B17：语言闸拒收批内即时纠正（不拖到整工具重做） ----------
+
+@pytest.mark.asyncio
+async def test_0817_lang_gate_reject_triggers_inbatch_corrective(tmp_path, monkeypatch):
+    """首批部分进展但撞语言闸 → 立即批内带拒因纠正重试一次，
+    不得拖到整工具失败由外层从头重做（6 分钟级浪费）。"""
+    from src.video_agent.core import prompt_gates
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.skill_runtime import exec_media_writer as mw
+
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["keyElements"] = [
+        {"id": "g1", "title": "程心", "drafts": [{"id": "d1", "prompt": ""}]},
+        {"id": "g2", "title": "艾AA", "drafts": [{"id": "d2", "prompt": ""}]},
+    ]
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+    monkeypatch.setattr(mw, "tool_available", lambda skill, tool: True)
+    monkeypatch.setattr(mw.exec_common, "_resolve_chat_provider",
+                        lambda p="", m="": ("prov", "model"))
+    monkeypatch.setattr(mw.exec_common, "_resolve_cascade_fast", lambda p, m: (p, m))
+
+    calls = []
+
+    async def fake_batch(tool_name, skill_name, skill_content, svc_, provider,
+                         model, batch, spec, analysis_hint, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            svc_.state_dict["keyElements"][0]["drafts"][0]["prompt"] = "中文提示词一"
+            return 1, [prompt_gates.LANG_EN_HARD_PREFIX + "：请改为中文正文后重新写入"], False
+        svc_.state_dict["keyElements"][1]["drafts"][0]["prompt"] = "纠正后的中文提示词"
+        return 1, [], False
+
+    monkeypatch.setattr(mw, "_write_prompt_batch", fake_batch)
+    tool = mw.WriteMediaPromptTool()
+    result = await tool.aexecute(tool.get_input_schema()(skill_name="KE"))
+    assert result.success, getattr(result, "error", "")
+    assert len(calls) == 2, "应在批内即时纠正重试一次"
+    assert calls[1].get("corrective") is True
+    reasons = calls[1].get("corrective_reasons") or []
+    assert any(prompt_gates.LANG_EN_HARD_PREFIX in str(r) for r in reasons)
+    assert svc.state_dict["keyElements"][1]["drafts"][0]["prompt"]
+
+
 # ---------- 0817 B16：执行器警告必须上抛到用户可见层 ----------
 
 def test_0817_executor_warnings_surface_to_user(monkeypatch):

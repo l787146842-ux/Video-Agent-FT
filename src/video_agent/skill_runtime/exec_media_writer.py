@@ -421,14 +421,26 @@ class WriteMediaPromptTool:
                 filled = filled_raw
             applied += filled
             new_pending = _remaining()
-            if len(new_pending) >= len(pending):
-                # 本批零进展（如写了空卡/写错分组）：先批内纠正重试一次
-                #（3333 事故：直接判失败会把剩余批次也丢掉，交给外层重试又从头重来）；
-                # 纠正后仍零进展才熔断，按未完成处理
-                logger.warning(
-                    f"[SkillExec] 提示词分批编写：第 {batch_no} 批零进展，立即纠正重试"
-                )
-                await emit_progress(f"第 {batch_no} 批零进展，正在纠正重试…")
+            # 0817 B17：语言闸拒收也触发批内即时纠正——全英文等硬拒带上拒因
+            # 立即重写，不再走「全部写完再拦 → 整工具失败从头重做」的高成本路径
+            _gate_rejects = [str(w) for w in warns
+                             if prompt_gates.LANG_EN_HARD_PREFIX in str(w)]
+            _zero_progress = len(new_pending) >= len(pending)
+            if _zero_progress or _gate_rejects:
+                if _zero_progress:
+                    # 本批零进展（如写了空卡/写错分组）：先批内纠正重试一次
+                    #（3333 事故：直接判失败会把剩余批次也丢掉，交给外层重试又从头重来）；
+                    # 纠正后仍零进展才熔断，按未完成处理
+                    logger.warning(
+                        f"[SkillExec] 提示词分批编写：第 {batch_no} 批零进展，立即纠正重试"
+                    )
+                    await emit_progress(f"第 {batch_no} 批零进展，正在纠正重试…")
+                else:
+                    logger.warning(
+                        f"[SkillExec] 提示词分批编写：第 {batch_no} 批撞语言闸 "
+                        f"{len(_gate_rejects)} 次，批内即时纠正重写"
+                    )
+                    await emit_progress(f"第 {batch_no} 批提示词语言未过闸，正在纠正重写…")
                 if (fast_provider, fast_model) != (provider, model):
                     logger.info(
                         f"[SkillExec] 级联升级：第 {batch_no} 批纠正重试由 "
@@ -439,7 +451,7 @@ class WriteMediaPromptTool:
                         self.name, params.skill_name, skill_content, svc,
                         provider, model, batch, spec, analysis_hint,
                         corrective=True, max_tokens=batch_budget,
-                        corrective_reasons=warns,
+                        corrective_reasons=(_gate_rejects[:6] if _gate_rejects else warns),
                     )
                 except Exception as e:
                     warnings.append(f"第 {batch_no} 批纠正重试失败：{e}")

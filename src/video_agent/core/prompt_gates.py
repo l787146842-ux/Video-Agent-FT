@@ -495,6 +495,10 @@ def autofill_at_refs(
 _SPEC_LANG_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?输出语言(?:\*\*)?\s*[:：]\s*(.+)$")
 
+# 0817 B17：语言闸硬拒稳定信号（exec_media_writer 据此批内即时纠正，
+# 不再走「整批写完再拦 → 整工具重做」的高成本路径）
+LANG_EN_HARD_PREFIX = "提示词正文几乎全是英文"
+
 
 def spec_output_language(raw_state: Optional[Dict[str, Any]]) -> str:
     """0817：规格文档里用户选定的「输出语言」维度值（未选/无规格返回空串）。"""
@@ -577,7 +581,7 @@ def validate_prompt_write(
     cjk_chars = len(_CJK_RE.findall(text))
     if total_chars and cjk_chars / total_chars < cjk_min_ratio:
         hard.append(
-            "提示词正文几乎全是英文：请改为中文正文（主体描述/动作表演/场景环境/"
+            f"{LANG_EN_HARD_PREFIX}：请改为中文正文（主体描述/动作表演/场景环境/"
             "镜头语言叙述用中文，仅专业风格/光影/构图/渲染技术术语可保留英文原词）后重新写入"
         )
 
