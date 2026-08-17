@@ -88,8 +88,6 @@ class RoundEndContext:
     executable: List[Dict[str, Any]] = field(default_factory=list)
     gate_rejections: List[str] = field(default_factory=list)
     spec_wizard_pending: bool = False
-    structure_self_check_pending: bool = False
-    structure_self_check_round: int = 0
     # 输出态（策略写入，agent_loop 回读）
     gate_heal: bool = False
     hard_break: bool = False
@@ -298,56 +296,26 @@ def _structure_kinds(ctx: RoundEndContext) -> set:
     return set(getattr(ctx.executor, "structure_kinds_created", None) or set())
 
 
-def _cond_structure_self_check(ctx: RoundEndContext) -> bool:
+def _cond_structure_stage_review(ctx: RoundEndContext) -> bool:
+    # 0817：暂停点归位 Skill 阶段边界（13.3/C6，用户裁决）：
+    # 平台不再强制自检轮/首建硬暂停；故事板阶段完成且模型未暂停才注入审阅卡
     return (
         not ctx.confirmation
         and bool(_structure_kinds(ctx))
-        and not ctx.structure_self_check_pending
+        and getattr(ctx.executor, "_storyboard_empty_before", False)
         and getattr(ctx.executor, "gate_enabled", False)
         and prompt_gates.gate_mode() == "strict"
+        and prompt_gates.storyboard_stage_complete(
+            ctx.executor.state, getattr(ctx.executor, "skill_name", "") or "")
     )
 
 
-async def _apply_structure_self_check(ctx: RoundEndContext, emit: Callable) -> None:
-    # 8888 事故：结构首建强制自检轮（不弹卡）
-    ctx.structure_self_check_pending = True
-    ctx.structure_self_check_round = ctx.step
-    logger.info(f"[FlowGate] 结构首建，强制自检轮（kinds={sorted(_structure_kinds(ctx))}）")
-
-
-def _cond_structure_self_check_fallback(ctx: RoundEndContext) -> bool:
-    return (
-        not ctx.confirmation
-        and ctx.structure_self_check_pending
-        and ctx.step > ctx.structure_self_check_round
-        and getattr(ctx.executor, "gate_enabled", False)
-        and prompt_gates.gate_mode() == "strict"
-    )
-
-
-async def _apply_structure_self_check_fallback(ctx: RoundEndContext, emit: Callable) -> None:
+async def _apply_structure_stage_review(ctx: RoundEndContext, emit: Callable) -> None:
     ctx.confirmation, ctx.confirmation_options = prompt_gates.structure_paused_confirmation(
         _structure_kinds(ctx)
     )
-    ctx.structure_self_check_pending = False
     logger.info(
-        f"[FlowGate] 自检轮后仍未暂停，注入结构审阅卡（kinds={sorted(_structure_kinds(ctx))}）"
-    )
-
-
-def _cond_structure_card_override(ctx: RoundEndContext) -> bool:
-    # 8888 二轮：模型自发暂停时文案保留、选项换成系统阶段卡
-    return (
-        bool(ctx.confirmation)
-        and bool(_structure_kinds(ctx))
-        and getattr(ctx.executor, "gate_enabled", False)
-        and prompt_gates.gate_mode() == "strict"
-    )
-
-
-async def _apply_structure_card_override(ctx: RoundEndContext, emit: Callable) -> None:
-    _sys_msg, ctx.confirmation_options = prompt_gates.structure_paused_confirmation(
-        _structure_kinds(ctx)
+        f"[FlowGate] 故事板阶段完成且模型未暂停，注入审阅卡（kinds={sorted(_structure_kinds(ctx))}）"
     )
 
 
@@ -469,12 +437,8 @@ ROUND_END_POLICIES: List[RoundEndPolicy] = [
                    _cond_spec_wizard_takeover, _apply_spec_wizard_takeover),
     RoundEndPolicy("spec_collect", KIND_ARBITRABLE, 70,
                    _cond_spec_collect, _apply_spec_collect),
-    RoundEndPolicy("structure_self_check", KIND_POST_PROCESS, 80,
-                   _cond_structure_self_check, _apply_structure_self_check),
-    RoundEndPolicy("structure_self_check_fallback", KIND_ARBITRABLE, 90,
-                   _cond_structure_self_check_fallback, _apply_structure_self_check_fallback),
-    RoundEndPolicy("structure_card_override", KIND_POST_PROCESS, 100,
-                   _cond_structure_card_override, _apply_structure_card_override),
+    RoundEndPolicy("structure_stage_review", KIND_ARBITRABLE, 80,
+                   _cond_structure_stage_review, _apply_structure_stage_review),
     RoundEndPolicy("stage_done_fallback", KIND_ARBITRABLE, 110,
                    _cond_stage_done_fallback, _apply_stage_done_fallback),
     RoundEndPolicy("false_claim_audit", KIND_POST_PROCESS, 120,

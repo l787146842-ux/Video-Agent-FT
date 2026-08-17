@@ -47,18 +47,19 @@ def _run(ctx: RoundEndContext, policies=None, tracer=None) -> RoundEndContext:
 
 
 def test_r1_policy_table_shape():
-    """策略表 = 12 条，优先级唯一且与计划书 D1 表一致（零行为变更基线）。"""
+    """策略表 = 10 条（0817：结构自检/回退/覆盖三策略归位为阶段审阅一条），
+    优先级唯一且仲裁顺序确定。"""
     table = rep.ROUND_END_POLICIES
-    assert len(table) == 12
+    assert len(table) == 10
     ids = [p.policy_id for p in sorted(table, key=lambda p: p.priority)]
     assert ids == [
         "flow_gate_pause", "partial_fail_warnings", "gate_heal",
         "spec_doc_written_pause", "spec_review_pending", "spec_wizard_takeover",
-        "spec_collect", "structure_self_check", "structure_self_check_fallback",
-        "structure_card_override", "stage_done_fallback", "false_claim_audit",
+        "spec_collect", "structure_stage_review",
+        "stage_done_fallback", "false_claim_audit",
     ]
     priorities = [p.priority for p in table]
-    assert len(set(priorities)) == 12, "优先级必须唯一（仲裁顺序确定性）"
+    assert len(set(priorities)) == 10, "优先级必须唯一（仲裁顺序确定性）"
 
 
 def test_r1_gate_heal_drops_confirmation_and_continues():
@@ -190,7 +191,7 @@ def test_r1_card_decision_into_trace():
 
 
 def test_r1_structure_override_replaces_options_only():
-    """结构卡覆盖（8888 二轮）：模型自发暂停文案保留、选项换系统卡。
+    """0817 用户裁决：模型自发暂停完全保留（文案+选项均不覆盖）。
 
     注：需 gate_enabled + strict 模式；gate_mode 依赖环境变量，此处直接构造
     条件成立的 executor 并 monkeypatch gate_mode。"""
@@ -201,8 +202,10 @@ def test_r1_structure_override_replaces_options_only():
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(prompt_gates, "gate_mode", lambda: "strict")
         ctx = RoundEndContext(
-            step=1, executor=ex, content="", confirmation="模型自拟：开始生成视频",
+            step=1, executor=ex, content="",
+            confirmation="模型自拟：开始生成视频",
+            confirmation_options=[{"label": "模型选项", "description": ""}],
         )
         out = _run(ctx)
     assert out.confirmation == "模型自拟：开始生成视频", "文案保留"
-    assert out.confirmation_options, "选项被系统阶段卡替换"
+    assert out.confirmation_options == [{"label": "模型选项", "description": ""}], "选项也保留"

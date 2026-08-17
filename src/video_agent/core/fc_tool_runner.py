@@ -374,9 +374,10 @@ class FCToolRunner:
         prompt_stripped = False
         # 本批被提示词闸机拦截的写入次数（防虚报：拦截后暂停文案不得引导确认未写入的提示词）
         prompt_gate_blocked = 0
-        # 首次搭建批次判定：批开始时故事板完全为空，则本批只允许先拆关键元素
+        # 0817：暂停点归位 Skill 阶段边界——只快照批前是否为空，
+        # 批末「故事板阶段完成且模型未暂停」才注入审阅卡（平台不再自加关键元素后暂停）
         skill_strict = bool(injected_skill) and prompt_gates.gate_mode() == "strict"
-        first_structure_batch = skill_strict and prompt_gates.storyboard_is_empty(self._raw_state())
+        storyboard_empty_before = prompt_gates.storyboard_is_empty(self._raw_state())
         # 生成类工具本批成败跟踪（防虚报：同批失败后暂停文案不得声称已触发生成）
         gen_failed_err = ""
         gen_succeeded = False
@@ -490,18 +491,10 @@ class FCToolRunner:
             # 浪费一轮工具往返 + 全文回喂 token（prompt 里的「不要再 read」靠模型自觉，此处硬保障）
             if self._strip_structure_prompt(name, args, injected_skill):
                 prompt_stripped = True
-            # 闸机链：规格前置 → 首拆只允关键元素 → 生成确认 → 提示词结构/时序
+            # 闸机链：规格前置 → 生成确认 → 提示词结构/时序
+            # （0817：首拆只允关键元素的平台自加警告已清除——流程以 Skill 为准，
+            # 客观数据完整性（sceneRefs 引用存在性）由 exec_common 校验兜底）
             gate_error = self._flow_gate(name, injected_skill)
-            if (
-                gate_error is None
-                and first_structure_batch
-                and name in ("storyboard_create_group", "storyboard_add_draft")
-                and ops.category_for_group_type(str(args.get("group_type") or "")) != CAT_KEY_ELEMENTS
-                and str(args.get("group_type") or "").strip()
-            ):
-                logger.info("[FlowGate] 首次搭建建议先拆关键元素（警告，不拦人）")
-                if prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR not in self.gate_warnings:
-                    self.gate_warnings.append(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
             if gate_error is None:
                 gate_error = self._gen_confirm_gate(name, args, injected_skill)
                 if gate_error is None:
@@ -695,16 +688,19 @@ class FCToolRunner:
             else:
                 confirmation, confirmation_options = prompt_gates.spec_collect_card(self._raw_state())
                 logger.info("[FlowGate] FC script_analyze 完成且无规格文档，注入规格收集向导")
-        # 故事板结构首次建立的硬暂停（阶段分界）：待确认标记已在批内即时置位；
-        # 暂停文案统一由系统按客观结构类别生成（含 shot → 分镜拆分审阅文案，
-        # 否则 → 关键元素拆分审阅文案）——结构阶段不产出提示词草案，
-        # 模型自拟文案（声称「提示词已写好/开始生成」）属虚报，一律覆盖。
-        if not confirmation and structure_created and skill_strict:
-            confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
-        # 8888 二轮：结构阶段模型自发暂停时文案保留、选项换成系统阶段卡
-        # （消除「开始编写提示词草案」不说是谁家提示词的含糊选项）
-        if confirmation and structure_created and skill_strict:
-            _sys_msg, confirmation_options = prompt_gates.structure_paused_confirmation(structure_kinds)
+        # 0817：暂停点归位 Skill 阶段边界（13.3/C6，用户裁决）：
+        # 平台不再「关键元素首建后硬暂停」；仅当本批把故事板推进到阶段完成
+        # （Skill 声明的组别齐）且模型未自行暂停时，注入审阅卡；
+        # 模型自发暂停一律保留其文案与选项（平台不覆盖）。
+        if (
+            not confirmation
+            and skill_strict
+            and storyboard_empty_before
+            and prompt_gates.storyboard_stage_complete(self._raw_state(), injected_skill)
+        ):
+            confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(
+                structure_kinds or prompt_gates.present_structure_kinds(self._raw_state()))
+            logger.info("[FlowGate] 故事板阶段完成且模型未暂停，注入审阅卡")
         # 结构阶段剥离了内联详细提示词：回喂中显式告知，防止模型虚报「提示词已写好」
         if prompt_stripped:
             tool_results.append({

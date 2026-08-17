@@ -143,10 +143,6 @@ def _extract_confirmation(action: Dict[str, Any]) -> str:
 # 五轮 S4g：_split_actions 兼容别名已清偿（唯一消费点改直调 split_actions）。
 
 
-# 自检回喂模板（888 事故：拆解覆盖完整性的表述源在铁律第 2 条）
-SELF_CHECK_FEEDBACK = "（系统）自检提醒：拆解需覆盖完整（按《执行铁律》第 2 条自检核对）。"
-
-
 async def run_agent_loop(
     user_text: Union[str, List[Dict[str, Any]]],
     *,
@@ -178,8 +174,6 @@ async def run_agent_loop(
 
     result = AgentLoopResult()
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
-    structure_self_check_pending = False
-    structure_self_check_round = 0
     # B0/F1：文本轨已发射过 doc_written 的文档名（防重复发射；FC 轨在 fc_tool_runner 内发射）
     _emitted_docs: set = set()
 
@@ -558,8 +552,6 @@ async def run_agent_loop(
             executable=executable,
             gate_rejections=gate_rejections,
             spec_wizard_pending=spec_wizard_pending,
-            structure_self_check_pending=structure_self_check_pending,
-            structure_self_check_round=structure_self_check_round,
             result_text=result.text,
         )
         await run_round_end_policies(_re_ctx, emit, tracer=tracer)
@@ -567,8 +559,6 @@ async def run_agent_loop(
         confirmation_options = _re_ctx.confirmation_options
         wants_continue = _re_ctx.wants_continue
         gate_heal = _re_ctx.gate_heal
-        structure_self_check_pending = _re_ctx.structure_self_check_pending
-        structure_self_check_round = _re_ctx.structure_self_check_round
         if _re_ctx.result_warnings:
             result.warnings.extend(_re_ctx.result_warnings)
         result.text = _re_ctx.result_text
@@ -582,9 +572,6 @@ async def run_agent_loop(
             f"[AgentLoop] step={step} actions={applied}/{total_exec} "
             f"continue={wants_continue} confirm={bool(confirmation)} finish={finish_reason or '-'}"
         )
-
-        if structure_self_check_pending and not confirmation:
-            wants_continue = True
 
         if confirmation:
             # 暂停等待用户确认：终止循环，把确认请求（含候选选项）带回给前端
@@ -634,8 +621,6 @@ async def run_agent_loop(
                 f"（系统）第 {step} 轮的 {applied} 个操作已执行，最新工作台状态已刷新到 system prompt。"
                 "请继续完成任务；全部完成后直接结束本轮回复。"
             )
-            if structure_self_check_pending:
-                feedback += "\n" + SELF_CHECK_FEEDBACK
         messages.append({"role": "user", "content": feedback})
 
     # 814G8：正常路径解绑进度通道（异常路径 contextvar 随任务消亡）

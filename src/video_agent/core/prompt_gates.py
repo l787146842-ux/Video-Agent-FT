@@ -660,6 +660,35 @@ def storyboard_is_empty(raw_state: Dict[str, Any]) -> bool:
     )
 
 
+def present_structure_kinds(raw_state: Dict[str, Any]) -> List[str]:
+    """0817：故事板现存的分组类别（审阅卡文案用）。"""
+    kinds: List[str] = []
+    if raw_state.get(CAT_KEY_ELEMENTS):
+        kinds.append("keyElement")
+    if raw_state.get(CAT_SHOTS):
+        kinds.append("shot")
+    if raw_state.get(CAT_AUDIO_ITEMS):
+        kinds.append("audio")
+    return kinds
+
+
+def storyboard_stage_complete(raw_state: Dict[str, Any], skill_name: str = "") -> bool:
+    """0817 故事板阶段完成（暂停点归位 Skill 阶段边界）：关键元素+分镜均非空；
+    音频仅当 Skill 声明音频拆解（available_tools 含 storyboard_audio）才要求。"""
+    if not (raw_state.get(CAT_KEY_ELEMENTS) or []) or not (raw_state.get(CAT_SHOTS) or []):
+        return False
+    need_audio = False
+    try:
+        from src.video_agent.skill_runtime.registry import resolve_entry
+        entry = resolve_entry(skill_name) if skill_name else None
+        need_audio = bool(
+            entry and "storyboard_audio" in (getattr(entry, "available_tools", None) or [])
+        )
+    except Exception:
+        need_audio = False
+    return bool(raw_state.get(CAT_AUDIO_ITEMS) or []) if need_audio else True
+
+
 def storyboard_pending(raw_state: Dict[str, Any]) -> bool:
     """故事板结构是否正处于「等待用户确认」窗口（仅供提示，不再拦截写入）"""
     interaction = raw_state.get("interaction") or {}

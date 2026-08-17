@@ -142,10 +142,10 @@ def test_ensure_iron_rules_doc_creates_three_clause_doc(tmp_path):
 
 
 def test_clause_number_references_synced():
-    """拆解覆盖现为第 2 条：自检回喂与执行器自检话术引用同步。"""
-    assert "《执行铁律》第 2 条" in agent_loop.SELF_CHECK_FEEDBACK
+    """拆解覆盖现为第 2 条：验收补漏话术引用铁律第 2 条（0817 表述源在 exec_split）。"""
     import inspect
-    src = inspect.getsource(ex_mod._selfcheck_key_elements)
+    from src.video_agent.skill_runtime import exec_split
+    src = inspect.getsource(exec_split._selfcheck_key_elements)
     assert "第 2 条" in src
 
 

@@ -234,10 +234,10 @@ async def test_structure_strips_inline_prompt_keeps_model_confirmation(svc):
         "拆解分镜", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
     assert calls["n"] == 1
-    # 模型自带的确认文案保留；选项换成系统阶段卡（8888 二轮 B8）
+    # 0817 用户裁决：模型自带的确认文案与选项均原样保留（平台不覆盖）
     assert result.confirmation == "确认分镜与音频草案，开始生成视频"
-    assert [o["label"] for o in result.confirmation_options] == [
-        o["label"] for o in prompt_gates.SHOT_STRUCTURE_OPTIONS]
+    assert [o["label"] for o in (result.confirmation_options or [])] == [
+        "确认草案，开始生成视频"]
     # 结构阶段内联提示词被剥离，草稿卡仍建立
     shot_group = next(g for g in svc.state_dict["shots"] if g.get("title") == "Shot_A")
     assert shot_group["drafts"][0]["prompt"] == ""
@@ -257,8 +257,8 @@ async def test_keyelement_structure_keeps_model_pause(svc):
         "拆关键元素", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
     assert result.confirmation == "确认草案，开始生成"
-    assert [o["label"] for o in result.confirmation_options] == [
-        o["label"] for o in prompt_gates.STORYBOARD_STRUCTURE_OPTIONS]
+    # 0817 用户裁决：模型未给选项时平台不代填（暂停完全尊重模型/用户）
+    assert not result.confirmation_options
 
 
 # ---------- 5555 事故回归：规格文档写入后的系统级暂停兜底（文本轨） ----------
@@ -447,19 +447,17 @@ async def test_stream_preapplied_actions_not_reexecuted(svc):
     assert ex.execute([act], accumulate=True) == 1
     ex.stream_consumed = 1
     ex.stream_preapplied = 1
-    # 模拟 agent_loop：同一动作再次出现在解析结果里 → 应被剔除，不重复建组
+    # 0817：平台不再强制自检轮——模型 stop 即收尾（阶段未完成不弹卡，
+    # 由建议动作引导下一步）
     reply = ('完成\n```studio-actions\n'
              '[{"action":"add_group","group_type":"keyElement","title":"Element_S","draft":{"label":"d"}}]\n```', "stop")
-    # 结构首建后系统会强制再跑一轮自检补漏：第二轮模型暂停审阅
-    pause = ('自检完成\n```studio-actions\n'
-             '[{"action":"request_confirmation","message":"自检完成"}]\n```', "stop")
-    llm, calls = make_llm([reply, pause])
+    llm, calls = make_llm([reply])
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
-    assert calls["n"] == 2
+    assert calls["n"] == 1
     assert result.applied_actions == 1  # 只计流式预执行的那一次
-    assert result.confirmation  # 结构自检后统一暂停
+    assert not result.confirmation  # 阶段未完成且模型未暂停 → 不弹卡
     titles = [g.get("title") for g in svc.state_dict["keyElements"] if g.get("title") == "Element_S"]
     assert len(titles) == 1  # 没有重复建组
 

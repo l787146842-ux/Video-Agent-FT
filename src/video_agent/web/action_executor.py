@@ -135,12 +135,8 @@ class StudioActionExecutor:
             self.prompts_stripped = 0
             self._stream_undo_pushed = False
             self._stream_batch_started = False
-            # 首次搭建批次判定：批开始时故事板完全为空，则本批只允许先拆关键元素
-            self._first_structure_batch = (
-                self.gate_enabled
-                and prompt_gates.gate_mode() == "strict"
-                and prompt_gates.storyboard_is_empty(self.state)
-            )
+            # 0817：批前故事板是否为空快照（轮末阶段审阅卡只在「本批把空板推进到阶段完成」时注入）
+            self._storyboard_empty_before = prompt_gates.storyboard_is_empty(self.state)
         else:
             if mutating and not self._stream_undo_pushed:
                 self.svc.push_undo()
@@ -148,11 +144,7 @@ class StudioActionExecutor:
             if not self._stream_batch_started:
                 # 流式轮首个变动动作时判定（与普通批次「批开始时刻」语义一致）
                 self._stream_batch_started = True
-                self._first_structure_batch = (
-                    self.gate_enabled
-                    and prompt_gates.gate_mode() == "strict"
-                    and prompt_gates.storyboard_is_empty(self.state)
-                )
+                self._storyboard_empty_before = prompt_gates.storyboard_is_empty(self.state)
         applied = 0
         for action in actions:
             try:
@@ -536,14 +528,8 @@ class StudioActionExecutor:
             action.get("group_type") or action.get("draft_type")
             or action.get("kind") or action.get("target_type") or ""
         ).strip()
-        if (
-            getattr(self, "_first_structure_batch", False)
-            and group_type
-            and ops.category_for_group_type(group_type) != CAT_KEY_ELEMENTS
-        ):
-            logger.info("[FlowGate] 首次搭建建议先拆关键元素（警告，不拦人）")
-            if prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR not in self.gate_warnings:
-                self.gate_warnings.append(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
+        # 首拆只允许关键元素的平台自加限制已清除（0817：流程以 Skill 为准）；
+        # 客观依赖（分镜 sceneRefs 必须引用已存在元素）由 exec_common 校验兜底
         return self._apply_add_group_inner(action)
 
     def _apply_add_group_inner(self, action: Dict) -> bool:
@@ -555,10 +541,11 @@ class StudioActionExecutor:
             )
             if kind:
                 self.structure_kinds_created.add(kind)
-        # 结构首次建立 → 即时置位故事板待确认标记（阶段分界，随用户回应清除）
+        # 结构首次建立 → 故事板阶段完成才置待确认标记（0817：暂停点归位 Skill 阶段边界）
         if ok and self.gate_enabled and prompt_gates.gate_mode() == "strict":
-            interaction = self.state.setdefault("interaction", {})
-            interaction["storyboard_pending"] = True
+            if prompt_gates.storyboard_stage_complete(self.state, getattr(self, "skill_name", "")):
+                interaction = self.state.setdefault("interaction", {})
+                interaction["storyboard_pending"] = True
         return ok
 
     def _add_group_core(self, action: Dict) -> bool:
@@ -699,15 +686,7 @@ class StudioActionExecutor:
             action.get("group_type") or action.get("groupType")
             or action.get("draft_type") or action.get("kind") or ""
         )
-        # 首拆只允许关键元素：首次搭建批次内新建 shot/audio 草稿直接拒绝
-        if (
-            getattr(self, "_first_structure_batch", False)
-            and str(group_type).strip()
-            and ops.category_for_group_type(str(group_type)) != CAT_KEY_ELEMENTS
-        ):
-            logger.info("[FlowGate] 首次搭建建议先拆关键元素（警告，不拦人）")
-            if prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR not in self.gate_warnings:
-                self.gate_warnings.append(prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR)
+        # 首拆只允许关键元素的平台自加限制已清除（0817）
         draft_data = action.get("draft") or action.get("payload") or {}
         if not draft_data and action.get("patch"):
             # 898 事故回归：模型把建卡字段放进 patch/fields 而非 draft 时
