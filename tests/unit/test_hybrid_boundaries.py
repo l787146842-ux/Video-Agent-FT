@@ -328,7 +328,8 @@ def _clear_storyboard(svc):
 
 
 def test_ke_first_gate_text_track(svc):
-    """文本轨：首次搭建批次内 shot/audio 分组照常创建并附警告"""
+    """0817 用户裁决：平台不再「首拆只允关键元素」警告——流程以 Skill 为准，
+    空板直接建 shot/audio 也照常创建且无首拆警告。"""
     _clear_storyboard(svc)
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     ex = StudioActionExecutor(svc, gate_enabled=True)
@@ -341,7 +342,7 @@ def test_ke_first_gate_text_track(svc):
     assert len(svc.state_dict["shots"]) == 1
     assert len(svc.state_dict["audioItems"]) == 1
     assert [g["title"] for g in svc.state_dict["keyElements"]][-1] == "Element_A"
-    assert ex.gate_warnings and "首次" in ex.gate_warnings[0]
+    assert not any("首次" in w for w in ex.gate_warnings)
 
 
 def test_ke_first_gate_allows_shots_after_elements_exist(svc):
@@ -357,7 +358,7 @@ def test_ke_first_gate_allows_shots_after_elements_exist(svc):
 
 
 def test_ke_first_gate_fc_track(monkeypatch):
-    """FC 轨：首次搭建批次内建 shot 分组照常执行并记录警告"""
+    """0817 用户裁决：FC 轨空板建 shot 照常执行且无首拆警告。"""
     import asyncio
     runner = FCToolRunner(tool_manager=_StubToolManager())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {
@@ -371,7 +372,7 @@ def test_ke_first_gate_fc_track(monkeypatch):
     ])
     applied, *_rest = asyncio.run(runner.execute(response, injected_skill="任意 Skill"))
     assert applied == 1
-    assert runner.gate_warnings and "首次" in runner.gate_warnings[0]
+    assert not any("首次" in w for w in runner.gate_warnings)
 
 
 # ---------- pending 批内即时置位（8888 事故：同批建结构又写提示词） ----------

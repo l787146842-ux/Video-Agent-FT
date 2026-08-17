@@ -306,6 +306,10 @@ class FCToolRunner:
         guard_pipeline.evaluate_gen_confirm（与文本轨逐字节一致）。"""
         if name != "image_generate":
             return None
+        # 0817 一条龙：用户本条消息的显式指令作为本批生成同意（留痕），不弹确认闸
+        if prompt_gates.flow_auto_continue(self._raw_state()):
+            logger.info("[FlowDirective] 一条龙指令作为本批生成同意（留痕）")
+            return None
         state = self._raw_state()
         target = str(args.get("target") or "all_keyElements").strip()
         targets: List[Dict[str, Any]] = []
@@ -683,7 +687,7 @@ class FCToolRunner:
             and not prompt_gates.has_spec_document(self._raw_state())
             and not confirmation
         ):
-            if self.gate_override in ("all", True):
+            if self.gate_override in ("all", True) or prompt_gates.flow_auto_continue(self._raw_state()):
                 self.gate_warnings.append("用户已要求全速推进，已豁免规格收集暂停（仅附警告）")
             else:
                 confirmation, confirmation_options = prompt_gates.spec_collect_card(self._raw_state())
@@ -696,6 +700,7 @@ class FCToolRunner:
             not confirmation
             and skill_strict
             and storyboard_empty_before
+            and not prompt_gates.flow_auto_continue(self._raw_state())
             and prompt_gates.storyboard_stage_complete(self._raw_state(), injected_skill)
         ):
             confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(

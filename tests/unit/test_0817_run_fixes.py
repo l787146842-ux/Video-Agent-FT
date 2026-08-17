@@ -198,6 +198,59 @@ def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
     assert svc.state_dict["keyElements"][0]["title"] == "瓦西里"
 
 
+# ---------- 0817 B11：flow_directive 一条龙（模型解读+平台机械执行+按消息生效） ----------
+
+@pytest.mark.asyncio
+async def test_0817_flow_directive_tool_sets_flag_and_clears(tmp_path, monkeypatch):
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.core import prompt_gates
+    from src.video_agent.tools.document_tools import FlowDirectiveTool
+    svc = StateManager(str(tmp_path / "ws"))
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+    tool = FlowDirectiveTool()
+    res = await tool.aexecute(tool.get_input_schema()(auto_continue=True))
+    assert res.success and prompt_gates.flow_auto_continue(svc.state_dict)
+    # 任务开始清除（按消息生效语义）
+    assert prompt_gates.clear_flow_directive(svc.state_dict) is True
+    assert not prompt_gates.flow_auto_continue(svc.state_dict)
+    assert prompt_gates.clear_flow_directive(svc.state_dict) is False
+
+
+@pytest.mark.asyncio
+async def test_0817_flow_directive_text_track_sets_flag(tmp_path):
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.core import prompt_gates
+    from src.video_agent.web.action_executor import StudioActionExecutor
+    svc = StateManager(str(tmp_path / "ws"))
+    ex = StudioActionExecutor(svc, gate_enabled=False)
+    assert ex.execute([{"action": "flow_directive", "auto_continue": True}]) == 1
+    assert prompt_gates.flow_auto_continue(svc.state_dict)
+
+
+@pytest.mark.asyncio
+async def test_0817_spec_write_allowed_under_auto_continue(tmp_path, monkeypatch):
+    """一条龙下模型可按 Skill 填写规格（用户指令=规格同意，留痕）。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.tools.document_tools import DocumentWriteTool
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
+    svc.state_dict.setdefault("interaction", {})["auto_continue"] = True
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+    tool = DocumentWriteTool()
+    res = await tool.aexecute(tool.get_input_schema()(
+        name="Final_Video_Spec.md", content="- 输出语言：中文\n"))
+    assert res.success, res.error
+
+
+def test_0817_pause_suppressions_wired_to_auto_continue():
+    """轮末三处暂停/引导卡均接入一条龙豁免（G4 同类路径）。"""
+    import inspect
+    from src.video_agent.core import round_end_policies as rep
+    for fn in (rep._cond_structure_stage_review, rep._cond_stage_done_fallback):
+        assert "flow_auto_continue" in inspect.getsource(fn)
+    assert "flow_auto_continue" in inspect.getsource(rep._apply_spec_collect)
+
+
 # ---------- 0817 B9：机器覆盖验收（Skill 声明驱动） ----------
 
 def test_0817_script_speakers_extraction():

@@ -329,6 +329,11 @@ class StudioActionExecutor:
 
         目标草稿存在未确认即整批硬拒（4444 语义：模型跳确认非用户意志；
         override/未激活放行）；不再各自手写「跳过未确认项」镜像判定。"""
+        # 0817 一条龙：用户本条消息的显式指令作为本批生成同意（留痕）
+        _svc = getattr(self, "svc", None)
+        if _svc is not None and prompt_gates.flow_auto_continue(_svc.state_dict):
+            logger.info("[FlowDirective] 一条龙指令作为本批生成同意（留痕）")
+            return pairs
         drafts = [d for _, d in pairs]
         err, warns = guard_pipeline.evaluate_gen_confirm(
             drafts,
@@ -381,6 +386,8 @@ class StudioActionExecutor:
             return self._apply_group_patch(action)
         if name == "add_draft":
             return self._apply_add_draft(action)
+        if name == "flow_directive":
+            return self._apply_flow_directive(action)
         if name in ("add_group", "add_keyElement", "add_shot", "add_audio"):
             return self._apply_add_group(action)
         if name in ("delete_draft", "remove_draft"):
@@ -677,6 +684,14 @@ class StudioActionExecutor:
             return False
         _, draft = result
         return ops.clear_draft_media(draft)
+
+    def _apply_flow_directive(self, action: Dict) -> bool:
+        # 0817：模型解读用户一条龙意图后发出；平台机械登记（本条消息生效）
+        if bool(action.get("auto_continue")):
+            inter = self.state.setdefault("interaction", {})
+            inter["auto_continue"] = True
+            logger.info("[FlowDirective] 一条龙指令登记（本条消息生效）")
+        return True
 
     def _apply_add_draft(self, action: Dict) -> bool:
         if not self._spec_gate_ok():

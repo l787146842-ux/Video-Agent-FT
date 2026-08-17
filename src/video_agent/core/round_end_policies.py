@@ -282,8 +282,9 @@ def _cond_spec_collect(ctx: RoundEndContext) -> bool:
 
 
 async def _apply_spec_collect(ctx: RoundEndContext, emit: Callable) -> None:
-    # 1111/6666 事故层9兜底；scope=all 豁免只附警告
-    if getattr(ctx.executor, "gate_override", False) in ("all", True):
+    # 1111/6666 事故层9兜底；scope=all 豁免只附警告；0817 一条龙同豁免
+    if getattr(ctx.executor, "gate_override", False) in ("all", True) \
+            or prompt_gates.flow_auto_continue(ctx.executor.state):
         ctx.result_warnings.append("用户已要求全速推进，已豁免规格收集暂停（仅附警告）")
         return
     ctx.confirmation, ctx.confirmation_options = prompt_gates.spec_collect_card(ctx.executor.state)
@@ -303,6 +304,7 @@ def _cond_structure_stage_review(ctx: RoundEndContext) -> bool:
         not ctx.confirmation
         and bool(_structure_kinds(ctx))
         and getattr(ctx.executor, "_storyboard_empty_before", False)
+        and not prompt_gates.flow_auto_continue(ctx.executor.state)
         and getattr(ctx.executor, "gate_enabled", False)
         and prompt_gates.gate_mode() == "strict"
         and prompt_gates.storyboard_stage_complete(
@@ -320,8 +322,10 @@ async def _apply_structure_stage_review(ctx: RoundEndContext, emit: Callable) ->
 
 
 def _cond_stage_done_fallback(ctx: RoundEndContext) -> bool:
-    # 5555 事故 + B4/F29：声明驱动 + 平台兜底双语义
+    # 5555 事故 + B4/F29：声明驱动 + 平台兜底双语义；0817 一条龙豁免引导卡
     if ctx.confirmation or ctx.gate_heal or ctx.applied <= 0:
+        return False
+    if prompt_gates.flow_auto_continue(ctx.executor.state):
         return False
     stage_pause_declared = False
     if ctx.skill:

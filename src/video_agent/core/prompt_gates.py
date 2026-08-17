@@ -689,6 +689,20 @@ def storyboard_stage_complete(raw_state: Dict[str, Any], skill_name: str = "") -
     return bool(raw_state.get(CAT_AUDIO_ITEMS) or []) if need_audio else True
 
 
+def flow_auto_continue(raw_state: Dict[str, Any]) -> bool:
+    """0817 一条龙指令（模型解读用户意图后发出；仅本条消息生效，任务开始即清）。"""
+    return bool((raw_state.get("interaction") or {}).get("auto_continue"))
+
+
+def clear_flow_directive(raw_state: Dict[str, Any]) -> bool:
+    """0817：任务开始清除上一任务残留的一条龙标记（按消息生效语义）；返回是否清除。"""
+    inter = raw_state.get("interaction")
+    if inter and inter.get("auto_continue"):
+        inter["auto_continue"] = False
+        return True
+    return False
+
+
 def storyboard_pending(raw_state: Dict[str, Any]) -> bool:
     """故事板结构是否正处于「等待用户确认」窗口（仅供提示，不再拦截写入）"""
     interaction = raw_state.get("interaction") or {}

@@ -21,6 +21,7 @@ from loguru import logger
 
 from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.config import settings
+from src.video_agent.core import prompt_gates
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.mock_chat import mock_stream
@@ -133,6 +134,10 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
         ensure_iron_rules_doc(svc.state_dict)
     except Exception as _e:
         logger.debug("[chat_service] 忽略异常: {}", _e)
+
+    # 0817：一条龙指令仅本条消息生效——任务开始清除上一任务残留标记
+    if prompt_gates.clear_flow_directive(svc.state_dict):
+        svc.save_debounced()
 
     t0 = time.monotonic()
     executor = StudioActionExecutor(

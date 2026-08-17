@@ -27,6 +27,7 @@
 - write_media_prompt: 调用 Skill 独立执行器按当前 Skill 的「提示词写法」章节为草稿逐条编写提示词。
 - audio_generate: 调用 Skill 独立执行器生成音频规划（旁白/BGM/音效）或绑定用户上传音频；不生成音频文件。
 - video_assembler: 调用 Skill 独立执行器输出成片素材清单、时间轴顺序与组装建议。
+- flow_directive: 流程指令。仅当用户本条消息明确要求一条龙/自动推进（如「一条龙」「一口气做完」「中途别问我」）时发出 {"action":"flow_directive","auto_continue":true}，豁免本条消息的流程暂停；用户未明确要求时不得发出。
   以上 7 个执行器会由系统自动注入当前选中 Skill 的对应章节并独立执行，不需要你输出 prompt 全文。
 
 patch/draft 可包含：title, desc, roughDesc, timeRange, duration, label, tag, prompt, imgUrl, videoUrl, mode, model, resolution, aspectRatio, size, timbre, refAssets。

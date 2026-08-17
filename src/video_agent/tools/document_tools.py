@@ -51,7 +51,8 @@ class GenerateImageInput(BaseModel):
 
 
 class WorkflowPauseInput(BaseModel):
-    message: str = Field("", description="向用户说明已完成什么、接下来要做什么")
+    message: str = Field("", description="向用户说明已完成什么、接下来做什么")
+
     options: List[Dict[str, str]] = Field(
         default_factory=list,
         description="引导选项（前端渲染为选择卡片，用户选择后作为回复发送），暂停时原则上必须提供："
@@ -60,6 +61,15 @@ class WorkflowPauseInput(BaseModel):
         "不是「生成概念图」），严禁超前承诺。"
         "多个维度一次性收集时（如成片规格：时长/画幅/风格/声音），每项带上 group 字段，"
         "前端会渲染为分页向导卡片，用户逐页选完后一次性发送全部选择，避免逐题多轮往返",
+    )
+
+
+class FlowDirectiveInput(BaseModel):
+    auto_continue: bool = Field(
+        False,
+        description="仅当用户本条消息明确要求一条龙/自动推进（如「一条龙」"
+        "「一口气做完」「中途别问我」）时为 true，豁免本条消息的流程暂停；"
+        "用户未明确要求时不得发出",
     )
 
 
@@ -136,12 +146,14 @@ class DocumentWriteTool(BaseTool):
                         error=("规格已按您的选择生成，无需重复写入；"
                                "要调整请在文档面板修改或重发选择。"),
                     )
-                # 814G3：规格尚未交互时文案不得说「已生成」（模型/用户都未交互过）
-                return ToolResult(
-                    success=False,
-                    error=("规格文档尚未生成：系统将按用户在向导中的选择统一拼装，"
-                           "模型不得手写；请暂停等待规格交互完成后再继续。"),
-                )
+                # 0817 一条龙：用户指令作为规格同意，模型按 Skill 填写写入（留痕）
+                if not prompt_gates.flow_auto_continue(svc.state_dict):
+                    # 814G3：规格尚未交互时文案不得说「已生成」（模型/用户都未交互过）
+                    return ToolResult(
+                        success=False,
+                        error=("规格文档尚未生成：系统将按用户在向导中的选择统一拼装，"
+                               "模型不得手写；请暂停等待规格交互完成后再继续。"),
+                    )
 
         async with svc.lock:
             docs = svc.state_dict.setdefault("documents", [])
@@ -426,6 +438,27 @@ class ImageGenerateTool(BaseTool):
         })
 
 
+class FlowDirectiveTool(BaseTool):
+    name = "flow_directive"
+    description = (
+        "流程指令：仅当用户本条消息明确要求一条龙/自动推进时才以 auto_continue=true 发出，"
+        "豁免本条消息的流程暂停（规格收集/故事板审阅等卡片不再弹出，"
+        "生成确认以该指令为本批显式同意并留痕）；用户未明确要求时不得发出。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return FlowDirectiveInput
+
+    async def aexecute(self, params: FlowDirectiveInput) -> ToolResult:
+        svc = StateManager.get_instance()
+        if params.auto_continue:
+            inter = svc.state_dict.setdefault("interaction", {})
+            inter["auto_continue"] = True
+            svc.save_debounced()
+            logger.info("[FlowDirective] 一条龙指令登记（本条消息生效）")
+        return ToolResult(success=True, data={"auto_continue": bool(params.auto_continue)})
+
+
 class WorkflowPauseTool(BaseTool):
     name = "workflow_pause"
     description = "暂停工作流并请求用户确认。用于拆解完成后请用户过目再继续的场景。"
@@ -454,4 +487,5 @@ def register_document_tools():
     ToolManager.register(ReadProjectDocTool())
     ToolManager.register(ImageGenerateTool())
     ToolManager.register(WorkflowPauseTool())
-    logger.info("[Tools] 7 document/generation/workflow tools registered")
+    ToolManager.register(FlowDirectiveTool())
+    logger.info("[Tools] 8 document/generation/workflow/flow tools registered")
