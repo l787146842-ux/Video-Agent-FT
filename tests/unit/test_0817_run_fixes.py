@@ -232,6 +232,27 @@ def test_0817_iron_rules_migration_strips_old_clauses():
     assert ensure_iron_rules_doc(raw) is False  # 幂等
 
 
+def test_0817_iron_rules_migration_from_spec_section_strips_clauses():
+    """复查补漏：老项目规格文档内嵌铁律章节迁入时，若带默认第4/5条同样剥离。"""
+    from src.video_agent.core.spec_rules import ensure_iron_rules_doc
+    spec_with_iron = (
+        "# 制片规格\n\n## 执行铁律\n"
+        "1. 执行优先：用户说什么就做什么。\n"
+        "2. 拆解覆盖完整（自检核对）。\n"
+        "3. 回复精简。\n"
+        "4. 提示词质量：须逐条落实 Skill 规范。\n"
+        "5. 产出形态：中文叙事式多节拍写法。\n\n"
+        "- 画幅比例：16:9\n"
+    )
+    raw = {"documents": [{"id": "s1", "name": "Final_Video_Spec.md",
+                          "content": spec_with_iron}]}
+    assert ensure_iron_rules_doc(raw) is True
+    iron = next(d for d in raw["documents"] if "铁律" in d["name"])
+    assert "提示词质量" not in iron["content"]
+    assert "产出形态" not in iron["content"]
+    assert "执行优先" in iron["content"]
+
+
 def test_0817_global_settings_stage_gated():
     """全局设置注入阶段门控：规格规划阶段不注入，故事板起才注入。"""
     from src.video_agent.core.prompt_builder import PromptBuilder

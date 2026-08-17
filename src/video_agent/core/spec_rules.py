@@ -98,8 +98,10 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
         body = migrated or _IRON_RULES_DOC_BODY.strip()
         # 老项目迁移来的正文同步升级：优先级措辞（含制片规格同级）
         # + 删「不得拦截/强制暂停」半句（2222 二轮）
+        # + 0817 B18：规格文档迁入的旧章节若带默认第 4/5 条同样剥离
         body = body.replace(_OLD_PRIORITY, _NEW_PRIORITY)
         body = _NO_BLOCK_RE.sub("。", body)
+        body = _IRON_CLAUSE_45_RE.sub("", body).rstrip()
         docs.insert(0, {
             "id": gen_id("doc"),
             "name": IRON_RULES_DOC_NAME,

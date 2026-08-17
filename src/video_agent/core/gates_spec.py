@@ -254,7 +254,7 @@ def build_spec_param_options(
     msg = (
         "以下规格维度尚待您选定：" + "、".join(rendered_dims)
         + "。请逐项选择或自定义输入后发送（直接点选即可），"
-        "系统将拼装规格并开始拆分关键元素。"
+        "系统将拼装规格，随后按当前 Skill 流程推进。"
     )
     return msg, opts
 
