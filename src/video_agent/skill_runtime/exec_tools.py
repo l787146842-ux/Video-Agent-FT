@@ -4,6 +4,7 @@
 独立完成「读输入 → LLM 调用/组装 → 结构化校验 → 写状态」。
 LLM 类执行器不依赖模型 function calling，Planner/文本动作轨都可调用。
 """
+import hashlib
 import json
 import math
 import re
@@ -106,6 +107,27 @@ class ScriptAnalyzeTool:
         content = str(doc.get("content") or "")
         if not content:
             return exec_common.SkillToolResult(success=False, error="上传文档没有可解析的文本内容（扫描版 PDF 需改用文本/图片上传）")
+        # 0817 B15：幂等——同一剧本（内容指纹未变）且无附加要求时直接复用
+        # 既有分析（零 LLM），防冗余重跑导致的耗时与正文重复总结
+        _fp = hashlib.sha1(content[:12000].encode("utf-8", "ignore")).hexdigest()[:16]
+        cached = svc.state_dict.get("analysis") or {}
+        if (
+            not str(params.user_text or "").strip()
+            and cached.get("doc_name") == doc.get("name")
+            and cached.get("fingerprint") == _fp
+            and str(cached.get("summary") or "").strip()
+        ):
+            logger.info("[SkillExec] script_analyze 幂等命中：剧本未变，复用既有分析")
+            return exec_common.SkillToolResult(success=True, data={
+                "summary": cached["summary"],
+                "key_points": cached.get("key_points") or [],
+                "cached": True,
+                "detail": (
+                    f"《{doc.get('name')}》已有分析结果（剧本未变更），直接复用。"
+                    f"一句话总结：{cached['summary']}（本轮不要重复分析；"
+                    "若此前已向用户展示过总结，正文不必再重复）"
+                ),
+            })
         user = (
             f"请分析以下上传素材《{doc.get('name')}》并输出 JSON：\n"
             "{\"summary\": \"一句话故事总结\", \"key_points\": [\"关键信息要点...\"]}\n\n"
@@ -132,6 +154,7 @@ class ScriptAnalyzeTool:
             "doc_name": doc.get("name"),
             "summary": summary,
             "key_points": key_points,
+            "fingerprint": _fp,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         svc.save_debounced()

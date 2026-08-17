@@ -198,6 +198,51 @@ def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
     assert svc.state_dict["keyElements"][0]["title"] == "瓦西里"
 
 
+# ---------- 0817 B15：script_analyze 幂等（剧本未变不重跑） ----------
+
+@pytest.mark.asyncio
+async def test_0817_script_analyze_idempotent(tmp_path, monkeypatch):
+    """同一剧本重复分析 → 第二次直接复用既有结果（零 LLM 调用）。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.skill_runtime import exec_tools
+
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["uploadedDocs"] = [
+        {"id": "d1", "name": "剧本.md", "content": "剧本正文：罗辑：黑暗森林。"}]
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+    calls = {"n": 0}
+
+    async def fake_json_call(system, user, **kwargs):
+        calls["n"] += 1
+        return {"summary": "人类 intercept 白色薄片", "key_points": ["降维打击"]}
+
+    monkeypatch.setattr(exec_tools.exec_spec, "_llm_json_call", fake_json_call)
+    monkeypatch.setattr(exec_tools, "tool_available", lambda skill, tool: True)
+    monkeypatch.setattr(exec_tools, "_generate_soft_spec_candidates",
+                        lambda *a, **k: _async_none())
+    tool = exec_tools.ScriptAnalyzeTool()
+    params = tool.get_input_schema()(skill_name="AI-短剧一站式生成", doc_name="剧本.md")
+    r1 = await tool.aexecute(params)
+    assert r1.success and calls["n"] == 1
+    r2 = await tool.aexecute(params)
+    assert r2.success and calls["n"] == 1, "剧本未变不得重跑 LLM"
+    assert r2.data.get("cached") is True
+    # 缓存命中的总结不再强制入正文（防规格交互后正文重复出现总结）
+    from src.video_agent.core.planner_output import prepend_script_summary
+    tr = [{"name": "script_analyze", "ok": True, "data": r2.data}]
+    assert prepend_script_summary("正文", tr) == "正文"
+    # 剧本内容变化 → 重新分析
+    svc.state_dict["uploadedDocs"][0]["content"] = "剧本正文（改）：程心：好的。"
+    r3 = await tool.aexecute(params)
+    assert r3.success and calls["n"] == 2
+
+
+def _async_none():
+    async def _coro(*a, **k):
+        return None
+    return _coro()
+
+
 # ---------- 0817 B14：规格文档卡不得落在用户选择消息之前 ----------
 
 def test_0817_wizard_doc_card_deferred_until_after_user_msg(tmp_path):

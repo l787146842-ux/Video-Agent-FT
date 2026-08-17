@@ -23,6 +23,9 @@ def prepend_script_summary(visible: str, tool_results) -> str:
         if not isinstance(tr, dict):
             continue
         if str(tr.get("name") or "") == "script_analyze" and tr.get("ok"):
+            # 0817 B15：幂等缓存命中不算新产出，不再重复拼总结入正文
+            if (tr.get("data") or {}).get("cached"):
+                continue
             s = str((tr.get("data") or {}).get("summary") or "").strip()
             if s:
                 summary = s
