@@ -9,6 +9,7 @@ from loguru import logger
 from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
+from src.video_agent.core.sse_events import SSE_DOC_WRITTEN
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.mock_chat import mock_stream
@@ -277,8 +278,6 @@ async def emit_pending_doc_card(svc, turn_id: str, emit) -> str:
     前端实时渲染只认 doc_written SSE / done 载荷 documents_written 两通道，
     向导机械拼装此前两通道都不走 → 不刷新看不见卡（9999 现场）。
     """
-    from src.video_agent.core.sse_events import SSE_DOC_WRITTEN
-
     name = flush_pending_doc_card(svc, turn_id)
     if name and emit is not None:
         await emit({"type": SSE_DOC_WRITTEN, "name": name, "turn_id": turn_id})

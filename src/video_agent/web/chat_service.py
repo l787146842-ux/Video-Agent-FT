@@ -647,6 +647,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         _record_active_skill(svc, body)
 
     # mock 路径
+    _wiz_card = ""
     if is_mock_provider(body.provider, body.model):
         async with svc.lock:
             if use_studio_context:
@@ -685,6 +686,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         videos=body.videos or [],
     )
 
+    _wiz_card_ns = ""
     async with svc.lock:
         if use_studio_context:
             bind_attachments(svc, body.attachments)
