@@ -89,7 +89,7 @@ def test_sort_badge_unknown_labels_keep_relative_order(tmp_path):
 
 @pytest.mark.asyncio
 async def test_split_emits_notes_and_snapshots_and_sorts(monkeypatch, tmp_path):
-    """完整 KE 拆解：首拆落盘即发快照+明细；自检补建后再发一次并按类别归位。"""
+    """完整 KE 拆解：首拆落盘即发快照+明细；验收定向补建后再发一次并按类别归位。"""
     from src.video_agent.skill_runtime.executors import (
         StoryboardKeyElementsTool, StoryboardSplitInput,
     )
@@ -103,16 +103,16 @@ async def test_split_emits_notes_and_snapshots_and_sorts(monkeypatch, tmp_path):
     async def fake_chat(provider, model, messages, **kwargs):
         calls["n"] += 1
         if calls["n"] == 1:
-            # 首拆：故意乱序（道具在前、人物在后），验证补漏后归位
+            # 首拆：故意乱序（道具在前、人物在后），验证补建后归位
             return ('[{"action":"add_group","group_type":"keyElement",'
                     '"title":"二向箔","desc":"道具","badgeLabel":"道具"},'
                     '{"action":"add_group","group_type":"keyElement",'
                     '"title":"罗辑","desc":"角色","badgeLabel":"人物"}]', "stop")
         if calls["n"] == 2:
-            # 自检（固定 1 轮）：补一个场景（真实函数会自行落盘）
+            # 定向补拆轮：补机器验收发现的缺失台词人程心
             return ('[{"action":"add_group","group_type":"keyElement",'
-                    '"title":"冥王星","desc":"场景","badgeLabel":"场景"}]', "stop")
-        return ("[]", "stop")  # 不应再发生（自检只跑 1 轮）
+                    '"title":"程心","desc":"角色","badgeLabel":"人物"}]', "stop")
+        return ("[]", "stop")  # 不应再发生（补拆只跑 1 轮）
 
     def fake_resolve(provider="", model=""):
         return ("fake-provider", "fake-model")
@@ -123,7 +123,7 @@ async def test_split_emits_notes_and_snapshots_and_sorts(monkeypatch, tmp_path):
     svc.state_dict["shots"] = []
     svc.state_dict["audioItems"] = []
     svc.state_dict["uploadedDocs"] = [
-        {"id": "d1", "name": "剧本.md", "content": "剧本正文：罗辑在冥王星"}
+        {"id": "d1", "name": "剧本.md", "content": "剧本正文：\n罗辑：黑暗森林。\n程心：好的。"}
     ]
     monkeypatch.setattr(gen_mod, "call_chat_completion", fake_chat)
     monkeypatch.setattr(exec_common, "_resolve_chat_provider", fake_resolve)
@@ -142,21 +142,21 @@ async def test_split_emits_notes_and_snapshots_and_sorts(monkeypatch, tmp_path):
         unbind_progress_emitter(token)
 
     assert result.success, result.error
-    # Q3：首拆落盘 + 自检补建，各发一次状态快照（前端左栏增量点亮）
+    # Q3：首拆落盘 + 验收补建，各发一次状态快照（前端左栏增量点亮）
     applied_events = [e for e in events if e.get("type") == "actions_applied"]
     assert len(applied_events) >= 2
-    # Q2：子步骤明细进时间线（首拆/自检轮都有）
+    # Q2：子步骤明细进时间线（首拆/补拆轮都有）
     notes = [
         e.get("result_summary", "")
         for e in events if e.get("type") == "tool_finished" and str(e.get("id", "")).startswith("sub-")
     ]
     assert any("首拆完成" in s for s in notes)
-    assert any("自检" in s and "补建 1 个遗漏元素" in s for s in notes)
-    # 固定 1 轮自检：不应出现第二轮明细
+    assert any("验收" in s and "补建 1 个遗漏元素" in s for s in notes)
+    # 只跑 1 轮补拆：不应出现第二轮明细
     assert not any("第 2 轮" in s for s in notes)
-    # Q4：补漏后按类别归位（人物→场景→道具），补建的场景不垫底
+    # Q4：补建后按类别归位（人物保持原先后→道具），补建的人物不垫底
     titles = [g["title"] for g in svc.state_dict["keyElements"]]
-    assert titles == ["罗辑", "冥王星", "二向箔"]
+    assert titles == ["罗辑", "程心", "二向箔"]
 
 
 @pytest.mark.asyncio

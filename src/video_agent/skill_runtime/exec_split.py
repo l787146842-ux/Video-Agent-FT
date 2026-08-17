@@ -4,8 +4,9 @@
 自检补漏（_selfcheck_key_elements）。exec_tools 尾部 re-export 保持既有
 引用路径不变（宪法 §12 登记壳）。
 """
+import re
 import time
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from loguru import logger
 
@@ -80,6 +81,76 @@ _AUDIO_BOUNDARY = (
 )
 
 
+_AUDIO_BADGES = ("音频", "音频-角色", "音色")
+_CHAR_BADGES = ("人物", "角色")
+_SPEAKER_RE = re.compile(r"(?m)^\s*([一-鿿A-Za-z][一-鿿A-Za-z0-9_]{0,11})\s*[:：]")
+_SPEAKER_STOP = frozenset({
+    "场景", "地点", "时间", "人物", "画面", "镜头", "旁白", "画外",
+    "音效", "音乐", "台词", "动作", "描述", "内容", "标题", "格式",
+    "注意", "说明", "总结", "梗概", "正文", "剧本", "摘要", "预览",
+})
+
+
+def _script_speakers(script_text: str, limit: int = 20) -> List[str]:
+    """0817：剧本原文客观提取台词人（行首 名字+冒号），作覆盖验收实体基线。"""
+    out: List[str] = []
+    for m in _SPEAKER_RE.finditer(str(script_text or "")):
+        name = m.group(1).strip()
+        if len(name) < 2 or any(w in name for w in _SPEAKER_STOP) or any(c.isdigit() for c in name):
+            continue
+        if name not in out:
+            out.append(name)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def skill_declares_audio(skill_name: str) -> bool:
+    """0817：Skill 是否声明音色登记（章节提及 key_element_audio/音色登记，
+    或 manifest gates.require_audio_layer）——验收清单从 Skill 读，不拍脑袋。"""
+    try:
+        entry = resolve_entry(skill_name)
+        content = entry.content if entry else ""
+    except Exception:
+        content = ""
+    if not content:
+        return False
+    if "key_element_audio" in content or ("音色" in content and "登记" in content):
+        return True
+    try:
+        from src.video_agent.core import prompt_gates
+        return bool(prompt_gates.parse_gate_rules(content).get("require_audio_layer", False))
+    except Exception:
+        return False
+
+
+def _coverage_missing_key_elements(svc: StateManager, skill_name: str) -> List[str]:
+    """0817 机器覆盖验收（零 token，P2）：① 剧本台词人都有对应分组；
+    ② Skill 声明音色时，每个人物组都有对应音色组。缺失才触发定向补拆。"""
+    groups = [
+        g for g in (svc.state_dict.get(CAT_KEY_ELEMENTS) or [])
+        if isinstance(g, dict)
+    ]
+    titles = [str(g.get("title") or "").strip() for g in groups]
+    missing: List[str] = []
+    script = exec_common._build_script_hint(svc.state_dict)
+    for sp in _script_speakers(script):
+        if not any(t and (sp in t or t in sp) for t in titles):
+            missing.append(f"角色「{sp}」（剧本台词人）未拆出分组")
+    if skill_declares_audio(skill_name):
+        audio_descs = [
+            (str(a.get("title") or "") + str(a.get("desc") or ""))
+            for a in groups
+            if str(a.get("badgeLabel") or "").strip() in _AUDIO_BADGES
+        ]
+        for g in groups:
+            badge = str(g.get("badgeLabel") or "").strip()
+            t = str(g.get("title") or "").strip()
+            if badge in _CHAR_BADGES and t and not any(t in d for d in audio_descs):
+                missing.append(f"角色「{t}」缺对应音色组（key_element_audio）")
+    return missing
+
+
 async def _selfcheck_key_elements(
     tool_name: str,
     skill_name: str,
@@ -88,25 +159,31 @@ async def _selfcheck_key_elements(
     svc: StateManager,
     provider: str,
     model: str,
+    missing: Optional[List[str]] = None,
 ) -> Tuple[int, List[str]]:
-    """第二遍自检：按剧本逐场核对补建遗漏的关键元素（防漏拆）。
-
-    模型首遍拆解倾向概括收敛（网页端靠用户多轮催补，执行器需自动化这一步）；
-    强制其对照已拆清单穷举核对。补建 0 个表示无遗漏，属正常结果。
-    """
-    if not script_hint:
+    """第二遍补漏：按机器验收缺失清单定向补建关键元素（0817：由常跑自检
+    改为条件触发，缺失清单由 _coverage_missing_key_elements 零 token 产出）。"""
+    if not script_hint and not missing:
         return 0, []
     existing = [
         str(g.get("title") or "").strip()
         for g in (svc.state_dict.get(CAT_KEY_ELEMENTS) or [])
     ]
     system = exec_common._skill_system_prompt(tool_name, skill_name, _KE_SELFCHECK_BOUNDARY)
+    if missing:
+        ask = (
+            "\n\n机器验收发现以下缺失项（逐条补齐，缺什么补什么，"
+            "不要重复已有分组）：\n" + "\n".join(f"- {m}" for m in missing)
+        )
+    else:
+        ask = (
+            "\n\n请按剧本逐场/逐段核对是否有遗漏的关键元素（补建粒度与克制要求按《执行铁律》第 2 条）。\n"
+            "只输出遗漏元素的 studio-actions JSON 数组"
+        )
     user = (
         "以下是本项目已拆出的关键元素分组：\n"
         + ("\n".join(f"- {t}" for t in existing) if existing else "（暂无）")
-        + "\n\n" + script_hint + "\n\n"
-        "请按剧本逐场/逐段核对是否有遗漏的关键元素（补建粒度与克制要求按《执行铁律》第 2 条）。\n"
-        "只输出遗漏元素的 studio-actions JSON 数组"
+        + "\n\n" + script_hint + ask +
         "（add_group，group_type=keyElement，带 title/desc/badgeLabel；"
         "badgeLabel 必填：人物/场景/关键道具/载具 等类别标签）；"
         "没有遗漏时只输出 []。不要输出正文解释。"
@@ -286,35 +363,40 @@ async def _run_storyboard_split(
     # 固定 1 轮（8888 事故：2 轮自检对短剧本是纯耗时，且失控补建了
     # 大量背景杂物元素；长剧本漏项可由用户审阅后口头补）
     if tool_name == "storyboard_key_elements":
-        try:
-            provider, model = exec_common._resolve_chat_provider(params.chat_provider, params.chat_model)
-            if provider:
-                await emit_progress("首拆完成，正在对照剧本逐场自检补漏…")
-                _sc_t0 = time.monotonic()
-                filled, sc_warns = await _selfcheck_key_elements(
-                    tool_name, params.skill_name, skill_content, script_hint,
-                    svc, provider, model,
-                )
-                _sc_ms = (time.monotonic() - _sc_t0) * 1000
-                warnings += sc_warns
-                if not filled:
-                    await emit_timeline_note(
-                        "自检：已对照剧本核对，无遗漏元素",
-                        elapsed_ms=_sc_ms,
+        # 0817：机器覆盖验收（Skill 声明驱动）替换常跑模型自检——
+        # 核对零 token；无缺失直接省一轮模型调用（上下文净减少）
+        missing = _coverage_missing_key_elements(svc, params.skill_name)
+        if not missing:
+            await emit_timeline_note("验收：机器交叉核对通过，无遗漏元素")
+        else:
+            try:
+                provider, model = exec_common._resolve_chat_provider(params.chat_provider, params.chat_model)
+                if provider:
+                    await emit_progress(f"验收发现 {len(missing)} 项缺失，定向补拆…")
+                    _sc_t0 = time.monotonic()
+                    filled, sc_warns = await _selfcheck_key_elements(
+                        tool_name, params.skill_name, skill_content, script_hint,
+                        svc, provider, model, missing=missing,
                     )
-                else:
-                    # 补漏元素不垫底（Q4）：按类别稳定排序归入同类，再快照即显
-                    exec_common._sort_key_elements_by_badge(svc)
-                    svc.save_debounced()
-                    applied += filled
-                    detail += f"；自检对照剧本补建了 {filled} 个遗漏元素"
-                    await emit_timeline_note(
-                        f"自检：补建 {filled} 个遗漏元素（已按类别归位）",
-                        elapsed_ms=_sc_ms,
-                    )
-                    await emit_state_refresh(filled)
-        except Exception as e:
-            logger.warning(f"[SkillExec] 关键元素自检补漏失败（不影响首拆结果）: {e}")
+                    _sc_ms = (time.monotonic() - _sc_t0) * 1000
+                    warnings += sc_warns
+                    if not filled:
+                        await emit_timeline_note(
+                            f"验收：发现 {len(missing)} 项缺失但补拆未产出，请审阅后口头补",
+                            elapsed_ms=_sc_ms,
+                        )
+                    else:
+                        exec_common._sort_key_elements_by_badge(svc)
+                        svc.save_debounced()
+                        applied += filled
+                        detail += f"；验收定向补建了 {filled} 个遗漏元素"
+                        await emit_timeline_note(
+                            f"验收：补建 {filled} 个遗漏元素（已按类别归位）",
+                            elapsed_ms=_sc_ms,
+                        )
+                        await emit_state_refresh(filled)
+            except Exception as e:
+                logger.warning(f"[SkillExec] 关键元素验收补漏失败（不影响首拆结果）: {e}")
     # 回执实际建成清单（888 事故：只回数量模型靠猜建成了哪几个，
     # 猜错产生重名卡/空卡）：对照拆解前 ID 快照求差集（含自检补建；
     # 边界自适应放行多类时逐类别收集，2222 二轮）

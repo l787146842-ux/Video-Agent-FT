@@ -198,6 +198,59 @@ def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
     assert svc.state_dict["keyElements"][0]["title"] == "瓦西里"
 
 
+# ---------- 0817 B9：机器覆盖验收（Skill 声明驱动） ----------
+
+def test_0817_script_speakers_extraction():
+    from src.video_agent.skill_runtime import exec_split
+    text = "### 场一\n罗辑：黑暗森林。\n程心：好的。\n旁白：远处。\n罗辑：再来。"
+    assert exec_split._script_speakers(text) == ["罗辑", "程心"]
+
+
+def test_0817_skill_declares_audio_from_skill_doc():
+    from src.video_agent.skill_runtime import exec_split
+    # 真实 Skill 声明 key_element_audio → 验收才查音色
+    assert exec_split.skill_declares_audio("AI-短剧一站式生成") is True
+    assert exec_split.skill_declares_audio("不存在的Skill") is False
+
+
+def test_0817_coverage_missing_audio_and_speakers(tmp_path):
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.skill_runtime import exec_split
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["keyElements"] = [
+        {"id": "1", "title": "瓦西里", "badgeLabel": "人物", "desc": "x"},
+    ]
+    svc.state_dict["uploadedDocs"] = [
+        {"id": "d", "name": "剧本.md", "content": "瓦西里：收到。\n领航员：明白。"}
+    ]
+    missing = exec_split._coverage_missing_key_elements(svc, "AI-短剧一站式生成")
+    # 台词人领航员未拆 + 瓦西里缺音色组
+    assert any("领航员" in m for m in missing)
+    assert any("瓦西里" in m and "音色" in m for m in missing)
+    # 补齐后 → 无缺失
+    svc.state_dict["keyElements"].append(
+        {"id": "2", "title": "领航员", "badgeLabel": "人物", "desc": "x"})
+    svc.state_dict["keyElements"].append(
+        {"id": "3", "title": "瓦西里", "badgeLabel": "音频-角色", "desc": "音色"})
+    svc.state_dict["keyElements"].append(
+        {"id": "4", "title": "领航员", "badgeLabel": "音频-角色", "desc": "音色"})
+    assert exec_split._coverage_missing_key_elements(svc, "AI-短剧一站式生成") == []
+
+
+def test_0817_coverage_no_audio_check_when_skill_silent(tmp_path):
+    """Skill 未声明音色 → 不查音色（不会硬拆出音色组）。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.skill_runtime import exec_split
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["keyElements"] = [
+        {"id": "1", "title": "瓦西里", "badgeLabel": "人物", "desc": "x"},
+    ]
+    svc.state_dict["uploadedDocs"] = [
+        {"id": "d", "name": "剧本.md", "content": "瓦西里：收到。"}
+    ]
+    assert exec_split._coverage_missing_key_elements(svc, "不存在的Skill") == []
+
+
 # ---------- 0817 B4：执行器 JSON 畸形 → 带拒因纠正重试（C2） ----------
 
 def test_0817_llm_json_call_corrective_retry_on_malformed(monkeypatch):

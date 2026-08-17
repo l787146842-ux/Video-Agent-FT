@@ -266,7 +266,7 @@ def test_add_group_title_field_fallback(tmp_path):
 
 @pytest.mark.asyncio
 async def test_key_elements_selfcheck_fills_missing(monkeypatch, tmp_path):
-    """关键元素拆解后自动跑第二遍自检：对照剧本补建遗漏元素（防漏拆）。"""
+    """0817 机器验收：剧本台词人未拆出 → 定向补拆一轮补齐（防漏拆）。"""
     from src.video_agent.skill_runtime import executors as ex_mod
     from src.video_agent.skill_runtime.executors import (
         StoryboardKeyElementsTool, StoryboardSplitInput,
@@ -284,7 +284,7 @@ async def test_key_elements_selfcheck_fills_missing(monkeypatch, tmp_path):
         if calls["n"] == 1:  # 首拆：只拆出一个元素（模拟概括收敛）
             return ('[{"action":"add_group","group_type":"keyElement",'
                     '"title":"罗辑","desc":"角色"}]', "stop")
-        # 自检轮：已补齐后交白卷（真实模型对照已拆清单输出 []）
+        # 定向补拆轮：已补齐后交白卷
         titles = [g["title"] for g in svc.state_dict.get("keyElements") or []]
         if "关一帆" in titles:
             return ("[]", "stop")
@@ -296,7 +296,7 @@ async def test_key_elements_selfcheck_fills_missing(monkeypatch, tmp_path):
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["uploadedDocs"] = [
-        {"id": "d1", "name": "剧本.md", "content": "剧本正文：关一帆与程心在蓝星"}
+        {"id": "d1", "name": "剧本.md", "content": "剧本正文：\n罗辑：黑暗森林。\n关一帆：我们出发。"}
     ]
     monkeypatch.setattr(gen_mod, "call_chat_completion", fake_chat)
     monkeypatch.setattr(exec_common, "_resolve_chat_provider", fake_resolve)
@@ -307,8 +307,44 @@ async def test_key_elements_selfcheck_fills_missing(monkeypatch, tmp_path):
     assert result.success, result.error
     titles = [g["title"] for g in svc.state_dict["keyElements"]]
     assert "罗辑" in titles
-    assert "关一帆" in titles  # 自检轮补建成功
-    assert "自检对照剧本补建了 1 个遗漏元素" in result.data["detail"]
+    assert "关一帆" in titles  # 定向补拆轮补建成功
+    assert "验收定向补建了 1 个遗漏元素" in result.data["detail"]
+
+
+@pytest.mark.asyncio
+async def test_key_elements_no_missing_skips_model_round(monkeypatch, tmp_path):
+    """0817 上下文净减少：机器验收无缺失时不再跑模型自检轮。"""
+    from src.video_agent.skill_runtime.executors import (
+        StoryboardKeyElementsTool, StoryboardSplitInput,
+    )
+    from src.video_agent.state.manager import StateManager
+
+    _write(
+        "ke-skip",
+        "# KE\n> 调用规则：测试\n<storyboard_key_elements>\n拆解规范\n</storyboard_key_elements>\n",
+    )
+    calls = {"n": 0}
+
+    async def fake_chat(provider, model, messages, **kwargs):
+        calls["n"] += 1
+        return ('[{"action":"add_group","group_type":"keyElement",'
+                '"title":"罗辑","desc":"角色"}]', "stop")
+
+    def fake_resolve(provider="", model=""):
+        return ("fake-provider", "fake-model")
+
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["uploadedDocs"] = [
+        {"id": "d1", "name": "剧本.md", "content": "剧本正文：\n罗辑：黑暗森林。"}
+    ]
+    monkeypatch.setattr(gen_mod, "call_chat_completion", fake_chat)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", fake_resolve)
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+
+    tool = StoryboardKeyElementsTool()
+    result = await tool.aexecute(StoryboardSplitInput(skill_name="KE-SKIP"))
+    assert result.success, result.error
+    assert calls["n"] == 1  # 无缺失 → 省掉模型自检轮
 
 
 def test_apply_actions_no_gate_rules_typeerror(tmp_path):
