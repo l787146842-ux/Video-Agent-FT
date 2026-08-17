@@ -16,7 +16,7 @@
 | 层 | 技术 |
 |---|---|
 | 后端 | Python 3.11+ / FastAPI / Pydantic v2 / httpx / loguru |
-| 前端（现行） | SolidJS + TypeScript + Vite + TailwindCSS（`src/web/`；API 配置页暂以 iframe 嵌入 `static/api-settings.html`，待重写） |
+| 前端（现行） | SolidJS + TypeScript + Vite + 手写语义 CSS（tokens.css，九轮 B5 起 Tailwind 已摘除）；设置页已 SPA 化（`src/web/`） |
 | Agent 核心 | Planner 唯一入口 + 多步工具循环（function calling / 文本动作双路径） |
 | 记忆 | 自研记忆系统（chromadb 向量检索，可降级 JSON 关键词检索） |
 | 测试 | pytest（单元 + 集成）/ vitest / Playwright（e2e 冒烟） |
@@ -81,7 +81,7 @@ src/video_agent/          后端（FastAPI 应用）
 └── config.py             集中配置（环境变量驱动）
 
 src/web/                  前端（SolidJS SPA）
-static/                   构建产物 dist/ + images/ + api-settings 嵌入页（待重写进 SPA）
+static/                   构建产物 dist/ + images/（api-settings 嵌入页已 SPA 化移除）
 prompts/                  外置 Prompt（Rule 6）
 data/                     供应商配置 / 技能文档 / 记忆 fallback（data/ 整体 gitignore；技能文档 data/skills/*.md 例外入库，是产品数据源）
 tests/                    unit / integration / e2e / fixtures/canvas（契约夹具）

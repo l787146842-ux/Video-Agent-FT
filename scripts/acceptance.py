@@ -29,6 +29,7 @@ GATES: List[Tuple[str, List[str]]] = [
     ("file_lines", [sys.executable, "scripts/check_file_lines.py"]),
     ("func_imports", [sys.executable, "scripts/check_func_imports.py"]),
     ("governance_refs", [sys.executable, "scripts/check_governance_refs.py"]),
+    ("category_keys", [sys.executable, "scripts/check_category_keys.py"]),
 ]
 SUITES: List[Tuple[str, List[str]]] = [
     ("pytest", [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=line"]),

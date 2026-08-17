@@ -19,6 +19,7 @@ from src.video_agent.utils import gen_id
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import DATA_DIR
 from src.video_agent.state.manager import StateManager
+from src.video_agent.state.models import CAT_SHOTS
 
 _PERSIST_PATH = DATA_DIR / "video_batch_tasks.json"
 _MAX_BATCHES = 50
@@ -60,7 +61,7 @@ class VideoBatchManager:
         state = svc.state_dict
         shots: List[Dict[str, Any]] = []
         wanted = set(shot_group_ids or [])
-        for group in state.get("shots") or []:
+        for group in state.get(CAT_SHOTS) or []:
             if not isinstance(group, dict):
                 continue
             if wanted and str(group.get("id") or "") not in wanted:
@@ -83,7 +84,7 @@ class VideoBatchManager:
             "model": model,
             "resolution": resolution or settings.default_video_resolution,
             "duration": duration or settings.max_shot_duration,
-            "shots": shots,
+            CAT_SHOTS: shots,
             "status": "running",
             "created_at": time.time(),
             "updated_at": time.time(),
@@ -103,7 +104,7 @@ class VideoBatchManager:
             raise KeyError(f"批次 {batch_id} 不存在")
         if record.get("status") == "running":
             return self.get(batch_id)
-        for s in record["shots"]:
+        for s in record[CAT_SHOTS]:
             if s.get("status") in ("failed", "pending", "interrupted"):
                 s["status"] = "pending"
                 s["error"] = ""
@@ -129,7 +130,7 @@ class VideoBatchManager:
         if not record:
             raise KeyError(f"批次 {batch_id} 不存在")
         out = {k: v for k, v in record.items()}
-        out["total"] = len(out["shots"])
+        out["total"] = len(out[CAT_SHOTS])
         return out
 
     def list(self, project_id: str = "") -> List[Dict[str, Any]]:
@@ -140,7 +141,7 @@ class VideoBatchManager:
             out.append({
                 "batch_id": r["batch_id"], "project_id": r["project_id"],
                 "status": r["status"], "done": r["done"], "failed": r["failed"],
-                "total": len(r["shots"]), "created_at": r["created_at"],
+                "total": len(r[CAT_SHOTS]), "created_at": r["created_at"],
             })
         return sorted(out, key=lambda x: x["created_at"], reverse=True)
 
@@ -155,14 +156,14 @@ class VideoBatchManager:
         svc = StateManager.get_instance()
         state = svc.state_dict
         shots_by_draft = {}
-        for group in state.get("shots") or []:
+        for group in state.get(CAT_SHOTS) or []:
             if not isinstance(group, dict):
                 continue
             for draft in (group.get("drafts") or []):
                 if isinstance(draft, dict):
                     shots_by_draft[str(draft.get("id") or "")] = (group, draft)
         try:
-            for shot in record["shots"]:
+            for shot in record[CAT_SHOTS]:
                 if record.get("status") not in ("running",):
                     break
                 if shot.get("status") != "pending":

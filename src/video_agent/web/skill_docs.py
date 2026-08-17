@@ -21,6 +21,7 @@ from loguru import logger
 
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import SKILL_DOCS_DIR
+from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
 # 五轮 S6：标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
 from src.video_agent.core import live_metrics
 # N7（三轮审核）：pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
@@ -443,8 +444,8 @@ _MANIFEST_PAUSE_KEYS: Dict[str, Any] = {"stage_pause": False}
 
 # B4b/F32：step_done_conditions 的合法客观状态键（DAG 完成度声明化评估）
 _STEP_DONE_STATE_KEYS = frozenset({
-    "spec", "analysis", "keyElements", "ke_media",
-    "shots", "audio", "shot_video", "assembly",
+    "spec", "analysis", CAT_KEY_ELEMENTS, "ke_media",
+    CAT_SHOTS, "audio", "shot_video", "assembly",
 })
 
 

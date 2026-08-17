@@ -11,6 +11,7 @@ from loguru import logger
 
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state import storyboard_ops as ops
+from src.video_agent.state.models import CAT_KEY_ELEMENTS
 from src.video_agent.web import generation as _gen
 from src.video_agent.skill_runtime.progress import (
     emit_progress,
@@ -97,7 +98,7 @@ async def _selfcheck_key_elements(
         return 0, []
     existing = [
         str(g.get("title") or "").strip()
-        for g in (svc.state_dict.get("keyElements") or [])
+        for g in (svc.state_dict.get(CAT_KEY_ELEMENTS) or [])
     ]
     system = exec_common._skill_system_prompt(tool_name, skill_name, _KE_SELFCHECK_BOUNDARY)
     user = (

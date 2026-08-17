@@ -1,6 +1,5 @@
 /* ===== 设计 Token / 主题变量 / 全局基础（由 app.css 拆分） ===== */
-/* ===== 暗色模式策略：class ===== */
-@custom-variant dark (&:where(.dark, .dark *));
+/* ===== 暗色模式策略：class（html.light 选择器，九轮 B5 清除 Tailwind 残留指令） ===== */
 
 /* ===== 设计 Token ===== */
 :root {
@@ -41,27 +40,6 @@ html.light {
   --accent-emerald: #10b981;
   --accent-amber: #f59e0b;
   --splitter-hover: #3b82f6;
-}
-
-/* ===== Tailwind 主题扩展 ===== */
-@theme {
-  --color-bg-primary: var(--bg-primary);
-  --color-bg-secondary: var(--bg-secondary);
-  --color-bg-tertiary: var(--bg-tertiary);
-  --color-bg-hover: var(--bg-hover);
-  --color-bg-card: var(--bg-card);
-  --color-border-main: var(--border-color);
-  --color-border-highlight: var(--border-highlight);
-  --color-text-main: var(--text-main);
-  --color-text-muted: var(--text-muted);
-  --color-text-dim: var(--text-dim);
-  --color-accent-blue: var(--accent-blue);
-  --color-accent-purple: var(--accent-purple);
-  --color-accent-emerald: var(--accent-emerald);
-  --color-accent-amber: var(--accent-amber);
-  --radius-sm: var(--radius-sm);
-  --radius-md: var(--radius-md);
-  --radius-lg: var(--radius-lg);
 }
 
 /* ===== @layer base：全局基础 ===== */

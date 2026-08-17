@@ -480,7 +480,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 logger.warning(f"[ChatService] LLM 流式调用失败 ({cand_provider}/{cand_model}): {e}")
                 await _emit_stream_error(svc, body, e, emit, use_studio_context)
                 return
-            next_model = candidates[idx + 1][1]
+            next_provider, next_model = candidates[idx + 1]
             logger.warning(
                 f"[ChatService] 模型 {cand_model} 瞬时故障（{str(e)[:80]}），fallback 到 {candidates[idx + 1][0]}/{next_model}"
             )

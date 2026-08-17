@@ -147,6 +147,11 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.core.fc_tool_runner:format_tool_results",
             "src.video_agent.core.planner:_prepend_script_summary",
             "src.video_agent.web.action_executor:StudioActionExecutor._apply_generate_image",
+            # 九轮 B3/B3b 新壳（exec_media_writer/exec_media_gen/gates_cards 迁出后 re-export）
+            "src.video_agent.skill_runtime.exec_tools:WriteMediaPromptTool",
+            "src.video_agent.skill_runtime.exec_tools:AudioGenerateTool",
+            "src.video_agent.core.prompt_gates:SPEC_GATE_ERROR",
+            "src.video_agent.core.prompt_gates:parse_hard_selections",
         ),
     ),
     CouplingRow(
@@ -157,10 +162,13 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R15_s5_split_modules",
-        "gates_script / exec_split 拆分模块变更",
+        "拆分模块变更（gates_script/exec_split/gates_cards/exec_media_writer/exec_media_gen）",
         "prompt_gates 尾部与 exec_tools 尾部 re-export；消费方旧命名空间不变",
         (("file", "src/video_agent/core/gates_script.py"),)
-        + (("file", "src/video_agent/skill_runtime/exec_split.py"),),
+        + (("file", "src/video_agent/skill_runtime/exec_split.py"),)
+        + (("file", "src/video_agent/core/gates_cards.py"),)
+        + (("file", "src/video_agent/skill_runtime/exec_media_writer.py"),)
+        + (("file", "src/video_agent/skill_runtime/exec_media_gen.py"),),
     ),
     CouplingRow(
         "R16_manifest_whitelist_keys",
@@ -218,7 +226,7 @@ COUPLING_ROWS: List[CouplingRow] = [
         "scripts/acceptance.py GATES/SUITES/EVAL 表 + CI Job 同构",
         (("gate", "check_governance_refs.py"), ("gate", "check_prompt_budget.py"),
          ("gate", "check_file_lines.py"), ("gate", "check_func_imports.py"),
-         ("gate", "gen_api_types.py")),
+         ("gate", "gen_api_types.py"), ("gate", "check_category_keys.py")),
     ),
     CouplingRow(
         "R23_governance_refs_gate",

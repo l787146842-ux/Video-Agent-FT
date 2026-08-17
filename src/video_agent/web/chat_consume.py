@@ -25,6 +25,7 @@ from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.adapters.agy_cli import AgyCliChatAdapter
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.state.models import ALL_CATEGORIES_TUPLE
 
 __all__ = ["stream_worker", "non_stream_worker", "build_multimodal_content"]
 
@@ -116,7 +117,7 @@ def _consume_pending_confirmation(svc, user_text: str = "") -> str:
     if presented:
         promoted = 0
         presented_set = set(presented)
-        for cat in ("keyElements", "shots", "audioItems"):
+        for cat in ALL_CATEGORIES_TUPLE:
             for group in svc.state_dict.get(cat, []) or []:
                 for draft in group.get("drafts", []) or []:
                     tag = str(draft.get("tag") or "").strip()
@@ -132,7 +133,7 @@ def _consume_pending_confirmation(svc, user_text: str = "") -> str:
     # 否则 tag 永远停在 Agent，生成闸反复拦截造成「确认了也出不了图」
     if not presented and interaction.get("awaiting_confirmation"):
         fallback_promoted = 0
-        for cat in ("keyElements", "shots", "audioItems"):
+        for cat in ALL_CATEGORIES_TUPLE:
             for group in svc.state_dict.get(cat, []) or []:
                 for draft in group.get("drafts", []) or []:
                     tag = str(draft.get("tag") or "").strip()

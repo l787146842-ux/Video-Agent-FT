@@ -26,6 +26,8 @@ except Exception:  # ImportError 或离线环境下 encoding 数据不可用
 
 # 模型名关键字 → 上下文窗口（token）。只收录确定值；未命中回落全局 CONTEXT_WINDOW_SIZE。
 # 新模型接入时按供应商文档扩充本表即可。
+# 匹配语义：子串先到先得——通用键（如 claude）必须置于特化键之前，
+# 特化键仅当窗口值与通用键不同时才值得单列。
 _MODEL_CONTEXT_WINDOWS = {
     "gemini-3": 1_000_000,
     "gemini-2": 1_000_000,
@@ -45,9 +47,6 @@ _MODEL_CONTEXT_WINDOWS = {
     "qwen": 128_000,
     "qwen3": 128_000,
     "claude": 200_000,
-    "claude-3": 200_000,
-    "claude-3.5": 200_000,
-    "claude-3.7": 200_000,
     "kimi": 128_000,
     "moonshot": 128_000,
     "glm": 128_000,

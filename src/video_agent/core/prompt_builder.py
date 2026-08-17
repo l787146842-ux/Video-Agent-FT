@@ -6,7 +6,7 @@
 
 planner.py 保留 _build_system_prompt 等同名委托，既有调用/测试路径不变。
 """
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -16,7 +16,8 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.core import live_metrics
 from src.video_agent.skill_runtime.registry import skill_flow_enabled
 from src.video_agent.memory import MemoryManager
-from src.video_agent.utils.prompts import load_prompt
+from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
+from src.video_agent.utils.prompts import load_prompt, render_prompt
 
 if TYPE_CHECKING:
     from src.video_agent.core.planner import PlannerContext
@@ -50,13 +51,17 @@ class PromptBuilder:
         （Tool 优先瘦身协议，共有段经 {{include}} 从 shared/ 拼装），
         False 时用 planner/system.md 完整协议（含 studio-actions 动作清单）。
         """
-        parts: List[str] = []
+        parts: List[Tuple[str, str]] = []
 
         if context.use_studio_context:
-            # Rule4: 从 prompts/ 目录加载（稳定前缀第一段）
-            protocol = load_prompt("planner/system_fc.md" if fc_mode else "planner/system.md")
+            # Rule4: 从 prompts/ 目录加载（稳定前缀第一段）；
+            # 九轮 B5：max_steps 模板化注入（消 system.md 与 config 双写漂移）
+            protocol = render_prompt(
+                "planner/system_fc.md" if fc_mode else "planner/system.md",
+                max_steps=settings.max_steps,
+            )
             if protocol:
-                parts.append(protocol)
+                parts.append(("protocol", protocol))
             # B1 修正：动作定义唯一源 = text_actions.md。
             # 注入条件以 adapter 真实能力（fc_mode=False）为准——任何不支持
             # Function Calling 的通道都需要文本协议，不依赖 chat_service 的
@@ -64,13 +69,13 @@ class PromptBuilder:
             if not fc_mode:
                 text_protocol = load_prompt("planner/text_actions.md")
                 if text_protocol:
-                    parts.append(text_protocol)
+                    parts.append(("text_protocol", text_protocol))
 
         # 渐进式披露：不再注入全部 Skill 全文，
         # 改为注入 Skill 目录（名称+摘要），全文由模型按需调 read_skill 加载
         catalog = self.build_skill_catalog(context)
         if catalog:
-            parts.append(catalog)
+            parts.append(("catalog", catalog))
 
         # 铁律全文注入（宪法 D2）：项目级生产契约的唯一表述源——
         # 铁律文档在每轮对话开始时由系统 ensure，存在即注入，不与 Skill 激活绑定
@@ -78,7 +83,7 @@ class PromptBuilder:
         if self._get_raw_state is not None:
             iron_block = self.build_iron_rules_block()
             if iron_block:
-                parts.append(iron_block)
+                parts.append(("iron_rules", iron_block))
 
         # 选中 Skill 全文块的硬保障说明：实际拼接移到状态 JSON 之后（靠末尾近生成端，
         # 遵循度更高；避免被大段状态 JSON「淹没在中间」）
@@ -88,16 +93,17 @@ class PromptBuilder:
 
         if context.use_studio_context:
             if context.selected_draft_id:
-                parts.append(
+                parts.append((
+                    "selected_draft",
                     f"\n用户当前选中的草稿：draft_id={context.selected_draft_id}"
-                    f"（类型 {context.selected_type or '未知'}）。studio-actions 里的 \"current\" 指向它。"
-                )
+                    f"（类型 {context.selected_type or '未知'}）。studio-actions 里的 \"current\" 指向它。",
+                ))
 
             # 全局生成设置（前端「全局设置」页用户配置，热生效）：
             # 分镜时长上限 + 默认生成渠道，Agent 拆镜/生成必须遵守
             note = self.build_global_settings_note()
             if note:
-                parts.append(note)
+                parts.append(("global_settings", note))
 
             # 混合记忆检索注入（语义 + 关键词 + 时间衰减），按项目隔离；
             # 命中明细写入 context.memory_hits（4.7：随 done payload 下发前端可视化）
@@ -115,13 +121,13 @@ class PromptBuilder:
                     else:
                         memory_ctx = mm.build_context(query, project_id=project_id)
                     if memory_ctx:
-                        parts.append(memory_ctx)
+                        parts.append(("memory", memory_ctx))
 
             # 本项目已配置的生成渠道（仅当 Skill 在 manifest 声明 channels_block：
             # 规格向导「制作渠道」维度的候选来源，S1：不预设所有 Skill 都要收集渠道）
             channels = self.build_generation_channels_block(context.skill_name)
             if channels:
-                parts.append(channels)
+                parts.append(("channels", channels))
 
             # 状态上下文殿后（每轮变化最大）：优先用惰性构建器按轮刷新，
             # 让 LLM 在每一轮都看到上一轮执行后的最新状态（P0 修复）
@@ -130,7 +136,7 @@ class PromptBuilder:
             else:
                 state_json = context.state_json
             if state_json:
-                parts.append("当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + state_json)
+                parts.append(("state_json", "当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + state_json))
 
             # 混合形态工具边界的可见性说明（裁剪生效时告诉模型哪些工具未开放、
             # 应先完成什么，防止幻觉调用；放在状态 JSON 之后，不破坏稳定前缀缓存）；
@@ -144,24 +150,28 @@ class PromptBuilder:
                 except Exception:
                     stage_note = ""
                 if stage_note:
-                    parts.append(stage_note)
+                    parts.append(("stage_note", stage_note))
 
         # 选中 Skill 全文放在最后（近生成端）：长 system prompt 中部的指令遵循度
         # 会衰减，而产出规范（提示词写法/分组规则）恰恰是最需要被严格执行的部分
         if selected_block:
-            parts.append(selected_block)
+            parts.append(("selected_skill", selected_block))
 
-        text = "\n\n".join(parts)
-        # B6/F36：组装明细入 live 注册表（context-usage 调试端点可读各段字符数）
+        text = "\n\n".join(seg for _, seg in parts)
+        # B6/F36：组装明细入 live 注册表（context-usage 调试端点可读各段字符数）；
+        # 九轮 B4：具名段组装后遥测直接读段名（消位置索引猜测，段序变动不失真）
         try:
+            sec_lens: Dict[str, int] = {}
+            for name, seg in parts:
+                sec_lens[name] = sec_lens.get(name, 0) + len(seg)
             live_metrics.record_sections(
                 self._get_project_id(),
                 {
-                    "protocol": len(protocol) if context.use_studio_context else 0,
-                    "catalog": len(catalog),
-                    "iron_rules": len(parts[2]) if len(parts) > 2 and "执行铁律" in parts[2] else 0,
-                    "memory": sum(len(p) for p in parts if "历史记忆" in p),
-                    "channels": sum(len(p) for p in parts if "已配置的生成渠道" in p),
+                    "protocol": sec_lens.get("protocol", 0) if context.use_studio_context else 0,
+                    "catalog": sec_lens.get("catalog", 0),
+                    "iron_rules": sec_lens.get("iron_rules", 0),
+                    "memory": sec_lens.get("memory", 0),
+                    "channels": sec_lens.get("channels", 0),
                     "state": len(state_json) if context.use_studio_context else 0,
                     "skill": len(selected_block),
                     "total": len(text),
@@ -433,9 +443,9 @@ class PromptBuilder:
         except Exception:
             return ""
         groups = (
-            list(raw.get("keyElements") or [])
-            + list(raw.get("shots") or [])
-            + list(raw.get("audioItems") or [])
+            list(raw.get(CAT_KEY_ELEMENTS) or [])
+            + list(raw.get(CAT_SHOTS) or [])
+            + list(raw.get(CAT_AUDIO_ITEMS) or [])
         )
         if not groups:
             return "planning"

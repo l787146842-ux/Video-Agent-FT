@@ -496,7 +496,7 @@ class FCToolRunner:
                 gate_error is None
                 and first_structure_batch
                 and name in ("storyboard_create_group", "storyboard_add_draft")
-                and ops.category_for_group_type(str(args.get("group_type") or "")) != "keyElements"
+                and ops.category_for_group_type(str(args.get("group_type") or "")) != CAT_KEY_ELEMENTS
                 and str(args.get("group_type") or "").strip()
             ):
                 logger.info("[FlowGate] 首次搭建建议先拆关键元素（警告，不拦人）")

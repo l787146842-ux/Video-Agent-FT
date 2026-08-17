@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state import storyboard_ops as ops
+from src.video_agent.state.models import CAT_KEY_ELEMENTS
 from src.video_agent.config import settings
 from src.video_agent.web import generation as _gen
 from src.video_agent.web.generation import (
@@ -674,7 +675,7 @@ def _apply_actions(
     }:
         _ke_map = [
             (str(k.get("title") or "").strip(), str(k.get("id") or ""))
-            for k in (svc.state_dict.get("keyElements") or [])
+            for k in (svc.state_dict.get(CAT_KEY_ELEMENTS) or [])
             if isinstance(k, dict)
         ]
         _bad: List[Dict[str, Any]] = []
@@ -756,11 +757,19 @@ def _badge_category_rank(label: str) -> int:
 def _sort_key_elements_by_badge(svc: StateManager) -> bool:
     """对关键元素列表按类别稳定排序（同类内部保持原有先后）。
     返回是否发生了顺序变化（无变化时不动状态，避免无谓重绘）。"""
-    groups = svc.state_dict.get("keyElements") or []
+    groups = svc.state_dict.get(CAT_KEY_ELEMENTS) or []
     if len(groups) < 2:
         return False
     ordered = sorted(groups, key=lambda g: _badge_category_rank(str(g.get("badgeLabel") or "")))
     if [g.get("id") for g in ordered] == [g.get("id") for g in groups]:
         return False
-    svc.state_dict["keyElements"] = ordered
+    svc.state_dict[CAT_KEY_ELEMENTS] = ordered
     return True
+
+
+# 九轮 B3：SkillToolInput 基类自 exec_tools 下沉本模块（exec_media_writer/exec_media_gen 的基类来源，防循环依赖）
+
+class SkillToolInput(BaseModel):
+    skill_name: str = Field("", description="当前选中 Skill 名称（系统自动注入，一般无需填写）")
+    chat_provider: str = Field("", description="当前对话使用的聊天供应商（系统自动注入，与主模型一致）")
+    chat_model: str = Field("", description="当前对话使用的聊天模型（系统自动注入，与主模型一致）")

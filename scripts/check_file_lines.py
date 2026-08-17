@@ -17,8 +17,9 @@ MAX_LINES = 1200
 WARN_LINES = 800
 # 棘轮基线（八轮 B1 设立；每清偿一件随降，禁止上调）；
 # B1 磁盘实测四件：planner 998 / prompt_gates 1036 / action_executor 1093 /
-# generation 968（后两者此前台账 T24 未登记，棘轮首查即暴露——登记即事实）
-OVER_900_BASELINE = 4
+# generation 968（后两者此前台账 T24 未登记，棘轮首查即暴露——登记即事实）；
+# 九轮 B3b prompt_gates 拆分清偿（gates_cards 切出）：4→3
+OVER_900_BASELINE = 3
 
 # 白名单：文件相对路径 -> 理由（只减不增；拆分清偿后移除条目）
 WHITELIST = {}

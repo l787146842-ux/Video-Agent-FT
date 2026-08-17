@@ -17,6 +17,7 @@ from src.video_agent.adapters.retry import with_retry
 from src.video_agent.core import prompt_gates
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.state.manager import StateManager
+from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
 from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.web.chat_service import _consume_pending_confirmation
 from src.video_agent.web.generation import call_chat_completion
@@ -146,7 +147,7 @@ def _check_confirm_unrelated_promotes() -> Tuple[bool, str]:
     StateManager.reset_instance()
     svc = StateManager(_make_temp_state_dir())
     try:
-        svc.state_dict["keyElements"] = [{
+        svc.state_dict[CAT_KEY_ELEMENTS] = [{
             "id": "g1", "title": "G",
             "drafts": [{"id": "d1", "tag": "Agent", "prompt": "足够长的提示词内容。"}],
         }]
@@ -155,7 +156,7 @@ def _check_confirm_unrelated_promotes() -> Tuple[bool, str]:
         inter["awaiting_confirmation"] = True
         inter["confirmation_message"] = "请审阅"
         _consume_pending_confirmation(svc, "今天天气如何？")
-        tag = svc.state_dict["keyElements"][0]["drafts"][0]["tag"]
+        tag = svc.state_dict[CAT_KEY_ELEMENTS][0]["drafts"][0]["tag"]
         return tag == "已确认", f"无关追问应晋升草稿并解除暂停，实际 tag={tag}"
     finally:
         StateManager.reset_instance()
@@ -189,10 +190,10 @@ def _check_element_gate_referenced_only() -> Tuple[bool, str]:
     StateManager.reset_instance()
     svc = StateManager(_make_temp_state_dir())
     try:
-        svc.state_dict["keyElements"] = [{
+        svc.state_dict[CAT_KEY_ELEMENTS] = [{
             "id": "ke-1", "title": "E", "drafts": [{"id": "ke-d", "imgUrl": ""}],
         }]
-        svc.state_dict["shots"] = [
+        svc.state_dict[CAT_SHOTS] = [
             {
                 "id": "shot-ref", "title": "引用", "sceneRefs": ["E"], "duration": "10s",
                 "drafts": [{"id": "s1", "mediaType": "video", "prompt": ""}],

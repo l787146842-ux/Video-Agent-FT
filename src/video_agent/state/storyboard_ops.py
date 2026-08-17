@@ -83,7 +83,7 @@ def categories_for_type(draft_type: str, strict: bool = False) -> List[str]:
     保证 LLM 未传类型时 find/delete 仍可用。
     """
     t = (draft_type or "").lower().strip()
-    if t in ("shot", "shots", "video"):
+    if t in ("shot", CAT_SHOTS, "video"):
         return [CAT_SHOTS] if strict else [CAT_SHOTS, CAT_KEY_ELEMENTS, CAT_AUDIO_ITEMS]
     if t in ("audio", "audioitem"):
         return [CAT_AUDIO_ITEMS] if strict else [CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS]
@@ -95,7 +95,7 @@ def categories_for_type(draft_type: str, strict: bool = False) -> List[str]:
 def category_for_group_type(group_type: str) -> str:
     """新建分组的类型映射（含中文别名，缺省归 keyElements）"""
     t = (group_type or "").lower().strip()
-    if t in ("shot", "shots", "video", "分镜"):
+    if t in ("shot", CAT_SHOTS, "video", "分镜"):
         return CAT_SHOTS
     if t in ("audio", "audioitem", "audioitems", "音频"):
         return CAT_AUDIO_ITEMS

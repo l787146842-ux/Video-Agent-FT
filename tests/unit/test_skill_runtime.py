@@ -6,6 +6,7 @@ from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.skill_runtime import registry
 from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.skill_runtime import exec_common
+from src.video_agent.skill_runtime import exec_media_writer
 from src.video_agent.skill_runtime import exec_tools
 from src.video_agent.web import generation as gen_mod
 
@@ -598,7 +599,7 @@ async def test_write_media_prompt_batches_split_by_size(monkeypatch, tmp_path):
     monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
     monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-    monkeypatch.setattr(exec_tools, "_PROMPT_BATCH_SIZE", 2)
+    monkeypatch.setattr(exec_media_writer, "_PROMPT_BATCH_SIZE", 2)
 
     tool = WriteMediaPromptTool()
     result = await tool.aexecute(

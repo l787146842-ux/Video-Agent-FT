@@ -7,6 +7,8 @@ Skill 的 <planner> 章节常带「依赖关系：3→1,2；4→3」式声明。
 import re
 from typing import Any, Dict, List, Optional
 
+from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
+
 # 步骤行：1. / 1、 / 1) 开头的编号行
 _STEP_RE = re.compile(r"(?m)^\s*(\d+)\s*[\.、)]\s*(.+)$")
 # 依赖行：3→1,2；4→3（允许中文分号分隔多对）
@@ -63,22 +65,22 @@ def step_done(no: int, text: str, state: Dict[str, Any], conditions: Optional[Di
     （确定性题归系统）；未声明回落关键字猜测（兼容存量 Skill）。"""
     if conditions and str(no) in conditions:
         key = conditions[str(no)]
-        ke = state.get("keyElements") or []
-        shots = state.get("shots") or []
-        audio = state.get("audioItems") or []
+        ke = state.get(CAT_KEY_ELEMENTS) or []
+        shots = state.get(CAT_SHOTS) or []
+        audio = state.get(CAT_AUDIO_ITEMS) or []
         if key == "spec":
             from src.video_agent.core.prompt_gates import has_spec_document
             return has_spec_document(state)
         if key == "analysis":
             return bool((state.get("analysis") or {}).get("summary"))
-        if key == "keyElements":
+        if key == CAT_KEY_ELEMENTS:
             return bool(ke)
         if key == "ke_media":
             return bool(ke) and any(
                 (d.get("imgUrl") or "").strip()
                 for g in ke for d in (g.get("drafts") or []) if isinstance(d, dict)
             )
-        if key == "shots":
+        if key == CAT_SHOTS:
             return bool(shots)
         if key == "audio":
             return bool(audio)
@@ -89,9 +91,9 @@ def step_done(no: int, text: str, state: Dict[str, Any], conditions: Optional[Di
             )
         return False
     t = (text or "").lower()
-    ke = state.get("keyElements") or []
-    shots = state.get("shots") or []
-    audio = state.get("audioItems") or []
+    ke = state.get(CAT_KEY_ELEMENTS) or []
+    shots = state.get(CAT_SHOTS) or []
+    audio = state.get(CAT_AUDIO_ITEMS) or []
 
     def _has_media(groups: List[Dict[str, Any]], field: str) -> bool:
         return any(

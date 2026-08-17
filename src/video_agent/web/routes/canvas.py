@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
 from src.video_agent.config import settings
+from src.video_agent.state.models import CAT_SHOTS
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils.paths import ASSETS_DIR
 
@@ -304,7 +305,7 @@ async def push_timeline_to_canvas(body: TimelinePushRequest):
     state = StateManager.get_instance().state_dict
     nodes = []
     idx = 0
-    for group in state.get("shots") or []:
+    for group in state.get(CAT_SHOTS) or []:
         if not isinstance(group, dict):
             continue
         if body.shot_group_id and str(group.get("id") or "") != body.shot_group_id:

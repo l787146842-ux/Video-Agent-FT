@@ -1,58 +1,84 @@
 @echo off
-chcp 65001 >nul
 title FTDYB + Canvas Launcher
 cd /d "%~dp0"
 echo ========================================
-echo   FTDYB - 影视创作工作台
-echo   + 画布画布联合启动
+echo   FTDYB Video Agent Studio
+echo   + Canvas Launcher
 echo ========================================
 echo.
 
-REM 前端产物前置检查：dist 是唯一前端，缺失时自动补构建；
-REM 前端源码（src/web）比产物新时自动重建，防止改了前端代码却还在服务旧产物（构建失败则终止，后端不再有任何回退页面）
+REM ============================================================
+REM THIS FILE MUST STAY 100% ASCII.
+REM Editors re-save it as UTF-8 and corrupt any non-ASCII byte
+REM (Chinese paths were destroyed twice this way). The Canvas
+REM directory is therefore discovered at runtime via ASCII
+REM wildcards below - never hardcode non-ASCII paths here.
+REM ============================================================
+
+REM Frontend artifact pre-check: dist is the only frontend; rebuild when missing
+REM or when src/web is newer than the artifact (build failure aborts launch)
 set "NEED_BUILD=0"
 if not exist "static\dist\index.html" set "NEED_BUILD=1"
 if exist "static\dist\index.html" for /f %%i in ('powershell -NoProfile -Command "if (@(Get-ChildItem -Path 'src/web' -Recurse -File | Where-Object { $_.LastWriteTime -gt (Get-Item 'static/dist/index.html').LastWriteTime }).Count) { 1 } else { 0 }"') do set "NEED_BUILD=%%i"
 if "%NEED_BUILD%"=="1" (
-  echo [build] 前端产物缺失或源码已更新，正在执行 npm run build ...
+  echo [build] dist missing or stale, running npm run build ...
   call npm run build
   if not exist "static\dist\index.html" (
-    echo [build] 构建失败，请手动执行 npm run build 排查后重启
+    echo [build] build failed, run npm run build manually then restart
     pause
     exit /b 1
   )
 )
 
-REM 六轮 S4/N2：启动前按 PID 杀净占用 8080/3000 的旧进程（宪法 §5.4 机制化）——
-REM 防旧服务残留导致端口冲突与日志文件多进程争用（loguru rotation WinError 32）
+REM Kill stale processes on 8080/3000 by PID before launch (constitution 5.4):
+REM prevents port conflicts and loguru rotation WinError 32 file contention.
+REM taskkill failure is NOT silenced: an elevated stale process survives
+REM silent kills and then blocks the new service with Errno 10048.
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8080 " ^| findstr LISTENING') do (
-  echo [cleanup] 结束占用 8080 的旧进程 PID %%p
+  echo [cleanup] killing stale process on 8080, PID %%p
   taskkill /F /PID %%p >nul 2>&1
+  if errorlevel 1 echo [cleanup] FAILED to kill PID %%p - access denied. Close its window manually or run this script as Administrator
 )
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":3000 " ^| findstr LISTENING') do (
-  echo [cleanup] 结束占用 3000 的旧进程 PID %%p
+  echo [cleanup] killing stale process on 3000, PID %%p
   taskkill /F /PID %%p >nul 2>&1
+  if errorlevel 1 echo [cleanup] FAILED to kill PID %%p - access denied. Close its window manually or run this script as Administrator
 )
 
-REM 启动画布画布服务（端口 3000）
-echo [1/2] 正在启动画布画布服务 (port 3000)...
-start "Canvas Server" cmd /c "cd /d E:\07 天问\熊布 && python main.py"
+REM Locate the Canvas project at runtime (ASCII wildcards only).
+REM Last match wins; today exactly one directory under E:\07* has main.py.
+set "CANVAS_DIR="
+for /d %%a in ("E:\07*") do (
+  for /d %%b in ("%%a\*") do if exist "%%b\main.py" set "CANVAS_DIR=%%b"
+)
+REM NEVER put unescaped ( ) inside echo text within a ( ) block: a literal
+REM ) closes the block early, and the pause/exit below then execute
+REM UNCONDITIONALLY - the launcher dies even when discovery succeeded.
+if not defined CANVAS_DIR (
+  echo [launcher] Canvas project not found under E:\07*\* - no main.py
+  pause
+  exit /b 1
+)
 
-REM 等待画布启动
+REM Start Canvas service (port 3000); child window keeps open on crash
+echo [1/2] Starting Canvas service (port 3000)...
+start "Canvas Server" cmd /c "chcp 65001 >nul & cd /d %CANVAS_DIR% && python main.py || (echo. & echo [launcher] Canvas exited with error - see log above & pause)"
+
+REM Wait for Canvas
 timeout /t 3 /nobreak >nul
 
-REM 启动本项目 Agent 服务（端口 8080）
-echo [2/2] 正在启动影视 Agent 服务 (port 8080)...
+REM Start Agent service (port 8080); child window keeps open on crash
+echo [2/2] Starting Agent service (port 8080)...
 set PORT=8080
-start "Agent Server" cmd /c "cd /d %~dp0 && set PORT=8080 && python -m src.video_agent.web"
+start "Agent Server" cmd /c "chcp 65001 >nul & cd /d %~dp0 && set PORT=8080 && python -m src.video_agent.web || (echo. & echo [launcher] Agent exited with error - see log above & pause)"
 
-REM 等待 Agent 启动
+REM Wait for Agent
 timeout /t 3 /nobreak >nul
 
-REM 打开 Studio 主页
+REM Open Studio
 echo.
-echo 正在打开工作台...
+echo Opening Studio ...
 start http://localhost:8080/
 echo.
-echo 服务已启动！请勿关闭弹出的两个命令行窗口。
+echo Services started. Do not close the two console windows.
 pause

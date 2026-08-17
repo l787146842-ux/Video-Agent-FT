@@ -27,6 +27,7 @@ from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
+from src.video_agent.state.models import ALL_CATEGORIES_TUPLE
 
 if TYPE_CHECKING:
     from src.video_agent.core.tracer import AgentTracer
@@ -410,7 +411,7 @@ _SUGGEST_CONFIRMED_TAG = "已确认"
 
 def _iter_storyboard_drafts(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     drafts: List[Dict[str, Any]] = []
-    for cat_key in ("keyElements", "shots", "audioItems"):
+    for cat_key in ALL_CATEGORIES_TUPLE:
         for group in state.get(cat_key, []) or []:
             if not isinstance(group, dict):
                 continue

@@ -261,7 +261,8 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 
 > 以下事项已由 acceptance 门禁机械强制，不再人工勾选：文件行数红线/棘轮（check_file_lines）、
 > 提示词严禁预算（check_prompt_budget）、方法内 import 防新增（check_func_imports）、
-> 治理叙事标记预算（check_governance_refs）、前后端契约（gen_api_types --check + api-contract 桥接）、
+> 治理叙事标记预算（check_governance_refs）、类别 Key 字面量（check_category_keys，CAT_* 单一事实源）、
+> 前后端契约（gen_api_types --check + api-contract 桥接）、
 > 四件套 pytest/vitest/tsc/eslint。
 
 ---

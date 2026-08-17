@@ -21,6 +21,7 @@ import httpx
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import DATA_DIR, API_DIR, PROVIDERS_FILE, ENV_FILE
 from src.video_agent.web.provider_models import validate_providers
@@ -393,20 +394,20 @@ def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any]
         return False
     stamped = False
     # 分辨率/时长全局默认（与供应商无关，先补）
-    if cat_key == "keyElements" and not str(draft.get("imageResolution") or "").strip():
+    if cat_key == CAT_KEY_ELEMENTS and not str(draft.get("imageResolution") or "").strip():
         draft["imageResolution"] = settings.default_image_resolution
         stamped = True
-    if cat_key == "shots" and str(draft.get("mediaType") or "").strip().lower() == "video":
+    if cat_key == CAT_SHOTS and str(draft.get("mediaType") or "").strip().lower() == "video":
         if not str(draft.get("resolution") or "").strip():
             draft["resolution"] = settings.default_video_resolution
             stamped = True
         if not str(draft.get("duration") or "").strip():
             draft["duration"] = f"{settings.max_shot_duration}s"
             stamped = True
-    if cat_key == "audioItems":
+    if cat_key == CAT_AUDIO_ITEMS:
         return stamped
     kind = "image"
-    if cat_key == "shots" and str(draft.get("mediaType") or "").strip().lower() == "video":
+    if cat_key == CAT_SHOTS and str(draft.get("mediaType") or "").strip().lower() == "video":
         kind = "video"
     # 按种类参数隔离（2026-08-15）：补印写本种类字段，旧共享字段同步保留供旧链路回退
     pid_field = "imageProviderId" if kind == "image" else "videoProviderId"

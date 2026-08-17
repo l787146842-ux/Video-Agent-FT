@@ -578,7 +578,7 @@ class StudioActionExecutor:
         )
         desc = action.get("desc") or group_data.get("desc") or patch.get("desc") or ""
 
-        new_id = group_data.get("id") or gen_id('shot' if cat_key == 'shots' else 'ke' if cat_key == 'keyElements' else 'audio')
+        new_id = group_data.get("id") or gen_id('shot' if cat_key == CAT_SHOTS else 'ke' if cat_key == CAT_KEY_ELEMENTS else 'audio')
 
         new_group: Dict[str, Any] = {
             "id": new_id,
