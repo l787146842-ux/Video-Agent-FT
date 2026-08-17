@@ -27,7 +27,7 @@ from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
-from src.video_agent.state.models import ALL_CATEGORIES_TUPLE
+from src.video_agent.state.models import ALL_CATEGORIES_TUPLE, CAT_KEY_ELEMENTS, CAT_SHOTS
 
 if TYPE_CHECKING:
     from src.video_agent.core.tracer import AgentTracer
@@ -405,6 +405,10 @@ def suggest_next_actions(state: Dict[str, Any]) -> List[Dict[str, str]]:
         drafts = _iter_storyboard_drafts(state or {})
     except Exception:
         return []
+    # 0817：中途停摆引导（Q4 闭环）——关键元素已拆但分镜未拆 → 发继续引导卡
+    if (state or {}).get(CAT_KEY_ELEMENTS) and not (state or {}).get(CAT_SHOTS):
+        return [{"kind": "next", "label": "继续拆分镜",
+                 "value": "基于关键元素继续拆分镜（shots）"}]
     if not drafts:
         return []
     confirmed = [d for d in drafts if str(d.get("tag") or "") == _SUGGEST_CONFIRMED_TAG]

@@ -808,7 +808,6 @@ from src.video_agent.core.gates_cards import (
     DRAFTS_REVIEW_MSG,
     DRAFTS_REVIEW_OPTIONS,
     drafts_review_card,
-    KEY_ELEMENT_FIRST_GATE_ERROR,
     GENERATION_CONFIRM_GATE_ERROR,
     GENERATION_CONFIRM_GATE_BLOCKED,
     SHOT_SEQUENCE_GATE_ERROR,

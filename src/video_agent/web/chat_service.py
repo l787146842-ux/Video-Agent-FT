@@ -621,6 +621,9 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         ensure_iron_rules_doc(svc.state_dict)
     except Exception as _e:
         logger.debug("[chat_service] 忽略异常: {}", _e)
+    # 0817：一条龙指令仅本条消息生效（与非流式路径对齐）
+    if prompt_gates.clear_flow_directive(svc.state_dict):
+        svc.save_debounced()
     executor = StudioActionExecutor(
         svc,
         selected_draft_id=body.selected_draft_id,

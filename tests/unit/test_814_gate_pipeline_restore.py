@@ -102,7 +102,6 @@ class TestMessagesExternalized:
         pairs = [
             (prompt_gates.SPEC_GATE_ERROR, "SPEC_GATE"),
             (prompt_gates.STORYBOARD_PENDING_GATE_ERROR, "STORYBOARD_PENDING"),
-            (prompt_gates.KEY_ELEMENT_FIRST_GATE_ERROR, "KEY_ELEMENT_FIRST"),
             (prompt_gates.SHOT_SEQUENCE_GATE_ERROR, "SHOT_SEQUENCE"),
             (prompt_gates.GENERATION_CONFIRM_GATE_ERROR, "GENERATION_CONFIRM"),
             (prompt_gates.GENERATION_CONFIRM_GATE_BLOCKED, "GENERATION_CONFIRM_BLOCKED"),

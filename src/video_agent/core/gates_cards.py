@@ -302,11 +302,6 @@ def drafts_review_card() -> Tuple[str, List[Dict[str, str]]]:
     return DRAFTS_REVIEW_MSG, list(DRAFTS_REVIEW_OPTIONS)
 
 
-KEY_ELEMENT_FIRST_GATE_ERROR = _gate_msg("KEY_ELEMENT_FIRST", (
-    "流程警告：首次搭建故事板通常应先拆分关键元素（角色/场景/道具）并请用户审阅，"
-    "再创建分镜与音频；本次分镜/音频已按用户要求照常创建，请同时提示用户审阅拆分完整性。"
-))
-
 GENERATION_CONFIRM_GATE_ERROR = _gate_msg("GENERATION_CONFIRM", (
     "流程警告：目标草稿的 Prompt Draft 尚未经用户审阅确认（tag 非「已确认」）。"
     "按 Skill 流程建议先展示草案并等待确认；本次生成已按用户要求照常触发，"
