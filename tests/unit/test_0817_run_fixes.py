@@ -434,6 +434,23 @@ async def test_0817_wizard_doc_card_live_visible_via_sse(tmp_path):
     assert events[0]["turn_id"] == "t9"
 
 
+# ---------- 0817 B21：向导拼装合成记账入 actionLog ----------
+
+def test_0817_wizard_assembly_recorded_in_action_log(tmp_path):
+    """向导机械拼装不走工具通道 → 合成记账，drain 后合入轮末 actionLog。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.web.chat_consume import (
+        _consume_spec_wizard, drain_pending_action_log,
+    )
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
+    svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
+    _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
+    entries = drain_pending_action_log(svc)
+    assert entries == ["系统拼装并写入规格文档 Final_Video_Spec.md"]
+    assert drain_pending_action_log(svc) == []  # 取走即清
+
+
 # ---------- 0817 B20：总结展示归 Skill 声明驱动（流程归位清查） ----------
 
 class _LR:

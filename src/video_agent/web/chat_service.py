@@ -530,7 +530,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                         ),
                         confirm=final_payload.get("confirmation") or "",
                         applied_actions=applied,
-                        action_log=final_payload.get("action_log") or [],
+                        action_log=drain_pending_action_log(svc)
+                        + (final_payload.get("action_log") or []),
                         trace=final_payload.get("trace") or {},
                         confirm_options=final_payload.get("confirmation_options") or None,
                         turn_id=turn_id,
@@ -799,7 +800,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     "agent", result.text, model_name=used_model or "",
                     confirm=result.confirmation,
                     applied_actions=result.applied_actions,
-                    action_log=result.action_log,
+                    action_log=drain_pending_action_log(svc) + (result.action_log or []),
                     confirm_options=result.confirmation_options or None,
                     turn_id=ns_turn_id,
                 )
@@ -846,6 +847,7 @@ from src.video_agent.web.chat_consume import (
     _consume_spec_wizard,
     _finalize_spec_params,
     _maybe_compact_history,
+    drain_pending_action_log,
     emit_pending_doc_card,
     flush_pending_doc_card,
 )

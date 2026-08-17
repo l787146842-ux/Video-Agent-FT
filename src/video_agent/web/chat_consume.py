@@ -228,6 +228,11 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
     # 8888 二轮：机械落盘也发文档卡片；0817 B14：改为挂起，由用户消息落库后
     # flush_pending_doc_card 补落（修复卡片排在用户选择消息之前的顺序 bug）
     inter["spec_doc_card_pending"] = name
+    # 0817 B21：向导拼装不走工具通道，动作日志天然缺失→合成记账，
+    # 轮末随 agent 消息 actionLog 下发（§2.5 可见性）
+    inter.setdefault("pending_action_log", []).append(
+        f"系统拼装并写入规格文档 {name}"
+    )
     svc.save()
     logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md")
     # 0817 B13：回执不 prose 指定子步骤与暂停点（流程/暂停归 Skill 阶段边界）
@@ -255,6 +260,15 @@ def flush_pending_doc_card(svc, turn_id: str = "") -> str:
     svc.save()
     logger.info(f"[SpecWizard] 规格文档卡补落：{name}（用户消息之后）")
     return name
+
+
+def drain_pending_action_log(svc) -> List[str]:
+    """0817 B21：取走并清空向导合成记账（轮末合入 agent 消息 actionLog）。"""
+    inter = svc.state_dict.get("interaction") or {}
+    entries = inter.pop("pending_action_log", None) or []
+    if entries:
+        svc.save_debounced()
+    return [str(e) for e in entries if str(e or "").strip()]
 
 
 async def emit_pending_doc_card(svc, turn_id: str, emit) -> str:
