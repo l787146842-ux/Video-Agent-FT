@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.video_agent.config import settings
+from src.video_agent.core.spec_rules import find_spec_doc
 from src.video_agent.state.models import (
     ALL_CATEGORIES,
     CAT_AUDIO_ITEMS,
@@ -491,6 +492,46 @@ def autofill_at_refs(
     return str(prompt).rstrip() + "\n出场元素：" + "、".join(f"@{t}" for t in missing)
 
 
+_SPEC_LANG_LINE_RE = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?输出语言(?:\*\*)?\s*[:：]\s*(.+)$")
+
+
+def spec_output_language(raw_state: Optional[Dict[str, Any]]) -> str:
+    """0817：规格文档里用户选定的「输出语言」维度值（未选/无规格返回空串）。"""
+    if not raw_state:
+        return ""
+    doc = find_spec_doc(raw_state)
+    if doc is None:
+        return ""
+    m = _SPEC_LANG_LINE_RE.search(str(doc.get("content") or ""))
+    return m.group(1).strip().strip("*").strip() if m else ""
+
+
+def resolve_prompt_language(
+    raw_state: Optional[Dict[str, Any]],
+    skill_rules: Optional[Dict[str, Any]] = None,
+) -> str:
+    """0817 语言单一事实源裁决：用户选择（规格输出语言）> Skill 声明
+    （cjk_min_ratio<=0 = 英文锁定）> 平台默认（中文）。
+    注入句与语言闸读同一结果，by construction 不可能再打架（C1 延伸）。"""
+    sel = spec_output_language(raw_state)
+    if sel:
+        has_cn = "中" in sel
+        has_en = ("英" in sel) or ("双语" in sel)
+        if has_cn and has_en:
+            return "中英双语"
+        if has_en and not has_cn:
+            return "英文"
+        return "中文"
+    gate = skill_rules or {}
+    try:
+        if float(gate.get("cjk_min_ratio", _CJK_MIN_RATIO)) <= 0:
+            return "英文"
+    except (TypeError, ValueError):
+        pass
+    return "中文"
+
+
 def validate_prompt_write(
     prompt: str,
     kind: str,
@@ -521,6 +562,13 @@ def validate_prompt_write(
     shot_min_chars = int(gate.get("shot_min_chars", _SHOT_PROMPT_MIN_CHARS))
     element_min_chars = int(gate.get("element_min_chars", _ELEMENT_PROMPT_MIN_CHARS))
     cjk_min_ratio = float(gate.get("cjk_min_ratio", _CJK_MIN_RATIO))
+    # 0817：语言单一事实源接入用户选择（规格输出语言 > Skill 声明）；
+    # 英文/中英双语关闭语言闸，中文选择在 Skill 英文锁定时恢复平台地板
+    _lang = resolve_prompt_language(raw_state, gate)
+    if _lang in ("英文", "中英双语"):
+        cjk_min_ratio = 0.0
+    elif cjk_min_ratio <= 0:
+        cjk_min_ratio = float(_CJK_MIN_RATIO)
 
     # 语言闸（shot / keyElement 通用）：中文输入环境下正文应以中文书写，
     # 仅专业技术术语可保留英文。阈值可由 manifest gates.cjk_min_ratio 调整

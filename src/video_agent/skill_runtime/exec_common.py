@@ -264,23 +264,22 @@ def _split_kinds_for_section(tool_name: str, skill_name: str) -> List[str]:
     return kinds
 
 
-def _prompt_language_rule(skill_name: str) -> str:
-    """提示词正文语言的单一事实源（业界基准 C1）。
-
-    与 PromptGate 语言闸读同一份 parse_gate_rules 结果：cjk_min_ratio>0 =
-    语言闸生效（中文正文），=0 = Skill 声明英文锁定。注入句是「事实陈述」
-    而非待权衡的规则，章节英文模板只借结构不借语言。
-    """
-    lang = "中文"
+def _prompt_language_rule(skill_name: str, raw_state: Optional[Dict[str, Any]] = None) -> str:
+    """提示词正文语言的单一事实源（业界基准 C1；0817 延伸接入用户规格
+    「输出语言」选择：用户选择 > Skill 声明 > 平台默认）。
+    注入句与 PromptGate 语言闸读同一份 resolve_prompt_language 结果，
+    by construction 不可能再打架；章节英文模板只借结构不借语言。"""
+    rules: Dict[str, Any] = {}
     try:
         entry = resolve_entry(skill_name)
         rules = prompt_gates.parse_gate_rules(entry.content if entry else "")
-        if float(rules.get("cjk_min_ratio", 0.15)) <= 0:
-            lang = "英文"
     except Exception:
-        lang = "中文"
+        rules = {}
+    lang = prompt_gates.resolve_prompt_language(raw_state, rules)
     if lang == "英文":
-        return "1. 提示词正文语言：英文（本 Skill 声明英文锁定、平台语言闸关闭，按章节模板书写）。"
+        return "1. 提示词正文语言：英文（用户规格选定英文/Skill 声明英文锁定，按章节模板书写）。"
+    if lang == "中英双语":
+        return "1. 提示词正文语言：中英双语（依用户规格「输出语言」确认，中文或英文正文均可）。"
     return (
         "1. 提示词正文语言：中文（平台语言闸生效，写入校验同此一源）。"
         "章节里的英文模板只借结构（三视图/四视图排布、一致性约束等），"
@@ -318,6 +317,7 @@ def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_ov
     section_override（814E1）：通用章节执行器直接注入任意章节文本，
     不经 tool_sections 的固定映射。"""
     section = section_override if section_override is not None else tool_sections(skill_name, tool)
+    state = StateManager.get_instance().state_dict
     parts = [
         "你是本影视 Agent 工作台的独立执行器。",
         f"当前选中 Skill：「{skill_name or '未指定'}」。",
@@ -332,7 +332,7 @@ def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_ov
     try:
         from src.video_agent.core.spec_rules import find_iron_rules_doc
 
-        iron = find_iron_rules_doc(StateManager.get_instance().state_dict)
+        iron = find_iron_rules_doc(state)
         iron_content = str((iron or {}).get("content") or "").strip()
         if iron_content:
             parts += ["", "== 项目《执行铁律》（生产契约，与章节冲突时以铁律为准）==", iron_content]
@@ -351,7 +351,7 @@ def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_ov
     parts += [
         "",
         "== 冲突裁决（无需自行权衡，直接按此执行）==",
-        _prompt_language_rule(skill_name),
+        _prompt_language_rule(skill_name, state),
         "2. 时长/数量等硬参数：后续任务消息里的【制作参数】【时长硬约束】来自用户确认的"
         "制片规格，与章节数字冲突时以任务消息为准。",
     ]
