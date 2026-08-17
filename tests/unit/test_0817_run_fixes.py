@@ -434,6 +434,36 @@ async def test_0817_wizard_doc_card_live_visible_via_sse(tmp_path):
     assert events[0]["turn_id"] == "t9"
 
 
+# ---------- 0817 B23/B24：思考档不硬编码降档 + 剧本注入上限合一 ----------
+
+def test_0817_script_inject_limit_unified_and_configurable():
+    """上限合一移全局设置：可配、截断附可见警告。"""
+    from src.video_agent.config import settings
+    from src.video_agent.skill_runtime import exec_common
+
+    old = settings.script_inject_limit
+    try:
+        object.__setattr__(settings, "script_inject_limit", 5000)
+        assert exec_common._script_inject_limit() == 5000
+        state = {"uploadedDocs": [{"id": "d1", "name": "长.md",
+                                   "content": "字" * 6000}]}
+        hint = exec_common._build_script_hint(state)
+        assert "已截断" in hint and "script_inject_limit" in hint
+        object.__setattr__(settings, "script_inject_limit", 20000)
+        state2 = {"uploadedDocs": [{"id": "d1", "name": "短.md", "content": "字" * 100}]}
+        assert "已截断" not in exec_common._build_script_hint(state2)
+    finally:
+        object.__setattr__(settings, "script_inject_limit", old)
+
+
+def test_0817_executor_thinking_not_hardcoded_low():
+    """0817 B23：平台不硬编码降档，默认沿用全局。"""
+    from src.video_agent.config import settings
+    from src.video_agent.skill_runtime import exec_common
+    assert settings.executor_thinking_level == ""
+    assert exec_common._executor_thinking() is None
+
+
 # ---------- 0817 B22：流程意见清除（平台只兜底，不包办排序） ----------
 
 def test_0817_platform_no_next_step_opinions():

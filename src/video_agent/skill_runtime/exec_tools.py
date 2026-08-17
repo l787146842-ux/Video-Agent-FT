@@ -131,7 +131,7 @@ class ScriptAnalyzeTool:
         user = (
             f"请分析以下上传素材《{doc.get('name')}》并输出 JSON：\n"
             "{\"summary\": \"一句话故事总结\", \"key_points\": [\"关键信息要点...\"]}\n\n"
-            f"素材全文：\n{content[:12000]}\n\n"
+            f"素材全文：\n{content[:exec_common._script_inject_limit()]}\n\n"
             f"用户附加要求：{params.user_text or '无'}"
         )
         # 长任务进度上报（M6）：独立 LLM 调用前告知用户在等什么

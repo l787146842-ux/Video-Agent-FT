@@ -395,7 +395,16 @@ def _read_spec_doc(state: Dict[str, Any]) -> str:
     return ""
 
 
-# 剧本正文注入上限（拆解/提示词阶段需按剧本忠实产出，仅摘要不足以覆盖台词与场次）
+# 0817 B24：剧本正文注入上限合一（原 10000/12000 分阶段硬编码废除），
+# 移入全局设置 script_inject_limit；拆解/提示词阶段需按剧本忠实产出，仅摘要不足以覆盖台词与场次
+def _script_inject_limit() -> int:
+    try:
+        return max(1000, int(settings.script_inject_limit or 20000))
+    except Exception:
+        return 20000
+
+
+# 兼容旧引用（测试/外部）
 _SCRIPT_INJECT_LIMIT = 10000
 
 
@@ -413,11 +422,18 @@ def _build_script_hint(state: Dict[str, Any]) -> str:
     if doc:
         content = str(doc.get("content") or "")
         if content:
-            body = content[:_SCRIPT_INJECT_LIMIT]
+            limit = _script_inject_limit()
+            body = content[:limit]
+            truncated = len(content) > limit
             suffix = (
-                "\n……（剧本超长已截断，请优先保证已见内容的忠实度）"
-                if len(content) > _SCRIPT_INJECT_LIMIT else ""
+                "\n……（剧本超长已截断（上限见全局设置 script_inject_limit），"
+                "请优先保证已见内容的忠实度）"
+                if truncated else ""
             )
+            if truncated:
+                logger.warning(
+                    f"[SkillExec] 剧本注入截断：{len(content)} 字 > 上限 {limit}"
+                )
             parts.append(f"剧本《{doc.get('name')}》正文：\n{body}{suffix}")
     return "\n\n".join(parts)
 

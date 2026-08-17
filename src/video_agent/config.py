@@ -154,7 +154,11 @@ class Settings:
     # 执行器誊写批的快模型（"provider" 或 "provider:model"）；空 = 回落主模型
     executor_fast_model: str = field(default_factory=lambda: os.getenv("EXECUTOR_FAST_MODEL", ""))
     # 执行器机械调用的思考档位（low/medium/high）；空 = 沿用全局 llm_thinking_level
-    executor_thinking_level: str = field(default_factory=lambda: os.getenv("EXECUTOR_THINKING_LEVEL", "low"))
+    # 0817 B23（用户裁决）：默认空（不硬编码降档）；要降档由全局设置配置
+    executor_thinking_level: str = field(default_factory=lambda: os.getenv("EXECUTOR_THINKING_LEVEL", ""))
+    # 0817 B24：剧本正文注入上限（合一，原 10000/12000 分阶段硬编码废除）；
+    # 仅超模型上下文硬窗时才截断，截断附可见警告
+    script_inject_limit: int = field(default_factory=lambda: _env_int("SCRIPT_INJECT_LIMIT", 20000))
 
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))

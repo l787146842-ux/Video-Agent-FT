@@ -19,6 +19,7 @@ from src.video_agent.skill_runtime.exec_common import (
     _find_uploaded_doc,
     _read_spec_doc,
     _SCRIPT_INJECT_LIMIT,
+    _script_inject_limit,
     _build_script_hint,
     _parse_actions_from_text,
     _PROGRESSIVE_FLUSH_N,

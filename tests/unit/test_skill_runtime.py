@@ -235,7 +235,7 @@ def test_build_script_hint_injects_full_text_even_with_summary():
 def test_build_script_hint_truncates_long_script():
     from src.video_agent.skill_runtime import executors as ex_mod
 
-    long_text = "字" * (ex_mod._SCRIPT_INJECT_LIMIT + 500)
+    long_text = "字" * (ex_mod._script_inject_limit() + 500)
     state = {"uploadedDocs": [{"id": "d1", "name": "长剧本.md", "content": long_text}]}
     hint = ex_mod._build_script_hint(state)
     assert "已截断" in hint

@@ -104,13 +104,13 @@ def test_2222_thinking_override_wins_over_global():
 
 
 def test_2222_executor_thinking_default_low_and_empty_falls_back():
-    """机械调用默认降档 low；置空 = 不覆盖沿用全局。"""
-    assert ex_mod._executor_thinking() == "low"
-    object.__setattr__(settings, "executor_thinking_level", "")
+    """0817 B23：默认不硬编码降档（空 = 沿用全局）；全局设置配置值生效。"""
+    assert ex_mod._executor_thinking() is None
+    object.__setattr__(settings, "executor_thinking_level", "low")
     try:
-        assert ex_mod._executor_thinking() is None
+        assert ex_mod._executor_thinking() == "low"
     finally:
-        object.__setattr__(settings, "executor_thinking_level", "low")
+        object.__setattr__(settings, "executor_thinking_level", "")
 
 
 def test_2222_all_executor_llm_calls_pass_thinking_level():
