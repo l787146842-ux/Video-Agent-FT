@@ -282,8 +282,9 @@ DRAFTS_REVIEW_MSG = (
     "确认后我将按全局设置中的生成渠道触发生成。"
 )
 DRAFTS_REVIEW_OPTIONS = [
-    {"label": "确认提示词草案，开始生成概念图",
-     "description": "将目标草稿标记为已确认并触发生成"},
+    # 0817 B25 中性化：平台不点名下一步（生成/生图排序归 Skill）
+    {"label": "确认提示词草案，按当前 Skill 流程推进",
+     "description": "将目标草稿标记为已确认，按当前 Skill 流程推进"},
     {"label": "先调整提示词", "description": "告诉我需要修改的草稿与修改意见"},
 ]
 
@@ -295,8 +296,7 @@ def drafts_review_card() -> Tuple[str, List[Dict[str, str]]]:
 
 GENERATION_CONFIRM_GATE_ERROR = _gate_msg("GENERATION_CONFIRM", (
     "流程警告：目标草稿的 Prompt Draft 尚未经用户审阅确认（tag 非「已确认」）。"
-    "按 Skill 流程建议先展示草案并等待确认；本次生成已按用户要求照常触发，"
-    "请同时在回复中提示用户审阅草稿。"
+    "本次生成已按用户要求照常触发，请同时在回复中提示用户审阅草稿。"
 ))
 
 # 4444：模型自发跳确认（本轮用户消息无跳过指令）→ 拒收而非放行。

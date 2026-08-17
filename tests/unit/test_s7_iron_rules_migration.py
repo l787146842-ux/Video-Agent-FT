@@ -63,9 +63,12 @@ def test_s7_important_rules_no_quality_block():
     assert "6 大核心规则" not in ir
     assert "千篇一律的开头句式" not in ir
     assert "每张卡按画面内容个性化撰写" not in ir
-    # 其余条款保留（渐进式披露/分组铁律/阶段暂停/时长规则）
-    for kept in ("渐进式披露", "关键元素独立分组铁律", "阶段暂停铁律", "分镜视频提示词时长规则"):
+    # 其余条款保留（渐进式披露）
+    for kept in ("渐进式披露",):
         assert kept in ir, f"important_rules 条款丢失: {kept}"
+    # 0817 B25：产出/流程规范已从平台层删除（归 Skill 章节/代码闸）
+    for gone in ("关键元素独立分组铁律", "阶段暂停铁律", "分镜视频提示词时长规则"):
+        assert gone not in ir, f"平台层不得复述产出规范: {gone}"
 
 
 # ---------- 台账一致性：D8 归位裁决 ----------

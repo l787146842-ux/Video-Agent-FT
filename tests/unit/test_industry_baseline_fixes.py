@@ -123,7 +123,7 @@ def test_cascade_fast_resolution_and_fallback(tmp_path, monkeypatch):
 def test_iron_rules_default_body_three_clauses():
     body = spec_rules._IRON_RULES_DOC_BODY
     assert "1. 执行优先" in body
-    assert "2. 拆解覆盖完整（自检核对）" in body
+    assert "2. 拆解覆盖完整（系统机器验收）" in body
     assert "3. 回复精简" in body
     # 旧条款已删（功能由闸门/系统行为兜底）
     assert "流程覆盖" not in body
@@ -188,6 +188,6 @@ def test_pause_label_protocol_scoped_to_confirmation():
 def test_iron_rules_clause2_single_sentence():
     """铁律第 2 条只留标题句，粒度裁量归模型 + Skill。"""
     body = spec_rules._IRON_RULES_DOC_BODY
-    assert "2. 拆解覆盖完整（自检核对）。\n" in body
+    assert "2. 拆解覆盖完整（系统机器验收）。\n" in body
     assert "严禁把多位配角" not in body
     assert "宁缺毋滥" not in body

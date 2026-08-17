@@ -30,7 +30,7 @@ def test_b1_prompt_budget_gate_passes():
 def test_b1_system_md_include_expansion():
     """F7：shared 段经 {{include}} 拼装（分身消除，单一事实源）。"""
     text = load_prompt("planner/system.md")
-    assert "关键元素独立分组铁律" in text          # shared/important_rules.md
+    assert "渐进式披露" in text          # shared/important_rules.md
     assert "结构化短交代" in text                    # shared/output_discipline.md
     assert "看图再动笔" in text or "故事板媒体调用" in text  # shared/media_rules.md
 

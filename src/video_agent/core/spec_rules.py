@@ -41,7 +41,7 @@ _IRON_RULES_DOC_BODY = f"""# {IRON_RULES_HEADING}（系统约定，按优先级�
 
 1. 执行优先：用户说什么就做什么。用户指令与本文档/制片规格/Skill 流程冲突时，先照常执行，
    再在回复末尾给出警告。
-2. 拆解覆盖完整（自检核对）。
+2. 拆解覆盖完整（系统机器验收）。
 3. 回复精简：写入草稿的提示词正文只允许一句话汇总
    （如「已写入 8 张关键元素提示词卡，详见左侧故事板」），
    严禁在聊天正文逐卡罗列「1 组 1 卡、2 组 1 卡…」式清单。
@@ -129,6 +129,8 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
         content = str(iron.get("content") or "")
         upgraded = content.replace(_OLD_PRIORITY, _NEW_PRIORITY)
         upgraded = _NO_BLOCK_RE.sub("。", upgraded)
+        # 0817 B25：第 2 条措辞迁移（自检→系统机器验收，B9 后验收已由代码承担）
+        upgraded = upgraded.replace("（自检核对）", "（系统机器验收）")
         if _IRON_CLAUSE_45_RE.search(upgraded):
             upgraded = _IRON_CLAUSE_45_RE.sub("", upgraded).rstrip() + "\n"
         if upgraded != content:
