@@ -464,6 +464,13 @@ def test_0817_executor_thinking_not_hardcoded_low():
     assert exec_common._executor_thinking() is None
 
 
+def test_0817_script_inject_limit_in_runtime_whitelist():
+    """0817 B24 复查：上限键纳入全局设置热更新白名单（独立钳制区间）。"""
+    from src.video_agent.web.routes import runtime_settings as rs
+    assert "script_inject_limit" in rs._CHAR_LIMIT_KEYS
+    assert "script_inject_limit" in rs.RuntimeSettingsUpdate.model_fields
+
+
 # ---------- 0817 B22：流程意见清除（平台只兜底，不包办排序） ----------
 
 def test_0817_platform_no_next_step_opinions():

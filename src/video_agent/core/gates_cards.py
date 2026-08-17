@@ -36,8 +36,7 @@ def _gate_json(section: str, fallback: Any) -> Any:
 
 
 SPEC_GATE_ERROR = _gate_msg("SPEC_GATE", (
-    "流程警告：规格文档尚未写入。建议先调用 document_write 写入规格文档"
-    "（标题、类型、画幅、时长、视觉风格、语言、模型偏好等制作参数）并请用户审阅；"
+    "流程警告：规格文档尚未写入。"
     "本次故事板结构已按用户要求照常搭建，规格文档仍建议补写。"
 ))
 
@@ -46,7 +45,7 @@ SPEC_GATE_ERROR = _gate_msg("SPEC_GATE", (
 STRUCTURE_INLINE_PROMPT_MAX = 40
 
 STORYBOARD_PENDING_GATE_ERROR = _gate_msg("STORYBOARD_PENDING", (
-    "流程警告：故事板结构尚未经用户确认。按 Skill 流程建议先请用户审阅拆分方案再写提示词；"
+    "流程警告：故事板结构尚未经用户确认。"
     "本次提示词已按用户要求照常写入，请同时在回复中提示用户审阅左侧故事板。"
 ))
 
@@ -57,8 +56,8 @@ _STORYBOARD_STRUCTURE_PAUSED = _gate_json("STORYBOARD_STRUCTURE_PAUSED", {
     ),
     "options": [
         {
-            "label": "确认关键元素拆解，继续编写元素生图提示词草案",
-            "description": "元素拆分无误，下一步为各关键元素编写生图提示词草案",
+            "label": "确认，按当前 Skill 流程推进下一阶段",
+            "description": "拆分无误，下一步以当前 Skill 流程为准",
         },
         {"label": "调整关键元素拆分", "description": "告诉我需要增删改的元素"},
     ],
@@ -78,8 +77,8 @@ _SHOT_STRUCTURE_PAUSED = _gate_json("SHOT_STRUCTURE_PAUSED", {
     ),
     "options": [
         {
-            "label": "确认分镜拆分方案，继续编写视频提示词草案",
-            "description": "分镜拆分无误，下一步为各分镜编写视频提示词草案",
+            "label": "确认，按当前 Skill 流程推进下一阶段",
+            "description": "拆分无误，下一步以当前 Skill 流程为准",
         },
         {"label": "调整分镜拆分", "description": "告诉我需要增删改的镜头"},
     ],

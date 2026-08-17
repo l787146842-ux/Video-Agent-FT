@@ -31,6 +31,8 @@ _STR_KEYS = (
     "default_image_resolution", "default_video_resolution",
 )
 _INT_KEYS = ("max_shot_duration",)
+# 0817 B24：剧本注入上限（字符）热更新键，独立钳制区间（不与秒数共用 clamp）
+_CHAR_LIMIT_KEYS = ("script_inject_limit",)
 # 814H7：推理档位键（""=默认/原生，low/medium/high 透传 reasoning_effort）
 _THINKING_KEYS = ("executor_thinking_level", "aux_thinking_level")
 _THINKING_VALUES = ("", "low", "medium", "high")
@@ -46,6 +48,8 @@ class RuntimeSettingsUpdate(BaseModel):
     default_image_resolution: Optional[str] = None
     default_video_resolution: Optional[str] = None
     max_shot_duration: Optional[int] = None
+    # 0817 B24：剧本正文注入上限（字符）
+    script_inject_limit: Optional[int] = None
     # 814H7：推理档位（""=默认/原生）
     executor_thinking_level: Optional[str] = None
     aux_thinking_level: Optional[str] = None
@@ -66,6 +70,7 @@ def _current_dict() -> Dict[str, Any]:
         "default_image_resolution": settings.default_image_resolution,
         "default_video_resolution": settings.default_video_resolution,
         "max_shot_duration": settings.max_shot_duration,
+        "script_inject_limit": settings.script_inject_limit,
         "executor_thinking_level": settings.executor_thinking_level,
         "aux_thinking_level": settings.aux_thinking_level,
         "model_policy": mp.current_policy(),
@@ -89,6 +94,11 @@ async def put_runtime_settings(body: RuntimeSettingsUpdate):
         elif key in _INT_KEYS:
             try:
                 value = max(1, min(int(value), 60))
+            except (TypeError, ValueError):
+                continue
+        elif key in _CHAR_LIMIT_KEYS:
+            try:
+                value = max(1000, min(int(value), 200000))
             except (TypeError, ValueError):
                 continue
         elif key in _STR_KEYS:
@@ -137,6 +147,12 @@ def load_runtime_settings() -> None:
             if key in data:
                 try:
                     object.__setattr__(settings, key, max(1, min(int(data[key]), 60)))
+                except (TypeError, ValueError) as _e:
+                    logger.debug("[runtime_settings] 忽略异常: {}", _e)
+        for key in _CHAR_LIMIT_KEYS:
+            if key in data:
+                try:
+                    object.__setattr__(settings, key, max(1000, min(int(data[key]), 200000)))
                 except (TypeError, ValueError) as _e:
                     logger.debug("[runtime_settings] 忽略异常: {}", _e)
         for key in _THINKING_KEYS:
