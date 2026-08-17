@@ -178,3 +178,44 @@ def test_0817_fc_create_group_title_normalized(tmp_path, monkeypatch):
         group_type="keyElement", title="元素场景_02 太阳系外缘启示号控制舱", desc="x")))
     titles = [g.get("title") for g in svc.state_dict.get("keyElements", [])]
     assert "太阳系外缘启示号控制舱" in titles
+
+
+# ---------- 0817 B4：执行器 JSON 畸形 → 带拒因纠正重试（C2） ----------
+
+def test_0817_llm_json_call_corrective_retry_on_malformed(monkeypatch):
+    """首次返回畸形 JSON → 携拒因重试一次 → 二次正确则解析成功。"""
+    import asyncio
+    from src.video_agent.skill_runtime import exec_spec
+
+    calls = []
+
+    async def fake_chat(provider, model, messages, **kw):
+        calls.append(list(messages))
+        if len(calls) == 1:
+            return ('{"summary": "x", "key_points": ["a" "b"]}', "stop")
+        return ('{"summary": "x", "key_points": ["a", "b"]}', "stop")
+
+    monkeypatch.setattr(exec_spec._gen, "call_chat_completion", fake_chat)
+    monkeypatch.setattr(
+        exec_spec.exec_common, "_resolve_chat_provider", lambda p, m: ("prov", "model"))
+    data = asyncio.run(exec_spec._llm_json_call("sys", "user", max_tokens=512))
+    assert data["summary"] == "x"
+    assert len(calls) == 2
+    # 纠正重试必须携拒因（C2 结构化拒因回喂）
+    assert any("无法解析" in str(m.get("content")) for m in calls[1])
+
+
+def test_0817_llm_json_call_raises_after_retry_still_malformed(monkeypatch):
+    """重试仍畸形 → 抛明确错误，不吞。"""
+    import asyncio
+    import pytest as _pt
+    from src.video_agent.skill_runtime import exec_spec
+
+    async def fake_chat(provider, model, messages, **kw):
+        return ('{"summary": "x", "key_points": ["a" "b"]}', "stop")
+
+    monkeypatch.setattr(exec_spec._gen, "call_chat_completion", fake_chat)
+    monkeypatch.setattr(
+        exec_spec.exec_common, "_resolve_chat_provider", lambda p, m: ("prov", "model"))
+    with _pt.raises(Exception, match="无法解析"):
+        asyncio.run(exec_spec._llm_json_call("sys", "user", max_tokens=512))

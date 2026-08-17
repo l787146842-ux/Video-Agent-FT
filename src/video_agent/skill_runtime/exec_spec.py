@@ -104,13 +104,47 @@ async def _llm_json_call(
     m = re.search(r"\{[\s\S]*\}", content or "")
     if not m:
         raise RuntimeError("执行器 LLM 未返回 JSON 结果")
-    try:
-        data = json.loads(m.group(0))
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"执行器 LLM 返回的 JSON 无法解析: {e}") from e
-    if not isinstance(data, dict):
-        raise RuntimeError("执行器 LLM 返回的 JSON 不是对象")
-    return data
+    # 0817：畸形 JSON 带拒因纠正重试一次（C2 结构化拒因回喂）：
+    # 小模型漏逗号/引号类错误高发，携报错原文+残文重问一次可高概率自愈，
+    # 仍败才抛错（不吞）。
+    candidate = m.group(0)
+    last_err: Optional[json.JSONDecodeError] = None
+    for attempt in (1, 2):
+        try:
+            data = json.loads(candidate)
+        except json.JSONDecodeError as e:
+            last_err = e
+            if attempt == 2:
+                break
+            messages += [
+                {"role": "assistant", "content": content or ""},
+                {"role": "user", "content": (
+                    f"你上次输出的 JSON 无法解析（{e}）。"
+                    "请逐字修正标点/引号/逗号后只重新输出完整 JSON 对象，"
+                    "不要输出正文解释。"
+                )},
+            ]
+            try:
+                content, _fix_finish = await _gen.call_chat_completion(
+                    provider,
+                    model,
+                    messages,
+                    max_tokens=budget,
+                    timeout=settings.llm_json_timeout,
+                    thinking_level=exec_common._executor_thinking(),
+                )
+            except GenerationError as ge:
+                raise RuntimeError(
+                    f"执行器 LLM 返回的 JSON 无法解析: {last_err}") from ge
+            m2 = re.search(r"\{[\s\S]*\}", content or "")
+            if not m2:
+                break
+            candidate = m2.group(0)
+        else:
+            if not isinstance(data, dict):
+                raise RuntimeError("执行器 LLM 返回的 JSON 不是对象")
+            return data
+    raise RuntimeError(f"执行器 LLM 返回的 JSON 无法解析: {last_err}")
 
 
 async def _generate_soft_spec_candidates(

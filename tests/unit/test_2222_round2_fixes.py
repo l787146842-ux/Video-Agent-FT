@@ -114,8 +114,9 @@ def test_2222_executor_thinking_default_low_and_empty_falls_back():
 
 
 def test_2222_all_executor_llm_calls_pass_thinking_level():
-    """G4 全局化：执行器全部 4 个 LLM 调用点都传思考档位，不许漏路径。
+    """G4 全局化：执行器全部 5 个 LLM 调用点都传思考档位，不许漏路径。
     R4a 拆分后扫描实现模块；五轮 S5 新增 exec_split（拆解域切出，含自检调用点）；
+    0817 B4 新增 _llm_json_call 畸形 JSON 纠正重试调用点；
     调用统一经 _gen.（web.generation）模块属性。"""
     from src.video_agent.skill_runtime import (
         exec_common, exec_spec, exec_split, exec_tools,
@@ -126,8 +127,8 @@ def test_2222_all_executor_llm_calls_pass_thinking_level():
            + inspect.getsource(exec_tools) + inspect.getsource(exec_split)
            + inspect.getsource(exec_media_writer) + inspect.getsource(exec_media_gen))
     n_calls = src.count("await _gen.call_chat_completion(") + src.count("await _gen.call_chat_completion_stream(")
-    assert n_calls == 4, "执行器 LLM 调用点数量变化时必须同步本断言"
-    # 调用点 4 处 + _executor_thinking 定义本身 1 处
+    assert n_calls == 5, "执行器 LLM 调用点数量变化时必须同步本断言"
+    # 调用点 5 处 + _executor_thinking 定义本身 1 处
     assert src.count("_executor_thinking()") == n_calls + 1
 
 
