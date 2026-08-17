@@ -13,6 +13,7 @@ from loguru import logger
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.models import CAT_KEY_ELEMENTS
+from src.video_agent.core import prompt_gates
 from src.video_agent.web import generation as _gen
 from src.video_agent.skill_runtime.progress import (
     emit_progress,
@@ -118,7 +119,6 @@ def skill_declares_audio(skill_name: str) -> bool:
     if "key_element_audio" in content or ("音色" in content and "登记" in content):
         return True
     try:
-        from src.video_agent.core import prompt_gates
         return bool(prompt_gates.parse_gate_rules(content).get("require_audio_layer", False))
     except Exception:
         return False
