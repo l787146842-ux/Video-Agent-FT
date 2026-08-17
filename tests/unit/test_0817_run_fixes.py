@@ -219,3 +219,34 @@ def test_0817_llm_json_call_raises_after_retry_still_malformed(monkeypatch):
         exec_spec.exec_common, "_resolve_chat_provider", lambda p, m: ("prov", "model"))
     with _pt.raises(Exception, match="无法解析"):
         asyncio.run(exec_spec._llm_json_call("sys", "user", max_tokens=512))
+
+
+# ---------- 0817 B6：后台任务生命周期状态可观测（静默死亡留痕） ----------
+
+def test_0817_task_lifecycle_done_and_cancel_statuses(tmp_path):
+    """worker 正常结束=done、被取消=cancelled，状态均落账（可观测性前提）。"""
+    from src.video_agent.web.agent_task_manager import AgentTaskManager
+
+    mgr = AgentTaskManager.__new__(AgentTaskManager)
+    mgr._tasks = {}
+    mgr._persist_path = tmp_path / "tasks.json"
+
+    async def worker_ok():
+        await asyncio.sleep(0.02)
+
+    async def worker_long():
+        await asyncio.sleep(5)
+
+    async def main():
+        rec = mgr.create("proj-x", worker_ok)
+        await asyncio.sleep(0.1)
+        done_status = mgr.get(rec["task_id"])["status"]
+        rec2 = mgr.create("proj-x", worker_long)
+        await asyncio.sleep(0.02)
+        mgr.stop(rec2["task_id"])
+        await asyncio.sleep(0.05)
+        return done_status, mgr.get(rec2["task_id"])["status"]
+
+    done_status, cancel_status = asyncio.run(main())
+    assert done_status == "done"
+    assert cancel_status == "cancelled"

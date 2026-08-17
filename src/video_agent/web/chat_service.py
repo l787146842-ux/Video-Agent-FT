@@ -210,7 +210,18 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
 
     tm = get_agent_task_manager()
-    svc, token = StateManager.create_task_bound(project_id, workspace_dir)
+    # 0817 可观测性：worker 生命周期三点日志（启动/被取消/退出）——
+    # 6666 运行首两轮任务静默消失无日志无 trace，根因定位依赖此链路
+    logger.info(f"[AgentTask] {task_id} worker 启动")
+    try:
+        svc, token = StateManager.create_task_bound(project_id, workspace_dir)
+    except Exception as e:
+        logger.exception(f"[AgentTask] {task_id} 状态绑定失败: {e}")
+        tm.emit(task_id, {
+            "type": SSE_ERROR, "detail": f"服务端异常: {e}",
+            "error_code": getattr(e, "error_code", None) or "INTERNAL_ERROR",
+        })
+        return
     try:
         async def emit(event: Dict[str, Any]) -> None:
             tm.emit(task_id, event)
@@ -222,6 +233,7 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
 
         await _stream_worker_impl(body, svc, emit, pending_injector=pending_injector)
     except asyncio.CancelledError:
+        logger.warning(f"[AgentTask] {task_id} worker 被取消（非用户停止即异常信号）")
         raise
     except Exception as e:
         logger.exception(f"[AgentTask] {task_id} 处理异常: {e}")
@@ -231,6 +243,7 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
             "error_code": getattr(e, "error_code", None) or "INTERNAL_ERROR",
         })
     finally:
+        logger.info(f"[AgentTask] {task_id} worker 退出")
         # 任务结束：清空未注入的排队项（前端 done 后会自动重发为普通请求，防双注入）
         tm.clear_pending_guidance(task_id)
         StateManager.release_task_bound(token)

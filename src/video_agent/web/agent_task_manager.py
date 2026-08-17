@@ -131,11 +131,19 @@ class AgentTaskManager:
             return
         if task.cancelled():
             record["status"] = "cancelled"
+            # 0817：取消路径原先完全静默（静默死亡事故根因盲区），必须留痕
+            logger.warning(f"[AgentTask] {task_id} 后台任务被取消")
         elif task.exception():
             exc = task.exception()
             record["status"] = "error"
             record["error"] = str(exc)
             logger.error(f"[AgentTask] {task_id} 后台异常: {exc}")
+        else:
+            # 0817：asyncio 任务结束即权威终态——worker 未自发 done 事件时
+            # 状态不得永停 running（静默死亡症状），兜底落 done
+            if record["status"] == "running":
+                record["status"] = "done"
+            logger.info(f"[AgentTask] {task_id} 后台任务结束")
         self._persist()
 
     # ====== 事件写入 / 订阅 ======
