@@ -132,3 +132,49 @@ def test_0817_injection_sentence_matches_spec_selection():
     s_bi = exec_common._prompt_language_rule(
         "AI-短剧一站式生成", _spec_state("输出语言：中英双语"))
     assert "中英双语" in s_bi
+
+
+# ---------- 0817 B3：分组标题确定性归一（剥英文标识/编号前缀） ----------
+
+def test_0817_normalize_group_title_strips_prefixes():
+    """模型模仿 Skill 英文标识当标题 → 确定性剥前缀，保留中文主体。"""
+    from src.video_agent.state import storyboard_ops as ops
+    assert ops.normalize_group_title("key_element_audio_瓦西里") == "瓦西里"
+    assert ops.normalize_group_title("key_element_audio_领航员") == "领航员"
+    assert ops.normalize_group_title("元素场景_01 木星轨道星环号球形舱") == "木星轨道星环号球形舱"
+    assert ops.normalize_group_title("元素道具_01 白色薄膜") == "白色薄膜"
+    assert ops.normalize_group_title("程心") == "程心"
+    # 剥完无中文主体 → 原样保留（机器不造名）
+    assert ops.normalize_group_title("element_scene_01") == "element_scene_01"
+    assert ops.normalize_group_title("元素场景_01") == "元素场景_01"
+
+
+def test_0817_add_group_title_normalized_on_write(tmp_path):
+    """文本轨/执行器轨建组入口：标题落盘前归一。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.web.action_executor import StudioActionExecutor
+    svc = StateManager(str(tmp_path / "ws"))
+    ex = StudioActionExecutor(svc, gate_enabled=False)
+    applied = ex.execute([{
+        "action": "add_group", "group_type": "keyElement",
+        "title": "key_element_audio_瓦西里", "desc": "音色低沉",
+    }])
+    assert applied == 1
+    titles = [g.get("title") for g in svc.state_dict.get("keyElements", [])]
+    assert "瓦西里" in titles
+    assert "key_element_audio_瓦西里" not in titles
+
+
+def test_0817_fc_create_group_title_normalized(tmp_path, monkeypatch):
+    """FC 轨 storyboard_create_group 同覆盖（G4）。"""
+    import asyncio
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.tools.storyboard_tools import StoryboardCreateGroupTool
+
+    svc = StateManager(str(tmp_path / "ws"))
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+    tool = StoryboardCreateGroupTool()
+    asyncio.run(tool.aexecute(tool.get_input_schema()(
+        group_type="keyElement", title="元素场景_02 太阳系外缘启示号控制舱", desc="x")))
+    titles = [g.get("title") for g in svc.state_dict.get("keyElements", [])]
+    assert "太阳系外缘启示号控制舱" in titles

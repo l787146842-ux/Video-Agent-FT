@@ -34,6 +34,26 @@ ALLOWED_GROUP_FIELDS = (
     "badgeLabel",
 )
 
+# ---------- 分组标题确定性归一（0817：模型模仿 Skill 英文标识当标题） ----------
+# P2 自动修正：剥 key_element_* 等英文标识前缀 / 「元素场景_01」式中文类别编号前缀，
+# 保留中文主体；剥完无中文主体则原样保留（机器不造名，用户可手动改名）。
+_ASCII_ID_PREFIX_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+_")
+_CN_CAT_PREFIX_RE = re.compile(r"^(?:元素|关键元素)?(?:场景|道具|人物|角色|音频|载具)[_\-\s]?\d+\s*")
+_TITLE_CJK_RE = re.compile(r"[一-鿿]")
+
+
+def normalize_group_title(title: str) -> str:
+    """0817：分组标题确定性归一（双轨建组入口共用）。"""
+    t = str(title or "").strip()
+    if not t:
+        return t
+    for rx in (_ASCII_ID_PREFIX_RE, _CN_CAT_PREFIX_RE):
+        s = rx.sub("", t).strip()
+        if s and s != t and _TITLE_CJK_RE.search(s):
+            return s
+    return t
+
+
 # ---------- 关键元素角标归一（8888 二轮） ----------
 # 模型偷懒写泛化「关键元素」或缺省角标时，按 desc 类型锚点确定映射
 # （模型自己的 desc 通常带 prop element/element scene 等锚点）；映射不到才保留原值。

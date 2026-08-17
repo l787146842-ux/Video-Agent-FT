@@ -576,6 +576,11 @@ class StudioActionExecutor:
             or action.get("element_id") or action.get("element_name")
             or action.get("group_title") or "Agent 新建分组"
         )
+        # 0817：标题确定性归一（剥英文标识/编号前缀，P2 自动修正，双轨共用 ops）
+        _raw_title = str(title)
+        title = ops.normalize_group_title(_raw_title)
+        if title != _raw_title:
+            logger.info(f"[StudioActions] 分组标题归一：{_raw_title} -> {title}")
         desc = action.get("desc") or group_data.get("desc") or patch.get("desc") or ""
 
         new_id = group_data.get("id") or gen_id('shot' if cat_key == CAT_SHOTS else 'ke' if cat_key == CAT_KEY_ELEMENTS else 'audio')

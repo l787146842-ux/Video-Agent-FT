@@ -84,7 +84,10 @@ class StoryboardCreateGroupTool(BaseTool):
         cat_key = ops.category_for_group_type(params.group_type)
 
         new_id = ops.new_group_id(cat_key)
-        new_group: Dict[str, Any] = {"id": new_id, "title": params.title, "desc": params.desc, "drafts": []}
+        # 0817：标题确定性归一（与文本轨同一 ops 实现，G4 全路径覆盖）
+        _raw_title = str(params.title or "")
+        _title = ops.normalize_group_title(_raw_title)
+        new_group: Dict[str, Any] = {"id": new_id, "title": _title, "desc": params.desc, "drafts": []}
 
         if cat_key == CAT_SHOTS:
             new_group["roughDesc"] = params.rough_desc or params.desc
