@@ -20,7 +20,7 @@ _MANIFEST_ALL_ON = (
     "```json skill_manifest\n"
     '{"gates": {"require_duration": true, "require_subtitle": true,'
     ' "require_camera_language": true, "require_audio_layer": true},'
-    ' "flow": {"spec_wizard": true, "spec_stage_trim": true, "channels_block": true},'
+    ' "flow": {"spec_wizard": true, "spec_stage_trim": true},'
     ' "pause": {"stage_pause": true}}\n'
     "```\n"
 )
@@ -89,7 +89,7 @@ def test_skill_flow_enabled_requires_declaration():
     sd.save_skill_doc("有声明", "# A\n" + _MANIFEST_ALL_ON)
     sd.save_skill_doc("无声明", "# B\n> 调用规则：测试\n正文")
     assert registry.skill_flow_enabled("有声明", "spec_wizard") is True
-    assert registry.skill_flow_enabled("有声明", "channels_block") is True
+    assert registry.skill_flow_enabled("有声明", "spec_stage_trim") is True
     assert registry.skill_flow_enabled("无声明", "spec_wizard") is False
     assert registry.skill_flow_enabled("不存在", "spec_wizard") is False
     assert registry.skill_flow_enabled("", "spec_wizard") is False

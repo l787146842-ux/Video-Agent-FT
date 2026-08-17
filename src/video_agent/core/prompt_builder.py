@@ -100,10 +100,12 @@ class PromptBuilder:
                 ))
 
             # 全局生成设置（前端「全局设置」页用户配置，热生效）：
-            # 分镜时长上限 + 默认生成渠道，Agent 拆镜/生成必须遵守
-            note = self.build_global_settings_note()
-            if note:
-                parts.append(("global_settings", note))
+            # 分镜时长上限 + 默认生成渠道，Agent 拆镜/生成必须遵守；
+            # 0817 B18：阶段门控——规格规划阶段无消费方，不注入（context rot 治理）
+            if self.stage_allows_global_settings():
+                note = self.build_global_settings_note()
+                if note:
+                    parts.append(("global_settings", note))
 
             # 混合记忆检索注入（语义 + 关键词 + 时间衰减），按项目隔离；
             # 命中明细写入 context.memory_hits（4.7：随 done payload 下发前端可视化）
@@ -123,11 +125,8 @@ class PromptBuilder:
                     if memory_ctx:
                         parts.append(("memory", memory_ctx))
 
-            # 本项目已配置的生成渠道（仅当 Skill 在 manifest 声明 channels_block：
-            # 规格向导「制作渠道」维度的候选来源，S1：不预设所有 Skill 都要收集渠道）
-            channels = self.build_generation_channels_block(context.skill_name)
-            if channels:
-                parts.append(("channels", channels))
+            # 0817 B18：生成渠道清单注入机制已整体清除——渠道唯一事实源为
+            # 顶部「全局设置」（provider_config/provider_prefs），规格文档不再承载渠道
 
             # 状态上下文殿后（每轮变化最大）：优先用惰性构建器按轮刷新，
             # 让 LLM 在每一轮都看到上一轮执行后的最新状态（P0 修复）
@@ -189,6 +188,17 @@ class PromptBuilder:
             )
         return text
 
+    def stage_allows_global_settings(self) -> bool:
+        """0817 B18：全局设置注入的阶段门控——规格规划阶段（无任何分组）
+        时长上限/渠道/分辨率都没有消费方，不注入；故事板阶段起才注入。
+        无法探测阶段时保守注入（不失约束）。"""
+        if self._get_raw_state is None:
+            return True
+        try:
+            return self.detect_stage() != "planning"
+        except Exception:
+            return True
+
     def build_global_settings_note(self) -> str:
         """全局生成设置注入块：分镜最大时长 + 默认出图/出视频渠道 + 聊天出图开关。"""
         lines = [
@@ -229,61 +239,6 @@ class PromptBuilder:
             "== 当前项目《执行铁律》全文（项目级生产契约，必须完整遵守；"
             "优先级：用户最新指令 > 本文档 + 制片规格 > Skill/系统默认）==\n" + content
         )
-
-    def build_generation_channels_block(self, skill_name: str = "") -> str:
-        """本项目已配置的出图/出视频渠道清单（规格向导候选来源）。
-
-        仅当 Skill 在 manifest 声明 channels_block 时注入（S1：渠道收集是
-        特定 Skill 的规格交互维度，不是平台默认行为）。
-        仅列出启用且对应模型列表非空的供应商（mock 除外）；聊天模型不在此列。
-        """
-        if skill_name:
-            try:
-                from src.video_agent.skill_runtime.registry import skill_flow_enabled
-
-                if not skill_flow_enabled(skill_name, "channels_block"):
-                    return ""
-            except Exception:
-                return ""
-        else:
-            return ""
-        try:
-            from src.video_agent.web.provider_config import load_merged_providers
-            providers = load_merged_providers()
-        except Exception:
-            return ""
-        image_lines: List[str] = []
-        video_lines: List[str] = []
-        for p in providers:
-            if not p.get("enabled", True):
-                continue
-            if (p.get("protocol") or "") == "mock":
-                continue
-            name = str(p.get("name") or "").strip()
-            pid = str(p.get("id") or "").strip()
-            if not name or not pid:
-                continue
-            imgs = [m for m in (p.get("image_models") or []) if m]
-            vids = [m for m in (p.get("video_models") or []) if m]
-            if imgs:
-                image_lines.append(f"- {name}（内部 id: {pid}）：{'、'.join(imgs)}")
-            if vids:
-                video_lines.append(f"- {name}（内部 id: {pid}）：{'、'.join(vids)}")
-        if not image_lines and not video_lines:
-            return ""
-        parts: List[str] = [
-            "== 本项目已配置的生成渠道（规格向导「制作渠道」维度候选来源；系统会校验：未列出的厂商/模型无法使用）=="
-        ]
-        if image_lines:
-            parts.append("【出图（image）】\n" + "\n".join(image_lines))
-        if video_lines:
-            parts.append("【出视频（video）】\n" + "\n".join(video_lines))
-        parts.append(
-            "规格文档中必须写明生成渠道（空格分隔、不要用逗号）："
-            "「图像生成：<厂商显示名> <模型名>」「视频生成：<厂商显示名> <模型名>」；"
-            "系统会据此自动绑定出图/出视频渠道。"
-        )
-        return "\n\n".join(parts)
 
     def build_skill_catalog(self, context: "PlannerContext") -> str:
         """构建 Skill 目录（渐进式披露的「目录」）：全部文档 Skill 的名称+摘要常驻，

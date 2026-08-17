@@ -12,33 +12,31 @@ from src.video_agent.utils.prompts import load_prompt
 ROOT = Path(__file__).resolve().parents[2]
 
 
-# ---------- 迁入端：铁律模板含全部迁移条款 ----------
+# ---------- 迁入端：铁律模板只留契约条款（0817 B18 用户裁决：原第 4/5 条
+# 提示词质量/产出形态归 Skill 章节唯一表述，铁律不再承载产出规范） ----------
 
 def test_s7_iron_rules_template_carries_migrated_clauses():
     body = _IRON_RULES_DOC_BODY
-    # #5 质量铁律（电影级核心规则六要素）
-    assert "提示词质量" in body
-    assert "专业风格术语" in body and "氛围与潜台词" in body
-    assert "模板套话" in body
-    # #4 产出形态（中文叙事式多节拍 + 节拍顺序 + @元素引用）
-    assert "产出形态" in body
-    assert "摄像机→主体→空间→音频" in body
-    assert "@Element_标题" in body
+    # 0817 B18：第 4/5 条已废除
+    assert "提示词质量" not in body
+    assert "产出形态" not in body
+    assert "摄像机→主体→空间→音频" not in body
+    # 契约条款保留
+    assert "执行优先" in body and "拆解覆盖完整" in body and "回复精简" in body
     # C6 基线对齐：粒度裁量归模型+Skill，铁律刻意不承载粒度细则
-    # （test_industry_baseline_fixes 同语义钉死，此处防 S7 迁移误带入）
     assert "宁缺毋滥" not in body
 
 
 def test_s7_iron_rules_ensure_creates_new_template():
-    """ensure 幂等创建的新文档即含迁移条款（新项目直接拿到层 4 完整契约）"""
+    """ensure 幂等创建的新文档即新模板（不再含已废除的第 4/5 条）"""
     from src.video_agent.core.spec_rules import ensure_iron_rules_doc, find_iron_rules_doc
 
     raw = {"documents": []}
     assert ensure_iron_rules_doc(raw) is True
     doc = find_iron_rules_doc(raw)
     assert doc is not None
-    assert "产出形态" in doc["content"]
-    assert "提示词质量" in doc["content"]
+    assert "产出形态" not in doc["content"]
+    assert "提示词质量" not in doc["content"]
     # 幂等：二次调用不再变更
     assert ensure_iron_rules_doc(raw) is False
 

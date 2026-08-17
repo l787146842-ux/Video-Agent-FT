@@ -195,7 +195,6 @@ DEFAULT_SKILL_DOC = """# 剧本生视频（需上传剧本）
   "flow": {
     "spec_wizard": true,
     "spec_stage_trim": true,
-    "channels_block": true,
     "spec_gate": true
   },
   "pause": {
@@ -437,8 +436,8 @@ _MANIFEST_GATE_KEYS: Dict[str, Any] = {
 _MANIFEST_FLOW_KEYS: Dict[str, Any] = {
     "spec_wizard": False,      # script_analyze 后规格参数向导 + 规格审阅卡升级
     "spec_stage_trim": False,  # 无规格文档时裁剪故事板/生成工具
-    "channels_block": False,   # 每轮注入「已配置生成渠道」块
     "spec_gate": False,        # 无规格文档时搭建故事板附「建议补写规格」警告
+    # 0817 B18：channels_block 已清除（生成渠道唯一事实源 = 顶部全局设置）
 }
 _MANIFEST_PAUSE_KEYS: Dict[str, Any] = {"stage_pause": False}
 

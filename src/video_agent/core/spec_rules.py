@@ -32,6 +32,11 @@ _NEW_PRIORITY = "用户指令 > 本文档 + 制片规格 > Skill/系统默认"
 # 容忍旧文档里的换行/空白差异；用户改过其它内容不受影响
 _NO_BLOCK_RE = re.compile(r"；\s*系统不得拦截用户要求的操作，\s*也不得强制暂停等待确认。")
 
+# 0817 B18（用户裁决）：铁律第 4/5 条（提示词质量/产出形态）归 Skill 章节
+# 唯一表述——存量项目铁律里的默认第 4/5 条升级迁移时剥离（保留用户自加的第 6+ 条）
+_IRON_CLAUSE_45_RE = re.compile(
+    r"(?m)^[ \t]*4\.[ \t]*提示词质量：[\s\S]*?^[ \t]*5\.[ \t]*产出形态：[\s\S]*?(?=^[ \t]*\d+\.[ \t]|\Z)")
+
 _IRON_RULES_DOC_BODY = f"""# {IRON_RULES_HEADING}（系统约定，按优先级执行：{_NEW_PRIORITY}）
 
 1. 执行优先：用户说什么就做什么。用户指令与本文档/制片规格/Skill 流程冲突时，先照常执行，
@@ -40,13 +45,6 @@ _IRON_RULES_DOC_BODY = f"""# {IRON_RULES_HEADING}（系统约定，按优先级�
 3. 回复精简：写入草稿的提示词正文只允许一句话汇总
    （如「已写入 8 张关键元素提示词卡，详见左侧故事板」），
    严禁在聊天正文逐卡罗列「1 组 1 卡、2 组 1 卡…」式清单。
-4. 提示词质量：写入草稿的生成提示词须逐条落实所选 Skill 的「提示词写法」规范
-   （电影级核心规则：专业风格术语/构图与镜头/光影/调色/视觉渲染/氛围与潜台词）；
-   每张卡按画面内容个性化撰写，同一套模板套话（千篇一律的开头句式、可互换的通用描述）
-   视为不合格；卡片数量多时宁可分批写入，也不为省 token 压缩质量。
-5. 产出形态：分镜视频提示词用中文叙事式多节拍写法（如「镜头一：中景，……切至镜头二：……」），
-   节拍内部按 摄像机→主体→空间→音频 顺序展开；分镜引用的关键元素用 @Element_标题 写入；
-   关键元素提示词按中文叙事描写（主体身份/特征细节/氛围基调），避免模板套话。
 """
 
 
@@ -123,11 +121,14 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
                 iron["content"] = iron_content.rstrip() + f"\n- {ELEMENT_IMAGE_PREREQ_OFF}\n"
             changed = True
     # 老项目措辞升级（精确应用，不动用户其它编辑）：
-    # ① 优先级文案（含制片规格同级）；② 删「不得拦截/强制暂停」半句（2222 二轮）
+    # ① 优先级文案（含制片规格同级）；② 删「不得拦截/强制暂停」半句（2222 二轮）；
+    # ③ 0817 B18：剥离默认第 4/5 条（产出规范归 Skill 章节唯一表述）
     if iron is not None:
         content = str(iron.get("content") or "")
         upgraded = content.replace(_OLD_PRIORITY, _NEW_PRIORITY)
         upgraded = _NO_BLOCK_RE.sub("。", upgraded)
+        if _IRON_CLAUSE_45_RE.search(upgraded):
+            upgraded = _IRON_CLAUSE_45_RE.sub("", upgraded).rstrip() + "\n"
         if upgraded != content:
             iron["content"] = upgraded
             changed = True

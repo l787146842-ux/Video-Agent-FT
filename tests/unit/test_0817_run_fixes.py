@@ -198,6 +198,62 @@ def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
     assert svc.state_dict["keyElements"][0]["title"] == "瓦西里"
 
 
+# ---------- 0817 B18：注入瘦身（铁律4/5删除+全局设置阶段门控+channels死机制清除） ----------
+
+def test_0817_iron_rules_template_drops_clauses_4_5():
+    """铁律只留契约条款：提示词质量/产出形态归 Skill 章节唯一表述（用户裁决）。"""
+    from src.video_agent.core.spec_rules import _IRON_RULES_DOC_BODY
+    assert "提示词质量" not in _IRON_RULES_DOC_BODY
+    assert "产出形态" not in _IRON_RULES_DOC_BODY
+    for kept in ("执行优先", "拆解覆盖完整", "回复精简"):
+        assert kept in _IRON_RULES_DOC_BODY, f"契约条款丢失: {kept}"
+
+
+def test_0817_iron_rules_migration_strips_old_clauses():
+    """存量项目铁律里的默认第4/5条升级迁移时剥离（幂等）。"""
+    from src.video_agent.core.spec_rules import (
+        IRON_RULES_DOC_NAME, ensure_iron_rules_doc,
+    )
+    old = (
+        "# 执行铁律（系统约定）\n\n"
+        "1. 执行优先：用户说什么就做什么。\n"
+        "2. 拆解覆盖完整（自检核对）。\n"
+        "3. 回复精简：写入草稿的提示词正文只允许一句话汇总。\n"
+        "4. 提示词质量：写入草稿的生成提示词须逐条落实所选 Skill 的「提示词写法」规范\n"
+        "   （电影级核心规则）；每张卡按画面内容个性化撰写。\n"
+        "5. 产出形态：分镜视频提示词用中文叙事式多节拍写法，\n"
+        "   节拍内部按 摄像机→主体→空间→音频 顺序展开。\n"
+    )
+    raw = {"documents": [{"id": "d1", "name": IRON_RULES_DOC_NAME, "content": old}]}
+    assert ensure_iron_rules_doc(raw) is True
+    content = raw["documents"][0]["content"]
+    assert "提示词质量" not in content and "产出形态" not in content
+    assert "执行优先" in content and "回复精简" in content
+    assert ensure_iron_rules_doc(raw) is False  # 幂等
+
+
+def test_0817_global_settings_stage_gated():
+    """全局设置注入阶段门控：规格规划阶段不注入，故事板起才注入。"""
+    from src.video_agent.core.prompt_builder import PromptBuilder
+    pb_empty = PromptBuilder(lambda: None, lambda: "p", get_raw_state=lambda: {
+        "keyElements": [], "shots": [], "audioItems": []})
+    assert pb_empty.stage_allows_global_settings() is False
+    pb_ke = PromptBuilder(lambda: None, lambda: "p", get_raw_state=lambda: {
+        "keyElements": [{"id": "g1", "title": "X", "drafts": []}],
+        "shots": [], "audioItems": []})
+    assert pb_ke.stage_allows_global_settings() is True
+    pb_nostate = PromptBuilder(lambda: None, lambda: "p", get_raw_state=None)
+    assert pb_nostate.stage_allows_global_settings() is True  # 无法探测时保守注入
+
+
+def test_0817_channels_dead_mechanism_removed():
+    """生成渠道已归全局设置唯一事实源：channels 注入机制整体清除。"""
+    from src.video_agent.core.prompt_builder import PromptBuilder
+    from src.video_agent.web import skill_docs
+    assert not hasattr(PromptBuilder, "build_generation_channels_block")
+    assert "channels_block" not in skill_docs._MANIFEST_FLOW_KEYS
+
+
 # ---------- 0817 B17：语言闸拒收批内即时纠正（不拖到整工具重做） ----------
 
 @pytest.mark.asyncio

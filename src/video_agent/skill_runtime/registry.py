@@ -259,7 +259,7 @@ def skill_manifest_of(skill_name: str) -> Optional[Dict[str, dict]]:
 
 
 def skill_flow_enabled(skill_name: str, key: str) -> bool:
-    """manifest 的 flow 开关是否启用（spec_wizard/spec_stage_trim/channels_block）。
+    """manifest 的 flow 开关是否启用（spec_wizard/spec_stage_trim/spec_gate）。
 
     未声明 manifest 或未声明该键时返回 False：引擎对业务流程一无所知，
     平台级流程闸/向导/裁剪只对显式声明的 Skill 生效（S1 清偿）。
