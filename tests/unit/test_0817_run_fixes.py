@@ -198,6 +198,31 @@ def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
     assert svc.state_dict["keyElements"][0]["title"] == "瓦西里"
 
 
+# ---------- 0817 B16：执行器警告必须上抛到用户可见层 ----------
+
+def test_0817_executor_warnings_surface_to_user(monkeypatch):
+    """执行器成功结果携带的 warnings（如补拆失败缺失清单）必须升级为用户可见警告。"""
+    import json
+    from src.video_agent.adapters.base_chat import ChatResponse
+    from src.video_agent.core.fc_tool_runner import FCToolRunner
+    from src.video_agent.tools.base import ToolResult
+
+    class _WarnTM:
+        async def invoke_tool(self, name, args):
+            return ToolResult(success=True, data={
+                "warnings": ["拆解覆盖缺口：角色「罗辑」仍缺失"]})
+
+    runner = FCToolRunner(tool_manager=_WarnTM())
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+    response = ChatResponse(content="", tool_calls=[
+        {"id": "c1", "type": "function", "function": {
+            "name": "storyboard_key_elements", "arguments": "{}"}},
+    ])
+    asyncio.run(runner.execute(response, injected_skill="AI-短剧一站式生成",
+                               gate_override="all"))
+    assert any("仍缺失" in w for w in runner.gate_warnings), runner.gate_warnings
+
+
 # ---------- 0817 B15：script_analyze 幂等（剧本未变不重跑） ----------
 
 @pytest.mark.asyncio

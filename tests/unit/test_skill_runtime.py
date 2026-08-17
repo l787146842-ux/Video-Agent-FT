@@ -312,6 +312,44 @@ async def test_key_elements_selfcheck_fills_missing(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_supplement_failure_emits_visible_warning(monkeypatch, tmp_path):
+    """0817 B16：机器验收发现缺失但定向补拆零产出 → 工具结果必须携带
+    用户可见警告（静默丢失禁令：缺失清单不得只进 trace）。"""
+    from src.video_agent.skill_runtime.executors import (
+        StoryboardKeyElementsTool, StoryboardSplitInput,
+    )
+    from src.video_agent.state.manager import StateManager
+
+    _write(
+        "ke-warn",
+        "# KE\n> 调用规则：测试\n<storyboard_key_elements>\n拆解规范\n</storyboard_key_elements>\n",
+    )
+    calls = {"n": 0}
+
+    async def fake_chat(provider, model, messages, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:  # 首拆：只拆一个无关元素（台词人漏拆）
+            return ('[{"action":"add_group","group_type":"keyElement",'
+                    '"title":"舰队","desc":"场景"}]', "stop")
+        return ("[]", "stop")  # 补拆零产出（模拟上游断连/空响应）
+
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["uploadedDocs"] = [
+        {"id": "d1", "name": "剧本.md", "content": "剧本正文：\n罗辑：黑暗森林。"}
+    ]
+    monkeypatch.setattr(gen_mod, "call_chat_completion", fake_chat)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider",
+                        lambda provider="", model="": ("fake", "fake"))
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+
+    tool = StoryboardKeyElementsTool()
+    result = await tool.aexecute(StoryboardSplitInput(skill_name="KE"))
+    assert result.success, result.error
+    warns = [str(w) for w in (result.data.get("warnings") or [])]
+    assert any("仍缺失" in w and "罗辑" in w for w in warns), warns
+
+
+@pytest.mark.asyncio
 async def test_key_elements_no_missing_skips_model_round(monkeypatch, tmp_path):
     """0817 上下文净减少：机器验收无缺失时不再跑模型自检轮。"""
     from src.video_agent.skill_runtime.executors import (

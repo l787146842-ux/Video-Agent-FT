@@ -634,6 +634,13 @@ class FCToolRunner:
                     inserts = data["chat_inserts"]
                     if isinstance(inserts, list):
                         chat_inserts.extend(inserts)
+                # --- 0817 B16：执行器成功结果携带的警告（如补拆失败缺失清单）
+                # 升级为轮末用户可见警告，不得只留在 trace（静默丢失禁令） ---
+                if data and isinstance(data.get("warnings"), list):
+                    for _tw in data["warnings"]:
+                        _tws = str(_tw or "").strip()
+                        if _tws and _tws not in self.gate_warnings:
+                            self.gate_warnings.append(_tws)
             else:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
                 if name in _CRITICAL_TOOL_NAMES:

@@ -381,8 +381,16 @@ async def _run_storyboard_split(
                     _sc_ms = (time.monotonic() - _sc_t0) * 1000
                     warnings += sc_warns
                     if not filled:
+                        # 0817 B16：补拆零产出不得静默——缺失清单上抛为
+                        # 用户可见警告（经 fc_tool_runner 并入轮末 warnings）
+                        _miss_txt = "、".join(missing[:6]) + (
+                            "等" if len(missing) > 6 else "")
+                        warnings.append(
+                            f"拆解覆盖缺口：{len(missing)} 项仍缺失（定向补拆未成功）："
+                            f"{_miss_txt}。请回复指出遗漏元素或发送「补拆」重试。"
+                        )
                         await emit_timeline_note(
-                            f"验收：发现 {len(missing)} 项缺失但补拆未产出，请审阅后口头补",
+                            f"验收：发现 {len(missing)} 项缺失但补拆未产出，已上报警告",
                             elapsed_ms=_sc_ms,
                         )
                     else:
@@ -397,6 +405,12 @@ async def _run_storyboard_split(
                         await emit_state_refresh(filled)
             except Exception as e:
                 logger.warning(f"[SkillExec] 关键元素验收补漏失败（不影响首拆结果）: {e}")
+                # 0817 B16：异常路径同样不得静默（如上游断连）
+                _miss_txt = "、".join(missing[:6]) + ("等" if len(missing) > 6 else "")
+                warnings.append(
+                    f"拆解覆盖缺口：{len(missing)} 项仍缺失（补拆执行异常）："
+                    f"{_miss_txt}。请回复指出遗漏元素或发送「补拆」重试。"
+                )
     # 回执实际建成清单（888 事故：只回数量模型靠猜建成了哪几个，
     # 猜错产生重名卡/空卡）：对照拆解前 ID 快照求差集（含自检补建；
     # 边界自适应放行多类时逐类别收集，2222 二轮）
