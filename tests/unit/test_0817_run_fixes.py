@@ -198,6 +198,44 @@ def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
     assert svc.state_dict["keyElements"][0]["title"] == "瓦西里"
 
 
+# ---------- 0817 B13：轮间提示去 prose 越权（客观状态机械生成） ----------
+
+def test_0817_wizard_note_no_forced_ke_pause(tmp_path):
+    """向导回执不得钉死「拆关键元素并暂停」：流程与暂停点归 Skill 阶段边界。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.web.chat_consume import _consume_spec_wizard
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
+    svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
+    note = _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
+    assert note, "规格选择应被向导消费落盘"
+    assert "开始拆分关键元素" not in note, "不得 prose 指定具体子步骤"
+    assert "暂停等用户确认拆分方案" not in note, "不得 prose 钉死暂停点"
+    assert "暂停点以" in note, "暂停归属必须指向 Skill 阶段边界"
+
+
+def test_0817_pause_note_objective_spec_state(tmp_path):
+    """暂停消费提示按客观状态生成：规格已存在说已写入，绝不再出现「先写入规格文档」。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.web.chat_consume import _consume_pending_confirmation
+    svc = StateManager(str(tmp_path / "ws"))
+    inter = svc.state_dict.setdefault("interaction", {})
+    inter["awaiting_confirmation"] = True
+    inter["confirmation_message"] = "请审阅"
+    svc.state_dict["documents"] = [
+        {"name": "Final_Video_Spec.md", "content": "# 规格\n- 画幅比例：16:9\n"}]
+    note = _consume_pending_confirmation(svc, "继续")
+    assert "先写入规格文档" not in note, "固定 prose 指令已废除"
+    assert "规格文档已写入" in note, "客观状态：规格存在必须如实告知"
+    # 无规格项目：不得谎称已写入
+    inter["awaiting_confirmation"] = True
+    inter["confirmation_message"] = "请审阅"
+    svc.state_dict["documents"] = []
+    note2 = _consume_pending_confirmation(svc, "继续")
+    assert "规格文档已写入" not in note2
+    assert "先写入规格文档" not in note2
+
+
 # ---------- 0817 B11：flow_directive 一条龙（模型解读+平台机械执行+按消息生效） ----------
 
 @pytest.mark.asyncio

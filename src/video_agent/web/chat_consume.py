@@ -8,6 +8,7 @@ from loguru import logger
 
 from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.config import settings
+from src.video_agent.core import prompt_gates
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.mock_chat import mock_stream
@@ -149,10 +150,18 @@ def _consume_pending_confirmation(svc, user_text: str = "") -> str:
     interaction["awaiting_confirmation"] = False
     interaction["confirmation_message"] = ""
     svc.save()
+    # 0817 B13：提示按客观状态机械生成（去 prose 越权）：
+    # 规格已存在就如实告知，绝不固定发「先写入规格文档」指令；
+    # 暂停点归 Skill 阶段边界，平台不 prose 指定
+    spec_note = (
+        "规格文档已写入，不必重写；"
+        if prompt_gates.has_spec_document(svc.state_dict) else ""
+    )
     return (
         "\n\n（系统提示：上一轮已通过 request_confirmation/workflow_pause 暂停等待确认，"
-        f"暂停内容：{paused_msg}。本条消息即对该暂停的回应：表示确认时，先把当前阶段产出物做完再暂停"
-        "（如规格选择收齐后先写入规格文档，再进入下一阶段）；已完成的步骤（已读文档/已写规格）不必重复；"
+        f"暂停内容：{paused_msg}。本条消息即对该暂停的回应：表示确认时，按当前 Skill 流程"
+        f"把当前阶段产出物做完；{spec_note}暂停点以 Skill 阶段边界为准；"
+        "已完成的步骤（已读文档/已写规格）不必重复；"
         "提出修改意见时按新要求执行，完成后重新请求确认。）"
     )
 
@@ -167,7 +176,6 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
     import re
     from datetime import datetime, timezone
 
-    from src.video_agent.core import prompt_gates
     from src.video_agent.utils import gen_id
 
     state = svc.state_dict
@@ -222,9 +230,10 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
     svc.add_chat_message("agent", "", doc_card=name)
     svc.save()
     logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md")
+    # 0817 B13：回执不 prose 指定子步骤与暂停点（流程/暂停归 Skill 阶段边界）
     return (
-        "\n\n（系统：已按你的选择拼装并写入 Final_Video_Spec.md 规格文档；"
-        "接下来请按 Skill 流程开始拆分关键元素，并暂停等用户确认拆分方案。）"
+        "\n\n（系统：已按你的选择拼装并写入 Final_Video_Spec.md 规格文档，不必再手写规格。"
+        "接下来按当前 Skill 流程执行下一阶段；暂停点以 Skill『何时暂停』为准。）"
     )
 
 
