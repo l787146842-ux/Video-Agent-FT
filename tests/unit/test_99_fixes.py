@@ -172,8 +172,11 @@ async def test_99_summary_not_prepended_on_spec_review_pause(svc):
     assert "太阳系逐渐二维化" not in result.text
 
 
-async def test_99_collect_card_embeds_summary(svc):
-    """8888 二轮：收集卡直接内嵌一句话总结（不再「见上」），正文不重复补拼。"""
+async def test_99_collect_card_embeds_summary(svc, monkeypatch):
+    """8888 二轮：声明总结展示的 Skill 收集卡直接内嵌一句话总结，正文不重复补拼。
+    0817 B20：内嵌归 Skill 声明驱动，此处模拟已声明。"""
+    from src.video_agent.core import prompt_gates
+    monkeypatch.setattr(prompt_gates, "skill_declares_summary", lambda name: True)
     svc.state_dict["analysis"] = {"summary": "太阳系逐渐二维化"}
     svc.state_dict["documents"] = []
     ex = StudioActionExecutor(svc, gate_enabled=True)

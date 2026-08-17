@@ -622,6 +622,7 @@ class Planner:
             analysis_summary=str(
                 ((self.state_manager.state_dict or {}).get("analysis") or {}).get("summary") or ""
             ).strip(),
+            skill_name=context.skill_name or "",
             script_pending_card=self._script_pending_card,
             aggregate_action_log=aggregate_action_log,
         )

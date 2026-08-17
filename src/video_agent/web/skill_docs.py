@@ -33,10 +33,10 @@ _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划�
 # 常引用本系统不存在的工具名，模型只能「近似映射」导致阶段纪律失真；
 # 注入时检测到这些名称就自动追加对照说明，把映射从模型猜测变成显式指令）
 FOREIGN_TOOL_MAP: Dict[str, str] = {
-    "resource_prepare_and_analyze": "script_analyze（解析上传素材并输出一句话总结，内部读取 read_uploaded_doc）",
-    "multimodal_analyze_tool": "script_analyze（解析上传素材并输出一句话总结）",
+    "resource_prepare_and_analyze": "script_analyze（解析上传素材并输出结构化要点，内部读取 read_uploaded_doc）",
+    "multimodal_analyze_tool": "script_analyze（解析上传素材并输出结构化要点）",
     "text_editor": "document_write（写入/更新项目文档，文本模式 write_document）",
-    "script_analyze": "script_analyze（解析上传素材并输出一句话总结 + 关键要点）",
+    "script_analyze": "script_analyze（解析上传素材并输出结构化要点，展示方式以当前 Skill 流程为准）",
     "storyboard_designer": "storyboard_key_elements / storyboard_shots / storyboard_audio（故事板三拆执行器，按阶段逐个调用）",
     "storyboard_key_elements": "storyboard_key_elements（只建关键元素结构）",
     "storyboard_shots": "storyboard_shots（只建分镜结构）",
@@ -437,6 +437,7 @@ _MANIFEST_FLOW_KEYS: Dict[str, Any] = {
     "spec_wizard": False,      # script_analyze 后规格参数向导 + 规格审阅卡升级
     "spec_stage_trim": False,  # 无规格文档时裁剪故事板/生成工具
     "spec_gate": False,        # 无规格文档时搭建故事板附「建议补写规格」警告
+    "display_analysis_summary": False,  # 0817 B20：分析后强制向用户展示总结（流程归 Skill）
     # 0817 B18：channels_block 已清除（生成渠道唯一事实源 = 顶部全局设置）
 }
 _MANIFEST_PAUSE_KEYS: Dict[str, Any] = {"stage_pause": False}

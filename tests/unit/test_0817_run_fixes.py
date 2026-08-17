@@ -434,6 +434,60 @@ async def test_0817_wizard_doc_card_live_visible_via_sse(tmp_path):
     assert events[0]["turn_id"] == "t9"
 
 
+# ---------- 0817 B20：总结展示归 Skill 声明驱动（流程归位清查） ----------
+
+class _LR:
+    """AgentLoopResult 轻量替身（assemble_response 只读这些字段）。"""
+
+    def __init__(self, text="", confirmation=""):
+        self.text = text
+        self.confirmation = confirmation
+        self.warnings = []
+        self.applied_actions = 0
+        self.steps = 1
+        self.trace = {}
+        self.suggested_actions = []
+        self.confirmation_options = []
+
+
+def test_0817_summary_display_skill_declared_driven(tmp_path, monkeypatch):
+    """未声明总结展示的 Skill：不强制拼总结/向导卡不内嵌；声明者才展示。"""
+    import src.video_agent.web.skill_docs as sd
+    from src.video_agent.core import prompt_gates, gates_spec, planner_output
+    from src.video_agent.skill_runtime import registry
+
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", tmp_path / "skills")
+    registry.reset_registry()
+    sd.save_skill_doc("no-sum", "# NS\n> 调用规则：测试\n正文")
+    sd.save_skill_doc("has-sum", "# HS\n> 调用规则：测试\n一句话总结剧本的故事")
+    assert prompt_gates.skill_declares_summary("no-sum") is False
+    assert prompt_gates.skill_declares_summary("has-sum") is True
+
+    st = {"usedSkills": ["no-sum"], "analysis": {"summary": "人类 intercept 薄片"}}
+    msg, _ = gates_spec.spec_collect_card(st)
+    assert "一句话故事总结" not in msg
+    st2 = {"usedSkills": ["has-sum"], "analysis": {"summary": "人类 intercept 薄片"}}
+    msg2, _ = gates_spec.spec_collect_card(st2)
+    assert "一句话故事总结：人类 intercept 薄片" in msg2
+
+    class _Ex:
+        skill_stages_done = {"script_analyze"}
+        chat_inserts = []
+        documents_written = []
+        action_log = []
+
+    def _run(skill):
+        return planner_output.assemble_response(
+            _LR(text="", confirmation="请确认规格"),
+            executor=_Ex(), response_factory=lambda **kw: kw,
+            analysis_summary="人类 intercept 薄片", skill_name=skill,
+        )
+
+    assert "人类 intercept 薄片" not in _run("no-sum")["confirmation"]
+    assert "人类 intercept 薄片" in _run("has-sum")["confirmation"]
+    registry.reset_registry()
+
+
 # ---------- 0817 B13：轮间提示去 prose 越权（客观状态机械生成） ----------
 
 def test_0817_wizard_note_no_forced_ke_pause(tmp_path):

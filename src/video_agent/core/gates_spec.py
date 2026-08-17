@@ -13,6 +13,7 @@ from src.video_agent.core.prompt_gates import (
     _SPEC_PARAM_LINES,
 
     SPEC_COLLECT_PAUSED_MSG,
+    SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY,
     SPEC_DOC_PAUSED_MSG,
     _SPEC_CONFIRM_INTENT_RE,
     _SPEC_DUR_SEL_RE,
@@ -312,9 +313,15 @@ def spec_pause_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
 
 def spec_collect_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
     """script_analyze 后的规格收集向导（6666 事故：交互收集必须在规格文档
-    写入之前；只渲染 Skill 声明的软维度）。总结内嵌表述（8888 二轮）。"""
+    写入之前；只渲染 Skill 声明的软维度）。
+    0817 B20：总结内嵌仅当当前 Skill 声明总结展示（流程归位）。"""
     summary = str(((state or {}).get("analysis") or {}).get("summary") or "").strip()
-    msg = SPEC_COLLECT_PAUSED_MSG.format(summary=summary or "（见剧本分析要点）")
+    used = (state or {}).get("usedSkills") or []
+    skill_name = str(used[-1] or "") if used else ""
+    if _pg.skill_declares_summary(skill_name):
+        msg = SPEC_COLLECT_PAUSED_MSG.format(summary=summary or "（见剧本分析要点）")
+    else:
+        msg = SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY
     _m, opts = build_spec_param_options("", state)
     return msg, opts
 

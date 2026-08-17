@@ -47,6 +47,7 @@ def svc(tmp_path):
 async def test_collect_gate_injects_wizard_when_no_spec_doc(svc, monkeypatch):
     """解析成功且尚无规格文档：注入规格收集向导（只含 Skill 软维度，无硬参数）"""
     monkeypatch.setattr(prompt_gates, "skill_spec_dimensions", lambda skill: ["视觉风格", "画幅"])
+    monkeypatch.setattr(prompt_gates, "skill_declares_summary", lambda name: True)
     svc.state_dict["documents"] = []  # demo 状态自带规格文档，先清掉
     svc.state_dict["usedSkills"] = ["测试流程Skill"]
     svc.state_dict.setdefault("interaction", {})["spec_soft_candidates"] = {
@@ -266,8 +267,9 @@ async def test_summary_gate_exempt_when_user_insists_all(svc):
     assert any("全速推进" in w for w in result.warnings)
 
 
-async def test_summary_gate_still_fires_for_element_image_scope(svc):
+async def test_summary_gate_still_fires_for_element_image_scope(svc, monkeypatch):
     """scope=element_image（只想跳过概念图）：不涵盖流程暂停闸，照常暂停"""
+    monkeypatch.setattr(prompt_gates, "skill_declares_summary", lambda name: True)
     svc.state_dict["documents"] = []
     ex = StudioActionExecutor(svc, gate_enabled=True)
     ex.skill_name = "测试流程Skill"
@@ -310,6 +312,7 @@ def test_fc_summary_gate_exempt_when_override_all(monkeypatch):
 def test_fc_collect_gate_fires_when_no_spec_doc(monkeypatch):
     """FC 轨：script_analyze 成功且无规格文档 → 注入规格收集向导（只含 Skill 软维度）"""
     monkeypatch.setattr(prompt_gates, "skill_spec_dimensions", lambda skill: ["视觉风格", "画幅"])
+    monkeypatch.setattr(prompt_gates, "skill_declares_summary", lambda name: True)
     runner = FCToolRunner(tool_manager=_StubToolManager())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
         lambda: {

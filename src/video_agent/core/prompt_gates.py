@@ -499,6 +499,30 @@ _SPEC_LANG_LINE_RE = re.compile(
 # 不再走「整批写完再拦 → 整工具重做」的高成本路径）
 LANG_EN_HARD_PREFIX = "提示词正文几乎全是英文"
 
+# 0817 B20：总结展示归 Skill 声明驱动（流程归位清查）——
+# 「一句话总结必须展示给用户」源自《剧本生视频》《音色参考》等 Skill，
+# 平台不得全局化；未声明的 Skill 不强制拼总结。
+_SUMMARY_DECL_MARKERS = ("一句话总结", "输出摘要", "摘要并请确认", "故事摘要")
+
+
+def skill_declares_summary(skill_name: str) -> bool:
+    """当前 Skill 是否声明「分析后向用户展示总结」流程。
+
+    manifest display_analysis_summary 优先；未声明时文本检测 Skill 正文。
+    """
+    if not skill_name:
+        return False
+    try:
+        from src.video_agent.skill_runtime.registry import resolve_entry, skill_flow_enabled
+
+        if skill_flow_enabled(skill_name, "display_analysis_summary"):
+            return True
+        entry = resolve_entry(skill_name)
+        content = entry.content if entry else ""
+    except Exception:
+        return False
+    return any(mk in (content or "") for mk in _SUMMARY_DECL_MARKERS)
+
 
 def spec_output_language(raw_state: Optional[Dict[str, Any]]) -> str:
     """0817：规格文档里用户选定的「输出语言」维度值（未选/无规格返回空串）。"""
@@ -795,6 +819,7 @@ from src.video_agent.core.gates_cards import (
     SPEC_DOC_OPTIONS,
     spec_review_options,
     SPEC_COLLECT_PAUSED_MSG,
+    SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY,
     SPEC_COLLECT_KIND,
     SPEC_DOC_PAUSED_MSG,
     _SUMMARY_QUOTE_CHARS,

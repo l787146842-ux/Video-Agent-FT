@@ -90,7 +90,7 @@ class StoryboardSplitInput(SkillToolInput):
 class ScriptAnalyzeTool:
     name = "script_analyze"
     description = (
-        "解析用户上传的剧本/素材（文本/PDF/图片），输出一句话故事总结与关键信息要点。"
+        "解析用户上传的剧本/素材（文本/PDF/图片），输出结构化要点。"
         "Skill 对应章节自动注入，无需手动读取全文。"
     )
 

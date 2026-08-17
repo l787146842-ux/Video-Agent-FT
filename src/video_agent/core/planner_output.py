@@ -10,6 +10,7 @@ response_factory 以 callable 注入（同 agent_loop 的 llm_call 惯例），
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.video_agent.core.agent_loop import AgentLoopResult
+from src.video_agent.core import prompt_gates
 
 
 def prepend_script_summary(visible: str, tool_results) -> str:
@@ -50,6 +51,7 @@ def assemble_response(
     image_urls_collector: Optional[List[str]] = None,
     confirmation_options_collector: Optional[List[Dict[str, Any]]] = None,
     analysis_summary: str = "",
+    skill_name: str = "",
     script_pending_card: Optional[Tuple[str, List[Dict[str, Any]]]] = None,
     aggregate_action_log: Optional[Callable[[List[str]], List[str]]] = None,
 ) -> Any:
@@ -69,9 +71,10 @@ def assemble_response(
                 seen.add(w)
 
     # 总结强制入正文（文本轨）：本次请求执行过 script_analyze 且停在暂停时，
-    # 一句话总结不得丢失（判重由函数内置）
+    # 一句话总结不得丢失（判重由函数内置）；
+    # 0817 B20：仅当当前 Skill 声明总结展示（流程归位，平台不全局化）
     if loop_result.confirmation and "script_analyze" in getattr(executor, "skill_stages_done", set()):
-        if analysis_summary:
+        if analysis_summary and prompt_gates.skill_declares_summary(skill_name):
             _tr = [{"name": "script_analyze", "ok": True, "data": {"summary": analysis_summary}}]
             loop_result.confirmation = prepend_script_summary(loop_result.confirmation, _tr)
             if loop_result.text:
