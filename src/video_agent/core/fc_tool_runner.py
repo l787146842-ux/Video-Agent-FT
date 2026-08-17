@@ -666,9 +666,11 @@ class FCToolRunner:
                         "elapsed_ms": round(_tool_ms, 1),
                         "result_summary": spec_silent_summary or str(result.error or "执行失败")[:120],
                     })
+                # 0817：trace 与 SSE 同一口径（规格静默拒收=中性 True，普通失败=红× False），
+                # 防刷新后失败被重建为绿√
                 tracer.record_action(
                     name=name, summary=spec_silent_summary or start_summary,
-                    elapsed_ms=_tool_ms, ok=not spec_silent_summary,
+                    elapsed_ms=_tool_ms, ok=bool(spec_silent_summary),
                     stage=stage_label_for_tool(name),
                 )
                 tool_results.append({
