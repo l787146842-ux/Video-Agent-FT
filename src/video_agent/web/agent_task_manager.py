@@ -131,7 +131,7 @@ class AgentTaskManager:
             return
         if task.cancelled():
             record["status"] = "cancelled"
-            # 0817：取消路径原先完全静默（静默死亡事故根因盲区），必须留痕
+            # 0817：取消路径原先完全静默，必须留痕
             logger.warning(f"[AgentTask] {task_id} 后台任务被取消")
         elif task.exception():
             exc = task.exception()

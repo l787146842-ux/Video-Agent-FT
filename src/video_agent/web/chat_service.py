@@ -210,8 +210,8 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
 
     tm = get_agent_task_manager()
-    # 0817 可观测性：worker 生命周期三点日志（启动/被取消/退出）——
-    # 6666 运行首两轮任务静默消失无日志无 trace，根因定位依赖此链路
+    # 0817 可观测性：worker 生命周期三点日志（启动/被取消/退出），
+    # 静默消失类问题的根因定位依赖此链路
     logger.info(f"[AgentTask] {task_id} worker 启动")
     try:
         svc, token = StateManager.create_task_bound(project_id, workspace_dir)
