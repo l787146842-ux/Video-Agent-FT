@@ -405,13 +405,33 @@ def test_0817_wizard_doc_card_deferred_until_after_user_msg(tmp_path):
     assert svc.state_dict["interaction"].get("spec_doc_card_pending") == "Final_Video_Spec.md"
     # 模拟真实落库次序：用户消息先落，再补卡片
     svc.add_chat_message("user", "画幅比例：16:9 横屏\n输出语言：中文")
-    assert flush_pending_doc_card(svc, "turn-x") is True
+    assert flush_pending_doc_card(svc, "turn-x") == "Final_Video_Spec.md"
     msgs = svc.get_chat_messages()
     assert [m.get("sender") for m in msgs[-2:]] == ["user", "agent"]
     assert msgs[-1].get("docCard") == "Final_Video_Spec.md"
     assert msgs[-1].get("turnId") == "turn-x"
-    # 挂起已清：重复 flush 无效
-    assert flush_pending_doc_card(svc, "turn-x") is False
+    # 挂起已清：重复 flush 返回空串
+    assert flush_pending_doc_card(svc, "turn-x") == ""
+
+
+@pytest.mark.asyncio
+async def test_0817_wizard_doc_card_live_visible_via_sse(tmp_path):
+    """0817 B19：向导规格卡补落同时发 doc_written 即显事件（live 不靠刷新）。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.web.chat_consume import emit_pending_doc_card
+
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict.setdefault("interaction", {})["spec_doc_card_pending"] = "Final_Video_Spec.md"
+    events = []
+
+    async def fake_emit(ev):
+        events.append(ev)
+
+    name = await emit_pending_doc_card(svc, "t9", fake_emit)
+    assert name == "Final_Video_Spec.md"
+    assert events and events[0]["type"] == "doc_written"
+    assert events[0]["name"] == "Final_Video_Spec.md"
+    assert events[0]["turn_id"] == "t9"
 
 
 # ---------- 0817 B13：轮间提示去 prose 越权（客观状态机械生成） ----------

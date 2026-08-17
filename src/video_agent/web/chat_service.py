@@ -376,8 +376,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 doc_blocks=getattr(body, "doc_blocks", None) or None,
                 skill_blocks=getattr(body, "skill_blocks", None) or None,
             )
-            # 0817 B14：向导挂起的规格卡补落（必须在用户消息之后，同轮 turnId）
-            flush_pending_doc_card(svc, turn_id)
+            # 0817 B14/B19：向导挂起的规格卡补落（用户消息之后）并发即显事件
+            await emit_pending_doc_card(svc, turn_id, emit)
 
     state_builder = (
         (lambda: svc.build_agent_context(body.asset_mode)) if use_studio_context else None
@@ -655,8 +655,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     doc_blocks=getattr(body, "doc_blocks", None) or None,
                     skill_blocks=getattr(body, "skill_blocks", None) or None,
                 )
-                # 0817 B14：规格卡补落（用户消息之后；非流式无 turnId 同轮聚合机制，保持现状）
-                flush_pending_doc_card(svc)
+                # 0817 B14/B19：规格卡补落（用户消息之后），名字随载荷下发保 live 可见
+                _wiz_card = flush_pending_doc_card(svc)
             raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
             actions = executor.parse_actions_from_reply(raw_reply)
             visible = executor.strip_action_blocks(raw_reply) or raw_reply
@@ -666,7 +666,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         return {
             "text": visible, "applied_actions": applied, "steps": 1,
             "warnings": ["当前为 mock 供应商，回复由本地规则生成，未调用真实 LLM"],
-            "confirmation": "", "documents_written": executor.documents_written,
+            "confirmation": "",
+            "documents_written": executor.documents_written + ([_wiz_card] if _wiz_card else []),
             "state": svc.get_full_snapshot(),
         }
 
@@ -692,8 +693,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                 doc_blocks=getattr(body, "doc_blocks", None) or None,
                 skill_blocks=getattr(body, "skill_blocks", None) or None,
             )
-            # 0817 B14：规格卡补落（用户消息之后，G4 非流式轨同步）
-            flush_pending_doc_card(svc)
+            # 0817 B14/B19：规格卡补落（用户消息之后，G4 非流式轨同步），名字随载荷下发
+            _wiz_card_ns = flush_pending_doc_card(svc)
 
     # 状态惰性构建器（P0）：多步循环每轮刷新
     state_builder = (
@@ -808,7 +809,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     return {
         "text": result.text, "applied_actions": result.applied_actions, "steps": result.steps,
         "warnings": result.warnings, "confirmation": result.confirmation,
-        "documents_written": result.documents_written,
+        "documents_written": result.documents_written + ([_wiz_card_ns] if _wiz_card_ns else []),
         "image_urls": result.image_urls,
         "state": svc.get_full_snapshot() if use_studio_context else None,
         "memory_hits": getattr(planner_ctx, "memory_hits", None) or [],
@@ -845,5 +846,6 @@ from src.video_agent.web.chat_consume import (
     _consume_spec_wizard,
     _finalize_spec_params,
     _maybe_compact_history,
+    emit_pending_doc_card,
     flush_pending_doc_card,
 )

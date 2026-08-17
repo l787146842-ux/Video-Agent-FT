@@ -7,7 +7,7 @@ import asyncio
 import time
 import uuid
 
-from src.video_agent.core.sse_events import SSE_DELTA, SSE_DONE, SSE_STATUS, status_event
+from src.video_agent.core.sse_events import SSE_DELTA, SSE_DOC_WRITTEN, SSE_DONE, SSE_STATUS, status_event
 from src.video_agent.memory import MemoryManager
 from src.video_agent.web.attachments import bind_attachments, store_uploaded_docs
 from src.video_agent.web.mock_llm import mock_llm_reply
@@ -44,6 +44,8 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
                 "spec_doc_card_pending", "") or "").strip()
             if _card:
                 svc.add_chat_message("agent", "", doc_card=_card, turn_id=turn_id)
+                # 0817 B19：live 可见性双通道（与流式真实轨同构）
+                await emit({"type": SSE_DOC_WRITTEN, "name": _card, "turn_id": turn_id})
         # 五轮自查补漏：mock 路径 status 同走 key 化（#1 G4 同类全覆盖）
         await emit(status_event("agent.mockRunning", "mock 模式：本地规则生成…", {}))
         raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))

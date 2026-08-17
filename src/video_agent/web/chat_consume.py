@@ -237,23 +237,38 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
     )
 
 
-def flush_pending_doc_card(svc, turn_id: str = "") -> bool:
+def flush_pending_doc_card(svc, turn_id: str = "") -> str:
     """0817 B14：用户消息落库后补落向导挂起的文档卡（顺序正确且同轮聚合）。
 
-    调用点：各落库路径 add_chat_message(user) 之后（G4 四轨：流式真实/
-    流式 mock/非流式真实/非流式 mock）。无挂起返回 False。
+    0817 B19：返回补落的文档名（无挂起返回空串），供调用方发 doc_written
+    即显事件（live 可见性双通道与模型写文档同构）。
+    调用点：各落库路径 add_chat_message(user) 之后（G4 四轨）。
     """
     inter = svc.state_dict.get("interaction") or {}
     name = str(inter.pop("spec_doc_card_pending", "") or "").strip()
     if not name:
-        return False
+        return ""
     if turn_id:
         svc.add_chat_message("agent", "", doc_card=name, turn_id=turn_id)
     else:
         svc.add_chat_message("agent", "", doc_card=name)
     svc.save()
     logger.info(f"[SpecWizard] 规格文档卡补落：{name}（用户消息之后）")
-    return True
+    return name
+
+
+async def emit_pending_doc_card(svc, turn_id: str, emit) -> str:
+    """0817 B19：补落向导规格卡并发 doc_written 即显事件（live 可见）。
+
+    前端实时渲染只认 doc_written SSE / done 载荷 documents_written 两通道，
+    向导机械拼装此前两通道都不走 → 不刷新看不见卡（9999 现场）。
+    """
+    from src.video_agent.core.sse_events import SSE_DOC_WRITTEN
+
+    name = flush_pending_doc_card(svc, turn_id)
+    if name and emit is not None:
+        await emit({"type": SSE_DOC_WRITTEN, "name": name, "turn_id": turn_id})
+    return name
 
 
 def _finalize_spec_params(svc, user_text: str) -> str:
