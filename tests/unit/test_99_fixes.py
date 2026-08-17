@@ -84,11 +84,11 @@ def test_99_fc_spec_review_card_not_remerged_with_wizard(monkeypatch):
     ])
     _applied, confirmation, _urls, _inserts, _log, conf_opts, _results, _docs, _warnings = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
-    # 审阅卡（下一步引导）而不是收集向导
+    # 审阅卡（中性选项，0817 B22）而不是收集向导
     assert confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG
     labels = [o["label"] for o in conf_opts]
-    assert "确认规格，开始拆解关键元素" in labels
-    assert "我还要修改规格" in labels
+    assert "确认成片规格，按流程继续" in labels
+    assert "调整成片规格" in labels
     groups = {o.get("group") for o in conf_opts}
     assert "出图渠道（API 厂商/模型）" not in groups
     assert "出视频渠道（API 厂商/模型）" not in groups

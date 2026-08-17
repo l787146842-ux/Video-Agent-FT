@@ -122,25 +122,8 @@ SPEC_DOC_OPTIONS = _gate_json("SPEC_DOC_OPTIONS", [
 
 
 def spec_review_options(state: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
-    """规格审阅卡的下一步选项（8888 二轮）：按故事板客观状态递推，
-    用户一眼知道确认后做什么；结构已越过分拆阶段时回落通用选项。"""
-    raw = state or {}
-    if not raw.get(CAT_KEY_ELEMENTS):
-        return [
-            {
-                "label": "确认规格，开始拆解关键元素",
-                "description": "规格无误，下一步提取剧本中的角色/场景/关键道具",
-            },
-            {"label": "我还要修改规格", "description": "告诉我需要修改的规格条目"},
-        ]
-    if not raw.get(CAT_SHOTS):
-        return [
-            {
-                "label": "确认规格，开始拆解分镜",
-                "description": "规格无误，下一步基于关键元素拆分镜头列表",
-            },
-            {"label": "我还要修改规格", "description": "告诉我需要修改的规格条目"},
-        ]
+    """规格审阅卡的下一步选项（0817 B22 中性化：平台不点名下一步，
+    一律「按当前 Skill 流程推进」；流程排序意见归 Skill）。"""
     return list(SPEC_DOC_OPTIONS)
 
 # script_analyze 后的规格收集暂停卡（6666 事故：原「确认总结」闸被用户判定多余——

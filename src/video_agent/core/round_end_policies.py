@@ -396,36 +396,34 @@ def _iter_storyboard_drafts(state: Dict[str, Any]) -> List[Dict[str, Any]]:
 def suggest_next_actions(state: Dict[str, Any]) -> List[Dict[str, str]]:
     """按工作台客观状态返回下一步建议（空列表 = 不建议）。
 
-    阶梯（前一阶梯未满足才看下一级）：
-    1. 结构存在但仍有草稿未确认 → 确认结构；
-    2. 全部已确认但仍有草稿缺提示词 → 开始写提示词；
-    3. 提示词就绪但仍有草稿未生成 → 开始生成。
+    0817 B22 中性化：只报客观状态（未确认/停摆），不点名下一步流程
+    （排序意见归 Skill）；确认类建议仅针对客观待确认对象。
     """
     try:
         drafts = _iter_storyboard_drafts(state or {})
     except Exception:
         return []
-    # 0817：中途停摆引导（Q4 闭环）——关键元素已拆但分镜未拆 → 发继续引导卡
+    # 0817：中途停摆引导（Q4 闭环）——关键元素已拆但分镜未拆 → 中性继续引导
     if (state or {}).get(CAT_KEY_ELEMENTS) and not (state or {}).get(CAT_SHOTS):
-        return [{"kind": "next", "label": "继续拆分镜",
-                 "value": "基于关键元素继续拆分镜（shots）"}]
+        return [{"kind": "next", "label": "继续故事板设计",
+                 "value": "请按当前 Skill 流程继续故事板设计阶段"}]
     if not drafts:
         return []
     confirmed = [d for d in drafts if str(d.get("tag") or "") == _SUGGEST_CONFIRMED_TAG]
     if len(confirmed) < len(drafts):
-        return [{"kind": "next", "label": "确认结构",
-                 "value": "请确认当前故事板结构（把全部草稿标记为已确认）"}]
+        return [{"kind": "next", "label": "确认故事板草稿",
+                 "value": "请审阅并确认当前故事板草稿"}]
     has_prompt = [d for d in confirmed if str(d.get("prompt") or "").strip()]
     if len(has_prompt) < len(confirmed):
-        return [{"kind": "next", "label": "开始写提示词",
-                 "value": "开始为已确认的故事板结构编写草稿提示词"}]
+        return [{"kind": "next", "label": "推进下一阶段",
+                 "value": "请按当前 Skill 流程推进下一阶段"}]
     generated = [
         d for d in confirmed
         if d.get("imgUrl") or d.get("videoUrl") or d.get("audioUrl")
     ]
     if len(generated) < len(confirmed):
-        return [{"kind": "next", "label": "开始生成",
-                 "value": "开始为提示词已就绪的草稿生成"}]
+        return [{"kind": "next", "label": "推进下一阶段",
+                 "value": "请按当前 Skill 流程推进下一阶段"}]
     return []
 
 

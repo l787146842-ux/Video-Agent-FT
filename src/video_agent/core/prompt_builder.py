@@ -151,6 +151,12 @@ class PromptBuilder:
                 if stage_note:
                     parts.append(("stage_note", stage_note))
 
+            # 0817 B22：故事板客观进度描述（只报状态，暂停点归 Skill）
+            if context.skill_name:
+                progress_note = self.build_storyboard_progress_note()
+                if progress_note:
+                    parts.append(("storyboard_progress", progress_note))
+
         # 选中 Skill 全文放在最后（近生成端）：长 system prompt 中部的指令遵循度
         # 会衰减，而产出规范（提示词写法/分组规则）恰恰是最需要被严格执行的部分
         if selected_block:
@@ -187,6 +193,29 @@ class PromptBuilder:
                 "建议清理草稿/缩短 Skill 全文或依赖降级保险丝"
             )
         return text
+
+    def build_storyboard_progress_note(self) -> str:
+        """0817 B22：故事板客观进度描述（P3 纯数据）——只报三类有无，
+        暂停点指向已注入的 Skill 流程基线，平台不给排序意见；
+        顺带同批暂停建议（建议非强制，省一轮往返）。"""
+        if self._get_raw_state is None:
+            return ""
+        try:
+            raw = self._get_raw_state()
+        except Exception:
+            return ""
+        ke = bool(raw.get(CAT_KEY_ELEMENTS))
+        sh = bool(raw.get(CAT_SHOTS))
+        au = bool(raw.get(CAT_AUDIO_ITEMS))
+        if not (ke or sh or au):
+            return ""
+        mark = lambda b: "✓" if b else "✗"
+        return (
+            "== 故事板客观进度 ==\n"
+            f"- 关键元素：{mark(ke)}；分镜：{mark(sh)}；音频：{mark(au)}\n"
+            "暂停点以当前 Skill 流程基线（『何时暂停』/关键暂停点）为准；"
+            "阶段完成时，workflow_pause 可与本轮最后一批工具同批发出（建议，省一轮往返）。"
+        )
 
     def stage_allows_global_settings(self) -> bool:
         """0817 B18：全局设置注入的阶段门控——规格规划阶段（无任何分组）

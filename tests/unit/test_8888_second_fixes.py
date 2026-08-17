@@ -134,13 +134,14 @@ def test_8888_takeover_skipped_when_spec_finalized(monkeypatch):
 
 
 def test_8888_review_options_concrete_next_step():
-    """B3：审阅卡下一步按客观状态递推，不再「按流程继续」黑盒。"""
+    """0817 B22：审阅卡选项中性化——平台不点名下一步，一律按 Skill 流程推进。"""
     from src.video_agent.core import prompt_gates
 
     opts = prompt_gates.spec_review_options({})
-    assert opts[0]["label"] == "确认规格，开始拆解关键元素"
+    assert "开始拆解" not in opts[0]["label"]
+    assert "按流程继续" in opts[0]["label"] or "Skill 流程" in opts[0]["label"]
     opts = prompt_gates.spec_review_options({"keyElements": [{"id": "k"}]})
-    assert opts[0]["label"] == "确认规格，开始拆解分镜"
+    assert "开始拆解" not in opts[0]["label"]
     opts = prompt_gates.spec_review_options({"keyElements": [{"id": "k"}], "shots": [{"id": "s"}]})
     assert opts[0]["label"] == "确认成片规格，按流程继续"
 

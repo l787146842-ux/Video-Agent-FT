@@ -434,6 +434,35 @@ async def test_0817_wizard_doc_card_live_visible_via_sse(tmp_path):
     assert events[0]["turn_id"] == "t9"
 
 
+# ---------- 0817 B22：流程意见清除（平台只兜底，不包办排序） ----------
+
+def test_0817_platform_no_next_step_opinions():
+    """平台卡片/建议不再点名下一步：V1/V2/V8/V9/V10 清除钉死。"""
+    from pathlib import Path
+    from src.video_agent.core import gates_cards, round_end_policies as rep
+
+    opts = gates_cards.spec_review_options({})
+    assert all("开始拆解" not in o["label"] for o in opts)
+    out = rep.suggest_next_actions({"keyElements": [{"id": "k", "drafts": []}]})
+    assert out and "拆分镜" not in out[0]["label"]
+    sd = Path("prompts/planner/skill_discipline.md").read_text(encoding="utf-8")
+    assert "首次拆分故事板只创建 keyElement" not in sd
+    assert "继续编写元素生图提示词草案" not in sd
+
+
+def test_0817_storyboard_progress_note_objective():
+    """客观进度描述：只报三类有无 + 暂停点指向 Skill，不含排序意见。"""
+    from src.video_agent.core.prompt_builder import PromptBuilder
+    pb = PromptBuilder(lambda: None, lambda: "p", get_raw_state=lambda: {
+        "keyElements": [{"id": "k"}], "shots": [], "audioItems": []})
+    note = pb.build_storyboard_progress_note()
+    assert "关键元素：✓" in note and "分镜：✗" in note and "音频：✗" in note
+    assert "Skill 流程基线" in note
+    pb0 = PromptBuilder(lambda: None, lambda: "p", get_raw_state=lambda: {
+        "keyElements": [], "shots": [], "audioItems": []})
+    assert pb0.build_storyboard_progress_note() == ""
+
+
 # ---------- 0817 B21：向导拼装合成记账入 actionLog ----------
 
 def test_0817_wizard_assembly_recorded_in_action_log(tmp_path):
