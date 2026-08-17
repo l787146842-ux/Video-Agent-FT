@@ -180,6 +180,24 @@ def test_0817_fc_create_group_title_normalized(tmp_path, monkeypatch):
     assert "太阳系外缘启示号控制舱" in titles
 
 
+def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
+    """复查补漏：模型经 patch_group 改名也归一（用户 REST 路径不受影响）。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.web.action_executor import StudioActionExecutor
+    svc = StateManager(str(tmp_path / "ws"))
+    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex.execute([{
+        "action": "add_group", "group_type": "keyElement",
+        "title": "瓦西里", "desc": "x",
+    }])
+    gid = svc.state_dict["keyElements"][0]["id"]
+    ex.execute([{
+        "action": "patch_group", "group_id": gid, "group_type": "keyElement",
+        "patch": {"title": "key_element_audio_瓦西里"},
+    }])
+    assert svc.state_dict["keyElements"][0]["title"] == "瓦西里"
+
+
 # ---------- 0817 B4：执行器 JSON 畸形 → 带拒因纠正重试（C2） ----------
 
 def test_0817_llm_json_call_corrective_retry_on_malformed(monkeypatch):

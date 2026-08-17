@@ -505,6 +505,10 @@ class StudioActionExecutor:
         group_id = action.get("group_id") or action.get("target_id") or action.get("id") or "current"
         group_type = action.get("group_type") or action.get("kind") or action.get("target_type") or ""
         patch = action.get("patch") or action.get("fields") or action.get("updates") or {}
+        # 0817：模型路径标题确定性归一（用户 REST 改名路径不受影响，用户意志优先）
+        if isinstance(patch, dict) and str(patch.get("title") or "").strip():
+            patch = dict(patch)
+            patch["title"] = ops.normalize_group_title(str(patch["title"]))
 
         group = self._find_group(group_id, group_type)
         if not group:
