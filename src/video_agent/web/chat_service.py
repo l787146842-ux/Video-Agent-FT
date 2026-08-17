@@ -376,6 +376,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 doc_blocks=getattr(body, "doc_blocks", None) or None,
                 skill_blocks=getattr(body, "skill_blocks", None) or None,
             )
+            # 0817 B14：向导挂起的规格卡补落（必须在用户消息之后，同轮 turnId）
+            flush_pending_doc_card(svc, turn_id)
 
     state_builder = (
         (lambda: svc.build_agent_context(body.asset_mode)) if use_studio_context else None
@@ -653,6 +655,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     doc_blocks=getattr(body, "doc_blocks", None) or None,
                     skill_blocks=getattr(body, "skill_blocks", None) or None,
                 )
+                # 0817 B14：规格卡补落（用户消息之后；非流式无 turnId 同轮聚合机制，保持现状）
+                flush_pending_doc_card(svc)
             raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
             actions = executor.parse_actions_from_reply(raw_reply)
             visible = executor.strip_action_blocks(raw_reply) or raw_reply
@@ -688,6 +692,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                 doc_blocks=getattr(body, "doc_blocks", None) or None,
                 skill_blocks=getattr(body, "skill_blocks", None) or None,
             )
+            # 0817 B14：规格卡补落（用户消息之后，G4 非流式轨同步）
+            flush_pending_doc_card(svc)
 
     # 状态惰性构建器（P0）：多步循环每轮刷新
     state_builder = (
@@ -839,4 +845,5 @@ from src.video_agent.web.chat_consume import (
     _consume_spec_wizard,
     _finalize_spec_params,
     _maybe_compact_history,
+    flush_pending_doc_card,
 )

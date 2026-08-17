@@ -22,6 +22,9 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
     注意：本函数在 svc.lock 内调用 executor.execute（同步、不重复取锁）。
     """
     async with svc.lock:
+        # 五轮 S2/#2：mock 路径同样携带轮次标识（G4 同类全覆盖）；
+        # 0817 B14：提前生成，供用户消息后的规格卡补落同轮聚合
+        turn_id = uuid.uuid4().hex[:12]
         if use_studio_context:
             bind_attachments(svc, body.attachments)
             store_uploaded_docs(svc, body.attachments)
@@ -35,6 +38,12 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
                 doc_blocks=getattr(body, "doc_blocks", None) or None,
                 skill_blocks=getattr(body, "skill_blocks", None) or None,
             )
+            # 0817 B14：向导挂起的规格卡补落（用户消息之后；chat_consume 导入
+            # 本模块，反向导入会成环，同语义 4 行内联）
+            _card = str((svc.state_dict.get("interaction") or {}).pop(
+                "spec_doc_card_pending", "") or "").strip()
+            if _card:
+                svc.add_chat_message("agent", "", doc_card=_card, turn_id=turn_id)
         # 五轮自查补漏：mock 路径 status 同走 key 化（#1 G4 同类全覆盖）
         await emit(status_event("agent.mockRunning", "mock 模式：本地规则生成…", {}))
         raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
@@ -44,8 +53,6 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
             await emit({"type": SSE_DELTA, "text": visible[i:i + 8]})
             await asyncio.sleep(0.02)
         applied = executor.execute(actions)
-        # 五轮 S2/#2：mock 路径同样携带轮次标识（G4 同类全覆盖）
-        turn_id = uuid.uuid4().hex[:12]
         if use_studio_context:
             svc.add_chat_message(
                 "agent", visible, model_name=body.model or "",

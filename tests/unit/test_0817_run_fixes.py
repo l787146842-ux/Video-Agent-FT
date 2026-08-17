@@ -198,6 +198,32 @@ def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
     assert svc.state_dict["keyElements"][0]["title"] == "瓦西里"
 
 
+# ---------- 0817 B14：规格文档卡不得落在用户选择消息之前 ----------
+
+def test_0817_wizard_doc_card_deferred_until_after_user_msg(tmp_path):
+    """向导落盘时卡片只挂起；用户消息先落库，卡片随后补落（顺序正确）。"""
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.web.chat_consume import (
+        _consume_spec_wizard, flush_pending_doc_card,
+    )
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
+    svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
+    _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
+    msgs = svc.get_chat_messages()
+    assert not any(m.get("docCard") for m in msgs), "向导消费不得立刻落卡片"
+    assert svc.state_dict["interaction"].get("spec_doc_card_pending") == "Final_Video_Spec.md"
+    # 模拟真实落库次序：用户消息先落，再补卡片
+    svc.add_chat_message("user", "画幅比例：16:9 横屏\n输出语言：中文")
+    assert flush_pending_doc_card(svc, "turn-x") is True
+    msgs = svc.get_chat_messages()
+    assert [m.get("sender") for m in msgs[-2:]] == ["user", "agent"]
+    assert msgs[-1].get("docCard") == "Final_Video_Spec.md"
+    assert msgs[-1].get("turnId") == "turn-x"
+    # 挂起已清：重复 flush 无效
+    assert flush_pending_doc_card(svc, "turn-x") is False
+
+
 # ---------- 0817 B13：轮间提示去 prose 越权（客观状态机械生成） ----------
 
 def test_0817_wizard_note_no_forced_ke_pause(tmp_path):

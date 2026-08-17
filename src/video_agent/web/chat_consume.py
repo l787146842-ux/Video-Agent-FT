@@ -225,9 +225,9 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
         })
     inter = state.setdefault("interaction", {})
     inter["spec_collected"] = True
-    # 8888 二轮：机械落盘也发文档卡片（持久化消息条 + 收尾快照携带），
-    # 否则用户永远看不到规格卡
-    svc.add_chat_message("agent", "", doc_card=name)
+    # 8888 二轮：机械落盘也发文档卡片；0817 B14：改为挂起，由用户消息落库后
+    # flush_pending_doc_card 补落（修复卡片排在用户选择消息之前的顺序 bug）
+    inter["spec_doc_card_pending"] = name
     svc.save()
     logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md")
     # 0817 B13：回执不 prose 指定子步骤与暂停点（流程/暂停归 Skill 阶段边界）
@@ -235,6 +235,25 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
         "\n\n（系统：已按你的选择拼装并写入 Final_Video_Spec.md 规格文档，不必再手写规格。"
         "接下来按当前 Skill 流程执行下一阶段；暂停点以 Skill『何时暂停』为准。）"
     )
+
+
+def flush_pending_doc_card(svc, turn_id: str = "") -> bool:
+    """0817 B14：用户消息落库后补落向导挂起的文档卡（顺序正确且同轮聚合）。
+
+    调用点：各落库路径 add_chat_message(user) 之后（G4 四轨：流式真实/
+    流式 mock/非流式真实/非流式 mock）。无挂起返回 False。
+    """
+    inter = svc.state_dict.get("interaction") or {}
+    name = str(inter.pop("spec_doc_card_pending", "") or "").strip()
+    if not name:
+        return False
+    if turn_id:
+        svc.add_chat_message("agent", "", doc_card=name, turn_id=turn_id)
+    else:
+        svc.add_chat_message("agent", "", doc_card=name)
+    svc.save()
+    logger.info(f"[SpecWizard] 规格文档卡补落：{name}（用户消息之后）")
+    return True
 
 
 def _finalize_spec_params(svc, user_text: str) -> str:
