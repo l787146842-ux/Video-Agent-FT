@@ -151,6 +151,10 @@
   .gate-chip-platform { color: #f87171; background: rgba(248, 113, 113, 0.12); border: 1px solid rgba(248, 113, 113, 0.35); }
   .gate-chip-skill { color: #fbbf24; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35); }
   .gate-chip-msg { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+  /* 0817：闸机拦截合并折叠（同款报错 ×N，details 展开） */
+  .msg-gate-collapse { width: 100%; }
+  .msg-gate-collapse-summary { cursor: pointer; font-size: 11px; color: var(--text-muted); user-select: none; }
+  .gate-chip-count { font-size: 11px; font-weight: 600; color: var(--warn, #d97706); }
 
   /* 过程时间线（agent 消息：深度思考 + 已处理操作折叠面板） */
   .agent-timeline { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; max-width: 100%; }

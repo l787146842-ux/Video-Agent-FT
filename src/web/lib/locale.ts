@@ -139,6 +139,8 @@ const zhCN: Record<string, string> = {
   'rp.msg.mediaInserted': 'Agent 已添加 {count} 个素材到对话输入框，确认后可发送',
   'rp.msg.gatePlatform': '平台',
   'rp.msg.gateSkill': 'Skill『{name}』',
+  'rp.msg.gateCollapseSummary': '闸机拦截 {total} 条（相同原因合并为 {groups} 类，点击展开）',
+  'rp.msg.gateCount': '×{count}',
 
   // ---------- 过程时间线（深度思考 + 已处理操作） ----------
   'rp.timeline.thinking': '深度思考',

@@ -99,6 +99,22 @@ export function ChatMessageItem(props: {
   };
   const hasGateWarning = () => gateRecords().length > 0;
 
+  /** 0817：相同闸机拦截（同层/同规则/同文案）合并计数，前端折叠展示 ×N；
+      trace 仍保留全量记录（审计不丢，§2.5）。 */
+  const groupedGates = () => {
+    const out: Array<{
+      rule_id: string; layer: string; message: string; skill_name?: string; count: number;
+    }> = [];
+    gateRecords().forEach((g) => {
+      const hit = out.find(
+        (o) => o.layer === g.layer && o.rule_id === g.rule_id && o.message === g.message,
+      );
+      if (hit) hit.count += 1;
+      else out.push({ ...g, count: 1 });
+    });
+    return out;
+  };
+
   /** 本次放行（§2.4）：显式用户指令 + gate_overrides 随消息留痕，后端单次消费 */
   const overrideOnce = () => {
     void sendUserMessage('放行本次拦截，继续任务', { gateOverrides: ['all'] });
@@ -221,8 +237,11 @@ export function ChatMessageItem(props: {
         <div class="answered-options">
           <For each={msg().confirmOptions || []}>
             {(opt) => {
+              const lines = (props.answeredValue || '')
+                .split('\n').map((s) => s.trim()).filter(Boolean);
               const chosen = () =>
-                opt.value === props.answeredValue || opt.label === props.answeredValue;
+                opt.value === props.answeredValue || opt.label === props.answeredValue
+                || lines.includes(opt.value ?? '') || lines.includes(opt.label ?? '');
               return (
                 <span class={`answered-option${chosen() ? ' chosen' : ''}`}>
                   <Show when={chosen()}>
@@ -259,19 +278,35 @@ export function ChatMessageItem(props: {
         {/* 模型降级等警示：常驻展示在 agent 气泡上（刷新后仍可见） */}
         <Show when={(msg().warnings || []).length > 0 || hasGateWarning()}>
           <div class="msg-warnings">
-            {/* B2/F13：闸机判定 chips（结构化来源标注：「平台」/「Skill『xxx』」） */}
-            <For each={gateRecords()}>
-              {(g) => (
-                <div class="gate-chip-row">
-                  <span class={`gate-chip gate-chip-${g.layer === 'platform' ? 'platform' : 'skill'}`}>
-                    {g.layer === 'platform'
-                      ? t('rp.msg.gatePlatform')
-                      : t('rp.msg.gateSkill', { name: g.skill_name || '' })}
-                  </span>
-                  <span class="gate-chip-msg">{g.message || g.rule_id}</span>
-                </div>
-              )}
-            </For>
+            {/* B2/F13：闸机判定 chips（结构化来源标注：「平台」/「Skill『xxx』」）；
+                0817：相同拦截合并 ×N + details 折叠，防同款长报错刷屏 */}
+            <Show when={groupedGates().length > 0}>
+              <details class="msg-gate-collapse" open={groupedGates().length <= 1}>
+                <summary class="msg-gate-collapse-summary">
+                  {t('rp.msg.gateCollapseSummary', {
+                    total: String(gateRecords().length),
+                    groups: String(groupedGates().length),
+                  })}
+                </summary>
+                <For each={groupedGates()}>
+                  {(g) => (
+                    <div class="gate-chip-row">
+                      <span class={`gate-chip gate-chip-${g.layer === 'platform' ? 'platform' : 'skill'}`}>
+                        {g.layer === 'platform'
+                          ? t('rp.msg.gatePlatform')
+                          : t('rp.msg.gateSkill', { name: g.skill_name || '' })}
+                      </span>
+                      <span class="gate-chip-msg">{g.message || g.rule_id}</span>
+                      <Show when={g.count > 1}>
+                        <span class="gate-chip-count">
+                          {t('rp.msg.gateCount', { count: String(g.count) })}
+                        </span>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </details>
+            </Show>
             <For each={msg().warnings || []}>
               {(w) => <div class="msg-warning-line">⚠ {w}</div>}
             </For>
