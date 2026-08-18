@@ -9,6 +9,27 @@
   },
   "flow": {
     "spec_gate": true,
+    "step_done_conditions": {
+      "2": "spec"
+    },
+    "steps": {
+      "1": "读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型",
+      "2": "将全局制作参数写入 Final_Video_Spec.md（画幅比例、目标时长、影像风格基调、输出语言）",
+      "3": "设计 Storyboard：登记所有 key_element，将剧本拆解为有序 shot 列表，规划 audio_layer",
+      "4": "生成所有 key_element 设定图（角色三视图、场景四视图）",
+      "5": "生成每批次运镜轨迹示意图（分镜表格图），供用户确认镜头逻辑",
+      "6": "逐 shot 生成视频，每镜仅引用对应 key_element 图像",
+      "7": "生成所有 audio_layer 音频资产（台词、BGM、旁白）",
+      "8": "按 Storyboard 顺序组装时间线，完成音画同步与剪辑输出"
+    },
+    "dependencies": {
+      "3": [1, 2],
+      "4": [3],
+      "5": [3],
+      "6": [4, 5],
+      "7": [3],
+      "8": [4, 5, 6, 7]
+    },
     "stage_executors": {
       "1": ["script_analyze"],
       "3": ["storyboard_key_elements", "storyboard_shots", "storyboard_audio"]

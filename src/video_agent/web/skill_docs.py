@@ -519,6 +519,25 @@ def parse_skill_manifest(content: str) -> Optional[Dict[str, Any]]:
         cleaned_se = {k: v for k, v in cleaned_se.items() if v}
         if cleaned_se:
             flow["stage_executors"] = cleaned_se
+    # 流程步骤/依赖声明（步骤号→标题；步骤号→前置号列表）：
+    # 调度器据此确定性解析，不再猜正文编号列表；非法键值丢弃
+    st = (data.get("flow") or {}).get("steps")
+    if isinstance(st, dict):
+        cleaned_st = {
+            str(k): str(v).strip() for k, v in st.items()
+            if str(k).isdigit() and str(v).strip()
+        }
+        if cleaned_st:
+            flow["steps"] = cleaned_st
+    dp = (data.get("flow") or {}).get("dependencies")
+    if isinstance(dp, dict):
+        cleaned_dp = {
+            str(k): [int(x) for x in v if isinstance(x, int) and not isinstance(x, bool)]
+            for k, v in dp.items() if str(k).isdigit() and isinstance(v, list)
+        }
+        cleaned_dp = {k: v for k, v in cleaned_dp.items() if v}
+        if cleaned_dp:
+            flow["dependencies"] = cleaned_dp
     return {
         "gates": _parse_manifest_section(data.get("gates") or {}, _MANIFEST_GATE_KEYS),
         "flow": flow,
@@ -574,6 +593,13 @@ def lint_skill_content(content: str) -> Dict[str, Any]:
             "检测到旧式 gate_rules/pause_rules 块：建议迁移为统一的 skill_manifest 声明块"
             "（并存时 manifest 优先，两块各自表述属于指令分身）"
         )
+    # <planner> 结构体检：依赖引用未命中步骤/编号冲突等，编辑期先告知
+    # （注册期同套体检也会告警；新流程建议 manifest flow.steps 显式声明）
+    from src.video_agent.skill_runtime import dag as _dag
+
+    _planner_issues = _dag.lint_planner_dag(
+        sections.get("planning") or "", parse_skill_manifest(content))
+    warnings.extend(f"<planner> 结构告警：{s}" for s in _planner_issues)
     # 暂停声明检测（仅提示不阻断；skill_manifest 的 pause.stage_pause 也是有效声明，S1）
     _manifest_pause = bool(
         ((parse_skill_manifest(content) or {}).get("pause") or {}).get("stage_pause")

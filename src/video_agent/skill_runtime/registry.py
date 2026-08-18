@@ -12,6 +12,8 @@ import re
 
 from loguru import logger
 
+from src.video_agent.skill_runtime import dag
+
 # 本项目新增的 Skill 执行器工具（复用现有工具不在此列：
 # document_write / read_uploaded_doc / image_generate / generate_video / workflow_pause）
 
@@ -112,11 +114,20 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
 
 
 def register_skill(slug: str) -> Optional[SkillEntry]:
-    """解析并注册一个 Skill；文档不存在或无法解析时返回 None。"""
+    """解析并注册一个 Skill；文档不存在或无法解析时返回 None。
+
+    注册期附带 <planner> 结构体检（lint）：依赖引用未命中步骤/编号冲突
+    等问题当场告警，不等运行时调度错乱才暴露（只告警不阻断注册）。
+    """
     entry = _load_entry(slug)
     if entry is None:
         return None
     _registry[slug] = entry
+    issues = dag.lint_planner_dag(entry.sections.get("planning") or "", entry.manifest)
+    if issues:
+        logger.warning(
+            f"[SkillRuntime] Skill「{entry.name}」<planner> 结构告警：{'；'.join(issues)}"
+        )
     tools = entry.available_tools
     logger.info(
         f"[SkillRuntime] 已注册 Skill「{entry.name}」"

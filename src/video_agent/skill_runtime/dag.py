@@ -3,25 +3,32 @@
 Skill 的 <planner> 章节常带「依赖关系：3→1,2；4→3」式声明。本模块把它
 解析成 DAG，按拓扑层给出可并行批次；并结合工作台状态客观判定步骤完成度，
 输出「下一步可执行批次」——调度由代码计算（P2 约束下沉），主模型只执行。
+
+步骤/依赖双通道：manifest flow.steps/dependencies 声明优先（确定性），
+未声明回落正文解析（存量兼容）；resolve_steps_and_deps 是唯一入口。
 """
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
 
 # 步骤行：1. / 1、 / 1) 开头的编号行
 _STEP_RE = re.compile(r"(?m)^\s*(\d+)\s*[\.、)]\s*(.+)$")
-# 依赖行：3→1,2；4→3（允许中文分号分隔多对）
-_DEP_RE = re.compile(r"(\d+)\s*→\s*([0-9,\s]+?)(?=[；;]|$)")
+# 依赖行：3→1,2；4→3（允许中文分号分隔多对；末对后跟换行/句号也闭合）
+_DEP_RE = re.compile(r"(\d+)\s*→\s*([0-9,\s]+?)(?=[；;。．.\n]|$)")
 
 
 def parse_steps(planner_text: str) -> Dict[int, str]:
-    """解析编号步骤：{步骤号: 步骤文本}（去掉行尾 **tool** 标记保留语义文本）。"""
+    """解析编号步骤：{步骤号: 步骤文本}（去掉行尾 **tool** 标记保留语义文本）。
+
+    同号冲突后来居上：生产流程列表通常排在启动协议/检查清单之后，
+    后者才是依赖声明指向的真实步骤。
+    """
     steps: Dict[int, str] = {}
     for m in _STEP_RE.finditer(planner_text or ""):
         no = int(m.group(1))
         text = re.sub(r"\*\*(.+?)\*\*", r"\1", m.group(2)).strip()
-        if text and no not in steps:
+        if text:
             steps[no] = text
     return steps
 
@@ -122,10 +129,75 @@ def step_done(no: int, text: str, state: Dict[str, Any], conditions: Optional[Di
     return False
 
 
-def pipeline_status(planner_text: str, state: Dict[str, Any], conditions: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+def resolve_steps_and_deps(
+    manifest: Optional[Dict[str, Any]], planner_text: str,
+) -> Tuple[Dict[int, str], Dict[int, List[int]]]:
+    """步骤/依赖统一入口：manifest flow.steps/dependencies 声明优先
+    （Skill 单一事实源，确定性调度）；未声明回落正文解析（存量兼容）。"""
+    flow = ((manifest or {}).get("flow") or {})
+    raw_steps = flow.get("steps")
+    if isinstance(raw_steps, dict) and raw_steps:
+        steps: Dict[int, str] = {}
+        for k, v in raw_steps.items():
+            try:
+                no = int(str(k).strip())
+            except (TypeError, ValueError):
+                continue
+            text = str(v or "").strip()
+            if text:
+                steps[no] = text
+        deps: Dict[int, List[int]] = {}
+        raw_deps = flow.get("dependencies") or {}
+        if isinstance(raw_deps, dict):
+            for k, v in raw_deps.items():
+                try:
+                    no = int(str(k).strip())
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(v, (list, tuple)):
+                    continue
+                prereq: List[int] = []
+                for x in v:
+                    try:
+                        prereq.append(int(x))
+                    except (TypeError, ValueError):
+                        continue
+                deps[no] = prereq
+        return steps, deps
+    return parse_steps(planner_text), parse_dependencies(planner_text)
+
+
+def lint_planner_dag(planner_text: str, manifest: Optional[Dict[str, Any]]) -> List[str]:
+    """<planner> 结构体检（注册期门禁用）：依赖引用必须命中步骤；
+    未声明 steps 时同号编号冲突也报出。返回问题描述列表（空 = 健康）。"""
+    issues: List[str] = []
+    flow = ((manifest or {}).get("flow") or {})
+    declared = isinstance(flow.get("steps"), dict) and bool(flow.get("steps"))
+    steps, deps = resolve_steps_and_deps(manifest, planner_text)
+    if not declared:
+        counts: Dict[int, int] = {}
+        for m in _STEP_RE.finditer(planner_text or ""):
+            counts[int(m.group(1))] = counts.get(int(m.group(1)), 0) + 1
+        dup = sorted(no for no, c in counts.items() if c > 1)
+        if dup:
+            issues.append(
+                f"正文编号列表同号冲突（后来居上）：步骤号 {dup}；"
+                "建议 manifest flow.steps 显式声明流程步骤"
+            )
+    for target in sorted(deps):
+        if target not in steps:
+            issues.append(f"依赖声明 {target}→… 的步骤 {target} 不在步骤列表中")
+        for pre in deps[target]:
+            if pre not in steps:
+                issues.append(f"依赖声明 {target}→{pre} 的前置步骤 {pre} 不在步骤列表中")
+    return issues
+
+
+def pipeline_status_from(
+    steps: Dict[int, str], deps: Dict[int, List[int]],
+    state: Dict[str, Any], conditions: Optional[Dict[str, str]] = None,
+) -> List[Dict[str, Any]]:
     """全步骤状态 + 下一可执行批次（依赖满足且未完成）。"""
-    steps = parse_steps(planner_text)
-    deps = parse_dependencies(planner_text)
     status = []
     done_nos = set()
     for no in sorted(steps):
@@ -141,3 +213,9 @@ def pipeline_status(planner_text: str, state: Dict[str, Any], conditions: Option
     for no in ready:
         by_no[no]["ready"] = True
     return status
+
+
+def pipeline_status(planner_text: str, state: Dict[str, Any], conditions: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+    """正文解析兼容入口（声明通道走 resolve_steps_and_deps + pipeline_status_from）。"""
+    return pipeline_status_from(
+        parse_steps(planner_text), parse_dependencies(planner_text), state, conditions)
