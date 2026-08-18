@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.video_agent.core import prompt_gates  # noqa: E402
-from src.video_agent.skill_runtime import dag  # noqa: E402
+from src.video_agent.skill_runtime import sidecar  # noqa: E402
 from src.video_agent.web import skill_docs  # noqa: E402
 
 CORPUS = PROJECT_ROOT / "tests" / "fixtures" / "gate_corpus" / "corpus.json"
@@ -53,21 +53,22 @@ def eval_gate_corpus() -> dict:
 
 
 def eval_skill_pipelines() -> dict:
+    """0818 B4：管线可解析性改按 sidecar 声明通道评估（正文正则通道退役）。"""
     report = []
     for doc in skill_docs.list_skill_docs():
-        content = doc.get("content") or ""
-        sections = skill_docs.split_skill_sections(content)
-        planning = sections.get("planning", "")
-        if not planning:
+        slug = doc.get("slug") or doc.get("name")
+        manifest = sidecar.load_sidecar(slug)
+        flow = ((manifest or {}).get("flow") or {})
+        steps = flow.get("steps") or {}
+        deps = flow.get("dependencies") or {}
+        if not steps:
             continue
-        steps = dag.parse_steps(planning)
-        deps = dag.parse_dependencies(planning)
-        batches = dag.topo_batches(steps, deps) if steps else []
+        issues = sidecar.validate_sidecar(manifest)
         report.append({
-            "skill": doc.get("name") or doc.get("slug"),
+            "skill": doc.get("name") or slug,
             "steps": len(steps),
             "deps": len(deps),
-            "parallel_batches": len(batches),
+            "issues": issues,
         })
     return {"pipeline_skills": report, "pipeline_skill_count": len(report)}
 

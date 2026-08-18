@@ -111,14 +111,17 @@ def skill_declares_audio(skill_name: str) -> bool:
     try:
         entry = resolve_entry(skill_name)
         content = entry.content if entry else ""
+        manifest = entry.manifest if entry else None
     except Exception:
         content = ""
+        manifest = None
     if not content:
         return False
     if "key_element_audio" in content or ("音色" in content and "登记" in content):
         return True
     try:
-        return bool(prompt_gates.parse_gate_rules(content).get("require_audio_layer", False))
+        return bool(prompt_gates.parse_gate_rules(
+            content, manifest=manifest).get("require_audio_layer", False))
     except Exception:
         return False
 

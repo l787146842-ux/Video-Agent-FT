@@ -269,7 +269,8 @@ def _prompt_language_rule(skill_name: str, raw_state: Optional[Dict[str, Any]] =
     rules: Dict[str, Any] = {}
     try:
         entry = resolve_entry(skill_name)
-        rules = prompt_gates.parse_gate_rules(entry.content if entry else "")
+        rules = prompt_gates.parse_gate_rules(
+            entry.content if entry else "", manifest=(entry.manifest if entry else None))
     except Exception:
         rules = {}
     lang = prompt_gates.resolve_prompt_language(raw_state, rules)
@@ -763,7 +764,11 @@ def _apply_actions(
     # 结构阶段内联提示词剥离只在结构执行器启用（write_media_prompt 等
     # 提示词阶段必须让 prompt 原样落盘，不能被结构纯净闸误剥）
     ex.structure_phase = bool(strip_prompts)
-    ex.gate_rules = prompt_gates.parse_gate_rules(skill_content)
+    from src.video_agent.skill_runtime.registry import fallback_skill_from_state, resolve_entry
+
+    _entry = resolve_entry(fallback_skill_from_state(svc.state_dict))
+    ex.gate_rules = prompt_gates.parse_gate_rules(
+        skill_content, manifest=(_entry.manifest if _entry else None))
     ex.gate_override = False
     applied = ex.execute(actions)
     warnings += list(ex.gate_warnings)

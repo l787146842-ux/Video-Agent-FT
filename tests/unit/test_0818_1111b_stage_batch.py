@@ -105,12 +105,12 @@ class TestStageExecutorsDeclaration:
         assert ((manifest.get("flow") or {}).get("step_done_conditions") or {}).get("2") == "spec"
 
     def test_step_done_spec_condition_objective(self):
-        """dag.step_done 按声明评估：spec 在=完成，不在=未完成。"""
-        from src.video_agent.skill_runtime import dag
+        """0818 B4：spec 阶段完成度走客观探针（spec 文档存在=完成）。"""
+        from src.video_agent.core import pipeline_orchestrator as po
 
         with_spec = {"documents": [{"name": "Final_Video_Spec.md", "content": "画幅 16:9"}]}
-        assert dag.step_done(2, "写入规格", with_spec, {"2": "spec"}) is True
-        assert dag.step_done(2, "写入规格", {"documents": []}, {"2": "spec"}) is False
+        assert po.stage_done("spec", with_spec) is True
+        assert po.stage_done("spec", {"documents": []}) is False
 
 
 # ---------- D3-G4：平台不再给暂停时机出主意 ----------

@@ -171,8 +171,8 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R16_manifest_whitelist_keys",
-        "skill_manifest 白名单键变更",
-        "七个消费点：parse_gate_rules/agent_loop/fc_tool_runner/planner 裁剪/"
+        "sidecar 声明键（gates/flow/pause）变更",
+        "0818 B4：声明唯一源 = data/skills_manifests（文档通道退役）；消费点：parse_gate_rules/agent_loop/fc_tool_runner/planner 裁剪/"
         "prompt_builder/registry pause 节",
         _sym(
             "src.video_agent.core.prompt_gates:parse_gate_rules",

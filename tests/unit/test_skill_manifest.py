@@ -41,38 +41,17 @@ def svc(tmp_path):
     StateManager.reset_instance()
 
 
-# ---------- 解析层 ----------
-
-def test_parse_manifest_none_when_absent():
-    assert sd.parse_skill_manifest("# 无声明\n正文") is None
-
-
-def test_parse_manifest_invalid_json_returns_none():
-    assert sd.parse_skill_manifest("```json skill_manifest\n{bad json\n```") is None
-    assert sd.parse_skill_manifest("```json skill_manifest\n[1,2]\n```") is None
-
-
-def test_parse_manifest_whitelist_drops_unknown_and_bad_types():
-    content = (
-        "```json skill_manifest\n"
-        '{"gates": {"cjk_min_ratio": 0.2, "shot_min_chars": -5, "evil_key": 1},'
-        ' "flow": {"spec_wizard": 1, "unknown_flow": true}}\n'
-        "```\n"
-    )
-    m = sd.parse_skill_manifest(content)
-    assert m["gates"] == {"cjk_min_ratio": 0.2}
-    assert m["flow"] == {"spec_wizard": True}
+# ---------- 解析层（0818 B4：声明迁 sidecar，文档解析通道退役；
+# 体检/加载语义由 test_0818_sidecar_migration 覆盖） ----------
 
 
 def test_manifest_gates_override_legacy_gate_rules():
-    """并存时 manifest 优先（冲突键覆盖旧块）"""
+    """并存时 sidecar 声明优先（冲突键覆盖旧 gate_rules 块）"""
     content = (
         "```json gate_rules\n" '{"require_duration": true}' "\n```\n"
-        + "```json skill_manifest\n"
-        '{"gates": {"require_duration": false}}\n'
-        "```\n"
     )
-    rules = prompt_gates.parse_gate_rules(content)
+    rules = prompt_gates.parse_gate_rules(
+        content, manifest={"gates": {"require_duration": False}})
     assert rules["require_duration"] is False
 
 
@@ -86,7 +65,11 @@ def test_default_gate_rules_business_gates_off():
 # ---------- flow 开关 ----------
 
 def test_skill_flow_enabled_requires_declaration():
-    sd.save_skill_doc("有声明", "# A\n" + _MANIFEST_ALL_ON)
+    from src.video_agent.skill_runtime import sidecar
+
+    sd.save_skill_doc("有声明", "# A\n正文")
+    sidecar.write_sidecar(
+        "有声明", {"flow": {"spec_wizard": True, "spec_stage_trim": True}})
     sd.save_skill_doc("无声明", "# B\n> 调用规则：测试\n正文")
     assert registry.skill_flow_enabled("有声明", "spec_wizard") is True
     assert registry.skill_flow_enabled("有声明", "spec_stage_trim") is True
@@ -98,11 +81,8 @@ def test_skill_flow_enabled_requires_declaration():
 # ---------- 端到端：英文锁定 Skill 不再被语言闸打回 ----------
 
 def test_english_prompt_passes_when_cjk_ratio_declared_low():
-    content = (
-        "# 宣言式\n"
-        "```json skill_manifest\n" '{"gates": {"cjk_min_ratio": 0}}\n' "```\n"
-    )
-    rules = prompt_gates.parse_gate_rules(content)
+    rules = prompt_gates.parse_gate_rules(
+        "", manifest={"gates": {"cjk_min_ratio": 0}})
     ok, hard, _ = prompt_gates.validate_prompt_write(
         "A monolithic black slab rises over the desert at dawn, extreme wide shot, "
         "slow push-in, hard rim light, no subtitles. This is a long English body "
@@ -141,7 +121,15 @@ async def test_spec_pause_gate_silent_without_manifest(svc):
 async def test_spec_pause_gate_fires_with_manifest(svc, monkeypatch):
     """4444 方案乙：声明 spec_wizard 的 Skill，模型手写规格被拒收
     （规格由系统拼装）；审阅卡走 spec_review_pending 路径（见 test_99）。"""
-    sd.save_skill_doc("向导流程", "# 向导\n" + _MANIFEST_ALL_ON)
+    from src.video_agent.skill_runtime import sidecar
+
+    sd.save_skill_doc("向导流程", "# 向导\n正文")
+    sidecar.write_sidecar("向导流程", {
+        "gates": {"require_duration": True, "require_subtitle": True,
+                  "require_camera_language": True, "require_audio_layer": True},
+        "flow": {"spec_wizard": True, "spec_stage_trim": True},
+        "pause": {"stage_pause": True},
+    })
     monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
     svc.state_dict["usedSkills"] = ["向导流程"]
     result = await _run_spec_write(svc, "向导流程")
@@ -175,28 +163,27 @@ def test_spec_gate_warning_requires_declaration(svc):
 
 def test_stage_pause_recognizes_manifest():
     from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
+    from src.video_agent.skill_runtime import sidecar
 
-    # 无关键词、仅 manifest 声明 → 生效
-    sd.save_skill_doc(
-        "仅清单暂停",
-        "# A\n```json skill_manifest\n" '{"pause": {"stage_pause": true}}\n' "```\n正文",
-    )
+    # 无关键词、仅 sidecar 声明 → 生效
+    sd.save_skill_doc("仅清单暂停", "# A\n正文")
+    sidecar.write_sidecar("仅清单暂停", {"pause": {"stage_pause": True}})
     assert skill_requires_stage_pause("仅清单暂停") is True
-    # manifest 显式 false 覆盖『何时暂停』关键词（manifest 优先）
-    sd.save_skill_doc(
-        "清单关闭",
-        "# B\n```json skill_manifest\n" '{"pause": {"stage_pause": false}}\n'
-        "```\n何时暂停：每阶段后。",
-    )
+    # sidecar 显式 false 覆盖『何时暂停』关键词（声明优先）
+    sd.save_skill_doc("清单关闭", "# B\n何时暂停：每阶段后。")
+    sidecar.write_sidecar("清单关闭", {"pause": {"stage_pause": False}})
     assert skill_requires_stage_pause("清单关闭") is False
 
 
-def test_lint_pause_warning_skipped_for_manifest_pause():
+def test_lint_pause_warning_keyword_driven():
+    """0818 B4：编辑期暂停提示只看正文关键词；manifest 块不再消费并显式告知。"""
     content = (
         "# A\n```json skill_manifest\n" '{"pause": {"stage_pause": true}}\n' "```\n正文"
     )
     result = sd.lint_skill_content(content)
-    assert not any("暂停声明" in w for w in result["warnings"])
+    assert any("不再消费" in w for w in result["warnings"])
+    ok = sd.lint_skill_content("# A\n**何时暂停**：每阶段后\n正文")
+    assert not any("暂停声明" in w for w in ok["warnings"])
 
 
 # ---------- 存量 Skill 快照（防未来单 Skill 再带偏） ----------
@@ -233,7 +220,8 @@ def test_real_skills_manifest_snapshot(monkeypatch):
             entry = registry.get_entry(slug)
             assert entry is not None, f"Skill 未注册: {slug}"
             flow = ((entry.manifest or {}).get("flow") or {})
-            assert not flow.get("spec_wizard"), f"{slug} 不应声明 spec_wizard"
+            # 0818 B4：spec_wizard 现值已冻结进 sidecar（存量视频 Skill 全为 true）
+            assert flow.get("spec_wizard") is True, f"{slug} 冻结值应为 true"
             # 存量视频 Skill 流程均含规格步骤：spec_gate 与迁移前行为等价
             assert flow.get("spec_gate") is True, f"{slug} 应声明 spec_gate"
         # 暂停声明迁入 manifest（旧 pause_rules 块已删）

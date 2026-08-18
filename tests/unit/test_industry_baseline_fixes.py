@@ -38,13 +38,15 @@ def test_language_rule_default_chinese_and_no_section_exception():
 
 
 def test_language_rule_english_locked_skill():
-    """manifest 声明 cjk_min_ratio=0（英文锁定）→ 注入句为英文事实陈述。"""
+    """sidecar 声明 cjk_min_ratio=0（英文锁定）→ 注入句为英文事实陈述。"""
+    from src.video_agent.skill_runtime import sidecar
+
     sd.save_skill_doc(
         "en",
         "# 英文锁定\n> 调用规则：测试\n"
-        "```json skill_manifest\n{\"gates\": {\"cjk_min_ratio\": 0}}\n```\n"
         "<write_the_prompt>\ntemplate\n</write_the_prompt>\n",
     )
+    sidecar.write_sidecar("en", {"gates": {"cjk_min_ratio": 0}})
     rule = ex_mod._prompt_language_rule("en")
     assert "英文" in rule and "英文锁定" in rule
 

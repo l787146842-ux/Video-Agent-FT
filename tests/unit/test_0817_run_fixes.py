@@ -268,11 +268,12 @@ def test_0817_global_settings_stage_gated():
 
 
 def test_0817_channels_dead_mechanism_removed():
-    """生成渠道已归全局设置唯一事实源：channels 注入机制整体清除。"""
+    """生成渠道已归全局设置唯一事实源：channels 注入机制整体清除
+    （0818 B4：manifest 解析链退役，白名单符号随删）。"""
     from src.video_agent.core.prompt_builder import PromptBuilder
     from src.video_agent.web import skill_docs
     assert not hasattr(PromptBuilder, "build_generation_channels_block")
-    assert "channels_block" not in skill_docs._MANIFEST_FLOW_KEYS
+    assert not hasattr(skill_docs, "_MANIFEST_FLOW_KEYS")
 
 
 # ---------- 0817 B17：语言闸拒收批内即时纠正（不拖到整工具重做） ----------

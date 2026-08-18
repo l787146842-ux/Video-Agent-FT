@@ -75,13 +75,25 @@ def stage_done(key: str, state: Dict[str, Any]) -> bool:
 
 
 def stage_table(skill: str) -> List[StageSpec]:
-    """平台规范阶段表 + sidecar 覆盖（skip 裁剪 / 同批执行器替换）。"""
+    """平台规范阶段表 + sidecar 覆盖（skip 裁剪 / 同批执行器替换）。
+
+    skill 感知裁剪：未声明 spec_wizard 的 Skill 无规格阶段；
+    无 video_assembler 执行器章节的 Skill 无组装阶段（除非 sidecar 显式覆盖）。"""
     manifest = registry.skill_manifest_of(skill) or {}
     overrides = ((manifest.get("flow") or {}).get("stages") or {})
+    entry = registry.resolve_entry(skill)
+    tools = set(entry.available_tools) if entry else set()
     table: List[StageSpec] = []
     for spec in CANONICAL_STAGES:
         ov = overrides.get(spec.key) or {}
         if ov.get("skip"):
+            continue
+        if spec.key == "spec" and not (
+            registry.spec_wizard_active(skill) or ov.get("executors")
+        ):
+            continue
+        if spec.key == "assembly" and "video_assembler" not in tools \
+                and not ov.get("executors"):
             continue
         executors = tuple(ov.get("executors") or spec.executors)
         table.append(StageSpec(spec.key, spec.title, executors, spec.deterministic))

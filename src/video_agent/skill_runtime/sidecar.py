@@ -8,7 +8,7 @@ sidecar 存放清洗后声明（与旧文档通道输出同构），双读零行
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -44,21 +44,45 @@ def write_sidecar(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def validate_sidecar(data: Optional[Dict[str, Any]]) -> List[str]:
+    """sidecar 声明体检（注册期门禁）：结构非法/依赖引用悬空即报出。"""
+    issues: List[str] = []
+    if data is None:
+        return issues  # 无 sidecar = 零声明，合法（引擎零预设）
+    if not isinstance(data, dict):
+        return ["sidecar 根节点必须是 JSON 对象"]
+    flow = data.get("flow") or {}
+    if not isinstance(flow, dict):
+        issues.append("flow 必须是 JSON 对象")
+        flow = {}
+    steps = flow.get("steps") or {}
+    deps = flow.get("dependencies") or {}
+    if not isinstance(steps, dict):
+        issues.append("flow.steps 必须是对象（步骤号→标题）")
+        steps = {}
+    if not isinstance(deps, dict):
+        issues.append("flow.dependencies 必须是对象（步骤号→前置列表）")
+        deps = {}
+    step_nos = {str(k) for k in steps}
+    for k, v in deps.items():
+        if str(k) not in step_nos:
+            issues.append(f"依赖声明 {k}→… 的步骤 {k} 不在 steps 中")
+        if isinstance(v, list):
+            for pre in v:
+                if str(pre) not in step_nos:
+                    issues.append(f"依赖 {k}→{pre} 的前置步骤 {pre} 不在 steps 中")
+    return issues
+
+
 def migrate_doc_to_sidecar(doc_path: Path, directory: Optional[Path] = None) -> bool:
-    """单文档 manifest 迁 sidecar 并去围栏（幂等；无围栏返回 False）。
+    """单文档 manifest 围栏剥离（幂等；无围栏返回 False）。
 
-    写入 sidecar 的是清洗后声明（parse_skill_manifest 输出），
-    与旧文档通道逐键相等，保证双读零行为变化。
-    """
-    from src.video_agent.web.skill_docs import parse_skill_manifest
-
+    0818 B4：声明唯一源 = sidecar；文档若仍带 manifest 围栏只剥离不消费，
+    声明内容请以 data/skills_manifests/ 为准编辑。"""
     content = doc_path.read_text(encoding="utf-8")
     if not _MANIFEST_FENCE_RE.search(content):
         return False
-    cleaned = parse_skill_manifest(content)
-    if cleaned is not None:
-        write_sidecar(doc_path.stem, cleaned, directory)
     doc_path.write_text(
         _MANIFEST_FENCE_RE.sub("", content, count=1), encoding="utf-8")
-    logger.info(f"[Sidecar] {doc_path.stem} manifest 已迁 sidecar，文档还原纯散文")
+    logger.info(f"[Sidecar] {doc_path.stem} 文档 manifest 围栏已剥离（声明以 sidecar 为准）")
     return True

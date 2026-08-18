@@ -322,27 +322,27 @@ def test_2222_split_executors_wire_override_injection():
 
 # ---------- 规格向导平台自动检测 ----------
 
-def test_2222_spec_wizard_auto_enabled_without_declaration():
-    """「AI-短剧」未声明 spec_wizard 但正文含规格流程 → 自动启用。"""
+def test_2222_spec_wizard_frozen_declaration_source():
+    """0818 B4：spec_wizard 以 sidecar 冻结声明为唯一源（文本启发式退役）。"""
     from src.video_agent.skill_runtime import registry
 
     registry.register_skill("AI-短剧一站式生成")
     entry = registry.resolve_entry("AI-短剧一站式生成")
-    assert ((entry.manifest or {}).get("flow") or {}).get("spec_wizard") is not True
+    assert ((entry.manifest or {}).get("flow") or {}).get("spec_wizard") is True
     assert registry.spec_wizard_active("AI-短剧一站式生成") is True
 
 
 def test_2222_spec_wizard_declared_true_still_active():
-    """显式声明 true 的 Skill 行为不变（manifest 逃生门反向：显式开启）。"""
-    from src.video_agent.skill_runtime import registry
+    """显式声明 true 的 Skill 行为不变（0818 B4：声明家 = sidecar）。"""
+    from src.video_agent.skill_runtime import registry, sidecar
     from src.video_agent.web import skill_docs as sd
 
-    # 自包含桩：manifest 显式 spec_wizard:true（不依赖产品 Skill，10.12-G1）
+    # 自包含桩：sidecar 显式 spec_wizard:true（不依赖产品 Skill，10.12-G1）
     sd.save_skill_doc(
         "显式向导测试桩",
-        "# 显式向导测试桩\n\n```json skill_manifest\n"
-        '{"flow": {"spec_wizard": true}}\n```\n> 调用规则：测试\n',
+        "# 显式向导测试桩\n> 调用规则：测试\n",
     )
+    sidecar.write_sidecar("显式向导测试桩", {"flow": {"spec_wizard": True}})
     registry.register_skill("显式向导测试桩")
     assert registry.spec_wizard_active("显式向导测试桩") is True
     registry.reset_registry()
@@ -357,16 +357,18 @@ def test_2222_spec_wizard_stub_skill_inactive():
 
 
 def test_2222_spec_wizard_manifest_false_escape_hatch():
-    """manifest 显式 false = 逃生门关闭（即使正文含规格流程）。"""
-    from src.video_agent.skill_runtime import registry
+    """sidecar 显式 false = 逃生门关闭（0818 B4：声明唯一源 = sidecar，
+    注册条目不再快照，原地改 manifest 失效；改用自包含桩声明）。"""
+    from src.video_agent.skill_runtime import registry, sidecar
+    from src.video_agent.web import skill_docs as sd
 
-    registry.register_skill("AI-短剧一站式生成")
-    entry = registry.resolve_entry("AI-短剧一站式生成")
-    entry.manifest.setdefault("flow", {})["spec_wizard"] = False
-    try:
-        assert registry.spec_wizard_active("AI-短剧一站式生成") is False
-    finally:
-        entry.manifest["flow"].pop("spec_wizard", None)
+    sd.save_skill_doc(
+        "false向导测试桩",
+        "# false向导测试桩\n> 调用规则：测试\n",
+    )
+    sidecar.write_sidecar("false向导测试桩", {"flow": {"spec_wizard": False}})
+    registry.register_skill("false向导测试桩")
+    assert registry.spec_wizard_active("false向导测试桩") is False
 
 
 def test_2222_spec_wizard_consumers_use_objective_detection():

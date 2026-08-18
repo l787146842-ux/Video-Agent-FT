@@ -145,16 +145,15 @@ _DEFAULT_GATE_RULES: Dict[str, Any] = {
 }
 
 
-def parse_gate_rules(content: str) -> Dict[str, Any]:
-    """从 Skill 文档解析闸机规则（声明块：skill_manifest 优先，旧 gate_rules 兼容）。
+def parse_gate_rules(content: str, manifest: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """从 Skill 解析闸机规则（旧 gate_rules 块兼容；manifest gates 由
+    调用方从 sidecar 传入——0818 B4 起文档不再承载声明）。
 
     未声明 / 格式非法 / 类型不合法时回落默认规则；只接受白名单键，
     防止用户文档意外破坏结构防护（长度/语言等基础阈值不可被关到负值）。
     """
     rules = dict(_DEFAULT_GATE_RULES)
-    if not content:
-        return rules
-    m = _GATE_RULES_BLOCK_RE.search(content)
+    m = _GATE_RULES_BLOCK_RE.search(content or "")
     if m:
         try:
             data = json.loads(m.group(1))
@@ -176,13 +175,7 @@ def parse_gate_rules(content: str) -> Dict[str, Any]:
                 elif isinstance(default, list):
                     if isinstance(val, list) and all(isinstance(x, str) for x in val):
                         rules[key] = [x for x in val if x]
-    # skill_manifest gates 覆盖（manifest 是平台行为声明的唯一源，冲突键优先于旧块）
-    try:
-        from src.video_agent.web.skill_docs import parse_skill_manifest
-
-        manifest = parse_skill_manifest(content)
-    except Exception:
-        manifest = None
+    # skill_manifest gates 覆盖（sidecar 声明是唯一源，冲突键优先于旧块）
     if manifest:
         for key, val in (manifest.get("gates") or {}).items():
             if key in _DEFAULT_GATE_RULES:

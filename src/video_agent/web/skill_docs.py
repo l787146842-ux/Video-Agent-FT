@@ -21,7 +21,6 @@ from loguru import logger
 
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import SKILL_DOCS_DIR
-from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
 # 五轮 S6：标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
 from src.video_agent.core import live_metrics
 # N7（三轮审核）：pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
@@ -407,9 +406,8 @@ _GATE_RULES_LINT_RE = re.compile(
     r"```(?:json|js)?\s*gate_rules\s*\n(.*?)```", re.S | re.I
 )
 
-# Skill 平台行为统一声明块（S1 清偿：引擎对业务流程一无所知，
-# 闸机/向导/工具裁剪等平台行为由本块声明驱动，未声明 = 只保留客观结构防护）；
-# 与旧 gate_rules/pause_rules 块并存时 manifest 优先（冲突键覆盖）
+# Skill 平台行为统一声明块正则（0818 B4：声明已迁 sidecar，
+# 本正则仅用于 lint 提示「文档内 manifest 不再消费」）
 _SKILL_MANIFEST_BLOCK_RE = re.compile(
     r"```(?:json|js)?\s*skill_manifest\s*\n(.*?)```", re.S | re.I
 )
@@ -421,128 +419,6 @@ _MODEL_PARAM_LINT_RE = re.compile(
     r"Runway|Vidu|Sora|Veo|Pika|Hailuo|海螺|万相|通义|1K|2K|4K|"
     r"480p|720p|1080p|4K高清|60fps|24fps)"
 )
-
-# manifest 白名单（键 → 类型），非白名单键静默丢弃，防止用户文档破坏平台行为
-_MANIFEST_GATE_KEYS: Dict[str, Any] = {
-    "shot_min_chars": 0,           # int >0
-    "element_min_chars": 0,        # int >0
-    "cjk_min_ratio": 0.0,          # float (0,1]
-    "require_duration": False,     # bool
-    "require_subtitle": False,     # bool
-    "require_camera_language": False,  # bool
-    "require_audio_layer": False,  # bool
-    "require_at_ref": False,       # bool：分镜提示词写入时系统按 sceneRefs 自动补 @引用
-}
-_MANIFEST_FLOW_KEYS: Dict[str, Any] = {
-    "spec_wizard": False,      # script_analyze 后规格参数向导 + 规格审阅卡升级
-    "spec_stage_trim": False,  # 无规格文档时裁剪故事板/生成工具
-    "spec_gate": False,        # 无规格文档时搭建故事板附「建议补写规格」警告
-    "display_analysis_summary": False,  # 0817 B20：分析后强制向用户展示总结（流程归 Skill）
-    # 0817 B18：channels_block 已清除（生成渠道唯一事实源 = 顶部全局设置）
-}
-_MANIFEST_PAUSE_KEYS: Dict[str, Any] = {"stage_pause": False}
-
-# B4b/F32：step_done_conditions 的合法客观状态键（DAG 完成度声明化评估）
-_STEP_DONE_STATE_KEYS = frozenset({
-    "spec", "analysis", CAT_KEY_ELEMENTS, "ke_media",
-    CAT_SHOTS, "audio", "shot_video", "assembly",
-})
-
-
-def _coerce_manifest_value(val: Any, default: Any) -> Optional[Any]:
-    """按白名单默认值的类型校验 manifest 单键；类型不合法返回 None（丢弃）。"""
-    if isinstance(default, bool):
-        if isinstance(val, (bool, int)):
-            return bool(val)
-        return None
-    if isinstance(default, int):
-        if isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
-            return int(val)
-        return None
-    if isinstance(default, float):
-        # 允许 0：如 cjk_min_ratio=0 等效关闭语言闸（英文锁定 Skill，S1）
-        if isinstance(val, (int, float)) and not isinstance(val, bool) and 0 <= val <= 1:
-            return float(val)
-        return None
-    return None
-
-
-def _parse_manifest_section(data: Dict[str, Any], whitelist: Dict[str, Any]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    section = data
-    if not isinstance(section, dict):
-        return out
-    for key, default in whitelist.items():
-        if key not in section:
-            continue
-        coerced = _coerce_manifest_value(section[key], default)
-        if coerced is not None:
-            out[key] = coerced
-    return out
-
-
-def parse_skill_manifest(content: str) -> Optional[Dict[str, Any]]:
-    """解析可选的 skill_manifest 声明块；未声明/格式非法返回 None。
-
-    返回 {"gates": {...}, "flow": {...}, "pause": {...}}（各节只含显式声明的键）。
-    语义：未声明 = 引擎只保留客观结构防护（业务闸/向导/裁剪全部关闭）。
-    """
-    m = _SKILL_MANIFEST_BLOCK_RE.search(content or "")
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(1))
-    except Exception:
-        return None
-    if not isinstance(data, dict):
-        return None
-    flow = _parse_manifest_section(data.get("flow") or {}, _MANIFEST_FLOW_KEYS)
-    # B4b/F32：step_done_conditions（步骤号 → 客观状态键）声明化——
-    # DAG 完成度判定由关键字猜测改为按声明评估（确定性题归系统）
-    sdc = (data.get("flow") or {}).get("step_done_conditions")
-    if isinstance(sdc, dict):
-        cleaned = {
-            str(k): str(v) for k, v in sdc.items()
-            if str(v) in _STEP_DONE_STATE_KEYS
-        }
-        if cleaned:
-            flow["step_done_conditions"] = cleaned
-    # 阶段同批声明（阶段号→同批执行器清单）：调度器按声明翻译，
-    # 执行器名不在注册表的不收（防垃圾声明）；未声明=维持现状回落
-    se = (data.get("flow") or {}).get("stage_executors")
-    if isinstance(se, dict):
-        from src.video_agent.skill_runtime.registry import SKILL_EXECUTOR_TOOLS
-        cleaned_se = {
-            str(k): [str(t) for t in v if str(t) in SKILL_EXECUTOR_TOOLS]
-            for k, v in se.items() if isinstance(v, list)
-        }
-        cleaned_se = {k: v for k, v in cleaned_se.items() if v}
-        if cleaned_se:
-            flow["stage_executors"] = cleaned_se
-    # 流程步骤/依赖声明（步骤号→标题；步骤号→前置号列表）：
-    # 调度器据此确定性解析，不再猜正文编号列表；非法键值丢弃
-    st = (data.get("flow") or {}).get("steps")
-    if isinstance(st, dict):
-        cleaned_st = {
-            str(k): str(v).strip() for k, v in st.items()
-            if str(k).isdigit() and str(v).strip()
-        }
-        if cleaned_st:
-            flow["steps"] = cleaned_st
-    dp = (data.get("flow") or {}).get("dependencies")
-    if isinstance(dp, dict):
-        cleaned_dp = {
-            str(k): [int(x) for x in v if isinstance(x, int) and not isinstance(x, bool)]
-            for k, v in dp.items() if str(k).isdigit() and isinstance(v, list)
-        }
-        cleaned_dp = {k: v for k, v in cleaned_dp.items() if v}
-        if cleaned_dp:
-            flow["dependencies"] = cleaned_dp
-    return {
-        "gates": _parse_manifest_section(data.get("gates") or {}, _MANIFEST_GATE_KEYS),
-        "flow": flow,
-        "pause": _parse_manifest_section(data.get("pause") or {}, _MANIFEST_PAUSE_KEYS),
-    }
 
 
 def lint_skill_content(content: str) -> Dict[str, Any]:
@@ -579,34 +455,20 @@ def lint_skill_content(content: str) -> Dict[str, Any]:
                 warnings.append("gate_rules 不是 JSON 对象，已回落默认闸机规则")
         except Exception:
             warnings.append("gate_rules JSON 解析失败，已回落默认闸机规则")
-    # skill_manifest 块格式校验（同 gate_rules：非法时静默回落最小闸，这里显式告知）
-    mm = _SKILL_MANIFEST_BLOCK_RE.search(content)
-    if mm:
-        try:
-            data = json.loads(mm.group(1))
-            if not isinstance(data, dict):
-                warnings.append("skill_manifest 不是 JSON 对象，已回落最小闸配置")
-        except Exception:
-            warnings.append("skill_manifest JSON 解析失败，已回落最小闸配置")
+    # 0818 B4：声明迁 sidecar——文档内 manifest 块不再消费，显式提示
+    if _SKILL_MANIFEST_BLOCK_RE.search(content):
+        warnings.append(
+            "skill_manifest 块不再消费：平台声明已迁 sidecar（data/skills_manifests/），请从文档移除该块"
+        )
     elif gm or _PAUSE_RULES_BLOCK_RE.search(content):
         warnings.append(
-            "检测到旧式 gate_rules/pause_rules 块：建议迁移为统一的 skill_manifest 声明块"
-            "（并存时 manifest 优先，两块各自表述属于指令分身）"
+            "检测到旧式 gate_rules/pause_rules 块：建议迁移为 sidecar 声明"
+            "（并存时两块各自表述属于指令分身）"
         )
-    # <planner> 结构体检：依赖引用未命中步骤/编号冲突等，编辑期先告知
-    # （注册期同套体检也会告警；新流程建议 manifest flow.steps 显式声明）
-    from src.video_agent.skill_runtime import dag as _dag
-
-    _planner_issues = _dag.lint_planner_dag(
-        sections.get("planning") or "", parse_skill_manifest(content))
-    warnings.extend(f"<planner> 结构告警：{s}" for s in _planner_issues)
-    # 暂停声明检测（仅提示不阻断；skill_manifest 的 pause.stage_pause 也是有效声明，S1）
-    _manifest_pause = bool(
-        ((parse_skill_manifest(content) or {}).get("pause") or {}).get("stage_pause")
-    )
+    # 暂停声明检测（仅提示不阻断；sidecar pause.stage_pause 在注册期校验，
+    # 编辑期只看正文关键词/pause_rules）
     if (
-        not _manifest_pause
-        and parse_pause_rules(content) is None
+        parse_pause_rules(content) is None
         and "何时暂停" not in content
         and "强制暂停点" not in content
     ):

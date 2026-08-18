@@ -12,7 +12,7 @@ import re
 
 from loguru import logger
 
-from src.video_agent.skill_runtime import dag
+from src.video_agent.skill_runtime import sidecar
 
 # 本项目新增的 Skill 执行器工具（复用现有工具不在此列：
 # document_write / read_uploaded_doc / image_generate / generate_video / workflow_pause）
@@ -73,9 +73,14 @@ class SkillEntry:
     content: str
     # stage → 章节原文（split_skill_sections 产出）
     sections: Dict[str, str] = field(default_factory=dict)
-    # skill_manifest 声明块解析结果（{"gates":..., "flow":..., "pause":...}）；
-    # None = 未声明，平台行为回落最小闸（S1：引擎不预设任何业务流程）
-    manifest: Optional[Dict[str, dict]] = None
+    @property
+    def manifest(self) -> Optional[Dict[str, dict]]:
+        """manifest 声明活读（B4）：sidecar 唯一源，注册不快照，
+        声明后写/迁移更新后立即生效（旧文档通道每次活读语义一致）。
+        None = 未声明，平台回落最小闸（S1）。"""
+        from src.video_agent.skill_runtime import sidecar
+
+        return sidecar.load_sidecar(self.slug)
 
     @property
     def available_tools(self) -> List[str]:
@@ -96,7 +101,6 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
     """从磁盘读取一个 Skill 文档并解析章节；不存在返回 None。"""
     from src.video_agent.web.skill_docs import (
         get_skill_doc,
-        parse_skill_manifest,
         split_skill_sections,
     )
 
@@ -104,18 +108,13 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
     if not doc:
         return None
     content = doc.get("content") or ""
-    # 0818 架构板正批 B0：声明双读——sidecar 优先，文档 manifest 回落（B4 退役文档通道）
-    from src.video_agent.skill_runtime import sidecar
-
-    manifest = sidecar.load_sidecar(slug)
-    if manifest is None:
-        manifest = parse_skill_manifest(content)
+    # 0818 架构板正批 B4：声明唯一源 = sidecar（文档纯散文，与源平台一致）；
+    # manifest 经 SkillEntry.manifest 属性活读，注册不快照。
     return SkillEntry(
         slug=slug,
         name=doc.get("name") or slug,
         content=content,
         sections=split_skill_sections(content),
-        manifest=manifest,
     )
 
 
@@ -129,7 +128,7 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
     if entry is None:
         return None
     _registry[slug] = entry
-    issues = dag.lint_planner_dag(entry.sections.get("planning") or "", entry.manifest)
+    issues = sidecar.validate_sidecar(entry.manifest)
     if issues:
         logger.warning(
             f"[SkillRuntime] Skill「{entry.name}」<planner> 结构告警：{'；'.join(issues)}"
@@ -305,44 +304,21 @@ def skill_stage_executors(skill_name: str) -> Dict[str, List[str]]:
 
 
 def spec_wizard_active(skill_name: str) -> bool:
-    """规格向导启用判定（2222 二轮：客观流程特征检测，替代纯声明制）。
+    """规格向导启用判定（0818 B4：sidecar 唯一源，文本启发式退役）。
 
-    Skill 正文提及规格文档名（流程含规格编写环节）→ 默认启用；
-    manifest 显式 `"spec_wizard": false` → 逃生门关闭；显式 true 保持启用。
-    修复「有规格流程但未声明 spec_wizard 的 Skill 向导不弹」（2222 二轮）；
-    判定依据是 Skill 客观文本而非平台预设，不违反 S1。
-    """
-    entry = resolve_entry(skill_name)
-    if entry is None:
-        return False
-    declared = ((entry.manifest or {}).get("flow") or {}).get("spec_wizard")
-    if declared is True:
-        return True
-    if declared is False:
-        return False
-    from src.video_agent.core.prompt_gates import text_mentions_spec_doc
-
-    return text_mentions_spec_doc(entry.content)
+    sidecar flow.spec_wizard 显式声明；未声明 = 不启用（引擎零预设）。
+    存量 Skill 的现值已由迁移脚本冻结进 sidecar。"""
+    manifest = skill_manifest_of(skill_name)
+    return bool(((manifest or {}).get("flow") or {}).get("spec_wizard"))
 
 
 def script_required_active(skill_name: str) -> bool:
-    """剧本原料闸启用判定（814H9，与 spec_wizard_active 同模式）。
+    """剧本原料闸启用判定（0818 B4：sidecar 唯一源，文本启发式退役）。
 
-    manifest 显式 `"script_required": true/false` 优先（逃生门）；
-    未声明时按客观文本特征：Skill 流程含「上传/分析剧本」环节即视为需剧本。
-    判定依据是 Skill 客观文本而非平台预设，不违反 S1；不修改任何 Skill 文件（13.12 G1）。
-    """
-    entry = resolve_entry(skill_name)
-    if entry is None:
-        return False
-    declared = ((entry.manifest or {}).get("flow") or {}).get("script_required")
-    if declared is True:
-        return True
-    if declared is False:
-        return False
-    from src.video_agent.core.prompt_gates import text_mentions_script
-
-    return text_mentions_script(entry.content)
+    sidecar flow.script_required 显式声明；未声明 = 不启用。
+    存量 Skill 的现值已由迁移脚本冻结进 sidecar。"""
+    manifest = skill_manifest_of(skill_name)
+    return bool(((manifest or {}).get("flow") or {}).get("script_required"))
 
 
 def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
