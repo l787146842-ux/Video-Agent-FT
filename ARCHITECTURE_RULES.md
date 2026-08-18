@@ -261,7 +261,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 
 > 以下事项已由 acceptance 门禁机械强制，不再人工勾选：文件行数红线/棘轮（check_file_lines）、
 > 提示词严禁预算（check_prompt_budget）、方法内 import 防新增（check_func_imports）、
-> 治理叙事标记预算（check_governance_refs）、类别 Key 字面量（check_category_keys，CAT_* 单一事实源）、
+> 治理叙事标记预算（check_governance_refs）、类别 Key 字面量（check_category_keys，CAT_* 单一事实源）、已删编排符号防复活（check_legacy_orchestration）、
 > 前后端契约（gen_api_types --check + api-contract 桥接）、
 > 四件套 pytest/vitest/tsc/eslint。
 
@@ -294,7 +294,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 |---|----|------|---------|---------|---------|
 | 1 | 平台协议 | `prompts/planner/system.md`（FC 用 `system_fc.md`） | 主模型每轮 | 动作格式/暂停通道/输出纪律/工具使用法 | 业务领域规则 |
 | 2 | 文本协议 | `prompts/planner/text_actions.md` | 仅非 FC 通道 | studio-actions 全量动作定义 | 流程/业务规则 |
-| 3 | Skill 文档 | `data/skills/*.md` | planner 章节/执行器内章节 | 该 Skill 的流程步骤、暂停点、产出规范；`skill_manifest` 声明块 | 模型能力参数；平台通用层硬编码其专属流程 |
+| 3 | Skill 文档 | `data/skills/*.md` | planner 章节/执行器内章节 | 该 Skill 的阶段内创作引导（产出规范/创作要求），纯散文 | 流程顺序与暂停点（已归平台编排+sidecar 声明）；模型能力参数 |
 | 4 | 执行铁律文档 | 项目内「执行铁律.md」（`spec_rules` 模板） | Skill 激活时全文注入 | 项目级可编辑生产契约 | 平台协议、流程步骤 |
 | 5 | 制片规格文档 | 项目内规格文档（Final_Video_Spec.md 等） | 执行器显式注入/按需 read | 本项目参数事实（画幅/分辨率/渠道/时长） | 任何规则性表述 |
 | 6 | 执行器提示词 | `skill_runtime/executors.py`（_TASK/_BOUNDARY/自检词） | 执行器独立调用 | 单一任务的输出格式与边界 | 跨阶段流程规则 |
@@ -315,13 +315,14 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 |---------|-----------|-----------|
 | 平台对话协议 | 层 1 system.md / system_fc.md | Skill、铁律、执行器 |
 | 项目级生产契约 | 层 4 铁律文档 | system.md 硬编码、执行器常量 |
-| 流程步骤与暂停点 | 层 3 Skill 的 `<planner>` 与「何时暂停」/manifest pause 声明 | system.md、runtime 块条款、回喂话术 |
+| 阶段顺序与暂停点 | 平台状态计算（`core/pipeline_orchestrator.py`）+ sidecar 声明（`data/skills_manifests/<slug>.json` 的 flow/pause） | Skill 散文、system.md、回喂话术 |
 | 单一执行器的输出格式与边界 | 层 3 Skill 对应章节是唯一表述源；层 6 只承载任务目标与格式锚点 | system.md |
 | 模型能力参数（分辨率/时长/渠道） | 层 5 制片规格（运行时动态注入）+ 全局设置 | Skill 硬编码数值、执行器写死数值 |
 | 可机械校验的约束 | 层 7/9 代码校验（拒收或修正） | 任何 prose 层重复表述 |
 | 通用提示词规范 | 层 3 Skill 的提示词章节 | system.md |
-| Skill 的平台行为开关 | 层 3 Skill 的 `skill_manifest` 声明块（引擎默认最小闸） | 平台通用层硬编码 |
-| 规格向导/剧本闸启停 | 客观流程特征检测（registry.spec_wizard_active / script_required_active）；manifest 显式逃生门 | 纯声明制 |
+| Skill 的平台行为开关 | sidecar 声明 `data/skills_manifests/<slug>.json`（声明唯一源，引擎默认最小闸） | Skill 散文、平台通用层硬编码 |
+| 规格向导/剧本闸启停 | sidecar 声明（registry.spec_wizard_active / script_required_active 纯读 sidecar）；sidecar 显式逃生门 | 文本启发式扫描 |
+| 阶段内创作引导 | 层 3 Skill 散文（纯散文，只管阶段内怎么写） | 平台层排序条款、sidecar |
 
 **冲突裁决顺序（模型可见优先级）**：用户最新指令 > 铁律文档 + 制片规格 > Skill > 平台协议默认。代码校验层不参与裁决——它是客观事实，只对结果裁定并回报。
 
@@ -331,13 +332,13 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 
 | 症状 | 正确归位层 | 禁止的捷径（历史事故） |
 |------|-----------|---------------------|
-| 模型该暂停时没暂停 | ①层 9 客观状态兜底注入；②层 3 Skill「何时暂停」/manifest pause 声明 | 在多层同时加“必须暂停”（5555） |
+| 模型该暂停时没暂停 | 编排器阶段边界机械暂停（pipeline_orchestrator）+ sidecar pause 声明 | 在多层同时加“必须暂停”prose（5555） |
 | 模型输出缺字段/格式错 | 层 6 执行器拒收+重试+格式锚点 | 只在 prose 加“必须携带 X 字段”（8888） |
 | 模型虚报完成 | 层 7 客观状态核验 + 只警告不拦人 | 硬拦截没收暂停（4444） |
 | 产出数量失控 | 铁律+Skill+执行器任务词三处**同步**写比例约束，自检限轮数 | 单向穷举表述与克制条款并存（8888） |
 | 工具成果用户看不见 | 层 9 系统兜底拼入正文/即时 SSE 事件 | 只加“必须展示”prose（2222/3333） |
 | 参数与生成能力不符 | 层 5 规格收集 + 执行器运行时注入 + 全局设置 | Skill/执行器硬编码数值 |
-| 模型继续推进了不该推进的阶段 | 层 7 工具裁剪 + 层 9 兜底卡 | 在回喂话术里加长段告诫（5555） |
+| 模型继续推进了不该推进的阶段 | 阶段顺序由平台状态计算（编排器）裁定，模型不参与排序 | 在回喂话术里加长段告诫（5555） |
 | Skill 流程与平台行为不符 | 系统层：平台闸启用条件 + 执行器冲突裁决注入 + 适配层填参 | 修改 Skill 文件或其 manifest 声明（S2；T16/T17 类清理须用户显式裁决） |
 | 模型产出不达标 | 查系统约束：输出预算/思考预算/截断处置，修管线 | 放宽 Skill 要求迁就系统缺陷（S2） |
 
