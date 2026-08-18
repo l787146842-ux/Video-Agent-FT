@@ -17,11 +17,8 @@ from pydantic import BaseModel, Field
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.config import settings
-from src.video_agent.web import generation as _gen
-from src.video_agent.web.generation import (
-    GenerationError,
-    call_chat_completion,
-)
+from src.video_agent.web.generation import GenerationError
+from src.video_agent.skill_runtime.blackbox import dump_case
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.token_budget import output_limit_for_model
 from src.video_agent.skill_runtime.progress import (
@@ -70,9 +67,10 @@ async def _llm_json_call(
         {"role": "user", "content": user},
     ]
     content = ""
+    finish = ""
     for attempt in (1, 2):
         try:
-            content, finish = await _gen.call_chat_completion(
+            content, finish = await exec_common.executor_stream_text(
                 provider,
                 model,
                 messages,
@@ -103,6 +101,12 @@ async def _llm_json_call(
         break
     m = re.search(r"\{[\s\S]*\}", content or "")
     if not m:
+        # 0818-1111：解析失败存原始回执，取证链不留死角
+        dump_case(
+            kind="exec_json", reason="no_json", system=system, user=user,
+            content=content or "", finish=finish,
+            extra={"provider": provider, "model": model},
+        )
         raise RuntimeError("执行器 LLM 未返回 JSON 结果")
     # 0817：畸形 JSON 带拒因纠正重试一次（C2 结构化拒因回喂）：
     # 小模型漏逗号/引号类错误高发，携报错原文+残文重问一次可高概率自愈，
@@ -125,7 +129,7 @@ async def _llm_json_call(
                 )},
             ]
             try:
-                content, _fix_finish = await _gen.call_chat_completion(
+                content, _fix_finish = await exec_common.executor_stream_text(
                     provider,
                     model,
                     messages,
@@ -144,6 +148,12 @@ async def _llm_json_call(
             if not isinstance(data, dict):
                 raise RuntimeError("执行器 LLM 返回的 JSON 不是对象")
             return data
+    # 0818-1111：畸形 JSON 存原始回执后再抛，事后可直接看模型回了什么
+    dump_case(
+        kind="exec_json", reason="json_parse_failed", system=system, user=user,
+        content=content or "", finish=finish,
+        extra={"provider": provider, "model": model, "error": str(last_err)},
+    )
     raise RuntimeError(f"执行器 LLM 返回的 JSON 无法解析: {last_err}")
 
 
@@ -393,7 +403,7 @@ async def _executor_actions_from_llm(
     warnings: List[str] = []
     last_content, last_finish = "", ""
     for attempt in (1, 2):
-        content, finish = await _gen.call_chat_completion(
+        content, finish = await exec_common.executor_stream_text(
             provider,
             model,
             [

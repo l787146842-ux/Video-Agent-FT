@@ -14,7 +14,6 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.models import CAT_KEY_ELEMENTS
 from src.video_agent.core import prompt_gates
-from src.video_agent.web import generation as _gen
 from src.video_agent.skill_runtime.progress import (
     emit_progress,
     emit_state_refresh,
@@ -188,7 +187,7 @@ async def _selfcheck_key_elements(
         "badgeLabel 必填：人物/场景/关键道具/载具 等类别标签）；"
         "没有遗漏时只输出 []。不要输出正文解释。"
     )
-    content, _ = await _gen.call_chat_completion(
+    content, _ = await exec_common.executor_stream_text(
         provider,
         model,
         [{"role": "system", "content": system}, {"role": "user", "content": user}],

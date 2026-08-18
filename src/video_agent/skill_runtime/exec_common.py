@@ -19,9 +19,6 @@ from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.models import CAT_KEY_ELEMENTS
 from src.video_agent.config import settings
 from src.video_agent.web import generation as _gen
-from src.video_agent.web.generation import (
-    call_chat_completion_stream,
-)
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.token_budget import output_limit_for_model
 from src.video_agent.skill_runtime.progress import (
@@ -626,6 +623,30 @@ async def _stream_actions_progressive(
             },
         )
     return counters["applied"], warnings, content or "", finish
+
+
+async def executor_stream_text(
+    provider: str,
+    model: str,
+    messages: List[Dict[str, Any]],
+    *,
+    max_tokens: int,
+    timeout: float,
+    thinking_level: Optional[str] = None,
+) -> Tuple[str, str]:
+    """执行器统一流式取稿（0818-1111）：流式接收+拼完整，返回 (content, finish_reason)。
+
+    执行器机械调用唯一出口；非流式调用会被 9router 等中介
+    对缺省 stream 按流式路由（0818-1111），故执行器层不再允许。
+    """
+    return await _gen.call_chat_completion_stream(
+        provider,
+        model,
+        messages,
+        max_tokens=max_tokens,
+        timeout=timeout,
+        thinking_level=thinking_level,
+    )
 
 
 # 执行器批次可识别的标题字段（与 action_executor 兜底链同义）：

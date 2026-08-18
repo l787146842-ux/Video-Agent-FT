@@ -30,7 +30,7 @@ def _bridge_stream_calls(monkeypatch):
     async def fake_stream(provider, model, messages, *, max_tokens=8192,
                           temperature=0.7, timeout=180, on_delta=None,
                           reasoning_sink=None, thinking_level=None):
-        content, finish = await ex_mod.call_chat_completion(
+        content, finish = await gen_mod.call_chat_completion(
             provider, model, messages, max_tokens=max_tokens
         )
         if on_delta and content:

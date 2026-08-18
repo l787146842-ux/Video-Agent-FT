@@ -721,6 +721,7 @@ def test_0817_llm_json_call_corrective_retry_on_malformed(monkeypatch):
     """首次返回畸形 JSON → 携拒因重试一次 → 二次正确则解析成功。"""
     import asyncio
     from src.video_agent.skill_runtime import exec_spec
+    from src.video_agent.web import generation as gen_mod
 
     calls = []
 
@@ -730,7 +731,7 @@ def test_0817_llm_json_call_corrective_retry_on_malformed(monkeypatch):
             return ('{"summary": "x", "key_points": ["a" "b"]}', "stop")
         return ('{"summary": "x", "key_points": ["a", "b"]}', "stop")
 
-    monkeypatch.setattr(exec_spec._gen, "call_chat_completion", fake_chat)
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
     monkeypatch.setattr(
         exec_spec.exec_common, "_resolve_chat_provider", lambda p, m: ("prov", "model"))
     data = asyncio.run(exec_spec._llm_json_call("sys", "user", max_tokens=512))
@@ -740,16 +741,18 @@ def test_0817_llm_json_call_corrective_retry_on_malformed(monkeypatch):
     assert any("无法解析" in str(m.get("content")) for m in calls[1])
 
 
-def test_0817_llm_json_call_raises_after_retry_still_malformed(monkeypatch):
+def test_0817_llm_json_call_raises_after_retry_still_malformed(monkeypatch, tmp_path):
     """重试仍畸形 → 抛明确错误，不吞。"""
     import asyncio
     import pytest as _pt
-    from src.video_agent.skill_runtime import exec_spec
+    from src.video_agent.skill_runtime import exec_spec, blackbox
+    from src.video_agent.web import generation as gen_mod
 
     async def fake_chat(provider, model, messages, **kw):
         return ('{"summary": "x", "key_points": ["a" "b"]}', "stop")
 
-    monkeypatch.setattr(exec_spec._gen, "call_chat_completion", fake_chat)
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
+    monkeypatch.setattr(blackbox, "_BLACKBOX_DIR", tmp_path)
     monkeypatch.setattr(
         exec_spec.exec_common, "_resolve_chat_provider", lambda p, m: ("prov", "model"))
     with _pt.raises(Exception, match="无法解析"):

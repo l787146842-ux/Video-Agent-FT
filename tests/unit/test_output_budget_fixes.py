@@ -37,7 +37,7 @@ def _patch_chat(monkeypatch, responses):
             raise item
         return item
 
-    monkeypatch.setattr(gen_mod, "call_chat_completion", fake)
+    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake)
     monkeypatch.setattr(
         ex_mod, "_resolve_chat_provider", lambda p="", m="": ("custom", "deepseek-v4-flash")
     )

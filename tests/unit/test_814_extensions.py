@@ -103,7 +103,7 @@ class TestGenericSectionExecutor:
         async def fake_chat(provider, model, messages, **kwargs):
             return f"```studio-actions\n{actions_json}\n```", "stop"
 
-        monkeypatch.setattr(gen_mod, "call_chat_completion", fake_chat)
+        monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
         tool = ex_mod.SkillSectionRunTool()
         result = await tool.aexecute(ex_mod.SkillSectionRunInput(
             skill_name="自定义章节 Skill", section="my_custom_tool", task="拆关键元素",

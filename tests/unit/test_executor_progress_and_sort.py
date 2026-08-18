@@ -38,8 +38,8 @@ def _bridge_stream_calls(monkeypatch):
     call_chat_completion（整段一次性回放），适配 Q5 流式逐条落盘改造。"""
 
     async def fake_stream(provider, model, messages, *, max_tokens=8192,
-                          temperature=0.7, timeout=180, on_delta=None):
-        content, finish = await ex_mod.call_chat_completion(
+                          temperature=0.7, timeout=180, on_delta=None, **_kw):
+        content, finish = await gen_mod.call_chat_completion(
             provider, model, messages, max_tokens=max_tokens
         )
         if on_delta and content:

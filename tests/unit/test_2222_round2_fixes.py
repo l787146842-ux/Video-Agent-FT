@@ -126,10 +126,16 @@ def test_2222_all_executor_llm_calls_pass_thinking_level():
     src = (inspect.getsource(exec_common) + inspect.getsource(exec_spec)
            + inspect.getsource(exec_tools) + inspect.getsource(exec_split)
            + inspect.getsource(exec_media_writer) + inspect.getsource(exec_media_gen))
-    n_calls = src.count("await _gen.call_chat_completion(") + src.count("await _gen.call_chat_completion_stream(")
-    assert n_calls == 5, "执行器 LLM 调用点数量变化时必须同步本断言"
-    # 调用点 5 处 + _executor_thinking 定义本身 1 处
-    assert src.count("_executor_thinking()") == n_calls + 1
+    # 0818-1111 B2：执行器 LLM 出口收敛为 exec_common.executor_stream_text
+    # （帮手内部是唯一 _gen 流式出口）。业务调用点 5 = 改道 4 + 流式拆解直调 1；
+    # 源码特征 6 = 5 业务点 + 帮手内部 1。调用点变化时必须同步本断言。
+    n_redirects = src.count("await exec_common.executor_stream_text(")
+    n_stream = src.count("await _gen.call_chat_completion_stream(")
+    n_legacy = src.count("await _gen.call_chat_completion(")
+    assert n_legacy == 0, "执行器层不得残留非流式调用"
+    assert n_redirects == 4 and n_stream == 2
+    # 5 调用点传思考档 + _executor_thinking 定义本身 1 处
+    assert src.count("_executor_thinking()") == 6
 
 
 # ---------- 截断保险全局化（流式拆解回滚 + 扩额整体重试） ----------

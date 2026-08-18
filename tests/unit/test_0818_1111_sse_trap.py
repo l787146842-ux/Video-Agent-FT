@@ -53,3 +53,60 @@ class TestB1StreamDeclaration:
             await adapter.chat([{"role": "user", "content": "你好"}])
         assert "非 JSON" in str(ei.value)
         await adapter.close()
+
+
+# ---------- B2：执行器流式取稿 + 黑匣子 ----------
+
+
+class TestB2ExecutorStreaming:
+    async def test_llm_json_call_uses_streaming(self, monkeypatch, tmp_path):
+        """0818-1111：_llm_json_call 必须走流式取稿（exec_common.executor_stream_text）。"""
+        from src.video_agent.skill_runtime import exec_common, exec_spec, blackbox
+        from src.video_agent.web import generation as gen_mod
+
+        calls = []
+
+        async def fake_stream(provider, model, messages, **kw):
+            calls.append((provider, model, kw))
+            return '{"summary": "一句话", "key_points": ["k1"]}', "stop"
+
+        monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
+        monkeypatch.setattr(blackbox, "_BLACKBOX_DIR", tmp_path)
+        data = await exec_spec._llm_json_call(
+            "sys", "user", max_tokens=4096,
+            provider="custom-api-19", model="qd/qmodel_38max",
+        )
+        assert data["summary"] == "一句话"
+        assert len(calls) == 1
+
+    async def test_llm_json_call_blackbox_on_parse_failure(self, monkeypatch, tmp_path):
+        """0818-1111：畸形 JSON 必须存原始回执（reason=json_parse_failed）后再抛。"""
+        from src.video_agent.skill_runtime import exec_common, exec_spec, blackbox
+        from src.video_agent.web import generation as gen_mod
+
+        async def fake_stream(provider, model, messages, **kw):
+            return '{"summary": "x", ]}', "stop"
+
+        monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
+        monkeypatch.setattr(blackbox, "_BLACKBOX_DIR", tmp_path)
+        with pytest.raises(RuntimeError) as ei:
+            await exec_spec._llm_json_call(
+                "sys", "user", max_tokens=4096,
+                provider="custom-api-19", model="qd/qmodel_38max",
+            )
+        assert "无法解析" in str(ei.value)
+        files = list(tmp_path.glob("*.json"))
+        assert len(files) == 1
+        rec = json.loads(files[0].read_text(encoding="utf-8"))
+        assert rec["reason"] == "json_parse_failed"
+        assert "summary" in rec["model_output"]
+
+    def test_no_direct_non_stream_call_in_executors(self):
+        """0818-1111 G4：执行器文件不得残留非流式 call_chat_completion( 调用。"""
+        from pathlib import Path
+        import src.video_agent.skill_runtime as rt
+
+        root = Path(rt.__file__).resolve().parent
+        for name in ("exec_spec.py", "exec_split.py", "exec_tools.py"):
+            src = (root / name).read_text(encoding="utf-8")
+            assert "call_chat_completion(" not in src, f"{name} 残留非流式调用"
