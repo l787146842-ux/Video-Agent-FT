@@ -77,7 +77,6 @@ class RoundEndContext:
     executor: Any = None
     content: str = ""
     skill: str = ""
-    flow_gates: Any = None
     # 输入态（agent_loop 填充）
     confirmation: str = ""
     confirmation_options: List[Dict[str, Any]] = field(default_factory=list)
@@ -154,24 +153,6 @@ async def run_round_end_policies(
 
 
 # ---------- 各策略实现（优先级 = 重构前代码书写顺序，D1 裁决零行为变更） ----------
-
-def _cond_flow_gate_pause(ctx: RoundEndContext) -> bool:
-    return ctx.flow_gates is not None and bool(ctx.flow_gates.consume_blocked())
-
-
-async def _apply_flow_gate_pause(ctx: RoundEndContext, emit: Callable) -> None:
-    # 文本轨越阶拦截强制暂停（814R3 复活语义）
-    ctx.confirmation = ctx.confirmation or ctx.flow_gates.pause_message()
-    ctx.confirmation_options = []
-    visible_txt = ctx.executor.strip_action_blocks(ctx.content)
-    if visible_txt:
-        ctx.result_text = (
-            f"{ctx.result_text}\n\n{visible_txt}".strip() if ctx.result_text else visible_txt
-        )
-    await emit(status_event("agent.flowGatePause", "越阶操作被流程门禁拦截，已强制暂停"))
-    ctx.hard_break = True
-    ctx.hard_break_finish = "gate_pause"
-
 
 def _cond_partial_fail_warnings(ctx: RoundEndContext) -> bool:
     return bool(ctx.total_exec) and ctx.applied < ctx.total_exec
@@ -267,30 +248,6 @@ async def _apply_spec_wizard_takeover(ctx: RoundEndContext, emit: Callable) -> N
     interaction = ctx.executor.state.setdefault("interaction", {})
     interaction["pending_pause_kind"] = "spec"
     logger.info("[FlowGate] 规格向导激活，模型手写规格已忽略，转系统规格向导暂停卡")
-
-
-def _cond_spec_collect(ctx: RoundEndContext) -> bool:
-    return (
-        "script_analyze" in getattr(ctx.executor, "skill_stages_done", set())
-        and not prompt_gates.has_spec_document(ctx.executor.state)
-        and not any(
-            prompt_gates.is_spec_doc_name(n)
-            for n in getattr(ctx.executor, "documents_written", []) or []
-        )
-        and not ctx.confirmation
-    )
-
-
-async def _apply_spec_collect(ctx: RoundEndContext, emit: Callable) -> None:
-    # 1111/6666 事故层9兜底；scope=all 豁免只附警告；0817 一条龙同豁免
-    if getattr(ctx.executor, "gate_override", False) in ("all", True) \
-            or prompt_gates.flow_auto_continue(ctx.executor.state):
-        ctx.result_warnings.append("用户已要求全速推进，已豁免规格收集暂停（仅附警告）")
-        return
-    ctx.confirmation, ctx.confirmation_options = prompt_gates.spec_collect_card(ctx.executor.state)
-    interaction = ctx.executor.state.setdefault("interaction", {})
-    interaction["pending_pause_kind"] = "collect"
-    logger.info("[FlowGate] script_analyze 完成且无规格文档，注入规格收集向导")
 
 
 def _structure_kinds(ctx: RoundEndContext) -> set:
@@ -429,8 +386,6 @@ def suggest_next_actions(state: Dict[str, Any]) -> List[Dict[str, str]]:
 
 # 策略表（优先级 = 重构前代码书写顺序；15 为失败警告块，原位于 flow_gate 早返之后）
 ROUND_END_POLICIES: List[RoundEndPolicy] = [
-    RoundEndPolicy("flow_gate_pause", KIND_HARD_BREAK, 10,
-                   _cond_flow_gate_pause, _apply_flow_gate_pause),
     RoundEndPolicy("partial_fail_warnings", KIND_POST_PROCESS, 15,
                    _cond_partial_fail_warnings, _apply_partial_fail_warnings),
     RoundEndPolicy("gate_heal", KIND_POST_PROCESS, 30,
@@ -441,8 +396,6 @@ ROUND_END_POLICIES: List[RoundEndPolicy] = [
                    _cond_spec_review_pending, _apply_spec_review_pending),
     RoundEndPolicy("spec_wizard_takeover", KIND_ARBITRABLE, 60,
                    _cond_spec_wizard_takeover, _apply_spec_wizard_takeover),
-    RoundEndPolicy("spec_collect", KIND_ARBITRABLE, 70,
-                   _cond_spec_collect, _apply_spec_collect),
     RoundEndPolicy("structure_stage_review", KIND_ARBITRABLE, 80,
                    _cond_structure_stage_review, _apply_structure_stage_review),
     RoundEndPolicy("stage_done_fallback", KIND_ARBITRABLE, 110,

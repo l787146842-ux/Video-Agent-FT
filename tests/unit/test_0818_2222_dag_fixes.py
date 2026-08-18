@@ -118,15 +118,6 @@ def test_pipeline_status_from_manifest():
     assert by_no[3]["ready"] is False
 
 
-def test_pipeline_plan_tool_consumes_manifest_channel():
-    """钉死：skill_pipeline_plan 走统一入口（manifest 优先），不直读正文正则。"""
-    from src.video_agent.skill_runtime import exec_tools
-
-    src = inspect.getsource(exec_tools.SkillPipelinePlanTool.aexecute)
-    assert "resolve_steps_and_deps(" in src
-    assert "pipeline_status_from(" in src
-
-
 # ---------- F4：lint 门禁 ----------
 
 def test_lint_detects_dangling_dependency():

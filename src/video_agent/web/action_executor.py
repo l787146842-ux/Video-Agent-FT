@@ -54,8 +54,6 @@ class StudioActionExecutor:
         self.gate_rules: Optional[Dict[str, Any]] = None
         # 决策 D：用户坚持（user_override）时硬伤降为警告照常放行
         self.gate_override: bool = False
-        # 已完成阶段集合（script_analyze 等；总结/收集闸判定用，会话级状态）
-        self.skill_stages_done: set = set()
         # 本批次闸机警告（executors._apply_actions 读取后随结果回喂）
         self.gate_warnings: List[str] = []
         # 当前激活的 Skill 名称（执行器/agent_loop 注入；S1：平台行为按 Skill 声明驱动）
@@ -292,28 +290,6 @@ class StudioActionExecutor:
         self._reject(outcome.reject_message)
         return False
 
-    def _spec_gate_ok(self) -> bool:
-        """规格前置（814Gb 核查：与 FC 轨 _flow_gate 对齐——只记日志，
-        不再向用户追加 ⚠；执行侧强制由 FlowGateSet.ensure_spec_gate 承担，
-        用户输入永不被拦）。恒返回 True（不硬拦）。"""
-        if not self.gate_enabled or prompt_gates.gate_mode() != "strict":
-            return True
-        if prompt_gates.has_spec_document(self.state):
-            return True
-        skill_name = getattr(self, "skill_name", "") or ""
-        declared = False
-        if skill_name:
-            try:
-                from src.video_agent.skill_runtime.registry import skill_flow_enabled
-
-                declared = skill_flow_enabled(skill_name, "spec_gate")
-            except Exception:
-                declared = False
-        if not declared:
-            return True
-        logger.info("[FlowGate] 规格文档未写入（Skill 声明 spec_gate；执行侧门禁已承担强制，此处仅日志）")
-        return True
-
     def _record_presented(self, draft_id: str) -> None:
         """记录本轮写入过提示词的草稿：用户下一条消息到达时晋升为「已确认」（确认闭环）"""
         if not draft_id or not self.gate_enabled:
@@ -528,8 +504,6 @@ class StudioActionExecutor:
 
     def _apply_add_group(self, action: Dict) -> bool:
         """创建新的故事板分组（关键元素 / 分镜 / 音频）"""
-        if not self._spec_gate_ok():
-            return False
         # 首拆只允许关键元素：首次搭建批次内创建 shot/audio 分组直接拒绝
         group_type = str(
             action.get("group_type") or action.get("draft_type")
@@ -694,8 +668,6 @@ class StudioActionExecutor:
         return True
 
     def _apply_add_draft(self, action: Dict) -> bool:
-        if not self._spec_gate_ok():
-            return False
         group_id = action.get("group_id") or action.get("groupId") or "current"
         group_type = (
             action.get("group_type") or action.get("groupType")

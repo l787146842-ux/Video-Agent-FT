@@ -145,7 +145,6 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.skill_runtime.exec_tools:_KE_TASK",
             # 八轮 B1-B3 新壳
             "src.video_agent.core.fc_tool_runner:format_tool_results",
-            "src.video_agent.core.planner:_prepend_script_summary",
             "src.video_agent.web.action_executor:StudioActionExecutor._apply_generate_image",
             # 九轮 B3/B3b 新壳（exec_media_writer/exec_media_gen/gates_cards 迁出后 re-export）
             "src.video_agent.skill_runtime.exec_tools:WriteMediaPromptTool",
@@ -174,13 +173,12 @@ COUPLING_ROWS: List[CouplingRow] = [
         "R16_manifest_whitelist_keys",
         "skill_manifest 白名单键变更",
         "七个消费点：parse_gate_rules/agent_loop/fc_tool_runner/planner 裁剪/"
-        "prompt_builder/action_executor/_spec_gate_ok/registry pause 节",
+        "prompt_builder/registry pause 节",
         _sym(
             "src.video_agent.core.prompt_gates:parse_gate_rules",
             "src.video_agent.core.fc_tool_runner:FCToolRunner._prompt_gate",
             "src.video_agent.core.planner:Planner._compute_excluded_tools",
             "src.video_agent.core.prompt_builder:PromptBuilder.build_system_prompt",
-            "src.video_agent.web.action_executor:StudioActionExecutor._spec_gate_ok",
             "src.video_agent.skill_runtime.registry:parse_pause_rules",
         ) + (("testfile", "tests/unit/test_skill_manifest.py"),),
     ),
@@ -197,13 +195,6 @@ COUPLING_ROWS: List[CouplingRow] = [
         "guard_pipeline.evaluate_gen_confirm 唯一判定；双轨只注入参数",
         _sym("src.video_agent.core.guard_pipeline:evaluate_gen_confirm")
         + (("testfile", "tests/unit/test_b4_dual_track_gen_confirm.py"),),
-    ),
-    CouplingRow(
-        "R19_flow_gate_single",
-        "流程门禁变更",
-        "guard_pipeline.evaluate_flow_gate 唯一判定；两轨只做分类与处置",
-        _sym("src.video_agent.core.guard_pipeline:evaluate_flow_gate")
-        + (("testfile", "tests/unit/test_r2_dual_track_flow_gate.py"),),
     ),
     CouplingRow(
         "R20_pause_rules_landing",

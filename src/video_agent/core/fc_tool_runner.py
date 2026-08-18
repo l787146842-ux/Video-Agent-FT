@@ -75,8 +75,6 @@ class FCToolRunner:
         self.gate_warnings: List[str] = []
         # 本轮同工具失败计数（结构化回喂升级用）
         self._tool_fail_counts: Dict[str, int] = {}
-        # 已完成阶段集合（script_analyze 等；总结/收集闸判定用）
-        self.skill_stages_done: set = set()
         # Skill 可配置闸机规则（测试/执行器注入 parse_gate_rules 结果）
         self._gate_rules: Optional[Dict[str, Any]] = None
         # 前端当前选中的草稿（对齐文本轨 "current" 语义）；execute 时按请求注入
@@ -353,10 +351,8 @@ class FCToolRunner:
         on_status=None, on_event=None, injected_skill: str = "",
         selected_draft_id: str = "", selected_type: str = "",
         gate_override: Any = False,
-        flow_gates=None,
     ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str], List[str]]:
         """执行 Function Calling 返回的 tool_calls。
-        flow_gates（可选，814R3 复活）：Skill 声明式流程门禁，越阶工具调用直接拦截。
         返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
         confirmation_options, tool_results, docs_written, warnings)。
         warnings（B0/F3）：本批闸机拦截/豁免的用户可见文案，由 planner 并入
@@ -430,32 +426,6 @@ class FCToolRunner:
                     "summary": start_summary,
                 })
             _tool_t0 = time.monotonic()
-
-            # --- Skill 声明式流程门禁（814R3 复活；R2 收敛：判定经
-            # guard_pipeline.evaluate_flow_gate 唯一实现）：拦截越阶工具调用（硬校验，不依赖模型自觉） ---
-            if flow_gates is not None:
-                gate_op = flow_gates.classify_fc(name, args)
-                gate_verdict = guard_pipeline.evaluate_flow_gate(
-                    flow_gates, gate_op, self._raw_state(),
-                    action_name=name, skill_name=injected_skill,
-                )
-                if gate_verdict is not None:
-                    reason = gate_verdict.message
-                    logger.warning(f"[FlowGate] 拦截工具 '{name}': {reason}")
-                    # 814G5：拦截对用户透明（结构化 chips 由 record_gate 入 trace，
-                    # B2/F13 起不再重复写纯文本 warnings；「本次放行」按钮按结构挂载）
-                    if on_event is not None:
-                        await on_event({
-                            "type": SSE_TOOL_FINISHED,
-                            "id": tool_event_id,
-                            "ok": False,
-                            "elapsed_ms": 0.0,
-                            "result_summary": "被流程门禁拦截",
-                        })
-                    tracer.record_action(name=name, summary="被流程门禁拦截", elapsed_ms=0.0, ok=False)
-                    tool_results.append({"name": name, "ok": False, "error": reason})
-                    flow_gates.mark_blocked(reason)
-                    continue
 
             # --- 生图模型强制注入（B7）：草稿自身（中间面板直接选择）> 全局设置 > 平台默认 ---
             if name == "generate_image" and (
@@ -625,8 +595,6 @@ class FCToolRunner:
                 tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True,
                                      stage=stage_label_for_tool(name))
                 tool_results.append({"name": name, "ok": True, "data": result.data})
-                if name == "script_analyze":
-                    self.skill_stages_done.add("script_analyze")
                 # --- 收集 generate_image 产出的图片 URL ---
                 data = result.data
                 if data and "image_urls" in data:
@@ -696,17 +664,6 @@ class FCToolRunner:
             spec_hit = any(prompt_gates.is_spec_doc_name(n) for n in docs_written)
             if spec_hit:
                 confirmation, confirmation_options = prompt_gates.spec_pause_card(self._raw_state())
-        # 总结/规格收集闸（层9 兜底）：script_analyze 成功且无规格文档且模型未暂停
-        if (
-            "script_analyze" in self.skill_stages_done
-            and not prompt_gates.has_spec_document(self._raw_state())
-            and not confirmation
-        ):
-            if self.gate_override in ("all", True) or prompt_gates.flow_auto_continue(self._raw_state()):
-                self.gate_warnings.append("用户已要求全速推进，已豁免规格收集暂停（仅附警告）")
-            else:
-                confirmation, confirmation_options = prompt_gates.spec_collect_card(self._raw_state())
-                logger.info("[FlowGate] FC script_analyze 完成且无规格文档，注入规格收集向导")
         # 0817：暂停点归位 Skill 阶段边界（13.3/C6，用户裁决）：
         # 平台不再「关键元素首建后硬暂停」；仅当本批把故事板推进到阶段完成
         # （Skill 声明的组别齐）且模型未自行暂停时，注入审阅卡；

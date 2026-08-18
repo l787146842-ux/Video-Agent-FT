@@ -82,7 +82,6 @@ from src.video_agent.skill_runtime.exec_tools import (
     _resolve_section_text,
     SkillSectionRunInput,
     SkillSectionRunTool,
-    SkillPipelinePlanTool,
     EXECUTOR_TOOL_CLASSES,
     build_executor_tool,
 )

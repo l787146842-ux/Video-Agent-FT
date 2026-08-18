@@ -81,12 +81,9 @@ def test_dual_track_same_verdict_for_good_prompt(tmp_path):
 
 
 def test_fc_flow_gate_s1_warning_only(tmp_path, monkeypatch):
-    """814G5：规格前置从「只警告」升级为执行侧强制（拦 agent 不拦用户）。
-
-    _flow_gate 本身不再追加用户警告；越阶拦截由 FlowGateSet.ensure_spec_gate
-    在工具执行前完成，用户「本次放行」/坚持时 planner 不构建门禁。"""
+    """814G5/0818：_flow_gate 恒 None 不硬拦（用户指令优先）；
+    越阶顺序控制已归编排器，FlowGateSet 退役。"""
     import src.video_agent.web.skill_docs as sd
-    from src.video_agent.core.flow_gates import FlowGateSet
     from src.video_agent.skill_runtime import registry
 
     skill_dir = tmp_path / "skills"
@@ -102,13 +99,5 @@ def test_fc_flow_gate_s1_warning_only(tmp_path, monkeypatch):
         runner._raw_state = staticmethod(lambda: {})
         assert runner._flow_gate("storyboard_create_group", "有规格闸") is None
         assert not runner.gate_warnings  # 用户侧无 ⚠
-        # 执行侧门禁客观生效：结构操作无规格被拦 / 执行器整包拆解同属结构操作
-        fs = FlowGateSet.ensure_spec_gate(None)
-        assert not fs.check_op(fs.classify_fc("storyboard_create_group", {}), {})[0]
-        assert not fs.check_op(fs.classify_fc("storyboard_key_elements", {}), {})[0]
-        assert fs.check_op(
-            fs.classify_fc("storyboard_key_elements", {}),
-            {"documents": [{"name": "Final_Video_Spec.md", "content": "x"}]},
-        )[0]
     finally:
         registry.reset_registry()

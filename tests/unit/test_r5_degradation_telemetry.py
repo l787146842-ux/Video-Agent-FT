@@ -51,18 +51,14 @@ def test_r5_policy_condition_failure_records_degradation():
 
 
 def test_r5_core_probe_points_instrumented():
-    """G4 防漂移：6 个核心探测点的降级遥测埋点在源码中持续存在
-    （_wizard_active 是 run_agent_loop 内闭包，无法轻量单测，以源码断言钉死）。"""
+    """G4 防漂移：核心探测点的降级遥测埋点在源码中持续存在
+    （0818 架构板正批：门禁链退役，planner 三个门禁埋点随删）。"""
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2]
     al_src = (root / "src/video_agent/core/agent_loop.py").read_text(encoding="utf-8")
-    planner_src = (root / "src/video_agent/core/planner.py").read_text(encoding="utf-8")
     rep_src = (root / "src/video_agent/core/round_end_policies.py").read_text(encoding="utf-8")
     assert 'record_degradation("agent_loop._wizard_active")' in al_src
-    assert 'record_degradation("planner.spec_gate_assembly")' in planner_src
-    assert 'record_degradation("planner.flow_gates_parse")' in planner_src
-    assert 'record_degradation("planner.script_gate_assembly")' in planner_src
     assert "record_degradation(f\"round_end.{policy.policy_id}\")" in rep_src
     assert 'record_degradation("round_end.stage_pause_declared")' in rep_src
     # 调试端点暴露（routes/agent.py）

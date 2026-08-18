@@ -1,42 +1,11 @@
-"""814R4 钉死回归：总结强制入正文接线 + chat_service 修复（重复 pop/公共编排/compaction）。
+"""814R4 钉死回归：chat_service 修复（重复 pop/公共编排/compaction）。
 
-事故背景：
-- `_prepend_script_summary` 有定义有测试但无生产调用（1111 台账「总结强制入正文」断线）；
-- chat_service._consume_pending_confirmation 重复 pop；流式/非流式开场编排双份复制；
-- 会话级 compaction（session_compact.md）无人消费。
+0818 架构板正批 B3：总结强制入正文接线随平台强注入退役删除。
 """
 import inspect
 
-from src.video_agent.core.planner import Planner, _prepend_script_summary
+from src.video_agent.core.planner import Planner
 from src.video_agent.web import chat_consume, chat_service
-
-
-class TestScriptSummaryWiring:
-    def test_fc_track_wired(self):
-        """FC 轨 llm_call 在取回工具结果后走带门禁的步级拼接
-        （0818-2222 E1：总结展示归 Skill 声明驱动，与轮末组装同判据）"""
-        src = inspect.getsource(Planner.handle_message)
-        assert "maybe_prepend_script_summary(content, tool_results" in src
-
-    def test_text_track_wired(self):
-        """文本轨：执行过 script_analyze 且暂停时补拼总结。
-        八轮 B2：接线随组装域迁入 planner_output.assemble_response，
-        断言基线同步迁移（锁语义不变：handle_message 必须走该组装路径）。"""
-        from src.video_agent.core.planner_output import assemble_response
-        src = inspect.getsource(assemble_response)
-        assert "skill_stages_done" in src and "prepend_script_summary(loop_result.confirmation" in src
-        caller = inspect.getsource(Planner.handle_message)
-        assert "assemble_response(" in caller
-
-    def test_no_dup_when_already_shown(self):
-        tr = [{"name": "script_analyze", "ok": True, "data": {"summary": "少年踏上复仇路"}}]
-        # 正文已含总结 → 原样返回，不重复拼
-        assert _prepend_script_summary("总结：少年踏上复仇路。", tr) == "总结：少年踏上复仇路。"
-
-    def test_prepends_when_missing(self):
-        tr = [{"name": "script_analyze", "ok": True, "data": {"summary": "少年踏上复仇路"}}]
-        out = _prepend_script_summary("已读取剧本。", tr)
-        assert out.startswith("**剧本一句话总结**：少年踏上复仇路")
 
 
 class TestChatServiceFixes:

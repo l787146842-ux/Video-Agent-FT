@@ -4,7 +4,6 @@ import pytest
 
 from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.core.agent_loop import run_agent_loop, split_actions
-from src.video_agent.core.planner import _prepend_script_summary
 from src.video_agent.state.manager import StateManager
 
 
@@ -118,28 +117,7 @@ async def test_prelude_notes_recorded_in_first_step(svc, executor):
     assert any("太阳系二维化" in s for s in summaries)
 
 
-# ---------- 总结强制入正文（Q1：script_analyze 与暂停同批时总结不丢） ----------
-
-def test_prepend_script_summary_when_missing():
-    results = [{"name": "script_analyze", "ok": True,
-                "data": {"summary": "人类文明被二向箔二维化的悲歌"}}]
-    out = _prepend_script_summary("正在为您解析故事核心。", results)
-    assert out.startswith("**剧本一句话总结**：人类文明被二向箔二维化的悲歌")
-    assert "正在为您解析故事核心。" in out
-
-
-def test_prepend_script_summary_no_duplicate():
-    results = [{"name": "script_analyze", "ok": True, "data": {"summary": "总结A"}}]
-    visible = "总结A 已展示在开头"
-    assert _prepend_script_summary(visible, results) == visible
-
-
-def test_prepend_script_summary_no_result():
-    assert _prepend_script_summary("正文", []) == "正文"
-    assert _prepend_script_summary(
-        "正文", [{"name": "script_analyze", "ok": False, "data": {"summary": "X"}}]
-    ) == "正文"
-
+# ---------- 总结展示随 0818 架构板正批退役（平台不再强注入） ----------
 
 async def test_wrapped_json_confirmation_recognized(svc, executor):
     """回归（9999 事故）：模型把确认写进 {"studio-actions": [...]} 包装

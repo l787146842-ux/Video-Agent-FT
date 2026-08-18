@@ -33,12 +33,8 @@ from src.video_agent.core.fc_tool_runner import (
     strip_prior_feedback_images,
 )
 from src.video_agent.core.prompt_builder import PromptBuilder
-# 八轮 B2：轮末组装域切入 planner_output（_prepend_script_summary 保留 re-export 壳）
-from src.video_agent.core.planner_output import (
-    assemble_response,
-    maybe_prepend_script_summary,
-    prepend_script_summary as _prepend_script_summary,  # noqa: F401 壳：既有引用路径不变
-)
+# 八轮 B2：轮末组装域切入 planner_output
+from src.video_agent.core.planner_output import assemble_response
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.live_metrics import record_degradation, record_live_context
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_REASONING_DELTA, SSE_STATUS, status_event
@@ -338,110 +334,14 @@ class Planner:
         if (
             settings.pipeline_orchestrator_enabled
             and context.skill_name
-            and self._route_orchestrator(user_message)
+            and self._route_orchestrator(user_message, context.skill_name)
         ):
-            _orch = await self._run_orchestrator_path(context)
+            _orch = await self._run_orchestrator_path(context, user_message)
             if _orch is not None:
                 return _orch
 
-        # Skill 声明式流程门禁（814R3 复活）：解析选中 Skill 声明的检查点，
-        # 由代码强制执行——越阶操作直接拦截并强制暂停，不依赖模型自觉。
-        # 未声明检查点的 Skill 不受影响（_flow_gates 为 None）；
-        # 用户坚持全速推进（scope=all）时本次不启用硬门禁（用户第一）。
-        self._flow_gates = None
-        if context.skill_name and not prompt_gates.override_covers(gate_override_scope, "flow"):
-            try:
-                from src.video_agent.web.skill_docs import resolve_skill_content
-                from src.video_agent.core.flow_gates import FlowGateSet
-
-                _skill_display, _skill_content = resolve_skill_content(context.skill_name)
-                self._flow_gates = FlowGateSet.from_skill(_skill_content or "")
-                # 814G5 执行侧强制：规格向导启用时，拆解结构必须等规格文档
-                # （只拦 agent 越阶工具调用，不拦用户输入；override 时本段不构建）
-                # 814Gb 核查：两种声明风格对齐——wizard 客观启用 或 manifest 显式 spec_gate
-                try:
-                    from src.video_agent.skill_runtime.registry import (
-                        skill_flow_enabled,
-                        spec_wizard_active,
-                    )
-                    if spec_wizard_active(context.skill_name) or skill_flow_enabled(
-                        context.skill_name, "spec_gate"
-                    ):
-                        self._flow_gates = FlowGateSet.ensure_spec_gate(self._flow_gates)
-                except Exception as e:
-                    record_degradation("planner.spec_gate_assembly")
-                    logger.warning(f"[Planner] spec_gate 装配失败（降级）: {e}")
-            except Exception as e:  # 解析失败不阻断对话，降级为无门禁
-                record_degradation("planner.flow_gates_parse")
-                logger.warning(f"[Planner] 流程检查点解析失败（降级为无门禁）: {e}")
-                self._flow_gates = None
-
-        # ---------- 814H9 剧本原料闸（层 9 兜底 + S7 零思考直出；1111 事故收归系统） ----------
-        # 原料是否已交是确定性事实（uploadedDocs/analysis），不再出题给模型。
-        # 只拦 agent 越阶/只提醒用户，不拦用户输入（P2 校验作用域）；
-        # 豁免（script_waived）/一次性申诉（override）/坚持话术 → 不构建门禁（用户第一）。
-        self._script_pending_card = None
-        if context.skill_name and not prompt_gates.override_covers(gate_override_scope, "flow"):
-            try:
-                from src.video_agent.skill_runtime.registry import script_required_active
-                from src.video_agent.core.flow_gates import FlowGateSet as _FGS
-
-                if script_required_active(context.skill_name):
-                    _st = self.state_manager.state_dict
-                    _inter = _st.setdefault("interaction", {})
-                    if prompt_gates.script_present(_st) or _inter.get("script_waived"):
-                        pass  # 原料已交或已豁免：不提醒
-                    elif (
-                        isinstance(user_message, str)
-                        and prompt_gates.script_waive_intent(user_message)
-                    ):
-                        _inter["script_waived"] = True
-                        self.state_manager.save()
-                        logger.info("[ScriptGate] 用户显式豁免（无剧本原创），记账 script_waived")
-                    else:
-                        # 原料缺失：执行侧拦越阶结构操作 + 提醒卡
-                        self._script_pending_card = prompt_gates.script_remind_card()
-                        self._flow_gates = _FGS.ensure_script_gate(self._flow_gates)
-            except Exception as e:
-                record_degradation("planner.script_gate_assembly")
-                logger.warning(f"[Planner] script_gate 装配失败（降级）: {e}")
-
-        if self._script_pending_card:
-            _sc_msg, _sc_opts = self._script_pending_card
-            _tracer = AgentTracer.get_instance()
-            # S7 零思考直出分支 a：用户回应「我去上传」→ 秒回等待回执，不重复弹卡
-            if isinstance(user_message, str) and prompt_gates.script_upload_ack_intent(
-                user_message
-            ):
-                _tracer.record_gate(
-                    "skill.script_required", "skill", False,
-                    skill_name=context.skill_name, message="原料缺失，用户表示去上传，回等待回执",
-                )
-                return PlannerResponse(text=prompt_gates.SCRIPT_UPLOAD_ACK, steps=1)
-            # S7 零思考直出分支 b：推进意图且非提问 → 跳过规划轮，秒发提醒卡（省 27.8s 式浪费）
-            if isinstance(user_message, str) and prompt_gates.script_short_circuit_eligible(
-                user_message
-            ):
-                _tracer.record_gate(
-                    "skill.script_required", "skill", False,
-                    skill_name=context.skill_name, message="原料缺失，零思考直出提醒卡",
-                )
-                return PlannerResponse(
-                    text=_sc_msg,
-                    steps=1,
-                    confirmation=_sc_msg,
-                    confirmation_options=_sc_opts,
-                )
-            # 落回正常 LLM：注入当轮短指令（层 8 ≤2 句），轮末强制提醒卡（反复提醒）
-            _note = f"\n\n（系统）{prompt_gates.SCRIPT_MODEL_NOTE}"
-            if isinstance(user_message, str):
-                user_message = user_message + _note
-            else:
-                user_message = list(user_message) + [{"type": "text", "text": _note}]
-            _tracer.record_gate(
-                "skill.script_required", "skill", False,
-                skill_name=context.skill_name, message="原料缺失，提醒卡随轮末强制下发",
-            )
+        # 0818 架构板正批 B3：FlowGateSet 门禁链与剧本闸装配退役——
+        # 顺序与原料闸能力迁入 pipeline_orchestrator（状态驱动、机械回卡）。
 
         # 包装 llm_call：处理 FC tool_calls 后返回 (content, finish_reason, fc_applied)
         # image_urls_collector 用于跨多步收集生图产物
@@ -568,11 +468,7 @@ class Planner:
                 selected_draft_id=context.selected_draft_id,
                 selected_type=context.selected_type,
                 gate_override=gate_override_scope,
-                flow_gates=self._flow_gates,
             )
-            # 总结强制入正文（步级）：仅 Skill 声明总结展示时拼接
-            # （与轮末组装同判据；平台不全局化）
-            content = maybe_prepend_script_summary(content, tool_results, context.skill_name or "")
             # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
             # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
             if tool_results:
@@ -612,16 +508,9 @@ class Planner:
             stream_hook=stream_hook,
             on_event=on_event,
             prelude_notes=context.prelude_notes,
-            flow_gates=self._flow_gates,
             user_id=context.user_id,
             pending_injector=context.pending_injector,
         )
-
-        # 双轨阶段账本统一：FC 轨完成的阶段并入文本轨 executor，
-        # 轮末策略（客观完成记账/总结闸）不漏 FC 轮
-        if not hasattr(executor, "skill_stages_done"):
-            executor.skill_stages_done = set()
-        executor.skill_stages_done.update(self._fc_runner.skill_stages_done)
 
         # 轮末组装委托 planner_output（八轮 B2 切出）：warnings 并入/总结强入/
         # 占位替换/双轨收集器去重/原料提醒卡覆盖/响应构造，行为不变。
@@ -640,8 +529,6 @@ class Planner:
             analysis_summary=str(
                 ((self.state_manager.state_dict or {}).get("analysis") or {}).get("summary") or ""
             ).strip(),
-            skill_name=context.skill_name or "",
-            script_pending_card=self._script_pending_card,
             aggregate_action_log=aggregate_action_log,
         )
 
@@ -891,7 +778,7 @@ class Planner:
             and any(v in user_message for v in self._ADHOC_VERBS)
         )
 
-    def _route_orchestrator(self, user_message: Any) -> bool:
+    def _route_orchestrator(self, user_message: Any, skill: str) -> bool:
         """确定性意图路由：歧义默认模型循环，不错抓自由对话。"""
         msg = str(user_message or "").strip()
         if not msg or self._is_adhoc_edit(msg):
@@ -906,22 +793,40 @@ class Planner:
         started = bool((state.get("analysis") or {}).get("summary"))
         if started:
             return hit
-        # 首轮推进：管线未启动且非提问，且有素材或显式推进词
+        # 首轮推进：管线未启动且非提问，且有素材/显式推进词/原料闸接管
         is_question = (
             "？" in msg or "?" in msg
             or msg.startswith(("什么", "怎么", "为什么", "哪", "吗"))
         )
-        return (not is_question) and (bool(state.get("uploadedDocs")) or hit)
+        if is_question:
+            return False
+        if state.get("uploadedDocs"):
+            return True
+        try:
+            from src.video_agent.skill_runtime.registry import script_required_active
+
+            if script_required_active(skill):
+                return True  # 编排器机械回提醒卡/上传回执（814H9 能力迁入）
+        except Exception:
+            pass
+        return hit
 
     async def _run_orchestrator_path(
-        self, context: "PlannerContext",
+        self, context: "PlannerContext", user_message: Any = "",
     ) -> Optional["PlannerResponse"]:
         """编排器快路径；返回 None = 创作型阶段交接模型循环。"""
         from src.video_agent.core import pipeline_orchestrator as _po
 
-        outcome = await _po.orchestrate_turn(self.state_manager, context.skill_name)
+        outcome = await _po.orchestrate_turn(
+            self.state_manager, context.skill_name, user_message)
         if outcome is None:
             return None
+        if outcome.kind == "script_pending":
+            return PlannerResponse(
+                text=outcome.message, confirmation=outcome.message,
+                confirmation_options=outcome.options or [], steps=1)
+        if outcome.kind == "script_ack":
+            return PlannerResponse(text=outcome.message, steps=1)
         if outcome.kind == "spec_pending":
             msg, opts = prompt_gates.spec_collect_card(self.state_manager.state_dict)
             return PlannerResponse(
@@ -953,7 +858,6 @@ class Planner:
         selected_draft_id: str = "",
         selected_type: str = "",
         gate_override: Any = False,
-        flow_gates=None,
     ) -> Tuple:
         """处理 LLM 响应中的 FC tool_calls。
         返回 (content, finish_reason, fc_applied, tool_results, fc_warnings)，
@@ -966,7 +870,7 @@ class Planner:
                 response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
                 on_status=on_status, on_event=on_event, injected_skill=injected_skill,
                 selected_draft_id=selected_draft_id, selected_type=selected_type,
-                gate_override=gate_override, flow_gates=flow_gates,
+                gate_override=gate_override,
             )
             if image_urls_collector is not None:
                 image_urls_collector.extend(image_urls)
@@ -1001,7 +905,7 @@ class Planner:
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",
         on_status=None, on_event=None, injected_skill: str = "",
         selected_draft_id: str = "", selected_type: str = "",
-        gate_override: Any = False, flow_gates=None,
+        gate_override: Any = False,
     ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str], List[str]]:
         """执行 Function Calling 返回的 tool_calls（委托 FCToolRunner）。
         返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
@@ -1010,7 +914,7 @@ class Planner:
             response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
             on_status=on_status, on_event=on_event, injected_skill=injected_skill,
             selected_draft_id=selected_draft_id, selected_type=selected_type,
-            gate_override=gate_override, flow_gates=flow_gates,
+            gate_override=gate_override,
         )
 
 

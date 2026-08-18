@@ -372,10 +372,6 @@ async def test_0817_script_analyze_idempotent(tmp_path, monkeypatch):
     r2 = await tool.aexecute(params)
     assert r2.success and calls["n"] == 1, "剧本未变不得重跑 LLM"
     assert r2.data.get("cached") is True
-    # 缓存命中的总结不再强制入正文（防规格交互后正文重复出现总结）
-    from src.video_agent.core.planner_output import prepend_script_summary
-    tr = [{"name": "script_analyze", "ok": True, "data": r2.data}]
-    assert prepend_script_summary("正文", tr) == "正文"
     # 剧本内容变化 → 重新分析
     svc.state_dict["uploadedDocs"][0]["content"] = "剧本正文（改）：程心：好的。"
     r3 = await tool.aexecute(params)
@@ -533,42 +529,27 @@ class _LR:
         self.confirmation_options = []
 
 
-def test_0817_summary_display_skill_declared_driven(tmp_path, monkeypatch):
-    """未声明总结展示的 Skill：不强制拼总结/向导卡不内嵌；声明者才展示。"""
-    import src.video_agent.web.skill_docs as sd
-    from src.video_agent.core import prompt_gates, gates_spec, planner_output
-    from src.video_agent.skill_runtime import registry
-
-    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", tmp_path / "skills")
-    registry.reset_registry()
-    sd.save_skill_doc("no-sum", "# NS\n> 调用规则：测试\n正文")
-    sd.save_skill_doc("has-sum", "# HS\n> 调用规则：测试\n一句话总结剧本的故事")
-    assert prompt_gates.skill_declares_summary("no-sum") is False
-    assert prompt_gates.skill_declares_summary("has-sum") is True
+def test_0817_summary_display_no_platform_injection(tmp_path, monkeypatch):
+    """0818 架构板正批：平台不再强注入总结（收集卡中性、轮末只补客观
+    完成记账）；总结展示归编排器暂停卡声明。"""
+    from src.video_agent.core import gates_spec, planner_output
 
     st = {"usedSkills": ["no-sum"], "analysis": {"summary": "人类 intercept 薄片"}}
     msg, _ = gates_spec.spec_collect_card(st)
     assert "一句话故事总结" not in msg
-    st2 = {"usedSkills": ["has-sum"], "analysis": {"summary": "人类 intercept 薄片"}}
-    msg2, _ = gates_spec.spec_collect_card(st2)
-    assert "一句话故事总结：人类 intercept 薄片" in msg2
 
     class _Ex:
-        skill_stages_done = {"script_analyze"}
         chat_inserts = []
         documents_written = []
         action_log = []
 
-    def _run(skill):
-        return planner_output.assemble_response(
-            _LR(text="", confirmation="请确认规格"),
-            executor=_Ex(), response_factory=lambda **kw: kw,
-            analysis_summary="人类 intercept 薄片", skill_name=skill,
-        )
-
-    assert "人类 intercept 薄片" not in _run("no-sum")["confirmation"]
-    assert "人类 intercept 薄片" in _run("has-sum")["confirmation"]
-    registry.reset_registry()
+    resp = planner_output.assemble_response(
+        _LR(text="解析完成。", confirmation="请确认规格"),
+        executor=_Ex(), response_factory=lambda **kw: kw,
+        analysis_summary="人类 intercept 薄片",
+    )
+    assert "人类 intercept 薄片" not in resp["confirmation"]
+    assert "剧本分析已完成" in resp["text"]
 
 
 # ---------- 0817 B13：轮间提示去 prose 越权（客观状态机械生成） ----------
@@ -654,12 +635,11 @@ async def test_0817_spec_write_allowed_under_auto_continue(tmp_path, monkeypatch
 
 
 def test_0817_pause_suppressions_wired_to_auto_continue():
-    """轮末三处暂停/引导卡均接入一条龙豁免（G4 同类路径）。"""
+    """轮末暂停/引导卡均接入一条龙豁免（G4 同类路径；0818：spec_collect 随门禁链退役）。"""
     import inspect
     from src.video_agent.core import round_end_policies as rep
     for fn in (rep._cond_structure_stage_review, rep._cond_stage_done_fallback):
         assert "flow_auto_continue" in inspect.getsource(fn)
-    assert "flow_auto_continue" in inspect.getsource(rep._apply_spec_collect)
 
 
 # ---------- 0817 B9：机器覆盖验收（Skill 声明驱动） ----------

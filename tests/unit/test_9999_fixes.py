@@ -7,7 +7,6 @@
 import pytest
 
 from src.video_agent.core import prompt_gates
-from src.video_agent.core.planner import _prepend_script_summary
 from src.video_agent.state.provider_prefs import extract_production_params
 from src.video_agent.state.manager import StateManager
 from src.video_agent.web.action_executor import StudioActionExecutor
@@ -30,18 +29,6 @@ def test_summary_already_visible_markdown_bold_insensitive():
 
 def test_summary_not_visible_when_absent():
     assert not prompt_gates.summary_already_visible("完全无关的正文", _SUMMARY_STRAIGHT)
-
-
-def test_prepend_script_summary_no_dup_when_model_showed_curly():
-    tool_results = [{"name": "script_analyze", "ok": True, "data": {"summary": _SUMMARY_STRAIGHT}}]
-    visible = f"{_SUMMARY_CURLY}\n\n已读取剧本全文。"
-    assert _prepend_script_summary(visible, tool_results) == visible
-
-
-def test_prepend_script_summary_still_prepends_when_absent():
-    tool_results = [{"name": "script_analyze", "ok": True, "data": {"summary": _SUMMARY_STRAIGHT}}]
-    out = _prepend_script_summary("已读取剧本全文。", tool_results)
-    assert out.startswith(f"**剧本一句话总结**：{_SUMMARY_STRAIGHT}")
 
 
 # ---------- 问题2：规格制作参数待确认兜底 ----------

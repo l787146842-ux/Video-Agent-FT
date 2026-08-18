@@ -47,19 +47,19 @@ def _run(ctx: RoundEndContext, policies=None, tracer=None) -> RoundEndContext:
 
 
 def test_r1_policy_table_shape():
-    """策略表 = 10 条（0817：结构自检/回退/覆盖三策略归位为阶段审阅一条），
+    """策略表 = 8 条（0818 架构板正批：flow_gate_pause/spec_collect 随门禁链退役），
     优先级唯一且仲裁顺序确定。"""
     table = rep.ROUND_END_POLICIES
-    assert len(table) == 10
+    assert len(table) == 8
     ids = [p.policy_id for p in sorted(table, key=lambda p: p.priority)]
     assert ids == [
-        "flow_gate_pause", "partial_fail_warnings", "gate_heal",
+        "partial_fail_warnings", "gate_heal",
         "spec_doc_written_pause", "spec_review_pending", "spec_wizard_takeover",
-        "spec_collect", "structure_stage_review",
+        "structure_stage_review",
         "stage_done_fallback", "false_claim_audit",
     ]
     priorities = [p.priority for p in table]
-    assert len(set(priorities)) == 10, "优先级必须唯一（仲裁顺序确定性）"
+    assert len(set(priorities)) == 8, "优先级必须唯一（仲裁顺序确定性）"
 
 
 def test_r1_gate_heal_drops_confirmation_and_continues():
@@ -86,17 +86,6 @@ def test_r1_partial_fail_warning_order():
     )
     out = _run(ctx)
     assert any("被流程闸机拦截" in w and "原因" in w for w in out.result_warnings)
-
-
-def test_r1_spec_collect_exempt_scope_all():
-    """规格收集闸 scope=all 豁免：只附警告不弹卡（用户第一）。"""
-    ex = FakeExecutor()
-    ex.skill_stages_done.add("script_analyze")
-    ex.gate_override = "all"
-    ctx = RoundEndContext(step=1, executor=ex, content="")
-    out = _run(ctx)
-    assert out.confirmation == ""
-    assert any("豁免规格收集暂停" in w for w in out.result_warnings)
 
 
 def test_r1_stage_done_fallback_requires_executor_action():
@@ -130,27 +119,6 @@ def test_r1_false_claim_audit_warns_but_keeps_pause():
     assert any("检测到虚报" in w for w in out.result_warnings)
     assert out.confirmation == "请审阅", "系统不没收模型暂停（4444 语义）"
     assert out.result_text == "已完成关键元素拆解，请验收"
-
-
-def test_r1_flow_gate_pause_hard_break():
-    """flow_gate_pause（hard_break）：命中即中止，confirmation 保留模型文案优先。"""
-
-    class FakeFlowGates:
-        def consume_blocked(self):
-            return True
-
-        def pause_message(self):
-            return "系统流程门禁：请先完成上一阶段"
-
-    ex = FakeExecutor()
-    ctx = RoundEndContext(
-        step=1, executor=ex, content="", flow_gates=FakeFlowGates(),
-        confirmation="模型自发暂停文案",
-    )
-    out = _run(ctx)
-    assert out.hard_break is True
-    assert out.hard_break_finish == "gate_pause"
-    assert out.confirmation == "模型自发暂停文案"  # confirmation or pause_message
 
 
 def test_r1_arbitration_order_lock():

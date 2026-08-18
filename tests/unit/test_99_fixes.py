@@ -172,23 +172,18 @@ async def test_99_summary_not_prepended_on_spec_review_pause(svc):
     assert "太阳系逐渐二维化" not in result.text
 
 
-async def test_99_collect_card_embeds_summary(svc, monkeypatch):
-    """8888 二轮：声明总结展示的 Skill 收集卡直接内嵌一句话总结，正文不重复补拼。
-    0817 B20：内嵌归 Skill 声明驱动，此处模拟已声明。"""
-    from src.video_agent.core import prompt_gates
-    monkeypatch.setattr(prompt_gates, "skill_declares_summary", lambda name: True)
+async def test_99_model_loop_no_summary_injection(svc):
+    """0818 架构板正批：模型循环不再强注入总结/收集卡（顺序与收集归编排器）。"""
     svc.state_dict["analysis"] = {"summary": "太阳系逐渐二维化"}
     svc.state_dict["documents"] = []
     ex = StudioActionExecutor(svc, gate_enabled=True)
     ex.skill_name = "测试流程Skill"
 
     async def llm(system_prompt, messages, stream_hook=None):
-        ex.skill_stages_done.add("script_analyze")
         return ("解析完成。", "stop", 0)
 
     result = await run_agent_loop(
         "开始", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
-    assert "一句话故事总结：太阳系逐渐二维化" in result.confirmation
-    assert "见上" not in result.confirmation
+    assert "一句话故事总结" not in (result.confirmation or "")
     assert not result.text.startswith("**剧本一句话总结**")

@@ -88,44 +88,6 @@ class TestStageExecutorsDeclaration:
         assert _stage_done_by_executors(exs, partial) is False
         assert _stage_done_by_executors(["unknown_tool"], full) is None
 
-    def test_detail_surfaces_same_batch_grouping(self):
-        from src.video_agent.skill_runtime.exec_tools import render_pipeline_detail
-
-        status = [{
-            "step": 3, "title": "设计 Storyboard", "done": False, "ready": True,
-            "executors": ["storyboard_key_elements", "storyboard_shots", "storyboard_audio"],
-        }]
-        detail = render_pipeline_detail(status, status)
-        assert "同批" in detail and "暂停点在阶段边界" in detail
-
-    def test_pipeline_plan_attaches_executors_and_done(self, monkeypatch):
-        """声明同批的阶段：status 带 executors，且完成度按全批客观判定。"""
-        from src.video_agent.skill_runtime import exec_tools, dag, guard, registry
-
-        status = [
-            {"step": 1, "title": "分析", "done": True, "ready": False},
-            {"step": 3, "title": "设计 Storyboard", "done": False, "ready": True},
-        ]
-        monkeypatch.setattr(guard, "skill_planner_flow", lambda name: "flow")
-        monkeypatch.setattr(dag, "pipeline_status", lambda flow, state, cond=None: status)
-        monkeypatch.setattr(dag, "parse_steps", lambda flow: {1: "分析", 3: "设计 Storyboard"})
-        monkeypatch.setattr(dag, "parse_dependencies", lambda flow: {})
-        monkeypatch.setattr(dag, "topo_batches", lambda steps, deps: [[1], [3]])
-        monkeypatch.setattr(registry, "resolve_entry", lambda name: None)
-        monkeypatch.setattr(registry, "skill_manifest_of", lambda name: STAGE_MANIFEST)
-
-        class FakeSvc:
-            state_dict = {"keyElements": [1], "shots": [], "audioItems": []}
-
-        monkeypatch.setattr(exec_tools.StateManager, "get_instance", lambda: FakeSvc)
-        from src.video_agent.skill_runtime.exec_common import SkillToolInput
-
-        res = asyncio.run(exec_tools.SkillPipelinePlanTool().aexecute(SkillToolInput(skill_name="X")))
-        step3 = next(s for s in res.data["steps"] if s["step"] == 3)
-        assert step3["executors"] == STAGE_MANIFEST["flow"]["stage_executors"]["3"]
-        assert step3["done"] is False  # 只拆完关键元素 ≠ 阶段完成
-        assert "同批" in res.data["detail"]
-
     def test_ai_skill_manifest_declares_stage3_batch(self):
         """单一事实源：AI-一站式 Skill 自己声明 step3 三拆解同批
         （0818 B0：声明家迁 sidecar，经 registry 统一入口读）。"""

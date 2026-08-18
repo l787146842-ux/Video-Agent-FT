@@ -146,15 +146,14 @@ def test_8888_review_options_concrete_next_step():
     assert opts[0]["label"] == "确认成片规格，按流程继续"
 
 
-def test_8888_collect_card_embeds_summary_and_no_dev_talk(monkeypatch):
-    """B4：声明总结展示的 Skill 收集卡内嵌总结、无「见上」/「按 Skill 声明」/全局设置解释句。
-    0817 B20：内嵌总结归 Skill 声明驱动，此处模拟已声明。"""
+def test_8888_collect_card_neutral_no_summary_injection():
+    """0818 架构板正批：收集卡不再平台侧内嵌总结（总结展示归
+    编排器暂停卡 include_summary_in_pause 声明）；无开发腔。"""
     from src.video_agent.core import prompt_gates
-    monkeypatch.setattr(prompt_gates, "skill_declares_summary", lambda name: True)
 
     state = {"analysis": {"summary": "人类在太阳系边缘拦截到神秘薄片"}}
     msg, _opts = prompt_gates.spec_collect_card(state)
-    assert "一句话故事总结：人类在太阳系边缘拦截到神秘薄片" in msg
+    assert "神秘薄片" not in msg
     assert "见上" not in msg
     assert "Skill 声明" not in msg
     assert "全局设置" not in msg

@@ -1,50 +1,14 @@
-"""轮次产出组装域（八轮 B2 自 planner.py 切出，零行为变更）。
+"""轮次产出组装域（八轮 B2 自 planner.py 切出）。
 
-承载：agent_loop 结束后的轮末组装——FC 闸机警告并入、script_analyze
-总结强制入正文、纯工具轮占位文案替换、双轨收集器去重合并、
-原料提醒卡覆盖、PlannerResponse 构造。
+承载：agent_loop 结束后的轮末组装——FC 闸机警告并入、暂停轮客观完成
+记账、纯工具轮占位文案替换、双轨收集器去重合并、PlannerResponse 构造。
 
 response_factory 以 callable 注入（同 agent_loop 的 llm_call 惯例），
 避免与 planner.py 循环导入；planner.py 传入 PlannerResponse 类本身。
 """
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from src.video_agent.core.agent_loop import AgentLoopResult
-from src.video_agent.core import prompt_gates
-
-
-def prepend_script_summary(visible: str, tool_results) -> str:
-    """总结强制入正文（Q1：script_analyze 与暂停同批时一句话总结不得丢失）。
-
-    若本轮 script_analyze 成功产出 summary 且正文尚未包含它，就在正文最前
-    拼一段「剧本一句话总结」；已包含或无可信结果时原样返回。
-    """
-    summary = ""
-    for tr in tool_results or []:
-        if not isinstance(tr, dict):
-            continue
-        if str(tr.get("name") or "") == "script_analyze" and tr.get("ok"):
-            # 0817 B15：幂等缓存命中不算新产出，不再重复拼总结入正文
-            if (tr.get("data") or {}).get("cached"):
-                continue
-            s = str((tr.get("data") or {}).get("summary") or "").strip()
-            if s:
-                summary = s
-                break
-    if not summary:
-        return str(visible or "")
-    norm = lambda s: str(s or "").replace("“", "").replace("”", "").replace("'", "").replace('"', "")
-    if norm(summary) in norm(visible):
-        return str(visible or "")
-    return f"**剧本一句话总结**：{summary}\n\n{visible}"
-
-
-def maybe_prepend_script_summary(visible: str, tool_results, skill_name: str) -> str:
-    """步级总结拼接（带门禁）：仅当前 Skill 声明总结展示时才拼，
-    与轮末组装同一判据（总结展示归 Skill 声明驱动，平台不全局化）。"""
-    if not prompt_gates.skill_declares_summary(skill_name or ""):
-        return str(visible or "")
-    return prepend_script_summary(visible, tool_results)
 
 
 def assemble_response(
@@ -59,8 +23,6 @@ def assemble_response(
     image_urls_collector: Optional[List[str]] = None,
     confirmation_options_collector: Optional[List[Dict[str, Any]]] = None,
     analysis_summary: str = "",
-    skill_name: str = "",
-    script_pending_card: Optional[Tuple[str, List[Dict[str, Any]]]] = None,
     aggregate_action_log: Optional[Callable[[List[str]], List[str]]] = None,
 ) -> Any:
     """轮末组装 PlannerResponse（planner.handle_message 尾段唯一落点）。
@@ -78,17 +40,10 @@ def assemble_response(
                 loop_result.warnings.append(w)
                 seen.add(w)
 
-    # 总结强制入正文（文本轨）：本次请求执行过 script_analyze 且停在暂停时，
-    # 一句话总结不得丢失（判重由函数内置）；
-    # 0817 B20：仅当当前 Skill 声明总结展示（流程归位，平台不全局化）
-    if loop_result.confirmation and "script_analyze" in getattr(executor, "skill_stages_done", set()):
-        if analysis_summary and prompt_gates.skill_declares_summary(skill_name):
-            _tr = [{"name": "script_analyze", "ok": True, "data": {"summary": analysis_summary}}]
-            loop_result.confirmation = prepend_script_summary(loop_result.confirmation, _tr)
-            if loop_result.text:
-                loop_result.text = prepend_script_summary(loop_result.text, _tr)
-        # 暂停轮客观完成记账：模型 prose 可能停留在执行前承诺（「接下来我先解析」），
-        # 历史只含文本时下一轮会误判未执行而重跑执行器；补一行客观事实（判重内置）
+    # 暂停轮客观完成记账（0818 架构板正批 E3 保留）：模型 prose 可能停留在
+    # 执行前承诺（「接下来我先解析」），历史只含文本时下一轮会误判未执行而
+    # 重跑执行器；补一行客观事实（判重内置）。总结展示不再平台强注入。
+    if loop_result.confirmation and analysis_summary:
         _t = str(loop_result.text or "")
         if _t.strip() and "剧本分析已完成" not in _t:
             loop_result.text = _t.rstrip() + "\n\n（剧本分析已完成并存档工作台）"
@@ -122,12 +77,6 @@ def assemble_response(
         if dn and dn not in seen_docs:
             seen_docs.add(dn)
             merged_docs.append(dn)
-
-    # 原料缺失反复提醒卡：优先级高于模型自拟暂停/规格向导卡（原料关先于规格关）
-    if script_pending_card:
-        _sc_msg, _sc_opts = script_pending_card
-        loop_result.confirmation = _sc_msg
-        loop_result.confirmation_options = _sc_opts
 
     # 阶段完成卡片粗粒度展示：连续同类操作合并（如「新建关键元素分组 ×3」），
     # 不逐张卡片罗列；随消息持久化与 done payload 一并下发

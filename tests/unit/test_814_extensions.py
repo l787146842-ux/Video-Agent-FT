@@ -123,16 +123,3 @@ class TestGenericSectionExecutor:
         ))
         assert result.success is False
         assert "planning" in result.error
-
-
-class TestPipelinePlanTool:
-    async def test_plan_returns_ready_batch(self, tmp_path, monkeypatch):
-        sd.save_skill_doc("custom", CUSTOM_SKILL)
-        svc = StateManager(str(tmp_path))
-        monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-        tool = ex_mod.SkillPipelinePlanTool()
-        result = await tool.aexecute(ex_mod.SkillToolInput(skill_name="自定义章节 Skill"))
-        assert result.success is True
-        ready = [s["step"] for s in result.data["ready_batch"]]
-        assert ready == [1]
-        assert result.data["parallel_batches"][0] == [1]

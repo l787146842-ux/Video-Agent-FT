@@ -165,18 +165,38 @@ def flow_auto_continue(state: Dict[str, Any]) -> bool:
 
 
 async def orchestrate_turn(
-    state_manager: Any, skill: str,
+    state_manager: Any, skill: str, user_message: Any = "",
 ) -> Optional[OrchestratorOutcome]:
     """编排一轮：连续推进确定性阶段直到暂停/交接/失败。
 
     返回 None = 当前阶段为创作型，交接模型循环（B2 接线）。
+    原料闸（814H9 能力迁入）：analysis 阶段且剧本缺失且未豁免 →
+    机械回提醒卡/上传回执，不出题给模型。
     """
     state = state_manager.state_dict
     auto = flow_auto_continue(state)
+    msg = str(user_message or "")
     while True:
         spec = current_stage(state, skill)
         if spec is None:
             return OrchestratorOutcome("all_done", message="全部阶段已完成。")
+        if spec.key == "analysis":
+            inter = state.get("interaction") or {}
+            if (
+                registry.script_required_active(skill)
+                and not prompt_gates.script_present(state)
+                and not inter.get("script_waived")
+            ):
+                if prompt_gates.script_waive_intent(msg):
+                    inter["script_waived"] = True
+                    state_manager.save_debounced()
+                    return None  # 豁免：交接模型循环
+                if prompt_gates.script_upload_ack_intent(msg):
+                    return OrchestratorOutcome(
+                        "script_ack", message=prompt_gates.SCRIPT_UPLOAD_ACK)
+                card_msg, card_opts = prompt_gates.script_remind_card()
+                return OrchestratorOutcome(
+                    "script_pending", message=card_msg, options=card_opts)
         if not spec.deterministic:
             return None
         if spec.key == "spec":

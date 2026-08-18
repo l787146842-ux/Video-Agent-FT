@@ -19,7 +19,7 @@ import time
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core import guard_pipeline, live_metrics, prompt_gates
+from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
     SSE_DOC_WRITTEN,
@@ -165,14 +165,11 @@ async def run_agent_loop(
     stream_hook: Optional[Callable[[str], Awaitable[None]]] = None,
     prelude_notes: Optional[List[tuple]] = None,
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None,
-    flow_gates=None,
     user_id: str = "",
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
     user_text 可以是纯文本 str，也可以是多模态 content parts 列表（含 image_url）。
-    flow_gates（可选，814R3 复活）：Skill 声明式流程门禁（FlowGateSet）；
-    越阶操作被拦截后本轮强制补发确认暂停，不依赖模型自觉。
     """
 
     async def emit(event: Dict[str, Any]) -> None:
@@ -285,7 +282,7 @@ async def run_agent_loop(
             logger.warning(f"[AgentLoop] 第 {step} 轮输出异常（空/畸形），重试 {bad_retries}/2")
             await emit(status_event("agent.badRetry", f"第 {step} 轮输出异常，重试中…", {"step": step}))
             tracer.record_action(
-                name="auto_retry",
+                name="bad_output_retry",
                 summary=f"模型输出异常（空/畸形），自动重做（第 {bad_retries} 次）",
                 elapsed_ms=0.0,
                 ok=True,
@@ -316,17 +313,7 @@ async def run_agent_loop(
             tracer.end_step(step, actions_applied=0, finish_reason="bad_output")
             break
 
-        # Skill 声明式流程门禁（814R3 复活，FC 轨）：本轮有越阶拦截 → 强制补发确认暂停
-        if flow_gates is not None:
-            fc_gate_blocked = flow_gates.consume_blocked()
-            if fc_gate_blocked:
-                result.confirmation = flow_gates.pause_message()
-                visible_fc = str(content or "").strip()
-                if visible_fc:
-                    result.text = visible_fc
-                await emit(status_event("agent.flowGatePause", "越阶操作被流程门禁拦截，已强制暂停"))
-                tracer.end_step(step, actions_applied=fc_applied, finish_reason="gate_pause")
-                break
+        # Skill 声明式流程门禁已随 0818 架构板正批退役（顺序归编排器）。
 
         if finish_reason == "length":
             result.warnings.append(
@@ -378,34 +365,6 @@ async def run_agent_loop(
             )
 
         executable, wants_continue, confirmation, confirmation_options = split_actions(actions)
-        # Skill 声明式流程门禁（814R3 复活，文本轨；R2 收敛：判定经
-        # guard_pipeline.evaluate_flow_gate 唯一实现）：执行前逐个校验，越阶操作直接剔除并记录拦截
-        if executable and flow_gates is not None:
-            _gate_state = getattr(executor, "state", None) or {}
-            kept: List[Dict[str, Any]] = []
-            for gi, action in enumerate(executable):
-                gop = flow_gates.classify_action(action)
-                gverdict = guard_pipeline.evaluate_flow_gate(
-                    flow_gates, gop, _gate_state,
-                    action_name=str(action.get("action", "")), skill_name=skill,
-                )
-                if gverdict is None:
-                    kept.append(action)
-                    continue
-                greason = gverdict.message
-                # B2/F13：拦截原因已由 record_gate 入 trace（前端渲染结构化 chips），
-                # 不再重复写入纯文本 warnings（避免同屏双显）
-                flow_gates.mark_blocked(greason)
-                tracer.record_action(
-                    name=str(action.get("action", "")), summary="被流程门禁拦截",
-                    elapsed_ms=0.0, ok=False,
-                )
-                await emit({
-                    "type": SSE_TOOL_FINISHED, "id": f"s{step}-gate{gi}",
-                    "ok": False, "elapsed_ms": 0.0,
-                    "result_summary": "被流程门禁拦截",
-                })
-            executable = kept
         # 模型自发暂停 + 规格参数未定稿：把模型自造 label 并入标准「键：值」向导
         # （1111 事故：自造「1K（更快）」无法机械落盘；系统永不没收模型的暂停文案）
         if confirmation and _wizard_active():
@@ -488,11 +447,6 @@ async def run_agent_loop(
         else:
             applied = await executor.execute_locked(executable, accumulate=stream_consumed > 0)
         # 阶段账本：script_analyze 成功 → 标记已完成（总结/收集闸判定）
-        if applied > 0 and any(
-            str(a.get("action") or a.get("tool") or "").strip() == "script_analyze"
-            for a in executable
-        ):
-            getattr(executor, "skill_stages_done", set()).add("script_analyze")
         applied += stream_preapplied  # 流式预执行成功数计入本轮应用量
         _batch_ms = (time.monotonic() - _t0) * 1000
         result.applied_actions += applied
@@ -556,7 +510,6 @@ async def run_agent_loop(
             executor=executor,
             content=content,
             skill=skill,
-            flow_gates=flow_gates,
             confirmation=confirmation,
             confirmation_options=confirmation_options,
             wants_continue=wants_continue,

@@ -2,7 +2,6 @@
 
 事故溯源约定：编号沿用计划书（docs/修复改进计划书-2026-08-15-第三轮.md）。
 """
-from src.video_agent.core.flow_gates import FlowGateSet
 from src.video_agent.utils.prompts import load_prompt
 
 
@@ -27,16 +26,3 @@ def test_n1_channel_rule_content_aligns_b7():
     assert "草稿自身参数" in text
     assert "全局设置" in text
     assert "规格文档与 Skill 不再承载模型能力参数" in text
-
-
-def test_n3_pause_message_no_double_period():
-    """block_reason 自带尾句号，pause_message 拼接归一化后不得出现「。。」。"""
-    fs = FlowGateSet([])
-    fs.mark_blocked(
-        "【流程门禁拦截】写入分镜提示词被阻止：前置条件未满足 —— "
-        "关键元素已确认。请先完成并确认当前阶段，不要跳过流程。"
-    )
-    msg = fs.pause_message()
-    assert "。。" not in msg
-    assert "不要跳过流程；" not in msg  # 归一化后以「；」连接且单句号收尾
-    assert "不要跳过流程。请按" in msg

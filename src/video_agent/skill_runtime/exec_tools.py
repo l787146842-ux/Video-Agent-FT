@@ -289,26 +289,6 @@ class SkillSectionRunTool:
         return exec_common.SkillToolResult(success=False, error="; ".join(warnings or ["执行器未产出有效操作"]))
 
 
-def render_pipeline_detail(status: List[Dict[str, Any]], ready: List[Dict[str, Any]]) -> str:
-    """pipeline 状态人读摘要（回喂 detail）：模型一眼看清完成度与下一批次，
-    掐掉「看不到结果」的盲重复调用。"""
-    done = [str(s.get("title") or s.get("step")) for s in status if s.get("done")]
-    todo = [str(s.get("title") or s.get("step")) for s in status if not s.get("done")]
-    nxt = [str(s.get("title") or s.get("step")) for s in ready]
-    parts = [
-        f"已完成：{'、'.join(done) or '无'}; ",
-        f"未完成：{'、'.join(todo) or '无'}; ",
-        f"下一可执行批次：{'、'.join(nxt) or '无（全部完成或依赖未满足）'}",
-    ]
-    groups = [
-        f"阶段{s.get('step')}同批：{'、'.join(s['executors'])}（全做完才算该阶段完成，暂停点在阶段边界）"
-        for s in status if s.get("executors")
-    ]
-    if groups:
-        parts.append("; " + "; ".join(groups))
-    return "".join(parts)
-
-
 # 执行器→工作台产出客观判定（阶段同批完成度机器读出用）
 _EXECUTOR_DONE_PROBES = {
     "script_analyze": lambda st: bool((st.get("analysis") or {}).get("summary")),
@@ -325,61 +305,6 @@ def _stage_done_by_executors(executors: List[str], state: Dict[str, Any]) -> Opt
     if not executors or not all(probes):
         return None
     return all(p(state) for p in probes)
-
-
-class SkillPipelinePlanTool:
-    name = "skill_pipeline_plan"
-    description = (
-        "依赖图调度（814E2）：解析当前 Skill <planner> 的步骤与依赖关系，"
-        "结合工作台状态客观返回各步骤完成度与下一可执行批次（同批可并行）。"
-        "按返回的 ready 批次推进，不要跳步。"
-    )
-
-    def get_input_schema(self) -> Type[BaseModel]:
-        return SkillToolInput
-
-    async def aexecute(self, params: SkillToolInput) -> SkillToolResult:
-        from src.video_agent.skill_runtime import dag
-        from src.video_agent.skill_runtime.guard import skill_planner_flow
-
-        svc = StateManager.get_instance()
-        skill = params.skill_name or fallback_skill_from_state(svc.state_dict)
-        flow = skill_planner_flow(skill)
-        if not flow:
-            return exec_common.SkillToolResult(success=False, error=f"Skill「{skill or '未指定'}」无 <planner> 流程章节")
-        # B4b/F32：manifest 声明的 step_done_conditions（确定性评估优先于关键字猜测）
-        from src.video_agent.skill_runtime.registry import resolve_entry
-        from src.video_agent.skill_runtime import registry as _registry
-        conditions = None
-        entry = resolve_entry(skill)
-        if entry and entry.manifest:
-            conditions = ((entry.manifest.get("flow") or {}).get("step_done_conditions")) or None
-        # 步骤/依赖统一入口：manifest flow.steps/dependencies 声明优先，
-        # 未声明回落正文解析（存量兼容）
-        steps, deps = dag.resolve_steps_and_deps(entry.manifest if entry else None, flow)
-        status = dag.pipeline_status_from(steps, deps, svc.state_dict, conditions)
-        # 阶段同批声明（Skill manifest 单一事实源）：翻译为同批执行器+
-        # 客观完成度；未声明的阶段维持 dag 既有判定。
-        stages = _registry.skill_stage_executors(skill)
-        for s in status:
-            exs = stages.get(str(s["step"]))
-            if not exs:
-                continue
-            s["executors"] = exs
-            done2 = _stage_done_by_executors(exs, svc.state_dict)
-            if done2 is not None:
-                s["done"] = done2
-                if done2:
-                    s["ready"] = False
-        ready = [s for s in status if s["ready"]]
-        batches = dag.topo_batches(steps, deps)
-        return exec_common.SkillToolResult(success=True, data={
-            "steps": status,
-            "ready_batch": ready,
-            "parallel_batches": batches,
-            # 回喂可见性：调度干货必须随 detail 进模型上下文
-            "detail": render_pipeline_detail(status, ready),
-        })
 
 
 # 九轮 B3：媒体生成族执行器实现体迁 exec_media_writer / exec_media_gen（注册表引用所需）
