@@ -11,7 +11,7 @@
 3. 四位重复数字事故号（如 2222/8888，\\b(\\d)\\1{3}\\b）；
 4. 「X轮」轮次批注（一至七轮）。
 
-预算 = 743（2026-08-17 九轮 D1 用户裁决终态实测下调；棘轮只降不升）。
+预算 = 739（2026-08-18 0818 连接流程批清偿新注释叙事后实测下调；棘轮只降不升）。
 清偿存量后应下调预算（棘轮）。
 输出纯 ASCII（防 Windows 终端乱码再骗，六轮 N1/N7 教训机制延续）。
 
@@ -23,7 +23,7 @@ import re
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCAN_DIRS = ["src/video_agent", "src/web"]
 EXTS = {".py", ".ts", ".tsx"}
-BUDGET = 743
+BUDGET = 739
 PATTERN = re.compile(r"事故|814[A-Z][0-9]?|\b(\d)\1{3}\b|[一二三四五六七]轮")
 
 

@@ -73,7 +73,7 @@ class FCToolRunner:
         self.gate_override: Any = False
         # 本批闸机警告（随 execute 返回/时间线可见）
         self.gate_warnings: List[str] = []
-        # 0818-1111：本轮同工具失败计数（结构化回喂升级用）
+        # 本轮同工具失败计数（结构化回喂升级用）
         self._tool_fail_counts: Dict[str, int] = {}
         # 已完成阶段集合（script_analyze 等；总结/收集闸判定用）
         self.skill_stages_done: set = set()
@@ -681,7 +681,7 @@ class FCToolRunner:
                     elapsed_ms=_tool_ms, ok=bool(spec_silent_summary),
                     stage=stage_label_for_tool(name),
                 )
-                # 0818-1111：结构化失败回喂（客观报告+单句建议，二次升级）
+                # 结构化失败回喂（客观报告+单句建议，二次升级）
                 self._tool_fail_counts[name] = self._tool_fail_counts.get(name, 0) + 1
                 tool_results.append({
                     "name": name, "ok": False,

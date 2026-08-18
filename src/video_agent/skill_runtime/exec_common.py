@@ -634,10 +634,10 @@ async def executor_stream_text(
     timeout: float,
     thinking_level: Optional[str] = None,
 ) -> Tuple[str, str]:
-    """执行器统一流式取稿（0818-1111）：流式接收+拼完整，返回 (content, finish_reason)。
+    """执行器统一流式取稿：流式接收+拼完整，返回 (content, finish_reason)。
 
-    执行器机械调用唯一出口；非流式调用会被 9router 等中介
-    对缺省 stream 按流式路由（0818-1111），故执行器层不再允许。
+    执行器机械调用唯一出口；非流式调用会被中介
+    对缺省 stream 按流式路由，故执行器层不再允许。
     """
     return await _gen.call_chat_completion_stream(
         provider,

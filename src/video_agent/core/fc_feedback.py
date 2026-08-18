@@ -183,7 +183,7 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
 
 
 def classify_tool_failure(error_text: str) -> str:
-    """0818-1111：执行器失败客观分类（层 8 结构化回喂用）。"""
+    """执行器失败客观分类（层 8 结构化回喂用）。"""
     t = str(error_text or "")
     if "无法解析" in t or "未返回 JSON" in t or "非 JSON" in t:
         return "output_format"
@@ -195,10 +195,10 @@ def classify_tool_failure(error_text: str) -> str:
 
 
 def compose_failure_feedback(name: str, error_text: str, fail_count: int) -> str:
-    """0818-1111：执行器失败结构化回喂（层 8）：客观报告 + 单句下一步。
+    """执行器失败结构化回喂（层 8）：客观报告 + 单句下一步。
 
     同工具第二次失败升级建议为「不得重试、向用户说明」，
-    掐掉主模型盲重试空转（1111 事故 step1→step3 同工具连败）。
+    掐掉主模型盲重试空转。
     """
     kind = classify_tool_failure(error_text)
     raw = str(error_text or "未知错误")[:120]

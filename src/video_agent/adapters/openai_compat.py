@@ -224,8 +224,8 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            # 0818-1111：非流式必须显式声明。9router 等中介对缺省 stream 的
-            # 自家规矩是「当流式」，缺省会拿回 SSE 文本导致解析崩溃。
+            # 非流式必须显式声明：中介对缺省 stream 按流式路由，
+            # 缺省会拿回 SSE 文本导致解析崩溃。
             "stream": False,
         }
         if tools:
@@ -244,7 +244,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             try:
                 data = resp.json()
             except json.JSONDecodeError as e:
-                # 0818-1111：200 但回非 JSON（被误当流式路由）按契约转 AdapterError，
+                # 200 但回非 JSON（被误当流式路由）按契约转 AdapterError，
                 # 不让裸解析错误漏出 adapter 层。
                 raise AdapterError(
                     f"LLM 返回非 JSON 响应（可能被误当流式）：{e}；响应头={resp.text[:120]!r}",

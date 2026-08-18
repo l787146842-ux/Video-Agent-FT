@@ -123,7 +123,7 @@ class ScriptAnalyzeTool:
                 "key_points": cached.get("key_points") or [],
                 "cached": True,
                 "detail": (
-                    # 0818-1111 P3：回喂只陈述客观事实，展示职责归层 9 代码
+                    # P3：回喂只陈述客观事实，展示职责归层 9 代码
                     f"《{doc.get('name')}》剧本未变更，复用既有分析。"
                     f"一句话总结：{cached['summary']}"
                 ),
@@ -168,7 +168,7 @@ class ScriptAnalyzeTool:
         return exec_common.SkillToolResult(success=True, data={
             "summary": summary,
             "key_points": key_points,
-            # 0818-1111 P3：去祈使化（展示由层 9 prepend_script_summary 机械保证）
+            # P3：去祈使化（展示由层 9 prepend_script_summary 机械保证）
             "detail": f"已分析《{doc.get('name')}》。一句话总结：{summary}",
         })
 

@@ -101,7 +101,7 @@ async def _llm_json_call(
         break
     m = re.search(r"\{[\s\S]*\}", content or "")
     if not m:
-        # 0818-1111：解析失败存原始回执，取证链不留死角
+        # 解析失败存原始回执，取证链不留死角
         dump_case(
             kind="exec_json", reason="no_json", system=system, user=user,
             content=content or "", finish=finish,
@@ -148,7 +148,7 @@ async def _llm_json_call(
             if not isinstance(data, dict):
                 raise RuntimeError("执行器 LLM 返回的 JSON 不是对象")
             return data
-    # 0818-1111：畸形 JSON 存原始回执后再抛，事后可直接看模型回了什么
+    # 畸形 JSON 存原始回执后再抛，事后可直接看模型回了什么
     dump_case(
         kind="exec_json", reason="json_parse_failed", system=system, user=user,
         content=content or "", finish=finish,
