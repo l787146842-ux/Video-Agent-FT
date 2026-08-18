@@ -159,6 +159,9 @@ class Settings:
     # 0817 B24：剧本正文注入上限（合一，原 10000/12000 分阶段硬编码废除）；
     # 仅超模型上下文硬窗时才截断，截断附可见警告
     script_inject_limit: int = field(default_factory=lambda: _env_int("SCRIPT_INJECT_LIMIT", 20000))
+    # 0818 架构板正批 B1：状态驱动编排器开关（B2 默认开；回关=回落模型持循环旧路径）
+    pipeline_orchestrator_enabled: bool = field(
+        default_factory=lambda: _env_bool("PIPELINE_ORCHESTRATOR_ENABLED", False))
 
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))

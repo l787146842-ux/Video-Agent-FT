@@ -1,0 +1,180 @@
+# -*- coding: utf-8 -*-
+"""0818 架构板正批 B1：状态驱动编排器黄金回归。
+
+钉死：
+① 阶段表 = 平台规范表 + sidecar 覆盖（skip/同批执行器）；
+② current_stage 按客观探针推进（analysis→spec→structure→创作型交接）；
+③ run_deterministic_stage 按批直调 + 确定性重试；
+④ 暂停卡纯客观事实，总结入卡随 sidecar 声明；
+⑤ orchestrate_turn：分析完成即边界暂停；flow_directive 豁免则续进至 spec_pending。
+"""
+import asyncio
+
+import pytest
+
+from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.skill_runtime import registry
+from src.video_agent.skill_runtime.exec_common import SkillToolResult
+
+SKILL = "AI-短剧一站式生成"
+
+
+# ---------- ① 阶段表 ----------
+
+def test_stage_table_canonical_order():
+    table = po.stage_table(SKILL)
+    keys = [s.key for s in table]
+    assert keys == ["analysis", "spec", "structure", "ke_media",
+                    "shot_media", "audio_assets", "assembly"]
+    assert table[0].deterministic is True
+    assert table[3].deterministic is False  # 创作型交接模型
+
+
+def test_stage_table_sidecar_override_skip_and_executors(monkeypatch):
+    monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
+        "flow": {"stages": {
+            "assembly": {"skip": True},
+            "structure": {"executors": ["storyboard_key_elements"]},
+        }}})
+    table = po.stage_table(SKILL)
+    keys = [s.key for s in table]
+    assert "assembly" not in keys
+    structure = next(s for s in table if s.key == "structure")
+    assert structure.executors == ("storyboard_key_elements",)
+
+
+# ---------- ② 客观探针推进 ----------
+
+def _state_with(**kw):
+    state = {}
+    if kw.get("analysis"):
+        state["analysis"] = {"summary": "木星掩体时代的降维打击。"}
+    if kw.get("spec"):
+        state["documents"] = [
+            {"name": "Final_Video_Spec.md", "content": "- 画幅：16:9\n"}]
+    if kw.get("structure"):
+        state["keyElements"] = [{"id": "ke1", "drafts": []}]
+        state["shots"] = [{"id": "s1", "drafts": []}]
+        state["audioItems"] = [{"id": "a1", "drafts": []}]
+    if kw.get("ke_media"):
+        state["keyElements"][0]["drafts"] = [{"imgUrl": "http://x/i.png"}]
+    return state
+
+
+def test_current_stage_progression():
+    assert po.current_stage(_state_with(), SKILL).key == "analysis"
+    assert po.current_stage(_state_with(analysis=True), SKILL).key == "spec"
+    assert po.current_stage(
+        _state_with(analysis=True, spec=True), SKILL).key == "structure"
+    st = _state_with(analysis=True, spec=True, structure=True)
+    assert po.current_stage(st, SKILL).key == "ke_media"
+    assert po.current_stage(st, SKILL).deterministic is False
+
+
+# ---------- ③ 按批直调 + 确定性重试 ----------
+
+def test_run_deterministic_stage_dispatch_order_and_retry(monkeypatch):
+    from src.video_agent.skill_runtime import exec_tools
+
+    calls = []
+
+    class FakeTool:
+        def __init__(self, name, fail_first):
+            self.name = name
+            self.fail_first = fail_first
+
+        def get_input_schema(self):
+            import pydantic
+
+            class Schema(pydantic.BaseModel):
+                skill_name: str = ""
+            return Schema
+
+        async def aexecute(self, params):
+            calls.append(self.name)
+            if self.fail_first and calls.count(self.name) == 1:
+                return SkillToolResult(success=False, error="瞬时故障")
+            return SkillToolResult(success=True, data={})
+
+    built = {"script_analyze": FakeTool("script_analyze", True)}
+    monkeypatch.setattr(exec_tools, "build_executor_tool",
+                        lambda name: built.get(name))
+    spec = po.StageSpec("analysis", "剧本分析", ("script_analyze",))
+    results = asyncio.run(po.run_deterministic_stage(SKILL, spec))
+    assert calls == ["script_analyze", "script_analyze"], "失败必须确定性重试一次"
+    assert results[0].success
+
+
+# ---------- ④ 暂停卡客观性 ----------
+
+def test_pause_card_summary_follows_sidecar_declaration(monkeypatch):
+    state = _state_with(analysis=True)
+    done = po.StageSpec("analysis", "剧本分析")
+    nxt = po.StageSpec("spec", "成片规格")
+
+    monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {"pause": {}})
+    msg, opts = po.compose_pause_card(state, SKILL, done, nxt)
+    assert "一句话总结" not in msg, "未声明不得强注入总结"
+    assert "下一阶段：「成片规格」" in msg
+
+    monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
+        "pause": {"include_summary_in_pause": True}})
+    msg2, _ = po.compose_pause_card(state, SKILL, done, nxt)
+    assert "剧本一句话总结：木星掩体时代的降维打击。" in msg2
+    assert opts[0]["label"] == "确认，继续"
+
+
+# ---------- ⑤ orchestrate_turn ----------
+
+@pytest.mark.asyncio
+async def test_orchestrate_turn_pauses_at_analysis_boundary(tmp_path, monkeypatch):
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.skill_runtime import exec_tools
+
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["uploadedDocs"] = [
+        {"id": "d1", "name": "剧本.md", "content": "剧本正文：程心苏醒。"}]
+
+    async def fake_aexecute(self, params):
+        svc.state_dict["analysis"] = {"summary": "程心苏醒与掩体失效。"}
+        return SkillToolResult(success=True, data={"summary": "程心苏醒与掩体失效。"})
+
+    monkeypatch.setattr(exec_tools.ScriptAnalyzeTool, "aexecute", fake_aexecute)
+    outcome = await po.orchestrate_turn(svc, SKILL)
+    assert outcome is not None and outcome.kind == "paused"
+    assert "剧本分析" in outcome.message and "成片规格" in outcome.message
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_turn_auto_continue_reaches_spec_pending(tmp_path, monkeypatch):
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.skill_runtime import exec_tools
+
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["uploadedDocs"] = [
+        {"id": "d1", "name": "剧本.md", "content": "剧本正文：程心苏醒。"}]
+    svc.state_dict.setdefault("interaction", {})["auto_continue"] = True
+
+    async def fake_aexecute(self, params):
+        svc.state_dict["analysis"] = {"summary": "程心苏醒与掩体失效。"}
+        return SkillToolResult(success=True, data={})
+
+    monkeypatch.setattr(exec_tools.ScriptAnalyzeTool, "aexecute", fake_aexecute)
+    outcome = await po.orchestrate_turn(svc, SKILL)
+    assert outcome is not None and outcome.kind == "spec_pending", \
+        "flow_directive 豁免：分析后不暂停，续进至规格收集"
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_turn_handoff_at_creative_stage(tmp_path):
+    from src.video_agent.state.manager import StateManager
+
+    svc = StateManager(str(tmp_path / "ws"))
+    svc.state_dict["analysis"] = {"summary": "x"}
+    svc.state_dict["documents"] = [
+        {"name": "Final_Video_Spec.md", "content": "- 画幅：16:9\n"}]
+    svc.state_dict["keyElements"] = [{"id": "ke1", "drafts": []}]
+    svc.state_dict["shots"] = [{"id": "s1", "drafts": []}]
+    svc.state_dict["audioItems"] = [{"id": "a1", "drafts": []}]
+    outcome = await po.orchestrate_turn(svc, SKILL)
+    assert outcome is None, "创作型阶段交接模型循环（混合模式）"
