@@ -144,7 +144,8 @@ class DocumentWriteTool(BaseTool):
                     return ToolResult(
                         success=False,
                         error=("规格已按您的选择生成，无需重复写入；"
-                               "要调整请在文档面板修改或重发选择。"),
+                               "要调整请在文档面板修改或重发选择；"
+                               "继续流程请 read_project_doc 读已定稿规格并推进下一阶段。"),
                     )
                 # 0817 一条龙：用户指令作为规格同意，模型按 Skill 填写写入（留痕）
                 if not prompt_gates.flow_auto_continue(svc.state_dict):
@@ -194,11 +195,7 @@ class ReadUploadedDocTool(BaseTool):
     async def aexecute(self, params: ReadUploadedDocInput) -> ToolResult:
         svc = StateManager.get_instance()
         docs = svc.state_dict.get("uploadedDocs") or []
-        target = None
-        if params.name:
-            target = _fuzzy_pick(docs, params.name, ["name"])
-        if target is None and params.doc_id:
-            target = next((d for d in docs if d.get("id") == params.doc_id), None)
+        target, auto_note = _resolve_uploaded_doc(docs, params.name, params.doc_id)
         if target is None:
             available = "、".join(d.get("name", "") for d in docs[:10]) or "无"
             return ToolResult(success=False, error=f"未找到该文档。已存档文档：{available}")
@@ -216,9 +213,24 @@ class ReadUploadedDocTool(BaseTool):
         )
         return ToolResult(success=True, data={
             "name": target.get("name", ""),
-            "content": body + note,
+            "content": (auto_note + "\n" if auto_note else "") + body + note,
             "char_count": target.get("char_count", len(content)),
         })
+
+
+def _resolve_uploaded_doc(docs: list, name: str, doc_id: str) -> tuple:
+    """返回 (target, auto_note)：name/doc_id 皆空且恰有一个已存档文档时
+    自动归位（掐掉空参试探的失败轮）；其余情形维持原匹配/报错路径。"""
+    target = None
+    if name:
+        target = _fuzzy_pick(docs, name, ["name"])
+    if target is None and doc_id:
+        target = next((d for d in docs if d.get("id") == doc_id), None)
+    auto_note = ""
+    if target is None and not name and not doc_id and len(docs) == 1:
+        target = docs[0]
+        auto_note = f"（未传 name，已自动归位到唯一存档文档『{target.get('name', '')}』）"
+    return target, auto_note
 
 
 def _truncate_content(content: str) -> str:

@@ -71,6 +71,16 @@ def _unpack_llm(ret: Tuple) -> Tuple[str, str, int, float]:
     return str(ret[0]), str(ret[1]), int(ret[2]), plan
 
 
+def _bad_output_nudge(attempt: int) -> str:
+    """空/畸形输出续写引导：重试时随 messages 附一句，
+    明确要求本轮直接产出工具调用或可见回复（只临时附加，不入历史）。"""
+    return (
+        f"（系统）上一轮（第 {attempt} 次）未产出任何可见回复或工具调用。"
+        "请直接发出本应执行的工具调用，或给出面向用户的回复；"
+        "不要只输出思考过程。"
+    )
+
+
 @dataclass
 class AgentLoopResult:
     text: str = ""
@@ -281,7 +291,11 @@ async def run_agent_loop(
                 ok=True,
             )
             content, finish_reason, fc_applied, plan_ms = _unpack_llm(
-                await llm_call(system_prompt, messages, stream_hook)
+                await llm_call(
+                    system_prompt,
+                    messages + [{"role": "user", "content": _bad_output_nudge(bad_retries)}],
+                    stream_hook,
+                )
             )
             plan_total += float(plan_ms or 0.0)
         # 规划耗时只算纯模型规划（2222 反馈）：FC 工具执行时间由各工具条目独立展示，

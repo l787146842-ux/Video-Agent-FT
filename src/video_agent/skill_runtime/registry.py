@@ -270,6 +270,23 @@ def skill_flow_enabled(skill_name: str, key: str) -> bool:
     return bool((manifest.get("flow") or {}).get(key, False))
 
 
+def skill_stage_executors(skill_name: str) -> Dict[str, List[str]]:
+    """manifest flow.stage_executors 声明：阶段号→同批执行器清单。
+
+    Skill 自己声明「哪几个执行器同属一个阶段」（P3 单一事实源），
+    平台调度器只翻译不决策；未声明返回空 dict（维持现状回落）。"""
+    manifest = skill_manifest_of(skill_name)
+    if not manifest:
+        return {}
+    raw = (manifest.get("flow") or {}).get("stage_executors") or {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(k): [str(t) for t in v if isinstance(t, str)]
+        for k, v in raw.items() if isinstance(v, list)
+    }
+
+
 def spec_wizard_active(skill_name: str) -> bool:
     """规格向导启用判定（2222 二轮：客观流程特征检测，替代纯声明制）。
 

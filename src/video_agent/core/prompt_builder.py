@@ -213,8 +213,7 @@ class PromptBuilder:
         return (
             "== 故事板客观进度 ==\n"
             f"- 关键元素：{mark(ke)}；分镜：{mark(sh)}；音频：{mark(au)}\n"
-            "暂停点以当前 Skill 流程基线（『何时暂停』/关键暂停点）为准；"
-            "阶段完成时，workflow_pause 可与本轮最后一批工具同批发出（建议，省一轮往返）。"
+            "暂停点以当前 Skill 流程基线（『何时暂停』/关键暂停点）为准。"
         )
 
     def stage_allows_global_settings(self) -> bool:

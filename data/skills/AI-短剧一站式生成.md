@@ -8,7 +8,11 @@
     "require_audio_layer": true
   },
   "flow": {
-    "spec_gate": true
+    "spec_gate": true,
+    "stage_executors": {
+      "1": ["script_analyze"],
+      "3": ["storyboard_key_elements", "storyboard_shots", "storyboard_audio"]
+    }
   },
   "pause": {
     "stage_pause": true

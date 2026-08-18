@@ -293,11 +293,36 @@ def render_pipeline_detail(status: List[Dict[str, Any]], ready: List[Dict[str, A
     done = [str(s.get("title") or s.get("step")) for s in status if s.get("done")]
     todo = [str(s.get("title") or s.get("step")) for s in status if not s.get("done")]
     nxt = [str(s.get("title") or s.get("step")) for s in ready]
-    return (
-        f"已完成：{'、'.join(done) or '无'}; "
-        f"未完成：{'、'.join(todo) or '无'}; "
-        f"下一可执行批次：{'、'.join(nxt) or '无（全部完成或依赖未满足）'}"
-    )
+    parts = [
+        f"已完成：{'、'.join(done) or '无'}; ",
+        f"未完成：{'、'.join(todo) or '无'}; ",
+        f"下一可执行批次：{'、'.join(nxt) or '无（全部完成或依赖未满足）'}",
+    ]
+    groups = [
+        f"阶段{s.get('step')}同批：{'、'.join(s['executors'])}（全做完才算该阶段完成，暂停点在阶段边界）"
+        for s in status if s.get("executors")
+    ]
+    if groups:
+        parts.append("; " + "; ".join(groups))
+    return "".join(parts)
+
+
+# 执行器→工作台产出客观判定（阶段同批完成度机器读出用）
+_EXECUTOR_DONE_PROBES = {
+    "script_analyze": lambda st: bool((st.get("analysis") or {}).get("summary")),
+    "storyboard_key_elements": lambda st: bool(st.get("keyElements")),
+    "storyboard_shots": lambda st: bool(st.get("shots")),
+    "storyboard_audio": lambda st: bool(st.get("audioItems")),
+}
+
+
+def _stage_done_by_executors(executors: List[str], state: Dict[str, Any]) -> Optional[bool]:
+    """声明同批的阶段：全部执行器产出齐备才算完成；
+    含无法客观判定的执行器时返回 None（回落既有判定，不猜）。"""
+    probes = [_EXECUTOR_DONE_PROBES.get(t) for t in executors]
+    if not executors or not all(probes):
+        return None
+    return all(p(state) for p in probes)
 
 
 class SkillPipelinePlanTool:
@@ -322,11 +347,25 @@ class SkillPipelinePlanTool:
             return exec_common.SkillToolResult(success=False, error=f"Skill「{skill or '未指定'}」无 <planner> 流程章节")
         # B4b/F32：manifest 声明的 step_done_conditions（确定性评估优先于关键字猜测）
         from src.video_agent.skill_runtime.registry import resolve_entry
+        from src.video_agent.skill_runtime import registry as _registry
         conditions = None
         entry = resolve_entry(skill)
         if entry and entry.manifest:
             conditions = ((entry.manifest.get("flow") or {}).get("step_done_conditions")) or None
         status = dag.pipeline_status(flow, svc.state_dict, conditions)
+        # 阶段同批声明（Skill manifest 单一事实源）：翻译为同批执行器+
+        # 客观完成度；未声明的阶段维持 dag 既有判定。
+        stages = _registry.skill_stage_executors(skill)
+        for s in status:
+            exs = stages.get(str(s["step"]))
+            if not exs:
+                continue
+            s["executors"] = exs
+            done2 = _stage_done_by_executors(exs, svc.state_dict)
+            if done2 is not None:
+                s["done"] = done2
+                if done2:
+                    s["ready"] = False
         ready = [s for s in status if s["ready"]]
         batches = dag.topo_batches(dag.parse_steps(flow), dag.parse_dependencies(flow))
         return exec_common.SkillToolResult(success=True, data={

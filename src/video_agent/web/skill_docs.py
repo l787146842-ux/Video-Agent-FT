@@ -507,6 +507,18 @@ def parse_skill_manifest(content: str) -> Optional[Dict[str, Any]]:
         }
         if cleaned:
             flow["step_done_conditions"] = cleaned
+    # 阶段同批声明（阶段号→同批执行器清单）：调度器按声明翻译，
+    # 执行器名不在注册表的不收（防垃圾声明）；未声明=维持现状回落
+    se = (data.get("flow") or {}).get("stage_executors")
+    if isinstance(se, dict):
+        from src.video_agent.skill_runtime.registry import SKILL_EXECUTOR_TOOLS
+        cleaned_se = {
+            str(k): [str(t) for t in v if str(t) in SKILL_EXECUTOR_TOOLS]
+            for k, v in se.items() if isinstance(v, list)
+        }
+        cleaned_se = {k: v for k, v in cleaned_se.items() if v}
+        if cleaned_se:
+            flow["stage_executors"] = cleaned_se
     return {
         "gates": _parse_manifest_section(data.get("gates") or {}, _MANIFEST_GATE_KEYS),
         "flow": flow,
