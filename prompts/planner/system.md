@@ -6,4 +6,6 @@ studio-actions 全量动作定义与格式示例见系统随后注入的《studi
 
 {{include:shared/important_rules.md}}
 
+{{include:shared/language.md}}
+
 {{include:shared/media_rules.md}}

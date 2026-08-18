@@ -11,6 +11,8 @@
 
 {{include:shared/important_rules.md}}
 
+{{include:shared/language.md}}
+
 {{include:shared/canvas_tools.md}}
 
 {{include:shared/media_rules.md}}

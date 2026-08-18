@@ -21,10 +21,6 @@ from src.video_agent.state.models import (
     ALL_CATEGORIES_TUPLE, CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS,
 )
 from src.video_agent.config import settings
-from src.video_agent.web import generation as _gen
-from src.video_agent.web.generation import (
-    call_chat_completion,
-)
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.token_budget import output_limit_for_model
 from src.video_agent.skill_runtime.progress import (
@@ -291,6 +287,19 @@ class SkillSectionRunTool:
         return exec_common.SkillToolResult(success=False, error="; ".join(warnings or ["执行器未产出有效操作"]))
 
 
+def render_pipeline_detail(status: List[Dict[str, Any]], ready: List[Dict[str, Any]]) -> str:
+    """pipeline 状态人读摘要（回喂 detail）：模型一眼看清完成度与下一批次，
+    掐掉「看不到结果」的盲重复调用。"""
+    done = [str(s.get("title") or s.get("step")) for s in status if s.get("done")]
+    todo = [str(s.get("title") or s.get("step")) for s in status if not s.get("done")]
+    nxt = [str(s.get("title") or s.get("step")) for s in ready]
+    return (
+        f"已完成：{'、'.join(done) or '无'}; "
+        f"未完成：{'、'.join(todo) or '无'}; "
+        f"下一可执行批次：{'、'.join(nxt) or '无（全部完成或依赖未满足）'}"
+    )
+
+
 class SkillPipelinePlanTool:
     name = "skill_pipeline_plan"
     description = (
@@ -324,6 +333,8 @@ class SkillPipelinePlanTool:
             "steps": status,
             "ready_batch": ready,
             "parallel_batches": batches,
+            # 回喂可见性：调度干货必须随 detail 进模型上下文
+            "detail": render_pipeline_detail(status, ready),
         })
 
 
