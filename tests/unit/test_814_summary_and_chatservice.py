@@ -13,9 +13,10 @@ from src.video_agent.web import chat_consume, chat_service
 
 class TestScriptSummaryWiring:
     def test_fc_track_wired(self):
-        """FC 轨 llm_call 在取回工具结果后调用 _prepend_script_summary"""
+        """FC 轨 llm_call 在取回工具结果后走带门禁的步级拼接
+        （0818-2222 E1：总结展示归 Skill 声明驱动，与轮末组装同判据）"""
         src = inspect.getsource(Planner.handle_message)
-        assert "_prepend_script_summary(content, tool_results)" in src
+        assert "maybe_prepend_script_summary(content, tool_results" in src
 
     def test_text_track_wired(self):
         """文本轨：执行过 script_analyze 且暂停时补拼总结。

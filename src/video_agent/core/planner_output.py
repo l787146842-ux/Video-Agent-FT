@@ -39,6 +39,14 @@ def prepend_script_summary(visible: str, tool_results) -> str:
     return f"**剧本一句话总结**：{summary}\n\n{visible}"
 
 
+def maybe_prepend_script_summary(visible: str, tool_results, skill_name: str) -> str:
+    """步级总结拼接（带门禁）：仅当前 Skill 声明总结展示时才拼，
+    与轮末组装同一判据（总结展示归 Skill 声明驱动，平台不全局化）。"""
+    if not prompt_gates.skill_declares_summary(skill_name or ""):
+        return str(visible or "")
+    return prepend_script_summary(visible, tool_results)
+
+
 def assemble_response(
     loop_result: AgentLoopResult,
     *,
@@ -79,6 +87,11 @@ def assemble_response(
             loop_result.confirmation = prepend_script_summary(loop_result.confirmation, _tr)
             if loop_result.text:
                 loop_result.text = prepend_script_summary(loop_result.text, _tr)
+        # 暂停轮客观完成记账：模型 prose 可能停留在执行前承诺（「接下来我先解析」），
+        # 历史只含文本时下一轮会误判未执行而重跑执行器；补一行客观事实（判重内置）
+        _t = str(loop_result.text or "")
+        if _t.strip() and "剧本分析已完成" not in _t:
+            loop_result.text = _t.rstrip() + "\n\n（剧本分析已完成并存档工作台）"
 
     # 纯工具轮无总结文字时，用实际操作清单替换无信息量的占位文案：
     # 占位文案进入历史后模型看不出上一轮做了什么（读文档/写文档/请求确认），

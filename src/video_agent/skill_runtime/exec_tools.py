@@ -156,11 +156,13 @@ class ScriptAnalyzeTool:
         svc.save_debounced()
         # 软参数候选出题（888 豪华版）：声明 spec_wizard 的 Skill 才生成；
         # 内层模型按剧本给六维度出候选，校验后落 interaction.spec_soft_candidates，
-        # 收集向导渲染；失败/校验不过静默回落平台默认候选，不阻断主流程
-        await _generate_soft_spec_candidates(
-            svc, params.skill_name, params.chat_provider, params.chat_model,
-            summary, content,
-        )
+        # 收集向导渲染；失败/校验不过静默回落平台默认候选，不阻断主流程。
+        # 规格文档已定稿时跳过：候选出题只为规格收集服务，再跑是冗余独立 LLM
+        if not prompt_gates.has_spec_document(svc.state_dict):
+            await _generate_soft_spec_candidates(
+                svc, params.skill_name, params.chat_provider, params.chat_model,
+                summary, content,
+            )
         return exec_common.SkillToolResult(success=True, data={
             "summary": summary,
             "key_points": key_points,
@@ -352,7 +354,10 @@ class SkillPipelinePlanTool:
         entry = resolve_entry(skill)
         if entry and entry.manifest:
             conditions = ((entry.manifest.get("flow") or {}).get("step_done_conditions")) or None
-        status = dag.pipeline_status(flow, svc.state_dict, conditions)
+        # 步骤/依赖统一入口：manifest flow.steps/dependencies 声明优先，
+        # 未声明回落正文解析（存量兼容）
+        steps, deps = dag.resolve_steps_and_deps(entry.manifest if entry else None, flow)
+        status = dag.pipeline_status_from(steps, deps, svc.state_dict, conditions)
         # 阶段同批声明（Skill manifest 单一事实源）：翻译为同批执行器+
         # 客观完成度；未声明的阶段维持 dag 既有判定。
         stages = _registry.skill_stage_executors(skill)
@@ -367,7 +372,7 @@ class SkillPipelinePlanTool:
                 if done2:
                     s["ready"] = False
         ready = [s for s in status if s["ready"]]
-        batches = dag.topo_batches(dag.parse_steps(flow), dag.parse_dependencies(flow))
+        batches = dag.topo_batches(steps, deps)
         return exec_common.SkillToolResult(success=True, data={
             "steps": status,
             "ready_batch": ready,

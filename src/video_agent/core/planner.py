@@ -36,6 +36,7 @@ from src.video_agent.core.prompt_builder import PromptBuilder
 # 八轮 B2：轮末组装域切入 planner_output（_prepend_script_summary 保留 re-export 壳）
 from src.video_agent.core.planner_output import (
     assemble_response,
+    maybe_prepend_script_summary,
     prepend_script_summary as _prepend_script_summary,  # noqa: F401 壳：既有引用路径不变
 )
 from src.video_agent.core import prompt_gates
@@ -558,9 +559,9 @@ class Planner:
                 gate_override=gate_override_scope,
                 flow_gates=self._flow_gates,
             )
-            # 总结强制入正文（1111/Q1；814R4 接线）：script_analyze 同批产出
-            # summary 且正文尚未包含时拼在最前，防暂停同批时总结丢失
-            content = _prepend_script_summary(content, tool_results)
+            # 总结强制入正文（步级）：仅 Skill 声明总结展示时拼接
+            # （与轮末组装同判据；平台不全局化）
+            content = maybe_prepend_script_summary(content, tool_results, context.skill_name or "")
             # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
             # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
             if tool_results:
@@ -604,6 +605,12 @@ class Planner:
             user_id=context.user_id,
             pending_injector=context.pending_injector,
         )
+
+        # 双轨阶段账本统一：FC 轨完成的阶段并入文本轨 executor，
+        # 轮末策略（客观完成记账/总结闸）不漏 FC 轮
+        if not hasattr(executor, "skill_stages_done"):
+            executor.skill_stages_done = set()
+        executor.skill_stages_done.update(self._fc_runner.skill_stages_done)
 
         # 轮末组装委托 planner_output（八轮 B2 切出）：warnings 并入/总结强入/
         # 占位替换/双轨收集器去重/原料提醒卡覆盖/响应构造，行为不变。
