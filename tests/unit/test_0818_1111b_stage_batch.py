@@ -135,6 +135,22 @@ class TestStageExecutorsDeclaration:
         stages = (manifest.get("flow") or {}).get("stage_executors") or {}
         assert stages.get("3") == ["storyboard_key_elements", "storyboard_shots", "storyboard_audio"]
 
+    def test_ai_skill_manifest_declares_step2_spec_done(self):
+        """step2 完成度走客观声明（spec 文档存在=完成），掐掉冗余写规格轮。"""
+        from src.video_agent.web.skill_docs import get_skill_doc, parse_skill_manifest
+
+        doc = get_skill_doc("AI-短剧一站式生成")
+        manifest = parse_skill_manifest(doc["content"])
+        assert ((manifest.get("flow") or {}).get("step_done_conditions") or {}).get("2") == "spec"
+
+    def test_step_done_spec_condition_objective(self):
+        """dag.step_done 按声明评估：spec 在=完成，不在=未完成。"""
+        from src.video_agent.skill_runtime import dag
+
+        with_spec = {"documents": [{"name": "Final_Video_Spec.md", "content": "画幅 16:9"}]}
+        assert dag.step_done(2, "写入规格", with_spec, {"2": "spec"}) is True
+        assert dag.step_done(2, "写入规格", {"documents": []}, {"2": "spec"}) is False
+
 
 # ---------- D3-G4：平台不再给暂停时机出主意 ----------
 
