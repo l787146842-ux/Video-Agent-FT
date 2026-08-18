@@ -268,6 +268,11 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                         retryable=e2.response.status_code >= 500,
                         http_status=e2.response.status_code,
                     )
+                except json.JSONDecodeError as e2:
+                    raise AdapterError(
+                        f"LLM 返回非 JSON 响应（可能被误当流式）：{e2}",
+                        retryable=False,
+                    ) from e2
                 except httpx.HTTPError as e2:
                     raise AdapterError(f"LLM 请求失败: {e2}", retryable=True)
             else:
@@ -393,8 +398,15 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
 
                 ctype = resp.headers.get("content-type", "")
                 if "text/event-stream" not in ctype:
-                    # 供应商不支持流式，按普通 JSON 处理
-                    data = json.loads((await resp.aread()).decode("utf-8", errors="replace"))
+                    # 供应商不支持流式，按普通 JSON 处理；
+                    # 畸形体按契约转 AdapterError，不漏裸解析错误（与 chat() 同契约）。
+                    try:
+                        data = json.loads((await resp.aread()).decode("utf-8", errors="replace"))
+                    except json.JSONDecodeError as e:
+                        raise AdapterError(
+                            f"LLM 返回非 JSON 响应（可能被误当流式）：{e}",
+                            retryable=False,
+                        ) from e
                     choices = data.get("choices", [])
                     if choices:
                         content = choices[0].get("message", {}).get("content", "") or ""
@@ -547,7 +559,11 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
             client = self._get_client(settings.image_gen_timeout)
             resp = await client.post("/images/generations", json=payload)
             if resp.status_code == 200:
-                data = resp.json()
+                try:
+                    data = resp.json()
+                except json.JSONDecodeError:
+                    errors.append("/images/generations 返回非 JSON 响应（可能被误当流式）")
+                    return None
                 images_data = data.get("data", [])
                 if images_data:
                     url = images_data[0].get("url", "")
@@ -600,7 +616,11 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
             client = self._get_client(settings.image_gen_timeout)
             resp = await client.post("/chat/completions", json=payload)
             resp.raise_for_status()
-            data = resp.json()
+            try:
+                data = resp.json()
+            except json.JSONDecodeError:
+                errors.append("/chat/completions 生图回退返回非 JSON 响应（可能被误当流式）")
+                return None
 
             choices = data.get("choices", [])
             content = choices[0].get("message", {}).get("content", "") if choices else ""

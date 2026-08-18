@@ -48,11 +48,15 @@ def _test_skill_stubs(monkeypatch, _skill_mirror_dir):
 def _disable_blackbox(monkeypatch):
     """测试期禁用黑匣子档案落盘：模拟截断/零产出的用例不得污染真实 logs 目录。
 
-    executors 在函数内延迟 import dump_case，patch 模块属性即可全局生效。
+    patch 调用方命名空间（exec_spec 顶层绑定 dump_case，台账惯例）。
     """
-    from src.video_agent.skill_runtime import blackbox
+    from src.video_agent.skill_runtime import blackbox, exec_spec
 
-    monkeypatch.setattr(blackbox, "dump_case", lambda *a, **k: "")
+    def _noop(*a, **k):
+        return ""
+
+    monkeypatch.setattr(blackbox, "dump_case", _noop)
+    monkeypatch.setattr(exec_spec, "dump_case", _noop)
 
 
 @pytest.fixture(autouse=True)

@@ -54,6 +54,22 @@ class TestB1StreamDeclaration:
         assert "非 JSON" in str(ei.value)
         await adapter.close()
 
+    @respx.mock
+    async def test_chat_stream_non_json_body_raises_adapter_error(self, adapter):
+        """0818-1111 G4：流式路径的非 SSE 回退分支同样不得漏裸 JSONDecodeError。"""
+        respx.post(f"{BASE_URL}/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                content=b'oops not json',
+                headers={"content-type": "application/json"},
+            )
+        )
+        with pytest.raises(AdapterError) as ei:
+            async for _ in adapter.chat_stream([{"role": "user", "content": "你好"}]):
+                pass
+        assert "非 JSON" in str(ei.value)
+        await adapter.close()
+
 
 # ---------- B2：执行器流式取稿 + 黑匣子 ----------
 
@@ -81,25 +97,26 @@ class TestB2ExecutorStreaming:
 
     async def test_llm_json_call_blackbox_on_parse_failure(self, monkeypatch, tmp_path):
         """0818-1111：畸形 JSON 必须存原始回执（reason=json_parse_failed）后再抛。"""
-        from src.video_agent.skill_runtime import exec_common, exec_spec, blackbox
+        from src.video_agent.skill_runtime import exec_spec
         from src.video_agent.web import generation as gen_mod
 
         async def fake_stream(provider, model, messages, **kw):
             return '{"summary": "x", ]}', "stop"
 
+        dumps = []
         monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
-        monkeypatch.setattr(blackbox, "_BLACKBOX_DIR", tmp_path)
+        # conftest 全局禁用落盘；本用例改录调用参数验证取证接线
+        monkeypatch.setattr(exec_spec, "dump_case", lambda **kw: dumps.append(kw))
         with pytest.raises(RuntimeError) as ei:
             await exec_spec._llm_json_call(
                 "sys", "user", max_tokens=4096,
                 provider="custom-api-19", model="qd/qmodel_38max",
             )
         assert "无法解析" in str(ei.value)
-        files = list(tmp_path.glob("*.json"))
-        assert len(files) == 1
-        rec = json.loads(files[0].read_text(encoding="utf-8"))
-        assert rec["reason"] == "json_parse_failed"
-        assert "summary" in rec["model_output"]
+        assert len(dumps) == 1
+        assert dumps[0]["reason"] == "json_parse_failed"
+        assert "summary" in dumps[0]["content"]
+        assert dumps[0]["extra"]["error"]
 
     def test_no_direct_non_stream_call_in_executors(self):
         """0818-1111 G4：执行器文件不得残留非流式 call_chat_completion( 调用。"""
