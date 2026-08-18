@@ -139,4 +139,22 @@ describe('chatActions 流式状态机', () => {
     chatActions.docWritten('大纲.md');
     expect(chatState.messages.filter((m) => m.docCard).length).toBe(1);
   });
+
+  // ---------- 0817：非流式响应 documents_written 即显（通道补齐，§5.2） ----------
+
+  it('applyNonStreamDocs 非流式响应文档卡即显：批内去重、批间按新一轮重新展示', () => {
+    chatActions.applyNonStreamDocs(['规格.md', '规格.md']);
+    let docs = chatState.messages.filter((m) => m.docCard);
+    expect(docs.map((m) => m.docCard)).toEqual(['规格.md']);
+    // 新一次响应 = 新一轮（与 startStream 每轮清零同语义），全量清单重新渲染
+    chatActions.applyNonStreamDocs(['规格.md', '大纲.md']);
+    docs = chatState.messages.filter((m) => m.docCard);
+    expect(docs.map((m) => m.docCard)).toEqual(['规格.md', '规格.md', '大纲.md']);
+  });
+
+  it('applyNonStreamDocs 空清单/空名不产生消息', () => {
+    chatActions.applyNonStreamDocs([]);
+    chatActions.applyNonStreamDocs(['']);
+    expect(chatState.messages.filter((m) => m.docCard).length).toBe(0);
+  });
 });

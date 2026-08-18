@@ -277,9 +277,26 @@ export const chatActions = {
     }));
   },
 
+  /** 非流式响应 documents_written 即显（0817 通道补齐，§5.2 不留半截通道）：
+   * 后端非流式载荷携带文档清单时前端同样渲染卡片；非流式无流式轮边界，
+   * 先重置「本轮已显」去重表（与 startStream 每轮清零同语义）再按清单渲染 */
+  applyNonStreamDocs(names: string[]) {
+    if (!names || !names.length) return;
+    setChatState(produce((s) => {
+      s.renderedDocCards = [];
+      names.forEach((name) => {
+        if (!name || s.renderedDocCards.includes(name)) return;
+        s.renderedDocCards.push(name);
+        s.messages.push({ sender: 'agent', text: '', docCard: name });
+      });
+    }));
+  },
+
   /** 从后端加载历史消息 */
   loadMessages(msgs: ChatMessage[]) {
     setChatState('messages', msgs);
+    // 0817：历史重建即新一轮展示，去重表同步清零（防切项目/刷新后残留误去重）
+    setChatState('renderedDocCards', []);
   },
 
   // ====== 排队引导消息（推理中继续发送，任务完成后自动发出） ======

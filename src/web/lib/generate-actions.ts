@@ -5,6 +5,7 @@
 import { state, findDraftRecord } from '@/stores/studio';
 import { studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
+import { chatActions } from '@/stores/chat';
 import { submitImageTask, submitVideoTask, addGenerationLog } from '@/api/generate';
 import { canvasLlm } from '@/api/agent';
 import { studioImageSizeForRatio } from '@/lib/image-sizes';
@@ -187,6 +188,8 @@ export async function generateAudio(): Promise<void> {
       context_mode: 'none',
     });
     const elapsedSec = (performance.now() - t0) / 1000;
+    // 0817：非流式响应的文档清单同样即显渲染（通道与流式轨对齐，§5.2）
+    chatActions.applyNonStreamDocs(data.documents_written || []);
     patchDraft(draft.id, draftType, {
       mediaType: 'audio', genType: 'audio', imgUrl: '', videoUrl: '',
       prompt: String(data.text || draft.prompt), mode, timbre,

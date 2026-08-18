@@ -17,9 +17,10 @@ export interface AgentChatResponse {
   state?: Record<string, unknown>;
 }
 
-/** 非流式 LLM 调用（音频规划等场景用） */
+/** 非流式 LLM 调用（音频规划等场景用）；0817：返回完整响应（documents_written
+ * 由调用方即显渲染，通道与流式轨对齐，§5.2） */
 export function canvasLlm(request: AgentChatRequest) {
-  return apiPost<{ text: string }>('/api/agent/chat', request);
+  return apiPost<AgentChatResponse>('/api/agent/chat', request);
 }
 
 /** 加载 Skill 列表（Agent 技能配置，/api/plugins/ftdyb-agent/config） */
