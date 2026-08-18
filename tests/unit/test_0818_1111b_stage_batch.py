@@ -1,7 +1,7 @@
 """回归测试 0818-1111b：空参读文档自动归位 + 空输出引导续写 + 阶段同批声明翻译。
 
-事故：1111 实测——模型空参试探 read_uploaded_doc 烧一轮；auto_retry 盲重跑
-翻倍成本；skill_pipeline_plan 只回步骤号，「step3=三拆解同阶段」分组不可见，
+事故：1111 实测——模型空参试探 read_uploaded_doc 烧一轮；盲目重试翻倍成本；
+旧调度工具只回步骤号，「step3=三拆解同阶段」分组不可见，
 模型拆完关键元素就暂停且把下一步说成编写提示词。
 """
 import asyncio
@@ -44,7 +44,7 @@ class TestUploadedDocAutoResolve:
         assert "自动归位" in res.data["content"]
 
 
-# ---------- D2：auto_retry 引导续写 ----------
+# ---------- D2：坏输出引导续写 ----------
 
 
 class TestBadOutputNudge:

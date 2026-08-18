@@ -97,7 +97,7 @@ def test_run_deterministic_stage_dispatch_order_and_retry(monkeypatch):
             return SkillToolResult(success=True, data={})
 
     built = {"script_analyze": FakeTool("script_analyze", True)}
-    monkeypatch.setattr(exec_tools, "build_executor_tool",
+    monkeypatch.setattr(po, "build_executor_tool",
                         lambda name: built.get(name))
     spec = po.StageSpec("analysis", "剧本分析", ("script_analyze",))
     results = asyncio.run(po.run_deterministic_stage(SKILL, spec))

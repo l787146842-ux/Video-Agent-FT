@@ -36,6 +36,8 @@ jobs:
         run: python scripts/check_governance_refs.py
       - name: Category keys gate (九轮 B2：类别 Key 字面量门禁，CAT_* 单一事实源)
         run: python scripts/check_category_keys.py
+      - name: Legacy orchestration gate (0818 B5：退役编排机制防复活)
+        run: python scripts/check_legacy_orchestration.py
       - name: API contract check (OpenAPI -> TS types)
         run: python scripts/gen_api_types.py --check
 

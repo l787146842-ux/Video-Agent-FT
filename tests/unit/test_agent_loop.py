@@ -189,7 +189,7 @@ async def test_all_gate_bypassed_writes_and_keeps_model_pause(svc, monkeypatch):
 
 
 def test_executor_records_gate_warnings(svc, monkeypatch):
-    """814Gb：规格前置用户侧静默（执行侧强制由 FlowGateSet 承担），下批次重置"""
+    """814Gb：规格前置用户侧静默（执行侧强制由编排器承担），下批次重置"""
     from src.video_agent.skill_runtime import registry
 
     monkeypatch.setattr(

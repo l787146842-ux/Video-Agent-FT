@@ -78,8 +78,6 @@ class SkillEntry:
         """manifest 声明活读（B4）：sidecar 唯一源，注册不快照，
         声明后写/迁移更新后立即生效（旧文档通道每次活读语义一致）。
         None = 未声明，平台回落最小闸（S1）。"""
-        from src.video_agent.skill_runtime import sidecar
-
         return sidecar.load_sidecar(self.slug)
 
     @property

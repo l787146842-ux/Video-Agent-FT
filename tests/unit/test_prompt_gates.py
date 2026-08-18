@@ -272,7 +272,7 @@ def test_has_spec_document_variants():
 
 def test_executor_spec_gate_warns_and_allows_add_group(svc, monkeypatch):
     """814Gb：文本轨规格前置与 FC 轨对齐——executor 不再向用户追加 ⚠，
-    执行侧强制由 FlowGateSet.ensure_spec_gate 承担（planner 装配）。"""
+    执行侧强制由编排器承担。"""
     from src.video_agent.skill_runtime import registry
 
     monkeypatch.setattr(
@@ -309,7 +309,7 @@ def test_executor_spec_gate_inactive_without_skill(svc):
 
 def test_fc_flow_gate_warns_and_allows_create_group_without_spec(monkeypatch):
     """814G5/0818：_flow_gate 不向用户追加 ⚠、不硬拦（恒 None）；
-    越阶顺序控制已归编排器，FlowGateSet 退役。"""
+    越阶顺序控制已归编排器（旧门禁链退役）。"""
     runner = FCToolRunner(tool_manager=None)
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {"documents": []}))
     err = runner._flow_gate("storyboard_create_group", injected_skill="剧本生视频（需上传剧本）")

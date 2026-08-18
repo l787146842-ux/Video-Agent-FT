@@ -82,7 +82,7 @@ def test_dual_track_same_verdict_for_good_prompt(tmp_path):
 
 def test_fc_flow_gate_s1_warning_only(tmp_path, monkeypatch):
     """814G5/0818：_flow_gate 恒 None 不硬拦（用户指令优先）；
-    越阶顺序控制已归编排器，FlowGateSet 退役。"""
+    越阶顺序控制已归编排器（旧门禁链退役）。"""
     import src.video_agent.web.skill_docs as sd
     from src.video_agent.skill_runtime import registry
 

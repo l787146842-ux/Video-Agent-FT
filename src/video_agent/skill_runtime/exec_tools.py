@@ -166,7 +166,7 @@ class ScriptAnalyzeTool:
         return exec_common.SkillToolResult(success=True, data={
             "summary": summary,
             "key_points": key_points,
-            # P3：去祈使化（展示由层 9 prepend_script_summary 机械保证）
+            # P3：去祈使化（总结展示归属机械链路，不在本层教模型）
             "detail": f"已分析《{doc.get('name')}》。一句话总结：{summary}",
         })
 

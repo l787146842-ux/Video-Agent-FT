@@ -21,6 +21,7 @@ from src.video_agent.config import settings
 from src.video_agent.core.token_budget import context_window_for_model, estimate_messages_tokens, truncate_messages
 from src.video_agent.memory import MemoryManager
 from src.video_agent.state.manager import StateManager
+from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.utils.prompts import load_prompt, load_prompt_section, render_prompt
@@ -340,8 +341,8 @@ class Planner:
             if _orch is not None:
                 return _orch
 
-        # 0818 架构板正批 B3：FlowGateSet 门禁链与剧本闸装配退役——
-        # 顺序与原料闸能力迁入 pipeline_orchestrator（状态驱动、机械回卡）。
+        # 0818 架构板正批 B3：门禁链与剧本闸装配退役，顺序与原料闸能力
+        # 迁入 pipeline_orchestrator（状态驱动、机械回卡）。
 
         # 包装 llm_call：处理 FC tool_calls 后返回 (content, finish_reason, fc_applied)
         # image_urls_collector 用于跨多步收集生图产物
@@ -770,7 +771,7 @@ class Planner:
         state = self.state_manager.state_dict
         titles = [
             str(g.get("title") or "").strip()
-            for cat in ("keyElements", "shots", "audioItems")
+            for cat in (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS)
             for g in (state.get(cat) or []) if isinstance(g, dict)
         ]
         return (
@@ -918,5 +919,3 @@ class Planner:
         )
 
 
-# _prepend_script_summary 定义源 = core/planner_output.py（八轮 B2 切出）；
-# 本文件顶部以别名保留 re-export 壳，既有引用/测试路径不变。

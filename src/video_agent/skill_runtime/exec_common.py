@@ -27,6 +27,7 @@ from src.video_agent.skill_runtime.progress import (
     emit_timeline_note,
 )
 from src.video_agent.skill_runtime.registry import (
+    fallback_skill_from_state,
     resolve_entry,
     tool_sections,
 )
@@ -764,8 +765,6 @@ def _apply_actions(
     # 结构阶段内联提示词剥离只在结构执行器启用（write_media_prompt 等
     # 提示词阶段必须让 prompt 原样落盘，不能被结构纯净闸误剥）
     ex.structure_phase = bool(strip_prompts)
-    from src.video_agent.skill_runtime.registry import fallback_skill_from_state, resolve_entry
-
     _entry = resolve_entry(fallback_skill_from_state(svc.state_dict))
     ex.gate_rules = prompt_gates.parse_gate_rules(
         skill_content, manifest=(_entry.manifest if _entry else None))

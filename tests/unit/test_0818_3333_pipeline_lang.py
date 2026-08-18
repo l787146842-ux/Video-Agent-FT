@@ -1,6 +1,6 @@
 """回归测试 0818-3333：pipeline 调度回喂可见性 + 语言跟随契约。
 
-事故：skill_pipeline_plan 返回值全是干货但回喂只给模型「执行成功」五字，
+事故：调度工具（已退役）返回值全是干货但回喂只给模型「执行成功」五字，
 模型看不到批次信息连调 3 次空转（每轮白烧 8~20s 思考）；planner 模板缺
 语言跟随契约（回复须跟随用户消息语言）。
 """
@@ -22,7 +22,7 @@ class TestPipelineDetailVisibility:
         from src.video_agent.core.fc_feedback import format_tool_results
 
         text = format_tool_results([{
-            "name": "skill_pipeline_plan", "ok": True,
+            "name": "script_analyze", "ok": True,
             "data": {"detail": "已完成：剧本分析; 未完成：关键元素; 下一可执行批次：关键元素"},
         }])
         assert "下一可执行批次：关键元素" in text

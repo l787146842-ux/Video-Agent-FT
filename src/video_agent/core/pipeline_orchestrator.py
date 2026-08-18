@@ -15,6 +15,7 @@ from loguru import logger
 
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
+from src.video_agent.skill_runtime.exec_tools import build_executor_tool
 from src.video_agent.skill_runtime.progress import emit_progress
 from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
 
@@ -112,8 +113,6 @@ async def run_deterministic_stage(
     skill: str, spec: StageSpec, *, max_retry: int = 1,
 ) -> List[Any]:
     """按批顺序直调执行器；失败确定性重试（幂等执行器安全），重试权不归模型。"""
-    from src.video_agent.skill_runtime.exec_tools import build_executor_tool
-
     results = []
     for name in spec.executors:
         tool = build_executor_tool(name)
