@@ -6,11 +6,21 @@
 import pytest
 
 import src.video_agent.web.skill_docs as sd
+from src.video_agent.config import settings
 from src.video_agent.core.flow_gates import FlowGateSet
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager
+
+
+@pytest.fixture(autouse=True)
+def _orchestrator_off():
+    """本文件钉旧原料闸组件（B3 计划移除）；关编排主路径隔离测试。"""
+    old = settings.pipeline_orchestrator_enabled
+    object.__setattr__(settings, "pipeline_orchestrator_enabled", False)
+    yield
+    object.__setattr__(settings, "pipeline_orchestrator_enabled", old)
 
 
 @pytest.fixture()

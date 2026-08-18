@@ -144,6 +144,16 @@ class TestPlannerNoAdapter:
 class TestStageGuideFallback:
     """5555 兜底：阶段执行器跑完但模型没发确认卡时，系统补下一步引导卡"""
 
+    @pytest.fixture(autouse=True)
+    def _orchestrator_off(self):
+        """钉 5555 兜底引导卡（旧组件）；关编排主路径隔离测试。"""
+        from src.video_agent.config import settings
+
+        old = settings.pipeline_orchestrator_enabled
+        object.__setattr__(settings, "pipeline_orchestrator_enabled", False)
+        yield
+        object.__setattr__(settings, "pipeline_orchestrator_enabled", old)
+
     async def test_stage_done_without_pause_gets_guide_card(self, svc, monkeypatch):
         from src.video_agent.skill_runtime import executors as ex_mod
         from src.video_agent.skill_runtime.executors import (

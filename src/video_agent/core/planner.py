@@ -333,6 +333,17 @@ class Planner:
         except Exception as _e:
             logger.warning("[GateOverride] gate_override 装配失败（豁免未传达执行器）: {}", _e)
 
+        # 0818 架构板正批 B2：状态驱动编排主路径（混合模式）——
+        # 推进意图/确认续进/首轮非提问走编排器；ad-hoc 与自由对话回落模型循环。
+        if (
+            settings.pipeline_orchestrator_enabled
+            and context.skill_name
+            and self._route_orchestrator(user_message)
+        ):
+            _orch = await self._run_orchestrator_path(context)
+            if _orch is not None:
+                return _orch
+
         # Skill 声明式流程门禁（814R3 复活）：解析选中 Skill 声明的检查点，
         # 由代码强制执行——越阶操作直接拦截并强制暂停，不依赖模型自觉。
         # 未声明检查点的 Skill 不受影响（_flow_gates 为 None）；
@@ -855,6 +866,75 @@ class Planner:
             thinking_level=getattr(self, "_chat_thinking_level", "") or "",
         ):
             yield chunk
+
+    # ---------- 0818 架构板正批 B2：状态驱动编排主路径（混合模式） ----------
+
+    _ADVANCE_CORPUS = (
+        "继续", "确认", "确定", "可以", "好的", "没问题", "下一步", "开始", "推进",
+    )
+    _ADHOC_VERBS = (
+        "改", "换", "重做", "删", "调整", "修改", "重写", "去掉", "新增", "加一个",
+    )
+
+    def _is_adhoc_edit(self, user_message: Any) -> bool:
+        """ad-hoc 特征（确定性）：命中既有资产名 + 修改动词 → 模型循环。"""
+        if not isinstance(user_message, str) or not user_message.strip():
+            return False
+        state = self.state_manager.state_dict
+        titles = [
+            str(g.get("title") or "").strip()
+            for cat in ("keyElements", "shots", "audioItems")
+            for g in (state.get(cat) or []) if isinstance(g, dict)
+        ]
+        return (
+            any(t and len(t) >= 2 and t in user_message for t in titles)
+            and any(v in user_message for v in self._ADHOC_VERBS)
+        )
+
+    def _route_orchestrator(self, user_message: Any) -> bool:
+        """确定性意图路由：歧义默认模型循环，不错抓自由对话。"""
+        msg = str(user_message or "").strip()
+        if not msg or self._is_adhoc_edit(msg):
+            return False
+        state = self.state_manager.state_dict
+        inter = state.get("interaction") or {}
+        hit = any(k in msg for k in self._ADVANCE_CORPUS)
+        if inter.get("auto_continue"):
+            return True
+        if inter.get("awaiting_confirmation"):
+            return hit
+        started = bool((state.get("analysis") or {}).get("summary"))
+        if started:
+            return hit
+        # 首轮推进：管线未启动且非提问，且有素材或显式推进词
+        is_question = (
+            "？" in msg or "?" in msg
+            or msg.startswith(("什么", "怎么", "为什么", "哪", "吗"))
+        )
+        return (not is_question) and (bool(state.get("uploadedDocs")) or hit)
+
+    async def _run_orchestrator_path(
+        self, context: "PlannerContext",
+    ) -> Optional["PlannerResponse"]:
+        """编排器快路径；返回 None = 创作型阶段交接模型循环。"""
+        from src.video_agent.core import pipeline_orchestrator as _po
+
+        outcome = await _po.orchestrate_turn(self.state_manager, context.skill_name)
+        if outcome is None:
+            return None
+        if outcome.kind == "spec_pending":
+            msg, opts = prompt_gates.spec_collect_card(self.state_manager.state_dict)
+            return PlannerResponse(
+                text="", confirmation=msg, confirmation_options=opts, steps=1)
+        if outcome.kind == "paused":
+            inter = self.state_manager.state_dict.setdefault("interaction", {})
+            inter["awaiting_confirmation"] = True
+            inter["confirmation_message"] = outcome.message
+            self.state_manager.save_debounced()
+            return PlannerResponse(
+                text=outcome.message, confirmation=outcome.message,
+                confirmation_options=outcome.options or [], steps=1)
+        return PlannerResponse(text=outcome.message or "", steps=1)
 
     async def _handle_fc_response(
         self,

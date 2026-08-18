@@ -161,7 +161,7 @@ class Settings:
     script_inject_limit: int = field(default_factory=lambda: _env_int("SCRIPT_INJECT_LIMIT", 20000))
     # 0818 架构板正批 B1：状态驱动编排器开关（B2 默认开；回关=回落模型持循环旧路径）
     pipeline_orchestrator_enabled: bool = field(
-        default_factory=lambda: _env_bool("PIPELINE_ORCHESTRATOR_ENABLED", False))
+        default_factory=lambda: _env_bool("PIPELINE_ORCHESTRATOR_ENABLED", True))
 
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))

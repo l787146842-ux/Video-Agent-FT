@@ -178,3 +178,67 @@ async def test_orchestrate_turn_handoff_at_creative_stage(tmp_path):
     svc.state_dict["audioItems"] = [{"id": "a1", "drafts": []}]
     outcome = await po.orchestrate_turn(svc, SKILL)
     assert outcome is None, "创作型阶段交接模型循环（混合模式）"
+
+
+# ---------- B2 接线：planner 主路径路由 ----------
+
+@pytest.mark.asyncio
+async def test_planner_routes_first_turn_to_orchestrator(tmp_path, monkeypatch):
+    """首轮非提问+有素材 → 编排器快路径（模型循环零调用）。"""
+    from src.video_agent.core.planner import Planner, PlannerContext
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.skill_runtime import exec_tools
+
+    StateManager.reset_instance()
+    svc = StateManager(str(tmp_path / "ws"))
+    StateManager._instance = svc
+    svc.state_dict["uploadedDocs"] = [
+        {"id": "d1", "name": "剧本.md", "content": "剧本正文：程心苏醒。"}]
+
+    async def fake_aexecute(self, params):
+        svc.state_dict["analysis"] = {"summary": "程心苏醒与掩体失效。"}
+        return SkillToolResult(success=True, data={})
+
+    monkeypatch.setattr(exec_tools.ScriptAnalyzeTool, "aexecute", fake_aexecute)
+    planner = Planner(state_manager=svc, llm_adapter=None, tool_manager=None)
+    result = await planner.handle_message(
+        "AI-短剧一站式生成", PlannerContext(skill_name=SKILL))
+    assert result.steps == 1
+    assert "剧本分析" in (result.confirmation or ""), "阶段边界机械暂停卡"
+    assert (svc.state_dict.get("interaction") or {}).get("awaiting_confirmation")
+    StateManager.reset_instance()
+
+
+@pytest.mark.asyncio
+async def test_planner_question_stays_in_model_loop(tmp_path, monkeypatch):
+    """自由提问不错抓：路由回落模型循环（adapter 被调用）。"""
+    from src.video_agent.core.planner import Planner, PlannerContext
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
+
+    class ProbeAdapter(BaseChatAdapter):
+        def __init__(self):
+            self.calls = 0
+
+        @property
+        def supports_function_calling(self):
+            return False
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            return ChatResponse(content="我是创作助手。", finish_reason="stop")
+
+        async def chat_stream(self, messages, **kwargs):
+            yield ChatResponse(content="我是创作助手。", finish_reason="stop")
+
+    StateManager.reset_instance()
+    svc = StateManager(str(tmp_path / "ws"))
+    StateManager._instance = svc
+    svc.state_dict["uploadedDocs"] = [
+        {"id": "d1", "name": "剧本.md", "content": "剧本正文。"}]
+    adapter = ProbeAdapter()
+    planner = Planner(state_manager=svc, llm_adapter=adapter, tool_manager=None)
+    await planner.handle_message(
+        "这个剧本讲什么？", PlannerContext(skill_name=SKILL))
+    assert adapter.calls >= 1, "提问必须回落模型循环"
+    StateManager.reset_instance()
