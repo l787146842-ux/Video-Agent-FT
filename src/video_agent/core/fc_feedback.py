@@ -182,6 +182,33 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
     )
 
 
+def classify_tool_failure(error_text: str) -> str:
+    """0818-1111：执行器失败客观分类（层 8 结构化回喂用）。"""
+    t = str(error_text or "")
+    if "无法解析" in t or "未返回 JSON" in t or "非 JSON" in t:
+        return "output_format"
+    if "超时" in t or "timeout" in t.lower():
+        return "timeout"
+    if "HTTP 5" in t or "流式请求失败" in t or "空内容" in t:
+        return "upstream"
+    return "other"
+
+
+def compose_failure_feedback(name: str, error_text: str, fail_count: int) -> str:
+    """0818-1111：执行器失败结构化回喂（层 8）：客观报告 + 单句下一步。
+
+    同工具第二次失败升级建议为「不得重试、向用户说明」，
+    掐掉主模型盲重试空转（1111 事故 step1→step3 同工具连败）。
+    """
+    kind = classify_tool_failure(error_text)
+    raw = str(error_text or "未知错误")[:120]
+    if fail_count >= 2:
+        hint = "不得再次重试该工具，向用户说明原因并给出替代选择"
+    else:
+        hint = "可调整参数后重试一次，或先向用户说明困难"
+    return f"[{kind}] {raw} 建议：{hint}"
+
+
 def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
     """FC 工具的中文简述（与 studio-actions 描述风格对齐）"""
     title = str(args.get("title") or "").strip()

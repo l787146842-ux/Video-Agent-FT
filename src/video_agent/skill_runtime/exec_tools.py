@@ -123,9 +123,9 @@ class ScriptAnalyzeTool:
                 "key_points": cached.get("key_points") or [],
                 "cached": True,
                 "detail": (
-                    f"《{doc.get('name')}》已有分析结果（剧本未变更），直接复用。"
-                    f"一句话总结：{cached['summary']}（本轮不要重复分析；"
-                    "若此前已向用户展示过总结，正文不必再重复）"
+                    # 0818-1111 P3：回喂只陈述客观事实，展示职责归层 9 代码
+                    f"《{doc.get('name')}》剧本未变更，复用既有分析。"
+                    f"一句话总结：{cached['summary']}"
                 ),
             })
         user = (
@@ -168,10 +168,8 @@ class ScriptAnalyzeTool:
         return exec_common.SkillToolResult(success=True, data={
             "summary": summary,
             "key_points": key_points,
-            "detail": (
-                f"已分析《{doc.get('name')}》。一句话总结：{summary} "
-                "（请在回复正文中把这句总结原样讲给用户）"
-            ),
+            # 0818-1111 P3：去祈使化（展示由层 9 prepend_script_summary 机械保证）
+            "detail": f"已分析《{doc.get('name')}》。一句话总结：{summary}",
         })
 
 

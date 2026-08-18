@@ -49,6 +49,8 @@ from src.video_agent.core.fc_feedback import (
     FEEDBACK_IMAGE_TOOL,  # noqa: F401
     FEEDBACK_MARKER,  # noqa: F401
     FEEDBACK_MAX_TOTAL_CHARS,  # noqa: F401
+    classify_tool_failure,  # noqa: F401
+    compose_failure_feedback,
     compress_prior_feedback,  # noqa: F401
     describe_fc_tool,
     format_tool_results,  # noqa: F401
@@ -71,6 +73,8 @@ class FCToolRunner:
         self.gate_override: Any = False
         # 本批闸机警告（随 execute 返回/时间线可见）
         self.gate_warnings: List[str] = []
+        # 0818-1111：本轮同工具失败计数（结构化回喂升级用）
+        self._tool_fail_counts: Dict[str, int] = {}
         # 已完成阶段集合（script_analyze 等；总结/收集闸判定用）
         self.skill_stages_done: set = set()
         # Skill 可配置闸机规则（测试/执行器注入 parse_gate_rules 结果）
@@ -677,9 +681,13 @@ class FCToolRunner:
                     elapsed_ms=_tool_ms, ok=bool(spec_silent_summary),
                     stage=stage_label_for_tool(name),
                 )
+                # 0818-1111：结构化失败回喂（客观报告+单句建议，二次升级）
+                self._tool_fail_counts[name] = self._tool_fail_counts.get(name, 0) + 1
                 tool_results.append({
                     "name": name, "ok": False,
-                    "error": str(result.error or "执行失败")[:200],
+                    "error": compose_failure_feedback(
+                        name, result.error, self._tool_fail_counts[name],
+                    ),
                 })
         # 阶段硬边界：写入了规格/阶段文档但模型未自行暂停时，由系统强制暂停等审阅，
         # 不给它顺手把后续阶段（拆结构/写提示词）也打包做完的机会；

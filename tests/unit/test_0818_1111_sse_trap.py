@@ -110,3 +110,29 @@ class TestB2ExecutorStreaming:
         for name in ("exec_spec.py", "exec_split.py", "exec_tools.py"):
             src = (root / name).read_text(encoding="utf-8")
             assert "call_chat_completion(" not in src, f"{name} 残留非流式调用"
+
+
+# ---------- B3：失败回喂结构化 + 去祈使化 ----------
+
+
+class TestB3FailureFeedback:
+    def test_failure_feedback_structured_and_escalates(self):
+        """0818-1111：失败回喂 = 客观分类 + 单句建议；同工具二次失败升级为不得重试。"""
+        from src.video_agent.core.fc_feedback import compose_failure_feedback
+
+        err = "执行器 LLM 返回的 JSON 无法解析: xxx"
+        first = compose_failure_feedback("script_analyze", err, 1)
+        assert first.startswith("[output_format]")
+        assert "重试一次" in first
+        second = compose_failure_feedback("script_analyze", err, 2)
+        assert "不得再次重试" in second
+        assert "向用户说明" in second
+
+    def test_fc_runner_failure_branch_uses_structured_feedback(self):
+        """0818-1111：FC 轨失败分支必须走结构化回喂，裸错误串不得复活。"""
+        import inspect
+        from src.video_agent.core import fc_tool_runner
+
+        src = inspect.getsource(fc_tool_runner)
+        assert "compose_failure_feedback(" in src
+        assert '"error": str(result.error or "执行失败")[:200]' not in src
