@@ -224,6 +224,9 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            # 0818-1111：非流式必须显式声明。9router 等中介对缺省 stream 的
+            # 自家规矩是「当流式」，缺省会拿回 SSE 文本导致解析崩溃。
+            "stream": False,
         }
         if tools:
             payload["tools"] = tools
@@ -238,7 +241,15 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                 context="chat",
             )
             resp.raise_for_status()
-            data = resp.json()
+            try:
+                data = resp.json()
+            except json.JSONDecodeError as e:
+                # 0818-1111：200 但回非 JSON（被误当流式路由）按契约转 AdapterError，
+                # 不让裸解析错误漏出 adapter 层。
+                raise AdapterError(
+                    f"LLM 返回非 JSON 响应（可能被误当流式）：{e}；响应头={resp.text[:120]!r}",
+                    retryable=False,
+                ) from e
         except httpx.TimeoutException:
             raise AdapterError(f"LLM 请求超时（{timeout}s），请检查网络或供应商状态", retryable=True)
         except httpx.HTTPStatusError as e:
