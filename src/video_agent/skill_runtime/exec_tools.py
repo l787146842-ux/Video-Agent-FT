@@ -310,9 +310,9 @@ def render_pipeline_detail(status: List[Dict[str, Any]], ready: List[Dict[str, A
 # 执行器→工作台产出客观判定（阶段同批完成度机器读出用）
 _EXECUTOR_DONE_PROBES = {
     "script_analyze": lambda st: bool((st.get("analysis") or {}).get("summary")),
-    "storyboard_key_elements": lambda st: bool(st.get("keyElements")),
-    "storyboard_shots": lambda st: bool(st.get("shots")),
-    "storyboard_audio": lambda st: bool(st.get("audioItems")),
+    "storyboard_key_elements": lambda st: bool(st.get(CAT_KEY_ELEMENTS)),
+    "storyboard_shots": lambda st: bool(st.get(CAT_SHOTS)),
+    "storyboard_audio": lambda st: bool(st.get(CAT_AUDIO_ITEMS)),
 }
 
 
