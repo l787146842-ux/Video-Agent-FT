@@ -24,6 +24,13 @@ def _skill_mirror_dir(tmp_path_factory):
     for f in fixture_dir.glob("*.md"):
         if f.name != "README.md":
             shutil.copy2(f, mirror / f.name)
+    # 0818 架构板正批 B0：sidecar 声明随文档同镜像（registry 双读在测试期可见）
+    real_sidecar = Path(REAL_DIR).parent / "skills_manifests"
+    if real_sidecar.exists():
+        sc = mirror.parent / "skills_manifests"
+        sc.mkdir(exist_ok=True)
+        for f in real_sidecar.glob("*.json"):
+            shutil.copy2(f, sc / f.name)
     return mirror
 
 

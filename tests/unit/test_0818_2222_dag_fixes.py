@@ -208,25 +208,25 @@ def test_declared_skills_semantic_golden(skill, checks):
 
 
 def test_all_product_skills_planner_lint_clean():
-    """全量盘点钉死：data/skills 下所有产品 Skill 的 <planner> 体检零告警。"""
+    """全量盘点钉死：data/skills 下所有产品 Skill 的 <planner> 体检零告警
+    （声明从注册表读——B0 起 sidecar 优先）。"""
     from pathlib import Path
-    from src.video_agent.web.skill_docs import parse_skill_manifest, split_skill_sections
+    from src.video_agent.skill_runtime import registry
 
     d = Path(__file__).resolve().parents[2] / "data" / "skills"
     skills = sorted(d.glob("*.md"))
     assert skills, "产品 Skill 目录为空"
     problems = []
     for f in skills:
-        content = f.read_text(encoding="utf-8")
-        sections = split_skill_sections(content)
-        planner = sections.get("planning") or ""
-        manifest = parse_skill_manifest(content)
-        issues = dag.lint_planner_dag(planner, manifest)
+        entry = registry.register_skill(f.stem)
+        assert entry is not None, f.stem
+        planner = entry.sections.get("planning") or ""
+        issues = dag.lint_planner_dag(planner, entry.manifest)
         if issues:
             problems.append(f"{f.stem}：{'；'.join(issues)}")
         # 末步无依赖 = 调度无条件放行末步（同型事故防线）：
         # 流程类 Skill（步骤数≥5）的最大步骤号必须带依赖声明
-        steps, deps = dag.resolve_steps_and_deps(manifest, planner)
+        steps, deps = dag.resolve_steps_and_deps(entry.manifest, planner)
         if len(steps) >= 5:
             last = max(steps)
             if last not in deps:

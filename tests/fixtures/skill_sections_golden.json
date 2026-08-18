@@ -237,7 +237,7 @@
   },
   "多人对话访谈": {
     "planning": {
-      "chars": 576,
+      "chars": 566,
       "head": "**阶段逻辑与依赖关系：**\n1. 编写 `Final_Video_Spec.m"
     },
     "storyboard_ke": {

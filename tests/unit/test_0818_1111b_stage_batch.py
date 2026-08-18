@@ -127,20 +127,19 @@ class TestStageExecutorsDeclaration:
         assert "同批" in res.data["detail"]
 
     def test_ai_skill_manifest_declares_stage3_batch(self):
-        """单一事实源：AI-一站式 Skill 自己声明 step3 三拆解同批。"""
-        from src.video_agent.web.skill_docs import get_skill_doc, parse_skill_manifest
+        """单一事实源：AI-一站式 Skill 自己声明 step3 三拆解同批
+        （0818 B0：声明家迁 sidecar，经 registry 统一入口读）。"""
+        from src.video_agent.skill_runtime import registry
 
-        doc = get_skill_doc("AI-短剧一站式生成")
-        manifest = parse_skill_manifest(doc["content"])
+        manifest = registry.skill_manifest_of("AI-短剧一站式生成")
         stages = (manifest.get("flow") or {}).get("stage_executors") or {}
         assert stages.get("3") == ["storyboard_key_elements", "storyboard_shots", "storyboard_audio"]
 
     def test_ai_skill_manifest_declares_step2_spec_done(self):
         """step2 完成度走客观声明（spec 文档存在=完成），掐掉冗余写规格轮。"""
-        from src.video_agent.web.skill_docs import get_skill_doc, parse_skill_manifest
+        from src.video_agent.skill_runtime import registry
 
-        doc = get_skill_doc("AI-短剧一站式生成")
-        manifest = parse_skill_manifest(doc["content"])
+        manifest = registry.skill_manifest_of("AI-短剧一站式生成")
         assert ((manifest.get("flow") or {}).get("step_done_conditions") or {}).get("2") == "spec"
 
     def test_step_done_spec_condition_objective(self):

@@ -104,12 +104,18 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
     if not doc:
         return None
     content = doc.get("content") or ""
+    # 0818 架构板正批 B0：声明双读——sidecar 优先，文档 manifest 回落（B4 退役文档通道）
+    from src.video_agent.skill_runtime import sidecar
+
+    manifest = sidecar.load_sidecar(slug)
+    if manifest is None:
+        manifest = parse_skill_manifest(content)
     return SkillEntry(
         slug=slug,
         name=doc.get("name") or slug,
         content=content,
         sections=split_skill_sections(content),
-        manifest=parse_skill_manifest(content),
+        manifest=manifest,
     )
 
 

@@ -1,16 +1,4 @@
 
-```json skill_manifest
-{
-  "gates": {
-    "require_subtitle": true,
-    "require_camera_language": true,
-    "require_audio_layer": true
-  },
-  "flow": {
-    "spec_gate": true
-  }
-}
-```
 skill_name: "音乐MV（需上传音乐）"
 skill_description: "用于通过已上传的音乐生成音乐视频。生成渠道以全局设置为准。在关键阶段暂停以供用户确认；采用人机协作的单次（one-shot）流程。"
 <planner>
