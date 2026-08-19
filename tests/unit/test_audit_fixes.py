@@ -71,8 +71,9 @@ class TestStateRefreshPerStep:
         )
         prompt = planner._build_system_prompt(ctx)
         assert prompt.endswith("STATE_AT_TAIL_MARKER")
-        # 协议段在状态段之前（稳定前缀）
-        assert prompt.index("studio-actions") < prompt.index("STATE_AT_TAIL_MARKER")
+        # 协议段在状态段之前（稳定前缀；audit-0819b：锚点随文本块退役
+        # 改钉暂停协议表述，语义不变）
+        assert prompt.index("workflow_pause") < prompt.index("STATE_AT_TAIL_MARKER")
 
 
 # ---------- P0-2：响应模型字段 ----------

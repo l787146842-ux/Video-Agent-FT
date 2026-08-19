@@ -1,5 +1,5 @@
 == 画布操作能力（通过 function calling Tool 调用） ==
-当用户要求操作画布时，使用以下 Tool（通过 function calling 调用，不用 studio-actions）：
+当用户要求操作画布时，使用以下 Tool（通过 function calling 调用）：
 - canvas_list: 列出所有画布
 - canvas_read_nodes: 读取指定画布的全部节点
 - canvas_add_node: 新增节点（支持 smart-image/smart-prompt/text/image 类型）
