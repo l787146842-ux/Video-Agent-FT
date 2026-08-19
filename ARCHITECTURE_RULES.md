@@ -29,6 +29,7 @@
 - **确认单轨化（audit-0819b/0819d）**：暂停确认唯一经 `workflow_pause` FC 工具产生（单一正名，对齐业界「只有一个 AskUserQuestion」；别名工具 request_confirmation 与文本别名归一 split_actions 已删），经 llm_call 第 5 元组结构化上抛；合成 studio-actions 文本块、流式抑制器（S01）、strip 清洗已同批删除；`agent_loop` 纯文本轮仅收尾（轮末策略照常承重）；mock 演示动作以结构化 dict 直达执行器
 - **执行器结构化输出（audit-0819d）**：执行器子 LLM 的 JSON 产出点一律下发 `response_format=json_object`（端点不支持时适配器探针剥离降级），产出严格 `json.loads` 校验，畸形走既有 C2 拒因纠正重试——宽容正则兜底已删（S17），禁止恢复；外来工具名运行时翻译层（S15）已删，Skill 导入期工具名转换归专用 Skill 系统
 - **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
+- **控制流统一（audit-0819e，ADR-0002，1111 事故根治）**：一切消息先过**确定性分诊**（`Planner._triage_control`，只认客观状态事实，零语料；概率路由 `_ADVANCE_CORPUS`/`_ADHOC_VERBS` 已删，S04 下账，禁止复活）；advance 由编排器接管，其余交接**受界模型循环**；模型循环每个 FC 批落盘后经 `between_steps` 回收钩子由外层循环再评估（单一就绪单元语义：模型循环只是随时可被回收的执行单元）；**阶段前置闸 `platform.stage_precondition`**（闸机链首位）在工具执行路径上机械强制阶段顺序，不依赖控制流入口的运气；分诊/阶段批/交接/回收全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，控制流决策永不无据可查
 - **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
 - **层级例外（已收敛）**：`web/action_executor.py` 因依赖 web 生成管线暂留 web 层；core→web 顶层 import 一律禁止（经构造注入装配）
 
@@ -342,6 +343,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 | 工具成果用户看不见 | 层 9 系统兜底拼入正文/即时 SSE 事件 | 只加“必须展示”prose（2222/3333） |
 | 参数与生成能力不符 | 层 5 规格收集 + 执行器运行时注入 + 全局设置 | Skill/执行器硬编码数值 |
 | 模型继续推进了不该推进的阶段 | 阶段顺序由平台状态计算（编排器）裁定，模型不参与排序 | 在回喂话术里加长段告诫（5555） |
+| 路由错过导致模型越阶（入口失控） | `platform.stage_precondition` 硬闸（执行路径内嵌）+ 步间回收，不依赖入口运气（audit-0819e） | 恢复语料/措辞路由猜意图（1111） |
 | Skill 流程与平台行为不符 | 系统层：平台闸启用条件 + 执行器冲突裁决注入 + 适配层填参 | 修改 Skill 文件或其 manifest 声明（S2；T16/T17 类清理须用户显式裁决） |
 | 模型产出不达标 | 查系统约束：输出预算/思考预算/截断处置，修管线 | 放宽 Skill 要求迁就系统缺陷（S2） |
 

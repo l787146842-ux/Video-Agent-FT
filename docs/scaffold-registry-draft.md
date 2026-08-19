@@ -47,4 +47,7 @@
   （build_foreign_tool_note）、S16 文本别名归一（split_actions）、
   S17 执行器宽容兜底解析（_parse_actions_from_text 宽容正则）；防复活钉死见
   test_audit0819d_structured_executors。
+- audit-0819e 控制流统一（2026-08-19，ADR-0002，1111 事故根治）：S04 概率
+  路由语料（_ADVANCE_CORPUS/_ADHOC_VERBS）拆除下账，基线随降；
+  替代机制为确定性分诊 + 步间回收 + 阶段前置闸（非脚手架，平台不变量）。
 - 棘轮：入账后脚手架计数只降不升（acceptance 门禁，2-1）。
