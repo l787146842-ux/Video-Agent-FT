@@ -52,7 +52,7 @@ def dag_env(monkeypatch):
 def _set_done(monkeypatch, done_keys):
     monkeypatch.setattr(
         po, "stage_done",
-        lambda key, state: key in done_keys,
+        lambda key, state, skill="": key in done_keys,
     )
 
 

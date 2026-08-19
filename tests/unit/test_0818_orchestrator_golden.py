@@ -21,6 +21,18 @@ from src.video_agent.skill_runtime.exec_common import SkillToolResult
 SKILL = "AI-短剧一站式生成"
 
 
+def _strip_demo_media(svc) -> None:
+    """批 6：assembly 探针与 shot_media 解耦后（看组装产物），demo 自带分镜
+    媒体会让 assembly 与分析同批就绪；本文件用例聚焦分析边界，剥离媒体
+    使初始状态确定（只剩 structure 完成）。"""
+    for cat in ("keyElements", "shots", "audioItems"):
+        for g in svc.state_dict.get(cat) or []:
+            for d in g.get("drafts") or []:
+                d.pop("videoUrl", None)
+                d.pop("imgUrl", None)
+                d.pop("audioUrl", None)
+
+
 # ---------- ① 阶段表 ----------
 
 def test_stage_table_canonical_order():
@@ -136,6 +148,7 @@ async def test_orchestrate_turn_pauses_at_analysis_boundary(tmp_path, monkeypatc
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["uploadedDocs"] = [
         {"id": "d1", "name": "剧本.md", "content": "剧本正文：程心苏醒。"}]
+    _strip_demo_media(svc)
 
     async def fake_aexecute(self, params):
         svc.state_dict["analysis"] = {"summary": "程心苏醒与掩体失效。"}
@@ -199,6 +212,7 @@ async def test_planner_routes_first_turn_to_orchestrator(tmp_path, monkeypatch):
     StateManager._instance = svc
     svc.state_dict["uploadedDocs"] = [
         {"id": "d1", "name": "剧本.md", "content": "剧本正文：程心苏醒。"}]
+    _strip_demo_media(svc)
 
     async def fake_aexecute(self, params):
         svc.state_dict["analysis"] = {"summary": "程心苏醒与掩体失效。"}

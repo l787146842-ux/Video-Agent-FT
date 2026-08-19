@@ -23,6 +23,10 @@ CAT_AUDIO_ITEMS = "audioItems"
 ALL_CATEGORIES = [CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS]
 ALL_CATEGORIES_TUPLE = (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS)
 
+# 组装阶段客观产物文档名（批 6）：video_assembler 执行器落盘，assembly 阶段
+# 完成探针据此区分「已生成未组装」与「已组装」（放 state 层避免 core↔skill_runtime 环）
+ASSEMBLY_PLAN_DOC_NAME = "Final_Assembly_Plan.md"
+
 # =======================
 # Enums
 # =======================

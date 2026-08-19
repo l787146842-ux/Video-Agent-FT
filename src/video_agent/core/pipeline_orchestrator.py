@@ -19,7 +19,9 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
 from src.video_agent.skill_runtime.exec_tools import build_executor_tool
 from src.video_agent.skill_runtime.progress import emit_progress
-from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
+from src.video_agent.state.models import (
+    ASSEMBLY_PLAN_DOC_NAME, CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS,
+)
 
 
 @dataclass(frozen=True)
@@ -51,8 +53,41 @@ def _has_media(groups: List[Dict[str, Any]], field: str) -> bool:
     )
 
 
-def stage_done(key: str, state: Dict[str, Any]) -> bool:
-    """阶段完成度客观探针（只认状态事实，认不出=未完成）。"""
+def _all_media(groups: List[Dict[str, Any]], field: str) -> bool:
+    """全部草稿均已具备指定媒体（无任何草稿时返 False，防空集恒真）"""
+    drafts = [
+        d for g in (groups or []) for d in (g.get("drafts") or [])
+        if isinstance(d, dict)
+    ]
+    return bool(drafts) and all(str((d or {}).get(field) or "").strip() for d in drafts)
+
+
+# 组装阶段客观产物（批 6）：video_assembler 执行器落盘的成片组装方案文档。
+# 探针据此区分「已生成未组装」与「已组装」（对标 Stop≠Done≠Verified：
+# 完成必须看产物证据，不与 shot_media 探针同构）；常量归 state/models 单一事实源。
+
+
+def _has_assembly_plan_doc(state: Dict[str, Any]) -> bool:
+    return any(
+        str(d.get("name") or "") == ASSEMBLY_PLAN_DOC_NAME
+        for d in (state.get("documents") or []) if isinstance(d, dict)
+    )
+
+
+def _assembly_done_decl(skill: str) -> str:
+    """sidecar 组装完成条件声明（flow.stages.assembly.done，可选）：
+    当前支持 "document:<文档名>"；未声明返空串（回落平台客观探针）。"""
+    if not skill:
+        return ""
+    manifest = registry.skill_manifest_of(skill) or {}
+    return str(
+        (((manifest.get("flow") or {}).get("stages") or {}).get("assembly") or {}).get("done")
+        or ""
+    ).strip()
+
+
+def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
+    """阶段完成度客观探针（只认状态事实，认不出=未完成；fail-closed）。"""
     if key == "analysis":
         return bool((state.get("analysis") or {}).get("summary"))
     if key == "spec":
@@ -73,7 +108,20 @@ def stage_done(key: str, state: Dict[str, Any]) -> bool:
                    for g in audio for d in (g.get("drafts") or []))
         )
     if key == "assembly":
-        return bool(shots) and _has_media(shots, "videoUrl")
+        # 批 6：sidecar 声明优先；未声明回落「全部分镜有视频 + 组装方案文档在盘」，
+        # 与 shot_media 探针解耦（已生成未组装不再被误判完成）
+        decl = _assembly_done_decl(skill)
+        if decl.startswith("document:"):
+            name = decl[len("document:"):].strip()
+            return any(
+                str(d.get("name") or "") == name
+                for d in (state.get("documents") or []) if isinstance(d, dict)
+            )
+        return (
+            bool(shots)
+            and _all_media(shots, "videoUrl")
+            and _has_assembly_plan_doc(state)
+        )
     return False
 
 
@@ -106,7 +154,7 @@ def stage_table(skill: str) -> List[StageSpec]:
 def current_stage(state: Dict[str, Any], skill: str) -> Optional[StageSpec]:
     """第一个未完成的阶段；全部完成返回 None。"""
     for spec in stage_table(skill):
-        if not stage_done(spec.key, state):
+        if not stage_done(spec.key, state, skill):
             return spec
     return None
 
@@ -246,7 +294,7 @@ def evaluate_stage_precondition(
     if not stage:
         return None
     deps = _effective_stage_deps(skill, table).get(stage, [])
-    missing = [d for d in deps if not stage_done(d, state)]
+    missing = [d for d in deps if not stage_done(d, state, skill)]
     if not missing:
         return None
     names = "、".join(f"「{_STAGE_TITLES.get(d, d)}」" for d in missing)
@@ -266,7 +314,7 @@ def next_batch(
     无 dependencies 声明 → 线性回落（第一个未完成阶段决定，零行为变更）。
     """
     table = stage_table(skill)
-    done = {s.key: stage_done(s.key, state) for s in table}
+    done = {s.key: stage_done(s.key, state, skill) for s in table}
     if all(done.values()):
         return [], False
     deps = _stage_dependencies(skill)
@@ -374,7 +422,7 @@ async def orchestrate_turn(
     while True:
         table = stage_table(skill)
         # 原料闸：analysis 在表且未完成时才判定
-        if any(s.key == "analysis" and not stage_done("analysis", state) for s in table):
+        if any(s.key == "analysis" and not stage_done("analysis", state, skill) for s in table):
             inter = state.get("interaction") or {}
             if (
                 registry.script_required_active(skill)
@@ -393,7 +441,7 @@ async def orchestrate_turn(
                     "script_pending", message=card_msg, options=card_opts)
         batch, handoff = next_batch(state, skill)
         if not batch:
-            if all(stage_done(s.key, state) for s in table):
+            if all(stage_done(s.key, state, skill) for s in table):
                 return OrchestratorOutcome("all_done", message="全部阶段已完成。")
             if handoff:
                 return None  # 创作型阶段就绪，交接模型循环

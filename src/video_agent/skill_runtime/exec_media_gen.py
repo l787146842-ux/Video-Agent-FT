@@ -16,9 +16,11 @@ from pydantic import BaseModel, Field
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.models import (
-    ALL_CATEGORIES_TUPLE, CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS,
+    ALL_CATEGORIES_TUPLE, ASSEMBLY_PLAN_DOC_NAME, CAT_AUDIO_ITEMS,
+    CAT_KEY_ELEMENTS, CAT_SHOTS,
 )
 from src.video_agent.config import settings
+from src.video_agent.utils import gen_id
 from src.video_agent.web import generation as _gen
 from src.video_agent.web.generation import (
     call_chat_completion,
@@ -183,9 +185,24 @@ class VideoAssemblerTool:
                 if l:
                     lines.append(f"  - {l}")
         plan = "\n".join(lines)
+        # 批 6：组装方案落盘为客观产物（幂等 upsert）——assembly 阶段完成探针
+        # 据此区分「已生成未组装」与「已组装」（Stop≠Done≠Verified：看产物证据）
+        docs = state.setdefault("documents", [])
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for d in docs:
+            if d.get("name") == ASSEMBLY_PLAN_DOC_NAME:
+                d["content"] = plan
+                d["updated_at"] = now
+                break
+        else:
+            docs.insert(0, {
+                "id": gen_id("doc"), "name": ASSEMBLY_PLAN_DOC_NAME,
+                "content": plan, "created_at": now, "updated_at": now,
+            })
+        svc.save_debounced()
         return exec_common.SkillToolResult(success=True, data={
             "plan": plan,
-            "detail": "已生成组装方案（素材清单 + 时间轴顺序），可在画布中按此组装导出",
+            "detail": f"已生成组装方案并写入 {ASSEMBLY_PLAN_DOC_NAME}（素材清单 + 时间轴顺序），可在画布中按此组装导出",
         })
 
 
