@@ -4,14 +4,14 @@ Agent 多步执行循环（Rule2: 唯一实现）。
 位于 core 层（P1-1 层级理顺：编排骨架属核心层，不再放 web/；
 web/agent_loop.py 保留为 DEPRECATED 兼容 re-export）。
 
-单轮「LLM → 解析 actions → 执行」升级为有界循环（最多 max_steps 轮）：
-LLM 可以在 studio-actions 末尾输出 {"action": "continue"} 请求下一轮，
-系统执行本轮操作后刷新上下文再次调用，直到 LLM 不再请求继续或达到上限。
+有界循环（最多 max_steps 轮）：FC 工具轮（tool_calls 在 llm_call 内执行，
+finish 非 stop 或无可见正文时继续下一轮）与纯文本收尾轮（audit-0819b
+单轨化，ADR-0001：文本动作块解析路径已退役；暂停确认经
+llm_call 第 5 元组结构化上抛，不经文本块）。
 
 llm_call / context_builder 以 callable 注入，便于单元测试。
 """
 from dataclasses import dataclass, field
-import re
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import time
@@ -19,11 +19,8 @@ import time
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
-    SSE_DOC_WRITTEN,
-    SSE_EXECUTING_ACTIONS,
     SSE_STATUS,
     SSE_STEP_STARTED,
     SSE_TOOL_FINISHED,
@@ -31,10 +28,7 @@ from src.video_agent.core.sse_events import (
     status_event,
 )
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.skill_runtime import registry as skill_registry
-from src.video_agent.skill_runtime.registry import fallback_skill_from_state, stage_label_for_tool
-# N7（三轮审核）：pause 声明消费顶层化（guard 依赖图与本文件既有导入重合，无环）
-from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
+from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # 四轮 R1（F47 清偿）：轮末闸机分支收敛为声明式策略表（层 9 唯一落点）
 from src.video_agent.core.round_end_policies import (
     RoundEndContext,
@@ -42,6 +36,7 @@ from src.video_agent.core.round_end_policies import (
     run_round_end_policies,
     suggest_next_actions,
 )
+from src.video_agent.core import prompt_gates
 # 四轮 R0（N7 漂移清偿）：进度通道绑定顶层化；spec_wizard_active 经模块属性访问
 # （测试 patch 目标=registry 命名空间，顶层 from-import 会冻结绑定导致 patch 失效）
 from src.video_agent.skill_runtime.progress import (
@@ -58,17 +53,20 @@ MAX_STEPS = settings.max_steps
 # llm_call(system_prompt, messages, stream_hook?) -> (content, finish_reason, fc_applied[, plan_ms])
 # fc_applied: FC 路径已执行的 tool 数量（可选，默认 0）
 # plan_ms: 纯模型规划耗时（可选；缺省 0，兼容旧 3 元组实现/测试桩）
+# extra: 可选 dict（audit-0819b）：{confirmation, confirmation_options}——
+#   本轮 FC 批经 workflow_pause 产生的结构化暂停确认（不经文本块）
 # stream_hook: 可选流式增量回调，每段文本 await stream_hook(text)
 LlmCall = Callable[..., Awaitable[Tuple[str, str, int, float]]]
 # context_builder() -> 最新的 system prompt（协议 + 实时状态）
 ContextBuilder = Callable[[], str]
 
 
-def _unpack_llm(ret: Tuple) -> Tuple[str, str, int, float]:
-    """解包 llm_call 返回值：4 元组 (content, finish, fc_applied, plan_ms)；
-    旧 3 元组实现 plan_ms 记 0（测试桩兼容）。"""
+def _unpack_llm(ret: Tuple) -> Tuple[str, str, int, float, Dict[str, Any]]:
+    """解包 llm_call 返回值：5 元组 (content, finish, fc_applied, plan_ms, extra)；
+    旧 3/4 元组实现缺省补齐（plan_ms=0，extra={}；测试桩兼容）。"""
     plan = float(ret[3]) if len(ret) > 3 else 0.0
-    return str(ret[0]), str(ret[1]), int(ret[2]), plan
+    extra = ret[4] if len(ret) > 4 and isinstance(ret[4], dict) else {}
+    return str(ret[0]), str(ret[1]), int(ret[2]), plan, extra
 
 
 def _bad_output_nudge(attempt: int) -> str:
@@ -181,24 +179,11 @@ async def run_agent_loop(
 
     result = AgentLoopResult()
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
-    # B0/F1：文本块路径已发射过 doc_written 的文档名（防重复发射；FC 轨在 fc_tool_runner 内发射）
-    _emitted_docs: set = set()
-
-    def _wizard_active() -> bool:
-        """当前 Skill 是否启用规格向导（manifest/正文客观检测，S1 单一事实源）。"""
-        try:
-            return bool(skill_registry.spec_wizard_active(skill))
-        except Exception as _e:
-            # 四轮 R5/#11：意外降级入遥测（接线断裂不再静默）
-            live_metrics.record_degradation("agent_loop._wizard_active")
-            logger.warning(f"[agent_loop] _wizard_active 探测失败（降级 False）: {_e}")
-            return False
 
     skill = str(getattr(executor, "skill_name", "") or "")
     if not skill:
         # 7777 事故：请求未携带 Skill 时回退项目 usedSkills 末位（单一实现）
         skill = fallback_skill_from_state(getattr(executor, "state", None) or {})
-    selected_skills = list((getattr(executor, "state", None) or {}).get("usedSkills") or [])
 
     # 链路追踪：记录本次对话执行过程
     tracer = AgentTracer.get_instance()
@@ -269,7 +254,7 @@ async def run_agent_loop(
         _plan_rec = tracer.record_action(
             "model_reasoning", f"Agent 正在规划本步动作（第 {step} 轮）", 0.0, True,
         )
-        content, finish_reason, fc_applied, plan_ms = _unpack_llm(
+        content, finish_reason, fc_applied, plan_ms, fc_extra = _unpack_llm(
             await llm_call(system_prompt, messages, stream_hook)
         )
         plan_total = float(plan_ms or 0.0)
@@ -287,7 +272,7 @@ async def run_agent_loop(
                 elapsed_ms=0.0,
                 ok=True,
             )
-            content, finish_reason, fc_applied, plan_ms = _unpack_llm(
+            content, finish_reason, fc_applied, plan_ms, fc_extra = _unpack_llm(
                 await llm_call(
                     system_prompt,
                     messages + [{"role": "user", "content": _bad_output_nudge(bad_retries)}],
@@ -317,22 +302,45 @@ async def run_agent_loop(
 
         if finish_reason == "length":
             result.warnings.append(
-                f"第 {step} 轮回复被 max_tokens 截断，studio-actions 可能不完整"
+                f"第 {step} 轮回复被 max_tokens 截断，工具调用/正文可能不完整"
             )
 
-        # FC 路径：tool_calls 已在 llm_call 内部执行，跳过文本解析
-        if fc_applied > 0:
+        # 结构化暂停确认（audit-0819b）：本轮 FC 批经 workflow_pause 产生
+        fc_confirmation = str((fc_extra or {}).get("confirmation") or "")
+        fc_confirmation_options = list((fc_extra or {}).get("confirmation_options") or [])
+
+        # FC 路径：tool_calls 已在 llm_call 内部执行；正文原样可见（单轨化后
+        # 无文本动作块通道，ADR-0001，无需清洗）
+        if fc_applied > 0 or fc_confirmation:
             result.applied_actions += fc_applied
-            await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": fc_applied})
-            # audit-0819-leak：FC 轨与文本轨同一清洗函数（Rule 2 双轨一致），
-            # 防模型违规输出的 studio-actions 块泄漏进用户气泡
-            visible = executor.strip_action_blocks(content)
+            if fc_applied:
+                await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": fc_applied})
+            visible = (content or "").strip()
             if visible:
                 result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
             logger.info(
                 f"[AgentLoop] step={step} fc_applied={fc_applied} "
-                f"confirm=False finish={finish_reason or '-'}"
+                f"confirm={bool(fc_confirmation)} finish={finish_reason or '-'}"
             )
+            if fc_confirmation:
+                # 虚报审计（7777×4444）：FC 确认轮同样承重——声称拆完但故事板
+                # 为空 → 只附警告不拦人（系统不没收模型暂停）；单轨化不豁免审计
+                if (
+                    _claims_structure_done(visible, fc_confirmation)
+                    and prompt_gates.storyboard_is_empty(executor.state)
+                ):
+                    result.warnings.append(
+                        "检测到虚报：正文声称已完成结构搭建，但故事板实际仍为空；"
+                        "已按用户确认语义保留当前暂停（系统不没收模型暂停）。"
+                    )
+                # 暂停等待用户确认：终止循环，把确认请求（含候选选项）带回给前端
+                result.confirmation = fc_confirmation
+                result.confirmation_options = fc_confirmation_options
+                tracer.end_step(
+                    step, actions_applied=fc_applied,
+                    finish_reason=finish_reason or "confirmation",
+                )
+                break
             # P2-6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
             # 不再固定追加一轮 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）
             if finish_reason in ("stop", "end_turn") and visible:
@@ -359,227 +367,47 @@ async def run_agent_loop(
             })
             continue
 
-        # 文本块解析路径（4-4 双轨退役后仅消费：系统内部合成的确认块 / mock 输出）
-        actions = executor.parse_actions_from_reply(content)
-        if not actions and executor.has_action_block(content):
-            result.warnings.append(
-                f"第 {step} 轮的 studio-actions 块解析失败（JSON 无效或被截断），本轮操作已丢弃"
-            )
-
-        executable, wants_continue, confirmation, confirmation_options = split_actions(actions)
-        # 模型自发暂停 + 规格参数未定稿：把模型自造 label 并入标准「键：值」向导
-        # （1111 事故：自造「1K（更快）」无法机械落盘；系统永不没收模型的暂停文案）
-        if confirmation and _wizard_active():
-            try:
-                _m, _opts, _merged = prompt_gates.merge_spec_param_wizard(
-                    executor.state, confirmation, confirmation_options,
-                )
-                if _merged:
-                    confirmation, confirmation_options = _m, _opts
-            except Exception as _e:
-                logger.debug("[agent_loop] 忽略异常: {}", _e)
-        # 规格向导闸机（S1）：声明 spec_wizard 的 Skill，规格文档由系统按向导
-        # 拼装，模型手写规格一律不落盘，改为系统规格收集/审阅暂停卡
-        spec_wizard_pending = False
-        if executable:
-            try:
-                # 拒收仅对「真实选中」的 Skill 生效（4444）：无 usedSkills 时
-                # 模型手写规格照常落盘，避免引擎预设流程误伤
-                if _wizard_active() and skill in selected_skills:
-                    spec_writes = [
-                        a for a in executable
-                        if str(a.get("action", "")).lower()
-                        in ("write_document", "write_doc", "save_document", "document_write")
-                        and prompt_gates.is_spec_doc_name(
-                            str(a.get("name") or a.get("title") or "")
-                        )
-                    ]
-                    if spec_writes:
-                        executable = [a for a in executable if a not in spec_writes]
-                        if prompt_gates.spec_doc_finalized(executor.state):
-                            # 8888 二轮：规格已定稿 → 冗余手写只拒收，不接管暂停卡；
-                            # 814G3：拒收只喂模型（下轮上下文），不再作为 ⚠ 展示给用户
-                            messages.append({"role": "user", "content": (
-                                "（系统）规格文档已定稿，你本次的冗余规格写入已被拒收（未落盘）；"
-                                "如需调整规格请引导用户在文档面板修改，不要重复手写。")})
-                        else:
-                            spec_wizard_pending = True
-                            # 814G3：接管静默——用户只看到随后的向导卡，不看报错
-                            messages.append({"role": "user", "content": (
-                                "（系统）规格文档由系统按向导拼装，你手写的规格未落盘；"
-                                "请立即暂停，等待用户完成规格交互。向用户陈述需与此一致：本轮未写入规格。")})
-            except Exception:
-                spec_wizard_pending = False
-        # 本轮全部可执行操作数：gate_heal 判定用
-        total_exec = len(executable)
-        # 4-4 双轨退役：流式「边写边填」预执行已删，无 stream_consumed 切片
-        if executable:
-            await emit({"type": SSE_EXECUTING_ACTIONS, "step": step, "count": len(executable)})
-            # 过程时间线：逐个预告即将执行的操作（前端渲染运行态条目）
-            for i, action in enumerate(executable):
-                aname = str(action.get("action", "") or "")
-                try:
-                    preview = executor._describe_action(action)
-                except Exception:
-                    preview = aname
-                await emit({
-                    "type": SSE_TOOL_STARTED,
-                    "id": f"s{step}-{i}",
-                    "name": aname,
-                    "summary": preview,
-                })
-        _log_before = len(executor.action_log)
-        _t0 = time.monotonic()
-        # 文本轨异步执行器动作（script_analyze/storyboard_* 等）走 execute_async
-        # （独立 LLM 调用 + 结构化校验）；其余走同步 execute_locked
-        if any(executor._is_async_action(a) for a in executable):
-            applied = await executor.execute_async_locked(executable)
-        else:
-            applied = await executor.execute_locked(executable)
-        # 阶段账本：script_analyze 成功 → 标记已完成（总结/收集闸判定）
-        _batch_ms = (time.monotonic() - _t0) * 1000
-        result.applied_actions += applied
-        if applied:
-            await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": applied})
-        # B0/F1：文本轨文档卡片即写即显（3333 修复四段链：发射 → planner 白名单 →
-        # chat_service 透传 → 前端 handler；FC 轨由 fc_tool_runner 发射）
-        for dn in (getattr(executor, "documents_written", None) or []):
-            if dn and dn not in _emitted_docs:
-                _emitted_docs.add(dn)
-                await emit({"type": SSE_DOC_WRITTEN, "name": str(dn)})
-        # 推理过程可视化：实时把本轮刚完成的操作描述推给前端状态栏 + 时间线
-        new_logs = executor.action_log[_log_before:]
-        if new_logs:
-            _ops_desc = "；".join(new_logs[-3:])
-            await emit(status_event("agent.opsDone", "已完成：" + _ops_desc, {"ops": _ops_desc}))
-        for i, desc in enumerate(new_logs):
-            per_ms = _batch_ms / len(new_logs) if new_logs else 0.0
-            # B2/F21：按动作实测耗时（文本轨此前均摊是白谎；执行器逐动作计时，
-            # 缺失时回落均摊）
-            _durations = getattr(executor, "last_action_durations", None) or []
-            if i < len(_durations):
-                per_ms = _durations[i]
-            await emit({
-                "type": SSE_TOOL_FINISHED,
-                "id": f"s{step}-{i}",
-                "ok": True,
-                "elapsed_ms": round(per_ms, 1),
-                "result_summary": desc,
-            })
-            tracer.record_action(
-                name=str(executable[i].get("action", "")) if i < len(executable) else "",
-                summary=desc, elapsed_ms=per_ms, ok=True,
-                stage=stage_label_for_tool(str(executable[i].get("action", ""))) if i < len(executable) else "",
-            )
-        # 部分操作未成功（未匹配到目标/执行异常）：剩余条目补发失败态，
-        # 避免前端时间线条目永远停在「运行中」
-        if len(new_logs) < len(executable):
-            for i in range(len(new_logs), len(executable)):
-                action = executable[i]
-                await emit({
-                    "type": SSE_TOOL_FINISHED,
-                    "id": f"s{step}-{i}",
-                    "ok": False,
-                    "elapsed_ms": 0.0,
-                    "result_summary": "未匹配到目标或执行失败",
-                })
-                tracer.record_action(
-                    name=str(action.get("action", "")),
-                    summary="未匹配到目标或执行失败", elapsed_ms=0.0, ok=False,
-                    stage=stage_label_for_tool(str(action.get("action", ""))),
-                )
-        gate_rejections = list(getattr(executor, "gate_rejections", None) or [])
-        # 轮末策略状态机（四轮 R1，F47 清偿）：原 10+ 个竞争 if 块（流程门禁暂停/
-        # 失败警告/闸机自愈/规格文档暂停/规格审阅卡/向导接管/规格收集/结构自检/
-        # 结构卡覆盖/阶段兜底卡/虚报检测）收敛为 round_end_policies 声明式策略表
-        # 单一路径——优先级逐字节复制现行顺序（零行为变更，D1 裁决）；
-        # 仲裁候选与胜出者经 tracer.record_card_decision 入 trace（#4 可观测）。
+        # 纯文本轮（FC 单轨，audit-0819b / ADR-0001）：模型本轮未发出工具调用，
+        # 即本轮为面向用户的回复，循环进入收尾。文本动作块解析路径已随
+        # 双轨退役删除；正文拼接收纳由轮末策略 false_claim_audit 单一执行
+        # （与历史文本路径同源，防双处拼接重复；虚报/假停兜底等机械闸机
+        # 与原文本路径同一策略表，零新增）。
         _re_ctx = RoundEndContext(
             step=step,
             executor=executor,
             content=content,
             skill=skill,
-            confirmation=confirmation,
-            confirmation_options=confirmation_options,
-            wants_continue=wants_continue,
-            total_exec=total_exec,
-            applied=applied,
-            executable=executable,
-            gate_rejections=gate_rejections,
-            spec_wizard_pending=spec_wizard_pending,
+            confirmation="",
+            confirmation_options=[],
+            wants_continue=False,
+            total_exec=0,
+            applied=0,
+            executable=[],
+            gate_rejections=list(getattr(executor, "gate_rejections", None) or []),
+            spec_wizard_pending=False,
             result_text=result.text,
         )
         await run_round_end_policies(_re_ctx, emit, tracer=tracer)
-        confirmation = _re_ctx.confirmation
-        confirmation_options = _re_ctx.confirmation_options
-        wants_continue = _re_ctx.wants_continue
-        gate_heal = _re_ctx.gate_heal
         if _re_ctx.result_warnings:
             result.warnings.extend(_re_ctx.result_warnings)
         result.text = _re_ctx.result_text
         # audit-0819-fakestop：轮末策略机械追加的建议动作（仅当无既有建议时生效）
         if _re_ctx.suggested_actions and not result.suggested_actions:
             result.suggested_actions.extend(_re_ctx.suggested_actions)
-        if _re_ctx.hard_break:
-            result.confirmation = confirmation
-            result.confirmation_options = confirmation_options
-            tracer.end_step(step, actions_applied=applied, finish_reason=_re_ctx.hard_break_finish)
-            break
-
-        logger.info(
-            f"[AgentLoop] step={step} actions={applied}/{total_exec} "
-            f"continue={wants_continue} confirm={bool(confirmation)} finish={finish_reason or '-'}"
-        )
-
-        if confirmation:
-            # 暂停等待用户确认：终止循环，把确认请求（含候选选项）带回给前端
-            result.confirmation = confirmation
-            result.confirmation_options = confirmation_options
-            tracer.end_step(step, actions_applied=applied, finish_reason=finish_reason or "confirmation")
-            break
-
-        if not wants_continue:
-            # 状态驱动下一步建议（八轮 B4）：正常收尾且无既有建议时按客观状态下发
-            if not result.suggested_actions:
-                result.suggested_actions.extend(suggest_next_actions(executor.state))
-            tracer.end_step(step, actions_applied=applied, finish_reason=finish_reason or "stop")
-            break
-        if step == max_steps:
-            result.warnings.append(f"已达到多步上限（{max_steps} 轮），循环终止")
-            result.suggested_actions.append(
-                {"kind": "continue", "label": "继续完成", "value": "继续完成"})
-            tracer.end_step(step, actions_applied=applied, finish_reason="max_steps")
-            break
-
-        tracer.end_step(step, actions_applied=applied, finish_reason=finish_reason or "continue")
-
-        # 回喂：让下一轮 LLM 知道上一轮说了什么、执行结果如何
-        messages.append({"role": "assistant", "content": content})
-        if gate_heal:
-            reasons = "\n".join(f"- {r}" for r in gate_rejections)
-            blocked_n = total_exec - applied
-            if applied:
-                head = (
-                    f"（系统）第 {step} 轮的 {total_exec} 个操作中有 {applied} 个成功、"
-                    f"{blocked_n} 个被系统流程闸机拦截（被拦截的写入没有生效）。"
-                )
-            else:
-                head = (
-                    f"（系统）第 {step} 轮的 {total_exec} 个操作全部被系统流程闸机拦截（0 个成功），"
-                    "本轮你声称已完成的写入/创建实际上都没有生效。"
-                )
-            feedback = (
-                f"{head}\n拦截原因：\n{reasons}\n"
-                "请严格按上述要求修正后重新执行被拦截的操作。"
-                "操作未全部成功前，向用户陈述需与此一致：未写入的内容尚未完成，"
-                "确认卡也只在全部成功后发出。"
+        if _re_ctx.confirmation or _re_ctx.hard_break:
+            # 轮末策略注入的暂停卡（规格审阅/规格收集等）：带回前端
+            result.confirmation = _re_ctx.confirmation
+            result.confirmation_options = _re_ctx.confirmation_options
+            tracer.end_step(
+                step, actions_applied=0,
+                finish_reason=_re_ctx.hard_break_finish or "confirmation",
             )
-        else:
-            feedback = (
-                f"（系统）第 {step} 轮的 {applied} 个操作已执行，最新工作台状态已刷新到 system prompt。"
-                "请继续完成任务；全部完成后直接结束本轮回复。"
-            )
-        messages.append({"role": "user", "content": feedback})
+            break
+        # 正常收尾：状态驱动下一步建议（八轮 B4）
+        if not result.suggested_actions:
+            result.suggested_actions.extend(suggest_next_actions(executor.state))
+        tracer.end_step(step, actions_applied=0, finish_reason=finish_reason or "stop")
+        break
 
     # 814G8：正常路径解绑进度通道（异常路径 contextvar 随任务消亡）
     unbind_progress_emitter(_progress_token)

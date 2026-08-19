@@ -31,12 +31,11 @@ SSE_DONE = "done"
 # 错误（携带 detail，可携带 error_code 供前端 i18n；
 # audit-0819 增 raw = 上游原始报文，前端「技术详情」折叠展示）
 SSE_ERROR = "error"
-# 文本解析路径的操作已执行（agent_loop 内部事件，前端目前忽略）
+# 本轮操作已执行（agent_loop 内部事件，前端目前忽略）
 SSE_ACTIONS_APPLIED = "actions_applied"
 # 多步循环的轮次开始（agent_loop 内部事件，前端目前忽略）
 SSE_STEP_STARTED = "step_started"
-# 即将执行解析出的操作（agent_loop 内部事件，前端目前忽略）
-SSE_EXECUTING_ACTIONS = "executing_actions"
+# audit-0819b：executing_actions 已随文本块执行路径退役删除（ADR-0001）
 # 引导消息轮间注入成功（携带 id/text，7777 三轮）：前端据此渲染用户气泡
 # 并从排队区移除对应条目（未被注入的条目由排队区兜底在任务结束后发出）
 SSE_GUIDANCE_INJECTED = "guidance_injected"
@@ -69,7 +68,6 @@ __all__ = [
     "SSE_ERROR",
     "SSE_ACTIONS_APPLIED",
     "SSE_STEP_STARTED",
-    "SSE_EXECUTING_ACTIONS",
     "SSE_GUIDANCE_INJECTED",
     "status_event",
 ]

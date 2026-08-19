@@ -1,4 +1,9 @@
-"""Planner 单元测试：多步循环、FC 模式、confirmation 中断"""
+"""Planner 单元测试：基础降级行为（audit-0819b 单轨化后收缩）。
+
+原多步 continue/文本确认/文本动作执行/5555 引导卡用例均钉文本块通道，
+已随双轨退役删除（ADR-0001）；循环级语义覆盖迁 test_agent_loop.py
+（FC 桁），确认合成块回归钉死见 test_audit0819_leak_and_fakestop.py。
+"""
 import pytest
 
 from src.video_agent.core.planner import Planner, PlannerContext, PlannerResponse
@@ -48,10 +53,10 @@ def context():
 
 
 class TestPlannerMultiStep:
-    """多步循环测试"""
+    """基础收尾语义（多步 continue 文本通道已退役，ADR-0001）"""
 
     async def test_single_step_no_continue(self, svc, context):
-        """无 continue 信号 → 单步结束"""
+        """无工具调用的纯文本回复 → 单步收尾"""
         adapter = FakeChatAdapter(["你好，我是 Agent。"])
         planner = Planner(llm_adapter=adapter)
         result = await planner.handle_message("你好", context)
@@ -60,72 +65,6 @@ class TestPlannerMultiStep:
         assert result.steps == 1
         assert "你好" in result.text
         assert len(adapter.calls) == 1
-
-    async def test_continue_triggers_multi_step(self, svc, context):
-        """continue 信号触发多步"""
-        r1 = '第一步\n```studio-actions\n[{"action":"continue"}]\n```'
-        r2 = '第二步完成'
-        adapter = FakeChatAdapter([r1, r2])
-        planner = Planner(llm_adapter=adapter)
-        result = await planner.handle_message("执行任务", context)
-
-        assert result.steps == 2
-        assert len(adapter.calls) == 2
-
-    async def test_max_steps_cap(self, svc, context):
-        """达到 MAX_STEPS 上限后终止"""
-        # 每轮都请求 continue
-        reply = '继续\n```studio-actions\n[{"action":"continue"}]\n```'
-        adapter = FakeChatAdapter([reply])  # 会重复使用最后一个
-        planner = Planner(llm_adapter=adapter)
-        result = await planner.handle_message("无限循环", context)
-
-        from src.video_agent.core.agent_loop import MAX_STEPS
-        assert result.steps == MAX_STEPS
-        assert any("上限" in w for w in result.warnings)
-
-
-class TestPlannerConfirmation:
-    """confirmation 中断测试"""
-
-    async def test_confirmation_stops_loop(self, svc, context):
-        """request_confirmation 信号中断循环"""
-        reply = '请确认\n```studio-actions\n[{"action":"request_confirmation","message":"确认继续？"}]\n```'
-        adapter = FakeChatAdapter([reply])
-        planner = Planner(llm_adapter=adapter)
-        result = await planner.handle_message("执行", context)
-
-        assert result.confirmation == "确认继续？"
-        assert result.steps == 1  # 第一轮就中断
-
-
-class TestPlannerActions:
-    """studio-actions 执行测试"""
-
-    async def test_actions_applied(self, svc, context):
-        """studio-actions 中的操作应被执行"""
-        reply = (
-            '已创建分组\n```studio-actions\n'
-            '[{"action":"add_group","group_type":"shot","title":"测试分镜","draft":{"label":"d","prompt":"p"}}]\n```'
-        )
-        adapter = FakeChatAdapter([reply])
-        planner = Planner(llm_adapter=adapter)
-        result = await planner.handle_message("创建分镜", context)
-
-        assert result.applied_actions == 1
-        # 验证状态确实被修改
-        shots = svc.state_dict.get("shots", [])
-        assert any(g.get("title") == "测试分镜" for g in shots)
-
-    async def test_visible_text_excludes_actions(self, svc, context):
-        """返回的 text 不应包含 studio-actions 块"""
-        reply = '可见文本\n```studio-actions\n[{"action":"continue"}]\n```'
-        adapter = FakeChatAdapter([reply, "完成"])
-        planner = Planner(llm_adapter=adapter)
-        result = await planner.handle_message("测试", context)
-
-        assert "studio-actions" not in result.text
-        assert "可见文本" in result.text
 
 
 class TestPlannerNoAdapter:
@@ -141,84 +80,11 @@ class TestPlannerNoAdapter:
         assert result.applied_actions == 0
 
 
-class TestStageGuideFallback:
-    """5555 兜底：阶段执行器跑完但模型没发确认卡时，系统补下一步引导卡"""
-
-    @pytest.fixture(autouse=True)
-    def _orchestrator_off(self):
-        """钉 5555 兜底引导卡（旧组件）；关编排主路径隔离测试。"""
-        from src.video_agent.config import settings
-
-        old = settings.pipeline_orchestrator_enabled
-        object.__setattr__(settings, "pipeline_orchestrator_enabled", False)
-        yield
-        object.__setattr__(settings, "pipeline_orchestrator_enabled", old)
-
-    async def test_stage_done_without_pause_gets_guide_card(self, svc, monkeypatch):
-        from src.video_agent.skill_runtime import executors as ex_mod
-        from src.video_agent.skill_runtime.executors import (
-            SkillToolResult, StoryboardSplitInput,
-        )
-
-        class _FakeStageTool:
-            name = "storyboard_key_elements"
-
-            def get_input_schema(self):
-                return StoryboardSplitInput
-
-            async def aexecute(self, params):
-                return SkillToolResult(success=True, data={"applied": 3})
-
-        monkeypatch.setattr(ex_mod, "build_executor_tool", lambda n: _FakeStageTool())
-        # 814G5：规格门禁执行侧强制——本用例聚焦引导卡兜底，先补规格文档过门禁
-        svc.state_dict["documents"] = [{"name": "Final_Video_Spec.md", "content": "规格"}]
-        # 814H9：剧本原料闸——本用例聚焦引导卡兜底，补上传文档过原料闸
-        svc.state_dict["uploadedDocs"] = [{"id": "d1", "name": "剧本.txt", "kind": "file"}]
-        ctx = PlannerContext(use_studio_context=False, skill_name="剧本生视频")
-        reply = '已完成关键元素拆解\n```studio-actions\n[{"action":"storyboard_key_elements"}]\n```'
-        adapter = FakeChatAdapter([reply])
-        planner = Planner(llm_adapter=adapter)
-        result = await planner.handle_message("拆解关键元素", ctx)
-
-        assert result.applied_actions == 1
-        # 模型没发确认卡 → 系统客观补一张下一步引导卡
-        assert result.confirmation
-        labels = [o.get("label") for o in result.confirmation_options]
-        assert "继续下一步" in labels and "我要调整" in labels
-
-    async def test_model_pause_not_duplicated(self, svc, monkeypatch):
-        """模型自己发了确认卡时，兜底不得覆盖模型文案"""
-        from src.video_agent.skill_runtime import executors as ex_mod
-        from src.video_agent.skill_runtime.executors import (
-            SkillToolResult, StoryboardSplitInput,
-        )
-
-        class _FakeStageTool:
-            name = "storyboard_key_elements"
-
-            def get_input_schema(self):
-                return StoryboardSplitInput
-
-            async def aexecute(self, params):
-                return SkillToolResult(success=True, data={"applied": 3})
-
-        monkeypatch.setattr(ex_mod, "build_executor_tool", lambda n: _FakeStageTool())
-        # 814H9：补原料过剧本闸（本用例聚焦兜底不覆盖模型暂停）
-        svc.state_dict["uploadedDocs"] = [{"id": "d1", "name": "剧本.txt", "kind": "file"}]
-        ctx = PlannerContext(use_studio_context=False, skill_name="剧本生视频")
-        reply = (
-            '拆解完成\n```studio-actions\n'
-            '[{"action":"storyboard_key_elements"},'
-            '{"action":"request_confirmation","message":"模型自己的暂停文案"}]\n```'
-        )
-        adapter = FakeChatAdapter([reply])
-        planner = Planner(llm_adapter=adapter)
-        result = await planner.handle_message("拆解关键元素", ctx)
-
-        assert result.confirmation == "模型自己的暂停文案"
+class TestNoStageNoGuideCard:
+    """日常对话（无阶段执行器）不补引导卡（5555 引导卡的文本轨场景
+    已随双轨退役删除，ADR-0001；保留「不误伤日常对话」断言）"""
 
     async def test_no_stage_no_guide_card(self, svc, context):
-        """日常对话（无阶段执行器）不补引导卡"""
         adapter = FakeChatAdapter(["好的，已收到。"])
         planner = Planner(llm_adapter=adapter)
         result = await planner.handle_message("你好", context)

@@ -488,6 +488,17 @@ class WorkflowPauseTool(BaseTool):
         return ToolResult(success=True, data={"paused": True, "message": params.message})
 
 
+class RequestConfirmationTool(WorkflowPauseTool):
+    """audit-0819b（对齐 AskUserQuestion 范式）：暂停确认的正式 FC 工具别名。
+
+    与 workflow_pause 同 schema 同行为（fc_tool_runner 同名消费）；双名保留
+    是因为 Skill 文档历史表述两者并用，模型可选任一发起暂停，均经
+    结构化通道上抛（不再合成文本块）。"""
+
+    name = "request_confirmation"
+    description = "向用户发起确认请求并暂停等待回复（workflow_pause 的同义工具）。"
+
+
 # ---------- 注册 ----------
 
 def register_document_tools():
@@ -499,5 +510,6 @@ def register_document_tools():
     ToolManager.register(ReadProjectDocTool())
     ToolManager.register(ImageGenerateTool())
     ToolManager.register(WorkflowPauseTool())
+    ToolManager.register(RequestConfirmationTool())
     ToolManager.register(FlowDirectiveTool())
-    logger.info("[Tools] 8 document/generation/workflow/flow tools registered")
+    logger.info("[Tools] 9 document/generation/workflow/flow tools registered")

@@ -46,7 +46,10 @@ def test_7777_fallback_skill_executors_resolvable():
 
 @pytest.mark.asyncio
 async def test_7777_agent_loop_falls_back_to_used_skills(tmp_path, monkeypatch):
-    """文本轨：executor.skill_name 为空时，agent_loop 用 usedSkills 末位解析当前 Skill。"""
+    """executor.skill_name 为空时，agent_loop 用 usedSkills 末位解析当前 Skill
+    （7777；audit-0819b：探针改钉 fallback_skill_from_state 调用，
+    原 _wizard_active 探针随文本块路径退役）。"""
+    from src.video_agent.core import agent_loop as al_mod
     from src.video_agent.core.agent_loop import run_agent_loop
     from src.video_agent.state.manager import StateManager
     from src.video_agent.web.action_executor import StudioActionExecutor
@@ -57,21 +60,20 @@ async def test_7777_agent_loop_falls_back_to_used_skills(tmp_path, monkeypatch):
     ex.skill_name = ""
 
     seen = {}
+    orig_fallback = al_mod.fallback_skill_from_state
 
-    def fake_wizard(name):
-        seen["skill"] = name
-        return False
+    def spy_fallback(state):
+        seen["called"] = True
+        return orig_fallback(state)
 
-    monkeypatch.setattr(registry, "spec_wizard_active", fake_wizard)
+    monkeypatch.setattr(al_mod, "fallback_skill_from_state", spy_fallback)
 
     async def llm(system_prompt, messages, stream_hook=None):
-        return (
-            "请确认\n```studio-actions\n"
-            '[{"action":"request_confirmation","message":"确认"}]\n```',
-            "stop", 0,
-        )
+        return ("请确认", "stop", 0, 0.0,
+                {"confirmation": "确认", "confirmation_options": []})
 
-    await run_agent_loop(
+    result = await run_agent_loop(
         "继续", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )
-    assert seen.get("skill") == "AI-短剧一站式生成"
+    assert seen.get("called") is True
+    assert result.confirmation == "确认"

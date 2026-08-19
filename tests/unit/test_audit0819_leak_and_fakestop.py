@@ -1,7 +1,8 @@
-"""audit-0819 两项 P0 修复的钉死回归：
+"""audit-0819 系列钉死回归：
 
-- audit-0819-leak：FC 轨正文必须经 strip_action_blocks 清洗（双轨一致，Rule 2），
-  studio-actions 块不得泄漏进用户可见正文；
+- audit-0819-leak 演化（audit-0819b 单轨化，ADR-0001）：暂停确认不再合成
+  studio-actions 文本块（防泄漏的根治：通道消失则无可泄漏），改经
+  结构化第 5 元组上抛；原 strip 清洗断言随通道退役；
 - audit-0819-fakestop：模型以延续承诺措辞收尾却零操作/无暂停时，
   轮末策略机械追加「继续」建议动作。
 """
@@ -29,31 +30,40 @@ async def _noop_emit(event):
     pass
 
 
-# ---------- audit-0819-leak：FC 轨正文清洗 ----------
+# ---------- audit-0819b：确认不再合成文本块（防泄漏根治） ----------
 
-async def test_fc_track_strips_action_blocks(executor):
-    """FC 分支（fc_applied>0）返回的正文含 studio-actions 块时必须被剥离。"""
+async def test_planner_does_not_synthesize_action_blocks(svc, executor, monkeypatch):
+    """钉死（ADR-0001）：_handle_fc_response 不得再合成 studio-actions 块；
+    确认经 confirmation_collector 结构化上抛，正文原样返回。"""
+    from src.video_agent.adapters.base_chat import ChatResponse
+    from src.video_agent.core.planner import Planner
+
+    planner = Planner(state_manager=svc, executor_factory=lambda *a, **k: executor)
+
+    async def _fake_execute(response, **kwargs):
+        return (2, "已拆解完毕，请确认", [], [], ["拆解完成"],
+                [{"label": "继续下一步", "description": ""}], [], [], [])
+
+    monkeypatch.setattr(planner, "_execute_fc_tools", _fake_execute)
+    holder = {}
+    response = ChatResponse(
+        content="拆解完成，请确认。", finish_reason="stop",
+        tool_calls=[{"id": "c1", "type": "function",
+                     "function": {"name": "workflow_pause", "arguments": "{}"}}],
+    )
+    content, finish, fc_applied, _results, _warns = await planner._handle_fc_response(
+        response, confirmation_collector=holder,
+    )
+    assert "studio-actions" not in content          # 合成块回归防护：出现即红
+    assert content == "拆解完成，请确认。"            # 正文原样返回
+    assert holder["message"] == "已拆解完毕，请确认"   # 确认结构化上抛
+    assert holder["options"] == [{"label": "继续下一步", "description": ""}]
+    assert fc_applied == 0                          # 确认轮不计 applied（历史语义保持）
+
+
+async def test_fc_text_visible_as_is(executor):
+    """单轨化：FC 轮正文原样可见（无文本块通道，无需清洗）。"""
     body = "已为你完成本轮操作，故事板已更新。"
-    leaked = (
-        body
-        + '\n```studio-actions\n[{"action":"request_confirmation","message":"请确认"}]\n```'
-    )
-
-    async def llm_call(system_prompt, messages, stream_hook=None):
-        return leaked, "stop", 1, 0.0  # fc_applied=1 → 走 FC 分支
-
-    result = await run_agent_loop(
-        "继续", llm_call=llm_call, context_builder=lambda: "ctx",
-        executor=executor, history=[],
-    )
-    assert body in result.text
-    assert "studio-actions" not in result.text
-    assert "request_confirmation" not in result.text
-
-
-async def test_fc_track_clean_content_unchanged(executor):
-    """干净正文经清洗为恒等变换（strip 语义），不丢字。"""
-    body = "普通回复，无任何动作块。"
 
     async def llm_call(system_prompt, messages, stream_hook=None):
         return body, "stop", 1, 0.0
@@ -62,48 +72,10 @@ async def test_fc_track_clean_content_unchanged(executor):
         "x", llm_call=llm_call, context_builder=lambda: "ctx",
         executor=executor, history=[],
     )
-    assert result.text.strip() == body
+    assert result.text == body
 
 
-async def test_text_track_strips_action_blocks(executor):
-    """文本轨同一内容同样不泄漏（双轨一致断言）。"""
-    body = "暂停前说明。"
-    content = (
-        body
-        + '\n```studio-actions\n[{"action":"request_confirmation","message":"请确认"}]\n```'
-    )
-
-    async def llm_call(system_prompt, messages, stream_hook=None):
-        return content, "stop", 0  # fc_applied=0 → 文本轨
-
-    result = await run_agent_loop(
-        "x", llm_call=llm_call, context_builder=lambda: "ctx",
-        executor=executor, history=[],
-    )
-    assert "studio-actions" not in result.text
-    assert body in result.text
-    # request_confirmation 被解析为暂停信号
-    assert result.confirmation
-
-
-# ---------- 无效动作块处置（4-4 双轨退役后：拒因重试自愈环已删，直接丢弃告警） ----------
-
-async def test_invalid_action_block_dropped_with_warning(executor):
-    """无效 studio-actions 块：不执行、不重试，丢弃并告警（ADR-0001）。"""
-    bad = ('正文\n```studio-actions\n[invalid json\n```', "stop")
-    calls = {"n": 0}
-
-    async def llm_call(system_prompt, messages, stream_hook=None):
-        calls["n"] += 1
-        return bad[0], bad[1], 0
-
-    result = await run_agent_loop(
-        "x", llm_call=llm_call, context_builder=lambda: "ctx",
-        executor=executor, history=[],
-    )
-    assert calls["n"] == 1, "拒因重试已随 4-4 退役删除，不得额外烧轮次"
-    assert result.applied_actions == 0
-    assert any("解析失败" in w for w in result.warnings)
+# ---------- 无效/异常输出处置（单轨化后：正文即用户可见，无解析/重试） ----------
 
 
 class _StubExec:

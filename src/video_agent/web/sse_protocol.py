@@ -18,7 +18,6 @@ from src.video_agent.core.sse_events import (
     SSE_DOC_WRITTEN,
     SSE_DONE,
     SSE_ERROR,
-    SSE_EXECUTING_ACTIONS,
     SSE_GUIDANCE_INJECTED,
     SSE_MODEL_FALLBACK,
     SSE_REASONING_DELTA,
@@ -68,10 +67,11 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
         "passthrough", "tool_finished", "过程时间线",
     ),
     SseEventSpec(
-        SSE_DOC_WRITTEN, ("core/agent_loop.py", "core/fc_tool_runner.py"),
+        SSE_DOC_WRITTEN, ("core/fc_tool_runner.py", "web/mock_chat.py", "web/chat_consume.py"),
         "passthrough", "doc_written",
         "3333/6666 事故（四段链补齐）；六轮 S5：透传段改 chat_service 专属分支"
-        "并打戳本轮 turn_id（_stamp_doc_written），链测试识别该形态",
+        "并打戳本轮 turn_id（_stamp_doc_written），链测试识别该形态；"
+        "audit-0819b：agent_loop 发射段随文本块通道退役删除",
     ),
     SseEventSpec(
         SSE_MODEL_FALLBACK, ("web/chat_service.py",),
@@ -97,10 +97,7 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
         SSE_STEP_STARTED, ("core/agent_loop.py",),
         "internal", "", "内部事件（前端忽略，登记防误依赖）",
     ),
-    SseEventSpec(
-        SSE_EXECUTING_ACTIONS, ("core/agent_loop.py",),
-        "internal", "", "内部事件（前端忽略，登记防误依赖）",
-    ),
+    # audit-0819b：executing_actions 事件随文本块执行路径退役删除（ADR-0001）
 )
 
 

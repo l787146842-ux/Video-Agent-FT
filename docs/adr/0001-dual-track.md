@@ -46,6 +46,24 @@
 - FC 轨内部合成确认块（planner._handle_fc_response → agent_loop 解析）；
 - mock 演示通道输出；strip_action_blocks 防泄漏（双路径共用）。
 
+## 执行记录二（audit-0819b 单轨化，2026-08-19，用户批准）
+
+对齐业界最高标准（Claude Code AskUserQuestion / codex-cli AskUserTool /
+DeepSeek Harness waterfall 审批：暂停确认一律是工具/结构化事件，从不走
+正文暗号），上述「保留项」同批清零：
+- 暂停确认唯一经 workflow_pause / request_confirmation FC 工具产生
+  （后者新增为正式工具别名，同 schema 同行为），经 llm_call 第 5 元组
+  extra={confirmation, confirmation_options} 结构化上抛 agent_loop；
+  planner 不再合成 studio-actions 块（防泄漏根治：通道消失则无可泄漏）。
+- stream_suppressor.py 整文件删除（S01 下账，基线 12→11）；action_parser
+  删除 strip_action_blocks / has_action_block；executor 同步删委托；
+  agent_loop 删除文本块解析路径，纯文本轮仅收尾（轮末策略表照常承重，
+  虚报审计在 FC 确认轮同批补回，单轨化不豁免审计）。
+- mock 演示通道动作改为结构化 dict 直达执行器（不经文本）；
+  executing_actions SSE 事件同批退役（登记/常量/前端 i18n 同步清理）。
+- 钉死：test_planner_does_not_synthesize_action_blocks（content 含
+  studio-actions 即红）；结构化确认暂停/选项透传回归（audit-0819b）。
+
 ## 后果
 
 - 双轨一致条款已随单轨化废除（宪法 Rule 2 改写）；

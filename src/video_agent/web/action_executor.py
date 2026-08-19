@@ -24,8 +24,6 @@ from src.video_agent.web.provider_config import stamp_draft_spec_preference
 from src.video_agent.web.prompt_refs import media_of_draft
 from src.video_agent.web.action_descriptions import describe_action
 from src.video_agent.web.action_parser import (
-    strip_action_blocks,
-    has_action_block as _has_action_block,
     parse_actions_from_reply as _parse_actions,
 )
 
@@ -96,16 +94,8 @@ class StudioActionExecutor:
         return self.svc.state_dict
 
     def parse_actions_from_reply(self, reply: str) -> List[Dict[str, Any]]:
-        """从 Agent 回复文本中提取 studio-actions JSON 块"""
+        """从回复文本中提取 studio-actions JSON 块（audit-0819b 后仅 mock 演示通道使用）"""
         return _parse_actions(reply)
-
-    def has_action_block(self, reply: str) -> bool:
-        """回复中是否存在 studio-actions 块"""
-        return _has_action_block(reply)
-
-    def strip_action_blocks(self, reply: str) -> str:
-        """移除回复中的 studio-actions 块，返回纯文本"""
-        return strip_action_blocks(reply)
 
     def execute(self, actions: List[Dict[str, Any]]) -> int:
         """执行操作列表，返回成功执行的数量。执行后自动持久化。

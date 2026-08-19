@@ -28,17 +28,11 @@ def test_parse_dict_with_actions_key(executor):
     assert len(actions) == 1
 
 
-def test_truncated_json_yields_no_actions_but_detected(executor):
+def test_truncated_json_yields_no_actions(executor):
     truncated = '```studio-actions\n[{"action":"add_group","title":"未闭合'
-    # 未闭合的代码块解析不到 actions
+    # 未闭合的代码块解析不到 actions（has_action_block/strip 已随
+    # audit-0819b 文本块通道退役删除，ADR-0001）
     assert executor.parse_actions_from_reply(truncated + "\n```") == []
-    # 但 has_action_block 能检测到，供上层发告警
-    assert executor.has_action_block(truncated)
-
-
-def test_strip_action_blocks(executor):
-    reply = '前文\n```studio-actions\n[]\n```\n后文'
-    assert executor.strip_action_blocks(reply) == "前文\n\n后文"
 
 
 def test_add_group_with_draft(svc, executor):

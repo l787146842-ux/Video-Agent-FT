@@ -70,20 +70,20 @@ def test_delete_missing_returns_zero(executor):
 
 
 async def test_request_confirmation_pauses_loop(svc, executor):
-    """LLM 请求确认后循环必须停下，即使同时带了 continue 也不再跑下一轮"""
-    reply = ('拆解完成，请确认。\n```studio-actions\n'
-             '[{"action":"add_group","group_type":"keyElement","title":"Element_X","draft":{"label":"d","prompt":"p"}},'
-             '{"action":"request_confirmation","message":"已拆解 1 个元素，确认后开始生成图片"},'
-             '{"action":"continue","reason":"should be ignored"}]\n```', "stop")
+    """LLM 经 workflow_pause/request_confirmation 工具请求确认后循环必须停下
+    （audit-0819b：确认经第 5 元组结构化上抛，不再经文本块）"""
     calls = {"n": 0}
 
     async def llm(system, messages, stream_hook=None):
         calls["n"] += 1
-        return reply[0], reply[1], 0
+        return ("拆解完成，请确认。", "stop", 1, 0.0, {
+            "confirmation": "已拆解 1 个元素，确认后开始生成图片",
+            "confirmation_options": [],
+        })
 
     result = await run_agent_loop(
         "拆解", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
     )
     assert calls["n"] == 1                      # 没有跑第二轮
     assert result.confirmation == "已拆解 1 个元素，确认后开始生成图片"
-    assert result.applied_actions == 1          # 确认/continue 不计数
+    assert result.applied_actions == 1          # 工具执行照计，确认不计数

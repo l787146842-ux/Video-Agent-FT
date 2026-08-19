@@ -1,15 +1,12 @@
 """
 Studio Actions 解析器 — 从 actions.py 抽离。
 
-职责：从 Agent 回复文本中提取 / 解析 / 修复 studio-actions JSON 块。
-纯函数实现，无状态依赖，可独立测试。
+职责（audit-0819b 单轨化后，ADR-0001）：仅保留 JSON 容错解析与动作归一
+纯函数（mock 演示通道与回归测试使用）。生产动作通道唯一 = FC 工具调用。
 
-4-4 双轨退役（ADR-0001，audit-0819）后的职能边界：
-- 不再作为「非 FC 模型动作通道」的解析器（文本轨已退役）；
-- 保留消费对象：①FC 轨系统内部合成的确认块（planner._handle_fc_response）；
-  ②mock/演示通道的固定输出；③strip_action_blocks 防违规块泄漏（双路径共用）。
-- 已删除：退化流程信号探测（extract_degraded_signal_blocks，7777 事故 S02）、
-  StreamingActionExtractor 流式增量提取（边写边填，文本轨基础设施）。
+已随双轨退役删除：strip_action_blocks / has_action_block（防泄漏清洗，
+文本块通道不复存在）、退化流程信号探测（extract_degraded_signal_blocks，
+7777 事故 S02）、StreamingActionExtractor 流式增量提取（边写边填）。
 """
 from loguru import logger
 import json
@@ -24,38 +21,11 @@ _ACTION_BLOCK_PATTERNS = [
     re.compile(r"<studio-actions>([\s\S]*?)</studio-actions>", re.IGNORECASE),
 ]
 
-_ACTION_BLOCK_DETECT = re.compile(
-    r"```(?:studio-actions|studio_action|studioActions)|<studio-actions>", re.IGNORECASE
-)
-
-_STRIP_PATTERNS = [
-    re.compile(r"```(?:studio-actions|studio_action|studioActions)\s*[\s\S]*?```", re.IGNORECASE),
-    re.compile(r"<studio-actions>[\s\S]*?</studio-actions>", re.IGNORECASE),
-]
-
-# 包装格式探测（9999 事故）：确认写进 {"studio-actions": [...]} 包装对象里，
-# 标准围栏匹配不到（系统内部合成确认块的兼容形态）
+# 包装格式探测（9999 事故）：{"studio-actions": [...]} 包装对象（解析兜底保留）
 _WRAPPER_KEY_RE = re.compile(r"\"studio-actions\"\s*:")
-_JSON_FENCE_RE = re.compile(r"```(?:json|javascript)\s*([\s\S]*?)```", re.IGNORECASE)
 
 
 # ---------- 公开 API ----------
-
-def strip_action_blocks(text: str) -> str:
-    """移除 studio-actions 块，返回纯可见文本（含包装格式，9999 事故）"""
-    for pat in _STRIP_PATTERNS:
-        text = pat.sub("", text)
-    text = _strip_wrapper_blocks(text)
-    return text.strip()
-
-
-def has_action_block(reply: str) -> bool:
-    """回复中是否存在 studio-actions 块（无论能否解析成功，含包装格式）"""
-    return (
-        bool(_ACTION_BLOCK_DETECT.search(reply))
-        or bool(_WRAPPER_KEY_RE.search(reply))
-    )
-
 
 def _find_wrapper_span(text: str, key_match_start: int) -> Optional[tuple]:
     """从包装键位置向前找最近的 '{'，用括号深度扫描出完整对象区间。"""
@@ -86,30 +56,11 @@ def _find_wrapper_span(text: str, key_match_start: int) -> Optional[tuple]:
     return None
 
 
-def _strip_wrapper_blocks(text: str) -> str:
-    """剥离 {"studio-actions": [...]} 包装对象（含包裹它的 json 围栏）。"""
-    while True:
-        m = _WRAPPER_KEY_RE.search(text)
-        if not m:
-            return text
-        span = _find_wrapper_span(text, m.start())
-        if not span:
-            return text
-        s, e = span
-        # 若包装对象被 ```json/``` 围栏包裹，连同围栏一起剥离
-        pre = text[:s]
-        fence_open = None
-        for fm in _JSON_FENCE_RE.finditer(text):
-            if fm.start() < s <= fm.end():
-                fence_open = fm
-                break
-        if fence_open is not None:
-            s, e = fence_open.start(), fence_open.end()
-        text = (pre[:s] if fence_open is None else text[:s]) + text[e:]
-
-
 def parse_actions_from_reply(reply: str) -> List[Dict[str, Any]]:
-    """从 Agent 回复文本中提取 studio-actions JSON 块并解析为操作列表"""
+    """从回复文本中提取 studio-actions JSON 块并解析为操作列表。
+
+    audit-0819b 后仅 mock 演示通道与回归测试使用；生产动作通道唯一 = FC 工具。
+    """
     actions: List[Dict[str, Any]] = []
     for pattern in _ACTION_BLOCK_PATTERNS:
         for match in pattern.finditer(reply):

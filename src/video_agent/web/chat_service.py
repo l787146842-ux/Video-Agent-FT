@@ -692,9 +692,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                 )
                 # 0817 B14/B19：规格卡补落（用户消息之后），名字随载荷下发保 live 可见
                 _wiz_card = flush_pending_doc_card(svc)
-            raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
-            actions = executor.parse_actions_from_reply(raw_reply)
-            visible = executor.strip_action_blocks(raw_reply) or raw_reply
+            # audit-0819b 单轨化：mock 动作以结构化 dict 直达执行器，不经文本块解析
+            visible, actions = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
             applied = executor.execute(actions)
             if use_studio_context:
                 svc.add_chat_message("agent", visible, model_name=body.model or "")

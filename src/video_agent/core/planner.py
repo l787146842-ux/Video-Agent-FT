@@ -39,7 +39,6 @@ from src.video_agent.core.planner_output import assemble_response
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.live_metrics import record_degradation, record_live_context
 from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS, status_event
-from src.video_agent.core.stream_suppressor import StreamActionSuppressor
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 
@@ -207,7 +206,7 @@ class Planner:
             if canvas_online_cached() is False:
                 excluded |= _CANVAS_TOOLS
         # 混合形态第一层：阶段探测驱动的工具裁剪（仅 Skill 激活 + strict），
-        # 用工具可见性隔离阶段；第二层由既有闸机兑底（文本轨不受裁剪影响）
+        # 用工具可见性隔离阶段；第二层由既有闸机兜底
         if context.skill_name and context.use_studio_context \
                 and prompt_gates.gate_mode() == "strict":
             try:
@@ -309,7 +308,7 @@ class Planner:
                     scope=str(gate_override_scope),
                 )
         except Exception as _e:
-            logger.warning("[GateOverride] 豁免消费失败（本次放行可能未生效，回落意图识别兑底）: {}", _e)
+            logger.warning("[GateOverride] 豁免消费失败（本次放行可能未生效，回落意图识别兜底）: {}", _e)
         if not gate_override_scope and isinstance(user_message, str):
             gate_override_scope = prompt_gates.user_insists_override(user_message) or False
         try:
@@ -365,6 +364,10 @@ class Planner:
         async def llm_call(system_prompt: str, messages: List[Dict[str, Any]], hook=None) -> tuple:
             # N6：主模型调用计数（成本看板平均耗时口径）
             tracer.record_llm_call()
+            # audit-0819b：确认信号结构化直通——本轮 FC 批的暂停确认由
+            # _handle_fc_response 写入本 holder，随 5 元组上抛 agent_loop，
+            # 不再合成 studio-actions 文本块回绕解析（对齐 AskUserQuestion 范式）
+            _confirm_holder: Dict[str, Any] = {}
             # 纯规划计时（2222 反馈）：只量模型流/调用本身，FC 工具执行时间
             # 不计入「Agent 正在规划本步动作」条目，避免规划行虚高掩盖工具耗时
             _t_plan = time.monotonic()
@@ -373,16 +376,13 @@ class Planner:
                 content_parts: List[str] = []
                 finish = ""
                 stream_tool_calls: List[Dict[str, Any]] = []
-                suppressor = StreamActionSuppressor()
                 async for chunk in self._call_llm_stream(system_prompt, messages):
                     if chunk.type == "text_delta" and chunk.text:
                         content_parts.append(chunk.text)
-                        # P2-1：仅屏蔽 studio-actions 围栏，普通代码块照常推送
-                        # （4-4 文本轨退役：流式预执行已删，抑制器只防 FC 模型
-                        # 违规围栏泄漏，audit-0819；块内动作若存在由循环末统一解析）
-                        out = suppressor.feed(chunk.text)
-                        if out:
-                            await hook(out)
+                        # audit-0819b 单轨化：确认走结构化 workflow_pause 工具，
+                        # studio-actions 文本块通道已退役（ADR-0001）——
+                        # 正文原样透传，流式抑制器（S01）同批下账
+                        await hook(chunk.text)
                     elif chunk.type == "reasoning_delta" and chunk.text:
                         # 深度思考：记入 trace（持久化展示）+ 实时推给前端，不进 LLM 上下文
                         tracer.record_reasoning(chunk.text)
@@ -399,9 +399,6 @@ class Planner:
                         })
                     elif chunk.type == "done":
                         finish = chunk.finish_reason or "stop"
-                tail = suppressor.flush()
-                if tail:
-                    await hook(tail)
                 content = "".join(content_parts)
                 response = ChatResponse(content=content, finish_reason=finish, tool_calls=stream_tool_calls)
                 plan_ms = (time.monotonic() - _t_plan) * 1000
@@ -425,6 +422,7 @@ class Planner:
                 selected_draft_id=context.selected_draft_id,
                 selected_type=context.selected_type,
                 gate_override=gate_override_scope,
+                confirmation_collector=_confirm_holder,
             )
             # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
             # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
@@ -448,7 +446,13 @@ class Planner:
                     if isinstance(feedback, list):
                         strip_prior_feedback_images(messages)
                     messages.append({"role": "user", "content": feedback})
-            return content, finish, fc_applied, plan_ms
+            _extra: Dict[str, Any] = {}
+            if _confirm_holder.get("message"):
+                _extra = {
+                    "confirmation": _confirm_holder["message"],
+                    "confirmation_options": _confirm_holder.get("options") or [],
+                }
+            return content, finish, fc_applied, plan_ms, _extra
 
         # 构建 context_builder
         def context_builder() -> str:
@@ -545,9 +549,6 @@ class Planner:
                     type="actions_applied", text=sev["text"],
                     payload={"count": count, "status_event": sev},
                 ))
-            elif etype == "executing_actions":
-                sev = status_event("agent.executing", "正在执行操作…", {})
-                await queue.put(PlannerEvent(type="status", text=sev["text"], payload=sev))
             elif etype in ("reasoning_delta", "tool_started", "tool_finished", "guidance_injected", "doc_written"):
                 # 过程时间线事件穿透（前端渲染深度思考/工具条目）
                 await queue.put(PlannerEvent(type=etype, text=event.get("text", ""), payload=event))
@@ -814,11 +815,14 @@ class Planner:
         selected_draft_id: str = "",
         selected_type: str = "",
         gate_override: Any = False,
+        confirmation_collector: Optional[Dict[str, Any]] = None,
     ) -> Tuple:
         """处理 LLM 响应中的 FC tool_calls。
         返回 (content, finish_reason, fc_applied, tool_results, fc_warnings)，
         tool_results: [{name, ok, data, error}] 供回喂进对话上下文；
-        fc_warnings: 本批闸机拦截/豁免的用户可见文案（B0/F3，双轨对齐）。"""
+        fc_warnings: 本批闸机拦截/豁免的用户可见文案（B0/F3）。
+        audit-0819b：暂停确认经 confirmation_collector 结构化上抛
+        （{message, options}），不再合成 studio-actions 文本块。"""
         if response.tool_calls:
             (fc_applied, fc_confirmation, image_urls,
              chat_inserts, fc_action_log, fc_confirmation_options,
@@ -841,19 +845,17 @@ class Planner:
             if fc_warnings_collector is not None:
                 fc_warnings_collector.extend(fc_warnings)
             if fc_confirmation:
-                confirm_action: Dict[str, Any] = {
-                    "action": "request_confirmation", "message": fc_confirmation,
-                }
-                if fc_confirmation_options:
-                    confirm_action["options"] = fc_confirmation_options
-                confirm_block = json.dumps([confirm_action], ensure_ascii=False)
-                # 空正文兜底处理：FC 模型常只发暂停工具不带正文，若不补可见文字，
-                # 用户会看到「模型返回了空内容」而非完成总结（事情干完了却像失败了）
+                # audit-0819b：确认结构化直通（对齐 AskUserQuestion 范式）：
+                # 文案+选项写入 collector 随 5 元组上抛 agent_loop，不再合成
+                # studio-actions 文本块回绕解析；正文原样返回
+                if confirmation_collector is not None:
+                    confirmation_collector["message"] = fc_confirmation
+                    confirmation_collector["options"] = fc_confirmation_options
+                # 空正文兜底：FC 模型常只发暂停工具不带正文，确认文案作可见正文
                 visible = (response.content or "").strip()
                 if not visible:
                     visible = fc_confirmation
-                content = visible + f"\n```studio-actions\n{confirm_block}\n```"
-                return content, response.finish_reason, 0, fc_tool_results, fc_warnings
+                return visible, response.finish_reason, 0, fc_tool_results, fc_warnings
             return response.content, response.finish_reason, fc_applied, fc_tool_results, fc_warnings
         return response.content, response.finish_reason, 0, [], []
 

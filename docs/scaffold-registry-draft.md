@@ -12,7 +12,7 @@
 
 | # | 组件 | 假设（模型做不到 X） | 承重证据 | 复测时机 |
 |---|------|--------------------|---------|---------|
-| S01 | `core/stream_suppressor.py` StreamActionSuppressor | 模型会把 studio-actions 围栏写进流式正文，需流式抑制防泄漏 | P2-1 回归；audit-0819 泄漏取证（FC 单轨下仍复现，故保留） | 每次主模型切换；连续 2 个模型周期零违规输出才可删 |
+| ~~S01~~ | ~~`core/stream_suppressor.py` StreamActionSuppressor~~ | **已随 audit-0819b 单轨化删除**（确认改经 FC 工具结构化上抛，文本块通道消失，ADR-0001 执行记录二） | — | — |
 | ~~S02~~ | ~~`web/action_parser.py` 退化信号检测~~ | **已随 4-4 双轨退役删除**（ADR-0001，audit-0819） | — | — |
 | S03 | `core/agent_loop.py` `_bad_output_nudge` | 模型会连续产出空/畸形输出 | bad_output_retry trace 计数；audit 回归 | 每次主模型切换 |
 | S04 | `core/planner.py` `_ADVANCE_CORPUS`/`_ADHOC_VERBS` 路由语料 | 模型不能自决「走编排器还是模型循环」 | 编排器路由回归 | 阶段 3 DAG 化后重估；模型切换时 |
@@ -41,5 +41,5 @@
 ## 三、盘点备注
 
 - 本清单为存量快照；新增组件必须经宪法 13.5（含 Q0）决策树入账，禁止裸补丁。
-- 4-4 双轨退役已执行（2026-08-19）：S02/S14 下账，S01 保留本体改复测口径，基线 14→12。
+- 4-4 双轨退役已执行（2026-08-19）：S02/S14 下账；audit-0819b 单轨化再下账 S01，基线 14→12→11。
 - 棘轮：入账后脚手架计数只降不升（acceptance 门禁，2-1）。

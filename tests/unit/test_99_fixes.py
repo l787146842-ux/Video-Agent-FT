@@ -156,14 +156,17 @@ async def test_99_model_spec_write_rejected_when_wizard_active(svc, monkeypatch)
 # ---------- 问题1回归：规格写完后的暂停不再重复展示剧本总结 ----------
 
 async def test_99_summary_not_prepended_on_spec_review_pause(svc):
-    """规格审阅暂停（pause_kind=spec）正文不带总结时也不补：总结只属于解析阶段"""
+    """规格审阅暂停（pause_kind=spec）正文不带总结时也不补：总结只属于解析阶段
+    （audit-0819b：确认经结构化 extra 上抛，原 request_confirmation 文本块退役）"""
     svc.state_dict["analysis"] = {"summary": "太阳系逐渐二维化"}
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": _SPEC_CONFIRMED}]
     svc.state_dict.setdefault("interaction", {})["pending_pause_kind"] = "spec"
     ex = StudioActionExecutor(svc, gate_enabled=False)
-    r1 = ("请审阅规格条目。\n```studio-actions\n"
-          '[{"action":"request_confirmation","message":"请确认规格"}]\n```', "stop")
-    llm, _ = make_llm([r1])
+
+    async def llm(system_prompt, messages, stream_hook=None):
+        return ("请审阅规格条目。", "stop", 0, 0.0,
+                {"confirmation": "请确认规格", "confirmation_options": []})
+
     result = await run_agent_loop(
         "开始", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
     )

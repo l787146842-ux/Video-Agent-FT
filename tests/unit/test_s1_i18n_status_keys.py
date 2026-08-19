@@ -15,7 +15,7 @@ QUEUE_STATUS_KEYS = (
     "agent.roundStart",
     "agent.planning",
     "agent.actionsApplied",
-    "agent.executing",
+    # audit-0819b：agent.executing 随 executing_actions 事件退役删除（ADR-0001）
 )
 
 
@@ -37,7 +37,8 @@ def test_s1_planner_queue_status_carry_keys():
     # 不得残留无 payload 的裸 status PlannerEvent（旧硬编码形态）
     assert 'PlannerEvent(type="status", text="正在执行操作…")' not in region
     # 每个队列级 status 的 PlannerEvent 必须携带 payload（status_event 整体）
-    assert region.count("payload=sev") >= 2
+    # （audit-0819b：agent.executing 分支随 executing_actions 退役，发射点减少）
+    assert region.count("payload=sev") >= 1
 
 
 def test_s1_chat_service_passthrough_status_payload():

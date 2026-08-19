@@ -101,28 +101,32 @@ def make_llm(replies):
 
 
 async def test_agent_loop_emits_tool_events(executor):
-    reply = ('好\n```studio-actions\n'
-             '[{"action":"add_group","group_type":"shot","title":"分镜A","draft":{"label":"d","prompt":"p"}}]\n```', "stop")
+    """过程时间线事件链（audit-0819b 单轨化后：agent_loop 侧发射源 =
+    模型推理条目与前奏明细；动作条目由 fc_tool_runner 发射，见
+    test_fc_tool_timeline_events）"""
     events: list = []
 
     async def on_event(ev):
         events.append(ev)
 
     result = await run_agent_loop(
-        "拆解", llm_call=make_llm([reply]), context_builder=lambda: "ctx",
-        executor=executor, history=[], on_event=on_event,
+        "你好", llm_call=make_llm([("好的，已收到。", "stop")]),
+        context_builder=lambda: "ctx", executor=executor, history=[],
+        on_event=on_event,
+        prelude_notes=[("read_skill", "加载 Skill 流程规范进上下文")],
     )
     types = [e["type"] for e in events]
     assert "tool_started" in types and "tool_finished" in types
-    # 顺序：先 started 后 finished，且 id 对应
+    # 前奏条目：先 started 后 finished，且 id 对应
     started = next(e for e in events
-                   if e["type"] == "tool_started" and e.get("name") != "model_reasoning")
+                   if e["type"] == "tool_started" and e.get("name") == "read_skill")
     finished = next(e for e in events
                     if e["type"] == "tool_finished" and e.get("id") == started["id"])
     assert types.index("tool_started") < types.index("tool_finished")
-    assert started["id"] == finished["id"]
     assert finished["ok"] is True
-    assert "分镜A" in started["summary"]
+    # 模型推理条目同样成对（耗时回填；finished 事件携 id 不带 name）
+    assert any(e.get("id") == "llm-s1" and e["type"] == "tool_finished"
+               for e in events)
     # trace 携带 actions 明细（前端刷新后可重建时间线）
     step = result.trace["steps"][0]
     assert step["actions"] and step["actions"][0]["ok"] is True

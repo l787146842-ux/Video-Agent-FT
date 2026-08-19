@@ -1,45 +1,17 @@
 """
 action_parser 模块单元测试 — 验证 JSON 容错解析与 action 提取逻辑。
+
+audit-0819b 单轨化（ADR-0001）：strip_action_blocks / has_action_block 已随
+文本块通道退役删除，对应测试同批退役。
 """
 import pytest
 
 from src.video_agent.web.action_parser import (
-    strip_action_blocks,
-    has_action_block,
     parse_actions_from_reply,
     parse_json_tolerant,
     repair_json,
     normalize_actions,
 )
-
-
-class TestStripActionBlocks:
-    def test_removes_markdown_block(self):
-        text = '你好\n```studio-actions\n[{"action":"add_group"}]\n```\n再见'
-        assert strip_action_blocks(text) == "你好\n\n再见"
-
-    def test_removes_xml_block(self):
-        text = '前文<studio-actions>[{"action":"x"}]</studio-actions>后文'
-        assert strip_action_blocks(text) == "前文后文"
-
-    def test_no_block_unchanged(self):
-        text = "普通回复文本"
-        assert strip_action_blocks(text) == text
-
-    def test_case_insensitive(self):
-        text = '```StudioActions\n[]\n```done'
-        assert strip_action_blocks(text) == "done"
-
-
-class TestHasActionBlock:
-    def test_detects_markdown(self):
-        assert has_action_block('```studio-actions\n[]\n```') is True
-
-    def test_detects_xml(self):
-        assert has_action_block('<studio-actions>[]</studio-actions>') is True
-
-    def test_no_block(self):
-        assert has_action_block('普通文本') is False
 
 
 class TestParseJsonTolerant:

@@ -45,9 +45,10 @@ def test_s3_planner_consumes_scope_enum():
 
 def test_s3_suggested_actions_emitted():
     loop_src = (ROOT / "src/video_agent/core/agent_loop.py").read_text(encoding="utf-8")
-    # 空响应兜底与坏输出终止 → retry；max_steps 两处截断 → continue（双轨 G4）
+    # 空响应兜底与坏输出终止 → retry；max_steps 截断 → continue
+    # （audit-0819b：文本路径 max_steps 分支随双轨退役，continue 发射点 2→1）
     assert loop_src.count('{"kind": "retry", "label": "重试", "value": ""}') == 2
-    assert loop_src.count('{"kind": "continue", "label": "继续完成", "value": "继续完成"}') == 2
+    assert loop_src.count('{"kind": "continue", "label": "继续完成", "value": "继续完成"}') == 1
     # planner 透传进 done payload
     planner_src = (ROOT / "src/video_agent/core/planner.py").read_text(encoding="utf-8")
     assert '"suggested_actions": result.suggested_actions' in planner_src

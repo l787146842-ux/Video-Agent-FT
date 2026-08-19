@@ -11,12 +11,9 @@
 import pytest
 
 from src.video_agent.core.agent_loop import _extract_confirmation, split_actions
-from src.video_agent.core.stream_suppressor import StreamActionSuppressor
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.web.action_parser import (
-    has_action_block,
     parse_actions_from_reply,
-    strip_action_blocks,
 )
 
 
@@ -29,26 +26,14 @@ class TestConfirmationToolKeyAlias:
 
 
 class TestLegitimateJsonUntouched:
-    """非流程信号的普通 JSON 不受兜底影响"""
+    """非流程信号的普通 JSON 不被误认为动作（单轨化后仅保留解析侧断言）"""
 
-    def test_plain_json_fence_not_stripped(self):
+    def test_plain_json_fence_not_parsed(self):
         text = '示例：\n```json\n{"a": 1, "b": 2}\n```\n以上。'
-        assert strip_action_blocks(text) == text.strip()
         assert parse_actions_from_reply(text) == []
 
     def test_plain_json_fence_not_detected(self):
-        assert has_action_block('```json\n{"a": 1}\n```') is False
-
-
-class TestSuppressorPlainJsonPassthrough:
-    """4-4 后抑制器只认 studio-actions 围栏：普通 json 围栏照常放行"""
-
-    def test_plain_json_fence_released(self):
-        sup = StreamActionSuppressor()
-        full = '```json\n{"data": 123}\n```'
-        out = sup.feed(full)
-        out += sup.flush()
-        assert '"data": 123' in out
+        assert parse_actions_from_reply('```json\n{"a": 1}\n```') == []
 
 
 # ---------- 降级新语义：同模型跨厂商 ----------
@@ -343,20 +328,17 @@ class TestGuidanceRoundInjection:
     async def test_injected_between_rounds_not_first(self, svc, executor):
         from src.video_agent.core.agent_loop import run_agent_loop
 
-        r1 = ('第一轮\n```studio-actions\n'
-              '[{"action":"add_group","group_type":"shot","title":"S1","draft":{"label":"d","prompt":"p"}},'
-              '{"action":"continue","reason":"继续"}]\n```', "stop")
-        r2 = ('完成\n```studio-actions\n'
-              '[{"action":"add_group","group_type":"shot","title":"S2","draft":{"label":"d","prompt":"p"}}]\n```', "stop")
+        # audit-0819b：多步链改以 FC 桩模拟（finish=tool_calls 续轮）；
+        # 轮间引导注入语义不变（上轮操作完成后才送达，不打断首轮）
         seen = {"msgs": []}
         calls = {"n": 0}
-        replies = [r1, r2]
 
         async def llm(system_prompt, messages, stream_hook=None):
             seen["msgs"].append([str(m.get("content")) for m in messages])
-            reply = replies[min(calls["n"], len(replies) - 1)]
             calls["n"] += 1
-            return reply[0], reply[1], 0
+            if calls["n"] == 1:
+                return ("处理中", "tool_calls", 1)
+            return ("完成", "stop", 0)
 
         events: list = []
 

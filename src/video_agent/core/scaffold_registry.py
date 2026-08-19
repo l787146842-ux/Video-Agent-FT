@@ -31,12 +31,9 @@ class ScaffoldEntry:
 
 SCAFFOLDS = (
     # ---------- 脚手架（可折旧） ----------
-    ScaffoldEntry(
-        "S01", "src.video_agent.core.stream_suppressor:StreamActionSuppressor",
-        "模型会把 studio-actions 围栏写进流式正文，需流式抑制防泄漏",
-        "P2-1 回归；audit-0819 泄漏取证（FC 单轨下仍复现，故保留）",
-        "每次主模型切换；连续 2 个模型周期零违规输出才可删",
-        "scaffold"),
+    # S01（stream_suppressor 流式围栏抑制）已随 audit-0819b 单轨化删除：
+    # 确认改经结构化 FC 工具上抛，文本块通道整体退役（ADR-0001），
+    # 流式正文无围栏可抑；stream_suppressor.py 文件同批删除。
     # S02（action_parser 退化信号探测）已随 4-4 双轨退役删除（ADR-0001，audit-0819）。
     ScaffoldEntry(
         "S03", "src.video_agent.core.agent_loop:_bad_output_nudge",

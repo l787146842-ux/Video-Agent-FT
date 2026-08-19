@@ -38,8 +38,8 @@ class TestForeignToolDetection:
         note = build_foreign_tool_note("先 write_media_prompt 再 media_generator")
         assert "外来工具名映射" in note
         assert "write_media_prompt" in note and "media_generator" in note
-        # 映射目标必须是本系统真实动作
-        assert "patch.prompt" in note
+        # 映射目标必须是本系统真实工具（audit-0819b 单轨化：落盘经 FC 工具）
+        assert "storyboard_patch_draft" in note
         assert "generate_image" in note
 
     def test_no_foreign_names_returns_empty(self):

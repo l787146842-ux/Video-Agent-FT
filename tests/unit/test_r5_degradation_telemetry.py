@@ -14,12 +14,12 @@ def _clean():
 
 
 def test_r5_record_degradation_counts():
-    live_metrics.record_degradation("agent_loop._wizard_active")
-    live_metrics.record_degradation("agent_loop._wizard_active")
+    live_metrics.record_degradation("round_end.stage_pause_declared")
+    live_metrics.record_degradation("round_end.stage_pause_declared")
     live_metrics.record_degradation("planner.flow_gates_parse", project_id="p1")
     rows = live_metrics.get_degradations()
     by_point = {(r["point"], r["project_id"]): r for r in rows}
-    assert by_point[("agent_loop._wizard_active", "")]["count"] == 2
+    assert by_point[("round_end.stage_pause_declared", "")]["count"] == 2
     assert by_point[("planner.flow_gates_parse", "p1")]["count"] == 1
 
 
@@ -56,9 +56,9 @@ def test_r5_core_probe_points_instrumented():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2]
-    al_src = (root / "src/video_agent/core/agent_loop.py").read_text(encoding="utf-8")
     rep_src = (root / "src/video_agent/core/round_end_policies.py").read_text(encoding="utf-8")
-    assert 'record_degradation("agent_loop._wizard_active")' in al_src
+    # audit-0819b：agent_loop._wizard_active 探针随文本块路径退役删除；
+    # round_end 探针继续承重
     assert "record_degradation(f\"round_end.{policy.policy_id}\")" in rep_src
     assert 'record_degradation("round_end.stage_pause_declared")' in rep_src
     # 调试端点暴露（routes/agent.py）

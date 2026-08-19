@@ -36,7 +36,7 @@ const zhCN: Record<string, string> = {
   'agent.roundStart': '第 {step} 轮推理中…（执行上轮操作后继续规划）',
   'agent.planning': '正在推理…（模型正在读状态并规划操作）',
   'agent.actionsApplied': '已应用 {count} 个操作',
-  'agent.executing': '正在执行操作…',
+  // audit-0819b：agent.executing 随 executing_actions 事件退役删除（ADR-0001）
   'rp.conv.close': '关闭对话',
   'rp.conv.create': '新建对话',
   'rp.conv.branch': '分支当前对话（快照并派生新对话）',

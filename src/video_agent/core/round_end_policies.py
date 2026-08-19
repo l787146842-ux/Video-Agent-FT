@@ -317,12 +317,13 @@ async def _apply_stage_done_fallback(ctx: RoundEndContext, emit: Callable) -> No
 
 
 def _cond_false_claim_audit(ctx: RoundEndContext) -> bool:
-    # 虚报检测与正文拼接收纳在同一块内（原 agent_loop L715-731 语义）
-    return bool(ctx.executor.strip_action_blocks(ctx.content))
+    # 虚报检测与正文拼接收纳在同一块内（原 agent_loop L715-731 语义）；
+    # audit-0819b 单轨化：文本动作块通道已退役，正文即模型可见文本，无需清洗
+    return bool((ctx.content or "").strip())
 
 
 async def _apply_false_claim_audit(ctx: RoundEndContext, emit: Callable) -> None:
-    visible = ctx.executor.strip_action_blocks(ctx.content)
+    visible = (ctx.content or "").strip()
     if visible and not ctx.gate_heal:
         # 虚报警告（7777 × 4444）：声称完成结构搭建但故事板实际为空 → 只警告不拦人
         if (

@@ -48,9 +48,8 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
                 await emit({"type": SSE_DOC_WRITTEN, "name": _card, "turn_id": turn_id})
         # 五轮自查补漏：mock 路径 status 同走 key 化（#1 G4 同类全覆盖）
         await emit(status_event("agent.mockRunning", "mock 模式：本地规则生成…", {}))
-        raw_reply = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
-        actions = executor.parse_actions_from_reply(raw_reply)
-        visible = executor.strip_action_blocks(raw_reply) or raw_reply
+        # audit-0819b 单轨化：mock 动作以结构化 dict 直达执行器，不经文本块解析
+        visible, actions = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
         for i in range(0, len(visible), 8):
             await emit({"type": SSE_DELTA, "text": visible[i:i + 8]})
             await asyncio.sleep(0.02)

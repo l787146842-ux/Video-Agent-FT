@@ -55,13 +55,18 @@ def test_split_actions_type_key_and_confirm_key():
     assert confirmation and executable == []
 
 
-async def test_confirm_variant_stops_loop_with_card(svc, executor):
-    """模型写 confirm 变体时：循环照常暂停并带回确认文案（阶段完成卡不丢）"""
-    reply = ('提示词已写完\n```studio-actions\n'
-             '[{"action": "confirm", "message": "请审阅提示词草案"}]\n```', "stop")
-    llm, calls = make_llm([reply])
+async def test_structured_confirmation_stops_loop_with_card(svc, executor):
+    """audit-0819b 单轨化：暂停确认经第 5 元组 extra 上抛（原「confirm 文本
+    变体解析」随文本块通道退役）——循环照常暂停并带回确认文案"""
+    calls = {"n": 0}
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        calls["n"] += 1
+        return ("提示词已写完", "stop", 1,
+                0.0, {"confirmation": "请审阅提示词草案", "confirmation_options": []})
+
     result = await run_agent_loop(
-        "写提示词", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+        "写提示词", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor, history=[],
     )
     assert result.confirmation == "请审阅提示词草案"
     assert calls["n"] == 1
@@ -69,21 +74,8 @@ async def test_confirm_variant_stops_loop_with_card(svc, executor):
     assert not any("未执行成功" in w for w in result.warnings)
 
 
-# ---------- 报错可读化（Q3：指名道姓哪个操作没做成） ----------
-
-async def test_unmatched_warning_names_the_action(svc, executor):
-    reply = ('处理中\n```studio-actions\n'
-             '[{"action":"update_draft","draft_id":"不存在的卡","patch":{"prompt":"x"}}]\n```', "stop")
-    llm, _ = make_llm([reply])
-    result = await run_agent_loop(
-        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
-    )
-    assert result.applied_actions == 0
-    warns = [w for w in result.warnings if "未执行成功" in w]
-    assert warns, result.warnings
-    # 旧猜谜文案必须消失，新文案带上具体操作说明
-    assert not any("draft/group 不存在？" in w for w in result.warnings)
-    assert "不存在的卡" in warns[0] or "操作" in warns[0]
+# ---------- 报错可读化（Q3）：文本轨执行警告随 4-4 退役；FC 轨工具失败
+# 经 fc_tool_runner 回喂链可见（test_fc_tool_feedback 覆盖） ----------
 
 
 # ---------- 过程明细（Q8：重试/读入也进时间线） ----------
@@ -119,26 +111,29 @@ async def test_prelude_notes_recorded_in_first_step(svc, executor):
 
 # ---------- 总结展示随 0818 架构板正批退役（平台不再强注入） ----------
 
-async def test_wrapped_json_confirmation_recognized(svc, executor):
-    """回归（9999 事故）：模型把确认写进 {"studio-actions": [...]} 包装
-    （```json 围栏 + name 键变体）也要识别为阶段暂停，且 JSON 不漏进正文。"""
+async def test_structured_confirmation_options_passthrough(svc, executor):
+    """回归（9999 事故改造，audit-0819b）：暂停选项经结构化通道原样带出；
+    原「包装 JSON 确认解析」随文本块通道退役（ADR-0001）。"""
     svc.state_dict["keyElements"] = []
     svc.state_dict["shots"] = []
     svc.state_dict["audioItems"] = []
-    reply = (
-        '剧本解析完成，请确认制作规格。\n```json\n'
-        '{"studio-actions": [{"name": "request_confirmation", '
-        '"message": "请确认规格", "options": ['
-        '{"label": "16:9", "description": "横屏", "group": "画幅"}]}]}\n```\n',
-        "stop",
-    )
-    llm, calls = make_llm([reply])
+    calls = {"n": 0}
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        calls["n"] += 1
+        return ("剧本解析完成，请确认制作规格。", "stop", 0, 0.0, {
+            "confirmation": "请确认规格",
+            "confirmation_options": [
+                {"label": "16:9", "description": "横屏", "group": "画幅"},
+            ],
+        })
+
     result = await run_agent_loop(
-        "开始", llm_call=llm, context_builder=lambda: "ctx",
+        "开始", llm_call=llm_call, context_builder=lambda: "ctx",
         executor=executor, history=[],
     )
     assert calls["n"] == 1
-    assert result.confirmation == "请确认规格"          # 包装格式也识别为暂停
-    assert result.confirmation_options                    # 选项正常带出
-    assert "studio-actions" not in result.text            # JSON 不泄漏进正文
+    assert result.confirmation == "请确认规格"          # 结构化暂停
+    assert result.confirmation_options                    # 选项原样带出
+    assert "studio-actions" not in result.text            # 全程无文本块参与
     assert not any("未执行成功" in w for w in result.warnings)
