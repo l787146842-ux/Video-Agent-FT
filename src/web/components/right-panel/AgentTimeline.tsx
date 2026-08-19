@@ -3,22 +3,14 @@ import {
   FiCheckCircle, FiChevronDown, FiLoader, FiXCircle, FiZap,
 } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
+import {
+  consolidateTimeline, formatElapsed, type TimelineItem,
+} from '@/lib/timeline';
 import type { ChatMessage, TraceAction } from '@/types';
 
-/** 耗时格式化：<0.1s 显示毫秒（本地状态操作很快，0.0s 看着像没计时） */
-export function formatElapsed(ms: number): string {
-  return ms < 100 ? `${Math.max(1, Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`;
-}
-
-/** 时间线单条操作条目（流式运行态与历史重建共用） */
-export interface TimelineItem {
-  id: string;
-  summary: string;
-  status: 'running' | 'done' | 'failed';
-  elapsed_ms?: number;
-  /** 814G2：运行态走秒起点 */
-  started_at_ms?: number;
-}
+// 耗时格式化与条目类型归 lib/timeline 单一事实源；保留 re-export 兼容既有导入
+export { formatElapsed };
+export type { TimelineItem };
 
 /**
  * 从已完成消息的 trace / actionLog 重建时间线数据（刷新页面后不丢）。
@@ -33,8 +25,10 @@ export function timelineFromMessage(msg: ChatMessage): { reasoning: string; item
   const items: TimelineItem[] = [];
   steps.forEach((s) => {
     (s.actions || []).forEach((a: TraceAction, i: number) => {
+      // 规划条目与 live 事件同构 id（llm-s{step}），历史重建也能命中合并降噪
+      const id = a.name === 'model_reasoning' ? `llm-s${s.step}` : `t-${s.step}-${i}`;
       items.push({
-        id: `t-${s.step}-${i}`,
+        id,
         summary: a.summary || a.name,
         status: a.ok ? 'done' : 'failed',
         elapsed_ms: a.elapsed_ms,
@@ -65,6 +59,64 @@ export function stageLabelFromMessage(msg: ChatMessage): string {
     });
   });
   return label;
+}
+
+/** 单条时间线条目（批 2：合并条目带逐轮明细，点击展开；展开态用户可控） */
+function TimelineRow(props: { item: TimelineItem; now: () => number }) {
+  const [open, setOpen] = createSignal(false);
+  const item = () => props.item;
+  return (
+    <li class={`tl-item tl-item-${item().status}`}>
+      <Show
+        when={item().status !== 'running'}
+        fallback={<FiLoader size={13} class="tl-item-icon spin" />}
+      >
+        <Show
+          when={item().status === 'done'}
+          fallback={<FiXCircle size={13} class="tl-item-icon failed" />}
+        >
+          <FiCheckCircle size={13} class="tl-item-icon ok" />
+        </Show>
+      </Show>
+      {/* 带明细的合并条目：summary 可点击展开逐轮明细 */}
+      <Show
+        when={(item().details || []).length > 0}
+        fallback={<span class="tl-item-summary">{item().summary}</span>}
+      >
+        <button
+          type="button"
+          class="tl-item-summary tl-item-summary-toggle"
+          onClick={() => setOpen(!open())}
+        >
+          {item().summary}
+          <FiChevronDown size={11} class={`tl-item-toggle-arrow${open() ? ' expanded' : ''}`} />
+        </button>
+      </Show>
+      {/* 完成态显示最终耗时；运行态走秒（有起点才显示） */}
+      <Show when={item().status !== 'running' && item().elapsed_ms != null}>
+        <span class="tl-item-elapsed">· {formatElapsed(item().elapsed_ms || 0)}</span>
+      </Show>
+      <Show when={item().status === 'running' && item().started_at_ms != null}>
+        <span class="tl-item-elapsed">
+          · {formatElapsed(Math.max(0, props.now() - (item().started_at_ms || 0)))}
+        </span>
+      </Show>
+      <Show when={open() && (item().details || []).length > 0}>
+        <ul class="tl-sublist">
+          <For each={item().details}>
+            {(d) => (
+              <li class={`tl-subitem tl-item-${d.status}`}>
+                <span class="tl-item-summary">{d.summary}</span>
+                <Show when={d.elapsed_ms != null}>
+                  <span class="tl-item-elapsed">· {formatElapsed(d.elapsed_ms || 0)}</span>
+                </Show>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+    </li>
+  );
 }
 
 /**
@@ -124,6 +176,10 @@ export function AgentTimeline(props: {
   });
   onCleanup(() => { if (tickTimer !== undefined) clearInterval(tickTimer); });
 
+  // 批 2 降噪：连续规划条目合并为「规划 N 轮 · 累计 Xs」单条（明细可展开）；
+  // 工具/执行器条目不受影响，流式 running 段不合并保持实时逐条可见
+  const viewItems = () => consolidateTimeline(props.items);
+
   return (
     <Show when={hasReasoning() || hasItems()}>
       <div class="agent-timeline">
@@ -177,34 +233,8 @@ export function AgentTimeline(props: {
             </button>
             <div class="tl-panel-body">
               <ul class="tl-item-list">
-                <For each={props.items}>
-                  {(item) => (
-                    <li class={`tl-item tl-item-${item.status}`}>
-                      <Show
-                        when={item.status !== 'running'}
-                        fallback={<FiLoader size={13} class="tl-item-icon spin" />}
-                      >
-                        <Show
-                          when={item.status === 'done'}
-                          fallback={<FiXCircle size={13} class="tl-item-icon failed" />}
-                        >
-                          <FiCheckCircle size={13} class="tl-item-icon ok" />
-                        </Show>
-                      </Show>
-                      <span class="tl-item-summary">{item.summary}</span>
-                      {/* 814G2：完成态显示最终耗时；运行态走秒（有起点才显示） */}
-                      <Show when={item.status !== 'running' && item.elapsed_ms != null}>
-                        <span class="tl-item-elapsed">
-                          · {formatElapsed(item.elapsed_ms || 0)}
-                        </span>
-                      </Show>
-                      <Show when={item.status === 'running' && item.started_at_ms != null}>
-                        <span class="tl-item-elapsed">
-                          · {formatElapsed(Math.max(0, now() - (item.started_at_ms || 0)))}
-                        </span>
-                      </Show>
-                    </li>
-                  )}
+                <For each={viewItems()}>
+                  {(item) => <TimelineRow item={item} now={now} />}
                 </For>
               </ul>
             </div>

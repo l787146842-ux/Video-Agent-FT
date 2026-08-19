@@ -187,6 +187,14 @@
   .tl-item-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tl-item-failed .tl-item-summary { color: #ef4444; }
   .tl-item-elapsed { color: var(--text-dim); flex-shrink: 0; }
+  /* 批 2 降噪：合并规划条目的展开钮与逐轮明细子列表 */
+  .tl-item { flex-wrap: wrap; }
+  .tl-item-summary-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-item-summary-toggle:hover { color: var(--text-main); }
+  .tl-item-toggle-arrow { flex-shrink: 0; transition: transform 0.15s; }
+  .tl-item-toggle-arrow.expanded { transform: rotate(180deg); }
+  .tl-sublist { flex-basis: 100%; margin: 2px 0 0 19px; padding: 0; display: flex; flex-direction: column; gap: 2px; list-style: none; }
+  .tl-subitem { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); line-height: 1.6; }
   @keyframes tlSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
   /* 流式指示器*/
