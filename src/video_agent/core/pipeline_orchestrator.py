@@ -183,6 +183,79 @@ def _stage_dependencies(skill: str) -> Dict[str, List[str]]:
     return out
 
 
+# ---------- 阶段前置闸（audit-0819e，控制流统一：平台不变量） ----------
+#
+# 业界依据（Claude Code hooks：「Hooks guarantee behavior; prompts suggest」，
+# 且 Anthropic RFC#45427 教训：旁路钩子可被绕过，强制必须内嵌执行路径）：
+# 阶段顺序不依赖控制流入口的运气，在工具执行路径上机械强制。
+# 非执行器工具的归属阶段（执行器归属由阶段表 executors 声明推导）：
+_PLATFORM_TOOL_STAGE: Dict[str, str] = {
+    # 故事板操作类工具：结构阶段内操作（前置同 structure）
+    "storyboard_create_group": "structure",
+    "storyboard_add_draft": "structure",
+    "storyboard_patch_draft": "structure",
+    "storyboard_delete_group": "structure",
+    "storyboard_confirm_draft": "structure",
+    "storyboard_media_to_chat": "structure",
+    "read_draft": "structure",
+    # 提示词编写/媒体生成：结构完成后才开放（ke_media 前置=[structure]）
+    "write_media_prompt": "ke_media",
+    "image_generate": "ke_media",
+    "generate_image": "ke_media",
+    "generate_video": "ke_media",
+}
+_STAGE_TITLES: Dict[str, str] = {s.key: s.title for s in CANONICAL_STAGES}
+
+
+def tool_stage_of(tool_name: str, table: List[StageSpec]) -> str:
+    """工具 → 规范阶段键：阶段表 executors 声明优先，其次平台映射表；未命中返空。"""
+    for spec in table:
+        if tool_name in spec.executors:
+            return spec.key
+    return _PLATFORM_TOOL_STAGE.get(tool_name, "")
+
+
+def _effective_stage_deps(skill: str, table: List[StageSpec]) -> Dict[str, List[str]]:
+    """阶段前置闸专用依赖图（audit-0819e）：声明优先，无前置的阶段一律
+    补线性前置（表中前一阶段）——闸机比调度更保守：调度里「未声明=未填」
+    的留白在闸机层不允许（否则 ke_media 等阶段会裸奔越阶）。"""
+    deps = {k: list(v) for k, v in _stage_dependencies(skill).items()}
+    prev: Optional[str] = None
+    for spec in table:
+        if not deps.get(spec.key) and prev is not None:
+            deps[spec.key] = [prev]
+        prev = spec.key
+    return deps
+
+
+def evaluate_stage_precondition(
+    tool_name: str, state: Dict[str, Any], skill: str,
+) -> Optional[str]:
+    """阶段前置闸判定（platform.stage_precondition，GATE_RULES 登记）。
+
+    返回拒收文案（结构化拒因，回喂模型）；None = 放行。
+    事实源全复用既有单一源：阶段表/依赖图/客观探针（sidecar 声明，
+    未声明前置回落线性链，与 3A 调度同构且更保守）。无 Skill 激活不启用。
+    """
+    if not skill:
+        return None
+    table = stage_table(skill)
+    if not table:
+        return None
+    stage = tool_stage_of(tool_name, table)
+    if not stage:
+        return None
+    deps = _effective_stage_deps(skill, table).get(stage, [])
+    missing = [d for d in deps if not stage_done(d, state)]
+    if not missing:
+        return None
+    names = "、".join(f"「{_STAGE_TITLES.get(d, d)}」" for d in missing)
+    return (
+        f"阶段前置闸拦截：{names} 尚未完成，当前不得调用 {tool_name}。"
+        "请先完成前置阶段（流程顺序由 Skill 声明机械强制，非建议）。"
+    )
+
+
 def next_batch(
     state: Dict[str, Any], skill: str,
 ) -> Tuple[List[StageSpec], bool]:

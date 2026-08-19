@@ -15,7 +15,7 @@ from loguru import logger
 
 from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.config import settings
-from src.video_agent.core import guard_pipeline, prompt_gates
+from src.video_agent.core import guard_pipeline, pipeline_orchestrator, prompt_gates
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import stage_label_for_tool
@@ -229,6 +229,35 @@ class FCToolRunner:
                 "请逐条对照原因彻底改写（不是换措辞：中文占比/字数/镜头语言标记必须实质达标），禁止再次提交相似文本。"
             )
         return text
+
+    def _stage_precondition_gate(self, name: str, injected_skill: str) -> Optional[str]:
+        """阶段前置闸（audit-0819e，platform.stage_precondition）：
+        工具归属阶段的前置阶段未完成 → 拒收（机械强制，不依赖控制流入口）。
+        仅 strict 模式启用；用户坚持（gate_override）可一次性豁免并留痕。"""
+        if not injected_skill or prompt_gates.gate_mode() != "strict":
+            return None
+        try:
+            err = pipeline_orchestrator.evaluate_stage_precondition(
+                name, self._raw_state(), injected_skill)
+        except Exception:
+            return None  # 判定异常不阻断对话（闸机失败-open 惯例，审计可查）
+        if err is None:
+            return None
+        if self.gate_override in (True, "all"):
+            self.gate_warnings.append(f"用户坚持放行：{err}")
+            guard_pipeline.audit_verdicts(
+                [guard_pipeline.GateVerdict(
+                    "platform.stage_precondition", "platform", True,
+                    message=f"用户坚持豁免：{err}")],
+                skill_name=injected_skill, action=name, overridden=True,
+            )
+            return None
+        guard_pipeline.audit_verdicts(
+            [guard_pipeline.GateVerdict(
+                "platform.stage_precondition", "platform", False, message=err)],
+            skill_name=injected_skill, action=name,
+        )
+        return err
 
     def _flow_gate(self, name: str, injected_skill: str) -> Optional[str]:
         """规格前置（S1，与文本轨对齐）：只对显式声明 flow.spec_gate 的 Skill
@@ -469,10 +498,12 @@ class FCToolRunner:
             # 浪费一轮工具往返 + 全文回喂 token（prompt 里的「不要再 read」靠模型自觉，此处硬保障）
             if self._strip_structure_prompt(name, args, injected_skill):
                 prompt_stripped = True
-            # 闸机链：规格前置 → 生成确认 → 提示词结构/时序
+            # 闸机链：阶段前置（平台不变量）→ 规格前置 → 生成确认 → 提示词结构/时序
             # （0817：首拆只允关键元素的平台自加警告已清除——流程以 Skill 为准，
             # 客观数据完整性（sceneRefs 引用存在性）由 exec_common 校验兜底）
-            gate_error = self._flow_gate(name, injected_skill)
+            gate_error = self._stage_precondition_gate(name, injected_skill)
+            if gate_error is None:
+                gate_error = self._flow_gate(name, injected_skill)
             if gate_error is None:
                 gate_error = self._gen_confirm_gate(name, args, injected_skill)
                 if gate_error is None:

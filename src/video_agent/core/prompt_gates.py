@@ -80,6 +80,10 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
         GateRuleMeta("skill.script_required", LAYER_SKILL,
                      "剧本原料闸（814H9）：需剧本 Skill 原料缺失时反复提醒上传；"
                      "执行侧拦 agent 越阶结构操作，不拦用户；豁免/坚持旁路"),
+        GateRuleMeta("platform.stage_precondition", LAYER_PLATFORM,
+                     "阶段前置闸（audit-0819e，控制流统一）：工具归属阶段的前置阶段"
+                     "未完成时拒收调用（sidecar 依赖图为唯一事实源）；机械强制，"
+                     "manifest 无权关闭，仅用户坚持可一次性豁免放行并留痕"),
     )
 }
 
@@ -718,11 +722,15 @@ def drafts_confirmed(raw_state: Dict[str, Any], drafts: List[Dict[str, Any]]) ->
 
 # ---------- 阶段探测驱动的工具裁剪（混合形态第一层：工具可见性边界） ----------
 
-# 故事板结构工具集（无规格文档阶段不下发）
+# 故事板结构工具集（无规格文档阶段不下发；audit-0819e 补洞：三个拆解
+# 执行器与提示词编写执行器同入名单——1111 事故越阶入口正是它们，
+# 可见性软层与阶段前置硬闸 platform.stage_precondition 双层一致）
 STORYBOARD_STAGE_TOOLS = frozenset({
     "storyboard_create_group", "storyboard_patch_draft", "storyboard_add_draft",
     "storyboard_delete_group", "storyboard_confirm_draft", "storyboard_media_to_chat",
     "read_draft",
+    "storyboard_key_elements", "storyboard_shots", "storyboard_audio",
+    "write_media_prompt",
 })
 # 草稿生成工具集（故事板结构就绪前不下发；对话内直出的 generate_image 不受影响）
 GENERATION_STAGE_TOOLS = frozenset({"image_generate", "generate_video"})

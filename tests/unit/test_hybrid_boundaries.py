@@ -362,7 +362,8 @@ def test_ke_first_gate_fc_track(monkeypatch):
     import asyncio
     runner = FCToolRunner(tool_manager=_StubToolManager())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {
-        "documents": [{"name": "制片规格.md", "content": "规格正文"}],
+        "analysis": {"summary": "一句话总结"},  # audit-0819e：前置就位
+        "documents": [{"name": "制片规格.md", "content": "规格内容"}],
         "keyElements": [], "shots": [], "audioItems": [],
     }))
     response = ChatResponse(content="", tool_calls=[
@@ -789,8 +790,10 @@ def test_confirm_fallback_not_triggered_without_pause(svc):
 # ---------- FC 轨 current 语义（审查修复：命中选中草稿 + 闸机不可绕过） ----------
 
 def _fc_state_with_two_ke_groups():
-    """两个关键元素分组，第二组 d2 为前端选中草稿"""
+    """两个关键元素分组，第二组 d2 为前端选中草稿
+    （audit-0819e：analysis 前置就位，阶段前置闸放行结构内操作）"""
     return {
+        "analysis": {"summary": "一句话总结"},
         "keyElements": [
             {"id": "ke-1", "title": "A", "drafts": [
                 {"id": "d1", "label": "first", "tag": "Agent", "prompt": ""}]},

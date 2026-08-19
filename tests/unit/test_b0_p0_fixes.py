@@ -57,7 +57,9 @@ def test_b0_f3_fc_gate_warnings_returned_in_tuple(monkeypatch):
             "id": "ke-1", "title": "Element_主角",
             "drafts": [{"id": "d1", "label": "概念图", "prompt": "一个角色", "tag": "Agent"}],
         }],
-        "shots": [], "audioItems": [],
+        # audit-0819e：结构三类就位，阶段前置闸放行生成类工具
+        "shots": [{"id": "s1", "title": "镜1", "drafts": []}],
+        "audioItems": [{"id": "a1", "title": "音1", "drafts": []}],
     }
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
     runner = FCToolRunner(_StubToolManager())
