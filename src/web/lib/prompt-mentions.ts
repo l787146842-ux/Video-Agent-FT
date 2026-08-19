@@ -101,7 +101,7 @@ export interface ResolvedPrompt {
 
 const AUDIO_EXTS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'];
 
-/** 推断 URL 的素材类型：故事板映射优先，其次按音频扩展名兑底 */
+/** 推断 URL 的素材类型：故事板映射优先，其次按音频扩展名兜底 */
 function kindOfUrl(url: string, map: Record<string, MediaRef>): MediaType {
   for (const info of Object.values(map)) {
     if (info.url === url) return info.kind;
