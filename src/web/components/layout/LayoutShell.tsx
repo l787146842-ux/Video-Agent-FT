@@ -19,8 +19,9 @@ import { getSkills } from '@/api/agent';
 import { ensureGlobalSettings } from '@/stores/global-settings';
 import { state, studioActions } from '@/stores/studio';
 import { chatActions } from '@/stores/chat';
+import { registerQueueStorageKey } from '@/lib/queue-storage';
 import { resumeAgentTasks } from '@/hooks/use-sse';
-import { convActions } from '@/stores/conversations';
+import { convActions, convState } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
 import {
   performRedo, performUndo, refreshHistoryStatus,
@@ -92,6 +93,11 @@ export function LayoutShell(props: ParentProps) {
     document.addEventListener('keydown', onGlobalKeyDown);
     onCleanup(() => document.removeEventListener('keydown', onGlobalKeyDown));
     void refreshHistoryStatus();
+
+    // 排队消息持久化键（批 3）：项目 + 对话维度，刷新后按当前上下文恢复
+    registerQueueStorageKey(
+      () => `ftdyb.queued.${state.projectId || 'none'}.${convState.activeId || 'main'}`,
+    );
 
     // 刷新存活：后端 worker 仍在跑（刷新不中断）则显示忙态并轮询，完成后同步成果
     void reattachRunningAgent();

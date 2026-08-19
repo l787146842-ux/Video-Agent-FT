@@ -1,5 +1,6 @@
 import { createStore, produce } from 'solid-js/store';
 import type { ChatMessage, SseDonePayload, RichContentPart } from '@/types';
+import { saveQueue, loadQueue } from '@/lib/queue-storage';
 import { t } from '@/lib/locale';
 
 /** 过程时间线条目（流式期间的工具/操作运行态，完成后从消息 trace 重建） */
@@ -69,6 +70,17 @@ const defaultChatState: ChatState = {
 };
 
 const [chatState, setChatState] = createStore<ChatState>(defaultChatState);
+
+/** 流式收尾重置（done/错误/停止/重连收尾四处同语义，单一实现） */
+function resetStreamFields(s: ChatState) {
+  s.isStreaming = false;
+  s.streamingText = '';
+  s.streamingStatus = '';
+  s.streamingModel = '';
+  s.streamingReasoning = '';
+  s.streamingTools = [];
+  s.streamingReasoningStartMs = 0;
+}
 
 export const chatActions = {
   addMessage(msg: ChatMessage) {
@@ -196,13 +208,7 @@ export const chatActions = {
           turnId,
         });
       }
-      s.isStreaming = false;
-      s.streamingText = '';
-      s.streamingStatus = '';
-      s.streamingModel = '';
-      s.streamingReasoning = '';
-      s.streamingTools = [];
-      s.streamingReasoningStartMs = 0;
+      resetStreamFields(s);
     }));
   },
 
@@ -217,13 +223,7 @@ export const chatActions = {
         // audit-0819：上游原始报文折叠展示（人话在气泡，raw 在折叠）
         errorDetail: detail || undefined,
       });
-      s.isStreaming = false;
-      s.streamingText = '';
-      s.streamingStatus = '';
-      s.streamingModel = '';
-      s.streamingReasoning = '';
-      s.streamingTools = [];
-      s.streamingReasoningStartMs = 0;
+      resetStreamFields(s);
     }));
   },
 
@@ -233,13 +233,7 @@ export const chatActions = {
       if (s.streamingText) {
         s.messages.push({ sender: 'agent', text: s.streamingText, meta: t('rp.msg.stopped'), modelName: s.streamingModel || undefined });
       }
-      s.isStreaming = false;
-      s.streamingText = '';
-      s.streamingStatus = '';
-      s.streamingModel = '';
-      s.streamingReasoning = '';
-      s.streamingTools = [];
-      s.streamingReasoningStartMs = 0;
+      resetStreamFields(s);
     }));
   },
 
@@ -261,15 +255,7 @@ export const chatActions = {
 
   /** 清空流式状态（重连后发现任务已完成，直接收尾，不追加「已停止」消息） */
   clearStreaming() {
-    setChatState(produce((s) => {
-      s.isStreaming = false;
-      s.streamingText = '';
-      s.streamingStatus = '';
-      s.streamingModel = '';
-      s.streamingReasoning = '';
-      s.streamingTools = [];
-      s.streamingReasoningStartMs = 0;
-    }));
+    setChatState(produce((s) => resetStreamFields(s)));
   },
 
   /** 文档写入即显（doc_written 事件，B0/F1 恢复四段链）：独立文档卡片立即渲染，
@@ -304,16 +290,20 @@ export const chatActions = {
     setChatState('messages', msgs);
     // 0817：历史重建即新一轮展示，去重表同步清零（防切项目/刷新后残留误去重）
     setChatState('renderedDocCards', []);
+    // 批 3：按当前项目+对话键恢复排队消息（刷新存活，T26 销账）
+    setChatState('queuedMessages', loadQueue());
   },
 
   // ====== 排队引导消息（推理中继续发送，任务完成后自动发出） ======
 
   enqueueMessage(msg: QueuedMessage) {
     setChatState('queuedMessages', (prev) => [...prev, msg]);
+    saveQueue(chatState.queuedMessages);
   },
 
   removeQueuedMessage(id: string) {
     setChatState('queuedMessages', (prev) => prev.filter((m) => m.id !== id));
+    saveQueue(chatState.queuedMessages);
   },
 
   /** 移到队首（「引导」：当前任务一结束就优先发送这条） */
@@ -323,10 +313,12 @@ export const chatActions = {
       if (!target) return prev;
       return [target, ...prev.filter((m) => m.id !== id)];
     });
+    saveQueue(chatState.queuedMessages);
   },
 
   clearQueuedMessages() {
     setChatState('queuedMessages', []);
+    saveQueue([]);
   },
 };
 
