@@ -96,6 +96,9 @@ class AgentTracer:
         self._step_start: float = 0.0
         # 全局闸机判定流（814R2 恢复审计）：不依附单次 trace，供 /api/agent/gates 调试端点
         self._recent_gates: Deque[Dict[str, Any]] = deque(maxlen=100)
+        # audit-0819e：控制流结构化事件流（分诊/阶段批/交接/回收）——
+        # 1111 事故教训：路由决策无日志可查只能考古；控制流必须可观测
+        self._control_flow: Deque[Dict[str, Any]] = deque(maxlen=200)
         # B10：模型降级事件计数（fallback 频率指标；record_fallback 写入）
         self._fallback_events: Deque[Dict[str, Any]] = deque(maxlen=200)
         self._persist_path = DATA_DIR / "agent_traces.jsonl"
@@ -223,6 +226,21 @@ class AgentTracer:
         self._recent_gates.append(entry)
         if self._current is not None:
             self._pending_gates.append(entry)
+
+    def record_control_flow(self, event: str, detail: str = "", skill_name: str = "") -> None:
+        """audit-0819e：控制流结构化事件（分诊 triage / 阶段批 stage_batch /
+        交接 handoff / 回收 reclaim / 发卡 card）——滚动保留，调用方同步打日志，
+        控制流决策永不无据可查（1111 事故教训）。"""
+        self._control_flow.append({
+            "ts": time.time(),
+            "event": str(event or ""),
+            "detail": str(detail or "")[:200],
+            "skill_name": str(skill_name or ""),
+        })
+
+    def control_flow_events(self) -> List[Dict[str, Any]]:
+        """控制流事件流（调试端点/审计用，新→旧）"""
+        return list(reversed(self._control_flow))
 
     def record_card_decision(
         self,

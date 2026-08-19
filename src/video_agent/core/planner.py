@@ -316,16 +316,22 @@ class Planner:
         except Exception as _e:
             logger.warning("[GateOverride] gate_override 装配失败（豁免未传达执行器）: {}", _e)
 
-        # 0818 架构板正批 B2：状态驱动编排主路径（混合模式）——
-        # 推进意图/确认续进/首轮非提问走编排器；ad-hoc 与自由对话回落模型循环。
-        if (
-            settings.pipeline_orchestrator_enabled
-            and context.skill_name
-            and self._route_orchestrator(user_message, context.skill_name)
-        ):
-            _orch = await self._run_orchestrator_path(context, user_message)
-            if _orch is not None:
-                return _orch
+        # audit-0819e 控制流统一（ADR-0002，1111 事故根治）：废除 0818 概率语料
+        # 路由——一切消息先过确定性分诊：advance 由外层循环接管，其余交接
+        # 受界模型循环（阶段前置闸/步间回收保证顺序不破）。分诊与编排器
+        # 进出全记结构化事件（1111 教训：控制流决策必须可观测，不得考古）。
+        if settings.pipeline_orchestrator_enabled and context.skill_name:
+            triage = self._triage_control(user_message, context.skill_name)
+            logger.info("[ControlFlow] triage={} skill={}", triage, context.skill_name)
+            try:
+                AgentTracer.get_instance().record_control_flow(
+                    "triage", triage, context.skill_name)
+            except Exception:
+                pass
+            if triage == "advance":
+                _orch = await self._run_orchestrator_path(context, user_message)
+                if _orch is not None:
+                    return _orch
 
         # 0818 架构板正批 B3：门禁链与剧本闸装配退役，顺序与原料闸能力
         # 迁入 pipeline_orchestrator（状态驱动、机械回卡）。
@@ -458,6 +464,50 @@ class Planner:
         def context_builder() -> str:
             return self._build_system_prompt(context)
 
+        # audit-0819e 步间回收（控制流统一）：每个 FC 批落盘后外层循环再评估
+        # 状态——确定性阶段就绪/应发机械卡即收回控制权（单一就绪单元语义）；
+        # 1111「入口错过=全程失控」根治：交接后模型循环不再是化外之地。
+        async def _between_steps_reclaim(step: int):
+            if not (settings.pipeline_orchestrator_enabled and context.skill_name):
+                return None
+            from src.video_agent.core import pipeline_orchestrator as _po
+
+            try:
+                outcome = await _po.orchestrate_turn(
+                    self.state_manager, context.skill_name, "")
+            except Exception as _e:
+                logger.warning("[ControlFlow] 步间回收评估失败（不阻断循环）: {}", _e)
+                return None
+            if outcome is None:
+                return None  # 创作型阶段就绪/无可推进 → 继续模型循环
+            if outcome.kind == "stage_failed":
+                # 回收保守化：确定性阶段失败不劫持模型循环（失败可见性
+                # 由闸机/回喂承接；仅机械卡与成功推进才回收控制权）
+                return None
+            try:
+                AgentTracer.get_instance().record_control_flow(
+                    "reclaim", outcome.kind, context.skill_name or "")
+            except Exception:
+                pass
+            if outcome.kind == "spec_pending":
+                msg, opts = prompt_gates.spec_collect_card(
+                    self.state_manager.state_dict)
+                return {"confirmation": msg, "confirmation_options": opts,
+                        "reason": "spec_pending"}
+            if outcome.kind == "script_pending":
+                return {"confirmation": outcome.message,
+                        "confirmation_options": outcome.options or [],
+                        "reason": "script_pending"}
+            if outcome.kind == "paused":
+                inter = self.state_manager.state_dict.setdefault("interaction", {})
+                inter["awaiting_confirmation"] = True
+                inter["confirmation_message"] = outcome.message
+                self.state_manager.save_debounced()
+                return {"confirmation": outcome.message,
+                        "confirmation_options": outcome.options or [],
+                        "reason": "paused"}
+            return {"text": outcome.message or "", "reason": outcome.kind}
+
         # 委托给统一循环
         loop_result = await run_agent_loop(
             user_message,
@@ -471,6 +521,7 @@ class Planner:
             prelude_notes=context.prelude_notes,
             user_id=context.user_id,
             pending_injector=context.pending_injector,
+            between_steps=_between_steps_reclaim,
         )
 
         # 轮末组装委托 planner_output（八轮 B2 切出）：warnings 并入/总结强入/
@@ -711,17 +762,15 @@ class Planner:
         ):
             yield chunk
 
-    # ---------- 0818 架构板正批 B2：状态驱动编排主路径（混合模式） ----------
-
-    _ADVANCE_CORPUS = (
-        "继续", "确认", "确定", "可以", "好的", "没问题", "下一步", "开始", "推进",
-    )
-    _ADHOC_VERBS = (
-        "改", "换", "重做", "删", "调整", "修改", "重写", "去掉", "新增", "加一个",
-    )
+    # ---------- audit-0819e 控制流统一（ADR-0002）：确定性分诊 ----------
+    #
+    # 0818 概率语料路由（_ADVANCE_CORPUS/_ADHOC_VERBS 词表猜意图）已删除：
+    # 1111 事故证明语料路由错过一次 = 全程失控。分诊只认客观状态事实，
+    # 措辞不参与判定；交接后由阶段前置闸（阶 1）与步间回收（阶 3）保底。
 
     def _is_adhoc_edit(self, user_message: Any) -> bool:
-        """ad-hoc 特征（确定性）：命中既有资产名 + 修改动词 → 模型循环。"""
+        """ad-hoc 特征（客观事实）：消息命中既有资产名 → 交接模型循环。
+        （语料动词已删：标题命中即足以判定，不猜措辞。）"""
         if not isinstance(user_message, str) or not user_message.strip():
             return False
         state = self.state_manager.state_dict
@@ -730,52 +779,71 @@ class Planner:
             for cat in (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS)
             for g in (state.get(cat) or []) if isinstance(g, dict)
         ]
-        return (
-            any(t and len(t) >= 2 and t in user_message for t in titles)
-            and any(v in user_message for v in self._ADHOC_VERBS)
-        )
+        return any(t and len(t) >= 2 and t in user_message for t in titles)
 
-    def _route_orchestrator(self, user_message: Any, skill: str) -> bool:
-        """确定性意图路由：歧义默认模型循环，不错抓自由对话。"""
+    def _is_question(self, user_message: Any) -> bool:
+        """提问客观特征（标点/疑问词）：自由提问不错抓进流程推进。"""
         msg = str(user_message or "").strip()
-        if not msg or self._is_adhoc_edit(msg):
-            return False
-        state = self.state_manager.state_dict
-        inter = state.get("interaction") or {}
-        hit = any(k in msg for k in self._ADVANCE_CORPUS)
-        if inter.get("auto_continue"):
-            return True
-        if inter.get("awaiting_confirmation"):
-            return hit
-        started = bool((state.get("analysis") or {}).get("summary"))
-        if started:
-            return hit
-        # 首轮推进：管线未启动且非提问，且有素材/显式推进词/原料闸接管
-        is_question = (
+        return (
             "？" in msg or "?" in msg
             or msg.startswith(("什么", "怎么", "为什么", "哪", "吗"))
         )
-        if is_question:
-            return False
-        if state.get("uploadedDocs"):
-            return True
-        try:
-            from src.video_agent.skill_runtime.registry import script_required_active
 
-            if script_required_active(skill):
-                return True  # 编排器机械回提醒卡/上传回执（814H9 能力迁入）
-        except Exception:
-            pass
-        return hit
+    def _triage_control(self, user_message: Any, skill: str) -> str:
+        """确定性分诊（audit-0819e）：返回 advance | handoff，零语料。
+
+        advance（外层循环接管）仅由客观事实触发：
+        - 一条龙豁免生效，或存在待确认暂停（回应即续进；改指示命中资产名
+          时经 adhoc 交接，提问经 question 交接）；
+        - 系统建议按钮的机械续进文案（suggested_actions 的 continue 值）；
+        - 管线未启动且（原料就位 或 原料闸启用）→ 开局（编排器直跑首个
+          确定性阶段或机械回提醒卡）。
+        其余一律 handoff（受界模型循环）：阶段前置闸与步间回收保证
+        交接不失控；歧义宁可交模型也不猜意图。
+        """
+        msg = str(user_message or "").strip()
+        state = self.state_manager.state_dict
+        inter = state.get("interaction") or {}
+        if inter.get("auto_continue"):
+            return "advance"
+        if inter.get("awaiting_confirmation"):
+            if self._is_adhoc_edit(msg) or self._is_question(msg):
+                return "handoff"
+            return "advance"
+        if msg == "继续完成":  # suggested_actions continue 按钮机械文案（B2/F16）
+            return "advance"
+        if not msg or self._is_adhoc_edit(msg) or self._is_question(msg):
+            return "handoff"
+        started = bool((state.get("analysis") or {}).get("summary"))
+        if not started:
+            if state.get("uploadedDocs"):
+                return "advance"
+            try:
+                from src.video_agent.skill_runtime.registry import script_required_active
+
+                if script_required_active(skill):
+                    return "advance"  # 编排器机械回提醒卡/上传回执（814H9）
+            except Exception:
+                pass
+        return "handoff"
 
     async def _run_orchestrator_path(
         self, context: "PlannerContext", user_message: Any = "",
     ) -> Optional["PlannerResponse"]:
-        """编排器快路径；返回 None = 创作型阶段交接模型循环。"""
+        """编排器快路径；返回 None = 创作型阶段交接模型循环。
+        进出结果全记控制流事件（audit-0819e 可观测性）。"""
         from src.video_agent.core import pipeline_orchestrator as _po
 
         outcome = await _po.orchestrate_turn(
             self.state_manager, context.skill_name, user_message)
+        _kind = outcome.kind if outcome is not None else "handoff"
+        logger.info("[ControlFlow] orchestrator outcome={}", _kind)
+        try:
+            AgentTracer.get_instance().record_control_flow(
+                "stage_batch" if outcome is not None else "handoff",
+                _kind, context.skill_name or "")
+        except Exception:
+            pass
         if outcome is None:
             return None
         if outcome.kind == "script_pending":

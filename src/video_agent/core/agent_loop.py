@@ -118,9 +118,13 @@ async def run_agent_loop(
     prelude_notes: Optional[List[tuple]] = None,
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None,
     user_id: str = "",
+    between_steps: Optional[Callable[[int], Awaitable[Optional[Dict[str, Any]]]]] = None,
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
+    between_steps（可选，audit-0819e）：步间回收钩子——每个 FC 批落盘后
+    await between_steps(step)；返回非空 dict 即回收控制权终止循环
+    （可携 text/confirmation/confirmation_options/warnings/reason）。
     user_text 可以是纯文本 str，也可以是多模态 content parts 列表（含 image_url）。
     """
 
@@ -310,6 +314,32 @@ async def run_agent_loop(
                 tracer.end_step(step, actions_applied=fc_applied, finish_reason="max_steps")
                 break
             tracer.end_step(step, actions_applied=fc_applied, finish_reason=finish_reason or "fc_continue")
+            # audit-0819e 步间回收：FC 批落盘后外层循环再评估状态——确定性
+            # 阶段就绪/应发机械卡即回收控制权（单一就绪单元语义：模型循环
+            # 只是随时可被回收的执行单元；1111「交接即失控」根治）
+            if between_steps is not None:
+                try:
+                    reclaim = await between_steps(step)
+                except Exception as _e:
+                    logger.warning("[AgentLoop] 步间回收评估失败（不阻断循环）: {}", _e)
+                    reclaim = None
+                if reclaim:
+                    r_text = str(reclaim.get("text") or "").strip()
+                    if r_text:
+                        result.text = (
+                            f"{result.text}\n\n{r_text}".strip() if result.text else r_text
+                        )
+                    r_conf = str(reclaim.get("confirmation") or "")
+                    if r_conf:
+                        result.confirmation = r_conf
+                        result.confirmation_options = list(
+                            reclaim.get("confirmation_options") or [])
+                    result.warnings.extend(reclaim.get("warnings") or [])
+                    logger.info(
+                        "[AgentLoop] step={} 步间回收：外层循环收回控制权（{}）",
+                        step, reclaim.get("reason") or "",
+                    )
+                    break
             # 回喂：让下一轮 LLM 知道工具已执行
             messages.append({"role": "assistant", "content": content or f"（已执行 {fc_applied} 个工具调用）"})
             messages.append({

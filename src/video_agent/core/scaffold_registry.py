@@ -41,12 +41,9 @@ SCAFFOLDS = (
         "bad_output_retry trace 计数；audit 回归",
         "每次主模型切换",
         "scaffold"),
-    ScaffoldEntry(
-        "S04", "src.video_agent.core.planner:Planner._ADVANCE_CORPUS",
-        "模型不能自决「走编排器还是模型循环」，需硬编码路由语料",
-        "编排器路由回归",
-        "阶段 3 DAG 化后重估；模型切换时",
-        "scaffold"),
+    # S04（Planner._ADVANCE_CORPUS/_ADHOC_VERBS 概率路由语料）已随
+    # audit-0819e 控制流统一删除（ADR-0002）：1111 事故证明语料路由错过
+    # 一次=全程失控；改为确定性分诊（客观状态事实，零措辞）。
     ScaffoldEntry(
         "S05", "src.video_agent.skill_runtime.registry:fallback_skill_from_state",
         "请求会丢失 skill 名，需回退 usedSkills 末位（7777）",

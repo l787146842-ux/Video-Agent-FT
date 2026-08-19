@@ -11,7 +11,8 @@ from src.video_agent.core import scaffold_registry as reg
 
 
 _EXPECTED_SIDS = {
-    "S03", "S04", "S05", "S06", "S07",
+    "S03",
+    "S05", "S06", "S07",
     "S08", "S09", "S10", "S11", "S12", "S13",
     "I01", "I02", "I03", "I04", "I05", "I06",
 }
