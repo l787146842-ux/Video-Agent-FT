@@ -50,7 +50,9 @@ class TestGenericSectionExecutor:
         ], ensure_ascii=False)
 
         async def fake_chat(provider, model, messages, **kwargs):
-            return f"```studio-actions\n{actions_json}\n```", "stop"
+            # audit-0819d 新契约：执行器产出为纯 JSON（response_format=json_object），
+            # 围栏形态已被严格校验拒收
+            return actions_json, "stop"
 
         monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
         tool = ex_mod.SkillSectionRunTool()

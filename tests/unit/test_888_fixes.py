@@ -174,7 +174,8 @@ def test_extract_complete_objects_braces_in_strings():
 
 @pytest.mark.asyncio
 async def test_stream_progressive_applies_in_batches(monkeypatch, tmp_path):
-    """流式增量到达即逐批落盘：三个动作分两次吐出，左栏状态随批增长。"""
+    """流式增量到达即逐批落盘：三个动作分两次吐出，左栏状态随批增长。
+    （audit-0819d：纯 JSON 数组流，response_format 参数透传钉死）"""
     from src.video_agent.state.manager import StateManager
 
     svc = StateManager(str(tmp_path / "ws"))
@@ -186,10 +187,13 @@ async def test_stream_progressive_applies_in_batches(monkeypatch, tmp_path):
         '{"action":"add_group","group_type":"keyElement","title":"罗辑"},',
         '{"action":"add_group","group_type":"keyElement","title":"二向箔"}]',
     ]
+    seen_kwargs = {}
 
     async def fake_stream(provider, model, messages, *, max_tokens=8192,
                           temperature=0.7, timeout=180, on_delta=None,
-                          reasoning_sink=None, thinking_level=None):
+                          reasoning_sink=None, thinking_level=None,
+                          response_format=None):
+        seen_kwargs["response_format"] = response_format
         content = ""
         for c in chunks:
             content += c
@@ -205,6 +209,8 @@ async def test_stream_progressive_applies_in_batches(monkeypatch, tmp_path):
     )
     assert applied == 3
     assert finish == "stop"
+    # audit-0819d：结构化输出声明必须随流式调用下发
+    assert seen_kwargs["response_format"] == {"type": "json_object"}
     titles = [g["title"] for g in svc.state_dict["keyElements"]]
     assert titles == ["程心", "罗辑", "二向箔"]
     assert content.startswith("[")
@@ -384,7 +390,8 @@ async def test_split_truncation_marks_incomplete_and_records_event(monkeypatch, 
 
     async def fake_stream(provider, model, messages, *, max_tokens=8192,
                           temperature=0.7, timeout=180, on_delta=None,
-                          reasoning_sink=None, thinking_level=None):
+                          reasoning_sink=None, thinking_level=None,
+                          response_format=None):
         content = ('[{"action":"add_group","group_type":"shot",'
                    '"title":"镜1","duration":"10s","sceneRefs":["s1"]}]')
         if on_delta:

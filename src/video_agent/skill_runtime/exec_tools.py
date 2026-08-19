@@ -2,7 +2,7 @@
 
 每个执行器只注入自己对应的 Skill 章节（registry.tool_sections），
 独立完成「读输入 → LLM 调用/组装 → 结构化校验 → 写状态」。
-LLM 类执行器不依赖模型 function calling，Planner/文本动作轨都可调用。
+LLM 类执行器走结构化输出轨（response_format=json_object + 硬校验，audit-0819d）。
 """
 import hashlib
 import json

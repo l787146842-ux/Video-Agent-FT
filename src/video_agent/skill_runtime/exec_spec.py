@@ -2,7 +2,7 @@
 
 每个执行器只注入自己对应的 Skill 章节（registry.tool_sections），
 独立完成「读输入 → LLM 调用/组装 → 结构化校验 → 写状态」。
-LLM 类执行器不依赖模型 function calling，Planner/文本动作轨都可调用。
+LLM 类执行器走结构化输出轨（response_format=json_object + 硬校验，audit-0819d）。
 """
 import json
 import math
@@ -50,12 +50,16 @@ async def _llm_json_call(
     provider: str = "",
     model: str = "",
 ) -> Dict[str, Any]:
-    """独立 LLM 调用并解析 JSON 输出（无 function calling 依赖）。
+    """独立 LLM 调用并解析 JSON 输出（结构化输出轨，audit-0819d）。
 
     预算策略（1111 事故：推理模型思考占满 2048 额度，四次连续截断失败）：
     - 初始预算先钳到模型输出上限（output_limit_for_model 查表）；
     - finish_reason 撞上限被截断、或思考耗尽预算返回空内容 → 自动翻倍扩额重试一次；
     - 扩到上限仍截断 → 抛明确的截断错误，不把残品 JSON 塞给解析器。
+
+    解析策略（audit-0819d，ADR-0001 执行记录三）：下发 response_format=json_object，
+    产出应纯 JSON，严格 json.loads 校验（正则抠取宽容兜底已删）；
+    畸形 → C2 结构化拒因回喂纠正重试一次，仍败抛错（不吞）。
     """
     provider, model = exec_common._resolve_chat_provider(provider, model)
     if not provider:
@@ -77,6 +81,7 @@ async def _llm_json_call(
                 max_tokens=budget,
                 timeout=settings.llm_json_timeout,
                 thinking_level=exec_common._executor_thinking(),
+                response_format={"type": "json_object"},
             )
         except GenerationError as e:
             # 空内容多为推理模型思考吃光预算；预算未到顶就扩额重试一次
@@ -99,25 +104,19 @@ async def _llm_json_call(
                 "请缩短素材或改用输出上限更大的模型"
             )
         break
-    m = re.search(r"\{[\s\S]*\}", content or "")
-    if not m:
-        # 解析失败存原始回执，取证链不留死角
-        dump_case(
-            kind="exec_json", reason="no_json", system=system, user=user,
-            content=content or "", finish=finish,
-            extra={"provider": provider, "model": model},
-        )
-        raise RuntimeError("执行器 LLM 未返回 JSON 结果")
+    # audit-0819d：严格校验（产出应为纯 JSON）；正则抠取宽容兜底已删。
     # 0817：畸形 JSON 带拒因纠正重试一次（C2 结构化拒因回喂）：
     # 小模型漏逗号/引号类错误高发，携报错原文+残文重问一次可高概率自愈，
     # 仍败才抛错（不吞）。
-    candidate = m.group(0)
+    candidate = (content or "").strip()
     last_err: Optional[json.JSONDecodeError] = None
     for attempt in (1, 2):
         try:
             data = json.loads(candidate)
         except json.JSONDecodeError as e:
             last_err = e
+            if attempt == 1:
+                exec_common.record_json_parse_degradation()
             if attempt == 2:
                 break
             messages += [
@@ -136,14 +135,12 @@ async def _llm_json_call(
                     max_tokens=budget,
                     timeout=settings.llm_json_timeout,
                     thinking_level=exec_common._executor_thinking(),
+                    response_format={"type": "json_object"},
                 )
             except GenerationError as ge:
                 raise RuntimeError(
                     f"执行器 LLM 返回的 JSON 无法解析: {last_err}") from ge
-            m2 = re.search(r"\{[\s\S]*\}", content or "")
-            if not m2:
-                break
-            candidate = m2.group(0)
+            candidate = (content or "").strip()
         else:
             if not isinstance(data, dict):
                 raise RuntimeError("执行器 LLM 返回的 JSON 不是对象")
@@ -413,6 +410,7 @@ async def _executor_actions_from_llm(
             max_tokens=max_tokens,
             timeout=180,
             thinking_level=exec_common._executor_thinking(),
+            response_format={"type": "json_object"},
         )
         last_content, last_finish = content or "", finish or ""
         actions = exec_common._parse_actions_from_text(content or "")

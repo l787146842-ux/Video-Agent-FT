@@ -241,7 +241,8 @@ async def test_2222_split_truncation_retry_success_path(monkeypatch, tmp_path):
 
     async def fake_stream(provider, model, messages, *, max_tokens=8192,
                           temperature=0.7, timeout=180, on_delta=None,
-                          reasoning_sink=None, thinking_level=None):
+                          reasoning_sink=None, thinking_level=None,
+                          response_format=None):
         calls["n"] += 1
         if calls["n"] == 1:
             content = ('[{"action":"add_group","group_type":"shot","title":"镜1",'

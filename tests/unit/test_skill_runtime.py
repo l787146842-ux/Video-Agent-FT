@@ -29,7 +29,8 @@ def _bridge_stream_calls(monkeypatch):
 
     async def fake_stream(provider, model, messages, *, max_tokens=8192,
                           temperature=0.7, timeout=180, on_delta=None,
-                          reasoning_sink=None, thinking_level=None):
+                          reasoning_sink=None, thinking_level=None,
+                          response_format=None):
         content, finish = await gen_mod.call_chat_completion(
             provider, model, messages, max_tokens=max_tokens
         )
@@ -619,7 +620,7 @@ async def test_write_media_prompt_batched_fill(monkeypatch, tmp_path):
             for g in svc.state_dict["keyElements"]
             if not any((d.get("prompt") or "").strip() for d in g["drafts"])
         ]
-        return ('```studio-actions\n' + json.dumps(acts, ensure_ascii=False) + '\n```', "stop")
+        return (json.dumps(acts, ensure_ascii=False), "stop")
 
     monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
     monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
@@ -668,7 +669,7 @@ async def test_write_media_prompt_batches_split_by_size(monkeypatch, tmp_path):
                                  "构图居中，氛围肃穆克制，背景深空星点散布，整体写实。"}}
             for g in missing
         ]
-        return ('```studio-actions\n' + json.dumps(acts, ensure_ascii=False) + '\n```', "stop")
+        return (json.dumps(acts, ensure_ascii=False), "stop")
 
     monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
     monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
@@ -704,9 +705,9 @@ async def test_write_media_prompt_fails_when_no_progress(monkeypatch, tmp_path):
     ]
 
     async def fake_chat(provider, model, messages, **kwargs):
-        # 只建空草稿卡，不写提示词（模拟 898 事故现场）
-        return ('```studio-actions\n[{"action":"add_draft","group_id":"ke-1"},'
-                '{"action":"add_draft","group_id":"ke-2"}]\n```', "stop")
+        # 只建空草稿卡，不写提示词（模拟 898 事故现场；audit-0819d：纯 JSON 新契约）
+        return ('[{"action":"add_draft","group_id":"ke-1"},'
+                '{"action":"add_draft","group_id":"ke-2"}]', "stop")
 
     monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
     monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
@@ -755,7 +756,7 @@ async def test_write_media_prompt_corrective_retry_after_empty_batch(monkeypatch
                                      "构图居中，氛围肃穆克制，背景深空星点散布，整体写实。"}}
                 for g in missing
             ]
-        return ('```studio-actions\n' + json.dumps(acts, ensure_ascii=False) + '\n```', "stop")
+        return (json.dumps(acts, ensure_ascii=False), "stop")
 
     monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
     monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))

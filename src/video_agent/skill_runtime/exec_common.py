@@ -2,7 +2,7 @@
 
 每个执行器只注入自己对应的 Skill 章节（registry.tool_sections），
 独立完成「读输入 → LLM 调用/组装 → 结构化校验 → 写状态」。
-LLM 类执行器不依赖模型 function calling，Planner/文本动作轨都可调用。
+LLM 类执行器走结构化输出轨（response_format=json_object + 硬校验，audit-0819d）。
 """
 import json
 import math
@@ -438,21 +438,34 @@ def _build_script_hint(state: Dict[str, Any]) -> str:
 
 
 def _parse_actions_from_text(text: str) -> List[Dict[str, Any]]:
-    """从 LLM 回复中提取 studio-actions JSON 数组（兼容围栏与裸 JSON）。"""
-    from src.video_agent.web.action_parser import parse_actions_from_reply
+    """严格解析执行器 LLM 返回的纯 JSON 数组（audit-0819d，ADR-0001 执行记录三）。
 
-    actions = parse_actions_from_reply(text)
-    if actions:
-        return actions
-    m = re.search(r"\[[\s\S]*\]", text)
-    if m:
-        try:
-            data = json.loads(m.group(0))
-            if isinstance(data, list):
-                return data
-        except Exception as _e:
-            logger.debug("[executors] 忽略异常: {}", _e)
-    return []
+    执行器 JSON 产出点均下发 response_format=json_object，产出应为纯 JSON；
+    硬校验即完，宽容正则/围栏兜底已删除（业界姿势：坏输出=证据确凿的失败，
+    由调用方既有 C2 拒因纠正重试承接，绝不「宽容理解」）。
+    解析失败返回 []（调用方按零进展处理→拒因重试），并记遥测观测遵守度。
+    """
+    body = (text or "").strip()
+    if not body:
+        return []
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        record_json_parse_degradation()
+        logger.warning("[executors] 输出未过硬 JSON 校验（宽容兜底已删，audit-0819d），按零进展交拒因重试")
+        return []
+    return data if isinstance(data, list) else []
+
+
+def record_json_parse_degradation() -> None:
+    """执行器 JSON 硬校验失败遥测（audit-0819d）：观测端点/模型对
+    response_format=json_object 的遵守度；失败绝不阻断主链路。
+    跨层 import 已登记（check_func_imports 白名单，台账 audit-0819d）。"""
+    try:
+        from src.video_agent.core.live_metrics import record_degradation
+        record_degradation("executor.json_strict_parse_failed")
+    except Exception:
+        pass
 
 
 # 流式逐条落盘参数（Q5：做好一个立即填入左侧故事板，不等整批生成完）
@@ -603,6 +616,9 @@ async def _stream_actions_progressive(
         on_delta=on_delta,
         reasoning_sink=_reasoning,
         thinking_level=_executor_thinking(),
+        # audit-0819d：结构化输出——纯 JSON 数组流，增量提取器直接消费；
+        # 端点不支持时适配器探针剥离降级，产出交严格校验+拒因重试
+        response_format={"type": "json_object"},
     )
     await flush(force=True)
     # 黑匣子（888 事故）：截断/零产出时完整取证落盘，事后可直接看模型在纠结什么
@@ -635,11 +651,14 @@ async def executor_stream_text(
     max_tokens: int,
     timeout: float,
     thinking_level: Optional[str] = None,
+    response_format: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str]:
     """执行器统一流式取稿：流式接收+拼完整，返回 (content, finish_reason)。
 
     执行器机械调用唯一出口；非流式调用会被中介
     对缺省 stream 按流式路由，故执行器层不再允许。
+    response_format（audit-0819d）：JSON 产出点下发 json_object，
+    端点不支持时适配器探针剥离降级。
     """
     return await _gen.call_chat_completion_stream(
         provider,
@@ -648,6 +667,7 @@ async def executor_stream_text(
         max_tokens=max_tokens,
         timeout=timeout,
         thinking_level=thinking_level,
+        response_format=response_format,
     )
 
 

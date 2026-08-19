@@ -146,11 +146,14 @@ async def call_chat_completion(
     temperature: float = 0.7,
     timeout: int = 120,
     thinking_level: Optional[str] = None,
+    response_format: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str]:
     """
     OpenAI 兼容 chat 调用。返回 (content, finish_reason)。
     内部委托给 OpenAICompatChatAdapter.chat()。
     thinking_level：本次调用思考档位覆盖（None=沿用全局配置，2222 二轮）。
+    response_format（audit-0819d）：结构化输出声明（如 {"type":"json_object"}），
+    端点不支持时适配器兼容探针自动剥离降级。
     失败抛 GenerationError。
     """
     base_url, api_key, effective_model = await resolve_openai_endpoint_async(provider_id, model)
@@ -160,7 +163,7 @@ async def call_chat_completion(
     try:
         response = await adapter.chat(
             messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout,
-            thinking_level=thinking_level,
+            thinking_level=thinking_level, response_format=response_format,
         )
     except AdapterError as e:
         raise GenerationError(str(e)) from e
@@ -184,11 +187,14 @@ async def call_chat_completion_stream(
     on_delta=None,
     reasoning_sink: List[str] | None = None,
     thinking_level: Optional[str] = None,
+    response_format: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str]:
     """
     流式 chat 调用。每收到一段增量文本就 await on_delta(text)。
     内部委托给 OpenAICompatChatAdapter.chat_stream()。
     thinking_level：本次调用思考档位覆盖（None=沿用全局配置，2222 二轮）。
+    response_format（audit-0819d）：结构化输出声明（如 {"type":"json_object"}），
+    端点不支持时适配器兼容探针自动剥离降级。
     返回 (完整内容, finish_reason)。失败抛 GenerationError。
     reasoning_sink（可选）：传入 list 则累积推理模型的思考增量（黑匣子取证用，
     888 事故），不进上下文。
@@ -203,7 +209,7 @@ async def call_chat_completion_stream(
     try:
         async for chunk in adapter.chat_stream(
             messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout,
-            thinking_level=thinking_level,
+            thinking_level=thinking_level, response_format=response_format,
         ):
             if chunk.type == "text_delta" and chunk.text:
                 content_parts.append(chunk.text)

@@ -197,6 +197,7 @@ async def _selfcheck_key_elements(
         max_tokens=8192,
         timeout=180,
         thinking_level=exec_common._executor_thinking(),
+        response_format={"type": "json_object"},
     )
     actions = exec_common._parse_actions_from_text(content or "")
     if not actions:

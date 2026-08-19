@@ -162,6 +162,10 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         self.api_key = api_key
         self.model = model
         self._client: Optional[httpx.AsyncClient] = None
+        # audit-0819d：字段兼容探针记忆（同实例只探一次）：
+        # 端点 400 拒收 reasoning_effort/response_format 后记入本集合，
+        # 后续请求不再下发该字段（与 814H7 降级同惯例）。
+        self._unsupported_fields: set = set()
 
     def _get_client(self, timeout: int = 120) -> httpx.AsyncClient:
         """Lazy 创建/复用 httpx 客户端（连接池复用）"""
@@ -203,6 +207,34 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         if level in ("low", "medium", "high"):
             payload["reasoning_effort"] = level
 
+    def _apply_response_format(self, payload: Dict[str, Any],
+                                response_format: Optional[Dict[str, Any]]) -> None:
+        """audit-0819d：结构化输出（执行器 JSON 产出点下发 json_object）。
+        探针已判定不支持的字段不再下发（兼容探针记忆）。"""
+        if response_format and "response_format" not in self._unsupported_fields:
+            payload["response_format"] = response_format
+
+    def _strip_unsupported_on_400(self, payload: Dict[str, Any], body: str) -> bool:
+        """兼容探针：400 拒收时按报文点名剥离可选字段（reasoning_effort/
+        response_format），未点名则两者并剥；剥过即记忆（同实例不再试探）。
+        返回是否剥离了任何字段（True 时调用方应重试一次）。"""
+        fields = [k for k in ("response_format", "reasoning_effort") if k in payload]
+        if not fields:
+            return False
+        named = [k for k in fields if k in body]
+        to_strip = named or fields
+        for k in to_strip:
+            payload.pop(k, None)
+            self._unsupported_fields.add(k)
+        try:
+            from src.video_agent.core.live_metrics import record_degradation
+            for k in to_strip:
+                record_degradation(f"adapter.{k}_unsupported")
+        except Exception:
+            pass
+        logger.warning(f"[OpenAICompat] 端点 400 拒收可选字段 {to_strip}，剥离后重试一次")
+        return True
+
     async def chat(
         self,
         messages: List[Dict[str, Any]],
@@ -212,6 +244,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         temperature: Optional[float] = None,
         timeout: Optional[int] = None,
         thinking_level: Optional[str] = None,
+        response_format: Optional[Dict[str, Any]] = None,
     ) -> ChatResponse:
         if max_tokens is None:
             max_tokens = settings.llm_max_tokens
@@ -231,6 +264,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         if tools:
             payload["tools"] = tools
         self._apply_thinking_level(payload, thinking_level)
+        self._apply_response_format(payload, response_format)
 
         try:
             client = self._get_client(timeout)
@@ -253,10 +287,10 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         except httpx.TimeoutException:
             raise AdapterError(f"LLM 请求超时（{timeout}s），请检查网络或供应商状态", retryable=True)
         except httpx.HTTPStatusError as e:
-            # 814H7 优雅降级：严格端点不认 reasoning_effort 报 400 → 去掉字段重试一次
-            if e.response.status_code == 400 and "reasoning_effort" in payload:
-                logger.warning("[OpenAICompat] 端点不认 reasoning_effort（400），去掉字段重试一次")
-                payload.pop("reasoning_effort", None)
+            # 814H7/audit-0819d 优雅降级：严格端点不认 reasoning_effort/
+            # response_format 报 400 → 剥离字段重试一次（兼容探针）
+            if e.response.status_code == 400 and self._strip_unsupported_on_400(
+                    payload, e.response.text[:400]):
                 try:
                     client = self._get_client(timeout)
                     resp = await client.post("/chat/completions", json=payload)
@@ -310,6 +344,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         temperature: Optional[float] = None,
         timeout: Optional[int] = None,
         thinking_level: Optional[str] = None,
+        response_format: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
         if max_tokens is None:
             max_tokens = settings.llm_max_tokens
@@ -327,6 +362,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         if tools:
             payload["tools"] = tools
         self._apply_thinking_level(payload, thinking_level)
+        self._apply_response_format(payload, response_format)
 
         # 首块产出前遇瞬时故障（上游 5xx 繁忙 / 连接失败）指数退避重试，
         # 与非流式路径的 with_retry 对齐；已开始产出内容则不重试（避免内容重复）。
@@ -339,17 +375,17 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     yield chunk
                 return
             except AdapterError as e:
-                # 814H7 优雅降级：严格端点不认 reasoning_effort 报 400 → 去掉字段重试
+                # 814H7/audit-0819d 优雅降级：严格端点不认 reasoning_effort/
+                # response_format 报 400 → 剥离字段重试（兼容探针；
+                # AdapterError 报文携原始 body 前 200 字，可供点名判定）
                 if (
                     not yielded
-                    and "reasoning_effort" in payload
                     and (
                         getattr(e, "http_status", None) == 400
                         or str(e).startswith("LLM 返回 HTTP 400")
                     )
+                    and self._strip_unsupported_on_400(payload, str(e))
                 ):
-                    payload.pop("reasoning_effort", None)
-                    logger.warning("[OpenAICompat] 流式端点不认 reasoning_effort（400），去掉字段重试")
                     continue
                 # 结构化判定（P0-2）：优先用 retryable 标记，兼容无标记旧异常回退文案匹配
                 flag = getattr(e, "retryable", None)
