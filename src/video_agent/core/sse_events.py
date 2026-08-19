@@ -28,7 +28,8 @@ SSE_DOC_WRITTEN = "doc_written"
 SSE_MODEL_FALLBACK = "model_fallback"
 # 本轮结束（携带完整 payload，含状态快照）
 SSE_DONE = "done"
-# 错误（携带 detail，可携带 error_code 供前端 i18n）
+# 错误（携带 detail，可携带 error_code 供前端 i18n；
+# audit-0819 增 raw = 上游原始报文，前端「技术详情」折叠展示）
 SSE_ERROR = "error"
 # 文本解析路径的操作已执行（agent_loop 内部事件，前端目前忽略）
 SSE_ACTIONS_APPLIED = "actions_applied"

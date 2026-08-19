@@ -669,6 +669,15 @@
   background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25);
   border-radius: 6px; padding: 5px 8px;
 }
+/* audit-0819：错误技术详情折叠（上游原始报文，默认收起，不发光） */
+.msg-error-detail { margin: 6px 0 0; font-size: 11px; color: #9ca3af; }
+.msg-error-detail summary { cursor: pointer; user-select: none; }
+.msg-error-detail-body {
+  margin: 4px 0 0; padding: 6px 8px; font-size: 10.5px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow-y: auto;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px; color: #9ca3af;
+}
 /* 814F7：拦截类警告的「本次放行」按钮（单次生效留痕，不发光） */
 .gate-override-btn {
   align-self: flex-start; font-size: 11px; padding: 4px 10px; border-radius: 6px;

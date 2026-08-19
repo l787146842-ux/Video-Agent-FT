@@ -703,6 +703,7 @@ class StateManager(UndoRedoMixin):
         skill_blocks: Optional[List[str]] = None,
         confirm_options: Optional[List[Dict[str, Any]]] = None,
         turn_id: str = "",
+        error_detail: str = "",
     ):
         """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，防止状态文件无上限增长。
 
@@ -743,6 +744,9 @@ class StateManager(UndoRedoMixin):
             entry["confirmOptions"] = list(confirm_options)
         if turn_id:
             entry["turnId"] = turn_id
+        if error_detail:
+            # audit-0819：错误气泡的技术详情（上游原始报文），前端折叠展示
+            entry["errorDetail"] = error_detail
         msgs.append(entry)
         if len(msgs) > _CHAT_HISTORY_LIMIT:
             del msgs[: len(msgs) - _CHAT_HISTORY_LIMIT]

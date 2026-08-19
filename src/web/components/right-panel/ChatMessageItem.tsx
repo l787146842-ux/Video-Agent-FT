@@ -2,7 +2,7 @@
 import { For, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import {
-  FiCheckCircle, FiChevronDown, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
+  FiCheckCircle, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
 } from 'solid-icons/fi';
 import { renderMarkdown } from '@/lib/markdown';
 import { sendUserMessage } from '@/lib/agent-actions';
@@ -345,6 +345,13 @@ export function ChatMessageItem(props: {
           >
             {t('rp.msg.checkSettings')}
           </button>
+        </Show>
+        {/* audit-0819：错误技术详情折叠（人话在气泡，上游原始报文默认收起） */}
+        <Show when={msg().errorDetail}>
+          <details class="msg-error-detail">
+            <summary>技术详情</summary>
+            <pre class="msg-error-detail-body">{msg().errorDetail}</pre>
+          </details>
         </Show>
         {/* 五轮 S3/#3：建议动作按钮（重试=机械重发上一条用户消息；继续=固定文本） */}
         <Show when={props.isSuggestedTarget && (msg().suggestedActions || []).length > 0}>

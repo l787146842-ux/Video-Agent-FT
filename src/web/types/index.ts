@@ -199,6 +199,8 @@ export interface ChatMessage {
   trace?: AgentTrace;
   /** U1：鉴权/供应商类错误气泡附「检查 API 配置」跳转按钮 */
   settingsHint?: boolean;
+  /** audit-0819：错误气泡的技术详情（上游原始报文），「技术详情」折叠渲染，默认不展开 */
+  errorDetail?: string;
   /** 五轮 S2/#2：轮次唯一标识（同轮正文/文档卡/图片卡共用，渲染层聚合为轮次容器） */
   turnId?: string;
   /** 五轮 S3/#3：建议动作按钮（随 done payload 落消息，仅最后一条渲染；
@@ -327,7 +329,7 @@ export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }
 /** 操作已执行（携带最新状态快照）：推理中逐步刷新故事板，不必等全部完成 */
 export interface SseActionsAppliedEvent { type: 'actions_applied'; payload?: { count?: number; state?: ServerStateSnapshot | null }; }
 /** 后端 error 事件用 detail 字段，可携带 error_code 供前端 i18n 翻译 */
-export interface SseErrorEvent { type: 'error'; detail?: string; text?: string; error_code?: string; }
+export interface SseErrorEvent { type: 'error'; detail?: string; text?: string; error_code?: string; /** audit-0819：上游原始报文（前端折叠展示） */ raw?: string; }
 /** 模型降级即时联动（7777）：切换时刻即下发，前端立即把选择器跳到实际生效的组合 */
 export interface SseModelFallbackEvent { type: 'model_fallback'; provider?: string; model?: string; }
 /** 引导消息轮间注入成功（7777 三轮）：渲染用户气泡并从排队区移除对应条目 */

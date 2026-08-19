@@ -275,7 +275,8 @@ function handleEvent(ev: SseEvent) {
     case 'error': {
       const msg = resolveErrorMessage(ev.error_code, ev.detail || ev.text || '服务端错误');
       setError(msg);
-      chatActions.streamError(msg);
+      // audit-0819：上游原始报文随错误消息下发，前端折叠展示
+      chatActions.streamError(msg, ev.raw || '');
       closeSubscription();
       break;
     }
