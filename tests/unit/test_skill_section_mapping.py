@@ -168,6 +168,8 @@ def test_lint_full_flova_skill_has_no_structural_warnings():
     content = (
         "<planner>\n流程\n**何时暂停**：每阶段后\n</planner>\n"
         "<storyboard_designer>\n故事板\n</storyboard_designer>\n"
+        "<media_generator>\n生成设定图与分镜视频\n</media_generator>\n"
+        "<write_the_prompt>\n提示词写法规范\n</write_the_prompt>\n"
     )
     lint = lint_skill_content(content)
     for tool in _SPLIT_TOOLS:

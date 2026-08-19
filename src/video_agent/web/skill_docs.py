@@ -21,10 +21,13 @@ from loguru import logger
 
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import SKILL_DOCS_DIR
+from src.video_agent.config import settings
 # 五轮 S6：标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
 from src.video_agent.core import live_metrics
 # N7（三轮审核）：pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
 from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: F401
+# 批 5：sidecar 声明体检（sidecar 顶层不依赖本模块，无环）
+from src.video_agent.skill_runtime import sidecar
 
 _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划线/连字符
 
@@ -383,11 +386,12 @@ _MODEL_PARAM_LINT_RE = re.compile(
 )
 
 
-def lint_skill_content(content: str) -> Dict[str, Any]:
+def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
     """Skill 文档保存时 lint：把注册结果/规则合法性提示前移到编辑时。
 
     返回 {"available_tools": [...], "warnings": [...]}；不阻断保存，
     由路由层随 PUT 响应下发，前端以 toast/详情展示。
+    slug 非空时追加 sidecar 声明缺失检查（仅告警，F4 只告警不阻断语义）。
     """
     from src.video_agent.skill_runtime.registry import SKILL_EXECUTOR_TOOLS, TOOL_STAGES
 
@@ -447,7 +451,63 @@ def lint_skill_content(content: str) -> Dict[str, Any]:
             + " 等）：已作废——出图/出视频渠道、分辨率、时长以「全局设置」为唯一权威源，"
             "运行时不会采用本文档中的这些参数"
         )
+    # 批 5（对标 Flova 固定组成）：体量预算预警（legacy 全文注入截断阈值前 20%）
+    _budget_warn = int(settings.max_doc_chars * 0.8)
+    if len(content) > _budget_warn:
+        warnings.append(
+            f"文档体量 {len(content)} 字符超过建议预算 {_budget_warn}（全文注入截断阈值 "
+            f"{settings.max_doc_chars} 的 80%）：超长将按阶段截断，建议精简或拆分章节"
+        )
+    # 批 5：章节完整性对照 Flova 组成（流程型 Skill 缺核心段才告警，自由型不误伤）
+    warnings.extend(_lint_flova_composition(content, sections, bool(available)))
+    # 批 5：有流程章节但 sidecar 未声明 steps/dependencies → 提示补声明
+    warnings.extend(_lint_sidecar_declaration(content, slug))
     return {"available_tools": available, "warnings": warnings}
+
+
+# Flova 组成核心段（自由型 Skill 无流程章节时不检查）：阶段键 + 正文关键词兜底
+_FLOVA_CORE_PARTS: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
+    ("故事板设计", ("storyboard_ke", "storyboard_shot", "storyboard_audio"),
+     ("故事板", "分镜", "关键元素")),
+    ("媒体生成", ("generation",), ("生成", "参考图", "设定图")),
+    ("提示词写法", ("prompt_draft",), ("提示词写法", "提示词规范", "Prompt")),
+)
+
+
+def _lint_flova_composition(
+    content: str, sections: Dict[str, str], has_executors: bool,
+) -> List[str]:
+    """流程型 Skill 的核心组成缺失提示（对标 Flova：只写会改变流程的规则，
+    但流程/故事板/生成/提示词四段是工作流骨架）；非流程型不告警。"""
+    if not has_executors and "planning" not in sections:
+        return []
+    missing: List[str] = []
+    for part, stage_keys, keywords in _FLOVA_CORE_PARTS:
+        if any((sections.get(k) or "").strip() for k in stage_keys):
+            continue
+        if any(kw in content for kw in keywords):
+            continue
+        missing.append(part)
+    if not missing:
+        return []
+    return ["对照视频 Skill 标准组成，未识别到：" + "、".join(missing)
+            + "（若本 Skill 确不涉及可忽略；涉及建议补对应章节，避免运行时靠启发式归段）"]
+
+
+def _lint_sidecar_declaration(content: str, slug: str) -> List[str]:
+    """有流程章节但 sidecar 未声明 steps/dependencies：调度回落正文解析，
+    提示补声明（声明唯一源 = data/skills_manifests/<slug>.json）。"""
+    if not slug or "<planner>" not in content:
+        return []
+    try:
+        data = sidecar.load_sidecar(slug)
+    except Exception:
+        return []
+    flow = (data or {}).get("flow") or {}
+    if flow.get("steps"):
+        return []
+    return ["流程步骤未在 sidecar 声明（flow.steps/dependencies 缺失）："
+            f"调度将回落正文启发式解析，建议在 data/skills_manifests/{slug}.json 补声明"]
 
 
 def _norm_skill_name(s: str) -> str:

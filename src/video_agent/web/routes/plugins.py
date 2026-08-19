@@ -15,6 +15,7 @@ from src.video_agent.web.skill_docs import (
     list_skill_doc_history,
     save_skill_doc,
     delete_skill_doc,
+    lint_skill_content,
 )
 
 router = APIRouter()
@@ -53,12 +54,14 @@ class SkillDocSave(BaseModel):
 
 @router.put("/skills/docs/{slug}")
 async def put_skill_doc(slug: str, body: SkillDocSave):
-    """保存 Skill 文档（新建或覆盖）"""
+    """保存 Skill 文档（新建或覆盖）；lint 结果随响应下发（只告警不阻断，
+    前端 toast 回显——体量/Flova 组成/sidecar 声明缺失等编辑期可见）"""
     try:
         doc = save_skill_doc(slug, body.content)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"ok": True, "doc": doc}
+    lint = lint_skill_content(body.content, slug=slug)
+    return {"ok": True, "doc": doc, "lint": lint}
 
 
 @router.get("/skills/docs/{slug}")

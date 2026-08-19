@@ -135,13 +135,15 @@ export async function saveCurrentDoc(): Promise<void> {
         setState('documents', data.documents as DocRecord[]);
       }
     } else {
-      await saveSkillDoc(cur.key, content);
+      const res = await saveSkillDoc(cur.key, content);
       setSkillDocs((prev) =>
         prev.map((d) => (d.slug === cur.key ? { ...d, content } : d)),
       );
       // 同步技能 system_prompt（doc:slug 关联）
       const sk = state.skills.find((s) => s.id === `doc:${cur.key}`);
       if (sk) sk.system_prompt = content;
+      // 保存时 lint 回显（批 5：体量/组成/sidecar 声明缺失编辑期可见）
+      (res?.lint?.warnings || []).forEach((w) => showToast(`⚠ ${w}`, 'warning'));
     }
     showToast('文档已保存', 'success');
     setEditing(false);
