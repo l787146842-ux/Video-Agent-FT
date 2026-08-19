@@ -22,7 +22,6 @@ from src.video_agent.config import settings
 from src.video_agent.core.token_budget import context_window_for_model, estimate_messages_tokens, truncate_messages
 from src.video_agent.memory import MemoryManager
 from src.video_agent.state.manager import StateManager
-from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.utils.prompts import load_prompt, load_prompt_section, render_prompt
@@ -38,6 +37,8 @@ from src.video_agent.core.prompt_builder import PromptBuilder
 # 八轮 B2：轮末组装域切入 planner_output
 from src.video_agent.core.planner_output import assemble_response
 from src.video_agent.core import prompt_gates
+# 批 7 拆分协作臂：豁免消费/确定性分诊/FC 响应合并（同名委托保持既有调用/测试路径）
+from src.video_agent.core import fc_response, planner_gate_session, planner_triage
 from src.video_agent.core.live_metrics import record_degradation, record_live_context
 from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS, status_event
 from src.video_agent.core.tracer import AgentTracer
@@ -314,34 +315,10 @@ class Planner:
             except Exception as _e:
                 logger.debug("[planner] 忽略异常: {}", _e)
 
-        # 会话层一次性豁免（814R3 恢复，§2.4）：用户「本次放行」写入
-        # interaction.gate_overrides，本次消费即清除（单次生效、全程留痕）；
-        # 无显式豁免时回落正则意图识别兜底（按钮化上线前保留）
-        gate_override_scope: Any = False
-        try:
-            interaction = self.state_manager.state_dict.get("interaction") or {}
-            taken = [r for r in (interaction.get("gate_overrides") or []) if r]
-            if taken:
-                interaction["gate_overrides"] = []
-                self.state_manager.save()
-                # 五轮 S3/#13：作用域显式枚举判定（原「非 all 即 element_image」隐式映射）
-                gate_override_scope = (
-                    prompt_gates.GATE_OVERRIDE_SCOPE_ALL
-                    if any(str(r) == prompt_gates.GATE_OVERRIDE_SCOPE_ALL
-                           or str(r).startswith("platform.") for r in taken)
-                    else prompt_gates.GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE
-                )
-                logger.info(f"[GateOverride] 消费 {len(taken)} 条一次性豁免，作用域={gate_override_scope}")
-                # 审计留痕（§2.4 全程留痕）：实际消费 scope 入 trace
-                AgentTracer.get_instance().record_gate(
-                    "platform.gate_override", "session", True,
-                    overridden=True, message=f"一次性放行生效，作用域={gate_override_scope}",
-                    scope=str(gate_override_scope),
-                )
-        except Exception as _e:
-            logger.warning("[GateOverride] 豁免消费失败（本次放行可能未生效，回落意图识别兜底）: {}", _e)
-        if not gate_override_scope and isinstance(user_message, str):
-            gate_override_scope = prompt_gates.user_insists_override(user_message) or False
+        # 会话层一次性豁免（§2.4）：按钮路径登记单次消费即清除（留痕）；
+        # 无显式豁免时回落正则意图识别兜底（委托 planner_gate_session）
+        gate_override_scope = planner_gate_session.consume_gate_overrides(
+            self.state_manager, user_message)
         try:
             executor.gate_override = gate_override_scope
         except Exception as _e:
@@ -800,115 +777,32 @@ class Planner:
         ):
             yield chunk
 
-    # ---------- audit-0819e 控制流统一（ADR-0002）：确定性分诊 ----------
+    # ---------- 控制流统一（ADR-0002）：确定性分诊（实现体 = planner_triage） ----------
     #
-    # 0818 概率语料路由（_ADVANCE_CORPUS/_ADHOC_VERBS 词表猜意图）已删除：
-    # 1111 事故证明语料路由错过一次 = 全程失控。分诊只认客观状态事实，
-    # 措辞不参与判定；交接后由阶段前置闸（阶 1）与步间回收（阶 3）保底。
+    # 概率语料路由已删除：语料路由错过一次 = 全程失控。分诊只认客观状态
+    # 事实，措辞不参与判定；交接后由阶段前置闸与步间回收保底。
+    # 同名委托保持既有调用/测试路径（宪法 §12 登记壳）。
 
     def _is_adhoc_edit(self, user_message: Any) -> bool:
-        """ad-hoc 特征（客观事实）：消息命中既有资产名 → 交接模型循环。
-        （语料动词已删：标题命中即足以判定，不猜措辞。）"""
-        if not isinstance(user_message, str) or not user_message.strip():
-            return False
-        state = self.state_manager.state_dict
-        titles = [
-            str(g.get("title") or "").strip()
-            for cat in (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS)
-            for g in (state.get(cat) or []) if isinstance(g, dict)
-        ]
-        return any(t and len(t) >= 2 and t in user_message for t in titles)
+        """ad-hoc 特征（客观事实）：消息命中既有资产名 → 交接模型循环。"""
+        return planner_triage.is_adhoc_edit(self.state_manager.state_dict, user_message)
 
     def _is_question(self, user_message: Any) -> bool:
         """提问客观特征（标点/疑问词）：自由提问不错抓进流程推进。"""
-        msg = str(user_message or "").strip()
-        return (
-            "？" in msg or "?" in msg
-            or msg.startswith(("什么", "怎么", "为什么", "哪", "吗"))
-        )
+        return planner_triage.is_question(user_message)
 
     def _triage_control(self, user_message: Any, skill: str) -> str:
-        """确定性分诊（audit-0819e）：返回 advance | handoff，零语料。
-
-        advance（外层循环接管）仅由客观事实触发：
-        - 一条龙豁免生效，或存在待确认暂停（回应即续进；改指示命中资产名
-          时经 adhoc 交接，提问经 question 交接）；
-        - 系统建议按钮的机械续进文案（suggested_actions 的 continue 值）；
-        - 管线未启动且（原料就位 或 原料闸启用）→ 开局（编排器直跑首个
-          确定性阶段或机械回提醒卡）。
-        其余一律 handoff（受界模型循环）：阶段前置闸与步间回收保证
-        交接不失控；歧义宁可交模型也不猜意图。
-        """
-        msg = str(user_message or "").strip()
-        state = self.state_manager.state_dict
-        inter = state.get("interaction") or {}
-        if inter.get("auto_continue"):
-            return "advance"
-        if inter.get("awaiting_confirmation"):
-            if self._is_adhoc_edit(msg) or self._is_question(msg):
-                return "handoff"
-            return "advance"
-        if msg == "继续完成":  # suggested_actions continue 按钮机械文案（B2/F16）
-            return "advance"
-        if not msg or self._is_adhoc_edit(msg) or self._is_question(msg):
-            return "handoff"
-        started = bool((state.get("analysis") or {}).get("summary"))
-        if not started:
-            if state.get("uploadedDocs"):
-                return "advance"
-            try:
-                from src.video_agent.skill_runtime.registry import script_required_active
-
-                if script_required_active(skill):
-                    return "advance"  # 编排器机械回提醒卡/上传回执（814H9）
-            except Exception:
-                pass
-        return "handoff"
+        """确定性分诊：返回 advance | handoff，零语料（实现体 planner_triage）。"""
+        return planner_triage.triage_control(
+            self.state_manager.state_dict, user_message, skill)
 
     async def _run_orchestrator_path(
         self, context: "PlannerContext", user_message: Any = "",
     ) -> Optional["PlannerResponse"]:
-        """编排器快路径；返回 None = 创作型阶段交接模型循环。
-        进出结果全记控制流事件（audit-0819e 可观测性）。"""
-        from src.video_agent.core import pipeline_orchestrator as _po
-
-        outcome = await _po.orchestrate_turn(
-            self.state_manager, context.skill_name, user_message)
-        _kind = outcome.kind if outcome is not None else "handoff"
-        logger.info("[ControlFlow] orchestrator outcome={}", _kind)
-        try:
-            AgentTracer.get_instance().record_control_flow(
-                "stage_batch" if outcome is not None else "handoff",
-                _kind, context.skill_name or "")
-        except Exception:
-            pass
-        if outcome is None:
-            return None
-        if outcome.kind == "script_pending":
-            resp = PlannerResponse(
-                text=outcome.message, confirmation=outcome.message,
-                confirmation_options=outcome.options or [], steps=1)
-            self._issue_pause(resp)
-            return resp
-        if outcome.kind == "script_ack":
-            return PlannerResponse(text=outcome.message, steps=1)
-        if outcome.kind == "spec_pending":
-            msg, opts = prompt_gates.spec_collect_card(self.state_manager.state_dict)
-            resp = PlannerResponse(
-                text="", confirmation=msg, confirmation_options=opts, steps=1)
-            self._issue_pause(resp)
-            return resp
-        if outcome.kind == "paused":
-            inter = self.state_manager.state_dict.setdefault("interaction", {})
-            inter["awaiting_confirmation"] = True
-            inter["confirmation_message"] = outcome.message
-            self.state_manager.save_debounced()
-            resp = PlannerResponse(
-                text=outcome.message, confirmation=outcome.message,
-                confirmation_options=outcome.options or [], steps=1)
-            self._issue_pause(resp)
-            return resp
-        return PlannerResponse(text=outcome.message or "", steps=1)
+        """编排器快路径；返回 None = 创作型阶段交接模型循环（实现体 planner_triage）。"""
+        return await planner_triage.run_orchestrator_path(
+            self.state_manager, context.skill_name, user_message,
+            PlannerResponse, self._issue_pause)
 
     async def _handle_fc_response(
         self,
@@ -929,47 +823,27 @@ class Planner:
         gate_override: Any = False,
         confirmation_collector: Optional[Dict[str, Any]] = None,
     ) -> Tuple:
-        """处理 LLM 响应中的 FC tool_calls。
-        返回 (content, finish_reason, fc_applied, tool_results, fc_warnings)，
-        tool_results: [{name, ok, data, error}] 供回喂进对话上下文；
-        fc_warnings: 本批闸机拦截/豁免的用户可见文案（B0/F3）。
-        audit-0819b：暂停确认经 confirmation_collector 结构化上抛
-        （{message, options}），不再合成 studio-actions 文本块。"""
-        if response.tool_calls:
-            (fc_applied, fc_confirmation, image_urls,
-             chat_inserts, fc_action_log, fc_confirmation_options,
-             fc_tool_results, fc_docs_written, fc_warnings) = await self._execute_fc_tools(
-                response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
-                on_status=on_status, on_event=on_event, injected_skill=injected_skill,
-                selected_draft_id=selected_draft_id, selected_type=selected_type,
-                gate_override=gate_override,
-            )
-            if image_urls_collector is not None:
-                image_urls_collector.extend(image_urls)
-            if chat_inserts_collector is not None:
-                chat_inserts_collector.extend(chat_inserts)
-            if action_log_collector is not None:
-                action_log_collector.extend(fc_action_log)
-            if confirmation_options_collector is not None:
-                confirmation_options_collector.extend(fc_confirmation_options)
-            if docs_written_collector is not None:
-                docs_written_collector.extend(fc_docs_written)
-            if fc_warnings_collector is not None:
-                fc_warnings_collector.extend(fc_warnings)
-            if fc_confirmation:
-                # audit-0819b：确认结构化直通（对齐 AskUserQuestion 范式）：
-                # 文案+选项写入 collector 随 5 元组上抛 agent_loop，不再合成
-                # studio-actions 文本块回绕解析；正文原样返回
-                if confirmation_collector is not None:
-                    confirmation_collector["message"] = fc_confirmation
-                    confirmation_collector["options"] = fc_confirmation_options
-                # 空正文兜底：FC 模型常只发暂停工具不带正文，确认文案作可见正文
-                visible = (response.content or "").strip()
-                if not visible:
-                    visible = fc_confirmation
-                return visible, response.finish_reason, 0, fc_tool_results, fc_warnings
-            return response.content, response.finish_reason, fc_applied, fc_tool_results, fc_warnings
-        return response.content, response.finish_reason, 0, [], []
+        """处理 LLM 响应中的 FC tool_calls（实现体 fc_response.merge_fc_response）。
+        返回 (content, finish_reason, fc_applied, tool_results, fc_warnings)；
+        执行经 self._execute_fc_tools 注入（monkeypatch 目标不变）。"""
+        return await fc_response.merge_fc_response(
+            response, self._execute_fc_tools,
+            image_urls_collector=image_urls_collector,
+            chat_inserts_collector=chat_inserts_collector,
+            action_log_collector=action_log_collector,
+            confirmation_options_collector=confirmation_options_collector,
+            docs_written_collector=docs_written_collector,
+            fc_warnings_collector=fc_warnings_collector,
+            image_provider=image_provider,
+            image_aspect_ratio=image_aspect_ratio,
+            on_status=on_status,
+            on_event=on_event,
+            injected_skill=injected_skill,
+            selected_draft_id=selected_draft_id,
+            selected_type=selected_type,
+            gate_override=gate_override,
+            confirmation_collector=confirmation_collector,
+        )
 
     async def _execute_fc_tools(
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",

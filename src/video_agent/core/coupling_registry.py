@@ -249,6 +249,18 @@ COUPLING_ROWS: List[CouplingRow] = [
         (("gate", "gen_api_types.py"),)
         + (("vtest", "src/web/lib/__tests__/api-contract.test.ts"),),
     ),
+    CouplingRow(
+        "R27_planner_split_delegation",
+        "planner 拆分协作臂变更（豁免消费/分诊/FC 响应合并）",
+        "实现体迁出后 planner 同名委托必须保留（既有测试与调用方钉死委托方法）",
+        _sym(
+            "src.video_agent.core.planner_gate_session:consume_gate_overrides",
+            "src.video_agent.core.planner_triage:triage_control",
+            "src.video_agent.core.planner_triage:run_orchestrator_path",
+            "src.video_agent.core.fc_response:merge_fc_response",
+            "src.video_agent.core.planner:Planner._triage_control",
+        ) + (("testfile", "tests/unit/test_audit0819e_control_flow.py"),),
+    ),
 ]
 
 
