@@ -9,7 +9,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.video_agent.core import prompt_gates
+from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core.tracer import AgentTracer
 
 
@@ -39,6 +39,8 @@ def consume_gate_overrides(state_manager: Any, user_message: Any) -> Any:
                 scope=str(gate_override_scope),
             )
     except Exception as _e:
+        # 承重接线遥测（批 8）：豁免消费断线不再只进日志，降级端点可见
+        live_metrics.record_degradation("planner_gate_session.consume_gate_overrides")
         logger.warning("[GateOverride] 豁免消费失败（本次放行可能未生效，回落意图识别兜底）: {}", _e)
     if not gate_override_scope and isinstance(user_message, str):
         gate_override_scope = prompt_gates.user_insists_override(user_message) or False

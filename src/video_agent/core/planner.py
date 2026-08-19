@@ -269,6 +269,8 @@ class Planner:
             }
             self.state_manager.save_debounced()
         except Exception as _e:
+            # 承重接线遥测（批 8）：暂停登记断线降级端点可见（对勾派生依赖此登记）
+            record_degradation("planner._issue_pause")
             logger.warning("[PauseId] active_pause 登记失败（不影响暂停卡渲染）: {}", _e)
 
     # ---------- 核心对话入口 ----------
@@ -475,49 +477,10 @@ class Planner:
         def context_builder() -> str:
             return self._build_system_prompt(context)
 
-        # audit-0819e 步间回收（控制流统一）：每个 FC 批落盘后外层循环再评估
-        # 状态——确定性阶段就绪/应发机械卡即收回控制权（单一就绪单元语义）；
-        # 1111「入口错过=全程失控」根治：交接后模型循环不再是化外之地。
-        async def _between_steps_reclaim(step: int):
-            if not (settings.pipeline_orchestrator_enabled and context.skill_name):
-                return None
-            from src.video_agent.core import pipeline_orchestrator as _po
-
-            try:
-                outcome = await _po.orchestrate_turn(
-                    self.state_manager, context.skill_name, "")
-            except Exception as _e:
-                logger.warning("[ControlFlow] 步间回收评估失败（不阻断循环）: {}", _e)
-                return None
-            if outcome is None:
-                return None  # 创作型阶段就绪/无可推进 → 继续模型循环
-            if outcome.kind == "stage_failed":
-                # 回收保守化：确定性阶段失败不劫持模型循环（失败可见性
-                # 由闸机/回喂承接；仅机械卡与成功推进才回收控制权）
-                return None
-            try:
-                AgentTracer.get_instance().record_control_flow(
-                    "reclaim", outcome.kind, context.skill_name or "")
-            except Exception:
-                pass
-            if outcome.kind == "spec_pending":
-                msg, opts = prompt_gates.spec_collect_card(
-                    self.state_manager.state_dict)
-                return {"confirmation": msg, "confirmation_options": opts,
-                        "reason": "spec_pending"}
-            if outcome.kind == "script_pending":
-                return {"confirmation": outcome.message,
-                        "confirmation_options": outcome.options or [],
-                        "reason": "script_pending"}
-            if outcome.kind == "paused":
-                inter = self.state_manager.state_dict.setdefault("interaction", {})
-                inter["awaiting_confirmation"] = True
-                inter["confirmation_message"] = outcome.message
-                self.state_manager.save_debounced()
-                return {"confirmation": outcome.message,
-                        "confirmation_options": outcome.options or [],
-                        "reason": "paused"}
-            return {"text": outcome.message or "", "reason": outcome.kind}
+        # 步间回收（控制流统一）：每个 FC 批落盘后外层循环再评估状态——
+        # 确定性阶段就绪/应发机械卡即回收控制权（实现体 planner_triage.make_reclaim_hook）
+        _between_steps_reclaim = planner_triage.make_reclaim_hook(
+            self.state_manager, context.skill_name)
 
         # 委托给统一循环
         loop_result = await run_agent_loop(

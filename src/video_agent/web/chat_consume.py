@@ -8,7 +8,7 @@ from loguru import logger
 
 from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.config import settings
-from src.video_agent.core import prompt_gates
+from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core.sse_events import SSE_DOC_WRITTEN
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
@@ -78,6 +78,8 @@ async def _maybe_compact_history(
             )
             summary = (resp.content or "").strip()
         except Exception as e:
+            # 承重接线遥测（批 8）：compaction 失败回落原 history 不再是纯静默
+            live_metrics.record_degradation("chat_consume.session_compact")
             logger.warning(f"[ChatService] 会话 compaction 失败，保留原 history: {e}")
             return history
         if not summary:

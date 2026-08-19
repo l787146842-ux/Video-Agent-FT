@@ -36,7 +36,7 @@ from src.video_agent.core.round_end_policies import (
     run_round_end_policies,
     suggest_next_actions,
 )
-from src.video_agent.core import prompt_gates
+from src.video_agent.core import live_metrics, prompt_gates
 # 四轮 R0（N7 漂移清偿）：进度通道绑定顶层化；spec_wizard_active 经模块属性访问
 # （测试 patch 目标=registry 命名空间，顶层 from-import 会冻结绑定导致 patch 失效）
 from src.video_agent.skill_runtime.progress import (
@@ -133,6 +133,9 @@ async def run_agent_loop(
             try:
                 await on_event(event)
             except Exception as _e:
+                # 承重接线遥测（批 8）：事件通道静默降级不再只进 debug 日志，
+                # 断线经 /api/agent/degradations 可见（814R 型事故防复发）
+                live_metrics.record_degradation("agent_loop.event_emit")
                 logger.debug("[agent_loop] 忽略异常: {}", _e)
 
     result = AgentLoopResult()

@@ -144,6 +144,13 @@ SCAFFOLDS = (
         "test_pause_structure 回归",
         "季度审计",
         "invariant"),
+    ScaffoldEntry(
+        "I08", "src.video_agent.core.live_metrics:record_degradation",
+        "承重接线静默降级必须可观测（814R 型断线防复发：豁免消费/暂停登记/"
+        "会话压缩/事件通道/步间回收五点计数，/api/agent/degradations 暴露）",
+        "test_degradation_telemetry 回归",
+        "季度审计",
+        "invariant"),
 )
 
 # 棘轮基线（2-1 设立；每拆除一件随降，禁止上调）：scaffold 类计数只降不升。

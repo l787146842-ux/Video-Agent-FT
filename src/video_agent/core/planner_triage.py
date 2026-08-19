@@ -5,10 +5,12 @@
 交接后由阶段前置闸（platform.stage_precondition）与步间回收保底。
 进出结果全记 tracer.record_control_flow + [ControlFlow] 日志（控制流决策永不无据可查）。
 """
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from loguru import logger
 
+from src.video_agent.config import settings
+from src.video_agent.core import live_metrics
 from src.video_agent.core import pipeline_orchestrator as _po
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.tracer import AgentTracer
@@ -122,3 +124,54 @@ async def run_orchestrator_path(
         issue_pause(resp)
         return resp
     return response_factory(text=outcome.message or "", steps=1)
+
+
+def make_reclaim_hook(
+    state_manager: Any, skill: str,
+) -> Callable[[int], Awaitable[Optional[Dict[str, Any]]]]:
+    """构造步间回收钩子（控制流统一：FC 批落盘后外层循环再评估）。
+
+    确定性阶段就绪/应发机械卡即回收控制权（单一就绪单元语义）；
+    stage_failed 不劫持模型循环（失败可见性由闸机/回喂承接）；fail-open。
+    提为工厂函数（批 8）：回收评估失败降级可单独测试（降级遥测点位）。
+    """
+
+    async def _between_steps_reclaim(step: int) -> Optional[Dict[str, Any]]:
+        if not (settings.pipeline_orchestrator_enabled and skill):
+            return None
+        try:
+            outcome = await _po.orchestrate_turn(state_manager, skill, "")
+        except Exception as _e:
+            # 承重接线遥测（批 8）：回收评估失败 fail-open 不阻断，但降级可见
+            live_metrics.record_degradation("planner.between_steps_reclaim")
+            logger.warning("[ControlFlow] 步间回收评估失败（不阻断循环）: {}", _e)
+            return None
+        if outcome is None:
+            return None  # 创作型阶段就绪/无可推进 → 继续模型循环
+        if outcome.kind == "stage_failed":
+            # 回收保守化：确定性阶段失败不劫持模型循环
+            return None
+        try:
+            AgentTracer.get_instance().record_control_flow(
+                "reclaim", outcome.kind, skill or "")
+        except Exception:
+            pass
+        if outcome.kind == "spec_pending":
+            msg, opts = prompt_gates.spec_collect_card(state_manager.state_dict)
+            return {"confirmation": msg, "confirmation_options": opts,
+                    "reason": "spec_pending"}
+        if outcome.kind == "script_pending":
+            return {"confirmation": outcome.message,
+                    "confirmation_options": outcome.options or [],
+                    "reason": "script_pending"}
+        if outcome.kind == "paused":
+            inter = state_manager.state_dict.setdefault("interaction", {})
+            inter["awaiting_confirmation"] = True
+            inter["confirmation_message"] = outcome.message
+            state_manager.save_debounced()
+            return {"confirmation": outcome.message,
+                    "confirmation_options": outcome.options or [],
+                    "reason": "paused"}
+        return {"text": outcome.message or "", "reason": outcome.kind}
+
+    return _between_steps_reclaim

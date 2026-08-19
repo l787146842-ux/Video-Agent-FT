@@ -257,6 +257,7 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.core.planner_gate_session:consume_gate_overrides",
             "src.video_agent.core.planner_triage:triage_control",
             "src.video_agent.core.planner_triage:run_orchestrator_path",
+            "src.video_agent.core.planner_triage:make_reclaim_hook",
             "src.video_agent.core.fc_response:merge_fc_response",
             "src.video_agent.core.planner:Planner._triage_control",
         ) + (("testfile", "tests/unit/test_audit0819e_control_flow.py"),),
