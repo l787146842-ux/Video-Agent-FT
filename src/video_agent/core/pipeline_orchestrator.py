@@ -11,6 +11,8 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+import asyncio
+
 from loguru import logger
 
 from src.video_agent.core import prompt_gates
@@ -109,6 +111,114 @@ def current_stage(state: Dict[str, Any], skill: str) -> Optional[StageSpec]:
     return None
 
 
+# ---------- 3A：sidecar dependencies 消费（DAG 调度） ----------
+#
+# step 描述关键词 → 平台规范阶段。顺序即优先级：assembly 等特化阶段在前，
+# structure 作为兼底放最后。step 5 分镜表格图（运镜轨迹示意）属视觉锚点类，
+# 归入 ke_media 后其依赖边被吸收（6→[4,5] 坍缩为 shot_media→ke_media）。
+_STEP_STAGE_HINTS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("analysis", ("分析", "读取并", "剧本文件")),
+    ("spec", ("规格", "参数写入", "Final_Video_Spec")),
+    ("assembly", ("组装", "时间线", "剪辑")),
+    ("ke_media", ("设定图", "概念图", "三视图", "运镜轨迹", "分镜表格图")),
+    ("shot_media", ("生成视频", "逐 shot")),
+    ("audio_assets", ("音频", "BGM", "旁白")),
+    ("structure", ("Storyboard", "故事板", "key_element", "拆解")),
+)
+
+
+def _step_to_stage(
+    step_no: Any, manifest: Optional[Dict[str, Any]], table: List[StageSpec],
+) -> Optional[str]:
+    """sidecar step 号 → 平台规范阶段：① stage_executors 执行器交集；② 描述关键词。"""
+    flow = ((manifest or {}).get("flow") or {})
+    execs = (flow.get("stage_executors") or {}).get(str(step_no)) or []
+    if execs:
+        for spec in table:
+            if set(execs) & set(spec.executors):
+                return spec.key
+    desc = str((flow.get("steps") or {}).get(str(step_no)) or "")
+    keys = {s.key for s in table}
+    for key, kws in _STEP_STAGE_HINTS:
+        if key in keys and any(k in desc for k in kws):
+            return key
+    return None
+
+
+def _stage_dependencies(skill: str) -> Dict[str, List[str]]:
+    """sidecar flow.dependencies（step 号 DAG）翻译为平台阶段 DAG。
+
+    未声明返回空 dict（orchestrate_turn 回落线性扫描，零行为变更）；
+    无法映射的 step（如源协议细粒度步骤）其边被吸收并 warning。
+    """
+    manifest = registry.skill_manifest_of(skill) or {}
+    deps_raw = ((manifest.get("flow") or {}).get("dependencies") or {})
+    if not isinstance(deps_raw, dict) or not deps_raw:
+        return {}
+    table = stage_table(skill)
+    all_steps = {str(k) for k in deps_raw}
+    for prereqs in deps_raw.values():
+        for p in prereqs or []:
+            all_steps.add(str(p))
+    step2stage = {s: _step_to_stage(s, manifest, table) for s in all_steps}
+    out: Dict[str, List[str]] = {}
+    for step_no, prereqs in deps_raw.items():
+        tgt = step2stage.get(str(step_no))
+        if not tgt:
+            logger.warning(f"[Orchestrator] dependencies step {step_no} 无法映射到平台阶段，边被吸收")
+            continue
+        for p in prereqs or []:
+            src = step2stage.get(str(p))
+            if src and src != tgt:
+                lst = out.setdefault(tgt, [])
+                if src not in lst:
+                    lst.append(src)
+    # 未声明阶段回落线性前置（表中前一阶段），防「未声明 = 无前置」
+    # 打乱规范顺序（如 spec 首轮即就绪）；已声明阶段以声明为准（可并行）。
+    prev: Optional[str] = None
+    for spec in table:
+        if spec.key not in out and prev is not None:
+            out[spec.key] = [prev]
+        prev = spec.key
+    return out
+
+
+def next_batch(
+    state: Dict[str, Any], skill: str,
+) -> Tuple[List[StageSpec], bool]:
+    """拓扑就绪集：返回 (可执行确定性阶段批, 是否交接创作型阶段)。
+
+    就绪 = 自身未完成且前置阶段全部 stage_done；同批可并行。
+    有确定性阶段就绪时优先执行；仅创作型就绪时交接模型循环。
+    无 dependencies 声明 → 线性回落（第一个未完成阶段决定，零行为变更）。
+    """
+    table = stage_table(skill)
+    done = {s.key: stage_done(s.key, state) for s in table}
+    if all(done.values()):
+        return [], False
+    deps = _stage_dependencies(skill)
+    if not deps:
+        for spec in table:
+            if not done[spec.key]:
+                if not spec.deterministic:
+                    return [], True
+                return [spec], False
+        return [], False
+    ready: List[StageSpec] = []
+    handoff = False
+    for spec in table:
+        if done[spec.key]:
+            continue
+        if all(done.get(p, False) for p in deps.get(spec.key, ())):
+            if spec.deterministic:
+                ready.append(spec)
+            else:
+                handoff = True
+    if ready:
+        return ready, False
+    return [], handoff
+
+
 async def run_deterministic_stage(
     skill: str, spec: StageSpec, *, max_retry: int = 1,
 ) -> List[Any]:
@@ -178,20 +288,20 @@ def flow_auto_continue(state: Dict[str, Any]) -> bool:
 async def orchestrate_turn(
     state_manager: Any, skill: str, user_message: Any = "",
 ) -> Optional[OrchestratorOutcome]:
-    """编排一轮：连续推进确定性阶段直到暂停/交接/失败。
+    """编排一轮：按拓扑就绪集推进确定性阶段直到暂停/交接/失败（3A DAG 化）。
 
-    返回 None = 当前阶段为创作型，交接模型循环（B2 接线）。
+    返回 None = 创作型阶段就绪或前置未决，交接模型循环（B2 接线）。
     原料闸（814H9 能力迁入）：analysis 阶段且剧本缺失且未豁免 →
     机械回提醒卡/上传回执，不出题给模型。
+    无 dependencies 声明时 next_batch 回落线性扫描（零行为变更）。
     """
     state = state_manager.state_dict
     auto = flow_auto_continue(state)
     msg = str(user_message or "")
     while True:
-        spec = current_stage(state, skill)
-        if spec is None:
-            return OrchestratorOutcome("all_done", message="全部阶段已完成。")
-        if spec.key == "analysis":
+        table = stage_table(skill)
+        # 原料闸：analysis 在表且未完成时才判定
+        if any(s.key == "analysis" and not stage_done("analysis", state) for s in table):
             inter = state.get("interaction") or {}
             if (
                 registry.script_required_active(skill)
@@ -208,20 +318,37 @@ async def orchestrate_turn(
                 card_msg, card_opts = prompt_gates.script_remind_card()
                 return OrchestratorOutcome(
                     "script_pending", message=card_msg, options=card_opts)
-        if not spec.deterministic:
-            return None
-        if spec.key == "spec":
+        batch, handoff = next_batch(state, skill)
+        if not batch:
+            if all(stage_done(s.key, state) for s in table):
+                return OrchestratorOutcome("all_done", message="全部阶段已完成。")
+            if handoff:
+                return None  # 创作型阶段就绪，交接模型循环
+            return None  # 前置未决/状态异常，安全交接模型循环
+        if any(s.key == "spec" for s in batch):
             return OrchestratorOutcome("spec_pending")
-        results = await run_deterministic_stage(skill, spec)
-        failed = [r for r in results if not getattr(r, "success", False)]
-        if failed:
-            return OrchestratorOutcome(
-                "stage_failed",
-                message=f"阶段「{spec.title}」执行失败：{failed[0].error}",
-                results=results,
-            )
-        nxt = current_stage(state, skill)
+        # 同批并行（执行器幂等 + 确定性重试）；单批串行保持原语义
+        if len(batch) > 1:
+            per = list(zip(
+                batch,
+                await asyncio.gather(
+                    *(run_deterministic_stage(skill, s) for s in batch)),
+            ))
+        else:
+            per = [(batch[0], await run_deterministic_stage(skill, batch[0]))]
+        results = [r for _, rs in per for r in rs]
+        for spec, rs in per:
+            failed = [r for r in rs if not getattr(r, "success", False)]
+            if failed:
+                return OrchestratorOutcome(
+                    "stage_failed",
+                    message=f"阶段「{spec.title}」执行失败：{failed[0].error}",
+                    results=results,
+                )
         if auto:
             continue
-        msg, opts = compose_pause_card(state, skill, spec, nxt)
-        return OrchestratorOutcome("paused", message=msg, options=opts, results=results)
+        nxt, _ = next_batch(state, skill)
+        next_spec = nxt[0] if nxt else None
+        pause_msg, opts = compose_pause_card(state, skill, batch[-1], next_spec)
+        return OrchestratorOutcome(
+            "paused", message=pause_msg, options=opts, results=results)

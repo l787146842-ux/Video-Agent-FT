@@ -7,6 +7,8 @@
 ③ run_deterministic_stage 按批直调 + 确定性重试；
 ④ 暂停卡纯客观事实，总结入卡随 sidecar 声明；
 ⑤ orchestrate_turn：分析完成即边界暂停；flow_directive 豁免则续进至 spec_pending。
+   （3A DAG 化后：已声明 dependencies 的阶段以声明为准可并行——audio 只依赖
+   structure，会与创作型 ke_media 竞争就绪；未声明阶段回落线性前置。）
 """
 import asyncio
 
@@ -167,6 +169,8 @@ async def test_orchestrate_turn_auto_continue_reaches_spec_pending(tmp_path, mon
 
 @pytest.mark.asyncio
 async def test_orchestrate_turn_handoff_at_creative_stage(tmp_path):
+    """3A DAG 语义：audio 已完（只依赖 structure）且 ke_media 未完成 →
+    创作型 ke_media 就绪 → 交接模型循环。"""
     from src.video_agent.state.manager import StateManager
 
     svc = StateManager(str(tmp_path / "ws"))
@@ -175,7 +179,8 @@ async def test_orchestrate_turn_handoff_at_creative_stage(tmp_path):
         {"name": "Final_Video_Spec.md", "content": "- 画幅：16:9\n"}]
     svc.state_dict["keyElements"] = [{"id": "ke1", "drafts": []}]
     svc.state_dict["shots"] = [{"id": "s1", "drafts": []}]
-    svc.state_dict["audioItems"] = [{"id": "a1", "drafts": []}]
+    # audio 阶段已完成（DAG 下它与 ke_media 并行，先完不等）
+    svc.state_dict["audioItems"] = [{"id": "a1", "drafts": [{"prompt": "BGM：低沉"}]}]
     outcome = await po.orchestrate_turn(svc, SKILL)
     assert outcome is None, "创作型阶段交接模型循环（混合模式）"
 
