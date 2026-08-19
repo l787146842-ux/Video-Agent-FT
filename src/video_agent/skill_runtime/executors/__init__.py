@@ -21,7 +21,6 @@ from src.video_agent.skill_runtime.exec_common import (
     _SCRIPT_INJECT_LIMIT,
     _script_inject_limit,
     _build_script_hint,
-    _parse_actions_from_text,
     _PROGRESSIVE_FLUSH_N,
     _PROGRESSIVE_FLUSH_SECS,
     _extract_complete_objects,

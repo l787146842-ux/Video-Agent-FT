@@ -69,7 +69,7 @@ def test_delete_missing_returns_zero(executor):
     assert executor.execute([{"action": "delete_group", "group_id": "no-such"}]) == 0
 
 
-async def test_request_confirmation_pauses_loop(svc, executor):
+async def test_workflow_pause_pauses_loop(svc, executor):
     """LLM 经 workflow_pause 工具请求确认后循环必须停下
     （audit-0819b：确认经第 5 元组结构化上抛，不再经文本块）"""
     calls = {"n": 0}

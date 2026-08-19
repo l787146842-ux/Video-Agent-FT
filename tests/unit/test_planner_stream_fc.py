@@ -1,6 +1,4 @@
 """P0-1/P0-2 回归：流式 Function Calling 工具调用执行 + confirmation JSON 注入防护"""
-import json
-import re
 from types import SimpleNamespace
 
 import pytest
@@ -135,8 +133,9 @@ class TestConfirmationJsonInjection:
         done = next(e for e in collected if e.type == "done")
         assert done.payload["confirmation"] == malicious
 
-    async def test_fc_confirmation_block_is_valid_json(self, svc):
-        """llm_call 拼出的 studio-actions 块必须是可解析的合法 JSON"""
+    async def test_fc_confirmation_no_synthesized_block(self, svc):
+        """audit-0819b/d 防泄漏根治：确认经结构化 extra 上抛，
+        planner 不得再合成 studio-actions 文本块；含引号/换行的确认文案不损坏"""
         malicious = '含"双引号"和\n换行的确认消息'
         adapter = FakeStreamFCAdapter([("workflow_pause", {"message": malicious})])
         planner = Planner(llm_adapter=adapter, tool_manager=FakeToolManager)
@@ -144,10 +143,5 @@ class TestConfirmationJsonInjection:
         result = await planner.handle_message(
             "开始", PlannerContext(use_studio_context=False), stream_hook=make_hook(),
         )
-        # 文本协议路径会在 content 中附加 studio-actions 块；提取并解析
-        m = re.search(r"```studio-actions\n(.*?)\n```", result.text, re.S)
-        if m:  # run_agent_loop 可能已消费；只要能解析即证明无注入
-            actions = json.loads(m.group(1))
-            assert actions[0]["action"] == "request_confirmation"
-            assert actions[0]["message"] == malicious
+        assert "```studio-actions" not in (result.text or ""), "合成块通道已退役，不得复活"
         assert result.confirmation == malicious

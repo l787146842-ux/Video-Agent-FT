@@ -5,8 +5,8 @@
 假停兜底（轮末策略在纯文本轮执行）、坏输出重试。
 
 文本块解析路径（continue/确认/动作经 studio-actions 文本）已随双轨退役
-删除，对应旧用例同批退役；暂停确认现唯一经 workflow_pause /
-request_confirmation FC 工具产生（fc_tool_runner → 5 元组 extra 上抛）。
+删除，对应旧用例同批退役；暂停确认现唯一经 workflow_pause FC 工具产生
+（单一正名，audit-0819d；fc_tool_runner → 5 元组 extra 上抛）。
 """
 import pytest
 
