@@ -33,10 +33,26 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
 
             if spec_rules.ensure_iron_rules_doc(svc.state_dict):
                 svc.save_debounced()
+            # 暂停回应结构化消费（与真实轨 consume_pause_response 同语义；
+            # chat_consume 导入本模块，反向导入会成环，同下方规格卡先例内联）
+            _pr = getattr(body, "pause_response", None) or {}
+            _pid = str(_pr.get("pause_id") or "").strip()
+            _inter_pm = svc.state_dict.get("interaction") or {}
+            _pause_answered = None
+            if _pid and str((_inter_pm.get("active_pause") or {}).get("pause_id") or "") == _pid:
+                _inter_pm.pop("active_pause", None)
+                svc.save_debounced()
+                _pause_answered = {
+                    "pause_id": _pid,
+                    "value": str(_pr.get("value") or ""),
+                    "label": str(_pr.get("label") or ""),
+                }
             svc.add_chat_message(
                 "user", user_text,
                 doc_blocks=getattr(body, "doc_blocks", None) or None,
                 skill_blocks=getattr(body, "skill_blocks", None) or None,
+                pause_answered=_pause_answered,
+                kind=getattr(body, "system_action", "") or "",
             )
             # 0817 B14：向导挂起的规格卡补落（用户消息之后；chat_consume 导入
             # 本模块，反向导入会成环，同语义 4 行内联）

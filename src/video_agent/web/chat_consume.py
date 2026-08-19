@@ -90,6 +90,31 @@ async def _maybe_compact_history(
     ] + history[-_HISTORY_COMPACT_KEEP:]
 
 
+def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
+    """消费暂停回应结构化回携（对标 AskUserQuestion 范式）。
+
+    用户点选暂停卡选项时请求携带 {"pause_id", "value", "label"}；与
+    interaction.active_pause 登记匹配即清除登记并返回持久化标记
+    {"pause_id", "value", "label"}；不匹配（旧卡/自由打字）返回 None。
+    LLM 语义不变：消息正文仍照常入 history，本函数只产出展示层标记。
+    调用方需持有 svc.lock。
+    """
+    pid = str((pause_response or {}).get("pause_id") or "").strip()
+    if not pid:
+        return None
+    interaction = svc.state_dict.get("interaction") or {}
+    active = interaction.get("active_pause") or {}
+    if str(active.get("pause_id") or "") != pid:
+        return None
+    interaction.pop("active_pause", None)
+    svc.save_debounced()
+    return {
+        "pause_id": pid,
+        "value": str((pause_response or {}).get("value") or ""),
+        "label": str((pause_response or {}).get("label") or ""),
+    }
+
+
 def _consume_pending_confirmation(svc, user_text: str = "") -> str:
     """消费「等待确认」暂停态：用户的新消息即是对上一轮暂停的回应。
 

@@ -370,10 +370,15 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         if use_studio_context:
             bind_attachments(svc, body.attachments)
             store_uploaded_docs(svc, body.attachments)
+            # 暂停回应结构化消费：点选回应与 active_pause 匹配即落标记（展示层）
+            pause_answered = consume_pause_response(
+                svc, getattr(body, "pause_response", None) or None)
             svc.add_chat_message(
                 "user", user_text,
                 doc_blocks=getattr(body, "doc_blocks", None) or None,
                 skill_blocks=getattr(body, "skill_blocks", None) or None,
+                pause_answered=pause_answered,
+                kind=getattr(body, "system_action", "") or "",
             )
             # 0817 B14/B19：向导挂起的规格卡补落（用户消息之后）并发即显事件
             await emit_pending_doc_card(svc, turn_id, emit)
@@ -534,6 +539,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                         trace=final_payload.get("trace") or {},
                         confirm_options=final_payload.get("confirmation_options") or None,
                         turn_id=turn_id,
+                        pause_id=str(final_payload.get("pause_id") or ""),
                     )
                 # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合，S2）
                 for doc_name in (final_payload.get("documents_written") or []):
@@ -725,10 +731,15 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         if use_studio_context:
             bind_attachments(svc, body.attachments)
             store_uploaded_docs(svc, body.attachments)
+            # 暂停回应结构化消费（G4：非流式路径同构）
+            ns_pause_answered = consume_pause_response(
+                svc, getattr(body, "pause_response", None) or None)
             svc.add_chat_message(
                 "user", user_text,
                 doc_blocks=getattr(body, "doc_blocks", None) or None,
                 skill_blocks=getattr(body, "skill_blocks", None) or None,
+                pause_answered=ns_pause_answered,
+                kind=getattr(body, "system_action", "") or "",
             )
             # 0817 B14/B19：规格卡补落（用户消息之后，G4 非流式轨同步），名字随载荷下发
             _wiz_card_ns = flush_pending_doc_card(svc)
@@ -839,6 +850,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     action_log=drain_pending_action_log(svc) + (result.action_log or []),
                     confirm_options=result.confirmation_options or None,
                     turn_id=ns_turn_id,
+                    pause_id=result.pause_id,
                 )
             if result.image_urls:
                 svc.add_chat_message("agent", "", image_urls=result.image_urls, turn_id=ns_turn_id)
@@ -846,6 +858,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     return {
         "text": result.text, "applied_actions": result.applied_actions, "steps": result.steps,
         "warnings": result.warnings, "confirmation": result.confirmation,
+        "pause_id": result.pause_id,
         "documents_written": result.documents_written + ([_wiz_card_ns] if _wiz_card_ns else []),
         "image_urls": result.image_urls,
         "state": svc.get_full_snapshot() if use_studio_context else None,
@@ -882,6 +895,7 @@ from src.video_agent.web.chat_consume import (
     _consume_spec_wizard,
     _finalize_spec_params,
     _maybe_compact_history,
+    consume_pause_response,
     drain_pending_action_log,
     emit_pending_doc_card,
     flush_pending_doc_card,

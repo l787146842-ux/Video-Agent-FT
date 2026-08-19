@@ -1,7 +1,7 @@
 import { createEffect, createSignal, createMemo, For, Show, onCleanup } from 'solid-js';
 import { chatState } from '@/stores/chat';
 import { t } from '@/lib/locale';
-import { groupTurns, suggestedTargetIndex } from '@/lib/turn-groups';
+import { groupTurns, suggestedTargetIndex, answeredValueFor } from '@/lib/turn-groups';
 import { ChatMessageItem } from './ChatMessageItem';
 import { StreamingIndicator } from './StreamingIndicator';
 import { StreamingBubble } from './StreamingBubble';
@@ -88,15 +88,12 @@ export function ChatFeed() {
     return 'expired';
   };
 
-  /** 五轮 S2/#12：已回应暂停卡的「当时选了哪项」——其后首条用户消息文本
-   * （选项 value/label 机械消费，回复内容即所选值；无匹配时返回空串防误标） */
-  const answeredValueFor = (idx: number): string => {
+  /** 五轮 S2/#12：已回应暂停卡的「当时选了哪项」——结构化优先（pauseAnsweredId 与
+   * 暂停卡 pauseId 匹配，对标 AskUserQuestion 权威登记派生），旧消息回落文本匹配；
+   * 纯函数在 lib/turn-groups，vitest 钉死 */
+  const answeredValueForIdx = (idx: number): string => {
     if (confirmStateFor(idx) !== 'answered') return '';
-    const msgs = chatState.messages;
-    for (let i = idx + 1; i < msgs.length; i += 1) {
-      if (msgs[i].sender === 'user') return (msgs[i].text || '').trim();
-    }
-    return '';
+    return answeredValueFor(chatState.messages, idx);
   };
 
   /** 五轮 S2/#2：轮次分组（同 turnId 聚合，旧消息相邻兜底）——一轮的
@@ -128,7 +125,7 @@ export function ChatFeed() {
                 isGateTarget={g.indices[0] === gateWarningTargetIdx()}
                 isSuggestedTarget={g.indices[0] === suggestedTargetIdx()}
                 confirmState={confirmStateFor(g.indices[0])}
-                answeredValue={answeredValueFor(g.indices[0])}
+                answeredValue={answeredValueForIdx(g.indices[0])}
               />
             }
           >
@@ -149,7 +146,7 @@ export function ChatFeed() {
                     isGateTarget={idx === gateWarningTargetIdx()}
                     isSuggestedTarget={idx === suggestedTargetIdx()}
                     confirmState={confirmStateFor(idx)}
-                    answeredValue={answeredValueFor(idx)}
+                    answeredValue={answeredValueForIdx(idx)}
                     hideChrome
                   />
                 )}

@@ -57,16 +57,15 @@ export function ConfirmActions(props: { message: ChatMessage }) {
 
   /** B2/F16：选项携带 value 时发送 value（后端确定性消费），否则发送 label */
   const valueFor = (label: string) =>
-    (options() || []).find((o) => (o.label === label && (o.value || '').trim()))?.value || label;
+    (options() || []).find((o) => o.label === label && (o.value || '').trim())?.value || label;
 
-  const sendAll = () => {
-    const lines = groups().map((g) => valueFor(effective(g.title))).filter(Boolean);
-    if (lines.length) void sendUserMessage(lines.join('\n'));
-  };
-  const sendSingle = () => {
-    const v = valueFor(effective(SINGLE_KEY));
-    if (v) void sendUserMessage(v);
-  };
+  /** 暂停回应结构化回携（AskUserQuestion 范式）：点选发送携带 pause_id，
+   *  「当时所选」对勾从后端权威登记派生，不再靠文本反推 */
+  const pauseOpts = (value: string, pid = msg().pauseId || '') => (pid
+    ? { pauseResponse: { pause_id: pid, value } } : {});
+  const sendPicked = (text: string) => { if (text) void sendUserMessage(text, pauseOpts(text)); };
+  const sendAll = () => sendPicked(groups().map((g) => valueFor(effective(g.title))).filter(Boolean).join('\n'));
+  const sendSingle = () => sendPicked(valueFor(effective(SINGLE_KEY)));
 
   const pickCard = (key: string, label: string) => {
     setPicks({ ...picks(), [key]: label });
@@ -117,8 +116,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
             // Ctrl/Cmd+Enter 快捷发送（普通回车允许换行写多行）
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
               e.preventDefault();
-              const v = (customText()[key] || '').trim();
-              if (v) void sendUserMessage(v);
+              sendPicked((customText()[key] || '').trim());
             }
           }}
         />

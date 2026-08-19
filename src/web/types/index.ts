@@ -206,6 +206,13 @@ export interface ChatMessage {
   /** 五轮 S3/#3：建议动作按钮（随 done payload 落消息，仅最后一条渲染；
    * 八轮 B4 扩 next=状态驱动下一步建议，点击机械发送 value） */
   suggestedActions?: Array<{ kind: 'retry' | 'continue' | 'next'; label: string; value: string }>;
+  /** 暂停卡结构化标识（后端三个 confirm 产生源统一签发，随 done payload 下发） */
+  pauseId?: string;
+  /** 用户回应暂停的结构化标记（与对应暂停卡的 pauseId 匹配；对勾不再靠文本反推） */
+  pauseAnsweredId?: string;
+  pauseAnsweredValue?: string;
+  /** 消息形态标记：system_action=系统动作行（如「本次放行」），不渲染为用户气泡 */
+  kind?: 'system_action' | string;
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
@@ -303,6 +310,8 @@ export interface SseDonePayload {
   steps: number;
   applied_actions: number;
   confirmation?: string;
+  /** 暂停卡结构化标识（用户点选回应时经 pause_response 结构化回携） */
+  pause_id?: string;
   documents_written?: string[];
   warnings?: string[];
   image_urls?: string[];

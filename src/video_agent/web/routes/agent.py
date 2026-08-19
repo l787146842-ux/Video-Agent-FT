@@ -91,6 +91,14 @@ class ChatRequest(BaseModel):
     # 会话级推理档位（814H7 对话栏「推理等级」选择器）：low/medium/high；
     # ""=默认（模型原生能力，不下发 reasoning_effort）
     thinking_level: str = ""
+    # 暂停回应结构化回携（对标 AskUserQuestion 范式）：用户点选暂停卡选项时
+    # 携带 {"pause_id", "value", "label"}；后端校验与 interaction.active_pause
+    # 匹配后随用户消息持久化 pauseAnsweredId/Value，前端对勾不再靠文本反推。
+    # 自由打字回应不携带，LLM 语义不变（消息正文仍是唯一输入）
+    pause_response: Dict[str, str] = {}
+    # 系统动作标记（如 gate_override=「本次放行」）：携带时用户消息持久化带
+    # kind 标记，前端渲染为系统动作行而非用户气泡（LLM 语义不变）
+    system_action: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -99,6 +107,7 @@ class ChatResponse(BaseModel):
     steps: int = 1
     warnings: List[str] = []
     confirmation: str = ""
+    pause_id: str = ""
     documents_written: List[str] = []
     # P0 修复：补齐 non_stream_worker 实际返回的字段，
     # 此前被 response_model 静默过滤导致非流式端点丢失生图结果

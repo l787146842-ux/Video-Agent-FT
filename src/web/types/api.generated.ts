@@ -57,6 +57,8 @@ export interface ChatRequest {
   gate_overrides?: string[];
   user_id?: string;
   thinking_level?: string;
+  pause_response?: Record<string, unknown>;
+  system_action?: string;
 }
 
 export interface ChatResponse {
@@ -65,6 +67,7 @@ export interface ChatResponse {
   steps?: number;
   warnings?: string[];
   confirmation?: string;
+  pause_id?: string;
   documents_written?: string[];
   image_urls?: string[];
   chat_inserts?: Record<string, unknown>[];

@@ -174,6 +174,8 @@ export const chatActions = {
         memoryHits: (payload.memory_hits || []).length ? payload.memory_hits : undefined,
         thinkingMs: thinkingMs || undefined,
         turnId,
+        // 暂停卡结构化标识（用户点选回应时经 pause_response 结构化回携，对勾不再靠文本反推）
+        pauseId: payload.pause_id || undefined,
         // 五轮 S3/#3：建议动作按钮（重试/继续，确定性交互；仅最后一条消息渲染）
         suggestedActions: (payload.suggested_actions || []).length
           ? payload.suggested_actions : undefined,

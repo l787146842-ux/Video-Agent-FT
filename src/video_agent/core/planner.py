@@ -11,6 +11,7 @@ Planner — 对话式 Agent 的唯一入口（Rule1）。
 import asyncio
 import json
 import time
+import uuid
 from dataclasses import dataclass, field, replace as dc_replace
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple, Union
 
@@ -125,6 +126,10 @@ class PlannerResponse:
     memory_hits: List[Dict[str, Any]] = field(default_factory=list)
     # 五轮 S3/#3：建议动作按钮（重试/继续，确定性交互；详见 agent_loop 同名字段）
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
+    # 暂停卡结构化标识（对标 AskUserQuestion 范式）：三个 confirm 产生源
+    # （FC workflow_pause / 编排器机械卡 / 轮末策略卡）在两个汇流点统一签发，
+    # 随 done payload 下发；用户回应经 ChatRequest.pause_response 结构化回携
+    pause_id: str = ""
 
 
 @dataclass
@@ -241,6 +246,29 @@ class Planner:
         """当前模型的上下文窗口（按模型名查表，缺省回落全局配置）"""
         model = getattr(self.llm_adapter, "model", "") if self.llm_adapter else ""
         return context_window_for_model(model, provider_id=getattr(self, "chat_provider", "") or "")
+
+    # ---------- 暂停卡结构化签发（单一实现，两个汇流点共用） ----------
+
+    def _issue_pause(self, response: "PlannerResponse") -> None:
+        """为携带 confirmation 的响应签发 pause_id 并登记 interaction.active_pause。
+
+        汇流点一（handle_message 轮末组装后）覆盖 FC workflow_pause 与轮末策略卡；
+        汇流点二（_run_orchestrator_path）覆盖编排器机械卡。登记不改变
+        awaiting_confirmation 既有语义（分诊/消费链零行为变更），只叠加结构化标识。
+        """
+        if not response.confirmation:
+            return
+        response.pause_id = uuid.uuid4().hex[:12]
+        try:
+            inter = self.state_manager.state_dict.setdefault("interaction", {})
+            inter["active_pause"] = {
+                "pause_id": response.pause_id,
+                "message": response.confirmation,
+                "options": list(response.confirmation_options or []),
+            }
+            self.state_manager.save_debounced()
+        except Exception as _e:
+            logger.warning("[PauseId] active_pause 登记失败（不影响暂停卡渲染）: {}", _e)
 
     # ---------- 核心对话入口 ----------
 
@@ -550,6 +578,9 @@ class Planner:
             aggregate_action_log=aggregate_action_log,
         )
 
+        # 暂停卡结构化签发（汇流点一）：FC workflow_pause 与轮末策略卡均在此汇流
+        self._issue_pause(response)
+
         # 记忆系统：后台异步记录本轮对话（不阻塞响应流），按项目隔离
         if settings.memory_enabled:
             MemoryManager.get_instance().record_dialog_background(
@@ -661,6 +692,7 @@ class Planner:
             "steps": result.steps,
             "warnings": result.warnings,
             "confirmation": result.confirmation,
+            "pause_id": result.pause_id,
             "documents_written": result.documents_written,
             "image_urls": result.image_urls,
             "chat_inserts": result.chat_inserts,
@@ -853,23 +885,29 @@ class Planner:
         if outcome is None:
             return None
         if outcome.kind == "script_pending":
-            return PlannerResponse(
+            resp = PlannerResponse(
                 text=outcome.message, confirmation=outcome.message,
                 confirmation_options=outcome.options or [], steps=1)
+            self._issue_pause(resp)
+            return resp
         if outcome.kind == "script_ack":
             return PlannerResponse(text=outcome.message, steps=1)
         if outcome.kind == "spec_pending":
             msg, opts = prompt_gates.spec_collect_card(self.state_manager.state_dict)
-            return PlannerResponse(
+            resp = PlannerResponse(
                 text="", confirmation=msg, confirmation_options=opts, steps=1)
+            self._issue_pause(resp)
+            return resp
         if outcome.kind == "paused":
             inter = self.state_manager.state_dict.setdefault("interaction", {})
             inter["awaiting_confirmation"] = True
             inter["confirmation_message"] = outcome.message
             self.state_manager.save_debounced()
-            return PlannerResponse(
+            resp = PlannerResponse(
                 text=outcome.message, confirmation=outcome.message,
                 confirmation_options=outcome.options or [], steps=1)
+            self._issue_pause(resp)
+            return resp
         return PlannerResponse(text=outcome.message or "", steps=1)
 
     async def _handle_fc_response(

@@ -63,7 +63,14 @@ function normalizeParts(input: string | RichContentPart[]): RichContentPart[] {
  */
 export async function sendUserMessage(
   input: string | RichContentPart[],
-  opts?: { gateOverrides?: string[] },
+  opts?: {
+    gateOverrides?: string[];
+    /** 暂停回应结构化回携（对标 AskUserQuestion）：点选暂停卡选项时携带，
+     *  后端校验后随消息持久化标记，前端对勾不再靠文本反推 */
+    pauseResponse?: { pause_id: string; value: string; label?: string };
+    /** 系统动作标记（如 gate_override）：本地与持久化消息渲染为系统动作行 */
+    systemAction?: string;
+  },
 ): Promise<boolean> {
   const parts = normalizeParts(input);
   const mediaParts = parts.filter((p) => p.type !== 'text') as Array<
@@ -139,6 +146,8 @@ export async function sendUserMessage(
     sender: 'user', text: message, parts,
     docBlocks: docBlocks.length ? docBlocks : undefined,
     skillBlocks: skillBlocks.length ? skillBlocks : undefined,
+    // 系统动作（如「本次放行」）不占用户气泡形态，渲染为系统动作行
+    kind: opts?.systemAction || undefined,
   });
   chatActions.setInput('');
   studioActions.setPendingAttachments([]);
@@ -167,6 +176,10 @@ export async function sendUserMessage(
     skill_blocks: skillBlocks,
     // 会话层一次性闸机豁免（814F7）：「本次放行」按钮携带，后端单次消费即清除
     ...(opts?.gateOverrides?.length ? { gate_overrides: opts.gateOverrides } : {}),
+    // 暂停回应结构化回携：后端与 active_pause 匹配后落 pauseAnsweredId/Value 标记
+    ...(opts?.pauseResponse ? { pause_response: opts.pauseResponse } : {}),
+    // 系统动作标记：后端随用户消息持久化 kind，刷新后仍可重建系统动作行
+    ...(opts?.systemAction ? { system_action: opts.systemAction } : {}),
     // 814H7：会话级推理档位（''=默认/模型原生）
     thinking_level: agentThinkingLevel(),
   };

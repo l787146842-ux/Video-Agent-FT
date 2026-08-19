@@ -115,9 +115,14 @@ export function ChatMessageItem(props: {
     return out;
   };
 
-  /** 本次放行（§2.4）：显式用户指令 + gate_overrides 随消息留痕，后端单次消费 */
+  /** 本次放行（§2.4）：显式用户指令 + gate_overrides 随消息留痕，后端单次消费。
+   *  系统动作形态（对标业界 harness：系统操作不混入用户话语流），
+   *  渲染为系统动作行而非用户气泡；LLM 语义不变（正文仍照常入 history） */
   const overrideOnce = () => {
-    void sendUserMessage('放行本次拦截，继续任务', { gateOverrides: ['all'] });
+    void sendUserMessage('放行本次拦截，继续任务', {
+      gateOverrides: ['all'],
+      systemAction: 'gate_override',
+    });
   };
 
   /** 用户气泡正文：纯 Skill 唤起时正文与 Skill 块重名，隐藏正文只留块 */
@@ -373,8 +378,13 @@ export function ChatMessageItem(props: {
         </Show>
       </Show>
 
+      {/* 系统动作行（如「本次放行」）：不占用户气泡形态，回看不误认为用户打过这句话 */}
+      <Show when={isUser() && msg().kind === 'system_action'}>
+        <div class="system-action-line">{msg().text}</div>
+      </Show>
+
       {/* 用户气泡：Skill 块/文档块与正文、内联媒体同一个气泡展示（Q5） */}
-      <Show when={isUser() && (userText() || hasRefBlocks() || hasInlineMedia())}>
+      <Show when={isUser() && msg().kind !== 'system_action' && (userText() || hasRefBlocks() || hasInlineMedia())}>
         <Show
           when={hasInlineMedia()}
           fallback={

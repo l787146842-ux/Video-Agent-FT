@@ -137,6 +137,13 @@ SCAFFOLDS = (
         "gate_corpus 黄金语料校准",
         "季度审计",
         "invariant"),
+    ScaffoldEntry(
+        "I07", "src.video_agent.core.planner:Planner._issue_pause",
+        "暂停/回应是结构化事件而非文本猜测（对标 AskUserQuestion："
+        "用户选择经结构化通道回携，展示层状态从权威登记派生）",
+        "test_pause_structure 回归",
+        "季度审计",
+        "invariant"),
 )
 
 # 棘轮基线（2-1 设立；每拆除一件随降，禁止上调）：scaffold 类计数只降不升。

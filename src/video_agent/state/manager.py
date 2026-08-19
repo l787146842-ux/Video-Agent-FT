@@ -704,6 +704,9 @@ class StateManager(UndoRedoMixin):
         confirm_options: Optional[List[Dict[str, Any]]] = None,
         turn_id: str = "",
         error_detail: str = "",
+        pause_id: str = "",
+        pause_answered: Optional[Dict[str, str]] = None,
+        kind: str = "",
     ):
         """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，防止状态文件无上限增长。
 
@@ -716,6 +719,10 @@ class StateManager(UndoRedoMixin):
         前端以可点击的块状形式展示（点击可查看对应文档）。
         turn_id（五轮 S2/#2）：轮次唯一标识（同轮的正文/文档卡/图片卡共用），
         前端据此把一轮产出聚合进同一轮次容器，消除消息流碎片化。
+        pause_id：agent 暂停卡的结构化标识（三个 confirm 产生源统一签发），
+        用户回应消息经 pause_answered 回携，前端「当时所选」对勾不再靠文本反推。
+        pause_answered：用户回应暂停的结构化标记 {"pause_id", "value", "label"}。
+        kind：消息形态标记（如 system_action=系统动作行，不渲染为用户气泡）。
         """
         self._ensure_conversations()
         msgs = self._raw_state["chatMessages"]
@@ -744,6 +751,13 @@ class StateManager(UndoRedoMixin):
             entry["confirmOptions"] = list(confirm_options)
         if turn_id:
             entry["turnId"] = turn_id
+        if pause_id:
+            entry["pauseId"] = pause_id
+        if pause_answered:
+            entry["pauseAnsweredId"] = str(pause_answered.get("pause_id") or "")
+            entry["pauseAnsweredValue"] = str(pause_answered.get("value") or "")
+        if kind:
+            entry["kind"] = kind
         if error_detail:
             # audit-0819：错误气泡的技术详情（上游原始报文），前端折叠展示
             entry["errorDetail"] = error_detail

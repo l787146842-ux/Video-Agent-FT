@@ -62,3 +62,20 @@ export function suggestedTargetIndex(
   }
   return candidate;
 }
+
+/** 已回应暂停卡的「当时所选值」（对标 AskUserQuestion：展示层状态从权威登记派生）。
+ * 优先结构化匹配：其后首条携带 pauseAnsweredId 且与暂停卡 pauseId 相等的用户消息；
+ * 旧消息（无结构化标记）回落文本匹配：其后首条用户消息文本即所选值。
+ * 纯函数，vitest 钉死。 */
+export function answeredValueFor(messages: ChatMessage[], idx: number): string {
+  const pid = messages[idx].pauseId;
+  for (let i = idx + 1; i < messages.length; i += 1) {
+    const m = messages[i];
+    if (m.sender !== 'user') continue;
+    // 系统动作行（如「本次放行」）不构成对暂停的回应
+    if (m.kind === 'system_action') continue;
+    if (pid && m.pauseAnsweredId === pid) return (m.pauseAnsweredValue || '').trim();
+    return (m.text || '').trim();
+  }
+  return '';
+}

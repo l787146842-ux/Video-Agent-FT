@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupTurns, suggestedTargetIndex } from '../turn-groups';
+import { groupTurns, suggestedTargetIndex, answeredValueFor } from '../turn-groups';
 import type { ChatMessage } from '@/types';
 
 /** 五轮 S2/#2：轮次分组纯函数（turnId 为主，相邻 agent 兜底） */
@@ -79,5 +79,46 @@ describe('suggestedTargetIndex 建议按钮挂载边界', () => {
   it('流式进行中 → 不渲染', () => {
     const msgs = [a('t1', { text: 'x', suggestedActions: [act] })];
     expect(suggestedTargetIndex(msgs, true)).toBe(-1);
+  });
+});
+
+/** 暂停回应结构化派生（对标 AskUserQuestion：展示层状态从权威登记派生） */
+describe('answeredValueFor 当时所选值', () => {
+  it('结构化匹配：pauseAnsweredId 与暂停卡 pauseId 相等 → 返回登记值', () => {
+    const msgs: ChatMessage[] = [
+      a('t1', { text: '请确认', confirm: '请确认', pauseId: 'p1', confirmOptions: [{ label: '确认' }] }),
+      { sender: 'user', text: '确认推进', pauseAnsweredId: 'p1', pauseAnsweredValue: '确认推进' },
+    ];
+    expect(answeredValueFor(msgs, 0)).toBe('确认推进');
+  });
+
+  it('自由打字回应（无结构化标记）回落文本匹配', () => {
+    const msgs: ChatMessage[] = [
+      a('t1', { text: '请确认', confirm: '请确认', pauseId: 'p1' }),
+      u('我觉得第二个方案更好'),
+    ];
+    expect(answeredValueFor(msgs, 0)).toBe('我觉得第二个方案更好');
+  });
+
+  it('旧消息无 pauseId 时仍走文本回落（向后兼容）', () => {
+    const msgs: ChatMessage[] = [
+      a('t1', { text: '请确认', confirm: '请确认' }),
+      u('确认，继续'),
+    ];
+    expect(answeredValueFor(msgs, 0)).toBe('确认，继续');
+  });
+
+  it('系统动作行不构成对暂停的回应（穿透到真实回应）', () => {
+    const msgs: ChatMessage[] = [
+      a('t1', { text: '请确认', confirm: '请确认', pauseId: 'p1' }),
+      { sender: 'user', text: '放行本次拦截，继续任务', kind: 'system_action' },
+      { sender: 'user', text: '确认', pauseAnsweredId: 'p1', pauseAnsweredValue: '确认' },
+    ];
+    expect(answeredValueFor(msgs, 0)).toBe('确认');
+  });
+
+  it('其后无用户消息 → 空串', () => {
+    const msgs: ChatMessage[] = [a('t1', { text: '请确认', confirm: '请确认', pauseId: 'p1' })];
+    expect(answeredValueFor(msgs, 0)).toBe('');
   });
 });

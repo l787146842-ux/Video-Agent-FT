@@ -29,6 +29,10 @@
   .msg-author { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; }
   .msg-meta { font-size: 10px; color: var(--text-muted); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
 
+  /* 系统动作行（如「本次放行」）：不占用户气泡形态，居中弱显示，
+     与用户话语流视觉区隔（对标业界 harness：系统操作不混入用户对话） */
+  .system-action-line { align-self: center; font-size: 11px; color: var(--text-dim); background: var(--bg-tertiary); border: 1px dashed var(--border-color); border-radius: 999px; padding: 3px 12px; }
+
   /* 五轮 S2/#2：轮次容器——同轮的正文/文档卡/图片卡聚合进同一组，
      组头显示模型名 + 耗时 meta（逐条不再重复），消除消息流碎片化 */
   .turn-group { display: flex; flex-direction: column; gap: 6px; align-self: flex-start; max-width: 88%; padding: 8px 10px; border-radius: var(--radius-md); border: 1px dashed var(--border-color); background: rgba(255, 255, 255, 0.015); }
