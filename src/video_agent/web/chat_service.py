@@ -433,6 +433,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
             ),
             skill_name=resolved_skill,
+            # audit-0819f：分诊只认用户原话（附件预览问号不参与提问判定）
+            raw_user_text=user_text,
             prelude_notes=prelude_notes,
             use_studio_context=use_studio_context,
             asset_mode=body.asset_mode,
@@ -752,6 +754,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
         ),
         skill_name=resolved_skill,
+        # audit-0819f：分诊只认用户原话（附件预览问号不参与提问判定）
+        raw_user_text=user_text,
         prelude_notes=prelude_notes,
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
         image_generation_provider=image_provider2,

@@ -43,6 +43,18 @@ from src.video_agent.skill_runtime.exec_common import (
 )
 
 
+def initial_json_budget(user_chars: int, requested: int, ceiling: int) -> int:
+    """audit-0819f C1：执行器 JSON 调用初始预算按任务定（业界 budget sizing）。
+
+    CJK 字符≈token：sizing = 4096 + 输入字符数；下限 8192（消灭「先撞墙
+    再扩额」的白烧——1111 事故 79 秒静默的根因）；调用方显式传更大值时
+    尊重调用方；上限钳到模型输出上限，绝对下限 1024。
+    """
+    sizing = 4096 + max(0, int(user_chars))
+    base = max(sizing, 8192, int(requested or 0))
+    return max(min(base, int(ceiling)), 1024)
+
+
 async def _llm_json_call(
     system: str,
     user: str,
@@ -52,9 +64,11 @@ async def _llm_json_call(
 ) -> Dict[str, Any]:
     """独立 LLM 调用并解析 JSON 输出（结构化输出轨，audit-0819d）。
 
-    预算策略（1111 事故：推理模型思考占满 2048 额度，四次连续截断失败）：
-    - 初始预算先钳到模型输出上限（output_limit_for_model 查表）；
-    - finish_reason 撞上限被截断、或思考耗尽预算返回空内容 → 自动翻倍扩额重试一次；
+    预算策略（1111 事故：推理模型思考占满 2048 额度，四次连续截断失败；
+    audit-0819f C1 升级为按任务定预算）：
+    - 初始预算 = initial_json_budget（4096+输入字符数，下限 8192，钳模型上限）；
+    - finish_reason 撞上限被截断、或思考耗尽预算返回空内容 → 自动翻倍扩额重试一次，
+      并经 emit_progress 下发「扩大配额重试」可见提示（B：长等待可见）；
     - 扩到上限仍截断 → 抛明确的截断错误，不把残品 JSON 塞给解析器。
 
     解析策略（audit-0819d，ADR-0001 执行记录三）：下发 response_format=json_object，
@@ -65,7 +79,8 @@ async def _llm_json_call(
     if not provider:
         raise RuntimeError("当前工作区未配置可用的聊天供应商，请先在 API 配置页添加")
     ceiling = output_limit_for_model(model)
-    budget = max(min(int(max_tokens or ceiling), ceiling), 1024)
+    # audit-0819f C1：按任务定预算（下限 8192，调用方大值优先，钳模型上限）
+    budget = initial_json_budget(len(user or ""), int(max_tokens or 0), ceiling)
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
@@ -90,6 +105,7 @@ async def _llm_json_call(
                 logger.warning(
                     f"[SkillExec] LLM 返回空内容（疑输出预算耗尽），自动扩额至 {budget} 重试"
                 )
+                await emit_progress(f"输出预算耗尽，正在扩大配额至 {budget} 重试…")
                 continue
             raise
         if _is_truncated(finish):
@@ -98,6 +114,7 @@ async def _llm_json_call(
                 logger.warning(
                     f"[SkillExec] LLM 输出被截断（finish={finish}），自动扩额至 {budget} 重试"
                 )
+                await emit_progress(f"输出被截断，正在扩大配额至 {budget} 重试…")
                 continue
             raise RuntimeError(
                 f"执行器 LLM 输出在模型输出上限（{budget} tokens）处被截断，"

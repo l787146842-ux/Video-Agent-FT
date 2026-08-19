@@ -78,6 +78,9 @@ class PlannerContext:
     # 传入 state_json 字符串是旧调用方式的兼容降级（整段固定不变）。
     state_builder: Optional[Callable[[], str]] = None
     skill_name: str = ""         # 前端当前选中的 Skill 名称（目录标注用，提高相关性判断准确率）
+    # audit-0819f：用户键入原文（未经多模态/附件拼装）。分诊（_triage_control）
+    # 只认原话——附件预览里的剧本对白问号不得参与提问判定（1111 事故根因）。
+    raw_user_text: str = ""
     use_studio_context: bool = True
     asset_mode: str = "bound"    # 资产过滤模式
     image_generation_provider: str = ""  # 选中草稿的生图 provider，用于强制注入
@@ -321,7 +324,10 @@ class Planner:
         # 受界模型循环（阶段前置闸/步间回收保证顺序不破）。分诊与编排器
         # 进出全记结构化事件（1111 教训：控制流决策必须可观测，不得考古）。
         if settings.pipeline_orchestrator_enabled and context.skill_name:
-            triage = self._triage_control(user_message, context.skill_name)
+            # audit-0819f：分诊只认用户原话——user_message 可能是多模态拼装
+            # （附件预览含剧本对白问号，1111 事故曾误判 handoff）
+            triage = self._triage_control(
+                context.raw_user_text or user_message, context.skill_name)
             logger.info("[ControlFlow] triage={} skill={}", triage, context.skill_name)
             try:
                 AgentTracer.get_instance().record_control_flow(
