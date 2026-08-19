@@ -186,7 +186,7 @@ class ReadUploadedDocTool(BaseTool):
     description = (
         "按需读取用户上传的素材文档（故事/剧本等）全文。"
         "上传文档正文不会自动注入上下文，清单里只有名称/字数/预览，"
-        "需要全文时必须调用本工具，不得声称看不到文档。"
+        "需要全文时必须按 name 调用本工具，请勿声称看不到文档或要求用户重新粘贴。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

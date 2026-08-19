@@ -265,8 +265,9 @@ class StoryboardReadDraftTool(BaseTool):
     name = "read_draft"
     description = (
         "按需读取指定故事板草稿卡的提示词全文。上下文里草稿只有目录信息（编号/label/字数），"
-        "审阅或修改提示词前必须先调用本工具读取全文；触发生成时系统会自动取提示词，无需先读。"
-        "draft_id 支持「组号-卡序号」编号（如 '1-2'），编号在关键元素/分镜/音频各类别独立从 1 计数。"
+        "审阅、修改或参考其写法时才需要调用本工具读取全文；触发生成时系统会自动取提示词，无需先读。"
+        "draft_id 支持「组号-卡序号」编号（如 '1-2'），编号在关键元素/分镜/音频各类别独立从 1 计数，"
+        "调用时建议同时带上 draft_type（keyElement/shot/audio）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
