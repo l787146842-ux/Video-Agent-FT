@@ -598,7 +598,7 @@ async def _stream_actions_progressive(
             try:
                 obj = json.loads(obj_text)
             except json.JSONDecodeError:
-                continue  # 单条格式坏不影响其余条目（结尾整体回退兑底）
+                continue  # 单条格式坏不影响其余条目（结尾整体回退兜底）
             if isinstance(obj, dict):
                 pending.append(obj)
         await flush()

@@ -26,7 +26,8 @@
 ### Rule 2: 多步循环唯一实现 + 动作通道单轨（FC）
 - `core/agent_loop.py::run_agent_loop()` 是多步循环的**唯一实现**；`MAX_STEPS` 读 `settings.max_steps`
 - **动作通道唯一 = FC 工具调用**（`core/fc_tool_runner.py`）；4-4 双轨退役（audit-0819，ADR-0001）已删除：非 FC 聊天通道（agy CLI）、text_actions.md 注入、退化信号探测、流式预执行；禁止恢复自由文本动作解析
-- **确认单轨化（audit-0819b）**：暂停确认唯一经 `workflow_pause` / `request_confirmation` FC 工具产生，经 llm_call 第 5 元组结构化上抛；合成 studio-actions 文本块、流式抑制器（S01）、strip 清洗已同批删除；`agent_loop` 纯文本轮仅收尾（轮末策略照常承重）；mock 演示动作以结构化 dict 直达执行器
+- **确认单轨化（audit-0819b/0819d）**：暂停确认唯一经 `workflow_pause` FC 工具产生（单一正名，对齐业界「只有一个 AskUserQuestion」；别名工具 request_confirmation 与文本别名归一 split_actions 已删），经 llm_call 第 5 元组结构化上抛；合成 studio-actions 文本块、流式抑制器（S01）、strip 清洗已同批删除；`agent_loop` 纯文本轮仅收尾（轮末策略照常承重）；mock 演示动作以结构化 dict 直达执行器
+- **执行器结构化输出（audit-0819d）**：执行器子 LLM 的 JSON 产出点一律下发 `response_format=json_object`（端点不支持时适配器探针剥离降级），产出严格 `json.loads` 校验，畸形走既有 C2 拒因纠正重试——宽容正则兜底已删（S17），禁止恢复；外来工具名运行时翻译层（S15）已删，Skill 导入期工具名转换归专用 Skill 系统
 - **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
 - **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
 - **层级例外（已收敛）**：`web/action_executor.py` 因依赖 web 生成管线暂留 web 层；core→web 顶层 import 一律禁止（经构造注入装配）

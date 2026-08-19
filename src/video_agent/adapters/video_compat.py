@@ -212,7 +212,7 @@ class OpenAICompatVideoAdapter(BaseVideoAdapter):
                 # 构建分辨率尺寸
                 size = self._resolve_size(resolution, aspect_ratio)
 
-                # 经典格式首帧兑底：仅传 media_refs 单张首帧时也能回退到 img_url
+                # 经典格式首帧兜底：仅传 media_refs 单张首帧时也能回退到 img_url
                 legacy_first_frame = image_url or next(
                     (r["url"] for r in media_refs if r["kind"] == "image"), ""
                 )

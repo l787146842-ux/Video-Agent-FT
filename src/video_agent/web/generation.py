@@ -384,7 +384,7 @@ async def generate_image_via_provider(
     provider_id = await resolve_provider_ref_async(provider_id)
     refs = reference_images or []
 
-    # 空模型兑底（彻底修复「model not register: ''/MissingParameter」）：
+    # 空模型兜底（彻底修复「model not register: ''/MissingParameter」）：
     # 模型解析优先级：规格文档指定（LLM action 参数）→ 预览框草稿参数
     # （action_executor 已按此链传入）→ 供应商配置的第一个图片模型
     cfg0 = await get_provider_config_async(provider_id)
@@ -566,7 +566,7 @@ def submit_image_task(
     try:
         task["_done"] = asyncio.get_running_loop().create_future()
     except RuntimeError:
-        pass  # 无事件循环（单元测试）时不可等待，靠任务状态轮询兑底
+        pass  # 无事件循环（单元测试）时不可等待，靠任务状态轮询兜底
     prev_tag = draft.get("tag") or ""
     draft["tag"] = "生成中"
     # 生成日志：提交即记录 started；前端据此立即点亮卡片转圈（改进2）
@@ -692,7 +692,7 @@ async def wait_image_task(task_id: str, timeout: float = 600.0) -> Tuple[bool, s
             return status == "ok", payload
         except asyncio.TimeoutError:
             return False, f"生成超时（{int(timeout)}s）"
-    # 兑底：提交时无事件循环（无 Future），轮询任务状态
+    # 兜底：提交时无事件循环（无 Future），轮询任务状态
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         t = tm.get_task(task_id)
@@ -833,7 +833,7 @@ def submit_video_task(
             f"供应商 '{adapter_name}' 的视频生成尚未配置，请先在 API 设置中添加 video_models"
         ) from e
 
-    # 空模型兑底：供应商配置的第一个视频模型
+    # 空模型兜底：供应商配置的第一个视频模型
     if not model and not is_mock_provider(provider_id, model):
         cfg0 = get_provider_config(provider_id)
         if cfg0:
@@ -949,7 +949,7 @@ def submit_video_task(
                     task_id=task_id,
                 )
                 writeback_if_complete(task_id)
-        except Exception as e:  # 统一兑底，保证任务状态闭环
+        except Exception as e:  # 统一兜底，保证任务状态闭环
             draft["tag"] = prev_tag  # 失败时恢复原标签，避免卡片永远卡在"生成中"
             if on_failure_save is not None:
                 on_failure_save()

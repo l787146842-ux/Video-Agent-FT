@@ -735,7 +735,7 @@ def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
     - 无规格文档 → 故事板结构工具 + 生成工具都不下发（先写规格）；
     - 有规格但故事板为空 → 生成工具不下发（先建结构）；
     - 其他阶段 → 不追加裁剪。
-    裁剪只是第一层（软）：文本动作轨不受影响，由既有闸机做第二层兑底。
+    裁剪只是第一层（软）：文本动作轨不受影响，由既有闸机做第二层兜底。
     """
     if not has_spec_document(raw_state):
         from src.video_agent.skill_runtime.registry import spec_wizard_active

@@ -64,6 +64,32 @@ DeepSeek Harness waterfall 审批：暂停确认一律是工具/结构化事件�
 - 钉死：test_planner_does_not_synthesize_action_blocks（content 含
   studio-actions 即红）；结构化确认暂停/选项透传回归（audit-0819b）。
 
+## 执行记录三（audit-0819d 四维对齐收尾，2026-08-19，用户裁决三补丁全删）
+
+对齐业界核实（OpenAI Structured Outputs strict / Codex apply_patch 严格解析 /
+AutoBe 编译器校验：坏输出=证据确凿的失败，硬校验+拒因重试，绝无宽容解析），
+最后一条文本解析管道与两处别名补丁同批清偿：
+- **执行器结构化输出（改造 1，S17 删）**：OpenAI 兼容适配器新增
+  response_format 参数 + 400 兼容探针（剥离重试+实例记忆+遥测
+  adapter.response_format_unsupported）；执行器全部 JSON 产出点下发
+  json_object；`_parse_actions_from_text` 改严格 json.loads（围栏/裸数组宽容
+  正则删除，失败记 executor.json_strict_parse_failed 遥测），`_llm_json_call`
+  正则抠取删除，畸形产出走既有 C2 拒因纠正重试；流式逐条落盘 UX 无损。
+- **暂停单一正名（改造 2）**：RequestConfirmationTool 别名工具删除，
+  workflow_pause 为唯一暂停入口（对齐「只有一个 AskUserQuestion」）；
+  全库双名表述（代码/提示词/测试断言）同批收敛。
+- **S15 工具名翻译层删**：FOREIGN_TOOL_MAP + build_foreign_tool_note 及
+  三处注入（prompt_builder ×2、read_skill）删除；运行时不再做工具名翻译，
+  导入期转换归将来专用 Skill 系统；存量 Skill 文档最后一处老名字已迁。
+- **S16 别名归一删**：agent_loop split_actions / _extract_confirmation 删除
+  （结构化上抛后无文本别名可归一）。
+- **棘轮门禁新增（改造 4）**：check_executor_skill_drift.py 升级为
+  「约束主体词×数字」漂移对检测，基线实测=0（只降不升），注册进
+  acceptance 第 13 门禁。
+- 钉死：test_audit0819d_structured_executors（探针/严格解析/三符号防复活）；
+  退役：test_foreign_tool_mapping、test_confirm_options 及 6666/7777 别名用例。
+- 脚手架基线维持 11 不上调（三补丁属存量清偿，直接删除而非登记）。
+
 ## 后果
 
 - 双轨一致条款已随单轨化废除（宪法 Rule 2 改写）；
