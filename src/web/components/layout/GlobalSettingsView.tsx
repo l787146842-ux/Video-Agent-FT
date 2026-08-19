@@ -196,33 +196,8 @@ export default function GlobalSettingsView() {
             <p class="gs-hint">开启时模型联不通/出不了图视频自动换同模型其他 API 厂商；关闭则直接按上游报错。</p>
           </section>
 
-          {/* 814H7：推理档位（执行器/辅助摘要；主模型档位在对话栏模型胶囊里按会话选） */}
-          <section class="gs-section">
-            <h3>推理档位</h3>
-            <div class="gs-row">
-              <ParamGroup label="执行器机械调用:">
-                <ParamSelect
-                  ariaLabel="执行器推理档位"
-                  value={gs()!.executor_thinking_level || ''}
-                  options={thinkingOpts()}
-                  onChange={(v) => set({ executor_thinking_level: v })}
-                />
-              </ParamGroup>
-              <ParamGroup label="辅助摘要:">
-                <ParamSelect
-                  ariaLabel="辅助摘要推理档位"
-                  value={gs()!.aux_thinking_level || ''}
-                  options={thinkingOpts()}
-                  onChange={(v) => set({ aux_thinking_level: v })}
-                />
-              </ParamGroup>
-            </div>
-            <p class="gs-hint">
-              执行器机械调用 = 拆关键元素/分镜/写提示词/出题等批量产出；辅助摘要 = 记忆摘要与会话压缩。
-              默认 = 模型原生能力；高/中/低按 reasoning_effort 透传，端点不认时自动忽略或降级重试。
-              主模型（对话规划）的档位在对话栏「模型」胶囊里按会话选择。
-            </p>
-          </section>
+          {/* audit-0819f：「推理档位」卡退役——执行器/摘要档位归入下方模型分层策略
+              表的「推理」列（通用搭配默认：摘要/执行器机械 = 低，防思考吃预算） */}
           {/* B8：模型分层策略表（四角色自动路由；空 = 跟随主模型） */}
           <section class="gs-section">
             <h3>模型分层策略</h3>
@@ -268,7 +243,8 @@ export default function GlobalSettingsView() {
             <p class="gs-hint">
               编排规划 = 主对话/规划轮；生成 = 执行器长文生成与纠正重试；摘要 = 记忆摘要与会话压缩；
               执行器机械 = 拆解/提示词批量誊写（快模型先试，零进展自动升级）。
-              「跟随主模型」= 不覆盖（沿用对话栏所选模型与既有回落链）；改动即时生效。
+              「跟随主模型」= 不覆盖（沿用对话栏所选模型与既有回落链）；
+              推理档通用搭配默认：摘要/执行器机械 = 低（照章办事不需深推理，防思考吃光输出预算），编排/生成 = 原生；改动即时生效。
             </p>
           </section>
           {/* B10：成本看板（轮次/耗时/闸机拦截率/降级频率） */}

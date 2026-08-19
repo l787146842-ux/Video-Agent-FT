@@ -454,11 +454,14 @@ def test_0817_script_inject_limit_unified_and_configurable():
 
 
 def test_0817_executor_thinking_not_hardcoded_low():
-    """0817 B23：平台不硬编码降档，默认沿用全局。"""
+    """0817 B23：平台不硬编码降档，默认沿用全局。
+    audit-0819f 用户裁决升级：通用搭配默认 executor=low（防思考吃预算），
+    但 settings.executor_thinking_level 本身仍默认空（env 未设）。
+    """
     from src.video_agent.config import settings
     from src.video_agent.skill_runtime import exec_common
     assert settings.executor_thinking_level == ""
-    assert exec_common._executor_thinking() is None
+    assert exec_common._executor_thinking() == "low"
 
 
 def test_0817_script_inject_limit_in_runtime_whitelist():

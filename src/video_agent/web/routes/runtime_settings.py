@@ -33,7 +33,8 @@ _STR_KEYS = (
 _INT_KEYS = ("max_shot_duration",)
 # 0817 B24：剧本注入上限（字符）热更新键，独立钳制区间（不与秒数共用 clamp）
 _CHAR_LIMIT_KEYS = ("script_inject_limit",)
-# 814H7：推理档位键（""=默认/原生，low/medium/high 透传 reasoning_effort）
+# 814H7 推理档位旧键名（audit-0819f 退役：仅作存量迁移用，API 表面已移除；
+# config 字段保留作 env 覆写，语义归模型分层策略 summary/executor 行）
 _THINKING_KEYS = ("executor_thinking_level", "aux_thinking_level")
 _THINKING_VALUES = ("", "low", "medium", "high")
 
@@ -50,10 +51,8 @@ class RuntimeSettingsUpdate(BaseModel):
     max_shot_duration: Optional[int] = None
     # 0817 B24：剧本正文注入上限（字符）
     script_inject_limit: Optional[int] = None
-    # 814H7：推理档位（""=默认/原生）
-    executor_thinking_level: Optional[str] = None
-    aux_thinking_level: Optional[str] = None
-    # B8：模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型）
+    # B8：模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型；
+    # audit-0819f：推理档位可独立于供应商设置；旧「推理档位」卡两键已退役）
     model_policy: Optional[Dict[str, Any]] = None
 
 
@@ -71,8 +70,7 @@ def _current_dict() -> Dict[str, Any]:
         "default_video_resolution": settings.default_video_resolution,
         "max_shot_duration": settings.max_shot_duration,
         "script_inject_limit": settings.script_inject_limit,
-        "executor_thinking_level": settings.executor_thinking_level,
-        "aux_thinking_level": settings.aux_thinking_level,
+        # audit-0819f：推理档位两键退役（归模型分层策略），GET 不再下发
         "model_policy": mp.current_policy(),
     }
 
@@ -103,10 +101,6 @@ async def put_runtime_settings(body: RuntimeSettingsUpdate):
                 continue
         elif key in _STR_KEYS:
             value = str(value or "").strip()
-        elif key in _THINKING_KEYS:
-            value = str(value or "").strip().lower()
-            if value not in _THINKING_VALUES:
-                value = ""
         elif key == "model_policy":
             # B8：策略表结构白名单清洗（4 角色 × 3 键）
             from src.video_agent.core import model_policy as mp
@@ -155,13 +149,37 @@ def load_runtime_settings() -> None:
                     object.__setattr__(settings, key, max(1000, min(int(data[key]), 200000)))
                 except (TypeError, ValueError) as _e:
                     logger.debug("[runtime_settings] 忽略异常: {}", _e)
-        for key in _THINKING_KEYS:
-            if key in data:
-                v = str(data[key] or "").strip().lower()
-                object.__setattr__(settings, key, v if v in _THINKING_VALUES else "")
-        if "model_policy" in data:
-            from src.video_agent.core import model_policy as mp
+        # audit-0819f：「推理档位」卡退役——存量值（文件旧键 / env 覆写）
+        # 一次性迁入 model_policy 的 executor/summary 行；两旧键从文件清除。
+        from src.video_agent.core import model_policy as mp
 
-            object.__setattr__(settings, "model_policy", mp.normalize_policy(data["model_policy"]))
+        pol = mp.normalize_policy(
+            data["model_policy"] if "model_policy" in data
+            else (getattr(settings, "model_policy", None) or {}))
+        migrated = False
+        for role, legacy_key, env_val in (
+            ("executor", "executor_thinking_level", settings.executor_thinking_level),
+            ("summary", "aux_thinking_level", settings.aux_thinking_level),
+        ):
+            legacy = str(data.get(legacy_key) or "").strip().lower()
+            if legacy not in _THINKING_VALUES:
+                legacy = ""
+            legacy = legacy or str(env_val or "").strip().lower()
+            if legacy and legacy in _THINKING_VALUES:
+                entry = pol.setdefault(role, {})
+                if not entry.get("thinking_level"):
+                    entry["thinking_level"] = legacy
+                    migrated = True
+        object.__setattr__(settings, "model_policy", pol)
+        if migrated:
+            try:
+                data["model_policy"] = pol
+                for legacy_key in _THINKING_KEYS:
+                    data.pop(legacy_key, None)
+                RUNTIME_SETTINGS_FILE.write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                logger.info("[RuntimeSettings] 推理档位存量值已迁入模型分层策略")
+            except Exception as e:
+                logger.warning(f"[RuntimeSettings] 迁移落盘失败（内存已生效）: {e}")
     except Exception as e:
         logger.warning(f"[RuntimeSettings] 启动加载失败，使用默认值: {e}")

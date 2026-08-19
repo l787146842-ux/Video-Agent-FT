@@ -15,6 +15,15 @@ ROLES = ("orchestration", "generation_strong", "summary", "executor")
 _ROLE_KEYS = ("provider", "model", "thinking_level")
 _THINKING_VALUES = ("", "low", "medium", "high")
 
+# audit-0819f 通用搭配默认（用户裁决，取代 0817 B23「默认空」）：
+# 摘要/执行器机械 = 照章办事的结构化产出，不需要深推理——低档防思考
+# 吃光输出预算（1111 事故根因）；编排/生成跟随主模型全力。用户可在全局
+# 设置页覆盖（UI 可见可改）。
+DEFAULT_POLICY: Dict[str, Dict[str, str]] = {
+    "summary": {"provider": "", "model": "", "thinking_level": "low"},
+    "executor": {"provider": "", "model": "", "thinking_level": "low"},
+}
+
 
 def _policy() -> Dict[str, Dict[str, str]]:
     from src.video_agent.config import settings
@@ -43,11 +52,31 @@ def resolve_role(role: str) -> Optional[Dict[str, str]]:
 
 
 def thinking_for(role: str, fallback: str = "") -> str:
-    """角色思考档位：策略值优先，未配置回落调用方给的 fallback（如 settings.aux_thinking_level）。"""
-    entry = resolve_role(role)
-    if entry and entry["thinking_level"]:
-        return entry["thinking_level"]
-    return fallback or ""
+    """角色思考档位（audit-0819f 补洞）：用户配置 > env 覆写（调用方 fallback）
+    > 通用搭配默认；**不要求 provider 已设**（跟随主模型也可单独定档）。
+    """
+    entry = _policy().get(role) or {}
+    level = str(entry.get("thinking_level") or "").strip().lower()
+    if level and level in _THINKING_VALUES:
+        return level
+    fb = str(fallback or "").strip().lower()
+    if fb and fb in _THINKING_VALUES:
+        return fb
+    return str((DEFAULT_POLICY.get(role) or {}).get("thinking_level") or "")
+
+
+def effective_policy() -> Dict[str, Dict[str, str]]:
+    """通用搭配默认 + 用户配置叠加（audit-0819f）：用户值非空即覆盖默认。
+    供 current_policy（UI 渲染）与 thinking_for 共用——UI 所见即生效。"""
+    out: Dict[str, Dict[str, str]] = {
+        r: dict(v) for r, v in DEFAULT_POLICY.items()
+    }
+    for role, entry in _policy().items():
+        cur = out.setdefault(role, {})
+        for key, val in (entry or {}).items():
+            if str(val or "").strip():
+                cur[key] = val
+    return out
 
 
 def normalize_policy(payload: Any) -> Dict[str, Dict[str, str]]:
@@ -66,11 +95,14 @@ def normalize_policy(payload: Any) -> Dict[str, Dict[str, str]]:
                 cleaned[key] = val.lower() if val.lower() in _THINKING_VALUES else ""
             else:
                 cleaned[key] = val
-        if cleaned.get("provider"):
+        if cleaned.get("provider") or cleaned.get("thinking_level"):
+            # audit-0819f 补洞：档位可独立于供应商设置（跟随主模型也可定档）；
+            # 旧实现无 provider 即丢弃整行，导致分层表「推理」下拉空转。
             out[role] = cleaned
     return out
 
 
 def current_policy() -> Dict[str, Dict[str, str]]:
-    """当前生效策略（供 /api/settings/runtime 返回与前端渲染）。"""
-    return {role: (_policy().get(role) or {}) for role in ROLES}
+    """当前生效策略（供 /api/settings/runtime 返回与前端渲染；audit-0819f：
+    含通用搭配默认，UI 所见即生效）。"""
+    return effective_policy()

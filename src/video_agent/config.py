@@ -155,6 +155,8 @@ class Settings:
     executor_fast_model: str = field(default_factory=lambda: os.getenv("EXECUTOR_FAST_MODEL", ""))
     # 执行器机械调用的思考档位（low/medium/high）；空 = 沿用全局 llm_thinking_level
     # 0817 B23（用户裁决）：默认空（不硬编码降档）；要降档由全局设置配置
+    # audit-0819f：全局设置「推理档位」卡退役，UI 语义归模型分层策略
+    # executor/summary 行（通用搭配默认 low）；本字段仅保留作 env 覆写回落。
     executor_thinking_level: str = field(default_factory=lambda: os.getenv("EXECUTOR_THINKING_LEVEL", ""))
     # 0817 B24：剧本正文注入上限（合一，原 10000/12000 分阶段硬编码废除）；
     # 仅超模型上下文硬窗时才截断，截断附可见警告

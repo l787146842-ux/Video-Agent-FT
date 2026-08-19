@@ -104,11 +104,12 @@ def test_2222_thinking_override_wins_over_global():
 
 
 def test_2222_executor_thinking_default_low_and_empty_falls_back():
-    """0817 B23：默认不硬编码降档（空 = 沿用全局）；全局设置配置值生效。"""
-    assert ex_mod._executor_thinking() is None
-    object.__setattr__(settings, "executor_thinking_level", "low")
+    """audit-0819f 通用搭配：默认 executor=low（取代 0817 B23 默认空）；
+    env 覆写（settings.executor_thinking_level）优先于默认，用户策略表优先于 env。"""
+    assert ex_mod._executor_thinking() == "low"
+    object.__setattr__(settings, "executor_thinking_level", "medium")
     try:
-        assert ex_mod._executor_thinking() == "low"
+        assert ex_mod._executor_thinking() == "medium"
     finally:
         object.__setattr__(settings, "executor_thinking_level", "")
 

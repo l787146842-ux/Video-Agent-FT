@@ -245,8 +245,6 @@ export interface RuntimeSettingsUpdate {
   default_video_resolution?: string | unknown;
   max_shot_duration?: number | unknown;
   script_inject_limit?: number | unknown;
-  executor_thinking_level?: string | unknown;
-  aux_thinking_level?: string | unknown;
   model_policy?: Record<string, unknown> | unknown;
 }
 
