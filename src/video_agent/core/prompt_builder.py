@@ -49,7 +49,8 @@ class PromptBuilder:
 
         fc_mode（814R1 恢复双协议瘦身）：True 时协议段用 planner/system_fc.md
         （Tool 优先瘦身协议，共有段经 {{include}} 从 shared/ 拼装），
-        False 时用 planner/system.md 完整协议（含 studio-actions 动作清单）。
+        False 时用 planner/system.md（mock/演示通道；studio-actions 文本
+        动作清单已随 4-4 双轨退役删除，ADR-0001）。
         """
         parts: List[Tuple[str, str]] = []
 
@@ -62,14 +63,8 @@ class PromptBuilder:
             )
             if protocol:
                 parts.append(("protocol", protocol))
-            # B1 修正：动作定义唯一源 = text_actions.md。
-            # 注入条件以 adapter 真实能力（fc_mode=False）为准——任何不支持
-            # Function Calling 的通道都需要文本协议，不依赖 chat_service 的
-            # 通道猜测（text_protocol 字段保留为兼容标记，不再作注入开关）。
-            if not fc_mode:
-                text_protocol = load_prompt("planner/text_actions.md")
-                if text_protocol:
-                    parts.append(("text_protocol", text_protocol))
+            # 4-4 双轨退役（ADR-0001）：text_actions.md 文本协议注入已删除；
+            # 动作通道唯一 = FC 工具（mock 通道除外，其输出为演示用固定文本）。
 
         # 渐进式披露：不再注入全部 Skill 全文，
         # 改为注入 Skill 目录（名称+摘要），全文由模型按需调 read_skill 加载

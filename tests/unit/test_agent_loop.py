@@ -78,6 +78,7 @@ async def test_truncation_warning(svc, executor):
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
     )
+    # 4-4 双轨退役：拒因重试自愈环已删，解析失败直接丢弃告警 → 1 轮
     assert result.steps == 1
     assert any("截断" in w for w in result.warnings)
     assert any("解析失败" in w for w in result.warnings)
@@ -420,47 +421,7 @@ async def test_partial_bad_prompt_rejected_and_healed(svc):
     assert ex.gate_rejections
 
 
-# ---------- 边写边填：流式增量提取器 + 预执行去重 ----------
-
-async def test_streaming_extractor_emits_objects_incrementally():
-    """studio-actions 块逐 chunk 喂入：每个 JSON 对象一闭合即可提取"""
-    from src.video_agent.web.action_parser import StreamingActionExtractor
-    ext = StreamingActionExtractor()
-    block = (
-        '[{"action":"update_draft","draft_id":"a","patch":{"prompt":"第一段提示词"}},'
-        '{"action":"update_draft","draft_id":"b","patch":{"prompt":"含花括号{对话}与转义\\"引号"}}]'
-    )
-    got = []
-    for i in range(0, len(block), 7):  # 任意切块喂入
-        got.extend(ext.feed(block[i:i + 7]))
-    assert len(got) == 2
-    assert got[0]["draft_id"] == "a"
-    assert got[1]["patch"]["prompt"] == '含花括号{对话}与转义"引号'
-
-
-async def test_stream_preapplied_actions_not_reexecuted(svc):
-    """流式预执行过的动作在批末不得重复执行（add_group 重复会建重分组）"""
-    ex = StudioActionExecutor(svc, gate_enabled=True)
-    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    # 模拟 planner 流式路径：逐条预执行（accumulate）
-    act = {"action": "add_group", "group_type": "keyElement", "title": "Element_S", "draft": {"label": "d"}}
-    assert ex.execute([act], accumulate=True) == 1
-    ex.stream_consumed = 1
-    ex.stream_preapplied = 1
-    # 0817：平台不再强制自检轮——模型 stop 即收尾（阶段未完成不弹卡，
-    # 由建议动作引导下一步）
-    reply = ('完成\n```studio-actions\n'
-             '[{"action":"add_group","group_type":"keyElement","title":"Element_S","draft":{"label":"d"}}]\n```', "stop")
-    llm, calls = make_llm([reply])
-    result = await run_agent_loop(
-        "x", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],
-    )
-    assert calls["n"] == 1
-    assert result.applied_actions == 1  # 只计流式预执行的那一次
-    assert not result.confirmation  # 阶段未完成且模型未暂停 → 不弹卡
-    titles = [g.get("title") for g in svc.state_dict["keyElements"] if g.get("title") == "Element_S"]
-    assert len(titles) == 1  # 没有重复建组
-
+# ---------- 边写边填：流式增量提取器与预执行已随 4-4 文本轨退役删除（ADR-0001） ----------
 
 async def test_bad_output_malformed_retried_then_ok(svc, executor):
     """回归（5555 事故）：MALFORMED_FUNCTION_CALL 视为坏输出自动重试，重试成功则正常推进，

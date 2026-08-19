@@ -1,21 +1,18 @@
-"""选中 Skill 硬注入 + 非 FC 通道全文降级测试。
+"""选中 Skill 硬注入测试。
 
-背景（888 项目事故）：agy（gemini-cli）通道不支持 Function Calling，
-read_skill/read_uploaded_doc 根本调不了；若 Skill 与剧本只给目录/预览，
-模型等于看不到流程规范与原文，产出质量直接劣化。
+背景（888 项目事故）：若 Skill 与剧本只给目录/预览，模型等于看不到
+流程规范与原文，产出质量直接劣化——选中 Skill 必须全文硬注入。
+
+4-4 双轨退役（ADR-0001）：原 TestNonFcChannelFallback（非 FC 通道附件
+全文直注）已随通道删除移除，替换为 CLI 聊天拦截断言（见文末）。
 
 注：代码内置 Skill（编剧/分镜师/制片）已按用户要求彻底移除，
 本测试全部使用文档 Skill（测试中为临时目录）。
 """
 import pytest
 
-import src.video_agent.web.attachments as attachments_mod
-import src.video_agent.web.chat_service as chat_service_mod
-import src.video_agent.web.chat_opening as chat_opening_mod
 import src.video_agent.web.skill_docs as skill_docs_mod
 from src.video_agent.core.planner import Planner, PlannerContext
-from src.video_agent.web.attachments import attachment_context
-from src.video_agent.web.chat_service import _channel_supports_fc
 
 SKILL_MARKER = "SKILL_FLOW_MARKER_888"
 
@@ -77,38 +74,17 @@ class TestSelectedSkillHardInjection:
             assert banned not in prompt, f"{banned} 不应再出现在 Skill 目录"
 
 
-class TestNonFcChannelFallback:
-    """非 FC 通道：附件文档全文直注（模型调不了 read_uploaded_doc）"""
+class TestCliChatRejected:
+    """4-4 双轨退役：CLI 供应商不再承载聊天，选中即报人话错误。"""
 
-    @pytest.fixture
-    def assets_dir(self, tmp_path, monkeypatch):
-        d = tmp_path / "assets"
-        d.mkdir()
-        monkeypatch.setattr(attachments_mod, "ASSETS_DIR", d)
-        return d
+    def test_cli_provider_chat_raises_friendly_error(self, monkeypatch):
+        from src.video_agent.exceptions import AdapterError
+        from src.video_agent.web import chat_opening as co
 
-    def test_full_text_mode_injects_body(self, assets_dir):
-        (assets_dir / "story.md").write_text("# 太阳系二维化\n二向箔来袭， UNIQUE_MARKER_123。", encoding="utf-8")
-        ctx = attachment_context(
-            [{"name": "story.md", "url": "/workspace/assets/story.md", "kind": "doc"}],
-            full_text=True,
-        )
-        assert "UNIQUE_MARKER_123" in ctx, "降级模式必须注入正文"
-        assert "read_uploaded_doc" not in ctx
-
-    def test_default_mode_still_manifest_only(self, assets_dir):
-        # 标记放在 200 字预览之外，才能区分「预览」与「全文注入」
-        (assets_dir / "story.md").write_text("x" * 250 + "UNIQUE_MARKER_456 正文。", encoding="utf-8")
-        ctx = attachment_context(
-            [{"name": "story.md", "url": "/workspace/assets/story.md", "kind": "doc"}],
-        )
-        assert "UNIQUE_MARKER_456" not in ctx
-        assert "read_uploaded_doc" in ctx
-
-    def test_channel_fc_detection(self, monkeypatch):
         monkeypatch.setattr(
-            chat_opening_mod, "get_provider_config",
+            co, "get_provider_config",
             lambda pid: {"protocol": "gemini-cli"} if pid == "agy-x" else {"protocol": "openai"},
         )
-        assert _channel_supports_fc("agy-x") is False
-        assert _channel_supports_fc("some-openai") is True
+        with pytest.raises(AdapterError, match="不支持聊天"):
+            co._create_chat_adapter("agy-x", "auto")
+

@@ -313,13 +313,14 @@ async def fetch_models(req: ProviderProbeRequest):
     base_url = req.base_url.rstrip("/")
     protocol = (req.protocol or "openai").lower()
 
-    # CLI 协议：返回预设模型列表
+    # CLI 协议：返回预设模型列表（4-4 双轨退役：CLI 不再承载聊天，
+    # chat_models 恒空，仅保留生图模型）
     if protocol in CLI_PROTOCOLS:
         models = _CLI_MODELS.get(protocol, ["auto"])
         return {
             "all": models,
             "image_models": models,
-            "chat_models": models,
+            "chat_models": [],
             "video_models": [],
             "total": len(models),
             "protocol": protocol,
@@ -400,7 +401,8 @@ async def _check_cli_protocol(protocol: str) -> Dict[str, Any]:
         "model_count": len(models),
         "all": models,
         "image_models": models,
-        "chat_models": models,
+        # 4-4 双轨退役：CLI 通道不支持聊天，聊天模型恒空
+        "chat_models": [],
         "video_models": [],
         "image_request_mode": "openai",
         "message": f"{cli_name} 已就绪 ({exe})",

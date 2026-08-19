@@ -15,7 +15,7 @@ import asyncio
 import re
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -55,7 +55,6 @@ from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.base_chat import BaseChatAdapter
 from src.video_agent.adapters.factory import AdapterFactory
-from src.video_agent.adapters.agy_cli import AgyCliChatAdapter
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.core.tracer import AgentTracer
 
@@ -436,8 +435,6 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             skill_name=resolved_skill,
             prelude_notes=prelude_notes,
             use_studio_context=use_studio_context,
-            # 814R1 恢复：非 FC 通道（如 agy CLI）注入 text_actions.md 文本协议全文
-            text_protocol=not _channel_supports_fc(body.provider),
             asset_mode=body.asset_mode,
             image_generation_provider=image_provider,
             image_generation_aspect_ratio=image_aspect_ratio,
@@ -563,19 +560,30 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
 
 
 async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: bool) -> None:
-    """流式失败统一出口：持久化错误消息 + 发 error 事件（透传上游原文）"""
-    text = _friendly_stream_error_text(e)
+    """流式失败统一出口：持久化错误消息 + 发 error 事件。
+
+    audit-0819：错误分层——气泡只展示一句人话（friendly），
+    上游原始报文（raw）随 errorDetail 持久化 + payload raw 下发，前端折叠展示。
+    """
+    friendly, raw = _friendly_stream_error(e)
     if use_studio_context:
         async with svc.lock:
             # B2/F22：错误前缀统一为 ⚠️（与前端 streamError 渲染一致，刷新后不跳变）
-            svc.add_chat_message("agent", f"⚠️ {text}", model_name=body.model or "")
-    await emit({"type": SSE_ERROR, "detail": text, "error_code": getattr(e, "error_code", "INTERNAL_ERROR")})
+            svc.add_chat_message(
+                "agent", f"⚠️ {friendly}", model_name=body.model or "",
+                error_detail=raw,
+            )
+    await emit({
+        "type": SSE_ERROR, "detail": friendly, "raw": raw,
+        "error_code": getattr(e, "error_code", "INTERNAL_ERROR"),
+    })
 
 
-def _friendly_stream_error_text(e: Exception) -> str:
+def _friendly_stream_error(e: Exception) -> Tuple[str, str]:
     """上游错误人话翻译（2222 反馈：裸 JSON 报错看不懂）。
 
-    预扣费额度不足等常见上游故障给出可操作提示；其余错误保持原文透传。
+    返回 (friendly, raw)：friendly = 一句可操作的人话；
+    raw = 上游原始报文（未命中翻译时为空串，前端不渲染技术详情折叠）。
     """
     msg = str(e)
     if "insufficient_user_quota" in msg or "预扣费" in msg:
@@ -587,9 +595,34 @@ def _friendly_stream_error_text(e: Exception) -> str:
         return (
             f"上游供应商账户额度不足{detail}，无法预扣本次调用费用——这不是上下文超限。"
             "上下文越长预扣越高，故常在任务后半程触发。"
-            "请为上游账户充值，或在 API 设置页切换其他供应商/模型后重试。"
+            "请为上游账户充值，或在 API 设置页切换其他供应商/模型后重试。",
+            msg,
         )
-    return msg
+    status = getattr(e, "http_status", None)
+    if status in (401, 403):
+        return (
+            f"鉴权失败（HTTP {status}）：API Key 未配置、已过期或不正确。"
+            "请到 API 设置页检查对应供应商的 Key 后重试。",
+            msg,
+        )
+    if status == 429:
+        return (
+            "上游供应商限流或配额不足（HTTP 429）。请稍后重试，或切换其他供应商/模型。",
+            msg,
+        )
+    if isinstance(status, int) and 500 <= status < 600:
+        return (
+            f"上游供应商瞬时故障（HTTP {status}），系统已按 fallback 链尝试重试；"
+            "若持续出现请切换其他供应商/模型。",
+            msg,
+        )
+    low = msg.lower()
+    if "timeout" in low or "timed out" in low or "connect" in low:
+        return (
+            "上游供应商连接超时或失败。请检查网络，或切换其他供应商/模型后重试。",
+            msg,
+        )
+    return msg, ""
 
 
 async def non_stream_worker(body: Any) -> Dict[str, Any]:
@@ -721,8 +754,6 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         ),
         skill_name=resolved_skill,
         prelude_notes=prelude_notes,
-        # 814R1 恢复：非 FC 通道（如 agy CLI）注入 text_actions.md 文本协议全文
-        text_protocol=not _channel_supports_fc(body.provider),
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
         image_generation_provider=image_provider2,
         image_generation_aspect_ratio=image_aspect_ratio2,
@@ -831,7 +862,6 @@ from src.video_agent.web.chat_opening import (
     _acquire_request_slot,
     _build_meta_note,
     _build_prelude_notes,
-    _channel_supports_fc,
     _create_chat_adapter,
     _prepare_chat_opening,
     _record_active_skill,

@@ -4,7 +4,7 @@ Planner — 对话式 Agent 的唯一入口（Rule1）。
 设计方案核心：
 - Planner 直接持有 LLM Adapter 引用（Rule6: 外部调用走 Adapter），不经过 Tool Manager
 - Tool Manager 只管理"业务 Tool"（故事板操作、生图、文档等）
-- 双模式兼容：Function Calling + 文本解析 fallback（Rule2）
+- 动作通道唯一 = FC 工具调用（4-4 双轨退役，ADR-0001）
 - 多步循环（MAX_STEPS），LLM 可请求 continue 推进下一轮
 - 流式通过 AsyncGenerator 穿透（SSE）
 """
@@ -38,7 +38,7 @@ from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core.planner_output import assemble_response
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.live_metrics import record_degradation, record_live_context
-from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_REASONING_DELTA, SSE_STATUS, status_event
+from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS, status_event
 from src.video_agent.core.stream_suppressor import StreamActionSuppressor
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
@@ -58,13 +58,8 @@ _CANVAS_TOOLS = frozenset({
     "canvas_delete_node", "canvas_list_assets", "canvas_batch_add_nodes",
 })
 
-# 814R1 恢复：Skill 流程闸启用时不允许参与流式「边写边填」预执行的阶段边界动作。
-# 它们若被预执行，会被 agent_loop 从 executable 切片移除，导致阶段硬边界/
-# 规格闸/结构暂停全部失效（同轮跨阶段缝隙）；一旦出现被延迟的动作，
-# 其后续动作也一并延迟（保证 stream_consumed 的前缀语义不被打乱）。
-_STREAM_GATE_DEFER_ACTIONS = frozenset({
-    "write_document", "write_doc", "save_document", "add_group", "add_draft",
-})
+# 814R1 曾设流式预执行阶段边界延迟集合：随 4-4 文本轨退役删除
+# （流式「边写边填」预执行为文本轨基础设施，FC 轨动作经 tool_calls 执行）。
 
 # 选中 Skill 时的流程提醒（814R1 恢复外置：prompts/planner/feedback.md 单一事实源）
 _SKILL_REMINDER = load_prompt_section("planner/feedback.md", "SKILL_REMINDER") or (
@@ -85,9 +80,6 @@ class PlannerContext:
     state_builder: Optional[Callable[[], str]] = None
     skill_name: str = ""         # 前端当前选中的 Skill 名称（目录标注用，提高相关性判断准确率）
     use_studio_context: bool = True
-    # 文本协议注入开关（814R1 恢复）：非 FC 通道（如 agy CLI）由 chat_service 置 True，
-    # prompt_builder 据此追加 text_actions.md 全量动作定义
-    text_protocol: bool = False
     asset_mode: str = "bound"    # 资产过滤模式
     image_generation_provider: str = ""  # 选中草稿的生图 provider，用于强制注入
     image_generation_aspect_ratio: str = ""  # 选中草稿的画面比例（如 16:9），用于强制注入
@@ -259,7 +251,8 @@ class Planner:
     ) -> PlannerResponse:
         """
         对话处理（多步循环）—— 流式/非流式统一入口。
-        委托给 run_agent_loop 统一循环骨架，内部通过 llm_call 包装器处理双模式（FC / 文本解析）。
+        委托给 run_agent_loop 统一循环骨架；动作通道唯一 = FC 工具调用
+        （4-4 双轨退役；文本块解析仅消费系统内部合成的确认块与 mock 输出）。
         stream_hook: 可选 async callable(text)，流式模式下每段 LLM 增量文本回调。
         """
         # 当前 Skill 归属（7777 事故）：请求未携带 Skill 时回退项目 usedSkills 末位，
@@ -290,12 +283,6 @@ class Planner:
                 executor.gate_enabled = True
             except Exception as _e:
                 logger.debug("[planner] 忽略异常: {}", _e)
-        # 流式增量执行计数重置（边写边填：上次调用的残留不得带入本次）
-        try:
-            executor.stream_preapplied = 0
-            executor.stream_consumed = 0
-        except Exception as _e:
-            logger.debug("[planner] 忽略异常: {}", _e)
 
         # 会话层一次性豁免（814R3 恢复，§2.4）：用户「本次放行」写入
         # interaction.gate_overrides，本次消费即清除（单次生效、全程留痕）；
@@ -387,46 +374,15 @@ class Planner:
                 finish = ""
                 stream_tool_calls: List[Dict[str, Any]] = []
                 suppressor = StreamActionSuppressor()
-                # 边写边填：studio-actions 块内每个 JSON 对象一流式闭合就立即执行，
-                # 草稿卡片逐张填充，不等全部写完一次性弹出
-                from src.video_agent.web.action_parser import StreamingActionExtractor
-                extractor = StreamingActionExtractor()
-                # 814R1 恢复：Skill 流程闸启用时阶段边界动作延迟到批末执行
-                _gate_strict = bool(getattr(executor, "gate_enabled", False)) \
-                    and prompt_gates.gate_mode() == "strict"
-                _preexec_stopped = False
                 async for chunk in self._call_llm_stream(system_prompt, messages):
                     if chunk.type == "text_delta" and chunk.text:
                         content_parts.append(chunk.text)
                         # P2-1：仅屏蔽 studio-actions 围栏，普通代码块照常推送
+                        # （4-4 文本轨退役：流式预执行已删，抑制器只防 FC 模型
+                        # 违规围栏泄漏，audit-0819；块内动作若存在由循环末统一解析）
                         out = suppressor.feed(chunk.text)
                         if out:
                             await hook(out)
-                        # 被抑制的动作块内容喂给增量提取器，闭合即执行
-                        if suppressor.suppressed:
-                            for act in extractor.feed(suppressor.suppressed):
-                                # 流程信号（continue/确认）不预执行，留待循环末尾统一处理
-                                if not executor._is_mutating(act):
-                                    continue
-                                _aname = str(act.get("action", "") or "").lower()
-                                if _gate_strict and (
-                                    _preexec_stopped or _aname in _STREAM_GATE_DEFER_ACTIONS
-                                ):
-                                    # 阶段边界动作（或其后继）延迟到批末：恢复阶段硬边界/规格闸/结构暂停
-                                    _preexec_stopped = True
-                                    continue
-                                executor.stream_consumed += 1
-                                try:
-                                    if executor.execute([act], accumulate=True):
-                                        executor.stream_preapplied += 1
-                                        if on_event is not None:
-                                            await on_event({
-                                                "type": SSE_ACTIONS_APPLIED,
-                                                "count": 1,
-                                            })
-                                except Exception as e:
-                                    logger.warning(f"[Planner] 流式增量执行失败: {act} -> {e}")
-                            suppressor.suppressed = ""
                     elif chunk.type == "reasoning_delta" and chunk.text:
                         # 深度思考：记入 trace（持久化展示）+ 实时推给前端，不进 LLM 上下文
                         tracer.record_reasoning(chunk.text)
@@ -703,9 +659,8 @@ class Planner:
 
     async def _call_llm(self, system: str, messages: List[Dict[str, Any]]) -> ChatResponse:
         """
-        双模式 LLM 调用（§2.2）：
-        - 模式 A：adapter 支持 function calling → 传入 tool schemas
-        - 模式 B：不支持 → 纯文本调用，从回复中解析 studio-actions
+        LLM 调用（§2.2）：支持 function calling 的 adapter 传入 tool schemas；
+        不支持的（mock/演示）纯文本调用（4-4 后不再作为生产动作通道）。
         """
         full_messages = [{"role": "system", "content": system}] + messages
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝

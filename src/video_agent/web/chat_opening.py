@@ -25,7 +25,6 @@ from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.base_chat import BaseChatAdapter
 from src.video_agent.adapters.factory import AdapterFactory
-from src.video_agent.adapters.agy_cli import AgyCliChatAdapter
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.core.tracer import AgentTracer
 
@@ -158,20 +157,6 @@ def _build_prelude_notes(resolved_skill: str) -> List[tuple]:
     return notes
 
 
-def _channel_supports_fc(provider_id: str) -> bool:
-    """判断供应商的聊天通道是否支持 Function Calling。
-
-    gemini-cli 协议走 AgyCliChatAdapter（无 FC），其他协议走 OpenAI 兼容
-    chat adapter（支持 FC）。非 FC 通道调不了 read_* 工具，
-    附件文档与选中 Skill 必须降级为全文直接注入，否则模型根本看不到。
-    """
-    try:
-        cfg = get_provider_config(provider_id) or {}
-    except Exception:
-        cfg = {}
-    return (cfg.get("protocol") or "openai") != "gemini-cli"
-
-
 def _resolve_summary_adapter(body, candidates: List[tuple]) -> Optional[BaseChatAdapter]:
     """解析记忆摘要专用 adapter：摘要无需主模型能力，固定走便宜模型省 token。
 
@@ -202,15 +187,16 @@ def _resolve_summary_adapter(body, candidates: List[tuple]) -> Optional[BaseChat
 def _create_chat_adapter(provider_id: str, model: str):
     """按供应商协议创建 chat adapter。
 
-    Antigravity CLI（gemini-cli 协议）对齐画布行为：聊天走本机 agy CLI
-    登录态，不走反代；model=auto 时不传 --model，由 agy 自行路由
-    （曾硬路由到 custom-api 反代导致 400 model not register）。
-    其他供应商维持原 OpenAI 兼容端点解析路径。
+    4-4 双轨退役（ADR-0001，audit-0819）：非 FC 聊天通道（gemini-cli 协议
+    agy CLI）已删除，CLI 协议仅保留生图职能；选中 CLI 供应商聊天直接报
+    人话错误（错误分层气泡展示）。
     """
     cfg = get_provider_config(provider_id)
-    if cfg and cfg.get("protocol") == "gemini-cli":
-        logger.info(f"[ChatService] Antigravity CLI 聊天走本机 agy: model={model}")
-        return AgyCliChatAdapter(model=model)
+    if cfg and cfg.get("protocol") in ("gemini-cli", "codex", "jimeng"):
+        raise AdapterError(
+            f"供应商「{provider_id}」是 CLI 通道，不支持聊天（仅可用于生图）；"
+            "请在对话栏改用 OpenAI 兼容供应商的模型"
+        )
     base_url, api_key, effective_model = resolve_openai_endpoint(provider_id, model)
     return AdapterFactory.get_or_create_chat_adapter(provider_id, base_url, api_key, effective_model)
 
@@ -261,10 +247,9 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
             pending_confirm_note = _consume_pending_confirmation(svc)
             spec_finalize_note = _finalize_spec_params(svc, user_text)
             spec_wizard_note = _consume_spec_wizard(svc, user_text)
-    # 非 FC 通道（如 agy）调不了 read_uploaded_doc：附件文档降级为全文直注
+    # 4-4 双轨退役：聊天通道均为 FC，附件统一走清单+read_uploaded_doc 渐进式披露
     attachment_note = (
-        attachment_context(body.attachments, full_text=not _channel_supports_fc(body.provider))
-        if body.attachments else ""
+        attachment_context(body.attachments) if body.attachments else ""
     )
     llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
     if attachment_note:

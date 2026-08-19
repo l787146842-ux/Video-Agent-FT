@@ -81,29 +81,15 @@ class TestDualProtocol:
         assert "- add_group:" not in text, "FC 协议不应携带 studio-actions 动作清单"
         assert "可用 action:" not in text, "FC 协议不应携带文本轨动作定义段"
 
-    def test_text_mode_uses_full_protocol(self):
-        """文本通道：system.md 完整协议（含 studio-actions 清单）"""
+    def test_text_actions_never_injected_after_44(self):
+        """4-4 双轨退役（ADR-0001）：text_actions.md 已删除，
+        两种协议模式都不再注入文本动作定义。"""
         builder = _make_builder()
         ctx = PlannerContext(use_studio_context=True)
-        text = builder.build_system_prompt(ctx, fc_mode=False)
-        assert "- add_group:" in text
-
-    def test_text_protocol_injects_text_actions(self):
-        """text_protocol=True 时追加 text_actions.md 全量动作定义"""
-        builder = _make_builder()
-        ctx = PlannerContext(use_studio_context=True, text_protocol=True)
-        text = builder.build_system_prompt(ctx, fc_mode=False)
-        actions_md = load_prompt("planner/text_actions.md")
-        head = actions_md.splitlines()[0].strip()
-        assert head and head in text
-
-    def test_fc_mode_does_not_inject_text_actions(self):
-        builder = _make_builder()
-        ctx = PlannerContext(use_studio_context=True, text_protocol=False)
-        text = builder.build_system_prompt(ctx, fc_mode=True)
-        actions_md = load_prompt("planner/text_actions.md")
-        head = actions_md.splitlines()[0].strip()
-        assert head not in text
+        for fc_mode in (True, False):
+            text = builder.build_system_prompt(ctx, fc_mode=fc_mode)
+            assert "- add_group:" not in text
+            assert "studio-actions 文本协议" not in text
 
 
 class TestFeedbackTemplates:

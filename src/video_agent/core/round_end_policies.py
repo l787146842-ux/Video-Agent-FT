@@ -51,6 +51,13 @@ _STRUCTURE_CLAIM_RE = re.compile(
 )
 _FUTURE_MARKER_RE = re.compile(r"确认后|接下来|之后|即将|下一步|先确认|先将")
 
+# audit-0819-fakestop：延续承诺措辞——正文声称要继续/正在做，却以 stop 收尾且零操作。
+# 只覆盖任务流常见承诺句式，配合 applied==0 + skill 激活条件使用，防普通对话误触发。
+_CONTINUATION_PROMISE_RE = re.compile(
+    r"马上继续|继续推进|继续执行|现在(?:进行|执行|调用|写入|分析|拆解|开始)|"
+    r"接下来(?:我|将|会)|即将开始|马上开始|立刻开始",
+)
+
 
 def _claims_structure_done(*texts: str) -> bool:
     """判定文本是否声称已完成故事板结构搭建（防虚报闸的文本检测）。
@@ -83,7 +90,6 @@ class RoundEndContext:
     wants_continue: bool = False
     total_exec: int = 0
     applied: int = 0
-    stream_consumed: int = 0
     executable: List[Dict[str, Any]] = field(default_factory=list)
     gate_rejections: List[str] = field(default_factory=list)
     spec_wizard_pending: bool = False
@@ -93,6 +99,8 @@ class RoundEndContext:
     hard_break_finish: str = ""
     result_warnings: List[str] = field(default_factory=list)
     result_text: str = ""
+    # audit-0819-fakestop：轮末策略机械追加的建议动作（agent_loop 回读并入 result）
+    suggested_actions: List[Dict[str, str]] = field(default_factory=list)
     # 仲裁记录（#4：候选 + 胜出者）
     candidates: List[str] = field(default_factory=list)
     winner: str = ""
@@ -164,7 +172,8 @@ async def _apply_partial_fail_warnings(ctx: RoundEndContext, emit: Callable) -> 
             f"第 {ctx.step} 轮有 {ctx.total_exec - ctx.applied} 个操作被流程闸机拦截"
             f"（原因：{ctx.gate_rejections[0][:60]}…）"
         )
-    elif ctx.stream_consumed == 0:
+    elif not ctx.gate_rejections:
+        # 4-4 双轨退役：stream_consumed 分支已删（流式预执行不复存在）
         failed_desc = ""
         try:
             failed_desc = "；".join(
@@ -330,6 +339,25 @@ async def _apply_false_claim_audit(ctx: RoundEndContext, emit: Callable) -> None
         )
 
 
+def _cond_aborted_continuation_audit(ctx: RoundEndContext) -> bool:
+    # audit-0819-fakestop：模型说「马上继续/现在进行…」却零操作、无暂停地收尾，
+    # 用户会困惑「怎么停了」。确定性三问全中（状态可算、机器可判、无创作空间），收归系统。
+    return (
+        bool(ctx.skill)
+        and ctx.applied == 0
+        and not ctx.confirmation
+        and not ctx.wants_continue
+        and not ctx.gate_heal
+        and not ctx.suggested_actions
+        and bool(_CONTINUATION_PROMISE_RE.search(ctx.content or ""))
+    )
+
+
+async def _apply_aborted_continuation_audit(ctx: RoundEndContext, emit: Callable) -> None:
+    ctx.suggested_actions.append({"kind": "continue", "label": "继续", "value": "继续"})
+    logger.info("[RoundEnd] audit-0819-fakestop: 延续承诺措辞且零操作，机械追加继续按钮")
+
+
 # ---------- 状态驱动的下一步建议（八轮 B4：确定性交互收归系统，层 9） ----------
 
 # 判定表语义：客观状态特征 → 唯一一条下一步建议（kind=next，点击机械发送 value）。
@@ -402,4 +430,6 @@ ROUND_END_POLICIES: List[RoundEndPolicy] = [
                    _cond_stage_done_fallback, _apply_stage_done_fallback),
     RoundEndPolicy("false_claim_audit", KIND_POST_PROCESS, 120,
                    _cond_false_claim_audit, _apply_false_claim_audit),
+    RoundEndPolicy("aborted_continuation_audit", KIND_POST_PROCESS, 130,
+                   _cond_aborted_continuation_audit, _apply_aborted_continuation_audit),
 ]

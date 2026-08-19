@@ -47,19 +47,19 @@ def _run(ctx: RoundEndContext, policies=None, tracer=None) -> RoundEndContext:
 
 
 def test_r1_policy_table_shape():
-    """策略表 = 8 条（0818 架构板正批：flow_gate_pause/spec_collect 随门禁链退役），
+    """策略表 = 9 条（audit-0819-fakestop 新增 aborted_continuation_audit），
     优先级唯一且仲裁顺序确定。"""
     table = rep.ROUND_END_POLICIES
-    assert len(table) == 8
+    assert len(table) == 9
     ids = [p.policy_id for p in sorted(table, key=lambda p: p.priority)]
     assert ids == [
         "partial_fail_warnings", "gate_heal",
         "spec_doc_written_pause", "spec_review_pending", "spec_wizard_takeover",
         "structure_stage_review",
-        "stage_done_fallback", "false_claim_audit",
+        "stage_done_fallback", "false_claim_audit", "aborted_continuation_audit",
     ]
     priorities = [p.priority for p in table]
-    assert len(set(priorities)) == 8, "优先级必须唯一（仲裁顺序确定性）"
+    assert len(set(priorities)) == 9, "优先级必须唯一（仲裁顺序确定性）"
 
 
 def test_r1_gate_heal_drops_confirmation_and_continues():

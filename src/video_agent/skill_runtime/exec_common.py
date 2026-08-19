@@ -48,7 +48,6 @@ class SkillToolResult(BaseModel):
 def _resolve_chat_provider(provider: str = "", model: str = "") -> Tuple[str, str]:
     """聊天供应商解析（决策 E：优先用主模型一致的供应商/模型，缺失回退首个可用）。"""
     from src.video_agent.web.provider_config import (
-        CLI_PROTOCOLS,
         get_provider_config,
         load_merged_providers,
     )
@@ -68,7 +67,8 @@ def _resolve_chat_provider(provider: str = "", model: str = "") -> Tuple[str, st
         if (p.get("protocol") or "") == "mock":
             continue
         models = p.get("chat_models") or []
-        if models and (p.get("base_url") or (p.get("protocol") or "") in CLI_PROTOCOLS):
+        # 4-4 双轨退役：CLI 协议无聊天能力，执行器聊天供应商必须有 base_url
+        if models and p.get("base_url"):
             return str(p.get("id") or ""), str(models[0])
     return "", ""
 

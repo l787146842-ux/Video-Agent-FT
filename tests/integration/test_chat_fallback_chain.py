@@ -79,7 +79,7 @@ def _patch_fallback_env(monkeypatch) -> None:
     monkeypatch.setattr(chat_service, "_maybe_compact_history", _no_compact)
     monkeypatch.setattr(chat_service, "_resolve_summary_adapter", lambda *a, **k: None)
     monkeypatch.setattr(chat_service, "is_mock_provider", lambda *a, **k: False)
-    monkeypatch.setattr(chat_service, "_channel_supports_fc", lambda *a, **k: False)
+    # 4-4 双轨退役：_channel_supports_fc 已删除，无需 patch（ADR-0001）
     monkeypatch.setattr(chat_service, "_resolve_skill_name_for_injection", lambda *a, **k: "")
     monkeypatch.setattr(chat_service, "_build_prelude_notes", lambda *a, **k: [])
     monkeypatch.setattr(chat_service, "_resolve_selected_draft_media_config", lambda *a, **k: ("", ""))

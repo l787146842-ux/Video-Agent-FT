@@ -35,18 +35,16 @@ def test_b1_system_md_include_expansion():
     assert "看图再动笔" in text or "故事板媒体调用" in text  # shared/media_rules.md
 
 
-def test_b1_text_actions_generate_confirm_contradiction_fixed():
-    """F6：generate_image/generate_video 未确认语义与代码闸机一致（拦截）。"""
+def test_b1_text_actions_deleted_after_44():
+    """4-4 双轨退役（ADR-0001）：text_actions.md 文件已删除，
+    生成确认拦截语义唯一承载 = FC 工具层闸机（prompt_gates/gen gate）。"""
     from pathlib import Path
 
-    text = Path("prompts/planner/text_actions.md").read_text(encoding="utf-8")
-    assert "未确认会被拦截" in text
-    assert "照常执行" not in text
-    assert "未确认的 Prompt Draft 会被系统拦截" in text
+    assert not Path("prompts/planner/text_actions.md").exists()
 
 
-def test_b1_text_mode_injects_action_protocol_fc_mode_does_not():
-    """F6：文本通道注入 text_actions.md；FC 通道注入 system_fc.md（双协议瘦身闭环）。"""
+def test_b1_no_text_action_protocol_injected_after_44():
+    """4-4：两种协议模式都不再注入文本动作定义；FC 通道仍用 system_fc.md。"""
     from src.video_agent.core.planner import PlannerContext
     from src.video_agent.core.prompt_builder import PromptBuilder
 
@@ -59,9 +57,9 @@ def test_b1_text_mode_injects_action_protocol_fc_mode_does_not():
         lambda: "proj-test",
         lambda: {},
     )
-    ctx = PlannerContext(history=[], use_studio_context=True, text_protocol=False)
+    ctx = PlannerContext(history=[], use_studio_context=True)
     text_mode = builder.build_system_prompt(ctx, fc_mode=False)
-    assert "storyboard_key_elements" in text_mode      # text_actions.md 注入
+    assert "storyboard_key_elements" not in text_mode  # 文本动作定义已删
     fc_mode = builder.build_system_prompt(ctx, fc_mode=True)
     assert "Tool 优先协议" in fc_mode                   # system_fc.md 注入
     assert "storyboard_key_elements" not in fc_mode

@@ -2,9 +2,9 @@
 """
 7777 二轮复盘修复回归测试。
 
-覆盖：
-1. 退化流程信号 JSON（普通 json 围栏确认数组 / 裸 JSON status+tool 变体）
-   的解析、剥离与流式抑制（消息框不再漏 JSON 原文）。
+覆盖（4-4 双轨退役后，ADR-0001）：
+1. 普通 JSON 不受动作块剥离/流式抑制影响（退化信号探测与 json 信号围栏
+   抑制已随文本轨删除；此处保留反向断言防误伤）。
 2. 降级开关新语义：同模型跨厂商（模型不换），仅列同名模型的供应商
    入链，空列表不入链；覆盖聊天/生图/出视频三类候选链与重试判定。
 """
@@ -20,62 +20,8 @@ from src.video_agent.web.action_parser import (
 )
 
 
-class TestDegradedJsonFenceConfirm:
-    """变体①：普通 ```json 围栏写 [{"action": "request_confirmation", ...}]"""
-
-    REPLY = (
-        "已为您重新编写当前分镜的提示词草案。\n\n"
-        "```json\n"
-        '[\n  {\n    "action": "request_confirmation",\n'
-        '    "message": "接下来您希望进行什么操作？",\n'
-        '    "options": [{"label": "生成视频", "description": "d1"}]\n  }\n]\n'
-        "```"
-    )
-
-    def test_parse_confirmation_from_plain_json_fence(self):
-        actions = parse_actions_from_reply(self.REPLY)
-        assert len(actions) == 1
-        assert actions[0]["action"] == "request_confirmation"
-
-    def test_split_extracts_confirmation_and_options(self):
-        actions = parse_actions_from_reply(self.REPLY)
-        _, _, confirmation, options = split_actions(actions)
-        assert confirmation == "接下来您希望进行什么操作？"
-        assert options and options[0]["label"] == "生成视频"
-
-    def test_strip_removes_fence_keeps_visible_text(self):
-        visible = strip_action_blocks(self.REPLY)
-        assert "json" not in visible
-        assert "request_confirmation" not in visible
-        assert "已为您重新编写当前分镜的提示词草案" in visible
-
-    def test_has_action_block_detects(self):
-        assert has_action_block(self.REPLY) is True
-
-
-class TestDegradedBareJsonStatusTool:
-    """变体②：正文裸 JSON {"status": "done", "tool": "confirm", "message": ...}"""
-
-    REPLY = (
-        "The transformation will continue, then slowly unfold.\n"
-        '{"status": "done", "tool": "confirm", '
-        '"message": "分镜拆解已完成。请您审阅分镜卡片的内容。"}'
-    )
-
-    def test_parse_bare_json_tool_variant(self):
-        actions = parse_actions_from_reply(self.REPLY)
-        assert len(actions) == 1
-        assert actions[0]["action"] == "confirm"
-
-    def test_extract_confirmation_via_tool_key(self):
-        actions = parse_actions_from_reply(self.REPLY)
-        _, _, confirmation, _ = split_actions(actions)
-        assert confirmation == "分镜拆解已完成。请您审阅分镜卡片的内容。"
-
-    def test_strip_bare_json_keeps_preceding_text(self):
-        visible = strip_action_blocks(self.REPLY)
-        assert "slowly unfold" in visible
-        assert '"tool"' not in visible
+class TestConfirmationToolKeyAlias:
+    """确认动作的 tool 键别名归一（内部合成确认块仍可能携带，保留）"""
 
     def test_extract_confirmation_direct_tool_key(self):
         msg = _extract_confirmation({"tool": "confirm", "message": "请确认"})
@@ -94,16 +40,8 @@ class TestLegitimateJsonUntouched:
         assert has_action_block('```json\n{"a": 1}\n```') is False
 
 
-class TestSuppressorSignalWatch:
-    """流式观察模式：含确认信号的 json 围栏整块抑制，普通 json 放行"""
-
-    def test_confirm_signal_fence_suppressed(self):
-        sup = StreamActionSuppressor()
-        out = sup.feed('前文\n```json\n[{"action": "request_confirmation", "message": "m"}]\n```\n后文')
-        sup.flush()
-        assert "request_confirmation" not in out
-        assert "前文" in out
-        assert "request_confirmation" in sup.suppressed
+class TestSuppressorPlainJsonPassthrough:
+    """4-4 后抑制器只认 studio-actions 围栏：普通 json 围栏照常放行"""
 
     def test_plain_json_fence_released(self):
         sup = StreamActionSuppressor()
@@ -111,13 +49,6 @@ class TestSuppressorSignalWatch:
         out = sup.feed(full)
         out += sup.flush()
         assert '"data": 123' in out
-
-    def test_status_tool_variant_suppressed(self):
-        sup = StreamActionSuppressor()
-        out = sup.feed('```json\n{"status": "done", "tool": "confirm", "message": "x"}\n```')
-        out += sup.flush()
-        assert '"tool"' not in out
-        assert '"tool": "confirm"' in sup.suppressed
 
 
 # ---------- 降级新语义：同模型跨厂商 ----------

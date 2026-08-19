@@ -3,6 +3,13 @@ Studio Actions 解析器 — 从 actions.py 抽离。
 
 职责：从 Agent 回复文本中提取 / 解析 / 修复 studio-actions JSON 块。
 纯函数实现，无状态依赖，可独立测试。
+
+4-4 双轨退役（ADR-0001，audit-0819）后的职能边界：
+- 不再作为「非 FC 模型动作通道」的解析器（文本轨已退役）；
+- 保留消费对象：①FC 轨系统内部合成的确认块（planner._handle_fc_response）；
+  ②mock/演示通道的固定输出；③strip_action_blocks 防违规块泄漏（双路径共用）。
+- 已删除：退化流程信号探测（extract_degraded_signal_blocks，7777 事故 S02）、
+  StreamingActionExtractor 流式增量提取（边写边填，文本轨基础设施）。
 """
 from loguru import logger
 import json
@@ -26,44 +33,27 @@ _STRIP_PATTERNS = [
     re.compile(r"<studio-actions>[\s\S]*?</studio-actions>", re.IGNORECASE),
 ]
 
-# 包装格式探测（9999 事故）：模型把确认写进 ```json 围栏或裸 JSON 的
-# {"studio-actions": [...]} 包装对象里，标准围栏匹配不到
+# 包装格式探测（9999 事故）：确认写进 {"studio-actions": [...]} 包装对象里，
+# 标准围栏匹配不到（系统内部合成确认块的兼容形态）
 _WRAPPER_KEY_RE = re.compile(r"\"studio-actions\"\s*:")
 _JSON_FENCE_RE = re.compile(r"```(?:json|javascript)\s*([\s\S]*?)```", re.IGNORECASE)
-
-# 退化流程信号探测（7777 事故第五/六代变体）：模型不写 studio-actions 围栏，
-# 直接在正文写 ①普通 ```json 围栏 [{"action": "request_confirmation", ...}]；
-# ②裸 JSON {"status": "done", "tool": "confirm", "message": ...}。
-# 识别口径：action/name/type/tool 任一键值命中流程信号别名即算。
-_SIGNAL_KEYS = ("action", "name", "type", "tool")
-_SIGNAL_ALIASES = (
-    "request_confirmation", "confirm", "confirmation", "pause",
-    "workflow_pause", "continue",
-)
-# 裸 JSON 锚点键（name/type 太泛不作裸锚，防误伤正文里的普通 JSON）
-_BARE_SIGNAL_KEY_RE = re.compile(r"\"(?:action|tool|status)\"\s*:")
 
 
 # ---------- 公开 API ----------
 
 def strip_action_blocks(text: str) -> str:
-    """移除 studio-actions 块，返回纯可见文本（含包装格式，9999 事故；
-    含退化流程信号 JSON，7777 事故）"""
+    """移除 studio-actions 块，返回纯可见文本（含包装格式，9999 事故）"""
     for pat in _STRIP_PATTERNS:
         text = pat.sub("", text)
     text = _strip_wrapper_blocks(text)
-    # 退化信号块（json 围栏/裸 JSON）：倒序剥离不影响前面的区间坐标
-    for s, e, _ in reversed(extract_degraded_signal_blocks(text)):
-        text = text[:s] + text[e:]
     return text.strip()
 
 
 def has_action_block(reply: str) -> bool:
-    """回复中是否存在 studio-actions 块（无论能否解析成功，含包装格式与退化信号）"""
+    """回复中是否存在 studio-actions 块（无论能否解析成功，含包装格式）"""
     return (
         bool(_ACTION_BLOCK_DETECT.search(reply))
         or bool(_WRAPPER_KEY_RE.search(reply))
-        or bool(extract_degraded_signal_blocks(reply))
     )
 
 
@@ -137,67 +127,7 @@ def parse_actions_from_reply(reply: str) -> List[Dict[str, Any]]:
             if parsed:
                 actions.extend(normalize_actions(parsed))
             break
-    # 退化信号兜底（7777 事故）：普通 json 围栏/裸 JSON 里直接写确认/暂停信号，
-    # 无 studio-actions 标签也识别出来，避免 JSON 原文漏给用户
-    if not actions:
-        for _, _, parsed in extract_degraded_signal_blocks(reply):
-            actions.extend(normalize_actions(parsed))
     return [a for a in actions if isinstance(a, dict)]
-
-
-# ---------- 退化流程信号探测（7777 事故） ----------
-
-def _is_signal_obj(obj: Any) -> bool:
-    """单个 dict 是否为流程信号（确认/暂停/继续）"""
-    if not isinstance(obj, dict):
-        return False
-    for key in _SIGNAL_KEYS:
-        val = obj.get(key)
-        if isinstance(val, str) and val.strip().lower() in _SIGNAL_ALIASES:
-            return True
-    return False
-
-
-def _parsed_is_signal(parsed: Any) -> bool:
-    """解析结果是否含流程信号（dict 本体 / 列表 / actions 包装）"""
-    if _is_signal_obj(parsed):
-        return True
-    if isinstance(parsed, list):
-        return any(_is_signal_obj(x) for x in parsed)
-    if isinstance(parsed, dict):
-        for key in ("actions", "studio-actions"):
-            sub = parsed.get(key)
-            if isinstance(sub, list) and any(_is_signal_obj(x) for x in sub):
-                return True
-    return False
-
-
-def extract_degraded_signal_blocks(reply: str) -> List[tuple]:
-    """扫描回复中的退化流程信号 JSON 块，返回 [(start, end, parsed)] 按起点升序。
-
-    覆盖两类：①```json/javascript 围栏内容解析后含信号；②正文裸 JSON 对象
-    （以 action/tool/status 键为锚点，括号深度扫描取完整区间）。与已命中
-    区间重叠的锚点跳过，防重复剥离。
-    """
-    blocks: List[tuple] = []
-    for fm in _JSON_FENCE_RE.finditer(reply):
-        parsed = parse_json_tolerant(fm.group(1))
-        if parsed is not None and _parsed_is_signal(parsed):
-            blocks.append((fm.start(), fm.end(), parsed))
-    for km in _BARE_SIGNAL_KEY_RE.finditer(reply):
-        if any(s <= km.start() < e for s, e, _ in blocks):
-            continue
-        span = _find_wrapper_span(reply, km.start())
-        if not span:
-            continue
-        s, e = span
-        if any(s < e2 and s2 < e for s2, e2, _ in blocks):
-            continue
-        parsed = parse_json_tolerant(reply[s:e])
-        if parsed is not None and _parsed_is_signal(parsed):
-            blocks.append((s, e, parsed))
-    blocks.sort(key=lambda b: b[0])
-    return blocks
 
 
 # ---------- JSON 容错解析 ----------
@@ -250,8 +180,7 @@ def normalize_actions(parsed: Any) -> List[Dict]:
     if isinstance(parsed, dict):
         if isinstance(parsed.get("actions"), list):
             return [_normalize_action_item(a) for a in parsed["actions"]]
-        # 单对象兜底（7777 事故：{"status":..., "tool": "confirm"} 无 action 键，
-        # 归一后能补出 action 才返回，避免把普通对象误当动作）
+        # 单对象兜底：归一后能补出 action 才返回，避免把普通对象误当动作
         item = _normalize_action_item(parsed)
         if isinstance(item, dict) and item.get("action"):
             return [item]
@@ -259,9 +188,7 @@ def normalize_actions(parsed: Any) -> List[Dict]:
 
 
 def _normalize_action_item(a: Any) -> Any:
-    """单条 action 归一：缺 action 键时用 name/type/tool 兜底（笨模型变体，
-    9999 事故：模型写 {"name": "request_confirmation", ...}；
-    7777 事故：模型写 {"status": "done", "tool": "confirm", ...}）。"""
+    """单条 action 归一：缺 action 键时用 name/type/tool 兜底（9999 变体）。"""
     return normalize_action_aliases(a)
 
 
@@ -289,62 +216,3 @@ def normalize_action_aliases(a: Any) -> Any:
         elif not isinstance(out.get("draft"), dict):
             out["draft"] = payload
     return out
-
-
-# ---------- 流式增量提取（边写边填） ----------
-
-class StreamingActionExtractor:
-    """studio-actions 块的流式增量提取器。
-
-    喂入被 StreamActionSuppressor 抑制的动作块内容（不含围栏），
-    用括号深度 + 字符串状态机检测顶层 JSON 对象闭合，
-    每闭合一个立即解析返回——支持模型边生成、系统边执行，
-    草稿卡片逐张填充，而不是等全部写完一次性弹出。
-    解析失败的片段静默丢弃（流尾由 parse_actions_from_reply 全量兜底）。
-    """
-
-    def __init__(self) -> None:
-        self._buf = ""
-        self._obj_start = -1
-        self._depth = 0
-        self._in_str = False
-        self._esc = False
-
-    def feed(self, chunk: str) -> List[Dict[str, Any]]:
-        """追加增量内容，返回本次新闭合的 action dict 列表"""
-        out: List[Dict[str, Any]] = []
-        for ch in chunk:
-            if self._obj_start == -1:
-                if ch == "{":
-                    self._obj_start = len(self._buf)
-                    self._depth = 1
-                    self._in_str = False
-                    self._esc = False
-                # 数组括号/逗号/空白跳过（对象内嵌套数组在深度计数内处理）
-                self._buf += ch
-                continue
-            self._buf += ch
-            if self._in_str:
-                if self._esc:
-                    self._esc = False
-                elif ch == "\\":
-                    self._esc = True
-                elif ch == '"':
-                    self._in_str = False
-                continue
-            if ch == '"':
-                self._in_str = True
-            elif ch in "{[":
-                self._depth += 1
-            elif ch in "}]":
-                self._depth -= 1
-                if self._depth == 0:
-                    raw = self._buf[self._obj_start:]
-                    self._obj_start = -1
-                    self._in_str = False
-                    self._esc = False
-                    parsed = parse_json_tolerant(raw)
-                    for a in normalize_actions(parsed):
-                        if isinstance(a, dict):
-                            out.append(a)
-        return out

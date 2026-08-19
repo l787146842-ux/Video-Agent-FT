@@ -23,10 +23,12 @@
 - routes 层（`web/routes/agent.py`）必须通过 `Planner.handle_message()` / `handle_message_stream()` 处理用户消息
 - **禁止**在 route 中直接调用 LLM Adapter 或自行实现多步循环
 
-### Rule 2: 多步循环唯一实现 + 双轨一致
+### Rule 2: 多步循环唯一实现 + 动作通道单轨（FC）
 - `core/agent_loop.py::run_agent_loop()` 是多步循环的**唯一实现**；`MAX_STEPS` 读 `settings.max_steps`
-- **双轨执行**：FC 轨（`core/fc_tool_runner.py`）与文本轨（`web/action_executor.py`）必须对同一请求使用**同一 guard pipeline 实例**（`core/guard_pipeline.py`，见 §2.0）与同一动作语义，判定逐字节一致；新增判定逻辑必须双轨同测
-- **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，双轨必须委托，禁止各自重写查找/字段白名单/类别映射
+- **动作通道唯一 = FC 工具调用**（`core/fc_tool_runner.py`）；4-4 双轨退役（audit-0819，ADR-0001）已删除：非 FC 聊天通道（agy CLI）、text_actions.md 注入、退化信号探测、流式预执行；禁止恢复自由文本动作解析
+- **文本块解析的保留边界**：`agent_loop` 仅消费①系统内部合成的确认块（`planner._handle_fc_response`）②mock 演示输出；`strip_action_blocks` 防违规块泄漏（双路径共用）
+- **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
+- **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
 - **层级例外（已收敛）**：`web/action_executor.py` 因依赖 web 生成管线暂留 web 层；core→web 顶层 import 一律禁止（经构造注入装配）
 
 ### Rule 3: StateManager 唯一写入点
@@ -61,7 +63,7 @@
 ### 2.0 闸机管线宪法（Guardrails are Execution Logic）
 - 闸机是**执行逻辑**，不是提示词条款：任何「拦截/放行/剥离」不得依赖模型自觉遵守。
 - 统一 guard pipeline：`input guard → tool input guard → tool execute → tool output guard → output guard → audit`；
-  FC 轨与文本轨使用**同一管线实例**，同一请求判定逐字节一致（Rule 2）。
+  动作通道单轨（FC，Rule 2），全部判定经同一管线实例。
 - 工具级闸在**每一次工具调用**前后都执行；tripwire 触发立即中断并保留已完成调用记录，禁止把残品当成品。
 - 所有 verdict 结构化（`GateVerdict(rule_id, layer, ok, message)`），回喂模型与展示用户用同一源，杜绝两套说辞。
 
@@ -194,7 +196,7 @@
 ## 十、测试要求
 
 - 新增 Tool→单测；新增路由→集成测试（TestClient）；新增 Adapter→mock 测试；改核心（Planner/StateManager/agent_loop/闸机）→回归测试
-- 闸机改动→黄金语料校准测试；提示词迁移→快照测试；双轨改动→双轨一致性测试；新增 SSE 事件→sse_protocol 注册表登记
+- 闸机改动→黄金语料校准测试；提示词迁移→快照测试；动作通道改动→FC 单轨一致性测试；新增 SSE 事件→sse_protocol 注册表登记
 - 耦合行变更→同批更新 `core/coupling_registry.py`（遍历测试钉死，漏改即红）
 
 ```bash
@@ -218,7 +220,7 @@ src/video_agent/
 │   ├── round_end_policies.py ← 轮末策略状态机 + suggest_next_actions（层 9 唯一落点）
 │   ├── prompt_gates.py     ← 闸机规则注册表 + 结构/流程判定（§2）
 │   ├── gates_spec.py / gates_script.py ← 规格/剧本闸家族（prompt_gates 尾部 re-export）
-│   ├── guard_pipeline.py   ← 双轨共用闸机管线（2.0）
+│   ├── guard_pipeline.py   ← 闸机管线（2.0，动作判定唯一入口）
 │   ├── prompt_builder.py   ← 上下文组装；token_budget.py ← 窗口/截断
 │   ├── coupling_registry.py ← 13.7 耦合表机器可读化（test_coupling_registry 钉死）
 │   └── tracer.py           ← 审计链路
@@ -228,7 +230,7 @@ src/video_agent/
 │   └── dag.py / registry.py / guard.py / progress.py / blackbox.py
 ├── web/
 │   ├── app.py / chat_service.py(+chat_opening/chat_consume) / sse.py / sse_protocol.py
-│   ├── action_executor.py  ← 文本轨执行器；生成动作域在 action_gen.py
+│   ├── action_executor.py  ← 动作执行器；生成动作域在 action_gen.py
 │   ├── task_manager.py / skill_docs.py / routes/
 ├── state/  manager.py（唯一写入点）/ models.py / storyboard_ops.py / context_builder.py
 ├── adapters/  tools/  memory/  config.py  exceptions.py  utils/
@@ -293,7 +295,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 | # | 层 | 位置 | 注入时机 | 唯一职责 | 禁止承载 |
 |---|----|------|---------|---------|---------|
 | 1 | 平台协议 | `prompts/planner/system.md`（FC 用 `system_fc.md`） | 主模型每轮 | 动作格式/暂停通道/输出纪律/工具使用法 | 业务领域规则 |
-| 2 | 文本协议 | `prompts/planner/text_actions.md` | 仅非 FC 通道 | studio-actions 全量动作定义 | 流程/业务规则 |
+| 2 | ~~文本协议~~ 已删 | —（4-4 双轨退役，ADR-0001） | — | studio-actions 动作定义随文本轨整体删除 | — |
 | 3 | Skill 文档 | `data/skills/*.md` | planner 章节/执行器内章节 | 该 Skill 的阶段内创作引导（产出规范/创作要求），纯散文 | 流程顺序与暂停点（已归平台编排+sidecar 声明）；模型能力参数 |
 | 4 | 执行铁律文档 | 项目内「执行铁律.md」（`spec_rules` 模板） | Skill 激活时全文注入 | 项目级可编辑生产契约 | 平台协议、流程步骤 |
 | 5 | 制片规格文档 | 项目内规格文档（Final_Video_Spec.md 等） | 执行器显式注入/按需 read | 本项目参数事实（画幅/分辨率/渠道/时长） | 任何规则性表述 |
@@ -346,6 +348,9 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 
 ```
 问题出现
+  ├─ Q0 现有机制或下一代模型是否已覆盖？先跑 eval（gate_corpus / acceptance --with-eval）
+  │     证明不覆盖，才允许新增组件（audit-0819 设立；Anthropic/OpenAI eval-driven）；
+  │     新增脚手架组件必须入账 core/scaffold_registry.py，禁止裸补丁
   ├─ Q1 这是什么规则失效？按 13.4/13.3 定位它的唯一定义层
   │     └─ 找不到归属 → 它是一条新规则，按 13.3 选层安家，而不是在症状现场造新家
   ├─ Q2 这条规则能被代码机械校验吗？
@@ -420,7 +425,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 
 **G1 Skill 只读关**：方案不得包含对 `data/skills/*` 的任何修改（含 manifest 声明、章节文字、写死参数）。Skill 要求与系统行为不符时，修平台层。**禁止以降低 Skill 要求的方式迁就系统缺陷**。（例外：用户显式裁决的清理，如八轮 T16/T17，须记台账。）
 
-**G2 既有机制审计关**：出方案前必须先 grep 代码与台账，回答“这个能力是否已存在”。已存在的机制优先**启用/扩展**，禁止凭空设计平行新机制。
+**G2 既有机制审计关**：出方案前必须先 grep 代码与台账，回答“这个能力是否已存在”。已存在的机制优先**启用/扩展**，禁止凭空设计平行新机制。对「模型能力缺口」类假设，必须跑 eval 证明缺口存在（13.5 Q0）才允许新增脚手架组件；新增即入账 `core/scaffold_registry.py`（假设可证伪 + 复测策略齐备）。
 
 **G3 Prose 禁令关**：方案不得包含“往任何文档/提示词里写一句话让模型配合某个机制”。机制能用代码机械执行就沉代码层（P2）。
 

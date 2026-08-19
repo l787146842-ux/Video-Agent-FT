@@ -81,14 +81,8 @@ class StudioActionExecutor:
         # 本批次被结构纯净闸剥离的内联详细提示词条数（每次 execute 重置）：
         # 剥离后草稿无提示词，正文追加更正说明防虚报
         self.prompts_stripped: int = 0
-        # 流式增量执行（边写边填）计数：由 planner 流式路径维护，
-        # agent_loop 据此把已预执行的动作从重复执行中剔除
-        self.stream_preapplied: int = 0
-        self.stream_consumed: int = 0
-        # 流式批次是否已压入 undo 快照（整批只压一次，随非累加批次复位）
-        self._stream_undo_pushed: bool = False
-        # 流式批次是否已开始（首拆判定整个流式轮只算一次，与普通批次语义对齐）
-        self._stream_batch_started: bool = False
+        # 4-4 双轨退役：流式「边写边填」计数器（stream_preapplied/stream_consumed）
+        # 与累加批次状态已删（流式预执行为文本轨基础设施）
 
     def _reject(self, reason: str) -> None:
         """记录一条闸机拦截原因（去重）"""
@@ -113,36 +107,22 @@ class StudioActionExecutor:
         """移除回复中的 studio-actions 块，返回纯文本"""
         return strip_action_blocks(reply)
 
-    def execute(self, actions: List[Dict[str, Any]], accumulate: bool = False) -> int:
+    def execute(self, actions: List[Dict[str, Any]]) -> int:
         """执行操作列表，返回成功执行的数量。执行后自动持久化。
 
         Agent 主路径统一在此 push_undo()，使 Agent 改动与手动 update 一样可撤销；
         纯信号操作（select/确认/continue）或全部失败时不污染 undo 栈。
-
-        accumulate=True（流式边写边填批次）：不重置闸机拦截/结构搭建等
-        批次记录（整个流式轮视为同一批），undo 快照整批只压一次。
         """
         mutating = [a for a in actions if self._is_mutating(a)]
-        if not accumulate:
-            if mutating:
-                self.svc.push_undo()
-            self.gate_rejections = []  # 每批次重置拦截原因记录
-            self.gate_warnings = []
-            self.last_action_durations = []  # B2/F21：每批次重置逐动作耗时
-            self.structure_kinds_created = set()
-            self.prompts_stripped = 0
-            self._stream_undo_pushed = False
-            self._stream_batch_started = False
-            # 0817：批前故事板是否为空快照（轮末阶段审阅卡只在「本批把空板推进到阶段完成」时注入）
-            self._storyboard_empty_before = prompt_gates.storyboard_is_empty(self.state)
-        else:
-            if mutating and not self._stream_undo_pushed:
-                self.svc.push_undo()
-                self._stream_undo_pushed = True
-            if not self._stream_batch_started:
-                # 流式轮首个变动动作时判定（与普通批次「批开始时刻」语义一致）
-                self._stream_batch_started = True
-                self._storyboard_empty_before = prompt_gates.storyboard_is_empty(self.state)
+        if mutating:
+            self.svc.push_undo()
+        self.gate_rejections = []  # 每批次重置拦截原因记录
+        self.gate_warnings = []
+        self.last_action_durations = []  # B2/F21：每批次重置逐动作耗时
+        self.structure_kinds_created = set()
+        self.prompts_stripped = 0
+        # 0817：批前故事板是否为空快照（轮末阶段审阅卡只在「本批把空板推进到阶段完成」时注入）
+        self._storyboard_empty_before = prompt_gates.storyboard_is_empty(self.state)
         applied = 0
         for action in actions:
             try:
@@ -157,8 +137,8 @@ class StudioActionExecutor:
             # 防抖落盘：多步循环中合并连续变更，避免每轮全量双写阻塞事件循环
             self.svc.save_debounced()
             logger.info(f"[StudioActions] Applied {applied} action(s), state persisted")
-        elif mutating and not accumulate:
-            # 全部失败：丢弃预先压入的 undo 快照（累加批次的快照属整个流式批，不在此丢）
+        elif mutating:
+            # 全部失败：丢弃预先压入的 undo 快照
             self.svc.discard_last_undo()
         return applied
 
@@ -180,7 +160,7 @@ class StudioActionExecutor:
             StudioActionExecutor._ASYNC_EXECUTOR_ACTIONS
 
     async def execute_async(
-        self, actions: List[Dict[str, Any]], accumulate: bool = False
+        self, actions: List[Dict[str, Any]]
     ) -> int:
         """文本动作轨执行含异步执行器的操作列表。
 
@@ -201,7 +181,7 @@ class StudioActionExecutor:
             else:
                 sync_actions.append(act)
         if sync_actions:
-            applied += self.execute(sync_actions, accumulate=accumulate)
+            applied += self.execute(sync_actions)
         if applied > 0:
             self.svc.save_debounced()
         return applied
@@ -325,21 +305,19 @@ class StudioActionExecutor:
             return []
         return pairs
 
-    async def execute_locked(self, actions: List[Dict[str, Any]], accumulate: bool = False) -> int:
+    async def execute_locked(self, actions: List[Dict[str, Any]]) -> int:
         """持 svc.lock 执行（与 FC Tool 路径的并发契约对齐）。
 
         调用方已持有 svc.lock 时（如 chat_service mock 路径）必须改用同步 execute()，
         asyncio.Lock 不可重入，嵌套获取会死锁。
         """
         async with self.svc.lock:
-            return self.execute(actions, accumulate=accumulate)
+            return self.execute(actions)
 
-    async def execute_async_locked(
-        self, actions: List[Dict[str, Any]], accumulate: bool = False,
-    ) -> int:
+    async def execute_async_locked(self, actions: List[Dict[str, Any]]) -> int:
         """持 svc.lock 执行异步执行器动作（对齐 execute_locked 并发契约）。"""
         async with self.svc.lock:
-            return await self.execute_async(actions, accumulate=accumulate)
+            return await self.execute_async(actions)
 
     # ---------- 内部方法 ----------
 

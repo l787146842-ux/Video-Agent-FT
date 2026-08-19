@@ -24,7 +24,6 @@ from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.base_chat import BaseChatAdapter
 from src.video_agent.adapters.factory import AdapterFactory
-from src.video_agent.adapters.agy_cli import AgyCliChatAdapter
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.state.models import ALL_CATEGORIES_TUPLE

@@ -148,15 +148,13 @@ def bind_attachments(svc: StateManager, attachments: List[Dict[str, str]]) -> No
         svc.save()
 
 
-def attachment_context(attachments: List[Dict[str, str]], full_text: bool = False) -> str:
+def attachment_context(attachments: List[Dict[str, str]]) -> str:
     """
     为 LLM 构建素材说明：文本类文档（.md/.txt）默认只注入清单（名称+字数+前 200 字预览），
     正文已存入 uploadedDocs，需要全文时调用 read_uploaded_doc 按需检索；
     其他类型给出明确的能力说明，避免 LLM 乱猜「我看不到素材」或假装看过。
 
-    full_text=True（降级路径）：当前通道不支持 Function Calling（如 gemini-cli），
-    模型根本调不了 read_uploaded_doc，此时直接注入截断后的全文，
-    否则模型只能看到 200 字预览就开始创作，产出必偏。
+    4-4 双轨退役（ADR-0001）：非 FC 通道的 full_text 全文直注降级路径已删除。
     """
     parts: List[str] = []
     for att in attachments[:_MAX_ATTACHMENTS]:
@@ -179,16 +177,6 @@ def attachment_context(attachments: List[Dict[str, str]], full_text: bool = Fals
                     )
                 else:
                     parts.append(f"（素材文档《{name}》未在服务器上找到，请让用户重新上传）")
-                continue
-            if full_text:
-                body = content[:_MAX_DOC_CHARS]
-                trunc_note = (
-                    f"\n……（正文超长，已截断为前 {_MAX_DOC_CHARS} 字）" if len(content) > _MAX_DOC_CHARS else ""
-                )
-                parts.append(
-                    f"（用户上传了素材文档《{name}》，共 {len(content)} 字，全文如下，"
-                    f"必须基于它创作，不得虚构原文没有的内容）\n{body}{trunc_note}"
-                )
                 continue
             preview = content[:_DOC_PREVIEW_CHARS].replace("\n", " ")
             parts.append(

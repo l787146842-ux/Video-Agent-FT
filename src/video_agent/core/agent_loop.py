@@ -181,7 +181,7 @@ async def run_agent_loop(
 
     result = AgentLoopResult()
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
-    # B0/F1：文本轨已发射过 doc_written 的文档名（防重复发射；FC 轨在 fc_tool_runner 内发射）
+    # B0/F1：文本块路径已发射过 doc_written 的文档名（防重复发射；FC 轨在 fc_tool_runner 内发射）
     _emitted_docs: set = set()
 
     def _wizard_active() -> bool:
@@ -324,7 +324,9 @@ async def run_agent_loop(
         if fc_applied > 0:
             result.applied_actions += fc_applied
             await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": fc_applied})
-            visible = content.strip()
+            # audit-0819-leak：FC 轨与文本轨同一清洗函数（Rule 2 双轨一致），
+            # 防模型违规输出的 studio-actions 块泄漏进用户气泡
+            visible = executor.strip_action_blocks(content)
             if visible:
                 result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
             logger.info(
@@ -357,7 +359,7 @@ async def run_agent_loop(
             })
             continue
 
-        # 文本解析路径（非 FC 模型的 fallback）
+        # 文本块解析路径（4-4 双轨退役后仅消费：系统内部合成的确认块 / mock 输出）
         actions = executor.parse_actions_from_reply(content)
         if not actions and executor.has_action_block(content):
             result.warnings.append(
@@ -408,19 +410,9 @@ async def run_agent_loop(
                                 "请立即暂停，等待用户完成规格交互。向用户陈述需与此一致：本轮未写入规格。")})
             except Exception:
                 spec_wizard_pending = False
-        # 本轮全部可执行操作数（含流式已预执行部分）：gate_heal 判定用
+        # 本轮全部可执行操作数：gate_heal 判定用
         total_exec = len(executable)
-        # 流式增量执行（边写边填）：planner 流式路径已逐条预执行的动作
-        # 计入已应用并从待执行列表剔除，严禁重复执行（add_group 重复会建重分组）
-        stream_consumed = int(getattr(executor, "stream_consumed", 0) or 0)
-        stream_preapplied = int(getattr(executor, "stream_preapplied", 0) or 0)
-        if stream_consumed:
-            executable = executable[stream_consumed:]
-            executor.stream_consumed = 0
-            executor.stream_preapplied = 0
-            logger.info(
-                f"[AgentLoop] step={step} 流式边写边填已预执行 {stream_preapplied}/{stream_consumed} 个操作"
-            )
+        # 4-4 双轨退役：流式「边写边填」预执行已删，无 stream_consumed 切片
         if executable:
             await emit({"type": SSE_EXECUTING_ACTIONS, "step": step, "count": len(executable)})
             # 过程时间线：逐个预告即将执行的操作（前端渲染运行态条目）
@@ -441,13 +433,10 @@ async def run_agent_loop(
         # 文本轨异步执行器动作（script_analyze/storyboard_* 等）走 execute_async
         # （独立 LLM 调用 + 结构化校验）；其余走同步 execute_locked
         if any(executor._is_async_action(a) for a in executable):
-            applied = await executor.execute_async_locked(
-                executable, accumulate=stream_consumed > 0,
-            )
+            applied = await executor.execute_async_locked(executable)
         else:
-            applied = await executor.execute_locked(executable, accumulate=stream_consumed > 0)
+            applied = await executor.execute_locked(executable)
         # 阶段账本：script_analyze 成功 → 标记已完成（总结/收集闸判定）
-        applied += stream_preapplied  # 流式预执行成功数计入本轮应用量
         _batch_ms = (time.monotonic() - _t0) * 1000
         result.applied_actions += applied
         if applied:
@@ -515,7 +504,6 @@ async def run_agent_loop(
             wants_continue=wants_continue,
             total_exec=total_exec,
             applied=applied,
-            stream_consumed=stream_consumed,
             executable=executable,
             gate_rejections=gate_rejections,
             spec_wizard_pending=spec_wizard_pending,
@@ -529,6 +517,9 @@ async def run_agent_loop(
         if _re_ctx.result_warnings:
             result.warnings.extend(_re_ctx.result_warnings)
         result.text = _re_ctx.result_text
+        # audit-0819-fakestop：轮末策略机械追加的建议动作（仅当无既有建议时生效）
+        if _re_ctx.suggested_actions and not result.suggested_actions:
+            result.suggested_actions.extend(_re_ctx.suggested_actions)
         if _re_ctx.hard_break:
             result.confirmation = confirmation
             result.confirmation_options = confirmation_options
