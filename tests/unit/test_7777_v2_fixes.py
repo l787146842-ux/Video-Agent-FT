@@ -10,19 +10,14 @@
 """
 import pytest
 
-from src.video_agent.core.agent_loop import _extract_confirmation, split_actions
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.web.action_parser import (
     parse_actions_from_reply,
 )
 
 
-class TestConfirmationToolKeyAlias:
-    """确认动作的 tool 键别名归一（内部合成确认块仍可能携带，保留）"""
-
-    def test_extract_confirmation_direct_tool_key(self):
-        msg = _extract_confirmation({"tool": "confirm", "message": "请确认"})
-        assert msg == "请确认"
+# TestConfirmationToolKeyAlias（_extract_confirmation 别名归一）已随
+# S16 删除退役（audit-0819d）：暂停确认唯一经 workflow_pause FC 工具上抛。
 
 
 class TestLegitimateJsonUntouched:

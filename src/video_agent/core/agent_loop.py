@@ -85,7 +85,7 @@ class AgentLoopResult:
     applied_actions: int = 0
     steps: int = 0
     warnings: List[str] = field(default_factory=list)
-    # LLM 通过 request_confirmation 请求用户确认时的说明文字（非空表示等待确认）
+    # LLM 通过 workflow_pause 工具请求用户确认时的说明文字（非空表示等待确认）
     confirmation: str = ""
     # 确认卡片的候选选项（每项 {label, description}，前端渲染为单选卡片）
     confirmation_options: List[Dict[str, Any]] = field(default_factory=list)
@@ -97,58 +97,12 @@ class AgentLoopResult:
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
 
 
-def split_actions(actions: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool, str, List[Dict[str, Any]]]:
-    """分离流程信号，返回 (可执行的 actions, 是否请求下一轮, 确认请求文案, 确认候选选项)"""
-    executable: List[Dict[str, Any]] = []
-    wants_continue = False
-    confirmation = ""
-    confirmation_options: List[Dict[str, Any]] = []
-    confirm_names = ("request_confirmation", "confirm", "confirmation", "pause", "workflow_pause")
-    for a in actions:
-        name = str(a.get("action") or a.get("tool") or a.get("type") or "").lower()
-        if name == "continue":
-            wants_continue = True
-        elif name in confirm_names or "confirmation" in a or "request_confirmation" in a:
-            confirmation = (
-                _extract_confirmation(a)
-                or str(a.get("confirmation") or a.get("request_confirmation") or "").strip()
-                or "请确认以上内容，确认后我将继续。"
-            )
-            opts = a.get("options") or []
-            if not isinstance(opts, list):
-                opts = []
-            for o in opts:
-                if isinstance(o, dict) and str(o.get("label") or "").strip():
-                    item = {
-                        "label": str(o.get("label")).strip(),
-                        "description": str(o.get("description") or "").strip(),
-                    }
-                    if str(o.get("group") or "").strip():
-                        item["group"] = str(o.get("group")).strip()
-                    # B2/F16：选项 value 机械消费（点击即发送 value，后端确定性处理）
-                    if str(o.get("value") or "").strip():
-                        item["value"] = str(o.get("value")).strip()
-                    confirmation_options.append(item)
-                elif isinstance(o, str) and o.strip():
-                    confirmation_options.append({"label": o.strip(), "description": ""})
-        else:
-            executable.append(a)
-    return executable, wants_continue, confirmation, confirmation_options
-
-
-def _extract_confirmation(action: Dict[str, Any]) -> str:
-    """从动作里提取暂停确认文案（兼容 tool/type 键与 message/confirmation 字段）。"""
-    if not isinstance(action, dict):
-        return ""
-    name = str(action.get("action") or action.get("tool") or action.get("type") or "").lower()
-    if name not in ("request_confirmation", "confirm", "confirmation", "pause", "workflow_pause"):
-        return ""
-    return str(action.get("message") or action.get("confirmation") or "").strip()
-
+# audit-0819d：split_actions / _extract_confirmation（文本动作别名归一）已删除
+# （S16 清偿）：暂停确认唯一经 workflow_pause FC 工具结构化上抛，
+# 不存在需归一的文本动作别名（对齐「只有一个 AskUserQuestion」）。
 
 # 防虚报检测（_STRUCTURE_CLAIM_RE/_claims_structure_done）四轮 R1 随唯一消费点
 # 迁入 round_end_policies；本文件顶部保留 re-export 壳，测试导入路径不变。
-# 五轮 S4g：_split_actions 兼容别名已清偿（唯一消费点改直调 split_actions）。
 
 
 async def run_agent_loop(

@@ -158,7 +158,7 @@ def _consume_pending_confirmation(svc, user_text: str = "") -> str:
         if prompt_gates.has_spec_document(svc.state_dict) else ""
     )
     return (
-        "\n\n（系统提示：上一轮已通过 request_confirmation/workflow_pause 暂停等待确认，"
+        "\n\n（系统提示：上一轮已通过 workflow_pause 暂停等待确认，"
         f"暂停内容：{paused_msg}。本条消息即对该暂停的回应：表示确认时，按当前 Skill 流程"
         f"把当前阶段产出物做完；{spec_note}暂停点以 Skill 阶段边界为准；"
         "已完成的步骤（已读文档/已写规格）不必重复；"

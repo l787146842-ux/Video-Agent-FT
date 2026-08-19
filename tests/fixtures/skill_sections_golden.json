@@ -125,7 +125,7 @@
       "head": "**完整视频的阶段逻辑和依赖关系：**\n1. 一句话总结剧本上传的剧本文件（图片"
     },
     "storyboard_ke": {
-      "chars": 748,
+      "chars": 766,
       "head": "**本节职责（最高优先级）**：只创建关键元素（keyElement）分组，**"
     },
     "storyboard_shot": {

@@ -63,7 +63,7 @@ _CANVAS_TOOLS = frozenset({
 # 选中 Skill 时的流程提醒（814R1 恢复外置：prompts/planner/feedback.md 单一事实源）
 _SKILL_REMINDER = load_prompt_section("planner/feedback.md", "SKILL_REMINDER") or (
     "【提醒】当前有选中 Skill：遵守其阶段划分与暂停点，到达确认点时用 "
-    "request_confirmation / workflow_pause 真正停下，不要一口气做完全部阶段。")
+    "workflow_pause 真正停下，不要一口气做完全部阶段。")
 
 
 @dataclass

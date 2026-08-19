@@ -51,8 +51,9 @@ def test_s7_skill_discipline_no_output_form_clause():
     assert "中文叙事式多节拍" not in sd
     # 标题客观化：不再自称「最高优先级」（与 13.3 裁决链冲突的措辞）
     assert "最高优先级" not in sd
-    # 流程纪律其余条款保留（快照锁语义：暂停/分批/自检/规格收集/元素图闸）
-    for kept in ("阶段逐段执行", "request_confirmation", "分批次确认",
+    # 流程纪律其余条款保留（快照锁语义：暂停/分批/自检/规格收集/元素图闸；
+    # audit-0819d：暂停正名钉 workflow_pause，request_confirmation 别名已删）
+    for kept in ("阶段逐段执行", "workflow_pause", "分批次确认",
                  "交付自检", "规格收集交互", "元素图像就绪闸门", "不超前承诺"):
         assert kept in sd, f"流程纪律条款丢失: {kept}"
 

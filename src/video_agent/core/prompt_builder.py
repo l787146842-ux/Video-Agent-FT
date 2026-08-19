@@ -328,15 +328,14 @@ class PromptBuilder:
             return ""
         if len(content) > settings.max_doc_chars:
             content = content[:settings.max_doc_chars] + "\n……（Skill 全文超长，已截断）"
-        mapping_note = sd.build_foreign_tool_note(content)
-        mapping_block = f"\n\n{mapping_note}" if mapping_note else ""
+        # audit-0819d：外来工具名映射注记已随 S15 删除（导入期转换归专用 Skill 系统）
         discipline = load_prompt("planner/skill_discipline.md") or ""
         base = (
             f"== 当前选中 Skill「{display or skill_name}」全文（本 Skill 无注册执行器章节，"
             f"全文直接注入，必须严格遵守其中的流程与规范）==\n"
             "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
             "一律以本 Skill 为准；Skill 内如提供多种可选写法，选最贴合本次需求的一种并全程保持一致。\n\n"
-            f"{content}{mapping_block}\n\n"
+            f"{content}\n\n"
             f"{discipline}"
         )
         # 当前阶段聚焦块追加在最末尾（离生成端最近，遵循度最高）
@@ -374,14 +373,7 @@ class PromptBuilder:
                 "== 当前 Skill 的流程基线（<planner>，必须按此顺序与阶段边界执行）==",
                 flow,
             ]
-            # 流程章节常引用外来工具名（flova 原生命名如 text_editor/media_generator）：
-            # 映射对照随基线一并注入，避免同一 system prompt 内两套工具名打架（S1）
-            try:
-                foreign_note = self._get_skill_docs().build_foreign_tool_note(flow)
-            except Exception:
-                foreign_note = ""
-            if foreign_note:
-                lines += ["", foreign_note]
+            # audit-0819d：外来工具名映射注记已随 S15 删除（导入期转换归专用 Skill 系统）
         lines += [
             "",
             "【执行方式】每个拆解/编写步骤必须真的执行了其中一种（调对应执行器，或直接输出 "
@@ -391,7 +383,7 @@ class PromptBuilder:
             "执行器失败时请重试或停下说明，虚报结果会被状态对账识破。",
             "【阶段边界与确认】各执行器的产出由系统按 Skill 章节校验（结构阶段只建分组、"
             "提示词阶段只写提示词）；阶段暂停点以本 Skill『何时暂停』为准，需暂停时用 "
-            "workflow_pause/request_confirmation 邀请确认，用户要求连续执行时照做并在回复末尾附警告。",
+            "workflow_pause 邀请确认，用户要求连续执行时照做并在回复末尾附警告。",
             "【通用能力】无专属执行器的章节用 skill_section_run（section=章节标识）执行；"
             "只调用上面列出的执行器与系统既有工具（document_write / read_uploaded_doc / image_generate / generate_video / workflow_pause 等）；"
             "不要调用本清单之外的 Skill 工具名，也不要对当前 Skill 调用 read_skill（执行器内部已注入对应章节）。",

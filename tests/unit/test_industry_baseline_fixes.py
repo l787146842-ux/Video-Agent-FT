@@ -172,9 +172,9 @@ def test_system_md_no_anti_pause_sentence():
     txt = (PROJECT_ROOT / "prompts" / "planner" / "system.md").read_text(encoding="utf-8")
     assert "不要在每个阶段完成后都暂停" not in txt
     assert "用户已给出明确指令时不要使用" not in txt
-    # 新基线（audit-0819b 单轨化后）：暂停通道协议表述为
-    # 「只能通过 request_confirmation / workflow_pause 动作发起，只在正文写『请确认』无效」
-    assert "只能通过 request_confirmation / workflow_pause 动作发起" in txt
+    # 新基线（audit-0819d 单正名后）：暂停通道协议表述为
+    # 「只能通过 workflow_pause 工具调用发起，只在正文写『请确认』无效」
+    assert "只能通过 workflow_pause 工具调用发起" in txt
     assert "无效" in txt
 
 

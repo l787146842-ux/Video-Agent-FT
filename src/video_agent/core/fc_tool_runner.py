@@ -529,7 +529,7 @@ class FCToolRunner:
                                 svc_now.save()
                         except Exception as _e:
                             logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
-                if name in ("workflow_pause", "request_confirmation"):
+                if name == "workflow_pause":
                     confirmation = args.get("message", "请确认以上内容。")
                     # 候选选项（前端渲染为单选卡片，点击即发送选择；带 group 时分页向导）
                     opts = args.get("options")

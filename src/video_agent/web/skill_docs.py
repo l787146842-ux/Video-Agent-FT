@@ -28,47 +28,9 @@ from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RUL
 
 _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划线/连字符
 
-# 外来 Skill 常见工具名 → 本系统动作对照表（第三方平台工作流直译的 Skill
-# 常引用本系统不存在的工具名，模型只能「近似映射」导致阶段纪律失真；
-# 注入时检测到这些名称就自动追加对照说明，把映射从模型猜测变成显式指令）
-FOREIGN_TOOL_MAP: Dict[str, str] = {
-    "resource_prepare_and_analyze": "script_analyze（解析上传素材并输出结构化要点，内部读取 read_uploaded_doc）",
-    "multimodal_analyze_tool": "script_analyze（解析上传素材并输出结构化要点）",
-    "text_editor": "document_write（写入/更新项目文档，文本模式 write_document）",
-    "script_analyze": "script_analyze（解析上传素材并输出结构化要点，展示方式以当前 Skill 流程为准）",
-    "storyboard_designer": "storyboard_key_elements / storyboard_shots / storyboard_audio（故事板三拆执行器，按阶段逐个调用）",
-    "storyboard_key_elements": "storyboard_key_elements（只建关键元素结构）",
-    "storyboard_shots": "storyboard_shots（只建分镜结构）",
-    "storyboard_audio": "storyboard_audio（只建音频结构）",
-    "write_media_prompt": "write_media_prompt（按 Skill 提示词写法分批编写草稿提示词，经 storyboard_patch_draft 落盘）",
-    "media_generator": "image_generate / generate_image / generate_video / audio_generate（图片/视频/音频，危险操作需用户明确指令）",
-    "reply_to_user": "workflow_pause / request_confirmation（工具调用，ADR-0001 单轨）",
-    "auditory_designer": "audio_generate（音频规划/绑定）",
-    "audio_generate": "audio_generate（音频规划/绑定用户已上传音频）",
-    "video_assembler": "video_assembler（素材清单 + 时间轴顺序 + 组装建议）",
-}
-
-
-def build_foreign_tool_note(content: str) -> str:
-    """检测 Skill 正文中出现的外来工具名，返回映射对照说明块；无则返回空串。
-
-    只匹配 FOREIGN_TOOL_MAP 已知的词汇表（不做开放式 snake_case 扫描，
-    避免把 element_id/shot_id 这类字段名误判为工具）。
-    """
-    if not content:
-        return ""
-    found = [
-        name for name in FOREIGN_TOOL_MAP
-        if re.search(rf"\b{re.escape(name)}\b", content, re.IGNORECASE)
-    ]
-    if not found:
-        return ""
-    lines = [f"- {name} → {FOREIGN_TOOL_MAP[name]}" for name in found]
-    return (
-        "== 外来工具名映射（本文档引用了本系统不存在的工具名，必须按下表映射为本系统动作执行，"
-        "假装调用不存在的工具不会产生任何效果）==\n" + "\n".join(lines)
-        + "\n文中未在上表列出的其他英文工具名一律视为描述性文字，调用未列出的工具不会被执行。"
-    )
+# audit-0819d：外来工具名映射层（FOREIGN_TOOL_MAP + build_foreign_tool_note）
+# 已删除（S15 清偿，用户裁决）：运行时不再做工具名翻译；进项目的 Skill
+# 必须在导入期改为本项目的工具名（归将来专用 Skill 系统职责）。
 
 # 版本历史：保存前把旧版备份到 .history/，每个 slug 保留最近 N 版
 _HISTORY_DIR_NAME = ".history"
@@ -210,17 +172,17 @@ DEFAULT_SKILL_DOC = """# 剧本生视频（需上传剧本）
 ### 第一段：规划结构
 1. 剧本正文不会自动注入上下文：先用 read_uploaded_doc 读取剧本全文；
    若 documents 清单里已有规格文档，先用 read_project_doc 读取并遵守；
-   然后分析素材 → write_document(制片规格.md) → request_confirmation
-2. 规划故事板：add_group keyElement(只写 title+desc) + add_group shot(只写 title+shotType+sceneRefs+roughDesc+duration)
-   此阶段不写详细提示词 → request_confirmation "故事板已建立，请审阅"
+   然后分析素材 → document_write(制片规格.md) → workflow_pause
+2. 规划故事板：storyboard_create_group keyElement(只写 title+desc) + storyboard_create_group shot(只写 title+shotType+sceneRefs+roughDesc+duration)
+   此阶段不写详细提示词 → workflow_pause "故事板已建立，请审阅"
 
 ### 第二段：提示词草案
-3. 用户确认后：为关键元素写入详细生图提示词(update_draft) → request_confirmation "尚未生成任何画面"
-4. 用户确认后：为分镜写入详细视频提示词(update_draft) → request_confirmation
+3. 用户确认后：为关键元素写入详细生图提示词(storyboard_patch_draft) → workflow_pause "尚未生成任何画面"
+4. 用户确认后：为分镜写入详细视频提示词(storyboard_patch_draft) → workflow_pause
 
 ### 第三段：生成（用户明确发起）
-5. 用户说"生成概念图" → generate_image(target="all_keyElements")
-6. 用户说"生成关键帧" → generate_image(target="all_shots")，自动注入 sceneRefs 参考图
+5. 用户说"生成概念图" → image_generate(target="all_keyElements")
+6. 用户说"生成关键帧" → image_generate(target="all_shots")，自动注入 sceneRefs 参考图
 
 ### 【铁律】
 - 规划阶段不写详细提示词，只建结构

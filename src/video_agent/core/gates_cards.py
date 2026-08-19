@@ -148,7 +148,7 @@ SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY = (
 )
 
 # 规格文档拼装/写入后的系统级暂停文案（5555 事故：模型幻觉已暂停、实际直冲拆解）：
-# 模型同批未自发 workflow_pause/request_confirmation 时，由执行层注入此文案；
+# 模型同批未自发 workflow_pause 时，由执行层注入此文案；
 # 下一步不写死具体阶段（启用条件按规格流程客观特征自动检测，2222 二轮；后续阶段以各自流程为准）；
 # 模型自填项必须逐条过目（888 事故：风格类参数模型拍板用户不知情）
 SPEC_DOC_PAUSED_MSG = (

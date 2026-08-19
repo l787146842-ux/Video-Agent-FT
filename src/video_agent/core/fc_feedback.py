@@ -244,6 +244,6 @@ def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
         return "发起生图"
     if name == "generate_video":
         return "发起视频生成"
-    if name in ("workflow_pause", "request_confirmation"):
+    if name == "workflow_pause":
         return "请求阶段确认"
     return f"执行工具 {name}"

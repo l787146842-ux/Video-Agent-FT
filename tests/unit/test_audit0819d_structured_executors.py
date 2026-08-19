@@ -127,3 +127,21 @@ def test_lenient_array_regex_not_restored():
     assert "parse_actions_from_reply" not in src, (
         "执行器不得再经 web/action_parser 宽容解析链"
     )
+
+
+def test_alias_layers_not_restored():
+    """S15/S16/确认别名工具拆除留痕：相关符号禁止复活（audit-0819d 用户裁决全删）"""
+    import importlib
+
+    agent_loop = importlib.import_module("src.video_agent.core.agent_loop")
+    assert not hasattr(agent_loop, "split_actions"), "S16 别名归一已删，禁止复活"
+    assert not hasattr(agent_loop, "_extract_confirmation"), "S16 别名归一已删，禁止复活"
+
+    skill_docs = importlib.import_module("src.video_agent.web.skill_docs")
+    assert not hasattr(skill_docs, "build_foreign_tool_note"), "S15 工具名翻译层已删，禁止复活"
+    assert not hasattr(skill_docs, "FOREIGN_TOOL_MAP"), "S15 工具名翻译层已删，禁止复活"
+
+    doc_tools = importlib.import_module("src.video_agent.tools.document_tools")
+    assert not hasattr(doc_tools, "RequestConfirmationTool"), (
+        "暂停确认单一正名 = workflow_pause，别名工具禁止复活"
+    )

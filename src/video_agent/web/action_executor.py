@@ -195,7 +195,7 @@ class StudioActionExecutor:
     def _is_mutating(action: Dict[str, Any]) -> bool:
         """判断操作是否可能变更状态（流程信号类操作不入 undo 栈）"""
         name = str(action.get("action") or action.get("type") or "").strip()
-        return name not in ("", "select_draft", "request_confirmation", "continue", "insert_chat_media")
+        return name not in ("", "select_draft", "continue", "insert_chat_media")
 
     def _describe_action(self, action: Dict[str, Any]) -> str:
         """生成操作的中文简述（委托 web.action_descriptions）"""
@@ -350,7 +350,7 @@ class StudioActionExecutor:
             return self._apply_generate_video(action)
         if name == "select_draft":
             return True  # 选中操作仅影响前端 UI，后端无需持久化
-        # request_confirmation / continue 是流程信号，由 agent_loop 处理，不算状态变更
+        # workflow_pause / continue 是流程信号（暂停经 FC 工具上抛），不算状态变更
         return False
 
     def _find_draft(self, draft_id: str, draft_type: str = ""):

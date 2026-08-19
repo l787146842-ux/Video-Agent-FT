@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-"""6666 项目事故回归：确认解析兜底 / 报错可读化 / 过程明细 / 总结强制入正文"""
+"""6666 项目事故回归：确认解析兜底 / 报错可读化 / 过程明细 / 总结强制入正文
+
+audit-0819d：原 split_actions 确认别名归一两条用例随 S16 删除退役
+（暂停确认唯一经 workflow_pause FC 工具结构化上抛，无文本别名可归一）。
+"""
 import pytest
 
 from src.video_agent.web.action_executor import StudioActionExecutor
-from src.video_agent.core.agent_loop import run_agent_loop, split_actions
+from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.state.manager import StateManager
 
 
@@ -28,31 +32,7 @@ def make_llm(replies):
     return llm_call, calls
 
 
-# ---------- 确认请求兜底解析（Q3/Q7：笨模型写变体导致确认卡丢失） ----------
-
-def test_split_actions_confirm_alias():
-    """action=confirm/pause 等别名也要识别为确认请求"""
-    for name in ("confirm", "confirmation", "pause", "workflow_pause", "request_confirmation"):
-        executable, cont, confirmation, opts = split_actions(
-            [{"action": name, "message": "请审阅", "options": [{"label": "A"}]}]
-        )
-        assert executable == [] and not cont
-        assert confirmation == "请审阅", name
-        assert opts == [{"label": "A", "description": ""}]
-
-
-def test_split_actions_type_key_and_confirm_key():
-    """type 键替代 action 键；无动作名但有 confirmation 键也兜底"""
-    executable, cont, confirmation, _ = split_actions(
-        [{"type": "request_confirmation", "message": "确认下"}]
-    )
-    assert confirmation == "确认下" and executable == []
-
-    executable, cont, confirmation, _ = split_actions([{"confirmation": "看看结果"}])
-    assert confirmation == "看看结果" and executable == []
-
-    executable, cont, confirmation, _ = split_actions([{"request_confirmation": True}])
-    assert confirmation and executable == []
+# ---------- 确认别名归一（split_actions）已随 S16 删除退役（audit-0819d） ----------
 
 
 async def test_structured_confirmation_stops_loop_with_card(svc, executor):

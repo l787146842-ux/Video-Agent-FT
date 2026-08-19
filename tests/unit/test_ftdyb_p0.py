@@ -1,4 +1,4 @@
-"""FTDYB 追赶 P0：分镜新字段、删除 action、request_confirmation 门控"""
+"""FTDYB 追赶 P0：分镜新字段、删除 action、workflow_pause 门控"""
 import pytest
 
 from src.video_agent.web.action_executor import StudioActionExecutor
@@ -70,7 +70,7 @@ def test_delete_missing_returns_zero(executor):
 
 
 async def test_request_confirmation_pauses_loop(svc, executor):
-    """LLM 经 workflow_pause/request_confirmation 工具请求确认后循环必须停下
+    """LLM 经 workflow_pause 工具请求确认后循环必须停下
     （audit-0819b：确认经第 5 元组结构化上抛，不再经文本块）"""
     calls = {"n": 0}
 
