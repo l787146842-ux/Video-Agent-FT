@@ -25,8 +25,8 @@ def register_skill_runtime_tools() -> None:
         WriteMediaPromptTool,
         AudioGenerateTool,
         VideoAssemblerTool,
-        # 814E1：通用章节执行器（平台级，任何 Skill 可用）；
-        # 依赖图调度工具随 0818 架构板正批退役（顺序归编排器）
+        # 通用章节执行器（平台级，任何 Skill 可用）；
+        # 依赖图调度工具随 架构板正批退役（顺序归编排器）
         SkillSectionRunTool,
     ):
         ToolManager.register(cls())

@@ -1,4 +1,4 @@
-"""实时上下文用量度量（888 反馈：用量数字一轮任务结束才变）。
+"""实时上下文用量度量（888 反馈：用量数字任务结束才变）。
 
 静态估算（持久化聊天记录 + 状态上下文）不含本轮进行中的消息与工具回喂，
 轮内数字恒定。主对话循环每次 LLM 调用前把截断后的真实消息记入本注册表，
@@ -30,7 +30,7 @@ def record_live_context(project_id: str, messages: List[Dict[str, Any]]) -> None
         logger.debug("[live_metrics] 忽略异常: {}", _e)
 
 
-# B6/F36：system prompt 组装明细（prompt_builder 写入，context-usage 返回）
+# system prompt 组装明细（prompt_builder 写入，context-usage 返回）
 _SECTIONS: Dict[str, Dict[str, int]] = {}
 
 
@@ -52,8 +52,8 @@ def get_live_context(project_id: str) -> Optional[Dict[str, Any]]:
     return rec
 
 
-# 四轮 R5/#11：核心探测点「预期外降级」遥测——接线断裂从静默 False 变为可观测计数
-# （814R 事故模式：md 幸存但代码无人读，探测点异常降级 False 无人察觉）。
+# 核心探测点「预期外降级」遥测——接线断裂从静默 False 变为可观测计数
+# （模式：md 幸存但代码无人读，探测点异常降级 False 无人察觉）。
 # point → {"count": int, "first_ts": float, "last_ts": float}
 _DEGRADATIONS: Dict[str, Dict[str, Any]] = {}
 # 滚动上限：点位过多时丢弃最旧（防遥测自身膨胀）

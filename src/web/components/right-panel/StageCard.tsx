@@ -7,7 +7,7 @@ import { stageLabelFromMessage } from './AgentTimeline';
 import type { ChatMessage } from '@/types';
 
 /**
- * 阶段完成卡（B2/F12·D4；五轮 S10 自 ChatMessageItem.tsx 切出，零行为变更）：
+ * 阶段完成卡（·；  自 ChatMessageItem.tsx 切出，零行为变更）：
  * 可展开、默认展开。正文=本轮概述（确认文案，与模型正文判重防双显）+ 执行清单
  * （actionLog）。历史消息同样可展开——暂停点回看不丢失（吸收 Qoder 问题 12）。
  */

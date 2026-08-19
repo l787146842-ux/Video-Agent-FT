@@ -52,7 +52,7 @@ describe('chatActions 流式状态机', () => {
   });
 
   it('finishStream meta 走 locale 字典（五轮 S1/#1 i18n 残留清偿）', () => {
-    // 键存在于字典：t() 返回文案而非 key 本身（缺失时 t 回退 key，可检出）
+    // 键存在于字典：t 返回文案而非 key 本身（缺失时 t 回退 key，可检出）
     expect(t('rp.msg.metaTime', { s: '1.0' })).toBe('耗时 1.0s');
     expect(t('rp.msg.metaRounds', { n: 3 })).toBe('3 轮');
     expect(t('rp.msg.metaUpdated', { n: 2 })).toBe('更新 2 项');
@@ -118,7 +118,7 @@ describe('chatActions 流式状态机', () => {
     expect(chatState.messages[0].text).toBe('新消息');
   });
 
-  // ---------- B0/F1：docCard 双通道去重 ----------
+  // ---------- ：docCard 双通道去重 ----------
 
   it('docWritten 即显后 finishStream 不重复渲染同名文档卡', () => {
     chatActions.startStream();
@@ -141,7 +141,7 @@ describe('chatActions 流式状态机', () => {
     expect(chatState.messages.filter((m) => m.docCard).length).toBe(1);
   });
 
-  // ---------- 0817：非流式响应 documents_written 即显（通道补齐，§5.2） ----------
+  // ---------- ：非流式响应 documents_written 即显（通道补齐，§5.2） ----------
 
   it('applyNonStreamDocs 非流式响应文档卡即显：批内去重、批间按新一轮重新展示', () => {
     chatActions.applyNonStreamDocs(['规格.md', '规格.md']);

@@ -1,5 +1,5 @@
 /**
- * RunningHub 新手引导（画布同款双 Key）——七轮 S1/T23 自 SettingsView 切出。
+ * RunningHub 新手引导（画布同款双 Key）——  自 SettingsView 切出。
  */
 import { FiCheck, FiKey } from 'solid-icons/fi';
 import { RH_GUIDE, type SettingsApi } from '../settings-meta';

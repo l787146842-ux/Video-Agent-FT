@@ -2,7 +2,7 @@
 
 每个执行器只注入自己对应的 Skill 章节（registry.tool_sections），
 独立完成「读输入 → LLM 调用/组装 → 结构化校验 → 写状态」。
-LLM 类执行器走结构化输出轨（response_format=json_object + 硬校验，audit-0819d）。
+LLM 类执行器走结构化输出轨（response_format=json_object + 硬校验）。
 """
 import json
 import math
@@ -74,7 +74,7 @@ def _resolve_chat_provider(provider: str = "", model: str = "") -> Tuple[str, st
 
 
 def _resolve_cascade_fast(main_provider: str, main_model: str) -> Tuple[str, str]:
-    """誊写批级联快模型解析（业界基准 C5；B8 策略表化）。
+    """誊写批级联快模型解析（业界基准 C5； 策略表化）。
 
     优先级：模型策略表 executor 角色（热更新可编辑）> settings.executor_fast_model
     （"provider" 或 "provider:model"，旧配置兼容）> 主模型（不级联）。
@@ -108,7 +108,7 @@ def _resolve_cascade_fast(main_provider: str, main_model: str) -> Tuple[str, str
 
 
 def _executor_thinking() -> Optional[str]:
-    """执行器机械调用的思考档位（2222 二轮，10.9 模型分层；B8 策略表化）：
+    """执行器机械调用的思考档位（10.9 模型分层； 策略表化）：
 
     拆解/提示词编写/自检/软参数出题等「照章办事」的结构化产出不需要深推理；
     降档缩短思考静默期，也防思考吃光输出预算导致截断（deepseek-v4-flash
@@ -131,10 +131,10 @@ def _fmt_num(value) -> str:
 
 
 def _spec_override_clauses(raw_state: Dict[str, Any], kinds: Tuple[str, ...]) -> str:
-    """五项制片规格覆盖注入（2222 二轮，【时长硬约束】模式扩展为统一实现点）。
+    """五项制片规格覆盖注入（【时长硬约束】模式扩展为统一实现点）。
 
     制片规格里已定的参数 → 注入一条覆盖句压过 Skill 章节写死的默认值
-    （优先级链：制片规格 > Skill，由系统注入执行而非 prose 说教，10.12-G3）。
+    （优先级链：制片规格 > Skill，由系统注入执行而非 prose 说教，10.12-）。
     kinds 取值：duration / image_resolution / video_resolution /
     image_channel / video_channel；规格未定的项不注入（章节默认值照常兜底）。
     """
@@ -181,7 +181,7 @@ def _spec_override_clauses(raw_state: Dict[str, Any], kinds: Tuple[str, ...]) ->
 
 
 def _rollback_split_groups(svc: StateManager, split_kind: str, ids_before: set) -> int:
-    """截断回滚（2222 二轮）：删除本次拆解新建的分组，恢复拆解前状态。
+    """截断回滚：删除本次拆解新建的分组，恢复拆解前状态。
 
     与「拆解前 ID 快照」配套：流式首拆撞上限时已落盘的残品全部撤销，
     随后扩额整体重试，避免「首拆 7 个 + 补拆 6 个」式拼接结果。
@@ -205,8 +205,8 @@ def _rollback_split_groups(svc: StateManager, split_kind: str, ids_before: set) 
     return removed
 
 
-# 拆解边界自适应（2222 二轮）：允许的分组类别以注入章节的客观文本为准
-# （与 _skill_system_prompt 注入源唯一，不依赖 Skill 声明改动，10.12-G1）。
+# 拆解边界自适应：允许的分组类别以注入章节的客观文本为准
+# （与 _skill_system_prompt 注入源唯一，不依赖 Skill 声明改动，10.12-）。
 # 优先级：① 章节「本节职责：只创建 X 分组」显式边界声明（Skill 层 3 唯一源）；
 # ② 无声明的合并章节按职责关键词检测（如「AI-短剧」storyboard_designer）。
 _RESP_SCOPE_RE = re.compile(r"本节职责[^：:]*[:：]\s*只创建([^，。；;\n]*?)分组")
@@ -263,7 +263,7 @@ def _split_kinds_for_section(tool_name: str, skill_name: str) -> List[str]:
 
 
 def _prompt_language_rule(skill_name: str, raw_state: Optional[Dict[str, Any]] = None) -> str:
-    """提示词正文语言的单一事实源（业界基准 C1；0817 延伸接入用户规格
+    """提示词正文语言的单一事实源（业界基准 C1； 延伸接入用户规格
     「输出语言」选择：用户选择 > Skill 声明 > 平台默认）。
     注入句与 PromptGate 语言闸读同一份 resolve_prompt_language 结果，
     by construction 不可能再打架；章节英文模板只借结构不借语言。"""
@@ -287,7 +287,7 @@ def _prompt_language_rule(skill_name: str, raw_state: Optional[Dict[str, Any]] =
 
 
 def _style_memory_block(limit: int = 5) -> str:
-    """项目风格记忆注入（814E3）：只认「风格偏好：」前缀条目（摘要提示词约定），
+    """项目风格记忆注入：只认「风格偏好：」前缀条目（摘要提示词约定），
     按项目隔离，注入执行器 system prompt，保证跨会话风格连续性。"""
     try:
         if not settings.memory_enabled:
@@ -313,7 +313,7 @@ def _style_memory_block(limit: int = 5) -> str:
 def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_override: Optional[str] = None) -> str:
     """执行器 system prompt：平台精简协议 + Skill 对应章节（只注入自己那一节）+ 铁律全文。
 
-    section_override（814E1）：通用章节执行器直接注入任意章节文本，
+    section_override：通用章节执行器直接注入任意章节文本，
     不经 tool_sections 的固定映射。"""
     section = section_override if section_override is not None else tool_sections(skill_name, tool)
     state = StateManager.get_instance().state_dict
@@ -326,7 +326,7 @@ def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_ov
         "== Skill 对应章节 ==",
         section or "（该 Skill 未提供本执行器对应章节）",
     ]
-    # 铁律全文注入（宪法 D2/D5）：拆解粒度等生产契约的表述源在铁律，
+    # 铁律全文注入（宪法）：拆解粒度等生产契约的表述源在铁律，
     # 任务词不再复述；无铁律文档（测试/未开工项目）时静默跳过
     try:
         from src.video_agent.core.spec_rules import find_iron_rules_doc
@@ -337,14 +337,14 @@ def _skill_system_prompt(tool: str, skill_name: str, extra: str = "", section_ov
             parts += ["", "== 项目《执行铁律》（生产契约，与章节冲突时以铁律为准）==", iron_content]
     except Exception as _e:
         logger.debug("[executors] 忽略异常: {}", _e)
-    # 风格记忆注入（814E3）：跨会话风格连续性
+    # 风格记忆注入：跨会话风格连续性
     style_block = _style_memory_block()
     if style_block:
         parts.append(style_block)
-    # 冲突裁决总则（888 事故：章节内中英规则打架、章节与规格时长数字并存，
+    # 冲突裁决总则（888 ：章节内中英规则打架、章节与规格时长数字并存，
     # 推理模型反复权衡耗掉万字思考）：把两处常见冲突收敛成一条确定规则，
     # 模型不再需要自行裁决。
-    # 语言单一事实源（业界基准 C1，6666 二轮事故）：注入句与 PromptGate 校验
+    # 语言单一事实源（业界基准 C1）：注入句与 PromptGate 校验
     # 读同一份 parse_gate_rules 结果——「章节模板是英文」不再构成例外，
     # 模型无需仲裁，两条平台表述 by construction 不可能再打架。
     parts += [
@@ -394,7 +394,7 @@ def _read_spec_doc(state: Dict[str, Any]) -> str:
     return ""
 
 
-# 0817 B24：剧本正文注入上限合一（原 10000/12000 分阶段硬编码废除），
+# 剧本正文注入上限合一（原 10000/12000 分阶段硬编码废除），
 # 移入全局设置 script_inject_limit；拆解/提示词阶段需按剧本忠实产出，仅摘要不足以覆盖台词与场次
 def _script_inject_limit() -> int:
     try:
@@ -438,7 +438,7 @@ def _build_script_hint(state: Dict[str, Any]) -> str:
 
 
 def _parse_actions_from_text(text: str) -> List[Dict[str, Any]]:
-    """严格解析执行器 LLM 返回的纯 JSON 数组（audit-0819d，ADR-0001 执行记录三）。
+    """严格解析执行器 LLM 返回的纯 JSON 数组（ADR-0001 执行记录三）。
 
     执行器 JSON 产出点均下发 response_format=json_object，产出应为纯 JSON；
     硬校验即完，宽容正则/围栏兜底已删除（业界姿势：坏输出=证据确凿的失败，
@@ -458,9 +458,9 @@ def _parse_actions_from_text(text: str) -> List[Dict[str, Any]]:
 
 
 def record_json_parse_degradation() -> None:
-    """执行器 JSON 硬校验失败遥测（audit-0819d）：观测端点/模型对
+    """执行器 JSON 硬校验失败遥测：观测端点/模型对
     response_format=json_object 的遵守度；失败绝不阻断主链路。
-    跨层 import 已登记（check_func_imports 白名单，台账 audit-0819d）。"""
+    跨层 import 已登记（check_func_imports 白名单，台账）。"""
     try:
         from src.video_agent.core.live_metrics import record_degradation
         record_degradation("executor.json_strict_parse_failed")
@@ -468,7 +468,7 @@ def record_json_parse_degradation() -> None:
         pass
 
 
-# 流式逐条落盘参数（Q5：做好一个立即填入左侧故事板，不等整批生成完）
+# 流式逐条落盘参数（做好一个立即填入左侧故事板，不等整批生成完）
 _PROGRESSIVE_FLUSH_N = 4        # 累积 N 个完整动作即应用一批
 
 
@@ -518,7 +518,7 @@ def _extract_complete_objects(buf: str, pos: int) -> Tuple[List[str], int]:
 
 
 def _is_truncated(finish: str) -> bool:
-    """finish_reason 是否为撞输出上限被截断（888 事故：截断残品被当成品收下）。"""
+    """finish_reason 是否为撞输出上限被截断（888 ：截断残品被当成品收下）。"""
     return (finish or "").strip().lower() in (
         "length", "max_tokens", "max_output_tokens", "content_filter",
     )
@@ -539,12 +539,12 @@ async def _stream_actions_progressive(
     flush_n: int = _PROGRESSIVE_FLUSH_N,
     only_group_type: str = "",
 ) -> Tuple[int, List[str], str, str]:
-    """流式生成 studio-actions 并逐批落盘（Q5）：模型每吐完几个完整动作就立即
+    """流式生成 studio-actions 并逐批落盘：模型每吐完几个完整动作就立即
     写入故事板并下发快照，左侧卡片逐个亮出来，不再干等整次调用结束。
 
     返回 (applied, warnings, 完整文本, finish_reason)；零产出时由调用方回退整体解析重试。
-    finish_reason 供截断检测（length=撞输出上限，888 事故）。
-    截断/零产出时自动落黑匣子档案（完整指令+输出+思考，888 事故）。
+    finish_reason 供截断检测（length=撞输出上限，888）。
+    截断/零产出时自动落黑匣子档案（完整指令+输出+思考，888）。
     """
     buf_parts: List[str] = []
     scan = {"pos": 0, "arr_started": False}
@@ -573,7 +573,7 @@ async def _stream_actions_progressive(
         if n:
             await emit_state_refresh(n)
             await emit_progress(f"已写入 {counters['applied']} 条，模型继续生成中…")
-            # 子步骤细分（2222 反馈）：每批流式落盘在时间线记一条子项，
+            # 子步骤细分（反馈）：每批流式落盘在时间线记一条子项，
             # 长拆解过程不再只有「首拆完成」一个粗粒度节点
             _note_ms = (time.monotonic() - counters["last_note"]) * 1000
             counters["last_note"] = time.monotonic()
@@ -616,12 +616,12 @@ async def _stream_actions_progressive(
         on_delta=on_delta,
         reasoning_sink=_reasoning,
         thinking_level=_executor_thinking(),
-        # audit-0819d：结构化输出——纯 JSON 数组流，增量提取器直接消费；
+        # 结构化输出——纯 JSON 数组流，增量提取器直接消费；
         # 端点不支持时适配器探针剥离降级，产出交严格校验+拒因重试
         response_format={"type": "json_object"},
     )
     await flush(force=True)
-    # 黑匣子（888 事故）：截断/零产出时完整取证落盘，事后可直接看模型在纠结什么
+    # 黑匣子（888）：截断/零产出时完整取证落盘，事后可直接看模型在纠结什么
     if _is_truncated(finish) or counters["applied"] == 0:
         from src.video_agent.skill_runtime.blackbox import dump_case
 
@@ -657,7 +657,7 @@ async def executor_stream_text(
 
     执行器机械调用唯一出口；非流式调用会被中介
     对缺省 stream 按流式路由，故执行器层不再允许。
-    response_format（audit-0819d）：JSON 产出点下发 json_object，
+    response_format：JSON 产出点下发 json_object，
     端点不支持时适配器探针剥离降级。
     """
     return await _gen.call_chat_completion_stream(
@@ -698,9 +698,9 @@ def _apply_actions(
 ) -> Tuple[int, List[str]]:
     """执行 LLM 产出的 studio-actions（走既有闸机与持久化，未命中返回警告）。
 
-    only_group_type（非空时）：阶段边界的代码校验（宪法 P2 下沉）——
+    only_group_type（非空时）：阶段边界的代码校验（宪法  下沉）——
     只允许指定类别的 add_group，越界分组拒收并回喂，替代 boundary prose 说服。
-    支持逗号分隔多类别（2222 二轮边界自适应）：Skill 章节同时覆盖多类分组
+    支持逗号分隔多类别（边界自适应）：Skill 章节同时覆盖多类分组
     职责时放行对应类别，单一职责章节仍传单类别。
     """
     from src.video_agent.web.action_executor import StudioActionExecutor
@@ -708,7 +708,7 @@ def _apply_actions(
     if not actions:
         return 0, ["执行器未产出有效操作（JSON 缺失或格式错误）"]
     warnings: List[str] = []
-    # 阶段边界拒收（宪法 P2）：KE 执行器里建分镜/音频等越界分组直接丢弃
+    # 阶段边界拒收（宪法）：KE 执行器里建分镜/音频等越界分组直接丢弃
     if only_group_type:
         _wants = {
             prompt_gates.normalize_structure_kind(k)
@@ -726,7 +726,7 @@ def _apply_actions(
                 f"{len(_off)} 个越界分组被拒收（本阶段只允许 {only_group_type} 类别，请重新执行对应阶段执行器）"
             )
             logger.warning(f"[SkillExec] 拒收越界 add_group {len(_off)} 个（只允许 {only_group_type}）")
-    # 分镜完整度校验（4444 P7，require_at_ref 同款机械模式）：shot 的 sceneRefs
+    # 分镜完整度校验（require_at_ref 同款机械模式）：shot 的 sceneRefs
     # 必须非空且覆盖标题提及的关键元素（标题点名的角色漏引 = 跨镜一致性断链）
     if only_group_type and "shot" in {
         prompt_gates.normalize_structure_kind(k)
@@ -762,7 +762,7 @@ def _apply_actions(
                 "角色/场景，请补全引用后重试。"
             )
             logger.warning(f"[SkillExec] 分镜完整度校验拒收 {len(_bad)} 个：{'；'.join(_bad_detail[:4])}")
-    # 无标题 add_group 拒收（8888 事故：首拆 20 组全落默认标题「Agent 新建分组」，
+    # 无标题 add_group 拒收（首拆 20 组全落默认标题「Agent 新建分组」，
     # 自检按标题去重又完全失效导致重复建卡）：宁缺毋滥，零产出时由
     # 调用方的回退重试路径带「必须携带 title」提示重新生成
     untitled = [
@@ -796,8 +796,8 @@ def _apply_actions(
     return applied, warnings
 
 
-# R4a 补：关键元素角标排序（自 exec_tools 移入，控制文件行数红线）
-# 关键元素类别排序（Q4 补漏元素不垫底）：人物→场景→道具→载具，其余保持原相对位置
+# 补：关键元素角标排序（自 exec_tools 移入，控制文件行数红线）
+# 关键元素类别排序（补漏元素不垫底）：人物→场景→道具→载具，其余保持原相对位置
 _BADGE_CATEGORY_KEYS = (
     ("人物", "角色"),
     ("场景", "地点", "环境"),
@@ -828,7 +828,7 @@ def _sort_key_elements_by_badge(svc: StateManager) -> bool:
     return True
 
 
-# 九轮 B3：SkillToolInput 基类自 exec_tools 下沉本模块（exec_media_writer/exec_media_gen 的基类来源，防循环依赖）
+# SkillToolInput 基类自 exec_tools 下沉本模块（exec_media_writer/exec_media_gen 的基类来源，防循环依赖）
 
 class SkillToolInput(BaseModel):
     skill_name: str = Field("", description="当前选中 Skill 名称（系统自动注入，一般无需填写）")

@@ -17,7 +17,7 @@ export interface AgentChatResponse {
   state?: Record<string, unknown>;
 }
 
-/** 非流式 LLM 调用（音频规划等场景用）；0817：返回完整响应（documents_written
+/** 非流式 LLM 调用（音频规划等场景用）；：返回完整响应（documents_written
  * 由调用方即显渲染，通道与流式轨对齐，§5.2） */
 export function canvasLlm(request: AgentChatRequest) {
   return apiPost<AgentChatResponse>('/api/agent/chat', request);
@@ -57,8 +57,8 @@ export interface RuntimeSettings {
   default_video_resolution: string;
   /** 分镜最大时长（秒）：Agent 自拆分镜单镜上限 */
   max_shot_duration: number;
-  /** audit-0819f：旧「推理档位」两键退役（归模型分层策略 summary/executor 行） */
-  /** B8：模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型） */
+  /** ：旧「推理档位」两键退役（归模型分层策略 summary/executor 行） */
+  /** ：模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型） */
   model_policy: Record<string, { provider: string; model: string; thinking_level: string }>;
 }
 
@@ -70,11 +70,11 @@ export function setRuntimeSettings(body: RuntimeSettingsUpdate): Promise<Runtime
   return apiPut<RuntimeSettings>('/api/settings/runtime', body);
 }
 
-/** B10：成本看板聚合指标 */
+/** ：成本看板聚合指标 */
 export interface AgentMetrics {
   traces_count: number;
   avg_turn_ms: number;
-  /** N6：平均耗时口径（llm_rounds=仅含模型调用轮；all=旧数据回落全量） */
+  /** ：平均耗时口径（llm_rounds=仅含模型调用轮；all=旧数据回落全量） */
   avg_turn_scope?: string;
   total_steps: number;
   total_actions: number;
@@ -99,5 +99,5 @@ export function stopAgentTask(): Promise<{ ok: boolean; cancelled: number }> {
   return apiPost<{ ok: boolean; cancelled: number }>('/api/agent/stop', {});
 }
 
-// 七轮 S2/F6：原 sendGuidance（POST /api/agent/guidance）为死代码——后端无该端点
+// ：原 sendGuidance（POST /api/agent/guidance）为死代码——后端无该端点
 // （真实链路为 sse.ts::postAgentTaskGuidance → /api/agent/tasks/{id}/guidance），已删除。

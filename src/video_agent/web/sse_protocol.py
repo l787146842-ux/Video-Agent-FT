@@ -1,10 +1,10 @@
-"""SSE 事件协议注册表（四轮 R4：6666 式四段链断链防复发机制化）。
+"""SSE 事件协议注册表（式四段链断链防复发机制化）。
 
 宪法 13.7「新增 SSE 事件」条目要求四段链同步：
     工具层 emit → planner 白名单 → chat_service 透传 → 前端 handler
 
 本注册表是该耦合点的**机器可读版**：每个事件的发射方、透传要求、前端 handler
-与引入事故号集中登记；tests/unit/test_sse_protocol_chain.py 遍历断言，
+与引入号集中登记；tests/unit/test_sse_protocol_chain.py 遍历断言，
 任何一段断链（如前端删了 handler、透传白名单漏登记）CI 即红。
 
 事件名常量仍以 core/sse_events.py 为唯一权威（本表只登记，不重定义）。
@@ -39,7 +39,7 @@ class SseEventSpec:
     transport: str
     # 前端 use-sse.ts 的 case 标签（internal 事件为空）
     frontend_case: str
-    # 引入/修复事故号（溯源用）
+    # 引入/修复号（溯源用）
     incident: str
 
 
@@ -48,7 +48,7 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
         SSE_STATUS,
         ("core/agent_loop.py", "core/round_end_policies.py", "core/planner.py",
          "web/chat_service.py"),
-        "direct", "status", "初始协议；四轮 R3 key+params i18n 化；五轮 S1 planner 队列级 status 收编",
+        "direct", "status", "初始协议（key+params i18n 化；队列级 status 收编）",
     ),
     SseEventSpec(
         SSE_DELTA, ("web/chat_service.py",),
@@ -69,17 +69,16 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
     SseEventSpec(
         SSE_DOC_WRITTEN, ("core/fc_tool_runner.py", "web/mock_chat.py", "web/chat_consume.py"),
         "passthrough", "doc_written",
-        "3333/6666 事故（四段链补齐）；六轮 S5：透传段改 chat_service 专属分支"
-        "并打戳本轮 turn_id（_stamp_doc_written），链测试识别该形态；"
-        "audit-0819b：agent_loop 发射段随文本块通道退役删除",
+        "四段链补齐；透传段为 chat_service 专属分支"
+        "并打戳本轮 turn_id（_stamp_doc_written），链测试识别该形态",
     ),
     SseEventSpec(
         SSE_MODEL_FALLBACK, ("web/chat_service.py",),
-        "direct", "model_fallback", "7777 事故（降级即时联动）",
+        "direct", "model_fallback", "降级即时联动",
     ),
     SseEventSpec(
         SSE_GUIDANCE_INJECTED, ("core/agent_loop.py",),
-        "passthrough", "guidance_injected", "7777 三轮（轮间注入）",
+        "passthrough", "guidance_injected", "轮间注入",
     ),
     SseEventSpec(
         SSE_DONE, ("web/chat_service.py",),
@@ -97,7 +96,7 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
         SSE_STEP_STARTED, ("core/agent_loop.py",),
         "internal", "", "内部事件（前端忽略，登记防误依赖）",
     ),
-    # audit-0819b：executing_actions 事件随文本块执行路径退役删除（ADR-0001）
+    # executing_actions 事件随文本块执行路径退役删除（ADR-0001）
 )
 
 

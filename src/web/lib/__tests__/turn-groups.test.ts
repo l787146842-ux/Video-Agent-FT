@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { groupTurns, suggestedTargetIndex, answeredValueFor } from '../turn-groups';
 import type { ChatMessage } from '@/types';
 
-/** 五轮 S2/#2：轮次分组纯函数（turnId 为主，相邻 agent 兜底） */
+/** ：轮次分组纯函数（turnId 为主，相邻 agent 兜底） */
 
 const u = (text: string): ChatMessage => ({ sender: 'user', text });
 const a = (turnId?: string, extra?: Partial<ChatMessage>): ChatMessage => ({
@@ -62,7 +62,7 @@ describe('groupTurns 轮次分组', () => {
   });
 });
 
-/** 六轮 S5/N4c：建议动作按钮挂载边界（锐化后规则） */
+/** ：建议动作按钮挂载边界（锐化后规则） */
 const act = { kind: 'retry' as const, label: '重试', value: '' };
 
 describe('suggestedTargetIndex 建议按钮挂载边界', () => {

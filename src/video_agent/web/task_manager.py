@@ -6,7 +6,7 @@ GenerationTaskManager — 生成任务统一管理（从 routes/generate.py 抽�
 - 后台 asyncio.Task 追踪（防止 fire-and-forget 丢失）
 - SSE 订阅者通知（任务完成时推送事件）
 
-单例模式：通过 get_task_manager() 获取全局实例。
+单例模式：通过 get_task_manager 获取全局实例。
 """
 import asyncio
 import json
@@ -33,7 +33,7 @@ class GenerationTaskManager:
         # 生成日志环形缓冲（最新在前）：图/视频/音频每次生成的成败记录，
         # 供顶部导航「生成日志」面板展示（照搬画布日志风格）
         self._gen_logs: List[Dict[str, Any]] = []
-        # 任务表 + 生成日志落盘（W13）：重启后 processing 任务不再永久丢失回调
+        # 任务表 + 生成日志落盘：重启后 processing 任务不再永久丢失回调
         self._persist_path = DATA_DIR / "generation_tasks.json"
         self._load_persisted()
 
@@ -181,7 +181,7 @@ class GenerationTaskManager:
         return self._gen_logs[: max(1, min(limit, _GEN_LOG_MAX))]
 
     def record_error_log(self, label: str, message: str, model: str = "") -> None:
-        """错误事件记入生成日志（9999 需求）：保存被拒/工具失败/流中断等
+        """错误事件记入生成日志（需求）：保存被拒/工具失败/流中断等
         原本只在右上角 toast 一闪而过的报错，事后可在「错误」页签回看。"""
         try:
             self.record_gen_log(
@@ -216,7 +216,7 @@ class GenerationTaskManager:
                 self._tasks.pop(tid, None)
         self._persist()
 
-    # ====== 落盘与恢复（W13） ======
+    # ====== 落盘与恢复 ======
 
     def _load_persisted(self) -> None:
         """启动恢复：加载落盘任务与生成日志；processing/pending 标记为 failed。"""
@@ -242,7 +242,7 @@ class GenerationTaskManager:
             self._gen_logs = [l for l in logs if isinstance(l, dict)]
         if recovered:
             logger.info(f"[TaskManager] 已恢复 {recovered} 个任务（中断任务已标记 failed）")
-        # B6/F44：数据 TTL——启动恢复后立即清理过期/超量任务（此前仅创建时清理，
+        # 数据 TTL——启动恢复后立即清理过期/超量任务（此前仅创建时清理，
         # 历史任务记录只进不出；gen 日志保留，任务表按 TTL 收敛）
         try:
             self._purge_stale()

@@ -16,7 +16,7 @@ import { t } from '@/lib/locale';
  * 当前任务完成后由 ChatInput 的出队逻辑按序自动发出。
  *
  * 每条排队消息的操作：
- * - 引导（R3 不打断语义）：移到队首并登记到运行中任务的轮间注入队列，
+ * - 引导（不打断语义）：移到队首并登记到运行中任务的轮间注入队列，
  *   后端在当前操作完成后的最近轮边界注入（不打断执行中的操作）；
  *   注入成功由 guidance_injected 事件渲染气泡并出队；
  *   任务不存在/已结束时保留队首，回落「任务结束后自动出队发送」。
@@ -32,13 +32,13 @@ export function QueuedMessagesBar(props: {
   /** 已点「引导」的条目 id：该条原位转圈圈等待轮间注入（不再顶部 toast 提醒） */
   const [guidedId, setGuidedId] = createSignal('');
 
-  // N5（三轮审核）：条目出队/清空后 spinner 终止，防转圈悬挂
+  // （审核）：条目出队/清空后 spinner 终止，防转圈悬挂
   createEffect(() => {
     const id = guidedId();
     if (id && !chatState.queuedMessages.some((m) => m.id === id)) setGuidedId('');
   });
 
-  /** 引导：队首优先 + 登记轮间注入（不打断当前操作；B0/F2 通道，G2 复用） */
+  /** 引导：队首优先 + 登记轮间注入（不打断当前操作； 通道， 复用） */
   function guide(item: QueuedMessage) {
     chatActions.moveQueuedToFront(item.id);
     setGuidedId(item.id);

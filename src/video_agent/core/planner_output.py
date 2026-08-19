@@ -1,4 +1,4 @@
-"""轮次产出组装域（八轮 B2 自 planner.py 切出）。
+"""轮次产出组装域（自 planner.py 切出）。
 
 承载：agent_loop 结束后的轮末组装——FC 闸机警告并入、暂停轮客观完成
 记账、纯工具轮占位文案替换、双轨收集器去重合并、PlannerResponse 构造。
@@ -40,7 +40,7 @@ def assemble_response(
                 loop_result.warnings.append(w)
                 seen.add(w)
 
-    # 暂停轮客观完成记账（0818 架构板正批 E3 保留）：模型 prose 可能停留在
+    # 暂停轮客观完成记账（架构板正批 保留）：模型 prose 可能停留在
     # 执行前承诺（「接下来我先解析」），历史只含文本时下一轮会误判未执行而
     # 重跑执行器；补一行客观事实（判重内置）。总结展示不再平台强注入。
     if loop_result.confirmation and analysis_summary:

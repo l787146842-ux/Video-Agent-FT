@@ -6,7 +6,7 @@ Agent Chat Service — 聊天业务编排（从 routes/agent.py 抽离）。
 - 非流式聊天编排
 - 会话持久化（用户/agent 消息、文档卡片、生图卡片）
 
-拆分（修复计划书 P1-6）：
+拆分（修复计划书 -6）：
 - 多模态内容构建 → multimodal_builder.py
 - SSE 事件推送 → sse.py
 routes/agent.py 仅保留路由定义和请求/响应模型。
@@ -37,7 +37,7 @@ from src.video_agent.web.provider_config import (
     load_merged_providers,
     load_merged_providers_async,
 )
-from src.video_agent.web.sse import sse_event_generator  # noqa: F401  （B6 保留 sse.py 为正常模块；本行仅兼容旧导入路径）
+from src.video_agent.web.sse import sse_event_generator  # noqa: 1 （保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.sse_events import (
@@ -124,9 +124,9 @@ async def stream_worker(body: Any, emit) -> None:
 async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_injector=None) -> None:
     """流式处理公共实现（mock + 真实供应商）；供 SSE worker 与后台任务 worker 复用。
 
-    pending_injector（B0/F2）：可选 callable → List[{id, text}]，轮间引导注入器，
+    pending_injector：可选 callable → List[{id, text}]，轮间引导注入器，
     由后台任务路径装配（agent_task_manager.drain_pending_guidance）。"""
-    # 铁律文档每轮确保存在（宪法 D2）：项目级生产契约唯一表述源，
+    # 铁律文档每轮确保存在（宪法）：项目级生产契约唯一表述源，
     # 真实聊天/任务路径同样生效，不能只在 mock 路径创建
     from src.video_agent.core.spec_rules import ensure_iron_rules_doc
     try:
@@ -134,7 +134,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
     except Exception as _e:
         logger.debug("[chat_service] 忽略异常: {}", _e)
 
-    # 0817：一条龙指令仅本条消息生效——任务开始清除上一任务残留标记
+    # 一条龙指令仅本条消息生效——任务开始清除上一任务残留标记
     if prompt_gates.clear_flow_directive(svc.state_dict):
         svc.save_debounced()
 
@@ -153,15 +153,15 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
         user_text = "请查看我上传的素材"
 
     use_studio_context = body.context_mode != "none"
-    # 开场公共编排（814F2）：暂停闭环 + 规格定稿/向导 + 附件降级注入
+    # 开场公共编排：暂停闭环 + 规格定稿/向导 + 附件降级注入
     llm_user_text = await _prepare_chat_opening(svc, body, user_text, use_studio_context)
 
-    # 会话层一次性豁免（814F7）：随消息登记，Planner 本次消费
+    # 会话层一次性豁免：随消息登记，Planner 本次消费
     if getattr(body, "gate_overrides", None) and use_studio_context:
         async with svc.lock:
             _store_gate_overrides(svc, body.gate_overrides)
 
-    # Skill 写入文档（B4/F30）：本轮激活了 Skill 即记入当前项目 usedSkills
+    # Skill 写入文档：本轮激活了 Skill 即记入当前项目 usedSkills
     #（不再依赖消息携带 chip/slug；文档面板只展示已发送过的 Skill 文档）
     async with svc.lock:
         _record_active_skill(svc, body)
@@ -190,7 +190,7 @@ def start_agent_task(body: Any) -> Dict[str, Any]:
     """任务式传输（D 批）：提交即返回 task_id，worker 后台运行。
 
     刷新/切项目只断订阅不杀任务；worker 绑定提交时所属项目（任务级 StateManager），
-    不会把旧项目状态写进新项目（7777 事故根因之一）。
+    不会把旧项目状态写进新项目（根因之一）。
     """
     from src.video_agent.utils import gen_id
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
@@ -214,7 +214,7 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
 
     tm = get_agent_task_manager()
-    # 0817 可观测性：worker 生命周期三点日志（启动/被取消/退出），
+    # 可观测性：worker 生命周期三点日志（启动/被取消/退出），
     # 静默消失类问题的根因定位依赖此链路
     logger.info(f"[AgentTask] {task_id} worker 启动")
     try:
@@ -230,7 +230,7 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
         async def emit(event: Dict[str, Any]) -> None:
             tm.emit(task_id, event)
 
-        # B0/F2 恢复：轮间引导注入器——注册到本任务的排队消息逐轮被消费
+        # 恢复：轮间引导注入器——注册到本任务的排队消息逐轮被消费
         # （agent_loop 第 2 轮起调用），注入成功即 guidance_injected 事件下发。
         def pending_injector() -> List[Dict[str, Any]]:
             return tm.drain_pending_guidance(task_id)
@@ -280,7 +280,7 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
 def _is_retryable_adapter_error(e: Exception) -> bool:
     """判定 AdapterError 是否为可切换备用模型重试的瞬时故障。
 
-    优先使用结构化标记（P0-2）：AdapterError.retryable 由 Adapter 层在抛错时
+    优先使用结构化标记（-2）：AdapterError.retryable 由 Adapter 层在抛错时
     填充（5xx / 超时 / 连接失败 → True，4xx → False）；无标记的旧异常回退
     文案匹配。仅瞬时故障可重试，4xx（鉴权/参数错误）重试无意义。
     """
@@ -297,7 +297,7 @@ def _is_retryable_adapter_error(e: Exception) -> bool:
 
 
 async def _fallback_candidates(provider_id: str, model: str) -> List[tuple]:
-    """构建 fallback 候选链（7777 二轮新语义）：同模型跨厂商，模型永不换。
+    """构建 fallback 候选链（新语义）：同模型跨厂商，模型永不换。
 
     主 (provider, model) → 其他启用供应商中明确在 chat_models 里列出
     同名模型的供应商。模型列表为空的供应商无法验证是否提供该模型，不入链；
@@ -328,7 +328,7 @@ async def _fallback_candidates(provider_id: str, model: str) -> List[tuple]:
 
 
 def _fallback_switch_payload(candidates: List[tuple], idx: int) -> Dict[str, str]:
-    """降级事件应下发的 (provider, model) —— 实际生效的下一候选（B0/F4 修正）。
+    """降级事件应下发的 (provider, model) —— 实际生效的下一候选（修正）。
 
     此前误发失败方供应商（cand_provider），同模型跨厂商降级时前端选择器跳转失效。"""
     nxt = candidates[idx + 1]
@@ -336,11 +336,11 @@ def _fallback_switch_payload(candidates: List[tuple], idx: int) -> Dict[str, str
 
 
 def _stamp_doc_written(payload: Optional[Dict[str, Any]], turn_id: str) -> Dict[str, Any]:
-    """六轮 S5/N4a：doc_written 即显事件打戳本轮 turn_id。
+    """ ：doc_written 即显事件打戳本轮 turn_id。
 
     发射端（agent_loop/fc_tool_runner）无 turn_id 概念，打戳归透传层
     （turn_id 在 _real_stream 起始生成）；前端即显卡据此与 done 主消息
-    同 turnId 严格归组（D3 显式 id 原则延伸，不再依赖相邻兜底）。
+    同 turnId 严格归组（显式 id 原则延伸，不再依赖相邻兜底）。
     """
     out = dict(payload or {"type": SSE_DOC_WRITTEN})
     out["turn_id"] = turn_id
@@ -352,20 +352,20 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
 
     主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，自动切换备用模型重试
     （避免重复执行已落盘的操作）；成功时 done payload 携带 fallback_model 供前端标注。
-    pending_injector（B0/F2）：轮间引导注入器，经 PlannerContext 传入循环。
+    pending_injector：轮间引导注入器，经 PlannerContext 传入循环。
     """
     history = truncate_history([
         {"role": m.get("role", "user"), "content": m.get("content", "")}
         for m in body.messages[-10:]
     ])
 
-    # 五轮 S2/#2：轮次唯一标识——本轮持久化的正文/文档卡/图片卡共用同一 turnId，
-    # 前端据此把一轮产出聚合进同一轮次容器（消除消息流碎片化）；随 done payload
+    # 轮次唯一标识——本轮持久化的正文/文档卡/图片卡共用同一 turnId，
+    # 前端据此把产出聚合进同次容器（消除消息流碎片化）；随 done payload
     # 下发，流式端与历史重载端同构
     turn_id = uuid.uuid4().hex[:12]
 
     # 短锁：绑定附件 + 附件文档存档 + 记录用户消息（仅一次，不随 fallback 重复）；
-    # 状态 JSON 改为惰性构建器（P0）：多步循环每一轮重新构建，模型每轮看到最新状态
+    # 状态 JSON 改为惰性构建器：多步循环每一轮重新构建，模型每轮看到最新状态
     async with svc.lock:
         if use_studio_context:
             bind_attachments(svc, body.attachments)
@@ -380,7 +380,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 pause_answered=pause_answered,
                 kind=getattr(body, "system_action", "") or "",
             )
-            # 0817 B14/B19：向导挂起的规格卡补落（用户消息之后）并发即显事件
+            # 向导挂起的规格卡补落（用户消息之后）并发即显事件
             await emit_pending_doc_card(svc, turn_id, emit)
 
     state_builder = (
@@ -397,7 +397,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         if settings.model_fallback_enabled
         else [(body.provider, body.model)]
     )
-    # 会话级 compaction（814R4 恢复；B5/F33：预热后台——便宜模型摘要与
+    # 会话级 compaction（恢复；：预热后台——便宜模型摘要与
     # fallback 候选的 adapter 创建/端点解析并行，首 token 不被摘要往返阻塞；
     # 命中缓存时任务即刻完成，语义与同步等待完全一致）
     summary_adapter = _resolve_summary_adapter(body, candidates)
@@ -438,7 +438,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
             ),
             skill_name=resolved_skill,
-            # audit-0819f：分诊只认用户原话（附件预览问号不参与提问判定）
+            # 分诊只认用户原话（附件预览问号不参与提问判定）
             raw_user_text=user_text,
             prelude_notes=prelude_notes,
             use_studio_context=use_studio_context,
@@ -446,9 +446,9 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             image_generation_provider=image_provider,
             image_generation_aspect_ratio=image_aspect_ratio,
             user_id=getattr(body, "user_id", "") or "",
-            # 814H7：会话级推理档位（对话栏选择器下发；""=模型原生）
+            # 会话级推理档位（对话栏选择器下发；""=模型原生）
             thinking_level=getattr(body, "thinking_level", "") or "",
-            # B0/F2：轮间引导注入器（任务式传输路径；非任务路径为 None）
+            # 轮间引导注入器（任务式传输路径；非任务路径为 None）
             pending_injector=pending_injector,
         )
 
@@ -458,7 +458,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         try:
             async for event in planner.handle_message_stream(llm_user_content, planner_ctx):
                 if event.type == "status":
-                    # 五轮 S1/#1：payload 携带完整 status_event（key+params）时原样透传，
+                    # payload 携带完整 status_event（key+params）时原样透传，
                     # 前端按 locale 翻译；无 payload 回落纯 text（动态自由文本路径）
                     await emit(event.payload or {"type": SSE_STATUS, "text": event.text})
                 elif event.type == "delta":
@@ -478,7 +478,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                             },
                         })
                 elif event.type == SSE_DOC_WRITTEN:
-                    # 六轮 S5/N4a：即显事件透传时打戳本轮 turn_id（打戳逻辑
+                    # 即显事件透传时打戳本轮 turn_id（打戳逻辑
                     # 抽 _stamp_doc_written 便于单测钉死）
                     await emit(_stamp_doc_written(event.payload, turn_id))
                 elif event.type in (
@@ -491,7 +491,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                     final_payload = event.payload or {}
                     final_text = final_payload.get("text", "")
                 elif event.type == "error":
-                    # 透传上游结构化故障标记（P0-2）：保证 fallback 链判定不依赖文案
+                    # 透传上游结构化故障标记（-2）：保证 fallback 链判定不依赖文案
                     p = event.payload or {}
                     raise AdapterError(
                         event.text,
@@ -513,8 +513,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 f"模型 {cand_model} 繁忙/异常，已切换 {next_model} 重试…",
                 {"from": cand_model, "to": next_model},
             ))
-            # 降级即时联动（7777）：切换时刻就下发，前端立即把选择器跳到实际生效的组合。
-            # B0/F4 修正：provider 必须为「下一候选」的供应商（同模型跨厂商降级时
+            # 降级即时联动：切换时刻就下发，前端立即把选择器跳到实际生效的组合。
+            # 修正：provider 必须为「下一候选」的供应商（同模型跨厂商降级时
             # 真正变化的是厂商），此前误发失败方供应商导致前端跳转失效
             AgentTracer.get_instance().record_fallback(next_provider, next_model)
             await emit({"type": SSE_MODEL_FALLBACK, **_fallback_switch_payload(candidates, idx)})
@@ -541,7 +541,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                         turn_id=turn_id,
                         pause_id=str(final_payload.get("pause_id") or ""),
                     )
-                # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合，S2）
+                # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合）
                 for doc_name in (final_payload.get("documents_written") or []):
                     svc.add_chat_message("agent", "", doc_card=doc_name, turn_id=turn_id)
                 # 生图卡片随历史持久化（独立消息条目，与前端 finishStream 的两条消息结构一致，
@@ -570,13 +570,13 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
 async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: bool) -> None:
     """流式失败统一出口：持久化错误消息 + 发 error 事件。
 
-    audit-0819：错误分层——气泡只展示一句人话（friendly），
+    ：错误分层——气泡只展示一句人话（friendly），
     上游原始报文（raw）随 errorDetail 持久化 + payload raw 下发，前端折叠展示。
     """
     friendly, raw = _friendly_stream_error(e)
     if use_studio_context:
         async with svc.lock:
-            # B2/F22：错误前缀统一为 ⚠️（与前端 streamError 渲染一致，刷新后不跳变）
+            # 错误前缀统一为 ⚠️（与前端 streamError 渲染一致，刷新后不跳变）
             svc.add_chat_message(
                 "agent", f"⚠️ {friendly}", model_name=body.model or "",
                 error_detail=raw,
@@ -588,7 +588,7 @@ async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: 
 
 
 def _friendly_stream_error(e: Exception) -> Tuple[str, str]:
-    """上游错误人话翻译（2222 反馈：裸 JSON 报错看不懂）。
+    """上游错误人话翻译（反馈：裸 JSON 报错看不懂）。
 
     返回 (friendly, raw)：friendly = 一句可操作的人话；
     raw = 上游原始报文（未命中翻译时为空串，前端不渲染技术详情折叠）。
@@ -645,7 +645,7 @@ async def non_stream_worker(body: Any) -> Dict[str, Any]:
     if not user_text:
         user_text = "请查看我上传的素材"
 
-    # 请求幂等防护（P2）：同一 request_id 处理中时拒绝重复提交
+    # 请求幂等防护：同一 request_id 处理中时拒绝重复提交
     request_id = body.request_id or ""
     if not _acquire_request_slot(request_id):
         raise VideoAgentError("相同请求正在处理中，请勿重复发送", status_code=409,
@@ -659,13 +659,13 @@ async def non_stream_worker(body: Any) -> Dict[str, Any]:
 async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     """非流式聊天主体（幂等槽位由 non_stream_worker 管理）"""
     svc = StateManager.get_instance()
-    # 铁律文档每轮确保存在（宪法 D2），非流式路径同样生效
+    # 铁律文档每轮确保存在（宪法），非流式路径同样生效
     from src.video_agent.core.spec_rules import ensure_iron_rules_doc
     try:
         ensure_iron_rules_doc(svc.state_dict)
     except Exception as _e:
         logger.debug("[chat_service] 忽略异常: {}", _e)
-    # 0817：一条龙指令仅本条消息生效（与非流式路径对齐）
+    # 一条龙指令仅本条消息生效（与非流式路径对齐）
     if prompt_gates.clear_flow_directive(svc.state_dict):
         svc.save_debounced()
     executor = StudioActionExecutor(
@@ -675,15 +675,15 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     )
 
     use_studio_context = body.context_mode != "none"
-    # 开场公共编排（814F2）：同流式路径（暂停闭环 + 规格定稿/向导 + 附件降级）
+    # 开场公共编排：同流式路径（暂停闭环 + 规格定稿/向导 + 附件降级）
     llm_user_text = await _prepare_chat_opening(svc, body, user_text, use_studio_context)
 
-    # 会话层一次性豁免（814F7）：同流式路径
+    # 会话层一次性豁免：同流式路径
     if getattr(body, "gate_overrides", None) and use_studio_context:
         async with svc.lock:
             _store_gate_overrides(svc, body.gate_overrides)
 
-    # Skill 写入文档（B4/F30）：同 stream_worker——本轮激活了 Skill 即记入 usedSkills
+    # Skill 写入文档：同 stream_worker——本轮激活了 Skill 即记入 usedSkills
     async with svc.lock:
         _record_active_skill(svc, body)
 
@@ -698,9 +698,9 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     doc_blocks=getattr(body, "doc_blocks", None) or None,
                     skill_blocks=getattr(body, "skill_blocks", None) or None,
                 )
-                # 0817 B14/B19：规格卡补落（用户消息之后），名字随载荷下发保 live 可见
+                # 规格卡补落（用户消息之后），名字随载荷下发保 live 可见
                 _wiz_card = flush_pending_doc_card(svc)
-            # audit-0819b 单轨化：mock 动作以结构化 dict 直达执行器，不经文本块解析
+            # 单轨化：mock 动作以结构化 dict 直达执行器，不经文本块解析
             visible, actions = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
             applied = executor.execute(actions)
             if use_studio_context:
@@ -731,7 +731,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         if use_studio_context:
             bind_attachments(svc, body.attachments)
             store_uploaded_docs(svc, body.attachments)
-            # 暂停回应结构化消费（G4：非流式路径同构）
+            # 暂停回应结构化消费（非流式路径同构）
             ns_pause_answered = consume_pause_response(
                 svc, getattr(body, "pause_response", None) or None)
             svc.add_chat_message(
@@ -741,10 +741,10 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                 pause_answered=ns_pause_answered,
                 kind=getattr(body, "system_action", "") or "",
             )
-            # 0817 B14/B19：规格卡补落（用户消息之后，G4 非流式轨同步），名字随载荷下发
+            # 规格卡补落（用户消息之后， 非流式轨同步），名字随载荷下发
             _wiz_card_ns = flush_pending_doc_card(svc)
 
-    # 状态惰性构建器（P0）：多步循环每轮刷新
+    # 状态惰性构建器：多步循环每轮刷新
     state_builder = (
         (lambda: svc.build_agent_context(body.asset_mode)) if use_studio_context else None
     )
@@ -765,7 +765,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
         ),
         skill_name=resolved_skill,
-        # audit-0819f：分诊只认用户原话（附件预览问号不参与提问判定）
+        # 分诊只认用户原话（附件预览问号不参与提问判定）
         raw_user_text=user_text,
         prelude_notes=prelude_notes,
         use_studio_context=use_studio_context, asset_mode=body.asset_mode,
@@ -782,7 +782,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         if settings.model_fallback_enabled
         else [(body.provider, body.model)]
     )
-    # 会话级 compaction（814R4 恢复；B5/F33：同流式路径——预热后台）
+    # 会话级 compaction（恢复；：同流式路径——预热后台）
     summary_adapter = _resolve_summary_adapter(body, candidates)
     _compact_task = asyncio.create_task(_maybe_compact_history(history, svc, summary_adapter))
     result = None
@@ -837,8 +837,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             f"主模型瞬时故障，本次回复由备用模型 {used_model} 生成，质量可能与主模型不同"
         )
 
-    # 五轮自查补漏：turn_id 提升到 if 外，非流式返回体与流式 done payload
-    # 契约对齐（turn_id + suggested_actions 同构，G4 一致性）
+    #自查补漏：turn_id 提升到 if 外，非流式返回体与流式 done payload
+    # 契约对齐（turn_id + suggested_actions 同构， 一致性）
     ns_turn_id = uuid.uuid4().hex[:12]
     if use_studio_context:
         async with svc.lock:
@@ -868,7 +868,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     }
 
 
-# R4c：开场编排域/消费压缩域实现体在 chat_opening.py / chat_consume.py，re-export 保持既有引用不变
+# 开场编排域/消费压缩域实现体在 chat_opening.py / chat_consume.py，re-export 保持既有引用不变
 from src.video_agent.web.chat_opening import (
     _HISTORY_ASSISTANT_MAX_CHARS,
     _HISTORY_ASSISTANT_RECENT_MAX_CHARS,

@@ -1,5 +1,5 @@
 /**
- * CLI 域状态与动作 hook——七轮 S1/T23 自 SettingsView 切出。
+ * CLI 域状态与动作 hook——  自 SettingsView 切出。
  * 承载 CLI 安装状态检测、帮助/积分弹窗、即梦扫码登录轮询；
  * 对外只暴露 SettingsApi 所需片段，行为与切出前逐字一致。
  */

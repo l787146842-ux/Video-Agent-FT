@@ -7,7 +7,7 @@ import type { ReorderRequest } from '@/types/api.generated';
 
 /** 分组排序持久化（拖拽排序后调用；静默失败不阻塞 UI） */
 export function reorderGroups(category: string, groupIds: string[]): void {
-  // 请求体类型以生成物为唯一来源（六轮 S2 路线 a）：字段漂移编译期即报错
+  // 请求体类型以生成物为唯一来源（路线 a）：字段漂移编译期即报错
   const body: ReorderRequest = { category, group_ids: groupIds };
   fetch('/api/storyboard/reorder', {
     method: 'PATCH',

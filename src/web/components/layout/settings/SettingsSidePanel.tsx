@@ -1,5 +1,5 @@
 /**
- * 左侧面板：平台列表 + 新增平台 + CLI 设置——七轮 S1/T23 自 SettingsView 切出。
+ * 左侧面板：平台列表 + 新增平台 + CLI 设置——  自 SettingsView 切出。
  */
 import { For, Show } from 'solid-js';
 import { FiPlus } from 'solid-icons/fi';

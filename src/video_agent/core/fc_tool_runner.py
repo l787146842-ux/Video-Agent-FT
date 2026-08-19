@@ -1,5 +1,5 @@
-"""FC 工具执行与回喂（从 planner.py 拆出，批次5 文件瘦身；
-八轮 B1 回喂家族切入 core/fc_feedback.py，本文件保留 re-export）。
+"""FC 工具执行与回喂（从 planner.py 拆出， 文件瘦身；
+  回喂家族切入 core/fc_feedback.py，本文件保留 re-export）。
 
 承载：
 - Function Calling tool_calls 的执行循环（含 read_skill 短路、生图参数注入、过程时间线事件）
@@ -37,26 +37,26 @@ _EXECUTOR_TOOL_NAMES = frozenset({
     "audio_generate",
     "video_assembler",
 })
-# 关键步骤工具（6666 事故）：这些失败时模型不得声称“已完成/已写入”
+# 关键步骤工具：这些失败时模型不得声称“已完成/已写入”
 _CRITICAL_TOOL_NAMES = frozenset(_EXECUTOR_TOOL_NAMES | {"document_write"})
 from src.video_agent.tools.base import ToolResult
 
 # 回喂家族定义源 = core/fc_feedback.py；本文件顶层重新绑定全部符号，
 # 既有 import 路径与测试 patch 目标不变（承重壳）。
 from src.video_agent.core.fc_feedback import (
-    FEEDBACK_COMPRESSED,  # noqa: F401
-    FEEDBACK_FULL_TOOLS,  # noqa: F401
-    FEEDBACK_IMAGE_TOOL,  # noqa: F401
-    FEEDBACK_MARKER,  # noqa: F401
-    FEEDBACK_MAX_TOTAL_CHARS,  # noqa: F401
-    classify_tool_failure,  # noqa: F401
+    FEEDBACK_COMPRESSED,  # noqa: 1
+    FEEDBACK_FULL_TOOLS,  # noqa: 1
+    FEEDBACK_IMAGE_TOOL,  # noqa: 1
+    FEEDBACK_MARKER,  # noqa: 1
+    FEEDBACK_MAX_TOTAL_CHARS,  # noqa: 1
+    classify_tool_failure,  # noqa: 1
     compose_failure_feedback,
-    compress_prior_feedback,  # noqa: F401
+    compress_prior_feedback,  # noqa: 1
     describe_fc_tool,
-    format_tool_results,  # noqa: F401
-    render_read_result,  # noqa: F401
-    should_compress_feedback,  # noqa: F401
-    strip_prior_feedback_images,  # noqa: F401
+    format_tool_results,  # noqa: 1
+    render_read_result,  # noqa: 1
+    should_compress_feedback,  # noqa: 1
+    strip_prior_feedback_images,  # noqa: 1
 )
 
 
@@ -151,7 +151,7 @@ class FCToolRunner:
             kind = {"keyelement": "keyElement", "shot": "shot", "audio": "audio"}.get(gt, "")
         else:
             return None
-        # 客观补全（888 事故）：@引用与镜头时长可从 sceneRefs/duration 算出来，
+        # 客观补全（888）：@引用与镜头时长可从 sceneRefs/duration 算出来，
         # 写入前按 Skill 声明的规则自动补印回待写入参数，不指望模型自觉
         if kind == "shot" and prompt:
             group: Optional[Dict[str, Any]] = None
@@ -193,7 +193,7 @@ class FCToolRunner:
                 and prompt_gates.storyboard_pending(self._raw_state()):
             self.gate_warnings.append(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
             logger.info("[FlowGate] 提示词写入时故事板待确认（警告，不拦人）")
-        # 统一闸机管线（宪法 §2.0 单一组合实现；814R2 恢复接线，与文本轨同源判定）
+        # 统一闸机管线（宪法 §2.0 单一组合实现； 恢复接线，与文本轨同源判定）
         outcome = guard_pipeline.evaluate_prompt_write(
             prompt, kind, self._raw_state(),
             gate_rules=self._gate_rules,
@@ -231,7 +231,7 @@ class FCToolRunner:
         return text
 
     def _stage_precondition_gate(self, name: str, injected_skill: str) -> Optional[str]:
-        """阶段前置闸（audit-0819e，platform.stage_precondition）：
+        """阶段前置闸（platform.stage_precondition）：
         工具归属阶段的前置阶段未完成 → 拒收（机械强制，不依赖控制流入口）。
         仅 strict 模式启用；用户坚持（gate_override）可一次性豁免并留痕。"""
         if not injected_skill or prompt_gates.gate_mode() != "strict":
@@ -260,7 +260,7 @@ class FCToolRunner:
         return err
 
     def _flow_gate(self, name: str, injected_skill: str) -> Optional[str]:
-        """规格前置（S1，与文本轨对齐）：只对显式声明 flow.spec_gate 的 Skill
+        """规格前置（与文本轨对齐）：只对显式声明 flow.spec_gate 的 Skill
         生效，且不硬拦——规格未写入时追加一条可视线索到操作时间线，
         模型下一轮自行决定补写（用户指令优先）。返回恒 None（不再硬拒绝）。"""
         if not injected_skill or prompt_gates.gate_mode() != "strict":
@@ -278,7 +278,7 @@ class FCToolRunner:
             declared = False
         if not declared:
             return None
-        # 814G5：执行侧强制已接管（ensure_spec_gate 拦截越阶工具调用），
+        # 执行侧强制已接管（ensure_spec_gate 拦截越阶工具调用），
         # 此处不再向用户追加 ⚠ 警告（只记日志，模型侧由拦截回喂知晓）
         logger.info(f"[FlowGate] {name}：规格文档未写入（Skill 声明 spec_gate，执行侧门禁生效）")
         return None
@@ -333,11 +333,11 @@ class FCToolRunner:
             logger.debug(f"[FlowGate] drafts_presented 记录失败: {e}")
 
     def _gen_confirm_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
-        """生成确认闸（FC 轨，B4 双轨收敛一期）：判定唯一实现 =
+        """生成确认闸（FC 轨， 双轨收敛一期）：判定唯一实现 =
         guard_pipeline.evaluate_gen_confirm（与文本轨逐字节一致）。"""
         if name != "image_generate":
             return None
-        # 0817 一条龙：用户本条消息的显式指令作为本批生成同意（留痕），不弹确认闸
+        # 一条龙：用户本条消息的显式指令作为本批生成同意（留痕），不弹确认闸
         if prompt_gates.flow_auto_continue(self._raw_state()):
             logger.info("[FlowDirective] 一条龙指令作为本批生成同意（留痕）")
             return None
@@ -384,13 +384,13 @@ class FCToolRunner:
         """执行 Function Calling 返回的 tool_calls。
         返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
         confirmation_options, tool_results, docs_written, warnings)。
-        warnings（B0/F3）：本批闸机拦截/豁免的用户可见文案，由 planner 并入
+        warnings：本批闸机拦截/豁免的用户可见文案，由 planner 并入
         loop_result.warnings —— FC 轨与文本轨拦截可见性对齐（§2.0/§2.4）。"""
         self._selected_draft_id = selected_draft_id or ""
         self._selected_type = selected_type or ""
         self.gate_override = gate_override
         self.gate_warnings = []
-        # B1/F10-1：对话内单图工具每批调用次数（prose 禁令下沉工具层，13.6 审计清偿）
+        # 1：对话内单图工具每批调用次数（prose 禁令下沉工具层，13.6 审计
         self._gen_image_calls = 0
         applied = 0
         confirmation = ""
@@ -407,17 +407,17 @@ class FCToolRunner:
         prompt_stripped = False
         # 本批被提示词闸机拦截的写入次数（防虚报：拦截后暂停文案不得引导确认未写入的提示词）
         prompt_gate_blocked = 0
-        # 0817：暂停点归位 Skill 阶段边界——只快照批前是否为空，
+        # 暂停点归位 Skill 阶段边界——只快照批前是否为空，
         # 批末「故事板阶段完成且模型未暂停」才注入审阅卡（平台不再自加关键元素后暂停）
         skill_strict = bool(injected_skill) and prompt_gates.gate_mode() == "strict"
         storyboard_empty_before = prompt_gates.storyboard_is_empty(self._raw_state())
         # 生成类工具本批成败跟踪（防虚报：同批失败后暂停文案不得声称已触发生成）
         gen_failed_err = ""
         gen_succeeded = False
-        # 关键执行器/文档写入成败跟踪（6666：script_analyze/document_write 失败仍声称完成）
+        # 关键执行器/文档写入成败跟踪（script_analyze/document_write 失败仍声称完成）
         key_tool_failed: List[str] = []
         key_tool_errors: Dict[str, str] = {}
-        # 规格写入被向导拒收（8888：拒收后必须接管为规格向导卡，模型不得跳过规格交互）
+        # 规格写入被向导拒收（拒收后必须接管为规格向导卡，模型不得跳过规格交互）
         spec_write_rejected = False
         tracer = AgentTracer.get_instance()
         for ci, call in enumerate(response.tool_calls):
@@ -431,7 +431,7 @@ class FCToolRunner:
             # current/空引用 → 真实 id（闸机与工具调用前，防命中错误卡片/绕过闸机）
             self._resolve_current_refs(name, args)
 
-            # 执行器工具强制绑定主对话模型（决策 E：与主模型一致；6666 二轮：
+            # 执行器工具强制绑定主对话模型（决策 E：与主模型一致；：
             # 模型自行填写 chat_provider/chat_model 一律覆盖，防止串线到其他供应商
             # 导致 429/余额错误，也让「执行器与主模型一致」成为硬约束而非缺省兜底）
             if name in _EXECUTOR_TOOL_NAMES:
@@ -439,7 +439,7 @@ class FCToolRunner:
                     args["chat_provider"] = self.chat_provider
                 if self.chat_model:
                     args["chat_model"] = self.chat_model
-                # 6666 事故：模型不带 skill_name 时，强制注入系统已确认的当前 Skill，
+                # 模型不带 skill_name 时，强制注入系统已确认的当前 Skill，
                 # 否则执行器注册检查拿到空名 → 「未指定」未注册
                 if not str(args.get("skill_name") or "").strip() and injected_skill:
                     args["skill_name"] = injected_skill
@@ -456,13 +456,13 @@ class FCToolRunner:
                 })
             _tool_t0 = time.monotonic()
 
-            # --- 生图模型强制注入（B7）：草稿自身（中间面板直接选择）> 全局设置 > 平台默认 ---
+            # --- 生图模型强制注入：草稿自身（中间面板直接选择）> 全局设置 > 平台默认 ---
             if name == "generate_image" and (
                 "adapter_provider" not in args or args.get("adapter_provider") in ("mock", "", None)
             ):
                 from src.video_agent.web.provider_config import spec_media_preference as _spec_pref
                 _sp, _sm = _spec_pref(self._raw_state())
-                # B7 用户裁决：模型能力参数唯一权威源 = 全局设置；优先级 =
+                # 用户裁决：模型能力参数唯一权威源 = 全局设置；优先级 =
                 # 草稿自身（用户在中间面板的直接选择）> 全局设置 > 平台默认
                 if image_provider:
                     args["adapter_provider"] = image_provider
@@ -478,8 +478,8 @@ class FCToolRunner:
                     logger.info("[Planner] Injected image gen aspect ratio from draft: %s",
                                 image_aspect_ratio)
             # --- image_generate（批量工具）同轨注入：LLM 未传 provider 时依次回退
-            # B7 用户裁决：草稿自身（用户直接选择）> 全局设置 > 平台默认；
-            # 防传空导致「供应商 '' 未配置」（8888 事故）---
+            # 用户裁决：草稿自身（用户直接选择）> 全局设置 > 平台默认；
+            # 防传空导致「供应商 '' 未配置」---
             if name == "image_generate" and not str(args.get("provider_id") or "").strip():
                 from src.video_agent.web.provider_config import spec_media_preference
                 spec_pid, spec_model = spec_media_preference(self._raw_state())
@@ -495,11 +495,11 @@ class FCToolRunner:
                                 spec_pid, spec_model)
 
             # read_skill 短路：选中 Skill 全文已硬注入 system prompt，重复 read 只是
-            # 浪费一轮工具往返 + 全文回喂 token（prompt 里的「不要再 read」靠模型自觉，此处硬保障）
+            # 浪费工具往返 + 全文回喂 token（prompt 里的「不要再 read」靠模型自觉，此处硬保障）
             if self._strip_structure_prompt(name, args, injected_skill):
                 prompt_stripped = True
             # 闸机链：阶段前置（平台不变量）→ 规格前置 → 生成确认 → 提示词结构/时序
-            # （0817：首拆只允关键元素的平台自加警告已清除——流程以 Skill 为准，
+            # （首拆只允关键元素的平台自加警告已清除——流程以 Skill 为准，
             # 客观数据完整性（sceneRefs 引用存在性）由 exec_common 校验兜底）
             gate_error = self._stage_precondition_gate(name, injected_skill)
             if gate_error is None:
@@ -511,7 +511,7 @@ class FCToolRunner:
                     if pg_err:
                         prompt_gate_blocked += 1
                         gate_error = pg_err
-            # B1/F10-1：对话内单图工具每批最多一次（prose 下沉工具层，13.6 审计清偿）。
+            # 1：对话内单图工具每批最多一次（prose 下沉工具层，13.6 审计。
             # 需要多张时模型改用 image_generate 批量工具（两者分工互斥，见 system_fc.md）
             if gate_error is None and name == "generate_image":
                 self._gen_image_calls += 1
@@ -573,13 +573,13 @@ class FCToolRunner:
                                 }
                                 if str(o.get("group") or "").strip():
                                     item["group"] = str(o.get("group")).strip()
-                                # B2/F16：选项 value 机械消费
+                                # 选项 value 机械消费
                                 if str(o.get("value") or "").strip():
                                     item["value"] = str(o.get("value")).strip()
                                 confirmation_options.append(item)
                             elif isinstance(o, str) and o.strip():
                                 confirmation_options.append({"label": o.strip(), "description": ""})
-                    # 1111 事故：模型自造「1K（更快）」式 label 无法机械落盘，
+                    # 模型自造「1K（更快）」式 label 无法机械落盘，
                     # 同 group 选项替换为标准「键：值」向导（系统永不没收模型的暂停文案）
                     try:
                         from src.video_agent.skill_runtime.registry import spec_wizard_active
@@ -597,7 +597,7 @@ class FCToolRunner:
                     doc_name = str(args.get("name") or args.get("key") or "").strip()
                     if doc_name:
                         docs_written.append(doc_name)
-                        # 3333 修复（B0/F1 恢复四段链）：文档卡片即写即显，不等整轮 done。
+                        # 修复（恢复四段链）：文档卡片即写即显，不等整轮 done。
                         # 前端按名称去重，done payload 的 documents_written 仍携带全量
                         # 供服务端持久化与刷新重建。
                         if on_event is not None:
@@ -637,7 +637,7 @@ class FCToolRunner:
                     inserts = data["chat_inserts"]
                     if isinstance(inserts, list):
                         chat_inserts.extend(inserts)
-                # --- 0817 B16：执行器成功结果携带的警告（如补拆失败缺失清单）
+                # --- ：执行器成功结果携带的警告（如补拆失败缺失清单）
                 # 升级为轮末用户可见警告，不得只留在 trace（静默丢失禁令） ---
                 if data and isinstance(data.get("warnings"), list):
                     for _tw in data["warnings"]:
@@ -653,7 +653,7 @@ class FCToolRunner:
                     str(args.get("name") or args.get("key") or "")
                 ):
                     spec_write_rejected = True
-                # 814G3：规格拒收静默——用户侧用中性系统提示（无失败红叉/⚠），
+                # 规格拒收静默——用户侧用中性系统提示（无失败红叉/⚠），
                 # 拒收原因仍经 tool_results 回喂模型（模型知道未落盘）
                 spec_silent_summary = ""
                 if (
@@ -673,7 +673,7 @@ class FCToolRunner:
                         "elapsed_ms": round(_tool_ms, 1),
                         "result_summary": spec_silent_summary or str(result.error or "执行失败")[:120],
                     })
-                # 0817：trace 与 SSE 同一口径（规格静默拒收=中性 True，普通失败=红× False），
+                # trace 与 SSE 同一口径（规格静默拒收=中性 True，普通失败=红× False），
                 # 防刷新后失败被重建为绿√
                 tracer.record_action(
                     name=name, summary=spec_silent_summary or start_summary,
@@ -695,7 +695,7 @@ class FCToolRunner:
             spec_hit = any(prompt_gates.is_spec_doc_name(n) for n in docs_written)
             if spec_hit:
                 confirmation, confirmation_options = prompt_gates.spec_pause_card(self._raw_state())
-        # 0817：暂停点归位 Skill 阶段边界（13.3/C6，用户裁决）：
+        # 暂停点归位 Skill 阶段边界（13.3/C6，用户裁决）：
         # 平台不再「关键元素首建后硬暂停」；仅当本批把故事板推进到阶段完成
         # （Skill 声明的组别齐）且模型未自行暂停时，注入审阅卡；
         # 模型自发暂停一律保留其文案与选项（平台不覆盖）。
@@ -720,7 +720,7 @@ class FCToolRunner:
                     "向用户陈述需与此一致。"
                 ),
             })
-        # 防虚报硬拦截（8888 事故）：同批生成类工具失败但模型暂停文案声称已触发/已生成
+        # 防虚报硬拦截：同批生成类工具失败但模型暂停文案声称已触发/已生成
         # → 覆盖为诚实文案（对齐文本轨 gate_heal 的「拦截后不接受虚报」原则）
         if gen_failed_err and not gen_succeeded and confirmation:
             _claim_markers = (
@@ -757,14 +757,14 @@ class FCToolRunner:
                 "label": "先调整提示词",
                 "description": "告诉我需要修改的草稿与修改意见",
             }]
-        # 8888 事故：规格写入被向导拒收 → 系统接管为规格向导卡（与文本轨一致），
+        # 规格写入被向导拒收 → 系统接管为规格向导卡（与文本轨一致），
         # 模型不得用「请求阶段确认」跳过规格交互，也不得声称已生成规格
         if spec_write_rejected:
             _spec_state = self._raw_state()
             inter = _spec_state.setdefault("interaction", {})
             took_over = False
             if "script_analyze" in key_tool_failed:
-                # 6666 二轮：剧本分析本身失败（如 API 余额不足/超时）时，
+                #剧本分析本身失败（如 API 余额不足/超时）时，
                 # 不能装成已读完剧本弹规格向导，必须把失败原因明确交给用户
                 _err = key_tool_errors.get("script_analyze", "执行失败")
                 confirmation = (
@@ -778,7 +778,7 @@ class FCToolRunner:
                 inter["pending_pause_kind"] = ""
                 took_over = True
             elif prompt_gates.spec_doc_finalized(_spec_state):
-                # 8888 二轮：规格已定稿时模型的冗余手写只拒收警告，
+                #规格已定稿时模型的冗余手写只拒收警告，
                 # 不接管暂停卡——拆解阶段的阶段卡正常出现，不再叫用户确认规格
                 logger.info("[Planner] 规格已定稿，模型冗余规格写入仅拒收警告，不接管暂停卡")
             else:
@@ -787,7 +787,7 @@ class FCToolRunner:
                 took_over = True
             if took_over:
                 try:
-                    # 8888 二轮：接管时必须同时洗掉 workflow_pause 写入的假完成文案，
+                    #接管时必须同时洗掉 workflow_pause 写入的假完成文案，
                     # 否则下一轮会把「已完成…写入项目文档」当作暂停内容回喂给模型
                     inter["awaiting_confirmation"] = True
                     inter["confirmation_message"] = confirmation
@@ -796,10 +796,10 @@ class FCToolRunner:
                     logger.warning("[Planner] 规格接管暂停态落盘失败（下轮可能重复接管）: {}", _e)
                 logger.warning("[Planner] 规格写入被向导拒收，已接管为规格向导卡")
 
-        # 6666/8888 事故：关键执行器/文档写入存在失败且模型带确认声称完成 → 覆盖为诚实文案
+        # / ：关键执行器/文档写入存在失败且模型带确认声称完成 → 覆盖为诚实文案
         # （部分成功、部分失败同样覆盖，堵住「script_analyze 成功就放行假规格文案」的盲区）
         if confirmation and key_tool_failed and not spec_write_rejected:
-            # B2/F23：失败工具名映射为用户友好名（内部英文名不出现在用户文案）
+            # 失败工具名映射为用户友好名（内部英文名不出现在用户文案）
             _failed = "、".join(
                 dict.fromkeys(stage_label_for_tool(n) or n for n in key_tool_failed)
             )[:160]

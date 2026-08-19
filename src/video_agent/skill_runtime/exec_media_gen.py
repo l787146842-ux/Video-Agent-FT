@@ -1,4 +1,4 @@
-"""媒体生成族（九轮 B3 自 exec_tools.py 切出，R4a 拆分模式延续）。
+"""媒体生成族（自 exec_tools.py 切出， 拆分模式延续）。
 
 AudioGenerateTool + VideoAssemblerTool。exec_tools 尾部 re-export 保持
 既有引用路径不变（宪法 §12 登记壳；零行为变更，代码逐字迁移）。

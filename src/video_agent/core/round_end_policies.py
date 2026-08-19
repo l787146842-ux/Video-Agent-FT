@@ -1,4 +1,4 @@
-"""轮末策略状态机（四轮 R1，F47 清偿：agent_loop 轮末注入点收敛为单一路径）。
+"""轮末策略状态机（清偿：agent_loop 轮末注入点收敛为单一路径）。
 
 原 run_agent_loop 轮末段 10+ 个竞争 if 块（流程门禁暂停/失败警告/闸机自愈/
 规格文档暂停/规格审阅卡/向导接管/规格收集/结构自检/结构卡/阶段兜底卡/虚报检测）
@@ -10,7 +10,7 @@
   「先到先得 + not confirmation 守卫」语义顺序求值）；post_process=副作用块
   （警告/自愈/选项覆盖/审计），全部执行；
 - 仲裁可观测（#4）：命中候选与胜出者经 tracer.record_card_decision 入 trace，
-  /api/agent/traces 可见（对话区暂不渲染，决策点 D5）。
+  /api/agent/traces 可见（对话区暂不渲染，决策点）。
 
 归属层：层 9 系统兜底卡唯一代码落点（宪法 13.3）。FC 轨的 flow_gate_pause
 仍由 agent_loop 在工具执行后早返处理（位置与重构前一致），共用本表 policy_id。
@@ -51,7 +51,7 @@ _STRUCTURE_CLAIM_RE = re.compile(
 )
 _FUTURE_MARKER_RE = re.compile(r"确认后|接下来|之后|即将|下一步|先确认|先将")
 
-# audit-0819-fakestop：延续承诺措辞——正文声称要继续/正在做，却以 stop 收尾且零操作。
+# fakestop：延续承诺措辞——正文声称要继续/正在做，却以 stop 收尾且零操作。
 # 只覆盖任务流常见承诺句式，配合 applied==0 + skill 激活条件使用，防普通对话误触发。
 _CONTINUATION_PROMISE_RE = re.compile(
     r"马上继续|继续推进|继续执行|现在(?:进行|执行|调用|写入|分析|拆解|开始)|"
@@ -62,8 +62,8 @@ _CONTINUATION_PROMISE_RE = re.compile(
 def _claims_structure_done(*texts: str) -> bool:
     """判定文本是否声称已完成故事板结构搭建（防虚报闸的文本检测）。
 
-    - 每个文本段独立判定（2222 事故：正文结尾与暂停文案开头跨文本拼接不得误报）；
-    - 含未来/预告措辞的段落不算声称（4444 误伤措辞豁免）。
+    - 每个文本段独立判定（正文结尾与暂停文案开头跨文本拼接不得误报）；
+    - 含未来/预告措辞的段落不算声称（误伤措辞豁免）。
     """
     for t in texts:
         text = str(t or "")
@@ -99,7 +99,7 @@ class RoundEndContext:
     hard_break_finish: str = ""
     result_warnings: List[str] = field(default_factory=list)
     result_text: str = ""
-    # audit-0819-fakestop：轮末策略机械追加的建议动作（agent_loop 回读并入 result）
+    # fakestop：轮末策略机械追加的建议动作（agent_loop 回读并入 result）
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
     # 仲裁记录（#4：候选 + 胜出者）
     candidates: List[str] = field(default_factory=list)
@@ -136,7 +136,7 @@ async def run_round_end_policies(
         try:
             hit = policy.condition(ctx)
         except Exception as e:
-            # 四轮 R5/#11：策略条件求值失败入遥测（防闸机接线静默断裂）
+            # 策略条件求值失败入遥测（防闸机接线静默断裂）
             live_metrics.record_degradation(f"round_end.{policy.policy_id}")
             logger.warning(f"[RoundEnd] 策略 {policy.policy_id} 条件求值失败（跳过）: {e}")
             continue
@@ -160,7 +160,7 @@ async def run_round_end_policies(
     return ctx
 
 
-# ---------- 各策略实现（优先级 = 重构前代码书写顺序，D1 裁决零行为变更） ----------
+# ---------- 各策略实现（优先级 = 重构前代码书写顺序， 裁决零行为变更） ----------
 
 def _cond_partial_fail_warnings(ctx: RoundEndContext) -> bool:
     return bool(ctx.total_exec) and ctx.applied < ctx.total_exec
@@ -192,7 +192,7 @@ def _cond_gate_heal(ctx: RoundEndContext) -> bool:
 
 
 async def _apply_gate_heal(ctx: RoundEndContext, emit: Callable) -> None:
-    # 8888 事故自愈：丢弃本轮暂停信号，拦截原因回喂模型修正后再暂停
+    # 自愈：丢弃本轮暂停信号，拦截原因回喂模型修正后再暂停
     ctx.gate_heal = True
     blocked_n = ctx.total_exec - ctx.applied
     ctx.confirmation = ""
@@ -229,7 +229,7 @@ def _cond_spec_doc_written_pause(ctx: RoundEndContext) -> bool:
 
 
 async def _apply_spec_doc_written_pause(ctx: RoundEndContext, emit: Callable) -> None:
-    # 9999 事故：写完规格强制审阅，无视 continue
+    # 写完规格强制审阅，无视 continue
     ctx.confirmation, ctx.confirmation_options = prompt_gates.spec_pause_card(ctx.executor.state)
     interaction = ctx.executor.state.setdefault("interaction", {})
     interaction["pending_pause_kind"] = "spec"
@@ -264,7 +264,7 @@ def _structure_kinds(ctx: RoundEndContext) -> set:
 
 
 def _cond_structure_stage_review(ctx: RoundEndContext) -> bool:
-    # 0817：暂停点归位 Skill 阶段边界（13.3/C6，用户裁决）：
+    # 暂停点归位 Skill 阶段边界（13.3/C6，用户裁决）：
     # 平台不再强制自检轮/首建硬暂停；故事板阶段完成且模型未暂停才注入审阅卡
     return (
         not ctx.confirmation
@@ -288,7 +288,7 @@ async def _apply_structure_stage_review(ctx: RoundEndContext, emit: Callable) ->
 
 
 def _cond_stage_done_fallback(ctx: RoundEndContext) -> bool:
-    # 5555 事故 + B4/F29：声明驱动 + 平台兜底双语义；0817 一条龙豁免引导卡
+    # + ：声明驱动 + 平台兜底双语义； 一条龙豁免引导卡
     if ctx.confirmation or ctx.gate_heal or ctx.applied <= 0:
         return False
     if prompt_gates.flow_auto_continue(ctx.executor.state):
@@ -317,15 +317,15 @@ async def _apply_stage_done_fallback(ctx: RoundEndContext, emit: Callable) -> No
 
 
 def _cond_false_claim_audit(ctx: RoundEndContext) -> bool:
-    # 虚报检测与正文拼接收纳在同一块内（原 agent_loop L715-731 语义）；
-    # audit-0819b 单轨化：文本动作块通道已退役，正文即模型可见文本，无需清洗
+    # 虚报检测与正文拼接收纳在同一块内（原 agent_loop 5-731 语义）；
+    # 单轨化：文本动作块通道已退役，正文即模型可见文本，无需清洗
     return bool((ctx.content or "").strip())
 
 
 async def _apply_false_claim_audit(ctx: RoundEndContext, emit: Callable) -> None:
     visible = (ctx.content or "").strip()
     if visible and not ctx.gate_heal:
-        # 虚报警告（7777 × 4444）：声称完成结构搭建但故事板实际为空 → 只警告不拦人
+        # 虚报警告（×）：声称完成结构搭建但故事板实际为空 → 只警告不拦人
         if (
             ctx.confirmation
             and _claims_structure_done(visible)
@@ -341,7 +341,7 @@ async def _apply_false_claim_audit(ctx: RoundEndContext, emit: Callable) -> None
 
 
 def _cond_aborted_continuation_audit(ctx: RoundEndContext) -> bool:
-    # audit-0819-fakestop：模型说「马上继续/现在进行…」却零操作、无暂停地收尾，
+    # fakestop：模型说「马上继续/现在进行…」却零操作、无暂停地收尾，
     # 用户会困惑「怎么停了」。确定性三问全中（状态可算、机器可判、无创作空间），收归系统。
     return (
         bool(ctx.skill)
@@ -359,7 +359,7 @@ async def _apply_aborted_continuation_audit(ctx: RoundEndContext, emit: Callable
     logger.info("[RoundEnd] audit-0819-fakestop: 延续承诺措辞且零操作，机械追加继续按钮")
 
 
-# ---------- 状态驱动的下一步建议（八轮 B4：确定性交互收归系统，层 9） ----------
+# ---------- 状态驱动的下一步建议（确定性交互收归系统，层 9） ----------
 
 # 判定表语义：客观状态特征 → 唯一一条下一步建议（kind=next，点击机械发送 value）。
 # 只读状态不写状态；生成类建议的点击本身构成「针对当前动作的显式用户指令」，
@@ -382,14 +382,14 @@ def _iter_storyboard_drafts(state: Dict[str, Any]) -> List[Dict[str, Any]]:
 def suggest_next_actions(state: Dict[str, Any]) -> List[Dict[str, str]]:
     """按工作台客观状态返回下一步建议（空列表 = 不建议）。
 
-    0817 B22 中性化：只报客观状态（未确认/停摆），不点名下一步流程
+      中性化：只报客观状态（未确认/停摆），不点名下一步流程
     （排序意见归 Skill）；确认类建议仅针对客观待确认对象。
     """
     try:
         drafts = _iter_storyboard_drafts(state or {})
     except Exception:
         return []
-    # 0817：中途停摆引导（Q4 闭环）——关键元素已拆但分镜未拆 → 中性继续引导
+    # 中途停摆引导（闭环）——关键元素已拆但分镜未拆 → 中性继续引导
     if (state or {}).get(CAT_KEY_ELEMENTS) and not (state or {}).get(CAT_SHOTS):
         return [{"kind": "next", "label": "继续故事板设计",
                  "value": "请按当前 Skill 流程继续故事板设计阶段"}]

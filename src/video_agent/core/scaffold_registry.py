@@ -3,14 +3,14 @@
 业界依据（Anthropic《Effective Harnesses for Long-Running Agents》）：harness 的每个
 组件都是一条「模型做不到 X」的假设；假设会过期，模型升级即逐件拆测。
 
-本注册表把事故-born 补丁从「隐形债务」变为「登记资产」：
+本注册表把-born 补丁从「隐形债务」变为「登记资产」：
 - classification=scaffold：对模型能力缺口的补偿，可折旧，入拆除仪式
   （docs/脚手架折旧规程.md）；必须有可证伪的 assumption 与 retest_policy；
 - classification=invariant：工程/物理约束，长期承重，季度审计但不入拆除仪式。
 
 棘轮（scripts/check_scaffold_registry.py + test_scaffold_registry.py 钉死）：
 scaffold 计数只降不升，基线 = SCAFFOLD_COUNT_BASELINE；新增脚手架必须经宪法
-13.5 决策树（含 Q0：eval 证明缺口存在）并上调基线的书面裁决。
+13.5 决策树（含 ：eval 证明缺口存在）并上调基线的书面裁决。
 
 存量清单来源：docs/scaffold-registry-draft.md（2026-08-19 审定入账）。
 """
@@ -31,29 +31,29 @@ class ScaffoldEntry:
 
 SCAFFOLDS = (
     # ---------- 脚手架（可折旧） ----------
-    # S01（stream_suppressor 流式围栏抑制）已随 audit-0819b 单轨化删除：
+    # （stream_suppressor 流式围栏抑制）已随 单轨化删除：
     # 确认改经结构化 FC 工具上抛，文本块通道整体退役（ADR-0001），
     # 流式正文无围栏可抑；stream_suppressor.py 文件同批删除。
-    # S02（action_parser 退化信号探测）已随 4-4 双轨退役删除（ADR-0001，audit-0819）。
+    # （action_parser 退化信号探测）已随 4-4 双轨退役删除（ADR-0001）。
     ScaffoldEntry(
         "S03", "src.video_agent.core.agent_loop:_bad_output_nudge",
         "模型会连续产出空/畸形输出",
         "bad_output_retry trace 计数；audit 回归",
         "每次主模型切换",
         "scaffold"),
-    # S04（Planner._ADVANCE_CORPUS/_ADHOC_VERBS 概率路由语料）已随
-    # audit-0819e 控制流统一删除（ADR-0002）：1111 事故证明语料路由错过
+    # （Planner._ADVANCE_CORPUS/_ADHOC_VERBS 概率路由语料）已随
+    # 控制流统一删除（ADR-0002）： 证明语料路由错过
     # 一次=全程失控；改为确定性分诊（客观状态事实，零措辞）。
     ScaffoldEntry(
         "S05", "src.video_agent.skill_runtime.registry:fallback_skill_from_state",
-        "请求会丢失 skill 名，需回退 usedSkills 末位（7777）",
-        "7777 回归",
+        "请求会丢失 skill 名，需回退 usedSkills 末位",
+        "回归测试钉死",
         "前端请求恒带 skill_slug 被机械验证后",
         "scaffold"),
     ScaffoldEntry(
         "S06", "src.video_agent.skill_runtime.registry:match_skill_name_from_text",
-        "用户会直接发 Skill 名而不挂引用块（6666）",
-        "6666 回归",
+        "用户会直接发 Skill 名而不挂引用块",
+        "回归测试钉死",
         "前端 @/Skill 引用块覆盖全部唤起路径后",
         "scaffold"),
     ScaffoldEntry(
@@ -64,14 +64,14 @@ SCAFFOLDS = (
         "scaffold"),
     ScaffoldEntry(
         "S08", "src.video_agent.core.round_end_policies:_claims_structure_done",
-        "模型会虚报「已完成拆解」而状态为空（2222/4444）",
-        "2222/4444 回归",
+        "模型会虚报「已完成拆解」而状态为空",
+        "回归测试钉死",
         "每次主模型切换",
         "scaffold"),
     ScaffoldEntry(
         "S09", "src.video_agent.core.planner:_SKILL_REMINDER",
-        "模型读了 Skill 全文后仍会忘记暂停点（5555）",
-        "5555 回归",
+        "模型读了 Skill 全文后仍会忘记暂停点",
+        "回归测试钉死",
         "编排器机械暂停全覆盖后",
         "scaffold"),
     ScaffoldEntry(
@@ -82,8 +82,8 @@ SCAFFOLDS = (
         "scaffold"),
     ScaffoldEntry(
         "S11", "src.video_agent.skill_runtime.exec_common:_executor_thinking",
-        "推理模型思考会吃光输出预算（deepseek-v4-flash 单次思考 2.6 万字事故）",
-        "2222 二轮回归",
+        "推理模型思考会吃光输出预算（deepseek-v4-flash 单次思考 2.6 万字耗光预算）",
+        "回归测试钉死",
         "每次主模型/执行器模型切换",
         "scaffold"),
     ScaffoldEntry(
@@ -98,8 +98,8 @@ SCAFFOLDS = (
         "audit-0819-fakestop 回归",
         "每次主模型切换",
         "scaffold"),
-    # S14（chat_opening._channel_supports_fc 附件全文直注）已随 4-4 双轨退役
-    # 删除（非 FC 聊天通道整体移除，ADR-0001，audit-0819）。
+    # （chat_opening._channel_supports_fc 附件全文直注）已随 4-4 双轨退役
+    # 删除（非 FC 聊天通道整体移除，ADR-0001）。
     # ---------- 不变量（长期承重） ----------
     ScaffoldEntry(
         "I01", "src.video_agent.core.token_budget:truncate_messages",
@@ -146,7 +146,7 @@ SCAFFOLDS = (
         "invariant"),
     ScaffoldEntry(
         "I08", "src.video_agent.core.live_metrics:record_degradation",
-        "承重接线静默降级必须可观测（814R 型断线防复发：豁免消费/暂停登记/"
+        "承重接线静默降级必须可观测（断线防复发：豁免消费/暂停登记/"
         "会话压缩/事件通道/步间回收五点计数，/api/agent/degradations 暴露）",
         "test_degradation_telemetry 回归",
         "季度审计",

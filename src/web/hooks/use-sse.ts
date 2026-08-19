@@ -18,7 +18,7 @@ import { applyFallbackModel } from '@/stores/agent-prefs';
 import { uid } from '@/lib/utils';
 
 /** Agent 后台任务流式订阅（D 批）：POST 取 task_id → 订阅事件（先 replay 再增量）。
- * 刷新/切项目只断开订阅，后台任务继续；切回时 resumeAgentTasks() 重连；停止才取消。 */
+ * 刷新/切项目只断开订阅，后台任务继续；切回时 resumeAgentTasks 重连；停止才取消。 */
 const [streaming, setStreaming] = createSignal(false);
 const [error, setError] = createSignal<string | null>(null);
 
@@ -125,7 +125,7 @@ export function disconnectAgentStream(): void {
   studioActions.setAgentBusy(false);
 }
 
-/** B0/F2：排队消息登记到运行中任务（轮间注入）；任务不存在/已结束静默回落
+/** ：排队消息登记到运行中任务（轮间注入）；任务不存在/已结束静默回落
  * 前端「任务结束后自动出队重发」路径，不丢失用户消息。 */
 export function sendGuidanceToTask(id: string, text: string): void {
   const task = currentTask;
@@ -218,7 +218,7 @@ function handleEvent(ev: SseEvent) {
       ),
       elapsed_ms: t.elapsed_ms ?? undefined,
       result_summary: t.result_summary || '',
-      // 814G2：运行中走秒起点（replay 无原始起点时以恢复时刻为准）
+      // ：运行中走秒起点（replay 无原始起点时以恢复时刻为准）
       started_at_ms: t.started_at_ms ?? Date.now(),
     })),
     model: p.model || '',
@@ -230,7 +230,7 @@ function handleEvent(ev: SseEvent) {
       break;
     }
     case 'status': {
-      // 四轮 R3/#5：固定文案按 key 走 locale 翻译（key 优先、字典缺失回退 text）
+      // ：固定文案按 key 走 locale 翻译（key 优先、字典缺失回退 text）
       const keyed = ev.key ? t(ev.key, ev.params) : '';
       chatActions.setStatus(keyed && keyed !== ev.key ? keyed : (ev.text || ''));
       break;
@@ -248,15 +248,15 @@ function handleEvent(ev: SseEvent) {
       chatActions.toolFinished(ev.id, ev.ok, ev.elapsed_ms || 0, ev.result_summary);
       break;
     case 'doc_written':
-      // 六轮 S5/N4a：携带后端打戳的 turn_id，即显卡与 done 主消息严格同组
+      // ：携带后端打戳的 turn_id，即显卡与 done 主消息严格同组
       if (ev.name) chatActions.docWritten(ev.name, ev.turn_id);
       break;
     case 'model_fallback':
-      // 降级即时联动（7777 事故）：切换时刻就跳选择器，不等整轮成功
+      // 降级即时联动：切换时刻就跳选择器，不等整轮成功
       applyFallbackModel(ev.provider, ev.model);
       break;
     case 'guidance_injected':
-      // 引导消息轮间注入成功（7777 三轮）：渲染用户气泡并从排队区移除对应条目
+      // 引导消息轮间注入成功：渲染用户气泡并从排队区移除对应条目
       if (ev.text) chatActions.addMessage({ sender: 'user', text: ev.text });
       if (ev.id) chatActions.removeQueuedMessage(ev.id);
       break;
@@ -275,7 +275,7 @@ function handleEvent(ev: SseEvent) {
     case 'error': {
       const msg = resolveErrorMessage(ev.error_code, ev.detail || ev.text || '服务端错误');
       setError(msg);
-      // audit-0819：上游原始报文随错误消息下发，前端折叠展示
+      // ：上游原始报文随错误消息下发，前端折叠展示
       chatActions.streamError(msg, ev.raw || '');
       closeSubscription();
       break;
@@ -308,7 +308,7 @@ function handleDone(payload: SseDonePayload) {
   if ((payload.applied_actions || 0) > 0) {
     studioActions.markBoardApplied();
   }
-  // B2/F14：toast 收敛——操作数已由阶段卡徽标/meta 展示、警告已常驻消息内，
+  // ：toast 收敛——操作数已由阶段卡徽标/meta 展示、警告已常驻消息内，
   // 不再重复弹 toast（信息已在对话内可见的只展示一处）
   // 任务已结束，关闭订阅（后台任务本身已完成，无需保留连接）
   if (currentTask) projectTasks.delete(currentTask.projectId);

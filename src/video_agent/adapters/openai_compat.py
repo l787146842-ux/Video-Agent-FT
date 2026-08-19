@@ -154,7 +154,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
     """OpenAI 兼容 Chat Adapter（支持流式 + function calling）
 
     连接池复用：实例持有长生命周期 httpx.AsyncClient，避免每次请求重建 TCP 连接。
-    使用完毕后调用 await adapter.close() 释放资源。
+    使用完毕后调用 await adapter.close 释放资源。
     """
 
     def __init__(self, base_url: str, api_key: str = "", model: str = ""):
@@ -162,9 +162,9 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         self.api_key = api_key
         self.model = model
         self._client: Optional[httpx.AsyncClient] = None
-        # audit-0819d：字段兼容探针记忆（同实例只探一次）：
+        # 字段兼容探针记忆（同实例只探一次）：
         # 端点 400 拒收 reasoning_effort/response_format 后记入本集合，
-        # 后续请求不再下发该字段（与 814H7 降级同惯例）。
+        # 后续请求不再下发该字段（与 降级同惯例）。
         self._unsupported_fields: set = set()
 
     def _get_client(self, timeout: int = 120) -> httpx.AsyncClient:
@@ -209,7 +209,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
 
     def _apply_response_format(self, payload: Dict[str, Any],
                                 response_format: Optional[Dict[str, Any]]) -> None:
-        """audit-0819d：结构化输出（执行器 JSON 产出点下发 json_object）。
+        """：结构化输出（执行器 JSON 产出点下发 json_object）。
         探针已判定不支持的字段不再下发（兼容探针记忆）。"""
         if response_format and "response_format" not in self._unsupported_fields:
             payload["response_format"] = response_format
@@ -287,7 +287,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         except httpx.TimeoutException:
             raise AdapterError(f"LLM 请求超时（{timeout}s），请检查网络或供应商状态", retryable=True)
         except httpx.HTTPStatusError as e:
-            # 814H7/audit-0819d 优雅降级：严格端点不认 reasoning_effort/
+            # / 优雅降级：严格端点不认 reasoning_effort/
             # response_format 报 400 → 剥离字段重试一次（兼容探针）
             if e.response.status_code == 400 and self._strip_unsupported_on_400(
                     payload, e.response.text[:400]):
@@ -375,7 +375,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     yield chunk
                 return
             except AdapterError as e:
-                # 814H7/audit-0819d 优雅降级：严格端点不认 reasoning_effort/
+                # / 优雅降级：严格端点不认 reasoning_effort/
                 # response_format 报 400 → 剥离字段重试（兼容探针；
                 # AdapterError 报文携原始 body 前 200 字，可供点名判定）
                 if (
@@ -387,7 +387,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     and self._strip_unsupported_on_400(payload, str(e))
                 ):
                     continue
-                # 结构化判定（P0-2）：优先用 retryable 标记，兼容无标记旧异常回退文案匹配
+                # 结构化判定（-2）：优先用 retryable 标记，兼容无标记旧异常回退文案匹配
                 flag = getattr(e, "retryable", None)
                 if flag is None:
                     msg = str(e)
@@ -435,7 +435,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                 ctype = resp.headers.get("content-type", "")
                 if "text/event-stream" not in ctype:
                     # 供应商不支持流式，按普通 JSON 处理；
-                    # 畸形体按契约转 AdapterError，不漏裸解析错误（与 chat() 同契约）。
+                    # 畸形体按契约转 AdapterError，不漏裸解析错误（与 chat 同契约）。
                     try:
                         data = json.loads((await resp.aread()).decode("utf-8", errors="replace"))
                     except json.JSONDecodeError as e:
@@ -475,7 +475,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     if fr:
                         last_finish = fr
                     delta = choices[0].get("delta", {}) or {}
-                    # 推理模型（DeepSeek-R1 / Gemini thinking 等）的 reasoning 增量：
+                    # 推理模型（DeepSeek- / Gemini thinking 等）的 reasoning 增量：
                     # 各家字段名不同（reasoning_content / reasoning），有则透传，无则静默
                     reasoning_piece = delta.get("reasoning_content") or delta.get("reasoning") or ""
                     if reasoning_piece:

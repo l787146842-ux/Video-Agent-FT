@@ -4,7 +4,7 @@ StateManager — Rule3: 唯一状态写入点。支持多项目。
 设计方案 §1.3：
 - 多项目管理内置于 StateManager（不另设 service 层）
 - 内部视图（Pydantic，后端使用）+ 外部视图（camelCase JSON，前端使用）
-- 点号路径 update() 统一写入入口
+- 点号路径 update 统一写入入口
 
 向后兼容：
 - CLI 路径（agent.py）通过 .state 属性获取 Pydantic 模型
@@ -32,8 +32,8 @@ from .project_manager import ProjectManager
 from .context_builder import build_agent_context as _build_context
 from .undo_redo import UndoRedoMixin
 
-# 后台 Agent 任务的按任务隔离实例（D 批）：worker 上下文内 get_instance()
-# 返回任务专属 StateManager，切项目/刷新不串写（7777 事故根因：旧状态覆盖新项目）。
+# 后台 Agent 任务的按任务隔离实例（D 批）：worker 上下文内 get_instance
+# 返回任务专属 StateManager，切项目/刷新不串写（根因：旧状态覆盖新项目）。
 _task_state_var: ContextVar[Optional["StateManager"]] = ContextVar(
     "agent_task_state", default=None,
 )
@@ -65,7 +65,7 @@ def _load_default_state() -> Dict[str, Any]:
 # ---------- 内部工具函数 ----------
 
 def _set_path_dict(obj: Any, path: str, value: Any) -> None:
-    """按点号路径设置 dict/list 元素（纯 dict 路径，814F3 后续：CLI 下线后
+    """按点号路径设置 dict/list 元素（纯 dict 路径， 后续：CLI 下线后
     Pydantic 对象分支已移除，非 dict/list 中间节点显式报错而非静默 setattr）。"""
     parts = path.split(".")
     current = obj
@@ -101,7 +101,7 @@ def _set_path_dict(obj: Any, path: str, value: Any) -> None:
 class StateManager(UndoRedoMixin):
     """Rule3: 唯一状态写入点。支持多项目。
 
-    版本账本（888 事故：双实例各算各的号导致正常保存被拒）：
+    版本账本（888 ：双实例各算各的号导致正常保存被拒）：
     `_board_versions` 类级共享（同项目所有实例同一本账），
     随项目文件落盘，进程重启后从落盘值继承，不断号。
 
@@ -142,7 +142,7 @@ class StateManager(UndoRedoMixin):
         """为后台 Agent 任务创建专属实例并绑定到当前 context（任务级隔离）。
 
         任务提交时锁定所属项目：即使之后用户切换项目/刷新页面，
-        worker 内所有 StateManager.get_instance() 都命中本实例，不串写。
+        worker 内所有 StateManager.get_instance 都命中本实例，不串写。
         """
         svc = cls(workspace_dir)
         if svc.active_project_id != project_id:
@@ -182,7 +182,7 @@ class StateManager(UndoRedoMixin):
         self._save_dirty = False
         self._save_flush_task: Optional[asyncio.Task] = None
 
-        # 本实例已知的项目落盘版本号（8888 二轮版本闸：磁盘账本比它新
+        # 本实例已知的项目落盘版本号（版本闸：磁盘账本比它新
         # 说明别的实例写过更新数据，本实例的保存必须放弃，防旧盖新）
         self._known_version: Optional[int] = None
 
@@ -321,7 +321,7 @@ class StateManager(UndoRedoMixin):
     def get_full_snapshot(self) -> Dict[str, Any]:
         """返回完整状态快照（供前端刷新/SSE done payload）。
 
-        P2 修复：返回深拷贝（json round-trip），调用方可任意使用不会回写
+         修复：返回深拷贝（json round-trip），调用方可任意使用不会回写
         污染内部状态；旧版浅拷贝共享嵌套引用的契约仅靠注释约束，过于脆弱。
         快照仅在聊天完成/mock 路径低频调用，序列化开销可接受。
         """
@@ -336,9 +336,9 @@ class StateManager(UndoRedoMixin):
         """按点号路径更新状态并持久化（Rule3: 唯一写入点入口）。
 
         同时支持 dict 路径（Web）和 Pydantic 属性路径（CLI）。
-        落盘走防抖合并（P2）：避免高频路径同步全量写盘阻塞事件循环；
+        落盘走防抖合并：避免高频路径同步全量写盘阻塞事件循环；
         无运行中事件循环时（CLI/同步测试）退化为立即同步落盘，
-        项目切换/服务关闭前由 flush_save() 保证持久性。
+        项目切换/服务关闭前由 flush_save 保证持久性。
         """
         self._push_undo()
         _set_path_dict(self._raw_state, path, value)
@@ -350,7 +350,7 @@ class StateManager(UndoRedoMixin):
 
         文档面板只展示已发送过的 Skill 文档：新建项目 usedSkills 为空，
         只有 Skill 引用块随消息发出后才写入，模型据此记住流程规则。
-        不走 update()（避免污染 undo 栈）。
+        不走 update（避免污染 undo 栈）。
         """
         if not slug:
             return
@@ -364,7 +364,7 @@ class StateManager(UndoRedoMixin):
 
         只写 raw state 的 flowEvents 列表（chat_service 用 get_full_snapshot
         构建模型可见状态 JSON，模型下一轮能直接看到「上次只完成一半」），
-        不走 update()（避免污染 undo 栈）。
+        不走 update（避免污染 undo 栈）。
         """
         events = self._raw_state.get("flowEvents")
         if not isinstance(events, list):
@@ -397,7 +397,7 @@ class StateManager(UndoRedoMixin):
     def save(self) -> None:
         """持久化：写入当前项目目录 + 兼容文件 + 更新 index 时间戳
 
-        版本账本闸（8888 二轮：任务级隔离后全局单例在任务期间不刷新，
+        版本账本闸（任务级隔离后全局单例在任务期间不刷新，
         切换/保存若用过期内存回写会抹掉后台任务的新数据）：磁盘账本比
         本实例已知号新 → 别的实例已写更新，放弃本次写入，防旧实例盖新实例。
         """
@@ -494,7 +494,7 @@ class StateManager(UndoRedoMixin):
         StateManager._board_versions[pid] = v
         return v
 
-    # 五轮 S4g：save_state 兼容别名已清偿（全仓零调用方）
+    # save_state 兼容别名已清偿（全仓零调用方）
 
     async def save_async(self) -> None:
         """异步立即落盘：写盘移 worker 线程，避免在 async 链路中阻塞事件循环。
@@ -717,8 +717,8 @@ class StateManager(UndoRedoMixin):
         保证刷新页面后「阶段完成」卡片与耗时角标不丢失。
         doc_blocks/skill_blocks: 用户消息携带的文档/Skill 引用块名称，
         前端以可点击的块状形式展示（点击可查看对应文档）。
-        turn_id（五轮 S2/#2）：轮次唯一标识（同轮的正文/文档卡/图片卡共用），
-        前端据此把一轮产出聚合进同一轮次容器，消除消息流碎片化。
+        turn_id：轮次唯一标识（同轮的正文/文档卡/图片卡共用），
+        前端据此把产出聚合进同次容器，消除消息流碎片化。
         pause_id：agent 暂停卡的结构化标识（三个 confirm 产生源统一签发），
         用户回应消息经 pause_answered 回携，前端「当时所选」对勾不再靠文本反推。
         pause_answered：用户回应暂停的结构化标记 {"pause_id", "value", "label"}。
@@ -759,7 +759,7 @@ class StateManager(UndoRedoMixin):
         if kind:
             entry["kind"] = kind
         if error_detail:
-            # audit-0819：错误气泡的技术详情（上游原始报文），前端折叠展示
+            # 错误气泡的技术详情（上游原始报文），前端折叠展示
             entry["errorDetail"] = error_detail
         msgs.append(entry)
         if len(msgs) > _CHAT_HISTORY_LIMIT:

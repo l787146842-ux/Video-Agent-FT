@@ -1,5 +1,5 @@
 /**
- * CLI 账户卡（画布同款）——七轮 S1/T23 自 SettingsView 切出。
+ * CLI 账户卡（画布同款）——  自 SettingsView 切出。
  * 检测/帮助/即梦登录积分登出按钮；动作经 SettingsApi 回调父组件状态。
  */
 import { Show } from 'solid-js';

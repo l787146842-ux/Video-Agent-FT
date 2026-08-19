@@ -150,9 +150,9 @@ async def call_chat_completion(
 ) -> Tuple[str, str]:
     """
     OpenAI 兼容 chat 调用。返回 (content, finish_reason)。
-    内部委托给 OpenAICompatChatAdapter.chat()。
-    thinking_level：本次调用思考档位覆盖（None=沿用全局配置，2222 二轮）。
-    response_format（audit-0819d）：结构化输出声明（如 {"type":"json_object"}），
+    内部委托给 OpenAICompatChatAdapter.chat。
+    thinking_level：本次调用思考档位覆盖（None=沿用全局配置）。
+    response_format：结构化输出声明（如 {"type":"json_object"}），
     端点不支持时适配器兼容探针自动剥离降级。
     失败抛 GenerationError。
     """
@@ -191,13 +191,13 @@ async def call_chat_completion_stream(
 ) -> Tuple[str, str]:
     """
     流式 chat 调用。每收到一段增量文本就 await on_delta(text)。
-    内部委托给 OpenAICompatChatAdapter.chat_stream()。
-    thinking_level：本次调用思考档位覆盖（None=沿用全局配置，2222 二轮）。
-    response_format（audit-0819d）：结构化输出声明（如 {"type":"json_object"}），
+    内部委托给 OpenAICompatChatAdapter.chat_stream。
+    thinking_level：本次调用思考档位覆盖（None=沿用全局配置）。
+    response_format：结构化输出声明（如 {"type":"json_object"}），
     端点不支持时适配器兼容探针自动剥离降级。
     返回 (完整内容, finish_reason)。失败抛 GenerationError。
     reasoning_sink（可选）：传入 list 则累积推理模型的思考增量（黑匣子取证用，
-    888 事故），不进上下文。
+    888），不进上下文。
     """
     base_url, api_key, effective_model = await resolve_openai_endpoint_async(provider_id, model)
     adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=effective_model)
@@ -219,7 +219,7 @@ async def call_chat_completion_stream(
                 reasoning_sink.append(chunk.text)
             elif chunk.type == "done":
                 # 透传真实 finish_reason（length=撞输出上限被截断），
-                # 不再一律当 stop：截断检测靠它（888 事故）
+                # 不再一律当 stop：截断检测靠它（888）
                 finish_reason = getattr(chunk, "finish_reason", "") or "stop"
     except AdapterError as e:
         raise GenerationError(str(e)) from e
@@ -303,7 +303,7 @@ async def _try_canvas_image_generation(
         return None
 
 
-# ---------- 生成侧降级链（7777 二轮：同模型跨厂商，失败才触发） ----------
+# ---------- 生成侧降级链（同模型跨厂商，失败才触发） ----------
 
 # 不可重试的失败特征：内容审核/鉴权/配置类错误换厂商也无意义，直接报错
 _NON_RETRYABLE_GEN_HINTS = (
@@ -437,10 +437,10 @@ async def generate_image_via_provider(
     raise GenerationError("供应商没有返回任何图片")
 
 
-# ---------- 生图并发节流 + 429 退避 + 连败熔断（4444） ----------
-# 15 张并发提交全撞 429（4444 现场）：并发上限 settings.image_gen_concurrency；
+# ---------- 生图并发节流 + 429 退避 + 连败熔断 ----------
+# 15 张并发提交全撞 429（现场）：并发上限 settings.image_gen_concurrency；
 # 429 指数退避重试 2 次；同供应商连败 ≥6 且 60s 内熔断开路，新提交直接报错
-# （P2 确定性拦截，防模型一轮轮反复触发整批）。
+# （确定性拦截，防模型轮反复触发整批）。
 _image_gen_sem: Optional[asyncio.Semaphore] = None
 _IMAGE_FAIL_STREAK: Dict[str, Dict[str, float]] = {}
 IMAGE_CIRCUIT_THRESHOLD = 6
@@ -480,7 +480,7 @@ async def _gen_image_throttled(
     pid: str, mdl: str, prompt: str, *, size: str,
     aspect_ratio: str, resolution: str, reference_images: Optional[List] = None,
 ) -> str:
-    """并发节流 + 429 退避的生图调用（4444）。退避等待不占并发位。"""
+    """并发节流 + 429 退避的生图调用。退避等待不占并发位。"""
     last: Optional[Exception] = None
     for attempt in range(3):
         try:
@@ -515,7 +515,7 @@ def submit_image_task(
 ) -> str:
     """提交异步生图任务（通过 GenerationTaskManager 统一管理）。
 
-    从 action_executor 下沉（批次5）：Agent 与路由层共用的生图提交管线。
+    从 action_executor 下沉：Agent 与路由层共用的生图提交管线。
     尺寸由 比例 + 分辨率档位（1K/2K/4K）计算，确保生图模型感知分辨率。
     提示词中的 @引用会被解析为位置标记，被引用的素材（refAssets +
     sceneRefs 参考图）随请求发送给多模态生图模型。
@@ -536,7 +536,7 @@ def submit_image_task(
     size = image_size_for(aspect_ratio, resolution)
     size_note = f"{size} ({aspect_ratio}, {resolution})"
 
-    # 连败熔断（4444）：上游持续限流时新提交直接报错，不再起整批任务
+    # 连败熔断：上游持续限流时新提交直接报错，不再起整批任务
     if image_circuit_open(provider_id):
         raise GenerationError(IMAGE_CIRCUIT_ERROR)
 
@@ -583,7 +583,7 @@ def submit_image_task(
     async def _run():
         t0 = time.time()
         task = tm.get_task(task_id)
-        # 同模型跨厂商降级（7777 二轮）：仅当主厂商失败且为可重试故障时，
+        # 同模型跨厂商降级：仅当主厂商失败且为可重试故障时，
         # 才换提供同一模型的其他厂商；首个成功即止，模型永不换
         candidates = [(provider_id, model)]
         try:
@@ -872,7 +872,7 @@ def submit_video_task(
     async def _run():
         t0 = time.time()
         task = tm.get_task(task_id)
-        # 同模型跨厂商降级（7777 二轮）：仅当主厂商失败且为可重试故障时，
+        # 同模型跨厂商降级：仅当主厂商失败且为可重试故障时，
         # 才换提供同一模型的其他厂商；首个成功即止，模型永不换
         candidates = [(provider_id, model)]
         try:

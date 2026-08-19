@@ -48,7 +48,7 @@ else:
         level="INFO",
     )
 # 日志落盘（排障用）：滚动 10MB × 保留 5 份；enqueue 避免阻塞事件循环。
-# 六轮 S4/N2：文件 sink 受 settings.log_file_enabled 开关控制——测试/验收子进程
+# 文件 sink 受 settings.log_file_enabled 开关控制——测试/验收子进程
 # （conftest / scripts/acceptance.py 注入 LOG_FILE_ENABLED=false）不写生产日志
 # 文件，避免与服务进程争用同一文件触发 rotation rename 失败（WinError 32）
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -75,7 +75,7 @@ async def lifespan(_app: FastAPI):
     # 下拉框与 Skill 目录只保留 data/skills/*.md 文档 Skill。
     ensure_default_skill_docs()
     StateManager.get_instance()  # 触发加载/初始化
-    # B6/F44：数据 TTL 启动清理——技能历史版本全量收敛（每 slug 保留最近 N 版）；
+    # 数据 TTL 启动清理——技能历史版本全量收敛（每 slug 保留最近 N 版）；
     # 生成任务表 TTL 清理由 task_manager._load_persisted 末尾自动执行
     try:
         from src.video_agent.web.skill_docs import prune_all_skill_history
@@ -87,7 +87,7 @@ async def lifespan(_app: FastAPI):
     if settings.canvas_enabled:
         from src.video_agent.tools.canvas_tools import register_canvas_tools
         register_canvas_tools()
-        # 画布版本漂移探测（P1-5）：fire-and-forget，失败/离线不阻塞启动
+        # 画布版本漂移探测（-5）：fire-and-forget，失败/离线不阻塞启动
 
         async def _check_canvas_version():
             from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
@@ -203,7 +203,7 @@ async def video_agent_error_handler(request: Request, exc: VideoAgentError):
 
 # ---------- 静态资源缓存策略 ----------
 # 生产环境：vendor/ 第三方库 7 天；dist/ 构建产物 1 天；其他静态 1 小时
-# 开发环境：dist/ 构建产物不缓存（文件名固定，避免改前端后 Ctrl+F5 仍命中旧缓存）
+# 开发环境：dist/ 构建产物不缓存（文件名固定，避免改前端后 Ctrl+ 仍命中旧缓存）
 @app.middleware("http")
 async def static_cache_headers(request: Request, call_next):
     response = await call_next(request)
@@ -304,7 +304,7 @@ app.include_router(video_batch_router, prefix="/api", tags=["video-batch"])
 app.include_router(snapshots_router, prefix="/api", tags=["snapshots"])
 
 
-# ---------- SPA 兜底（814H8） ----------
+# ---------- SPA 兜底 ----------
 @app.get("/{full_path:path}", include_in_schema=False)
 async def spa_catch_all(full_path: str):
     """前端路由硬敲/刷新/书签（如 /global-settings）统一返回 index.html，

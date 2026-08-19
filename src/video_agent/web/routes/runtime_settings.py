@@ -31,9 +31,9 @@ _STR_KEYS = (
     "default_image_resolution", "default_video_resolution",
 )
 _INT_KEYS = ("max_shot_duration",)
-# 0817 B24：剧本注入上限（字符）热更新键，独立钳制区间（不与秒数共用 clamp）
+# 剧本注入上限（字符）热更新键，独立钳制区间（不与秒数共用 clamp）
 _CHAR_LIMIT_KEYS = ("script_inject_limit",)
-# 814H7 推理档位旧键名（audit-0819f 退役：仅作存量迁移用，API 表面已移除；
+# 推理档位旧键名（退役：仅作存量迁移用，API 表面已移除；
 # config 字段保留作 env 覆写，语义归模型分层策略 summary/executor 行）
 _THINKING_KEYS = ("executor_thinking_level", "aux_thinking_level")
 _THINKING_VALUES = ("", "low", "medium", "high")
@@ -49,10 +49,10 @@ class RuntimeSettingsUpdate(BaseModel):
     default_image_resolution: Optional[str] = None
     default_video_resolution: Optional[str] = None
     max_shot_duration: Optional[int] = None
-    # 0817 B24：剧本正文注入上限（字符）
+    # 剧本正文注入上限（字符）
     script_inject_limit: Optional[int] = None
-    # B8：模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型；
-    # audit-0819f：推理档位可独立于供应商设置；旧「推理档位」卡两键已退役）
+    # 模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型；
+    # 推理档位可独立于供应商设置；旧「推理档位」卡两键已退役）
     model_policy: Optional[Dict[str, Any]] = None
 
 
@@ -70,7 +70,7 @@ def _current_dict() -> Dict[str, Any]:
         "default_video_resolution": settings.default_video_resolution,
         "max_shot_duration": settings.max_shot_duration,
         "script_inject_limit": settings.script_inject_limit,
-        # audit-0819f：推理档位两键退役（归模型分层策略），GET 不再下发
+        # 推理档位两键退役（归模型分层策略），GET 不再下发
         "model_policy": mp.current_policy(),
     }
 
@@ -102,7 +102,7 @@ async def put_runtime_settings(body: RuntimeSettingsUpdate):
         elif key in _STR_KEYS:
             value = str(value or "").strip()
         elif key == "model_policy":
-            # B8：策略表结构白名单清洗（4 角色 × 3 键）
+            # 策略表结构白名单清洗（4 角色 × 3 键）
             from src.video_agent.core import model_policy as mp
 
             value = mp.normalize_policy(value)
@@ -149,7 +149,7 @@ def load_runtime_settings() -> None:
                     object.__setattr__(settings, key, max(1000, min(int(data[key]), 200000)))
                 except (TypeError, ValueError) as _e:
                     logger.debug("[runtime_settings] 忽略异常: {}", _e)
-        # audit-0819f：「推理档位」卡退役——存量值（文件旧键 / env 覆写）
+        # 「推理档位」卡退役——存量值（文件旧键 / env 覆写）
         # 一次性迁入 model_policy 的 executor/summary 行；两旧键从文件清除。
         from src.video_agent.core import model_policy as mp
 

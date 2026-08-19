@@ -27,7 +27,7 @@ class GenerateVideoTool(BaseTool):
         )
         from src.video_agent.web.provider_config import get_provider_config
 
-        # 同模型跨厂商降级（7777 二轮，与 submit_video_task 同口径）：
+        # 同模型跨厂商降级（与 submit_video_task 同口径）：
         # 仅失败才切；模型取主厂商配置的首个视频模型，候选只收列出同名模型的厂商
         first_adapter = AdapterFactory.get_adapter("video_generation", params.adapter_provider)
         eff_model = getattr(first_adapter, "model", "") or ""

@@ -1,4 +1,4 @@
-"""闸机文案/卡片族（九轮 B3b 自 prompt_gates.py 切出，R4b 拆分模式延续）。
+"""闸机文案/卡片族（自 prompt_gates.py 切出， 拆分模式延续）。
 
 闸机文案外置加载（_gate_msg/_gate_json，prompts/gates/messages.md 单一事实源）
 + 全部用户可见文案常量与卡片组装（规格闸/结构暂停卡/规格审阅选项/草稿审阅卡/
@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
 from src.video_agent.utils.prompts import load_prompt_section
 
-# ---------- 闸机文案外置（宪法 §2.3；814R2 恢复） ----------
+# ---------- 闸机文案外置（宪法 §2.3； 恢复） ----------
 #
 # prompts/gates/messages.md 是闸机文案单一事实源；代码内置文案仅作分节
 # 缺失时的兜底（行为不回退）。回喂模型与展示用户用同一源，防两套说辞。
@@ -68,8 +68,8 @@ STORYBOARD_STRUCTURE_OPTIONS = list(_STORYBOARD_STRUCTURE_PAUSED.get("options") 
 
 # 分镜拆解完成后的暂停文案（结构 → 提示词 分界）：
 # 结构阶段只建骨架、不写详细提示词，确认卡片必须引导用户审阅拆分方案，
-# 而不是声称提示词已写好或直接引导生成（8888 事故：拆完分镜即引导「确认草案，开始生成视频」）；
-# 下一步文案不写死具体阶段（S1：不同 Skill 的下一步不同，以各自流程为准）
+# 而不是声称提示词已写好或直接引导生成（拆完分镜即引导「确认草案，开始生成视频」）；
+# 下一步文案不写死具体阶段（不同 Skill 的下一步不同，以各自流程为准）
 _SHOT_STRUCTURE_PAUSED = _gate_json("SHOT_STRUCTURE_PAUSED", {
     "message": (
         "分镜拆解已完成，请在左侧故事板审阅分镜拆分方案（镜头数量/时间轴/镜头语言）；"
@@ -104,13 +104,13 @@ def structure_paused_confirmation(kinds) -> Tuple[str, List[Dict[str, str]]]:
 
     含 shot → 分镜拆分审阅文案；否则 → 关键元素拆分审阅文案。
     文案由系统按客观状态生成，杜绝模型虚报「提示词已写好/开始生成」；
-    下一步不写死具体阶段，以当前 Skill 流程为准（S1）。"""
+    下一步不写死具体阶段，以当前 Skill 流程为准。"""
     norm = {normalize_structure_kind(k) for k in (kinds or set())}
     if "shot" in norm:
         return SHOT_STRUCTURE_PAUSED_MSG, list(SHOT_STRUCTURE_OPTIONS)
     return STORYBOARD_STRUCTURE_PAUSED_MSG, list(STORYBOARD_STRUCTURE_OPTIONS)
 
-# 规格文档写入后的引导选项（8888 二轮：下一步客观具体，不再「按流程继续」黑盒）
+# 规格文档写入后的引导选项（下一步客观具体，不再「按流程继续」黑盒）
 SPEC_DOC_OPTIONS = _gate_json("SPEC_DOC_OPTIONS", [
     {
         "label": "确认成片规格，按流程继续",
@@ -121,14 +121,14 @@ SPEC_DOC_OPTIONS = _gate_json("SPEC_DOC_OPTIONS", [
 
 
 def spec_review_options(state: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
-    """规格审阅卡的下一步选项（0817 B22 中性化：平台不点名下一步，
+    """规格审阅卡的下一步选项（中性化：平台不点名下一步，
     一律「按当前 Skill 流程推进」；流程排序意见归 Skill）。"""
     return list(SPEC_DOC_OPTIONS)
 
-# script_analyze 后的规格收集暂停卡（6666 事故：原「确认总结」闸被用户判定多余——
+# script_analyze 后的规格收集暂停卡（原「确认总结」闸被用户判定多余——
 # 规格交互本身就是暂停点；改为解析完成后直接进入规格收集向导）。
-# 4444 方案乙：收集完成后规格文档由系统机械拼装，模型不再手写。
-# 8888 二轮：总结直接内嵌表述（不再「见上」）；删除开发者视角的
+# 方案乙：收集完成后规格文档由系统机械拼装，模型不再手写。
+#总结直接内嵌表述（不再「见上」）；删除开发者视角的
 # 「按 Skill 声明」与全局设置解释句（用户审定）。
 SPEC_COLLECT_PAUSED_MSG = (
     "剧本读完了。一句话故事总结：{summary}\n"
@@ -139,7 +139,7 @@ SPEC_COLLECT_PAUSED_MSG = (
 
 SPEC_COLLECT_KIND = "collect"
 
-# 0817 B20：未声明总结展示的 Skill 用无总结版（流程归位，平台不全局化）
+# 未声明总结展示的 Skill 用无总结版（流程归位，平台不全局化）
 SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY = (
     "剧本读完了。\n"
     "接下来我为这部片子拼装一份制片规格，请逐项选定以下维度"
@@ -147,16 +147,16 @@ SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY = (
     "选完发给我，自动拼装规格并请您审阅。"
 )
 
-# 规格文档拼装/写入后的系统级暂停文案（5555 事故：模型幻觉已暂停、实际直冲拆解）：
+# 规格文档拼装/写入后的系统级暂停文案（模型幻觉已暂停、实际直冲拆解）：
 # 模型同批未自发 workflow_pause 时，由执行层注入此文案；
-# 下一步不写死具体阶段（启用条件按规格流程客观特征自动检测，2222 二轮；后续阶段以各自流程为准）；
-# 模型自填项必须逐条过目（888 事故：风格类参数模型拍板用户不知情）
+# 下一步不写死具体阶段（启用条件按规格流程客观特征自动检测，；后续阶段以各自流程为准）；
+# 模型自填项必须逐条过目（888 ：风格类参数模型拍板用户不知情）
 SPEC_DOC_PAUSED_MSG = (
     "制片规格已按您的选定拼装完成，请审阅规格条目；未选维度由模型根据剧本拟定自填，请逐条过目，"
     "如需调整直接告诉我。确认后按当前 Skill 流程推进下一阶段。"
 )
 
-# ---------- 一句话总结展示去重（9999 事故：正文出现两遍总结） ----------
+# ---------- 一句话总结展示去重（正文出现两遍总结） ----------
 # 模型自己展示总结时常改写引号/标点（“启示” vs "启示"），裸子串判重失效，
 # 系统兜底又拼一份 → 两段重复。归一化后判重：去引号/加粗符/空白再比对，
 # 另以开头 24 字容错末尾措辞微调。
@@ -185,11 +185,11 @@ def summary_already_visible(visible: str, summary: str) -> bool:
     return bool(head) and head in nv
 
 
-# ---------- 规格制作参数待确认兜底（9999 事故：三项参数标着「待确认」就放行） ----------
+# ---------- 规格制作参数待确认兜底（三项参数标着「待确认」就放行） ----------
 # Skill 要求图片分辨率/视频分辨率/分镜最大时长必须在规格交互中给候选项由
 # 用户选定；笨模型会写「待确认」占位就暂停。系统兜底：检测未确认项 →
 # 暂停卡升级为候选项向导，用户回应时机械落盘（chat_service 消费）。
-from src.video_agent.state.provider_prefs import SPEC_PARAM_UNCONFIRMED_MARKERS  # noqa: E402
+from src.video_agent.state.provider_prefs import SPEC_PARAM_UNCONFIRMED_MARKERS  # noqa: 2
 
 _SPEC_PARAM_LINES: Tuple[Tuple[str, re.Pattern], ...] = (
     ("图片分辨率", re.compile(r"(?im)^\s*(?:[-*]\s*)?(?:图片|图像|出图)分辨率\s*[:：].*$")),
@@ -205,7 +205,7 @@ _SPEC_CONFIRM_INTENT_RE = re.compile(r"确认|没问题|无误|可以|同意|继
 
 
 def parse_hard_selections(user_text: str) -> Dict[str, str]:
-    """解析用户回应里的三项硬参数选择，键用规格文档行键（4444 方案乙存档用）。"""
+    """解析用户回应里的三项硬参数选择，键用规格文档行键（方案乙存档用）。"""
     out: Dict[str, str] = {}
     text = str(user_text or "")
     m = _SPEC_IMG_SEL_RE.search(text)
@@ -220,11 +220,11 @@ def parse_hard_selections(user_text: str) -> Dict[str, str]:
     return out
 
 
-# ---------- 软制作参数（4444 复盘：维度来自 Skill，平台不预设） ----------
+# ---------- 软制作参数（复盘：维度来自 Skill，平台不预设） ----------
 # 向导的软维度 = Skill 规格编写步骤客观声明的维度（如「AI-短剧」画幅比例/
 # 目标时长/影像风格基调/输出语言）；候选由内层模型按剧本逐维出题，落
 # interaction.spec_soft_candidates；用户不选则放行、模型自填（不拦人）。
-# 平台固定六维及「声音风格/目标观众」文案已于 4444 二轮整体删除。
+# 平台固定六维及「声音风格/目标观众」文案已于整体删除。
 _SPEC_WRITE_ENUM_RE = re.compile(r"[（(]([^（）()]+)[）)]")
 _SPEC_WRITE_VERB_RE = re.compile(r"写入|编写|初始化|拟定")
 # 规格维度优先解析「建议条目：…」整段（去掉括号注解后按 /、，、；切分）
@@ -271,17 +271,17 @@ _SPEC_SUGGESTED_RE = re.compile(r"建议条目\s*[:：]\s*([^）)；。\n]+)")
 
 
 
-# ---------- 规格文档系统拼装（4444 方案乙：模型不手写规格） ----------
+# ---------- 规格文档系统拼装（方案乙：模型不手写规格） ----------
 
 
-# 4444（C3/P4）：提示词草案写入后 Skill 要求暂停审阅，模型该停没停时
+# （C3/）：提示词草案写入后 Skill 要求暂停审阅，模型该停没停时
 # 层 9 兜底注入（与规格审阅卡同构；10.7「Skill 暂停点 + 层 9 兜底缺一不可」）
 DRAFTS_REVIEW_MSG = (
     "提示词草案已写入，请在左侧故事板审阅草案内容；"
     "确认后我将按全局设置中的生成渠道触发生成。"
 )
 DRAFTS_REVIEW_OPTIONS = [
-    # 0817 B25 中性化：平台不点名下一步（生成/生图排序归 Skill）
+    # 中性化：平台不点名下一步（生成/生图排序归 Skill）
     {"label": "确认提示词草案，按当前 Skill 流程推进",
      "description": "将目标草稿标记为已确认，按当前 Skill 流程推进"},
     {"label": "先调整提示词", "description": "告诉我需要修改的草稿与修改意见"},
@@ -289,7 +289,7 @@ DRAFTS_REVIEW_OPTIONS = [
 
 
 def drafts_review_card() -> Tuple[str, List[Dict[str, str]]]:
-    """提示词草案审阅暂停卡（层 9 兜底，4444）。"""
+    """提示词草案审阅暂停卡（层 9 兜底）。"""
     return DRAFTS_REVIEW_MSG, list(DRAFTS_REVIEW_OPTIONS)
 
 
@@ -298,7 +298,7 @@ GENERATION_CONFIRM_GATE_ERROR = _gate_msg("GENERATION_CONFIRM", (
     "本次生成已按用户要求照常触发，请同时在回复中提示用户审阅草稿。"
 ))
 
-# 4444：模型自发跳确认（本轮用户消息无跳过指令）→ 拒收而非放行。
+# 模型自发跳确认（本轮用户消息无跳过指令）→ 拒收而非放行。
 # 「只警告不拦人」保护的是用户意志；模型违反 Skill 暂停语义不属用户意志。
 GENERATION_CONFIRM_GATE_BLOCKED = _gate_msg("GENERATION_CONFIRM_BLOCKED", (
     "流程拦截：目标草稿的 Prompt Draft 尚未经用户审阅确认。请先展示草案并调用"

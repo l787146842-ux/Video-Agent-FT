@@ -8,7 +8,7 @@ import { providerModels } from '@/lib/providers';
 import { t } from '@/lib/locale';
 
 /**
- * 模型+推理等级组合胶囊（814H7，Codex 样式）：
+ * 模型+推理等级组合胶囊（Codex 样式）：
  * 一个下拉面板两节——「模型」列表 + 「推理等级」四档（高/中/低/默认）。
  * 默认 = 模型原生能力（不下发 reasoning_effort）。
  * 胶囊文字：模型名 + 档位（非默认时），如「gemini-3.1-pro 高」。

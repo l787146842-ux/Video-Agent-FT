@@ -1,4 +1,4 @@
-"""FC 工具结果回喂家族（八轮 B1 自 fc_tool_runner.py 切出，零行为变更）。
+"""FC 工具结果回喂家族（自 fc_tool_runner.py 切出，零行为变更）。
 
 承载：工具结果回喂消息的格式化（read_* 全文「借阅归还」、执行器 detail 随喂、
 view_storyboard_media 多模态回喂）与旧轮回喂的惰性压缩/图片剥离（token 治理，
@@ -13,7 +13,7 @@ from src.video_agent.config import settings
 from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.utils.prompts import load_prompt_section
 
-# 回喂模板外置（814R1 恢复）：prompts/planner/feedback.md 为单一事实源，代码留内置兜底
+# 回喂模板外置（恢复）：prompts/planner/feedback.md 为单一事实源，代码留内置兜底
 _FEEDBACK_FILE = "planner/feedback.md"
 
 # 回喂消息的识别前缀（与 format_tool_results 首行保持一致）
@@ -38,7 +38,7 @@ def should_compress_feedback(messages: List[Dict[str, Any]], context_window: int
     """惰性压缩决策：消息估算总量达到 token 预算的 feedback_compress_ratio
     才压缩旧轮全文回喂；未达到则保留全文保质量（短对话零损失）。
 
-    814R1 恢复：预算按当前模型窗口计算（传 context_window），
+     恢复：预算按当前模型窗口计算（传 context_window），
     未传/传 0 回落全局 settings.context_window_size（兼容旧调用）。"""
     ratio = min(max(settings.feedback_compress_ratio, 0.0), 1.0)
     if ratio >= 1.0:
@@ -53,7 +53,7 @@ def compress_prior_feedback(messages: List[Dict[str, Any]]) -> None:
     """把 messages 里已有的工具结果回喂消息压缩为占位文案（原地修改）。
 
     时机：新一轮回喂 append 之前调用，因此现存的所有回喂消息都属「旧轮」。
-    read_* 全文只保留最近一轮，更早的以一句话占位——约束效力靠提示词延续，
+    read_* 全文只保留最近，更早的以一句话占位——约束效力靠提示词延续，
     全文本身已写入草稿/文档，需要时模型可重新 read。
     多模态回喂（含图片 parts 的 list content）同样压成纯文本占位，
     旧轮图片不再占用 vision token。
@@ -144,7 +144,7 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
             continue
         if name not in FEEDBACK_FULL_TOOLS:
             # 执行器类工具（script_analyze 等）的 detail 必须随回喂传给模型
-            # （3333 事故：一句话总结只报「执行成功」被模型吞掉）
+            # （一句话总结只报「执行成功」被模型吞掉）
             data = tr.get("data") or {}
             detail = str(data.get("detail") or "").strip()
             if detail and total + len(detail) <= FEEDBACK_MAX_TOTAL_CHARS:

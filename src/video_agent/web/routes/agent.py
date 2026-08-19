@@ -55,7 +55,7 @@ class ChatRequest(BaseModel):
     # DEPRECATED：后端已不再使用（Skill 全文改由服务端按 skill_name 硬注入），
     # 仅为 legacy 前端兼容保留，新前端不再发送
     system_prompt: str = ""
-    # 请求幂等键（P2）：前端每次发送生成唯一 id，同 id 处理中时拒绝重复提交
+    # 请求幂等键：前端每次发送生成唯一 id，同 id 处理中时拒绝重复提交
     request_id: str = ""
     provider: str = ""
     model: str = ""
@@ -82,13 +82,13 @@ class ChatRequest(BaseModel):
     # doc_blocks = 随消息发送的文档附件名称；skill_blocks = 随消息发送的 Skill 名称
     doc_blocks: List[str] = []
     skill_blocks: List[str] = []
-    # 会话层一次性闸机豁免（814F7，§2.4）：前端拦截提示上的「本次放行」按钮
+    # 会话层一次性闸机豁免（§2.4）：前端拦截提示上的「本次放行」按钮
     # 携带 rule_id 列表（或 "all"）；后端写入 interaction.gate_overrides，
     # 由本次请求的 Planner 消费一次即清除（单次生效、留痕于用户消息）
     gate_overrides: List[str] = []
-    # 多用户归属（814E6 基础）：可选用户标识，入 trace 审计；完整鉴权另行立项
+    # 多用户归属（基础）：可选用户标识，入 trace 审计；完整鉴权另行立项
     user_id: str = ""
-    # 会话级推理档位（814H7 对话栏「推理等级」选择器）：low/medium/high；
+    # 会话级推理档位（对话栏「推理等级」选择器）：low/medium/high；
     # ""=默认（模型原生能力，不下发 reasoning_effort）
     thinking_level: str = ""
     # 暂停回应结构化回携（对标 AskUserQuestion 范式）：用户点选暂停卡选项时
@@ -109,7 +109,7 @@ class ChatResponse(BaseModel):
     confirmation: str = ""
     pause_id: str = ""
     documents_written: List[str] = []
-    # P0 修复：补齐 non_stream_worker 实际返回的字段，
+    # 修复：补齐 non_stream_worker 实际返回的字段，
     # 此前被 response_model 静默过滤导致非流式端点丢失生图结果
     image_urls: List[str] = []
     chat_inserts: List[Dict[str, Any]] = []
@@ -160,13 +160,13 @@ async def get_agent_traces(limit: int = 50):
 
 @router.get("/agent/metrics")
 async def get_agent_metrics():
-    """B10：成本看板聚合——轨迹数/平均耗时/轮次/操作数/闸机拦截率/降级频率。"""
+    """：成本看板聚合——轨迹数/平均耗时/轮次/操作数/闸机拦截率/降级频率。"""
     return AgentTracer.get_instance().metrics()
 
 
 @router.get("/agent/gates")
 async def get_agent_gates(limit: int = 50):
-    """814R2 恢复：获取最近 N 条闸机判定（rule_id/层/结果/是否被申诉放行）+ 规则注册表概览。
+    """ 恢复：获取最近 N 条闸机判定（rule_id/层/结果/是否被申诉放行）+ 规则注册表概览。
 
     与 /agent/traces 并列的调试端点：闸机策略分层的审计入口，
     平台层规则（platform.*）不可被 Skill manifest 配置（地板模型强制不变量）。"""
@@ -183,7 +183,7 @@ async def get_agent_gates(limit: int = 50):
 
 @router.get("/agent/degradations")
 async def get_agent_degradations():
-    """四轮 R5/#11：核心探测点意外降级计数（接线断裂可观测，814R 事故防复发）。
+    """ ：核心探测点意外降级计数（接线断裂可观测， 防复发）。
 
     与 /agent/traces、/agent/gates 并列的调试端点：探测点（规格向导探测/
     闸机装配/流程检查点解析等）异常回落默认值时计数 +1，运行期健康信号。"""
@@ -271,14 +271,14 @@ async def stop_agent_task(task_id: str):
 
 
 class GuidanceItem(BaseModel):
-    """B0/F2：排队消息登记体（id=前端排队条目 id，text=纯文本正文）。"""
+    """：排队消息登记体（id=前端排队条目 id，text=纯文本正文）。"""
     id: str
     text: str
 
 
 @router.post("/agent/tasks/{task_id}/guidance")
 async def register_task_guidance(task_id: str, item: GuidanceItem):
-    """把用户推理中发送的排队消息登记到运行中任务，供轮间注入（B0/F2 恢复）。
+    """把用户推理中发送的排队消息登记到运行中任务，供轮间注入（恢复）。
 
     任务不存在/已结束时返回 ok=False，前端回落「任务结束后自动出队重发」。"""
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
@@ -297,7 +297,7 @@ async def get_context_usage(model: str = ""):
     - window_tokens: 当前模型上下文窗口（供前端算圆环填充比）
     """
     svc = StateManager.get_instance()
-    # 后台任务专属实例写盘后，全局单例内存可能陈旧（2222 反馈：用量一直 0）；
+    # 后台任务专属实例写盘后，全局单例内存可能陈旧（反馈：用量一直 0）；
     # 磁盘账本更新时先重载，保证静态估算不返回过期空值
     svc.reload_if_stale()
     try:
@@ -311,7 +311,7 @@ async def get_context_usage(model: str = ""):
     state_tokens = max(0, estimate_tokens(state_json) - _empty_state_baseline())
     history_tokens = estimate_tokens(history_json)
     chars = len(state_json) + len(history_json)
-    # 推理中实时值优先（2222 反馈）：主循环每次 LLM 调用前记录截断后的真实
+    # 推理中实时值优先（反馈）：主循环每次 LLM 调用前记录截断后的真实
     # 上下文规模，180s 有效期内直接采用，静态估算作兜底
     live = get_live_context(svc.active_project_id)
     est_tokens = int(live["est_tokens"]) if live else state_tokens + history_tokens

@@ -1,4 +1,4 @@
-"""生成动作域（八轮 B3 自 action_executor.py 切出，零行为变更）。
+"""生成动作域（自 action_executor.py 切出，零行为变更）。
 
 承载：文本轨 studio-actions 的生图/分镜视频生成动作——参数回退链
 （LLM 指定 → 草稿自身 → 全局设置 → 平台默认）、生成确认闸接入、
@@ -65,7 +65,7 @@ def apply_generate_image(ex: "StudioActionExecutor", action: Dict) -> bool:
     if not pairs:
         return False
 
-    # B7 用户裁决：模型能力参数唯一权威源 = 全局设置；优先级 =
+    # 用户裁决：模型能力参数唯一权威源 = 全局设置；优先级 =
     # LLM 指定 > 草稿自身（用户在预览框的直接选择）> 全局设置 > 平台默认。
     # 防前端默认首选供应商（如 Grsai）覆盖全局设置中配置的生图渠道
     spec_pid, spec_model = ("", "")
@@ -78,9 +78,9 @@ def apply_generate_image(ex: "StudioActionExecutor", action: Dict) -> bool:
         if not prompt:
             continue
         refs = ex._resolve_scene_refs(group) if group else []
-        # provider 回退链（B7）：LLM 指定 → 草稿自身（预览框已选）→ 全局设置 → 中间面板选中草稿 → 平台默认
+        # provider 回退链：LLM 指定 → 草稿自身（预览框已选）→ 全局设置 → 中间面板选中草稿 → 平台默认
         eff_provider = provider_id or (draft.get("imageProviderId") or draft.get("providerId") or "") or spec_pid or sel_provider or settings.default_image_provider_id
-        # model 回退链（B7）：LLM 指定 → 草稿自身 → 全局设置（仅当供应商一致）→ 供应商默认模型（generation 层兜底）
+        # model 回退链：LLM 指定 → 草稿自身 → 全局设置（仅当供应商一致）→ 供应商默认模型（generation 层兜底）
         eff_model = model or (draft.get("imageModel") or draft.get("model") or "") or (spec_model if eff_provider == spec_pid else "") or (settings.default_image_model if eff_provider == settings.default_image_provider_id else "")
         # 比例回退链：LLM 指定 → 目标草稿自身 → 中间面板选中草稿 → 16:9
         eff_ratio = act_ratio or (draft.get("aspectRatio") or "") or sel_ratio or "16:9"

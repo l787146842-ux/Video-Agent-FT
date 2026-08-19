@@ -43,7 +43,7 @@ TOOL_STAGES: Dict[str, tuple] = {
     "video_assembler": ("assembly",),
 }
 
-# B2/F15：大阶段展示标签（后端权威下发，随 trace 条目 stage 字段持久化；
+# 大阶段展示标签（后端权威下发，随 trace 条目 stage 字段持久化；
 # 前端不再按工具名硬编码推断，工具改名不会导致卡片退化）
 STAGE_LABELS: Dict[str, str] = {
     "script_analyze": "剧本分析",
@@ -75,9 +75,9 @@ class SkillEntry:
     sections: Dict[str, str] = field(default_factory=dict)
     @property
     def manifest(self) -> Optional[Dict[str, dict]]:
-        """manifest 声明活读（B4）：sidecar 唯一源，注册不快照，
+        """manifest 声明活读：sidecar 唯一源，注册不快照，
         声明后写/迁移更新后立即生效（旧文档通道每次活读语义一致）。
-        None = 未声明，平台回落最小闸（S1）。"""
+        None = 未声明，平台回落最小闸。"""
         return sidecar.load_sidecar(self.slug)
 
     @property
@@ -106,7 +106,7 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
     if not doc:
         return None
     content = doc.get("content") or ""
-    # 0818 架构板正批 B4：声明唯一源 = sidecar（文档纯散文，与源平台一致）；
+    # 架构板正批 ：声明唯一源 = sidecar（文档纯散文，与源平台一致）；
     # manifest 经 SkillEntry.manifest 属性活读，注册不快照。
     return SkillEntry(
         slug=slug,
@@ -217,7 +217,7 @@ def _norm_name(s: str) -> str:
 def resolve_entry(wanted: str) -> Optional[SkillEntry]:
     """按 Skill 名称/别名模糊定位注册条目（精确 → 归一化相等 → 双向包含）。
 
-    五轮 S6/#7：包含匹配收紧为**唯一命中才返回**——近似名 Skill 并存时
+ ：包含匹配收紧为**唯一命中才返回**——近似名 Skill 并存时
     （如「古风甜宠短剧」vs「古风短剧」）多命中记 warning 并返回 None，
     宁可要求选准也不静默错配。
     """
@@ -276,7 +276,7 @@ def skill_flow_enabled(skill_name: str, key: str) -> bool:
     """manifest 的 flow 开关是否启用（spec_wizard/spec_stage_trim/spec_gate）。
 
     未声明 manifest 或未声明该键时返回 False：引擎对业务流程一无所知，
-    平台级流程闸/向导/裁剪只对显式声明的 Skill 生效（S1 清偿）。
+    平台级流程闸/向导/裁剪只对显式声明的 Skill 生效（。
     """
     manifest = skill_manifest_of(skill_name)
     if not manifest:
@@ -287,7 +287,7 @@ def skill_flow_enabled(skill_name: str, key: str) -> bool:
 def skill_stage_executors(skill_name: str) -> Dict[str, List[str]]:
     """manifest flow.stage_executors 声明：阶段号→同批执行器清单。
 
-    Skill 自己声明「哪几个执行器同属一个阶段」（P3 单一事实源），
+    Skill 自己声明「哪几个执行器同属一个阶段」（单一事实源），
     平台调度器只翻译不决策；未声明返回空 dict（维持现状回落）。"""
     manifest = skill_manifest_of(skill_name)
     if not manifest:
@@ -302,7 +302,7 @@ def skill_stage_executors(skill_name: str) -> Dict[str, List[str]]:
 
 
 def spec_wizard_active(skill_name: str) -> bool:
-    """规格向导启用判定（0818 B4：sidecar 唯一源，文本启发式退役）。
+    """规格向导启用判定（sidecar 唯一源，文本启发式退役）。
 
     sidecar flow.spec_wizard 显式声明；未声明 = 不启用（引擎零预设）。
     存量 Skill 的现值已由迁移脚本冻结进 sidecar。"""
@@ -311,7 +311,7 @@ def spec_wizard_active(skill_name: str) -> bool:
 
 
 def script_required_active(skill_name: str) -> bool:
-    """剧本原料闸启用判定（0818 B4：sidecar 唯一源，文本启发式退役）。
+    """剧本原料闸启用判定（sidecar 唯一源，文本启发式退役）。
 
     sidecar flow.script_required 显式声明；未声明 = 不启用。
     存量 Skill 的现值已由迁移脚本冻结进 sidecar。"""
@@ -320,11 +320,11 @@ def script_required_active(skill_name: str) -> bool:
 
 
 def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
-    """项目最近使用的 Skill 兜底（7777 事故）：请求未携带 Skill 名时，
+    """项目最近使用的 Skill 兜底：请求未携带 Skill 名时，
     回退 usedSkills 末位，保证后续轮次（继续/拆分分镜）仍绑定同一执行器。
 
     这是「当前 Skill 归属」的单一实现：chat_service / planner / agent_loop
-    统一走这里，禁止各自再写一份 usedSkills 兜底（P1 单一事实源）。
+    统一走这里，禁止各自再写一份 usedSkills 兜底（单一事实源）。
     """
     if not isinstance(raw_state, dict):
         return ""
@@ -333,7 +333,7 @@ def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
 
 
 def match_skill_name_from_text(text: str) -> str:
-    """消息文本里出现已注册 Skill 名时自动绑定（6666 事故：用户直接发 Skill 名/文档按钮引用，
+    """消息文本里出现已注册 Skill 名时自动绑定（用户直接发 Skill 名/文档按钮引用，
     但请求未带 skill_slug；确定性匹配，不依赖模型自觉）。
 
     按名称/标识匹配：命中多个时取最后一个（用户最新提到的 Skill 更可能是当前意图）。
@@ -352,7 +352,7 @@ def match_skill_name_from_text(text: str) -> str:
     return matched
 
 
-# ---------- N7（三轮审核）：pause 声明解析下沉 ----------
+# ---------- （审核）：pause 声明解析下沉 ----------
 # 原属 web/skill_docs；guard 需顶层消费，为避免 skill_runtime→web 反向依赖下沉本包；
 # web/skill_docs 保留 re-export（兼容既有导入路径）。
 _PAUSE_RULES_BLOCK_RE = re.compile(

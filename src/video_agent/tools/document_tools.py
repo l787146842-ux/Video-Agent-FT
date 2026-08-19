@@ -126,7 +126,7 @@ class DocumentWriteTool(BaseTool):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         content = str(params.content or "")
         is_spec = prompt_gates.is_spec_doc_name(params.name)
-        # 铁律文档保护（888 事故）：铁律由系统维护 + 用户在文档面板手改，
+        # 铁律文档保护（888）：铁律由系统维护 + 用户在文档面板手改，
         # 模型只读不得整篇重写（会盖掉用户编辑）
         if IRON_RULES_HEADING in str(params.name or ""):
             return ToolResult(
@@ -134,7 +134,7 @@ class DocumentWriteTool(BaseTool):
                 error=("《执行铁律.md》由系统维护、用户在文档面板手动编辑，模型不得整篇重写"
                        "（会盖掉用户的修改）。如需调整流程开关，按用户指令由系统幂等合并对应声明行即可。"),
             )
-        # 规格向导拒收模型手写规格（方案乙 4444）：规格由系统按向导选定拼装
+        # 规格向导拒收模型手写规格（方案乙）：规格由系统按向导选定拼装
         if is_spec:
             from src.video_agent.skill_runtime.registry import spec_wizard_active
 
@@ -147,9 +147,9 @@ class DocumentWriteTool(BaseTool):
                                "要调整请在文档面板修改或重发选择；"
                                "继续流程请 read_project_doc 读已定稿规格并推进下一阶段。"),
                     )
-                # 0817 一条龙：用户指令作为规格同意，模型按 Skill 填写写入（留痕）
+                # 一条龙：用户指令作为规格同意，模型按 Skill 填写写入（留痕）
                 if not prompt_gates.flow_auto_continue(svc.state_dict):
-                    # 814G3：规格尚未交互时文案不得说「已生成」（模型/用户都未交互过）
+                    # 规格尚未交互时文案不得说「已生成」（模型/用户都未交互过）
                     return ToolResult(
                         success=False,
                         error=("规格文档尚未生成：系统将按用户在向导中的选择统一拼装，"
@@ -284,7 +284,7 @@ class ReadSkillTool(BaseTool):
                 success=False,
                 error=f"未找到 Skill「{wanted}」。可用 Skill：{'、'.join(available) or '无'}",
             )
-        # audit-0819d：外来工具名映射注记已随 S15 删除（导入期转换归
+        # 外来工具名映射注记已随 删除（导入期转换归
         # 专用 Skill 系统职责，运行时不再做工具名翻译）
         return ToolResult(success=True, data={"name": matched, "content": _truncate_content(content)})
 
@@ -366,7 +366,7 @@ class ImageGenerateTool(BaseTool):
         if not targets:
             return ToolResult(success=False, error="未找到有提示词的草稿")
 
-        # 供应商回退链（8888 事故修复；B7 唯一权威源=全局设置）：LLM 参数 → 全局设置 → 草稿自带 providerId
+        # 供应商回退链（修复； 唯一权威源=全局设置）：LLM 参数 → 全局设置 → 草稿自带 providerId
         # → 配置中首个可用生图供应商；LLM 常传空 provider，不回退会报「供应商 '' 未配置」
         provider_id = resolve_provider_ref(str(params.provider_id or "").strip())
         model = str(params.model or "").strip()
@@ -400,7 +400,7 @@ class ImageGenerateTool(BaseTool):
                 "当前工作区未配置任何可用的生图供应商，请先在 API 配置页添加供应商与 API Key。"
             ))
 
-        # 规格制作参数（7777 二轮）：图片分辨率由规格文档优先，
+        # 规格制作参数：图片分辨率由规格文档优先，
         # 其次草稿自带，最后全局默认（回退链与供应商链口径一致）
         from src.video_agent.web.provider_config import spec_production_params
 
@@ -437,7 +437,7 @@ class ImageGenerateTool(BaseTool):
                     draft["model"] = model
             svc.save()
 
-        # 提交即返回（W12/P2）：结果由前端 SSE + 轮询跟踪，
+        # 提交即返回：结果由前端 SSE + 轮询跟踪，
         # 避免 N×600s 工具轮阻塞 agent 循环
         return ToolResult(success=True, data={
             "submitted": len(submitted),
@@ -484,14 +484,14 @@ class WorkflowPauseTool(BaseTool):
         return ToolResult(success=True, data={"paused": True, "message": params.message})
 
 
-# audit-0819d：RequestConfirmationTool（同义别名工具）已删除——暂停确认
+# RequestConfirmationTool（同义别名工具）已删除——暂停确认
 # 单一正名 = workflow_pause（对齐业界「只有一个 AskUserQuestion」）。
 
 
 # ---------- 注册 ----------
 
 def register_document_tools():
-    """注册文档 & 生成 & 暂停 Tool（workflow_step 随 workflows 引擎下线，814F3）"""
+    """注册文档 & 生成 & 暂停 Tool（workflow_step 随 workflows 引擎下线）"""
     from src.video_agent.tools.manager import ToolManager
     ToolManager.register(DocumentWriteTool())
     ToolManager.register(ReadUploadedDocTool())

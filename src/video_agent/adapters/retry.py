@@ -78,14 +78,14 @@ async def with_retry(
                         f"[Retry] {context} HTTP {result.status_code}，"
                         f"第 {attempt + 1}/{max_retries} 次重试，等待 {delay:.1f}s"
                     )
-                    # 超时重试可视化（7777 事故）：静默重试 → 前端状态栏实时可见
+                    # 超时重试可视化：静默重试 → 前端状态栏实时可见
                     await notify_stream(
                         f"⏳ {context or '上游'}繁忙（HTTP {result.status_code}），"
                         f"{delay:.0f}s 后自动重试（{attempt + 1}/{max_retries}）…"
                     )
                     await asyncio.sleep(delay)
                     continue
-                # 末次尝试仍收到 5xx：绝不把失败响应当成功返回（P0-2 契约修复）
+                # 末次尝试仍收到 5xx：绝不把失败响应当成功返回（-2 契约修复）
                 raise AdapterError(
                     f"[Retry] {context} HTTP {result.status_code}：服务端错误，"
                     f"已重试 {max_retries} 次仍失败",
@@ -109,7 +109,7 @@ async def with_retry(
             else:
                 raise
         except httpx.HTTPStatusError as e:
-            # HTTPStatusError 由 raise_for_status() 抛出，检查是否 5xx
+            # HTTPStatusError 由 raise_for_status 抛出，检查是否 5xx
             if _is_retryable_status(e.response.status_code) and attempt < max_retries:
                 delay = base_delay * (2 ** attempt)
                 logger.warning(

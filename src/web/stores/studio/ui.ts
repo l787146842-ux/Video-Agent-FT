@@ -1,4 +1,4 @@
-/** Studio store · UI 域（批次6 从 studio.ts 拆出）：选中态/页签/弹窗/附件/生成态/配置 */
+/** Studio store · UI 域（从 studio.ts 拆出）：选中态/页签/弹窗/附件/生成态/配置 */
 import { produce } from 'solid-js/store';
 import type {
   DraftType, LeftTab, SubTab, ApiProvider, Skill, PendingAttachment,
@@ -121,7 +121,7 @@ export const uiActions = {
   },
 
   /** 按标题或分组 id 跳转到关键元素（分镜 sceneRefs chip 点击；
-   * sceneRefs 存的是 ke-xxx id，需同时支持 id 命中，888 事故：只匹配标题报「未找到」）。
+   * sceneRefs 存的是 ke-xxx id，需同时支持 id 命中，888 ：只匹配标题报「未找到」）。
    * 跳转效果与预览框「定位」一致：滚动到目标分组卡并闪烁，没有草稿卡也能看到。 */
   jumpToElementByTitle(title: string) {
     const el = state.keyElements.find((k) => k.title === title || k.id === title);

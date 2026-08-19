@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- 故事板域集中了本地编辑/同步/持久化/卸载冲刷，超行属合理；新增代码仍受规则约束 */
-/** Studio store · 故事板域（批次6 从 studio.ts 拆出）：分组/草稿本地编辑、服务端同步、持久化 */
+/** Studio store · 故事板域（从 studio.ts 拆出）：分组/草稿本地编辑、服务端同步、持久化 */
 import { produce } from 'solid-js/store';
 import type {
   DraftType, Draft, SubTab, AnyGroup, ServerStateSnapshot,
@@ -47,7 +47,7 @@ function buildDefaultGroup(subTab: SubTab, ordinal: number): { group: AnyGroup; 
 // ===== 持久化 =====
 
 /** 整板保存 payload（防抖 PUT 与页面卸载冲刷共用）；
- * base_version 供后端乐观锁校验（D2），防陈旧整板覆盖 Agent 新写入 */
+ * base_version 供后端乐观锁校验，防陈旧整板覆盖 Agent 新写入 */
 function boardSavePayload() {
   return {
     project_id: state.projectId,
@@ -90,7 +90,7 @@ async function doBoardSave(): Promise<void> {
     const resp = await putProjectState(boardSavePayload());
     boardDirty = false;
     lastSyncedContentJson = contentJson;
-    // 乐观锁版本跟进（D2 修复）：后端每次落盘版本 +1，前端必须同步采纳，
+    // 乐观锁版本跟进（修复）：后端每次落盘版本 +1，前端必须同步采纳，
     // 否则下一次 PUT 永远落后 1 被 409 拒 → 重同步冲掉用户编辑（加了又没加/删了又弹回）
     setState('boardVersion', typeof resp?.board_version === 'number'
       ? resp.board_version
@@ -99,10 +99,10 @@ async function doBoardSave(): Promise<void> {
   } catch (e) {
     setState('boardSaveStatus', 'error');
     if (e instanceof ApiError && e.status === 409) {
-      // 版本冲突（D2）：在途期间后端已写入 → 丢弃本次陈旧保存，重新同步最新状态；
+      // 版本冲突：在途期间后端已写入 → 丢弃本次陈旧保存，重新同步最新状态；
       // 项目切换 409 依旧静默丢弃（旧项目的编辑不应写进新项目）
       if (/版本冲突/.test(e.message)) {
-        // 888 事故：提示不得轻描淡写，必须明确告知编辑未保存需重做
+        // 888 ：提示不得轻描淡写，必须明确告知编辑未保存需重做
         showToast('你刚才的编辑没有保存成功（期间 Agent 已更新故事板），页面已同步最新状态，请在最新状态上重做刚才的编辑', 'error');
         try {
           const snap = await getProjectState();
@@ -138,13 +138,13 @@ export const persistBoard: PersistBoardFn = Object.assign(
   { flush: persistBoardInner.flush, cancel: persistBoardInner.cancel },
 );
 
-// ===== 页面卸载/隐藏冲刷（D1）：堵住"编辑后直接 F5 → 防抖未触发/PUT 被剪断 → 刷新丢数据"的口子 =====
+// ===== 页面卸载/隐藏冲刷：堵住"编辑后直接  → 防抖未触发/PUT 被剪断 → 刷新丢数据"的口子 =====
 if (typeof window !== 'undefined') {
   // 标签页隐藏（切走/Alt+Tab）：异步冲刷，通常能完整送达
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && boardDirty) void persistBoardInner.flush();
   });
-  // 页面卸载（F5/关闭）：keepalive 尽力送达；超 keepalive 配额时退化为普通 fetch 兜底
+  // 页面卸载（/关闭）：keepalive 尽力送达；超 keepalive 配额时退化为普通 fetch 兜底
   window.addEventListener('pagehide', () => {
     if (!boardDirty || !state.projectId) return;
     persistBoardInner.cancel();
@@ -168,7 +168,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// ===== 本地新增保护（D2）：Agent 运行期间的快照整板替换不得冲掉用户刚手建的分组/草稿 =====
+// ===== 本地新增保护：Agent 运行期间的快照整板替换不得冲掉用户刚手建的分组/草稿 =====
 
 /** 本地新建但尚未被服务端快照确认的分组/草稿 ID；快照里出现即移出保护集 */
 const localAddedIds = new Set<string>();
@@ -336,7 +336,7 @@ export const storyboardActions = {
     const field = fieldForSubTab(subTab);
     const target = (state[field] as AnyGroup[]).find((g) => g.id === groupId);
     if (!target) return;
-    // D2：删除的实体移出本地新增保护集，避免后续快照合并时被复活
+    // ：删除的实体移出本地新增保护集，避免后续快照合并时被复活
     localAddedIds.delete(groupId);
     for (const d of target.drafts || []) localAddedIds.delete(d.id);
     setState(field, (prev: AnyGroup[]) => prev.filter((g) => g.id !== groupId));

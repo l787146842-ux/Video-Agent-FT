@@ -23,7 +23,7 @@ class ProjectManager:
     """多项目管理器 — 负责项目 CRUD 与索引维护。
 
     通过回调与 StateManager 协作：
-    - get_state(): 获取当前 raw state（用于保存当前项目）
+    - get_state: 获取当前 raw state（用于保存当前项目）
     - set_state(state): 设置 raw state（切换/创建后）
     """
 
@@ -37,7 +37,7 @@ class ProjectManager:
         self._repo = repo
         self._get_state = get_state
         self._set_state = set_state  # (state_dict, project_id) -> None
-        # 切换/新建前只冲刷挂起变更（8888 二轮：不得用内存全量状态回写，
+        # 切换/新建前只冲刷挂起变更（不得用内存全量状态回写，
         # 任务级隔离后本实例可能过期，全量回写会抹掉后台任务的新数据）
         self._flush_state = flush_state or (lambda: None)
 
@@ -57,7 +57,7 @@ class ProjectManager:
 
     def create_project(self, name: str, active_id: str) -> str:
         """新建项目：冲刷当前挂起变更 → 创建新项目 → 更新索引 → 返回 project_id"""
-        # 冲刷当前项目挂起变更（不脏不写；8888 二轮：不再内存全量回写）
+        # 冲刷当前项目挂起变更（不脏不写；：不再内存全量回写）
         if active_id:
             self._flush_state()
 
@@ -103,7 +103,7 @@ class ProjectManager:
         if project_id == active_id:
             return True
 
-        # 冲刷当前项目挂起变更（不脏不写；8888 二轮：不再内存全量回写）
+        # 冲刷当前项目挂起变更（不脏不写；：不再内存全量回写）
         if active_id:
             self._flush_state()
 

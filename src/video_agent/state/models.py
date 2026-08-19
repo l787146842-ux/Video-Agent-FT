@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from src.video_agent.utils import gen_id
 
 # 管线模型从 models_pipeline 导入（Phase 4 拆分）
-from .models_pipeline import (  # noqa: F401
+from .models_pipeline import (  # noqa: 1
     AssetType, AssetStatus, AudioCategory,
     TimelineStatus, TaskType, TaskStatus, ErrorLevel,
     AssetState, Clip, Track, TimelineState,
@@ -196,7 +196,7 @@ class ProjectState(BaseModel):
     status: ProjectStatus = ProjectStatus.idle
     user_goal: str = ""
 
-    # 五轮 S4g/N2：CLI 遗留 plan/story 字段已清偿（旧模型文件已删除）。
+    # CLI 遗留 plan/story 字段已清偿（旧模型文件已删除）。
     # ProjectState extra="ignore" 保证旧 state.json 里残留的 plan/story 键加载时
     # 被静默忽略、不报错（2026-08-16 实测：存量文件该两键仅空壳默认值）。
     # 注意：原 storyboard: StoryboardState 已删除，由 key_elements/shots/audio_items 替代（v2.0.0）
@@ -263,7 +263,7 @@ DRAFT_DEFAULT_FIELDS: Dict[str, Any] = {
     "model": "",
     "mode": "",
     "aspectRatio": "16:9",
-    # 6666 二轮：分辨率/时长等硬参数唯一来源为顶部「全局设置」，
+    #分辨率/时长等硬参数唯一来源为顶部「全局设置」，
     # 草稿默认留空，由 stamp_draft_spec_preference 按全局设置补印，
     # 不再用硬编码默认值挡住补印（生成时也不得偏离全局设置）
     "resolution": "",

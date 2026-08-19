@@ -1,4 +1,4 @@
-/* eslint-disable max-lines */ // 消息流元素聚合（卡片/时间线/闸机 chips）；StageCard 已于五轮 S10 切出
+/* eslint-disable max-lines */ // 消息流元素聚合（卡片/时间线/闸机 chips）；StageCard 已于  切出
 import { For, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import {
@@ -27,15 +27,15 @@ import type { ChatMessage } from '@/types';
 export function ChatMessageItem(props: {
   message: ChatMessage;
   isLast: boolean;
-  /** 814F7：是否为最后一条含闸机拦截警告的消息（「本次放行」按钮挂载点） */
+  /** ：是否为最后一条含闸机拦截警告的消息（「本次放行」按钮挂载点） */
   isGateTarget?: boolean;
-  /** 四轮 R3/#10：暂停卡生命周期（answered/expired 时阶段卡挂徽标，回看不迷惑） */
+  /** ：暂停卡生命周期（answered/expired 时阶段卡挂徽标，回看不迷惑） */
   confirmState?: 'active' | 'answered' | 'expired' | 'none';
-  /** 五轮 S2/#2：轮次容器内渲染——作者名/meta 上提到组头，本条不再重复 */
+  /** ：轮次容器内渲染——作者名/meta 上提到组头，本条不再重复 */
   hideChrome?: boolean;
-  /** 五轮 S2/#12：已回应暂停卡的「当时所选值」（其后首条用户消息文本） */
+  /** ：已回应暂停卡的「当时所选值」（其后首条用户消息文本） */
   answeredValue?: string;
-  /** 五轮 S3/#3：是否为最后一条携带建议动作的消息（重试/继续按钮挂载点） */
+  /** ：是否为最后一条携带建议动作的消息（重试/继续按钮挂载点） */
   isSuggestedTarget?: boolean;
 }) {
   const msg = () => props.message;
@@ -44,9 +44,9 @@ export function ChatMessageItem(props: {
   /** 原图预览（lightbox）当前打开的图片地址 */
   const [lightboxUrl, setLightboxUrl] = createSignal('');
 
-  /** 五轮 S3/#3（D4 终裁）：重试 = 机械重发上一条用户消息原内容（含富文本附件），
+  /** （终裁）：重试 = 机械重发上一条用户消息原内容（含富文本附件），
    * 零模型猜测；continue/next = 发送后端下发的固定 value 文本
-   * （next=状态驱动下一步建议，八轮 B4，点击即显式用户指令） */
+   * （next=状态驱动下一步建议， ，点击即显式用户指令） */
   const runSuggested = (act: { kind: 'retry' | 'continue' | 'next'; value: string }) => {
     if (act.kind === 'retry') {
       const msgs = chatState.messages;
@@ -77,11 +77,11 @@ export function ChatMessageItem(props: {
   /** 用户消息是否含内联媒体（有则用富文本气泡还原排版） */
   const hasInlineMedia = () => !!msg().parts && msg().parts!.some((p) => p.type !== 'text');
 
-  /** 用户消息是否带 Skill / 文档引用块（Q5：渲染进气泡内部） */
+  /** 用户消息是否带 Skill / 文档引用块（渲染进气泡内部） */
   const hasRefBlocks = () =>
     ((msg().docBlocks || []).length > 0) || ((msg().skillBlocks || []).length > 0);
 
-  /** 是否含闸机拦截类警告（B2/F13：结构化判定——trace.gates 存在 ok=false 条目，
+  /** 是否含闸机拦截类警告（结构化判定——trace.gates 存在 ok=false 条目，
    * 不再对文案做 includes('拦截') 字符串匹配） */
   const gateRecords = () => {
     const out: Array<{ rule_id: string; layer: string; message: string; skill_name?: string }> = [];
@@ -99,7 +99,7 @@ export function ChatMessageItem(props: {
   };
   const hasGateWarning = () => gateRecords().length > 0;
 
-  /** 0817：相同闸机拦截（同层/同规则/同文案）合并计数，前端折叠展示 ×N；
+  /** ：相同闸机拦截（同层/同规则/同文案）合并计数，前端折叠展示 ×N；
       trace 仍保留全量记录（审计不丢，§2.5）。 */
   const groupedGates = () => {
     const out: Array<{

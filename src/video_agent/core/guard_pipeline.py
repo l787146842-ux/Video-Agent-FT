@@ -1,4 +1,4 @@
-"""统一闸机管线（宪法 §2.0：Guardrails are Execution Logic；814R2 恢复接线）。
+"""统一闸机管线（宪法 §2.0：Guardrails are Execution Logic； 恢复接线）。
 
 FC 轨（core/fc_tool_runner.py）与文本轨（web/action_executor.py）共用
 同一份规则源（core/prompt_gates.py）与本模块的执行组合：
@@ -9,7 +9,7 @@ FC 轨（core/fc_tool_runner.py）与文本轨（web/action_executor.py）共用
 verdict 结构化（GateVerdict），回喂模型与展示用户用同一源；
 每条判定经 tracer.record_gate 入审计（/api/agent/gates 可见）。
 
-语义基线（4444/8888 二轮，用户第一）：
+语义基线（/，用户第一）：
 - 流程闸（元素概念图前置/故事板待确认窗口）只警告不拦人；
 - 结构闸（字数/语言/时长/字幕/音频/镜头语言）strict 模式拒收重写；
 - 用户坚持（gate_override 作用域覆盖）时硬伤降为警告放行。
@@ -114,7 +114,7 @@ def evaluate_prompt_write(
         out.verdicts.append(GateVerdict("platform.prompt_write", "platform", True))
         return out
 
-    # 流程闸：元素概念图前置（只警告不拦人，4444 语义；用户坚持时降为提示）
+    # 流程闸：元素概念图前置（只警告不拦人， 语义；用户坚持时降为提示）
     if kind == "shot" and mode == "strict" and element_image_missing:
         if prompt_gates.override_covers(gate_override, prompt_gates.GATE_ELEMENT_IMAGE):
             out.warnings.append(
@@ -168,14 +168,14 @@ def evaluate_gen_confirm(
     override: Any = False,
     action: str = "",
 ) -> "tuple[Optional[str], List[str]]":
-    """生成确认闸统一判定（B4 双轨收敛一期：platform.gen_confirm 唯一实现）。
+    """生成确认闸统一判定（双轨收敛一期：platform.gen_confirm 唯一实现）。
 
     drafts：目标草稿（已含提示词者由调用方筛好）；active：Skill 激活且 strict；
     override：用户坚持作用域。返回 (硬拒原因, warnings)，双轨语义逐字节一致：
     - override 命中 → 不拒，附豁免警告；
     - 未激活/空目标 → 不拒（空目标交工具自身报「未找到」）；
     - 全部已确认 → 不拒；
-    - 存在未确认 → 硬拒（4444：模型跳确认非用户意志），拒因用 BLOCKED 文案。
+    - 存在未确认 → 硬拒（模型跳确认非用户意志），拒因用 BLOCKED 文案。
     判定经 tracer.record_gate 入审计（前端 chips 同源）。
     """
     warns: List[str] = []
@@ -211,7 +211,7 @@ def prompt_write_verdict(
     - ok=False：调用方必须拒绝写入并把 message 回喂模型（自愈闭环）；
     - ok=True 且 message 非空：写入放行，message 作为警告随结果展示；
     - user_override=True（决策 D：用户坚持）：硬伤降为警告照常放行。
-    流程闸（元素图/待确认窗口）按 4444 语义只警告不拦人。
+    流程闸（元素图/待确认窗口）按  语义只警告不拦人。
     """
     out = evaluate_prompt_write(
         prompt, kind, state,

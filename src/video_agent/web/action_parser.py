@@ -1,12 +1,12 @@
 """
 Studio Actions 解析器 — 从 actions.py 抽离。
 
-职责（audit-0819b 单轨化后，ADR-0001）：仅保留 JSON 容错解析与动作归一
+职责（单轨化后，ADR-0001）：仅保留 JSON 容错解析与动作归一
 纯函数（mock 演示通道与回归测试使用）。生产动作通道唯一 = FC 工具调用。
 
 已随双轨退役删除：strip_action_blocks / has_action_block（防泄漏清洗，
 文本块通道不复存在）、退化流程信号探测（extract_degraded_signal_blocks，
-7777 事故 S02）、StreamingActionExtractor 流式增量提取（边写边填）。
+）、StreamingActionExtractor 流式增量提取（边写边填）。
 """
 from loguru import logger
 import json
@@ -21,7 +21,7 @@ _ACTION_BLOCK_PATTERNS = [
     re.compile(r"<studio-actions>([\s\S]*?)</studio-actions>", re.IGNORECASE),
 ]
 
-# 包装格式探测（9999 事故）：{"studio-actions": [...]} 包装对象（解析兜底保留）
+# 包装格式探测：{"studio-actions": [...]} 包装对象（解析兜底保留）
 _WRAPPER_KEY_RE = re.compile(r"\"studio-actions\"\s*:")
 
 
@@ -59,7 +59,7 @@ def _find_wrapper_span(text: str, key_match_start: int) -> Optional[tuple]:
 def parse_actions_from_reply(reply: str) -> List[Dict[str, Any]]:
     """从回复文本中提取 studio-actions JSON 块并解析为操作列表。
 
-    audit-0819b 后仅 mock 演示通道与回归测试使用；生产动作通道唯一 = FC 工具。
+     后仅 mock 演示通道与回归测试使用；生产动作通道唯一 = FC 工具。
     """
     actions: List[Dict[str, Any]] = []
     for pattern in _ACTION_BLOCK_PATTERNS:
@@ -67,7 +67,7 @@ def parse_actions_from_reply(reply: str) -> List[Dict[str, Any]]:
             parsed = parse_json_tolerant(match.group(1))
             if parsed:
                 actions.extend(normalize_actions(parsed))
-    # 包装格式兜底（9999 事故）：{"studio-actions": [...]} 无论裸 JSON 还是
+    # 包装格式兜底：{"studio-actions": [...]} 无论裸 JSON 还是
     # json 围栏内，都按包装对象解析
     if not actions and _WRAPPER_KEY_RE.search(reply):
         for m in _WRAPPER_KEY_RE.finditer(reply):
@@ -124,7 +124,7 @@ def repair_json(text: str) -> str:
 def normalize_actions(parsed: Any) -> List[Dict]:
     """将解析结果统一为 action dict 列表（兼容包装格式与 name 键变体）"""
     if isinstance(parsed, dict) and isinstance(parsed.get("studio-actions"), list):
-        # 包装格式：{"studio-actions": [...]}（9999 事故）
+        # 包装格式：{"studio-actions": [...]}
         return [_normalize_action_item(a) for a in parsed["studio-actions"]]
     if isinstance(parsed, list):
         return [_normalize_action_item(a) for a in parsed]
@@ -139,12 +139,12 @@ def normalize_actions(parsed: Any) -> List[Dict]:
 
 
 def _normalize_action_item(a: Any) -> Any:
-    """单条 action 归一：缺 action 键时用 name/type/tool 兜底（9999 变体）。"""
+    """单条 action 归一：缺 action 键时用 name/type/tool 兜底（变体）。"""
     return normalize_action_aliases(a)
 
 
 def normalize_action_aliases(a: Any) -> Any:
-    """单条 action 的键级别名归一（9999 现场：弱模型把 add_draft 写成
+    """单条 action 的键级别名归一（现场：弱模型把 add_draft 写成
     type/groupId/payload 驼峰 schema，group_id/draft 缺失导致整批被
     「拒绝盲建」拒收）。只在正典字段缺失时补，不覆盖已有值；幂等。"""
     if not isinstance(a, dict):

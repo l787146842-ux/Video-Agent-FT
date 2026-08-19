@@ -303,7 +303,7 @@ def extract_media_preference(text: str, kind: str = "image") -> Tuple[str, str]:
 
 
 def spec_media_preference(raw_state: Dict[str, Any], kind: str = "image") -> Tuple[str, str]:
-    """生成渠道单一事实源（6666 二轮：顶部「全局设置」，不再扫描规格文档）。
+    """生成渠道单一事实源（顶部「全局设置」，不再扫描规格文档）。
 
     出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长由全局设置唯一
     提供，规格文档不再承载这些硬参数；旧规格文档里的残留行也不参与决策。
@@ -320,9 +320,9 @@ async def first_available_image_provider_async() -> Tuple[str, str]:
 
 
 def spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
-    """制作参数单一事实源（6666 二轮：顶部「全局设置」，不再扫描规格文档）。
+    """制作参数单一事实源（顶部「全局设置」，不再扫描规格文档）。
 
-    agent 执行生图/出视频/拆分镜时据此主动填入对应参数栏（7777 二轮）；
+    agent 执行生图/出视频/拆分镜时据此主动填入对应参数栏；
     规格文档不再承载这些硬参数，旧文档残留行也不参与决策。
     """
     from src.video_agent.state.provider_prefs import resolve_spec_production_params
@@ -384,10 +384,10 @@ def apply_spec_channel_selections(content: str, reply: str) -> Tuple[str, List[s
 
 
 def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any], cat_key: str) -> bool:
-    """新建草稿时补印全局默认（8888 事故：草稿无值时被前端硬编码首选供应商回填污染）。
+    """新建草稿时补印全局默认（草稿无值时被前端硬编码首选供应商回填污染）。
 
     补印顺序：分辨率/时长全局默认（草稿自带不覆盖）→ 供应商/模型
-    （B7 唯一权威源=全局设置；仅当草稿未自带 providerId 时补印，
+    （唯一权威源=全局设置；仅当草稿未自带 providerId 时补印，
     防前端默认首选供应商回填污染——参数栏与全局设置不一致；
     audioItems 跳过供应商补印）。返回是否发生补印。"""
     if not isinstance(draft, dict):

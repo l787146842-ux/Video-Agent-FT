@@ -46,7 +46,7 @@ class Settings:
     # 安全
     environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))
     api_key: str = field(default_factory=lambda: os.getenv("API_KEY", ""))
-    # 日志文件落盘开关（六轮 S4/N2）：服务进程默认开；测试/验收子进程经
+    # 日志文件落盘开关：服务进程默认开；测试/验收子进程经
     # conftest / scripts/acceptance.py 置 false，避免多进程争用同一日志文件
     # 触发 loguru rotation rename 失败（WinError 32）
     log_file_enabled: bool = field(default_factory=lambda: _env_bool("LOG_FILE_ENABLED", True))
@@ -66,13 +66,13 @@ class Settings:
     llm_json_timeout: float = field(default_factory=lambda: float(os.getenv("LLM_JSON_TIMEOUT", "120")))
     # LLM 思考（thinking/reasoning）档位：low/medium/high = 按 OpenAI 兼容
     # reasoning_effort 透传；空 = 不下发该字段（模型原生能力，默认）。
-    # 814H7：主模型档位改由对话栏「推理等级」选择器按会话下发（默认=原生），
+    # 主模型档位改由对话栏「推理等级」选择器按会话下发（默认=原生），
     # 本全局值仅作未携带会话档位时的回落（env 可覆写）。
     # 注意：对字段严格的端点会自动去掉该字段重试一次（400 优雅降级）。
     llm_thinking_level: str = field(default_factory=lambda: os.getenv("LLM_THINKING_LEVEL", ""))
-    # 辅助摘要调用档位（记忆摘要/会话压缩；814H7 全局设置页可调，默认=原生）
+    # 辅助摘要调用档位（记忆摘要/会话压缩； 全局设置页可调，默认=原生）
     aux_thinking_level: str = field(default_factory=lambda: os.getenv("AUX_THINKING_LEVEL", ""))
-    # trace 持久化的 reasoning 尾部保留字符数（B2/F19·D11：头部截断，仅展示用）
+    # trace 持久化的 reasoning 尾部保留字符数（·：头部截断，仅展示用）
     trace_reasoning_max_chars: int = field(default_factory=lambda: _env_int("TRACE_REASONING_MAX_CHARS", 2000))
     # CLI 协议（如 gemini-cli/Antigravity CLI）路由到 custom-api 反代时 auto 的回退模型：
     # 聊天已对齐画布行为改走本机 agy CLI，此值仅影响带参考图的生图编辑等
@@ -82,14 +82,14 @@ class Settings:
     # Token 预算管理
     context_window_size: int = field(default_factory=lambda: _env_int("CONTEXT_WINDOW_SIZE", 128000))
     token_budget_ratio: float = field(default_factory=lambda: float(os.getenv("TOKEN_BUDGET_RATIO", "0.8")))
-    # 五轮 S9/#15b：单张图片的 vision token 固定估算（此前多模态消息的 image_url
+    # 单张图片的 vision token 固定估算（此前多模态消息的 image_url
     # 部分不计入预算，截断决策对带图历史失真）；取常见高分辨率档保守值
     image_token_estimate: int = field(default_factory=lambda: _env_int("IMAGE_TOKEN_ESTIMATE", 1200))
     # 旧轮 read_* 回喂全文的惰性压缩阈值：消息总量达到预算的该比例才压缩，
     # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）；
-    # 814G7 收紧 0.5→0.35（历史是上下文膨胀大头，提早压缩）
+    # 收紧 0.5→0.35（历史是上下文膨胀大头，提早压缩）
     feedback_compress_ratio: float = field(default_factory=lambda: float(os.getenv("FEEDBACK_COMPRESS_RATIO", "0.35")))
-    # 会话级 compaction（814R4 恢复、814G7 默认开）：history 条数达该阈值时用
+    # 会话级 compaction（恢复、 默认开）：history 条数达该阈值时用
     # 便宜模型把较早对话压成摘要+最近几条（0 = 关闭，仅靠 truncate_history 头尾截断）
     history_compact_threshold: int = field(default_factory=lambda: _env_int("HISTORY_COMPACT_THRESHOLD", 12))
     # 工作台状态 JSON 紧凑序列化（模型读紧凑 JSON 无损，约省 20-30% token）；
@@ -117,7 +117,7 @@ class Settings:
     # 超限会直接报错；超出部分降级为文本清单，LLM 仍可知晓其存在）
     max_llm_images: int = field(default_factory=lambda: _env_int("MAX_LLM_IMAGES", 9))
     # 生成参考素材数量上限（图片/视频/音频参考注入）：
-    # 并发过高会撞供应商 429（4444 现场），参考过多会撑爆请求体
+    # 并发过高会撞供应商 429（现场），参考过多会撑爆请求体
     image_ref_limit: int = field(default_factory=lambda: _env_int("IMAGE_REF_LIMIT", 10))
     image_gen_concurrency: int = field(default_factory=lambda: _env_int("IMAGE_GEN_CONCURRENCY", 4))
     video_ref_limit_image: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_IMAGE", 30))
@@ -148,30 +148,30 @@ class Settings:
     # Skill 执行器运行时模式：auto = 按 Skill 能否解析出执行器章节自动选择；
     # executors = 全部走执行器；legacy = 全部走全文+阶段聚焦
     skill_runtime: str = field(default_factory=lambda: os.getenv("SKILL_RUNTIME", "auto"))
-    # B8：模型分层策略表（编排/生成/摘要/执行器四角色，热更新于 runtime_settings.json；
+    # 模型分层策略表（编排/生成/摘要/执行器四角色，热更新于 runtime_settings.json；
     # 字段语义见 core/model_policy.py；空 = 跟随主模型/既有回落链）
     model_policy: dict = field(default_factory=dict)
     # 执行器誊写批的快模型（"provider" 或 "provider:model"）；空 = 回落主模型
     executor_fast_model: str = field(default_factory=lambda: os.getenv("EXECUTOR_FAST_MODEL", ""))
     # 执行器机械调用的思考档位（low/medium/high）；空 = 沿用全局 llm_thinking_level
-    # 0817 B23（用户裁决）：默认空（不硬编码降档）；要降档由全局设置配置
-    # audit-0819f：全局设置「推理档位」卡退役，UI 语义归模型分层策略
+    # （用户裁决）：默认空（不硬编码降档）；要降档由全局设置配置
+    # 全局设置「推理档位」卡退役，UI 语义归模型分层策略
     # executor/summary 行（通用搭配默认 low）；本字段仅保留作 env 覆写回落。
     executor_thinking_level: str = field(default_factory=lambda: os.getenv("EXECUTOR_THINKING_LEVEL", ""))
-    # 0817 B24：剧本正文注入上限（合一，原 10000/12000 分阶段硬编码废除）；
+    # 剧本正文注入上限（合一，原 10000/12000 分阶段硬编码废除）；
     # 仅超模型上下文硬窗时才截断，截断附可见警告
     script_inject_limit: int = field(default_factory=lambda: _env_int("SCRIPT_INJECT_LIMIT", 20000))
-    # 0818 架构板正批 B1：状态驱动编排器开关（B2 默认开；回关=回落模型持循环旧路径）
+    # 架构板正批 ：状态驱动编排器开关（默认开；回关=回落模型持循环旧路径）
     pipeline_orchestrator_enabled: bool = field(
         default_factory=lambda: _env_bool("PIPELINE_ORCHESTRATOR_ENABLED", True))
 
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))
     task_max: int = field(default_factory=lambda: _env_int("TASK_MAX", 500))
-    # Agent trace JSONL 体积轮转（W22/3.1）
+    # Agent trace JSONL 体积轮转（.1）
     trace_file_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_FILE_MAX_BYTES", 2_000_000))
     trace_rotation_keep: int = field(default_factory=lambda: _env_int("TRACE_ROTATION_KEEP", 3))
-    # N6/L2（三轮审核）：trace 总容量上限（主文件+.N 合计，超则从最旧丢弃）
+    # （审核）：trace 总容量上限（主文件+.N 合计，超则从最旧丢弃）
     trace_total_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_TOTAL_MAX_BYTES", 20_000_000))
 
     # 上传限制
@@ -180,7 +180,7 @@ class Settings:
     # 请求限流（每分钟每 IP 最大请求数，0 = 不限流）
     rate_limit_per_minute: int = field(default_factory=lambda: _env_int("RATE_LIMIT_PER_MINUTE", 10))
     # 生成类端点（/api/generate*）单独配额：批量生图/生视频会连续提交多个任务，
-    # 与聊天共用低配额会误伤正常批量操作（P0-3）
+    # 与聊天共用低配额会误伤正常批量操作（-3）
     rate_limit_generate_per_minute: int = field(default_factory=lambda: _env_int("RATE_LIMIT_GENERATE_PER_MINUTE", 60))
     # 是否信任 X-Forwarded-For 头提取客户端 IP（仅在可信反向代理后置 true；
     # 本机直连部署下该头可被伪造，用于绕过 IP 级限流）
@@ -189,7 +189,7 @@ class Settings:
     # 存储后端（"local" | "s3"）
     storage_backend: str = field(default_factory=lambda: os.getenv("STORAGE_BACKEND", "local"))
 
-    # 项目状态持久化后端（"json" | "sqlite"）：814E6 起默认 sqlite（事务原子性
+    # 项目状态持久化后端（"json" | "sqlite"）： 起默认 sqlite（事务原子性
     # 与并发安全，多用户基础）；首次启用自动从 JSON 迁移，STATE_BACKEND=json 可随时回退
     state_backend: str = field(default_factory=lambda: os.getenv("STATE_BACKEND", "sqlite"))
 

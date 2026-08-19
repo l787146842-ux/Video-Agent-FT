@@ -54,7 +54,7 @@ class AgentTaskManager:
             # 随 replay 下发，刷新重连后前端仍能把选择器跳到正确组合
             "fallback": None,
             "error": None,
-            # B0/F2：轮间引导注入队列（用户推理中发送的排队消息，planner 逐轮消费）
+            # 轮间引导注入队列（用户推理中发送的排队消息，planner 逐轮消费）
             "pending_guidance": [],
             "_subscribers": [],
             "_task": None,
@@ -79,7 +79,7 @@ class AgentTaskManager:
         self._notify(record, {"type": "task_status", "status": "cancelled"})
         return True
 
-    # ====== 轮间引导注入（B0/F2 恢复：7777 三轮机制重新接线） ======
+    # ====== 轮间引导注入（恢复：机制重新接线） ======
 
     def add_pending_guidance(self, task_id: str, item: Dict[str, Any]) -> bool:
         """把用户排队消息登记到运行中任务，供 planner 轮间注入。
@@ -131,7 +131,7 @@ class AgentTaskManager:
             return
         if task.cancelled():
             record["status"] = "cancelled"
-            # 0817：取消路径原先完全静默，必须留痕
+            # 取消路径原先完全静默，必须留痕
             logger.warning(f"[AgentTask] {task_id} 后台任务被取消")
         elif task.exception():
             exc = task.exception()
@@ -139,7 +139,7 @@ class AgentTaskManager:
             record["error"] = str(exc)
             logger.error(f"[AgentTask] {task_id} 后台异常: {exc}")
         else:
-            # 0817：asyncio 任务结束即权威终态——worker 未自发 done 事件时
+            # asyncio 任务结束即权威终态——worker 未自发 done 事件时
             # 状态不得永停 running（静默死亡症状），兜底落 done
             if record["status"] == "running":
                 record["status"] = "done"
@@ -215,7 +215,7 @@ class AgentTaskManager:
                 "status": "running",
                 "elapsed_ms": None,
                 "result_summary": "",
-                # 814G2：运行中走秒起点（replay/重连后前端继续计时）
+                # 运行中走秒起点（replay/重连后前端继续计时）
                 "started_at_ms": round(time.time() * 1000),
             })
         elif etype == "tool_finished":

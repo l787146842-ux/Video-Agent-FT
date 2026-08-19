@@ -1,4 +1,4 @@
-"""故事板拆解域（五轮 S5 自 exec_tools.py 切出，R4a 拆分模式延续）。
+"""故事板拆解域（自 exec_tools.py 切出， 拆分模式延续）。
 
 任务词（_KE_TASK 等）+ 三拆共用执行逻辑（_run_storyboard_split）+ 关键元素
 自检补漏（_selfcheck_key_elements）。exec_tools 尾部 re-export 保持既有
@@ -92,7 +92,7 @@ _SPEAKER_STOP = frozenset({
 
 
 def _script_speakers(script_text: str, limit: int = 20) -> List[str]:
-    """0817：剧本原文客观提取台词人（行首 名字+冒号），作覆盖验收实体基线。"""
+    """：剧本原文客观提取台词人（行首 名字+冒号），作覆盖验收实体基线。"""
     out: List[str] = []
     for m in _SPEAKER_RE.finditer(str(script_text or "")):
         name = m.group(1).strip()
@@ -106,7 +106,7 @@ def _script_speakers(script_text: str, limit: int = 20) -> List[str]:
 
 
 def skill_declares_audio(skill_name: str) -> bool:
-    """0817：Skill 是否声明音色登记（章节提及 key_element_audio/音色登记，
+    """：Skill 是否声明音色登记（章节提及 key_element_audio/音色登记，
     或 manifest gates.require_audio_layer）——验收清单从 Skill 读，不拍脑袋。"""
     try:
         entry = resolve_entry(skill_name)
@@ -127,7 +127,7 @@ def skill_declares_audio(skill_name: str) -> bool:
 
 
 def _coverage_missing_key_elements(svc: StateManager, skill_name: str) -> List[str]:
-    """0817 机器覆盖验收（零 token，P2）：① 剧本台词人都有对应分组；
+    """ 机器覆盖验收（零 token）：① 剧本台词人都有对应分组；
     ② Skill 声明音色时，每个人物组都有对应音色组。缺失才触发定向补拆。"""
     groups = [
         g for g in (svc.state_dict.get(CAT_KEY_ELEMENTS) or [])
@@ -163,7 +163,7 @@ async def _selfcheck_key_elements(
     model: str,
     missing: Optional[List[str]] = None,
 ) -> Tuple[int, List[str]]:
-    """第二遍补漏：按机器验收缺失清单定向补建关键元素（0817：由常跑自检
+    """第二遍补漏：按机器验收缺失清单定向补建关键元素（由常跑自检
     改为条件触发，缺失清单由 _coverage_missing_key_elements 零 token 产出）。"""
     if not script_hint and not missing:
         return 0, []
@@ -213,7 +213,7 @@ async def _selfcheck_key_elements(
     ]
     if not actions:
         return 0, []
-    # 阶段边界：自检轮只允许补建关键元素分组（代码校验，宪法 P2）
+    # 阶段边界：自检轮只允许补建关键元素分组（代码校验，宪法）
     applied, warnings = exec_common._apply_actions(
         svc, actions, skill_content, strip_prompts=True, only_group_type="keyElement",
     )
@@ -254,7 +254,7 @@ async def _run_storyboard_split(
         f"{script_hint or '（暂无剧本摘要）'}\n\n"
         f"【本次拆解任务】{task_desc}"
     )
-    # 输出格式锚点（8888 事故：首拆 JSON 缺 title 字段全落默认标题）：
+    # 输出格式锚点（首拆 JSON 缺 title 字段全落默认标题）：
     # 只给关键元素拆解钉死示例，分镜/音频字段不同不适用
     if tool_name == "storyboard_key_elements":
         user += (
@@ -262,7 +262,7 @@ async def _run_storyboard_split(
             '[{"action":"add_group","group_type":"keyElement","title":"程心",'
             '"badgeLabel":"人物","desc":"外观与声音描述…"}]'
         )
-    # 制片规格覆盖注入（2222 二轮，统一 helper；原内联时长硬约束块并入此处）：
+    # 制片规格覆盖注入（统一 helper；原内联时长硬约束块并入此处）：
     # 规格已定的参数覆盖 Skill 章节写死的默认值（时长/分辨率/渠道）
     _override_kinds = {
         "storyboard_key_elements": ("image_resolution", "image_channel"),
@@ -272,11 +272,11 @@ async def _run_storyboard_split(
     user += exec_common._spec_override_clauses(svc.state_dict, _override_kinds)
     entry = resolve_entry(params.skill_name)
     skill_content = entry.content if entry else ""
-    # 输出预算（9999 事故：分镜拆解只给 8192，推理模型思考占满额度后零产出）：
+    # 输出预算（分镜拆解只给 8192，推理模型思考占满额度后零产出）：
     # 关键元素与分镜同档 16384（分钟级成片镜头数×单条 JSON 体量与 KE 相当），音频维持 8192
     max_tokens = 16384 if tool_name in ("storyboard_key_elements", "storyboard_shots") else 8192
-    # 阶段边界的代码校验（宪法 P2）：允许的分组类别按注入章节结构自适应
-    # （2222 二轮）——合并章节（Skill 说"一起设计"）放行对应多类，
+    # 阶段边界的代码校验（宪法）：允许的分组类别按注入章节结构自适应
+    # ——合并章节（Skill 说"一起设计"）放行对应多类，
     # 单一职责章节维持单类边界；逗号分隔串直接传 _apply_actions
     _split_kind = ",".join(exec_common._split_kinds_for_section(tool_name, params.skill_name))
     # 拆解前 ID 快照（回执实际建成清单 / 截断回滚用；覆盖全部放行类别）
@@ -288,15 +288,15 @@ async def _run_storyboard_split(
     provider, model = exec_common._resolve_chat_provider(params.chat_provider, params.chat_model)
     if not provider:
         return exec_common.SkillToolResult(success=False, error="当前工作区未配置可用的聊天供应商，请先在 API 配置页添加")
-    # 长任务进度上报（M6）：拆解执行器单次 LLM 调用通常 30~90s，先告知在等什么
+    # 长任务进度上报：拆解执行器单次 LLM 调用通常 30~90s，先告知在等什么
     await emit_progress(f"正在拆解故事板结构（{tool_name}，预计 30~90 秒）…")
-    # 子步骤细分（2222 反馈）：时间线先记「首拆开始」，配合流式落盘批次子项
+    # 子步骤细分（反馈）：时间线先记「首拆开始」，配合流式落盘批次子项
     # 与「首拆完成/自检」构成完整细分链路
     _split_cn = {"storyboard_key_elements": "关键元素",
                  "storyboard_shots": "分镜", "storyboard_audio": "音频"}.get(tool_name, "结构")
     await emit_timeline_note(f"首拆开始：模型流式生成{_split_cn}分组（边生成边写入）…")
     _t_first = time.monotonic()
-    # 流式逐条落盘（Q5）：做好一个分组立即写入左侧，不等整次调用结束
+    # 流式逐条落盘：做好一个分组立即写入左侧，不等整次调用结束
     system = exec_common._skill_system_prompt(tool_name, params.skill_name, boundary)
     try:
         applied, warnings, _content, _finish = await exec_common._stream_actions_progressive(
@@ -306,7 +306,7 @@ async def _run_storyboard_split(
         )
     except Exception as e:
         applied, warnings, _finish = 0, [str(e)], ""
-    # 截断保险（2222 二轮，与 _llm_json_call 策略对齐，10.12-G4 全局化）：
+    # 截断保险（与 _llm_json_call 策略对齐，10.12- 全局化）：
     # 流式路径撞 finish=length 不再收「部分成功」——回滚已写入残品，
     # 扩额整体重试一次；重试仍截断才记警告并走对账流程
     if _is_truncated(_finish):
@@ -334,8 +334,8 @@ async def _run_storyboard_split(
         elif applied:
             warnings.append("首拆输出曾被截断，已回退并扩额重试获得完整输出")
     if not applied:
-        # 流式零产出（格式漂移/断流/思考占满额度，9999 事故）：回退非流式整体解析
-        # 重试一次（P0-4 兜底）；预算翻倍给思考模型留够正文空间，并钉死「直接输出 JSON」
+        # 流式零产出（格式漂移/断流/思考占满额度）：回退非流式整体解析
+        # 重试一次（-4 兜底）；预算翻倍给思考模型留够正文空间，并钉死「直接输出 JSON」
         try:
             applied, warnings2 = await _executor_actions_from_llm(
                 tool_name, params.skill_name,
@@ -354,8 +354,8 @@ async def _run_storyboard_split(
             return exec_common.SkillToolResult(success=False, error=str(e))
     if not applied:
         return exec_common.SkillToolResult(success=False, error="；".join(warnings) or "本次故事板拆解未产出任何分组")
-    # 首拆即显（Q3）：落盘后立即下发状态快照，左栏分组当场亮出来，
-    # 不等后续自检轮跑完；同时在时间线记一条子步骤明细（Q2）
+    # 首拆即显：落盘后立即下发状态快照，左栏分组当场亮出来，
+    # 不等后续自检轮跑完；同时在时间线记一条子步骤明细
     _first_ms = (time.monotonic() - _t_first) * 1000
     await emit_timeline_note(
         f"首拆完成：{applied} 个分组已写入故事板", elapsed_ms=_first_ms,
@@ -363,11 +363,11 @@ async def _run_storyboard_split(
     await emit_state_refresh(applied)
     detail = f"已按 Skill 章节拆解并写入 {applied} 个故事板分组"
     # 关键元素自检补漏（防漏拆）：对照剧本逐场核对，结果即时落盘。
-    # 固定 1 轮（8888 事故：2 轮自检对短剧本是纯耗时，且失控补建了
+    # 固定 1 轮（2 轮自检对短剧本是纯耗时，且失控补建了
     # 大量背景杂物元素；长剧本漏项可由用户审阅后口头补）
     if tool_name == "storyboard_key_elements":
-        # 0817：机器覆盖验收（Skill 声明驱动）替换常跑模型自检——
-        # 核对零 token；无缺失直接省一轮模型调用（上下文净减少）
+        # 机器覆盖验收（Skill 声明驱动）替换常跑模型自检——
+        # 核对零 token；无缺失直接省模型调用（上下文净减少）
         missing = _coverage_missing_key_elements(svc, params.skill_name)
         if not missing:
             await emit_timeline_note("验收：机器交叉核对通过，无遗漏元素")
@@ -384,7 +384,7 @@ async def _run_storyboard_split(
                     _sc_ms = (time.monotonic() - _sc_t0) * 1000
                     warnings += sc_warns
                     if not filled:
-                        # 0817 B16：补拆零产出不得静默——缺失清单上抛为
+                        # 补拆零产出不得静默——缺失清单上抛为
                         # 用户可见警告（经 fc_tool_runner 并入轮末 warnings）
                         _miss_txt = "、".join(missing[:6]) + (
                             "等" if len(missing) > 6 else "")
@@ -408,15 +408,15 @@ async def _run_storyboard_split(
                         await emit_state_refresh(filled)
             except Exception as e:
                 logger.warning(f"[SkillExec] 关键元素验收补漏失败（不影响首拆结果）: {e}")
-                # 0817 B16：异常路径同样不得静默（如上游断连）
+                # 异常路径同样不得静默（如上游断连）
                 _miss_txt = "、".join(missing[:6]) + ("等" if len(missing) > 6 else "")
                 warnings.append(
                     f"拆解覆盖缺口：{len(missing)} 项仍缺失（补拆执行异常）："
                     f"{_miss_txt}。请回复指出遗漏元素或发送「补拆」重试。"
                 )
-    # 回执实际建成清单（888 事故：只回数量模型靠猜建成了哪几个，
+    # 回执实际建成清单（888 ：只回数量模型靠猜建成了哪几个，
     # 猜错产生重名卡/空卡）：对照拆解前 ID 快照求差集（含自检补建；
-    # 边界自适应放行多类时逐类别收集，2222 二轮）
+    # 边界自适应放行多类时逐类别收集）
     _created_titles: List[str] = []
     for _k in (_split_kind.split(",") if _split_kind else []):
         _cat_key = ops.category_for_group_type(_k) if _k else ""
@@ -432,7 +432,7 @@ async def _run_storyboard_split(
         if len(_created_titles) > 40:
             _titles_txt += f" 等 {len(_created_titles)} 个"
         detail += f"。实际新建：{_titles_txt}"
-    # 截断事实进账本 / 完整完成则消解（888 事故：截断不得冒充完成）
+    # 截断事实进账本 / 完整完成则消解（888 ：截断不得冒充完成）
     if _is_truncated(_finish):
         _kind_cn = {"storyboard_key_elements": "关键元素",
                     "storyboard_shots": "分镜", "storyboard_audio": "音频"}.get(tool_name, "结构")

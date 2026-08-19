@@ -22,17 +22,17 @@ from loguru import logger
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import SKILL_DOCS_DIR
 from src.video_agent.config import settings
-# 五轮 S6：标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
+# 标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
 from src.video_agent.core import live_metrics
-# N7（三轮审核）：pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
-from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: F401
+# （审核）：pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
+from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: 1
 # 批 5：sidecar 声明体检（sidecar 顶层不依赖本模块，无环）
 from src.video_agent.skill_runtime import sidecar
 
 _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划线/连字符
 
-# audit-0819d：外来工具名映射层（FOREIGN_TOOL_MAP + build_foreign_tool_note）
-# 已删除（S15 清偿，用户裁决）：运行时不再做工具名翻译；进项目的 Skill
+# 外来工具名映射层（FOREIGN_TOOL_MAP + build_foreign_tool_note）
+# 已删除（清偿，用户裁决）：运行时不再做工具名翻译；进项目的 Skill
 # 必须在导入期改为本项目的工具名（归将来专用 Skill 系统职责）。
 
 # 版本历史：保存前把旧版备份到 .history/，每个 slug 保留最近 N 版
@@ -120,7 +120,7 @@ def split_skill_sections(content: str) -> Dict[str, str]:
     # 2) Markdown 标题兜底
     parts = re.split(r"(?m)^(#{1,4}[^\n]*)$", content)
     stage_now = ""
-    # 五轮 S6/#6：静默沿用告警——连续 ≥3 节未命中关键字而沿用上一阶段时，
+    # 静默沿用告警——连续 ≥3 节未命中关键字而沿用上一阶段时，
     # 说明该 Skill 的标题体系可能整体未映射（章节会被静默归错阶段），
     # 记 warning + 降级遥测供排查（不阻断解析）
     _inherit_run = 0
@@ -303,7 +303,7 @@ def _backup_skill_doc(slug: str, target: Path) -> None:
 
 
 def prune_all_skill_history() -> int:
-    """B6/F44：启动时裁剪全部 Skill 历史——每 slug 只保留最近 _HISTORY_MAX 版。
+    """：启动时裁剪全部 Skill 历史——每 slug 只保留最近 _HISTORY_MAX 版。
 
     历史文件的堆积来自保存时的增量裁剪与旧版本遗留；此函数按 slug 分组
     （文件名 `{slug}-{毫秒时间戳}.md`）做一次全量收敛，返回删除数。"""
@@ -365,19 +365,19 @@ def delete_skill_doc(slug: str) -> None:
         logger.warning(f"[SkillDocs] Skill 执行器注销失败 {slug}: {e}")
 
 
-# Skill 暂停点显式声明解析已下沉 skill_runtime.registry（N7），本文件经顶部 import re-export。
+# Skill 暂停点显式声明解析已下沉 skill_runtime.registry，本文件经顶部 import re-export。
 # gate_rules 块格式校验用（与 prompt_gates.parse_gate_rules 的正则保持一致）
 _GATE_RULES_LINT_RE = re.compile(
     r"```(?:json|js)?\s*gate_rules\s*\n(.*?)```", re.S | re.I
 )
 
-# Skill 平台行为统一声明块正则（0818 B4：声明已迁 sidecar，
+# Skill 平台行为统一声明块正则（声明已迁 sidecar，
 # 本正则仅用于 lint 提示「文档内 manifest 不再消费」）
 _SKILL_MANIFEST_BLOCK_RE = re.compile(
     r"```(?:json|js)?\s*skill_manifest\s*\n(.*?)```", re.S | re.I
 )
 
-# B7 用户裁决：Skill 内写死的模型能力参数检测（厂商/模型/分辨率/时长），
+# 用户裁决：Skill 内写死的模型能力参数检测（厂商/模型/分辨率/时长），
 # 保存/导入时 lint 提示「已作废，以全局设置为准」；运行时一律忽略
 _MODEL_PARAM_LINT_RE = re.compile(
     r"(Seedance|GPT\s*Image|Kling|可灵|即梦|Midjourney|Flux|SDXL|"
@@ -391,7 +391,7 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
 
     返回 {"available_tools": [...], "warnings": [...]}；不阻断保存，
     由路由层随 PUT 响应下发，前端以 toast/详情展示。
-    slug 非空时追加 sidecar 声明缺失检查（仅告警，F4 只告警不阻断语义）。
+    slug 非空时追加 sidecar 声明缺失检查（仅告警， 只告警不阻断语义）。
     """
     from src.video_agent.skill_runtime.registry import SKILL_EXECUTOR_TOOLS, TOOL_STAGES
 
@@ -421,7 +421,7 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
                 warnings.append("gate_rules 不是 JSON 对象，已回落默认闸机规则")
         except Exception:
             warnings.append("gate_rules JSON 解析失败，已回落默认闸机规则")
-    # 0818 B4：声明迁 sidecar——文档内 manifest 块不再消费，显式提示
+    # 声明迁 sidecar——文档内 manifest 块不再消费，显式提示
     if _SKILL_MANIFEST_BLOCK_RE.search(content):
         warnings.append(
             "skill_manifest 块不再消费：平台声明已迁 sidecar（data/skills_manifests/），请从文档移除该块"
@@ -442,7 +442,7 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
             "未检测到阶段暂停声明（可加 ```json pause_rules {\"stage_pause\": true}``` 或写明「何时暂停」），"
             "执行器完成后将不会主动邀请用户确认"
         )
-    # B7 用户裁决：模型能力参数唯一权威源 = 全局设置——Skill 内写死的
+    # 用户裁决：模型能力参数唯一权威源 = 全局设置——Skill 内写死的
     # 厂商/模型/分辨率/时长参数一律作废（运行时忽略，仅提示迁移）
     _hard_params = _MODEL_PARAM_LINT_RE.findall(content)
     if _hard_params:

@@ -17,7 +17,7 @@ function extractDescription(skill: Skill): string {
   return skill.description || t('rp.skillDetail.noIntro');
 }
 
-/** skill_manifest 声明块（机器读的系统配置，888 事故：对外封装时不该让人看到） */
+/** skill_manifest 声明块（机器读的系统配置，888 ：对外封装时不该让人看到） */
 const MANIFEST_BLOCK_RE = /```(?:json|js)?\s*skill_manifest\s*\n[\s\S]*?```/i;
 
 /** 提取 skill_manifest 声明块原文（无则返回空串） */

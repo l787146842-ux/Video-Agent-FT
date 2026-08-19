@@ -1,4 +1,4 @@
-"""耦合注册表（八轮 B5，T20 全量清偿：宪法 13.7 耦合表机器可读化）。
+"""耦合注册表（全量清偿：宪法 13.7 耦合表机器可读化）。
 
 13.7「改 A 必须同步检查 B」原为宪法内散文表，靠 AI 读到并记住——记性不可靠。
 本注册表把全部耦合行转为数据（policy-as-data 同源），每行声明强制方式：
@@ -11,8 +11,8 @@
 - prose  ：确不可机械化，必须给理由（降级声明，非遗漏）
 
 遍历测试：tests/unit/test_coupling_registry.py（注册表每行强制项真实存在；
-prose 行必须有理由）。宪法 13.7 正文由该注册表 + 遍历测试承接（八轮 B8 落指针）。
-行编号 R01-R26 与宪法 13.7 原表行序对应，便于销账对照。
+prose 行必须有理由）。宪法 13.7 正文由该注册表 + 遍历测试承接（落指针）。
+行编号 - 与宪法 13.7 原表行序对应，便于销账对照。
 """
 from dataclasses import dataclass, field
 from typing import List, Tuple
@@ -62,7 +62,7 @@ COUPLING_ROWS: List[CouplingRow] = [
         "执行器输出格式变更",
         "action_executor 兜底链 + 自检去重键（去重依赖标题有效）",
         (("testfile", "tests/unit/test_2222_round2_fixes.py"),)
-        + (("prose", "兜底链行为由事故回归测试钉死，格式锚点属内容审查"),),
+        + (("prose", "兜底链行为由回归测试钉死，格式锚点属内容审查"),),
     ),
     CouplingRow(
         "R05_new_pause_point",
@@ -133,20 +133,20 @@ COUPLING_ROWS: List[CouplingRow] = [
         "拆分模块新增顶层符号",
         "re-export 壳清单 + 测试 patch 目标改为调用方命名空间",
         _sym(
-            # skill_runtime/executors 承重壳（R4a）
+            # skill_runtime/executors 承重壳
             "src.video_agent.skill_runtime.executors:ScriptAnalyzeTool",
             "src.video_agent.skill_runtime.executors:StoryboardShotsTool",
-            # prompt_gates 尾部承重壳（gates_spec + gates_script，R4b/S5）
+            # prompt_gates 尾部承重壳（gates_spec + gates_script）
             "src.video_agent.core.prompt_gates:spec_pause_card",
             "src.video_agent.core.prompt_gates:script_present",
-            # chat_service 尾部承重壳（R4c）
+            # chat_service 尾部承重壳
             "src.video_agent.web.chat_service:_acquire_request_slot",
-            # exec_tools 尾部承重壳（exec_split，S5）
+            # exec_tools 尾部承重壳（exec_split）
             "src.video_agent.skill_runtime.exec_tools:_KE_TASK",
-            # 八轮 B1-B3 新壳
+            # 新壳
             "src.video_agent.core.fc_tool_runner:format_tool_results",
             "src.video_agent.web.action_executor:StudioActionExecutor._apply_generate_image",
-            # 九轮 B3/B3b 新壳（exec_media_writer/exec_media_gen/gates_cards 迁出后 re-export）
+            # 新壳（exec_media_writer/exec_media_gen/gates_cards 迁出后 re-export）
             "src.video_agent.skill_runtime.exec_tools:WriteMediaPromptTool",
             "src.video_agent.skill_runtime.exec_tools:AudioGenerateTool",
             "src.video_agent.core.prompt_gates:SPEC_GATE_ERROR",

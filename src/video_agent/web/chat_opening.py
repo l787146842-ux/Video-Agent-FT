@@ -1,4 +1,4 @@
-"""开场编排域（R4c 自 chat_service.py 切出）：请求幂等/历史截断/技能解析/暂停闭环消费前的拼装。"""
+"""开场编排域（自 chat_service.py 切出）：请求幂等/历史截断/技能解析/暂停闭环消费前的拼装。"""
 import asyncio
 import re
 import time
@@ -18,7 +18,7 @@ from src.video_agent.web.multimodal_builder import (
 from src.video_agent.web.provider_config import (
     get_provider_config,
 )
-from src.video_agent.web.sse import sse_event_generator  # noqa: F401  （B6 保留 sse.py 为正常模块；本行仅兼容旧导入路径）
+from src.video_agent.web.sse import sse_event_generator  # noqa: 1 （保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.memory import MemoryManager
@@ -37,7 +37,7 @@ from src.video_agent.web.chat_consume import (
 )
 
 
-# 请求幂等防护（P2）：同一 request_id 正在处理中时拒绝重复提交，
+# 请求幂等防护：同一 request_id 正在处理中时拒绝重复提交，
 # 防止 SSE 断连重发/双标签页重复发送导致操作重复落盘。
 # 完成后即移除，不影响断线重连后的正常重发。
 _INFLIGHT_REQUESTS: set = set()
@@ -120,8 +120,8 @@ def _resolve_skill_name_for_injection(
     """Skill 全文硬注入的键名兜底：前端选中项（skill_name）优先；
     选中项为空但消息携带了 Skill 引用块（skill_slug）时，按 slug 解析出 Skill 名称，
     保证「随消息发送过的 Skill 必定全文注入」；两者皆空时先按消息文本匹配已注册 Skill
-    （6666 事故：直接发 Skill 名也要能绑定），再回退项目 usedSkills 末位
-    （7777 事故：后续轮次不带 Skill 导致执行器「未注册」）。
+    （直接发 Skill 名也要能绑定），再回退项目 usedSkills 末位
+    （后续轮次不带 Skill 导致执行器「未注册」）。
     """
     if skill_name:
         return skill_name
@@ -146,7 +146,7 @@ def _resolve_skill_name_for_injection(
 
 
 def _build_prelude_notes(resolved_skill: str) -> List[tuple]:
-    """前奏时间线（只登记真实发生的事件，8888 事故：不得用假操作冒充工具动作）。
+    """前奏时间线（只登记真实发生的事件， ：不得用假操作冒充工具动作）。
 
     只保留「加载 Skill 流程基线」——它对应 prompt_builder 每轮真实注入当前 Skill 的
     <planner> 章节；「读取/存档上传文档」由 read_uploaded_doc 工具真实发生时记录，
@@ -160,7 +160,7 @@ def _build_prelude_notes(resolved_skill: str) -> List[tuple]:
 def _resolve_summary_adapter(body, candidates: List[tuple]) -> Optional[BaseChatAdapter]:
     """解析记忆摘要专用 adapter：摘要无需主模型能力，固定走便宜模型省 token。
 
-    优先级（B8 策略表化）：模型策略表 summary 角色（provider:model）>
+    优先级（策略表化）：模型策略表 summary 角色（provider:model）>
     settings.memory_summary_model > fallback 链末位 > None（跟随主模型）。
     解析失败静默回落 None（摘要仍走主模型，功能不中断）。
     """
@@ -187,7 +187,7 @@ def _resolve_summary_adapter(body, candidates: List[tuple]) -> Optional[BaseChat
 def _create_chat_adapter(provider_id: str, model: str):
     """按供应商协议创建 chat adapter。
 
-    4-4 双轨退役（ADR-0001，audit-0819）：非 FC 聊天通道（gemini-cli 协议
+    4-4 双轨退役（ADR-0001）：非 FC 聊天通道（gemini-cli 协议
     agy CLI）已删除，CLI 协议仅保留生图职能；选中 CLI 供应商聊天直接报
     人话错误（错误分层气泡展示）。
     """
@@ -212,7 +212,7 @@ def _build_meta_note(elapsed_secs: float, steps: int, applied: int) -> str:
 
 
 def _record_active_skill(svc, body: Any) -> None:
-    """B4/F30：当前技能三本账收敛——本轮实际激活了 Skill（skill_name/skill_slug
+    """：当前技能三本账收敛——本轮实际激活了 Skill（skill_name/skill_slug
     可解析到已注册 Skill）就记入项目 usedSkills，不再依赖消息携带 chip；
     usedSkills 是唯一持久事实源（localStorage 仅作跨会话记忆）。"""
     name = str(getattr(body, "skill_name", "") or "").strip()
@@ -234,7 +234,7 @@ def _record_active_skill(svc, body: Any) -> None:
 
 
 async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_context: bool) -> str:
-    """开场公共编排（814F2：流式/非流式双路径单一实现，消除双份复制）。
+    """开场公共编排（流式/非流式双路径单一实现，消除双份复制）。
 
     暂停闭环（消费上轮暂停态）+ 规格定稿/向导消费 + 附件降级注入，
     返回拼好的 LLM 用户消息文本。调用方需保证同一请求只调一次。
@@ -258,7 +258,7 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
 
 
 def _store_gate_overrides(svc, overrides) -> None:
-    """814F7（§2.4）：把用户「本次放行」的 rule_id 列表写入 interaction，
+    """（§2.4）：把用户「本次放行」的 rule_id 列表写入 interaction，
     由本次请求的 Planner 消费一次即清除（单次生效、全程留痕）。
     调用方需持有 svc.lock。"""
     cleaned = [r for r in (overrides or []) if isinstance(r, str) and r.strip()]

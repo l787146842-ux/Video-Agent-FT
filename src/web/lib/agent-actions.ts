@@ -18,7 +18,7 @@ import type { AgentChatRequest, AnyGroup, MediaType, RichContentPart } from '@/t
 /**
  * Agent 可调取的素材 = 故事板全部草稿卡（关键元素/分镜/音频）中已有媒体的 URL。
  * 未归类素材（state.assets）不参与上下文——它是从故事板移除的素材，agent 不可调取。
- * B5/F35：请求体瘦身——按「选中草稿优先」排序并封顶（图 9=MAX_LLM_IMAGES、视频 10），
+ * ：请求体瘦身——按「选中草稿优先」排序并封顶（图 9=MAX_LLM_IMAGES、视频 10），
  * 素材数百张时不再全量上行；服务端参考注入本就按状态/规格解析，与列表长度无关。
  */
 function selectedAssetUrls(kind: MediaType): string[] {
@@ -103,7 +103,7 @@ export async function sendUserMessage(
     const qid = uid('q');
     chatActions.enqueueMessage({ id: qid, text: message, displayText: queuedDisplay, parts });
     chatActions.setInput('');
-    // B0/F2 恢复：同时登记到服务端运行中任务，轮间注入成功即渲染用户气泡并出队；
+    //  恢复：同时登记到服务端运行中任务，轮间注入成功即渲染用户气泡并出队；
     // 任务已结束则回落「任务完成后自动出队重发」
     sendGuidanceToTask(qid, message);
     showToast(t('rp.queue.enqueued'), 'info');
@@ -174,13 +174,13 @@ export async function sendUserMessage(
     // 引用块随消息持久化，刷新后气泡里的文档/Skill 块可重建
     doc_blocks: docBlocks,
     skill_blocks: skillBlocks,
-    // 会话层一次性闸机豁免（814F7）：「本次放行」按钮携带，后端单次消费即清除
+    // 会话层一次性闸机豁免：「本次放行」按钮携带，后端单次消费即清除
     ...(opts?.gateOverrides?.length ? { gate_overrides: opts.gateOverrides } : {}),
     // 暂停回应结构化回携：后端与 active_pause 匹配后落 pauseAnsweredId/Value 标记
     ...(opts?.pauseResponse ? { pause_response: opts.pauseResponse } : {}),
     // 系统动作标记：后端随用户消息持久化 kind，刷新后仍可重建系统动作行
     ...(opts?.systemAction ? { system_action: opts.systemAction } : {}),
-    // 814H7：会话级推理档位（''=默认/模型原生）
+    // ：会话级推理档位（''=默认/模型原生）
     thinking_level: agentThinkingLevel(),
   };
 

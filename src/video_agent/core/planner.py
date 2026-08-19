@@ -34,7 +34,7 @@ from src.video_agent.core.fc_tool_runner import (
     strip_prior_feedback_images,
 )
 from src.video_agent.core.prompt_builder import PromptBuilder
-# 八轮 B2：轮末组装域切入 planner_output
+# 轮末组装域切入 planner_output
 from src.video_agent.core.planner_output import assemble_response
 from src.video_agent.core import prompt_gates
 # 批 7 拆分协作臂：豁免消费/确定性分诊/FC 响应合并（同名委托保持既有调用/测试路径）
@@ -59,10 +59,10 @@ _CANVAS_TOOLS = frozenset({
     "canvas_delete_node", "canvas_list_assets", "canvas_batch_add_nodes",
 })
 
-# 814R1 曾设流式预执行阶段边界延迟集合：随 4-4 文本轨退役删除
+# 曾设流式预执行阶段边界延迟集合：随 4-4 文本轨退役删除
 # （流式「边写边填」预执行为文本轨基础设施，FC 轨动作经 tool_calls 执行）。
 
-# 选中 Skill 时的流程提醒（814R1 恢复外置：prompts/planner/feedback.md 单一事实源）
+# 选中 Skill 时的流程提醒（恢复外置：prompts/planner/feedback.md 单一事实源）
 _SKILL_REMINDER = load_prompt_section("planner/feedback.md", "SKILL_REMINDER") or (
     "【提醒】当前有选中 Skill：遵守其阶段划分与暂停点，到达确认点时用 "
     "workflow_pause 真正停下，不要一口气做完全部阶段。")
@@ -75,13 +75,13 @@ class PlannerContext:
     selected_draft_id: str = ""
     selected_type: str = ""
     state_json: str = ""
-    # 状态 JSON 的惰性构建器（P0 修复）：多步循环每一轮都会调用一次，
+    # 状态 JSON 的惰性构建器（修复）：多步循环每一轮都会调用一次，
     # 保证模型在每轮看到上一轮执行后的最新工作台状态。
     # 传入 state_json 字符串是旧调用方式的兼容降级（整段固定不变）。
     state_builder: Optional[Callable[[], str]] = None
     skill_name: str = ""         # 前端当前选中的 Skill 名称（目录标注用，提高相关性判断准确率）
-    # audit-0819f：用户键入原文（未经多模态/附件拼装）。分诊（_triage_control）
-    # 只认原话——附件预览里的剧本对白问号不得参与提问判定（1111 事故根因）。
+    # 用户键入原文（未经多模态/附件拼装）。分诊（_triage_control）
+    # 只认原话——附件预览里的剧本对白问号不得参与提问判定（根因）。
     raw_user_text: str = ""
     use_studio_context: bool = True
     asset_mode: str = "bound"    # 资产过滤模式
@@ -92,14 +92,14 @@ class PlannerContext:
     degraded_state_builder: Optional[Callable[[], str]] = None
     # 本轮记忆检索命中明细（4.7：随 done payload 下发前端可视化）
     memory_hits: List[Dict[str, Any]] = field(default_factory=list)
-    # 前奏时间线（Q8/6666/8888）：只登记真实发生的 system 动作（加载 Skill 流程基线），
+    # 前奏时间线（//）：只登记真实发生的 system 动作（加载 Skill 流程基线），
     # 读取/存档由对应工具真实发生时记录，前奏不得冒充工具操作
     prelude_notes: List[tuple] = field(default_factory=list)
-    # 多用户归属（814E6 基础）：可选用户标识，入 trace 审计
+    # 多用户归属（基础）：可选用户标识，入 trace 审计
     user_id: str = ""
-    # 814H7：会话级推理档位（对话栏「推理等级」选择器下发；""=模型原生能力）
+    # 会话级推理档位（对话栏「推理等级」选择器下发；""=模型原生能力）
     thinking_level: str = ""
-    # B0/F2 恢复：轮间引导注入器（任务式传输注册的排队消息，逐轮消费）。
+    # 恢复：轮间引导注入器（任务式传输注册的排队消息，逐轮消费）。
     # 由 web 层按 task_id 装配（agent_task_manager.drain_pending_guidance）；
     # None = 无注入（非任务路径）。
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None
@@ -125,7 +125,7 @@ class PlannerResponse:
     trace: Dict[str, Any] = field(default_factory=dict)
     # 本轮记忆检索命中明细（4.7：随 done payload 下发前端可视化）
     memory_hits: List[Dict[str, Any]] = field(default_factory=list)
-    # 五轮 S3/#3：建议动作按钮（重试/继续，确定性交互；详见 agent_loop 同名字段）
+    # 建议动作按钮（重试/继续，确定性交互；详见 agent_loop 同名字段）
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
     # 暂停卡结构化标识（对标 AskUserQuestion 范式）：三个 confirm 产生源
     # （FC workflow_pause / 编排器机械卡 / 轮末策略卡）在两个汇流点统一签发，
@@ -181,7 +181,7 @@ class Planner:
         self._excluded_tools: frozenset = frozenset()
         # system 超预算时的降级重建器（handle_message 时按 context 装配）
         self._system_degrader: Optional[Callable[[str], str]] = None
-        # 拆出的协作臂（批次5）：prompt 组装与 FC 执行，Planner 保留同名委托
+        # 拆出的协作臂：prompt 组装与 FC 执行，Planner 保留同名委托
         self._prompt_builder = PromptBuilder(
             self._get_skill_docs,
             lambda: self.state_manager.active_project_id,
@@ -288,7 +288,7 @@ class Planner:
         （4-4 双轨退役；文本块解析仅消费系统内部合成的确认块与 mock 输出）。
         stream_hook: 可选 async callable(text)，流式模式下每段 LLM 增量文本回调。
         """
-        # 当前 Skill 归属（7777 事故）：请求未携带 Skill 时回退项目 usedSkills 末位，
+        # 当前 Skill 归属：请求未携带 Skill 时回退项目 usedSkills 末位，
         # 保证后续轮次仍绑定同一执行器；单一实现见 registry.fallback_skill_from_state。
         if not context.skill_name:
             context.skill_name = fallback_skill_from_state(self.state_manager.state_dict)
@@ -296,7 +296,7 @@ class Planner:
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
         self._excluded_tools = self._compute_excluded_tools(context)
         self._system_degrader = self._make_system_degrader(context)
-        # 814H7：会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
+        # 会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
         self._chat_thinking_level = context.thinking_level or ""
 
         # 构建 executor（文本解析路径用）：优先注入的工厂，缺省延迟导入 web 层实现
@@ -326,13 +326,13 @@ class Planner:
         except Exception as _e:
             logger.warning("[GateOverride] gate_override 装配失败（豁免未传达执行器）: {}", _e)
 
-        # audit-0819e 控制流统一（ADR-0002，1111 事故根治）：废除 0818 概率语料
+        # 控制流统一（ADR-0002， 根治）：废除 概率语料
         # 路由——一切消息先过确定性分诊：advance 由外层循环接管，其余交接
         # 受界模型循环（阶段前置闸/步间回收保证顺序不破）。分诊与编排器
-        # 进出全记结构化事件（1111 教训：控制流决策必须可观测，不得考古）。
+        # 进出全记结构化事件（教训：控制流决策必须可观测，不得考古）。
         if settings.pipeline_orchestrator_enabled and context.skill_name:
-            # audit-0819f：分诊只认用户原话——user_message 可能是多模态拼装
-            # （附件预览含剧本对白问号，1111 事故曾误判 handoff）
+            # 分诊只认用户原话——user_message 可能是多模态拼装
+            # （附件预览含剧本对白问号， 曾误判 handoff）
             triage = self._triage_control(
                 context.raw_user_text or user_message, context.skill_name)
             logger.info("[ControlFlow] triage={} skill={}", triage, context.skill_name)
@@ -346,7 +346,7 @@ class Planner:
                 if _orch is not None:
                     return _orch
 
-        # 0818 架构板正批 B3：门禁链与剧本闸装配退役，顺序与原料闸能力
+        # 架构板正批 ：门禁链与剧本闸装配退役，顺序与原料闸能力
         # 迁入 pipeline_orchestrator（状态驱动、机械回卡）。
 
         # 包装 llm_call：处理 FC tool_calls 后返回 (content, finish_reason, fc_applied)
@@ -360,13 +360,13 @@ class Planner:
         confirmation_options_collector: List[Dict[str, Any]] = []
         # docs_written_collector 用于跨多步收集 FC 轨写入的文档名（渲染文档卡片）
         docs_written_collector: List[str] = []
-        # B0/F3：FC 轨闸机拦截/豁免文案收集器（每批 execute() 返回的 warnings），
+        # FC 轨闸机拦截/豁免文案收集器（每批 execute 返回的 warnings），
         # 循环结束后并入 loop_result.warnings，与文本轨拦截可见性对齐
         fc_warnings_collector: List[str] = []
 
         async def _emit_status(text: str, key: str = "", params: Optional[Dict[str, Any]] = None) -> None:
             """推理过程可视化：把 FC 工具执行进度实时推给前端状态栏。
-            固定文案携带 key+params（四轮 R3/#5：前端按 locale 翻译，text 兜底）。"""
+            固定文案携带 key+params（前端按 locale 翻译，text 兜底）。"""
             if on_event is not None:
                 if key:
                     await on_event(status_event(key, text, params))
@@ -381,13 +381,13 @@ class Planner:
         tracer = AgentTracer.get_instance()
 
         async def llm_call(system_prompt: str, messages: List[Dict[str, Any]], hook=None) -> tuple:
-            # N6：主模型调用计数（成本看板平均耗时口径）
+            # 主模型调用计数（成本看板平均耗时口径）
             tracer.record_llm_call()
-            # audit-0819b：确认信号结构化直通——本轮 FC 批的暂停确认由
+            # 确认信号结构化直通——本轮 FC 批的暂停确认由
             # _handle_fc_response 写入本 holder，随 5 元组上抛 agent_loop，
             # 不再合成 studio-actions 文本块回绕解析（对齐 AskUserQuestion 范式）
             _confirm_holder: Dict[str, Any] = {}
-            # 纯规划计时（2222 反馈）：只量模型流/调用本身，FC 工具执行时间
+            # 纯规划计时（反馈）：只量模型流/调用本身，FC 工具执行时间
             # 不计入「Agent 正在规划本步动作」条目，避免规划行虚高掩盖工具耗时
             _t_plan = time.monotonic()
             # 流式路径：使用 chat_stream + hook 回调
@@ -398,9 +398,9 @@ class Planner:
                 async for chunk in self._call_llm_stream(system_prompt, messages):
                     if chunk.type == "text_delta" and chunk.text:
                         content_parts.append(chunk.text)
-                        # audit-0819b 单轨化：确认走结构化 workflow_pause 工具，
+                        # 单轨化：确认走结构化 workflow_pause 工具，
                         # studio-actions 文本块通道已退役（ADR-0001）——
-                        # 正文原样透传，流式抑制器（S01）同批下账
+                        # 正文原样透传，流式抑制器同批下账
                         await hook(chunk.text)
                     elif chunk.type == "reasoning_delta" and chunk.text:
                         # 深度思考：记入 trace（持久化展示）+ 实时推给前端，不进 LLM 上下文
@@ -454,7 +454,7 @@ class Planner:
                             feedback = feedback + [{"type": "text", "text": reminder}]
                         else:
                             feedback += reminder
-                    # token 治理（P1）：新一轮回喂入库前，把更早轮次的 read_* 全文
+                    # token 治理：新一轮回喂入库前，把更早轮次的 read_* 全文
                     # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
                     # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
                     # 短对话保留全文；选中 Skill 不受影响（它硬注入在 system prompt 里）
@@ -498,7 +498,7 @@ class Planner:
             between_steps=_between_steps_reclaim,
         )
 
-        # 轮末组装委托 planner_output（八轮 B2 切出）：warnings 并入/总结强入/
+        # 轮末组装委托 planner_output（切出）：warnings 并入/总结强入/
         # 占位替换/双轨收集器去重/原料提醒卡覆盖/响应构造，行为不变。
         # web 层聚合工具延迟导入（同 executor_factory 回落模式；patch 目标=本命名空间）
         from src.video_agent.web.action_descriptions import aggregate_action_log
@@ -554,8 +554,8 @@ class Planner:
         async def on_event(event: Dict[str, Any]) -> None:
             etype = event.get("type", "")
             if etype == "step_started":
-                # 五轮 S1/#1：队列级 status 走 status_event key+params（i18n 残留清偿，
-                # 同四轮 R3/#5 模式）；payload 携带完整 status 事件，chat_service 透传
+                # 队列级 status 走 status_event key+params（i18n 残留清偿，
+                # 同 模式）；payload 携带完整 status 事件，chat_service 透传
                 step = event.get("step", 1)
                 max_steps = event.get("max_steps", MAX_STEPS)
                 if step > 1:
@@ -601,7 +601,7 @@ class Planner:
         task = asyncio.create_task(_run())
 
         # 消费队列事件并 yield；消费方提前关闭（如 SSE 客户端断连）时
-        # 必须取消后台任务，否则孤儿任务继续烧 token 并写状态（P0-1）
+        # 必须取消后台任务，否则孤儿任务继续烧 token 并写状态（-1）
         try:
             while True:
                 item = await queue.get()
@@ -623,7 +623,7 @@ class Planner:
             return
 
         result = result_holder[0] if result_holder else PlannerResponse()
-        # B2/F17：空回复占位统一由前端渲染（「（空回复）」单一形态），
+        # 空回复占位统一由前端渲染（「（空回复）」单一形态），
         # 后端流式 done 不再替换占位文案（非流式路径仍以 result.text 原样返回）
 
         yield PlannerEvent(type="done", payload={
@@ -647,7 +647,7 @@ class Planner:
 
     def _build_system_prompt(self, context: PlannerContext) -> str:
         """构建 system prompt（委托 PromptBuilder；段落顺序为前缀缓存优化）。
-        814R1 恢复双协议瘦身：FC 通道注入瘦身版协议（system_fc.md），文本通道用完整协议。"""
+         恢复双协议瘦身：FC 通道注入瘦身版协议（system_fc.md），文本通道用完整协议。"""
         fc_mode = bool(
             self.llm_adapter is not None
             and getattr(self.llm_adapter, "supports_function_calling", False)
@@ -670,7 +670,7 @@ class Planner:
                 )
             else:
                 # 摘要专用模型：直接裸调用（无工具、无状态注入），成本最小化；
-                # 814H7/B8：辅助摘要档位独立于主模型（策略表 summary 角色 > 全局设置）
+                # /：辅助摘要档位独立于主模型（策略表 summary 角色 > 全局设置）
                 from src.video_agent.core import model_policy
 
                 resp = await adapter.chat(
@@ -696,7 +696,7 @@ class Planner:
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
         max_tokens = int(self._context_window() * settings.token_budget_ratio)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=self._system_degrader)
-        # 实时上下文度量（2222 反馈）：截断后的真实消息记入 live 注册表，
+        # 实时上下文度量（反馈）：截断后的真实消息记入 live 注册表，
         # context-usage 接口推理中即可看到用量随轮次增长
         record_live_context(self.state_manager.active_project_id, full_messages)
 
@@ -724,7 +724,7 @@ class Planner:
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
         max_tokens = int(self._context_window() * settings.token_budget_ratio)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=self._system_degrader)
-        # 实时上下文度量（2222 反馈）：同 _call_llm，推理中用量可见
+        # 实时上下文度量（反馈）：同 _call_llm，推理中用量可见
         record_live_context(self.state_manager.active_project_id, full_messages)
 
         if self.llm_adapter is None:

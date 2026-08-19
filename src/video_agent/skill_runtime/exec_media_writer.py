@@ -1,4 +1,4 @@
-"""媒体提示词编写族（九轮 B3 自 exec_tools.py 切出，R4a 拆分模式延续）。
+"""媒体提示词编写族（自 exec_tools.py 切出， 拆分模式延续）。
 
 write_prompt 批处理支撑（_coverage_categories/_prompt_coverage_note/
 _pending_prompt_groups/_production_param_note/_write_prompt_batch）+
@@ -122,13 +122,13 @@ def _prompt_coverage_note(state: Dict[str, Any], target: str) -> str:
     return ""
 
 
-# 提示词编写的分批参数（2222 事故：61 个元素一次生成提示词远超 120s 读超时）
-# 888 事故复盘：每批 8 条长提示词+思考挤爆 8192 输出额度 → 缩到 4 条（甜点位：
+# 提示词编写的分批参数（61 个元素一次生成提示词远超 120s 读超时）
+# 888 复盘：每批 8 条长提示词+思考挤爆 8192 输出额度 → 缩到 4 条（甜点位：
 # 每批输出三四千 token 不爆额度，失败时浪费更少、续写更顺；调用次数仅翻倍）
 _PROMPT_BATCH_SIZE = 4    # 每批编写的分组数：单次调用输出小不超时，且每批落盘可中途审阅
 
 
-_PROMPT_BATCH_MAX_TOKENS = 16384  # 批次输出预算（与拆解执行器同档；8192 是 888 事故遗漏）
+_PROMPT_BATCH_MAX_TOKENS = 16384  # 批次输出预算（与拆解执行器同档；8192 是 888 遗漏）
 
 
 _PROMPT_MAX_BATCHES = 48  # 分批循环上限（防无进展死循环；缩批后同步放宽）
@@ -141,7 +141,7 @@ def _pending_prompt_groups(
 
     overwrite=False（补写语义）：跳过已有提示词的分组，中断/超时后再次调用
     自然从缺失处续写。
-    overwrite=True（重写语义，7777 事故）：目标范围内已有提示词的分组同样纳入，
+    overwrite=True（重写语义）：目标范围内已有提示词的分组同样纳入，
     批次写入时以 update_draft 直接覆盖旧提示词——不先清空，未轮到的分组
     保留旧提示词，中断无损失。
     target 传具体 group_id/draft_id 时收窄到对应单个分组（单张重写入口）；
@@ -169,7 +169,7 @@ def _pending_prompt_groups(
 
 
 def _production_param_note(state: Dict[str, Any], has_ke: bool, has_shots: bool) -> str:
-    """制作参数注入（7777 二轮）：Skill 要求每份 Prompt Draft 包含推荐模型与分辨率，
+    """制作参数注入：Skill 要求每份 Prompt Draft 包含推荐模型与分辨率，
     从规格文档取真实渠道/分辨率/时长值给模型照抄，防止自行拍板。"""
     from src.video_agent.web.provider_config import spec_media_preference, spec_production_params
 
@@ -252,7 +252,7 @@ async def _write_prompt_batch(
             if titles:
                 line += f"；本镜头出场元素：{'、'.join(titles)}"
         lines.append(line)
-    # @引用规则移植（7777 事故）：写提示词的职能从主模型搬到执行器后，
+    # @引用规则移植：写提示词的职能从主模型搬到执行器后，
     # planner/system.md 里的 @规则没有跟过来，导致分镜提示词不 @ 关键元素；
     # 此处显式注入，与主模型路径口径一致
     at_rule = (
@@ -261,14 +261,14 @@ async def _write_prompt_batch(
         "系统生成时会自动把对应素材作为参考素材随请求发送，并把 @名称 改写为"
         "[参考图N：元素标题] 位置标记，无需你手动处理参考素材。"
     ) if has_shots else ""
-    # 制作参数注入（7777 二轮）：推荐模型/分辨率/时长上限取自规格文档
+    # 制作参数注入：推荐模型/分辨率/时长上限取自规格文档
     prod_note = _production_param_note(svc.state_dict, has_ke, has_shots)
     system = exec_common._skill_system_prompt(
         tool_name, skill_name,
         "【分批任务边界】本轮只为本批列出的分组编写提示词：只输出 update_draft"
         "（缺卡片用 add_draft），每个 patch 必须含非空 prompt；"
         "本批之外的分组、新建故事板结构分组、触发生成都不属于本任务范围。"
-        # 誊写任务直出指令（888 事故：推理模型把输出额度耗在思考上致零产出）：
+        # 誊写任务直出指令（888 ：推理模型把输出额度耗在思考上致零产出）：
         # 提示词编写是按规矩翻译的誊写题，推理收益极小，直出优先
         "\n【输出要求】直接输出 studio-actions JSON 结果，"
         "禁止先输出长篇分析/推理过程。"
@@ -294,7 +294,7 @@ async def _write_prompt_batch(
         f"{analysis_hint or '（暂无剧本分析摘要）'}\n\n"
         f"当前工作台状态：\n{state_ctx}"
     )
-    # 流式逐卡落盘（Q5）：写好一张提示词卡立即写入左侧，不等本批全部生成完
+    # 流式逐卡落盘：写好一张提示词卡立即写入左侧，不等本批全部生成完
     applied, warnings, content, finish = await exec_common._stream_actions_progressive(
         tool_name, skill_name, system, user, svc, skill_content,
         provider=provider, model=model, max_tokens=max_tokens, flush_n=2,
@@ -353,22 +353,22 @@ class WriteMediaPromptTool:
                            if params.overwrite else "目标范围内所有草稿均已持有提示词，无需编写"),
                 "warnings": [],
             })
-        # 分批编写（2222 事故：61 个元素一次生成提示词超 120s 读超时，重试三次全失败）。
+        # 分批编写（61 个元素一次生成提示词超 120s 读超时，重试三次全失败）。
         # 每批分组少、单次输出小不超时，写完即落盘：用户中途停止或单批超时
         # 都不丢已完成批次，再次调用时按客观状态从缺失分组自动续写。
         applied = 0
         warnings: List[str] = []
         total = len(pending)
         batch_no = 0
-        batch_times: List[float] = []  # 各批耗时（M6：用于估算剩余时间）
+        batch_times: List[float] = []  # 各批耗时（用于估算剩余时间）
 
         # 进度锚点分模式：
-        # - 补写模式：客观重列"无提示词分组"（原逻辑）；
-        # - 重写模式：目标终将全部持有提示词，"有无"不再是锚点，
-        #   改用"批前后分组提示词签名是否变化"客观判定哪些已重写。
+        # 补写模式：客观重列"无提示词分组"（原逻辑）；
+        # 重写模式：目标终将全部持有提示词，"有无"不再是锚点，
+        # 改用"批前后分组提示词签名是否变化"客观判定哪些已重写。
         all_targets = pending if params.overwrite else []
         done_ids: set = set()
-        # 撞线即扩额（888 事故：出现一次撞上限就当预算不足处理）：
+        # 撞线即扩额（888 ：出现一次撞上限就当预算不足处理）：
         # 后续批次预算翻倍，直到 32768 封顶
         batch_budget = _PROMPT_BATCH_MAX_TOKENS
 
@@ -385,7 +385,7 @@ class WriteMediaPromptTool:
                 return [item for item in all_targets if item[1].get("id") not in done_ids]
             return _pending_prompt_groups(svc.state_dict, params.target)
 
-        # 长任务进度上报（M6）：开局告知总批次规模，用户知道在等什么
+        # 长任务进度上报：开局告知总批次规模，用户知道在等什么
         await emit_progress(
             f"开始分批{'重写' if params.overwrite else '编写'}提示词：{total} 个分组待写，"
             f"约 {math.ceil(total / _PROMPT_BATCH_SIZE)} 批（每批落盘，可中断可续写）…"
@@ -421,7 +421,7 @@ class WriteMediaPromptTool:
                 filled = filled_raw
             applied += filled
             new_pending = _remaining()
-            # 0817 B17：语言闸拒收也触发批内即时纠正——全英文等硬拒带上拒因
+            # 语言闸拒收也触发批内即时纠正——全英文等硬拒带上拒因
             # 立即重写，不再走「全部写完再拦 → 整工具失败从头重做」的高成本路径
             _gate_rejects = [str(w) for w in warns
                              if prompt_gates.LANG_EN_HARD_PREFIX in str(w)]
@@ -429,7 +429,7 @@ class WriteMediaPromptTool:
             if _zero_progress or _gate_rejects:
                 if _zero_progress:
                     # 本批零进展（如写了空卡/写错分组）：先批内纠正重试一次
-                    #（3333 事故：直接判失败会把剩余批次也丢掉，交给外层重试又从头重来）；
+                    #（直接判失败会把剩余批次也丢掉，交给外层重试又从头重来）；
                     # 纠正后仍零进展才熔断，按未完成处理
                     logger.warning(
                         f"[SkillExec] 提示词分批编写：第 {batch_no} 批零进展，立即纠正重试"
@@ -473,7 +473,7 @@ class WriteMediaPromptTool:
                     pending = new_pending
                     break
             batch_times.append(time.monotonic() - batch_t0)
-            # 完成一批即显（Q1）：本批提示词落盘后立即下发快照，左侧草稿卡
+            # 完成一批即显：本批提示词落盘后立即下发快照，左侧草稿卡
             # 逐批亮出来，不等全部写完；同时时间线记一条子步骤明细
             _batch_written = len(pending) - len(new_pending)
             if _batch_written > 0:
@@ -495,7 +495,7 @@ class WriteMediaPromptTool:
             lack = "未完成重写" if params.overwrite else "缺少提示词"
             note = f"覆盖异常：写入后仍有 {len(pending)}/{total} 个分组{lack}（已完成 {done} 个）"
             logger.warning(f"[SkillExec] {note}")
-            # 部分完成事实进账本（888 事故：只写完 8/16 却无人知晓）：
+            # 部分完成事实进账本（888 ：只写完 8/16 却无人知晓）：
             # 下一轮模型能从工作台状态直接看到「只完成了一半」
             svc.record_flow_event(
                 "write_media_prompt_partial",

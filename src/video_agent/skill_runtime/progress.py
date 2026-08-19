@@ -1,4 +1,4 @@
-"""执行器进度上报（M6）：长任务批次 x/y 与预计剩余时间实时推给前端状态栏。
+"""执行器进度上报：长任务批次 x/y 与预计剩余时间实时推给前端状态栏。
 
 用 contextvar 绑定当前任务的事件通道：FC 轨（fc_tool_runner 工具调用处）与
 文本轨（agent_loop 执行 executor 动作处）在调用执行器前 bind_progress_emitter，
@@ -52,7 +52,7 @@ async def emit_progress(text: str) -> None:
 async def emit_timeline_note(
     summary: str, *, name: str = "executor_substep", ok: bool = True, elapsed_ms: float = 0.0,
 ) -> None:
-    """执行器子步骤过程明细（Q2：模型的一切操作都要进时间线）。
+    """执行器子步骤过程明细（模型的一切操作都要进时间线）。
 
     双通道记录：持久化 trace（刷新后仍在）+ 实时时间线事件（推理中可见）。
     未绑定事件通道时仅记 trace（单测/CLI 场景不受影响）。
@@ -61,7 +61,7 @@ async def emit_timeline_note(
         return
     try:
         from src.video_agent.core.tracer import AgentTracer
-        # 814G2：子步骤缓冲挂到父工具条目之后（持久化顺序 = live 顺序）
+        # 子步骤缓冲挂到父工具条目之后（持久化顺序 = live 顺序）
         AgentTracer.get_instance().record_subaction(
             name=name, summary=summary, elapsed_ms=elapsed_ms, ok=ok,
         )
@@ -82,7 +82,7 @@ async def emit_timeline_note(
 
 
 async def emit_state_refresh(count: int = 1) -> None:
-    """状态快照即时下发（Q3 首拆即显）：执行器批次落盘后立即通知前端
+    """状态快照即时下发（首拆即显）：执行器批次落盘后立即通知前端
     刷新故事板，不等整个工具调用结束。chat_service 收到 actions_applied
     会附上全量快照，前端左栏卡片当场亮出来。"""
     emitter = _progress_var.get()

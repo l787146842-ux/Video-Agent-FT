@@ -2,7 +2,7 @@
 
 每个执行器只注入自己对应的 Skill 章节（registry.tool_sections），
 独立完成「读输入 → LLM 调用/组装 → 结构化校验 → 写状态」。
-LLM 类执行器走结构化输出轨（response_format=json_object + 硬校验，audit-0819d）。
+LLM 类执行器走结构化输出轨（response_format=json_object + 硬校验）。
 """
 import hashlib
 import json
@@ -67,7 +67,7 @@ from src.video_agent.skill_runtime.exec_spec import (
 )
 
 
-from src.video_agent.skill_runtime.exec_common import SkillToolInput  # 九轮 B3 下沉后 re-export 保路径
+from src.video_agent.skill_runtime.exec_common import SkillToolInput  # 下沉后 re-export 保路径
 
 
 class ScriptAnalyzeInput(SkillToolInput):
@@ -102,7 +102,7 @@ class ScriptAnalyzeTool:
         content = str(doc.get("content") or "")
         if not content:
             return exec_common.SkillToolResult(success=False, error="上传文档没有可解析的文本内容（扫描版 PDF 需改用文本/图片上传）")
-        # 0817 B15：幂等——同一剧本（内容指纹未变）且无附加要求时直接复用
+        # 幂等——同一剧本（内容指纹未变）且无附加要求时直接复用
         # 既有分析（零 LLM），防冗余重跑导致的耗时与正文重复总结
         _fp = hashlib.sha1(content[:12000].encode("utf-8", "ignore")).hexdigest()[:16]
         cached = svc.state_dict.get("analysis") or {}
@@ -118,7 +118,7 @@ class ScriptAnalyzeTool:
                 "key_points": cached.get("key_points") or [],
                 "cached": True,
                 "detail": (
-                    # P3：回喂只陈述客观事实，展示职责归层 9 代码
+                    # 回喂只陈述客观事实，展示职责归层 9 代码
                     f"《{doc.get('name')}》剧本未变更，复用既有分析。"
                     f"一句话总结：{cached['summary']}"
                 ),
@@ -129,7 +129,7 @@ class ScriptAnalyzeTool:
             f"素材全文：\n{content[:exec_common._script_inject_limit()]}\n\n"
             f"用户附加要求：{params.user_text or '无'}"
         )
-        # 长任务进度上报（M6）：独立 LLM 调用前告知用户在等什么
+        # 长任务进度上报：独立 LLM 调用前告知用户在等什么
         await emit_progress("正在解析剧本素材（独立 LLM 分析，预计数十秒）…")
         try:
             data = await exec_spec._llm_json_call(
@@ -165,12 +165,12 @@ class ScriptAnalyzeTool:
         return exec_common.SkillToolResult(success=True, data={
             "summary": summary,
             "key_points": key_points,
-            # P3：去祈使化（总结展示归属机械链路，不在本层教模型）
+            # 去祈使化（总结展示归属机械链路，不在本层教模型）
             "detail": f"已分析《{doc.get('name')}》。一句话总结：{summary}",
         })
 
 
-# 五轮 S5：任务词与故事板拆解域实现体切出至 exec_split.py（文件瘦身）；
+# 任务词与故事板拆解域实现体切出至 exec_split.py（文件瘦身）；
 # 本文件尾部 re-export 保持既有引用路径不变（登记壳，见尾块注释）。
 
 class StoryboardKeyElementsTool:
@@ -222,7 +222,7 @@ class StoryboardAudioTool:
 
 
 def _resolve_section_text(entry: Optional[Any], section: str) -> str:
-    """通用章节解析（814E1）：stage key → flova tag → 标题关键字 → 任意 <tag>。
+    """通用章节解析：stage key → flova tag → 标题关键字 → 任意 <tag>。
 
     未解析返回空串（调用方报错并附可用章节清单）。
     """
@@ -254,7 +254,7 @@ class SkillSectionRunInput(SkillToolInput):
 class SkillSectionRunTool:
     name = "skill_section_run"
     description = (
-        "通用章节执行器（814E1）：把当前 Skill 的任意章节作为唯一依据注入独立执行器，"
+        "通用章节执行器：把当前 Skill 的任意章节作为唯一依据注入独立执行器，"
         "LLM 产出 studio-actions 后由系统应用并校验。适用于没有专属执行器的章节"
         "（自定义 tag / 本地改写标题）。返回 applied 数量与警告。"
     )
@@ -306,7 +306,7 @@ def _stage_done_by_executors(executors: List[str], state: Dict[str, Any]) -> Opt
     return all(p(state) for p in probes)
 
 
-# 九轮 B3：媒体生成族执行器实现体迁 exec_media_writer / exec_media_gen（注册表引用所需）
+# 媒体生成族执行器实现体迁 exec_media_writer / exec_media_gen（注册表引用所需）
 from src.video_agent.skill_runtime.exec_media_writer import WriteMediaPromptTool
 from src.video_agent.skill_runtime.exec_media_gen import AudioGenerateTool, VideoAssemblerTool
 
@@ -325,13 +325,13 @@ def build_executor_tool(name: str):
     """按动作名构造执行器实例（文本动作轨用）；未知名返回 None。"""
     cls = EXECUTOR_TOOL_CLASSES.get(name)
     return cls() if cls else None
-# R4a 补：角标排序家族实现体在 exec_common，此处 re-export 保持既有直引
+# 补：角标排序家族实现体在 exec_common，此处 re-export 保持既有直引
 from src.video_agent.skill_runtime.exec_common import (
     _BADGE_CATEGORY_KEYS,
     _badge_category_rank,
     _sort_key_elements_by_badge,
 )
-# 五轮 S5：任务词与故事板拆解域实现体在 exec_split.py，此处 re-export 保持
+# 任务词与故事板拆解域实现体在 exec_split.py，此处 re-export 保持
 # 既有引用路径不变（宪法 §12 登记壳；壳到期制登记：长期保留·架构承重——
 # executors/__init__ 与测试经 exec_tools.* / executors.* 引用，迁移需全量
 # 改引用并同步 test patch 目标）
@@ -347,7 +347,7 @@ from src.video_agent.skill_runtime.exec_split import (
     _selfcheck_key_elements,
 )
 
-# 九轮 B3：媒体提示词/媒体生成族实现体迁出后 re-export，保持既有引用路径不变
+# 媒体提示词/媒体生成族实现体迁出后 re-export，保持既有引用路径不变
 #（宪法 §12 登记壳；壳到期制登记：长期保留·架构承重——executors/__init__ 与
 # 测试经 exec_tools.* 引用，迁移需全量改引用并同步 test patch 目标）
 from src.video_agent.skill_runtime.exec_media_writer import (

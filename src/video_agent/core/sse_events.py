@@ -1,4 +1,4 @@
-"""SSE 事件名常量（后端唯一权威定义，批次6 契约集中化）。
+"""SSE 事件名常量（后端唯一权威定义， 契约集中化）。
 
 Agent 聊天流协议：POST /api/agent/chat/stream 的 SSE data 帧均为
 {"type": <下列常量>, ...}。前端联合类型见 src/web/types/index.ts 的 SseEvent，
@@ -19,30 +19,30 @@ SSE_REASONING_DELTA = "reasoning_delta"
 SSE_TOOL_STARTED = "tool_started"
 # 过程时间线：工具/操作完成（携带 id/ok/elapsed_ms/result_summary）
 SSE_TOOL_FINISHED = "tool_finished"
-# 文档写入即显（携带 name）：文档卡片不等整轮结束立即渲染（3333 事故：
+# 文档写入即显（携带 name）：文档卡片不等整轮结束立即渲染（
 # 规格卡被同轮的长耗时拆解压在轮末才出现）
 SSE_DOC_WRITTEN = "doc_written"
 # 模型降级即时联动（携带 provider/model）：切换时刻即下发，前端立即把
-# 输入框选择器跳到实际生效的组合（7777 事故：轮被停止时 done 永不到达，
+# 输入框选择器跳到实际生效的组合（轮被停止时 done 永不到达，
 # 仅靠 done payload 的 fallback_model 会漏跳）
 SSE_MODEL_FALLBACK = "model_fallback"
 # 本轮结束（携带完整 payload，含状态快照）
 SSE_DONE = "done"
 # 错误（携带 detail，可携带 error_code 供前端 i18n；
-# audit-0819 增 raw = 上游原始报文，前端「技术详情」折叠展示）
+# 增 raw = 上游原始报文，前端「技术详情」折叠展示）
 SSE_ERROR = "error"
 # 本轮操作已执行（agent_loop 内部事件，前端目前忽略）
 SSE_ACTIONS_APPLIED = "actions_applied"
 # 多步循环的轮次开始（agent_loop 内部事件，前端目前忽略）
 SSE_STEP_STARTED = "step_started"
-# audit-0819b：executing_actions 已随文本块执行路径退役删除（ADR-0001）
-# 引导消息轮间注入成功（携带 id/text，7777 三轮）：前端据此渲染用户气泡
+# executing_actions 已随文本块执行路径退役删除（ADR-0001）
+# 引导消息轮间注入成功（携带 id/text）：前端据此渲染用户气泡
 # 并从排队区移除对应条目（未被注入的条目由排队区兜底在任务结束后发出）
 SSE_GUIDANCE_INJECTED = "guidance_injected"
 
 
 def status_event(key: str, text: str, params: dict | None = None) -> dict:
-    """状态事件统一构造（四轮 R3/#5：i18n 断裂缝清偿）。
+    """状态事件统一构造（i18n 断裂缝。
 
     固定文案的状态事件必须经本函数发射：key+params 供前端按 locale 翻译
     （前端字典键与 key 一致），text 为中文兜底（过渡期保留，前端 key 优先、

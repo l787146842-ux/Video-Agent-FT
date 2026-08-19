@@ -170,7 +170,7 @@ def build_agent_context(
         # 避免用户回复确认后模型感知不到进度、从头重复同一套操作
         "interaction": _build_interaction(raw_state),
         # 剧本分析摘要（script_analyze 产出）：一句话总结 + 关键要点，
-        # 拆解/提示词阶段主模型必须看到，否则会凭空概括（6666 事故）
+        # 拆解/提示词阶段主模型必须看到，否则会凭空概括
         "analysis": _build_analysis(raw_state),
     }
     result = _dumps(snapshot)

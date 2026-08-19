@@ -21,7 +21,7 @@ from loguru import logger
 from src.video_agent.config import settings
 from src.video_agent.utils.paths import DATA_DIR
 
-# reasoning 文本持久化长度（仅展示用，防 trace 膨胀；D11：保留尾部，头部省略）
+# reasoning 文本持久化长度（仅展示用，防 trace 膨胀；：保留尾部，头部省略）
 _REASONING_HEAD_NOTE = "…（前文思考已截断）"
 
 
@@ -35,9 +35,9 @@ class StepTrace:
     finish_reason: str = ""
     # 本轮执行的操作明细（工具/ studio-actions），供前端时间线逐条展示
     actions: List[Dict[str, Any]] = field(default_factory=list)
-    # 本轮闸机判定明细（814R2 恢复：rule_id/层/结果/是否被申诉放行），供审计与前端展示
+    # 本轮闸机判定明细（恢复：rule_id/层/结果/是否被申诉放行），供审计与前端展示
     gates: List[Dict[str, Any]] = field(default_factory=list)
-    # 本轮轮末卡片仲裁明细（四轮 R1/#4：候选策略/胜出者），供 /api/agent/traces 审计
+    # 本轮轮末卡片仲裁明细（候选策略/胜出者），供 /api/agent/traces 审计
     card_decisions: List[Dict[str, Any]] = field(default_factory=list)
     # 本轮 reasoning（深度思考）文本摘要（截断后）
     reasoning: str = ""
@@ -52,8 +52,8 @@ class TraceRecord:
     steps: List[StepTrace] = field(default_factory=list)
     total_actions: int = 0
     user_message_preview: str = ""  # 前 80 字符
-    user_id: str = ""  # 多用户归属（814E6 基础，完整鉴权另行立项）
-    llm_calls: int = 0  # N6：本 trace 含模型调用次数（成本看板口径用）
+    user_id: str = ""  # 多用户归属（基础，完整鉴权另行立项）
+    llm_calls: int = 0  # 本 trace 含模型调用次数（成本看板口径用）
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -83,7 +83,7 @@ class TraceRecord:
 
 class AgentTracer:
     """
-    追踪器（单例）—— 内存保留最近 N 条 + JSONL 文件持久化（W22）。
+    追踪器（单例）—— 内存保留最近 N 条 + JSONL 文件持久化。
     文件超限自动轮转（保留 trace_rotation_keep 份），重载按 trace_id 去重。
     """
 
@@ -94,12 +94,12 @@ class AgentTracer:
         self._traces: Deque[TraceRecord] = deque(maxlen=self.MAX_TRACES)
         self._current: Optional[TraceRecord] = None
         self._step_start: float = 0.0
-        # 全局闸机判定流（814R2 恢复审计）：不依附单次 trace，供 /api/agent/gates 调试端点
+        # 全局闸机判定流（恢复审计）：不依附单次 trace，供 /api/agent/gates 调试端点
         self._recent_gates: Deque[Dict[str, Any]] = deque(maxlen=100)
-        # audit-0819e：控制流结构化事件流（分诊/阶段批/交接/回收）——
-        # 1111 事故教训：路由决策无日志可查只能考古；控制流必须可观测
+        # 控制流结构化事件流（分诊/阶段批/交接/回收）——
+        # 教训：路由决策无日志可查只能考古；控制流必须可观测
         self._control_flow: Deque[Dict[str, Any]] = deque(maxlen=200)
-        # B10：模型降级事件计数（fallback 频率指标；record_fallback 写入）
+        # 模型降级事件计数（fallback 频率指标；record_fallback 写入）
         self._fallback_events: Deque[Dict[str, Any]] = deque(maxlen=200)
         self._persist_path = DATA_DIR / "agent_traces.jsonl"
 
@@ -129,7 +129,7 @@ class AgentTracer:
         self._pending_gates: List[Dict[str, Any]] = []
         self._pending_cards: List[Dict[str, Any]] = []
         self._pending_reasoning: List[str] = []
-        # 执行器子步骤缓冲（814G2）：子步骤先于父工具完成时暂存，
+        # 执行器子步骤缓冲：子步骤先于父工具完成时暂存，
         # 待父工具 record_action 时挂到父条目之后（持久化顺序 = live 顺序）
         self._pending_subs: List[Dict[str, Any]] = []
         return trace_id
@@ -153,9 +153,9 @@ class AgentTracer:
     ) -> Dict[str, Any]:
         """记录当前 step 内的一个操作/工具调用（供前端时间线逐条展示）。
 
-        stage（B2/F15）：大阶段标签（后端权威下发，前端不再按工具名推断）。
+        stage：大阶段标签（后端权威下发，前端不再按工具名推断）。
         返回条目 dict（调用方可事后补填 elapsed_ms，如规划条目先占位后计时）；
-        同时把缓冲的执行器子步骤挂到本条目之后（814G2 顺序一致性）。
+        同时把缓冲的执行器子步骤挂到本条目之后（顺序一致性）。
         """
         entry = {
             "name": name,
@@ -180,7 +180,7 @@ class AgentTracer:
         elapsed_ms: float = 0.0,
         ok: bool = True,
     ) -> None:
-        """执行器子步骤（814G2）：缓冲到 _pending_subs，随下一个父 record_action
+        """执行器子步骤：缓冲到 _pending_subs，随下一个父 record_action
         挂到父条目之后；step 结束仍无父条目时由 end_step 兜底落盘。"""
         if self._current is None:
             return
@@ -209,7 +209,7 @@ class AgentTracer:
         message: str = "",
         scope: str = "",
     ) -> None:
-        """记录一条闸机判定（814R2 恢复审计）：归档到当前 step + 全局调试流"""
+        """记录一条闸机判定（恢复审计）：归档到当前 step + 全局调试流"""
         entry = {
             "ts": time.time(),
             "rule_id": rule_id,
@@ -228,9 +228,9 @@ class AgentTracer:
             self._pending_gates.append(entry)
 
     def record_control_flow(self, event: str, detail: str = "", skill_name: str = "") -> None:
-        """audit-0819e：控制流结构化事件（分诊 triage / 阶段批 stage_batch /
+        """：控制流结构化事件（分诊 triage / 阶段批 stage_batch /
         交接 handoff / 回收 reclaim / 发卡 card）——滚动保留，调用方同步打日志，
-        控制流决策永不无据可查（1111 事故教训）。"""
+        控制流决策永不无据可查（教训）。"""
         self._control_flow.append({
             "ts": time.time(),
             "event": str(event or ""),
@@ -248,7 +248,7 @@ class AgentTracer:
         candidates: List[str],
         winner: str,
     ) -> None:
-        """四轮 R1（#4 仲裁可观测）：记录一次轮末卡片仲裁——
+        """ （#4 仲裁可观测）：记录一次轮末卡片仲裁——
         全部命中候选策略 + 胜出者，随 step 归档，/api/agent/traces 可审计。"""
         if self._current is None:
             return
@@ -260,20 +260,20 @@ class AgentTracer:
         })
 
     def record_fallback(self, provider: str, model: str) -> None:
-        """B10：记录一次模型降级切换（fallback 频率指标；内存滚动保留）。"""
+        """：记录一次模型降级切换（fallback 频率指标；内存滚动保留）。"""
         self._fallback_events.append({
             "ts": time.time(), "provider": provider, "model": model,
         })
 
     def record_llm_call(self) -> None:
-        """N6（三轮审核）：当前 trace 模型调用 +1——成本看板平均耗时仅聚合含模型调用的轮。"""
+        """（审核）：当前 trace 模型调用 +1——成本看板平均耗时仅聚合含模型调用的轮。"""
         if self._current is not None:
             self._current.llm_calls += 1
 
     def metrics(self) -> Dict[str, Any]:
-        """B10：成本看板聚合（内存 + 文件 trace，按 trace_id 去重）。
+        """：成本看板聚合（内存 + 文件 trace，按 trace_id 去重）。
 
-        N6：平均耗时仅聚合 llm_calls>0 的 trace（零模型调用的引导卡/直出卡
+        ：平均耗时仅聚合 llm_calls>0 的 trace（零模型调用的引导卡/直出卡
         不再拉低均值）；旧 trace 无 llm_calls 字段时回落全量口径。
         """
         traces = self.get_recent_traces(limit=200)
@@ -313,11 +313,11 @@ class AgentTracer:
             return
         timing_ms = (time.monotonic() - self._step_start) * 1000
         reasoning = "".join(self._pending_reasoning)
-        # D11：保留尾部（最新思考最有回看价值），头部省略
+        # 保留尾部（最新思考最有回看价值），头部省略
         max_chars = int(getattr(settings, "trace_reasoning_max_chars", 0) or 2000)
         if len(reasoning) > max_chars:
             reasoning = _REASONING_HEAD_NOTE + reasoning[-max_chars:]
-        # 814G2：step 结束仍无父条目承接的子步骤兜底落盘（防丢）
+        # step 结束仍无父条目承接的子步骤兜底落盘（防丢）
         if self._pending_subs:
             self._pending_actions.extend(self._pending_subs)
             self._pending_subs = []
@@ -383,7 +383,7 @@ class AgentTracer:
             if first.exists():
                 first.unlink()
             self._persist_path.rename(first)
-            # N6/L2：总容量上限——合计超 cap 时从编号最大（最旧）的 .N 丢弃
+            # 总容量上限——合计超 cap 时从编号最大（最旧）的 .N 丢弃
             cap = int(getattr(settings, "trace_total_max_bytes", 20_000_000))
             for n in range(keep + 1, 0, -1):
                 files = [self._persist_path] + [

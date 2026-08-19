@@ -1,7 +1,7 @@
-"""剧本原料闸家族（五轮 S5 自 prompt_gates.py 切出；814H9 宪法 13.5 确定性三问收归系统）。
+"""剧本原料闸家族（自 prompt_gates.py 切出； 宪法 13.5 确定性三问收归系统）。
 
 「剧本是否已交」可从客观数据算出（uploadedDocs/analysis）、可机器一眼判定、
-无创作空间 → 收归系统：缺失时提醒/短路/拦越阶，不再出题给模型（1111 事故）。
+无创作空间 → 收归系统：缺失时提醒/短路/拦越阶，不再出题给模型。
 被测试 patch 的符号经 prompt_gates 模块属性引用（尾块登记 re-export，
 patch prompt_gates 即可生效）。
 """
@@ -38,7 +38,7 @@ _SCRIPT_WAIVE_RE = re.compile(
 def script_waive_intent(text: str) -> bool:
     """用户消息是否表达「无剧本豁免」意图（Context≠Consent：只认显式话术）。
 
-    B2/F16：提醒卡选项携带 value（waive_script），点击即机械消费——意图识别
+    ：提醒卡选项携带 value（waive_script），点击即机械消费——意图识别
     不再依赖正则猜话术（正则仅作手工输入的兜底）。"""
     t = str(text or "").strip()
     if t == "waive_script":
@@ -54,9 +54,9 @@ _SCRIPT_QUESTION_RE = re.compile(r"[？?]|什么|为什么|怎么|如何|你是�
 
 
 def script_short_circuit_eligible(text: str) -> bool:
-    """S7 零思考直出准入：含推进意图 且 非提问 且 非长文本粘贴（>500 字视为原料在消息里）。
+    """ 零思考直出准入：含推进意图 且 非提问 且 非长文本粘贴（>500 字视为原料在消息里）。
 
-    提问类消息落回正常 LLM（回复末尾由层 9 附提醒），避免用催传卡答非所问（P2 用户意志优先）。
+    提问类消息落回正常 LLM（回复末尾由层 9 附提醒），避免用催传卡答非所问（用户意志优先）。
     """
     t = str(text or "")
     if len(t) > 500:
@@ -97,7 +97,7 @@ _SCRIPT_UPLOAD_ACK_RE = re.compile(r"^(我去上传|好的，?我去|马上去|�
 def script_upload_ack_intent(text: str) -> bool:
     """用户回应了「我去上传」类话术 → 回等待回执而非再弹提醒卡。
 
-    B2/F16：提醒卡选项 value=upload_script 点击即机械消费；正则仅作手工输入兜底。"""
+    ：提醒卡选项 value=upload_script 点击即机械消费；正则仅作手工输入兜底。"""
     if str(text or "").strip() == "upload_script":
         return True
     return bool(_SCRIPT_UPLOAD_ACK_RE.search(str(text or "")))

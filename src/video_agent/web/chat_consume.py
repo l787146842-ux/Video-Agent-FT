@@ -1,4 +1,4 @@
-"""消费/压缩域（R4c 自 chat_service.py 切出）：会话 compaction/暂停态消费/规格向导消费/卡片枚举压缩。"""
+"""消费/压缩域（自 chat_service.py 切出）：会话 compaction/暂停态消费/规格向导消费/卡片枚举压缩。"""
 import asyncio
 import re
 import time
@@ -17,7 +17,7 @@ from src.video_agent.web.mock_llm import mock_llm_reply
 from src.video_agent.web.multimodal_builder import (
     build_multimodal_content,
 )
-from src.video_agent.web.sse import sse_event_generator  # noqa: F401  （B6 保留 sse.py 为正常模块；本行仅兼容旧导入路径）
+from src.video_agent.web.sse import sse_event_generator  # noqa: 1 （保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.memory import MemoryManager
@@ -32,14 +32,14 @@ __all__ = ["stream_worker", "non_stream_worker", "build_multimodal_content"]
 
 
 
-# 会话级 compaction（814R4 恢复）：压缩后仍完整保留的最近消息条数
+# 会话级 compaction（恢复）：压缩后仍完整保留的最近消息条数
 _HISTORY_COMPACT_KEEP = 4
 
 
 async def _maybe_compact_history(
     history: List[Dict[str, Any]], svc, adapter,
 ) -> List[Dict[str, Any]]:
-    """会话级 compaction（814R4 恢复）：历史超阈值时用便宜模型把较早消息压成摘要。
+    """会话级 compaction（恢复）：历史超阈值时用便宜模型把较早消息压成摘要。
 
     对齐 Anthropic compaction 实践：保留决策与约束、丢弃冗余过程；
     摘要按对话消息数缓存于 interaction.session_summary（消息数变化即失效重建），
@@ -156,7 +156,7 @@ def _consume_pending_confirmation(svc, user_text: str = "") -> str:
         svc.save()
         if promoted:
             logger.info(f"[ConfirmFlow] 用户回应到达：{promoted} 个已展示的 Prompt Draft 晋升为「已确认」")
-    # 晋升兜底（8888 事故）：处于暂停态但 presented 记录缺失（记录链路异常或
+    # 晋升兜底：处于暂停态但 presented 记录缺失（记录链路异常或
     # 草稿经未记录路径写入）时，用户对暂停的回应即视为对当前带提示词草稿的确认，
     # 否则 tag 永远停在 Agent，生成闸反复拦截造成「确认了也出不了图」
     if not presented and interaction.get("awaiting_confirmation"):
@@ -177,7 +177,7 @@ def _consume_pending_confirmation(svc, user_text: str = "") -> str:
     interaction["awaiting_confirmation"] = False
     interaction["confirmation_message"] = ""
     svc.save()
-    # 0817 B13：提示按客观状态机械生成（去 prose 越权）：
+    # 提示按客观状态机械生成（去 prose 越权）：
     # 规格已存在就如实告知，绝不固定发「先写入规格文档」指令；
     # 暂停点归 Skill 阶段边界，平台不 prose 指定
     spec_note = (
@@ -194,7 +194,7 @@ def _consume_pending_confirmation(svc, user_text: str = "") -> str:
 
 
 def _consume_spec_wizard(svc, user_text: str) -> str:
-    """规格向导消费（6666/1111 事故）：用户回应是规格收集暂停的候选项时，
+    """规格向导消费（/）：用户回应是规格收集暂停的候选项时，
     机械落盘为规格文档（系统拼装，模型不手写），返回附加系统提示。
 
     仅当：项目尚无规格文档 + 用户回应含可解析的制作参数/渠道选择或明确确认意图。
@@ -252,17 +252,17 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
         })
     inter = state.setdefault("interaction", {})
     inter["spec_collected"] = True
-    # 8888 二轮：机械落盘也发文档卡片；0817 B14：改为挂起，由用户消息落库后
+    #机械落盘也发文档卡片； ：改为挂起，由用户消息落库后
     # flush_pending_doc_card 补落（修复卡片排在用户选择消息之前的顺序 bug）
     inter["spec_doc_card_pending"] = name
-    # 0817 B21：向导拼装不走工具通道，动作日志天然缺失→合成记账，
+    # 向导拼装不走工具通道，动作日志天然缺失→合成记账，
     # 轮末随 agent 消息 actionLog 下发（§2.5 可见性）
     inter.setdefault("pending_action_log", []).append(
         f"系统拼装并写入规格文档 {name}"
     )
     svc.save()
     logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md")
-    # 0817 B13：回执不 prose 指定子步骤与暂停点（流程/暂停归 Skill 阶段边界）
+    # 回执不 prose 指定子步骤与暂停点（流程/暂停归 Skill 阶段边界）
     return (
         "\n\n（系统：已按你的选择拼装并写入 Final_Video_Spec.md 规格文档，不必再手写规格。"
         "接下来按当前 Skill 流程执行下一阶段；暂停点以 Skill『何时暂停』为准。）"
@@ -270,11 +270,11 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
 
 
 def flush_pending_doc_card(svc, turn_id: str = "") -> str:
-    """0817 B14：用户消息落库后补落向导挂起的文档卡（顺序正确且同轮聚合）。
+    """ ：用户消息落库后补落向导挂起的文档卡（顺序正确且同轮聚合）。
 
-    0817 B19：返回补落的文档名（无挂起返回空串），供调用方发 doc_written
+     ：返回补落的文档名（无挂起返回空串），供调用方发 doc_written
     即显事件（live 可见性双通道与模型写文档同构）。
-    调用点：各落库路径 add_chat_message(user) 之后（G4 四轨）。
+    调用点：各落库路径 add_chat_message(user) 之后（四轨）。
     """
     inter = svc.state_dict.get("interaction") or {}
     name = str(inter.pop("spec_doc_card_pending", "") or "").strip()
@@ -290,7 +290,7 @@ def flush_pending_doc_card(svc, turn_id: str = "") -> str:
 
 
 def drain_pending_action_log(svc) -> List[str]:
-    """0817 B21：取走并清空向导合成记账（轮末合入 agent 消息 actionLog）。"""
+    """ ：取走并清空向导合成记账（轮末合入 agent 消息 actionLog）。"""
     inter = svc.state_dict.get("interaction") or {}
     entries = inter.pop("pending_action_log", None) or []
     if entries:
@@ -299,10 +299,10 @@ def drain_pending_action_log(svc) -> List[str]:
 
 
 async def emit_pending_doc_card(svc, turn_id: str, emit) -> str:
-    """0817 B19：补落向导规格卡并发 doc_written 即显事件（live 可见）。
+    """ ：补落向导规格卡并发 doc_written 即显事件（live 可见）。
 
     前端实时渲染只认 doc_written SSE / done 载荷 documents_written 两通道，
-    向导机械拼装此前两通道都不走 → 不刷新看不见卡（9999 现场）。
+    向导机械拼装此前两通道都不走 → 不刷新看不见卡（现场）。
     """
     name = flush_pending_doc_card(svc, turn_id)
     if name and emit is not None:
@@ -311,7 +311,7 @@ async def emit_pending_doc_card(svc, turn_id: str, emit) -> str:
 
 
 def _finalize_spec_params(svc, user_text: str) -> str:
-    """规格暂停回应定稿（1111 事故）：summary 暂停的「确认」不得定稿规格；
+    """规格暂停回应定稿：summary 暂停的「确认」不得定稿规格；
     spec 暂停的「确认」按展示值定稿；显式选择（分辨率/时长）任意情况下生效。"""
     from src.video_agent.core import prompt_gates
 
@@ -339,7 +339,7 @@ def _finalize_spec_params(svc, user_text: str) -> str:
 
 
 def _compact_card_enumeration(text: str) -> str:
-    """把「N 组 M 卡（名称）：…」式逐卡枚举压缩为一行（8888 事故：正文逐卡罗列
+    """把「N 组 M 卡（名称）：…」式逐卡枚举压缩为一行（正文逐卡罗列
     既耗 token 又撑长卡片）。少于 3 行枚举不触发。"""
     import re
 
@@ -359,7 +359,7 @@ def _compact_card_enumeration(text: str) -> str:
 
 
 def _summary_thinking_level() -> str:
-    """摘要/压缩调用思考档位（B8 策略表化）：策略 summary 角色 > settings.aux_thinking_level。"""
+    """摘要/压缩调用思考档位（策略表化）：策略 summary 角色 > settings.aux_thinking_level。"""
     from src.video_agent.core import model_policy
 
     return model_policy.thinking_for("summary", getattr(settings, "aux_thinking_level", "") or "")

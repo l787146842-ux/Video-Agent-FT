@@ -22,7 +22,7 @@ const [skillId, setSkillSig] = createSignal(localStorage.getItem(KEY_SKILL) || '
 const [assetMode, setAssetModeSig] = createSignal(localStorage.getItem(KEY_ASSET_MODE) || 'bound');
 const [thinkingLevel, setThinkingLevelSig] = createSignal(localStorage.getItem(KEY_THINKING) || '');
 
-/** 814H7 会话级推理档位：''=默认（模型原生）；low/medium/high 透传 reasoning_effort */
+/**  会话级推理档位：''=默认（模型原生）；low/medium/high 透传 reasoning_effort */
 export type ThinkingLevel = '' | 'low' | 'medium' | 'high';
 export const THINKING_LEVEL_OPTIONS: Array<{ value: ThinkingLevel; label: string }> = [
   { value: 'high', label: '高' },
@@ -73,7 +73,7 @@ export function setAgentModel(v: string) {
 }
 
 export function agentSkillId(): string {
-  // B4/F28·D2：默认无技能——localStorage 无值/失效时返回空（不自动回落第一个技能），
+  // ·：默认无技能——localStorage 无值/失效时返回空（不自动回落第一个技能），
   // 用户显式选择 Skill 才激活流程/闸机；SkillPicker 提供「不使用技能」卡。
   const id = skillId();
   if (id && state.skills.some((s) => s.id === id)) return id;
@@ -99,7 +99,7 @@ export function setAgentAssetMode(v: 'bound' | 'all') {
   setAssetModeSig(v);
 }
 
-/** 模型降级即时联动（7777 事故）：切换时刻就把输入框选择器跳到实际生效的组合 */
+/** 模型降级即时联动：切换时刻就把输入框选择器跳到实际生效的组合 */
 export function applyFallbackModel(providerId: string | undefined, modelName: string | undefined) {
   const name = (modelName || '').trim();
   if (!name) return;

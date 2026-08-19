@@ -1,4 +1,4 @@
-"""B8：模型分层策略表——编排/生成/摘要/执行器四角色自动路由的单一事实源。
+"""：模型分层策略表——编排/生成/摘要/执行器四角色自动路由的单一事实源。
 
 业界对标（13.9 模型分层 + Codex/DSH 模型路由实践）：
 - orchestration  主对话/规划（跟随主模型；策略仅作显式覆盖）
@@ -15,9 +15,9 @@ ROLES = ("orchestration", "generation_strong", "summary", "executor")
 _ROLE_KEYS = ("provider", "model", "thinking_level")
 _THINKING_VALUES = ("", "low", "medium", "high")
 
-# audit-0819f 通用搭配默认（用户裁决，取代 0817 B23「默认空」）：
+# 通用搭配默认（用户裁决，取代 「默认空」）：
 # 摘要/执行器机械 = 照章办事的结构化产出，不需要深推理——低档防思考
-# 吃光输出预算（1111 事故根因）；编排/生成跟随主模型全力。用户可在全局
+# 吃光输出预算（根因）；编排/生成跟随主模型全力。用户可在全局
 # 设置页覆盖（UI 可见可改）。
 DEFAULT_POLICY: Dict[str, Dict[str, str]] = {
     "summary": {"provider": "", "model": "", "thinking_level": "low"},
@@ -52,7 +52,7 @@ def resolve_role(role: str) -> Optional[Dict[str, str]]:
 
 
 def thinking_for(role: str, fallback: str = "") -> str:
-    """角色思考档位（audit-0819f 补洞）：用户配置 > env 覆写（调用方 fallback）
+    """角色思考档位（补洞）：用户配置 > env 覆写（调用方 fallback）
     > 通用搭配默认；**不要求 provider 已设**（跟随主模型也可单独定档）。
     """
     entry = _policy().get(role) or {}
@@ -66,7 +66,7 @@ def thinking_for(role: str, fallback: str = "") -> str:
 
 
 def effective_policy() -> Dict[str, Dict[str, str]]:
-    """通用搭配默认 + 用户配置叠加（audit-0819f）：用户值非空即覆盖默认。
+    """通用搭配默认 + 用户配置叠加：用户值非空即覆盖默认。
     供 current_policy（UI 渲染）与 thinking_for 共用——UI 所见即生效。"""
     out: Dict[str, Dict[str, str]] = {
         r: dict(v) for r, v in DEFAULT_POLICY.items()
@@ -96,13 +96,13 @@ def normalize_policy(payload: Any) -> Dict[str, Dict[str, str]]:
             else:
                 cleaned[key] = val
         if cleaned.get("provider") or cleaned.get("thinking_level"):
-            # audit-0819f 补洞：档位可独立于供应商设置（跟随主模型也可定档）；
+            # 补洞：档位可独立于供应商设置（跟随主模型也可定档）；
             # 旧实现无 provider 即丢弃整行，导致分层表「推理」下拉空转。
             out[role] = cleaned
     return out
 
 
 def current_policy() -> Dict[str, Dict[str, str]]:
-    """当前生效策略（供 /api/settings/runtime 返回与前端渲染；audit-0819f：
+    """当前生效策略（供 /api/settings/runtime 返回与前端渲染；：
     含通用搭配默认，UI 所见即生效）。"""
     return effective_policy()

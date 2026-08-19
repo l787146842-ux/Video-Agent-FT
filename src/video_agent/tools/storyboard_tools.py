@@ -84,7 +84,7 @@ class StoryboardCreateGroupTool(BaseTool):
         cat_key = ops.category_for_group_type(params.group_type)
 
         new_id = ops.new_group_id(cat_key)
-        # 0817：标题确定性归一（与文本轨同一 ops 实现，G4 全路径覆盖）
+        # 标题确定性归一（与文本轨同一 ops 实现， 全路径覆盖）
         _raw_title = str(params.title or "")
         _title = ops.normalize_group_title(_raw_title)
         new_group: Dict[str, Any] = {"id": new_id, "title": _title, "desc": params.desc, "drafts": []}
@@ -124,7 +124,7 @@ class StoryboardPatchDraftTool(BaseTool):
                 if ops.patch_draft(draft, params.patch):
                     # 时长参数同步：分镜提示词写入时把分镜时长补印到草稿时长参数
                     ops.sync_shot_duration(group, draft, params.patch)
-                    # 全局设置补印（6666 二轮：与文本轨一致，草稿缺分辨率/时长时
+                    # 全局设置补印（与文本轨一致，草稿缺分辨率/时长时
                     # 按顶部「全局设置」填充，硬参数不依赖规格文档）
                     from src.video_agent.web.provider_config import stamp_draft_spec_preference
                     cat = ops.category_for_group_type(str(group.get("group_type") or ""))
@@ -152,7 +152,7 @@ class StoryboardAddDraftTool(BaseTool):
             draft = ops.append_draft(target_group, params.draft)
             # 时长参数同步：分镜草稿的时长参数与分镜结构对齐（客观兜底）
             ops.sync_shot_duration(target_group, draft)
-            # 全局设置补印（B7 唯一权威源）：草稿未自带供应商时按全局设置填充，
+            # 全局设置补印（唯一权威源）：草稿未自带供应商时按全局设置填充，
             # 防前端默认首选供应商回填污染（参数栏与全局设置不一致）
             from src.video_agent.web.provider_config import stamp_draft_spec_preference
             cat = ops.category_for_group_type(str(params.group_type or ""))

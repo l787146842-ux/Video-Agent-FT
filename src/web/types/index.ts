@@ -3,7 +3,7 @@
  * FTDYB 全局类型定义
  * 精确匹配后端 API 数据模型（从旧 studio/types.ts 迁移 + 规范化）
  *
- * 契约来源纪律（六轮 S2 路线 a，D1 用户终裁；七轮 S2/F1 消费面补齐）：
+ * 契约来源纪律（路线 a， 用户终裁；  消费面补齐）：
  * API 边界请求/响应类型以 api.generated.ts（FastAPI OpenAPI schema 生成）为唯一来源，
  * 本文件只保留别名 re-export 与视图态类型；tsc 编译期即契约门禁。
  * 消费覆盖防回退由 vitest 桥接测试 api-contract.test.ts 机械断言（只升不降）。
@@ -22,11 +22,11 @@
  *   SkillDoc/SkillDocVersion（api/docs.ts）、RuntimeSettings（api/agent.ts 读形态）、
  *   整板保存 payload（stores/studio/storyboard.ts，后端 ProjectStateUpdate 为粗粒度
  *   unknown 字段）——保留手写强类型，后端建模精细化后再迁。
- * - 生成物消费基座站点（生成物为类型来源，手写只做收窄/精化，七轮 S2/F1 登记）：
+ * - 生成物消费基座站点（生成物为类型来源，手写只做收窄/精化，  登记）：
  *   GenerateImageRequest/GenerateVideoRequest（交集精化，api/generate.ts）、
  *   BatchImageRequest（Required 收窄必填）、CanvasDropImagePayload（交集精化，api/canvas.ts）。
  * - 前端无消费路径的生成物（后端端点专用/前端走通用端点）：ModelFallbackPatch
- *   （前端开关走通用 runtime PUT）、TimelinePushRequest（B9b 时间线回画布走 Agent
+ *   （前端开关走通用 runtime PUT）、TimelinePushRequest（时间线回画布走 Agent
  *   工具路径）、Body_upload_files_api_ai_upload_post（multipart 上传）、
  *   DraftCreate/DraftPatch/GroupPatch（草稿操作走整板保存通道）、ProjectStateResponse（空 schema）。
  */
@@ -189,7 +189,7 @@ export interface ChatMessage {
   skillBlocks?: string[];
   /** 本轮已执行操作的中文描述清单（「阶段完成」卡片展开查看具体操作） */
   actionLog?: string[];
-  /** 确认卡片的候选选项（单选卡片，点击即把 value||label 作为回复发送；B2/F16 value 机械消费） */
+  /** 确认卡片的候选选项（单选卡片，点击即把 value||label 作为回复发送； value 机械消费） */
   confirmOptions?: Array<{ label: string; description?: string; group?: string; value?: string }>;
   /** 模型降级等警示行（常驻展示在 agent 气泡上，刷新后仍可见） */
   warnings?: string[];
@@ -197,14 +197,14 @@ export interface ChatMessage {
   memoryHits?: Array<{ date?: string; content: string }>;
   /** 执行轨迹（每轮 step/耗时/操作数，「执行轨迹」折叠区展示） */
   trace?: AgentTrace;
-  /** U1：鉴权/供应商类错误气泡附「检查 API 配置」跳转按钮 */
+  /** ：鉴权/供应商类错误气泡附「检查 API 配置」跳转按钮 */
   settingsHint?: boolean;
-  /** audit-0819：错误气泡的技术详情（上游原始报文），「技术详情」折叠渲染，默认不展开 */
+  /** ：错误气泡的技术详情（上游原始报文），「技术详情」折叠渲染，默认不展开 */
   errorDetail?: string;
-  /** 五轮 S2/#2：轮次唯一标识（同轮正文/文档卡/图片卡共用，渲染层聚合为轮次容器） */
+  /** ：轮次唯一标识（同轮正文/文档卡/图片卡共用，渲染层聚合为轮次容器） */
   turnId?: string;
-  /** 五轮 S3/#3：建议动作按钮（随 done payload 落消息，仅最后一条渲染；
-   * 八轮 B4 扩 next=状态驱动下一步建议，点击机械发送 value） */
+  /** ：建议动作按钮（随 done payload 落消息，仅最后一条渲染；
+   *  扩 next=状态驱动下一步建议，点击机械发送 value） */
   suggestedActions?: Array<{ kind: 'retry' | 'continue' | 'next'; label: string; value: string }>;
   /** 暂停卡结构化标识（后端三个 confirm 产生源统一签发，随 done payload 下发） */
   pauseId?: string;
@@ -217,7 +217,7 @@ export interface ChatMessage {
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
 export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** B2/F15：大阶段标签（后端权威下发） */ stage?: string; }
-/** 闸机判定明细（后端 tracer.record_gate 产出，B2/F13：前端按结构渲染来源标注 chips） */
+/** 闸机判定明细（后端 tracer.record_gate 产出，：前端按结构渲染来源标注 chips） */
 export interface GateRecord {
   rule_id: string;
   layer: 'platform' | 'skill' | 'session' | string;
@@ -238,7 +238,7 @@ export interface AgentTraceStep {
   actions?: TraceAction[];
   /** 本轮 reasoning（深度思考）文本摘要（仅展示，不进下次上下文） */
   reasoning?: string;
-  /** 本轮闸机判定明细（814R2；B2/F13 前端渲染来源标注 chips） */
+  /** 本轮闸机判定明细（前端渲染来源标注 chips） */
   gates?: GateRecord[];
 }
 export interface AgentTrace {
@@ -286,7 +286,7 @@ export interface TaskResult {
 export interface SseStatusEvent {
   type: 'status';
   text: string;
-  /** 四轮 R3/#5：固定文案 i18n 键（前端 locale 字典同键翻译；缺失时回退 text） */
+  /** ：固定文案 i18n 键（前端 locale 字典同键翻译；缺失时回退 text） */
   key?: string;
   /** key 的插值参数 */
   params?: Record<string, string | number>;
@@ -327,10 +327,10 @@ export interface SseDonePayload {
   trace?: AgentTrace;
   /** 本轮 Agent 参考的长期记忆命中（4.7：前端「记忆参考」折叠展示） */
   memory_hits?: Array<{ id?: string; date?: string; content: string }>;
-  /** 五轮 S2/#2：轮次唯一标识（前端同轮消息聚合为轮次容器） */
+  /** ：轮次唯一标识（前端同轮消息聚合为轮次容器） */
   turn_id?: string;
-  /** 五轮 S3/#3：建议动作按钮（retry=机械重发上一条用户消息；continue=发送固定文本；
-   * next=状态驱动下一步建议，八轮 B4） */
+  /** ：建议动作按钮（retry=机械重发上一条用户消息；continue=发送固定文本；
+   * next=状态驱动下一步建议） */
   suggested_actions?: Array<{ kind: 'retry' | 'continue' | 'next'; label: string; value: string }>;
   state?: ServerStateSnapshot | null;
 }
@@ -339,12 +339,12 @@ export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }
 export interface SseActionsAppliedEvent { type: 'actions_applied'; payload?: { count?: number; state?: ServerStateSnapshot | null }; }
 /** 后端 error 事件用 detail 字段，可携带 error_code 供前端 i18n 翻译 */
 export interface SseErrorEvent { type: 'error'; detail?: string; text?: string; error_code?: string; /** audit-0819：上游原始报文（前端折叠展示） */ raw?: string; }
-/** 模型降级即时联动（7777）：切换时刻即下发，前端立即把选择器跳到实际生效的组合 */
+/** 模型降级即时联动：切换时刻即下发，前端立即把选择器跳到实际生效的组合 */
 export interface SseModelFallbackEvent { type: 'model_fallback'; provider?: string; model?: string; }
-/** 引导消息轮间注入成功（7777 三轮）：渲染用户气泡并从排队区移除对应条目 */
+/** 引导消息轮间注入成功：渲染用户气泡并从排队区移除对应条目 */
 export interface SseGuidanceInjectedEvent { type: 'guidance_injected'; id?: string; text?: string; }
-/** 文档写入即显（3333）：独立文档卡片立即渲染，不等整轮 done；
- * 六轮 S5/N4a：后端透传层打戳本轮 turn_id，即显卡严格归入轮次容器 */
+/** 文档写入即显：独立文档卡片立即渲染，不等整轮 done；
+ * ：后端透传层打戳本轮 turn_id，即显卡严格归入轮次容器 */
 export interface SseDocWrittenEvent { type: 'doc_written'; name?: string; turn_id?: string; }
 /** 任务式传输：订阅时先回放累计状态（刷新/切项目重连后恢复进度） */
 export interface AgentTaskReplayPayload {
@@ -386,7 +386,7 @@ export interface Conversation { id: string; title: string; messages: ChatMessage
 export interface ServerStateSnapshot {
   /** 快照所属项目 ID（持久化请求回传，后端据此丢弃跨项目的过期写入） */
   project_id?: string;
-  /** 故事板乐观锁版本（整板保存回携，防陈旧覆盖，D2） */
+  /** 故事板乐观锁版本（整板保存回携，防陈旧覆盖） */
   board_version?: number;
   keyElements?: KeyElementGroup[];
   shots?: ShotGroup[];
@@ -415,7 +415,7 @@ export interface GroupRecord {
   group: AnyGroup;
 }
 
-// ===== Agent 聊天请求（六轮 S2 路线 a：以生成物 ChatRequest 为唯一来源） =====
+// ===== Agent 聊天请求（路线 a：以生成物 ChatRequest 为唯一来源） =====
 // 字段语义注释以后端 routes/agent.py::ChatRequest 为准；本别名使 tsc 编译期
 // 直接校验请求体与后端 schema 的字段一致性（漂移即编译错）。
 export type AgentChatRequest = ChatRequest;

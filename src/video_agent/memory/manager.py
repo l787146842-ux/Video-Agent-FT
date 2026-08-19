@@ -41,7 +41,7 @@ class MemoryManager:
     ):
         base = persist_dir or (DATA_DIR / "memory")
         self._store = VectorStore(base, backend or settings.memory_vector_backend)
-        self._dialog_counts: Dict[str, int] = {}  # B6/F51：按 project_id 分桶
+        self._dialog_counts: Dict[str, int] = {}  # 按 project_id 分桶
         self._write_lock = asyncio.Lock()
         # 实例级覆盖（测试友好）；默认读全局配置
         self._summary_interval = summary_interval or settings.memory_summary_interval
@@ -72,7 +72,7 @@ class MemoryManager:
     def retrieve(
         self, user_message: str, top_k: Optional[int] = None, project_id: str = "",
     ) -> List[MemoryRecord]:
-        """混合检索相关记忆（按项目隔离，P1 修复）"""
+        """混合检索相关记忆（按项目隔离， 修复）"""
         top_k = top_k or settings.memory_max_results
         semantic = self._store.search_semantic(user_message, top_k * 2)
         if semantic is not None:
@@ -144,7 +144,7 @@ class MemoryManager:
 
     def list_records(self, project_id: str = "") -> List[MemoryRecord]:
         """全量记忆清单（管理 API 用）；指定项目时只返回该项目的记忆；
-        排序：置顶优先，其余按时间新→旧（M4）"""
+        排序：置顶优先，其余按时间新→旧"""
         records = self._store.all_records()
         if project_id:
             records = [r for r in records if r.project_id == project_id]
@@ -154,7 +154,7 @@ class MemoryManager:
         )
 
     def pin_record(self, record_id: str, pinned: bool) -> bool:
-        """置顶/取消置顶一条记忆（M4 管理 API 用）；不存在返回 False"""
+        """置顶/取消置顶一条记忆（管理 API 用）；不存在返回 False"""
         return self._store.set_pinned(record_id, pinned)
 
     def delete_record(self, record_id: str) -> bool:
@@ -171,12 +171,12 @@ class MemoryManager:
         project_id: str = "",
     ) -> Optional[MemoryRecord]:
         """
-        记录一轮对话（按 memory_summary_interval 间隔触发摘要写入）。
+        记录对话（按 memory_summary_interval 间隔触发摘要写入）。
         返回写入的 MemoryRecord；未触发/未启用返回 None。
         """
         if not settings.memory_enabled:
             return None
-        # B6/F51：摘要触发计数按项目分桶（此前全局单例计数，跨项目混合触发：
+        # 摘要触发计数按项目分桶（此前全局单例计数，跨项目混合触发：
         # A 项目 2 条 + B 项目 1 条会触发第 3 条的摘要）
         self._dialog_counts[str(project_id or "")] = \
             self._dialog_counts.get(str(project_id or ""), 0) + 1

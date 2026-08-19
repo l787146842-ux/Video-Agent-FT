@@ -1,4 +1,4 @@
-"""system prompt 组装（从 planner.py 拆出，批次5 文件瘦身）。
+"""system prompt 组装（从 planner.py 拆出， 文件瘦身）。
 
 承载：协议/Skill 目录/选中草稿/记忆检索/状态 JSON/选中 Skill 全文（含分阶段聚焦块）的组装。
 段落顺序：稳定内容在前，状态 JSON 殿后；选中 Skill 全文放在最末尾（近生成端，
@@ -12,7 +12,7 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
-# N7（三轮审核）：顶层化（registry 顶层不依赖 core，无环；live_metrics 同包）
+# （审核）：顶层化（registry 顶层不依赖 core，无环；live_metrics 同包）
 from src.video_agent.core import live_metrics
 from src.video_agent.skill_runtime.registry import skill_flow_enabled
 from src.video_agent.memory import MemoryManager
@@ -22,7 +22,7 @@ from src.video_agent.utils.prompts import load_prompt, render_prompt
 if TYPE_CHECKING:
     from src.video_agent.core.planner import PlannerContext
 
-# 814F7 遥测：system prompt 组装总长预警阈值（字符）——超过即 warning，
+# 遥测：system prompt 组装总长预警阈值（字符）——超过即 warning，
 # 提醒清理草稿/缩短 Skill 全文（token 治理的组装层可观测性）
 _SYSTEM_PROMPT_WARN_CHARS = 60000
 
@@ -44,10 +44,10 @@ class PromptBuilder:
     def build_system_prompt(self, context: "PlannerContext", fc_mode: bool = False) -> str:
         """构建 system prompt：从 prompts/ 加载 + 注入状态上下文。
 
-        段落顺序为前缀缓存（P1）优化：稳定内容在前，状态 JSON 殿后；
+        段落顺序为前缀缓存优化：稳定内容在前，状态 JSON 殿后；
         选中 Skill 全文放在最末尾（近生成端，遵循度最高，避免被大段状态 JSON 淹没）。
 
-        fc_mode（814R1 恢复双协议瘦身）：True 时协议段用 planner/system_fc.md
+        fc_mode（恢复双协议瘦身）：True 时协议段用 planner/system_fc.md
         （Tool 优先瘦身协议，共有段经 {{include}} 从 shared/ 拼装），
         False 时用 planner/system.md（mock/演示通道；studio-actions 文本
         动作清单已随 4-4 双轨退役删除，ADR-0001）。
@@ -56,7 +56,7 @@ class PromptBuilder:
 
         if context.use_studio_context:
             # Rule4: 从 prompts/ 目录加载（稳定前缀第一段）；
-            # 九轮 B5：max_steps 模板化注入（消 system.md 与 config 双写漂移）
+            # max_steps 模板化注入（消 system.md 与 config 双写漂移）
             protocol = render_prompt(
                 "planner/system_fc.md" if fc_mode else "planner/system.md",
                 max_steps=settings.max_steps,
@@ -72,7 +72,7 @@ class PromptBuilder:
         if catalog:
             parts.append(("catalog", catalog))
 
-        # 铁律全文注入（宪法 D2）：项目级生产契约的唯一表述源——
+        # 铁律全文注入（宪法）：项目级生产契约的唯一表述源——
         # 铁律文档在每轮对话开始时由系统 ensure，存在即注入，不与 Skill 激活绑定
         # （system.md 不再重复业务规则，铁律不能缺位）
         if self._get_raw_state is not None:
@@ -96,7 +96,7 @@ class PromptBuilder:
 
             # 全局生成设置（前端「全局设置」页用户配置，热生效）：
             # 分镜时长上限 + 默认生成渠道，Agent 拆镜/生成必须遵守；
-            # 0817 B18：阶段门控——规格规划阶段无消费方，不注入（context rot 治理）
+            # 阶段门控——规格规划阶段无消费方，不注入（context rot 治理）
             if self.stage_allows_global_settings():
                 note = self.build_global_settings_note()
                 if note:
@@ -120,11 +120,11 @@ class PromptBuilder:
                     if memory_ctx:
                         parts.append(("memory", memory_ctx))
 
-            # 0817 B18：生成渠道清单注入机制已整体清除——渠道唯一事实源为
+            # 生成渠道清单注入机制已整体清除——渠道唯一事实源为
             # 顶部「全局设置」（provider_config/provider_prefs），规格文档不再承载渠道
 
             # 状态上下文殿后（每轮变化最大）：优先用惰性构建器按轮刷新，
-            # 让 LLM 在每一轮都看到上一轮执行后的最新状态（P0 修复）
+            # 让 LLM 在每一轮都看到上一轮执行后的最新状态（修复）
             if context.state_builder is not None:
                 state_json = context.state_builder()
             else:
@@ -134,7 +134,7 @@ class PromptBuilder:
 
             # 混合形态工具边界的可见性说明（裁剪生效时告诉模型哪些工具未开放、
             # 应先完成什么，防止幻觉调用；放在状态 JSON 之后，不破坏稳定前缀缓存）；
-            # 仅对声明 spec_stage_trim 的 Skill 生效（S1：与 planner 裁剪条件对齐）
+            # 仅对声明 spec_stage_trim 的 Skill 生效（与 planner 裁剪条件对齐）
             if context.skill_name and self._get_raw_state is not None \
                     and prompt_gates.gate_mode() == "strict":
                 try:
@@ -146,7 +146,7 @@ class PromptBuilder:
                 if stage_note:
                     parts.append(("stage_note", stage_note))
 
-            # 0817 B22：故事板客观进度描述（只报状态，暂停点归 Skill）
+            # 故事板客观进度描述（只报状态，暂停点归 Skill）
             if context.skill_name:
                 progress_note = self.build_storyboard_progress_note()
                 if progress_note:
@@ -158,8 +158,8 @@ class PromptBuilder:
             parts.append(("selected_skill", selected_block))
 
         text = "\n\n".join(seg for _, seg in parts)
-        # B6/F36：组装明细入 live 注册表（context-usage 调试端点可读各段字符数）；
-        # 九轮 B4：具名段组装后遥测直接读段名（消位置索引猜测，段序变动不失真）
+        # 组装明细入 live 注册表（context-usage 调试端点可读各段字符数）；
+        # 具名段组装后遥测直接读段名（消位置索引猜测，段序变动不失真）
         try:
             sec_lens: Dict[str, int] = {}
             for name, seg in parts:
@@ -179,7 +179,7 @@ class PromptBuilder:
             )
         except Exception as _e:
             logger.debug("[prompt_builder] 忽略异常: {}", _e)
-        # 814F7 遥测：组装超限预警（各段字符数入账，便于定位臃胀来源）
+        # 遥测：组装超限预警（各段字符数入账，便于定位臃胀来源）
         if len(text) > _SYSTEM_PROMPT_WARN_CHARS:
             logger.warning(
                 f"[PromptBuilder] system prompt 组装超阈值：总长 {len(text)} 字符 > "
@@ -190,9 +190,9 @@ class PromptBuilder:
         return text
 
     def build_storyboard_progress_note(self) -> str:
-        """0817 B22：故事板客观进度描述（P3 纯数据）——只报三类有无，
+        """ ：故事板客观进度描述（纯数据）——只报三类有无，
         暂停点指向已注入的 Skill 流程基线，平台不给排序意见；
-        顺带同批暂停建议（建议非强制，省一轮往返）。"""
+        顺带同批暂停建议（建议非强制，省往返）。"""
         if self._get_raw_state is None:
             return ""
         try:
@@ -212,7 +212,7 @@ class PromptBuilder:
         )
 
     def stage_allows_global_settings(self) -> bool:
-        """0817 B18：全局设置注入的阶段门控——规格规划阶段（无任何分组）
+        """ ：全局设置注入的阶段门控——规格规划阶段（无任何分组）
         时长上限/渠道/分辨率都没有消费方，不注入；故事板阶段起才注入。
         无法探测阶段时保守注入（不失约束）。"""
         if self._get_raw_state is None:
@@ -245,7 +245,7 @@ class PromptBuilder:
         return "== 全局生成设置（用户在「全局设置」页配置，必须遵守）==\n" + "\n".join(lines)
 
     def build_iron_rules_block(self) -> str:
-        """当前项目「执行铁律.md」全文注入块（宪法 D2：项目级契约唯一表述源）。
+        """当前项目「执行铁律.md」全文注入块（宪法 ：项目级契约唯一表述源）。
 
         无铁律文档（未开工的新项目）或读取失败时返回空串，不阻断对话。
         """
@@ -293,12 +293,12 @@ class PromptBuilder:
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 的注入块（814F3：settings.skill_runtime 开关落地）。
+        """选中 Skill 的注入块（settings.skill_runtime 开关落地）。
 
         - auto（默认）：有章节→执行器清单+流程基线；无章节→全文兜底直注；
         - executors：只走执行器形态，无章节时不注入全文（返回空串）；
         - legacy：强制全文直注 + 阶段聚焦（非 FC 通道/无执行器 Skill 的保底形态）。
-        无章节全文兜底：非 FC 通道调不了 read_skill，888 事故保障不降级。
+        无章节全文兜底：非 FC 通道调不了 read_skill，888 保障不降级。
         """
         mode = str(getattr(settings, "skill_runtime", "auto") or "auto").strip().lower()
         if mode == "legacy":
@@ -315,7 +315,7 @@ class PromptBuilder:
         """无可识别章节的 Skill：全文直注兜底。
 
         非 FC 通道（如 agy CLI）调不了 read_skill，若只给目录，模型等于看不到
-        流程规范（888 项目事故保障）；外来工具名映射对照表同步追加。
+        流程规范（888 项目保障）；外来工具名映射对照表同步追加。
         """
         sd = self._get_skill_docs()
         try:
@@ -328,7 +328,7 @@ class PromptBuilder:
             return ""
         if len(content) > settings.max_doc_chars:
             content = content[:settings.max_doc_chars] + "\n……（Skill 全文超长，已截断）"
-        # audit-0819d：外来工具名映射注记已随 S15 删除（导入期转换归专用 Skill 系统）
+        # 外来工具名映射注记已随 删除（导入期转换归专用 Skill 系统）
         discipline = load_prompt("planner/skill_discipline.md") or ""
         base = (
             f"== 当前选中 Skill「{display or skill_name}」全文（本 Skill 无注册执行器章节，"
@@ -354,7 +354,7 @@ class PromptBuilder:
         tools = entry.available_tools
         if not tools:
             return ""
-        # P0-2：流程基线 = 当前 Skill 的 <planner> 章节（切换 Skill 即切换流程）
+        # 2：流程基线 = 当前 Skill 的 <planner> 章节（切换 Skill 即切换流程）
         flow = ""
         try:
             from src.video_agent.skill_runtime.guard import skill_planner_flow
@@ -373,7 +373,7 @@ class PromptBuilder:
                 "== 当前 Skill 的流程基线（<planner>，必须按此顺序与阶段边界执行）==",
                 flow,
             ]
-            # audit-0819d：外来工具名映射注记已随 S15 删除（导入期转换归专用 Skill 系统）
+            # 外来工具名映射注记已随 删除（导入期转换归专用 Skill 系统）
         lines += [
             "",
             "【执行方式】每个拆解/编写步骤必须真的执行了其中一种（调对应执行器，或直接输出 "

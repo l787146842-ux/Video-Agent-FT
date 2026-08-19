@@ -1,7 +1,7 @@
 /**
  * 自动生成 —— 请勿手工编辑。
  * 来源：FastAPI OpenAPI schema（python scripts/gen_api_types.py）
- * 用途：前端 API 边界类型的唯一来源（六轮 S2 路线 a）；
+ * 用途：前端 API 边界类型的唯一来源；
  * 视图态类型（ChatMessage 等纯 UI 形态）见手写 src/web/types/index.ts。
  */
 

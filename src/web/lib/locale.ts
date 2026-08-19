@@ -1,5 +1,5 @@
 /**
- * 轻量 i18n（计划书 P2-4）：UI 文案抽取到 locale 字典，zh-CN 为默认语言。
+ * 轻量 i18n（计划书 -4）：UI 文案抽取到 locale 字典，zh-CN 为默认语言。
  *
  * 约定：
  * - key 以面板前缀分组（rp.* = right-panel，第一期；后续 mp.* / lp.* / layout.*）
@@ -24,7 +24,7 @@ const zhCN: Record<string, string> = {
   'rp.streaming.processing': '正在处理…',
   'rp.streaming.executing': '正在执行第 {n} 项操作：{summary}',
 
-  // ---------- 后端 SSE status 事件固定文案（四轮 R3/#5，键与后端 status_event key 一致） ----------
+  // ---------- 后端 SSE status 事件固定文案（键与后端 status_event key 一致） ----------
   'agent.roundThinking': '第 {prev} 轮操作已完成，继续思考中（第 {step}/{max} 轮）…',
   'agent.badRetry': '第 {step} 轮输出异常，重试中…',
   'agent.flowGatePause': '越阶操作被流程门禁拦截，已强制暂停',
@@ -32,11 +32,11 @@ const zhCN: Record<string, string> = {
   'agent.gateHeal': '系统闸机拦截了本轮 {count} 个流程操作，正在要求模型按流程修正…',
   'agent.modelFallback': '模型 {from} 繁忙/异常，已切换 {to} 重试…',
   'agent.mockRunning': 'mock 模式：本地规则生成…',
-  // 五轮 S1/#1：planner 队列级 status 收编（原硬编码中文，i18n 残留清偿）
+  // ：planner 队列级 status 收编（原硬编码中文，i18n 残留
   'agent.roundStart': '第 {step} 轮推理中…（执行上轮操作后继续规划）',
   'agent.planning': '正在推理…（模型正在读状态并规划操作）',
   'agent.actionsApplied': '已应用 {count} 个操作',
-  // audit-0819b：agent.executing 随 executing_actions 事件退役删除（ADR-0001）
+  // ：agent.executing 随 executing_actions 事件退役删除（ADR-0001）
   'rp.conv.close': '关闭对话',
   'rp.conv.create': '新建对话',
   'rp.conv.branch': '分支当前对话（快照并派生新对话）',
@@ -115,12 +115,12 @@ const zhCN: Record<string, string> = {
 
   // ---------- 消息卡片 ----------
   'rp.msg.docDone': '已完成',
-  // 五轮 S1/#1：消息 meta 行（原硬编码中文，i18n 残留清偿）
+  // ：消息 meta 行（原硬编码中文，i18n 残留
   'rp.msg.metaTime': '耗时 {s}s',
   'rp.msg.metaRounds': '{n} 轮',
   'rp.msg.metaUpdated': '更新 {n} 项',
   'rp.msg.chosen': '已选',
-  // 五轮 S3/#3：建议动作按钮（确定性交互）
+  // ：建议动作按钮（确定性交互）
   'rp.msg.retry': '重试',
   'rp.msg.continueTask': '继续完成',
   'rp.msg.imageResult': '生图结果',
@@ -152,7 +152,7 @@ const zhCN: Record<string, string> = {
   'rp.msg.gateOverride': '放行本次拦截（本轮闸机全部豁免，仅本次生效）',
   'rp.msg.checkSettings': '检查 API 配置',
 
-  // ---------- 确认向导（814F6 i18n 补齐） ----------
+  // ---------- 确认向导（i18n 补齐） ----------
   'rp.confirm.customBtn': '其它（自定义输入）',
   'rp.confirm.customPlaceholder': '输入你的想法，发送后作为本组的选择…',
   'rp.confirm.send': '发送',

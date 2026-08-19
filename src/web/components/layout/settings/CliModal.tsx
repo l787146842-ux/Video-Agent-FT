@@ -1,5 +1,5 @@
 /**
- * CLI 输出弹窗（帮助/积分/扫码登录）——七轮 S1/T23 自 SettingsView 切出，纯展示。
+ * CLI 输出弹窗（帮助/积分/扫码登录）——  自 SettingsView 切出，纯展示。
  */
 import { Show } from 'solid-js';
 import { FiExternalLink, FiX } from 'solid-icons/fi';

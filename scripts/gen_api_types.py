@@ -4,11 +4,11 @@
     python scripts/gen_api_types.py          # 生成 src/web/types/api.generated.ts
     python scripts/gen_api_types.py --check  # 校验已有生成物与 schema 一致（CI 用，不一致退出码 1）
 
-生成的类型覆盖路由层请求/响应模型（components.schemas）；六轮 S2（路线 a）后
-前端 API 边界类型以本生成物为唯一来源（tsc 编译期即契约门禁），视图态类型
+生成的类型覆盖路由层请求/响应模型（components.schemas）；前端 API 边界
+类型以本生成物为唯一来源（tsc 编译期即契约门禁），视图态类型
 （ChatMessage/Draft 等纯 UI 形态）继续手工维护于 types/index.ts。
 
-输出约定（六轮 S1/N1②）：成败信息一律带 ASCII 前缀（OK: / FAIL:），
+输出约定：成败信息一律带 ASCII 前缀（OK: / FAIL:），
 防 Windows GBK 终端乱码把失败误读成通过——验收只认退出码，不人眼读文案。
 """
 import sys
@@ -81,7 +81,7 @@ def build_output() -> str:
         "/**",
         " * 自动生成 —— 请勿手工编辑。",
         " * 来源：FastAPI OpenAPI schema（python scripts/gen_api_types.py）",
-        " * 用途：前端 API 边界类型的唯一来源（六轮 S2 路线 a）；",
+        " * 用途：前端 API 边界类型的唯一来源；",
         " * 视图态类型（ChatMessage 等纯 UI 形态）见手写 src/web/types/index.ts。",
         " */",
         "",

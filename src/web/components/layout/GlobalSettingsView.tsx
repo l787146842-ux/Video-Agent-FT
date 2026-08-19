@@ -7,7 +7,7 @@ import { apiProvidersFor, providerModels } from '@/lib/providers';
 import { ParamGroup, ParamSelect } from '@/components/middle-panel/params/ParamBase';
 import { getAgentMetrics, type AgentMetrics, type RuntimeSettings } from '@/api/agent';
 
-/** B8：模型分层策略表四角色（编排/生成/摘要/执行器） */
+/** ：模型分层策略表四角色（编排/生成/摘要/执行器） */
 const MODEL_POLICY_ROLES = [
   { key: 'orchestration', label: '编排规划' },
   { key: 'generation_strong', label: '生成' },
@@ -41,7 +41,7 @@ export default function GlobalSettingsView() {
     { value: '', label: '未设置' },
     ...providerModels(gs()?.default_video_provider_id || '', 'video').map((m) => ({ value: m, label: m })),
   ];
-  /** 814H7 推理档位四档：默认=模型原生 */
+  /**  推理档位四档：默认=模型原生 */
   const thinkingOpts = () => [
     { value: '', label: '默认（原生）' },
     { value: 'high', label: '高' },
@@ -59,7 +59,7 @@ export default function GlobalSettingsView() {
     set({ max_shot_duration: n });
   }
 
-  /** B8：单角色策略局部更新（保留其他角色与其他键） */
+  /** ：单角色策略局部更新（保留其他角色与其他键） */
   function setPolicyRole(roleKey: string, patch: { provider?: string; model?: string; thinking_level?: string }) {
     const policy = { ...(gs()?.model_policy || {}) };
     const cur = { ...(policy[roleKey] || { provider: '', model: '', thinking_level: '' }) };
@@ -67,7 +67,7 @@ export default function GlobalSettingsView() {
     set({ model_policy: policy });
   }
 
-  /** B10：运行指标（成本看板） */
+  /** ：运行指标（成本看板） */
   const [metrics, setMetrics] = createSignal<AgentMetrics | null>(null);
   function refreshMetrics() {
     return getAgentMetrics().then(setMetrics).catch(() => { /* 后端未就绪静默 */ });

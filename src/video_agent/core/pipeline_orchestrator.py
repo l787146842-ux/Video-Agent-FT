@@ -1,12 +1,12 @@
-# -*- coding: utf-8 -*-
-"""状态驱动管线编排器（0818 架构板正批 B1）。
+# *- coding: utf-8 -*-
+"""状态驱动管线编排器（架构板正批）。
 
 顶层顺序归代码：按工作台客观状态计算当前阶段、按批派发执行器、
-阶段边界机械暂停；模型只做阶段内创作与 ad-hoc 指令（混合模式，B2 接线）。
+阶段边界机械暂停；模型只做阶段内创作与 ad-hoc 指令（混合模式， 接线）。
 对齐 Flova / LLM-as-Code 业界标准形态：顺序不来自散文解析，也不来自模型选择。
 
 阶段表 = 平台规范表（探针客观判定）+ sidecar 覆盖（裁剪/同批执行器）。
-创作型阶段（ke_media/shot_media）deterministic=False，B2 起交接模型循环。
+创作型阶段（ke_media/shot_media）deterministic=False， 起交接模型循环。
 """
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -231,7 +231,7 @@ def _stage_dependencies(skill: str) -> Dict[str, List[str]]:
     return out
 
 
-# ---------- 阶段前置闸（audit-0819e，控制流统一：平台不变量） ----------
+# ---------- 阶段前置闸（控制流统一：平台不变量） ----------
 #
 # 业界依据（Claude Code hooks：「Hooks guarantee behavior; prompts suggest」，
 # 且 Anthropic RFC#45427 教训：旁路钩子可被绕过，强制必须内嵌执行路径）：
@@ -264,7 +264,7 @@ def tool_stage_of(tool_name: str, table: List[StageSpec]) -> str:
 
 
 def _effective_stage_deps(skill: str, table: List[StageSpec]) -> Dict[str, List[str]]:
-    """阶段前置闸专用依赖图（audit-0819e）：声明优先，无前置的阶段一律
+    """阶段前置闸专用依赖图：声明优先，无前置的阶段一律
     补线性前置（表中前一阶段）——闸机比调度更保守：调度里「未声明=未填」
     的留白在闸机层不允许（否则 ke_media 等阶段会裸奔越阶）。"""
     deps = {k: list(v) for k, v in _stage_dependencies(skill).items()}
@@ -372,7 +372,7 @@ def compose_pause_card(
     state: Dict[str, Any], skill: str, done_spec: StageSpec,
     next_spec: Optional[StageSpec],
 ) -> Tuple[str, List[Dict[str, str]]]:
-    """阶段边界暂停卡：纯客观事实（P3）；总结是否入卡随 sidecar 声明。"""
+    """阶段边界暂停卡：纯客观事实；总结是否入卡随 sidecar 声明。"""
     manifest = registry.skill_manifest_of(skill) or {}
     include_summary = bool(
         ((manifest.get("pause") or {}).get("include_summary_in_pause")))
@@ -409,10 +409,10 @@ def flow_auto_continue(state: Dict[str, Any]) -> bool:
 async def orchestrate_turn(
     state_manager: Any, skill: str, user_message: Any = "",
 ) -> Optional[OrchestratorOutcome]:
-    """编排一轮：按拓扑就绪集推进确定性阶段直到暂停/交接/失败（3A DAG 化）。
+    """编排：按拓扑就绪集推进确定性阶段直到暂停/交接/失败（3A DAG 化）。
 
-    返回 None = 创作型阶段就绪或前置未决，交接模型循环（B2 接线）。
-    原料闸（814H9 能力迁入）：analysis 阶段且剧本缺失且未豁免 →
+    返回 None = 创作型阶段就绪或前置未决，交接模型循环（接线）。
+    原料闸（能力迁入）：analysis 阶段且剧本缺失且未豁免 →
     机械回提醒卡/上传回执，不出题给模型。
     无 dependencies 声明时 next_batch 回落线性扫描（零行为变更）。
     """

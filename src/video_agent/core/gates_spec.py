@@ -1,4 +1,4 @@
-"""制片规格向导家族（R4b 自 prompt_gates.py 切出）：维度提取/候选解析/向导拼装/规格落盘。
+"""制片规格向导家族（自 prompt_gates.py 切出）：维度提取/候选解析/向导拼装/规格落盘。
 被测试 patch 的符号（_channel_groups/skill_spec_dimensions/gate_mode）经 _pg 模块属性引用，
 patch prompt_gates 模块即可生效。"""
 import json
@@ -28,7 +28,7 @@ from src.video_agent.core.prompt_gates import (
 )
 
 
-# 硬参数维度黑名单（6666 二轮：出图/出视频渠道、分辨率、分镜最大时长
+# 硬参数维度黑名单（出图/出视频渠道、分辨率、分镜最大时长
 # 由顶部「全局设置」唯一提供，规格向导与规格文档均不再承载；总时长等
 # 创作性「时长」维度不在黑名单内）
 _HARD_PARAM_DIM_HINTS = (
@@ -59,7 +59,7 @@ def _dedupe(items) -> List[str]:
 
 
 def skill_spec_dimensions(skill_name: str) -> List[str]:
-    """客观提取 Skill 规格编写步骤声明的维度清单（10.12-G1：不改 skill）。
+    """客观提取 Skill 规格编写步骤声明的维度清单（10.12-：不改 skill）。
 
     优先解析「建议条目：…」整段（去括号注解后按 /、，、；切分，不截断）；
     无建议条目时回退解析括号枚举；硬参数维度（渠道/分辨率/分镜最大时长）
@@ -127,7 +127,7 @@ def _spec_doc_content(state: Dict[str, Any]) -> str:
 
 
 def state_has_spec_doc(state: Dict[str, Any]) -> bool:
-    """工作台是否已存在规格文档（6666 事故：收集闸仅在无规格文档时触发）。"""
+    """工作台是否已存在规格文档（收集闸仅在无规格文档时触发）。"""
     return any(
         isinstance(d, dict) and is_spec_doc_name(str(d.get("name") or ""))
         for d in (state.get("documents") or [])
@@ -178,7 +178,7 @@ def _current_skill_of(state: Optional[Dict[str, Any]]) -> str:
 def _spec_dim_unresolved(content: str, dim: str) -> bool:
     """规格文档里某软维度是否未定稿（行缺失/值空/含待确认标记，兼容加粗行）。
 
-    向导渲染的客观闸门（9999 二轮：拆解阶段暂停卡混回规格向导）：
+    向导渲染的客观闸门（拆解阶段暂停卡混回规格向导）：
     维度已在规格里定稿就不再渲染，不依赖 spec_collected 一次性标记的
     消费时序——标记被规格审阅暂停消费后，后续任何暂停都重弹向导。
     """
@@ -195,7 +195,7 @@ def _spec_dim_unresolved(content: str, dim: str) -> bool:
 
 
 def spec_doc_finalized(state: Dict[str, Any]) -> bool:
-    """规格文档已存在且 Skill 软维度全部定稿（8888 二轮客观闸门）。
+    """规格文档已存在且 Skill 软维度全部定稿（客观闸门）。
 
     用于规格拒收接管路径：规格已定稿时模型的冗余手写只需拒收警告，
     不得接管暂停卡（否则拆解阶段又被换回「确认规格」卡）。"""
@@ -211,11 +211,11 @@ def spec_doc_finalized(state: Dict[str, Any]) -> bool:
 def build_spec_param_options(
     spec_content: str, state: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, List[Dict[str, Any]]]:
-    """规格交互候选项向导（6666 二轮：出图/出视频渠道、图片分辨率、
+    """规格交互候选项向导（出图/出视频渠道、图片分辨率、
     视频分辨率、分镜最大时长由顶部「全局设置」唯一提供，向导不再渲染）。
 
-    只渲染 Skill 规格步骤声明的软维度（4444：维度来自 Skill，平台不预设）；
-    规格文档已存在时只渲染未定稿维度（9999 二轮：客观状态闸门）；
+    只渲染 Skill 规格步骤声明的软维度（维度来自 Skill，平台不预设）；
+    规格文档已存在时只渲染未定稿维度（客观状态闸门）；
     每个维度至少渲染一个入口——候选 >=2 渲染候选卡，候选不足时渲染占位卡
     + 组内「其它（自定义输入）」，保证「模型不能增删维度」。
     选项 label 采用「键：值」格式（前端向导按 group 分页，发送时逐行拼接，
@@ -235,7 +235,7 @@ def build_spec_param_options(
             for v in vals[:4]:
                 opts.append({
                     "label": f"{dim}：{v}",
-                    # 814G4：卡片文字不重复维度名（维度名已在页头/问题行），
+                    # 卡片文字不重复维度名（维度名已在页头/问题行），
                     # 说明文字逐项差异化白话（防整组说明雷同成天书）
                     "display": v,
                     "description": f"若选此项，成片将按「{v}」制作",
@@ -261,7 +261,7 @@ def build_spec_param_options(
 
 
 def _consume_spec_collected(state: Dict[str, Any]) -> bool:
-    """消费 spec_collected 标记（6666 事故：收集向导已回应过，规格写入后的
+    """消费 spec_collected 标记（收集向导已回应过，规格写入后的
     暂停不再重复弹向导）；返回是否命中并清除。"""
     inter = state.get("interaction")
     if isinstance(inter, dict) and inter.get("spec_collected"):
@@ -273,7 +273,7 @@ def _consume_spec_collected(state: Dict[str, Any]) -> bool:
 def merge_spec_param_wizard(
     state: Dict[str, Any], message: str, options: List[Dict[str, Any]],
 ) -> Tuple[str, List[Dict[str, Any]], bool]:
-    """制作参数未选定时，把候选项向导合并进任意来源的暂停卡（1111 事故：
+    """制作参数未选定时，把候选项向导合并进任意来源的暂停卡（
     模型自发暂停的选项 label 是自造文案如「1K（更快）」，不可机械落盘）。
 
     与向导同 group 的模型选项被替换为标准「键：值」格式（保证
@@ -285,7 +285,7 @@ def merge_spec_param_wizard(
     if not content.strip():
         return message, options or [], False
     if _consume_spec_collected(state):
-        # 收集向导已交互过：模型自发暂停原样保留，不重复合并向导（6666 事故）
+        # 收集向导已交互过：模型自发暂停原样保留，不重复合并向导
         return message, options or [], False
     msg, wizard = build_spec_param_options(content, state)
     if not wizard:
@@ -301,8 +301,8 @@ def merge_spec_param_wizard(
 
 def spec_pause_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
     """规格文档写入后的暂停卡：收集向导已交互过时沿用常规审阅暂停卡；
-    否则升级为 Skill 软维度候选项向导（6666 二轮：不再含渠道/分辨率/时长）。
-    审阅卡下一步选项客观具体（8888 二轮）。"""
+    否则升级为 Skill 软维度候选项向导（不再含渠道/分辨率/时长）。
+    审阅卡下一步选项客观具体。"""
     if _consume_spec_collected(state):
         return SPEC_DOC_PAUSED_MSG, spec_review_options(state)
     msg, opts = build_spec_param_options(_spec_doc_content(state), state)
@@ -312,9 +312,9 @@ def spec_pause_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
 
 
 def spec_collect_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
-    """script_analyze 后的规格收集向导（6666 事故：交互收集必须在规格文档
+    """script_analyze 后的规格收集向导（交互收集必须在规格文档
     写入之前；只渲染 Skill 声明的软维度）。
-    0818 架构板正批：平台不内嵌总结（总结展示归编排器暂停卡声明）。"""
+     架构板正批：平台不内嵌总结（总结展示归编排器暂停卡声明）。"""
     _m, opts = build_spec_param_options("", state)
     return SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY, opts
 
@@ -326,7 +326,7 @@ def apply_spec_param_selections(
 
     - 用户明确给出某参数值（向导逐行回传或自由表述）→ 覆盖该行并去掉待确认标记；
     - 参数仍缺值但用户表达了确认意图（确认成片规格/继续…）且
-      allow_confirm_intent=True（仅当上一轮暂停确为规格暂停时，1111 事故：
+      allow_confirm_intent=True（仅当上一轮暂停确为规格暂停时， ：
       总结暂停的「确认」不能误定稿规格）→ 按文档当前展示值定稿；
     - 调整类反馈 → 不动，交给模型处理。
     """
@@ -379,7 +379,7 @@ def assemble_spec_doc(
     selections: Dict[str, str],
     model_filled: Optional[Dict[str, str]] = None,
 ) -> str:
-    """按「Skill 维度」机械拼装键值清单规格文档（方案乙；6666 二轮：
+    """按「Skill 维度」机械拼装键值清单规格文档（方案乙；：
     出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长由顶部
     「全局设置」唯一提供，不再写入规格文档）。
 
@@ -395,6 +395,6 @@ def assemble_spec_doc(
     return "\n".join(lines) + "\n"
 
 
-# 平台层维度说明补注已停用（814G4：说明文字改为逐项差异化白话，
+# 平台层维度说明补注已停用（说明文字改为逐项差异化白话，
 # 维度含义由页头/问题行承载；保留空表防外部引用报错）
 _DIM_DESCRIPTION_OVERRIDES: Dict[str, str] = {}

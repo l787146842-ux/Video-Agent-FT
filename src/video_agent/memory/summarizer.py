@@ -1,5 +1,5 @@
 """
-对话摘要：LLM 压缩一轮对话为长期记忆条目；LLM 不可用时降级截取。
+对话摘要：LLM 压缩对话为长期记忆条目；LLM 不可用时降级截取。
 
 Prompt 外置（Rule6）：prompts/memory/summarize.md
 """

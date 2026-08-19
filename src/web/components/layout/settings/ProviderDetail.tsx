@@ -1,6 +1,6 @@
 /**
  * 右侧详情区：选中平台的头部卡/基本信息卡/模型列表/安全说明——
- * 七轮 S1/T23 自 SettingsView 切出（KeyRow/ModelCard 随之内化）。
+ *  自 SettingsView 切出（KeyRow/ModelCard 随之内化）。
  */
 import { For, Show } from 'solid-js';
 import {

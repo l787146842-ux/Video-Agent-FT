@@ -43,7 +43,7 @@ export function timelineFromMessage(msg: ChatMessage): { reasoning: string; item
   return { reasoning, items };
 }
 
-/** 执行器工具 → 大阶段名：B2/F15 起改为后端权威下发（trace 条目 stage 字段），
+/** 执行器工具 → 大阶段名： 起改为后端权威下发（trace 条目 stage 字段），
  * 前端不再硬编码推断，工具改名不会导致卡片退化（13.7 登记）。 */
 
 /**
@@ -124,7 +124,7 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
  * 内容全部来自 SSE 一次性事件 / 消息 trace 字段，不进下次 LLM 上下文。
  */
 export function AgentTimeline(props: {
-  /** 静态文本或响应式 getter（流式场景传 () => chatState.streamingReasoning） */
+  /** 静态文本或响应式 getter（流式场景传  => chatState.streamingReasoning） */
   reasoning?: string | (() => string);
   items: TimelineItem[];
   /** 流式中：操作面板默认展开，运行项显示旋转图标 */
@@ -146,7 +146,7 @@ export function AgentTimeline(props: {
   const hasItems = () => props.items.length > 0;
   const doneCount = () => props.items.filter((i) => i.status !== 'running').length;
 
-  // 流式思考视窗自动跟随（814G9）：overflow-y:auto 可滚轮回看上文；
+  // 流式思考视窗自动跟随：overflow-y:auto 可滚轮回看上文；
   // 仅当用户停在底部附近时才自动追新文字，滚上去看历史不被打断
   let reasoningRef: HTMLDivElement | undefined;
   createEffect(() => {
@@ -161,7 +161,7 @@ export function AgentTimeline(props: {
     }
   });
 
-  // 814G2：运行中条目走秒计时（有 running 条目时每 500ms 刷新一次 now）
+  // ：运行中条目走秒计时（有 running 条目时每 500ms 刷新一次 now）
   const [now, setNow] = createSignal(Date.now());
   const hasRunning = () => props.items.some((i) => i.status === 'running');
   let tickTimer: ReturnType<typeof setInterval> | undefined;

@@ -17,7 +17,7 @@ from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, ALL_CATEGO
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.utils import gen_id
-# 八轮 B3：生成动作域切入 web/action_gen.py（实例方法壳保留，patch 目标不变）
+# 生成动作域切入 web/action_gen.py（实例方法壳保留，patch 目标不变）
 from src.video_agent.web.action_gen import apply_generate_image, apply_generate_video
 from src.video_agent.web.generation import submit_image_task
 from src.video_agent.web.provider_config import stamp_draft_spec_preference
@@ -54,7 +54,7 @@ class StudioActionExecutor:
         self.gate_override: bool = False
         # 本批次闸机警告（executors._apply_actions 读取后随结果回喂）
         self.gate_warnings: List[str] = []
-        # 当前激活的 Skill 名称（执行器/agent_loop 注入；S1：平台行为按 Skill 声明驱动）
+        # 当前激活的 Skill 名称（执行器/agent_loop 注入；：平台行为按 Skill 声明驱动）
         self.skill_name: str = ""
         # 结构阶段开关：True = add_draft 内联详细提示词被剥离（默认，主模型直出结构路径）；
         # 执行器按阶段设置（write_media_prompt 等提示词阶段必须关闭）
@@ -66,7 +66,7 @@ class StudioActionExecutor:
         self.chat_inserts: List[Dict[str, str]] = []
         # 已执行操作的中文描述清单（供前端「阶段完成」卡片展开查看具体操作，随消息持久化）
         self.action_log: List[str] = []
-        # B2/F21：成功动作的逐动作实测耗时（ms），与 action_log 下标对齐；
+        # 成功动作的逐动作实测耗时（ms），与 action_log 下标对齐；
         # agent_loop 用其替换时间线均摊耗时（文本轨此前均摊是白谎）
         self.last_action_durations: List[float] = []
         # 本批次被流程闸机拦截的原因清单（每次 execute 重置）：
@@ -94,13 +94,13 @@ class StudioActionExecutor:
         return self.svc.state_dict
 
     def parse_actions_from_reply(self, reply: str) -> List[Dict[str, Any]]:
-        """从回复文本中提取 studio-actions JSON 块（audit-0819b 后仅 mock 演示通道使用）"""
+        """从回复文本中提取 studio-actions JSON 块（后仅 mock 演示通道使用）"""
         return _parse_actions(reply)
 
     def execute(self, actions: List[Dict[str, Any]]) -> int:
         """执行操作列表，返回成功执行的数量。执行后自动持久化。
 
-        Agent 主路径统一在此 push_undo()，使 Agent 改动与手动 update 一样可撤销；
+        Agent 主路径统一在此 push_undo，使 Agent 改动与手动 update 一样可撤销；
         纯信号操作（select/确认/continue）或全部失败时不污染 undo 栈。
         """
         mutating = [a for a in actions if self._is_mutating(a)]
@@ -108,10 +108,10 @@ class StudioActionExecutor:
             self.svc.push_undo()
         self.gate_rejections = []  # 每批次重置拦截原因记录
         self.gate_warnings = []
-        self.last_action_durations = []  # B2/F21：每批次重置逐动作耗时
+        self.last_action_durations = []  # 每批次重置逐动作耗时
         self.structure_kinds_created = set()
         self.prompts_stripped = 0
-        # 0817：批前故事板是否为空快照（轮末阶段审阅卡只在「本批把空板推进到阶段完成」时注入）
+        # 批前故事板是否为空快照（轮末阶段审阅卡只在「本批把空板推进到阶段完成」时注入）
         self._storyboard_empty_before = prompt_gates.storyboard_is_empty(self.state)
         applied = 0
         for action in actions:
@@ -221,7 +221,7 @@ class StudioActionExecutor:
         return ops.sync_shot_duration(group, draft, patch)
 
     def _gate_check(self, prompt: str, kind: str, group: Optional[Dict[str, Any]] = None) -> bool:
-        """写入前闸机（委托统一闸机管线，宪法 §2.0；814R2 恢复接线，与 FC 轨同源判定）。
+        """写入前闸机（委托统一闸机管线，宪法 §2.0； 恢复接线，与 FC 轨同源判定）。
 
         返回 True = 放行。闸机未启用 / 模式非 strict 时恒放行；
         strict 拦截的写入返回 False，模型下一轮看到状态缺失后自行补写（自愈）。"""
@@ -270,12 +270,12 @@ class StudioActionExecutor:
             presented.append(draft_id)
 
     def _gen_confirm_gate(self, pairs: List[tuple]) -> List[tuple]:
-        """生成确认闸（文本轨，B4 双轨收敛一期）：判定唯一实现 =
+        """生成确认闸（文本轨， 双轨收敛一期）：判定唯一实现 =
         guard_pipeline.evaluate_gen_confirm（与 FC 轨逐字节一致）。
 
-        目标草稿存在未确认即整批硬拒（4444 语义：模型跳确认非用户意志；
+        目标草稿存在未确认即整批硬拒（语义：模型跳确认非用户意志；
         override/未激活放行）；不再各自手写「跳过未确认项」镜像判定。"""
-        # 0817 一条龙：用户本条消息的显式指令作为本批生成同意（留痕）
+        # 一条龙：用户本条消息的显式指令作为本批生成同意（留痕）
         _svc = getattr(self, "svc", None)
         if _svc is not None and prompt_gates.flow_auto_continue(_svc.state_dict):
             logger.info("[FlowDirective] 一条龙指令作为本批生成同意（留痕）")
@@ -298,7 +298,7 @@ class StudioActionExecutor:
     async def execute_locked(self, actions: List[Dict[str, Any]]) -> int:
         """持 svc.lock 执行（与 FC Tool 路径的并发契约对齐）。
 
-        调用方已持有 svc.lock 时（如 chat_service mock 路径）必须改用同步 execute()，
+        调用方已持有 svc.lock 时（如 chat_service mock 路径）必须改用同步 execute，
         asyncio.Lock 不可重入，嵌套获取会死锁。
         """
         async with self.svc.lock:
@@ -389,7 +389,7 @@ class StudioActionExecutor:
                     and prompt_gates.storyboard_pending(self.state):
                 logger.info("[FlowGate] 提示词写入时故事板待确认（警告，不拦人）")
                 self.gate_warnings.append(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
-            # 客观补全（888 事故）：@引用与镜头时长可从 sceneRefs/duration 算出来，
+            # 客观补全（888）：@引用与镜头时长可从 sceneRefs/duration 算出来，
             # 写入前按 Skill 声明的规则自动补印，不指望模型自觉、也不重复拒绝重写
             if self._kind_of_group(group) == "shot":
                 filled_refs = prompt_gates.autofill_at_refs(
@@ -418,7 +418,7 @@ class StudioActionExecutor:
         return ok
 
     def _stamp_spec_resolution(self, group: Dict[str, Any], draft: Dict[str, Any]) -> None:
-        """分辨率补印（9999 需求；B7 唯一权威源=全局设置）：草稿缺分辨率时按全局设置填充，
+        """分辨率补印（需求； 唯一权威源=全局设置）：草稿缺分辨率时按全局设置填充，
         参数栏与全局设置一致，防前端硬编码回填污染。"""
         if not isinstance(draft, dict):
             return
@@ -448,7 +448,7 @@ class StudioActionExecutor:
         group_id = action.get("group_id") or action.get("target_id") or action.get("id") or "current"
         group_type = action.get("group_type") or action.get("kind") or action.get("target_type") or ""
         patch = action.get("patch") or action.get("fields") or action.get("updates") or {}
-        # 0817：模型路径标题确定性归一（用户 REST 改名路径不受影响，用户意志优先）
+        # 模型路径标题确定性归一（用户 REST 改名路径不受影响，用户意志优先）
         if isinstance(patch, dict) and str(patch.get("title") or "").strip():
             patch = dict(patch)
             patch["title"] = ops.normalize_group_title(str(patch["title"]))
@@ -477,7 +477,7 @@ class StudioActionExecutor:
             action.get("group_type") or action.get("draft_type")
             or action.get("kind") or action.get("target_type") or ""
         ).strip()
-        # 首拆只允许关键元素的平台自加限制已清除（0817：流程以 Skill 为准）；
+        # 首拆只允许关键元素的平台自加限制已清除（流程以 Skill 为准）；
         # 客观依赖（分镜 sceneRefs 必须引用已存在元素）由 exec_common 校验兜底
         return self._apply_add_group_inner(action)
 
@@ -490,7 +490,7 @@ class StudioActionExecutor:
             )
             if kind:
                 self.structure_kinds_created.add(kind)
-        # 结构首次建立 → 故事板阶段完成才置待确认标记（0817：暂停点归位 Skill 阶段边界）
+        # 结构首次建立 → 故事板阶段完成才置待确认标记（暂停点归位 Skill 阶段边界）
         if ok and self.gate_enabled and prompt_gates.gate_mode() == "strict":
             if prompt_gates.storyboard_stage_complete(self.state, getattr(self, "skill_name", "")):
                 interaction = self.state.setdefault("interaction", {})
@@ -509,14 +509,14 @@ class StudioActionExecutor:
         group_data = action.get("group") or action.get("data") or {}
         # 也允许 patch 字段携带 title/desc
         patch = action.get("patch") or {}
-        # 标题兜底链（8888 事故）：title → name → element_id → element_name → group_title
+        # 标题兜底链：title → name → element_id → element_name → group_title
         title = (
             action.get("title") or group_data.get("title") or patch.get("title")
             or action.get("name") or group_data.get("name")
             or action.get("element_id") or action.get("element_name")
             or action.get("group_title") or "Agent 新建分组"
         )
-        # 0817：标题确定性归一（剥英文标识/编号前缀，P2 自动修正，双轨共用 ops）
+        # 标题确定性归一（剥英文标识/编号前缀， 自动修正，双轨共用 ops）
         _raw_title = str(title)
         title = ops.normalize_group_title(_raw_title)
         if title != _raw_title:
@@ -538,7 +538,7 @@ class StudioActionExecutor:
         if cat_key == CAT_SHOTS:
             rough = pick("roughDesc")
             if isinstance(rough, str) and len(rough) > 200:
-                # 概述截断（888 事故）：超长 roughDesc 撑爆卡片/上下文
+                # 概述截断（888）：超长 roughDesc 撑爆卡片/上下文
                 rough = rough[:200] + "…"
             new_group["roughDesc"] = rough
             if not desc and rough:
@@ -552,7 +552,7 @@ class StudioActionExecutor:
             new_group["sceneRefs"] = refs if isinstance(refs, list) else [refs]
         badge = pick("badgeLabel")
         if cat_key != CAT_SHOTS:
-            # 8888 二轮：角标归一（泛化「关键元素」/缺省 → 按 desc 锚点映射人物/场景/道具/声音特征）
+            #角标归一（泛化「关键元素」/缺省 → 按 desc 锚点映射人物/场景/道具/声音特征）
             badge = ops.normalize_badge_label(badge, str(desc or ""), group_type=group_type)
         if badge:
             new_group["badgeLabel"] = badge
@@ -604,7 +604,7 @@ class StudioActionExecutor:
             return None
         draft = ops.append_draft(group, data)
         self._stamp_spec_resolution(group, draft)
-        # 全局设置补印：草稿未自带供应商时按全局设置填充（B7 唯一权威源），
+        # 全局设置补印：草稿未自带供应商时按全局设置填充（唯一权威源），
         # 防前端默认首选供应商回填污染（参数栏与全局设置不一致）
         cat = ops.category_for_group_type(self._kind_of_group(group))
         if stamp_draft_spec_preference(self.state, draft, cat):
@@ -628,7 +628,7 @@ class StudioActionExecutor:
         return ops.clear_draft_media(draft)
 
     def _apply_flow_directive(self, action: Dict) -> bool:
-        # 0817：模型解读用户一条龙意图后发出；平台机械登记（本条消息生效）
+        # 模型解读用户一条龙意图后发出；平台机械登记（本条消息生效）
         if bool(action.get("auto_continue")):
             inter = self.state.setdefault("interaction", {})
             inter["auto_continue"] = True
@@ -641,21 +641,21 @@ class StudioActionExecutor:
             action.get("group_type") or action.get("groupType")
             or action.get("draft_type") or action.get("kind") or ""
         )
-        # 首拆只允许关键元素的平台自加限制已清除（0817）
+        # 首拆只允许关键元素的平台自加限制已清除
         draft_data = action.get("draft") or action.get("payload") or {}
         if not draft_data and action.get("patch"):
-            # 898 事故回归：模型把建卡字段放进 patch/fields 而非 draft 时
+            # 898 回归：模型把建卡字段放进 patch/fields 而非 draft 时
             # 不得静默落成空默认草稿，提示词必须写入
             draft_data = action.get("patch") or {}
 
         label = str(draft_data.get("label") or "").strip()
         group = None
         if str(group_id) in ("", "current") and label:
-            # 未指定有效分组时按 label 名称智能匹配（proj-1786169643 事故），
+            # 未指定有效分组时按 label 名称智能匹配（proj-1786169643），
             # 优先于「current → 第一个分组」的旧兜底
             group = self._match_group_by_label(label)
         # 显式 group_id 或前端已选中草稿时才走 find_group；
-        # 「current + 无选中」会盲捡第一个分组（888 事故），交给下方多分组防护
+        # 「current + 无选中」会盲捡第一个分组（888），交给下方多分组防护
         if group is None and (
             str(group_id) not in ("", "current")
             or str(getattr(self, "selected_draft_id", "") or "").strip()
@@ -681,13 +681,13 @@ class StudioActionExecutor:
                 if isinstance(g, dict)
             ]
             if len(all_groups) > 1:
-                # 888 事故：未携带有效 group_id 且 label 无法定位时盲捡第一个分组，
+                # 888 ：未携带有效 group_id 且 label 无法定位时盲捡第一个分组，
                 # 提示词全污染进程心组——多分组场景直接拒绝并回喂模型纠正
                 self.gate_rejections.append(
                     "add_draft 未指定有效分组且 label 无法定位；"
                     "当前存在多个分组，已拒绝盲捡，请携带正确的 group_id 或分组标题重试"
                 )
-                logger.warning("[StudioActions] add_draft 多分组盲捡被拒（888 事故回归）")
+                logger.warning("[StudioActions] add_draft 多分组盲捡被拒")
                 return False
             if all_groups:
                 group = all_groups[0]
@@ -713,7 +713,7 @@ class StudioActionExecutor:
         return appended is not None
 
     def _match_group_by_label(self, label: str) -> Optional[Dict[str, Any]]:
-        """按草稿 label 名称模糊匹配目标分组（proj-1786169643 事故：
+        """按草稿 label 名称模糊匹配目标分组（proj-1786169643 ：
         add_draft 未携带有效 group_id 时盲捡第一个分组，导致提示词全进程心组）。
 
         取 label 第一段（按 - / — 切分，如「艾AA - 角色概念图」→「艾AA」），
@@ -876,7 +876,7 @@ class StudioActionExecutor:
         return apply_generate_video(self, action)
 
     def _submit_image_task(self, draft: Dict, provider_id: str, model: str, refs: List[Dict], aspect_ratio: str = "16:9", resolution: str = "1K") -> None:
-        """提交异步生图任务（委托 generation 层的 submit_image_task，批次5 下沉）"""
+        """提交异步生图任务（委托 generation 层的 submit_image_task， 下沉）"""
         submit_image_task(
             self.state, draft, provider_id, model, refs,
             aspect_ratio=aspect_ratio, resolution=resolution,

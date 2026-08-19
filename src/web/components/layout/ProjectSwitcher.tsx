@@ -139,7 +139,7 @@ export function ProjectSwitcher() {
     const d = new Date(p.updated_at);
     if (Number.isNaN(d.getTime())) return p.updated_at.replace('T', ' ').slice(5, 16);
     const pad = (n: number) => String(n).padStart(2, '0');
-    // 后端存 UTC（Z 结尾），这里转本地时区显示，避免差 8 小时（7777 现场）
+    // 后端存 UTC（Z 结尾），这里转本地时区显示，避免差 8 小时（现场）
     return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 

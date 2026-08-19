@@ -9,7 +9,7 @@ import type {
   BatchImageGenRequest, GenLogRequest, ImageGenRequest, VideoGenRequest,
 } from '@/types/api.generated';
 
-// ===== 请求体（七轮 S2/F1：以生成物为唯一来源；必填收窄与精化字段用交集登记） =====
+// ===== 请求体（以生成物为唯一来源；必填收窄与精化字段用交集登记） =====
 
 export type GenerateImageRequest = ImageGenRequest & {
   provider_id: string;
@@ -88,7 +88,7 @@ export function getActiveGenTasks() {
 
 // ===== 批量生成 =====
 
-/** 生成物字段全可选，前端语义全必填 → Required 收窄（七轮 S2/F1） */
+/** 生成物字段全可选，前端语义全必填 → Required 收窄 */
 export type BatchImageRequest = Required<BatchImageGenRequest>;
 
 export interface BatchImageResponse {

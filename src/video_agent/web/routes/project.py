@@ -23,7 +23,7 @@ class ProjectListResponse(BaseModel):
 
 
 class ProjectStateResponse(BaseModel):
-    """get_full_snapshot() 返回的完整状态（字段动态，用宽松模型）"""
+    """get_full_snapshot 返回的完整状态（字段动态，用宽松模型）"""
     model_config = {"extra": "allow"}
 
 
@@ -170,7 +170,7 @@ async def put_project_state(body: ProjectStateUpdate):
     """前端整体保存状态"""
     svc = StateManager.get_instance()
     async with svc.lock:
-        # 乐观锁（9999 事故）：陈旧 PUT 必须被拒，前端采纳响应版本跟进
+        # 乐观锁：陈旧 PUT 必须被拒，前端采纳响应版本跟进
         if body.base_version is not None and body.base_version != svc.board_version:
             raise HTTPException(
                 status_code=409,

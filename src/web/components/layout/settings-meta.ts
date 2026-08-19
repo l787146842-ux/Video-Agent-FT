@@ -1,5 +1,5 @@
 /**
- * API 配置页纯数据域（五轮 S10 自 SettingsView.tsx 切出，零行为变更）。
+ * API 配置页纯数据域（自 SettingsView.tsx 切出，零行为变更）。
  *
  * 类型定义 + 协议/平台常量 + 纯工厂函数——无 Solid 响应式依赖，
  * SettingsView 经具名导入消费，语义与切出前逐字一致。
@@ -102,7 +102,7 @@ export function newProvider(id: string): EditableProvider {
 export type CliStatusMap = Record<string, { installed: boolean; message: string }>;
 
 /**
- * SettingsView 子组件共享 API（七轮 S1/T23 切分设立）：
+ * SettingsView 子组件共享 API（切分设立）：
  * 状态全部留在父组件，子组件经此对象消费 accessor 与动作——
  * 单一 prop 传入，避免 20+ 个离散 props 钻透。
  */

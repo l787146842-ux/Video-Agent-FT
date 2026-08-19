@@ -2,7 +2,7 @@
 
 每个执行器只注入自己对应的 Skill 章节（registry.tool_sections），
 独立完成「读输入 → LLM 调用/组装 → 结构化校验 → 写状态」。
-LLM 类执行器走结构化输出轨（response_format=json_object + 硬校验，audit-0819d）。
+LLM 类执行器走结构化输出轨（response_format=json_object + 硬校验）。
 """
 import json
 import math
@@ -44,10 +44,10 @@ from src.video_agent.skill_runtime.exec_common import (
 
 
 def initial_json_budget(user_chars: int, requested: int, ceiling: int) -> int:
-    """audit-0819f C1：执行器 JSON 调用初始预算按任务定（业界 budget sizing）。
+    """ C1：执行器 JSON 调用初始预算按任务定（业界 budget sizing）。
 
     CJK 字符≈token：sizing = 4096 + 输入字符数；下限 8192（消灭「先撞墙
-    再扩额」的白烧——1111 事故 79 秒静默的根因）；调用方显式传更大值时
+    再扩额」的白烧——  79 秒静默的根因）；调用方显式传更大值时
     尊重调用方；上限钳到模型输出上限，绝对下限 1024。
     """
     sizing = 4096 + max(0, int(user_chars))
@@ -62,16 +62,16 @@ async def _llm_json_call(
     provider: str = "",
     model: str = "",
 ) -> Dict[str, Any]:
-    """独立 LLM 调用并解析 JSON 输出（结构化输出轨，audit-0819d）。
+    """独立 LLM 调用并解析 JSON 输出（结构化输出轨）。
 
-    预算策略（1111 事故：推理模型思考占满 2048 额度，四次连续截断失败；
-    audit-0819f C1 升级为按任务定预算）：
+    预算策略（推理模型思考占满 2048 额度，四次连续截断失败；
+     C1 升级为按任务定预算）：
     - 初始预算 = initial_json_budget（4096+输入字符数，下限 8192，钳模型上限）；
     - finish_reason 撞上限被截断、或思考耗尽预算返回空内容 → 自动翻倍扩额重试一次，
       并经 emit_progress 下发「扩大配额重试」可见提示（B：长等待可见）；
     - 扩到上限仍截断 → 抛明确的截断错误，不把残品 JSON 塞给解析器。
 
-    解析策略（audit-0819d，ADR-0001 执行记录三）：下发 response_format=json_object，
+    解析策略（ADR-0001 执行记录三）：下发 response_format=json_object，
     产出应纯 JSON，严格 json.loads 校验（正则抠取宽容兜底已删）；
     畸形 → C2 结构化拒因回喂纠正重试一次，仍败抛错（不吞）。
     """
@@ -79,7 +79,7 @@ async def _llm_json_call(
     if not provider:
         raise RuntimeError("当前工作区未配置可用的聊天供应商，请先在 API 配置页添加")
     ceiling = output_limit_for_model(model)
-    # audit-0819f C1：按任务定预算（下限 8192，调用方大值优先，钳模型上限）
+    # C1：按任务定预算（下限 8192，调用方大值优先，钳模型上限）
     budget = initial_json_budget(len(user or ""), int(max_tokens or 0), ceiling)
     messages = [
         {"role": "system", "content": system},
@@ -121,8 +121,8 @@ async def _llm_json_call(
                 "请缩短素材或改用输出上限更大的模型"
             )
         break
-    # audit-0819d：严格校验（产出应为纯 JSON）；正则抠取宽容兜底已删。
-    # 0817：畸形 JSON 带拒因纠正重试一次（C2 结构化拒因回喂）：
+    # 严格校验（产出应为纯 JSON）；正则抠取宽容兜底已删。
+    # 畸形 JSON 带拒因纠正重试一次（C2 结构化拒因回喂）：
     # 小模型漏逗号/引号类错误高发，携报错原文+残文重问一次可高概率自愈，
     # 仍败才抛错（不吞）。
     candidate = (content or "").strip()
@@ -182,8 +182,8 @@ async def _generate_soft_spec_candidates(
     """软制作参数候选出题（888 豪华版）：内层模型按剧本给六个维度各出
     2~4 个候选，校验后落 interaction.spec_soft_candidates 供收集向导渲染。
 
-    规格流程按客观特征自动检测启用（2222 二轮）；维度来自 Skill 规格步骤
-    客观提取（4444：平台不预设维度）；任何失败静默回落（向导不渲染该维度）。
+    规格流程按客观特征自动检测启用；维度来自 Skill 规格步骤
+    客观提取（平台不预设维度）；任何失败静默回落（向导不渲染该维度）。
     """
     try:
         from src.video_agent.skill_runtime.registry import spec_wizard_active
@@ -196,8 +196,8 @@ async def _generate_soft_spec_candidates(
         provider, model = exec_common._resolve_chat_provider(chat_provider, chat_model)
         if not provider:
             return
-        # 剧本体量客观边界（4444：1197 字剧本出 10 分钟候选的闹剧；
-        # 9999 二轮：旧 3 字/秒是旁白朗读速率，1197 字微剧本算出 7 分钟
+        # 剧本体量客观边界（1197 字剧本出 10 分钟候选的闹剧；
+        #旧 3 字/秒是旁白朗读速率，1197 字微剧本算出 7 分钟
         # 上限仍不合理）——剧情类成片约 600 字剧本/分钟；按剧本正文实测，
         # 收卷时超限候选剔除，全超则回落确定性梯度（不再出题给模型）
         script_len = len(str(script_content or "").strip())
@@ -213,7 +213,7 @@ async def _generate_soft_spec_candidates(
             "16:9、9:16、1:1、4:3、2.35:1，可附不超过 4 字的修饰）"
             if any(_is_aspect_dim(d) for d in dims) else ""
         )
-        # 长任务进度上报（2222 反馈）：内层候选出题 LLM 调用常耗时数十秒，
+        # 长任务进度上报（反馈）：内层候选出题 LLM 调用常耗时数十秒，
         # 与 script_analyze 主调用一样先告知用户在等什么
         await emit_progress("正在生成制片规格候选（独立 LLM 调用，预计数十秒）…")
         data = await _llm_json_call(
@@ -245,7 +245,7 @@ async def _generate_soft_spec_candidates(
                             continue
                     vs.append(s)
             if dur_cap_min and "时长" in dim:
-                # 8888 二轮：时长候选按分钟值去重（「约 2 分钟」≈「约 120 秒」
+                #时长候选按分钟值去重（「约 2 分钟」≈「约 120 秒」
                 # 是同一档），表述归一，不再给用户出重复选项
                 vs = _dedupe_duration_candidates(vs)
             if _is_aspect_dim(dim):
@@ -277,7 +277,7 @@ def _candidate_minutes(text: str) -> float:
 
 
 def _dedupe_duration_candidates(vals: List[str]) -> List[str]:
-    """8888 二轮：时长候选按分钟值去重（同值留首个）并归一表述
+    """：时长候选按分钟值去重（同值留首个）并归一表述
     （<1 分钟用「约 N 秒」，其余「约 N 分钟」）；解析不出分钟的原样保留。"""
     out: List[str] = []
     seen: set = set()
@@ -300,7 +300,7 @@ def _dedupe_duration_candidates(vals: List[str]) -> List[str]:
     return out
 
 
-# ---------- 画幅候选客观归一（9999 二轮） ----------
+# ---------- 画幅候选客观归一 ----------
 # 画幅比例是生成渠道的能力参数，属确定性题（13.5 三问 1+2）：
 # 候选只能命中标准画幅白名单，模型只选不造；有效候选不足时兜底平台标准集。
 _ASPECT_RATIO_WHITELIST: Tuple[str, ...] = (
@@ -362,7 +362,7 @@ def _duration_ladder(cap_min: int) -> List[str]:
 async def _fill_spec_values(
     skill_name: str, dims: List[str], raw_state: Dict[str, Any],
 ) -> Dict[str, str]:
-    """方案乙：未选软维度由模型按剧本填值（只出值、不出文档，4444）。"""
+    """方案乙：未选软维度由模型按剧本填值（只出值、不出文档）。"""
     if not dims:
         return {}
     provider, model = exec_common._resolve_chat_provider("", "")
@@ -438,13 +438,13 @@ async def _executor_actions_from_llm(
         warnings += warns
         if applied:
             return applied, warnings
-        # 自动重试一次（P0-4：失败兜底，禁止让主模型绕过执行器手动代拆）
+        # 自动重试一次（-4：失败兜底，禁止让主模型绕过执行器手动代拆）
         user_prompt = (
             user_prompt
             + "\n\n（系统）上一次执行器输出未通过校验或未产出有效操作，"
             "请严格按注入章节重新输出 studio-actions JSON；不要输出正文解释。"
         )
-    # 黑匣子（888 事故）：非流式兜底路径异常也存档，取证链不留死角
+    # 黑匣子（888）：非流式兜底路径异常也存档，取证链不留死角
     from src.video_agent.skill_runtime.blackbox import dump_case
     
     dump_case(

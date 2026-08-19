@@ -43,7 +43,7 @@ ALLOWED_EXTS = {
 
 @router.post("/ai/upload")
 async def upload_files(files: list[UploadFile] = File(...)):
-    """前端 handleChatFileUpload() 调用"""
+    """前端 handleChatFileUpload 调用"""
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     results = []
     for f in files:
@@ -92,7 +92,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
 async def image_proxy(url: str = Query(..., description="图片 URL")):
     """后端代理下载图片，返回原始字节（供前端 Canvas 格式转换用，绕过 CORS）。
 
-    B6/F37：协议白名单 + 内网/回环校验（url_safety.validate_external_url 单一事实源，
+    ：协议白名单 + 内网/回环校验（url_safety.validate_external_url 单一事实源，
     防 SSRF/DNS rebinding）。"""
     from src.video_agent.web.url_safety import validate_external_url
 

@@ -5,7 +5,7 @@
  * fetch-models（自动分类）、test-connection（验证地址）、probe-async（验证协议）、
  * /api/{gemini-cli,codex,jimeng}/status|help、/api/jimeng/login/*|logout|credit。
  *
- * 七轮 S1/T23：视图子域切至 settings/（SidePanel/ProviderDetail/RunningHubGuide/
+ * ：视图子域切至 settings/（SidePanel/ProviderDetail/RunningHubGuide/
  * CliAccountCard/FetchModelsModal/CliModal）；状态与动作仍全部留在本组件，
  * 子组件经 SettingsApi 单对象消费，行为零变更。
  */
@@ -33,7 +33,7 @@ export default function SettingsView() {
   const [providers, setProviders] = createSignal<EditableProvider[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [sel, setSel] = createSignal(0);
-  // CLI 域（安装状态/弹窗/即梦登录轮询）收敛在 use-cli-ops（七轮 S1/T23）
+  // CLI 域（安装状态/弹窗/即梦登录轮询）收敛在 use-cli-ops
   const cli = useCliOps();
 
   // Key 输入（每平台独立缓冲，切换平台重置）
@@ -85,7 +85,7 @@ export default function SettingsView() {
     setProviders((prev) => prev.map((p, i) => (i === sel() ? { ...p, [field]: value } : p)));
   }
 
-  // 拉取模型域（fetched/savedCats + 拉取/应用动作）收敛在 use-model-fetch（七轮 S1/T23）
+  // 拉取模型域（fetched/savedCats + 拉取/应用动作）收敛在 use-model-fetch
   const mf = useModelFetch(current, keyInput, patch);
 
   /** 保存全部（可给当前平台附加覆盖字段，如 api_key/clear_key/wallet_api_key） */
@@ -200,8 +200,8 @@ export default function SettingsView() {
     }
   }
 
-  // ---------- CLI 操作：实现收敛于 use-cli-ops（七轮 S1/T23） ----------
-  // ---------- 拉取模型：实现收敛于 use-model-fetch（七轮 S1/T23） ----------
+  // ---------- CLI 操作：实现收敛于 use-cli-ops ----------
+  // ---------- 拉取模型：实现收敛于 use-model-fetch ----------
 
   // ---------- 模型行编辑 ----------
   function patchModel(kind: ModelKind, idx: number, value: string) {
@@ -222,7 +222,7 @@ export default function SettingsView() {
     setProviders((prev) => prev.map((p, i) => (i === sel() ? { ...p, [kind]: [...(p[kind] || []), ''] } : p)));
   }
 
-  /** 子组件共享 API（状态与动作的唯一出口；七轮 S1/T23） */
+  /** 子组件共享 API（状态与动作的唯一出口） */
   const api: SettingsApi = {
     current, providers, sel, proto, isCli, imageMode,
     keyInput, setKeyInput, rhCoin, setRhCoin, rhWallet, setRhWallet,

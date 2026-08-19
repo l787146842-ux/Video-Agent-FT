@@ -5,11 +5,11 @@ import { t } from '@/lib/locale';
 
 export interface ConfirmOptionItem {
   label: string;
-  /** 814G4：卡片展示文字（缺省用 label）；label 保留「键：值」回传格式 */
+  /** ：卡片展示文字（缺省用 label）；label 保留「键：值」回传格式 */
   display?: string;
   description?: string;
   group?: string;
-  /** B2/F16：点击发送的机械值（后端确定性消费）；缺省发送 label */
+  /** ：点击发送的机械值（后端确定性消费）；缺省发送 label */
   value?: string;
 }
 
@@ -24,7 +24,7 @@ export type PickDim = 'provider' | 'model' | 'image-channel' | 'video-channel' |
  */
 export function pickDimension(title: string, opts: ConfirmOptionItem[]): PickDim {
   const titleText = String(title || '');
-  // 7777 二轮：分辨率/时长类维度是固定档位选项卡；标题常含「图片/视频」
+  //分辨率/时长类维度是固定档位选项卡；标题常含「图片/视频」
   // 方向词，先精确判死防被下方渠道正则误判成厂商/模型下拉
   if (/分辨率/.test(titleText)) return '';
   if (/最大时长|单镜头|分镜时长/.test(titleText)) return '';

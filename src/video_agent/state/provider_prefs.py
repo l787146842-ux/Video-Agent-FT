@@ -1,4 +1,4 @@
-"""制作参数单一事实源（6666 二轮：顶部「全局设置」→ 渠道/分辨率/时长）。
+"""制作参数单一事实源（顶部「全局设置」→ 渠道/分辨率/时长）。
 
 出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长由顶部「全局设置」
 唯一提供，规格文档只承载 Skill 声明的创作性软维度；本模块是这些硬参数的
@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Tuple
 from src.video_agent.config import settings
 from src.video_agent.web.provider_config import spec_media_preference
 
-# 规格文档中「未确认占位」标记（9999 事故：三项参数标着「待确认」就放行）。
+# 规格文档中「未确认占位」标记（三项参数标着「待确认」就放行）。
 # prompt_gates.spec_unconfirmed_params / apply_spec_selections 与解析正则同源消费。
 SPEC_PARAM_UNCONFIRMED_MARKERS: Tuple[str, ...] = ("待确认", "待定", "未确认", "TBD")
 
@@ -38,7 +38,7 @@ def resolve_spec_media_preference(
 
 
 def resolve_spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
-    """制作参数单一事实源（6666 二轮：顶部「全局设置」，不再扫描规格文档）。
+    """制作参数单一事实源（顶部「全局设置」，不再扫描规格文档）。
 
     返回执行器/生成管线关心的三个键：
     - image_resolution：图片分辨率（如 1K/2K/4K）
@@ -54,7 +54,7 @@ def resolve_spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def extract_production_params(content: str) -> Dict[str, Any]:
-    """制作参数单一事实源（6666 二轮：全局设置；content 仅保留签名兼容）。
+    """制作参数单一事实源（全局设置；content 仅保留签名兼容）。
 
     旧版本按规格文档正文解析，现统一改为全局设置，避免两套说辞。
     """

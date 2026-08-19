@@ -28,7 +28,7 @@ from src.video_agent.state.models import (
 )
 from src.video_agent.utils.prompts import load_prompt_section
 
-# ---------- 闸机规则注册表（Policy-as-Data，宪法 §2.3；814R2 恢复） ----------
+# ---------- 闸机规则注册表（Policy-as-Data，宪法 §2.3； 恢复） ----------
 
 LAYER_PLATFORM = "platform"
 LAYER_SKILL = "skill"
@@ -44,7 +44,7 @@ class GateRuleMeta:
 
 
 # 规则注册表：平台层为硬边界（manifest 无权关闭，仅可经用户一次性申诉放行）；
-# Skill 层为内容结构/流程规则（manifest 可关/放宽/加严；流程闸只警告不拦人，4444）。
+# Skill 层为内容结构/流程规则（manifest 可关/放宽/加严；流程闸只警告不拦人）。
 GATE_RULES: Dict[str, GateRuleMeta] = {
     r.rule_id: r for r in (
         GateRuleMeta("platform.prompt_write", LAYER_PLATFORM,
@@ -74,14 +74,14 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
         GateRuleMeta("skill.flow.spec_gate", LAYER_SKILL,
                      "规格文档前置闸：未写规格时附警告（只警告不拦人）"),
         GateRuleMeta("skill.flow.element_image", LAYER_SKILL,
-                     "元素概念图前置闸：元素无图时附警告（只警告不拦人，4444）"),
+                     "元素概念图前置闸：元素无图时附警告（只警告不拦人）"),
         GateRuleMeta("skill.flow.storyboard_pending", LAYER_SKILL,
-                     "故事板待确认窗口闸：结构未确认时附警告（只警告不拦人，4444）"),
+                     "故事板待确认窗口闸：结构未确认时附警告（只警告不拦人）"),
         GateRuleMeta("skill.script_required", LAYER_SKILL,
-                     "剧本原料闸（814H9）：需剧本 Skill 原料缺失时反复提醒上传；"
+                     "剧本原料闸：需剧本 Skill 原料缺失时反复提醒上传；"
                      "执行侧拦 agent 越阶结构操作，不拦用户；豁免/坚持旁路"),
         GateRuleMeta("platform.stage_precondition", LAYER_PLATFORM,
-                     "阶段前置闸（audit-0819e，控制流统一）：工具归属阶段的前置阶段"
+                     "阶段前置闸（控制流统一）：工具归属阶段的前置阶段"
                      "未完成时拒收调用（sidecar 依赖图为唯一事实源）；机械强制，"
                      "manifest 无权关闭，仅用户坚持可一次性豁免放行并留痕"),
     )
@@ -110,11 +110,11 @@ _CJK_MIN_RATIO = 0.15
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _WS_RE = re.compile(r"\s")
 
-# 时长语义解析（P1-4）：数字 + 秒/s/sec/seconds（可带「时长/镜头总时长」前缀）
+# 时长语义解析（-4）：数字 + 秒/s/sec/seconds（可带「时长/镜头总时长」前缀）
 _DURATION_RE = re.compile(
     r"\d+(?:\.\d+)?\s*(?:秒|s|sec|seconds)", re.IGNORECASE
 )
-# 字幕负面约束同义词（P1-4）：任一命中即视为已声明「字幕后期添加」
+# 字幕负面约束同义词（-4）：任一命中即视为已声明「字幕后期添加」
 _SUBTITLE_NEGATIONS = (
     "no subtitles",
     "无字幕",
@@ -126,8 +126,8 @@ _SUBTITLE_NEGATIONS = (
     "subtitles later",
 )
 
-# Skill 可配置闸机规则（W20/S1）：文档内可选声明块，优先级 skill_manifest > gate_rules；
-# 业务闸开关默认全关——引擎不预设任何 Skill 的提示词规范（S1 清偿），
+# Skill 可配置闸机规则：文档内可选声明块，优先级 skill_manifest > gate_rules；
+# 业务闸开关默认全关——引擎不预设任何 Skill 的提示词规范（
 # 需要这些结构检查的 Skill 在自己的 manifest gates 里声明开启
 _GATE_RULES_BLOCK_RE = re.compile(
     r"```(?:json|js)?\s*gate_rules\s*\n(.*?)```", re.S | re.I
@@ -140,7 +140,7 @@ _DEFAULT_GATE_RULES: Dict[str, Any] = {
     "require_subtitle": False,
     "require_camera_language": False,
     "require_audio_layer": False,
-    # @引用（888 事故）：声明开启后分镜提示词写入时系统按 sceneRefs 客观补印，
+    # @引用（888）：声明开启后分镜提示词写入时系统按 sceneRefs 客观补印，
     # 不出题给模型；未声明的 Skill 一律不动（验收跟着技能声明走）
     "require_at_ref": False,
     "subtitle_synonyms": list(_SUBTITLE_NEGATIONS),
@@ -151,7 +151,7 @@ _DEFAULT_GATE_RULES: Dict[str, Any] = {
 
 def parse_gate_rules(content: str, manifest: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """从 Skill 解析闸机规则（旧 gate_rules 块兼容；manifest gates 由
-    调用方从 sidecar 传入——0818 B4 起文档不再承载声明）。
+    调用方从 sidecar 传入——  起文档不再承载声明）。
 
     未声明 / 格式非法 / 类型不合法时回落默认规则；只接受白名单键，
     防止用户文档意外破坏结构防护（长度/语言等基础阈值不可被关到负值）。
@@ -173,7 +173,7 @@ def parse_gate_rules(content: str, manifest: Optional[Dict[str, Any]] = None) ->
                     if isinstance(val, (int, float)) and val > 0:
                         rules[key] = int(val)
                 elif isinstance(default, float):
-                    # 允许 0：cjk_min_ratio=0 等效关闭语言闸（英文锁定 Skill，S1）
+                    # 允许 0：cjk_min_ratio=0 等效关闭语言闸（英文锁定 Skill）
                     if isinstance(val, (int, float)) and 0 <= val <= 1:
                         rules[key] = float(val)
                 elif isinstance(default, list):
@@ -201,7 +201,7 @@ def gate_mode() -> str:
 
 # ---------- 用户坚持覆盖（用户第一 > 规格文档铁律 > Skill/系统默认） ----------
 
-# 用户坚持覆盖（M1 作用域升级）：不再全局降级，按意图映射到具体闸门。
+# 用户坚持覆盖（作用域升级）：不再全局降级，按意图映射到具体闸门。
 # 返回值（作用域）：""=未命中 / "element_image"=仅要求跳过元素概念图前置 /
 # "all"=泛化权威表达（全部闸门降为警告）。特定意图优先于泛化表达：
 # 「我坚持要跳过概念图」只放行元素图闸，结构校验闸保持严格。
@@ -210,8 +210,8 @@ GATE_ELEMENT_IMAGE = "element_image"    # 元素概念图前置闸
 GATE_FLOW_PAUSE = "flow_pause"          # 流程暂停兜底闸（总结/规格暂停卡）：仅 scope=all 豁免，
 # 「跳过概念图」等特定意图不涵盖（用户只是不想等图，不是不要交互分界）
 
-# 五轮 S3/#13：一次性放行作用域枚举——前端按钮/后端消费/trace 记录三端引用同一语义。
-# 值与上方闸域常量同源（P1 单一表述源：ELEMENT_IMAGE 即 GATE_ELEMENT_IMAGE 别名），
+# 一次性放行作用域枚举——前端按钮/后端消费/trace 记录三端引用同一语义。
+# 值与上方闸域常量同源（单一表述源：ELEMENT_IMAGE 即 GATE_ELEMENT_IMAGE 别名），
 # 此前 planner 消费逻辑「非 all 即 element_image」的隐式映射只有两处代码可懂。
 GATE_OVERRIDE_SCOPE_ALL = "all"                          # 本轮闸机全部豁免（单次生效）
 GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE = GATE_ELEMENT_IMAGE   # 仅元素概念图前置闸豁免
@@ -257,7 +257,7 @@ def user_insists_override(user_text: str) -> str:
 
 
 def override_covers(scope: Any, gate: str) -> bool:
-    """覆盖作用域是否涵盖指定闸（M1）。
+    """覆盖作用域是否涵盖指定闸。
 
     兼容旧布尔语义：True 等价 "all"；False/空串不涵盖任何闸。
     """
@@ -305,15 +305,15 @@ def is_spec_doc_name(name: str) -> bool:
 def text_mentions_spec_doc(text: str) -> bool:
     """文本是否提及规格文档（与 is_spec_doc_name 同一份名称特征源）。
 
-    2222 二轮：规格向导客观流程检测的判据——Skill 正文提及规格文档名
+规格向导客观流程检测的判据——Skill 正文提及规格文档名
     即视为其流程含规格编写环节。
     """
     n = str(text or "").lower().replace(" ", "").replace("-", "_")
     return any(h in n for h in _SPEC_NAME_HINTS)
 
 
-# ---------- 剧本原料闸（814H9）----------
-# 五轮 S5：剧本闸家族实现体切出至 core/gates_script.py（文件瘦身）；
+# ---------- 剧本原料闸----------
+# 剧本闸家族实现体切出至 core/gates_script.py（文件瘦身）；
 # 本文件尾部 re-export 保持既有引用路径不变（登记壳，见尾块注释）。
 
 
@@ -353,7 +353,7 @@ def shot_references_missing_element_images(
     group: Optional[Dict[str, Any]] = None,
     scene_refs: Optional[List[Any]] = None,
 ) -> bool:
-    """分镜 sceneRefs 引用了无图关键元素时返回 True（引用感知，P1-4）。
+    """分镜 sceneRefs 引用了无图关键元素时返回 True（引用感知，-4）。
 
     group 优先取其 sceneRefs；新建分组场景可显式传 scene_refs。
     无 sceneRefs / 未引用任何关键元素 → False（不误伤无关分镜）。
@@ -426,7 +426,7 @@ def autofill_shot_duration(
     group: Optional[Dict[str, Any]],
     rules: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """分镜提示词时长自动补全（888 事故：模型漏写时长 → 整批 12 条被结构闸拒绝
+    """分镜提示词时长自动补全（888 ：模型漏写时长 → 整批 12 条被结构闸拒绝
     → 纠正重试仍漏 → 零进展熔断）。
 
     提示词未写明镜头时长且所属分镜组的 duration 字段可用时，在末尾追加
@@ -454,7 +454,7 @@ def autofill_at_refs(
     raw_state: Dict[str, Any] | None = None,
     rules: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """分镜提示词 @引用系统自动补写（888 事故：规则注入到位但模型没写，
+    """分镜提示词 @引用系统自动补写（888 ：规则注入到位但模型没写，
     8 条提示词一条 @ 都没有）。
 
     确定性任务收归系统（三问判别法：答案能从 sceneRefs 算出来、对错机器可判）：
@@ -492,12 +492,12 @@ def autofill_at_refs(
 _SPEC_LANG_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?输出语言(?:\*\*)?\s*[:：]\s*(.+)$")
 
-# 0817 B17：语言闸硬拒稳定信号（exec_media_writer 据此批内即时纠正，
+# 语言闸硬拒稳定信号（exec_media_writer 据此批内即时纠正，
 # 不再走「整批写完再拦 → 整工具重做」的高成本路径）
 LANG_EN_HARD_PREFIX = "提示词正文几乎全是英文"
 
 def spec_output_language(raw_state: Optional[Dict[str, Any]]) -> str:
-    """0817：规格文档里用户选定的「输出语言」维度值（未选/无规格返回空串）。"""
+    """：规格文档里用户选定的「输出语言」维度值（未选/无规格返回空串）。"""
     if not raw_state:
         return ""
     doc = find_spec_doc(raw_state)
@@ -511,7 +511,7 @@ def resolve_prompt_language(
     raw_state: Optional[Dict[str, Any]],
     skill_rules: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """0817 语言单一事实源裁决：用户选择（规格输出语言）> Skill 声明
+    """ 语言单一事实源裁决：用户选择（规格输出语言）> Skill 声明
     （cjk_min_ratio<=0 = 英文锁定）> 平台默认（中文）。
     注入句与语言闸读同一结果，by construction 不可能再打架（C1 延伸）。"""
     sel = spec_output_language(raw_state)
@@ -562,7 +562,7 @@ def validate_prompt_write(
     shot_min_chars = int(gate.get("shot_min_chars", _SHOT_PROMPT_MIN_CHARS))
     element_min_chars = int(gate.get("element_min_chars", _ELEMENT_PROMPT_MIN_CHARS))
     cjk_min_ratio = float(gate.get("cjk_min_ratio", _CJK_MIN_RATIO))
-    # 0817：语言单一事实源接入用户选择（规格输出语言 > Skill 声明）；
+    # 语言单一事实源接入用户选择（规格输出语言 > Skill 声明）；
     # 英文/中英双语关闭语言闸，中文选择在 Skill 英文锁定时恢复平台地板
     _lang = resolve_prompt_language(raw_state, gate)
     if _lang in ("英文", "中英双语"):
@@ -572,7 +572,7 @@ def validate_prompt_write(
 
     # 语言闸（shot / keyElement 通用）：中文输入环境下正文应以中文书写，
     # 仅专业技术术语可保留英文。阈值可由 manifest gates.cjk_min_ratio 调整
-    # （英文锁定的 Skill 声明极低阈值即等效关闭；S1：文案不再冒用 Skill 名义）
+    # （英文锁定的 Skill 声明极低阈值即等效关闭；：文案不再冒用 Skill 名义）
     total_chars = len(_WS_RE.sub("", text))
     cjk_chars = len(_CJK_RE.findall(text))
     if total_chars and cjk_chars / total_chars < cjk_min_ratio:
@@ -661,7 +661,7 @@ def storyboard_is_empty(raw_state: Dict[str, Any]) -> bool:
 
 
 def present_structure_kinds(raw_state: Dict[str, Any]) -> List[str]:
-    """0817：故事板现存的分组类别（审阅卡文案用）。"""
+    """：故事板现存的分组类别（审阅卡文案用）。"""
     kinds: List[str] = []
     if raw_state.get(CAT_KEY_ELEMENTS):
         kinds.append("keyElement")
@@ -673,7 +673,7 @@ def present_structure_kinds(raw_state: Dict[str, Any]) -> List[str]:
 
 
 def storyboard_stage_complete(raw_state: Dict[str, Any], skill_name: str = "") -> bool:
-    """0817 故事板阶段完成（暂停点归位 Skill 阶段边界）：关键元素+分镜均非空；
+    """ 故事板阶段完成（暂停点归位 Skill 阶段边界）：关键元素+分镜均非空；
     音频仅当 Skill 声明音频拆解（available_tools 含 storyboard_audio）才要求。"""
     if not (raw_state.get(CAT_KEY_ELEMENTS) or []) or not (raw_state.get(CAT_SHOTS) or []):
         return False
@@ -690,12 +690,12 @@ def storyboard_stage_complete(raw_state: Dict[str, Any], skill_name: str = "") -
 
 
 def flow_auto_continue(raw_state: Dict[str, Any]) -> bool:
-    """0817 一条龙指令（模型解读用户意图后发出；仅本条消息生效，任务开始即清）。"""
+    """ 一条龙指令（模型解读用户意图后发出；仅本条消息生效，任务开始即清）。"""
     return bool((raw_state.get("interaction") or {}).get("auto_continue"))
 
 
 def clear_flow_directive(raw_state: Dict[str, Any]) -> bool:
-    """0817：任务开始清除上一任务残留的一条龙标记（按消息生效语义）；返回是否清除。"""
+    """：任务开始清除上一任务残留的一条龙标记（按消息生效语义）；返回是否清除。"""
     inter = raw_state.get("interaction")
     if inter and inter.get("auto_continue"):
         inter["auto_continue"] = False
@@ -722,8 +722,8 @@ def drafts_confirmed(raw_state: Dict[str, Any], drafts: List[Dict[str, Any]]) ->
 
 # ---------- 阶段探测驱动的工具裁剪（混合形态第一层：工具可见性边界） ----------
 
-# 故事板结构工具集（无规格文档阶段不下发；audit-0819e 补洞：三个拆解
-# 执行器与提示词编写执行器同入名单——1111 事故越阶入口正是它们，
+# 故事板结构工具集（无规格文档阶段不下发； 补洞：三个拆解
+# 执行器与提示词编写执行器同入名单—— 越阶入口正是它们，
 # 可见性软层与阶段前置硬闸 platform.stage_precondition 双层一致）
 STORYBOARD_STAGE_TOOLS = frozenset({
     "storyboard_create_group", "storyboard_patch_draft", "storyboard_add_draft",
@@ -773,7 +773,7 @@ def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
     return frozenset(), ""
 
 
-# 九轮 B3b：闸机文案/卡片族实现体迁 gates_cards.py，re-export 保持既有引用路径
+# 闸机文案/卡片族实现体迁 gates_cards.py，re-export 保持既有引用路径
 #（宪法 §12 登记壳；壳到期制登记：长期保留·架构承重——round_end_policies/
 # agent_loop/chat_consume 等经 prompt_gates.* 引用，迁移需全量改引用）
 from src.video_agent.core.gates_cards import (
@@ -818,7 +818,7 @@ from src.video_agent.core.gates_cards import (
     SHOT_SEQUENCE_GATE_ERROR,
 )
 
-# R4b：规格向导家族实现体在 gates_spec.py，此处 re-export 保持既有引用不变
+# 规格向导家族实现体在 gates_spec.py，此处 re-export 保持既有引用不变
 from src.video_agent.core.gates_spec import (
     _CHANNEL_GROUP_IMAGE,
     _CHANNEL_GROUP_VIDEO,
@@ -846,7 +846,7 @@ from src.video_agent.core.gates_spec import (
     state_has_spec_doc,
 )
 
-# 五轮 S5：剧本原料闸家族实现体在 gates_script.py，此处 re-export 保持既有引用不变
+# 剧本原料闸家族实现体在 gates_script.py，此处 re-export 保持既有引用不变
 # （宪法 §12 登记壳；壳到期制登记：长期保留·架构承重，消费方含 planner/registry
 # 经 prompt_gates.* 属性访问，迁移需全量改引用并同步 test patch 目标）
 from src.video_agent.core.gates_script import (

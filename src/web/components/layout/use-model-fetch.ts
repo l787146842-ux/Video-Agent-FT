@@ -1,5 +1,5 @@
 /**
- * 拉取模型域状态与动作 hook——七轮 S1/T23 自 SettingsView 切出。
+ * 拉取模型域状态与动作 hook——  自 SettingsView 切出。
  * 承载 fetched/savedCats 状态与「拉取/应用」动作；弹窗 UI 在 settings/FetchModelsModal。
  */
 import { createSignal } from 'solid-js';

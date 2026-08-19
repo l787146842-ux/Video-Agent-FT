@@ -64,7 +64,7 @@ _MODEL_CONTEXT_WINDOWS = {
 def context_window_for_model(model: str, provider_id: str = "") -> int:
     """按模型名查上下文窗口；未收录的模型回落 settings.context_window_size。
 
-    B6/F52：供应商元数据（api_providers.json 的模型条目 context_window）优先，
+    ：供应商元数据（api_providers.json 的模型条目 context_window）优先，
     硬编码子串表仅作兜底（同族不同型号窗口可表达，不因表过期而失真）。"""
     m = (model or "").lower()
     if provider_id:
@@ -78,7 +78,7 @@ def context_window_for_model(model: str, provider_id: str = "") -> int:
                     if win > 0:
                         return win
         except Exception:
-            pass  # 元数据不可用：回落查表（B6/F50 已日志化的降级路径）
+            pass  # 元数据不可用：回落查表（已日志化的降级路径）
     for key, window in _MODEL_CONTEXT_WINDOWS.items():
         if key in m:
             return window
@@ -86,7 +86,7 @@ def context_window_for_model(model: str, provider_id: str = "") -> int:
 
 
 # 模型名关键字 → 单次输出上限（max_tokens 封顶值）。与上下文窗口是两回事：
-# 输出上限通常远小于窗口，且推理模型的思考 token 也计入该额度（9999/1111 事故）。
+# 输出上限通常远小于窗口，且推理模型的思考 token 也计入该额度（/）。
 # 只收录保守的供应商文档保证值；未命中回落全局 LLM_OUTPUT_LIMIT。
 _MODEL_OUTPUT_LIMITS = {
     "deepseek": 8_192,
@@ -139,7 +139,7 @@ def estimate_messages_tokens(messages: List[Dict[str, Any]]) -> int:
                 if part.get("type") == "text":
                     total += estimate_tokens(part.get("text", ""))
                 elif part.get("type") == "image_url":
-                    # 五轮 S9/#15b：vision token 计入预算（此前漏计，带图历史
+                    # vision token 计入预算（此前漏计，带图历史
                     # 的截断决策失真）；固定成本取 settings.image_token_estimate
                     total += settings.image_token_estimate
         # 每条消息的 role/metadata 开销约 4 token
@@ -150,7 +150,7 @@ def estimate_messages_tokens(messages: List[Dict[str, Any]]) -> int:
 def _is_real_user_msg(msg: Dict[str, Any]) -> bool:
     """判定 user 消息是否为用户真实输入（与系统合成的回喂/注入相对）。
 
-    四轮 R5/#8：截断按「轮组」原子删除——轮组 = 真实用户消息 + 其后的
+ ：截断按「轮组」原子删除——轮组 = 真实用户消息 + 其后的
     assistant/（系统）回喂，延续到下一条真实用户消息为止。FC 轨
     assistant(tool_calls) 与随后的（系统）回喂是配对消息，拆半边会被供应商 400。
     """
@@ -178,7 +178,7 @@ def truncate_messages(
     - 保留首条消息（通常是 system prompt）
     - 保留最近 keep_recent 条消息
     - 从中间按「轮组」整组删除最早的消息，直到估算 token 数 <= max_tokens；
-      轮组 = 一条消息 + 紧随其后的合成回喂消息（四轮 R5/#8：FC 轨
+      轮组 = 一条消息 + 紧随其后的合成回喂消息（FC 轨
       assistant(tool_calls) 与（系统）回喂配对完整，拆半边会被供应商 400）
     - 保险丝：删无可删仍超预算且首条为 system 时，调用 system_degrader
       降级重建 system 段（如状态 JSON 只留组标题/计数），避免超限请求发出

@@ -57,7 +57,7 @@ export function ChatFeed() {
     return -1;
   };
 
-  /** B2/F13：最后一条含闸机拦截判定（trace.gates ok=false）的消息（「本次放行」按钮挂载点）。
+  /** ：最后一条含闸机拦截判定（trace.gates ok=false）的消息（「本次放行」按钮挂载点）。
    * 结构化判定替代文案 includes('拦截') 字符串匹配——文案/措辞改动不再影响按钮。 */
   const gateWarningTargetIdx = () => {
     if (chatState.isStreaming) return -1;
@@ -69,14 +69,14 @@ export function ChatFeed() {
     return -1;
   };
 
-  /** 五轮 S3/#3：携带建议动作的消息（重试/继续按钮挂载点）。
-   * 六轮 S5/N4c 边界锐化：候选消息之后出现新「用户消息」即视为已处置
+  /** ：携带建议动作的消息（重试/继续按钮挂载点）。
+   *  边界锐化：候选消息之后出现新「用户消息」即视为已处置
    * （用户已用别的方式继续），旧按钮失效——同轮的 doc 卡/图片卡等 agent
    * 派生条目不构成失效（判定纯函数在 lib/turn-groups，vitest 钉死）。 */
   const suggestedTargetIdx = () =>
     suggestedTargetIndex(chatState.messages, chatState.isStreaming);
 
-  /** 四轮 R3/#10：暂停卡生命周期状态（回看时可知旧卡是否仍有效）。
+  /** ：暂停卡生命周期状态（回看时可知旧卡是否仍有效）。
    * active=当前待回应；answered=其后已有用户消息（已回应）；expired=被更新的暂停取代。 */
   const confirmStateFor = (idx: number): 'active' | 'answered' | 'expired' | 'none' => {
     const msgs = chatState.messages;
@@ -88,7 +88,7 @@ export function ChatFeed() {
     return 'expired';
   };
 
-  /** 五轮 S2/#12：已回应暂停卡的「当时选了哪项」——结构化优先（pauseAnsweredId 与
+  /** ：已回应暂停卡的「当时选了哪项」——结构化优先（pauseAnsweredId 与
    * 暂停卡 pauseId 匹配，对标 AskUserQuestion 权威登记派生），旧消息回落文本匹配；
    * 纯函数在 lib/turn-groups，vitest 钉死 */
   const answeredValueForIdx = (idx: number): string => {
@@ -96,7 +96,7 @@ export function ChatFeed() {
     return answeredValueFor(chatState.messages, idx);
   };
 
-  /** 五轮 S2/#2：轮次分组（同 turnId 聚合，旧消息相邻兜底）——一轮的
+  /** ：轮次分组（同 turnId 聚合，旧消息相邻兜底）——一轮的
    * 正文/文档卡/图片卡收进同一容器，消除消息流碎片化 */
   const groups = createMemo(() => groupTurns(chatState.messages));
 

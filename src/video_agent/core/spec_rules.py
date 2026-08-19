@@ -27,12 +27,12 @@ _IRON_SECTION_RE = re.compile(r"##\s*执行铁律[^\n]*\n.*?(?=\n##\s|\Z)", re.S
 # 用户改过其它内容不受影响
 _OLD_PRIORITY = "用户指令 > 本文档 > Skill/系统默认"
 _NEW_PRIORITY = "用户指令 > 本文档 + 制片规格 > Skill/系统默认"
-# 2222 二轮：删除「不得拦截/强制暂停」半句（暂停语义唯一源=Skill 文本，此句与
+#删除「不得拦截/强制暂停」半句（暂停语义唯一源=Skill 文本，此句与
 # Skill 暂停条款打架只喂推理模型仲裁开销，且平台暂停由闸机代码驱动不受其影响）。
 # 容忍旧文档里的换行/空白差异；用户改过其它内容不受影响
 _NO_BLOCK_RE = re.compile(r"；\s*系统不得拦截用户要求的操作，\s*也不得强制暂停等待确认。")
 
-# 0817 B18（用户裁决）：铁律第 4/5 条（提示词质量/产出形态）归 Skill 章节
+# （用户裁决）：铁律第 4/5 条（提示词质量/产出形态）归 Skill 章节
 # 唯一表述——存量项目铁律里的默认第 4/5 条升级迁移时剥离（保留用户自加的第 6+ 条）
 _IRON_CLAUSE_45_RE = re.compile(
     r"(?m)^[ \t]*4\.[ \t]*提示词质量：[\s\S]*?^[ \t]*5\.[ \t]*产出形态：[\s\S]*?(?=^[ \t]*\d+\.[ \t]|\Z)")
@@ -97,8 +97,8 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         body = migrated or _IRON_RULES_DOC_BODY.strip()
         # 老项目迁移来的正文同步升级：优先级措辞（含制片规格同级）
-        # + 删「不得拦截/强制暂停」半句（2222 二轮）
-        # + 0817 B18：规格文档迁入的旧章节若带默认第 4/5 条同样剥离
+        # + 删「不得拦截/强制暂停」半句
+        # + ：规格文档迁入的旧章节若带默认第 4/5 条同样剥离
         body = body.replace(_OLD_PRIORITY, _NEW_PRIORITY)
         body = _NO_BLOCK_RE.sub("。", body)
         body = _IRON_CLAUSE_45_RE.sub("", body).rstrip()
@@ -123,13 +123,13 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
                 iron["content"] = iron_content.rstrip() + f"\n- {ELEMENT_IMAGE_PREREQ_OFF}\n"
             changed = True
     # 老项目措辞升级（精确应用，不动用户其它编辑）：
-    # ① 优先级文案（含制片规格同级）；② 删「不得拦截/强制暂停」半句（2222 二轮）；
-    # ③ 0817 B18：剥离默认第 4/5 条（产出规范归 Skill 章节唯一表述）
+    # ① 优先级文案（含制片规格同级）；② 删「不得拦截/强制暂停」半句；
+    # ③ ：剥离默认第 4/5 条（产出规范归 Skill 章节唯一表述）
     if iron is not None:
         content = str(iron.get("content") or "")
         upgraded = content.replace(_OLD_PRIORITY, _NEW_PRIORITY)
         upgraded = _NO_BLOCK_RE.sub("。", upgraded)
-        # 0817 B25：第 2 条措辞迁移（自检→系统机器验收，B9 后验收已由代码承担）
+        # 第 2 条措辞迁移（自检→系统机器验收， 后验收已由代码承担）
         upgraded = upgraded.replace("（自检核对）", "（系统机器验收）")
         if _IRON_CLAUSE_45_RE.search(upgraded):
             upgraded = _IRON_CLAUSE_45_RE.sub("", upgraded).rstrip() + "\n"

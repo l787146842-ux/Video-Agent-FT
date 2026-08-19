@@ -1,8 +1,8 @@
 """
-产出质量评估集 — 8888/666 事故样本回归 + LLM-as-judge（W21）。
+产出质量评估集 — /666 样本回归 + LLM-as-judge。
 
 本地检查（确定性）：闸机规则 / 确认闭环 / SSRF / with_retry 等可直接断言；
-LLM 检查（judge 模式）：把事故场景发给 LLM，用 judge 提示词判定行为是否合规。
+LLM 检查（judge 模式）：把场景发给 LLM，用 judge 提示词判定行为是否合规。
 
 用法：
     python scripts/eval/run_eval.py --mode local
@@ -23,11 +23,11 @@ from src.video_agent.web.chat_service import _consume_pending_confirmation
 from src.video_agent.web.generation import call_chat_completion
 from src.video_agent.web.url_safety import validate_external_url
 
-# 事故样本：输入场景 → 期望行为
+# 样本：输入场景 → 期望行为
 LOCAL_CASES: List[Dict[str, Any]] = [
     {
         "id": "gate_english_body_rejected",
-        "title": "8888 事故：整段英文分镜提示词应被校验识别为不合格（照写并警告）",
+        "title": "整段英文分镜提示词应被校验识别为不合格（照写并警告）",
         "check": "gate_english_body_rejected",
     },
     {
@@ -47,7 +47,7 @@ LOCAL_CASES: List[Dict[str, Any]] = [
     },
     {
         "id": "spec_gate_warns_and_allows_structure",
-        "title": "666 事故：无规格文档时照常搭建故事板并记录警告",
+        "title": "无规格文档时照常搭建故事板并记录警告",
         "check": "spec_gate_warns_and_allows_structure",
     },
     {
@@ -166,7 +166,7 @@ def _check_spec_gate_warns_and_allows_structure() -> Tuple[bool, str]:
     StateManager.reset_instance()
     svc = StateManager(_make_temp_state_dir())
     try:
-        # S1：规格前置警告仅对声明 spec_gate 的 Skill 生效；
+        # 规格前置警告仅对声明 spec_gate 的 Skill 生效；
         # eval 环境无真实 Skill 文档，作用域内模拟声明（退出即恢复）
         from unittest.mock import patch
 
