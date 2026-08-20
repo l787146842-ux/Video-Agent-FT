@@ -376,14 +376,17 @@ def test_spec_wizard_manifest_false_escape_hatch():
 def test_spec_wizard_consumers_use_objective_detection():
     """G4：消费点统一走 spec_wizard_active，不留直读声明的分身。
     R4a 拆分后 ex_mod 为 re-export 壳，实现扫描三个子模块；
-    audit-0819b：agent_loop 消费点随文本块路径退役（剩 fc_tool_runner + 执行器两处）。"""
+    audit-0819b：agent_loop 消费点随文本块路径退役；
+    Rule2 v6：FC 轨选项面归一迁 pause_composer 单一实现。"""
     from src.video_agent.core import fc_tool_runner as fcr
+    from src.video_agent.core import pause_composer
     from src.video_agent.skill_runtime import exec_common, exec_spec, exec_tools
 
     fcr_src = inspect.getsource(fcr)
     ex_src = (inspect.getsource(exec_common) + inspect.getsource(exec_spec)
               + inspect.getsource(exec_tools))
-    assert "spec_wizard_active(injected_skill)" in fcr_src
+    assert "normalize_option_surface" in fcr_src
+    assert "spec_wizard_active" in inspect.getsource(pause_composer)
     assert "spec_wizard_active(skill_name)" in ex_src
     assert 'skill_flow_enabled(injected_skill, "spec_wizard")' not in fcr_src
 

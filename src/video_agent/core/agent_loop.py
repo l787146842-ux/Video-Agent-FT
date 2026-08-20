@@ -199,17 +199,18 @@ async def run_agent_loop(
                 })
         system_prompt = context_builder()  # 每轮刷新，让 LLM 看到上一轮执行后的最新状态
 
-        # 过程时间线：模型推理轮本身也作为操作条目可见（读文档/调执行器之外的“思考”动作）
+        # 过程时间线：模型推理轮本身也作为操作条目可见（v6：仅创作型
+        # 交接轮进入本循环，文案为节点内创作语义，非确定性阶段规划）
         await emit({
             "type": SSE_TOOL_STARTED,
             "id": f"llm-s{step}",
             "name": "model_reasoning",
-            "summary": f"Agent 正在规划本步动作（第 {step} 轮）",
+            "summary": f"模型创作规划（节点内第 {step} 轮）",
         })
         # 规划条目先占位入 trace（保证持久化顺序 = live 顺序：规划→工具），
         # 耗时在 llm_call 返回后补填
         _plan_rec = tracer.record_action(
-            "model_reasoning", f"Agent 正在规划本步动作（第 {step} 轮）", 0.0, True,
+            "model_reasoning", f"模型创作规划（节点内第 {step} 轮）", 0.0, True,
         )
         content, finish_reason, fc_applied, plan_ms, fc_extra = _unpack_llm(
             await llm_call(system_prompt, messages, stream_hook)

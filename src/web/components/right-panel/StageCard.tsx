@@ -27,6 +27,16 @@ export function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'an
     return c;
   };
   const hasBody = () => !!bodyText() || (msg().actionLog || []).length > 0;
+  /** 卡标题按 pause kind 语义渲染（Rule2 v6）：
+   *  remind=待补原料 / collect=规格交互 / 其余=阶段完成（消误标） */
+  const cardTitle = () => {
+    const k = msg().kind;
+    if (k === 'remind') return '待补原料';
+    if (k === 'collect') return '规格交互';
+    return stageLabelFromMessage(msg())
+      ? `${stageLabelFromMessage(msg())} · ${t('rp.msg.stageDone')}`
+      : t('rp.msg.stageDone');
+  };
 
   return (
     <div class={`stage-card ${open() ? 'expanded' : ''}`}>
@@ -38,9 +48,7 @@ export function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'an
       >
         <FiCheckCircle size={15} class="stage-check" />
         <span class="stage-card-title">
-          {stageLabelFromMessage(msg())
-            ? `${stageLabelFromMessage(msg())} · ${t('rp.msg.stageDone')}`
-            : t('rp.msg.stageDone')}
+          {cardTitle()}
         </span>
         <Show when={msg().appliedActions}>
           <span class="stage-card-badge">

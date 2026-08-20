@@ -265,11 +265,9 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
     #机械落盘也发文档卡片； ：改为挂起，由用户消息落库后
     # flush_pending_doc_card 补落（修复卡片排在用户选择消息之前的顺序 bug）
     inter["spec_doc_card_pending"] = name
-    # 向导拼装不走工具通道，动作日志天然缺失→合成记账，
-    # 轮末随 agent 消息 actionLog 下发（§2.5 可见性）
-    inter.setdefault("pending_action_log", []).append(
-        f"系统拼装并写入规格文档 {name}"
-    )
+    # 产物账本一等条目（Rule2 v6 ArtifactCommitted）：机械写入进
+    # workflow_run.artifacts，done 载荷经 documents_written 同轮下发
+    workflow_runtime.record_artifact(state, skill_name, name)
     # 批 1：机械写文档落转录（完成态时间线可见，与 live 同构）
     try:
         AgentTracer.get_instance().record_action(

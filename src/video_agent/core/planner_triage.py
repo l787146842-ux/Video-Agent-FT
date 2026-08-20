@@ -12,6 +12,7 @@ from loguru import logger
 
 from src.video_agent.core import pipeline_orchestrator as _po
 from src.video_agent.core import prompt_gates
+from src.video_agent.core import pause_composer
 from src.video_agent.core.tracer import AgentTracer
 
 
@@ -40,17 +41,25 @@ async def run_gate_precheck(
     if outcome is None:
         return None
     if outcome.kind == "script_pending":
+        # 三通道（Rule2 v6）：引导词归正文，卡=一句问句，kind=remind
+        card = pause_composer.compose_remind_card(
+            "剧本尚未收到，请选择原料提供方式。", outcome.options or [])
         resp = response_factory(
-            text=outcome.message, confirmation=outcome.message,
-            confirmation_options=outcome.options or [], steps=1)
+            text=outcome.message, confirmation=card["message"],
+            confirmation_options=card["options"], steps=1)
+        resp.pause_kind = card["kind"]
         issue_pause(resp)
         return resp
     if outcome.kind == "script_ack":
         return response_factory(text=outcome.message, steps=1)
     if outcome.kind == "spec_pending":
-        msg, opts = prompt_gates.spec_collect_card(state_manager.state_dict)
+        lead, opts = prompt_gates.spec_collect_card(state_manager.state_dict)
+        card = pause_composer.compose_collect_card(lead, opts)
         resp = response_factory(
-            text="", confirmation=msg, confirmation_options=opts, steps=1)
+            text=lead,  # 引导词归正文通道（正常完成禁空正文）
+            confirmation="请逐项选定规格维度后发送（点选或自定义输入）。",
+            confirmation_options=card["options"], steps=1)
+        resp.pause_kind = card["kind"]
         issue_pause(resp)
         return resp
     return None

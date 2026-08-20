@@ -311,6 +311,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
     # 前端据此把产出聚合进同次容器（消除消息流碎片化）；随 done payload
     # 下发，流式端与历史重载端同构
     turn_id = uuid.uuid4().hex[:12]
+    _wiz_card_live = ""
 
     # 短锁：绑定附件 + 附件文档存档 + 记录用户消息（仅一次，不随 fallback 重复）；
     # 状态 JSON 改为惰性构建器：多步循环每一轮重新构建，模型每轮看到最新状态
@@ -329,7 +330,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 kind=getattr(body, "system_action", "") or "",
             )
             # 向导挂起的规格卡补落（用户消息之后）并发即显事件
-            await emit_pending_doc_card(svc, turn_id, emit)
+            _wiz_card_live = await emit_pending_doc_card(svc, turn_id, emit)
 
     state_builder = (
         (lambda: svc.build_agent_context(body.asset_mode)) if use_studio_context else None
@@ -471,6 +472,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                         confirm_options=final_payload.get("confirmation_options") or None,
                         turn_id=turn_id,
                         pause_id=str(final_payload.get("pause_id") or ""),
+                        # 暂停卡语义种类持久化（前端历史重载按 kind 渲染标题）
+                        kind=str(final_payload.get("pause_kind") or ""),
                     )
                 # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合）
                 for doc_name in (final_payload.get("documents_written") or []):
@@ -481,6 +484,12 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 if image_urls:
                     svc.add_chat_message("agent", "", image_urls=image_urls, turn_id=turn_id)
 
+        # 产物账本同轮下发：向导机械落盘的规格文档并入 documents_written
+        if _wiz_card_live:
+            _docs = list(final_payload.get("documents_written") or [])
+            if _wiz_card_live not in _docs:
+                _docs.append(_wiz_card_live)
+            final_payload["documents_written"] = _docs
         done_payload: Dict[str, Any] = {
             **final_payload,
             "state": svc.get_full_snapshot() if use_studio_context else None,
@@ -767,6 +776,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     confirm_options=result.confirmation_options or None,
                     turn_id=ns_turn_id,
                     pause_id=result.pause_id,
+                    kind=result.pause_kind or "",
                 )
             if result.image_urls:
                 svc.add_chat_message("agent", "", image_urls=result.image_urls, turn_id=ns_turn_id)

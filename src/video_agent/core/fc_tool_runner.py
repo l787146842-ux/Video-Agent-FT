@@ -18,6 +18,8 @@ from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline, pipeline_orchestrator, prompt_gates
 from src.video_agent.core import workflow_runtime
+from src.video_agent.core import pause_composer
+from src.video_agent.core.pause_composer import PAUSE_MSG_MAX  # noqa: re-export 壳（测试导入路径不变）
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import stage_label_for_tool
@@ -46,9 +48,7 @@ _PAUSE_WINDOW_READONLY = frozenset({
     "read_draft", "read_skill", "read_project_doc", "read_uploaded_doc",
     "workflow_pause",
 })
-# 三通道分离 B：pause message 契约=一句确认问句；超过此长度视为模型
-# 把成果dump进卡片，机械变换（原文进正文通道，卡片留系统短问句）
-PAUSE_MSG_MAX = 220
+# 三通道 B 阈值与变换实现归 pause_composer（单一事实源，顶部 re-export）。
 from src.video_agent.tools.base import ToolResult
 
 # 回喂家族定义源 = core/fc_feedback.py；本文件顶层重新绑定全部符号，
@@ -598,16 +598,11 @@ class FCToolRunner:
                 if name == "workflow_pause":
                     paused_this_batch = True
                     confirmation = args.get("message", "请确认以上内容。")
-                    # 三通道分离 B（hook）：成果展示归正文通道，暂停卡只留短问句；
-                    # 模型仍dump成果（>PAUSE_MSG_MAX）时确定性变换——原文进
-                    # pause_overflow 随正文下发，confirmation 压缩为系统短问句
-                    # （不没收暂停本身与 options，仅压缩展示）。
-                    if len(str(confirmation or "")) > PAUSE_MSG_MAX:
-                        pause_overflow = str(confirmation)
-                        confirmation = (
-                            f"「{last_stage_label or '本阶段'}」已完成，"
-                            "请过目以上成果并选择下一步。"
-                        )
+                    # 三通道 B（composer 单一实现）：超上限原文进正文通道，
+                    # 确认通道压缩为系统短问句（不没收暂停与 options）。
+                    confirmation, pause_overflow = pause_composer.compress_pause_message(
+                        confirmation, last_stage_label)
+                    if pause_overflow:
                         logger.info(
                             "[FlowGate] pause message 超长（{}字）已压缩，原文进正文通道",
                             len(pause_overflow),
@@ -647,48 +642,19 @@ class FCToolRunner:
                             _svc_m.save_debounced()
                     except Exception as _e:
                         logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
-                    # 模型自造「1K（更快）」式 label 无法机械落盘，
-                    # 同 group 选项替换为标准「键：值」向导（系统永不没收模型的暂停文案）
-                    try:
-                        from src.video_agent.skill_runtime.registry import spec_wizard_active
-
-                        if spec_wizard_active(injected_skill):
-                            _m, _opts, _merged = prompt_gates.merge_spec_param_wizard(
-                                self._raw_state(), confirmation, confirmation_options,
-                            )
-                            if _merged:
-                                confirmation, confirmation_options = _m, _opts
-                    except Exception as _e:
-                        logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
-                    # 三通道分离 C：「继续」选项由系统按 sidecar 流程机械附挂
-                    # （仅本批刚完成阶段边界时挂，防阶段中暂停误挂）；
-                    # 剔除模型自造继续类选项，保留调整类选项。
-                    try:
-                        _boundary_hit = (
-                            "script_analyze" in batch_tool_names
-                            or (doc_written and prompt_gates.has_spec_document(
-                                self._raw_state()))
-                            or (structure_created and prompt_gates.storyboard_stage_complete(
-                                self._raw_state(), injected_skill))
-                        )
-                        if _boundary_hit and injected_skill:
-                            _sys_opt = prompt_gates.system_continue_option(
-                                self._raw_state(), injected_skill)
-                            if _sys_opt:
-                                _cont_re = re.compile(r"(继续|推进|进入|开始)")
-                                confirmation_options = [
-                                    o for o in confirmation_options
-                                    if not (
-                                        _cont_re.search(str(o.get("label") or ""))
-                                        and str(o.get("value") or "") not in (
-                                            "继续", "补拆")
-                                    )
-                                ]
-                                confirmation_options.insert(0, _sys_opt)
-                                logger.info(
-                                    "[FlowGate] 阶段边界暂停卡已机械附挂系统继续选项")
-                    except Exception as _e:
-                        logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
+                    # 选项面单一归一（Rule2 v6，pause_composer 唯一实现）：
+                    # 模型自造规格类选项替换为标准向导；阶段边界剔除模型
+                    # 继续类选项并前置系统派生项；调整类选项保留。
+                    _boundary_hit = (
+                        "script_analyze" in batch_tool_names
+                        or (doc_written and prompt_gates.has_spec_document(
+                            self._raw_state()))
+                        or (structure_created and prompt_gates.storyboard_stage_complete(
+                            self._raw_state(), injected_skill))
+                    )
+                    confirmation, confirmation_options = pause_composer.normalize_option_surface(
+                        self._raw_state(), injected_skill, confirmation,
+                        confirmation_options, boundary_hit=_boundary_hit)
                 if name in ("document_write", "write_document"):
                     doc_written = True
                     doc_name = str(args.get("name") or args.get("key") or "").strip()
