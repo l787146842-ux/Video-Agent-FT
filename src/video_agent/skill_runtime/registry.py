@@ -174,14 +174,21 @@ def sync_all(force: bool = False) -> int:
         _synced = True
         return 0
     count = 0
-    try:
-        for f in sorted(directory.glob("*.md")):
-            slug = f.stem
-            if slug and _load_entry(slug) is not None:
+    # 每个文件都是独立的注册单元。一个遗留的非法/损坏 slug 不能
+    # 截断整个注册批次，否则后面的有效 Skill 会静默消失，运行时
+    # 只能错误地回落到模型流程。
+    for f in sorted(directory.glob("*.md")):
+        slug = f.stem
+        if not slug:
+            continue
+        try:
+            if _load_entry(slug) is not None:
                 register_skill(slug)
                 count += 1
-    except Exception as e:  # 注册失败不阻断主流程
-        logger.warning(f"[SkillRuntime] 全量注册失败: {e}")
+        except Exception as e:
+            logger.warning(
+                f"[SkillRuntime] 跳过无效 Skill 文件 {f.name!r}: {e}"
+            )
     _synced = True
     return count
 

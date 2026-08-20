@@ -17,8 +17,7 @@ WorkflowRun 持久化于 ``state["workflow_run"]``，**仅本模块 reducer 可�
 （StateManager 仍唯一写入点，Rule3）；interaction 暂停旗标同经
 ``reduce_interaction`` 单一写入。完成度只认客观探针（stage_done，fail-closed）。
 """
-import hashlib
-import json
+import copy
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -27,6 +26,11 @@ from src.video_agent.config import settings
 from src.video_agent.core import pipeline_orchestrator as po
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
+from src.video_agent.core.workflow_contract import WorkflowDefinitionError, default_v2_workflow
+from src.video_agent.core.workflow_events import EventLedger
+from src.video_agent.core.turn_commit import (
+    TurnCommit, TurnResult, WorkflowCommitError, commit_turn,
+)
 
 # v1 直跑白名单：仅剧本分析（只读分析、无外部副作用）。
 # 扩展须用户裁决 + 审批语义设计（生成类阶段默认禁止）。
@@ -49,26 +53,22 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
     entry = registry.resolve_entry(skill)
     if entry is None:
         return None
-    manifest = registry.skill_manifest_of(skill) or {}
-    table = po.stage_table(skill)
-    nodes = [
-        {
-            "key": spec.key,
-            "title": spec.title,
-            "executors": list(spec.executors),
-            "deterministic": bool(spec.deterministic),
-        }
-        for spec in table
-    ]
-    blob = json.dumps(
-        {"slug": entry.slug, "manifest": manifest, "nodes": nodes},
-        ensure_ascii=False, sort_keys=True,
-    )
-    digest = hashlib.sha1(blob.encode("utf-8")).hexdigest()
+    definition = default_v2_workflow(str(entry.slug or skill))
+    titles = {"analyze_script": "剧本分析", "collect_spec": "规格候选收集",
+              "write_spec": "规格文档", "review_spec": "规格审核",
+              "storyboard_key_elements": "关键元素拆解",
+              "review_key_elements": "关键元素审核",
+              "storyboard_shots": "分镜设计", "storyboard_audio": "音频层设计"}
+    nodes = [{**node.to_dict(), "key": node.node_id,
+              "title": titles.get(node.node_id, node.node_id),
+              "executors": [] if node.executor == "workflow_pause" else [node.executor]}
+             for node in definition.nodes]
     return {
         "slug": str(entry.slug or ""),
         "name": str(entry.name or skill),
-        "revision": digest[:12],
+        "workflow_id": definition.workflow_id,
+        "revision": definition.revision,
+        "definition_hash": definition.content_hash,
         "nodes": nodes,
     }
 
@@ -81,30 +81,38 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
     definition = compile_definition(skill)
     run = state.setdefault("workflow_run", {})
     if definition is None:
-        run.clear()
+        run.setdefault("failure_state", {"code": "INVALID_SKILL", "skill": skill})
         return run
-    if run.get("revision") != definition["revision"]:
-        run.clear()
-        run.update({
-            "slug": definition["slug"],
-            "name": definition["name"],
-            "revision": definition["revision"],
-            "completed_nodes": [],
-            "current_node": "",
-            "pending_gate": "",
-            "artifacts": [],
-        })
-    completed: List[str] = []
-    current = ""
-    for node in definition["nodes"]:
-        if po.stage_done(node["key"], state, skill):
-            completed.append(node["key"])
-        elif not current:
-            current = node["key"]
+    import uuid
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    if not run:
+        run.update({"run_id": f"run_{uuid.uuid4().hex}", "workflow_id": definition["workflow_id"],
+                    "definition_revision": definition["revision"], "definition_hash": definition["definition_hash"],
+                    "slug": definition["slug"], "name": definition["name"], "revision": definition["revision"],
+                    "status": "ready", "current_node": "analyze_script", "completed_nodes": [],
+                    "pending_decision": None, "artifacts": [], "run_version": 0,
+                    "event_sequence": 0, "node_attempts": {}, "failure_state": None,
+                    "created_at": now, "updated_at": now})
+    elif run.get("definition_hash") and run.get("definition_hash") != definition["definition_hash"]:
+        run.setdefault("definition_change_detected", {"active_hash": run.get("definition_hash"), "available_hash": definition["definition_hash"]})
+        return run
+    for key, value in (("workflow_id", definition["workflow_id"]), ("definition_revision", definition["revision"]),
+                       ("definition_hash", definition["definition_hash"]), ("status", "ready"),
+                       ("completed_nodes", []), ("pending_decision", None), ("artifacts", []),
+                       ("run_version", 0), ("event_sequence", 0), ("node_attempts", {}),
+                       ("failure_state", None), ("created_at", now)):
+        run.setdefault(key, copy.deepcopy(value))
+    completed = list(dict.fromkeys(str(x) for x in run.get("completed_nodes") or []))
+    if po.stage_done("analysis", state, skill) and "analyze_script" not in completed: completed.append("analyze_script")
+    if prompt_gates.has_spec_document(state) and "write_spec" not in completed: completed.append("write_spec")
     run["completed_nodes"] = completed
-    run["current_node"] = current
-    run.setdefault("pending_gate", "")
-    run.setdefault("artifacts", [])
+    if not run.get("current_node") or run.get("current_node") in completed:
+        for node in definition["nodes"]:
+            if node["node_id"] not in completed and all(x in completed for x in node.get("prerequisites") or []):
+                run["current_node"] = node["node_id"]; break
+    if run.get("pending_decision"): run["status"] = "waiting_user"
+    run["updated_at"] = now
     return run
 
 
@@ -163,33 +171,60 @@ def drive_turn(
     if not str(advance_signal or "").strip():
         return None
     sync_run(state, skill)
-    table = po.stage_table(skill)
-    if not table:
-        return None
-    batch, _handoff = po.next_batch(state, skill)
-    if not batch:
-        return None
-    stage = batch[0]
-    if stage.key not in DIRECT_RUN_STAGES or not stage.executors:
+    definition = compile_definition(skill) or {}
+    run = sync_run(state, skill); node_id = str(run.get("current_node") or "")
+    node = next((x for x in definition.get("nodes") or [] if x.get("node_id") == node_id), None)
+    if node_id != "analyze_script" or node is None:
         return None
     # 原料闸客观前置：需剧本 Skill 剧本缺失且未豁免 → 交接闸预检提醒卡
-    if stage.key == "analysis" and (
+    if node_id == "analyze_script" and (
         registry.script_required_active(skill)
         and not prompt_gates.script_present(state)
         and not (state.get("interaction") or {}).get("script_waived")
     ):
         return None
-    logger.info("[ControlFlow] runtime direct_run stage={}", stage.key)
+    logger.info("[ControlFlow] runtime direct_run node={}", node_id)
     return {
         "kind": "direct_run",
-        "stage_key": stage.key,
-        "stage_title": stage.title,
-        "executors": list(stage.executors),
+        "stage_key": "analysis", "node_id": node_id,
+        "stage_title": node.get("title") or "剧本分析",
+        "executors": list(node.get("executors") or ["script_analyze"]),
     }
 
 
 def record_artifact(state: Dict[str, Any], skill: str, name: str) -> None:
     """产物账本一等条目（ArtifactCommitted）：reducer 单一写入。"""
-    run = sync_run(state, skill)
-    if run and name and name not in (run.get("artifacts") or []):
-        run.setdefault("artifacts", []).append(str(name))
+    if name:
+        commit_turn(state, TurnResult(turn_id=f"artifact:{name}", artifacts=[name], node_id=str((state.get("workflow_run") or {}).get("current_node") or "")), run_id=str((state.get("workflow_run") or {}).get("run_id") or ""), skill=skill, persist=False)
+
+class WorkflowRuntime:
+    def __init__(self, state_manager: Any, skill: str = ""):
+        self.state_manager, self.skill = state_manager, str(skill or "")
+    @property
+    def state(self) -> Dict[str, Any]: return self.state_manager.state_dict if hasattr(self.state_manager, "state_dict") else self.state_manager
+    def start_run(self, *, input_present: Optional[bool] = None) -> Dict[str, Any]:
+        run = sync_run(self.state, self.skill); ledger = EventLedger(self.state)
+        ledger.append("RunStarted", run_id=run["run_id"], idempotency_key=f"run:{run['run_id']}:started", payload={"workflow_id": run.get("workflow_id")})
+        missing = input_present is False or (input_present is None and registry.script_required_active(self.skill) and not prompt_gates.script_present(self.state))
+        if missing:
+            run["status"] = "waiting_user"; run["pending_decision"] = {"token": f"input:{run['run_id']}", "node_id": "analyze_script", "schema": {"type": "input", "required": True}}
+            ledger.append("InputRequested", run_id=run["run_id"], node_id="analyze_script", idempotency_key=f"run:{run['run_id']}:input", payload={"status": "waiting_user"})
+        run["event_sequence"] = max((x.sequence for x in ledger.by_run(run["run_id"])), default=0)
+        if hasattr(self.state_manager, "save"): self.state_manager.save()
+        return copy.deepcopy(run)
+    def dispatch(self, *, advance_signal: str = "") -> Optional[Dict[str, Any]]: return drive_turn(self.state, self.skill, advance_signal)
+    def commit_turn(self, result: Any, **kwargs: Any) -> TurnCommit: return commit_turn(self.state_manager, result, skill=self.skill, **kwargs)
+    def resolve_decision(self, token: str, value: Any, *, turn_id: str = "") -> TurnCommit:
+        run = sync_run(self.state, self.skill); pending = run.get("pending_decision") or {}
+        if pending.get("token") != token: raise WorkflowCommitError("stale decision token")
+        allowed = pending.get("options") or []
+        if allowed and str(value) not in {str(x.get("value") if isinstance(x, dict) else x) for x in allowed}: raise WorkflowCommitError("invalid decision value")
+        run["pending_decision"] = None
+        return commit_turn(self.state_manager, TurnResult(turn_id=turn_id or f"decision:{token}:{value}", node_id=str(pending.get("node_id") or run.get("current_node") or ""), timeline_events=[{"event_type": "DecisionResolved", "payload": {"token": token, "value": value}}]), skill=self.skill, expected_version=int(run.get("run_version") or 0))
+    def recover_run(self) -> Dict[str, Any]:
+        run = sync_run(self.state, self.skill); events = EventLedger(self.state).by_run(run.get("run_id") or "")
+        run["event_sequence"] = max((x.sequence for x in events), default=0)
+        if run.get("pending_decision"): run["status"] = "waiting_user"
+        return copy.deepcopy(run)
+
+__all__ = ["WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn", "compile_definition", "sync_run", "drive_turn", "record_artifact", "apply_interaction", "reduce_interaction"]
