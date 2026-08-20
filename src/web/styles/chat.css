@@ -24,7 +24,7 @@
   .chat-msg.user { align-self: flex-end; }
   .chat-msg.agent { align-self: flex-start; }
   .chat-bubble { padding: 14px 18px; border-radius: var(--radius-md); font-size: 13px; line-height: 1.55; }
-  .chat-msg.user .chat-bubble { background-color: var(--accent-blue); color: #ffffff; border-bottom-right-radius: 2px; white-space: pre-wrap; }
+  .chat-msg.user .chat-bubble { background-color: var(--accent-blue); color: #ffffff; border-bottom-right-radius: 2px; white-space: pre-wrap; word-break: break-word; }
   .chat-msg.agent .chat-bubble { background-color: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main); border-bottom-left-radius: 2px; }
   .msg-author { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; }
   .msg-meta { font-size: 10px; color: var(--text-muted); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
@@ -68,7 +68,7 @@
   .msg-ref-doc:hover { background: rgba(59, 130, 246, 0.25); }
   .msg-ref-skill { background: rgba(139, 92, 246, 0.14); border-color: rgba(139, 92, 246, 0.5); color: #c4b5fd; }
   .msg-ref-skill:hover { background: rgba(139, 92, 246, 0.25); }
-  .chat-markdown { box-sizing: border-box; }
+  .chat-markdown { box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word; }
 
   /* 确认操作 */
   .confirm-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }

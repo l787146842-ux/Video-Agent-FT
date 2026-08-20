@@ -150,6 +150,32 @@ async def ref_to_data_uri(url: str) -> str:
         return ""
 
 
+# ---------- 批 A：中继错误信封识别（用户裁决：选什么用什么，联不通直接报错） ----------
+# 中继层（9router 等）会把上游拒收（403/10605 slow 队列等）包进 HTTP 200 流
+# 当「模型内容」下发（如 "[qoder error 403: {...}]"）；不识别会被当稿子，
+# 垃圾递模型/绿勾/正文渲染裸 JSON。识别命中即抛错（retryable=False，不重试）。
+_RELAY_ERROR_PREFIX_RE = re.compile(r"^\s*\[[\w-]+\s+error\s+(\d{3})\s*:", re.IGNORECASE)
+_RELAY_QUEUE_CODE_RE = re.compile(r'"code"\s*:\s*"?(\d{3})"?')
+
+
+def detect_relay_error_envelope(text: str) -> Optional[int]:
+    """文本是中继层拒收通知单返回 http_status，否则 None。
+
+    只看短文本（通知单至多几百字），合法长稿零误判：
+    ①「[xxx error 403: …」前缀形态；②「{"code":"403",…10605/queueType…}」裸信封形态。
+    """
+    if not text or len(text) > 4000:
+        return None
+    m = _RELAY_ERROR_PREFIX_RE.match(text)
+    if m:
+        return int(m.group(1))
+    stripped = text.lstrip()
+    if stripped.startswith("{") and "10605" in text and "queueType" in text:
+        m2 = _RELAY_QUEUE_CODE_RE.search(text)
+        return int(m2.group(1)) if m2 else 403
+    return None
+
+
 class OpenAICompatChatAdapter(BaseChatAdapter):
     """OpenAI 兼容 Chat Adapter（支持流式 + function calling）
 
@@ -327,6 +353,13 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             content = " ".join(
                 p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") != "image_url"
             )
+        # 批 A：中继拒收通知单识别（200 包错误）——命中即抛错，不当稿子返回
+        _env_status = detect_relay_error_envelope(content)
+        if _env_status is not None:
+            raise AdapterError(
+                f"LLM 中继拒收通知单（HTTP {_env_status}）: {content[:200]}",
+                retryable=False, http_status=_env_status,
+            )
         tool_calls = message.get("tool_calls", []) or []
         return ChatResponse(
             content=content,
@@ -446,6 +479,12 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     choices = data.get("choices", [])
                     if choices:
                         content = choices[0].get("message", {}).get("content", "") or ""
+                        _env_status = detect_relay_error_envelope(content)
+                        if _env_status is not None:
+                            raise AdapterError(
+                                f"LLM 中继拒收通知单（HTTP {_env_status}）: {content[:200]}",
+                                retryable=False, http_status=_env_status,
+                            )
                         if content:
                             yield StreamChunk(type="text_delta", text=content)
                         fr = choices[0].get("finish_reason", "") or "stop"
@@ -453,6 +492,9 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     return
 
                 last_finish = ""
+                # 批 A：通知单头部累积器——中继把拒收缝进 200 流时，首段即识别抛错
+                _env_head = ""
+                _env_done = False
                 # 流式 FC 累积器：OpenAI 协议中 tool_calls 的 arguments 是分片字符串，
                 # 必须按 index 跨 chunk 拼接，流结束后统一解析（逐 chunk 解析必失败）
                 tc_accumulator: Dict[int, Dict[str, str]] = {}
@@ -482,6 +524,16 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                         yield StreamChunk(type="reasoning_delta", text=reasoning_piece)
                     piece = delta.get("content") or ""
                     if piece:
+                        if not _env_done:
+                            _env_head += piece
+                            _env_status = detect_relay_error_envelope(_env_head)
+                            if _env_status is not None:
+                                raise AdapterError(
+                                    f"LLM 中继拒收通知单（HTTP {_env_status}）: {_env_head[:200]}",
+                                    retryable=False, http_status=_env_status,
+                                )
+                            if len(_env_head) >= 512:
+                                _env_done = True
                         yield StreamChunk(type="text_delta", text=piece)
                     # function calling 分片累积（index 标识第几个工具调用）
                     if delta.get("tool_calls"):
