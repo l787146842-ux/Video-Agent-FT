@@ -8,6 +8,7 @@ import time
 import uuid
 
 from src.video_agent.core.sse_events import SSE_DELTA, SSE_DOC_WRITTEN, SSE_DONE, SSE_STATUS, status_event
+from src.video_agent.core import workflow_runtime
 from src.video_agent.memory import MemoryManager
 from src.video_agent.web.attachments import bind_attachments, store_uploaded_docs
 from src.video_agent.web.mock_llm import mock_llm_reply
@@ -40,8 +41,7 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
             _inter_pm = svc.state_dict.get("interaction") or {}
             _pause_answered = None
             if _pid and str((_inter_pm.get("active_pause") or {}).get("pause_id") or "") == _pid:
-                _inter_pm.pop("active_pause", None)
-                svc.save_debounced()
+                workflow_runtime.reduce_interaction(svc, pop_flags=("active_pause",))
                 _pause_answered = {
                     "pause_id": _pid,
                     "value": str(_pr.get("value") or ""),

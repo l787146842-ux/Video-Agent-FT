@@ -164,6 +164,10 @@ class Settings:
     # 架构板正批 ：状态驱动编排器开关（默认开；回关=回落模型持循环旧路径）
     pipeline_orchestrator_enabled: bool = field(
         default_factory=lambda: _env_bool("PIPELINE_ORCHESTRATOR_ENABLED", True))
+    # Workflow Runtime 驱动器开关（宪法 v6 Rule2，ADR-0003；默认开；
+    # 回关=白名单确定性阶段回落模型循环旧路径）
+    workflow_runtime_enabled: bool = field(
+        default_factory=lambda: _env_bool("WORKFLOW_RUNTIME_ENABLED", True))
 
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))

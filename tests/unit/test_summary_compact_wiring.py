@@ -10,9 +10,11 @@ from src.video_agent.web import chat_consume, chat_service
 
 class TestChatServiceFixes:
     def test_no_duplicate_pop(self):
-        """_consume_pending_confirmation 的 pending_pause_kind 只允许 pop 一次"""
+        """pending_pause_kind 消费收敛 reducer（Rule2 v6）：
+        散落直写/直 pop 清零，统一走 reduce_interaction pop_flags。"""
         src = inspect.getsource(chat_service._consume_pending_confirmation)
-        assert src.count('interaction.pop("pending_pause_kind"') == 1
+        assert src.count('interaction.pop("pending_pause_kind"') == 0
+        assert 'pop_flags=("pending_pause_kind"' in src
 
     def test_single_opening_impl(self):
         """流式/非流式都走 _prepare_chat_opening（P1 单一实现）"""

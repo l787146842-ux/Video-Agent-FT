@@ -1,0 +1,195 @@
+# -*- coding: utf-8 -*-
+"""Workflow Runtime — 控制流唯一驱动器（宪法 v6 Rule2，ADR-0003）。
+
+正向设计（业界基准：Anthropic workflows-vs-agents / Claude Code hooks 公理 /
+Codex loop+approval / Flova runtime contract）：模型只做节点内语义创作，
+运行时做确定性顺序、持久状态、审批恢复与产物账本。
+
+v1 边界（声明式可扩展）：
+- ``DIRECT_RUN_STAGES`` 白名单内的确定性阶段由 runtime 直跑（零模型规划轮），
+  经 FCToolRunner 合成 FC 批执行——闸机链（stage_precondition 等）仍在执行
+  路径首位承重（hooks guarantee behavior）；
+- 白名单外阶段（含创作型与多执行器阶段）交接有界模型循环（agent_loop 节点内
+  唯一实现），平台否决权不变；
+- 生成类阶段（高风险工具，§2.7）不进白名单，须另行设计审批语义后才可扩展。
+
+WorkflowRun 持久化于 ``state["workflow_run"]``，**仅本模块 reducer 可改**
+（StateManager 仍唯一写入点，Rule3）；interaction 暂停旗标同经
+``reduce_interaction`` 单一写入。完成度只认客观探针（stage_done，fail-closed）。
+"""
+import hashlib
+import json
+from typing import Any, Dict, List, Optional
+
+from loguru import logger
+
+from src.video_agent.config import settings
+from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import prompt_gates
+from src.video_agent.skill_runtime import registry
+
+# v1 直跑白名单：仅剧本分析（只读分析、无外部副作用）。
+# 扩展须用户裁决 + 审批语义设计（生成类阶段默认禁止）。
+DIRECT_RUN_STAGES = frozenset({"analysis"})
+
+
+def canonical_slug(name: str) -> str:
+    """canonical 身份归一：小写 + 去空格/连字符/下划线/扩展名。
+
+    「AI短剧一站式生成」与「AI-短剧一站式生成」归一到同一身份，
+    模型逐字复制显示名的误差不再造成解析失败。"""
+    return registry._norm_name(name).replace("-", "").replace("_", "")
+
+
+def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
+    """Skill 激活编译 WorkflowDefinition（canonical slug + revision + hash）。
+
+    源 = sidecar 声明（validate_sidecar 注册期门禁）+ 阶段表；编译失败
+    （未注册 Skill）返回 None（runtime 不启用，回落模型循环旧路径）。"""
+    entry = registry.resolve_entry(skill)
+    if entry is None:
+        return None
+    manifest = registry.skill_manifest_of(skill) or {}
+    table = po.stage_table(skill)
+    nodes = [
+        {
+            "key": spec.key,
+            "title": spec.title,
+            "executors": list(spec.executors),
+            "deterministic": bool(spec.deterministic),
+        }
+        for spec in table
+    ]
+    blob = json.dumps(
+        {"slug": entry.slug, "manifest": manifest, "nodes": nodes},
+        ensure_ascii=False, sort_keys=True,
+    )
+    digest = hashlib.sha1(blob.encode("utf-8")).hexdigest()
+    return {
+        "slug": str(entry.slug or ""),
+        "name": str(entry.name or skill),
+        "revision": digest[:12],
+        "nodes": nodes,
+    }
+
+
+def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
+    """同步 WorkflowRun：定义变更重初始化；完成度按客观探针重算。
+
+    current_node = 阶段表首个未完成步；completed_nodes 只认 stage_done
+    （fail-closed）。run 块为 reducer 单一写入点。"""
+    definition = compile_definition(skill)
+    run = state.setdefault("workflow_run", {})
+    if definition is None:
+        run.clear()
+        return run
+    if run.get("revision") != definition["revision"]:
+        run.clear()
+        run.update({
+            "slug": definition["slug"],
+            "name": definition["name"],
+            "revision": definition["revision"],
+            "completed_nodes": [],
+            "current_node": "",
+            "pending_gate": "",
+            "artifacts": [],
+        })
+    completed: List[str] = []
+    current = ""
+    for node in definition["nodes"]:
+        if po.stage_done(node["key"], state, skill):
+            completed.append(node["key"])
+        elif not current:
+            current = node["key"]
+    run["completed_nodes"] = completed
+    run["current_node"] = current
+    run.setdefault("pending_gate", "")
+    run.setdefault("artifacts", [])
+    return run
+
+
+def apply_interaction(
+    state: Dict[str, Any],
+    set_flags: Optional[Dict[str, Any]] = None,
+    pop_flags: tuple = (),
+) -> Dict[str, Any]:
+    """interaction 旗标写入原语（不落盘）：reducer 族唯一写入原语。
+
+    不经 StateManager 的持态调用点（轮末策略/执行器批内等）用本原语，
+    落盘由调用方或 reduce_interaction 承担；散落直写禁止（Rule2 v6）。"""
+    inter = state.setdefault("interaction", {})
+    for key, val in (set_flags or {}).items():
+        inter[key] = val
+    for key in pop_flags:
+        inter.pop(key, None)
+    return inter
+
+
+def reduce_interaction(
+    svc: Any,
+    set_flags: Optional[Dict[str, Any]] = None,
+    pop_flags: tuple = (),
+    flush: bool = False,
+) -> Dict[str, Any]:
+    """interaction 暂停旗标唯一写入点（reducer 语义，Rule2 v6）。
+
+    散落直写已收敛到此；flush=True 时即时落盘（暂停闭环等承重路径）。
+    控制流可观测：写入经 [ControlFlow] 日志留痕。"""
+    inter = apply_interaction(svc.state_dict, set_flags, pop_flags)
+    if flush:
+        svc.save()
+    else:
+        svc.save_debounced()
+    if set_flags or pop_flags:
+        logger.info(
+            "[ControlFlow] reduce_interaction set={} pop={}",
+            sorted((set_flags or {}).keys()), sorted(pop_flags),
+        )
+    return inter
+
+
+def drive_turn(
+    state: Dict[str, Any], skill: str, advance_signal: str = "",
+) -> Optional[Dict[str, Any]]:
+    """轮始驱动判定：白名单确定性阶段就绪 → direct_run；其余 None（交接）。
+
+    只认客观状态事实：阶段表 + stage_done + 原料闸客观条件；零语料、
+    零模型参与。advance_signal 为轮始客观推进信号（暂停消费/附件/
+    系统继续选项点选，由开场编排装配）：无信号的自由提问轮不直跑，
+    交接模型循环（防提问误抓）。原料缺失时返回 None，由闸预检装配
+    提醒卡（不抢先对话）。"""
+    if not (getattr(settings, "workflow_runtime_enabled", True) and skill):
+        return None
+    if not str(advance_signal or "").strip():
+        return None
+    sync_run(state, skill)
+    table = po.stage_table(skill)
+    if not table:
+        return None
+    batch, _handoff = po.next_batch(state, skill)
+    if not batch:
+        return None
+    stage = batch[0]
+    if stage.key not in DIRECT_RUN_STAGES or not stage.executors:
+        return None
+    # 原料闸客观前置：需剧本 Skill 剧本缺失且未豁免 → 交接闸预检提醒卡
+    if stage.key == "analysis" and (
+        registry.script_required_active(skill)
+        and not prompt_gates.script_present(state)
+        and not (state.get("interaction") or {}).get("script_waived")
+    ):
+        return None
+    logger.info("[ControlFlow] runtime direct_run stage={}", stage.key)
+    return {
+        "kind": "direct_run",
+        "stage_key": stage.key,
+        "stage_title": stage.title,
+        "executors": list(stage.executors),
+    }
+
+
+def record_artifact(state: Dict[str, Any], skill: str, name: str) -> None:
+    """产物账本一等条目（ArtifactCommitted）：reducer 单一写入。"""
+    run = sync_run(state, skill)
+    if run and name and name not in (run.get("artifacts") or []):
+        run.setdefault("artifacts", []).append(str(name))

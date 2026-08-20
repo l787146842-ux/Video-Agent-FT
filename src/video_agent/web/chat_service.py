@@ -153,7 +153,9 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
 
     use_studio_context = body.context_mode != "none"
     # 开场公共编排：暂停闭环 + 规格定稿/向导 + 附件降级注入
-    llm_user_text = await _prepare_chat_opening(svc, body, user_text, use_studio_context)
+    # + 轮始客观推进信号（Rule2 v6 runtime 直跑判定用）
+    llm_user_text, advance_signal = await _prepare_chat_opening(
+        svc, body, user_text, use_studio_context)
 
     # 会话层一次性豁免：随消息登记，Planner 本次消费
     if getattr(body, "gate_overrides", None) and use_studio_context:
@@ -392,6 +394,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             thinking_level=getattr(body, "thinking_level", "") or "",
             # 轮间引导注入器（任务式传输路径；非任务路径为 None）
             pending_injector=pending_injector,
+            # 轮始客观推进信号（runtime 直跑仅流程推进轮）
+            advance_signal=advance_signal,
         )
 
         applied_seen = False
@@ -604,8 +608,9 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     )
 
     use_studio_context = body.context_mode != "none"
-    # 开场公共编排：同流式路径（暂停闭环 + 规格定稿/向导 + 附件降级）
-    llm_user_text = await _prepare_chat_opening(svc, body, user_text, use_studio_context)
+    # 开场公共编排：同流式路径（暂停闭环 + 规格定稿/向导 + 附件降级 + 推进信号）
+    llm_user_text, advance_signal = await _prepare_chat_opening(
+        svc, body, user_text, use_studio_context)
 
     # 会话层一次性豁免：同流式路径
     if getattr(body, "gate_overrides", None) and use_studio_context:
@@ -702,6 +707,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         image_generation_aspect_ratio=image_aspect_ratio2,
         user_id=getattr(body, "user_id", "") or "",
         thinking_level=getattr(body, "thinking_level", "") or "",
+        advance_signal=advance_signal,
     )
 
     # 批 C 退役（用户裁决 2026-08-20）：单一候选 = 用户所选，联不通直接报错

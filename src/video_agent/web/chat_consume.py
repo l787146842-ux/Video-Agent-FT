@@ -9,6 +9,7 @@ from loguru import logger
 from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.config import settings
 from src.video_agent.core import live_metrics, prompt_gates
+from src.video_agent.core import workflow_runtime
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.sse_events import SSE_DOC_WRITTEN
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
@@ -109,8 +110,7 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
     active = interaction.get("active_pause") or {}
     if str(active.get("pause_id") or "") != pid:
         return None
-    interaction.pop("active_pause", None)
-    svc.save_debounced()
+    workflow_runtime.reduce_interaction(svc, pop_flags=("active_pause",))
     return {
         "pause_id": pid,
         "value": str((pause_response or {}).get("value") or ""),
@@ -131,14 +131,16 @@ def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "
     pause_kind = interaction.get("pending_pause_kind")
     if pause_kind == "collect":
         # 规格收集暂停的回应：视为已进入收集环节（后续由 _consume_spec_wizard 拼装）
-        interaction["spec_collected"] = True
-    # 暂停语义标记（summary/spec/collect）随回应消费清除，避免残留影响下一轮
-    interaction.pop("pending_pause_kind", None)
+        workflow_runtime.reduce_interaction(
+            svc, set_flags={"spec_collected": True}, pop_flags=("pending_pause_kind",))
+    else:
+        # 暂停语义标记（summary/spec/collect）随回应消费清除，避免残留影响下一轮
+        workflow_runtime.reduce_interaction(svc, pop_flags=("pending_pause_kind",))
     # 故事板待确认窗口（步骤3→步骤4 分界）：不依赖 awaiting_confirmation，
     # 用户任何新消息到达即视为已审阅故事板，解除提示词写入封锁
     if interaction.get("storyboard_pending"):
-        interaction["storyboard_pending"] = False
-        svc.save()
+        workflow_runtime.reduce_interaction(
+            svc, set_flags={"storyboard_pending": False}, flush=True)
     # 确认闭环：上一轮展示过提示词草案（drafts_presented）且用户新消息到达，
     # 将未被重写过的草稿晋升为「已确认」（生成闸的前置条件）；
     # 期间被重写的草稿 tag 已在写入时重置，不会被误晋升
@@ -175,9 +177,8 @@ def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "
     if not interaction.get("awaiting_confirmation"):
         return ""
     paused_msg = str(interaction.get("confirmation_message") or "")[:300]
-    interaction["awaiting_confirmation"] = False
-    interaction["confirmation_message"] = ""
-    svc.save()
+    workflow_runtime.reduce_interaction(svc, set_flags={
+        "awaiting_confirmation": False, "confirmation_message": "",}, flush=True)
     # 提示按客观状态机械生成（去 prose 越权）：
     # 规格已存在就如实告知，绝不固定发「先写入规格文档」指令；
     # 暂停点归 Skill 阶段边界，平台不 prose 指定
@@ -260,7 +261,7 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
             "created_at": now, "updated_at": now,
         })
     inter = state.setdefault("interaction", {})
-    inter["spec_collected"] = True
+    workflow_runtime.apply_interaction(state, set_flags={"spec_collected": True})
     #机械落盘也发文档卡片； ：改为挂起，由用户消息落库后
     # flush_pending_doc_card 补落（修复卡片排在用户选择消息之前的顺序 bug）
     inter["spec_doc_card_pending"] = name

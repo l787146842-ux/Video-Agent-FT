@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates as _pg
+from src.video_agent.core import workflow_runtime
 from src.video_agent.state.provider_prefs import SPEC_PARAM_UNCONFIRMED_MARKERS
 from src.video_agent.core.prompt_gates import (
     _SPEC_PARAM_LINES,
@@ -265,7 +266,7 @@ def _consume_spec_collected(state: Dict[str, Any]) -> bool:
     暂停不再重复弹向导）；返回是否命中并清除。"""
     inter = state.get("interaction")
     if isinstance(inter, dict) and inter.get("spec_collected"):
-        inter.pop("spec_collected", None)
+        workflow_runtime.apply_interaction(state, pop_flags=("spec_collected",))
         return True
     return False
 

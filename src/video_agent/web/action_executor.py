@@ -13,6 +13,7 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline, prompt_gates
+from src.video_agent.core import workflow_runtime
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, ALL_CATEGORIES
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
@@ -493,8 +494,8 @@ class StudioActionExecutor:
         # 结构首次建立 → 故事板阶段完成才置待确认标记（暂停点归位 Skill 阶段边界）
         if ok and self.gate_enabled and prompt_gates.gate_mode() == "strict":
             if prompt_gates.storyboard_stage_complete(self.state, getattr(self, "skill_name", "")):
-                interaction = self.state.setdefault("interaction", {})
-                interaction["storyboard_pending"] = True
+                workflow_runtime.apply_interaction(
+                    self.state, set_flags={"storyboard_pending": True})
         return ok
 
     def _add_group_core(self, action: Dict) -> bool:

@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""状态驱动管线知识源 + 闸预检黄金回归（批 12 快路径降级后迁移）。
+"""状态驱动管线知识源 + 闸预检 + Workflow Runtime 黄金回归。
 
 钉死：
 ① 阶段表 = 平台规范表 + sidecar 覆盖（skip/同批执行器）；
 ② current_stage 按客观探针推进（analysis→spec→structure→创作型交接）；
 ③ 闸预检只装配兜底卡（原料闸/规格闸），永不执行阶段、永不抢先对话；
-④ 首轮有素材 → 交接模型循环（模型主动权，快路径抢先权已退场）；
-⑤ 提问/自由消息 → 模型循环。
+④ 首轮有素材 + 推进信号 → runtime 直跑分析（宪法 v6 Rule2，ADR-0003：
+   零模型规划轮，选项面系统派生）；
+⑤ 提问/自由消息（无推进信号）→ 模型循环。
 """
 import pytest
 
@@ -126,14 +127,20 @@ async def test_precheck_handoff_at_creative_stage(tmp_path):
     StateManager.reset_instance()
 
 
-# ---------- ④⑤ planner 主路径：模型主动权 ----------
+# ---------- ④⑤ planner 主路径：runtime 直跑 vs 模型循环 ----------
 
 @pytest.mark.asyncio
-async def test_planner_first_turn_hands_off_to_model(tmp_path):
-    """批 12：首轮有素材也不再抢先执行——交接模型循环（adapter 被调用）"""
+async def test_planner_first_turn_runtime_direct_run(tmp_path, monkeypatch):
+    """宪法 v6：首轮有素材 + 推进信号 → runtime 直跑分析（模型零调用）。
+
+    钉死：零规划轮（adapter 不调用）、正文非空（成果渲染）、
+    暂停卡选项面系统派生（「确认，进入「制作规格」」）。"""
     from src.video_agent.core.planner import Planner, PlannerContext
     from src.video_agent.state.manager import StateManager
     from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
+    from src.video_agent.skill_runtime import exec_tools
+    from src.video_agent.tools.base import ToolResult
+    from src.video_agent.tools.manager import ToolManager
 
     class ProbeAdapter(BaseChatAdapter):
         def __init__(self):
@@ -145,22 +152,43 @@ async def test_planner_first_turn_hands_off_to_model(tmp_path):
 
         async def chat(self, messages, **kwargs):
             self.calls += 1
-            return ChatResponse(content="收到，我先读取剧本。", finish_reason="stop")
+            return ChatResponse(content="不应被调用", finish_reason="stop")
 
         async def chat_stream(self, messages, **kwargs):
             self.calls += 1
-            yield ChatResponse(content="收到，我先读取剧本。", finish_reason="stop")
+            yield ChatResponse(content="不应被调用", finish_reason="stop")
 
+    async def fake_analyze(self, params):
+        svc_now = StateManager.get_instance()
+        svc_now.state_dict["analysis"] = {
+            "summary": "程心苏醒与掩体失效。",
+            "key_points": ["结构：三场戏"],
+            "doc_name": "剧本.md",
+        }
+        return ToolResult(success=True, data={"summary": "程心苏醒与掩体失效。"})
+
+    monkeypatch.setattr(exec_tools.ScriptAnalyzeTool, "aexecute", fake_analyze)
+    # 全量跑时前置测试可能 reset 过 ToolManager：幂等补注册执行器工具
+    from src.video_agent.skill_runtime.registration import register_skill_runtime_tools
+    register_skill_runtime_tools()
     StateManager.reset_instance()
     svc = StateManager(str(tmp_path / "ws"))
     StateManager._instance = svc
     svc.state_dict["uploadedDocs"] = [
         {"id": "d1", "name": "剧本.md", "content": "剧本正文：程心苏醒。"}]
     adapter = ProbeAdapter()
-    planner = Planner(state_manager=svc, llm_adapter=adapter, tool_manager=None)
-    await planner.handle_message(
-        "AI-短剧一站式生成", PlannerContext(skill_name=SKILL))
-    assert adapter.calls >= 1, "快路径退场：首轮必须交接模型循环"
+    planner = Planner(state_manager=svc, llm_adapter=adapter,
+                      tool_manager=ToolManager)
+    result = await planner.handle_message(
+        "请查看我上传的素材",
+        PlannerContext(skill_name=SKILL, advance_signal="attachment"))
+    assert adapter.calls == 0, "v6：确定性阶段直跑，零模型规划轮"
+    assert result.applied_actions >= 1
+    assert result.text.strip(), "正常完成禁空正文"
+    assert result.confirmation, "阶段边界必须系统发卡"
+    labels = [o.get("label") for o in result.confirmation_options]
+    assert "确认，进入「制作规格」" in labels, "选项面系统派生（sidecar 流程）"
+    assert not any("继续拆分" in (l or "") for l in labels), "模型自造继续选项无入口"
     StateManager.reset_instance()
 
 

@@ -17,6 +17,7 @@ from loguru import logger
 from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline, pipeline_orchestrator, prompt_gates
+from src.video_agent.core import workflow_runtime
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import stage_label_for_tool
@@ -589,10 +590,9 @@ class FCToolRunner:
                     if skill_strict:
                         try:
                             svc_now = StateManager.get_instance()
-                            inter_now = svc_now.state_dict.setdefault("interaction", {})
-                            if not inter_now.get("storyboard_pending"):
-                                inter_now["storyboard_pending"] = True
-                                svc_now.save()
+                            if not (svc_now.state_dict.get("interaction") or {}).get("storyboard_pending"):
+                                workflow_runtime.reduce_interaction(
+                                    svc_now, set_flags={"storyboard_pending": True}, flush=True)
                         except Exception as _e:
                             logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
                 if name == "workflow_pause":
@@ -877,7 +877,8 @@ class FCToolRunner:
                     "label": "重试剧本分析",
                     "description": "重新执行 script_analyze（已绑定当前对话模型）",
                 }]
-                inter["pending_pause_kind"] = ""
+                workflow_runtime.apply_interaction(
+                    _spec_state, set_flags={"pending_pause_kind": ""})
                 took_over = True
             elif prompt_gates.spec_doc_finalized(_spec_state):
                 #规格已定稿时模型的冗余手写只拒收警告，
@@ -885,14 +886,17 @@ class FCToolRunner:
                 logger.info("[Planner] 规格已定稿，模型冗余规格写入仅拒收警告，不接管暂停卡")
             else:
                 confirmation, confirmation_options = prompt_gates.spec_pause_card(_spec_state)
-                inter["pending_pause_kind"] = "spec"
+                workflow_runtime.apply_interaction(
+                    _spec_state, set_flags={"pending_pause_kind": "spec"})
                 took_over = True
             if took_over:
                 try:
-                    #接管时必须同时洗掉 workflow_pause 写入的假完成文案，
+                    # 接管时必须同时洗掉 workflow_pause 写入的假完成文案，
                     # 否则下一轮会把「已完成…写入项目文档」当作暂停内容回喂给模型
-                    inter["awaiting_confirmation"] = True
-                    inter["confirmation_message"] = confirmation
+                    workflow_runtime.apply_interaction(_spec_state, set_flags={
+                        "awaiting_confirmation": True,
+                        "confirmation_message": confirmation,
+                    })
                     StateManager.get_instance().save()
                 except Exception as _e:
                     logger.warning("[Planner] 规格接管暂停态落盘失败（下轮可能重复接管）: {}", _e)

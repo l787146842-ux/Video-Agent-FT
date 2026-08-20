@@ -20,6 +20,7 @@ from src.video_agent.web.provider_config import (
 )
 from src.video_agent.web.sse import sse_event_generator  # noqa: 1 （保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
+from src.video_agent.core import prompt_gates
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
@@ -233,15 +234,19 @@ def _record_active_skill(svc, body: Any) -> None:
         svc.record_used_skill(slug)
 
 
-async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_context: bool) -> str:
+async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_context: bool):
     """开场公共编排（流式/非流式双路径单一实现，消除双份复制）。
 
     暂停闭环（消费上轮暂停态）+ 规格定稿/向导消费 + 附件降级注入，
-    返回拼好的 LLM 用户消息文本。调用方需保证同一请求只调一次。
+    返回 (拼好的 LLM 用户消息文本, 轮始客观推进信号)。
+    信号（Rule2 v6）供 workflow_runtime 判定直跑：仅流程推进轮
+    （暂停消费/向导回应/继续选项点选/带附件）触发；自由提问轮交接模型。
+    调用方需保证同一请求只调一次。
     """
     pending_confirm_note = ""
     spec_finalize_note = ""
     spec_wizard_note = ""
+    pause_value = str((getattr(body, "pause_response", None) or {}).get("value") or "")
     if use_studio_context:
         async with svc.lock:
             # 三通道分离 C：点选回携 value 传入，命中系统继续选项时机械生成下一步指令
@@ -257,7 +262,18 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
     llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
     if attachment_note:
         llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
-    return llm_user_text
+    # 轮始客观推进信号（零语料：只认消费结果/附件/继续选项行格式）
+    if pending_confirm_note:
+        advance_signal = "pause"
+    elif spec_wizard_note:
+        advance_signal = "wizard"
+    elif prompt_gates.is_flow_continue_value(pause_value):
+        advance_signal = "continue"
+    elif body.attachments:
+        advance_signal = "attachment"
+    else:
+        advance_signal = ""
+    return llm_user_text, advance_signal
 
 
 def _store_gate_overrides(svc, overrides) -> None:

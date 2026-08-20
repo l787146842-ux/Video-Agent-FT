@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 from loguru import logger
 
 from src.video_agent.core import live_metrics, prompt_gates
+from src.video_agent.core import workflow_runtime
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
@@ -231,8 +232,8 @@ def _cond_spec_doc_written_pause(ctx: RoundEndContext) -> bool:
 async def _apply_spec_doc_written_pause(ctx: RoundEndContext, emit: Callable) -> None:
     # 写完规格强制审阅，无视 continue
     ctx.confirmation, ctx.confirmation_options = prompt_gates.spec_pause_card(ctx.executor.state)
-    interaction = ctx.executor.state.setdefault("interaction", {})
-    interaction["pending_pause_kind"] = "spec"
+    workflow_runtime.apply_interaction(
+        ctx.executor.state, set_flags={"pending_pause_kind": "spec"})
     logger.info("[FlowGate] 规格文档已写入，强制暂停审阅")
 
 
@@ -254,8 +255,8 @@ def _cond_spec_wizard_takeover(ctx: RoundEndContext) -> bool:
 
 async def _apply_spec_wizard_takeover(ctx: RoundEndContext, emit: Callable) -> None:
     ctx.confirmation, ctx.confirmation_options = prompt_gates.spec_pause_card(ctx.executor.state)
-    interaction = ctx.executor.state.setdefault("interaction", {})
-    interaction["pending_pause_kind"] = "spec"
+    workflow_runtime.apply_interaction(
+        ctx.executor.state, set_flags={"pending_pause_kind": "spec"})
     logger.info("[FlowGate] 规格向导激活，模型手写规格已忽略，转系统规格向导暂停卡")
 
 

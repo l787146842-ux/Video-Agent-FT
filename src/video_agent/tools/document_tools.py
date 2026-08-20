@@ -9,7 +9,9 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
+from src.video_agent.core import workflow_runtime
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
+from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
 from src.video_agent.state.manager import StateManager
@@ -279,6 +281,12 @@ class ReadSkillTool(BaseTool):
         # 与 Planner 选中项注入共用同一套解析（仅文档 Skill，模糊匹配）
         matched, content = resolve_skill_content(wanted)
         if not content:
+            # canonical 身份兑底（Rule2 v6）：模型逐字复制显示名的误差
+            # （去连字符/空格归一）经 registry 定位同身份条目
+            entry = registry.resolve_entry(wanted)
+            if entry is not None and str(entry.content or "").strip():
+                matched, content = entry.name, entry.content
+        if not content:
             available: List[str] = []
             try:
                 available += [d.get("name", "") for d in list_skill_docs()]
@@ -481,10 +489,10 @@ class WorkflowPauseTool(BaseTool):
     async def aexecute(self, params: WorkflowPauseInput) -> ToolResult:
         svc = StateManager.get_instance()
         async with svc.lock:
-            interaction = svc.state_dict.setdefault("interaction", {})
-            interaction["awaiting_confirmation"] = True
-            interaction["confirmation_message"] = params.message or "请确认以上内容，确认后我将继续。"
-            svc.save()
+            workflow_runtime.reduce_interaction(svc, set_flags={
+                "awaiting_confirmation": True,
+                "confirmation_message": params.message or "请确认以上内容，确认后我将继续。",
+            }, flush=True)
         return ToolResult(success=True, data={"paused": True, "message": params.message})
 
 

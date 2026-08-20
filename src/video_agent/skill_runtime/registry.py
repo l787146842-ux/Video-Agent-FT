@@ -210,8 +210,13 @@ def list_entries() -> List[SkillEntry]:
 
 
 def _norm_name(s: str) -> str:
-    """名称归一化（与 skill_docs 模糊匹配一致）。"""
-    return (s or "").strip().casefold().replace(" ", "").replace(".md", "").replace(".txt", "")
+    """名称归一化（canonical 身份，Rule2 v6）：小写 + 去空格/连字符/
+    下划线/扩展名——「AI短剧一站式生成」与「AI-短剧一站式生成」同身份。"""
+    return (
+        (s or "").strip().casefold()
+        .replace(" ", "").replace("-", "").replace("_", "")
+        .replace(".md", "").replace(".txt", "")
+    )
 
 
 def resolve_entry(wanted: str) -> Optional[SkillEntry]:
