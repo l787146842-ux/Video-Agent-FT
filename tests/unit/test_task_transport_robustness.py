@@ -62,28 +62,17 @@ def _patch_providers(monkeypatch, module):
 
 
 class TestSameModelCrossProviderCandidates:
-    """候选链只收明确列出同名模型的启用供应商；模型永不换；空列表不入链"""
+    """批 C 裁决（2026-08-20）：聊天链路退役 fallback，单一候选 = 用户所选；
+    生图/生视频 fallback 属独立机制（generation.py），不在裁决范围"""
 
-    @pytest.mark.asyncio
-    async def test_chat_candidates_same_model_only(self, monkeypatch):
-        from src.video_agent.web import chat_service
+    def test_chat_fallback_retired_single_candidate(self):
+        from pathlib import Path
 
-        _patch_providers(monkeypatch, chat_service)
-        cands = await chat_service._fallback_candidates("main", "gemini-3.1-pro")
-        assert cands[0] == ("main", "gemini-3.1-pro")
-        # 全部候选的模型名不变；空列表 alt2 / 禁用 alt3 不入链
-        assert all(m == "gemini-3.1-pro" for _, m in cands)
-        pids = [p for p, _ in cands]
-        assert "alt1" in pids and "alt4" in pids
-        assert "alt2" not in pids and "alt3" not in pids
-
-    @pytest.mark.asyncio
-    async def test_chat_candidates_no_other_model_mixed_in(self, monkeypatch):
-        from src.video_agent.web import chat_service
-
-        _patch_providers(monkeypatch, chat_service)
-        cands = await chat_service._fallback_candidates("main", "gemini-3.1-pro")
-        assert ("alt1", "gemini-3.6-flash") not in cands
+        root = Path(__file__).resolve().parents[2]
+        src = (root / "src/video_agent/web/chat_service.py").read_text(encoding="utf-8")
+        assert "candidates = [(body.provider, body.model)]" in src
+        assert "await _fallback_candidates(" not in src
+        assert "def _fallback_candidates" not in src
 
     @pytest.mark.asyncio
     async def test_image_candidates_by_image_models(self, monkeypatch):
@@ -102,14 +91,6 @@ class TestSameModelCrossProviderCandidates:
         cands = await generation._gen_fallback_candidates("main", "seedance-2.5", "video")
         pids = [p for p, _ in cands]
         assert pids == ["main", "alt1"]
-
-    @pytest.mark.asyncio
-    async def test_empty_model_single_candidate(self, monkeypatch):
-        from src.video_agent.web import chat_service
-
-        _patch_providers(monkeypatch, chat_service)
-        cands = await chat_service._fallback_candidates("main", "")
-        assert cands == [("main", "")]
 
 
 class TestGenRetryableJudgement:

@@ -47,7 +47,6 @@ from src.video_agent.core.sse_events import (
     SSE_DONE,
     SSE_ERROR,
     SSE_GUIDANCE_INJECTED,
-    SSE_MODEL_FALLBACK,
     SSE_STATUS,
     status_event,
 )
@@ -275,64 +274,11 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
     return settings.default_image_provider_id, aspect_ratio
 
 
-# ---------- 模型 fallback 链 ----------
-
-def _is_retryable_adapter_error(e: Exception) -> bool:
-    """判定 AdapterError 是否为可切换备用模型重试的瞬时故障。
-
-    优先使用结构化标记（-2）：AdapterError.retryable 由 Adapter 层在抛错时
-    填充（5xx / 超时 / 连接失败 → True，4xx → False）；无标记的旧异常回退
-    文案匹配。仅瞬时故障可重试，4xx（鉴权/参数错误）重试无意义。
-    """
-    flag = getattr(e, "retryable", None)
-    if flag is not None:
-        return bool(flag)
-    msg = str(e)
-    return (
-        "HTTP 5" in msg
-        or "流式请求失败" in msg
-        or "请求失败" in msg
-        or "超时" in msg
-    )
-
-
-async def _fallback_candidates(provider_id: str, model: str) -> List[tuple]:
-    """构建 fallback 候选链（新语义）：同模型跨厂商，模型永不换。
-
-    主 (provider, model) → 其他启用供应商中明确在 chat_models 里列出
-    同名模型的供应商。模型列表为空的供应商无法验证是否提供该模型，不入链；
-    mock 供应商不入链；总长度受 settings.model_fallback_max_candidates 限制。
-    """
-    limit = max(1, settings.model_fallback_max_candidates)
-    candidates: List[tuple] = [(provider_id, model)]
-    if not str(model or "").strip():
-        return candidates[:limit]
-    if await is_mock_provider_async(provider_id, model):
-        return candidates[:limit]
-    try:
-        providers = await load_merged_providers_async()
-    except Exception:
-        return candidates[:limit]
-    for p in providers:
-        if len(candidates) >= limit:
-            break
-        pid = p.get("id") or ""
-        if not pid or pid == provider_id or not p.get("enabled", True):
-            continue
-        if await is_mock_provider_async(pid):
-            continue
-        models = [str(m or "").strip() for m in (p.get("chat_models") or [])]
-        if model in models and (pid, model) not in candidates:
-            candidates.append((pid, model))
-    return candidates[:limit]
-
-
-def _fallback_switch_payload(candidates: List[tuple], idx: int) -> Dict[str, str]:
-    """降级事件应下发的 (provider, model) —— 实际生效的下一候选（修正）。
-
-    此前误发失败方供应商（cand_provider），同模型跨厂商降级时前端选择器跳转失效。"""
-    nxt = candidates[idx + 1]
-    return {"provider": nxt[0], "model": nxt[1]}
+# ---------- 模型 fallback 链（退役：用户裁决 2026-08-20） ----------
+# 模型选择权归用户：选什么用什么，联不通直接报错。自动换厂商 fallback
+# （_fallback_candidates/_fallback_switch_payload/_is_retryable_adapter_error）
+# 已删除；model_fallback 事件骨架仅留兼容旧任务 replay（协议表见退役注记）。
+# 生图/生视频 fallback 属独立机制（generation.py），不在本裁决范围。
 
 
 def _stamp_doc_written(payload: Optional[Dict[str, Any]], turn_id: str) -> Dict[str, Any]:
@@ -392,11 +338,9 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         svc, body.selected_draft_id, body.selected_type
     )
 
-    candidates = (
-        await _fallback_candidates(body.provider, body.model)
-        if settings.model_fallback_enabled
-        else [(body.provider, body.model)]
-    )
+    # 批 C 退役（用户裁决 2026-08-20）：模型选择权归用户——
+    # 选什么用什么，联不通直接报错，不自动换厂商 fallback
+    candidates = [(body.provider, body.model)]
     # 会话级 compaction（恢复；：预热后台——便宜模型摘要与
     # fallback 候选的 adapter 创建/端点解析并行，首 token 不被摘要往返阻塞；
     # 命中缓存时任务即刻完成，语义与同步等待完全一致）
@@ -407,13 +351,11 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         try:
             llm_adapter = _create_chat_adapter(cand_provider, cand_model)
         except GenerationError as e:
-            logger.warning(f"[ChatService] fallback 候选 {cand_provider}/{cand_model} 端点解析失败: {e}")
-            if idx == len(candidates) - 1:
-                if _compact_task is not None and not _compact_task.done():
-                    _compact_task.cancel()
-                await _emit_stream_error(svc, body, e, emit, use_studio_context)
-                return
-            continue
+            logger.warning(f"[ChatService] 所选供应商 {cand_provider}/{cand_model} 端点解析失败: {e}")
+            if _compact_task is not None and not _compact_task.done():
+                _compact_task.cancel()
+            await _emit_stream_error(svc, body, e, emit, use_studio_context)
+            return
         # 进入候选前取回压缩结果（预热失败/超时由 _maybe_compact_history 内部回落原 history）
         if _compact_task is not None:
             history = await _compact_task
@@ -499,32 +441,11 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                         http_status=p.get("http_status"),
                     )
         except (GenerationError, AdapterError) as e:
-            # 已执行过操作 → 不得重试（避免重复写入）；不可重试/候选用尽 → 报错
-            if applied_seen or not _is_retryable_adapter_error(e) or idx == len(candidates) - 1:
-                logger.warning(f"[ChatService] LLM 流式调用失败 ({cand_provider}/{cand_model}): {e}")
-                await _emit_stream_error(svc, body, e, emit, use_studio_context)
-                return
-            next_provider, next_model = candidates[idx + 1]
-            logger.warning(
-                f"[ChatService] 模型 {cand_model} 瞬时故障（{str(e)[:80]}），fallback 到 {candidates[idx + 1][0]}/{next_model}"
-            )
-            await emit(status_event(
-                "agent.modelFallback",
-                f"模型 {cand_model} 繁忙/异常，已切换 {next_model} 重试…",
-                {"from": cand_model, "to": next_model},
-            ))
-            # 降级即时联动：切换时刻就下发，前端立即把选择器跳到实际生效的组合。
-            # 修正：provider 必须为「下一候选」的供应商（同模型跨厂商降级时
-            # 真正变化的是厂商），此前误发失败方供应商导致前端跳转失效
-            AgentTracer.get_instance().record_fallback(next_provider, next_model)
-            # 批 1：降级切换落转录（完成态回看可见，不再仅瞬态 status）
-            AgentTracer.get_instance().record_action(
-                "model_fallback",
-                f"模型降级：{cand_provider}/{cand_model} → {next_provider}/{next_model}",
-                ok=True,
-            )
-            await emit({"type": SSE_MODEL_FALLBACK, **_fallback_switch_payload(candidates, idx)})
-            continue
+            # 批 C 裁决：单一候选、不自动换模型——失败直接报错；
+            # 已执行过操作同样直接报错（避免重复落盘）
+            logger.warning(f"[ChatService] LLM 流式调用失败 ({cand_provider}/{cand_model}): {e}")
+            await _emit_stream_error(svc, body, e, emit, use_studio_context)
+            return
 
         # --- 成功路径：持久化 + done ---
         if use_studio_context and (final_text or final_payload.get("image_urls") or final_payload.get("confirmation")):
@@ -562,13 +483,6 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             "elapsed_ms": int((time.monotonic() - t0) * 1000),
             "turn_id": turn_id,
         }
-        if idx > 0:
-            done_payload["fallback_model"] = cand_model
-            # 降级显式告警：备用模型的产出质量可能不同于主模型，
-            # 必须让用户可见（随消息持久化到 warnings），不做静默降级
-            warnings = list(done_payload.get("warnings") or [])
-            warnings.append(f"主模型瞬时故障，本次回复由备用模型 {cand_model} 生成，质量可能与主模型不同")
-            done_payload["warnings"] = warnings
         await emit({"type": SSE_DONE, "payload": done_payload})
         return
 
@@ -613,6 +527,15 @@ def _friendly_stream_error(e: Exception) -> Tuple[str, str]:
             msg,
         )
     status = getattr(e, "http_status", None)
+    # 批 A：中继拒收通知单（slow 队列等）优先翻译——须在 401/403 鉴权分支前，
+    # 否则 403 被误译为「Key 过期」；裁决：不自动换模型，只提示手动
+    low = msg.lower()
+    if "10605" in msg or "queuetype" in low or "中继拒收通知单" in msg:
+        return (
+            "上游排队拒收（slow 队列瞬时不接客）：非 Key 或上下文问题。"
+            "请稍后重试；如需可在选择器手动切换其他模型号再发。",
+            msg,
+        )
     if status in (401, 403):
         return (
             f"鉴权失败（HTTP {status}）：API Key 未配置、已过期或不正确。"
@@ -626,8 +549,8 @@ def _friendly_stream_error(e: Exception) -> Tuple[str, str]:
         )
     if isinstance(status, int) and 500 <= status < 600:
         return (
-            f"上游供应商瞬时故障（HTTP {status}），系统已按 fallback 链尝试重试；"
-            "若持续出现请切换其他供应商/模型。",
+            f"上游供应商瞬时故障（HTTP {status}）。请稍后重试；"
+            "如需可在选择器手动切换其他供应商/模型。",
             msg,
         )
     low = msg.lower()
@@ -781,13 +704,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         thinking_level=getattr(body, "thinking_level", "") or "",
     )
 
-    # 非流式复用与 _real_stream 相同的 fallback 链：主模型瞬时故障（5xx/超时/连接失败）
-    # 且尚未执行任何操作时，自动切换备用模型重试；已执行操作则不重试（避免重复落盘）
-    candidates = (
-        await _fallback_candidates(body.provider, body.model)
-        if settings.model_fallback_enabled
-        else [(body.provider, body.model)]
-    )
+    # 批 C 退役（用户裁决 2026-08-20）：单一候选 = 用户所选，联不通直接报错
+    candidates = [(body.provider, body.model)]
     # 会话级 compaction（恢复；：同流式路径——预热后台）
     summary_adapter = _resolve_summary_adapter(body, candidates)
     _compact_task = asyncio.create_task(_maybe_compact_history(history, svc, summary_adapter))
@@ -798,13 +716,10 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         try:
             llm_adapter = _create_chat_adapter(cand_provider, cand_model)
         except GenerationError as e:
-            logger.warning(f"[ChatService] fallback 候选 {cand_provider}/{cand_model} 端点解析失败: {e}")
-            last_err = e
-            if idx == len(candidates) - 1:
-                if _compact_task is not None and not _compact_task.done():
-                    _compact_task.cancel()
-                raise
-            continue
+            logger.warning(f"[ChatService] 所选供应商 {cand_provider}/{cand_model} 端点解析失败: {e}")
+            if _compact_task is not None and not _compact_task.done():
+                _compact_task.cancel()
+            raise
         if _compact_task is not None:
             history = await _compact_task
             _compact_task = None
@@ -826,22 +741,11 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             used_model = cand_model
             break
         except (GenerationError, AdapterError) as e:
-            last_err = e
-            if applied_seen or not _is_retryable_adapter_error(e) or idx == len(candidates) - 1:
-                raise
-            logger.warning(
-                f"[ChatService] 模型 {cand_model} 瞬时故障（{str(e)[:80]}），"
-                f"非流式 fallback 到 {candidates[idx + 1][1]}"
-            )
-            continue
+            # 批 C 裁决：单一候选、不自动换模型——失败直接报错
+            logger.warning(f"[ChatService] LLM 非流式调用失败 ({cand_provider}/{cand_model}): {e}")
+            raise
     if result is None:  # 理论不可达（最后候选失败已 raise），防御兜底
         raise last_err or GenerationError("无可用聊天模型")
-
-    # 降级显式告警（与流式路径一致）：备用模型产出必须让用户可见，不做静默降级
-    if used_model != body.model and body.model:
-        result.warnings.append(
-            f"主模型瞬时故障，本次回复由备用模型 {used_model} 生成，质量可能与主模型不同"
-        )
 
     #自查补漏：turn_id 提升到 if 外，非流式返回体与流式 done payload
     # 契约对齐（turn_id + suggested_actions 同构， 一致性）

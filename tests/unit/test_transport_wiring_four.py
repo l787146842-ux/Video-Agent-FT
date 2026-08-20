@@ -93,13 +93,15 @@ def test_b0_f3_fc_warnings_flow_into_handle_fc_response(monkeypatch):
     assert collector == ["警告A"]
 
 
-def test_b0_f4_fallback_payload_uses_next_candidate():
-    """F4：降级事件携带「下一候选」的供应商（此前误发失败方供应商）。"""
-    from src.video_agent.web.chat_service import _fallback_switch_payload
+def test_b0_f4_fallback_retired_by_ruling():
+    """F4 退役锁（用户裁决 2026-08-20）：聊天链路单一候选、不自动换厂商；
+    _fallback_switch_payload 已自 chat_service 删除"""
+    from pathlib import Path
 
-    candidates = [("provA", "m1"), ("provB", "m1")]
-    payload = _fallback_switch_payload(candidates, 0)
-    assert payload == {"provider": "provB", "model": "m1"}
+    root = Path(__file__).resolve().parents[2]
+    src = (root / "src/video_agent/web/chat_service.py").read_text(encoding="utf-8")
+    assert "_fallback_switch_payload" not in src.replace("（_fallback_candidates/_fallback_switch_payload/_is_retryable_adapter_error）", "")
+    assert "candidates = [(body.provider, body.model)]" in src
 
 
 def test_b0_f2_guidance_register_drain_clear():

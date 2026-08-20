@@ -46,12 +46,12 @@ async def test_heartbeat_emits_on_long_wait(monkeypatch):
     assert any("模型仍在生成" in t for t in texts), texts
 
 
-def test_fallback_and_spec_write_record_trace_action():
-    """降级切换与规格机械写均落 trace action（源码锁源）"""
+def test_fallback_retired_and_spec_write_record_trace_action():
+    """规格机械写落转录（源码锁源）；fallback 切换转录随裁决退役（2026-08-20）"""
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]
     cs = (root / "src/video_agent/web/chat_service.py").read_text(encoding="utf-8")
-    assert 'record_action(\n                "model_fallback"' in cs or '"model_fallback"' in cs
+    assert '"model_fallback"' not in cs, "裁决：聊天链路不自动换模型，发射端已删"
     cc = (root / "src/video_agent/web/chat_consume.py").read_text(encoding="utf-8")
     assert '"write_document"' in cc and "写入文档" in cc
 

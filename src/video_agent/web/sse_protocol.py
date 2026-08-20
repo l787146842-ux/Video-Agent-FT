@@ -74,7 +74,9 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
     ),
     SseEventSpec(
         SSE_MODEL_FALLBACK, ("web/chat_service.py",),
-        "direct", "model_fallback", "降级即时联动",
+        "direct", "model_fallback",
+        "退役（用户裁决 2026-08-20：模型选择权归用户，不自动换模型，"
+        "联不通直接报错）；事件骨架仅留兼容旧任务 replay，发射端已删",
     ),
     SseEventSpec(
         SSE_GUIDANCE_INJECTED, ("core/agent_loop.py",),

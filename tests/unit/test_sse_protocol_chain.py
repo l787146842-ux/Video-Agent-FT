@@ -35,7 +35,15 @@ def test_r4_registry_covers_all_event_constants():
 @pytest.mark.parametrize("spec", SSE_EVENT_REGISTRY, ids=lambda s: s.event_type)
 def test_r4_emitter_segment(spec):
     """发射段：每个登记的发射方源码中存在该事件类型的发射痕迹
-    （SSE_* 常量引用或 "type": "<event>" 字面量）。"""
+    （SSE_* 常量引用或 "type": "<event>" 字面量）。
+    退役事件（注记以「退役」开头）反向钉死：发射痕迹必须已删。"""
+    if (spec.incident or "").startswith("退役"):
+        for emitter in spec.emitters:
+            src = (VA / emitter).read_text(encoding="utf-8")
+            assert f'"{spec.event_type}"' not in src and f"'{spec.event_type}'" not in src, (
+                f"退役事件 {spec.event_type} 发射端仍残留在 {emitter}"
+            )
+        return
     for emitter in spec.emitters:
         src = (VA / emitter).read_text(encoding="utf-8")
         const_name = next(
