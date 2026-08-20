@@ -8,6 +8,7 @@ import json
 import math
 import re
 import time
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Type
 
@@ -643,6 +644,11 @@ async def _stream_actions_progressive(
     return counters["applied"], warnings, content or "", finish
 
 
+# 批 2 长等待心跳参数：超过 AFTER 秒仍无结果，每 EVERY 秒下发一次进度
+_HEARTBEAT_AFTER = 20.0
+_HEARTBEAT_EVERY = 15.0
+
+
 async def executor_stream_text(
     provider: str,
     model: str,
@@ -659,16 +665,30 @@ async def executor_stream_text(
     对缺省 stream 按流式路由，故执行器层不再允许。
     response_format：JSON 产出点下发 json_object，
     端点不支持时适配器探针剥离降级。
+    批 2：长等待心跳——超过 _HEARTBEAT_AFTER 秒仍无结果，每
+    _HEARTBEAT_EVERY 秒下发一次进度（状态栏不再静默黑箱）。
     """
-    return await _gen.call_chat_completion_stream(
-        provider,
-        model,
-        messages,
-        max_tokens=max_tokens,
-        timeout=timeout,
-        thinking_level=thinking_level,
-        response_format=response_format,
-    )
+    async def _heartbeat() -> None:
+        t0 = time.monotonic()
+        await asyncio.sleep(_HEARTBEAT_AFTER)
+        while True:
+            await emit_progress(
+                f"模型仍在生成（已等待 {int(time.monotonic() - t0)} 秒）…")
+            await asyncio.sleep(_HEARTBEAT_EVERY)
+
+    hb = asyncio.create_task(_heartbeat())
+    try:
+        return await _gen.call_chat_completion_stream(
+            provider,
+            model,
+            messages,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            thinking_level=thinking_level,
+            response_format=response_format,
+        )
+    finally:
+        hb.cancel()
 
 
 # 执行器批次可识别的标题字段（与 action_executor 兜底链同义）：
