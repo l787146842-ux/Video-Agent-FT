@@ -1,8 +1,10 @@
-# 架构宪法 — AI 协作开发强制约束（v5 · 2026-08-20）
+# 架构宪法 — AI 协作开发强制约束（v6 · 2026-08-20）
 
 > **本文档是所有 AI 工具（Cursor / Codex / Claude / Gemini / Qoder / CodeBuddy 等）在本项目中工作的最高优先级约束。**
 > 任何代码生成、修改、重构都必须遵守以下规则。违反即视为错误实现。
-> 本版为宪法 v5：指令治理层方法论（原第十三章）整体迁出为
+> 本版为宪法 v6：Rule 2 控制流范式按 2026-08-20 用户审定裁决（ADR-0003）翻转为
+> **Workflow Runtime 单一控制实体**（反转批 12「模型主动权 + 平台否决权」，
+> GOVERNANCE §13.13 同批修订）；指令治理层方法论（原第十三章）整体迁出为
 > [docs/GOVERNANCE.md](docs/GOVERNANCE.md)（与总纲同权，编号 13.x 不变）。
 > 历史版本归档：`docs/archive/recovery-sources-20260813/qoder-history/ARCHITECTURE_RULES-pre-damage-20260811.md`。
 >
@@ -24,13 +26,13 @@
 - routes 层（`web/routes/agent.py`）必须通过 `Planner.handle_message()` / `handle_message_stream()` 处理用户消息
 - **禁止**在 route 中直接调用 LLM Adapter 或自行实现多步循环
 
-### Rule 2: 多步循环唯一实现 + 动作通道单轨（FC）
-- `core/agent_loop.py::run_agent_loop()` 是多步循环的**唯一实现**；`MAX_STEPS` 读 `settings.max_steps`
+### Rule 2: Workflow Runtime 单一控制实体 + 动作通道单轨（FC）
+- `core/agent_loop.py::run_agent_loop()` 是节点内有界模型循环的**唯一实现**；`MAX_STEPS` 读 `settings.max_steps`
 - **动作通道唯一 = FC 工具调用**（`core/fc_tool_runner.py`）；4-4 双轨退役（audit-0819，ADR-0001）已删除：非 FC 聊天通道（agy CLI）、text_actions.md 注入、退化信号探测、流式预执行；禁止恢复自由文本动作解析
 - **确认单轨化（audit-0819b/0819d）**：暂停确认唯一经 `workflow_pause` FC 工具产生（单一正名，对齐业界「只有一个 AskUserQuestion」；别名工具 request_confirmation 与文本别名归一 split_actions 已删），经 llm_call 第 5 元组结构化上抛；合成 studio-actions 文本块、流式抑制器（S01）、strip 清洗已同批删除；`agent_loop` 纯文本轮仅收尾（轮末策略照常承重）；mock 演示动作以结构化 dict 直达执行器
 - **执行器结构化输出（audit-0819d）**：执行器子 LLM 的 JSON 产出点一律下发 `response_format=json_object`（端点不支持时适配器探针剥离降级），产出严格 `json.loads` 校验，畸形走既有 C2 拒因纠正重试——宽容正则兜底已删（S17），禁止恢复；外来工具名运行时翻译层（S15）已删，Skill 导入期工具名转换归专用 Skill 系统
 - **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
-- **控制流统一（audit-0819e，ADR-0002，1111 事故根治）**：一切消息先过**确定性分诊**（`Planner._triage_control`，只认客观状态事实，零语料；概率路由 `_ADVANCE_CORPUS`/`_ADHOC_VERBS` 已删，S04 下账，禁止复活）；advance 由编排器接管，其余交接**受界模型循环**；模型循环每个 FC 批落盘后经 `between_steps` 回收钩子由外层循环再评估（单一就绪单元语义：模型循环只是随时可被回收的执行单元）；**阶段前置闸 `platform.stage_precondition`**（闸机链首位）在工具执行路径上机械强制阶段顺序，不依赖控制流入口的运气；分诊/阶段批/交接/回收全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，控制流决策永不无据可查
+- **控制流统一 v2（2026-08-20 裁决，ADR-0003，1111 根治）**：`core/workflow_runtime.py` 是控制流**唯一驱动器**——Skill 激活编译 `WorkflowDefinition`（canonical slug + revision + content hash，源 = sidecar 声明，`validate_sidecar` 注册期门禁）；持久化 `WorkflowRun`（current_node/completed_nodes/pending_gate/artifacts），**仅 runtime reducer 可改**（StateManager 仍唯一写入点，Rule 3）。**确定性阶段**（阶段表声明 executors）由 runtime 直跑，**零模型规划轮**；**创作型阶段**（deterministic=False）交接有界模型循环（`agent_loop` 为节点内唯一实现）；模型只做节点内语义创作，**不决定阶段顺序、不撰写暂停卡选项面**。平台保留否决权：`platform.stage_precondition`/暂停纪律闸/原料闸/规格闸内嵌执行路径首位（hooks guarantee behavior），不依赖模型自觉。**原子轮提交**：一轮只提交一个 `TurnResult`（body+artifacts+timeline_events+decision_request+next_transition，turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。批 12「模型主动权 + 平台否决权」范式与「快路径退场」叙事被本裁决退役（GOVERNANCE §13.13 同批改指针，P1 规则单家）；控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
 - **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
 - **层级例外（已收敛）**：`web/action_executor.py` 因依赖 web 生成管线暂留 web 层；core→web 顶层 import 一律禁止（经构造注入装配）
 
@@ -216,7 +218,9 @@ python scripts/acceptance.py --with-eval # 终验：追加评测管线
 src/video_agent/
 ├── core/
 │   ├── planner.py          ← Agent 唯一入口（Rule1）
-│   ├── agent_loop.py       ← 多步循环唯一实现（Rule2）
+│   ├── agent_loop.py       ← 节点内有界模型循环唯一实现（Rule2）
+│   ├── workflow_runtime.py ← Workflow Runtime 唯一驱动器（Rule2 v6：定义编译/run reducer/就绪批驱动/原子提交）
+│   ├── pause_composer.py   ← 暂停卡唯一发行点（Rule2 v6 三通道契约）
 │   ├── fc_tool_runner.py   ← FC 轨执行臂；回喂家族在 fc_feedback.py
 │   ├── fc_feedback.py      ← 工具结果回喂/压缩家族（C3 落点）
 │   ├── planner_output.py   ← 轮末产出组装域
@@ -261,6 +265,9 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 - [ ] 拆分模块新增顶层符号已同步登记 re-export 壳清单，测试 patch 目标为调用方命名空间
 - [ ] 测试不得写生产 data/skills（conftest session 级镜像目录保障）
 - [ ] 耦合行变更已同批更新 coupling_registry.py（十、3 条）
+- [ ] 确定性阶段无 model_reasoning 条目（零规划轮），暂停卡选项全系统派生（无模型自造继续/规格类选项）（Rule2 v6）
+- [ ] 一轮一 TurnResult 提交（turn_id 归组），无空文本 docCard 消息、无合成 actionLog（Rule2 v6）
+- [ ] 控制流范式表述唯一归宪法 Rule2，ADR/GOVERNANCE 仅指针（P1）
 - [ ] 修改前已按第十三章 13.5 决策树定位归属层；没有在事故现场就近补条款（P1/P2）
 - [ ] 没有在 Skill 文件里改系统层缺口；没有用 prose 教模型配合既有机制（G1/G3）
 

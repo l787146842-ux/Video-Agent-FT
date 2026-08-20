@@ -1,0 +1,451 @@
+{
+  "project_id": "proj-1787220923-d875e30f",
+  "note": "1111 事故修复前基线（2026-08-20 18:15-18:30 现场）。证据锚点：旧进程跑批12范式（模型主动权）的五现象——秒回机械卡/三规划轮/顺序漂移/空回复/四加载一报错与文档卡丢失。修复后黄金测试对照本基线断言改善。",
+  "usedSkills": [
+    "AI-短剧一站式生成"
+  ],
+  "documents": [
+    "Final_Video_Spec.md",
+    "执行铁律.md"
+  ],
+  "interaction_keys": [
+    "active_pause",
+    "awaiting_confirmation",
+    "confirmation_message",
+    "spec_soft_candidates"
+  ],
+  "messages": [
+    {
+      "sender": "user",
+      "text": "AI-短剧一站式生成"
+    },
+    {
+      "sender": "agent",
+      "text": "这个 Skill 的创作以剧本为原料，当前还没收到剧本文件。请先上传剧本（.txt/.docx）或直接把剧本文字粘贴发给我；若本次想做无剧本从零原创，请点选确认。",
+      "meta": "耗时 0.7s",
+      "confirm": "这个 Skill 的创作以剧本为原料，当前还没收到剧本文件。请先上传剧本（.txt/.docx）或直接把剧本文字粘贴发给我；若本次想做无剧本从零原创，请点选确认。",
+      "confirmOptions": [
+        {
+          "label": "确认从零原创（无需剧本）",
+          "group": null,
+          "value": "waive_script"
+        },
+        {
+          "label": "我去上传/粘贴剧本",
+          "group": null,
+          "value": "upload_script"
+        }
+      ],
+      "turnId": "fa291519fb6b",
+      "pauseId": "87d582bb2129"
+    },
+    {
+      "sender": "user",
+      "text": "upload_script"
+    },
+    {
+      "sender": "agent",
+      "text": "好的，我等你发送剧本（上传 .txt/.docx 或直接粘贴文字）。原料一到立刻开始分析与设计，在那之前不会推进下游环节。",
+      "meta": "耗时 0.7s",
+      "turnId": "6a3bebe31a8b"
+    },
+    {
+      "sender": "user",
+      "text": "请查看我上传的素材"
+    },
+    {
+      "sender": "agent",
+      "text": "剧本分析已完成 ✅\n\n**《三体简短版》分析摘要**\n\n- **一句话总结**：人类在木星轨道发现掩体防御失效，太阳系正被一枚看似无害的白色薄片实施无法理解的毁灭打击。\n- **结构**：三场戏 —— ① 木星轨道“星环”号（末日确认）→ ② 一年前“启示”号拦截发现（倒叙：白色薄片现身）→ ③ 实验舱接触实验（诡异升级）。\n- **核心悬念**：打击物不是光粒，而是一片 8.5×5.2 厘米、无质量、全频段穿透的“二向箔”式白色薄膜——它“什么也不做”，却正是末日本身。\n- **主要角色**：程心、AA、曹彬（场一）；白Ice、瓦西里、领航员、观测员（场二、三）。\n- **情绪曲线**：不安 → 屏息 → 荒诞的轻松 → 骤然收紧（白Ice：“离它远点”）。\n\n下一步我将基于此进行**故事板拆分**（关键元素 + 分镜卡）。拆分完成后会停下来请你过目确认。",
+      "meta": "耗时 145.2s · 3 轮 · 更新 3 项",
+      "confirm": "剧本分析已完成并生成摘要（见上方）。接下来将进入故事板拆分阶段：先拆出关键元素（角色/场景/道具的形象设定），再拆分镜卡，拆分完成后我会暂停请你确认。\n\n同时可顺带告诉我成片的偏好（可多选，也可跳过按默认处理）：",
+      "confirmOptions": [
+        {
+          "label": "继续拆分关键元素",
+          "group": "下一步",
+          "value": null
+        },
+        {
+          "label": "16:9 横屏",
+          "group": "画幅",
+          "value": null
+        },
+        {
+          "label": "9:16 竖屏",
+          "group": "画幅",
+          "value": null
+        },
+        {
+          "label": "写实科幻电影风",
+          "group": "风格",
+          "value": null
+        },
+        {
+          "label": "概念插画风",
+          "group": "风格",
+          "value": null
+        },
+        {
+          "label": "约1分钟以内",
+          "group": "时长",
+          "value": null
+        },
+        {
+          "label": "1-2分钟",
+          "group": "时长",
+          "value": null
+        }
+      ],
+      "actionLog": [
+        "加载Skill完整流程",
+        "读取上传文档",
+        "执行工具script_analyze",
+        "请求阶段确认"
+      ],
+      "turnId": "9eb0c5ecc51b",
+      "pauseId": "8f12495213d6",
+      "traceSteps": [
+        {
+          "step": 1,
+          "actions": [
+            {
+              "name": "system",
+              "summary": "加载 Skill「AI-短剧一站式生成」流程规范进上下文",
+              "elapsed_ms": 0.0,
+              "ok": true
+            },
+            {
+              "name": "model_reasoning",
+              "summary": "Agent 正在规划本步动作（第 1 轮）",
+              "elapsed_ms": 5064.8,
+              "ok": true
+            },
+            {
+              "name": "read_skill",
+              "summary": "加载 Skill「AI-短剧一站式生成」完整流程",
+              "elapsed_ms": 1.2,
+              "ok": true
+            },
+            {
+              "name": "read_uploaded_doc",
+              "summary": "读取上传文档「三体简短版.md」",
+              "elapsed_ms": 0.8,
+              "ok": true
+            }
+          ]
+        },
+        {
+          "step": 2,
+          "actions": [
+            {
+              "name": "model_reasoning",
+              "summary": "Agent 正在规划本步动作（第 2 轮）",
+              "elapsed_ms": 9852.2,
+              "ok": true
+            },
+            {
+              "name": "script_analyze",
+              "summary": "执行工具 script_analyze",
+              "elapsed_ms": 103293.9,
+              "ok": true
+            }
+          ]
+        },
+        {
+          "step": 3,
+          "actions": [
+            {
+              "name": "model_reasoning",
+              "summary": "Agent 正在规划本步动作（第 3 轮）",
+              "elapsed_ms": 25600.5,
+              "ok": true
+            },
+            {
+              "name": "workflow_pause",
+              "summary": "请求阶段确认",
+              "elapsed_ms": 5.2,
+              "ok": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "sender": "user",
+      "text": "继续拆分关键元素\n16:9 横屏\n写实科幻电影风\n1-2分钟"
+    },
+    {
+      "sender": "agent",
+      "meta": "耗时 0.7s",
+      "confirm": "剧本读完了。\n接下来我为这部片子拼装一份制片规格，请逐项选定以下维度（点选或自定义输入；不选的由我按剧本拟定后给您过目）。选完发给我，自动拼装规格并请您审阅。",
+      "confirmOptions": [
+        {
+          "label": "画幅比例：2.35:1 宽银幕",
+          "group": "画幅比例",
+          "value": null
+        },
+        {
+          "label": "画幅比例：16:9 横屏",
+          "group": "画幅比例",
+          "value": null
+        },
+        {
+          "label": "画幅比例：9:16 竖屏",
+          "group": "画幅比例",
+          "value": null
+        },
+        {
+          "label": "目标时长：约 1.5 分钟",
+          "group": "目标时长",
+          "value": null
+        },
+        {
+          "label": "目标时长：约 1.75 分钟",
+          "group": "目标时长",
+          "value": null
+        },
+        {
+          "label": "目标时长：约 2 分钟",
+          "group": "目标时长",
+          "value": null
+        },
+        {
+          "label": "影像风格基调：冷峻深空科幻",
+          "group": "影像风格基调",
+          "value": null
+        },
+        {
+          "label": "影像风格基调：静谧宏大惊悚",
+          "group": "影像风格基调",
+          "value": null
+        },
+        {
+          "label": "影像风格基调：克制悬疑末日",
+          "group": "影像风格基调",
+          "value": null
+        },
+        {
+          "label": "输出语言：中文普通话",
+          "group": "输出语言",
+          "value": null
+        },
+        {
+          "label": "输出语言：中英双语",
+          "group": "输出语言",
+          "value": null
+        },
+        {
+          "label": "输出语言：英语",
+          "group": "输出语言",
+          "value": null
+        }
+      ],
+      "turnId": "def15bf149b9",
+      "pauseId": "f031ab1abfa5"
+    },
+    {
+      "sender": "user",
+      "text": "画幅比例：16:9 横屏\n目标时长：约 2 分钟\n影像风格基调：冷峻深空科幻\n输出语言：中文普通话"
+    },
+    {
+      "sender": "agent",
+      "docCard": "Final_Video_Spec.md",
+      "turnId": "150cbeaa0359"
+    },
+    {
+      "sender": "agent",
+      "text": "关键元素拆分已完成，共 9 组，请过目：\n\n【角色 · 5 组】\n1. 程心 —— 星环号指令舱，冷静承压的科学家气质\n2. AA —— 星环号同伴，利落直率\n3. 曹彬 —— 星环号成员，理性克制\n4. 白Ice —— 启示号研究员，敏锐警觉（关键台词担当）\n5. 瓦西里 —— 启示号研究员，务实沉稳\n\n【场景 · 3 组】\n6. 木星轨道\"星环\"号球形舱 —— 末日确认现场\n7. 一年前\"启示\"号拦截现场 —— 倒叙发现白色薄片\n8. \"启示\"号实验舱 —— 接触实验、诡异升级\n\n【道具 · 1 组】\n9. 白色薄片／二向箔 —— 8.5×5.2cm，无质量、全频段穿透的核心悬念物\n\n规格已锁定：16:9 横屏 · 约 2 分钟 · 冷峻深空科幻 · 中文普通话。\n\n确认后将开始编写关键元素提示词（为每组元素撰写生成用提示词）。如需增删改，请直接说明。\n\n（剧本分析已完成并存档工作台）",
+      "meta": "耗时 208.6s · 4 轮 · 更新 3 项",
+      "confirm": "关键元素拆分已完成，共 9 组，请过目：\n\n【角色 · 5 组】\n1. 程心 —— 星环号指令舱，冷静承压的科学家气质\n2. AA —— 星环号同伴，利落直率\n3. 曹彬 —— 星环号成员，理性克制\n4. 白Ice —— 启示号研究员，敏锐警觉（关键台词担当）\n5. 瓦西里 —— 启示号研究员，务实沉稳\n\n【场景 · 3 组】\n6. 木星轨道\"星环\"号球形舱 —— 末日确认现场\n7. 一年前\"启示\"号拦截现场 —— 倒叙发现白色薄片\n8. \"启示\"号实验舱 —— 接触实验、诡异升级\n\n【道具 · 1 组】\n9. 白色薄片／二向箔 —— 8.5×5.2cm，无质量、全频段穿透的核心悬念物\n\n规格已锁定：16:9 横屏 · 约 2 分钟 · 冷峻深空科幻 · 中文普通话。\n\n确认后将开始编写关键元素提示词（为每组元素撰写生成用提示词）。如需增删改，请直接说明。",
+      "confirmOptions": [
+        {
+          "label": "确认，开始编写关键元素提示词",
+          "group": "关键元素拆分确认",
+          "value": null
+        },
+        {
+          "label": "需要调整拆分",
+          "group": "关键元素拆分确认",
+          "value": null
+        },
+        {
+          "label": "补拆 9 项缺失元素",
+          "group": null,
+          "value": "补拆"
+        },
+        {
+          "label": "维持现状继续",
+          "group": null,
+          "value": "继续"
+        }
+      ],
+      "actionLog": [
+        "系统拼装并写入规格文档 Final_Video_Spec.md",
+        "加载Skill完整流程 ×2",
+        "执行工具storyboard_key_elements",
+        "请求阶段确认"
+      ],
+      "turnId": "150cbeaa0359",
+      "pauseId": "e1f60199d210",
+      "traceSteps": [
+        {
+          "step": 1,
+          "actions": [
+            {
+              "name": "system",
+              "summary": "加载 Skill「AI-短剧一站式生成」流程规范进上下文",
+              "elapsed_ms": 0.0,
+              "ok": true
+            },
+            {
+              "name": "model_reasoning",
+              "summary": "Agent 正在规划本步动作（第 1 轮）",
+              "elapsed_ms": 16076.5,
+              "ok": true
+            },
+            {
+              "name": "read_skill",
+              "summary": "加载 Skill「AI短剧一站式生成」完整流程",
+              "elapsed_ms": 21.8,
+              "ok": false
+            },
+            {
+              "name": "bad_output_retry",
+              "summary": "模型输出异常（空/畸形），自动重做（第 1 次）",
+              "elapsed_ms": 0.0,
+              "ok": true
+            },
+            {
+              "name": "read_skill",
+              "summary": "加载 Skill「AI-短剧一站式生成」完整流程",
+              "elapsed_ms": 1.0,
+              "ok": true
+            }
+          ]
+        },
+        {
+          "step": 2,
+          "actions": [
+            {
+              "name": "model_reasoning",
+              "summary": "Agent 正在规划本步动作（第 2 轮）",
+              "elapsed_ms": 9119.7,
+              "ok": true
+            },
+            {
+              "name": "read_skill",
+              "summary": "加载 Skill「AI-短剧一站式生成」完整流程",
+              "elapsed_ms": 0.6,
+              "ok": true
+            }
+          ]
+        },
+        {
+          "step": 3,
+          "actions": [
+            {
+              "name": "model_reasoning",
+              "summary": "Agent 正在规划本步动作（第 3 轮）",
+              "elapsed_ms": 7396.2,
+              "ok": true
+            },
+            {
+              "name": "storyboard_key_elements",
+              "summary": "执行工具 storyboard_key_elements",
+              "elapsed_ms": 164499.6,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "首拆开始：模型流式生成关键元素分组（边生成边写入）…",
+              "elapsed_ms": 0.0,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "流式落盘：本批写入 1 个分组（累计 1）",
+              "elapsed_ms": 43227.9,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "流式落盘：本批写入 1 个分组（累计 2）",
+              "elapsed_ms": 1591.5,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "流式落盘：本批写入 1 个分组（累计 3）",
+              "elapsed_ms": 1638.1,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "流式落盘：本批写入 1 个分组（累计 4）",
+              "elapsed_ms": 1594.9,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "流式落盘：本批写入 1 个分组（累计 5）",
+              "elapsed_ms": 1510.2,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "流式落盘：本批写入 1 个分组（累计 6）",
+              "elapsed_ms": 1531.1,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "流式落盘：本批写入 1 个分组（累计 7）",
+              "elapsed_ms": 1542.5,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "流式落盘：本批写入 1 个分组（累计 8）",
+              "elapsed_ms": 1509.4,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "流式落盘：本批写入 1 个分组（累计 9）",
+              "elapsed_ms": 1594.1,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "首拆完成：9 个分组已写入故事板",
+              "elapsed_ms": 55740.0,
+              "ok": true
+            },
+            {
+              "name": "executor_substep",
+              "summary": "验收：发现 9 项缺失但补拆未产出，已上报警告",
+              "elapsed_ms": 108368.2,
+              "ok": true
+            }
+          ]
+        },
+        {
+          "step": 4,
+          "actions": [
+            {
+              "name": "model_reasoning",
+              "summary": "Agent 正在规划本步动作（第 4 轮）",
+              "elapsed_ms": 9771.6,
+              "ok": true
+            },
+            {
+              "name": "workflow_pause",
+              "summary": "请求阶段确认",
+              "elapsed_ms": 5.5,
+              "ok": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
