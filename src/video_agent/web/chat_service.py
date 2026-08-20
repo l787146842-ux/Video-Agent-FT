@@ -184,7 +184,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
         return
 
     # ---------- 真实供应商 ----------
-    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector)
+    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal)
 
 
 def start_agent_task(body: Any) -> Dict[str, Any]:
@@ -295,7 +295,7 @@ def _stamp_doc_written(payload: Optional[Dict[str, Any]], turn_id: str) -> Dict[
     return out
 
 
-async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None) -> None:
+async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "") -> None:
     """真实供应商的流式处理（含模型 fallback 链）。
 
     主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，自动切换备用模型重试
@@ -466,8 +466,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                         ),
                         confirm=final_payload.get("confirmation") or "",
                         applied_actions=applied,
-                        action_log=drain_pending_action_log(svc)
-                        + (final_payload.get("action_log") or []),
+                        action_log=final_payload.get("action_log") or [],
                         trace=final_payload.get("trace") or {},
                         confirm_options=final_payload.get("confirmation_options") or None,
                         turn_id=turn_id,
@@ -772,7 +771,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     "agent", result.text, model_name=used_model or "",
                     confirm=result.confirmation,
                     applied_actions=result.applied_actions,
-                    action_log=drain_pending_action_log(svc) + (result.action_log or []),
+                    action_log=result.action_log or [],
                     confirm_options=result.confirmation_options or None,
                     turn_id=ns_turn_id,
                     pause_id=result.pause_id,
@@ -822,7 +821,6 @@ from src.video_agent.web.chat_consume import (
     _finalize_spec_params,
     _maybe_compact_history,
     consume_pause_response,
-    drain_pending_action_log,
     emit_pending_doc_card,
     flush_pending_doc_card,
 )

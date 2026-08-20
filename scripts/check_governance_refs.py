@@ -23,7 +23,7 @@ import re
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCAN_DIRS = ["src/video_agent", "src/web"]
 EXTS = {".py", ".ts", ".tsx"}
-BUDGET = 60
+BUDGET = 57
 PATTERN = re.compile(r"事故|814[A-Z][0-9]?|\b(\d)\1{3}\b|[一二三四五六七]轮")
 
 

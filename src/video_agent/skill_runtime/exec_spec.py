@@ -366,7 +366,7 @@ async def run_collect_spec_node(
     chat_model: str = "",
 ) -> bool:
     """collect_spec 独立节点（Rule2 v6 批3）：候选出题不再藏进
-    script_analyze 耗时（1111 根因：103s 内藏第二次 LLM）；
+    script_analyze 耗时（候选出题曾内藏于分析调用，批3 分离）；
     非创作内层走 aux 角色（executor 级联快模型）。规格已定稿/
     无供应商时返 False 静默回落（向导不渲染软维度）。"""
     if prompt_gates.has_spec_document(svc.state_dict):

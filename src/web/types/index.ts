@@ -361,6 +361,8 @@ export interface AgentTaskReplayPayload {
   }>;
   snapshot?: ServerStateSnapshot | null;
   done_payload?: SseDonePayload | null;
+  /** Rule2 v6：断连期间已写文档累积账本（replay 补渲染文档卡） */
+  docs?: string[];
   fallback?: { provider?: string; model?: string } | null;
   error?: string | null;
 }

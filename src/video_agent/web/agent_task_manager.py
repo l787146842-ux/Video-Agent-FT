@@ -176,6 +176,7 @@ class AgentTaskManager:
                 "tools": record["tools"],
                 "snapshot": record["snapshot"],
                 "done_payload": record["done_payload"],
+                "docs": list(record.get("docs") or []),
                 "fallback": record.get("fallback"),
                 "error": record["error"],
             },
@@ -242,6 +243,11 @@ class AgentTaskManager:
             record["done_payload"] = payload
             if payload.get("state"):
                 record["snapshot"] = payload["state"]
+        elif etype == "doc_written":
+            # Rule2 v6 产物账本累积：断连重连 replay 补渲染文档卡
+            _dn = str(event.get("name") or "")
+            if _dn and _dn not in record.setdefault("docs", []):
+                record["docs"].append(_dn)
         elif etype == "error":
             record["status"] = "error"
             record["error"] = str(event.get("detail") or event.get("text") or "")

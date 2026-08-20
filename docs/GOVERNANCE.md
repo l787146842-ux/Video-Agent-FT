@@ -122,7 +122,7 @@
 
 ### 13.7 耦合点清单（改 A 必须同步检查 B）— 已机器可读化
 
-> 全部耦合行（R01-R26）以数据形式登记在 `src/video_agent/core/coupling_registry.py`，
+> 全部耦合行（R01-R27）以数据形式登记在 `src/video_agent/core/coupling_registry.py`，
 > 每行带强制项（符号可导入/钉死测试存在/门禁已注册 acceptance）；
 > `tests/unit/test_coupling_registry.py` 遍历钉死，漏同步/漏登记即红。
 > 变更任何耦合行：先改注册表同批提交；prose 降级行必须给出理由。

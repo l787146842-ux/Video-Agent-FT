@@ -4,8 +4,8 @@ Agent 多步执行循环（Rule2: 唯一实现）。
 位于 core 层（-1 层级理顺：编排骨架属核心层，不再放 web/；
 web/agent_loop.py 保留为 DEPRECATED 兼容 re-export）。
 
-有界循环（最多 max_steps 轮）：FC 工具轮（tool_calls 在 llm_call 内执行，
-finish 非 stop 或无可见正文时继续下一轮）与纯文本收尾轮（
+有界循环（最多 max_steps 步）：FC 工具步（tool_calls 在 llm_call 内执行，
+finish 非 stop 或无可见正文时继续下一步）与纯文本收尾步（
 单轨化，ADR-0001：文本动作块解析路径已退役；暂停确认经
 llm_call 第 5 元组结构化上抛，不经文本块）。
 
@@ -71,9 +71,9 @@ def _unpack_llm(ret: Tuple) -> Tuple[str, str, int, float, Dict[str, Any]]:
 
 def _bad_output_nudge(attempt: int) -> str:
     """空/畸形输出续写引导：重试时随 messages 附一句，
-    明确要求本轮直接产出工具调用或可见回复（只临时附加，不入历史）。"""
+    明确要求本步直接产出工具调用或可见回复（只临时附加，不入历史）。"""
     return (
-        f"（系统）上一轮（第 {attempt} 次）未产出任何可见回复或工具调用。"
+        f"（系统）上一步（第 {attempt} 次）未产出任何可见回复或工具调用。"
         "请直接发出本应执行的工具调用，或给出面向用户的回复；"
         "不要只输出思考过程。"
     )
@@ -93,7 +93,7 @@ class AgentLoopResult:
     trace: Dict[str, Any] = field(default_factory=dict)
     # 建议动作按钮（确定性交互， 三问全中收归系统）：
     # retry=机械重发上一条用户消息（value 空，前端取历史原文）；
-    # continue=发送固定文本推进新一轮
+    # continue=发送固定文本推进新一步
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
 
 
@@ -166,15 +166,15 @@ async def run_agent_loop(
                 await emit({"type": SSE_TOOL_FINISHED, "id": pid, "ok": True, "elapsed_ms": 0.0, "result_summary": str(summary)})
         await emit({"type": SSE_STEP_STARTED, "step": step, "max_steps": max_steps})
         if step > 1:
-            # 多轮循环"静默期"提示：上一轮工具执行完到本轮首 token 之间可能耗时数十秒，
+            # 多步循环"静默期"提示：上一步工具执行完到本步首 token 之间可能耗时数十秒，
             # 前端状态栏需明确告知正在进行第几轮思考（status 事件全链路已透传）
             await emit(status_event(
                 "agent.roundThinking",
                 f"第 {step - 1} 轮操作已完成，继续思考中（第 {step}/{max_steps} 轮）…",
                 {"prev": step - 1, "step": step, "max": max_steps},
             ))
-        # 轮间注入：任务执行期间收到的用户引导消息在上一轮操作完成、
-        # 本轮 LLM 调用之前送达；首轮尚无操作可打断，一律不注入
+        # 步间注入：任务执行期间收到的用户引导消息在上一步操作完成、
+        # 本步 LLM 调用之前送达；首步尚无操作可打断，一律不注入
         if step > 1 and pending_injector is not None:
             try:
                 pending_items = pending_injector() or []
@@ -197,7 +197,7 @@ async def run_agent_loop(
                     "id": gid,
                     "text": gtext,
                 })
-        system_prompt = context_builder()  # 每轮刷新，让 LLM 看到上一轮执行后的最新状态
+        system_prompt = context_builder()  # 每步刷新，让 LLM 看到上一步执行后的最新状态
 
         # 过程时间线：模型推理轮本身也作为操作条目可见（v6：仅创作型
         # 交接轮进入本循环，文案为节点内创作语义，非确定性阶段规划）
@@ -322,7 +322,7 @@ async def run_agent_loop(
                 tracer.end_step(step, actions_applied=fc_applied, finish_reason="max_steps")
                 break
             tracer.end_step(step, actions_applied=fc_applied, finish_reason=finish_reason or "fc_continue")
-            # 回喂：让下一轮 LLM 知道工具已执行
+            # 回喂：让下一步 LLM 知道工具已执行
             messages.append({"role": "assistant", "content": content or f"（已执行 {fc_applied} 个工具调用）"})
             messages.append({
                 "role": "user",
@@ -391,7 +391,7 @@ async def run_agent_loop(
         else:
             # 用户腔兜底（空响应不是用户的错，给出明确下一步）
             result.text = (
-                "这一轮没有生成可见回复（上游可能瞬时抖动）——请直接说「重试」，我再来一次；"
+                "这一步没有生成可见回复（上游可能瞬时抖动）——请直接说「重试」，我再来一次；"
                 "若连续出现可尝试切换模型。"
             )
             # 一键重试按钮替代手打「重试」（机械重发上一条用户消息）

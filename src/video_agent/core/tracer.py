@@ -101,6 +101,9 @@ class AgentTracer:
         self._control_flow: Deque[Dict[str, Any]] = deque(maxlen=200)
         # 模型降级事件计数（fallback 频率指标；record_fallback 写入）
         self._fallback_events: Deque[Dict[str, Any]] = deque(maxlen=200)
+        # 轮前机械动作缓冲（向导机械写文档等先于 start_trace）：
+        # start_trace 收养进当轮时间线（Rule2 v6 瞬态不得作为唯一可见性）
+        self._pre_actions: List[Dict[str, Any]] = []
         self._persist_path = DATA_DIR / "agent_traces.jsonl"
 
     @classmethod
@@ -126,6 +129,10 @@ class AgentTracer:
         self._step_start = time.monotonic()
         # 当前 step 期间收集的操作明细与 reasoning（end_step 时归档）
         self._pending_actions: List[Dict[str, Any]] = []
+        # 轮前机械动作收养（向导机械写文档等）：完成态/运行态同一条目
+        if self._pre_actions:
+            self._pending_actions.extend(self._pre_actions)
+            self._pre_actions = []
         self._pending_gates: List[Dict[str, Any]] = []
         self._pending_cards: List[Dict[str, Any]] = []
         self._pending_reasoning: List[str] = []
@@ -189,6 +196,18 @@ class AgentTracer:
             "summary": summary,
             "elapsed_ms": round(elapsed_ms, 1),
             "ok": ok,
+        })
+
+    def record_pre_turn(
+        self, name: str, summary: str = "", elapsed_ms: float = 0.0, ok: bool = True,
+    ) -> None:
+        """轮前机械动作登记：缓冲待 start_trace 收养（Rule2 v6）。
+
+        开场编排（向导机械落盘等）先于 agent_loop.start_trace 发生，
+        直记 record_action 会落进上一轮残迹被清空——轮前缓冲根治。"""
+        self._pre_actions.append({
+            "name": name, "summary": summary,
+            "elapsed_ms": round(elapsed_ms, 1), "ok": ok,
         })
 
     def record_reasoning(self, text: str) -> None:

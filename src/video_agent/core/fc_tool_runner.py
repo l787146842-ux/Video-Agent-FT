@@ -418,7 +418,7 @@ class FCToolRunner:
         # 三通道分离 B：模型 pause message 超长的原文（进正文通道，不丢信息）
         pause_overflow = ""
         # 三通道分离 C：批内成功执行的工具名/阶段标签（阶段边界判定用）；
-        # 阶段标签跨批保留（实例属性）——1111 场景 script_analyze 与
+        # 阶段标签跨批保留（实例属性）——分析工具与
         # workflow_pause 分属两个批，短问句仍需带上真实阶段名
         batch_tool_names: set = set(getattr(self, "_turn_tool_names", ()))
         self._turn_tool_names = batch_tool_names

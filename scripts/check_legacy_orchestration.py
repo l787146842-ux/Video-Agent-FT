@@ -22,6 +22,7 @@ FORBIDDEN = re.compile(
     r"|auto_retry|parse_skill_manifest|skill_declares_summary"
     r"|parse_steps\b|parse_dependencies\b|topo_batches|resolve_steps_and_deps"
     r"|pipeline_status_from|lint_planner_dag|render_pipeline_detail"
+    r"|pending_action_log|Agent 正在规划本步动作"
 )
 
 

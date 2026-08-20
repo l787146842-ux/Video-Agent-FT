@@ -507,7 +507,7 @@ def test_wizard_assembly_recorded_in_artifact_ledger(tmp_path):
     from src.video_agent.state.manager import StateManager
     from src.video_agent.core import workflow_runtime
     from src.video_agent.web.chat_consume import (
-        _consume_spec_wizard, drain_pending_action_log,
+        _consume_spec_wizard,
     )
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
@@ -515,7 +515,6 @@ def test_wizard_assembly_recorded_in_artifact_ledger(tmp_path):
     _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
     run = svc.state_dict.get("workflow_run") or {}
     assert "Final_Video_Spec.md" in (run.get("artifacts") or [])
-    assert drain_pending_action_log(svc) == []  # 合成记账已退役
 
 
 # ---------- 0817 B20：总结展示归 Skill 声明驱动（流程归位清查） ----------

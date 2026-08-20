@@ -268,9 +268,9 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
     # 产物账本一等条目（Rule2 v6 ArtifactCommitted）：机械写入进
     # workflow_run.artifacts，done 载荷经 documents_written 同轮下发
     workflow_runtime.record_artifact(state, skill_name, name)
-    # 批 1：机械写文档落转录（完成态时间线可见，与 live 同构）
+    # 轮前机械动作落转录（Rule2 v6：start_trace 收养进当轮时间线）
     try:
-        AgentTracer.get_instance().record_action(
+        AgentTracer.get_instance().record_pre_turn(
             "write_document", f"写入文档 {name}", ok=True)
     except Exception:
         pass
@@ -301,15 +301,6 @@ def flush_pending_doc_card(svc, turn_id: str = "") -> str:
     svc.save()
     logger.info(f"[SpecWizard] 规格文档卡补落：{name}（用户消息之后）")
     return name
-
-
-def drain_pending_action_log(svc) -> List[str]:
-    """ ：取走并清空向导合成记账（轮末合入 agent 消息 actionLog）。"""
-    inter = svc.state_dict.get("interaction") or {}
-    entries = inter.pop("pending_action_log", None) or []
-    if entries:
-        svc.save_debounced()
-    return [str(e) for e in entries if str(e or "").strip()]
 
 
 async def emit_pending_doc_card(svc, turn_id: str, emit) -> str:

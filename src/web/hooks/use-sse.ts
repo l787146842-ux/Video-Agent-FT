@@ -203,6 +203,9 @@ function handleEvent(ev: SseEvent) {
         break;
       }
       // 运行中：恢复累积状态后继续收实时增量
+      // Rule2 v6：断连期间文档卡补渲染（task_manager 累积账本，
+      // 瞬态 SSE 不得作为唯一可见性）
+      (p.docs || []).forEach((n) => chatActions.docWritten(n));
   chatActions.restoreStreamingState({
     reasoning: p.reasoning || '',
     text: p.text || '',

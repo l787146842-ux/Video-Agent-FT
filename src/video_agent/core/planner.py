@@ -419,7 +419,7 @@ class Planner:
             # 不再合成 studio-actions 文本块回绕解析（对齐 AskUserQuestion 范式）
             _confirm_holder: Dict[str, Any] = {}
             # 纯规划计时（反馈）：只量模型流/调用本身，FC 工具执行时间
-            # 不计入「Agent 正在规划本步动作」条目，避免规划行虚高掩盖工具耗时
+            # 不计入规划条目，避免规划行虚高掩盖工具耗时
             _t_plan = time.monotonic()
             # 流式路径：使用 chat_stream + hook 回调
             if hook:
