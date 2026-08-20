@@ -1,7 +1,8 @@
 /**
  * 过程时间线纯函数域（批 2 时间线降噪）。
  *
- * model_reasoning 规划条目每轮一条（「Agent 正在规划本步动作（第 N 轮）」），
+ * model_reasoning 创作规划条目每步一条（「模型创作规划（节点内第 N 轮）」，
+ * Rule2 v6：仅创作型交接轮产生；确定性直跑轮无此类条目），
  * 多轮任务下低信息密度条目堆叠淹没真实工具账目。渲染前把连续规划条目合并为
  * 「规划 N 轮 · 累计 Xs」单条（保留逐轮明细可展开）；工具/执行器条目不受影响。
  *
@@ -47,7 +48,7 @@ export function consolidateTimeline(items: TimelineItem[]): TimelineItem[] {
       const failed = run.some((i) => i.status === 'failed');
       out.push({
         id: `${run[0].id}-merged`,
-        summary: `规划 ${run.length} 轮 · 累计 ${formatElapsed(total)}`,
+        summary: `模型创作 ${run.length} 步 · 累计 ${formatElapsed(total)}`,
         status: failed ? 'failed' : 'done',
         elapsed_ms: total,
         details: run,

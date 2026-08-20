@@ -186,6 +186,9 @@ export const chatActions = {
         memoryHits: (payload.memory_hits || []).length ? payload.memory_hits : undefined,
         thinkingMs: thinkingMs || undefined,
         turnId,
+        // 暂停卡语义种类（Rule2 v6：前端卡标题按 kind 渲染，
+        // remind=待补原料 / collect=规格交互 / 其余=阶段完成）
+        kind: payload.pause_kind || undefined,
         // 暂停卡结构化标识（用户点选回应时经 pause_response 结构化回携，对勾不再靠文本反推）
         pauseId: payload.pause_id || undefined,
         // ：建议动作按钮（重试/继续，确定性交互；仅最后一条消息渲染）

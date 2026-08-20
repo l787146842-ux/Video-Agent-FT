@@ -312,6 +312,8 @@ export interface SseDonePayload {
   confirmation?: string;
   /** 暂停卡结构化标识（用户点选回应时经 pause_response 结构化回携） */
   pause_id?: string;
+  /** Rule2 v6：暂停卡语义种类（remind/collect/stage_done/confirm，卡标题渲染依据） */
+  pause_kind?: string;
   documents_written?: string[];
   warnings?: string[];
   image_urls?: string[];

@@ -5,7 +5,7 @@ import { consolidateTimeline, formatElapsed, type TimelineItem } from '../timeli
 
 const reasoning = (step: number, ms: number, status: TimelineItem['status'] = 'done'): TimelineItem => ({
   id: `llm-s${step}`,
-  summary: `Agent 正在规划本步动作（第 ${step} 轮）`,
+  summary: `模型创作规划（节点内第 ${step} 轮）`,
   status,
   elapsed_ms: ms,
 });
@@ -17,7 +17,7 @@ describe('consolidateTimeline 规划条目合并', () => {
   it('连续多条规划条目合并为单条（N 轮 + 累计耗时 + 明细保留）', () => {
     const out = consolidateTimeline([reasoning(1, 1200), reasoning(2, 800), reasoning(3, 1000)]);
     expect(out.length).toBe(1);
-    expect(out[0].summary).toBe('规划 3 轮 · 累计 3.0s');
+    expect(out[0].summary).toBe('模型创作 3 步 · 累计 3.0s');
     expect(out[0].elapsed_ms).toBe(3000);
     expect(out[0].details?.length).toBe(3);
   });
