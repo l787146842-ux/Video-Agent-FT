@@ -2,7 +2,7 @@
 
 原多步 continue/文本确认/文本动作执行/5555 引导卡用例均钉文本块通道，
 已随双轨退役删除（ADR-0001）；循环级语义覆盖迁 test_agent_loop.py
-（FC 桁），确认合成块回归钉死见 test_audit0819_leak_and_fakestop.py。
+（FC 桁），确认合成块回归钉死见 test_fc_leak_fakestop.py。
 """
 import pytest
 

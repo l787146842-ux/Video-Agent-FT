@@ -42,7 +42,7 @@ def svc(tmp_path):
 
 
 # ---------- 解析层（0818 B4：声明迁 sidecar，文档解析通道退役；
-# 体检/加载语义由 test_0818_sidecar_migration 覆盖） ----------
+# 体检/加载语义由 test_sidecar_migration 覆盖） ----------
 
 
 def test_manifest_gates_override_legacy_gate_rules():

@@ -124,8 +124,8 @@
     "prompt": "总时长：12秒。他对这个推断感到惊讶，影子被夕阳拉长，神情复杂地望向远方，色调深青克制，<风声低鸣>，no music，no subtitles。",
     "manifest": null,
     "expect_blocked": true,
-    "expect_rule": "skill.require_camera_language",
-    "note": "批次7 精化验证：含「推断/拉长」但无真实镜头语言——旧版单字推/拉会误放行，新版正确拦截"
+    "expect_rule": "skill.shot_min_chars",
+    "note": "低于平台地板被拦；含「推断/拉长」但无真实镜头语言描述（单字推/拉为粗粒度标记，镜头语言闸不据此放行）"
   },
   {
     "id": "audio_false_positive_fixed",
@@ -133,7 +133,125 @@
     "prompt": "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，数学成绩<及格线让他沮丧，光影克制，色调深青，no subtitles。",
     "manifest": null,
     "expect_blocked": true,
+    "expect_rule": "skill.shot_min_chars",
+    "note": "低于平台地板被拦；裸 < 包装非音频语义（音频层客观标记为粗粒度，误报防护由字数地板兼顾）"
+  },
+  {
+    "id": "shot_ok_duration_synonym",
+    "kind": "shot",
+    "prompt": "总时长：15秒。缓慢推入中景，主角站在船头凝望雾气中渐渐远去的海岸，海风吹动衣角，远处礁石浪花飞溅，光影克制，色调深青，<海浪声>，no music，no subtitles。",
+    "manifest": { "gates": { "require_duration": true } },
+    "expect_blocked": false,
+    "note": "时长闸合法样本：总时长前缀写法放行"
+  },
+  {
+    "id": "shot_ok_subtitle_cn",
+    "kind": "shot",
+    "prompt": "镜头总时长：10秒。缓慢横移全景，暮色中的山谷雾气流动，远处村落灯火点点，炊烟升起，山脊轮廓在暮色里渐渐模糊，归鸟掠过天边，色调暖灰克制，<虫鸣声>，no music，无字幕。",
+    "manifest": { "gates": { "require_subtitle": true } },
+    "expect_blocked": false,
+    "note": "字幕闸合法样本：中文同义词「无字幕」放行"
+  },
+  {
+    "id": "shot_ok_camera_markers",
+    "kind": "shot",
+    "prompt": "镜头总时长：12秒。俯瞰缓缓下降至中景，集市人潮涌动，晨光斜照在屋檐之间，旗帜随风摆动，摊贩的幌子轻轻摇晃，色调写实，<集市嘈杂声>，no music，no subtitles。",
+    "manifest": { "gates": { "require_camera_language": true } },
+    "expect_blocked": false,
+    "note": "镜头语言闸合法样本：俯瞰+中景标记放行"
+  },
+  {
+    "id": "shot_ok_audio_dialogue",
+    "kind": "shot",
+    "prompt": "镜头总时长：12秒。特写，主角手中攥着一封信，烛光摇曳照亮半边脸，尘埃在光束里浮动，色调暖暗，{主角低声说：终于来了}，no music，no subtitles。",
+    "manifest": { "gates": { "require_audio_layer": true } },
+    "expect_blocked": false,
+    "note": "音频层闸合法样本：对白 {…} 包装放行"
+  },
+  {
+    "id": "shot_ok_all_gates",
+    "kind": "shot",
+    "prompt": "镜头总时长：14秒。缓慢推入，从全景到中景，主角行走在雪原上朝远处灯塔走去，脚印在身后延伸，{一句对白：到了}，光影克制清冷，no music，no subtitles。",
+    "manifest": { "gates": { "require_duration": true, "require_subtitle": true, "require_camera_language": true, "require_audio_layer": true } },
+    "expect_blocked": false,
+    "note": "四闸全开全合规：时长/字幕/镜头语言/音频层齐备"
+  },
+  {
+    "id": "ke_ok_scene",
+    "kind": "keyElement",
+    "prompt": "废弃的空间站控制大厅，面板漆黑，尘埃在裂缝漏下的光束中浮动，应急灯闪着红光，冰冷的钢结构延伸至黑暗深处，压抑而孤寂的氛围。",
+    "manifest": null,
+    "expect_blocked": false,
+    "note": "关键元素合法样本：场景类（默认策略放行）"
+  },
+  {
+    "id": "ke_ok_prop",
+    "kind": "keyElement",
+    "prompt": "黄铜怀表，表壳刻着藤蔓花纹，表面停在三点十二分，链条略有磨损，泛黄的表盖内侧刻着一行小字，带着记忆与时间的重量感。",
+    "manifest": null,
+    "expect_blocked": false,
+    "note": "关键元素合法样本：道具类（默认策略放行）"
+  },
+  {
+    "id": "shot_ok_cjk_with_terms",
+    "kind": "shot",
+    "prompt": "镜头总时长：12秒。中景，主角走过霓虹闪烁的小巷，积水倒映着斑斓光斑，缓慢跟拍随其移动，cinematic 电影质感，<远处车流声>，no music，no subtitles。",
+    "manifest": null,
+    "expect_blocked": false,
+    "note": "语言闸边界内样本：中文正文 + 少量英文术语，占比高于地板放行"
+  },
+  {
+    "id": "shot_block_no_duration",
+    "kind": "shot",
+    "prompt": "缓慢横移全景，暮色中的山谷雾气流动，远处村落灯火点点，牧人赶着羊群沿山路归家，羊铃声随风隐约传来，色调暖灰克制，<虫鸣声>，no music，no subtitles。",
+    "manifest": { "gates": { "require_duration": true } },
+    "expect_blocked": true,
+    "expect_rule": "skill.require_duration",
+    "note": "时长闸拦截样本：全文无任何时长语义（数字+秒/s）"
+  },
+  {
+    "id": "shot_block_no_subtitle",
+    "kind": "shot",
+    "prompt": "镜头总时长：11秒。缓慢推入中景，主角在台灯下整理旧照片，尘埃在光柱中浮动，墙面映出物件的影子，色调暖暗，<纸页翻动声>，no music。",
+    "manifest": { "gates": { "require_subtitle": true } },
+    "expect_blocked": true,
+    "expect_rule": "skill.require_subtitle",
+    "note": "字幕闸拦截样本：无任何字幕负面约束同义词"
+  },
+  {
+    "id": "shot_block_no_audio",
+    "kind": "shot",
+    "prompt": "镜头总时长：10秒。全景，雪原在远处延伸，一个人影缓缓走着，脚印在身后拉长，阳光斜照在雪面上，色调清冷克制，无字幕。",
+    "manifest": { "gates": { "require_audio_layer": true } },
+    "expect_blocked": true,
     "expect_rule": "skill.require_audio_layer",
-    "note": "批次7 精化验证：裸 < 不成对不再视为音频层——旧版会误放行，新版正确拦截"
+    "note": "音频层闸拦截样本：无 < / { 包装亦无 no music/音效/旁白"
+  },
+  {
+    "id": "shot_block_no_camera",
+    "kind": "shot",
+    "prompt": "清晨的旧街道空无一人，落叶沿石板路滚动，晨光从楼缝之间斜斜洒下，湿漉漉的路面泛着微光，远处路灯尚未熄灭，色调清冷克制，{风声}，no music，no subtitles，总时长：8秒。",
+    "manifest": { "gates": { "require_camera_language": true } },
+    "expect_blocked": true,
+    "expect_rule": "skill.require_camera_language",
+    "note": "镜头语言闸拦截样本：纯画面描述无景别/角度/运动标记"
+  },
+  {
+    "id": "ke_block_too_short_desc",
+    "kind": "keyElement",
+    "prompt": "红衣少女站在桥头",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.element_min_chars",
+    "note": "关键元素拦截样本：字数低于元素地板（50 字）"
+  },
+  {
+    "id": "shot_block_low_cjk_border",
+    "kind": "shot",
+    "prompt": "Medium view of a lighthouse at dusk, waves crashing against the rocks below, cold blue palette, slow orbit around the tower, wind sweeping the grass. 灯塔孤独矗立在海角尽头。 no music, no subtitles.",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.cjk_min_ratio",
+    "note": "语言闸边界拦截样本：英文为主 + 少量中文，占比低于地板"
   }
 ]

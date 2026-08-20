@@ -61,7 +61,7 @@ COUPLING_ROWS: List[CouplingRow] = [
         "R04_executor_output_format",
         "执行器输出格式变更",
         "action_executor 兜底链 + 自检去重键（去重依赖标题有效）",
-        (("testfile", "tests/unit/test_2222_round2_fixes.py"),)
+        (("testfile", "tests/unit/test_action_executor_fallback.py"),)
         + (("prose", "兜底链行为由回归测试钉死，格式锚点属内容审查"),),
     ),
     CouplingRow(
@@ -125,7 +125,7 @@ COUPLING_ROWS: List[CouplingRow] = [
         "R12_fc_confirm_loop",
         "FC 确认回环变更",
         "planner 合成 studio-actions JSON 拼回正文 → agent_loop 单路径消费；双轨同测",
-        (("testfile", "tests/unit/test_b0_p0_fixes.py"),)
+        (("testfile", "tests/unit/test_transport_wiring_four.py"),)
         + (("prose", "FC 暂停语义合成 studio-actions 单路径消费，双轨同测由该行测试覆盖"),),
     ),
     CouplingRow(
@@ -194,7 +194,7 @@ COUPLING_ROWS: List[CouplingRow] = [
         "生成确认闸变更",
         "guard_pipeline.evaluate_gen_confirm 唯一判定；双轨只注入参数",
         _sym("src.video_agent.core.guard_pipeline:evaluate_gen_confirm")
-        + (("testfile", "tests/unit/test_b4_dual_track_gen_confirm.py"),),
+        + (("testfile", "tests/unit/test_gen_confirm_gate.py"),),
     ),
     CouplingRow(
         "R20_pause_rules_landing",
@@ -240,7 +240,7 @@ COUPLING_ROWS: List[CouplingRow] = [
         "chat_service 透传层打戳 → use-sse 携带 → chat.docWritten 落消息",
         _sym("src.video_agent.web.chat_service:_stamp_doc_written")
         + (("vtest", "src/web/lib/__tests__/turn-groups.test.ts"),)
-        + (("testfile", "tests/unit/test_s5_doc_written_turn_stamp.py"),),
+        + (("testfile", "tests/unit/test_doc_written_turn_stamp.py"),),
     ),
     CouplingRow(
         "R26_frontend_contract",
@@ -260,7 +260,7 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.core.planner_triage:make_reclaim_hook",
             "src.video_agent.core.fc_response:merge_fc_response",
             "src.video_agent.core.planner:Planner._triage_control",
-        ) + (("testfile", "tests/unit/test_audit0819e_control_flow.py"),),
+        ) + (("testfile", "tests/unit/test_deterministic_triage.py"),),
     ),
 ]
 

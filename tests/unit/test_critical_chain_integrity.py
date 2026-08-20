@@ -13,7 +13,7 @@ from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.base import ToolResult
 
 
-def test_6666_iron_rules_ensured_on_real_chat(tmp_path):
+def test_iron_rules_ensured_on_real_chat(tmp_path):
     """真实聊天/任务路径每轮确保《执行铁律.md》存在（不能只在 mock 路径创建）。"""
     from src.video_agent.core.spec_rules import find_iron_rules_doc
     from src.video_agent.state.manager import StateManager
@@ -32,7 +32,7 @@ def test_6666_iron_rules_ensured_on_real_chat(tmp_path):
     assert find_iron_rules_doc(svc.state_dict) is not None
 
 
-def test_6666_fc_injects_skill_name_into_executor_args(monkeypatch):
+def test_fc_injects_skill_name_into_executor_args(monkeypatch):
     """FC 调用执行器时，模型没带 skill_name → 平台强制注入 injected_skill。"""
     captured = {}
 
@@ -54,14 +54,14 @@ def test_6666_fc_injects_skill_name_into_executor_args(monkeypatch):
     assert captured["args"].get("skill_name") == "AI-短剧一站式生成"
 
 
-def test_6666_message_text_skill_match():
+def test_message_text_skill_match():
     """消息文本里出现已注册 Skill 名 → 自动绑定（不依赖请求字段/模型）。"""
     assert registry.match_skill_name_from_text("AI-短剧一站式生成") == "AI-短剧一站式生成"
     from src.video_agent.web.chat_service import _resolve_skill_name_for_injection
     assert _resolve_skill_name_for_injection("", "", {}, "请帮我跑 AI-短剧一站式生成") == "AI-短剧一站式生成"
 
 
-def test_6666_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypatch):
+def test_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypatch):
     """script_analyze/document_write(规格) 失败但模型带确认声称完成 →
     6666 二轮：明确提示「剧本分析未完成」并洗掉假完成文案（不允许假完成）。"""
     import asyncio
@@ -138,7 +138,7 @@ def test_executor_force_main_chat_model(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_6666_prelude_notes_recorded_in_trace(tmp_path):
+async def test_prelude_notes_recorded_in_trace(tmp_path):
     """prelude（加载 Skill 流程/读取存档文档）进入执行轨迹，前端时间线可见。"""
     from src.video_agent.core.agent_loop import run_agent_loop
     from src.video_agent.state.manager import StateManager

@@ -52,6 +52,7 @@ async def test_session_compact_failure_degradation_visible(monkeypatch):
     from src.video_agent.config import settings
     from src.video_agent.web import chat_consume
 
+    original_threshold = settings.history_compact_threshold
     object.__setattr__(settings, "history_compact_threshold", 2)
 
     class _FailAdapter:
@@ -69,7 +70,10 @@ async def test_session_compact_failure_degradation_visible(monkeypatch):
         def get_chat_messages(self):
             return history
 
-    out = await chat_consume._maybe_compact_history(history, _Svc(), _FailAdapter())
+    try:
+        out = await chat_consume._maybe_compact_history(history, _Svc(), _FailAdapter())
+    finally:
+        object.__setattr__(settings, "history_compact_threshold", original_threshold)
     assert out is history, "压缩失败必须回落原 history（优化不是前置条件）"
     assert "chat_consume.session_compact" in _points()
 
@@ -102,6 +106,7 @@ async def test_between_steps_reclaim_degradation_visible(monkeypatch):
     from src.video_agent.core import pipeline_orchestrator as po
     from src.video_agent.core import planner_triage
 
+    original_flag = settings.pipeline_orchestrator_enabled
     object.__setattr__(settings, "pipeline_orchestrator_enabled", True)
 
     async def boom(state_manager, skill, user_message=""):
@@ -109,8 +114,11 @@ async def test_between_steps_reclaim_degradation_visible(monkeypatch):
 
     monkeypatch.setattr(po, "orchestrate_turn", boom)
 
-    hook = planner_triage.make_reclaim_hook(_BrokenState(), "AI-短剧一站式生成")
-    reclaim = await hook(1)
+    try:
+        hook = planner_triage.make_reclaim_hook(_BrokenState(), "AI-短剧一站式生成")
+        reclaim = await hook(1)
+    finally:
+        object.__setattr__(settings, "pipeline_orchestrator_enabled", original_flag)
     assert reclaim is None, "回收评估失败必须 fail-open（不劫持模型循环）"
     assert "planner.between_steps_reclaim" in _points()
 

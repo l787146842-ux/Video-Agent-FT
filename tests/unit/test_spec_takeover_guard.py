@@ -11,7 +11,7 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 
 
-def test_8888_prelude_only_real_events():
+def test_prelude_only_real_events():
     """前奏只登记「加载 Skill 流程基线」；不得出现假「读取并存档上传文档」。"""
     from src.video_agent.web.chat_service import _build_prelude_notes
 
@@ -23,7 +23,7 @@ def test_8888_prelude_only_real_events():
     assert _build_prelude_notes("") == []
 
 
-def test_8888_fc_spec_reject_takes_over_with_wizard(tmp_path, monkeypatch):
+def test_fc_spec_reject_takes_over_with_wizard(tmp_path, monkeypatch):
     """script_analyze 成功 + 规格写入被向导拒收 → 接管为规格向导卡，
     模型不得用「请求阶段确认」跳过规格，也不得声称已生成规格。"""
     import asyncio
@@ -65,7 +65,7 @@ def test_8888_fc_spec_reject_takes_over_with_wizard(tmp_path, monkeypatch):
     assert raw_state["interaction"].get("confirmation_message") == confirmation
 
 
-def test_8888_general_mixed_failure_override(tmp_path, monkeypatch):
+def test_general_mixed_failure_override(tmp_path, monkeypatch):
     """部分关键成功、部分失败 + 模型声称全部完成 → 覆盖为诚实文案（盲区修复）。"""
     import asyncio
 

@@ -17,7 +17,7 @@ def _fresh(ws: str, project_id: str) -> StateManager:
 
 # ---------- A3：切换/保存不得回退后台任务的新写入 ----------
 
-def test_8888_switch_does_not_regress_task_writes(tmp_path):
+def test_switch_does_not_regress_task_writes(tmp_path):
     """钉死 8888 现场：任务实例写新后，单例来回切换不得抹掉文件；
     单例持过期内存直接 save() 也必须被版本闸放弃。"""
     ws = str(tmp_path / "ws")
@@ -49,7 +49,7 @@ def test_8888_switch_does_not_regress_task_writes(tmp_path):
     assert fresh.state_dict["shots"], "过期实例的保存必须被版本闸放弃"
 
 
-def test_8888_parallel_projects_no_cross_write(tmp_path):
+def test_parallel_projects_no_cross_write(tmp_path):
     """双项目并行：各自实例各自落盘，互不串写。"""
     ws = str(tmp_path / "ws")
     a = StateManager(ws)
@@ -70,7 +70,7 @@ def test_8888_parallel_projects_no_cross_write(tmp_path):
     assert [g["title"] for g in fb.state_dict["keyElements"]] == ["元素B"]
 
 
-def test_8888_normal_single_instance_save_still_works(tmp_path):
+def test_normal_single_instance_save_still_works(tmp_path):
     """版本闸不得误伤正常单实例读写链：连续 update/save 均落盘。"""
     ws = str(tmp_path / "ws")
     svc = StateManager(ws)
@@ -91,7 +91,7 @@ _SPEC_FULL = (
 )
 
 
-def test_8888_takeover_skipped_when_spec_finalized(monkeypatch):
+def test_takeover_skipped_when_spec_finalized(monkeypatch):
     """B1 钉死现场：规格已定稿时模型冗余手写规格 → 只拒收警告，
     不接管暂停卡（拆解阶段不再被换回「确认规格」卡）。"""
     import asyncio
@@ -133,7 +133,7 @@ def test_8888_takeover_skipped_when_spec_finalized(monkeypatch):
     assert raw_state["interaction"].get("pending_pause_kind") != "spec"
 
 
-def test_8888_review_options_concrete_next_step():
+def test_review_options_concrete_next_step():
     """0817 B22：审阅卡选项中性化——平台不点名下一步，一律按 Skill 流程推进。"""
     from src.video_agent.core import prompt_gates
 
@@ -146,7 +146,7 @@ def test_8888_review_options_concrete_next_step():
     assert opts[0]["label"] == "确认成片规格，按流程继续"
 
 
-def test_8888_collect_card_neutral_no_summary_injection():
+def test_collect_card_neutral_no_summary_injection():
     """0818 架构板正批：收集卡不再平台侧内嵌总结（总结展示归
     编排器暂停卡 include_summary_in_pause 声明）；无开发腔。"""
     from src.video_agent.core import prompt_gates
@@ -159,7 +159,7 @@ def test_8888_collect_card_neutral_no_summary_injection():
     assert "全局设置" not in msg
 
 
-def test_8888_duration_candidates_dedup_by_value():
+def test_duration_candidates_dedup_by_value():
     """B5：「约 2 分钟」与「约 120 秒」同档去重，表述归一。"""
     from src.video_agent.skill_runtime import executors as ex_mod
 
@@ -169,7 +169,7 @@ def test_8888_duration_candidates_dedup_by_value():
     assert out == ["约 45 秒"]
 
 
-def test_8888_output_language_dim_description(monkeypatch):
+def test_output_language_dim_description(monkeypatch):
     """B6/814G4：维度选项卡片文字不重复维度名（display），说明逐项差异化白话。"""
     from src.video_agent.core import prompt_gates
 
@@ -185,7 +185,7 @@ def test_8888_output_language_dim_description(monkeypatch):
     assert all(o["label"].startswith("输出语言：") for o in opts)
 
 
-def test_8888_badge_normalize_from_desc_anchors():
+def test_badge_normalize_from_desc_anchors():
     """B7：泛化「关键元素」/缺省角标按 desc 锚点确定映射。"""
     from src.video_agent.state import storyboard_ops as ops
 

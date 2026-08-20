@@ -17,7 +17,7 @@ from src.video_agent.core.planner_output import assemble_response
 # ---------- ① 规格已定稿不再出软参数候选 ----------
 
 @pytest.mark.asyncio
-async def test_0818_soft_candidates_skipped_when_spec_doc_exists(tmp_path, monkeypatch):
+async def test_soft_candidates_skipped_when_spec_doc_exists(tmp_path, monkeypatch):
     """规格文档已落盘：script_analyze 跳过候选出题（零冗余 LLM）。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.skill_runtime import exec_tools
@@ -48,7 +48,7 @@ async def test_0818_soft_candidates_skipped_when_spec_doc_exists(tmp_path, monke
 
 
 @pytest.mark.asyncio
-async def test_0818_soft_candidates_still_run_without_spec_doc(tmp_path, monkeypatch):
+async def test_soft_candidates_still_run_without_spec_doc(tmp_path, monkeypatch):
     """无规格文档（首轮）：候选出题照常（行为不变）。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.skill_runtime import exec_tools
@@ -87,7 +87,7 @@ def _executor_stub():
     )
 
 
-def test_0818_pause_text_gets_objective_done_note():
+def test_pause_text_gets_objective_done_note():
     """分析已存档且暂停：正文保留模型 prose 并追加客观完成行，
     下一轮历史能看到分析已完成的客观事实。"""
     lr = AgentLoopResult(
@@ -103,7 +103,7 @@ def test_0818_pause_text_gets_objective_done_note():
     assert "剧本分析已完成" in resp["text"]
 
 
-def test_0818_pause_note_dedup_and_scope():
+def test_pause_note_dedup_and_scope():
     """判重与触发边界：正文已含完成陈述不重复；未暂停/无分析不追加。"""
     # 正文已含客观完成 → 不重复拼
     lr = AgentLoopResult(text="剧本分析已完成，按流程停在阶段边界。", confirmation="暂停")

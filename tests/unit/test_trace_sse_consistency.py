@@ -42,7 +42,7 @@ def _run_with_trace(monkeypatch, tool_name, args, raw_state):
     return events, list(tracer._pending_actions)
 
 
-def test_0817_trace_ok_matches_sse_on_normal_failure(monkeypatch):
+def test_trace_ok_matches_sse_on_normal_failure(monkeypatch):
     """普通工具失败：SSE 发 ok=False（live 红×），trace 也必须 ok=False，
     刷新重建时间线不得把失败渲染成绿√。"""
     events, actions = _run_with_trace(
@@ -54,7 +54,7 @@ def test_0817_trace_ok_matches_sse_on_normal_failure(monkeypatch):
     assert rec[0]["ok"] is False, "trace 与 SSE 口径必须一致：失败记 False"
 
 
-def test_0817_trace_ok_neutral_on_spec_silent_reject(monkeypatch):
+def test_trace_ok_neutral_on_spec_silent_reject(monkeypatch):
     """规格手写被向导拒收（814G3 静默）：用户侧中性（无红×），
     trace 与 SSE 同口径记 ok=True。"""
     events, actions = _run_with_trace(
@@ -84,21 +84,21 @@ def _spec_state(lang_line: str):
                            "content": f"# 最终成片规格\n- 画幅比例：16:9\n- {lang_line}\n"}]}
 
 
-def test_0817_spec_english_selection_disables_language_gate():
+def test_spec_english_selection_disables_language_gate():
     """用户选英文 → 语言闸关闭，英文提示词放行。"""
     ok, hard, _ = prompt_gates.validate_prompt_write(
         _ENG, "keyElement", _spec_state("输出语言：英文"))
     assert ok and not any("全是英文" in h for h in hard)
 
 
-def test_0817_spec_chinese_selection_blocks_english_prompt():
+def test_spec_chinese_selection_blocks_english_prompt():
     """用户选中文 → 英文提示词仍被拦（与平台默认一致）。"""
     _ok, hard, _ = prompt_gates.validate_prompt_write(
         _ENG, "keyElement", _spec_state("输出语言：中文"))
     assert any("几乎全是英文" in h for h in hard)
 
 
-def test_0817_user_selection_overrides_skill_english_lock():
+def test_user_selection_overrides_skill_english_lock():
     """优先级：用户选择 > Skill 声明。Skill 声明英文锁定但用户选中文 → 中文生效。"""
     _ok, hard, _ = prompt_gates.validate_prompt_write(
         _ENG, "keyElement", _spec_state("输出语言：中文"),
@@ -106,21 +106,21 @@ def test_0817_user_selection_overrides_skill_english_lock():
     assert any("几乎全是英文" in h for h in hard)
 
 
-def test_0817_bilingual_selection_disables_language_gate():
+def test_bilingual_selection_disables_language_gate():
     """用户选中英双语 → 语言闸不卡，中英皆可。"""
     ok, hard, _ = prompt_gates.validate_prompt_write(
         _ENG, "keyElement", _spec_state("输出语言：中英双语"))
     assert ok
 
 
-def test_0817_no_spec_keeps_platform_default():
+def test_no_spec_keeps_platform_default():
     """无规格文档 → 维持平台默认（中文环境下英文被拦），不回归。"""
     _ok, hard, _ = prompt_gates.validate_prompt_write(
         _ENG, "keyElement", {"documents": []})
     assert any("几乎全是英文" in h for h in hard)
 
 
-def test_0817_injection_sentence_matches_spec_selection():
+def test_injection_sentence_matches_spec_selection():
     """C1：执行器注入句与闸机读同一裁决——注入句随用户选择变化。"""
     from src.video_agent.skill_runtime import exec_common
     s_en = exec_common._prompt_language_rule(
@@ -136,7 +136,7 @@ def test_0817_injection_sentence_matches_spec_selection():
 
 # ---------- 0817 B3：分组标题确定性归一（剥英文标识/编号前缀） ----------
 
-def test_0817_normalize_group_title_strips_prefixes():
+def test_normalize_group_title_strips_prefixes():
     """模型模仿 Skill 英文标识当标题 → 确定性剥前缀，保留中文主体。"""
     from src.video_agent.state import storyboard_ops as ops
     assert ops.normalize_group_title("key_element_audio_瓦西里") == "瓦西里"
@@ -149,7 +149,7 @@ def test_0817_normalize_group_title_strips_prefixes():
     assert ops.normalize_group_title("元素场景_01") == "元素场景_01"
 
 
-def test_0817_add_group_title_normalized_on_write(tmp_path):
+def test_add_group_title_normalized_on_write(tmp_path):
     """文本轨/执行器轨建组入口：标题落盘前归一。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.web.action_executor import StudioActionExecutor
@@ -165,7 +165,7 @@ def test_0817_add_group_title_normalized_on_write(tmp_path):
     assert "key_element_audio_瓦西里" not in titles
 
 
-def test_0817_fc_create_group_title_normalized(tmp_path, monkeypatch):
+def test_fc_create_group_title_normalized(tmp_path, monkeypatch):
     """FC 轨 storyboard_create_group 同覆盖（G4）。"""
     import asyncio
     from src.video_agent.state.manager import StateManager
@@ -180,7 +180,7 @@ def test_0817_fc_create_group_title_normalized(tmp_path, monkeypatch):
     assert "太阳系外缘启示号控制舱" in titles
 
 
-def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
+def test_patch_group_title_normalized_on_model_path(tmp_path):
     """复查补漏：模型经 patch_group 改名也归一（用户 REST 路径不受影响）。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.web.action_executor import StudioActionExecutor
@@ -200,7 +200,7 @@ def test_0817_patch_group_title_normalized_on_model_path(tmp_path):
 
 # ---------- 0817 B18：注入瘦身（铁律4/5删除+全局设置阶段门控+channels死机制清除） ----------
 
-def test_0817_iron_rules_template_drops_clauses_4_5():
+def test_iron_rules_template_drops_clauses_4_5():
     """铁律只留契约条款：提示词质量/产出形态归 Skill 章节唯一表述（用户裁决）。"""
     from src.video_agent.core.spec_rules import _IRON_RULES_DOC_BODY
     assert "提示词质量" not in _IRON_RULES_DOC_BODY
@@ -209,7 +209,7 @@ def test_0817_iron_rules_template_drops_clauses_4_5():
         assert kept in _IRON_RULES_DOC_BODY, f"契约条款丢失: {kept}"
 
 
-def test_0817_iron_rules_migration_strips_old_clauses():
+def test_iron_rules_migration_strips_old_clauses():
     """存量项目铁律里的默认第4/5条升级迁移时剥离（幂等）。"""
     from src.video_agent.core.spec_rules import (
         IRON_RULES_DOC_NAME, ensure_iron_rules_doc,
@@ -232,7 +232,7 @@ def test_0817_iron_rules_migration_strips_old_clauses():
     assert ensure_iron_rules_doc(raw) is False  # 幂等
 
 
-def test_0817_iron_rules_migration_from_spec_section_strips_clauses():
+def test_iron_rules_migration_from_spec_section_strips_clauses():
     """复查补漏：老项目规格文档内嵌铁律章节迁入时，若带默认第4/5条同样剥离。"""
     from src.video_agent.core.spec_rules import ensure_iron_rules_doc
     spec_with_iron = (
@@ -253,7 +253,7 @@ def test_0817_iron_rules_migration_from_spec_section_strips_clauses():
     assert "执行优先" in iron["content"]
 
 
-def test_0817_global_settings_stage_gated():
+def test_global_settings_stage_gated():
     """全局设置注入阶段门控：规格规划阶段不注入，故事板起才注入。"""
     from src.video_agent.core.prompt_builder import PromptBuilder
     pb_empty = PromptBuilder(lambda: None, lambda: "p", get_raw_state=lambda: {
@@ -267,7 +267,7 @@ def test_0817_global_settings_stage_gated():
     assert pb_nostate.stage_allows_global_settings() is True  # 无法探测时保守注入
 
 
-def test_0817_channels_dead_mechanism_removed():
+def test_channels_dead_mechanism_removed():
     """生成渠道已归全局设置唯一事实源：channels 注入机制整体清除
     （0818 B4：manifest 解析链退役，白名单符号随删）。"""
     from src.video_agent.core.prompt_builder import PromptBuilder
@@ -279,7 +279,7 @@ def test_0817_channels_dead_mechanism_removed():
 # ---------- 0817 B17：语言闸拒收批内即时纠正（不拖到整工具重做） ----------
 
 @pytest.mark.asyncio
-async def test_0817_lang_gate_reject_triggers_inbatch_corrective(tmp_path, monkeypatch):
+async def test_lang_gate_reject_triggers_inbatch_corrective(tmp_path, monkeypatch):
     """首批部分进展但撞语言闸 → 立即批内带拒因纠正重试一次，
     不得拖到整工具失败由外层从头重做（6 分钟级浪费）。"""
     from src.video_agent.core import prompt_gates
@@ -321,7 +321,7 @@ async def test_0817_lang_gate_reject_triggers_inbatch_corrective(tmp_path, monke
 
 # ---------- 0817 B16：执行器警告必须上抛到用户可见层 ----------
 
-def test_0817_executor_warnings_surface_to_user(monkeypatch):
+def test_executor_warnings_surface_to_user(monkeypatch):
     """执行器成功结果携带的 warnings（如补拆失败缺失清单）必须升级为用户可见警告。"""
     import json
     from src.video_agent.adapters.base_chat import ChatResponse
@@ -347,7 +347,7 @@ def test_0817_executor_warnings_surface_to_user(monkeypatch):
 # ---------- 0817 B15：script_analyze 幂等（剧本未变不重跑） ----------
 
 @pytest.mark.asyncio
-async def test_0817_script_analyze_idempotent(tmp_path, monkeypatch):
+async def test_script_analyze_idempotent(tmp_path, monkeypatch):
     """同一剧本重复分析 → 第二次直接复用既有结果（零 LLM 调用）。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.skill_runtime import exec_tools
@@ -387,7 +387,7 @@ def _async_none():
 
 # ---------- 0817 B14：规格文档卡不得落在用户选择消息之前 ----------
 
-def test_0817_wizard_doc_card_deferred_until_after_user_msg(tmp_path):
+def test_wizard_doc_card_deferred_until_after_user_msg(tmp_path):
     """向导落盘时卡片只挂起；用户消息先落库，卡片随后补落（顺序正确）。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.web.chat_consume import (
@@ -412,7 +412,7 @@ def test_0817_wizard_doc_card_deferred_until_after_user_msg(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_0817_wizard_doc_card_live_visible_via_sse(tmp_path):
+async def test_wizard_doc_card_live_visible_via_sse(tmp_path):
     """0817 B19：向导规格卡补落同时发 doc_written 即显事件（live 不靠刷新）。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.web.chat_consume import emit_pending_doc_card
@@ -433,7 +433,7 @@ async def test_0817_wizard_doc_card_live_visible_via_sse(tmp_path):
 
 # ---------- 0817 B23/B24：思考档不硬编码降档 + 剧本注入上限合一 ----------
 
-def test_0817_script_inject_limit_unified_and_configurable():
+def test_script_inject_limit_unified_and_configurable():
     """上限合一移全局设置：可配、截断附可见警告。"""
     from src.video_agent.config import settings
     from src.video_agent.skill_runtime import exec_common
@@ -453,7 +453,7 @@ def test_0817_script_inject_limit_unified_and_configurable():
         object.__setattr__(settings, "script_inject_limit", old)
 
 
-def test_0817_executor_thinking_not_hardcoded_low():
+def test_executor_thinking_not_hardcoded_low():
     """0817 B23：平台不硬编码降档，默认沿用全局。
     audit-0819f 用户裁决升级：通用搭配默认 executor=low（防思考吃预算），
     但 settings.executor_thinking_level 本身仍默认空（env 未设）。
@@ -464,7 +464,7 @@ def test_0817_executor_thinking_not_hardcoded_low():
     assert exec_common._executor_thinking() == "low"
 
 
-def test_0817_script_inject_limit_in_runtime_whitelist():
+def test_script_inject_limit_in_runtime_whitelist():
     """0817 B24 复查：上限键纳入全局设置热更新白名单（独立钳制区间）。"""
     from src.video_agent.web.routes import runtime_settings as rs
     assert "script_inject_limit" in rs._CHAR_LIMIT_KEYS
@@ -473,7 +473,7 @@ def test_0817_script_inject_limit_in_runtime_whitelist():
 
 # ---------- 0817 B22：流程意见清除（平台只兜底，不包办排序） ----------
 
-def test_0817_platform_no_next_step_opinions():
+def test_platform_no_next_step_opinions():
     """平台卡片/建议不再点名下一步：V1/V2/V8/V9/V10 清除钉死。"""
     from pathlib import Path
     from src.video_agent.core import gates_cards, round_end_policies as rep
@@ -487,7 +487,7 @@ def test_0817_platform_no_next_step_opinions():
     assert "继续编写元素生图提示词草案" not in sd
 
 
-def test_0817_storyboard_progress_note_objective():
+def test_storyboard_progress_note_objective():
     """客观进度描述：只报三类有无 + 暂停点指向 Skill，不含排序意见。"""
     from src.video_agent.core.prompt_builder import PromptBuilder
     pb = PromptBuilder(lambda: None, lambda: "p", get_raw_state=lambda: {
@@ -502,7 +502,7 @@ def test_0817_storyboard_progress_note_objective():
 
 # ---------- 0817 B21：向导拼装合成记账入 actionLog ----------
 
-def test_0817_wizard_assembly_recorded_in_action_log(tmp_path):
+def test_wizard_assembly_recorded_in_action_log(tmp_path):
     """向导机械拼装不走工具通道 → 合成记账，drain 后合入轮末 actionLog。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.web.chat_consume import (
@@ -533,7 +533,7 @@ class _LR:
         self.confirmation_options = []
 
 
-def test_0817_summary_display_no_platform_injection(tmp_path, monkeypatch):
+def test_summary_display_no_platform_injection(tmp_path, monkeypatch):
     """0818 架构板正批：平台不再强注入总结（收集卡中性、轮末只补客观
     完成记账）；总结展示归编排器暂停卡声明。"""
     from src.video_agent.core import gates_spec, planner_output
@@ -558,7 +558,7 @@ def test_0817_summary_display_no_platform_injection(tmp_path, monkeypatch):
 
 # ---------- 0817 B13：轮间提示去 prose 越权（客观状态机械生成） ----------
 
-def test_0817_wizard_note_no_forced_ke_pause(tmp_path):
+def test_wizard_note_no_forced_ke_pause(tmp_path):
     """向导回执不得钉死「拆关键元素并暂停」：流程与暂停点归 Skill 阶段边界。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.web.chat_consume import _consume_spec_wizard
@@ -572,7 +572,7 @@ def test_0817_wizard_note_no_forced_ke_pause(tmp_path):
     assert "暂停点以" in note, "暂停归属必须指向 Skill 阶段边界"
 
 
-def test_0817_pause_note_objective_spec_state(tmp_path):
+def test_pause_note_objective_spec_state(tmp_path):
     """暂停消费提示按客观状态生成：规格已存在说已写入，绝不再出现「先写入规格文档」。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.web.chat_consume import _consume_pending_confirmation
@@ -597,7 +597,7 @@ def test_0817_pause_note_objective_spec_state(tmp_path):
 # ---------- 0817 B11：flow_directive 一条龙（模型解读+平台机械执行+按消息生效） ----------
 
 @pytest.mark.asyncio
-async def test_0817_flow_directive_tool_sets_flag_and_clears(tmp_path, monkeypatch):
+async def test_flow_directive_tool_sets_flag_and_clears(tmp_path, monkeypatch):
     from src.video_agent.state.manager import StateManager
     from src.video_agent.core import prompt_gates
     from src.video_agent.tools.document_tools import FlowDirectiveTool
@@ -613,7 +613,7 @@ async def test_0817_flow_directive_tool_sets_flag_and_clears(tmp_path, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_0817_flow_directive_text_track_sets_flag(tmp_path):
+async def test_flow_directive_text_track_sets_flag(tmp_path):
     from src.video_agent.state.manager import StateManager
     from src.video_agent.core import prompt_gates
     from src.video_agent.web.action_executor import StudioActionExecutor
@@ -624,7 +624,7 @@ async def test_0817_flow_directive_text_track_sets_flag(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_0817_spec_write_allowed_under_auto_continue(tmp_path, monkeypatch):
+async def test_spec_write_allowed_under_auto_continue(tmp_path, monkeypatch):
     """一条龙下模型可按 Skill 填写规格（用户指令=规格同意，留痕）。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.tools.document_tools import DocumentWriteTool
@@ -638,7 +638,7 @@ async def test_0817_spec_write_allowed_under_auto_continue(tmp_path, monkeypatch
     assert res.success, res.error
 
 
-def test_0817_pause_suppressions_wired_to_auto_continue():
+def test_pause_suppressions_wired_to_auto_continue():
     """轮末暂停/引导卡均接入一条龙豁免（G4 同类路径；0818：spec_collect 随门禁链退役）。"""
     import inspect
     from src.video_agent.core import round_end_policies as rep
@@ -648,20 +648,20 @@ def test_0817_pause_suppressions_wired_to_auto_continue():
 
 # ---------- 0817 B9：机器覆盖验收（Skill 声明驱动） ----------
 
-def test_0817_script_speakers_extraction():
+def test_script_speakers_extraction():
     from src.video_agent.skill_runtime import exec_split
     text = "### 场一\n罗辑：黑暗森林。\n程心：好的。\n旁白：远处。\n罗辑：再来。"
     assert exec_split._script_speakers(text) == ["罗辑", "程心"]
 
 
-def test_0817_skill_declares_audio_from_skill_doc():
+def test_skill_declares_audio_from_skill_doc():
     from src.video_agent.skill_runtime import exec_split
     # 真实 Skill 声明 key_element_audio → 验收才查音色
     assert exec_split.skill_declares_audio("AI-短剧一站式生成") is True
     assert exec_split.skill_declares_audio("不存在的Skill") is False
 
 
-def test_0817_coverage_missing_audio_and_speakers(tmp_path):
+def test_coverage_missing_audio_and_speakers(tmp_path):
     from src.video_agent.state.manager import StateManager
     from src.video_agent.skill_runtime import exec_split
     svc = StateManager(str(tmp_path / "ws"))
@@ -685,7 +685,7 @@ def test_0817_coverage_missing_audio_and_speakers(tmp_path):
     assert exec_split._coverage_missing_key_elements(svc, "AI-短剧一站式生成") == []
 
 
-def test_0817_coverage_no_audio_check_when_skill_silent(tmp_path):
+def test_coverage_no_audio_check_when_skill_silent(tmp_path):
     """Skill 未声明音色 → 不查音色（不会硬拆出音色组）。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.skill_runtime import exec_split
@@ -701,7 +701,7 @@ def test_0817_coverage_no_audio_check_when_skill_silent(tmp_path):
 
 # ---------- 0817 B4：执行器 JSON 畸形 → 带拒因纠正重试（C2） ----------
 
-def test_0817_llm_json_call_corrective_retry_on_malformed(monkeypatch):
+def test_llm_json_call_corrective_retry_on_malformed(monkeypatch):
     """首次返回畸形 JSON → 携拒因重试一次 → 二次正确则解析成功。"""
     import asyncio
     from src.video_agent.skill_runtime import exec_spec
@@ -725,7 +725,7 @@ def test_0817_llm_json_call_corrective_retry_on_malformed(monkeypatch):
     assert any("无法解析" in str(m.get("content")) for m in calls[1])
 
 
-def test_0817_llm_json_call_raises_after_retry_still_malformed(monkeypatch, tmp_path):
+def test_llm_json_call_raises_after_retry_still_malformed(monkeypatch, tmp_path):
     """重试仍畸形 → 抛明确错误，不吞。"""
     import asyncio
     import pytest as _pt
@@ -745,7 +745,7 @@ def test_0817_llm_json_call_raises_after_retry_still_malformed(monkeypatch, tmp_
 
 # ---------- 0817 B6：后台任务生命周期状态可观测（静默死亡留痕） ----------
 
-def test_0817_task_lifecycle_done_and_cancel_statuses(tmp_path):
+def test_task_lifecycle_done_and_cancel_statuses(tmp_path):
     """worker 正常结束=done、被取消=cancelled，状态均落账（可观测性前提）。"""
     from src.video_agent.web.agent_task_manager import AgentTaskManager
 

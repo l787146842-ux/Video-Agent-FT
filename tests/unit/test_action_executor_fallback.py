@@ -23,7 +23,7 @@ from src.video_agent.web import generation as gen_mod
 _OLD_CLAUSE = "系统不得拦截用户要求的操作，也不得强制暂停等待确认"
 
 
-def test_2222_iron_rules_template_no_block_clause_removed():
+def test_iron_rules_template_no_block_clause_removed():
     """模板第 1 条只保留『照常执行 + 末尾警告』，拦截/强制暂停半句已删。"""
     body = spec_rules._IRON_RULES_DOC_BODY
     assert _OLD_CLAUSE not in body
@@ -31,7 +31,7 @@ def test_2222_iron_rules_template_no_block_clause_removed():
     assert "先照常执行" in body and "再在回复末尾给出警告。" in body
 
 
-def test_2222_existing_iron_doc_auto_upgraded_on_ensure():
+def test_existing_iron_doc_auto_upgraded_on_ensure():
     """存量项目铁律文档带旧半句：ensure 时精确删除，其余内容不动。"""
     old = (
         "# 执行铁律（系统约定，按优先级执行：用户指令 > 本文档 + 制片规格 > Skill/系统默认）\n\n"
@@ -49,14 +49,14 @@ def test_2222_existing_iron_doc_auto_upgraded_on_ensure():
     assert "- 用户自定义条款：保持原样。" in doc["content"]  # 用户其它编辑不动
 
 
-def test_2222_existing_iron_doc_upgrade_idempotent():
+def test_existing_iron_doc_upgrade_idempotent():
     """升级幂等：已升级的文档再次 ensure 不报变化。"""
     state = {"documents": [{"name": "执行铁律.md",
                             "content": spec_rules._IRON_RULES_DOC_BODY.strip() + "\n"}]}
     assert spec_rules.ensure_iron_rules_doc(state) is False
 
 
-def test_2222_migrated_spec_section_strips_block_clause():
+def test_migrated_spec_section_strips_block_clause():
     """老项目规格文档内嵌铁律章节迁移时，旧半句一并清除。"""
     spec = (
         "# 最终成片规格\n\n## 执行铁律（系统约定）\n\n"
@@ -75,7 +75,7 @@ def test_2222_migrated_spec_section_strips_block_clause():
 
 # ---------- 思考档位按调用覆盖（executor_thinking_level） ----------
 
-def test_2222_thinking_override_wins_over_global():
+def test_thinking_override_wins_over_global():
     """本次调用档位覆盖全局配置；覆盖值非法时不下发；显式空串=原生（814H7）。"""
     adapter = OpenAICompatChatAdapter(base_url="http://x", api_key="k", model="m")
     payload: dict = {}
@@ -103,7 +103,7 @@ def test_2222_thinking_override_wins_over_global():
     assert "reasoning_effort" not in payload3
 
 
-def test_2222_executor_thinking_default_low_and_empty_falls_back():
+def test_executor_thinking_default_low_and_empty_falls_back():
     """audit-0819f 通用搭配：默认 executor=low（取代 0817 B23 默认空）；
     env 覆写（settings.executor_thinking_level）优先于默认，用户策略表优先于 env。"""
     assert ex_mod._executor_thinking() == "low"
@@ -114,7 +114,7 @@ def test_2222_executor_thinking_default_low_and_empty_falls_back():
         object.__setattr__(settings, "executor_thinking_level", "")
 
 
-def test_2222_all_executor_llm_calls_pass_thinking_level():
+def test_all_executor_llm_calls_pass_thinking_level():
     """G4 全局化：执行器全部 5 个 LLM 调用点都传思考档位，不许漏路径。
     R4a 拆分后扫描实现模块；五轮 S5 新增 exec_split（拆解域切出，含自检调用点）；
     0817 B4 新增 _llm_json_call 畸形 JSON 纠正重试调用点；
@@ -141,7 +141,7 @@ def test_2222_all_executor_llm_calls_pass_thinking_level():
 
 # ---------- 截断保险全局化（流式拆解回滚 + 扩额整体重试） ----------
 
-def test_2222_rollback_split_groups_removes_only_new(tmp_path):
+def test_rollback_split_groups_removes_only_new(tmp_path):
     """回滚只删本次拆解新建的分组，拆解前既有分组不动，幂等。"""
     from src.video_agent.state.manager import StateManager
 
@@ -159,7 +159,7 @@ def test_2222_rollback_split_groups_removes_only_new(tmp_path):
     assert ex_mod._rollback_split_groups(svc, "shot", ids_before) == 0  # 幂等
 
 
-def test_2222_split_truncation_retry_pinned():
+def test_split_truncation_retry_pinned():
     """钉死：流式拆解截断 → 回滚 → 扩额整体重试，不再收部分成功。"""
     src = inspect.getsource(ex_mod._run_storyboard_split)
     assert "正在回退重试补全" not in src  # 只承诺不执行的空头文案已删
@@ -171,7 +171,7 @@ def test_2222_split_truncation_retry_pinned():
 
 # ---------- 拆解边界按 Skill 章节结构自适应 ----------
 
-def test_2222_merged_section_allows_all_three_kinds():
+def test_merged_section_allows_all_three_kinds():
     """「AI-短剧」storyboard_designer 同含三类职责 → 三个拆解执行器均放行三类。"""
     from src.video_agent.skill_runtime import registry
 
@@ -181,7 +181,7 @@ def test_2222_merged_section_allows_all_three_kinds():
         assert kinds == {"keyElement", "shot", "audio"}, f"{tool} 应放行三类，实际 {kinds}"
 
 
-def test_2222_separate_sections_keep_single_kind_boundary():
+def test_separate_sections_keep_single_kind_boundary():
     """三个独立章节（各带「本节职责：只创建 X 分组」声明）→ 各执行器只放行自己类别。"""
     from src.video_agent.skill_runtime import registry
     from src.video_agent.web import skill_docs as sd
@@ -206,7 +206,7 @@ def test_2222_separate_sections_keep_single_kind_boundary():
     registry.reset_registry()
 
 
-def test_2222_apply_actions_multi_kind_accepts_and_single_rejects(tmp_path):
+def test_apply_actions_multi_kind_accepts_and_single_rejects(tmp_path):
     """多类别边界放行混类 add_group；单类别边界仍拒收越界。"""
     from src.video_agent.state.manager import StateManager
 
@@ -225,7 +225,7 @@ def test_2222_apply_actions_multi_kind_accepts_and_single_rejects(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_2222_split_truncation_retry_success_path(monkeypatch, tmp_path):
+async def test_split_truncation_retry_success_path(monkeypatch, tmp_path):
     """正向路径钉死：首拆截断 → 回滚 + 扩额重试；重试完整则无拼接、不进对账流程。"""
     from src.video_agent.skill_runtime import registry
     from src.video_agent.skill_runtime.executors import StoryboardShotsTool, StoryboardSplitInput
@@ -286,7 +286,7 @@ _SPEC_TEXT_2222 = (
 )
 
 
-def test_2222_spec_override_clauses_by_kind(set_global_setting):
+def test_spec_override_clauses_by_kind(set_global_setting):
     """6666 二轮：覆盖句来自顶部全局设置，按 kinds 精确注入；kinds 之外不串味。"""
     set_global_setting("default_image_resolution", "2K")
     set_global_setting("default_video_resolution", "720p")
@@ -304,7 +304,7 @@ def test_2222_spec_override_clauses_by_kind(set_global_setting):
     assert "分镜最大时长" not in ke and "视频分辨率" not in ke
 
 
-def test_2222_spec_override_empty_when_unset(set_global_setting):
+def test_spec_override_empty_when_unset(set_global_setting):
     """全局设置未配置 → 不注入，Skill 章节默认值照常兜底。"""
     set_global_setting("default_image_resolution", "")
     set_global_setting("default_video_resolution", "")
@@ -315,7 +315,7 @@ def test_2222_spec_override_empty_when_unset(set_global_setting):
                                          ("duration", "image_resolution")) == ""
 
 
-def test_2222_split_executors_wire_override_injection():
+def test_split_executors_wire_override_injection():
     """钉死：拆解执行器经统一 helper 注入规格覆盖，旧的内联时长块不复存在。"""
     src = inspect.getsource(ex_mod._run_storyboard_split)
     assert "_spec_override_clauses(svc.state_dict, _override_kinds)" in src
@@ -324,7 +324,7 @@ def test_2222_split_executors_wire_override_injection():
 
 # ---------- 规格向导平台自动检测 ----------
 
-def test_2222_spec_wizard_frozen_declaration_source():
+def test_spec_wizard_frozen_declaration_source():
     """0818 B4：spec_wizard 以 sidecar 冻结声明为唯一源（文本启发式退役）。"""
     from src.video_agent.skill_runtime import registry
 
@@ -334,7 +334,7 @@ def test_2222_spec_wizard_frozen_declaration_source():
     assert registry.spec_wizard_active("AI-短剧一站式生成") is True
 
 
-def test_2222_spec_wizard_declared_true_still_active():
+def test_spec_wizard_declared_true_still_active():
     """显式声明 true 的 Skill 行为不变（0818 B4：声明家 = sidecar）。"""
     from src.video_agent.skill_runtime import registry, sidecar
     from src.video_agent.web import skill_docs as sd
@@ -350,7 +350,7 @@ def test_2222_spec_wizard_declared_true_still_active():
     registry.reset_registry()
 
 
-def test_2222_spec_wizard_stub_skill_inactive():
+def test_spec_wizard_stub_skill_inactive():
     """测试桩（正文无规格文档名）→ 不弹向导。"""
     from src.video_agent.skill_runtime import registry
 
@@ -358,7 +358,7 @@ def test_2222_spec_wizard_stub_skill_inactive():
     assert registry.spec_wizard_active("截断技能") is False
 
 
-def test_2222_spec_wizard_manifest_false_escape_hatch():
+def test_spec_wizard_manifest_false_escape_hatch():
     """sidecar 显式 false = 逃生门关闭（0818 B4：声明唯一源 = sidecar，
     注册条目不再快照，原地改 manifest 失效；改用自包含桩声明）。"""
     from src.video_agent.skill_runtime import registry, sidecar
@@ -373,7 +373,7 @@ def test_2222_spec_wizard_manifest_false_escape_hatch():
     assert registry.spec_wizard_active("false向导测试桩") is False
 
 
-def test_2222_spec_wizard_consumers_use_objective_detection():
+def test_spec_wizard_consumers_use_objective_detection():
     """G4：消费点统一走 spec_wizard_active，不留直读声明的分身。
     R4a 拆分后 ex_mod 为 re-export 壳，实现扫描三个子模块；
     audit-0819b：agent_loop 消费点随文本块路径退役（剩 fc_tool_runner + 执行器两处）。"""

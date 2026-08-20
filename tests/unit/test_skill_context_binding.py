@@ -14,14 +14,14 @@ import pytest
 from src.video_agent.skill_runtime import registry
 
 
-def test_7777_fallback_skill_from_state_last_used():
+def test_fallback_skill_from_state_last_used():
     assert registry.fallback_skill_from_state({"usedSkills": ["剧本生视频", "AI-短剧一站式生成"]}) == "AI-短剧一站式生成"
     assert registry.fallback_skill_from_state({"usedSkills": []}) == ""
     assert registry.fallback_skill_from_state({}) == ""
     assert registry.fallback_skill_from_state(None) == ""
 
 
-def test_7777_chat_resolver_falls_back_to_used_skills():
+def test_chat_resolver_falls_back_to_used_skills():
     from src.video_agent.web.chat_service import _resolve_skill_name_for_injection
 
     state = {"usedSkills": ["AI-短剧一站式生成"]}
@@ -29,14 +29,14 @@ def test_7777_chat_resolver_falls_back_to_used_skills():
     assert _resolve_skill_name_for_injection("", "", {}) == ""
 
 
-def test_7777_chat_resolver_request_skill_wins():
+def test_chat_resolver_request_skill_wins():
     from src.video_agent.web.chat_service import _resolve_skill_name_for_injection
 
     state = {"usedSkills": ["旧 Skill"]}
     assert _resolve_skill_name_for_injection("新选中 Skill", "", state) == "新选中 Skill"
 
 
-def test_7777_fallback_skill_executors_resolvable():
+def test_fallback_skill_executors_resolvable():
     """兜底 Skill（项目最近使用）必须能解析出执行器章节，否则回退后仍会「未注册」。"""
     entry = registry.resolve_entry("AI-短剧一站式生成")
     assert entry is not None
@@ -45,7 +45,7 @@ def test_7777_fallback_skill_executors_resolvable():
 
 
 @pytest.mark.asyncio
-async def test_7777_agent_loop_falls_back_to_used_skills(tmp_path, monkeypatch):
+async def test_agent_loop_falls_back_to_used_skills(tmp_path, monkeypatch):
     """executor.skill_name 为空时，agent_loop 用 usedSkills 末位解析当前 Skill
     （7777；audit-0819b：探针改钉 fallback_skill_from_state 调用，
     原 _wizard_active 探针随文本块路径退役）。"""

@@ -19,6 +19,27 @@ def test_corpus_no_mismatch():
     assert report["corpus_accuracy"] == 1.0
 
 
+def test_corpus_rule_coverage():
+    """批 10 扩编钉死：每个活跃结构闸至少 1 合法 + 1 应拦样本，总量 ≥30
+    （评测驱动：规则级断言防拦截归因漂移，样本量防校准空心化）"""
+    entries = json.loads(CORPUS.read_text(encoding="utf-8"))
+    assert len(entries) >= 30, f"语料规模劣化：{len(entries)} < 30"
+    active_rules = (
+        "skill.shot_min_chars", "skill.element_min_chars", "skill.cjk_min_ratio",
+        "skill.require_duration", "skill.require_subtitle",
+        "skill.require_camera_language", "skill.require_audio_layer",
+    )
+    for rule in active_rules:
+        blocked = [
+            e for e in entries
+            if e.get("expect_blocked") and e.get("expect_rule") == rule
+        ]
+        assert blocked, f"规则 {rule} 缺应拦样本"
+    # 合法样本覆盖：放行样本总量（无 expect_blocked）
+    legal = [e for e in entries if not e.get("expect_blocked")]
+    assert len(legal) >= 8, f"合法样本不足：{len(legal)}"
+
+
 def test_corpus_manifest_bidirectional():
     """同一提示词：声明闸的 Skill 拦 / 关闭闸的 Skill 放（manifest 双向验证存在）"""
     entries = {e["id"]: e for e in json.loads(CORPUS.read_text(encoding="utf-8"))}

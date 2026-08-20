@@ -20,6 +20,18 @@ from src.video_agent.web import skill_docs  # noqa: E402
 
 CORPUS = PROJECT_ROOT / "tests" / "fixtures" / "gate_corpus" / "corpus.json"
 
+# 规则级断言映射（批 10：expect_rule 从仅记录升级为硬断言）：
+# 拦截样本的 hard 文案必须来自声明的规则维度（防拦截归因漂移）
+_RULE_HARD_MARKERS = {
+    "skill.shot_min_chars": "过短",
+    "skill.element_min_chars": "过短",
+    "skill.cjk_min_ratio": prompt_gates.LANG_EN_HARD_PREFIX,
+    "skill.require_duration": "缺少镜头时长",
+    "skill.require_subtitle": "缺少字幕负面约束",
+    "skill.require_audio_layer": "缺少音频层",
+    "skill.require_camera_language": "缺少镜头语言",
+}
+
 
 def eval_gate_corpus() -> dict:
     entries = json.loads(CORPUS.read_text(encoding="utf-8"))
@@ -42,8 +54,13 @@ def eval_gate_corpus() -> dict:
                 "id": e["id"], "expected_blocked": expect, "actual_blocked": blocked,
             })
         elif expect and e.get("expect_rule"):
-            # 规则级断言：hard 文案应来自该规则维度（宽松校验：仅记录）
-            pass
+            # 规则级断言（批 10）：hard 文案必须命中声明规则维度的标记
+            marker = _RULE_HARD_MARKERS.get(e["expect_rule"])
+            if marker and not any(marker in h for h in hard):
+                mismatches.append({
+                    "id": e["id"], "expected_rule": e["expect_rule"],
+                    "actual_hard": hard,
+                })
     total = len(entries)
     return {
         "corpus_total": total,
