@@ -18,9 +18,9 @@ from src.video_agent.core.planner_output import assemble_response
 
 @pytest.mark.asyncio
 async def test_soft_candidates_skipped_when_spec_doc_exists(tmp_path, monkeypatch):
-    """规格文档已落盘：script_analyze 跳过候选出题（零冗余 LLM）。"""
+    """规格文档已落盘：collect_spec 节点跳过候选出题（零冗余 LLM）。"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.skill_runtime import exec_tools
+    from src.video_agent.skill_runtime import exec_spec
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["uploadedDocs"] = [
@@ -29,51 +29,39 @@ async def test_soft_candidates_skipped_when_spec_doc_exists(tmp_path, monkeypatc
         {"name": "Final_Video_Spec.md", "content": "# 最终成片规格\n- 画幅：16:9\n"}]
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
 
-    async def fake_json_call(system, user, **kwargs):
-        return {"summary": "一句话总结", "key_points": ["要点"]}
-
     cand_calls = {"n": 0}
 
     async def fake_candidates(*a, **k):
         cand_calls["n"] += 1
 
-    monkeypatch.setattr(exec_tools.exec_spec, "_llm_json_call", fake_json_call)
-    monkeypatch.setattr(exec_tools, "tool_available", lambda skill, tool: True)
-    monkeypatch.setattr(exec_tools, "_generate_soft_spec_candidates", fake_candidates)
-    tool = exec_tools.ScriptAnalyzeTool()
-    params = tool.get_input_schema()(skill_name="AI-短剧一站式生成", doc_name="剧本.md")
-    r = await tool.aexecute(params)
-    assert r.success
+    monkeypatch.setattr(exec_spec, "_generate_soft_spec_candidates", fake_candidates)
+    ok = await exec_spec.run_collect_spec_node(svc, "AI-短剧一站式生成")
+    assert ok is False
     assert cand_calls["n"] == 0, "规格已定稿：候选出题不得再耗独立 LLM"
 
 
 @pytest.mark.asyncio
 async def test_soft_candidates_still_run_without_spec_doc(tmp_path, monkeypatch):
-    """无规格文档（首轮）：候选出题照常（行为不变）。"""
+    """无规格文档（首轮）：collect_spec 节点照常出题。"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.skill_runtime import exec_tools
+    from src.video_agent.skill_runtime import exec_common, exec_spec
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["uploadedDocs"] = [
         {"id": "d1", "name": "剧本.md", "content": "剧本正文：罗辑：黑暗森林。"}]
     svc.state_dict["documents"] = []  # demo 状态自带规格文档，先清掉
+    svc.state_dict["analysis"] = {"summary": "一句话总结"}
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-
-    async def fake_json_call(system, user, **kwargs):
-        return {"summary": "一句话总结", "key_points": ["要点"]}
 
     cand_calls = {"n": 0}
 
     async def fake_candidates(*a, **k):
         cand_calls["n"] += 1
 
-    monkeypatch.setattr(exec_tools.exec_spec, "_llm_json_call", fake_json_call)
-    monkeypatch.setattr(exec_tools, "tool_available", lambda skill, tool: True)
-    monkeypatch.setattr(exec_tools, "_generate_soft_spec_candidates", fake_candidates)
-    tool = exec_tools.ScriptAnalyzeTool()
-    params = tool.get_input_schema()(skill_name="AI-短剧一站式生成", doc_name="剧本.md")
-    r = await tool.aexecute(params)
-    assert r.success
+    monkeypatch.setattr(exec_spec, "_generate_soft_spec_candidates", fake_candidates)
+    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
+    ok = await exec_spec.run_collect_spec_node(svc, "AI-短剧一站式生成")
+    assert ok is True
     assert cand_calls["n"] == 1
 
 

@@ -142,6 +142,8 @@ async def test_script_analyze_9999_candidates_objective(monkeypatch, tmp_path):
         ScriptAnalyzeInput(skill_name="9999二轮测试桩", doc_name="三体简短版.md")
     )
     assert result.success
+    # 批3 分离：候选出题 = collect_spec 独立节点
+    await exec_spec.run_collect_spec_node(svc, "9999二轮测试桩")
     cands = (svc.state_dict.get("interaction") or {}).get("spec_soft_candidates") or {}
     durs = cands.get("目标时长") or []
     assert durs, "时长维度候选全超限时必须有确定性回落"

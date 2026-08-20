@@ -359,6 +359,28 @@ def _duration_ladder(cap_min: int) -> List[str]:
     return out
 
 
+async def run_collect_spec_node(
+    svc: StateManager,
+    skill_name: str,
+    chat_provider: str = "",
+    chat_model: str = "",
+) -> bool:
+    """collect_spec 独立节点（Rule2 v6 批3）：候选出题不再藏进
+    script_analyze 耗时（1111 根因：103s 内藏第二次 LLM）；
+    非创作内层走 aux 角色（executor 级联快模型）。规格已定稿/
+    无供应商时返 False 静默回落（向导不渲染软维度）。"""
+    if prompt_gates.has_spec_document(svc.state_dict):
+        return False
+    provider, model = exec_common.aux_chat_provider(chat_provider, chat_model)
+    if not provider:
+        return False
+    summary = str(((svc.state_dict.get("analysis") or {}).get("summary")) or "")
+    content = exec_common._build_script_hint(svc.state_dict)
+    await _generate_soft_spec_candidates(
+        svc, skill_name, provider, model, summary, content)
+    return True
+
+
 async def _fill_spec_values(
     skill_name: str, dims: List[str], raw_state: Dict[str, Any],
 ) -> Dict[str, str]:

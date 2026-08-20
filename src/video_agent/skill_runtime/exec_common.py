@@ -19,6 +19,7 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.models import CAT_KEY_ELEMENTS
 from src.video_agent.config import settings
+from src.video_agent.core import model_policy
 from src.video_agent.web import generation as _gen
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.token_budget import output_limit_for_model
@@ -106,6 +107,16 @@ def _resolve_cascade_fast(main_provider: str, main_model: str) -> Tuple[str, str
         return pid, mdl
     except Exception:
         return main_provider, main_model
+
+
+def aux_chat_provider(chat_provider: str = "", chat_model: str = "") -> Tuple[str, str]:
+    """非创作内层调用供应商解析（Rule2 v6 批3 模型分层）：
+    executor 角色/级联快模型优先；未配置回落主模型绑定链。
+    候选出题/验收补拆等「照章办事」调用用本解析，创作拆分仍绑主模型。"""
+    prov, mdl = _resolve_cascade_fast(chat_provider, chat_model)
+    if prov:
+        return prov, mdl
+    return _resolve_chat_provider(chat_provider, chat_model)
 
 
 def _executor_thinking() -> Optional[str]:

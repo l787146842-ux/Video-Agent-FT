@@ -62,7 +62,6 @@ from src.video_agent.skill_runtime.exec_common import (
 from src.video_agent.skill_runtime.exec_spec import (
     _build_state_context,
     _executor_actions_from_llm,
-    _generate_soft_spec_candidates,
     _llm_json_call,
 )
 
@@ -153,15 +152,8 @@ class ScriptAnalyzeTool:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         svc.save_debounced()
-        # 软参数候选出题（888 豪华版）：声明 spec_wizard 的 Skill 才生成；
-        # 内层模型按剧本给六维度出候选，校验后落 interaction.spec_soft_candidates，
-        # 收集向导渲染；失败/校验不过静默回落平台默认候选，不阻断主流程。
-        # 规格文档已定稿时跳过：候选出题只为规格收集服务，再跑是冗余独立 LLM
-        if not prompt_gates.has_spec_document(svc.state_dict):
-            await _generate_soft_spec_candidates(
-                svc, params.skill_name, params.chat_provider, params.chat_model,
-                summary, content,
-            )
+        # 软参数候选出题已分离为 collect_spec 独立节点（Rule2 v6 批3）：
+        # 由 workflow runtime 直跑分析后调度，不再藏进本工具耗时。
         return exec_common.SkillToolResult(success=True, data={
             "summary": summary,
             "key_points": key_points,

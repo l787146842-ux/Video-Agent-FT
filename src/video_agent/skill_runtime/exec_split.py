@@ -373,7 +373,9 @@ async def _run_storyboard_split(
             await emit_timeline_note("验收：机器交叉核对通过，无遗漏元素")
         else:
             try:
-                provider, model = exec_common._resolve_chat_provider(params.chat_provider, params.chat_model)
+                # 验收补拆 = 非创作内层调用（Rule2 v6 批3）：走 aux 级联快模型
+                provider, model = exec_common.aux_chat_provider(
+                    params.chat_provider or "", params.chat_model or "")
                 if provider:
                     await emit_progress(f"验收发现 {len(missing)} 项缺失，定向补拆…")
                     _sc_t0 = time.monotonic()

@@ -49,6 +49,7 @@ from src.video_agent.core.sse_events import (
 )
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
+from src.video_agent.skill_runtime import exec_spec
 # Workflow Runtime（宪法 v6 Rule2，ADR-0003）：唯一驱动器 + 暂停卡唯一发行点
 from src.video_agent.core import pause_composer, workflow_runtime
 from src.video_agent.core.stage_deliverables import render_stage_deliverables
@@ -825,6 +826,29 @@ class Planner:
             selected_draft_id=context.selected_draft_id,
             selected_type=context.selected_type,
         )
+        # collect_spec 独立节点（Rule2 v6 批3）：分析直跑完成后调度
+        # 候选出题（aux 快模型），时间线独立条目，不藏进分析耗时
+        if directive.get("stage_key") == "analysis" and applied:
+            _cs_id = "wf-collect-spec"
+            if on_event is not None:
+                await on_event({"type": SSE_TOOL_STARTED, "id": _cs_id,
+                                "name": "collect_spec",
+                                "summary": "collect_spec 候选出题（独立节点）"})
+            _cs_t0 = time.monotonic()
+            _cs_ok = False
+            try:
+                _cs_ok = await exec_spec.run_collect_spec_node(
+                    self.state_manager, context.skill_name,
+                    self.chat_provider, self.chat_model)
+            except Exception as _e:
+                logger.warning("[WorkflowRuntime] collect_spec 节点失败（静默回落）: {}", _e)
+            _cs_ms = (time.monotonic() - _cs_t0) * 1000
+            tracer.record_action(
+                "collect_spec", "collect_spec 候选出题（独立节点）", _cs_ms, _cs_ok)
+            if on_event is not None:
+                await on_event({"type": SSE_TOOL_FINISHED, "id": _cs_id, "ok": _cs_ok,
+                                "elapsed_ms": round(_cs_ms, 1),
+                                "result_summary": "collect_spec 候选出题（独立节点）"})
         state = self.state_manager.state_dict
         # 三通道 A：成果正文由层 9 确定性渲染；无成果时一句兜底（禁空正文）
         body = render_stage_deliverables(state, list(directive.get("executors") or []))

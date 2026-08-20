@@ -364,8 +364,6 @@ async def test_script_analyze_idempotent(tmp_path, monkeypatch):
 
     monkeypatch.setattr(exec_tools.exec_spec, "_llm_json_call", fake_json_call)
     monkeypatch.setattr(exec_tools, "tool_available", lambda skill, tool: True)
-    monkeypatch.setattr(exec_tools, "_generate_soft_spec_candidates",
-                        lambda *a, **k: _async_none())
     tool = exec_tools.ScriptAnalyzeTool()
     params = tool.get_input_schema()(skill_name="AI-短剧一站式生成", doc_name="剧本.md")
     r1 = await tool.aexecute(params)

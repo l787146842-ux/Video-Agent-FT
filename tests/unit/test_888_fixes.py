@@ -577,6 +577,8 @@ async def test_script_analyze_generates_soft_candidates(monkeypatch, tmp_path):
         ScriptAnalyzeInput(skill_name="豪华技能", doc_name="剧本.md")
     )
     assert result.success
+    # 批3 分离：候选出题 = collect_spec 独立节点（runtime 调度）
+    await exec_spec.run_collect_spec_node(svc, "豪华技能")
     cands = (svc.state_dict.get("interaction") or {}).get("spec_soft_candidates") or {}
     assert cands.get("视觉风格") == ["硬核写实科幻", "赛博朋克"]
     assert "输出语言" not in cands
