@@ -122,3 +122,18 @@ async def test_write_spec_commit_opens_review_and_pause_resolves(env):
     assert out is not None
     run = svc.state_dict.get("workflow_run") or {}
     assert run.get("pending_decision") is None
+
+
+def test_workflow_projection_carries_turn_events(env):
+    """v2 批3：project() 只读派生 run 快照 + 本轮事件序列（done/replay 同源）。"""
+    from src.video_agent.core import workflow_runtime
+    from src.video_agent.web import chat_consume
+    svc, _adapter, _planner = env
+    svc.state_dict["usedSkills"] = [SKILL]
+    svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
+    _note, name = chat_consume._consume_spec_wizard(svc, "画幅比例：16:9 横屏")
+    proj = workflow_runtime.project(svc.state_dict)
+    assert proj["run_id"] and proj["current_node"] == "review_spec"
+    assert proj["pending_decision"] is True
+    # turn_events 按 turn_id 过滤：不存在的 turn 为空列
+    assert workflow_runtime.project(svc.state_dict, "nope").get("turn_events") == []

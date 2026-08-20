@@ -22,6 +22,7 @@ from loguru import logger
 from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
+from src.video_agent.core import workflow_runtime
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.mock_chat import mock_stream
@@ -498,6 +499,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             "state": svc.get_full_snapshot() if use_studio_context else None,
             "elapsed_ms": int((time.monotonic() - t0) * 1000),
             "turn_id": turn_id,
+            # v2 批3：workflow 投影（run 快照 + 本轮事件，重连 replay 同源）
+            "workflow": workflow_runtime.project(svc.state_dict, turn_id),
         }
         await emit({"type": SSE_DONE, "payload": done_payload})
         return
@@ -659,6 +662,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             "confirmation": "",
             "documents_written": executor.documents_written + ([_wiz_card] if _wiz_card else []),
             "state": svc.get_full_snapshot(),
+            "workflow": workflow_runtime.project(svc.state_dict),
         }
 
     # 真实供应商
@@ -798,6 +802,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         "memory_hits": getattr(planner_ctx, "memory_hits", None) or [],
         "turn_id": ns_turn_id,
         "suggested_actions": result.suggested_actions,
+        # v2 批3：workflow 投影（非流式同构）
+        "workflow": workflow_runtime.project(svc.state_dict, ns_turn_id),
     }
 
 

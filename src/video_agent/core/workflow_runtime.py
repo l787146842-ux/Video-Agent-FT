@@ -192,6 +192,28 @@ def drive_turn(
     }
 
 
+def project(state: Dict[str, Any], turn_id: str = "") -> Dict[str, Any]:
+    """v2 批3：workflow 投影（done 载荷/重连 replay 同源）。
+
+    run 级快照 + 本轮事件序列（前端历史重载与实时 SSE 一致重建）。
+    只读派生，不改状态。"""
+    run = state.get("workflow_run") or {}
+    proj = {
+        "run_id": run.get("run_id") or "",
+        "status": run.get("status") or "",
+        "current_node": run.get("current_node") or "",
+        "completed_nodes": list(run.get("completed_nodes") or []),
+        "event_sequence": int(run.get("event_sequence") or 0),
+        "pending_decision": bool(run.get("pending_decision")),
+    }
+    if turn_id:
+        ledger = EventLedger(state)
+        proj["turn_events"] = [
+            e.to_dict() for e in ledger.events if e.turn_id == str(turn_id)
+        ]
+    return proj
+
+
 def record_artifact(state: Dict[str, Any], skill: str, name: str) -> None:
     """产物账本一等条目（ArtifactCommitted）：reducer 单一写入。"""
     if name:
