@@ -133,7 +133,7 @@ def test_fc_model_pause_merged_with_wizard(monkeypatch):
                 ],
             })}},
     ])
-    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written, _warnings = asyncio.run(
+    applied, confirmation, _urls, _inserts, _log, conf_opts, _results, docs_written, _warnings, _overflow = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     labels = [o["label"] for o in conf_opts]
     assert "风格A" not in labels

@@ -8,6 +8,7 @@
 planner.py 对下列符号保留同名委托，既有调用/测试路径不变。
 """
 import json
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -44,6 +45,9 @@ _PAUSE_WINDOW_READONLY = frozenset({
     "read_draft", "read_skill", "read_project_doc", "read_uploaded_doc",
     "workflow_pause",
 })
+# 三通道分离 B：pause message 契约=一句确认问句；超过此长度视为模型
+# 把成果dump进卡片，机械变换（原文进正文通道，卡片留系统短问句）
+PAUSE_MSG_MAX = 220
 from src.video_agent.tools.base import ToolResult
 
 # 回喂家族定义源 = core/fc_feedback.py；本文件顶层重新绑定全部符号，
@@ -380,6 +384,15 @@ class FCToolRunner:
             logger.info(f"[GenGate] 拦截 image_generate：{len(targets)} 个目标草稿存在未确认 Prompt Draft")
         return err
 
+    def reset_turn_tracking(self) -> None:
+        """轮始重置跨批跟踪（三通道分离 C）：阶段边界判定只认本轮执行。
+
+        runner 为 Planner 级长存实例，不重置则上轮 script_analyze 等
+        工具名泄漏到本轮边界判定，造成阶段中暂停误挂继续选项。
+        """
+        self._turn_tool_names = set()
+        self._turn_stage_label = ""
+
     async def execute(
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",
         on_status=None, on_event=None, injected_skill: str = "",
@@ -401,6 +414,14 @@ class FCToolRunner:
         paused_this_batch = False
         applied = 0
         confirmation = ""
+        # 三通道分离 B：模型 pause message 超长的原文（进正文通道，不丢信息）
+        pause_overflow = ""
+        # 三通道分离 C：批内成功执行的工具名/阶段标签（阶段边界判定用）；
+        # 阶段标签跨批保留（实例属性）——1111 场景 script_analyze 与
+        # workflow_pause 分属两个批，短问句仍需带上真实阶段名
+        batch_tool_names: set = set(getattr(self, "_turn_tool_names", ()))
+        self._turn_tool_names = batch_tool_names
+        last_stage_label = str(getattr(self, "_turn_stage_label", "") or "")
         confirmation_options: List[Dict[str, Any]] = []
         image_urls: List[str] = []
         chat_inserts: List[Dict[str, Any]] = []
@@ -577,6 +598,20 @@ class FCToolRunner:
                 if name == "workflow_pause":
                     paused_this_batch = True
                     confirmation = args.get("message", "请确认以上内容。")
+                    # 三通道分离 B（hook）：成果展示归正文通道，暂停卡只留短问句；
+                    # 模型仍dump成果（>PAUSE_MSG_MAX）时确定性变换——原文进
+                    # pause_overflow 随正文下发，confirmation 压缩为系统短问句
+                    # （不没收暂停本身与 options，仅压缩展示）。
+                    if len(str(confirmation or "")) > PAUSE_MSG_MAX:
+                        pause_overflow = str(confirmation)
+                        confirmation = (
+                            f"「{last_stage_label or '本阶段'}」已完成，"
+                            "请过目以上成果并选择下一步。"
+                        )
+                        logger.info(
+                            "[FlowGate] pause message 超长（{}字）已压缩，原文进正文通道",
+                            len(pause_overflow),
+                        )
                     # 候选选项（前端渲染为单选卡片，点击即发送选择；带 group 时分页向导）
                     opts = args.get("options")
                     if isinstance(opts, list):
@@ -625,6 +660,35 @@ class FCToolRunner:
                                 confirmation, confirmation_options = _m, _opts
                     except Exception as _e:
                         logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
+                    # 三通道分离 C：「继续」选项由系统按 sidecar 流程机械附挂
+                    # （仅本批刚完成阶段边界时挂，防阶段中暂停误挂）；
+                    # 剔除模型自造继续类选项，保留调整类选项。
+                    try:
+                        _boundary_hit = (
+                            "script_analyze" in batch_tool_names
+                            or (doc_written and prompt_gates.has_spec_document(
+                                self._raw_state()))
+                            or (structure_created and prompt_gates.storyboard_stage_complete(
+                                self._raw_state(), injected_skill))
+                        )
+                        if _boundary_hit and injected_skill:
+                            _sys_opt = prompt_gates.system_continue_option(
+                                self._raw_state(), injected_skill)
+                            if _sys_opt:
+                                _cont_re = re.compile(r"(继续|推进|进入|开始)")
+                                confirmation_options = [
+                                    o for o in confirmation_options
+                                    if not (
+                                        _cont_re.search(str(o.get("label") or ""))
+                                        and str(o.get("value") or "") not in (
+                                            "继续", "补拆")
+                                    )
+                                ]
+                                confirmation_options.insert(0, _sys_opt)
+                                logger.info(
+                                    "[FlowGate] 阶段边界暂停卡已机械附挂系统继续选项")
+                    except Exception as _e:
+                        logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
                 if name in ("document_write", "write_document"):
                     doc_written = True
                     doc_name = str(args.get("name") or args.get("key") or "").strip()
@@ -658,6 +722,11 @@ class FCToolRunner:
                     })
                 tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True,
                                      stage=stage_label_for_tool(name))
+                batch_tool_names.add(name)
+                _stage_lbl = stage_label_for_tool(name)
+                if _stage_lbl:
+                    last_stage_label = _stage_lbl
+                    self._turn_stage_label = _stage_lbl
                 tool_results.append({"name": name, "ok": True, "data": result.data})
                 # --- 收集 generate_image 产出的图片 URL ---
                 data = result.data
@@ -845,4 +914,4 @@ class FCToolRunner:
                 "label": "重试",
                 "description": "重新执行未完成的关键步骤（Skill 绑定/执行器/规格向导已就绪）",
             }]
-        return applied, confirmation, image_urls, chat_inserts, action_log, confirmation_options, tool_results, docs_written, list(self.gate_warnings)
+        return applied, confirmation, image_urls, chat_inserts, action_log, confirmation_options, tool_results, docs_written, list(self.gate_warnings), pause_overflow

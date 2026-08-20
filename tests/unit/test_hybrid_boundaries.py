@@ -417,7 +417,7 @@ def test_fc_spec_doc_written_injects_system_pause(monkeypatch):
             "name": "document_write",
             "arguments": json.dumps({"name": "制片规格.md", "content": "标题：测试"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written, _warnings = asyncio.run(
+    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     assert applied == 1
     assert docs_written == ["制片规格.md"]
@@ -437,7 +437,7 @@ def test_fc_spec_doc_written_keeps_model_pause(monkeypatch):
             "name": "workflow_pause",
             "arguments": json.dumps({"message": "请审阅规格"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written, _warnings = asyncio.run(
+    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     assert docs_written == ["制片规格.md"]
     assert confirmation == "请审阅规格"  # 模型自发暂停原样保留
@@ -453,7 +453,7 @@ def test_fc_non_spec_doc_written_no_pause(monkeypatch):
             "name": "document_write",
             "arguments": json.dumps({"name": "大纲.md", "content": "正文"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written, _warnings = asyncio.run(
+    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     assert applied == 1
     assert docs_written == ["大纲.md"]
@@ -815,7 +815,7 @@ def test_fc_patch_current_rejects_bad_prompt(monkeypatch):
             "name": "storyboard_patch_draft",
             "arguments": json.dumps({"draft_id": "current", "patch": {"prompt": "x"}})}},
     ])
-    applied, confirmation, *_rest, tool_results, _docs, _warnings = asyncio.run(
+    applied, confirmation, *_rest, tool_results, _docs, _warnings, _overflow = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill",
                        selected_draft_id="d2", selected_type="keyElement"))
     assert applied == 0

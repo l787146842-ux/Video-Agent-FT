@@ -82,7 +82,7 @@ def test_99_fc_spec_review_card_not_remerged_with_wizard(monkeypatch):
             "name": "document_write",
             "arguments": json.dumps({"name": "制片规格.md", "content": _SPEC_CONFIRMED})}},
     ])
-    _applied, confirmation, _urls, _inserts, _log, conf_opts, _results, _docs, _warnings = asyncio.run(
+    _applied, confirmation, _urls, _inserts, _log, conf_opts, _results, _docs, _warnings, _overflow = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     # 审阅卡（中性选项，0817 B22）而不是收集向导
     assert confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG

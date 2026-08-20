@@ -51,7 +51,11 @@ class GenerateImageInput(BaseModel):
 
 
 class WorkflowPauseInput(BaseModel):
-    message: str = Field("", description="向用户说明已完成什么、接下来做什么")
+    message: str = Field(
+        "", description="给用户的一句确认问句（建议≤120字）。"
+        "阶段成果（剧本分析要点等）由系统自动渲染进正文，"
+        "message 中不要复述成果内容，只问确认什么/下一步选择。"
+    )
 
     options: List[Dict[str, str]] = Field(
         default_factory=list,

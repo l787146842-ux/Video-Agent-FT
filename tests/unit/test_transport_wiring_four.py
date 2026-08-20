@@ -63,7 +63,7 @@ def test_b0_f3_fc_gate_warnings_returned_in_tuple(monkeypatch):
     }
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
     runner = FCToolRunner(_StubToolManager())
-    applied, confirmation, _urls, _inserts, _log, _opts, _results, docs, warnings = asyncio.run(
+    applied, confirmation, _urls, _inserts, _log, _opts, _results, docs, warnings, _overflow = asyncio.run(
         runner.execute(
             _fc_response("image_generate", {"target": "all_keyElements"}),
             injected_skill="测试技能",
@@ -82,7 +82,7 @@ def test_b0_f3_fc_warnings_flow_into_handle_fc_response(monkeypatch):
     planner = Planner.__new__(Planner)
 
     async def fake_execute(*_a, **_k):
-        return 0, "", [], [], [], [], [], [], ["警告A"]
+        return 0, "", [], [], [], [], [], [], ["警告A"], ""
 
     monkeypatch.setattr(planner, "_execute_fc_tools", fake_execute)
     collector = []

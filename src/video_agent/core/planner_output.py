@@ -9,6 +9,23 @@ response_factory 以 callable 注入（同 agent_loop 的 llm_call 惯例），
 from typing import Any, Callable, Dict, List, Optional
 
 from src.video_agent.core.agent_loop import AgentLoopResult
+from src.video_agent.core.gates_cards import summary_already_visible
+from src.video_agent.core.stage_deliverables import render_stage_deliverables
+
+
+def _executed_tool_names(loop_result: AgentLoopResult) -> List[str]:
+    """本轮 trace 中成功执行的工具名（保序，供成果渲染器判定）。
+
+    trace 在 agent_loop 返回前已 finish_trace，steps[].actions[] 可用；
+    无 trace（测试桩等）返回空列表。
+    """
+    names: List[str] = []
+    trace = getattr(loop_result, "trace", None) or {}
+    for step in (trace.get("steps") or []):
+        for act in (step.get("actions") or []):
+            if act.get("ok") and str(act.get("name") or "").strip():
+                names.append(str(act["name"]))
+    return names
 
 
 def assemble_response(
@@ -40,10 +57,21 @@ def assemble_response(
                 loop_result.warnings.append(w)
                 seen.add(w)
 
-    # 暂停轮客观完成记账（架构板正批 保留）：模型 prose 可能停留在
-    # 执行前承诺（「接下来我先解析」），历史只含文本时下一轮会误判未执行而
-    # 重跑执行器；补一行客观事实（判重内置）。总结展示不再平台强注入。
-    if loop_result.confirmation and analysis_summary:
+    # 成果正文通道（三通道分离 A）：本轮成功执行的阶段工具成果由层 9
+    # 确定性渲染进正文（模型只短交代，成果展示不再依赖模型自觉）；
+    # 判重内置——模型 prose 已含总结时不重复追加。
+    _state = getattr(executor, "state", None) or {}
+    _deliverable = render_stage_deliverables(_state, _executed_tool_names(loop_result))
+    if _deliverable:
+        _t = str(loop_result.text or "")
+        _summary = str((_state.get("analysis") or {}).get("summary") or "")
+        if not summary_already_visible(_t, _summary):
+            loop_result.text = (
+                f"{_t.rstrip()}\n\n{_deliverable}".strip() if _t.strip() else _deliverable
+            )
+    elif loop_result.confirmation and analysis_summary:
+        # 无成果块命中时的历史语义兜底：暂停轮补一行客观事实（判重内置），
+        # 防模型 prose 停留在执行前承诺导致下一轮误判未执行而重跑执行器。
         _t = str(loop_result.text or "")
         if _t.strip() and "剧本分析已完成" not in _t:
             loop_result.text = _t.rstrip() + "\n\n（剧本分析已完成并存档工作台）"

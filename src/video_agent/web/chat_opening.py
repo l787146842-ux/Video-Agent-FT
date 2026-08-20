@@ -244,7 +244,10 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
     spec_wizard_note = ""
     if use_studio_context:
         async with svc.lock:
-            pending_confirm_note = _consume_pending_confirmation(svc)
+            # 三通道分离 C：点选回携 value 传入，命中系统继续选项时机械生成下一步指令
+            _pr = getattr(body, "pause_response", None) or {}
+            pending_confirm_note = _consume_pending_confirmation(
+                svc, pause_value=str(_pr.get("value") or ""))
             spec_finalize_note = _finalize_spec_params(svc, user_text)
             spec_wizard_note = _consume_spec_wizard(svc, user_text)
     # 4-4 双轨退役：聊天通道均为 FC，附件统一走清单+read_uploaded_doc 渐进式披露

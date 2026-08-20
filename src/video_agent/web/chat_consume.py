@@ -118,7 +118,7 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
     }
 
 
-def _consume_pending_confirmation(svc, user_text: str = "") -> str:
+def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "") -> str:
     """消费「等待确认」暂停态：用户的新消息即是对上一轮暂停的回应。
 
     暂停态只写不清会让模型永远停在上一阶段；只清不带则模型看不到
@@ -185,10 +185,18 @@ def _consume_pending_confirmation(svc, user_text: str = "") -> str:
         "规格文档已写入，不必重写；"
         if prompt_gates.has_spec_document(svc.state_dict) else ""
     )
+    # 三通道分离 C：用户点选系统派生继续选项时，
+    # 下一步指令机械生成（sidecar 流程唯一源），模型不再自行猜测；
+    # 向导多组拼装 value 为逐行文本，走行格式判定
+    flow_note = ""
+    if prompt_gates.is_flow_continue_value(pause_value):
+        _used = svc.state_dict.get("usedSkills") or []
+        _skill = str(_used[-1] or "") if _used else ""
+        flow_note = prompt_gates.flow_continue_note(svc.state_dict, _skill)
     return (
         "\n\n（系统提示：上一轮已通过 workflow_pause 暂停等待确认，"
         f"暂停内容：{paused_msg}。本条消息即对该暂停的回应：表示确认时，按当前 Skill 流程"
-        f"把当前阶段产出物做完；{spec_note}暂停点以 Skill 阶段边界为准；"
+        f"把当前阶段产出物做完；{spec_note}{flow_note}暂停点以 Skill 阶段边界为准；"
         "已完成的步骤（已读文档/已写规格）不必重复；"
         "提出修改意见时按新要求执行，完成后重新请求确认。）"
     )

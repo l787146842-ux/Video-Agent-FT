@@ -296,6 +296,8 @@ class Planner:
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
         self._excluded_tools = self._compute_excluded_tools(context)
         self._system_degrader = self._make_system_degrader(context)
+        # 三通道分离 C：轮始重置 FC runner 跨批跟踪（阶段边界只认本轮）
+        self._fc_runner.reset_turn_tracking()
         # 会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
         self._chat_thinking_level = context.thinking_level or ""
 
@@ -468,6 +470,8 @@ class Planner:
                 _extra = {
                     "confirmation": _confirm_holder["message"],
                     "confirmation_options": _confirm_holder.get("options") or [],
+                    # 三通道分离 B：超长 pause message 原文随正文下发
+                    "pause_overflow": _confirm_holder.get("overflow") or "",
                 }
             return content, finish, fc_applied, plan_ms, _extra
 

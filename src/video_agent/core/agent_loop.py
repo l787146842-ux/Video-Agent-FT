@@ -293,6 +293,14 @@ async def run_agent_loop(
                 # 暂停等待用户确认：终止循环，把确认请求（含候选选项）带回给前端
                 result.confirmation = fc_confirmation
                 result.confirmation_options = fc_confirmation_options
+                # 三通道分离 B：超长 pause message 原文进正文通道
+                # （成果展示归正文；判重内置，防与模型 prose 重复）
+                _pause_overflow = str((fc_extra or {}).get("pause_overflow") or "").strip()
+                if _pause_overflow and _pause_overflow not in (result.text or ""):
+                    result.text = (
+                        f"{result.text}\n\n{_pause_overflow}".strip()
+                        if result.text else _pause_overflow
+                    )
                 tracer.end_step(
                     step, actions_applied=fc_applied,
                     finish_reason=finish_reason or "confirmation",

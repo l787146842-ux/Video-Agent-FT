@@ -283,7 +283,16 @@ def merge_spec_param_wizard(
     """
     content = _spec_doc_content(state)
     if not content.strip():
-        return message, options or [], False
+        # 三通道分离 C：规格向导前移到阶段 1 边界——无规格文档但软候选
+        # 在场（script_analyze 已跑过、内层模型已按剧本出题）时仍构建向导，
+        # 修复阶段 1 边界 early-return 空窗（1111 事故：模型自造规格组）。
+        _cands = ((state or {}).get("interaction") or {}).get(
+            "spec_soft_candidates") or {}
+        if not any(
+            str(v or "").strip()
+            for vals in _cands.values() for v in (vals or [])
+        ):
+            return message, options or [], False
     if _consume_spec_collected(state):
         # 收集向导已交互过：模型自发暂停原样保留，不重复合并向导
         return message, options or [], False

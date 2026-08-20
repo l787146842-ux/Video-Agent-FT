@@ -39,7 +39,8 @@ async def merge_fc_response(
     if response.tool_calls:
         (fc_applied, fc_confirmation, image_urls,
          chat_inserts, fc_action_log, fc_confirmation_options,
-         fc_tool_results, fc_docs_written, fc_warnings) = await execute_fn(
+         fc_tool_results, fc_docs_written, fc_warnings,
+         fc_pause_overflow) = await execute_fn(
             response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
             on_status=on_status, on_event=on_event, injected_skill=injected_skill,
             selected_draft_id=selected_draft_id, selected_type=selected_type,
@@ -63,6 +64,10 @@ async def merge_fc_response(
             if confirmation_collector is not None:
                 confirmation_collector["message"] = fc_confirmation
                 confirmation_collector["options"] = fc_confirmation_options
+                # 三通道分离 B：超长 pause message 原文随 collector 上抛，
+                # 经 _extra.pause_overflow 由 agent_loop 追加进正文
+                if fc_pause_overflow:
+                    confirmation_collector["overflow"] = fc_pause_overflow
             # 空正文兜底：FC 模型常只发暂停工具不带正文，确认文案作可见正文
             visible = (response.content or "").strip()
             if not visible:

@@ -171,7 +171,7 @@ async def test_read_skill_short_circuit():
                          "function": {"name": "read_skill", "arguments": '{"name": "分镜师"}'}}],
         )
         # 已注入同名 Skill → 短路
-        applied, *_rest, tool_results, _docs, _warnings = await planner._execute_fc_tools(
+        applied, *_rest, tool_results, _docs, _warnings, _overflow = await planner._execute_fc_tools(
             response, injected_skill="分镜师"
         )
         assert invoked == []  # 工具未被调用

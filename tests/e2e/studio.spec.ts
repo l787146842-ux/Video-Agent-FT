@@ -142,17 +142,47 @@ test.describe('阶段确认卡片与文档卡片', () => {
         await chatInput.press('Enter');
 
         const feed = page.getByTestId('chat-feed');
-        // 阶段完成卡：标题 + 操作数徽标；正文细节不再进卡片（2222 反馈）
+        // 阶段完成卡：标题 + 操作数徽标 + 短确认问句 + 执行清单
         const stageCard = feed.locator('.stage-card').last();
         await expect(stageCard).toContainText('阶段完成');
         await expect(stageCard).toContainText('已执行 3 个操作');
-        // 卡片不再渲染确认文案正文（与模型气泡去重），也不再有可折叠 body
-        await expect(stageCard.locator('.stage-card-body')).toHaveCount(0);
-        await expect(stageCard).not.toContainText('故事板已建立，请审阅');
+        await expect(stageCard).toContainText('故事板已建立，请审阅');
+        await expect(stageCard.locator('.stage-card-body')).toContainText('新建关键元素分组「主角」');
         // 文档完成卡片
         await expect(feed.locator('.doc-card').last()).toContainText('Final_Video_Spec.md');
         // 操作明细在「已处理 X 个操作」时间线里（展开后可见）
         await expect(feed.locator('.agent-timeline').last()).toContainText('已处理');
+    });
+
+    test('三通道分离：成果在正文、卡片只留短问句（1111 反馈）', async ({ page }) => {
+        await mockAgentTask(page, {
+            text: '剧本分析完成。\n\n## 剧本分析《三体简短版.md》\n**一句话总结**：太阳系遭遇白色薄片打击。',
+            elapsed_ms: 300,
+            steps: 2,
+            applied_actions: 1,
+            confirmation: '「剧本分析」已完成，请过目以上成果并选择下一步。',
+            confirmation_options: [{
+                label: '确认，进入「制作规格」', description: '下一步执行「制作规格」',
+                value: '确认，进入「制作规格」', group: '下一步',
+            }],
+            action_log: ['执行工具script_analyze'],
+            trace: { steps: [{ step: 1, timing_ms: 200, actions_applied: 1, finish_reason: 'stop' }], total_ms: 300 },
+        });
+
+        await page.goto('/');
+        await page.waitForLoadState('networkidle');
+        const chatInput = page.locator('#chatInputTextarea');
+        await chatInput.fill('分析剧本');
+        await chatInput.press('Enter');
+
+        const feed = page.getByTestId('chat-feed');
+        // 成果通道：结构化分析在正文气泡（系统渲染），不在阶段卡
+        await expect(feed).toContainText('一句话总结');
+        const stageCard = feed.locator('.stage-card').last();
+        await expect(stageCard).toContainText('「剧本分析」已完成');
+        await expect(stageCard).not.toContainText('一句话总结');
+        // 引导通道：系统派生继续选项可见
+        await expect(feed).toContainText('确认，进入「制作规格」');
     });
 });
 

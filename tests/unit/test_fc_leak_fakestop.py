@@ -42,7 +42,7 @@ async def test_planner_does_not_synthesize_action_blocks(svc, executor, monkeypa
 
     async def _fake_execute(response, **kwargs):
         return (2, "已拆解完毕，请确认", [], [], ["拆解完成"],
-                [{"label": "继续下一步", "description": ""}], [], [], [])
+                [{"label": "继续下一步", "description": ""}], [], [], [], "")
 
     monkeypatch.setattr(planner, "_execute_fc_tools", _fake_execute)
     holder = {}
