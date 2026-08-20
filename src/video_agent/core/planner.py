@@ -359,10 +359,9 @@ class Planner:
             if _directive is not None and _directive.get("kind") == "direct_run":
                 return await self._run_direct_stage(_directive, context, on_event=on_event)
 
-        # 批 12 快路径降级（正向设计：模型主动权 + 平台否决权）：
-        # 轮始只做闸预检（原料闸/规格闸兜底卡），永不抢先执行阶段；
-        # 流程推进归模型循环（按注入流程清单调执行器/workflow_pause），
-        # 顺序由 stage_precondition 闸否决越阶。进出全记控制流事件。
+        # Rule2 v6（ADR-0003）：轮始闸预检只装配兜底卡（原料闸/规格闸），
+        # 白名单确定性阶段已由 workflow_runtime 直跑（见上）；其余交接模型循环，
+        # 越阶由 stage_precondition 闸在工具执行路径否决。
         if settings.pipeline_orchestrator_enabled and context.skill_name:
             # 闸预检只认用户原话——user_message 可能是多模态拼装
             # （附件预览含剧本对白问号，不得参与豁免/回执意图判定）
@@ -769,10 +768,10 @@ class Planner:
         ):
             yield chunk
 
-    # ---------- 批 12 快路径降级：闸预检（实现体 = planner_triage.run_gate_precheck） ----------
+    # ---------- 闸预检（Rule2 v6：runtime 闸节点，实现体 = planner_triage.run_gate_precheck） ----------
     #
-    # 分诊/自动执行/步间收权三件已删（抢先权退场）：轮始只装配原料闸/规格闸
-    # 兜底卡；流程推进归模型循环，越阶/越暂停由闸机在工具调用点否决。
+    # 轮始只装配原料闸/规格闸兜底卡；白名单确定性阶段由 workflow_runtime
+    # 直跑，创作型阶段交接模型循环；越阶/越暂停由闸机在工具调用点否决。
 
     async def _run_direct_stage(
         self, directive: Dict[str, Any], context: PlannerContext, on_event=None,

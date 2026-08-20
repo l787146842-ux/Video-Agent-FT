@@ -1,9 +1,8 @@
-"""闸预检协作臂（批 12 快路径降级：自「分诊+快路径+收权」退位为「兜底卡装配」）。
+"""闸预检协作臂（Rule2 v6：workflow_runtime 的闸节点，装配兜底卡）。
 
-正向设计（模型主动权 + 平台否决权）：流程推进归模型循环（按注入的
-Skill 流程清单调用执行器 / workflow_pause），顺序由 platform.stage_precondition
-闸否决越阶，暂停由 workflow_pause + 轮内暂停纪律强制；本模块只在轮始
-装配两类机械兜底卡（原料闸提醒/规格向导），**永不执行阶段、永不抢先对话**。
+正向设计（宪法 v6 Rule2，ADR-0003）：白名单确定性阶段由 runtime 直跑；
+本模块只在轮始装配两类机械兜底卡（原料闸提醒/规格向导），**永不执行
+阶段、永不抢先对话**；创作型阶段交接模型循环，越阶由闸机在工具调用点否决。
 进出结果全记 tracer.record_control_flow + [ControlFlow] 日志（可观测性）。
 """
 from typing import Any, Callable, Optional

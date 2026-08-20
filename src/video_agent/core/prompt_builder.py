@@ -375,7 +375,7 @@ class PromptBuilder:
             ]
             # 外来工具名映射注记已随 删除（导入期转换归专用 Skill 系统）
         # 批 12：sidecar 流程清单（机械顺序清单，与 stage_precondition 闸同源「法条」；
-        # 快路径退场后模型持主动权，按清单推进，越阶由闸否决）
+        # Rule2 v6：确定性阶段由 runtime 直跑，模型循环只做节点内创作，越阶由闸否决）
         try:
             from src.video_agent.skill_runtime.registry import skill_manifest_of
 

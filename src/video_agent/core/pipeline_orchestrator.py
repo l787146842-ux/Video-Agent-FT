@@ -1,10 +1,9 @@
 # *- coding: utf-8 -*-
-"""状态驱动管线知识源 + 闸预检（批 12 快路径降级后）。
+"""状态驱动管线知识源 + 闸预检（Rule2 v6：定义层承自本模块，驱动器 = workflow_runtime）。
 
-本模块不再驱动执行：阶段表/依赖图/客观探针作为「法条」供
-stage_precondition 闸否决越阶、done-闸判定完成；轮始闸预检
-（gate_precheck）只装配原料闸/规格闸兜底卡。流程推进归模型循环
-（模型主动权 + 平台否决权，正向设计）。
+本模块提供阶段表/依赖图/客观探针作为「法条」，供 stage_precondition 闸
+否决越阶、done-闸判定完成、runtime 驱动就绪批；轮始闸预检只装配原料闸/
+规格闸兜底卡（Rule2 v6：确定性阶段由 workflow_runtime 直跑，平台保留否决权）。
 """
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -345,7 +344,7 @@ class OrchestratorOutcome:
 async def gate_precheck(
     state_manager: Any, skill: str, user_message: Any = "",
 ) -> Optional[OrchestratorOutcome]:
-    """闸预检（批 12 快路径降级：编排器从驱动器退位为否决权/兜底卡）。
+    """闸预检（Rule2 v6：runtime 闸节点；编排器定义层 + 兜底卡装配）。
 
     只产出两类机械兜底卡，**永不执行阶段、永不抢先对话**：
     - 原料闸：需剧本 Skill 剧本缺失且未豁免 → 提醒卡/上传回执；
