@@ -251,15 +251,14 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R27_planner_split_delegation",
-        "planner 拆分协作臂变更（豁免消费/分诊/FC 响应合并）",
-        "实现体迁出后 planner 同名委托必须保留（既有测试与调用方钉死委托方法）",
+        "planner 拆分协作臂变更（豁免消费/闸预检/FC 响应合并；批 12 分诊/收权退场）",
+        "实现体迁出后 planner 委托必须保留（既有测试与调用方钉死委托方法）",
         _sym(
             "src.video_agent.core.planner_gate_session:consume_gate_overrides",
-            "src.video_agent.core.planner_triage:triage_control",
-            "src.video_agent.core.planner_triage:run_orchestrator_path",
-            "src.video_agent.core.planner_triage:make_reclaim_hook",
+            "src.video_agent.core.planner_triage:run_gate_precheck",
+            "src.video_agent.core.pipeline_orchestrator:gate_precheck",
             "src.video_agent.core.fc_response:merge_fc_response",
-            "src.video_agent.core.planner:Planner._triage_control",
+            "src.video_agent.core.planner:Planner._run_gate_precheck",
         ) + (("testfile", "tests/unit/test_deterministic_triage.py"),),
     ),
 ]

@@ -80,8 +80,8 @@ class PlannerContext:
     # 传入 state_json 字符串是旧调用方式的兼容降级（整段固定不变）。
     state_builder: Optional[Callable[[], str]] = None
     skill_name: str = ""         # 前端当前选中的 Skill 名称（目录标注用，提高相关性判断准确率）
-    # 用户键入原文（未经多模态/附件拼装）。分诊（_triage_control）
-    # 只认原话——附件预览里的剧本对白问号不得参与提问判定（根因）。
+    # 用户键入原文（未经多模态/附件拼装）。闸预检/分诊历史消费点
+    # 只认原话——附件预览里的剧本对白问号不得参与判定（根因）。
     raw_user_text: str = ""
     use_studio_context: bool = True
     asset_mode: str = "bound"    # 资产过滤模式
@@ -254,8 +254,8 @@ class Planner:
         """为携带 confirmation 的响应签发 pause_id 并登记 interaction.active_pause。
 
         汇流点一（handle_message 轮末组装后）覆盖 FC workflow_pause 与轮末策略卡；
-        汇流点二（_run_orchestrator_path）覆盖编排器机械卡。登记不改变
-        awaiting_confirmation 既有语义（分诊/消费链零行为变更），只叠加结构化标识。
+        汇流点二（_run_gate_precheck）覆盖原料闸/规格闸兜底卡。登记不改变
+        awaiting_confirmation 既有语义（消费链零行为变更），只叠加结构化标识。
         """
         if not response.confirmation:
             return
@@ -326,25 +326,23 @@ class Planner:
         except Exception as _e:
             logger.warning("[GateOverride] gate_override 装配失败（豁免未传达执行器）: {}", _e)
 
-        # 控制流统一（ADR-0002， 根治）：废除 概率语料
-        # 路由——一切消息先过确定性分诊：advance 由外层循环接管，其余交接
-        # 受界模型循环（阶段前置闸/步间回收保证顺序不破）。分诊与编排器
-        # 进出全记结构化事件（教训：控制流决策必须可观测，不得考古）。
+        # 批 12 快路径降级（正向设计：模型主动权 + 平台否决权）：
+        # 轮始只做闸预检（原料闸/规格闸兜底卡），永不抢先执行阶段；
+        # 流程推进归模型循环（按注入流程清单调执行器/workflow_pause），
+        # 顺序由 stage_precondition 闸否决越阶。进出全记控制流事件。
         if settings.pipeline_orchestrator_enabled and context.skill_name:
-            # 分诊只认用户原话——user_message 可能是多模态拼装
-            # （附件预览含剧本对白问号， 曾误判 handoff）
-            triage = self._triage_control(
-                context.raw_user_text or user_message, context.skill_name)
-            logger.info("[ControlFlow] triage={} skill={}", triage, context.skill_name)
+            # 闸预检只认用户原话——user_message 可能是多模态拼装
+            # （附件预览含剧本对白问号，不得参与豁免/回执意图判定）
             try:
-                AgentTracer.get_instance().record_control_flow(
-                    "triage", triage, context.skill_name)
-            except Exception:
-                pass
-            if triage == "advance":
-                _orch = await self._run_orchestrator_path(context, user_message)
-                if _orch is not None:
-                    return _orch
+                _orch = await self._run_gate_precheck(
+                    context, context.raw_user_text or user_message)
+            except Exception as _e:
+                # 承重接线遥测（批 8  lineage）：预检失败 fail-open 不阻断对话
+                record_degradation("planner.gate_precheck")
+                logger.warning("[ControlFlow] 闸预检失败（交接模型循环）: {}", _e)
+                _orch = None
+            if _orch is not None:
+                return _orch
 
         # 架构板正批 ：门禁链与剧本闸装配退役，顺序与原料闸能力
         # 迁入 pipeline_orchestrator（状态驱动、机械回卡）。
@@ -477,13 +475,8 @@ class Planner:
         def context_builder() -> str:
             return self._build_system_prompt(context)
 
-        # 步间回收（控制流统一）：每个 FC 批落盘后外层循环再评估状态——
-        # 确定性阶段就绪/应发机械卡即回收控制权（实现体 planner_triage.make_reclaim_hook）
-        _between_steps_reclaim = planner_triage.make_reclaim_hook(
-            self.state_manager, context.skill_name,
-            self.chat_provider, self.chat_model)
-
-        # 委托给统一循环
+        # 委托给统一循环（批 12：步间收权已删——模型循环不再被中途夺权，
+        # 越阶/越暂停由闸机在工具调用点否决）
         loop_result = await run_agent_loop(
             user_message,
             llm_call=llm_call,
@@ -496,7 +489,6 @@ class Planner:
             prelude_notes=context.prelude_notes,
             user_id=context.user_id,
             pending_injector=context.pending_injector,
-            between_steps=_between_steps_reclaim,
         )
 
         # 轮末组装委托 planner_output（切出）：warnings 并入/总结强入/
@@ -741,33 +733,18 @@ class Planner:
         ):
             yield chunk
 
-    # ---------- 控制流统一（ADR-0002）：确定性分诊（实现体 = planner_triage） ----------
+    # ---------- 批 12 快路径降级：闸预检（实现体 = planner_triage.run_gate_precheck） ----------
     #
-    # 概率语料路由已删除：语料路由错过一次 = 全程失控。分诊只认客观状态
-    # 事实，措辞不参与判定；交接后由阶段前置闸与步间回收保底。
-    # 同名委托保持既有调用/测试路径（宪法 §12 登记壳）。
+    # 分诊/自动执行/步间收权三件已删（抢先权退场）：轮始只装配原料闸/规格闸
+    # 兜底卡；流程推进归模型循环，越阶/越暂停由闸机在工具调用点否决。
 
-    def _is_adhoc_edit(self, user_message: Any) -> bool:
-        """ad-hoc 特征（客观事实）：消息命中既有资产名 → 交接模型循环。"""
-        return planner_triage.is_adhoc_edit(self.state_manager.state_dict, user_message)
-
-    def _is_question(self, user_message: Any) -> bool:
-        """提问客观特征（标点/疑问词）：自由提问不错抓进流程推进。"""
-        return planner_triage.is_question(user_message)
-
-    def _triage_control(self, user_message: Any, skill: str) -> str:
-        """确定性分诊：返回 advance | handoff，零语料（实现体 planner_triage）。"""
-        return planner_triage.triage_control(
-            self.state_manager.state_dict, user_message, skill)
-
-    async def _run_orchestrator_path(
+    async def _run_gate_precheck(
         self, context: "PlannerContext", user_message: Any = "",
     ) -> Optional["PlannerResponse"]:
-        """编排器快路径；返回 None = 创作型阶段交接模型循环（实现体 planner_triage）。"""
-        return await planner_triage.run_orchestrator_path(
+        """轮始闸预检；返回 None = 交接模型循环（实现体 planner_triage）。"""
+        return await planner_triage.run_gate_precheck(
             self.state_manager, context.skill_name, user_message,
-            PlannerResponse, self._issue_pause,
-            self.chat_provider, self.chat_model)
+            PlannerResponse, self._issue_pause)
 
     async def _handle_fc_response(
         self,

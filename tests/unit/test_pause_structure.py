@@ -88,20 +88,20 @@ class TestLoopConfluenceIssuesPause:
 
 
 class TestOrchestratorConfluenceIssuesPause:
-    """汇流点二：编排器机械卡（script_pending / spec_pending / paused）"""
+    """汇流点二：兜底卡（script_pending / spec_pending；批 12 后 paused 机械卡退场）"""
 
-    @pytest.mark.parametrize("kind", ["script_pending", "spec_pending", "paused"])
+    @pytest.mark.parametrize("kind", ["script_pending", "spec_pending"])
     async def test_mechanical_cards_carry_pause_id(self, svc, monkeypatch, kind):
         from src.video_agent.core import pipeline_orchestrator as po
 
-        async def fake_orchestrate(state_manager, skill, user_message="", **kw):
+        async def fake_precheck(state_manager, skill, user_message=""):
             return po.OrchestratorOutcome(
                 kind=kind, message="机械卡文案", options=[{"label": "确认"}])
 
-        monkeypatch.setattr(po, "orchestrate_turn", fake_orchestrate)
+        monkeypatch.setattr(po, "gate_precheck", fake_precheck)
         planner = Planner(state_manager=svc, llm_adapter=None)
 
-        resp = await planner._run_orchestrator_path(
+        resp = await planner._run_gate_precheck(
             PlannerContext(skill_name="AI-短剧一站式生成"), "继续")
 
         assert resp is not None
@@ -113,13 +113,13 @@ class TestOrchestratorConfluenceIssuesPause:
     async def test_handoff_returns_none(self, svc, monkeypatch):
         from src.video_agent.core import pipeline_orchestrator as po
 
-        async def fake_orchestrate(state_manager, skill, user_message="", **kw):
+        async def fake_precheck(state_manager, skill, user_message=""):
             return None
 
-        monkeypatch.setattr(po, "orchestrate_turn", fake_orchestrate)
+        monkeypatch.setattr(po, "gate_precheck", fake_precheck)
         planner = Planner(state_manager=svc, llm_adapter=None)
 
-        resp = await planner._run_orchestrator_path(
+        resp = await planner._run_gate_precheck(
             PlannerContext(skill_name="AI-短剧一站式生成"), "继续")
         assert resp is None
 

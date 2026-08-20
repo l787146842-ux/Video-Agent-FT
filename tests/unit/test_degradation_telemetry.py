@@ -100,27 +100,42 @@ async def test_event_emit_degradation_visible(svc_env):
     assert "agent_loop.event_emit" in _points()
 
 
-async def test_between_steps_reclaim_degradation_visible(monkeypatch):
-    """步间回收评估失败 fail-open：钩子返 None（循环继续）且降级可见"""
-    from src.video_agent.config import settings
-    from src.video_agent.core import pipeline_orchestrator as po
-    from src.video_agent.core import planner_triage
+async def test_gate_precheck_degradation_visible(monkeypatch, tmp_path):
+    """闸预检失败 fail-open：降级计数 + 交接模型循环（批 12 接替收权点）"""
+    from src.video_agent.core.planner import Planner, PlannerContext
+    from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
+    from src.video_agent.state.manager import StateManager
 
-    original_flag = settings.pipeline_orchestrator_enabled
-    object.__setattr__(settings, "pipeline_orchestrator_enabled", True)
+    class ProbeAdapter(BaseChatAdapter):
+        def __init__(self):
+            self.calls = 0
 
-    async def boom(state_manager, skill, user_message=""):
-        raise RuntimeError("orchestrator down")
+        @property
+        def supports_function_calling(self):
+            return False
 
-    monkeypatch.setattr(po, "orchestrate_turn", boom)
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            return ChatResponse(content="ok", finish_reason="stop")
 
-    try:
-        hook = planner_triage.make_reclaim_hook(_BrokenState(), "AI-短剧一站式生成")
-        reclaim = await hook(1)
-    finally:
-        object.__setattr__(settings, "pipeline_orchestrator_enabled", original_flag)
-    assert reclaim is None, "回收评估失败必须 fail-open（不劫持模型循环）"
-    assert "planner.between_steps_reclaim" in _points()
+        async def chat_stream(self, messages, **kwargs):
+            self.calls += 1
+            yield ChatResponse(content="ok", finish_reason="stop")
+
+    async def boom(self, context, user_message=""):
+        raise RuntimeError("precheck down")
+
+    monkeypatch.setattr(Planner, "_run_gate_precheck", boom)
+
+    StateManager.reset_instance()
+    svc = StateManager(str(tmp_path / "ws"))
+    StateManager._instance = svc
+    adapter = ProbeAdapter()
+    planner = Planner(state_manager=svc, llm_adapter=adapter, tool_manager=None)
+    await planner.handle_message("开始", PlannerContext(skill_name="AI-短剧一站式生成"))
+    assert adapter.calls >= 1, "预检失败必须 fail-open 交接模型循环"
+    assert "planner.gate_precheck" in _points()
+    StateManager.reset_instance()
 
 
 @pytest.fixture

@@ -1,24 +1,18 @@
 # *- coding: utf-8 -*-
-"""状态驱动管线编排器（架构板正批）。
+"""状态驱动管线知识源 + 闸预检（批 12 快路径降级后）。
 
-顶层顺序归代码：按工作台客观状态计算当前阶段、按批派发执行器、
-阶段边界机械暂停；模型只做阶段内创作与 ad-hoc 指令（混合模式， 接线）。
-对齐 Flova / LLM-as-Code 业界标准形态：顺序不来自散文解析，也不来自模型选择。
-
-阶段表 = 平台规范表（探针客观判定）+ sidecar 覆盖（裁剪/同批执行器）。
-创作型阶段（ke_media/shot_media）deterministic=False， 起交接模型循环。
+本模块不再驱动执行：阶段表/依赖图/客观探针作为「法条」供
+stage_precondition 闸否决越阶、done-闸判定完成；轮始闸预检
+（gate_precheck）只装配原料闸/规格闸兜底卡。流程推进归模型循环
+（模型主动权 + 平台否决权，正向设计）。
 """
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
-
-import asyncio
 
 from loguru import logger
 
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
-from src.video_agent.skill_runtime.exec_tools import build_executor_tool
-from src.video_agent.skill_runtime.progress import emit_progress
 from src.video_agent.state.models import (
     ASSEMBLY_PLAN_DOC_NAME, CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS,
 )
@@ -340,152 +334,48 @@ def next_batch(
     return [], handoff
 
 
-async def run_deterministic_stage(
-    skill: str, spec: StageSpec, *, max_retry: int = 1,
-    chat_provider: str = "", chat_model: str = "",
-) -> List[Any]:
-    """按批顺序直调执行器；失败确定性重试（幂等执行器安全），重试权不归模型。
-
-    chat_provider/chat_model：用户对话所选供应商/模型透传注入执行器参数
-   （Skill 管道与主模型一致；缺省回落执行器级联默认）。
-    """
-    results = []
-    for name in spec.executors:
-        tool = build_executor_tool(name)
-        if tool is None:
-            logger.warning(f"[Orchestrator] 未知执行器 {name}，跳过")
-            continue
-        await emit_progress(f"正在执行「{spec.title}」：{name}…")
-        schema = tool.get_input_schema()
-        try:
-            params = schema(skill_name=skill)
-        except Exception:
-            params = schema()
-        # 用户所选供应商/模型注入（基类字段在场才写，Pydantic 默认允许赋值）
-        for _fld, _val in (("chat_provider", chat_provider), ("chat_model", chat_model)):
-            if _val and _fld in type(params).model_fields:
-                setattr(params, _fld, _val)
-        attempt = 0
-        while True:
-            res = await tool.aexecute(params)
-            if res.success or attempt >= max_retry:
-                break
-            attempt += 1
-            logger.warning(
-                f"[Orchestrator] {name} 失败，确定性重试 {attempt}/{max_retry}: {res.error}")
-        results.append(res)
-    return results
-
-
-def compose_pause_card(
-    state: Dict[str, Any], skill: str, done_spec: StageSpec,
-    next_spec: Optional[StageSpec],
-) -> Tuple[str, List[Dict[str, str]]]:
-    """阶段边界暂停卡：纯客观事实；总结是否入卡随 sidecar 声明。"""
-    manifest = registry.skill_manifest_of(skill) or {}
-    include_summary = bool(
-        ((manifest.get("pause") or {}).get("include_summary_in_pause")))
-    lines = [f"✅ 阶段「{done_spec.title}」已完成。"]
-    if done_spec.key == "analysis" and include_summary:
-        summary = str((state.get("analysis") or {}).get("summary") or "").strip()
-        if summary:
-            lines.append(f"剧本一句话总结：{summary}")
-    if next_spec:
-        lines.append(f"下一阶段：「{next_spec.title}」。")
-    else:
-        lines.append("全部阶段已完成。")
-    lines.append("确认后回复「继续」推进；如需调整请直接说明。")
-    options = [
-        {"label": "确认，继续", "value": "继续"},
-        {"label": "先调整", "value": ""},
-    ]
-    return "\n".join(lines), options
-
-
 @dataclass
 class OrchestratorOutcome:
-    kind: str  # paused / spec_pending / handoff_model / all_done / stage_failed
+    kind: str  # script_pending / script_ack / spec_pending（批 12 后仅兜底卡三类）
     message: str = ""
     options: List[Dict[str, str]] = None
     results: List[Any] = None
 
 
-def flow_auto_continue(state: Dict[str, Any]) -> bool:
-    """flow_directive 单消息豁免：本条消息不暂停（既有交互字段）。"""
-    return bool(((state.get("interaction") or {}).get("auto_continue")))
-
-
-async def orchestrate_turn(
+async def gate_precheck(
     state_manager: Any, skill: str, user_message: Any = "",
-    *, chat_provider: str = "", chat_model: str = "",
 ) -> Optional[OrchestratorOutcome]:
-    """编排：按拓扑就绪集推进确定性阶段直到暂停/交接/失败（3A DAG 化）。
+    """闸预检（批 12 快路径降级：编排器从驱动器退位为否决权/兜底卡）。
 
-    返回 None = 创作型阶段就绪或前置未决，交接模型循环（接线）。
-    原料闸（能力迁入）：analysis 阶段且剧本缺失且未豁免 →
-    机械回提醒卡/上传回执，不出题给模型。
-    无 dependencies 声明时 next_batch 回落线性扫描（零行为变更）。
+    只产出两类机械兜底卡，**永不执行阶段、永不抢先对话**：
+    - 原料闸：需剧本 Skill 剧本缺失且未豁免 → 提醒卡/上传回执；
+    - 规格闸：spec 阶段就绪且未完成 → spec_pending（向导收集卡）。
+    其余一律 None = 交接模型循环（模型持主动权，按注入的流程清单
+    调用执行器/ workflow_pause；顺序由 stage_precondition 闸否决越阶）。
     """
     state = state_manager.state_dict
-    auto = flow_auto_continue(state)
     msg = str(user_message or "")
-    while True:
-        table = stage_table(skill)
-        # 原料闸：analysis 在表且未完成时才判定
-        if any(s.key == "analysis" and not stage_done("analysis", state, skill) for s in table):
-            inter = state.get("interaction") or {}
-            if (
-                registry.script_required_active(skill)
-                and not prompt_gates.script_present(state)
-                and not inter.get("script_waived")
-            ):
-                if prompt_gates.script_waive_intent(msg):
-                    inter["script_waived"] = True
-                    state_manager.save_debounced()
-                    return None  # 豁免：交接模型循环
-                if prompt_gates.script_upload_ack_intent(msg):
-                    return OrchestratorOutcome(
-                        "script_ack", message=prompt_gates.SCRIPT_UPLOAD_ACK)
-                card_msg, card_opts = prompt_gates.script_remind_card()
+    table = stage_table(skill)
+    # 原料闸：analysis 在表且未完成时才判定
+    if any(s.key == "analysis" and not stage_done("analysis", state, skill) for s in table):
+        inter = state.setdefault("interaction", {})
+        if (
+            registry.script_required_active(skill)
+            and not prompt_gates.script_present(state)
+            and not inter.get("script_waived")
+        ):
+            if prompt_gates.script_waive_intent(msg):
+                inter["script_waived"] = True
+                state_manager.save_debounced()
+                return None  # 豁免：交接模型循环
+            if prompt_gates.script_upload_ack_intent(msg):
                 return OrchestratorOutcome(
-                    "script_pending", message=card_msg, options=card_opts)
-        batch, handoff = next_batch(state, skill)
-        if not batch:
-            if all(stage_done(s.key, state, skill) for s in table):
-                return OrchestratorOutcome("all_done", message="全部阶段已完成。")
-            if handoff:
-                return None  # 创作型阶段就绪，交接模型循环
-            return None  # 前置未决/状态异常，安全交接模型循环
-        if any(s.key == "spec" for s in batch):
-            return OrchestratorOutcome("spec_pending")
-        # 同批并行（执行器幂等 + 确定性重试）；单批串行保持原语义
-        if len(batch) > 1:
-            per = list(zip(
-                batch,
-                await asyncio.gather(
-                    *(run_deterministic_stage(
-                        skill, s,
-                        chat_provider=chat_provider, chat_model=chat_model,
-                    ) for s in batch)),
-            ))
-        else:
-            per = [(batch[0], await run_deterministic_stage(
-                skill, batch[0],
-                chat_provider=chat_provider, chat_model=chat_model,
-            ))]
-        results = [r for _, rs in per for r in rs]
-        for spec, rs in per:
-            failed = [r for r in rs if not getattr(r, "success", False)]
-            if failed:
-                return OrchestratorOutcome(
-                    "stage_failed",
-                    message=f"阶段「{spec.title}」执行失败：{failed[0].error}",
-                    results=results,
-                )
-        if auto:
-            continue
-        nxt, _ = next_batch(state, skill)
-        next_spec = nxt[0] if nxt else None
-        pause_msg, opts = compose_pause_card(state, skill, batch[-1], next_spec)
-        return OrchestratorOutcome(
-            "paused", message=pause_msg, options=opts, results=results)
+                    "script_ack", message=prompt_gates.SCRIPT_UPLOAD_ACK)
+            card_msg, card_opts = prompt_gates.script_remind_card()
+            return OrchestratorOutcome(
+                "script_pending", message=card_msg, options=card_opts)
+    # 规格闸：spec 阶段就绪且未完成 → 向导收集卡（不执行、不抢先）
+    batch, _handoff = next_batch(state, skill)
+    if any(s.key == "spec" for s in batch):
+        return OrchestratorOutcome("spec_pending")
+    return None

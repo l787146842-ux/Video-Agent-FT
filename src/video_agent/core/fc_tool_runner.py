@@ -39,6 +39,11 @@ _EXECUTOR_TOOL_NAMES = frozenset({
 })
 # 关键步骤工具：这些失败时模型不得声称“已完成/已写入”
 _CRITICAL_TOOL_NAMES = frozenset(_EXECUTOR_TOOL_NAMES | {"document_write"})
+# 批 12 轮内暂停纪律豁免集：workflow_pause 请求确认后，同批仅读类工具与暂停工具本身可行
+_PAUSE_WINDOW_READONLY = frozenset({
+    "read_draft", "read_skill", "read_project_doc", "read_uploaded_doc",
+    "workflow_pause",
+})
 from src.video_agent.tools.base import ToolResult
 
 # 回喂家族定义源 = core/fc_feedback.py；本文件顶层重新绑定全部符号，
@@ -392,6 +397,8 @@ class FCToolRunner:
         self.gate_warnings = []
         # 1：对话内单图工具每批调用次数（prose 禁令下沉工具层，13.6 审计
         self._gen_image_calls = 0
+        # 批 12 轮内暂停纪律：workflow_pause 请求确认后同批拒续执行
+        paused_this_batch = False
         applied = 0
         confirmation = ""
         confirmation_options: List[Dict[str, Any]] = []
@@ -498,10 +505,17 @@ class FCToolRunner:
             # 浪费工具往返 + 全文回喂 token（prompt 里的「不要再 read」靠模型自觉，此处硬保障）
             if self._strip_structure_prompt(name, args, injected_skill):
                 prompt_stripped = True
-            # 闸机链：阶段前置（平台不变量）→ 规格前置 → 生成确认 → 提示词结构/时序
-            # （首拆只允关键元素的平台自加警告已清除——流程以 Skill 为准，
-            # 客观数据完整性（sceneRefs 引用存在性）由 exec_common 校验兜底）
-            gate_error = self._stage_precondition_gate(name, injected_skill)
+            # 闸机链：轮内暂停纪律（批 12）→ 阶段前置（平台不变量）→ 规格前置 → 生成确认 → 提示词结构/时序
+            # 暂停纪律：workflow_pause 后同批续执行拒收（暂停点必须真停，
+            # 读只读工具与暂停工具本身豁免）——抢先权退场后的轮内否决权
+            gate_error = None
+            if paused_this_batch and name not in _PAUSE_WINDOW_READONLY:
+                gate_error = (
+                    "本轮已用 workflow_pause 请求用户确认，请等待用户回应后再继续执行；"
+                    "暂停窗口内仅允许读类工具（read_*）。"
+                )
+            if gate_error is None:
+                gate_error = self._stage_precondition_gate(name, injected_skill)
             if gate_error is None:
                 gate_error = self._flow_gate(name, injected_skill)
             if gate_error is None:
@@ -561,6 +575,7 @@ class FCToolRunner:
                         except Exception as _e:
                             logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
                 if name == "workflow_pause":
+                    paused_this_batch = True
                     confirmation = args.get("message", "请确认以上内容。")
                     # 候选选项（前端渲染为单选卡片，点击即发送选择；带 group 时分页向导）
                     opts = args.get("options")

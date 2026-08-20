@@ -1,150 +1,131 @@
-"""audit-0819e 阶段 2/3 钉死回归：控制流统一（确定性分诊 + 步间回收）。
+"""批 12 快路径降级钉死回归：抢先权退场，否决权/兜底卡保留。
 
-1111 事故根治：概率语料路由已删（S04 下账），分诊只认客观状态事实；
-模型循环每个 FC 批落盘后外层循环再评估（单一就绪单元语义），
-确定性阶段就绪/应发机械卡即回收控制权——交接不再等于失控。
+正向设计（模型主动权 + 平台否决权）：
+- 分诊/自动执行/步间收权三件删除（防复活锁源）；
+- 轮始闸预检只装配原料闸/规格闸兜底卡，其余交接模型循环；
+- 轮内暂停纪律：workflow_pause 后同批续执行被拒收；
+- 顺序由 stage_precondition 闸否决越阶（既有，不在本文件重复钉）。
 """
+import inspect
+
 import pytest
 
-from src.video_agent.core.agent_loop import run_agent_loop
+from src.video_agent.core import pipeline_orchestrator as po
 from src.video_agent.core.planner import Planner
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.action_executor import StudioActionExecutor
 
-_SKILL = "控制流测试技能"
+_SKILL = "AI-短剧一站式生成"
 
 
 @pytest.fixture
 def svc(tmp_path):
-    return StateManager(str(tmp_path))
+    StateManager.reset_instance()
+    instance = StateManager(str(tmp_path))
+    yield instance
+    StateManager.reset_instance()
 
 
-@pytest.fixture
-def planner(svc):
-    return Planner(state_manager=svc, llm_adapter=None, tool_manager=None)
+# ---------- 防复活：抢先权符号禁止回到控制流 ----------
+
+def test_preemption_symbols_deleted():
+    """分诊/快路径驱动/步间收权符号禁止复活（批 12 已下账）"""
+    assert not hasattr(Planner, "_triage_control")
+    assert not hasattr(Planner, "_run_orchestrator_path")
+    assert not hasattr(po, "run_deterministic_stage")
+    assert not hasattr(po, "orchestrate_turn")
+    assert not hasattr(po, "compose_pause_card")
+    from src.video_agent.core import agent_loop, planner_triage
+    assert "between_steps" not in inspect.signature(agent_loop.run_agent_loop).parameters
+    assert not hasattr(planner_triage, "make_reclaim_hook")
+    assert not hasattr(planner_triage, "triage_control")
 
 
-# ---------- 阶段 2：确定性分诊（零语料） ----------
-
-def test_triage_pending_confirmation_is_advance(planner, svc):
-    """待确认暂停的回应 = 续进（客观事实，不猜措辞）"""
-    svc.state_dict["interaction"] = {"awaiting_confirmation": True}
-    assert planner._triage_control("好", _SKILL) == "advance"
-    assert planner._triage_control("嗯，就这样吧", _SKILL) == "advance"
-
-
-def test_triage_adhoc_title_mention_is_handoff(planner, svc):
-    """暂停中点名资产 = 改指示 → 交接模型循环（客观标题命中，非语料）"""
-    svc.state_dict["interaction"] = {"awaiting_confirmation": True}
-    svc.state_dict["keyElements"] = [{"title": "程心"}]
-    assert planner._triage_control("把程心的描述改一下", _SKILL) == "handoff"
+def test_pause_window_gate_present():
+    """轮内暂停纪律闸在场（workflow_pause 后同批续执行拒收）"""
+    from src.video_agent.core import fc_tool_runner
+    src = inspect.getsource(fc_tool_runner)
+    assert "_PAUSE_WINDOW_READONLY" in src
+    assert "paused_this_batch" in src
 
 
-def test_triage_question_is_handoff(planner, svc):
-    assert planner._triage_control("什么是关键元素？", _SKILL) == "handoff"
+# ---------- 闸预检语义：只装配兜底卡，永不执行/抢先 ----------
+
+@pytest.mark.asyncio
+async def test_precheck_script_pending_when_material_missing(svc):
+    """需剧本 Skill + 剧本缺失 → 原料闸提醒卡（兜底，非执行）"""
+    out = await po.gate_precheck(svc, _SKILL, "开始制作")
+    assert out is not None and out.kind == "script_pending"
 
 
-def test_triage_kickoff_with_materials(planner, svc):
-    """管线未启动 + 原料就位 → 开局接管（编排器直跑首个确定性阶段）"""
+@pytest.mark.asyncio
+async def test_precheck_waive_intent_uses_raw_text(svc):
+    """豁免意图（只认显式话术）→ 交接模型循环并留痕 script_waived"""
+    out = await po.gate_precheck(svc, _SKILL, "waive_script")
+    assert out is None
+    assert (svc.state_dict.get("interaction") or {}).get("script_waived") is True
+
+
+@pytest.mark.asyncio
+async def test_precheck_upload_ack_card(svc):
+    out = await po.gate_precheck(svc, _SKILL, "upload_script")
+    assert out is not None and out.kind == "script_ack"
+
+
+@pytest.mark.asyncio
+async def test_precheck_spec_pending_after_analysis(svc):
+    """分析完成 + 规格未定 → 规格向导卡（不执行、不抢先）"""
     svc.state_dict["uploadedDocs"] = [{"id": "d1", "name": "剧本.md", "content": "x"}]
-    assert planner._triage_control("AI-短剧一站式生成", _SKILL) == "advance"
-
-
-def test_triage_started_free_message_is_handoff(planner, svc):
-    """管线已启动、无待办、非机械文案 → 交接（歧义不猜意图）"""
-    svc.state_dict["analysis"] = {"summary": "x"}
-    assert planner._triage_control("帮我想个海报创意", _SKILL) == "handoff"
-
-
-def test_triage_system_continue_button_is_advance(planner, svc):
-    """suggested_actions continue 按钮机械文案 = 确定性续进"""
-    svc.state_dict["analysis"] = {"summary": "x"}
-    assert planner._triage_control("继续完成", _SKILL) == "advance"
-
-
-def test_corpus_symbols_deleted():
-    """防复活：概率语料路由符号禁止回到 Planner（S04 已下账）"""
-    assert not hasattr(Planner, "_ADVANCE_CORPUS")
-    assert not hasattr(Planner, "_ADHOC_VERBS")
-    assert not hasattr(Planner, "_route_orchestrator")
-
-
-# ---------- 阶段 3：步间回收（单一就绪单元语义） ----------
-
-@pytest.fixture
-def executor(svc):
-    return StudioActionExecutor(svc)
+    svc.state_dict["analysis"] = {"summary": "一句话"}
+    out = await po.gate_precheck(svc, _SKILL, "继续")
+    assert out is not None and out.kind == "spec_pending"
 
 
 @pytest.mark.asyncio
-async def test_reclaim_interrupts_loop_with_spec_card(executor):
-    """1111 现场钉死：模型循环 FC 批落盘后，外层循环发现应发规格向导卡
-    → 立即回收控制权，循环终止并把卡片带回（越阶不再可能发生）"""
-    calls = {"n": 0}
+async def test_precheck_handoff_when_no_gate_fires(svc):
+    """无兜底卡触发 → None = 交接模型循环（模型持主动权）"""
+    svc.state_dict["interaction"] = {"script_waived": True}
+    svc.state_dict["analysis"] = {"summary": "一句话"}
+    svc.state_dict["documents"] = [{
+        "name": "Final_Video_Spec.md", "content": "规格", "confirmed": True,
+    }]
+    out = await po.gate_precheck(svc, _SKILL, "继续")
+    assert out is None
 
-    async def llm_call(system_prompt, messages, stream_hook=None):
-        calls["n"] += 1
-        return ("处理中", "tool_calls", 1)  # 恒 FC 批 → 原本会无限多步
 
-    reclaim_count = {"n": 0}
-
-    async def between_steps(step):
-        reclaim_count["n"] += 1
-        return {
-            "confirmation": "请选择成片规格参数",
-            "confirmation_options": [{"label": "16:9 横屏", "description": ""}],
-            "reason": "spec_pending",
-        }
-
-    result = await run_agent_loop(
-        "开始", llm_call=llm_call, context_builder=lambda: "ctx",
-        executor=executor, history=[], between_steps=between_steps,
-    )
-    assert calls["n"] == 1, "第一步落盘后必须立即回收，不得继续烧模型轮次"
-    assert reclaim_count["n"] == 1
-    assert result.confirmation == "请选择成片规格参数"
-    assert result.confirmation_options == [{"label": "16:9 横屏", "description": ""}]
-
+# ---------- 轮内暂停纪律：workflow_pause 后同批拒续 ----------
 
 @pytest.mark.asyncio
-async def test_reclaim_none_continues_loop(executor):
-    """回收评估返回 None（创作型阶段就绪）→ 循环照常继续"""
-    replies = [("处理中", "tool_calls", 1), ("完成了", "stop", 0)]
-    calls = {"n": 0}
+async def test_pause_window_rejects_same_batch_continuation(svc):
+    """模型不暂停的越权形态被轮内否决：workflow_pause 后同批续执行拒收"""
+    import json as _json
 
-    async def llm_call(system_prompt, messages, stream_hook=None):
-        r = replies[min(calls["n"], len(replies) - 1)]
-        calls["n"] += 1
-        return r
+    from src.video_agent.adapters.base_chat import ChatResponse
+    from src.video_agent.core.fc_tool_runner import FCToolRunner
+    from src.video_agent.state.manager import StateManager
+    from src.video_agent.tools.base import ToolResult
 
-    async def between_steps(step):
-        return None
+    invoked = []
 
-    result = await run_agent_loop(
-        "开始", llm_call=llm_call, context_builder=lambda: "ctx",
-        executor=executor, history=[], between_steps=between_steps,
-    )
-    assert calls["n"] == 2, "回收返回 None 时不得中断多步链"
-    assert not result.confirmation
+    class StubManager:
+        async def invoke_tool(self, name, args):
+            invoked.append(name)
+            return ToolResult(success=True, data={"paused": True, "message": "x"})
 
-
-@pytest.mark.asyncio
-async def test_reclaim_error_does_not_break_loop(executor):
-    """回收钩子异常 fail-open：不阻断循环（闸机失败-open 惯例）"""
-    replies = [("处理中", "tool_calls", 1), ("完成了", "stop", 0)]
-    calls = {"n": 0}
-
-    async def llm_call(system_prompt, messages, stream_hook=None):
-        r = replies[min(calls["n"], len(replies) - 1)]
-        calls["n"] += 1
-        return r
-
-    async def between_steps(step):
-        raise RuntimeError("模拟编排器评估异常")
-
-    result = await run_agent_loop(
-        "开始", llm_call=llm_call, context_builder=lambda: "ctx",
-        executor=executor, history=[], between_steps=between_steps,
-    )
-    assert calls["n"] == 2
-    assert not result.confirmation
+    StateManager.reset_instance()
+    StateManager._instance = svc
+    runner = FCToolRunner(StubManager())
+    resp = ChatResponse(
+        content="", finish_reason="tool_calls",
+        tool_calls=[
+            {"id": "c1", "function": {"name": "workflow_pause",
+                                      "arguments": _json.dumps({"message": "请确认"})}},
+            {"id": "c2", "function": {"name": "storyboard_key_elements",
+                                      "arguments": _json.dumps({"skill_name": _SKILL})}},
+        ])
+    out = await runner.execute(resp, injected_skill=_SKILL)
+    assert invoked == ["workflow_pause"], "暂停后同批续执行必须被拒收"
+    tool_results = out[6]
+    assert any(
+        "请求用户确认" in str(t.get("error") or "") for t in tool_results
+    ), tool_results
+    StateManager.reset_instance()

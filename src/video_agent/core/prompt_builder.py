@@ -374,6 +374,26 @@ class PromptBuilder:
                 flow,
             ]
             # 外来工具名映射注记已随 删除（导入期转换归专用 Skill 系统）
+        # 批 12：sidecar 流程清单（机械顺序清单，与 stage_precondition 闸同源「法条」；
+        # 快路径退场后模型持主动权，按清单推进，越阶由闸否决）
+        try:
+            from src.video_agent.skill_runtime.registry import skill_manifest_of
+
+            _steps = (((skill_manifest_of(skill_name) or {}).get("flow") or {}).get("steps")) or {}
+            if _steps:
+                _ordered = [
+                    f"{k}. {v}" for k, v in sorted(
+                        _steps.items(), key=lambda kv: int(kv[0]))
+                ]
+                lines += [
+                    "",
+                    "== 流程清单（sidecar 声明；跨阶段调用会被阶段前置闸拒收）==",
+                    *_ordered,
+                    "每阶段完成后用 workflow_pause 暂停邀请确认"
+                    "（用户明确声明连续执行时除外）。",
+                ]
+        except Exception:
+            pass
         lines += [
             "",
             "【执行方式】每个拆解/编写步骤必须真的执行了其中一种（调对应执行器，或直接输出 "
