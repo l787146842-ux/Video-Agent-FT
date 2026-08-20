@@ -37,6 +37,7 @@ docs/archive/
 
 # 临时测试目录
 .pytest_tmp/
+.pytest_tmp_run*/
 
 # 大文件截图
 flova_studio_page.png
