@@ -9,6 +9,7 @@ from loguru import logger
 from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.config import settings
 from src.video_agent.core import live_metrics, prompt_gates
+from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.sse_events import SSE_DOC_WRITTEN
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
@@ -260,6 +261,12 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
     inter.setdefault("pending_action_log", []).append(
         f"系统拼装并写入规格文档 {name}"
     )
+    # 批 1：机械写文档落转录（完成态时间线可见，与 live 同构）
+    try:
+        AgentTracer.get_instance().record_action(
+            "write_document", f"写入文档 {name}", ok=True)
+    except Exception:
+        pass
     svc.save()
     logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md")
     # 回执不 prose 指定子步骤与暂停点（流程/暂停归 Skill 阶段边界）

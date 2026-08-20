@@ -131,6 +131,8 @@ export function AgentTimeline(props: {
   live?: boolean;
   /** 深度思考总耗时（毫秒，完成后展示在卡片角标） */
   thinkingMs?: number;
+  /** 批 1：实时状态文案（状态栏=当前正在做的一件事），流式标题优先展示 */
+  liveStatus?: () => string;
 }) {
   // 深度思考面板：流式中自动展开（实时看思考流），完成后自动折叠（live 卸载后
   // 消息重建时初始值为 false）；展开/折叠始终可由用户手动切换
@@ -226,7 +228,10 @@ export function AgentTimeline(props: {
               <FiCheckCircle size={13} class="tl-icon-done" />
               <span class="tl-panel-title">
                 {props.live
-                  ? t('rp.timeline.processing', { count: doneCount() })
+                  ? (props.liveStatus && props.liveStatus()
+                    && props.liveStatus() !== t('rp.streaming.processing')
+                    ? `${props.liveStatus()}（已完成 ${doneCount()} 项）`
+                    : t('rp.timeline.processing', { count: doneCount() }))
                   : t('rp.timeline.processed', { count: props.items.length })}
               </span>
               <FiChevronDown size={12} class="tl-arrow" />

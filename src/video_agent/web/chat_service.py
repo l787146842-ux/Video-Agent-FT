@@ -517,6 +517,12 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             # 修正：provider 必须为「下一候选」的供应商（同模型跨厂商降级时
             # 真正变化的是厂商），此前误发失败方供应商导致前端跳转失效
             AgentTracer.get_instance().record_fallback(next_provider, next_model)
+            # 批 1：降级切换落转录（完成态回看可见，不再仅瞬态 status）
+            AgentTracer.get_instance().record_action(
+                "model_fallback",
+                f"模型降级：{cand_provider}/{cand_model} → {next_provider}/{next_model}",
+                ok=True,
+            )
             await emit({"type": SSE_MODEL_FALLBACK, **_fallback_switch_payload(candidates, idx)})
             continue
 

@@ -163,6 +163,7 @@ export function ChatFeed() {
             reasoning={() => chatState.streamingReasoning}
             items={chatState.streamingTools}
             live
+            liveStatus={() => chatState.streamingStatus}
           />
         </div>
       </Show>
