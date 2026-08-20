@@ -19,7 +19,6 @@ from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline, pipeline_orchestrator, prompt_gates
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
-from src.video_agent.core.pause_composer import PAUSE_MSG_MAX  # noqa: re-export 壳（测试导入路径不变）
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import stage_label_for_tool
@@ -597,11 +596,10 @@ class FCToolRunner:
                             logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
                 if name == "workflow_pause":
                     paused_this_batch = True
-                    confirmation = args.get("message", "请确认以上内容。")
-                    # 三通道 B（composer 单一实现）：超上限原文进正文通道，
-                    # 确认通道压缩为系统短问句（不没收暂停与 options）。
-                    confirmation, pause_overflow = pause_composer.compress_pause_message(
-                        confirmation, last_stage_label)
+                    # v2 批4：workflow_pause 只提交审批事实——卡问句系统
+                    # 组装，模型原文一律进正文通道（无阈值补丁）
+                    confirmation, pause_overflow = pause_composer.split_pause_channels(
+                        args.get("message", ""), last_stage_label)
                     if pause_overflow:
                         logger.info(
                             "[FlowGate] pause message 超长（{}字）已压缩，原文进正文通道",

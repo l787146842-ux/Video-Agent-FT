@@ -185,7 +185,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
         return
 
     # ---------- 真实供应商 ----------
-    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal)
+    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal, wiz_doc=_wiz_doc)
 
 
 def start_agent_task(body: Any) -> Dict[str, Any]:
@@ -296,7 +296,7 @@ def _stamp_doc_written(payload: Optional[Dict[str, Any]], turn_id: str) -> Dict[
     return out
 
 
-async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "") -> None:
+async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", wiz_doc: str = "") -> None:
     """真实供应商的流式处理（含模型 fallback 链）。
 
     主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，自动切换备用模型重试
@@ -331,10 +331,10 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 kind=getattr(body, "system_action", "") or "",
             )
             # v2 批2：规格卡自 write_spec 提交结果投影（用户消息之后）+ 即显事件
-            if _wiz_doc:
-                svc.add_chat_message("agent", "", doc_card=_wiz_doc, turn_id=turn_id)
-                _wiz_card_live = _wiz_doc
-                await emit({"type": SSE_DOC_WRITTEN, "name": _wiz_doc,
+            if wiz_doc:
+                svc.add_chat_message("agent", "", doc_card=wiz_doc, turn_id=turn_id)
+                _wiz_card_live = wiz_doc
+                await emit({"type": SSE_DOC_WRITTEN, "name": wiz_doc,
                             "turn_id": turn_id})
 
     state_builder = (

@@ -126,10 +126,12 @@ def test_takeover_skipped_when_spec_finalized(monkeypatch):
             "name": "workflow_pause",
             "arguments": json.dumps({"message": "关键元素拆解完成，请审阅"})}},
     ])
-    _applied, confirmation, *_rest = asyncio.run(
+    _res = asyncio.run(
         runner.execute(response, injected_skill="AI-短剧一站式生成"))
-    # 模型暂停文案保留，不被规格卡接管
-    assert confirmation == "关键元素拆解完成，请审阅"
+    confirmation, overflow = _res[1], _res[9]
+    # v2 批4：卡问句系统组装、模型原文进正文通道；且不被规格卡接管
+    assert "请过目以上成果" in confirmation
+    assert overflow == "关键元素拆解完成，请审阅"
     assert raw_state["interaction"].get("pending_pause_kind") != "spec"
 
 

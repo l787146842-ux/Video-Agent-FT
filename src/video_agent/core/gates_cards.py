@@ -317,10 +317,7 @@ SHOT_SEQUENCE_GATE_ERROR = _gate_msg("SHOT_SEQUENCE", (
 # 业界依据（Claude Code/Codex：确认 UI 由系统从即将执行的动作渲染，模型不撰写
 # 确认界面；Flova：暂停点与下一步是 Skill 工作流声明的属性）。1111 事故：
 # 模型自造「继续故事板拆分」跳过规格阶段——下一步 label 改为机械派生。
-FLOW_STEP_SHORT_TITLES: Dict[int, str] = {
-    1: "剧本分析", 2: "制作规格", 3: "关键元素拆解", 4: "设定图生成",
-    5: "分镜表格图", 6: "视频生成", 7: "音频生成", 8: "时间线组装",
-}
+# v2 批4：阶段短名由 sidecar flow.step_short_titles 声明（平台硬编码退役）。
 
 
 def _flow_steps_of(skill_name: str) -> Dict[int, str]:
@@ -364,9 +361,20 @@ def current_flow_step(state: Dict[str, Any], skill_name: str) -> int:
     return done
 
 
-def _flow_step_title(steps: Dict[int, str], n: int) -> str:
-    """步骤短标题：平台短名优先，回落 sidecar 标题前 12 字。"""
-    title = FLOW_STEP_SHORT_TITLES.get(n)
+def _flow_short_of(skill_name: str) -> Dict[int, str]:
+    """sidecar flow.step_short_titles 活读（步骤号→短标题）；
+    v2 批4：平台阶段短名改按 Skill 声明，代码硬编码退役。"""
+    from src.video_agent.skill_runtime.registry import skill_manifest_of
+
+    manifest = skill_manifest_of(str(skill_name or "").strip())
+    raw = (((manifest or {}).get("flow") or {}).get("step_short_titles")) or {}
+    return {int(k): str(v or "") for k, v in raw.items() if str(k).isdigit()}
+
+
+def _flow_step_title(steps: Dict[int, str], n: int,
+                     short_titles: Optional[Dict[int, str]] = None) -> str:
+    """步骤短标题：sidecar 声明短名优先，回落长标题前 12 字。"""
+    title = (short_titles or {}).get(n)
     if title:
         return title
     long_title = str(steps.get(n) or "").strip()
@@ -388,7 +396,7 @@ def system_continue_option(
     next_no = current_flow_step(state, skill_name) + 1
     if next_no not in steps:
         return None
-    title = _flow_step_title(steps, next_no)
+    title = _flow_step_title(steps, next_no, _flow_short_of(skill_name))
     if not title:
         return None
     label = f"确认，进入「{title}」"
@@ -420,7 +428,7 @@ def flow_continue_note(state: Dict[str, Any], skill_name: str) -> str:
     if not steps:
         return ""
     next_no = current_flow_step(state, skill_name) + 1
-    title = _flow_step_title(steps, next_no)
+    title = _flow_step_title(steps, next_no, _flow_short_of(skill_name))
     if not title:
         return ""
     return f"用户已确认进入阶段 {next_no}「{title}」，直接执行该阶段；"

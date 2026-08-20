@@ -23,6 +23,8 @@ FORBIDDEN = re.compile(
     r"|parse_steps\b|parse_dependencies\b|topo_batches|resolve_steps_and_deps"
     r"|pipeline_status_from|lint_planner_dag|render_pipeline_detail"
     r"|pending_action_log|Agent 正在规划本步动作"
+    r"|PAUSE_MSG_MAX|compress_pause_message|FLOW_STEP_SHORT_TITLES|_DIM_ALIAS"
+    r"|flush_pending_doc_card|emit_pending_doc_card|spec_doc_card_pending"
 )
 
 

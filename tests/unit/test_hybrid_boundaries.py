@@ -440,7 +440,9 @@ def test_fc_spec_doc_written_keeps_model_pause(monkeypatch):
     applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill"))
     assert docs_written == ["制片规格.md"]
-    assert confirmation == "请审阅规格"  # 模型自发暂停原样保留
+    # v2 批4：卡问句系统组装（不没收暂停），模型原文进正文通道
+    assert "请过目以上成果" in confirmation
+    assert _overflow == "请审阅规格"
 
 
 def test_fc_non_spec_doc_written_no_pause(monkeypatch):
@@ -709,8 +711,10 @@ def test_honest_pause_kept_when_generation_failed(monkeypatch):
             "name": "workflow_pause",
             "arguments": json.dumps({"message": "提示词草案已写好，请审阅确认。"})}},
     ])
-    applied, confirmation, *_rest = asyncio.run(runner.execute(response))
-    assert confirmation == "提示词草案已写好，请审阅确认。"
+    applied, confirmation, *_rest, _warns, _overflow = asyncio.run(runner.execute(response))
+    # v2 批4：诚实暂停不被没收——闸警告与模型原文在确认/正文通道可见
+    assert "提示词草案已写好，请审阅确认。" in (confirmation + _overflow)
+    assert "闸" in confirmation or "请过目以上成果" in confirmation
 
 
 # ---------- 新建草稿按规格偏好补印供应商（防前端默认回填污染） ----------

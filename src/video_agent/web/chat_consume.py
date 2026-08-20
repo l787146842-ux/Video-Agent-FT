@@ -271,7 +271,7 @@ def _consume_spec_wizard(svc, user_text: str) -> Tuple[str, str]:
             "options": [], "node_id": "review_spec"}
     # v2 批2：write_spec 节点提交——文档 artifact 与阶段推进进 reducer
     # 单事务（ArtifactCommitted + StageSucceeded(write_spec) +
-    # current_node→review_spec）；Web 直写旁路与 spec_doc_card_pending
+    # current_node→review_spec）；Web 直写旁路与挂起补卡机制
     # 退役；卡片投影由调用方按提交结果于用户消息后落库（顺序同轮聚合）。
     try:
         workflow_runtime.commit_turn(

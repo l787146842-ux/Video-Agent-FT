@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Atomic, idempotent TurnCommit for workflow state and projections."""
 from __future__ import annotations
+import asyncio
 import copy, inspect, uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -155,7 +156,7 @@ def commit_turn(target: Any, result: Union[TurnResult, Mapping[str, Any]], *, ru
         for event in events:
             value = publish(event)
             if inspect.isawaitable(value):
-                import asyncio; asyncio.create_task(value)
+                asyncio.create_task(value)
     return TurnCommit(turn.turn_id, copy.deepcopy(run), turn, events, False, bool(svc is not None and persist), int(run.get("event_sequence") or 0))
 
 __all__ = ["ArtifactRef", "DecisionRequest", "TurnCommit", "TurnResult", "WorkflowCommitError", "WorkflowConcurrencyError", "commit_turn"]

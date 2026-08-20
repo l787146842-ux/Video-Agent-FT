@@ -131,7 +131,10 @@ class TestConfirmationJsonInjection:
             collected.append(event)
 
         done = next(e for e in collected if e.type == "done")
-        assert done.payload["confirmation"] == malicious
+        # v2 批4：确认通道 = 系统组装问句；模型原文（含引号/换行/伪 JSON）
+        # 进正文通道，不再进入确认通道
+        assert "请过目以上成果" in done.payload["confirmation"]
+        assert malicious in (done.payload.get("text") or "")
 
     async def test_fc_confirmation_no_synthesized_block(self, svc):
         """audit-0819b/d 防泄漏根治：确认经结构化 extra 上抛，
@@ -144,4 +147,5 @@ class TestConfirmationJsonInjection:
             "开始", PlannerContext(use_studio_context=False), stream_hook=make_hook(),
         )
         assert "```studio-actions" not in (result.text or ""), "合成块通道已退役，不得复活"
-        assert result.confirmation == malicious
+        assert "请过目以上成果" in (result.confirmation or "")
+        assert malicious in (result.text or ""), "模型原文进正文通道不损坏"

@@ -215,6 +215,21 @@ def test_runtime_recover_run_restores_sequence_and_status():
 
 # ---------- ⑤ 注册隔离 ----------
 
+def test_sync_run_backfills_legacy_run_without_clearing():
+    """重构计划批4：在途旧 run 一次性导入——新字段补齐，
+    artifacts/completed_nodes 不清空（禁止 clear 式回滚）。"""
+    from src.video_agent.core import workflow_runtime
+
+    st = {"workflow_run": {"run_id": "run_old", "current_node": "analyze_script",
+                           "completed_nodes": ["analyze_script"],
+                           "artifacts": ["a.md"]},
+          "usedSkills": ["AI-短剧一站式生成"]}
+    run = workflow_runtime.sync_run(st, "AI-短剧一站式生成")
+    assert run["artifacts"] == ["a.md"]
+    for key in ("run_version", "event_sequence", "status", "node_attempts"):
+        assert key in run, f"旧 run 缺字段补齐: {key}"
+
+
 def test_sync_all_skips_invalid_file_without_aborting_batch(tmp_path, monkeypatch):
     from src.video_agent.web import skill_docs as sd
     from src.video_agent.skill_runtime import registry

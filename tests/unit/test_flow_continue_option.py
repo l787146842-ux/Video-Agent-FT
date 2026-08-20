@@ -14,7 +14,9 @@ from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.tools.base import ToolResult
 
 _FLOW = {"flow": {"steps": {
-    "1": "读取并分析剧本", "2": "写入制作规格", "3": "设计 Storyboard"}}}
+    "1": "读取并分析剧本", "2": "写入制作规格", "3": "设计 Storyboard"},
+    # v2 批4：阶段短名由 sidecar 声明（平台硬编码退役）
+    "step_short_titles": {"1": "剧本分析", "2": "制作规格", "3": "关键元素拆解"}}}
 
 
 def _register_flow_skill():
@@ -67,8 +69,8 @@ class _TM:
 
 
 def test_boundary_pause_strips_model_continue_and_prepends_system(monkeypatch):
-    """本批跑完 script_analyze 后暂停：模型「继续故事板拆分」被剔除，
-    系统「确认，进入『制作规格』」前置；调整类选项保留。"""
+    """v2 批4：阶段边界选项面 = 系统派生唯一入口——
+    模型「继续故事板拆分」与调整类选项均直接拒收（不做模糊清洗）。"""
     _register_flow_skill()
     runner = FCToolRunner(tool_manager=_TM())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {
@@ -92,7 +94,8 @@ def test_boundary_pause_strips_model_continue_and_prepends_system(monkeypatch):
     opts = res[5]
     assert opts[0].get("value") == opts[0].get("label") == "确认，进入「制作规格」"
     assert not any("继续故事板拆分" in str(o.get("label")) for o in opts)
-    assert any("需要调整分析" in str(o.get("label")) for o in opts)
+    assert not any("需要调整分析" in str(o.get("label")) for o in opts), \
+        "边界模型选项直接拒收"
 
 
 def test_mid_stage_pause_not_decorated(monkeypatch):

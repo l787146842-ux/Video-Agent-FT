@@ -104,9 +104,11 @@ class _StubToolManager:
 
 
 def test_fc_model_pause_merged_with_wizard(monkeypatch):
-    """FC 轨：模型同批写规格 + 自发暂停 → 软维度并入标准向导；
-    硬参数不再向导化（模型自造分辨率 label 原样保留，不影响全局设置）"""
+    """v2 批4：规格未定稿时规格交互唯一入口 = 系统向导——
+    模型选项（软维度/硬参数/工作流类）一律直接拒收，不做模糊清洗。"""
+    from src.video_agent.skill_runtime import registry
     monkeypatch.setattr(prompt_gates, "skill_spec_dimensions", lambda skill: ["视觉风格", "画幅"])
+    monkeypatch.setattr(registry, "spec_wizard_active", lambda name: True)
     runner = FCToolRunner(tool_manager=_StubToolManager())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
         lambda: {
@@ -138,8 +140,8 @@ def test_fc_model_pause_merged_with_wizard(monkeypatch):
     labels = [o["label"] for o in conf_opts]
     assert "风格A" not in labels
     assert "视觉风格：写实" in labels
-    assert "1K（更快）" in labels  # 硬参数不再向导化，模型选项保留
-    assert "确认规格并开始拆分关键元素" in labels
+    assert "1K（更快）" not in labels, "v2：模型选项直接拒收"
+    assert "确认规格并开始拆分关键元素" not in labels, "v2：模型工作流选项拒收"
 
 
 # ---------- 确认意图定稿的暂停类型门槛 ----------

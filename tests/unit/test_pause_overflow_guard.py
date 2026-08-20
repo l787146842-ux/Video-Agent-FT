@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""三通道分离 B 回归：pause message 超长机械压缩，原文进正文通道。
+"""三通道分离 B 回归（v2 批4）：workflow_pause 只提交审批事实。
 
-契约：workflow_pause.message = 一句确认问句；模型仍 dump 成果
-（>PAUSE_MSG_MAX）时确定性变换——卡片留系统短问句（带真实阶段标签），
-原文经 pause_overflow 随正文下发，不丢信息、不没收暂停。
+契约：确认通道 = 系统组装问句（带真实阶段标签）；模型原文一律进
+正文通道（pause_overflow），无阈值补丁——通道分离是契约不是压缩。
+不没收暂停与选项。
 """
 import asyncio
 import json
 
 from src.video_agent.adapters.base_chat import ChatResponse
-from src.video_agent.core.fc_tool_runner import FCToolRunner, PAUSE_MSG_MAX
+from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.tools.base import ToolResult
 
 
@@ -32,21 +32,20 @@ def _unpack(res):
     return applied, confirmation, opts, overflow
 
 
-def test_long_pause_message_compressed_and_overflow_carried(monkeypatch):
-    """超 220 字 → confirmation 压缩为系统短问句，原文进第 10 元组。"""
+def test_model_dump_goes_to_body_channel(monkeypatch):
+    """模型 dump 成果 → 卡问句系统组装，原文进第 10 元组（正文通道）。"""
     runner = FCToolRunner(tool_manager=_TM())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
     long_msg = "✅ 阶段一「剧本分析」已完成。" + "结构化要点内容。" * 30
-    assert len(long_msg) > PAUSE_MSG_MAX
     _applied, confirmation, _opts, overflow = _unpack(asyncio.run(
         runner.execute(_fc(("workflow_pause", {"message": long_msg})))))
     assert overflow == long_msg
-    assert len(confirmation) <= PAUSE_MSG_MAX
     assert "已完成" in confirmation and "请过目以上成果" in confirmation
+    assert long_msg not in confirmation, "模型原文不得进确认通道"
 
 
-def test_short_question_carries_stage_label(monkeypatch):
-    """同批先跑 script_analyze → 短问句带真实阶段标签「剧本分析」。"""
+def test_system_question_carries_stage_label(monkeypatch):
+    """同批先跑 script_analyze → 系统问句带真实阶段标签「剧本分析」。"""
     runner = FCToolRunner(tool_manager=_TM())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
     long_msg = "成果dump。" * 60
@@ -59,12 +58,11 @@ def test_short_question_carries_stage_label(monkeypatch):
     assert overflow == long_msg
 
 
-def test_short_pause_message_untouched(monkeypatch):
-    """≤220 字 → 原样保留，overflow 为空（契约内不干预）。"""
+def test_empty_model_message_still_system_question(monkeypatch):
+    """v2：无模型原文也发系统问句（审批事实语义），overflow 为空串。"""
     runner = FCToolRunner(tool_manager=_TM())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    msg = "请确认分析结果，并选择下一步。"
     _applied, confirmation, _opts, overflow = _unpack(asyncio.run(
-        runner.execute(_fc(("workflow_pause", {"message": msg})))))
-    assert confirmation == msg
+        runner.execute(_fc(("workflow_pause", {"message": ""})))))
     assert overflow == ""
+    assert "请过目以上成果" in confirmation

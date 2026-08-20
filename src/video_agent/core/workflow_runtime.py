@@ -18,6 +18,8 @@ WorkflowRun 持久化于 ``state["workflow_run"]``，**仅本模块 reducer 可�
 ``reduce_interaction`` 单一写入。完成度只认客观探针（stage_done，fail-closed）。
 """
 import copy
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -83,8 +85,6 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
     if definition is None:
         run.setdefault("failure_state", {"code": "INVALID_SKILL", "skill": skill})
         return run
-    import uuid
-    from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
     if not run:
         run.update({"run_id": f"run_{uuid.uuid4().hex}", "workflow_id": definition["workflow_id"],

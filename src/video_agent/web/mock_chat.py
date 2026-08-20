@@ -54,14 +54,8 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
                 pause_answered=_pause_answered,
                 kind=getattr(body, "system_action", "") or "",
             )
-            # 向导挂起的规格卡补落（用户消息之后；chat_consume 导入
-            # 本模块，反向导入会成环，同语义 4 行内联）
-            _card = str((svc.state_dict.get("interaction") or {}).pop(
-                "spec_doc_card_pending", "") or "").strip()
-            if _card:
-                svc.add_chat_message("agent", "", doc_card=_card, turn_id=turn_id)
-                # live 可见性双通道（与流式真实轨同构）
-                await emit({"type": SSE_DOC_WRITTEN, "name": _card, "turn_id": turn_id})
+            # v2 批2：挂起补卡机制退役；向导规格卡投影由 chat_service
+            # 按 write_spec 提交结果于用户消息后落库（mock 轨同构）
         #自查补漏：mock 路径 status 同走 key 化（#1 同类全覆盖）
         await emit(status_event("agent.mockRunning", "mock 模式：本地规则生成…", {}))
         # 单轨化：mock 动作以结构化 dict 直达执行器，不经文本块解析

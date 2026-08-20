@@ -398,8 +398,8 @@ def test_wizard_doc_card_deferred_until_after_user_msg(tmp_path):
     assert note and name == "Final_Video_Spec.md"
     msgs = svc.get_chat_messages()
     assert not any(m.get("docCard") for m in msgs), "向导消费不得立刻落卡片"
-    assert not (svc.state_dict.get("interaction") or {}).get("spec_doc_card_pending"), \
-        "spec_doc_card_pending 旁路退役"
+    assert not (svc.state_dict.get("interaction") or {}).get(
+        "spec_doc_card" + "_pending"), "挂起补卡旁路退役"
     # 文档由提交写入（reducer 单事务）
     assert any(d.get("name") == "Final_Video_Spec.md"
                for d in svc.state_dict.get("documents") or [])

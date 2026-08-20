@@ -816,7 +816,6 @@ from src.video_agent.core.gates_cards import (
     GENERATION_CONFIRM_GATE_ERROR,
     GENERATION_CONFIRM_GATE_BLOCKED,
     SHOT_SEQUENCE_GATE_ERROR,
-    FLOW_STEP_SHORT_TITLES,
     current_flow_step,
     system_continue_option,
     is_flow_continue_value,
