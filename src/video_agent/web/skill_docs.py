@@ -462,6 +462,8 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
     warnings.extend(_lint_flova_composition(content, sections, bool(available)))
     # 批 5：有流程章节但 sidecar 未声明 steps/dependencies → 提示补声明
     warnings.extend(_lint_sidecar_declaration(content, slug))
+    # 批 3：散文含对话义务而 sidecar 未声明 pause → 显性化分歧（只告警不阻断）
+    warnings.extend(_lint_prose_obligations(content, slug))
     return {"available_tools": available, "warnings": warnings}
 
 
@@ -508,6 +510,32 @@ def _lint_sidecar_declaration(content: str, slug: str) -> List[str]:
         return []
     return ["流程步骤未在 sidecar 声明（flow.steps/dependencies 缺失）："
             f"调度将回落正文启发式解析，建议在 data/skills_manifests/{slug}.json 补声明"]
+
+
+# 批 3：散文对话义务标记（<planner> 含确认/询问/暂停类义务词）
+_PROSE_OBLIGATION_RE = re.compile(r"确认|询问|暂停|问用户|请用户")
+
+
+def _lint_prose_obligations(content: str, slug: str) -> List[str]:
+    """散文含对话义务而 sidecar 未声明 pause → 告警显性化分歧。
+
+    批 12 后平台以机械卡/闸兜底对话义务；Skill 散文与 sidecar 声明
+    分歧时不再静默丢弃（P1 单一家原则的编辑期提示），只告警不阻断。
+    """
+    if not slug:
+        return []
+    sections = split_skill_sections(content or "")
+    planner = (sections.get("planning") or sections.get("planner") or "")
+    if not _PROSE_OBLIGATION_RE.search(planner):
+        return []
+    try:
+        data = sidecar.load_sidecar(slug)
+    except Exception:
+        return []
+    if ((data or {}).get("pause") or {}):
+        return []
+    return ["<planner> 散文含对话义务（确认/询问/暂停）而 sidecar 未声明 pause："
+            "平台将以机械卡/闸形态兜底；建议补 pause.stage_pause 声明或接受平台卡形态"]
 
 
 def _norm_skill_name(s: str) -> str:

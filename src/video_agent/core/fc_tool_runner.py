@@ -594,6 +594,24 @@ class FCToolRunner:
                                 confirmation_options.append(item)
                             elif isinstance(o, str) and o.strip():
                                 confirmation_options.append({"label": o.strip(), "description": ""})
+                    # 批 3：验收缺失清单在场 → 暂停卡附「补拆/维持」结构化选项
+                    # （落实 Skill「先与用户确认是否修改」；附后清除登记）
+                    try:
+                        _svc_m = StateManager.get_instance()
+                        _inter_m = _svc_m.state_dict.get("interaction") or {}
+                        _missing = _inter_m.get("pending_missing") or []
+                        if _missing:
+                            _n = len(_missing)
+                            confirmation_options.append({
+                                "label": f"补拆 {_n} 项缺失元素", "value": "补拆",
+                                "description": "、".join(_missing[:6]) + ("等" if _n > 6 else "")})
+                            confirmation_options.append({
+                                "label": "维持现状继续", "value": "继续",
+                                "description": "接受缺失，按流程推进下一阶段"})
+                            _inter_m.pop("pending_missing", None)
+                            _svc_m.save_debounced()
+                    except Exception as _e:
+                        logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
                     # 模型自造「1K（更快）」式 label 无法机械落盘，
                     # 同 group 选项替换为标准「键：值」向导（系统永不没收模型的暂停文案）
                     try:

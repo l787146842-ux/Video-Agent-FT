@@ -392,6 +392,14 @@ async def _run_storyboard_split(
                             f"拆解覆盖缺口：{len(missing)} 项仍缺失（定向补拆未成功）："
                             f"{_miss_txt}。请回复指出遗漏元素或发送「补拆」重试。"
                         )
+                        # 批 3：缺失清单结构化登记——workflow_pause 暂停卡
+                        # 附「补拆/维持」选项，落实 Skill「先与用户确认是否修改」
+                        try:
+                            inter = svc.state_dict.setdefault("interaction", {})
+                            inter["pending_missing"] = list(missing[:12])
+                            svc.save_debounced()
+                        except Exception:
+                            pass
                         await emit_timeline_note(
                             f"验收：发现 {len(missing)} 项缺失但补拆未产出，已上报警告",
                             elapsed_ms=_sc_ms,
