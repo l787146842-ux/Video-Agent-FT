@@ -81,6 +81,8 @@ async def run_orchestrator_path(
     user_message: Any,
     response_factory: Callable[..., Any],
     issue_pause: Callable[[Any], None],
+    chat_provider: str = "",
+    chat_model: str = "",
 ) -> Optional[Any]:
     """编排器快路径；返回 None = 创作型阶段交接模型循环。
 
@@ -88,7 +90,10 @@ async def run_orchestrator_path(
     惯例，避免与 planner 循环导入）；issue_pause 为暂停签发登记委托。
     进出结果全记控制流事件（可观测性）。
     """
-    outcome = await _po.orchestrate_turn(state_manager, skill, user_message)
+    outcome = await _po.orchestrate_turn(
+        state_manager, skill, user_message,
+        chat_provider=chat_provider, chat_model=chat_model,
+    )
     _kind = outcome.kind if outcome is not None else "handoff"
     logger.info("[ControlFlow] orchestrator outcome={}", _kind)
     try:
@@ -128,6 +133,7 @@ async def run_orchestrator_path(
 
 def make_reclaim_hook(
     state_manager: Any, skill: str,
+    chat_provider: str = "", chat_model: str = "",
 ) -> Callable[[int], Awaitable[Optional[Dict[str, Any]]]]:
     """构造步间回收钩子（控制流统一：FC 批落盘后外层循环再评估）。
 
@@ -140,7 +146,10 @@ def make_reclaim_hook(
         if not (settings.pipeline_orchestrator_enabled and skill):
             return None
         try:
-            outcome = await _po.orchestrate_turn(state_manager, skill, "")
+            outcome = await _po.orchestrate_turn(
+                state_manager, skill, "",
+                chat_provider=chat_provider, chat_model=chat_model,
+            )
         except Exception as _e:
             # 承重接线遥测（批 8）：回收评估失败 fail-open 不阻断，但降级可见
             live_metrics.record_degradation("planner.between_steps_reclaim")

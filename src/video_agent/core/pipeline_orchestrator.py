@@ -342,8 +342,13 @@ def next_batch(
 
 async def run_deterministic_stage(
     skill: str, spec: StageSpec, *, max_retry: int = 1,
+    chat_provider: str = "", chat_model: str = "",
 ) -> List[Any]:
-    """按批顺序直调执行器；失败确定性重试（幂等执行器安全），重试权不归模型。"""
+    """按批顺序直调执行器；失败确定性重试（幂等执行器安全），重试权不归模型。
+
+    chat_provider/chat_model：用户对话所选供应商/模型透传注入执行器参数
+   （Skill 管道与主模型一致；缺省回落执行器级联默认）。
+    """
     results = []
     for name in spec.executors:
         tool = build_executor_tool(name)
@@ -356,6 +361,10 @@ async def run_deterministic_stage(
             params = schema(skill_name=skill)
         except Exception:
             params = schema()
+        # 用户所选供应商/模型注入（基类字段在场才写，Pydantic 默认允许赋值）
+        for _fld, _val in (("chat_provider", chat_provider), ("chat_model", chat_model)):
+            if _val and _fld in type(params).model_fields:
+                setattr(params, _fld, _val)
         attempt = 0
         while True:
             res = await tool.aexecute(params)
@@ -408,6 +417,7 @@ def flow_auto_continue(state: Dict[str, Any]) -> bool:
 
 async def orchestrate_turn(
     state_manager: Any, skill: str, user_message: Any = "",
+    *, chat_provider: str = "", chat_model: str = "",
 ) -> Optional[OrchestratorOutcome]:
     """编排：按拓扑就绪集推进确定性阶段直到暂停/交接/失败（3A DAG 化）。
 
@@ -453,10 +463,16 @@ async def orchestrate_turn(
             per = list(zip(
                 batch,
                 await asyncio.gather(
-                    *(run_deterministic_stage(skill, s) for s in batch)),
+                    *(run_deterministic_stage(
+                        skill, s,
+                        chat_provider=chat_provider, chat_model=chat_model,
+                    ) for s in batch)),
             ))
         else:
-            per = [(batch[0], await run_deterministic_stage(skill, batch[0]))]
+            per = [(batch[0], await run_deterministic_stage(
+                skill, batch[0],
+                chat_provider=chat_provider, chat_model=chat_model,
+            ))]
         results = [r for _, rs in per for r in rs]
         for spec, rs in per:
             failed = [r for r in rs if not getattr(r, "success", False)]

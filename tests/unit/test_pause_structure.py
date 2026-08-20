@@ -94,7 +94,7 @@ class TestOrchestratorConfluenceIssuesPause:
     async def test_mechanical_cards_carry_pause_id(self, svc, monkeypatch, kind):
         from src.video_agent.core import pipeline_orchestrator as po
 
-        async def fake_orchestrate(state_manager, skill, user_message=""):
+        async def fake_orchestrate(state_manager, skill, user_message="", **kw):
             return po.OrchestratorOutcome(
                 kind=kind, message="机械卡文案", options=[{"label": "确认"}])
 
@@ -113,7 +113,7 @@ class TestOrchestratorConfluenceIssuesPause:
     async def test_handoff_returns_none(self, svc, monkeypatch):
         from src.video_agent.core import pipeline_orchestrator as po
 
-        async def fake_orchestrate(state_manager, skill, user_message=""):
+        async def fake_orchestrate(state_manager, skill, user_message="", **kw):
             return None
 
         monkeypatch.setattr(po, "orchestrate_turn", fake_orchestrate)

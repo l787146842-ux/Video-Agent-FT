@@ -480,7 +480,8 @@ class Planner:
         # 步间回收（控制流统一）：每个 FC 批落盘后外层循环再评估状态——
         # 确定性阶段就绪/应发机械卡即回收控制权（实现体 planner_triage.make_reclaim_hook）
         _between_steps_reclaim = planner_triage.make_reclaim_hook(
-            self.state_manager, context.skill_name)
+            self.state_manager, context.skill_name,
+            self.chat_provider, self.chat_model)
 
         # 委托给统一循环
         loop_result = await run_agent_loop(
@@ -765,7 +766,8 @@ class Planner:
         """编排器快路径；返回 None = 创作型阶段交接模型循环（实现体 planner_triage）。"""
         return await planner_triage.run_orchestrator_path(
             self.state_manager, context.skill_name, user_message,
-            PlannerResponse, self._issue_pause)
+            PlannerResponse, self._issue_pause,
+            self.chat_provider, self.chat_model)
 
     async def _handle_fc_response(
         self,
