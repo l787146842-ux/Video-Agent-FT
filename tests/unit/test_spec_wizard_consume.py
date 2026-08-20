@@ -33,7 +33,7 @@ def test_selections_write_spec_doc(svc, skills_dir, monkeypatch):
         lambda skill: ["视频标题", "视觉风格"],
     )
     svc.state_dict["usedSkills"] = ["向导技能"]
-    note = _consume_spec_wizard(
+    note, _name = _consume_spec_wizard(
         svc,
         "视觉风格：赛博朋克",
     )
@@ -51,5 +51,5 @@ def test_selections_write_spec_doc(svc, skills_dir, monkeypatch):
 
 def test_plain_reply_without_selection_ignored(svc, skills_dir):
     svc.state_dict["usedSkills"] = ["向导技能"]
-    assert _consume_spec_wizard(svc, "继续吧") == ""
+    assert _consume_spec_wizard(svc, "继续吧") == ("", "")
     assert not (svc.state_dict.get("documents") or [])

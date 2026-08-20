@@ -386,47 +386,50 @@ def _async_none():
 # ---------- 0817 B14：规格文档卡不得落在用户选择消息之前 ----------
 
 def test_wizard_doc_card_deferred_until_after_user_msg(tmp_path):
-    """向导落盘时卡片只挂起；用户消息先落库，卡片随后补落（顺序正确）。"""
+    """v2 批2：向导消费经 write_spec 节点提交（文档进 reducer 单事务），
+    消费本身不落卡片；调用方于用户消息后投影文档卡（顺序正确同轮聚合）。"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.chat_consume import (
-        _consume_spec_wizard, flush_pending_doc_card,
-    )
+    from src.video_agent.web.chat_consume import _consume_spec_wizard
+
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
     svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
-    _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
+    note, name = _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
+    assert note and name == "Final_Video_Spec.md"
     msgs = svc.get_chat_messages()
     assert not any(m.get("docCard") for m in msgs), "向导消费不得立刻落卡片"
-    assert svc.state_dict["interaction"].get("spec_doc_card_pending") == "Final_Video_Spec.md"
-    # 模拟真实落库次序：用户消息先落，再补卡片
+    assert not (svc.state_dict.get("interaction") or {}).get("spec_doc_card_pending"), \
+        "spec_doc_card_pending 旁路退役"
+    # 文档由提交写入（reducer 单事务）
+    assert any(d.get("name") == "Final_Video_Spec.md"
+               for d in svc.state_dict.get("documents") or [])
+    # 模拟真实落库次序：用户消息先落，卡片随后投影
     svc.add_chat_message("user", "画幅比例：16:9 横屏\n输出语言：中文")
-    assert flush_pending_doc_card(svc, "turn-x") == "Final_Video_Spec.md"
+    svc.add_chat_message("agent", "", doc_card=name, turn_id="turn-x")
     msgs = svc.get_chat_messages()
     assert [m.get("sender") for m in msgs[-2:]] == ["user", "agent"]
     assert msgs[-1].get("docCard") == "Final_Video_Spec.md"
     assert msgs[-1].get("turnId") == "turn-x"
-    # 挂起已清：重复 flush 返回空串
-    assert flush_pending_doc_card(svc, "turn-x") == ""
 
 
 @pytest.mark.asyncio
-async def test_wizard_doc_card_live_visible_via_sse(tmp_path):
-    """0817 B19：向导规格卡补落同时发 doc_written 即显事件（live 不靠刷新）。"""
+async def test_wizard_write_spec_node_commit_events(tmp_path):
+    """v2 批2：向导落盘 = write_spec 节点提交——ArtifactCommitted +
+    StageSucceeded(write_spec) + current_node→review_spec 同事务入账。"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.chat_consume import emit_pending_doc_card
+    from src.video_agent.core.workflow_events import EventLedger
+    from src.video_agent.web.chat_consume import _consume_spec_wizard
 
     svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict.setdefault("interaction", {})["spec_doc_card_pending"] = "Final_Video_Spec.md"
-    events = []
-
-    async def fake_emit(ev):
-        events.append(ev)
-
-    name = await emit_pending_doc_card(svc, "t9", fake_emit)
+    svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
+    svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
+    note, name = _consume_spec_wizard(svc, "画幅比例：16:9 横屏")
     assert name == "Final_Video_Spec.md"
-    assert events and events[0]["type"] == "doc_written"
-    assert events[0]["name"] == "Final_Video_Spec.md"
-    assert events[0]["turn_id"] == "t9"
+    run = svc.state_dict.get("workflow_run") or {}
+    assert run.get("current_node") == "review_spec"
+    assert "write_spec" in (run.get("completed_nodes") or [])
+    types = [e.event_type for e in EventLedger(svc.state_dict).by_run(run["run_id"])]
+    assert "ArtifactCommitted" in types and "StageSucceeded" in types
 
 
 # ---------- 0817 B23/B24：思考档不硬编码降档 + 剧本注入上限合一 ----------
@@ -565,7 +568,7 @@ def test_wizard_note_no_forced_ke_pause(tmp_path):
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
     svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
-    note = _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
+    note, _name = _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
     assert note, "规格选择应被向导消费落盘"
     assert "开始拆分关键元素" not in note, "不得 prose 指定具体子步骤"
     assert "暂停等用户确认拆分方案" not in note, "不得 prose 钉死暂停点"

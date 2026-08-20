@@ -238,14 +238,16 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
     """开场公共编排（流式/非流式双路径单一实现，消除双份复制）。
 
     暂停闭环（消费上轮暂停态）+ 规格定稿/向导消费 + 附件降级注入，
-    返回 (拼好的 LLM 用户消息文本, 轮始客观推进信号)。
+    返回 (拼好的 LLM 用户消息文本, 轮始客观推进信号, 向导落盘文档名)。
     信号（Rule2 v6）供 workflow_runtime 判定直跑：仅流程推进轮
     （暂停消费/向导回应/继续选项点选/带附件）触发；自由提问轮交接模型。
+    落盘文档名（v2 批2）供调用方于用户消息后投影文档卡（提交结果同源）。
     调用方需保证同一请求只调一次。
     """
     pending_confirm_note = ""
     spec_finalize_note = ""
     spec_wizard_note = ""
+    wiz_doc = ""
     pause_value = str((getattr(body, "pause_response", None) or {}).get("value") or "")
     if use_studio_context:
         async with svc.lock:
@@ -254,7 +256,7 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
             pending_confirm_note = _consume_pending_confirmation(
                 svc, pause_value=str(_pr.get("value") or ""))
             spec_finalize_note = _finalize_spec_params(svc, user_text)
-            spec_wizard_note = _consume_spec_wizard(svc, user_text)
+            spec_wizard_note, wiz_doc = _consume_spec_wizard(svc, user_text)
     # 4-4 双轨退役：聊天通道均为 FC，附件统一走清单+read_uploaded_doc 渐进式披露
     attachment_note = (
         attachment_context(body.attachments) if body.attachments else ""
@@ -273,7 +275,7 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
         advance_signal = "attachment"
     else:
         advance_signal = ""
-    return llm_user_text, advance_signal
+    return llm_user_text, advance_signal, wiz_doc
 
 
 def _store_gate_overrides(svc, overrides) -> None:

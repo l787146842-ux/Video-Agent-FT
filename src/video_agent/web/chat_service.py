@@ -154,7 +154,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
     use_studio_context = body.context_mode != "none"
     # 开场公共编排：暂停闭环 + 规格定稿/向导 + 附件降级注入
     # + 轮始客观推进信号（Rule2 v6 runtime 直跑判定用）
-    llm_user_text, advance_signal = await _prepare_chat_opening(
+    llm_user_text, advance_signal, _wiz_doc = await _prepare_chat_opening(
         svc, body, user_text, use_studio_context)
 
     # 会话层一次性豁免：随消息登记，Planner 本次消费
@@ -329,8 +329,12 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 pause_answered=pause_answered,
                 kind=getattr(body, "system_action", "") or "",
             )
-            # 向导挂起的规格卡补落（用户消息之后）并发即显事件
-            _wiz_card_live = await emit_pending_doc_card(svc, turn_id, emit)
+            # v2 批2：规格卡自 write_spec 提交结果投影（用户消息之后）+ 即显事件
+            if _wiz_doc:
+                svc.add_chat_message("agent", "", doc_card=_wiz_doc, turn_id=turn_id)
+                _wiz_card_live = _wiz_doc
+                await emit({"type": SSE_DOC_WRITTEN, "name": _wiz_doc,
+                            "turn_id": turn_id})
 
     state_builder = (
         (lambda: svc.build_agent_context(body.asset_mode)) if use_studio_context else None
@@ -617,7 +621,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
 
     use_studio_context = body.context_mode != "none"
     # 开场公共编排：同流式路径（暂停闭环 + 规格定稿/向导 + 附件降级 + 推进信号）
-    llm_user_text, advance_signal = await _prepare_chat_opening(
+    llm_user_text, advance_signal, _wiz_doc_ns = await _prepare_chat_opening(
         svc, body, user_text, use_studio_context)
 
     # 会话层一次性豁免：同流式路径
@@ -640,8 +644,10 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     doc_blocks=getattr(body, "doc_blocks", None) or None,
                     skill_blocks=getattr(body, "skill_blocks", None) or None,
                 )
-                # 规格卡补落（用户消息之后），名字随载荷下发保 live 可见
-                _wiz_card = flush_pending_doc_card(svc)
+                # v2 批2：规格卡自提交结果投影（用户消息之后），名字随载荷下发保 live 可见
+                if _wiz_doc_ns:
+                    svc.add_chat_message("agent", "", doc_card=_wiz_doc_ns)
+                _wiz_card = _wiz_doc_ns
             # 单轨化：mock 动作以结构化 dict 直达执行器，不经文本块解析
             visible, actions = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
             applied = executor.execute(actions)
@@ -683,8 +689,10 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                 pause_answered=ns_pause_answered,
                 kind=getattr(body, "system_action", "") or "",
             )
-            # 规格卡补落（用户消息之后， 非流式轨同步），名字随载荷下发
-            _wiz_card_ns = flush_pending_doc_card(svc)
+            # v2 批2：规格卡自提交结果投影（用户消息之后，非流式轨同步）
+            if _wiz_doc_ns:
+                svc.add_chat_message("agent", "", doc_card=_wiz_doc_ns)
+            _wiz_card_ns = _wiz_doc_ns
 
     # 状态惰性构建器：多步循环每轮刷新
     state_builder = (
@@ -821,6 +829,4 @@ from src.video_agent.web.chat_consume import (
     _finalize_spec_params,
     _maybe_compact_history,
     consume_pause_response,
-    emit_pending_doc_card,
-    flush_pending_doc_card,
 )

@@ -161,7 +161,8 @@ async def test_question_turn_handoff_to_model(tmp_path):
 
 @pytest.mark.asyncio
 async def test_wizard_send_artifact_ledger_and_doc_card(tmp_path):
-    """④ 向导发送 → 产物账本 + 文档卡补落（同轮可见，非空消息 hack 退役）。"""
+    """④ 向导发送 → write_spec 节点提交：产物账本 + 文档同事务落盘，
+    卡片由调用方于用户消息后投影（空文本 docCard hack 退役）。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.web import chat_consume
 
@@ -171,20 +172,20 @@ async def test_wizard_send_artifact_ledger_and_doc_card(tmp_path):
     svc.state_dict["usedSkills"] = [SKILL]
     svc.state_dict["interaction"] = {"spec_soft_candidates": {
         "画幅比例": ["16:9 横屏", "9:16 竖屏"]}}
-    note = chat_consume._consume_spec_wizard(svc, "画幅比例：16:9 横屏")
+    note, name = chat_consume._consume_spec_wizard(svc, "画幅比例：16:9 横屏")
     assert note, "机械落盘回执随用户消息回喂模型"
+    assert name == "Final_Video_Spec.md"
     run = svc.state_dict.get("workflow_run") or {}
     assert "Final_Video_Spec.md" in (run.get("artifacts") or []), \
         "ArtifactCommitted 一等条目"
-    emitted = []
-
-    async def fake_emit(ev):
-        emitted.append(ev)
-
-    name = await chat_consume.emit_pending_doc_card(svc, "t1", fake_emit)
-    assert name == "Final_Video_Spec.md"
-    assert any(e.get("type") == "doc_written" for e in emitted), \
-        "文档卡即显事件同轮下发"
+    assert any(d.get("name") == "Final_Video_Spec.md"
+               for d in svc.state_dict.get("documents") or []), \
+        "文档由 reducer 单事务写入"
+    # 投影次序：用户消息先落，卡片随后（同轮 turnId 聚合）
+    svc.add_chat_message("user", "画幅比例：16:9 横屏")
+    svc.add_chat_message("agent", "", doc_card=name, turn_id="t1")
+    msgs = svc.get_chat_messages()
+    assert [m.get("sender") for m in msgs[-2:]] == ["user", "agent"]
     StateManager.reset_instance()
 
 

@@ -2,7 +2,7 @@
 import asyncio
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -11,7 +11,6 @@ from src.video_agent.config import settings
 from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.core.sse_events import SSE_DOC_WRITTEN
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.mock_chat import mock_stream
@@ -111,6 +110,17 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
     if str(active.get("pause_id") or "") != pid:
         return None
     workflow_runtime.reduce_interaction(svc, pop_flags=("active_pause",))
+    # v2 批2：review decision 解析（审阅卡确认即解除 review_spec 挂起）
+    try:
+        _used = svc.state_dict.get("usedSkills") or []
+        _sk = str(_used[-1] or "") if _used else ""
+        _tok = str(((svc.state_dict.get("workflow_run") or {})
+                    .get("pending_decision") or {}).get("token") or "")
+        if _sk and _tok.startswith("review:"):
+            workflow_runtime.WorkflowRuntime(svc, _sk).resolve_decision(
+                _tok, str((pause_response or {}).get("value") or "confirm"))
+    except Exception as _e:
+        logger.debug("[WorkflowRuntime] review decision 解析跳过: {}", _e)
     return {
         "pause_id": pid,
         "value": str((pause_response or {}).get("value") or ""),
@@ -203,24 +213,24 @@ def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "
     )
 
 
-def _consume_spec_wizard(svc, user_text: str) -> str:
-    """规格向导消费（/）：用户回应是规格收集暂停的候选项时，
-    机械落盘为规格文档（系统拼装，模型不手写），返回附加系统提示。
+def _consume_spec_wizard(svc, user_text: str) -> Tuple[str, str]:
+    """规格向导消费（v2 批2）：用户回应是规格收集暂停的候选项时，
+    经 write_spec 节点提交机械落盘为规格文档（系统拼装，模型不手写），
+    返回 (附加系统提示, 落盘文档名)；文档名供调用方在用户消息后投影文档卡。
 
     仅当：项目尚无规格文档 + 用户回应含可解析的制作参数/渠道选择或明确确认意图。
     调用方需持有 svc.lock。
     """
     import re
-    from datetime import datetime, timezone
 
     from src.video_agent.utils import gen_id
 
     state = svc.state_dict
     if prompt_gates.has_spec_document(state):
-        return ""
+        return "", ""
     text = str(user_text or "").strip()
     if not text:
-        return ""
+        return "", ""
     used = state.get("usedSkills") or []
     skill_name = str(used[-1] or "") if used else ""
     # Skill 软维度（向导逐行回传格式「键：值」；出图/出视频渠道、图片分辨率、
@@ -233,7 +243,7 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
         re.search(re.escape(dim) + r"\s*[:：]", text) for dim in dims
     )
     if not responded:
-        return ""
+        return "", ""
     # 未选维度用模型出题的候选首项兜底；无候选时以「（待定）」占位，
     # 保证规格文档维度与 Skill 声明完全一致（模型不能增删维度）
     model_filled: Dict[str, str] = {}
@@ -246,28 +256,39 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
         skill_name, selections, model_filled=model_filled,
     )
     if not content.strip():
-        return ""
-    docs = state.setdefault("documents", [])
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return "", ""
     name = "Final_Video_Spec.md"
-    for d in docs:
-        if d.get("name") == name:
-            d["content"] = content
-            d["updated_at"] = now
-            break
-    else:
-        docs.insert(0, {
-            "id": gen_id("doc"), "name": name, "content": content,
-            "created_at": now, "updated_at": now,
-        })
-    inter = state.setdefault("interaction", {})
     workflow_runtime.apply_interaction(state, set_flags={"spec_collected": True})
-    #机械落盘也发文档卡片； ：改为挂起，由用户消息落库后
-    # flush_pending_doc_card 补落（修复卡片排在用户选择消息之前的顺序 bug）
-    inter["spec_doc_card_pending"] = name
-    # 产物账本一等条目（Rule2 v6 ArtifactCommitted）：机械写入进
-    # workflow_run.artifacts，done 载荷经 documents_written 同轮下发
-    workflow_runtime.record_artifact(state, skill_name, name)
+    # review decision token 需 run_id：无 run 时先轻量同步（幂等）
+    _run_id = str((state.get("workflow_run") or {}).get("run_id") or "")
+    if not _run_id and skill_name:
+        _run_id = str(workflow_runtime.sync_run(state, skill_name).get("run_id") or "")
+    _review_req = None
+    if _run_id:
+        _review_req = {
+            "token": f"review:{_run_id}",
+            "prompt": "请审阅规格文档，确认后进入下一阶段",
+            "options": [], "node_id": "review_spec"}
+    # v2 批2：write_spec 节点提交——文档 artifact 与阶段推进进 reducer
+    # 单事务（ArtifactCommitted + StageSucceeded(write_spec) +
+    # current_node→review_spec）；Web 直写旁路与 spec_doc_card_pending
+    # 退役；卡片投影由调用方按提交结果于用户消息后落库（顺序同轮聚合）。
+    try:
+        workflow_runtime.commit_turn(
+            state, workflow_runtime.TurnResult(
+                turn_id=f"write_spec:{gen_id('wf')}",
+                node_id="write_spec",
+                artifacts=[{"name": name, "kind": "document", "content": content}],
+                timeline_events=[{"event_type": "StageStarted",
+                                  "payload": {"node_id": "write_spec"}}],
+                decision_request=_review_req,
+                next_transition={"completed_node": "write_spec",
+                                 "next_node": "review_spec",
+                                 "status": "waiting_user"}),
+            skill=skill_name, persist=False)
+    except Exception as e:
+        logger.warning("[SpecWizard] write_spec 节点提交失败（本轮不落盘）: {}", e)
+        return "", ""
     # 轮前机械动作落转录（Rule2 v6：start_trace 收养进当轮时间线）
     try:
         AgentTracer.get_instance().record_pre_turn(
@@ -275,44 +296,13 @@ def _consume_spec_wizard(svc, user_text: str) -> str:
     except Exception:
         pass
     svc.save()
-    logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md")
+    logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md（write_spec 节点提交）")
     # 回执不 prose 指定子步骤与暂停点（流程/暂停归 Skill 阶段边界）
     return (
         "\n\n（系统：已按你的选择拼装并写入 Final_Video_Spec.md 规格文档，不必再手写规格。"
-        "接下来按当前 Skill 流程执行下一阶段；暂停点以 Skill『何时暂停』为准。）"
+        "接下来按当前 Skill 流程执行下一阶段；暂停点以 Skill『何时暂停』为准。）",
+        name,
     )
-
-
-def flush_pending_doc_card(svc, turn_id: str = "") -> str:
-    """ ：用户消息落库后补落向导挂起的文档卡（顺序正确且同轮聚合）。
-
-     ：返回补落的文档名（无挂起返回空串），供调用方发 doc_written
-    即显事件（live 可见性双通道与模型写文档同构）。
-    调用点：各落库路径 add_chat_message(user) 之后（四轨）。
-    """
-    inter = svc.state_dict.get("interaction") or {}
-    name = str(inter.pop("spec_doc_card_pending", "") or "").strip()
-    if not name:
-        return ""
-    if turn_id:
-        svc.add_chat_message("agent", "", doc_card=name, turn_id=turn_id)
-    else:
-        svc.add_chat_message("agent", "", doc_card=name)
-    svc.save()
-    logger.info(f"[SpecWizard] 规格文档卡补落：{name}（用户消息之后）")
-    return name
-
-
-async def emit_pending_doc_card(svc, turn_id: str, emit) -> str:
-    """ ：补落向导规格卡并发 doc_written 即显事件（live 可见）。
-
-    前端实时渲染只认 doc_written SSE / done 载荷 documents_written 两通道，
-    向导机械拼装此前两通道都不走 → 不刷新看不见卡（现场）。
-    """
-    name = flush_pending_doc_card(svc, turn_id)
-    if name and emit is not None:
-        await emit({"type": SSE_DOC_WRITTEN, "name": name, "turn_id": turn_id})
-    return name
 
 
 def _finalize_spec_params(svc, user_text: str) -> str:

@@ -96,3 +96,29 @@ async def test_advance_signal_resolves_and_node_commit_advances(env):
     assert "DecisionResolved" in types
     assert "StageSucceeded" in types
     assert "TurnCommitted" in types
+
+
+@pytest.mark.asyncio
+async def test_write_spec_commit_opens_review_and_pause_resolves(env):
+    """v2 批2：向导落盘同事务开 review decision（waiting_user）；
+    审阅卡确认（consume_pause_response）解析后解除挂起。"""
+    from src.video_agent.web import chat_consume
+    svc, _adapter, _planner = env
+    svc.state_dict["usedSkills"] = [SKILL]
+    svc.state_dict["interaction"] = {"spec_soft_candidates": {
+        "画幅比例": ["16:9 横屏"]}}
+    note, name = chat_consume._consume_spec_wizard(svc, "画幅比例：16:9 横屏")
+    assert name == "Final_Video_Spec.md"
+    run = svc.state_dict.get("workflow_run") or {}
+    assert run.get("status") == "waiting_user"
+    token = str((run.get("pending_decision") or {}).get("token") or "")
+    assert token.startswith("review:")
+    # 审阅卡确认 → resolve
+    pid = "pause-x"
+    svc.state_dict.setdefault("interaction", {})["active_pause"] = {
+        "pause_id": pid, "message": "请审阅", "options": []}
+    out = chat_consume.consume_pause_response(
+        svc, {"pause_id": pid, "value": "确认，进入下一阶段"})
+    assert out is not None
+    run = svc.state_dict.get("workflow_run") or {}
+    assert run.get("pending_decision") is None

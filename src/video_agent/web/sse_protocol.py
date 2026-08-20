@@ -67,10 +67,11 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
         "passthrough", "tool_finished", "过程时间线",
     ),
     SseEventSpec(
-        SSE_DOC_WRITTEN, ("core/fc_tool_runner.py", "web/mock_chat.py", "web/chat_consume.py"),
+        SSE_DOC_WRITTEN, ("core/fc_tool_runner.py", "web/mock_chat.py", "web/chat_service.py"),
         "passthrough", "doc_written",
         "四段链补齐；透传段为 chat_service 专属分支"
-        "并打戳本轮 turn_id（_stamp_doc_written），链测试识别该形态",
+        "并打戳本轮 turn_id；v2 批2 向导规格卡投影发射源自"
+        " chat_consume 迁入 chat_service（单一发射源）",
     ),
     SseEventSpec(
         SSE_MODEL_FALLBACK, ("web/chat_service.py",),
