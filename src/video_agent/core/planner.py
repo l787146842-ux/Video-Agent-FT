@@ -353,6 +353,20 @@ class Planner:
         # runtime 直跑（零模型规划轮），闸机链在合成 FC 批内仍承重；
         # 其余交接闸预检/模型循环（平台否决权不变）。
         if settings.pipeline_orchestrator_enabled and context.skill_name:
+            # v2 批1：轮始 run 同步（RunStarted 幂等）+ 输入类 decision 消费
+            # （waiting_user→ready，DecisionResolved 入事件账本）。
+            try:
+                _rt = workflow_runtime.WorkflowRuntime(
+                    self.state_manager, context.skill_name)
+                _run0 = _rt.start_run()
+                if str(context.advance_signal or "").strip():
+                    _pend = _run0.get("pending_decision") or {}
+                    if ((_pend.get("schema") or {}).get("type")) == "input":
+                        _rt.resolve_decision(
+                            str(_pend.get("token") or ""),
+                            str(context.advance_signal))
+            except Exception as _e:
+                logger.debug("[WorkflowRuntime] 轮始 run 同步跳过: {}", _e)
             _directive = workflow_runtime.drive_turn(
                 self.state_manager.state_dict, context.skill_name,
                 advance_signal=context.advance_signal)
@@ -827,6 +841,8 @@ class Planner:
         )
         # collect_spec 独立节点（Rule2 v6 批3）：分析直跑完成后调度
         # 候选出题（aux 快模型），时间线独立条目，不藏进分析耗时
+        _cs_done = False
+        _cs_ok = False
         if directive.get("stage_key") == "analysis" and applied:
             _cs_id = "wf-collect-spec"
             if on_event is not None:
@@ -835,6 +851,7 @@ class Planner:
                                 "summary": "collect_spec 候选出题（独立节点）"})
             _cs_t0 = time.monotonic()
             _cs_ok = False
+            _cs_done = True
             try:
                 _cs_ok = await exec_spec.run_collect_spec_node(
                     self.state_manager, context.skill_name,
@@ -853,10 +870,32 @@ class Planner:
         body = render_stage_deliverables(state, list(directive.get("executors") or []))
         if not str(body or "").strip():
             body = f"「{directive.get('stage_title') or '本阶段'}」已执行完成，请过目左侧工作台结果。"
-        # 产物账本 + run 状态同步（reducer 单一写入）
+        # 产物账本 + 节点推进提交（reducer 单一写入，v2 批1）
         for doc_name in docs_written:
             workflow_runtime.record_artifact(state, context.skill_name, doc_name)
-        workflow_runtime.sync_run(state, context.skill_name)
+        _node_id = str(directive.get("node_id") or directive.get("stage_key") or "")
+        _defn = workflow_runtime.compile_definition(context.skill_name) or {}
+        _nodes = _defn.get("nodes") or []
+        _nexts = [n["node_id"] for n in _nodes
+                  if _node_id in (n.get("prerequisites") or ())]
+        _tl: List[Dict[str, Any]] = [
+            {"event_type": "StageStarted", "payload": {"node_id": _node_id}}]
+        if directive.get("stage_key") == "analysis" and _cs_done:
+            _tl.append({"event_type": "ToolSucceeded",
+                        "payload": {"node_id": "collect_spec", "ok": bool(_cs_ok)}})
+        _trans: Dict[str, Any] = {"completed_node": _node_id, "status": "ready"}
+        if _nexts:
+            _trans["next_node"] = _nexts[0]
+        try:
+            workflow_runtime.commit_turn(
+                state, workflow_runtime.TurnResult(
+                    turn_id=f"node:{_node_id}:{uuid.uuid4().hex[:8]}",
+                    node_id=_node_id, timeline_events=_tl,
+                    next_transition=_trans),
+                skill=context.skill_name, persist=False)
+        except Exception as _e:
+            logger.warning("[WorkflowRuntime] 节点提交失败（回落客观探针同步）: {}", _e)
+            workflow_runtime.sync_run(state, context.skill_name)
         pause = pause_composer.compose_stage_pause(
             state, context.skill_name, str(directive.get("stage_title") or ""))
         tracer.end_step(1, actions_applied=applied, finish_reason="runtime_direct")
