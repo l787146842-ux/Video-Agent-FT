@@ -327,7 +327,7 @@ class Planner:
         if not context.skill_name:
             context.skill_name = fallback_skill_from_state(self.state_manager.state_dict)
 
-        # 批4：轮始清理 workflow 编译缓存（sidecar 声明轮间可编辑，缓存只活一轮）
+        # 批4：轮始清理 workflow 编译缓存（sidecar 声明轮间可编辑，缓存仅限本轮）
         workflow_runtime.clear_compile_cache()
 
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）

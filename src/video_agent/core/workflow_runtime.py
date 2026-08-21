@@ -47,7 +47,7 @@ _COMPILE_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
 
 
 def clear_compile_cache() -> None:
-    """轮始清理编译缓存（批4：sidecar 声明在轮间可能被编辑，缓存只活一轮）。"""
+    """轮始清理编译缓存（批4：sidecar 声明轮间可能被编辑，缓存仅限本轮）。"""
     _COMPILE_CACHE.clear()
 
 
