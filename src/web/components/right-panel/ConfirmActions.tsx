@@ -1,8 +1,9 @@
-import { For, Show, createMemo, createSignal } from 'solid-js';
+import { Show, createMemo, createSignal } from 'solid-js';
 import { sendUserMessage } from '@/lib/agent-actions';
 import { t } from '@/lib/locale';
 import type { ChatMessage } from '@/types';
 import { pickDimension, kindForDim, ConfigProviderModelSelect, type ConfirmOptionItem } from './ConfirmPicker';
+import { ConfirmOptionCards } from './ConfirmOptionCards';
 
 /** 无 group 的普通选项组使用的内部键 */
 const SINGLE_KEY = '__single__';
@@ -63,9 +64,17 @@ export function ConfirmActions(props: { message: ChatMessage }) {
    *  「当时所选」对勾从后端权威登记派生，不再靠文本反推 */
   const pauseOpts = (value: string, pid = msg().pauseId || '') => (pid
     ? { pauseResponse: { pause_id: pid, value } } : {});
-  const sendPicked = (text: string) => { if (text) void sendUserMessage(text, pauseOpts(text)); };
-  const sendAll = () => sendPicked(groups().map((g) => valueFor(effective(g.title))).filter(Boolean).join('\n'));
-  const sendSingle = () => sendPicked(valueFor(effective(SINGLE_KEY)));
+  /** 单发语义（批1 审核整改）：暂停回应一经发出即锁，连点/双击不得重复发送
+   *  （旧行为：第二次点击落入排队区，任务结束后把同一回答自动重发一遍） */
+  const [sent, setSent] = createSignal(false);
+  const sendPicked = async (text: string) => {
+    if (!text || sent()) return;
+    setSent(true);
+    const ok = await sendUserMessage(text, pauseOpts(text));
+    if (!ok) setSent(false); // 被拦截（无供应商等）时解锁，允许重试
+  };
+  const sendAll = () => void sendPicked(groups().map((g) => valueFor(effective(g.title))).filter(Boolean).join('\n'));
+  const sendSingle = () => void sendPicked(valueFor(effective(SINGLE_KEY)));
 
   const pickCard = (key: string, label: string) => {
     setPicks({ ...picks(), [key]: label });
@@ -116,7 +125,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
             // Ctrl/Cmd+Enter 快捷发送（普通回车允许换行写多行）
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
               e.preventDefault();
-              sendPicked((customText()[key] || '').trim());
+              void sendPicked((customText()[key] || '').trim());
             }
           }}
         />
@@ -135,27 +144,13 @@ export function ConfirmActions(props: { message: ChatMessage }) {
             <div class="confirm-wizard">
               <Show
                 when={singleDim()}
-                fallback={
-                  <div class="confirm-options">
-                    <For each={options()}>
-                      {(opt) => (
-                        <button
-                          type="button"
-                          class={`confirm-option-card${picks()[SINGLE_KEY] === opt.label ? ' selected' : ''}`}
-                          onClick={() => pickCard(SINGLE_KEY, opt.label)}
-                        >
-                          <span class="confirm-option-radio" />
-                          <span class="confirm-option-body">
-                            <span class="confirm-option-label">{opt.display || opt.label}</span>
-                            <Show when={opt.description}>
-                              <span class="confirm-option-desc">{opt.description}</span>
-                            </Show>
-                          </span>
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                }
+                fallback={(
+                  <ConfirmOptionCards
+                    opts={options()}
+                    selectedLabel={picks()[SINGLE_KEY] || ''}
+                    onPick={(v) => pickCard(SINGLE_KEY, v)}
+                  />
+                )}
               >
                 <ConfigProviderModelSelect
                   kind={kindForDim(singleDim(), '')}
@@ -171,7 +166,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
                 <button
                   type="button"
                   class="confirm-btn primary"
-                  disabled={!effective(SINGLE_KEY)}
+                  disabled={!effective(SINGLE_KEY) || sent()}
                   onClick={sendSingle}
                 >
                   {t('rp.confirm.send')}
@@ -184,27 +179,13 @@ export function ConfirmActions(props: { message: ChatMessage }) {
             <div class="confirm-wizard-question">{curGroup().title}</div>
             <Show
               when={wizardDim()}
-              fallback={
-                <div class="confirm-options">
-                  <For each={curGroup().opts}>
-                    {(opt) => (
-                      <button
-                        type="button"
-                        class={`confirm-option-card${picks()[curGroup().title] === opt.label ? ' selected' : ''}`}
-                        onClick={() => pickCard(curGroup().title, opt.label)}
-                      >
-                        <span class="confirm-option-radio" />
-                        <span class="confirm-option-body">
-                          <span class="confirm-option-label">{opt.display || opt.label}</span>
-                          <Show when={opt.description}>
-                            <span class="confirm-option-desc">{opt.description}</span>
-                          </Show>
-                        </span>
-                      </button>
-                    )}
-                  </For>
-                </div>
-              }
+              fallback={(
+                <ConfirmOptionCards
+                  opts={curGroup().opts}
+                  selectedLabel={picks()[curGroup().title] || ''}
+                  onPick={(v) => pickCard(curGroup().title, v)}
+                />
+              )}
             >
               <ConfigProviderModelSelect
                 kind={kindForDim(wizardDim(), curGroup().title)}
@@ -242,7 +223,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
                     <button
                       type="button"
                       class="confirm-btn primary"
-                      disabled={!allPicked()}
+                      disabled={!allPicked() || sent()}
                       onClick={sendAll}
                     >
                       {t('rp.confirm.send')}
@@ -268,7 +249,13 @@ export function ConfirmActions(props: { message: ChatMessage }) {
           <button
             type="button"
             class="confirm-btn primary"
-            onClick={() => void sendUserMessage(t('rp.msg.confirmText'))}
+            disabled={sent()}
+            onClick={() => {
+              // 无选项确认同样携带 pause_response（批1：结构化回携全覆盖，
+              // 对勾从后端权威登记派生，不再回落文本反推）
+              const text = t('rp.msg.confirmText');
+              void sendPicked(text);
+            }}
           >
             {t('rp.msg.confirmContinue')}
           </button>

@@ -21,6 +21,7 @@ const zhCN: Record<string, string> = {
   'rp.streaming.reasoning': '深度思考中…',
   'rp.streaming.replying': '正在回复…',
   'rp.streaming.restoring': '正在恢复 Agent 进度…',
+  'rp.streaming.reconnecting': '连接中断，正在自动重连（{attempt}/{max}）…',
   'rp.streaming.processing': '正在处理…',
   'rp.streaming.executing': '正在执行第 {n} 项操作：{summary}',
 
@@ -174,8 +175,10 @@ const zhCN: Record<string, string> = {
   'rp.queue.openSideBusy': 'Agent 忙碌中，无法新建对话，消息已保留在排队',
   'rp.queue.guideSpinner': '已登记，当前操作完成后即注入',
   'rp.queue.enqueued': '已加入排队，Agent 完成当前任务后自动发送（可点「引导」下一轮优先注入）',
+  'rp.queue.pauseRejected': '暂停回应未能发出（重复点击或任务忙），请在当前暂停卡上重新选择',
   'rp.queue.cleared': '已清空排队消息',
   'rp.task.done': '后台 Agent 任务已完成',
+  'rp.suggested.valueRejected': '建议动作文本异常（非人类可读），已拦截发送',
   'rp.send.noProvider': '请先选择 Agent API 和对应模型',
   'rp.skill.manifestHint': '高级声明（skill_manifest，系统自动维护，无需编辑）',
 

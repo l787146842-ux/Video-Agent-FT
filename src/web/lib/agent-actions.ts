@@ -97,6 +97,12 @@ export async function sendUserMessage(
 
   // Agent 推理中：不阻断用户，消息进入排队引导区，当前任务完成后自动发送
   if (state.agentBusy) {
+    // 暂停回应不入队（批1 审核整改）：pause_response 只对当前活动暂停有意义，
+    // 排队重发会在任务结束后把同一回答再发一遍（连点双发断点）；直接拒收提示
+    if (opts?.pauseResponse) {
+      showToast(t('rp.queue.pauseRejected'), 'warning');
+      return false;
+    }
     const queuedDisplay = docBlocks.length
       ? `${message}（附件：${docBlocks.join('、')}）`
       : message;

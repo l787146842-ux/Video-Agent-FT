@@ -241,13 +241,22 @@ async def agent_task_events(task_id: str, request: Request):
 
     async def gen():
         try:
+            # 心跳保活（批1 审核整改，对齐 generate.py）：长静默轮（执行器数十秒）
+            # 响应体无数据会被中间代理 idle 断开；SSE 注释帧前端 parseSSE
+            # 天然跳过（非 data: 行），零前端变更
+            idle_polls = 0
             while True:
                 if await request.is_disconnected():
                     break
                 try:
                     ev = await asyncio.wait_for(q.get(), timeout=1.0)
                 except asyncio.TimeoutError:
+                    idle_polls += 1
+                    if idle_polls >= 15:  # 约 15s 静默发一次心跳
+                        idle_polls = 0
+                        yield ": heartbeat\n\n"
                     continue
+                idle_polls = 0
                 yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
                 if ev.get("type") in ("done", "error", "task_status"):
                     break

@@ -7,9 +7,11 @@ import {
 import { renderMarkdown } from '@/lib/markdown';
 import { sendUserMessage } from '@/lib/agent-actions';
 import { chatState } from '@/stores/chat';
+import { showToast } from '@/stores/toast';
 import { openDocsPanel } from '@/stores/docs';
 import { endCanvasImageDrag } from '@/stores/canvas';
 import { safeUrl } from '@/lib/utils';
+import { isHumanReadableSuggestedValue } from '@/lib/suggested-guard';
 import { createImageDrag, absUrl } from '@/lib/chat-image-drag';
 import { t } from '@/lib/locale';
 import { RichBubble } from './RichBubble';
@@ -44,6 +46,9 @@ export function ChatMessageItem(props: {
   /** 原图预览（lightbox）当前打开的图片地址 */
   const [lightboxUrl, setLightboxUrl] = createSignal('');
 
+  /** 建议动作 value 护栏（批1 审核整改，实现见 lib/suggested-guard）：
+   *  value 会直入用户气泡与 LLM 历史，契约 = 与 label 同值的人类可读文本 */
+
   /** （终裁）：重试 = 机械重发上一条用户消息原内容（含富文本附件），
    * 零模型猜测；continue/next = 发送后端下发的固定 value 文本
    * （next=状态驱动下一步建议， ，点击即显式用户指令） */
@@ -59,7 +64,14 @@ export function ChatMessageItem(props: {
       }
       return;
     }
-    if (act.value) void sendUserMessage(act.value);
+    if (act.value) {
+      if (!isHumanReadableSuggestedValue(act.value)) {
+        console.warn('[ChatMessageItem] 建议动作 value 非人类可读，拒发:', act.value);
+        showToast(t('rp.suggested.valueRejected'), 'warning');
+        return;
+      }
+      void sendUserMessage(act.value);
+    }
   };
 
   /** 过程时间线数据（从消息 trace/actionLog 重建，刷新后不丢） */

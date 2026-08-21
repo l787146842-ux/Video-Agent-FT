@@ -27,6 +27,29 @@ let currentTask: { taskId: string; projectId: string; recovering: boolean } | nu
 /** 每个项目仍在后台运行的任务（切走后记住，切回时恢复订阅） */
 const projectTasks = new Map<string, string>();
 
+/** SSE 自动重连（批1 审核整改）：后台任务在断连期间继续运行，
+ * 网络抖动不得落错误气泡/清忙态；指数退避重订阅（服务端先 replay 快照再增量，
+ * restoreStreamingState 整体替换累积文本，天然幂等）。重试耗尽才落错误。 */
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_BASE_DELAY_MS = 500;
+/** resumeAgentTasks 双触发互斥（LayoutShell onMount 与 project effect 竞态窗口） */
+let resumeInFlight = false;
+/** parseSSE 帧解析失败计数（不静默：调试可见，异常帧不中断流） */
+let sseParseErrors = 0;
+export function getSseParseErrorCount(): number { return sseParseErrors; }
+
+/** 事件订阅 HTTP 失败：携带 status 供重连策略判定（4xx 任务面错误不重连） */
+class SseHttpError extends Error {
+  constructor(public readonly status: number) {
+    super(`事件订阅失败 (${status})`);
+    this.name = 'SseHttpError';
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 function parseSSE(res: Response, onEvent: (ev: SseEvent) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const reader = res.body!.getReader();
@@ -48,7 +71,11 @@ function parseSSE(res: Response, onEvent: (ev: SseEvent) => void): Promise<void>
             if (jsonStr === '[DONE]') continue;
             try {
               onEvent(JSON.parse(jsonStr) as SseEvent);
-            } catch { /* 忽略解析错误 */ }
+            } catch {
+              // 异常帧不中断流：计数+告警（静默吞错曾掩盖契约漂移）
+              sseParseErrors += 1;
+              console.warn(`[use-sse] SSE 帧解析失败（累计 ${sseParseErrors} 次）`);
+            }
           }
         }
         resolve();
@@ -65,33 +92,58 @@ function closeSubscription() {
   abortController = null;
 }
 
+async function subscribeOnce(taskId: string): Promise<void> {
+  abortController = new AbortController();
+  const res = await fetchAgentTaskEvents(taskId, abortController.signal);
+  if (!res.ok || !res.body) throw new SseHttpError(res.status);
+  await parseSSE(res, (ev) => handleEvent(ev));
+}
+
+/** 订阅失败判定：true = 网络/传输层瞬断，值得重连（后台任务仍在跑）；
+ * false = 用户取消或任务面错误（4xx：任务不存在/已结束被清理），重连无意义。 */
+function isRetriableSubscribeError(err: unknown): boolean {
+  if ((err as Error).name === 'AbortError') return false;
+  if (err instanceof SseHttpError) {
+    // 408/429 属瞬态可重连；其余 4xx = 任务面错误
+    return err.status === 408 || err.status === 429 || err.status >= 500;
+  }
+  return true; // fetch 网络错误 / 读流中断
+}
+
 async function connectToTask(taskId: string, projectId: string, recovering: boolean): Promise<void> {
   setStreaming(true);
   studioActions.setAgentBusy(true);
   currentTask = { taskId, projectId, recovering };
-  abortController = new AbortController();
 
-  try {
-    const res = await fetchAgentTaskEvents(taskId, abortController.signal);
-    if (!res.ok || !res.body) {
-      throw new Error(`事件订阅失败 (${res.status})`);
+  let attempt = 0;
+  while (true) {
+    try {
+      await subscribeOnce(taskId);
+      break; // 流正常结束（done/error 事件已在 handleEvent 内收尾）
+    } catch (err) {
+      // 任务归属已变（停止/切换/断开）：不再处理本任务的失败
+      if (currentTask?.taskId !== taskId) return;
+      if (!isRetriableSubscribeError(err) || attempt >= MAX_RECONNECT_ATTEMPTS) {
+        const msg = (err as Error).message || '未知错误';
+        setError(msg);
+        chatActions.streamError(msg);
+        break;
+      }
+      // 指数退避重订阅：忙态保持 true（后台任务未停），replay 快照幂等恢复
+      attempt += 1;
+      const waitMs = RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1);
+      chatActions.setStatus(t('rp.streaming.reconnecting', { attempt, max: MAX_RECONNECT_ATTEMPTS }));
+      await delay(waitMs);
+      if (currentTask?.taskId !== taskId) return; // 等待期间归属变化
     }
-    await parseSSE(res, (ev) => handleEvent(ev));
-  } catch (err) {
-    if ((err as Error).name !== 'AbortError') {
-      const msg = (err as Error).message || '未知错误';
-      setError(msg);
-      chatActions.streamError(msg);
-    }
-  } finally {
-    // 仅当仍订阅本任务时清理（disconnectAgentStream 已把 currentTask 置空）
-    if (currentTask?.taskId === taskId) {
-      setStreaming(false);
-      studioActions.setAgentBusy(false);
-      currentTask = null;
-      abortController = null;
-      if (projectTasks.get(projectId) === taskId) projectTasks.delete(projectId);
-    }
+  }
+  // 仅当仍订阅本任务时清理（disconnectAgentStream/handleDone 已把 currentTask 置空）
+  if (currentTask?.taskId === taskId) {
+    setStreaming(false);
+    studioActions.setAgentBusy(false);
+    currentTask = null;
+    abortController = null;
+    if (projectTasks.get(projectId) === taskId) projectTasks.delete(projectId);
   }
 }
 
@@ -147,23 +199,30 @@ export function stopAgentStream(): void {
   currentTask = null;
 }
 
-/** 刷新 / 切回项目后恢复进行中的后台任务 */
+/** 刷新 / 切回项目后恢复进行中的后台任务（互斥：onMount 与 project effect 双触发只进一次） */
 export async function resumeAgentTasks(projectId: string): Promise<void> {
-  if (!projectId || streaming()) return;
-  let tasks: AgentTaskInfo[] = [];
+  if (!projectId || streaming() || resumeInFlight) return;
+  resumeInFlight = true;
   try {
-    tasks = await listAgentTasks(projectId);
-  } catch { /* 后端未就绪时静默 */ }
-  if (!tasks.length) return;
-  const task = tasks[0]; // 最新任务
-  projectTasks.set(projectId, task.task_id);
-  chatActions.restoreStreamingState({
-    reasoning: '',
-    text: '',
-    statusText: t('rp.streaming.restoring'),
-    tools: [],
-  });
-  await connectToTask(task.task_id, projectId, true);
+    let tasks: AgentTaskInfo[] = [];
+    try {
+      tasks = await listAgentTasks(projectId);
+    } catch { /* 后端未就绪时静默 */ }
+    if (!tasks.length) return;
+    // await 之后再判一次：窗口内另一触发可能已建立订阅
+    if (streaming()) return;
+    const task = tasks[0]; // 最新任务
+    projectTasks.set(projectId, task.task_id);
+    chatActions.restoreStreamingState({
+      reasoning: '',
+      text: '',
+      statusText: t('rp.streaming.restoring'),
+      tools: [],
+    });
+    await connectToTask(task.task_id, projectId, true);
+  } finally {
+    resumeInFlight = false;
+  }
 }
 
 function handleEvent(ev: SseEvent) {
