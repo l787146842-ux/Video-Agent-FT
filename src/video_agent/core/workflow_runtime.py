@@ -1,23 +1,21 @@
 # -*- coding: utf-8 -*-
-"""Workflow Runtime — 控制流唯一驱动器（宪法 v6 Rule2，ADR-0003）。
+"""Workflow Runtime — 账本 + 裁判数据层（宪法 Rule2 主体回归，ADR-0004）。
 
 正向设计（业界基准：Anthropic workflows-vs-agents / Claude Code hooks 公理 /
-Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复）：模型只做节点内语义创作，
-运行时做确定性顺序、持久状态、审批恢复与产物账本。
+Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复；
+共识：确定性 = 把关模型发起的动作，不是系统代替模型发起动作）：
+模型永远是唯一行动主体，运行时做持久状态、产物账本、投影与裁判数据，
+不发起任何行动；越阶由 stage_precondition 闸在工具执行路径首位否决。
 
-v1 边界（声明式可扩展）：
-- 直跑面 = sidecar 声明 ``flow.direct_run_nodes``（缺失回落 analysis 节点），
-  runtime 按声明机械直跑（零模型规划轮），经 FCToolRunner 合成 FC 批执行——
-  闸机链（stage_precondition 等）仍在执行路径首位承重（hooks guarantee behavior）；
-- 审批直跑能力（workflow_pause 执行器节点）已实现但默认不入名单：
-  与模型循环暂停的语义去重需用户裁决后启用；
-- 声明外阶段（含创作型与多执行器阶段）交接有界模型循环（agent_loop 节点内
-  唯一实现），平台否决权不变；
-- 生成类阶段（高风险工具，§2.7）入直跑声明须另行设计审批语义。
-
-WorkflowRun 持久化于 ``state["workflow_run"]``，**仅本模块 reducer 可改**
-（StateManager 仍唯一写入点，Rule3）；interaction 暂停旗标同经
-``reduce_interaction`` 单一写入。完成度只认客观探针（stage_done，fail-closed）。
+职责边界（主体回归后）：
+- Skill 激活编译 ``WorkflowDefinition``（canonical slug + revision + content hash，
+  源 = sidecar 声明，``validate_sidecar`` 注册期门禁）；
+- 持久化 ``WorkflowRun``（current_node/completed_nodes/pending_gate/artifacts），
+  **仅本模块 reducer 可改**（StateManager 仍唯一写入点，Rule3）；
+  interaction 暂停旗标同经 ``reduce_interaction`` 单一写入；
+- 完成度只认客观探针（stage_done，fail-closed）；
+- 历史机械直跑/审批直跑能力随 ADR-0004 退役（防复活归
+  check_legacy_orchestration 门禁）；「不暂停连跑」语义归自主性档位（批5）。
 """
 import copy
 import uuid
@@ -37,30 +35,13 @@ from src.video_agent.core.turn_commit import (
     TurnCommit, TurnResult, WorkflowCommitError, commit_turn,
 )
 
-# 批4 泛化：直跑面改由 sidecar 声明驱动（flow.direct_run_nodes），
-# DIRECT_RUN_STAGES 硬编码白名单退役；缺失声明回落 analysis 节点（存量不变）。
-_DEFAULT_DIRECT_RUN_NODES = frozenset({"analyze_script"})
-# 节点 → 阶段键映射（_run_direct_stage 消费：stage_done 探针/后台预取挂钩）
-_NODE_STAGE_KEYS = {"analyze_script": "analysis"}
-# per-turn 编译缓存（轮始清理；同轮内 sync_run/drive_turn/排除计算共享）
+# per-turn 编译缓存（轮始清理；同轮内 sync_run/排除计算共享）
 _COMPILE_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
 
 
 def clear_compile_cache() -> None:
     """轮始清理编译缓存（批4：sidecar 声明轮间可能被编辑，缓存仅限本轮）。"""
     _COMPILE_CACHE.clear()
-
-
-def direct_run_nodes(skill: str) -> frozenset:
-    """直跑面声明（批4）：sidecar flow.direct_run_nodes 优先，缺失回落默认。"""
-    try:
-        manifest = registry.skill_manifest_of(skill) or {}
-    except Exception:
-        manifest = {}
-    declared = ((manifest.get("flow") or {}).get("direct_run_nodes"))
-    if isinstance(declared, list) and declared:
-        return frozenset(str(x) for x in declared if str(x).strip())
-    return _DEFAULT_DIRECT_RUN_NODES
 
 
 def canonical_slug(name: str) -> str:
@@ -198,54 +179,6 @@ def reduce_interaction(
     return inter
 
 
-def drive_turn(
-    state: Dict[str, Any], skill: str, advance_signal: str = "",
-) -> Optional[Dict[str, Any]]:
-    """轮始驱动判定（批4 泛化）：声明直跑面内的当前节点就绪 → direct_run；
-    其余 None（交接）。只认客观状态事实：阶段表 + 直跑声明 + 原料闸客观条件；
-    零语料、零模型参与。
-
-    advance_signal 为轮始客观推进信号（暂停消费/附件/系统继续选项点选，
-    由开场编排装配）：无信号的自由提问轮不直跑，交接模型循环（防提问误抓）。
-    审批节点（workflow_pause 执行器）直跑能力已实现但未入默认声明：
-    与模型循环暂停的语义去重需裁决后启用（防双暂停）。
-    原料缺失时返回 None，由闸预检装配提醒卡（不抢先对话）。"""
-    if not (getattr(settings, "workflow_runtime_enabled", True) and skill):
-        return None
-    if not str(advance_signal or "").strip():
-        return None
-    run = sync_run(state, skill)
-    definition = compile_definition(skill) or {}
-    node_id = str(run.get("current_node") or "")
-    node = next((x for x in definition.get("nodes") or [] if x.get("node_id") == node_id), None)
-    if node is None or node_id not in direct_run_nodes(skill):
-        return None
-    # 审批直跑能力（workflow_pause 节点）：声明入名单才生效；
-    # 当前默认名单不含审批节点（语义去重待裁决，防双暂停）
-    if str(node.get("executor") or "") == "workflow_pause":
-        logger.info("[ControlFlow] runtime approval_pause node={}（预留能力）", node_id)
-        return {"kind": "approval_pause", "node_id": node_id,
-                "stage_title": node.get("title") or node_id}
-    executors = list(node.get("executors") or [])
-    if not executors:
-        return None
-    # 原料闸客观前置：需剧本 Skill 剧本缺失且未豁免 → 交接闸预检提醒卡
-    if node_id == "analyze_script" and (
-        registry.script_required_active(skill)
-        and not prompt_gates.script_present(state)
-        and not (state.get("interaction") or {}).get("script_waived")
-    ):
-        return None
-    logger.info("[ControlFlow] runtime direct_run node={}", node_id)
-    return {
-        "kind": "direct_run",
-        "stage_key": _NODE_STAGE_KEYS.get(node_id, node_id),
-        "node_id": node_id,
-        "stage_title": node.get("title") or node_id,
-        "executors": executors,
-    }
-
-
 def record_node_event(
     state: Dict[str, Any], node_id: str, event_type: str,
     payload: Optional[Dict[str, Any]] = None,
@@ -324,7 +257,6 @@ class WorkflowRuntime:
         run["event_sequence"] = max((x.sequence for x in ledger.by_run(run["run_id"])), default=0)
         if hasattr(self.state_manager, "save"): self.state_manager.save()
         return copy.deepcopy(run)
-    def dispatch(self, *, advance_signal: str = "") -> Optional[Dict[str, Any]]: return drive_turn(self.state, self.skill, advance_signal)
     def commit_turn(self, result: Any, **kwargs: Any) -> TurnCommit: return commit_turn(self.state_manager, result, skill=self.skill, **kwargs)
     def resolve_decision(self, token: str, value: Any, *, turn_id: str = "") -> TurnCommit:
         run = sync_run(self.state, self.skill); pending = run.get("pending_decision") or {}
@@ -339,7 +271,7 @@ class WorkflowRuntime:
         if run.get("pending_decision"): run["status"] = "waiting_user"
         return copy.deepcopy(run)
 
-__all__ = ["WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn", "compile_definition", "sync_run", "drive_turn", "record_artifact", "apply_interaction", "reduce_interaction"]
+__all__ = ["WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn", "compile_definition", "sync_run", "record_artifact", "apply_interaction", "reduce_interaction"]
 
 # 批4：sidecar 声明写入即失效编译缓存（门禁/直跑声明变更不被缓存遮蔽）
 sidecar.register_write_hook(clear_compile_cache)

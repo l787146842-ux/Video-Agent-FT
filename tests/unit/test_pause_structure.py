@@ -151,6 +151,52 @@ class TestConsumePauseResponse:
         assert consume_pause_response(svc, {}) is None
 
 
+class TestPauseSlotMutex:
+    """单一活跃暂停槽位互斥（主体回归，ADR-0004）：已有未消费暂停时
+    重复 workflow_pause 被拒收（结构化拒因回喂，不静默吞掉）。"""
+
+    @pytest.mark.asyncio
+    async def test_duplicate_pause_rejected_when_slot_occupied(self, svc):
+        from src.video_agent.adapters.base_chat import ChatResponse
+        from src.video_agent.core.fc_tool_runner import FCToolRunner
+        from src.video_agent.tools.manager import ToolManager
+        from src.video_agent.skill_runtime.registration import (
+            register_skill_runtime_tools,
+        )
+
+        register_skill_runtime_tools()
+        inter = svc.state_dict.setdefault("interaction", {})
+        inter["active_pause"] = {"pause_id": "existing1", "message": "m", "options": []}
+
+        runner = FCToolRunner(ToolManager)
+        resp = ChatResponse(content="", finish_reason="tool_calls", tool_calls=[
+            {"id": "wp1", "type": "function", "function": {
+                "name": "workflow_pause",
+                "arguments": '{"message": "再暂停一次"}'}}])
+        result = await runner.execute(resp)
+        applied, confirmation = result[0], result[1]
+        assert applied == 0, "槽位被占用时暂停不计为成功动作"
+        assert not confirmation, "重复暂停不上抛 confirmation（防双暂停）"
+
+    @pytest.mark.asyncio
+    async def test_pause_accepted_when_slot_free(self, svc):
+        from src.video_agent.adapters.base_chat import ChatResponse
+        from src.video_agent.core.fc_tool_runner import FCToolRunner
+        from src.video_agent.tools.manager import ToolManager
+        from src.video_agent.skill_runtime.registration import (
+            register_skill_runtime_tools,
+        )
+
+        register_skill_runtime_tools()
+        runner = FCToolRunner(ToolManager)
+        resp = ChatResponse(content="", finish_reason="tool_calls", tool_calls=[
+            {"id": "wp2", "type": "function", "function": {
+                "name": "workflow_pause",
+                "arguments": '{"message": "请确认是否继续"}'}}])
+        result = await runner.execute(resp)
+        assert result[0] == 1, "槽位空闲时暂停正常受理"
+
+
 class TestPersistedMarkers:
     """持久化标记（前端刷新后对勾/系统动作行可重建）"""
 

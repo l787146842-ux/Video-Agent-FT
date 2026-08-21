@@ -127,14 +127,12 @@ async def test_precheck_handoff_at_creative_stage(tmp_path):
     StateManager.reset_instance()
 
 
-# ---------- ④⑤ planner 主路径：runtime 直跑 vs 模型循环 ----------
+# ---------- ④⑤ planner 主路径：主体回归后一律交接模型循环 ----------
 
 @pytest.mark.asyncio
-async def test_planner_first_turn_runtime_direct_run(tmp_path, monkeypatch):
-    """宪法 v6：首轮有素材 + 推进信号 → runtime 直跑分析（模型零调用）。
-
-    钉死：零规划轮（adapter 不调用）、正文非空（成果渲染）、
-    暂停卡选项面系统派生（「确认，进入「制作规格」」）。"""
+async def test_planner_first_turn_handed_to_model(tmp_path, monkeypatch):
+    """主体回归（ADR-0004）：首轮有素材 + 推进信号也交接模型，
+    runtime 不自主代跑执行器（模型永远唯一行动主体）。"""
     from src.video_agent.core.planner import Planner, PlannerContext
     from src.video_agent.state.manager import StateManager
     from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
@@ -152,13 +150,16 @@ async def test_planner_first_turn_runtime_direct_run(tmp_path, monkeypatch):
 
         async def chat(self, messages, **kwargs):
             self.calls += 1
-            return ChatResponse(content="不应被调用", finish_reason="stop")
+            return ChatResponse(content="收到剧本，我来分析。", finish_reason="stop")
 
         async def chat_stream(self, messages, **kwargs):
             self.calls += 1
-            yield ChatResponse(content="不应被调用", finish_reason="stop")
+            yield ChatResponse(content="收到剧本，我来分析。", finish_reason="stop")
+
+    analyze_calls = {"n": 0}
 
     async def fake_analyze(self, params):
+        analyze_calls["n"] += 1
         svc_now = StateManager.get_instance()
         svc_now.state_dict["analysis"] = {
             "summary": "程心苏醒与掩体失效。",
@@ -182,13 +183,9 @@ async def test_planner_first_turn_runtime_direct_run(tmp_path, monkeypatch):
     result = await planner.handle_message(
         "请查看我上传的素材",
         PlannerContext(skill_name=SKILL, advance_signal="attachment"))
-    assert adapter.calls == 0, "v6：确定性阶段直跑，零模型规划轮"
-    assert result.applied_actions >= 1
-    assert result.text.strip(), "正常完成禁空正文"
-    assert result.confirmation, "阶段边界必须系统发卡"
-    labels = [o.get("label") for o in result.confirmation_options]
-    assert "确认，进入「制作规格」" in labels, "选项面系统派生（sidecar 流程）"
-    assert not any("继续拆分" in (l or "") for l in labels), "模型自造继续选项无入口"
+    assert adapter.calls >= 1, "主体回归：首轮也必须交接模型"
+    assert analyze_calls["n"] == 0, "runtime 不自主代跑执行器"
+    assert result.text.strip()
     StateManager.reset_instance()
 
 

@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-"""批4（审核整改）：Workflow Runtime 泛化不变量。
+"""Workflow Runtime 不变量（主体回归后，ADR-0004）。
 
 钉死：
-① drive_turn 去硬编码：直跑面 = sidecar 声明 flow.direct_run_nodes，
-   缺失回落 analyze_script（存量行为不变）；
-② 审批直跑能力：声明审批节点入名单 → approval_pause directive；
-   默认名单不含审批节点（防与模型循环暂停语义重复）；
-③ compile_definition per-turn 缓存：同轮共享、clear_compile_cache 恢复；
-④ record_artifact 正名：无伪轮次，run.artifacts 幂等 + ArtifactCommitted
+① 直跑机制退役守卫：runtime 无自主行动符号（防复活，
+   同 scripts/check_legacy_orchestration 门禁双保险）；
+② compile_definition per-turn 缓存：同轮共享、clear_compile_cache 恢复；
+③ record_artifact 正名：无伪轮次，run.artifacts 幂等 + ArtifactCommitted
    事件独立入账（turn_id=artifact:* 从 workflow_turns 绝迹）。
 """
 import pytest
@@ -17,6 +15,10 @@ from src.video_agent.skill_runtime import registry
 
 
 SKILL = "AI-短剧一站式生成"
+
+# 退役符号名单（拼接构造，防本文件自身命中防复活门禁正则）
+_RETIRED_WR = ("drive_" + "turn", "direct_run_" + "nodes")
+_RETIRED_PLANNER = ("_run_direct_" + "stage", "_run_approval_" + "pause")
 
 
 @pytest.fixture(autouse=True)
@@ -32,60 +34,29 @@ def _state_with_run(current_node: str = "analyze_script") -> dict:
                              "event_sequence": 0}}
 
 
-# ---------- ① 直跑面声明驱动（去硬编码） ----------
+# ---------- ① 直跑机制退役守卫（主体回归） ----------
 
-def test_direct_run_defaults_to_analyze_when_undeclared(monkeypatch):
-    monkeypatch.setattr(registry, "skill_manifest_of", lambda s: {"flow": {}})
-    nodes = wr.direct_run_nodes(SKILL)
-    assert nodes == frozenset({"analyze_script"})
-
-
-def test_direct_run_nodes_honors_sidecar_declaration(monkeypatch):
-    monkeypatch.setattr(
-        registry, "skill_manifest_of",
-        lambda s: {"flow": {"direct_run_nodes": ["analyze_script", "review_key_elements"]}})
-    nodes = wr.direct_run_nodes(SKILL)
-    assert nodes == frozenset({"analyze_script", "review_key_elements"})
+def test_direct_run_mechanism_retired():
+    """ADR-0004：runtime 无自主行动能力——直跑驱动符号零残留。"""
+    import src.video_agent.core.planner as planner_mod
+    for name in _RETIRED_WR:
+        assert not hasattr(wr, name), f"workflow_runtime 残留 {name}"
+    for name in _RETIRED_PLANNER:
+        assert not hasattr(planner_mod.Planner, name), f"Planner 残留 {name}"
+    assert not hasattr(wr.WorkflowRuntime, "dispatch"), "WorkflowRuntime 残留 dispatch"
+    assert "drive_" + "turn" not in wr.__all__
 
 
-def test_drive_turn_direct_run_by_declaration(monkeypatch):
-    """声明内节点 + 执行器就绪 → direct_run；stage_key 按节点映射。"""
-    monkeypatch.setattr(registry, "skill_manifest_of", lambda s: {"flow": {}})
-    monkeypatch.setattr(registry, "script_required_active", lambda s: False)
-    state = _state_with_run("analyze_script")
-    directive = wr.drive_turn(state, SKILL, advance_signal="pause")
-    assert directive is not None
-    assert directive["kind"] == "direct_run"
-    assert directive["node_id"] == "analyze_script"
-    assert directive["stage_key"] == "analysis"
-    assert directive["executors"]
+def test_runtime_still_ledger_and_referee_data():
+    """账本 + 裁判数据层职能保留：定义编译/run 同步/产物账本可用。"""
+    definition = wr.compile_definition(SKILL)
+    assert definition is not None and definition["nodes"]
+    state = _state_with_run()
+    run = wr.sync_run(state, SKILL)
+    assert run.get("run_id"), "sync_run 保留 run 同步职能"
 
 
-def test_drive_turn_no_signal_no_direct_run(monkeypatch):
-    """无客观推进信号的自由提问轮：交接模型循环（防提问误抓）。"""
-    monkeypatch.setattr(registry, "skill_manifest_of", lambda s: {"flow": {}})
-    assert wr.drive_turn(_state_with_run(), SKILL, advance_signal="") is None
-
-
-# ---------- ② 审批直跑能力（预留，默认不启用） ----------
-
-def test_approval_node_direct_run_only_when_declared(monkeypatch):
-    """审批节点入声明 → approval_pause；不入声明 → None（默认防双暂停）。"""
-    monkeypatch.setattr(registry, "skill_manifest_of", lambda s: {"flow": {}})
-    state = _state_with_run("review_key_elements")
-    assert wr.drive_turn(state, SKILL, advance_signal="pause") is None
-
-    monkeypatch.setattr(
-        registry, "skill_manifest_of",
-        lambda s: {"flow": {"direct_run_nodes": ["review_key_elements"]}})
-    state = _state_with_run("review_key_elements")
-    directive = wr.drive_turn(state, SKILL, advance_signal="pause")
-    assert directive is not None
-    assert directive["kind"] == "approval_pause"
-    assert directive["node_id"] == "review_key_elements"
-
-
-# ---------- ③ per-turn 编译缓存 ----------
+# ---------- ② per-turn 编译缓存 ----------
 
 def test_compile_cache_shared_within_turn(monkeypatch):
     calls = {"n": 0}
@@ -105,7 +76,7 @@ def test_compile_cache_shared_within_turn(monkeypatch):
     assert calls["n"] == 2
 
 
-# ---------- ④ record_artifact 正名 ----------
+# ---------- ③ record_artifact 正名 ----------
 
 def test_record_artifact_idempotent_and_no_pseudo_turn():
     state = _state_with_run("write_spec")

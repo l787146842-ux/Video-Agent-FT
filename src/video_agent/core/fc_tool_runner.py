@@ -571,6 +571,21 @@ class FCToolRunner:
             else:
                 result = await self.tool_manager.invoke_tool(name, args)
             _tool_ms = (time.monotonic() - _tool_t0) * 1000
+            # 主体回归（ADR-0004）单一活跃暂停槽位互斥：已有未消费暂停时
+            # 拒收重复 workflow_pause，结构化拒因回喂模型并进 trace（不静默吞掉）
+            if name == "workflow_pause" and result.success:
+                try:
+                    _svc_pause = StateManager.get_instance()
+                    _active = ((_svc_pause.state_dict.get("interaction") or {})
+                               .get("active_pause") or {})
+                    if _active.get("pause_id"):
+                        result = ToolResult(success=False, error=(
+                            "已有一张活跃暂停卡正在等待用户回应（单一活跃暂停槽位，"
+                            "ADR-0004）。请勿重复发起暂停；等待用户回应现有暂停卡后，"
+                            "再根据其回应决定下一步。"))
+                        logger.info("[PauseSlot] workflow_pause 拒收：已有活跃暂停")
+                except Exception as _e:
+                    logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
             # 生成类工具成败记录（批末防虚报校验用）
             if name in ("image_generate", "generate_image", "generate_video"):
                 if result.success:

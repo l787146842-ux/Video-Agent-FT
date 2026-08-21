@@ -36,6 +36,7 @@ from src.video_agent.core.fc_tool_runner import (
 from src.video_agent.core.prompt_builder import PromptBuilder
 # 轮末组装域切入 planner_output
 from src.video_agent.core.planner_output import assemble_response
+from src.video_agent.core import pipeline_orchestrator
 from src.video_agent.core import prompt_gates
 # 批 7 拆分协作臂：豁免消费/确定性分诊/FC 响应合并（同名委托保持既有调用/测试路径）
 from src.video_agent.core import fc_response, planner_gate_session, planner_triage
@@ -50,10 +51,8 @@ from src.video_agent.core.sse_events import (
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 from src.video_agent.skill_runtime import exec_spec
-# Workflow Runtime（宪法 v6 Rule2，ADR-0003）：唯一驱动器 + 暂停卡唯一发行点
-from src.video_agent.core import pause_composer, workflow_runtime
-from src.video_agent.core.stage_deliverables import render_stage_deliverables
-from src.video_agent.core.turn_frame import emit_prelude_events
+# Workflow Runtime（宪法 Rule2 主体回归，ADR-0004）：账本 + 裁判数据层
+from src.video_agent.core import workflow_runtime
 
 
 # 绑定工作台状态的工具集：use_studio_context=False 时不下发（节省 schema token）
@@ -72,6 +71,9 @@ _CANVAS_TOOLS = frozenset({
 
 # v2 收尾：后台节点任务登记（collect_spec 预取等）；drain 供测试/关停等待
 _BG_TASKS: set = set()
+# 主体回归（ADR-0004）：规格候选后台预取点火名单（防失败重试每轮重复点火；
+# 候选落盘后轮始条件自然不成立，本名单只兜失败路径）
+_COLLECT_SPEC_FIRED: set = set()
 
 
 async def drain_background_tasks() -> None:
@@ -365,9 +367,11 @@ class Planner:
         except Exception as _e:
             logger.warning("[GateOverride] gate_override 装配失败（豁免未传达执行器）: {}", _e)
 
-        # Workflow Runtime（宪法 v6 Rule2，ADR-0003）：白名单确定性阶段由
-        # runtime 直跑（零模型规划轮），闸机链在合成 FC 批内仍承重；
-        # 其余交接闸预检/模型循环（平台否决权不变）。
+        # Workflow Runtime（宪法 Rule2 主体回归，ADR-0004）：runtime 降级为
+        # 「账本 + 裁判数据层」——轮始只做 run 同步（RunStarted 幂等）与客观
+        # 数据预取；本轮做什么永远由模型接到用户消息后发起工具调用，
+        # runtime 无自主行动能力；越阶由 stage_precondition 闸在工具执行
+        # 路径首位否决（防越阶靠刹车，不没收方向盘）。
         if settings.pipeline_orchestrator_enabled and context.skill_name:
             # v2 批1：轮始 run 同步（RunStarted 幂等）+ 输入类 decision 消费
             # （waiting_user→ready，DecisionResolved 入事件账本）。
@@ -381,21 +385,27 @@ class Planner:
                         _rt.resolve_decision(
                             str(_pend.get("token") or ""),
                             str(context.advance_signal))
+                # 客观数据预取（非自主行动）：分析阶段完成后后台出规格候选，
+                # 幂等（候选在场或已点火即跳过），模型发起规格向导轮不空手
+                _st0 = self.state_manager.state_dict
+                _inter0 = _st0.get("interaction") or {}
+                if (
+                    pipeline_orchestrator.stage_done("analysis", _st0, context.skill_name)
+                    and not _inter0.get("spec_soft_candidates")
+                    and context.skill_name not in _COLLECT_SPEC_FIRED
+                ):
+                    _COLLECT_SPEC_FIRED.add(context.skill_name)
+                    _t = asyncio.ensure_future(self._bg_collect_spec(context.skill_name))
+                    _BG_TASKS.add(_t)
+                    _t.add_done_callback(_BG_TASKS.discard)
             except Exception as _e:
                 # 承重接线遥测（批5 留痕）：轮始 run 同步失败 fail-open 不阻断对话
                 record_degradation("planner.run_sync")
                 logger.debug("[WorkflowRuntime] 轮始 run 同步跳过: {}", _e)
-            _directive = workflow_runtime.drive_turn(
-                self.state_manager.state_dict, context.skill_name,
-                advance_signal=context.advance_signal)
-            if _directive is not None and _directive.get("kind") == "direct_run":
-                return await self._run_direct_stage(_directive, context, on_event=on_event)
-            if _directive is not None and _directive.get("kind") == "approval_pause":
-                return await self._run_approval_pause(_directive, context)
 
-        # Rule2 v6（ADR-0003）：轮始闸预检只装配兜底卡（原料闸/规格闸），
-        # 白名单确定性阶段已由 workflow_runtime 直跑（见上）；其余交接模型循环，
-        # 越阶由 stage_precondition 闸在工具执行路径否决。
+        # Rule2 主体回归（ADR-0004）：轮始闸预检只装配兜底卡（原料闸/规格闸，
+        # 层 9 由代码执行不依赖模型自觉）；其余交接模型循环，越阶由
+        # stage_precondition 闸在工具执行路径否决。
         if settings.pipeline_orchestrator_enabled and context.skill_name:
             # 闸预检只认用户原话——user_message 可能是多模态拼装
             # （附件预览含剧本对白问号，不得参与豁免/回执意图判定）
@@ -838,114 +848,6 @@ class Planner:
             logger.debug("[WorkflowRuntime] collect_spec 事件入账跳过: {}", _e)
         logger.info("[ControlFlow] collect_spec 后台节点完成 ok={} ms={:.0f}", ok, ms)
 
-    async def _run_direct_stage(
-        self, directive: Dict[str, Any], context: PlannerContext, on_event=None,
-    ) -> PlannerResponse:
-        """runtime 直跑确定性阶段：合成 FC 批 → 闸机链承重 → 三通道发卡。
-
-        零模型规划轮：时间线只有节点执行条目（前奏 + 工具），无
-        model_reasoning；正文 = 层 9 成果渲染（正常完成禁空正文）；
-        暂停卡 = 一句问句 + 系统派生选项（pause_composer 唯一发行）。
-        """
-        tracer = AgentTracer.get_instance()
-        tracer.record_control_flow(
-            "runtime_direct_run", str(directive.get("stage_key") or ""),
-            context.skill_name)
-        tracer.start_trace(
-            f"[runtime] {directive.get('stage_key') or ''}", user_id=context.user_id)
-        tracer.start_step()
-        # 前奏时间线（批4 turn_frame 抽公共：与 agent_loop step1 同源）
-        await emit_prelude_events(
-            context.prelude_notes,
-            lambda name, summary, ms, ok: tracer.record_action(name, summary, ms, ok),
-            on_event or (lambda _e: asyncio.sleep(0)),
-        )
-
-        async def _status(text: str, key: str = "", params=None) -> None:
-            if on_event is not None:
-                if key:
-                    await on_event(status_event(key, text, params))
-                else:
-                    await on_event({"type": SSE_STATUS, "text": text})
-
-        tool_calls = [
-            {"id": f"wf-{name}", "type": "function", "function": {
-                "name": name,
-                "arguments": json.dumps(
-                    {"skill_name": context.skill_name}, ensure_ascii=False),
-            }}
-            for name in directive.get("executors") or []
-        ]
-        synth = ChatResponse(content="", finish_reason="tool_calls", tool_calls=tool_calls)
-        (applied, _conf, image_urls, chat_inserts, action_log, _opts,
-         _tool_results, docs_written, warnings, _overflow) = await self._fc_runner.execute(
-            synth,
-            image_provider=context.image_generation_provider,
-            image_aspect_ratio=context.image_generation_aspect_ratio,
-            on_status=_status, on_event=on_event,
-            injected_skill=context.skill_name,
-            selected_draft_id=context.selected_draft_id,
-            selected_type=context.selected_type,
-        )
-        # collect_spec 独立节点（v2 收尾）：候选出题后台预取，
-        # 不阻塞分析轮（计划§5：分析提交后立即返回）；独立事件独立
-        # 耗时入事件账本；向导消费侧容忍候选缺席。
-        if directive.get("stage_key") == "analysis" and applied:
-            _t = asyncio.ensure_future(self._bg_collect_spec(context.skill_name))
-            _BG_TASKS.add(_t)
-            _t.add_done_callback(_BG_TASKS.discard)
-        state = self.state_manager.state_dict
-        # 三通道 A：成果正文由层 9 确定性渲染；无成果时一句兜底（禁空正文）
-        body = render_stage_deliverables(state, list(directive.get("executors") or []))
-        if not str(body or "").strip():
-            body = f"「{directive.get('stage_title') or '本阶段'}」已执行完成，请过目左侧工作台结果。"
-        # 产物账本 + 节点推进提交（reducer 单一写入，v2 批1）
-        for doc_name in docs_written:
-            workflow_runtime.record_artifact(state, context.skill_name, doc_name)
-        _node_id = str(directive.get("node_id") or directive.get("stage_key") or "")
-        _defn = workflow_runtime.compile_definition(context.skill_name) or {}
-        _nodes = _defn.get("nodes") or []
-        _nexts = [n["node_id"] for n in _nodes
-                  if _node_id in (n.get("prerequisites") or ())]
-        _tl: List[Dict[str, Any]] = [
-            {"event_type": "StageStarted", "payload": {"node_id": _node_id}}]
-        _trans: Dict[str, Any] = {"completed_node": _node_id, "status": "ready"}
-        if _nexts:
-            _trans["next_node"] = _nexts[0]
-        try:
-            workflow_runtime.commit_turn(
-                state, workflow_runtime.TurnResult(
-                    turn_id=f"node:{_node_id}:{uuid.uuid4().hex[:8]}",
-                    node_id=_node_id, timeline_events=_tl,
-                    next_transition=_trans),
-                skill=context.skill_name, persist=False)
-        except Exception as _e:
-            logger.warning("[WorkflowRuntime] 节点提交失败（回落客观探针同步）: {}", _e)
-            workflow_runtime.sync_run(state, context.skill_name)
-        pause = pause_composer.compose_stage_pause(
-            state, context.skill_name, str(directive.get("stage_title") or ""))
-        tracer.end_step(1, actions_applied=applied, finish_reason="runtime_direct")
-        trace = tracer.finish_trace(total_actions=applied)
-        response = PlannerResponse(
-            text=body, applied_actions=applied, steps=1,
-            warnings=list(warnings),
-            confirmation=pause["message"],
-            confirmation_options=pause["options"],
-            documents_written=list(docs_written),
-            image_urls=list(image_urls),
-            chat_inserts=list(chat_inserts),
-            action_log=list(action_log),
-            trace=trace,
-        )
-        response.pause_kind = str(pause.get("kind") or "")
-        self._issue_pause(response)
-        if settings.memory_enabled:
-            MemoryManager.get_instance().record_dialog_background(
-                context.raw_user_text or "", body, self._make_summarize_fn(),
-                project_id=self.state_manager.active_project_id,
-            )
-        return response
-
     async def _run_gate_precheck(
         self, context: "PlannerContext", user_message: Any = "",
     ) -> Optional["PlannerResponse"]:
@@ -953,44 +855,6 @@ class Planner:
         return await planner_triage.run_gate_precheck(
             self.state_manager, context.skill_name, user_message,
             PlannerResponse, self._issue_pause)
-
-    async def _run_approval_pause(
-        self, directive: Dict[str, Any], context: PlannerContext,
-    ) -> PlannerResponse:
-        """runtime 审批直跑（批4 能力）：审批节点机械发暂停卡，零模型规划轮。
-
-        仅当 sidecar 声明该节点入 direct_run_nodes 时生效；默认名单不含
-        审批节点（与模型循环暂停的语义去重待裁决，防双暂停）。
-        pending_decision 登记审批事实，用户点选经 resolve_decision 消费。
-        """
-        tracer = AgentTracer.get_instance()
-        node_id = str(directive.get("node_id") or "")
-        tracer.record_control_flow(
-            "runtime_approval_pause", node_id, context.skill_name)
-        state = self.state_manager.state_dict
-        pause = pause_composer.compose_stage_pause(
-            state, context.skill_name, str(directive.get("stage_title") or ""))
-        try:
-            run = workflow_runtime.sync_run(state, context.skill_name)
-            run["pending_decision"] = {
-                "token": f"approval:{run.get('run_id') or ''}:{node_id}",
-                "node_id": node_id,
-                "schema": {"type": "approval"},
-                "options": list(pause.get("options") or []),
-            }
-            run["status"] = "waiting_user"
-            self.state_manager.save_debounced()
-        except Exception as _e:
-            record_degradation("planner.approval_pause")
-            logger.warning("[WorkflowRuntime] 审批 decision 登记跳过: {}", _e)
-        response = PlannerResponse(
-            text=str(pause.get("message") or ""), steps=1,
-            confirmation=str(pause.get("message") or ""),
-            confirmation_options=list(pause.get("options") or []),
-        )
-        response.pause_kind = str(pause.get("kind") or "")
-        self._issue_pause(response)
-        return response
 
     async def _handle_fc_response(
         self,

@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-"""1111 黄金轮次契约（宪法 v6 Rule2 / ADR-0003，用户审定计划钉死）。
+"""1111 黄金轮次契约（宪法 Rule2 主体回归 / ADR-0004，用户审定裁决钉死）。
 
-对照 tests/fixtures/workflow_1111_baseline.json（修复前基线）断言改善：
-① 轮1 缺剧本 → kind=remind 机械卡：零 LLM、正文非空、卡≠正文复述；
-② 轮3 带附件推进信号 → runtime 直跑分析：零模型规划轮、选项面系统派生
-   （「确认，进入「制作规格」」前置、无模型自造继续/裸值规格组）、
-   分析轮不等待候选出题（collect_spec 后台预取，独立事件入账）；
+对照 tests/fixtures/workflow_1111_baseline.json（修复前基线）断言：
+① 轮1 缺剧本 → kind=remind 引导卡（层 9 兜底，由代码执行不依赖模型自觉）；
+② 轮3 带附件推进 → 交接模型循环（主体回归：模型永远唯一行动主体，
+   runtime 不自主执行执行器；越阶靠 stage_precondition 闸刹车）；
 ③ 自由提问（无推进信号）→ 交接模型循环（不错抓）；
 ④ 向导发送 → 机械落盘进产物账本 + 文档卡补落同轮可见；
 ⑤ read_skill canonical 身份归一（去连字符误差不报错）。
@@ -56,9 +55,9 @@ async def test_turn1_script_missing_remind_card_zero_llm(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_turn3_direct_run_zero_planning_rounds(tmp_path, monkeypatch):
-    """② 附件推进信号 → runtime 直跑：零模型调用、选项面系统派生、
-    时间线无 model_reasoning；collect_spec 后台预取不阻塞分析轮。"""
+async def test_attachment_turn_handed_to_model(tmp_path, monkeypatch):
+    """② 附件推进轮 → 交接模型循环（主体回归）：模型被调用，
+    runtime 不自主执行执行器（script_analyze 未被系统代跑）。"""
     from src.video_agent.core.planner import Planner, PlannerContext
     from src.video_agent.state.manager import StateManager
     from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
@@ -76,24 +75,22 @@ async def test_turn3_direct_run_zero_planning_rounds(tmp_path, monkeypatch):
 
         async def chat(self, messages, **kwargs):
             self.calls += 1
-            return ChatResponse(content="不应被调用", finish_reason="stop")
+            return ChatResponse(content="收到剧本，我来分析。", finish_reason="stop")
 
         async def chat_stream(self, messages, **kwargs):
             self.calls += 1
-            yield ChatResponse(content="不应被调用", finish_reason="stop")
+            yield ChatResponse(content="收到剧本，我来分析。", finish_reason="stop")
+
+    analyze_calls = {"n": 0}
 
     async def fake_analyze(self, params):
+        analyze_calls["n"] += 1
         svc_now = StateManager.get_instance()
         svc_now.state_dict["analysis"] = {
             "summary": "程心苏醒与掩体失效。", "key_points": [], "doc_name": "剧本.md"}
         return ToolResult(success=True, data={"summary": "程心苏醒与掩体失效。"})
 
-    async def fake_candidates(*a, **k):
-        return None
-
     monkeypatch.setattr(exec_tools.ScriptAnalyzeTool, "aexecute", fake_analyze)
-    monkeypatch.setattr(exec_tools.exec_spec, "_generate_soft_spec_candidates",
-                        fake_candidates)
     from src.video_agent.skill_runtime.registration import register_skill_runtime_tools
     register_skill_runtime_tools()
     StateManager.reset_instance()
@@ -107,26 +104,9 @@ async def test_turn3_direct_run_zero_planning_rounds(tmp_path, monkeypatch):
     result = await planner.handle_message(
         "请查看我上传的素材",
         PlannerContext(skill_name=SKILL, advance_signal="attachment"))
-    assert adapter.calls == 0, "v6：确定性阶段直跑，零模型规划轮"
+    assert adapter.calls >= 1, "主体回归：附件轮必须交接模型（模型是唯一行动主体）"
+    assert analyze_calls["n"] == 0, "runtime 不自主执行执行器（探针适配器未 FC，无代跑）"
     assert result.text.strip()
-    labels = [str(o.get("label") or "") for o in result.confirmation_options]
-    assert "确认，进入「制作规格」" in labels, "选项面系统派生"
-    assert not any("继续拆分" in l for l in labels), "模型自造继续选项无入口"
-    assert not any(l.startswith(("16:9", "9:16")) for l in labels), \
-        "模型裸值规格组无入口（向导为唯一规格交互）"
-    actions = [
-        a.get("name") for s in (result.trace.get("steps") or [])
-        for a in (s.get("actions") or [])]
-    assert "model_reasoning" not in actions, "直跑轮时间线无规划条目"
-    assert "script_analyze" in actions
-    assert "collect_spec" not in actions, "分析轮不等待候选出题（后台预取）"
-    # 后台节点完成后独立事件入账（独立事件独立耗时，计划§8）
-    from src.video_agent.core import planner as planner_mod
-    from src.video_agent.core.workflow_events import EventLedger
-    await planner_mod.drain_background_tasks()
-    evs = EventLedger(svc.state_dict).events
-    assert any(e.node_id == "collect_spec" for e in evs), \
-        "collect_spec 后台节点独立事件入账"
     StateManager.reset_instance()
 
 

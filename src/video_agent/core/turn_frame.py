@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """轮帧公共域（批4 turn_frame 抽公共）。
 
-runtime 直跑（planner._run_direct_stage）与节点内模型循环（agent_loop step1）
-的前奏时间线登记曾各自实现一遍同构逻辑；收敛为单一实现，两处委托。
-一切机械动作进转录一等条目（Rule2 v6：运行态/持久化同条目）。
+节点内模型循环（agent_loop step1）的前奏时间线登记：只登记真实
+发生的 system 准备动作，前奏不冒充工具操作。
+一切机械动作进转录一等条目（运行态/持久化同条目）。
+（历史 runtime 机械直跑消费方已随 ADR-0004 退役，现唯一消费方 = agent_loop。）
 """
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 

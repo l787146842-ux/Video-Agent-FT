@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-"""v2 批1 接线回归：WorkflowRuntime 入主链（轮始 run 同步 + 节点推进提交）。
+"""v2 批1 接线回归：WorkflowRuntime 入主链（轮始 run 同步 + decision 消费）。
 
-钉死（重构计划§一/§二）：
-① 轮始 start_run 幂等创建 run；缺原料 → waiting_user + InputRequested；
+钉死（主体回归 ADR-0004 后语义）：
+① 轮始 start_run 幂等创建 run；缺原料 → waiting_user + InputRequested（层 9 提醒卡）；
 ② 推进信号消费输入类 decision → DecisionResolved + ready；
-③ 直跑分析完成后 reducer 提交：StageSucceeded(analyze_script) +
-   current_node 推进 collect_spec + completed_nodes 含 analyze_script；
-④ 全程零模型调用（确定性节点不调主模型规划）。
+③ 附件轮交接模型循环（模型唯一行动主体，runtime 不自主提交节点）。
 """
 import pytest
 
@@ -77,7 +75,7 @@ async def test_turn_start_waiting_user_and_input_requested(env):
 
 
 @pytest.mark.asyncio
-async def test_advance_signal_resolves_and_node_commit_advances(env):
+async def test_advance_signal_resolves_and_handoff_to_model(env):
     svc, adapter, planner = env
     await planner.handle_message("为什么还没好？", PlannerContext(skill_name=SKILL))
     svc.state_dict["uploadedDocs"] = [
@@ -85,17 +83,14 @@ async def test_advance_signal_resolves_and_node_commit_advances(env):
     result = await planner.handle_message(
         "请查看我上传的素材",
         PlannerContext(skill_name=SKILL, advance_signal="attachment"))
-    assert adapter.calls == 0, "确定性节点零模型规划"
-    assert result.applied_actions >= 1
+    assert adapter.calls >= 1, "主体回归：附件轮交接模型（runtime 不自主行动）"
     run = svc.state_dict.get("workflow_run") or {}
-    assert run.get("pending_decision") is None
+    assert run.get("pending_decision") is None, "输入类 decision 已消费"
     assert run.get("status") == "ready"
-    assert "analyze_script" in (run.get("completed_nodes") or [])
-    assert run.get("current_node") == "collect_spec"
     types = [e.event_type for e in EventLedger(svc.state_dict).by_run(run["run_id"])]
     assert "DecisionResolved" in types
-    assert "StageSucceeded" in types
-    assert "TurnCommitted" in types
+    # 探针适配器未 FC：分析未被代跑，完成节点不含 analyze_script
+    assert "analyze_script" not in (run.get("completed_nodes") or [])
 
 
 @pytest.mark.asyncio

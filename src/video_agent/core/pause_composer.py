@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
-"""暂停卡唯一发行点（三通道契约，宪法 v6 Rule2，ADR-0003）。
+"""暂停卡通道/选项面处理（主体回归，宪法 Rule2，ADR-0004）。
 
-v2（重构计划批4）：暂停卡 = 节点 decision_schema 的无状态渲染——
-- 模型 workflow_pause 只提交「节点需要审批」事实，卡问句系统组装，
+暂停卡唯一发行主体 = 模型的 workflow_pause 工具调用（对齐
+AskUserQuestion 范式）；本模块只做通道分离与选项面归一，不发行卡片：
+- 模型 workflow_pause 只提交「需要审批」事实，卡问句系统组装，
   模型原文进正文通道（无阈值补丁：通道分离是契约不是压缩）；
 - 选项面：阶段边界 = 系统派生唯一入口（模型选项直接拒收，不做模糊清洗）；
   规格未定稿 = 系统向导唯一入口（维度模糊映射退役）；
-- kind（remind/collect/stage_done/confirm）供前端按语义渲染标题。
+- kind（remind/collect/stage_done/confirm）供前端按语义渲染标题；
+- 历史 runtime 机械阶段暂停卡随直跑机制同批退役（ADR-0004）。
 """
 from typing import Any, Dict, List, Tuple
 
@@ -23,28 +25,6 @@ PAUSE_KIND_REMIND = "remind"        # 待补原料/前置缺失提醒
 PAUSE_KIND_COLLECT = "collect"      # 规格收集向导
 PAUSE_KIND_STAGE_DONE = "stage_done"  # 阶段完成审阅
 PAUSE_KIND_CONFIRM = "confirm"      # 常规模型暂停
-
-
-def compose_stage_pause(
-    state: Dict[str, Any], skill: str, stage_title: str,
-) -> Dict[str, Any]:
-    """阶段边界暂停卡（runtime 直跑后）：短问句 + 系统派生选项面。
-
-    继续选项由 sidecar flow.steps + 客观状态机械派生（current_flow_step）；
-    规格未定稿时规格向导合并进选项面（merge_spec_param_wizard），
-    模型不撰写任何选项。"""
-    message = f"「{stage_title}」已完成，请过目以上成果并选择下一步。"
-    options: List[Dict[str, Any]] = []
-    sys_opt = gates_cards.system_continue_option(state, skill)
-    if sys_opt:
-        options.append(sys_opt)
-    final_msg, opts, _merged = gates_spec.merge_spec_param_wizard(
-        state, message, options)
-    return {
-        "message": str(final_msg or message),
-        "options": list(opts or options),
-        "kind": PAUSE_KIND_STAGE_DONE,
-    }
 
 
 def compose_remind_card(message: str, options: List[Dict[str, Any]]) -> Dict[str, Any]:
