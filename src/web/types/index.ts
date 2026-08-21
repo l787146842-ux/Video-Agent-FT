@@ -138,6 +138,8 @@ export interface Skill {
   name: string;
   system_prompt?: string;
   description?: string;
+  /** 审核整改批 2：规划级执行器名单（后端 capability 注册表下发，欠账显性化） */
+  planning_executors?: string[];
   [key: string]: unknown;
 }
 
@@ -217,7 +219,7 @@ export interface ChatMessage {
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
-export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** B2/F15：大阶段标签（后端权威下发） */ stage?: string; /** 批2 透明度：工具执行结果一句话摘要（与 SSE tool_finished 同口径） */ result_summary?: string; }
+export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** B2/F15：大阶段标签（后端权威下发） */ stage?: string; /** 批2 透明度：工具执行结果一句话摘要（与 SSE tool_finished 同口径） */ result_summary?: string; /** 审核整改批 2：规划级执行器标记（capability 注册表下发） */ planning?: boolean; }
 /** 闸机判定明细（后端 tracer.record_gate 产出，：前端按结构渲染来源标注 chips） */
 export interface GateRecord {
   rule_id: string;
@@ -304,6 +306,8 @@ export interface SseToolFinishedEvent {
   ok: boolean;
   elapsed_ms: number;
   result_summary?: string;
+  /** 审核整改批 2：规划级执行器标记（后端 capability 注册表下发） */
+  planning?: boolean;
 }
 export interface SseDonePayload {
   text: string;
@@ -361,6 +365,8 @@ export interface AgentTaskReplayPayload {
   tools?: Array<{
     id?: string; name?: string; summary?: string; status?: string;
     elapsed_ms?: number | null; result_summary?: string; started_at_ms?: number;
+    /** 审核整改批 2：规划级执行器标记 */
+    planning?: boolean;
   }>;
   snapshot?: ServerStateSnapshot | null;
   done_payload?: SseDonePayload | null;

@@ -33,6 +33,7 @@ from src.video_agent.skill_runtime.progress import (
     emit_timeline_note,
     format_eta,
 )
+from src.video_agent.skill_runtime.capability import planning_note
 from src.video_agent.skill_runtime.registry import (
     fallback_skill_from_state,
     resolve_entry,
@@ -86,7 +87,7 @@ class AudioGenerateTool:
     description = (
         "按当前 Skill 的「生成」章节为音频层生成可执行音频规划（旁白/BGM/音效），"
         "并支持绑定用户已上传音频；当前版本不调用真实 TTS/BGM 生成文件。"
-    )
+    ) + planning_note("audio_generate")
 
     def get_input_schema(self) -> Type[BaseModel]:
         return AudioGenerateInput
@@ -133,7 +134,7 @@ class VideoAssemblerTool:
     description = (
         "按当前 Skill 的「组装导出」章节，输出最终成片的素材清单、时间轴顺序与组装建议，"
         "供画布/剪辑软件组装；当前版本不自动合成视频。"
-    )
+    ) + planning_note("video_assembler")
 
     def get_input_schema(self) -> Type[BaseModel]:
         return VideoAssemblerInput

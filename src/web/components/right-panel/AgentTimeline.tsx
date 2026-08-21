@@ -34,6 +34,8 @@ export function timelineFromMessage(msg: ChatMessage): { reasoning: string; item
         elapsed_ms: a.elapsed_ms,
         // 批2 透明度：后端持久化的结果摘要（与 live tool_finished 同口径）
         result_summary: a.result_summary || undefined,
+        // 审核整改批 2：规划级执行器徽标（重建与 live 同源）
+        planning: a.planning || undefined,
       });
     });
   });
@@ -93,6 +95,10 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
           {item().summary}
           <FiChevronDown size={11} class={`tl-item-toggle-arrow${open() ? ' expanded' : ''}`} />
         </button>
+      </Show>
+      {/* 审核整改批 2：规划级执行器徽标（不产真实媒体，欠账显性化） */}
+      <Show when={item().planning}>
+        <span class="tl-planning-badge" title="规划级执行器：产出规划/方案文本，不产生真实媒体文件">规划</span>
       </Show>
       {/* 完成态显示最终耗时；运行态走秒（有起点才显示） */}
       <Show when={item().status !== 'running' && item().elapsed_ms != null}>

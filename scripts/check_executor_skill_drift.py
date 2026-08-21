@@ -9,10 +9,15 @@
   （与脚手架棘轮同一惯例）；
 - 人工比对的并排输出保留（--verbose）。
 
+审核整改批 2 新增：执行器 capability 登记断言（deny-by-default）——
+每个已注册 Skill 执行器必须在 skill_runtime/capability.py 的
+EXECUTOR_CAPABILITY 有登记，未登记即 FAIL（防新增隐形空壳执行器）。
+
 用法：
     python scripts/check_executor_skill_drift.py            # 门禁（退出码判定）
     python scripts/check_executor_skill_drift.py --verbose  # 附两侧明细
 """
+import ast
 import re
 import sys
 from pathlib import Path
@@ -84,6 +89,48 @@ def detect_drift(executors: list, skills: list) -> list:
     return pairs
 
 
+def _executor_tool_names() -> set:
+    """registry.SKILL_EXECUTOR_TOOLS 展平后的执行器工具名（AST 解析，含 splat）。"""
+    src = (ROOT / "src" / "video_agent" / "skill_runtime" / "registry.py").read_text(encoding="utf-8")
+    tuples: dict = {}
+    for node in ast.parse(src).body:
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Tuple)):
+            continue
+        name = node.targets[0].id
+        if name not in ("STORYBOARD_STRUCTURE_TOOLS", "SKILL_EXECUTOR_TOOLS"):
+            continue
+        vals = []
+        for el in node.value.elts:
+            if isinstance(el, ast.Constant) and isinstance(el.value, str):
+                vals.append(el.value)
+            elif isinstance(el, ast.Starred) and isinstance(el.value, ast.Name):
+                vals.extend(tuples.get(el.value.id, []))
+        tuples[name] = vals
+    return set(tuples.get("SKILL_EXECUTOR_TOOLS", []))
+
+
+def _capability_registered() -> set:
+    """capability.EXECUTOR_CAPABILITY 已登记的执行器名（AST 解析，兼容带注解赋值）。"""
+    path = ROOT / "src" / "video_agent" / "skill_runtime" / "capability.py"
+    if not path.exists():
+        return set()
+    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        target = node.target if isinstance(node, ast.AnnAssign) else (
+            node.targets[0] if isinstance(node, ast.Assign) and len(node.targets) == 1 else None)
+        if not (isinstance(target, ast.Name) and target.id == "EXECUTOR_CAPABILITY"
+                and isinstance(node.value, ast.Dict)):
+            continue
+        return {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
+    return set()
+
+
+def check_capability_registration() -> list:
+    """未登记 capability 的已注册执行器名单（空 = 合规）。"""
+    return sorted(_executor_tool_names() - _capability_registered())
+
+
 def main() -> int:
     verbose = "--verbose" in sys.argv[1:]
     executors = scan_executors()
@@ -108,7 +155,14 @@ def main() -> int:
         print(f"[check_executor_skill_drift] FAIL：漂移对 {len(pairs)} > 基线 "
               f"{DRIFT_BASELINE}（棘轮只降不升；清偿一对同批下调基线）")
         return 1
-    print(f"[check_executor_skill_drift] PASS（{len(pairs)} <= 基线 {DRIFT_BASELINE}）")
+    missing = check_capability_registration()
+    if missing:
+        print(f"[check_executor_skill_drift] FAIL：执行器未登记 capability 注册表 "
+              f"(deny-by-default)：{', '.join(missing)}"
+              f"——新增执行器必须在 skill_runtime/capability.py 登记能力级别")
+        return 1
+    print(f"[check_executor_skill_drift] PASS（{len(pairs)} <= 基线 {DRIFT_BASELINE}，"
+          f"capability 登记全覆盖）")
     return 0
 
 

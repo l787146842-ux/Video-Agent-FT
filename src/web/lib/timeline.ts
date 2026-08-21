@@ -20,6 +20,8 @@ export interface TimelineItem {
   started_at_ms?: number;
   /** 工具执行结果一句话摘要（批2 透明度：live=tool_finished、历史=trace result_summary） */
   result_summary?: string;
+  /** 审核整改批 2：规划级执行器标记（不产真实媒体，前端挂「规划」徽标） */
+  planning?: boolean;
   /** 合并条目的逐轮明细（点击展开） */
   details?: TimelineItem[];
 }

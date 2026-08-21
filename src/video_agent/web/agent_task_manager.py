@@ -227,6 +227,9 @@ class AgentTaskManager:
                     t["status"] = "done" if event.get("ok") else "failed"
                     t["elapsed_ms"] = event.get("elapsed_ms")
                     t["result_summary"] = str(event.get("result_summary") or "")
+                    # 审核整改批 2：规划级标记入账本，重连 replay 后徽标不丢
+                    if event.get("planning"):
+                        t["planning"] = True
                     break
         elif etype == "actions_applied":
             payload = event.get("payload") or {}

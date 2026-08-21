@@ -21,6 +21,7 @@ from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
 from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.skill_runtime.capability import is_planning
 from src.video_agent.skill_runtime.registry import stage_label_for_tool
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
@@ -675,18 +676,21 @@ class FCToolRunner:
                     "view_storyboard_media",
                 ):
                     await on_event({"type": SSE_ACTIONS_APPLIED, "count": 1})
-                # 过程时间线：工具完成 + trace 记录
+                # 过程时间线：工具完成 + trace 记录（planning 标记同源下发，审核整改批 2）
                 if on_event is not None:
-                    await on_event({
+                    _finished_ev = {
                         "type": SSE_TOOL_FINISHED,
                         "id": tool_event_id,
                         "ok": True,
                         "elapsed_ms": round(_tool_ms, 1),
                         "result_summary": desc,
-                    })
+                    }
+                    if is_planning(name):
+                        _finished_ev["planning"] = True
+                    await on_event(_finished_ev)
                 tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True,
                                      stage=stage_label_for_tool(name),
-                                     result_summary=desc)
+                                     result_summary=desc, planning=is_planning(name))
                 batch_tool_names.add(name)
                 _stage_lbl = stage_label_for_tool(name)
                 if _stage_lbl:
@@ -733,13 +737,16 @@ class FCToolRunner:
                         else "规格已定稿，冗余写入被拒收（未落盘）"
                     )
                 if on_event is not None:
-                    await on_event({
+                    _finished_ev = {
                         "type": SSE_TOOL_FINISHED,
                         "id": tool_event_id,
                         "ok": bool(spec_silent_summary),
                         "elapsed_ms": round(_tool_ms, 1),
                         "result_summary": spec_silent_summary or str(result.error or "执行失败")[:120],
-                    })
+                    }
+                    if is_planning(name):
+                        _finished_ev["planning"] = True
+                    await on_event(_finished_ev)
                 # trace 与 SSE 同一口径（规格静默拒收=中性 True，普通失败=红× False），
                 # 防刷新后失败被重建为绿√；result_summary 与 SSE 同口径（批2）
                 tracer.record_action(
@@ -747,6 +754,7 @@ class FCToolRunner:
                     elapsed_ms=_tool_ms, ok=bool(spec_silent_summary),
                     stage=stage_label_for_tool(name),
                     result_summary=spec_silent_summary or str(result.error or "执行失败")[:120],
+                    planning=is_planning(name),
                 )
                 # 结构化失败回喂（客观报告+单句建议，二次升级）
                 self._tool_fail_counts[name] = self._tool_fail_counts.get(name, 0) + 1

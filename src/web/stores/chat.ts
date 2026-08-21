@@ -11,6 +11,8 @@ export interface TimelineToolEntry {
   status: 'running' | 'done' | 'failed';
   elapsed_ms?: number;
   result_summary?: string;
+  /** 审核整改批 2：规划级执行器标记（capability 注册表下发） */
+  planning?: boolean;
   /** ：运行态走秒计时起点（刷新/重连无起点时以恢复时刻为准） */
   started_at_ms?: number;
 }
@@ -129,14 +131,15 @@ export const chatActions = {
     }));
   },
 
-  /** 过程时间线：工具/操作完成（对勾/失败态） */
-  toolFinished(id: string, ok: boolean, elapsedMs: number, resultSummary?: string) {
+  /** 过程时间线：工具/操作完成（对勾/失败态；planning=规划级执行器标记） */
+  toolFinished(id: string, ok: boolean, elapsedMs: number, resultSummary?: string, planning?: boolean) {
     setChatState(produce((s) => {
       // 参数名避开 i18n 惯用名 t（批6：遮蔽隐患清偿）
       const entry = s.streamingTools.find((item) => item.id === id);
       if (entry) {
         entry.status = ok ? 'done' : 'failed';
         entry.elapsed_ms = elapsedMs;
+        if (planning) entry.planning = true;
         entry.result_summary = resultSummary;
       }
     }));
