@@ -95,6 +95,7 @@ class TestB2ExecutorStreaming:
         assert data["summary"] == "一句话"
         assert len(calls) == 1
 
+    @pytest.mark.allow_degradation
     async def test_llm_json_call_blackbox_on_parse_failure(self, monkeypatch, tmp_path):
         """0818-1111：畸形 JSON 必须存原始回执（reason=json_parse_failed）后再抛。"""
         from src.video_agent.skill_runtime import exec_spec

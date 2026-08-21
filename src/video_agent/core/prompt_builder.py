@@ -275,8 +275,8 @@ class PromptBuilder:
                 name = d.get("name") or d.get("slug") or ""
                 desc = (d.get("description") or "").strip() or "未提供摘要"
                 lines.append(f"- {name}：{desc}")
-        except Exception:  # 文档目录读取失败不阻断对话
-            pass
+        except Exception:  # 文档目录读取失败不阻断对话（降级遥测可见，批5）
+            live_metrics.record_degradation("prompt_builder.catalog")
         if not lines:
             return ""
         header = (
@@ -393,7 +393,8 @@ class PromptBuilder:
                     # 此处不再复述（P1 规则单家）
                 ]
         except Exception:
-            pass
+            # 流程清单装配失败不阻断对话（降级遥测可见，批5）
+            live_metrics.record_degradation("prompt_builder.flow_steps")
         # 执行方式/阶段边界/通用能力 prose 外置 prompts/planner/executor_runtime.md
         # （批3 指令收敛，Rule6；暂停纪律表述以 skill_discipline.md 为单家）
         _runtime_prose = load_prompt("planner/executor_runtime.md").strip()

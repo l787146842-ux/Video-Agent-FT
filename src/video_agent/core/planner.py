@@ -382,6 +382,8 @@ class Planner:
                             str(_pend.get("token") or ""),
                             str(context.advance_signal))
             except Exception as _e:
+                # 承重接线遥测（批5 留痕）：轮始 run 同步失败 fail-open 不阻断对话
+                record_degradation("planner.run_sync")
                 logger.debug("[WorkflowRuntime] 轮始 run 同步跳过: {}", _e)
             _directive = workflow_runtime.drive_turn(
                 self.state_manager.state_dict, context.skill_name,
@@ -832,6 +834,7 @@ class Planner:
                                       "mode": "background"})
                 self.state_manager.save_debounced()
         except Exception as _e:
+            record_degradation("planner.collect_spec_event")
             logger.debug("[WorkflowRuntime] collect_spec 事件入账跳过: {}", _e)
         logger.info("[ControlFlow] collect_spec 后台节点完成 ok={} ms={:.0f}", ok, ms)
 

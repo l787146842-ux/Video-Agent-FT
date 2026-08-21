@@ -62,6 +62,7 @@ async def test_response_format_in_payload(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.allow_degradation
 async def test_response_format_400_probe_strips_and_retries(monkeypatch):
     """端点 400 拒收 response_format → 剥离字段重试一次并记忆（同实例不再下发）"""
     adapter = OpenAICompatChatAdapter("http://x", model="m")
@@ -89,18 +90,21 @@ def test_strict_parse_accepts_pure_json_array():
     ]
 
 
+@pytest.mark.allow_degradation
 def test_strict_parse_rejects_fenced_json():
     """围栏包裹 = 端点未遵守 json_object：拒收（按零进展交拒因重试），不宽容抠取"""
     text = '```studio-actions\n[{"action":"add_group"}]\n```'
     assert exec_common._parse_actions_from_text(text) == []
 
 
+@pytest.mark.allow_degradation
 def test_strict_parse_rejects_prose_wrapped_json():
     """正文包裹 JSON（旧裸数组正则的宽容对象）同样拒收"""
     text = '好的，结果如下：\n[{"action":"add_group"}]\n以上。'
     assert exec_common._parse_actions_from_text(text) == []
 
 
+@pytest.mark.allow_degradation
 def test_strict_parse_records_degradation_telemetry():
     from src.video_agent.core import live_metrics
 

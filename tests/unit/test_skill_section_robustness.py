@@ -28,6 +28,7 @@ def test_s6_skill_sections_golden_pinned():
         )
 
 
+@pytest.mark.allow_degradation
 def test_s6_heading_fallback_warns_on_silent_inherit():
     """连续 ≥3 节未命中关键字而沿用上一阶段 → 记降级遥测（静默沿用不再无声）"""
     from src.video_agent.core import live_metrics

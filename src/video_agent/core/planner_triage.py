@@ -10,6 +10,7 @@ from typing import Any, Callable, Optional
 from loguru import logger
 
 from src.video_agent.core import pipeline_orchestrator as _po
+from src.video_agent.core import live_metrics
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import pause_composer
 from src.video_agent.core.tracer import AgentTracer
@@ -36,7 +37,8 @@ async def run_gate_precheck(
             "gate_card" if outcome is not None else "handoff",
             _kind, skill or "")
     except Exception:
-        pass
+        # 控制流审计登记失败不阻断（降级遥测可见，批5）
+        live_metrics.record_degradation("planner_triage.control_flow_log")
     if outcome is None:
         return None
     if outcome.kind == "script_pending":

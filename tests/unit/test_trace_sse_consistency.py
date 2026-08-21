@@ -704,6 +704,7 @@ def test_coverage_no_audio_check_when_skill_silent(tmp_path):
 
 # ---------- 0817 B4：执行器 JSON 畸形 → 带拒因纠正重试（C2） ----------
 
+@pytest.mark.allow_degradation
 def test_llm_json_call_corrective_retry_on_malformed(monkeypatch):
     """首次返回畸形 JSON → 携拒因重试一次 → 二次正确则解析成功。"""
     import asyncio
@@ -728,6 +729,7 @@ def test_llm_json_call_corrective_retry_on_malformed(monkeypatch):
     assert any("无法解析" in str(m.get("content")) for m in calls[1])
 
 
+@pytest.mark.allow_degradation
 def test_llm_json_call_raises_after_retry_still_malformed(monkeypatch, tmp_path):
     """重试仍畸形 → 抛明确错误，不吞。"""
     import asyncio

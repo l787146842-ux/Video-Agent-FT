@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Tuple
 
 from src.video_agent.core import gates_cards
 from src.video_agent.core import gates_spec
+from src.video_agent.core import live_metrics
 from src.video_agent.core import prompt_gates
 # 模块属性调用（测试 patch 目标=registry 命名空间，
 # 顶层 from-import 会冻结绑定导致 patch 失效）
@@ -90,7 +91,8 @@ def normalize_option_surface(
             _m, opts, _merged = gates_spec.merge_spec_param_wizard(
                 state, message, opts)
     except Exception:
-        pass
+        # 向导合并失败不阻断发卡（降级遥测可见，批5：引导通道断裂不再静默）
+        live_metrics.record_degradation("pause_composer.spec_wizard_merge")
     if boundary_hit and skill:
         sys_opt = gates_cards.system_continue_option(state, skill)
         opts = ([sys_opt] if sys_opt else []) + (opts if spec_open else [])
