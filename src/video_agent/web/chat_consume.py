@@ -10,6 +10,7 @@ from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.config import settings
 from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core import workflow_runtime
+from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
@@ -51,8 +52,6 @@ async def _maybe_compact_history(
     threshold = int(getattr(settings, "history_compact_threshold", 0) or 0)
     if threshold <= 0 or adapter is None:
         return history
-    from src.video_agent.core.token_budget import estimate_messages_tokens
-
     # token 条件：按窗口 0.6 倍（getattr 兼容测试替身的部分配置注入）
     window = int(getattr(settings, "context_window_size", 128000) or 128000)
     token_limit = int(window * 0.6)
