@@ -1,0 +1,187 @@
+/* ===== chat.css 拆分：卡片族（确认卡/文档卡/阶段卡/闸机 chips/生图卡片）——P4-23 纯移动 ===== */
+@layer components {
+  /* 确认操作 */
+  .confirm-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .chat-msg > .confirm-actions { margin-top: 8px; }
+
+  /* 确认卡片的候选选项（单选卡片，点击即把选项作为回复发送） */
+  .confirm-options { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .confirm-option-card { display: flex; align-items: flex-start; gap: 9px; text-align: left; padding: 9px 12px; border-radius: 8px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); transition: border-color 0.12s ease, background 0.12s ease; }
+  .confirm-option-card:hover { border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.08); }
+  .confirm-option-radio { flex-shrink: 0; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--text-muted); }
+  .confirm-option-card:hover .confirm-option-radio { border-color: var(--accent-blue); box-shadow: inset 0 0 0 3.5px var(--accent-blue); }
+  .confirm-option-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .confirm-option-label { font-size: 13px; font-weight: 600; color: var(--text-main); line-height: 1.4; }
+  .confirm-option-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
+  .confirm-btn { padding: 4px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); }
+  .confirm-btn.primary { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+  .confirm-btn.secondary { background: var(--bg-tertiary); color: var(--text-muted); }
+  .confirm-btn.secondary:hover { color: var(--text-main); }
+  .confirm-btn.secondary.active { color: #93c5fd; border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.10); }
+  .confirm-btn:hover { filter: brightness(1.15); }
+  .confirm-btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+
+  /* 分页选择向导（多维度一次性收集：逐页选择，末页发送） */
+  .confirm-wizard { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(255, 255, 255, 0.02); }
+  .confirm-wizard-question { font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; }
+  .confirm-option-card.selected { border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.10); }
+  .confirm-option-card.selected .confirm-option-radio { border-color: var(--accent-blue); box-shadow: inset 0 0 0 3.5px var(--accent-blue); }
+  .confirm-wizard-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  .confirm-wizard-actions { display: flex; align-items: center; gap: 6px; }
+  .confirm-wizard-hint { font-size: 11px; color: var(--text-dim); }
+  /* 组内自定义输入框（「其它（自定义输入）」展开后在组内直接输入，支持 Ctrl+Enter 发送） */
+  .confirm-custom-input { display: block; width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-main); font-size: 12.5px; line-height: 1.6; font-family: inherit; resize: vertical; outline: none; }
+  .confirm-custom-input:focus { border-color: var(--accent-blue); }
+  .confirm-custom-input::placeholder { color: var(--text-dim); }
+  .confirm-wizard-pager { display: flex; align-items: center; gap: 8px; }
+  .confirm-wizard-arrow { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); cursor: pointer; font-size: 14px; line-height: 1; }
+  .confirm-wizard-arrow:disabled { opacity: 0.35; cursor: not-allowed; }
+  .confirm-wizard-indicator { font-size: 12px; color: var(--text-muted); }
+  /* 确认卡片配色（最终版，按深色 UI 搭配）：外层透明橙底；
+     选项卡深底橙色调+暖白文字，选中=实橙边框+深色调；发送=实橙渐变；其它=橙色描边按钮 */
+  .confirm-wizard { border: 1px solid rgba(249, 115, 22, 0.35); border-radius: 12px; background: rgba(249, 115, 22, 0.08); }
+  .confirm-option-card { background: rgba(249, 115, 22, 0.12); border-color: rgba(251, 146, 60, 0.30); }
+  .confirm-option-card:hover { border-color: rgba(251, 146, 60, 0.65); background: rgba(249, 115, 22, 0.20); }
+  .confirm-option-card.selected { border-color: #fb923c; background: rgba(249, 115, 22, 0.30); }
+  .confirm-option-radio { border-color: rgba(251, 146, 60, 0.65); }
+  .confirm-option-card.selected .confirm-option-radio { border-color: #fb923c; box-shadow: inset 0 0 0 3.5px #fb923c; }
+  .confirm-option-label { color: #ffedd5; }
+  .confirm-option-card.selected .confirm-option-label { color: #fff; }
+  .confirm-option-desc { color: rgba(255, 237, 213, 0.72); }
+  .confirm-option-card.selected .confirm-option-desc { color: #fed7aa; }
+  .confirm-btn.primary { background: linear-gradient(135deg, #f97316, #ea580c); border-color: transparent; color: #fff; box-shadow: 0 2px 10px rgba(249, 115, 22, 0.35); }
+  .confirm-btn.primary:hover { filter: brightness(1.08); }
+  .confirm-wizard .confirm-btn.secondary { background: transparent; border-color: rgba(251, 146, 60, 0.45); color: #fdba74; }
+  .confirm-wizard .confirm-btn.secondary:hover { background: rgba(249, 115, 22, 0.12); color: #ffedd5; }
+  .confirm-wizard .confirm-btn.secondary.active { background: rgba(249, 115, 22, 0.22); border-color: #fb923c; color: #ffedd5; }
+
+  /* 文档卡片 */
+  .doc-card { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(255, 255, 255, 0.03); cursor: pointer; max-width: 92%; }
+  .doc-card:hover { border-color: #3b82f6; }
+  button.doc-card { width: 100%; font: inherit; text-align: left; }
+  .doc-card .doc-card-icon { color: var(--accent-blue); flex-shrink: 0; }
+  .doc-card .doc-card-arrow { flex-shrink: 0; opacity: 0.5; }
+  .doc-card-name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc-card-status { margin-left: auto; font-size: 10px; color: var(--accent-emerald); flex-shrink: 0; }
+
+  /* 阶段卡片（B2/F12·D4：可展开、默认展开；正文=本轮概述+执行清单，与模型正文判重） */
+  .stage-card { border: 1px solid rgba(52, 211, 153, 0.3); border-radius: 8px; background: rgba(52, 211, 153, 0.05); margin-bottom: 6px; overflow: hidden; }
+  .stage-card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; user-select: none; width: 100%; background: none; border: none; font: inherit; text-align: left; cursor: pointer; }
+  .stage-card-header:hover { background: rgba(52, 211, 153, 0.08); }
+  .stage-check { color: #34d399; flex-shrink: 0; }
+  .stage-card-title { font-size: 12px; font-weight: 600; color: #34d399; }
+  .stage-card-badge { font-size: 10px; color: var(--text-muted); background: rgba(255, 255, 255, 0.06); padding: 2px 7px; border-radius: 4px; }
+    /* 四轮 R3/#10：过期/已回应暂停卡徽标（降饱和虚线框，弱化但可读） */
+    .stage-card-badge-stale { color: var(--text-dim); background: transparent; border: 1px dashed var(--border-color); }
+  .stage-card-arrow { margin-left: auto; color: var(--text-dim); flex-shrink: 0; }
+  .stage-card-body { padding: 2px 12px 10px; border-top: 1px dashed rgba(52, 211, 153, 0.25); }
+  .stage-card-summary { margin: 6px 0; font-size: 12px; line-height: 1.6; color: var(--text-color); }
+  .stage-card-ops { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+  .stage-card-ops li { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+  /* 闸机判定 chips（B2/F13：结构化来源标注「平台」/「Skill『xxx』」） */
+  .gate-chip-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .gate-chip { font-size: 10px; padding: 1px 7px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
+  .gate-chip-platform { color: #f87171; background: rgba(248, 113, 113, 0.12); border: 1px solid rgba(248, 113, 113, 0.35); }
+  .gate-chip-skill { color: #fbbf24; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35); }
+  .gate-chip-msg { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+  /* 0817：闸机拦截合并折叠（同款报错 ×N，details 展开） */
+  .msg-gate-collapse { width: 100%; }
+  .msg-gate-collapse-summary { cursor: pointer; font-size: 11px; color: var(--text-muted); user-select: none; }
+  .gate-chip-count { font-size: 11px; font-weight: 600; color: var(--warn, #d97706); }
+  /* ===== 生图结果图片卡片 ===== */
+  .image-card {
+    border: 1px solid rgba(147, 197, 253, 0.3);
+    border-radius: 10px;
+    background: rgba(59, 130, 246, 0.04);
+    padding: 10px 12px;
+    max-width: 92%;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: default;
+  }
+  .image-card-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--accent-blue);
+    margin-bottom: 8px;
+  }
+  .image-card-provider {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+  .image-card-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .image-card-thumb {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid var(--border-color);
+    background: var(--bg-tertiary);
+    cursor: grab;
+    transition: border-color 0.15s, transform 0.15s;
+    user-select: none;
+  }
+  .image-card-thumb:hover {
+    border-color: var(--accent-blue);
+    transform: scale(1.05);
+  }
+  .image-card-thumb:active {
+    cursor: grabbing;
+    transform: scale(0.98);
+  }
+  .image-card-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+  }
+  .image-card-label {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 3px 5px;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    font-size: 9px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .image-card-download {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .image-card-thumb:hover .image-card-download {
+    opacity: 1;
+  }
+  .image-card-download:hover {
+    background: rgba(59, 130, 246, 0.8);
+  }
+}
