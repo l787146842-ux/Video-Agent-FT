@@ -3,7 +3,7 @@ Antigravity CLI (agy) Adapter — 通过本机 agy CLI 调用 Gemini 生图。
 
 与画布行为对齐：Antigravity CLI 使用本机 agy 登录态，生图走本机 CLI，不走反代。
 
-4-4 双轨退役（ADR-0001，audit-0819）：CLI 聊天适配器（AgyCliChatAdapter）
+双轨退役（ADR-0001）：CLI 聊天适配器（AgyCliChatAdapter）
 已删除——非 FC 通道不再承载对话；CLI 三协议仅保留生图职能。
 """
 import asyncio

@@ -38,7 +38,7 @@ def compose_collect_card(message: str, options: List[Dict[str, Any]]) -> Dict[st
 
 
 def split_pause_channels(model_message: str, stage_label: str = "") -> Tuple[str, str]:
-    """v2 批4：FC workflow_pause 两通道确定性分离（无阈值补丁）。
+    """FC workflow_pause 两通道确定性分离（无阈值补丁）。
 
     确认通道 = 系统组装问句（带真实阶段标签）；模型原文一律进
     正文通道（空原文返回空串）。暂停与选项不被没收。"""
@@ -53,7 +53,7 @@ def normalize_option_surface(
     options: List[Dict[str, Any]],
     boundary_hit: bool = False,
 ) -> Tuple[str, List[Dict[str, Any]]]:
-    """选项面单一归一（v2 批4：模型不撰写工作流选项，非法直接拒收）。
+    """选项面单一归一（模型不撰写工作流选项，非法直接拒收）。
 
     - 规格未定稿：规格交互唯一入口 = 系统向导（模型选项直接拒收，
       维度模糊映射退役）；
@@ -71,7 +71,7 @@ def normalize_option_surface(
             _m, opts, _merged = gates_spec.merge_spec_param_wizard(
                 state, message, opts)
     except Exception:
-        # 向导合并失败不阻断发卡（降级遥测可见，批5：引导通道断裂不再静默）
+        # 向导合并失败不阻断发卡（降级遥测可见，引导通道断裂不静默）
         live_metrics.record_degradation("pause_composer.spec_wizard_merge")
     if boundary_hit and skill:
         sys_opt = gates_cards.system_continue_option(state, skill)

@@ -150,7 +150,7 @@ async def ref_to_data_uri(url: str) -> str:
         return ""
 
 
-# ---------- 批 A：中继错误信封识别（用户裁决：选什么用什么，联不通直接报错） ----------
+# ---------- 中继错误信封识别（用户裁决：选什么用什么，联不通直接报错） ----------
 # 中继层（9router 等）会把上游拒收（403/10605 slow 队列等）包进 HTTP 200 流
 # 当「模型内容」下发（如 "[qoder error 403: {...}]"）；不识别会被当稿子，
 # 垃圾递模型/绿勾/正文渲染裸 JSON。识别命中即抛错（retryable=False，不重试）。
@@ -353,7 +353,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             content = " ".join(
                 p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") != "image_url"
             )
-        # 批 A：中继拒收通知单识别（200 包错误）——命中即抛错，不当稿子返回
+        # 中继拒收通知单识别（200 包错误）——命中即抛错，不当稿子返回
         _env_status = detect_relay_error_envelope(content)
         if _env_status is not None:
             raise AdapterError(
@@ -361,7 +361,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                 retryable=False, http_status=_env_status,
             )
         tool_calls = message.get("tool_calls", []) or []
-        # 批2 透明度兑现：usage.total_tokens 入响应（轮次账单数据源，缺失保 0）
+        # 透明度兑现：usage.total_tokens 入响应（轮次账单数据源，缺失保 0）
         _usage = data.get("usage") or {}
         _total_tokens = int(_usage.get("total_tokens") or 0) if isinstance(_usage, dict) else 0
         return ChatResponse(
@@ -499,10 +499,10 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     return
 
                 last_finish = ""
-                # 批2 透明度兑现：机会性收集流内 usage（include_usage 端点在末段
+                # 透明度兑现：机会性收集流内 usage（include_usage 端点在末段
                 # 下发 choices 为空的 usage chunk；未下发则保 0，不强求不变更请求体）
                 _stream_tokens = 0
-                # 批 A：通知单头部累积器——中继把拒收缝进 200 流时，首段即识别抛错
+                # 通知单头部累积器——中继把拒收缝进 200 流时，首段即识别抛错
                 _env_head = ""
                 _env_done = False
                 # 流式 FC 累积器：OpenAI 协议中 tool_calls 的 arguments 是分片字符串，
@@ -520,7 +520,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     except json.JSONDecodeError:
                         continue
                     choices = data.get("choices", [])
-                    # usage chunk 可能 choices 为空：先取 usage 再判空（批2）
+                    # usage chunk 可能 choices 为空：先取 usage 再判空
                     _u = data.get("usage")
                     if isinstance(_u, dict) and _u.get("total_tokens"):
                         _stream_tokens = int(_u.get("total_tokens") or 0)

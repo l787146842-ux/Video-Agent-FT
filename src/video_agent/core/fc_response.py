@@ -1,4 +1,4 @@
-"""FC 响应合并域（批 7 自 planner.py 切出；handle_message 瘦身）。
+"""FC 响应合并域（自 planner.py 切出；handle_message 瘦身）。
 
 LLM 响应中 FC tool_calls 的执行与收集器合并胶水：执行委托注入的
 execute_fn（Planner._execute_fc_tools，测试可 monkeypatch），

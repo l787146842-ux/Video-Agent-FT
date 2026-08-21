@@ -15,7 +15,7 @@ Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复；
   interaction 暂停旗标同经 ``reduce_interaction`` 单一写入；
 - 完成度只认客观探针（stage_done，fail-closed）；
 - 历史机械直跑/审批直跑能力随 ADR-0004 退役（防复活归
-  check_legacy_orchestration 门禁）；「不暂停连跑」语义归自主性档位（批5）。
+  check_legacy_orchestration 门禁）；「不暂停连跑」语义归自主性档位。
 """
 import copy
 import uuid
@@ -40,7 +40,7 @@ _COMPILE_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
 
 
 def clear_compile_cache() -> None:
-    """轮始清理编译缓存（批4：sidecar 声明轮间可能被编辑，缓存仅限本轮）。"""
+    """轮始清理编译缓存（sidecar 声明轮间可能被编辑，缓存仅限本轮）。"""
     _COMPILE_CACHE.clear()
 
 
@@ -57,7 +57,7 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
 
     源 = sidecar 声明（validate_sidecar 注册期门禁）+ 阶段表；编译失败
     （未注册 Skill）返回 None（runtime 不启用，回落模型循环旧路径）。
-    批4：per-turn 缓存（轮始 clear_compile_cache；同轮多次调用共享）。"""
+    per-turn 缓存（轮始 clear_compile_cache；同轮多次调用共享）。"""
     cache_key = canonical_slug(skill) or str(skill or "")
     if cache_key in _COMPILE_CACHE:
         hit = _COMPILE_CACHE[cache_key]
@@ -197,7 +197,7 @@ def record_node_event(
 
 
 def project(state: Dict[str, Any], turn_id: str = "") -> Dict[str, Any]:
-    """v2 批3：workflow 投影（done 载荷/重连 replay 同源）。
+    """workflow 投影（done 载荷/重连 replay 同源）。
 
     run 级快照 + 本轮事件序列（前端历史重载与实时 SSE 一致重建）。
     只读派生，不改状态。"""
@@ -221,7 +221,7 @@ def project(state: Dict[str, Any], turn_id: str = "") -> Dict[str, Any]:
 def record_artifact(state: Dict[str, Any], skill: str, name: str) -> None:
     """产物账本一等条目（ArtifactCommitted）：reducer 单一写入。
 
-    批4 正名：伪轮次（turn_id=artifact:{name} 走 commit_turn）退役，
+    伪轮次（turn_id=artifact:{name} 走 commit_turn）退役，
     改为独立事件入账 + run.artifacts 单一写入（行为等价：幂等去重）。"""
     if not name:
         return
@@ -273,5 +273,5 @@ class WorkflowRuntime:
 
 __all__ = ["WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn", "compile_definition", "sync_run", "record_artifact", "apply_interaction", "reduce_interaction"]
 
-# 批4：sidecar 声明写入即失效编译缓存（声明变更不被缓存遮蔽）
+# sidecar 声明写入即失效编译缓存（声明变更不被缓存遮蔽）
 sidecar.register_write_hook(clear_compile_cache)

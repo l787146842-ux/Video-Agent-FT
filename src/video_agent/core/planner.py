@@ -38,7 +38,7 @@ from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core.planner_output import assemble_response
 from src.video_agent.core import pipeline_orchestrator
 from src.video_agent.core import prompt_gates
-# 批 7 拆分协作臂：豁免消费/确定性分诊/FC 响应合并（同名委托保持既有调用/测试路径）
+# 拆分协作臂：豁免消费/确定性分诊/FC 响应合并（同名委托保持既有调用/测试路径）
 from src.video_agent.core import fc_response, planner_gate_session, planner_triage
 from src.video_agent.core.live_metrics import record_degradation, record_live_context
 from src.video_agent.core.sse_events import (
@@ -305,7 +305,7 @@ class Planner:
                 },
             })
         except Exception as _e:
-            # 承重接线遥测（批 8）：暂停登记断线降级端点可见（对勾派生依赖此登记）
+            # 承重接线遥测：暂停登记断线降级端点可见（对勾派生依赖此登记）
             record_degradation("planner._issue_pause")
             logger.warning("[PauseId] active_pause 登记失败（不影响暂停卡渲染）: {}", _e)
 
@@ -329,7 +329,7 @@ class Planner:
         if not context.skill_name:
             context.skill_name = fallback_skill_from_state(self.state_manager.state_dict)
 
-        # 批4：轮始清理 workflow 编译缓存（sidecar 声明轮间可编辑，缓存仅限本轮）
+        # 轮始清理 workflow 编译缓存（sidecar 声明轮间可编辑，缓存仅限本轮）
         workflow_runtime.clear_compile_cache()
 
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
@@ -373,7 +373,7 @@ class Planner:
         # runtime 无自主行动能力；越阶由 stage_precondition 闸在工具执行
         # 路径首位否决（防越阶靠刹车，不没收方向盘）。
         if settings.pipeline_orchestrator_enabled and context.skill_name:
-            # v2 批1：轮始 run 同步（RunStarted 幂等）+ 输入类 decision 消费
+            # 轮始 run 同步（RunStarted 幂等）+ 输入类 decision 消费
             # （waiting_user→ready，DecisionResolved 入事件账本）。
             try:
                 _rt = workflow_runtime.WorkflowRuntime(
@@ -399,7 +399,7 @@ class Planner:
                     _BG_TASKS.add(_t)
                     _t.add_done_callback(_BG_TASKS.discard)
             except Exception as _e:
-                # 承重接线遥测（批5 留痕）：轮始 run 同步失败 fail-open 不阻断对话
+                # 承重接线遥测：轮始 run 同步失败 fail-open 不阻断对话
                 record_degradation("planner.run_sync")
                 logger.debug("[WorkflowRuntime] 轮始 run 同步跳过: {}", _e)
 
@@ -413,14 +413,14 @@ class Planner:
                 _orch = await self._run_gate_precheck(
                     context, context.raw_user_text or user_message)
             except Exception as _e:
-                # 承重接线遥测（批 8  lineage）：预检失败 fail-open 不阻断对话
+                # 承重接线遥测：预检失败 fail-open 不阻断对话
                 record_degradation("planner.gate_precheck")
                 logger.warning("[ControlFlow] 闸预检失败（交接模型循环）: {}", _e)
                 _orch = None
             if _orch is not None:
                 return _orch
 
-        # 架构板正批 ：门禁链与剧本闸装配退役，顺序与原料闸能力
+        # 门禁链与剧本闸装配退役，顺序与原料闸能力
         # 迁入 pipeline_orchestrator（状态驱动、机械回卡）。
 
         # 包装 llm_call：处理 FC tool_calls 后返回 (content, finish_reason, fc_applied)
@@ -469,7 +469,7 @@ class Planner:
                 content_parts: List[str] = []
                 finish = ""
                 stream_tool_calls: List[Dict[str, Any]] = []
-                # 批2 透明度兑现：流内 usage 机会性收集（中继未下发则 0）
+                # 透明度兑现：流内 usage 机会性收集（中继未下发则 0）
                 _stream_usage_tokens = 0
                 async for chunk in self._call_llm_stream(system_prompt, messages):
                     if chunk.type == "text_delta" and chunk.text:
@@ -545,7 +545,7 @@ class Planner:
                         strip_prior_feedback_images(messages)
                     messages.append({"role": "user", "content": feedback})
             _extra: Dict[str, Any] = {}
-            # 批2 透明度兑现：本轮 token 用量随 5 元组上抛（agent_loop 入账 trace）
+            # 透明度兑现：本轮 token 用量随 5 元组上抛（agent_loop 入账 trace）
             _extra["token_usage"] = int(getattr(response, "token_usage", 0) or 0)
             if _confirm_holder.get("message"):
                 _extra.update({
@@ -560,7 +560,7 @@ class Planner:
         def context_builder() -> str:
             return self._build_system_prompt(context)
 
-        # 委托给统一循环（批 12：步间收权已删——模型循环不再被中途夺权，
+        # 委托给统一循环（步间收权已删——模型循环不再被中途夺权，
         # 越阶/越暂停由闸机在工具调用点否决）
         loop_result = await run_agent_loop(
             user_message,

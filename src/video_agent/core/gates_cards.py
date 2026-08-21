@@ -317,7 +317,7 @@ SHOT_SEQUENCE_GATE_ERROR = _gate_msg("SHOT_SEQUENCE", (
 # 业界依据（Claude Code/Codex：确认 UI 由系统从即将执行的动作渲染，模型不撰写
 # 确认界面；Flova：暂停点与下一步是 Skill 工作流声明的属性）。1111 事故：
 # 模型自造「继续故事板拆分」跳过规格阶段——下一步 label 改为机械派生。
-# v2 批4：阶段短名由 sidecar flow.step_short_titles 声明（平台硬编码退役）。
+# 阶段短名由 sidecar flow.step_short_titles 声明（平台硬编码退役）。
 
 
 def _flow_steps_of(skill_name: str) -> Dict[int, str]:
@@ -363,7 +363,7 @@ def current_flow_step(state: Dict[str, Any], skill_name: str) -> int:
 
 def _flow_short_of(skill_name: str) -> Dict[int, str]:
     """sidecar flow.step_short_titles 活读（步骤号→短标题）；
-    v2 批4：平台阶段短名改按 Skill 声明，代码硬编码退役。"""
+    平台阶段短名改按 Skill 声明，代码硬编码退役。"""
     from src.video_agent.skill_runtime.registry import skill_manifest_of
 
     manifest = skill_manifest_of(str(skill_name or "").strip())

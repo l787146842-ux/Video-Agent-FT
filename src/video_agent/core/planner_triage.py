@@ -37,7 +37,7 @@ async def run_gate_precheck(
             "gate_card" if outcome is not None else "handoff",
             _kind, skill or "")
     except Exception:
-        # 控制流审计登记失败不阻断（降级遥测可见，批5）
+        # 控制流审计登记失败不阻断（降级遥测可见）
         live_metrics.record_degradation("planner_triage.control_flow_log")
     if outcome is None:
         return None

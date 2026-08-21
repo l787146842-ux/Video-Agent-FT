@@ -324,7 +324,7 @@ def spec_pause_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
 def spec_collect_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
     """script_analyze 后的规格收集向导（交互收集必须在规格文档
     写入之前；只渲染 Skill 声明的软维度）。
-     架构板正批：平台不内嵌总结（总结展示归编排器暂停卡声明）。"""
+     平台不内嵌总结（总结展示归编排器暂停卡声明）。"""
     _m, opts = build_spec_param_options("", state)
     return SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY, opts
 

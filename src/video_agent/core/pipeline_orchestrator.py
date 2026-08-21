@@ -55,7 +55,7 @@ def _all_media(groups: List[Dict[str, Any]], field: str) -> bool:
     return bool(drafts) and all(str((d or {}).get(field) or "").strip() for d in drafts)
 
 
-# 组装阶段客观产物（批 6）：video_assembler 执行器落盘的成片组装方案文档。
+# 组装阶段客观产物：video_assembler 执行器落盘的成片组装方案文档。
 # 探针据此区分「已生成未组装」与「已组装」（对标 Stop≠Done≠Verified：
 # 完成必须看产物证据，不与 shot_media 探针同构）；常量归 state/models 单一事实源。
 
@@ -101,7 +101,7 @@ def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
                    for g in audio for d in (g.get("drafts") or []))
         )
     if key == "assembly":
-        # 批 6：sidecar 声明优先；未声明回落「全部分镜有视频 + 组装方案文档在盘」，
+        # sidecar 声明优先；未声明回落「全部分镜有视频 + 组装方案文档在盘」，
         # 与 shot_media 探针解耦（已生成未组装不再被误判完成）
         decl = _assembly_done_decl(skill)
         if decl.startswith("document:"):
@@ -335,7 +335,7 @@ def next_batch(
 
 @dataclass
 class OrchestratorOutcome:
-    kind: str  # script_pending / script_ack / spec_pending（批 12 后仅兜底卡三类）
+    kind: str  # script_pending / script_ack / spec_pending（仅兜底卡三类）
     message: str = ""
     options: List[Dict[str, str]] = None
     results: List[Any] = None

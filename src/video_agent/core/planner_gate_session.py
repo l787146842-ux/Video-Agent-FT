@@ -1,4 +1,4 @@
-"""闸机豁免消费域（批 7 自 planner.py 切出；handle_message 瘦身）。
+"""闸机豁免消费域（自 planner.py 切出；handle_message 瘦身）。
 
 会话层一次性豁免（gate_overrides，§2.4）的消费与作用域判定：
 按钮路径（随消息登记 interaction.gate_overrides，单次消费即清除、留痕入 trace）
@@ -39,7 +39,7 @@ def consume_gate_overrides(state_manager: Any, user_message: Any) -> Any:
                 scope=str(gate_override_scope),
             )
     except Exception as _e:
-        # 承重接线遥测（批 8）：豁免消费断线不再只进日志，降级端点可见
+        # 承重接线遥测：豁免消费断线不再只进日志，降级端点可见
         live_metrics.record_degradation("planner_gate_session.consume_gate_overrides")
         logger.warning("[GateOverride] 豁免消费失败（本次放行可能未生效，回落意图识别兜底）: {}", _e)
     if not gate_override_scope and isinstance(user_message, str):

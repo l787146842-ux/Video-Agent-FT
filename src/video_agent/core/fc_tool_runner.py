@@ -43,7 +43,7 @@ _EXECUTOR_TOOL_NAMES = frozenset({
 })
 # 关键步骤工具：这些失败时模型不得声称“已完成/已写入”
 _CRITICAL_TOOL_NAMES = frozenset(_EXECUTOR_TOOL_NAMES | {"document_write"})
-# 批 12 轮内暂停纪律豁免集：workflow_pause 请求确认后，同批仅读类工具与暂停工具本身可行
+# 轮内暂停纪律豁免集：workflow_pause 请求确认后，同批仅读类工具与暂停工具本身可行
 _PAUSE_WINDOW_READONLY = frozenset({
     "read_draft", "read_skill", "read_project_doc", "read_uploaded_doc",
     "workflow_pause",
@@ -411,7 +411,7 @@ class FCToolRunner:
         self.gate_warnings = []
         # 1：对话内单图工具每批调用次数（prose 禁令下沉工具层，13.6 审计
         self._gen_image_calls = 0
-        # 批 12 轮内暂停纪律：workflow_pause 请求确认后同批拒续执行
+        # 轮内暂停纪律：workflow_pause 请求确认后同批拒续执行
         paused_this_batch = False
         applied = 0
         confirmation = ""
@@ -527,7 +527,7 @@ class FCToolRunner:
             # 浪费工具往返 + 全文回喂 token（prompt 里的「不要再 read」靠模型自觉，此处硬保障）
             if self._strip_structure_prompt(name, args, injected_skill):
                 prompt_stripped = True
-            # 闸机链：轮内暂停纪律（批 12）→ 阶段前置（平台不变量）→ 规格前置 → 生成确认 → 提示词结构/时序
+            # 闸机链：轮内暂停纪律 → 阶段前置（平台不变量）→ 规格前置 → 生成确认 → 提示词结构/时序
             # 暂停纪律：workflow_pause 后同批续执行拒收（暂停点必须真停，
             # 读只读工具与暂停工具本身豁免）——轮内暂停纪律否决权（执行路径内嵌，ADR-0004）
             gate_error = None
@@ -612,7 +612,7 @@ class FCToolRunner:
                             logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
                 if name == "workflow_pause":
                     paused_this_batch = True
-                    # v2 批4：workflow_pause 只提交审批事实——卡问句系统
+                    # workflow_pause 只提交审批事实——卡问句系统
                     # 组装，模型原文一律进正文通道（无阈值补丁）
                     confirmation, pause_overflow = pause_composer.split_pause_channels(
                         args.get("message", ""), last_stage_label)
@@ -638,7 +638,7 @@ class FCToolRunner:
                                 confirmation_options.append(item)
                             elif isinstance(o, str) and o.strip():
                                 confirmation_options.append({"label": o.strip(), "description": ""})
-                    # 批 3：验收缺失清单在场 → 暂停卡附「补拆/维持」结构化选项
+                    # 验收缺失清单在场 → 暂停卡附「补拆/维持」结构化选项
                     # （落实 Skill「先与用户确认是否修改」；附后清除登记）
                     try:
                         _svc_m = StateManager.get_instance()
@@ -691,7 +691,7 @@ class FCToolRunner:
                     "view_storyboard_media",
                 ):
                     await on_event({"type": SSE_ACTIONS_APPLIED, "count": 1})
-                # 过程时间线：工具完成 + trace 记录（planning 标记同源下发，审核整改批 2）
+                # 过程时间线：工具完成 + trace 记录（planning 标记同源下发）
                 if on_event is not None:
                     _finished_ev = {
                         "type": SSE_TOOL_FINISHED,
@@ -763,7 +763,7 @@ class FCToolRunner:
                         _finished_ev["planning"] = True
                     await on_event(_finished_ev)
                 # trace 与 SSE 同一口径（规格静默拒收=中性 True，普通失败=红× False），
-                # 防刷新后失败被重建为绿√；result_summary 与 SSE 同口径（批2）
+                # 防刷新后失败被重建为绿√；result_summary 与 SSE 同口径
                 tracer.record_action(
                     name=name, summary=spec_silent_summary or start_summary,
                     elapsed_ms=_tool_ms, ok=bool(spec_silent_summary),

@@ -15,7 +15,7 @@ class ChatResponse(BaseModel):
     finish_reason: str = ""
     tool_calls: List[Dict[str, Any]] = []
     raw: Optional[Dict[str, Any]] = None
-    # 本轮消耗 token（usage.total_tokens；批2 透明度兑现：轮次账单数据源，
+    # 本轮消耗 token（usage.total_tokens；透明度兑现：轮次账单数据源，
     # 端点未返回 usage 时保持 0，消费方按「有则展示」降级）
     token_usage: int = 0
 

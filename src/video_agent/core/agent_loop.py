@@ -74,7 +74,7 @@ def _unpack_llm(ret: Tuple) -> Tuple[str, str, int, float, Dict[str, Any]]:
 def _bad_output_nudge(attempt: int) -> str:
     """空/畸形输出续写引导：重试时随 messages 附一句，
     明确要求本步直接产出工具调用或可见回复（只临时附加，不入历史）。
-    文案外置 prompts/planner/feedback.md::BAD_OUTPUT_NUDGE（批3 指令收敛，Rule6）。"""
+    文案外置 prompts/planner/feedback.md::BAD_OUTPUT_NUDGE（指令收敛，Rule6）。"""
     tpl = load_prompt_section("planner/feedback.md", "BAD_OUTPUT_NUDGE")
     if tpl:
         return tpl.replace("{{attempt}}", str(attempt))
@@ -135,7 +135,7 @@ async def run_agent_loop(
             try:
                 await on_event(event)
             except Exception as _e:
-                # 承重接线遥测（批 8）：事件通道静默降级不再只进 debug 日志，
+                # 承重接线遥测：事件通道静默降级不再只进 debug 日志，
                 # 断线经 /api/agent/degradations 可见（型防复发）
                 live_metrics.record_degradation("agent_loop.event_emit")
                 logger.debug("[agent_loop] 忽略异常: {}", _e)
@@ -164,7 +164,7 @@ async def run_agent_loop(
         tracer.start_step()
         if step == 1:
             # 前奏明细：读 Skill/文档等准备动作记入第一步时间线
-            # （批4 turn_frame 抽公共；live 与持久化同条目；历史 runtime 直跑
+            # （live 与持久化同条目；历史 runtime 直跑
             # 消费方已随 ADR-0004 退役，现唯一消费方 = 本循环）
             await emit_prelude_events(
                 prelude_notes,
@@ -223,7 +223,7 @@ async def run_agent_loop(
             await llm_call(system_prompt, messages, stream_hook)
         )
         plan_total = float(plan_ms or 0.0)
-        # 批2 透明度兑现：本轮 token 用量入账 trace（轮次账单数据源）
+        # 透明度兑现：本轮 token 用量入账 trace（轮次账单数据源）
         step_tokens = int((fc_extra or {}).get("token_usage") or 0)
 
         # 空/畸形响应防护：空响应或 MALFORMED_FUNCTION_CALL 连续发生 → 重试至多 2 次，
@@ -267,7 +267,7 @@ async def run_agent_loop(
                             token_usage=step_tokens)
             break
 
-        # Skill 声明式流程门禁已随 架构板正批退役（顺序归编排器）。
+        # Skill 声明式流程门禁已退役（顺序归编排器）。
 
         if finish_reason == "length":
             result.warnings.append(
@@ -339,7 +339,7 @@ async def run_agent_loop(
                             finish_reason=finish_reason or "fc_continue",
                             token_usage=step_tokens)
             # 回喂：让下一步 LLM 知道工具已执行（文案外置 feedback.md::STEP_FEEDBACK，
-            # 批3 指令收敛 Rule6）
+            # 指令收敛 Rule6）
             messages.append({"role": "assistant", "content": content or f"（已执行 {fc_applied} 个工具调用）"})
             _step_fb = load_prompt_section("planner/feedback.md", "STEP_FEEDBACK")
             messages.append({
@@ -413,7 +413,7 @@ async def run_agent_loop(
             )
         else:
             # 用户腔兜底（空响应不是用户的错，给出明确下一步）；
-            # 文案外置 feedback.md::EMPTY_RESPONSE_FALLBACK（批3 指令收敛，Rule6）
+            # 文案外置 feedback.md::EMPTY_RESPONSE_FALLBACK（指令收敛，Rule6）
             result.text = load_prompt_section(
                 "planner/feedback.md", "EMPTY_RESPONSE_FALLBACK") or (
                 "这一步没有生成可见回复（上游可能瞬时抖动）——请直接说「重试」，我再来一次；"

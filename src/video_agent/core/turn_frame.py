@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""轮帧公共域（批4 turn_frame 抽公共）。
+"""轮帧公共域（agent_loop 前奏登记抽公共）。
 
 节点内模型循环（agent_loop step1）的前奏时间线登记：只登记真实
 发生的 system 准备动作，前奏不冒充工具操作。
