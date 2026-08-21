@@ -609,6 +609,11 @@ async def test_flow_directive_tool_sets_flag_and_clears(tmp_path, monkeypatch):
     tool = FlowDirectiveTool()
     res = await tool.aexecute(tool.get_input_schema()(auto_continue=True))
     assert res.success and prompt_gates.flow_auto_continue(svc.state_dict)
+    # 批5：授权经控制流 trace 留痕（可追溯，Context ≠ Consent）
+    from src.video_agent.core.tracer import AgentTracer
+    events = AgentTracer.get_instance().control_flow_events()
+    assert any(e.get("event") == "autonomy_granted" for e in events), \
+        "自主性档位授予必须进控制流 trace"
     # 任务开始清除（按消息生效语义）
     assert prompt_gates.clear_flow_directive(svc.state_dict) is True
     assert not prompt_gates.flow_auto_continue(svc.state_dict)

@@ -10,6 +10,7 @@ from loguru import logger
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import workflow_runtime
+from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.base import BaseTool, ToolResult
@@ -470,12 +471,24 @@ class FlowDirectiveTool(BaseTool):
         return FlowDirectiveInput
 
     async def aexecute(self, params: FlowDirectiveInput) -> ToolResult:
+        """自主性档位（宪法 Rule2，批5 正名）：用户显式指令授予模型豁免非平台
+        硬暂停点；按消息生效、任务开始即清；授权经控制流 trace 留痕
+        （可追溯到授予它的用户消息，Context ≠ Consent）。"""
         svc = StateManager.get_instance()
         if params.auto_continue:
             inter = svc.state_dict.setdefault("interaction", {})
             inter["auto_continue"] = True
             svc.save_debounced()
             logger.info("[FlowDirective] 一条龙指令登记（本条消息生效）")
+            try:
+                AgentTracer.get_instance().record_control_flow(
+                    "autonomy_granted",
+                    "用户显式指令授予连续执行档位（本条消息生效，豁免非平台硬暂停点；"
+                    "生成确认以本指令为显式同意）",
+                    str((svc.state_dict.get("usedSkills") or [""])[0] or ""),
+                )
+            except Exception as _e:
+                logger.debug("[FlowDirective] 控制流留痕跳过: {}", _e)
         return ToolResult(success=True, data={"auto_continue": bool(params.auto_continue)})
 
 
