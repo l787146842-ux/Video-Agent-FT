@@ -44,21 +44,30 @@ _HISTORY_MAX = 10
 # 它们的运行时把各节分别注入对应阶段的子工具；本系统把全文一次性注入单一编排模型，
 # 只能靠「识别当前阶段 → 重复强调对应章节」来逼近同等遵循度。
 # 值支持一对多：旧 tag（如 storyboard_designer）三拆重构后同时映射到全部拆分 stage，
-# 保证存量 Skill 的整节内容对三个拆解执行器同等注入（与旧执行器语义一致）
+# 保证存量 Skill 的整节内容对三个拆解执行器同等注入（与旧执行器语义一致）。
+# 执行器名对齐批：本项目 skill 文档章节 tag 一律用真实执行器/工具名；
+# 源平台遗留名（media_generator/storyboard_designer 等）仅作外来 Skill 兼容别名保留。
 SECTION_TAG_STAGES: Dict[str, Union[str, Tuple[str, ...]]] = {
     "planner": "planning",
+    # 兼容别名（源平台名，外来 Skill 用）→ 本项目执行器 script_analyze
     "resource_prepare_and_analyze": "planning",
     "multimodal_analyze_tool": "planning",
     "script_analyze": "planning",
     "text_editor": "planning",
+    # 兼容别名（源平台名）→ 本项目三拆解执行器（一对多）
     "storyboard_designer": ("storyboard_ke", "storyboard_shot", "storyboard_audio"),
     "storyboard_key_elements": "storyboard_ke",
     "storyboard_shots": "storyboard_shot",
     "storyboard_audio": "storyboard_audio",
     "write_media_prompt": "prompt_draft",
+    # 兼容别名（源平台名）→ 本项目执行器 write_media_prompt
     "write_the_prompt": "prompt_draft",
+    # 兼容别名（源平台名）→ generation 阶段；本项目用真实工具名分节
     "media_generator": "generation",
     "generation": "generation",
+    "image_generate": "generation",
+    "generate_video": "generation",
+    "audio_generate": "generation",
     "video_assembler": "assembly",
     "reply_to_user": "",
 }

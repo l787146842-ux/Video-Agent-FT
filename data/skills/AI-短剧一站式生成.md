@@ -12,13 +12,13 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 
 **全流程阶段与依赖关系**
 
-1. 读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型 → **resource_prepare_and_analyze**
-2. 将全局制作参数写入 Final_Video_Spec.md（画幅比例、目标时长、影像风格基调、输出语言）→ **text_editor**
-3. 设计 Storyboard：登记所有 key_element（角色、场景、关键道具），将剧本拆解为有序 shot 列表，规划 audio_layer（BGM、旁白）→ **storyboard_designer**
-4. 生成所有 key_element 设定图（角色三视图、场景四视图）→ **media_generator**
-5. 生成每批次运镜轨迹示意图（分镜表格图），供视频生成阶段作视觉锚点参考，这步只用来给用户确认镜头逻辑是否符合预期，不作为视频生成的参考 → **media_generator**
-6. 逐 shot 生成视频，每镜仅引用对应 key_element 图像；仅在与上一镜连续性极强时额外引用上一镜视频作为 reference_video → **media_generator**
-7. 生成所有 audio_layer 音频资产（台词、BGM、旁白）→ **media_generator**
+1. 读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型 → **script_analyze**
+2. 将全局制作参数写入 Final_Video_Spec.md（画幅比例、目标时长、影像风格基调、输出语言）→ **document_write**
+3. 设计 Storyboard：登记所有 key_element（角色、场景、关键道具），将剧本拆解为有序 shot 列表，规划 audio_layer（BGM、旁白）→ **storyboard_key_elements / storyboard_shots / storyboard_audio**
+4. 生成所有 key_element 设定图（角色三视图、场景四视图）→ **write_media_prompt、image_generate**
+5. 生成每批次运镜轨迹示意图（分镜表格图），供视频生成阶段作视觉锚点参考，这步只用来给用户确认镜头逻辑是否符合预期，不作为视频生成的参考 → **write_media_prompt、image_generate**
+6. 逐 shot 生成视频，每镜仅引用对应 key_element 图像；仅在与上一镜连续性极强时额外引用上一镜视频作为 reference_video → **write_media_prompt、generate_video**
+7. 生成所有 audio_layer 音频资产（台词、BGM、旁白）→ **audio_generate**
 8. 按 Storyboard 顺序组装时间线，完成音画同步与剪辑输出 → **video_assembler**
 
 **依赖关系：** 3→1,2；4→3；5→3；6→4,5；7→3；8→4,5,6,7
@@ -35,7 +35,7 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 **信息缺失处理：** 剧本中未写明的角色长相、场景细节、影像风格，一律主动询问用户，不得静默假设或擅自补充。
 </planner>
 
-<multimodal_analyze_tool>
+<script_analyze>
 **剧本文件接收与分类**
 
 接受以下输入形式：.txt、.docx 文件上传，或用户直接粘贴的文本内容。
@@ -44,7 +44,7 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 
 - **A 类 — 成熟分镜剧本：** 已按场景/镜头明确划分，包含景别、运镜、台词等要素 → 可直接进入 Storyboard 设计阶段。
 - **B 类 — 散文体小说 / 纯对话文本：** 无镜头结构，仅有叙事或人物对话 → 须告知用户，建议先完成短剧化改编（将叙事转化为分镜脚本）再继续；不得自行补全剧本中未描述的角色外貌或场景细节，须向用户确认。
-- **C 类 — 半结构化剧本：** 有基本场景描述或简单镜头标注，但缺少完整分镜语法（景别/机位/运镜不全）→ 可直接进入 Storyboard 设计阶段，由 storyboard_designer 在拆解 shot 时补全缺失的分镜要素。
+- **C 类 — 半结构化剧本：** 有基本场景描述或简单镜头标注，但缺少完整分镜语法（景别/机位/运镜不全）→ 可直接进入 Storyboard 设计阶段，由 storyboard_key_elements / storyboard_shots / storyboard_audio 在拆解 shot 时补全缺失的分镜要素。
 
 **提取结构化信息**
 
@@ -54,16 +54,18 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 - **场景清单：** 场景名称、空间特征描述、出现的镜头范围
 - **关键道具：** 对剧情或视觉有重要作用的道具
 - **剧情结构：** 幕次划分（开篇/发展/转折/高潮/结尾）及各幕大致镜头数量估算
-</multimodal_analyze_tool>
+</script_analyze>
 
-<storyboard_designer>
+<storyboard_key_elements>
 **设计 key_element**
 
 - 登记所有**主要角色**（element character）、**关键场景**（element scene）、关键道具（prop element）作为 key_element。
 - 角色描述须包含：年龄/性别/外貌/发型/服装/标志性细节；若角色在剧情中有多套造型或不同时间线形象，在描述中分别列出（如"造型A：…；造型B：…"）。
 - 场景描述须包含：空间结构、固定参照物（不可移动的视觉地标）、材质/光源/色温/氛围词。这些描述是后续每个 shot 空间连续性的锚点。
 - 角色的声音特征（音色/语气/情绪基调）单独登记为 key_element_audio，与角色元素绑定，用于视频生成时的音频条件。
+</storyboard_key_elements>
 
+<storyboard_shots>
 **拆解 shot 列表**
 
 - 每个 shot = 一次生成任务，时长 ≤ 30s（硬性上限，超出必须拆分）。
@@ -106,15 +108,17 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 - \[ \] **音效/台词位置**：是否紧贴对应动作，无错位？
 
 如有问题，先与用户确认是否修改，再继续下一步，不得静默修改原稿。
+</storyboard_shots>
 
+<storyboard_audio>
 **设计 audio_layer**
 
 - **BGM**：全剧至少规划一条背景音乐轨。若剧情有明显情绪转折点（如 3 分钟以上长片），可分段设计多条 BGM（各有独立 audio_layer ID 和覆盖镜头范围）。
 - **旁白**：如有画外音/旁白，以 narration 类型登记，注明音色特征、语气、具体台词文本及覆盖的镜头范围。
 - 视频生成阶段视频本身**不内嵌 BGM**（在 audio_layer 独立生成后于组装阶段混音）；台词/音效可在视频生成时内嵌。
-</storyboard_designer>
+</storyboard_audio>
 
-<media_generator>
+<image_generate>
 **key_element 设定图生成**
 
 - 使用 **TextToImage** 生成所有角色和场景设定图，模型与分辨率按全局设置的默认渠道填写。
@@ -128,21 +132,25 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 - 使用 **ImageToImage**，模型与分辨率按全局设置的默认渠道填写；同时上传该 shot 涉及的角色三视图和场景四视图作为 reference_image，确保画风/角色/场景一致。
 - 分镜表格图需包含四大要素：运镜轨迹箭头（推进/拉远/环绕/升降/跟随/固定各用不同颜色区分）、每切镜的中文动作说明、景别与时长标注、机位示意（相机图标+虚线轨迹）。
 - 具体提示词写法见 **Write the Prompt** 分区。
+</image_generate>
 
+<generate_video>
 **分镜视频生成**
 
 - 使用 **MultiModalToVideo**，模型与分辨率按全局设置的默认渠道填写。
 - 每个 shot 的参考输入默认包含：该镜涉及的所有角色 key_element 图像 + 对应场景 key_element 图像。
 - 仅当本镜与上一镜的连续性极强（如同一动作的延续、无剪切的场景推进）时，额外添加上一镜的 final_shot 视频作为 reference_video；**通常不加视频参考**，避免模型过度继承上一镜构图而削弱本镜的运镜设计。
 - 每个 shot 视频生成时，将对应角色的 key_element_audio 作为音频条件，保持角色音色跨镜一致。
+</generate_video>
 
+<audio_generate>
 **音频生成**
 
 - BGM（music 类型）：使用 **text_to_instrumental**，模型与分辨率按全局设置的默认渠道填写（注意：提示词中不得出现知名音乐人名字）。
 - 旁白（narration 类型）：使用 **text to narration**，模型与分辨率按全局设置的默认渠道填写。
-</media_generator>
+</audio_generate>
 
-<write_the_prompt>
+<write_media_prompt>
 **内切镜时长估算（视频提示词撰写前）**
 
 若 Storyboard shot 未标注各内切镜时长，按以下经验值估算，确保单 shot 合计 ≤ 30s：
@@ -227,7 +235,7 @@ Reference images attached:\
 - 所有视频提示词末尾必须包含 No subtitles, no background music, no text overlay——BGM 在 audio_layer 独立生成，后期混音；台词/音效可内嵌。
 - 使用 Seedance 2.5 480p 内嵌格式：音乐 (...)、音效 <...>、台词 {...}（非项目语言需在括号前标明语言）、片内字幕 【...】；台词括号内只写原文，不加情绪标注。
 - 不依赖绝对时间戳（如 "0–3s"）描述动作节奏，改用速度形容词。
-</write_the_prompt>
+</write_media_prompt>
 
 <video_assembler>
 **首尾帧衔接策略**

@@ -171,14 +171,16 @@ def test_split_truncation_retry_pinned():
 
 # ---------- 拆解边界按 Skill 章节结构自适应 ----------
 
-def test_merged_section_allows_all_three_kinds():
-    """「AI-短剧」storyboard_designer 同含三类职责 → 三个拆解执行器均放行三类。"""
+def test_ai_skill_split_sections_scope_kinds():
+    """执行器名对齐批（L-0821C）：AI-短剧的 storyboard_designer 旧合并章节已按
+    真实执行器拆为三节；各执行器放行 kinds 收敛到本节职责（不再整节三类
+    全放行）；ke 节含 shot 相关描述故宽容放行 shot，audio 职责不再跨节漏入。"""
     from src.video_agent.skill_runtime import registry
 
     registry.register_skill("AI-短剧一站式生成")
-    for tool in ("storyboard_key_elements", "storyboard_shots", "storyboard_audio"):
-        kinds = set(ex_mod._split_kinds_for_section(tool, "AI-短剧一站式生成"))
-        assert kinds == {"keyElement", "shot", "audio"}, f"{tool} 应放行三类，实际 {kinds}"
+    assert set(ex_mod._split_kinds_for_section("storyboard_key_elements", "AI-短剧一站式生成")) == {"keyElement", "shot"}
+    assert set(ex_mod._split_kinds_for_section("storyboard_shots", "AI-短剧一站式生成")) == {"shot"}
+    assert set(ex_mod._split_kinds_for_section("storyboard_audio", "AI-短剧一站式生成")) == {"audio"}
 
 
 def test_separate_sections_keep_single_kind_boundary():
