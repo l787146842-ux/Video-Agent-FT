@@ -42,11 +42,22 @@ async def _maybe_compact_history(
 ) -> List[Dict[str, Any]]:
     """会话级 compaction（恢复）：历史超阈值时用便宜模型把较早消息压成摘要。
 
+    触发双条件（token 驱动 + 条数兜底）：estimate_messages_tokens(history)
+    超过窗口 0.6 倍，或条数达 history_compact_threshold（阈值 0 = 整体关闭）；
+    长消息少条数的历史（大段回喂/附件）靠 token 条件命中，反之靠条数。
     对齐 Anthropic compaction 实践：保留决策与约束、丢弃冗余过程；
     摘要按对话消息数缓存于 interaction.session_summary（消息数变化即失效重建），
     失败静默回落原 history（compaction 是优化不是前置条件）。"""
     threshold = int(getattr(settings, "history_compact_threshold", 0) or 0)
-    if threshold <= 0 or adapter is None or len(history) < threshold:
+    if threshold <= 0 or adapter is None:
+        return history
+    from src.video_agent.core.token_budget import estimate_messages_tokens
+
+    # token 条件：按窗口 0.6 倍（getattr 兼容测试替身的部分配置注入）
+    window = int(getattr(settings, "context_window_size", 128000) or 128000)
+    token_limit = int(window * 0.6)
+    over_tokens = estimate_messages_tokens(history) > token_limit
+    if len(history) < threshold and not over_tokens:
         return history
     interaction = svc.state_dict.setdefault("interaction", {})
     cached = interaction.get("session_summary") or {}
@@ -87,7 +98,9 @@ async def _maybe_compact_history(
             return history
         interaction["session_summary"] = {"count": msg_count, "text": summary[:1000]}
         svc.save_debounced()
-        logger.info(f"[ChatService] 会话 compaction：{len(history)} 条 history 压缩为摘要+{keep} 条")
+        logger.info(
+            f"[ChatService] 会话 compaction（{'token' if over_tokens else '条数'}触发）："
+            f"{len(history)} 条 history 压缩为摘要+{keep} 条")
     return [
         {"role": "user", "content": f"（会话摘要，较早对话已压缩；工作台状态 JSON 仍是最新事实源）{summary}"},
     ] + history[-_HISTORY_COMPACT_KEEP:]
