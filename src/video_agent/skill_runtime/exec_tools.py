@@ -152,8 +152,8 @@ class ScriptAnalyzeTool:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         svc.save_debounced()
-        # 软参数候选出题已分离为 collect_spec 独立节点（Rule2 v6 批3）：
-        # 由 workflow runtime 直跑分析后调度，不再藏进本工具耗时。
+        # 软参数候选出题已分离为 collect_spec 独立节点：由 planner 轮始客观
+        # 预取调度（分析完成后后台点火），不再藏进本工具耗时（ADR-0004）。
         return exec_common.SkillToolResult(success=True, data={
             "summary": summary,
             "key_points": key_points,

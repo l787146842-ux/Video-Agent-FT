@@ -529,7 +529,7 @@ class FCToolRunner:
                 prompt_stripped = True
             # 闸机链：轮内暂停纪律（批 12）→ 阶段前置（平台不变量）→ 规格前置 → 生成确认 → 提示词结构/时序
             # 暂停纪律：workflow_pause 后同批续执行拒收（暂停点必须真停，
-            # 读只读工具与暂停工具本身豁免）——Rule2 v6 轮内暂停纪律否决权（驱动器 = workflow_runtime）
+            # 读只读工具与暂停工具本身豁免）——轮内暂停纪律否决权（执行路径内嵌，ADR-0004）
             gate_error = None
             if paused_this_batch and name not in _PAUSE_WINDOW_READONLY:
                 gate_error = (

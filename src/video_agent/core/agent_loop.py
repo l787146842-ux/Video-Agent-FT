@@ -164,7 +164,8 @@ async def run_agent_loop(
         tracer.start_step()
         if step == 1:
             # 前奏明细：读 Skill/文档等准备动作记入第一步时间线
-            # （批4 turn_frame 抽公共：与 runtime 直跑同源；live 与持久化同条目）
+            # （批4 turn_frame 抽公共；live 与持久化同条目；历史 runtime 直跑
+            # 消费方已随 ADR-0004 退役，现唯一消费方 = 本循环）
             await emit_prelude_events(
                 prelude_notes,
                 lambda name, summary, ms, ok: tracer.record_action(name, summary, ms, ok),

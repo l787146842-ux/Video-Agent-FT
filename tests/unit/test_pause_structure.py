@@ -1,6 +1,6 @@
 """暂停回应结构化闭环（对标 AskUserQuestion 范式）。
 
-三个 confirm 产生源（FC workflow_pause / 编排器机械卡 / 轮末策略卡）在两个
+三个 confirm 产生源（FC workflow_pause / 闸预检兜底卡 / 轮末策略卡）在两个
 汇流点统一签发 pause_id 并登记 interaction.active_pause；用户点选回应经
 ChatRequest.pause_response 结构化回携，消费匹配后随用户消息持久化
 pauseAnsweredId/Value——前端「当时所选」对勾从权威登记派生，不再文本反推。

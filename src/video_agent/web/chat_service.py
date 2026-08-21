@@ -154,7 +154,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
 
     use_studio_context = body.context_mode != "none"
     # 开场公共编排：暂停闭环 + 规格定稿/向导 + 附件降级注入
-    # + 轮始客观推进信号（Rule2 v6 runtime 直跑判定用）
+    # + 轮始客观推进信号（decision 消费/闸预检分诊用）
     llm_user_text, advance_signal, _wiz_doc = await _prepare_chat_opening(
         svc, body, user_text, use_studio_context)
 
@@ -400,7 +400,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             thinking_level=getattr(body, "thinking_level", "") or "",
             # 轮间引导注入器（任务式传输路径；非任务路径为 None）
             pending_injector=pending_injector,
-            # 轮始客观推进信号（runtime 直跑仅流程推进轮）
+            # 轮始客观推进信号（decision 消费/闸预检分诊；runtime 不据此自主行动）
             advance_signal=advance_signal,
         )
 

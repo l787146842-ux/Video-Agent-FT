@@ -1,9 +1,9 @@
 # *- coding: utf-8 -*-
-"""状态驱动管线知识源 + 闸预检（Rule2 v6：定义层承自本模块，驱动器 = workflow_runtime）。
+"""状态驱动管线知识源 + 闸预检（Rule2 主体回归：定义层承自本模块，账本/裁判数据归 workflow_runtime）。
 
 本模块提供阶段表/依赖图/客观探针作为「法条」，供 stage_precondition 闸
-否决越阶、done-闸判定完成、runtime 驱动就绪批；轮始闸预检只装配原料闸/
-规格闸兜底卡（Rule2 v6：确定性阶段由 workflow_runtime 直跑，平台保留否决权）。
+否决越阶、done-闸判定完成、轮始闸预检装配原料闸/规格闸兜底卡
+（层 9 由代码执行不依赖模型自觉；行动发起永远归模型，ADR-0004）。
 """
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple

@@ -161,13 +161,11 @@ class Settings:
     # 剧本正文注入上限（合一，原 10000/12000 分阶段硬编码废除）；
     # 仅超模型上下文硬窗时才截断，截断附可见警告
     script_inject_limit: int = field(default_factory=lambda: _env_int("SCRIPT_INJECT_LIMIT", 20000))
-    # 架构板正批 ：状态驱动编排器开关（默认开；回关=回落模型持循环旧路径）
+    # 架构板正批：状态驱动管线开关（阶段表/闸预检/账本同步总闸；默认开）
     pipeline_orchestrator_enabled: bool = field(
         default_factory=lambda: _env_bool("PIPELINE_ORCHESTRATOR_ENABLED", True))
-    # Workflow Runtime 驱动器开关（宪法 v6 Rule2，ADR-0003；默认开；
-    # 回关=白名单确定性阶段回落模型循环旧路径）
-    workflow_runtime_enabled: bool = field(
-        default_factory=lambda: _env_bool("WORKFLOW_RUNTIME_ENABLED", True))
+    # （Workflow Runtime 驱动器开关已随 ADR-0004 主体回归退役：runtime 不再有
+    # 驱动/直跑能力，账本与闸预检由 pipeline_orchestrator_enabled 统一管辖）
 
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))

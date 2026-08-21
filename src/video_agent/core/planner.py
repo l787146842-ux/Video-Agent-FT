@@ -128,7 +128,8 @@ class PlannerContext:
     # 由 web 层按 task_id 装配（agent_task_manager.drain_pending_guidance）；
     # None = 无注入（非任务路径）。
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None
-    # 轮始客观推进信号（Rule2 v6：runtime 直跑仅对流程推进轮生效）：
+    # 轮始客观推进信号（主体回归后用途：输入类 decision 消费/闸预检分诊；
+    # runtime 不再据此自主行动，ADR-0004）：
     # "pause"=上轮暂停被消费；"wizard"=规格向导回应被消费；
     # "continue"=点选系统派生继续选项；"attachment"=本轮带附件。
     # 空串 = 自由对话轮（提问等），交接模型循环。
@@ -158,7 +159,7 @@ class PlannerResponse:
     # 建议动作按钮（重试/继续，确定性交互；详见 agent_loop 同名字段）
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
     # 暂停卡结构化标识（对标 AskUserQuestion 范式）：三个 confirm 产生源
-    # （FC workflow_pause / 编排器机械卡 / 轮末策略卡）在两个汇流点统一签发，
+    # （FC workflow_pause / 闸预检兜底卡 / 轮末策略卡）在两个汇流点统一签发，
     # 随 done payload 下发；用户回应经 ChatRequest.pause_response 结构化回携
     pause_id: str = ""
     # 暂停卡语义种类（remind/collect/stage_done/confirm，前端标题渲染唯一依据）
@@ -285,7 +286,6 @@ class Planner:
         return context_window_for_model(model, provider_id=getattr(self, "chat_provider", "") or "")
 
     # ---------- 暂停卡结构化签发（单一实现，两个汇流点共用） ----------
-
     def _issue_pause(self, response: "PlannerResponse") -> None:
         """为携带 confirmation 的响应签发 pause_id 并登记 interaction.active_pause。
 
@@ -819,10 +819,10 @@ class Planner:
         ):
             yield chunk
 
-    # ---------- 闸预检（Rule2 v6：runtime 闸节点，实现体 = planner_triage.run_gate_precheck） ----------
+    # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------
     #
-    # 轮始只装配原料闸/规格闸兜底卡；白名单确定性阶段由 workflow_runtime
-    # 直跑，创作型阶段交接模型循环；越阶/越暂停由闸机在工具调用点否决。
+    # 轮始只装配原料闸/规格闸兜底卡（由代码执行不依赖模型自觉）；其余交接
+    # 模型循环；越阶/越暂停由闸机在工具调用点否决（ADR-0004 主体回归）。
 
     async def _bg_collect_spec(self, skill_name: str) -> None:
         """后台 collect_spec 节点（v2 收尾）：不阻塞分析轮；

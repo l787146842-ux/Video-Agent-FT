@@ -273,5 +273,5 @@ class WorkflowRuntime:
 
 __all__ = ["WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn", "compile_definition", "sync_run", "record_artifact", "apply_interaction", "reduce_interaction"]
 
-# 批4：sidecar 声明写入即失效编译缓存（门禁/直跑声明变更不被缓存遮蔽）
+# 批4：sidecar 声明写入即失效编译缓存（声明变更不被缓存遮蔽）
 sidecar.register_write_hook(clear_compile_cache)
