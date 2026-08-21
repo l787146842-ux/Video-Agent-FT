@@ -1,0 +1,41 @@
+{
+  "flow": {
+    "steps": {
+      "1": "分析已上传的音乐，导出其节奏结构、精确时间（时间戳）和歌词 → **script_analyze**。",
+      "2": "编写 `Final_Video_Spec.md`（标题、类型、比例、时长、视觉风格、语言、模型偏好） → **document_write**。",
+      "3": "生成故事板（关键元素、镜头列表、音频层） → **storyboard_key_elements / storyboard_shots / storyboard_audio**。并将上传的音频绑定到audio layer → **audio_generate**。",
+      "4": "设置元素：如果用户已经上传了元素资源（如角色图像或参考库中的角色），请直接将其作为资产绑定到相应的关键元素上。否则，为所有元素生成图像 → **write_media_prompt、image_generate**。",
+      "5": "为每个镜头生成一张关键帧图像以锁定视觉一致性；参考元素图像（第 3 步），后续镜头应参考之前类似的画面以保持连贯性 → **write_media_prompt、image_generate**。",
+      "6": "为每个镜头生成最终视频；对于演唱场景，使用 **ImageToVideoByAudio** 进行唇形同步，并结合歌词创造富有表现力的表演。对于非对口型场景，请使用 **MultiModalToVideo** 以保持一致性。严格参考音频片段来驱动该镜头中的关键帧 → **write_media_prompt、generate_video**。",
+      "7": "所有资源就绪后进行最终合成；然后引导用户导出 → **video_assembler**。"
+    },
+    "dependencies": {
+      "2": [
+        1
+      ],
+      "3": [
+        1,
+        2
+      ],
+      "4": [
+        2
+      ],
+      "5": [
+        3
+      ],
+      "6": [
+        3,
+        5
+      ],
+      "7": [
+        3,
+        6
+      ]
+    },
+    "spec_wizard": true,
+    "spec_gate": true
+  },
+  "pause": {
+    "stage_pause": true
+  }
+}

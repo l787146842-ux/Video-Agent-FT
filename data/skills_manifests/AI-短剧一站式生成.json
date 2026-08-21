@@ -1,0 +1,68 @@
+{
+  "flow": {
+    "steps": {
+      "1": "读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型 → **script_analyze**",
+      "2": "将全局制作参数写入 Final_Video_Spec.md（画幅比例、目标时长、影像风格基调、输出语言）→ **document_write**",
+      "3": "设计 Storyboard：登记所有 key_element（角色、场景、关键道具），将剧本拆解为有序 shot 列表，规划 audio_layer（BGM、旁白）→ **storyboard_key_elements / storyboard_shots / storyboard_audio**",
+      "4": "生成所有 key_element 设定图（角色三视图、场景四视图）→ **write_media_prompt、image_generate**",
+      "5": "生成每批次运镜轨迹示意图（分镜表格图），供视频生成阶段作视觉锚点参考，这步只用来给用户确认镜头逻辑是否符合预期，不作为视频生成的参考 → **write_media_prompt、image_generate**",
+      "6": "逐 shot 生成视频，每镜仅引用对应 key_element 图像；仅在与上一镜连续性极强时额外引用上一镜视频作为 reference_video → **write_media_prompt、generate_video**",
+      "7": "生成所有 audio_layer 音频资产（台词、BGM、旁白）→ **audio_generate**",
+      "8": "按 Storyboard 顺序组装时间线，完成音画同步与剪辑输出 → **video_assembler**"
+    },
+    "dependencies": {
+      "3": [
+        1,
+        2
+      ],
+      "4": [
+        3
+      ],
+      "5": [
+        3
+      ],
+      "6": [
+        4,
+        5
+      ],
+      "7": [
+        3
+      ],
+      "8": [
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    "spec_wizard": true,
+    "spec_gate": true,
+    "script_required": true,
+    "stage_executors": {
+      "1": [
+        "script_analyze"
+      ],
+      "3": [
+        "storyboard_key_elements",
+        "storyboard_shots",
+        "storyboard_audio"
+      ]
+    },
+    "step_done_conditions": {
+      "2": "spec"
+    },
+    "step_short_titles": {
+      "1": "剧本分析",
+      "2": "制作规格",
+      "3": "关键元素拆解",
+      "4": "设定图生成",
+      "5": "分镜表格图",
+      "6": "视频生成",
+      "7": "音频生成",
+      "8": "时间线组装"
+    }
+  },
+  "pause": {
+    "stage_pause": true
+  }
+}

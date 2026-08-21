@@ -17,7 +17,7 @@ from src.video_agent.skill_runtime import sidecar
 # 本项目新增的 Skill 执行器工具（复用现有工具不在此列：
 # document_write / read_uploaded_doc / image_generate / generate_video / workflow_pause）
 
-# 故事板结构拆解执行器家族（原 storyboard_designer 拆分为三部分，按阶段逐个调用）
+# 故事板结构拆解执行器家族（三执行器各管一节，skill 文档按三 tag 分章，L-0821C）
 STORYBOARD_STRUCTURE_TOOLS = (
     "storyboard_key_elements",
     "storyboard_shots",

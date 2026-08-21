@@ -87,21 +87,10 @@ def media_ref_for(line: str) -> str:
     return "write_media_prompt、image_generate"
 
 
-# ---------- storyboard_designer 三拆（标题分类式） ----------
+# ---------- storyboard_designer 三拆（顺序边界式） ----------
 
 _SB_AUDIO = re.compile(r"音频|BGM|旁白|配乐|audio", re.I)
 _SB_SHOT = re.compile(r"分镜|镜头|shot|运镜|机位", re.I)
-_SB_KE = re.compile(r"关键元素|key.?element|设定元素|资产", re.I)
-
-
-def _classify_sb_heading(s: str) -> str:
-    if _SB_AUDIO.search(s):
-        return "storyboard_audio"
-    if _SB_SHOT.search(s):
-        return "storyboard_shots"
-    if _SB_KE.search(s):
-        return "storyboard_key_elements"
-    return ""  # 全局规范类 → 前导，归入首个分类段
 
 
 def _split_by_heading_class(body: str, classify, report, name: str, which: str):

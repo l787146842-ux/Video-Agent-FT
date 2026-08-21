@@ -220,7 +220,7 @@ def _rollback_split_groups(svc: StateManager, split_kind: str, ids_before: set) 
 # 拆解边界自适应：允许的分组类别以注入章节的客观文本为准
 # （与 _skill_system_prompt 注入源唯一，不依赖 Skill 声明改动，10.12-）。
 # 优先级：① 章节「本节职责：只创建 X 分组」显式边界声明（Skill 层 3 唯一源）；
-# ② 无声明的合并章节按职责关键词检测（如「AI-短剧」storyboard_designer）。
+# ② 无声明的合并章节按职责关键词检测（外来 Skill 仍用合并章节时的兼容路径）。
 _RESP_SCOPE_RE = re.compile(r"本节职责[^：:]*[:：]\s*只创建([^，。；;\n]*?)分组")
 
 
@@ -243,7 +243,7 @@ def _split_kinds_for_section(tool_name: str, skill_name: str) -> List[str]:
 
     章节带「本节职责：只创建 X 分组」声明（如「剧本生视频」三个独立章节）→
     按声明精确放行，句内提到的其它类别是禁令不是职责；
-    无声明的合并章节（如「AI-短剧」storyboard_designer 同含三块职责）→
+    无声明的合并章节（外来 Skill 一节同含三块职责，兼容路径）→
     Skill 语义即"一起设计"，按关键词检测放行对应多类一次收进。
     本执行器自身类别恒定包含（检测漏判也不越权收紧）。
     """

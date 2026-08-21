@@ -239,7 +239,7 @@ def _resolve_section_text(entry: Optional[Any], section: str) -> str:
 
 
 class SkillSectionRunInput(SkillToolInput):
-    section: str = Field(..., description="章节标识：stage key（如 storyboard_ke）/ flova tag（如 write_the_prompt）/ 任意自定义 <tag> / 标题关键字")
+    section: str = Field(..., description="章节标识：stage key（如 storyboard_ke）/ flova tag（如 write_media_prompt）/ 任意自定义 <tag> / 标题关键字")
     task: str = Field(..., description="本章节要执行的具体任务描述（系统自动附工作台状态 JSON）")
 
 

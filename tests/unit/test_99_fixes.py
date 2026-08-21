@@ -105,7 +105,7 @@ async def test_99_text_spec_review_card_not_remerged_with_wizard(svc, monkeypatc
     sd.save_skill_doc(
         "测试流程Skill",
         "# T\n> 调用规则：测试\n将全局制作参数写入 Final_Video_Spec.md"
-        "（画幅比例、目标时长）→ text_editor\n",
+        "（画幅比例、目标时长）→ document_write\n",
     )
     svc.state_dict["usedSkills"] = ["测试流程Skill"]
     inter = svc.state_dict.setdefault("interaction", {})
@@ -135,7 +135,7 @@ async def test_99_model_spec_write_rejected_when_wizard_active(svc, monkeypatch)
     sd.save_skill_doc(
         "测试流程Skill",
         "# T\n> 调用规则：测试\n将全局制作参数写入 Final_Video_Spec.md"
-        "（画幅比例、目标时长）→ text_editor\n",
+        "（画幅比例、目标时长）→ document_write\n",
     )
     svc.state_dict["usedSkills"] = ["测试流程Skill"]
     svc.state_dict["documents"] = []
