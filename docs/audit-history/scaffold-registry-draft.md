@@ -1,4 +1,8 @@
-# 脚手架存量入账清单（0A 草稿，待审定）
+# 脚手架存量入账清单（0A 草稿，已审定入账）
+
+> **【完结 · 2026-08-21 治理沉积物折旧专项 P2a】** 使命完成：存量已全部审定入账
+> `src/video_agent/core/scaffold_registry.py`，`check_scaffold_registry.py` 已为 acceptance
+> 常驻门禁（机制转正）；本文书迁 docs/audit-history/ 仅供历史追溯。
 
 > **【档案化 · 2026-08-21 审核整改批0】** 本草稿为阶段 0A 一次性盘点资产，
 > 脚手架退役清单现行事实源 = 退役登记（check_legacy_orchestration 门禁 + 宪法 §十二），本文档仅供历史追溯。

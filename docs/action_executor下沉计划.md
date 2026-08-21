@@ -1,5 +1,7 @@
 # action_executor 下沉计划（审核整改批 8，仅规划不动码）
 
+> **性质：活跃（欠账已登记 docs/archive/debt-ledger.md D-01）；复审到期日 2026-09-30。**
+
 - 状态：规划已登记（scaffold_registry I09 承重壳，2026-08-21）
 - 对象：`src/video_agent/web/action_executor.py`（885 行，宪法 Rule2 层级例外）
 - 问题：按分层约束，故事板写域与动作语义应在 core/state 层；该文件因依赖

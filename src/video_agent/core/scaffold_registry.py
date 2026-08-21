@@ -12,7 +12,7 @@
 scaffold 计数只降不升，基线 = SCAFFOLD_COUNT_BASELINE；新增脚手架必须经宪法
 13.5 决策树（含 ：eval 证明缺口存在）并上调基线的书面裁决。
 
-存量清单来源：docs/scaffold-registry-draft.md（2026-08-19 审定入账）。
+存量清单来源：docs/audit-history/scaffold-registry-draft.md（2026-08-19 审定入账）。
 """
 from dataclasses import dataclass
 

@@ -1,5 +1,10 @@
 # 层 8 回喂话术资产盘点（阶段 5，audit-0819）
 
+> **【完结 · 2026-08-21 治理沉积物折旧专项 P2a】** 一次性盘点使命完成：对照 GOVERNANCE
+> 13.2 层 8 现状——回喂家族现行事实源已是 `core/fc_feedback.py` + `prompts/planner/feedback.md`，
+> 层 8 特别条款的登记/审查要求归 GOVERNANCE 与季度严禁审计承重，不再依赖本盘点表；
+> 本文书迁 docs/audit-history/ 仅供历史追溯。
+
 > **【档案化 · 2026-08-21 审核整改批0】** 本文档为 audit-0819 时期的一次性盘点资产，
 > 回喂家族现行事实源 = `core/fc_feedback.py` + `prompts/planner/feedback.md`；本文档仅供历史追溯，不再随代码演进更新。
 

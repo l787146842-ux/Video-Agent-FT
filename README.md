@@ -100,7 +100,7 @@ workspace/                运行时状态与资产（gitignore）
 | [docs/配置说明.md](docs/配置说明.md) | 各配置文件的权威关系与加载优先级 |
 | [docs/前端体验规范.md](docs/前端体验规范.md) | 品牌/视觉/交互细节强制规范 |
 | [docs/对画布的需求清单.md](docs/对画布的需求清单.md) | 需要画布侧实现的能力（postMessage 协议等） |
-| [docs/兼容层移除计划.md](docs/兼容层移除计划.md) | 兼容层清偿台账（含承重壳登记，五轮 S4 终态） |
+| [docs/兼容层移除计划.md](docs/兼容层移除计划.md) | 兼容层清偿台账（版本节点全部执行完毕；剩余兼容别名尾巴，到期日 2026-10-31） |
 | [docs/audit-history/](docs/audit-history/) | 历轮审核报告与整改计划书归档 |
 | [tests/fixtures/canvas/README.md](tests/fixtures/canvas/README.md) | 画布 API 契约夹具的录制与刷新方法 |
 

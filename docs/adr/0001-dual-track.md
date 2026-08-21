@@ -2,7 +2,7 @@
 
 - 状态：**已执行完毕**（2026-08-19，audit-0819；冻结 4-3 → 删除 4-4 同日完成）
 - 触发判据：用户书面确认不使用非 FC 通道（「不能 FC 就删掉」）+ 0B 度量非 FC 占比 0%
-- 关联：宪法 Rule 2、`docs/nonfc-measurement-memo.md`、`core/scaffold_registry.py` S01
+- 关联：宪法 Rule 2、`docs/audit-history/nonfc-measurement-memo.md`、`core/scaffold_registry.py` S01
 
 ## 背景
 
