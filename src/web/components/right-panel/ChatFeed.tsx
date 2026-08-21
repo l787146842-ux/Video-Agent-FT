@@ -1,7 +1,8 @@
 import { createEffect, createSignal, createMemo, For, Show, onCleanup } from 'solid-js';
 import { chatState } from '@/stores/chat';
 import { t } from '@/lib/locale';
-import { groupTurns, suggestedTargetIndex, answeredValueFor } from '@/lib/turn-groups';
+import { groupTurns } from '@/lib/turn-groups';
+import { deriveAffordances } from '@/lib/message-affordances';
 import { ChatMessageItem } from './ChatMessageItem';
 import { StreamingIndicator } from './StreamingIndicator';
 import { StreamingBubble } from './StreamingBubble';
@@ -41,60 +42,13 @@ export function ChatFeed() {
 
   onCleanup(() => { if (rafId !== undefined) cancelAnimationFrame(rafId); });
 
-  /** 当前待回应的确认消息下标：最后一条 confirm 消息，且必须出现在最后一条
-   * 用户消息之后（用户回应后旧确认不再可操作）。不能用「整体最后一条」判定：
-   * 文档卡片/图片卡片会追加在确认消息之后，会把确认消息顶掉导致引导按钮不渲染。 */
-  const confirmTargetIdx = () => {
-    if (chatState.isStreaming) return -1;
-    const msgs = chatState.messages;
-    let lastUser = -1;
-    for (let i = msgs.length - 1; i >= 0; i -= 1) {
-      if (msgs[i].sender === 'user') { lastUser = i; break; }
-    }
-    for (let i = msgs.length - 1; i >= 0; i -= 1) {
-      if (msgs[i].confirm) return i > lastUser ? i : -1;
-    }
-    return -1;
-  };
-
-  /** ：最后一条含闸机拦截判定（trace.gates ok=false）的消息（「本次放行」按钮挂载点）。
-   * 结构化判定替代文案 includes('拦截') 字符串匹配——文案/措辞改动不再影响按钮。 */
-  const gateWarningTargetIdx = () => {
-    if (chatState.isStreaming) return -1;
-    const msgs = chatState.messages;
-    for (let i = msgs.length - 1; i >= 0; i -= 1) {
-      const gates = (msgs[i].trace?.steps || []).flatMap((s) => s.gates || []);
-      if (gates.some((g) => !g.ok)) return i;
-    }
-    return -1;
-  };
-
-  /** ：携带建议动作的消息（重试/继续按钮挂载点）。
-   *  边界锐化：候选消息之后出现新「用户消息」即视为已处置
-   * （用户已用别的方式继续），旧按钮失效——同轮的 doc 卡/图片卡等 agent
-   * 派生条目不构成失效（判定纯函数在 lib/turn-groups，vitest 钉死）。 */
-  const suggestedTargetIdx = () =>
-    suggestedTargetIndex(chatState.messages, chatState.isStreaming);
-
-  /** ：暂停卡生命周期状态（回看时可知旧卡是否仍有效）。
-   * active=当前待回应；answered=其后已有用户消息（已回应）；expired=被更新的暂停取代。 */
-  const confirmStateFor = (idx: number): 'active' | 'answered' | 'expired' | 'none' => {
-    const msgs = chatState.messages;
-    if (!msgs[idx].confirm) return 'none';
-    if (idx === confirmTargetIdx()) return 'active';
-    for (let i = idx + 1; i < msgs.length; i += 1) {
-      if (msgs[i].sender === 'user') return 'answered';
-    }
-    return 'expired';
-  };
-
-  /** ：已回应暂停卡的「当时选了哪项」——结构化优先（pauseAnsweredId 与
-   * 暂停卡 pauseId 匹配，对标 AskUserQuestion 权威登记派生），旧消息回落文本匹配；
-   * 纯函数在 lib/turn-groups，vitest 钉死 */
-  const answeredValueForIdx = (idx: number): string => {
-    if (confirmStateFor(idx) !== 'answered') return '';
-    return answeredValueFor(chatState.messages, idx);
-  };
+  /** 消息交互派生层（审核整改批 3：P8 收敛）：哪条消息挂哪个交互件的
+   * 全部判定归 lib/message-affordances 单一纯函数（语义零变更，vitest 钉死）：
+   * 确认卡目标（文档卡/图片卡追加在确认之后不顶掉引导按钮）、闸机放行目标
+   * （结构化判定替代文案匹配）、建议动作目标（新用户消息即失效）、
+   * 暂停卡生命周期（active/answered/expired）与已回应所选值。 */
+  const affordances = createMemo(() =>
+    deriveAffordances(chatState.messages, chatState.isStreaming));
 
   /** ：轮次分组（同 turnId 聚合，旧消息相邻兜底）——一轮的
    * 正文/文档卡/图片卡收进同一容器，消除消息流碎片化 */
@@ -121,11 +75,11 @@ export function ChatFeed() {
             fallback={
               <ChatMessageItem
                 message={chatState.messages[g.indices[0]]}
-                isLast={g.indices[0] === confirmTargetIdx()}
-                isGateTarget={g.indices[0] === gateWarningTargetIdx()}
-                isSuggestedTarget={g.indices[0] === suggestedTargetIdx()}
-                confirmState={confirmStateFor(g.indices[0])}
-                answeredValue={answeredValueForIdx(g.indices[0])}
+                isLast={affordances()[g.indices[0]].confirmTarget}
+                isGateTarget={affordances()[g.indices[0]].gateTarget}
+                isSuggestedTarget={affordances()[g.indices[0]].suggestedTarget}
+                confirmState={affordances()[g.indices[0]].confirmState}
+                answeredValue={affordances()[g.indices[0]].answeredValue}
               />
             }
           >
@@ -142,11 +96,11 @@ export function ChatFeed() {
                 {(idx) => (
                   <ChatMessageItem
                     message={chatState.messages[idx]}
-                    isLast={idx === confirmTargetIdx()}
-                    isGateTarget={idx === gateWarningTargetIdx()}
-                    isSuggestedTarget={idx === suggestedTargetIdx()}
-                    confirmState={confirmStateFor(idx)}
-                    answeredValue={answeredValueForIdx(idx)}
+                    isLast={affordances()[idx].confirmTarget}
+                    isGateTarget={affordances()[idx].gateTarget}
+                    isSuggestedTarget={affordances()[idx].suggestedTarget}
+                    confirmState={affordances()[idx].confirmState}
+                    answeredValue={affordances()[idx].answeredValue}
                     hideChrome
                   />
                 )}
