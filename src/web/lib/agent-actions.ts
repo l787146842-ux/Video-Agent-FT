@@ -41,8 +41,9 @@ function selectedAssetUrls(kind: MediaType): string[] {
 /** 规范化 parts：字符串 → 单个 text 片段；丢弃空 text 片段 */
 function normalizeParts(input: string | RichContentPart[]): RichContentPart[] {
   if (typeof input === 'string') {
-    const t = input.trim();
-    return t ? [{ type: 'text', text: input }] : [];
+    // 变量名避开 i18n 的 t 函数（批6：遮蔽隐患清偿）
+    const trimmed = input.trim();
+    return trimmed ? [{ type: 'text', text: input }] : [];
   }
   return input.filter((p) => (p.type === 'text' ? p.text.trim().length > 0 : !!p.url));
 }
@@ -68,8 +69,9 @@ export async function sendUserMessage(
     /** 暂停回应结构化回携（对标 AskUserQuestion）：点选暂停卡选项时携带，
      *  后端校验后随消息持久化标记，前端对勾不再靠文本反推 */
     pauseResponse?: { pause_id: string; value: string; label?: string };
-    /** 系统动作标记（如 gate_override）：本地与持久化消息渲染为系统动作行 */
-    systemAction?: string;
+    /** 系统动作标记（批6 收窄：唯一形态值 'system_action'，如「本次放行」）：
+     *  本地与持久化消息渲染为系统动作行 */
+    systemAction?: 'system_action';
   },
 ): Promise<boolean> {
   const parts = normalizeParts(input);

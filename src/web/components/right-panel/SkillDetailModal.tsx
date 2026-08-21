@@ -93,21 +93,33 @@ export function SkillDetailModal(props: {
       showToast(t('rp.skillDetail.introEmpty'), 'error');
       return;
     }
-    // 替换原文中的 > 引用行（描述行）
+    // 批6 修复：简介块锚定「标题之后的首个引用块」（旧全文首个引用块启发式
+    // 会误改正文其他引用块）；标题缺失时报错不写；描述只允许落在标题与下一
+    // 个章节标题之间的区间内。
     const lines = content.split('\n');
-    const firstQuoteIdx = lines.findIndex((l) => l.trimStart().startsWith('>'));
+    const titleIdx = lines.findIndex((l) => l.startsWith('# '));
+    if (titleIdx < 0) {
+      showToast(t('rp.skillDetail.saveFailed', { error: 'Skill 文档缺少标题行，无法定位简介位置' }), 'error');
+      return;
+    }
+    // 搜索区间：标题之后到下一个章节标题（或文末）
+    let sectionEnd = lines.length;
+    for (let i = titleIdx + 1; i < lines.length; i++) {
+      if (/^#{1,2} /.test(lines[i])) { sectionEnd = i; break; }
+    }
+    let firstQuoteIdx = -1;
+    for (let i = titleIdx + 1; i < sectionEnd; i++) {
+      if (lines[i].trimStart().startsWith('>')) { firstQuoteIdx = i; break; }
+    }
+    const newLines = newDesc.split('\n').map((l) => `> ${l}`);
     if (firstQuoteIdx >= 0) {
-      // 找到连续的 > 行范围
+      // 替换连续 > 行范围（限在锚定区间内）
       let endIdx = firstQuoteIdx;
-      while (endIdx + 1 < lines.length && lines[endIdx + 1].trimStart().startsWith('>')) endIdx++;
-      // 用新描述替换
-      const newLines = newDesc.split('\n').map((l) => `> ${l}`);
+      while (endIdx + 1 < sectionEnd && lines[endIdx + 1].trimStart().startsWith('>')) endIdx++;
       lines.splice(firstQuoteIdx, endIdx - firstQuoteIdx + 1, ...newLines);
     } else {
-      // 没有 > 行，在标题后插入
-      const titleIdx = lines.findIndex((l) => l.startsWith('# '));
-      const insertAt = titleIdx >= 0 ? titleIdx + 1 : 0;
-      lines.splice(insertAt, 0, '', `> ${newDesc}`);
+      // 标题存在但无描述块：紧随标题插入（保留原插入语义）
+      lines.splice(titleIdx + 1, 0, '', ...newLines);
     }
     const newContent = lines.join('\n');
     setSavingIntro(true);

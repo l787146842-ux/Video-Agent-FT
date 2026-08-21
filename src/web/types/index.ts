@@ -174,7 +174,7 @@ export interface ChatMessage {
   meta?: string;
   confirm?: boolean | string;
   appliedActions?: number;
-  docCard?: boolean | string;
+  docCard?: string;
   /** 回复时使用的模型名称（agent 消息） */
   modelName?: string;
   /** 深度思考耗时（毫秒，完成后展示在「深度思考」卡片角标） */
@@ -211,8 +211,9 @@ export interface ChatMessage {
   /** 用户回应暂停的结构化标记（与对应暂停卡的 pauseId 匹配；对勾不再靠文本反推） */
   pauseAnsweredId?: string;
   pauseAnsweredValue?: string;
-  /** 消息形态标记：system_action=系统动作行（如「本次放行」），不渲染为用户气泡 */
-  kind?: 'system_action' | string;
+  /** 消息形态标记（批6 收窄：system_action=系统动作行；其余为暂停卡语义种类，
+   *  源自后端 pause_kind） */
+  kind?: 'system_action' | 'remind' | 'collect' | 'stage_done' | 'confirm';
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */

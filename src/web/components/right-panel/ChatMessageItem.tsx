@@ -1,24 +1,25 @@
-/* eslint-disable max-lines */ // 消息流元素聚合（卡片/时间线/闸机 chips）；StageCard 已于  切出
 import { For, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import {
-  FiCheckCircle, FiChevronRight, FiDownload, FiFileText, FiImage, FiX,
+  FiCheckCircle, FiChevronRight, FiFileText,
 } from 'solid-icons/fi';
 import { renderMarkdown } from '@/lib/markdown';
 import { sendUserMessage } from '@/lib/agent-actions';
 import { chatState } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { openDocsPanel } from '@/stores/docs';
-import { endCanvasImageDrag } from '@/stores/canvas';
-import { safeUrl } from '@/lib/utils';
 import { isHumanReadableSuggestedValue } from '@/lib/suggested-guard';
-import { createImageDrag, absUrl } from '@/lib/chat-image-drag';
+import { absUrl } from '@/lib/chat-image-drag';
 import { t } from '@/lib/locale';
 import { RichBubble } from './RichBubble';
 import { AgentTimeline, timelineFromMessage } from './AgentTimeline';
 import { ConfirmActions } from './ConfirmActions';
 import { StageCard } from './StageCard';
 import { UserRefBlocks } from './UserRefBlocks';
+import { ImageResultCard } from './ImageResultCard';
+import { ImageLightbox } from './ImageLightbox';
+import { GateWarnings } from './GateWarnings';
+import { MemoryHits } from './MemoryHits';
 import type { ChatMessage } from '@/types';
 
 /**
@@ -77,65 +78,12 @@ export function ChatMessageItem(props: {
   /** 过程时间线数据（从消息 trace/actionLog 重建，刷新后不丢） */
   const timeline = () => timelineFromMessage(msg());
 
-  const drag = createImageDrag();
-
-  // Esc 关闭原图预览
-  function onDocKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape') setLightboxUrl('');
-  }
-  onMount(() => document.addEventListener('keydown', onDocKeyDown));
-  onCleanup(() => document.removeEventListener('keydown', onDocKeyDown));
-
   /** 用户消息是否含内联媒体（有则用富文本气泡还原排版） */
-  const hasInlineMedia = () => !!msg().parts && msg().parts!.some((p) => p.type !== 'text');
+  const hasInlineMedia = () => (msg().parts || []).some((p) => p.type !== 'text');
 
   /** 用户消息是否带 Skill / 文档引用块（渲染进气泡内部） */
   const hasRefBlocks = () =>
     ((msg().docBlocks || []).length > 0) || ((msg().skillBlocks || []).length > 0);
-
-  /** 是否含闸机拦截类警告（结构化判定——trace.gates 存在 ok=false 条目，
-   * 不再对文案做 includes('拦截') 字符串匹配） */
-  const gateRecords = () => {
-    const out: Array<{ rule_id: string; layer: string; message: string; skill_name?: string }> = [];
-    (msg().trace?.steps || []).forEach((s) => {
-      (s.gates || []).forEach((g) => {
-        if (!g.ok) out.push({
-          rule_id: g.rule_id,
-          layer: g.layer,
-          message: g.message || '',
-          skill_name: g.skill_name,
-        });
-      });
-    });
-    return out;
-  };
-  const hasGateWarning = () => gateRecords().length > 0;
-
-  /** ：相同闸机拦截（同层/同规则/同文案）合并计数，前端折叠展示 ×N；
-      trace 仍保留全量记录（审计不丢，§2.5）。 */
-  const groupedGates = () => {
-    const out: Array<{
-      rule_id: string; layer: string; message: string; skill_name?: string; count: number;
-    }> = [];
-    gateRecords().forEach((g) => {
-      const hit = out.find(
-        (o) => o.layer === g.layer && o.rule_id === g.rule_id && o.message === g.message,
-      );
-      if (hit) hit.count += 1;
-      else out.push({ ...g, count: 1 });
-    });
-    return out;
-  };
-
-  /** 本次放行（§2.4）：显式用户指令 + gate_overrides 随消息留痕，后端单次消费。
-   *  系统动作形态（对标业界 harness：系统操作不混入用户话语流），
-   *  渲染为系统动作行而非用户气泡；LLM 语义不变（正文仍照常入 history） */
-  const overrideOnce = () => {
-    void sendUserMessage('放行本次拦截，继续任务', {
-      gateOverrides: ['all'],
-      systemAction: 'gate_override',
-    });
-  };
 
   /** 用户气泡正文：纯 Skill 唤起时正文与 Skill 块重名，隐藏正文只留块 */
   const userText = () => {
@@ -145,100 +93,34 @@ export function ChatMessageItem(props: {
     return raw;
   };
 
+  // Esc 关闭内联媒体原图预览（生图卡的预览由 ImageResultCard 自管）
+  function onDocKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape') setLightboxUrl('');
+  }
+  onMount(() => document.addEventListener('keydown', onDocKeyDown));
+  onCleanup(() => document.removeEventListener('keydown', onDocKeyDown));
+
   return (
     <div class={`chat-msg ${isUser() ? 'user' : 'agent'}`}>
-      {/* 文档完成卡片（旧版 doc-card） */}
-      <Show when={typeof msg().docCard === 'string' && msg().docCard}>
-        <button
-          type="button"
-          class="doc-card"
-          onClick={() => openDocsPanel(String(msg().docCard))}
-        >
-          <FiFileText size={15} class="doc-card-icon" />
-          <span class="doc-card-name">{String(msg().docCard)}</span>
-          <span class="doc-card-status">{t('rp.msg.docDone')}</span>
-          <FiChevronRight size={12} class="doc-card-arrow" />
-        </button>
+      {/* 文档完成卡片（批6：keyed Show 消除 String()/非空断言） */}
+      <Show when={msg().docCard} keyed>
+        {(doc) => (
+          <button
+            type="button"
+            class="doc-card"
+            onClick={() => openDocsPanel(doc)}
+          >
+            <FiFileText size={15} class="doc-card-icon" />
+            <span class="doc-card-name">{doc}</span>
+            <span class="doc-card-status">{t('rp.msg.docDone')}</span>
+            <FiChevronRight size={12} class="doc-card-arrow" />
+          </button>
+        )}
       </Show>
 
-      {/* 生图结果图片卡片（可拖拽到文件夹/画布） */}
-      <Show when={msg().imageCard && msg().imageCard!.image_urls.length > 0}>
-        <div class="image-card">
-          <div class="image-card-header">
-            <FiImage size={14} />
-            <span>{t('rp.msg.imageResult')}</span>
-            <Show when={msg().imageCard!.provider}>
-              <span class="image-card-provider">{msg().imageCard!.provider}</span>
-            </Show>
-          </div>
-          <div class="image-card-grid">
-            <For each={msg().imageCard!.image_urls}>
-              {(url, idx) => {
-                const fname = () => url.split('/').pop()?.split('?')[0] || `image-${idx() + 1}.png`;
-                return (
-                  <div
-                    class="image-card-thumb"
-                    draggable="true"
-                    onDragStart={(e) => drag.handleImageDragStart(e, url, fname())}
-                    onDragEnd={() => endCanvasImageDrag()}
-                    onPointerDown={(e) => drag.onThumbPointerDown(e, url, fname())}
-                    onClick={() => { if (!drag.wasMoved()) setLightboxUrl(absUrl(url)); }}
-                    title={t('rp.msg.imageTip', { name: fname() })}
-                  >
-                    <img
-                      src={safeUrl(url)}
-                      alt={fname()}
-                      loading="lazy"
-                      onLoad={() => drag.prefetchDragFile(url, fname())}
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                    <span class="image-card-label">{fname()}</span>
-                    <button
-                      type="button"
-                      class="image-card-download"
-                      title={t('rp.msg.download')}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const a = document.createElement('a');
-                        a.href = absUrl(url);
-                        a.download = fname();
-                        a.click();
-                      }}
-                    >
-                      <FiDownload size={12} />
-                    </button>
-                  </div>
-                );
-              }}
-            </For>
-          </div>
-        </div>
-      </Show>
-
-      {/* 原图预览 lightbox：点击缩略图打开，点击背景/Esc 关闭 */}
-      <Show when={lightboxUrl()}>
-        <div class="image-lightbox" onClick={() => setLightboxUrl('')}>
-          <img
-            src={lightboxUrl()}
-            alt={t('rp.msg.lightboxAlt')}
-            onClick={(e) => e.stopPropagation()}
-          />
-          <div class="image-lightbox-actions">
-            <a
-              href={lightboxUrl()}
-              download=""
-              title={t('rp.msg.downloadOriginal')}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <FiDownload size={16} />
-            </a>
-            <button type="button" title={t('rp.msg.closeEsc')} onClick={() => setLightboxUrl('')}>
-              <FiX size={18} />
-            </button>
-          </div>
-        </div>
+      {/* 生图结果图片卡片（批6：拖拽/下载/lightbox 迁入 ImageResultCard） */}
+      <Show when={msg().imageCard} keyed>
+        {(card) => <ImageResultCard card={card} />}
       </Show>
 
       {/* 阶段完成卡（B2/F12·D4：可展开、默认展开；正文=本轮概述（确认文案）+执行清单。
@@ -292,63 +174,10 @@ export function ChatMessageItem(props: {
             {msg().modelName || 'Agent'}
           </span>
         </Show>
-        {/* 模型降级等警示：常驻展示在 agent 气泡上（刷新后仍可见） */}
-        <Show when={(msg().warnings || []).length > 0 || hasGateWarning()}>
-          <div class="msg-warnings">
-            {/* B2/F13：闸机判定 chips（结构化来源标注：「平台」/「Skill『xxx』」）；
-                0817：相同拦截合并 ×N + details 折叠，防同款长报错刷屏 */}
-            <Show when={groupedGates().length > 0}>
-              <details class="msg-gate-collapse" open={groupedGates().length <= 1}>
-                <summary class="msg-gate-collapse-summary">
-                  {t('rp.msg.gateCollapseSummary', {
-                    total: String(gateRecords().length),
-                    groups: String(groupedGates().length),
-                  })}
-                </summary>
-                <For each={groupedGates()}>
-                  {(g) => (
-                    <div class="gate-chip-row">
-                      <span class={`gate-chip gate-chip-${g.layer === 'platform' ? 'platform' : 'skill'}`}>
-                        {g.layer === 'platform'
-                          ? t('rp.msg.gatePlatform')
-                          : t('rp.msg.gateSkill', { name: g.skill_name || '' })}
-                      </span>
-                      <span class="gate-chip-msg">{g.message || g.rule_id}</span>
-                      <Show when={g.count > 1}>
-                        <span class="gate-chip-count">
-                          {t('rp.msg.gateCount', { count: String(g.count) })}
-                        </span>
-                      </Show>
-                    </div>
-                  )}
-                </For>
-              </details>
-            </Show>
-            <For each={msg().warnings || []}>
-              {(w) => <div class="msg-warning-line">⚠ {w}</div>}
-            </For>
-            {/* 814F7/B2：拦截类警告附「本次放行」按钮（结构化挂载，仅最新一条，单次生效留痕） */}
-            <Show when={props.isGateTarget && hasGateWarning()}>
-              <button type="button" class="gate-override-btn" onClick={overrideOnce}>
-                {t('rp.msg.gateOverride')}
-              </button>
-            </Show>
-          </div>
-        </Show>
-        {/* 记忆命中可视化（4.7）：本轮 Agent 参考了哪些长期记忆（折叠展示） */}
-        <Show when={(msg().memoryHits || []).length > 0}>
-          <details class="msg-memory-hits">
-            <summary>{t('rp.msg.memoryRefs', { count: (msg().memoryHits || []).length })}</summary>
-            <For each={msg().memoryHits || []}>
-              {(h) => (
-                <div class="memory-hit-line">
-                  <span class="memory-hit-date">{h.date}</span>
-                  {h.content}
-                </div>
-              )}
-            </For>
-          </details>
-        </Show>
+        {/* 模型降级等警示 + 闸机拦截 chips + 本次放行（批6 迁入 GateWarnings） */}
+        <GateWarnings message={msg()} isGateTarget={props.isGateTarget} />
+        {/* 记忆命中可视化（批6 迁入 MemoryHits） */}
+        <MemoryHits message={msg()} />
         <div
           class="chat-bubble chat-markdown"
           innerHTML={renderMarkdown(msg().text)}
@@ -416,11 +245,14 @@ export function ChatMessageItem(props: {
                 <UserRefBlocks message={msg()} />
               </Show>
             }
-            parts={msg().parts!}
+            parts={msg().parts || []}
             onImageClick={(url) => setLightboxUrl(absUrl(url))}
           />
         </Show>
       </Show>
+
+      {/* 内联媒体原图预览 lightbox（共享组件，批6） */}
+      <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl('')} />
 
       {/* 元信息（旧版 msg-meta；五轮 S2/#2：轮次容器内已上提到组头） */}
       <Show when={msg().meta && !props.hideChrome}>

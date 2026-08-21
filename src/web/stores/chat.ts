@@ -132,7 +132,8 @@ export const chatActions = {
   /** 过程时间线：工具/操作完成（对勾/失败态） */
   toolFinished(id: string, ok: boolean, elapsedMs: number, resultSummary?: string) {
     setChatState(produce((s) => {
-      const entry = s.streamingTools.find((t) => t.id === id);
+      // 参数名避开 i18n 惯用名 t（批6：遮蔽隐患清偿）
+      const entry = s.streamingTools.find((item) => item.id === id);
       if (entry) {
         entry.status = ok ? 'done' : 'failed';
         entry.elapsed_ms = elapsedMs;
@@ -191,8 +192,11 @@ export const chatActions = {
         thinkingMs: thinkingMs || undefined,
         turnId,
         // 暂停卡语义种类（Rule2 v6：前端卡标题按 kind 渲染，
-        // remind=待补原料 / collect=规格交互 / 其余=阶段完成）
-        kind: payload.pause_kind || undefined,
+        // remind=待补原料 / collect=规格交互 / 其余=阶段完成）；
+        // 批6：白名单收窄，未知值不入库（防类型退化回潮）
+        kind: (['remind', 'collect', 'stage_done', 'confirm'].includes(payload.pause_kind || '')
+          ? (payload.pause_kind as ChatMessage['kind'])
+          : undefined),
         // 暂停卡结构化标识（用户点选回应时经 pause_response 结构化回携，对勾不再靠文本反推）
         pauseId: payload.pause_id || undefined,
         // ：建议动作按钮（重试/继续，确定性交互；仅最后一条消息渲染）

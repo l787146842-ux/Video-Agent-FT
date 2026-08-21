@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from 'solid-js';
+import { Show, createSignal } from 'solid-js';
 import {
   FiCheckCircle, FiChevronDown, FiChevronRight,
 } from 'solid-icons/fi';
@@ -7,9 +7,11 @@ import { stageLabelFromMessage } from './AgentTimeline';
 import type { ChatMessage } from '@/types';
 
 /**
- * 阶段完成卡（·；  自 ChatMessageItem.tsx 切出，零行为变更）：
- * 可展开、默认展开。正文=本轮概述（确认文案，与模型正文判重防双显）+ 执行清单
- * （actionLog）。历史消息同样可展开——暂停点回看不丢失（吸收 Qoder 问题 12）。
+ * 阶段完成卡（自 ChatMessageItem.tsx 切出）：
+ * 可展开、默认展开。正文 = 本轮概述（确认文案，与模型正文判重防双显）。
+ * 批6 账目收敛：执行明细（actionLog）只展示在 AgentTimeline「已处理操作」
+ * 面板（trace 同源、含 result_summary），本卡只留操作数徽标，不再双处呈现
+ *（项目体验基线：信息已在对话内可见的只展示一处）。
  */
 export function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'answered' | 'expired' | 'none' }) {
   const [open, setOpen] = createSignal(true);
@@ -26,7 +28,7 @@ export function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'an
     if (norm(msg().text || '').includes(norm(c))) return '';
     return c;
   };
-  const hasBody = () => !!bodyText() || (msg().actionLog || []).length > 0;
+  const hasBody = () => !!bodyText();
   /** 卡标题按 pause kind 语义渲染（Rule2 v6）：
    *  remind=待补原料 / collect=规格交互 / 其余=阶段完成（消误标） */
   const cardTitle = () => {
@@ -70,13 +72,7 @@ export function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'an
           <Show when={bodyText()}>
             <p class="stage-card-summary">{bodyText()}</p>
           </Show>
-          <Show when={(msg().actionLog || []).length > 0}>
-            <ul class="stage-card-ops">
-              <For each={msg().actionLog || []}>
-                {(op) => <li>{op}</li>}
-              </For>
-            </ul>
-          </Show>
+          {/* 批6：actionLog 明细不再双处呈现，归 AgentTimeline 单家 */}
         </div>
       </Show>
     </div>

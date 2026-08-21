@@ -59,9 +59,10 @@ export function pickDimension(title: string, opts: ConfirmOptionItem[]): PickDim
 export function kindForDim(dim: PickDim, title: string): ProviderKind {
   if (dim === 'image-channel') return 'image';
   if (dim === 'video-channel') return 'video';
-  const t = String(title || '');
-  if (/视频/.test(t)) return 'video';
-  if (/图|图片|图像/.test(t)) return 'image';
+  // 变量名避开 i18n 惯用名 t（批6：遮蔽隐患清偿）
+  const titleStr = String(title || '');
+  if (/视频/.test(titleStr)) return 'video';
+  if (/图|图片|图像/.test(titleStr)) return 'image';
   return 'chat';
 }
 
