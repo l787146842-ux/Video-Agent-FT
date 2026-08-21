@@ -160,6 +160,45 @@ def test_build_context_empty_query(mem_dir):
 # ---------- 4.7：写入去重 / 命中可视化 / 管理 API 底座 ----------
 
 @pytest.mark.asyncio
+async def test_dedup_cross_generation_single_char_stock(mem_dir):
+    """跨代去重（三维评审必修 1）：存量单字关键词记录 × 新 bigram 写入可判重。
+
+    旧单字切分时代落盘的记录与新 bigram 写入直接求交集恒空，
+    去重永久失效并已在 fallback.json 产生跨代重复；归一化修复后钉死。"""
+    mgr = MemoryManager(persist_dir=mem_dir, backend="json", summary_interval=1)
+    legacy = MemoryRecord(
+        content="收到剧本，我来分析。",
+        source="请查看我上传的素材",
+        keywords=list("收到剧本我来分析"),  # 旧代单字关键词
+        project_id="",
+    )
+    mgr._store.add(legacy)
+    # 判重命中存量单字记录
+    dup = mgr._find_duplicate("收到剧本，我来分析。", "")
+    assert dup is not None and dup.id == legacy.id
+
+
+@pytest.mark.asyncio
+async def test_record_dialog_dedup_against_single_char_stock(mem_dir):
+    """写入路径端到端：相同内容的摘要不再在单字存量上堆出第二条"""
+    mgr = MemoryManager(persist_dir=mem_dir, backend="json", summary_interval=1)
+    legacy = MemoryRecord(
+        content="正在操作",
+        source="创建分镜",
+        keywords=list("正在操作"),
+        project_id="",
+    )
+    mgr._store.add(legacy)
+
+    async def fake_llm(prompt: str) -> str:
+        return "正在操作"
+
+    r = await mgr.record_dialog("创建分镜", "好的", summarize_fn=fake_llm)
+    assert r is None
+    assert mgr.count() == 1
+
+
+@pytest.mark.asyncio
 async def test_record_dialog_dedup_skips_similar_summary(mem_dir):
     """写入去重：与已有记忆关键词高度重叠的摘要不再重复堆积"""
     mgr = MemoryManager(persist_dir=mem_dir, backend="json", summary_interval=1)

@@ -10,7 +10,7 @@ from src.video_agent.web.action_executor import StudioActionExecutor
 from src.video_agent.config import settings
 from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core import workflow_runtime
-from src.video_agent.core.token_budget import estimate_messages_tokens
+from src.video_agent.core.token_budget import context_window_for_model, estimate_messages_tokens
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
@@ -52,8 +52,14 @@ async def _maybe_compact_history(
     threshold = int(getattr(settings, "history_compact_threshold", 0) or 0)
     if threshold <= 0 or adapter is None:
         return history
-    # token 条件：按窗口 0.6 倍（getattr 兼容测试替身的部分配置注入）
-    window = int(getattr(settings, "context_window_size", 128000) or 128000)
+    # token 条件：按窗口 0.6 倍；窗口与 planner 截断同源（按模型查表，
+    # 消除大窗口模型摘要过早/小窗口模型 token 条件空转的口径偏差）；
+    # adapter 无 model 属性（测试替身）时回落 settings 口径，threshold=0 关闭语义不变
+    model = getattr(adapter, "model", "") or ""
+    if model:
+        window = int(context_window_for_model(model) or 0) or 128000
+    else:
+        window = int(getattr(settings, "context_window_size", 128000) or 128000)
     token_limit = int(window * 0.6)
     over_tokens = estimate_messages_tokens(history) > token_limit
     if len(history) < threshold and not over_tokens:

@@ -14,7 +14,7 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.memory.models import MemoryRecord
-from src.video_agent.memory.retriever import hybrid_rank, tokenize
+from src.video_agent.memory.retriever import _bigrams, hybrid_rank, tokenize
 from src.video_agent.memory.summarizer import summarize_dialog
 from src.video_agent.memory.vector_store import VectorStore
 from src.video_agent.utils.paths import DATA_DIR
@@ -124,8 +124,12 @@ class MemoryManager:
     # ---------- 写入去重与管理 ----------
 
     def _find_duplicate(self, content: str, project_id: str) -> Optional[MemoryRecord]:
-        """写入去重检测（4.7）：与已有记忆的关键词集 Jaccard 重叠 ≥ 阈值视为同一条"""
-        new_kw = set(tokenize(content)[:10])
+        """写入去重检测（4.7）：与已有记忆的关键词集 Jaccard 重叠 ≥ 阈值视为同一条。
+
+        双侧统一经 retriever._bigrams 归一化（对齐 keyword_score 的双侧同构口径）：
+        旧存量记录的关键词为单字切分，直接与新写入的 bigram 求交集恒空，
+        跨代去重会永久失效；归一化后旧单字存量也补展为 bigram 参与判重。"""
+        new_kw = set(_bigrams(tokenize(content)[:10]))
         if not new_kw:
             return None
         try:
@@ -133,7 +137,7 @@ class MemoryManager:
         except Exception:
             return None
         for r in candidates:
-            old_kw = set(r.keywords or tokenize(r.content)[:10])
+            old_kw = set(_bigrams(tokenize(r.content)[:10]))
             if not old_kw:
                 continue
             inter = len(new_kw & old_kw)

@@ -9,6 +9,7 @@ from loguru import logger
 import json
 import os
 import pathlib
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -41,24 +42,28 @@ _SECTIONS: Dict[str, Dict[str, int]] = {}
 _SAMPLES_PATH = pathlib.Path(__file__).resolve().parents[3] / "data" / "prompt_sections.jsonl"
 _SAMPLES_MAX_LINES = 4000   # 滚动上限：超出即裁剪，防遥测自身膨胀
 _SAMPLES_KEEP_LINES = 2000  # 裁剪时保留最近 N 条
+# 追加/裁剪串行化：多 worker 并发下避免丢样本与读到半截文件
+_SAMPLES_LOCK = threading.Lock()
 
 
 def _persist_section_sample(project_id: str, sections: Dict[str, int]) -> None:
     """追加一条组装样本（ts/project_id/各段字符数）。
 
+    append + 全量读 + 重写均在模块级锁内串行，消除并发丢样本与半截文件面。
     pytest 环境不落盘（防测试基线污染样本文件）；异常静默，遥测不阻断主流程。"""
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return
     path = _SAMPLES_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     rec = {"ts": time.time(), "project_id": project_id, **sections}
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    with open(path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-    if len(lines) > _SAMPLES_MAX_LINES:
-        with open(path, "w", encoding="utf-8") as f:
-            f.writelines(lines[-_SAMPLES_KEEP_LINES:])
+    with _SAMPLES_LOCK:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) > _SAMPLES_MAX_LINES:
+            with open(path, "w", encoding="utf-8") as f:
+                f.writelines(lines[-_SAMPLES_KEEP_LINES:])
 
 
 def record_sections(project_id: str, sections: Dict[str, int]) -> None:

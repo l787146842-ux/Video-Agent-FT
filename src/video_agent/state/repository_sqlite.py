@@ -151,7 +151,8 @@ class SqliteStateRepository:
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('index', ?)",
                 (json.dumps(index, ensure_ascii=False),),
             )
-        self._mirror_index(index)
+            # 镜像纳入锁内：并发保存下镜像与 DB 同序落盘，不乱序滞后
+            self._mirror_index(index)
 
     def save_project(self, project_id: str, state: Dict[str, Any]) -> None:
         self._validate_id(project_id)
@@ -162,7 +163,8 @@ class SqliteStateRepository:
                 "INSERT OR REPLACE INTO projects (id, state, updated_at) VALUES (?, ?, ?)",
                 (project_id, state_text, now),
             )
-        self._mirror_project(project_id, state_text)
+            # 镜像纳入锁内：并发保存下镜像与 DB 同序落盘，不乱序滞后
+            self._mirror_project(project_id, state_text)
 
     def load_project(self, project_id: str) -> Optional[Dict[str, Any]]:
         self._validate_id(project_id)
