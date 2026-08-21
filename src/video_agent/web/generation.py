@@ -437,69 +437,162 @@ async def generate_image_via_provider(
     raise GenerationError("供应商没有返回任何图片")
 
 
-# ---------- 生图并发节流 + 429 退避 + 连败熔断 ----------
-# 15 张并发提交全撞 429（现场）：并发上限 settings.image_gen_concurrency；
-# 429 指数退避重试 2 次；同供应商连败 ≥6 且 60s 内熔断开路，新提交直接报错
-# （确定性拦截，防模型轮反复触发整批）。
-_image_gen_sem: Optional[asyncio.Semaphore] = None
-_IMAGE_FAIL_STREAK: Dict[str, Dict[str, float]] = {}
-IMAGE_CIRCUIT_THRESHOLD = 6
-IMAGE_CIRCUIT_WINDOW = 60.0
+# ---------- BoundedChannel：有界并发三件套（信号量 + 429 退避 + 连败熔断） ----------
+# 自生图单点节流抽为通用通道并推广到媒体生成族（P3-13）：
+# image/video/audio 三通道各自独立信号量与熔断台账，互不干扰。
+# 有界并发只作用于「模型发起的执行器批内部」的供应商调用，
+# runtime 自身不发起生成（ADR-0004）。
 
 IMAGE_CIRCUIT_ERROR = (
     "出图渠道连败熔断：上游持续限流/报错。请约 1 分钟后重试，"
     "或在 API 配置/规格文档更换出图渠道。"
 )
+VIDEO_CIRCUIT_ERROR = (
+    "视频生成渠道连败熔断：上游持续限流/报错。请约 1 分钟后重试，"
+    "或在 API 配置/规格文档更换生视频渠道。"
+)
+AUDIO_CIRCUIT_ERROR = (
+    "音频生成渠道连败熔断：上游持续限流/报错。请约 1 分钟后重试，"
+    "或在 API 配置/规格文档更换音频渠道。"
+)
 
 
-def _get_image_sem() -> asyncio.Semaphore:
-    global _image_gen_sem
-    if _image_gen_sem is None:
-        _image_gen_sem = asyncio.Semaphore(max(1, settings.image_gen_concurrency))
-    return _image_gen_sem
+class BoundedChannel:
+    """有界并发通道：asyncio 信号量 + 429 指数退避 + 连败熔断（参数化三件套）。
+
+    参数：并发上限 / 退避基数（秒）/ 最大尝试次数 / 熔断阈值（连败次数）/ 冷却秒数。
+    - 并发上限：信号量只包住供应商调用本体；退避等待不占并发位（先释放再 sleep）；
+    - 429 退避：命中 429 按 backoff_base * (attempt+1) 递增退避重试，总尝试 max_attempts 次；
+    - 连败熔断：同供应商连败 ≥ 阈值且 window 秒内 → 熔断开路，新调用直接报错
+      （确定性拦截，防模型轮反复触发整批）；任一成功清零连败台账。
+    """
+
+    def __init__(
+        self,
+        name: str,
+        concurrency: int,
+        *,
+        backoff_base: float = 5.0,
+        max_attempts: int = 3,
+        circuit_threshold: int = 6,
+        circuit_window: float = 60.0,
+        circuit_error: str = "",
+    ) -> None:
+        self.name = name
+        self.concurrency = max(1, int(concurrency))
+        self.backoff_base = float(backoff_base)
+        self.max_attempts = max(1, int(max_attempts))
+        self.circuit_threshold = int(circuit_threshold)
+        self.circuit_window = float(circuit_window)
+        self.circuit_error = circuit_error or (
+            f"{name} 生成渠道连败熔断：上游持续限流/报错，请约 1 分钟后重试。"
+        )
+        self._sem: Optional[asyncio.Semaphore] = None
+        self._fail_streak: Dict[str, Dict[str, float]] = {}
+
+    # -- 熔断台账（按供应商独立记账） --
+
+    def circuit_open(self, provider_id: str) -> bool:
+        st = self._fail_streak.get(provider_id or "")
+        return bool(
+            st and st["n"] >= self.circuit_threshold
+            and (time.time() - st["ts"]) < self.circuit_window
+        )
+
+    def check_circuit(self, provider_id: str) -> None:
+        """熔断开路时新调用直接报错（确定性拦截）。"""
+        if self.circuit_open(provider_id):
+            raise GenerationError(self.circuit_error)
+
+    def _record(self, provider_id: str, ok: bool) -> None:
+        st = self._fail_streak.setdefault(provider_id or "", {"n": 0.0, "ts": 0.0})
+        if ok:
+            st["n"] = 0.0
+        else:
+            st["n"] += 1
+            st["ts"] = time.time()
+
+    def reset(self) -> None:
+        """清空熔断台账（测试隔离/渠道人工恢复后用）。"""
+        self._fail_streak.clear()
+
+    # -- 有界执行 --
+
+    def _get_sem(self) -> asyncio.Semaphore:
+        if self._sem is None:
+            self._sem = asyncio.Semaphore(self.concurrency)
+        return self._sem
+
+    async def run(self, provider_id: str, fn, *args, **kwargs):
+        """经通道执行一次供应商调用：信号量节流 + 429 退避 + 熔断记账。
+
+        fn 为异步可调用；熔断开路时立即抛 GenerationError（不占并发位）。
+        """
+        self.check_circuit(provider_id)
+        last: Optional[Exception] = None
+        for attempt in range(self.max_attempts):
+            try:
+                async with self._get_sem():
+                    result = await fn(*args, **kwargs)
+                self._record(provider_id, True)
+                return result
+            except Exception as e:
+                last = e
+                self._record(provider_id, False)
+                if "429" in str(e) and attempt < self.max_attempts - 1:
+                    wait = self.backoff_base * (attempt + 1)
+                    logger.warning(
+                        f"[Generation] {self.name} 生成 429 限流，退避 {wait:g}s 重试（{provider_id}）"
+                    )
+                    await asyncio.sleep(wait)  # 退避等待不占并发位（信号量已释放）
+                    continue
+                raise
+        raise last or GenerationError(f"{self.name} 生成失败")
 
 
-def image_circuit_open(provider_id: str) -> bool:
-    st = _IMAGE_FAIL_STREAK.get(provider_id or "")
-    return bool(
-        st and st["n"] >= IMAGE_CIRCUIT_THRESHOLD
-        and (time.time() - st["ts"]) < IMAGE_CIRCUIT_WINDOW
+# 三通道独立信号量：image 保持现值 4 不回归；video 保守起步 2（单发成本高、
+# 供应商并发配额小）；audio 同口径预留（当前版本无真实音频文件生成调用）。
+image_channel = BoundedChannel(
+    "image", settings.image_gen_concurrency,
+    circuit_error=IMAGE_CIRCUIT_ERROR,
+)
+video_channel = BoundedChannel(
+    "video", settings.video_gen_concurrency,
+    circuit_error=VIDEO_CIRCUIT_ERROR,
+)
+audio_channel = BoundedChannel(
+    "audio", settings.audio_gen_concurrency,
+    circuit_error=AUDIO_CIRCUIT_ERROR,
+)
+
+
+async def bounded_gather(channel: BoundedChannel, jobs: List[Tuple[str, Any]]) -> List:
+    """同批多目标经通道限流并发执行（asyncio.gather + 通道）。
+
+    jobs：[(provider_id, 零参异步可调用)]；结果按索引对应，失败项为
+    Exception 实例（return_exceptions，批内不连锁取消）。
+    """
+    return await asyncio.gather(
+        *(channel.run(pid, fn) for pid, fn in jobs),
+        return_exceptions=True,
     )
 
 
-def _image_result(provider_id: str, ok: bool) -> None:
-    st = _IMAGE_FAIL_STREAK.setdefault(provider_id or "", {"n": 0.0, "ts": 0.0})
-    if ok:
-        st["n"] = 0.0
-    else:
-        st["n"] += 1
-        st["ts"] = time.time()
+def image_circuit_open(provider_id: str) -> bool:
+    return image_channel.circuit_open(provider_id)
 
 
 async def _gen_image_throttled(
     pid: str, mdl: str, prompt: str, *, size: str,
     aspect_ratio: str, resolution: str, reference_images: Optional[List] = None,
 ) -> str:
-    """并发节流 + 429 退避的生图调用。退避等待不占并发位。"""
-    last: Optional[Exception] = None
-    for attempt in range(3):
-        try:
-            async with _get_image_sem():
-                url = await generate_image_via_provider(
-                    pid, mdl, prompt, size=size, aspect_ratio=aspect_ratio,
-                    resolution=resolution, reference_images=reference_images,
-                )
-            _image_result(pid, True)
-            return url
-        except Exception as e:
-            last = e
-            _image_result(pid, False)
-            if "429" in str(e) and attempt < 2:
-                logger.warning(f"[Generation] 生图 429 限流，退避 {5 * (attempt + 1)}s 重试（{pid}）")
-                await asyncio.sleep(5 * (attempt + 1))
-                continue
-            raise
-    raise last or GenerationError("生图失败")
+    """并发节流 + 429 退避的生图调用（经 image 通道；退避等待不占并发位）。"""
+    async def _call():
+        return await generate_image_via_provider(
+            pid, mdl, prompt, size=size, aspect_ratio=aspect_ratio,
+            resolution=resolution, reference_images=reference_images,
+        )
+    return await image_channel.run(pid, _call)
 
 
 def submit_image_task(
@@ -784,6 +877,10 @@ def submit_video_task(
 
     provider_id = resolve_provider_ref(provider_id)
 
+    # 连败熔断：上游持续限流时新提交直接报错，不再起整批任务（与生图同口径）
+    if video_channel.circuit_open(provider_id):
+        raise GenerationError(VIDEO_CIRCUIT_ERROR)
+
     # --- @引用解析 + 参考素材合并去重（草稿 refAssets 优先，显式参考其次）---
     base_ref_urls: List[str] = [u for u in (draft.get("refAssets") or []) if u]
     for r in (image_refs or []) + (video_refs or []) + (audio_refs or []):
@@ -892,7 +989,11 @@ def submit_video_task(
                         else:
                             adapter_name_c = pid or "modelscope"
                         adapter_c = AdapterFactory.get_adapter("video_generation", adapter_name_c)
-                    result = await adapter_c.generate(
+                    # 有界并发（P3-13）：供应商提交调用经 video 通道节流
+                    # （信号量 + 429 退避 + 连败熔断）；异步任务的长轮询等待
+                    # 不占并发位，避免长任务饿死保守并发上限
+                    result = await video_channel.run(
+                        pid, adapter_c.generate,
                         image_url=first_frame,
                         prompt=eff_prompt,
                         model=mdl or None,

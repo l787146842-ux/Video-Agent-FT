@@ -120,6 +120,10 @@ class Settings:
     # 并发过高会撞供应商 429（现场），参考过多会撑爆请求体
     image_ref_limit: int = field(default_factory=lambda: _env_int("IMAGE_REF_LIMIT", 10))
     image_gen_concurrency: int = field(default_factory=lambda: _env_int("IMAGE_GEN_CONCURRENCY", 4))
+    # 媒体生成族有界并发（P3-13）：生视频单发成本高、供应商并发配额小，保守起步 2；
+    # 音频当前版本无真实文件生成调用，通道预留同口径配置
+    video_gen_concurrency: int = field(default_factory=lambda: _env_int("VIDEO_GEN_CONCURRENCY", 2))
+    audio_gen_concurrency: int = field(default_factory=lambda: _env_int("AUDIO_GEN_CONCURRENCY", 2))
     video_ref_limit_image: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_IMAGE", 30))
     video_ref_limit_video: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_VIDEO", 10))
     video_ref_limit_audio: int = field(default_factory=lambda: _env_int("VIDEO_REF_LIMIT_AUDIO", 10))
