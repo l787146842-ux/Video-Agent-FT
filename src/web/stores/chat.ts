@@ -73,6 +73,10 @@ const defaultChatState: ChatState = {
 
 const [chatState, setChatState] = createStore<ChatState>(defaultChatState);
 
+/** P4-21：「继续刚才的任务」本地派生（停止/报错气泡共用单一实现）；
+ * kind=retry=点击走既有机械重发，失效走 suggestedTargetIndex 既有机制 */
+const continueLastTaskSuggestion = () => [{ kind: 'retry' as const, label: t('rp.msg.continueLastTask'), value: '' }];
+
 /** 流式收尾重置（done/错误/停止/重连收尾四处同语义，单一实现） */
 function resetStreamFields(s: ChatState) {
   s.isStreaming = false;
@@ -227,16 +231,18 @@ export const chatActions = {
     }));
   },
 
-  /** 流式错误 */
+  /** 流式错误（P4-21 补：会话中已有用户消息时同样派生「继续刚才的任务」，
+   * 与主动停止同语义；首轮即报错无用户消息则不挂，防无的放矢） */
   streamError(message: string, detail?: string) {
     setChatState(produce((s) => {
       // ：鉴权/供应商类错误附「检查 API 配置」跳转（非此类不显示，防噪音）
       const settingsHint = /401|403|令牌|token|api\s*key|鉴权|unauthorized|authentication/i.test(message);
+      // ：上游原始报文折叠展示（人话在气泡，raw 在折叠）；
+      // P4-21 补：已有用户消息时派生「继续刚才的任务」（与主动停止同语义）
       s.messages.push({
         sender: 'agent', text: `⚠️ ${message}`, modelName: s.streamingModel || undefined,
-        settingsHint,
-        // ：上游原始报文折叠展示（人话在气泡，raw 在折叠）
-        errorDetail: detail || undefined,
+        settingsHint, errorDetail: detail || undefined,
+        suggestedActions: s.messages.some((m) => m.sender === 'user') ? continueLastTaskSuggestion() : undefined,
       });
       resetStreamFields(s);
     }));
@@ -250,7 +256,7 @@ export const chatActions = {
       if (s.streamingText) {
         s.messages.push({
           sender: 'agent', text: s.streamingText, meta: t('rp.msg.stopped'), modelName: s.streamingModel || undefined,
-          suggestedActions: [{ kind: 'retry', label: t('rp.msg.continueLastTask'), value: '' }],
+          suggestedActions: continueLastTaskSuggestion(),
         });
       }
       resetStreamFields(s);
