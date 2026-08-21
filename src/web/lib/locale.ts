@@ -124,6 +124,9 @@ const zhCN: Record<string, string> = {
   // ：建议动作按钮（确定性交互）
   'rp.msg.retry': '重试',
   'rp.msg.continueTask': '继续完成',
+  // P4-20：用户气泡编辑控制点（本地派生）
+  'rp.msg.edit': '编辑',
+  'rp.msg.editTitle': '回填到输入框，修改后作为新消息发送',
   'rp.msg.imageResult': '生图结果',
   'rp.msg.imageTip': '{name} — 点击查看原图，按住拖动到画布',
   'rp.msg.download': '下载',

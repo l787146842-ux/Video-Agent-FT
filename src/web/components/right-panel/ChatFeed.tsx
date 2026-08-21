@@ -78,6 +78,7 @@ export function ChatFeed() {
                 isLast={affordances()[g.indices[0]].confirmTarget}
                 isGateTarget={affordances()[g.indices[0]].gateTarget}
                 isSuggestedTarget={affordances()[g.indices[0]].suggestedTarget}
+                editable={affordances()[g.indices[0]].editable}
                 confirmState={affordances()[g.indices[0]].confirmState}
                 answeredValue={affordances()[g.indices[0]].answeredValue}
               />
@@ -99,6 +100,7 @@ export function ChatFeed() {
                     isLast={affordances()[idx].confirmTarget}
                     isGateTarget={affordances()[idx].gateTarget}
                     isSuggestedTarget={affordances()[idx].suggestedTarget}
+                    editable={affordances()[idx].editable}
                     confirmState={affordances()[idx].confirmState}
                     answeredValue={affordances()[idx].answeredValue}
                     hideChrome

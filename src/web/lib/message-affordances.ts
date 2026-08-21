@@ -22,6 +22,8 @@ export interface MessageAffordance {
   gateTarget: boolean;
   /** 携带建议动作的消息（重试/继续按钮挂载点） */
   suggestedTarget: boolean;
+  /** 用户气泡可编辑（P4-20：编辑控制点挂载位，点击回填输入框后作为新消息发送） */
+  editable: boolean;
   /** 暂停卡生命周期（回看时可知旧卡是否仍有效） */
   confirmState: ConfirmState;
   /** 已回应暂停卡的「当时所选值」（仅 answered 态非空） */
@@ -67,6 +69,13 @@ function confirmStateFor(
   return 'expired';
 }
 
+/** 用户消息编辑挂载判定（P4-20）：有正文文本的普通用户消息可编辑；
+ * 系统动作行（如「本次放行」留痕）非用户手打，不挂编辑。
+ * 流式中不失效——编辑旧消息回填输入框与当前推理无冲突（发送走排队）。 */
+function isEditable(m: ChatMessage): boolean {
+  return m.sender === 'user' && m.kind !== 'system_action' && (m.text || '').trim() !== '';
+}
+
 /** 全量派生：与消息数组等长、同序（ChatFeed 按下标消费）。 */
 export function deriveAffordances(
   messages: ChatMessage[], isStreaming: boolean,
@@ -80,6 +89,7 @@ export function deriveAffordances(
       confirmTarget: idx === confirmTarget,
       gateTarget: idx === gateTarget,
       suggestedTarget: idx === suggestedTarget,
+      editable: isEditable(messages[idx]),
       confirmState: state,
       answeredValue: state === 'answered' ? answeredValueFor(messages, idx) : '',
     };

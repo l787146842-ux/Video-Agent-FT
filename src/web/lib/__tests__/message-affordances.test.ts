@@ -122,6 +122,30 @@ describe('deriveAffordances — 建议动作目标', () => {
   });
 });
 
+describe('deriveAffordances — 用户气泡编辑控制点（P4-20）', () => {
+  it('有正文的普通用户消息可编辑；agent 消息不挂', () => {
+    const msgs = [user('写一段开场白'), agent('好的')];
+    const aff = deriveAffordances(msgs, false);
+    expect(aff[0].editable).toBe(true);
+    expect(aff[1].editable).toBe(false);
+  });
+
+  it('系统动作行（非用户手打）与空文本用户消息不挂编辑', () => {
+    const msgs = [
+      user('本次放行', { kind: 'system_action' }),
+      user('   '),
+      user('', { docCard: '附件.md' } as Partial<ChatMessage>),
+    ];
+    const aff = deriveAffordances(msgs, false);
+    expect(aff.every((a) => !a.editable)).toBe(true);
+  });
+
+  it('流式中不失效（回填输入框与当前推理无冲突，发送走排队）', () => {
+    const msgs = [user('写一段开场白')];
+    expect(deriveAffordances(msgs, true)[0].editable).toBe(true);
+  });
+});
+
 describe('deriveAffordances — 形状契约', () => {
   it('输出与消息等长同序；answeredValue 仅 answered 态非空', () => {
     const msgs = [user('一'), agent('二'), agent('三', { confirm: '确认' })];

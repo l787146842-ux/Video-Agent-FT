@@ -59,6 +59,9 @@
   /* 批7 轮级 regenerate：低调小钮，悬停加深（不喧宾夺正文视觉层级） */
   .msg-regenerate-btn { align-self: flex-start; margin-top: 2px; padding: 2px 10px; font-size: 11px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border-color); background: transparent; color: var(--text-dim); opacity: 0.75; transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease; }
   .msg-regenerate-btn:hover { opacity: 1; color: var(--text-main); border-color: var(--accent-blue); }
+  /* P4-20 用户气泡编辑控制点：右对齐低调小钮（与 regenerate 同视觉级，不喂正文层级） */
+  .msg-edit-btn { align-self: flex-end; margin-top: 2px; padding: 2px 10px; font-size: 11px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border-color); background: transparent; color: var(--text-dim); opacity: 0.75; transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease; }
+  .msg-edit-btn:hover { opacity: 1; color: var(--text-main); border-color: var(--accent-blue); }
 
 
   /* 无消息时（新建项目等）左上角淡显提示：只给大概能力说明，不占完整消息卡片 */

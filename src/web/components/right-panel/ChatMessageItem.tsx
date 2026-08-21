@@ -10,6 +10,7 @@ import { showToast } from '@/stores/toast';
 import { openDocsPanel } from '@/stores/docs';
 import { isHumanReadableSuggestedValue } from '@/lib/suggested-guard';
 import { resendNearestUserMessage } from '@/lib/resend';
+import { requestEditBackfill } from '@/lib/chat-input-bridge';
 import { absUrl } from '@/lib/chat-image-drag';
 import { t } from '@/lib/locale';
 import { RichBubble } from './RichBubble';
@@ -41,6 +42,8 @@ export function ChatMessageItem(props: {
   answeredValue?: string;
   /** ：是否为最后一条携带建议动作的消息（重试/继续按钮挂载点） */
   isSuggestedTarget?: boolean;
+  /** P4-20：用户气泡编辑控制点挂载位（经 deriveAffordances 派生） */
+  editable?: boolean;
 }) {
   const msg = () => props.message;
   const isUser = () => msg().sender === 'user';
@@ -261,6 +264,19 @@ export function ChatMessageItem(props: {
             onImageClick={(url) => setLightboxUrl(absUrl(url))}
           />
         </Show>
+      </Show>
+
+      {/* P4-20 用户气泡编辑控制点：回填输入框（排队编辑同款通道），
+          发送时作为新消息发出（零后端降级，不截断历史） */}
+      <Show when={props.editable}>
+        <button
+          type="button"
+          class="msg-edit-btn"
+          title={t('rp.msg.editTitle')}
+          onClick={() => requestEditBackfill(msg().text || '')}
+        >
+          {t('rp.msg.edit')}
+        </button>
       </Show>
 
       {/* 内联媒体原图预览 lightbox（共享组件，批6） */}

@@ -76,6 +76,9 @@ export function ChatInput() {
         const exists = Array.from(el.querySelectorAll('.skill-chip'))
           .some((n) => (n as HTMLElement).dataset.skillName === req.name);
         if (!exists) insertNodeAtCursor(el, createSkillChip(req.name), savedRange);
+      } else if (req.kind === 'edit_backfill') {
+        // P4-20 用户气泡「编辑」回填：与排队消息编辑同款换行追加语义
+        backfillText(req.text);
       } else {
         insertTextAtCursor(el, req.text, savedRange);
       }
@@ -135,8 +138,9 @@ export function ChatInput() {
     mention.detectMention();
   }
 
-  /** 排队消息「编辑」：文本追加回填输入框（换行分隔，不冲掉正在输入的内容） */
-  function handleEditQueued(text: string) {
+  /** 文本回填输入框（P4-20 收敛为单一实现）：换行追加、不冲掉正在输入的内容；
+   * 排队消息「编辑」与用户气泡「编辑」（edit_backfill 桥接请求）共用同款语义 */
+  function backfillText(text: string) {
     const el = editorRef;
     if (!el || !text) return;
     insertTextAtCursor(el, (el.textContent ? '\n' : '') + text, savedRange);
@@ -222,7 +226,7 @@ export function ChatInput() {
           Array.from(dt.files || []).forEach((f) => void uploadAndInsert(f, insertMedia));
         }}
       >
-        <QueuedMessagesBar onEdit={handleEditQueued} />
+        <QueuedMessagesBar onEdit={backfillText} />
 
         <PendingAttachmentBar />
 
