@@ -63,16 +63,9 @@ def _patch_providers(monkeypatch, module):
 
 class TestSameModelCrossProviderCandidates:
     """批 C 裁决（2026-08-20）：聊天链路退役 fallback，单一候选 = 用户所选；
-    生图/生视频 fallback 属独立机制（generation.py），不在裁决范围"""
-
-    def test_chat_fallback_retired_single_candidate(self):
-        from pathlib import Path
-
-        root = Path(__file__).resolve().parents[2]
-        src = (root / "src/video_agent/web/chat_service.py").read_text(encoding="utf-8")
-        assert "candidates = [(body.provider, body.model)]" in src
-        assert "await _fallback_candidates(" not in src
-        assert "def _fallback_candidates" not in src
+    生图/生视频 fallback 属独立机制（generation.py），不在裁决范围。
+    聊天链路单一候选的源码锁源在 test_transport_wiring_four.test_b0_f4
+    （P2d：本处重复钉死删除）。"""
 
     @pytest.mark.asyncio
     async def test_image_candidates_by_image_models(self, monkeypatch):
