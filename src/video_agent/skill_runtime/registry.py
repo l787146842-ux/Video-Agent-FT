@@ -43,6 +43,13 @@ TOOL_STAGES: Dict[str, tuple] = {
     "video_assembler": ("assembly",),
 }
 
+# P3-15 自定义章节通道：sidecar 顶层声明 custom_sections（章节标识→执行器名），
+# 非管线类 Skill 不必套固定 7 章节模板也能走执行器形态（压缩全文直注使用面）。
+# 通道单一 = 通用章节执行器 skill_section_run（与 prompts/planner/
+# executor_runtime.md「无专属执行器的章节用 skill_section_run」同源语义；
+# 不占 SKILL_EXECUTOR_TOOLS，不参与固定章节词汇表与漂移门禁口径）。
+CUSTOM_SECTION_EXECUTOR = "skill_section_run"
+
 # 大阶段展示标签（后端权威下发，随 trace 条目 stage 字段持久化；
 # 前端不再按工具名硬编码推断，工具改名不会导致卡片退化）
 STAGE_LABELS: Dict[str, str] = {
@@ -56,6 +63,7 @@ STAGE_LABELS: Dict[str, str] = {
     "image_generate": "设定图生成",
     "generate_image": "对话出图",
     "generate_video": "视频生成",
+    "skill_section_run": "自定义章节执行",
 }
 
 
@@ -81,11 +89,65 @@ class SkillEntry:
         return sidecar.load_sidecar(self.slug)
 
     @property
+    def custom_sections(self) -> Dict[str, str]:
+        """sidecar custom_sections 声明（活读）：章节标识 → 通用执行器名。
+
+        未声明 = 空 dict（回落现行为：只走固定章节词汇表）；
+        消费端 fail-closed：schema 未放行的形状（非对象/空键/白名单外
+        执行器）整体忽略，非法声明不产生通道（注册期另有告警）。
+        """
+        raw = (self.manifest or {}).get("custom_sections")
+        if not isinstance(raw, dict):
+            return {}
+        return {
+            str(k): str(v) for k, v in raw.items()
+            if isinstance(k, str) and k.strip() and v == CUSTOM_SECTION_EXECUTOR
+        }
+
+    def custom_section_text(self, section: str) -> str:
+        """自定义章节标识 → 章节原文；未解析返回空串。
+
+        解析链与 skill_section_run 同源（stage 键 → 章节 tag 映射 →
+        标题关键字 → 任意 <tag> 直取），保证声明可用性预检与运行期
+        注入同口径，不出现「注册了却注入不到」的半死通道。
+        """
+        sec = (section or "").strip()
+        if not sec:
+            return ""
+        if sec in self.sections:
+            return self.sections[sec]
+        from src.video_agent.web.skill_docs import (
+            SECTION_TAG_STAGES,
+            _stage_from_heading,
+        )
+
+        low = sec.lower()
+        for mapper in (SECTION_TAG_STAGES.get(low, ""), _stage_from_heading(sec)):
+            stages = mapper if isinstance(mapper, tuple) else (mapper,)
+            for s in stages:
+                if s and s in self.sections:
+                    return self.sections[s]
+        m = re.search(
+            rf"<{re.escape(low)}>(.*?)</{re.escape(low)}>",
+            self.content or "", re.S | re.I)
+        return m.group(1).strip() if m else ""
+
+    @property
     def available_tools(self) -> List[str]:
-        """该 Skill 实际可用的执行器（对应章节非空才注册）。"""
-        return [t for t in SKILL_EXECUTOR_TOOLS if self.section_for(t)]
+        """该 Skill 实际可用的执行器（对应章节非空才注册）。
+
+        P3-15：声明 custom_sections 且任一标识可解析出非空章节时，
+        追加注册通用章节执行器（自定义通道，不占固定章节词汇表）。
+        """
+        tools = [t for t in SKILL_EXECUTOR_TOOLS if self.section_for(t)]
+        if self.custom_sections and self.section_for(CUSTOM_SECTION_EXECUTOR):
+            tools.append(CUSTOM_SECTION_EXECUTOR)
+        return tools
 
     def section_for(self, tool: str) -> str:
+        if tool == CUSTOM_SECTION_EXECUTOR:
+            parts = [self.custom_section_text(k) for k in self.custom_sections]
+            return "\n\n".join(p for p in parts if p and p.strip()).strip()
         stages = TOOL_STAGES.get(tool) or ()
         parts = [self.sections.get(s, "") for s in stages]
         return "\n\n".join(p for p in parts if p and p.strip()).strip()

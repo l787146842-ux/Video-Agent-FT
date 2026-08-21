@@ -7,7 +7,8 @@
 
 校验键清单（flow 下）：steps / dependencies / stage_executors / step_stages /
 step_done_conditions / step_short_titles / stages.<规范键>.{done,skip,executors} /
-布尔开关（spec_wizard/spec_gate/script_required）；顶层 pause.stage_pause。
+布尔开关（spec_wizard/spec_gate/script_required）；顶层 pause.stage_pause；
+顶层 custom_sections（自定义章节→通用执行器通道，P3-15）。
 另含跨键一致性：步骤号引用必须落在 steps 内；step_stages×dependencies
 翻译出的阶段 DAG 不得成环（成环 = 调度死锁，注册期即拒）。
 
@@ -27,6 +28,12 @@ _FLOW_BOOL_KEYS = ("spec_wizard", "spec_gate", "script_required")
 _STAGE_OVERRIDE_KEYS = ("done", "skip", "executors")
 _DONE_PREFIX = "document:"
 _PAUSE_KEYS = ("stage_pause",)
+
+# custom_sections 声明的合法执行器白名单（P3-15 自定义章节通道）：
+# 通道单一 = 通用章节执行器 skill_section_run（与 prompts/planner/
+# executor_runtime.md「无专属执行器的章节用 skill_section_run」同源语义）；
+# 未来若增专属通用执行器，先在此登记再允许声明（fail-closed）。
+CUSTOM_SECTION_EXECUTORS = ("skill_section_run",)
 
 
 def _step_nos_of(steps: Dict[str, Any]) -> set:
@@ -98,6 +105,26 @@ def _check_stage_value(name: str, k: Any, v: Any, issues: List[str]) -> None:
 def _check_str_value(name: str, k: Any, v: Any, issues: List[str]) -> None:
     if not isinstance(v, str) or not v.strip():
         issues.append(f"flow.{name}[{k}] 必须是非空字符串")
+
+
+def _check_custom_sections(raw: Any, issues: List[str]) -> None:
+    """custom_sections：章节标识 → 通用执行器名（顶层声明）。
+
+    未声明合法（回落现行为：固定章节词汇表）；已声明形状非法 fail-closed。
+    """
+    if raw is None:
+        return
+    if not isinstance(raw, dict):
+        issues.append("custom_sections 必须是 JSON 对象（章节标识→执行器名）")
+        return
+    for k, v in raw.items():
+        if not isinstance(k, str) or not k.strip():
+            issues.append(f"custom_sections 章节标识 {k!r} 必须是非空字符串")
+            continue
+        if not isinstance(v, str) or v not in CUSTOM_SECTION_EXECUTORS:
+            issues.append(
+                f"custom_sections[{k}] 执行器必须是 "
+                f"{'/'.join(CUSTOM_SECTION_EXECUTORS)} 之一（实际 {v!r}）")
 
 
 def _check_stage_overrides(stages: Any, issues: List[str]) -> None:
@@ -190,6 +217,7 @@ def validate_sidecar_data(data: Any) -> List[str]:
         "step_short_titles", flow.get("step_short_titles"),
         step_nos, has_steps, _check_str_value, issues)
     _check_stage_overrides(flow.get("stages"), issues)
+    _check_custom_sections(data.get("custom_sections"), issues)
     for bk in _FLOW_BOOL_KEYS:
         v = flow.get(bk)
         if v is not None and not isinstance(v, bool):

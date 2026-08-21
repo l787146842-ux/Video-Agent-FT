@@ -366,6 +366,17 @@ class PromptBuilder:
             "本 Skill 全文不在此处注入；执行器已注册，系统会按对应章节自动校验你的产出：",
         ]
         lines += [f"- {t}" for t in tools]
+        # P3-15 自定义章节通道接线（非 legacy 全文直注段）：显式下发
+        # custom_sections 声明的章节标识（skill_section_run 的 section 参数
+        # 取值），模型不必从散文里猜标识；未声明时零增量。
+        _custom = getattr(entry, "custom_sections", None) or {}
+        if _custom:
+            lines += [
+                "",
+                "== 自定义章节（sidecar 声明；用 skill_section_run 执行，"
+                "section 参数取下列标识）==",
+            ]
+            lines += [f"- {k}" for k in _custom]
         if flow:
             lines += [
                 "",

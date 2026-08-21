@@ -1,0 +1,162 @@
+# -*- coding: utf-8 -*-
+"""P3-15 Skill 表达力破单一模板：custom_sections 自定义章节通道。
+
+钉死四件事：
+① sidecar_schema 校验——未声明合法、非法声明 fail-closed；
+② registry 注册——声明+章节可解析 → skill_section_run 进 available_tools；
+③ 回落——未声明/解析不到/非法声明者维持现行为（不产生半死通道）；
+④ 接线——执行器运行时块显式下发章节标识且不回落全文直注。
+"""
+import pytest
+
+import src.video_agent.web.skill_docs as sd
+from src.video_agent.core.prompt_builder import PromptBuilder
+from src.video_agent.skill_runtime import registry
+from src.video_agent.skill_runtime import sidecar
+from src.video_agent.skill_runtime import sidecar_schema
+
+
+@pytest.fixture(autouse=True)
+def isolate(tmp_path, monkeypatch):
+    """每个测试独立 Skill 目录 + 清空运行时注册表（sidecar 随目录同根）。"""
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", tmp_path / "skills")
+    registry.reset_registry()
+    yield
+    registry.reset_registry()
+
+
+def _write(slug: str, content: str):
+    sd.save_skill_doc(slug, content)
+
+
+# 仅含自定义 tag 章节的文档（固定 7 章节词汇表全部落空）
+_DOC_CUSTOM = (
+    "# 访谈音色\n> 调用规则：测试\n"
+    "<tone_design>\n为每位发言者设计音色档案。\n</tone_design>\n"
+)
+
+
+# ---------- ① schema 校验：未声明合法 / 非法 fail-closed ----------
+
+
+def test_schema_custom_sections_valid_and_undeclared():
+    assert sidecar_schema.validate_sidecar_data(
+        {"custom_sections": {"音色设计": "skill_section_run"}}) == []
+    assert sidecar_schema.validate_sidecar_data({}) == []
+    assert sidecar_schema.validate_sidecar_data(None) == []
+
+
+def test_schema_custom_sections_fail_closed():
+    def _issues(manifest):
+        return [i for i in sidecar_schema.validate_sidecar_data(manifest)
+                if "custom_sections" in i]
+
+    # 非对象
+    assert _issues({"custom_sections": ["音色设计"]})
+    # 空键
+    assert _issues({"custom_sections": {"": "skill_section_run"}})
+    # 白名单外执行器（含复用工具名/专属执行器名：通道单一）
+    assert _issues({"custom_sections": {"音色设计": "script_analyze"}})
+    assert _issues({"custom_sections": {"音色设计": 123}})
+
+
+# ---------- ② 注册：声明 + 章节可解析 → 通用执行器可用 ----------
+
+
+def test_custom_sections_registers_generic_executor():
+    _write("interview", _DOC_CUSTOM)
+    sidecar.write_sidecar(
+        "interview", {"custom_sections": {"tone_design": "skill_section_run"}})
+    entry = registry.get_entry("interview")
+    assert entry is not None
+    # 固定 7 章节全落空，仅自定义通道成立
+    assert entry.available_tools == ["skill_section_run"]
+    assert "音色档案" in registry.tool_sections("interview", "skill_section_run")
+    assert registry.tool_available("interview", "skill_section_run")
+    # trace 大阶段标签登记（前端卡片不退化）
+    assert registry.stage_label_for_tool("skill_section_run") == "自定义章节执行"
+
+
+def test_custom_sections_coexist_with_fixed_tools():
+    content = (
+        "# 混合\n> 调用规则：测试\n"
+        "<planner>\n流程章节\n</planner>\n"
+        "<my_tag>\n自定义章节\n</my_tag>\n"
+    )
+    _write("mix", content)
+    sidecar.write_sidecar(
+        "mix", {"custom_sections": {"my_tag": "skill_section_run",
+                                    "planning": "skill_section_run"}})
+    entry = registry.get_entry("mix")
+    # stage 键解析链同源：planning 走 sections，my_tag 走任意 <tag>
+    assert entry.available_tools == ["script_analyze", "skill_section_run"]
+    sec = registry.tool_sections("mix", "skill_section_run")
+    assert "自定义章节" in sec and "流程章节" in sec
+
+
+# ---------- ③ 回落：未声明/解析不到/非法声明者维持现行为 ----------
+
+
+def test_custom_sections_undeclared_falls_back():
+    _write("plain", _DOC_CUSTOM)
+    entry = registry.get_entry("plain")
+    assert entry.available_tools == []  # 与改造前完全一致
+    assert registry.tool_sections("plain", "skill_section_run") == ""
+
+
+def test_custom_sections_unresolvable_not_registered():
+    """声明了但文档无对应章节：fail-closed，不注册半死通道。"""
+    _write("hollow", "# 空\n> 调用规则：测试\n正文\n")
+    sidecar.write_sidecar(
+        "hollow", {"custom_sections": {"不存在章节": "skill_section_run"}})
+    entry = registry.get_entry("hollow")
+    assert "skill_section_run" not in entry.available_tools
+    assert registry.tool_sections("hollow", "skill_section_run") == ""
+
+
+def test_custom_sections_illegal_declaration_ignored():
+    """消费端 fail-closed：白名单外执行器声明整体忽略（注册期另有告警）。"""
+    _write("bad", _DOC_CUSTOM)
+    sidecar.write_sidecar(
+        "bad", {"custom_sections": {"tone_design": "script_analyze"}})
+    entry = registry.get_entry("bad")
+    assert entry.custom_sections == {}
+    assert "skill_section_run" not in entry.available_tools
+    assert any("custom_sections" in i
+               for i in sidecar.validate_sidecar(entry.manifest))
+
+
+# ---------- ④ 接线：执行器块下发标识且不回落全文直注 ----------
+
+
+def test_executor_runtime_block_lists_custom_sections():
+    _write("interview2", _DOC_CUSTOM)
+    sidecar.write_sidecar(
+        "interview2", {"custom_sections": {"tone_design": "skill_section_run"}})
+    pb = PromptBuilder(
+        lambda: sd,
+        lambda: "proj",
+        lambda: {"keyElements": [], "shots": [], "audioItems": []},
+    )
+    block = pb.build_selected_skill_block("访谈音色")
+    assert "已注册独立执行器" in block
+    assert "skill_section_run" in block
+    # 声明的章节标识显式下发（模型不必从散文猜 section 参数）
+    assert "tone_design" in block
+    # 执行器形态成立：不回落 legacy 全文直注，章节原文不进 system prompt
+    assert "全文直接注入" not in block
+    assert "音色档案" not in block
+
+
+def test_executor_runtime_block_zero_delta_without_declaration():
+    """未声明 custom_sections 的执行器 Skill：运行时块无自定义章节增量行
+    （executor_runtime.md 散文里的 skill_section_run 通用表述不受影响）。"""
+    _write("fixed", "# 固定\n> 调用规则：测试\n"
+           "<script_analyze>\n分析\n</script_analyze>\n")
+    pb = PromptBuilder(
+        lambda: sd,
+        lambda: "proj",
+        lambda: {"keyElements": [], "shots": [], "audioItems": []},
+    )
+    block = pb.build_selected_skill_block("固定")
+    assert "== 自定义章节" not in block
