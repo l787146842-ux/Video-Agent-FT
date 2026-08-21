@@ -89,6 +89,10 @@ class Settings:
     # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）；
     # 收紧 0.5→0.35（历史是上下文膨胀大头，提早压缩）
     feedback_compress_ratio: float = field(default_factory=lambda: float(os.getenv("FEEDBACK_COMPRESS_RATIO", "0.35")))
+    # tool-result 消化（默认开）：历史中已投影进状态 JSON 的写类工具结果回喂行
+    # 超过该字符数即替换为「摘要 + 状态已在工作台 JSON」指针；只消化已投影结果，
+    # 最近 2 轮回喂保留原文；=0 一键关闭（对标 Anthropic tool-result 消化杠杆）
+    tool_result_digest_chars: int = field(default_factory=lambda: _env_int("TOOL_RESULT_DIGEST_CHARS", 200))
     # 会话级 compaction（恢复、 默认开）：history 条数达该阈值时用
     # 便宜模型把较早对话压成摘要+最近几条（0 = 关闭，仅靠 truncate_history 头尾截断）
     history_compact_threshold: int = field(default_factory=lambda: _env_int("HISTORY_COMPACT_THRESHOLD", 12))

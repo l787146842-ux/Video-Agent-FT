@@ -1,12 +1,13 @@
 """FC 工具结果回喂家族（自 fc_tool_runner.py 切出，零行为变更）。
 
 承载：工具结果回喂消息的格式化（read_* 全文「借阅归还」、执行器 detail 随喂、
-view_storyboard_media 多模态回喂）与旧轮回喂的惰性压缩/图片剥离（token 治理，
-业界基准 C3 唯一代码落点）+ FC 工具中文简述。
+view_storyboard_media 多模态回喂）与旧轮回喂的惰性压缩/图片剥离（token 治理）
++ 已投影工具结果的消化（tool-result 消化杠杆）+ FC 工具中文简述。
 
 fc_tool_runner.py 对本模块全部符号保留 re-export（壳清单登记于该文件尾部注释，
 13.7 惯例），既有调用/测试的 import 路径不变。
 """
+import re
 from typing import Any, Dict, List, Union
 
 from src.video_agent.config import settings
@@ -32,6 +33,21 @@ FEEDBACK_FULL_TOOLS = {"read_skill", "read_project_doc", "read_uploaded_doc", "r
 FEEDBACK_IMAGE_TOOL = "view_storyboard_media"
 # 单次回喂总量保险丝（read_* 各自已有 max_doc_chars 截断，这里防多文档叠加）
 FEEDBACK_MAX_TOTAL_CHARS = 100000
+
+# 结果已完整投影进工作台状态 JSON 的写类工具：只有它们的回喂行才可被消化。
+# 读回类（read_*）与调图（view_storyboard_media）的结果不在状态 JSON 里，
+# 消化即丢信息，硬排除在外；失败行同样不消化（错误信息模型需要）
+PROJECTED_STATE_TOOLS = frozenset({
+    "storyboard_create_group", "storyboard_patch_draft", "storyboard_add_draft",
+    "storyboard_delete_group", "storyboard_confirm_draft", "document_write",
+})
+# 消化后的指针文案：保留工具名+成败摘要，指向状态 JSON 事实源
+DIGEST_POINTER = (
+    "{name}：执行成功（结果已写入工作台并投影进状态 JSON，"
+    "冗长详情回喂已省略；最新状态以工作台状态 JSON 为准）"
+)
+# 可消化行识别：回喂正文行「- 工具名：执行成功…」（与 format_tool_results 一致）
+_DIGEST_LINE_RE = re.compile(r"^- ([A-Za-z_][A-Za-z0-9_]*)：执行成功")
 
 
 def should_compress_feedback(messages: List[Dict[str, Any]], context_window: int = 0) -> bool:
@@ -72,6 +88,51 @@ def compress_prior_feedback(messages: List[Dict[str, Any]]) -> None:
             )
             if first_text.startswith(FEEDBACK_MARKER):
                 m["content"] = FEEDBACK_COMPRESSED
+
+
+def digest_projected_tool_results(
+    messages: List[Dict[str, Any]],
+    max_chars: int = 0,
+    keep_recent: int = 2,
+) -> int:
+    """tool-result 消化（最安全杠杆）：历史中已投影进状态 JSON 的写类工具
+    结果回喂行超过 max_chars 字符时，替换为「摘要 + 状态已在工作台 JSON」指针。
+
+    硬约束（丢信息风险归零）：
+    - 只消化 PROJECTED_STATE_TOOLS 白名单内的工具行（结果已完整投影进
+      每轮刷新的工作台状态 JSON）；read_* 全文/调图/失败行一律不碰；
+    - 最近 keep_recent 条回喂保留原文（模型正在依据它们工作）；
+    - max_chars <= 0 整体关闭（settings.tool_result_digest_chars=0 一键关）。
+    原地修改，返回被消化的行数（幂等：已消化行短于阈值不会二次命中）。
+    """
+    if max_chars <= 0:
+        return 0
+    fb_idx = []
+    for i, m in enumerate(messages):
+        content = m.get("content", "")
+        if m.get("role") != "user" or not isinstance(content, str):
+            continue
+        if content.startswith(FEEDBACK_MARKER):
+            fb_idx.append(i)
+    # 最近 keep_recent 条回喂保留原文
+    eligible = fb_idx[:-keep_recent] if keep_recent > 0 else fb_idx
+    digested = 0
+    for i in eligible:
+        m = messages[i]
+        out_lines: List[str] = []
+        changed = False
+        for line in str(m.get("content", "")).splitlines():
+            hit = _DIGEST_LINE_RE.match(line)
+            if (hit and hit.group(1) in PROJECTED_STATE_TOOLS
+                    and len(line) > max_chars):
+                out_lines.append("- " + DIGEST_POINTER.format(name=hit.group(1)))
+                digested += 1
+                changed = True
+            else:
+                out_lines.append(line)
+        if changed:
+            m["content"] = "\n".join(out_lines)
+    return digested
 
 
 def strip_prior_feedback_images(messages: List[Dict[str, Any]]) -> None:

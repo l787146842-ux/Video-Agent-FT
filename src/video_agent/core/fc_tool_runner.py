@@ -63,6 +63,7 @@ from src.video_agent.core.fc_feedback import (
     compose_failure_feedback,
     compress_prior_feedback,  # noqa: 1
     describe_fc_tool,
+    digest_projected_tool_results,  # noqa: 1
     format_tool_results,  # noqa: 1
     render_read_result,  # noqa: 1
     should_compress_feedback,  # noqa: 1

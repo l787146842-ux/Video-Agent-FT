@@ -29,6 +29,7 @@ from src.video_agent.core.agent_loop import MAX_STEPS, run_agent_loop
 from src.video_agent.core.fc_tool_runner import (
     FCToolRunner,
     compress_prior_feedback,
+    digest_projected_tool_results,
     format_tool_results,
     should_compress_feedback,
     strip_prior_feedback_images,
@@ -769,6 +770,10 @@ class Planner:
         不支持的（mock/演示）纯文本调用（4-4 后不再作为生产动作通道）。
         """
         full_messages = [{"role": "system", "content": system}] + messages
+        # tool-result 消化：已投影进状态 JSON 的写类工具结果超阈值行替换为
+        # 指针（最近 2 轮回喂保留原文；TOOL_RESULT_DIGEST_CHARS=0 一键关）
+        digest_projected_tool_results(
+            full_messages, int(settings.tool_result_digest_chars))
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
         max_tokens = int(self._context_window() * settings.token_budget_ratio)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=self._system_degrader)
@@ -797,6 +802,9 @@ class Planner:
     async def _call_llm_stream(self, system: str, messages: List[Dict[str, Any]]) -> AsyncGenerator[StreamChunk, None]:
         """流式 LLM 调用"""
         full_messages = [{"role": "system", "content": system}] + messages
+        # tool-result 消化：同 _call_llm（已投影结果超阈值行换指针）
+        digest_projected_tool_results(
+            full_messages, int(settings.tool_result_digest_chars))
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
         max_tokens = int(self._context_window() * settings.token_budget_ratio)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=self._system_degrader)
