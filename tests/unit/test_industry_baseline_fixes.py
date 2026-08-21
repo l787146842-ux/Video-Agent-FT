@@ -165,17 +165,17 @@ def test_skill_reminder_has_no_pause_pressure():
     assert "阶段完成引导兜底" in src
 
 
-def test_system_md_no_anti_pause_sentence():
-    """system.md 反暂停句已删；暂停通道协议（怎么暂停）保留。"""
+def test_system_fc_no_anti_pause_sentence():
+    """协议模板反暂停句已删；暂停通道协议（怎么暂停）保留。
+    P2e 单轨收敛：断言对象从已退役的 system.md 迁到唯一协议 system_fc.md。"""
     from src.video_agent.utils.paths import PROJECT_ROOT
 
-    txt = (PROJECT_ROOT / "prompts" / "planner" / "system.md").read_text(encoding="utf-8")
+    txt = (PROJECT_ROOT / "prompts" / "planner" / "system_fc.md").read_text(encoding="utf-8")
     assert "不要在每个阶段完成后都暂停" not in txt
     assert "用户已给出明确指令时不要使用" not in txt
-    # 新基线（audit-0819d 单正名后）：暂停通道协议表述为
-    # 「只能通过 workflow_pause 工具调用发起，只在正文写『请确认』无效」
-    assert "只能通过 workflow_pause 工具调用发起" in txt
-    assert "无效" in txt
+    # 新基线（P2e 后）：暂停通道协议在 FC 协议中表述为
+    # 「暂停请求用户确认：调用 workflow_pause Tool」
+    assert "调用 workflow_pause Tool" in txt
 
 
 def test_pause_label_protocol_scoped_to_confirmation():

@@ -7,8 +7,6 @@
 import asyncio
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -36,7 +34,7 @@ class TestLanguageContract:
         lang = (ROOT / "prompts" / "shared" / "language.md").read_text(encoding="utf-8")
         assert "跟随用户" in lang or "用户最新一条消息的语言" in lang
 
-    @pytest.mark.parametrize("tpl", ["planner/system.md", "planner/system_fc.md"])
-    def test_planner_templates_include_language(self, tpl):
-        text = (ROOT / "prompts" / tpl).read_text(encoding="utf-8")
-        assert "shared/language.md" in text, f"{tpl} 未 include 语言规则（P3 单一事实源）"
+    def test_planner_templates_include_language(self):
+        # P2e 单轨收敛：协议模板唯一 = system_fc.md（文本协议 system.md 已退役）
+        text = (ROOT / "prompts" / "planner" / "system_fc.md").read_text(encoding="utf-8")
+        assert "shared/language.md" in text, "system_fc.md 未 include 语言规则（P3 单一事实源）"

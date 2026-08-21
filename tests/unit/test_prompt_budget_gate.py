@@ -1,4 +1,4 @@
-"""B1 回归：提示词预算门禁 + 双协议瘦身 + 动作定义唯一源 + 矛盾统一 + F10-1 下沉。
+"""B1 回归：提示词预算门禁 + 协议单轨瘦身 + 动作定义唯一源 + 矛盾统一 + F10-1 下沉。
 
 对应审核报告 F5/F6/F7/F8/F9/F10；快照锁语义（Rule 6）。
 """
@@ -9,11 +9,12 @@ from src.video_agent.utils.prompts import load_prompt
 from src.video_agent.adapters.base_chat import ChatResponse
 
 
-def test_b1_system_md_under_budget_and_slimmed():
-    """F5：system.md ≤7KB 且不再内联动作清单（text_actions.md 为唯一动作定义源）。"""
+def test_b1_system_fc_under_budget_and_slimmed():
+    """F5：system_fc.md ≤7KB 且不再内联动作清单（text_actions.md 为唯一动作定义源）。
+    文本协议 system.md 已退役（P2e 单轨收敛），预算断言收敛到唯一协议。"""
     from pathlib import Path
 
-    f = Path("prompts/planner/system.md")
+    f = Path("prompts/planner/system_fc.md")
     text = f.read_text(encoding="utf-8")
     assert f.stat().st_size <= 7168
     for anchor in ("- add_group:", "- write_document:", "- generate_image:", "```studio-actions"):
@@ -27,9 +28,9 @@ def test_b1_prompt_budget_gate_passes():
     assert gate.main() == 0
 
 
-def test_b1_system_md_include_expansion():
+def test_b1_system_fc_include_expansion():
     """F7：shared 段经 {{include}} 拼装（分身消除，单一事实源）。"""
-    text = load_prompt("planner/system.md")
+    text = load_prompt("planner/system_fc.md")
     assert "渐进式披露" in text          # shared/important_rules.md
     assert "结构化短交代" in text                    # shared/output_discipline.md
     assert "看图再动笔" in text or "故事板媒体调用" in text  # shared/media_rules.md
@@ -44,7 +45,7 @@ def test_b1_text_actions_deleted_after_44():
 
 
 def test_b1_no_text_action_protocol_injected_after_44():
-    """4-4：两种协议模式都不再注入文本动作定义；FC 通道仍用 system_fc.md。"""
+    """4-4/P2e：协议单轨（system_fc.md）不注入文本动作定义。"""
     from src.video_agent.core.planner import PlannerContext
     from src.video_agent.core.prompt_builder import PromptBuilder
 
@@ -58,11 +59,9 @@ def test_b1_no_text_action_protocol_injected_after_44():
         lambda: {},
     )
     ctx = PlannerContext(history=[], use_studio_context=True)
-    text_mode = builder.build_system_prompt(ctx, fc_mode=False)
-    assert "storyboard_key_elements" not in text_mode  # 文本动作定义已删
-    fc_mode = builder.build_system_prompt(ctx, fc_mode=True)
-    assert "Tool 优先协议" in fc_mode                   # system_fc.md 注入
-    assert "storyboard_key_elements" not in fc_mode
+    text = builder.build_system_prompt(ctx)
+    assert "Tool 优先协议" in text                      # system_fc.md 注入
+    assert "storyboard_key_elements" not in text        # 文本动作定义已删
 
 
 def test_b1_generate_image_once_per_batch():

@@ -9,6 +9,7 @@
 - dag.py 正则通道（parse_steps 等）/ parse_skill_manifest 文档通道
 - 五轮 S4 兼容壳：planner 委托方法组 / _split_actions、save_state 别名（P2d 结构性测试减负承接）
 - 已迁 prose 防复述：暂停邀请确认（暂停纪律单家）/ 同批发出（暂停时机建议归 Skill）
+- 文本协议残留：planner/system.md 字面量（P2e 单轨收敛，协议唯一 = system_fc.md，ADR-0001）
 - \u4e3b\u4f53\u56de\u5f52\uff08ADR-0004\uff09\uff1aruntime \u673a\u68b0\u76f4\u8dd1/\u5ba1\u6279\u76f4\u8dd1\u9a71\u52a8\u7b26\u53f7\uff08\u6a21\u578b\u6c38\u8fdc\u552f\u4e00\u884c\u52a8\u4e3b\u4f53\uff09
 spec_pause_card/spec_collect_card\uff08\u89c4\u683c\u5411\u5bfc\uff0c\u4e0d\u53d8\u57fa\u7ebf\uff09\u4e0d\u5728\u6e05\u5355\u5185\u3002
 \u8f93\u51fa\u7eaf ASCII\uff08\u9a8c\u6536\u4e71\u7801\u8bef\u8bfb\u6559\u8bad\uff09\u3002\u7528\u6cd5\uff1apython scripts/check_legacy_orchestration.py
@@ -37,6 +38,9 @@ FORBIDDEN = re.compile(
     r"|def _build_skill_catalog|def _last_user_text|_FEEDBACK_MARKER|_FEEDBACK_FULL_TOOLS"
     r"|_split_actions = split_actions|save_state = save"
     r"|暂停邀请确认|同批发出"
+    # P2e 单轨收敛（ADR-0001）：文本协议 system.md 已退役删除，
+    # 字面量防复活（协议唯一 = planner/system_fc.md；不命中 system_fc.md）
+    r"|planner/system\.md"
 )
 
 

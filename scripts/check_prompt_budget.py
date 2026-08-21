@@ -6,8 +6,8 @@
    排除 docstring（模块/类/函数首语句）与注释（非模型可见）。
 
 预算：合计 ≤ 8（宪法 13.6）。另断言：
-- system.md / system_fc.md 文件字节 ≤ 7168（13.6 协议预算）；
-- 动作定义唯一性：system.md 不再内联动作清单（文本动作定义已随 4-4 双轨退役删除，ADR-0001）；
+- system_fc.md 文件字节 ≤ 7168（13.6 协议预算；文本协议 system.md 已退役，P2e 单轨收敛）；
+- 动作定义唯一性：协议模板不再内联动作清单（文本动作定义已随 4-4 双轨退役删除，ADR-0001）；
 - include 引用完整性：{{include:path}} 目标文件存在。
 
 用法：python scripts/check_prompt_budget.py   （退出码非 0 即失败）
@@ -97,7 +97,7 @@ def main() -> int:
     if len(viols) > BUDGET:
         ok = False
 
-    for name in ("planner/system.md", "planner/system_fc.md"):
+    for name in ("planner/system_fc.md",):
         f = PROMPTS / name
         size = f.stat().st_size
         status = "OK" if size <= BYTE_BUDGET else "OVER"
@@ -105,9 +105,9 @@ def main() -> int:
         if size > BYTE_BUDGET:
             ok = False
 
-    sys_text = (PROMPTS / "planner/system.md").read_text(encoding="utf-8")
+    sys_text = (PROMPTS / "planner/system_fc.md").read_text(encoding="utf-8")
     if re.search(r"^- (add_group|update_draft|write_document|generate_image|generate_video):", sys_text, re.M):
-        print("[check_prompt_budget] system.md 仍内联动作清单（动作通道唯一 = FC 工具，ADR-0001）")
+        print("[check_prompt_budget] system_fc.md 仍内联动作清单（动作通道唯一 = FC 工具，ADR-0001）")
         ok = False
 
     for f in sorted(PROMPTS.rglob("*.md")):

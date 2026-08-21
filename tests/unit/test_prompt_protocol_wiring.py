@@ -1,8 +1,8 @@
-"""814R1 钉死回归：提示词加载器（include/分节）+ 双协议瘦身 + 回喂模板外置。
+"""814R1 钉死回归：提示词加载器（include/分节）+ 协议单轨接线 + 回喂模板外置。
 
 事故背景：8/12 回退丢失批次5「双协议瘦身/文案外置」接线——system_fc.md 与
 {{include}} 无人加载、feedback.md 分节无人读取、text_actions.md 永注入不了。
-本测试钉死恢复后的行为，防再次断线。
+本测试钉死恢复后的行为，防再次断线；P2e 后协议收敛为单一 system_fc.md。
 """
 import pytest
 
@@ -71,25 +71,25 @@ class TestPromptLoader:
         assert load_prompt_section("planner/feedback.md", "NO_SUCH_KEY") == ""
 
 
-class TestDualProtocol:
-    def test_fc_mode_uses_slim_protocol(self):
-        """FC 通道：system_fc.md 瘦身协议，不含 studio-actions 动作清单"""
+class TestSingleProtocol:
+    def test_protocol_is_slim_fc_only(self):
+        """协议单轨（P2e/ADR-0001）：唯一协议 = system_fc.md 瘦身协议，
+        不含 studio-actions 动作清单。"""
         builder = _make_builder()
         ctx = PlannerContext(use_studio_context=True)
-        text = builder.build_system_prompt(ctx, fc_mode=True)
+        text = builder.build_system_prompt(ctx)
         assert "Tool 优先协议" in text
         assert "- add_group:" not in text, "FC 协议不应携带 studio-actions 动作清单"
         assert "可用 action:" not in text, "FC 协议不应携带文本轨动作定义段"
 
     def test_text_actions_never_injected_after_44(self):
         """4-4 双轨退役（ADR-0001）：text_actions.md 已删除，
-        两种协议模式都不再注入文本动作定义。"""
+        协议不再注入文本动作定义。"""
         builder = _make_builder()
         ctx = PlannerContext(use_studio_context=True)
-        for fc_mode in (True, False):
-            text = builder.build_system_prompt(ctx, fc_mode=fc_mode)
-            assert "- add_group:" not in text
-            assert "studio-actions 文本协议" not in text
+        text = builder.build_system_prompt(ctx)
+        assert "- add_group:" not in text
+        assert "studio-actions 文本协议" not in text
 
 
 class TestFeedbackTemplates:

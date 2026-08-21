@@ -55,7 +55,7 @@
 - 所有 system prompt / 闸机文案 / 回喂模板存放在 `prompts/`（`planner/`、`gates/`、`shared/`、`memory/` 分区），经 `utils/prompts.py::load_prompt()` / `load_prompt_section()` 加载
 - **禁止**在代码中硬编码超过 3 行的 prompt 字符串；代码只留组装逻辑
 - **快照防漂移**：提示词外置/迁移必须配快照测试，锁定迁移前后关键段落语义一致；无快照测试的迁移视为错误实现
-- **双协议瘦身**：FC 模式用 `prompts/planner/system_fc.md`，文本模式用 `system.md`；共有段落抽到 `prompts/shared/` 引用拼装，两文件互不复制
+- **协议单轨**：平台协议唯一 = `prompts/planner/system_fc.md`（文本协议 `system.md` 已退役删除，ADR-0001 单轨）；共有段落抽到 `prompts/shared/` 经 `{{include}}` 引用拼装，不复制
 - 纪律条款外置为独立 md（如 `planner/skill_discipline.md`），不得内联代码
 
 ### Rule 7: 画布边界 — 任何时候都禁止修改

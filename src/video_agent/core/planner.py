@@ -726,12 +726,9 @@ class Planner:
 
     def _build_system_prompt(self, context: PlannerContext) -> str:
         """构建 system prompt（委托 PromptBuilder；段落顺序为前缀缓存优化）。
-         恢复双协议瘦身：FC 通道注入瘦身版协议（system_fc.md），文本通道用完整协议。"""
-        fc_mode = bool(
-            self.llm_adapter is not None
-            and getattr(self.llm_adapter, "supports_function_calling", False)
-        )
-        return self._prompt_builder.build_system_prompt(context, fc_mode=fc_mode)
+        协议单轨（ADR-0001，P2e 收敛）：统一注入 system_fc.md，
+        原 fc_mode 双分支已随文本协议退役删除。"""
+        return self._prompt_builder.build_system_prompt(context)
 
     def _make_summarize_fn(self):
         """包装摘要调用：优先用注入的便宜模型 adapter（摘要无需主模型能力），

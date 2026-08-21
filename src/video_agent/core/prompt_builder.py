@@ -41,29 +41,28 @@ class PromptBuilder:
         # 当前工作台 raw state（分阶段聚焦注入探测用；缺省不启用聚焦）
         self._get_raw_state = get_raw_state
 
-    def build_system_prompt(self, context: "PlannerContext", fc_mode: bool = False) -> str:
+    def build_system_prompt(self, context: "PlannerContext") -> str:
         """构建 system prompt：从 prompts/ 加载 + 注入状态上下文。
 
         段落顺序为前缀缓存优化：稳定内容在前，状态 JSON 殿后；
         选中 Skill 全文放在最末尾（近生成端，遵循度最高，避免被大段状态 JSON 淹没）。
 
-        fc_mode（恢复双协议瘦身）：True 时协议段用 planner/system_fc.md
-        （Tool 优先瘦身协议，共有段经 {{include}} 从 shared/ 拼装），
-        False 时用 planner/system.md（mock/演示通道；studio-actions 文本
-        动作清单已随 4-4 双轨退役删除，ADR-0001）。
+        协议段唯一 = planner/system_fc.md（Tool 优先瘦身协议，共有段经
+        {{include}} 从 shared/ 拼装）；文本协议 system.md 已退役删除
+        （P2e 单轨收敛，ADR-0001），原 fc_mode 双分支随之移除。
         """
         parts: List[Tuple[str, str]] = []
 
         if context.use_studio_context:
             # Rule4: 从 prompts/ 目录加载（稳定前缀第一段）；
-            # max_steps 模板化注入（消 system.md 与 config 双写漂移）
+            # max_steps 模板化注入（消协议模板与 config 双写漂移）
             protocol = render_prompt(
-                "planner/system_fc.md" if fc_mode else "planner/system.md",
+                "planner/system_fc.md",
                 max_steps=settings.max_steps,
             )
             if protocol:
                 parts.append(("protocol", protocol))
-            # 4-4 双轨退役（ADR-0001）：text_actions.md 文本协议注入已删除；
+            # 协议单轨（ADR-0001）：文本协议 system.md 已随 P2e 退役删除，
             # 动作通道唯一 = FC 工具（mock 通道除外，其输出为演示用固定文本）。
 
         # 渐进式披露：不再注入全部 Skill 全文，
@@ -74,7 +73,7 @@ class PromptBuilder:
 
         # 铁律全文注入（宪法）：项目级生产契约的唯一表述源——
         # 铁律文档在每轮对话开始时由系统 ensure，存在即注入，不与 Skill 激活绑定
-        # （system.md 不再重复业务规则，铁律不能缺位）
+        # （协议模板不重复业务规则，铁律不能缺位）
         if self._get_raw_state is not None:
             iron_block = self.build_iron_rules_block()
             if iron_block:
