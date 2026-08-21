@@ -6,7 +6,9 @@
 \u9000\u5f79\u6e05\u5355\uff08\u7b26\u53f7\u975e\u6982\u5ff5\uff0c\u540c\u540d\u590d\u7528\u5373\u89c6\u4e3a\u590d\u6d3b\uff09\uff1a
 - FlowGateSet \u95f8\u673a\u94fe / skill_pipeline_plan \u8c03\u5ea6\u5de5\u5177 / auto_retry \u76f2\u91cd\u8bd5
 - prepend_script_summary/maybe_prepend \u603b\u7ed3\u6ce8\u5165\u94fe / skill_declares_summary
-- dag.py \u6b63\u5219\u901a\u9053\uff08parse_steps \u7b49\uff09/ parse_skill_manifest \u6587\u6863\u901a\u9053
+- dag.py 正则通道（parse_steps 等）/ parse_skill_manifest 文档通道
+- 五轮 S4 兼容壳：planner 委托方法组 / _split_actions、save_state 别名（P2d 结构性测试减负承接）
+- 已迁 prose 防复述：暂停邀请确认（暂停纪律单家）/ 同批发出（暂停时机建议归 Skill）
 - \u4e3b\u4f53\u56de\u5f52\uff08ADR-0004\uff09\uff1aruntime \u673a\u68b0\u76f4\u8dd1/\u5ba1\u6279\u76f4\u8dd1\u9a71\u52a8\u7b26\u53f7\uff08\u6a21\u578b\u6c38\u8fdc\u552f\u4e00\u884c\u52a8\u4e3b\u4f53\uff09
 spec_pause_card/spec_collect_card\uff08\u89c4\u683c\u5411\u5bfc\uff0c\u4e0d\u53d8\u57fa\u7ebf\uff09\u4e0d\u5728\u6e05\u5355\u5185\u3002
 \u8f93\u51fa\u7eaf ASCII\uff08\u9a8c\u6536\u4e71\u7801\u8bef\u8bfb\u6559\u8bad\uff09\u3002\u7528\u6cd5\uff1apython scripts/check_legacy_orchestration.py
@@ -29,6 +31,12 @@ FORBIDDEN = re.compile(
     # 主体回归（ADR-0004，审核整改批4）：runtime 机械直跑/审批直跑退役，
     # 模型永远唯一行动主体；直跑驱动符号防复活
     r"|drive_turn|direct_run_nodes|_run_direct_stage|_run_approval_pause|compose_stage_pause"
+    # 五轮 S4 兼容壳清偿防复活（P2d 结构性测试减负：test_shell_payoff/test_stage_batch_execution/
+    # test_prompt_relocation_batch3 的文本棘轮下沉至本门禁）+ 已迁 prose 防复述
+    r"|def _format_tool_results|def _render_read_result|def _describe_fc_tool"
+    r"|def _build_skill_catalog|def _last_user_text|_FEEDBACK_MARKER|_FEEDBACK_FULL_TOOLS"
+    r"|_split_actions = split_actions|save_state = save"
+    r"|暂停邀请确认|同批发出"
 )
 
 

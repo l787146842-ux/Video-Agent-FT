@@ -1,7 +1,8 @@
 """五轮 S4：兼容壳 100% 清偿回归（#10/N2，防回潮 + 承重壳保护）。
 
 清偿对象（未登记壳）：web/state_service.py、web/actions.py、planner 委托壳、
-models_legacy.py（plan/story 字段）、_split_actions/save_state 别名。
+models_legacy.py（plan/story 字段）；委托/别名符号防复活由
+check_legacy_orchestration 门禁承接（P2d 结构性测试减负）。
 保护对象（宪法 §12 登记承重壳）：executors/__init__、prompt_gates 尾部、
 chat_service 尾部——monkeypatch 调用方命名空间策略锚点，不得删除。
 """
@@ -27,27 +28,11 @@ def test_s4_models_legacy_fields_removed():
     assert 'extra="ignore"' in models
 
 
-def test_s4_planner_shells_removed():
+def test_s4_planner_direct_call_wired():
+    # 委托方法组/别名符号的防复活由 check_legacy_orchestration 门禁承接；
+    # 此处只钉正向接线：真实消费直调新命名空间
     planner = (SRC / "core/planner.py").read_text(encoding="utf-8")
-    # 委托方法与属性转手已删；真实消费改直调
-    for gone in (
-        "_FEEDBACK_MARKER = FEEDBACK_MARKER",
-        "_FEEDBACK_FULL_TOOLS = FEEDBACK_FULL_TOOLS",
-        "def _format_tool_results",
-        "def _render_read_result",
-        "def _describe_fc_tool",
-        "def _build_skill_catalog",
-        "def _last_user_text",
-    ):
-        assert gone not in planner, f"planner 壳残留: {gone}"
-    assert "format_tool_results(tool_results)" in planner  # 直调新命名空间
-
-
-def test_s4_aliases_removed():
-    loop = (SRC / "core/agent_loop.py").read_text(encoding="utf-8")
-    assert "_split_actions = split_actions" not in loop
-    manager = (SRC / "state/manager.py").read_text(encoding="utf-8")
-    assert "save_state = save" not in manager
+    assert "format_tool_results(tool_results)" in planner
 
 
 def test_s4_planner_suggested_retry_present():

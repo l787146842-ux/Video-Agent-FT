@@ -5,11 +5,8 @@
 模型拆完关键元素就暂停且把下一步说成编写提示词。
 """
 import asyncio
-from pathlib import Path
 
 import pytest
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 # ---------- D1：read_uploaded_doc 单文档自动归位 ----------
@@ -113,13 +110,8 @@ class TestStageExecutorsDeclaration:
         assert po.stage_done("spec", {"documents": []}) is False
 
 
-# ---------- D3-G4：平台不再给暂停时机出主意 ----------
-
-
-class TestProgressNoteNoPauseOpinion:
-    def test_no_same_batch_pause_suggestion(self):
-        src = (ROOT / "src" / "video_agent" / "core" / "prompt_builder.py").read_text(encoding="utf-8")
-        assert "同批发出" not in src, "平台不得建议暂停时机（暂停点归 Skill 单一事实源）"
+# ---------- D3-G4：平台不再给暂停时机出主意——该措辞防复活已迁
+# check_legacy_orchestration 门禁（P2d 结构性测试减负） ----------
 
 
 # ---------- 落盘加固：Windows 锁文件竞态重试 ----------

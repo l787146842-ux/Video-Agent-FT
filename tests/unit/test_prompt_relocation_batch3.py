@@ -25,7 +25,8 @@ def test_b3_executor_runtime_template_carries_clauses():
     for kept in ("执行方式", "虚报结果会被状态对账识破", "阶段边界",
                  "skill_section_run", "read_skill"):
         assert kept in body, f"executor_runtime 语义丢失: {kept}"
-    # 暂停纪律单家：本文件只留指针，不复述暂停邀请确认条款
+    # 暂停纪律单家：本文件只留指针；邀请确认条款的防复述由
+    # check_legacy_orchestration 门禁承接（P2d）
     assert "暂停邀请" not in body and "workflow_pause 邀请确认" not in body
 
 
@@ -61,12 +62,10 @@ def test_b3_prompt_builder_no_inline_instructions():
 
 
 def test_b3_pause_discipline_single_home():
-    """暂停纪律唯一家 = skill_discipline.md（P1）：
-    sidecar 流程清单附注与 executor_runtime 块的复述已删。"""
+    """暂停纪律唯一家 = skill_discipline.md（P1）；sidecar 流程清单附注的
+    复述防复活由 check_legacy_orchestration 门禁承接（P2d）。"""
     sd = load_prompt("planner/skill_discipline.md")
     assert "workflow_pause 工具调用真正停下" in sd, "暂停纪律单家条款丢失"
-    src = (ROOT / "src/video_agent/core/prompt_builder.py").read_text(encoding="utf-8")
-    assert "暂停邀请确认" not in src, "sidecar 流程清单不得复述暂停纪律"
 
 
 def test_b3_agent_loop_templates_wired():
