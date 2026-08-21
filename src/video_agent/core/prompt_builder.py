@@ -190,9 +190,10 @@ class PromptBuilder:
         return text
 
     def build_storyboard_progress_note(self) -> str:
-        """ ：故事板客观进度描述（纯数据）——只报三类有无，
+        """故事板客观进度描述（纯数据）——只报三类有无，
         暂停点指向已注入的 Skill 流程基线，平台不给排序意见；
-        顺带同批暂停建议（建议非强制，省往返）。"""
+        顺带同批暂停建议（建议非强制，省往返）。
+        文案外置 prompts/shared/storyboard_progress.md（批3 指令收敛，Rule6）。"""
         if self._get_raw_state is None:
             return ""
         try:
@@ -205,11 +206,9 @@ class PromptBuilder:
         if not (ke or sh or au):
             return ""
         mark = lambda b: "✓" if b else "✗"
-        return (
-            "== 故事板客观进度 ==\n"
-            f"- 关键元素：{mark(ke)}；分镜：{mark(sh)}；音频：{mark(au)}\n"
-            "暂停点以当前 Skill 流程基线（『何时暂停』/关键暂停点）为准。"
-        )
+        return render_prompt(
+            "shared/storyboard_progress.md",
+            ke_mark=mark(ke), sh_mark=mark(sh), au_mark=mark(au))
 
     def stage_allows_global_settings(self) -> bool:
         """ ：全局设置注入的阶段门控——规格规划阶段（无任何分组）
@@ -223,26 +222,28 @@ class PromptBuilder:
             return True
 
     def build_global_settings_note(self) -> str:
-        """全局生成设置注入块：分镜最大时长 + 默认出图/出视频渠道 + 聊天出图开关。"""
-        lines = [
-            f"- 分镜最大时长：{settings.max_shot_duration} 秒"
-            "（自己拆分镜时单个分镜时长不超该值——超限会被系统校正；duration 字段与提示词内总时长描述与其一致）"
-        ]
+        """全局生成设置注入块：分镜最大时长 + 默认出图/出视频渠道 + 聊天出图开关。
+        文案外置 prompts/shared/global_settings.md（批3 指令收敛，Rule6），
+        代码只留动态行组装。"""
+        image_line = ""
         if settings.default_image_provider_id:
             model = f" / 模型 {settings.default_image_model}" if settings.default_image_model else ""
-            lines.append(
-                f"- 默认出图渠道：供应商 {settings.default_image_provider_id}{model}，"
-                f"图片分辨率 {settings.default_image_resolution}（草稿自身未配置时按其填写参数）"
-            )
+            image_line = (
+                f"默认出图渠道：供应商 {settings.default_image_provider_id}{model}，"
+                f"图片分辨率 {settings.default_image_resolution}（草稿自身未配置时按其填写参数）")
+        video_line = ""
         if settings.default_video_provider_id:
             model = f" / 模型 {settings.default_video_model}" if settings.default_video_model else ""
-            lines.append(
-                f"- 默认出视频渠道：供应商 {settings.default_video_provider_id}{model}，"
-                f"视频分辨率 {settings.default_video_resolution}（草稿自身未配置时按其填写参数）"
-            )
-        if not settings.chat_image_enabled:
-            lines.append("- 聊天框出图当前关闭：不要主动触发 generate_image / image_generate")
-        return "== 全局生成设置（用户在「全局设置」页配置，必须遵守）==\n" + "\n".join(lines)
+            video_line = (
+                f"默认出视频渠道：供应商 {settings.default_video_provider_id}{model}，"
+                f"视频分辨率 {settings.default_video_resolution}（草稿自身未配置时按其填写参数）")
+        return render_prompt(
+            "shared/global_settings.md",
+            max_shot_duration=settings.max_shot_duration,
+            image_line=image_line,
+            video_line=video_line,
+            chat_image_off=not settings.chat_image_enabled,
+        )
 
     def build_iron_rules_block(self) -> str:
         """当前项目「执行铁律.md」全文注入块（宪法 ：项目级契约唯一表述源）。
@@ -258,10 +259,9 @@ class PromptBuilder:
             return ""
         if not content:
             return ""
-        return (
-            "== 当前项目《执行铁律》全文（项目级生产契约，必须完整遵守；"
-            "优先级：用户最新指令 > 本文档 + 制片规格 > Skill/系统默认）==\n" + content
-        )
+        # 头部文案外置 prompts/shared/iron_rules_header.md（批3 指令收敛，Rule6）
+        header = load_prompt("shared/iron_rules_header.md").strip()
+        return header + "\n" + content
 
     def build_skill_catalog(self, context: "PlannerContext") -> str:
         """构建 Skill 目录（渐进式披露的「目录」）：全部文档 Skill 的名称+摘要常驻，
@@ -389,25 +389,16 @@ class PromptBuilder:
                     "",
                     "== 流程清单（sidecar 声明；跨阶段调用会被阶段前置闸拒收）==",
                     *_ordered,
-                    "每阶段完成后用 workflow_pause 暂停邀请确认"
-                    "（用户明确声明连续执行时除外）。",
+                    # 批3 暂停纪律单家：暂停确认的邀请表述归 skill_discipline.md，
+                    # 此处不再复述（P1 规则单家）
                 ]
         except Exception:
             pass
-        lines += [
-            "",
-            "【执行方式】每个拆解/编写步骤必须真的执行了其中一种（调对应执行器，或直接输出 "
-            "studio-actions）后才可声称完成；"
-            "未调用任何执行器、也未输出任何 studio-actions 时，系统会判定本步未完成"
-            "（声称「已拆解/已完成/已写入故事板」与状态对账不符）；"
-            "执行器失败时请重试或停下说明，虚报结果会被状态对账识破。",
-            "【阶段边界与确认】各执行器的产出由系统按 Skill 章节校验（结构阶段只建分组、"
-            "提示词阶段只写提示词）；阶段暂停点以本 Skill『何时暂停』为准，需暂停时用 "
-            "workflow_pause 邀请确认，用户要求连续执行时照做并在回复末尾附警告。",
-            "【通用能力】无专属执行器的章节用 skill_section_run（section=章节标识）执行；"
-            "只调用上面列出的执行器与系统既有工具（document_write / read_uploaded_doc / image_generate / generate_video / workflow_pause 等）；"
-            "不要调用本清单之外的 Skill 工具名，也不要对当前 Skill 调用 read_skill（执行器内部已注入对应章节）。",
-        ]
+        # 执行方式/阶段边界/通用能力 prose 外置 prompts/planner/executor_runtime.md
+        # （批3 指令收敛，Rule6；暂停纪律表述以 skill_discipline.md 为单家）
+        _runtime_prose = load_prompt("planner/executor_runtime.md").strip()
+        if _runtime_prose:
+            lines += ["", _runtime_prose]
         return "\n".join(lines)
 
     # ---------- 分阶段聚焦注入（legacy 全文兜底路径专用） ----------

@@ -28,6 +28,7 @@ from src.video_agent.core.sse_events import (
     status_event,
 )
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # （轮末闸机分支收敛为声明式策略表（层 9 唯一落点）
 from src.video_agent.core.round_end_policies import (
@@ -71,11 +72,15 @@ def _unpack_llm(ret: Tuple) -> Tuple[str, str, int, float, Dict[str, Any]]:
 
 def _bad_output_nudge(attempt: int) -> str:
     """空/畸形输出续写引导：重试时随 messages 附一句，
-    明确要求本步直接产出工具调用或可见回复（只临时附加，不入历史）。"""
+    明确要求本步直接产出工具调用或可见回复（只临时附加，不入历史）。
+    文案外置 prompts/planner/feedback.md::BAD_OUTPUT_NUDGE（批3 指令收敛，Rule6）。"""
+    tpl = load_prompt_section("planner/feedback.md", "BAD_OUTPUT_NUDGE")
+    if tpl:
+        return tpl.replace("{{attempt}}", str(attempt))
     return (
         f"（系统）上一步（第 {attempt} 次）未产出任何可见回复或工具调用。"
         "请直接发出本应执行的工具调用，或给出面向用户的回复；"
-        "不要只输出思考过程。"
+        "避免只输出思考过程。"
     )
 
 
@@ -331,13 +336,18 @@ async def run_agent_loop(
             tracer.end_step(step, actions_applied=fc_applied,
                             finish_reason=finish_reason or "fc_continue",
                             token_usage=step_tokens)
-            # 回喂：让下一步 LLM 知道工具已执行
+            # 回喂：让下一步 LLM 知道工具已执行（文案外置 feedback.md::STEP_FEEDBACK，
+            # 批3 指令收敛 Rule6）
             messages.append({"role": "assistant", "content": content or f"（已执行 {fc_applied} 个工具调用）"})
+            _step_fb = load_prompt_section("planner/feedback.md", "STEP_FEEDBACK")
             messages.append({
                 "role": "user",
                 "content": (
-                    f"（系统）第 {step} 轮的 {fc_applied} 个 Tool 已执行完毕，工作台状态已刷新到 system prompt。"
-                    "请继续完成任务；全部完成后直接回复文本即可。"
+                    _step_fb.replace("{{step}}", str(step)).replace("{{count}}", str(fc_applied))
+                    if _step_fb else (
+                        f"（系统）第 {step} 轮的 {fc_applied} 个 Tool 已执行完毕，工作台状态已刷新到 system prompt。"
+                        "请继续完成任务；全部完成后直接回复文本即可。"
+                    )
                 ),
             })
             continue
@@ -400,8 +410,10 @@ async def run_agent_loop(
                 f"已执行 {result.applied_actions} 个操作，故事板与当前预览已更新（模型未输出总结文字）。"
             )
         else:
-            # 用户腔兜底（空响应不是用户的错，给出明确下一步）
-            result.text = (
+            # 用户腔兜底（空响应不是用户的错，给出明确下一步）；
+            # 文案外置 feedback.md::EMPTY_RESPONSE_FALLBACK（批3 指令收敛，Rule6）
+            result.text = load_prompt_section(
+                "planner/feedback.md", "EMPTY_RESPONSE_FALLBACK") or (
                 "这一步没有生成可见回复（上游可能瞬时抖动）——请直接说「重试」，我再来一次；"
                 "若连续出现可尝试切换模型。"
             )
