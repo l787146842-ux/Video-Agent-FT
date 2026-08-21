@@ -105,6 +105,16 @@ describe('chatActions 流式状态机', () => {
     expect(chatState.messages.length).toBe(0);
   });
 
+  it('cancelStream 本地派生「继续刚才的任务」建议（P4-21：kind=retry 走机械重发）', () => {
+    chatActions.startStream();
+    chatActions.appendDelta('部分内容');
+    chatActions.cancelStream();
+    const acts = chatState.messages[0].suggestedActions;
+    expect(acts).toHaveLength(1);
+    expect(acts?.[0].kind).toBe('retry');
+    expect(acts?.[0].label).toBe('继续刚才的任务');
+  });
+
   it('addMessage 追加用户消息', () => {
     chatActions.addMessage({ sender: 'user', text: '你好' });
     expect(chatState.messages.length).toBe(1);

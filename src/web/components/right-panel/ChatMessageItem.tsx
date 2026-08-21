@@ -214,7 +214,8 @@ export function ChatMessageItem(props: {
                   onClick={() => runSuggested(act)}
                 >
                   {act.kind === 'retry'
-                    ? t('rp.msg.retry')
+                    // P4-21：后端/本地派生可下发显式 label（如「继续刚才的任务」），无 label 回落「重试」
+                    ? (act.label || t('rp.msg.retry'))
                     : (act.kind === 'next' && act.label ? act.label : t('rp.msg.continueTask'))}
                 </button>
               )}

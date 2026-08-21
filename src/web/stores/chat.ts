@@ -242,11 +242,16 @@ export const chatActions = {
     }));
   },
 
-  /** 清空流式状态（用户手动停止） */
+  /** 清空流式状态（用户手动停止）。P4-21：停止后不再纯丢弃——
+   * 停止气泡本地派生「继续刚才的任务」建议（走既有 suggested_actions 展示通道，
+   * 不改 SSE 协议）；kind=retry 即点击走已验收的机械重发（重发最近一条用户消息） */
   cancelStream() {
     setChatState(produce((s) => {
       if (s.streamingText) {
-        s.messages.push({ sender: 'agent', text: s.streamingText, meta: t('rp.msg.stopped'), modelName: s.streamingModel || undefined });
+        s.messages.push({
+          sender: 'agent', text: s.streamingText, meta: t('rp.msg.stopped'), modelName: s.streamingModel || undefined,
+          suggestedActions: [{ kind: 'retry', label: t('rp.msg.continueLastTask'), value: '' }],
+        });
       }
       resetStreamFields(s);
     }));
