@@ -2,7 +2,7 @@
 """Workflow Runtime — 控制流唯一驱动器（宪法 v6 Rule2，ADR-0003）。
 
 正向设计（业界基准：Anthropic workflows-vs-agents / Claude Code hooks 公理 /
-Codex loop+approval / Flova runtime contract）：模型只做节点内语义创作，
+Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复）：模型只做节点内语义创作，
 运行时做确定性顺序、持久状态、审批恢复与产物账本。
 
 v1 边界（声明式可扩展）：

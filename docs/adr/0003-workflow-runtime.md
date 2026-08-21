@@ -19,7 +19,7 @@
 | 定义良好的管线用 workflow（代码持有控制流），agent loop 只留开放任务 | Anthropic《Building Effective Agents》 |
 | Hooks guarantee behavior; prompts suggest——确定性强制内嵌执行路径 | Claude Code hooks |
 | 一致性流程用编排器驱动模型-工具循环，循环只负责单元内开放决策 | OpenAI Codex / Agents SDK cookbook |
-| 模型做语义内容，运行时做确定性顺序/持久状态/审批恢复/产物账本 | Flova Runtime Contract |
+| 模型做语义内容，运行时做确定性顺序/持久状态/审批恢复/产物账本 | Temporal Durable Execution / LangGraph persistence（checkpoint + human-in-the-loop interrupt） |
 
 ## 独立诊断收敛
 

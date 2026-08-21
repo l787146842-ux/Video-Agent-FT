@@ -1,11 +1,12 @@
-"""统一闸机管线（宪法 §2.0：Guardrails are Execution Logic； 恢复接线）。
+"""统一闸机管线（宪法 §2.0：Guardrails are Execution Logic）。
 
-FC 轨（core/fc_tool_runner.py）与文本轨（web/action_executor.py）共用
-同一份规则源（core/prompt_gates.py）与本模块的执行组合：
+动作通道单轨 = FC（ADR-0001）：判定经 fc_tool_runner 闸机链执行，
+规则源唯一 = core/prompt_gates.py，执行组合唯一 = 本模块：
 
     input guard → tool input guard → tool execute → tool output guard → output guard → audit
 
-本模块是「提示词写入」判定的唯一组合实现；两轨只注入参数，不各自写判定。
+本模块是「提示词写入」判定的唯一组合实现；调用方只注入参数，不各自写判定。
+（studio-actions 严格 JSON 解析仅存于 mock 演示通道，主路径无自由文本解析。）
 verdict 结构化（GateVerdict），回喂模型与展示用户用同一源；
 每条判定经 tracer.record_gate 入审计（/api/agent/gates 可见）。
 
