@@ -41,6 +41,16 @@
         8
       ]
     },
+    "step_stages": {
+      "1": "analysis",
+      "2": "spec",
+      "3": "structure",
+      "5": "structure",
+      "6": "ke_media",
+      "7": "shot_media",
+      "8": "audio_assets",
+      "9": "assembly"
+    },
     "spec_wizard": true,
     "spec_gate": true,
     "script_required": true

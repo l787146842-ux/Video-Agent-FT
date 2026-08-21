@@ -7,7 +7,7 @@
 """
 import json
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
 from src.video_agent.utils.prompts import load_prompt_section
@@ -333,8 +333,22 @@ def _flow_steps_of(skill_name: str) -> Dict[int, str]:
     return out
 
 
+# step_done_conditions 声明探针注入口：单一实现在 pipeline_orchestrator
+# （本模块被 prompt_gates 导入，反向顶层 import 成环，故注册钩子解耦）。
+# 签名：(step_no, state, skill) -> Optional[bool]，None = 未声明回落旧规则。
+_STEP_DONE_PROBE: Optional[Callable[[Any, Dict[str, Any], str], Optional[bool]]] = None
+
+
+def register_step_done_probe(
+    fn: Callable[[Any, Dict[str, Any], str], Optional[bool]],
+) -> None:
+    global _STEP_DONE_PROBE
+    _STEP_DONE_PROBE = fn
+
+
 def current_flow_step(state: Dict[str, Any], skill_name: str) -> int:
-    """客观状态推导已完成步数（v1 覆盖 step1-3；其余步不判定返回当前值）。
+    """客观状态推导已完成步数（声明优先：step_done_conditions 已声明的步
+    走其阶段客观探针；未声明步回落 v1 硬规则，覆盖 step1-3）。
 
     step1=分析存档；step2=规格文档存在；step3=故事板阶段完成。
     从 1 起连续判定，首个未完成步即断（依赖序由 sidecar 保证）。
@@ -346,7 +360,13 @@ def current_flow_step(state: Dict[str, Any], skill_name: str) -> int:
         return 0
     done = 0
     for n in sorted(steps):
-        if n == 1:
+        declared = (
+            _STEP_DONE_PROBE(n, state or {}, str(skill_name or ""))
+            if _STEP_DONE_PROBE is not None else None
+        )
+        if declared is not None:
+            ok = declared
+        elif n == 1:
             ok = bool(((state or {}).get("analysis") or {}).get("summary"))
         elif n == 2:
             ok = prompt_gates.has_spec_document(state or {})

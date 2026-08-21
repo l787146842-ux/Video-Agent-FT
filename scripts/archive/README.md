@@ -14,3 +14,4 @@
 | clean_incident_refs.py | 九轮 9b 批：注释/docstring 事故编号叙事机械清点（只重写注释文本，防误删设白名单模式） |
 | clean_temp_artifacts.py | 临时产物清扫：.pytest_tmp / .playwright-cli 等堆积调试文件（默认 dry-run，--apply 真删） |
 | audit_skill_gates.py | 只读审计：盘点 Skill prompt_draft 下小节，为 skill_manifest gates 数据配置提供依据 |
+| migrate_step_stages.py | P3-12 批：为 16 个 sidecar manifest 幂等补写 flow.step_stages 显式声明（schema v2，已执行完毕并有 test_sidecar_schema_v2 兜底） |

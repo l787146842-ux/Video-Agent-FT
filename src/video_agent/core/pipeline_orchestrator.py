@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
+from src.video_agent.core import gates_cards
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.models import (
@@ -61,26 +62,36 @@ def _all_media(groups: List[Dict[str, Any]], field: str) -> bool:
 
 
 def _has_assembly_plan_doc(state: Dict[str, Any]) -> bool:
+    return _has_document_named(state, ASSEMBLY_PLAN_DOC_NAME)
+
+
+def _has_document_named(state: Dict[str, Any], name: str) -> bool:
     return any(
-        str(d.get("name") or "") == ASSEMBLY_PLAN_DOC_NAME
+        str(d.get("name") or "") == name
         for d in (state.get("documents") or []) if isinstance(d, dict)
     )
 
 
-def _assembly_done_decl(skill: str) -> str:
-    """sidecar 组装完成条件声明（flow.stages.assembly.done，可选）：
+def _stage_done_decl(skill: str, key: str) -> str:
+    """sidecar 阶段完成条件声明（flow.stages.<阶段键>.done，可选，任意阶段同构）：
     当前支持 "document:<文档名>"；未声明返空串（回落平台客观探针）。"""
     if not skill:
         return ""
     manifest = registry.skill_manifest_of(skill) or {}
     return str(
-        (((manifest.get("flow") or {}).get("stages") or {}).get("assembly") or {}).get("done")
+        (((manifest.get("flow") or {}).get("stages") or {}).get(key) or {}).get("done")
         or ""
     ).strip()
 
 
 def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
-    """阶段完成度客观探针（只认状态事实，认不出=未完成；fail-closed）。"""
+    """阶段完成度客观探针（只认状态事实，认不出=未完成；fail-closed）。
+
+    sidecar 声明探针通道（任意阶段同构）：flow.stages.<key>.done 声明
+    优先（document:<文档名>），未声明回落各阶段平台客观探针。"""
+    decl = _stage_done_decl(skill, key)
+    if decl.startswith("document:"):
+        return _has_document_named(state, decl[len("document:"):].strip())
     if key == "analysis":
         return bool((state.get("analysis") or {}).get("summary"))
     if key == "spec":
@@ -101,21 +112,45 @@ def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
                    for g in audio for d in (g.get("drafts") or []))
         )
     if key == "assembly":
-        # sidecar 声明优先；未声明回落「全部分镜有视频 + 组装方案文档在盘」，
-        # 与 shot_media 探针解耦（已生成未组装不再被误判完成）
-        decl = _assembly_done_decl(skill)
-        if decl.startswith("document:"):
-            name = decl[len("document:"):].strip()
-            return any(
-                str(d.get("name") or "") == name
-                for d in (state.get("documents") or []) if isinstance(d, dict)
-            )
+        # 声明通道已在函数首位判定；未声明回落「全部分镜有视频 +
+        # 组装方案文档在盘」，与 shot_media 探针解耦（已生成未组装不再误判完成）
         return (
             bool(shots)
             and _all_media(shots, "videoUrl")
             and _has_assembly_plan_doc(state)
         )
     return False
+
+
+def step_done_declared(step_no: Any, skill: str) -> Optional[str]:
+    """sidecar flow.step_done_conditions 声明：step 号 → 客观探针阶段键；
+    未声明返回 None（声明驱动，不猜）。"""
+    if not skill:
+        return None
+    manifest = registry.skill_manifest_of(skill) or {}
+    stage_key = str(
+        ((manifest.get("flow") or {}).get("step_done_conditions") or {}).get(str(step_no))
+        or ""
+    ).strip()
+    return stage_key or None
+
+
+def step_done(step_no: Any, state: Dict[str, Any], skill: str) -> bool:
+    """step 完成度客观探针（声明驱动，fail-closed）：
+    step_done_conditions 声明的阶段探针是唯一事实源；未声明返 False。
+    探针只记录客观完成度，不发起行动（ADR-0004）。"""
+    stage_key = step_done_declared(step_no, skill)
+    return stage_done(stage_key, state, skill) if stage_key else False
+
+
+def step_done_probe(
+    step_no: Any, state: Dict[str, Any], skill: str,
+) -> Optional[bool]:
+    """step_done_conditions 消费方适配：未声明返 None（回落消费方旧规则），
+    已声明返客观探针结果（三态区分「无声明」与「声明了未完成」）。"""
+    if step_done_declared(step_no, skill) is None:
+        return None
+    return step_done(step_no, state, skill)
 
 
 def stage_table(skill: str) -> List[StageSpec]:
@@ -154,9 +189,9 @@ def current_stage(state: Dict[str, Any], skill: str) -> Optional[StageSpec]:
 
 # ---------- 3A：sidecar dependencies 消费（DAG 调度） ----------
 #
-# step 描述关键词 → 平台规范阶段。顺序即优先级：assembly 等特化阶段在前，
-# structure 作为兼底放最后。step 5 分镜表格图（运镜轨迹示意）属视觉锚点类，
-# 归入 ke_media 后其依赖边被吸收（6→[4,5] 坍缩为 shot_media→ke_media）。
+# step 描述关键词 → 平台规范阶段（仅作未声明回落兜底）。顺序即优先级：
+# assembly 等特化阶段在前，structure 作为兼底放最后。首选通道 =
+# flow.step_stages 显式声明（sidecar schema v2，注册期门禁校验）。
 _STEP_STAGE_HINTS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("analysis", ("分析", "读取并", "剧本文件")),
     ("spec", ("规格", "参数写入", "Final_Video_Spec")),
@@ -167,22 +202,52 @@ _STEP_STAGE_HINTS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("structure", ("Storyboard", "故事板", "key_element", "拆解")),
 )
 
+# 遥测：step→stage 映射来源分布（命中率计数，为将来下线启发式留证据）。
+# explicit=step_stages 声明命中；declared_absent=声明阶段不在当前阶段表
+# （边被吸收；声明权威不回退启发式）；只计数不落盘。
+_STEP_STAGE_STATS: Dict[str, int] = {
+    "explicit": 0, "executors": 0, "heuristic": 0,
+    "declared_absent": 0, "unmapped": 0,
+}
+
+
+def step_stage_stats() -> Dict[str, int]:
+    """step→stage 映射来源遥测快照（explicit 占比 = 启发式下线证据）。"""
+    return dict(_STEP_STAGE_STATS)
+
+
+def reset_step_stage_stats() -> None:
+    """测试用：清零映射来源计数。"""
+    for k in _STEP_STAGE_STATS:
+        _STEP_STAGE_STATS[k] = 0
+
 
 def _step_to_stage(
     step_no: Any, manifest: Optional[Dict[str, Any]], table: List[StageSpec],
 ) -> Optional[str]:
-    """sidecar step 号 → 平台规范阶段：① stage_executors 执行器交集；② 描述关键词。"""
+    """sidecar step 号 → 平台规范阶段：① step_stages 显式声明（权威）；
+    ② stage_executors 执行器交集；③ 描述关键词启发式（回落，遥测记账）。"""
     flow = ((manifest or {}).get("flow") or {})
+    keys = {s.key for s in table}
+    declared = str((flow.get("step_stages") or {}).get(str(step_no)) or "").strip()
+    if declared:
+        if declared in keys:
+            _STEP_STAGE_STATS["explicit"] += 1
+            return declared
+        _STEP_STAGE_STATS["declared_absent"] += 1
+        return None
     execs = (flow.get("stage_executors") or {}).get(str(step_no)) or []
     if execs:
         for spec in table:
             if set(execs) & set(spec.executors):
+                _STEP_STAGE_STATS["executors"] += 1
                 return spec.key
     desc = str((flow.get("steps") or {}).get(str(step_no)) or "")
-    keys = {s.key for s in table}
     for key, kws in _STEP_STAGE_HINTS:
         if key in keys and any(k in desc for k in kws):
+            _STEP_STAGE_STATS["heuristic"] += 1
             return key
+    _STEP_STAGE_STATS["unmapped"] += 1
     return None
 
 
@@ -378,3 +443,8 @@ async def gate_precheck(
     if any(s.key == "spec" for s in batch):
         return OrchestratorOutcome("spec_pending")
     return None
+
+
+# step_done_conditions 声明探针注入下一步机械派生（gates_cards 被
+# prompt_gates 导入，反向顶层 import 成环，故用注册钩子解耦）。
+gates_cards.register_step_done_probe(step_done_probe)

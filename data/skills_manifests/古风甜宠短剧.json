@@ -34,6 +34,15 @@
         6
       ]
     },
+    "step_stages": {
+      "0": "analysis",
+      "1": "analysis",
+      "3": "spec",
+      "4": "structure",
+      "5": "ke_media",
+      "6": "shot_media",
+      "7": "assembly"
+    },
     "spec_wizard": true,
     "spec_gate": true
   },

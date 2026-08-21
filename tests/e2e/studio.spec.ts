@@ -142,16 +142,19 @@ test.describe('阶段确认卡片与文档卡片', () => {
         await chatInput.press('Enter');
 
         const feed = page.getByTestId('chat-feed');
-        // 阶段完成卡：标题 + 操作数徽标 + 短确认问句 + 执行清单
+        // 阶段完成卡：标题 + 操作数徽标 + 短确认问句（body 只留概要，明细不双处呈现）
         const stageCard = feed.locator('.stage-card').last();
         await expect(stageCard).toContainText('阶段完成');
         await expect(stageCard).toContainText('已执行 3 个操作');
-        await expect(stageCard).toContainText('故事板已建立，请审阅');
-        await expect(stageCard.locator('.stage-card-body')).toContainText('新建关键元素分组「主角」');
+        await expect(stageCard.locator('.stage-card-body')).toContainText('故事板已建立，请审阅');
+        await expect(stageCard.locator('.stage-card-body')).not.toContainText('新建关键元素分组');
         // 文档完成卡片
         await expect(feed.locator('.doc-card').last()).toContainText('Final_Video_Spec.md');
-        // 操作明细在「已处理 X 个操作」时间线里（展开后可见）
-        await expect(feed.locator('.agent-timeline').last()).toContainText('已处理');
+        // action_log 明细归时间线「已处理操作」面板单家（非 live 默认折叠，点开头部再断言）
+        const opsPanel = feed.locator('.agent-timeline .tl-panel', { hasText: '已处理' }).last();
+        await expect(opsPanel).toContainText('已处理');
+        await opsPanel.locator('.tl-panel-header').click();
+        await expect(opsPanel.locator('.tl-panel-body')).toContainText('新建关键元素分组「主角」');
     });
 
     test('三通道分离：成果在正文、卡片只留短问句（1111 反馈）', async ({ page }) => {
@@ -215,6 +218,17 @@ test.describe('闸机「本次放行」（814F7）', () => {
                     payload: {
                         text: '写入被拦截',
                         warnings: ['流程闸机拦截：分镜提示词结构校验未通过'],
+                        // 结构化闸机判定：放行按钮渲染条件 = trace.steps[].gates[] 存在 ok=false 条目
+                        trace: {
+                            steps: [{
+                                step: 1, timing_ms: 10, actions_applied: 0, finish_reason: 'stop',
+                                gates: [{
+                                    ok: false, rule_id: 'storyboard_prompt_structure',
+                                    layer: 'platform', message: '分镜提示词结构校验未通过',
+                                }],
+                            }],
+                            total_ms: 10,
+                        },
                         elapsed_ms: 10, steps: 1, applied_actions: 0,
                     },
                 })}\n\n`,

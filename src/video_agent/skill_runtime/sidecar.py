@@ -12,6 +12,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 
+from src.video_agent.skill_runtime.sidecar_schema import validate_sidecar_data
+
 _MANIFEST_FENCE_RE = re.compile(r"```json skill_manifest.*?```\n?", re.S)
 
 # 声明写入钩子：sidecar 变更时通知消费方失效缓存（如 workflow
@@ -64,33 +66,9 @@ def write_sidecar(
 
 
 def validate_sidecar(data: Optional[Dict[str, Any]]) -> List[str]:
-    """sidecar 声明体检（注册期门禁）：结构非法/依赖引用悬空即报出。"""
-    issues: List[str] = []
-    if data is None:
-        return issues  # 无 sidecar = 零声明，合法（引擎零预设）
-    if not isinstance(data, dict):
-        return ["sidecar 根节点必须是 JSON 对象"]
-    flow = data.get("flow") or {}
-    if not isinstance(flow, dict):
-        issues.append("flow 必须是 JSON 对象")
-        flow = {}
-    steps = flow.get("steps") or {}
-    deps = flow.get("dependencies") or {}
-    if not isinstance(steps, dict):
-        issues.append("flow.steps 必须是对象（步骤号→标题）")
-        steps = {}
-    if not isinstance(deps, dict):
-        issues.append("flow.dependencies 必须是对象（步骤号→前置列表）")
-        deps = {}
-    step_nos = {str(k) for k in steps}
-    for k, v in deps.items():
-        if str(k) not in step_nos:
-            issues.append(f"依赖声明 {k}→… 的步骤 {k} 不在 steps 中")
-        if isinstance(v, list):
-            for pre in v:
-                if str(pre) not in step_nos:
-                    issues.append(f"依赖 {k}→{pre} 的前置步骤 {pre} 不在 steps 中")
-    return issues
+    """sidecar 声明体检（注册期门禁）：全键 schema 校验，
+    单一实现 = sidecar_schema（非法声明 fail-closed，未声明键回落旧行为）。"""
+    return validate_sidecar_data(data)
 
 
 def migrate_doc_to_sidecar(doc_path: Path, directory: Optional[Path] = None) -> bool:

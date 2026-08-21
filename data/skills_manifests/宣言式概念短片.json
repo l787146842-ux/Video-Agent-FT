@@ -5,6 +5,10 @@
       "2": "画面符号化：每帧是独立强符号，隐喻密度高，脱离上下文单帧即该命题的视觉代名词。禁匿名空镜。"
     },
     "dependencies": {},
+    "step_stages": {
+      "1": "audio_assets",
+      "2": "shot_media"
+    },
     "spec_wizard": true,
     "spec_gate": true
   },

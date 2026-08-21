@@ -27,6 +27,15 @@
         5
       ]
     },
+    "step_stages": {
+      "1": "spec",
+      "2": "structure",
+      "3": "ke_media",
+      "4": "audio_assets",
+      "5": "ke_media",
+      "6": "shot_media",
+      "7": "assembly"
+    },
     "spec_wizard": true,
     "spec_gate": true
   },
