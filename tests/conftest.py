@@ -93,3 +93,26 @@ def set_global_setting():
     yield _set
     for key, old in applied.items():
         object.__setattr__(settings, key, old)
+
+
+@pytest.fixture(autouse=True)
+def _degradation_watchdog(request):
+    """批5 劣化即红守卫（全 tests/ 覆盖：unit + integration）。
+
+    核心探测点的「预期外降级」遥测（record_degradation）一旦在单测运行期间
+    触发即测试失败——承重接线断裂不再静默存活（对齐评测驱动公理，宪法 §2.6）。
+    有意触发降级的故障注入测试用 @pytest.mark.allow_degradation 豁免。"""
+    from src.video_agent.core import live_metrics
+
+    live_metrics.reset_degradations()
+    yield
+    if request.node.get_closest_marker("allow_degradation"):
+        live_metrics.reset_degradations()
+        return
+    hits = live_metrics.get_degradations()
+    live_metrics.reset_degradations()
+    assert not hits, (
+        "承重接线意外降级（劣化即红）: "
+        + ", ".join(f"{h['point']}×{h['count']}" for h in hits)
+        + "；确属有意的故障注入请加 @pytest.mark.allow_degradation"
+    )

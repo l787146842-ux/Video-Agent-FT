@@ -177,7 +177,8 @@ export const chatActions = {
         sender: 'agent',
         text: (payload.text || '').trim() || t('rp.msg.emptyReply'),
         meta: metaParts.join(' · '),
-        confirm: payload.confirmation || '',
+        // 批6 类型收窄：confirm 唯一形态 = 问句文本（无暂停 = undefined）
+        confirm: payload.confirmation || undefined,
         appliedActions: payload.applied_actions || 0,
         actionLog: (payload.action_log || []).length ? payload.action_log : undefined,
         // 确认卡片的候选选项（单选卡片，点击即把 label 作为回复发送）

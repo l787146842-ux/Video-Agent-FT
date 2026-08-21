@@ -39,7 +39,7 @@ let sseParseErrors = 0;
 export function getSseParseErrorCount(): number { return sseParseErrors; }
 
 /** 事件订阅 HTTP 失败：携带 status 供重连策略判定（4xx 任务面错误不重连） */
-class SseHttpError extends Error {
+export class SseHttpError extends Error {
   constructor(public readonly status: number) {
     super(`事件订阅失败 (${status})`);
     this.name = 'SseHttpError';
@@ -100,8 +100,9 @@ async function subscribeOnce(taskId: string): Promise<void> {
 }
 
 /** 订阅失败判定：true = 网络/传输层瞬断，值得重连（后台任务仍在跑）；
- * false = 用户取消或任务面错误（4xx：任务不存在/已结束被清理），重连无意义。 */
-function isRetriableSubscribeError(err: unknown): boolean {
+ * false = 用户取消或任务面错误（4xx：任务不存在/已结束被清理），重连无意义。
+ * 导出供单测钉死（批1 验收）。 */
+export function isRetriableSubscribeError(err: unknown): boolean {
   if ((err as Error).name === 'AbortError') return false;
   if (err instanceof SseHttpError) {
     // 408/429 属瞬态可重连；其余 4xx = 任务面错误

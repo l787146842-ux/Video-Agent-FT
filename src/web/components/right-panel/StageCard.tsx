@@ -16,10 +16,7 @@ import type { ChatMessage } from '@/types';
 export function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'answered' | 'expired' | 'none' }) {
   const [open, setOpen] = createSignal(true);
   const msg = () => props.msg();
-  const confirmText = () => {
-    const c = msg().confirm;
-    return typeof c === 'string' ? c : '';
-  };
+  const confirmText = () => msg().confirm || '';
   /** 确认文案与模型正文判重：正文已包含同样句子时卡片只留执行清单 */
   const bodyText = () => {
     const c = confirmText().trim();

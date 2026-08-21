@@ -172,7 +172,7 @@ export interface ChatMessage {
   sender: 'user' | 'assistant' | 'agent';
   text: string;
   meta?: string;
-  confirm?: boolean | string;
+  confirm?: string;
   appliedActions?: number;
   docCard?: string;
   /** 回复时使用的模型名称（agent 消息） */
