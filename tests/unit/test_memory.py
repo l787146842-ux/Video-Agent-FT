@@ -34,7 +34,7 @@ def mem_dir():
 def test_tokenize_mixed():
     tokens = tokenize("制作 Cinematic 风格的科幻短片")
     assert "cinematic" in tokens
-    assert "科" in tokens
+    assert "科幻" in tokens  # 中文按 bigram（P3-14：单字切分退役）
 
 
 def test_keyword_score_overlap():

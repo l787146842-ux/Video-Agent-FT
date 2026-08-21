@@ -104,7 +104,7 @@ class PromptBuilder:
             # 混合记忆检索注入（语义 + 关键词 + 时间衰减），按项目隔离；
             # 命中明细写入 context.memory_hits（4.7：随 done payload 下发前端可视化）
             if settings.memory_enabled:
-                query = self.last_user_text(context)
+                query = self.memory_recall_query(context)
                 if query:
                     project_id = self._get_project_id()
                     mm = MemoryManager.get_instance()
@@ -465,7 +465,7 @@ class PromptBuilder:
 
     @staticmethod
     def last_user_text(context: "PlannerContext") -> str:
-        """从历史中取最近一条用户消息作为记忆检索 query"""
+        """从历史中取最近一条用户消息作为记忆检索 query 基底"""
         for msg in reversed(context.history or []):
             if msg.get("role") == "user":
                 content = msg.get("content", "")
@@ -477,3 +477,22 @@ class PromptBuilder:
                         if isinstance(p, dict) and p.get("type") == "text"
                     )
         return ""
+
+    def memory_recall_query(self, context: "PlannerContext") -> str:
+        """记忆召回 query 扩展：用户消息 + 当前阶段标签 + 激活 Skill 名拼接。
+
+        单靠最近一条用户消息常缺主题词（「继续」「改一下」类短消息
+        几乎检索不到任何记忆）；阶段标签与 Skill 名把检索维度拉回
+        当前制作上下文。阶段不可探测时只省掉该段，不影响主 query。"""
+        base = self.last_user_text(context)
+        parts: List[str] = [base] if base else []
+        try:
+            label = self._STAGE_LABELS.get(self.detect_stage(), "")
+            if label:
+                parts.append(label)
+        except Exception:
+            pass
+        skill = str(getattr(context, "skill_name", "") or "").strip()
+        if skill:
+            parts.append(skill)
+        return " ".join(parts)

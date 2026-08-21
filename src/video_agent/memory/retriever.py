@@ -11,17 +11,30 @@ from typing import Dict, List, Optional
 
 from src.video_agent.memory.models import MemoryRecord
 
-# 中文按字符 bigram，英文按词
-_TOKEN_RE = re.compile(r"[a-zA-Z0-9]+|[一-鿿]")
+# 英文/数字按词，中文按连续片段捕获（下一步展开为 bigram）
+_TOKEN_RE = re.compile(r"[a-zA-Z0-9]+|[一-鿿]+")
 
 
 def tokenize(text: str) -> List[str]:
-    """中英文混合分词：英文单词 + 中文单字（bigram 在重叠计算中展开）"""
-    return _TOKEN_RE.findall(text.lower())
+    """中英文混合分词：英文单词 + 中文 bigram。
+
+    中文单字切分曾使 fallback 后端关键词近乎失效（「用」「户」这类
+    通用单字淹没有效信号），改 bigram 后「用户」「要求」才是可匹配的
+    词；单字残段（长度 1 的片段）原样保留。"""
+    tokens: List[str] = []
+    for tok in _TOKEN_RE.findall(text.lower()):
+        if len(tok) == 1 and '一' <= tok <= '鿿':
+            tokens.append(tok)
+        elif tok[0].isascii():
+            tokens.append(tok)
+        else:
+            tokens.extend(tok[i] + tok[i + 1] for i in range(len(tok) - 1))
+    return tokens
 
 
 def _bigrams(tokens: List[str]) -> List[str]:
-    """中文单字序列展开为 bigram，提升中文短语匹配精度"""
+    """兼容层：旧存量记录的关键词为单字切分，检索时把相邻单字
+    补展为 bigram，与新写入的 bigram 关键词对齐（新分词下基本透传）"""
     chars = [t for t in tokens if len(t) == 1 and '一' <= t <= '鿿']
     words = [t for t in tokens if len(t) > 1]
     return words + chars + [chars[i] + chars[i + 1] for i in range(len(chars) - 1)]
