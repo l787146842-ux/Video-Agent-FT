@@ -6,6 +6,9 @@ context-usage 接口优先取新鲜 live 值，静态估算作兜底——推理
 看到用量随步骤增长。
 """
 from loguru import logger
+import json
+import os
+import pathlib
 import time
 from typing import Any, Dict, List, Optional
 
@@ -33,11 +36,40 @@ def record_live_context(project_id: str, messages: List[Dict[str, Any]]) -> None
 # system prompt 组装明细（prompt_builder 写入，context-usage 返回）
 _SECTIONS: Dict[str, Dict[str, int]] = {}
 
+# 运行时组装总长遥测样本（P3-17）：追加式 JSONL，供
+# scripts/check_prompt_budget.py 周报观察项统计 P95（只观察不作硬门禁）
+_SAMPLES_PATH = pathlib.Path(__file__).resolve().parents[3] / "data" / "prompt_sections.jsonl"
+_SAMPLES_MAX_LINES = 4000   # 滚动上限：超出即裁剪，防遥测自身膨胀
+_SAMPLES_KEEP_LINES = 2000  # 裁剪时保留最近 N 条
+
+
+def _persist_section_sample(project_id: str, sections: Dict[str, int]) -> None:
+    """追加一条组装样本（ts/project_id/各段字符数）。
+
+    pytest 环境不落盘（防测试基线污染样本文件）；异常静默，遥测不阻断主流程。"""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    path = _SAMPLES_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rec = {"ts": time.time(), "project_id": project_id, **sections}
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    if len(lines) > _SAMPLES_MAX_LINES:
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(lines[-_SAMPLES_KEEP_LINES:])
+
 
 def record_sections(project_id: str, sections: Dict[str, int]) -> None:
-    """记录最近一次 system prompt 各段字符数（组装层可观测性，调试端点用）。"""
+    """记录最近一次 system prompt 各段字符数（组装层可观测性，调试端点用）；
+    同步追加一条持久化样本供预算脚本 P95 周报统计（P3-17）。"""
     if project_id:
         _SECTIONS[project_id] = dict(sections)
+        try:
+            _persist_section_sample(project_id, sections)
+        except Exception as _e:
+            logger.debug("[live_metrics] 组装样本落盘忽略异常: {}", _e)
 
 
 def get_sections(project_id: str) -> Dict[str, int]:

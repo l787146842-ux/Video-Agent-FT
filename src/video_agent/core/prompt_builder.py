@@ -296,7 +296,8 @@ class PromptBuilder:
 
         - auto（默认）：有章节→执行器清单+流程基线；无章节→全文兜底直注；
         - executors：只走执行器形态，无章节时不注入全文（返回空串）；
-        - legacy：强制全文直注 + 阶段聚焦（非 FC 通道/无执行器 Skill 的保底形态）。
+        - legacy：强制全文直注 + 阶段聚焦指针（非 FC 通道/无执行器 Skill 的保底形态；
+          聚焦为指针式强调，章节内容随全文仅注入一次，P3-17 单注入收敛）。
         无章节全文兜底：非 FC 通道调不了 read_skill，888 保障不降级。
         """
         mode = str(getattr(settings, "skill_runtime", "auto") or "auto").strip().lower()
@@ -421,7 +422,8 @@ class PromptBuilder:
         "generation": "素材生成",
         "assembly": "组装导出",
     }
-    _FOCUS_MAX_CHARS = 12000
+    # 注：_FOCUS_MAX_CHARS（聚焦摘录截断上限）随 P3-17 单注入收敛删除——
+    # 聚焦块不再重复章节正文，截断需求随之消失（全文截断仍由 max_doc_chars 管）
 
     def detect_stage(self) -> str:
         """根据工作台状态推断当前制作阶段（每轮构建 system prompt 时实时计算）：
@@ -448,9 +450,11 @@ class PromptBuilder:
         return "generation"
 
     def build_stage_focus_block(self, content: str) -> str:
-        """当前阶段聚焦块：把 Skill 中与当前制作阶段对应的章节在 system prompt
-        末尾再强调一遍。外来 Skill（如 flova）的各节在原生平台是分别注入对应
-        子工具的；legacy 路径只能靠「全文 + 阶段聚焦重复」逼近同等遵循度。
+        """当前阶段聚焦指针块（P3-17：「全文 + 阶段聚焦重复注入」合并为单注入）。
+
+        旧实现把当前阶段对应章节的内容在全文之后再摘录重注一遍（同章节注两遍，
+        纯 token 浪费）；现实现保留「末尾近生成端强调」的意图，但只注入指针
+        （指向全文中对应章节），章节正文在组装结果中仅出现一次。
         无法识别阶段或章节时返回空串（行为不变）。"""
         stage = self.detect_stage()
         if not stage:
@@ -465,13 +469,12 @@ class PromptBuilder:
         focus = (sections.get(stage) or "").strip()
         if not focus:
             return ""
-        if len(focus) > self._FOCUS_MAX_CHARS:
-            focus = focus[:self._FOCUS_MAX_CHARS] + "\n……（阶段章节超长，已截断）"
         label = self._STAGE_LABELS.get(stage, stage)
         return (
             f"\n\n== 【当前阶段重点 · {label}】工作台状态显示任务正处于该阶段，"
-            "本阶段的全部产出（字段/结构/提示词写法与顺序）必须逐条遵守以下章节，"
-            "它摘自本 Skill 对应段落，与上文全文同等效力、不受其他段落稀释 ==\n" + focus
+            "本阶段的全部产出（字段/结构/提示词写法与顺序）必须逐条遵守上文 Skill 全文中"
+            "与本阶段对应的章节——该章节已随全文注入且仅此一份，此处不再摘录重复，"
+            "与全文同等效力、不受其他段落稀释 ==\n"
         )
 
     @staticmethod

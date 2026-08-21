@@ -153,9 +153,13 @@ class Settings:
     # 分镜最大时长（秒）：Agent 自拆分镜单镜时长上限与新建分镜默认时长
     max_shot_duration: int = 5
 
-    # Skill 执行器运行时模式：auto = 按 Skill 能否解析出执行器章节自动选择；
-    # executors = 全部走执行器；legacy = 全部走全文+阶段聚焦
-    skill_runtime: str = field(default_factory=lambda: os.getenv("SKILL_RUNTIME", "auto"))
+    # Skill 执行器运行时模式（skill_runtime 执行器形态的灰度开关，计划名
+    # SKILL_RUNTIME_MODE，同名环境变量优先；SKILL_RUNTIME 为旧名兼容）：
+    # auto = 按 Skill 能否解析出执行器章节自动选择（默认，现行为不回归）；
+    # executors = 全部走执行器；legacy = 全部走全文直注（阶段聚焦已随 P3-17
+    # 收敛为指针式单注入，回退到 legacy 仅回形态、不回复重复注入）
+    skill_runtime: str = field(default_factory=lambda: (
+        os.getenv("SKILL_RUNTIME_MODE") or os.getenv("SKILL_RUNTIME", "auto")))
     # 模型分层策略表（编排/生成/摘要/执行器四角色，热更新于 runtime_settings.json；
     # 字段语义见 core/model_policy.py；空 = 跟随主模型/既有回落链）
     model_policy: dict = field(default_factory=dict)

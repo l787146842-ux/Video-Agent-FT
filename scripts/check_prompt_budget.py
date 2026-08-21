@@ -10,10 +10,16 @@
 - 动作定义唯一性：协议模板不再内联动作清单（文本动作定义已随 4-4 双轨退役删除，ADR-0001）；
 - include 引用完整性：{{include:path}} 目标文件存在。
 
+另附运行时观察项（P3-17，非硬门禁不影响退出码）：
+- 读 live_metrics 落盘的组装样本（data/prompt_sections.jsonl），统计组装总长
+  P95，>48k 字符只在输出中 WARN，供周报观察。
+
 用法：python scripts/check_prompt_budget.py   （退出码非 0 即失败）
 """
 import ast
 import io
+import json
+import math
 import pathlib
 import re
 import sys
@@ -25,6 +31,9 @@ CODE_DIRS = ["src/video_agent/core", "src/video_agent/skill_runtime", "src/video
 BUDGET = 8
 BYTE_BUDGET = 7168
 BAN_RE = re.compile(r"严禁|不得")
+# 运行时组装总长观察阈值（字符）：P95 超限仅 WARN（周报观察项，不作硬门禁）
+P95_WARN_CHARS = 48000
+SECTIONS_SAMPLE_FILE = ROOT / "data" / "prompt_sections.jsonl"
 
 # 已知非指令型字面量白名单（正则模式等），逐条注明原因
 WHITELIST = [
@@ -88,6 +97,32 @@ def collect_violations() -> list:
     return out
 
 
+def runtime_total_p95():
+    """从 live_metrics 落盘样本读组装总长序列，返回 (P95, 样本数)；无样本返回 (None, 0)。
+
+    样本由 core/live_metrics.record_sections 在真实运行时追加（pytest 不落盘），
+    坏行忽略（样本文件允许有历史噪声）。"""
+    if not SECTIONS_SAMPLE_FILE.exists():
+        return None, 0
+    totals = []
+    for line in SECTIONS_SAMPLE_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except Exception:
+            continue
+        t = rec.get("total")
+        if isinstance(t, int) and t >= 0:
+            totals.append(t)
+    if not totals:
+        return None, 0
+    totals.sort()
+    idx = max(0, math.ceil(0.95 * len(totals)) - 1)
+    return totals[idx], len(totals)
+
+
 def main() -> int:
     ok = True
     viols = collect_violations()
@@ -117,6 +152,14 @@ def main() -> int:
             if not target.exists():
                 print(f"[check_prompt_budget] include 目标缺失: {f.relative_to(ROOT)} -> {m.group(1)}")
                 ok = False
+
+    # 5）运行时组装总长遥测（P3-17 周报观察项：只 WARN 不失败，不改退出码）
+    p95, n = runtime_total_p95()
+    if p95 is None:
+        print("[check_prompt_budget] 运行时组装样本：无（data/prompt_sections.jsonl 缺失或无有效样本，观察项跳过）")
+    else:
+        flag = "WARN" if p95 > P95_WARN_CHARS else "OK"
+        print(f"[check_prompt_budget] 运行时组装总长 P95={p95} 字符（样本 {n} 条，观察阈值 {P95_WARN_CHARS}）{flag}")
 
     print("[check_prompt_budget]", "PASS" if ok else "FAIL")
     return 0 if ok else 1

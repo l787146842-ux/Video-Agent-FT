@@ -1,5 +1,5 @@
-"""Skill 章节解析与执行器注入块（M5：legacy 全文注入/阶段聚焦已移除，
-本文件只保留章节解析与 executors 注入块的回归测试）"""
+"""Skill 章节解析与执行器注入块（本文件覆盖章节解析与 executors 注入块回归；
+legacy 全文直注/阶段聚焦单注入收敛的钉测试见 test_prompt_single_injection_p317.py，P3-17）"""
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.web import skill_docs
 
