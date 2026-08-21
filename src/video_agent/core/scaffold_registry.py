@@ -151,6 +151,13 @@ SCAFFOLDS = (
         "test_degradation_telemetry 回归",
         "季度审计",
         "invariant"),
+    ScaffoldEntry(
+        "I09", "src.video_agent.web.action_executor",
+        "承重壳（审核整改批 8 登记）：层级例外暂留 web 层（依赖 web 生成管线）；"
+        "下沉两阶段路线见 docs/action_executor下沉计划.md；下沉前禁改其对外行为",
+        "action_executor 相关集成测试",
+        "下沉计划阶段验收",
+        "invariant"),
 )
 
 # 棘轮基线（2-1 设立；每拆除一件随降，禁止上调）：scaffold 类计数只降不升。
