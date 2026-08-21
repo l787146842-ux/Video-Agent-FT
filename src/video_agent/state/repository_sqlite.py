@@ -5,11 +5,15 @@ SqliteStateRepository — SQLite 持久化层（与 StateRepository 同接口的
 - JSON 文件方案在高频防抖落盘、并发读写、大状态（聊天历史/故事板）下存在写放大与竞争风险；
 - SQLite 提供事务原子性、单文件部署、按需查询能力，且仍保持零外部依赖（标准库 sqlite3）。
 
-切换方式：环境变量 STORAGE_BACKEND=sqlite（默认 json，可随时回退）。
+切换方式：STATE_BACKEND 默认 sqlite（P3-16 翻转，等价性测试守护）；
+设 STATE_BACKEND=json 一键回退（json 为回落后端）。
 迁移策略：首次启用且数据库为空时，自动从 workspace/projects/*/state.json + index.json 导入；
-JSON 兼容文件（studio_state.json）继续双写一个周期，保证回退无损。
+双写回退期：DB 为权威源，同时镜像写回 JSON 侧文件
+（projects/*/state.json + index.json + 兼容文件 studio_state.json），
+回退 json 后端时无损续跑（含混用工作区，不依赖兼容文件迁移单路径）。
 """
 import json
+import shutil
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -19,6 +23,7 @@ from typing import Any, Dict, Optional
 from loguru import logger
 
 from src.video_agent.exceptions import StateError
+from src.video_agent.utils.fileio import atomic_write_text
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
@@ -96,6 +101,25 @@ class SqliteStateRepository:
             )
         logger.info(f"[SqliteRepo] 已从 JSON 迁移 {migrated} 个项目到 SQLite")
 
+    # ====== 双写回退期镜像（P3-16）：DB 权威，JSON 文件回落无损 ======
+
+    def _mirror_project(self, project_id: str, state_text: str) -> None:
+        """镜像写回 projects/<id>/state.json（镜像失败只警告不阻断主路径）。"""
+        try:
+            pdir = self._projects_dir / project_id
+            pdir.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(pdir / "state.json", state_text)
+        except Exception as e:
+            logger.warning(f"[SqliteRepo] 双写镜像 state.json 失败（{project_id}）: {e}")
+
+    def _mirror_index(self, index: Dict[str, Any]) -> None:
+        try:
+            atomic_write_text(
+                self._projects_dir / "index.json",
+                json.dumps(index, ensure_ascii=False, indent=2))
+        except Exception as e:
+            logger.warning(f"[SqliteRepo] 双写镜像 index.json 失败: {e}")
+
     # ====== 与 StateRepository 相同的接口 ======
 
     @property
@@ -127,6 +151,7 @@ class SqliteStateRepository:
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('index', ?)",
                 (json.dumps(index, ensure_ascii=False),),
             )
+        self._mirror_index(index)
 
     def save_project(self, project_id: str, state: Dict[str, Any]) -> None:
         self._validate_id(project_id)
@@ -137,6 +162,7 @@ class SqliteStateRepository:
                 "INSERT OR REPLACE INTO projects (id, state, updated_at) VALUES (?, ?, ?)",
                 (project_id, state_text, now),
             )
+        self._mirror_project(project_id, state_text)
 
     def load_project(self, project_id: str) -> Optional[Dict[str, Any]]:
         self._validate_id(project_id)
@@ -154,11 +180,17 @@ class SqliteStateRepository:
         self._validate_id(project_id)
         with self._lock, self._connect() as conn:
             conn.execute("DELETE FROM projects WHERE id=?", (project_id,))
+        # 镜像目录同删（双写回退期：回退 json 后不得见已删项目的残留）
+        try:
+            pdir = self._projects_dir / project_id
+            if pdir.exists():
+                shutil.rmtree(pdir, ignore_errors=True)
+        except Exception as e:
+            logger.warning(f"[SqliteRepo] 镜像目录删除失败（{project_id}）: {e}")
 
     def save_compat(self, state: Dict[str, Any]) -> None:
-        """双写旧版 studio_state.json（回退开关期内保持兼容）"""
+        """双写旧版 studio_state.json（双写回退期内保持兼容）"""
         try:
-            from src.video_agent.utils.fileio import atomic_write_text
             atomic_write_text(self._state_file, json.dumps(state, ensure_ascii=False, indent=2))
         except Exception as _e:
             logger.debug("[repository_sqlite] 忽略异常: {}", _e)

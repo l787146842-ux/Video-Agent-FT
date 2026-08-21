@@ -594,6 +594,25 @@ class FCToolRunner:
                     gen_failed_err = str(result.error or "执行失败")
             if result.success:
                 applied += 1
+                if name in _EXECUTOR_TOOL_NAMES:
+                    # 成功清失败记账（P3-16）：陈旧计数不得再次触发重试引导；
+                    # 无达标残留时同步清引导标记与模型可见 flowEvents
+                    try:
+                        _st_ok = self._raw_state()
+                        if workflow_runtime.clear_node_attempt(_st_ok, name):
+                            _run_ok = _st_ok.get("workflow_run") or {}
+                            _left = [
+                                k for k, v in (_run_ok.get("node_attempts") or {}).items()
+                                if int((v or {}).get("count") or 0)
+                                >= int(settings.node_retry_guidance_threshold or 2)
+                            ]
+                            _svc_ok = StateManager.get_instance()
+                            if not _left:
+                                _run_ok.pop("retry_guidance", None)
+                                _svc_ok.clear_flow_events("retry_guidance")
+                            _svc_ok.save_debounced()
+                    except Exception as _e:
+                        logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
                 self._record_presented(name, args)
                 if name in ("storyboard_create_group", "storyboard_add_draft"):
                     structure_created = True
@@ -732,6 +751,15 @@ class FCToolRunner:
                             self.gate_warnings.append(_tws)
             else:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
+                # 执行器失败记账（P3-16 node_attempts）：闸拒收（gate_error 非空）
+                # 不属执行失败不入账；连失败 ≥ 阈值的引导派生归 gate_precheck
+                if gate_error is None and name in _EXECUTOR_TOOL_NAMES:
+                    try:
+                        workflow_runtime.bump_node_attempt(
+                            self._raw_state(), name, str(result.error or ""))
+                        StateManager.get_instance().save_debounced()
+                    except Exception as _e:
+                        logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
                 if name in _CRITICAL_TOOL_NAMES:
                     key_tool_failed.append(name)
                     key_tool_errors[name] = str(result.error or "执行失败")[:200]

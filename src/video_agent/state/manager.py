@@ -199,7 +199,7 @@ class StateManager(UndoRedoMixin):
 
     @staticmethod
     def _build_repo(workspace_dir: Path):
-        """按 settings.state_backend 选择状态仓库（json 默认 / sqlite 可选，可回退）。"""
+        """按 settings.state_backend 选择状态仓库（sqlite 默认 / json 回落，可回退）。"""
         from src.video_agent.config import settings
         backend = (settings.state_backend or "json").strip().lower()
         if backend == "sqlite":

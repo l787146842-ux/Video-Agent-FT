@@ -27,7 +27,7 @@ async def run_gate_precheck(
 
     response_factory 以 callable 注入（PlannerResponse 类，同 assemble_response
     惯例，避免与 planner 循环导入）；issue_pause 为暂停签发登记委托。
-    仅装配原料闸/规格闸兜底卡；其余一律 None。
+    仅装配原料闸/规格闸兜底卡；重试引导只入账数据后交接；其余一律 None。
     """
     outcome = await _po.gate_precheck(state_manager, skill, user_message)
     _kind = outcome.kind if outcome is not None else "handoff"
@@ -40,6 +40,10 @@ async def run_gate_precheck(
         # 控制流审计登记失败不阻断（降级遥测可见）
         live_metrics.record_degradation("planner_triage.control_flow_log")
     if outcome is None:
+        return None
+    if outcome.kind == "retry_guidance":
+        # 引导数据已由 gate_precheck 入账 flowEvents（模型可见）：直接交接
+        # 模型循环，模型发起重试/换渠道工具调用（ADR-0004：runtime 不发起行动）
         return None
     if outcome.kind == "script_pending":
         # 三通道（Rule2 v6）：引导词归正文，卡=一句问句，kind=remind
