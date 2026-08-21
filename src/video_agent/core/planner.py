@@ -53,6 +53,7 @@ from src.video_agent.skill_runtime import exec_spec
 # Workflow Runtime（宪法 v6 Rule2，ADR-0003）：唯一驱动器 + 暂停卡唯一发行点
 from src.video_agent.core import pause_composer, workflow_runtime
 from src.video_agent.core.stage_deliverables import render_stage_deliverables
+from src.video_agent.core.turn_frame import emit_prelude_events
 
 
 # 绑定工作台状态的工具集：use_studio_context=False 时不下发（节省 schema token）
@@ -326,6 +327,9 @@ class Planner:
         if not context.skill_name:
             context.skill_name = fallback_skill_from_state(self.state_manager.state_dict)
 
+        # 批4：轮始清理 workflow 编译缓存（sidecar 声明轮间可编辑，缓存只活一轮）
+        workflow_runtime.clear_compile_cache()
+
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
         self._excluded_tools = self._compute_excluded_tools(context)
         self._system_degrader = self._make_system_degrader(context)
@@ -384,6 +388,8 @@ class Planner:
                 advance_signal=context.advance_signal)
             if _directive is not None and _directive.get("kind") == "direct_run":
                 return await self._run_direct_stage(_directive, context, on_event=on_event)
+            if _directive is not None and _directive.get("kind") == "approval_pause":
+                return await self._run_approval_pause(_directive, context)
 
         # Rule2 v6（ADR-0003）：轮始闸预检只装配兜底卡（原料闸/规格闸），
         # 白名单确定性阶段已由 workflow_runtime 直跑（见上）；其余交接模型循环，
@@ -845,15 +851,12 @@ class Planner:
         tracer.start_trace(
             f"[runtime] {directive.get('stage_key') or ''}", user_id=context.user_id)
         tracer.start_step()
-        # 前奏时间线（与 agent_loop step1 同构：运行态/持久化同条目）
-        for pi, (pname, psummary) in enumerate(context.prelude_notes or []):
-            tracer.record_action(str(pname), str(psummary), 0.0, True)
-            pid = f"pre-{pi}"
-            if on_event is not None:
-                await on_event({"type": SSE_TOOL_STARTED, "id": pid,
-                                "name": str(pname), "summary": str(psummary)})
-                await on_event({"type": SSE_TOOL_FINISHED, "id": pid, "ok": True,
-                                "elapsed_ms": 0.0, "result_summary": str(psummary)})
+        # 前奏时间线（批4 turn_frame 抽公共：与 agent_loop step1 同源）
+        await emit_prelude_events(
+            context.prelude_notes,
+            lambda name, summary, ms, ok: tracer.record_action(name, summary, ms, ok),
+            on_event or (lambda _e: asyncio.sleep(0)),
+        )
 
         async def _status(text: str, key: str = "", params=None) -> None:
             if on_event is not None:
@@ -947,6 +950,44 @@ class Planner:
         return await planner_triage.run_gate_precheck(
             self.state_manager, context.skill_name, user_message,
             PlannerResponse, self._issue_pause)
+
+    async def _run_approval_pause(
+        self, directive: Dict[str, Any], context: PlannerContext,
+    ) -> PlannerResponse:
+        """runtime 审批直跑（批4 能力）：审批节点机械发暂停卡，零模型规划轮。
+
+        仅当 sidecar 声明该节点入 direct_run_nodes 时生效；默认名单不含
+        审批节点（与模型循环暂停的语义去重待裁决，防双暂停）。
+        pending_decision 登记审批事实，用户点选经 resolve_decision 消费。
+        """
+        tracer = AgentTracer.get_instance()
+        node_id = str(directive.get("node_id") or "")
+        tracer.record_control_flow(
+            "runtime_approval_pause", node_id, context.skill_name)
+        state = self.state_manager.state_dict
+        pause = pause_composer.compose_stage_pause(
+            state, context.skill_name, str(directive.get("stage_title") or ""))
+        try:
+            run = workflow_runtime.sync_run(state, context.skill_name)
+            run["pending_decision"] = {
+                "token": f"approval:{run.get('run_id') or ''}:{node_id}",
+                "node_id": node_id,
+                "schema": {"type": "approval"},
+                "options": list(pause.get("options") or []),
+            }
+            run["status"] = "waiting_user"
+            self.state_manager.save_debounced()
+        except Exception as _e:
+            record_degradation("planner.approval_pause")
+            logger.warning("[WorkflowRuntime] 审批 decision 登记跳过: {}", _e)
+        response = PlannerResponse(
+            text=str(pause.get("message") or ""), steps=1,
+            confirmation=str(pause.get("message") or ""),
+            confirmation_options=list(pause.get("options") or []),
+        )
+        response.pause_kind = str(pause.get("kind") or "")
+        self._issue_pause(response)
+        return response
 
     async def _handle_fc_response(
         self,

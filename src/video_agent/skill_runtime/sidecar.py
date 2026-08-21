@@ -8,11 +8,29 @@ sidecar 存放清洗后声明（与旧文档通道输出同构），双读零行
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 
 _MANIFEST_FENCE_RE = re.compile(r"```json skill_manifest.*?```\n?", re.S)
+
+# 声明写入钩子（批4）：sidecar 变更时通知消费方失效缓存（如 workflow
+# 编译 per-turn 缓存）。注册方 = core.workflow_runtime（依赖方向不变：
+# workflow_runtime 顶层已 import sidecar，此处只被注册不反向 import）。
+_WRITE_HOOKS: List[Callable[[], None]] = []
+
+
+def register_write_hook(fn: Callable[[], None]) -> None:
+    if fn not in _WRITE_HOOKS:
+        _WRITE_HOOKS.append(fn)
+
+
+def _fire_write_hooks() -> None:
+    for fn in list(_WRITE_HOOKS):
+        try:
+            fn()
+        except Exception as e:  # 钩子失败不阻断声明写入
+            logger.debug(f"[Sidecar] 写入钩子异常: {e}")
 
 
 def sidecar_dir() -> Path:
@@ -42,6 +60,7 @@ def write_sidecar(
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{slug}.json").write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _fire_write_hooks()
 
 
 def validate_sidecar(data: Optional[Dict[str, Any]]) -> List[str]:
@@ -85,4 +104,5 @@ def migrate_doc_to_sidecar(doc_path: Path, directory: Optional[Path] = None) -> 
     doc_path.write_text(
         _MANIFEST_FENCE_RE.sub("", content, count=1), encoding="utf-8")
     logger.info(f"[Sidecar] {doc_path.stem} 文档 manifest 围栏已剥离（声明以 sidecar 为准）")
+    _fire_write_hooks()
     return True

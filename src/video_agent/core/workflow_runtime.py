@@ -6,12 +6,14 @@ Codex loop+approval / Flova runtime contract）：模型只做节点内语义创
 运行时做确定性顺序、持久状态、审批恢复与产物账本。
 
 v1 边界（声明式可扩展）：
-- ``DIRECT_RUN_STAGES`` 白名单内的确定性阶段由 runtime 直跑（零模型规划轮），
-  经 FCToolRunner 合成 FC 批执行——闸机链（stage_precondition 等）仍在执行
-  路径首位承重（hooks guarantee behavior）；
-- 白名单外阶段（含创作型与多执行器阶段）交接有界模型循环（agent_loop 节点内
+- 直跑面 = sidecar 声明 ``flow.direct_run_nodes``（缺失回落 analysis 节点），
+  runtime 按声明机械直跑（零模型规划轮），经 FCToolRunner 合成 FC 批执行——
+  闸机链（stage_precondition 等）仍在执行路径首位承重（hooks guarantee behavior）；
+- 审批直跑能力（workflow_pause 执行器节点）已实现但默认不入名单：
+  与模型循环暂停的语义去重需用户裁决后启用；
+- 声明外阶段（含创作型与多执行器阶段）交接有界模型循环（agent_loop 节点内
   唯一实现），平台否决权不变；
-- 生成类阶段（高风险工具，§2.7）不进白名单，须另行设计审批语义后才可扩展。
+- 生成类阶段（高风险工具，§2.7）入直跑声明须另行设计审批语义。
 
 WorkflowRun 持久化于 ``state["workflow_run"]``，**仅本模块 reducer 可改**
 （StateManager 仍唯一写入点，Rule3）；interaction 暂停旗标同经
@@ -35,9 +37,30 @@ from src.video_agent.core.turn_commit import (
     TurnCommit, TurnResult, WorkflowCommitError, commit_turn,
 )
 
-# v1 直跑白名单：仅剧本分析（只读分析、无外部副作用）。
-# 扩展须用户裁决 + 审批语义设计（生成类阶段默认禁止）。
-DIRECT_RUN_STAGES = frozenset({"analysis"})
+# 批4 泛化：直跑面改由 sidecar 声明驱动（flow.direct_run_nodes），
+# DIRECT_RUN_STAGES 硬编码白名单退役；缺失声明回落 analysis 节点（存量不变）。
+_DEFAULT_DIRECT_RUN_NODES = frozenset({"analyze_script"})
+# 节点 → 阶段键映射（_run_direct_stage 消费：stage_done 探针/后台预取挂钩）
+_NODE_STAGE_KEYS = {"analyze_script": "analysis"}
+# per-turn 编译缓存（轮始清理；同轮内 sync_run/drive_turn/排除计算共享）
+_COMPILE_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
+
+
+def clear_compile_cache() -> None:
+    """轮始清理编译缓存（批4：sidecar 声明在轮间可能被编辑，缓存只活一轮）。"""
+    _COMPILE_CACHE.clear()
+
+
+def direct_run_nodes(skill: str) -> frozenset:
+    """直跑面声明（批4）：sidecar flow.direct_run_nodes 优先，缺失回落默认。"""
+    try:
+        manifest = registry.skill_manifest_of(skill) or {}
+    except Exception:
+        manifest = {}
+    declared = ((manifest.get("flow") or {}).get("direct_run_nodes"))
+    if isinstance(declared, list) and declared:
+        return frozenset(str(x) for x in declared if str(x).strip())
+    return _DEFAULT_DIRECT_RUN_NODES
 
 
 def canonical_slug(name: str) -> str:
@@ -52,9 +75,15 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
     """Skill 激活编译 WorkflowDefinition（canonical slug + revision + hash）。
 
     源 = sidecar 声明（validate_sidecar 注册期门禁）+ 阶段表；编译失败
-    （未注册 Skill）返回 None（runtime 不启用，回落模型循环旧路径）。"""
+    （未注册 Skill）返回 None（runtime 不启用，回落模型循环旧路径）。
+    批4：per-turn 缓存（轮始 clear_compile_cache；同轮多次调用共享）。"""
+    cache_key = canonical_slug(skill) or str(skill or "")
+    if cache_key in _COMPILE_CACHE:
+        hit = _COMPILE_CACHE[cache_key]
+        return copy.deepcopy(hit) if hit is not None else None
     entry = registry.resolve_entry(skill)
     if entry is None:
+        _COMPILE_CACHE[cache_key] = None
         return None
     # v2 收尾：sidecar 体检门禁——非法声明拒入 workflow（计划§1/§6：
     # 无效 sidecar 不得“只告警后继续”驱动运行时；散文通道仍可工作）
@@ -64,6 +93,7 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
         logger.warning(
             "[WorkflowRuntime] sidecar 非法，workflow 拒入（{}）: {}",
             skill, ";".join(issues))
+        _COMPILE_CACHE[cache_key] = None
         return None
     definition = default_v2_workflow(str(entry.slug or skill))
     titles = {"analyze_script": "剧本分析", "collect_spec": "规格候选收集",
@@ -75,7 +105,7 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
               "title": titles.get(node.node_id, node.node_id),
               "executors": [] if node.executor == "workflow_pause" else [node.executor]}
              for node in definition.nodes]
-    return {
+    result = {
         "slug": str(entry.slug or ""),
         "name": str(entry.name or skill),
         "workflow_id": definition.workflow_id,
@@ -83,6 +113,8 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
         "definition_hash": definition.content_hash,
         "nodes": nodes,
     }
+    _COMPILE_CACHE[cache_key] = copy.deepcopy(result)
+    return result
 
 
 def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
@@ -169,22 +201,33 @@ def reduce_interaction(
 def drive_turn(
     state: Dict[str, Any], skill: str, advance_signal: str = "",
 ) -> Optional[Dict[str, Any]]:
-    """轮始驱动判定：白名单确定性阶段就绪 → direct_run；其余 None（交接）。
+    """轮始驱动判定（批4 泛化）：声明直跑面内的当前节点就绪 → direct_run；
+    其余 None（交接）。只认客观状态事实：阶段表 + 直跑声明 + 原料闸客观条件；
+    零语料、零模型参与。
 
-    只认客观状态事实：阶段表 + stage_done + 原料闸客观条件；零语料、
-    零模型参与。advance_signal 为轮始客观推进信号（暂停消费/附件/
-    系统继续选项点选，由开场编排装配）：无信号的自由提问轮不直跑，
-    交接模型循环（防提问误抓）。原料缺失时返回 None，由闸预检装配
-    提醒卡（不抢先对话）。"""
+    advance_signal 为轮始客观推进信号（暂停消费/附件/系统继续选项点选，
+    由开场编排装配）：无信号的自由提问轮不直跑，交接模型循环（防提问误抓）。
+    审批节点（workflow_pause 执行器）直跑能力已实现但未入默认声明：
+    与模型循环暂停的语义去重需裁决后启用（防双暂停）。
+    原料缺失时返回 None，由闸预检装配提醒卡（不抢先对话）。"""
     if not (getattr(settings, "workflow_runtime_enabled", True) and skill):
         return None
     if not str(advance_signal or "").strip():
         return None
-    sync_run(state, skill)
+    run = sync_run(state, skill)
     definition = compile_definition(skill) or {}
-    run = sync_run(state, skill); node_id = str(run.get("current_node") or "")
+    node_id = str(run.get("current_node") or "")
     node = next((x for x in definition.get("nodes") or [] if x.get("node_id") == node_id), None)
-    if node_id != "analyze_script" or node is None:
+    if node is None or node_id not in direct_run_nodes(skill):
+        return None
+    # 审批直跑能力（workflow_pause 节点）：声明入名单才生效；
+    # 当前默认名单不含审批节点（语义去重待裁决，防双暂停）
+    if str(node.get("executor") or "") == "workflow_pause":
+        logger.info("[ControlFlow] runtime approval_pause node={}（预留能力）", node_id)
+        return {"kind": "approval_pause", "node_id": node_id,
+                "stage_title": node.get("title") or node_id}
+    executors = list(node.get("executors") or [])
+    if not executors:
         return None
     # 原料闸客观前置：需剧本 Skill 剧本缺失且未豁免 → 交接闸预检提醒卡
     if node_id == "analyze_script" and (
@@ -196,9 +239,10 @@ def drive_turn(
     logger.info("[ControlFlow] runtime direct_run node={}", node_id)
     return {
         "kind": "direct_run",
-        "stage_key": "analysis", "node_id": node_id,
-        "stage_title": node.get("title") or "剧本分析",
-        "executors": list(node.get("executors") or ["script_analyze"]),
+        "stage_key": _NODE_STAGE_KEYS.get(node_id, node_id),
+        "node_id": node_id,
+        "stage_title": node.get("title") or node_id,
+        "executors": executors,
     }
 
 
@@ -242,9 +286,28 @@ def project(state: Dict[str, Any], turn_id: str = "") -> Dict[str, Any]:
 
 
 def record_artifact(state: Dict[str, Any], skill: str, name: str) -> None:
-    """产物账本一等条目（ArtifactCommitted）：reducer 单一写入。"""
-    if name:
-        commit_turn(state, TurnResult(turn_id=f"artifact:{name}", artifacts=[name], node_id=str((state.get("workflow_run") or {}).get("current_node") or "")), run_id=str((state.get("workflow_run") or {}).get("run_id") or ""), skill=skill, persist=False)
+    """产物账本一等条目（ArtifactCommitted）：reducer 单一写入。
+
+    批4 正名：伪轮次（turn_id=artifact:{name} 走 commit_turn）退役，
+    改为独立事件入账 + run.artifacts 单一写入（行为等价：幂等去重）。"""
+    if not name:
+        return
+    run = state.get("workflow_run") or {}
+    rid = str(run.get("run_id") or "")
+    if not rid:
+        return
+    artifacts = run.setdefault("artifacts", [])
+    if name not in artifacts:
+        artifacts.append(name)
+    all_artifacts = state.setdefault("workflow_artifacts", [])
+    if not any(isinstance(x, dict) and x.get("name") == name for x in all_artifacts):
+        all_artifacts.append({"name": name, "kind": "artifact"})
+    ledger = EventLedger(state)
+    ledger.append(
+        "ArtifactCommitted", run_id=rid,
+        node_id=str(run.get("current_node") or ""),
+        idempotency_key=f"artifact:{rid}:{name}",
+        payload={"name": name})
 
 class WorkflowRuntime:
     def __init__(self, state_manager: Any, skill: str = ""):
@@ -277,3 +340,6 @@ class WorkflowRuntime:
         return copy.deepcopy(run)
 
 __all__ = ["WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn", "compile_definition", "sync_run", "drive_turn", "record_artifact", "apply_interaction", "reduce_interaction"]
+
+# 批4：sidecar 声明写入即失效编译缓存（门禁/直跑声明变更不被缓存遮蔽）
+sidecar.register_write_hook(clear_compile_cache)

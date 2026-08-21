@@ -28,6 +28,7 @@ from src.video_agent.core.sse_events import (
     status_event,
 )
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.core.turn_frame import emit_prelude_events
 from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # （轮末闸机分支收敛为声明式策略表（层 9 唯一落点）
@@ -163,12 +164,12 @@ async def run_agent_loop(
         tracer.start_step()
         if step == 1:
             # 前奏明细：读 Skill/文档等准备动作记入第一步时间线
-            # （同时发 live 事件，运行中视图与持久化视图同条目）
-            for pi, (name, summary) in enumerate(prelude_notes or []):
-                tracer.record_action(str(name), str(summary), 0.0, True)
-                pid = f"pre-{pi}"
-                await emit({"type": SSE_TOOL_STARTED, "id": pid, "name": str(name), "summary": str(summary)})
-                await emit({"type": SSE_TOOL_FINISHED, "id": pid, "ok": True, "elapsed_ms": 0.0, "result_summary": str(summary)})
+            # （批4 turn_frame 抽公共：与 runtime 直跑同源；live 与持久化同条目）
+            await emit_prelude_events(
+                prelude_notes,
+                lambda name, summary, ms, ok: tracer.record_action(name, summary, ms, ok),
+                emit,
+            )
         await emit({"type": SSE_STEP_STARTED, "step": step, "max_steps": max_steps})
         if step > 1:
             # 多步循环"静默期"提示：上一步工具执行完到本步首 token 之间可能耗时数十秒，
