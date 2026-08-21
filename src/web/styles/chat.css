@@ -207,6 +207,10 @@
   .tl-subitem { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); line-height: 1.6; }
   /* 批2 透明度：工具执行结果一句话摘要（换行第二行，与明细子列表同降噪视觉级） */
   .tl-item-result { flex-basis: 100%; margin-left: 19px; font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* P4-22：多句结果摘要可点击展开全文（折叠态保持一句话降噪视觉级） */
+  .tl-item-result-toggle { display: flex; align-items: center; gap: 4px; padding: 0; border: none; background: transparent; cursor: pointer; font-family: inherit; text-align: left; }
+  .tl-item-result-toggle:hover { color: var(--text-main); }
+  .tl-item-result.expanded { white-space: pre-wrap; overflow: visible; }
   /* 审核整改批 2：规划级执行器徽标（欠账显性化：不产真实媒体的阶段据实标注） */
   .tl-planning-badge { flex-shrink: 0; font-size: 10px; line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(251,146,60,0.6); background: rgba(251,146,60,0.12); color: #fb923c; white-space: nowrap; }
   .skill-planning-badge { flex-shrink: 0; font-size: 10px; line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(251,146,60,0.6); background: rgba(251,146,60,0.12); color: #fb923c; white-space: nowrap; align-self: center; }

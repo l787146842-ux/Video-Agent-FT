@@ -4,7 +4,7 @@ import {
 } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
 import {
-  consolidateTimeline, formatElapsed, type TimelineItem,
+  consolidateTimeline, formatElapsed, resultSummaryView, type TimelineItem,
 } from '@/lib/timeline';
 import type { ChatMessage, TraceAction } from '@/types';
 
@@ -68,6 +68,8 @@ export function stageLabelFromMessage(msg: ChatMessage): string {
 /** 单条时间线条目（批 2：合并条目带逐轮明细，点击展开；展开态用户可控） */
 function TimelineRow(props: { item: TimelineItem; now: () => number }) {
   const [open, setOpen] = createSignal(false);
+  /** P4-22：result_summary 详情展开态（折叠=一句话摘要，展开=全文） */
+  const [resultOpen, setResultOpen] = createSignal(false);
   const item = () => props.item;
   return (
     <li class={`tl-item tl-item-${item().status}`}>
@@ -109,14 +111,31 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
           · {formatElapsed(Math.max(0, props.now() - (item().started_at_ms || 0)))}
         </span>
       </Show>
-      {/* 批2 透明度：工具执行结果一句话摘要（与 summary 重复时不重复展示） */}
+      {/* 批2 透明度：工具执行结果一句话摘要（与 summary 重复时不重复展示）；
+          P4-22：多句摘要可点击展开全文（折叠态默认一句话，纯前端切换） */}
       <Show
         when={item().status !== 'running' && item().result_summary
           && item().result_summary !== item().summary}
       >
-        <span class="tl-item-result" title={item().result_summary}>
-          ↳ {item().result_summary}
-        </span>
+        <Show
+          when={resultSummaryView(item().result_summary || '').expandable}
+          fallback={
+            <span class="tl-item-result" title={item().result_summary}>
+              ↳ {item().result_summary}
+            </span>
+          }
+        >
+          <button
+            type="button"
+            class={`tl-item-result tl-item-result-toggle${resultOpen() ? ' expanded' : ''}`}
+            onClick={() => setResultOpen(!resultOpen())}
+          >
+            ↳ {resultOpen()
+              ? item().result_summary
+              : resultSummaryView(item().result_summary || '').collapsed}
+            <FiChevronDown size={11} class={`tl-item-toggle-arrow${resultOpen() ? ' expanded' : ''}`} />
+          </button>
+        </Show>
       </Show>
       <Show when={open() && (item().details || []).length > 0}>
         <ul class="tl-sublist">

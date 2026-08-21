@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { consolidateTimeline, formatElapsed, type TimelineItem } from '../timeline';
+import {
+  consolidateTimeline, formatElapsed, resultSummaryView, type TimelineItem,
+} from '../timeline';
 
 /** 批 2 时间线降噪：连续规划条目合并（纯函数钉死） */
 
@@ -57,5 +59,29 @@ describe('formatElapsed', () => {
   });
   it('>=100ms 显示秒（一位小数）', () => {
     expect(formatElapsed(1200)).toBe('1.2s');
+  });
+});
+
+describe('resultSummaryView 详情展开视图（P4-22）', () => {
+  it('单句摘要（句末标点收尾）→ 不可展开，折叠即全文', () => {
+    expect(resultSummaryView('分析完成。')).toEqual({ expandable: false, collapsed: '分析完成。' });
+    expect(resultSummaryView('产出 3 张图')).toEqual({ expandable: false, collapsed: '产出 3 张图' });
+  });
+
+  it('多句摘要 → 可展开，折叠态只留首句（含句末标点）', () => {
+    const view = resultSummaryView('已写入规格文档。含分镜与音色两节，待确认。');
+    expect(view.expandable).toBe(true);
+    expect(view.collapsed).toBe('已写入规格文档。');
+  });
+
+  it('换行切分：首行即折叠态，其余行展开可见', () => {
+    const view = resultSummaryView('素材清单已生成\n- 图A\n- 图B');
+    expect(view.expandable).toBe(true);
+    expect(view.collapsed).toBe('素材清单已生成');
+  });
+
+  it('空文本 → 不可展开且折叠为空', () => {
+    expect(resultSummaryView('')).toEqual({ expandable: false, collapsed: '' });
+    expect(resultSummaryView('   ')).toEqual({ expandable: false, collapsed: '' });
   });
 });

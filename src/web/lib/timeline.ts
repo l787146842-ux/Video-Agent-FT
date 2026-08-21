@@ -31,6 +31,18 @@ export function formatElapsed(ms: number): string {
   return ms < 100 ? `${Math.max(1, Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
+/** result_summary 详情展开视图（P4-22，纯函数，vitest 钉死）：
+ * 折叠态默认一句话摘要（首句句末标点/换行切分）；其后仍有内容才可展开。
+ * 无切分点的整段摘要不可展开（不挂多余按钮）。 */
+export function resultSummaryView(full: string): { expandable: boolean; collapsed: string } {
+  const text = (full || '').trim();
+  if (!text) return { expandable: false, collapsed: '' };
+  const firstLine = text.split('\n')[0];
+  const m = /^.*?[。！？!?]/.exec(firstLine);
+  const collapsed = m ? m[0] : firstLine;
+  return { expandable: collapsed.length < text.length, collapsed };
+}
+
 /** agent_loop 规划条目的 id 前缀（llm-s{step}），合并判定唯一依据 */
 const REASONING_ID_PREFIX = 'llm-s';
 
