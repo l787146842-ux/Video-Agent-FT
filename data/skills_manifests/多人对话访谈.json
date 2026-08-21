@@ -41,5 +41,8 @@
   },
   "pause": {
     "stage_pause": true
+  },
+  "custom_sections": {
+    "音色设计": "skill_section_run"
   }
 }
