@@ -28,6 +28,7 @@ from src.video_agent.config import settings
 from src.video_agent.core import pipeline_orchestrator as po
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
+from src.video_agent.skill_runtime import sidecar
 from src.video_agent.core.workflow_contract import WorkflowDefinitionError, default_v2_workflow
 from src.video_agent.core.workflow_events import EventLedger
 from src.video_agent.core.turn_commit import (
@@ -54,6 +55,15 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
     （未注册 Skill）返回 None（runtime 不启用，回落模型循环旧路径）。"""
     entry = registry.resolve_entry(skill)
     if entry is None:
+        return None
+    # v2 收尾：sidecar 体检门禁——非法声明拒入 workflow（计划§1/§6：
+    # 无效 sidecar 不得“只告警后继续”驱动运行时；散文通道仍可工作）
+    issues = sidecar.validate_sidecar(
+        sidecar.load_sidecar(str(entry.slug or skill)))
+    if issues:
+        logger.warning(
+            "[WorkflowRuntime] sidecar 非法，workflow 拒入（{}）: {}",
+            skill, ";".join(issues))
         return None
     definition = default_v2_workflow(str(entry.slug or skill))
     titles = {"analyze_script": "剧本分析", "collect_spec": "规格候选收集",
@@ -190,6 +200,23 @@ def drive_turn(
         "stage_title": node.get("title") or "剧本分析",
         "executors": list(node.get("executors") or ["script_analyze"]),
     }
+
+
+def record_node_event(
+    state: Dict[str, Any], node_id: str, event_type: str,
+    payload: Optional[Dict[str, Any]] = None,
+) -> Optional[Any]:
+    """后台/异步节点事件入账（v2 收尾）：独立事件独立耗时，
+    幂等键稳定（同 run 同节点同类型不重复）。无 run 时跳过。"""
+    run = state.get("workflow_run") or {}
+    rid = str(run.get("run_id") or "")
+    if not rid:
+        return None
+    ledger = EventLedger(state)
+    return ledger.append(
+        event_type, run_id=rid, node_id=node_id,
+        idempotency_key=f"bg:{rid}:{node_id}:{event_type}",
+        payload=dict(payload or {}))
 
 
 def project(state: Dict[str, Any], turn_id: str = "") -> Dict[str, Any]:

@@ -177,6 +177,7 @@ class AgentTaskManager:
                 "snapshot": record["snapshot"],
                 "done_payload": record["done_payload"],
                 "docs": list(record.get("docs") or []),
+                "wf_event_sequence": int(record.get("wf_event_sequence") or 0),
                 "fallback": record.get("fallback"),
                 "error": record["error"],
             },
@@ -243,6 +244,11 @@ class AgentTaskManager:
             record["done_payload"] = payload
             if payload.get("state"):
                 record["snapshot"] = payload["state"]
+            # v2 收尾：workflow 事件序列高水位（重连按 sequence 补发/去重依据）
+            _wf = payload.get("workflow") or {}
+            _seq = int(_wf.get("event_sequence") or 0)
+            if _seq > int(record.get("wf_event_sequence") or 0):
+                record["wf_event_sequence"] = _seq
         elif etype == "doc_written":
             # Rule2 v6 产物账本累积：断连重连 replay 补渲染文档卡
             _dn = str(event.get("name") or "")

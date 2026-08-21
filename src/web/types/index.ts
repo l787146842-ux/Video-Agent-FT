@@ -365,6 +365,8 @@ export interface AgentTaskReplayPayload {
   done_payload?: SseDonePayload | null;
   /** Rule2 v6：断连期间已写文档累积账本（replay 补渲染文档卡） */
   docs?: string[];
+  /** v2 收尾：workflow 事件序列高水位（重连按 sequence 补发/去重依据） */
+  wf_event_sequence?: number;
   /** v2 批3：workflow 投影（run 快照 + 本轮事件序列，重载/重连同源重建） */
   workflow?: {
     run_id?: string;

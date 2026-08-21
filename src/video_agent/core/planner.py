@@ -69,6 +69,18 @@ _CANVAS_TOOLS = frozenset({
     "canvas_delete_node", "canvas_list_assets", "canvas_batch_add_nodes",
 })
 
+# v2 收尾：后台节点任务登记（collect_spec 预取等）；drain 供测试/关停等待
+_BG_TASKS: set = set()
+
+
+async def drain_background_tasks() -> None:
+    """等待在途后台节点任务完成（幂等；测试与优雅关停钩子）。"""
+    for t in list(_BG_TASKS):
+        try:
+            await t
+        except Exception:
+            pass
+
 # 曾设流式预执行阶段边界延迟集合：随 4-4 文本轨退役删除
 # （流式「边写边填」预执行为文本轨基础设施，FC 轨动作经 tool_calls 执行）。
 
@@ -787,6 +799,29 @@ class Planner:
     # 轮始只装配原料闸/规格闸兜底卡；白名单确定性阶段由 workflow_runtime
     # 直跑，创作型阶段交接模型循环；越阶/越暂停由闸机在工具调用点否决。
 
+    async def _bg_collect_spec(self, skill_name: str) -> None:
+        """后台 collect_spec 节点（v2 收尾）：不阻塞分析轮；
+        完成/失败均入事件账本（独立事件独立耗时），失败静默回落。"""
+        t0 = time.monotonic()
+        ok = False
+        try:
+            ok = await exec_spec.run_collect_spec_node(
+                self.state_manager, skill_name,
+                self.chat_provider, self.chat_model)
+        except Exception as _e:
+            logger.warning("[WorkflowRuntime] 后台 collect_spec 失败（静默回落）: {}", _e)
+        ms = (time.monotonic() - t0) * 1000
+        try:
+            async with self.state_manager.lock:
+                workflow_runtime.record_node_event(
+                    self.state_manager.state_dict, "collect_spec",
+                    "ToolSucceeded", {"ok": bool(ok), "elapsed_ms": round(ms, 1),
+                                      "mode": "background"})
+                self.state_manager.save_debounced()
+        except Exception as _e:
+            logger.debug("[WorkflowRuntime] collect_spec 事件入账跳过: {}", _e)
+        logger.info("[ControlFlow] collect_spec 后台节点完成 ok={} ms={:.0f}", ok, ms)
+
     async def _run_direct_stage(
         self, directive: Dict[str, Any], context: PlannerContext, on_event=None,
     ) -> PlannerResponse:
@@ -839,32 +874,13 @@ class Planner:
             selected_draft_id=context.selected_draft_id,
             selected_type=context.selected_type,
         )
-        # collect_spec 独立节点（Rule2 v6 批3）：分析直跑完成后调度
-        # 候选出题（aux 快模型），时间线独立条目，不藏进分析耗时
-        _cs_done = False
-        _cs_ok = False
+        # collect_spec 独立节点（v2 收尾）：候选出题后台预取，
+        # 不阻塞分析轮（计划§5：分析提交后立即返回）；独立事件独立
+        # 耗时入事件账本；向导消费侧容忍候选缺席。
         if directive.get("stage_key") == "analysis" and applied:
-            _cs_id = "wf-collect-spec"
-            if on_event is not None:
-                await on_event({"type": SSE_TOOL_STARTED, "id": _cs_id,
-                                "name": "collect_spec",
-                                "summary": "collect_spec 候选出题（独立节点）"})
-            _cs_t0 = time.monotonic()
-            _cs_ok = False
-            _cs_done = True
-            try:
-                _cs_ok = await exec_spec.run_collect_spec_node(
-                    self.state_manager, context.skill_name,
-                    self.chat_provider, self.chat_model)
-            except Exception as _e:
-                logger.warning("[WorkflowRuntime] collect_spec 节点失败（静默回落）: {}", _e)
-            _cs_ms = (time.monotonic() - _cs_t0) * 1000
-            tracer.record_action(
-                "collect_spec", "collect_spec 候选出题（独立节点）", _cs_ms, _cs_ok)
-            if on_event is not None:
-                await on_event({"type": SSE_TOOL_FINISHED, "id": _cs_id, "ok": _cs_ok,
-                                "elapsed_ms": round(_cs_ms, 1),
-                                "result_summary": "collect_spec 候选出题（独立节点）"})
+            _t = asyncio.ensure_future(self._bg_collect_spec(context.skill_name))
+            _BG_TASKS.add(_t)
+            _t.add_done_callback(_BG_TASKS.discard)
         state = self.state_manager.state_dict
         # 三通道 A：成果正文由层 9 确定性渲染；无成果时一句兜底（禁空正文）
         body = render_stage_deliverables(state, list(directive.get("executors") or []))
@@ -880,9 +896,6 @@ class Planner:
                   if _node_id in (n.get("prerequisites") or ())]
         _tl: List[Dict[str, Any]] = [
             {"event_type": "StageStarted", "payload": {"node_id": _node_id}}]
-        if directive.get("stage_key") == "analysis" and _cs_done:
-            _tl.append({"event_type": "ToolSucceeded",
-                        "payload": {"node_id": "collect_spec", "ok": bool(_cs_ok)}})
         _trans: Dict[str, Any] = {"completed_node": _node_id, "status": "ready"}
         if _nexts:
             _trans["next_node"] = _nexts[0]

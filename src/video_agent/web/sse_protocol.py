@@ -67,7 +67,7 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
         "passthrough", "tool_finished", "过程时间线",
     ),
     SseEventSpec(
-        SSE_DOC_WRITTEN, ("core/fc_tool_runner.py", "web/mock_chat.py", "web/chat_service.py"),
+        SSE_DOC_WRITTEN, ("core/fc_tool_runner.py", "web/chat_service.py"),
         "passthrough", "doc_written",
         "四段链补齐；透传段为 chat_service 专属分支"
         "并打戳本轮 turn_id；v2 批2 向导规格卡投影发射源自"

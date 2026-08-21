@@ -5,7 +5,7 @@
 ① 轮1 缺剧本 → kind=remind 机械卡：零 LLM、正文非空、卡≠正文复述；
 ② 轮3 带附件推进信号 → runtime 直跑分析：零模型规划轮、选项面系统派生
    （「确认，进入「制作规格」」前置、无模型自造继续/裸值规格组）、
-   时间线含 collect_spec 独立条目且无 model_reasoning；
+   分析轮不等待候选出题（collect_spec 后台预取，独立事件入账）；
 ③ 自由提问（无推进信号）→ 交接模型循环（不错抓）；
 ④ 向导发送 → 机械落盘进产物账本 + 文档卡补落同轮可见；
 ⑤ read_skill canonical 身份归一（去连字符误差不报错）。
@@ -58,7 +58,7 @@ async def test_turn1_script_missing_remind_card_zero_llm(tmp_path):
 @pytest.mark.asyncio
 async def test_turn3_direct_run_zero_planning_rounds(tmp_path, monkeypatch):
     """② 附件推进信号 → runtime 直跑：零模型调用、选项面系统派生、
-    时间线无 model_reasoning、collect_spec 独立条目。"""
+    时间线无 model_reasoning；collect_spec 后台预取不阻塞分析轮。"""
     from src.video_agent.core.planner import Planner, PlannerContext
     from src.video_agent.state.manager import StateManager
     from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
@@ -119,7 +119,14 @@ async def test_turn3_direct_run_zero_planning_rounds(tmp_path, monkeypatch):
         for a in (s.get("actions") or [])]
     assert "model_reasoning" not in actions, "直跑轮时间线无规划条目"
     assert "script_analyze" in actions
-    assert "collect_spec" in actions, "候选出题独立节点可见"
+    assert "collect_spec" not in actions, "分析轮不等待候选出题（后台预取）"
+    # 后台节点完成后独立事件入账（独立事件独立耗时，计划§8）
+    from src.video_agent.core import planner as planner_mod
+    from src.video_agent.core.workflow_events import EventLedger
+    await planner_mod.drain_background_tasks()
+    evs = EventLedger(svc.state_dict).events
+    assert any(e.node_id == "collect_spec" for e in evs), \
+        "collect_spec 后台节点独立事件入账"
     StateManager.reset_instance()
 
 

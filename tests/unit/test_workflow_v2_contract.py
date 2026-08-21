@@ -230,6 +230,55 @@ def test_sync_run_backfills_legacy_run_without_clearing():
         assert key in run, f"旧 run 缺字段补齐: {key}"
 
 
+def test_alias_collision_rejected_at_registration(tmp_path, monkeypatch):
+    """计划§6：归一碰撞 = 配置错误——同身份第二个文件拒注册。"""
+    from src.video_agent.web import skill_docs as sd
+    from src.video_agent.skill_runtime import registry
+
+    d = tmp_path / "skills"
+    d.mkdir()
+    (d / "AI-短剧一站式生成.md").write_text(
+        "# A\n> 调用规则：测试\n正文", encoding="utf-8")
+    (d / "AI短剧一站式生成.md").write_text(
+        "# B\n> 调用规则：测试\n正文", encoding="utf-8")
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
+    registry.reset_registry()
+    try:
+        registry.sync_all(force=True)
+        entries = set()
+        for slug in ("AI-短剧一站式生成", "AI短剧一站式生成"):
+            e = registry.resolve_entry(slug)
+            if e is not None:
+                entries.add(e.slug)
+        assert entries == {"AI-短剧一站式生成"}, "碰撞者拒注册"
+    finally:
+        registry.reset_registry()
+
+
+def test_invalid_sidecar_rejected_from_workflow(tmp_path, monkeypatch):
+    """计划§1/§6：无效 sidecar 不得驱动 workflow（compile_definition 返回 None）。"""
+    from src.video_agent.core import workflow_runtime
+    from src.video_agent.skill_runtime import sidecar, registry
+    from src.video_agent.web import skill_docs as sd
+
+    slug = "门禁技能"
+    d = tmp_path / "skills"
+    d.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
+    sd.save_skill_doc(slug, "# 门禁技能\n> 调用规则：测试\n正文")
+    registry.reset_registry()
+    try:
+        registry.sync_all(force=True)
+        # 无 sidecar → 零声明合法，workflow 可编译（默认定义）
+        assert workflow_runtime.compile_definition(slug) is not None
+        # 注入悬空依赖的非法 sidecar → workflow 拒入
+        sidecar.write_sidecar(slug, {"flow": {
+            "steps": {"1": "a"}, "dependencies": {"1": ["9"]}}})
+        assert workflow_runtime.compile_definition(slug) is None
+    finally:
+        registry.reset_registry()
+
+
 def test_sync_all_skips_invalid_file_without_aborting_batch(tmp_path, monkeypatch):
     from src.video_agent.web import skill_docs as sd
     from src.video_agent.skill_runtime import registry

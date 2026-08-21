@@ -7,7 +7,7 @@ import asyncio
 import time
 import uuid
 
-from src.video_agent.core.sse_events import SSE_DELTA, SSE_DOC_WRITTEN, SSE_DONE, SSE_STATUS, status_event
+from src.video_agent.core.sse_events import SSE_DELTA, SSE_DONE, SSE_STATUS, status_event
 from src.video_agent.core import workflow_runtime
 from src.video_agent.memory import MemoryManager
 from src.video_agent.web.attachments import bind_attachments, store_uploaded_docs

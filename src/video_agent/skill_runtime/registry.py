@@ -177,13 +177,23 @@ def sync_all(force: bool = False) -> int:
     # 每个文件都是独立的注册单元。一个遗留的非法/损坏 slug 不能
     # 截断整个注册批次，否则后面的有效 Skill 会静默消失，运行时
     # 只能错误地回落到模型流程。
+    seen_canon: Dict[str, str] = {}
     for f in sorted(directory.glob("*.md")):
         slug = f.stem
         if not slug:
             continue
+        # v2 收尾：canonical 身份碰撞拒注册（计划§6：alias 必须显式
+        # 登记；归一碰撞 = 配置错误，不得双注册同身份 Skill）。
+        canon = _norm_name(slug)
+        if canon in seen_canon:
+            logger.error(
+                f"[SkillRuntime] alias 碰撞，拒绝注册 {slug!r}"
+                f"（同身份已注册: {seen_canon[canon]!r}）")
+            continue
         try:
             if _load_entry(slug) is not None:
                 register_skill(slug)
+                seen_canon[canon] = slug
                 count += 1
         except Exception as e:
             logger.warning(
