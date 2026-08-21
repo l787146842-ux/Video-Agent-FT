@@ -241,7 +241,7 @@ async def agent_task_events(task_id: str, request: Request):
 
     async def gen():
         try:
-            # 心跳保活（批1 审核整改，对齐 generate.py）：长静默轮（执行器数十秒）
+            # 心跳保活（对齐 generate.py）：长静默轮（执行器数十秒）
             # 响应体无数据会被中间代理 idle 断开；SSE 注释帧前端 parseSSE
             # 天然跳过（非 data: 行），零前端变更
             idle_polls = 0

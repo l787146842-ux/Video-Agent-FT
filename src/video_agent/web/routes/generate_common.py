@@ -1,4 +1,4 @@
-"""生成路由共享设施（批次5 从 generate.py 拆出）：任务管理、SSE 通知、请求模型、轮询。
+"""生成路由共享设施（从 generate.py 拆出）：任务管理、SSE 通知、请求模型、轮询。
 
 被 generate_image.py / generate_video.py / generate.py 共用，本身不注册路由。
 """

@@ -38,7 +38,7 @@ async def get_agent_config():
             "system_prompt": d["content"],
             "source": "doc",
             "slug": d["slug"],
-            # 审核整改批 2：欠账显性化——规划级执行器名单随契约下发，
+            # 欠账显性化——规划级执行器名单随契约下发，
             # 前端据实标注（不硬编码工具名）
             "planning_executors": _planning_executors_of(d["name"]),
         }

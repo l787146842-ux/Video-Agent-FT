@@ -1,4 +1,4 @@
-"""Agent 聊天后台任务管理（D 批）。
+"""Agent 聊天后台任务管理。
 
 目标：Agent 运行与 HTTP 连接解耦——
 - 提交后立即返回 task_id，worker 在后台运行；
@@ -227,7 +227,7 @@ class AgentTaskManager:
                     t["status"] = "done" if event.get("ok") else "failed"
                     t["elapsed_ms"] = event.get("elapsed_ms")
                     t["result_summary"] = str(event.get("result_summary") or "")
-                    # 审核整改批 2：规划级标记入账本，重连 replay 后徽标不丢
+                    # 规划级标记入账本，重连 replay 后徽标不丢
                     if event.get("planning"):
                         t["planning"] = True
                     break

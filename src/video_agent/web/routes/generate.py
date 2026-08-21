@@ -1,5 +1,5 @@
 """
-/api/generate — 生成任务端点（批次5 拆分后的聚合出口）
+/api/generate — 生成任务端点（拆分后的聚合出口）
 
 - 图片端点：generate_image.py（/generate/image、/canvas-image-tasks、/generate/batch-image）
 - 视频端点：generate_video.py（/generate/video、/canvas-video）

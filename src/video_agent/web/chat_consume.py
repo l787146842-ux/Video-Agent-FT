@@ -79,7 +79,7 @@ async def _maybe_compact_history(
             )
             summary = (resp.content or "").strip()
         except Exception as e:
-            # 承重接线遥测（批 8）：compaction 失败回落原 history 不再是纯静默
+            # 承重接线遥测：compaction 失败回落原 history 不再是纯静默
             live_metrics.record_degradation("chat_consume.session_compact")
             logger.warning(f"[ChatService] 会话 compaction 失败，保留原 history: {e}")
             return history
@@ -110,7 +110,7 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
     if str(active.get("pause_id") or "") != pid:
         return None
     workflow_runtime.reduce_interaction(svc, pop_flags=("active_pause",))
-    # v2 批2：review decision 解析（审阅卡确认即解除 review_spec 挂起）
+    # review decision 解析（审阅卡确认即解除 review_spec 挂起）
     try:
         _used = svc.state_dict.get("usedSkills") or []
         _sk = str(_used[-1] or "") if _used else ""
@@ -214,7 +214,7 @@ def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "
 
 
 def _consume_spec_wizard(svc, user_text: str) -> Tuple[str, str]:
-    """规格向导消费（v2 批2）：用户回应是规格收集暂停的候选项时，
+    """规格向导消费：用户回应是规格收集暂停的候选项时，
     经 write_spec 节点提交机械落盘为规格文档（系统拼装，模型不手写），
     返回 (附加系统提示, 落盘文档名)；文档名供调用方在用户消息后投影文档卡。
 
@@ -269,7 +269,7 @@ def _consume_spec_wizard(svc, user_text: str) -> Tuple[str, str]:
             "token": f"review:{_run_id}",
             "prompt": "请审阅规格文档，确认后进入下一阶段",
             "options": [], "node_id": "review_spec"}
-    # v2 批2：write_spec 节点提交——文档 artifact 与阶段推进进 reducer
+    # write_spec 节点提交——文档 artifact 与阶段推进进 reducer
     # 单事务（ArtifactCommitted + StageSucceeded(write_spec) +
     # current_node→review_spec）；Web 直写旁路与挂起补卡机制
     # 退役；卡片投影由调用方按提交结果于用户消息后落库（顺序同轮聚合）。

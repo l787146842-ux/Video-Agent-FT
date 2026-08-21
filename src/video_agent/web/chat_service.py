@@ -189,7 +189,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
 
 
 def start_agent_task(body: Any) -> Dict[str, Any]:
-    """任务式传输（D 批）：提交即返回 task_id，worker 后台运行。
+    """任务式传输：提交即返回 task_id，worker 后台运行。
 
     刷新/切项目只断订阅不杀任务；worker 绑定提交时所属项目（任务级 StateManager），
     不会把旧项目状态写进新项目（根因之一）。
@@ -330,7 +330,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 pause_answered=pause_answered,
                 kind=getattr(body, "system_action", "") or "",
             )
-            # v2 批2：规格卡自 write_spec 提交结果投影（用户消息之后）+ 即显事件
+            # 规格卡自 write_spec 提交结果投影（用户消息之后）+ 即显事件
             if wiz_doc:
                 svc.add_chat_message("agent", "", doc_card=wiz_doc, turn_id=turn_id)
                 _wiz_card_live = wiz_doc
@@ -346,7 +346,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         svc, body.selected_draft_id, body.selected_type
     )
 
-    # 批 C 退役（用户裁决 2026-08-20）：模型选择权归用户——
+    # 用户裁决：模型选择权归用户——
     # 选什么用什么，联不通直接报错，不自动换厂商 fallback
     candidates = [(body.provider, body.model)]
     # 会话级 compaction（恢复；：预热后台——便宜模型摘要与
@@ -451,7 +451,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                         http_status=p.get("http_status"),
                     )
         except (GenerationError, AdapterError) as e:
-            # 批 C 裁决：单一候选、不自动换模型——失败直接报错；
+            # 单一候选、不自动换模型——失败直接报错；
             # 已执行过操作同样直接报错（避免重复落盘）
             logger.warning(f"[ChatService] LLM 流式调用失败 ({cand_provider}/{cand_model}): {e}")
             await _emit_stream_error(svc, body, e, emit, use_studio_context)
@@ -499,7 +499,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             "state": svc.get_full_snapshot() if use_studio_context else None,
             "elapsed_ms": int((time.monotonic() - t0) * 1000),
             "turn_id": turn_id,
-            # v2 批3：workflow 投影（run 快照 + 本轮事件，重连 replay 同源）
+            # workflow 投影（run 快照 + 本轮事件，重连 replay 同源）
             "workflow": workflow_runtime.project(svc.state_dict, turn_id),
         }
         await emit({"type": SSE_DONE, "payload": done_payload})
@@ -546,7 +546,7 @@ def _friendly_stream_error(e: Exception) -> Tuple[str, str]:
             msg,
         )
     status = getattr(e, "http_status", None)
-    # 批 A：中继拒收通知单（slow 队列等）优先翻译——须在 401/403 鉴权分支前，
+    # 中继拒收通知单（slow 队列等）优先翻译——须在 401/403 鉴权分支前，
     # 否则 403 被误译为「Key 过期」；裁决：不自动换模型，只提示手动
     low = msg.lower()
     if "10605" in msg or "queuetype" in low or "中继拒收通知单" in msg:
@@ -647,7 +647,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                     doc_blocks=getattr(body, "doc_blocks", None) or None,
                     skill_blocks=getattr(body, "skill_blocks", None) or None,
                 )
-                # v2 批2：规格卡自提交结果投影（用户消息之后），名字随载荷下发保 live 可见
+                # 规格卡自提交结果投影（用户消息之后），名字随载荷下发保 live 可见
                 if _wiz_doc_ns:
                     svc.add_chat_message("agent", "", doc_card=_wiz_doc_ns)
                 _wiz_card = _wiz_doc_ns
@@ -693,7 +693,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
                 pause_answered=ns_pause_answered,
                 kind=getattr(body, "system_action", "") or "",
             )
-            # v2 批2：规格卡自提交结果投影（用户消息之后，非流式轨同步）
+            # 规格卡自提交结果投影（用户消息之后，非流式轨同步）
             if _wiz_doc_ns:
                 svc.add_chat_message("agent", "", doc_card=_wiz_doc_ns)
             _wiz_card_ns = _wiz_doc_ns
@@ -730,7 +730,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         advance_signal=advance_signal,
     )
 
-    # 批 C 退役（用户裁决 2026-08-20）：单一候选 = 用户所选，联不通直接报错
+    # 用户裁决：单一候选 = 用户所选，联不通直接报错
     candidates = [(body.provider, body.model)]
     # 会话级 compaction（恢复；：同流式路径——预热后台）
     summary_adapter = _resolve_summary_adapter(body, candidates)
@@ -767,7 +767,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             used_model = cand_model
             break
         except (GenerationError, AdapterError) as e:
-            # 批 C 裁决：单一候选、不自动换模型——失败直接报错
+            # 单一候选、不自动换模型——失败直接报错
             logger.warning(f"[ChatService] LLM 非流式调用失败 ({cand_provider}/{cand_model}): {e}")
             raise
     if result is None:  # 理论不可达（最后候选失败已 raise），防御兜底
@@ -802,7 +802,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         "memory_hits": getattr(planner_ctx, "memory_hits", None) or [],
         "turn_id": ns_turn_id,
         "suggested_actions": result.suggested_actions,
-        # v2 批3：workflow 投影（非流式同构）
+        # workflow 投影（非流式同构）
         "workflow": workflow_runtime.project(svc.state_dict, ns_turn_id),
     }
 

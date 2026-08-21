@@ -26,7 +26,7 @@ from src.video_agent.config import settings
 from src.video_agent.core import live_metrics
 # （审核）：pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
 from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: 1
-# 批 5：sidecar 声明体检（sidecar 顶层不依赖本模块，无环）
+# sidecar 声明体检（sidecar 顶层不依赖本模块，无环）
 from src.video_agent.skill_runtime import sidecar
 
 _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划线/连字符
@@ -460,18 +460,18 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
             + " 等）：已作废——出图/出视频渠道、分辨率、时长以「全局设置」为唯一权威源，"
             "运行时不会采用本文档中的这些参数"
         )
-    # 批 5（对标 Flova 固定组成）：体量预算预警（legacy 全文注入截断阈值前 20%）
+    # 对标 Flova 固定组成：体量预算预警（legacy 全文注入截断阈值前 20%）
     _budget_warn = int(settings.max_doc_chars * 0.8)
     if len(content) > _budget_warn:
         warnings.append(
             f"文档体量 {len(content)} 字符超过建议预算 {_budget_warn}（全文注入截断阈值 "
             f"{settings.max_doc_chars} 的 80%）：超长将按阶段截断，建议精简或拆分章节"
         )
-    # 批 5：章节完整性对照 Flova 组成（流程型 Skill 缺核心段才告警，自由型不误伤）
+    # 章节完整性对照 Flova 组成（流程型 Skill 缺核心段才告警，自由型不误伤）
     warnings.extend(_lint_flova_composition(content, sections, bool(available)))
-    # 批 5：有流程章节但 sidecar 未声明 steps/dependencies → 提示补声明
+    # 有流程章节但 sidecar 未声明 steps/dependencies → 提示补声明
     warnings.extend(_lint_sidecar_declaration(content, slug))
-    # 批 3：散文含对话义务而 sidecar 未声明 pause → 显性化分歧（只告警不阻断）
+    # 散文含对话义务而 sidecar 未声明 pause → 显性化分歧（只告警不阻断）
     warnings.extend(_lint_prose_obligations(content, slug))
     return {"available_tools": available, "warnings": warnings}
 
@@ -521,14 +521,14 @@ def _lint_sidecar_declaration(content: str, slug: str) -> List[str]:
             f"调度将回落正文启发式解析，建议在 data/skills_manifests/{slug}.json 补声明"]
 
 
-# 批 3：散文对话义务标记（<planner> 含确认/询问/暂停类义务词）
+# 散文对话义务标记（<planner> 含确认/询问/暂停类义务词）
 _PROSE_OBLIGATION_RE = re.compile(r"确认|询问|暂停|问用户|请用户")
 
 
 def _lint_prose_obligations(content: str, slug: str) -> List[str]:
     """散文含对话义务而 sidecar 未声明 pause → 告警显性化分歧。
 
-    批 12 后平台以机械卡/闸兜底对话义务；Skill 散文与 sidecar 声明
+    平台以机械卡/闸兜底对话义务；Skill 散文与 sidecar 声明
     分歧时不再静默丢弃（P1 单一家原则的编辑期提示），只告警不阻断。
     """
     if not slug:

@@ -242,7 +242,7 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
     信号供输入类 decision 消费与闸预检分诊（主体回归后 runtime 不据此
     自主行动，ADR-0004）；仅流程推进轮（暂停消费/向导回应/继续选项点选/
     带附件）产生。
-    落盘文档名（v2 批2）供调用方于用户消息后投影文档卡（提交结果同源）。
+    落盘文档名供调用方于用户消息后投影文档卡（提交结果同源）。
     调用方需保证同一请求只调一次。
     """
     pending_confirm_note = ""

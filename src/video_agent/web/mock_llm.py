@@ -4,7 +4,7 @@ Mock LLM 回复生成器 — 仅在用户显式选择 mock 供应商时使用。
 从 routes/agent.py 抽离，保持路由层精简。
 分支顺序：修改/优化 先于 拆解，避免「修改分镜」被误路由到拆解分支。
 
-audit-0819b 单轨化（ADR-0001）：mock 动作不再写进正文 studio-actions 文本块
+单轨化（ADR-0001）：mock 动作不再写进正文 studio-actions 文本块
 再解析，改为返回结构化动作 dict 列表（对齐「动作不经文本」的单轨语义），
 由消费方直接交执行器 execute()（与 FC 轨同一闸机/undo/持久化语义）。
 """

@@ -54,7 +54,7 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
                 pause_answered=_pause_answered,
                 kind=getattr(body, "system_action", "") or "",
             )
-            # v2 批2：挂起补卡机制退役；向导规格卡投影由 chat_service
+            # 挂起补卡机制退役；向导规格卡投影由 chat_service
             # 按 write_spec 提交结果于用户消息后落库（mock 轨同构）
         #自查补漏：mock 路径 status 同走 key 化（#1 同类全覆盖）
         await emit(status_event("agent.mockRunning", "mock 模式：本地规则生成…", {}))

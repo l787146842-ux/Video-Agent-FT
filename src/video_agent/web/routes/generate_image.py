@@ -1,4 +1,4 @@
-"""/api/generate 图片生成端点（批次5 从 generate.py 拆出）。
+"""/api/generate 图片生成端点（从 generate.py 拆出）。
 
 原则：
 - 只有用户显式选择 mock 供应商（或 provider 为空）才走 mock，且结果会标注 mock=True；
