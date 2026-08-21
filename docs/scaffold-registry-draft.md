@@ -1,5 +1,8 @@
 # 脚手架存量入账清单（0A 草稿，待审定）
 
+> **【档案化 · 2026-08-21 审核整改批0】** 本草稿为阶段 0A 一次性盘点资产，
+> 脚手架退役清单现行事实源 = 退役登记（check_legacy_orchestration 门禁 + 宪法 §十二），本文档仅供历史追溯。
+
 > 对应《正向设计修复改进计划书》阶段 0A。
 > 原则（Anthropic《Effective Harnesses for Long-Running Agents》）：harness 的每个组件都是
 > 一条「模型做不到 X」的假设；假设会过期，模型升级即逐件拆测。
