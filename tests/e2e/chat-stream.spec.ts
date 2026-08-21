@@ -170,7 +170,9 @@ test.describe('时间线两面板（结构化 SSE 帧）', () => {
 
     const feed = page.getByTestId('chat-feed');
     // 流式中：深度思考面板实时展开，思考文本上屏
-    await expect(feed.locator('.agent-timeline .tl-panel-title', { hasText: '深度思考' }))
+    // first()：后端真实会话历史可能携带同型时间线（E2E 不 mock 会话端点），
+    // 断言只要求「存在且可见」，后续 toContainText 钉本场景自身内容
+    await expect(feed.locator('.agent-timeline .tl-panel-title', { hasText: '深度思考' }).first())
       .toBeVisible({ timeout: 10000 });
     await expect(feed).toContainText('先评估素材，再决定拆分方案', { timeout: 10000 });
     // 完成入库：已处理操作面板 + 条目耗时角标（800ms → 0.8s）
@@ -286,6 +288,63 @@ test.describe('重新生成（机械重发）', () => {
       .toBeGreaterThanOrEqual(postsBefore + 1);
     const resent = capturedBodies[capturedBodies.length - 1];
     expect(resent.message).toBe('原始问题');
+    await handle.close();
+  });
+});
+
+test.describe('滚底保持（P4 滚底回归修复）', () => {
+  /** 长回复：80 行撑高滚动容器，让「是否贴底」可度量（短内容恒贴底无区分度） */
+  const longText = (prefix: string) => Array.from({ length: 80 }, (_, i) => `${prefix} ${i + 1}`).join('\n');
+  const distFromBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight;
+
+  test('发送消息后滚动容器保持在底部（不跳顶）', async ({ page }) => {
+    const handle = await startSseServer({
+      done: { text: longText('回复行'), elapsed_ms: 100, steps: 1, applied_actions: 0 },
+    });
+    const capturedBodies: Array<Record<string, unknown>> = [];
+    await wireAgentRoutes(page, handle, capturedBodies);
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await sendMessage(page, '第一条消息');
+    const feed = page.getByTestId('chat-feed');
+    await expect(feed).toContainText('回复行 80', { timeout: 10000 });
+    // 首轮回覆后内容已超高：容器应贴底（content-visibility 高度逐段兑现，用 poll 收敛）
+    await expect.poll(() => feed.evaluate(distFromBottom), { timeout: 10000 }).toBeLessThan(80);
+
+    // 再发一条：发送动作本身不得把容器打回顶部
+    await sendMessage(page, '第二条消息');
+    await expect(feed).toContainText('第二条消息', { timeout: 10000 });
+    await expect.poll(() => feed.evaluate(distFromBottom), { timeout: 10000 }).toBeLessThan(80);
+    await handle.close();
+  });
+
+  test('流式中点停止后保持在底部（不跳顶）', async ({ page }) => {
+    await page.route(/\/api\/agent\/tasks\/[^/]+\/stop/, (route) => {
+      void route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"cancelled":1}' });
+    });
+    // 无 done 帧：流保持打开，忙碌态持续至手动停止
+    const handle = await startSseServer({
+      frames: [
+        '{"type":"status","text":"正在思考…"}',
+        JSON.stringify({ type: 'delta', text: longText('流式行') }),
+      ],
+    });
+    const capturedBodies: Array<Record<string, unknown>> = [];
+    await wireAgentRoutes(page, handle, capturedBodies);
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await sendMessage(page, '写一段很长的开场白');
+    const feed = page.getByTestId('chat-feed');
+    await expect(feed).toContainText('流式行 80', { timeout: 10000 });
+    // 流式增长中近底跟随生效
+    await expect.poll(() => feed.evaluate(distFromBottom), { timeout: 10000 }).toBeLessThan(80);
+
+    // 停止：已累积文本落「已停止」气泡后容器仍贴底
+    await page.locator('.send-btn-stop').click();
+    await expect(feed).toContainText('已停止', { timeout: 10000 });
+    await expect.poll(() => feed.evaluate(distFromBottom), { timeout: 10000 }).toBeLessThan(80);
     await handle.close();
   });
 });

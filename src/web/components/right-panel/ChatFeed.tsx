@@ -1,7 +1,7 @@
 import { createEffect, createSignal, createMemo, For, Show, onCleanup } from 'solid-js';
 import { chatState } from '@/stores/chat';
 import { t } from '@/lib/locale';
-import { groupTurns } from '@/lib/turn-groups';
+import { groupTurns, type TurnGroup } from '@/lib/turn-groups';
 import { deriveAffordances } from '@/lib/message-affordances';
 import { ChatMessageItem } from './ChatMessageItem';
 import { StreamingIndicator } from './StreamingIndicator';
@@ -13,6 +13,11 @@ function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 }
 
+/** 钉底后的跟随帧预算：content-visibility 占位高度逐段兑现（每轮布局只展开
+ * 视口能容下的条目），长内容需要多轮「钉底→撑开→再钉底」才真正到底；
+ * 高度一稳定即早停，预算只是上限（jsdom 静态几何首帧即停，不受影响） */
+const PIN_FOLLOWUP_FRAMES = 64;
+
 /**
  * 聊天消息流：<For> keyed 列表 + 智能自动滚底
  * 用户手动上滚时不强制拉底，回到底部后恢复自动滚动。
@@ -21,10 +26,34 @@ export function ChatFeed() {
   let feedRef: HTMLDivElement | undefined;
   const [autoScroll, setAutoScroll] = createSignal(true);
   let rafId: number | undefined;
+  /** 程序化钉底进行中标记：钉底赋值 scrollTop 引发的 scroll 事件异步派发，
+   *  期间不得据其翻转 autoScroll（钳制事件离底很远，会把跟随自锁死） */
+  let pinning = false;
+  let followupLeft = 0;
+  let lastPinnedHeight = 0;
 
-  // 监听用户滚动：离开底部时暂停自动滚动
+  // 监听用户滚动：离开底部时暂停自动滚动（钉底期间的事件跳过）
   function onScroll() {
-    if (feedRef) setAutoScroll(isNearBottom(feedRef));
+    if (!feedRef || pinning) return;
+    setAutoScroll(isNearBottom(feedRef));
+  }
+
+  /** 钉底一帧；之后逐帧检测布局兑现——高度仍在增长则继续钉底 */
+  function pinToBottom() {
+    if (!feedRef) return;
+    pinning = true;
+    feedRef.scrollTop = feedRef.scrollHeight;
+    lastPinnedHeight = feedRef.scrollHeight;
+    if (followupLeft > 0) {
+      followupLeft -= 1;
+      rafId = requestAnimationFrame(() => {
+        rafId = undefined;
+        if (feedRef && feedRef.scrollHeight !== lastPinnedHeight) pinToBottom();
+        else pinning = false;
+      });
+    } else {
+      pinning = false;
+    }
   }
 
   // 消息数或流式文本变化时滚动到底部（仅 autoScroll 开启时）
@@ -33,10 +62,11 @@ export function ChatFeed() {
     void chatState.streamingText;
     void chatState.streamingStatus;
     if (!autoScroll()) return;
+    followupLeft = PIN_FOLLOWUP_FRAMES;
     if (rafId !== undefined) cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(() => {
       rafId = undefined;
-      if (feedRef) feedRef.scrollTop = feedRef.scrollHeight;
+      pinToBottom();
     });
   });
 
@@ -51,8 +81,32 @@ export function ChatFeed() {
     deriveAffordances(chatState.messages, chatState.isStreaming));
 
   /** ：轮次分组（同 turnId 聚合，旧消息相邻兜底）——一轮的
-   * 正文/文档卡/图片卡收进同一容器，消除消息流碎片化 */
-  const groups = createMemo(() => groupTurns(chatState.messages));
+   * 正文/文档卡/图片卡收进同一容器，消除消息流碎片化。
+   * P4 滚底回归修复：groupTurns 每次返回全新对象，而 Solid <For> 按对象
+   * identity diff——引用不稳导致每条消息变化都全树拆建，content-visibility
+   * 高度缓存随之失效，滚底 effect 读到的 scrollHeight 塌缩为占位估算值，
+   * 钉底钉在错的高度上，真实布局撑开后视口停回顶部。此处对结构未变的组
+   * 复用旧引用（组内下标恒为连续区间，首下标+长度相等即同组），<For>
+   * 只做尾部增量 diff，既有节点与其高度缓存全部保留。 */
+  let lastGroups: TurnGroup[] = [];
+  const groups = createMemo(() => {
+    const next = groupTurns(chatState.messages);
+    const prev = lastGroups;
+    const out: TurnGroup[] = [];
+    for (let i = 0; i < next.length; i += 1) {
+      const n = next[i];
+      const p = prev[i];
+      if (p && p.kind === n.kind && p.turnId === n.turnId
+        && p.indices.length === n.indices.length
+        && p.indices[0] === n.indices[0]) {
+        out.push(p);
+      } else {
+        out.push(n);
+      }
+    }
+    lastGroups = out;
+    return out;
+  });
 
   /** 轮次组头部信息：模型名 + 耗时 meta 上提（组内逐条不再重复渲染） */
   const turnHeader = (indices: number[]) => {
