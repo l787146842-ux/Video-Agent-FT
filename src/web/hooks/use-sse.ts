@@ -334,6 +334,10 @@ function handleEvent(ev: SseEvent) {
     case 'done':
       handleDone(ev.payload);
       break;
+    case 'task_status':
+      // 任务状态变更（cancelled 等，批2 契约对齐）：后端下发后即关流，
+      // 流结束走 connectToTask 正常收尾清理；此处显式消费不落 default
+      break;
     case 'error': {
       const msg = resolveErrorMessage(ev.error_code, ev.detail || ev.text || '服务端错误');
       setError(msg);

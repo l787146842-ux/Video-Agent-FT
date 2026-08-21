@@ -195,6 +195,8 @@
   .tl-item-toggle-arrow.expanded { transform: rotate(180deg); }
   .tl-sublist { flex-basis: 100%; margin: 2px 0 0 19px; padding: 0; display: flex; flex-direction: column; gap: 2px; list-style: none; }
   .tl-subitem { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+  /* 批2 透明度：工具执行结果一句话摘要（换行第二行，与明细子列表同降噪视觉级） */
+  .tl-item-result { flex-basis: 100%; margin-left: 19px; font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @keyframes tlSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
   /* 流式指示器*/

@@ -157,10 +157,13 @@ class AgentTracer:
         elapsed_ms: float = 0.0,
         ok: bool = True,
         stage: str = "",
+        result_summary: str = "",
     ) -> Dict[str, Any]:
         """记录当前 step 内的一个操作/工具调用（供前端时间线逐条展示）。
 
         stage：大阶段标签（后端权威下发，前端不再按工具名推断）。
+        result_summary：工具执行结果一句话摘要（批2 透明度兑现：持久化后
+        刷新重建的时间线不再丢失结果细节；与 SSE tool_finished 同口径）。
         返回条目 dict（调用方可事后补填 elapsed_ms，如规划条目先占位后计时）；
         同时把缓冲的执行器子步骤挂到本条目之后（顺序一致性）。
         """
@@ -172,6 +175,8 @@ class AgentTracer:
         }
         if stage:
             entry["stage"] = stage
+        if result_summary:
+            entry["result_summary"] = result_summary
         if self._current is None:
             return entry
         self._pending_actions.append(entry)

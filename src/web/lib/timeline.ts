@@ -18,6 +18,8 @@ export interface TimelineItem {
   elapsed_ms?: number;
   /** 运行态走秒起点 */
   started_at_ms?: number;
+  /** 工具执行结果一句话摘要（批2 透明度：live=tool_finished、历史=trace result_summary） */
+  result_summary?: string;
   /** 合并条目的逐轮明细（点击展开） */
   details?: TimelineItem[];
 }

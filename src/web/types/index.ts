@@ -216,7 +216,7 @@ export interface ChatMessage {
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
-export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** B2/F15：大阶段标签（后端权威下发） */ stage?: string; }
+export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** B2/F15：大阶段标签（后端权威下发） */ stage?: string; /** 批2 透明度：工具执行结果一句话摘要（与 SSE tool_finished 同口径） */ result_summary?: string; }
 /** 闸机判定明细（后端 tracer.record_gate 产出，：前端按结构渲染来源标注 chips） */
 export interface GateRecord {
   rule_id: string;
@@ -381,6 +381,9 @@ export interface AgentTaskReplayPayload {
   error?: string | null;
 }
 export interface SseReplayEvent { type: 'replay'; payload?: AgentTaskReplayPayload; }
+/** 任务状态变更通知（后端 agent_task_manager 下发，如 cancelled）；
+ * 批2 契约对齐：此前仅后端 break 条件引用、前端联合类型缺失 */
+export interface SseTaskStatusEvent { type: 'task_status'; status?: string; }
 export type SseEvent =
   | SseStatusEvent
   | SseDeltaEvent
@@ -393,7 +396,8 @@ export type SseEvent =
   | SseModelFallbackEvent
   | SseGuidanceInjectedEvent
   | SseDocWrittenEvent
-  | SseReplayEvent;
+  | SseReplayEvent
+  | SseTaskStatusEvent;
 
 // ===== 后端状态快照 =====
 /** 单个对话（同一项目支持多对话窗口） */

@@ -32,6 +32,8 @@ export function timelineFromMessage(msg: ChatMessage): { reasoning: string; item
         summary: a.summary || a.name,
         status: a.ok ? 'done' : 'failed',
         elapsed_ms: a.elapsed_ms,
+        // 批2 透明度：后端持久化的结果摘要（与 live tool_finished 同口径）
+        result_summary: a.result_summary || undefined,
       });
     });
   });
@@ -99,6 +101,15 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
       <Show when={item().status === 'running' && item().started_at_ms != null}>
         <span class="tl-item-elapsed">
           · {formatElapsed(Math.max(0, props.now() - (item().started_at_ms || 0)))}
+        </span>
+      </Show>
+      {/* 批2 透明度：工具执行结果一句话摘要（与 summary 重复时不重复展示） */}
+      <Show
+        when={item().status !== 'running' && item().result_summary
+          && item().result_summary !== item().summary}
+      >
+        <span class="tl-item-result" title={item().result_summary}>
+          ↳ {item().result_summary}
         </span>
       </Show>
       <Show when={open() && (item().details || []).length > 0}>

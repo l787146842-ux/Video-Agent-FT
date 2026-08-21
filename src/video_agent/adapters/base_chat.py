@@ -15,6 +15,9 @@ class ChatResponse(BaseModel):
     finish_reason: str = ""
     tool_calls: List[Dict[str, Any]] = []
     raw: Optional[Dict[str, Any]] = None
+    # 本轮消耗 token（usage.total_tokens；批2 透明度兑现：轮次账单数据源，
+    # 端点未返回 usage 时保持 0，消费方按「有则展示」降级）
+    token_usage: int = 0
 
 
 class StreamChunk(BaseModel):
@@ -24,6 +27,8 @@ class StreamChunk(BaseModel):
     tool_name: str = ""
     tool_args: Dict[str, Any] = {}
     finish_reason: str = ""  # 仅在 type="done" 时携带（stop / length / tool_calls）
+    # 仅在 type="done" 时机会性携带（中继在流内下发 usage 才有值，不强求）
+    usage_tokens: int = 0
 
 
 class BaseChatAdapter(ABC):

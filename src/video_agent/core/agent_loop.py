@@ -216,6 +216,8 @@ async def run_agent_loop(
             await llm_call(system_prompt, messages, stream_hook)
         )
         plan_total = float(plan_ms or 0.0)
+        # 批2 透明度兑现：本轮 token 用量入账 trace（轮次账单数据源）
+        step_tokens = int((fc_extra or {}).get("token_usage") or 0)
 
         # 空/畸形响应防护：空响应或 MALFORMED_FUNCTION_CALL 连续发生 → 重试至多 2 次，
         # 达到上限后以明确故障文案收尾（不再静默落为「没有返回可见回复」）。
@@ -238,6 +240,7 @@ async def run_agent_loop(
                 )
             )
             plan_total += float(plan_ms or 0.0)
+            step_tokens = int((fc_extra or {}).get("token_usage") or 0)
         # 规划耗时只算纯模型规划（反馈）：FC 工具执行时间由各工具条目独立展示，
         # 不再把工具耗时叠进规划行导致「规划很慢」的错觉
         await emit({
@@ -253,7 +256,8 @@ async def run_agent_loop(
             result.warnings.append("模型连续 3 次输出异常（空/畸形），已终止本轮")
             # 一键重试按钮（机械重发上一条用户消息，零模型猜测）
             result.suggested_actions.append({"kind": "retry", "label": "重试", "value": ""})
-            tracer.end_step(step, actions_applied=0, finish_reason="bad_output")
+            tracer.end_step(step, actions_applied=0, finish_reason="bad_output",
+                            token_usage=step_tokens)
             break
 
         # Skill 声明式流程门禁已随 架构板正批退役（顺序归编排器）。
@@ -305,6 +309,7 @@ async def run_agent_loop(
                 tracer.end_step(
                     step, actions_applied=fc_applied,
                     finish_reason=finish_reason or "confirmation",
+                    token_usage=step_tokens,
                 )
                 break
             # 6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
@@ -313,15 +318,19 @@ async def run_agent_loop(
                 # 状态驱动下一步建议：收尾且无既有建议时按客观状态下发
                 if not result.suggested_actions:
                     result.suggested_actions.extend(suggest_next_actions(executor.state))
-                tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done")
+                tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
+                                token_usage=step_tokens)
                 break
             if step == max_steps:
                 result.warnings.append(f"已达到多步上限（{max_steps} 轮），循环终止")
                 result.suggested_actions.append(
                     {"kind": "continue", "label": "继续完成", "value": "继续完成"})
-                tracer.end_step(step, actions_applied=fc_applied, finish_reason="max_steps")
+                tracer.end_step(step, actions_applied=fc_applied, finish_reason="max_steps",
+                                token_usage=step_tokens)
                 break
-            tracer.end_step(step, actions_applied=fc_applied, finish_reason=finish_reason or "fc_continue")
+            tracer.end_step(step, actions_applied=fc_applied,
+                            finish_reason=finish_reason or "fc_continue",
+                            token_usage=step_tokens)
             # 回喂：让下一步 LLM 知道工具已执行
             messages.append({"role": "assistant", "content": content or f"（已执行 {fc_applied} 个工具调用）"})
             messages.append({
@@ -367,12 +376,14 @@ async def run_agent_loop(
             tracer.end_step(
                 step, actions_applied=0,
                 finish_reason=_re_ctx.hard_break_finish or "confirmation",
+                token_usage=step_tokens,
             )
             break
         # 正常收尾：状态驱动下一步建议
         if not result.suggested_actions:
             result.suggested_actions.extend(suggest_next_actions(executor.state))
-        tracer.end_step(step, actions_applied=0, finish_reason=finish_reason or "stop")
+        tracer.end_step(step, actions_applied=0, finish_reason=finish_reason or "stop",
+                        token_usage=step_tokens)
         break
 
     # 正常路径解绑进度通道（异常路径 contextvar 随任务消亡）

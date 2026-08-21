@@ -451,6 +451,8 @@ class Planner:
                 content_parts: List[str] = []
                 finish = ""
                 stream_tool_calls: List[Dict[str, Any]] = []
+                # 批2 透明度兑现：流内 usage 机会性收集（中继未下发则 0）
+                _stream_usage_tokens = 0
                 async for chunk in self._call_llm_stream(system_prompt, messages):
                     if chunk.type == "text_delta" and chunk.text:
                         content_parts.append(chunk.text)
@@ -474,8 +476,11 @@ class Planner:
                         })
                     elif chunk.type == "done":
                         finish = chunk.finish_reason or "stop"
+                        _stream_usage_tokens = int(getattr(chunk, "usage_tokens", 0) or 0)
                 content = "".join(content_parts)
-                response = ChatResponse(content=content, finish_reason=finish, tool_calls=stream_tool_calls)
+                response = ChatResponse(content=content, finish_reason=finish,
+                                        tool_calls=stream_tool_calls,
+                                        token_usage=_stream_usage_tokens)
                 plan_ms = (time.monotonic() - _t_plan) * 1000
             else:
                 response = await self._call_llm(system_prompt, messages)
@@ -522,13 +527,15 @@ class Planner:
                         strip_prior_feedback_images(messages)
                     messages.append({"role": "user", "content": feedback})
             _extra: Dict[str, Any] = {}
+            # 批2 透明度兑现：本轮 token 用量随 5 元组上抛（agent_loop 入账 trace）
+            _extra["token_usage"] = int(getattr(response, "token_usage", 0) or 0)
             if _confirm_holder.get("message"):
-                _extra = {
+                _extra.update({
                     "confirmation": _confirm_holder["message"],
                     "confirmation_options": _confirm_holder.get("options") or [],
                     # 三通道分离 B：超长 pause message 原文随正文下发
                     "pause_overflow": _confirm_holder.get("overflow") or "",
-                }
+                })
             return content, finish, fc_applied, plan_ms, _extra
 
         # 构建 context_builder

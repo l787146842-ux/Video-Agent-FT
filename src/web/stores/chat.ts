@@ -157,6 +157,10 @@ export const chatActions = {
     const elapsed = ((payload.elapsed_ms || 0) / 1000).toFixed(1);
     // ：meta 行走 locale（原硬编码中文，i18n 残留
     const metaParts = [t('rp.msg.metaTime', { s: elapsed })];
+    // 批2 透明度兑现：轮次 token 账单（后端 usage 有值才展示；缺失保 0 不显示）
+    const totalTokens = (payload.trace?.steps || [])
+      .reduce((sum, st) => sum + (st.token_usage || 0), 0);
+    if (totalTokens > 0) metaParts.push(t('rp.msg.metaTokens', { n: totalTokens }));
     if (payload.steps > 1) metaParts.push(t('rp.msg.metaRounds', { n: payload.steps }));
     if (payload.applied_actions > 0) metaParts.push(t('rp.msg.metaUpdated', { n: payload.applied_actions }));
 
@@ -252,7 +256,10 @@ export const chatActions = {
       s.streamingStatus = p.statusText || '';
       s.streamingTools = p.tools || [];
       s.streamingModel = p.model || '';
-      s.streamingReasoningStartMs = 0;
+      // 批2 重连角标修复：replay 无原始思考起点；已有 reasoning 时以恢复时刻
+      // 为起点继续计时（角标不再恒 0），同步重置终点防旧值残留
+      s.streamingReasoningStartMs = p.reasoning ? Date.now() : 0;
+      s.streamingReasoningEndMs = p.reasoning ? Date.now() : 0;
     }));
   },
 

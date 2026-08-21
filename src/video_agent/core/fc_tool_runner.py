@@ -685,7 +685,8 @@ class FCToolRunner:
                         "result_summary": desc,
                     })
                 tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True,
-                                     stage=stage_label_for_tool(name))
+                                     stage=stage_label_for_tool(name),
+                                     result_summary=desc)
                 batch_tool_names.add(name)
                 _stage_lbl = stage_label_for_tool(name)
                 if _stage_lbl:
@@ -740,11 +741,12 @@ class FCToolRunner:
                         "result_summary": spec_silent_summary or str(result.error or "执行失败")[:120],
                     })
                 # trace 与 SSE 同一口径（规格静默拒收=中性 True，普通失败=红× False），
-                # 防刷新后失败被重建为绿√
+                # 防刷新后失败被重建为绿√；result_summary 与 SSE 同口径（批2）
                 tracer.record_action(
                     name=name, summary=spec_silent_summary or start_summary,
                     elapsed_ms=_tool_ms, ok=bool(spec_silent_summary),
                     stage=stage_label_for_tool(name),
+                    result_summary=spec_silent_summary or str(result.error or "执行失败")[:120],
                 )
                 # 结构化失败回喂（客观报告+单句建议，二次升级）
                 self._tool_fail_counts[name] = self._tool_fail_counts.get(name, 0) + 1
