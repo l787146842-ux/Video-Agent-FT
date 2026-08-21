@@ -9,6 +9,7 @@ import { chatState } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { openDocsPanel } from '@/stores/docs';
 import { isHumanReadableSuggestedValue } from '@/lib/suggested-guard';
+import { resendNearestUserMessage } from '@/lib/resend';
 import { absUrl } from '@/lib/chat-image-drag';
 import { t } from '@/lib/locale';
 import { RichBubble } from './RichBubble';
@@ -55,14 +56,7 @@ export function ChatMessageItem(props: {
    * （next=状态驱动下一步建议， ，点击即显式用户指令） */
   const runSuggested = (act: { kind: 'retry' | 'continue' | 'next'; value: string }) => {
     if (act.kind === 'retry') {
-      const msgs = chatState.messages;
-      for (let i = msgs.length - 1; i >= 0; i -= 1) {
-        const m = msgs[i];
-        if (m.sender !== 'user') continue;
-        const parts = (m.parts || []).filter((p) => (p.type === 'text' ? !!p.text.trim() : !!p.url));
-        void sendUserMessage(parts.length ? parts : (m.text || ''));
-        return;
-      }
+      resendNearestUserMessage(chatState.messages.length - 1);
       return;
     }
     if (act.value) {
@@ -73,6 +67,13 @@ export function ChatMessageItem(props: {
       }
       void sendUserMessage(act.value);
     }
+  };
+
+  /** 批7 轮级 regenerate：任意 agent 回复可重跑（机械重发其前最近用户消息，
+   * 与 retry 同语义，实现见 lib/resend）；末条已有 suggested retry 不重复挂载 */
+  const regenerate = () => {
+    const here = chatState.messages.indexOf(msg());
+    if (here > 0) resendNearestUserMessage(here - 1);
   };
 
   /** 过程时间线数据（从消息 trace/actionLog 重建，刷新后不丢） */
@@ -216,6 +217,17 @@ export function ChatMessageItem(props: {
               )}
             </For>
           </div>
+        </Show>
+        {/* 批7 轮级 regenerate：非末尾 agent 回复挂重跑按钮（末条已有 suggested retry） */}
+        <Show when={!props.isSuggestedTarget}>
+          <button
+            type="button"
+            class="msg-regenerate-btn"
+            title={t('rp.msg.regenerate')}
+            onClick={regenerate}
+          >
+            {t('rp.msg.regenerate')}
+          </button>
         </Show>
       </Show>
 

@@ -180,6 +180,7 @@ const zhCN: Record<string, string> = {
   'rp.task.done': '后台 Agent 任务已完成',
   'rp.suggested.valueRejected': '建议动作文本异常（非人类可读），已拦截发送',
   'rp.msg.metaTokens': '{n} tokens',
+  'rp.msg.regenerate': '重新生成（机械重发该回复前的问题）',
   'rp.send.noProvider': '请先选择 Agent API 和对应模型',
   'rp.skill.manifestHint': '高级声明（skill_manifest，系统自动维护，无需编辑）',
 
