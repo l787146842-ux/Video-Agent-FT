@@ -46,7 +46,7 @@ def load_prompt(relative_path: str, use_cache: bool = True, lang: str = "") -> s
 def _load_file(relative_path: str, use_cache: bool = True, _depth: int = 0) -> str:
     """内部文件加载（带缓存）。
 
-    批次5：支持 {{include:path}} 组装指令——把 prompts/ 下另一文件的全文
+    支持 {{include:path}} 组装指令——把 prompts/ 下另一文件的全文
     嵌入当前位置（共有段落单一事实源，防多处复制漂移）；递归深度限制防环。
     """
     cache_key = relative_path
@@ -76,7 +76,7 @@ def _load_file(relative_path: str, use_cache: bool = True, _depth: int = 0) -> s
 
 
 def load_prompt_section(relative_path: str, section: str) -> str:
-    """加载文件的指定分节（批次5：系统文案外置的读取入口）。
+    """加载文件的指定分节（系统文案外置的读取入口）。
 
     分节格式：`## KEY` 标题到下一个 `## ` 标题（或文件末尾）之间的正文。
     未找到分节时返回空串并告警（调用方应有内置兜底）。"""

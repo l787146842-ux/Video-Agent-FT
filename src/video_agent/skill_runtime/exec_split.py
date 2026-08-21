@@ -373,7 +373,7 @@ async def _run_storyboard_split(
             await emit_timeline_note("验收：机器交叉核对通过，无遗漏元素")
         else:
             try:
-                # 验收补拆 = 非创作内层调用（Rule2 v6 批3）：走 aux 级联快模型
+                # 验收补拆 = 非创作内层调用（Rule2 v6）：走 aux 级联快模型
                 provider, model = exec_common.aux_chat_provider(
                     params.chat_provider or "", params.chat_model or "")
                 if provider:
@@ -394,7 +394,7 @@ async def _run_storyboard_split(
                             f"拆解覆盖缺口：{len(missing)} 项仍缺失（定向补拆未成功）："
                             f"{_miss_txt}。请回复指出遗漏元素或发送「补拆」重试。"
                         )
-                        # 批 3：缺失清单结构化登记——workflow_pause 暂停卡
+                        # 缺失清单结构化登记——workflow_pause 暂停卡
                         # 附「补拆/维持」选项，落实 Skill「先与用户确认是否修改」
                         try:
                             inter = svc.state_dict.setdefault("interaction", {})

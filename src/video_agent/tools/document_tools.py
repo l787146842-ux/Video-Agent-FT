@@ -471,7 +471,7 @@ class FlowDirectiveTool(BaseTool):
         return FlowDirectiveInput
 
     async def aexecute(self, params: FlowDirectiveInput) -> ToolResult:
-        """自主性档位（宪法 Rule2，批5 正名）：用户显式指令授予模型豁免非平台
+        """自主性档位（宪法 Rule2）：用户显式指令授予模型豁免非平台
         硬暂停点；按消息生效、任务开始即清；授权经控制流 trace 留痕
         （可追溯到授予它的用户消息，Context ≠ Consent）。"""
         svc = StateManager.get_instance()

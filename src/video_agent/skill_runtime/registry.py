@@ -106,7 +106,7 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
     if not doc:
         return None
     content = doc.get("content") or ""
-    # 架构板正批 ：声明唯一源 = sidecar（文档纯散文，与源平台一致）；
+    # 声明唯一源 = sidecar（文档纯散文，与源平台一致）；
     # manifest 经 SkillEntry.manifest 属性活读，注册不快照。
     return SkillEntry(
         slug=slug,

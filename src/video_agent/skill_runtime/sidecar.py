@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Skill 平台声明 sidecar 存储（0818 架构板正批 B0）。
+"""Skill 平台声明 sidecar 存储（0818 B0）。
 
 manifest 声明从 skill 文档外置到平台档案，文档还原纯散文（与源平台一致）；
 registry 双读 sidecar 优先，文档 manifest 回落（文档通道 B4 退役）。
@@ -14,7 +14,7 @@ from loguru import logger
 
 _MANIFEST_FENCE_RE = re.compile(r"```json skill_manifest.*?```\n?", re.S)
 
-# 声明写入钩子（批4）：sidecar 变更时通知消费方失效缓存（如 workflow
+# 声明写入钩子：sidecar 变更时通知消费方失效缓存（如 workflow
 # 编译 per-turn 缓存）。注册方 = core.workflow_runtime（依赖方向不变：
 # workflow_runtime 顶层已 import sidecar，此处只被注册不反向 import）。
 _WRITE_HOOKS: List[Callable[[], None]] = []

@@ -32,7 +32,7 @@ from .project_manager import ProjectManager
 from .context_builder import build_agent_context as _build_context
 from .undo_redo import UndoRedoMixin
 
-# 后台 Agent 任务的按任务隔离实例（D 批）：worker 上下文内 get_instance
+# 后台 Agent 任务的按任务隔离实例：worker 上下文内 get_instance
 # 返回任务专属 StateManager，切项目/刷新不串写（根因：旧状态覆盖新项目）。
 _task_state_var: ContextVar[Optional["StateManager"]] = ContextVar(
     "agent_task_state", default=None,

@@ -186,7 +186,7 @@ class VideoAssemblerTool:
                 if l:
                     lines.append(f"  - {l}")
         plan = "\n".join(lines)
-        # 批 6：组装方案落盘为客观产物（幂等 upsert）——assembly 阶段完成探针
+        # 组装方案落盘为客观产物（幂等 upsert）——assembly 阶段完成探针
         # 据此区分「已生成未组装」与「已组装」（Stop≠Done≠Verified：看产物证据）
         docs = state.setdefault("documents", [])
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
