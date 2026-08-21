@@ -27,6 +27,7 @@ GATES: List[Tuple[str, List[str]]] = [
     ("contract", [sys.executable, "scripts/gen_api_types.py", "--check"]),
     ("prompt_budget", [sys.executable, "scripts/check_prompt_budget.py"]),
     ("file_lines", [sys.executable, "scripts/check_file_lines.py"]),
+    ("file_lines_frontend", [sys.executable, "scripts/check_file_lines.py", "--frontend"]),
     ("func_imports", [sys.executable, "scripts/check_func_imports.py"]),
     ("governance_refs", [sys.executable, "scripts/check_governance_refs.py"]),
     ("category_keys", [sys.executable, "scripts/check_category_keys.py"]),

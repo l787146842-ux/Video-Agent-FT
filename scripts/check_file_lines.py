@@ -1,4 +1,4 @@
-"""文件行数门禁（R4c/F58 落地；八轮 B1 升级双水位）。
+"""文件行数门禁（R4c/F58 落地；八轮 B1 升级双水位；P4-23 新增 --frontend 档）。
 
 - 红线：src/ 下任何 .py 不得超过 1200 行，超限即 CI 失败；
   确需例外时在 WHITELIST 登记（附理由，只减不增）。
@@ -6,6 +6,9 @@
   让临界文件在离红线还有 30% 时就进入视野，而不是撞线才立项。
 - 棘轮（八轮 B1 新增）：>900 行的文件数量只降不升，基线值写死在
   OVER_900_BASELINE，清偿拆分后随降，禁止上调。
+- 前端档（P4-23 新增，--frontend）：src/web 下 .ts/.tsx/.css 物理行数红线 250
+  （对齐架构铁律 10.1 与 eslint max-lines；物理口径严于 eslint 跳空行/注释口径），
+  存量超限在 FRONTEND_WHITELIST 登记，只减不增且超限文件数棘轮只降不升。
 
 历史背景：executors.py 曾膨胀至 2222 行、prompt_gates.py 1404 行、
 chat_service.py 1203 行，R4a/R4b/R4c 批次拆分清偿。
@@ -24,6 +27,34 @@ OVER_900_BASELINE = 3
 # 白名单：文件相对路径 -> 理由（只减不增；拆分清偿后移除条目）
 WHITELIST = {}
 
+# ---------- 前端档（P4-23 新增：--frontend） ----------
+FRONTEND_MAX_LINES = 250
+# 存量超限白名单（P4-23 首查登记，只减不增；拆分清偿一件移除一条）
+FRONTEND_WHITELIST = {
+    "src/web/components/layout/GlobalSettingsView.tsx": "全局设置页多设置卡聚合（拆分另行立项）",
+    "src/web/components/layout/LayoutShell.tsx": "布局壳三栏骨架装配（拆分另行立项）",
+    "src/web/components/layout/ProjectSwitcher.tsx": "项目切换器（拆分另行立项）",
+    "src/web/components/layout/SettingsView.tsx": "设置页聚合（拆分另行立项）",
+    "src/web/components/middle-panel/MediaViewer.tsx": "媒体查看器多形态预览（拆分另行立项）",
+    "src/web/components/middle-panel/params/ParamBase.tsx": "参数隔离改造 bucket 维度（拆分另行立项）",
+    "src/web/components/middle-panel/PromptEditor.tsx": "提示词编辑器（拆分另行立项）",
+    "src/web/components/right-panel/AgentTimeline.tsx": "时间线多事件形态渲染（拆分另行立项）",
+    "src/web/components/right-panel/ChatMessageItem.tsx": "消息气泡多形态（拆分另行立项）",
+    "src/web/components/right-panel/ConfirmActions.tsx": "确认卡/向导交互聚合（拆分另行立项）",
+    "src/web/components/right-panel/SkillDetailModal.tsx": "Skill 详情弹窗多 tab（拆分另行立项）",
+    "src/web/hooks/use-sse.ts": "后台任务订阅协调中枢，事件类型多属合理",
+    "src/web/lib/locale.ts": "i18n 字典集中管理（词条自然增长）",
+    "src/web/lib/rich-input.ts": "富文本编辑器 DOM 操作集中（拆分另行立项）",
+    "src/web/stores/chat.ts": "对话 store 核心（P4-19 覆盖率闸保护中）",
+    "src/web/stores/studio/storyboard.ts": "故事板域集中本地编辑/同步/持久化属合理",
+    "src/web/styles/chat-input.css": "chat.css 拆分后输入区段（P4-23，后续可再细分）",
+    "src/web/styles/overlays.css": "弹窗族样式聚合（拆分另行立项）",
+    "src/web/types/api.generated.ts": "gen_api_types.py 生成物，随后端 schema 自然增长",
+    "src/web/types/index.ts": "前后端契约类型集中单文件便于对照",
+}
+# 超限文件数棘轮基线（P4-23 设立；含白名单条目，清偿一件随降一件，禁止上调）
+FRONTEND_OVER_BASELINE = len(FRONTEND_WHITELIST)
+
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 
@@ -37,6 +68,40 @@ def iter_src_py():
         if "__pycache__" in p.parts:
             continue
         yield p
+
+
+def iter_frontend():
+    web = ROOT / "src" / "web"
+    for pat in ("*.ts", "*.tsx", "*.css"):
+        for p in sorted(web.rglob(pat)):
+            yield p
+
+
+def run_frontend() -> int:
+    violations, over = [], []
+    for p in iter_frontend():
+        rel = p.relative_to(ROOT).as_posix()
+        n = count_lines(p)
+        if n <= FRONTEND_MAX_LINES:
+            continue
+        over.append((rel, n))
+        if rel not in FRONTEND_WHITELIST:
+            violations.append(f"  {rel}: {n} lines (max {FRONTEND_MAX_LINES})")
+    if violations:
+        print("[check_file_lines --frontend] FAIL - over FRONTEND_MAX_LINES (未登记白名单):")
+        print("\n".join(violations))
+        print("payoff: split by responsibility or reduce lines (only-down)")
+        return 1
+    if len(over) > FRONTEND_OVER_BASELINE:
+        print("[check_file_lines --frontend] FAIL - over-limit files increased "
+              f"({len(over)} > baseline {FRONTEND_OVER_BASELINE}, ratchet only-down):")
+        for rel, n in over:
+            print(f"  {rel}: {n} lines")
+        return 1
+    print(f"[check_file_lines --frontend] PASS - src/web/**/*.(ts|tsx|css) <= "
+          f"{FRONTEND_MAX_LINES} lines or whitelisted; over-limit count "
+          f"{len(over)} <= baseline {FRONTEND_OVER_BASELINE}")
+    return 0
 
 
 def main() -> int:
@@ -72,4 +137,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--frontend" in sys.argv[1:]:
+        sys.exit(run_frontend())
     sys.exit(main())
