@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates as _pg
 from src.video_agent.core import workflow_runtime
+from src.video_agent.core.ports import provider_config_port
 from src.video_agent.state.provider_prefs import SPEC_PARAM_UNCONFIRMED_MARKERS
 from src.video_agent.core.prompt_gates import (
     _SPEC_PARAM_LINES,
@@ -145,11 +146,10 @@ _CHANNEL_GROUP_VIDEO = "出视频渠道（API 厂商/模型）"
 
 def _channel_groups() -> List[Dict[str, Any]]:
     """出图/出视频渠道选项组（组内选项仅为占位：前端渲染为厂商+模型下拉）。
-    供应商配置加载失败时静默返回空（不阻断参数向导）。"""
+    供应商配置经 provider_config 端口读取（D-01 倒置），加载失败时静默返回空
+    （不阻断参数向导）。"""
     try:
-        from src.video_agent.web import provider_config
-
-        providers = provider_config.load_merged_providers()
+        providers = provider_config_port().load_merged_providers()
     except Exception:
         return []
     has_img = any((p.get("image_models") or []) for p in providers)

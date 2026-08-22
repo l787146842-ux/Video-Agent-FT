@@ -22,8 +22,9 @@ WARN_LINES = 800
 # B1 磁盘实测四件：planner 998 / prompt_gates 1036 / action_executor 1093 /
 # generation 968（后两者此前台账 T24 未登记，棘轮首查即暴露——登记即事实）；
 # 九轮 B3b prompt_gates 拆分清偿（gates_cards 切出）：4→3；
-# 任务#23 fc_tool_runner 三段拆分清偿（fc_gates/fc_reconcile 切出）：3→2
-OVER_900_BASELINE = 2
+# 任务#23 fc_tool_runner 三段拆分清偿（fc_gates/fc_reconcile 切出）：3→2；
+# D-02 第一件 planner 拆分清偿（turn_executor 切出）：2→1
+OVER_900_BASELINE = 1
 
 # 白名单：文件相对路径 -> 理由（只减不增；拆分清偿后移除条目）
 WHITELIST = {}
@@ -36,7 +37,6 @@ FRONTEND_WHITELIST = {
     "src/web/components/layout/LayoutShell.tsx": "布局壳三栏骨架装配（拆分另行立项）",
     "src/web/components/layout/ProjectSwitcher.tsx": "项目切换器（拆分另行立项）",
     "src/web/components/layout/SettingsView.tsx": "设置页聚合（拆分另行立项）",
-    "src/web/components/middle-panel/MediaViewer.tsx": "媒体查看器多形态预览（拆分另行立项）",
     "src/web/components/middle-panel/params/ParamBase.tsx": "参数隔离改造 bucket 维度（拆分另行立项）",
     "src/web/components/middle-panel/PromptEditor.tsx": "提示词编辑器（拆分另行立项）",
     "src/web/components/right-panel/AgentTimeline.tsx": "时间线多事件形态渲染（拆分另行立项）",

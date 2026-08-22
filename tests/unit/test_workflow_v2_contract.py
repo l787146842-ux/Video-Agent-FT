@@ -255,10 +255,10 @@ def test_alias_collision_rejected_at_registration(tmp_path, monkeypatch):
         registry.reset_registry()
 
 
-def test_invalid_sidecar_rejected_from_workflow(tmp_path, monkeypatch):
-    """计划§1/§6：无效 sidecar 不得驱动 workflow（compile_definition 返回 None）。"""
+def test_invalid_manifest_rejected_from_workflow(tmp_path, monkeypatch):
+    """计划§1/§6：无效 frontmatter 声明不得驱动 workflow（compile_definition 返回 None）。"""
     from src.video_agent.core import workflow_runtime
-    from src.video_agent.skill_runtime import sidecar, registry
+    from src.video_agent.skill_runtime import frontmatter, registry
     from src.video_agent.web import skill_docs as sd
 
     slug = "门禁技能"
@@ -269,11 +269,13 @@ def test_invalid_sidecar_rejected_from_workflow(tmp_path, monkeypatch):
     registry.reset_registry()
     try:
         registry.sync_all(force=True)
-        # 无 sidecar → 零声明合法，workflow 可编译（默认定义）
+        workflow_runtime.clear_compile_cache()
+        # 零声明合法，workflow 可编译（默认定义）
         assert workflow_runtime.compile_definition(slug) is not None
-        # 注入悬空依赖的非法 sidecar → workflow 拒入
-        sidecar.write_sidecar(slug, {"flow": {
-            "steps": {"1": "a"}, "dependencies": {"1": ["9"]}}})
+        # 注入非法声明（白名单外闸键 + 已废除流程抄本键）→ workflow 拒入
+        frontmatter.write_manifest(slug, {
+            "gates": {"unknown_gate": True},
+            "flow": {"steps": {"1": "a"}}})
         assert workflow_runtime.compile_definition(slug) is None
     finally:
         registry.reset_registry()

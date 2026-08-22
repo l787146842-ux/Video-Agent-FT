@@ -1,12 +1,33 @@
 # action_executor 下沉计划（审核整改批 8，仅规划不动码）
 
-> **性质：活跃（欠账 D-01 登记于项目外清单 E:\07 天问\未清偿债务与事故清单-2026-08-22.md）；复审到期日 2026-09-30。**
+> **性质：部分清偿（欠账 D-01 登记于项目外清单 E:\07 天问\未清偿债务与事故清单-2026-08-22.md）；阶段二复审到期日 2026-09-30。**
 
-- 状态：规划已登记（scaffold_registry I09 承重壳，2026-08-21）
-- 对象：`src/video_agent/web/action_executor.py`（885 行，宪法 Rule2 层级例外）
+- 状态：阶段一已完成（2026-08-22，D-01 清偿批）；阶段二待启动
+- 对象：~~`src/video_agent/web/action_executor.py`~~（885 行）→ 已下沉 `src/video_agent/core/action_executor.py`；web 侧仅留 re-export 壳待阶段二清退
 - 问题：按分层约束，故事板写域与动作语义应在 core/state 层；该文件因依赖
-  web 生成管线（`web/generation.py`）暂留 web 层，是 core→web 边界上最大
- 的一块未下沉债务。
+  web 生成管线（`web/generation.py`）暂留 web 层，曾是 core→web 边界上最大
+ 的一块未下沉债务（已于 2026-08-22 清偿）。
+
+## 阶段一落地记录（2026-08-22）
+
+- 依赖倒置：新建 `core/ports.py` 端口注册表（generation / provider_config /
+  task_log / skill_docs 四端口），`web/port_wiring.py::install_core_ports()`
+  在三处装配点注入（web/app.py lifespan、tests/conftest.py、
+  scripts/run_eval_pipeline.py）；端口持 web 模块引用、属性调用时解析，
+  存量测试对 web 模块属性的 monkeypatch 仍生效；
+- 迁移：git mv 四件入 core（action_executor / action_gen /
+  action_descriptions / prompt_refs）；web 侧四件改 re-export 壳；
+- 清零：core 层 10 处 core→web 延迟导入全部移除（planner 3 处、
+  fc_tool_runner 3 处、gates_spec / option_groups / token_budget / agent_loop
+  各 1 处）；core 层不再存在对 web 层的任何 import；
+- 行为冻结：studio-actions dict 执行语义、guard_pipeline 共用判定、
+  `_gen_confirm_gate`、`flow_auto_continue` 豁免均未变更；单测基线不变；
+- 偏差说明：本计划阶段一原定「仅生成动作域下沉」，实际为一次性清偿
+  D-01 债务将整执行器四件一并下沉（依赖倒置同时覆盖 provider_config，
+  超出原计划仅 generation 的端口面）；路线方向一致，范围扩大；
+- 登记同步：`func_imports_baseline.txt` 刷新（177→126 条）、
+  ARCHITECTURE_RULES.md 层级例外条款改「已清偿」、scaffold_registry I09
+  更新为清偿后形态、coupling_registry 符号路径改 core。
 
 ## 现状边界（下沉前禁改）
 
@@ -17,7 +38,7 @@
 
 ## 两阶段路线
 
-### 阶段一：生成动作域下沉（前置：生成管线依赖梳理）
+### 阶段一：生成动作域下沉（前置：生成管线依赖梳理）✅ 已完成（2026-08-22，见上方落地记录）
 
 1. 梳理 `action_gen.py` / `_apply_generate_image` / `_apply_generate_video`
    对 `web/generation.py` 的依赖面（任务提交/轮询/SSE 通知）；

@@ -92,13 +92,14 @@ def test_idempotent():
 
 
 def test_planner_wires_digest_before_truncate():
-    """接线：planner 两处 LLM 调用点在构建 full_messages 后先消化再截断"""
+    """接线：LLM 调用点在构建 full_messages 后先消化再截断
+    （D-02 拆分：实现体迁 core/turn_executor.py）"""
     import inspect
 
-    from src.video_agent.core import planner
+    from src.video_agent.core import turn_executor
 
-    assert hasattr(planner, "digest_projected_tool_results")
-    for fn in (planner.Planner._call_llm, planner.Planner._call_llm_stream):
+    assert hasattr(turn_executor, "digest_projected_tool_results")
+    for fn in (turn_executor.TurnExecutor.call_llm, turn_executor.TurnExecutor.call_llm_stream):
         src = inspect.getsource(fn)
         assert "digest_projected_tool_results" in src
         assert src.index("digest_projected_tool_results") < src.index("truncate_messages")

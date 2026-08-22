@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.core.ports import provider_config_port
 
 # tiktoken 为可选依赖：装了走精确估算，没装回退启发式（功能不中断）
 try:
@@ -69,9 +70,7 @@ def context_window_for_model(model: str, provider_id: str = "") -> int:
     m = (model or "").lower()
     if provider_id:
         try:
-            from src.video_agent.web.provider_config import get_provider_config
-
-            cfg = get_provider_config(provider_id) or {}
+            cfg = provider_config_port().get_provider_config(provider_id) or {}
             for entry in (cfg.get("chat_models_meta") or []):
                 if isinstance(entry, dict) and str(entry.get("model") or "").lower() == m:
                     win = int(entry.get("context_window") or 0)

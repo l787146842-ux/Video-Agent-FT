@@ -3,7 +3,7 @@
 问题：原探针与 shot_media 同构（shots 有 videoUrl 即判完成），「已生成未
 组装」被误判完成，assembly 阶段被静默跳过。
 修复（对标 Stop≠Done≠Verified：完成看产物证据，fail-closed）：
-- sidecar flow.stages.assembly.done 声明优先（document:<文档名>）；
+- frontmatter flow.stages.assembly.done 声明优先（document:<文档名>）；
 - 未声明回落「全部分镜有视频 + 组装方案文档在盘」。
 （TestAssemblerPersistsArtifact：video_assembler 执行器落盘闭环用例已随
 任务#36 B5 执行器一步退役删除；组装方案文档改由通用主路径用
@@ -55,7 +55,7 @@ class TestAssemblyProbeFallback:
 
 
 class TestAssemblyProbeDeclaration:
-    """sidecar flow.stages.assembly.done 声明优先"""
+    """frontmatter flow.stages.assembly.done 声明优先"""
 
     def test_declared_document_name_overrides(self, monkeypatch):
         from src.video_agent.skill_runtime import registry

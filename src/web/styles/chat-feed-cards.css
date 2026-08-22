@@ -1,0 +1,57 @@
+/* ===== 恢复的对话栏组件样式（8/12 前终版；历史快照未覆盖，按设计令牌补齐） ===== */
+.confirm-select-row { display: flex; gap: 8px; align-items: center; }
+.confirm-select {
+  flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--bg-tertiary);
+  color: var(--text-main); font-size: 12px;
+}
+.confirm-select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.msg-warnings { margin: 6px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.msg-warning-line {
+  font-size: 11px; line-height: 1.5; color: var(--accent-amber);
+  background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 6px; padding: 5px 8px;
+}
+/* 错误技术详情折叠（上游原始报文，默认收起，不发光） */
+.msg-error-detail { margin: 6px 0 0; font-size: 11px; color: #9ca3af; }
+.msg-error-detail summary { cursor: pointer; user-select: none; }
+.msg-error-detail-body {
+  margin: 4px 0 0; padding: 6px 8px; font-size: 10.5px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow-y: auto;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px; color: #9ca3af;
+}
+/* 拦截类警告的「本次放行」按钮（单次生效留痕，不发光） */
+.gate-override-btn {
+  align-self: flex-start; font-size: 11px; padding: 4px 10px; border-radius: 6px;
+  border: 1px solid rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.12);
+  color: var(--accent-amber); cursor: pointer; transition: background 0.15s;
+}
+.gate-override-btn:hover { background: rgba(245, 158, 11, 0.2); }
+
+.msg-memory-hits { margin: 6px 0 0; font-size: 11px; color: var(--text-muted); }
+.msg-memory-hits summary { cursor: pointer; user-select: none; }
+.memory-hit-line { display: flex; gap: 6px; padding: 3px 0; line-height: 1.5; }
+.memory-hit-date { color: var(--text-dim); white-space: nowrap; }
+
+/* ===== 长任务阶段进度条（流式中：推理轮次 + 故事板客观进度） ===== */
+.stage-progress { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; margin-bottom: 6px; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); }
+.stage-progress-round { display: flex; align-items: center; gap: 8px; }
+.stage-progress-round-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.stage-progress-track { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.stage-progress-fill { height: 100%; border-radius: 2px; background: var(--accent-emerald); transition: width 0.4s ease; }
+.stage-progress-boards { display: flex; flex-wrap: wrap; gap: 6px; }
+.stage-progress-board { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-muted); }
+.stage-progress-board.done { border-color: rgba(52, 211, 153, 0.5); color: var(--accent-emerald); }
+.stage-progress-board-name { font-weight: 600; }
+.stage-progress-board-count { color: var(--text-dim); }
+.stage-progress-board.done .stage-progress-board-count { color: var(--accent-emerald); }
+
+/* ===== 空状态引导卡（能力提示 + 示例指令 chips） ===== */
+.empty-state-card { align-self: flex-start; display: flex; flex-direction: column; gap: 8px; max-width: 82%; margin-top: 6px; padding: 14px 16px; border-radius: var(--radius-md); border: 1px dashed var(--border-color); background: rgba(255, 255, 255, 0.015); }
+.empty-state-title { font-size: 13px; font-weight: 600; color: var(--text-main); }
+.empty-state-try { font-size: 11px; color: var(--text-dim); }
+.empty-state-examples { display: flex; flex-direction: column; gap: 6px; }
+.empty-state-example { align-self: flex-start; max-width: 100%; text-align: left; padding: 6px 12px; font-size: 12px; line-height: 1.5; color: var(--text-muted); border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-tertiary); cursor: pointer; transition: color 0.15s, border-color 0.15s, background 0.15s; }
+.empty-state-example:hover { color: var(--text-main); border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.1); }

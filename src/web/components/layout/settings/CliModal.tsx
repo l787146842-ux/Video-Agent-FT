@@ -12,11 +12,11 @@ export interface CliModalData {
 
 export function CliModal(props: { modal: () => CliModalData; onClose: () => void }) {
   return (
-    <div class="aps-modal-mask" onClick={props.onClose}>
+    <div class="aps-modal-mask" onClick={() => props.onClose()}>
       <div class="aps-modal" onClick={(e) => e.stopPropagation()}>
         <div class="aps-modal-head">
           <div class="aps-sec-title">{props.modal().title}</div>
-          <button type="button" class="aps-icon-btn" title="关闭" onClick={props.onClose}>
+          <button type="button" class="aps-icon-btn" title="关闭" onClick={() => props.onClose()}>
             <FiX size={14} />
           </button>
         </div>

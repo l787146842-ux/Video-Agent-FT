@@ -1,7 +1,7 @@
 {
   "3D国漫古装精品短剧": {
     "planning": {
-      "chars": 4692,
+      "chars": 4669,
       "head": "**启动协议**\n用户触发本Skill时，首先判断用户属于以下哪种场景，并据此选"
     },
     "storyboard_ke": {
@@ -9,29 +9,29 @@
       "head": "**全局风格锁定**\n所有视觉设计统一采用3D建模风格：以3D CGI渲染质感呈"
     },
     "storyboard_shot": {
-      "chars": 7845,
-      "head": "**拆解shot列表**\n- 每个shot = 一次生成任务，时长 ≤ 15s（"
+      "chars": 7865,
+      "head": "**拆解shot列表**\n- 每个shot = 一次生成任务，时长遵循全局设置中"
     },
     "storyboard_audio": {
       "chars": 680,
       "head": "**设计audio_layer**\n- **BGM**：全剧至少规划一条背景音乐"
     },
     "generation": {
-      "chars": 5313,
+      "chars": 5305,
       "head": "**key_element设定图生成**\n- **角色设定图：** 使用 **T"
     },
     "prompt_draft": {
-      "chars": 17257,
+      "chars": 17327,
       "head": "**全局提示词撰写原则（适用于所有提示词类型）**\n- **风格关键词强制写入（"
     },
     "assembly": {
-      "chars": 978,
+      "chars": 969,
       "head": "**跨镜空间一致性策略**\n- 跨镜空间一致性在视频生成阶段（**write_m"
     }
   },
   "AI-短剧一站式生成": {
     "planning": {
-      "chars": 1877,
+      "chars": 1885,
       "head": "**启动协议**\n\n用户触发本 Skill 时，按顺序确认以下信息后再推进：\n\n"
     },
     "storyboard_ke": {
@@ -39,8 +39,8 @@
       "head": "**设计 key_element**\n\n- 登记所有**主要角色**（eleme"
     },
     "storyboard_shot": {
-      "chars": 1206,
-      "head": "**拆解 shot 列表**\n\n- 每个 shot = 一次生成任务，时长 ≤ "
+      "chars": 1210,
+      "head": "**拆解 shot 列表**\n\n- 每个 shot = 一次生成任务，时长遵循全"
     },
     "storyboard_audio": {
       "chars": 238,
@@ -51,33 +51,33 @@
       "head": "**key_element 设定图生成**\n\n- 使用 **TextToImag"
     },
     "prompt_draft": {
-      "chars": 3264,
+      "chars": 3316,
       "head": "**内切镜时长估算（视频提示词撰写前）**\n\n若 Storyboard shot"
     },
     "assembly": {
-      "chars": 1041,
+      "chars": 1032,
       "head": "**首尾帧衔接策略**\n\n- 第一个 shot：以对应场景 key_elemen"
     }
   },
   "人文纪录短片": {
     "planning": {
-      "chars": 1313,
-      "head": "**全片流程与阶段依赖：**\n1. 和用户确认并建立 Final_Video_S"
+      "chars": 1287,
+      "head": "**全片流程与阶段依赖：**\n1. 和用户确认并建立 制片规格.md（片名、题材"
     },
     "storyboard_ke": {
       "chars": 934,
       "head": "**全球人文纪录片剧本与剧情规划规范**\n一、 核心叙事理念：观察生活，而非“拍"
     },
     "storyboard_shot": {
-      "chars": 638,
-      "head": "**分镜镜头设计原则**\n- **时长：** 每个镜头 6–12 秒，不做短于 "
+      "chars": 647,
+      "head": "**分镜镜头设计原则**\n- **时长：** 镜头时长遵循全局设置中的时长参数；"
     },
     "storyboard_audio": {
       "chars": 60,
       "head": "**音频层设计**\n- BGM（可选）：若使用，选择极简器乐或无调性环境音景；禁"
     },
     "generation": {
-      "chars": 576,
+      "chars": 556,
       "head": "**元素图/首帧图生成（每个镜头的 start_frame）**\n- 工具：**"
     },
     "prompt_draft": {
@@ -91,27 +91,27 @@
   },
   "剧情短片音色参考": {
     "planning": {
-      "chars": 2437,
+      "chars": 2455,
       "head": "**完整视频的阶段逻辑和依赖关系：**\n\n1. **剧本获取（二选一）：**\n "
     },
     "storyboard_ke": {
-      "chars": 689,
+      "chars": 699,
       "head": "**脚本忠实度（最高优先级）**\n\n- **用户上传了剧本时：** 分镜中的**"
     },
     "storyboard_shot": {
-      "chars": 555,
+      "chars": 537,
       "head": "**如何设计镜头**\n\n- 每个镜头描述必须包含：**场景（元素）**、**故事"
     },
     "storyboard_audio": {
-      "chars": 193,
+      "chars": 191,
       "head": "**如何设计独立音频**\n\n- **背景音乐：** 至少一个全局背景音轨；风格和"
     },
     "generation": {
-      "chars": 940,
+      "chars": 712,
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
-      "chars": 4605,
+      "chars": 4252,
       "head": "**优先级最高、适用于所有prompt编写情况（含图像、视频、音频提示词）：当用"
     },
     "assembly": {
@@ -121,7 +121,7 @@
   },
   "剧本生视频需上传剧本": {
     "planning": {
-      "chars": 707,
+      "chars": 722,
       "head": "**完整视频的阶段逻辑和依赖关系：**\n1. 一句话总结剧本上传的剧本文件（图片"
     },
     "storyboard_ke": {
@@ -129,7 +129,7 @@
       "head": "**本节职责（最高优先级）**：只创建关键元素（keyElement）分组，**"
     },
     "storyboard_shot": {
-      "chars": 85,
+      "chars": 91,
       "head": "**本节职责（最高优先级）**：只创建分镜（shot）分组，分镜必须通过 sce"
     },
     "storyboard_audio": {
@@ -151,8 +151,8 @@
   },
   "叙事驱动的美学视频": {
     "planning": {
-      "chars": 683,
-      "head": "**完整视频的阶段逻辑与依赖关系：**\n1. 起草 `Final_Video_S"
+      "chars": 686,
+      "head": "**完整视频的阶段逻辑与依赖关系：**\n1. 起草 `制片规格.md`（标题、类"
     },
     "storyboard_ke": {
       "chars": 261,
@@ -167,11 +167,11 @@
       "head": "**如何设计独立音频**\n- **背景音乐：** 设计至少一段全局背景音乐。如果"
     },
     "generation": {
-      "chars": 1300,
-      "head": "**元素图像生成（Midjourney V7 — 风格基准测试）**\n目的：构建"
+      "chars": 1287,
+      "head": "**元素图像生成（风格基准测试；具体渠道与模型由全局设置决定，本文档不指定）**"
     },
     "prompt_draft": {
-      "chars": 4949,
+      "chars": 4856,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     },
     "assembly": {
@@ -181,7 +181,7 @@
   },
   "古风甜宠短剧": {
     "planning": {
-      "chars": 2349,
+      "chars": 2358,
       "head": "**整体流程与里程碑节点**\n按以下阶段顺序推进，每个里程碑结束后必须暂停并获得"
     },
     "storyboard_ke": {
@@ -189,56 +189,56 @@
       "head": "**设计 key elements**\n- 必须包含：**男主**、**女主**"
     },
     "storyboard_shot": {
-      "chars": 919,
-      "head": "**设计分镜**\n- 总镜头数目标：10～14 个，覆盖完整剧本情节，整体时长约"
+      "chars": 933,
+      "head": "**设计分镜**\n- 总镜头数目标：10～14 个，覆盖完整剧本情节，整体时长遵"
     },
     "storyboard_audio": {
       "chars": 143,
       "head": "**设计独立音频轨道**\n- 背景音乐（bgm）：至少一条贯穿全片的古风甜宠风格"
     },
     "generation": {
-      "chars": 1663,
+      "chars": 1650,
       "head": "**角色形象图生成（阶段 2）**\n- 使用 **ImageToImage**，"
     },
     "prompt_draft": {
-      "chars": 2399,
+      "chars": 2413,
       "head": "**全局最高优先级：** 所有提示词均使用**中文**撰写。视频中人物台词与旁白"
     },
     "assembly": {
-      "chars": 319,
+      "chars": 322,
       "head": "- 严格按故事板镜头顺序组装时间线，不得自行调换镜头次序。\n- 情感高潮镜头（对"
     }
   },
   "商品宣传短片": {
     "planning": {
-      "chars": 761,
-      "head": "**阶段逻辑与依赖关系：**\n1. 编写 `Final_Video_Spec.m"
+      "chars": 762,
+      "head": "**阶段逻辑与依赖关系：**\n1. 编写 制片规格.md（标题、类型、画幅、时长"
     },
     "storyboard_ke": {
       "chars": 201,
       "head": "**如何设计关键元素**\n- 始终包含关键主体：产品对象、关键场景（使用环境）和"
     },
     "storyboard_shot": {
-      "chars": 1209,
-      "head": "**如何设计镜头**\n- **优先考虑带有内部剪辑的长镜头**，每个镜头 5 -"
+      "chars": 1182,
+      "head": "**如何设计镜头**\n- **优先考虑带有内部剪辑的长镜头**。在镜头*内部*进"
     },
     "storyboard_audio": {
       "chars": 210,
       "head": "**如何设计独立音频**\n- **背景音乐：** 设计至少一个全局背景音轨。如果"
     },
     "generation": {
-      "chars": 250,
+      "chars": 249,
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage** "
     },
     "prompt_draft": {
-      "chars": 4332,
+      "chars": 4280,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     }
   },
   "多人对话访谈": {
     "planning": {
-      "chars": 664,
-      "head": "**阶段逻辑与依赖关系：**\n1. 编写 `Final_Video_Spec.m"
+      "chars": 665,
+      "head": "**阶段逻辑与依赖关系：**\n1. 编写 制片规格.md（标题、类型、画幅、时长"
     },
     "storyboard_ke": {
       "chars": 289,
@@ -253,11 +253,11 @@
       "head": "**如何设计独立音频**\n- **背景音乐：** 设计至少一个全局背景音轨。如果"
     },
     "generation": {
-      "chars": 601,
+      "chars": 600,
       "head": "**元素图像生成**\n- 使用 **TextToImage**。对于处于不同状态"
     },
     "prompt_draft": {
-      "chars": 2512,
+      "chars": 2500,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     },
     "assembly": {
@@ -267,7 +267,7 @@
   },
   "宣言式概念短片": {
     "planning": {
-      "chars": 1870,
+      "chars": 1858,
       "head": "两条硬规则：\n1. 文本命名化：每句文案是一个新定义或本体命名，可引用可复述。禁"
     },
     "storyboard_ke": {
@@ -283,7 +283,7 @@
       "head": "把已确认 Manifesto 文本拆为画面序列。文本先在，镜头数时长节奏全由文本"
     },
     "generation": {
-      "chars": 1999,
+      "chars": 1918,
       "head": "模型以全局设置的默认渠道为准（关键帧/视频/旁白/音乐）。 画幅：21:9；每次"
     },
     "prompt_draft": {
@@ -297,49 +297,49 @@
   },
   "故事驱动型视频": {
     "planning": {
-      "chars": 912,
-      "head": "**完整视频的阶段逻辑与依赖关系：**\n1. 编写 `Final_Video_S"
+      "chars": 917,
+      "head": "**完整视频的阶段逻辑与依赖关系：**\n1. 编写 制片规格.md（标题、类型、"
     },
     "storyboard_ke": {
-      "chars": 303,
+      "chars": 317,
       "head": "**如何设计关键元素**\n- 确保包含**关键主体**（角色、物体等）、**关键"
     },
     "storyboard_shot": {
-      "chars": 386,
-      "head": "**如何设计镜头**\n- **优先考虑带有内部剪辑的长镜头**（例如，每个镜头 "
+      "chars": 362,
+      "head": "**如何设计镜头**\n- **优先考虑带有内部剪辑的长镜头**。在镜头*内部*进"
     },
     "storyboard_audio": {
       "chars": 215,
       "head": "**如何设计独立音频**\n- **背景音乐：** 设计至少一个全局背景音乐轨道。"
     },
     "generation": {
-      "chars": 463,
+      "chars": 462,
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
-      "chars": 3666,
+      "chars": 3614,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     }
   },
   "未来科幻真人电影": {
     "planning": {
-      "chars": 2779,
+      "chars": 2771,
       "head": "## 工作定位\n以超写实真人未来科幻电影的制片与美术指导方式执行「创意梳理—资产"
     },
     "storyboard_ke": {
-      "chars": 1075,
+      "chars": 1043,
       "head": "## 故事与段落结构\n- 先输出 100–200 字故事核心梗概，再按时间轴输出"
     },
     "storyboard_shot": {
-      "chars": 880,
+      "chars": 886,
       "head": "## 风格化美术设计\n- 先将已选择的风格转化为贯穿 key_element、场"
     },
     "generation": {
-      "chars": 1998,
+      "chars": 1932,
       "head": "## 资产生成与绑定顺序\n- 先绑定用户已提供的资源。人物参考图直接注册并绑定为"
     },
     "prompt_draft": {
-      "chars": 4485,
+      "chars": 4413,
       "head": "## 共同写作规则\n- 使用 Markdown 分级标题与固定模块顺序，不使用表"
     },
     "assembly": {
@@ -349,7 +349,7 @@
   },
   "李安美学风格短片": {
     "planning": {
-      "chars": 5933,
+      "chars": 5856,
       "head": "**全局视频参数建立与风格选择：**\n\n1. **构思引导与子风格自动匹配**："
     },
     "storyboard_ke": {
@@ -357,29 +357,29 @@
       "head": "**关键元素（Elements）设计：**\n\n- **角色（element ch"
     },
     "storyboard_shot": {
-      "chars": 2736,
+      "chars": 2755,
       "head": "**分镜镜头（Shots）设计：**\n\n- **元素、场景与道具强锚定规范（防止"
     },
     "storyboard_audio": {
-      "chars": 953,
+      "chars": 941,
       "head": "**音频层（Audio Layers）设计：**\n\n- **旁白（narrati"
     },
     "generation": {
-      "chars": 3170,
+      "chars": 2978,
       "head": "**元素、图像与音色资产生成：**\n\n- **模型锁定与唯一性规范**：\n  -"
     },
     "prompt_draft": {
-      "chars": 20787,
+      "chars": 20508,
       "head": "**最高优先级规则**：当项目环境或用户输入为中文时，提示词主体（Subject"
     },
     "assembly": {
-      "chars": 2446,
+      "chars": 2436,
       "head": "**时间轴装配与节奏控制：**\n\n- **剪辑律动与风格化装配**：保持整体慢节"
     }
   },
   "水墨风格武侠短片": {
     "planning": {
-      "chars": 4145,
+      "chars": 4129,
       "head": "**全流程阶段逻辑与协同编排：**\n\n1. **确立全局规格**：在生成任务启动"
     },
     "storyboard_ke": {
@@ -387,7 +387,7 @@
       "head": "**设计 key_element（核心元素）：**\n- **element ch"
     },
     "storyboard_shot": {
-      "chars": 6687,
+      "chars": 6684,
       "head": "**设计 shot（镜头）：**\n- **分镜时长与节奏动态规划规范（解决全量5"
     },
     "storyboard_audio": {
@@ -395,11 +395,11 @@
       "head": "**设计 audio_layer（独立音频轨道）：**\n- **背景音乐（bgm"
     },
     "generation": {
-      "chars": 3689,
-      "head": "**视觉元素生成策略（GPT Image 2）：**\n- **核心指令**：\n "
+      "chars": 3594,
+      "head": "**视觉元素生成策略（具体渠道与模型由全局设置决定，本文档不指定）：**\n- *"
     },
     "prompt_draft": {
-      "chars": 20535,
+      "chars": 20410,
       "head": "**语系优先与主导风格写作规范：**\n- **语言一致性高阶规则**：当用户使用"
     },
     "assembly": {
@@ -409,7 +409,7 @@
   },
   "视频拉片复刻": {
     "planning": {
-      "chars": 1261,
+      "chars": 1264,
       "head": "**完整视频的阶段逻辑和依赖关系：**\n1. 详尽分析上传的视频。提取关键参考帧"
     },
     "storyboard_ke": {
@@ -417,19 +417,19 @@
       "head": "**如何设计关键元素**\n- 始终包含**关键主体**（角色、物体等）、**关键"
     },
     "storyboard_shot": {
-      "chars": 569,
+      "chars": 546,
       "head": "**如何设计镜头**\n- **每个镜头与镜头拆解中的一个片段一一对应或明确映射*"
     },
     "storyboard_audio": {
-      "chars": 284,
+      "chars": 264,
       "head": "**如何设计独立音频**\n- **背景音乐：** 至少有一个全局背景音轨；风格和"
     },
     "generation": {
-      "chars": 699,
+      "chars": 661,
       "head": "**元素生成**\n- **图像：** 如果用户已指定了元素的资产（例如产品图像、"
     },
     "prompt_draft": {
-      "chars": 4676,
+      "chars": 4624,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     },
     "assembly": {
@@ -439,7 +439,7 @@
   },
   "音乐MV需上传音乐": {
     "planning": {
-      "chars": 1442,
+      "chars": 1471,
       "head": "**阶段逻辑与依赖关系：**\n1. 分析已上传的音乐，导出其节奏结构、精确时间（"
     },
     "storyboard_ke": {
@@ -455,11 +455,11 @@
       "head": "**如何设计独立音频**\n- **背景音乐：** 使用用户上传的音乐作为 BGM"
     },
     "generation": {
-      "chars": 621,
+      "chars": 620,
       "head": "**元素图像生成**\n- 使用 **TextToImage**。对于不同外观或年"
     },
     "prompt_draft": {
-      "chars": 5905,
+      "chars": 5871,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     },
     "assembly": {

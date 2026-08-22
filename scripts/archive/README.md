@@ -15,3 +15,5 @@
 | clean_temp_artifacts.py | 临时产物清扫：.pytest_tmp / .playwright-cli 等堆积调试文件（默认 dry-run，--apply 真删） |
 | audit_skill_gates.py | 只读审计：盘点 Skill prompt_draft 下小节，为 skill_manifest gates 数据配置提供依据 |
 | migrate_step_stages.py | P3-12 批：为 16 个 sidecar manifest 幂等补写 flow.step_stages 显式声明（schema v2，已执行完毕并有 test_sidecar_schema_v2 兜底） |
+| migrate_manifests_to_frontmatter.py | 任务#5：16 个外置 JSON sidecar 声明迁入 Skill 文档头部 YAML frontmatter（flow.steps/step_stages/dependencies 三键废除不迁；已执行完毕，data/skills_manifests/ 随迁删除） |
+| migrate_manifests_v3.py | 任务#34 B1：manifest v2→v3 幂等迁移（schema_version/requires_inputs/pause_points 只加不删）；默认目录 data/skills_manifests 已随任务#5 frontmatter 合一删除，仅 --dir 演练可用（test_sidecar_schema_v3 兜底） |

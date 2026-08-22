@@ -4,7 +4,7 @@ McpToolAdapter 就是 BaseTool：复用 ToolManager.register（注册期 risk
 强制校验同口径），name = mcp__<server>__<tool>（双下划线三段式）。
 
 参数校验口径：远端 JSON Schema 存原始 dict，invoke 时按 required+type
-最小自校验（零新依赖，与 sidecar 校验同款口径），不做 pydantic 动态建模；
+最小自校验（零新依赖，与 manifest schema 校验同款口径），不做 pydantic 动态建模；
 get_input_schema 返回宽松模型保 ToolManager schema 装配链路不断。
 
 deny-first 运行时面：未启用（interaction.mcp_enabled 白名单未含）的

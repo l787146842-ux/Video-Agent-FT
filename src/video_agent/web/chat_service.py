@@ -24,6 +24,7 @@ from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import workflow_runtime
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
+from src.video_agent.web.chat_cards import _stamp_doc_written, _video_card_items
 from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.mock_chat import mock_stream
 from src.video_agent.web.mock_llm import mock_llm_reply
@@ -319,18 +320,6 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
 # 生图/生视频 fallback 属独立机制（generation.py），不在本裁决范围。
 
 
-def _stamp_doc_written(payload: Optional[Dict[str, Any]], turn_id: str) -> Dict[str, Any]:
-    """ ：doc_written 即显事件打戳本轮 turn_id。
-
-    发射端（agent_loop/fc_tool_runner）无 turn_id 概念，打戳归透传层
-    （turn_id 在 _real_stream 起始生成）；前端即显卡据此与 done 主消息
-    同 turnId 严格归组（显式 id 原则延伸，不再依赖相邻兜底）。
-    """
-    out = dict(payload or {"type": SSE_DOC_WRITTEN})
-    out["turn_id"] = turn_id
-    return out
-
-
 async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", wiz_doc: str = "", stop_scope: str = "chat") -> None:
     """真实供应商的流式处理（含模型 fallback 链）。
 
@@ -513,7 +502,11 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             return
 
         # --- 成功路径：持久化 + done ---
-        if use_studio_context and (final_text or final_payload.get("image_urls") or final_payload.get("confirmation")):
+        video_items = _video_card_items(final_payload)
+        if use_studio_context and (
+            final_text or final_payload.get("image_urls")
+            or final_payload.get("confirmation") or video_items
+        ):
             applied = final_payload.get("applied_actions") or 0
             async with svc.lock:
                 if final_text or final_payload.get("confirmation"):
@@ -542,6 +535,9 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                 image_urls = final_payload.get("image_urls") or []
                 if image_urls:
                     svc.add_chat_message("agent", "", image_urls=image_urls, turn_id=turn_id)
+                # 视频卡同构持久化（独立消息条目，同轮 turnId 聚合）
+                if video_items:
+                    svc.add_chat_message("agent", "", video_items=video_items, turn_id=turn_id)
 
         # 产物账本同轮下发：向导机械落盘的规格文档并入 documents_written
         if _wiz_card_live:

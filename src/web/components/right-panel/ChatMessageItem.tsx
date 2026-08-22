@@ -18,6 +18,7 @@ import { ConfirmActions } from './ConfirmActions';
 import { StageCard } from './StageCard';
 import { UserRefBlocks } from './UserRefBlocks';
 import { ImageResultCard } from './ImageResultCard';
+import { VideoResultCard } from './VideoResultCard';
 import { ImageLightbox } from './ImageLightbox';
 import { GateWarnings } from './GateWarnings';
 import { MemoryHits } from './MemoryHits';
@@ -124,10 +125,9 @@ export function ChatMessageItem(props: {
         )}
       </Show>
 
-      {/* 生图结果图片卡片（拖拽/下载/lightbox 均在 ImageResultCard 内） */}
-      <Show when={msg().imageCard} keyed>
-        {(card) => <ImageResultCard card={card} />}
-      </Show>
+      {/* 生图结果卡 / 视频结果内联预览卡（拖拽/下载/lightbox 均在各自 Card 内） */}
+      <Show when={msg().imageCard} keyed>{(card) => <ImageResultCard card={card} />}</Show>
+      <Show when={msg().videoCard} keyed>{(card) => <VideoResultCard card={card} />}</Show>
 
       {/* 阶段完成卡：可展开、默认展开；正文=本轮概述（确认文案）+执行清单。
           确认文案与模型正文判重防双显；历史消息同样可展开，暂停点回看不丢失） */}

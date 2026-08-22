@@ -94,6 +94,43 @@ describe('增量事件路由与异常帧', () => {
     expect(showToast).toHaveBeenCalled(); // mediaInserted 提示
   });
 
+  it('done 携带视频插入：kind=video 跳过输入框（内联卡为准），toast 计数不含视频', async () => {
+    vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([
+      {
+        type: 'done',
+        payload: {
+          text: '完成', elapsed_ms: 1, steps: 1,
+          chat_inserts: [
+            { kind: 'video', url: '/media/v.mp4', name: '开场', thumb: '/media/v.jpg' },
+            { kind: 'image', url: '/workspace/assets/y.png', name: 'y' },
+          ],
+        },
+      },
+    ]));
+    await streamAgentChat(req);
+    // 只插入 image 项；视频由 finishStream 派生 videoCard 气泡，不双处呈现
+    expect(requestInsertMedia).toHaveBeenCalledTimes(1);
+    expect(requestInsertMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'image', url: '/workspace/assets/y.png' }),
+    );
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('1'), 'success');
+  });
+
+  it('done 仅携带视频插入：不插输入框也不弹 toast', async () => {
+    vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([
+      {
+        type: 'done',
+        payload: {
+          text: '完成', elapsed_ms: 1, steps: 1,
+          chat_inserts: [{ kind: 'video', url: '/media/v.mp4', name: '开场' }],
+        },
+      },
+    ]));
+    await streamAgentChat(req);
+    expect(requestInsertMedia).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
   it('异常帧不中断流：JSON 解析失败计数 + 继续消费后续帧', async () => {
     const before = getSseParseErrorCount();
     vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([

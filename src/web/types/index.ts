@@ -184,6 +184,8 @@ export interface ChatMessage {
   thinkingMs?: number;
   /** 生图结果图片卡片 */
   imageCard?: ImageCardData;
+  /** 视频结果内联预览卡（首帧 poster + ▶ 角标，点击 lightbox 播放/下载） */
+  videoCard?: VideoCardData;
   /** 用户消息的有序富文本片段（文字 + 内联缩略图交错），用于气泡还原排版 */
   parts?: RichContentPart[];
   /** 用户消息携带的文档附件块（点击可查看文档，发送后才真正附加） */
@@ -258,6 +260,16 @@ export interface AgentTrace {
 export interface ImageCardData {
   image_urls: string[];
   /** 生成模型/供应商标识 */ provider?: string;
+}
+
+// ===== 视频结果内联预览卡（done payload chat_inserts 中 kind=video 项） =====
+export interface VideoCardItem {
+  url: string;
+  name?: string;
+  /** 首帧缩略图（poster） */ thumb?: string;
+}
+export interface VideoCardData {
+  items: VideoCardItem[];
 }
 
 // ===== 文档 =====

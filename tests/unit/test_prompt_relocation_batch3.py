@@ -57,7 +57,7 @@ def test_b3_prompt_builder_no_inline_instructions():
 
 
 def test_b3_pause_discipline_single_home():
-    """暂停纪律唯一家 = skill_discipline.md（P1）；sidecar 流程清单附注的
+    """暂停纪律唯一家 = skill_discipline.md（P1）；frontmatter 流程清单附注的
     复述防复活由 check_legacy_orchestration 门禁承接（P2d）。"""
     sd = load_prompt("planner/skill_discipline.md")
     assert "workflow_pause 工具调用真正停下" in sd, "暂停纪律单家条款丢失"

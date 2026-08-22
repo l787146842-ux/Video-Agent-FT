@@ -53,7 +53,7 @@ export function AssetLibraryItemsTab(props: {
           <FiAlertCircle size={22} />
           <p>{t('rp.asset.offlineLimited', { error: props.items()!.error || t('rp.asset.connectionFailed') })}</p>
           <p class="asset-modal-status-hint">{t('rp.asset.checkOriginPre')}<code>{location.origin.replace(/\d+$/, '3000')}</code>{t('rp.asset.checkOriginPost')}</p>
-          <button type="button" class="btn-secondary" onClick={props.onReconnect}>{t('rp.asset.reconnect')}</button>
+          <button type="button" class="btn-secondary" onClick={() => props.onReconnect()}>{t('rp.asset.reconnect')}</button>
         </div>
       </Show>
 

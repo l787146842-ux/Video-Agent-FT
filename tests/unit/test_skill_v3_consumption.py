@@ -17,7 +17,7 @@ from src.video_agent.core import pipeline_orchestrator as po
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core.workflow_runtime import WorkflowRuntime
-from src.video_agent.skill_runtime import registry, sidecar
+from src.video_agent.skill_runtime import frontmatter, registry
 from src.video_agent.skill_runtime.guard import (
     skill_pause_points,
     skill_requires_stage_pause,
@@ -34,12 +34,10 @@ _LONG_EN_PROMPT = (
 @pytest.fixture(autouse=True)
 def isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", tmp_path / "skills")
-    # sidecar 目录随 SKILL_DOCS_DIR 活读（sidecar_dir() 读 sd.SKILL_DOCS_DIR），
-    # 不隔离会把测试桩 sidecar 泄漏进真实 data/skills_manifests，
-    # 后续懒同步 sync_all 把泄漏文档重新注册回来，掩盖 fail-hard 拒注册。
-    monkeypatch.setattr(
-        "src.video_agent.skill_runtime.sidecar.sidecar_dir",
-        lambda: tmp_path / "skills_manifests")
+    # 任务#5：frontmatter 随文档同根（经 skill_docs 端口读 SKILL_DOCS_DIR），
+    # 上面的目录隔离即声明隔离；不隔离会把测试桩文档泄漏进真实
+    # data/skills，后续懒同步 sync_all 把泄漏文档重新注册回来，
+    # 掩盖 fail-hard 拒注册。
     registry.reset_registry()
     yield
     registry.reset_registry()
@@ -55,7 +53,7 @@ def svc(tmp_path):
 def _save(name: str, content: str = "", manifest=None):
     sd.save_skill_doc(name, content or f"# {name}\n正文")
     if manifest is not None:
-        sidecar.write_sidecar(name, manifest)
+        frontmatter.write_manifest(name, manifest)
     registry.register_skill(name)
 
 
@@ -84,7 +82,7 @@ def test_registry_v3_readers_zero_preset_and_clean():
     assert registry.skill_language("全声明") == {"prompt": "en"}
 
 
-def test_registry_v3_fail_hard_rejects_invalid_sidecar():
+def test_registry_v3_fail_hard_rejects_invalid_manifest():
     """C4 fail-hard（任务#22）：schema 违规拒注册，替代旧「只告警不阻断」。"""
     _save("坏声明", "# X\n正文", {
         "requires_inputs": [
@@ -99,11 +97,11 @@ def test_registry_v3_fail_hard_rejects_invalid_sidecar():
 
 
 def test_registry_v3_readers_fail_closed_on_live_edit():
-    """消费端 fail-closed 清洗保留：合法注册后 sidecar 被改坏，
+    """消费端 fail-closed 清洗保留：合法注册后 frontmatter 被改坏，
     活读时非法项丢弃（不二次报错）。"""
     _save("活读清洗", "# Y\n正文", {"requires_inputs": [{"type": "script"}]})
     assert registry.get_entry("活读清洗") is not None
-    sidecar.write_sidecar("活读清洗", {
+    frontmatter.write_manifest("活读清洗", {
         "requires_inputs": [{"type": "外星人"}, {"type": "music"}],
         "language": {"output": "非法值"},
     })
@@ -285,7 +283,7 @@ def test_pause_points_fail_hard_and_live_clean():
 
     _save("活读暂停", "# Y\n正文", {
         "pause_points": [{"id": "ok", "trigger": "spec_finalized"}]})
-    sidecar.write_sidecar("活读暂停", {"pause_points": [
+    frontmatter.write_manifest("活读暂停", {"pause_points": [
         {"id": "ok", "trigger": "spec_finalized"},
         {"id": "bad", "trigger": "不在白名单"},
         {"id": "bb", "trigger": "batch_boundary"},  # 缺 description 丢弃

@@ -131,7 +131,7 @@ def test_thinking_override_wins_over_global():
 # ---------- 规格向导平台自动检测 ----------
 
 def test_spec_wizard_frozen_declaration_source():
-    """0818 B4：spec_wizard 以 sidecar 冻结声明为唯一源（文本启发式退役）。"""
+    """0818 B4：spec_wizard 以 frontmatter 冻结声明为唯一源（文本启发式退役）。"""
     from src.video_agent.skill_runtime import registry
 
     registry.register_skill("AI-短剧一站式生成")
@@ -141,16 +141,16 @@ def test_spec_wizard_frozen_declaration_source():
 
 
 def test_spec_wizard_declared_true_still_active():
-    """显式声明 true 的 Skill 行为不变（0818 B4：声明家 = sidecar）。"""
-    from src.video_agent.skill_runtime import registry, sidecar
+    """显式声明 true 的 Skill 行为不变（0818 B4：声明家 = frontmatter）。"""
+    from src.video_agent.skill_runtime import frontmatter, registry
     from src.video_agent.web import skill_docs as sd
 
-    # 自包含桩：sidecar 显式 spec_wizard:true（不依赖产品 Skill，10.12-G1）
+    # 自包含桩：frontmatter 显式 spec_wizard:true（不依赖产品 Skill，10.12-G1）
     sd.save_skill_doc(
         "显式向导测试桩",
         "# 显式向导测试桩\n> 调用规则：测试\n",
     )
-    sidecar.write_sidecar("显式向导测试桩", {"flow": {"spec_wizard": True}})
+    frontmatter.write_manifest("显式向导测试桩", {"flow": {"spec_wizard": True}})
     registry.register_skill("显式向导测试桩")
     assert registry.spec_wizard_active("显式向导测试桩") is True
     registry.reset_registry()
@@ -161,7 +161,7 @@ def test_spec_wizard_stub_skill_inactive():
     from src.video_agent.skill_runtime import registry
     from src.video_agent.web import skill_docs as sd
 
-    # 自包含桩（不依赖已退役用例留下的 Skill 文档）：无 sidecar flow 声明
+    # 自包含桩（不依赖已退役用例留下的 Skill 文档）：无 frontmatter flow 声明
     sd.save_skill_doc("向导隐性测试桩", "# 向导隐性测试桩\n> 调用规则：测试\n")
     registry.register_skill("向导隐性测试桩")
     assert registry.spec_wizard_active("向导隐性测试桩") is False
@@ -169,16 +169,16 @@ def test_spec_wizard_stub_skill_inactive():
 
 
 def test_spec_wizard_manifest_false_escape_hatch():
-    """sidecar 显式 false = 逃生门关闭（0818 B4：声明唯一源 = sidecar，
+    """frontmatter 显式 false = 逃生门关闭（0818 B4：声明唯一源 = frontmatter，
     注册条目不再快照，原地改 manifest 失效；改用自包含桩声明）。"""
-    from src.video_agent.skill_runtime import registry, sidecar
+    from src.video_agent.skill_runtime import frontmatter, registry
     from src.video_agent.web import skill_docs as sd
 
     sd.save_skill_doc(
         "false向导测试桩",
         "# false向导测试桩\n> 调用规则：测试\n",
     )
-    sidecar.write_sidecar("false向导测试桩", {"flow": {"spec_wizard": False}})
+    frontmatter.write_manifest("false向导测试桩", {"flow": {"spec_wizard": False}})
     registry.register_skill("false向导测试桩")
     assert registry.spec_wizard_active("false向导测试桩") is False
 

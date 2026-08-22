@@ -56,7 +56,7 @@ class TestBadOutputNudge:
 
 
 # STAGE_MANIFEST（stage_executors 声明样例）的消费用例已退役，
-# 声明数据本身仍由 sidecar schema 层测试钉死（test_sidecar_schema_v3）。
+# 声明数据本身仍由 manifest schema 层测试钉死（test_sidecar_schema_v3）。
 
 
 class TestStageExecutorsDeclaration:
@@ -67,7 +67,7 @@ class TestStageExecutorsDeclaration:
 
     def test_ai_skill_manifest_declares_stage3_batch(self):
         """单一事实源：AI-一站式 Skill 自己声明 step3 三拆解同批
-        （0818 B0：声明家迁 sidecar，经 registry 统一入口读）。"""
+        （0818 B0：声明家迁 frontmatter，经 registry 统一入口读）。"""
         from src.video_agent.skill_runtime import registry
 
         manifest = registry.skill_manifest_of("AI-短剧一站式生成")

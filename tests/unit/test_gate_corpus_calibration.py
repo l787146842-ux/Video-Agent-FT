@@ -49,7 +49,13 @@ def test_corpus_manifest_bidirectional():
 
 
 def test_skill_pipelines_parseable():
+    """任务#5：flow.steps/dependencies 抄本通道废除，deps 口径随退；
+    可解析性钉 frontmatter 体检零问题 + 阶段调度声明（stage_executors/stages）存在。"""
     report = eval_skill_pipelines()
     assert report["pipeline_skill_count"] >= 5, "存量 Skill 管线应可解析"
-    with_deps = [s for s in report["pipeline_skills"] if s["deps"]]
-    assert with_deps, "至少一个 Skill 声明了依赖关系（E2 调度可用）"
+    for s in report["pipeline_skills"]:
+        assert s["issues"] == [], f"{s['skill']} frontmatter 体检异常: {s['issues']}"
+    with_sched = [
+        s for s in report["pipeline_skills"]
+        if s["stage_executors"] or s["stages"]]
+    assert with_sched, "至少一个 Skill 声明了阶段调度（stage_executors/stages）"

@@ -50,6 +50,9 @@ python -m src.video_agent.web   # http://127.0.0.1:8080
 ## 开发命令
 
 ```bash
+# 开发/测试依赖（pytest/pytest-cov 等已归位 requirements-dev.txt，含 -r requirements.txt）
+pip install -r requirements-dev.txt
+
 # 后端测试（全量 / 单元 / 集成）
 python -m pytest tests/ -q
 python -m pytest tests/unit/ -q

@@ -32,8 +32,9 @@ def test_s4_models_legacy_fields_removed():
 def test_s4_planner_direct_call_wired():
     # 委托方法组/别名符号的防复活由 check_legacy_orchestration 门禁承接；
     # 此处只钉正向接线：真实消费直调新命名空间
-    planner = (SRC / "core/planner.py").read_text(encoding="utf-8")
-    assert "format_tool_results(tool_results)" in planner
+    # （D-02 拆分：回喂消费点随单轮执行迁 core/turn_executor.py）
+    turn_exec = (SRC / "core/turn_executor.py").read_text(encoding="utf-8")
+    assert "format_tool_results(tool_results)" in turn_exec
 
 
 def test_s4_planner_suggested_retry_present():

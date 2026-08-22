@@ -15,8 +15,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.video_agent.core import prompt_gates  # noqa: E402
-from src.video_agent.skill_runtime import sidecar  # noqa: E402
+from src.video_agent.skill_runtime import frontmatter  # noqa: E402
 from src.video_agent.web import skill_docs  # noqa: E402
+from src.video_agent.web.port_wiring import install_core_ports  # noqa: E402
+
+# D-01：core 端口装配（评测管线装配点；黄金语料回归直驱执行器需 web 实现注入）
+install_core_ports()
 
 CORPUS = PROJECT_ROOT / "tests" / "fixtures" / "gate_corpus" / "corpus.json"
 
@@ -70,21 +74,20 @@ def eval_gate_corpus() -> dict:
 
 
 def eval_skill_pipelines() -> dict:
-    """0818 B4：管线可解析性改按 sidecar 声明通道评估（正文正则通道退役）。"""
+    """管线可解析性按 frontmatter 声明通道评估（任务#5：flow.steps 抄本废除，
+    正文 planner 是唯一流程源；此处评估 frontmatter 声明体检与阶段覆盖声明）。"""
     report = []
     for doc in skill_docs.list_skill_docs():
         slug = doc.get("slug") or doc.get("name")
-        manifest = sidecar.load_sidecar(slug)
-        flow = ((manifest or {}).get("flow") or {})
-        steps = flow.get("steps") or {}
-        deps = flow.get("dependencies") or {}
-        if not steps:
+        manifest = frontmatter.load_manifest(slug)
+        if manifest is None:
             continue
-        issues = sidecar.validate_sidecar(manifest)
+        flow = manifest.get("flow") or {}
+        issues = frontmatter.validate_manifest(manifest)
         report.append({
             "skill": doc.get("name") or slug,
-            "steps": len(steps),
-            "deps": len(deps),
+            "stage_executors": len(flow.get("stage_executors") or {}),
+            "stages": len(flow.get("stages") or {}),
             "issues": issues,
         })
     return {"pipeline_skills": report, "pipeline_skill_count": len(report)}

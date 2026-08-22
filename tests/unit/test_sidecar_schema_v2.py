@@ -1,23 +1,27 @@
 # -*- coding: utf-8 -*-
-"""P3-12 sidecar schema v2：显式映射 + 全键校验 + step_done_conditions 消费。
+"""P3-12 Skill 声明 schema：显式映射 + 全键校验 + step_done_conditions 消费。
+
+任务#5 frontmatter 合一后口径：flow.steps/step_stages/dependencies 生产
+通道已废除（frontmatter 声明即 fail-hard）；①③ 节保留的声明消费测试
+均为内存 manifest（orchestrator/gates_cards 通用消费代码保留，测试
+走 monkeypatch 注入，不依赖生产声明）。
 
 钉死三件事：
 ① flow.step_stages 显式声明优先于启发式（声明权威；未声明回落并记遥测）；
-② sidecar_schema 全键校验（合法/非法用例，fail-closed；未声明键合法）；
+② manifest_schema 全键校验（合法/非法用例，fail-closed；未声明键合法；
+   废除键 fail-hard；gates 键白名单与 prompt_gates 锁源）；
 ③ step_done_conditions 声明探针消费（stage_done 任意阶段声明通道同构 +
    gates_cards.current_flow_step 声明优先接线）。
 """
-import json
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from src.video_agent.core import gates_cards
 from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import prompt_gates
+from src.video_agent.skill_runtime import manifest_schema
 from src.video_agent.skill_runtime import registry
-from src.video_agent.skill_runtime import sidecar
-from src.video_agent.skill_runtime import sidecar_schema
 
 
 # ---------- ① step_stages 显式映射 ----------
@@ -92,38 +96,25 @@ def test_undeclared_step_falls_back_to_heuristic_with_telemetry(monkeypatch):
     assert stats["heuristic"] == 2 and stats["explicit"] == 0
 
 
-def test_product_manifests_declare_step_stages():
-    """迁移覆盖钉死：16 个产品 manifest 全部声明 step_stages 且值合法。
-
-    直读生产目录（同 test_executor_name_alignment 的 ROOT 钉法）：
-    sidecar.sidecar_dir() 随 SKILL_DOCS_DIR 镜像走，全量跑时镜像内混入
-    其他用例写入的桩 manifest（无 step_stages 合法），不得遮蔽本钉。"""
-    root = Path(__file__).resolve().parents[2]
-    manifest_dir = root / "data" / "skills_manifests"
-    for f in sorted(manifest_dir.glob("*.json")):
-        flow = json.loads(f.read_text(encoding="utf-8")).get("flow") or {}
-        declared = flow.get("step_stages") or {}
-        assert declared, f"{f.stem}: 未声明 flow.step_stages"
-        assert set(declared) <= {str(k) for k in (flow.get("steps") or {})}, f.stem
-        assert set(declared.values()) <= set(sidecar_schema.CANONICAL_STAGE_KEYS), f.stem
-
-
-# ---------- ② sidecar_schema 全键校验 ----------
+# ---------- ② manifest_schema 全键校验（frontmatter 合一） ----------
 
 
 def test_canonical_stage_keys_drift_lock():
     """规范阶段键锁源：schema 复制值必须与 orchestrator 单一事实源一致。"""
-    assert sidecar_schema.CANONICAL_STAGE_KEYS == tuple(
+    assert manifest_schema.CANONICAL_STAGE_KEYS == tuple(
         s.key for s in po.CANONICAL_STAGES)
 
 
-def test_schema_accepts_full_valid_sidecar():
+def test_gate_keys_drift_lock():
+    """gates 键白名单锁源：与 prompt_gates._DEFAULT_GATE_RULES 键集一致
+    （manifest_schema docstring 承诺；漂移即本钉报出）。"""
+    assert set(manifest_schema.GATE_KEYS) == set(prompt_gates._DEFAULT_GATE_RULES)
+
+
+def test_schema_accepts_full_valid_manifest():
     good = {
         "flow": {
-            "steps": {"1": "分析", "2": "组装"},
-            "dependencies": {"2": [1]},
             "stage_executors": {"1": ["script_analyze"]},
-            "step_stages": {"1": "analysis", "2": "assembly"},
             "step_done_conditions": {"2": "assembly"},
             "step_short_titles": {"1": "剧本分析"},
             "stages": {"assembly": {"done": "document:X.md",
@@ -132,49 +123,36 @@ def test_schema_accepts_full_valid_sidecar():
             "spec_wizard": True, "spec_gate": True, "script_required": False,
         },
         "pause": {"stage_pause": True},
+        "gates": {"require_subtitle": True, "cjk_min_ratio": 0.2},
+        "version": "1.0",
+        "tools_required": ["script_analyze"],
+        "source": "用户导入",
     }
-    assert sidecar.validate_sidecar(good) == []
-    assert sidecar.validate_sidecar(None) == []  # 零声明合法
+    assert manifest_schema.validate_manifest_data(good) == []
+    assert manifest_schema.validate_manifest_data(None) == []  # 零声明合法
 
 
 @pytest.mark.parametrize("manifest,keyword", [
-    ({"flow": {"steps": {"1": "a"},
-               "step_stages": {"1": "wonderland"}}}, "规范阶段键"),
-    ({"flow": {"steps": {"1": "a"},
-               "step_stages": {"9": "spec"}}}, "不在 steps"),
-    ({"flow": {"steps": {"1": "a"},
-               "step_done_conditions": {"1": "nope"}}}, "规范阶段键"),
-    ({"flow": {"steps": {"1": "a"},
-               "stage_executors": {"1": "script_analyze"}}}, "数组"),
-    ({"flow": {"steps": {"1": "a", "2": ""}}}, "非空字符串"),
+    # 流程步骤抄本通道废除：声明即 fail-hard
+    ({"flow": {"steps": {"1": "a"}}}, "已废除"),
+    ({"flow": {"step_stages": {"1": "spec"}}}, "已废除"),
+    ({"flow": {"dependencies": {"2": [1]}}}, "已废除"),
+    ({"flow": {"step_done_conditions": {"1": "wonderland"}}}, "规范阶段键"),
+    ({"flow": {"stage_executors": {"1": "script_analyze"}}}, "数组"),
+    ({"flow": {"step_short_titles": {"1": ""}}}, "非空字符串"),
     ({"flow": {"stages": {"spec": {"done": "X.md"}}}}, "document:"),
     ({"flow": {"stages": {"wonderland": {"skip": True}}}}, "不是规范阶段键"),
     ({"flow": {"stages": {"spec": {"skip": "yes"}}}}, "布尔值"),
     ({"flow": {"spec_wizard": "yes"}}, "布尔值"),
     ({"pause": {"stage_pause": "yes"}}, "布尔值"),
+    # gates 键白名单 fail-hard（未登记闸键拒注册）
+    ({"gates": {"unknown_gate": True}}, "不是平台登记的闸键"),
+    ({"version": ""}, "非空字符串"),
+    ({"tools_required": [""]}, "非空字符串"),
 ])
 def test_schema_rejects_illegal_declarations(manifest, keyword):
-    issues = sidecar.validate_sidecar(manifest)
+    issues = manifest_schema.validate_manifest_data(manifest)
     assert issues and any(keyword in i for i in issues)
-
-
-def test_schema_rejects_stage_dag_cycle():
-    """step_stages×dependencies 翻译的阶段 DAG 成环 → 注册期即拒（调度死锁）。"""
-    cyclic = {"flow": {
-        "steps": {"1": "a", "2": "b", "3": "c"},
-        "dependencies": {"2": [1], "1": [2]},
-        "step_stages": {"1": "structure", "2": "ke_media", "3": "spec"},
-    }}
-    issues = sidecar.validate_sidecar(cyclic)
-    assert any("成环" in i for i in issues)
-
-
-def test_schema_keeps_dangling_dep_messages():
-    """旧契约不劣化：依赖悬空报出（步骤/前置不在 steps）。"""
-    bad = {"flow": {"steps": {"1": "a"}, "dependencies": {"2": [1], "1": [9]}}}
-    issues = sidecar.validate_sidecar(bad)
-    assert any("2" in i for i in issues)
-    assert any("9" in i for i in issues)
 
 
 # ---------- ③ step_done_conditions 消费 ----------

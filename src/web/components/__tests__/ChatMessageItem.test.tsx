@@ -72,3 +72,23 @@ describe('停止后继续建议按钮文案', () => {
     expect(btn.textContent).toBe('重试');
   });
 });
+
+describe('视频内联卡持久化渲染（replay/刷新恢复路径）', () => {
+  it('历史消息直接携带 videoCard 字段即渲染（不依赖 finishStream 派生）', () => {
+    // 模拟后端快照 chatMessages → loadMessages → ChatMessageItem：
+    // 消息字段直读渲染，刷新/replay 后视频卡不丢
+    const msg: ChatMessage = {
+      sender: 'agent',
+      text: '视频已生成',
+      videoCard: {
+        items: [{ url: '/media/v.mp4', name: '开场.mp4', thumb: '/media/v.jpg' }],
+      },
+    };
+    const { container } = render(() => <ChatMessageItem message={msg} isLast />);
+    const card = container.querySelector('.video-card');
+    expect(card).toBeTruthy();
+    expect(card?.textContent).toContain('开场.mp4');
+    expect(card?.querySelector('video')?.getAttribute('src')).toContain('/media/v.mp4');
+    expect(card?.querySelector('.video-card-badge')?.textContent).toBe('▶');
+  });
+});

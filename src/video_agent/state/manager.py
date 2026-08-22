@@ -713,11 +713,15 @@ class StateManager(UndoRedoMixin):
         pause_id: str = "",
         pause_answered: Optional[Dict[str, str]] = None,
         kind: str = "",
+        video_items: Optional[List[Dict[str, Any]]] = None,
     ):
         """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，防止状态文件无上限增长。
 
         image_urls: generate_image 工具产出的图片 URL 列表，以 imageCard 结构随消息持久化，
         前端刷新后可从历史记录重建生图卡片。
+        video_items: 对话流视频内联预览卡条目（done 结算 chat_inserts 中 kind=video 项），
+        以 videoCard 结构随消息持久化（与 imageCard 对称，瞬态 SSE 不作唯一可见性），
+        每项保留 url/name/thumb；url 为空的非法项丢弃。
         meta/confirm/applied_actions/action_log/doc_card: Agent 回复的附加展示信息
         （耗时角标/阶段确认卡片/操作数/具体操作清单/文档完成卡片），随消息持久化，
         保证刷新页面后「阶段完成」卡片与耗时角标不丢失。
@@ -737,6 +741,20 @@ class StateManager(UndoRedoMixin):
             entry["modelName"] = model_name
         if image_urls:
             entry["imageCard"] = {"image_urls": list(image_urls)}
+        if video_items:
+            items: List[Dict[str, Any]] = []
+            for it in video_items:
+                url = str((it or {}).get("url") or "")
+                if not url:
+                    continue
+                item: Dict[str, Any] = {"url": url}
+                if str((it or {}).get("name") or ""):
+                    item["name"] = str(it["name"])
+                if str((it or {}).get("thumb") or ""):
+                    item["thumb"] = str(it["thumb"])
+                items.append(item)
+            if items:
+                entry["videoCard"] = {"items": items}
         if meta:
             entry["meta"] = meta
         if confirm:

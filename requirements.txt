@@ -18,9 +18,8 @@ httpx==0.28.1
 # Workflow 配置解析（yaml 支持）
 pyyaml==6.0.3
 
-# 测试相关（开发环境也可用 requirements-dev.txt）
-pytest==9.1.1
-pytest-asyncio>=0.24.0
+# 测试依赖已归位 requirements-dev.txt（任务 #11 依赖归位：pytest/pytest-asyncio/
+# pytest-cov 属开发/CI 依赖；CI 各 job 按需安装 -r requirements-dev.txt）
 
 # 可选：Agent 记忆系统向量检索后端（MEMORY_VECTOR_BACKEND 默认 chromadb）。
 # 未安装时自动诚实降级为 JSON 关键词检索，功能不中断；

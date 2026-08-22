@@ -2,7 +2,7 @@
 """状态驱动管线知识源 + 闸预检 + Workflow Runtime 黄金回归。
 
 钉死：
-① 阶段表 = 平台规范表 + sidecar 覆盖（skip/同批执行器）；
+① 阶段表 = 平台规范表 + frontmatter 声明覆盖（skip/同批执行器）；
 ② current_stage 按客观探针推进（analysis→spec→structure→创作型交接）；
 ③ 闸预检只装配兜底卡（原料闸/规格闸），永不执行阶段、永不抢先对话；
 ④ 首轮有素材 + 推进信号 → 交接模型循环（宪法 Rule2 主体回归，ADR-0004：
@@ -28,7 +28,7 @@ def test_stage_table_canonical_order():
     assert table[3].deterministic is False  # 创作型交接模型
 
 
-def test_stage_table_sidecar_override_skip_and_executors(monkeypatch):
+def test_stage_table_manifest_override_skip_and_executors(monkeypatch):
     monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
         "flow": {"stages": {
             "assembly": {"skip": True},

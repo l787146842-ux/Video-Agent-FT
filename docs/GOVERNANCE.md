@@ -32,10 +32,10 @@
 |---|----|------|---------|---------|---------|
 | 1 | 平台协议 | `prompts/planner/system_fc.md`（文本协议 system.md 已退役，P2e 单轨收敛） | 主模型每轮 | 动作格式/暂停通道/输出纪律/工具使用法 | 业务领域规则 |
 | 2 | ~~文本协议~~ 已删 | —（4-4 双轨退役，ADR-0001） | — | studio-actions 动作定义随文本轨整体删除 | — |
-| 3 | Skill 文档 | `data/skills/*.md` | planner 章节/执行器内章节 | 该 Skill 的阶段内创作引导（产出规范/创作要求），纯散文 | 流程顺序与暂停点（已归平台编排+sidecar 声明）；模型能力参数 |
+| 3 | Skill 文档 | `data/skills/*.md` | planner 章节/执行器内章节 | 该 Skill 的阶段内创作引导（产出规范/创作要求），纯散文 | 流程顺序与暂停点（已归平台编排+文档头部 frontmatter 声明）；模型能力参数 |
 | 4 | 执行铁律文档 | 项目内「执行铁律.md」（`spec_rules` 模板） | Skill 激活时全文注入 | 项目级可编辑生产契约 | 平台协议、流程步骤 |
-| 5 | 制片规格文档 | 项目内规格文档（Final_Video_Spec.md 等） | 执行器显式注入/按需 read | 本项目参数事实（画幅/分辨率/渠道/时长） | 任何规则性表述 |
-| 6 | 执行器提示词 | `skill_runtime/executors.py`（_TASK/_BOUNDARY/自检词） | 执行器独立调用 | 单一任务的输出格式与边界 | 跨阶段流程规则 |
+| 5 | 制片规格文档 | 项目内规格文档（制片规格.md 等） | 执行器显式注入/按需 read | 本项目参数事实（画幅/分辨率/渠道/时长） | 任何规则性表述 |
+| 6 | 执行器提示词 | 执行器提示词装配主路径（执行器族已随任务#36 B5 一步退役物理删除，原 _TASK/_BOUNDARY/自检词随模块退役） | 执行器独立调用 | 单一任务的输出格式与边界 | 跨阶段流程规则 |
 | 7 | 闸机 | `core/prompt_gates.py` + `core/guard_pipeline.py` | 工具裁剪/警告/回喂 | 客观状态校验与阶段门禁 | prose 说服（闸机只裁定，不说教） |
 | 8 | 回喂话术 | `agent_loop.py`/`planner.py`/`fc_tool_runner.py` | 轮间 | 客观回报上轮结果 + 单句下一步；允许当轮短期指令 | 持久性规则条款 |
 | 9 | 系统兜底卡 | agent_loop/planner/chat_service + `round_end_policies.py` | 轮末 | 客观状态 → 确定性交互，不依赖模型自觉 | 无（代码行为，非指令） |
@@ -53,14 +53,14 @@
 |---------|-----------|-----------|
 | 平台对话协议 | 层 1 system.md / system_fc.md | Skill、铁律、执行器 |
 | 项目级生产契约 | 层 4 铁律文档 | system.md 硬编码、执行器常量 |
-| 阶段顺序与暂停点 | 平台闸机刹车（`platform.stage_precondition` 内嵌工具执行路径首位；账本/探针归 `core/workflow_runtime.py`，定义层承自 `pipeline_orchestrator`/sidecar 声明 `data/skills_manifests/<slug>.json` 的 flow/pause） | Skill 散文、system.md、回喂话术、模型循环猜序 |
+| 阶段顺序与暂停点 | 平台闸机刹车（`platform.stage_precondition` 内嵌工具执行路径首位；账本/探针归 `core/workflow_runtime.py`，定义层承自 `pipeline_orchestrator`/frontmatter 声明 `data/skills/<slug>.md` 头部 YAML 块的 flow/pause） | Skill 散文、system.md、回喂话术、模型循环猜序 |
 | 单一执行器的输出格式与边界 | 层 3 Skill 对应章节是唯一表述源；层 6 只承载任务目标与格式锚点 | system.md |
 | 模型能力参数（分辨率/时长/渠道） | 层 5 制片规格（运行时动态注入）+ 全局设置 | Skill 硬编码数值、执行器写死数值 |
 | 可机械校验的约束 | 层 7/9 代码校验（拒收或修正） | 任何 prose 层重复表述 |
 | 通用提示词规范 | 层 3 Skill 的提示词章节 | system.md |
-| Skill 的平台行为开关 | sidecar 声明 `data/skills_manifests/<slug>.json`（声明唯一源，引擎默认最小闸） | Skill 散文、平台通用层硬编码 |
-| 规格向导/剧本闸启停 | sidecar 声明（registry.spec_wizard_active / script_required_active 纯读 sidecar）；sidecar 显式逃生门 | 文本启发式扫描 |
-| 阶段内创作引导 | 层 3 Skill 散文（纯散文，只管阶段内怎么写） | 平台层排序条款、sidecar |
+| Skill 的平台行为开关 | 文档头部 frontmatter 声明 `data/skills/<slug>.md`（声明唯一源，任务#5 合一；引擎默认最小闸） | Skill 正文散文、平台通用层硬编码 |
+| 规格向导/剧本闸启停 | frontmatter 声明（registry.spec_wizard_active / script_required_active 纯读 frontmatter）；frontmatter 显式逃生门 | 文本启发式扫描 |
+| 阶段内创作引导 | 层 3 Skill 散文（纯散文，只管阶段内怎么写） | 平台层排序条款、frontmatter |
 
 **冲突裁决顺序（模型可见优先级）**：用户最新指令 > 铁律文档 + 制片规格 > Skill > 平台协议默认。代码校验层不参与裁决——它是客观事实，只对结果裁定并回报。
 
@@ -70,7 +70,7 @@
 
 | 症状 | 正确归位层 | 禁止的捷径（历史事故） |
 |------|-----------|---------------------|
-| 模型该暂停时没暂停 | 编排器阶段边界机械暂停（pipeline_orchestrator）+ sidecar pause 声明 | 在多层同时加“必须暂停”prose（5555） |
+| 模型该暂停时没暂停 | 编排器阶段边界机械暂停（pipeline_orchestrator）+ frontmatter pause 声明 | 在多层同时加“必须暂停”prose（5555） |
 | 模型输出缺字段/格式错 | 层 6 执行器拒收+重试+格式锚点 | 只在 prose 加“必须携带 X 字段”（8888） |
 | 模型虚报完成 | 层 7 客观状态核验 + 只警告不拦人 | 硬拦截没收暂停（4444） |
 | 产出数量失控 | 铁律+Skill+执行器任务词三处**同步**写比例约束，自检限轮数 | 单向穷举表述与克制条款并存（8888） |
@@ -152,11 +152,11 @@
 
 | # | 模式 | 唯一代码落点 | 禁止的捷径 |
 |---|------|-------------|-----------|
-| C1 | 语言单一事实源：注入句与 PromptGate 读同一份 parse_gate_rules | `executors._prompt_language_rule` + `prompt_gates` 语言闸 | 仲裁条款里写「从其要求」类例外 |
+| C1 | 语言单一事实源：注入句与 PromptGate 读同一份 parse_gate_rules | 语言规则注入主路径（执行器族已退役）+ `prompt_gates` 语言闸 | 仲裁条款里写「从其要求」类例外 |
 | C2 | 结构化拒因回喂：纠正重试携带闸门拒因原文逐条修复 | `_write_prompt_batch(corrective_reasons=…)` | 只给「不得留空」式笼统纠正 |
 | C3 | 轮内 compaction：旧轮对折叠成摘要，最近两轮保留原文 | `core/fc_feedback.py`（惰性反馈压缩 + 旧轮图片剥离） | 每轮全量重发旧轮原文 |
 | C4 | 读不触发写：未变更不保存 + 内容级脏检查 | 前端编辑 handler + 保存基线 | blur/查看调度整板 PUT |
-| C5 | 模型级联：誊写批快模型先试，零进展/拒收升级推理模型 | `executors._resolve_cascade_fast` + 纠正升级 | 硬换模型无升级保险 |
+| C5 | 模型级联：誊写批快模型先试，零进展/拒收升级推理模型 | 级联选型主路径（执行器族已退役）+ 纠正升级 | 硬换模型无升级保险 |
 | C6 | 铁律最小化 + 暂停语义唯一源 = Skill 文本/manifest 声明 | `spec_rules._IRON_RULES_DOC_BODY`；planner 提醒只留执行器失败禁令/总结强展 | 把可校验约束或暂停条款写回铁律/平台提醒 |
 
 **卡片面纪律（C1/C6 延伸）**：draft label ≤12 字短语、提示词正文必须相对分组描述增加增量信息、前端卡片定宽 + 描述 2 行 clamp。
@@ -185,7 +185,7 @@
 符合 §2.4「显式用户指令解除当前动作硬边界」）；暂停卡唯一发行主体 = 模型 workflow_pause（单一活跃暂停槽位互斥）。ADR-0003 机械直跑退役教训：确定性 = 把关模型发起的动作，不是系统代替模型发起动作；「hooks guarantee behavior」的含义是钩子保证模型行为边界。叙事权（机械动作全进转录）与裁量权（reducer 单一写入）分离的 v6 成果保留。
 - 任何平台机械动作必须进持久化转录（trace 一等条目），完成态视图与运行态视图从同一条日志派生（814G2）；瞬态通道不得作为唯一可见性。
 - **模型选择权归用户（用户裁决 2026-08-20）**：选什么用什么，联不通直接报错；聊天链路不自动换厂商/模型 fallback（已退役）。中继层把上游拒收缝进 200 流时，适配器层必须识别错误信封并抛错（不当稿子），错误展示走人话+原文折叠。
-- Skill 散文流程诉求与 sidecar 声明分歧时：编辑期 lint 告警显性化（批 3），运行期平台机械卡兜底；分歧不再静默丢弃（P1 延伸）。
+- Skill 散文流程诉求与 frontmatter 声明分歧时：编辑期 lint 告警显性化（批 3），运行期平台机械卡兜底；分歧不再静默丢弃（P1 延伸）。
 
 ### 13.14 治理频率与折旧裁决（任务 #21 设立，2026-08-22）
 

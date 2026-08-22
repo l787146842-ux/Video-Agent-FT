@@ -215,7 +215,7 @@ def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "
         if prompt_gates.has_spec_document(svc.state_dict) else ""
     )
     # 三通道分离 C：用户点选系统派生继续选项时，
-    # 下一步指令机械生成（sidecar 流程唯一源），模型不再自行猜测；
+    # 下一步指令机械生成（frontmatter 声明流程唯一源），模型不再自行猜测；
     # 向导多组拼装 value 为逐行文本，走行格式判定
     flow_note = ""
     if prompt_gates.is_flow_continue_value(pause_value):

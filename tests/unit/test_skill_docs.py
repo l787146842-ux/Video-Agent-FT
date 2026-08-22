@@ -43,6 +43,56 @@ def test_empty_content_rejected():
         sd.save_skill_doc("ok-name", "   ")
 
 
+# ---------- 正确性审查（Ryan）P2 批：frontmatter 交互修复钉 ----------
+
+def test_parse_doc_ignores_yaml_comment_title():
+    """P2-3：_parse_doc 在剥离 frontmatter 后的正文上找标题，
+    YAML 注释行（# ...）不再污染显示名。"""
+    content = (
+        "---\n# 这是 YAML 注释行，不是标题\nversion: '1.0'\n---\n"
+        "# 真实标题\n> 调用规则：测试\n正文"
+    )
+    doc = sd._parse_doc("注释名桩", content)
+    assert doc["name"] == "真实标题"
+    assert doc["description"] == "调用规则：测试"
+    assert doc["content"] == content  # 全文原样返回
+
+
+def test_get_skill_doc_reads_bom_file(tmp_path):
+    """P2-2：Windows 记事本带 BOM 回存的 md 照常解析标题/描述。"""
+    sd.SKILL_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    (sd.SKILL_DOCS_DIR / "bom桩.md").write_text(
+        "\ufeff# BOM 标题\n> 调用规则：测试\n正文", encoding="utf-8")
+    doc = sd.get_skill_doc("bom桩")
+    assert doc is not None and doc["name"] == "BOM 标题"
+    assert doc["description"] == "调用规则：测试"
+
+
+def test_save_skill_doc_foreign_requires_section_tag(tmp_path):
+    """P2-4①：外来章节判定与 lint 口径一致（f\"<{t}>\" 存在），
+    正文散文里提及工具名不标为外来（裸子串误报清偿）。"""
+    # 散文提及工具名（无章节 tag）→ 保存逐字节忠实，不注 source
+    prose = "# 散文桩\n正文提及 resource_prepare_and_analyze 工具名\n"
+    sd.save_skill_doc("散文桩", prose)
+    assert (tmp_path / "skills" / "散文桩.md").read_text(
+        encoding="utf-8") == prose
+    # 含外来章节 tag → 新建文档补 source 来源标记
+    sd.save_skill_doc(
+        "章节桩", "# 章节桩\n<resource_prepare_and_analyze>\n分析正文\n"
+        "</resource_prepare_and_analyze>\n")
+    saved = (tmp_path / "skills" / "章节桩.md").read_text(encoding="utf-8")
+    assert "source: 用户导入" in saved
+
+
+def test_save_skill_doc_unclosed_header_keeps_original(tmp_path):
+    """P2-4②：头部未闭合（收尾 --- 缺失）时不前置新 frontmatter 块，
+    保存原文让 lint 警告暴露，避免新块掩盖未闭合头。"""
+    content = "---\nversion: '1.0'\n# 未闭合头桩\n正文提及工具名但头部未闭合\n"
+    sd.save_skill_doc("未闭合头桩", content)
+    assert (tmp_path / "skills" / "未闭合头桩.md").read_text(
+        encoding="utf-8") == content
+
+
 # ---------- write_document 文档工件 ----------
 
 @pytest.fixture

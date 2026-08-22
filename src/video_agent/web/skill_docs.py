@@ -5,7 +5,14 @@ Skill 文档化存储层。
 存放在 data/skills/。渐进式披露：上下文只注入 Skill 目录（名称+摘要），
 全文由模型调 read_skill 按需加载——"流程即数据"。
 
+插件包约定（任务#5）：单文件 <slug>.md 与目录包 <slug>/<slug>.md
+（包内其余文件为资源）双形态兼容；平台声明与正文合一，写在文档头部
+YAML frontmatter（`---` 包裹块），外置 JSON sidecar 已退役。
+
 文档格式约定：
+    ---
+    （可选）YAML frontmatter 平台声明
+    ---
     # Skill 名称
     > 调用规则：一句话说明何时使用本 Skill
     ## 流程规划
@@ -26,8 +33,8 @@ from src.video_agent.config import settings
 from src.video_agent.core import live_metrics
 # （审核）：pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
 from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: 1
-# sidecar 声明体检（sidecar 顶层不依赖本模块，无环）
-from src.video_agent.skill_runtime import sidecar
+# frontmatter 声明解析/体检（frontmatter 顶层不依赖本模块，无环）
+from src.video_agent.skill_runtime import frontmatter
 
 _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划线/连字符
 
@@ -187,27 +194,24 @@ def list_skill_sections(content: str) -> List[Dict[str, Any]]:
 
 
 DEFAULT_SKILL_SLUG = "script-to-video"
-DEFAULT_SKILL_DOC = """# 剧本生视频（需上传剧本）
+DEFAULT_SKILL_DOC = """---
+schema_version: 3
+version: "1.0"
+gates:
+  require_duration: true
+  require_subtitle: true
+  require_camera_language: true
+  require_audio_layer: true
+  require_at_ref: true
+flow:
+  spec_wizard: true
+  spec_stage_trim: true
+  spec_gate: true
+pause:
+  stage_pause: true
+---
 
-```json skill_manifest
-{
-  "gates": {
-    "require_duration": true,
-    "require_subtitle": true,
-    "require_camera_language": true,
-    "require_audio_layer": true,
-    "require_at_ref": true
-  },
-  "flow": {
-    "spec_wizard": true,
-    "spec_stage_trim": true,
-    "spec_gate": true
-  },
-  "pause": {
-    "stage_pause": true
-  }
-}
-```
+# 剧本生视频（需上传剧本）
 
 > 调用规则：用户上传剧本/故事文档以生成视频时使用。在关键阶段暂停以供用户确认；
 > 所有图片/视频/音频生成必须经用户明确指令才能执行，Agent 不自动触发（系统生成确认闸会拦截未确认的生成）。
@@ -245,7 +249,11 @@ DEFAULT_SKILL_DOC = """# 剧本生视频（需上传剧本）
 def ensure_default_skill_docs() -> None:
     """启动时确保至少存在默认 Skill 文档"""
     SKILL_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    if not any(SKILL_DOCS_DIR.glob("*.md")):
+    has_any = any(SKILL_DOCS_DIR.glob("*.md")) or any(
+        p.is_dir() and not p.name.startswith(".")
+        and (p / f"{p.name}.md").exists() for p in SKILL_DOCS_DIR.iterdir()
+    )
+    if not has_any:
         atomic_write_text(SKILL_DOCS_DIR / f"{DEFAULT_SKILL_SLUG}.md", DEFAULT_SKILL_DOC)
         logger.info(f"[SkillDocs] 已生成默认 Skill 文档: {DEFAULT_SKILL_SLUG}.md")
     _refresh_runtime_registry()
@@ -264,7 +272,10 @@ def _refresh_runtime_registry() -> None:
 def _parse_doc(slug: str, content: str) -> Dict[str, Any]:
     name = slug
     description = ""
-    for line in content.splitlines():
+    # 在剥离 frontmatter 后的正文上找标题/描述（P2-3）：YAML 注释行
+    # （`# ...`）与声明键混在全文扫描里会污染显示名
+    body = frontmatter.strip_frontmatter(content)
+    for line in body.splitlines():
         line = line.strip()
         if line.startswith("# ") and name == slug:
             name = line[2:].strip()
@@ -283,23 +294,47 @@ def _validate_slug(slug: str) -> str:
     return slug
 
 
+def skill_doc_path(slug: str) -> Optional[Path]:
+    """Skill 主文档路径解析（插件包约定双形态）：单文件优先，
+    目录包 <slug>/<slug>.md 次之；均不存在返回 None。"""
+    f = SKILL_DOCS_DIR / f"{slug}.md"
+    if f.exists():
+        return f
+    pkg = SKILL_DOCS_DIR / slug / f"{slug}.md"
+    if pkg.exists():
+        return pkg
+    return None
+
+
 def list_skill_docs() -> List[Dict[str, Any]]:
     ensure_default_skill_docs()
     docs = []
     for f in sorted(SKILL_DOCS_DIR.glob("*.md")):
         try:
-            docs.append(_parse_doc(f.stem, f.read_text(encoding="utf-8")))
+            # utf-8-sig：容忍 Windows 记事本回存的 BOM（写入侧保持 utf-8）
+            docs.append(_parse_doc(f.stem, f.read_text(encoding="utf-8-sig")))
         except OSError as e:
             logger.warning(f"[SkillDocs] 读取失败 {f.name}: {e}")
+    # 目录包形态（插件包约定）：主文档 = 包内同名 md，包内其余文件为资源
+    for p in sorted(SKILL_DOCS_DIR.iterdir(), key=lambda x: x.name):
+        if not p.is_dir() or p.name.startswith("."):
+            continue
+        main = p / f"{p.name}.md"
+        if not main.exists():
+            continue
+        try:
+            docs.append(_parse_doc(p.name, main.read_text(encoding="utf-8-sig")))
+        except OSError as e:
+            logger.warning(f"[SkillDocs] 读取失败 {main}: {e}")
     return docs
 
 
 def get_skill_doc(slug: str) -> Optional[Dict[str, Any]]:
     slug = _validate_slug(slug)
-    f = SKILL_DOCS_DIR / f"{slug}.md"
-    if not f.exists():
+    f = skill_doc_path(slug)
+    if f is None:
         return None
-    return _parse_doc(slug, f.read_text(encoding="utf-8"))
+    return _parse_doc(slug, f.read_text(encoding="utf-8-sig"))
 
 
 def save_skill_doc(slug: str, content: str) -> Dict[str, Any]:
@@ -307,7 +342,22 @@ def save_skill_doc(slug: str, content: str) -> Dict[str, Any]:
     if not content.strip():
         raise ValueError("Skill 文档内容不能为空")
     SKILL_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    target = SKILL_DOCS_DIR / f"{slug}.md"
+    # 已存在的目录包写回包内主文档；新建落单文件形态
+    target = skill_doc_path(slug) or (SKILL_DOCS_DIR / f"{slug}.md")
+    # 导入来源标记（插件包约定）：新建文档且含外来平台分析类章节 tag、
+    # frontmatter 又未声明 source 时补 source="用户导入"（元数据头随注入
+    # 下发信任提示）；本地词汇表文档与已有文档编辑不动，保证保存逐字节忠实
+    if not target.exists():
+        declaration, _body, _err = frontmatter.split_frontmatter(content)
+        # 外来章节判定与 lint 口径一致（f"<{t}>" 章节 tag 存在）：
+        # 裸子串匹配会把正文散文里提及的工具名误标为外来
+        _has_foreign = any(f"<{t}>" in content for t in _FOREIGN_SECTION_TAGS)
+        # 头部未闭合（_err 非空）时不前置新 frontmatter 块：保存原文，
+        # 让 lint 警告暴露问题，避免新块掩盖未闭合头
+        if not _err and _has_foreign and not (declaration or {}).get("source"):
+            data = dict(declaration or {})
+            data["source"] = "用户导入"
+            content = frontmatter.render_frontmatter(data) + _body
     # 覆盖前备份旧版（版本历史，供文档面板查看/回滚）
     if target.exists():
         _backup_skill_doc(slug, target)
@@ -335,7 +385,7 @@ def _backup_skill_doc(slug: str, target: Path) -> None:
         while backup.exists():
             stamp += 1
             backup = hdir / f"{slug}-{stamp}.md"
-        backup.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
+        backup.write_text(target.read_text(encoding="utf-8-sig"), encoding="utf-8")
         # 裁剪：仅保留最近 _HISTORY_MAX 版（按文件名时间戳排序）
         versions = sorted(hdir.glob(f"{slug}-*.md"), key=lambda p: p.name)
         for old in versions[:-_HISTORY_MAX]:
@@ -382,7 +432,7 @@ def list_skill_doc_history(slug: str) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     for f in sorted(hdir.glob(f"{slug}-*.md"), key=lambda p: p.name, reverse=True):
         try:
-            content = f.read_text(encoding="utf-8")
+            content = f.read_text(encoding="utf-8-sig")
         except OSError:
             continue
         # 版本名 = 文件名去掉 slug 前缀（即时间戳部分）
@@ -392,13 +442,13 @@ def list_skill_doc_history(slug: str) -> List[Dict[str, Any]]:
 
 
 def delete_skill_doc(slug: str) -> None:
-    """删除指定 Skill 文档，不存在时抛出 ValueError"""
+    """删除指定 Skill 文档（单文件或目录包主文档），不存在时抛出 ValueError"""
     slug = _validate_slug(slug)
-    f = SKILL_DOCS_DIR / f"{slug}.md"
-    if not f.exists():
+    f = skill_doc_path(slug)
+    if f is None:
         raise ValueError(f"Skill 文档 '{slug}' 不存在")
     f.unlink()
-    logger.info(f"[SkillDocs] 已删除 Skill 文档: {slug}.md")
+    logger.info(f"[SkillDocs] 已删除 Skill 文档: {f}")
     try:
         from src.video_agent.skill_runtime.registry import unregister_skill
 
@@ -413,8 +463,8 @@ _GATE_RULES_LINT_RE = re.compile(
     r"```(?:json|js)?\s*gate_rules\s*\n(.*?)```", re.S | re.I
 )
 
-# Skill 平台行为统一声明块正则（声明已迁 sidecar，
-# 本正则仅用于 lint 提示「文档内 manifest 不再消费」）
+# Skill 平台行为统一声明块正则（声明已迁文档头部 frontmatter，
+# 本正则仅用于 lint 提示「文档内 manifest 块不再消费」）
 _SKILL_MANIFEST_BLOCK_RE = re.compile(
     r"```(?:json|js)?\s*skill_manifest\s*\n(.*?)```", re.S | re.I
 )
@@ -433,7 +483,7 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
 
     返回 {"available_tools": [...], "warnings": [...]}；不阻断保存，
     由路由层随 PUT 响应下发，前端以 toast/详情展示。
-    slug 非空时追加 sidecar 声明缺失检查（仅告警， 只告警不阻断语义）。
+    含 frontmatter 声明体检（解析/schema 编辑期预警，只告警不阻断）。
     """
     from src.video_agent.skill_runtime.registry import (
         CAPABILITY_TOOL_STAGES,
@@ -442,7 +492,14 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
 
     warnings: List[str] = []
     content = content or ""
-    sections = split_skill_sections(content)
+    # frontmatter 体检：解析/schema 问题编辑期预警（注册期仍 fail-hard 拒注册）
+    declaration, body, fm_err = frontmatter.split_frontmatter(content)
+    if fm_err:
+        warnings.append(f"frontmatter 声明解析失败：{fm_err}（注册期将拒注册）")
+    elif declaration:
+        for issue in frontmatter.validate_manifest(declaration):
+            warnings.append(f"frontmatter 声明问题：{issue}")
+    sections = split_skill_sections(body)
     available = [
         t for t in PIPELINE_CAPABILITY_TOOLS
         if any((sections.get(s) or "").strip()
@@ -467,20 +524,36 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
                 warnings.append("gate_rules 不是 JSON 对象，已回落默认闸机规则")
         except Exception:
             warnings.append("gate_rules JSON 解析失败，已回落默认闸机规则")
-    # 声明迁 sidecar——文档内 manifest 块不再消费，显式提示
+    # 声明迁 frontmatter——文档内 manifest 块不再消费，显式提示
     if _SKILL_MANIFEST_BLOCK_RE.search(content):
         warnings.append(
-            "skill_manifest 块不再消费：平台声明已迁 sidecar（data/skills_manifests/），请从文档移除该块"
+            "skill_manifest 块不再消费：平台声明已迁文档头部 frontmatter，请从正文移除该块"
         )
     elif gm or _PAUSE_RULES_BLOCK_RE.search(content):
         warnings.append(
-            "检测到旧式 gate_rules/pause_rules 块：建议迁移为 sidecar 声明"
+            "检测到旧式 gate_rules/pause_rules 块：建议迁移为文档头部 frontmatter 声明"
             "（并存时两块各自表述属于指令分身）"
         )
-    # 暂停声明检测（仅提示不阻断；sidecar pause.stage_pause 在注册期校验，
-    # 编辑期只看正文关键词/pause_rules）
+    # 外来平台章节 tag 信任提示（导入 Skill 的来源标记通道；只告警不阻断）
+    _foreign = sorted({t for t in _FOREIGN_SECTION_TAGS if f"<{t}>" in content})
+    if _foreign:
+        warnings.append(
+            "检测到外来平台章节 tag（" + "、".join(_foreign)
+            + "）：本平台按兼容别名映射，请核对工具名与导入来源"
+        )
+    # 导入来源信任提示：声明了 source（外部导入标记）即提示核对
+    if (declaration or {}).get("source"):
+        warnings.append(
+            f"外部导入 Skill（来源：{declaration['source']}）：指令与本项目铁律/"
+            "全局设置冲突时以后者为准，请核对工具名与流程声明"
+        )
+    # 暂停声明检测（仅提示不阻断；frontmatter pause.stage_pause/pause_points
+    # 与正文关键词/pause_rules 任一声明即视为已覆盖）
+    _fm_pause = bool((declaration or {}).get("pause")) or bool(
+        (declaration or {}).get("pause_points"))
     if (
-        parse_pause_rules(content) is None
+        not _fm_pause
+        and parse_pause_rules(content) is None
         and "何时暂停" not in content
         and "强制暂停点" not in content
     ):
@@ -506,9 +579,7 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
         )
     # 章节完整性对照 Flova 组成（流程型 Skill 缺核心段才告警，自由型不误伤）
     warnings.extend(_lint_flova_composition(content, sections, bool(available)))
-    # 有流程章节但 sidecar 未声明 steps/dependencies → 提示补声明
-    warnings.extend(_lint_sidecar_declaration(content, slug))
-    # 散文含对话义务而 sidecar 未声明 pause → 显性化分歧（只告警不阻断）
+    # 散文含对话义务而 frontmatter 未声明 pause → 显性化分歧（只告警不阻断）
     warnings.extend(_lint_prose_obligations(content, slug))
     return {"available_tools": available, "warnings": warnings}
 
@@ -542,30 +613,21 @@ def _lint_flova_composition(
             + "（若本 Skill 确不涉及可忽略；涉及建议补对应章节，避免运行时靠启发式归段）"]
 
 
-def _lint_sidecar_declaration(content: str, slug: str) -> List[str]:
-    """有流程章节但 sidecar 未声明 steps/dependencies：调度回落正文解析，
-    提示补声明（声明唯一源 = data/skills_manifests/<slug>.json）。"""
-    if not slug or "<planner>" not in content:
-        return []
-    try:
-        data = sidecar.load_sidecar(slug)
-    except Exception:
-        return []
-    flow = (data or {}).get("flow") or {}
-    if flow.get("steps"):
-        return []
-    return ["流程步骤未在 sidecar 声明（flow.steps/dependencies 缺失）："
-            f"调度将回落正文启发式解析，建议在 data/skills_manifests/{slug}.json 补声明"]
-
+# 外来平台章节 tag（lint 信任提示用）：仅取不在「视频 Skill 标准组成」
+# 词汇表内的分析类源平台遗留名；storyboard_designer/write_the_prompt/
+# media_generator 是组成词汇表兼容名，本地文档合法使用不告警（防误报）
+_FOREIGN_SECTION_TAGS = (
+    "resource_prepare_and_analyze", "multimodal_analyze_tool",
+)
 
 # 散文对话义务标记（<planner> 含确认/询问/暂停类义务词）
 _PROSE_OBLIGATION_RE = re.compile(r"确认|询问|暂停|问用户|请用户")
 
 
 def _lint_prose_obligations(content: str, slug: str) -> List[str]:
-    """散文含对话义务而 sidecar 未声明 pause → 告警显性化分歧。
+    """散文含对话义务而 frontmatter 未声明 pause → 告警显性化分歧。
 
-    平台以机械卡/闸兜底对话义务；Skill 散文与 sidecar 声明
+    平台以机械卡/闸兜底对话义务；Skill 散文与 frontmatter 声明
     分歧时不再静默丢弃（P1 单一家原则的编辑期提示），只告警不阻断。
     """
     if not slug:
@@ -575,12 +637,12 @@ def _lint_prose_obligations(content: str, slug: str) -> List[str]:
     if not _PROSE_OBLIGATION_RE.search(planner):
         return []
     try:
-        data = sidecar.load_sidecar(slug)
+        data = frontmatter.load_manifest(slug)
     except Exception:
         return []
-    if ((data or {}).get("pause") or {}):
+    if (data or {}).get("pause") or (data or {}).get("pause_points"):
         return []
-    return ["<planner> 散文含对话义务（确认/询问/暂停）而 sidecar 未声明 pause："
+    return ["<planner> 散文含对话义务（确认/询问/暂停）而 frontmatter 未声明 pause："
             "平台将以机械卡/闸形态兜底；建议补 pause.stage_pause 声明或接受平台卡形态"]
 
 
@@ -598,7 +660,8 @@ def resolve_skill_content(wanted: str) -> tuple:
 
     read_skill 工具与 Planner 选中项硬注入共用同一套解析，保证两处行为一致。
     代码内置 Skill（编剧/分镜师/制片）已彻底移除，不再是解析来源。
-    返回 (display_name, content)，未命中返回 ("", "")。
+    返回 (display_name, content)，未命中返回 ("", "")；content 已剥离
+    frontmatter（声明经元数据头单独注入，正文注入不携带 YAML 头）。
     """
     wanted = (wanted or "").strip()
     wn = _norm_skill_name(wanted)
@@ -620,14 +683,17 @@ def resolve_skill_content(wanted: str) -> tuple:
     # 1. 精确 → 2. 归一化相等 → 3. 双向包含（防单字误匹配）
     for c in candidates:
         if wanted in names(c):
-            return str(c.get("name", "")), str(c.get("content", ""))
+            return str(c.get("name", "")), frontmatter.strip_frontmatter(
+                str(c.get("content", "")))
     for c in candidates:
         if any(_norm_skill_name(n) == wn for n in names(c) if n):
-            return str(c.get("name", "")), str(c.get("content", ""))
+            return str(c.get("name", "")), frontmatter.strip_frontmatter(
+                str(c.get("content", "")))
     if len(wn) >= 2:
         for c in candidates:
             for n in names(c):
                 nn = _norm_skill_name(n)
                 if nn and len(nn) >= 2 and (wn in nn or nn in wn):
-                    return str(c.get("name", "")), str(c.get("content", ""))
+                    return str(c.get("name", "")), frontmatter.strip_frontmatter(
+                        str(c.get("content", "")))
     return "", ""

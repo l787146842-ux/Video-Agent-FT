@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.guard_pipeline import prompt_write_verdict
 from src.video_agent.skill_runtime.registry import resolve_entry, parse_pause_rules
-from src.video_agent.skill_runtime.sidecar_schema import PAUSE_TRIGGER_VALUES
+from src.video_agent.skill_runtime.manifest_schema import PAUSE_TRIGGER_VALUES
 
 
 def strip_draft_prompt(draft: Dict[str, Any]) -> bool:
@@ -81,7 +81,7 @@ def skill_requires_stage_pause(skill_name: str) -> bool:
     return bool(skill_pause_points(skill_name))
 
 
-# stage_pause（bool）机械转暂停点清单的两个锚点（与 scripts/migrate_manifests_v3.py
+# stage_pause（bool）机械转暂停点清单的两个锚点（与 scripts/archive/migrate_manifests_v3.py
 # V3_ANCHOR_PAUSE_POINTS 同口径：迁移完成后两侧语义自然合流，id 与 trigger 同名）
 _STAGE_PAUSE_ANCHOR_POINTS: Tuple[Dict[str, Any], ...] = (
     {"id": "storyboard_structure_ready", "trigger": "storyboard_structure_ready"},
@@ -128,7 +128,7 @@ def skill_pause_points(skill_name: str) -> List[Dict[str, Any]]:
 
     未命中任一级返回空表（不要求暂停）。每项含 id/trigger，
     batch_boundary 附 description、free_text 附 prose（trigger 白名单与
-    sidecar_schema 同源）。"""
+    manifest_schema 同源）。"""
     entry = resolve_entry(skill_name)
     if entry is None:
         return []

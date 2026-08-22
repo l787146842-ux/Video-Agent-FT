@@ -5,7 +5,6 @@ import { stopAgentStream } from '@/hooks/use-sse';
 import { uploadAndInsert, handleUrlDrop } from '@/lib/chat-input-media';
 import { useChatEditor } from '@/lib/chat-editor';
 import { startQueuedAutosend } from '@/lib/chat-queue-autosend';
-import { t } from '@/lib/locale';
 import { agentSkill } from '@/stores/agent-prefs';
 import { openDocsPanel } from '@/stores/docs';
 import { ChatInputToolbar } from './ChatInputToolbar';

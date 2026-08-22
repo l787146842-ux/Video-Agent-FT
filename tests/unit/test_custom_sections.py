@@ -2,7 +2,7 @@
 """P3-15 Skill 表达力破单一模板：custom_sections 自定义章节通道。
 
 钉死四件事：
-① sidecar_schema 校验——未声明合法、非法声明 fail-closed；
+① manifest_schema 校验——未声明合法、非法声明 fail-closed；
 ② registry 注册——声明+章节可解析 → skill_section_run 进 available_tools；
 ③ 回落——未声明/解析不到/非法声明者维持现行为（不产生半死通道）；
 ④ 接线——执行器退役后含自定义章节的短 Skill 走通用主路径全文直注，
@@ -12,14 +12,14 @@ import pytest
 
 import src.video_agent.web.skill_docs as sd
 from src.video_agent.core.prompt_builder import PromptBuilder
+from src.video_agent.skill_runtime import frontmatter
+from src.video_agent.skill_runtime import manifest_schema
 from src.video_agent.skill_runtime import registry
-from src.video_agent.skill_runtime import sidecar
-from src.video_agent.skill_runtime import sidecar_schema
 
 
 @pytest.fixture(autouse=True)
 def isolate(tmp_path, monkeypatch):
-    """每个测试独立 Skill 目录 + 清空运行时注册表（sidecar 随目录同根）。"""
+    """每个测试独立 Skill 目录 + 清空运行时注册表（frontmatter 随文档同根）。"""
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", tmp_path / "skills")
     registry.reset_registry()
     yield
@@ -41,15 +41,15 @@ _DOC_CUSTOM = (
 
 
 def test_schema_custom_sections_valid_and_undeclared():
-    assert sidecar_schema.validate_sidecar_data(
+    assert manifest_schema.validate_manifest_data(
         {"custom_sections": {"音色设计": "skill_section_run"}}) == []
-    assert sidecar_schema.validate_sidecar_data({}) == []
-    assert sidecar_schema.validate_sidecar_data(None) == []
+    assert manifest_schema.validate_manifest_data({}) == []
+    assert manifest_schema.validate_manifest_data(None) == []
 
 
 def test_schema_custom_sections_fail_closed():
     def _issues(manifest):
-        return [i for i in sidecar_schema.validate_sidecar_data(manifest)
+        return [i for i in manifest_schema.validate_manifest_data(manifest)
                 if "custom_sections" in i]
 
     # 非对象
@@ -66,7 +66,7 @@ def test_schema_custom_sections_fail_closed():
 
 def test_custom_sections_registers_generic_executor():
     _write("interview", _DOC_CUSTOM)
-    sidecar.write_sidecar(
+    frontmatter.write_manifest(
         "interview", {"custom_sections": {"tone_design": "skill_section_run"}})
     entry = registry.get_entry("interview")
     assert entry is not None
@@ -85,7 +85,7 @@ def test_custom_sections_coexist_with_fixed_tools():
         "<my_tag>\n自定义章节\n</my_tag>\n"
     )
     _write("mix", content)
-    sidecar.write_sidecar(
+    frontmatter.write_manifest(
         "mix", {"custom_sections": {"my_tag": "skill_section_run",
                                     "planning": "skill_section_run"}})
     entry = registry.get_entry("mix")
@@ -108,7 +108,7 @@ def test_custom_sections_undeclared_falls_back():
 def test_custom_sections_unresolvable_not_registered():
     """声明了但文档无对应章节：fail-closed，不注册半死通道。"""
     _write("hollow", "# 空\n> 调用规则：测试\n正文\n")
-    sidecar.write_sidecar(
+    frontmatter.write_manifest(
         "hollow", {"custom_sections": {"不存在章节": "skill_section_run"}})
     entry = registry.get_entry("hollow")
     assert "skill_section_run" not in entry.available_tools
@@ -120,14 +120,14 @@ def test_custom_sections_illegal_declaration_fail_hard():
     注册期直接拒注册（替代旧「告警照注册、消费端忽略」）；
     注册后改坏再 refresh 同样摘除条目（与 save_skill_doc 刷新链路同源）。"""
     _write("bad", _DOC_CUSTOM)
-    sidecar.write_sidecar(
+    frontmatter.write_manifest(
         "bad", {"custom_sections": {"tone_design": "script_analyze"}})
-    # save_skill_doc 时（sidecar 未写）已注册；改坏后 refresh 触发 fail-hard
+    # save_skill_doc 时（frontmatter 未写）已注册；改坏后 refresh 触发 fail-hard
     assert registry.refresh_skill("bad") is None
     assert registry.get_entry("bad") is None
     # 合法声明照常注册
     _write("livebad", _DOC_CUSTOM)
-    sidecar.write_sidecar(
+    frontmatter.write_manifest(
         "livebad", {"custom_sections": {"tone_design": "skill_section_run"}})
     entry = registry.get_entry("livebad")
     assert entry is not None and entry.custom_sections
@@ -141,7 +141,7 @@ def test_generic_block_full_text_includes_custom_sections():
     走通用主路径全文直注——章节原文随全文进 system prompt，
     与执行器形态的「章节不进 prompt」正好反转（断言不弱化）。"""
     _write("interview2", _DOC_CUSTOM)
-    sidecar.write_sidecar(
+    frontmatter.write_manifest(
         "interview2", {"custom_sections": {"tone_design": "skill_section_run"}})
     pb = PromptBuilder(
         lambda: sd,

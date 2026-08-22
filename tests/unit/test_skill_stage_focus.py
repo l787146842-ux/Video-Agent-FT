@@ -66,7 +66,9 @@ def test_generic_block_full_text_instead_of_executor_list():
     pb = _pb(state)
     block = pb.build_selected_skill_block("AI-短剧一站式生成")
     # 全文直注：章节原文进 prompt（执行器形态的「全文不注入」已反转）
-    assert "使用 Seedance 2.5" in block
+    # 锚点随任务 #12 交叉验证更新：James 批 16 Skill 内容清退移除「Seedance 2.5」
+    # 供应商字样，改钉清退后文档中稳定存在的章节原文（planner 启动协议）。
+    assert "启动协议" in block
     # 执行器清单措辞随退役删除
     assert "已注册独立执行器" not in block
     assert "== 当前 Skill 的流程基线" not in block

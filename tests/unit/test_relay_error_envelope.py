@@ -111,8 +111,9 @@ def test_friendly_queue_branch_before_auth():
 # ---------- 批 B：气泡长词换行锁源 ----------
 
 def test_chat_markdown_wraps_long_tokens():
-    # P4-23：chat.css 拆分为 @import 入口，两条换行规则现居 chat-feed.css（消息流段）
-    css = (ROOT / "src/web/styles/chat-feed.css").read_text(encoding="utf-8")
+    # P4-23：chat.css 拆分为 @import 入口；任务 #10 再按卡片族/区块拆分，
+    # 两条换行规则现居 chat-feed-core.css（消息流核心段）
+    css = (ROOT / "src/web/styles/chat-feed-core.css").read_text(encoding="utf-8")
     line = next(l for l in css.splitlines() if l.strip().startswith(".chat-markdown"))
     assert "overflow-wrap: anywhere" in line
     assert "word-break: break-word" in line

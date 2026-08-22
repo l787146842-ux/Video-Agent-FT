@@ -84,7 +84,7 @@ export function AssetLibraryCanvasTab(props: {
           <FiAlertCircle size={22} />
           <p>{t('rp.asset.canvasOffline')}</p>
           <p class="asset-modal-status-hint">{t('rp.asset.canvasOfflineHint')}</p>
-          <button type="button" class="btn-secondary" onClick={props.onReconnect}>{t('rp.asset.reconnect')}</button>
+          <button type="button" class="btn-secondary" onClick={() => props.onReconnect()}>{t('rp.asset.reconnect')}</button>
         </div>
       </Show>
 

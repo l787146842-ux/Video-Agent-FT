@@ -36,7 +36,7 @@
 - **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
 - **控制流主体回归（2026-08-21 裁决，ADR-0004）**：模型永远唯一行动主体——每轮做什么由模型接到用户消息后发起工具调用（带附件首条消息也由模型接手，系统不静默自动分析）；`core/workflow_runtime.py` 降级为**账本 + 裁判数据层**（Skill 激活编译 `WorkflowDefinition`，canonical slug + revision + content hash，源 = sidecar 声明，`validate_sidecar` 注册期门禁；持久化 `WorkflowRun`，**仅 runtime reducer 可改**，StateManager 仍唯一写入点 Rule3；完成度只认客观探针），不发起任何行动；ADR-0003 机械直跑/审批直跑退役（驱动符号登记 `check_legacy_orchestration` 防复活）。顺序保障 = 刹车不是方向盘：阶段表/依赖图/`platform.stage_precondition` 闸内嵌工具执行路径首位，模型越阶即拒收回喂。「不暂停连跑」= 自主性档位（用户指令/开关授予模型豁免非平台硬暂停点；平台硬闸任何档位必停，Context ≠ Consent，授权留痕）。**原子轮提交**：一轮只提交一个 `TurnResult`（turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项（暂停卡唯一发行主体 = 模型 `workflow_pause`，单一活跃暂停槽位互斥，重复暂停拒收留痕）；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
 - **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
-- **层级例外（已收敛）**：`web/action_executor.py` 因依赖 web 生成管线暂留 web 层；core→web 顶层 import 一律禁止（经构造注入装配）
+- **层级例外（已清偿，D-01 2026-08-22）**：动作执行器已下沉 `core/action_executor.py`，对 web 生成管线/供应商配置的依赖倒置为 `core/ports.py` 端口、web 装配点注入（`web/port_wiring.py`）；core→web 任何 import（含延迟/TYPE_CHECKING）一律禁止，web 侧仅留 re-export 壳待阶段二清退
 
 ### Rule 3: StateManager 唯一写入点
 - `state/manager.py::StateManager` 是状态的**唯一写入点**；复杂嵌套操作允许直接操作 `state_dict`，但完成后**必须 `save()`**
@@ -111,7 +111,7 @@
 - 新工具未声明风险级别视为 high（deny-by-default），不得静默放行。
 
 ### 2.8 Skill 宪法（Skill = 注册表 + 通用主路径）
-- Skill 上传/保存/删除 = `data/skills/*.md` 唯一数据源 + 自动解析 manifest（v3 sidecar）→ 刷新注册表；下拉框数据源不变。
+- Skill 上传/保存/删除 = `data/skills/*.md` 唯一数据源 + 自动解析文档头部 frontmatter 声明（v3，任务#5 合一）→ 刷新注册表；下拉框数据源不变。插件包约定：单文件与目录包 `<slug>/<slug>.md` 双形态兼容。
 - 管线阶段由通用主路径直走平台工具：`prompt_builder` 按预算分级注入（≤阈值全文直注；超长 planner 章节+章节目录），无执行器子代理（任务#36 B5 一步退役）。
 - 关键步骤失败**禁止绕过回喂/虚报**：`fc_tool_runner` 按客观探针（document_write 等工作台状态）覆写完成文案，模型不得假装已执行。
 - 注册表是数据（policy-as-data），不得散落硬编码；外部工具接入层（MCP）为任务#37 预留扩展点，不得在注册表外私设工具通道。
@@ -232,15 +232,16 @@ src/video_agent/
 │   ├── guard_pipeline.py   ← 闸机管线（2.0，动作判定唯一入口）
 │   ├── prompt_builder.py   ← 上下文组装；token_budget.py ← 窗口/截断
 │   ├── coupling_registry.py ← 13.7 耦合表机器可读化（test_coupling_registry 钉死）
+│   ├── action_executor.py  ← 动作执行器（D-01 下沉）；生成动作域 action_gen.py；web 依赖经 ports.py 倒置
 │   └── tracer.py           ← 审计链路
 ├── skill_runtime/
 │   ├── registry.py / guard.py / progress.py
-│   └── sidecar.py / sidecar_schema.py ← manifest v3 sidecar 单一事实源
+│   └── frontmatter.py / manifest_schema.py ← 文档头部 frontmatter 声明单一事实源（任务#5，外置 sidecar 退役）
 │   （executors/exec_* 执行器族已随任务#36 B5 一步退役，防复活见 check_legacy_orchestration；
 │     MCP 外部工具接入层为任务#37 预留扩展点）
 ├── web/
 │   ├── app.py / chat_service.py(+chat_opening/chat_consume) / sse.py / sse_protocol.py
-│   ├── action_executor.py  ← 动作执行器；生成动作域在 action_gen.py
+│   ├── port_wiring.py ← core 端口装配（D-01）；action_executor.py 等 4 件为 re-export 壳待清退
 │   ├── task_manager.py / skill_docs.py / routes/
 ├── state/  manager.py（唯一写入点）/ models.py / storyboard_ops.py / context_builder.py
 ├── adapters/  tools/  memory/  config.py  exceptions.py  utils/

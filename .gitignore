@@ -3,14 +3,14 @@
 API/.env
 *.env.local
 
-# 运行时数据（L-0821C 根因修复：skill 文档与 sidecar 声明是配置资产，
-# 曾被 data/ 整体忽略导致新文件不入仓、改动无法回滚；
+# 运行时数据（L-0821C 根因修复：skill 文档（含头部 frontmatter 声明）是配置资产，
+# 曾被 data/ 整体忽略导致新文件不入仓、改动无法回滚；任务#5 声明与正文合一，
+# 外置 skills_manifests 已退役；
 # 运行时状态文件仍被 data/* 覆盖忽略，api_providers 含密钥绝不入库）
 workspace/
 logs/
 data/*
 !data/skills/
-!data/skills_manifests/
 !data/mcp_servers.json.example
 resp.txt
 server_log.txt
@@ -54,6 +54,8 @@ static/dist/
 
 # 测试产物
 coverage/
+.coverage
+coverage.xml
 test-results/
 playwright-report/
 .playwright/

@@ -7,19 +7,20 @@ Planner — 对话式 Agent 的唯一入口（Rule1）。
 - 动作通道唯一 = FC 工具调用（4-4 双轨退役，ADR-0001）
 - 多步循环（MAX_STEPS），LLM 可请求 continue 推进下一轮
 - 流式通过 AsyncGenerator 穿透（SSE）
+
+D-02 拆分：单轮 llm_call/FC 响应消费/回喂治理/上下文预算装配切出
+core/turn_executor.py（TurnExecutor）；本文件保留入口编排、契约
+数据结构、工具裁剪与轮末组装委托。
 """
 import asyncio
-import json
-import time
 import uuid
 from dataclasses import dataclass, field, replace as dc_replace
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple, Union
 
 from loguru import logger
 
-from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse, StreamChunk
+from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
 from src.video_agent.config import settings
-from src.video_agent.core.token_budget import context_window_for_model, estimate_messages_tokens, truncate_messages
 from src.video_agent.memory import MemoryManager
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
@@ -28,37 +29,25 @@ from src.video_agent.tools.manager import ToolManager
 from src.video_agent.tools.mcp import catalog as mcp_catalog
 from src.video_agent.utils.prompts import load_prompt, load_prompt_section, render_prompt
 from src.video_agent.core.agent_loop import MAX_STEPS, run_agent_loop
-from src.video_agent.core.stop_signal import (
-    STOP_PHASE_TOOL_EXECUTING,
-    AgentStoppedError,
-    current_stop_id,
-    is_stop_requested,
-)
 from src.video_agent.core.fc_tool_runner import (
     FCExecuteResult,
     FCToolRunner,
-    compress_prior_feedback,
-    digest_projected_tool_results,
-    format_tool_results,
-    should_compress_feedback,
-    strip_prior_feedback_images,
 )
 from src.video_agent.core.prompt_builder import PromptBuilder
+# 动作执行器与操作描述已下沉 core（D-01）；顶层导入替代旧 web 延迟导入
+from src.video_agent.core.action_executor import StateOperationExecutor
+from src.video_agent.core.action_descriptions import aggregate_action_log
+from src.video_agent.core.ports import skill_docs_port
 # 轮末组装域切入 planner_output
 from src.video_agent.core.planner_output import assemble_response
 from src.video_agent.core import pipeline_orchestrator
 from src.video_agent.core import prompt_gates
 # 拆分协作臂：豁免消费/确定性分诊/FC 响应合并（同名委托保持既有调用/测试路径）
 from src.video_agent.core import fc_response, planner_gate_session, planner_triage
-from src.video_agent.core.live_metrics import record_degradation, record_live_context
-from src.video_agent.core.sse_events import (
-    SSE_REASONING_DELTA,
-    SSE_STATUS,
-    SSE_TOOL_FINISHED,
-    SSE_TOOL_STARTED,
-    status_event,
-)
-from src.video_agent.core.tracer import AgentTracer
+# D-02 拆分协作臂：单轮执行 + FC 响应消费 + 回喂治理 + 上下文预算装配
+from src.video_agent.core.turn_executor import TurnExecutor
+from src.video_agent.core.live_metrics import record_degradation
+from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # Workflow Runtime（宪法 Rule2 主体回归，ADR-0004）：账本 + 裁判数据层
 from src.video_agent.core import workflow_runtime
@@ -239,12 +228,16 @@ class Planner:
         self._fc_runner = FCToolRunner(self.tool_manager)
         self._fc_runner.chat_provider = self.chat_provider
         self._fc_runner.chat_model = self.chat_model
+        # 拆出的协作臂（D-02）：单轮执行 + FC 响应消费 + 回喂治理 +
+        # 上下文预算装配；handle_message 每轮 bind_turn 后委托 llm_call，
+        # 摘要路径复用其 call_llm（预算管线同一实现）
+        self._turn_executor = TurnExecutor(self)
 
     def _get_skill_docs(self):
-        """Skill 文档提供者：优先注入实例，缺省延迟导入 web.skill_docs（Rule2 登记例外）"""
+        """Skill 文档提供者：优先注入实例，缺省经 core 端口取 web 层实现
+        （D-01 依赖倒置：装配点注入，core 不 import web）"""
         if self._skill_docs is None:
-            from src.video_agent.web import skill_docs as sd
-            self._skill_docs = sd
+            self._skill_docs = skill_docs_port()
         return self._skill_docs
 
     # 阶段完成引导兜底（agent_loop 层 9）：执行器跑完但模型未暂停时，
@@ -301,11 +294,6 @@ class Planner:
 
         return _degrade
 
-    def _context_window(self) -> int:
-        """当前模型的上下文窗口（按模型名查表，缺省回落全局配置）"""
-        model = getattr(self.llm_adapter, "model", "") if self.llm_adapter else ""
-        return context_window_for_model(model, provider_id=getattr(self, "chat_provider", "") or "")
-
     # ---------- 暂停卡结构化签发（单一实现，两个汇流点共用） ----------
     def _issue_pause(self, response: "PlannerResponse") -> None:
         """为携带 confirmation 的响应签发 pause_id 并登记 interaction.active_pause。
@@ -361,10 +349,9 @@ class Planner:
         # 会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
         self._chat_thinking_level = context.thinking_level or ""
 
-        # 构建 executor（文本解析路径用）：优先注入的工厂，缺省延迟导入 web 层实现
+        # 构建 executor（文本解析路径用）：优先注入的工厂，缺省 core 层实现（D-01 下沉）
         factory = self.executor_factory
         if factory is None:
-            from src.video_agent.web.action_executor import StateOperationExecutor
             factory = StateOperationExecutor
         executor = factory(
             self.state_manager,
@@ -433,8 +420,8 @@ class Planner:
         # 门禁链与剧本闸装配退役，顺序与原料闸能力
         # 迁入 pipeline_orchestrator（状态驱动、机械回卡）。
 
-        # 包装 llm_call：处理 FC tool_calls 后返回 (content, finish_reason, fc_applied)
-        # image_urls_collector 用于跨多步收集生图产物
+        # 单轮执行委托 TurnExecutor（D-02 拆分）：收集器在此定义、跨多步
+        # 共享，轮末由 assemble_response 统一合并
         image_urls_collector: List[str] = []
         # chat_inserts_collector 用于跨多步收集「插入对话输入框」的媒体
         chat_inserts_collector: List[Dict[str, Any]] = []
@@ -448,134 +435,22 @@ class Planner:
         # 循环结束后并入 loop_result.warnings，与文本轨拦截可见性对齐
         fc_warnings_collector: List[str] = []
 
-        async def _emit_status(text: str, key: str = "", params: Optional[Dict[str, Any]] = None) -> None:
-            """推理过程可视化：把 FC 工具执行进度实时推给前端状态栏。
-            固定文案携带 key+params（前端按 locale 翻译，text 兜底）。"""
-            if on_event is not None:
-                if key:
-                    await on_event(status_event(key, text, params))
-                else:
-                    await on_event({"type": SSE_STATUS, "text": text})
-
-        async def _emit_event(event: Dict[str, Any]) -> None:
-            """过程时间线事件透传（tool_started/tool_finished）"""
-            if on_event is not None:
-                await on_event(event)
-
-        tracer = AgentTracer.get_instance()
-
-        async def llm_call(system_prompt: str, messages: List[Dict[str, Any]], hook=None) -> tuple:
-            # 主模型调用计数（成本看板平均耗时口径）
-            tracer.record_llm_call()
-            # 确认信号结构化直通——本轮 FC 批的暂停确认由
-            # _handle_fc_response 写入本 holder，随 5 元组上抛 agent_loop，
-            # 不再合成 studio-actions 文本块回绕解析（对齐 AskUserQuestion 范式）
-            _confirm_holder: Dict[str, Any] = {}
-            # 纯规划计时（反馈）：只量模型流/调用本身，FC 工具执行时间
-            # 不计入规划条目，避免规划行虚高掩盖工具耗时
-            _t_plan = time.monotonic()
-            # 流式路径：使用 chat_stream + hook 回调
-            if hook:
-                content_parts: List[str] = []
-                finish = ""
-                stream_tool_calls: List[Dict[str, Any]] = []
-                # 透明度兑现：流内 usage 机会性收集（中继未下发则 0）
-                _stream_usage_tokens = 0
-                async for chunk in self._call_llm_stream(system_prompt, messages):
-                    # 协作式停止（任务 #17）：流式消费中命中停止标志即提前断流，
-                    # 不再继续烧 token；后续阶段判定/收尾归 agent_loop 检查点
-                    if is_stop_requested(context.stop_scope):
-                        break
-                    if chunk.type == "text_delta" and chunk.text:
-                        content_parts.append(chunk.text)
-                        # 单轨化：确认走结构化 workflow_pause 工具，
-                        # studio-actions 文本块通道已退役（ADR-0001）——
-                        # 正文原样透传，流式抑制器同批下账
-                        await hook(chunk.text)
-                    elif chunk.type == "reasoning_delta" and chunk.text:
-                        # 深度思考：记入 trace（持久化展示）+ 实时推给前端，不进 LLM 上下文
-                        tracer.record_reasoning(chunk.text)
-                        if on_event is not None:
-                            await on_event({"type": SSE_REASONING_DELTA, "text": chunk.text})
-                    elif chunk.type == "tool_call":
-                        stream_tool_calls.append({
-                            "id": f"call_stream_{len(stream_tool_calls)}",
-                            "type": "function",
-                            "function": {
-                                "name": chunk.tool_name,
-                                "arguments": json.dumps(chunk.tool_args, ensure_ascii=False),
-                            },
-                        })
-                    elif chunk.type == "done":
-                        finish = chunk.finish_reason or "stop"
-                        _stream_usage_tokens = int(getattr(chunk, "usage_tokens", 0) or 0)
-                content = "".join(content_parts)
-                response = ChatResponse(content=content, finish_reason=finish,
-                                        tool_calls=stream_tool_calls,
-                                        token_usage=_stream_usage_tokens)
-                plan_ms = (time.monotonic() - _t_plan) * 1000
-            else:
-                response = await self._call_llm(system_prompt, messages)
-                plan_ms = (time.monotonic() - _t_plan) * 1000
-
-            # 检查点（工具批执行前，任务 #17）：模型已返回 tool_calls 但尚未执行，
-            # 命中停止标志即抛 AgentStoppedError（agent_loop 捕获后干净收尾）；
-            # 停止信号不经 fc_tool_runner 闸机传递，只在循环边界拦截
-            if response.tool_calls and is_stop_requested(context.stop_scope):
-                raise AgentStoppedError(STOP_PHASE_TOOL_EXECUTING,
-                                        stop_id=current_stop_id(context.stop_scope))
-
-            content, finish, fc_applied, tool_results, fc_warnings = await self._handle_fc_response(
-                response,
-                image_urls_collector=image_urls_collector,
-                chat_inserts_collector=chat_inserts_collector,
-                action_log_collector=action_log_collector,
-                confirmation_options_collector=confirmation_options_collector,
-                docs_written_collector=docs_written_collector,
-                fc_warnings_collector=fc_warnings_collector,
-                image_provider=context.image_generation_provider,
-                image_aspect_ratio=context.image_generation_aspect_ratio,
-                on_status=_emit_status,
-                on_event=_emit_event,
-                injected_skill=context.skill_name,
-                selected_draft_id=context.selected_draft_id,
-                selected_type=context.selected_type,
-                gate_override=gate_override_scope,
-                confirmation_collector=_confirm_holder,
-            )
-            # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
-            # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
-            if tool_results:
-                feedback = format_tool_results(tool_results)
-                if feedback:
-                    if context.skill_name:
-                        reminder = "\n" + _SKILL_REMINDER
-                        if isinstance(feedback, list):
-                            feedback = feedback + [{"type": "text", "text": reminder}]
-                        else:
-                            feedback += reminder
-                    # token 治理：新一轮回喂入库前，把更早轮次的 read_* 全文
-                    # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
-                    # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
-                    # 短对话保留全文；选中 Skill 不受影响（它硬注入在 system prompt 里）
-                    if should_compress_feedback(messages, self._context_window()):
-                        compress_prior_feedback(messages)
-                    # 按需调图：新回喂带图片时，先剥离旧轮已加载的图片，
-                    # 上下文始终只保留最新一轮的画面（vision token 治理）
-                    if isinstance(feedback, list):
-                        strip_prior_feedback_images(messages)
-                    messages.append({"role": "user", "content": feedback})
-            _extra: Dict[str, Any] = {}
-            # 透明度兑现：本轮 token 用量随 5 元组上抛（agent_loop 入账 trace）
-            _extra["token_usage"] = int(getattr(response, "token_usage", 0) or 0)
-            if _confirm_holder.get("message"):
-                _extra.update({
-                    "confirmation": _confirm_holder["message"],
-                    "confirmation_options": _confirm_holder.get("options") or [],
-                    # 三通道分离 B：超长 pause message 原文随正文下发
-                    "pause_overflow": _confirm_holder.get("overflow") or "",
-                })
-            return content, finish, fc_applied, plan_ms, _extra
+        # 装配本轮执行器（实现体 core/turn_executor.py）：单轮 llm_call
+        # 携带停止检查点/FC 响应消费/回喂治理（惰性压缩/图片剥离/Skill 提醒）
+        self._turn_executor.bind_turn(
+            context=context,
+            gate_override_scope=gate_override_scope,
+            collectors={
+                "image_urls": image_urls_collector,
+                "chat_inserts": chat_inserts_collector,
+                "action_log": action_log_collector,
+                "confirmation_options": confirmation_options_collector,
+                "docs_written": docs_written_collector,
+                "fc_warnings": fc_warnings_collector,
+            },
+            on_event=on_event,
+            skill_reminder=_SKILL_REMINDER,
+        )
 
         # 构建 context_builder
         def context_builder() -> str:
@@ -585,7 +460,7 @@ class Planner:
         # 越阶/越暂停由闸机在工具调用点否决）
         loop_result = await run_agent_loop(
             user_message,
-            llm_call=llm_call,
+            llm_call=self._turn_executor.llm_call,
             context_builder=context_builder,
             executor=executor,
             history=context.history,
@@ -600,8 +475,7 @@ class Planner:
 
         # 轮末组装委托 planner_output（切出）：warnings 并入/总结强入/
         # 占位替换/双轨收集器去重/原料提醒卡覆盖/响应构造，行为不变。
-        # web 层聚合工具延迟导入（同 executor_factory 回落模式；patch 目标=本命名空间）
-        from src.video_agent.web.action_descriptions import aggregate_action_log
+        # 聚合工具顶层导入（D-01 下沉 core；patch 目标=本命名空间）
         response = assemble_response(
             loop_result,
             executor=executor,
@@ -771,7 +645,7 @@ class Planner:
 
         async def _fn(prompt: str) -> str:
             if use_main:
-                resp = await self._call_llm(
+                resp = await self._turn_executor.call_llm(
                     "你是记忆整理助手。",
                     [{"role": "user", "content": prompt}],
                 )
@@ -793,67 +667,6 @@ class Planner:
             return resp.content or ""
 
         return _fn
-
-    async def _call_llm(self, system: str, messages: List[Dict[str, Any]]) -> ChatResponse:
-        """
-        LLM 调用（§2.2）：支持 function calling 的 adapter 传入 tool schemas；
-        不支持的（mock/演示）纯文本调用（4-4 后不再作为生产动作通道）。
-        """
-        full_messages = [{"role": "system", "content": system}] + messages
-        # tool-result 消化：已投影进状态 JSON 的写类工具结果超阈值行替换为
-        # 指针（最近 2 轮回喂保留原文；TOOL_RESULT_DIGEST_CHARS=0 一键关）
-        digest_projected_tool_results(
-            full_messages, int(settings.tool_result_digest_chars))
-        # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
-        max_tokens = int(self._context_window() * settings.token_budget_ratio)
-        full_messages = truncate_messages(full_messages, max_tokens, system_degrader=self._system_degrader)
-        # 实时上下文度量（反馈）：截断后的真实消息记入 live 注册表，
-        # context-usage 接口推理中即可看到用量随轮次增长
-        record_live_context(self.state_manager.active_project_id, full_messages)
-
-        if self.llm_adapter is None:
-            # 无 adapter 时返回空响应（mock 路径由上层处理）
-            return ChatResponse(content="", finish_reason="stop")
-
-        if self.llm_adapter.supports_function_calling:
-            # 模式 A：标准 function calling（工具集按上下文裁剪）
-            tools_schema = self.tool_manager.get_all_tool_schemas(exclude=self._excluded_tools)
-            return await self.llm_adapter.chat(
-                full_messages, tools=tools_schema, timeout=settings.llm_timeout,
-                thinking_level=getattr(self, "_chat_thinking_level", "") or "",
-            )
-        else:
-            # 模式 B：纯文本对话（adapter 不支持 function calling 的保底通道；
-            # 不携带工具调用，文本轨不产生动作——动作通道唯一 = 工具调用，ADR-0001）
-            return await self.llm_adapter.chat(
-                full_messages, timeout=settings.llm_timeout,
-                thinking_level=getattr(self, "_chat_thinking_level", "") or "",
-            )
-
-    async def _call_llm_stream(self, system: str, messages: List[Dict[str, Any]]) -> AsyncGenerator[StreamChunk, None]:
-        """流式 LLM 调用"""
-        full_messages = [{"role": "system", "content": system}] + messages
-        # tool-result 消化：同 _call_llm（已投影结果超阈值行换指针）
-        digest_projected_tool_results(
-            full_messages, int(settings.tool_result_digest_chars))
-        # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
-        max_tokens = int(self._context_window() * settings.token_budget_ratio)
-        full_messages = truncate_messages(full_messages, max_tokens, system_degrader=self._system_degrader)
-        # 实时上下文度量（反馈）：同 _call_llm，推理中用量可见
-        record_live_context(self.state_manager.active_project_id, full_messages)
-
-        if self.llm_adapter is None:
-            return
-
-        tools_schema = None
-        if self.llm_adapter.supports_function_calling:
-            tools_schema = self.tool_manager.get_all_tool_schemas(exclude=self._excluded_tools)
-
-        async for chunk in self.llm_adapter.chat_stream(
-            full_messages, tools=tools_schema, timeout=settings.llm_stream_timeout,
-            thinking_level=getattr(self, "_chat_thinking_level", "") or "",
-        ):
-            yield chunk
 
     # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------
     #

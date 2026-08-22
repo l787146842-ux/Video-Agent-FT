@@ -33,12 +33,18 @@ GATES: List[Tuple[str, List[str]]] = [
     ("category_keys", [sys.executable, "scripts/check_category_keys.py"]),
     ("legacy_orchestration", [sys.executable, "scripts/check_legacy_orchestration.py"]),
     ("scaffold_registry", [sys.executable, "scripts/check_scaffold_registry.py"]),
+    # 任务 #11：core 覆盖率棘轮（只升不降，基线 scripts/cov_baseline.txt）；
+    # 本地无 coverage.xml 时 SKIP，CI 以 --require-xml 硬门禁。
+    # 退役条件：core 覆盖率 >= 90% 且连续两季无回退争议时裁决下账（§13.14(c)）。
+    ("cov_ratchet", [sys.executable, "scripts/check_cov_ratchet.py"]),
     # executor_skill_drift 闸已随任务#36 B5 执行器一步退役删除（执行器族不复存在，
     # 工具名/能力覆盖改由 scan_skills --gate 与 tool_risk 门禁承接）
     ("skill_tool_names", [sys.executable, "scripts/scan_skills.py", "--gate"]),
 ]
 SUITES: List[Tuple[str, List[str]]] = [
-    ("pytest", [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=line"]),
+    # --cov 产出 coverage.xml，供下一轮 cov_ratchet 闸对比（与 CI 度量口径同构）
+    ("pytest", [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=line",
+                "--cov=src/video_agent/core", "--cov-report=xml"]),
     ("vitest", ["npx", "vitest", "run", "--silent"]),
     ("tsc", ["npx", "tsc", "--noEmit"]),
     ("eslint", ["npx", "eslint", "src/web/", "--quiet"]),

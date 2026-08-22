@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""任务#34 B1：sidecar schema v3 地基钉（纯增量、零行为变化）。
+"""任务#34 B1：Skill 声明 schema v3 地基钉（纯增量、零行为变化）。
+
+任务#5 frontmatter 合一后口径：声明唯一源 = 文档头部 YAML frontmatter
+（sidecar 模块已退役，读写改 frontmatter，校验改 manifest_schema）。
 
 钉死四件事：
 ① v3 新键（schema_version/kind/requires_inputs/language/pause_points/scripts）
    合法/非法/缺省用例（fail-closed；未声明=零预设）；
-② v2 键校验语义不回归（旧口径原样保留）；
-③ sidecar 读写透传 schema_version（活读不快照）；
+② v2 键校验语义不回归（旧口径原样保留；流程抄本三键已废除）；
+③ frontmatter 读写透传 schema_version（活读不快照）；
 ④ migrate_manifests_v3.py 幂等迁移（临时目录，只加不删、重复运行不变）。
 """
 import importlib.util
@@ -14,12 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from src.video_agent.skill_runtime import sidecar
-from src.video_agent.skill_runtime import sidecar_schema as ss
+from src.video_agent.skill_runtime import frontmatter
+from src.video_agent.skill_runtime import manifest_schema as ms
 
 _ROOT = Path(__file__).resolve().parents[2]
 _mig_spec = importlib.util.spec_from_file_location(
-    "migrate_manifests_v3", _ROOT / "scripts" / "migrate_manifests_v3.py")
+    "migrate_manifests_v3",
+    _ROOT / "scripts" / "archive" / "migrate_manifests_v3.py")
 mig = importlib.util.module_from_spec(_mig_spec)
 _mig_spec.loader.exec_module(mig)
 
@@ -36,7 +40,7 @@ _mig_spec.loader.exec_module(mig)
     {"kind": "reference"},
 ])
 def test_v3_defaults_and_valid_scalars(data):
-    assert ss.validate_sidecar_data(data) == []
+    assert ms.validate_manifest_data(data) == []
 
 
 @pytest.mark.parametrize("data,keyword", [
@@ -47,7 +51,7 @@ def test_v3_defaults_and_valid_scalars(data):
     ({"kind": 1}, "忽略"),
 ])
 def test_v3_rejects_illegal_schema_version_and_kind(data, keyword):
-    issues = ss.validate_sidecar_data(data)
+    issues = ms.validate_manifest_data(data)
     assert issues and any(keyword in i for i in issues)
 
 
@@ -61,7 +65,7 @@ def test_v3_rejects_illegal_schema_version_and_kind(data, keyword):
     {"requires_inputs": []},
 ])
 def test_v3_requires_inputs_valid(data):
-    assert ss.validate_sidecar_data(data) == []
+    assert ms.validate_manifest_data(data) == []
 
 
 @pytest.mark.parametrize("data,keyword", [
@@ -73,7 +77,7 @@ def test_v3_requires_inputs_valid(data):
     ({"requires_inputs": [{"type": "script", "hint": ""}]}, "非空字符串"),
 ])
 def test_v3_requires_inputs_illegal(data, keyword):
-    issues = ss.validate_sidecar_data(data)
+    issues = ms.validate_manifest_data(data)
     assert issues and any(keyword in i for i in issues)
 
 
@@ -87,7 +91,7 @@ def test_v3_requires_inputs_illegal(data, keyword):
     {"language": {"prompt": "en", "output": "en"}},
 ])
 def test_v3_language_valid(data):
-    assert ss.validate_sidecar_data(data) == []
+    assert ms.validate_manifest_data(data) == []
 
 
 @pytest.mark.parametrize("data,keyword", [
@@ -96,7 +100,7 @@ def test_v3_language_valid(data):
     ({"language": {"output": "中文"}}, "zh/en/auto"),
 ])
 def test_v3_language_illegal(data, keyword):
-    issues = ss.validate_sidecar_data(data)
+    issues = ms.validate_manifest_data(data)
     assert issues and any(keyword in i for i in issues)
 
 
@@ -115,7 +119,7 @@ def test_v3_language_illegal(data, keyword):
         {"id": "free", "trigger": "free_text", "prose": "请确认美术方向"}]},
 ])
 def test_v3_pause_points_valid(data):
-    assert ss.validate_sidecar_data(data) == []
+    assert ms.validate_manifest_data(data) == []
 
 
 @pytest.mark.parametrize("data,keyword", [
@@ -131,7 +135,7 @@ def test_v3_pause_points_valid(data):
     ({"pause_points": [{"id": "x", "trigger": "free_text", "prose": ""}]}, "prose"),
 ])
 def test_v3_pause_points_illegal(data, keyword):
-    issues = ss.validate_sidecar_data(data)
+    issues = ms.validate_manifest_data(data)
     assert issues and any(keyword in i for i in issues)
 
 
@@ -143,7 +147,7 @@ def test_v3_pause_points_illegal(data, keyword):
     {"scripts": []},
 ])
 def test_v3_scripts_empty_is_undeclared(data):
-    assert ss.validate_sidecar_data(data) == []
+    assert ms.validate_manifest_data(data) == []
 
 
 @pytest.mark.parametrize("data", [
@@ -152,7 +156,7 @@ def test_v3_scripts_empty_is_undeclared(data):
     {"scripts": "x"},
 ])
 def test_v3_scripts_nonempty_warns_unsupported(data):
-    issues = ss.validate_sidecar_data(data)
+    issues = ms.validate_manifest_data(data)
     assert issues and any("暂不支持" in i for i in issues)
 
 
@@ -160,27 +164,26 @@ def test_v3_scripts_nonempty_warns_unsupported(data):
 
 
 def test_v2_full_manifest_still_passes_unchanged():
-    """v2 锁源样例（与 test_sidecar_schema_v2 同源）校验语义不动。"""
+    """v2 锁源样例（与 test_sidecar_schema_v2 同源）校验语义不动；
+    流程抄本三键（steps/step_stages/dependencies）已随任务#5 废除。"""
     good = {
         "flow": {
-            "steps": {"1": "分析", "2": "组装"},
-            "dependencies": {"2": [1]},
             "stage_executors": {"1": ["script_analyze"]},
-            "step_stages": {"1": "analysis", "2": "assembly"},
+            "step_done_conditions": {"2": "assembly"},
             "spec_wizard": True, "spec_gate": True, "script_required": False,
         },
         "pause": {"stage_pause": True},
     }
-    assert ss.validate_sidecar_data(good) == []
+    assert ms.validate_manifest_data(good) == []
 
 
 @pytest.mark.parametrize("data,keyword", [
-    ({"flow": {"steps": {"1": "a"}, "step_stages": {"1": "wonderland"}}}, "规范阶段键"),
+    ({"flow": {"step_done_conditions": {"1": "wonderland"}}}, "规范阶段键"),
     ({"flow": {"spec_wizard": "yes"}}, "布尔值"),
     ({"pause": {"stage_pause": "yes"}}, "布尔值"),
 ])
 def test_v2_illegal_still_rejected(data, keyword):
-    issues = ss.validate_sidecar_data(data)
+    issues = ms.validate_manifest_data(data)
     assert issues and any(keyword in i for i in issues)
 
 
@@ -188,31 +191,31 @@ def test_v2_and_v3_keys_coexist():
     mixed = {
         "schema_version": 3,
         "kind": "pipeline",
-        "flow": {"steps": {"1": "分析"}, "step_stages": {"1": "analysis"}},
+        "flow": {"stage_executors": {"1": ["script_analyze"]}},
         "pause": {"stage_pause": True},
         "requires_inputs": [{"type": "script"}],
         "language": {"prompt": "zh", "output": "auto"},
         "pause_points": [{"id": "sb", "trigger": "storyboard_structure_ready"}],
     }
-    assert ss.validate_sidecar_data(mixed) == []
+    assert ms.validate_manifest_data(mixed) == []
 
 
-# ---------- ③ sidecar 读写透传 schema_version ----------
+# ---------- ③ frontmatter 读写透传 schema_version ----------
 
 
-def test_sidecar_roundtrip_passes_through_v3_keys(tmp_path):
+def test_frontmatter_roundtrip_passes_through_v3_keys(tmp_path):
     payload = {
         "schema_version": 3,
         "kind": "style",
         "requires_inputs": [{"type": "script", "required": True}],
         "language": {"prompt": "zh", "output": "zh"},
         "pause_points": [{"id": "gen", "trigger": "first_generation_call"}],
-        "flow": {"steps": {"1": "分析"}},
+        "flow": {"stage_executors": {"1": ["script_analyze"]}},
     }
-    sidecar.write_sidecar("v3_probe", payload, directory=tmp_path)
-    loaded = sidecar.load_sidecar("v3_probe", directory=tmp_path)
+    frontmatter.write_manifest("v3_probe", payload, directory=tmp_path)
+    loaded = frontmatter.load_manifest("v3_probe", directory=tmp_path)
     assert loaded == payload
-    assert sidecar.validate_sidecar(loaded) == []
+    assert ms.validate_manifest_data(loaded) == []
 
 
 # ---------- ④ 迁移脚本幂等性（临时目录） ----------
@@ -220,8 +223,6 @@ def test_sidecar_roundtrip_passes_through_v3_keys(tmp_path):
 
 _V2_SAMPLE = {
     "flow": {
-        "steps": {"1": "分析", "2": "组装"},
-        "step_stages": {"1": "analysis", "2": "assembly"},
         "script_required": True,
     },
     "pause": {"stage_pause": True},
@@ -249,11 +250,11 @@ def test_migrate_data_is_pure_additive_and_idempotent():
     # 幂等：再翻一次无变化（返回 None）
     assert mig.migrate_data(out) is None
     # 迁移产物过 v3 schema
-    assert ss.validate_sidecar_data(out) == []
+    assert ms.validate_manifest_data(out) == []
 
 
 def test_migrate_skips_absent_translation_points():
-    bare = {"flow": {"steps": {"1": "分析"}}}
+    bare = {"flow": {"spec_wizard": True}}
     out = mig.migrate_data(bare)
     assert out == {"schema_version": 3, "flow": bare["flow"]}
     assert "requires_inputs" not in out and "pause_points" not in out

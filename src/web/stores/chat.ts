@@ -236,6 +236,24 @@ export const chatActions = {
           turnId,
         });
       }
+      // 视频结果内联预览卡：数据源 = done payload 的 chat_inserts 中 kind=video 项
+      //（storyboard_media_to_chat 产出，带首帧 thumb）；输入框插入通道不变（use-sse 侧）
+      const videoInserts = (payload.chat_inserts || [])
+        .filter((it) => it.kind === 'video' && !!it.url);
+      if (videoInserts.length > 0) {
+        s.messages.push({
+          sender: 'agent',
+          text: '',
+          videoCard: {
+            items: videoInserts.map((it) => ({
+              url: it.url,
+              name: it.name || undefined,
+              thumb: it.thumb || undefined,
+            })),
+          },
+          turnId,
+        });
+      }
       resetStreamFields(s);
     }));
   },

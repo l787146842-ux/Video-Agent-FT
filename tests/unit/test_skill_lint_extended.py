@@ -3,8 +3,10 @@
 三类新检查（只告警不阻断，F4 语义）：
 ① 体量预算（全文注入截断阈值 80% 预警）；
 ② 章节完整性对照 Flova 组成（流程型 Skill 缺核心段才告警）；
-③ 有流程章节但 sidecar 未声明 steps → 提示补声明。
+③ frontmatter 声明体检（解析/schema 编辑期预警，任务#5 后口径）。
 另含保存路由接线断言（814R 型断线防复发：lint 必须有消费方）。
+（原「有流程章节但未声明 steps」提示已随任务#5 流程抄本通道废除退役：
+正文 planner 是唯一流程源，无 steps 声明可补。）
 """
 from pathlib import Path
 
@@ -52,26 +54,17 @@ def test_flova_composition_skips_freeform_skills():
     assert not any("标准组成" in w for w in result["warnings"])
 
 
-def test_sidecar_declaration_warns_when_steps_missing(tmp_path, monkeypatch):
-    from src.video_agent.skill_runtime import sidecar
-
-    monkeypatch.setattr(sidecar, "sidecar_dir", lambda: tmp_path)
-    content = "<planner>\n1. 分析剧本\n2. 拆解故事板\n</planner>"
+def test_frontmatter_lint_warns_on_schema_issue():
+    """任务#5：frontmatter 声明问题编辑期预警（只告警不阻断）。"""
+    content = "---\ngates:\n  unknown_gate: true\n---\n<planner>\n1. 分析剧本\n</planner>"
     result = sd.lint_skill_content(content, slug="test-skill")
-    assert any("sidecar 声明" in w for w in result["warnings"])
+    assert any("frontmatter 声明问题" in w for w in result["warnings"])
 
 
-def test_sidecar_declaration_silent_when_declared(tmp_path, monkeypatch):
-    from src.video_agent.skill_runtime import sidecar
-
-    monkeypatch.setattr(sidecar, "sidecar_dir", lambda: tmp_path)
-    sidecar.write_sidecar(
-        "test-skill", {"flow": {"steps": {"1": "分析"}, "dependencies": {}}},
-        directory=tmp_path,
-    )
-    content = "<planner>\n1. 分析剧本\n</planner>"
+def test_frontmatter_lint_silent_when_valid():
+    content = "---\npause:\n  stage_pause: true\n---\n<planner>\n1. 分析剧本\n</planner>"
     result = sd.lint_skill_content(content, slug="test-skill")
-    assert not any("sidecar 声明" in w for w in result["warnings"])
+    assert not any("frontmatter 声明" in w for w in result["warnings"])
 
 
 def test_put_route_returns_lint():

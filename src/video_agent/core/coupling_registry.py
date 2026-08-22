@@ -96,7 +96,7 @@ COUPLING_ROWS: List[CouplingRow] = [
         "doc_written 即显链路变更",
         "发射（按名去重）→ planner 白名单 → chat_service 透传 → 前端双通道去重",
         (("vtest", "src/web/lib/__tests__/turn-groups.test.ts"),)
-        + _sym("src.video_agent.web.chat_service:_stamp_doc_written"),
+        + _sym("src.video_agent.web.chat_cards:_stamp_doc_written"),
     ),
     CouplingRow(
         "R08_model_policy_roles",
@@ -152,7 +152,7 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.core.fc_tool_runner:format_tool_results",
             # 任务#23 三段拆分承重壳：闸机方法壳（实现体 fc_gates）
             "src.video_agent.core.fc_tool_runner:FCToolRunner._prompt_gate",
-            "src.video_agent.web.action_executor:StateOperationExecutor._apply_generate_image",
+            "src.video_agent.core.action_executor:StateOperationExecutor._apply_generate_image",
             "src.video_agent.core.prompt_gates:SPEC_GATE_ERROR",
             "src.video_agent.core.prompt_gates:parse_hard_selections",
             # skill_runtime/executors 与 exec_tools 承重壳已随任务#36 B5
@@ -175,8 +175,8 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R16_manifest_whitelist_keys",
-        "sidecar 声明键（gates/flow/pause）变更",
-        "0818 B4：声明唯一源 = data/skills_manifests（文档通道退役）；消费点：parse_gate_rules/agent_loop/fc_gates/planner 裁剪/"
+        "frontmatter 声明键（gates/flow/pause）变更",
+        "任务#5：声明唯一源 = Skill 文档头部 YAML frontmatter（外置 JSON sidecar 退役）；消费点：parse_gate_rules/agent_loop/fc_gates/planner 裁剪/"
         "prompt_builder/registry pause 节",
         _sym(
             "src.video_agent.core.prompt_gates:parse_gate_rules",
@@ -241,8 +241,8 @@ COUPLING_ROWS: List[CouplingRow] = [
     CouplingRow(
         "R25_doc_turn_stamp",
         "doc_written turn_id 打戳位置变更",
-        "chat_service 透传层打戳 → use-sse 携带 → chat.docWritten 落消息",
-        _sym("src.video_agent.web.chat_service:_stamp_doc_written")
+        "chat_cards 打戳（chat_service 透传层消费）→ use-sse 携带 → chat.docWritten 落消息",
+        _sym("src.video_agent.web.chat_cards:_stamp_doc_written")
         + (("vtest", "src/web/lib/__tests__/turn-groups.test.ts"),)
         + (("testfile", "tests/unit/test_doc_written_turn_stamp.py"),),
     ),
@@ -255,14 +255,18 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R27_planner_split_delegation",
-        "planner 拆分协作臂变更（豁免消费/闸预检/FC 响应合并；批 12 分诊/收权退场）",
-        "实现体迁出后 planner 委托必须保留（既有测试与调用方钉死委托方法）",
+        "planner 拆分协作臂变更（豁免消费/闸预检/FC 响应合并；批 12 分诊/收权退场；"
+        "D-02 单轮执行/回喂治理/预算装配切出 turn_executor）",
+        "实现体迁出后 planner 委托必须保留（既有测试与调用方钉死委托方法）；"
+        "turn_executor 经实例引用回调 _handle_fc_response，委托改名即断线",
         _sym(
             "src.video_agent.core.planner_gate_session:consume_gate_overrides",
             "src.video_agent.core.planner_triage:run_gate_precheck",
             "src.video_agent.core.pipeline_orchestrator:gate_precheck",
             "src.video_agent.core.fc_response:merge_fc_response",
             "src.video_agent.core.planner:Planner._run_gate_precheck",
+            "src.video_agent.core.turn_executor:TurnExecutor.llm_call",
+            "src.video_agent.core.planner:Planner._handle_fc_response",
         ) + (("testfile", "tests/unit/test_deterministic_triage.py"),),
     ),
 ]

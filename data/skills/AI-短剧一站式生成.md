@@ -1,3 +1,59 @@
+---
+flow:
+  spec_wizard: true
+  spec_gate: true
+  script_required: true
+  stage_executors:
+    '1':
+    - script_analyze
+    '3':
+    - storyboard_key_elements
+    - storyboard_shots
+    - storyboard_audio
+  step_done_conditions:
+    '2': spec
+  step_short_titles:
+    '1': 剧本分析
+    '2': 制作规格
+    '3': 关键元素拆解
+    '4': 设定图生成
+    '5': 分镜表格图
+    '6': 视频生成
+    '7': 音频生成
+    '8': 时间线组装
+pause:
+  stage_pause: true
+schema_version: 3
+kind: pipeline
+requires_inputs:
+- type: script
+  required: true
+pause_points:
+- id: shortdrama_storyboard_confirmed
+  trigger: storyboard_structure_ready
+- id: shortdrama_setting_images_review
+  trigger: batch_boundary
+  description: 所有 key_element 设定图生成完毕后暂停，等待用户确认视觉风格与剧本一致，确认后才进入视频生成。
+- id: shortdrama_first_generation_call
+  trigger: first_generation_call
+- id: shortdrama_shot_videos_review
+  trigger: batch_boundary
+  description: 每批分镜视频生成完毕后暂停，等待用户确认后再继续下一批或进入时间线组装。
+tools_required:
+- script_analyze
+- document_write
+- storyboard_key_elements
+- storyboard_shots
+- storyboard_audio
+- write_media_prompt
+- image_generate
+- generate_video
+- audio_generate
+- video_assembler
+- super_resolution
+- workflow_pause
+version: '1.0'
+---
 
 skill_name: "AI 短剧一站式生成"
 skill_description: "适用于将剧本文本工业化拆解为短剧视频的全流程制作场景。支持从剧本分析、角色/场景元素设定、分镜设计、视频生成到时间线合成的完整链路；图像/视频生成渠道以全局设置为准 生成角色与场景设定图。"
@@ -13,7 +69,7 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 **全流程阶段与依赖关系**
 
 1. 读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型 → **script_analyze**
-2. 将全局制作参数写入 Final_Video_Spec.md（画幅比例、目标时长、影像风格基调、输出语言）→ **document_write**
+2. 将全局制作参数写入 制片规格.md（画幅比例、目标时长、影像风格基调、输出语言；图像/视频生成渠道与分辨率遵循全局设置）→ **document_write**
 3. 设计 Storyboard：登记所有 key_element（角色、场景、关键道具），将剧本拆解为有序 shot 列表，规划 audio_layer（BGM、旁白）→ **storyboard_key_elements / storyboard_shots / storyboard_audio**
 4. 生成所有 key_element 设定图（角色三视图、场景四视图）→ **write_media_prompt、image_generate**
 5. 生成每批次运镜轨迹示意图（分镜表格图），供视频生成阶段作视觉锚点参考，这步只用来给用户确认镜头逻辑是否符合预期，不作为视频生成的参考 → **write_media_prompt、image_generate**
@@ -68,13 +124,13 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 <storyboard_shots>
 **拆解 shot 列表**
 
-- 每个 shot = 一次生成任务，时长 ≤ 30s（硬性上限，超出必须拆分）。
+- 每个 shot = 一次生成任务，时长遵循全局设置中的时长参数（超出上限必须拆分）。
 - **批次拆分规则**（每个 shot 视为一个批次单元）：
-  - 单 shot 时长 ≤ 30s
+  - 单 shot 时长遵循全局设置中的时长参数
   - 单 shot 内切镜数量建议 2—6 个
   - 单 shot 出场人物 ≤ 3 人，超出须拆分
   - 单 shot 保持空间一致性，跨物理空间必须切新 shot
-- **优先设计较长镜头**（建议 8—30s），充分利用视频生成模型在单次生成中支持内切镜和丰富运镜的能力；避免将一个连续场景拆成过多短镜头。
+- **优先设计较长镜头**，充分利用视频生成能力在单次生成中支持内切镜和丰富运镜；避免将一个连续场景拆成过多短镜头。
 - 每个 shot 描述必须包含：
   - **场景**：引用对应 element scene ID
   - **人物动作与对白**：以时间顺序描述人物行为、面部表情、台词（写出具体台词文本）
@@ -102,7 +158,7 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 - \[ \] **遗漏检查**：原剧本中所有关键动作、台词、转折是否都有对应 shot？
 - \[ \] **逻辑一致性**：人物在前后 shot 的位置/朝向/手持物是否连贯？
 - \[ \] **接镜顺畅度**：前一 shot 出画方向与后一 shot 入画方向是否符合轴线规则（不跳轴）？
-- \[ \] **时长合规**：每个 shot 合计是否 ≤ 30s？每个内切镜是否在景别建议时长内？
+- \[ \] **时长合规**：每个 shot 合计时长是否符合全局设置中的时长参数？每个内切镜是否在景别建议时长内？
 - \[ \] **空间一致性**：同一 shot 内是否未跨场景？光影基调是否与前 shot 衔接（除非剧情需要硬切）？
 - \[ \] **角色一致性**：角色代号是否全程统一，无同人异名？
 - \[ \] **音效/台词位置**：是否紧贴对应动作，无错位？
@@ -153,13 +209,13 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 <write_media_prompt>
 **内切镜时长估算（视频提示词撰写前）**
 
-若 Storyboard shot 未标注各内切镜时长，按以下经验值估算，确保单 shot 合计 ≤ 30s：
+若 Storyboard shot 未标注各内切镜时长，按以下经验值估算，确保单 shot 合计时长符合全局设置中的时长参数：
 
 镜头类型建议时长大特写 / 手部脚部特写1.5–2.5s面部特写（含台词）2–4s近景胸像（含台词）2.5–4s中景 / 中全景3–5s全景 / 大全景建立镜3–5s运镜推进 / 拉远 / 环绕基础景别时长 +1s
 
-超过 30s 必须拆分为独立 shot。
+超出全局设置的时长上限必须拆分为独立 shot。
 
-**角色三视图提示词（TextToImage / GPT Image 2）**
+**角色三视图提示词（TextToImage，具体渠道与模型由全局设置决定，本文档不指定）**
 
 A character turnaround sheet of \[角色描述，含年龄/性别/外貌/服装/标志性细节\].
 Show three full-body views in one image, evenly spaced left-to-right:
@@ -169,7 +225,7 @@ Plain neutral gray background (#888888), soft even studio lighting, no shadows o
 Photorealistic, cinematic film still aesthetic, PANAVISION lens look, 8K detail.
 No text, no labels, no watermark.
 
-**场景四视图提示词（TextToImage / GPT Image 2）**
+**场景四视图提示词（TextToImage，具体渠道与模型由全局设置决定，本文档不指定）**
 
 A location reference sheet of \[场景描述，含空间结构/材质/光源/色温/标志物\].
 Show four angles of the same location in one composite image (2×2 grid):
@@ -181,7 +237,7 @@ Identical lighting, color palette, and props across all four panels.
 No people in frame. Photorealistic, \[光影基调描述\], PANAVISION cinematic, IMAX 70mm film grain.
 No text, no labels, no watermark.
 
-**分镜表格图（运镜轨迹示意图）提示词（ImageToImage / GPT Image 2）**
+**分镜表格图（运镜轨迹示意图）提示词（ImageToImage，具体渠道与模型由全局设置决定，本文档不指定）**
 
 A professional storyboard sheet titled "\[Shot ID\] 运镜轨迹示意图" in Chinese,
 clean white background, top-to-bottom vertical layout.
@@ -233,7 +289,7 @@ Reference images attached:\
 **固定尾部规则：**
 
 - 所有视频提示词末尾必须包含 No subtitles, no background music, no text overlay——BGM 在 audio_layer 独立生成，后期混音；台词/音效可内嵌。
-- 使用 Seedance 2.5 480p 内嵌格式：音乐 (...)、音效 <...>、台词 {...}（非项目语言需在括号前标明语言）、片内字幕 【...】；台词括号内只写原文，不加情绪标注。
+- 若所选视频渠道支持内嵌音频/文本标记（具体渠道与模型由全局设置决定，本文档不指定）：音乐 (...)、音效 <...>、台词 {...}（非项目语言需在括号前标明语言）、片内字幕 【...】；台词括号内只写原文，不加情绪标注。
 - 不依赖绝对时间戳（如 "0–3s"）描述动作节奏，改用速度形容词。
 </write_media_prompt>
 
@@ -262,6 +318,6 @@ Reference images attached:\
 
 **导出基准**
 
-- 视频轨分辨率对齐生成时的最高规格；如需提升，经 super_resolution（MediaKit，待平台补齐工具）上采样后再导出。
+- 视频轨分辨率对齐生成时的最高规格；如需提升，经 super_resolution（待平台补齐工具）上采样后再导出。
 - 帧率 24fps；如需流畅慢动作片段，对目标 shot 单独执行帧插值（fps 提升至 60）后再并入时间线。
 </video_assembler>

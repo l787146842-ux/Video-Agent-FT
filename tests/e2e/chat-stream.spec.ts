@@ -334,6 +334,48 @@ test.describe('重新生成（机械重发）', () => {
   });
 });
 
+test.describe('视频结果内联预览卡（任务 #10）', () => {
+  test('done payload chat_inserts 视频项 → 内联预览卡（poster + ▶ 角标 + lightbox）', async ({ page }) => {
+    const handle = await startSseServer({
+      done: {
+        text: '视频已生成', elapsed_ms: 100, steps: 1, applied_actions: 0,
+        // 数据通路：done payload 的 chat_inserts 中 kind=video 项（带首帧 thumb）
+        chat_inserts: [
+          { kind: 'video', url: 'http://127.0.0.1:1/media/opening.mp4', name: '开场.mp4', thumb: 'http://127.0.0.1:1/media/opening.jpg' },
+        ],
+      },
+    });
+    const capturedBodies: Array<Record<string, unknown>> = [];
+    await wireAgentRoutes(page, handle, capturedBodies);
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await sendMessage(page, '生成一段开场视频');
+    const feed = page.getByTestId('chat-feed');
+    await expect(feed).toContainText('视频已生成', { timeout: 10000 });
+
+    // 视频卡上屏：标题（locale rp.msg.videoResult）+ 首帧 poster + ▶ 角标 + 文件名
+    const card = feed.locator('.video-card');
+    await expect(card).toBeVisible({ timeout: 10000 });
+    await expect(card).toContainText('视频结果');
+    await expect(card).toContainText('开场.mp4');
+    const video = card.locator('video');
+    await expect(video).toHaveAttribute('src', /opening\.mp4/);
+    await expect(video).toHaveAttribute('poster', /opening\.jpg/);
+    await expect(card.locator('.video-card-badge')).toContainText('▶');
+
+    // 点击缩略 → lightbox 播放（共享 MediaLightbox kind=video）
+    await card.locator('.video-card-thumb').click();
+    const lightbox = page.locator('.image-lightbox');
+    await expect(lightbox).toBeVisible({ timeout: 10000 });
+    await expect(lightbox.locator('video')).toHaveAttribute('src', /opening\.mp4/);
+    // Esc 关闭
+    await page.keyboard.press('Escape');
+    await expect(lightbox).toHaveCount(0, { timeout: 10000 });
+    await handle.close();
+  });
+});
+
 test.describe('滚底保持（P4 滚底回归修复）', () => {
   /** 长回复：80 行撑高滚动容器，让「是否贴底」可度量（短内容恒贴底无区分度） */
   const longText = (prefix: string) => Array.from({ length: 80 }, (_, i) => `${prefix} ${i + 1}`).join('\n');

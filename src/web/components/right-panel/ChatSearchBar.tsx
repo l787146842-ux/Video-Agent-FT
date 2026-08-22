@@ -58,7 +58,7 @@ export function ChatSearchBar(props: { onClose: () => void }) {
           type="button"
           class="chat-search-close"
           title={t('rp.lightbox.close')}
-          onClick={props.onClose}
+          onClick={() => props.onClose()}
         >
           <FiX size={14} />
         </button>

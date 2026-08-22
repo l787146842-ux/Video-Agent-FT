@@ -1,81 +1,17 @@
-/* eslint-disable max-lines -- 新增删除媒体后超行，待后续拆分；新增代码仍受规则约束 */
-import {
-  createSignal, createEffect, onCleanup, Show, Switch, Match,
-} from 'solid-js';
-import { FiRefreshCw, FiGrid, FiX, FiTrash2, FiNavigation } from 'solid-icons/fi';
+import { createSignal, createEffect, onCleanup, Show } from 'solid-js';
+import { FiRefreshCw, FiGrid, FiTrash2, FiNavigation } from 'solid-icons/fi';
 import { state, findDraftRecord, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { showContextMenu } from '@/components/shared/ContextMenu';
 import { uploadFiles } from '@/api/upload';
 import { safeUrl } from '@/lib/utils';
-import { useFocusTrap } from '@/lib/focus-trap';
-import type { Draft, ActiveGeneration } from '@/types';
 import type { AllCanvasImageItem } from '@/api/canvas';
 import { CanvasImagePickerModal } from './CanvasImagePickerModal';
 import { GenTypeTabs } from './GenTypeTabs';
-
-/* ===== 子组件：空态 ===== */
-function PreviewEmpty(props: { hint?: string }) {
-  return (
-    <div class="preview-empty">
-      <p class="preview-empty-icon">🎬</p>
-      <p>{props.hint || '暂无媒体预览'}</p>
-      <p class="preview-empty-hint">双击或拖拽上传，右键可替换媒体</p>
-    </div>
-  );
-}
-
-/* ===== 子组件：生成进度环 ===== */
-function GenProgress(props: { gen: ActiveGeneration; elapsed: number }) {
-  const ringOffset = () => 251.2 * (1 - (props.elapsed % 60) / 60);
-  return (
-    <div class="gen-progress">
-      <div class="gen-progress-ring">
-        <svg viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="40" fill="none" stroke="#2b3149" stroke-width="8" />
-          <circle
-            cx="50" cy="50" r="40" fill="none" stroke="#3b82f6" stroke-width="8"
-            stroke-linecap="round" stroke-dasharray="251.2"
-            stroke-dashoffset={ringOffset()}
-          />
-        </svg>
-        <span class="gen-progress-time">{props.elapsed.toFixed(1)}s</span>
-      </div>
-      <span class="gen-progress-label">
-        {props.gen.kind === 'image' ? '图片生成中…' : '视频渲染中…'}
-      </span>
-    </div>
-  );
-}
-
-/* ===== 子组件：媒体内容（按类型切换） ===== */
-function MediaContent(props: { draft: Draft; url: string; onImageClick?: () => void }) {
-  return (
-    <div class="preview-media-viewer">
-      <Switch fallback={
-        <img
-          src={props.url}
-          alt={props.draft.label}
-          class="preview-img-clickable"
-          onClick={props.onImageClick}
-          title="点击放大查看"
-        />
-      }>
-        <Match when={props.draft.mediaType === 'video'}>
-          {/* preload=metadata：切卡片时只加载首帧/元数据，避免每次点卡片
-              都后台全量下载视频（大文件时会明显卡顿）；点击播放时照常加载 */}
-          <video src={props.url} controls preload="metadata" />
-        </Match>
-        <Match when={props.draft.mediaType === 'audio'}>
-          <div class="preview-audio-wrap">
-            <p class="preview-audio-name">{props.draft.label}</p>
-            <audio src={props.url} controls />
-          </div>
-        </Match>
-      </Switch>
-    </div>
-  );
-}
+import { PreviewEmpty } from './PreviewEmpty';
+import { GenProgress } from './GenProgress';
+import { MediaContent } from './MediaContent';
+import { PreviewLightbox } from './PreviewLightbox';
 
 /**
  * 预览媒体区：图片 / 视频 / 音频 / 空态 / 生成中进度环
@@ -86,10 +22,6 @@ export function MediaViewer() {
   const [elapsed, setElapsed] = createSignal(0);
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [lightboxUrl, setLightboxUrl] = createSignal('');
-
-  // 焦点圈闭：放大预览 Esc 关闭（补齐 title 提示对应的实际监听）
-  const [lightboxEl, setLightboxEl] = createSignal<HTMLElement>();
-  useFocusTrap(() => (lightboxUrl() ? lightboxEl() : undefined), { onEscape: () => setLightboxUrl('') });
 
   const rec = () => findDraftRecord(state.selectedDraftId, state.selectedType);
   const draft = () => rec()?.draft;
@@ -247,76 +179,7 @@ export function MediaViewer() {
 
       {/* 图片放大查看 lightbox（支持滚轮缩放 + 鼠标按住拖拽平移） */}
       <Show when={lightboxUrl()}>
-        {(() => {
-          const [zoom, setZoom] = createSignal(1);
-          const [pan, setPan] = createSignal({ x: 0, y: 0 });
-          const [dragging, setDragging] = createSignal(false);
-          let startX = 0;
-          let startY = 0;
-          let baseX = 0;
-          let baseY = 0;
-
-          const closeLightbox = () => {
-            setLightboxUrl('');
-            setZoom(1);
-            setPan({ x: 0, y: 0 });
-          };
-
-          /** 按住图片拖动：上下左右平移（window 级监听，拖出图片不丢手势） */
-          function onImgMouseDown(e: MouseEvent) {
-            e.preventDefault();
-            e.stopPropagation();
-            setDragging(true);
-            startX = e.clientX;
-            startY = e.clientY;
-            baseX = pan().x;
-            baseY = pan().y;
-            const onMove = (ev: MouseEvent) => {
-              setPan({ x: baseX + (ev.clientX - startX), y: baseY + (ev.clientY - startY) });
-            };
-            const onUp = () => {
-              setDragging(false);
-              window.removeEventListener('mousemove', onMove);
-              window.removeEventListener('mouseup', onUp);
-            };
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
-          }
-
-          return (
-            <div
-              class="preview-lightbox"
-              ref={setLightboxEl}
-              role="dialog"
-              aria-modal="true"
-              aria-label="放大预览"
-              onClick={() => closeLightbox()}
-              onWheel={(e) => {
-                e.preventDefault();
-                setZoom((z) => Math.min(5, Math.max(0.2, z - e.deltaY * 0.001)));
-              }}
-            >
-              <img
-                src={lightboxUrl()}
-                alt="放大预览"
-                class={`preview-lightbox-img ${dragging() ? 'preview-lightbox-img-dragging' : ''}`}
-                style={{ transform: `translate(${pan().x}px, ${pan().y}px) scale(${zoom()})` }}
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={onImgMouseDown}
-                title="按住拖动移动，滚轮缩放"
-              />
-              <span class="preview-lightbox-zoom">{Math.round(zoom() * 100)}%</span>
-              <button
-                type="button"
-                class="preview-lightbox-close"
-                onClick={() => closeLightbox()}
-                title="关闭 (Esc)"
-              >
-                <FiX size={20} />
-              </button>
-            </div>
-          );
-        })()}
+        <PreviewLightbox url={lightboxUrl()} onClose={() => setLightboxUrl('')} />
       </Show>
 
       {/* 导航定位按钮（右下角）：左面板自动定位到当前预览对应的

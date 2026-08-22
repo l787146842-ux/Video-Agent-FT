@@ -68,8 +68,10 @@ if settings.log_file_enabled:
 async def lifespan(_app: FastAPI):
     from src.video_agent.web.providers import register_adapters
     from src.video_agent.web.skill_docs import ensure_default_skill_docs
+    from src.video_agent.web.port_wiring import install_core_ports
     from src.video_agent.state.manager import StateManager
     from src.video_agent.config import settings
+    install_core_ports()  # D-01：core 端口装配（生成管线/供应商配置/日志/Skill 文档）
     register_adapters()
     load_runtime_settings()  # 运行时设置（fallback 开关等）持久化覆盖，热生效
     # 代码内置 Skill（编剧/分镜师/制片）已按用户要求彻底移除，不再注册；

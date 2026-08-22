@@ -94,7 +94,7 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
                      "执行侧拦 agent 越阶结构操作，不拦用户；豁免/坚持旁路"),
         GateRuleMeta("platform.stage_precondition", LAYER_PLATFORM,
                      "阶段前置闸（控制流统一）：工具归属阶段的前置阶段"
-                     "未完成时拒收调用（sidecar 依赖图为唯一事实源）；机械强制，"
+                     "未完成时拒收调用（frontmatter 声明依赖图为唯一事实源）；机械强制，"
                      "manifest 无权关闭，仅用户坚持可一次性豁免放行并留痕"),
     )
 }
@@ -163,7 +163,7 @@ _DEFAULT_GATE_RULES: Dict[str, Any] = {
 
 def parse_gate_rules(content: str, manifest: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """从 Skill 解析闸机规则（旧 gate_rules 块兼容；manifest gates 由
-    调用方从 sidecar 传入——  起文档不再承载声明）。
+    调用方读 frontmatter 传入——正文不再承载声明）。
 
     未声明 / 格式非法 / 类型不合法时回落默认规则；只接受白名单键，
     防止用户文档意外破坏结构防护（长度/语言等基础阈值不可被关到负值）。
@@ -191,7 +191,7 @@ def parse_gate_rules(content: str, manifest: Optional[Dict[str, Any]] = None) ->
                 elif isinstance(default, list):
                     if isinstance(val, list) and all(isinstance(x, str) for x in val):
                         rules[key] = [x for x in val if x]
-    # skill_manifest gates 覆盖（sidecar 声明是唯一源，冲突键优先于旧块）
+    # skill_manifest gates 覆盖（frontmatter 声明是唯一源，冲突键优先于旧块）
     if manifest:
         for key, val in (manifest.get("gates") or {}).items():
             if key in _DEFAULT_GATE_RULES:
@@ -488,7 +488,7 @@ def resolve_prompt_language(
     （v3 language.prompt=en 或 cjk_min_ratio<=0 = 英文锁定）> 平台默认（中文）。
     注入句与语言闸读同一结果，by construction 不可能再打架（C1 延伸）。
 
-    v3 放宽（任务#35 B2）：sidecar 声明 language.prompt=en 即按声明放宽，
+    v3 放宽（任务#35 B2）：frontmatter 声明 language.prompt=en 即按声明放宽，
     读取路径经 registry API；未声明维持现状（skill 定位：显式传入 >
     usedSkills 末位兜底，与「当前 Skill 归属」单一实现同源）。"""
     sel = spec_output_language(raw_state)

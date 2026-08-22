@@ -140,6 +140,8 @@ const zhCN = {
   'rp.msg.continueLastTask': '继续刚才的任务',
   'rp.msg.imageResult': '生图结果',
   'rp.msg.imageTip': '{name} — 点击查看原图，按住拖动到画布',
+  'rp.msg.videoResult': '视频结果',
+  'rp.msg.videoTip': '{name} — 点击放大播放',
   'rp.msg.download': '下载',
   'rp.msg.lightboxAlt': '原图预览',
   'rp.msg.downloadOriginal': '下载原图',

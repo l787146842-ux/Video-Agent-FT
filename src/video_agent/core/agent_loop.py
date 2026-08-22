@@ -13,7 +13,7 @@ llm_call / context_builder 以 callable 注入，便于单元测试。
 """
 import asyncio
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import time
 
@@ -59,9 +59,8 @@ from src.video_agent.skill_runtime.progress import (
     unbind_progress_emitter,
 )
 
-if TYPE_CHECKING:
-    # 仅类型标注用：执行器实现依赖 web 层生成管线，运行时不做硬依赖
-    from src.video_agent.web.action_executor import StateOperationExecutor
+# 执行器已下沉 core（D-01）：顶层导入替代旧 TYPE_CHECKING 下的 web 延迟引用
+from src.video_agent.core.action_executor import StateOperationExecutor
 
 MAX_STEPS = settings.max_steps
 

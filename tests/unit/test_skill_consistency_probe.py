@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""P3-15 一致性诊断探针：scan_skills.sidecar_consistency_issues 命中与不误报。
+"""P3-15 一致性诊断探针：scan_skills.manifest_consistency_issues 命中与不误报。
 
 探针为报告性质（不进 acceptance GATES）；本测试钉死口径：
 ① 未声明/一致 → 空清单（不误报）；
@@ -7,7 +7,6 @@
 ③ 存量 16 skill 实数据全绿（含试点 多人对话访谈 的音色设计声明）。
 """
 import importlib.util
-import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,14 +33,13 @@ _DOC_FULL = (
 
 
 def test_probe_undeclared_manifest_clean():
-    assert scan_skills.sidecar_consistency_issues("s", _DOC_FULL, None) == []
-    assert scan_skills.sidecar_consistency_issues("s", _DOC_FULL, {}) == []
+    assert scan_skills.manifest_consistency_issues("s", _DOC_FULL, None) == []
+    assert scan_skills.manifest_consistency_issues("s", _DOC_FULL, {}) == []
 
 
 def test_probe_consistent_declaration_clean():
     manifest = {
         "flow": {
-            "steps": {"1": "拆解", "2": "组装"},
             "stage_executors": {
                 "1": ["storyboard_key_elements", "image_generate"],
                 "2": ["video_assembler"],
@@ -49,14 +47,14 @@ def test_probe_consistent_declaration_clean():
         },
         "custom_sections": {"tone_design": "skill_section_run"},
     }
-    assert scan_skills.sidecar_consistency_issues("s", _DOC_FULL, manifest) == []
+    assert scan_skills.manifest_consistency_issues("s", _DOC_FULL, manifest) == []
 
 
 def test_probe_heading_style_section_no_false_positive():
     """标题式文档：声明标识命中标题关键字解析链不误报。"""
     content = "# 分镜设计\n镜头正文\n"
     manifest = {"custom_sections": {"分镜设计": "skill_section_run"}}
-    assert scan_skills.sidecar_consistency_issues("s", content, manifest) == []
+    assert scan_skills.manifest_consistency_issues("s", content, manifest) == []
 
 
 # ---------- ② 命中 ----------
@@ -64,21 +62,21 @@ def test_probe_heading_style_section_no_false_positive():
 
 def test_probe_hits_unresolvable_custom_section():
     manifest = {"custom_sections": {"不存在章节": "skill_section_run"}}
-    issues = scan_skills.sidecar_consistency_issues("s", _DOC_FULL, manifest)
+    issues = scan_skills.manifest_consistency_issues("s", _DOC_FULL, manifest)
     assert any("custom_sections 声明「不存在章节」" in i for i in issues)
 
 
 def test_probe_hits_executor_without_section_support():
     doc = "# 缺组装\n<planner>\n流程\n</planner>\n"
     manifest = {"flow": {"stage_executors": {"1": ["video_assembler"]}}}
-    issues = scan_skills.sidecar_consistency_issues("s", doc, manifest)
+    issues = scan_skills.manifest_consistency_issues("s", doc, manifest)
     assert any("video_assembler" in i and "无文档章节支撑" in i for i in issues)
 
 
 def test_probe_hits_unknown_executor_and_reused_exempt():
     manifest = {"flow": {"stage_executors": {
         "1": ["不存在的执行器", "document_write", "read_skill"]}}}
-    issues = scan_skills.sidecar_consistency_issues("s", _DOC_FULL, manifest)
+    issues = scan_skills.manifest_consistency_issues("s", _DOC_FULL, manifest)
     assert any("不存在的执行器" in i for i in issues)
     # 复用工具豁免：不误报
     assert not any("document_write" in i or "read_skill" in i for i in issues)
@@ -86,7 +84,7 @@ def test_probe_hits_unknown_executor_and_reused_exempt():
 
 def test_probe_carries_schema_issues():
     manifest = {"custom_sections": {"音色设计": "script_analyze"}}
-    issues = scan_skills.sidecar_consistency_issues("s", _DOC_FULL, manifest)
+    issues = scan_skills.manifest_consistency_issues("s", _DOC_FULL, manifest)
     assert any("custom_sections" in i for i in issues)
 
 
@@ -94,14 +92,16 @@ def test_probe_carries_schema_issues():
 
 
 def test_probe_real_skills_all_consistent():
+    """任务#5：声明已迁入文档头部 frontmatter（外置 JSON 目录已删除），
+    探针直接读同目录 frontmatter。"""
+    from src.video_agent.skill_runtime import frontmatter
+
     skills_dir = ROOT / "data" / "skills"
-    manifests_dir = ROOT / "data" / "skills_manifests"
     total = 0
     for f in sorted(skills_dir.glob("*.md")):
         content = f.read_text(encoding="utf-8")
-        mf = manifests_dir / f"{f.stem}.json"
-        manifest = json.loads(mf.read_text(encoding="utf-8")) if mf.exists() else None
-        issues = scan_skills.sidecar_consistency_issues(f.stem, content, manifest)
+        manifest = frontmatter.load_manifest(f.stem, directory=skills_dir)
+        issues = scan_skills.manifest_consistency_issues(f.stem, content, manifest)
         assert issues == [], f"Skill「{f.stem}」探针不一致: {issues}"
         total += 1
     assert total >= 16

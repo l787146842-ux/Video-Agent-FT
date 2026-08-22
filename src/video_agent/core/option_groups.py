@@ -19,6 +19,8 @@ from typing import Any, Dict, List, Tuple
 
 from loguru import logger
 
+from src.video_agent.core.ports import provider_config_port
+
 # 分页向导的最小选项数：阶段确认卡片（确认/调整）只有 2~4 个选项，
 # 不得被误造成向导；规格向导场景恒为 ≥5 个选项（多维度×候选）
 MIN_OPTIONS_FOR_WIZARD = 5
@@ -71,13 +73,12 @@ def _channel_dim_from_hints(text: str) -> str:
 
 
 def _configured_names(kind: str) -> List[str]:
-    """本项目已配置的供应商显示名与模型名（kind=image/video；读取失败返回空）。"""
+    """本项目已配置的供应商显示名与模型名（kind=image/video；
+    经 provider_config 端口读取（D-01 倒置），读取失败返回空）。"""
     try:
-        from src.video_agent.web.provider_config import load_merged_providers
-
         names: List[str] = []
         key = "image_models" if kind == "image" else "video_models"
-        for p in load_merged_providers():
+        for p in provider_config_port().load_merged_providers():
             if not p.get("enabled", True) or (p.get("protocol") or "") == "mock":
                 continue
             nm = str(p.get("name") or "").strip()

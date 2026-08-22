@@ -10,6 +10,12 @@ from pathlib import Path
 # 触发 loguru rotation rename 失败（WinError 32）。外部显式设置时从其值。
 os.environ.setdefault("LOG_FILE_ENABLED", "false")
 
+# D-01：core 端口装配（测试侧装配点）——core 层经 core/ports.py 访问 web 层
+# 实现（生成管线/供应商配置/生成日志/Skill 文档），任何测试导入前完成注入。
+from src.video_agent.web.port_wiring import install_core_ports  # noqa: E402
+
+install_core_ports()
+
 
 @pytest.fixture(scope="session")
 def _skill_mirror_dir(tmp_path_factory):
@@ -24,13 +30,8 @@ def _skill_mirror_dir(tmp_path_factory):
     for f in fixture_dir.glob("*.md"):
         if f.name != "README.md":
             shutil.copy2(f, mirror / f.name)
-    # 0818 架构板正批 B0：sidecar 声明随文档同镜像（registry 双读在测试期可见）
-    real_sidecar = Path(REAL_DIR).parent / "skills_manifests"
-    if real_sidecar.exists():
-        sc = mirror.parent / "skills_manifests"
-        sc.mkdir(exist_ok=True)
-        for f in real_sidecar.glob("*.json"):
-            shutil.copy2(f, sc / f.name)
+    # 任务#5：声明与正文合一（文档头部 frontmatter），随 md 拷贝天然进镜像；
+    # 原外置 sidecar 镜像块随 data/skills_manifests/ 退役删除
     return mirror
 
 

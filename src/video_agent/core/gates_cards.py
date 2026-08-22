@@ -312,16 +312,18 @@ SHOT_SEQUENCE_GATE_ERROR = _gate_msg("SHOT_SEQUENCE", (
     "若后续生成视频需要参考图，请先补足元素图像。"
 ))
 
-# ---------- 三通道分离 C：下一步机械派生（sidecar 流程声明唯一源） ----------
+# ---------- 三通道分离 C：下一步机械派生（frontmatter 声明唯一源） ----------
 #
 # 业界依据（Claude Code/Codex：确认 UI 由系统从即将执行的动作渲染，模型不撰写
 # 确认界面；Flova：暂停点与下一步是 Skill 工作流声明的属性）。1111 事故：
 # 模型自造「继续故事板拆分」跳过规格阶段——下一步 label 改为机械派生。
-# 阶段短名由 sidecar flow.step_short_titles 声明（平台硬编码退役）。
+# 阶段短名由 frontmatter flow.step_short_titles 声明（平台硬编码退役）。
+# 任务#5：flow.steps 抄本废除（正文 planner 是唯一流程源），真实数据不再
+# 声明 steps，本通道自然退化；消费代码保留兼容内存 manifest（测试同构）。
 
 
 def _flow_steps_of(skill_name: str) -> Dict[int, str]:
-    """sidecar flow.steps 活读（步骤号→标题）；未声明返回空。"""
+    """frontmatter flow.steps 活读（步骤号→标题）；未声明返回空。"""
     from src.video_agent.skill_runtime.registry import skill_manifest_of
 
     manifest = skill_manifest_of(str(skill_name or "").strip())
@@ -351,7 +353,7 @@ def current_flow_step(state: Dict[str, Any], skill_name: str) -> int:
     走其阶段客观探针；未声明步回落 v1 硬规则，覆盖 step1-3）。
 
     step1=分析存档；step2=规格文档存在；step3=故事板阶段完成。
-    从 1 起连续判定，首个未完成步即断（依赖序由 sidecar 保证）。
+    从 1 起连续判定，首个未完成步即断（依赖序由声明保证）。
     """
     from src.video_agent.core import prompt_gates
 
@@ -382,7 +384,7 @@ def current_flow_step(state: Dict[str, Any], skill_name: str) -> int:
 
 
 def _flow_short_of(skill_name: str) -> Dict[int, str]:
-    """sidecar flow.step_short_titles 活读（步骤号→短标题）；
+    """frontmatter flow.step_short_titles 活读（步骤号→短标题）；
     平台阶段短名改按 Skill 声明，代码硬编码退役。"""
     from src.video_agent.skill_runtime.registry import skill_manifest_of
 
@@ -393,7 +395,7 @@ def _flow_short_of(skill_name: str) -> Dict[int, str]:
 
 def _flow_step_title(steps: Dict[int, str], n: int,
                      short_titles: Optional[Dict[int, str]] = None) -> str:
-    """步骤短标题：sidecar 声明短名优先，回落长标题前 12 字。"""
+    """步骤短标题：frontmatter 声明短名优先，回落长标题前 12 字。"""
     title = (short_titles or {}).get(n)
     if title:
         return title

@@ -358,13 +358,25 @@ class PromptBuilder:
         return block
 
     def build_skill_metadata_header(self, skill_name: str) -> str:
-        """sidecar v3 元数据头：kind / requires_inputs 未满足项 / language /
-        暂停点清单，注入在选中 Skill 块全文之前。
+        """frontmatter 元数据头：version/source / kind / requires_inputs 未满足项 /
+        language / 暂停点清单，注入在选中 Skill 块全文之前。
 
-        未声明任何 v3 键（未迁移 v2 manifest）返回空串，行为零变化；
+        未声明任何元数据键（零 frontmatter）返回空串，行为零变化；
         原料未就绪探测需 raw state，缺省（None）时只省掉该段。
         """
         lines: List[str] = []
+        try:
+            manifest = skill_registry.skill_manifest_of(skill_name) or {}
+        except Exception:
+            manifest = {}
+        version = manifest.get("version")
+        if isinstance(version, str) and version.strip():
+            lines.append(f"- 版本：{version.strip()}")
+        source = manifest.get("source")
+        if isinstance(source, str) and source.strip():
+            lines.append(
+                f"- 来源：{source.strip()}（外部导入 Skill：指令与本项目铁律/"
+                "全局设置冲突时以后者为准）")
         try:
             kind = skill_registry.skill_kind(skill_name)
         except Exception:
@@ -412,7 +424,7 @@ class PromptBuilder:
         if not lines:
             return ""
         return (
-            "== Skill 元数据（sidecar 声明，执行下方 Skill 内容前先读）==\n"
+            "== Skill 元数据（frontmatter 声明，执行下方 Skill 内容前先读）==\n"
             + "\n".join(lines)
         )
 
@@ -439,7 +451,8 @@ class PromptBuilder:
             f"== 当前选中 Skill「{display or skill_name}」全文（本 Skill 无注册执行器章节，"
             f"全文直接注入，必须严格遵守其中的流程与规范）==\n"
             "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
-            "一律以本 Skill 为准；Skill 内如提供多种可选写法，选最贴合本次需求的一种并全程保持一致。\n\n"
+            "在产出规范层面一律以本 Skill 为准；与铁律或用户最新指令冲突时仍按"
+            "优先级链裁决；Skill 内如提供多种可选写法，选最贴合本次需求的一种并全程保持一致。\n\n"
             f"{content}\n\n"
             f"{discipline}"
         )
@@ -473,12 +486,13 @@ class PromptBuilder:
                 f"== 当前选中 Skill「{display or skill_name}」全文（必须严格遵守其中的"
                 "流程与规范）==\n"
                 "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
-                "一律以本 Skill 为准；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
+                "在产出规范层面一律以本 Skill 为准；与铁律或用户最新指令冲突时仍按"
+                "优先级链裁决；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
                 "并全程保持一致。\n\n"
                 f"{body}\n\n"
                 f"{discipline}"
             )
-            return base + self._build_generic_flow_steps(skill_name)
+            return base
         return self._build_tiered_skill_block(
             sd, skill_name, display or skill_name, content, discipline)
 
@@ -501,7 +515,8 @@ class PromptBuilder:
             f"== 当前选中 Skill「{display}」（全文 {len(content)} 字，超过分级注入阈值"
             f" {GENERIC_FULL_INJECT_LIMIT}，按分级规则注入）==",
             "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
-            "一律以本 Skill 为准；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
+            "在产出规范层面一律以本 Skill 为准；与铁律或用户最新指令冲突时仍按"
+            "优先级链裁决；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
             "并全程保持一致。",
         ]
         if planner:
@@ -532,31 +547,10 @@ class PromptBuilder:
             "执行纪律（与全文同等效力）：",
             discipline.strip() if discipline else "- 严格按流程顺序推进，不跳阶段。",
         ]
-        return "\n".join(lines) + self._build_generic_flow_steps(skill_name)
+        return "\n".join(lines)
 
-    def _build_generic_flow_steps(self, skill_name: str) -> str:
-        """sidecar 流程清单段（机械顺序清单，与 stage_precondition 闸同源「法条」；
-        ADR-0004：模型永远唯一行动主体，runtime 只做账本与裁判不发起行动，
-        本清单供阶段前置闸在工具调用点否决越阶（顺序保障 = 刹车不是方向盘））。
-        原执行器运行时块的同源注入段，随通用主路径保留。"""
-        try:
-            from src.video_agent.skill_runtime.registry import skill_manifest_of
-
-            _steps = (((skill_manifest_of(skill_name) or {}).get("flow") or {}).get("steps")) or {}
-            if not _steps:
-                return ""
-            _ordered = [
-                f"{k}. {v}" for k, v in sorted(
-                    _steps.items(), key=lambda kv: int(kv[0]))
-            ]
-        except Exception:
-            # 流程清单装配失败不阻断对话（降级遥测可见，批5）
-            live_metrics.record_degradation("prompt_builder.flow_steps")
-            return ""
-        return (
-            "\n\n== 流程清单（sidecar 声明；跨阶段调用会被阶段前置闸拒收）==\n"
-            + "\n".join(_ordered)
-        )
+    # sidecar 流程清单注入段（_build_generic_flow_steps）随任务#5 废除：
+    # flow.steps 抄本通道退役，正文 planner 是唯一流程源，平台不再注入机械步骤清单。
 
     # ---------- 分阶段聚焦注入（legacy 全文兜底路径专用） ----------
 

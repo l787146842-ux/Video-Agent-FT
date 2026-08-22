@@ -18,6 +18,7 @@ from loguru import logger
 
 from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.core import fc_gates, fc_reconcile, prompt_gates
+from src.video_agent.core import ports
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
 from src.video_agent.core.sse_events import (
@@ -118,7 +119,7 @@ class FCToolRunner:
 
     def _gate_ctx(self, injected_skill: str = "") -> fc_gates.GateContext:
         """组装闸机上下文（warnings/gate_repeat 绑定本实例对象，写入即时可见；
-        record_gen_log 注入 web 层日志面板引用，保住 core→web 分层）。
+        record_gen_log 经 core 端口委托 web 层日志面板，保住 core→web 分层）。
         非 __init__ 构造的实例（测试夹具 object.__new__）缺失属性回落默认值。"""
         return fc_gates.GateContext(
             injected_skill=injected_skill,
@@ -135,13 +136,10 @@ class FCToolRunner:
 
     @staticmethod
     def _record_gate_gen_log(prompt: str, hard: List[str]) -> None:
-        """闸机拦截写入生成日志（顶栏日志面板可见）；记录失败不影响主链路。"""
+        """闸机拦截写入生成日志（顶栏日志面板可见，经 task_log 端口）；
+        记录失败/端口未装配不影响主链路。"""
         try:
-            from src.video_agent.web.task_manager import get_task_manager
-            get_task_manager().record_gen_log(
-                media_type="prompt", status="failed", prompt=prompt,
-                error="; ".join(hard), source="agent",
-            )
+            ports.task_log_port().record_gate_gen_log(prompt, hard)
         except Exception:  # 记录失败不影响主链路
             pass
 
@@ -306,8 +304,7 @@ class FCToolRunner:
             if name == "generate_image" and (
                 "adapter_provider" not in args or args.get("adapter_provider") in ("mock", "", None)
             ):
-                from src.video_agent.web.provider_config import spec_media_preference as _spec_pref
-                _sp, _sm = _spec_pref(self._raw_state())
+                _sp, _sm = ports.provider_config_port().spec_media_preference(self._raw_state())
                 # 用户裁决：模型能力参数唯一权威源 = 全局设置；优先级 =
                 # 草稿自身（用户在中间面板的直接选择）> 全局设置 > 平台默认
                 if image_provider:
@@ -327,8 +324,7 @@ class FCToolRunner:
             # 用户裁决：草稿自身（用户直接选择）> 全局设置 > 平台默认；
             # 防传空导致「供应商 '' 未配置」---
             if name == "image_generate" and not str(args.get("provider_id") or "").strip():
-                from src.video_agent.web.provider_config import spec_media_preference
-                spec_pid, spec_model = spec_media_preference(self._raw_state())
+                spec_pid, spec_model = ports.provider_config_port().spec_media_preference(self._raw_state())
                 if image_provider:
                     args["provider_id"] = image_provider
                     logger.info("[Planner] Injected image_generate provider from draft: %s",

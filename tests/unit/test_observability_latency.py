@@ -21,12 +21,12 @@ def test_fallback_retired_and_spec_write_record_trace_action():
 
 
 def test_prose_obligation_lint_warns_without_pause_declaration():
-    """散文含对话义务而 sidecar 无 pause 声明 → lint 告警（只告警不阻断）"""
+    """散文含对话义务而 frontmatter 无 pause 声明 → lint 告警（只告警不阻断）"""
     from src.video_agent.web import skill_docs as sd
 
-    # 用真实存量 Skill：AI-短剧一站式生成 的 sidecar 有 pause.stage_pause → 不告警
+    # 用真实存量 Skill：AI-短剧一站式生成 的 frontmatter 有 pause.stage_pause → 不告警
     ok_content = "<planner>\n每阶段完成后必须暂停，等待用户确认再继续。\n</planner>\n"
     assert sd._lint_prose_obligations(ok_content, "AI-短剧一站式生成") == []
-    # 无 sidecar 文件的 slug → load_sidecar 空 → 告警
+    # 不存在的 slug → frontmatter 读空 → 告警
     warn = sd._lint_prose_obligations(ok_content, "__no_such_skill__")
     assert warn and "pause" in warn[0]

@@ -52,10 +52,14 @@ export function RunningHubGuide(props: { api: SettingsApi }) {
       <div class="aps-guide-save">
         <button
           type="button" class="aps-btn light"
-          onClick={() => void api().saveAll({
-            ...(api().rhCoin().trim() ? { api_key: api().rhCoin().trim() } : {}),
-            ...(api().rhWallet().trim() ? { wallet_api_key: api().rhWallet().trim() } : {}),
-          }).then((ok) => { if (ok) { api().setRhCoin(''); api().setRhWallet(''); } })}
+          onClick={() => {
+            // 先取快照再进 .then：避免异步回调内直接读响应式 props（solid/reactivity）
+            const a = api();
+            void a.saveAll({
+              ...(a.rhCoin().trim() ? { api_key: a.rhCoin().trim() } : {}),
+              ...(a.rhWallet().trim() ? { wallet_api_key: a.rhWallet().trim() } : {}),
+            }).then((ok) => { if (ok) { a.setRhCoin(''); a.setRhWallet(''); } });
+          }}
         >
           <FiCheck size={12} /> 保存
         </button>

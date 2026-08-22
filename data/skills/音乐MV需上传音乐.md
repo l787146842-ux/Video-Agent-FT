@@ -1,10 +1,42 @@
+---
+flow:
+  spec_wizard: true
+  spec_gate: true
+pause:
+  stage_pause: true
+schema_version: 3
+kind: pipeline
+pause_points:
+- id: mv_spec_finalized
+  trigger: spec_finalized
+- id: mv_storyboard_ready
+  trigger: storyboard_structure_ready
+- id: mv_first_generation_call
+  trigger: first_generation_call
+requires_inputs:
+- type: music
+  required: true
+tools_required:
+- script_analyze
+- document_write
+- storyboard_key_elements
+- storyboard_shots
+- storyboard_audio
+- write_media_prompt
+- image_generate
+- generate_video
+- audio_generate
+- video_assembler
+- ImageToVideoByAudio
+version: '1.0'
+---
 
 skill_name: "音乐MV（需上传音乐）"
 skill_description: "用于通过已上传的音乐生成音乐视频。生成渠道以全局设置为准。在关键阶段暂停以供用户确认；采用人机协作的单次（one-shot）流程。"
 <planner>
 **阶段逻辑与依赖关系：**
 1. 分析已上传的音乐，导出其节奏结构、精确时间（时间戳）和歌词 → **script_analyze**。
-2. 编写 `Final_Video_Spec.md`（标题、类型、比例、时长、视觉风格、语言、模型偏好） → **document_write**。
+2. 编写 制片规格.md（标题、类型、画幅、时长、视觉风格、语言；图像/视频生成渠道与分辨率遵循全局设置） → **document_write**。
 3. 生成故事板（关键元素、镜头列表、音频层） → **storyboard_key_elements / storyboard_shots / storyboard_audio**。并将上传的音频绑定到audio layer → **audio_generate**。
 4. 设置元素：如果用户已经上传了元素资源（如角色图像或参考库中的角色），请直接将其作为资产绑定到相应的关键元素上。否则，为所有元素生成图像 → **write_media_prompt、image_generate**。
 5. 为每个镜头生成一张关键帧图像以锁定视觉一致性；参考元素图像（第 3 步），后续镜头应参考之前类似的画面以保持连贯性 → **write_media_prompt、image_generate**。
@@ -17,7 +49,7 @@ skill_description: "用于通过已上传的音乐生成音乐视频。生成渠
 
 **何时暂停：** 不要一次性运行所有步骤。在上述每个关键阶段（例如：规格确定后、故事板后、元素图像后、关键帧后、镜头视频后、音频后）停止，与用户确认，然后再继续下一步。使用卡片或 reply_to_user 在继续前邀请用户进行审查。
 
-**音频驱动视频（口形同步/OmniHuman）的依赖关系：** 
+**音频驱动视频（口形同步）的依赖关系（唇形同步依赖的“音频驱动视频”能力待平台补齐，当前不可用，不得向用户虚报）：** 
    **先决条件链：** 在分镜脚本、起始帧和最终确定的驱动音频全部就绪并经用户确认之前，绝对不能开始最终视频生成。
    **工作流修正：** 如果缺少驱动音频，请在视频合成前转向 `audio_generate`。
     *   **用户覆盖与风险：** 如果用户要求在没有最终音频的情况下生成视频，您必须在 `reply_to_user` 中说明：“由于缺少驱动音频，现在生成将导致唇形同步精度下降。” 仅在获得用户明确确认后方可继续。
@@ -55,7 +87,7 @@ skill_description: "用于通过已上传的音乐生成音乐视频。生成渠
 <image_generate>
 **元素图像生成**
 - 使用 **TextToImage**。对于不同外观或年龄的同一角色，建议使用 **ImageToImage**；后续的外观应参考之前生成的形象以保持一致性。
-- ，模型与分辨率按全局设置的默认渠道填写。角色元素建议优先使用**三视图**（正面/侧面/背面）以支持跨镜头的一致性。
+- 模型与分辨率按全局设置的默认渠道填写。角色元素建议优先使用**三视图**（正面/侧面/背面）以支持跨镜头的一致性。
 
 **关键帧图像生成（每个镜头）**
 - 使用 **ImageToImage**，模型与分辨率按全局设置的默认渠道填写。参考图像必须包含 (1) 该镜头**相关的元素图像**，以及 (2) 对于每个镜头，参考**同一组中先前镜头**的**最相似**关键帧（成批生成时，批次中的后续镜头参考之前的镜头），作为额外的参考以加强连贯性——例如角色在场景中的位置、他们如何面对彼此以及表情：这些是元素引用无法定义的细节。
@@ -71,13 +103,13 @@ skill_description: "用于通过已上传的音乐生成音乐视频。生成渠
 </generate_video>
 
 <write_media_prompt>
-**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言环境时，提示词prompt需要用中文书写。但是prompt中有关旁白/对话的内容要严格遵循Final_Video_Spec中的Output Language。**
+**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言环境时，提示词prompt需要用中文书写。但是prompt中有关旁白/对话的内容要严格遵循制片规格中的Output Language。**
 **图像生成提示词（TextToImage, ImageToImage）—— 图像提示词编写指南：**
 
 **所有图像提示词的通用原则：**
 - 提示词不仅是描述“画面中有什么”，更像是真正的电影导演和调色师向团队下达指令。
 - 使用**连贯的自然语言**描述场景内容（主体 + 行为 + 环境等），并使用**简短的词组**描述视觉美学（风格、色彩、灯光、构图）。**拒绝文学冗余：** 不要向 AI 解释角色动机或内心状态（例如“仿佛他不关心这张照片”）。不要描述屏幕外或不可见的元素。**只描述物理上可见的内容**。
-- 对于所有图像提示词（任何角色）：然后指导“如何绘制”，而不仅仅是“画什么”。你必须在全球范围内（照片级真实感、动漫、3D 等）应用**电影级提示词的 6 大核心规则**，以确保电影质感。将提示词正文用中文书写（本 Skill 明确要求英文的除外，如 Midjourney 场景单图正文），将这 6 条规则自然交织进描述中。不要将它们输出为带标签的部分：
+- 对于所有图像提示词（任何角色）：然后指导“如何绘制”，而不仅仅是“画什么”。你必须在全球范围内（照片级真实感、动漫、3D 等）应用**电影级提示词的 6 大核心规则**，以确保电影质感。将提示词正文用中文书写（除制片规格明确要求英文的部分外），将这 6 条规则自然交织进描述中。不要将它们输出为带标签的部分：
    **专业风格术语：** 将专业艺术或电影术语与风格术语结合使用，以提高准确性。（例如，引入电影大师和特定的电影视觉锚点，使用 `Neo-Noir style, David Fincher Style, inspired by Se7en` 作为风格锚点，而不是泛泛地声明 `Neo-Noir` 风格）。
    **取景（Framing）：** 明确说明电影取景（例如，`Over-the-shoulder shot`, `Dutch angle`）和景别（例如，`Close-up`, `Medium shot`）。
    **灯光（Lighting）：** 详细说明主光，并强烈强调“负向补光（negative lighting）”以增加对比度和戏剧性（例如，`Strong chiaroscuro contrast`, `dramatic interplay of light and shadow`, 或 `deep facial shadows emphasizing facial structure`）。

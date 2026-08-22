@@ -1,6 +1,13 @@
 # 开发/测试额外依赖（先安装 requirements.txt）
 -r requirements.txt
 
+# 测试框架（任务 #11 依赖归位：自 requirements.txt 移入，生产运行不需要）
+pytest==9.1.1
+pytest-asyncio>=0.24.0
+
+# 覆盖率度量（任务 #11：--cov=src/video_agent/core + scripts/check_cov_ratchet.py 棘轮）
+pytest-cov>=6.0
+
 # HTTP mock（Adapter 单元测试）
 respx==0.22.0
 

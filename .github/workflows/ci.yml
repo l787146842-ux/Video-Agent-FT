@@ -24,8 +24,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-      - name: Run pytest
-        run: python -m pytest tests/ -q --tb=short
+      - name: Run pytest (任务 #11：--cov=src/video_agent/core 并入本次运行，免重复全量)
+        run: python -m pytest tests/ -q --tb=short --cov=src/video_agent/core --cov-report=xml
+      - name: Coverage ratchet gate (任务 #11：core 覆盖率棘轮，只升不降)
+        run: python scripts/check_cov_ratchet.py --require-xml
       - name: Prompt budget gate (宪法 §13.6：模型可见严禁数量 + system.md 体量)
         run: python scripts/check_prompt_budget.py
       - name: File lines gate (宪法 §5/F58：单文件 1200 行红线)
@@ -47,6 +49,27 @@ jobs:
         run: python scripts/scan_skills.py --gate
       - name: API contract check (OpenAPI -> TS types)
         run: python scripts/gen_api_types.py --check
+
+  # ---------- Job 1b: 后端测试（STATE_BACKEND=sqlite 显式维度，任务 #11） ----------
+  # sqlite 虽是默认后端（P3-16 翻转），此 job 显式钉死环境变量，
+  # 防默认值未来漂移时 CI 静默改口径；与矩阵 job 同套件、单 Python 版本控成本。
+  backend-test-sqlite:
+    runs-on: ubuntu-latest
+    env:
+      STATE_BACKEND: sqlite
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run pytest (STATE_BACKEND=sqlite)
+        run: python -m pytest tests/ -q --tb=short
 
   # ---------- Job 2: 前端类型检查 + Lint + 单元测试 ----------
   frontend-check:
@@ -70,7 +93,7 @@ jobs:
   # ---------- Job 3: 构建验证 ----------
   build:
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-check]
+    needs: [backend-test, backend-test-sqlite, frontend-check]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js
@@ -91,7 +114,7 @@ jobs:
   # ---------- Job 4: E2E 冒烟（硬门禁：任务 #18 口径对齐，移除 continue-on-error） ----------
   e2e-smoke:
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-check]
+    needs: [backend-test, backend-test-sqlite, frontend-check]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python

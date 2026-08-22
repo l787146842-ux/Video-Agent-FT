@@ -3,7 +3,7 @@
  * 搜索/页签/勾选状态下沉自管理（弹窗每次打开全新挂载，初始勾选 = 已配置模型）；
  * 父组件只传数据与「应用」回调，行为与切出前一致。
  */
-import { For, Show, createSignal } from 'solid-js';
+import { For, Show, createSignal, untrack } from 'solid-js';
 import { FiX } from 'solid-icons/fi';
 import type { FetchedModels, ModelCat } from '../settings-meta';
 
@@ -23,8 +23,8 @@ export function FetchModelsModal(props: {
 }) {
   const [mSearch, setMSearch] = createSignal('');
   const [mTab, setMTab] = createSignal<'all' | ModelCat>('all');
-  // 画布同款：默认勾选 = 已在配置里的
-  const init = props.savedCats();
+  // 画布同款：默认勾选 = 已在配置里的（挂载时一次性快照，不随外部变化重算）
+  const init = untrack(() => props.savedCats());
   const [checked, setChecked] = createSignal<Set<string>>(
     new Set([...init.image, ...init.chat, ...init.video]),
   );
@@ -67,14 +67,14 @@ export function FetchModelsModal(props: {
   }
 
   return (
-    <div class="aps-modal-mask" onClick={props.onClose}>
+    <div class="aps-modal-mask" onClick={() => props.onClose()}>
       <div class="aps-modal" onClick={(e) => e.stopPropagation()}>
         <div class="aps-modal-head">
           <div>
             <div class="aps-sec-title">从上游拉取的模型清单</div>
             <div class="aps-sec-desc">共 {props.fetched().total} 个模型 · 协议 {props.fetched().protocol} · 勾选后应用到模型列表</div>
           </div>
-          <button type="button" class="aps-icon-btn" title="关闭" onClick={props.onClose}>
+          <button type="button" class="aps-icon-btn" title="关闭" onClick={() => props.onClose()}>
             <FiX size={14} />
           </button>
         </div>
@@ -116,7 +116,7 @@ export function FetchModelsModal(props: {
           <span class="aps-apply-badge">视频 {catCount('video').on}</span>
           <span class="aps-foot-unsel">未选 {catCount('all').total - catCount('all').on}</span>
           <span class="aps-foot-spacer" />
-          <button type="button" class="aps-btn" onClick={props.onClose}>取消</button>
+          <button type="button" class="aps-btn" onClick={() => props.onClose()}>取消</button>
           <button type="button" class="aps-btn light" onClick={applyFetched}>应用到模型列表</button>
         </div>
       </div>

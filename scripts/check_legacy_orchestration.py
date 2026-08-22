@@ -83,7 +83,7 @@ def main() -> int:
         print(
             f"[check_legacy_orchestration] FAIL: {len(hits)} legacy-orchestration reference(s). "
             "Retired by 0818 state-driven orchestration batch; extend "
-            "pipeline_orchestrator/sidecar instead of reviving old mechanisms."
+            "pipeline_orchestrator/frontmatter instead of reviving old mechanisms."
         )
         return 1
     print("[check_legacy_orchestration] PASS: no legacy orchestration symbols")

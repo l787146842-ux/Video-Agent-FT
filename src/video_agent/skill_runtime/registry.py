@@ -1,8 +1,10 @@
 """Skill 上传即注册：文档章节 → 注册表条目。
 
-Skill 文档（data/skills/*.md）仍是唯一数据源与下拉框数据源；
-本注册表保存每个 Skill 解析后的章节与能力声明清单（任务#36 B5
-执行器退役后不再对应已注册工具，仅作阶段裁剪/闸机的客观探针）。
+Skill 文档（data/skills/*.md 或目录包 data/skills/<slug>/<slug>.md）
+仍是唯一数据源与下拉框数据源；平台声明随文档头部 YAML frontmatter
+合一（任务#5，外置 JSON sidecar 已退役）。本注册表保存每个 Skill
+解析后的章节与能力声明清单（任务#36 B5 执行器退役后不再对应已注册
+工具，仅作阶段裁剪/闸机的客观探针）。
 """
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -12,8 +14,9 @@ import re
 
 from loguru import logger
 
-from src.video_agent.skill_runtime import sidecar
-from src.video_agent.skill_runtime.sidecar_schema import (
+from src.video_agent.core import ports
+from src.video_agent.skill_runtime import frontmatter
+from src.video_agent.skill_runtime.manifest_schema import (
     KIND_VALUES,
     LANGUAGE_VALUES,
     REQUIRES_INPUT_TYPES,
@@ -45,7 +48,7 @@ CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
     "video_assembler": ("assembly",),
 }
 
-# P3-15 自定义章节通道：sidecar 顶层声明 custom_sections（章节标识→通道名），
+# P3-15 自定义章节通道：frontmatter 顶层声明 custom_sections（章节标识→通道名），
 # 非管线类 Skill 不必套固定 7 章节模板也能声明自定义章节（执行器形态已退役，
 # 现仅作章节声明探针；不参与固定章节词汇表与漂移门禁口径）。
 CUSTOM_SECTION_EXECUTOR = "skill_section_run"
@@ -83,19 +86,19 @@ class SkillEntry:
     sections: Dict[str, str] = field(default_factory=dict)
     @property
     def manifest(self) -> Optional[Dict[str, dict]]:
-        """manifest 声明活读：sidecar 唯一源，注册不快照，
-        声明后写/迁移更新后立即生效（旧文档通道每次活读语义一致）。
+        """manifest 声明活读：frontmatter 唯一源，注册不快照，
+        声明后写/迁移更新后立即生效（每次从磁盘解析语义一致）。
         None = 未声明，平台回落最小闸。"""
-        return sidecar.load_sidecar(self.slug)
+        return frontmatter.load_manifest(self.slug)
 
     @property
     def custom_sections(self) -> Dict[str, str]:
-        """sidecar custom_sections 声明（活读）：章节标识 → 通用执行器名。
+        """frontmatter custom_sections 声明（活读）：章节标识 → 通用执行器名。
 
         未声明 = 空 dict（回落现行为：只走固定章节词汇表）；
         消费端 fail-closed：schema 未放行的形状（非对象/空键/白名单外
         执行器）整体忽略，非法声明不产生通道（注册期 fail-hard 拒注册，
-        本清洗只兜注册后 sidecar 被改坏的活读场景）。
+        本清洗只兜注册后 frontmatter 被改坏的活读场景）。
         """
         raw = (self.manifest or {}).get("custom_sections")
         if not isinstance(raw, dict):
@@ -117,13 +120,11 @@ class SkillEntry:
             return ""
         if sec in self.sections:
             return self.sections[sec]
-        from src.video_agent.web.skill_docs import (
-            SECTION_TAG_STAGES,
-            _stage_from_heading,
-        )
+        # 宪法铁律：skill_runtime 不 import web 层，经 skill_docs 端口访问
+        sd = ports.skill_docs_port()
 
         low = sec.lower()
-        for mapper in (SECTION_TAG_STAGES.get(low, ""), _stage_from_heading(sec)):
+        for mapper in (sd.SECTION_TAG_STAGES.get(low, ""), sd._stage_from_heading(sec)):
             stages = mapper if isinstance(mapper, tuple) else (mapper,)
             for s in stages:
                 if s and s in self.sections:
@@ -162,44 +163,42 @@ _synced: bool = False
 
 def _load_entry(slug: str) -> Optional[SkillEntry]:
     """从磁盘读取一个 Skill 文档并解析章节；不存在返回 None。"""
-    from src.video_agent.web.skill_docs import (
-        get_skill_doc,
-        split_skill_sections,
-    )
+    sd = ports.skill_docs_port()
 
-    doc = get_skill_doc(slug)
+    doc = sd.get_skill_doc(slug)
     if not doc:
         return None
-    content = doc.get("content") or ""
-    # 声明唯一源 = sidecar（文档纯散文，与源平台一致）；
-    # manifest 经 SkillEntry.manifest 属性活读，注册不快照。
+    # 声明唯一源 = 文档头部 frontmatter（任务#5 合一）；manifest 经
+    # SkillEntry.manifest 属性活读，注册不快照。章节解析只对剥离声明块
+    # 后的正文（YAML 头不是 Skill 正文，不得混入章节/探针）。
+    content = frontmatter.strip_frontmatter(doc.get("content") or "")
     return SkillEntry(
         slug=slug,
         name=doc.get("name") or slug,
         content=content,
-        sections=split_skill_sections(content),
+        sections=sd.split_skill_sections(content),
     )
 
 
 def register_skill(slug: str) -> Optional[SkillEntry]:
     """解析并注册一个 Skill；文档不存在或无法解析时返回 None。
 
-    C4 fail-hard（任务#22）：sidecar schema 校验失败拒绝注册，替代旧
-    「只告警不阻断」——坏声明不能带病上线，修好 data/skills_manifests/
-    下的 sidecar 才能注册；单个坏 Skill 拒注册不截断 sync_all 批次。
-    消费端 fail-closed 清洗仍保留（兜注册后 sidecar 被改坏的活读场景）。
+    C4 fail-hard（任务#22）：frontmatter schema 校验失败拒绝注册，替代旧
+    「只告警不阻断」——坏声明不能带病上线，修好 data/skills/<slug>.md
+    头部 frontmatter 才能注册；单个坏 Skill 拒注册不截断 sync_all 批次。
+    消费端 fail-closed 清洗仍保留（兜注册后 frontmatter 被改坏的活读场景）。
     """
     entry = _load_entry(slug)
     if entry is None:
         return None
-    issues = sidecar.validate_sidecar(entry.manifest)
+    issues = frontmatter.validate_manifest(entry.manifest)
     if issues:
-        # 拒注册同时摘除陈旧条目（refresh/重注册路径：sidecar 改坏后
+        # 拒注册同时摘除陈旧条目（refresh/重注册路径：frontmatter 改坏后
         # 旧注册态不得继续可用）
         _registry.pop(slug, None)
         logger.error(
-            f"[SkillRuntime] Skill「{entry.name}」sidecar schema 校验失败，"
-            f"拒绝注册（fail-hard，修复 data/skills_manifests/{slug}.json "
+            f"[SkillRuntime] Skill「{entry.name}」frontmatter schema 校验失败，"
+            f"拒绝注册（fail-hard，修复 data/skills/{slug}.md 头部声明 "
             f"后经 refresh_skill 重试）：{'；'.join(issues)}"
         )
         return None
@@ -230,8 +229,10 @@ def refresh_skill(slug: str) -> Optional[SkillEntry]:
 
 
 def sync_all(force: bool = False) -> int:
-    """启动/首次使用时全量注册 data/skills/*.md（幂等，可重复调用）。
+    """启动/首次使用时全量注册 data/skills 下的 Skill（幂等，可重复调用）。
 
+    插件包约定双形态（任务#5）：单文件 <slug>.md 与目录包
+    <slug>/<slug>.md（包内其余文件为资源）同等扫描。
     直接扫描 SKILL_DOCS_DIR，不经过 list_skill_docs/ensure_default_skill_docs，
     避免与文档系统互相递归。
     """
@@ -240,21 +241,23 @@ def sync_all(force: bool = False) -> int:
         return len(_registry)
     from pathlib import Path
 
-    from src.video_agent.web import skill_docs as sd
-
-    directory = Path(sd.SKILL_DOCS_DIR)
+    directory = Path(ports.skill_docs_port().SKILL_DOCS_DIR)
     if not directory.exists():
         _synced = True
         return 0
     count = 0
-    # 每个文件都是独立的注册单元。一个遗留的非法/损坏 slug 不能
+    # 每个 Skill 都是独立的注册单元。一个遗留的非法/损坏 slug 不能
     # 截断整个注册批次，否则后面的有效 Skill 会静默消失，运行时
     # 只能错误地回落到模型流程。
+    slugs: List[str] = sorted(f.stem for f in directory.glob("*.md") if f.stem)
+    # 目录包：隐藏目录（.history 等）不参与注册
+    slugs += sorted(
+        p.name for p in directory.iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+        and (p / f"{p.name}.md").exists()
+    )
     seen_canon: Dict[str, str] = {}
-    for f in sorted(directory.glob("*.md")):
-        slug = f.stem
-        if not slug:
-            continue
+    for slug in slugs:
         # v2 收尾：canonical 身份碰撞拒注册（计划§6：alias 必须显式
         # 登记；归一碰撞 = 配置错误，不得双注册同身份 Skill）。
         canon = _norm_name(slug)
@@ -271,7 +274,7 @@ def sync_all(force: bool = False) -> int:
                 count += 1
         except Exception as e:
             logger.warning(
-                f"[SkillRuntime] 跳过无效 Skill 文件 {f.name!r}: {e}"
+                f"[SkillRuntime] 跳过无效 Skill {slug!r}: {e}"
             )
     _synced = True
     return count
@@ -386,19 +389,19 @@ def skill_flow_enabled(skill_name: str, key: str) -> bool:
 
 
 def spec_wizard_active(skill_name: str) -> bool:
-    """规格向导启用判定（sidecar 唯一源，文本启发式退役）。
+    """规格向导启用判定（frontmatter 唯一源，文本启发式退役）。
 
-    sidecar flow.spec_wizard 显式声明；未声明 = 不启用（引擎零预设）。
-    存量 Skill 的现值已由迁移脚本冻结进 sidecar。"""
+    frontmatter flow.spec_wizard 显式声明；未声明 = 不启用（引擎零预设）。
+    存量 Skill 的现值已由迁移脚本冻结进 frontmatter。"""
     manifest = skill_manifest_of(skill_name)
     return bool(((manifest or {}).get("flow") or {}).get("spec_wizard"))
 
 
 def script_required_active(skill_name: str) -> bool:
-    """剧本原料闸启用判定（sidecar 唯一源，文本启发式退役）。
+    """剧本原料闸启用判定（frontmatter 唯一源，文本启发式退役）。
 
-    sidecar flow.script_required 显式声明；未声明 = 不启用。
-    存量 Skill 的现值已由迁移脚本冻结进 sidecar。"""
+    frontmatter flow.script_required 显式声明；未声明 = 不启用。
+    存量 Skill 的现值已由迁移脚本冻结进 frontmatter。"""
     manifest = skill_manifest_of(skill_name)
     return bool(((manifest or {}).get("flow") or {}).get("script_required"))
 
@@ -406,7 +409,7 @@ def script_required_active(skill_name: str) -> bool:
 # ---------- v3 声明读取 API（任务#35 B2：requires_inputs/kind/language 消费） ----------
 # 与 spec_wizard_active/script_required_active 同模块属性访问模式（调用方经
 # registry.<fn> 引用，测试 patch 目标稳定）；未声明 = 零预设（空表/空串/空 dict），
-# 非法声明项 fail-closed 丢弃（注册期告警在 validate_sidecar，消费侧不二次报错）。
+# 非法声明项 fail-closed 丢弃（注册期告警在 validate_manifest，消费侧不二次报错）。
 
 
 def skill_requires_inputs(skill_name: str) -> List[Dict[str, Any]]:

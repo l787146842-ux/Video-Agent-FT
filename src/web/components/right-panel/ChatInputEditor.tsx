@@ -30,8 +30,8 @@ export function ChatInputEditor(props: {
         role="textbox"
         aria-label={t('rp.input.aria')}
         data-placeholder={t('rp.input.placeholder')}
-        onInput={ed().handleInput}
-        onKeyDown={props.onKeyDown}
+        onInput={() => ed().handleInput()}
+        onKeyDown={(e) => props.onKeyDown(e)}
         onDblClick={(e) => {
           const p = ed().handleChipDblClick(e);
           if (p) props.onPreview(p);

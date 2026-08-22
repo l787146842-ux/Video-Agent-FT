@@ -39,8 +39,10 @@ def test_s2_stream_and_nonstream_paths_carry_turn_id():
     # （任务 #17 +2：停止路径痕迹消息持久化——有文本正文与无文本轻量气泡
     #  均属同一停止轮，带同轮 turn_id，与既有四处同语义；该两处随任务 #17
     #  收尾抽至 web/stop_manager.py（行数棘轮清偿），故指纹改为两文件合计）
+    # （影响面修复批 +1：视频内联预览卡持久化——videoCard 与 imageCard 对称，
+    #  done 结算独立条目带同轮 turn_id）
     sm = (ROOT / "src/video_agent/web/stop_manager.py").read_text(encoding="utf-8")
-    assert cs.count("turn_id=turn_id") + sm.count("turn_id=turn_id") == 6
+    assert cs.count("turn_id=turn_id") + sm.count("turn_id=turn_id") == 7
     assert '"turn_id": turn_id' in cs
     # 非流式路径同样携带
     assert "turn_id=ns_turn_id" in cs

@@ -439,6 +439,8 @@ function handleDone(payload: SseDonePayload) {
   if (inserts.length) {
     const seen = new Set<string>();
     for (const it of inserts) {
+      // 视频项不进输入框：内联预览卡为准（finishStream 派生 videoCard 气泡），防双渲染
+      if (it.kind === 'video') continue;
       if (!it.url || seen.has(it.url)) continue;
       seen.add(it.url);
       requestInsertMedia({
@@ -446,7 +448,8 @@ function handleDone(payload: SseDonePayload) {
         name: it.name || it.url, thumb: it.thumb || undefined,
       });
     }
-    showToast(t('rp.msg.mediaInserted', { count: seen.size }), 'success');
+    // toast 计数只算实际插入项（不含视频）；无插入不弹
+    if (seen.size) showToast(t('rp.msg.mediaInserted', { count: seen.size }), 'success');
   }
   if ((payload.applied_actions || 0) > 0) {
     studioActions.markBoardApplied();

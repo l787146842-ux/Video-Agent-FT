@@ -76,7 +76,7 @@ def _has_document_named(state: Dict[str, Any], name: str) -> bool:
 
 
 def _stage_done_decl(skill: str, key: str) -> str:
-    """sidecar 阶段完成条件声明（flow.stages.<阶段键>.done，可选，任意阶段同构）：
+    """frontmatter 阶段完成条件声明（flow.stages.<阶段键>.done，可选，任意阶段同构）：
     当前支持 "document:<文档名>"；未声明返空串（回落平台客观探针）。"""
     if not skill:
         return ""
@@ -90,7 +90,7 @@ def _stage_done_decl(skill: str, key: str) -> str:
 def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
     """阶段完成度客观探针（只认状态事实，认不出=未完成；fail-closed）。
 
-    sidecar 声明探针通道（任意阶段同构）：flow.stages.<key>.done 声明
+    frontmatter 声明探针通道（任意阶段同构）：flow.stages.<key>.done 声明
     优先（document:<文档名>），未声明回落各阶段平台客观探针。"""
     decl = _stage_done_decl(skill, key)
     if decl.startswith("document:"):
@@ -126,7 +126,7 @@ def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
 
 
 def step_done_declared(step_no: Any, skill: str) -> Optional[str]:
-    """sidecar flow.step_done_conditions 声明：step 号 → 客观探针阶段键；
+    """frontmatter flow.step_done_conditions 声明：step 号 → 客观探针阶段键；
     未声明返回 None（声明驱动，不猜）。"""
     if not skill:
         return None
@@ -157,10 +157,10 @@ def step_done_probe(
 
 
 def stage_table(skill: str) -> List[StageSpec]:
-    """平台规范阶段表 + sidecar 覆盖（skip 裁剪 / 同批执行器替换）。
+    """平台规范阶段表 + frontmatter 覆盖（skip 裁剪 / 同批执行器替换）。
 
     skill 感知裁剪：未声明 spec_wizard 的 Skill 无规格阶段；
-    无 video_assembler 执行器章节的 Skill 无组装阶段（除非 sidecar 显式覆盖）。"""
+    无 video_assembler 执行器章节的 Skill 无组装阶段（除非 frontmatter 显式覆盖）。"""
     manifest = registry.skill_manifest_of(skill) or {}
     overrides = ((manifest.get("flow") or {}).get("stages") or {})
     entry = registry.resolve_entry(skill)
@@ -190,11 +190,14 @@ def current_stage(state: Dict[str, Any], skill: str) -> Optional[StageSpec]:
     return None
 
 
-# ---------- 3A：sidecar dependencies 消费（DAG 调度） ----------
+# ---------- 3A：frontmatter dependencies 消费（DAG 调度） ----------
+#
+# 任务#5：step_stages/dependencies 声明通道废除（正文 planner 是唯一流程源），
+# 真实数据不再声明；消费代码保留兼容内存 manifest（测试同构口径）。
 #
 # step 描述关键词 → 平台规范阶段（仅作未声明回落兜底）。顺序即优先级：
 # assembly 等特化阶段在前，structure 作为兼底放最后。首选通道 =
-# flow.step_stages 显式声明（sidecar schema v2，注册期门禁校验）。
+# flow.step_stages 显式声明（schema v2，注册期门禁校验）。
 _STEP_STAGE_HINTS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("analysis", ("分析", "读取并", "剧本文件")),
     ("spec", ("规格", "参数写入", "Final_Video_Spec")),
@@ -228,7 +231,7 @@ def reset_step_stage_stats() -> None:
 def _step_to_stage(
     step_no: Any, manifest: Optional[Dict[str, Any]], table: List[StageSpec],
 ) -> Optional[str]:
-    """sidecar step 号 → 平台规范阶段：① step_stages 显式声明（权威）；
+    """frontmatter step 号 → 平台规范阶段：① step_stages 显式声明（权威）；
     ② stage_executors 执行器交集；③ 描述关键词启发式（回落，遥测记账）。"""
     flow = ((manifest or {}).get("flow") or {})
     keys = {s.key for s in table}
@@ -255,7 +258,7 @@ def _step_to_stage(
 
 
 def _stage_dependencies(skill: str) -> Dict[str, List[str]]:
-    """sidecar flow.dependencies（step 号 DAG）翻译为平台阶段 DAG。
+    """frontmatter flow.dependencies（step 号 DAG）翻译为平台阶段 DAG。
 
     未声明返回空 dict（orchestrate_turn 回落线性扫描，零行为变更）；
     无法映射的 step（如源协议细粒度步骤）其边被吸收并 warning。
@@ -343,7 +346,7 @@ def evaluate_stage_precondition(
     """阶段前置闸判定（platform.stage_precondition，GATE_RULES 登记）。
 
     返回拒收文案（结构化拒因，回喂模型）；None = 放行。
-    事实源全复用既有单一源：阶段表/依赖图/客观探针（sidecar 声明，
+    事实源全复用既有单一源：阶段表/依赖图/客观探针（frontmatter 声明，
     未声明前置回落线性链，与 3A 调度同构且更保守）。无 Skill 激活不启用。
     """
     if not skill:

@@ -9,7 +9,7 @@ Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复；
 
 职责边界（主体回归后）：
 - Skill 激活编译 ``WorkflowDefinition``（canonical slug + revision + content hash，
-  源 = sidecar 声明，``validate_sidecar`` 注册期门禁）；
+  源 = frontmatter 声明，``validate_manifest`` 注册期门禁）；
 - 持久化 ``WorkflowRun``（current_node/completed_nodes/pending_gate/artifacts），
   **仅本模块 reducer 可改**（StateManager 仍唯一写入点，Rule3）；
   interaction 暂停旗标同经 ``reduce_interaction`` 单一写入；
@@ -29,7 +29,7 @@ from src.video_agent.core import gates_inputs
 from src.video_agent.core import pipeline_orchestrator as po
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
-from src.video_agent.skill_runtime import sidecar
+from src.video_agent.skill_runtime import frontmatter
 from src.video_agent.core.workflow_contract import WorkflowDefinitionError, default_v2_workflow
 from src.video_agent.core.workflow_events import EventLedger
 from src.video_agent.core.turn_commit import (
@@ -41,7 +41,7 @@ _COMPILE_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
 
 
 def clear_compile_cache() -> None:
-    """轮始清理编译缓存（sidecar 声明轮间可能被编辑，缓存仅限本轮）。"""
+    """轮始清理编译缓存（frontmatter 声明轮间可能被编辑，缓存仅限本轮）。"""
     _COMPILE_CACHE.clear()
 
 
@@ -56,7 +56,7 @@ def canonical_slug(name: str) -> str:
 def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
     """Skill 激活编译 WorkflowDefinition（canonical slug + revision + hash）。
 
-    源 = sidecar 声明（validate_sidecar 注册期门禁）+ 阶段表；编译失败
+    源 = frontmatter 声明（validate_manifest 注册期门禁）+ 阶段表；编译失败
     （未注册 Skill）返回 None（runtime 不启用，回落模型循环旧路径）。
     per-turn 缓存（轮始 clear_compile_cache；同轮多次调用共享）。"""
     cache_key = canonical_slug(skill) or str(skill or "")
@@ -67,13 +67,13 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
     if entry is None:
         _COMPILE_CACHE[cache_key] = None
         return None
-    # v2 收尾：sidecar 体检门禁——非法声明拒入 workflow（计划§1/§6：
-    # 无效 sidecar 不得“只告警后继续”驱动运行时；散文通道仍可工作）
-    issues = sidecar.validate_sidecar(
-        sidecar.load_sidecar(str(entry.slug or skill)))
+    # v2 收尾：frontmatter 体检门禁——非法声明拒入 workflow（计划§1/§6：
+    # 无效声明不得“只告警后继续”驱动运行时；散文通道仍可工作）
+    issues = frontmatter.validate_manifest(
+        frontmatter.load_manifest(str(entry.slug or skill)))
     if issues:
         logger.warning(
-            "[WorkflowRuntime] sidecar 非法，workflow 拒入（{}）: {}",
+            "[WorkflowRuntime] frontmatter 非法，workflow 拒入（{}）: {}",
             skill, ";".join(issues))
         _COMPILE_CACHE[cache_key] = None
         return None
@@ -315,5 +315,5 @@ class WorkflowRuntime:
 
 __all__ = ["WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn", "compile_definition", "sync_run", "record_artifact", "apply_interaction", "reduce_interaction", "bump_node_attempt", "clear_node_attempt"]
 
-# sidecar 声明写入即失效编译缓存（声明变更不被缓存遮蔽）
-sidecar.register_write_hook(clear_compile_cache)
+# frontmatter 声明写入即失效编译缓存（声明变更不被缓存遮蔽）
+frontmatter.register_write_hook(clear_compile_cache)

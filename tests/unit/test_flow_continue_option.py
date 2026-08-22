@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""三通道分离 C 回归：「继续」选项由 sidecar 流程机械派生（1111 事故正向修复）。
+"""三通道分离 C 回归：「继续」选项由 Skill 流程声明机械派生（1111 事故正向修复）。
 
 模型自造「继续故事板拆分」跳过规格阶段 → 下一步 label 改由系统按
-sidecar flow.steps + 客观状态推导；阶段边界暂停卡剔除模型继续类选项、
-前置系统派生项；规格向导前移到阶段 1 边界（软候选回落）。
+流程声明（steps 消费通道仅存于内存 manifest：生产 frontmatter 已废除
+该键，正文 planner 是唯一流程源） + 客观状态推导；阶段边界暂停卡剔除
+模型继续类选项、前置系统派生项；规格向导前移到阶段 1 边界（软候选回落）。
 """
 import asyncio
 import json
@@ -15,22 +16,26 @@ from src.video_agent.tools.base import ToolResult
 
 _FLOW = {"flow": {"steps": {
     "1": "读取并分析剧本", "2": "写入制作规格", "3": "设计 Storyboard"},
-    # v2 批4：阶段短名由 sidecar 声明（平台硬编码退役）
+    # v2 批4：阶段短名由声明驱动（平台硬编码退役）
     "step_short_titles": {"1": "剧本分析", "2": "制作规格", "3": "关键元素拆解"}}}
 
 
-def _register_flow_skill():
-    from src.video_agent.skill_runtime import registry, sidecar
+def _register_flow_skill(monkeypatch):
+    """注册零声明文档条目，流程声明经内存 manifest 注入（steps 消费
+    通道保留于编排器/闸机通用代码；生产 frontmatter 声明 steps = fail-hard）。"""
+    from src.video_agent.skill_runtime import registry
     from src.video_agent.web import skill_docs as sd
 
     sd.save_skill_doc("流程测试", "# 流程测试\n> 调用规则：测试\n")
-    sidecar.write_sidecar("流程测试", _FLOW)
     registry.register_skill("流程测试")
+    monkeypatch.setattr(
+        registry, "skill_manifest_of",
+        lambda name: _FLOW if name == "流程测试" else None)
 
 
-def test_current_flow_step_objective_derivation():
+def test_current_flow_step_objective_derivation(monkeypatch):
     """step1=分析存档；step2=规格文档；无声明=0。"""
-    _register_flow_skill()
+    _register_flow_skill(monkeypatch)
     state1 = {"analysis": {"summary": "x"}, "documents": []}
     assert gates_cards.current_flow_step(state1, "流程测试") == 1
     state2 = {"analysis": {"summary": "x"}, "documents": [
@@ -39,9 +44,9 @@ def test_current_flow_step_objective_derivation():
     assert gates_cards.current_flow_step(state1, "未声明Skill") == 0
 
 
-def test_system_continue_option_labels():
+def test_system_continue_option_labels(monkeypatch):
     """阶段 1 边界 → 「确认，进入『制作规格』」；阶段 2 边界 → 关键元素拆解。"""
-    _register_flow_skill()
+    _register_flow_skill(monkeypatch)
     opt = gates_cards.system_continue_option(
         {"analysis": {"summary": "x"}, "documents": []}, "流程测试")
     assert opt["label"] == "确认，进入「制作规格」"
@@ -55,9 +60,9 @@ def test_system_continue_option_labels():
     assert gates_cards.system_continue_option({}, "未声明Skill") is None
 
 
-def test_flow_continue_note_for_next_turn():
+def test_flow_continue_note_for_next_turn(monkeypatch):
     """用户点选 flow_continue 后回喂模型的机械指令含阶段号与短标题。"""
-    _register_flow_skill()
+    _register_flow_skill(monkeypatch)
     note = gates_cards.flow_continue_note(
         {"analysis": {"summary": "x"}, "documents": []}, "流程测试")
     assert "阶段 2" in note and "制作规格" in note
@@ -71,7 +76,7 @@ class _TM:
 def test_boundary_pause_strips_model_continue_and_prepends_system(monkeypatch):
     """v2 批4：阶段边界选项面 = 系统派生唯一入口——
     模型「继续故事板拆分」与调整类选项均直接拒收（不做模糊清洗）。"""
-    _register_flow_skill()
+    _register_flow_skill(monkeypatch)
     runner = FCToolRunner(tool_manager=_TM())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {
         "analysis": {"summary": "x"}, "documents": [],
@@ -100,7 +105,7 @@ def test_boundary_pause_strips_model_continue_and_prepends_system(monkeypatch):
 
 def test_mid_stage_pause_not_decorated(monkeypatch):
     """本批未命中阶段边界（仅 workflow_pause）→ 不挂系统继续选项。"""
-    _register_flow_skill()
+    _register_flow_skill(monkeypatch)
     runner = FCToolRunner(tool_manager=_TM())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {
         "analysis": {"summary": "x"}, "documents": [],

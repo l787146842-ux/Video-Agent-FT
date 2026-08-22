@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from 'solid-js';
+import { createSignal, onCleanup, For, Show } from 'solid-js';
 import { FiPlus } from 'solid-icons/fi';
 import { studioActions } from '@/stores/studio';
 import { DraftCard } from './DraftCard';
@@ -34,6 +34,18 @@ export function GroupCard(props: {
   /** 卡片行悬停态（仅悬停在卡片/输入行上才展开微调行，悬停标题描述不触发） */
   const [cardsHover, setCardsHover] = createSignal(false);
   let adjustBoxRef: HTMLDivElement | undefined;
+
+  /* 微调框悬停 300ms 延迟浮现（体验规范）：enter 挂表、leave 取消，
+     避免扫过卡片列表时反复弹出；已展开后不重复挂表 */
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  function clearHoverTimer() {
+    if (hoverTimer !== undefined) { clearTimeout(hoverTimer); hoverTimer = undefined; }
+  }
+  function armHoverTimer() {
+    if (cardsHover() || hoverTimer !== undefined) return;
+    hoverTimer = setTimeout(() => { hoverTimer = undefined; setCardsHover(true); }, 300);
+  }
+  onCleanup(clearHoverTimer);
 
   /** 分组拖拽门控：仅当按下点在空白区域（非文字/按钮/卡片等）才允许拖动整个分组，
    * 其他区域（尤其文字）保留鼠标选中复制能力 */
@@ -113,7 +125,7 @@ export function GroupCard(props: {
       data-group-id={props.group.id}
       draggable={dragEnabled()}
       onMouseDown={(e) => setDragEnabled(isBlankDragArea(e.target))}
-      onMouseLeave={() => setCardsHover(false)}
+      onMouseLeave={() => { clearHoverTimer(); setCardsHover(false); }}
       onContextMenu={(e) => props.onContextMenu(e)}
       onDragStart={(e) => { e.dataTransfer!.setData('text/plain', props.group.id); e.dataTransfer!.effectAllowed = 'move'; props.onDragStart(e); }}
       onDragOver={(e) => props.onDragOver(e)}
@@ -146,6 +158,7 @@ export function GroupCard(props: {
           // 移向下方微调输入行时不清除（保持展开），移出卡片区域才收起
           const rt = e.relatedTarget as HTMLElement | null;
           if (rt && adjustBoxRef && adjustBoxRef.contains(rt)) return;
+          clearHoverTimer();
           setCardsHover(false);
         }}
       >
@@ -161,7 +174,7 @@ export function GroupCard(props: {
           {(draft, di) => (
             <div
               class="draft-card-wrap"
-              onMouseEnter={() => { setHoverDraftId(draft.id); setCardsHover(true); }}
+              onMouseEnter={() => { setHoverDraftId(draft.id); armHoverTimer(); }}
             >
               <DraftCard
                 draft={draft}

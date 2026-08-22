@@ -41,12 +41,12 @@ def svc(tmp_path):
     StateManager.reset_instance()
 
 
-# ---------- 解析层（0818 B4：声明迁 sidecar，文档解析通道退役；
+# ---------- 解析层（任务#5：声明迁文档头部 frontmatter；
 # 体检/加载语义由 test_sidecar_migration 覆盖） ----------
 
 
 def test_manifest_gates_override_legacy_gate_rules():
-    """并存时 sidecar 声明优先（冲突键覆盖旧 gate_rules 块）"""
+    """并存时 frontmatter 声明优先（冲突键覆盖旧 gate_rules 块）"""
     content = (
         "```json gate_rules\n" '{"require_duration": true}' "\n```\n"
     )
@@ -65,10 +65,10 @@ def test_default_gate_rules_business_gates_off():
 # ---------- flow 开关 ----------
 
 def test_skill_flow_enabled_requires_declaration():
-    from src.video_agent.skill_runtime import sidecar
+    from src.video_agent.skill_runtime import frontmatter
 
     sd.save_skill_doc("有声明", "# A\n正文")
-    sidecar.write_sidecar(
+    frontmatter.write_manifest(
         "有声明", {"flow": {"spec_wizard": True, "spec_stage_trim": True}})
     sd.save_skill_doc("无声明", "# B\n> 调用规则：测试\n正文")
     assert registry.skill_flow_enabled("有声明", "spec_wizard") is True
@@ -121,10 +121,10 @@ async def test_spec_pause_gate_silent_without_manifest(svc):
 async def test_spec_pause_gate_fires_with_manifest(svc, monkeypatch):
     """4444 方案乙：声明 spec_wizard 的 Skill，模型手写规格被拒收
     （规格由系统拼装）；审阅卡走 spec_review_pending 路径（见 test_99）。"""
-    from src.video_agent.skill_runtime import sidecar
+    from src.video_agent.skill_runtime import frontmatter
 
     sd.save_skill_doc("向导流程", "# 向导\n正文")
-    sidecar.write_sidecar("向导流程", {
+    frontmatter.write_manifest("向导流程", {
         "gates": {"require_duration": True, "require_subtitle": True,
                   "require_camera_language": True, "require_audio_layer": True},
         "flow": {"spec_wizard": True, "spec_stage_trim": True},
@@ -163,20 +163,21 @@ def test_spec_gate_warning_requires_declaration(svc):
 
 def test_stage_pause_recognizes_manifest():
     from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
-    from src.video_agent.skill_runtime import sidecar
+    from src.video_agent.skill_runtime import frontmatter
 
-    # 无关键词、仅 sidecar 声明 → 生效
+    # 无关键词、仅 frontmatter 声明 → 生效
     sd.save_skill_doc("仅清单暂停", "# A\n正文")
-    sidecar.write_sidecar("仅清单暂停", {"pause": {"stage_pause": True}})
+    frontmatter.write_manifest("仅清单暂停", {"pause": {"stage_pause": True}})
     assert skill_requires_stage_pause("仅清单暂停") is True
-    # sidecar 显式 false 覆盖『何时暂停』关键词（声明优先）
+    # frontmatter 显式 false 覆盖『何时暂停』关键词（声明优先）
     sd.save_skill_doc("清单关闭", "# B\n何时暂停：每阶段后。")
-    sidecar.write_sidecar("清单关闭", {"pause": {"stage_pause": False}})
+    frontmatter.write_manifest("清单关闭", {"pause": {"stage_pause": False}})
     assert skill_requires_stage_pause("清单关闭") is False
 
 
 def test_lint_pause_warning_keyword_driven():
-    """0818 B4：编辑期暂停提示只看正文关键词；manifest 块不再消费并显式告知。"""
+    """任务#5：编辑期暂停提示看正文关键词与 frontmatter 声明；
+    文档内 manifest 块不再消费并显式告知。"""
     content = (
         "# A\n```json skill_manifest\n" '{"pause": {"stage_pause": true}}\n' "```\n正文"
     )
@@ -220,7 +221,7 @@ def test_real_skills_manifest_snapshot(monkeypatch):
             entry = registry.get_entry(slug)
             assert entry is not None, f"Skill 未注册: {slug}"
             flow = ((entry.manifest or {}).get("flow") or {})
-            # 0818 B4：spec_wizard 现值已冻结进 sidecar（存量视频 Skill 全为 true）
+            # 0818 B4：spec_wizard 现值已冻结进 frontmatter（存量视频 Skill 全为 true）
             assert flow.get("spec_wizard") is True, f"{slug} 冻结值应为 true"
             # 存量视频 Skill 流程均含规格步骤：spec_gate 与迁移前行为等价
             assert flow.get("spec_gate") is True, f"{slug} 应声明 spec_gate"
@@ -236,10 +237,12 @@ def test_real_skills_manifest_snapshot(monkeypatch):
 # 814H9 影响面快照（13.7 登记）：客观检测只命中流程含「上传/分析剧本」的 Skill
 # （豪华技能为测试桩，R2 已迁 tests/fixtures/skills，不再占生产快照名额）
 _SCRIPT_REQUIRED_ON = (
-    "3D国漫古装精品短剧", "AI-短剧一站式生成", "剧情短片音色参考",
-    "剧本生视频需上传剧本",
+    "3D国漫古装精品短剧", "AI-短剧一站式生成", "剧本生视频需上传剧本",
 )
-_SCRIPT_REQUIRED_OFF = ("宣言式概念短片", "音乐MV需上传音乐", "商品宣传短片")
+# 剧情短片音色参考：任务#6 用户裁决剧本可选（script_required=false，
+# planner 可代写），自 ON 清单移入 OFF
+_SCRIPT_REQUIRED_OFF = ("宣言式概念短片", "音乐MV需上传音乐", "商品宣传短片",
+                        "剧情短片音色参考")
 
 
 def test_script_required_snapshot(monkeypatch):
