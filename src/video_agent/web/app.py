@@ -19,6 +19,7 @@ from loguru import logger
 
 from src.video_agent.utils.paths import PROJECT_ROOT, STATIC_DIR, WORKSPACE_DIR, ASSETS_DIR, LOGS_DIR
 from src.video_agent.exceptions import VideoAgentError
+from src.video_agent.web.error_payload import classify_exception, classify_http_status, classify_legacy_code
 from src.video_agent.config import settings
 from src.video_agent.web.routes.config import router as config_router
 from src.video_agent.web.routes.providers import router as providers_router
@@ -168,7 +169,9 @@ async def dev_origin_guard(request: Request, call_next):
                 logger.warning(f"[Security] 拒绝外站来源的写请求: {source} {request.method} {request.url.path}")
                 return JSONResponse(
                     status_code=403,
-                    content={"detail": "拒绝非本机来源的写请求", "error_code": "FORBIDDEN_ORIGIN"},
+                    content=classify_legacy_code(
+                        "FORBIDDEN_ORIGIN", "拒绝非本机来源的写请求",
+                    ).http_body("FORBIDDEN_ORIGIN"),
                 )
     return await call_next(request)
 
@@ -188,17 +191,22 @@ async def api_key_auth(request: Request, call_next):
     # 校验 X-API-Key 头（未配置 api_key 时拒绝所有请求，安全默认）
     key = request.headers.get("X-API-Key", "")
     if not settings.api_key or key != settings.api_key:
-        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+        return JSONResponse(
+            status_code=401,
+            content=classify_http_status(401, "Unauthorized").http_body("UNAUTHORIZED"),
+        )
     return await call_next(request)
 
 
 # ---------- 统一异常处理 ----------
 @app.exception_handler(VideoAgentError)
 async def video_agent_error_handler(request: Request, exc: VideoAgentError):
-    """业务异常统一转译为 JSON 响应（包含 error_code 供前端国际化）"""
+    """业务异常统一转译为 JSON 响应（任务 #19：ErrorPayload 契约——
+    既有 detail/error_code 兼容字段 + 结构化 code/kind/message）"""
+    payload = classify_exception(exc)
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": str(exc), "error_code": exc.error_code},
+        content=payload.http_body(exc.error_code),
     )
 
 # ---------- 静态资源缓存策略 ----------

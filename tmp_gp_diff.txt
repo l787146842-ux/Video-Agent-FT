@@ -1,0 +1,53 @@
+﻿diff --git a/src/video_agent/core/guard_pipeline.py b/src/video_agent/core/guard_pipeline.py
+index d852282..a066c30 100644
+--- a/src/video_agent/core/guard_pipeline.py
++++ b/src/video_agent/core/guard_pipeline.py
+@@ -6,7 +6,7 @@
+     input guard 鈫?tool input guard 鈫?tool execute 鈫?tool output guard 鈫?output guard 鈫?audit
+ 
+ 鏈ā鍧楁槸銆屾彁绀鸿瘝鍐欏叆銆嶅垽瀹氱殑鍞竴缁勫悎瀹炵幇锛涜皟鐢ㄦ柟鍙敞鍏ュ弬鏁帮紝涓嶅悇鑷啓鍒ゅ畾銆?-锛坰tudio-actions 涓ユ牸 JSON 瑙ｆ瀽浠呭瓨浜?mock 婕旂ず閫氶亾锛屼富璺緞鏃犺嚜鐢辨枃鏈В鏋愩€傦級
++锛坰tudio-actions 鏂囨湰瑙ｆ瀽宸插叏閲忛€€褰癸紝鍚?mock 婕旂ず閫氶亾锛屼富璺緞鏃犺嚜鐢辨枃鏈В鏋愶紝ADR-0001銆傦級
+ verdict 缁撴瀯鍖栵紙GateVerdict锛夛紝鍥炲杺妯″瀷涓庡睍绀虹敤鎴风敤鍚屼竴婧愶紱
+ 姣忔潯鍒ゅ畾缁?tracer.record_gate 鍏ュ璁★紙/api/agent/gates 鍙锛夈€? 
+@@ -197,6 +197,49 @@ def evaluate_gen_confirm(
+     return msg, warns
+ 
+ 
++def evaluate_tool_risk(
++    name: str,
++    *,
++    override: Any = False,
++    flow_consent: bool = False,
++) -> "tuple[Optional[str], List[str]]":
++    """宸ュ叿椋庨櫓鍒嗙骇纭闂革紙瀹硶 搂2.7锛歨igh 蹇呴』骞冲彴闂告満 + 鐢ㄦ埛纭锛夈€?+
++    閫傜敤鑼冨洿 = high 绾т笖鏃犳棦鏈夌‘璁ゅ師璇鐩栫殑宸ュ叿锛堢敾甯冨啓鍏?鏂囨。鍐欏叆锛?+    鍚嶅崟褰?fc_gates.TOOL_RISK_CONFIRM_TOOLS锛夛紱鐢熸垚绫?high
++    锛坕mage_generate 绛夛級鐢?gen_confirm 闂歌鐩栵紝涓嶉噸澶嶈闂搞€?+    纭鍥炴惡鏈哄埗涓?gen_confirm 鍚屾簮锛埪?.4锛夛細
++    - flow_directive 涓€鏉￠緳鎸囦护 = 鏈壒鏄惧紡鍚屾剰锛堢暀鐥曪級锛?+    - 鐢ㄦ埛銆屾湰娆℃斁琛屻€嶏紙gate_overrides 鍗曟娑堣垂锛? 涓€娆℃€у悓鎰忥紱
++    - 鏃犲悓鎰?鈫?纭嫆锛圕ontext 鈮?Consent锛岀姝㈤潤榛樻斁琛岋級锛?+      鎷掑洜鍥炲杺妯″瀷锛岀敱鍏舵殏鍋滃悜鐢ㄦ埛鍙戣捣纭閭€璇枫€?+    鍒ゅ畾缁?audit_verdicts 鍏ュ璁★紙rule_id = platform.tool_risk锛夈€?+    杩斿洖 (纭嫆鍘熷洜, warnings)銆?+    """
++    warns: List[str] = []
++    if flow_consent:
++        w = "涓€鏉￠緳鎸囦护浣滀负鏈壒楂橀闄╁伐鍏凤紙" + name + "锛夌殑鏄惧紡鍚屾剰锛堢暀鐥曪級"
++        warns.append(w)
++        audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
++                       action=name, overridden=True)
++        return None, warns
++    if override in (True, "all") or prompt_gates.override_covers(override, "tool_risk"):
++        w = f"鐢ㄦ埛鍧氭寔鏀捐楂橀闄╁伐鍏风‘璁ら椄锛堜粎璀﹀憡锛屽崟娆＄敓鏁堢暀鐥曪級锛歿name}"
++        warns.append(w)
++        audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
++                       action=name, overridden=True)
++        return None, warns
++    msg = (
++        f"楂橀闄╁伐鍏风‘璁ら椄鎷︽埅锛?{name}' 涓?high 绾ф搷浣滐紙瀹硶 搂2.7锛夛紝"
++        "鏈粡鐢ㄦ埛鏄惧紡鍚屾剰涓嶅緱鎵ц銆傝鍏堢敤 workflow_pause 鍚戠敤鎴疯鏄庢湰娆″皢鎵ц鐨?
++        "鎿嶄綔骞惰姹傜‘璁わ紱鐢ㄦ埛鍚屾剰鍚庯紙鐐广€屾湰娆℃斁琛屻€嶆垨鏈潯娑堟伅鏄庣‘鎸囩ず锛夊啀閲嶆柊鍙戣捣銆?
++    )
++    warns.append(msg)
++    audit_verdicts([GateVerdict("platform.tool_risk", "platform", False, msg)],
++                   action=name)
++    return msg, warns
++
++
+ def prompt_write_verdict(
+     prompt: str,
+     kind: str,

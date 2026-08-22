@@ -3,8 +3,9 @@
 清偿对象（未登记壳）：web/state_service.py、web/actions.py、planner 委托壳、
 models_legacy.py（plan/story 字段）；委托/别名符号防复活由
 check_legacy_orchestration 门禁承接（P2d 结构性测试减负）。
-保护对象（宪法 §12 登记承重壳）：executors/__init__、prompt_gates 尾部、
-chat_service 尾部——monkeypatch 调用方命名空间策略锚点，不得删除。
+保护对象（宪法 §12 登记承重壳）：prompt_gates 尾部、chat_service 尾部
+——monkeypatch 调用方命名空间策略锚点，不得删除。
+（executors/__init__ 承重壳已随任务#36 B5 执行器一步退役物理删除。）
 """
 from pathlib import Path
 
@@ -46,8 +47,9 @@ def test_s4_planner_suggested_retry_present():
 # ---------- 宪法 §12 承重壳不得误删 ----------
 
 def test_s4_registered_shells_kept():
-    executors_init = (SRC / "skill_runtime/executors/__init__.py").read_text(encoding="utf-8")
-    assert "exec_common import" in executors_init
+    # skill_runtime/executors/__init__.py 承重壳保护已随任务#36 B5 执行器
+    # 一步退役删除（模块物理删除，见 coupling_registry R13 留痕）
+    assert not (SRC / "skill_runtime/executors/__init__.py").exists()
     pg = (SRC / "core/prompt_gates.py").read_text(encoding="utf-8")
     assert "from src.video_agent.core.gates_spec import" in pg
     cs = (SRC / "web/chat_service.py").read_text(encoding="utf-8")

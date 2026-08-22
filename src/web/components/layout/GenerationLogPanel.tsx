@@ -7,6 +7,7 @@ import { For, Show, createSignal } from 'solid-js';
 import { FiX, FiImage, FiVideo, FiMusic, FiAlertTriangle } from 'solid-icons/fi';
 import { genLogs, genLogOpen, closeGenLog } from '@/stores/generation-log';
 import { safeUrl } from '@/lib/utils';
+import { useFocusTrap } from '@/lib/focus-trap';
 
 type FilterKind = 'all' | 'image' | 'video' | 'audio' | 'error';
 
@@ -47,6 +48,10 @@ function KindIcon(props: { kind: string }) {
 export function GenerationLogPanel() {
   const [filter, setFilter] = createSignal<FilterKind>('all');
 
+  // 焦点圈闭：打开圈闭、Esc 关闭、关闭还原焦点
+  const [panelEl, setPanelEl] = createSignal<HTMLElement>();
+  useFocusTrap(() => (genLogOpen() ? panelEl() : undefined), { onEscape: () => closeGenLog() });
+
   const logs = () => {
     const all = genLogs();
     const f = filter();
@@ -69,7 +74,13 @@ export function GenerationLogPanel() {
   return (
     <Show when={genLogOpen()}>
       <div class="genlog-overlay">
-        <div class="genlog-panel" role="dialog" aria-label="生成日志">
+        <div
+          class="genlog-panel"
+          ref={setPanelEl}
+          role="dialog"
+          aria-modal="true"
+          aria-label="生成日志"
+        >
           <div class="genlog-header">
             <span class="genlog-title">生成日志</span>
             <div class="genlog-filters">

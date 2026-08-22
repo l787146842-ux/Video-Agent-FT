@@ -23,6 +23,7 @@ from src.video_agent.core.sse_events import (
     SSE_REASONING_DELTA,
     SSE_STATUS,
     SSE_STEP_STARTED,
+    SSE_STOPPED,
     SSE_TOOL_FINISHED,
     SSE_TOOL_STARTED,
 )
@@ -90,6 +91,12 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
     SseEventSpec(
         SSE_ERROR, ("web/chat_service.py",),
         "direct", "error", "初始协议（P0-2 结构化故障标记）",
+    ),
+    SseEventSpec(
+        SSE_STOPPED, ("core/agent_loop.py", "web/chat_service.py"),
+        "passthrough", "stopped",
+        "任务 #17 端到端中断协议：协作式取消检查点命中发终态事件（不变式：任何中断都有痕迹、都有出口）；"
+        "透传段为 chat_service 专属分支并富化在途外部生成任务登记（inflight，第一版不撤销）",
     ),
     SseEventSpec(
         SSE_ACTIONS_APPLIED, ("web/chat_service.py", "core/agent_loop.py"),

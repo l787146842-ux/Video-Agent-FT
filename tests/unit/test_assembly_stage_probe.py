@@ -4,23 +4,13 @@
 组装」被误判完成，assembly 阶段被静默跳过。
 修复（对标 Stop≠Done≠Verified：完成看产物证据，fail-closed）：
 - sidecar flow.stages.assembly.done 声明优先（document:<文档名>）；
-- 未声明回落「全部分镜有视频 + 组装方案文档在盘」；
-- video_assembler 执行器落盘 Final_Assembly_Plan.md 客观产物（幂等）。
+- 未声明回落「全部分镜有视频 + 组装方案文档在盘」。
+（TestAssemblerPersistsArtifact：video_assembler 执行器落盘闭环用例已随
+任务#36 B5 执行器一步退役删除；组装方案文档改由通用主路径用
+document_write 写入，探针只看产物证据不关心供给侧。）
 """
-import pytest
-
 from src.video_agent.core import pipeline_orchestrator as po
-from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import ASSEMBLY_PLAN_DOC_NAME
-
-
-@pytest.fixture
-def svc(tmp_path):
-    StateManager.reset_instance()
-    instance = StateManager(str(tmp_path))
-    StateManager._instance = instance
-    yield instance
-    StateManager.reset_instance()
 
 
 def _state_with_shots(n_videos: int, n_total: int) -> dict:
@@ -91,38 +81,6 @@ class TestAssemblyProbeDeclaration:
         assert po.stage_done("assembly", state, skill="X") is True
 
 
-class TestAssemblerPersistsArtifact:
-    """video_assembler 执行器落盘客观产物（探针的供给侧闭环）"""
-
-    async def test_assembler_writes_plan_doc(self, svc):
-        from src.video_agent.skill_runtime.exec_media_gen import (
-            VideoAssemblerTool, VideoAssemblerInput,
-        )
-
-        state = svc.state_dict
-        state["shots"] = [{
-            "id": "g1", "title": "分镜",
-            "drafts": [{"id": "d1", "label": "镜头1",
-                        "videoUrl": "http://v/1.mp4", "duration": "5"}],
-        }]
-        tool = VideoAssemblerTool()
-        result = await tool.aexecute(VideoAssemblerInput(skill_name=""))
-        assert result.success
-
-        docs = svc.state_dict.get("documents") or []
-        names = [d.get("name") for d in docs]
-        assert ASSEMBLY_PLAN_DOC_NAME in names
-        # 探针闭环：产物落盘后 assembly 阶段可判完成（分镜需全有视频）
-        assert po.stage_done("assembly", svc.state_dict) is True
-
-    async def test_assembler_upsert_idempotent(self, svc):
-        from src.video_agent.skill_runtime.exec_media_gen import (
-            VideoAssemblerTool, VideoAssemblerInput,
-        )
-
-        tool = VideoAssemblerTool()
-        await tool.aexecute(VideoAssemblerInput(skill_name=""))
-        await tool.aexecute(VideoAssemblerInput(skill_name=""))
-        docs = [d for d in svc.state_dict.get("documents") or []
-                if d.get("name") == ASSEMBLY_PLAN_DOC_NAME]
-        assert len(docs) == 1, "重复执行必须幂等 upsert，不得重复插入"
+# TestAssemblerPersistsArtifact（video_assembler 执行器落盘客观产物）已随
+# 任务#36 B5 执行器一步退役删除：exec_media_gen 不复存在，组装方案文档
+# 改由通用主路径用 document_write 写入（探针闭环上方两个类继续钉死）。

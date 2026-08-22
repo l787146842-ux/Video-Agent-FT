@@ -1,4 +1,9 @@
-/* ===== 右面板：Agent 聊天样式入口（P4-23 拆分：按选择器前缀分三文件，装载顺序不变） ===== */
+/* ===== 右面板：Agent 聊天样式入口（按选择器前缀分三文件，装载顺序不变） ===== */
 @import "./chat-feed.css";
 @import "./chat-cards.css";
-@import "./chat-input.css";
+/* 输入区样式按组件域组织为 5 文件，装载顺序即段序（后装载可覆盖先装载） */
+@import "./chat-input-core.css";
+@import "./chat-input-composer.css";
+@import "./chat-input-mention.css";
+@import "./chat-input-lightbox.css";
+@import "./chat-input-picker.css";

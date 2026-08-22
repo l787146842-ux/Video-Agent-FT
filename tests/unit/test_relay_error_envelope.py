@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from src.video_agent.adapters import openai_compat as oc
-from src.video_agent.exceptions import AdapterError, GenerationError
+from src.video_agent.exceptions import AdapterError
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -91,27 +91,9 @@ async def test_chat_stream_raises_on_envelope(monkeypatch):
     assert ei.value.http_status == 403
 
 
-@pytest.mark.asyncio
-async def test_executor_path_surfaces_generation_error(monkeypatch):
-    """执行器取稿唯一出口：适配器抛错 → generation 转 GenerationError（工具红 × 链路）"""
-    from src.video_agent.skill_runtime import exec_common
-    from src.video_agent.web import generation
-
-    async def boom_stream(self, messages, **kw):
-        raise AdapterError(f"LLM 中继拒收通知单（HTTP 403）: {ENVELOPE[:80]}",
-                           retryable=False, http_status=403)
-        yield  # pragma: no cover
-
-    async def fake_resolve(provider_id, model):
-        return ("http://127.0.0.1:1/v1", "k", model)
-
-    monkeypatch.setattr(generation, "resolve_openai_endpoint_async", fake_resolve)
-    monkeypatch.setattr(oc.OpenAICompatChatAdapter, "chat_stream", boom_stream)
-    with pytest.raises(GenerationError):
-        await exec_common.executor_stream_text(
-            "p", "m", [{"role": "user", "content": "x"}],
-            max_tokens=16, timeout=5)
-
+# test_executor_path_surfaces_generation_error（执行器取稿出口转 GenerationError）
+# 已随任务#36 B5 执行器一步退役删除：exec_common.executor_stream_text 不复存在，
+# 适配器抛错语义由上方 test_chat_stream_raises_on_envelope 在适配器层钉死。
 
 # ---------- 人话翻译：排队拒收优先于鉴权分支 ----------
 

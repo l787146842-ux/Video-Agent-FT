@@ -1,5 +1,5 @@
 /**
- * 聊天输入编辑区核心逻辑（P4-23 结构清欠从 ChatInput 拆出）：
+ * 聊天输入编辑区核心逻辑（从 ChatInput 拆出，控制组件行数）：
  * contenteditable 光标记忆、桥接插入请求消费、@ 提及替换、文本回填与发送序列化。
  * 纯逻辑无 JSX，渲染在 ChatInputEditor 组件；DOM 结构与行为零变化。
  */
@@ -64,7 +64,7 @@ export function useChatEditor() {
           .some((n) => (n as HTMLElement).dataset.skillName === req.name);
         if (!exists) insertNodeAtCursor(el, createSkillChip(req.name), savedRange);
       } else if (req.kind === 'edit_backfill') {
-        // P4-20 用户气泡「编辑」回填：与排队消息编辑同款换行追加语义
+        // 用户气泡「编辑」回填：与排队消息编辑同款换行追加语义
         backfillText(req.text);
       } else {
         insertTextAtCursor(el, req.text, savedRange);
@@ -126,7 +126,7 @@ export function useChatEditor() {
     mention.detectMention();
   }
 
-  /** 文本回填输入框（P4-20 收敛为单一实现）：换行追加、不冲掉正在输入的内容；
+  /** 文本回填输入框（单一实现）：换行追加、不冲掉正在输入的内容；
    * 排队消息「编辑」与用户气泡「编辑」（edit_backfill 桥接请求）共用同款语义 */
   function backfillText(text: string) {
     const el = editorEl;

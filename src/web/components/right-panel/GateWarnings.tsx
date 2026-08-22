@@ -30,7 +30,7 @@ export function gateRecordsOf(msg: ChatMessage): GateWarningRecord[] {
 }
 
 /**
- * 闸机拦截 chips + 警告行 +「本次放行」（批6 拆分自 ChatMessageItem）。
+ * 闸机拦截 chips + 警告行 +「本次放行」。
  * 相同拦截（同层/同规则/同文案）合并计数折叠 ×N；trace 仍保留全量记录（审计不丢，§2.5）。
  */
 export function GateWarnings(props: { message: ChatMessage; isGateTarget?: boolean }) {
@@ -52,8 +52,7 @@ export function GateWarnings(props: { message: ChatMessage; isGateTarget?: boole
 
   /** 本次放行（§2.4）：显式用户指令 + gate_overrides 随消息留痕，后端单次消费。
    *  系统动作形态（对标业界 harness：系统操作不混入用户话语流）；
-   *  kind 必须用形态标记 'system_action'（批6：旧 'gate_override' 值从未命中
-   *  系统动作行渲染条件，属类型退化掩盖的真实矛盾） */
+   *  kind 必须用形态标记 'system_action'（仅此值能命中系统动作行渲染条件） */
   const overrideOnce = () => {
     void sendUserMessage('放行本次拦截，继续任务', {
       gateOverrides: ['all'],

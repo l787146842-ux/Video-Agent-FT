@@ -21,8 +21,9 @@ WARN_LINES = 800
 # 棘轮基线（八轮 B1 设立；每清偿一件随降，禁止上调）；
 # B1 磁盘实测四件：planner 998 / prompt_gates 1036 / action_executor 1093 /
 # generation 968（后两者此前台账 T24 未登记，棘轮首查即暴露——登记即事实）；
-# 九轮 B3b prompt_gates 拆分清偿（gates_cards 切出）：4→3
-OVER_900_BASELINE = 3
+# 九轮 B3b prompt_gates 拆分清偿（gates_cards 切出）：4→3；
+# 任务#23 fc_tool_runner 三段拆分清偿（fc_gates/fc_reconcile 切出）：3→2
+OVER_900_BASELINE = 2
 
 # 白名单：文件相对路径 -> 理由（只减不增；拆分清偿后移除条目）
 WHITELIST = {}
@@ -47,8 +48,6 @@ FRONTEND_WHITELIST = {
     "src/web/lib/rich-input.ts": "富文本编辑器 DOM 操作集中（拆分另行立项）",
     "src/web/stores/chat.ts": "对话 store 核心（P4-19 覆盖率闸保护中）",
     "src/web/stores/studio/storyboard.ts": "故事板域集中本地编辑/同步/持久化属合理",
-    "src/web/styles/chat-input.css": "chat.css 拆分后输入区段（P4-23，后续可再细分）",
-    "src/web/styles/overlays.css": "弹窗族样式聚合（拆分另行立项）",
     "src/web/types/api.generated.ts": "gen_api_types.py 生成物，随后端 schema 自然增长",
     "src/web/types/index.ts": "前后端契约类型集中单文件便于对照",
 }

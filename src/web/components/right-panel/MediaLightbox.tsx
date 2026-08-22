@@ -1,7 +1,8 @@
-import { onMount, onCleanup, Switch, Match } from 'solid-js';
+import { onMount, onCleanup, Switch, Match, createSignal } from 'solid-js';
 import { FiDownload, FiX } from 'solid-icons/fi';
 import { safeUrl } from '@/lib/utils';
 import { t } from '@/lib/locale';
+import { useFocusTrap } from '@/lib/focus-trap';
 
 /**
  * 媒体预览灯箱：点击/双击输入框缩略块后放大查看原图/原视频/播放音频。
@@ -12,6 +13,10 @@ export function MediaLightbox(props: {
   kind: string;
   onClose: () => void;
 }) {
+  // 焦点圈闭：打开圈闭、Esc 关闭、关闭还原焦点
+  const [boxEl, setBoxEl] = createSignal<HTMLElement>();
+  useFocusTrap(boxEl, { onEscape: () => props.onClose() });
+
   function onKey(e: KeyboardEvent) {
     if (e.key === 'Escape') props.onClose();
   }
@@ -21,7 +26,14 @@ export function MediaLightbox(props: {
   const src = () => safeUrl(props.url);
 
   return (
-    <div class="image-lightbox" onClick={() => props.onClose()}>
+    <div
+      class="image-lightbox"
+      ref={setBoxEl}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('rp.lightbox.dialogAria')}
+      onClick={() => props.onClose()}
+    >
       <Switch fallback={
         <img src={src()} alt={t('rp.lightbox.alt')} onClick={(e) => e.stopPropagation()} />
       }>

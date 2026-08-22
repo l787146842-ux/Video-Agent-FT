@@ -1,7 +1,6 @@
 /**
- * 聊天输入编辑区（P4-23 结构清欠从 ChatInput 拆出）：
- * contenteditable 编辑器 + @ 提及弹层。DOM 结构不变——
- * #chatInputTextarea / .rich-chat-input / .mention-popup 等选择器原样保留。
+ * 聊天输入编辑区：
+ * contenteditable 编辑器 + @ 提及弹层。
  * 编辑器逻辑（光标记忆/桥接插入/回填/序列化）由 lib/chat-editor 的 useChatEditor 提供，
  * 父组件创建后整体传入，保证发送与排队回填仍可触达同一编辑器实例。
  */

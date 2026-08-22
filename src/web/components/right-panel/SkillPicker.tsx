@@ -135,7 +135,7 @@ export function SkillPicker() {
                     <>
                       <div class="skill-picker-info">
                         <span class="skill-picker-name">{skill.name}</span>
-                        {/* 审核整改批 2：含规划级执行器（不产真实媒体）的 Skill 据实标注 */}
+                        {/* 含规划级执行器（不产真实媒体）的 Skill 据实标注 */}
                         <Show when={(skill.planning_executors || []).length > 0}>
                           <span class="skill-planning-badge" title="含规划级执行器：该阶段只产出规划/方案文本，不产生真实媒体文件">含规划级阶段</span>
                         </Show>

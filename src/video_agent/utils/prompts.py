@@ -5,7 +5,7 @@ Prompt 加载器 — 从 prompts/ 目录读取 Markdown 模板（Rule4: Prompt �
     from src.video_agent.utils.prompts import load_prompt, render_prompt
 
     system = load_prompt("planner/system_fc.md")
-    rendered = render_prompt("planner/context_template.md", state_json="...", selected_draft_id="x")
+    rendered = render_prompt("memory/context_template.md", memories="...")
 """
 import re
 from pathlib import Path

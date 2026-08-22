@@ -1,9 +1,10 @@
 """生成动作域（自 action_executor.py 切出，零行为变更）。
 
-承载：文本轨 studio-actions 的生图/分镜视频生成动作——参数回退链
+承载：生图/分镜视频生成动作（结构化动作 dict 直达，不经文本解析，
+ADR-0001）——参数回退链
 （LLM 指定 → 草稿自身 → 全局设置 → 平台默认）、生成确认闸接入、
 参数回写草稿、任务提交。执行器以参数传入（ex），实例方法壳保留在
-StudioActionExecutor（测试 patch 目标=执行器实例属性，不变）。
+StateOperationExecutor（测试 patch 目标=执行器实例属性，不变）。
 """
 import re
 from typing import TYPE_CHECKING, Dict
@@ -15,10 +16,10 @@ from src.video_agent.web.generation import collect_shot_video_refs, submit_video
 from src.video_agent.web.provider_config import resolve_provider_ref, spec_media_preference
 
 if TYPE_CHECKING:
-    from src.video_agent.web.action_executor import StudioActionExecutor
+    from src.video_agent.web.action_executor import StateOperationExecutor
 
 
-def apply_generate_image(ex: "StudioActionExecutor", action: Dict) -> bool:
+def apply_generate_image(ex: "StateOperationExecutor", action: Dict) -> bool:
     """Agent 触发生图（仅当用户明确要求时）。支持批量。
 
     LLM 指定的供应商/模型/比例/分辨率会同步回写到目标草稿，
@@ -104,7 +105,7 @@ def apply_generate_image(ex: "StudioActionExecutor", action: Dict) -> bool:
     return submitted > 0
 
 
-def apply_generate_video(ex: "StudioActionExecutor", action: Dict) -> bool:
+def apply_generate_video(ex: "StateOperationExecutor", action: Dict) -> bool:
     """Agent 触发分镜视频生成（仅当用户明确要求时）。支持批量。
 
     参考素材自动挂接（对齐 Skill 步骤6）：

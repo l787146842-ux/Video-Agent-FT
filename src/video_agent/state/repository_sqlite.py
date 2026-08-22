@@ -6,11 +6,15 @@ SqliteStateRepository — SQLite 持久化层（与 StateRepository 同接口的
 - SQLite 提供事务原子性、单文件部署、按需查询能力，且仍保持零外部依赖（标准库 sqlite3）。
 
 切换方式：STATE_BACKEND 默认 sqlite（P3-16 翻转，等价性测试守护）；
-设 STATE_BACKEND=json 一键回退（json 为回落后端）。
+设 STATE_BACKEND=json 仅可回落到「未迁入 sqlite 的旧 JSON 工作区」。
 迁移策略：首次启用且数据库为空时，自动从 workspace/projects/*/state.json + index.json 导入；
-双写回退期：DB 为权威源，同时镜像写回 JSON 侧文件
-（projects/*/state.json + index.json + 兼容文件 studio_state.json），
-回退 json 后端时无损续跑（含混用工作区，不依赖兼容文件迁移单路径）。
+兼容文件 studio_state.json 经 StateManager._load → load_compat 一次性迁入。
+
+镜像退役（任务 #24 存储层单一事实源收敛）：SQLite 为项目状态唯一事实源，
+P3-16 双写回退期的 JSON 镜像（projects/*/state.json + index.json + studio_state.json）
+已停写。代价明示：sqlite 写入后回退 STATE_BACKEND=json 不再无损续跑
+（json 侧只剩迁入前的陈旧文件）；STATE_BACKEND=json 保留为测试基线与
+旧 JSON 工作区回落路径，不承担生产数据连续性承诺。
 """
 import json
 import shutil
@@ -23,7 +27,6 @@ from typing import Any, Dict, Optional
 from loguru import logger
 
 from src.video_agent.exceptions import StateError
-from src.video_agent.utils.fileio import atomic_write_text
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
@@ -48,7 +51,9 @@ class SqliteStateRepository:
     def __init__(self, workspace_dir: Path):
         self._workspace_dir = workspace_dir
         self._projects_dir = workspace_dir / "projects"
-        self._state_file = workspace_dir / "studio_state.json"  # 兼容旧版（双写）
+        # 兼容旧版 studio_state.json：镜像已退役（任务 #24），仅保留只读入口
+        # 供 StateManager._load 一次性迁移（load_compat），不再有任何写入方
+        self._state_file = workspace_dir / "studio_state.json"
         self._db_file = workspace_dir / "state.sqlite3"
         self._lock = threading.Lock()
 
@@ -101,25 +106,6 @@ class SqliteStateRepository:
             )
         logger.info(f"[SqliteRepo] 已从 JSON 迁移 {migrated} 个项目到 SQLite")
 
-    # ====== 双写回退期镜像（P3-16）：DB 权威，JSON 文件回落无损 ======
-
-    def _mirror_project(self, project_id: str, state_text: str) -> None:
-        """镜像写回 projects/<id>/state.json（镜像失败只警告不阻断主路径）。"""
-        try:
-            pdir = self._projects_dir / project_id
-            pdir.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(pdir / "state.json", state_text)
-        except Exception as e:
-            logger.warning(f"[SqliteRepo] 双写镜像 state.json 失败（{project_id}）: {e}")
-
-    def _mirror_index(self, index: Dict[str, Any]) -> None:
-        try:
-            atomic_write_text(
-                self._projects_dir / "index.json",
-                json.dumps(index, ensure_ascii=False, indent=2))
-        except Exception as e:
-            logger.warning(f"[SqliteRepo] 双写镜像 index.json 失败: {e}")
-
     # ====== 与 StateRepository 相同的接口 ======
 
     @property
@@ -151,8 +137,7 @@ class SqliteStateRepository:
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('index', ?)",
                 (json.dumps(index, ensure_ascii=False),),
             )
-            # 镜像纳入锁内：并发保存下镜像与 DB 同序落盘，不乱序滞后
-            self._mirror_index(index)
+        # index.json 镜像已退役（任务 #24）：SQLite 为唯一事实源
 
     def save_project(self, project_id: str, state: Dict[str, Any]) -> None:
         self._validate_id(project_id)
@@ -163,8 +148,7 @@ class SqliteStateRepository:
                 "INSERT OR REPLACE INTO projects (id, state, updated_at) VALUES (?, ?, ?)",
                 (project_id, state_text, now),
             )
-            # 镜像纳入锁内：并发保存下镜像与 DB 同序落盘，不乱序滞后
-            self._mirror_project(project_id, state_text)
+        # state.json 镜像已退役（任务 #24）：SQLite 为唯一事实源
 
     def load_project(self, project_id: str) -> Optional[Dict[str, Any]]:
         self._validate_id(project_id)
@@ -182,7 +166,8 @@ class SqliteStateRepository:
         self._validate_id(project_id)
         with self._lock, self._connect() as conn:
             conn.execute("DELETE FROM projects WHERE id=?", (project_id,))
-        # 镜像目录同删（双写回退期：回退 json 后不得见已删项目的残留）
+        # 镜像已停写，但镜像回退期遗留的旧项目目录可能仍在：删除项目时
+        # 顺带清掉残留目录，防止回退 json 后端时已删项目借陈旧文件复活
         try:
             pdir = self._projects_dir / project_id
             if pdir.exists():
@@ -191,11 +176,13 @@ class SqliteStateRepository:
             logger.warning(f"[SqliteRepo] 镜像目录删除失败（{project_id}）: {e}")
 
     def save_compat(self, state: Dict[str, Any]) -> None:
-        """双写旧版 studio_state.json（双写回退期内保持兼容）"""
-        try:
-            atomic_write_text(self._state_file, json.dumps(state, ensure_ascii=False, indent=2))
-        except Exception as _e:
-            logger.debug("[repository_sqlite] 忽略异常: {}", _e)
+        """镜像退役（任务 #24）：studio_state.json 停写。
+
+        保留空实现维持 StateRepository 接口对齐（StateManager.save /
+        ProjectManager 无需感知后端差异）。该文件仅余只读身份：
+        启动时经 load_compat 一次性迁入 SQLite，之后不再更新。
+        """
+        return
 
     def load_compat(self) -> Optional[Dict[str, Any]]:
         if self._state_file.exists():

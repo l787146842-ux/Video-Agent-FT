@@ -1,5 +1,5 @@
 /**
- * AgentTimeline 组件测试（P4-19 前端回归防护：只加测试不改行为）。
+ * AgentTimeline 组件测试。
  *
  * 钉死契约：
  * ① 双折叠面板（深度思考 / 已处理操作）呈现与手动展开折叠；
@@ -129,7 +129,7 @@ describe('AgentTimeline 合并条目与结果摘要', () => {
     expect(results).toEqual(['↳ 产出 3 张图']);
   });
 
-  it('P4-22 多句 result_summary：折叠态一句话，点击展开全文，再点收起', async () => {
+  it('多句 result_summary：折叠态一句话，点击展开全文，再点收起', async () => {
     const full = '已写入规格文档。含分镜与音色两节，待确认。';
     const { container } = render(() => (
       <AgentTimeline items={[doneItem('t-1-0', '写文档', 300, { result_summary: full })]} />
@@ -148,7 +148,7 @@ describe('AgentTimeline 合并条目与结果摘要', () => {
     expect(toggle.classList.contains('expanded')).toBe(false);
   });
 
-  it('P4-22 单句 result_summary：不挂展开按钮（保持纯文本行）', () => {
+  it('单句 result_summary：不挂展开按钮（保持纯文本行）', () => {
     const { container } = render(() => (
       <AgentTimeline items={[doneItem('t-1-0', '生图', 900, { result_summary: '产出 3 张图。' })]} />
     ));

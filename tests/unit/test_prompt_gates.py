@@ -4,7 +4,7 @@ import pytest
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 
 GOOD_SHOT_PROMPT = (
     "镜头总时长：15秒。缓慢推入中景，程心怀抱文物奔向舱门，背景冥王星冰原崩裂成二维平面，"
@@ -187,7 +187,7 @@ def _seed_shot(svc):
 
 def test_executor_rejects_bad_update_draft_by_default(svc):
     _seed_shot(svc)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
         "patch": {"prompt": "太短了"},
@@ -200,7 +200,7 @@ def test_executor_rejects_bad_update_draft_by_default(svc):
 
 def test_executor_user_override_writes_bad_prompt_with_warning(svc):
     _seed_shot(svc)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.gate_rules = dict(ALL_GATES_ON)  # 显式声明业务闸（S1：默认全关）
     ex.gate_override = True  # 用户坚持：照常写入 + 警告
     applied = ex.execute([{
@@ -216,7 +216,7 @@ def test_executor_user_override_writes_bad_prompt_with_warning(svc):
 
 def test_executor_passes_good_update_draft(svc):
     _seed_shot(svc)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
         "patch": {"prompt": GOOD_SHOT_PROMPT},
@@ -229,7 +229,7 @@ def test_executor_passes_good_update_draft(svc):
 
 def test_executor_gate_disabled_allows_everything(svc):
     _seed_shot(svc)
-    ex = StudioActionExecutor(svc)  # gate_enabled 默认 False
+    ex = StateOperationExecutor(svc)  # gate_enabled 默认 False
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
         "patch": {"prompt": "太短了"},
@@ -240,7 +240,7 @@ def test_executor_gate_disabled_allows_everything(svc):
 def test_executor_add_group_rejects_bad_inline_draft(svc):
     # 预置规格文档：否则会被规格前置闸机整体拦下（见下方专项用例）
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "add_group", "group_type": "shot", "title": "Shot_新",
         "draft": {"label": "分镜", "prompt": "敷衍短句"},
@@ -279,7 +279,7 @@ def test_executor_spec_gate_warns_and_allows_add_group(svc, monkeypatch):
         registry, "skill_flow_enabled", lambda skill, key: key == "spec_gate",
     )
     before = len(svc.state_dict.get("keyElements") or [])
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.skill_name = "测试流程Skill"
     applied = ex.execute([{
         "action": "add_group", "group_type": "keyElement", "title": "Element_测试",
@@ -292,7 +292,7 @@ def test_executor_spec_gate_warns_and_allows_add_group(svc, monkeypatch):
 
 def test_executor_spec_gate_allows_after_spec_written(svc):
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "add_group", "group_type": "keyElement", "title": "Element_测试",
     }])
@@ -300,7 +300,7 @@ def test_executor_spec_gate_allows_after_spec_written(svc):
 
 
 def test_executor_spec_gate_inactive_without_skill(svc):
-    ex = StudioActionExecutor(svc)  # gate_enabled=False → 日常微调不受影响
+    ex = StateOperationExecutor(svc)  # gate_enabled=False → 日常微调不受影响
     applied = ex.execute([{
         "action": "add_group", "group_type": "keyElement", "title": "Element_测试",
     }])
@@ -344,7 +344,7 @@ def test_element_images_missing_helper():
 def test_executor_writes_shot_prompt_before_element_images_with_warning(svc):
     _seed_ke_without_image(svc)
     _seed_shot(svc)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
         "patch": {"prompt": GOOD_SHOT_PROMPT},
@@ -388,7 +388,7 @@ def test_shot_without_scene_refs_not_blocked_by_missing_element_images(svc):
         "sceneRefs": [],
         "drafts": [{"id": "draft-s", "label": "分镜", "mediaType": "video", "prompt": ""}],
     }]
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "draft-s", "draft_type": "shot",
         "patch": {"prompt": GOOD_SHOT_PROMPT},
@@ -420,7 +420,7 @@ def test_executor_structure_strips_inline_prompt_on_first_batch(svc):
     svc.state_dict["keyElements"] = []
     svc.state_dict["shots"] = []
     svc.state_dict["audioItems"] = []
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "add_group", "group_type": "keyElement", "title": "Element_测试",
         "draft": {"label": "概念图", "prompt": "y" * 120},
@@ -437,7 +437,7 @@ def test_executor_pending_window_does_not_block_prompt_write(svc):
     from src.video_agent.web.chat_service import _consume_pending_confirmation
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     _seed_shot(svc)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     # 同批：建结构 + 写提示词 → 两者都执行（步骤3与4可合并）
     applied = ex.execute([
         {"action": "add_group", "group_type": "keyElement", "title": "Element_新"},
@@ -565,7 +565,7 @@ def test_executor_uses_skill_gate_rules_as_rejection(svc):
         "id": "shot-1", "title": "S", "duration": "10s", "sceneRefs": [],
         "drafts": [{"id": "d1", "mediaType": "video", "prompt": ""}],
     }]
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.gate_rules = {"shot_min_chars": 200}
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "d1", "draft_type": "shot",
@@ -574,7 +574,7 @@ def test_executor_uses_skill_gate_rules_as_rejection(svc):
     assert applied == 0  # 决策 D：Skill 规则把最短字数提到 200 → 拒绝写入
     assert ex.gate_rejections
     # 用户坚持 → 照常写入并警告
-    ex2 = StudioActionExecutor(svc, gate_enabled=True)
+    ex2 = StateOperationExecutor(svc, gate_enabled=True)
     ex2.gate_rules = {"shot_min_chars": 200}
     ex2.gate_override = True
     applied2 = ex2.execute([{
@@ -619,41 +619,58 @@ def test_fc_gate_off_mode(monkeypatch):
     ) is None
 
 
-# ---------- 用户坚持覆盖（用户第一 > 规格文档铁律 > Skill/系统默认） ----------
+# ---------- C5：豁免唯一权威入口 = 按钮 scope（正则 NLU 已退役） ----------
 
-def test_user_insists_override_detection():
-    assert prompt_gates.user_insists_override("我就要跳过出图")
-    assert prompt_gates.user_insists_override("直接写提示词，不用等图")
-    assert prompt_gates.user_insists_override("我坚持，按我说的来")
-    assert not prompt_gates.user_insists_override("确认规格，拆解关键元素")
-    assert not prompt_gates.user_insists_override("")
+def test_user_insists_nlu_retired():
+    """C5（任务#22）：正则猜自然语言豁免入口退役，「坚持/听我的/直接写」
+    类话术不再降级闸门（误伤面归零）；豁免只认按钮 gate_overrides"""
+    assert not hasattr(prompt_gates, "user_insists_override")
+    from src.video_agent.core import planner_gate_session
 
+    class _Svc:  # 最小 stub：无 interaction 豁免登记
+        state_dict = {}
 
-def test_user_insists_override_no_false_positive_on_descriptive_text():
-    """3.2 收紧：裸词不再在描述性文本上误触发（原「坚持/强制/绕过/无视」子串匹配）"""
-    # 误伤反例：剧情/角色描述中的裸词
-    assert not prompt_gates.user_insists_override("这个角色性格很坚持")
-    assert not prompt_gates.user_insists_override("他太坚持己见了")
-    assert not prompt_gates.user_insists_override("飞船绕过木星继续航行")
-    assert not prompt_gates.user_insists_override("这是剧情中强制性的命运冲突")
-    assert not prompt_gates.user_insists_override("主角无视了敌人的警告继续前进")
-    # 指令性短语仍正常命中
-    assert prompt_gates.user_insists_override("我坚持要跳过概念图")
-    assert prompt_gates.user_insists_override("强制执行写入")
-    assert prompt_gates.user_insists_override("绕过闸机直接写")
-    assert prompt_gates.user_insists_override("无视流程规则，直接编写")
-    assert prompt_gates.user_insists_override("听我的，不要图片")
+        def save(self):
+            pass
+
+    for text in ("听我的", "我坚持，按我说的来", "直接写提示词，不要概念图", "绕过闸机直接写"):
+        assert planner_gate_session.consume_gate_overrides(_Svc(), text) is False
 
 
-def test_user_insists_override_scope():
-    """M1：意图→闸门映射，特定意图（跳过图）优先于泛化表达"""
-    # 特定意图：只降级元素图前置闸
-    assert prompt_gates.user_insists_override("不要概念图") == prompt_gates.GATE_ELEMENT_IMAGE
-    assert prompt_gates.user_insists_override("我坚持要跳过概念图") == prompt_gates.GATE_ELEMENT_IMAGE
-    assert prompt_gates.user_insists_override("直接写提示词，不用等图") == prompt_gates.GATE_ELEMENT_IMAGE
-    # 泛化权威表达：全部闸门
-    assert prompt_gates.user_insists_override("听我的") == "all"
-    assert prompt_gates.user_insists_override("强制执行写入") == "all"
+def test_button_gate_overrides_consumed_once():
+    """C5：按钮路径照常消费——scope=all 映射 ALL、单次消费即清除"""
+    from src.video_agent.core import planner_gate_session
+
+    class _Svc:
+        state_dict = {"interaction": {"gate_overrides": ["all"]}}
+
+        def save(self):
+            pass
+
+    svc = _Svc()
+    assert (
+        planner_gate_session.consume_gate_overrides(svc, "任意文本")
+        == prompt_gates.GATE_OVERRIDE_SCOPE_ALL
+    )
+    # 单次消费：豁免清单已清空，次轮不再放行
+    assert svc.state_dict["interaction"]["gate_overrides"] == []
+    assert planner_gate_session.consume_gate_overrides(svc, "任意文本") is False
+
+
+def test_button_gate_overrides_element_scope():
+    """C5：非 all 的按钮 scope 映射为元素图作用域"""
+    from src.video_agent.core import planner_gate_session
+
+    class _Svc:
+        state_dict = {"interaction": {"gate_overrides": ["element_image"]}}
+
+        def save(self):
+            pass
+
+    assert (
+        planner_gate_session.consume_gate_overrides(_Svc(), "")
+        == prompt_gates.GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE
+    )
 
 
 def test_override_covers_matrix():
@@ -670,7 +687,7 @@ def test_override_covers_matrix():
 def test_narrow_scope_still_rejects_bad_structure(svc):
     """M1：用户只要求跳过概念图时，敷衍提示词仍被结构闸打回（不再全局降级）"""
     _seed_shot(svc)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.gate_override = prompt_gates.GATE_ELEMENT_IMAGE
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
@@ -734,7 +751,7 @@ def test_executor_user_override_allows_shot_prompt_without_images(svc):
 
     _seed_ke_without_image(svc)
     _seed_shot(svc)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.gate_override = True  # 用户坚持「跳过出图」
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
@@ -754,7 +771,7 @@ def test_executor_override_writes_spec_when_exists(svc):
     _seed_shot(svc)
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "# 规格\n"}]
     spec_rules.ensure_iron_rules_doc(svc.state_dict)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.gate_override = True
     assert ex.execute([{
         "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
@@ -766,7 +783,7 @@ def test_executor_override_writes_spec_when_exists(svc):
 def test_executor_no_override_still_writes_with_warning(svc):
     _seed_ke_without_image(svc)
     _seed_shot(svc)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
         "patch": {"prompt": GOOD_SHOT_PROMPT},

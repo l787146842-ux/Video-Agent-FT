@@ -40,15 +40,9 @@ def test_b8_resolve_role_and_thinking_fallback():
         _restore_policy()
 
 
-def test_b8_cascade_fast_prefers_policy_executor():
-    from src.video_agent.skill_runtime.executors import _resolve_cascade_fast
-
-    _set_policy({"executor": {"provider": "polP", "model": "polM"}})
-    try:
-        prov, model = _resolve_cascade_fast("mainP", "mainM")
-        assert (prov, model) == ("polP", "polM")
-    finally:
-        _restore_policy()
+# test_b8_cascade_fast_prefers_policy_executor（executors._resolve_cascade_fast
+# 快模型级联优先策略表）已随任务#36 B5 执行器一步退役删除；
+# executor 角色策略行本身保留（前端设置页契约，与 STAGE_LABELS 同裁决）。
 
 
 # ---------- audit-0819f：档位独立于供应商 + 通用搭配默认 ----------

@@ -134,7 +134,8 @@ def test_unknown_tag_or_heading_registers_nothing_without_error():
 def test_lint_empty_sections_warns():
     lint = lint_skill_content("# 空\n> 调用规则：无章节\n纯正文\n")
     assert lint["available_tools"] == []
-    assert any("未识别到任何执行器章节" in w for w in lint["warnings"])
+    # 任务#36 B5 后新措辞：无管线能力章节 = 自由型（全文直注，无阶段裁剪）
+    assert any("未识别到任何管线能力章节" in w for w in lint["warnings"])
 
 
 def test_lint_partial_split_warns_missing_executors():

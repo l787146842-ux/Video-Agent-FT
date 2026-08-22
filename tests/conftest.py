@@ -51,19 +51,9 @@ def _test_skill_stubs(monkeypatch, _skill_mirror_dir):
 
 
 
-@pytest.fixture(autouse=True)
-def _disable_blackbox(monkeypatch):
-    """测试期禁用黑匣子档案落盘：模拟截断/零产出的用例不得污染真实 logs 目录。
-
-    patch 调用方命名空间（exec_spec 顶层绑定 dump_case，台账惯例）。
-    """
-    from src.video_agent.skill_runtime import blackbox, exec_spec
-
-    def _noop(*a, **k):
-        return ""
-
-    monkeypatch.setattr(blackbox, "dump_case", _noop)
-    monkeypatch.setattr(exec_spec, "dump_case", _noop)
+# （原 _disable_blackbox fixture 已随任务#36 B5 执行器退役删除：
+# 黑匣子档案（skill_runtime/blackbox.py）唯一消费方为 exec_spec/exec_common，
+# 随执行器族一并退役。）
 
 
 @pytest.fixture(autouse=True)

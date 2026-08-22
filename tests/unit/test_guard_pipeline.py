@@ -5,7 +5,7 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.core.guard_pipeline import prompt_write_verdict
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 
 GOOD_SHOT = (
     "镜头总时长：15秒。缓慢推入中景，程心怀抱文物奔向舱门，背景冥王星冰原崩裂成二维平面，"
@@ -50,7 +50,7 @@ def test_dual_track_same_verdict_for_bad_prompt(tmp_path):
     svc.state_dict["keyElements"] = []
     svc.state_dict["shots"] = []
     svc.state_dict["audioItems"] = []
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.structure_phase = True
     blocked = not ex._gate_check("敷衍短句", "shot")
     runner = FCToolRunner(tool_manager=None)
@@ -68,7 +68,7 @@ def test_dual_track_same_verdict_for_good_prompt(tmp_path):
              "shots": [], "audioItems": []}
     svc = StateManager(str(tmp_path))
     svc.state_dict.update(state)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     assert ex._gate_check(GOOD_SHOT, "shot") is True
     runner = FCToolRunner(tool_manager=None)
     runner._raw_state = staticmethod(lambda: state)

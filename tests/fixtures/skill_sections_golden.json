@@ -17,7 +17,7 @@
       "head": "**设计audio_layer**\n- **BGM**：全剧至少规划一条背景音乐"
     },
     "generation": {
-      "chars": 5228,
+      "chars": 5313,
       "head": "**key_element设定图生成**\n- **角色设定图：** 使用 **T"
     },
     "prompt_draft": {
@@ -25,7 +25,7 @@
       "head": "**全局提示词撰写原则（适用于所有提示词类型）**\n- **风格关键词强制写入（"
     },
     "assembly": {
-      "chars": 970,
+      "chars": 978,
       "head": "**跨镜空间一致性策略**\n- 跨镜空间一致性在视频生成阶段（**write_m"
     }
   },
@@ -47,7 +47,7 @@
       "head": "**设计 audio_layer**\n\n- **BGM**：全剧至少规划一条背景"
     },
     "generation": {
-      "chars": 1042,
+      "chars": 1109,
       "head": "**key_element 设定图生成**\n\n- 使用 **TextToImag"
     },
     "prompt_draft": {
@@ -55,13 +55,13 @@
       "head": "**内切镜时长估算（视频提示词撰写前）**\n\n若 Storyboard shot"
     },
     "assembly": {
-      "chars": 1033,
+      "chars": 1041,
       "head": "**首尾帧衔接策略**\n\n- 第一个 shot：以对应场景 key_elemen"
     }
   },
   "人文纪录短片": {
     "planning": {
-      "chars": 1325,
+      "chars": 1313,
       "head": "**全片流程与阶段依赖：**\n1. 和用户确认并建立 Final_Video_S"
     },
     "storyboard_ke": {
@@ -77,7 +77,7 @@
       "head": "**音频层设计**\n- BGM（可选）：若使用，选择极简器乐或无调性环境音景；禁"
     },
     "generation": {
-      "chars": 510,
+      "chars": 576,
       "head": "**元素图/首帧图生成（每个镜头的 start_frame）**\n- 工具：**"
     },
     "prompt_draft": {
@@ -107,7 +107,7 @@
       "head": "**如何设计独立音频**\n\n- **背景音乐：** 至少一个全局背景音轨；风格和"
     },
     "generation": {
-      "chars": 916,
+      "chars": 940,
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
@@ -151,7 +151,7 @@
   },
   "叙事驱动的美学视频": {
     "planning": {
-      "chars": 687,
+      "chars": 683,
       "head": "**完整视频的阶段逻辑与依赖关系：**\n1. 起草 `Final_Video_S"
     },
     "storyboard_ke": {
@@ -167,7 +167,7 @@
       "head": "**如何设计独立音频**\n- **背景音乐：** 设计至少一段全局背景音乐。如果"
     },
     "generation": {
-      "chars": 1276,
+      "chars": 1300,
       "head": "**元素图像生成（Midjourney V7 — 风格基准测试）**\n目的：构建"
     },
     "prompt_draft": {
@@ -197,7 +197,7 @@
       "head": "**设计独立音频轨道**\n- 背景音乐（bgm）：至少一条贯穿全片的古风甜宠风格"
     },
     "generation": {
-      "chars": 1596,
+      "chars": 1663,
       "head": "**角色形象图生成（阶段 2）**\n- 使用 **ImageToImage**，"
     },
     "prompt_draft": {
@@ -211,7 +211,7 @@
   },
   "商品宣传短片": {
     "planning": {
-      "chars": 765,
+      "chars": 761,
       "head": "**阶段逻辑与依赖关系：**\n1. 编写 `Final_Video_Spec.m"
     },
     "storyboard_ke": {
@@ -227,7 +227,7 @@
       "head": "**如何设计独立音频**\n- **背景音乐：** 设计至少一个全局背景音轨。如果"
     },
     "generation": {
-      "chars": 226,
+      "chars": 250,
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage** "
     },
     "prompt_draft": {
@@ -253,7 +253,7 @@
       "head": "**如何设计独立音频**\n- **背景音乐：** 设计至少一个全局背景音轨。如果"
     },
     "generation": {
-      "chars": 556,
+      "chars": 601,
       "head": "**元素图像生成**\n- 使用 **TextToImage**。对于处于不同状态"
     },
     "prompt_draft": {
@@ -297,7 +297,7 @@
   },
   "故事驱动型视频": {
     "planning": {
-      "chars": 924,
+      "chars": 912,
       "head": "**完整视频的阶段逻辑与依赖关系：**\n1. 编写 `Final_Video_S"
     },
     "storyboard_ke": {
@@ -313,7 +313,7 @@
       "head": "**如何设计独立音频**\n- **背景音乐：** 设计至少一个全局背景音乐轨道。"
     },
     "generation": {
-      "chars": 439,
+      "chars": 463,
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
@@ -349,7 +349,7 @@
   },
   "李安美学风格短片": {
     "planning": {
-      "chars": 5875,
+      "chars": 5933,
       "head": "**全局视频参数建立与风格选择：**\n\n1. **构思引导与子风格自动匹配**："
     },
     "storyboard_ke": {
@@ -365,11 +365,11 @@
       "head": "**音频层（Audio Layers）设计：**\n\n- **旁白（narrati"
     },
     "generation": {
-      "chars": 3127,
+      "chars": 3170,
       "head": "**元素、图像与音色资产生成：**\n\n- **模型锁定与唯一性规范**：\n  -"
     },
     "prompt_draft": {
-      "chars": 20796,
+      "chars": 20787,
       "head": "**最高优先级规则**：当项目环境或用户输入为中文时，提示词主体（Subject"
     },
     "assembly": {
@@ -379,7 +379,7 @@
   },
   "水墨风格武侠短片": {
     "planning": {
-      "chars": 4142,
+      "chars": 4145,
       "head": "**全流程阶段逻辑与协同编排：**\n\n1. **确立全局规格**：在生成任务启动"
     },
     "storyboard_ke": {
@@ -409,7 +409,7 @@
   },
   "视频拉片复刻": {
     "planning": {
-      "chars": 1265,
+      "chars": 1261,
       "head": "**完整视频的阶段逻辑和依赖关系：**\n1. 详尽分析上传的视频。提取关键参考帧"
     },
     "storyboard_ke": {
@@ -425,7 +425,7 @@
       "head": "**如何设计独立音频**\n- **背景音乐：** 至少有一个全局背景音轨；风格和"
     },
     "generation": {
-      "chars": 675,
+      "chars": 699,
       "head": "**元素生成**\n- **图像：** 如果用户已指定了元素的资产（例如产品图像、"
     },
     "prompt_draft": {
@@ -439,7 +439,7 @@
   },
   "音乐MV需上传音乐": {
     "planning": {
-      "chars": 1405,
+      "chars": 1442,
       "head": "**阶段逻辑与依赖关系：**\n1. 分析已上传的音乐，导出其节奏结构、精确时间（"
     },
     "storyboard_ke": {
@@ -455,11 +455,11 @@
       "head": "**如何设计独立音频**\n- **背景音乐：** 使用用户上传的音乐作为 BGM"
     },
     "generation": {
-      "chars": 575,
+      "chars": 621,
       "head": "**元素图像生成**\n- 使用 **TextToImage**。对于不同外观或年"
     },
     "prompt_draft": {
-      "chars": 5864,
+      "chars": 5905,
       "head": "**优先级最高、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语"
     },
     "assembly": {

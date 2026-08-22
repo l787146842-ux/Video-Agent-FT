@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { isHumanReadableSuggestedValue } from '../suggested-guard';
 
 /**
- * 建议动作 value 护栏测试（批1 审核整改）
+ * 建议动作 value 护栏测试
  * 契约：value = label 同值的人类可读文本；机械 token/JSON/控制符拒发
  */
 describe('isHumanReadableSuggestedValue', () => {

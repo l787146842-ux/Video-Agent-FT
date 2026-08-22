@@ -1,4 +1,4 @@
-"""SqliteStateRepository 单元测试：接口与 JSON 仓库对齐 + 自动迁移"""
+"""SqliteStateRepository 单元测试：接口与 JSON 仓库对齐 + 自动迁移 + 镜像退役（任务 #24）"""
 import json
 
 import pytest
@@ -41,13 +41,34 @@ class TestSqliteRepository:
         with pytest.raises(StateError):
             repo.load_project("a/b")
 
-    def test_compat_dual_write(self, repo, tmp_path):
+    def test_compat_save_retired_no_file_written(self, repo, tmp_path):
+        """镜像退役（任务 #24）：save_compat 停写 studio_state.json，
+        load_compat 仍可读取旧文件（一次性迁入入口）"""
         state = {"project_id": "proj-1"}
         repo.save_compat(state)
-        compat_file = tmp_path / "studio_state.json"
-        assert compat_file.exists()
-        assert json.loads(compat_file.read_text(encoding="utf-8")) == state
+        assert not (tmp_path / "studio_state.json").exists()
+        # 旧文件在场时只读入口仍生效（启动迁移路径）
+        (tmp_path / "studio_state.json").write_text(json.dumps(state), encoding="utf-8")
         assert repo.load_compat() == state
+
+    def test_no_json_mirror_written(self, repo, tmp_path):
+        """镜像退役（任务 #24）：save_project/write_index 只写 SQLite，
+        不再产出 projects/<id>/state.json 与 projects/index.json"""
+        repo.save_project("proj-1", {"project_id": "proj-1"})
+        repo.write_index({"active_project_id": "proj-1", "projects": [{"id": "proj-1"}]})
+        assert not (tmp_path / "projects" / "proj-1" / "state.json").exists()
+        assert not (tmp_path / "projects" / "index.json").exists()
+        # 数据仍从 SQLite 读回（唯一事实源）
+        assert repo.load_project("proj-1") == {"project_id": "proj-1"}
+
+    def test_delete_cleans_legacy_mirror_dir(self, repo, tmp_path):
+        """删除项目时顺带清理镜像回退期遗留的旧项目目录"""
+        legacy_dir = tmp_path / "projects" / "proj-old"
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "state.json").write_text("{}", encoding="utf-8")
+        repo.save_project("proj-old", {"project_id": "proj-old"})
+        repo.delete_project_dir("proj-old")
+        assert not legacy_dir.exists()
 
 
 class TestAutoMigration:

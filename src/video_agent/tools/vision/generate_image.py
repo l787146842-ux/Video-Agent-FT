@@ -12,6 +12,7 @@ class GenerateImageParams(BaseModel):
 
 class GenerateImageTool(BaseTool):
     name = "generate_image"
+    risk = "high"  # §2.7：生成类（外部副作用/花钱）
     description = (
         "根据传入的提示词和可选的参考图片，生成一张图片并返回图片地址。"
         "每次调用只产出一张图；需要多张图片时请改用 image_generate 批量工具"

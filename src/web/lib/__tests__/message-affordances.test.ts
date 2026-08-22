@@ -1,5 +1,5 @@
 /**
- * 消息交互派生层测试（审核整改批 3：P8 收敛）。
+ * 消息交互派生层测试。
  *
  * 钉死 deriveAffordances 的判定语义（自 ChatFeed 原样归位，零行为变更）：
  * 确认卡目标（doc 卡追加不顶掉）、闸机放行目标（结构化判定）、
@@ -122,7 +122,7 @@ describe('deriveAffordances — 建议动作目标', () => {
   });
 });
 
-describe('deriveAffordances — 用户气泡编辑控制点（P4-20）', () => {
+describe('deriveAffordances — 用户气泡编辑控制点', () => {
   it('有正文的普通用户消息可编辑；agent 消息不挂', () => {
     const msgs = [user('写一段开场白'), agent('好的')];
     const aff = deriveAffordances(msgs, false);

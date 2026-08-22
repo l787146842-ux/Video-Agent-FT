@@ -6,7 +6,7 @@
 """
 from src.video_agent.core import guard_pipeline
 from src.video_agent.core.fc_tool_runner import FCToolRunner
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 
 CONF = {"id": "d1", "prompt": "x", "tag": "已确认"}
 UNCONF = {"id": "d2", "prompt": "y", "tag": "Agent"}
@@ -21,7 +21,7 @@ def _fc_runner(state, override=False):
 
 
 def _text_executor(override=False):
-    e = object.__new__(StudioActionExecutor)
+    e = object.__new__(StateOperationExecutor)
     e.gate_enabled = True
     e.gate_override = override
     e.gate_warnings = []

@@ -1,11 +1,13 @@
-"""Skill 独立执行器运行时。
+"""Skill 运行时（通用主路径）。
 
-上传/编辑 Skill 文档后，按章节自动注册为真实执行器：
-- registry：Skill 文档 → 注册表条目（章节、可用执行器）
-- executors：每个执行器只注入自己对应的 Skill 章节，独立 LLM 调用 + 结构化校验
+上传/编辑 Skill 文档后，按章节注册进注册表：
+- registry：Skill 文档 → 注册表条目（章节、阶段能力探针）
+- sidecar/sidecar_schema：声明唯一源（data/skills_manifests）与 schema 校验
 
-执行器工具由 tools/__init__.py 统一注册进 ToolManager，
-文本动作轨由 web/action_executor.StudioActionExecutor.execute_async 调用。
+任务#36 B5：独立执行器族（exec_common/exec_spec/exec_tools/exec_media_gen/
+exec_media_writer/exec_split/registration/capability/executors）已一步退役
+物理删除；管线阶段改由通用主路径直走平台工具（prompt_builder 全文/章节
+分级注入 + fc_tool_runner 闸机链）。
 """
 
 from src.video_agent.skill_runtime import registry

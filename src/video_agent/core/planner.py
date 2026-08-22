@@ -24,9 +24,18 @@ from src.video_agent.memory import MemoryManager
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
+# MCP 两段式注入段 2（任务#37 B4）：未启用 MCP 工具 schema 不进 FC payload
+from src.video_agent.tools.mcp import catalog as mcp_catalog
 from src.video_agent.utils.prompts import load_prompt, load_prompt_section, render_prompt
 from src.video_agent.core.agent_loop import MAX_STEPS, run_agent_loop
+from src.video_agent.core.stop_signal import (
+    STOP_PHASE_TOOL_EXECUTING,
+    AgentStoppedError,
+    current_stop_id,
+    is_stop_requested,
+)
 from src.video_agent.core.fc_tool_runner import (
+    FCExecuteResult,
     FCToolRunner,
     compress_prior_feedback,
     digest_projected_tool_results,
@@ -51,7 +60,6 @@ from src.video_agent.core.sse_events import (
 )
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
-from src.video_agent.skill_runtime import exec_spec
 # Workflow Runtime（宪法 Rule2 主体回归，ADR-0004）：账本 + 裁判数据层
 from src.video_agent.core import workflow_runtime
 
@@ -70,11 +78,10 @@ _CANVAS_TOOLS = frozenset({
     "canvas_delete_node", "canvas_list_assets", "canvas_batch_add_nodes",
 })
 
-# v2 收尾：后台节点任务登记（collect_spec 预取等）；drain 供测试/关停等待
+# 后台节点任务登记；drain 供测试/关停等待
+# （collect_spec 规格候选预取已随任务#36 B5 执行器退役删除：
+# 规格收集改由模型按 skill_discipline 第 6 条用 workflow_pause 分组向导完成）
 _BG_TASKS: set = set()
-# 主体回归（ADR-0004）：规格候选后台预取点火名单（防失败重试每轮重复点火；
-# 候选落盘后轮始条件自然不成立，本名单只兜失败路径）
-_COLLECT_SPEC_FIRED: set = set()
 
 
 async def drain_background_tasks() -> None:
@@ -135,6 +142,9 @@ class PlannerContext:
     # "continue"=点选系统派生继续选项；"attachment"=本轮带附件。
     # 空串 = 自由对话轮（提问等），交接模型循环。
     advance_signal: str = ""
+    # 协作式停止标志作用域（端到端中断协议，任务 #17）：
+    # SSE 直连="chat"；任务式传输=task_id（web 层按传输路径装配）
+    stop_scope: str = "chat"
 
 
 @dataclass
@@ -165,6 +175,10 @@ class PlannerResponse:
     pause_id: str = ""
     # 暂停卡语义种类（remind/collect/stage_done/confirm，前端标题渲染唯一依据）
     pause_kind: str = ""
+    # 协作式停止标记（任务 #17）：随 done payload 下发，web 透传层据此
+    # 落停止痕迹消息并不再发 done（stopped 终态事件已由 agent_loop 先行下发）
+    stopped: bool = False
+    stop_phase: str = ""
 
 
 @dataclass
@@ -263,6 +277,12 @@ class Planner:
         # 出工具 schema（关模型重读入口；前奏注记保时间线可见）
         if context.skill_name and workflow_runtime.compile_definition(context.skill_name):
             excluded.add("read_skill")
+        # MCP 两段式注入（任务#37 B4）：白名单（interaction.mcp_enabled）外
+        # 的 MCP 工具 schema 不下发（deny-first 可见性面；目录块已告知存在）
+        try:
+            excluded |= set(mcp_catalog.inactive_tool_names())
+        except Exception:
+            pass  # 裁剪失败不阻断对话；未启用工具直调仍被 adapter 拒执行
         return frozenset(excluded)
 
     def _make_system_degrader(self, context: PlannerContext) -> Optional[Callable[[str], str]]:
@@ -344,8 +364,8 @@ class Planner:
         # 构建 executor（文本解析路径用）：优先注入的工厂，缺省延迟导入 web 层实现
         factory = self.executor_factory
         if factory is None:
-            from src.video_agent.web.action_executor import StudioActionExecutor
-            factory = StudioActionExecutor
+            from src.video_agent.web.action_executor import StateOperationExecutor
+            factory = StateOperationExecutor
         executor = factory(
             self.state_manager,
             selected_draft_id=context.selected_draft_id,
@@ -386,19 +406,8 @@ class Planner:
                         _rt.resolve_decision(
                             str(_pend.get("token") or ""),
                             str(context.advance_signal))
-                # 客观数据预取（非自主行动）：分析阶段完成后后台出规格候选，
-                # 幂等（候选在场或已点火即跳过），模型发起规格向导轮不空手
-                _st0 = self.state_manager.state_dict
-                _inter0 = _st0.get("interaction") or {}
-                if (
-                    pipeline_orchestrator.stage_done("analysis", _st0, context.skill_name)
-                    and not _inter0.get("spec_soft_candidates")
-                    and context.skill_name not in _COLLECT_SPEC_FIRED
-                ):
-                    _COLLECT_SPEC_FIRED.add(context.skill_name)
-                    _t = asyncio.ensure_future(self._bg_collect_spec(context.skill_name))
-                    _BG_TASKS.add(_t)
-                    _t.add_done_callback(_BG_TASKS.discard)
+                # collect_spec 规格候选后台预取已随任务#36 B5 执行器退役删除；
+                # 规格收集交互改由模型按 skill_discipline 第 6 条主动发起
             except Exception as _e:
                 # 承重接线遥测：轮始 run 同步失败 fail-open 不阻断对话
                 record_degradation("planner.run_sync")
@@ -473,6 +482,10 @@ class Planner:
                 # 透明度兑现：流内 usage 机会性收集（中继未下发则 0）
                 _stream_usage_tokens = 0
                 async for chunk in self._call_llm_stream(system_prompt, messages):
+                    # 协作式停止（任务 #17）：流式消费中命中停止标志即提前断流，
+                    # 不再继续烧 token；后续阶段判定/收尾归 agent_loop 检查点
+                    if is_stop_requested(context.stop_scope):
+                        break
                     if chunk.type == "text_delta" and chunk.text:
                         content_parts.append(chunk.text)
                         # 单轨化：确认走结构化 workflow_pause 工具，
@@ -504,6 +517,13 @@ class Planner:
             else:
                 response = await self._call_llm(system_prompt, messages)
                 plan_ms = (time.monotonic() - _t_plan) * 1000
+
+            # 检查点（工具批执行前，任务 #17）：模型已返回 tool_calls 但尚未执行，
+            # 命中停止标志即抛 AgentStoppedError（agent_loop 捕获后干净收尾）；
+            # 停止信号不经 fc_tool_runner 闸机传递，只在循环边界拦截
+            if response.tool_calls and is_stop_requested(context.stop_scope):
+                raise AgentStoppedError(STOP_PHASE_TOOL_EXECUTING,
+                                        stop_id=current_stop_id(context.stop_scope))
 
             content, finish, fc_applied, tool_results, fc_warnings = await self._handle_fc_response(
                 response,
@@ -575,6 +595,7 @@ class Planner:
             prelude_notes=context.prelude_notes,
             user_id=context.user_id,
             pending_injector=context.pending_injector,
+            stop_scope=context.stop_scope,
         )
 
         # 轮末组装委托 planner_output（切出）：warnings 并入/总结强入/
@@ -596,6 +617,10 @@ class Planner:
             ).strip(),
             aggregate_action_log=aggregate_action_log,
         )
+        # 协作式停止标记透传（任务 #17）：轮末组装不改停止语义，
+        # 只把循环的 stopped/stop_phase 随响应下发（web 层据此落痕迹）
+        response.stopped = bool(loop_result.stopped)
+        response.stop_phase = str(loop_result.stop_phase or "")
 
         # 暂停卡结构化签发（汇流点一）：FC workflow_pause 与轮末策略卡均在此汇流
         self._issue_pause(response)
@@ -656,8 +681,10 @@ class Planner:
                     type="actions_applied", text=sev["text"],
                     payload={"count": count, "status_event": sev},
                 ))
-            elif etype in ("reasoning_delta", "tool_started", "tool_finished", "guidance_injected", "doc_written"):
-                # 过程时间线事件穿透（前端渲染深度思考/工具条目）
+            elif etype in ("reasoning_delta", "tool_started", "tool_finished", "guidance_injected", "doc_written", "stopped"):
+                # 过程时间线事件穿透（前端渲染深度思考/工具条目）；
+                # stopped=停止终态事件（任务 #17：agent_loop 检查点发出，
+                # web 透传层富化在途登记后作为终态帧下发）
                 await queue.put(PlannerEvent(type=etype, text=event.get("text", ""), payload=event))
 
         # 在后台任务中运行统一循环，通过 queue 穿透事件
@@ -721,6 +748,9 @@ class Planner:
             "memory_hits": result.memory_hits,
             "suggested_actions": result.suggested_actions,
             "pause_kind": result.pause_kind,
+            # 协作式停止标记（任务 #17）：web 透传层据此落停止痕迹、不再发 done
+            "stopped": bool(result.stopped),
+            "stop_phase": result.stop_phase,
         })
 
     # ---------- 内部方法 ----------
@@ -793,7 +823,8 @@ class Planner:
                 thinking_level=getattr(self, "_chat_thinking_level", "") or "",
             )
         else:
-            # 模式 B：纯文本（fallback 到 studio-actions 文本解析）
+            # 模式 B：纯文本对话（adapter 不支持 function calling 的保底通道；
+            # 不携带工具调用，文本轨不产生动作——动作通道唯一 = 工具调用，ADR-0001）
             return await self.llm_adapter.chat(
                 full_messages, timeout=settings.llm_timeout,
                 thinking_level=getattr(self, "_chat_thinking_level", "") or "",
@@ -828,31 +859,8 @@ class Planner:
     #
     # 轮始只装配原料闸/规格闸兜底卡（由代码执行不依赖模型自觉）；其余交接
     # 模型循环；越阶/越暂停由闸机在工具调用点否决（ADR-0004 主体回归）。
-
-    async def _bg_collect_spec(self, skill_name: str) -> None:
-        """后台 collect_spec 节点（v2 收尾）：不阻塞分析轮；
-        完成/失败均入事件账本（独立事件独立耗时），失败静默回落。"""
-        t0 = time.monotonic()
-        ok = False
-        try:
-            ok = await exec_spec.run_collect_spec_node(
-                self.state_manager, skill_name,
-                self.chat_provider, self.chat_model)
-        except Exception as _e:
-            logger.warning("[WorkflowRuntime] 后台 collect_spec 失败（静默回落）: {}", _e)
-        ms = (time.monotonic() - t0) * 1000
-        try:
-            async with self.state_manager.lock:
-                workflow_runtime.record_node_event(
-                    self.state_manager.state_dict, "collect_spec",
-                    "ToolSucceeded", {"ok": bool(ok), "elapsed_ms": round(ms, 1),
-                                      "mode": "background"})
-                self.state_manager.save_debounced()
-        except Exception as _e:
-            record_degradation("planner.collect_spec_event")
-            logger.debug("[WorkflowRuntime] collect_spec 事件入账跳过: {}", _e)
-        logger.info("[ControlFlow] collect_spec 后台节点完成 ok={} ms={:.0f}", ok, ms)
-
+    # _bg_collect_spec 后台规格候选节点已随任务#36 B5 执行器退役删除。
+    
     async def _run_gate_precheck(
         self, context: "PlannerContext", user_message: Any = "",
     ) -> Optional["PlannerResponse"]:
@@ -907,10 +915,10 @@ class Planner:
         on_status=None, on_event=None, injected_skill: str = "",
         selected_draft_id: str = "", selected_type: str = "",
         gate_override: Any = False,
-    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str], List[str]]:
-        """执行 Function Calling 返回的 tool_calls（委托 FCToolRunner）。
-        返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
-        confirmation_options, tool_results, docs_written, warnings)"""
+    ) -> FCExecuteResult:
+        """执行 Function Calling 返回的 tool_calls（委托 FCToolRunner.execute，
+        任务#23 三段拆分后返回结构化 FCExecuteResult；位置解包仍兼容，
+        新调用方按字段名取用）。"""
         return await self._fc_runner.execute(
             response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
             on_status=on_status, on_event=on_event, injected_skill=injected_skill,

@@ -7,6 +7,10 @@ _get_provider_config / _get_api_key / 模型分类逻辑，已全部收敛到这
 - 供应商配置：data/api_providers.json
 - API Key：进程环境变量优先，其次 API/.env
 - .env 写入带消毒（去换行）与线程锁，防止 value 注入其他键
+
+所有权声明（任务 #24 存储层单一事实源收敛）：api_providers.json 定位
+「配置文件」而非运行时数据（用户在 api-settings 页面手工维护、需 diff/
+备份语义），豁免迁入 sqlite，维持文件为唯一权威源不动。
 """
 import asyncio
 import json
@@ -17,9 +21,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-import httpx
 from loguru import logger
 
+from src.video_agent.adapters.canvas_adapter import fetch_canvas_providers_sync
 from src.video_agent.config import settings
 from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
 from src.video_agent.utils.fileio import atomic_write_text
@@ -101,17 +105,11 @@ def reset_provider_caches() -> None:
 def load_canvas_providers() -> List[Dict[str, Any]]:
     """从画布读取 provider 配置（HTTP 优先，文件兜底）。
     任何异常均静默返回 []，不影响 Agent 正常运行。"""
-    # 1. 尝试 HTTP API
-    try:
-        resp = httpx.get(settings.canvas_providers_url, timeout=3.0, trust_env=False)
-        if resp.status_code == 200:
-            data = resp.json()
-            providers = data.get("providers", [])
-            if isinstance(providers, list) and providers:
-                logger.debug(f"[ProviderConfig] 从画布 HTTP 读取到 {len(providers)} 个 provider")
-                return providers
-    except Exception:
-        pass  # 画布不在线，静默跳过
+    # 1. 尝试 HTTP API（Rule4/Rule7：画布交互统一经 canvas_adapter）
+    providers = fetch_canvas_providers_sync()
+    if providers:
+        logger.debug(f"[ProviderConfig] 从画布 HTTP 读取到 {len(providers)} 个 provider")
+        return providers
 
     # 2. 兜底：读磁盘文件（环境变量未配置时跳过）
     try:

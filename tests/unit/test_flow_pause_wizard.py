@@ -15,7 +15,7 @@ from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 from src.video_agent.web.chat_service import _finalize_spec_params
 
 

@@ -1,6 +1,7 @@
 import { createSignal, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { FiAlertTriangle } from 'solid-icons/fi';
+import { useFocusTrap } from '@/lib/focus-trap';
 
 /**
  * 全局确认对话框（替代 window.confirm，与整体视觉统一）。
@@ -37,6 +38,10 @@ function settle(value: boolean) {
 
 /** 宿主组件，挂载于 LayoutShell（Portal 渲染到 body） */
 export function ConfirmDialogHost() {
+  // 焦点圈闭：打开圈闭、Esc 取消、关闭还原焦点
+  const [modalEl, setModalEl] = createSignal<HTMLElement>();
+  useFocusTrap(() => (request() ? modalEl() : undefined), { onEscape: () => settle(false) });
+
   function onKeyDown(e: KeyboardEvent) {
     if (!request()) return;
     if (e.key === 'Escape') { e.preventDefault(); settle(false); }
@@ -52,7 +57,7 @@ export function ConfirmDialogHost() {
             onClick={(e) => { if (e.target === e.currentTarget) settle(false); }}
             onKeyDown={onKeyDown}
           >
-            <div class="confirm-modal" role="alertdialog" aria-modal="true">
+            <div class="confirm-modal" ref={setModalEl} role="alertdialog" aria-modal="true" aria-label={req().title}>
               <div class="confirm-title">
                 <Show when={req().danger}>
                   <FiAlertTriangle size={16} class="confirm-danger-icon" />

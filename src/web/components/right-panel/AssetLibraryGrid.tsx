@@ -1,7 +1,6 @@
 /**
- * 素材库卡片网格（P4-23 结构清欠从 AssetLibraryModal 拆出）：
+ * 素材库卡片网格：
  * 图片资产/画布资产/本地素材三个 tab 共用的多选卡片网格。
- * DOM 结构不变（.asset-grid / .asset-card 原样），行为零变化。
  */
 import { For, Show } from 'solid-js';
 import { FiImage } from 'solid-icons/fi';

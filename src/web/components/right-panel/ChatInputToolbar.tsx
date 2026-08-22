@@ -95,7 +95,7 @@ export function ChatInputToolbar(props: {
           title={t('rp.toolbar.providerTitle')}
           onSelect={setAgentProvider}
         />
-        {/* 814H7：模型+推理等级组合胶囊（Codex 样式两节下拉） */}
+        {/* 模型+推理等级组合胶囊（Codex 样式两节下拉） */}
         <ModelThinkingPill />
         <SkillPicker />
         <button

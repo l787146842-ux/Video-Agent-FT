@@ -1,8 +1,9 @@
-"""回归测试 0818-1111：9router「缺省 stream 当流式」陷阱与执行器流式/回喂治理。
+"""回归测试 0818-1111：9router「缺省 stream 当流式」陷阱。
 
-事故：1111 项目执行器非流式调用经 9router 时，中介对缺省 stream 字段按
+事故：1111 项目非流式调用经 9router 时，中介对缺省 stream 字段按
 流式路由，200 回 SSE 文本，resp.json() 裸崩 JSONDecodeError，流程静默失败。
-本文件按批次钉死修复：B1 协议声明+契约报错；B2 执行器流式+黑匣子；B3 回喂治理。
+本文件按批次钉死修复：B1 协议声明+契约报错；B3 回喂治理。
+（B2 执行器流式取稿+黑匣子用例已随任务#36 B5 执行器一步退役删除。）
 """
 import json
 
@@ -71,63 +72,8 @@ class TestB1StreamDeclaration:
         await adapter.close()
 
 
-# ---------- B2：执行器流式取稿 + 黑匣子 ----------
-
-
-class TestB2ExecutorStreaming:
-    async def test_llm_json_call_uses_streaming(self, monkeypatch, tmp_path):
-        """0818-1111：_llm_json_call 必须走流式取稿（exec_common.executor_stream_text）。"""
-        from src.video_agent.skill_runtime import exec_common, exec_spec, blackbox
-        from src.video_agent.web import generation as gen_mod
-
-        calls = []
-
-        async def fake_stream(provider, model, messages, **kw):
-            calls.append((provider, model, kw))
-            return '{"summary": "一句话", "key_points": ["k1"]}', "stop"
-
-        monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
-        monkeypatch.setattr(blackbox, "_BLACKBOX_DIR", tmp_path)
-        data = await exec_spec._llm_json_call(
-            "sys", "user", max_tokens=4096,
-            provider="custom-api-19", model="qd/qmodel_38max",
-        )
-        assert data["summary"] == "一句话"
-        assert len(calls) == 1
-
-    @pytest.mark.allow_degradation
-    async def test_llm_json_call_blackbox_on_parse_failure(self, monkeypatch, tmp_path):
-        """0818-1111：畸形 JSON 必须存原始回执（reason=json_parse_failed）后再抛。"""
-        from src.video_agent.skill_runtime import exec_spec
-        from src.video_agent.web import generation as gen_mod
-
-        async def fake_stream(provider, model, messages, **kw):
-            return '{"summary": "x", ]}', "stop"
-
-        dumps = []
-        monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
-        # conftest 全局禁用落盘；本用例改录调用参数验证取证接线
-        monkeypatch.setattr(exec_spec, "dump_case", lambda **kw: dumps.append(kw))
-        with pytest.raises(RuntimeError) as ei:
-            await exec_spec._llm_json_call(
-                "sys", "user", max_tokens=4096,
-                provider="custom-api-19", model="qd/qmodel_38max",
-            )
-        assert "无法解析" in str(ei.value)
-        assert len(dumps) == 1
-        assert dumps[0]["reason"] == "json_parse_failed"
-        assert "summary" in dumps[0]["content"]
-        assert dumps[0]["extra"]["error"]
-
-    def test_no_direct_non_stream_call_in_executors(self):
-        """0818-1111 G4：执行器文件不得残留非流式 call_chat_completion( 调用。"""
-        from pathlib import Path
-        import src.video_agent.skill_runtime as rt
-
-        root = Path(rt.__file__).resolve().parent
-        for name in ("exec_spec.py", "exec_split.py", "exec_tools.py"):
-            src = (root / name).read_text(encoding="utf-8")
-            assert "call_chat_completion(" not in src, f"{name} 残留非流式调用"
+# ---------- B2：执行器流式取稿 + 黑匣子（TestB2ExecutorStreaming 已随
+# 任务#36 B5 执行器一步退役删除：_llm_json_call/黑匣子档案不复存在） ----------
 
 
 # ---------- B3：失败回喂结构化 + 去祈使化 ----------

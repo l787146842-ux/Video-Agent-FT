@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.core import gates_inputs
 from src.video_agent.core import pipeline_orchestrator as po
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
@@ -281,7 +282,17 @@ class WorkflowRuntime:
     def start_run(self, *, input_present: Optional[bool] = None) -> Dict[str, Any]:
         run = sync_run(self.state, self.skill); ledger = EventLedger(self.state)
         ledger.append("RunStarted", run_id=run["run_id"], idempotency_key=f"run:{run['run_id']}:started", payload={"workflow_id": run.get("workflow_id")})
-        missing = input_present is False or (input_present is None and registry.script_required_active(self.skill) and not prompt_gates.script_present(self.state))
+        # 原料闸（任务#35 B2）：v3 requires_inputs 声明优先（任一 required 项
+        # 未满足即 waiting_user），未声明回落 v2 script_required，两路不叠加。
+        if input_present is False:
+            missing = True
+        elif input_present is None:
+            if registry.skill_requires_inputs(self.skill):
+                missing = bool(gates_inputs.missing_required_inputs(self.state, self.skill))
+            else:
+                missing = registry.script_required_active(self.skill) and not prompt_gates.script_present(self.state)
+        else:
+            missing = False
         if missing:
             run["status"] = "waiting_user"; run["pending_decision"] = {"token": f"input:{run['run_id']}", "node_id": "analyze_script", "schema": {"type": "input", "required": True}}
             ledger.append("InputRequested", run_id=run["run_id"], node_id="analyze_script", idempotency_key=f"run:{run['run_id']}:input", payload={"status": "waiting_user"})

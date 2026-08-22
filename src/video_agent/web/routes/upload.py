@@ -13,10 +13,11 @@ import time
 import random
 from pathlib import Path
 
-import httpx
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import Response
 
+from src.video_agent.adapters.fetch_adapter import get_media_fetch_adapter
+from src.video_agent.exceptions import AdapterError
 from src.video_agent.config import settings
 from src.video_agent.utils.paths import ASSETS_DIR
 
@@ -103,14 +104,19 @@ async def image_proxy(url: str = Query(..., description="图片 URL")):
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="仅支持 http/https URL")
     try:
-        async with httpx.AsyncClient(timeout=30, trust_env=False, follow_redirects=True) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-    except httpx.HTTPError as e:
+        result = await get_media_fetch_adapter().download(
+            url,
+            timeout=30,
+            trust_env=False,
+            follow_redirects=True,
+            raise_on_http_error=True,
+            context="image-proxy",
+        )
+    except AdapterError as e:
         raise HTTPException(status_code=502, detail=f"图片下载失败: {e}")
-    content_type = resp.headers.get("content-type", "application/octet-stream")
+    content_type = result.content_type or "application/octet-stream"
     return Response(
-        content=resp.content,
+        content=result.content,
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=3600"},
     )

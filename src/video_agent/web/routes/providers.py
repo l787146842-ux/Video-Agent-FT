@@ -11,7 +11,6 @@ import shutil
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
-import httpx
 from fastapi import APIRouter, Request
 from loguru import logger
 from pydantic import BaseModel
@@ -31,6 +30,11 @@ from src.video_agent.web.provider_config import (
     update_env_key,
 )
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
+from src.video_agent.adapters.probe_adapter import (
+    ProbeHTTPError,
+    ProbeTimeoutError,
+    get_provider_probe_adapter,
+)
 
 router = APIRouter()
 
@@ -279,26 +283,6 @@ class ProviderProbeRequest(BaseModel):
     image_request_mode: str = "openai"
 
 
-def _normalize_openai_base_url(base_url: str) -> str:
-    """与画布保持一致：若 base_url 未以 /v1 结尾则自动补全，避免用户手填时漏掉路径段。"""
-    url = base_url.rstrip("/")
-    if not url.endswith("/v1"):
-        url += "/v1"
-    return url
-
-
-async def _fetch_model_list(base_url: str, api_key: str) -> List[str]:
-    """GET {base_url}/models，返回排序后的模型 id 列表（OpenAI 兼容格式）"""
-    url = _normalize_openai_base_url(base_url)
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(f"{url}/models", headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
-    models_data = data.get("data", [])
-    return sorted(m.get("id", "") for m in models_data if m.get("id"))
-
-
 # CLI 协议的预设模型
 _CLI_MODELS = {
     "gemini-cli": ["auto"],
@@ -336,7 +320,7 @@ async def fetch_models(req: ProviderProbeRequest):
         return {"error": str(e), "all": [], "total": 0}
 
     try:
-        all_models = await _fetch_model_list(base_url, api_key)
+        all_models = await get_provider_probe_adapter().fetch_model_list(base_url, api_key)
         classified = classify_models(all_models)
         return {
             "all": all_models,
@@ -344,10 +328,10 @@ async def fetch_models(req: ProviderProbeRequest):
             "total": len(all_models),
             "protocol": detect_protocol(base_url, req.protocol),
         }
-    except httpx.TimeoutException:
+    except ProbeTimeoutError:
         return {"error": "连接超时（15s）", "all": [], "total": 0}
-    except httpx.HTTPStatusError as e:
-        return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}", "all": [], "total": 0}
+    except ProbeHTTPError as e:
+        return {"error": f"HTTP {e.status_code}: {e.body_text}", "all": [], "total": 0}
     except Exception as e:
         return {"error": str(e), "all": [], "total": 0}
 
@@ -428,7 +412,7 @@ async def test_connection(req: ProviderProbeRequest):
 
     api_key = resolve_api_key(req.api_key, req.provider_id)
     try:
-        all_models = await _fetch_model_list(base_url, api_key)
+        all_models = await get_provider_probe_adapter().fetch_model_list(base_url, api_key)
         classified = classify_models(all_models)
         return {
             "ok": True,
@@ -440,11 +424,11 @@ async def test_connection(req: ProviderProbeRequest):
             "image_request_mode": req.image_request_mode or "openai",
             "message": f"连接成功，发现 {len(all_models)} 个模型",
         }
-    except httpx.TimeoutException:
+    except ProbeTimeoutError:
         return {"ok": False, "status": 0, "message": "连接超时（15s）", "model_count": 0}
-    except httpx.HTTPStatusError as e:
-        msg = "认证失败：API Key 无效或未提供" if e.response.status_code == 401 else f"HTTP {e.response.status_code}"
-        return {"ok": False, "status": e.response.status_code, "message": msg, "model_count": 0}
+    except ProbeHTTPError as e:
+        msg = "认证失败：API Key 无效或未提供" if e.status_code == 401 else f"HTTP {e.status_code}"
+        return {"ok": False, "status": e.status_code, "message": msg, "model_count": 0}
     except Exception as e:
         return {"ok": False, "status": 0, "message": str(e), "model_count": 0}
 
@@ -475,12 +459,9 @@ async def probe_async(req: ProviderProbeRequest):
 
     api_key = resolve_api_key(req.api_key, req.provider_id)
     try:
-        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-        probe_url = _normalize_openai_base_url(base_url)
-        async with httpx.AsyncClient(timeout=12) as client:
-            resp = await client.get(f"{probe_url}/models", headers=headers)
-            status_code = resp.status_code
-            raw = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"text": resp.text[:500]}
+        probe = await get_provider_probe_adapter().probe_models_endpoint(base_url, api_key)
+        status_code = probe.status_code
+        raw = probe.raw
 
         detected_protocol = detect_protocol(base_url, "openai")
 
@@ -507,7 +488,7 @@ async def probe_async(req: ProviderProbeRequest):
             "image_request_mode": "openai",
         }
 
-    except httpx.TimeoutException:
+    except ProbeTimeoutError:
         return {"ok": False, "protocol": "openai", "message": "连接超时", "status_code": 0, "raw": {}}
     except Exception as e:
         return {"ok": False, "protocol": "openai", "message": str(e), "status_code": 0, "raw": {}}

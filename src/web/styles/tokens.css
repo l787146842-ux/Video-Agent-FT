@@ -1,5 +1,5 @@
-/* ===== 设计 Token / 主题变量 / 全局基础（由 app.css 拆分） ===== */
-/* ===== 暗色模式策略：class（html.light 选择器，九轮 B5 清除 Tailwind 残留指令） ===== */
+/* ===== 设计 Token / 主题变量 / 全局基础 ===== */
+/* ===== 暗色模式策略：class（html.light 选择器，不依赖框架预设指令） ===== */
 
 /* ===== 设计 Token ===== */
 :root {
@@ -22,6 +22,39 @@
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
+
+  /* ===== Token 扩展（只增不改，存量样式逐步替换） ===== */
+  /* 间距标尺 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  /* 字阶 */
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-md: 13px;
+  --font-lg: 14px;
+  --font-xl: 16px;
+  /* 层级（与现有弹层 z-index 对齐，新增弹层一律走此处） */
+  --z-pill: 50;
+  --z-mention: 60;
+  --z-queued-menu: 90;
+  /* 全局断连横幅：在 toast 之下、picker 弹层之上 */
+  --z-banner: 95;
+  --z-toast: 100;
+  --z-picker-panel: 200;
+  --z-modal: 1000;
+  --z-confirm: 1200;
+  --z-docs: 8000;
+  /* 动效时长 */
+  --dur-fast: 0.15s;
+  --dur-base: 0.2s;
+  --dur-slow: 0.3s;
+  /* 焦点环（键盘可见焦点，无障碍补课） */
+  --focus-ring: 2px solid var(--border-highlight);
+  --focus-ring-offset: 2px;
 }
 
 html.light {
@@ -57,8 +90,8 @@ html.light {
     user-select: none;
   }
 
-  /* U3（三轮审核 D4）：button 基线重置——Tailwind 摘除后 preflight 消失，
-     浏览器默认白底/边框曾漏进暗色主题（文档面板白块）；根因修复，同类隐患一并清偿 */
+  /* button 基线重置：无框架 preflight 后，浏览器默认白底/边框
+     会漏进暗色主题（文档面板白块）；此处根因修复 */
   button { background: transparent; border: none; font: inherit; color: inherit; }
 
   /* 滚动条*/
@@ -88,8 +121,22 @@ html.light {
   html.light .chat-markdown strong { color: #111827; }
   html.light .chat-markdown code { background: rgba(0,0,0,0.06); }
   html.light .chat-markdown pre { background: rgba(0,0,0,0.05); }
+
+  /* 统一键盘焦点环（无障碍）：鼠标点击不显示（:focus-visible），
+     Tab 键盘导航时所有可聚焦控件获得一致可见焦点 */
+  :focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
+    transition: outline-color var(--dur-fast) ease;
+  }
 }
 
-/* ===== 工具类（2026-08-15：补齐旧版 Tailwind 移除后缺失的 .hidden，
-   原生 file input 等依赖它隐藏，否则浏览器渲染「选择文件」控件） ===== */
+/* ===== 工具类（.hidden 被原生 file input 等依赖用于隐藏，
+   缺失时浏览器会渲染「选择文件」控件） ===== */
 .hidden { display: none !important; }
+
+/* 读屏专用文案（视觉隐藏但可被朗读） */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}

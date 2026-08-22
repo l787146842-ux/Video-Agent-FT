@@ -1,5 +1,5 @@
 """
-Adapter 请求重试辅助 — 对瞬时故障（5xx、超时、连接错误）自动重试。
+Adapter 请求重试辅助 — 对瞬时故障（429/5xx、超时、连接错误）自动重试。
 
 用法：
     from src.video_agent.adapters.retry import with_retry
@@ -10,10 +10,11 @@ Adapter 请求重试辅助 — 对瞬时故障（5xx、超时、连接错误）�
         base_delay=1.0,
     )
 
-设计原则：
-- 仅对可重试错误（5xx / 超时 / 连接失败）重试，4xx 不重试
+设计原则（任务 #26 错误分类分流）：
+- 可重试性由 adapters/errors.py 分类器唯一判定：transient（429/5xx/超时/
+  连接错误/流中断）才重试；permanent（其余 4xx）不重试直接穿过
 - 指数退避：delay = base_delay * 2^(attempt-1)
-- 最终仍失败时抛出最后一次异常（由调用方转译为 AdapterError）
+- 最终仍失败时抛出携带 kind 的结构化 AdapterError（绝不把失败响应当成功）
 """
 import asyncio
 from typing import Any, Awaitable, Callable, TypeVar
@@ -21,7 +22,7 @@ from typing import Any, Awaitable, Callable, TypeVar
 import httpx
 from loguru import logger
 
-from src.video_agent.exceptions import AdapterError
+from src.video_agent.adapters.errors import build_status_error, is_transient_status
 from src.video_agent.utils.stream_notify import notify_stream
 
 T = TypeVar("T")
@@ -39,8 +40,8 @@ RETRYABLE_EXCEPTIONS = (
 
 
 def _is_retryable_status(status_code: int) -> bool:
-    """5xx 服务端错误可重试，4xx 客户端错误不可重试"""
-    return status_code >= 500
+    """可重试性按分类器唯一判定（任务 #26）：429/5xx = transient，其余 4xx 不重试"""
+    return is_transient_status(status_code)
 
 
 async def with_retry(
@@ -85,12 +86,17 @@ async def with_retry(
                     )
                     await asyncio.sleep(delay)
                     continue
-                # 末次尝试仍收到 5xx：绝不把失败响应当成功返回（-2 契约修复）
-                raise AdapterError(
-                    f"[Retry] {context} HTTP {result.status_code}：服务端错误，"
-                    f"已重试 {max_retries} 次仍失败",
-                    retryable=True,
-                    http_status=result.status_code,
+                # 末次尝试仍收到 transient 响应（429/5xx）：绝不把失败响应当成功返回（-2 契约修复）
+                _body = ""
+                try:
+                    _body = result.text[:200]
+                except Exception:
+                    pass
+                raise build_status_error(
+                    result.status_code,
+                    _body,
+                    context=context,
+                    detail=f"已重试 {max_retries} 次仍失败",
                 )
             return result
         except RETRYABLE_EXCEPTIONS as e:

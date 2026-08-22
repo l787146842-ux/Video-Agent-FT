@@ -1,0 +1,57 @@
+/* ===== 菜单类弹层：项目切换器 / 导出下拉 / 项目骨架屏 ===== */
+@layer components {
+  /* ---------- 项目切换器 ---------- */
+  .project-switcher { position: relative; }
+  .project-switcher-btn { display: flex; align-items: center; gap: 6px; box-sizing: border-box; height: 32px; padding: 0 12px; font-size: 13px; color: var(--text-main); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: background var(--dur-fast); }
+  .project-switcher-btn:hover { background: var(--bg-hover); }
+  .project-switcher-name { max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-dropdown { position: absolute; right: 0; top: 100%; margin-top: 4px; width: 312px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); z-index: var(--z-pill); }
+  .project-dropdown-list { max-height: 280px; overflow-y: auto; }
+  .project-option { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; font-size: 13px; color: var(--text-muted); border-radius: 6px; cursor: pointer; transition: background 0.12s; }
+  .project-option:hover { background: var(--bg-hover); }
+  .project-option.active { background: var(--bg-tertiary); color: var(--text-main); }
+  .project-option-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-option-time { font-size: 11px; color: var(--text-dim); }
+  .project-option-delete { padding: 3px; color: var(--text-dim); cursor: pointer; transition: color 0.12s; }
+  .project-option-delete:hover { color: #ef4444; }
+  .project-option .option-check { color: var(--accent-blue); flex-shrink: 0; }
+  .project-option .option-folder { opacity: 0.4; flex-shrink: 0; }
+  .project-dropdown-divider { border-top: 1px solid var(--border-color); margin: 4px 2px; }
+  .project-create-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; font-size: 13px; color: var(--text-muted); border-radius: 6px; background: none; border: none; cursor: pointer; text-align: left; }
+  .project-create-btn:hover { background: var(--bg-hover); color: var(--text-main); }
+  .project-create-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+  .project-create-input { flex: 1; min-width: 0; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 5px 8px; font-size: 13px; color: var(--text-main); outline: none; }
+  .project-create-input:focus { border-color: var(--accent-blue); }
+  .project-create-action { padding: 4px; border-radius: 4px; cursor: pointer; }
+  .project-create-action:hover { background: var(--bg-hover); }
+  /* 项目切换器下拉动画 */
+  @keyframes dropdown-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .project-dropdown { animation: dropdown-in var(--dur-fast) ease-out; }
+
+  /* ---------- 导出下拉菜单 ---------- */
+  .export-dropdown { position: relative; display: inline-flex; }
+  .export-chevron { transition: transform var(--dur-fast); }
+  .export-chevron.open { transform: rotate(180deg); }
+  .export-menu { position: absolute; bottom: calc(100% + 6px); left: 0; min-width: 160px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); z-index: var(--z-toast); padding: 4px; display: flex; flex-direction: column; gap: 2px; }
+  .export-menu-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 12px; color: var(--text-main); background: transparent; border: 0; border-radius: 6px; cursor: pointer; transition: background 0.12s; white-space: nowrap; }
+  .export-menu-item:hover { background: var(--bg-tertiary); }
+  .export-canvas-sub { margin-top: 2px; padding: 4px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px; max-height: 160px; overflow-y: auto; }
+  .export-canvas-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12px; color: var(--text-main); background: transparent; border: 0; border-radius: 6px; cursor: pointer; transition: background 0.12s; text-align: left; }
+  .export-canvas-item:hover { background: var(--bg-tertiary); }
+  .export-canvas-kind { font-size: 10px; padding: 1px 5px; background: rgba(59, 130, 246, 0.15); color: #93c5fd; border-radius: 3px; white-space: nowrap; }
+  .export-canvas-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .export-canvas-loading { padding: 8px 10px; font-size: 11px; color: var(--text-dim); text-align: center; }
+}
+
+/* ===== 项目列表骨架屏（恢复自 8/12 前终版 overlays.css；原层外规则，保持层外） ===== */
+.project-skeleton { display: flex; flex-direction: column; gap: 8px; padding: 8px 4px; }
+.skeleton-bar {
+  height: 12px; border-radius: 6px;
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-hover) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s linear infinite;
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}

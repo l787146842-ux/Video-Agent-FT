@@ -33,3 +33,8 @@ Pillow>=10.0
 # 上传剧本 PDF 文本抽取（read_uploaded_doc 支持 PDF 格式）；
 # 未安装时诚实降级：提示用户改用 .md/.txt
 pdfplumber>=0.11
+
+# 可选：MCP 外部工具接入层（任务#37 B4，tools/mcp/）的官方 SDK；
+# 未安装时整层诚实降级为零工具（日志可见），主链路不中断；
+# 需要接入外部 MCP server 时执行：pip install mcp
+# mcp>=2.0

@@ -1,0 +1,54 @@
+/* ===== 全局断连横幅：顶部居中条，offline 琥珀 / backend-down 红 ===== */
+
+.health-banner {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-banner);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-4);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  border: 1px solid transparent;
+  border-top: none;
+  font-size: var(--font-sm);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  animation: health-banner-in var(--dur-slow) ease both;
+  user-select: none;
+}
+
+@keyframes health-banner-in {
+  from { transform: translate(-50%, -100%); opacity: 0; }
+  to   { transform: translate(-50%, 0);     opacity: 1; }
+}
+
+/* 呼吸状态点：断连中持续提示「仍在等待恢复」 */
+.health-banner-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: health-banner-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes health-banner-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
+/* 浏览器断网（本机网络层）：琥珀——外部不可控，等待即可 */
+.health-banner.offline {
+  background: #92400e;
+  border-color: #b45309;
+  color: #fde68a;
+}
+
+/* 后端失联（服务层）：红——可动作排查，措辞提示任务不受影响 */
+.health-banner.backend-down {
+  background: #7f1d1d;
+  border-color: #991b1b;
+  color: #fecaca;
+}

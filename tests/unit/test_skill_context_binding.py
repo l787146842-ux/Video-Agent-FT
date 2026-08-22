@@ -52,11 +52,11 @@ async def test_agent_loop_falls_back_to_used_skills(tmp_path, monkeypatch):
     from src.video_agent.core import agent_loop as al_mod
     from src.video_agent.core.agent_loop import run_agent_loop
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.action_executor import StudioActionExecutor
+    from src.video_agent.web.action_executor import StateOperationExecutor
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.skill_name = ""
 
     seen = {}

@@ -40,6 +40,11 @@ jobs:
         run: python scripts/check_category_keys.py
       - name: Legacy orchestration gate (0818 B5：退役编排机制防复活)
         run: python scripts/check_legacy_orchestration.py
+      - name: Scaffold registry gate (acceptance GATES 对齐：脚手架登记表 + 组件可导入)
+        run: python scripts/check_scaffold_registry.py
+      # Executor skill drift gate 已随任务#36 B5 执行器一步退役删除（执行器族不复存在）
+      - name: Skill tool names gate (acceptance GATES 对齐：技能文档工具白名单)
+        run: python scripts/scan_skills.py --gate
       - name: API contract check (OpenAPI -> TS types)
         run: python scripts/gen_api_types.py --check
 
@@ -83,11 +88,10 @@ jobs:
           ls static/dist/studio-*.js || (echo "JS bundle missing!" && exit 1)
           echo "Build OK: dist/index.html + JS bundle exist"
 
-  # ---------- Job 4: E2E 冒烟（可选，不阻塞合并） ----------
+  # ---------- Job 4: E2E 冒烟（硬门禁：任务 #18 口径对齐，移除 continue-on-error） ----------
   e2e-smoke:
     runs-on: ubuntu-latest
     needs: [backend-test, frontend-check]
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python

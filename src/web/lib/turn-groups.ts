@@ -1,8 +1,8 @@
 /**
  * 轮次分组（消息流碎片化。
  *
- * 一轮 Agent 回复会产出多条消息条目（正文气泡 / 文档卡 / 图片卡），
- * 渲染层按轮次聚合进同一容器（turn group），消除「一轮产出散落多条消息」
+ * 单次 Agent 回复会产出多条消息条目（正文气泡 / 文档卡 / 图片卡），
+ * 渲染层按轮次聚合进同一容器（turn group），消除「单次产出散落多条消息」
  * 的碎片化观感。
  *
  * 聚合规则（终裁）：
@@ -78,4 +78,26 @@ export function answeredValueFor(messages: ChatMessage[], idx: number): string {
     return (m.text || '').trim();
   }
   return '';
+}
+
+/**
+ * 轮次组引用稳定化：groupTurns 每次返回全新对象，而 Solid <For> 按对象
+ * identity diff——引用不稳导致每条消息变化都全树拆建，content-visibility
+ * 高度缓存随之失效。组内下标恒为连续区间：首下标+长度相等且 kind/turnId
+ * 相同即同组，复用旧引用，<For> 只做尾部增量 diff，既有节点与高度缓存保留。
+ */
+export function stabilizeGroups(prev: TurnGroup[], next: TurnGroup[]): TurnGroup[] {
+  const out: TurnGroup[] = [];
+  for (let i = 0; i < next.length; i += 1) {
+    const n = next[i];
+    const p = prev[i];
+    if (p && p.kind === n.kind && p.turnId === n.turnId
+      && p.indices.length === n.indices.length
+      && p.indices[0] === n.indices[0]) {
+      out.push(p);
+    } else {
+      out.push(n);
+    }
+  }
+  return out;
 }

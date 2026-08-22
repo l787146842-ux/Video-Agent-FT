@@ -12,11 +12,20 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
+# gates_inputs 必须在 prompt_gates 之后导入（gates_script↔prompt_gates 尾块
+# re-export 对首入方向敏感；任务#35 B2 原料判定家族）
+from src.video_agent.core import gates_inputs
 # （审核）：顶层化（registry 顶层不依赖 core，无环；live_metrics 同包）
 from src.video_agent.core import live_metrics
+from src.video_agent.skill_runtime import guard as skill_guard
+# v3 声明读取经模块属性访问（任务#35 B2：测试 patch registry.<fn> 即生效）
+from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.skill_runtime.registry import skill_flow_enabled
 from src.video_agent.memory import MemoryManager
 from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
+# MCP 两段式注入段 1（任务#37 B4）：外部工具目录文本块（名称+摘要，
+# schema 不进 FC tools；完整 schema 由 enable 后按需注入）
+from src.video_agent.tools.mcp import catalog as mcp_catalog
 from src.video_agent.utils.prompts import load_prompt, render_prompt
 
 if TYPE_CHECKING:
@@ -25,6 +34,24 @@ if TYPE_CHECKING:
 # 遥测：system prompt 组装总长预警阈值（字符）——超过即 warning，
 # 提醒清理草稿/缩短 Skill 全文（token 治理的组装层可观测性）
 _SYSTEM_PROMPT_WARN_CHARS = 60000
+
+# 通用主路径分级注入阈值（任务#36 B5）：全文超过该字符数时不再直注全文，
+# 改为「planner 章节全文 + 章节目录（标题+字符区间）」，其余章节经
+# read_skill（section/start）按需续读；≤ 阈值全文直注。
+# 与 read_skill 短路判定（fc_tool_runner._skill_full_text_injected）同口径。
+GENERIC_FULL_INJECT_LIMIT = 20000
+
+# v3 元数据头展示标签（任务#35 B2/B3：kind 目录口径 + 暂停 trigger 文案）
+_KIND_LABELS = {
+    "pipeline": "流程型（固定流水线）",
+    "style": "风格型（美学指导）",
+    "reference": "参考型（知识素材）",
+}
+_PAUSE_TRIGGER_LABELS = {
+    "spec_finalized": "规格定稿后",
+    "storyboard_structure_ready": "故事板结构就绪（分组/草稿搭建完成）后",
+    "first_generation_call": "首次调用生成类工具前",
+}
 
 
 class PromptBuilder:
@@ -71,6 +98,16 @@ class PromptBuilder:
         if catalog:
             parts.append(("catalog", catalog))
 
+        # MCP 外部工具目录（两段式注入段 1）：仅名称+摘要常驻，
+        # 完整 schema 等 mcp_tool_catalog enable 后次回合进 FC tools
+        try:
+            mcp_block = mcp_catalog.catalog_block(self._get_raw_state()
+                                                  if self._get_raw_state else None)
+        except Exception:
+            mcp_block = ""
+        if mcp_block:
+            parts.append(("mcp_catalog", mcp_block))
+
         # 铁律全文注入（宪法）：项目级生产契约的唯一表述源——
         # 铁律文档在每轮对话开始时由系统 ensure，存在即注入，不与 Skill 激活绑定
         # （协议模板不重复业务规则，铁律不能缺位）
@@ -90,7 +127,7 @@ class PromptBuilder:
                 parts.append((
                     "selected_draft",
                     f"\n用户当前选中的草稿：draft_id={context.selected_draft_id}"
-                    f"（类型 {context.selected_type or '未知'}）。studio-actions 里的 \"current\" 指向它。",
+                    f"（类型 {context.selected_type or '未知'}）。",
                 ))
 
             # 全局生成设置（前端「全局设置」页用户配置，热生效）：
@@ -168,6 +205,7 @@ class PromptBuilder:
                 {
                     "protocol": sec_lens.get("protocol", 0) if context.use_studio_context else 0,
                     "catalog": sec_lens.get("catalog", 0),
+                    "mcp_catalog": sec_lens.get("mcp_catalog", 0),
                     "iron_rules": sec_lens.get("iron_rules", 0),
                     "memory": sec_lens.get("memory", 0),
                     "channels": sec_lens.get("channels", 0),
@@ -285,31 +323,98 @@ class PromptBuilder:
         )
         if context.skill_name:
             header += (
-                f"\n用户当前在前端选中了「{context.skill_name}」，其已注册执行器清单另行注入下方；"
-                "调用执行器时系统自动注入对应章节（全文不注入）。如确需全文可调用 read_skill；"
+                f"\n用户当前在前端选中了「{context.skill_name}」，其完整流程已注入下方（超长时"
+                "按分级注入规则给章节目录，按需 read_skill 续读）；"
                 "其他 Skill 需要时仍要先 read_skill。"
             )
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 的注入块（settings.skill_runtime 开关落地）。
+        """选中 Skill 的注入块（任务#36 B5：通用主路径切换）。
 
-        - auto（默认）：有章节→执行器清单+流程基线；无章节→全文兜底直注；
-        - executors：只走执行器形态，无章节时不注入全文（返回空串）；
-        - legacy：强制全文直注 + 阶段聚焦指针（非 FC 通道/无执行器 Skill 的保底形态；
-          聚焦为指针式强调，章节内容随全文仅注入一次，P3-17 单注入收敛）。
-        无章节全文兜底：非 FC 通道调不了 read_skill，888 保障不降级。
+        settings.skill_runtime（SKILL_RUNTIME_MODE）降级为 deprecated 全局回退闸：
+        - auto（默认）：通用主路径 build_generic_skill_block——元数据头 +
+          全文分级注入（≤20000 直注；超长给 planner 章节全文 + 章节目录）；
+        - executors：执行器形态已一步退役（用户裁决不设观察期），按通用主路径
+          执行并记弃用告警；
+        - legacy：强制旧全文直注行为，保留作事故回退。
         """
         mode = str(getattr(settings, "skill_runtime", "auto") or "auto").strip().lower()
         if mode == "legacy":
-            return self._build_unsectioned_skill_block(skill_name)
-        runtime_block = self.build_executor_runtime_block(skill_name)
-        if runtime_block:
-            return runtime_block
-        if mode == "executors":
-            logger.info(f"[Planner] Skill「{skill_name}」无可执行章节（executors 模式不注入全文）")
+            block = self._build_unsectioned_skill_block(skill_name)
+        else:
+            if mode == "executors":
+                logger.warning(
+                    "[Planner] skill_runtime=executors 已弃用（执行器一步退役，任务#36 B5），"
+                    "按通用主路径执行；请移除 SKILL_RUNTIME_MODE/SKILL_RUNTIME 环境变量"
+                )
+            block = self.build_generic_skill_block(skill_name)
+        # v3 元数据头（任务#35 B2/B3）：拼在 Skill 块正文之前；未声明任何
+        # v3 键时返回空串（未迁移 v2 manifest 零增量）；选中块本身仍在
+        # system prompt 最末段（近生成端），不破坏稳定段在前的前缀缓存排序
+        header = self.build_skill_metadata_header(skill_name)
+        if header and block:
+            return header + "\n\n" + block
+        return block
+
+    def build_skill_metadata_header(self, skill_name: str) -> str:
+        """sidecar v3 元数据头：kind / requires_inputs 未满足项 / language /
+        暂停点清单，注入在选中 Skill 块全文之前。
+
+        未声明任何 v3 键（未迁移 v2 manifest）返回空串，行为零变化；
+        原料未就绪探测需 raw state，缺省（None）时只省掉该段。
+        """
+        lines: List[str] = []
+        try:
+            kind = skill_registry.skill_kind(skill_name)
+        except Exception:
+            kind = ""
+        if kind:
+            lines.append(f"- 类型：{_KIND_LABELS.get(kind, kind)}（目录展示口径）")
+        missing: List[Dict[str, Any]] = []
+        if self._get_raw_state is not None:
+            try:
+                missing = gates_inputs.missing_required_inputs(
+                    self._get_raw_state(), skill_name)
+            except Exception:
+                missing = []
+        for m in missing:
+            label = gates_inputs.INPUT_TYPE_LABELS.get(
+                str(m.get("type") or ""), str(m.get("type") or ""))
+            hint = str(m.get("hint") or "").strip()
+            lines.append(
+                f"- 原料未就绪：{hint or ('本 Skill 需要' + label + '素材，尚未检测到上传')}"
+            )
+        try:
+            lang = skill_registry.skill_language(skill_name)
+        except Exception:
+            lang = {}
+        if lang.get("prompt") == "en":
+            lines.append(
+                "- 语言要求：生成提示词正文须用英文书写（平台语言闸已按声明放宽）")
+        elif lang.get("prompt") == "zh":
+            lines.append("- 语言要求：生成提示词正文用中文书写（平台语言闸生效）")
+        try:
+            points = skill_guard.skill_pause_points(skill_name)
+        except Exception:
+            points = []
+        if points:
+            lines.append("- 平台会在以下节点兜底保证暂停（到达时先停下等您确认）：")
+            for p in points:
+                trigger = str(p.get("trigger") or "")
+                if trigger == "batch_boundary":
+                    desc = str(p.get("description") or "").strip()
+                elif trigger == "free_text":
+                    desc = str(p.get("prose") or "").strip()
+                else:
+                    desc = _PAUSE_TRIGGER_LABELS.get(trigger, trigger)
+                lines.append(f"  · {desc}")
+        if not lines:
             return ""
-        return self._build_unsectioned_skill_block(skill_name)
+        return (
+            "== Skill 元数据（sidecar 声明，执行下方 Skill 内容前先读）==\n"
+            + "\n".join(lines)
+        )
 
     def _build_unsectioned_skill_block(self, skill_name: str) -> str:
         """无可识别章节的 Skill：全文直注兜底。
@@ -341,77 +446,117 @@ class PromptBuilder:
         # 当前阶段聚焦块追加在最末尾（离生成端最近，遵循度最高）
         return base + self.build_stage_focus_block(content)
 
-    def build_executor_runtime_block(self, skill_name: str) -> str:
-        """executors 模式：注册执行器清单（不再注入全文，章节在执行器内注入）。"""
-        try:
-            from src.video_agent.skill_runtime.registry import resolve_entry
+    def build_generic_skill_block(self, skill_name: str) -> str:
+        """通用主路径注入块（任务#36 B5）：全文直注或分级注入。
 
-            entry = resolve_entry(skill_name)
-        except Exception:
-            entry = None
-        if entry is None:
-            return ""
-        tools = entry.available_tools
-        if not tools:
-            return ""
-        # 2：流程基线 = 当前 Skill 的 <planner> 章节（切换 Skill 即切换流程）
-        flow = ""
+        - ≤ GENERIC_FULL_INJECT_LIMIT：全文直注（超 max_doc_chars 硬截断）；
+        - 超长：planner 章节全文 + 章节目录（标题+字符区间）+ 续读指令，
+          其余章节由模型执行对应环节前调 read_skill（section/start）续读。
+        执行器形态已一步退役，本块为选中 Skill 的唯一注入形态（legacy 除外）。
+        """
+        sd = self._get_skill_docs()
         try:
-            from src.video_agent.skill_runtime.guard import skill_planner_flow
+            display, content = sd.resolve_skill_content(skill_name)
+        except Exception:  # 解析失败不阻断对话
+            logger.warning(f"[Planner] 选中 Skill「{skill_name}」解析失败，降级为仅目录")
+            return ""
+        content = (content or "").strip()
+        if not content:
+            return ""
+        discipline = load_prompt("planner/skill_discipline.md") or ""
+        if len(content) <= GENERIC_FULL_INJECT_LIMIT:
+            # 全文直注（与旧兜底同口径：max_doc_chars 硬截断防撑爆上下文）
+            body = content
+            if len(body) > settings.max_doc_chars:
+                body = body[:settings.max_doc_chars] + "\n……（Skill 全文超长，已截断）"
+            base = (
+                f"== 当前选中 Skill「{display or skill_name}」全文（必须严格遵守其中的"
+                "流程与规范）==\n"
+                "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
+                "一律以本 Skill 为准；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
+                "并全程保持一致。\n\n"
+                f"{body}\n\n"
+                f"{discipline}"
+            )
+            return base + self._build_generic_flow_steps(skill_name)
+        return self._build_tiered_skill_block(
+            sd, skill_name, display or skill_name, content, discipline)
 
-            flow = skill_planner_flow(skill_name)
+    def _build_tiered_skill_block(
+        self, sd: Any, skill_name: str, display: str, content: str, discipline: str,
+    ) -> str:
+        """分级注入块（全文 > GENERIC_FULL_INJECT_LIMIT）：planner 章节全文 +
+        章节目录（标题+字符区间）+ 续读指令。章节区间与 read_skill 续读同口径
+        （skill_docs.list_skill_sections）。planner 章节缺失时回落全文首段截断。"""
+        try:
+            sections = sd.split_skill_sections(content) or {}
         except Exception:
-            flow = ""
-        lines = [
-            f"== 当前选中 Skill「{entry.name}」已注册独立执行器（上传即注册）==",
-            "本 Skill 全文不在此处注入；执行器已注册，系统会按对应章节自动校验你的产出：",
+            sections = {}
+        planner = (sections.get("planning") or "").strip()
+        try:
+            toc = sd.list_skill_sections(content) or []
+        except Exception:
+            toc = []
+        lines: List[str] = [
+            f"== 当前选中 Skill「{display}」（全文 {len(content)} 字，超过分级注入阈值"
+            f" {GENERIC_FULL_INJECT_LIMIT}，按分级规则注入）==",
+            "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
+            "一律以本 Skill 为准；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
+            "并全程保持一致。",
         ]
-        lines += [f"- {t}" for t in tools]
-        # P3-15 自定义章节通道接线（非 legacy 全文直注段）：显式下发
-        # custom_sections 声明的章节标识（skill_section_run 的 section 参数
-        # 取值），模型不必从散文里猜标识；未声明时零增量。
-        _custom = getattr(entry, "custom_sections", None) or {}
-        if _custom:
+        if planner:
             lines += [
                 "",
-                "== 自定义章节（sidecar 声明；用 skill_section_run 执行，"
-                "section 参数取下列标识）==",
+                "== 流程规划章节（全文注入，必须按此顺序与阶段边界执行）==",
+                planner,
             ]
-            lines += [f"- {k}" for k in _custom]
-        if flow:
+        else:
+            # 无 planner 章节：回落全文首段截断，保底不丢流程入口
+            head = content[:GENERIC_FULL_INJECT_LIMIT]
             lines += [
                 "",
-                "== 当前 Skill 的流程基线（<planner>，必须按此顺序与阶段边界执行）==",
-                flow,
+                "== Skill 正文首段（未识别到流程规划章节，先注入前 "
+                f"{GENERIC_FULL_INJECT_LIMIT} 字）==",
+                head,
             ]
-            # 外来工具名映射注记已随 删除（导入期转换归专用 Skill 系统）
-        # 批 12：sidecar 流程清单（机械顺序清单，与 stage_precondition 闸同源「法条」；
-        # Rule2 v6：确定性阶段由 runtime 直跑，模型循环只做节点内创作，越阶由闸否决）
+        if toc:
+            lines += [
+                "",
+                "== 章节目录（标题与字符区间；执行对应环节前先调用 "
+                "read_skill（name=本 Skill，section=章节标题，或 start=区间起点）续读该章节"
+                "全文，不要凭目录猜测章节内容）==",
+            ]
+            lines += [f"- {t['title']}（第 {t['start']}~{t['end']} 字）" for t in toc]
+        lines += [
+            "",
+            "执行纪律（与全文同等效力）：",
+            discipline.strip() if discipline else "- 严格按流程顺序推进，不跳阶段。",
+        ]
+        return "\n".join(lines) + self._build_generic_flow_steps(skill_name)
+
+    def _build_generic_flow_steps(self, skill_name: str) -> str:
+        """sidecar 流程清单段（机械顺序清单，与 stage_precondition 闸同源「法条」；
+        ADR-0004：模型永远唯一行动主体，runtime 只做账本与裁判不发起行动，
+        本清单供阶段前置闸在工具调用点否决越阶（顺序保障 = 刹车不是方向盘））。
+        原执行器运行时块的同源注入段，随通用主路径保留。"""
         try:
             from src.video_agent.skill_runtime.registry import skill_manifest_of
 
             _steps = (((skill_manifest_of(skill_name) or {}).get("flow") or {}).get("steps")) or {}
-            if _steps:
-                _ordered = [
-                    f"{k}. {v}" for k, v in sorted(
-                        _steps.items(), key=lambda kv: int(kv[0]))
-                ]
-                lines += [
-                    "",
-                    "== 流程清单（sidecar 声明；跨阶段调用会被阶段前置闸拒收）==",
-                    *_ordered,
-                    # 批3 暂停纪律单家：暂停确认的邀请表述归 skill_discipline.md，
-                    # 此处不再复述（P1 规则单家）
-                ]
+            if not _steps:
+                return ""
+            _ordered = [
+                f"{k}. {v}" for k, v in sorted(
+                    _steps.items(), key=lambda kv: int(kv[0]))
+            ]
         except Exception:
             # 流程清单装配失败不阻断对话（降级遥测可见，批5）
             live_metrics.record_degradation("prompt_builder.flow_steps")
-        # 执行方式/阶段边界/通用能力 prose 外置 prompts/planner/executor_runtime.md
-        # （批3 指令收敛，Rule6；暂停纪律表述以 skill_discipline.md 为单家）
-        _runtime_prose = load_prompt("planner/executor_runtime.md").strip()
-        if _runtime_prose:
-            lines += ["", _runtime_prose]
-        return "\n".join(lines)
+            return ""
+        return (
+            "\n\n== 流程清单（sidecar 声明；跨阶段调用会被阶段前置闸拒收）==\n"
+            + "\n".join(_ordered)
+        )
 
     # ---------- 分阶段聚焦注入（legacy 全文兜底路径专用） ----------
 

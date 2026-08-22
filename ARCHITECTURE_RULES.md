@@ -16,7 +16,7 @@
 > 3. **评测驱动（Evaluation-Driven）**：闸机行为由黄金语料库校准，误杀/漏放计数劣化即测试失败；提示词迁移由快照测试锁语义。
 > 4. **deny-overrides 分层合并**：平台硬边界永远优先，Skill 配置只能加强或持平，不能削弱。
 > 5. **小批交付、即时提交**：每批独立 commit、独立验收；禁止攒大批未提交改动（本仓库已因此丢过整批工作，见 §5）。
-> 6. **验收 = 一键脚本 + 用户目测**：`python scripts/acceptance.py` 全 PASS（五门禁 + 四件套，**只认进程退出码**——Windows 终端乱码曾把契约门禁失败伪装成通过；`--with-eval` 补评测管线）；UI 变更必须构建后由**用户目测反馈**确认（不派浏览器子代理截图代目测，可做轻量定点代码级验证），缺一项不算完成。
+> 6. **验收 = 一键脚本 + 用户目测**：`python scripts/acceptance.py` 全 PASS（测试套件 + 门禁清单以脚本内 `SUITES`/`GATES` 表为准，不写死数量，**只认进程退出码**——Windows 终端乱码曾把契约门禁失败伪装成通过；`--with-eval` 补评测管线）；UI 变更必须构建后由**用户目测反馈**确认（不派浏览器子代理截图代目测，可做轻量定点代码级验证），缺一项不算完成。
 > 7. **指令治理层（docs/GOVERNANCE.md，原第十三章）与本总纲同权**：任何规则只有一个家（P1）、约束下沉代码层（P2）、状态即数据（P3）；修改前必须按 GOVERNANCE.md §13.5 决策树定位归属层，禁止在事故现场就近补条款。
 
 ---
@@ -32,7 +32,7 @@
 - `core/agent_loop.py::run_agent_loop()` 是节点内有界模型循环的**唯一实现**；`MAX_STEPS` 读 `settings.max_steps`
 - **动作通道唯一 = FC 工具调用**（`core/fc_tool_runner.py`）；4-4 双轨退役（audit-0819，ADR-0001）已删除：非 FC 聊天通道（agy CLI）、text_actions.md 注入、退化信号探测、流式预执行；禁止恢复自由文本动作解析
 - **确认单轨化（audit-0819b/0819d）**：暂停确认唯一经 `workflow_pause` FC 工具产生（单一正名，对齐业界「只有一个 AskUserQuestion」；别名工具 request_confirmation 与文本别名归一 split_actions 已删），经 llm_call 第 5 元组结构化上抛；合成 studio-actions 文本块、流式抑制器（S01）、strip 清洗已同批删除；`agent_loop` 纯文本轮仅收尾（轮末策略照常承重）；mock 演示动作以结构化 dict 直达执行器
-- **执行器结构化输出（audit-0819d）**：执行器子 LLM 的 JSON 产出点一律下发 `response_format=json_object`（端点不支持时适配器探针剥离降级），产出严格 `json.loads` 校验，畸形走既有 C2 拒因纠正重试——宽容正则兜底已删（S17），禁止恢复；外来工具名运行时翻译层（S15）已删，Skill 导入期工具名转换归专用 Skill 系统
+- **执行器族一步退役（任务#36 B5）**：执行器子代理（agent-as-tool）机制已物理删除（executors/exec_* 全族 + `prompts/planner/executor_runtime.md`），管线阶段改由通用主路径直走平台工具（`prompt_builder` 分级注入）；其结构化输出/拒因重试/黑匣子约束随之退役，防虚报收敛到 `fc_tool_runner` 关键步骤探针；退役符号登记 `check_legacy_orchestration` 防复活，禁止恢复；外来工具名运行时翻译层（S15）已删，Skill 导入期工具名转换归专用 Skill 系统
 - **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
 - **控制流主体回归（2026-08-21 裁决，ADR-0004）**：模型永远唯一行动主体——每轮做什么由模型接到用户消息后发起工具调用（带附件首条消息也由模型接手，系统不静默自动分析）；`core/workflow_runtime.py` 降级为**账本 + 裁判数据层**（Skill 激活编译 `WorkflowDefinition`，canonical slug + revision + content hash，源 = sidecar 声明，`validate_sidecar` 注册期门禁；持久化 `WorkflowRun`，**仅 runtime reducer 可改**，StateManager 仍唯一写入点 Rule3；完成度只认客观探针），不发起任何行动；ADR-0003 机械直跑/审批直跑退役（驱动符号登记 `check_legacy_orchestration` 防复活）。顺序保障 = 刹车不是方向盘：阶段表/依赖图/`platform.stage_precondition` 闸内嵌工具执行路径首位，模型越阶即拒收回喂。「不暂停连跑」= 自主性档位（用户指令/开关授予模型豁免非平台硬暂停点；平台硬闸任何档位必停，Context ≠ Consent，授权留痕）。**原子轮提交**：一轮只提交一个 `TurnResult`（turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项（暂停卡唯一发行主体 = 模型 `workflow_pause`，单一活跃暂停槽位互斥，重复暂停拒收留痕）；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
 - **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
@@ -99,7 +99,7 @@
 
 ### 2.5 审计闭环
 - `tracer.record_gate(...)` 持久化到 `agent_traces.jsonl`；调试端点 `GET /api/agent/gates` 与 `/api/agent/traces` 并列
-- 闸机触发/放行、工具调用、执行器输出校验、截断/回滚全部入 trace；执行器内层模型异常落黑匣子档案（只落盘不进上下文）
+- 闸机触发/放行、工具调用、截断/回滚全部入 trace（执行器输出校验/黑匣子档案已随任务#36 B5 执行器退役删除）
 
 ### 2.6 校准闭环（评测驱动）
 - `tests/fixtures/gate_corpus/` 黄金语料（合法/应拦两组真实风格样例，带期望 verdict）；按 规则×Skill profile 遍历，误杀/漏放计数劣化即测试失败
@@ -110,11 +110,11 @@
 - high 级工具必须平台闸机 + 用户确认；medium 级按 Skill 配置；low 级直接执行。
 - 新工具未声明风险级别视为 high（deny-by-default），不得静默放行。
 
-### 2.8 执行器宪法（Skill = 注册表 + 执行器）
-- Skill 上传/保存/删除 = `data/skills/*.md` 唯一数据源 + 自动解析 manifest → 刷新执行器注册表；下拉框数据源不变。
-- 执行器是 Planner 可调用的受管子代理工具（agent-as-tool）：独立上下文、独立工具白名单、结构化输入输出校验。
-- 执行器失败**禁止绕过回喂主模型**；主模型不得假装执行器已执行。
-- 执行器注册表是数据（policy-as-data），不得散落硬编码；`SKILL_RUNTIME=auto` 按 Skill 是否可解析出执行器章节自动选择 executors / legacy。
+### 2.8 Skill 宪法（Skill = 注册表 + 通用主路径）
+- Skill 上传/保存/删除 = `data/skills/*.md` 唯一数据源 + 自动解析 manifest（v3 sidecar）→ 刷新注册表；下拉框数据源不变。
+- 管线阶段由通用主路径直走平台工具：`prompt_builder` 按预算分级注入（≤阈值全文直注；超长 planner 章节+章节目录），无执行器子代理（任务#36 B5 一步退役）。
+- 关键步骤失败**禁止绕过回喂/虚报**：`fc_tool_runner` 按客观探针（document_write 等工作台状态）覆写完成文案，模型不得假装已执行。
+- 注册表是数据（policy-as-data），不得散落硬编码；外部工具接入层（MCP）为任务#37 预留扩展点，不得在注册表外私设工具通道。
 
 ---
 
@@ -196,7 +196,7 @@
 - **先读懂再动手**，不得"重写一遍"；修改范围最小化；不为"觉得更好"重构无关代码
 - 删除前全局搜索确认无引用；DEPRECATED 保留别名导入不立即删；删除后跑测试
 - 禁止提交 `print()` / `# TODO: remove` / `# HACK`；调试用 `logger.debug()`；临时 mock 不得覆盖正式实现
-- **事故注释约定**：新注释只写结论（这里为什么这么做），不写事故过程；事故叙事的唯一载体是台账（`docs/archive/incident-ledger.md`），代码里引用事故编号即可
+- **事故注释约定**：新注释只写结论（这里为什么这么做），不写事故过程；未清偿项登记于项目外清单（`E:\07 天问\未清偿债务与事故清单-2026-08-22.md`，见 GOVERNANCE §13.8/§13.10），代码里引用事故编号即可
 
 ---
 
@@ -207,7 +207,7 @@
 - 耦合行变更→同批更新 `core/coupling_registry.py`（遍历测试钉死，漏改即红）
 
 ```bash
-python scripts/acceptance.py             # 一键验收：四件套+五门禁，只认 exit code
+python scripts/acceptance.py             # 一键验收：测试套件+门禁（清单以脚本 GATES/SUITES 表为准），只认 exit code
 python scripts/acceptance.py --quick     # 快验：门禁 + tsc
 python scripts/acceptance.py --with-eval # 终验：追加评测管线
 ```
@@ -234,9 +234,10 @@ src/video_agent/
 │   ├── coupling_registry.py ← 13.7 耦合表机器可读化（test_coupling_registry 钉死）
 │   └── tracer.py           ← 审计链路
 ├── skill_runtime/
-│   ├── executors/          ← re-export 壳（承重）
-│   ├── exec_common.py / exec_spec.py / exec_tools.py / exec_split.py
-│   └── dag.py / registry.py / guard.py / progress.py / blackbox.py
+│   ├── registry.py / guard.py / progress.py
+│   └── sidecar.py / sidecar_schema.py ← manifest v3 sidecar 单一事实源
+│   （executors/exec_* 执行器族已随任务#36 B5 一步退役，防复活见 check_legacy_orchestration；
+│     MCP 外部工具接入层为任务#37 预留扩展点）
 ├── web/
 │   ├── app.py / chat_service.py(+chat_opening/chat_consume) / sse.py / sse_protocol.py
 │   ├── action_executor.py  ← 动作执行器；生成动作域在 action_gen.py
@@ -259,7 +260,7 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 - [ ] 没有硬编码 prompt >3 行；提示词迁移带快照测试；文案治理迁移同批更新锁旧文案的断言测试（Rule 6）
 - [ ] 没有 manifest 削弱平台硬边界；触碰项有负面用例（§2.2）
 - [ ] 工具已声明 risk 分级；high 级工具带平台闸机与确认（§2.7）
-- [ ] Skill 保存/删除后执行器注册表已同步；执行器失败未绕过回喂（§2.8）
+- [ ] Skill 保存/删除后注册表已同步；关键步骤失败未被虚报完成（§2.8）
 - [ ] 闸机改动带黄金语料校准；连续拦截有升级指引（§2.6）
 - [ ] UI 改动符合 §3 与 `docs/前端体验规范.md`，且构建后经用户目测反馈确认
 - [ ] 没有 box-shadow/发光出现在确认卡片；品牌仍为「飞天」

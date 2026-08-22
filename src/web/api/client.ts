@@ -2,14 +2,21 @@
  * API 客户端封装
  * 所有面板组件通过 api/ 层调用，不直接 fetch
  */
+import { httpErrorPayload, makeErrorPayload, kindFromHttpStatus, type ErrorPayload } from '@/lib/error-payload';
 
 export class ApiError extends Error {
+  /** 任务 #19：结构化错误负载（消费方按 kind 做动作不再猜文案） */
+  public payload: ErrorPayload;
+
   constructor(
     public status: number,
     public detail: string,
+    /** 缺省按状态码兜底构造（兼容未走 readError 的直造点，如 upload） */
+    payload?: ErrorPayload,
   ) {
     super(`API Error ${status}: ${detail}`);
     this.name = 'ApiError';
+    this.payload = payload ?? makeErrorPayload(detail, kindFromHttpStatus(status));
   }
 }
 
@@ -32,13 +39,16 @@ export function setGlobalApiKey(key: string): void {
   } catch { /* 隐私模式等场景静默 */ }
 }
 
-async function readError(res: Response): Promise<string> {
+async function readError(res: Response): Promise<ApiError> {
+  let body: Record<string, unknown> | null = null;
   try {
-    const body = await res.json();
-    return body.detail || body.message || res.statusText;
+    body = await res.json();
   } catch {
-    return res.statusText;
+    body = null;
   }
+  // 任务 #19：HTTP 失败与 SSE 错误事件共用同一解析器（lib/error-payload.ts）
+  const payload = httpErrorPayload(res.status, body, res.statusText);
+  return new ApiError(res.status, payload.message || res.statusText, payload);
 }
 
 export async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
@@ -50,7 +60,7 @@ export async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> 
     ...opts,
   });
   if (!res.ok) {
-    throw new ApiError(res.status, await readError(res));
+    throw await readError(res);
   }
   // 204 No Content
   if (res.status === 204) return undefined as T;

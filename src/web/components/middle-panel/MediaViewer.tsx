@@ -8,6 +8,7 @@ import { showToast } from '@/stores/toast';
 import { showContextMenu } from '@/components/shared/ContextMenu';
 import { uploadFiles } from '@/api/upload';
 import { safeUrl } from '@/lib/utils';
+import { useFocusTrap } from '@/lib/focus-trap';
 import type { Draft, ActiveGeneration } from '@/types';
 import type { AllCanvasImageItem } from '@/api/canvas';
 import { CanvasImagePickerModal } from './CanvasImagePickerModal';
@@ -85,6 +86,10 @@ export function MediaViewer() {
   const [elapsed, setElapsed] = createSignal(0);
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [lightboxUrl, setLightboxUrl] = createSignal('');
+
+  // 焦点圈闭：放大预览 Esc 关闭（补齐 title 提示对应的实际监听）
+  const [lightboxEl, setLightboxEl] = createSignal<HTMLElement>();
+  useFocusTrap(() => (lightboxUrl() ? lightboxEl() : undefined), { onEscape: () => setLightboxUrl('') });
 
   const rec = () => findDraftRecord(state.selectedDraftId, state.selectedType);
   const draft = () => rec()?.draft;
@@ -281,6 +286,10 @@ export function MediaViewer() {
           return (
             <div
               class="preview-lightbox"
+              ref={setLightboxEl}
+              role="dialog"
+              aria-modal="true"
+              aria-label="放大预览"
               onClick={() => closeLightbox()}
               onWheel={(e) => {
                 e.preventDefault();

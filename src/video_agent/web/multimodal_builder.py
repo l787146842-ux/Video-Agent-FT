@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-import httpx
 from loguru import logger
 
+from src.video_agent.adapters.fetch_adapter import get_media_fetch_adapter
 from src.video_agent.config import settings
 from src.video_agent.web.attachments import attachment_context, collect_image_urls
 from src.video_agent.state.manager import StateManager
@@ -111,21 +111,22 @@ async def fetch_remote_image_data_uri(url: str) -> str:
     if not url.lower().startswith(("http://", "https://")):
         return ""
     try:
-        async with httpx.AsyncClient(timeout=_REMOTE_FETCH_TIMEOUT, follow_redirects=True) as client:
-            resp = await client.get(url)
-        if resp.status_code != 200:
-            logger.warning(f"[Multimodal] 远程图片拉取失败 HTTP {resp.status_code}，跳过注入: {url}")
-            return ""
-        raw = resp.content
+        result = await get_media_fetch_adapter().download(
+            url, timeout=_REMOTE_FETCH_TIMEOUT, follow_redirects=True, context="multimodal"
+        )
     except Exception as e:
         logger.warning(f"[Multimodal] 远程图片拉取失败，跳过注入: {url} ({e})")
         return ""
+    if result.status_code != 200:
+        logger.warning(f"[Multimodal] 远程图片拉取失败 HTTP {result.status_code}，跳过注入: {url}")
+        return ""
+    raw = result.content
     if len(raw) > _MAX_IMAGE_BYTES:
         logger.warning(f"[Multimodal] 远程图片超过 10MB，跳过注入: {url}")
         return ""
     suffix = Path(urlparse(url).path).suffix.lower() or ".png"
     raw, mime_override = _downscale_image(raw, suffix)
-    ct = (resp.headers.get("content-type") or "").split(";")[0].strip()
+    ct = (result.content_type or "").split(";")[0].strip()
     mime = mime_override or (ct if ct.startswith("image/") else "") or mimetypes.guess_type(url)[0] or "image/png"
     b64 = base64.b64encode(raw).decode("ascii")
     return f"data:{mime};base64,{b64}"

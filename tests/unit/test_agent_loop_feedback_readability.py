@@ -6,7 +6,7 @@ audit-0819d：原 split_actions 确认别名归一两条用例随 S16 删除退�
 """
 import pytest
 
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.state.manager import StateManager
 
@@ -18,7 +18,7 @@ def svc(tmp_path):
 
 @pytest.fixture
 def executor(svc):
-    return StudioActionExecutor(svc)
+    return StateOperationExecutor(svc)
 
 
 def make_llm(replies):

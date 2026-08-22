@@ -1,0 +1,257 @@
+﻿diff --git a/src/video_agent/skill_runtime/registry.py b/src/video_agent/skill_runtime/registry.py
+index f4524ff..d3a8e55 100644
+--- a/src/video_agent/skill_runtime/registry.py
++++ b/src/video_agent/skill_runtime/registry.py
+@@ -1,8 +1,8 @@
+ """Skill 涓婁紶鍗虫敞鍐岋細鏂囨。绔犺妭 鈫?娉ㄥ唽琛ㄦ潯鐩€? 
+ Skill 鏂囨。锛坉ata/skills/*.md锛変粛鏄敮涓€鏁版嵁婧愪笌涓嬫媺妗嗘暟鎹簮锛?-鏈敞鍐岃〃淇濆瓨姣忎釜 Skill 瑙ｆ瀽鍚庣殑绔犺妭涓庡彲鐢ㄦ墽琛屽櫒娓呭崟锛?-鎵ц鍣ㄨ皟鐢ㄦ椂鎹鍙敞鍏ヨ嚜宸卞搴旂殑绔犺妭銆?+鏈敞鍐岃〃淇濆瓨姣忎釜 Skill 瑙ｆ瀽鍚庣殑绔犺妭涓庤兘鍔涘０鏄庢竻鍗曪紙浠诲姟#36 B5
++鎵ц鍣ㄩ€€褰瑰悗涓嶅啀瀵瑰簲宸叉敞鍐屽伐鍏凤紝浠呬綔闃舵瑁佸壀/闂告満鐨勫瑙傛帰閽堬級銆? """
+ from dataclasses import dataclass, field
+ from typing import Any, Dict, List, Optional
+@@ -13,27 +13,29 @@ import re
+ from loguru import logger
+ 
+ from src.video_agent.skill_runtime import sidecar
++from src.video_agent.skill_runtime.sidecar_schema import (
++    KIND_VALUES,
++    LANGUAGE_VALUES,
++    REQUIRES_INPUT_TYPES,
++)
+ 
+-# 鏈」鐩柊澧炵殑 Skill 鎵ц鍣ㄥ伐鍏凤紙澶嶇敤鐜版湁宸ュ叿涓嶅湪姝ゅ垪锛?-# document_write / read_uploaded_doc / image_generate / generate_video / workflow_pause锛?-
+-# 鏁呬簨鏉跨粨鏋勬媶瑙ｆ墽琛屽櫒瀹舵棌锛堜笁鎵ц鍣ㄥ悇绠′竴鑺傦紝skill 鏂囨。鎸変笁 tag 鍒嗙珷锛孡-0821C锛?-STORYBOARD_STRUCTURE_TOOLS = (
++# 绠＄嚎鑳藉姏璇嶆眹琛紙浠诲姟#36 B5锛氭墽琛屽櫒宸蹭竴姝ラ€€褰癸紝鍘?SKILL_EXECUTOR_TOOLS/
++# STORYBOARD_STRUCTURE_TOOLS 闄嶇骇涓恒€岀珷鑺傚０鏄?鈫?闃舵鑳藉姏銆嶆爣璁帮紝浠呬緵
++# pipeline_orchestrator 闃舵瑁佸壀銆乸rompt_gates 闊抽闂搞€乻kill_docs/scan_skills
++# Skill lint 浣滃瑙傛帰閽堬紱骞冲彴涓嶅啀娉ㄥ唽鍚屽悕宸ュ叿锛夈€?+PIPELINE_CAPABILITY_TOOLS = (
++    "script_analyze",
+     "storyboard_key_elements",
+     "storyboard_shots",
+     "storyboard_audio",
+-)
+-
+-SKILL_EXECUTOR_TOOLS = (
+-    "script_analyze",
+-    *STORYBOARD_STRUCTURE_TOOLS,
+     "write_media_prompt",
+     "audio_generate",
+     "video_assembler",
+ )
+ 
+-# 鎵ц鍣?鈫?闇€瑕佺殑 Skill 绔犺妭锛坰tage 閿紝涓?skill_docs.split_skill_sections 瀵归綈锛?-TOOL_STAGES: Dict[str, tuple] = {
++# 鑳藉姏 鈫?闇€瑕佺殑 Skill 绔犺妭锛坰tage 閿紝涓?skill_docs.split_skill_sections 瀵归綈锛?+# 锛堝師 TOOL_STAGES 鍚屾暟鎹紝闅忔墽琛屽櫒閫€褰规敼鍚嶏級
++CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
+     "script_analyze": ("planning",),
+     "storyboard_key_elements": ("storyboard_ke",),
+     "storyboard_shots": ("storyboard_shot",),
+@@ -43,11 +45,9 @@ TOOL_STAGES: Dict[str, tuple] = {
+     "video_assembler": ("assembly",),
+ }
+ 
+-# P3-15 鑷畾涔夌珷鑺傞€氶亾锛歴idecar 椤跺眰澹版槑 custom_sections锛堢珷鑺傛爣璇嗏啋鎵ц鍣ㄥ悕锛夛紝
+-# 闈炵绾跨被 Skill 涓嶅繀濂楀浐瀹?7 绔犺妭妯℃澘涔熻兘璧版墽琛屽櫒褰㈡€侊紙鍘嬬缉鍏ㄦ枃鐩存敞浣跨敤闈級銆?-# 閫氶亾鍗曚竴 = 閫氱敤绔犺妭鎵ц鍣?skill_section_run锛堜笌 prompts/planner/
+-# executor_runtime.md銆屾棤涓撳睘鎵ц鍣ㄧ殑绔犺妭鐢?skill_section_run銆嶅悓婧愯涔夛紱
+-# 涓嶅崰 SKILL_EXECUTOR_TOOLS锛屼笉鍙備笌鍥哄畾绔犺妭璇嶆眹琛ㄤ笌婕傜Щ闂ㄧ鍙ｅ緞锛夈€?+# P3-15 鑷畾涔夌珷鑺傞€氶亾锛歴idecar 椤跺眰澹版槑 custom_sections锛堢珷鑺傛爣璇嗏啋閫氶亾鍚嶏級锛?+# 闈炵绾跨被 Skill 涓嶅繀濂楀浐瀹?7 绔犺妭妯℃澘涔熻兘澹版槑鑷畾涔夌珷鑺傦紙鎵ц鍣ㄥ舰鎬佸凡閫€褰癸紝
++# 鐜颁粎浣滅珷鑺傚０鏄庢帰閽堬紱涓嶅弬涓庡浐瀹氱珷鑺傝瘝姹囪〃涓庢紓绉婚棬绂佸彛寰勶級銆? CUSTOM_SECTION_EXECUTOR = "skill_section_run"
+ 
+ # 澶ч樁娈靛睍绀烘爣绛撅紙鍚庣鏉冨▉涓嬪彂锛岄殢 trace 鏉＄洰 stage 瀛楁鎸佷箙鍖栵紱
+@@ -94,7 +94,8 @@ class SkillEntry:
+ 
+         鏈０鏄?= 绌?dict锛堝洖钀界幇琛屼负锛氬彧璧板浐瀹氱珷鑺傝瘝姹囪〃锛夛紱
+         娑堣垂绔?fail-closed锛歴chema 鏈斁琛岀殑褰㈢姸锛堥潪瀵硅薄/绌洪敭/鐧藉悕鍗曞
+-        鎵ц鍣級鏁翠綋蹇界暐锛岄潪娉曞０鏄庝笉浜х敓閫氶亾锛堟敞鍐屾湡鍙︽湁鍛婅锛夈€?+        鎵ц鍣級鏁翠綋蹇界暐锛岄潪娉曞０鏄庝笉浜х敓閫氶亾锛堟敞鍐屾湡 fail-hard 鎷掓敞鍐岋紝
++        鏈竻娲楀彧鍏滄敞鍐屽悗 sidecar 琚敼鍧忕殑娲昏鍦烘櫙锛夈€?         """
+         raw = (self.manifest or {}).get("custom_sections")
+         if not isinstance(raw, dict):
+@@ -134,12 +135,14 @@ class SkillEntry:
+ 
+     @property
+     def available_tools(self) -> List[str]:
+-        """璇?Skill 瀹為檯鍙敤鐨勬墽琛屽櫒锛堝搴旂珷鑺傞潪绌烘墠娉ㄥ唽锛夈€?+        """璇?Skill 鐨勭绾胯兘鍔涘０鏄庢竻鍗曪紙瀵瑰簲绔犺妭闈炵┖鎵嶆垚绔嬶級銆? 
++        浠诲姟#36 B5 鎵ц鍣ㄩ€€褰瑰悗锛氬悕鍗曚笉鍐嶆槸宸叉敞鍐屽伐鍏凤紝鑰屾槸闃舵瑁佸壀/
++        闊抽闂?lint 鐨勫瑙傛帰閽堬紙鍚屽悕宸ュ叿宸插垹闄わ級銆?         P3-15锛氬０鏄?custom_sections 涓斾换涓€鏍囪瘑鍙В鏋愬嚭闈炵┖绔犺妭鏃讹紝
+-        杩藉姞娉ㄥ唽閫氱敤绔犺妭鎵ц鍣紙鑷畾涔夐€氶亾锛屼笉鍗犲浐瀹氱珷鑺傝瘝姹囪〃锛夈€?+        杩藉姞鑷畾涔夌珷鑺傞€氶亾鏍囪銆?         """
+-        tools = [t for t in SKILL_EXECUTOR_TOOLS if self.section_for(t)]
++        tools = [t for t in PIPELINE_CAPABILITY_TOOLS if self.section_for(t)]
+         if self.custom_sections and self.section_for(CUSTOM_SECTION_EXECUTOR):
+             tools.append(CUSTOM_SECTION_EXECUTOR)
+         return tools
+@@ -148,7 +151,7 @@ class SkillEntry:
+         if tool == CUSTOM_SECTION_EXECUTOR:
+             parts = [self.custom_section_text(k) for k in self.custom_sections]
+             return "\n\n".join(p for p in parts if p and p.strip()).strip()
+-        stages = TOOL_STAGES.get(tool) or ()
++        stages = CAPABILITY_TOOL_STAGES.get(tool) or ()
+         parts = [self.sections.get(s, "") for s in stages]
+         return "\n\n".join(p for p in parts if p and p.strip()).strip()
+ 
+@@ -181,22 +184,30 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
+ def register_skill(slug: str) -> Optional[SkillEntry]:
+     """瑙ｆ瀽骞舵敞鍐屼竴涓?Skill锛涙枃妗ｄ笉瀛樺湪鎴栨棤娉曡В鏋愭椂杩斿洖 None銆? 
+-    娉ㄥ唽鏈熼檮甯?<planner> 缁撴瀯浣撴锛坙int锛夛細渚濊禆寮曠敤鏈懡涓楠?缂栧彿鍐茬獊
+-    绛夐棶棰樺綋鍦哄憡璀︼紝涓嶇瓑杩愯鏃惰皟搴﹂敊涔辨墠鏆撮湶锛堝彧鍛婅涓嶉樆鏂敞鍐岋級銆?+    C4 fail-hard锛堜换鍔?22锛夛細sidecar schema 鏍￠獙澶辫触鎷掔粷娉ㄥ唽锛屾浛浠ｆ棫
++    銆屽彧鍛婅涓嶉樆鏂€嶁€斺€斿潖澹版槑涓嶈兘甯︾梾涓婄嚎锛屼慨濂?data/skills_manifests/
++    涓嬬殑 sidecar 鎵嶈兘娉ㄥ唽锛涘崟涓潖 Skill 鎷掓敞鍐屼笉鎴柇 sync_all 鎵规銆?+    娑堣垂绔?fail-closed 娓呮礂浠嶄繚鐣欙紙鍏滄敞鍐屽悗 sidecar 琚敼鍧忕殑娲昏鍦烘櫙锛夈€?     """
+     entry = _load_entry(slug)
+     if entry is None:
+         return None
+-    _registry[slug] = entry
+     issues = sidecar.validate_sidecar(entry.manifest)
+     if issues:
+-        logger.warning(
+-            f"[SkillRuntime] Skill銆寋entry.name}銆?planner> 缁撴瀯鍛婅锛歿'锛?.join(issues)}"
++        # 鎷掓敞鍐屽悓鏃舵憳闄ら檲鏃ф潯鐩紙refresh/閲嶆敞鍐岃矾寰勶細sidecar 鏀瑰潖鍚?+        # 鏃ф敞鍐屾€佷笉寰楃户缁彲鐢級
++        _registry.pop(slug, None)
++        logger.error(
++            f"[SkillRuntime] Skill銆寋entry.name}銆峴idecar schema 鏍￠獙澶辫触锛?
++            f"鎷掔粷娉ㄥ唽锛坒ail-hard锛屼慨澶?data/skills_manifests/{slug}.json "
++            f"鍚庣粡 refresh_skill 閲嶈瘯锛夛細{'锛?.join(issues)}"
+         )
++        return None
++    _registry[slug] = entry
+     tools = entry.available_tools
+     logger.info(
+         f"[SkillRuntime] 宸叉敞鍐?Skill銆寋entry.name}銆?
+-        f"锛坽len(entry.sections)} 涓珷鑺傦紝鎵ц鍣? {tools or '鏃?}锛?
++        f"锛坽len(entry.sections)} 涓珷鑺傦紝鑳藉姏澹版槑: {tools or '鏃?}锛?
+     )
+     global _synced
+     _synced = True
+@@ -204,10 +215,10 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
+ 
+ 
+ def unregister_skill(slug: str) -> None:
+-    """鍒犻櫎 Skill 鏃舵敞閿€鍏舵墽琛屽櫒娉ㄥ唽琛ㄦ潯鐩紙澶嶇敤鐜版湁宸ュ叿涓嶅彈褰卞搷锛夈€?""
++    """鍒犻櫎 Skill 鏃舵敞閿€鍏舵敞鍐岃〃鏉＄洰銆?""
+     entry = _registry.pop(slug, None)
+     if entry is not None:
+-        logger.info(f"[SkillRuntime] 宸叉敞閿€ Skill銆寋entry.name}銆嶇殑鎵ц鍣ㄦ敞鍐?)
++        logger.info(f"[SkillRuntime] 宸叉敞閿€ Skill銆寋entry.name}銆嶇殑娉ㄥ唽鏉＄洰")
+     global _synced
+     _synced = True
+ 
+@@ -253,8 +264,9 @@ def sync_all(force: bool = False) -> int:
+                 f"锛堝悓韬唤宸叉敞鍐? {seen_canon[canon]!r}锛?)
+             continue
+         try:
+-            if _load_entry(slug) is not None:
+-                register_skill(slug)
++            # fail-hard 鎷掓敞鍐岀殑 Skill 涓嶈鍏ャ€佷笉鍗?canonical 韬唤
++            #锛圕4锛歴chema 杩濊 = 鏈敞鍐岋紝韬唤鐣欑粰淇鍚庣殑鍚堟硶鏂囦欢锛?+            if _load_entry(slug) is not None and register_skill(slug) is not None:
+                 seen_canon[canon] = slug
+                 count += 1
+         except Exception as e:
+@@ -279,12 +291,17 @@ def reset_registry() -> None:
+ 
+ 
+ def get_entry(slug: str) -> Optional[SkillEntry]:
+-    _ensure_synced()
++    # 鐐规煡浼樺厛锛歠ail-hard 鎷掓敞鍐岀殑 slug 涓嶈兘琚噿鍚屾 sync_all 鍏ㄧ洏鎵弿
++    # 閲嶆柊鎹炲洖娉ㄥ唽锛堟嫆娉ㄥ唽鏄槑纭鍐筹紝涓嶆槸銆岃繕娌℃壂鍒般€嶏級锛?+    # 浠呭湪娉ㄥ唽琛ㄤ粠鏈垵濮嬪寲鏃舵墠瑙﹀彂鎳掑悓姝ャ€?+    if not _synced:
++        sync_all()
+     return _registry.get(slug)
+ 
+ 
+ def list_entries() -> List[SkillEntry]:
+-    _ensure_synced()
++    if not _synced:
++        sync_all()
+     return list(_registry.values())
+ 
+ 
+@@ -336,7 +353,7 @@ def resolve_entry(wanted: str) -> Optional[SkillEntry]:
+ 
+ 
+ def tool_sections(skill_name: str, tool: str) -> str:
+-    """杩斿洖鏌愭墽琛屽櫒搴旀敞鍏ョ殑 Skill 绔犺妭鍏ㄦ枃锛汼kill 鏈敞鍐?鏃犲搴旂珷鑺傝繑鍥炵┖涓层€?""
++    """杩斿洖鏌愯兘鍔涘０鏄庡搴旂殑 Skill 绔犺妭鍏ㄦ枃锛汼kill 鏈敞鍐?鏃犲搴旂珷鑺傝繑鍥炵┖涓层€?""
+     entry = resolve_entry(skill_name)
+     if entry is None:
+         return ""
+@@ -344,7 +361,7 @@ def tool_sections(skill_name: str, tool: str) -> str:
+ 
+ 
+ def tool_available(skill_name: str, tool: str) -> bool:
+-    """璇?Skill 鏄惁娉ㄥ唽浜嗗搴旀墽琛屽櫒銆?""
++    """璇?Skill 鏄惁澹版槑浜嗗搴旂绾胯兘鍔涳紙绔犺妭鎺㈤拡锛夈€?""
+     return bool(tool_sections(skill_name, tool))
+ 
+ 
+@@ -368,23 +385,6 @@ def skill_flow_enabled(skill_name: str, key: str) -> bool:
+     return bool((manifest.get("flow") or {}).get(key, False))
+ 
+ 
+-def skill_stage_executors(skill_name: str) -> Dict[str, List[str]]:
+-    """manifest flow.stage_executors 澹版槑锛氶樁娈靛彿鈫掑悓鎵规墽琛屽櫒娓呭崟銆?-
+-    Skill 鑷繁澹版槑銆屽摢鍑犱釜鎵ц鍣ㄥ悓灞炰竴涓樁娈点€嶏紙鍗曚竴浜嬪疄婧愶級锛?-    骞冲彴璋冨害鍣ㄥ彧缈昏瘧涓嶅喅绛栵紱鏈０鏄庤繑鍥炵┖ dict锛堢淮鎸佺幇鐘跺洖钀斤級銆?""
+-    manifest = skill_manifest_of(skill_name)
+-    if not manifest:
+-        return {}
+-    raw = (manifest.get("flow") or {}).get("stage_executors") or {}
+-    if not isinstance(raw, dict):
+-        return {}
+-    return {
+-        str(k): [str(t) for t in v if isinstance(t, str)]
+-        for k, v in raw.items() if isinstance(v, list)
+-    }
+-
+-
+ def spec_wizard_active(skill_name: str) -> bool:
+     """瑙勬牸鍚戝鍚敤鍒ゅ畾锛坰idecar 鍞竴婧愶紝鏂囨湰鍚彂寮忛€€褰癸級銆? 
+@@ -403,6 +403,61 @@ def script_required_active(skill_name: str) -> bool:
+     return bool(((manifest or {}).get("flow") or {}).get("script_required"))
+ 
+ 
++# ---------- v3 澹版槑璇诲彇 API锛堜换鍔?35 B2锛歳equires_inputs/kind/language 娑堣垂锛?----------
++# 涓?spec_wizard_active/script_required_active 鍚屾ā鍧楀睘鎬ц闂ā寮忥紙璋冪敤鏂圭粡
++# registry.<fn> 寮曠敤锛屾祴璇?patch 鐩爣绋冲畾锛夛紱鏈０鏄?= 闆堕璁撅紙绌鸿〃/绌轰覆/绌?dict锛夛紝
++# 闈炴硶澹版槑椤?fail-closed 涓㈠純锛堟敞鍐屾湡鍛婅鍦?validate_sidecar锛屾秷璐逛晶涓嶄簩娆℃姤閿欙級銆?+
++
++def skill_requires_inputs(skill_name: str) -> List[Dict[str, Any]]:
++    """manifest requires_inputs 澹版槑锛坴3锛夛細瑙勮寖鍖栧悗鐨勫師鏂欓渶姹傛竻鍗曘€?+
++    姣忛」 {type, required, hint}锛況equired 缂虹渷 true锛涚櫧鍚嶅崟澶?type/闈炴硶椤逛涪寮冦€?+    鏈０鏄庤繑鍥炵┖琛紙鍥炶惤鏃?script_required 鍒ゅ畾锛屼袱璺涔変笉鍙犲姞锛夈€?""
++    manifest = skill_manifest_of(skill_name)
++    raw = (manifest or {}).get("requires_inputs")
++    if not isinstance(raw, list):
++        return []
++    out: List[Dict[str, Any]] = []
++    for item in raw:
++        if not isinstance(item, dict):
++            continue
++        t = item.get("type")
++        if not isinstance(t, str) or t not in REQUIRES_INPUT_TYPES:
++            continue
++        req = item.get("required")
++        hint = item.get("hint")
++        out.append({
++            "type": t,
++            "required": True if req is None else bool(req),
++            "hint": str(hint or "").strip(),
++        })
++    return out
++
++
++def skill_kind(skill_name: str) -> str:
++    """manifest kind 澹版槑锛坴3锛歱ipeline|style|reference锛夛紱鏈０鏄?闈炴硶杩斿洖绌轰覆銆?""
++    manifest = skill_manifest_of(skill_name)
++    v = (manifest or {}).get("kind")
++    return str(v) if v in KIND_VALUES else ""
++
++
++def skill_language(skill_name: str) -> Dict[str, str]:
++    """manifest language 澹版槑锛坴3锛歿prompt, output}锛屽彇鍊?zh|en|auto锛夈€?+
++    鍙繚鐣欑櫧鍚嶅崟鍐呭彇鍊硷紱鏈０鏄庤繑鍥炵┖ dict锛堣瑷€闂哥淮鎸佺幇鐘讹級銆?""
++    manifest = skill_manifest_of(skill_name)
++    raw = (manifest or {}).get("language")
++    if not isinstance(raw, dict):
++        return {}
++    out: Dict[str, str] = {}
++    for key in ("prompt", "output"):
++        v = raw.get(key)
++        if v in LANGUAGE_VALUES:
++            out[key] = str(v)
++    return out
++
++
+ def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
+     """椤圭洰鏈€杩戜娇鐢ㄧ殑 Skill 鍏滃簳锛氳姹傛湭鎼哄甫 Skill 鍚嶆椂锛?     鍥為€€ usedSkills 鏈綅锛屼繚璇佸悗缁疆娆★紙缁х画/鎷嗗垎鍒嗛暅锛変粛缁戝畾鍚屼竴鎵ц鍣ㄣ€?

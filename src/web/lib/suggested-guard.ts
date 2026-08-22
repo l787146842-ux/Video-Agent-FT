@@ -1,5 +1,5 @@
 /**
- * 建议动作 value 护栏（批1 审核整改）
+ * 建议动作 value 护栏
  *
  * suggested_actions 的 value 由前端零解析直接发送进用户气泡与 LLM 历史，
  * 契约 = 与 label 同值的人类可读文本（宪法三通道契约：value 必须人类可读）。

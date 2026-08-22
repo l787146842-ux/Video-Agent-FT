@@ -3,19 +3,17 @@
 
 本文件覆盖：
 ① 铁律删「不得拦截/强制暂停」半句 + 存量文档自动升级（spec_rules）
-② 执行器机械调用思考档位按调用覆盖（executor_thinking_level）
-后续批次（截断保险/边界自适应/规格注入/向导自动检测）陆续追加。
+② 思考档位按调用覆盖（executor_thinking_level，adapter 层）
+③ 规格向导平台自动检测（registry.spec_wizard_active）
+（执行器机械调用档位/截断保险/拆解边界/规格注入用例已随任务#36 B5
+执行器一步退役删除：被测对象（executors._executor_thinking/_rollback_split_groups/
+_run_storyboard_split/_split_kinds_for_section/_apply_actions/_spec_override_clauses
+与 StoryboardShotsTool）不复存在；分组类型阶段边界与 sceneRefs 完整度改由
+fc_tool_runner _structure_integrity_gate 承接。）
 """
-import inspect
-
-import pytest
-
 from src.video_agent.adapters.openai_compat import OpenAICompatChatAdapter
 from src.video_agent.config import settings
 from src.video_agent.core import spec_rules
-from src.video_agent.skill_runtime import executors as ex_mod
-from src.video_agent.skill_runtime import exec_common
-from src.video_agent.web import generation as gen_mod
 
 
 # ---------- 铁律删句（模板 + 存量自动升级） ----------
@@ -103,225 +101,31 @@ def test_thinking_override_wins_over_global():
     assert "reasoning_effort" not in payload3
 
 
-def test_executor_thinking_default_low_and_empty_falls_back():
-    """audit-0819f 通用搭配：默认 executor=low（取代 0817 B23 默认空）；
-    env 覆写（settings.executor_thinking_level）优先于默认，用户策略表优先于 env。"""
-    assert ex_mod._executor_thinking() == "low"
-    object.__setattr__(settings, "executor_thinking_level", "medium")
-    try:
-        assert ex_mod._executor_thinking() == "medium"
-    finally:
-        object.__setattr__(settings, "executor_thinking_level", "")
-
-
-def test_all_executor_llm_calls_pass_thinking_level():
-    """G4 全局化：执行器全部 5 个 LLM 调用点都传思考档位，不许漏路径。
-    R4a 拆分后扫描实现模块；五轮 S5 新增 exec_split（拆解域切出，含自检调用点）；
-    0817 B4 新增 _llm_json_call 畸形 JSON 纠正重试调用点；
-    调用统一经 _gen.（web.generation）模块属性。"""
-    from src.video_agent.skill_runtime import (
-        exec_common, exec_spec, exec_split, exec_tools,
-        exec_media_writer, exec_media_gen,
-    )
-
-    src = (inspect.getsource(exec_common) + inspect.getsource(exec_spec)
-           + inspect.getsource(exec_tools) + inspect.getsource(exec_split)
-           + inspect.getsource(exec_media_writer) + inspect.getsource(exec_media_gen))
-    # 0818-1111 B2：执行器 LLM 出口收敛为 exec_common.executor_stream_text
-    # （帮手内部是唯一 _gen 流式出口）。业务调用点 5 = 改道 4 + 流式拆解直调 1；
-    # 源码特征 6 = 5 业务点 + 帮手内部 1。调用点变化时必须同步本断言。
-    n_redirects = src.count("await exec_common.executor_stream_text(")
-    n_stream = src.count("await _gen.call_chat_completion_stream(")
-    n_legacy = src.count("await _gen.call_chat_completion(")
-    assert n_legacy == 0, "执行器层不得残留非流式调用"
-    assert n_redirects == 4 and n_stream == 2
-    # 5 调用点传思考档 + _executor_thinking 定义本身 1 处
-    assert src.count("_executor_thinking()") == 6
+# test_executor_thinking_default_low_and_empty_falls_back /
+# test_all_executor_llm_calls_pass_thinking_level 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（executors._executor_thinking 与六个 exec_* 模块源码扫描）不复存在。
+# executor 档位策略表保留在 model_policy（test_model_policy 钉死，前端设置页契约）。
 
 
 # ---------- 截断保险全局化（流式拆解回滚 + 扩额整体重试） ----------
-
-def test_rollback_split_groups_removes_only_new(tmp_path):
-    """回滚只删本次拆解新建的分组，拆解前既有分组不动，幂等。"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    shots = svc.state_dict.setdefault("shots", [])
-    ids_before = {g.get("id") for g in shots}  # demo 项目可能自带分组，全量快照
-    n_before = len(shots)
-    shots.append({"id": "shot-new-1", "title": "残品1"})
-    shots.append({"id": "shot-new-2", "title": "残品2"})
-
-    n = ex_mod._rollback_split_groups(svc, "shot", ids_before)
-    assert n == 2
-    assert len(svc.state_dict["shots"]) == n_before
-    assert all(g["id"] in ids_before for g in svc.state_dict["shots"])
-    assert ex_mod._rollback_split_groups(svc, "shot", ids_before) == 0  # 幂等
-
-
-def test_split_truncation_retry_pinned():
-    """钉死：流式拆解截断 → 回滚 → 扩额整体重试，不再收部分成功。"""
-    src = inspect.getsource(ex_mod._run_storyboard_split)
-    assert "正在回退重试补全" not in src  # 只承诺不执行的空头文案已删
-    assert src.count("_stream_actions_progressive(") == 2  # 首拆 + 截断后整体重试
-    assert "_rollback_split_groups(svc, _split_kind, _ids_before)" in src
-    # 顺序钉死：回滚重试必须先于零产出兜底（重试仍零产出才进兜底）
-    assert src.index("_rollback_split_groups(") < src.index("if not applied:")
+# test_rollback_split_groups_removes_only_new / test_split_truncation_retry_pinned /
+# test_split_truncation_retry_success_path 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（executors._rollback_split_groups / _run_storyboard_split /
+# StoryboardShotsTool）不复存在。
 
 
 # ---------- 拆解边界按 Skill 章节结构自适应 ----------
-
-def test_ai_skill_split_sections_scope_kinds():
-    """执行器名对齐批（L-0821C）：AI-短剧的 storyboard_designer 旧合并章节已按
-    真实执行器拆为三节；各执行器放行 kinds 收敛到本节职责（不再整节三类
-    全放行）；ke 节含 shot 相关描述故宽容放行 shot，audio 职责不再跨节漏入。"""
-    from src.video_agent.skill_runtime import registry
-
-    registry.register_skill("AI-短剧一站式生成")
-    assert set(ex_mod._split_kinds_for_section("storyboard_key_elements", "AI-短剧一站式生成")) == {"keyElement", "shot"}
-    assert set(ex_mod._split_kinds_for_section("storyboard_shots", "AI-短剧一站式生成")) == {"shot"}
-    assert set(ex_mod._split_kinds_for_section("storyboard_audio", "AI-短剧一站式生成")) == {"audio"}
-
-
-def test_separate_sections_keep_single_kind_boundary():
-    """三个独立章节（各带「本节职责：只创建 X 分组」声明）→ 各执行器只放行自己类别。"""
-    from src.video_agent.skill_runtime import registry
-    from src.video_agent.web import skill_docs as sd
-
-    # 自包含桩（不依赖任何产品 Skill 文件，10.12-G1）：三章各自单一职责
-    sd.save_skill_doc(
-        "分章边界测试桩",
-        "# 分章边界测试桩\n> 调用规则：测试\n"
-        "<storyboard_key_elements>\n**本节职责（最高优先级）**：只创建关键元素"
-        "（keyElement）分组，严禁创建分镜（shot）或音频（audio）分组。\n"
-        "</storyboard_key_elements>\n"
-        "<storyboard_shots>\n**本节职责（最高优先级）**：只创建分镜（shot）分组，"
-        "不得创建关键元素（keyElement）与音频（audio）分组。\n</storyboard_shots>\n"
-        "<storyboard_audio>\n**本节职责（最高优先级）**：只创建音频（audio）分组，"
-        "不得创建关键元素（keyElement）与分镜（shot）分组。\n</storyboard_audio>\n",
-    )
-    registry.register_skill("分章边界测试桩")
-    assert ex_mod._split_kinds_for_section("storyboard_shots", "分章边界测试桩") == ["shot"]
-    assert ex_mod._split_kinds_for_section("storyboard_audio", "分章边界测试桩") == ["audio"]
-    assert ex_mod._split_kinds_for_section(
-        "storyboard_key_elements", "分章边界测试桩") == ["keyElement"]
-    registry.reset_registry()
-
-
-def test_apply_actions_multi_kind_accepts_and_single_rejects(tmp_path):
-    """多类别边界放行混类 add_group；单类别边界仍拒收越界。"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    mixed = [
-        {"action": "add_group", "group_type": "keyElement", "title": "程心"},
-        {"action": "add_group", "group_type": "shot", "title": "冬眠苏醒",
-         "sceneRefs": ["s1"]},
-        {"action": "add_group", "group_type": "audio", "title": "BGM"},
-    ]
-    n, warns = ex_mod._apply_actions(svc, list(mixed), "", only_group_type="keyElement,shot,audio")
-    assert n == 3 and not warns
-
-    n2, warns2 = ex_mod._apply_actions(svc, list(mixed), "", only_group_type="keyElement")
-    assert n2 == 1 and any("越界分组被拒收" in w for w in warns2)
-
-
-@pytest.mark.asyncio
-async def test_split_truncation_retry_success_path(monkeypatch, tmp_path):
-    """正向路径钉死：首拆截断 → 回滚 + 扩额重试；重试完整则无拼接、不进对账流程。"""
-    from src.video_agent.skill_runtime import registry
-    from src.video_agent.skill_runtime.executors import StoryboardShotsTool, StoryboardSplitInput
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.web import skill_docs as sd
-
-    # 复用既有测试桩「截断技能」（不新增 Skill 文件，10.12-G1）
-    sd.save_skill_doc(
-        "截断技能", "# T\n> 调用规则：测试\n<storyboard_shots>\n拆解规范\n</storyboard_shots>\n",
-    )
-    registry.register_skill("截断技能")
-
-    calls = {"n": 0}
-
-    async def fake_stream(provider, model, messages, *, max_tokens=8192,
-                          temperature=0.7, timeout=180, on_delta=None,
-                          reasoning_sink=None, thinking_level=None,
-                          response_format=None):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            content = ('[{"action":"add_group","group_type":"shot","title":"镜1",'
-                       '"duration":"10s","sceneRefs":["s1"]}]')
-            finish = "length"  # 首拆撞上限
-        else:
-            content = ('[{"action":"add_group","group_type":"shot","title":"镜1",'
-                       '"duration":"10s","sceneRefs":["s1"]},'
-                       '{"action":"add_group","group_type":"shot","title":"镜2",'
-                       '"duration":"12s","sceneRefs":["s1"]}]')
-            finish = "stop"  # 扩额重试完整产出
-        if on_delta:
-            await on_delta(content)
-        return content, finish
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["shots"] = []
-    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
-    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-
-    result = await StoryboardShotsTool().aexecute(
-        StoryboardSplitInput(skill_name="截断技能")
-    )
-    assert result.success
-    assert calls["n"] == 2, "截断必须重试"
-    assert [g["title"] for g in svc.state_dict["shots"]] == ["镜1", "镜2"], \
-        "重试结果整体替换，不得出现 1+2 拼接"
-    assert not any("仍撞上限" in w for w in result.data["warnings"])
-    registry.reset_registry()
+# test_ai_skill_split_sections_scope_kinds / test_separate_sections_keep_single_kind_boundary /
+# test_apply_actions_multi_kind_accepts_and_single_rejects 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（executors._split_kinds_for_section / _apply_actions）不复存在；
+# 分组类型阶段边界校验改由 fc_tool_runner _structure_integrity_gate 承接钉死。
 
 
 # ---------- 五项制片规格覆盖注入 ----------
-
-_SPEC_TEXT_2222 = (
-    "# 最终成片规格\n"
-    "- 图片分辨率：2K\n"
-    "- 视频分辨率：720p\n"
-    "- 分镜最大时长：12 秒\n"
-)
-
-
-def test_spec_override_clauses_by_kind(set_global_setting):
-    """6666 二轮：覆盖句来自顶部全局设置，按 kinds 精确注入；kinds 之外不串味。"""
-    set_global_setting("default_image_resolution", "2K")
-    set_global_setting("default_video_resolution", "720p")
-    set_global_setting("max_shot_duration", 12)
-    set_global_setting("default_image_provider_id", "")
-    set_global_setting("default_video_provider_id", "")
-    state = {"documents": []}
-    shots = ex_mod._spec_override_clauses(
-        state, ("duration", "video_resolution", "video_channel"))
-    assert "12 秒" in shots and "720p" in shots
-    assert "冲突时以本条为准" in shots
-    assert "图片分辨率" not in shots  # 分镜阶段不带元素图参数
-    ke = ex_mod._spec_override_clauses(state, ("image_resolution", "image_channel"))
-    assert "2K" in ke
-    assert "分镜最大时长" not in ke and "视频分辨率" not in ke
-
-
-def test_spec_override_empty_when_unset(set_global_setting):
-    """全局设置未配置 → 不注入，Skill 章节默认值照常兜底。"""
-    set_global_setting("default_image_resolution", "")
-    set_global_setting("default_video_resolution", "")
-    set_global_setting("max_shot_duration", 0)
-    set_global_setting("default_image_provider_id", "")
-    set_global_setting("default_video_provider_id", "")
-    assert ex_mod._spec_override_clauses({"documents": []},
-                                         ("duration", "image_resolution")) == ""
-
-
-def test_split_executors_wire_override_injection():
-    """钉死：拆解执行器经统一 helper 注入规格覆盖，旧的内联时长块不复存在。"""
-    src = inspect.getsource(ex_mod._run_storyboard_split)
-    assert "_spec_override_clauses(svc.state_dict, _override_kinds)" in src
-    assert "【时长硬约束】" not in src  # 已并入统一 helper，不得留分身
+# _SPEC_TEXT_2222 与 test_spec_override_clauses_by_kind / test_spec_override_empty_when_unset /
+# test_split_executors_wire_override_injection 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（executors._spec_override_clauses / _run_storyboard_split）不复存在；
+# 制片规格改由通用主路径全文注入 Skill 后模型直调平台工具消费。
 
 
 # ---------- 规格向导平台自动检测 ----------
@@ -355,9 +159,13 @@ def test_spec_wizard_declared_true_still_active():
 def test_spec_wizard_stub_skill_inactive():
     """测试桩（正文无规格文档名）→ 不弹向导。"""
     from src.video_agent.skill_runtime import registry
+    from src.video_agent.web import skill_docs as sd
 
-    registry.register_skill("截断技能")
-    assert registry.spec_wizard_active("截断技能") is False
+    # 自包含桩（不依赖已退役用例留下的 Skill 文档）：无 sidecar flow 声明
+    sd.save_skill_doc("向导隐性测试桩", "# 向导隐性测试桩\n> 调用规则：测试\n")
+    registry.register_skill("向导隐性测试桩")
+    assert registry.spec_wizard_active("向导隐性测试桩") is False
+    registry.reset_registry()
 
 
 def test_spec_wizard_manifest_false_escape_hatch():
@@ -377,19 +185,16 @@ def test_spec_wizard_manifest_false_escape_hatch():
 
 def test_spec_wizard_consumers_use_objective_detection():
     """G4：消费点统一走 spec_wizard_active，不留直读声明的分身。
-    R4a 拆分后 ex_mod 为 re-export 壳，实现扫描三个子模块；
-    audit-0819b：agent_loop 消费点随文本块路径退役；
-    Rule2 v6：FC 轨选项面归一迁 pause_composer 单一实现。"""
+    Rule2 v6：FC 轨选项面归一迁 pause_composer 单一实现；
+    执行器消费点已随任务#36 B5 执行器一步退役删除。"""
+    import inspect
+
     from src.video_agent.core import fc_tool_runner as fcr
     from src.video_agent.core import pause_composer
-    from src.video_agent.skill_runtime import exec_common, exec_spec, exec_tools
 
     fcr_src = inspect.getsource(fcr)
-    ex_src = (inspect.getsource(exec_common) + inspect.getsource(exec_spec)
-              + inspect.getsource(exec_tools))
     assert "normalize_option_surface" in fcr_src
     assert "spec_wizard_active" in inspect.getsource(pause_composer)
-    assert "spec_wizard_active(skill_name)" in ex_src
     assert 'skill_flow_enabled(injected_skill, "spec_wizard")' not in fcr_src
 
 

@@ -1,7 +1,13 @@
+/* eslint-disable max-lines */ // 对话 store 核心（已登记 FRONTEND_WHITELIST）
 import { createStore, produce } from 'solid-js/store';
 import type { ChatMessage, SseDonePayload, RichContentPart } from '@/types';
 import { saveQueue, loadQueue } from '@/lib/queue-storage';
 import { t } from '@/lib/locale';
+import { actionForKind, type ErrorPayload } from '@/lib/error-payload';
+import {
+  resetStreamFields, continueLastTaskSuggestion, buildStopMessages,
+} from '@/lib/stream-finalize';
+import type { StopPhase, StopInflightItem } from '@/lib/stream-finalize';
 
 /** 过程时间线条目（流式期间的工具/操作运行态，完成后从消息 trace 重建） */
 export interface TimelineToolEntry {
@@ -11,9 +17,9 @@ export interface TimelineToolEntry {
   status: 'running' | 'done' | 'failed';
   elapsed_ms?: number;
   result_summary?: string;
-  /** 审核整改批 2：规划级执行器标记（capability 注册表下发） */
+  /** 规划级执行器标记（capability 注册表下发） */
   planning?: boolean;
-  /** ：运行态走秒计时起点（刷新/重连无起点时以恢复时刻为准） */
+  /** 运行态走秒计时起点（刷新/重连无起点时以恢复时刻为准） */
   started_at_ms?: number;
 }
 
@@ -48,12 +54,15 @@ export interface ChatState {
   streamingTools: TimelineToolEntry[];
   /** 深度思考开始时刻（首条 reasoning 增量到达时记录，用于完成后的耗时角标） */
   streamingReasoningStartMs: number;
-  /** ：深度思考结束时刻（末条 reasoning 增量）；耗时角标 = 末-首，不混入工具执行时间 */
+  /** 深度思考结束时刻（末条 reasoning 增量）；耗时角标 = 末-首，不混入工具执行时间 */
   streamingReasoningEndMs: number;
   /** 排队中的引导消息（推理中发送 → 当前任务完成后自动发出） */
   queuedMessages: QueuedMessage[];
-  /** ：本轮流已渲染过文档卡片的名称（doc_written 即显与 done 全量清单去重用） */
+  /** 本轮流已渲染过文档卡片的名称（doc_written 即显与 done 全量清单去重用） */
   renderedDocCards: string[];
+  /** 推理轮次进度（status 事件 {step,max} 结构化捕获；0 = 未收到） */
+  roundStep: number;
+  roundMax: number;
 }
 
 const defaultChatState: ChatState = {
@@ -69,24 +78,14 @@ const defaultChatState: ChatState = {
   streamingReasoningEndMs: 0,
   queuedMessages: [],
   renderedDocCards: [],
+  roundStep: 0,
+  roundMax: 0,
 };
 
 const [chatState, setChatState] = createStore<ChatState>(defaultChatState);
 
-/** P4-21：「继续刚才的任务」本地派生（停止/报错气泡共用单一实现）；
- * kind=retry=点击走既有机械重发，失效走 suggestedTargetIndex 既有机制 */
-const continueLastTaskSuggestion = () => [{ kind: 'retry' as const, label: t('rp.msg.continueLastTask'), value: '' }];
-
-/** 流式收尾重置（done/错误/停止/重连收尾四处同语义，单一实现） */
-function resetStreamFields(s: ChatState) {
-  s.isStreaming = false;
-  s.streamingText = '';
-  s.streamingStatus = '';
-  s.streamingModel = '';
-  s.streamingReasoning = '';
-  s.streamingTools = [];
-  s.streamingReasoningStartMs = 0;
-}
+// 流式收尾重置/继续建议派生/停止气泡构造抽至 lib/stream-finalize.ts，
+// 供 done/错误/停止/重连四处收尾复用同一语义（控制本文件行数）
 
 export const chatActions = {
   addMessage(msg: ChatMessage) {
@@ -109,6 +108,16 @@ export const chatActions = {
       s.streamingReasoningStartMs = 0;
       s.streamingReasoningEndMs = 0;
       s.renderedDocCards = [];
+      s.roundStep = 0;
+      s.roundMax = 0;
+    }));
+  },
+
+  /** 推理轮次进度更新（status 事件结构化参数；阶段进度条唯一数据源） */
+  setRoundProgress(step: number, max: number) {
+    setChatState(produce((s) => {
+      s.roundStep = step;
+      s.roundMax = max;
     }));
   },
 
@@ -116,7 +125,7 @@ export const chatActions = {
   appendReasoning(text: string) {
     setChatState(produce((s) => {
       if (!s.streamingReasoningStartMs) s.streamingReasoningStartMs = Date.now();
-      // ：结束时刻随每条增量推进（思考与工具执行交错，角标只算思考区间）
+      // 结束时刻随每条增量推进（思考与工具执行交错，角标只算思考区间）
       s.streamingReasoningEndMs = Date.now();
       s.streamingReasoning += text;
       s.streamingStatus = t('rp.streaming.reasoning');
@@ -127,7 +136,7 @@ export const chatActions = {
   toolStarted(id: string, name: string, summary: string) {
     setChatState(produce((s) => {
       s.streamingTools.push({ id, name, summary, status: 'running', started_at_ms: Date.now() });
-      // ：i18n 键替换硬编码中文
+      // 状态文案走 i18n 键，不硬编码中文
       s.streamingStatus = t('rp.streaming.executing', {
         n: s.streamingTools.length,
         summary: summary || name,
@@ -138,7 +147,7 @@ export const chatActions = {
   /** 过程时间线：工具/操作完成（对勾/失败态；planning=规划级执行器标记） */
   toolFinished(id: string, ok: boolean, elapsedMs: number, resultSummary?: string, planning?: boolean) {
     setChatState(produce((s) => {
-      // 参数名避开 i18n 惯用名 t（批6：遮蔽隐患清偿）
+      // 参数名避开 i18n 惯用名 t，防止遮蔽外层 t 函数
       const entry = s.streamingTools.find((item) => item.id === id);
       if (entry) {
         entry.status = ok ? 'done' : 'failed';
@@ -163,9 +172,9 @@ export const chatActions = {
   /** 流式完成：将结果写入消息列表 */
   finishStream(payload: SseDonePayload) {
     const elapsed = ((payload.elapsed_ms || 0) / 1000).toFixed(1);
-    // ：meta 行走 locale（原硬编码中文，i18n 残留
+    // meta 文案全部走 locale 字典，不硬编码中文
     const metaParts = [t('rp.msg.metaTime', { s: elapsed })];
-    // 批2 透明度兑现：轮次 token 账单（后端 usage 有值才展示；缺失保 0 不显示）
+    // 轮次 token 账单（后端 usage 有值才展示；缺失保 0 不显示）
     const totalTokens = (payload.trace?.steps || [])
       .reduce((sum, st) => sum + (st.token_usage || 0), 0);
     if (totalTokens > 0) metaParts.push(t('rp.msg.metaTokens', { n: totalTokens }));
@@ -178,13 +187,13 @@ export const chatActions = {
     const thinkingMs = startMs && endMs && endMs >= startMs ? endMs - startMs : 0;
 
     setChatState(produce((s) => {
-      // ：同轮消息共用 turnId（渲染层聚合为轮次容器，消除碎片化）
+      // 同轮消息共用 turnId（渲染层聚合为轮次容器，消除碎片化）
       const turnId = payload.turn_id || undefined;
       s.messages.push({
         sender: 'agent',
         text: (payload.text || '').trim() || t('rp.msg.emptyReply'),
         meta: metaParts.join(' · '),
-        // 批6 类型收窄：confirm 唯一形态 = 问句文本（无暂停 = undefined）
+        // 类型收窄：confirm 唯一形态 = 问句文本（无暂停 = undefined）
         confirm: payload.confirmation || undefined,
         appliedActions: payload.applied_actions || 0,
         actionLog: (payload.action_log || []).length ? payload.action_log : undefined,
@@ -199,15 +208,15 @@ export const chatActions = {
         memoryHits: (payload.memory_hits || []).length ? payload.memory_hits : undefined,
         thinkingMs: thinkingMs || undefined,
         turnId,
-        // 暂停卡语义种类（Rule2 v6：前端卡标题按 kind 渲染，
-        // remind=待补原料 / collect=规格交互 / 其余=阶段完成）；
-        // 批6：白名单收窄，未知值不入库（防类型退化回潮）
+        // 暂停卡语义种类：前端卡标题按 kind 渲染（remind=待补原料 /
+        // collect=规格交互 / 其余=阶段完成）；
+        // 白名单收窄，未知值不入库（防类型退化）
         kind: (['remind', 'collect', 'stage_done', 'confirm'].includes(payload.pause_kind || '')
           ? (payload.pause_kind as ChatMessage['kind'])
           : undefined),
         // 暂停卡结构化标识（用户点选回应时经 pause_response 结构化回携，对勾不再靠文本反推）
         pauseId: payload.pause_id || undefined,
-        // ：建议动作按钮（重试/继续，确定性交互；仅最后一条消息渲染）
+        // 建议动作按钮（重试/继续，确定性交互；仅最后一条消息渲染）
         suggestedActions: (payload.suggested_actions || []).length
           ? payload.suggested_actions : undefined,
       });
@@ -231,34 +240,44 @@ export const chatActions = {
     }));
   },
 
-  /** 流式错误（P4-21 补：会话中已有用户消息时同样派生「继续刚才的任务」，
-   * 与主动停止同语义；首轮即报错无用户消息则不挂，防无的放矢） */
-  streamError(message: string, detail?: string) {
+  /** 流式错误：输入为结构化 ErrorPayload，affordance 查 ERROR_ACTION_MAP
+   * 单一映射表（不做正则猜文案）；会话中已有用户消息时派生「继续刚才的任务」 */
+  streamError(payload: ErrorPayload) {
+    const action = actionForKind(payload.kind);
     setChatState(produce((s) => {
-      // ：鉴权/供应商类错误附「检查 API 配置」跳转（非此类不显示，防噪音）
-      const settingsHint = /401|403|令牌|token|api\s*key|鉴权|unauthorized|authentication/i.test(message);
-      // ：上游原始报文折叠展示（人话在气泡，raw 在折叠）；
-      // P4-21 补：已有用户消息时派生「继续刚才的任务」（与主动停止同语义）
+      // auth →「检查 API 配置」跳转；quota/network 等 affordance 由映射表集中决定；
+      // 上游原始报文折叠展示（人话在气泡，raw 在折叠）
       s.messages.push({
-        sender: 'agent', text: `⚠️ ${message}`, modelName: s.streamingModel || undefined,
-        settingsHint, errorDetail: detail || undefined,
+        sender: 'agent', text: `⚠️ ${payload.message}`, modelName: s.streamingModel || undefined,
+        settingsHint: !!action.settingsHint,
+        errorKind: payload.kind,
+        errorDetail: payload.raw || undefined,
         suggestedActions: s.messages.some((m) => m.sender === 'user') ? continueLastTaskSuggestion() : undefined,
       });
       resetStreamFields(s);
     }));
   },
 
-  /** 清空流式状态（用户手动停止）。P4-21：停止后不再纯丢弃——
+  /** 清空流式状态（用户手动停止）。停止后不纯丢弃——
    * 停止气泡本地派生「继续刚才的任务」建议（走既有 suggested_actions 展示通道，
-   * 不改 SSE 协议）；kind=retry 即点击走已验收的机械重发（重发最近一条用户消息） */
-  cancelStream() {
+   * 不改 SSE 协议）；kind=retry 即点击走已验收的机械重发（重发最近一条用户消息）。
+   * 中断不变式：任何中断都有痕迹、都有出口——
+   * 无文本停止同样落轻量系统气泡 + 继续建议；阶段标记影响措辞；
+   * 在途外部生成任务登记（inflight）附文案提醒（第一版不撤销）。 */
+  cancelStream(opts?: {
+    /** 停止阶段（stopped 事件/停止响应下发；缺省按本地流状态推导） */
+    phase?: StopPhase;
+    /** 在途外部生成任务登记（后端 /stop 响应或 stopped 事件携带） */
+    inflight?: StopInflightItem[];
+  }) {
     setChatState(produce((s) => {
-      if (s.streamingText) {
-        s.messages.push({
-          sender: 'agent', text: s.streamingText, meta: t('rp.msg.stopped'), modelName: s.streamingModel || undefined,
-          suggestedActions: continueLastTaskSuggestion(),
-        });
-      }
+      // 停止气泡构造归 lib/stream-finalize.buildStopMessages
+      // （不变式：无文本停止也落轻量气泡 + 继续建议）
+      s.messages.push(...buildStopMessages({
+        phase: opts?.phase, inflight: opts?.inflight,
+        text: s.streamingText, model: s.streamingModel,
+        hasRunningTool: s.streamingTools.some((item) => item.status === 'running'),
+      }));
       resetStreamFields(s);
     }));
   },
@@ -275,7 +294,7 @@ export const chatActions = {
       s.streamingStatus = p.statusText || '';
       s.streamingTools = p.tools || [];
       s.streamingModel = p.model || '';
-      // 批2 重连角标修复：replay 无原始思考起点；已有 reasoning 时以恢复时刻
+      // 重连无原始思考起点：已有 reasoning 时以恢复时刻
       // 为起点继续计时（角标不再恒 0），同步重置终点防旧值残留
       s.streamingReasoningStartMs = p.reasoning ? Date.now() : 0;
       s.streamingReasoningEndMs = p.reasoning ? Date.now() : 0;
@@ -287,9 +306,9 @@ export const chatActions = {
     setChatState(produce((s) => resetStreamFields(s)));
   },
 
-  /** 文档写入即显（doc_written 事件， 恢复四段链）：独立文档卡片立即渲染，
+  /** 文档写入即显（doc_written 事件）：独立文档卡片立即渲染，
    * 不等整轮 done；同轮重复名称去重（done 全量清单与事件双通道防双显）。
-   * ：携带后端透传层打戳的 turn_id，即显卡严格归入轮次容器 */
+   * 携带后端透传层打戳的 turn_id，即显卡严格归入轮次容器 */
   docWritten(name: string, turnId?: string) {
     if (!name) return;
     setChatState(produce((s) => {
@@ -299,7 +318,7 @@ export const chatActions = {
     }));
   },
 
-  /** 非流式响应 documents_written 即显（通道补齐，§5.2 不留半截通道）：
+  /** 非流式响应 documents_written 即显（与流式通道对齐，不留半截通道）：
    * 后端非流式载荷携带文档清单时前端同样渲染卡片；非流式无流式轮边界，
    * 先重置「本轮已显」去重表（与 startStream 每轮清零同语义）再按清单渲染 */
   applyNonStreamDocs(names: string[]) {
@@ -317,9 +336,9 @@ export const chatActions = {
   /** 从后端加载历史消息 */
   loadMessages(msgs: ChatMessage[]) {
     setChatState('messages', msgs);
-    // ：历史重建即新一轮展示，去重表同步清零（防切项目/刷新后残留误去重）
+    // 历史重建视同新轮次展示，去重表同步清零（防切项目/刷新后残留误去重）
     setChatState('renderedDocCards', []);
-    // 批 3：按当前项目+对话键恢复排队消息（刷新存活， 销账）
+    // 按当前项目+对话键恢复排队消息（刷新存活）
     setChatState('queuedMessages', loadQueue());
   },
 

@@ -15,7 +15,8 @@ export function StreamingIndicator() {
     <Show when={chatState.isStreaming && !chatState.streamingText && noTimelineYet()}>
       <div class="chat-msg agent">
         <div class="chat-bubble streaming-bubble">
-          <div class="streaming-indicator">
+          {/* role=status 隐含 aria-live=polite，状态文案变更对读屏器可闻 */}
+          <div class="streaming-indicator" role="status">
             <BsRobot size={14} class="icon-accent-blue" />
             <span class="typing-dots">
               <span /><span /><span />

@@ -31,8 +31,11 @@ class AdapterError(VideoAgentError):
     """Adapter 调用失败（LLM / 图片 / 视频供应商）
 
     结构化故障信息（替代脆弱的错误文案字符串匹配）：
-    - retryable: 是否为瞬时故障（5xx / 超时 / 连接失败），可重试/切备用模型
+    - retryable: 是否为瞬时故障（5xx / 429 / 超时 / 连接失败），可重试/切备用模型
     - http_status: 上游 HTTP 状态码（如有），供日志与监控分档
+    - kind: 错误类别（upstream/auth/quota/param/refusal/timeout/network/unknown），
+      字段口径与任务 #19 的 ErrorPayload 对齐（#19 落地后直接复用，
+      不再另造并行结构）；取值见 adapters/errors.py 的 KIND_* 常量
     """
     status_code = 502
     error_code = "ADAPTER_ERROR"
@@ -45,10 +48,12 @@ class AdapterError(VideoAgentError):
         error_code: str = "",
         retryable: Optional[bool] = None,
         http_status: Optional[int] = None,
+        kind: str = "",
     ):
         super().__init__(message, status_code=status_code, error_code=error_code)
         self.retryable = retryable
         self.http_status = http_status
+        self.kind = kind
 
 
 class GenerationError(VideoAgentError):

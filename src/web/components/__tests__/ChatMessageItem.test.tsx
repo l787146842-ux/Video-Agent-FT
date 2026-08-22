@@ -1,11 +1,11 @@
 /**
- * ChatMessageItem 交互控制点组件测试（P4-20/21）。
+ * ChatMessageItem 交互控制点组件测试。
  *
  * 钉死契约：
- * ① 编辑控制点（P4-20）：editable 挂载位渲染「编辑」按钮，点击经
- *    chat-input-bridge 回填通道发出原文（排队消息编辑同款通道）；
+ * ① 编辑控制点：editable 挂载位渲染「编辑」按钮，点击走编辑分支
+ *    通道（edit-branch：快照派生新对话 + 原文回填），原对话不变；
  *    未挂 editable 的消息不渲染按钮。
- * ② 继续控制点（P4-21）：retry 建议按钮优先显示后端/本地派生的显式
+ * ② 继续控制点：retry 建议按钮优先显示后端/本地派生的显式
  *    label（如「继续刚才的任务」），无 label 回落「重试」。
  */
 import { render, fireEvent } from '@solidjs/testing-library';
@@ -16,26 +16,26 @@ import type { ChatMessage } from '@/types';
 // 本测试不触路由：useNavigate 以空跳转桩替代（避免 Router 上下文依赖）
 vi.mock('@solidjs/router', () => ({ useNavigate: () => () => {} }));
 
-const backfillMock = vi.fn();
-vi.mock('@/lib/chat-input-bridge', () => ({
-  requestEditBackfill: (text: string) => backfillMock(text),
+const editBranchMock = vi.fn(async (_text: string) => true);
+vi.mock('@/lib/edit-branch', () => ({
+  editMessageInBranch: (text: string) => editBranchMock(text),
 }));
 
 vi.mock('@/lib/agent-actions', () => ({
   sendUserMessage: () => Promise.resolve(true),
 }));
 
-describe('P4-20 用户气泡编辑控制点', () => {
-  beforeEach(() => backfillMock.mockClear());
+describe('用户气泡编辑控制点（编辑即分支）', () => {
+  beforeEach(() => editBranchMock.mockClear());
 
-  it('editable 挂载位渲染「编辑」按钮；点击以原文经回填通道发出', async () => {
+  it('editable 挂载位渲染「编辑」按钮；点击以原文走编辑分支通道', async () => {
     const msg: ChatMessage = { sender: 'user', text: '写一段开场白' };
     const { container } = render(() => <ChatMessageItem message={msg} isLast editable />);
     const btn = container.querySelector('.msg-edit-btn') as HTMLButtonElement;
     expect(btn).toBeTruthy();
     await fireEvent.click(btn);
-    expect(backfillMock).toHaveBeenCalledTimes(1);
-    expect(backfillMock).toHaveBeenCalledWith('写一段开场白');
+    expect(editBranchMock).toHaveBeenCalledTimes(1);
+    expect(editBranchMock).toHaveBeenCalledWith('写一段开场白');
   });
 
   it('未挂 editable 的用户消息与 agent 消息均不渲染编辑按钮', () => {
@@ -48,7 +48,7 @@ describe('P4-20 用户气泡编辑控制点', () => {
   });
 });
 
-describe('P4-21 停止后继续建议按钮文案', () => {
+describe('停止后继续建议按钮文案', () => {
   it('retry 带显式 label 时按钮显示「继续刚才的任务」', () => {
     const msg: ChatMessage = {
       sender: 'agent',

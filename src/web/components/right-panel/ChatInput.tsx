@@ -20,9 +20,9 @@ import { MediaLightbox } from './MediaLightbox';
  * 「添加到对话」、@ 提及、粘贴、拖拽、上传的媒体都以缩略块插入到光标处，
  * 发送时序列化为有序 parts，让 LLM 精确识别文字与媒体的对应关系。
  *
- * P4-23 结构清欠三分：编辑区（ChatInputEditor + lib/chat-editor）、
+ * 模块分工：编辑区（ChatInputEditor + lib/chat-editor）、
  * 排队区（QueuedMessagesBar + lib/chat-queue-autosend）、粘贴拖拽（lib/chat-input-media），
- * 本文件只留组装与拖拽摄取入口，DOM 结构不变。
+ * 本文件只负责组装与拖拽摄取入口。
  */
 export function ChatInput() {
   const [dragOver, setDragOver] = createSignal(false);

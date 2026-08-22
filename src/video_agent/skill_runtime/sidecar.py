@@ -4,6 +4,9 @@
 manifest 声明从 skill 文档外置到平台档案，文档还原纯散文（与源平台一致）；
 registry 双读 sidecar 优先，文档 manifest 回落（文档通道 B4 退役）。
 sidecar 存放清洗后声明（与旧文档通道输出同构），双读零行为变化。
+
+读写均为活读不快照：任意键（含 v3 的 schema_version/kind/requires_inputs/
+language/pause_points/scripts，任务#34 B1）原样透传，消费语义归 schema 校验器。
 """
 import json
 import re

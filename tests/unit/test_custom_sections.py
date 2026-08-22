@@ -5,7 +5,8 @@
 ① sidecar_schema 校验——未声明合法、非法声明 fail-closed；
 ② registry 注册——声明+章节可解析 → skill_section_run 进 available_tools；
 ③ 回落——未声明/解析不到/非法声明者维持现行为（不产生半死通道）；
-④ 接线——执行器运行时块显式下发章节标识且不回落全文直注。
+④ 接线——执行器退役后含自定义章节的短 Skill 走通用主路径全文直注，
+   章节原文随全文进 prompt（不再有执行器清单/章节标识单独下发形态）。
 """
 import pytest
 
@@ -114,22 +115,31 @@ def test_custom_sections_unresolvable_not_registered():
     assert registry.tool_sections("hollow", "skill_section_run") == ""
 
 
-def test_custom_sections_illegal_declaration_ignored():
-    """消费端 fail-closed：白名单外执行器声明整体忽略（注册期另有告警）。"""
+def test_custom_sections_illegal_declaration_fail_hard():
+    """C4 fail-hard（任务#22）：白名单外执行器声明 schema 违规，
+    注册期直接拒注册（替代旧「告警照注册、消费端忽略」）；
+    注册后改坏再 refresh 同样摘除条目（与 save_skill_doc 刷新链路同源）。"""
     _write("bad", _DOC_CUSTOM)
     sidecar.write_sidecar(
         "bad", {"custom_sections": {"tone_design": "script_analyze"}})
-    entry = registry.get_entry("bad")
-    assert entry.custom_sections == {}
-    assert "skill_section_run" not in entry.available_tools
-    assert any("custom_sections" in i
-               for i in sidecar.validate_sidecar(entry.manifest))
+    # save_skill_doc 时（sidecar 未写）已注册；改坏后 refresh 触发 fail-hard
+    assert registry.refresh_skill("bad") is None
+    assert registry.get_entry("bad") is None
+    # 合法声明照常注册
+    _write("livebad", _DOC_CUSTOM)
+    sidecar.write_sidecar(
+        "livebad", {"custom_sections": {"tone_design": "skill_section_run"}})
+    entry = registry.get_entry("livebad")
+    assert entry is not None and entry.custom_sections
 
 
-# ---------- ④ 接线：执行器块下发标识且不回落全文直注 ----------
+# ---------- ④ 接线：通用主路径全文直注（执行器形态已一步退役） ----------
 
 
-def test_executor_runtime_block_lists_custom_sections():
+def test_generic_block_full_text_includes_custom_sections():
+    """任务#36 B5：执行器退役后，含自定义章节的短 Skill（≤20000 字符）
+    走通用主路径全文直注——章节原文随全文进 system prompt，
+    与执行器形态的「章节不进 prompt」正好反转（断言不弱化）。"""
     _write("interview2", _DOC_CUSTOM)
     sidecar.write_sidecar(
         "interview2", {"custom_sections": {"tone_design": "skill_section_run"}})
@@ -139,13 +149,13 @@ def test_executor_runtime_block_lists_custom_sections():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("访谈音色")
-    assert "已注册独立执行器" in block
-    assert "skill_section_run" in block
-    # 声明的章节标识显式下发（模型不必从散文猜 section 参数）
+    # 全文直注：章节标识与章节原文都在 prompt 里
     assert "tone_design" in block
-    # 执行器形态成立：不回落 legacy 全文直注，章节原文不进 system prompt
-    assert "全文直接注入" not in block
-    assert "音色档案" not in block
+    assert "音色档案" in block
+    # 通用主路径全文头（唯一注入形态）
+    assert "== 当前选中 Skill「访谈音色」全文" in block
+    # 执行器清单措辞已随退役删除
+    assert "已注册独立执行器" not in block
 
 
 def test_executor_runtime_block_zero_delta_without_declaration():

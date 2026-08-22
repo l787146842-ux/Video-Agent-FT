@@ -12,8 +12,6 @@ from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.state.manager import StateManager
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
 from src.video_agent.core.workflow_events import EventLedger
-from src.video_agent.skill_runtime import exec_tools
-from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
 
 SKILL = "AI-短剧一站式生成"
@@ -36,21 +34,15 @@ class ProbeAdapter(BaseChatAdapter):
         yield ChatResponse(content="不应被调用", finish_reason="stop")
 
 
-async def _fake_analyze(self, params):
-    svc_now = StateManager.get_instance()
-    svc_now.state_dict["analysis"] = {
-        "summary": "程心苏醒与掩体失效。",
-        "key_points": ["结构：三场戏"],
-        "doc_name": "剧本.md",
-    }
-    return ToolResult(success=True, data={"summary": "程心苏醒与掩体失效。"})
+# （原 _fake_analyze：exec_tools.ScriptAnalyzeTool 探针已随任务#36 B5
+# 执行器一步退役删除，代跑路径不复存在。）
 
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    from src.video_agent.skill_runtime.registration import register_skill_runtime_tools
-    register_skill_runtime_tools()
-    monkeypatch.setattr(exec_tools.ScriptAnalyzeTool, "aexecute", _fake_analyze)
+    # （原 register_skill_runtime_tools + ScriptAnalyzeTool.aexecute 探针已随
+    # 任务#36 B5 执行器一步退役删除：系统代跑路径不复存在，
+    # 「runtime 不自主提交节点」由探针适配器 calls 断言钉死。）
     StateManager.reset_instance()
     svc = StateManager(str(tmp_path / "ws"))
     StateManager._instance = svc

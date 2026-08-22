@@ -1,0 +1,29 @@
+{
+  "servers": {
+    "subtitle": {
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-subtitle"],
+      "env": {},
+      "enabled": true,
+      "description": "字幕生成",
+      "risk_default": "high",
+      "tool_risk": {
+        "generate_subtitle": "high",
+        "list_styles": "low"
+      }
+    },
+    "remote_demo": {
+      "transport": "streamable_http",
+      "url": "http://127.0.0.1:9100/mcp",
+      "enabled": false,
+      "description": "远程示例服务（默认关闭）",
+      "risk_default": "high"
+    }
+  },
+  "policy": {
+    "deny_servers": [],
+    "deny_tools": [],
+    "max_active_tools": 8
+  }
+}

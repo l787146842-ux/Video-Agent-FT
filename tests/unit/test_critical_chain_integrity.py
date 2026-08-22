@@ -1,5 +1,7 @@
-"""6666 事故回归：铁律文档每轮确保 + FC 执行器注入 skill_name +
-消息文本识别 Skill + 关键工具失败防虚报 + prelude 时间线恢复。
+"""6666 事故回归：铁律文档每轮确保 + 消息文本识别 Skill +
+关键工具失败防虚报 + prelude 时间线恢复。
+（FC 向执行器注入 skill_name / 执行器强制主模型用例已随任务#36 B5
+执行器一步退役删除：执行器工具不复存在，管线阶段改由通用主路径直走平台工具。）
 """
 
 import json
@@ -32,26 +34,8 @@ def test_iron_rules_ensured_on_real_chat(tmp_path):
     assert find_iron_rules_doc(svc.state_dict) is not None
 
 
-def test_fc_injects_skill_name_into_executor_args(monkeypatch):
-    """FC 调用执行器时，模型没带 skill_name → 平台强制注入 injected_skill。"""
-    captured = {}
-
-    class _TM:
-        async def invoke_tool(self, name, args):
-            captured["args"] = dict(args)
-            return ToolResult(success=True, data={"summary": "ok"})
-
-    runner = FCToolRunner(tool_manager=_TM())
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    response = ChatResponse(content="", tool_calls=[
-        {"id": "c1", "type": "function", "function": {
-            "name": "script_analyze",
-            "arguments": json.dumps({"doc_name": "剧本.md"}),
-        }},
-    ])
-    import asyncio
-    asyncio.run(runner.execute(response, injected_skill="AI-短剧一站式生成"))
-    assert captured["args"].get("skill_name") == "AI-短剧一站式生成"
+# test_fc_injects_skill_name_into_executor_args 已随任务#36 B5 执行器一步退役删除：
+# skill_name 强制注入只为执行器工具（已删），平台工具 schema 自带所需参数。
 
 
 def test_message_text_skill_match():
@@ -62,8 +46,9 @@ def test_message_text_skill_match():
 
 
 def test_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypatch):
-    """script_analyze/document_write(规格) 失败但模型带确认声称完成 →
-    6666 二轮：明确提示「剧本分析未完成」并洗掉假完成文案（不允许假完成）。"""
+    """关键文档写入失败但模型带确认声称完成 → 覆盖为诚实文案（不允许假完成）。
+    新基线（任务#36 B5 后）：关键步骤防虚报收敛到 document_write（非规格文档），
+    文案为「关键步骤未全部完成：<阶段名> 执行失败…」。"""
     import asyncio
 
     from src.video_agent.state.manager import StateManager
@@ -75,10 +60,8 @@ def test_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypatch):
 
     class _TM:
         async def invoke_tool(self, name, args):
-            if name == "script_analyze":
-                return ToolResult(success=False, error="当前 Skill「未指定」未注册 script_analyze 执行器")
             if name == "document_write":
-                return ToolResult(success=False, error="《制片规格》由系统按向导选定自动拼装，无需手写")
+                return ToolResult(success=False, error="磁盘写入失败")
             if name == "workflow_pause":
                 return ToolResult(success=True, data={})
             return ToolResult(success=True, data={})
@@ -87,54 +70,23 @@ def test_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypatch):
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: raw))
     response = ChatResponse(content="", tool_calls=[
         {"id": "c1", "type": "function", "function": {
-            "name": "script_analyze", "arguments": "{}"}},
-        {"id": "c2", "type": "function", "function": {
             "name": "document_write",
-            "arguments": json.dumps({"name": "制片规格.md", "content": "x"})}},
-        {"id": "c3", "type": "function", "function": {
+            "arguments": json.dumps({"name": "进度日志.md", "content": "x"})}},
+        {"id": "c2", "type": "function", "function": {
             "name": "workflow_pause",
-            "arguments": json.dumps({"message": "剧本分析与全局参数设定已完成，请审阅"})}},
+            "arguments": json.dumps({"message": "文档写入已完成，请审阅"})}},
     ])
-    _applied, confirmation, *_rest = asyncio.run(runner.execute(response, injected_skill="AI-短剧一站式生成"))
-    # 新基线（客观账本式文案）：关键步骤失败 → 诚实文案
-    # 「剧本分析未完成（执行失败）：<具体原因>」，不再出现「已完成」假声称
-    assert "剧本分析未完成" in confirmation
+    _applied, confirmation, *_rest = asyncio.run(
+        runner.execute(response, injected_skill="AI-短剧一站式生成", gate_override="all"))
+    # 客观账本式文案：关键步骤失败 → 诚实文案，不再出现「已完成」假声称
+    assert "关键步骤未全部完成" in confirmation
     assert "执行失败" in confirmation
-    assert "剧本分析与全局参数设定已完成" not in confirmation
-    assert raw["interaction"].get("pending_pause_kind") == ""
-    assert raw["interaction"].get("awaiting_confirmation") is True
-    assert raw["interaction"].get("confirmation_message") == confirmation
+    assert "文档写入已完成，请审阅" not in confirmation
 
 
-def test_executor_force_main_chat_model(monkeypatch):
-    """6666 二轮：执行器 chat_provider/chat_model 强制覆盖为主对话模型，
-    模型自行填写 modelscope/千问 一律无效（防串线 429/余额错误）。"""
-    import asyncio
-
-    captured = []
-
-    class _CaptureTM:
-        async def invoke_tool(self, name, args):
-            captured.append((name, dict(args)))
-            return ToolResult(success=True, data={"summary": "测试总结", "key_points": []})
-
-    runner = FCToolRunner(tool_manager=_CaptureTM())
-    runner.chat_provider = "custom-api-2"
-    runner.chat_model = "gemini-3.1-pro"
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    response = ChatResponse(content="", tool_calls=[
-        {"id": "c1", "type": "function", "function": {
-            "name": "script_analyze",
-            "arguments": json.dumps({
-                "doc_name": "剧本.md",
-                "chat_provider": "modelscope",
-                "chat_model": "Qwen/Qwen3-235B-A22B",
-            })}},
-    ])
-    asyncio.run(runner.execute(response, injected_skill="AI-短剧一站式生成"))
-    _name, args = captured[0]
-    assert args["chat_provider"] == "custom-api-2"
-    assert args["chat_model"] == "gemini-3.1-pro"
+# test_executor_force_main_chat_model 已随任务#36 B5 执行器一步退役删除：
+# 被测行为（执行器内层 LLM 调用强制主模型）不复存在；管线阶段改由模型
+# 直接调用平台工具，模型路由统一走主对话链，无执行器内层调用可串线。
 
 
 @pytest.mark.asyncio
@@ -142,10 +94,10 @@ async def test_prelude_notes_recorded_in_trace(tmp_path):
     """prelude（加载 Skill 流程/读取存档文档）进入执行轨迹，前端时间线可见。"""
     from src.video_agent.core.agent_loop import run_agent_loop
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.action_executor import StudioActionExecutor
+    from src.video_agent.web.action_executor import StateOperationExecutor
 
     svc = StateManager(str(tmp_path / "ws"))
-    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex = StateOperationExecutor(svc, gate_enabled=False)
 
     async def llm(system_prompt, messages, stream_hook=None):
         return ("完成", "stop", 0)

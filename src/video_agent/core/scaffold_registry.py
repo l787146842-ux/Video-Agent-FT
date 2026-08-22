@@ -80,18 +80,8 @@ SCAFFOLDS = (
         "层 9 回归",
         "编排器接管暂停点后",
         "scaffold"),
-    ScaffoldEntry(
-        "S11", "src.video_agent.skill_runtime.exec_common:_executor_thinking",
-        "推理模型思考会吃光输出预算（deepseek-v4-flash 单次思考 2.6 万字耗光预算）",
-        "回归测试钉死",
-        "每次主模型/执行器模型切换",
-        "scaffold"),
-    ScaffoldEntry(
-        "S12", "src.video_agent.skill_runtime.exec_common:_resolve_cascade_fast",
-        "快模型誊写批会零进展，需级联升级保险（C5）",
-        "C5 回归",
-        "每次执行器模型切换",
-        "scaffold"),
+    # S11（exec_common:_executor_thinking）与 S12（exec_common:_resolve_cascade_fast）
+    # 已随任务#36 B5 执行器一步退役删除（承重组件随模块物理删除）。
     ScaffoldEntry(
         "S13", "src.video_agent.core.round_end_policies:_cond_aborted_continuation_audit",
         "模型会说「马上继续」却以 stop 收尾（audit-0819 假停取证）",

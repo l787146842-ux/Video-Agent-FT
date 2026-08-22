@@ -3,6 +3,9 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel, Field
 
+# 风险分级合法枚举（宪法 §2.7 单一事实源；注册校验/闸机消费同引用）
+RISK_TIERS = ("low", "medium", "high")
+
 
 class ToolEvent(BaseModel):
     """工具执行过程中向前端推送的结构化事件。
@@ -31,6 +34,11 @@ class ToolResult(BaseModel):
 class BaseTool(ABC):
     name: str = ""
     description: str = ""
+    # 工具风险分级（宪法 §2.7）：low=只读/可逆；medium=写状态但可撤销；
+    # high=生成/文档写入/跨阶段建结构/外部副作用。
+    # 必须由子类显式声明；未声明者在 ToolManager.register 被拒绝注册
+    # （deny-by-default，不得静默放行）。
+    risk: str = ""
 
     @abstractmethod
     def get_input_schema(self) -> Type[BaseModel]:

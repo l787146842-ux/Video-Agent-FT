@@ -5,7 +5,6 @@ import type { DraftType } from '@/types';
 
 /**
  * 分组头：图标 + 标题（双击编辑）+ 徽标（双击编辑）+ 序号。
- * 八轮 B7 自 GroupCard.tsx 切出，零行为变更。
  */
 export function GroupHeader(props: {
   type: DraftType;

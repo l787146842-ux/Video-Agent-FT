@@ -3,7 +3,7 @@ import { sendUserMessage } from '@/lib/agent-actions';
 import type { Draft } from '@/types';
 
 /**
- * 组级微调输入行（八轮 B7 自 GroupCard.tsx 切出，零行为变更）。
+ * 组级微调输入行。
  * 挂在分组底部占满组宽；仅悬停卡片时原位展开（收起态 pointer-events:none），
  * 内容跟随当前悬停的卡（每张卡的输入各自保存互不干扰）；聚焦输入期间保持可见。
  * 每张草稿卡独立的微调输入内容（组内多卡各自微调互不干扰）。

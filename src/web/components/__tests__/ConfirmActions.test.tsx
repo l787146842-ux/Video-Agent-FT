@@ -1,9 +1,9 @@
 /**
- * ConfirmActions 交互测试（批1 验收补测：连点去重 + pause_response 全覆盖）。
+ * ConfirmActions 交互测试（连点去重 + pause_response 全覆盖）。
  *
  * 钉死契约：
- * ① 暂停回应一经发出即锁，连点/双击不重复发送（旧行为：第二次点击落入排队区，
- *    任务结束后把同一回答自动重发一遍）；
+ * ① 暂停回应一经发出即锁，连点/双击不重复发送（防二次点击落入排队区后
+ *    在任务结束后把同一回答自动重发一遍）；
  * ② 无选项确认同样携带 pause_response 结构化回携（对勾从后端权威登记派生，
  *    不再回落文本反推）；
  * ③ 选项卡发送携带机械 value（后端确定性消费）。
@@ -32,7 +32,7 @@ function pauseMessage(options: Array<{ label: string; value?: string; group?: st
   };
 }
 
-describe('ConfirmActions 单发语义与结构化回携（批1）', () => {
+describe('ConfirmActions 单发语义与结构化回携', () => {
   beforeEach(() => {
     sendMock.mockClear();
   });

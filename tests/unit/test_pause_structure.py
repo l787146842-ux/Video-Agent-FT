@@ -160,11 +160,9 @@ class TestPauseSlotMutex:
         from src.video_agent.adapters.base_chat import ChatResponse
         from src.video_agent.core.fc_tool_runner import FCToolRunner
         from src.video_agent.tools.manager import ToolManager
-        from src.video_agent.skill_runtime.registration import (
-            register_skill_runtime_tools,
-        )
 
-        register_skill_runtime_tools()
+        # （原 register_skill_runtime_tools 已随任务#36 B5 执行器退役删除；
+        # workflow_pause 是平台工具，不依赖执行器注册）
         inter = svc.state_dict.setdefault("interaction", {})
         inter["active_pause"] = {"pause_id": "existing1", "message": "m", "options": []}
 
@@ -183,11 +181,7 @@ class TestPauseSlotMutex:
         from src.video_agent.adapters.base_chat import ChatResponse
         from src.video_agent.core.fc_tool_runner import FCToolRunner
         from src.video_agent.tools.manager import ToolManager
-        from src.video_agent.skill_runtime.registration import (
-            register_skill_runtime_tools,
-        )
 
-        register_skill_runtime_tools()
         runner = FCToolRunner(ToolManager)
         resp = ChatResponse(content="", finish_reason="tool_calls", tool_calls=[
             {"id": "wp2", "type": "function", "function": {

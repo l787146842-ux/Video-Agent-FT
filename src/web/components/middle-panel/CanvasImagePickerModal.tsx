@@ -5,6 +5,7 @@ import {
   type AllCanvasImageItem, type CanvasListItem,
 } from '@/api/canvas';
 import { safeUrl } from '@/lib/utils';
+import { useFocusTrap } from '@/lib/focus-trap';
 
 /**
  * "当前画布操作空间"图片选择弹窗（单选模式 + 手动画布选择器）。
@@ -18,6 +19,11 @@ export function CanvasImagePickerModal(props: {
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
   const [selectedCanvasId, setSelectedCanvasId] = createSignal<string>('');
   const [dropdownOpen, setDropdownOpen] = createSignal(false);
+
+  // 焦点圈闭（任务 #29）：打开圈闭、Esc 关闭、关闭还原焦点
+  // （容器随 open 置空：<Show> 卸载后 ref 信号残留旧元素，不得据此保持激活）
+  const [panelEl, setPanelEl] = createSignal<HTMLElement>();
+  useFocusTrap(() => (props.open ? panelEl() : undefined), { onEscape: () => props.onClose() });
 
   // 加载画布列表
   const [canvasList, { refetch: refetchCanvasList }] = createResource(
@@ -77,7 +83,13 @@ export function CanvasImagePickerModal(props: {
     <Show when={props.open}>
       <div class="asset-modal canvas-picker-modal">
         <div class="asset-modal-backdrop" onClick={() => props.onClose()} />
-        <div class="asset-modal-panel">
+        <div
+          class="asset-modal-panel"
+          ref={setPanelEl}
+          role="dialog"
+          aria-modal="true"
+          aria-label="画布操作空间图片选择"
+        >
           {/* 头部：标题 + 画布选择器 + 关闭 */}
           <div class="asset-modal-header">
             <div class="canvas-picker-title">

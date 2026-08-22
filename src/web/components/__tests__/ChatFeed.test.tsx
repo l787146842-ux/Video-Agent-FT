@@ -1,5 +1,5 @@
 /**
- * ChatFeed 组件测试（P4-19 前端回归防护：只加测试不改行为）。
+ * ChatFeed 组件测试。
  *
  * 钉死契约：
  * ① 轮次分组渲染（groupTurns：同 turnId 聚合进 .turn-group，用户消息独立成组）；
@@ -14,15 +14,18 @@ import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ChatFeed } from '../right-panel/ChatFeed';
 import { chatState, chatActions, setChatState } from '@/stores/chat';
+import { requestScrollToMessage } from '@/lib/chat-scroll-bridge';
 import type { ChatMessage } from '@/types';
 
 vi.mock('../right-panel/ChatMessageItem', () => ({
   ChatMessageItem: (props: {
     message: ChatMessage; isLast: boolean; isGateTarget?: boolean;
     isSuggestedTarget?: boolean; confirmState?: string; editable?: boolean;
+    domIndex?: number;
   }) => (
     <div
       class="mock-msg"
+      data-msg-index={props.domIndex}
       data-sender={props.message.sender}
       data-confirm-target={props.isLast ? '1' : '0'}
       data-gate-target={props.isGateTarget ? '1' : '0'}
@@ -112,7 +115,7 @@ describe('ChatFeed 交互挂载位（deriveAffordances 派生结果）', () => {
     expect(items[2].dataset.gateTarget).toBe('1');
   });
 
-  it('用户气泡编辑控制点（P4-20）：有正文的用户消息挂 editable，agent/系统动作行不挂', () => {
+  it('用户气泡编辑控制点：有正文的用户消息挂 editable，agent/系统动作行不挂', () => {
     const { container } = render(() => <ChatFeed />);
     resetChat([
       user('写一段开场白'),
@@ -193,3 +196,54 @@ describe('ChatFeed 自动滚底阈值（80px）', () => {
 
 // 防止未使用告警：chatState 由被测组件消费，测试仅经 chatActions 驱动
 void chatState;
+
+describe('ChatFeed 长会话窗口化（feed-window）', () => {
+  beforeEach(() => resetChat([]));
+  const nextFrame = () => new Promise<void>((r) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => r(undefined)));
+  });
+
+  /** 造 n 条用户消息 */
+  function many(n: number): ChatMessage[] {
+    return Array.from({ length: n }, (_, i) => user(`消息${i}`));
+  }
+
+  it('未超基底窗口 → 全量渲染，无「显示更早」入口', () => {
+    resetChat(many(30));
+    const { container } = render(() => <ChatFeed />);
+    expect(msgs(container).length).toBe(30);
+    expect(container.querySelector('.feed-show-earlier')).toBeNull();
+  });
+
+  it('超出基底 → 只渲染近段（DOM 节点封顶），头部折叠为展开按钮', () => {
+    resetChat(many(130));
+    const { container } = render(() => <ChatFeed />);
+    expect(msgs(container).length).toBe(120);
+    const btn = container.querySelector('.feed-show-earlier') as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    // 窗口内消息的全局下标从折叠点开始（data-msg-index = 原数组下标）
+    expect(msgs(container)[0].dataset.msgIndex).toBe('10');
+  });
+
+  it('点「显示更早」向前展开一批，全部纳入后按钮消失', async () => {
+    resetChat(many(130));
+    const { container } = render(() => <ChatFeed />);
+    const btn = container.querySelector('.feed-show-earlier') as HTMLButtonElement;
+    fireEvent.click(btn);
+    await nextFrame();
+    expect(msgs(container).length).toBe(130);
+    expect(container.querySelector('.feed-show-earlier')).toBeNull();
+    expect(msgs(container)[0].dataset.msgIndex).toBe('0');
+  });
+
+  it('搜索跳转折叠头部消息：先扩窗纳入再定位高亮（此用例置最后，避免遗留请求干扰他测）', async () => {
+    resetChat(many(130));
+    const { container } = render(() => <ChatFeed />);
+    expect(container.querySelector('[data-msg-index="5"]')).toBeNull();
+    requestScrollToMessage(5);
+    await nextFrame();
+    const target = container.querySelector('[data-msg-index="5"]');
+    expect(target).toBeTruthy();
+    expect(target?.classList.contains('search-flash')).toBe(true);
+  });
+});

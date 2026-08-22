@@ -15,6 +15,7 @@ class GenerateVideoParams(BaseModel):
 
 class GenerateVideoTool(BaseTool):
     name = "generate_video"
+    risk = "high"  # §2.7：生成类（外部副作用/花钱）
     description = "根据传入的首帧图片和提示词，生成高清视频并返回结果。"
 
     def get_input_schema(self) -> Type[BaseModel]:

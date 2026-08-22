@@ -9,7 +9,7 @@ import type { ChatMessage } from '@/types';
 /**
  * 阶段完成卡（自 ChatMessageItem.tsx 切出）：
  * 可展开、默认展开。正文 = 本轮概述（确认文案，与模型正文判重防双显）。
- * 批6 账目收敛：执行明细（actionLog）只展示在 AgentTimeline「已处理操作」
+ * 账目收敛：执行明细（actionLog）只展示在 AgentTimeline「已处理操作」
  * 面板（trace 同源、含 result_summary），本卡只留操作数徽标，不再双处呈现
  *（项目体验基线：信息已在对话内可见的只展示一处）。
  */
@@ -54,7 +54,7 @@ export function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'an
             {t('rp.msg.appliedOps', { count: msg().appliedActions ?? 0 })}
           </span>
         </Show>
-        {/* 四轮 R3/#10：非当前待回应的暂停卡标注生命周期（已回应/已过期），回看不迷惑 */}
+        {/* 非当前待回应的暂停卡标注生命周期（已回应/已过期），回看不迷惑 */}
         <Show when={props.state === 'answered' || props.state === 'expired'}>
           <span class="stage-card-badge stage-card-badge-stale">
             {props.state === 'answered' ? t('rp.msg.confirmAnswered') : t('rp.msg.confirmExpired')}
@@ -69,7 +69,7 @@ export function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'an
           <Show when={bodyText()}>
             <p class="stage-card-summary">{bodyText()}</p>
           </Show>
-          {/* 批6：actionLog 明细不再双处呈现，归 AgentTimeline 单家 */}
+          {/* actionLog 明细不双处呈现，归 AgentTimeline 单家 */}
         </div>
       </Show>
     </div>

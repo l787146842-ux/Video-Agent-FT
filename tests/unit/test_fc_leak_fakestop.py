@@ -13,7 +13,7 @@ import pytest
 from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.core.round_end_policies import RoundEndContext, run_round_end_policies
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def svc(tmp_path):
 
 @pytest.fixture
 def executor(svc):
-    return StudioActionExecutor(svc)
+    return StateOperationExecutor(svc)
 
 
 async def _noop_emit(event):

@@ -81,10 +81,10 @@ async def test_session_compact_failure_degradation_visible(monkeypatch):
 async def test_event_emit_degradation_visible(svc_env):
     """事件通道异常被吞时计数（loop 不中断，收尾正常）"""
     from src.video_agent.core.agent_loop import run_agent_loop
-    from src.video_agent.web.action_executor import StudioActionExecutor
+    from src.video_agent.web.action_executor import StateOperationExecutor
 
     svc, _ = svc_env
-    executor = StudioActionExecutor(svc)
+    executor = StateOperationExecutor(svc)
 
     async def llm_call(system_prompt, messages, stream_hook=None):
         return "好的", "stop", 0

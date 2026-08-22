@@ -1,14 +1,14 @@
-"""6666 二轮事故 / 业界基准回归：语言单一事实源（C1）、拒因回喂（C2）、
-轮内 compaction（C3）、级联快模型（C5）、铁律三条款、卡片面纪律。"""
+"""6666 二轮事故 / 业界基准回归：铁律三条款、卡片面纪律、暂停语义归位。
+（C1 语言单一事实源、C2 拒因回喂、C5 级联快模型、条款编号同步用例
+已随任务#36 B5 执行器一步退役删除：被测对象 executors._prompt_language_rule /
+_write_prompt_batch / _resolve_cascade_fast 与 exec_split._selfcheck_key_elements
+不复存在。语言闸/拒因回喂改由 fc_tool_runner 提示词闸消费（prompt_gates 既有单测钉死）。"""
 import pytest
 
 import src.video_agent.web.skill_docs as sd
-from src.video_agent.core import agent_loop
 from src.video_agent.core import spec_rules
-from src.video_agent.skill_runtime import executors as ex_mod
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager
-from src.video_agent.skill_runtime import exec_common
 
 
 @pytest.fixture(autouse=True)
@@ -21,103 +21,21 @@ def isolate(tmp_path, monkeypatch):
 
 
 # ---------- C1：语言单一事实源 ----------
-
-def test_language_rule_default_chinese_and_no_section_exception():
-    """默认（语言闸生效）注入句为中文事实陈述，且旧的「章节从其要求」例外消失。"""
-    sd.save_skill_doc(
-        "demo",
-        "# 演示\n> 调用规则：测试\n"
-        "<write_the_prompt>\nA character turnaround sheet of X.\n</write_the_prompt>\n",
-    )
-    rule = ex_mod._prompt_language_rule("demo")
-    assert "中文" in rule and "平台语言闸生效" in rule
-    assert "从其要求" not in rule
-    sysp = ex_mod._skill_system_prompt("write_media_prompt", "demo")
-    assert "平台语言闸生效" in sysp
-    assert "从其要求" not in sysp
-
-
-def test_language_rule_english_locked_skill():
-    """sidecar 声明 cjk_min_ratio=0（英文锁定）→ 注入句为英文事实陈述。"""
-    from src.video_agent.skill_runtime import sidecar
-
-    sd.save_skill_doc(
-        "en",
-        "# 英文锁定\n> 调用规则：测试\n"
-        "<write_the_prompt>\ntemplate\n</write_the_prompt>\n",
-    )
-    sidecar.write_sidecar("en", {"gates": {"cjk_min_ratio": 0}})
-    rule = ex_mod._prompt_language_rule("en")
-    assert "英文" in rule and "英文锁定" in rule
+# test_language_rule_default_chinese_and_no_section_exception / test_language_rule_english_locked_skill
+# 已随任务#36 B5 执行器一步退役删除：被测对象（executors._prompt_language_rule /
+# _skill_system_prompt）不复存在。语言闸由 prompt_gates 消费，其既有单测承接钉死。
 
 
 # ---------- C2 + 卡片面纪律：纠正重试带结构化拒因 ----------
-
-async def test_corrective_retry_carries_rejection_reasons_and_card_discipline(tmp_path, monkeypatch):
-    captured = {}
-
-    async def fake_stream(tool_name, skill_name, system, user, svc, skill_content,
-                          provider="", model="", max_tokens=8192, flush_n=2):
-        captured["system"] = system
-        return 0, [], "[]", "stop"
-
-    monkeypatch.setattr(exec_common, "_stream_actions_progressive", fake_stream)
-    svc = StateManager(str(tmp_path / "ws"))
-    batch = [("keyElements", {"id": "ke-1", "title": "程心", "drafts": []})]
-    await ex_mod._write_prompt_batch(
-        "write_media_prompt", "demo", "", svc,
-        "p", "m", batch, "", "",
-        corrective=True, corrective_reasons=["提示词正文几乎全是英文：请改为中文正文"],
-    )
-    sysp = captured["system"]
-    assert "【拒因回喂】" in sysp
-    assert "提示词正文几乎全是英文" in sysp
-    # 卡片面纪律：label 限长 + 增量信息（防介绍==提示词）
-    assert "≤12 字短语" in sysp
-    assert "逐字誊写分组描述不符合要求" in sysp
-
-
-async def test_normal_batch_has_no_reason_block(tmp_path, monkeypatch):
-    captured = {}
-
-    async def fake_stream(tool_name, skill_name, system, user, svc, skill_content,
-                          provider="", model="", max_tokens=8192, flush_n=2):
-        captured["system"] = system
-        return 0, [], "[]", "stop"
-
-    monkeypatch.setattr(exec_common, "_stream_actions_progressive", fake_stream)
-    svc = StateManager(str(tmp_path / "ws"))
-    batch = [("keyElements", {"id": "ke-1", "title": "程心", "drafts": []})]
-    await ex_mod._write_prompt_batch(
-        "write_media_prompt", "demo", "", svc, "p", "m", batch, "", "",
-    )
-    assert "【拒因回喂】" not in captured["system"]
-    assert "【卡片面纪律】" in captured["system"]
+# test_corrective_retry_carries_rejection_reasons_and_card_discipline /
+# test_normal_batch_has_no_reason_block 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（executors._write_prompt_batch）不复存在；拒因回喂改由 fc_tool_runner
+# 提示词闸拒因文案承接。
 
 
 # ---------- C5：级联快模型 ----------
-
-def test_cascade_fast_resolution_and_fallback(tmp_path, monkeypatch):
-    from src.video_agent.config import settings
-
-    monkeypatch.setattr(
-        "src.video_agent.web.provider_config.load_merged_providers",
-        lambda: [{"id": "fast", "enabled": True, "chat_models": ["flash-lite"]}],
-    )
-    # 空配置 → 不级联
-    assert ex_mod._resolve_cascade_fast("main", "reasoner") == ("main", "reasoner")
-    # 配置 provider → 取其默认聊天模型
-    object.__setattr__(settings, "executor_fast_model", "fast")
-    try:
-        assert ex_mod._resolve_cascade_fast("main", "reasoner") == ("fast", "flash-lite")
-        # 配置 provider:model 精确指定
-        object.__setattr__(settings, "executor_fast_model", "fast:flash-lite")
-        assert ex_mod._resolve_cascade_fast("main", "reasoner") == ("fast", "flash-lite")
-        # 解析不到 → 回落主模型
-        object.__setattr__(settings, "executor_fast_model", "ghost")
-        assert ex_mod._resolve_cascade_fast("main", "reasoner") == ("main", "reasoner")
-    finally:
-        object.__setattr__(settings, "executor_fast_model", "")
+# test_cascade_fast_resolution_and_fallback 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（executors._resolve_cascade_fast）不复存在。
 
 
 # ---------- 铁律三条款 ----------
@@ -143,12 +61,9 @@ def test_ensure_iron_rules_doc_creates_three_clause_doc(tmp_path):
     assert "流程覆盖" not in doc["content"]
 
 
-def test_clause_number_references_synced():
-    """拆解覆盖现为第 2 条：验收补漏话术引用铁律第 2 条（0817 表述源在 exec_split）。"""
-    import inspect
-    from src.video_agent.skill_runtime import exec_split
-    src = inspect.getsource(exec_split._selfcheck_key_elements)
-    assert "第 2 条" in src
+# test_clause_number_references_synced 已随任务#36 B5 执行器一步退役删除：
+# 断言主体（exec_split._selfcheck_key_elements 源码引用铁律第 2 条）不复存在；
+# 铁律第 2 条正文由上方 test_iron_rules_default_body_three_clauses 钉死。
 
 
 # ---------- 暂停语义归位（6666 四轮）：Skill 唯一暂停源 ----------

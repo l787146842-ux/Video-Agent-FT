@@ -1,8 +1,7 @@
 /**
- * 素材库「画布资产」tab（P4-23 结构清欠从 AssetLibraryModal 拆出）：
+ * 素材库「画布资产」tab：
  * 画布空间选择器 + 加载/离线/空状态 + 所选画布的图片网格。
- * DOM 结构不变（.canvas-picker-subheader / .canvas-selector* / .asset-modal-status 原样），
- * 数据源（canvasList/canvasImages 资源）仍在父组件，行为零变化。
+ * 数据源（canvasList/canvasImages 资源）由父组件提供。
  */
 import { Show, For, createSignal } from 'solid-js';
 import { FiGrid, FiLoader, FiAlertCircle, FiChevronDown } from 'solid-icons/fi';

@@ -55,35 +55,15 @@ class TestBadOutputNudge:
 # ---------- D3：阶段同批声明翻译（P3 单一事实源） ----------
 
 
-STAGE_MANIFEST = {"flow": {"stage_executors": {
-    "1": ["script_analyze"],
-    "3": ["storyboard_key_elements", "storyboard_shots", "storyboard_audio"],
-}}}
+# STAGE_MANIFEST（stage_executors 声明样例）的消费用例已退役，
+# 声明数据本身仍由 sidecar schema 层测试钉死（test_sidecar_schema_v3）。
 
 
 class TestStageExecutorsDeclaration:
-    def test_registry_parses_stage_executors(self, monkeypatch):
-        from src.video_agent.skill_runtime import registry
-
-        monkeypatch.setattr(registry, "skill_manifest_of", lambda name: STAGE_MANIFEST)
-        stages = registry.skill_stage_executors("任意Skill")
-        assert stages["3"] == ["storyboard_key_elements", "storyboard_shots", "storyboard_audio"]
-
-    def test_registry_undeclared_returns_empty(self, monkeypatch):
-        from src.video_agent.skill_runtime import registry
-
-        monkeypatch.setattr(registry, "skill_manifest_of", lambda name: None)
-        assert registry.skill_stage_executors("任意Skill") == {}
-
-    def test_stage_done_requires_all_executors(self):
-        from src.video_agent.skill_runtime.exec_tools import _stage_done_by_executors
-
-        exs = ["storyboard_key_elements", "storyboard_shots", "storyboard_audio"]
-        full = {"keyElements": [1], "shots": [1], "audioItems": [1]}
-        partial = {"keyElements": [1], "shots": [], "audioItems": []}
-        assert _stage_done_by_executors(exs, full) is True
-        assert _stage_done_by_executors(exs, partial) is False
-        assert _stage_done_by_executors(["unknown_tool"], full) is None
+    # test_registry_parses_stage_executors / test_registry_undeclared_returns_empty /
+    # test_stage_done_requires_all_executors 已随任务#36 B5 执行器一步退役删除：
+    # registry.skill_stage_executors 与 exec_tools._stage_done_by_executors 不复存在，
+    # 阶段完成度改由 pipeline_orchestrator.stage_done 客观探针判定（下方用例钉死）。
 
     def test_ai_skill_manifest_declares_stage3_batch(self):
         """单一事实源：AI-一站式 Skill 自己声明 step3 三拆解同批

@@ -7,7 +7,7 @@
  * - ChatInput 用 createEffect 跟踪队列变化，消费并插入到当前光标处
  *
  * 同时支持纯文本注入（空卡片回退为「针对草稿「xxx」：」文本引用）。
- * P4-20 扩展：用户气泡「编辑」回填请求（与排队消息编辑同款通道，
+ * 用户气泡「编辑」回填请求（与排队消息编辑同款通道，
  * ChatInput 消费时走同款换行追加回填语义）。
  */
 import { createSignal } from 'solid-js';
@@ -38,7 +38,7 @@ export function requestInsertSkill(name: string): void {
   setQueue((prev) => [...prev, { kind: 'skill', name }]);
 }
 
-/** 请求把已发送用户消息的正文回填到聊天输入框（P4-20 编辑控制点；
+/** 请求把已发送用户消息的正文回填到聊天输入框（用户气泡编辑控制点；
  * ChatInput 按排队消息编辑同款语义消费：换行追加、不冲掉正在输入的内容） */
 export function requestEditBackfill(text: string): void {
   if (!text.trim()) return;

@@ -143,24 +143,20 @@ COUPLING_ROWS: List[CouplingRow] = [
         "拆分模块新增顶层符号",
         "re-export 壳清单 + 测试 patch 目标改为调用方命名空间",
         _sym(
-            # skill_runtime/executors 承重壳
-            "src.video_agent.skill_runtime.executors:ScriptAnalyzeTool",
-            "src.video_agent.skill_runtime.executors:StoryboardShotsTool",
             # prompt_gates 尾部承重壳（gates_spec + gates_script）
             "src.video_agent.core.prompt_gates:spec_pause_card",
             "src.video_agent.core.prompt_gates:script_present",
             # chat_service 尾部承重壳
             "src.video_agent.web.chat_service:_acquire_request_slot",
-            # exec_tools 尾部承重壳（exec_split）
-            "src.video_agent.skill_runtime.exec_tools:_KE_TASK",
             # 新壳
             "src.video_agent.core.fc_tool_runner:format_tool_results",
-            "src.video_agent.web.action_executor:StudioActionExecutor._apply_generate_image",
-            # 新壳（exec_media_writer/exec_media_gen/gates_cards 迁出后 re-export）
-            "src.video_agent.skill_runtime.exec_tools:WriteMediaPromptTool",
-            "src.video_agent.skill_runtime.exec_tools:AudioGenerateTool",
+            # 任务#23 三段拆分承重壳：闸机方法壳（实现体 fc_gates）
+            "src.video_agent.core.fc_tool_runner:FCToolRunner._prompt_gate",
+            "src.video_agent.web.action_executor:StateOperationExecutor._apply_generate_image",
             "src.video_agent.core.prompt_gates:SPEC_GATE_ERROR",
             "src.video_agent.core.prompt_gates:parse_hard_selections",
+            # skill_runtime/executors 与 exec_tools 承重壳已随任务#36 B5
+            # 执行器一步退役删除（物理删除，不设观察期）
         ),
     ),
     CouplingRow(
@@ -171,22 +167,20 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R15_s5_split_modules",
-        "拆分模块变更（gates_script/exec_split/gates_cards/exec_media_writer/exec_media_gen）",
-        "prompt_gates 尾部与 exec_tools 尾部 re-export；消费方旧命名空间不变",
+        "拆分模块变更（gates_script/gates_cards）",
+        "prompt_gates 尾部 re-export；消费方旧命名空间不变"
+        "（exec_split/exec_media_writer/exec_media_gen 已随任务#36 B5 退役删除）",
         (("file", "src/video_agent/core/gates_script.py"),)
-        + (("file", "src/video_agent/skill_runtime/exec_split.py"),)
-        + (("file", "src/video_agent/core/gates_cards.py"),)
-        + (("file", "src/video_agent/skill_runtime/exec_media_writer.py"),)
-        + (("file", "src/video_agent/skill_runtime/exec_media_gen.py"),),
+        + (("file", "src/video_agent/core/gates_cards.py"),),
     ),
     CouplingRow(
         "R16_manifest_whitelist_keys",
         "sidecar 声明键（gates/flow/pause）变更",
-        "0818 B4：声明唯一源 = data/skills_manifests（文档通道退役）；消费点：parse_gate_rules/agent_loop/fc_tool_runner/planner 裁剪/"
+        "0818 B4：声明唯一源 = data/skills_manifests（文档通道退役）；消费点：parse_gate_rules/agent_loop/fc_gates/planner 裁剪/"
         "prompt_builder/registry pause 节",
         _sym(
             "src.video_agent.core.prompt_gates:parse_gate_rules",
-            "src.video_agent.core.fc_tool_runner:FCToolRunner._prompt_gate",
+            "src.video_agent.core.fc_gates:prompt_gate",
             "src.video_agent.core.planner:Planner._compute_excluded_tools",
             "src.video_agent.core.prompt_builder:PromptBuilder.build_system_prompt",
             "src.video_agent.skill_runtime.registry:parse_pause_rules",

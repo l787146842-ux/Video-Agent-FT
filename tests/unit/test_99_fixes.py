@@ -15,7 +15,7 @@ from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 
 
 _SPEC_CONFIRMED = (
@@ -83,7 +83,9 @@ def test_99_fc_spec_review_card_not_remerged_with_wizard(monkeypatch):
             "arguments": json.dumps({"name": "制片规格.md", "content": _SPEC_CONFIRMED})}},
     ])
     _applied, confirmation, _urls, _inserts, _log, conf_opts, _results, _docs, _warnings, _overflow = asyncio.run(
-        runner.execute(response, injected_skill="任意 Skill"))
+        # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户
+        # 一次性同意（「本次放行」回携），测试原意的规格审阅卡逻辑不变
+        runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
     # 审阅卡（中性选项，0817 B22）而不是收集向导
     assert confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG
     labels = [o["label"] for o in conf_opts]
@@ -111,7 +113,7 @@ async def test_99_text_spec_review_card_not_remerged_with_wizard(svc, monkeypatc
     inter = svc.state_dict.setdefault("interaction", {})
     inter["spec_collected"] = True
     inter["spec_review_pending"] = True
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.skill_name = "测试流程Skill"
     r1 = ("规格已生成，请审阅。", "stop")
     llm, calls = make_llm([r1])
@@ -139,7 +141,7 @@ async def test_99_model_spec_write_rejected_when_wizard_active(svc, monkeypatch)
     )
     svc.state_dict["usedSkills"] = ["测试流程Skill"]
     svc.state_dict["documents"] = []
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.skill_name = "测试流程Skill"
     r1 = ('规格已保存。\n```studio-actions\n'
           '[{"action":"write_document","name":"制片规格.md","content":"画幅：16:9"}]\n```', "stop")
@@ -161,7 +163,7 @@ async def test_99_summary_not_prepended_on_spec_review_pause(svc):
     svc.state_dict["analysis"] = {"summary": "太阳系逐渐二维化"}
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": _SPEC_CONFIRMED}]
     svc.state_dict.setdefault("interaction", {})["pending_pause_kind"] = "spec"
-    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex = StateOperationExecutor(svc, gate_enabled=False)
 
     async def llm(system_prompt, messages, stream_hook=None):
         return ("请审阅规格条目。", "stop", 0, 0.0,
@@ -179,7 +181,7 @@ async def test_99_model_loop_no_summary_injection(svc):
     """0818 架构板正批：模型循环不再强注入总结/收集卡（顺序与收集归编排器）。"""
     svc.state_dict["analysis"] = {"summary": "太阳系逐渐二维化"}
     svc.state_dict["documents"] = []
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.skill_name = "测试流程Skill"
 
     async def llm(system_prompt, messages, stream_hook=None):

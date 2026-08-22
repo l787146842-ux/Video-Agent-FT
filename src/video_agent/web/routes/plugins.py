@@ -9,8 +9,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from loguru import logger
 
-from src.video_agent.skill_runtime import registry as skill_registry
-from src.video_agent.skill_runtime.capability import is_planning
 from src.video_agent.web.skill_docs import (
     get_skill_doc,
     list_skill_docs,
@@ -48,14 +46,9 @@ async def get_agent_config():
 
 
 def _planning_executors_of(skill_name: str):
-    """该 Skill 可用执行器中的规划级名单（capability 注册表派生）。"""
-    try:
-        entry = skill_registry.resolve_entry(skill_name)
-    except Exception:
-        entry = None
-    if entry is None:
-        return []
-    return [t for t in (entry.available_tools or []) if is_planning(t)]
+    """规划级执行器名单（前端契约字段保留）：执行器已随任务#36 B5
+    一步退役，永远返回空名单（前端据实标注，空 = 无规划级欠账）。"""
+    return []
 
 
 @router.get("/skills/docs")

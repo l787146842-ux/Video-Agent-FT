@@ -121,17 +121,18 @@ def test_no_spec_keeps_platform_default():
 
 
 def test_injection_sentence_matches_spec_selection():
-    """C1：执行器注入句与闸机读同一裁决——注入句随用户选择变化。"""
-    from src.video_agent.skill_runtime import exec_common
-    s_en = exec_common._prompt_language_rule(
-        "AI-短剧一站式生成", _spec_state("输出语言：英文"))
-    assert "英文" in s_en
-    s_cn = exec_common._prompt_language_rule(
-        "AI-短剧一站式生成", _spec_state("输出语言：中文"))
-    assert "中文" in s_cn and "中英双语" not in s_cn
-    s_bi = exec_common._prompt_language_rule(
-        "AI-短剧一站式生成", _spec_state("输出语言：中英双语"))
-    assert "中英双语" in s_bi
+    """C1：语言裁决与闸机读同一事实——注入句随用户选择变化。
+    （断言主体从已退役的 exec_common._prompt_language_rule 迁到通用路径
+    注入面：prompt_gates 语言闸裁决口径，同输入同结论。）"""
+    ok_en, hard_en, _ = prompt_gates.validate_prompt_write(
+        _ENG, "keyElement", _spec_state("输出语言：英文"))
+    assert ok_en and not any("全是英文" in h for h in hard_en)
+    _ok_cn, hard_cn, _ = prompt_gates.validate_prompt_write(
+        _ENG, "keyElement", _spec_state("输出语言：中文"))
+    assert any("几乎全是英文" in h for h in hard_cn)
+    ok_bi, hard_bi, _ = prompt_gates.validate_prompt_write(
+        _ENG, "keyElement", _spec_state("输出语言：中英双语"))
+    assert ok_bi and not any("全是英文" in h for h in hard_bi)
 
 
 # ---------- 0817 B3：分组标题确定性归一（剥英文标识/编号前缀） ----------
@@ -150,11 +151,11 @@ def test_normalize_group_title_strips_prefixes():
 
 
 def test_add_group_title_normalized_on_write(tmp_path):
-    """文本轨/执行器轨建组入口：标题落盘前归一。"""
+    """文本轨建组入口：标题落盘前归一。"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.action_executor import StudioActionExecutor
+    from src.video_agent.web.action_executor import StateOperationExecutor
     svc = StateManager(str(tmp_path / "ws"))
-    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex = StateOperationExecutor(svc, gate_enabled=False)
     applied = ex.execute([{
         "action": "add_group", "group_type": "keyElement",
         "title": "key_element_audio_瓦西里", "desc": "音色低沉",
@@ -183,9 +184,9 @@ def test_fc_create_group_title_normalized(tmp_path, monkeypatch):
 def test_patch_group_title_normalized_on_model_path(tmp_path):
     """复查补漏：模型经 patch_group 改名也归一（用户 REST 路径不受影响）。"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.action_executor import StudioActionExecutor
+    from src.video_agent.web.action_executor import StateOperationExecutor
     svc = StateManager(str(tmp_path / "ws"))
-    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex = StateOperationExecutor(svc, gate_enabled=False)
     ex.execute([{
         "action": "add_group", "group_type": "keyElement",
         "title": "瓦西里", "desc": "x",
@@ -277,57 +278,16 @@ def test_channels_dead_mechanism_removed():
 
 
 # ---------- 0817 B17：语言闸拒收批内即时纠正（不拖到整工具重做） ----------
-
-@pytest.mark.asyncio
-async def test_lang_gate_reject_triggers_inbatch_corrective(tmp_path, monkeypatch):
-    """首批部分进展但撞语言闸 → 立即批内带拒因纠正重试一次，
-    不得拖到整工具失败由外层从头重做（6 分钟级浪费）。"""
-    from src.video_agent.core import prompt_gates
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.skill_runtime import exec_media_writer as mw
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = [
-        {"id": "g1", "title": "程心", "drafts": [{"id": "d1", "prompt": ""}]},
-        {"id": "g2", "title": "艾AA", "drafts": [{"id": "d2", "prompt": ""}]},
-    ]
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-    monkeypatch.setattr(mw, "tool_available", lambda skill, tool: True)
-    monkeypatch.setattr(mw.exec_common, "_resolve_chat_provider",
-                        lambda p="", m="": ("prov", "model"))
-    monkeypatch.setattr(mw.exec_common, "_resolve_cascade_fast", lambda p, m: (p, m))
-
-    calls = []
-
-    async def fake_batch(tool_name, skill_name, skill_content, svc_, provider,
-                         model, batch, spec, analysis_hint, **kwargs):
-        calls.append(kwargs)
-        if len(calls) == 1:
-            svc_.state_dict["keyElements"][0]["drafts"][0]["prompt"] = "中文提示词一"
-            return 1, [prompt_gates.LANG_EN_HARD_PREFIX + "：请改为中文正文后重新写入"], False
-        svc_.state_dict["keyElements"][1]["drafts"][0]["prompt"] = "纠正后的中文提示词"
-        return 1, [], False
-
-    monkeypatch.setattr(mw, "_write_prompt_batch", fake_batch)
-    tool = mw.WriteMediaPromptTool()
-    result = await tool.aexecute(tool.get_input_schema()(skill_name="KE"))
-    assert result.success, getattr(result, "error", "")
-    assert len(calls) == 2, "应在批内即时纠正重试一次"
-    assert calls[1].get("corrective") is True
-    reasons = calls[1].get("corrective_reasons") or []
-    assert any(prompt_gates.LANG_EN_HARD_PREFIX in str(r) for r in reasons)
-    assert svc.state_dict["keyElements"][1]["drafts"][0]["prompt"]
+# test_lang_gate_reject_triggers_inbatch_corrective 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（exec_media_writer.WriteMediaPromptTool 批内纠正）不复存在；
+# 语言闸拒因回喂改由 fc_tool_runner 提示词闸承接。
 
 
-# ---------- 0817 B16：执行器警告必须上抛到用户可见层 ----------
+# ---------- 0817 B16：工具警告必须上抛到用户可见层 ----------
 
 def test_executor_warnings_surface_to_user(monkeypatch):
-    """执行器成功结果携带的 warnings（如补拆失败缺失清单）必须升级为用户可见警告。"""
-    import json
-    from src.video_agent.adapters.base_chat import ChatResponse
-    from src.video_agent.core.fc_tool_runner import FCToolRunner
-    from src.video_agent.tools.base import ToolResult
-
+    """工具成功结果携带的 warnings（如拆解覆盖缺口清单）经 FCToolRunner
+    必须升级为用户可见警告。"""
     class _WarnTM:
         async def invoke_tool(self, name, args):
             return ToolResult(success=True, data={
@@ -345,42 +305,8 @@ def test_executor_warnings_surface_to_user(monkeypatch):
 
 
 # ---------- 0817 B15：script_analyze 幂等（剧本未变不重跑） ----------
-
-@pytest.mark.asyncio
-async def test_script_analyze_idempotent(tmp_path, monkeypatch):
-    """同一剧本重复分析 → 第二次直接复用既有结果（零 LLM 调用）。"""
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.skill_runtime import exec_tools
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["uploadedDocs"] = [
-        {"id": "d1", "name": "剧本.md", "content": "剧本正文：罗辑：黑暗森林。"}]
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-    calls = {"n": 0}
-
-    async def fake_json_call(system, user, **kwargs):
-        calls["n"] += 1
-        return {"summary": "人类 intercept 白色薄片", "key_points": ["降维打击"]}
-
-    monkeypatch.setattr(exec_tools.exec_spec, "_llm_json_call", fake_json_call)
-    monkeypatch.setattr(exec_tools, "tool_available", lambda skill, tool: True)
-    tool = exec_tools.ScriptAnalyzeTool()
-    params = tool.get_input_schema()(skill_name="AI-短剧一站式生成", doc_name="剧本.md")
-    r1 = await tool.aexecute(params)
-    assert r1.success and calls["n"] == 1
-    r2 = await tool.aexecute(params)
-    assert r2.success and calls["n"] == 1, "剧本未变不得重跑 LLM"
-    assert r2.data.get("cached") is True
-    # 剧本内容变化 → 重新分析
-    svc.state_dict["uploadedDocs"][0]["content"] = "剧本正文（改）：程心：好的。"
-    r3 = await tool.aexecute(params)
-    assert r3.success and calls["n"] == 2
-
-
-def _async_none():
-    async def _coro(*a, **k):
-        return None
-    return _coro()
+# test_script_analyze_idempotent 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（exec_tools.ScriptAnalyzeTool）不复存在。
 
 
 # ---------- 0817 B14：规格文档卡不得落在用户选择消息之前 ----------
@@ -433,36 +359,12 @@ async def test_wizard_write_spec_node_commit_events(tmp_path):
 
 
 # ---------- 0817 B23/B24：思考档不硬编码降档 + 剧本注入上限合一 ----------
+# test_script_inject_limit_unified_and_configurable 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（exec_common._script_inject_limit / _build_script_hint）不复存在。
 
-def test_script_inject_limit_unified_and_configurable():
-    """上限合一移全局设置：可配、截断附可见警告。"""
-    from src.video_agent.config import settings
-    from src.video_agent.skill_runtime import exec_common
-
-    old = settings.script_inject_limit
-    try:
-        object.__setattr__(settings, "script_inject_limit", 5000)
-        assert exec_common._script_inject_limit() == 5000
-        state = {"uploadedDocs": [{"id": "d1", "name": "长.md",
-                                   "content": "字" * 6000}]}
-        hint = exec_common._build_script_hint(state)
-        assert "已截断" in hint and "script_inject_limit" in hint
-        object.__setattr__(settings, "script_inject_limit", 20000)
-        state2 = {"uploadedDocs": [{"id": "d1", "name": "短.md", "content": "字" * 100}]}
-        assert "已截断" not in exec_common._build_script_hint(state2)
-    finally:
-        object.__setattr__(settings, "script_inject_limit", old)
-
-
-def test_executor_thinking_not_hardcoded_low():
-    """0817 B23：平台不硬编码降档，默认沿用全局。
-    audit-0819f 用户裁决升级：通用搭配默认 executor=low（防思考吃预算），
-    但 settings.executor_thinking_level 本身仍默认空（env 未设）。
-    """
-    from src.video_agent.config import settings
-    from src.video_agent.skill_runtime import exec_common
-    assert settings.executor_thinking_level == ""
-    assert exec_common._executor_thinking() == "low"
+# test_executor_thinking_not_hardcoded_low 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（exec_common._executor_thinking）不复存在；executor 档位默认改由
+# model_policy 通用搭配钉死（test_model_policy.test_0819f_universal_defaults_low_for_executor_summary）。
 
 
 def test_script_inject_limit_in_runtime_whitelist():
@@ -624,9 +526,9 @@ async def test_flow_directive_tool_sets_flag_and_clears(tmp_path, monkeypatch):
 async def test_flow_directive_text_track_sets_flag(tmp_path):
     from src.video_agent.state.manager import StateManager
     from src.video_agent.core import prompt_gates
-    from src.video_agent.web.action_executor import StudioActionExecutor
+    from src.video_agent.web.action_executor import StateOperationExecutor
     svc = StateManager(str(tmp_path / "ws"))
-    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex = StateOperationExecutor(svc, gate_enabled=False)
     assert ex.execute([{"action": "flow_directive", "auto_continue": True}]) == 1
     assert prompt_gates.flow_auto_continue(svc.state_dict)
 
@@ -655,102 +557,18 @@ def test_pause_suppressions_wired_to_auto_continue():
 
 
 # ---------- 0817 B9：机器覆盖验收（Skill 声明驱动） ----------
-
-def test_script_speakers_extraction():
-    from src.video_agent.skill_runtime import exec_split
-    text = "### 场一\n罗辑：黑暗森林。\n程心：好的。\n旁白：远处。\n罗辑：再来。"
-    assert exec_split._script_speakers(text) == ["罗辑", "程心"]
-
-
-def test_skill_declares_audio_from_skill_doc():
-    from src.video_agent.skill_runtime import exec_split
-    # 真实 Skill 声明 key_element_audio → 验收才查音色
-    assert exec_split.skill_declares_audio("AI-短剧一站式生成") is True
-    assert exec_split.skill_declares_audio("不存在的Skill") is False
-
-
-def test_coverage_missing_audio_and_speakers(tmp_path):
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.skill_runtime import exec_split
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = [
-        {"id": "1", "title": "瓦西里", "badgeLabel": "人物", "desc": "x"},
-    ]
-    svc.state_dict["uploadedDocs"] = [
-        {"id": "d", "name": "剧本.md", "content": "瓦西里：收到。\n领航员：明白。"}
-    ]
-    missing = exec_split._coverage_missing_key_elements(svc, "AI-短剧一站式生成")
-    # 台词人领航员未拆 + 瓦西里缺音色组
-    assert any("领航员" in m for m in missing)
-    assert any("瓦西里" in m and "音色" in m for m in missing)
-    # 补齐后 → 无缺失
-    svc.state_dict["keyElements"].append(
-        {"id": "2", "title": "领航员", "badgeLabel": "人物", "desc": "x"})
-    svc.state_dict["keyElements"].append(
-        {"id": "3", "title": "瓦西里", "badgeLabel": "音频-角色", "desc": "音色"})
-    svc.state_dict["keyElements"].append(
-        {"id": "4", "title": "领航员", "badgeLabel": "音频-角色", "desc": "音色"})
-    assert exec_split._coverage_missing_key_elements(svc, "AI-短剧一站式生成") == []
-
-
-def test_coverage_no_audio_check_when_skill_silent(tmp_path):
-    """Skill 未声明音色 → 不查音色（不会硬拆出音色组）。"""
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.skill_runtime import exec_split
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = [
-        {"id": "1", "title": "瓦西里", "badgeLabel": "人物", "desc": "x"},
-    ]
-    svc.state_dict["uploadedDocs"] = [
-        {"id": "d", "name": "剧本.md", "content": "瓦西里：收到。"}
-    ]
-    assert exec_split._coverage_missing_key_elements(svc, "不存在的Skill") == []
+# test_script_speakers_extraction / test_skill_declares_audio_from_skill_doc /
+# test_coverage_missing_audio_and_speakers / test_coverage_no_audio_check_when_skill_silent
+# 已随任务#36 B5 执行器一步退役删除：被测对象（exec_split._script_speakers /
+# skill_declares_audio / _coverage_missing_key_elements）不复存在；拆解覆盖完整
+# 改由模型按铁律第 2 条自查 + fc_tool_runner _structure_integrity_gate 客观校验承接。
 
 
 # ---------- 0817 B4：执行器 JSON 畸形 → 带拒因纠正重试（C2） ----------
-
-@pytest.mark.allow_degradation
-def test_llm_json_call_corrective_retry_on_malformed(monkeypatch):
-    """首次返回畸形 JSON → 携拒因重试一次 → 二次正确则解析成功。"""
-    import asyncio
-    from src.video_agent.skill_runtime import exec_spec
-    from src.video_agent.web import generation as gen_mod
-
-    calls = []
-
-    async def fake_chat(provider, model, messages, **kw):
-        calls.append(list(messages))
-        if len(calls) == 1:
-            return ('{"summary": "x", "key_points": ["a" "b"]}', "stop")
-        return ('{"summary": "x", "key_points": ["a", "b"]}', "stop")
-
-    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
-    monkeypatch.setattr(
-        exec_spec.exec_common, "_resolve_chat_provider", lambda p, m: ("prov", "model"))
-    data = asyncio.run(exec_spec._llm_json_call("sys", "user", max_tokens=512))
-    assert data["summary"] == "x"
-    assert len(calls) == 2
-    # 纠正重试必须携拒因（C2 结构化拒因回喂）
-    assert any("无法解析" in str(m.get("content")) for m in calls[1])
-
-
-@pytest.mark.allow_degradation
-def test_llm_json_call_raises_after_retry_still_malformed(monkeypatch, tmp_path):
-    """重试仍畸形 → 抛明确错误，不吞。"""
-    import asyncio
-    import pytest as _pt
-    from src.video_agent.skill_runtime import exec_spec, blackbox
-    from src.video_agent.web import generation as gen_mod
-
-    async def fake_chat(provider, model, messages, **kw):
-        return ('{"summary": "x", "key_points": ["a" "b"]}', "stop")
-
-    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_chat)
-    monkeypatch.setattr(blackbox, "_BLACKBOX_DIR", tmp_path)
-    monkeypatch.setattr(
-        exec_spec.exec_common, "_resolve_chat_provider", lambda p, m: ("prov", "model"))
-    with _pt.raises(Exception, match="无法解析"):
-        asyncio.run(exec_spec._llm_json_call("sys", "user", max_tokens=512))
+# test_llm_json_call_corrective_retry_on_malformed /
+# test_llm_json_call_raises_after_retry_still_malformed 已随任务#36 B5
+# 执行器一步退役删除：被测对象（exec_spec._llm_json_call 与 blackbox 档案）
+# 不复存在；畸形 JSON 纠正重试随执行器内层 LLM 调用一并退役。
 
 
 # ---------- 0817 B6：后台任务生命周期状态可观测（静默死亡留痕） ----------
@@ -758,10 +576,12 @@ def test_llm_json_call_raises_after_retry_still_malformed(monkeypatch, tmp_path)
 def test_task_lifecycle_done_and_cancel_statuses(tmp_path):
     """worker 正常结束=done、被取消=cancelled，状态均落账（可观测性前提）。"""
     from src.video_agent.web.agent_task_manager import AgentTaskManager
+    from src.video_agent.web.task_store import TaskStore
 
     mgr = AgentTaskManager.__new__(AgentTaskManager)
     mgr._tasks = {}
-    mgr._persist_path = tmp_path / "tasks.json"
+    # 任务 #24：持久化已迁 sqlite kv 表，测试注入临时库（替代旧 _persist_path）
+    mgr._store = TaskStore(tmp_path / "tasks.sqlite3")
 
     async def worker_ok():
         await asyncio.sleep(0.02)

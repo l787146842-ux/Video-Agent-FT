@@ -6,9 +6,8 @@ import { chatState, chatActions } from '@/stores/chat';
 import type { QueuedMessage } from '@/stores/chat';
 import { state as studioState } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
-import { sendGuidanceToTask } from '@/hooks/use-sse';
+import { submitMessage } from '@/lib/submit-message';
 import { convActions } from '@/stores/conversations';
-import { sendUserMessage } from '@/lib/agent-actions';
 import { t } from '@/lib/locale';
 
 /**
@@ -38,11 +37,10 @@ export function QueuedMessagesBar(props: {
     if (id && !chatState.queuedMessages.some((m) => m.id === id)) setGuidedId('');
   });
 
-  /** 引导：队首优先 + 登记轮间注入（不打断当前操作； 通道， 复用） */
+  /** 引导：队首优先 + 登记轮间注入（不打断当前操作；走统一入口 intent='guidance'） */
   function guide(item: QueuedMessage) {
-    chatActions.moveQueuedToFront(item.id);
     setGuidedId(item.id);
-    sendGuidanceToTask(item.id, item.text);
+    void submitMessage('guidance', { input: item.text, queuedEntry: item });
   }
 
   /** 在侧边聊天中打开：新建对话窗口并把这条消息发过去（Agent 忙碌时禁止新建对话） */
@@ -58,7 +56,7 @@ export function QueuedMessagesBar(props: {
       chatActions.enqueueMessage(item); // 新建失败放回队列，消息不丢
       return;
     }
-    void sendUserMessage(item.parts.length ? item.parts : item.text);
+    void submitMessage('queued', { input: item.parts?.length ? item.parts : item.text, queuedEntry: item });
   }
 
   function closeQueue() {
@@ -69,7 +67,8 @@ export function QueuedMessagesBar(props: {
 
   return (
     <Show when={chatState.queuedMessages.length > 0}>
-      <div class="queued-bar">
+      {/* 排队区增删/引导态变更对读屏器可闻；Agent 忙碌时标 aria-busy */}
+      <div class="queued-bar" aria-live="polite" aria-busy={chatState.isStreaming}>
         <div class="queued-bar-header">
           <span class="queued-bar-title">{t('rp.queue.title')}</span>
           <button

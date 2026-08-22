@@ -161,14 +161,9 @@ def test_collect_card_neutral_no_summary_injection():
     assert "全局设置" not in msg
 
 
-def test_duration_candidates_dedup_by_value():
-    """B5：「约 2 分钟」与「约 120 秒」同档去重，表述归一。"""
-    from src.video_agent.skill_runtime import executors as ex_mod
-
-    out = ex_mod._dedupe_duration_candidates(["约 2 分钟", "约 120 秒", "约 90 秒"])
-    assert out == ["约 2 分钟", "约 1.5 分钟"]
-    out = ex_mod._dedupe_duration_candidates(["约 45 秒", "约 45 秒"])
-    assert out == ["约 45 秒"]
+# test_duration_candidates_dedup_by_value（executors._dedupe_duration_candidates）
+# 已随任务#36 B5 执行器一步退役删除：时长候选去重是执行器规格收集
+# 内部逻辑，规格收集改由模型按 skill_discipline 用 workflow_pause 分组向导完成。
 
 
 def test_output_language_dim_description(monkeypatch):

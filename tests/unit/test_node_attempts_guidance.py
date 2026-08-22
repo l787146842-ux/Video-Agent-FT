@@ -5,14 +5,14 @@
 - 派生只产出引导数据（flowEvents 模型可见 + run.retry_guidance 结构化），
   不推进 run 进度（current_node/completed_nodes/run_version 零变更）；
 - 同签名幂等不重复入账；计数变化重入账；成功后清账不再派生；
-- 接线：FC 轨执行器真实执行失败入账（闸拒收不入账），成功清账。
+- 接线：失败入账/成功清账的数据操作由 workflow_runtime 提供（消费链
+  既有单测钉死）；FC 轨执行器真实执行入账/清账接线已随任务#36 B5
+  执行器一步退役删除（node_attempts 失败记账随执行器退役）。
 
 ADR-0004 合规：本链路上 runtime 从不发起执行器调用——
 记账（bump/clear）与派生（derive_retry_guidance）皆为数据操作，
 重试/换渠道动作由模型发起工具调用（planner_triage 交接模型循环）。
 """
-import json
-
 import pytest
 
 from src.video_agent.core import pipeline_orchestrator as po
@@ -171,70 +171,7 @@ class TestRetryGuidanceDerivation:
 
 
 # ---------- FC 轨接线：真实执行失败入账 / 成功清账 ----------
-
-class TestFcRunnerWiring:
-    @pytest.mark.asyncio
-    async def test_executor_failure_books_attempt(self, svc):
-        """执行器真实执行失败 → node_attempts 入账 1 次"""
-        from src.video_agent.adapters.base_chat import ChatResponse
-        from src.video_agent.core.fc_tool_runner import FCToolRunner
-        from src.video_agent.tools.base import ToolResult
-
-        _quiet_gates(svc)
-        _seed_run(svc, {})
-
-        class StubManager:
-            async def invoke_tool(self, name, args):
-                return ToolResult(success=False, error="供应商 429 限流")
-
-        StateManager.reset_instance()
-        StateManager._instance = svc
-        try:
-            runner = FCToolRunner(StubManager())
-            resp = ChatResponse(
-                content="", finish_reason="tool_calls",
-                tool_calls=[{"id": "c1", "function": {
-                    "name": "storyboard_shots",
-                    "arguments": json.dumps({"skill_name": _SKILL})}}])
-            await runner.execute(resp, injected_skill=_SKILL)
-        finally:
-            StateManager.reset_instance()
-
-        attempts = (svc.state_dict.get("workflow_run") or {}).get("node_attempts") or {}
-        entry = attempts.get("storyboard_shots") or {}
-        assert entry.get("count") == 1
-        assert "429" in str(entry.get("last_error") or "")
-
-    @pytest.mark.asyncio
-    async def test_executor_success_clears_attempt_and_guidance(self, svc):
-        """执行器成功 → 清账 + 清引导标记与模型可见 flowEvents"""
-        from src.video_agent.adapters.base_chat import ChatResponse
-        from src.video_agent.core.fc_tool_runner import FCToolRunner
-        from src.video_agent.tools.base import ToolResult
-
-        _quiet_gates(svc)
-        _seed_run(svc, {"storyboard_shots": {"count": 2, "last_error": "e"}})
-        svc.state_dict["workflow_run"]["retry_guidance"] = {"signature": "storyboard_shots:2"}
-        svc.record_flow_event("retry_guidance", "旧引导")
-
-        class StubManager:
-            async def invoke_tool(self, name, args):
-                return ToolResult(success=True, data={"applied": 1})
-
-        StateManager.reset_instance()
-        StateManager._instance = svc
-        try:
-            runner = FCToolRunner(StubManager())
-            resp = ChatResponse(
-                content="", finish_reason="tool_calls",
-                tool_calls=[{"id": "c1", "function": {
-                    "name": "storyboard_shots",
-                    "arguments": json.dumps({"skill_name": _SKILL})}}])
-            await runner.execute(resp, injected_skill=_SKILL)
-        finally:
-            StateManager.reset_instance()
-
-        run = svc.state_dict.get("workflow_run") or {}
-        assert "storyboard_shots" not in (run.get("node_attempts") or {})
-        assert "retry_guidance" not in run
-        assert _guidance_events(svc) == []
+# TestFcRunnerWiring（test_executor_failure_books_attempt /
+# test_executor_success_clears_attempt_and_guidance）已随任务#36 B5
+# 执行器一步退役删除：fc_tool_runner 的 node_attempts 失败/成功记账
+# 随执行器退役移除；记账原语（bump/clear）与引导派生由上方既有单测钉死。

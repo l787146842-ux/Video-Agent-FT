@@ -28,8 +28,13 @@ SSE_DOC_WRITTEN = "doc_written"
 SSE_MODEL_FALLBACK = "model_fallback"
 # 本轮结束（携带完整 payload，含状态快照）
 SSE_DONE = "done"
+# 停止终态（端到端中断协议，任务 #17）：用户主动停止的明确终态事件。
+# 携带 phase=thinking/tool_executing/streaming（前端措辞区分）与
+# inflight=在途外部生成任务登记（web 透传层富化）；任何中断都有痕迹、都有出口。
+SSE_STOPPED = "stopped"
 # 错误（携带 detail，可携带 error_code 供前端 i18n；
-# 增 raw = 上游原始报文，前端「技术详情」折叠展示）
+# 增 raw = 上游原始报文，前端「技术详情」折叠展示；
+# 任务 #19：增结构化 code/kind/message（ErrorPayload 契约，见 web/error_payload.py））
 SSE_ERROR = "error"
 # 本轮操作已执行（agent_loop 内部事件，前端目前忽略）
 SSE_ACTIONS_APPLIED = "actions_applied"
@@ -65,6 +70,7 @@ __all__ = [
     "SSE_DOC_WRITTEN",
     "SSE_MODEL_FALLBACK",
     "SSE_DONE",
+    "SSE_STOPPED",
     "SSE_ERROR",
     "SSE_ACTIONS_APPLIED",
     "SSE_STEP_STARTED",

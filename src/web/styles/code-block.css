@@ -1,0 +1,85 @@
+/* ===== 代码块增强：工具条（语言标签 + 复制按钮）+ hljs 高亮配色 ===== */
+
+.chat-markdown .md-codeblock {
+  margin: 8px 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.chat-markdown .md-codeblock pre {
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  max-height: 340px;
+}
+
+.chat-markdown .md-codeblock pre code {
+  display: block;
+  font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  tab-size: 4;
+}
+
+.md-codeblock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 2px var(--space-2);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.md-codeblock-lang {
+  font-size: var(--font-xs);
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  user-select: none;
+}
+
+.md-codeblock-copy {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--dur-fast) ease, background-color var(--dur-fast) ease;
+}
+
+.md-codeblock-copy:hover {
+  color: var(--text-main);
+  background: var(--bg-hover);
+}
+
+/* 复制成功内联反馈（lib/code-copy 切 is-done，1.6s 后还原） */
+.md-codeblock-copy.is-done {
+  color: var(--accent-emerald);
+}
+
+/* ----- hljs 高亮配色（暗色主题：低饱和，贴合工作台深色基调） ----- */
+.md-codeblock .hljs-comment, .md-codeblock .hljs-quote { color: #7d8590; font-style: italic; }
+.md-codeblock .hljs-keyword, .md-codeblock .hljs-selector-tag, .md-codeblock .hljs-literal { color: #ff7b72; }
+.md-codeblock .hljs-string, .md-codeblock .hljs-regexp, .md-codeblock .hljs-addition { color: #a5d6ff; }
+.md-codeblock .hljs-number, .md-codeblock .hljs-symbol, .md-codeblock .hljs-bullet { color: #79c0ff; }
+.md-codeblock .hljs-title, .md-codeblock .hljs-section, .md-codeblock .hljs-name { color: #d2a8ff; }
+.md-codeblock .hljs-built_in, .md-codeblock .hljs-type { color: #ffa657; }
+.md-codeblock .hljs-attr, .md-codeblock .hljs-attribute, .md-codeblock .hljs-variable, .md-codeblock .hljs-template-variable { color: #7ee787; }
+.md-codeblock .hljs-tag, .md-codeblock .hljs-selector-class { color: #7ee787; }
+.md-codeblock .hljs-meta, .md-codeblock .hljs-meta-keyword { color: #9ca3af; }
+.md-codeblock .hljs-emphasis { font-style: italic; }
+.md-codeblock .hljs-strong { font-weight: 600; }
+.md-codeblock .hljs-deletion { color: #ffa198; }
+
+/* ----- 亮色主题适配 ----- */
+html.light .chat-markdown .md-codeblock { background: rgba(0, 0, 0, 0.03); }
+html.light .md-codeblock .hljs-comment { color: #8a919c; }
+html.light .md-codeblock .hljs-keyword, html.light .md-codeblock .hljs-literal { color: #cf222e; }
+html.light .md-codeblock .hljs-string, html.light .md-codeblock .hljs-regexp { color: #0a3069; }
+html.light .md-codeblock .hljs-number { color: #0550ae; }
+html.light .md-codeblock .hljs-title { color: #8250df; }
+html.light .md-codeblock .hljs-built_in, html.light .md-codeblock .hljs-type { color: #953800; }
+html.light .md-codeblock .hljs-attr, html.light .md-codeblock .hljs-variable, html.light .md-codeblock .hljs-tag { color: #116329; }

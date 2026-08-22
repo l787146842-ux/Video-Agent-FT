@@ -3,7 +3,7 @@ import { studioActions } from '@/stores/studio';
 import type { DraftType } from '@/types';
 
 /**
- * 分组描述编辑器（八轮 B7 自 GroupCard.tsx 切出，零行为变更）。
+ * 分组描述编辑器。
  * 双击编辑；编辑框为多行 textarea，高度随内容自适应，与展示区同等占位，
  * 长文不被截断；失焦/点外部即保存退出。
  */

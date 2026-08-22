@@ -5,6 +5,7 @@ import { saveSkillDoc } from '@/api/docs';
 import { refreshSkills } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { t } from '@/lib/locale';
+import { useFocusTrap } from '@/lib/focus-trap';
 import type { Skill } from '@/types';
 
 /** 从 skill 内容中解析 skill_description 字段（简介用） */
@@ -58,6 +59,11 @@ export function SkillDetailModal(props: {
   // manifest 声明块（打开时快照）：默认折叠，只在展开时可见
   const manifestBlock = untrack(() => extractManifest(props.skill.system_prompt || ''));
 
+  // 焦点圈闭：打开圈闭、Esc 关闭、关闭还原焦点
+  // （组件由父级 <Show> 条件渲染，卸载即释放，容器直接取 ref 信号）
+  const [panelEl, setPanelEl] = createSignal<HTMLElement>();
+  useFocusTrap(panelEl, { onEscape: () => props.onClose() });
+
   /** 复制 Skill 全文到剪贴板（优先 Clipboard API，降级 execCommand） */
   async function copyContent() {
     const text = props.skill.system_prompt || '';
@@ -93,7 +99,7 @@ export function SkillDetailModal(props: {
       showToast(t('rp.skillDetail.introEmpty'), 'error');
       return;
     }
-    // 批6 修复：简介块锚定「标题之后的首个引用块」（旧全文首个引用块启发式
+    // 简介块锚定「标题之后的首个引用块」（若按全文首个引用块启发
     // 会误改正文其他引用块）；标题缺失时报错不写；描述只允许落在标题与下一
     // 个章节标题之间的区间内。
     const lines = content.split('\n');
@@ -140,7 +146,13 @@ export function SkillDetailModal(props: {
     <div class="skill-modal-backdrop" onClick={(e) => {
       if (e.target === e.currentTarget) props.onClose();
     }}>
-      <div class="skill-modal">
+      <div
+        class="skill-modal"
+        ref={setPanelEl}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${t('rp.skillDetail.dialogAria')}：${props.skill.name}`}
+      >
         {/* 顶部：标签页 + 关闭按钮 */}
         <div class="skill-modal-header">
           <div class="skill-modal-tabs">
@@ -221,7 +233,7 @@ export function SkillDetailModal(props: {
                 class="skill-modal-content chat-markdown"
                 innerHTML={renderMarkdown(extractPlannerContent(props.skill))}
               />
-              {/* 高级声明折叠区（888 事故）：机器读的配置铭牌，默认隐藏，文件内容不受影响 */}
+              {/* 高级声明折叠区：机器读的配置铭牌，默认隐藏，文件内容不受影响 */}
               <Show when={manifestBlock}>
                 <details class="skill-modal-manifest">
                   <summary>{t('rp.skill.manifestHint')}</summary>

@@ -26,12 +26,12 @@ import { showToast } from '@/stores/toast';
 import {
   performRedo, performUndo, refreshHistoryStatus,
 } from '@/stores/history';
-import { uid, debounce } from '@/lib/utils';
+import { uid } from '@/lib/utils';
 import type { AssetPickerItem } from '@/api/providers';
-import { initCanvasBridge, broadcastStateSync, broadcastThemeChange } from '@/lib/canvas-bridge';
+import { initCanvasBridge, broadcastThemeChange } from '@/lib/canvas-bridge';
 import { useTheme } from '@/hooks/use-theme';
 import {
-  setCanvasIframe, setCanvasError, setCanvasReady, canvasOverlayDragging,
+  setCanvasIframe, setCanvasError, canvasOverlayDragging,
 } from '@/stores/canvas';
 
 /**
@@ -66,13 +66,6 @@ export function LayoutShell(props: ParentProps) {
   // ========== 画布 iframe 持久化（不随路由卸载，保留画布状态） ==========
   let canvasIframeRef: HTMLIFrameElement | undefined;
 
-  function onCanvasMessage(e: MessageEvent) {
-    if ((e.data as { type?: string } | undefined)?.type === 'canvas:ready') {
-      setCanvasError(false);
-      setCanvasReady(true);
-    }
-  }
-
   // 全局快捷键：Ctrl+Z 撤销 / Ctrl+Shift+Z、Ctrl+Y 重做（输入框内不拦截）
   function onGlobalKeyDown(e: KeyboardEvent) {
     if (!(e.ctrlKey || e.metaKey)) return;
@@ -94,7 +87,7 @@ export function LayoutShell(props: ParentProps) {
     onCleanup(() => document.removeEventListener('keydown', onGlobalKeyDown));
     void refreshHistoryStatus();
 
-    // 排队消息持久化键（批 3）：项目 + 对话维度，刷新后按当前上下文恢复
+    // 排队消息持久化键：项目 + 对话维度，刷新后按当前上下文恢复
     registerQueueStorageKey(
       () => `ftdyb.queued.${state.projectId || 'none'}.${convState.activeId || 'main'}`,
     );
@@ -105,12 +98,9 @@ export function LayoutShell(props: ParentProps) {
     // 全局生成事件总线：agent/批量生成驱动卡片转圈 + 生成日志联动
     initGenerationEvents();
 
-    // 画布 iframe 持久化：监听握手消息（用于状态同步，不再作为加载失败判据）
-    window.addEventListener('message', onCanvasMessage);
-    onCleanup(() => {
-      window.removeEventListener('message', onCanvasMessage);
-      setCanvasIframe(undefined);
-    });
+    // 画布 iframe 卸载时清引用（画布当前不发送 postMessage，无需监听握手；
+    // 在线状态经后端 API 探测，见 stores/canvas.probeCanvasOnline）
+    onCleanup(() => setCanvasIframe(undefined));
 
     // 全局生成设置（顶栏入口/参数栏自动填充共用）预热加载
     void ensureGlobalSettings();
@@ -149,8 +139,8 @@ export function LayoutShell(props: ParentProps) {
 
   /** 重载后探测后台 Agent：running 时置忙态轮询，结束后重拉快照同步消息/故事板 */
   async function reattachRunningAgent() {
-    // 任务式传输（D 批）：刷新后按项目重连后台任务事件流（replay 恢复进度），
-    // 不再依赖轮询 /agent/running；任务已完成时 resumeAgentTasks 内部静默返回。
+    // 刷新后按项目重连后台任务事件流（replay 恢复进度），不依赖轮询
+    // /agent/running；任务已完成时 resumeAgentTasks 内部静默返回。
     const pid = state.projectId || '';
     if (!pid) return;
     try {
@@ -179,18 +169,9 @@ export function LayoutShell(props: ParentProps) {
     });
   });
 
-  // 主题变更 → 通知画布
+  // 主题变更 → 通知画布（当前唯一生效的画布 postMessage 通道）
   createEffect(() => {
     broadcastThemeChange(theme());
-  });
-
-  // 故事板分组变更 → 节流广播到画布
-  const broadcastDebounced = debounce(broadcastStateSync, 500);
-  createEffect(() => {
-    void state.keyElements;
-    void state.shots;
-    void state.audioItems;
-    broadcastDebounced();
   });
 
   return (
@@ -246,7 +227,7 @@ export function LayoutShell(props: ParentProps) {
       <ConfirmDialogHost />
       <DocsPanel />
       <GenerationLogPanel />
-      {/* 记忆管理面板（Header 数据库图标入口，4.7） */}
+      {/* 记忆管理面板（Header 数据库图标入口） */}
       <MemoryPanel />
 
       {/* 全局"画布素材库"模态框（左栏 AssetCard 和 ChatInput 工具栏共用） */}

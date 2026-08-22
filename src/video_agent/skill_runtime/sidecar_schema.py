@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
-"""sidecar schema v2 校验器（手写 dataclass 级结构校验，零新依赖，禁 jsonschema）。
+"""sidecar schema v2/v3 校验器（手写 dataclass 级结构校验，零新依赖，禁 jsonschema）。
 
 语义口径：
 - fail-closed：已声明键形状非法 → 报出（注册期门禁告警、workflow 编译门禁拒入）；
 - 未声明键合法：引擎零预设，回落旧行为（与 sidecar「零声明 = 最小闸」同构）。
+
+v3 新增键（0822 任务#34 B1，Skill 通用化「全文注入+模型自主执行」地基）：
+顶层 schema_version / kind / requires_inputs / language / pause_points /
+scripts。全部可选、未声明=零预设；执行器一步退役（用户裁决），
+故不设 execution.mode/strict 执行器名单。v2 键校验语义一律不动。
 
 校验键清单（flow 下）：steps / dependencies / stage_executors / step_stages /
 step_done_conditions / step_short_titles / stages.<规范键>.{done,skip,executors} /
@@ -34,6 +39,23 @@ _PAUSE_KEYS = ("stage_pause",)
 # executor_runtime.md「无专属执行器的章节用 skill_section_run」同源语义）；
 # 未来若增专属通用执行器，先在此登记再允许声明（fail-closed）。
 CUSTOM_SECTION_EXECUTORS = ("skill_section_run",)
+
+# ---------- v3 新增键白名单（任务#34 B1） ----------
+SCHEMA_VERSION = 3
+_KIND_VALUES = ("pipeline", "style", "reference")
+_REQUIRES_INPUT_TYPES = ("script", "music", "video", "image", "doc")
+_LANGUAGE_VALUES = ("zh", "en", "auto")
+_PAUSE_TRIGGER_VALUES = (
+    "spec_finalized", "storyboard_structure_ready",
+    "first_generation_call", "batch_boundary", "free_text",
+)
+
+# 公开别名（任务#35 B2/B3 消费端同源读取：registry 声明 API / guard 暂停点
+# 清洗同读此白名单，消费侧不再各自硬编码；校验语义仍归本模块 _check_*）
+KIND_VALUES = _KIND_VALUES
+REQUIRES_INPUT_TYPES = _REQUIRES_INPUT_TYPES
+LANGUAGE_VALUES = _LANGUAGE_VALUES
+PAUSE_TRIGGER_VALUES = _PAUSE_TRIGGER_VALUES
 
 
 def _step_nos_of(steps: Dict[str, Any]) -> set:
@@ -125,6 +147,115 @@ def _check_custom_sections(raw: Any, issues: List[str]) -> None:
             issues.append(
                 f"custom_sections[{k}] 执行器必须是 "
                 f"{'/'.join(CUSTOM_SECTION_EXECUTORS)} 之一（实际 {v!r}）")
+
+
+def _check_schema_version(data: Dict[str, Any], issues: List[str]) -> None:
+    """顶层 schema_version：整数，当前 3；缺省视为 v2 兼容（零预设）。"""
+    v = data.get("schema_version")
+    if v is None:
+        return
+    if isinstance(v, bool) or not isinstance(v, int):
+        issues.append("schema_version 必须是整数（当前 3；缺省视为 v2 兼容）")
+    elif v not in (2, SCHEMA_VERSION):
+        issues.append(f"schema_version 取值 {v} 不受支持（当前 3，缺省视为 v2 兼容）")
+
+
+def _check_kind(data: Dict[str, Any], issues: List[str]) -> None:
+    """kind：枚举 pipeline|style|reference；非法值整体忽略该键并告警。"""
+    v = data.get("kind")
+    if v is None:
+        return
+    if v not in _KIND_VALUES:
+        issues.append(
+            f"kind 必须是 {'/'.join(_KIND_VALUES)} 之一"
+            f"（非法值整体忽略，实际 {v!r}）")
+
+
+def _check_requires_inputs(raw: Any, issues: List[str]) -> None:
+    """requires_inputs：数组，每项 {type, required, hint}；
+    type 白名单 script|music|video|image|doc，required 缺省 true。"""
+    if raw is None:
+        return
+    if not isinstance(raw, list):
+        issues.append("requires_inputs 必须是数组（每项 {type, required, hint}）")
+        return
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            issues.append(f"requires_inputs[{i}] 必须是对象 {{type, required, hint}}")
+            continue
+        t = item.get("type")
+        if t not in _REQUIRES_INPUT_TYPES:
+            issues.append(
+                f"requires_inputs[{i}].type 必须是 "
+                f"{'/'.join(_REQUIRES_INPUT_TYPES)} 之一（实际 {t!r}）")
+        req = item.get("required")
+        if req is not None and not isinstance(req, bool):
+            issues.append(f"requires_inputs[{i}].required 必须是布尔值（缺省 true）")
+        hint = item.get("hint")
+        if hint is not None and (not isinstance(hint, str) or not hint.strip()):
+            issues.append(f"requires_inputs[{i}].hint 必须是非空字符串")
+
+
+def _check_language(raw: Any, issues: List[str]) -> None:
+    """language：对象 {prompt, output}，取值 zh|en|auto。"""
+    if raw is None:
+        return
+    if not isinstance(raw, dict):
+        issues.append("language 必须是对象 {prompt, output}")
+        return
+    for key in ("prompt", "output"):
+        v = raw.get(key)
+        if v is not None and v not in _LANGUAGE_VALUES:
+            issues.append(
+                f"language.{key} 必须是 {'/'.join(_LANGUAGE_VALUES)} 之一"
+                f"（实际 {v!r}）")
+
+
+def _check_pause_points(raw: Any, issues: List[str]) -> None:
+    """pause_points：数组，每项 {id, trigger, ...}；trigger 白名单制。
+
+    batch_boundary 需附 description、free_text 需附 prose，
+    缺失则该项注册期忽略并告警（fail-closed 口径）。
+    """
+    if raw is None:
+        return
+    if not isinstance(raw, list):
+        issues.append("pause_points 必须是数组（每项 {id, trigger, ...}）")
+        return
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            issues.append(f"pause_points[{i}] 必须是对象 {{id, trigger, ...}}")
+            continue
+        pid = item.get("id")
+        if not isinstance(pid, str) or not pid.strip():
+            issues.append(f"pause_points[{i}].id 必须是非空字符串")
+        trigger = item.get("trigger")
+        if trigger not in _PAUSE_TRIGGER_VALUES:
+            issues.append(
+                f"pause_points[{i}].trigger 必须是 "
+                f"{'/'.join(_PAUSE_TRIGGER_VALUES)} 之一（实际 {trigger!r}）")
+            continue
+        if trigger == "batch_boundary":
+            desc = item.get("description")
+            if not isinstance(desc, str) or not desc.strip():
+                issues.append(
+                    f"pause_points[{i}] trigger=batch_boundary 需附 description"
+                    "（缺失则该项忽略）")
+        elif trigger == "free_text":
+            prose = item.get("prose")
+            if not isinstance(prose, str) or not prose.strip():
+                issues.append(
+                    f"pause_points[{i}] trigger=free_text 需附 prose"
+                    "（缺失则该项忽略）")
+
+
+def _check_scripts(raw: Any, issues: List[str]) -> None:
+    """scripts：字段允许存在，但声明非空即注册期告警「暂不支持」
+    （v3 第一版不消费；空声明 = 未声明，零预设）。"""
+    if raw is None:
+        return
+    if raw:  # 非空对象/数组/字符串等均视为「已声明」
+        issues.append("scripts 暂不支持（v3 第一版不消费该键，声明已忽略）")
 
 
 def _check_stage_overrides(stages: Any, issues: List[str]) -> None:
@@ -236,4 +367,11 @@ def validate_sidecar_data(data: Any) -> List[str]:
             sp = pause.get("stage_pause")
             if sp is not None and not isinstance(sp, bool):
                 issues.append("pause.stage_pause 必须是布尔值")
+    # v3 新增键（任务#34 B1）：全部可选，未声明=零预设，非法 fail-closed
+    _check_schema_version(data, issues)
+    _check_kind(data, issues)
+    _check_requires_inputs(data.get("requires_inputs"), issues)
+    _check_language(data.get("language"), issues)
+    _check_pause_points(data.get("pause_points"), issues)
+    _check_scripts(data.get("scripts"), issues)
     return issues

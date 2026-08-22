@@ -1,4 +1,4 @@
-/* ===== 中间面板（预览 / Prompt 编辑器 / 参数栏）（由 app.css 拆分） ===== */
+/* ===== 中间面板（预览 / Prompt 编辑器 / 参数栏） ===== */
 @layer components {
   /* ---------- 中间面板 ---------- */
   .preview-top { flex: 1; min-height: 150px; background-color: #0b0c10; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; overflow: hidden; padding: 16px; transition: box-shadow 0.2s; }

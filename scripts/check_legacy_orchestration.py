@@ -10,7 +10,11 @@
 - 五轮 S4 兼容壳：planner 委托方法组 / _split_actions、save_state 别名（P2d 结构性测试减负承接）
 - 已迁 prose 防复述：暂停邀请确认（暂停纪律单家）/ 同批发出（暂停时机建议归 Skill）
 - 文本协议残留：planner/system.md 字面量（P2e 单轨收敛，协议唯一 = system_fc.md，ADR-0001）
-- \u4e3b\u4f53\u56de\u5f52\uff08ADR-0004\uff09\uff1aruntime \u673a\u68b0\u76f4\u8dd1/\u5ba1\u6279\u76f4\u8dd1\u9a71\u52a8\u7b26\u53f7\uff08\u6a21\u578b\u6c38\u8fdc\u552f\u4e00\u884c\u52a8\u4e3b\u4f53\uff09
+- 主体回归（ADR-0004）：runtime 机械直跑/审批直跑驱动符号（模型永远唯一行动主体）
+- 任务#36 B5 执行器一步退役：executors/exec_* 执行器族模块导入
+- 任务#27 文本轨残留退役：web.action_parser 文本块解析通道 /
+  parse_actions_from_reply / StudioActionExecutor 旧名（已按实际职责更名
+  StateOperationExecutor）/ pipeline_orchestrator 拓扑就绪集调度函数
 spec_pause_card/spec_collect_card\uff08\u89c4\u683c\u5411\u5bfc\uff0c\u4e0d\u53d8\u57fa\u7ebf\uff09\u4e0d\u5728\u6e05\u5355\u5185\u3002
 \u8f93\u51fa\u7eaf ASCII\uff08\u9a8c\u6536\u4e71\u7801\u8bef\u8bfb\u6559\u8bad\uff09\u3002\u7528\u6cd5\uff1apython scripts/check_legacy_orchestration.py
 """
@@ -41,6 +45,22 @@ FORBIDDEN = re.compile(
     # P2e 单轨收敛（ADR-0001）：文本协议 system.md 已退役删除，
     # 字面量防复活（协议唯一 = planner/system_fc.md；不命中 system_fc.md）
     r"|planner/system\.md"
+    # 任务#36 B5 执行器一步退役：执行器族符号防复活（用 import/模块路径
+    # 形式扫描，不命中退役留痕注释；管线阶段改由通用主路径直走平台工具）
+    r"|skill_runtime\.executors|skill_runtime\.exec_common|skill_runtime\.exec_spec"
+    r"|skill_runtime\.exec_split|skill_runtime\.exec_tools|skill_runtime\.exec_media_gen"
+    r"|skill_runtime\.exec_media_writer|skill_runtime\.registration|skill_runtime\.capability"
+    r"|skill_runtime\.blackbox|skill_runtime import executors"
+    r"|import exec_common|import exec_spec|import exec_split|import exec_tools"
+    r"|import exec_media_gen|import exec_media_writer"
+    # 任务#27 文本轨残留退役：文本块动作解析通道防复活（动作通道唯一 = FC，
+    # ADR-0001；action_parser 用导入路径形式扫描，不命中退役留痕注释）；
+    # StudioActionExecutor 旧名防复活（已更名 StateOperationExecutor）；
+    # pipeline_orchestrator 拓扑就绪集调度函数防复活（存活消费语义已迁
+    # _spec_stage_pending 探针，ADR-0004 后 runtime 永不执行阶段）
+    r"|StudioActionExecutor|def parse_actions_from_reply|parse_actions_from_reply\("
+    r"|web\.action_parser|import action_parser"
+    r"|\bnext_batch\b"
 )
 
 

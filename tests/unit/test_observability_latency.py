@@ -1,49 +1,13 @@
-"""批 1/2 钉死回归：可观测性统一 + 时延治理。
+"""批 1/2 钉死回归：可观测性统一。
 
-- 降级切换/机械写文档落转录（完成态可见）；
-- 执行器长等待心跳（>20s 后每 15s 下发进度，状态栏不静默）；
-- executor 角色 thinking=low 接通执行器内部 LLM 调用（防思考吃光预算）。
+- 降级切换/机械写文档落转录（完成态可见）。
+（执行器长等待心跳与 executor thinking=low 接线用例已随任务#36 B5
+执行器一步退役删除：exec_common 不复存在。）
 """
-import asyncio
-import inspect
 
-import pytest
-
-from src.video_agent.skill_runtime import exec_common, progress
-
-
-def test_executor_thinking_low_wired():
-    """model_policy executor 角色默认 low，且执行器取稿唯一出口携带 thinking_level"""
-    assert exec_common._executor_thinking() == "low"
-    src = inspect.getsource(exec_common.executor_stream_text)
-    assert "thinking_level" in src
-
-
-@pytest.mark.asyncio
-async def test_heartbeat_emits_on_long_wait(monkeypatch):
-    """长等待心跳：超过 AFTER 仍无结果即下发进度文案（黑箱等待不复现）"""
-    monkeypatch.setattr(exec_common, "_HEARTBEAT_AFTER", 0.05)
-    monkeypatch.setattr(exec_common, "_HEARTBEAT_EVERY", 0.05)
-    seen = []
-
-    async def collector(event):
-        seen.append(event)
-
-    async def slow_stream(provider, model, messages, **kw):
-        await asyncio.sleep(0.2)
-        return "ok", "stop"
-
-    monkeypatch.setattr(
-        exec_common._gen, "call_chat_completion_stream", slow_stream)
-    token = progress.bind_progress_emitter(collector)
-    try:
-        out = await exec_common.executor_stream_text(
-            "p", "m", [], max_tokens=16, timeout=5)
-    finally:
-        progress.unbind_progress_emitter(token)
-    assert out == ("ok", "stop")
-    texts = [str(e.get("text") or "") for e in seen]
-    assert any("模型仍在生成" in t for t in texts), texts
+# test_executor_thinking_low_wired / test_heartbeat_emits_on_long_wait 已随
+# 任务#36 B5 执行器一步退役删除（被测对象 exec_common.executor_stream_text
+# 与 _executor_thinking 不复存在；心跳/thinking 档位是执行器内部机制）。
 
 
 def test_fallback_retired_and_spec_write_record_trace_action():

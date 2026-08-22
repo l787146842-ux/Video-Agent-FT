@@ -31,6 +31,7 @@
  *   DraftCreate/DraftPatch/GroupPatch（草稿操作走整板保存通道）、ProjectStateResponse（空 schema）。
  */
 import type { ChatRequest } from './api.generated';
+import type { ErrorKind } from '@/lib/error-payload';
 
 // ===== 基础枚举 =====
 export type DraftType = 'keyElement' | 'shot' | 'audio';
@@ -138,7 +139,7 @@ export interface Skill {
   name: string;
   system_prompt?: string;
   description?: string;
-  /** 审核整改批 2：规划级执行器名单（后端 capability 注册表下发，欠账显性化） */
+  /** 规划级执行器名单（后端 capability 注册表下发） */
   planning_executors?: string[];
   [key: string]: unknown;
 }
@@ -201,6 +202,8 @@ export interface ChatMessage {
   trace?: AgentTrace;
   /** ：鉴权/供应商类错误气泡附「检查 API 配置」跳转按钮 */
   settingsHint?: boolean;
+  /** 错误结构化归类（ErrorPayload.kind；渲染层按映射表扩展 affordance） */
+  errorKind?: ErrorKind;
   /** ：错误气泡的技术详情（上游原始报文），「技术详情」折叠渲染，默认不展开 */
   errorDetail?: string;
   /** ：轮次唯一标识（同轮正文/文档卡/图片卡共用，渲染层聚合为轮次容器） */
@@ -213,14 +216,14 @@ export interface ChatMessage {
   /** 用户回应暂停的结构化标记（与对应暂停卡的 pauseId 匹配；对勾不再靠文本反推） */
   pauseAnsweredId?: string;
   pauseAnsweredValue?: string;
-  /** 消息形态标记（批6 收窄：system_action=系统动作行；其余为暂停卡语义种类，
+  /** 消息形态标记（system_action=系统动作行；其余为暂停卡语义种类，
    *  源自后端 pause_kind） */
   kind?: 'system_action' | 'remind' | 'collect' | 'stage_done' | 'confirm';
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
-export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** B2/F15：大阶段标签（后端权威下发） */ stage?: string; /** 批2 透明度：工具执行结果一句话摘要（与 SSE tool_finished 同口径） */ result_summary?: string; /** 审核整改批 2：规划级执行器标记（capability 注册表下发） */ planning?: boolean; }
-/** 闸机判定明细（后端 tracer.record_gate 产出，：前端按结构渲染来源标注 chips） */
+export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** 大阶段标签（后端权威下发） */ stage?: string; /** 工具执行结果一句话摘要（与 SSE tool_finished 同口径） */ result_summary?: string; /** 规划级执行器标记（capability 注册表下发） */ planning?: boolean; }
+/** 闸机判定明细（后端 tracer.record_gate 产出，前端按结构渲染来源标注 chips） */
 export interface GateRecord {
   rule_id: string;
   layer: 'platform' | 'skill' | 'session' | string;
@@ -306,7 +309,7 @@ export interface SseToolFinishedEvent {
   ok: boolean;
   elapsed_ms: number;
   result_summary?: string;
-  /** 审核整改批 2：规划级执行器标记（后端 capability 注册表下发） */
+  /** 规划级执行器标记（后端 capability 注册表下发） */
   planning?: boolean;
 }
 export interface SseDonePayload {
@@ -339,13 +342,35 @@ export interface SseDonePayload {
   /** ：建议动作按钮（retry=机械重发上一条用户消息；continue=发送固定文本；
    * next=状态驱动下一步建议） */
   suggested_actions?: Array<{ kind: 'retry' | 'continue' | 'next'; label: string; value: string }>;
+  /** 协作式停止标记（停止时 done payload 携带；stopped 事件已先行下发） */
+  stopped?: boolean;
+  /** 停止阶段（thinking/tool_executing/streaming，气泡措辞依据） */
+  stop_phase?: string;
   state?: ServerStateSnapshot | null;
 }
 export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }
+/** 停止终态事件（后端 agent_loop 协作式取消检查点命中时下发；
+ *  在途外部生成任务登记由 web 透传层富化，第一版不做真实撤销） */
+export interface SseStoppedInflightItem {
+  task_id?: string;
+  media_type?: string;
+  model?: string;
+  draft_id?: string;
+  summary?: string;
+}
+export interface SseStoppedEvent {
+  type: 'stopped';
+  /** 停止阶段：thinking=思考 / tool_executing=工具执行 / streaming=输出 */
+  phase?: 'thinking' | 'tool_executing' | 'streaming';
+  step?: number;
+  /** 在途外部生成任务（出图/出视频）登记：仍在供应商侧继续，本次停止不撤销 */
+  inflight?: SseStoppedInflightItem[];
+}
 /** 操作已执行（携带最新状态快照）：推理中逐步刷新故事板，不必等全部完成 */
 export interface SseActionsAppliedEvent { type: 'actions_applied'; payload?: { count?: number; state?: ServerStateSnapshot | null }; }
-/** 后端 error 事件用 detail 字段，可携带 error_code 供前端 i18n 翻译 */
-export interface SseErrorEvent { type: 'error'; detail?: string; text?: string; error_code?: string; /** audit-0819：上游原始报文（前端折叠展示） */ raw?: string; }
+/** 后端 error 事件用 detail 字段，可携带 error_code 供前端 i18n 翻译；
+ * 增结构化 code/kind（ErrorPayload 契约，镜像后端 web/error_payload.py） */
+export interface SseErrorEvent { type: 'error'; detail?: string; text?: string; error_code?: string; /** 上游原始报文（前端折叠展示） */ raw?: string; code?: string; kind?: string; }
 /** 模型降级即时联动：切换时刻即下发，前端立即把选择器跳到实际生效的组合 */
 export interface SseModelFallbackEvent { type: 'model_fallback'; provider?: string; model?: string; }
 /** 引导消息轮间注入成功：渲染用户气泡并从排队区移除对应条目 */
@@ -365,16 +390,18 @@ export interface AgentTaskReplayPayload {
   tools?: Array<{
     id?: string; name?: string; summary?: string; status?: string;
     elapsed_ms?: number | null; result_summary?: string; started_at_ms?: number;
-    /** 审核整改批 2：规划级执行器标记 */
+    /** 规划级执行器标记 */
     planning?: boolean;
   }>;
   snapshot?: ServerStateSnapshot | null;
   done_payload?: SseDonePayload | null;
+  /** 停止终态事件负载（status=stopped 时携带，刷新后恢复停止痕迹） */
+  stopped_payload?: SseStoppedEvent | null;
   /** Rule2 v6：断连期间已写文档累积账本（replay 补渲染文档卡） */
   docs?: string[];
-  /** v2 收尾：workflow 事件序列高水位（重连按 sequence 补发/去重依据） */
+  /** workflow 事件序列高水位（重连按 sequence 补发/去重依据） */
   wf_event_sequence?: number;
-  /** v2 批3：workflow 投影（run 快照 + 本轮事件序列，重载/重连同源重建） */
+  /** workflow 投影（run 快照 + 本轮事件序列，重载/重连同源重建） */
   workflow?: {
     run_id?: string;
     status?: string;
@@ -386,10 +413,12 @@ export interface AgentTaskReplayPayload {
   } | null;
   fallback?: { provider?: string; model?: string } | null;
   error?: string | null;
+  /** 错误结构化归类（replay 同源下发；旧记录无此字段时为 null） */
+  error_payload?: { code?: string; kind?: string; raw?: string } | null;
 }
 export interface SseReplayEvent { type: 'replay'; payload?: AgentTaskReplayPayload; }
 /** 任务状态变更通知（后端 agent_task_manager 下发，如 cancelled）；
- * 批2 契约对齐：此前仅后端 break 条件引用、前端联合类型缺失 */
+ * 前后端契约对齐：前端联合类型须覆盖后端 break 条件引用的事件 */
 export interface SseTaskStatusEvent { type: 'task_status'; status?: string; }
 export type SseEvent =
   | SseStatusEvent
@@ -399,6 +428,7 @@ export type SseEvent =
   | SseToolFinishedEvent
   | SseActionsAppliedEvent
   | SseDoneEvent
+  | SseStoppedEvent
   | SseErrorEvent
   | SseModelFallbackEvent
   | SseGuidanceInjectedEvent

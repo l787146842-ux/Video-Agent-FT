@@ -3,7 +3,7 @@
  *
  * 确定性验证，无需真实 LLM：
  * (a) tool_started/tool_finished/reasoning_delta 帧 → 时间线两面板呈现与耗时角标；
- * (b) 停止按钮 → 已累积文本落「已停止」气泡；
+ * (b) 停止按钮 → 已累积文本落停止气泡（任务 #17 阶段化措辞）；
  * (c) 重新生成按钮 → 机械重发该回复前最近的用户消息；
  * (d) 排队引导 → 条目原位 spinner，轮间注入成功后引导上屏。
  *
@@ -184,7 +184,7 @@ test.describe('时间线两面板（结构化 SSE 帧）', () => {
 });
 
 test.describe('停止按钮', () => {
-  test('点击停止：已累积文本落「已停止」气泡', async ({ page }) => {
+  test('点击停止：已累积文本落「已在输出阶段停止」气泡', async ({ page }) => {
     const capturedStops: string[] = [];
     await page.route(/\/api\/agent\/tasks\/[^/]+\/stop/, (route) => {
       capturedStops.push(route.request().url());
@@ -211,8 +211,8 @@ test.describe('停止按钮', () => {
     await expect(stopBtn).toBeVisible({ timeout: 10000 });
     await stopBtn.click();
 
-    // 已累积文本落为「已停止」气泡（meta 或轮次组头展示）；停止指令确实下发
-    await expect(feed).toContainText('已停止', { timeout: 10000 });
+    // 已累积文本落为停止气泡（任务 #17 阶段化措辞：有累积文本 → 输出阶段）；停止指令确实下发
+    await expect(feed).toContainText('已在输出阶段停止', { timeout: 10000 });
     await expect.poll(() => capturedStops.length, { timeout: 10000 }).toBeGreaterThanOrEqual(1);
     await handle.close();
   });
@@ -250,6 +250,48 @@ test.describe('停止按钮', () => {
       .toBeGreaterThanOrEqual(postsBefore + 1);
     const resent = capturedBodies[capturedBodies.length - 1];
     expect(resent.message).toBe('写一段很长的开场白');
+    await handle.close();
+  });
+
+  test('任务 #17 思考阶段停止：无文本停止也落停止气泡 + 继续建议 + 在途提醒', async ({ page }) => {
+    // stop 响应携带在途外部生成任务登记（第一版不撤销，仅文案告知）
+    const capturedStops17: string[] = [];
+    await page.route(/\/api\/agent\/tasks\/[^/]+\/stop/, (route) => {
+      capturedStops17.push(route.request().url());
+      void route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true, cancelled: 1,
+          inflight: [{ task_id: 'g1', media_type: 'image', summary: '生成海报' }],
+        }),
+      });
+    });
+    // 只有 status 帧、无 delta：流保持打开、忙碑态持续，尚无任何可见正文（思考阶段）
+    const handle = await startSseServer({
+      frames: ['{"type":"status","text":"正在思考…"}'],
+    });
+    const capturedBodies: Array<Record<string, unknown>> = [];
+    await wireAgentRoutes(page, handle, capturedBodies);
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await sendMessage(page, '帮我搭建故事板');
+
+    // 忙碑态建立（停止键出现），此时仍无正文
+    const stopBtn = page.locator('.send-btn-stop');
+    await expect(stopBtn).toBeVisible({ timeout: 10000 });
+    await stopBtn.click();
+
+    const feed = page.getByTestId('chat-feed');
+    // 停止指令确实下发（调试钉死：定位气泡缺失是请求未发还是渲染丢失）
+    await expect.poll(() => capturedStops17.length, { timeout: 10000 }).toBeGreaterThanOrEqual(1);
+    // 不变式：无文本停止不得静默——落思考阶段措辞的轻量停止气泡
+    await expect(feed).toContainText('已在思考阶段停止', { timeout: 10000 });
+    // 在途外部生成任务登记提醒（供应商侧仍在继续）
+    await expect(feed).toContainText('在供应商侧继续', { timeout: 10000 });
+    // 出口：挂「继续刚才的任务」建议
+    const continueBtn = feed.locator('.suggested-action-btn', { hasText: '继续刚才的任务' });
+    await expect(continueBtn).toBeVisible({ timeout: 10000 });
     await handle.close();
   });
 });
@@ -341,9 +383,9 @@ test.describe('滚底保持（P4 滚底回归修复）', () => {
     // 流式增长中近底跟随生效
     await expect.poll(() => feed.evaluate(distFromBottom), { timeout: 10000 }).toBeLessThan(80);
 
-    // 停止：已累积文本落「已停止」气泡后容器仍贴底
+    // 停止：已累积文本落停止气泡（任务 #17 阶段化措辞）后容器仍贴底
     await page.locator('.send-btn-stop').click();
-    await expect(feed).toContainText('已停止', { timeout: 10000 });
+    await expect(feed).toContainText('已在输出阶段停止', { timeout: 10000 });
     await expect.poll(() => feed.evaluate(distFromBottom), { timeout: 10000 }).toBeLessThan(80);
     await handle.close();
   });

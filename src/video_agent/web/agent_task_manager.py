@@ -9,22 +9,51 @@
 import asyncio
 import json
 import time
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from loguru import logger
 
 from src.video_agent.utils import gen_id
-from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import DATA_DIR
+from src.video_agent.web.error_payload import classify_exception
+from src.video_agent.web.task_store import TaskStore
 
 _TASK_MAX = 50
 
+# 任务 #24：任务表持久化单源收敛 —— data/agent_tasks.json 停写，
+# 落盘迁入 workspace/state.sqlite3 kv 表（事务性，见 task_store）；
+# 旧文件仅作首启一次性导入兜底，导入后保留只读一个版本周期
+_STORE_KEY = "agent_tasks"
+
 
 class AgentTaskManager:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        store: Optional[TaskStore] = None,
+        legacy_file: Optional[Path] = None,
+    ) -> None:
         self._tasks: Dict[str, Dict[str, Any]] = {}
-        self._persist_path = DATA_DIR / "agent_tasks.json"
+        # store/legacy_file 可注入（测试隔离）；生产默认全局库 + data/ 旧文件
+        self._store = store or TaskStore()
+        self._legacy_file = Path(legacy_file) if legacy_file else DATA_DIR / "agent_tasks.json"
+        self._import_legacy_file()
         self._load_persisted()
+
+    def _import_legacy_file(self) -> None:
+        """一次性导入兜底：sqlite 无数据而旧 JSON 存在时读入 kv 表（幂等）。
+
+        导入后旧文件不再被读写（停写保留只读），防止重启反复导入无谓告警。
+        """
+        try:
+            if self._store.exists(_STORE_KEY) or not self._legacy_file.exists():
+                return
+            data = json.loads(self._legacy_file.read_text(encoding="utf-8"))
+            payload = data if isinstance(data, dict) else {"tasks": data}
+            self._store.save(_STORE_KEY, payload)
+            logger.info(f"[AgentTask] 已从旧任务表导入 SQLite: {self._legacy_file}")
+        except Exception as e:
+            logger.warning(f"[AgentTask] 旧任务表导入失败: {e}")
 
     # ====== 创建 / 生命周期 ======
 
@@ -50,6 +79,8 @@ class AgentTaskManager:
             "tools": [],
             "snapshot": None,
             "done_payload": None,
+            # 停止终态事件（任务 #17）：stopped 事件完整负载，replay 携带供刷新后恢复痕迹
+            "stopped_payload": None,
             # 降级即时联动（D-A）：最近一次 fallback 切换实际生效的厂商/模型，
             # 随 replay 下发，刷新重连后前端仍能把选择器跳到正确组合
             "fallback": None,
@@ -130,13 +161,19 @@ class AgentTaskManager:
         if not record:
             return
         if task.cancelled():
-            record["status"] = "cancelled"
+            # 任务 #17：worker 已在 CancelledError 落地时发过 stopped 终态事件
+            # （协作式停止）时，保留 stopped 状态，不覆盖为 cancelled
+            if record["status"] != "stopped":
+                record["status"] = "cancelled"
             # 取消路径原先完全静默，必须留痕
             logger.warning(f"[AgentTask] {task_id} 后台任务被取消")
         elif task.exception():
             exc = task.exception()
             record["status"] = "error"
             record["error"] = str(exc)
+            # 任务 #19：结构化归类随 replay 下发（刷新恢复后前端映射表仍能命中）
+            _p = classify_exception(exc)  # type: ignore[arg-type]
+            record["error_payload"] = {"code": _p.code, "kind": _p.kind, "raw": _p.raw}
             logger.error(f"[AgentTask] {task_id} 后台异常: {exc}")
         else:
             # asyncio 任务结束即权威终态——worker 未自发 done 事件时
@@ -176,10 +213,13 @@ class AgentTaskManager:
                 "tools": record["tools"],
                 "snapshot": record["snapshot"],
                 "done_payload": record["done_payload"],
+                "stopped_payload": record.get("stopped_payload"),
                 "docs": list(record.get("docs") or []),
                 "wf_event_sequence": int(record.get("wf_event_sequence") or 0),
                 "fallback": record.get("fallback"),
                 "error": record["error"],
+                # 任务 #19：结构化错误归类（code/kind/raw；旧记录无此键时为 None）
+                "error_payload": record.get("error_payload"),
             },
         })
         return q
@@ -257,9 +297,21 @@ class AgentTaskManager:
             _dn = str(event.get("name") or "")
             if _dn and _dn not in record.setdefault("docs", []):
                 record["docs"].append(_dn)
+        elif etype == "stopped":
+            # 停止终态（任务 #17）：落终态标记与完整负载，供 replay 恢复痕迹
+            record["status"] = "stopped"
+            record["stopped_payload"] = event
+            record["status_text"] = "已被用户停止"
         elif etype == "error":
             record["status"] = "error"
             record["error"] = str(event.get("detail") or event.get("text") or "")
+            # 任务 #19：error 事件携带结构化归类时入账，replay 同源下发
+            if event.get("code") or event.get("kind"):
+                record["error_payload"] = {
+                    "code": str(event.get("code") or ""),
+                    "kind": str(event.get("kind") or ""),
+                    "raw": str(event.get("raw") or ""),
+                }
 
     # ====== 查询 ======
 
@@ -311,7 +363,6 @@ class AgentTaskManager:
 
     def _persist(self) -> None:
         try:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
             payload = {
                 "tasks": [
                     {
@@ -323,17 +374,17 @@ class AgentTaskManager:
                     for r in self._tasks.values()
                 ]
             }
-            atomic_write_text(self._persist_path, json.dumps(payload, ensure_ascii=False))
+            self._store.save(_STORE_KEY, payload)
         except Exception as e:
             logger.warning(f"[AgentTask] 任务表落盘失败: {e}")
 
     def _load_persisted(self) -> None:
         try:
-            if not self._persist_path.exists():
-                return
-            data = json.loads(self._persist_path.read_text(encoding="utf-8"))
+            data = self._store.load(_STORE_KEY)
         except Exception as e:
             logger.warning(f"[AgentTask] 恢复任务表失败: {e}")
+            return
+        if not data:
             return
         for t in (data.get("tasks") or []):
             if not isinstance(t, dict) or not t.get("task_id"):

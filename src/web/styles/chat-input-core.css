@@ -1,0 +1,88 @@
+/* ===== 输入区核心：容器/工具栏/发送/排队/上下文用量/附件 ===== */
+@layer components {
+  /* 聊天输入区：shell 固定高度（拖拽把手控制）+ flex 填充链，
+     拉高分界线时编辑器同步伸展，不再只多出死空间 */
+  .chat-input-shell { flex-shrink: 0; display: flex; flex-direction: column; }
+  .chat-input-shell .chat-input-area { flex: 1; min-height: 0; }
+  .chat-input-area { padding: 0 12px 12px; background-color: var(--bg-secondary); display: flex; flex-direction: column; flex-shrink: 0; }
+  .chat-input-area .chat-input-box { flex: 1; min-height: 0; }
+  .chat-input-box { display: flex; flex-direction: column; gap: 0; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 12px; position: relative; transition: border-color 0.2s; }
+  .chat-input-box:focus-within { border-color: var(--accent-blue); }
+  .chat-input-box.drag-over { border-color: var(--accent-blue); background-color: rgba(59, 130, 246, 0.05); }
+  .chat-input-box textarea { width: 100%; flex: 1; background: none; border: none; color: var(--text-main); font-size: 13px; outline: none; resize: none; min-height: 44px; line-height: 1.5; padding-bottom: 8px; }
+  .chat-input-toolbar { display: flex; align-items: center; justify-content: space-between; padding-top: 8px; }
+  .toolbar-left { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .toolbar-right { display: flex; align-items: center; gap: 6px; }
+  .toolbar-pill-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: 12px; color: var(--text-muted); background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .toolbar-pill-btn:hover { color: var(--text-main); border-color: var(--accent-blue); background-color: rgba(59, 130, 246, 0.08); }
+  .toolbar-pill-btn.active { color: #93c5fd; border-color: var(--accent-blue); background-color: rgba(59, 130, 246, 0.12); }
+
+  /* 发送按钮*/
+  .send-btn { width: 32px; height: 32px; border-radius: 50%; background-color: var(--bg-hover); border: 1px solid var(--border-color); color: var(--text-main); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
+  .send-btn:hover { background-color: var(--accent-blue); border-color: var(--accent-blue); color: #ffffff; }
+  .send-btn-busy { background-color: rgba(239, 68, 68, 0.8); border-color: #ef4444; color: #ffffff; }
+  .send-btn-busy:hover { background-color: #ef4444; }
+  /* 推理中的独立停止键（发送键保持可用，消息进排队） */
+  .send-btn-stop { background-color: rgba(239, 68, 68, 0.8); border-color: #ef4444; color: #ffffff; }
+  .send-btn-stop:hover { background-color: #ef4444; }
+
+  /* 排队引导区（推理中继续发送的消息，Agent 完成后自动发出） */
+  .queued-bar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; padding: 7px 9px; border: 1px dashed rgba(59, 130, 246, 0.45); border-radius: 8px; background: rgba(59, 130, 246, 0.05); }
+  .queued-bar-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .queued-bar-title { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queued-bar-clear { flex-shrink: 0; background: none; border: none; font-size: 11px; color: var(--text-dim); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+  .queued-bar-clear:hover { color: #ef4444; background: rgba(239, 68, 68, 0.08); }
+  .queued-chip { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; background: var(--bg-tertiary); border: 1px solid var(--border-color); }
+  .queued-chip-text { flex: 1; min-width: 0; font-size: 12px; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queued-chip-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .queued-action { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: 11px; color: var(--text-muted); background: none; border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .queued-action:hover { color: var(--text-main); border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.08); }
+  .queued-action-guide:hover { color: #ffffff; background-color: var(--accent-blue); border-color: var(--accent-blue); }
+  .queued-more-wrap { position: relative; display: inline-flex; }
+  .queued-more-btn { padding: 3px 5px; }
+  .queued-more-menu { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: var(--z-queued-menu); display: flex; flex-direction: column; min-width: 150px; padding: 4px; background: #1f2430; border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); }
+  html.light .queued-more-menu { background: #ffffff; }
+  .queued-more-menu button { display: flex; align-items: center; gap: 7px; padding: 6px 9px; background: none; border: none; border-radius: 5px; font-size: 12px; color: var(--text-main); text-align: left; cursor: pointer; }
+  .queued-more-menu button:hover { background: rgba(59, 130, 246, 0.1); }
+
+  /* 上下文用量状态图标（发送按钮旁）：悬停显示已用多少K上下文 */
+  .context-usage-wrap { position: relative; display: flex; align-items: center; }
+  .context-usage-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; font-size: 11px; color: var(--text-muted); background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .context-usage-btn:hover { color: var(--text-main); border-color: var(--accent-blue); background-color: rgba(59, 130, 246, 0.08); }
+  .context-usage-value { font-variant-numeric: tabular-nums; }
+  .context-usage-tip { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 80; padding: 6px 12px; background: #1f2430; border: 1px solid var(--border-color); color: var(--text-main); font-size: 12px; white-space: nowrap; border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity var(--dur-fast), transform var(--dur-fast); }
+  html.light .context-usage-tip { background: #ffffff; color: #1f2937; }
+  .context-usage-wrap:hover .context-usage-tip { opacity: 1; transform: translateY(0); }
+
+  /* 附件 */
+  .pending-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 4px; }
+  .attachment-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; color: var(--text-main); max-width: 200px; }
+  .attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attachment-remove { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: none; border: none; color: var(--text-muted); cursor: pointer; flex-shrink: 0; }
+  .attachment-remove:hover { color: #ef4444; background-color: rgba(239, 68, 68, 0.1); }
+  .attachment-thumb { width: 36px; height: 36px; border-radius: 4px; object-fit: cover; border: 1px solid var(--border-color); }
+
+  /* ===== 支持 chat-input-box 为 mention-popup 相对定位容器 ===== */
+  .chat-input-box {
+    position: relative;
+  }
+
+  /* 拖拽把手 */
+  .chat-resize-handle { height: 6px; cursor: row-resize; background: transparent; position: relative; flex-shrink: 0; transition: background-color 0.2s; }
+  .chat-resize-handle::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 36px; height: 3px; border-radius: 2px; background-color: var(--border-color); transition: background-color 0.2s, width 0.2s; }
+  .chat-resize-handle:hover, .chat-resize-handle.dragging { background-color: rgba(96, 165, 250, 0.06); }
+  .chat-resize-handle:hover::after, .chat-resize-handle.dragging::after { background-color: var(--splitter-hover); width: 52px; }
+
+  /* 上下文用量小圆圈：环填充比 = 已用/窗口，色随水位（蓝→琥珀→红） */
+  .ctx-ring { transform: rotate(-90deg); flex-shrink: 0; }
+  .ctx-ring circle { fill: none; stroke-width: 2; }
+  .ctx-ring-bg { stroke: var(--border-color); opacity: 0.6; }
+  .ctx-ring-fg { stroke: var(--accent-blue); stroke-linecap: round; transition: stroke-dasharray 0.3s, stroke 0.3s; }
+  .ctx-ring.warn .ctx-ring-fg { stroke: var(--accent-amber); }
+  .ctx-ring.hot .ctx-ring-fg { stroke: #ef4444; }
+
+  /* 引导发送转圈圈：推理中发送键外环旋转 */
+  .send-btn { position: relative; }
+  .send-btn.busy::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid transparent; border-top-color: var(--accent-blue); animation: send-spin 0.9s linear infinite; }
+  @keyframes send-spin { to { transform: rotate(360deg); } }
+}

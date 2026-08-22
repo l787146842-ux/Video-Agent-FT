@@ -137,7 +137,7 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 <generate_video>
 **分镜视频生成**
 
-- 使用 **MultiModalToVideo**，模型与分辨率按全局设置的默认渠道填写。
+- 使用 **generate_video**（MultiModalToVideo 多模态参考通道），模型与分辨率按全局设置的默认渠道填写。
 - 每个 shot 的参考输入默认包含：该镜涉及的所有角色 key_element 图像 + 对应场景 key_element 图像。
 - 仅当本镜与上一镜的连续性极强（如同一动作的延续、无剪切的场景推进）时，额外添加上一镜的 final_shot 视频作为 reference_video；**通常不加视频参考**，避免模型过度继承上一镜构图而削弱本镜的运镜设计。
 - 每个 shot 视频生成时，将对应角色的 key_element_audio 作为音频条件，保持角色音色跨镜一致。
@@ -146,8 +146,8 @@ skill_description: "适用于将剧本文本工业化拆解为短剧视频的全
 <audio_generate>
 **音频生成**
 
-- BGM（music 类型）：使用 **text_to_instrumental**，模型与分辨率按全局设置的默认渠道填写（注意：提示词中不得出现知名音乐人名字）。
-- 旁白（narration 类型）：使用 **text to narration**，模型与分辨率按全局设置的默认渠道填写。
+- BGM（music 类型）：使用 **audio_generate**（text_to_instrumental 纯音乐通道），模型与分辨率按全局设置的默认渠道填写（注意：提示词中不得出现知名音乐人名字）。
+- 旁白（narration 类型）：使用 **audio_generate**（text_to_narration 旁白通道），模型与分辨率按全局设置的默认渠道填写。
 </audio_generate>
 
 <write_media_prompt>
@@ -262,6 +262,6 @@ Reference images attached:\
 
 **导出基准**
 
-- 视频轨分辨率对齐生成时的最高规格；如需提升，经 super_resolution（MediaKit）上采样后再导出。
+- 视频轨分辨率对齐生成时的最高规格；如需提升，经 super_resolution（MediaKit，待平台补齐工具）上采样后再导出。
 - 帧率 24fps；如需流畅慢动作片段，对目标 shot 单独执行帧插值（fps 提升至 60）后再并入时间线。
 </video_assembler>

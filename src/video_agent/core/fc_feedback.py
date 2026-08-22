@@ -68,7 +68,7 @@ def should_compress_feedback(messages: List[Dict[str, Any]], context_window: int
 def compress_prior_feedback(messages: List[Dict[str, Any]]) -> None:
     """把 messages 里已有的工具结果回喂消息压缩为占位文案（原地修改）。
 
-    时机：新一轮回喂 append 之前调用，因此现存的所有回喂消息都属「旧轮」。
+    时机：新一次回喂 append 之前调用，因此现存的所有回喂消息都属「旧轮」。
     read_* 全文只保留最近，更早的以一句话占位——约束效力靠提示词延续，
     全文本身已写入草稿/文档，需要时模型可重新 read。
     多模态回喂（含图片 parts 的 list content）同样压成纯文本占位，
@@ -138,7 +138,7 @@ def digest_projected_tool_results(
 def strip_prior_feedback_images(messages: List[Dict[str, Any]]) -> None:
     """把旧轮多模态回喂里的图片 parts 移除，只保留文本（原地修改）。
 
-    时机：新一轮含图片的回喂 append 之前。上下文里始终只保留最新一轮
+    时机：新一次含图片的回喂 append 之前。上下文里始终只保留最近一次
     加载的图片：模型逐条草稿「调图 → 写提示词 → 调下一批图」，旧图对后续
     推理无价值且 vision token 昂贵，剥离后模型需要时可重新调用加载。
     """

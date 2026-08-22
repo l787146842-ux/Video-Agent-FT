@@ -142,7 +142,7 @@ export async function saveCurrentDoc(): Promise<void> {
       // 同步技能 system_prompt（doc:slug 关联）
       const sk = state.skills.find((s) => s.id === `doc:${cur.key}`);
       if (sk) sk.system_prompt = content;
-      // 保存时 lint 回显（批 5：体量/组成/sidecar 声明缺失编辑期可见）
+      // 保存时 lint 回显（体量/组成/sidecar 声明缺失编辑期可见）
       (res?.lint?.warnings || []).forEach((w) => showToast(`⚠ ${w}`, 'warning'));
     }
     showToast('文档已保存', 'success');

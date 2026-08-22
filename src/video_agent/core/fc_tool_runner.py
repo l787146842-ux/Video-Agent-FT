@@ -1,54 +1,32 @@
-"""FC 工具执行与回喂（从 planner.py 拆出， 文件瘦身；
-  回喂家族切入 core/fc_feedback.py，本文件保留 re-export）。
+"""FC 工具执行段（任务#23 D1：巨石三段拆分 2/3；回喂家族早已切入 fc_feedback.py）。
 
-承载：
-- Function Calling tool_calls 的执行循环（含 read_skill 短路、生图参数注入、过程时间线事件）
-- 工具结果回喂的格式化/压缩委托 fc_feedback（token 治理，C3 落点见该模块）
+三段结构：
+- 闸机裁决 = core/fc_gates.py（闸机链组合；判定实现唯一归 guard_pipeline）
+- 执行 = 本文件（tool_calls 执行循环 + 过程时间线事件 + trace 记账）
+- 批末对账 = core/fc_reconcile.py（客观账本为主、措辞兜底，见该模块 D2 说明）
 
-planner.py 对下列符号保留同名委托，既有调用/测试路径不变。
+execute() 返回 FCExecuteResult（结构化命名元组）：调用方按字段名取用，
+位置解包仍兼容（历史调用/测试不破坏），新增字段不再是隐性破坏。
+闸机方法对 fc_gates 保留同名承重壳（壳清单见文件尾部注释，13.7 惯例），
+既有调用/测试 patch 路径不变。
 """
 import json
-import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional
 
 from loguru import logger
 
 from src.video_agent.adapters.base_chat import ChatResponse
-from src.video_agent.config import settings
-from src.video_agent.core import guard_pipeline, pipeline_orchestrator, prompt_gates
+from src.video_agent.core import fc_gates, fc_reconcile, prompt_gates
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
-from src.video_agent.core.sse_events import SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED
+from src.video_agent.core.sse_events import (
+    SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED,
+)
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.skill_runtime.capability import is_planning
 from src.video_agent.skill_runtime.registry import stage_label_for_tool
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
-from src.video_agent.state.models import (
-    ALL_CATEGORIES_TUPLE,
-    CAT_KEY_ELEMENTS,
-    CAT_SHOTS,
-)
-
-# 执行器工具名集合（skill_runtime 注册；FC 轨据此注入聊天供应商）
-_EXECUTOR_TOOL_NAMES = frozenset({
-    "script_analyze",
-    "storyboard_key_elements",
-    "storyboard_shots",
-    "storyboard_audio",
-    "write_media_prompt",
-    "audio_generate",
-    "video_assembler",
-})
-# 关键步骤工具：这些失败时模型不得声称“已完成/已写入”
-_CRITICAL_TOOL_NAMES = frozenset(_EXECUTOR_TOOL_NAMES | {"document_write"})
-# 轮内暂停纪律豁免集：workflow_pause 请求确认后，同批仅读类工具与暂停工具本身可行
-_PAUSE_WINDOW_READONLY = frozenset({
-    "read_draft", "read_skill", "read_project_doc", "read_uploaded_doc",
-    "workflow_pause",
-})
-# 三通道 B 阈值与变换实现归 pause_composer（单一事实源，顶部 re-export）。
 from src.video_agent.tools.base import ToolResult
 
 # 回喂家族定义源 = core/fc_feedback.py；本文件顶层重新绑定全部符号，
@@ -70,6 +48,40 @@ from src.video_agent.core.fc_feedback import (
     strip_prior_feedback_images,  # noqa: 1
 )
 
+# 闸机常量定义源 = core/fc_gates.py；顶层重新绑定（承重壳，旧路径兼容）
+_TOOL_RISK_CONFIRM_TOOLS = fc_gates.TOOL_RISK_CONFIRM_TOOLS  # noqa: 1
+_PAUSE_WINDOW_READONLY = fc_gates.PAUSE_WINDOW_READONLY  # noqa: 1
+_STAGE_ALLOWED_GROUP_KINDS = fc_gates.STAGE_ALLOWED_GROUP_KINDS  # noqa: 1
+
+
+def _as_start(raw: Any) -> int:
+    """read_skill 续读起点容错解析：非数字（模型偶发传「开头」等描述、
+    None/缺失）一律归 0，不得抛 ValueError 中断整批工具执行。"""
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+class FCExecuteResult(NamedTuple):
+    """execute() 结构化返回（杜绝位置解包：字段名即契约）。
+
+    warnings：本批闸机拦截/豁免的用户可见文案，由 planner 并入
+    loop_result.warnings —— FC 轨与文本轨拦截可见性对齐（§2.0/§2.4）；
+    pause_overflow：三通道分离 B，模型 pause message 超长的原文（进正文通道）。
+    """
+
+    applied: int
+    confirmation: str
+    image_urls: List[str]
+    chat_inserts: List[Dict[str, Any]]
+    action_log: List[str]
+    confirmation_options: List[Dict[str, Any]]
+    tool_results: List[Dict[str, Any]]
+    docs_written: List[str]
+    warnings: List[str]
+    pause_overflow: str
+
 
 class FCToolRunner:
     """执行 Function Calling 返回的 tool_calls（planner 的 FC 执行臂）"""
@@ -77,7 +89,8 @@ class FCToolRunner:
     def __init__(self, tool_manager) -> None:
         self.tool_manager = tool_manager
         # 当前对话使用的聊天供应商/模型（决策 E：与主模型一致，
-        # 由 chat_service/planner 注入，执行器工具缺省时使用）
+        # 由 chat_service/planner 注入；执行器已随任务#36 B5 退役，
+        # 属性保留仅为注入方兼容）
         self.chat_provider: str = ""
         self.chat_model: str = ""
         # 用户坚持作用域（False / True / "all" / "element_image"）：覆盖对应闸机
@@ -94,7 +107,7 @@ class FCToolRunner:
         # 闸机校准：(kind+原因签名) 连续相同拦截计数，用于升级重写指引文案
         self._gate_repeat: Dict[str, int] = {}
 
-    # ---------- 提示词结构闸机 ----------
+    # ---------- 闸机裁决段承重壳（实现体 = core/fc_gates.py） ----------
 
     @staticmethod
     def _raw_state() -> Dict[str, Any]:
@@ -103,124 +116,26 @@ class FCToolRunner:
         except Exception:
             return {}
 
-    def _resolve_current_refs(self, name: str, args: Dict[str, Any]) -> None:
-        """把 FC 工具参数里的 "current"/空 引用解析为真实 id（对齐文本轨语义）：
-        前端选中草稿优先，未选中时回落第一个可用对象（与 ops.find_draft 兜底一致）。
-        必须在闸机与工具调用之前执行，否则闸机/回写会命中错误的卡片。"""
-        if name in ("storyboard_patch_draft", "storyboard_confirm_draft"):
-            if str(args.get("draft_id") or "").strip() in ("", "current"):
-                found = ops.find_draft(
-                    self._raw_state(), "current", str(args.get("draft_type") or ""),
-                    selected_draft_id=self._selected_draft_id,
-                    selected_type=self._selected_type,
-                )
-                if found:
-                    args["draft_id"] = found[1].get("id") or ""
-        elif name == "storyboard_add_draft":
-            if str(args.get("group_id") or "").strip() in ("", "current"):
-                group = ops.find_group(
-                    self._raw_state(), "current", str(args.get("group_type") or ""),
-                    selected_draft_id=self._selected_draft_id,
-                    selected_type=self._selected_type,
-                )
-                if group:
-                    args["group_id"] = group.get("id") or ""
-        elif name == "storyboard_media_to_chat":
-            if str(args.get("target") or "").strip() == "current":
-                found = ops.find_draft(
-                    self._raw_state(), "current", "",
-                    selected_draft_id=self._selected_draft_id,
-                    selected_type=self._selected_type,
-                )
-                if found and found[1].get("id"):
-                    ids = list(args.get("draft_ids") or [])
-                    if found[1]["id"] not in ids:
-                        ids.append(found[1]["id"])
-                    args["draft_ids"] = ids
-                    args["target"] = ""
-
-    def _prompt_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
-        """写入前闸机：Skill 流程激活时校验待写入的提示词结构。
-        返回非 None = strict 模式硬拒绝（工具不执行，错误文案带回给模型重写）。"""
-        if not injected_skill or prompt_gates.gate_mode() == "off":
-            return None
-        prompt, kind = "", ""
-        if name == "storyboard_patch_draft":
-            patch = args.get("patch") if isinstance(args.get("patch"), dict) else {}
-            prompt = str(patch.get("prompt") or "").strip()
-            kind = str(args.get("draft_type") or "").strip()
-            if prompt and kind not in ("shot", "keyElement", "audio"):
-                kind = prompt_gates.resolve_kind_by_draft_id(
-                    self._raw_state(), str(args.get("draft_id") or ""),
-                    str(args.get("draft_type") or ""),
-                    self._selected_draft_id, self._selected_type,
-                )
-        elif name in ("storyboard_create_group", "storyboard_add_draft"):
-            draft = args.get("draft")
-            prompt = str(draft.get("prompt") or "").strip() if isinstance(draft, dict) else ""
-            gt = str(args.get("group_type") or "").strip().lower()
-            kind = {"keyelement": "keyElement", "shot": "shot", "audio": "audio"}.get(gt, "")
-        else:
-            return None
-        # 客观补全（888）：@引用与镜头时长可从 sceneRefs/duration 算出来，
-        # 写入前按 Skill 声明的规则自动补印回待写入参数，不指望模型自觉
-        if kind == "shot" and prompt:
-            group: Optional[Dict[str, Any]] = None
-            if name == "storyboard_patch_draft":
-                found = ops.find_draft(
-                    self._raw_state(), str(args.get("draft_id") or ""),
-                    str(args.get("draft_type") or ""),
-                    selected_draft_id=self._selected_draft_id,
-                    selected_type=self._selected_type,
-                )
-                if found:
-                    group = found[0]
-            else:
-                group = {
-                    "id": str(args.get("group_id") or ""),
-                    "title": str(args.get("title") or ""),
-                    "sceneRefs": args.get("sceneRefs") or [],
-                    "duration": str(args.get("duration") or ""),
-                }
-            if group is not None:
-                target = patch if name == "storyboard_patch_draft" else draft
-                if isinstance(target, dict):
-                    filled_refs = prompt_gates.autofill_at_refs(
-                        prompt, "shot", group, self._raw_state(), rules=self._gate_rules,
-                    )
-                    if filled_refs != prompt:
-                        target["prompt"] = filled_refs
-                        prompt = filled_refs
-                    filled_dur = prompt_gates.autofill_shot_duration(
-                        prompt, "shot", group, rules=self._gate_rules,
-                    )
-                    if filled_dur and filled_dur != prompt:
-                        target["prompt"] = filled_dur
-                        prompt = filled_dur
-        if not prompt or kind not in ("shot", "keyElement"):
-            return None
-        # 故事板待确认窗口（步骤3→步骤4 分界）：流程闸，只警告不拦人
-        if prompt_gates.gate_mode() == "strict" \
-                and prompt_gates.storyboard_pending(self._raw_state()):
-            self.gate_warnings.append(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
-            logger.info("[FlowGate] 提示词写入时故事板待确认（警告，不拦人）")
-        # 统一闸机管线（宪法 §2.0 单一组合实现； 恢复接线，与文本轨同源判定）
-        outcome = guard_pipeline.evaluate_prompt_write(
-            prompt, kind, self._raw_state(),
-            gate_rules=self._gate_rules,
+    def _gate_ctx(self, injected_skill: str = "") -> fc_gates.GateContext:
+        """组装闸机上下文（warnings/gate_repeat 绑定本实例对象，写入即时可见；
+        record_gen_log 注入 web 层日志面板引用，保住 core→web 分层）。
+        非 __init__ 构造的实例（测试夹具 object.__new__）缺失属性回落默认值。"""
+        return fc_gates.GateContext(
+            injected_skill=injected_skill,
             gate_override=self.gate_override,
-            element_image_missing=prompt_gates.element_images_missing(self._raw_state()),
+            gate_rules=getattr(self, "_gate_rules", None),
+            selected_draft_id=getattr(self, "_selected_draft_id", ""),
+            selected_type=getattr(self, "_selected_type", ""),
+            warnings=self.gate_warnings,
+            gate_repeat=getattr(self, "_gate_repeat", {}),
+            state=self._raw_state,
+            tool_risk_of=self._tool_risk_of,
+            record_gen_log=self._record_gate_gen_log,
         )
-        self.gate_warnings.extend(outcome.warnings)
-        guard_pipeline.audit_verdicts(
-            outcome.verdicts, skill_name=injected_skill, action=name,
-            overridden=outcome.overridden,
-        )
-        if outcome.ok:
-            return None
-        hard = outcome.hard_errors
-        logger.info(f"[PromptGate] 拦截不合格提示词写入（{kind}）: {hard}")
-        # 错误日志入账：闸机拦截写入生成日志（顶栏日志面板可见，恢复错误日志可见性）
+
+    @staticmethod
+    def _record_gate_gen_log(prompt: str, hard: List[str]) -> None:
+        """闸机拦截写入生成日志（顶栏日志面板可见）；记录失败不影响主链路。"""
         try:
             from src.video_agent.web.task_manager import get_task_manager
             get_task_manager().record_gen_log(
@@ -229,89 +144,48 @@ class FCToolRunner:
             )
         except Exception:  # 记录失败不影响主链路
             pass
-        # 闸机校准：连续相同拦截升级指引，防模型陷入「拦截-重写-再拦截」空转
-        sig = f"{kind}|{'|'.join(sorted(hard))}"
-        n = self._gate_repeat.get(sig, 0) + 1
-        self._gate_repeat[sig] = n
-        text = outcome.reject_message
-        if n > 1:
-            text += (
-                f"\n[连续第 {n} 次因相同原因被拦截] 上一次重写未修正上述问题，"
-                "请逐条对照原因彻底改写（不是换措辞：中文占比/字数/镜头语言标记必须实质达标），禁止再次提交相似文本。"
-            )
-        return text
+
+    @staticmethod
+    def _skill_full_text_injected(skill_name: str) -> bool:
+        return fc_gates.skill_full_text_injected(skill_name)
+
+    def _resolve_current_refs(self, name: str, args: Dict[str, Any]) -> None:
+        fc_gates.resolve_current_refs(self._gate_ctx(), name, args)
+
+    def _prompt_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
+        return fc_gates.prompt_gate(self._gate_ctx(injected_skill), name, args)
 
     def _stage_precondition_gate(self, name: str, injected_skill: str) -> Optional[str]:
-        """阶段前置闸（platform.stage_precondition）：
-        工具归属阶段的前置阶段未完成 → 拒收（机械强制，不依赖控制流入口）。
-        仅 strict 模式启用；用户坚持（gate_override）可一次性豁免并留痕。"""
-        if not injected_skill or prompt_gates.gate_mode() != "strict":
-            return None
-        try:
-            err = pipeline_orchestrator.evaluate_stage_precondition(
-                name, self._raw_state(), injected_skill)
-        except Exception:
-            return None  # 判定异常不阻断对话（闸机失败-open 惯例，审计可查）
-        if err is None:
-            return None
-        if self.gate_override in (True, "all"):
-            self.gate_warnings.append(f"用户坚持放行：{err}")
-            guard_pipeline.audit_verdicts(
-                [guard_pipeline.GateVerdict(
-                    "platform.stage_precondition", "platform", True,
-                    message=f"用户坚持豁免：{err}")],
-                skill_name=injected_skill, action=name, overridden=True,
-            )
-            return None
-        guard_pipeline.audit_verdicts(
-            [guard_pipeline.GateVerdict(
-                "platform.stage_precondition", "platform", False, message=err)],
-            skill_name=injected_skill, action=name,
-        )
-        return err
+        return fc_gates.stage_precondition_gate(self._gate_ctx(injected_skill), name)
 
     def _flow_gate(self, name: str, injected_skill: str) -> Optional[str]:
-        """规格前置（与文本轨对齐）：只对显式声明 flow.spec_gate 的 Skill
-        生效，且不硬拦——规格未写入时追加一条可视线索到操作时间线，
-        模型下一轮自行决定补写（用户指令优先）。返回恒 None（不再硬拒绝）。"""
-        if not injected_skill or prompt_gates.gate_mode() != "strict":
-            return None
-        if name not in ("storyboard_create_group", "storyboard_add_draft"):
-            return None
-        if prompt_gates.has_spec_document(self._raw_state()):
-            return None
-        declared = False
-        try:
-            from src.video_agent.skill_runtime.registry import skill_flow_enabled
-
-            declared = skill_flow_enabled(injected_skill, "spec_gate")
-        except Exception:
-            declared = False
-        if not declared:
-            return None
-        # 执行侧强制已接管（ensure_spec_gate 拦截越阶工具调用），
-        # 此处不再向用户追加 ⚠ 警告（只记日志，模型侧由拦截回喂知晓）
-        logger.info(f"[FlowGate] {name}：规格文档未写入（Skill 声明 spec_gate，执行侧门禁生效）")
-        return None
+        return fc_gates.flow_gate(self._gate_ctx(injected_skill), name)
 
     def _strip_structure_prompt(self, name: str, args: Dict[str, Any], injected_skill: str) -> bool:
-        """结构纯净闸（步骤3）：Skill 激活且 strict 时，create_group/add_draft 携带的
-        内联草稿带提示词时，剥离 prompt 字段
-        后放行建结构（不丢分组、不造成虚报），详细提示词留到用户确认后的步骤4。
-        返回 True = 发生了剥离（回喂时附说明）。"""
-        if not injected_skill or prompt_gates.gate_mode() != "strict":
-            return False
-        if name not in ("storyboard_create_group", "storyboard_add_draft"):
-            return False
-        draft = args.get("draft")
-        if not isinstance(draft, dict):
-            return False
-        prompt = str(draft.get("prompt") or "").strip()
-        if not prompt:
-            return False
-        draft["prompt"] = ""
-        logger.info(f"[FlowGate] 剥离 {name} 内联详细提示词（{len(prompt)} 字，结构阶段只建骨架）")
-        return True
+        return fc_gates.strip_structure_prompt(self._gate_ctx(injected_skill), name, args)
+
+    def _structure_integrity_gate(
+        self, name: str, args: Dict[str, Any], injected_skill: str,
+    ) -> Optional[str]:
+        return fc_gates.structure_integrity_gate(
+            self._gate_ctx(injected_skill), name, args)
+
+    def _gen_confirm_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
+        return fc_gates.gen_confirm_gate(self._gate_ctx(injected_skill), name, args)
+
+    def _tool_risk_gate(self, name: str) -> Optional[str]:
+        return fc_gates.tool_risk_gate(self._gate_ctx(), name)
+
+    # ---------- 执行段 ----------
+
+    def _tool_risk_of(self, name: str) -> str:
+        """读取工具声明的风险分级；未注册/未声明一律 high（deny-by-default，§2.7）。"""
+        try:
+            tool = self.tool_manager.get_tool(name)
+        except Exception:
+            tool = None
+        risk = str(getattr(tool, "risk", "") or "").strip().lower()
+        return risk if risk in ("low", "medium", "high") else "high"
 
     def _record_presented(self, name: str, args: Dict[str, Any]) -> None:
         """FC 轨记录本轮写入过提示词的草稿：patch_draft 带非空 prompt 成功时，
@@ -343,49 +217,6 @@ class FCToolRunner:
         except Exception as e:  # 记录失败不影响主链路
             logger.debug(f"[FlowGate] drafts_presented 记录失败: {e}")
 
-    def _gen_confirm_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
-        """生成确认闸（FC 轨， 双轨收敛一期）：判定唯一实现 =
-        guard_pipeline.evaluate_gen_confirm（与文本轨逐字节一致）。"""
-        if name != "image_generate":
-            return None
-        # 一条龙：用户本条消息的显式指令作为本批生成同意（留痕），不弹确认闸
-        if prompt_gates.flow_auto_continue(self._raw_state()):
-            logger.info("[FlowDirective] 一条龙指令作为本批生成同意（留痕）")
-            return None
-        state = self._raw_state()
-        target = str(args.get("target") or "all_keyElements").strip()
-        targets: List[Dict[str, Any]] = []
-        if target in ("all_keyElements", "all_keyelements"):
-            for g in state.get(CAT_KEY_ELEMENTS, []):
-                for d in g.get("drafts", []):
-                    if (d.get("prompt") or "").strip():
-                        targets.append(d)
-        elif target in ("all_shots", "all_shot"):
-            for g in state.get(CAT_SHOTS, []):
-                for d in g.get("drafts", []):
-                    if (d.get("prompt") or "").strip():
-                        targets.append(d)
-        else:
-            for cat in ALL_CATEGORIES_TUPLE:
-                for g in state.get(cat, []):
-                    for d in g.get("drafts", []):
-                        if d.get("id") == target and (d.get("prompt") or "").strip():
-                            targets.append(d)
-        if not targets:
-            return None  # 无目标：交给工具自身报「未找到有提示词的草稿」
-        err, warns = guard_pipeline.evaluate_gen_confirm(
-            targets,
-            active=bool(injected_skill) and prompt_gates.gate_mode() == "strict",
-            override=self.gate_override,
-            action=name,
-        )
-        for w in warns:
-            if w not in self.gate_warnings:
-                self.gate_warnings.append(w)
-        if err:
-            logger.info(f"[GenGate] 拦截 image_generate：{len(targets)} 个目标草稿存在未确认 Prompt Draft")
-        return err
-
     def reset_turn_tracking(self) -> None:
         """轮始重置跨批跟踪（三通道分离 C）：阶段边界判定只认本轮执行。
 
@@ -400,18 +231,27 @@ class FCToolRunner:
         on_status=None, on_event=None, injected_skill: str = "",
         selected_draft_id: str = "", selected_type: str = "",
         gate_override: Any = False,
-    ) -> Tuple[int, str, List[str], List[Dict[str, Any]], List[str], List[Dict[str, Any]], List[Dict[str, Any]], List[str], List[str]]:
+    ) -> FCExecuteResult:
         """执行 Function Calling 返回的 tool_calls。
-        返回 (applied_count, confirmation_message, image_urls, chat_inserts, action_log,
-        confirmation_options, tool_results, docs_written, warnings)。
-        warnings：本批闸机拦截/豁免的用户可见文案，由 planner 并入
-        loop_result.warnings —— FC 轨与文本轨拦截可见性对齐（§2.0/§2.4）。"""
+
+        返回 FCExecuteResult（applied, confirmation, image_urls, chat_inserts,
+        action_log, confirmation_options, tool_results, docs_written, warnings,
+        pause_overflow）——位置解包仍兼容，新调用方请按字段名取用。
+        """
         self._selected_draft_id = selected_draft_id or ""
         self._selected_type = selected_type or ""
         self.gate_override = gate_override
         self.gate_warnings = []
-        # 1：对话内单图工具每批调用次数（prose 禁令下沉工具层，13.6 审计
-        self._gen_image_calls = 0
+        # 闸机上下文（批级）：生图配额计数随 ctx 跨工具累计
+        ctx = self._gate_ctx(injected_skill)
+        # 批末对账账本（客观事实逐项记账，对账归 fc_reconcile）
+        ledger = fc_reconcile.BatchLedger(
+            injected_skill=injected_skill,
+            # 暂停点归位 Skill 阶段边界——只快照批前是否为空，
+            # 批末「故事板阶段完成且模型未暂停」才注入审阅卡（平台不再自加关键元素后暂停）
+            skill_strict=bool(injected_skill) and prompt_gates.gate_mode() == "strict",
+            storyboard_empty_before=prompt_gates.storyboard_is_empty(self._raw_state()),
+        )
         # 轮内暂停纪律：workflow_pause 请求确认后同批拒续执行
         paused_this_batch = False
         applied = 0
@@ -434,21 +274,7 @@ class FCToolRunner:
         # 结构纯净闸/故事板强制暂停用的批内标志
         structure_created = False
         structure_kinds: set = set()  # 本批搭建的结构类别（shot 优先决定暂停文案）
-        prompt_stripped = False
-        # 本批被提示词闸机拦截的写入次数（防虚报：拦截后暂停文案不得引导确认未写入的提示词）
         prompt_gate_blocked = 0
-        # 暂停点归位 Skill 阶段边界——只快照批前是否为空，
-        # 批末「故事板阶段完成且模型未暂停」才注入审阅卡（平台不再自加关键元素后暂停）
-        skill_strict = bool(injected_skill) and prompt_gates.gate_mode() == "strict"
-        storyboard_empty_before = prompt_gates.storyboard_is_empty(self._raw_state())
-        # 生成类工具本批成败跟踪（防虚报：同批失败后暂停文案不得声称已触发生成）
-        gen_failed_err = ""
-        gen_succeeded = False
-        # 关键执行器/文档写入成败跟踪（script_analyze/document_write 失败仍声称完成）
-        key_tool_failed: List[str] = []
-        key_tool_errors: Dict[str, str] = {}
-        # 规格写入被向导拒收（拒收后必须接管为规格向导卡，模型不得跳过规格交互）
-        spec_write_rejected = False
         tracer = AgentTracer.get_instance()
         for ci, call in enumerate(response.tool_calls):
             func = call.get("function", {}) if isinstance(call, dict) else {}
@@ -459,20 +285,10 @@ class FCToolRunner:
             except json.JSONDecodeError:
                 args = {}
             # current/空引用 → 真实 id（闸机与工具调用前，防命中错误卡片/绕过闸机）
-            self._resolve_current_refs(name, args)
+            fc_gates.resolve_current_refs(ctx, name, args)
 
-            # 执行器工具强制绑定主对话模型（决策 E：与主模型一致；：
-            # 模型自行填写 chat_provider/chat_model 一律覆盖，防止串线到其他供应商
-            # 导致 429/余额错误，也让「执行器与主模型一致」成为硬约束而非缺省兜底）
-            if name in _EXECUTOR_TOOL_NAMES:
-                if self.chat_provider:
-                    args["chat_provider"] = self.chat_provider
-                if self.chat_model:
-                    args["chat_model"] = self.chat_model
-                # 模型不带 skill_name 时，强制注入系统已确认的当前 Skill，
-                # 否则执行器注册检查拿到空名 → 「未指定」未注册
-                if not str(args.get("skill_name") or "").strip() and injected_skill:
-                    args["skill_name"] = injected_skill
+            # 执行器供应商/模型绑定与 skill_name 强注已随任务#36 B5 退役
+            # （执行器工具不再注册；通用路径工具无此参数）
 
             # 过程时间线：工具开始（前端渲染运行态条目）
             tool_event_id = str(call.get("id") or f"fc-{ci}") if isinstance(call, dict) else f"fc-{ci}"
@@ -524,50 +340,32 @@ class FCToolRunner:
                     logger.info("[Planner] Injected image_generate provider from global settings: %s/%s",
                                 spec_pid, spec_model)
 
-            # read_skill 短路：选中 Skill 全文已硬注入 system prompt，重复 read 只是
-            # 浪费工具往返 + 全文回喂 token（prompt 里的「不要再 read」靠模型自觉，此处硬保障）
-            if self._strip_structure_prompt(name, args, injected_skill):
-                prompt_stripped = True
-            # 闸机链：轮内暂停纪律 → 阶段前置（平台不变量）→ 规格前置 → 生成确认 → 提示词结构/时序
-            # 暂停纪律：workflow_pause 后同批续执行拒收（暂停点必须真停，
-            # 读只读工具与暂停工具本身豁免）——轮内暂停纪律否决权（执行路径内嵌，ADR-0004）
-            gate_error = None
-            if paused_this_batch and name not in _PAUSE_WINDOW_READONLY:
-                gate_error = (
-                    "本轮已用 workflow_pause 请求用户确认，请等待用户回应后再继续执行；"
-                    "暂停窗口内仅允许读类工具（read_*）。"
-                )
-            if gate_error is None:
-                gate_error = self._stage_precondition_gate(name, injected_skill)
-            if gate_error is None:
-                gate_error = self._flow_gate(name, injected_skill)
-            if gate_error is None:
-                gate_error = self._gen_confirm_gate(name, args, injected_skill)
-                if gate_error is None:
-                    pg_err = self._prompt_gate(name, args, injected_skill)
-                    if pg_err:
-                        prompt_gate_blocked += 1
-                        gate_error = pg_err
-            # 1：对话内单图工具每批最多一次（prose 下沉工具层，13.6 审计。
-            # 需要多张时模型改用 image_generate 批量工具（两者分工互斥，见 system_fc.md）
-            if gate_error is None and name == "generate_image":
-                self._gen_image_calls += 1
-                if self._gen_image_calls > 1:
-                    gate_error = (
-                        "generate_image 每轮只调用一次；"
-                        "需要多张图片时改用 image_generate 批量工具（明确 target 范围）。"
-                    )
+            # 结构纯净闸：内联详细提示词剥离（闸机链之前，回喂时附说明）
+            if fc_gates.strip_structure_prompt(ctx, name, args):
+                ledger.prompt_stripped = True
+            # 闸机链（fc_gates.run_gate_chain）：轮内暂停纪律 → 阶段前置（平台不变量）
+            # → 规格前置 → 工具风险 → 生成确认 → 建组结构完整性 → 提示词结构 → 生图配额
+            chain = fc_gates.run_gate_chain(
+                ctx, name, args, paused_this_batch=paused_this_batch)
+            gate_error = chain.error
+            prompt_gate_blocked += chain.prompt_gate_blocked
             if gate_error is not None:
                 result = ToolResult(success=False, error=gate_error)
             elif name == "read_skill" and injected_skill:
                 wanted_skill = str(args.get("name") or "").strip()
-                if wanted_skill and wanted_skill == injected_skill.strip():
+                same_skill = bool(wanted_skill) and wanted_skill == injected_skill.strip()
+                # 续读参数（section/start）一律真读：分级注入时全文未全量注入，
+                # 短路会断掉模型的章节续读能力（任务#36 B5）
+                has_cont = bool(str(args.get("section") or "").strip()) \
+                    or _as_start(args.get("start")) > 0
+                if same_skill and not has_cont and fc_gates.skill_full_text_injected(wanted_skill):
                     result = ToolResult(success=True, data={
                         "content": f"Skill「{wanted_skill}」全文已在本轮 system prompt 中注入，无需重复读取，直接遵循其中的规则即可。",
                         "already_injected": True,
                     })
-                    logger.info(f"[Planner] read_skill 短路：「{wanted_skill}」已注入，跳过工具调用")
+                    logger.info(f"[Planner] read_skill 短路：「{wanted_skill}」全文已直注，跳过工具调用")
                 else:
+                    # 未全量直注（分级注入/其他 Skill/续读）：按需真读全文或章节
                     result = await self.tool_manager.invoke_tool(name, args)
             else:
                 result = await self.tool_manager.invoke_tool(name, args)
@@ -587,33 +385,16 @@ class FCToolRunner:
                         logger.info("[PauseSlot] workflow_pause 拒收：已有活跃暂停")
                 except Exception as _e:
                     logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
-            # 生成类工具成败记录（批末防虚报校验用）
+            # 生成类工具成败记录（批末对账用客观账本）
             if name in ("image_generate", "generate_image", "generate_video"):
                 if result.success:
-                    gen_succeeded = True
-                elif not gen_failed_err:
-                    gen_failed_err = str(result.error or "执行失败")
+                    ledger.gen_succeeded = True
+                elif not ledger.gen_failed_err:
+                    ledger.gen_failed_err = str(result.error or "执行失败")
             if result.success:
                 applied += 1
-                if name in _EXECUTOR_TOOL_NAMES:
-                    # 成功清失败记账（P3-16）：陈旧计数不得再次触发重试引导；
-                    # 无达标残留时同步清引导标记与模型可见 flowEvents
-                    try:
-                        _st_ok = self._raw_state()
-                        if workflow_runtime.clear_node_attempt(_st_ok, name):
-                            _run_ok = _st_ok.get("workflow_run") or {}
-                            _left = [
-                                k for k, v in (_run_ok.get("node_attempts") or {}).items()
-                                if int((v or {}).get("count") or 0)
-                                >= int(settings.node_retry_guidance_threshold or 2)
-                            ]
-                            _svc_ok = StateManager.get_instance()
-                            if not _left:
-                                _run_ok.pop("retry_guidance", None)
-                                _svc_ok.clear_flow_events("retry_guidance")
-                            _svc_ok.save_debounced()
-                    except Exception as _e:
-                        logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
+                # node_attempts 成败记账随执行器退役删除（任务#36 B5）：
+                # 连失败重试引导归 gate_precheck，通用路径工具不再入账
                 self._record_presented(name, args)
                 if name in ("storyboard_create_group", "storyboard_add_draft"):
                     structure_created = True
@@ -621,8 +402,8 @@ class FCToolRunner:
                     if kind:
                         structure_kinds.add(kind)
                     # 待确认标记即时置位（不等批结束）：同批后续的提示词写入
-                    # 会被 _prompt_gate 的 storyboard_pending 检查拦住（防 3+4 合并）
-                    if skill_strict:
+                    # 会被提示词闸的 storyboard_pending 检查拦住（防 3+4 合并）
+                    if ledger.skill_strict:
                         try:
                             svc_now = StateManager.get_instance()
                             if not (svc_now.state_dict.get("interaction") or {}).get("storyboard_pending"):
@@ -711,7 +492,7 @@ class FCToolRunner:
                     "view_storyboard_media",
                 ):
                     await on_event({"type": SSE_ACTIONS_APPLIED, "count": 1})
-                # 过程时间线：工具完成 + trace 记录（planning 标记同源下发）
+                # 过程时间线：工具完成 + trace 记录
                 if on_event is not None:
                     _finished_ev = {
                         "type": SSE_TOOL_FINISHED,
@@ -720,12 +501,10 @@ class FCToolRunner:
                         "elapsed_ms": round(_tool_ms, 1),
                         "result_summary": desc,
                     }
-                    if is_planning(name):
-                        _finished_ev["planning"] = True
                     await on_event(_finished_ev)
                 tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True,
                                      stage=stage_label_for_tool(name),
-                                     result_summary=desc, planning=is_planning(name))
+                                     result_summary=desc)
                 batch_tool_names.add(name)
                 _stage_lbl = stage_label_for_tool(name)
                 if _stage_lbl:
@@ -743,7 +522,7 @@ class FCToolRunner:
                     inserts = data["chat_inserts"]
                     if isinstance(inserts, list):
                         chat_inserts.extend(inserts)
-                # --- ：执行器成功结果携带的警告（如补拆失败缺失清单）
+                # --- ：工具成功结果携带的警告（如建组闸机回喂清单）
                 # 升级为轮末用户可见警告，不得只留在 trace（静默丢失禁令） ---
                 if data and isinstance(data.get("warnings"), list):
                     for _tw in data["warnings"]:
@@ -752,22 +531,14 @@ class FCToolRunner:
                             self.gate_warnings.append(_tws)
             else:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
-                # 执行器失败记账（P3-16 node_attempts）：闸拒收（gate_error 非空）
-                # 不属执行失败不入账；连失败 ≥ 阈值的引导派生归 gate_precheck
-                if gate_error is None and name in _EXECUTOR_TOOL_NAMES:
-                    try:
-                        workflow_runtime.bump_node_attempt(
-                            self._raw_state(), name, str(result.error or ""))
-                        StateManager.get_instance().save_debounced()
-                    except Exception as _e:
-                        logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
-                if name in _CRITICAL_TOOL_NAMES:
-                    key_tool_failed.append(name)
-                    key_tool_errors[name] = str(result.error or "执行失败")[:200]
+                # node_attempts 失败记账随执行器退役删除（任务#36 B5）
+                if name == "document_write":
+                    ledger.key_tool_failed.append(name)
+                    ledger.key_tool_errors[name] = str(result.error or "执行失败")[:200]
                 if name == "document_write" and prompt_gates.is_spec_doc_name(
                     str(args.get("name") or args.get("key") or "")
                 ):
-                    spec_write_rejected = True
+                    ledger.spec_write_rejected = True
                 # 规格拒收静默——用户侧用中性系统提示（无失败红叉/⚠），
                 # 拒收原因仍经 tool_results 回喂模型（模型知道未落盘）
                 spec_silent_summary = ""
@@ -788,8 +559,6 @@ class FCToolRunner:
                         "elapsed_ms": round(_tool_ms, 1),
                         "result_summary": spec_silent_summary or str(result.error or "执行失败")[:120],
                     }
-                    if is_planning(name):
-                        _finished_ev["planning"] = True
                     await on_event(_finished_ev)
                 # trace 与 SSE 同一口径（规格静默拒收=中性 True，普通失败=红× False），
                 # 防刷新后失败被重建为绿√；result_summary 与 SSE 同口径
@@ -798,7 +567,6 @@ class FCToolRunner:
                     elapsed_ms=_tool_ms, ok=bool(spec_silent_summary),
                     stage=stage_label_for_tool(name),
                     result_summary=spec_silent_summary or str(result.error or "执行失败")[:120],
-                    planning=is_planning(name),
                 )
                 # 结构化失败回喂（客观报告+单句建议，二次升级）
                 self._tool_fail_counts[name] = self._tool_fail_counts.get(name, 0) + 1
@@ -808,132 +576,34 @@ class FCToolRunner:
                         name, result.error, self._tool_fail_counts[name],
                     ),
                 })
-        # 阶段硬边界：写入了规格/阶段文档但模型未自行暂停时，由系统强制暂停等审阅，
-        # 不给它顺手把后续阶段（拆结构/写提示词）也打包做完的机会；
-        # 写入规格文档时用专属文案（带文档卡片提示与下一步指引）
-        if doc_written and not confirmation:
-            spec_hit = any(prompt_gates.is_spec_doc_name(n) for n in docs_written)
-            if spec_hit:
-                confirmation, confirmation_options = prompt_gates.spec_pause_card(self._raw_state())
-        # 暂停点归位 Skill 阶段边界（13.3/C6，用户裁决）：
-        # 平台不再「关键元素首建后硬暂停」；仅当本批把故事板推进到阶段完成
-        # （Skill 声明的组别齐）且模型未自行暂停时，注入审阅卡；
-        # 模型自发暂停一律保留其文案与选项（平台不覆盖）。
-        if (
-            not confirmation
-            and skill_strict
-            and storyboard_empty_before
-            and not prompt_gates.flow_auto_continue(self._raw_state())
-            and prompt_gates.storyboard_stage_complete(self._raw_state(), injected_skill)
-        ):
-            confirmation, confirmation_options = prompt_gates.structure_paused_confirmation(
-                structure_kinds or prompt_gates.present_structure_kinds(self._raw_state()))
-            logger.info("[FlowGate] 故事板阶段完成且模型未暂停，注入审阅卡")
-        # 结构阶段剥离了内联详细提示词：回喂中显式告知，防止模型虚报「提示词已写好」
-        if prompt_stripped:
-            tool_results.append({
-                "name": "系统闸机",
-                "ok": False,
-                "error": (
-                    "结构搭建阶段只建骨架：内联草稿中的详细提示词已被剥离，当前草稿无提示词（事实）。"
-                    "请等用户确认故事板后，再用 storyboard_patch_draft 逐条编写提示词草案；"
-                    "向用户陈述需与此一致。"
-                ),
-            })
-        # 防虚报硬拦截：同批生成类工具失败但模型暂停文案声称已触发/已生成
-        # → 覆盖为诚实文案（对齐文本轨 gate_heal 的「拦截后不接受虚报」原则）
-        if gen_failed_err and not gen_succeeded and confirmation:
-            _claim_markers = (
-                "已触发", "已为您触发", "开始生成", "正在生成", "生成中",
-                "已生成", "已完成", "生成完毕", "出图进度",
-            )
-            if any(mk in confirmation for mk in _claim_markers):
-                logger.warning("[Planner] 防虚报拦截：生成工具失败但暂停文案声称已触发，已覆盖为诚实文案")
-                confirmation = (
-                    "出图尚未执行：本次生成被系统闸机拦截（"
-                    f"{gen_failed_err[:80]}）。提示词草案已就绪，请在左侧故事板审阅；"
-                    "确认后我将按全局设置中的生成渠道触发生成。"
-                )
-                confirmation_options = [{
-                    "label": "确认提示词草案，开始生成概念图",
-                    "description": "将目标草稿标记为已确认并重新触发生成",
-                }, {
-                    "label": "先调整提示词",
-                    "description": "告诉我需要修改的草稿与修改意见",
-                }]
-        # 暂停防虚报（问题2）：本批有提示词写入被质量闸拦截（未写入卡片），
-        # 模型却仍暂停引导用户「确认提示词」→ 覆盖为诚实文案
-        # （对齐生成失败防虚报闸；结构刚建立时已由上方结构暂停文案接管，不重复覆盖）
-        if prompt_gate_blocked and confirmation and not structure_created:
-            logger.warning(f"[Planner] 暂停防虚报：{prompt_gate_blocked} 条提示词写入被拦，覆盖暂停文案")
-            confirmation = (
-                f"部分提示词写入被系统质量闸拦截（{prompt_gate_blocked} 条未通过校验、未写入卡片），"
-                "请先在左侧故事板审阅已成功写入的草案；确认后我将按 Skill 规范重写被拦截的提示词并再次请您确认。"
-            )
-            confirmation_options = [{
-                "label": "确认已写入的草案，继续重写被拦截的提示词",
-                "description": "把已审阅草案标记为已确认，并重写被闸机拦截的提示词",
-            }, {
-                "label": "先调整提示词",
-                "description": "告诉我需要修改的草稿与修改意见",
-            }]
-        # 规格写入被向导拒收 → 系统接管为规格向导卡（与文本轨一致），
-        # 模型不得用「请求阶段确认」跳过规格交互，也不得声称已生成规格
-        if spec_write_rejected:
-            _spec_state = self._raw_state()
-            inter = _spec_state.setdefault("interaction", {})
-            took_over = False
-            if "script_analyze" in key_tool_failed:
-                #剧本分析本身失败（如 API 余额不足/超时）时，
-                # 不能装成已读完剧本弹规格向导，必须把失败原因明确交给用户
-                _err = key_tool_errors.get("script_analyze", "执行失败")
-                confirmation = (
-                    f"剧本分析未完成（执行失败）：{_err}。"
-                    "规格尚未交互与写入，请重试剧本分析；不要声称已完成或已生成规格。"
-                )
-                confirmation_options = [{
-                    "label": "重试剧本分析",
-                    "description": "重新执行 script_analyze（已绑定当前对话模型）",
-                }]
-                workflow_runtime.apply_interaction(
-                    _spec_state, set_flags={"pending_pause_kind": ""})
-                took_over = True
-            elif prompt_gates.spec_doc_finalized(_spec_state):
-                #规格已定稿时模型的冗余手写只拒收警告，
-                # 不接管暂停卡——拆解阶段的阶段卡正常出现，不再叫用户确认规格
-                logger.info("[Planner] 规格已定稿，模型冗余规格写入仅拒收警告，不接管暂停卡")
-            else:
-                confirmation, confirmation_options = prompt_gates.spec_pause_card(_spec_state)
-                workflow_runtime.apply_interaction(
-                    _spec_state, set_flags={"pending_pause_kind": "spec"})
-                took_over = True
-            if took_over:
-                try:
-                    # 接管时必须同时洗掉 workflow_pause 写入的假完成文案，
-                    # 否则下一轮会把「已完成…写入项目文档」当作暂停内容回喂给模型
-                    workflow_runtime.apply_interaction(_spec_state, set_flags={
-                        "awaiting_confirmation": True,
-                        "confirmation_message": confirmation,
-                    })
-                    StateManager.get_instance().save()
-                except Exception as _e:
-                    logger.warning("[Planner] 规格接管暂停态落盘失败（下轮可能重复接管）: {}", _e)
-                logger.warning("[Planner] 规格写入被向导拒收，已接管为规格向导卡")
+        # 批末对账（fc_reconcile）：客观账本为主、措辞兜底（D2）
+        ledger.doc_written = doc_written
+        ledger.docs_written = docs_written
+        ledger.structure_created = structure_created
+        ledger.structure_kinds = structure_kinds
+        ledger.prompt_gate_blocked = prompt_gate_blocked
+        ledger.confirmation = confirmation
+        ledger.confirmation_options = confirmation_options
+        ledger.tool_results = tool_results
+        fc_reconcile.reconcile_batch(ledger, self._raw_state)
+        return FCExecuteResult(
+            applied=applied,
+            confirmation=ledger.confirmation,
+            image_urls=image_urls,
+            chat_inserts=chat_inserts,
+            action_log=action_log,
+            confirmation_options=ledger.confirmation_options,
+            tool_results=ledger.tool_results,
+            docs_written=docs_written,
+            warnings=list(self.gate_warnings),
+            pause_overflow=pause_overflow,
+        )
 
-        # / ：关键执行器/文档写入存在失败且模型带确认声称完成 → 覆盖为诚实文案
-        # （部分成功、部分失败同样覆盖，堵住「script_analyze 成功就放行假规格文案」的盲区）
-        if confirmation and key_tool_failed and not spec_write_rejected:
-            # 失败工具名映射为用户友好名（内部英文名不出现在用户文案）
-            _failed = "、".join(
-                dict.fromkeys(stage_label_for_tool(n) or n for n in key_tool_failed)
-            )[:160]
-            logger.warning(f"[Planner] 关键步骤防虚报：{_failed} 失败但模型声称完成，已覆盖")
-            confirmation = (
-                f"关键步骤未全部完成：{_failed} 执行失败，工作台状态未按预期更新；"
-                "请按系统提示重试，不要声称已完成。"
-            )
-            confirmation_options = [{
-                "label": "重试",
-                "description": "重新执行未完成的关键步骤（Skill 绑定/执行器/规格向导已就绪）",
-            }]
-        return applied, confirmation, image_urls, chat_inserts, action_log, confirmation_options, tool_results, docs_written, list(self.gate_warnings), pause_overflow
+
+# ---------- 承重壳清单（13.7 登记；测试 patch 目标与旧 import 路径不变） ----------
+# 闸机裁决段承重壳（实现体 core/fc_gates.py）：
+#   FCToolRunner._prompt_gate / _stage_precondition_gate / _flow_gate /
+#   _structure_integrity_gate / _gen_confirm_gate / _tool_risk_gate /
+#   _strip_structure_prompt / _resolve_current_refs / _skill_full_text_injected
+# 批末对账段（实现体 core/fc_reconcile.py）：execute() 尾部 reconcile_batch 调用
+# 回喂家族承重壳（实现体 core/fc_feedback.py）：本文件顶部 re-export 清单

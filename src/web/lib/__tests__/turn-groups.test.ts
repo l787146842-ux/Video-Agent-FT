@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupTurns, suggestedTargetIndex, answeredValueFor } from '../turn-groups';
+import { groupTurns, suggestedTargetIndex, answeredValueFor, stabilizeGroups } from '../turn-groups';
 import type { ChatMessage } from '@/types';
 
 /** ：轮次分组纯函数（turnId 为主，相邻 agent 兜底） */
@@ -50,7 +50,7 @@ describe('groupTurns 轮次分组', () => {
     expect(groups[0].turnId).toBe('t9');
   });
 
-  it('六轮 S5/N4a：即显 doc 卡携带事件 turn_id 与主消息严格同组（不依赖兜底）', () => {
+  it('即显 doc 卡携带事件 turn_id 与主消息严格同组（不依赖兜底）', () => {
     const groups = groupTurns([
       u('写文档'),
       a('t7', { docCard: '规格.md' }), // doc_written 事件打戳先到
@@ -120,5 +120,39 @@ describe('answeredValueFor 当时所选值', () => {
   it('其后无用户消息 → 空串', () => {
     const msgs: ChatMessage[] = [a('t1', { text: '请确认', confirm: '请确认', pauseId: 'p1' })];
     expect(answeredValueFor(msgs, 0)).toBe('');
+  });
+});
+
+/** 组引用稳定化：Solid <For> 按 identity diff，引用复用保住既有节点 */
+describe('stabilizeGroups 组引用稳定化', () => {
+  it('同位同形态组复用旧引用（内容变化不触发整组拆建）', () => {
+    const prev = groupTurns([u('问'), a('t1', { text: '旧正文' })]);
+    const next = groupTurns([u('问'), a('t1', { text: '新正文（变长）' })]);
+    const out = stabilizeGroups(prev, next);
+    expect(out[0]).toBe(prev[0]);
+    expect(out[1]).toBe(prev[1]);
+  });
+
+  it('尾部新增组：旧组引用保留，新组用新引用', () => {
+    const prev = groupTurns([u('问'), a('t1', { text: '答' })]);
+    const next = groupTurns([u('问'), a('t1', { text: '答' }), u('再问'), a('t2', { text: '再答' })]);
+    const out = stabilizeGroups(prev, next);
+    expect(out[0]).toBe(prev[0]);
+    expect(out[1]).toBe(prev[1]);
+    expect(out[2]).toBe(next[2]);
+    expect(out[3]).toBe(next[3]);
+  });
+
+  it('组内追加消息 / turnId 变化 → 该组换新引用（diff 必须可见）', () => {
+    const prev = groupTurns([a('t1', { text: '正文' })]);
+    const grown = groupTurns([a('t1', { text: '正文' }), a('t1', { docCard: 'd.md' })]);
+    expect(stabilizeGroups(prev, grown)[0]).toBe(grown[0]);
+    const reid = groupTurns([a('t9', { text: '正文' })]);
+    expect(stabilizeGroups(prev, reid)[0]).toBe(reid[0]);
+  });
+
+  it('prev 为空（首渲染）原样返回 next', () => {
+    const next = groupTurns([u('问')]);
+    expect(stabilizeGroups([], next)).toEqual(next);
   });
 });

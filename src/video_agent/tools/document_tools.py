@@ -40,6 +40,12 @@ class ReadUploadedDocInput(BaseModel):
 
 class ReadSkillInput(BaseModel):
     name: str = Field(..., description="Skill 名称（与 Skill 目录中的名称一致）")
+    section: str = Field(
+        "", description="可选：章节标题（来自分级注入的章节目录，如 planner/提示词写法），"
+        "传入则只返回该章节全文；不传返回 Skill 全文（或按 start 续读）")
+    start: int = Field(
+        0, ge=0, description="读取起始位置（字符偏移，相对全文原文）；正文超长时工具会返回"
+        "下一段的 start 值，传入即可续读（section 指定时以该章节为基准续读）")
 
 
 class ReadProjectDocInput(BaseModel):
@@ -123,6 +129,7 @@ def _fuzzy_pick(items: List[Dict[str, Any]], wanted: str, keys: List[str]) -> Op
 
 class DocumentWriteTool(BaseTool):
     name = "document_write"
+    risk = "high"  # §2.7：文档写入属 high，需平台闸机 + 用户确认
     description = "写入/更新项目文档工件（如制作规格、脚本大纲）。已存在同名文档则覆盖。"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -190,6 +197,7 @@ class DocumentWriteTool(BaseTool):
 
 class ReadUploadedDocTool(BaseTool):
     name = "read_uploaded_doc"
+    risk = "low"  # §2.7：只读
     description = (
         "按需读取用户上传的素材文档（故事/剧本等）全文。"
         "上传文档正文不会自动注入上下文，清单里只有名称/字数/预览，"
@@ -240,14 +248,6 @@ def _resolve_uploaded_doc(docs: list, name: str, doc_id: str) -> tuple:
     return target, auto_note
 
 
-def _truncate_content(content: str) -> str:
-    """按需读取的正文统一上限截断，防止单次工具返回撑爆上下文（兼容旧调用）"""
-    max_chars = settings.max_doc_chars
-    if len(content) > max_chars:
-        return content[:max_chars] + f"\n……（正文超长，已截断为前 {max_chars} 字）"
-    return content
-
-
 def _slice_content(content: str, start: int) -> tuple:
     """分段读取：返回 (切片正文, 续读提示)。超出上限时提示下一段 start 值，
     超长文档不再丢尾部（取代旧的一刀切截断）"""
@@ -264,9 +264,11 @@ def _slice_content(content: str, start: int) -> tuple:
 
 class ReadSkillTool(BaseTool):
     name = "read_skill"
+    risk = "low"  # §2.7：只读
     description = (
         "按需加载指定 Skill 的完整流程文档。上下文里只有 Skill 目录（名称+摘要），"
         "执行任务前必须先调用本工具读取对应 Skill 全文，不要凭目录摘要自行推测流程。"
+        "选中 Skill 超长分级注入时，按章节目录传 section（章节标题）或 start（字符偏移）续读对应章节。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -275,6 +277,7 @@ class ReadSkillTool(BaseTool):
     async def aexecute(self, params: ReadSkillInput) -> ToolResult:
         from src.video_agent.web.skill_docs import (
             list_skill_docs,
+            list_skill_sections,
             resolve_skill_content,
         )
 
@@ -297,13 +300,45 @@ class ReadSkillTool(BaseTool):
                 success=False,
                 error=f"未找到 Skill「{wanted}」。可用 Skill：{'、'.join(available) or '无'}",
             )
-        # 外来工具名映射注记已随 删除（导入期转换归
-        # 专用 Skill 系统职责，运行时不再做工具名翻译）
-        return ToolResult(success=True, data={"name": matched, "content": _truncate_content(content)})
+        # 章节续读（任务#36 B5）：section 命中章节目录时只返回该章节全文，
+        # start 相对章节起点；未命中时回喂可用章节清单（不阻断，给模型纠错机会）
+        section = (params.section or "").strip()
+        if section:
+            toc = list_skill_sections(content)
+            hit = next((s for s in toc if s["title"] == section), None)
+            if hit is None:
+                sec_norm = section.casefold().replace(" ", "")
+                hit = next((s for s in toc
+                            if s["title"].casefold().replace(" ", "") == sec_norm), None)
+            if hit is None:
+                titles = "、".join(s["title"] for s in toc[:20]) or "无"
+                return ToolResult(
+                    success=False,
+                    error=f"未找到章节「{section}」。可用章节：{titles}",
+                )
+            sec_text = content[hit["start"]:hit["end"]]
+            start = max(0, params.start)
+            if start >= len(sec_text) and sec_text:
+                return ToolResult(
+                    success=False,
+                    error=f"章节「{section}」已读完（共 {len(sec_text)} 字，无后续内容）")
+            body, note = _slice_content(sec_text, start)
+            return ToolResult(success=True, data={
+                "name": matched, "section": hit["title"], "content": body + note,
+            })
+        # 全文按需读：start>0 时按字符偏移续读（复用 read_uploaded_doc 分段先例）
+        start = max(0, params.start)
+        if start >= len(content) and content:
+            return ToolResult(
+                success=False,
+                error=f"Skill 已读完（共 {len(content)} 字，无后续内容）")
+        body, note = _slice_content(content, start)
+        return ToolResult(success=True, data={"name": matched, "content": body + note})
 
 
 class ReadProjectDocTool(BaseTool):
     name = "read_project_doc"
+    risk = "low"  # §2.7：只读
     description = (
         "按需读取项目规格文档（write_document 产出，如 Final_Video_Spec.md）全文。"
         "工作台状态 JSON 的 documents 节只有清单（名称/摘要），"
@@ -335,6 +370,7 @@ class ReadProjectDocTool(BaseTool):
 
 class ImageGenerateTool(BaseTool):
     name = "image_generate"
+    risk = "high"  # §2.7：生成类（外部副作用/花钱），经生成确认闸覆盖
     description = (
         "触发图片生成（危险操作）。仅当用户明确要求'生成/出图/执行'时才可调用。"
         "系统会自动将 sceneRefs 引用的关键元素概念图作为参考图注入。"
@@ -461,6 +497,7 @@ class ImageGenerateTool(BaseTool):
 
 class FlowDirectiveTool(BaseTool):
     name = "flow_directive"
+    risk = "medium"  # §2.7 裁决：写交互状态、按消息生效即清，从严定 medium
     description = (
         "流程指令：仅当用户本条消息明确要求一条龙/自动推进时才以 auto_continue=true 发出，"
         "豁免本条消息的流程暂停（规格收集/故事板审阅等卡片不再弹出，"
@@ -494,6 +531,7 @@ class FlowDirectiveTool(BaseTool):
 
 class WorkflowPauseTool(BaseTool):
     name = "workflow_pause"
+    risk = "medium"  # §2.7：写交互暂停态，用户回应即可撤销
     description = "暂停工作流并请求用户确认。用于拆解完成后请用户过目再继续的场景。"
 
     def get_input_schema(self) -> Type[BaseModel]:

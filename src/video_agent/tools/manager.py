@@ -1,7 +1,7 @@
 ﻿from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel
 from loguru import logger
-from .base import BaseTool, ToolResult
+from .base import BaseTool, RISK_TIERS, ToolResult
 
 class ToolManager:
     _tools: Dict[str, BaseTool] = {}
@@ -11,9 +11,21 @@ class ToolManager:
     def register(cls, tool: BaseTool):
         if not tool.name:
             raise ValueError("Tool must have a valid 'name' attribute.")
+        # 注册期强制校验风险分级（宪法 §2.7 deny-by-default）：
+        # 未声明 risk 的工具直接拒绝注册，杜绝静默放行
+        risk = str(getattr(tool, "risk", "") or "").strip().lower()
+        if risk not in RISK_TIERS:
+            logger.error(
+                f"拒绝注册工具 '{tool.name}'：未声明风险分级 risk（宪法 §2.7，"
+                "未声明视为 high，不得静默放行）"
+            )
+            raise ValueError(
+                f"Tool '{tool.name}' must declare risk in {RISK_TIERS} "
+                "per ARCHITECTURE_RULES §2.7 (deny-by-default)."
+            )
         cls._tools[tool.name] = tool
         cls._schema_cache = None  # 注册新工具时失效缓存
-        logger.debug(f"Registered tool: {tool.name}")
+        logger.debug(f"Registered tool: {tool.name} (risk={risk})")
 
     @classmethod
     def reset(cls):
@@ -27,6 +39,13 @@ class ToolManager:
         if not tool:
             raise ValueError(f"Tool '{name}' not found.")
         return tool
+
+    @classmethod
+    def get_tool_risk(cls, name: str) -> str:
+        """工具声明的风险分级；未注册/未声明一律返回 high（deny-by-default，§2.7）。"""
+        tool = cls._tools.get(name)
+        risk = str(getattr(tool, "risk", "") or "").strip().lower() if tool else ""
+        return risk if risk in RISK_TIERS else "high"
 
     @classmethod
     def get_all_tool_schemas(cls, exclude=None) -> List[Dict[str, Any]]:

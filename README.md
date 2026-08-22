@@ -17,7 +17,7 @@
 |---|---|
 | 后端 | Python 3.11+ / FastAPI / Pydantic v2 / httpx / loguru |
 | 前端（现行） | SolidJS + TypeScript + Vite + 手写语义 CSS（tokens.css，九轮 B5 起 Tailwind 已摘除）；设置页已 SPA 化（`src/web/`） |
-| Agent 核心 | Planner 唯一入口 + 多步工具循环（function calling / 文本动作双路径） |
+| Agent 核心 | Planner 唯一入口 + 多步工具循环（动作通道单轨 = function calling，ADR-0001/0004 裁决文本轨退役） |
 | 记忆 | 自研记忆系统（chromadb 向量检索，可降级 JSON 关键词检索） |
 | 测试 | pytest（单元 + 集成）/ vitest / Playwright（e2e 冒烟） |
 
@@ -62,6 +62,7 @@ npm run build        # 构建到 static/dist/（后端 / 路由优先返回 dist
 npm run check        # tsc --noEmit + eslint
 npm run test         # vitest
 npm run test:e2e     # Playwright（需两个服务都在运行）
+python scripts/install_hooks.py  # 一步安装 pre-commit 钩子（幂等，npm run hooks 同效）
 ```
 
 CI 配置见 [.github/workflows/ci.yml](.github/workflows/ci.yml)；本地已安装
@@ -100,7 +101,7 @@ workspace/                运行时状态与资产（gitignore）
 | [docs/配置说明.md](docs/配置说明.md) | 各配置文件的权威关系与加载优先级 |
 | [docs/前端体验规范.md](docs/前端体验规范.md) | 品牌/视觉/交互细节强制规范 |
 | [docs/对画布的需求清单.md](docs/对画布的需求清单.md) | 需要画布侧实现的能力（postMessage 协议等） |
-| [docs/兼容层移除计划.md](docs/兼容层移除计划.md) | 兼容层清偿台账（版本节点全部执行完毕；剩余兼容别名尾巴，到期日 2026-10-31） |
+| [docs/audit-history/兼容层移除计划.md](docs/audit-history/兼容层移除计划.md) | 兼容层清偿台账（已完结：版本节点与 D-05 兼容别名尾巴全部清偿，归档于 audit-history） |
 | [docs/audit-history/](docs/audit-history/) | 历轮审核报告与整改计划书归档 |
 | [tests/fixtures/canvas/README.md](tests/fixtures/canvas/README.md) | 画布 API 契约夹具的录制与刷新方法 |
 

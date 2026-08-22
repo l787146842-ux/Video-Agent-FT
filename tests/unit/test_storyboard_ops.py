@@ -9,7 +9,7 @@ from src.video_agent.tools.storyboard_tools import (
     StoryboardConfirmDraftTool,
     ConfirmDraftInput,
 )
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ async def test_fc_and_text_track_patch_equivalence(svc):
     fc_snapshot = dict(draft)
 
     # 还原后走文本轨
-    executor = StudioActionExecutor(svc)
+    executor = StateOperationExecutor(svc)
     executor.execute([{"action": "update_draft", "draft_id": draft["id"], "patch": patch}])
     text_snapshot = dict(draft)
 
@@ -83,7 +83,7 @@ async def test_fc_confirm_uses_unified_patch(svc):
 @pytest.mark.asyncio
 async def test_execute_locked_applies_under_lock(svc):
     """execute_locked：持锁执行，结果与同步 execute 一致"""
-    executor = StudioActionExecutor(svc)
+    executor = StateOperationExecutor(svc)
     applied = await executor.execute_locked([{
         "action": "add_group", "group_type": "keyElement", "title": "持锁分组",
     }])

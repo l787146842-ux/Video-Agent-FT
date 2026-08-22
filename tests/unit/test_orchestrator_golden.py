@@ -73,23 +73,15 @@ def test_current_stage_progression():
 
 @pytest.mark.asyncio
 async def test_precheck_script_pending_no_execution(tmp_path, monkeypatch):
-    """剧本缺失 → 原料闸提醒卡；且没有任何执行器被调用（去驱动化钉死）"""
+    """剧本缺失 → 原料闸提醒卡（去驱动化：闸预检永不执行任何工具；
+    原 ScriptAnalyzeTool 探针已随任务#36 B5 执行器退役删除，代跑路径不复存在）"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.skill_runtime import exec_tools
 
-    executed = []
-
-    async def spy_aexecute(self, params):
-        executed.append(True)
-        raise AssertionError("闸预检不得执行任何执行器")
-
-    monkeypatch.setattr(exec_tools.ScriptAnalyzeTool, "aexecute", spy_aexecute)
     StateManager.reset_instance()
     svc = StateManager(str(tmp_path / "ws"))
     StateManager._instance = svc
     outcome = await po.gate_precheck(svc, SKILL, "开始制作")
     assert outcome is not None and outcome.kind == "script_pending"
-    assert not executed
     StateManager.reset_instance()
 
 
@@ -131,13 +123,12 @@ async def test_precheck_handoff_at_creative_stage(tmp_path):
 
 @pytest.mark.asyncio
 async def test_planner_first_turn_handed_to_model(tmp_path, monkeypatch):
-    """主体回归（ADR-0004）：首轮有素材 + 推进信号也交接模型，
-    runtime 不自主代跑执行器（模型永远唯一行动主体）。"""
+    """主体回归（ADR-0004）：首轮有素材 + 推进信号也交接模型
+    （模型永远唯一行动主体；原 ScriptAnalyzeTool 代跑探针已随任务#36 B5
+    执行器一步退役删除，系统代跑路径不复存在）。"""
     from src.video_agent.core.planner import Planner, PlannerContext
     from src.video_agent.state.manager import StateManager
     from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
-    from src.video_agent.skill_runtime import exec_tools
-    from src.video_agent.tools.base import ToolResult
     from src.video_agent.tools.manager import ToolManager
 
     class ProbeAdapter(BaseChatAdapter):
@@ -156,22 +147,6 @@ async def test_planner_first_turn_handed_to_model(tmp_path, monkeypatch):
             self.calls += 1
             yield ChatResponse(content="收到剧本，我来分析。", finish_reason="stop")
 
-    analyze_calls = {"n": 0}
-
-    async def fake_analyze(self, params):
-        analyze_calls["n"] += 1
-        svc_now = StateManager.get_instance()
-        svc_now.state_dict["analysis"] = {
-            "summary": "程心苏醒与掩体失效。",
-            "key_points": ["结构：三场戏"],
-            "doc_name": "剧本.md",
-        }
-        return ToolResult(success=True, data={"summary": "程心苏醒与掩体失效。"})
-
-    monkeypatch.setattr(exec_tools.ScriptAnalyzeTool, "aexecute", fake_analyze)
-    # 全量跑时前置测试可能 reset 过 ToolManager：幂等补注册执行器工具
-    from src.video_agent.skill_runtime.registration import register_skill_runtime_tools
-    register_skill_runtime_tools()
     StateManager.reset_instance()
     svc = StateManager(str(tmp_path / "ws"))
     StateManager._instance = svc
@@ -184,7 +159,6 @@ async def test_planner_first_turn_handed_to_model(tmp_path, monkeypatch):
         "请查看我上传的素材",
         PlannerContext(skill_name=SKILL, advance_signal="attachment"))
     assert adapter.calls >= 1, "主体回归：首轮也必须交接模型"
-    assert analyze_calls["n"] == 0, "runtime 不自主代跑执行器"
     assert result.text.strip()
     StateManager.reset_instance()
 

@@ -18,9 +18,23 @@ from urllib.parse import urlparse
 import httpx
 from loguru import logger
 
-from .base_chat import BaseChatAdapter, ChatResponse, StreamChunk
+from .base_chat import (
+    BaseChatAdapter,
+    ChatResponse,
+    StreamChunk,
+    dispatch_chat_request,
+    new_request_id,
+)
 from .base import BaseImageAdapter, ImageGenerationResponse
-from .retry import with_retry
+from .errors import (
+    KIND_NETWORK,
+    KIND_REFUSAL,
+    KIND_TIMEOUT,
+    KIND_UPSTREAM,
+    build_exception_error,
+    build_status_error,
+    is_transient_error,
+)
 from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils.paths import ASSETS_DIR
@@ -292,15 +306,21 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         self._apply_thinking_level(payload, thinking_level)
         self._apply_response_format(payload, response_format)
 
+        # 同轮请求标识（幂等语义，任务 #26）：一次 chat 调用生成一个 id，
+        # 重试全程复用同一 payload + 同一标识（随 X-Request-Id 下发），
+        # 供上游按标识去重，避免同轮请求被当多次新请求重复计费。
+        request_id = new_request_id()
+        _req_headers = {"X-Request-Id": request_id}
         try:
             client = self._get_client(timeout)
-            resp = await with_retry(
-                lambda: client.post("/chat/completions", json=payload),
-                max_retries=1,
-                base_delay=1.0,
+            # 分流入口（任务 #26）：transient（429/5xx/超时/连接错误）指数退避
+            # 重试（上限/退避走 config）；permanent 4xx 立即上抛结构化错误
+            resp = await dispatch_chat_request(
+                lambda: client.post(
+                    "/chat/completions", json=payload, headers=_req_headers,
+                ),
                 context="chat",
             )
-            resp.raise_for_status()
             try:
                 data = resp.json()
             except json.JSONDecodeError as e:
@@ -309,40 +329,36 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                 raise AdapterError(
                     f"LLM 返回非 JSON 响应（可能被误当流式）：{e}；响应头={resp.text[:120]!r}",
                     retryable=False,
+                    kind=KIND_UPSTREAM,
                 ) from e
-        except httpx.TimeoutException:
-            raise AdapterError(f"LLM 请求超时（{timeout}s），请检查网络或供应商状态", retryable=True)
-        except httpx.HTTPStatusError as e:
+        except AdapterError as e:
             # / 优雅降级：严格端点不认 reasoning_effort/
-            # response_format 报 400 → 剥离字段重试一次（兼容探针）
-            if e.response.status_code == 400 and self._strip_unsupported_on_400(
-                    payload, e.response.text[:400]):
+            # response_format 报 400 → 剥离字段重试一次（兼容探针；
+            # permanent 400 中唯一允许的一次纠正式重提，非盲目重试）
+            if getattr(e, "http_status", None) == 400 and self._strip_unsupported_on_400(
+                    payload, str(e)):
                 try:
-                    client = self._get_client(timeout)
-                    resp = await client.post("/chat/completions", json=payload)
-                    resp.raise_for_status()
-                    data = resp.json()
-                except httpx.HTTPStatusError as e2:
-                    raise AdapterError(
-                        f"LLM 返回 HTTP {e2.response.status_code}: {e2.response.text[:200]}",
-                        retryable=e2.response.status_code >= 500,
-                        http_status=e2.response.status_code,
+                    resp = await client.post(
+                        "/chat/completions", json=payload, headers=_req_headers,
                     )
+                    if resp.status_code >= 400:
+                        raise build_status_error(
+                            resp.status_code, resp.text[:200], context="chat",
+                        )
+                    data = resp.json()
                 except json.JSONDecodeError as e2:
                     raise AdapterError(
                         f"LLM 返回非 JSON 响应（可能被误当流式）：{e2}",
                         retryable=False,
+                        kind=KIND_UPSTREAM,
                     ) from e2
                 except httpx.HTTPError as e2:
-                    raise AdapterError(f"LLM 请求失败: {e2}", retryable=True)
+                    raise build_exception_error(e2, context="chat") from e2
             else:
-                raise AdapterError(
-                    f"LLM 返回 HTTP {e.response.status_code}: {e.response.text[:200]}",
-                    retryable=e.response.status_code >= 500,
-                    http_status=e.response.status_code,
-                )
+                raise
         except httpx.HTTPError as e:
-            raise AdapterError(f"LLM 请求失败: {e}", retryable=True)
+            # 重试耗尽的超时/连接错误在此转译：分类器给出 kind/retryable
+            raise build_exception_error(e, context="chat") from e
 
         choices = data.get("choices", [])
         if not choices:
@@ -353,12 +369,13 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             content = " ".join(
                 p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") != "image_url"
             )
-        # 中继拒收通知单识别（200 包错误）——命中即抛错，不当稿子返回
+        # 中继拒收通知单识别（200 包错误）——命中即抛错，不当稿子返回；
+        # 归类为 permanent/refusal（模型拒答同源处置，任务 #26：不重试不 nudge）
         _env_status = detect_relay_error_envelope(content)
         if _env_status is not None:
             raise AdapterError(
                 f"LLM 中继拒收通知单（HTTP {_env_status}）: {content[:200]}",
-                retryable=False, http_status=_env_status,
+                retryable=False, http_status=_env_status, kind=KIND_REFUSAL,
             )
         tool_calls = message.get("tool_calls", []) or []
         # 透明度兑现：usage.total_tokens 入响应（轮次账单数据源，缺失保 0）
@@ -424,15 +441,11 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     and self._strip_unsupported_on_400(payload, str(e))
                 ):
                     continue
-                # 结构化判定（-2）：优先用 retryable 标记，兼容无标记旧异常回退文案匹配
+                # 结构化判定（-2）：优先用 retryable 标记，无标记旧异常回落
+                # 分类器结构化判定（任务 #26，替代脆弱的文案匹配）
                 flag = getattr(e, "retryable", None)
                 if flag is None:
-                    msg = str(e)
-                    flag = (
-                        msg.startswith("LLM 返回 HTTP 5")
-                        or "流式请求失败" in msg
-                        or "流式请求超时" in msg
-                    )
+                    flag = is_transient_error(e)
                 if not flag or yielded or attempt >= max_connect_retries:
                     raise
                 delay = 1.0 * (2 ** attempt)
@@ -463,11 +476,8 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             ) as resp:
                 if resp.status_code != 200:
                     body = (await resp.aread()).decode("utf-8", errors="replace")[:200]
-                    raise AdapterError(
-                        f"LLM 返回 HTTP {resp.status_code}: {body}",
-                        retryable=resp.status_code >= 500,
-                        http_status=resp.status_code,
-                    )
+                    # 分类器统一判定（任务 #26）：429/5xx = transient 才进重试循环
+                    raise build_status_error(resp.status_code, body, context="chat-stream")
 
                 ctype = resp.headers.get("content-type", "")
                 if "text/event-stream" not in ctype:
@@ -581,9 +591,13 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         except AdapterError:
             raise
         except httpx.TimeoutException:
-            raise AdapterError(f"LLM 流式请求超时（{timeout}s）", retryable=True)
+            raise AdapterError(
+                f"LLM 流式请求超时（{timeout}s）", retryable=True, kind=KIND_TIMEOUT,
+            )
         except httpx.HTTPError as e:
-            raise AdapterError(f"LLM 流式请求失败: {e}", retryable=True)
+            raise AdapterError(
+                f"LLM 流式请求失败: {e}", retryable=True, kind=KIND_NETWORK,
+            )
 
 
 class OpenAICompatImageAdapter(BaseImageAdapter):

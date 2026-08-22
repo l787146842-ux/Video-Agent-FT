@@ -1,4 +1,4 @@
-"""Skill 章节解析与执行器注入块（本文件覆盖章节解析与 executors 注入块回归；
+"""Skill 章节解析与通用主路径注入块（本文件覆盖章节解析与通用全文直注回归；
 legacy 全文直注/阶段聚焦单注入收敛的钉测试见 test_prompt_single_injection_p317.py，P3-17）"""
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.web import skill_docs
@@ -46,7 +46,7 @@ def test_split_sections_empty():
     assert skill_docs.split_skill_sections("") == {}
 
 
-# ---------- 执行器注入块（executors 唯一形态） ----------
+# ---------- 通用主路径注入块（执行器形态已一步退役） ----------
 
 def _pb(raw_state):
     return PromptBuilder(
@@ -56,20 +56,20 @@ def _pb(raw_state):
     )
 
 
-def test_executor_runtime_block_instead_of_full_text():
-    """只注入已注册执行器清单 + 流程基线，不注入 Skill 全文"""
+def test_generic_block_full_text_instead_of_executor_list():
+    """任务#36 B5：执行器退役后短 Skill（≤20000 字符）全文直注，
+    不再是「只注入执行器清单不注入全文」形态（断言不弱化，方向反转）。"""
     from src.video_agent.skill_runtime import registry
 
     registry.reset_registry()  # 隔离：确保按真实 data/skills 目录重新注册
     state = {"keyElements": [], "shots": [], "audioItems": []}
     pb = _pb(state)
     block = pb.build_selected_skill_block("AI-短剧一站式生成")
-    assert "已注册独立执行器" in block
-    for tool in ("script_analyze", "storyboard_key_elements", "storyboard_shots",
-                 "storyboard_audio", "write_media_prompt", "audio_generate", "video_assembler"):
-        assert tool in block
-    # 全文不注入（章节在执行器调用时自动注入）
-    assert "Seedance 顺序" not in block
+    # 全文直注：章节原文进 prompt（执行器形态的「全文不注入」已反转）
+    assert "使用 Seedance 2.5" in block
+    # 执行器清单措辞随退役删除
+    assert "已注册独立执行器" not in block
+    assert "== 当前 Skill 的流程基线" not in block
 
 
 def test_unsectioned_skill_block_is_empty():

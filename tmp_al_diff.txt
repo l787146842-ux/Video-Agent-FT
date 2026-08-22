@@ -1,0 +1,209 @@
+﻿diff --git a/src/video_agent/core/agent_loop.py b/src/video_agent/core/agent_loop.py
+index e0fa7b2..023e630 100644
+--- a/src/video_agent/core/agent_loop.py
++++ b/src/video_agent/core/agent_loop.py
+@@ -11,6 +11,7 @@ llm_call 绗?5 鍏冪粍缁撴瀯鍖栦笂鎶涳紝涓嶇粡鏂囨湰鍧楋級銆? 
+ llm_call / context_builder 浠?callable 娉ㄥ叆锛屼究浜庡崟鍏冩祴璇曘€? """
++import asyncio
+ from dataclasses import dataclass, field
+ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
+ 
+@@ -23,10 +24,21 @@ from src.video_agent.core.sse_events import (
+     SSE_ACTIONS_APPLIED,
+     SSE_STATUS,
+     SSE_STEP_STARTED,
++    SSE_STOPPED,
+     SSE_TOOL_FINISHED,
+     SSE_TOOL_STARTED,
+     status_event,
+ )
++# 鍗忎綔寮忓仠姝紙绔埌绔腑鏂崗璁紝浠诲姟 #17锛夛細妫€鏌ョ偣鍙鏍囧織娉ㄥ唽琛紝
++# 鍋滄淇″彿涓嶇粡闂告満/宸ュ叿鎵ц鍣ㄤ紶閫?+from src.video_agent.core.stop_signal import (
++    STOP_PHASE_STREAMING,
++    STOP_PHASE_THINKING,
++    STOP_PHASE_TOOL_EXECUTING,
++    AgentStoppedError,
++    clear_stop,
++    is_stop_requested,
++)
+ from src.video_agent.core.tracer import AgentTracer
+ from src.video_agent.core.turn_frame import emit_prelude_events
+ from src.video_agent.utils.prompts import load_prompt_section
+@@ -39,6 +51,7 @@ from src.video_agent.core.round_end_policies import (
+     suggest_next_actions,
+ )
+ from src.video_agent.core import live_metrics, prompt_gates
++from src.video_agent.exceptions import AdapterError
+ # 锛堟紓绉昏繘搴﹂€氶亾缁戝畾椤跺眰鍖栵紱spec_wizard_active 缁忔ā鍧楀睘鎬ц闂? # 锛堟祴璇?patch 鐩爣=registry 鍛藉悕绌洪棿锛岄《灞?from-import 浼氬喕缁撶粦瀹氬鑷?patch 澶辨晥锛? from src.video_agent.skill_runtime.progress import (
+@@ -48,7 +61,7 @@ from src.video_agent.skill_runtime.progress import (
+ 
+ if TYPE_CHECKING:
+     # 浠呯被鍨嬫爣娉ㄧ敤锛氭墽琛屽櫒瀹炵幇渚濊禆 web 灞傜敓鎴愮绾匡紝杩愯鏃朵笉鍋氱‖渚濊禆
+-    from src.video_agent.web.action_executor import StudioActionExecutor
++    from src.video_agent.web.action_executor import StateOperationExecutor
+ 
+ MAX_STEPS = settings.max_steps
+ 
+@@ -101,6 +114,11 @@ class AgentLoopResult:
+     # retry=鏈烘閲嶅彂涓婁竴鏉＄敤鎴锋秷鎭紙value 绌猴紝鍓嶇鍙栧巻鍙插師鏂囷級锛?     # continue=鍙戦€佸浐瀹氭枃鏈帹杩涙柊涓€姝?     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
++    # 鍗忎綔寮忓仠姝㈡爣璁帮紙绔埌绔腑鏂崗璁紝浠诲姟 #17锛夛細
++    # stopped=True 琛ㄧず鏈惊鐜粡妫€鏌ョ偣鍛戒腑鐢ㄦ埛鍋滄淇″彿骞插噣閫€鍑猴紱
++    # stop_phase=thinking/tool_executing/streaming锛堝墠绔皵娉℃帾杈炰緷鎹級
++    stopped: bool = False
++    stop_phase: str = ""
+ 
+ 
+ # split_actions / _extract_confirmation锛堟枃鏈姩浣滃埆鍚嶅綊涓€锛夊凡鍒犻櫎
+@@ -116,7 +134,7 @@ async def run_agent_loop(
+     *,
+     llm_call: LlmCall,
+     context_builder: ContextBuilder,
+-    executor: "StudioActionExecutor",
++    executor: "StateOperationExecutor",
+     history: List[Dict[str, Any]],
+     max_steps: int = MAX_STEPS,
+     on_event=None,
+@@ -124,10 +142,13 @@ async def run_agent_loop(
+     prelude_notes: Optional[List[tuple]] = None,
+     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None,
+     user_id: str = "",
++    stop_scope: str = "chat",
+ ) -> AgentLoopResult:
+     """on_event锛堝彲閫夛級锛歛sync callable锛屾帴鏀?{"type": "step_started"/"actions_applied", ...}
+     stream_hook锛堝彲閫夛級锛氭祦寮忔枃鏈閲忓洖璋冿紝姣忔敹鍒颁竴娈?LLM 鏂囨湰灏?await stream_hook(text)銆?     user_text 鍙互鏄函鏂囨湰 str锛屼篃鍙互鏄妯℃€?content parts 鍒楄〃锛堝惈 image_url锛夈€?+    stop_scope锛堢鍒扮涓柇鍗忚锛屼换鍔?#17锛夛細鍗忎綔寮忓仠姝㈡爣蹇椾綔鐢ㄥ煙
++    锛圫SE 鐩磋繛="chat"锛涗换鍔″紡浼犺緭=task_id锛夛紝姣忔妫€鏌ョ偣璇诲彇锛屽懡涓嵆骞插噣鏀跺熬銆?     """
+ 
+     async def emit(event: Dict[str, Any]) -> None:
+@@ -143,6 +164,18 @@ async def run_agent_loop(
+     result = AgentLoopResult()
+     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
+ 
++    # 鍗忎綔寮忓仠姝紙浠诲姟 #17锛夛細寰幆寮€濮嬫竻闄ゆ畫鐣欐爣蹇楋紙涓婁竴浠诲姟琚仠姝㈠悗鏈強娓呯悊鏃讹紝
++    # 涓嶅緱璇潃鏂颁换鍔★級锛涘寘瑁?stream_hook 璺熻釜鏄惁宸蹭骇鐢熸祦寮忔鏂囷紙闃舵鍒ゅ畾鐢級
++    clear_stop(stop_scope)
++    _streamed = {"on": False}
++    if stream_hook is not None:
++        async def _stream_hook_tracked(text: str) -> None:
++            _streamed["on"] = True
++            await stream_hook(text)
++        _hook_use: Optional[Callable[[str], Awaitable[None]]] = _stream_hook_tracked
++    else:
++        _hook_use = None
++
+     skill = str(getattr(executor, "skill_name", "") or "")
+     if not skill:
+         # 璇锋眰鏈惡甯?Skill 鏃跺洖閫€椤圭洰 usedSkills 鏈綅锛堝崟涓€瀹炵幇锛?@@ -159,9 +192,71 @@ async def run_agent_loop(
+     # contextvar 浠诲姟绾ч殧绂伙細寮傚父璺緞闅忎换鍔℃秷浜★紝姝ｅ父璺緞鍦ㄥ惊鐜粨鏉熷悗瑙ｇ粦銆?     _progress_token = bind_progress_emitter(emit)
+ 
++    def _stop_if_requested(phase: str) -> Optional[AgentStoppedError]:
++        """妫€鏌ョ偣锛氳鍋滄鏍囧織锛屽懡涓繑鍥炴惡甯﹂樁娈垫爣璁扮殑寮傚父瀵硅薄锛堢敱璋冪敤鏂规敹灏撅級"""
++        if is_stop_requested(stop_scope):
++            return AgentStoppedError(phase, result.steps)
++        return None
++
++    async def _finalize_stop(err: AgentStoppedError) -> AgentLoopResult:
++        """鐢ㄦ埛鍋滄鐨勫共鍑€鏀跺熬锛歵race 姝ヤ汉璐︺€佸彂鏄庣‘缁堟€佷簨浠躲€佹竻鏍囧織銆佽В缁戣繘搴﹂€氶亾銆?+        涓嶅彉寮忥細浠讳綍涓柇閮芥湁鐥曡抗锛坰topped 浜嬩欢 + result.stopped锛夈€侀兘鏈夊嚭鍙?+        锛堝墠绔嵁缁堟€佷簨浠惰惤鍋滄姘旀场骞舵寕銆岀户缁垰鎵嶇殑浠诲姟銆嶏級銆?""
++        result.stopped = True
++        result.stop_phase = err.phase
++        _step_no = err.step or result.steps
++        tracer.end_step(
++            _step_no, actions_applied=0,
++            finish_reason="stopped_by_user", token_usage=0,
++        )
++        logger.info(f"[AgentLoop] 宸茶鐢ㄦ埛鍋滄锛歱hase={err.phase} step={_step_no}")
++        await emit({"type": SSE_STOPPED, "phase": err.phase, "step": _step_no})
++        clear_stop(stop_scope)
++        unbind_progress_emitter(_progress_token)
++        result.trace = tracer.finish_trace(total_actions=result.applied_actions)
++        return result
++
++    async def _await_llm_with_stop_guard(phase_when_streamed: str, extra_messages: Optional[List[Dict[str, Any]]] = None):
++        """llm_call 璋冪敤缁熶竴瀹堥棬锛?+        - AgentStoppedError锛坧lanner 灞傚伐鍏锋壒鎵ц鍓嶆鏌ョ偣鎶涘嚭锛夆啋 骞插噣鏀跺熬锛?+        - CancelledError 纭彇娑堣惤鍦帮細鏈夊仠姝㈡爣蹇?= 鐢ㄦ埛鍋滄 鈫?鏀舵暃涓哄共鍑€鏀跺熬
++          锛堥樁娈垫寜宸蹭骇鐢熸祦寮忔鏂囦笌鍚﹀垽瀹氾級锛屾棤鏍囧織 = 寮傚父鍙栨秷鍘熸牱涓婃姏銆?+        杩斿洖 (None, 鏀跺熬缁撴灉) 琛ㄧず宸茶鍋滄锛堣皟鐢ㄦ柟鐩存帴杩斿洖锛夛紝鍚﹀垯 (5 鍏冪粍, None)銆?""
++        # 鏃犻檮鍔犳秷鎭椂鐩翠紶鍘熷垪琛ㄥ紩鐢細llm_call 鍐呯殑鍥炲杺 append锛坮ead_* 鍏ㄦ枃
++        # 娓愯繘寮忔姭闇插洖璺級涓庢儼鎬у帇缂╅兘闈犲師鍦颁慨鏀圭敓鏁堬紝鎷兼柊鍓湰浼氫涪鍥炲杺锛?+        # 甯?extra_messages锛堝潖杈撳嚭閲嶈瘯 nudge锛夋墠鎷煎壇鏈紝nudge 涓嶆寔涔呭寲
++        _msgs = messages if not extra_messages else messages + list(extra_messages)
++        try:
++            return _unpack_llm(await llm_call(system_prompt, _msgs, _hook_use)), None
++        except AgentStoppedError as _stop_err:
++            return None, await _finalize_stop(_stop_err)
++        except asyncio.CancelledError:
++            if is_stop_requested(stop_scope):
++                _ph = phase_when_streamed if _streamed["on"] else STOP_PHASE_THINKING
++                return None, await _finalize_stop(AgentStoppedError(_ph, result.steps))
++            unbind_progress_emitter(_progress_token)
++            raise
++        except AdapterError as _adapter_err:
++            # 閿欒鍒嗙被鍒嗘祦锛堜换鍔?#26锛夛細渚涘簲鍟嗛敊璇埌杈炬澶勬椂锛岃涔?transient
++            # 閲嶈瘯宸插湪閫傞厤灞傦紙dispatch_chat_request/with_retry锛夎€楀敖锛岃涔堟槸
++            # permanent锛堥壌鏉?鍙傛暟/鎷掔瓟锛夐敊璇€斺€斾袱绫婚兘涓嶅叿寰幆鍐呴噸璇曚环鍊硷細
++            # nudge 鍙敤浜庢ā鍨嬩晶绌?鐣稿舰杈撳嚭锛屽惊鐜晶涓嶅啀瀵瑰悓涓€ transient
++            # 鍙嶅 nudge銆傛竻鐞嗚繘搴﹂€氶亾鍚庡師鏍蜂笂鎶涳紝鐢变笂灞傜粺涓€閿欒璺緞鎵挎帴銆?+            unbind_progress_emitter(_progress_token)
++            logger.warning(
++                f"[AgentLoop] llm_call 渚涘簲鍟嗛敊璇紙kind={getattr(_adapter_err, 'kind', '')} "
++                f"retryable={getattr(_adapter_err, 'retryable', None)}锛夛細涓?nudge锛岀洿鎺ヤ笂鎶?
++            )
++            raise
++
+     for step in range(1, max_steps + 1):
+         result.steps = step
+         tracer.start_step()
++        # 妫€鏌ョ偣 1锛堟ā鍨嬭皟鐢ㄥ墠锛屼换鍔?#17锛夛細涓婅疆宸ュ叿鎵瑰凡瀹屾垚銆佹湰杞€濊€冩湭寮€濮嬶紝
++        # 鍛戒腑鍗虫€濊€冮樁娈靛仠姝紱涓嶆敼鍙樻甯歌矾寰勮涓猴紙鏃犳爣蹇楁椂闆跺紑閿€锛?+        _stop_err = _stop_if_requested(STOP_PHASE_THINKING)
++        if _stop_err is not None:
++            return await _finalize_stop(_stop_err)
+         if step == 1:
+             # 鍓嶅鏄庣粏锛氳 Skill/鏂囨。绛夊噯澶囧姩浣滆鍏ョ涓€姝ユ椂闂寸嚎
+             # 锛坙ive 涓庢寔涔呭寲鍚屾潯鐩紱鍘嗗彶 runtime 鐩磋窇
+@@ -219,15 +314,27 @@ async def run_agent_loop(
+         _plan_rec = tracer.record_action(
+             "model_reasoning", f"妯″瀷鍒涗綔瑙勫垝锛堣妭鐐瑰唴绗?{step} 杞級", 0.0, True,
+         )
+-        content, finish_reason, fc_applied, plan_ms, fc_extra = _unpack_llm(
+-            await llm_call(system_prompt, messages, stream_hook)
+-        )
++        content, finish_reason, fc_applied, plan_ms, fc_extra = (None, "", 0, 0.0, {})
++        _unpacked, _stopped_result = await _await_llm_with_stop_guard(STOP_PHASE_STREAMING)
++        if _stopped_result is not None:
++            return _stopped_result
++        content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
+         plan_total = float(plan_ms or 0.0)
+         # 閫忔槑搴﹀厬鐜帮細鏈疆 token 鐢ㄩ噺鍏ヨ处 trace锛堣疆娆¤处鍗曟暟鎹簮锛?         step_tokens = int((fc_extra or {}).get("token_usage") or 0)
++        # 妫€鏌ョ偣 2锛堟ā鍨嬭皟鐢ㄨ繑鍥炲悗锛屼换鍔?#17锛夛細FC 宸ュ叿鎵瑰凡鍦?llm_call 鍐呮墽琛屽畬姣曪紝
++        # 姝ゆ椂鍛戒腑鎸夊垰缁忓巻鐨勯樁娈垫爣璁帮紙宸ュ叿鎵?娴佸紡杈撳嚭/鎬濊€冿級骞插噣閫€鍑?+        _stop_err = _stop_if_requested(
++            STOP_PHASE_TOOL_EXECUTING if fc_applied > 0
++            else (STOP_PHASE_STREAMING if _streamed["on"] else STOP_PHASE_THINKING)
++        )
++        if _stop_err is not None:
++            return await _finalize_stop(_stop_err)
+ 
+-        # 绌?鐣稿舰鍝嶅簲闃叉姢锛氱┖鍝嶅簲鎴?MALFORMED_FUNCTION_CALL 杩炵画鍙戠敓 鈫?閲嶈瘯鑷冲 2 娆★紝
+-        # 杈惧埌涓婇檺鍚庝互鏄庣‘鏁呴殰鏂囨鏀跺熬锛堜笉鍐嶉潤榛樿惤涓恒€屾病鏈夎繑鍥炲彲瑙佸洖澶嶃€嶏級銆?+        # 绌?鐣稿舰鍝嶅簲闃叉姢锛堜换鍔?#26 鍒嗙被锛歱ermanent-ish 妯″瀷渚ч棶棰橈紝闈炰緵搴斿晢
++        # transient锛夛細绌哄搷搴旀垨 MALFORMED_FUNCTION_CALL 杩炵画鍙戠敓 鈫?nudge 閲嶈瘯鑷冲 2 娆★紝
++        # 杈惧埌涓婇檺鍚庝互鏄庣‘鏁呴殰鏂囨鏀跺熬锛堜笉鍐嶉潤榛樿惤涓恒€屾病鏈夎繑鍥炲彲瑙佸洖澶嶃€嶏級锛?+        # 渚涘簲鍟嗕晶閿欒宸茬敱涓婃柟 AdapterError 鍒嗘祦鎵挎帴锛屼笉浼氳鍏ユ湰閲嶈瘯璺緞銆?         bad_retries = 0
+         while not str(content or "").strip() and fc_applied == 0 and bad_retries < 2:
+             bad_retries += 1
+@@ -239,13 +346,17 @@ async def run_agent_loop(
+                 elapsed_ms=0.0,
+                 ok=True,
+             )
+-            content, finish_reason, fc_applied, plan_ms, fc_extra = _unpack_llm(
+-                await llm_call(
+-                    system_prompt,
+-                    messages + [{"role": "user", "content": _bad_output_nudge(bad_retries)}],
+-                    stream_hook,
+-                )
++            # 妫€鏌ョ偣锛堥噸璇曟ā鍨嬭皟鐢ㄥ墠锛夛細鍋滄浼樺厛浜庡潖杈撳嚭閲嶈瘯
++            _stop_err = _stop_if_requested(STOP_PHASE_THINKING)
++            if _stop_err is not None:
++                return await _finalize_stop(_stop_err)
++            _unpacked, _stopped_result = await _await_llm_with_stop_guard(
++                STOP_PHASE_STREAMING,
++                extra_messages=[{"role": "user", "content": _bad_output_nudge(bad_retries)}],
+             )
++            if _stopped_result is not None:
++                return _stopped_result
++            content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
+             plan_total += float(plan_ms or 0.0)
+             step_tokens = int((fc_extra or {}).get("token_usage") or 0)
+         # 瑙勫垝鑰楁椂鍙畻绾ā鍨嬭鍒掞紙鍙嶉锛夛細FC 宸ュ叿鎵ц鏃堕棿鐢卞悇宸ュ叿鏉＄洰鐙珛灞曠ず锛?

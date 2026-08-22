@@ -50,7 +50,7 @@ const SHADOW_WHITELIST = new Set([
   'ProjectListResponse', 'OkWithStateResponse', 'UndoStatusResponse', 'ProvidersResponse',
 ]);
 
-describe('契约桥接（七轮 S2/F1）', () => {
+describe('契约桥接', () => {
   const schemaNames = Array.from(genRaw.matchAll(/^export interface (\w+)/gm)).map((m) => m[1]);
 
   it('生成物 schema 全部被消费或登记豁免（消费面只升不降）', () => {

@@ -3,7 +3,7 @@ import { t } from '@/lib/locale';
 import type { ChatMessage } from '@/types';
 
 /**
- * 记忆命中可视化（批6 拆分自 ChatMessageItem）：
+ * 记忆命中可视化：
  * 本轮 Agent 参考了哪些长期记忆（折叠展示）。
  */
 export function MemoryHits(props: { message: ChatMessage }) {

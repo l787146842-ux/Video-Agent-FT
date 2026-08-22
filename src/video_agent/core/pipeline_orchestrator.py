@@ -13,6 +13,7 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import gates_cards
+from src.video_agent.core import gates_inputs
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.models import (
@@ -364,40 +365,29 @@ def evaluate_stage_precondition(
     )
 
 
-def next_batch(
-    state: Dict[str, Any], skill: str,
-) -> Tuple[List[StageSpec], bool]:
-    """拓扑就绪集：返回 (可执行确定性阶段批, 是否交接创作型阶段)。
+def _spec_stage_pending(state: Dict[str, Any], skill: str) -> bool:
+    """规格闸就绪探针（原拓扑就绪集调度函数的唯一存活消费语义，任务#27 退役后迁入）。
 
-    就绪 = 自身未完成且前置阶段全部 stage_done；同批可并行。
-    有确定性阶段就绪时优先执行；仅创作型就绪时交接模型循环。
-    无 dependencies 声明 → 线性回落（第一个未完成阶段决定，零行为变更）。
+    就绪 = spec 自身未完成且前置阶段全部 stage_done；无 dependencies
+    声明时线性回落（spec 为第一个未完成阶段才就绪），与原调度函数
+    成员判定逐句同构（零行为变更，任务#27 文本轨残留退役批迁入）。
+    探针只读客观事实、不发起行动（ADR-0004）；原调度函数的「可执行批/
+    交接」语义已随 runtime 直跑机制退役，防复活归
+    check_legacy_orchestration 门禁。
     """
     table = stage_table(skill)
-    done = {s.key: stage_done(s.key, state, skill) for s in table}
-    if all(done.values()):
-        return [], False
+    if not any(s.key == "spec" for s in table):
+        return False
+    if stage_done("spec", state, skill):
+        return False
     deps = _stage_dependencies(skill)
     if not deps:
+        # 线性回落：仅当 spec 是第一个未完成阶段（且为确定性阶段）
         for spec in table:
-            if not done[spec.key]:
-                if not spec.deterministic:
-                    return [], True
-                return [spec], False
-        return [], False
-    ready: List[StageSpec] = []
-    handoff = False
-    for spec in table:
-        if done[spec.key]:
-            continue
-        if all(done.get(p, False) for p in deps.get(spec.key, ())):
-            if spec.deterministic:
-                ready.append(spec)
-            else:
-                handoff = True
-    if ready:
-        return ready, False
-    return [], handoff
+            if not stage_done(spec.key, state, skill):
+                return spec.key == "spec"
+        return False
+    return all(stage_done(d, state, skill) for d in deps.get("spec", []))
 
 
 @dataclass
@@ -470,7 +460,36 @@ async def gate_precheck(
     # 原料闸：analysis 在表且未完成时才判定
     if any(s.key == "analysis" and not stage_done("analysis", state, skill) for s in table):
         inter = state.setdefault("interaction", {})
-        if (
+        reqs = registry.skill_requires_inputs(skill)
+        if reqs:
+            # v3 原料闸（任务#35 B2）：requires_inputs 声明优先，任一 required
+            # 项客观未满足即拦截；与 v2 script_required 两路不叠加（声明了
+            # v3 清单就不再重复走旧判定，未声明才回落下方旧分支）。
+            missing = gates_inputs.missing_required_inputs(state, skill)
+            if inter.get("script_waived"):
+                missing = [m for m in missing if m["type"] != "script"]
+            waived_now = False
+            if any(m["type"] == "script" for m in missing):
+                if prompt_gates.script_waive_intent(msg):
+                    inter["script_waived"] = True
+                    state_manager.save_debounced()
+                    waived_now = True
+                    missing = [m for m in missing if m["type"] != "script"]
+                elif prompt_gates.script_upload_ack_intent(msg):
+                    return OrchestratorOutcome(
+                        "script_ack", message=prompt_gates.SCRIPT_UPLOAD_ACK)
+            if missing:
+                if all(m["type"] == "script" for m in missing):
+                    card_msg, card_opts = prompt_gates.script_remind_card()
+                else:
+                    # 非剧本类/混合缺失：通用提醒文案（无豁免选项）
+                    card_msg = gates_inputs.input_remind_message(missing)
+                    card_opts = []
+                return OrchestratorOutcome(
+                    "script_pending", message=card_msg, options=card_opts)
+            if waived_now:
+                return None  # 本轮豁免：交接模型循环（与 v2 豁免短路同语义）
+        elif (
             registry.script_required_active(skill)
             and not prompt_gates.script_present(state)
             and not inter.get("script_waived")
@@ -505,8 +524,7 @@ async def gate_precheck(
             "retry_guidance", message=message,
             options=[{"node": e["node"], "count": str(e["count"])} for e in entries])
     # 规格闸：spec 阶段就绪且未完成 → 向导收集卡（不执行、不抢先）
-    batch, _handoff = next_batch(state, skill)
-    if any(s.key == "spec" for s in batch):
+    if _spec_stage_pending(state, skill):
         return OrchestratorOutcome("spec_pending")
     return None
 

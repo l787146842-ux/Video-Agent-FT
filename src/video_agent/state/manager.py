@@ -220,7 +220,11 @@ class StateManager(UndoRedoMixin):
         self._ensure_conversations()
 
     def _load(self):
-        """加载：优先从 projects/index.json 找活跃项目，否则迁移旧 studio_state.json"""
+        """加载：优先从索引找活跃项目，否则迁移旧 studio_state.json。
+
+        读写均经 self._repo 接口（sqlite 后端下索引/项目体都在
+        state.sqlite3；任务 #24 镜像退役后无 JSON 镜像旁路）。
+        """
         self._repo.ensure_dirs()
 
         index = self._repo.read_index()
@@ -395,7 +399,9 @@ class StateManager(UndoRedoMixin):
             self._context_cache.clear()
 
     def save(self) -> None:
-        """持久化：写入当前项目目录 + 兼容文件 + 更新 index 时间戳
+        """持久化：写入当前项目 + 更新 index 时间戳（经 repo 接口；
+        sqlite 后端下唯一落盘点为 state.sqlite3，JSON 镜像已退役，
+        save_compat 在 sqlite 仓库为空实现）
 
         版本账本闸（任务级隔离后全局单例在任务期间不刷新，
         切换/保存若用过期内存回写会抹掉后台任务的新数据）：磁盘账本比

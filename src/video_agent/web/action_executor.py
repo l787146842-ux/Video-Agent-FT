@@ -1,8 +1,9 @@
 """
-Studio Actions 执行器 — 从 actions.py 抽离。
+Studio 状态操作执行器 — 从 actions.py 抽离。
 
-职责：执行 studio-actions JSON 中的操作列表，操作 StateManager 共享状态并自动持久化。
-解析逻辑在 action_parser.py，本文件仅负责执行。
+职责：执行结构化动作 dict 列表，操作 StateManager 共享状态并自动持久化。
+动作来源 = FC 工具调用 / mock 结构化动作（动作通道唯一 = FC，ADR-0001；
+文本块解析已随文本轨退役删除，任务#27）。
 """
 from datetime import datetime, timezone
 import re
@@ -24,14 +25,11 @@ from src.video_agent.web.generation import submit_image_task
 from src.video_agent.web.provider_config import stamp_draft_spec_preference
 from src.video_agent.web.prompt_refs import media_of_draft
 from src.video_agent.web.action_descriptions import describe_action
-from src.video_agent.web.action_parser import (
-    parse_actions_from_reply as _parse_actions,
-)
 
 
-class StudioActionExecutor:
+class StateOperationExecutor:
     """
-    执行 studio-actions JSON 中的操作列表。
+    执行结构化动作 dict 列表（FC 轨工具 / mock 结构化动作直达，不经文本解析）。
     操作 StudioStateService 共享状态，执行后自动持久化。
     """
 
@@ -48,12 +46,13 @@ class StudioActionExecutor:
         self.selected_type = selected_type
         # 提示词结构闸机开关（Skill 流程激活时由 Planner 打开，日常微调/mock 不拦截）
         self.gate_enabled = gate_enabled
-        # 执行器/闸机规则（skill_runtime executors 注入 parse_gate_rules 结果；
+        # 闸机规则（Skill 激活时注入 parse_gate_rules 结果；
         # None = 用平台默认规则，保证无 Skill 场景不炸）
+        # （原 skill_runtime executors 注入通道已随任务#36 B5 执行器退役删除）
         self.gate_rules: Optional[Dict[str, Any]] = None
         # 决策 D：用户坚持（user_override）时硬伤降为警告照常放行
         self.gate_override: bool = False
-        # 本批次闸机警告（executors._apply_actions 读取后随结果回喂）
+        # 本批次闸机警告（eval 回归读取核验闸机判定；每次 execute 重置）
         self.gate_warnings: List[str] = []
         # 当前激活的 Skill 名称（执行器/agent_loop 注入；：平台行为按 Skill 声明驱动）
         self.skill_name: str = ""
@@ -94,10 +93,6 @@ class StudioActionExecutor:
     def state(self) -> Dict[str, Any]:
         return self.svc.state_dict
 
-    def parse_actions_from_reply(self, reply: str) -> List[Dict[str, Any]]:
-        """从回复文本中提取 studio-actions JSON 块（后仅 mock 演示通道使用）"""
-        return _parse_actions(reply)
-
     def execute(self, actions: List[Dict[str, Any]]) -> int:
         """执行操作列表，返回成功执行的数量。执行后自动持久化。
 
@@ -133,64 +128,9 @@ class StudioActionExecutor:
             self.svc.discard_last_undo()
         return applied
 
-    # 文本动作轨的异步执行器动作（skill_runtime.executors 注册的工具）
-    _ASYNC_EXECUTOR_ACTIONS = frozenset({
-        "script_analyze",
-        "storyboard_key_elements",
-        "storyboard_shots",
-        "storyboard_audio",
-        "write_media_prompt",
-        "audio_generate",
-        "video_assembler",
-    })
-
-    @staticmethod
-    def _is_async_action(action: Dict[str, Any]) -> bool:
-        """判断是否为需要独立 LLM 调用的执行器动作（文本轨据此走 execute_async）。"""
-        return str(action.get("action") or action.get("type") or "").strip() in \
-            StudioActionExecutor._ASYNC_EXECUTOR_ACTIONS
-
-    async def execute_async(
-        self, actions: List[Dict[str, Any]]
-    ) -> int:
-        """文本动作轨执行含异步执行器的操作列表。
-
-        异步动作 → skill_runtime 执行器（独立 LLM 调用 + 结构化校验）；
-        其余动作 → 同步 execute（同一闸机/undo/持久化语义）。
-        返回成功执行的条数。
-        """
-        applied = 0
-        sync_actions: List[Dict[str, Any]] = []
-        for act in actions or []:
-            if self._is_async_action(act):
-                result = await self._dispatch_async_action(act)
-                if result is not None and result.success:
-                    applied += 1
-                    detail = str((result.data or {}).get("detail") or "")
-                    if detail:
-                        self.action_log.append(detail)
-            else:
-                sync_actions.append(act)
-        if sync_actions:
-            applied += self.execute(sync_actions)
-        if applied > 0:
-            self.svc.save_debounced()
-        return applied
-
-    async def _dispatch_async_action(self, action: Dict[str, Any]):
-        """按动作名构造执行器实例并执行；未注册/参数不合返回 None。"""
-        from src.video_agent.skill_runtime.executors import build_executor_tool
-
-        tool = build_executor_tool(str(action.get("action") or ""))
-        if tool is None:
-            return None
-        payload = {k: v for k, v in action.items() if k not in ("action", "type")}
-        try:
-            params = tool.get_input_schema()(**payload)
-        except Exception:
-            logger.warning(f"[SkillExec] 执行器参数构造失败: {action.get('action')} {payload}")
-            return None
-        return await tool.aexecute(params)
+    # 文本动作轨的异步执行器动作（execute_async/_dispatch_async_action/
+    # _ASYNC_EXECUTOR_ACTIONS）已随任务#36 B5 执行器一步退役删除：
+    # 管线阶段改由通用主路径直走平台工具，无外部调用方。
 
     @staticmethod
     def _is_mutating(action: Dict[str, Any]) -> bool:
@@ -305,10 +245,7 @@ class StudioActionExecutor:
         async with self.svc.lock:
             return self.execute(actions)
 
-    async def execute_async_locked(self, actions: List[Dict[str, Any]]) -> int:
-        """持 svc.lock 执行异步执行器动作（对齐 execute_locked 并发契约）。"""
-        async with self.svc.lock:
-            return await self.execute_async(actions)
+    # （execute_async_locked 已随任务#36 B5 执行器退役删除，异步执行器动作不再存在）
 
     # ---------- 内部方法 ----------
 
@@ -479,7 +416,8 @@ class StudioActionExecutor:
             or action.get("kind") or action.get("target_type") or ""
         ).strip()
         # 首拆只允许关键元素的平台自加限制已清除（流程以 Skill 为准）；
-        # 客观依赖（分镜 sceneRefs 必须引用已存在元素）由 exec_common 校验兜底
+        # 客观依赖（分镜 sceneRefs 必须引用已存在元素）由 fc_tool_runner
+        # _structure_integrity_gate 校验兜底（任务#36 护栏移植，承接原 exec_common）
         return self._apply_add_group_inner(action)
 
     def _apply_add_group_inner(self, action: Dict) -> bool:

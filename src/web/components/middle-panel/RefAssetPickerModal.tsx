@@ -6,6 +6,8 @@ import {
   fetchAllCanvasNodeImages, fetchCanvasList, type CanvasListItem,
 } from '@/api/canvas';
 import { safeUrl } from '@/lib/utils';
+import { useFocusTrap } from '@/lib/focus-trap';
+import { ModalStatus } from './RefAssetModalStatus';
 
 /** 参考素材项（统一图片/视频/音频） */
 export interface RefAssetItem {
@@ -29,6 +31,10 @@ export function RefAssetPickerModal(props: {
   const [dropdownOpen, setDropdownOpen] = createSignal(false);
   /** 多选暂存（确认时批量添加） */
   const [picked, setPicked] = createSignal<RefAssetItem[]>([]);
+
+  // 焦点圈闭：打开圈闭、Esc 关闭、关闭还原焦点
+  const [panelEl, setPanelEl] = createSignal<HTMLElement>();
+  useFocusTrap(() => (props.open ? panelEl() : undefined), { onEscape: () => props.onClose() });
 
   // 每次打开重置选择
   createEffect(() => { if (props.open) setPicked([]); });
@@ -112,7 +118,13 @@ export function RefAssetPickerModal(props: {
     <Show when={props.open}>
       <div class="asset-modal canvas-picker-modal">
         <div class="asset-modal-backdrop" onClick={() => props.onClose()} />
-        <div class="asset-modal-panel">
+        <div
+          class="asset-modal-panel"
+          ref={setPanelEl}
+          role="dialog"
+          aria-modal="true"
+          aria-label="选择参考素材"
+        >
           {/* 头部：标题 + 源选择器 + 关闭 */}
           <div class="asset-modal-header">
             <div class="canvas-picker-title">
@@ -158,32 +170,23 @@ export function RefAssetPickerModal(props: {
           {/* 主体网格 */}
           <div class="asset-modal-body">
             <Show when={loading()}>
-              <div class="asset-modal-status">
-                <FiLoader size={22} class="animate-spin" />
-                <p>加载中...</p>
-              </div>
+              <ModalStatus icon={<FiLoader size={22} class="animate-spin" />} text="加载中..." />
             </Show>
 
             <Show when={!loading() && source() === '' && (canvasList()?.canvases || []).length === 0}>
-              <div class="asset-modal-status">
-                <FiImage size={28} />
-                <p>暂无可用画布，可在 + 菜单本地上传素材</p>
-              </div>
+              <ModalStatus icon={<FiImage size={28} />} text="暂无可用画布，可在 + 菜单本地上传素材" />
             </Show>
 
             <Show when={!loading() && source() !== '' && canvasImages()?.canvas_online === false}>
-              <div class="asset-modal-status">
-                <FiAlertCircle size={22} />
-                <p>画布未连接，画布源不可用（仍可用参考栏已有素材或 + 本地上传）</p>
-                <button type="button" class="btn-secondary" onClick={() => void refetchCanvasImages()}>重连画布</button>
-              </div>
+              <ModalStatus
+                icon={<FiAlertCircle size={22} />}
+                text="画布未连接，画布源不可用（仍可用参考栏已有素材或 + 本地上传）"
+                action={<button type="button" class="btn-secondary" onClick={() => void refetchCanvasImages()}>重连画布</button>}
+              />
             </Show>
 
             <Show when={!loading() && source() !== '' && canvasImages()?.canvas_online !== false && items().length === 0}>
-              <div class="asset-modal-status">
-                <FiImage size={28} />
-                <p>该画布中暂无素材</p>
-              </div>
+              <ModalStatus icon={<FiImage size={28} />} text="该画布中暂无素材" />
             </Show>
 
             <Show when={!loading() && items().length > 0}>

@@ -1,4 +1,4 @@
-/* ===== chat.css 拆分：卡片族（确认卡/文档卡/阶段卡/闸机 chips/生图卡片）——P4-23 纯移动 ===== */
+/* ===== 卡片族（确认卡/文档卡/阶段卡/闸机 chips/生图卡片） ===== */
 @layer components {
   /* 确认操作 */
   .confirm-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
@@ -64,14 +64,14 @@
   .doc-card-name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .doc-card-status { margin-left: auto; font-size: 10px; color: var(--accent-emerald); flex-shrink: 0; }
 
-  /* 阶段卡片（B2/F12·D4：可展开、默认展开；正文=本轮概述+执行清单，与模型正文判重） */
+  /* 阶段卡片（可展开、默认展开；正文=本轮概述+执行清单，与模型正文判重） */
   .stage-card { border: 1px solid rgba(52, 211, 153, 0.3); border-radius: 8px; background: rgba(52, 211, 153, 0.05); margin-bottom: 6px; overflow: hidden; }
   .stage-card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; user-select: none; width: 100%; background: none; border: none; font: inherit; text-align: left; cursor: pointer; }
   .stage-card-header:hover { background: rgba(52, 211, 153, 0.08); }
   .stage-check { color: #34d399; flex-shrink: 0; }
   .stage-card-title { font-size: 12px; font-weight: 600; color: #34d399; }
   .stage-card-badge { font-size: 10px; color: var(--text-muted); background: rgba(255, 255, 255, 0.06); padding: 2px 7px; border-radius: 4px; }
-    /* 四轮 R3/#10：过期/已回应暂停卡徽标（降饱和虚线框，弱化但可读） */
+    /* 过期/已回应暂停卡徽标（降饱和虚线框，弱化但可读） */
     .stage-card-badge-stale { color: var(--text-dim); background: transparent; border: 1px dashed var(--border-color); }
   .stage-card-arrow { margin-left: auto; color: var(--text-dim); flex-shrink: 0; }
   .stage-card-body { padding: 2px 12px 10px; border-top: 1px dashed rgba(52, 211, 153, 0.25); }
@@ -79,13 +79,13 @@
   .stage-card-ops { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
   .stage-card-ops li { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
-  /* 闸机判定 chips（B2/F13：结构化来源标注「平台」/「Skill『xxx』」） */
+  /* 闸机判定 chips（结构化来源标注「平台」/「Skill『xxx』」） */
   .gate-chip-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
   .gate-chip { font-size: 10px; padding: 1px 7px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
   .gate-chip-platform { color: #f87171; background: rgba(248, 113, 113, 0.12); border: 1px solid rgba(248, 113, 113, 0.35); }
   .gate-chip-skill { color: #fbbf24; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35); }
   .gate-chip-msg { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
-  /* 0817：闸机拦截合并折叠（同款报错 ×N，details 展开） */
+  /* 闸机拦截合并折叠（同款报错 ×N，details 展开） */
   .msg-gate-collapse { width: 100%; }
   .msg-gate-collapse-summary { cursor: pointer; font-size: 11px; color: var(--text-muted); user-select: none; }
   .gate-chip-count { font-size: 11px; font-weight: 600; color: var(--warn, #d97706); }

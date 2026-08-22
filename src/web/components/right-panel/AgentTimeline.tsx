@@ -32,9 +32,9 @@ export function timelineFromMessage(msg: ChatMessage): { reasoning: string; item
         summary: a.summary || a.name,
         status: a.ok ? 'done' : 'failed',
         elapsed_ms: a.elapsed_ms,
-        // 批2 透明度：后端持久化的结果摘要（与 live tool_finished 同口径）
+        // 后端持久化的结果摘要（与 live tool_finished 同口径）
         result_summary: a.result_summary || undefined,
-        // 审核整改批 2：规划级执行器徽标（重建与 live 同源）
+        // 规划级执行器徽标（重建与 live 同源）
         planning: a.planning || undefined,
       });
     });
@@ -65,10 +65,10 @@ export function stageLabelFromMessage(msg: ChatMessage): string {
   return label;
 }
 
-/** 单条时间线条目（批 2：合并条目带逐轮明细，点击展开；展开态用户可控） */
+/** 单条时间线条目（合并条目带逐轮明细，点击展开；展开态用户可控） */
 function TimelineRow(props: { item: TimelineItem; now: () => number }) {
   const [open, setOpen] = createSignal(false);
-  /** P4-22：result_summary 详情展开态（折叠=一句话摘要，展开=全文） */
+  /** result_summary 详情展开态（折叠=一句话摘要，展开=全文） */
   const [resultOpen, setResultOpen] = createSignal(false);
   const item = () => props.item;
   return (
@@ -98,7 +98,7 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
           <FiChevronDown size={11} class={`tl-item-toggle-arrow${open() ? ' expanded' : ''}`} />
         </button>
       </Show>
-      {/* 审核整改批 2：规划级执行器徽标（不产真实媒体，欠账显性化） */}
+      {/* 规划级执行器徽标（不产真实媒体，欠账显性化） */}
       <Show when={item().planning}>
         <span class="tl-planning-badge" title="规划级执行器：产出规划/方案文本，不产生真实媒体文件">规划</span>
       </Show>
@@ -111,8 +111,8 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
           · {formatElapsed(Math.max(0, props.now() - (item().started_at_ms || 0)))}
         </span>
       </Show>
-      {/* 批2 透明度：工具执行结果一句话摘要（与 summary 重复时不重复展示）；
-          P4-22：多句摘要可点击展开全文（折叠态默认一句话，纯前端切换） */}
+      {/* 工具执行结果一句话摘要（与 summary 重复时不重复展示）；
+          多句摘要可点击展开全文（折叠态默认一句话，纯前端切换） */}
       <Show
         when={item().status !== 'running' && item().result_summary
           && item().result_summary !== item().summary}
@@ -167,7 +167,7 @@ export function AgentTimeline(props: {
   live?: boolean;
   /** 深度思考总耗时（毫秒，完成后展示在卡片角标） */
   thinkingMs?: number;
-  /** 批 1：实时状态文案（状态栏=当前正在做的一件事），流式标题优先展示 */
+  /** 实时状态文案（状态栏=当前正在做的一件事），流式标题优先展示 */
   liveStatus?: () => string;
 }) {
   // 深度思考面板：流式中自动展开（实时看思考流），完成后自动折叠（live 卸载后
@@ -214,7 +214,7 @@ export function AgentTimeline(props: {
   });
   onCleanup(() => { if (tickTimer !== undefined) clearInterval(tickTimer); });
 
-  // 批 2 降噪：连续规划条目合并为「规划 N 轮 · 累计 Xs」单条（明细可展开）；
+  // 降噪：连续规划条目合并为「规划 N 轮 · 累计 Xs」单条（明细可展开）；
   // 工具/执行器条目不受影响，流式 running 段不合并保持实时逐条可见
   const viewItems = () => consolidateTimeline(props.items);
 
@@ -262,7 +262,8 @@ export function AgentTimeline(props: {
               onClick={() => setOpsOpen(!opsOpen())}
             >
               <FiCheckCircle size={13} class="tl-icon-done" />
-              <span class="tl-panel-title">
+              {/* 流式状态文案（正在执行第 N 项…）对读屏器可闻；历史重建态不挂 live */}
+              <span class="tl-panel-title" aria-live={props.live ? 'polite' : undefined}>
                 {props.live
                   ? (props.liveStatus && props.liveStatus()
                     && props.liveStatus() !== t('rp.streaming.processing')

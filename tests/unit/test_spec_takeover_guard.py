@@ -65,34 +65,7 @@ def test_fc_spec_reject_takes_over_with_wizard(tmp_path, monkeypatch):
     assert raw_state["interaction"].get("confirmation_message") == confirmation
 
 
-def test_general_mixed_failure_override(tmp_path, monkeypatch):
-    """部分关键成功、部分失败 + 模型声称全部完成 → 覆盖为诚实文案（盲区修复）。"""
-    import asyncio
-
-    tmp_svc = StateManager(str(tmp_path / "ws"))
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: tmp_svc))
-
-    class _TM:
-        async def invoke_tool(self, name, args):
-            if name == "script_analyze":
-                return ToolResult(success=True, data={"summary": "分析完成"})
-            if name == "storyboard_shots":
-                return ToolResult(success=False, error="当前 Skill「未指定」未注册 storyboard_shots 执行器")
-            if name == "workflow_pause":
-                return ToolResult(success=True, data={})
-            return ToolResult(success=True, data={})
-
-    runner = FCToolRunner(tool_manager=_TM())
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    response = ChatResponse(content="", tool_calls=[
-        {"id": "c1", "type": "function", "function": {
-            "name": "script_analyze", "arguments": "{}"}},
-        {"id": "c2", "type": "function", "function": {
-            "name": "storyboard_shots", "arguments": "{}"}},
-        {"id": "c3", "type": "function", "function": {
-            "name": "workflow_pause",
-            "arguments": json.dumps({"message": "关键元素与分镜全部完成，请确认"})}},
-    ])
-    _applied, confirmation, *_rest = asyncio.run(runner.execute(response, injected_skill="AI-短剧一站式生成"))
-    assert "关键步骤未全部完成" in confirmation
-    assert "全部完成，请确认" not in confirmation
+# test_general_mixed_failure_override 已随任务#36 B5 执行器一步退役删除：
+# 被测场景（storyboard_shots 执行器失败计入关键步骤防虚报）不复存在；
+# 新基线关键步骤防虚报收敛到 document_write，由
+# test_critical_chain_integrity.test_false_claim_overridden_when_critical_tools_fail 钉死。

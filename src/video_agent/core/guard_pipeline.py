@@ -6,7 +6,7 @@
     input guard → tool input guard → tool execute → tool output guard → output guard → audit
 
 本模块是「提示词写入」判定的唯一组合实现；调用方只注入参数，不各自写判定。
-（studio-actions 严格 JSON 解析仅存于 mock 演示通道，主路径无自由文本解析。）
+（studio-actions 文本解析已全量退役，含 mock 演示通道，主路径无自由文本解析，ADR-0001。）
 verdict 结构化（GateVerdict），回喂模型与展示用户用同一源；
 每条判定经 tracer.record_gate 入审计（/api/agent/gates 可见）。
 
@@ -194,6 +194,49 @@ def evaluate_gen_confirm(
     msg = "生成确认闸拦截：" + prompt_gates.GENERATION_CONFIRM_GATE_BLOCKED
     warns.append(msg)
     audit_verdicts([GateVerdict("platform.gen_confirm", "platform", False, msg)], action=action)
+    return msg, warns
+
+
+def evaluate_tool_risk(
+    name: str,
+    *,
+    override: Any = False,
+    flow_consent: bool = False,
+) -> "tuple[Optional[str], List[str]]":
+    """工具风险分级确认闸（宪法 §2.7：high 必须平台闸机 + 用户确认）。
+
+    适用范围 = high 级且无既有确认原语覆盖的工具（画布写入/文档写入，
+    名单归 fc_gates.TOOL_RISK_CONFIRM_TOOLS）；生成类 high
+    （image_generate 等）由 gen_confirm 闸覆盖，不重复设闸。
+    确认回携机制与 gen_confirm 同源（§2.4）：
+    - flow_directive 一条龙指令 = 本批显式同意（留痕）；
+    - 用户「本次放行」（gate_overrides 单次消费）= 一次性同意；
+    - 无同意 → 硬拒（Context ≠ Consent，禁止静默放行），
+      拒因回喂模型，由其暂停向用户发起确认邀请。
+    判定经 audit_verdicts 入审计（rule_id = platform.tool_risk）。
+    返回 (硬拒原因, warnings)。
+    """
+    warns: List[str] = []
+    if flow_consent:
+        w = "一条龙指令作为本批高风险工具（" + name + "）的显式同意（留痕）"
+        warns.append(w)
+        audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
+                       action=name, overridden=True)
+        return None, warns
+    if override in (True, "all") or prompt_gates.override_covers(override, "tool_risk"):
+        w = f"用户坚持放行高风险工具确认闸（仅警告，单次生效留痕）：{name}"
+        warns.append(w)
+        audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
+                       action=name, overridden=True)
+        return None, warns
+    msg = (
+        f"高风险工具确认闸拦截：'{name}' 为 high 级操作（宪法 §2.7），"
+        "未经用户显式同意不得执行。请先用 workflow_pause 向用户说明本次将执行的"
+        "操作并请求确认；用户同意后（点「本次放行」或本条消息明确指示）再重新发起。"
+    )
+    warns.append(msg)
+    audit_verdicts([GateVerdict("platform.tool_risk", "platform", False, msg)],
+                   action=name)
     return msg, warns
 
 

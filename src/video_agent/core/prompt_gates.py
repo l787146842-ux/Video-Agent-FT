@@ -1,17 +1,23 @@
 """
-提示词结构校验（Prompt Gate）— 写入即校验、不合格照写并附警告。
+提示词结构校验（Prompt Gate）— 写入即校验，按模式区分处置。
 
-指令约束（system prompt / Skill 注入）是「贴告示」，遵循是概率性的；
-本模块做客观可查的结构校验，但按用户要求**永不拦截**：
-校验未通过时写入照常生效，同时把校验意见作为警告随回复返回，
-让用户在知情前提下自行决定是否采纳。用户指令永远优先于流程。
+语义基线（与 prompts/gates/messages.md 一致）：流程闸对用户只警告不拦人；
+结构闸 strict 下拒收重写。指令约束（system prompt / Skill 注入）是「贴告示」，
+遵循是概率性的；本模块做客观可查的结构校验：
+- strict：校验未通过时该次写入被闸机拒收，校验意见结构化回喂模型修正重写；
+- warn：校验未通过时写入按用户要求照常生效，校验意见作为警告随回复返回，
+  让用户在知情前提下自行决定是否采纳；
+- off：完全关闭。
+用户明确坚持时可签发覆盖放行（硬伤降为警告，见 guard_pipeline 覆盖分支）；
+指令优先级声明见 shared/iron_rules_header.md（单一表述源）。
 
 设计原则：
 - 只查客观标记（字符级可判定），不做主观质量评判，避免误伤合法提示词；
 - 全部复用现有字段（prompt / refAssets / timbre），不引入新字段体系；
 - 仅在 Skill 流程激活时启用（由调用方按 injected_skill / gate_enabled 决定），
   日常微调、mock 流程不受影响；
-- 模式：strict/warn = 照常执行 + 返回警告（默认）、off = 完全关闭。
+- 模式：strict = 拒收重写（校验未通过拦下写入）、warn = 照常执行 + 返回警告
+  （默认）、off = 完全关闭。
 """
 import json
 import re
@@ -20,6 +26,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.video_agent.config import settings
 from src.video_agent.core.spec_rules import find_spec_doc
+# v3 language 声明读取（任务#35 B2）：registry 顶层不依赖 core，无环；
+# 经模块属性访问保住测试 patch 目标（monkeypatch registry.skill_language 即生效）
+from src.video_agent.skill_runtime import registry
 from src.video_agent.state.models import (
     ALL_CATEGORIES,
     CAT_AUDIO_ITEMS,
@@ -55,6 +64,9 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
                      "关键元素提示词最短字数地板（防敷衍，不可被 Skill 降低）"),
         GateRuleMeta("platform.gen_confirm", LAYER_PLATFORM,
                      "生成确认闸：未经用户确认的 Prompt Draft 不触发生成"),
+        GateRuleMeta("platform.tool_risk", LAYER_PLATFORM,
+                     "工具风险分级闸（§2.7）：high 级且无既有确认原语覆盖的工具"
+                     "（画布写入/文档写入）须经用户显式同意方可执行"),
         GateRuleMeta("skill.require_duration", LAYER_SKILL,
                      "分镜提示词须写明镜头总时长"),
         GateRuleMeta("skill.require_subtitle", LAYER_SKILL,
@@ -199,61 +211,21 @@ def gate_mode() -> str:
     return (settings.prompt_gate_mode or "strict").strip().lower()
 
 
-# ---------- 用户坚持覆盖（用户第一 > 规格文档铁律 > Skill/系统默认） ----------
+# ---------- 闸机豁免（指令优先级声明见 shared/iron_rules_header.md） ----------
 
-# 用户坚持覆盖（作用域升级）：不再全局降级，按意图映射到具体闸门。
-# 返回值（作用域）：""=未命中 / "element_image"=仅要求跳过元素概念图前置 /
-# "all"=泛化权威表达（全部闸门降为警告）。特定意图优先于泛化表达：
-# 「我坚持要跳过概念图」只放行元素图闸，结构校验闸保持严格。
+# 闸机豁免作用域枚举：只认前端「本次放行」按钮携带的 scope（C5，任务#22：
+# 正则猜自然语言豁免入口已退役——「坚持/听我的/直接写」类话术不再降级闸门，
+# 误伤面归零；豁免唯一权威入口 = GateWarnings 按钮随消息携带 gate_overrides）。
 GATE_STRUCTURE = "structure"            # 提示词结构闸（字数/语言/时长/字幕/音频/镜头语言）
 GATE_ELEMENT_IMAGE = "element_image"    # 元素概念图前置闸
 GATE_FLOW_PAUSE = "flow_pause"          # 流程暂停兜底闸（总结/规格暂停卡）：仅 scope=all 豁免，
 # 「跳过概念图」等特定意图不涵盖（用户只是不想等图，不是不要交互分界）
 
 # 一次性放行作用域枚举——前端按钮/后端消费/trace 记录三端引用同一语义。
-# 值与上方闸域常量同源（单一表述源：ELEMENT_IMAGE 即 GATE_ELEMENT_IMAGE 别名），
-# 此前 planner 消费逻辑「非 all 即 element_image」的隐式映射只有两处代码可懂。
+# 值与上方闸域常量同源（单一表述源：ELEMENT_IMAGE 即 GATE_ELEMENT_IMAGE 别名）。
 GATE_OVERRIDE_SCOPE_ALL = "all"                          # 本轮闸机全部豁免（单次生效）
 GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE = GATE_ELEMENT_IMAGE   # 仅元素概念图前置闸豁免
 GATE_OVERRIDE_SCOPE_FLOW = "flow"                        # 流程门禁豁免（用户坚持全速推进）
-
-# 特定意图：跳过元素概念图前置（只降级 GATE_ELEMENT_IMAGE）
-_USER_INSIST_IMAGE_PATTERNS = tuple(
-    re.compile(p) for p in (
-        r"跳过(出图|元素图|概念图|前置)",
-        r"不(用|要|生成)(出图|图片|概念图|元素图|图)",
-        r"不(用)?等图",
-        r"忽略前置",
-    )
-)
-# 泛化权威表达（降级全部闸门）
-_USER_INSIST_GENERAL_PATTERNS = tuple(
-    re.compile(p) for p in (
-        # 「坚持」裸词仅在非程度副词修饰时命中（「很/太/真/非常…坚持」属描述性文本）
-        r"(?<![很太真非有特十])(?<!非常)(?<!特别)(?<!有点)(?<!有些)坚持",
-        r"强制(跳过|执行|写入|继续|生成|放行|开启)",
-        r"按我说的|按我要求|按我的要求|听我的",
-        # 「绕过」需带流程类宾语或「直接绕过」（防「绕过木星」类剧情描述误触发）
-        r"绕过(流程|闸机|前置|校验|检查|限制|确认|它)|直接绕过",
-        r"无视(规则|流程|闸机|警告|前置|校验|限制)",
-        r"直接(写|编写|填)",
-    )
-)
-
-
-def user_insists_override(user_text: str) -> str:
-    """当前用户消息是否明确坚持跳过流程前置；返回覆盖作用域（空串=未命中）。
-
-    特定意图（跳过图）优先：只降级其提及的闸，结构校验等其余闸保持严格。
-    """
-    t = (user_text or "").strip().lower()
-    if not t:
-        return ""
-    if any(p.search(t) for p in _USER_INSIST_IMAGE_PATTERNS):
-        return GATE_ELEMENT_IMAGE
-    if any(p.search(t) for p in _USER_INSIST_GENERAL_PATTERNS):
-        return "all"
-    return ""
 
 
 def override_covers(scope: Any, gate: str) -> bool:
@@ -492,8 +464,8 @@ def autofill_at_refs(
 _SPEC_LANG_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?输出语言(?:\*\*)?\s*[:：]\s*(.+)$")
 
-# 语言闸硬拒稳定信号（exec_media_writer 据此批内即时纠正，
-# 不再走「整批写完再拦 → 整工具重做」的高成本路径）
+# 语言闸硬拒稳定信号（前缀供调用方稳定判别；原 exec_media_writer
+# 批内即时纠正消费已随任务#36 B5 执行器退役删除）
 LANG_EN_HARD_PREFIX = "提示词正文几乎全是英文"
 
 def spec_output_language(raw_state: Optional[Dict[str, Any]]) -> str:
@@ -510,10 +482,15 @@ def spec_output_language(raw_state: Optional[Dict[str, Any]]) -> str:
 def resolve_prompt_language(
     raw_state: Optional[Dict[str, Any]],
     skill_rules: Optional[Dict[str, Any]] = None,
+    skill_name: str = "",
 ) -> str:
     """ 语言单一事实源裁决：用户选择（规格输出语言）> Skill 声明
-    （cjk_min_ratio<=0 = 英文锁定）> 平台默认（中文）。
-    注入句与语言闸读同一结果，by construction 不可能再打架（C1 延伸）。"""
+    （v3 language.prompt=en 或 cjk_min_ratio<=0 = 英文锁定）> 平台默认（中文）。
+    注入句与语言闸读同一结果，by construction 不可能再打架（C1 延伸）。
+
+    v3 放宽（任务#35 B2）：sidecar 声明 language.prompt=en 即按声明放宽，
+    读取路径经 registry API；未声明维持现状（skill 定位：显式传入 >
+    usedSkills 末位兜底，与「当前 Skill 归属」单一实现同源）。"""
     sel = spec_output_language(raw_state)
     if sel:
         has_cn = "中" in sel
@@ -523,6 +500,15 @@ def resolve_prompt_language(
         if has_en and not has_cn:
             return "英文"
         return "中文"
+    try:
+        wanted = skill_name or registry.fallback_skill_from_state(
+            raw_state if isinstance(raw_state, dict) else None)
+        if wanted and str(
+            (registry.skill_language(wanted) or {}).get("prompt") or ""
+        ) == "en":
+            return "英文"
+    except Exception:
+        pass  # 声明读取失败回落现状判定（不误拦）
     gate = skill_rules or {}
     try:
         if float(gate.get("cjk_min_ratio", _CJK_MIN_RATIO)) <= 0:
@@ -548,8 +534,10 @@ def validate_prompt_write(
 
     Returns:
         (ok, hard_errors, soft_warnings)
-        ok=False 时调用方照常写入并把 hard_errors 作为警告返回给用户，
-        不再拦截（用户指令优先于流程）。
+        ok=False 的处置由调用方按闸机模式决定（见 guard_pipeline）：
+        strict 下拒收本次写入并把 hard_errors 回喂模型修正重写；
+        warn（默认）下照常写入并把 hard_errors 作为警告返回给用户。
+        指令优先级声明见 shared/iron_rules_header.md（单一表述源）。
     """
     text = (prompt or "").strip()
     hard: List[str] = []

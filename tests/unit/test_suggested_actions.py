@@ -1,26 +1,15 @@
 """五轮 S3：确定性按钮化回归（#3/#11/#13）。
 
 - #3 suggested_actions：空响应/坏输出 → retry；max_steps 截断 → continue；
-- #11 user_insists_override 意图语料快照钉死（劣化即红）；
+- #11 豁免入口按钮化（C5：正则 NLU 语料快照随入口退役，行为钉死
+  迁 test_prompt_gates 的 C5 段）；
 - #13 scope 枚举显式化 + planner 消费逻辑引用常量。
 """
-import json
 from pathlib import Path
 
 from src.video_agent.core import prompt_gates
 
 ROOT = Path(__file__).resolve().parents[2]
-CORPUS = ROOT / "tests/fixtures/gate_override_intent.json"
-
-
-# ---------- #11 意图识别黄金语料 ----------
-
-def test_s3_override_intent_corpus_pinned():
-    cases = json.loads(CORPUS.read_text(encoding="utf-8"))["cases"]
-    assert len(cases) >= 16, "语料规模不得缩水"
-    for c in cases:
-        got = prompt_gates.user_insists_override(c["text"])
-        assert got == c["expect"], f"意图判定漂移: {c['text']!r} -> {got!r} (期望 {c['expect']!r})"
 
 
 # ---------- #13 scope 枚举 ----------

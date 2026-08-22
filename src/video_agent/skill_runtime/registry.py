@@ -1,8 +1,8 @@
 """Skill 上传即注册：文档章节 → 注册表条目。
 
 Skill 文档（data/skills/*.md）仍是唯一数据源与下拉框数据源；
-本注册表保存每个 Skill 解析后的章节与可用执行器清单，
-执行器调用时据此只注入自己对应的章节。
+本注册表保存每个 Skill 解析后的章节与能力声明清单（任务#36 B5
+执行器退役后不再对应已注册工具，仅作阶段裁剪/闸机的客观探针）。
 """
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -13,27 +13,29 @@ import re
 from loguru import logger
 
 from src.video_agent.skill_runtime import sidecar
+from src.video_agent.skill_runtime.sidecar_schema import (
+    KIND_VALUES,
+    LANGUAGE_VALUES,
+    REQUIRES_INPUT_TYPES,
+)
 
-# 本项目新增的 Skill 执行器工具（复用现有工具不在此列：
-# document_write / read_uploaded_doc / image_generate / generate_video / workflow_pause）
-
-# 故事板结构拆解执行器家族（三执行器各管一节，skill 文档按三 tag 分章，L-0821C）
-STORYBOARD_STRUCTURE_TOOLS = (
+# 管线能力词汇表（任务#36 B5：执行器已一步退役，原 SKILL_EXECUTOR_TOOLS/
+# STORYBOARD_STRUCTURE_TOOLS 降级为「章节声明 → 阶段能力」标记，仅供
+# pipeline_orchestrator 阶段裁剪、prompt_gates 音频闸、skill_docs/scan_skills
+# Skill lint 作客观探针；平台不再注册同名工具）。
+PIPELINE_CAPABILITY_TOOLS = (
+    "script_analyze",
     "storyboard_key_elements",
     "storyboard_shots",
     "storyboard_audio",
-)
-
-SKILL_EXECUTOR_TOOLS = (
-    "script_analyze",
-    *STORYBOARD_STRUCTURE_TOOLS,
     "write_media_prompt",
     "audio_generate",
     "video_assembler",
 )
 
-# 执行器 → 需要的 Skill 章节（stage 键，与 skill_docs.split_skill_sections 对齐）
-TOOL_STAGES: Dict[str, tuple] = {
+# 能力 → 需要的 Skill 章节（stage 键，与 skill_docs.split_skill_sections 对齐）
+# （原 TOOL_STAGES 同数据，随执行器退役改名）
+CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
     "script_analyze": ("planning",),
     "storyboard_key_elements": ("storyboard_ke",),
     "storyboard_shots": ("storyboard_shot",),
@@ -43,11 +45,9 @@ TOOL_STAGES: Dict[str, tuple] = {
     "video_assembler": ("assembly",),
 }
 
-# P3-15 自定义章节通道：sidecar 顶层声明 custom_sections（章节标识→执行器名），
-# 非管线类 Skill 不必套固定 7 章节模板也能走执行器形态（压缩全文直注使用面）。
-# 通道单一 = 通用章节执行器 skill_section_run（与 prompts/planner/
-# executor_runtime.md「无专属执行器的章节用 skill_section_run」同源语义；
-# 不占 SKILL_EXECUTOR_TOOLS，不参与固定章节词汇表与漂移门禁口径）。
+# P3-15 自定义章节通道：sidecar 顶层声明 custom_sections（章节标识→通道名），
+# 非管线类 Skill 不必套固定 7 章节模板也能声明自定义章节（执行器形态已退役，
+# 现仅作章节声明探针；不参与固定章节词汇表与漂移门禁口径）。
 CUSTOM_SECTION_EXECUTOR = "skill_section_run"
 
 # 大阶段展示标签（后端权威下发，随 trace 条目 stage 字段持久化；
@@ -94,7 +94,8 @@ class SkillEntry:
 
         未声明 = 空 dict（回落现行为：只走固定章节词汇表）；
         消费端 fail-closed：schema 未放行的形状（非对象/空键/白名单外
-        执行器）整体忽略，非法声明不产生通道（注册期另有告警）。
+        执行器）整体忽略，非法声明不产生通道（注册期 fail-hard 拒注册，
+        本清洗只兜注册后 sidecar 被改坏的活读场景）。
         """
         raw = (self.manifest or {}).get("custom_sections")
         if not isinstance(raw, dict):
@@ -134,12 +135,14 @@ class SkillEntry:
 
     @property
     def available_tools(self) -> List[str]:
-        """该 Skill 实际可用的执行器（对应章节非空才注册）。
+        """该 Skill 的管线能力声明清单（对应章节非空才成立）。
 
+        任务#36 B5 执行器退役后：名单不再是已注册工具，而是阶段裁剪/
+        音频闸/lint 的客观探针（同名工具已删除）。
         P3-15：声明 custom_sections 且任一标识可解析出非空章节时，
-        追加注册通用章节执行器（自定义通道，不占固定章节词汇表）。
+        追加自定义章节通道标记。
         """
-        tools = [t for t in SKILL_EXECUTOR_TOOLS if self.section_for(t)]
+        tools = [t for t in PIPELINE_CAPABILITY_TOOLS if self.section_for(t)]
         if self.custom_sections and self.section_for(CUSTOM_SECTION_EXECUTOR):
             tools.append(CUSTOM_SECTION_EXECUTOR)
         return tools
@@ -148,7 +151,7 @@ class SkillEntry:
         if tool == CUSTOM_SECTION_EXECUTOR:
             parts = [self.custom_section_text(k) for k in self.custom_sections]
             return "\n\n".join(p for p in parts if p and p.strip()).strip()
-        stages = TOOL_STAGES.get(tool) or ()
+        stages = CAPABILITY_TOOL_STAGES.get(tool) or ()
         parts = [self.sections.get(s, "") for s in stages]
         return "\n\n".join(p for p in parts if p and p.strip()).strip()
 
@@ -181,22 +184,30 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
 def register_skill(slug: str) -> Optional[SkillEntry]:
     """解析并注册一个 Skill；文档不存在或无法解析时返回 None。
 
-    注册期附带 <planner> 结构体检（lint）：依赖引用未命中步骤/编号冲突
-    等问题当场告警，不等运行时调度错乱才暴露（只告警不阻断注册）。
+    C4 fail-hard（任务#22）：sidecar schema 校验失败拒绝注册，替代旧
+    「只告警不阻断」——坏声明不能带病上线，修好 data/skills_manifests/
+    下的 sidecar 才能注册；单个坏 Skill 拒注册不截断 sync_all 批次。
+    消费端 fail-closed 清洗仍保留（兜注册后 sidecar 被改坏的活读场景）。
     """
     entry = _load_entry(slug)
     if entry is None:
         return None
-    _registry[slug] = entry
     issues = sidecar.validate_sidecar(entry.manifest)
     if issues:
-        logger.warning(
-            f"[SkillRuntime] Skill「{entry.name}」<planner> 结构告警：{'；'.join(issues)}"
+        # 拒注册同时摘除陈旧条目（refresh/重注册路径：sidecar 改坏后
+        # 旧注册态不得继续可用）
+        _registry.pop(slug, None)
+        logger.error(
+            f"[SkillRuntime] Skill「{entry.name}」sidecar schema 校验失败，"
+            f"拒绝注册（fail-hard，修复 data/skills_manifests/{slug}.json "
+            f"后经 refresh_skill 重试）：{'；'.join(issues)}"
         )
+        return None
+    _registry[slug] = entry
     tools = entry.available_tools
     logger.info(
         f"[SkillRuntime] 已注册 Skill「{entry.name}」"
-        f"（{len(entry.sections)} 个章节，执行器: {tools or '无'}）"
+        f"（{len(entry.sections)} 个章节，能力声明: {tools or '无'}）"
     )
     global _synced
     _synced = True
@@ -204,10 +215,10 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
 
 
 def unregister_skill(slug: str) -> None:
-    """删除 Skill 时注销其执行器注册表条目（复用现有工具不受影响）。"""
+    """删除 Skill 时注销其注册表条目。"""
     entry = _registry.pop(slug, None)
     if entry is not None:
-        logger.info(f"[SkillRuntime] 已注销 Skill「{entry.name}」的执行器注册")
+        logger.info(f"[SkillRuntime] 已注销 Skill「{entry.name}」的注册条目")
     global _synced
     _synced = True
 
@@ -253,8 +264,9 @@ def sync_all(force: bool = False) -> int:
                 f"（同身份已注册: {seen_canon[canon]!r}）")
             continue
         try:
-            if _load_entry(slug) is not None:
-                register_skill(slug)
+            # fail-hard 拒注册的 Skill 不计入、不占 canonical 身份
+            #（C4：schema 违规 = 未注册，身份留给修复后的合法文件）
+            if _load_entry(slug) is not None and register_skill(slug) is not None:
                 seen_canon[canon] = slug
                 count += 1
         except Exception as e:
@@ -279,12 +291,17 @@ def reset_registry() -> None:
 
 
 def get_entry(slug: str) -> Optional[SkillEntry]:
-    _ensure_synced()
+    # 点查优先：fail-hard 拒注册的 slug 不能被懒同步 sync_all 全盘扫描
+    # 重新捞回注册（拒注册是明确裁决，不是「还没扫到」）；
+    # 仅在注册表从未初始化时才触发懒同步。
+    if not _synced:
+        sync_all()
     return _registry.get(slug)
 
 
 def list_entries() -> List[SkillEntry]:
-    _ensure_synced()
+    if not _synced:
+        sync_all()
     return list(_registry.values())
 
 
@@ -336,7 +353,7 @@ def resolve_entry(wanted: str) -> Optional[SkillEntry]:
 
 
 def tool_sections(skill_name: str, tool: str) -> str:
-    """返回某执行器应注入的 Skill 章节全文；Skill 未注册/无对应章节返回空串。"""
+    """返回某能力声明对应的 Skill 章节全文；Skill 未注册/无对应章节返回空串。"""
     entry = resolve_entry(skill_name)
     if entry is None:
         return ""
@@ -344,7 +361,7 @@ def tool_sections(skill_name: str, tool: str) -> str:
 
 
 def tool_available(skill_name: str, tool: str) -> bool:
-    """该 Skill 是否注册了对应执行器。"""
+    """该 Skill 是否声明了对应管线能力（章节探针）。"""
     return bool(tool_sections(skill_name, tool))
 
 
@@ -368,23 +385,6 @@ def skill_flow_enabled(skill_name: str, key: str) -> bool:
     return bool((manifest.get("flow") or {}).get(key, False))
 
 
-def skill_stage_executors(skill_name: str) -> Dict[str, List[str]]:
-    """manifest flow.stage_executors 声明：阶段号→同批执行器清单。
-
-    Skill 自己声明「哪几个执行器同属一个阶段」（单一事实源），
-    平台调度器只翻译不决策；未声明返回空 dict（维持现状回落）。"""
-    manifest = skill_manifest_of(skill_name)
-    if not manifest:
-        return {}
-    raw = (manifest.get("flow") or {}).get("stage_executors") or {}
-    if not isinstance(raw, dict):
-        return {}
-    return {
-        str(k): [str(t) for t in v if isinstance(t, str)]
-        for k, v in raw.items() if isinstance(v, list)
-    }
-
-
 def spec_wizard_active(skill_name: str) -> bool:
     """规格向导启用判定（sidecar 唯一源，文本启发式退役）。
 
@@ -401,6 +401,61 @@ def script_required_active(skill_name: str) -> bool:
     存量 Skill 的现值已由迁移脚本冻结进 sidecar。"""
     manifest = skill_manifest_of(skill_name)
     return bool(((manifest or {}).get("flow") or {}).get("script_required"))
+
+
+# ---------- v3 声明读取 API（任务#35 B2：requires_inputs/kind/language 消费） ----------
+# 与 spec_wizard_active/script_required_active 同模块属性访问模式（调用方经
+# registry.<fn> 引用，测试 patch 目标稳定）；未声明 = 零预设（空表/空串/空 dict），
+# 非法声明项 fail-closed 丢弃（注册期告警在 validate_sidecar，消费侧不二次报错）。
+
+
+def skill_requires_inputs(skill_name: str) -> List[Dict[str, Any]]:
+    """manifest requires_inputs 声明（v3）：规范化后的原料需求清单。
+
+    每项 {type, required, hint}；required 缺省 true；白名单外 type/非法项丢弃。
+    未声明返回空表（回落旧 script_required 判定，两路语义不叠加）。"""
+    manifest = skill_manifest_of(skill_name)
+    raw = (manifest or {}).get("requires_inputs")
+    if not isinstance(raw, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        t = item.get("type")
+        if not isinstance(t, str) or t not in REQUIRES_INPUT_TYPES:
+            continue
+        req = item.get("required")
+        hint = item.get("hint")
+        out.append({
+            "type": t,
+            "required": True if req is None else bool(req),
+            "hint": str(hint or "").strip(),
+        })
+    return out
+
+
+def skill_kind(skill_name: str) -> str:
+    """manifest kind 声明（v3：pipeline|style|reference）；未声明/非法返回空串。"""
+    manifest = skill_manifest_of(skill_name)
+    v = (manifest or {}).get("kind")
+    return str(v) if v in KIND_VALUES else ""
+
+
+def skill_language(skill_name: str) -> Dict[str, str]:
+    """manifest language 声明（v3：{prompt, output}，取值 zh|en|auto）。
+
+    只保留白名单内取值；未声明返回空 dict（语言闸维持现状）。"""
+    manifest = skill_manifest_of(skill_name)
+    raw = (manifest or {}).get("language")
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, str] = {}
+    for key in ("prompt", "output"):
+        v = raw.get(key)
+        if v in LANGUAGE_VALUES:
+            out[key] = str(v)
+    return out
 
 
 def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:

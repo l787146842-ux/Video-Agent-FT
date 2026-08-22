@@ -1,17 +1,11 @@
 # -*- coding: utf-8 -*-
 """888 项目九项反馈修复回归：时长补全、盲捡收敛、概述裁剪、铁律措辞、
 流式逐条落盘、实时上下文用量。"""
-import json
-
 import pytest
 
 from src.video_agent.core import prompt_gates, spec_rules
 from src.video_agent.core.live_metrics import get_live_context, record_live_context
-from src.video_agent.skill_runtime import executors as ex_mod
-from src.video_agent.web.action_executor import StudioActionExecutor
-from src.video_agent.skill_runtime import exec_common
-from src.video_agent.skill_runtime import exec_spec
-from src.video_agent.web import generation as gen_mod
+from src.video_agent.web.action_executor import StateOperationExecutor
 
 
 # ---------- item 6：分镜提示词时长客观补全 ----------
@@ -48,7 +42,7 @@ def test_executor_shot_prompt_missing_duration_passes_gate(tmp_path):
         "id": "shot-1", "title": "镜头1", "duration": "20s",
         "drafts": [{"id": "draft-1", "prompt": "", "mediaType": "video"}],
     }]
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.gate_rules = {"require_duration": True}  # 显式声明时长闸（S1：默认关）
     # 提示词满足其余硬条款（长度/字幕/音频/镜头），唯独不写时长
     prompt = (
@@ -80,7 +74,7 @@ def test_add_draft_rejects_blind_pickup_with_many_groups(tmp_path):
     ]
     svc.state_dict["shots"] = []
     svc.state_dict["audioItems"] = []
-    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex = StateOperationExecutor(svc, gate_enabled=False)
     applied = ex.execute([
         {"action": "add_draft", "group_id": "current",
          "draft": {"label": "???", "prompt": "无归属提示词", "mediaType": "image"}},
@@ -99,7 +93,7 @@ def test_add_draft_single_group_fallback_still_works(tmp_path):
     ]
     svc.state_dict["shots"] = []
     svc.state_dict["audioItems"] = []
-    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex = StateOperationExecutor(svc, gate_enabled=False)
     applied = ex.execute([
         {"action": "add_draft", "group_id": "current",
          "draft": {"label": "???", "prompt": "唯一分组提示词", "mediaType": "image"}},
@@ -115,7 +109,7 @@ def test_shot_rough_desc_clamped(tmp_path):
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["shots"] = []
-    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex = StateOperationExecutor(svc, gate_enabled=False)
     applied = ex.execute([{
         "action": "add_group", "group_type": "shot", "title": "镜头1",
         "roughDesc": "Shot1 细节" * 100, "duration": "20s",
@@ -151,69 +145,10 @@ def test_iron_rules_old_priority_upgraded_in_place():
 
 
 # ---------- item 5：流式逐条落盘 ----------
-
-def test_extract_complete_objects_incremental():
-    buf = '[{"action":"add_group","title":"A"},{"action":"add_'
-    objs, pos = ex_mod._extract_complete_objects(buf, 1)
-    assert len(objs) == 1
-    assert json.loads(objs[0])["title"] == "A"
-    # 第二个对象未闭合：位置停在它的起点，等待增量补齐
-    assert buf[pos:].startswith('{"action":"add_')
-    objs2, _ = ex_mod._extract_complete_objects(
-        buf + 'group","title":"B"}]', pos,
-    )
-    assert [json.loads(o)["title"] for o in objs2] == ["B"]
-
-
-def test_extract_complete_objects_braces_in_strings():
-    buf = '[{"desc":"含 {花括号} 与 \\"引号\\" 的文本","ok":true}]'
-    objs, _ = ex_mod._extract_complete_objects(buf, 1)
-    assert len(objs) == 1
-    assert json.loads(objs[0])["ok"] is True
-
-
-@pytest.mark.asyncio
-async def test_stream_progressive_applies_in_batches(monkeypatch, tmp_path):
-    """流式增量到达即逐批落盘：三个动作分两次吐出，左栏状态随批增长。
-    （audit-0819d：纯 JSON 数组流，response_format 参数透传钉死）"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = []
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-
-    chunks = [
-        '[{"action":"add_group","group_type":"keyElement","title":"程心"},',
-        '{"action":"add_group","group_type":"keyElement","title":"罗辑"},',
-        '{"action":"add_group","group_type":"keyElement","title":"二向箔"}]',
-    ]
-    seen_kwargs = {}
-
-    async def fake_stream(provider, model, messages, *, max_tokens=8192,
-                          temperature=0.7, timeout=180, on_delta=None,
-                          reasoning_sink=None, thinking_level=None,
-                          response_format=None):
-        seen_kwargs["response_format"] = response_format
-        content = ""
-        for c in chunks:
-            content += c
-            if on_delta:
-                await on_delta(c)
-        return content, "stop"
-
-    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
-
-    applied, warnings, content, finish = await ex_mod._stream_actions_progressive(
-        "storyboard_key_elements", "技能", "system", "user", svc, "",
-        provider="p", model="m", max_tokens=8192, flush_n=2,
-    )
-    assert applied == 3
-    assert finish == "stop"
-    # audit-0819d：结构化输出声明必须随流式调用下发
-    assert seen_kwargs["response_format"] == {"type": "json_object"}
-    titles = [g["title"] for g in svc.state_dict["keyElements"]]
-    assert titles == ["程心", "罗辑", "二向箔"]
-    assert content.startswith("[")
+# test_extract_complete_objects_incremental / test_extract_complete_objects_braces_in_strings /
+# test_stream_progressive_applies_in_batches 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（executors._extract_complete_objects / _stream_actions_progressive）不复存在，
+# 管线阶段改由通用主路径直走平台工具。
 
 
 # ---------- item 7：sceneRefs ID 兼容（后端解析链路） ----------
@@ -365,53 +300,10 @@ def test_flow_event_recorded_injected_and_cleared(tmp_path):
     assert "上次分镜拆解输出被截断" not in svc.build_agent_context("all")
 
 
-def test_is_truncated_detects_length_finish():
-    assert ex_mod._is_truncated("length") is True
-    assert ex_mod._is_truncated("max_tokens") is True
-    assert ex_mod._is_truncated("stop") is False
-    assert ex_mod._is_truncated("") is False
-
-
-@pytest.mark.asyncio
-async def test_split_truncation_marks_incomplete_and_records_event(monkeypatch, tmp_path):
-    """888 现场：截断只拆出 4 个却报「重拆完成」。修复后截断不得冒充完成：
-    回执带警告 + 流程事件账本记录疑似不完整。"""
-    from src.video_agent.skill_runtime.executors import (
-        StoryboardShotsTool, StoryboardSplitInput,
-    )
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.web import skill_docs as sd
-    from src.video_agent.skill_runtime import registry
-
-    sd.save_skill_doc(
-        "截断技能", "# T\n> 调用规则：测试\n<storyboard_shots>\n拆解规范\n</storyboard_shots>\n",
-    )
-    registry.register_skill("截断技能")
-
-    async def fake_stream(provider, model, messages, *, max_tokens=8192,
-                          temperature=0.7, timeout=180, on_delta=None,
-                          reasoning_sink=None, thinking_level=None,
-                          response_format=None):
-        content = ('[{"action":"add_group","group_type":"shot",'
-                   '"title":"镜1","duration":"10s","sceneRefs":["s1"]}]')
-        if on_delta:
-            await on_delta(content)
-        return content, "length"  # 撞输出上限被截断（两次都截断才走对账流程）
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["shots"] = []
-    monkeypatch.setattr(gen_mod, "call_chat_completion_stream", fake_stream)
-    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-
-    result = await StoryboardShotsTool().aexecute(
-        StoryboardSplitInput(skill_name="截断技能")
-    )
-    assert result.success  # 部分写入照常落盘不丢
-    assert "截断" in result.data["detail"]  # 但回执不得冒充完整
-    events = svc.state_dict.get("flowEvents") or []
-    assert any("截断" in str(e.get("text") or "") for e in events)
-    registry.reset_registry()
+# test_is_truncated_detects_length_finish / test_split_truncation_marks_incomplete_and_records_event
+# 已随任务#36 B5 执行器一步退役删除：被测对象（executors._is_truncated /
+# StoryboardShotsTool 截断对账）不复存在。「截断不得冒充完成」的通用事实由
+# test_flow_event_recorded_injected_and_cleared（StateManager 流程事件账本）承接钉死。
 
 
 # ---------- B7：铁律文档保护（模型不得整篇重写） ----------
@@ -516,11 +408,11 @@ def test_action_alias_normalization_groupid_payload(tmp_path):
     """9999 现场：弱模型把 add_draft 写成 type/groupId/payload 驼峰 schema，
     归一后必须命中分组写入，不再整批「拒绝盲建」。"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.action_executor import StudioActionExecutor
+    from src.video_agent.web.action_executor import StateOperationExecutor
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["keyElements"] = [{"id": "ke-1", "title": "程心", "drafts": []}]
-    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex = StateOperationExecutor(svc, gate_enabled=False)
     applied = ex.execute([{
         "type": "add_draft",
         "groupId": "ke-1",
@@ -530,57 +422,7 @@ def test_action_alias_normalization_groupid_payload(tmp_path):
     assert svc.state_dict["keyElements"][0]["drafts"]
 
 
-@pytest.mark.asyncio
-async def test_script_analyze_generates_soft_candidates(monkeypatch, tmp_path):
-    """script_analyze 后内层模型按剧本出题软参数候选并落 state；
-    校验不过的维度被丢弃。"""
-    from src.video_agent.skill_runtime.executors import (
-        ScriptAnalyzeTool, ScriptAnalyzeInput,
-    )
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.web import skill_docs as sd
-    from src.video_agent.skill_runtime import registry
-
-    sd.save_skill_doc(
-        "豪华技能", "# S\n> 调用规则：测试\n<script_analyze>\n分析\n</script_analyze>\n",
-    )
-    registry.register_skill("豪华技能")
-    monkeypatch.setattr(registry, "skill_flow_enabled", lambda skill, key: True)
-    monkeypatch.setattr(registry, "spec_wizard_active", lambda skill: True)
-    # 4444：维度来自 Skill 客观提取；测试桩无规格行，用 monkeypatch 注入维度
-    monkeypatch.setattr(
-        prompt_gates, "skill_spec_dimensions",
-        lambda skill: ["视觉风格", "输出语言", "画幅"],
-    )
-
-    calls = {"n": 0}
-
-    async def fake_json(system, user, **kwargs):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return {"summary": "太阳系逐渐二维化", "key_points": []}
-        return {
-            "视觉风格": ["硬核写实科幻", "赛博朋克"],
-            "输出语言": ["中文"],          # 只有 1 个候选 → 校验不过丢弃
-            "画幅": ["16:9 横屏", "9:16 竖屏"],
-        }
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["uploadedDocs"] = [
-        {"id": "d1", "name": "剧本.md", "content": "程心看着二向箔展开。"},
-    ]
-    monkeypatch.setattr(exec_spec, "_llm_json_call", fake_json)
-    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("f", "f"))
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-
-    result = await ScriptAnalyzeTool().aexecute(
-        ScriptAnalyzeInput(skill_name="豪华技能", doc_name="剧本.md")
-    )
-    assert result.success
-    # 批3 分离：候选出题 = collect_spec 独立节点（runtime 调度）
-    await exec_spec.run_collect_spec_node(svc, "豪华技能")
-    cands = (svc.state_dict.get("interaction") or {}).get("spec_soft_candidates") or {}
-    assert cands.get("视觉风格") == ["硬核写实科幻", "赛博朋克"]
-    assert "输出语言" not in cands
-    assert cands.get("画幅") == ["16:9 横屏", "9:16 竖屏"]
-    registry.reset_registry()
+# test_script_analyze_generates_soft_candidates 已随任务#36 B5 执行器一步退役删除：
+# 被测对象（executors.ScriptAnalyzeTool + exec_spec.run_collect_spec_node 候选落盘）
+# 不复存在。平台不再机械出题，规格收集改由模型按 skill_discipline 用 workflow_pause
+# 分组向导完成。

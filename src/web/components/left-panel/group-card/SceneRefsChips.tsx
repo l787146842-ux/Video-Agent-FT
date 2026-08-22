@@ -4,8 +4,8 @@ import { state, studioActions } from '@/stores/studio';
 import type { ShotGroup } from '@/types';
 
 /**
- * 场景引用 chips（仅分镜组；八轮 B7 自 GroupCard.tsx 切出，零行为变更）。
- * 点击跳转；× 删除与 + 添加（C4：为 LLM 写提示词提供依据，
+ * 场景引用 chips（仅分镜组）。
+ * 点击跳转；× 删除与 + 添加（为 LLM 写提示词提供依据，
  * 并决定出图/出视频时自动挂哪些元素概念图）。
  */
 export function SceneRefsChips(props: { group: ShotGroup }) {

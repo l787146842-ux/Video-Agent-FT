@@ -1,5 +1,5 @@
 /**
- * GateWarnings 组件测试（P4-19 前端回归防护：只加测试不改行为）。
+ * GateWarnings 组件测试。
  *
  * 钉死契约：
  * ① 闸机拦截明细结构化判定（trace.gates ok=false），不靠文案匹配；

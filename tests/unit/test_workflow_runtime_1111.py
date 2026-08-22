@@ -56,13 +56,12 @@ async def test_turn1_script_missing_remind_card_zero_llm(tmp_path):
 
 @pytest.mark.asyncio
 async def test_attachment_turn_handed_to_model(tmp_path, monkeypatch):
-    """② 附件推进轮 → 交接模型循环（主体回归）：模型被调用，
-    runtime 不自主执行执行器（script_analyze 未被系统代跑）。"""
+    """② 附件推进轮 → 交接模型循环（主体回归）：模型被调用。
+    （原「script_analyze 未被系统代跑」探针已随任务#36 B5 执行器一步
+    退役删除：系统代跑路径不复存在，主体回归由探针适配器 calls 钉死。）"""
     from src.video_agent.core.planner import Planner, PlannerContext
     from src.video_agent.state.manager import StateManager
     from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
-    from src.video_agent.skill_runtime import exec_tools
-    from src.video_agent.tools.base import ToolResult
     from src.video_agent.tools.manager import ToolManager
 
     class ProbeAdapter(BaseChatAdapter):
@@ -81,18 +80,6 @@ async def test_attachment_turn_handed_to_model(tmp_path, monkeypatch):
             self.calls += 1
             yield ChatResponse(content="收到剧本，我来分析。", finish_reason="stop")
 
-    analyze_calls = {"n": 0}
-
-    async def fake_analyze(self, params):
-        analyze_calls["n"] += 1
-        svc_now = StateManager.get_instance()
-        svc_now.state_dict["analysis"] = {
-            "summary": "程心苏醒与掩体失效。", "key_points": [], "doc_name": "剧本.md"}
-        return ToolResult(success=True, data={"summary": "程心苏醒与掩体失效。"})
-
-    monkeypatch.setattr(exec_tools.ScriptAnalyzeTool, "aexecute", fake_analyze)
-    from src.video_agent.skill_runtime.registration import register_skill_runtime_tools
-    register_skill_runtime_tools()
     StateManager.reset_instance()
     svc = StateManager(str(tmp_path / "ws"))
     StateManager._instance = svc
@@ -105,7 +92,6 @@ async def test_attachment_turn_handed_to_model(tmp_path, monkeypatch):
         "请查看我上传的素材",
         PlannerContext(skill_name=SKILL, advance_signal="attachment"))
     assert adapter.calls >= 1, "主体回归：附件轮必须交接模型（模型是唯一行动主体）"
-    assert analyze_calls["n"] == 0, "runtime 不自主执行执行器（探针适配器未 FC，无代跑）"
     assert result.text.strip()
     StateManager.reset_instance()
 

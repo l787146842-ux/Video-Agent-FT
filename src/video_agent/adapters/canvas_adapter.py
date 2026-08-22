@@ -493,6 +493,29 @@ class CanvasAdapter:
         return drift_msg
 
 
+# ---------- 画布 provider 配置读取（同步，供 provider_config 降级链使用） ----------
+
+def fetch_canvas_providers_sync(timeout: float = 3.0) -> List[Dict[str, Any]]:
+    """从画布 HTTP API 读取 provider 配置（同步版；Rule7: 画布交互统一经此适配器）。
+
+    供 web/provider_config.load_canvas_providers 在同步上下文（asyncio.to_thread
+    包装前）调用。任何异常/非 200/空列表均静默返回 []，由调用方降级到文件兜底，
+    行为与迁移前的 httpx.get 直调完全一致（timeout=3.0，trust_env=False）。
+    """
+    try:
+        with httpx.Client(timeout=timeout, trust_env=False) as client:
+            resp = client.get(settings.canvas_providers_url)
+        if resp.status_code == 200:
+            data = resp.json()
+            providers = data.get("providers", [])
+            if isinstance(providers, list) and providers:
+                logger.debug(f"[CanvasAdapter] 从画布 HTTP 读取到 {len(providers)} 个 provider")
+                return providers
+    except Exception:
+        pass  # 画布不在线，静默降级
+    return []
+
+
 # ---------- 模块级单例 ----------
 
 _adapter_instance: Optional[CanvasAdapter] = None

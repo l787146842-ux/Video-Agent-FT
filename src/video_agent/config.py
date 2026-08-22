@@ -7,6 +7,7 @@
 
 环境变量覆盖：设置对应的大写环境变量即可（如 PORT=9000）。
 """
+import logging
 import os
 from dataclasses import dataclass, field
 
@@ -57,6 +58,12 @@ class Settings:
     # LLM 超时（秒）
     llm_timeout: int = field(default_factory=lambda: _env_int("LLM_TIMEOUT", 120))
     llm_stream_timeout: int = field(default_factory=lambda: _env_int("LLM_STREAM_TIMEOUT", 180))
+    # Adapter 瞬时故障重试（任务 #26）：仅 transient（429/5xx/超时/连接错误）
+    # 走指数退避重试，上限与退避基准统一走 config；permanent 不重试立即上抛
+    adapter_retry_max: int = field(default_factory=lambda: _env_int("ADAPTER_RETRY_MAX", 2))
+    adapter_retry_base_delay: float = field(
+        default_factory=lambda: float(os.getenv("ADAPTER_RETRY_BASE_DELAY", "1.0"))
+    )
     # LLM 生成参数（adapter 未显式传参时的回落值）
     llm_max_tokens: int = field(default_factory=lambda: _env_int("LLM_MAX_TOKENS", 8192))
     llm_temperature: float = field(default_factory=lambda: float(os.getenv("LLM_TEMPERATURE", "0.7")))
@@ -153,13 +160,23 @@ class Settings:
     # 分镜最大时长（秒）：Agent 自拆分镜单镜时长上限与新建分镜默认时长
     max_shot_duration: int = 5
 
-    # Skill 执行器运行时模式（skill_runtime 执行器形态的灰度开关，计划名
-    # SKILL_RUNTIME_MODE，同名环境变量优先；SKILL_RUNTIME 为旧名兼容）：
-    # auto = 按 Skill 能否解析出执行器章节自动选择（默认，现行为不回归）；
-    # executors = 全部走执行器；legacy = 全部走全文直注（阶段聚焦已随 P3-17
-    # 收敛为指针式单注入，回退到 legacy 仅回形态、不回复重复注入）
+    # Skill 运行时回退闸（deprecated，任务#36 B5：执行器一步退役后通用主路径
+    # 为唯一主路径，本开关降级为事故回退闸；计划名 SKILL_RUNTIME_MODE，
+    # 同名环境变量优先；SKILL_RUNTIME 为旧名兼容）：
+    # auto = 通用主路径（默认：元数据头 + 全文分级注入）；
+    # executors = 已弃用（执行器已物理删除），按 auto 行为执行并记弃用告警；
+    # legacy = 强制旧全文直注行为，仅保留作事故回退。
     skill_runtime: str = field(default_factory=lambda: (
         os.getenv("SKILL_RUNTIME_MODE") or os.getenv("SKILL_RUNTIME", "auto")))
+
+    def __post_init__(self) -> None:
+        # 启动路径一次性废弃告警：SKILL_RUNTIME_MODE=executors 执行器形态已退役，
+        # 运行时按 auto 语义执行不变（prompt_builder 另有同口径告警）
+        if str(self.skill_runtime or "auto").strip().lower() == "executors":
+            logging.getLogger(__name__).warning(
+                "SKILL_RUNTIME_MODE=executors 已废弃（执行器形态已退役，任务#36 B5），"
+                "实际按 auto 通用主路径执行；请移除 SKILL_RUNTIME_MODE/SKILL_RUNTIME 环境变量")
+
     # 模型分层策略表（编排/生成/摘要/执行器四角色，热更新于 runtime_settings.json；
     # 字段语义见 core/model_policy.py；空 = 跟随主模型/既有回落链）
     model_policy: dict = field(default_factory=dict)
@@ -189,7 +206,9 @@ class Settings:
     task_max: int = field(default_factory=lambda: _env_int("TASK_MAX", 500))
     # Agent trace JSONL 体积轮转（.1）
     trace_file_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_FILE_MAX_BYTES", 2_000_000))
-    trace_rotation_keep: int = field(default_factory=lambda: _env_int("TRACE_ROTATION_KEEP", 3))
+    # 运行时残留策略（#16）：轮转保留份数收紧为 2 份（原 3）——trace 供近期审计，
+    # 历史归档归文件备份；可用 TRACE_ROTATION_KEEP 环境变量覆盖
+    trace_rotation_keep: int = field(default_factory=lambda: _env_int("TRACE_ROTATION_KEEP", 2))
     # （审核）：trace 总容量上限（主文件+.N 合计，超则从最旧丢弃）
     trace_total_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_TOTAL_MAX_BYTES", 20_000_000))
 
@@ -208,8 +227,10 @@ class Settings:
     # 存储后端（"local" | "s3"）
     storage_backend: str = field(default_factory=lambda: os.getenv("STORAGE_BACKEND", "local"))
 
-    # 项目状态持久化后端（"json" | "sqlite"）： 起默认 sqlite（事务原子性
-    # 与并发安全，多用户基础）；首次启用自动从 JSON 迁移，STATE_BACKEND=json 可随时回退
+    # 项目状态持久化后端（"json" | "sqlite"）：默认 sqlite（事务原子性
+    # 与并发安全，多用户基础）且为项目状态唯一事实源（任务 #24：JSON 镜像
+    # 已退役停写，首启自动从旧 JSON 文件一次性导入）；STATE_BACKEND=json 仅
+    # 保留为测试基线与旧 JSON 工作区回落路径，sqlite 写入后回退不再无损
     state_backend: str = field(default_factory=lambda: os.getenv("STATE_BACKEND", "sqlite"))
 
     # 画布画布集成
@@ -239,6 +260,13 @@ class Settings:
     # 画布独立迭代若改了外壳布局，可通过环境变量调整，不影响功能（结果会被夹取到可视区内）
     canvas_shell_offset_x: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_X", 96))
     canvas_shell_offset_y: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_Y", 16))
+
+    # MCP 外部工具接入层（任务#37 B4）：总开关（无配置文件 = 零工具，
+    # deny-first）；活动工具上限（mcp_tool_catalog enable 超限拒收）；
+    # 单结果回喂字符上限（超限截断附警告，防外部结果撑爆上下文）
+    mcp_enabled: bool = field(default_factory=lambda: _env_bool("MCP_ENABLED", True))
+    mcp_max_active_tools: int = field(default_factory=lambda: _env_int("MCP_MAX_ACTIVE_TOOLS", 8))
+    mcp_result_max_chars: int = field(default_factory=lambda: _env_int("MCP_RESULT_MAX_CHARS", 4000))
 
 
 # 全局单例（启动时加载一次）

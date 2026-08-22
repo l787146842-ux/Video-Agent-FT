@@ -188,7 +188,7 @@ export async function generateAudio(): Promise<void> {
       context_mode: 'none',
     });
     const elapsedSec = (performance.now() - t0) / 1000;
-    // 0817：非流式响应的文档清单同样即显渲染（通道与流式轨对齐，§5.2）
+    // 非流式响应的文档清单同样即显渲染（通道与流式轨对齐，§5.2）
     chatActions.applyNonStreamDocs(data.documents_written || []);
     patchDraft(draft.id, draftType, {
       mediaType: 'audio', genType: 'audio', imgUrl: '', videoUrl: '',

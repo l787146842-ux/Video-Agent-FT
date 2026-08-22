@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 """九项修复回归测试（7777 复盘批次）：
 - D2：整板保存乐观锁（board_version 校验 + 快照携带版本）
-- B：write_media_prompt 执行器批次指令注入 @ 引用规则与出场元素清单
 - C3：视频参考三桶拆分（视频参考项不再被静默丢弃）+ 新上限默认值
 - A：任务管理器累计 model_fallback 事件（replay 补跳选择器用）
+- 超时重试可视化（stream_notify）
+（B：write_media_prompt 执行器批次用例与 write_media_prompt 重写模式用例
+已随任务#36 B5 执行器一步退役删除：被测对象 executors._write_prompt_batch /
+WriteMediaPromptTool / _pending_prompt_groups 不复存在。）
 """
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.video_agent.state.manager import StateManager
-from src.video_agent.skill_runtime import exec_common
 
 
 @pytest.fixture
@@ -76,59 +78,10 @@ def test_put_state_without_version_still_allowed(client, svc):
 
 
 # ---------- B：执行器 @ 引用规则移植 ----------
-
-@pytest.mark.asyncio
-async def test_write_prompt_batch_shot_injects_at_rule(monkeypatch, tmp_path):
-    """7777 事故回归：分镜批次指令必须携带 @引用规则 + 本镜头出场元素清单。"""
-    from src.video_agent.skill_runtime import executors as ex_mod
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = [
-        {"id": "ke-1", "title": "二向箔", "drafts": []},
-        {"id": "ke-2", "title": "太阳系外缘", "drafts": []},
-    ]
-    shot = {
-        "id": "shot-1", "title": "二向箔展开",
-        "sceneRefs": ["ke-1", "ke-2"],
-        "drafts": [{"id": "d1", "prompt": ""}],
-    }
-    captured = {}
-
-    async def fake_stream(tool, skill, system, user, svc_, content, **kwargs):
-        captured["system"] = system
-        captured["user"] = user
-        return (0, [], "", "stop")
-
-    monkeypatch.setattr(exec_common, "_stream_actions_progressive", fake_stream)
-    await ex_mod._write_prompt_batch(
-        "write_media_prompt", "测试技能", "", svc, "prov", "model",
-        [("shots", shot)], "规格", "摘要",
-    )
-    assert "【@引用规则】" in captured["system"]
-    assert "本镜头出场元素：二向箔、太阳系外缘" in captured["user"]
-
-
-@pytest.mark.asyncio
-async def test_write_prompt_batch_keyelement_no_at_rule(monkeypatch, tmp_path):
-    """关键元素批次不注入分镜 @ 规则（避免干扰元素图提示词）。"""
-    from src.video_agent.skill_runtime import executors as ex_mod
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = [
-        {"id": "ke-1", "title": "二向箔", "drafts": [{"id": "d1", "prompt": ""}]},
-    ]
-    captured = {}
-
-    async def fake_stream(tool, skill, system, user, svc_, content, **kwargs):
-        captured["system"] = system
-        return (0, [], "", "stop")
-
-    monkeypatch.setattr(exec_common, "_stream_actions_progressive", fake_stream)
-    await ex_mod._write_prompt_batch(
-        "write_media_prompt", "测试技能", "", svc, "prov", "model",
-        [("keyElements", svc.state_dict["keyElements"][0])], "规格", "摘要",
-    )
-    assert "【@引用规则】" not in captured["system"]
+# test_write_prompt_batch_shot_injects_at_rule / test_write_prompt_batch_keyelement_no_at_rule
+# 已随任务#36 B5 执行器一步退役删除：被测对象（executors._write_prompt_batch）
+# 不复存在；@ 引用客观补印改由 fc_tool_runner 提示词闸 autofill_at_refs 承接
+# （见 test_888_fixes.test_fc_track_autofills_at_refs）。
 
 
 # ---------- C3：视频参考三桶 + 新上限 ----------
@@ -282,129 +235,9 @@ async def test_chat_stream_retry_notifies_user():
 
 
 # ---------- write_media_prompt 重写模式（7777 "重写全部"卡死事故） ----------
-
-_SHOTS_WITH_PROMPTS = lambda: [
-    {"id": "s1", "title": "镜头1", "drafts": [{"id": "d1", "prompt": "旧提示词1"}]},
-    {"id": "s2", "title": "镜头2", "drafts": [{"id": "d2", "prompt": "旧提示词2"}]},
-    {"id": "s3", "title": "镜头3", "drafts": [{"id": "d3", "prompt": ""}]},
-]
-
-
-def test_pending_prompt_groups_overwrite_and_scope():
-    """选取语义：补写只挑空分组；重写纳入全部；具体 draft_id 收窄到单张。"""
-    from src.video_agent.skill_runtime.executors import _pending_prompt_groups
-    state = {"keyElements": [], "audioItems": [], "shots": _SHOTS_WITH_PROMPTS()}
-    ids = lambda lst: [g["id"] for _, g in lst]
-    # 补写（默认）：只有无提示词的 s3
-    assert ids(_pending_prompt_groups(state, "all_shots")) == ["s3"]
-    # 重写：三个分组全部纳入
-    assert ids(_pending_prompt_groups(state, "all_shots", overwrite=True)) == ["s1", "s2", "s3"]
-    # 单张重写：draft_id 收窄到所属分组，不误伤其他
-    assert ids(_pending_prompt_groups(state, "d2", overwrite=True)) == ["s2"]
-    # 具体 group_id 同样收窄
-    assert ids(_pending_prompt_groups(state, "s1", overwrite=True)) == ["s1"]
-
-
-@pytest.fixture
-def wmp_env(tmp_path, monkeypatch):
-    """隔离 Skill 目录 + 注册带 write_the_prompt 章节的测试技能 + 接管实例/供应商解析。"""
-    import src.video_agent.web.skill_docs as sd
-    from src.video_agent.skill_runtime import registry
-    from src.video_agent.skill_runtime import executors as ex_mod
-
-    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", tmp_path / "skills")
-    registry.reset_registry()
-    sd.save_skill_doc(
-        "重写技能",
-        "# 重写技能\n> 调用规则：测试\n<write_the_prompt>\n写中文提示词\n</write_the_prompt>\n",
-    )
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = []
-    svc.state_dict["audioItems"] = []
-    svc.state_dict["shots"] = _SHOTS_WITH_PROMPTS()
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-    monkeypatch.setattr(exec_common, "_resolve_chat_provider", lambda p="", m="": ("fake", "fake-model"))
-    yield svc
-    registry.reset_registry()
-
-
-def _make_fake_stream(svc, write: bool):
-    """伪造批次写入：按 user 指令里的 group_id 清单替换提示词（write=False 模拟中断零产出）"""
-    import re
-
-    async def fake_stream(tool, skill, system, user, svc_, content, **kwargs):
-        if not write:
-            return (0, [], "", "stop")
-        gids = set(re.findall(r"group_id=(\S+?)（", user))
-        applied = 0
-        for g in svc_.state_dict.get("shots") or []:
-            if g["id"] in gids:
-                for d in g["drafts"]:
-                    d["prompt"] = "重写后的提示词 @镜头元素"
-                applied += 1
-        return (applied, [], "", "stop")
-
-    return fake_stream
-
-
-@pytest.mark.asyncio
-async def test_write_media_prompt_overwrite_full_replaces_all(monkeypatch, wmp_env):
-    """全量重写：overwrite=true + all_shots → 旧提示词全部被覆盖，一张不漏。"""
-    from src.video_agent.skill_runtime import executors as ex_mod
-    from src.video_agent.skill_runtime.executors import WriteMediaPromptInput, WriteMediaPromptTool
-
-    svc = wmp_env
-    monkeypatch.setattr(exec_common, "_stream_actions_progressive", _make_fake_stream(svc, write=True))
-    result = await WriteMediaPromptTool().aexecute(
-        WriteMediaPromptInput(skill_name="重写技能", target="all_shots", overwrite=True)
-    )
-    assert result.success, result.error
-    prompts = [d["prompt"] for g in svc.state_dict["shots"] for d in g["drafts"]]
-    assert all(p == "重写后的提示词 @镜头元素" for p in prompts)
-    assert "重写" in result.data["detail"]
-
-
-@pytest.mark.asyncio
-async def test_write_media_prompt_overwrite_interrupt_keeps_old_and_resumes(monkeypatch, wmp_env):
-    """中断无损失 + 续写：首次零产出（模拟超时/停止）判失败且旧提示词完整保留；
-    再次带 overwrite 调用从断点续写补齐。"""
-    from src.video_agent.skill_runtime import executors as ex_mod
-    from src.video_agent.skill_runtime.executors import WriteMediaPromptInput, WriteMediaPromptTool
-
-    svc = wmp_env
-    # 第一次：全部批次零产出（模拟内层调用挂死/被停止）
-    monkeypatch.setattr(exec_common, "_stream_actions_progressive", _make_fake_stream(svc, write=False))
-    result1 = await WriteMediaPromptTool().aexecute(
-        WriteMediaPromptInput(skill_name="重写技能", target="all_shots", overwrite=True)
-    )
-    assert not result1.success
-    assert "overwrite=true" in result1.error  # 续写指引必须提醒再带 overwrite
-    # 旧提示词完整保留（未出现清空裸奔窗口）
-    olds = [d["prompt"] for g in svc.state_dict["shots"] for d in g["drafts"]]
-    assert olds == ["旧提示词1", "旧提示词2", ""]
-
-    # 第二次：恢复正常写入，断点续写补齐全部
-    monkeypatch.setattr(exec_common, "_stream_actions_progressive", _make_fake_stream(svc, write=True))
-    result2 = await WriteMediaPromptTool().aexecute(
-        WriteMediaPromptInput(skill_name="重写技能", target="all_shots", overwrite=True)
-    )
-    assert result2.success, result2.error
-    prompts = [d["prompt"] for g in svc.state_dict["shots"] for d in g["drafts"]]
-    assert all(p == "重写后的提示词 @镜头元素" for p in prompts)
-
-
-@pytest.mark.asyncio
-async def test_write_media_prompt_overwrite_single_shot_scope(monkeypatch, wmp_env):
-    """单张重写：target 指定 draft_id 只重写该分镜，其他分镜旧提示词不动。"""
-    from src.video_agent.skill_runtime import executors as ex_mod
-    from src.video_agent.skill_runtime.executors import WriteMediaPromptInput, WriteMediaPromptTool
-
-    svc = wmp_env
-    monkeypatch.setattr(exec_common, "_stream_actions_progressive", _make_fake_stream(svc, write=True))
-    result = await WriteMediaPromptTool().aexecute(
-        WriteMediaPromptInput(skill_name="重写技能", target="d2", overwrite=True)
-    )
-    assert result.success, result.error
-    prompts = {g["id"]: g["drafts"][0]["prompt"] for g in svc.state_dict["shots"]}
-    assert prompts["s2"] == "重写后的提示词 @镜头元素"
-    assert prompts["s1"] == "旧提示词1"  # 未被误伤
+# test_pending_prompt_groups_overwrite_and_scope / test_write_media_prompt_overwrite_full_replaces_all /
+# test_write_media_prompt_overwrite_interrupt_keeps_old_and_resumes /
+# test_write_media_prompt_overwrite_single_shot_scope 及其 fixture（wmp_env/_make_fake_stream/
+# _SHOTS_WITH_PROMPTS）已随任务#36 B5 执行器一步退役删除：被测对象
+# （executors._pending_prompt_groups / WriteMediaPromptTool）不复存在，
+# 提示词编写改由模型按通用主路径直接调用平台工具完成。

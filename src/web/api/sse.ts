@@ -55,7 +55,8 @@ export async function listAgentTasks(projectId: string): Promise<AgentTaskInfo[]
 }
 
 export function stopAgentTask(taskId: string) {
-  return apiPost<{ ok: boolean; cancelled: number }>(
+  // 任务 #17：响应新增 inflight（在途外部生成任务登记，停止气泡文案消费）
+  return apiPost<{ ok: boolean; cancelled: number; inflight?: Array<{ task_id?: string; media_type?: string; model?: string; summary?: string }> }>(
     `/api/agent/tasks/${encodeURIComponent(taskId)}/stop`,
     {},
   );

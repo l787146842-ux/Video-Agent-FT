@@ -1,9 +1,10 @@
 """闸机豁免消费域（自 planner.py 切出；handle_message 瘦身）。
 
 会话层一次性豁免（gate_overrides，§2.4）的消费与作用域判定：
-按钮路径（随消息登记 interaction.gate_overrides，单次消费即清除、留痕入 trace）
-优先；无显式豁免时回落正则意图识别兜底（按钮化全覆盖前的过渡）。
-返回作用域（False = 无豁免）；消费失败不阻断对话（回落兜底）。
+唯一权威入口 = 前端「本次放行」按钮随消息登记 interaction.gate_overrides，
+单次消费即清除、留痕入 trace（C5：正则猜自然语言豁免入口已退役，
+「坚持/听我的/直接写」类话术不再降级闸门，误伤面归零）。
+返回作用域（False = 无豁免）；消费失败不阻断对话（本轮无豁免放行）。
 """
 from typing import Any
 
@@ -17,7 +18,7 @@ def consume_gate_overrides(state_manager: Any, user_message: Any) -> Any:
     """消费本轮一次性豁免并返回作用域（False/"all"/"element_image"）。
 
     显式枚举判定：scope=all 或 platform.* 前缀 → ALL；其余 → ELEMENT_IMAGE。
-    全程留痕（§2.4）：实际消费 scope 入 trace；消费失败回落意图识别兜底。
+    全程留痕（§2.4）：实际消费 scope 入 trace；消费失败本轮视为无豁免。
     """
     gate_override_scope: Any = False
     try:
@@ -41,7 +42,5 @@ def consume_gate_overrides(state_manager: Any, user_message: Any) -> Any:
     except Exception as _e:
         # 承重接线遥测：豁免消费断线不再只进日志，降级端点可见
         live_metrics.record_degradation("planner_gate_session.consume_gate_overrides")
-        logger.warning("[GateOverride] 豁免消费失败（本次放行可能未生效，回落意图识别兜底）: {}", _e)
-    if not gate_override_scope and isinstance(user_message, str):
-        gate_override_scope = prompt_gates.user_insists_override(user_message) or False
+        logger.warning("[GateOverride] 豁免消费失败（本次放行可能未生效，本轮视为无豁免）: {}", _e)
     return gate_override_scope

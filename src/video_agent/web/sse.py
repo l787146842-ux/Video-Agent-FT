@@ -35,7 +35,8 @@ async def sse_event_generator(queue: asyncio.Queue, task: asyncio.Task, request:
                 continue
             idle_secs = 0
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            if event.get("type") in ("done", "error"):
+            # 终态：done/error 正常终态；stopped 为用户停止终态（任务 #17）
+            if event.get("type") in ("done", "error", "stopped"):
                 break
     finally:
         if not task.done():

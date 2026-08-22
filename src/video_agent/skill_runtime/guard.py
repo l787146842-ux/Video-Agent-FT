@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.guard_pipeline import prompt_write_verdict
 from src.video_agent.skill_runtime.registry import resolve_entry, parse_pause_rules
+from src.video_agent.skill_runtime.sidecar_schema import PAUSE_TRIGGER_VALUES
 
 
 def strip_draft_prompt(draft: Dict[str, Any]) -> bool:
@@ -72,24 +73,83 @@ def validate_prompt_hard(
 
 
 def skill_requires_stage_pause(skill_name: str) -> bool:
-    """按 Skill 声明判断是否要求阶段暂停。
+    """按 Skill 声明判断是否要求阶段暂停（对外 bool 兼容语义，调用方不改行为）。
 
-    判定优先级：
-    1. skill_manifest 的 pause.stage_pause（S1：manifest 是平台行为声明的唯一源）；
-    2. 旧 pause_rules 显式声明（兼容存量，与 manifest 并存时以 manifest 为准）；
-    3. 兜底：存在『何时暂停/强制暂停点』字样即视为要求（兼容存量文档）。
-    """
+    判定 = skill_pause_points 非空；四级优先级见 skill_pause_points。
+    v2 存量（无 pause_points 声明）行为与旧实现逐一等价：
+    manifest pause.stage_pause > pause_rules 声明块 > 关键词兜底。"""
+    return bool(skill_pause_points(skill_name))
+
+
+# stage_pause（bool）机械转暂停点清单的两个锚点（与 scripts/migrate_manifests_v3.py
+# V3_ANCHOR_PAUSE_POINTS 同口径：迁移完成后两侧语义自然合流，id 与 trigger 同名）
+_STAGE_PAUSE_ANCHOR_POINTS: Tuple[Dict[str, Any], ...] = (
+    {"id": "storyboard_structure_ready", "trigger": "storyboard_structure_ready"},
+    {"id": "first_generation_call", "trigger": "first_generation_call"},
+)
+
+
+def _clean_pause_points(raw: List[Any]) -> List[Dict[str, Any]]:
+    """manifest pause_points 声明清洗（fail-closed，与 schema 同口径）：
+    trigger 白名单外/id 缺失/batch_boundary 缺 description/free_text 缺 prose 的项丢弃。"""
+    out: List[Dict[str, Any]] = []
+    for item in raw or []:
+        if not isinstance(item, dict):
+            continue
+        pid = item.get("id")
+        trigger = item.get("trigger")
+        if not isinstance(pid, str) or not pid.strip():
+            continue
+        if trigger not in PAUSE_TRIGGER_VALUES:
+            continue
+        point: Dict[str, Any] = {"id": pid.strip(), "trigger": trigger}
+        if trigger == "batch_boundary":
+            desc = item.get("description")
+            if not isinstance(desc, str) or not desc.strip():
+                continue
+            point["description"] = desc.strip()
+        elif trigger == "free_text":
+            prose = item.get("prose")
+            if not isinstance(prose, str) or not prose.strip():
+                continue
+            point["prose"] = prose.strip()
+        out.append(point)
+    return out
+
+
+def skill_pause_points(skill_name: str) -> List[Dict[str, Any]]:
+    """通用暂停点清单（任务#35 B3），四级优先级：
+
+    1. manifest pause_points 声明（v3，列表形态即接管；非法项 fail-closed 丢弃）；
+    2. pause.stage_pause（bool 机械转两锚点：storyboard_structure_ready/
+       first_generation_call；false = 显式关闭，返回空表）；
+    3. 文档 pause_rules 声明块（兼容存量，同机械转口径）；
+    4. 关键词兜底：存在『何时暂停/强制暂停点』字样即视为要求（同两锚点）。
+
+    未命中任一级返回空表（不要求暂停）。每项含 id/trigger，
+    batch_boundary 附 description、free_text 附 prose（trigger 白名单与
+    sidecar_schema 同源）。"""
     entry = resolve_entry(skill_name)
     if entry is None:
-        return False
-    manifest_pause = (entry.manifest or {}).get("pause") or {} if entry.manifest else {}
-    if "stage_pause" in manifest_pause:
-        return bool(manifest_pause["stage_pause"])
+        return []
+    manifest = entry.manifest or {}
+    raw_pps = manifest.get("pause_points")
+    if isinstance(raw_pps, list):
+        return _clean_pause_points(raw_pps)
+    manifest_pause = manifest.get("pause") or {}
+    if isinstance(manifest_pause, dict) and "stage_pause" in manifest_pause:
+        if bool(manifest_pause["stage_pause"]):
+            return [dict(p) for p in _STAGE_PAUSE_ANCHOR_POINTS]
+        return []
     content = entry.content or ""
     rules = parse_pause_rules(content)
     if rules is not None and "stage_pause" in rules:
-        return bool(rules["stage_pause"])
-    return "何时暂停" in content or "强制暂停点" in content
+        if bool(rules["stage_pause"]):
+            return [dict(p) for p in _STAGE_PAUSE_ANCHOR_POINTS]
+        return []
+    if "何时暂停" in content or "强制暂停点" in content:
+        return [dict(p) for p in _STAGE_PAUSE_ANCHOR_POINTS]
+    return []
 
 
 def skill_planner_flow(skill_name: str, limit: int = 6000) -> str:

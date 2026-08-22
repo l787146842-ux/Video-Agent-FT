@@ -10,6 +10,10 @@
 - 动作定义唯一性：协议模板不再内联动作清单（文本动作定义已随 4-4 双轨退役删除，ADR-0001）；
 - include 引用完整性：{{include:path}} 目标文件存在。
 
+Skill 直注禁令独立账本（C6，任务#22）：data/skills/*.md 的「严禁/不得」
+不并入 BUDGET=8，单独计账：当前 WARN 观察项（正文清洗留长期路线图 #33），
+基线棘轮锁死当前计数（166）——超过基线即 FAIL，只降不升。
+
 另附运行时观察项（P3-17，非硬门禁不影响退出码）：
 - 读 live_metrics 落盘的组装样本（data/prompt_sections.jsonl），统计组装总长
   P95，>48k 字符只在输出中 WARN，供周报观察。
@@ -31,6 +35,10 @@ CODE_DIRS = ["src/video_agent/core", "src/video_agent/skill_runtime", "src/video
 BUDGET = 8
 BYTE_BUDGET = 7168
 BAN_RE = re.compile(r"严禁|不得")
+# Skill 直注禁令独立账本（C6）：data/skills/*.md 行级命中基线棘轮，只降不升；
+# 下调基线需同步完成对应存量的正文清洗（长期路线图 #33）。
+SKILLS_MD_DIR = ROOT / "data" / "skills"
+SKILL_BAN_BASELINE = 166
 # 运行时组装总长观察阈值（字符）：P95 超限仅 WARN（周报观察项，不作硬门禁）
 P95_WARN_CHARS = 48000
 SECTIONS_SAMPLE_FILE = ROOT / "data" / "prompt_sections.jsonl"
@@ -97,6 +105,19 @@ def collect_violations() -> list:
     return out
 
 
+def collect_skill_ban_violations() -> list:
+    """Skill 直注禁令独立账本（C6）：data/skills/*.md 行级「严禁/不得」命中。
+
+    与 BUDGET=8 主账本分离（Skill 正文清洗留长期路线图 #33，不在本门禁扩面）。
+    """
+    out = []
+    for f in sorted(SKILLS_MD_DIR.glob("*.md")):
+        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if BAN_RE.search(line):
+                out.append(f"{f.relative_to(ROOT)}:{i}")
+    return out
+
+
 def runtime_total_p95():
     """从 live_metrics 落盘样本读组装总长序列，返回 (P95, 样本数)；无样本返回 (None, 0)。
 
@@ -152,6 +173,20 @@ def main() -> int:
             if not target.exists():
                 print(f"[check_prompt_budget] include 目标缺失: {f.relative_to(ROOT)} -> {m.group(1)}")
                 ok = False
+
+    # 4.5）Skill 直注禁令独立账本（C6）：WARN 观察项 + 基线棘轮（超基线 FAIL）
+    skill_viols = collect_skill_ban_violations()
+    if len(skill_viols) > SKILL_BAN_BASELINE:
+        print(
+            f"[check_prompt_budget] Skill 直注禁令 {len(skill_viols)} 处"
+            f"（基线 {SKILL_BAN_BASELINE}，棘轮只降不升）FAIL"
+        )
+        ok = False
+    else:
+        print(
+            f"[check_prompt_budget] Skill 直注禁令独立账本: {len(skill_viols)} 处"
+            f"（基线 {SKILL_BAN_BASELINE}，棘轮锁死）WARN-观察项（不并入 BUDGET={BUDGET}）"
+        )
 
     # 5）运行时组装总长遥测（P3-17 周报观察项：只 WARN 不失败，不改退出码）
     p95, n = runtime_total_p95()

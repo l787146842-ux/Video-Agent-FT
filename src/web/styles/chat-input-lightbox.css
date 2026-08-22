@@ -1,0 +1,68 @@
+/* ===== 聊天图片/媒体原图预览 lightbox ===== */
+@layer components {
+  /* ===== 聊天图片原图预览 lightbox ===== */
+  .image-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    background: rgba(0, 0, 0, 0.82);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-out;
+  }
+  .image-lightbox img {
+    max-width: 92vw;
+    max-height: 90vh;
+    border-radius: 8px;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+    cursor: default;
+  }
+  .image-lightbox video {
+    max-width: 92vw;
+    max-height: 90vh;
+    border-radius: 8px;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+    background: #000;
+  }
+  .image-lightbox-actions {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    gap: 8px;
+  }
+  .image-lightbox-actions a,
+  .image-lightbox-actions button {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--dur-fast);
+  }
+  .image-lightbox-actions a:hover,
+  .image-lightbox-actions button:hover {
+    background: rgba(59, 130, 246, 0.75);
+  }
+  /* 音频预览：无画面，居中播放器 */
+  .image-lightbox-audio {
+    min-width: min(420px, 84vw);
+    padding: 24px;
+    border-radius: 12px;
+    background: rgba(30, 41, 59, 0.92);
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: default;
+  }
+  .image-lightbox-audio audio {
+    width: 100%;
+  }
+}

@@ -3,32 +3,23 @@
 7777 二轮复盘修复回归测试。
 
 覆盖（4-4 双轨退役后，ADR-0001）：
-1. 普通 JSON 不受动作块剥离/流式抑制影响（退化信号探测与 json 信号围栏
-   抑制已随文本轨删除；此处保留反向断言防误伤）。
-2. 降级开关新语义：同模型跨厂商（模型不换），仅列同名模型的供应商
+1. 降级开关新语义：同模型跨厂商（模型不换），仅列同名模型的供应商
    入链，空列表不入链；覆盖聊天/生图/出视频三类候选链与重试判定。
+（普通 JSON 不受动作块误伤的解析侧反向断言已随任务#27 文本轨残留
+退役删除：被测对象 web/action_parser.py 整文件退役。）
 """
 import pytest
 
 from src.video_agent.exceptions import AdapterError
-from src.video_agent.web.action_parser import (
-    parse_actions_from_reply,
-)
 
 
 # TestConfirmationToolKeyAlias（_extract_confirmation 别名归一）已随
 # S16 删除退役（audit-0819d）：暂停确认唯一经 workflow_pause FC 工具上抛。
 
 
-class TestLegitimateJsonUntouched:
-    """非流程信号的普通 JSON 不被误认为动作（单轨化后仅保留解析侧断言）"""
-
-    def test_plain_json_fence_not_parsed(self):
-        text = '示例：\n```json\n{"a": 1, "b": 2}\n```\n以上。'
-        assert parse_actions_from_reply(text) == []
-
-    def test_plain_json_fence_not_detected(self):
-        assert parse_actions_from_reply('```json\n{"a": 1}\n```') == []
+# TestLegitimateJsonUntouched（普通 json 围栏不被误认为动作的解析侧断言）
+# 已随任务#27 文本轨残留退役删除：被测对象（action_parser.parse_actions_from_reply）
+# 整模块退役，动作通道唯一 = FC 工具调用（ADR-0001）。
 
 
 # ---------- 降级新语义：同模型跨厂商 ----------
@@ -199,32 +190,9 @@ class TestNewWizardDimensions:
         assert classify_option("3-5 分钟") == "时长"
 
 
-class TestProductionParamNote:
-    """提示词草案执行器：制作参数注入（推荐模型/分辨率/时长上限）"""
-
-    def test_note_contains_duration_cap(self, set_global_setting):
-        from src.video_agent.skill_runtime.executors import _production_param_note
-
-        set_global_setting("max_shot_duration", 12)
-        set_global_setting("default_image_provider_id", "img-prov")
-        set_global_setting("default_image_model", "img-model")
-        set_global_setting("default_video_provider_id", "vid-prov")
-        set_global_setting("default_video_model", "vid-model")
-        set_global_setting("default_image_resolution", "2K")
-        set_global_setting("default_video_resolution", "720p")
-        state = {"documents": [{"name": "制片规格.md", "content": _SPEC_TEXT}]}
-        note = _production_param_note(state, has_ke=False, has_shots=True)
-        assert "12 秒" in note
-
-    def test_note_empty_without_params(self, set_global_setting):
-        from src.video_agent.skill_runtime.executors import _production_param_note
-
-        set_global_setting("default_image_provider_id", "")
-        set_global_setting("default_video_provider_id", "")
-        set_global_setting("default_image_resolution", "")
-        set_global_setting("default_video_resolution", "")
-        set_global_setting("max_shot_duration", 0)
-        assert _production_param_note({"documents": []}, True, True) == ""
+# TestProductionParamNote（executors._production_param_note 制作参数注入）
+# 已随任务#36 B5 执行器一步退役删除：制作参数改由通用主路径随 Skill
+# 全文直注/章节注入下发，不再有执行器专属注入点。
 
 
 # ---------- 引导消息轮间注入（7777 三轮） ----------
@@ -238,9 +206,9 @@ def svc(tmp_path):
 
 @pytest.fixture
 def executor(svc):
-    from src.video_agent.web.action_executor import StudioActionExecutor
+    from src.video_agent.web.action_executor import StateOperationExecutor
 
-    return StudioActionExecutor(svc)
+    return StateOperationExecutor(svc)
 
 
 class TestGuidanceQueue:

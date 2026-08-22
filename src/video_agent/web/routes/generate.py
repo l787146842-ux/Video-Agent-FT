@@ -20,8 +20,6 @@ from fastapi.responses import StreamingResponse
 
 from .generate_common import (
     GenLogRequest,
-    _log_task_exception,  # noqa: F401  向后兼容别名（供旧模块导入）
-    _tasks,  # noqa: F401  向后兼容别名（供 actions.py 等模块导入）
     _tm,
     poll_task,
 )

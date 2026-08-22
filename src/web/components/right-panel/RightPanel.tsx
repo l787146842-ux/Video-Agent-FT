@@ -1,7 +1,8 @@
-import { For, Show } from 'solid-js';
-import { FiGitBranch, FiPlus, FiX } from 'solid-icons/fi';
+import { For, Show, createSignal } from 'solid-js';
+import { FiGitBranch, FiPlus, FiSearch, FiX } from 'solid-icons/fi';
 import { ChatFeed } from './ChatFeed';
 import { ChatInput } from './ChatInput';
+import { ChatSearchBar } from './ChatSearchBar';
 import { state } from '@/stores/studio';
 import { convState, convActions } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
@@ -16,6 +17,8 @@ import { t } from '@/lib/locale';
  * 多对话规则：≥2 个对话时任意关闭；仅剩 1 个时不可关闭（不渲染关闭钮）。
  */
 export default function RightPanel() {
+  /** 消息搜索/轮次跳转条展开态（会话标签栏下方） */
+  const [showSearch, setShowSearch] = createSignal(false);
   const inputSplit = useSplitter(150, {
     axis: 'y',
     min: 100,
@@ -89,6 +92,15 @@ export default function RightPanel() {
           )}
         </For>
         <div class="conv-tabs-actions">
+          <button
+            type="button"
+            class={`conv-tabs-add${showSearch() ? ' active' : ''}`}
+            title={t('rp.search.open')}
+            aria-pressed={showSearch()}
+            onClick={() => setShowSearch((v) => !v)}
+          >
+            <FiSearch size={13} />
+          </button>
           <button type="button" class="conv-tabs-add" title={t('rp.conv.branch')} onClick={() => void handleBranch()}>
             <FiGitBranch size={13} />
           </button>
@@ -101,6 +113,11 @@ export default function RightPanel() {
           />
         </div>
       </div>
+
+      {/* 消息搜索/轮次跳转条（标签栏与消息流之间展开） */}
+      <Show when={showSearch()}>
+        <ChatSearchBar onClose={() => setShowSearch(false)} />
+      </Show>
 
       <ChatFeed />
 

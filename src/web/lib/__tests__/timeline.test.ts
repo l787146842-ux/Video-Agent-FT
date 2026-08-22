@@ -3,7 +3,7 @@ import {
   consolidateTimeline, formatElapsed, resultSummaryView, type TimelineItem,
 } from '../timeline';
 
-/** 批 2 时间线降噪：连续规划条目合并（纯函数钉死） */
+/** 时间线降噪：连续规划条目合并（纯函数钉死） */
 
 const reasoning = (step: number, ms: number, status: TimelineItem['status'] = 'done'): TimelineItem => ({
   id: `llm-s${step}`,
@@ -62,7 +62,7 @@ describe('formatElapsed', () => {
   });
 });
 
-describe('resultSummaryView 详情展开视图（P4-22）', () => {
+describe('resultSummaryView 详情展开视图', () => {
   it('单句摘要（句末标点收尾）→ 不可展开，折叠即全文', () => {
     expect(resultSummaryView('分析完成。')).toEqual({ expandable: false, collapsed: '分析完成。' });
     expect(resultSummaryView('产出 3 张图')).toEqual({ expandable: false, collapsed: '产出 3 张图' });

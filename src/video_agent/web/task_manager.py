@@ -11,20 +11,30 @@ GenerationTaskManager — 生成任务统一管理（从 routes/generate.py 抽�
 import asyncio
 import json
 import time
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
-from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import DATA_DIR
+from src.video_agent.web.task_store import TaskStore
+
+# 任务 #24：任务表持久化单源收敛 —— data/generation_tasks.json 停写，
+# 落盘迁入 workspace/state.sqlite3 kv 表（事务性，见 task_store）；
+# 旧文件仅作首启一次性导入兜底，导入后保留只读一个版本周期
+_STORE_KEY = "generation_tasks"
 
 
 class GenerationTaskManager:
     """生成任务管理器 — 统一管理图片/视频生成任务的生命周期与生成日志。"""
 
-    def __init__(self):
+    def __init__(
+        self,
+        store: Optional[TaskStore] = None,
+        legacy_file: Optional[Path] = None,
+    ):
         self._tasks: Dict[str, Dict[str, Any]] = {}
         self._background_tasks: set = set()
         self._sse_subscribers: List[asyncio.Queue] = []
@@ -34,8 +44,26 @@ class GenerationTaskManager:
         # 供顶部导航「生成日志」面板展示（照搬画布日志风格）
         self._gen_logs: List[Dict[str, Any]] = []
         # 任务表 + 生成日志落盘：重启后 processing 任务不再永久丢失回调
-        self._persist_path = DATA_DIR / "generation_tasks.json"
+        # store/legacy_file 可注入（测试隔离）；生产默认全局库 + data/ 旧文件
+        self._store = store or TaskStore()
+        self._legacy_file = Path(legacy_file) if legacy_file else DATA_DIR / "generation_tasks.json"
+        self._import_legacy_file()
         self._load_persisted()
+
+    def _import_legacy_file(self) -> None:
+        """一次性导入兜底：sqlite 无数据而旧 JSON 存在时读入 kv 表（幂等）。
+
+        导入后旧文件不再被读写（停写保留只读）。
+        """
+        try:
+            if self._store.exists(_STORE_KEY) or not self._legacy_file.exists():
+                return
+            data = json.loads(self._legacy_file.read_text(encoding="utf-8"))
+            payload = data if isinstance(data, dict) else {"tasks": data}
+            self._store.save(_STORE_KEY, payload)
+            logger.info(f"[TaskManager] 已从旧任务表导入 SQLite: {self._legacy_file}")
+        except Exception as e:
+            logger.warning(f"[TaskManager] 旧任务表导入失败: {e}")
 
     # ====== 任务 CRUD ======
 
@@ -221,9 +249,9 @@ class GenerationTaskManager:
     def _load_persisted(self) -> None:
         """启动恢复：加载落盘任务与生成日志；processing/pending 标记为 failed。"""
         try:
-            if not self._persist_path.exists():
+            data = self._store.load(_STORE_KEY)
+            if not data:
                 return
-            data = json.loads(self._persist_path.read_text(encoding="utf-8"))
             tasks = data.get("tasks") or []
             logs = data.get("logs") or []
         except Exception as e:
@@ -251,9 +279,8 @@ class GenerationTaskManager:
         self._persist()
 
     def _persist(self) -> None:
-        """任务表 + 生成日志原子落盘（供重启恢复；跳过不可序列化的运行时字段）。"""
+        """任务表 + 生成日志事务落盘（供重启恢复；跳过不可序列化的运行时字段）。"""
         try:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
             payload = {
                 "tasks": [
                     {"task_id": tid, **{
@@ -263,10 +290,7 @@ class GenerationTaskManager:
                 ],
                 "logs": self._gen_logs,
             }
-            atomic_write_text(
-                self._persist_path,
-                json.dumps(payload, ensure_ascii=False),
-            )
+            self._store.save(_STORE_KEY, payload)
         except Exception as e:
             logger.warning(f"[TaskManager] 任务表落盘失败: {e}")
 
@@ -303,6 +327,35 @@ def get_task_manager() -> GenerationTaskManager:
     if _instance is None:
         _instance = GenerationTaskManager()
     return _instance
+
+
+def snapshot_inflight_generations() -> List[Dict[str, Any]]:
+    """在途外部生成任务快照（端到端中断协议，任务 #17）。
+
+    停止路径调用：列出仍在 processing/pending 的图片/视频生成任务。
+    第一版不做真实撤销（供应商侧无统一取消通道），只登记 + 文案告知
+    哪些生成仍在供应商侧继续进行；后续方向：按 task_id 对接供应商
+    取消 API 实现真实撤销/补偿（见 stop_signal 模块注释）。
+    """
+    out: List[Dict[str, Any]] = []
+    try:
+        tasks = get_task_manager().tasks
+    except Exception:
+        return out
+    for tid, task in tasks.items():
+        if not isinstance(task, dict) or task.get("status") not in ("processing", "pending"):
+            continue
+        # 媒体类型判定：视频任务创建时带 adapter_type 标记，其余为图片
+        media = "video" if task.get("adapter_type") == "video_generation" else "image"
+        out.append({
+            "task_id": str(tid),
+            "media_type": media,
+            "model": str(task.get("model") or ""),
+            "draft_id": str(task.get("draft_id") or ""),
+            # 提示词截断前 60 字：停止文案里可识别是哪一项生成
+            "summary": str(task.get("prompt") or "")[:60],
+        })
+    return out
 
 
 def writeback_if_complete(task_id: str) -> None:

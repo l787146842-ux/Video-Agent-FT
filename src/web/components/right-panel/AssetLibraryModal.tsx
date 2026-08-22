@@ -4,6 +4,7 @@ import { useNavigate } from '@solidjs/router';
 import { fetchAssetPicker, type AssetPickerItem } from '@/api/providers';
 import { fetchCanvasList, fetchAllCanvasNodeImages } from '@/api/canvas';
 import { t } from '@/lib/locale';
+import { useFocusTrap } from '@/lib/focus-trap';
 import { AssetLibraryCanvasTab } from './AssetLibraryCanvasTab';
 import { AssetLibraryItemsTab, TAB_LABELS } from './AssetLibraryItemsTab';
 
@@ -19,7 +20,7 @@ type Tab = 'image' | 'canvas' | 'local';
  * - 点击卡片 → 切换选中态（带视觉反馈 .selected + ✓ 角标）
  * - 底部"已选 N 个" + "添加到对话框"按钮 → 批量回调 onPick(items) 后关闭
  *
- * P4-23 结构清欠：tab 主体拆为 AssetLibraryCanvasTab / AssetLibraryItemsTab，
+ * tab 主体拆为 AssetLibraryCanvasTab / AssetLibraryItemsTab（控制本文件行数），
  * 共用卡片网格 AssetLibraryGrid；本文件保留数据源与选中态，DOM 结构不变。
  */
 export function AssetLibraryModal(props: {
@@ -34,6 +35,10 @@ export function AssetLibraryModal(props: {
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set());
   /** 画布资产 tab：目标画布空间 */
   const [selectedCanvasId, setSelectedCanvasId] = createSignal('');
+
+  // 焦点圈闭：打开圈闭、Esc 关闭、关闭还原焦点
+  const [panelEl, setPanelEl] = createSignal<HTMLElement>();
+  useFocusTrap(() => (props.open ? panelEl() : undefined), { onEscape: () => props.onClose() });
 
   // 加载当前 tab 的素材（画布资产 tab 走独立的画布空间逻辑，不走此接口）
   const [items, { refetch: refetchItems }] = createResource(
@@ -111,7 +116,13 @@ export function AssetLibraryModal(props: {
     <Show when={props.open}>
       <div class="asset-modal">
         <div class="asset-modal-backdrop" onClick={() => props.onClose()} />
-        <div class="asset-modal-panel">
+        <div
+          class="asset-modal-panel"
+          ref={setPanelEl}
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('rp.asset.libraryAria')}
+        >
           {/* 头部：3 tab + 跳转画布按钮 + 关闭 */}
           <div class="asset-modal-header">
             <div class="asset-modal-tabs">

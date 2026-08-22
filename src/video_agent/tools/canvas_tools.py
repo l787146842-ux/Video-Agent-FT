@@ -128,6 +128,7 @@ async def _load_and_save(canvas_id: str, mutate_fn, max_retries: int = 3):
 
 class CanvasListTool(BaseTool):
     name = "canvas_list"
+    risk = "low"  # §2.7：只读
     description = "列出所有画布（ID、标题、节点数）"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -145,6 +146,7 @@ class CanvasListTool(BaseTool):
 
 class CanvasReadNodesTool(BaseTool):
     name = "canvas_read_nodes"
+    risk = "low"  # §2.7：只读
     description = "读取指定画布的全部节点信息（ID、类型、标题、坐标、图片、提示词）"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -181,6 +183,7 @@ class CanvasReadNodesTool(BaseTool):
 
 class CanvasAddNodeTool(BaseTool):
     name = "canvas_add_node"
+    risk = "high"  # §2.7：画布写入（外部副作用），需用户确认
     description = "在画布中新增一个节点（支持 smart-image/smart-prompt/text/image 类型）"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -203,6 +206,7 @@ class CanvasAddNodeTool(BaseTool):
 
 class CanvasUpdateNodeTool(BaseTool):
     name = "canvas_update_node"
+    risk = "high"  # §2.7：画布写入（外部副作用），需用户确认
     description = "修改画布中指定节点的属性（标题/坐标/提示词/图片/文本内容）"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -240,6 +244,7 @@ class CanvasUpdateNodeTool(BaseTool):
 
 class CanvasDeleteNodeTool(BaseTool):
     name = "canvas_delete_node"
+    risk = "high"  # §2.7：画布写入（外部副作用），需用户确认
     description = "删除画布中指定的节点"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -271,6 +276,7 @@ class CanvasDeleteNodeTool(BaseTool):
 
 class CanvasListAssetsTool(BaseTool):
     name = "canvas_list_assets"
+    risk = "low"  # §2.7：只读
     description = "列出画布素材库中的所有素材（图片/工作流等）"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -299,6 +305,7 @@ class CanvasBatchUpdateInput(BaseModel):
 
 class CanvasBatchUpdateTool(BaseTool):
     name = "canvas_batch_add_nodes"
+    risk = "high"  # §2.7：画布写入（外部副作用），需用户确认
     description = "批量添加多个节点到画布（一次 HTTP 完成，避免多次读写）"
 
     def get_input_schema(self) -> Type[BaseModel]:

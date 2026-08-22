@@ -20,9 +20,9 @@ export function getCanvasIframe() {
 export const [canvasError, setCanvasError] = createSignal(false);
 
 /**
- * 探测画布服务是否在线（修复计划书 P0-3）。
+ * 探测画布服务是否在线。
  * 走本项目后端 GET /api/canvas/list（其返回 canvas_online 标志），
- * 不依赖 postMessage 握手（画布当前不发送 canvas:ready，Rule 7 不可改）。
+ * 不依赖 postMessage 握手（画布当前不发送任何消息，Rule 7 不可改）。
  * 离线或请求失败时置 canvasError=true，驱动 CanvasView 的错误覆盖层。
  */
 export async function probeCanvasOnline(): Promise<boolean> {
@@ -36,9 +36,6 @@ export async function probeCanvasOnline(): Promise<boolean> {
     return false;
   }
 }
-
-/** 画布是否已就绪（收到 canvas:ready 握手） */
-export const [canvasReady, setCanvasReady] = createSignal(false);
 
 /** 覆盖层拖拽中标志（拖拽时禁用 iframe pointer-events 防止吐掉 mousemove） */
 export const [canvasOverlayDragging, setCanvasOverlayDragging] = createSignal(false);
@@ -58,25 +55,4 @@ export function startCanvasImageDrag(info: CanvasImageDragInfo) {
 }
 export function endCanvasImageDrag() {
   setCanvasImageDrag(null);
-}
-
-/** 画布内选中的图片（经 canvas:selection postMessage 上报）。
- * 选中态只存在于画布浏览器端内存，需画布侧主动广播；本项目侧只做监听消费（Rule 7）。
- * 画布侧未上报时 items 为空，@ 菜单回退为展示全部画布素材。 */
-export interface CanvasSelectedImage {
-  url: string;
-  name: string;
-  kind?: string;
-  nodeId?: string;
-}
-export interface CanvasSelectionState {
-  items: CanvasSelectedImage[];
-  receivedAt: number;
-}
-export const [canvasSelection, setCanvasSelection] = createSignal<CanvasSelectionState>({ items: [], receivedAt: 0 });
-export function applyCanvasSelection(items: CanvasSelectedImage[]) {
-  setCanvasSelection({ items, receivedAt: Date.now() });
-}
-export function clearCanvasSelection() {
-  setCanvasSelection({ items: [], receivedAt: 0 });
 }

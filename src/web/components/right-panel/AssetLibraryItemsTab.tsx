@@ -1,5 +1,5 @@
 /**
- * 素材库「图片资产 / 本地素材」tab（P4-23 结构清欠从 AssetLibraryModal 拆出）：
+ * 素材库「图片资产 / 本地素材」tab（自 AssetLibraryModal 拆出）：
  * 加载 / 错误 / 画布离线 / 空态 / 卡片网格。
  * DOM 结构不变（.asset-modal-status / .asset-grid 原样），
  * 数据源（items 资源）仍在父组件，行为零变化。
@@ -16,7 +16,7 @@ type ItemsValue = AssetPickerResponse;
 
 type Tab = 'image' | 'canvas' | 'local';
 
-/** tab 文案走 i18n 字典（P2-4），函数形式保持语言切换可扩展 */
+/** tab 文案走 i18n 字典，函数形式保持语言切换可扩展 */
 export function TAB_LABELS(): Record<Tab, string> {
   return {
     image: t('rp.asset.tabImage'),

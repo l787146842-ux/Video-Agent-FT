@@ -13,19 +13,20 @@ import {
 } from '@/stores/canvas';
 import { showToast } from '@/stores/toast';
 import { dropImageToCanvas } from '@/api/canvas';
+import { t } from '@/lib/locale';
 
 /**
  * 画布模式（路由 /canvas）
  * iframe 已持久化在 LayoutShell（不随路由卸载，保留画布状态）。
  * 本组件仅渲染：错误覆盖层 + 图片拖放层 + 右侧 Agent 面板覆盖层。
  *
- * P2-3 样式评估结论：覆盖层保持不透明悬浮（box-shadow 已具备悬浮感）——
+ * 覆盖层保持不透明悬浮（box-shadow 已具备悬浮感）——
  * 聊天长文本在半透明底上可读性明显下降，故不采用 backdrop 半透明。
  */
 const KEY_OVERLAY_COLLAPSED = 'canvasAgentOverlayCollapsed';
 
 export default function CanvasView() {
-  // 收起状态记忆：从 localStorage 恢复用户上次偏好（P2-3）
+  // 收起状态记忆：从 localStorage 恢复用户上次偏好
   const [collapsed, setCollapsedRaw] = createSignal(
     localStorage.getItem(KEY_OVERLAY_COLLAPSED) === '1',
   );
@@ -119,6 +120,10 @@ export default function CanvasView() {
           </div>
         </div>
       </Show>
+
+      {/* 联动能力明示：画布当前无选中跟随/节点级联动（postMessage 协议未实现），
+          避免用户误以为选中会跟随；待画布侧实现后可移除（见 docs/对画布的需求清单.md） */}
+      <div class="canvas-linkage-note">{t('canvas.linkage.pending')}</div>
 
       {/* 右侧 Agent 覆盖层 */}
       <aside

@@ -1,8 +1,8 @@
-/* ===== 左面板（故事板 / 未归类素材）（由 app.css 拆分） ===== */
+/* ===== 左面板（故事板 / 未归类素材） ===== */
 @layer components {
   /* ---------- 左面板 ---------- */
   .left-tabs { display: flex; border-bottom: 1px solid var(--border-color); background-color: var(--bg-secondary); padding: 8px 12px 0 12px; gap: 8px; }
-  /* 814F6：页签文字不得竖排堆叠/折行（保存状态挤压宽度时的真实缺陷） */
+  /* 页签文字不得竖排堆叠/折行（宽度被挤压时防换行堆叠） */
   .left-tab-btn { padding: 8px 16px; font-size: 13px; font-weight: 600; color: var(--text-muted); border: none; background: none; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
   .left-tab-btn:hover { color: var(--text-main); }
   .left-tab-btn.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
@@ -44,7 +44,7 @@
   .draft-card-col:active { cursor: grabbing; }
   .draft-card-code { font-size: 10px; color: var(--text-dim); line-height: 1; font-variant-numeric: tabular-nums; user-select: none; }
   .draft-card.drag-over { border-color: var(--accent-blue); box-shadow: 0 0 8px rgba(59, 130, 246, 0.5); }
-  /* 卡片定宽（6666 二轮反馈）：长 label 不得把卡片撑长，省略号截断；
+  /* 卡片定宽：长 label 不得把卡片撑长，省略号截断；
      描述区 2 行 clamp，组卡高度不再随长文增长 */
   .draft-card { width: 116px; min-width: 116px; height: 64px; border-radius: var(--radius-sm); background-color: var(--bg-tertiary); border: 2px solid transparent; cursor: pointer; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px; background-size: cover; background-position: center; transition: all 0.2s; }
   .draft-card.active { border-color: var(--accent-blue); box-shadow: 0 0 8px rgba(59, 130, 246, 0.5); }
@@ -75,7 +75,7 @@
 
   /* 卡列包裹：每张草稿卡的列容器（悬停追踪由组件 onMouseEnter 处理） */
   .draft-card-wrap { display: flex; flex-direction: column; }
-  /* 组级微调输入行（7777 四轮）：挂在分组底部占满组宽，悬停卡片时原位展开
+  /* 组级微调输入行：挂在分组底部占满组宽，悬停卡片时原位展开
      （max-height 动画，分组高度随之自然增加）；收起时零占位且 pointer-events:none，
      底部不残留可悬停的隐形占位条（只有悬停卡片才能触发展开） */
   .card-adjust-box { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; padding: 0 4px; max-height: 0; margin-top: 0; overflow: hidden; opacity: 0; box-sizing: border-box; background-color: var(--bg-secondary); border: 1px solid transparent; border-radius: var(--radius-sm); pointer-events: none; transition: max-height 0.16s ease, opacity 0.16s ease, margin-top 0.16s ease, padding 0.16s ease; }

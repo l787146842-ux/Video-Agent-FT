@@ -43,6 +43,8 @@ def test_b0_f1_doc_written_emitted_on_fc_document_write(monkeypatch):
         runner.execute(
             _fc_response("document_write", {"name": "大纲.md", "content": "标题：测试"}),
             on_event=collect,
+            # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户一次性同意
+            gate_override="all",
         )
     )
     assert applied == 1

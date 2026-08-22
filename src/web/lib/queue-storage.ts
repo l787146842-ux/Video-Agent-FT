@@ -1,5 +1,5 @@
 /**
- * 排队引导消息持久化（批 3，T26 销账：推理中刷新不再丢排队消息）。
+ * 排队引导消息持久化（推理中刷新不丢排队消息）。
  *
  * 对标 harness「If it isn't in a file, it doesn't exist」：后端 worker 刷新
  * 存活（reattachRunningAgent），前端排队消息也应对称存活。键按「项目 + 对话」
@@ -34,7 +34,8 @@ export function saveQueue(list: QueuedMessage[]) {
   }
 }
 
-/** 按当前键读取队列（损坏/缺失返回空列表，不抛异常） */
+/** 按当前键读取队列（损坏/缺失返回空列表，不抛异常）；
+ * 旧格式条目（无 parts/displayText 键）在此结构归一化，读取处不必各自设防 */
 export function loadQueue(): QueuedMessage[] {
   const key = queueStorageKey();
   if (!key) return [];
@@ -43,9 +44,15 @@ export function loadQueue(): QueuedMessage[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (m) => m && typeof m.id === 'string' && typeof m.text === 'string',
-    );
+    return parsed
+      .filter(
+        (m) => m && typeof m.id === 'string' && typeof m.text === 'string',
+      )
+      .map((m) => ({
+        ...m,
+        displayText: typeof m.displayText === 'string' ? m.displayText : m.text,
+        parts: Array.isArray(m.parts) ? m.parts : [],
+      }));
   } catch {
     return [];
   }

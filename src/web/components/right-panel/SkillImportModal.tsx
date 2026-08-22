@@ -4,6 +4,7 @@ import { saveSkillDoc } from '@/api/docs';
 import { showToast } from '@/stores/toast';
 import { refreshSkills } from '@/stores/studio';
 import { t } from '@/lib/locale';
+import { useFocusTrap } from '@/lib/focus-trap';
 
 /**
  * Skill 导入弹窗
@@ -16,6 +17,10 @@ export function SkillImportModal(props: {
   const [slug, setSlug] = createSignal('');
   const [saving, setSaving] = createSignal(false);
   let fileRef: HTMLInputElement | undefined;
+
+  // 焦点圈闭：打开圈闭、Esc 关闭、关闭还原焦点
+  const [panelEl, setPanelEl] = createSignal<HTMLElement>();
+  useFocusTrap(panelEl, { onEscape: () => props.onClose() });
 
   /** 从内容中自动提取 slug（支持 # 标题 和 skill_name: "..." 两种格式） */
   function autoSlug(text: string): string {
@@ -97,7 +102,13 @@ export function SkillImportModal(props: {
     <div class="skill-modal-backdrop" onClick={(e) => {
       if (e.target === e.currentTarget) props.onClose();
     }}>
-      <div class="skill-modal skill-import-modal">
+      <div
+        class="skill-modal skill-import-modal"
+        ref={setPanelEl}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('rp.skillImport.dialogAria')}
+      >
         {/* 顶部 */}
         <div class="skill-modal-header">
           <div class="skill-modal-title" style={{ padding: 0 }}>{t('rp.skillImport.title')}</div>

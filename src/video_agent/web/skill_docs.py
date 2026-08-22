@@ -153,6 +153,39 @@ def split_skill_sections(content: str) -> Dict[str, str]:
         _add(stage_now, body)
     return {k: "\n\n".join(v) for k, v in collected.items()}
 
+
+def list_skill_sections(content: str) -> List[Dict[str, Any]]:
+    """章节目录：[{title, start, end}]，按出现顺序，字符区间基于全文原文
+    （content[start:end] 即该章节文本）。
+
+    与 split_skill_sections 同口径双格式：
+    1. flova 原生 <tag>…</tag> 章节：title = tag 名，区间覆盖整个标签块；
+    2. Markdown 标题式：title = 标题文本（去 # 前缀），区间从标题行到下一标题前。
+    任务#36 B5：分级注入章节目录与 read_skill（section/start）续读共用。
+    """
+    content = content or ""
+    out: List[Dict[str, Any]] = []
+    tag_alt = "|".join(re.escape(t) for t in SECTION_TAG_STAGES)
+    tag_re = re.compile(rf"<(?P<tag>{tag_alt})>(?P<body>.*?)</(?P=tag)>", re.S | re.I)
+    found_tag = False
+    for m in tag_re.finditer(content):
+        found_tag = True
+        out.append({"title": m.group("tag").lower(),
+                    "start": m.start(), "end": m.end()})
+    if found_tag:
+        return out
+    # Markdown 标题兜底：逐标题定位起点，end 回填到下一节起点
+    for m in re.finditer(r"(?m)^#{1,4}[^\n]*", content):
+        heading = m.group(0).lstrip("#").strip()
+        if not heading:
+            continue
+        out.append({"title": heading, "start": m.start(), "end": m.end()})
+    # 回填 end：每节到下一节起点（最后一节到全文末尾）
+    for i, sec in enumerate(out):
+        sec["end"] = out[i + 1]["start"] if i + 1 < len(out) else len(content)
+    return out
+
+
 DEFAULT_SKILL_SLUG = "script-to-video"
 DEFAULT_SKILL_DOC = """# 剧本生视频（需上传剧本）
 
@@ -402,25 +435,29 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
     由路由层随 PUT 响应下发，前端以 toast/详情展示。
     slug 非空时追加 sidecar 声明缺失检查（仅告警， 只告警不阻断语义）。
     """
-    from src.video_agent.skill_runtime.registry import SKILL_EXECUTOR_TOOLS, TOOL_STAGES
+    from src.video_agent.skill_runtime.registry import (
+        CAPABILITY_TOOL_STAGES,
+        PIPELINE_CAPABILITY_TOOLS,
+    )
 
     warnings: List[str] = []
     content = content or ""
     sections = split_skill_sections(content)
     available = [
-        t for t in SKILL_EXECUTOR_TOOLS
-        if any((sections.get(s) or "").strip() for s in TOOL_STAGES.get(t, ()))
+        t for t in PIPELINE_CAPABILITY_TOOLS
+        if any((sections.get(s) or "").strip()
+               for s in CAPABILITY_TOOL_STAGES.get(t, ()))
     ]
     if not available:
         warnings.append(
-            "未识别到任何执行器章节：选中该 Skill 时将回退全文注入模式，无独立执行器可用"
+            "未识别到任何管线能力章节：选中该 Skill 时按自由型处理（全文直注，无阶段裁剪）"
         )
-    # 三拆部分缺失：故事板章节只覆盖了部分拆解执行器
+    # 三拆部分缺失：故事板章节只覆盖了部分拆解能力
     split_tools = ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")
     present = [t for t in split_tools if t in available]
     if present and len(present) < 3:
         missing = [t for t in split_tools if t not in available]
-        warnings.append("故事板章节仅覆盖部分拆解执行器，未注册：" + "、".join(missing))
+        warnings.append("故事板章节仅覆盖部分拆解能力，未声明：" + "、".join(missing))
     # gate_rules 块格式校验（非法时 prompt_gates 静默回落默认，这里显式告知）
     gm = _GATE_RULES_LINT_RE.search(content)
     if gm:
@@ -449,7 +486,7 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
     ):
         warnings.append(
             "未检测到阶段暂停声明（可加 ```json pause_rules {\"stage_pause\": true}``` 或写明「何时暂停」），"
-            "执行器完成后将不会主动邀请用户确认"
+            "阶段完成后将不会主动邀请用户确认"
         )
     # 用户裁决：模型能力参数唯一权威源 = 全局设置——Skill 内写死的
     # 厂商/模型/分辨率/时长参数一律作废（运行时忽略，仅提示迁移）

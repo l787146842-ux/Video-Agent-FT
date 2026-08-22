@@ -14,7 +14,7 @@ import type {
  * 单个故事板分组卡片
  * 按类型渲染：关键元素（蓝）/ 分镜（紫，含场景引用 chips）/ 音频（绿）
  * 支持分组级拖拽排序（drag 事件由 StoryboardView 协调）。
- * 八轮 B7（T25）：分组头/场景引用/描述编辑/微调行切至 group-card/ 子组件。
+ * 分组头/场景引用/描述编辑/微调行位于 group-card/ 子组件。
  */
 export function GroupCard(props: {
   group: AnyGroup;

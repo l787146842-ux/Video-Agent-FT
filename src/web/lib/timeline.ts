@@ -1,5 +1,5 @@
 /**
- * 过程时间线纯函数域（批 2 时间线降噪）。
+ * 过程时间线纯函数域。
  *
  * model_reasoning 创作规划条目每步一条（「模型创作规划（节点内第 N 轮）」；
  * 主体回归后每轮均由模型循环产生，历史 runtime 机械直跑已退役），
@@ -18,9 +18,9 @@ export interface TimelineItem {
   elapsed_ms?: number;
   /** 运行态走秒起点 */
   started_at_ms?: number;
-  /** 工具执行结果一句话摘要（批2 透明度：live=tool_finished、历史=trace result_summary） */
+  /** 工具执行结果一句话摘要（live=tool_finished、历史=trace result_summary） */
   result_summary?: string;
-  /** 审核整改批 2：规划级执行器标记（不产真实媒体，前端挂「规划」徽标） */
+  /** 规划级执行器标记（不产真实媒体，前端挂「规划」徽标） */
   planning?: boolean;
   /** 合并条目的逐轮明细（点击展开） */
   details?: TimelineItem[];
@@ -31,7 +31,7 @@ export function formatElapsed(ms: number): string {
   return ms < 100 ? `${Math.max(1, Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-/** result_summary 详情展开视图（P4-22，纯函数，vitest 钉死）：
+/** result_summary 详情展开视图（纯函数，vitest 钉死）：
  * 折叠态默认一句话摘要（首句句末标点/换行切分）；其后仍有内容才可展开。
  * 无切分点的整段摘要不可展开（不挂多余按钮）。 */
 export function resultSummaryView(full: string): { expandable: boolean; collapsed: string } {

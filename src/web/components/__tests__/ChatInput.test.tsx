@@ -98,7 +98,7 @@ describe('ChatInput 键盘发送', () => {
   });
 });
 
-describe('ChatInput 编辑回填通道（P4-20：edit_backfill 桥接请求）', () => {
+describe('ChatInput 编辑回填通道（edit_backfill 桥接请求）', () => {
   beforeEach(() => {
     sendMock.mockClear();
     takeInsertRequests(); // 清空跨用例残留的桥接请求

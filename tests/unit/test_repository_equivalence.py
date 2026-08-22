@@ -2,10 +2,11 @@
 
 覆盖三件事：
 1. 接口等价：同一操作序列在 StateRepository 与 SqliteStateRepository 上
-   产出相同读回结果（参数化双后端同题同断言）；
+   产出相同读回结果（参数化双后端同题同断言；save_compat 语义已分裂：
+   json 后端为自身兼容文件写入，sqlite 后端镜像退役为空实现，故不参数化）；
 2. 迁移路径：json 文件 → sqlite 首启自动迁移无损；
-3. 双写回退期无损：sqlite 主写 + JSON 侧镜像/兼容文件双写，
-   回退 json 后端（含混用工作区）经 StateManager 全周期无损续跑。
+3. 镜像退役（任务 #24）：sqlite 主写不再产出 JSON 镜像，
+   回退 json 后端不再无损（新契约守护）。
 """
 import pytest
 
@@ -69,14 +70,26 @@ class TestInterfaceEquivalence:
         with pytest.raises(StateError):
             repo.load_project("../escape")
 
-    def test_compat_roundtrip(self, repo):
-        repo.save_compat(_STATE)
-        assert repo.load_compat() == _STATE
+
+class TestCompatDivergence:
+    """save_compat 语义分裂守护：json 后端自身兼容文件照写，
+    sqlite 后端镜像退役为空实现（任务 #24）。"""
+
+    def test_json_repo_compat_roundtrip(self, tmp_path):
+        jrepo = StateRepository(tmp_path)
+        jrepo.save_compat(_STATE)
+        assert jrepo.load_compat() == _STATE
+
+    def test_sqlite_repo_compat_save_is_noop(self, tmp_path):
+        srepo = SqliteStateRepository(tmp_path)
+        srepo.save_compat(_STATE)
+        assert srepo.load_compat() is None
+        assert not (tmp_path / "studio_state.json").exists()
 
 
-class TestMigrationAndDualWrite:
+class TestMigrationAndMirrorRetirement:
     def test_json_to_sqlite_migration_lossless(self, tmp_path):
-        """json 侧既有文件 → sqlite 首启自动迁移无损"""
+        """json 侧既有文件 → sqlite 首启自动迁移无损（一次性导入兜底保留）"""
         jrepo = StateRepository(tmp_path)
         jrepo.ensure_dirs()
         jrepo.save_project(_PROJECT_ID, _STATE)
@@ -86,32 +99,23 @@ class TestMigrationAndDualWrite:
         assert srepo.load_project(_PROJECT_ID) == _STATE
         assert srepo.read_index() == _INDEX
 
-    def test_sqlite_dual_write_readable_by_json_repo(self, tmp_path):
-        """sqlite 主写 + 双写 → json 仓库直接读回（镜像与兼容文件两路皆无损）"""
+    def test_sqlite_write_produces_no_mirror(self, tmp_path):
+        """镜像退役：sqlite 写入后 JSON 侧零产出（含兼容文件）"""
         srepo = SqliteStateRepository(tmp_path)
         srepo.save_project(_PROJECT_ID, _STATE_V2)
         srepo.write_index(_INDEX)
         srepo.save_compat(_STATE_V2)
+        assert not (tmp_path / "projects" / _PROJECT_ID / "state.json").exists()
+        assert not (tmp_path / "projects" / "index.json").exists()
+        assert not (tmp_path / "studio_state.json").exists()
 
-        jrepo = StateRepository(tmp_path)
-        assert jrepo.load_project(_PROJECT_ID) == _STATE_V2
-        assert jrepo.read_index() == _INDEX
-        assert jrepo.load_compat() == _STATE_V2
-
-    def test_sqlite_delete_mirrors_to_json_side(self, tmp_path):
-        """sqlite 删除 → 镜像文件同删（回退 json 后不得见已删项目残留）"""
-        srepo = SqliteStateRepository(tmp_path)
-        srepo.save_project(_PROJECT_ID, _STATE)
-        srepo.delete_project_dir(_PROJECT_ID)
-        assert StateRepository(tmp_path).load_project(_PROJECT_ID) is None
-
-    def test_full_cycle_json_sqlite_json_via_state_manager(
+    def test_json_then_sqlite_via_state_manager(
         self, tmp_path, set_global_setting,
     ):
-        """全周期无损：json 写 → sqlite 迁移主写+双写 → 回退 json 续跑。
+        """json 存量工作区 → 翻转 sqlite 首启自动导入无损（新契约：
+        导入后 SQLite 为唯一事实源，不再镜像回写 JSON 侧）。
 
-        混用工作区（json 阶段已留 state.json/index.json）下回退不得读到
-        陈旧文件——sqlite 侧镜像必须把 JSON 侧同步到最新。
+        旧版「阶段三回退 json 无损续跑」断言随镜像退役移除（任务 #24）。
         """
         from src.video_agent.state.manager import StateManager
 
@@ -122,15 +126,20 @@ class TestMigrationAndDualWrite:
         m1.state_dict["project_name"] = "周期验证-json 段"
         m1.save()
 
-        # 阶段二：翻转到 sqlite（首启自动迁移）并更新
+        # 阶段二：翻转到 sqlite（首启自动导入）——数据无损读回
         set_global_setting("state_backend", "sqlite")
         m2 = StateManager(str(tmp_path))
+        assert m2.active_project_id == pid
         assert m2.state_dict.get("project_name") == "周期验证-json 段"
         m2.state_dict["project_name"] = "周期验证-sqlite 段"
         m2.save()
 
-        # 阶段三：一键回退 json —— 必须读到 sqlite 段的最新状态（无损）
-        set_global_setting("state_backend", "json")
+        # sqlite 段写入不再更新 JSON 镜像（镜像文件停留在导入前的旧值）
+        import json as _json
+        mirror = tmp_path / "projects" / pid / "state.json"
+        if mirror.exists():
+            assert _json.loads(mirror.read_text(encoding="utf-8")).get(
+                "project_name") == "周期验证-json 段"
+        # 重启 sqlite 实例读到最新值（唯一事实源）
         m3 = StateManager(str(tmp_path))
-        assert m3.active_project_id == pid
         assert m3.state_dict.get("project_name") == "周期验证-sqlite 段"

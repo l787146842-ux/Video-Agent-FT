@@ -18,7 +18,7 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 from src.video_agent.web.chat_service import _consume_pending_confirmation
 from src.video_agent.web.generation import call_chat_completion
 from src.video_agent.web.url_safety import validate_external_url
@@ -174,7 +174,7 @@ def _check_spec_gate_warns_and_allows_structure() -> Tuple[bool, str]:
             "src.video_agent.skill_runtime.registry.skill_flow_enabled",
             side_effect=lambda skill, key: key == "spec_gate",
         ):
-            ex = StudioActionExecutor(svc, gate_enabled=True)
+            ex = StateOperationExecutor(svc, gate_enabled=True)
             ex.skill_name = "eval-spec-gate"
             applied = ex.execute([{
                 "action": "add_group", "group_type": "keyElement", "title": "E",
@@ -203,7 +203,7 @@ def _check_element_gate_referenced_only() -> Tuple[bool, str]:
                 "drafts": [{"id": "s2", "mediaType": "video", "prompt": ""}],
             },
         ]
-        ex = StudioActionExecutor(svc, gate_enabled=True)
+        ex = StateOperationExecutor(svc, gate_enabled=True)
         first = ex.execute([{
             "action": "update_draft", "draft_id": "s1", "draft_type": "shot",
             "patch": {"prompt": _good_shot_base() + " no subtitles 镜头总时长：15秒"},

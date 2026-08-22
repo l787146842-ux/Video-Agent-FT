@@ -8,8 +8,7 @@ import type { ImageCardData } from '@/types';
 import { ImageLightbox } from './ImageLightbox';
 
 /**
- * 生图结果卡片 + 原图预览 lightbox（批6 拆分自 ChatMessageItem，
- * 主文件回归 ≤250 行铁律；拖拽/下载/Esc 关闭行为不变）。
+ * 生图结果卡片 + 原图预览 lightbox（拖拽/下载/Esc 关闭）。
  */
 export function ImageResultCard(props: { card: ImageCardData }) {
   const card = () => props.card;

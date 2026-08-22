@@ -8,18 +8,18 @@ skill_description: "用于通过已上传的音乐生成音乐视频。生成渠
 3. 生成故事板（关键元素、镜头列表、音频层） → **storyboard_key_elements / storyboard_shots / storyboard_audio**。并将上传的音频绑定到audio layer → **audio_generate**。
 4. 设置元素：如果用户已经上传了元素资源（如角色图像或参考库中的角色），请直接将其作为资产绑定到相应的关键元素上。否则，为所有元素生成图像 → **write_media_prompt、image_generate**。
 5. 为每个镜头生成一张关键帧图像以锁定视觉一致性；参考元素图像（第 3 步），后续镜头应参考之前类似的画面以保持连贯性 → **write_media_prompt、image_generate**。
-6. 为每个镜头生成最终视频；对于演唱场景，使用 **ImageToVideoByAudio** 进行唇形同步，并结合歌词创造富有表现力的表演。对于非对口型场景，请使用 **MultiModalToVideo** 以保持一致性。严格参考音频片段来驱动该镜头中的关键帧 → **write_media_prompt、generate_video**。
+6. 为每个镜头生成最终视频；对于演唱场景，使用 **ImageToVideoByAudio**（待平台补齐工具：音频驱动口型同步视频生成）进行唇形同步，并结合歌词创造富有表现力的表演。对于非对口型场景，请使用 **generate_video**（MultiModalToVideo 多模态参考通道）以保持一致性。严格参考音频片段来驱动该镜头中的关键帧 → **write_media_prompt、generate_video**。
 7. 所有资源就绪后进行最终合成；然后引导用户导出 → **video_assembler**。
 
 **依赖关系：** 2→1；3→1,2；4→2；5→3；6→3,5；7→3,6。
 
-**注意 — 用户提供或预先存在的媒体（主要影响第 3-6 步）：** 在填充生成内容之前，先通过 **image_generate** 将媒体绑定并分配到适当的分镜位置；避免重复生成用户已提供的内容。
+**注意 — 用户提供或预先存在的媒体（主要影响第 3-6 步）：** 在填充生成内容之前，先通过 **bind_asset** 将媒体绑定并分配到适当的分镜位置；避免重复生成用户已提供的内容。
 
 **何时暂停：** 不要一次性运行所有步骤。在上述每个关键阶段（例如：规格确定后、故事板后、元素图像后、关键帧后、镜头视频后、音频后）停止，与用户确认，然后再继续下一步。使用卡片或 reply_to_user 在继续前邀请用户进行审查。
 
 **音频驱动视频（口形同步/OmniHuman）的依赖关系：** 
    **先决条件链：** 在分镜脚本、起始帧和最终确定的驱动音频全部就绪并经用户确认之前，绝对不能开始最终视频生成。
-   **工作流修正：** 如果缺少驱动音频，请在视频合成前转向 `auditory_designer`。
+   **工作流修正：** 如果缺少驱动音频，请在视频合成前转向 `audio_generate`。
     *   **用户覆盖与风险：** 如果用户要求在没有最终音频的情况下生成视频，您必须在 `reply_to_user` 中说明：“由于缺少驱动音频，现在生成将导致唇形同步精度下降。” 仅在获得用户明确确认后方可继续。
    **缺失音频资源恢复（工作流修正）：** 如果分镜脚本已准备就绪，但缺少所需的音频，请转向音频生成。
 </planner>
@@ -65,9 +65,9 @@ skill_description: "用于通过已上传的音乐生成音乐视频。生成渠
 **最终镜头视频生成**
 分镜脚本设计了纯叙事表演 + 唇形同步演唱表演的组合。
 - **对于叙事表演：** 
-   使用 **MultiModalToVideo**，模型与分辨率按全局设置的默认渠道填写。参考该镜头的**关键元素 + 关键帧图像**。
+   使用 **generate_video**（MultiModalToVideo 多模态参考通道），模型与分辨率按全局设置的默认渠道填写。参考该镜头的**关键元素 + 关键帧图像**。
 - **对于唇形同步演唱表演：**
-   使用 **ImageToVideoByAudio**，模型与分辨率按全局设置的默认渠道填写。参考**关键帧 + 对齐的音频片段**。
+   使用 **ImageToVideoByAudio**（待平台补齐工具：音频驱动口型同步视频生成），模型与分辨率按全局设置的默认渠道填写。参考**关键帧 + 对齐的音频片段**。
 </generate_video>
 
 <write_media_prompt>
@@ -102,7 +102,7 @@ skill_description: "用于通过已上传的音乐生成音乐视频。生成渠
 - **结束帧：** 展示动作结束后的即时结果——主体的最终姿势或表情、环境变化后的状态以及摄像机为下一个剪辑做好准备的最终位置。
 - **高光帧：**找出镜头中最具视觉冲击力或情感冲击力的瞬间（例如，冲击力达到顶峰、角色恍然大悟的那一刻、能够凝固镜头主题的构图）。将这一帧定格并尽可能详细地描述——姿势、表情、光线状态、镜头构图——使其能够独立成章，成为镜头中最具感染力的静帧。
 
-**视频生成提示词（FirstFrameToVideo, ImageToVideoByAudio）：**
+**视频生成提示词（generate_video 首帧驱动通道 FirstFrameToVideo；ImageToVideoByAudio 音频驱动通道待平台补齐）：**
 对于基于关键帧的视频生成，提示词的主要目的是描述“变化”和“动态”。你应该避免重新描述开始/结束帧中已经存在的静态细节，而是专注于让场景“活”起来。高质量的视频提示词必须描述场景在以下维度上的动态演变：
 
 **静态主体描述：** 对镜头开始时主体外观的清晰详细描述（例如，角色的特征、服装或物体的材质和外观）。当主体具有显著特征时，将其包含在内以锚定主体（例如，`the elderly man`, `the woman in sunglasses`）。
@@ -112,7 +112,7 @@ skill_description: "用于通过已上传的音乐生成音乐视频。生成渠
 - **运动限定词：** 模型对时序性、多拍动作以及带有不同动作的多个主体反应强烈。你可以写：subject1 + motion1 + motion2, 或 subject1 + motion1, subject2 + motion2 等。按顺序排列动作；模型将相对于帧进行扩展和解释。
 - **摄像机运动：** 摄像机运动（电影摄影）提示词：用自然语言描述所需的**摄像机变化**。支持的选项包括 **orbit（环绕）, aerial（航拍）, zoom（变焦）, pan（平移）, track/follow（跟拍）, handheld（手持）, 和 shot cuts（镜头剪切）**。摄像机语言是许多基于帧的视频模型的强项。对于多镜头或切镜频繁的提示词，写出**镜头之间的逻辑连接**；使用明确的提示，如 **"cut to"** 或 **"shot cut"** 来连接镜头。切镜后，如果场景发生变化，描述新场景。当提示词包含摄像机运动时，基础参数应该是 **"non-fixed camera"**（非固定镜头）。这些摄像机提示词指南同时适用于图生视频和文生视频。如果摄像机是静止的，你必须声明 **'static camera'** 或 **'fixed shot'**。
 
-**`ImageToVideoByAudio` 的特别说明：** 当使用音频驱动（唇形同步/表演）模型时，提示词必须遵循上述维度，同时还要遵守以下独特的结构：
+**`ImageToVideoByAudio`（待平台补齐工具）的特别说明：** 当使用音频驱动（唇形同步/表演）模型时，提示词必须遵循上述维度，同时还要遵守以下独特的结构：
 你**必须**明确描述由音频驱动的角色状态（例如，speaking, singing, crying while talking, rapping）。
 - **最佳实践模板：** 摄像机运动 + 说话者情绪 + 说话状态 + 具体身体动作 + (可选) 背景事件。
 - **示例：** `The camera follows as a man turns to face the lens and walks forward while singing with an intoxicated, soulful expression. He first touches his collar with both hands, then spreads his arms wide and tilts his head back, appearing completely immersed. Light and shadow in the background pulse with the rhythm.`

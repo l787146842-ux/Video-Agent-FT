@@ -64,8 +64,8 @@ export function ConfirmActions(props: { message: ChatMessage }) {
    *  「当时所选」对勾从后端权威登记派生，不再靠文本反推 */
   const pauseOpts = (value: string, pid = msg().pauseId || '') => (pid
     ? { pauseResponse: { pause_id: pid, value } } : {});
-  /** 单发语义（批1 审核整改）：暂停回应一经发出即锁，连点/双击不得重复发送
-   *  （旧行为：第二次点击落入排队区，任务结束后把同一回答自动重发一遍） */
+  /** 单发语义：暂停回应一经发出即锁，连点/双击不得重复发送
+   *  （二次点击若落入排队区，会在任务结束后把同一回答自动重发一遍） */
   const [sent, setSent] = createSignal(false);
   const sendPicked = async (text: string) => {
     if (!text || sent()) return;
@@ -251,7 +251,7 @@ export function ConfirmActions(props: { message: ChatMessage }) {
             class="confirm-btn primary"
             disabled={sent()}
             onClick={() => {
-              // 无选项确认同样携带 pause_response（批1：结构化回携全覆盖，
+              // 无选项确认同样携带 pause_response（结构化回携全覆盖，
               // 对勾从后端权威登记派生，不再回落文本反推）
               const text = t('rp.msg.confirmText');
               void sendPicked(text);

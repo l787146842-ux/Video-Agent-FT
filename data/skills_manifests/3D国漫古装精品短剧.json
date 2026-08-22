@@ -60,5 +60,22 @@
   },
   "pause": {
     "stage_pause": true
-  }
+  },
+  "schema_version": 3,
+  "requires_inputs": [
+    {
+      "type": "script",
+      "required": true
+    }
+  ],
+  "pause_points": [
+    {
+      "id": "storyboard_structure_ready",
+      "trigger": "storyboard_structure_ready"
+    },
+    {
+      "id": "first_generation_call",
+      "trigger": "first_generation_call"
+    }
+  ]
 }

@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import workflow_runtime
@@ -38,6 +38,7 @@ from src.video_agent.web.provider_config import (
     load_merged_providers,
     load_merged_providers_async,
 )
+from src.video_agent.web.error_payload import classify_exception, classify_legacy_code
 from src.video_agent.web.sse import sse_event_generator  # noqa: 1 （保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner, PlannerContext
@@ -49,7 +50,14 @@ from src.video_agent.core.sse_events import (
     SSE_ERROR,
     SSE_GUIDANCE_INJECTED,
     SSE_STATUS,
+    SSE_STOPPED,
     status_event,
+)
+from src.video_agent.core.stop_signal import is_stop_requested
+from src.video_agent.web.stop_manager import (
+    persist_stop_trace,
+    snapshot_inflight_generations,
+    stopped_event,
 )
 from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
@@ -59,6 +67,9 @@ from src.video_agent.tools.manager import ToolManager
 from src.video_agent.core.tracer import AgentTracer
 
 __all__ = ["stream_worker", "non_stream_worker", "build_multimodal_content"]
+
+# 停止阶段措辞/痕迹文案/停止持久化已抽至 web/stop_manager.py（任务 #17 收尾，
+# 行数棘轮清偿：chat_service 回落 900 行以下）
 
 
 
@@ -111,21 +122,32 @@ async def stream_worker(body: Any, emit) -> None:
     """
     request_id = body.request_id or ""
     if not _acquire_request_slot(request_id):
-        await emit({"type": SSE_ERROR, "detail": "相同请求正在处理中，请勿重复发送",
-                    "error_code": "DUPLICATE_REQUEST"})
+        _dup_msg = "相同请求正在处理中，请勿重复发送"
+        await emit({"type": SSE_ERROR, "detail": _dup_msg,
+                    "error_code": "DUPLICATE_REQUEST",
+                    **classify_legacy_code("DUPLICATE_REQUEST", _dup_msg).sse_fields()})
         return
     try:
         svc = StateManager.get_instance()
         await _stream_worker_impl(body, svc, emit)
+    except asyncio.CancelledError:
+        # 任务 #17 安全网：cancel 落在循环检查点之外（如开场编排/持久化阶段）
+        # 且停止标志在位（用户主动停止）时，收敛为 stopped 终态事件而非异常取消
+        if is_stop_requested("chat"):
+            await emit(stopped_event())
+            return
+        raise
     finally:
         _release_request_slot(request_id)
 
 
-async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_injector=None) -> None:
+async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_injector=None, stop_scope: str = "chat") -> None:
     """流式处理公共实现（mock + 真实供应商）；供 SSE worker 与后台任务 worker 复用。
 
     pending_injector：可选 callable → List[{id, text}]，轮间引导注入器，
-    由后台任务路径装配（agent_task_manager.drain_pending_guidance）。"""
+    由后台任务路径装配（agent_task_manager.drain_pending_guidance）。
+    stop_scope：协作式停止标志作用域（任务 #17）——SSE 直连="chat"，
+    任务式传输=task_id（多任务并发互不串）。"""
     # 铁律文档每轮确保存在（宪法）：项目级生产契约唯一表述源，
     # 真实聊天/任务路径同样生效，不能只在 mock 路径创建
     from src.video_agent.core.spec_rules import ensure_iron_rules_doc
@@ -139,7 +161,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
         svc.save_debounced()
 
     t0 = time.monotonic()
-    executor = StudioActionExecutor(
+    executor = StateOperationExecutor(
         svc,
         selected_draft_id=body.selected_draft_id,
         selected_type=body.selected_type,
@@ -147,7 +169,9 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
 
     user_text = body.message.strip()
     if not user_text and not body.attachments:
-        await emit({"type": SSE_ERROR, "detail": "消息不能为空", "error_code": "EMPTY_MESSAGE"})
+        _empty_msg = "消息不能为空"
+        await emit({"type": SSE_ERROR, "detail": _empty_msg, "error_code": "EMPTY_MESSAGE",
+                    **classify_legacy_code("EMPTY_MESSAGE", _empty_msg).sse_fields()})
         return
     if not user_text:
         user_text = "请查看我上传的素材"
@@ -185,7 +209,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
         return
 
     # ---------- 真实供应商 ----------
-    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal, wiz_doc=_wiz_doc)
+    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal, wiz_doc=_wiz_doc, stop_scope=stop_scope)
 
 
 def start_agent_task(body: Any) -> Dict[str, Any]:
@@ -223,9 +247,11 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
         svc, token = StateManager.create_task_bound(project_id, workspace_dir)
     except Exception as e:
         logger.exception(f"[AgentTask] {task_id} 状态绑定失败: {e}")
+        _detail = f"服务端异常: {e}"
         tm.emit(task_id, {
-            "type": SSE_ERROR, "detail": f"服务端异常: {e}",
+            "type": SSE_ERROR, "detail": _detail,
             "error_code": getattr(e, "error_code", None) or "INTERNAL_ERROR",
+            **classify_exception(e, message=_detail).sse_fields(),
         })
         return
     try:
@@ -237,16 +263,25 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
         def pending_injector() -> List[Dict[str, Any]]:
             return tm.drain_pending_guidance(task_id)
 
-        await _stream_worker_impl(body, svc, emit, pending_injector=pending_injector)
+        await _stream_worker_impl(body, svc, emit, pending_injector=pending_injector, stop_scope=task_id)
     except asyncio.CancelledError:
+        # 任务 #17：用户主动停止（停止标志在位）且检查点未来得及发 stopped
+        # 终态事件时补发，保证任何中断都有痕迹；随后原样上抛（asyncio 任务以
+        # cancelled 终结，_on_done 会保留 stopped 状态不覆盖）
+        if is_stop_requested(task_id):
+            _rec = tm.get(task_id) or {}
+            if _rec.get("status") != "stopped":
+                tm.emit(task_id, stopped_event())
         logger.warning(f"[AgentTask] {task_id} worker 被取消（非用户停止即异常信号）")
         raise
     except Exception as e:
         logger.exception(f"[AgentTask] {task_id} 处理异常: {e}")
+        _detail = f"服务端异常: {e}"
         tm.emit(task_id, {
             "type": SSE_ERROR,
-            "detail": f"服务端异常: {e}",
+            "detail": _detail,
             "error_code": getattr(e, "error_code", None) or "INTERNAL_ERROR",
+            **classify_exception(e, message=_detail).sse_fields(),
         })
     finally:
         logger.info(f"[AgentTask] {task_id} worker 退出")
@@ -296,12 +331,13 @@ def _stamp_doc_written(payload: Optional[Dict[str, Any]], turn_id: str) -> Dict[
     return out
 
 
-async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", wiz_doc: str = "") -> None:
+async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", wiz_doc: str = "", stop_scope: str = "chat") -> None:
     """真实供应商的流式处理（含模型 fallback 链）。
 
     主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，自动切换备用模型重试
     （避免重复执行已落盘的操作）；成功时 done payload 携带 fallback_model 供前端标注。
     pending_injector：轮间引导注入器，经 PlannerContext 传入循环。
+    stop_scope：协作式停止标志作用域（任务 #17），透传 PlannerContext → agent_loop 检查点。
     """
     history = truncate_history([
         {"role": m.get("role", "user"), "content": m.get("content", "")}
@@ -371,7 +407,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
 
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
-            executor_factory=StudioActionExecutor,
+            executor_factory=StateOperationExecutor,
             summary_adapter=summary_adapter,
             chat_provider=cand_provider, chat_model=cand_model,
         )
@@ -402,6 +438,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             pending_injector=pending_injector,
             # 轮始客观推进信号（decision 消费/闸预检分诊；runtime 不据此自主行动）
             advance_signal=advance_signal,
+            # 协作式停止标志作用域（任务 #17）：SSE 直连="chat"，任务式传输=task_id
+            stop_scope=stop_scope,
         )
 
         applied_seen = False
@@ -439,6 +477,13 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                     # 过程时间线事件透传（深度思考增量 / 工具开始与完成 / 引导注入），
                     # 仅 UI 展示用，不进下次 LLM 上下文
                     await emit(event.payload or {"type": event.type, "text": event.text})
+                elif event.type == SSE_STOPPED:
+                    # 停止终态事件透传（任务 #17）：agent_loop 检查点已发 phase/step，
+                    # web 透传层负责富化在途外部生成任务登记（core 层不感知 web 注册表）。
+                    # 第一版不做真实撤销/补偿，仅登记 + 文案告知供应商侧仍在进行
+                    _sp = dict(event.payload or {"type": SSE_STOPPED})
+                    _sp.setdefault("inflight", snapshot_inflight_generations())
+                    await emit(_sp)
                 elif event.type == "done":
                     final_payload = event.payload or {}
                     final_text = final_payload.get("text", "")
@@ -455,6 +500,16 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             # 已执行过操作同样直接报错（避免重复落盘）
             logger.warning(f"[ChatService] LLM 流式调用失败 ({cand_provider}/{cand_model}): {e}")
             await _emit_stream_error(svc, body, e, emit, use_studio_context)
+            return
+
+        # --- 停止路径（任务 #17）：stopped 终态事件已由检查点先行下发，
+        # 此处只落停止痕迹消息供刷新后恢复，不再发 done（stopped 即终态）
+        if final_payload.get("stopped"):
+            # 停止痕迹持久化（stop_manager）；stopped 即终态，不再发 done
+            await persist_stop_trace(
+                svc, final_text, str(final_payload.get("stop_phase") or "thinking"),
+                cand_model or "", turn_id, use_studio_context,
+            )
             return
 
         # --- 成功路径：持久化 + done ---
@@ -513,6 +568,8 @@ async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: 
     上游原始报文（raw）随 errorDetail 持久化 + payload raw 下发，前端折叠展示。
     """
     friendly, raw = _friendly_stream_error(e)
+    # 任务 #19：结构化归类（kind/code）随事件下发，前端按映射表做动作，不再猜文案
+    payload = classify_exception(e, message=friendly, raw=raw)
     if use_studio_context:
         async with svc.lock:
             # 错误前缀统一为 ⚠️（与前端 streamError 渲染一致，刷新后不跳变）
@@ -523,6 +580,7 @@ async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: 
     await emit({
         "type": SSE_ERROR, "detail": friendly, "raw": raw,
         "error_code": getattr(e, "error_code", "INTERNAL_ERROR"),
+        **payload.sse_fields(),
     })
 
 
@@ -616,7 +674,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     # 一条龙指令仅本条消息生效（与非流式路径对齐）
     if prompt_gates.clear_flow_directive(svc.state_dict):
         svc.save_debounced()
-    executor = StudioActionExecutor(
+    executor = StateOperationExecutor(
         svc,
         selected_draft_id=body.selected_draft_id,
         selected_type=body.selected_type,
@@ -728,6 +786,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         user_id=getattr(body, "user_id", "") or "",
         thinking_level=getattr(body, "thinking_level", "") or "",
         advance_signal=advance_signal,
+        # 任务 #17：非流式无停止端点，独立 scope 防被 SSE 路径停止标志误杀
+        stop_scope="nonstream",
     )
 
     # 用户裁决：单一候选 = 用户所选，联不通直接报错
@@ -751,7 +811,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             _compact_task = None
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
-            executor_factory=StudioActionExecutor,
+            executor_factory=StateOperationExecutor,
             summary_adapter=summary_adapter,
             chat_provider=cand_provider, chat_model=cand_model,
         )

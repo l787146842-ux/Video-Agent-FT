@@ -1,7 +1,7 @@
 """
 /api/agent — Agent 聊天端点（路由层，业务逻辑委托给 chat_service.py）
 
-流程：服务端构建上下文 → 多步 LLM 循环（默认≤6 轮，AGENT_MAX_STEPS 可调）→ 解析并执行 studio-actions → 持久化 → 返回。
+流程：服务端构建上下文 → 多步 LLM 循环（默认≤6 轮，AGENT_MAX_STEPS 可调）→ 经 Function Calling 工具调用执行动作（动作通道唯一，ADR-0001）→ 持久化 → 返回。
 
 - 上下文注入在服务端完成（前端只发消息本体 + 选中态），服务端是唯一事实源；
 - 仅当 provider 为空/mock 时走 mock；真实供应商失败返回 502 + 真实错误。
@@ -18,6 +18,8 @@ from loguru import logger
 
 from src.video_agent.web.chat_service import stream_worker, non_stream_worker
 from src.video_agent.web.sse import sse_event_generator
+from src.video_agent.core.stop_signal import request_stop
+from src.video_agent.web.task_manager import snapshot_inflight_generations
 from src.video_agent.exceptions import AdapterError, GenerationError
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.live_metrics import get_degradations, get_live_context
@@ -202,15 +204,25 @@ async def agent_running():
 
 @router.post("/agent/stop")
 async def agent_stop():
-    """显式停止当前聊天 worker（停止按钮调用；刷新不触发此端点，worker 续跑）"""
+    """显式停止当前聊天 worker（停止按钮调用；刷新不触发此端点，worker 续跑）。
+
+    端到端中断协议（任务 #17）：
+    1. 先登记在途外部生成任务快照（第一版不撤销，只登记 + 文案告知）；
+    2. 置协作式停止标志（先于 cancel：CancelledError 先落也能识别为用户停止）；
+    3. cancel worker——循环内检查点/取消守门会收敛为 stopped 终态事件。
+    """
+    inflight = snapshot_inflight_generations()
+    request_stop("chat")
     cancelled = 0
     for key in list(_CHAT_TASKS.keys()):
         t = _CHAT_TASKS.pop(key, None)
         if t is not None and not t.done():
             t.cancel()
             cancelled += 1
-    logger.info(f"[Agent] stop 请求，取消 worker 数={cancelled}")
-    return {"ok": True, "cancelled": cancelled}
+    logger.info(
+        f"[Agent] stop 请求，取消 worker 数={cancelled}，在途外部生成任务数={len(inflight)}"
+    )
+    return {"ok": True, "cancelled": cancelled, "inflight": inflight}
 
 
 @router.post("/agent/tasks")
@@ -258,7 +270,7 @@ async def agent_task_events(task_id: str, request: Request):
                     continue
                 idle_polls = 0
                 yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
-                if ev.get("type") in ("done", "error", "task_status"):
+                if ev.get("type") in ("done", "error", "task_status", "stopped"):
                     break
         finally:
             tm.unsubscribe(task_id, q)
@@ -272,11 +284,17 @@ async def agent_task_events(task_id: str, request: Request):
 
 @router.post("/agent/tasks/{task_id}/stop")
 async def stop_agent_task(task_id: str):
-    """真正停止后台任务（停止按钮调用）；刷新/切项目不调用。"""
+    """真正停止后台任务（停止按钮调用）；刷新/切项目不调用。
+
+    端到端中断协议（任务 #17）：同 /agent/stop——先登记在途外部生成任务、
+    置任务作用域停止标志（scope=task_id），再 cancel；响应携带在途项说明。
+    """
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
 
+    inflight = snapshot_inflight_generations()
+    request_stop(task_id)
     ok = get_agent_task_manager().stop(task_id)
-    return {"ok": ok, "cancelled": 1 if ok else 0}
+    return {"ok": ok, "cancelled": 1 if ok else 0, "inflight": inflight}
 
 
 class GuidanceItem(BaseModel):

@@ -85,14 +85,16 @@ class TestUnifiedPipeline:
         assert v_ok.ok is True
 
     def test_dual_track_same_source(self):
-        """双轨同源：FC 轨与文本轨的判定函数是同一个（防再次各自组装）"""
+        """双轨同源：FC 轨与文本轨的判定函数是同一个（防再次各自组装）。
+        任务#23 三段拆分后 FC 轨判定实现体 = core/fc_gates.prompt_gate
+        （FCToolRunner._prompt_gate 为承重壳，委托本函数）。"""
         import inspect
 
-        from src.video_agent.core import fc_tool_runner
+        from src.video_agent.core import fc_gates
         from src.video_agent.web import action_executor
 
-        fc_src = inspect.getsource(fc_tool_runner.FCToolRunner._prompt_gate)
-        te_src = inspect.getsource(action_executor.StudioActionExecutor._gate_check)
+        fc_src = inspect.getsource(fc_gates.prompt_gate)
+        te_src = inspect.getsource(action_executor.StateOperationExecutor._gate_check)
         assert "guard_pipeline.evaluate_prompt_write" in fc_src
         assert "guard_pipeline.evaluate_prompt_write" in te_src
 

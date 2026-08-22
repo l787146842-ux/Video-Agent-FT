@@ -1,7 +1,7 @@
 """FTDYB 追赶 P0：分镜新字段、删除 action、workflow_pause 门控"""
 import pytest
 
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.state.manager import StateManager
 
@@ -13,7 +13,7 @@ def svc(tmp_path):
 
 @pytest.fixture
 def executor(svc):
-    return StudioActionExecutor(svc)
+    return StateOperationExecutor(svc)
 
 
 def test_add_shot_with_ftdyb_fields(svc, executor):

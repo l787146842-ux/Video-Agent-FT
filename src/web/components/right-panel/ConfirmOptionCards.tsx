@@ -2,8 +2,8 @@ import { For, Show } from 'solid-js';
 import type { ConfirmOptionItem } from './ConfirmPicker';
 
 /**
- * 确认选项卡列表（批1 审核整改：单组单选卡与向导页选项卡曾逐行重复，
- * 抽为单一组件，样式/行为改动不再双改）
+ * 确认选项卡列表（单组单选卡与向导页选项卡共用单一组件，
+ * 样式/行为改动不需双改）
  */
 export function ConfirmOptionCards(props: {
   opts: ConfirmOptionItem[];

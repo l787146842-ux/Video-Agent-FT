@@ -5,6 +5,7 @@ import { showToast } from '@/stores/toast';
 import { requestInsertMedia } from '@/lib/chat-input-bridge';
 import { safeUrl, uid } from '@/lib/utils';
 import { t } from '@/lib/locale';
+import { useFocusTrap } from '@/lib/focus-trap';
 import type { AnyGroup, MediaType } from '@/types';
 
 /** 弹窗内的统一媒体项（故事板草稿 / 未归类素材共用） */
@@ -18,7 +19,7 @@ interface PickerItem {
 
 type Tab = 'keyElement' | 'shot' | 'audio' | 'uncat';
 
-/** tab 文案走 i18n 字典（P2-4） */
+/** tab 文案走 i18n 字典 */
 function TAB_LABELS(): Record<Tab, string> {
   return {
     keyElement: t('rp.picker.tabKeyElement'),
@@ -71,6 +72,10 @@ export function StudioAssetPickerModal(props: {
   /** 多选状态：用 item.id 而非下标，避免切换 tab 时下标漂移 */
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set());
 
+  // 焦点圈闭：打开圈闭、Esc 关闭、关闭还原焦点
+  const [panelEl, setPanelEl] = createSignal<HTMLElement>();
+  useFocusTrap(() => (props.open ? panelEl() : undefined), { onEscape: () => props.onClose() });
+
   const items = createMemo<PickerItem[]>(() => {
     const t = tab();
     if (t === 'uncat') return uncatItems();
@@ -111,7 +116,13 @@ export function StudioAssetPickerModal(props: {
     <Show when={props.open}>
       <div class="asset-modal">
         <div class="asset-modal-backdrop" onClick={() => props.onClose()} />
-        <div class="asset-modal-panel">
+        <div
+          class="asset-modal-panel"
+          ref={setPanelEl}
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('rp.picker.dialogAria')}
+        >
           {/* 头部：tab + 画布素材库入口 + 关闭 */}
           <div class="asset-modal-header">
             <div class="asset-modal-tabs">

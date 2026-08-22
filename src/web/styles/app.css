@@ -1,9 +1,16 @@
 /* FTDYB 影视创作工作台 — 样式聚合入口（按域拆分：tokens/layout/left/middle/chat/overlays）。
-   B3/F25：Tailwind 已摘除（工具类使用率 ~0，纯构建开销），手写 CSS + tokens.css 为唯一样式系统。 */
+   手写 CSS + tokens.css 为唯一样式系统（不引入工具类框架）。 */
 @import "./tokens.css";
 @import "./layout.css";
 @import "./left-panel.css";
 @import "./middle-panel.css";
 @import "./chat.css";
-@import "./overlays.css";
+/* 弹层样式按组件域组织为 4 文件，装载顺序即域序（后装载可覆盖先装载） */
+@import "./overlays-core.css";
+@import "./overlays-panel.css";
+@import "./overlays-modal.css";
+@import "./overlays-menu.css";
+/* 代码块增强（工具条 + hljs 配色）与全局断连横幅 */
+@import "./code-block.css";
+@import "./health-banner.css";
 @import "./genlog.css";

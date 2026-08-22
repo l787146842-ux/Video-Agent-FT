@@ -74,6 +74,7 @@ class ViewStoryboardMediaInput(BaseModel):
 
 class StoryboardCreateGroupTool(BaseTool):
     name = "storyboard_create_group"
+    risk = "medium"  # §2.7：写内部状态（可删除撤销）
     description = "创建新的故事板分组（关键元素/分镜/音频），可附带草稿"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -108,6 +109,7 @@ class StoryboardCreateGroupTool(BaseTool):
 
 class StoryboardPatchDraftTool(BaseTool):
     name = "storyboard_patch_draft"
+    risk = "medium"  # §2.7：写内部状态（可重写撤销）
     description = "修改指定草稿的字段（提示词、标签、模型等）"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -136,6 +138,7 @@ class StoryboardPatchDraftTool(BaseTool):
 
 class StoryboardAddDraftTool(BaseTool):
     name = "storyboard_add_draft"
+    risk = "medium"  # §2.7：写内部状态（可删除撤销）
     description = "给指定分组新增一个草稿卡片"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -163,6 +166,7 @@ class StoryboardAddDraftTool(BaseTool):
 
 class StoryboardDeleteGroupTool(BaseTool):
     name = "storyboard_delete_group"
+    risk = "medium"  # §2.7 裁决：写内部状态（可重建撤销），定 medium
     description = "删除整个故事板分组（含其全部草稿）"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -180,6 +184,7 @@ class StoryboardDeleteGroupTool(BaseTool):
 
 class StoryboardConfirmDraftTool(BaseTool):
     name = "storyboard_confirm_draft"
+    risk = "medium"  # §2.7：写草稿标记（可再改撤销）
     description = "将指定草稿标记为「已确认」"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -200,6 +205,7 @@ class StoryboardConfirmDraftTool(BaseTool):
 
 class StoryboardMediaToChatTool(BaseTool):
     name = "storyboard_media_to_chat"
+    risk = "low"  # §2.7：只读（不改故事板状态，仅填充输入框）
     description = (
         "把故事板草稿卡片里的媒体（图片/视频/音频）自动添加到右侧 Agent 对话输入框，"
         "供用户确认后发送。不修改故事板状态。"
@@ -263,6 +269,7 @@ class StoryboardMediaToChatTool(BaseTool):
 
 class StoryboardReadDraftTool(BaseTool):
     name = "read_draft"
+    risk = "low"  # §2.7：只读
     description = (
         "按需读取指定故事板草稿卡的提示词全文。上下文里草稿只有目录信息（编号/label/字数），"
         "审阅、修改或参考其写法时才需要调用本工具读取全文；触发生成时系统会自动取提示词，无需先读。"
@@ -294,6 +301,7 @@ class StoryboardReadDraftTool(BaseTool):
 
 class ViewStoryboardMediaTool(BaseTool):
     name = "view_storyboard_media"
+    risk = "low"  # §2.7：只读
     description = (
         "按需把故事板草稿卡的图片加载进你的上下文（服务端转 base64 内联，你能直接看到画面）。"
         "编写/修改某条提示词草案前，先调用本工具加载对应草稿的图片再动笔；"

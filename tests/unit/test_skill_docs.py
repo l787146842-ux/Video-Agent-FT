@@ -2,7 +2,7 @@
 import pytest
 
 import src.video_agent.web.skill_docs as sd
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 from src.video_agent.state.manager import StateManager
 
 
@@ -51,7 +51,7 @@ def svc(tmp_path):
 
 
 def test_write_document_upsert(svc):
-    ex = StudioActionExecutor(svc)
+    ex = StateOperationExecutor(svc)
     assert ex.execute([{"action": "write_document", "name": "Final_Video_Spec.md",
                         "content": "# 规格\n时长: 60s"}]) == 1
     docs = svc.state_dict["documents"]
@@ -67,13 +67,13 @@ def test_write_document_upsert(svc):
 
 
 def test_write_document_requires_name_and_content(svc):
-    ex = StudioActionExecutor(svc)
+    ex = StateOperationExecutor(svc)
     assert ex.execute([{"action": "write_document", "name": "", "content": "x"}]) == 0
     assert ex.execute([{"action": "write_document", "name": "a.md", "content": "  "}]) == 0
 
 
 def test_documents_in_agent_context(svc):
-    ex = StudioActionExecutor(svc)
+    ex = StateOperationExecutor(svc)
     ex.execute([{"action": "write_document", "name": "Spec.md", "content": "硬核写实科幻，60 秒"}])
     ctx = svc.build_agent_context("bound")
     assert "Spec.md" in ctx

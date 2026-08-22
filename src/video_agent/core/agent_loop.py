@@ -11,6 +11,7 @@ llm_call 第 5 元组结构化上抛，不经文本块）。
 
 llm_call / context_builder 以 callable 注入，便于单元测试。
 """
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
@@ -23,9 +24,20 @@ from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
     SSE_STATUS,
     SSE_STEP_STARTED,
+    SSE_STOPPED,
     SSE_TOOL_FINISHED,
     SSE_TOOL_STARTED,
     status_event,
+)
+# 协作式停止（端到端中断协议，任务 #17）：检查点只读标志注册表，
+# 停止信号不经闸机/工具执行器传递
+from src.video_agent.core.stop_signal import (
+    STOP_PHASE_STREAMING,
+    STOP_PHASE_THINKING,
+    STOP_PHASE_TOOL_EXECUTING,
+    AgentStoppedError,
+    clear_stop,
+    current_stop_id,
 )
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.turn_frame import emit_prelude_events
@@ -39,6 +51,7 @@ from src.video_agent.core.round_end_policies import (
     suggest_next_actions,
 )
 from src.video_agent.core import live_metrics, prompt_gates
+from src.video_agent.exceptions import AdapterError
 # （漂移进度通道绑定顶层化；spec_wizard_active 经模块属性访问
 # （测试 patch 目标=registry 命名空间，顶层 from-import 会冻结绑定导致 patch 失效）
 from src.video_agent.skill_runtime.progress import (
@@ -48,7 +61,7 @@ from src.video_agent.skill_runtime.progress import (
 
 if TYPE_CHECKING:
     # 仅类型标注用：执行器实现依赖 web 层生成管线，运行时不做硬依赖
-    from src.video_agent.web.action_executor import StudioActionExecutor
+    from src.video_agent.web.action_executor import StateOperationExecutor
 
 MAX_STEPS = settings.max_steps
 
@@ -101,6 +114,11 @@ class AgentLoopResult:
     # retry=机械重发上一条用户消息（value 空，前端取历史原文）；
     # continue=发送固定文本推进新一步
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
+    # 协作式停止标记（端到端中断协议，任务 #17）：
+    # stopped=True 表示本循环经检查点命中用户停止信号干净退出；
+    # stop_phase=thinking/tool_executing/streaming（前端气泡措辞依据）
+    stopped: bool = False
+    stop_phase: str = ""
 
 
 # split_actions / _extract_confirmation（文本动作别名归一）已删除
@@ -116,7 +134,7 @@ async def run_agent_loop(
     *,
     llm_call: LlmCall,
     context_builder: ContextBuilder,
-    executor: "StudioActionExecutor",
+    executor: "StateOperationExecutor",
     history: List[Dict[str, Any]],
     max_steps: int = MAX_STEPS,
     on_event=None,
@@ -124,10 +142,13 @@ async def run_agent_loop(
     prelude_notes: Optional[List[tuple]] = None,
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None,
     user_id: str = "",
+    stop_scope: str = "chat",
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
     user_text 可以是纯文本 str，也可以是多模态 content parts 列表（含 image_url）。
+    stop_scope（端到端中断协议，任务 #17）：协作式停止标志作用域
+    （SSE 直连="chat"；任务式传输=task_id），每步检查点读取，命中即干净收尾。
     """
 
     async def emit(event: Dict[str, Any]) -> None:
@@ -142,6 +163,19 @@ async def run_agent_loop(
 
     result = AgentLoopResult()
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
+
+    # 协作式停止（任务 #17）：循环开始无条件清除残留标志（上一任务被停止后
+    # 未及清理时，不得误杀新任务；带代际的收尾清理见 _finalize_stop）；
+    # 包装 stream_hook 跟踪是否已产生流式正文（阶段判定用）
+    clear_stop(stop_scope)
+    _streamed = {"on": False}
+    if stream_hook is not None:
+        async def _stream_hook_tracked(text: str) -> None:
+            _streamed["on"] = True
+            await stream_hook(text)
+        _hook_use: Optional[Callable[[str], Awaitable[None]]] = _stream_hook_tracked
+    else:
+        _hook_use = None
 
     skill = str(getattr(executor, "skill_name", "") or "")
     if not skill:
@@ -159,9 +193,79 @@ async def run_agent_loop(
     # contextvar 任务级隔离：异常路径随任务消亡，正常路径在循环结束后解绑。
     _progress_token = bind_progress_emitter(emit)
 
+    def _stop_if_requested(phase: str) -> Optional[AgentStoppedError]:
+        """检查点：读停止标志，命中返回携带阶段标记与代际 token 的异常对象
+        （由调用方收尾；收尾清理按代匹配，不误清快速重连后的新停止请求）"""
+        sid = current_stop_id(stop_scope)
+        if sid:
+            return AgentStoppedError(phase, result.steps, stop_id=sid)
+        return None
+
+    async def _finalize_stop(err: AgentStoppedError) -> AgentLoopResult:
+        """用户停止的干净收尾：trace 步人账、发明确终态事件、清标志、解绑进度通道。
+        不变式：任何中断都有痕迹（stopped 事件 + result.stopped）、都有出口
+        （前端据终态事件落停止气泡并挂「继续刚才的任务」）。"""
+        result.stopped = True
+        result.stop_phase = err.phase
+        _step_no = err.step or result.steps
+        tracer.end_step(
+            _step_no, actions_applied=0,
+            finish_reason="stopped_by_user", token_usage=0,
+        )
+        logger.info(f"[AgentLoop] 已被用户停止：phase={err.phase} step={_step_no}")
+        await emit({"type": SSE_STOPPED, "phase": err.phase, "step": _step_no})
+        # 代际匹配清理：收尾期间若已有新停止请求（快速重连场景），不清
+        if err.stop_id:
+            clear_stop(stop_scope, err.stop_id)
+        else:
+            clear_stop(stop_scope)
+        unbind_progress_emitter(_progress_token)
+        result.trace = tracer.finish_trace(total_actions=result.applied_actions)
+        return result
+
+    async def _await_llm_with_stop_guard(phase_when_streamed: str, extra_messages: Optional[List[Dict[str, Any]]] = None):
+        """llm_call 调用统一守门：
+        - AgentStoppedError（planner 层工具批执行前检查点抛出）→ 干净收尾；
+        - CancelledError 硬取消落地：有停止标志 = 用户停止 → 收敛为干净收尾
+          （阶段按已产生流式正文与否判定），无标志 = 异常取消原样上抛。
+        返回 (None, 收尾结果) 表示已被停止（调用方直接返回），否则 (5 元组, None)。"""
+        # 无附加消息时直传原列表引用：llm_call 内的回喂 append（read_* 全文
+        # 渐进式披露回路）与惰性压缩都靠原地修改生效，拼新副本会丢回喂；
+        # 带 extra_messages（坏输出重试 nudge）才拼副本，nudge 不持久化
+        _msgs = messages if not extra_messages else messages + list(extra_messages)
+        try:
+            return _unpack_llm(await llm_call(system_prompt, _msgs, _hook_use)), None
+        except AgentStoppedError as _stop_err:
+            return None, await _finalize_stop(_stop_err)
+        except asyncio.CancelledError:
+            sid = current_stop_id(stop_scope)
+            if sid:
+                _ph = phase_when_streamed if _streamed["on"] else STOP_PHASE_THINKING
+                return None, await _finalize_stop(
+                    AgentStoppedError(_ph, result.steps, stop_id=sid))
+            unbind_progress_emitter(_progress_token)
+            raise
+        except AdapterError as _adapter_err:
+            # 错误分类分流（任务 #26）：供应商错误到达此处时，要么 transient
+            # 重试已在适配层（dispatch_chat_request/with_retry）耗尽，要么是
+            # permanent（鉴权/参数/拒答）错误——两类都不具循环内重试价值：
+            # nudge 只用于模型侧空/畸形输出，循环侧不再对同一 transient
+            # 反复 nudge。清理进度通道后原样上抛，由上层统一错误路径承接。
+            unbind_progress_emitter(_progress_token)
+            logger.warning(
+                f"[AgentLoop] llm_call 供应商错误（kind={getattr(_adapter_err, 'kind', '')} "
+                f"retryable={getattr(_adapter_err, 'retryable', None)}）：不 nudge，直接上抛"
+            )
+            raise
+
     for step in range(1, max_steps + 1):
         result.steps = step
         tracer.start_step()
+        # 检查点 1（模型调用前，任务 #17）：上轮工具批已完成、本轮思考未开始，
+        # 命中即思考阶段停止；不改变正常路径行为（无标志时零开销）
+        _stop_err = _stop_if_requested(STOP_PHASE_THINKING)
+        if _stop_err is not None:
+            return await _finalize_stop(_stop_err)
         if step == 1:
             # 前奏明细：读 Skill/文档等准备动作记入第一步时间线
             # （live 与持久化同条目；历史 runtime 直跑
@@ -219,15 +323,27 @@ async def run_agent_loop(
         _plan_rec = tracer.record_action(
             "model_reasoning", f"模型创作规划（节点内第 {step} 轮）", 0.0, True,
         )
-        content, finish_reason, fc_applied, plan_ms, fc_extra = _unpack_llm(
-            await llm_call(system_prompt, messages, stream_hook)
-        )
+        content, finish_reason, fc_applied, plan_ms, fc_extra = (None, "", 0, 0.0, {})
+        _unpacked, _stopped_result = await _await_llm_with_stop_guard(STOP_PHASE_STREAMING)
+        if _stopped_result is not None:
+            return _stopped_result
+        content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
         plan_total = float(plan_ms or 0.0)
         # 透明度兑现：本轮 token 用量入账 trace（轮次账单数据源）
         step_tokens = int((fc_extra or {}).get("token_usage") or 0)
+        # 检查点 2（模型调用返回后，任务 #17）：FC 工具批已在 llm_call 内执行完毕，
+        # 此时命中按刚经历的阶段标记（工具批/流式输出/思考）干净退出
+        _stop_err = _stop_if_requested(
+            STOP_PHASE_TOOL_EXECUTING if fc_applied > 0
+            else (STOP_PHASE_STREAMING if _streamed["on"] else STOP_PHASE_THINKING)
+        )
+        if _stop_err is not None:
+            return await _finalize_stop(_stop_err)
 
-        # 空/畸形响应防护：空响应或 MALFORMED_FUNCTION_CALL 连续发生 → 重试至多 2 次，
-        # 达到上限后以明确故障文案收尾（不再静默落为「没有返回可见回复」）。
+        # 空/畸形响应防护（任务 #26 分类：permanent-ish 模型侧问题，非供应商
+        # transient）：空响应或 MALFORMED_FUNCTION_CALL 连续发生 → nudge 重试至多 2 次，
+        # 达到上限后以明确故障文案收尾（不再静默落为「没有返回可见回复」）；
+        # 供应商侧错误已由上方 AdapterError 分流承接，不会误入本重试路径。
         bad_retries = 0
         while not str(content or "").strip() and fc_applied == 0 and bad_retries < 2:
             bad_retries += 1
@@ -239,13 +355,17 @@ async def run_agent_loop(
                 elapsed_ms=0.0,
                 ok=True,
             )
-            content, finish_reason, fc_applied, plan_ms, fc_extra = _unpack_llm(
-                await llm_call(
-                    system_prompt,
-                    messages + [{"role": "user", "content": _bad_output_nudge(bad_retries)}],
-                    stream_hook,
-                )
+            # 检查点（重试模型调用前）：停止优先于坏输出重试
+            _stop_err = _stop_if_requested(STOP_PHASE_THINKING)
+            if _stop_err is not None:
+                return await _finalize_stop(_stop_err)
+            _unpacked, _stopped_result = await _await_llm_with_stop_guard(
+                STOP_PHASE_STREAMING,
+                extra_messages=[{"role": "user", "content": _bad_output_nudge(bad_retries)}],
             )
+            if _stopped_result is not None:
+                return _stopped_result
+            content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
             plan_total += float(plan_ms or 0.0)
             step_tokens = int((fc_extra or {}).get("token_usage") or 0)
         # 规划耗时只算纯模型规划（反馈）：FC 工具执行时间由各工具条目独立展示，

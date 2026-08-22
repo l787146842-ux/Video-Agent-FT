@@ -33,7 +33,9 @@ GATES: List[Tuple[str, List[str]]] = [
     ("category_keys", [sys.executable, "scripts/check_category_keys.py"]),
     ("legacy_orchestration", [sys.executable, "scripts/check_legacy_orchestration.py"]),
     ("scaffold_registry", [sys.executable, "scripts/check_scaffold_registry.py"]),
-    ("executor_skill_drift", [sys.executable, "scripts/check_executor_skill_drift.py"]),
+    # executor_skill_drift 闸已随任务#36 B5 执行器一步退役删除（执行器族不复存在，
+    # 工具名/能力覆盖改由 scan_skills --gate 与 tool_risk 门禁承接）
+    ("skill_tool_names", [sys.executable, "scripts/scan_skills.py", "--gate"]),
 ]
 SUITES: List[Tuple[str, List[str]]] = [
     ("pytest", [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=line"]),

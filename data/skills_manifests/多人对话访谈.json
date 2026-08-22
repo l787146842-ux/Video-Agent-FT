@@ -44,5 +44,19 @@
   },
   "custom_sections": {
     "音色设计": "skill_section_run"
+  },
+  "schema_version": 3,
+  "pause_points": [
+    {
+      "id": "storyboard_structure_ready",
+      "trigger": "storyboard_structure_ready"
+    },
+    {
+      "id": "first_generation_call",
+      "trigger": "first_generation_call"
+    }
+  ],
+  "language": {
+    "prompt": "en"
   }
 }

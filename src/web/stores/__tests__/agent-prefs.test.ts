@@ -2,10 +2,10 @@ import { describe, it, expect, vi } from 'vitest';
 import type { ApiProvider, Skill } from '@/types';
 
 /**
- * P2-2：输入区 pill 选择持久化 —— API/模型/Skill 记住上次选择（localStorage），
+ * 输入区 pill 选择持久化 —— API/模型/Skill 记住上次选择（localStorage），
  * 默认值预填，供应商失效时回退首选可用项。
  * 代码内置 Skill（production-agent 等）已彻底移除：默认不再预填。
- * B4/F28·D2 基线：默认无技能——残留无效 Skill id 同样返回空
+ * 基线：默认无技能——残留无效 Skill id 同样返回空
  * （不自动回落第一个文档 Skill），由「不使用技能」卡承载默认态。
  */
 
@@ -35,7 +35,7 @@ async function loadPrefs(
   return import('@/stores/agent-prefs');
 }
 
-describe('stores/agent-prefs（P2-2 pill 持久化）', () => {
+describe('stores/agent-prefs（pill 持久化）', () => {
   it('无记录时不再预填已删除的代码 Skill（默认空）', async () => {
     const prefs = await loadPrefs({});
     expect(prefs.agentProvider()).toBe('custom-api');

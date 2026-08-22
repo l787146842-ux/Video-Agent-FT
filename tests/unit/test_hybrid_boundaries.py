@@ -9,7 +9,7 @@ from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 from src.video_agent.web import provider_config as pc
 
 
@@ -72,7 +72,7 @@ def test_presented_record_and_promote_on_user_reply(svc):
     """写提示词记录 presented → 用户新消息到达 → 晋升已确认并清空记录"""
     from src.video_agent.web.chat_service import _consume_pending_confirmation
     _seed_ke_draft(svc, tag="Agent")
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "d-ke1", "draft_type": "keyElement",
         "patch": {"prompt": "年轻女性程心身穿白色星环号轻型宇航服，面容清秀温婉，眼神中带着深沉的悲悯与疲惫，冷白正面主光，哑光金属质感，电影级新写实主义质感。"},
@@ -153,7 +153,7 @@ def test_select_signal_promotes(svc):
 def test_manual_confirm_draft_still_works(svc):
     """手动确认落点（用户口头明确确认）照常可用"""
     _seed_ke_draft(svc, tag="Agent")
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([{
         "action": "confirm_draft", "draft_id": "d-ke1", "draft_type": "keyElement",
     }])
@@ -167,7 +167,7 @@ def test_gen_gate_blocks_model_self_skip_text_track(svc, monkeypatch):
     """4444：未确认草稿——本轮无跳过指令 → 拒收；用户本轮要求（gate_override）
     → 照常生成+警告；确认后放行。"""
     _seed_ke_draft(svc, tag="Agent")
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     submitted = []
     monkeypatch.setattr(ex, "_submit_image_task", lambda *a, **k: submitted.append(a))
     applied = ex.execute([{
@@ -176,7 +176,7 @@ def test_gen_gate_blocks_model_self_skip_text_track(svc, monkeypatch):
     assert applied == 0 and not submitted  # 模型自发跳确认被拒收
     assert any("拦截" in w for w in ex.gate_warnings)
     # 用户本轮明确要求跳过 → 放行+警告
-    ex2 = StudioActionExecutor(svc, gate_enabled=True)
+    ex2 = StateOperationExecutor(svc, gate_enabled=True)
     ex2.gate_override = "all"
     monkeypatch.setattr(ex2, "_submit_image_task", lambda *a, **k: submitted.append(a))
     applied = ex2.execute([{
@@ -186,7 +186,7 @@ def test_gen_gate_blocks_model_self_skip_text_track(svc, monkeypatch):
     assert any("确认" in w for w in ex2.gate_warnings)
     # 确认后同样放行
     svc.state_dict["keyElements"][0]["drafts"][0]["tag"] = "已确认"
-    ex3 = StudioActionExecutor(svc, gate_enabled=True)
+    ex3 = StateOperationExecutor(svc, gate_enabled=True)
     monkeypatch.setattr(ex3, "_submit_image_task", lambda *a, **k: submitted.append(a))
     applied = ex3.execute([{
         "action": "generate_image", "target": "all_keyElements",
@@ -203,7 +203,7 @@ def test_gen_gate_partial_confirmed_filters_unconfirmed(svc, monkeypatch):
         "drafts": [{"id": "d-ke2", "label": "图", "tag": "Agent",
                     "prompt": "黑色玄武岩方碑耸立在冥王星地表，地球文明石刻，宏大苍凉。"}],
     })
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     submitted = []
     monkeypatch.setattr(ex, "_submit_image_task", lambda *a, **k: submitted.append(a))
     applied = ex.execute([{"action": "generate_image", "target": "all_keyElements"}])
@@ -213,7 +213,7 @@ def test_gen_gate_partial_confirmed_filters_unconfirmed(svc, monkeypatch):
 
 def test_gen_gate_inactive_without_skill(svc, monkeypatch):
     _seed_ke_draft(svc, tag="Agent")
-    ex = StudioActionExecutor(svc)  # gate_enabled=False
+    ex = StateOperationExecutor(svc)  # gate_enabled=False
     submitted = []
     monkeypatch.setattr(ex, "_submit_image_task", lambda *a, **k: submitted.append(a))
     applied = ex.execute([{"action": "generate_image", "target": "all_keyElements"}])
@@ -332,7 +332,7 @@ def test_ke_first_gate_text_track(svc):
     空板直接建 shot/audio 也照常创建且无首拆警告。"""
     _clear_storyboard(svc)
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([
         {"action": "add_group", "group_type": "shot", "title": "Shot_1"},
         {"action": "add_group", "group_type": "audio", "title": "Audio_1"},
@@ -350,7 +350,7 @@ def test_ke_first_gate_allows_shots_after_elements_exist(svc):
     _clear_storyboard(svc)
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     _seed_ke_draft(svc)
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([
         {"action": "add_group", "group_type": "shot", "title": "Shot_1"},
     ])
@@ -358,18 +358,22 @@ def test_ke_first_gate_allows_shots_after_elements_exist(svc):
 
 
 def test_ke_first_gate_fc_track(monkeypatch):
-    """0817 用户裁决：FC 轨空板建 shot 照常执行且无首拆警告。"""
+    """0817 用户裁决：FC 轨建 shot 无首拆警告。
+    任务#36 护栏移植后：分镜 sceneRefs 完整度由 _structure_integrity_gate
+    机械校验（承接原 exec_common），故建分镜须带客观引用。"""
     import asyncio
     runner = FCToolRunner(tool_manager=_StubToolManager())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {
         "analysis": {"summary": "一句话总结"},  # audit-0819e：前置就位
         "documents": [{"name": "制片规格.md", "content": "规格内容"}],
-        "keyElements": [], "shots": [], "audioItems": [],
+        "keyElements": [{"id": "ke-1", "title": "程心", "drafts": []}],
+        "shots": [], "audioItems": [],
     }))
     response = ChatResponse(content="", tool_calls=[
         {"id": "c1", "type": "function", "function": {
             "name": "storyboard_create_group",
-            "arguments": json.dumps({"group_type": "shot", "title": "Shot_1"})}},
+            "arguments": json.dumps({"group_type": "shot", "title": "Shot_1",
+                                     "scene_refs": ["ke-1"]})}},
     ])
     applied, *_rest = asyncio.run(runner.execute(response, injected_skill="任意 Skill"))
     assert applied == 1
@@ -382,7 +386,7 @@ def test_pending_immediate_rejects_short_prompt_in_same_batch(svc):
     """同一批：建结构成功，但过短提示词被质量闸拒绝（决策 D）"""
     _clear_storyboard(svc)
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     applied = ex.execute([
         {"action": "add_group", "group_type": "keyElement", "title": "Element_A",
          "draft": {"label": "概念图"}},
@@ -418,7 +422,8 @@ def test_fc_spec_doc_written_injects_system_pause(monkeypatch):
             "arguments": json.dumps({"name": "制片规格.md", "content": "标题：测试"})}},
     ])
     applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow = asyncio.run(
-        runner.execute(response, injected_skill="任意 Skill"))
+        # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户一次性同意
+        runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
     assert applied == 1
     assert docs_written == ["制片规格.md"]
     assert confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG
@@ -438,7 +443,8 @@ def test_fc_spec_doc_written_keeps_model_pause(monkeypatch):
             "arguments": json.dumps({"message": "请审阅规格"})}},
     ])
     applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow = asyncio.run(
-        runner.execute(response, injected_skill="任意 Skill"))
+        # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户一次性同意
+        runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
     assert docs_written == ["制片规格.md"]
     # v2 批4：卡问句系统组装（不没收暂停），模型原文进正文通道
     assert "请过目以上成果" in confirmation
@@ -456,7 +462,8 @@ def test_fc_non_spec_doc_written_no_pause(monkeypatch):
             "arguments": json.dumps({"name": "大纲.md", "content": "正文"})}},
     ])
     applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow = asyncio.run(
-        runner.execute(response, injected_skill="任意 Skill"))
+        # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户一次性同意
+        runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
     assert applied == 1
     assert docs_written == ["大纲.md"]
     assert confirmation == ""
@@ -741,7 +748,7 @@ def test_text_track_add_draft_stamps_spec_preference(svc, monkeypatch, set_globa
     """文本轨 add_draft 同样补印（来源为全局设置）；草稿自带 providerId 时不覆盖"""
     set_global_setting("default_image_provider_id", "gemini-cli")
     set_global_setting("default_image_model", "auto")
-    ex = StudioActionExecutor(svc, gate_enabled=False)
+    ex = StateOperationExecutor(svc, gate_enabled=False)
     svc.state_dict["documents"] = [
         {"name": "制片规格.md", "content": _SPEC_PREF_DOC}]
     svc.state_dict["keyElements"] = [{"id": "g1", "title": "G", "drafts": []}]

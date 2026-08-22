@@ -1,8 +1,9 @@
 """批3（审核整改）：指令收敛入宪执行——prose 外置 + 暂停纪律单家（Rule6 快照锁语义）。
 
 迁移内容：
-1. prompt_builder 内硬编码模型指令块 → prompts/（executor_runtime / global_settings /
-   storyboard_progress / iron_rules_header）；
+1. prompt_builder 内硬编码模型指令块 → prompts/（global_settings /
+   storyboard_progress / iron_rules_header；executor_runtime 已随任务#36 B5
+   执行器一步退役删除，其语义由通用主路径 Skill 全文直注承接）；
 2. agent_loop 运行时文案（空输出引导/步间回喂/空响应兜底）→ feedback.md 分节；
 3. 暂停纪律四处表述收敛为 skill_discipline.md 单家（P1 规则单家）。
 
@@ -19,15 +20,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # ---------- 迁入端：外置文件承载关键语义 ----------
 
-def test_b3_executor_runtime_template_carries_clauses():
-    body = load_prompt("planner/executor_runtime.md")
-    assert body, "executor_runtime.md 缺失"
-    for kept in ("执行方式", "虚报结果会被状态对账识破", "阶段边界",
-                 "skill_section_run", "read_skill"):
-        assert kept in body, f"executor_runtime 语义丢失: {kept}"
-    # 暂停纪律单家：本文件只留指针；邀请确认条款的防复述由
-    # check_legacy_orchestration 门禁承接（P2d）
-    assert "暂停邀请" not in body and "workflow_pause 邀请确认" not in body
+# test_b3_executor_runtime_template_carries_clauses 已随任务#36 B5 执行器一步退役删除：
+# 承载文件 prompts/planner/executor_runtime.md 已物理删除；执行方式/阶段边界/
+# skill_section_run 等语义改由通用主路径 Skill 全文直注 + skill_discipline.md 承接。
 
 
 def test_b3_feedback_sections_exist():

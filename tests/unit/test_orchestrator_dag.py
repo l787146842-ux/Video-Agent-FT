@@ -1,7 +1,10 @@
 """3A 编排器 DAG 化调度钉死测试。
 
 用 AI-短剧一站式生成 风格的 sidecar 依赖图（6 等 4、5 完成；5 无独立平台
-阶段被吸收）钉死：拓扑就绪集、同批并行、线性回落、step→stage 映射。
+阶段被吸收）钉死：依赖图翻译、step→stage 映射、规格闸就绪探针。
+（拓扑就绪集/同批并行/交接判定的调度函数钉死用例已随任务#27
+文本轨残留退役删除：被测调度函数退役（ADR-0004 后 runtime 永不执行
+阶段），存活消费语义迁入 _spec_stage_pending 探针并由下方同构用例钉死。）
 """
 from types import SimpleNamespace
 
@@ -70,57 +73,40 @@ def test_step_to_stage_mapping(dag_env):
     assert "shot_media" in deps.get("assembly", [])
 
 
-def test_dag_shot_media_waits_for_ke_media(dag_env, monkeypatch):
-    """钉死：ke_media 未完成时 shot_media 不就绪；确定性阶段 audio 先执行。"""
-    _set_done(monkeypatch, {"analysis", "spec", "structure"})
-    batch, handoff = po.next_batch({}, _SKILL)
-    keys = [s.key for s in batch]
-    # audio 前置 structure 已完 → 就绪；ke_media 创作型就绪但确定性优先不交接
-    assert keys == ["audio_assets"]
-    assert not handoff
-
-
-def test_dag_shot_media_ready_after_ke(dag_env, monkeypatch):
-    """钉死：ke_media 完成后 shot_media 就绪（创作型→交接模型循环）。"""
-    _set_done(monkeypatch, {
-        "analysis", "spec", "structure", "ke_media", "audio_assets",
-    })
-    batch, handoff = po.next_batch({}, _SKILL)
-    # shot_media 前置 ke_media 已完 → 创作型就绪 → 交接
-    assert batch == [] and handoff is True
-    # ke_media 未完成时 shot_media 不就绪：audio 已完则无确定性就绪→也不交接
-    _set_done(monkeypatch, {"analysis", "spec", "structure", "audio_assets"})
-    batch, handoff = po.next_batch({}, _SKILL)
-    # ke_media 创作型就绪 → 交接（不会越过 ke_media 直接跑 shot_media）
-    assert batch == [] and handoff is True
-
-
-def test_dag_handoff_when_only_creative_ready(dag_env, monkeypatch):
-    """钉死：创作型就绪优先交接；shot_media 完成后 assembly 就绪执行。"""
-    _set_done(monkeypatch, {
-        "analysis", "spec", "structure", "ke_media", "shot_media",
-        "audio_assets",
-    })
-    batch, handoff = po.next_batch({}, _SKILL)
-    assert [s.key for s in batch] == ["assembly"] and not handoff
-    # 全部完成 → 空批 + 不交接
+def test_dag_spec_pending_waits_for_analysis(dag_env, monkeypatch):
+    """钉死（依赖图通道）：spec 前置 analysis 未完成不就绪；完成后就绪。"""
+    _set_done(monkeypatch, set())
+    assert po._spec_stage_pending({}, _SKILL) is False
+    _set_done(monkeypatch, {"analysis"})
+    assert po._spec_stage_pending({}, _SKILL) is True
+    # spec 自身完成 → 不再就绪（全部完成同理）
     _set_done(monkeypatch, {
         "analysis", "spec", "structure", "ke_media", "shot_media",
         "audio_assets", "assembly",
     })
-    batch, handoff = po.next_batch({}, _SKILL)
-    assert batch == [] and handoff is False
+    assert po._spec_stage_pending({}, _SKILL) is False
 
 
-def test_linear_fallback_without_dependencies(dag_env, monkeypatch):
-    """钉死：无 dependencies 声明 → 线性回落（第一个未完成阶段）。"""
+def test_linear_fallback_spec_pending_without_dependencies(dag_env, monkeypatch):
+    """钉死：无 dependencies 声明 → 线性回落（spec 为第一个未完成阶段才就绪）。"""
     monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
         "flow": {"spec_wizard": True},
     })
     _set_done(monkeypatch, {"analysis"})
-    batch, handoff = po.next_batch({}, _SKILL)
-    assert [s.key for s in batch] == ["spec"] and not handoff
-    # 第一个未完成是创作型 → 交接
+    assert po._spec_stage_pending({}, _SKILL) is True
+    # analysis 未完成 → 第一个未完成阶段是 analysis，spec 不就绪
+    _set_done(monkeypatch, set())
+    assert po._spec_stage_pending({}, _SKILL) is False
+    # 首个未完成阶段已过 spec（创作型在前）→ 不就绪
     _set_done(monkeypatch, {"analysis", "spec", "structure", "ke_media"})
-    batch, handoff = po.next_batch({}, _SKILL)
-    assert batch == [] and handoff is True
+    assert po._spec_stage_pending({}, _SKILL) is False
+
+
+def test_spec_absent_from_table_not_pending(dag_env, monkeypatch):
+    """钉死：阶段表无 spec（未声明 spec_wizard）→ 永不就绪。"""
+    monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
+        "flow": {},
+    })
+    monkeypatch.setattr(registry, "spec_wizard_active", lambda name: False)
+    _set_done(monkeypatch, {"analysis"})
+    assert po._spec_stage_pending({}, _SKILL) is False

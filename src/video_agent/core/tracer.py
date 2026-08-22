@@ -12,6 +12,7 @@ actions/reasoning 供前端「过程时间线」折叠面板展示（不进 LLM 
 import time
 import uuid
 from collections import deque
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 import json
 from typing import Any, Deque, Dict, List, Optional
@@ -23,6 +24,34 @@ from src.video_agent.utils.paths import DATA_DIR
 
 # reasoning 文本持久化长度（仅展示用，防 trace 膨胀；：保留尾部，头部省略）
 _REASONING_HEAD_NOTE = "…（前文思考已截断）"
+
+
+@dataclass
+class _TraceContextState:
+    """单任务上下文的追踪态（ContextVar 持有，并行任务各持一份互不串线）。
+
+    串线缺陷根因（#16）：旧实现以实例属性存「当前 trace」，SSE 断连后
+    任务转后台继续跑、用户同时开新会话时两个任务互相覆盖；改为随
+    contextvar 隔离（先例：StateManager._task_state_var / create_task_bound），
+    asyncio 任务创建时自动拷贝上下文，后台 worker 与新会话各写各的。
+    """
+    current: Optional["TraceRecord"] = None  # 本上下文当前 trace
+    step_start: float = 0.0  # 当前 step 计时起点
+    # 当前 step 期间收集的操作/闸机/仲裁/reasoning 明细（end_step 归档）
+    pending_actions: List[Dict[str, Any]] = field(default_factory=list)
+    pending_gates: List[Dict[str, Any]] = field(default_factory=list)
+    pending_cards: List[Dict[str, Any]] = field(default_factory=list)
+    pending_reasoning: List[str] = field(default_factory=list)
+    # 执行器子步骤缓冲：先于父工具完成时暂存，随下一个 record_action 挂接
+    pending_subs: List[Dict[str, Any]] = field(default_factory=list)
+    # 轮前机械动作缓冲（先于 start_trace，start_trace 时收养进当轮时间线）
+    pre_actions: List[Dict[str, Any]] = field(default_factory=list)
+
+
+# 每任务上下文独立持有追踪态；未显式绑定时 _ctx() 惰性建档
+_trace_ctx_var: ContextVar[Optional[_TraceContextState]] = ContextVar(
+    "agent_trace_current", default=None,
+)
 
 
 @dataclass
@@ -85,6 +114,10 @@ class AgentTracer:
     """
     追踪器（单例）—— 内存保留最近 N 条 + JSONL 文件持久化。
     文件超限自动轮转（保留 trace_rotation_keep 份），重载按 trace_id 去重。
+
+    并发隔离（#16）：「当前 trace」及各 step 缓冲随 contextvar 按上下文持有，
+    后台任务转续与新会话并行时 span 归属各自正确（全局流：traces/gates/
+    control_flow/fallback 仍实例共享，属进程级审计口径，与任务归属无关）。
     """
 
     _instance: Optional["AgentTracer"] = None
@@ -92,8 +125,6 @@ class AgentTracer:
 
     def __init__(self):
         self._traces: Deque[TraceRecord] = deque(maxlen=self.MAX_TRACES)
-        self._current: Optional[TraceRecord] = None
-        self._step_start: float = 0.0
         # 全局闸机判定流（恢复审计）：不依附单次 trace，供 /api/agent/gates 调试端点
         self._recent_gates: Deque[Dict[str, Any]] = deque(maxlen=100)
         # 控制流结构化事件流（分诊/阶段批/交接/回收）——
@@ -101,10 +132,29 @@ class AgentTracer:
         self._control_flow: Deque[Dict[str, Any]] = deque(maxlen=200)
         # 模型降级事件计数（fallback 频率指标；record_fallback 写入）
         self._fallback_events: Deque[Dict[str, Any]] = deque(maxlen=200)
-        # 轮前机械动作缓冲（向导机械写文档等先于 start_trace）：
-        # start_trace 收养进当轮时间线（Rule2 v6 瞬态不得作为唯一可见性）
-        self._pre_actions: List[Dict[str, Any]] = []
         self._persist_path = DATA_DIR / "agent_traces.jsonl"
+
+    @staticmethod
+    def _ctx() -> _TraceContextState:
+        """取当前上下文的追踪态（无则惰性建档）。
+
+        asyncio 每个 Task 创建时拷贝上下文：首次 set 只影响本任务副本，
+        后台 worker 与前台会话天然各持一份 _TraceContextState，不串写。
+        """
+        state = _trace_ctx_var.get()
+        if state is None:
+            state = _TraceContextState()
+            _trace_ctx_var.set(state)
+        return state
+
+    # 兼容入口（测试/旧调用直访实例属性）：代理到当前上下文态
+    @property
+    def _current(self) -> Optional[TraceRecord]:
+        return self._ctx().current
+
+    @property
+    def _pending_actions(self) -> List[Dict[str, Any]]:
+        return self._ctx().pending_actions
 
     @classmethod
     def get_instance(cls) -> "AgentTracer":
@@ -118,37 +168,45 @@ class AgentTracer:
         cls._instance = None
 
     def start_trace(self, user_message: str = "", user_id: str = "") -> str:
-        """开始一次新追踪，返回 trace_id"""
+        """开始一次新追踪，返回 trace_id（绑定到调用方所在上下文）。
+
+        每次新建追踪态并 set 进当前上下文：即使本上下文从创建方继承来
+        共享状态对象（create_task 拷贝上下文），新 trace 也与原对象彻底
+        切割，并行任务间零串写；同上下文轮前缓冲随新态收养不丢。
+        """
+        inherited = _trace_ctx_var.get()
+        ctx = _TraceContextState()
+        if inherited is not None and inherited.pre_actions:
+            # 轮前机械动作收养（向导机械写文档等）：完成态/运行态同一条目
+            ctx.pre_actions = list(inherited.pre_actions)
+            inherited.pre_actions = []
+        _trace_ctx_var.set(ctx)
         trace_id = uuid.uuid4().hex[:12]
-        self._current = TraceRecord(
+        ctx.current = TraceRecord(
             trace_id=trace_id,
             timestamp=time.time(),
             user_message_preview=user_message[:80],
             user_id=user_id or "",
         )
-        self._step_start = time.monotonic()
+        ctx.step_start = time.monotonic()
         # 当前 step 期间收集的操作明细与 reasoning（end_step 时归档）
-        self._pending_actions: List[Dict[str, Any]] = []
-        # 轮前机械动作收养（向导机械写文档等）：完成态/运行态同一条目
-        if self._pre_actions:
-            self._pending_actions.extend(self._pre_actions)
-            self._pre_actions = []
-        self._pending_gates: List[Dict[str, Any]] = []
-        self._pending_cards: List[Dict[str, Any]] = []
-        self._pending_reasoning: List[str] = []
+        ctx.pending_actions = []
+        if ctx.pre_actions:
+            ctx.pending_actions.extend(ctx.pre_actions)
+            ctx.pre_actions = []
         # 执行器子步骤缓冲：子步骤先于父工具完成时暂存，
         # 待父工具 record_action 时挂到父条目之后（持久化顺序 = live 顺序）
-        self._pending_subs: List[Dict[str, Any]] = []
         return trace_id
 
     def start_step(self) -> None:
-        """标记一步的开始（计时起点）"""
-        self._step_start = time.monotonic()
-        self._pending_actions = []
-        self._pending_gates = []
-        self._pending_cards = []
-        self._pending_reasoning = []
-        self._pending_subs = []
+        """标记一步的开始（计时起点，按当前上下文取值）"""
+        ctx = self._ctx()
+        ctx.step_start = time.monotonic()
+        ctx.pending_actions = []
+        ctx.pending_gates = []
+        ctx.pending_cards = []
+        ctx.pending_reasoning = []
+        ctx.pending_subs = []
 
     def record_action(
         self,
@@ -181,12 +239,13 @@ class AgentTracer:
             entry["result_summary"] = result_summary
         if planning:
             entry["planning"] = True
-        if self._current is None:
+        ctx = self._ctx()
+        if ctx.current is None:
             return entry
-        self._pending_actions.append(entry)
-        if self._pending_subs:
-            self._pending_actions.extend(self._pending_subs)
-            self._pending_subs = []
+        ctx.pending_actions.append(entry)
+        if ctx.pending_subs:
+            ctx.pending_actions.extend(ctx.pending_subs)
+            ctx.pending_subs = []
         return entry
 
     def record_subaction(
@@ -196,11 +255,12 @@ class AgentTracer:
         elapsed_ms: float = 0.0,
         ok: bool = True,
     ) -> None:
-        """执行器子步骤：缓冲到 _pending_subs，随下一个父 record_action
+        """执行器子步骤：缓冲到 pending_subs，随下一个父 record_action
         挂到父条目之后；step 结束仍无父条目时由 end_step 兜底落盘。"""
-        if self._current is None:
+        ctx = self._ctx()
+        if ctx.current is None:
             return
-        self._pending_subs.append({
+        ctx.pending_subs.append({
             "name": name,
             "summary": summary,
             "elapsed_ms": round(elapsed_ms, 1),
@@ -214,16 +274,17 @@ class AgentTracer:
 
         开场编排（向导机械落盘等）先于 agent_loop.start_trace 发生，
         直记 record_action 会落进上一轮残迹被清空——轮前缓冲根治。"""
-        self._pre_actions.append({
+        self._ctx().pre_actions.append({
             "name": name, "summary": summary,
             "elapsed_ms": round(elapsed_ms, 1), "ok": ok,
         })
 
     def record_reasoning(self, text: str) -> None:
         """追加当前 step 的 reasoning（深度思考）文本"""
-        if self._current is None or not text:
+        ctx = self._ctx()
+        if ctx.current is None or not text:
             return
-        self._pending_reasoning.append(text)
+        ctx.pending_reasoning.append(text)
 
     def record_gate(
         self,
@@ -252,8 +313,9 @@ class AgentTracer:
         if scope:
             entry["scope"] = scope
         self._recent_gates.append(entry)
-        if self._current is not None:
-            self._pending_gates.append(entry)
+        ctx = self._ctx()
+        if ctx.current is not None:
+            ctx.pending_gates.append(entry)
 
     def record_control_flow(self, event: str, detail: str = "", skill_name: str = "") -> None:
         """：控制流结构化事件（分诊 triage / 阶段批 stage_batch /
@@ -278,9 +340,10 @@ class AgentTracer:
     ) -> None:
         """ （#4 仲裁可观测）：记录一次轮末卡片仲裁——
         全部命中候选策略 + 胜出者，随 step 归档，/api/agent/traces 可审计。"""
-        if self._current is None:
+        ctx = self._ctx()
+        if ctx.current is None:
             return
-        self._pending_cards.append({
+        ctx.pending_cards.append({
             "ts": time.time(),
             "step": step,
             "candidates": list(candidates or []),
@@ -295,8 +358,9 @@ class AgentTracer:
 
     def record_llm_call(self) -> None:
         """（审核）：当前 trace 模型调用 +1——成本看板平均耗时仅聚合含模型调用的轮。"""
-        if self._current is not None:
-            self._current.llm_calls += 1
+        current = self._ctx().current
+        if current is not None:
+            current.llm_calls += 1
 
     def metrics(self) -> Dict[str, Any]:
         """：成本看板聚合（内存 + 文件 trace，按 trace_id 去重）。
@@ -337,46 +401,48 @@ class AgentTracer:
         token_usage: int = 0,
     ) -> None:
         """记录一步的完成"""
-        if self._current is None:
+        ctx = self._ctx()
+        if ctx.current is None:
             return
-        timing_ms = (time.monotonic() - self._step_start) * 1000
-        reasoning = "".join(self._pending_reasoning)
+        timing_ms = (time.monotonic() - ctx.step_start) * 1000
+        reasoning = "".join(ctx.pending_reasoning)
         # 保留尾部（最新思考最有回看价值），头部省略
         max_chars = int(getattr(settings, "trace_reasoning_max_chars", 0) or 2000)
         if len(reasoning) > max_chars:
             reasoning = _REASONING_HEAD_NOTE + reasoning[-max_chars:]
         # step 结束仍无父条目承接的子步骤兜底落盘（防丢）
-        if self._pending_subs:
-            self._pending_actions.extend(self._pending_subs)
-            self._pending_subs = []
-        self._current.steps.append(StepTrace(
+        if ctx.pending_subs:
+            ctx.pending_actions.extend(ctx.pending_subs)
+            ctx.pending_subs = []
+        ctx.current.steps.append(StepTrace(
             step=step,
             timing_ms=timing_ms,
             token_usage=token_usage,
             actions_applied=actions_applied,
             finish_reason=finish_reason,
-            actions=list(self._pending_actions),
-            gates=list(self._pending_gates),
-            card_decisions=list(self._pending_cards),
+            actions=list(ctx.pending_actions),
+            gates=list(ctx.pending_gates),
+            card_decisions=list(ctx.pending_cards),
             reasoning=reasoning,
         ))
-        self._pending_actions = []
-        self._pending_gates = []
-        self._pending_cards = []
-        self._pending_reasoning = []
+        ctx.pending_actions = []
+        ctx.pending_gates = []
+        ctx.pending_cards = []
+        ctx.pending_reasoning = []
 
     def finish_trace(self, total_actions: int = 0) -> Dict[str, Any]:
         """完成追踪并存入历史，返回本次 trace 的 dict（供 done payload 下发前端展示）"""
-        if self._current is None:
+        ctx = self._ctx()
+        if ctx.current is None:
             return {}
-        self._current.total_ms = (time.monotonic() - self._step_start) * 1000
+        ctx.current.total_ms = (time.monotonic() - ctx.step_start) * 1000
         # 使用第一步开始到最后的总时间
-        if self._current.steps:
-            self._current.total_ms = sum(s.timing_ms for s in self._current.steps)
-        self._current.total_actions = total_actions
-        record = self._current.to_dict()
-        self._traces.append(self._current)
-        self._current = None
+        if ctx.current.steps:
+            ctx.current.total_ms = sum(s.timing_ms for s in ctx.current.steps)
+        ctx.current.total_actions = total_actions
+        record = ctx.current.to_dict()
+        self._traces.append(ctx.current)
+        ctx.current = None
         self._persist_record(record)
         return record
 
@@ -393,7 +459,9 @@ class AgentTracer:
 
     def _rotate_if_needed(self) -> None:
         max_bytes = int(getattr(settings, "trace_file_max_bytes", 2_000_000))
-        keep = int(getattr(settings, "trace_rotation_keep", 3))
+        # 运行时残留策略（#16）：保留份数收紧为 2 份（原 3 份）——
+        # trace 仅供近期审计/重建，历史归档归文件备份，不留过多残留
+        keep = int(getattr(settings, "trace_rotation_keep", 2))
         try:
             if not self._persist_path.exists():
                 return

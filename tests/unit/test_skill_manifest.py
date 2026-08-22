@@ -14,7 +14,7 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.action_executor import StudioActionExecutor
+from src.video_agent.web.action_executor import StateOperationExecutor
 
 _MANIFEST_ALL_ON = (
     "```json skill_manifest\n"
@@ -94,7 +94,7 @@ def test_english_prompt_passes_when_cjk_ratio_declared_low():
 # ---------- 端到端：规格暂停闸只对声明 spec_wizard 的 Skill 生效 ----------
 
 async def _run_spec_write(svc, skill_name: str):
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.skill_name = skill_name
     svc.state_dict["documents"] = []
     reply = ('规格已保存。\n```studio-actions\n'
@@ -151,7 +151,7 @@ def test_spec_gate_warning_requires_declaration(svc):
     sd.save_skill_doc("无规格闸", "# B\n> 调用规则：测试\n正文")
     svc.state_dict["documents"] = []
 
-    ex = StudioActionExecutor(svc, gate_enabled=True)
+    ex = StateOperationExecutor(svc, gate_enabled=True)
     ex.skill_name = "有规格闸"
     assert not hasattr(ex, "_spec_gate_ok")
     assert ex.execute([{

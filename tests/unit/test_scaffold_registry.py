@@ -13,7 +13,7 @@ from src.video_agent.core import scaffold_registry as reg
 _EXPECTED_SIDS = {
     "S03",
     "S05", "S06", "S07",
-    "S08", "S09", "S10", "S11", "S12", "S13",
+    "S08", "S09", "S10", "S13",  # S11/S12 随任务#36 B5 执行器退役删除
     "I01", "I02", "I03", "I04", "I05", "I06", "I07", "I08",
     # 审核整改批 8：action_executor 承重壳登记（下沉计划见 docs）
     "I09",

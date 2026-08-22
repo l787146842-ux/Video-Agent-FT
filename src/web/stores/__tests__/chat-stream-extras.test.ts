@@ -1,5 +1,5 @@
 /**
- * chat store 补强测试（P4-19 前端回归防护：只加测试不改行为）。
+ * chat store 补强测试（前端回归防护：只加测试不改行为）。
  *
  * 补齐 chat.test.ts 未覆盖的状态机分支：
  * 深度思考增量/工具时间线（toolStarted/toolFinished）、流式恢复与清理、
@@ -144,15 +144,19 @@ describe('chatActions 错误/恢复/清理分支', () => {
     chatActions.clearStreaming();
   });
 
-  it('streamError 鉴权类错误挂设置跳转提示，其余不挂；原始报文进折叠', () => {
+  it('streamError 鉴权类错误挂设置跳转提示，其余不挂；原始报文进折叠（按 kind 查映射表）', () => {
     chatActions.startStream();
-    chatActions.streamError('401 Unauthorized', 'raw body');
+    chatActions.streamError({
+      code: 'err.auth.invalid_key', kind: 'auth', message: '鉴权失败（HTTP 401）', raw: 'raw body',
+    });
     expect(chatState.messages[0].settingsHint).toBe(true);
     expect(chatState.messages[0].errorDetail).toBe('raw body');
+    expect(chatState.messages[0].errorKind).toBe('auth');
     chatActions.startStream();
-    chatActions.streamError('网络超时');
+    chatActions.streamError({ code: 'err.network.timeout', kind: 'network', message: '网络超时' });
     expect(chatState.messages[1].settingsHint).toBe(false);
     expect(chatState.messages[1].errorDetail).toBeUndefined();
+    expect(chatState.messages[1].errorKind).toBe('network');
   });
 
   it('restoreStreamingState 整体回放累计状态；有 reasoning 时以恢复时刻重新计时', () => {
