@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from pydantic import BaseModel
 
+from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
 from src.video_agent.utils import gen_id
 from src.video_agent.utils.fileio import atomic_write_text
@@ -28,6 +29,34 @@ def _snap_dir(project_id: str):
     d = WORKSPACE_DIR / "snapshots" / (project_id or "_")
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _prune_snapshots(project_id: str) -> int:
+    """每项目快照数量上限（默认 20，SNAPSHOT_MAX_PER_PROJECT 可配）。
+
+    超限淘汰最旧（按 created_at 升序）：快照数据结构无手动标记/置顶字段，
+    最简且语义清晰的策略即「最新优先保留」；淘汰在创建成功后执行，
+    新快照永不被当次淘汰。返回删除数量。
+    """
+    cap = max(1, int(settings.snapshot_max_per_project))
+    entries = []
+    for f in _snap_dir(project_id).glob("*.json"):
+        try:
+            created = float(json.loads(f.read_text(encoding="utf-8")).get("created_at") or 0.0)
+        except Exception:
+            created = 0.0  # 损坏/缺字段视为最旧，优先淘汰
+        entries.append((created, f))
+    removed = 0
+    for _, f in sorted(entries, key=lambda e: e[0]):
+        if len(entries) - removed <= cap:
+            break
+        try:
+            f.unlink()
+            removed += 1
+            logger.info(f"[Snapshot] 超出上限（{cap}），已淘汰最旧快照 {f.stem}")
+        except OSError as e:
+            logger.warning(f"[Snapshot] 淘汰快照失败 {f.name}: {e}")
+    return removed
 
 
 def _read_snapshot(project_id: str, snap_id: str) -> Dict[str, Any]:
@@ -107,6 +136,7 @@ async def create_snapshot(body: SnapshotRequest = SnapshotRequest()):
     }
     f = _snap_dir(record["project_id"]) / f"{snap_id}.json"
     atomic_write_text(f, json.dumps(record, ensure_ascii=False))
+    _prune_snapshots(record["project_id"])
     logger.info(f"[Snapshot] 已创建快照 {snap_id}（{len(record['messages'])} 条消息）")
     return {"snap_id": snap_id, "title": record["title"]}
 

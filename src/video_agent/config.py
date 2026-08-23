@@ -204,6 +204,9 @@ class Settings:
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))
     task_max: int = field(default_factory=lambda: _env_int("TASK_MAX", 500))
+    # 每项目快照数量上限（超限时创建后淘汰最旧；≤ 0 按 1 处理）
+    snapshot_max_per_project: int = field(
+        default_factory=lambda: _env_int("SNAPSHOT_MAX_PER_PROJECT", 20))
     # Agent trace JSONL 体积轮转（.1）
     trace_file_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_FILE_MAX_BYTES", 2_000_000))
     # 运行时残留策略（#16）：轮转保留份数收紧为 2 份（原 3）——trace 供近期审计，
