@@ -82,6 +82,18 @@ export function closeDocsPanel() {
   setEditing(false);
 }
 
+/** 面板内保存 Skill 文档（结构化视图更新回调）：落盘 + lint 回显 + 刷新列表 */
+export async function saveSkillDocFromPanel(slug: string, content: string): Promise<void> {
+  try {
+    const res = await saveSkillDoc(slug, content);
+    (res?.lint?.warnings || []).forEach((w) => showToast(`⚠ ${w}`, 'warning'));
+    setSkillDocs(await getSkillDocs());
+    showToast('已保存', 'success');
+  } catch (err) {
+    showToast(`保存失败：${(err as Error).message}`, 'error');
+  }
+}
+
 export function selectDoc(kind: 'project' | 'skill', key: string) {
   setCurrent({ kind, key });
   setEditing(false);

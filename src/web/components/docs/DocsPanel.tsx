@@ -6,9 +6,10 @@ import {
   docsPanelOpen, closeDocsPanel, current,
   editing, viewMode, setViewMode, startEdit, cancelEdit,
   saveCurrentDoc, deleteDoc, currentContent, currentDisplayName,
-  draftContent, setDraftContent,
+  draftContent, setDraftContent, saveSkillDocFromPanel,
 } from '@/stores/docs';
 import { renderMarkdown } from '@/lib/markdown';
+import { SkillStructuredView } from '@/components/skills/SkillStructuredView';
 import { DocsSidebar } from './DocsSidebar';
 
 /**
@@ -81,7 +82,7 @@ export function DocsPanel() {
                 {currentDisplayName() || '未选择文档'}
               </span>
               <div class="docs-content-actions">
-                <Show when={!editing()}>
+                <Show when={!editing() && current()?.kind === 'project'}>
                   <div class="docs-mode-toggle">
                     <button
                       type="button"
@@ -99,7 +100,7 @@ export function DocsPanel() {
                     </button>
                   </div>
                 </Show>
-                <Show when={current()}>
+                <Show when={current() && current()!.kind === 'project'}>
                   <Show
                     when={editing()}
                     fallback={
@@ -158,25 +159,36 @@ export function DocsPanel() {
               fallback={<div class="docs-empty centered">从左侧选择文档</div>}
             >
               <Show
-                when={editing()}
+                when={current()!.kind === 'skill'}
                 fallback={
                   <Show
-                    when={viewMode() === 'read'}
+                    when={editing()}
                     fallback={
-                      <pre class="docs-viewer">{currentContent()}</pre>
+                      <Show
+                        when={viewMode() === 'read'}
+                        fallback={
+                          <pre class="docs-viewer">{currentContent()}</pre>
+                        }
+                      >
+                        <div
+                          class="docs-rendered"
+                          innerHTML={renderMarkdown(currentContent())}
+                        />
+                      </Show>
                     }
                   >
-                    <div
-                      class="docs-rendered"
-                      innerHTML={renderMarkdown(currentContent())}
+                    <textarea
+                      class="docs-editor"
+                      value={draftContent()}
+                      onInput={(e) => setDraftContent(e.currentTarget.value)}
                     />
                   </Show>
                 }
               >
-                <textarea
-                  class="docs-editor"
-                  value={draftContent()}
-                  onInput={(e) => setDraftContent(e.currentTarget.value)}
+                {/* Skill 文档：结构化视图（易读/Markdown + 行内编辑 + 另存为副本） */}
+                <SkillStructuredView
+                  raw={currentContent()}
+                  onSave={(raw) => saveSkillDocFromPanel(current()!.key, raw)}
                 />
               </Show>
             </Show>

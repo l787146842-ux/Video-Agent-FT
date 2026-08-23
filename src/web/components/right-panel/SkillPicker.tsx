@@ -7,6 +7,7 @@ import { editorToPlainText } from '@/lib/rich-input';
 import { deleteSkillDoc } from '@/api/docs';
 import { showToast } from '@/stores/toast';
 import { requestInsertSkill } from '@/lib/chat-input-bridge';
+import { isSkillEnabled } from '@/stores/skill-prefs';
 import { t } from '@/lib/locale';
 import { SkillDetailModal } from './SkillDetailModal';
 import { SkillImportModal } from './SkillImportModal';
@@ -76,6 +77,9 @@ export function SkillPicker() {
     return skill.id.startsWith('doc:') || (skill.source as string) === 'doc';
   }
 
+  /** 仅展示已加入可用集的 Skill（全局加入集，工作台左栏控制） */
+  const visibleSkills = () => state.skills.filter((s) => isSkillEnabled((s.slug as string) || s.id.replace(/^doc:/, '')));
+
   async function doDeleteSkill(skill: Skill) {
     const slug = (skill.slug as string) || skill.id.replace(/^doc:/, '');
     setConfirmingId(null);
@@ -124,7 +128,7 @@ export function SkillPicker() {
               <span class="skill-picker-desc">{t('rp.skill.noneOptionHint')}</span>
             </div>
           </div>
-          <For each={state.skills}>
+          <For each={visibleSkills()}>
             {(skill) => (
               <div
                 class={`skill-picker-card ${skill.id === agentSkillId() ? 'active' : ''}`}
@@ -206,6 +210,9 @@ export function SkillPicker() {
           <Show when={!state.skills.length}>
             <div class="empty-state">{t('rp.skill.none')}</div>
           </Show>
+          <Show when={state.skills.length > 0 && visibleSkills().length === 0}>
+            <div class="empty-state">暂无已加入的 Skill，请到顶栏「Skill 工作台」加入</div>
+          </Show>
           {/* 导入按钮 */}
           <div
             class="skill-picker-import"
@@ -226,6 +233,7 @@ export function SkillPicker() {
         <SkillDetailModal
           skill={previewSkill()!}
           onClose={() => setPreviewSkill(null)}
+          onSaved={(s) => setPreviewSkill(s)}
           onUse={(skill) => {
             insertSkillToInput(skill);
             setPreviewSkill(null);
