@@ -36,6 +36,16 @@ gates 键白名单与 core.prompt_gates._DEFAULT_GATE_RULES 键集同值复制
 （skill_runtime 不得反向 import core，分层约束），漂移由
 tests/unit/test_sidecar_schema_v2.py 的锁源断言钉死；规范阶段键
 同 pipeline_orchestrator.CANONICAL_STAGES 复制口径。
+
+扩展逃生舱约定（对齐 Agent Skills 开放标准，审核改进方案 kind 体系
+要求）：frontmatter 顶层 `metadata` 自由 map（string→string，开放标准
+官方逃生舱语义，如 metadata.version / metadata.author）与 `x-` 前缀键
+（如 x-acme-review）一律校验器忽略——不 WARN、不拒注册、不校验形状，
+frontmatter 任意键原样透传，便于将来与 Agent Skills 开放标准互转
+（逃生舱键双向搬运不产生校验噪音）。防冲突约定：metadata 命名空间内
+键名与 x- 后缀建议带厂商/团队前缀（如 metadata."acme.market_id"），
+避免与平台未来登记键或其他导入源撞键。判定归一入口 is_extension_key；
+本清单校验只按登记表消费键，扩展键不进任何 _check_* 路径。
 """
 from typing import Any, Dict, List, Tuple
 
@@ -43,6 +53,25 @@ from typing import Any, Dict, List, Tuple
 # WARN（开放注册降级/废除键过渡告警），不触发 fail-hard 拒注册；
 # 其余条目为错误级。消费端用 split_issue_warnings 拆分。
 WARN_PREFIX = "[WARN] "
+
+
+# ---------- 扩展逃生舱（对齐 Agent Skills 开放标准） ----------
+# 顶层 metadata 自由 map 与 x- 前缀键：校验器一律忽略（不 WARN、不拒
+# 注册、不校验形状），frontmatter 原样透传，便于将来与开放标准互转。
+# 防冲突约定：命名空间内键名建议带厂商/团队前缀（详见模块 docstring）。
+EXTENSION_KEY_PREFIX = "x-"
+METADATA_KEY = "metadata"
+
+
+def is_extension_key(key: Any) -> bool:
+    """扩展逃生舱键判定：顶层 metadata 自由 map 与 x- 前缀键
+    （对齐 Agent Skills 开放标准逃生舱语义）。
+
+    命中键由 validate_manifest_data 一律忽略（不 WARN、不拒注册），
+    frontmatter 读写原样透传；与开放标准互转意图见模块 docstring。
+    """
+    return key == METADATA_KEY or (
+        isinstance(key, str) and key.startswith(EXTENSION_KEY_PREFIX))
 
 
 def split_issue_warnings(issues: List[str]) -> Tuple[List[str], List[str]]:
@@ -345,6 +374,8 @@ def validate_manifest_data(data: Any) -> List[str]:
 
     None = 零声明合法。frontmatter YAML 解析失败时 load_manifest 返回
     带 _parse_error 键的哨兵对象，此处转为问题报出（注册期 fail-hard）。
+    扩展逃生舱（is_extension_key：顶层 metadata 自由 map 与 x- 前缀键）
+    一律忽略——不 WARN、不拒注册，原样透传待开放标准互转消费。
     """
     issues: List[str] = []
     if data is None:
@@ -354,6 +385,8 @@ def validate_manifest_data(data: Any) -> List[str]:
     err = data.get("_parse_error")
     if err:
         return [str(err)]
+    # 扩展逃生舱显式口径：metadata / x-* 顶层键不进任何 _check_* 校验
+    # 路径（本函数只按登记表消费键），声明即透传，零 WARN 零拒注册。
     flow = data.get("flow")
     if flow is not None and not isinstance(flow, dict):
         issues.append("flow 必须是对象")
