@@ -63,6 +63,16 @@ def test_b3_pause_discipline_single_home():
     assert "workflow_pause 工具调用真正停下" in sd, "暂停纪律单家条款丢失"
 
 
+def test_f1_guide_card_boundary_reference():
+    """F-1 快照锁：引导卡/暂停卡边界定义单家在宪法 Rule2，
+    skill_discipline 第 2 条只引用不复述机制细节（防家规打架）。"""
+    sd = load_prompt("planner/skill_discipline.md")
+    assert "引导卡与暂停卡的边界定义见宪法 Rule2" in sd, "边界定义引用丢失"
+    assert "由代码执行，不依赖模型自觉" not in sd, "机制细节复述回潮"
+    rules = (ROOT / "ARCHITECTURE_RULES.md").read_text(encoding="utf-8")
+    assert "引导卡仅承载客观状态选项" in rules, "宪法 Rule2 边界定义丢失"
+
+
 def test_finalization_to_document_clause():
     """任务#6 C-1 快照锁：剧本定稿入文档的编排约定在 skill_discipline.md 单家在场：
     用户表达定稿意图 → 先 workflow_pause 弹确认卡（存入文档/继续打磨）→
