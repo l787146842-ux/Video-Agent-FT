@@ -101,3 +101,23 @@ def test_template_has_handoff_sections():
     assert "未决事项清单" in tpl
     assert "最近关键产物名" in tpl
     assert "{{dialog}}" in tpl
+
+
+def test_template_must_keep_semantics_snapshot():
+    """快照防漂移（Rule6）：记忆系统退役后，会话压缩是创作设定的唯一
+    软性保护——锁定「必须保留」清单的关键语义（含批次 D 新增的
+    角色/场景/音色设定要点行）与四段式交接结构，改动需同批更新本快照。"""
+    from src.video_agent.utils.prompts import load_prompt_section
+
+    tpl = load_prompt_section("planner/session_compact.md", "TEMPLATE")
+    # handoff 四段式结构
+    assert "目标与现状" in tpl
+    assert "已定约束" in tpl
+    # 必须保留清单（逐条钉死关键语义）
+    assert "用户的创作目标、已确认的规格与偏好" in tpl
+    assert "已确认的角色/场景/音色设定要点（若尚未沉淀到故事板）" in tpl
+    assert "已完成的阶段" in tpl
+    assert "用户明确否决或要求修改过的内容" in tpl
+    # 丢弃边界与输出格式锚点
+    assert "已沉淀在工作台状态里" in tpl
+    assert "摘要：<不超过 300 字" in tpl
