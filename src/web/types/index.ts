@@ -465,16 +465,9 @@ export interface AgentTaskReplayPayload {
   docs?: string[];
   /** workflow 事件序列高水位（重连按 sequence 补发/去重依据） */
   wf_event_sequence?: number;
-  /** workflow 投影（run 快照 + 本轮事件序列，重载/重连同源重建） */
-  workflow?: {
-    run_id?: string;
-    status?: string;
-    current_node?: string;
-    completed_nodes?: string[];
-    event_sequence?: number;
-    pending_decision?: boolean;
-    turn_events?: Array<Record<string, unknown>>;
-  } | null;
+  /** workflow 投影（run 快照 + pending_decision_payload + 本轮事件序列，
+   *  重载/重连同源重建；任务 #3 结构化决策表单数据源） */
+  workflow?: WorkflowProjection | null;
   fallback?: { provider?: string; model?: string } | null;
   error?: string | null;
   /** 错误结构化归类（replay 同源下发；旧记录无此字段时为 null） */
