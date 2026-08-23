@@ -30,6 +30,7 @@ from src.video_agent.core import pipeline_orchestrator as po
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
 from src.video_agent.skill_runtime import frontmatter
+from src.video_agent.skill_runtime.manifest_schema import split_issue_warnings
 from src.video_agent.core.workflow_contract import WorkflowDefinitionError, default_v2_workflow
 from src.video_agent.core.workflow_events import EventLedger
 from src.video_agent.core.turn_commit import (
@@ -73,7 +74,6 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
     # 废除键过渡告警）记录日志后放行，与注册门禁同口径。
     _issues = frontmatter.validate_manifest(
         frontmatter.load_manifest(str(entry.slug or skill)))
-    from src.video_agent.skill_runtime.manifest_schema import split_issue_warnings
     issues, _warns = split_issue_warnings(_issues)
     for _w in _warns:
         logger.warning("[WorkflowRuntime] frontmatter 告警（{}）: {}", skill, _w)
