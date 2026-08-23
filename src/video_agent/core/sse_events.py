@@ -15,7 +15,8 @@ SSE_STATUS = "status"
 SSE_DELTA = "delta"
 # 深度思考增量（仅 UI 展示，不进下次上下文）
 SSE_REASONING_DELTA = "reasoning_delta"
-# 过程时间线：工具/操作开始（携带 id/name/summary）
+# 过程时间线：工具/操作开始（携带 id/name/summary/args；args = 输入参数
+# 预览，必经 core/tool_args_preview 裁剪脱敏，前端按工具名分级展开）
 SSE_TOOL_STARTED = "tool_started"
 # 过程时间线：工具/操作完成（携带 id/ok/elapsed_ms/result_summary）
 SSE_TOOL_FINISHED = "tool_finished"

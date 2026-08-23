@@ -21,6 +21,7 @@ from src.video_agent.core import fc_gates, fc_reconcile, prompt_gates
 from src.video_agent.core import ports
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
+from src.video_agent.core import tool_args_preview
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED,
 )
@@ -291,12 +292,16 @@ class FCToolRunner:
             # 过程时间线：工具开始（前端渲染运行态条目）
             tool_event_id = str(call.get("id") or f"fc-{ci}") if isinstance(call, dict) else f"fc-{ci}"
             start_summary = describe_fc_tool(name, args)
+            # 输入参数预览（裁剪脱敏，任务 #2）：随 started 事件下发并同步
+            # 落盘 trace（刷新重建后详情卡展开区不丢）
+            args_preview = tool_args_preview.redact_tool_args(name, args)
             if on_event is not None:
                 await on_event({
                     "type": SSE_TOOL_STARTED,
                     "id": tool_event_id,
                     "name": name,
                     "summary": start_summary,
+                    "args": args_preview,
                 })
             _tool_t0 = time.monotonic()
 
@@ -500,7 +505,8 @@ class FCToolRunner:
                     await on_event(_finished_ev)
                 tracer.record_action(name=name, summary=desc, elapsed_ms=_tool_ms, ok=True,
                                      stage=stage_label_for_tool(name),
-                                     result_summary=desc)
+                                     result_summary=desc,
+                                     args=args_preview)
                 batch_tool_names.add(name)
                 _stage_lbl = stage_label_for_tool(name)
                 if _stage_lbl:
@@ -563,6 +569,7 @@ class FCToolRunner:
                     elapsed_ms=_tool_ms, ok=bool(spec_silent_summary),
                     stage=stage_label_for_tool(name),
                     result_summary=spec_silent_summary or str(result.error or "执行失败")[:120],
+                    args=args_preview,
                 )
                 # 结构化失败回喂（客观报告+单句建议，二次升级）
                 self._tool_fail_counts[name] = self._tool_fail_counts.get(name, 0) + 1

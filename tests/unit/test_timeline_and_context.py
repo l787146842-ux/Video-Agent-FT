@@ -234,12 +234,19 @@ async def test_fc_tool_timeline_events(svc):
     tool_finished = [e for e in events if e["type"] == "tool_finished"]
     assert len(tool_finished) == 2
     assert started[1]["name"] == "fake_tool"
+    # 任务 #2：工具 started 事件携裁剪脱敏后的 args（规划条目不带）
+    assert started[1]["args"] == {"a": 1}
+    assert "args" not in started[0]
     assert finished[0]["ok"] is True
     step = result.trace["steps"][0]
     # 814G2 顺序：规划条目在前、工具在后，且规划耗时已补填
     assert step["actions"][0]["name"] == "model_reasoning"
     assert step["actions"][0]["elapsed_ms"] >= 0
     assert step["actions"][1]["name"] == "fake_tool"
+    # 任务 #2：trace 条目同步落盘 args（刷新重建后详情卡展开区不丢；
+    # 规划条目不带 args）
+    assert step["actions"][1].get("args") == {"a": 1}
+    assert "args" not in step["actions"][0]
 
 
 # ---------- 知识渐进式披露：规格清单 / 附件清单 / 按需检索 ----------

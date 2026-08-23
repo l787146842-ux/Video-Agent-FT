@@ -254,6 +254,9 @@ class AgentTaskManager:
                 "id": event.get("id", ""),
                 "name": event.get("name", ""),
                 "summary": event.get("summary", ""),
+                # 输入参数预览（后端已裁剪脱敏，任务 #2）：重连 replay 后
+                # 详情卡展开区不丢
+                "args": event.get("args") or {},
                 "status": "running",
                 "elapsed_ms": None,
                 "result_summary": "",
