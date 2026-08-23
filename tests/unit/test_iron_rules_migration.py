@@ -81,3 +81,35 @@ def test_s7_d8_attribution():
     重建后与新建项目同模板，D8 的「老新不一致」消除。"""
     assert "宁缺毋滥" not in _IRON_RULES_DOC_BODY
     assert "拆解覆盖完整" in _IRON_RULES_DOC_BODY
+
+
+# ---------- 铁律自动升级守卫（三维审查建议项）：第 3 条替换仅当
+# 正文与默认模板一致；标题匹配但正文已定制则跳过留痕 ----------
+
+def test_clause_3_upgrade_guard_default_template_replaced():
+    """第 3 条默认模板正文 → 照常升级为平台协议指针（存量口径不变）。"""
+    from src.video_agent.core.spec_rules import IRON_RULES_DOC_NAME, ensure_iron_rules_doc
+
+    old = ("# 执行铁律（系统约定）\n\n"
+           "1. 执行优先：用户说什么就做什么。\n"
+           "2. 拆解覆盖完整（自检核对）。\n"
+           "3. 回复精简：写入草稿的提示词正文只允许一句话汇总。\n")
+    raw = {"documents": [{"id": "d1", "name": IRON_RULES_DOC_NAME, "content": old}]}
+    assert ensure_iron_rules_doc(raw) is True
+    content = raw["documents"][0]["content"]
+    assert "回复纪律见平台协议" in content and "回复精简" not in content
+
+
+def test_clause_3_upgrade_guard_customized_body_preserved():
+    """标题匹配但正文已被用户定制 → 跳过替换，用户措辞逐字保留。"""
+    from src.video_agent.core.spec_rules import IRON_RULES_DOC_NAME, ensure_iron_rules_doc
+
+    custom = "3. 回复精简：回复一律先给结论再给依据，且不超过两百字。\n"
+    old = ("# 执行铁律（系统约定）\n\n"
+           "1. 执行优先：用户说什么就做什么。\n"
+           "2. 拆解覆盖完整（系统机器验收）。\n" + custom)
+    raw = {"documents": [{"id": "d1", "name": IRON_RULES_DOC_NAME, "content": old}]}
+    assert ensure_iron_rules_doc(raw) is False  # 无漂移点 → 不写
+    content = raw["documents"][0]["content"]
+    assert custom in content, "用户定制的第 3 条必须原样保留"
+    assert "回复纪律见平台协议" not in content

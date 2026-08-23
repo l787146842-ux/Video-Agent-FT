@@ -11,6 +11,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from loguru import logger
+
 from src.video_agent.utils import gen_id
 
 IRON_RULES_HEADING = "执行铁律"
@@ -44,6 +46,27 @@ _IRON_CLAUSE_45_RE = re.compile(
 # 铁律第 3 条收敛为「回复纪律见平台协议」指针；存量文档同口径升级
 _IRON_CLAUSE_3_RE = re.compile(
     r"(?m)^[ \t]*3\.[ \t]*回复精简[：:]?[\s\S]*?(?=^[ \t]*\d+\.[ \t]|\Z)")
+# 铁律自动升级守卫（三维审查建议项）：第 3 条替换仅当正文与平台下发的
+# 默认模板一致时才执行（去空白归一后比对）；标题匹配但正文已被用户
+# 定制则跳过替换、用户措辞原样保留（留痕 = 日志登记）。
+_CLAUSE_3_DEFAULT_BODIES = frozenset({
+    "3.回复精简。",
+    "3.回复精简：写入草稿的提示词正文只允许一句话汇总。",
+})
+_CLAUSE_3_POINTER = "3. 回复纪律见平台协议。\n"
+
+
+def _upgrade_clause_3(body: str) -> str:
+    """第 3 条守卫式升级：默认模板才替换为平台协议指针，定制正文跳过留痕。"""
+    m = _IRON_CLAUSE_3_RE.search(body)
+    if not m:
+        return body
+    normalized = re.sub(r"\s+", "", m.group(0))
+    if normalized not in _CLAUSE_3_DEFAULT_BODIES:
+        logger.info("[spec_rules] 铁律第 3 条正文已被用户定制，跳过自动升级"
+                    "（保留用户措辞）：{}", normalized[:60])
+        return body
+    return _IRON_CLAUSE_3_RE.sub(_CLAUSE_3_POINTER, body)
 
 _IRON_RULES_DOC_BODY = f"""# {IRON_RULES_HEADING}（系统约定，按优先级执行：{_NEW_PRIORITY}）
 
@@ -110,7 +133,7 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
             body = body.replace(old, _NEW_PRIORITY)
         body = _NO_BLOCK_RE.sub("。", body)
         body = _IRON_CLAUSE_45_RE.sub("", body)
-        body = _IRON_CLAUSE_3_RE.sub("3. 回复纪律见平台协议。\n", body).rstrip()
+        body = _upgrade_clause_3(body).rstrip()
         docs.insert(0, {
             "id": gen_id("doc"),
             "name": IRON_RULES_DOC_NAME,
@@ -145,8 +168,7 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
         upgraded = upgraded.replace("（自检核对）", "（系统机器验收）")
         if _IRON_CLAUSE_45_RE.search(upgraded):
             upgraded = _IRON_CLAUSE_45_RE.sub("", upgraded).rstrip() + "\n"
-        if _IRON_CLAUSE_3_RE.search(upgraded):
-            upgraded = _IRON_CLAUSE_3_RE.sub("3. 回复纪律见平台协议。\n", upgraded)
+        upgraded = _upgrade_clause_3(upgraded)
         if upgraded != content:
             iron["content"] = upgraded
             changed = True

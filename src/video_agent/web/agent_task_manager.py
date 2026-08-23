@@ -356,6 +356,10 @@ class AgentTaskManager:
     # ====== 清理 / 落盘 ======
 
     def _purge_stale(self) -> None:
+        # TTL 口径显式登记（三维审查建议项）：此处 3600s 是 agent 任务内存/kv
+        # 台账的有意短 TTL（test_task_table_capacity 钉死），与
+        # settings.task_ttl_seconds（86400，归 generate_common/task_manager
+        # 的生成任务台账）双口径并存、各管各账，非配置漂移。
         now = time.time()
         stale = [
             tid for tid, r in self._tasks.items()
