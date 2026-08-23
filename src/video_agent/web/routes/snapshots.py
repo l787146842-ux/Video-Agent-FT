@@ -165,7 +165,9 @@ async def branch_snapshot(snap_id: str, body: BranchRequest):
                 break
         svc.save()
     logger.info(f"[Snapshot] 从 {snap_id} 派生分支对话 {conv_id}")
-    return svc.list_conversations()
+    # E-2 消息单一来源：响应只含元信息，分支消息由前端经
+    # GET /conversations/{conv_id}/messages 装载
+    return svc.conversations_meta_payload()
 
 
 @router.delete("/conversations/snapshots/{snap_id}")

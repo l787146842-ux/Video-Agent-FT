@@ -1,20 +1,35 @@
 /**
  * 多对话管理 API（同一项目多个对话窗口）
- * 端点：/api/conversations（GET/POST/DELETE/{id}/activate）
- * 所有响应统一为 ConversationsPayload，前端据此整体刷新标签栏。
+ * 端点：/api/conversations（GET/POST/DELETE/{id}/activate/{id}/messages）
+ * 对话列表/增删切响应统一为 ConversationsPayload（仅元信息，E-2 消息单一来源），
+ * 前端据此刷新标签栏；目标对话消息经 getConversationMessages 单独装载。
  */
 import { apiFetch, apiPost, apiDelete } from './client';
-import type { Conversation } from '@/types';
+import type { ChatMessage, Conversation } from '@/types';
 import type { BranchRequest, CreateConversationRequest, SnapshotRequest } from '@/types/api.generated';
 
 export interface ConversationsPayload {
+  /** 对话元信息列表（不含消息副本，E-2） */
   conversations: Conversation[];
   active_conversation_id: string;
 }
 
-/** 列出当前项目全部对话（含消息）+ 活跃对话 ID */
+/** 按会话拉消息的响应（消息单一来源装载接口） */
+export interface ConversationMessagesResponse {
+  conversation_id: string;
+  messages: ChatMessage[];
+}
+
+/** 列出当前项目全部对话（元信息，不含消息）+ 活跃对话 ID */
 export function getConversations(): Promise<ConversationsPayload> {
   return apiFetch<ConversationsPayload>('/api/conversations');
+}
+
+/** 按会话 ID 拉消息（切会话/新建/关闭/分支后装载目标对话历史的唯一通道） */
+export function getConversationMessages(id: string): Promise<ConversationMessagesResponse> {
+  return apiFetch<ConversationMessagesResponse>(
+    `/api/conversations/${encodeURIComponent(id)}/messages`,
+  );
 }
 
 /** 新建对话并设为活跃 */

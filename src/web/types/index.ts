@@ -501,8 +501,9 @@ export type SseEvent =
   | SseTaskStatusEvent;
 
 // ===== 后端状态快照 =====
-/** 单个对话（同一项目支持多对话窗口） */
-export interface Conversation { id: string; title: string; messages: ChatMessage[]; }
+/** 单个对话（同一项目支持多对话窗口）：仅元信息（E-2 消息单一来源，
+ * 消息唯一存于 chat store；装载走 GET /conversations/{id}/messages 或快照 chatMessages） */
+export interface Conversation { id: string; title: string; }
 
 export interface ServerStateSnapshot {
   /** 快照所属项目 ID（持久化请求回传，后端据此丢弃跨项目的过期写入） */
@@ -518,7 +519,7 @@ export interface ServerStateSnapshot {
   project_name?: string;
   /** 当前项目已发送给 Agent 的 Skill slug 列表（文档面板只展示这些 Skill 文档） */
   usedSkills?: string[];
-  /** 多对话列表（含消息），活跃对话与 chatMessages 一致 */
+  /** 多对话列表（仅元信息，E-2）；活跃对话消息由顶层 chatMessages 携带 */
   conversations?: Conversation[];
   /** 活跃对话 ID */
   activeConversationId?: string;

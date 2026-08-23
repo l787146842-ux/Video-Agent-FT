@@ -450,15 +450,22 @@ test.describe('悬停工具条与截断重答（任务 #17 新交互模型）', 
     await page.route(/\/api\/conversations\/snapshots\/[^/]+\/branch$/, (route) => {
       void route.fulfill({
         status: 200, contentType: 'application/json',
+        // E-2 消息单一来源：分支响应只含元信息，消息经按会话拉消息接口装载
         body: JSON.stringify({
-          conversations: [{
-            id: 'c-branch', title: '分支对话',
-            messages: [
-              { sender: 'user', text: '第一个问题' },
-              { sender: 'agent', text: '第一轮回复' },
-            ],
-          }],
+          conversations: [{ id: 'c-branch', title: '分支对话' }],
           active_conversation_id: 'c-branch',
+        }),
+      });
+    });
+    await page.route(/\/api\/conversations\/[^/]+\/messages$/, (route) => {
+      void route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          conversation_id: 'c-branch',
+          messages: [
+            { sender: 'user', text: '第一个问题' },
+            { sender: 'agent', text: '第一轮回复' },
+          ],
         }),
       });
     });

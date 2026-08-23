@@ -25,7 +25,8 @@ export async function branchAtMessage(upToIndex: number): Promise<boolean> {
   try {
     const snap = await createSnapshot(upToIndex);
     const payload = await branchSnapshot(snap.snap_id);
-    convActions.applyPayload(payload);
+    // E-2：分支响应仅元信息，分支消息由 applyPayload 内经按会话拉消息接口装载
+    await convActions.applyPayload(payload);
     showToast(t('rp.msg.branchedAt'), 'success');
     return true;
   } catch (e) {
