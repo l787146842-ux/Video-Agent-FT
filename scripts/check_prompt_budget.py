@@ -19,6 +19,9 @@ Skill 直注禁令独立账本（C6，任务#22）：data/skills/*.md 的「严�
   P95，>48k 字符只在输出中 WARN，供周报观察。
 
 用法：python scripts/check_prompt_budget.py   （退出码非 0 即失败）
+
+退役条件（宪法 §13.14(c)）：模型可见「严禁/不得」存量清零、预算降为 0
+硬闸后，待指令治理完全数据化（Policy-as-Data）时裁决下账，度量转为纯观测。
 """
 import ast
 import io

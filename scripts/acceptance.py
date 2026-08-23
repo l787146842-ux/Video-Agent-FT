@@ -22,20 +22,30 @@ from typing import List, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# 组件清单：(名称, 命令行) —— 新增/修改门禁脚本必须同步本表（宪法 §13.7 登记）
+# 组件清单：(名称, 命令行) —— 新增/修改门禁脚本必须同步本表（宪法 §13.7 登记）；
+# 每条存量门禁附退役条件一行（§13.14(c) 登记义务，格式对齐 cov_ratchet）
 GATES: List[Tuple[str, List[str]]] = [
+    # 退役条件：前后端类型同源（不再依赖生成产物桥接）时方可裁决下账。
     ("contract", [sys.executable, "scripts/gen_api_types.py", "--check"]),
+    # 退役条件：模型可见禁令存量清零、预算降为 0 硬闸后，指令治理完全数据化时裁决下账。
     ("prompt_budget", [sys.executable, "scripts/check_prompt_budget.py"]),
+    # 退役条件：超红线文件全部拆分归零且行数红线内化为开发惯例时裁决下账。
     ("file_lines", [sys.executable, "scripts/check_file_lines.py"]),
+    # 退役条件：前端超红线文件全部拆分归零且行数红线内化为开发惯例时裁决下账。
     ("file_lines_frontend", [sys.executable, "scripts/check_file_lines.py", "--frontend"]),
         # 任务 #4：语义色收口闸——styles/ 硬编码色值棘轮只减不增（白名单见脚本内）；
         # 退役条件：白名单清偿归零后降级为零白名单硬门禁，样式体系迁离 tokens.css
         # 时方可裁决整体退役（详见脚本头部注释，§13.14(c)）。
         ("semantic_colors", [sys.executable, "scripts/check_semantic_colors.py"]),
+    # 退役条件：方法内 import 存量清零且基线冻结后裁决下账（宪法 §六 禁令内化）。
     ("func_imports", [sys.executable, "scripts/check_func_imports.py"]),
+    # 退役条件：治理叙事标记预算降至 0 且连续两季无反弹时裁决下账。
     ("governance_refs", [sys.executable, "scripts/check_governance_refs.py"]),
+    # 退役条件：类别 Key 硬编码字面量清零、CAT_* 单一事实源全域收敛时裁决下账。
     ("category_keys", [sys.executable, "scripts/check_category_keys.py"]),
+    # 退役条件：退役编排符号在长期演进中证实无复活风险（登记清单可整体清退）时裁决下账。
     ("legacy_orchestration", [sys.executable, "scripts/check_legacy_orchestration.py"]),
+    # 退役条件：脚手架类全部退役、注册计数归零时裁决下账（详见脚本头部注释）。
     ("scaffold_registry", [sys.executable, "scripts/check_scaffold_registry.py"]),
     # 任务 #11：core 覆盖率棘轮（只升不降，基线 scripts/cov_baseline.txt）；
     # 本地无 coverage.xml 时 SKIP，CI 以 --require-xml 硬门禁。
@@ -43,6 +53,7 @@ GATES: List[Tuple[str, List[str]]] = [
     ("cov_ratchet", [sys.executable, "scripts/check_cov_ratchet.py"]),
     # executor_skill_drift 闸已随任务#36 B5 执行器一步退役删除（执行器族不复存在，
     # 工具名/能力覆盖改由 scan_skills --gate 与 tool_risk 门禁承接）
+    # 退役条件：Skill 工具名与平台工具注册表完全对齐、漂移计数连续两季为零时裁决下账。
     ("skill_tool_names", [sys.executable, "scripts/scan_skills.py", "--gate"]),
 ]
 SUITES: List[Tuple[str, List[str]]] = [
