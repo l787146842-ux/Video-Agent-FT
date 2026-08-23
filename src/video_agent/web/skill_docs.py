@@ -280,7 +280,11 @@ def _parse_doc(slug: str, content: str) -> Dict[str, Any]:
         if line.startswith("# ") and name == slug:
             name = line[2:].strip()
         elif line.startswith(">") and not description:
-            description = line.lstrip("> ").strip()
+            # 剥离「调用规则：」前缀：Picker/结构化视图展示纯描述，
+            # 序列化侧（前端 skill-structure）统一写回前缀
+            description = re.sub(
+                r"^调用规则\s*[:：]\s*", "", line.lstrip("> ").strip(),
+            )
         if name != slug and description:
             break
     return {"id": f"doc:{slug}", "slug": slug, "name": name,

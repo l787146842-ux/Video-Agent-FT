@@ -18,7 +18,9 @@ def test_default_doc_created_and_parsed():
     d = docs[0]
     assert d["slug"] == sd.DEFAULT_SKILL_SLUG
     assert d["name"] == "剧本生视频（需上传剧本）"
-    assert "调用规则" in d["description"]
+    # description 剥离「调用规则：」前缀（Picker/结构化视图展示纯描述）
+    assert "调用规则" not in d["description"]
+    assert "用户上传剧本" in d["description"]
     assert "铁律" in d["content"]
 
 
@@ -26,7 +28,7 @@ def test_save_and_get_roundtrip():
     sd.save_skill_doc("my-skill", "# 我的技能\n> 调用规则：测试\n正文")
     doc = sd.get_skill_doc("my-skill")
     assert doc["name"] == "我的技能"
-    assert doc["description"] == "调用规则：测试"
+    assert doc["description"] == "测试"
 
 
 def test_slug_traversal_rejected():
@@ -54,7 +56,7 @@ def test_parse_doc_ignores_yaml_comment_title():
     )
     doc = sd._parse_doc("注释名桩", content)
     assert doc["name"] == "真实标题"
-    assert doc["description"] == "调用规则：测试"
+    assert doc["description"] == "测试"
     assert doc["content"] == content  # 全文原样返回
 
 
@@ -65,7 +67,7 @@ def test_get_skill_doc_reads_bom_file(tmp_path):
         "\ufeff# BOM 标题\n> 调用规则：测试\n正文", encoding="utf-8")
     doc = sd.get_skill_doc("bom桩")
     assert doc is not None and doc["name"] == "BOM 标题"
-    assert doc["description"] == "调用规则：测试"
+    assert doc["description"] == "测试"
 
 
 def test_save_skill_doc_foreign_requires_section_tag(tmp_path):

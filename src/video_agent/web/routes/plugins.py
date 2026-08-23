@@ -9,6 +9,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from loguru import logger
 
+import re
+from typing import Dict, List, Optional
+
+from src.video_agent.web.chat_opening import _create_chat_adapter
+from src.video_agent.web.provider_config import load_merged_providers
 from src.video_agent.web.skill_docs import (
     get_skill_doc,
     list_skill_docs,
@@ -135,8 +140,7 @@ async def format_skill_content(body: SkillFormatRequest):
     if not body.content.strip():
         raise HTTPException(status_code=400, detail="内容不能为空")
     try:
-        from src.video_agent.adapters.factory import AdapterFactory
-        adapter = AdapterFactory.create("chat")
+        adapter = _resolve_chat_adapter("", "")
         messages = [
             {"role": "system", "content": _FORMAT_SYSTEM},
             {"role": "user", "content": body.content},
@@ -148,3 +152,93 @@ async def format_skill_content(body: SkillFormatRequest):
     except Exception as e:
         logger.warning(f"[SkillFormat] LLM 整理失败，返回原文: {e}")
     return {"content": body.content}
+
+
+# ---------- Skill 优化助手（Skill 工作台右栏，非流式 v1） ----------
+
+
+class SkillAssistantMessage(BaseModel):
+    role: str
+    content: str
+
+
+class SkillAssistantRequest(BaseModel):
+    """当前 Skill 全文 + 会话历史（末条为本次用户请求）；
+    provider/model 与主对话胶囊同源（前端 agent-prefs），缺省回落首个可聊天供应商。"""
+    content: str
+    messages: List[SkillAssistantMessage] = []
+    provider: str = ""
+    model: str = ""
+
+
+def _resolve_chat_adapter(provider: str, model: str):
+    """助手/整理通道适配器解析：复用 chat_opening 的建适配套餐
+    （CLI 通道拒绝 + OpenAI 端点解析 + 连接池复用）。
+    依赖已在顶层导入（无循环依赖，方法内 import 为宪法第六章所禁）。"""
+    if not provider:
+        for p in load_merged_providers():
+            if (p.get("protocol") or "") not in ("gemini-cli", "codex", "jimeng"):
+                provider = str(p.get("id") or "")
+                if provider:
+                    break
+    if not provider:
+        return None
+    return _create_chat_adapter(provider, model)
+
+
+_ASSISTANT_SYSTEM = """你是 Skill 优化助手，帮助用户定制/优化影视创作 Agent 的 Skill 文档。
+用户会给你当前 Skill 文档全文与优化请求。
+输出要求：
+1. 先给不超过 150 字的简短说明（说明改了什么、为什么）；
+2. 然后必须用 ```markdown 代码块输出更新后的 Skill 文档全文。
+规则：
+- 保留原文档头部 YAML frontmatter 声明（如有），不删除不改写；
+- 保留「# 标题」与「> 调用规则：」行结构；
+- 不编造不存在的工具名（可用：script_analyze/document_write/read_uploaded_doc/read_project_doc/storyboard_key_elements/storyboard_shots/storyboard_audio/storyboard_patch_draft/write_media_prompt/image_generate/generate_video/audio_generate/video_assembler/workflow_pause）；
+- 不写死厂商/模型/分辨率/时长参数（以全局设置为唯一权威源）；
+- 用户请求不明确时保持原文不变。
+"""
+
+_ASSISTANT_BLOCK_RE = re.compile(r"```(?:markdown|md)?\s*\n(.*?)```", re.S | re.I)
+
+
+def _extract_skill_block(text: str) -> Optional[str]:
+    """从助手回复中提取最后一个 markdown 代码块作为新 Skill 全文；
+    无代码块或不含标题行（不像 Skill 文档）时返回 None（前端只展示回复不覆盖预览）。"""
+    matches = list(_ASSISTANT_BLOCK_RE.finditer(text or ""))
+    if not matches:
+        return None
+    content = matches[-1].group(1).strip()
+    if not content or "# " not in content:
+        return None
+    return content
+
+
+@router.post("/skills/assistant")
+async def skill_assistant(body: SkillAssistantRequest):
+    """Skill 优化助手：单次 LLM 调用，返回 {reply, content}。
+    content 为解析出的更新后全文（解析失败为 null）；前端覆盖预览草稿，
+    落盘由用户点保存决定。"""
+    if not body.content.strip() and not body.messages:
+        raise HTTPException(status_code=400, detail="内容不能为空")
+    try:
+        adapter = _resolve_chat_adapter(body.provider, body.model)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"chat 渠道不可用: {e}")
+    if adapter is None:
+        raise HTTPException(status_code=503, detail="无可用聊天供应商，请先在 API 配置中添加")
+    messages: List[Dict[str, str]] = [
+        {"role": "system", "content": _ASSISTANT_SYSTEM},
+        {"role": "user", "content": f"当前 Skill 文档全文：\n\n{body.content}"},
+    ]
+    # 会话历史截尾 10 条（控上下文预算），role 收敛 user/assistant
+    for m in body.messages[-10:]:
+        role = m.role if m.role in ("user", "assistant") else "user"
+        messages.append({"role": role, "content": m.content})
+    try:
+        result = await adapter.generate(messages, temperature=0.3)
+        text = (result.text or "").strip()
+    except Exception as e:
+        logger.warning(f"[SkillAssistant] LLM 调用失败: {e}")
+        return {"reply": f"LLM 调用失败：{e}", "content": None}
+    return {"reply": text, "content": _extract_skill_block(text)}

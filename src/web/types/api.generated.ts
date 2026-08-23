@@ -251,6 +251,18 @@ export interface RuntimeSettingsUpdate {
   model_policy?: Record<string, unknown> | unknown;
 }
 
+export interface SkillAssistantMessage {
+  role: string;
+  content: string;
+}
+
+export interface SkillAssistantRequest {
+  content: string;
+  messages?: SkillAssistantMessage[];
+  provider?: string;
+  model?: string;
+}
+
 export interface SkillDocSave {
   content: string;
 }
