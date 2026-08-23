@@ -184,6 +184,13 @@ const zhCN = {
   'rp.confirm.hintPick': '选择后点击发送',
   'rp.confirm.pickProvider': '请选择 API 厂商…',
 
+  // ---------- 结构化决策表单（任务 #3：schema→表单数据驱动） ----------
+  'rp.decision.submit': '提交',
+  'rp.decision.hint': '填写完成后提交',
+  'rp.decision.sent': '已提交',
+  'rp.decision.selectPlaceholder': '请选择…',
+  'rp.decision.defaultTitle': '需要确认几个参数',
+
   // ---------- 排队引导消息（推理中继续发送） ----------
   'rp.queue.title': '排队中的引导消息（Agent 完成后自动发送）',
   'rp.queue.guide': '引导',

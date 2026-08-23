@@ -61,6 +61,7 @@ export const spies = {
   clearStreaming: vi.spyOn(chatActions, 'clearStreaming'),
   toolStarted: vi.spyOn(chatActions, 'toolStarted'),
   toolFinished: vi.spyOn(chatActions, 'toolFinished'),
+  applyDecisionForm: vi.spyOn(chatActions, 'applyDecisionForm'),
 };
 
 export function clearSpies(): void {

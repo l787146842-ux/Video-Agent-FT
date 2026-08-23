@@ -139,3 +139,44 @@ async def test_agent_task_events_replay_then_delta_then_done():
     assert types[0] == "replay"
     assert "status" in types and "delta" in types
     assert types[-1] == "done"
+
+
+@pytest.mark.asyncio
+async def test_agent_task_replay_carries_workflow_projection():
+    """任务 #3：done 载荷的 workflow 投影（含 pending_decision_payload）入账，
+    重连 replay 同源携带——刷新后结构化决策表单可重建。"""
+    tm = get_agent_task_manager()
+    wf = {
+        "run_id": "run_x", "status": "waiting_user", "current_node": "review_spec",
+        "completed_nodes": ["write_spec"], "event_sequence": 3,
+        "pending_decision": True,
+        "pending_decision_payload": {
+            "token": "review:run_x", "node_id": "review_spec",
+            "message": "请审阅规格文档",
+            "schema": {"type": "decision", "fields": [
+                {"key": "shots", "label": "几个分镜？", "type": "number"},
+            ]},
+            "options": [],
+        },
+    }
+
+    async def worker():
+        tm.emit(task_id, {"type": "done", "payload": {
+            "text": "完成", "applied_actions": 0, "workflow": wf}})
+
+    task_id = "agt-test-wf-replay"
+    tm.create("p1", worker, task_id=task_id)
+    # 等 worker 跑完再订阅：断言对象是 replay 快照（非增量事件），不引入时序竞态
+    for _ in range(100):
+        rec = tm.get(task_id)
+        if rec and rec.get("status") == "done":
+            break
+        await asyncio.sleep(0.02)
+    q = tm.subscribe(task_id)
+    try:
+        first = await asyncio.wait_for(q.get(), timeout=3)
+        assert first["type"] == "replay"
+        assert first["payload"]["workflow"] == wf
+        assert first["payload"]["wf_event_sequence"] == 3
+    finally:
+        tm.unsubscribe(task_id, q)

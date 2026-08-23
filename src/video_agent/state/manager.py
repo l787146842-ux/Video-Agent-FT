@@ -333,6 +333,11 @@ class StateManager(UndoRedoMixin):
         snap = json.loads(json.dumps(self._raw_state, ensure_ascii=False))
         # 乐观锁版本号随快照下发（不写入状态 JSON 本体，避免污染 undo/快照）
         snap["board_version"] = self.board_version
+        # E-2 消息单一来源：快照中对话只留元信息，消息副本不再随快照下发
+        #（活跃对话消息仍由顶层 chatMessages 携带；切会话走按会话拉消息接口）
+        for conv in snap.get("conversations") or []:
+            if isinstance(conv, dict):
+                conv.pop("messages", None)
         return snap
 
     # ====== 写入（Rule3: 唯一写入点） ======
@@ -660,8 +665,33 @@ class StateManager(UndoRedoMixin):
         }
 
     def list_conversations(self) -> Dict[str, Any]:
-        """列出当前项目的全部对话 + 活跃对话 ID"""
+        """列出当前项目的全部对话（含消息）+ 活跃对话 ID。
+
+        内部/兼容接口：HTTP 响应一律走 conversations_meta_payload（不含消息，
+        E-2 消息单一来源）；快照创建等后端内部路径仍可读本接口取活跃消息。
+        """
         return self._conversations_payload()
+
+    def conversations_meta_payload(self) -> Dict[str, Any]:
+        """多对话元信息响应（仅 id/title 等元信息，不含消息副本）。
+
+        E-2 消息单一来源：前端 convState 不再持有消息副本，
+        消息装载一律走 get_conversation_messages（GET /conversations/{id}/messages）。
+        """
+        payload = self._conversations_payload()
+        payload["conversations"] = [
+            {k: v for k, v in c.items() if k != "messages" and not str(k).startswith("_")}
+            for c in payload["conversations"]
+        ]
+        return payload
+
+    def get_conversation_messages(self, conversation_id: str) -> Optional[List[Dict[str, Any]]]:
+        """按会话 ID 取消息（消息单一来源装载接口）；会话不存在返回 None。"""
+        convs = self._ensure_conversations()
+        target = next((c for c in convs if c.get("id") == conversation_id), None)
+        if target is None:
+            return None
+        return list(target.get("messages") or [])
 
     def create_conversation(self, title: str = "") -> Dict[str, Any]:
         """新建对话并设为活跃（chatMessages 重新绑定到空列表）"""

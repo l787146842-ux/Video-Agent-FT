@@ -122,5 +122,20 @@ def test_workflow_projection_carries_turn_events(env):
     proj = workflow_runtime.project(svc.state_dict)
     assert proj["run_id"] and proj["current_node"] == "review_spec"
     assert proj["pending_decision"] is True
+    # 任务 #3：布尔旗标之外透传决策完整结构（schema→表单数据驱动）；
+    # 旗标语义不变，payload 只增不改（既有布尔契约不破）
+    pd = proj.get("pending_decision_payload") or {}
+    assert str(pd.get("token") or "").startswith("review:")
+    assert pd["node_id"] == "review_spec"
+    assert pd["message"] and isinstance(pd["schema"], dict) and pd["options"] == []
     # turn_events 按 turn_id 过滤：不存在的 turn 为空列
     assert workflow_runtime.project(svc.state_dict, "nope").get("turn_events") == []
+
+
+def test_workflow_projection_no_decision_no_payload(env):
+    """任务 #3：无挂起决策时不附 payload（投影只读派生，不造壳）。"""
+    from src.video_agent.core import workflow_runtime
+    svc, _adapter, _planner = env
+    proj = workflow_runtime.project(svc.state_dict)
+    assert proj["pending_decision"] is False
+    assert "pending_decision_payload" not in proj

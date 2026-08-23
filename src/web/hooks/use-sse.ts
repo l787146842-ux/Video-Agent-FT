@@ -278,6 +278,10 @@ function handleEvent(ev: SseEvent) {
             convActions.syncFromServer(p.snapshot);
           }
           if (p.snapshot?.chatMessages) chatActions.loadMessages(p.snapshot.chatMessages);
+          // 任务 #3：持久化消息不携 decisionForm，replay 同源重建结构化决策表单
+          if (p.workflow?.pending_decision_payload) {
+            chatActions.applyDecisionForm(p.workflow.pending_decision_payload);
+          }
           chatActions.clearStreaming();
           setStreaming(false);
           studioActions.setAgentBusy(false);
@@ -356,6 +360,10 @@ function handleEvent(ev: SseEvent) {
       if (p.snapshot) {
         studioActions.syncFromServer(p.snapshot);
         convActions.syncFromServer(p.snapshot);
+      }
+      // 任务 #3：运行中重连同样重建待回应决策表单（token 幂等不双挂）
+      if (p.workflow?.pending_decision_payload) {
+        chatActions.applyDecisionForm(p.workflow.pending_decision_payload);
       }
       break;
     }

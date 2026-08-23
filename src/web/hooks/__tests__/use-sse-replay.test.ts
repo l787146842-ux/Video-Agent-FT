@@ -136,4 +136,63 @@ describe('replay 快照 → 增量衔接', () => {
     expect(spies.loadMessages).toHaveBeenCalledWith([snapshotMsg]);
     expect(spies.cancelStream).not.toHaveBeenCalled();
   });
+
+  // ===== 任务 #3：workflow 投影 → 结构化决策表单重建 =====
+  const decisionPayload = {
+    token: 'decision:run_1', node_id: 'storyboard_shots',
+    message: '几个分镜？画幅选哪个？',
+    schema: { type: 'decision', fields: [{ key: 'shots', label: '几个分镜？', type: 'number' }] },
+    options: [],
+  };
+
+  it('恢复场景 replay done：workflow.pending_decision_payload 重建决策表单', async () => {
+    const snapshotMsg = { sender: 'agent' as const, text: '请确认参数', confirm: '请确认参数' };
+    vi.mocked(listAgentTasks).mockResolvedValue([
+      { task_id: 't9', project_id: 'p1', status: 'running', created_at: 1 },
+    ]);
+    vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([
+      {
+        type: 'replay',
+        payload: {
+          status: 'done',
+          done_payload: { text: 'x', elapsed_ms: 1, steps: 1 },
+          snapshot: { chatMessages: [snapshotMsg] },
+          workflow: { run_id: 'run_1', status: 'waiting_user', pending_decision: true,
+            pending_decision_payload: decisionPayload },
+        },
+      },
+    ]));
+    await resumeAgentTasks('p1');
+    // 服务端快照只携持久化消息；decisionForm 由 replay 同源投影附挂
+    // （Solid store 就地更新同一引用，断言时对象已带投影结果）
+    expect(spies.loadMessages).toHaveBeenCalledWith([
+      { sender: 'agent' as const, text: '请确认参数', confirm: '请确认参数', decisionForm: decisionPayload },
+    ]);
+    expect(spies.applyDecisionForm).toHaveBeenCalledWith(decisionPayload);
+  });
+
+  it('运行中 replay：同样投影待回应决策表单（重连幂等不双挂）', async () => {
+    vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([
+      {
+        type: 'replay',
+        payload: {
+          status: 'running', text: '', status_text: '等待确认', model: 'm1',
+          workflow: { pending_decision: true, pending_decision_payload: decisionPayload },
+        },
+      },
+      doneFrame('收尾'),
+    ]));
+    await streamAgentChat(req);
+    expect(spies.applyDecisionForm).toHaveBeenCalledTimes(1);
+    expect(spies.applyDecisionForm).toHaveBeenCalledWith(decisionPayload);
+  });
+
+  it('无 pending_decision_payload 的 replay 不触发表单投影（旧契约不受影响）', async () => {
+    vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([
+      { type: 'replay', payload: { status: 'running', text: 'T0', workflow: { run_id: 'r' } } },
+      doneFrame('收尾'),
+    ]));
+    await streamAgentChat(req);
+    expect(spies.applyDecisionForm).not.toHaveBeenCalled();
+  });
 });

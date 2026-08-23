@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */ // 对话 store 核心（已登记 FRONTEND_WHITELIST）
 import { createStore, produce } from 'solid-js/store';
-import type { ChatMessage, SseDonePayload, RichContentPart } from '@/types';
+import type { ChatMessage, SseDonePayload, RichContentPart, PendingDecisionPayload } from '@/types';
 import { saveQueue, loadQueue } from '@/lib/queue-storage';
 import { t } from '@/lib/locale';
 import { actionForKind, type ErrorPayload } from '@/lib/error-payload';
@@ -241,6 +241,9 @@ export const chatActions = {
           : undefined),
         // 暂停卡结构化标识（用户点选回应时经 pause_response 结构化回携，对勾不再靠文本反推）
         pauseId: payload.pause_id || undefined,
+        // 任务 #3：结构化决策表单（workflow 投影 pending_decision_payload，
+        // schema→表单数据驱动；与确认卡同源同消息，不另起卡片）
+        decisionForm: payload.workflow?.pending_decision_payload || undefined,
         // 建议动作按钮（重试/继续，确定性交互；仅最后一条消息渲染）
         suggestedActions: (payload.suggested_actions || []).length
           ? payload.suggested_actions : undefined,
@@ -350,6 +353,35 @@ export const chatActions = {
   /** 清空流式状态（重连后发现任务已完成，直接收尾，不追加「已停止」消息） */
   clearStreaming() {
     setChatState(produce((s) => resetStreamFields(s)));
+  },
+
+  /** 任务 #3：结构化决策表单投影（replay 重建通道）。把 pending_decision_payload
+   * 挂到最近一条待回应 agent 暂停消息；无载体时派生轻量卡消息。
+   * token 幂等守卫：重连/重放 replay 不重复挂卡；不跨用户消息向前附挂
+   * （用户已回应后旧决策不再复活）。 */
+  applyDecisionForm(payload: PendingDecisionPayload) {
+    const hasBody = Boolean(payload.token) || (payload.schema?.fields || []).length > 0;
+    if (!hasBody) return;
+    setChatState(produce((s) => {
+      // 幂等：同 token 已在列表中（重连 replay 同源重建不双挂）
+      if (payload.token
+        && s.messages.some((m) => m.decisionForm?.token === payload.token)) return;
+      for (let i = s.messages.length - 1; i >= 0; i -= 1) {
+        const m = s.messages[i];
+        if (m.sender === 'user') break;
+        if (m.sender === 'agent' && (m.confirm || m.kind) && !m.decisionForm) {
+          m.decisionForm = payload;
+          return;
+        }
+      }
+      // 无载体：派生独立卡消息（confirm 取决策问句供阶段卡展示；
+      // 交互面由 DecisionFormCard 接管，ConfirmActions 遇 decisionForm 让位）
+      s.messages.push({
+        sender: 'agent', text: '', ts: Date.now(),
+        decisionForm: payload,
+        confirm: payload.message || t('rp.decision.defaultTitle'),
+      });
+    }));
   },
 
   /** 文档写入即显（doc_written 事件）：独立文档卡片立即渲染，

@@ -5,7 +5,8 @@
 - 不提供 up_to_index → 全量快照（既有调用零行为变化）；
 - up_to_index=0/末位 → 截取 messages[:up_to_index+1]（含该条）；
 - 越界/为负 → 400 结构化错误（ErrorPayload：error_code/code/kind/detail）；
-- 派生分支接口不变：分支装载快照内的全部消息（截断快照 → 分支只含截断后消息）。
+- 派生分支接口不变：分支装载快照内的全部消息（截断快照 → 分支只含截断后消息）；
+- E-2：分支响应只含对话元信息，分支消息经 GET /conversations/{id}/messages 读回。
 """
 import pytest
 from fastapi import FastAPI
@@ -28,11 +29,14 @@ def svc(tmp_path):
 
 @pytest.fixture
 def client(svc, tmp_path, monkeypatch):
+    import src.video_agent.web.routes.conversations as conv_mod
     import src.video_agent.web.routes.snapshots as snapshots_mod
 
     # 快照文件落测试目录，不污染生产 workspace/snapshots
     monkeypatch.setattr(snapshots_mod, "WORKSPACE_DIR", tmp_path / "snaps")
     app = FastAPI()
+    # 分支消息经按会话拉消息接口读回（E-2），需同时注册 conversations 路由
+    app.include_router(conv_mod.router, prefix="/api")
     app.include_router(snapshots_mod.router, prefix="/api")
     return TestClient(app)
 
@@ -110,7 +114,7 @@ def test_snapshot_up_to_index_on_empty_conversation_400(client, svc):
     assert r.status_code == 400
 
 
-# ---------- 派生分支接口不变 ----------
+# ---------- 派生分支接口不变（E-2：响应只含元信息，消息经 messages 接口读回） ----------
 
 def test_branch_loads_all_messages_of_truncated_snapshot(client, svc):
     """分支 = 装载快照全部消息：截断快照派生的分支只含截断后消息，
@@ -121,14 +125,15 @@ def test_branch_loads_all_messages_of_truncated_snapshot(client, svc):
     rb = client.post(f"/api/conversations/snapshots/{snap_id}/branch", json={"title": "分支"})
     assert rb.status_code == 200
     payload = rb.json()
-    active = next(
-        c for c in payload["conversations"]
-        if c["id"] == payload["active_conversation_id"]
-    )
-    assert [m["text"] for m in active["messages"]] == ["消息0", "消息1"]
+    active_id = payload["active_conversation_id"]
+    # 响应只含元信息（E-2）
+    assert all("messages" not in c for c in payload["conversations"])
+    # 分支消息经按会话拉消息接口读回：只含截断后消息
+    msgs = client.get(f"/api/conversations/{active_id}/messages").json()["messages"]
+    assert [m["text"] for m in msgs] == ["消息0", "消息1"]
     # 原对话不受分支影响（非破坏性）：消息仍为全量 4 条
-    origin = next(
-        c for c in payload["conversations"]
-        if c["id"] != payload["active_conversation_id"]
+    origin_id = next(
+        c["id"] for c in payload["conversations"] if c["id"] != active_id
     )
-    assert len(origin["messages"]) == 4
+    origin_msgs = client.get(f"/api/conversations/{origin_id}/messages").json()["messages"]
+    assert len(origin_msgs) == 4

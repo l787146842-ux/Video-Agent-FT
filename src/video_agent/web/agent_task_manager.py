@@ -84,6 +84,9 @@ class AgentTaskManager:
             # 降级即时联动（D-A）：最近一次 fallback 切换实际生效的厂商/模型，
             # 随 replay 下发，刷新重连后前端仍能把选择器跳到正确组合
             "fallback": None,
+            # 任务 #3：最近一次 done 载荷的 workflow 投影（run 快照 +
+            # pending_decision_payload），随 replay 同源下发供刷新后重建决策表单
+            "workflow": None,
             "error": None,
             # 轮间引导注入队列（用户推理中发送的排队消息，planner 逐轮消费）
             "pending_guidance": [],
@@ -216,6 +219,9 @@ class AgentTaskManager:
                 "stopped_payload": record.get("stopped_payload"),
                 "docs": list(record.get("docs") or []),
                 "wf_event_sequence": int(record.get("wf_event_sequence") or 0),
+                # 任务 #3：workflow 投影（run 快照 + pending_decision_payload +
+                # turn_events），前端 replay 分支据此重建结构化决策表单
+                "workflow": record.get("workflow"),
                 "fallback": record.get("fallback"),
                 "error": record["error"],
                 # 任务 #19：结构化错误归类（code/kind/raw；旧记录无此键时为 None）
@@ -295,6 +301,10 @@ class AgentTaskManager:
             _seq = int(_wf.get("event_sequence") or 0)
             if _seq > int(record.get("wf_event_sequence") or 0):
                 record["wf_event_sequence"] = _seq
+            # 任务 #3：workflow 投影入账（含 pending_decision_payload），
+            # replay 携带供刷新/重连后同源重建结构化决策表单
+            if _wf:
+                record["workflow"] = _wf
         elif etype == "doc_written":
             # Rule2 v6 产物账本累积：断连重连 replay 补渲染文档卡
             _dn = str(event.get("name") or "")

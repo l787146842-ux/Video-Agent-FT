@@ -196,6 +196,9 @@ export interface ChatMessage {
   actionLog?: string[];
   /** 确认卡片的候选选项（单选卡片，点击即把 value||label 作为回复发送； value 机械消费） */
   confirmOptions?: Array<{ label: string; description?: string; group?: string; value?: string }>;
+  /** 结构化决策表单（任务 #3：workflow pending_decision schema→表单数据驱动；
+   *  提交走既有暂停回应/消息通道，留痕同普通用户消息） */
+  decisionForm?: PendingDecisionPayload;
   /** 模型降级等警示行（常驻展示在 agent 气泡上，刷新后仍可见） */
   warnings?: string[];
   /** 本轮 Agent 参考的长期记忆命中（折叠展示） */
@@ -301,6 +304,50 @@ export interface TaskResult {
   mock?: boolean;
 }
 
+// ===== 结构化决策表单（任务 #3：workflow pending_decision 投影契约） =====
+/** 决策表单单字段（数据驱动：产出侧写入 schema.fields 即渲染，
+ *  「几个分镜？画幅选哪个？」类多字段参数决策） */
+export interface DecisionFormField {
+  key: string;
+  label?: string;
+  /** 缺省按 text 渲染 */
+  type?: 'text' | 'number' | 'select';
+  /** select 类型的候选项 */
+  options?: Array<{ label: string; value?: string }>;
+  default?: string | number;
+  placeholder?: string;
+  required?: boolean;
+}
+/** 决策 schema（后端 pending_decision.schema 原样透传，表单由 fields 派生） */
+export interface DecisionFormSchema {
+  type?: string;
+  title?: string;
+  description?: string;
+  required?: boolean;
+  fields?: DecisionFormField[];
+}
+/** 待决决策完整结构（后端 workflow 投影 pending_decision_payload；
+ *  DecisionRequest 五元组：token/node_id/message/schema/options） */
+export interface PendingDecisionPayload {
+  token?: string;
+  node_id?: string;
+  message?: string;
+  schema?: DecisionFormSchema;
+  options?: Array<{ label?: string; value?: string }>;
+}
+/** workflow 投影（后端 workflow_runtime.project 产出；done 载荷/replay 同源） */
+export interface WorkflowProjection {
+  run_id?: string;
+  status?: string;
+  current_node?: string;
+  completed_nodes?: string[];
+  event_sequence?: number;
+  pending_decision?: boolean;
+  /** 结构化决策表单数据源（任务 #3；无挂起决策时缺省） */
+  pending_decision_payload?: PendingDecisionPayload | null;
+  turn_events?: Array<Record<string, unknown>>;
+}
+
 // ===== SSE 事件（Agent 聊天流） =====
 // 契约锚点：事件名以后端 src/video_agent/core/sse_events.py 的 SSE_* 常量为唯一权威；
 // 新增/改名事件时两侧必须同步（后端常量 → 本联合类型 → use-sse.ts 的 switch）。
@@ -315,8 +362,8 @@ export interface SseStatusEvent {
 export interface SseDeltaEvent { type: 'delta'; text: string; }
 /** 深度思考（reasoning）增量：仅 UI 展示，不进下次 LLM 上下文 */
 export interface SseReasoningEvent { type: 'reasoning_delta'; text: string; }
-/** 过程时间线：工具/操作开始 */
-export interface SseToolStartedEvent { type: 'tool_started'; id: string; name: string; summary: string; }
+/** 过程时间线：工具/操作开始（args = 输入参数预览，后端已裁剪脱敏） */
+export interface SseToolStartedEvent { type: 'tool_started'; id: string; name: string; summary: string; args?: Record<string, unknown>; }
 /** 过程时间线：工具/操作完成 */
 export interface SseToolFinishedEvent {
   type: 'tool_finished';
@@ -361,6 +408,8 @@ export interface SseDonePayload {
   stopped?: boolean;
   /** 停止阶段（thinking/tool_executing/streaming，气泡措辞依据） */
   stop_phase?: string;
+  /** workflow 投影（任务 #3：pending_decision_payload 驱动结构化决策表单） */
+  workflow?: WorkflowProjection | null;
   state?: ServerStateSnapshot | null;
 }
 export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }

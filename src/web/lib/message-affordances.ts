@@ -40,7 +40,8 @@ export interface MessageAffordance {
   answeredValue: string;
 }
 
-/** 当前待回应的确认消息下标：最后一条 confirm 消息，且必须出现在最后一条
+/** 当前待回应的确认消息下标：最后一条 confirm 消息（任务 #3 扩：结构化
+ * 决策表单 decisionForm 同口径），且必须出现在最后一条
  * 用户消息之后（用户回应后旧确认不再可操作）。不能用「整体最后一条」判定：
  * 文档卡片/图片卡片会追加在确认消息之后，会把确认消息顶掉导致引导按钮不渲染。 */
 function confirmTargetIdx(messages: ChatMessage[], isStreaming: boolean): number {
@@ -50,7 +51,7 @@ function confirmTargetIdx(messages: ChatMessage[], isStreaming: boolean): number
     if (messages[i].sender === 'user') { lastUser = i; break; }
   }
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].confirm) return i > lastUser ? i : -1;
+    if (messages[i].confirm || messages[i].decisionForm) return i > lastUser ? i : -1;
   }
   return -1;
 }

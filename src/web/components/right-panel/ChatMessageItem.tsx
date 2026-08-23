@@ -26,6 +26,7 @@ import { MessageHoverToolbar } from './MessageHoverToolbar';
 import { InlineEditBox } from './InlineEditBox';
 import { SuggestedActionBar } from './SuggestedActionBar';
 import { AnsweredOptions } from './AnsweredOptions';
+import { DecisionFormCard, decisionFormFields } from './DecisionFormCard';
 import type { ChatMessage } from '@/types';
 
 /** epoch ms → HH:MM（悬停工具条时间戳；无 ts 返回空串不显示） */
@@ -293,9 +294,9 @@ export function ChatMessageItem(props: {
         <div class="msg-meta">{msg().meta}</div>
       </Show>
 
-      {/* 确认操作区（仅最后一条带 confirm 的消息：候选项单选卡片 / 确认按钮） */}
-      <Show when={msg().confirm && props.isLast}>
-        <ConfirmActions message={msg()} />
+      {/* 确认操作区（仅最后一条）：fields 非空时决策表单接管，否则回落确认卡 */}
+      <Show when={props.isLast && decisionFormFields(msg()).length > 0} fallback={<Show when={props.isLast && (msg().confirm || msg().decisionForm)}><ConfirmActions message={msg()} /></Show>}>
+        <DecisionFormCard message={msg()} />
       </Show>
     </div>
   );

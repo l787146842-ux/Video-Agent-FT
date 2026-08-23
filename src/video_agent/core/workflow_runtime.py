@@ -238,7 +238,14 @@ def project(state: Dict[str, Any], turn_id: str = "") -> Dict[str, Any]:
     """workflow 投影（done 载荷/重连 replay 同源）。
 
     run 级快照 + 本轮事件序列（前端历史重载与实时 SSE 一致重建）。
-    只读派生，不改状态。"""
+    只读派生，不改状态。
+
+    任务 #3：``pending_decision_payload`` —— 布尔旗标之外附决策完整结构
+    （token/node_id/message/schema/options，DecisionRequest 五元组透传），
+    前端渲染层据此 schema→表单数据驱动（schema.fields = 多字段参数表单：
+    每项 {key, label, type=text|number|select, options?, default?, required?}；
+    产出侧写入 fields 即生效，投影层不做形态假设）；提交走既有
+    暂停回应/消息通道，runtime 不因此发起任何行动（账本层不变式）。"""
     run = state.get("workflow_run") or {}
     proj = {
         "run_id": run.get("run_id") or "",
@@ -248,6 +255,15 @@ def project(state: Dict[str, Any], turn_id: str = "") -> Dict[str, Any]:
         "event_sequence": int(run.get("event_sequence") or 0),
         "pending_decision": bool(run.get("pending_decision")),
     }
+    _pend = run.get("pending_decision") or {}
+    if isinstance(_pend, dict) and _pend.get("token"):
+        proj["pending_decision_payload"] = {
+            "token": str(_pend.get("token") or ""),
+            "node_id": str(_pend.get("node_id") or ""),
+            "message": str(_pend.get("prompt") or _pend.get("message") or ""),
+            "schema": copy.deepcopy(_pend.get("schema") or {}),
+            "options": copy.deepcopy(_pend.get("options") or []),
+        }
     if turn_id:
         ledger = EventLedger(state)
         proj["turn_events"] = [
