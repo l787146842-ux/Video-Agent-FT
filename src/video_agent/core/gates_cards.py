@@ -37,7 +37,7 @@ def _gate_json(section: str, fallback: Any) -> Any:
 
 SPEC_GATE_ERROR = _gate_msg("SPEC_GATE", (
     "流程警告：规格文档尚未写入。"
-    "本次故事板结构已按用户要求照常搭建，规格文档仍建议补写。"
+    "本次操作已按用户要求照常执行，规格文档仍建议补写。"
 ))
 
 # 结构搭建阶段内联提示词的容忍上限（字符）：保留兼容常量，
@@ -306,7 +306,9 @@ GENERATION_CONFIRM_GATE_BLOCKED = _gate_msg("GENERATION_CONFIRM_BLOCKED", (
     "时才可直接触发生成。"
 ))
 
-SHOT_SEQUENCE_GATE_ERROR = _gate_msg("SHOT_SEQUENCE", (
+# 分节键原为 SHOT_SEQUENCE（语义错位：实际承载「关键元素无概念图」警告），
+# 任务#10 更名为 ELEMENT_IMAGE_MISSING；常量名暂保留以限缩联动面。
+SHOT_SEQUENCE_GATE_ERROR = _gate_msg("ELEMENT_IMAGE_MISSING", (
     "流程警告：关键元素还没有任何概念图（生成或上传）。按 Skill 流程建议先让元素概念图就绪"
     "再编制分镜提示词（镜头可参考元素图像）；本次分镜提示词已按用户要求照常写入，"
     "若后续生成视频需要参考图，请先补足元素图像。"
