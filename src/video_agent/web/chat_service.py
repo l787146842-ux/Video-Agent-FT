@@ -620,7 +620,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         async with svc.lock:
             _store_gate_overrides(svc, body.gate_overrides)
 
-    # Skill 写入文档：同 stream_worker——本轮激活了 Skill 即记入 usedSkills
+    # Skill 写入文档：同流式路径——本轮激活了 Skill 即记入 usedSkills
     async with svc.lock:
         _record_active_skill(svc, body)
 

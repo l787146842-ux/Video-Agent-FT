@@ -231,7 +231,7 @@ async def agent_task_events(task_id: str, request: Request):
 async def stop_agent_task(task_id: str):
     """真正停止后台任务（停止按钮调用）；刷新/切项目不调用。
 
-    端到端中断协议（任务 #17）：同 /agent/stop——先登记在途外部生成任务、
+    端到端中断协议（任务 #17）：先登记在途外部生成任务、
     置任务作用域停止标志（scope=task_id），再 cancel；响应携带在途项说明。
     """
     from src.video_agent.web.agent_task_manager import get_agent_task_manager

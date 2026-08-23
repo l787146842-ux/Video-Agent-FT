@@ -56,7 +56,7 @@ def stopped_note(phase: str, inflight_count: int = 0) -> str:
 def stopped_event(phase: str = "thinking", inflight: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
     """构造 stopped 终态事件并富化在途登记（web 层职责：core 不感知注册表）。
 
-    三处共用：stream_worker / _run_agent_task 的 CancelledError 守门补发，
+    两处共用：_run_agent_task 的 CancelledError 守门补发，
     以及 _real_stream 对 agent_loop 检查点事件的透传富化（setdefault 不覆盖
     上游已带字段）。第一版不做真实撤销/补偿，仅登记 + 文案告知。
     """

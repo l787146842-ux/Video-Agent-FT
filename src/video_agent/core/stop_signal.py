@@ -6,7 +6,7 @@
 （guard_pipeline/fc_tool_runner）不感知停止语义，避免触碰并行任务在改的文件。
 
 职责：
-- request_stop(scope)：停止端点（/agent/stop、/agent/tasks/{id}/stop）在
+- request_stop(scope)：停止端点（/agent/tasks/{id}/stop）在
   cancel asyncio.Task 之前先置标志，保证 CancelledError 先落时也能
   识别为「用户主动停止」而非异常取消。
 - is_stop_requested(scope)：agent_loop 每步检查点读取（模型调用前 /
@@ -16,7 +16,7 @@
   stop_id，带 id 的清理仅在当前代际匹配时生效——旧运行收尾不得误清
   快速重连后新发的停止请求；不带 id（循环开头残留清理）无条件清除。
 
-scope 约定：SSE 直连路径用 "chat"；任务式传输用 task_id（多任务并发互不串）。
+scope 约定：任务式传输用 task_id（多任务并发互不串）；非流式用 "nonstream"。
 
 阶段标记（stopped 事件 phase 字段，前端据此措辞）：
 - thinking：思考阶段（模型调用前/间，尚未产生可见内容）

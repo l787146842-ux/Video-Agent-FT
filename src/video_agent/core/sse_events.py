@@ -1,6 +1,6 @@
 """SSE 事件名常量（后端唯一权威定义， 契约集中化）。
 
-Agent 聊天流协议：POST /api/agent/chat/stream 的 SSE data 帧均为
+Agent 聊天流协议：任务式事件流（GET /api/agent/tasks/{id}/events）的 SSE data 帧均为
 {"type": <下列常量>, ...}。前端联合类型见 src/web/types/index.ts 的 SseEvent，
 改动任一事件名/字段时两侧必须同步。
 
