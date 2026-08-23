@@ -184,29 +184,6 @@ async def agent_running():
     return {"running": any(not t.done() for t in _CHAT_TASKS.values())}
 
 
-@router.post("/agent/stop")
-async def agent_stop():
-    """显式停止当前聊天 worker（停止按钮调用；刷新不触发此端点，worker 续跑）。
-
-    端到端中断协议（任务 #17）：
-    1. 先登记在途外部生成任务快照（第一版不撤销，只登记 + 文案告知）；
-    2. 置协作式停止标志（先于 cancel：CancelledError 先落也能识别为用户停止）；
-    3. cancel worker——循环内检查点/取消守门会收敛为 stopped 终态事件。
-    """
-    inflight = snapshot_inflight_generations()
-    request_stop("chat")
-    cancelled = 0
-    for key in list(_CHAT_TASKS.keys()):
-        t = _CHAT_TASKS.pop(key, None)
-        if t is not None and not t.done():
-            t.cancel()
-            cancelled += 1
-    logger.info(
-        f"[Agent] stop 请求，取消 worker 数={cancelled}，在途外部生成任务数={len(inflight)}"
-    )
-    return {"ok": True, "cancelled": cancelled, "inflight": inflight}
-
-
 @router.post("/agent/tasks")
 async def create_agent_task(body: ChatRequest):
     """任务式传输：提交 Agent 聊天任务，立即返回 task_id（worker 后台运行）。"""

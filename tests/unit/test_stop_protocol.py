@@ -8,7 +8,6 @@
 - 检查点 1（模型调用前/思考阶段）与检查点 2（模型调用返回后）分别触发；
 - CancelledError 硬取消落地：有停止标志 → 收敛为干净收尾；无标志 → 原样上抛；
 - snapshot_inflight_generations 在途登记（图片/视频 media_type 判定、跳过已完结）；
-- /agent/stop 端点：登记在途 + 置协作式停止标志 + 返回 inflight；
 - stopped 终态事件结构与 phase 合法集合。
 
 停止信号只经 stop_signal 标志注册表与任务注册表传递（不触碰闸机）。
@@ -247,27 +246,3 @@ def test_snapshot_inflight_generations(monkeypatch):
     assert by_id["img1"]["media_type"] == "image"
     assert by_id["vid1"]["media_type"] == "video"
     assert by_id["img1"]["summary"] == "一只猫"
-
-
-# ---------- /agent/stop 端点：登记在途 + 置标志 ----------
-
-async def test_agent_stop_endpoint_registers_inflight(monkeypatch):
-    from src.video_agent.web import task_manager as tm_mod
-    from src.video_agent.web.routes import agent as agent_route
-
-    class _Stub:
-        tasks = {
-            "g1": {"status": "processing", "model": "m", "draft_id": "d", "prompt": "生成一张海报"},
-        }
-
-    monkeypatch.setattr(tm_mod, "_instance", _Stub())
-    try:
-        resp = await agent_route.agent_stop()
-        assert resp["ok"] is True
-        assert resp["cancelled"] == 0  # 测试内无在途 chat worker
-        assert len(resp["inflight"]) == 1
-        assert resp["inflight"][0]["media_type"] == "image"
-        # 停止标志已置（协作式检查点可读到）
-        assert is_stop_requested("chat") is True
-    finally:
-        clear_stop("chat")
