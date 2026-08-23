@@ -46,7 +46,7 @@ describe('resetStreamFields（done/错误/停止/重连收尾四处同语义）'
     expect(s.streamingReasoning).toBe('');
     expect(s.streamingTools).toEqual([]);
     expect(s.streamingReasoningStartMs).toBe(0);
-    // 现行为钉死：收尾重置面不含 EndMs（下一轮 startStream 会清零，此处防误扩面）
+    // 现行为钉死：收尾重置面不含 EndMs（下一次 startStream 会清零，此处防误扩面）
     expect(s.streamingReasoningEndMs).toBe(2000);
     expect(s.roundStep).toBe(0);
     expect(s.roundMax).toBe(0);

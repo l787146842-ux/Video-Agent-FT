@@ -7,10 +7,7 @@ import { showToast } from '@/stores/toast';
 import { t } from '@/lib/locale';
 import type { DocRecord } from '@/types';
 
-/**
- * 文档面板状态：项目文档 / 上传素材 / Skill 文档
- * read（渲染）↔ md（源码）视图切换 + 编辑/保存。
- */
+/** 文档面板状态：项目文档 / 上传素材 / Skill 文档；read（渲染）↔ md（源码）视图切换 + 编辑/保存。 */
 
 export interface DocCurrent {
   kind: 'project' | 'skill';
@@ -25,11 +22,8 @@ const [viewMode, setViewMode] = createSignal<'read' | 'md'>('read');
 const [draftContent, setDraftContent] = createSignal('');
 const [assetContent, setAssetContent] = createSignal('');
 
-/**
- * 当前项目可展示的 Skill 文档：仅限已随消息发送给 Agent 的（state.usedSkills）。
- * 新建项目 usedSkills 为空 → 文档面板 Skill 分区为空；
- * 只有 Skill 引用块随消息发出后才写入展示，模型据此记住流程规则。
- */
+/** 当前项目可展示的 Skill 文档：仅限已随消息发送给 Agent 的（state.usedSkills）；
+ * 新建项目为空 → 文档面板 Skill 分区为空；Skill 引用块随消息发出后才写入展示。 */
 export function visibleSkillDocs(): SkillDoc[] {
   const used = state.usedSkills || [];
   return skillDocs().filter((d) => used.includes(d.slug));

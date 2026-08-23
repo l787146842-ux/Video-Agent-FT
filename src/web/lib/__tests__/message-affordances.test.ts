@@ -24,11 +24,8 @@ describe('deriveAffordances — 确认卡目标', () => {
   });
 
   it('doc 卡追加在确认之后不顶掉引导按钮（确认目标仍是确认消息）', () => {
-    const msgs = [
-      user('开始'),
-      agent('完成', { confirm: '请确认', turnId: 't1' }),
-      agent('', { docCard: 'Final_Video_Spec.md', turnId: 't1' }),
-    ];
+    const msgs = [user('开始'), agent('完成', { confirm: '请确认', turnId: 't1' }),
+      agent('', { docCard: 'Final_Video_Spec.md', turnId: 't1' })];
     const aff = deriveAffordances(msgs, false);
     expect(aff[1].confirmTarget).toBe(true);
     expect(aff[2].confirmTarget).toBe(false);
@@ -50,10 +47,7 @@ describe('deriveAffordances — 确认卡目标', () => {
 
 describe('deriveAffordances — 暂停卡生命周期', () => {
   it('旧确认卡被新暂停取代 → expired；新卡 active', () => {
-    const msgs = [
-      agent('旧', { confirm: '旧确认' }),
-      agent('新', { confirm: '新确认' }),
-    ];
+    const msgs = [agent('旧', { confirm: '旧确认' }), agent('新', { confirm: '新确认' })];
     const aff = deriveAffordances(msgs, false);
     expect(aff[0].confirmState).toBe('expired');
     expect(aff[1].confirmState).toBe('active');
@@ -70,11 +64,7 @@ describe('deriveAffordances — 暂停卡生命周期', () => {
   });
 
   it('已回应所选值：旧消息回落文本匹配；系统动作行不构成回应', () => {
-    const msgs = [
-      agent('', { confirm: '选风格' }),
-      user('本次放行', { kind: 'system_action' }),
-      user('写实'),
-    ];
+    const msgs = [agent('', { confirm: '选风格' }), user('本次放行', { kind: 'system_action' }), user('写实')];
     const aff = deriveAffordances(msgs, false);
     expect(aff[0].confirmState).toBe('answered');
     expect(aff[0].answeredValue).toBe('写实');
@@ -102,9 +92,7 @@ describe('deriveAffordances — 闸机放行目标', () => {
 
 describe('deriveAffordances — 建议动作目标', () => {
   it('最后一条带 suggestedActions 的消息为目标；新用户消息使其失效', () => {
-    const msgs = [
-      agent('出错', { suggestedActions: [{ kind: 'retry', label: '重试', value: '' }] }),
-    ];
+    const msgs = [agent('出错', { suggestedActions: [{ kind: 'retry', label: '重试', value: '' }] })];
     expect(deriveAffordances(msgs, false)[0].suggestedTarget).toBe(true);
     const msgs2 = [...msgs, user('换个方式')];
     expect(deriveAffordances(msgs2, false)[0].suggestedTarget).toBe(false);
@@ -180,11 +168,7 @@ describe('deriveAffordances — 悬停工具条按钮矩阵（任务 #17）', ()
   });
 
   it('待回应暂停卡（confirm/confirmOptions）不挂重新生成；向前回落普通回复', () => {
-    const msgs = [
-      user('干活'),
-      agent('正常回复'),
-      agent('阶段完成，请确认', { confirm: '确认继续？' }),
-    ];
+    const msgs = [user('干活'), agent('正常回复'), agent('阶段完成，请确认', { confirm: '确认继续？' })];
     const aff = deriveAffordances(msgs, false);
     expect(aff[2].regenerable).toBe(false);
     expect(aff[1].regenerable).toBe(true);
@@ -202,12 +186,8 @@ describe('deriveAffordances — 悬停工具条按钮矩阵（任务 #17）', ()
   });
 
   it('卡片派生条目（空正文 doc/图/视频卡）不挂分支', () => {
-    const msgs = [
-      user('一'),
-      agent('正文回复', { turnId: 't1' }),
-      agent('', { docCard: 'A.md', turnId: 't1' }),
-      agent('', { imageCard: { image_urls: ['/a.png'] } }),
-    ];
+    const msgs = [user('一'), agent('正文回复', { turnId: 't1' }),
+      agent('', { docCard: 'A.md', turnId: 't1' }), agent('', { imageCard: { image_urls: ['/a.png'] } })];
     const aff = deriveAffordances(msgs, false);
     expect(aff[1].branchable).toBe(true);
     expect(aff[2].branchable).toBe(false);
