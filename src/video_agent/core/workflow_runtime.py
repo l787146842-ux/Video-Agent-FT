@@ -68,9 +68,15 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
         _COMPILE_CACHE[cache_key] = None
         return None
     # v2 收尾：frontmatter 体检门禁——非法声明拒入 workflow（计划§1/§6：
-    # 无效声明不得“只告警后继续”驱动运行时；散文通道仍可工作）
-    issues = frontmatter.validate_manifest(
+    # 无效声明不能“只告警后继续”驱动运行时；散文通道仍可工作）
+    # 问题分级（任务#5 B-1）：只按错误级拒入；WARN 级（开放注册降级/
+    # 废除键过渡告警）记录日志后放行，与注册门禁同口径。
+    _issues = frontmatter.validate_manifest(
         frontmatter.load_manifest(str(entry.slug or skill)))
+    from src.video_agent.skill_runtime.manifest_schema import split_issue_warnings
+    issues, _warns = split_issue_warnings(_issues)
+    for _w in _warns:
+        logger.warning("[WorkflowRuntime] frontmatter 告警（{}）: {}", skill, _w)
     if issues:
         logger.warning(
             "[WorkflowRuntime] frontmatter 非法，workflow 拒入（{}）: {}",

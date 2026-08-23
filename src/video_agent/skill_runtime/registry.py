@@ -20,6 +20,7 @@ from src.video_agent.skill_runtime.manifest_schema import (
     KIND_VALUES,
     LANGUAGE_VALUES,
     REQUIRES_INPUT_TYPES,
+    split_issue_warnings,
 )
 
 # 管线能力词汇表（任务#36 B5：执行器已一步退役，原 SKILL_EXECUTOR_TOOLS/
@@ -187,19 +188,25 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
     「只告警不阻断」——坏声明不能带病上线，修好 data/skills/<slug>.md
     头部 frontmatter 才能注册；单个坏 Skill 拒注册不截断 sync_all 批次。
     消费端 fail-closed 清洗仍保留（兜注册后 frontmatter 被改坏的活读场景）。
+
+    问题分级（任务#5 B-1）：只有错误级问题拒注册；WARN 级（开放注册
+    降级/废除键过渡告警）只输出告警日志，不阻断注册。
     """
     entry = _load_entry(slug)
     if entry is None:
         return None
-    issues = frontmatter.validate_manifest(entry.manifest)
-    if issues:
+    errors, warnings = split_issue_warnings(
+        frontmatter.validate_manifest(entry.manifest))
+    for w in warnings:
+        logger.warning(f"[SkillRuntime] Skill「{entry.name}」frontmatter 告警：{w}")
+    if errors:
         # 拒注册同时摘除陈旧条目（refresh/重注册路径：frontmatter 改坏后
         # 旧注册态不得继续可用）
         _registry.pop(slug, None)
         logger.error(
             f"[SkillRuntime] Skill「{entry.name}」frontmatter schema 校验失败，"
             f"拒绝注册（fail-hard，修复 data/skills/{slug}.md 头部声明 "
-            f"后经 refresh_skill 重试）：{'；'.join(issues)}"
+            f"后经 refresh_skill 重试）：{'；'.join(errors)}"
         )
         return None
     _registry[slug] = entry
@@ -439,10 +446,36 @@ def skill_requires_inputs(skill_name: str) -> List[Dict[str, Any]]:
 
 
 def skill_kind(skill_name: str) -> str:
-    """manifest kind 声明（v3：pipeline|style|reference）；未声明/非法返回空串。"""
+    """manifest kind 声明（v3：pipeline|style|reference）；未声明/非已知值返回空串。
+
+    展示/消费口径；注入策略解析用 skill_injection_kind（任务#5 B-1：
+    未知 kind 开放注册降级，不返回空串而返回默认策略）。"""
     manifest = skill_manifest_of(skill_name)
     v = (manifest or {}).get("kind")
     return str(v) if v in KIND_VALUES else ""
+
+
+# 默认注入策略（未声明 kind / 未知 kind 开放注册降级同口径，任务#5 B-1）
+DEFAULT_INJECTION_KIND = "pipeline"
+
+
+def skill_injection_kind(skill_name: str) -> str:
+    """注入策略维度解析（任务#5 B-1：kind 只管注入策略这一个维度）。
+
+    已知 kind（pipeline/style/reference）直接返回；声明了未知 kind
+    降级为默认（pipeline）策略并输出告警（开放注册，不拒服务）；
+    未声明 kind 回落默认策略（零预设）。"""
+    manifest = skill_manifest_of(skill_name)
+    v = (manifest or {}).get("kind")
+    if v is None:
+        return DEFAULT_INJECTION_KIND
+    if isinstance(v, str) and v in KIND_VALUES:
+        return v
+    logger.warning(
+        f"[SkillRuntime] Skill「{skill_name}」声明未知 kind {v!r}，"
+        f"按开放注册降级为默认（{DEFAULT_INJECTION_KIND}）注入策略"
+    )
+    return DEFAULT_INJECTION_KIND
 
 
 def skill_language(skill_name: str) -> Dict[str, str]:

@@ -8,6 +8,11 @@
 - fail-closed：已声明键形状非法 → 报出（注册期门禁告警、workflow 编译门禁拒入）；
 - 未声明键合法：引擎零预设，回落旧行为（「零声明 = 最小闸」同构）。
 
+问题分级（任务#5 B-1/B-4）：issues 条目以 WARN_PREFIX 开头 = 告警级
+（不拒注册，注册期输出告警/遥测）；其余 = 错误级（fail-hard）。消费端
+经 split_issue_warnings 拆分（registry 注册门禁、workflow 编译门禁只按
+错误级拒入）。
+
 流程步骤抄本废除（用户裁决）：flow.steps / flow.step_stages /
 flow.dependencies 通道废止——Skill 正文 planner 是唯一流程源，
 frontmatter 声明这三键 = fail-hard 报出（注册期拒注册）。
@@ -25,7 +30,25 @@ gates 键白名单与 core.prompt_gates._DEFAULT_GATE_RULES 键集同值复制
 tests/unit/test_sidecar_schema_v2.py 的锁源断言钉死；规范阶段键
 同 pipeline_orchestrator.CANONICAL_STAGES 复制口径。
 """
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
+
+# 告警级问题前缀（任务#5 B-1）：validate 返回清单中以此开头的条目为
+# WARN（开放注册降级/废除键过渡告警），不触发 fail-hard 拒注册；
+# 其余条目为错误级。消费端用 split_issue_warnings 拆分。
+WARN_PREFIX = "[WARN] "
+
+
+def split_issue_warnings(issues: List[str]) -> Tuple[List[str], List[str]]:
+    """校验问题清单 → (错误级, 告警级)；告警级剥掉 WARN_PREFIX 前缀。"""
+    errors: List[str] = []
+    warnings: List[str] = []
+    for i in issues or []:
+        if str(i).startswith(WARN_PREFIX):
+            warnings.append(str(i)[len(WARN_PREFIX):])
+        else:
+            errors.append(str(i))
+    return errors, warnings
+
 
 # 与 pipeline_orchestrator.CANONICAL_STAGES 键序一致（漂移锁源见测试）
 CANONICAL_STAGE_KEYS = (
@@ -188,14 +211,18 @@ def _check_schema_version(data: Dict[str, Any], issues: List[str]) -> None:
 
 
 def _check_kind(data: Dict[str, Any], issues: List[str]) -> None:
-    """kind：枚举 pipeline|style|reference；非法值整体忽略该键并告警。"""
+    """kind：开放注册（任务#5 B-1）——已知 pipeline/style/reference 走各自
+    注入策略；未知取值不拒注册，降级为默认（pipeline）注入策略并输出
+    WARN（注册期告警/遥测），为 writing/office 等新场景预留扩展位。
+    kind 只管注入策略这一个维度，闸机语义/UI 呈现不绑到 kind 上。"""
     v = data.get("kind")
     if v is None:
         return
     if v not in _KIND_VALUES:
         issues.append(
-            f"kind 必须是 {'/'.join(_KIND_VALUES)} 之一"
-            f"（非法值整体忽略，实际 {v!r}）")
+            WARN_PREFIX
+            + f"kind {v!r} 不在平台 kind 登记表（{'/'.join(_KIND_VALUES)}）；"
+            "按开放注册降级为默认（pipeline）注入策略")
 
 
 def _check_requires_inputs(raw: Any, issues: List[str]) -> None:

@@ -47,6 +47,49 @@ _KIND_LABELS = {
     "style": "风格型（美学指导）",
     "reference": "参考型（知识素材）",
 }
+
+# kind 差异化注入策略（任务#5 B-1：kind 只管注入策略这一个维度）：
+# pipeline = 现状全文/分级注入（强约束执行规范）；style = 风格层注入
+# （强调贯穿全流程的美学约束语义）；reference = 低权重参考资料语义注入。
+# 注入形态仍走同一组装结构（全文直注/分级注入），只换包壳语义，
+# 不改变段落顺序（稳定内容在前、选中 Skill 殿后近生成端）。
+_KIND_STYLE_LAYER_NOTE = (
+    "【风格层声明】本 Skill 作为风格层注入：其美学约束贯穿本次任务的"
+    "全流程——规格撰写、故事板设计、提示词编写与素材生成各环节的产出，"
+    "均须持续对照本文声明的风格基调执行，与流程规范同等效力。"
+)
+_KIND_REFERENCE_NOTE = (
+    "【参考资料声明】本 Skill 作为低权重参考资料注入：供背景、风格与"
+    "写法参考，不是强制执行的流程规范；其内容与用户指令或平台铁律"
+    "不一致时，以用户指令与平台铁律为准。"
+)
+
+
+def _kind_block_suffix(kind: str) -> str:
+    """选中 Skill 块标题行的 kind 差异语义后缀（pipeline 保持现状口径）。"""
+    if kind == "style":
+        return "作为风格层注入：其美学约束贯穿本次任务全流程，各环节产出须持续对照执行"
+    if kind == "reference":
+        return "作为参考资料注入（低权重）：供背景与风格参考，与用户指令不一致时以用户指令为准"
+    return "必须严格遵守其中的流程与规范"
+
+
+def _kind_baseline_statement(kind: str) -> str:
+    """执行基准声明（kind 差异化，任务#5 B-1）。pipeline/未知 kind 保持
+    现状口径；style 追加风格层声明；reference 换低权重参考资料语义。"""
+    if kind == "reference":
+        return _KIND_REFERENCE_NOTE
+    base = (
+        "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
+        "在产出规范层面一律以本 Skill 为准；与铁律或用户最新指令冲突时仍按"
+        "优先级链裁决；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
+        "并全程保持一致。"
+    )
+    if kind == "style":
+        return base + "\n" + _KIND_STYLE_LAYER_NOTE
+    return base
+
+
 _PAUSE_TRIGGER_LABELS = {
     "spec_finalized": "规格定稿后",
     "storyboard_structure_ready": "故事板结构就绪（分组/草稿搭建完成）后",
@@ -338,17 +381,25 @@ class PromptBuilder:
         - executors：执行器形态已一步退役（用户裁决不设观察期），按通用主路径
           执行并记弃用告警；
         - legacy：强制旧全文直注行为，保留作事故回退。
+
+        kind 差异化注入（任务#5 B-1）：经 registry.skill_injection_kind
+        解析注入策略（未知 kind 开放注册降级为 pipeline），按 kind 换
+        块标题/基准声明语义，注入形态与段落顺序不变。
         """
         mode = str(getattr(settings, "skill_runtime", "auto") or "auto").strip().lower()
+        try:
+            kind = skill_registry.skill_injection_kind(skill_name)
+        except Exception:
+            kind = "pipeline"
         if mode == "legacy":
-            block = self._build_unsectioned_skill_block(skill_name)
+            block = self._build_unsectioned_skill_block(skill_name, kind)
         else:
             if mode == "executors":
                 logger.warning(
                     "[Planner] skill_runtime=executors 已弃用（执行器一步退役，任务#36 B5），"
                     "按通用主路径执行；请移除 SKILL_RUNTIME_MODE/SKILL_RUNTIME 环境变量"
                 )
-            block = self.build_generic_skill_block(skill_name)
+            block = self.build_generic_skill_block(skill_name, kind)
         # v3 元数据头（任务#35 B2/B3）：拼在 Skill 块正文之前；未声明任何
         # v3 键时返回空串（未迁移 v2 manifest 零增量）；选中块本身仍在
         # system prompt 最末段（近生成端），不破坏稳定段在前的前缀缓存排序
@@ -428,7 +479,7 @@ class PromptBuilder:
             + "\n".join(lines)
         )
 
-    def _build_unsectioned_skill_block(self, skill_name: str) -> str:
+    def _build_unsectioned_skill_block(self, skill_name: str, kind: str = "pipeline") -> str:
         """无可识别章节的 Skill：全文直注兜底。
 
         非 FC 通道（如 agy CLI）调不了 read_skill，若只给目录，模型等于看不到
@@ -449,17 +500,15 @@ class PromptBuilder:
         discipline = load_prompt("planner/skill_discipline.md") or ""
         base = (
             f"== 当前选中 Skill「{display or skill_name}」全文（本 Skill 无注册执行器章节，"
-            f"全文直接注入，必须严格遵守其中的流程与规范）==\n"
-            "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
-            "在产出规范层面一律以本 Skill 为准；与铁律或用户最新指令冲突时仍按"
-            "优先级链裁决；Skill 内如提供多种可选写法，选最贴合本次需求的一种并全程保持一致。\n\n"
+            f"全文直接注入，{_kind_block_suffix(kind)}）==\n"
+            f"{_kind_baseline_statement(kind)}\n\n"
             f"{content}\n\n"
             f"{discipline}"
         )
         # 当前阶段聚焦块追加在最末尾（离生成端最近，遵循度最高）
         return base + self.build_stage_focus_block(content)
 
-    def build_generic_skill_block(self, skill_name: str) -> str:
+    def build_generic_skill_block(self, skill_name: str, kind: str = "pipeline") -> str:
         """通用主路径注入块（任务#36 B5）：全文直注或分级注入。
 
         - ≤ GENERIC_FULL_INJECT_LIMIT：全文直注（超 max_doc_chars 硬截断）；
@@ -483,21 +532,19 @@ class PromptBuilder:
             if len(body) > settings.max_doc_chars:
                 body = body[:settings.max_doc_chars] + "\n……（Skill 全文超长，已截断）"
             base = (
-                f"== 当前选中 Skill「{display or skill_name}」全文（必须严格遵守其中的"
-                "流程与规范）==\n"
-                "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
-                "在产出规范层面一律以本 Skill 为准；与铁律或用户最新指令冲突时仍按"
-                "优先级链裁决；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
-                "并全程保持一致。\n\n"
+                f"== 当前选中 Skill「{display or skill_name}」全文"
+                f"（{_kind_block_suffix(kind)}）==\n"
+                f"{_kind_baseline_statement(kind)}\n\n"
                 f"{body}\n\n"
                 f"{discipline}"
             )
             return base
         return self._build_tiered_skill_block(
-            sd, skill_name, display or skill_name, content, discipline)
+            sd, skill_name, display or skill_name, content, discipline, kind)
 
     def _build_tiered_skill_block(
         self, sd: Any, skill_name: str, display: str, content: str, discipline: str,
+        kind: str = "pipeline",
     ) -> str:
         """分级注入块（全文 > GENERIC_FULL_INJECT_LIMIT）：planner 章节全文 +
         章节目录（标题+字符区间）+ 续读指令。章节区间与 read_skill 续读同口径
@@ -513,11 +560,8 @@ class PromptBuilder:
             toc = []
         lines: List[str] = [
             f"== 当前选中 Skill「{display}」（全文 {len(content)} 字，超过分级注入阈值"
-            f" {GENERIC_FULL_INJECT_LIMIT}，按分级规则注入）==",
-            "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
-            "在产出规范层面一律以本 Skill 为准；与铁律或用户最新指令冲突时仍按"
-            "优先级链裁决；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
-            "并全程保持一致。",
+            f" {GENERIC_FULL_INJECT_LIMIT}，按分级规则注入，{_kind_block_suffix(kind)}）==",
+            _kind_baseline_statement(kind),
         ]
         if planner:
             lines += [
