@@ -297,6 +297,21 @@ test.describe('停止按钮', () => {
 });
 
 test.describe('悬停工具条与截断重答（任务 #17 新交互模型）', () => {
+  /** 确定性点亮工具条并等待过渡终值：focus 触发 :focus-within（不依赖鼠标命中/
+   * 隐藏窗口 :hover 合成），再轮询 opacity 计算样式收敛到终值 '1'——
+   * 不赌 0.12s CSS 过渡的中间态（慢机器/后台窗口下过渡可能冻结或延迟）。
+   * 工具条按钮集由 affordances 矩阵条件渲染（Show），落盘与否与显隐无关。 */
+  async function revealToolbar(
+    msg: import('@playwright/test').Locator,
+    anchorTestid: string,
+  ) {
+    const anchor = msg.locator(`[data-testid="${anchorTestid}"]`);
+    await expect(anchor).toBeAttached({ timeout: 10000 });
+    await anchor.focus();
+    await expect(msg.locator('[data-testid="msg-hover-toolbar"]'))
+      .toHaveCSS('opacity', '1', { timeout: 10000 });
+  }
+
   /** 截断重答端点 mock：捕获 body，返回与 /agent/tasks 同形的 {task_id, project_id} */
   async function wireTruncateRoute(
     page: import('@playwright/test').Page,
@@ -329,30 +344,32 @@ test.describe('悬停工具条与截断重答（任务 #17 新交互模型）', 
     await sendMessage(page, '第二个问题');
     await expect(feed).toContainText('回复乙', { timeout: 10000 });
 
-    // 末条用户消息：复制+编辑（无分支/重新生成）；工具条带 HH:MM 时间戳
+    // 末条用户消息：复制+编辑（无分支/重新生成）；工具条带 HH:MM 时间戳。
+    // 键盘 focus 通路点亮（见 revealToolbar）：hover 命中点在消息底缘与相邻条目
+    // 竞态，隐藏窗口下 :hover 合成不稳——focus-within 是确定性路径
     const lastUser = feed.locator('.chat-msg.user', { hasText: '第二个问题' });
-    await lastUser.hover();
-    await expect(lastUser.locator('[data-testid="msg-act-edit"]')).toBeVisible({ timeout: 10000 });
-    await expect(lastUser.locator('[data-testid="msg-act-copy"]')).toBeVisible();
+    await revealToolbar(lastUser, 'msg-act-edit');
+    await expect(lastUser.locator('[data-testid="msg-act-edit"]')).toBeEnabled();
+    await expect(lastUser.locator('[data-testid="msg-act-copy"]')).toBeEnabled();
     await expect(lastUser.locator('[data-testid="msg-act-branch"]')).toHaveCount(0);
     await expect(lastUser.locator('[data-testid="msg-act-regenerate"]')).toHaveCount(0);
     await expect(lastUser.locator('.msg-hover-time')).toContainText(/^\d{2}:\d{2}$/);
 
-    // 末条 agent 回复：复制+分支+重新生成
+    // 末条 agent 回复：复制+分支+重新生成+存为文档（含正文的助手消息挂，任务#6 C-2）
     const lastAgent = feed.locator('.chat-msg.agent', { hasText: '回复乙' });
-    await lastAgent.hover();
-    await expect(lastAgent.locator('[data-testid="msg-act-regenerate"]')).toBeVisible({ timeout: 10000 });
-    await expect(lastAgent.locator('[data-testid="msg-act-branch"]')).toBeVisible();
-    await expect(lastAgent.locator('[data-testid="msg-act-copy"]')).toBeVisible();
+    await revealToolbar(lastAgent, 'msg-act-regenerate');
+    await expect(lastAgent.locator('[data-testid="msg-act-regenerate"]')).toBeEnabled();
+    await expect(lastAgent.locator('[data-testid="msg-act-branch"]')).toBeEnabled();
+    await expect(lastAgent.locator('[data-testid="msg-act-copy"]')).toBeEnabled();
+    await expect(lastAgent.locator('[data-testid="msg-act-save-doc"]')).toBeEnabled();
 
     // 历史轮：agent 回复只留分支（无重新生成）；用户消息只留复制（无编辑）
     const histAgent = feed.locator('.chat-msg.agent', { hasText: '回复甲' });
-    await histAgent.hover();
-    await expect(histAgent.locator('[data-testid="msg-act-branch"]')).toBeVisible({ timeout: 10000 });
+    await revealToolbar(histAgent, 'msg-act-branch');
     await expect(histAgent.locator('[data-testid="msg-act-regenerate"]')).toHaveCount(0);
+    await expect(histAgent.locator('[data-testid="msg-act-save-doc"]')).toBeEnabled();
     const histUser = feed.locator('.chat-msg.user', { hasText: '原始问题' });
-    await histUser.hover();
-    await expect(histUser.locator('[data-testid="msg-act-copy"]')).toBeVisible({ timeout: 10000 });
+    await revealToolbar(histUser, 'msg-act-copy');
     await expect(histUser.locator('[data-testid="msg-act-edit"]')).toHaveCount(0);
     await handle.close();
   });

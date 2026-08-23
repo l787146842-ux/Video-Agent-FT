@@ -58,5 +58,9 @@ test.describe('设置页冒烟', () => {
 
     // 全程无未捕获异常
     expect(pageErrors).toEqual([]);
+
+    // 在飞路由清理：回拨 PUT 可能在测试结束时仍在 route.fetch 途中，
+    // 不清理会以「route.fetch: Test ended」脱管错误把全绿的全量跑打成非零退出
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
   });
 });
