@@ -24,6 +24,9 @@ export default defineConfig({
       //（vitest 4 支持按 glob 键设阈值）
       enabled: true,
       provider: 'v8',
+      // F-6：json-summary 供前端覆盖率棘轮（scripts/check_fe_cov_ratchet.py）读取，
+      // 产出 coverage/coverage-summary.json；text 保持人读报表不变。
+      reporter: ['text', 'json-summary'],
       include: ['src/web/**/*.{ts,tsx}'],
       exclude: ['src/web/**/__tests__/**'],
       thresholds: {

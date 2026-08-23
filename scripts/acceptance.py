@@ -51,6 +51,11 @@ GATES: List[Tuple[str, List[str]]] = [
     # 本地无 coverage.xml 时 SKIP，CI 以 --require-xml 硬门禁。
     # 退役条件：core 覆盖率 >= 90% 且连续两季无回退争议时裁决下账（§13.14(c)）。
     ("cov_ratchet", [sys.executable, "scripts/check_cov_ratchet.py"]),
+    # 任务 #13 F-6：前端整体覆盖率棘轮（只升不降，基线 scripts/fe_cov_baseline.txt
+    # 首钉 63.00，读 vitest json-summary）；本地无 coverage-summary.json 时 SKIP，
+    # CI 以 --require-summary 硬门禁；基线文件缺失即 FAIL 防永久空转。
+    # 退役条件：前端整体行覆盖率 >= 90% 且连续两季无回退争议时裁决下账（§13.14(c)）。
+    ("fe_cov_ratchet", [sys.executable, "scripts/check_fe_cov_ratchet.py"]),
     # executor_skill_drift 闸已随任务#36 B5 执行器一步退役删除（执行器族不复存在，
     # 工具名/能力覆盖改由 scan_skills --gate 与 tool_risk 门禁承接）
     # 退役条件：Skill 工具名与平台工具注册表完全对齐、漂移计数连续两季为零时裁决下账。
