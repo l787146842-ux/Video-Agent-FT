@@ -91,6 +91,6 @@ export function getAgentMetrics(): Promise<AgentMetrics> {
 
 // ：原 getAgentRunning（GET /api/agent/running）与 stopAgentTask（POST /api/agent/stop）
 // 为死代码——真实停止链路为 sse.ts::stopAgentTask → /api/agent/tasks/{id}/stop，
-// 运行态由任务列表（listAgentTasks）派生；后端同名路由清退为遗留事项。
+// 运行态由任务列表（listAgentTasks）派生；后端同名路由已同步清退。
 // ：原 sendGuidance（POST /api/agent/guidance）为死代码——后端无该端点
 // （真实链路为 sse.ts::postAgentTaskGuidance → /api/agent/tasks/{id}/guidance），已删除。

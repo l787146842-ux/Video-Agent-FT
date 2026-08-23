@@ -6,7 +6,7 @@
 （保留 turnId 等元数据）→ 复用 start_agent_task 以正常发送的
 同一通路起 agent 任务（任务式传输，响应体与 /agent/tasks 一致）。
 
-- agent 忙碌时 409（与前端 busyGuard 同语义：SSE worker 或后台任务在跑）；
+- agent 忙碌时 409（与前端 busyGuard 同语义：当前项目有后台 agent 任务在跑）；
 - 无用户消息可重答时 400；错误响应走 ErrorPayload 结构化契约。
 
 时序不变式（全部在同一把 svc.lock 临界区内完成）：
@@ -56,10 +56,7 @@ def _error(status: int, legacy_code: str, message: str) -> JSONResponse:
 
 
 def _agent_busy(svc: StateManager) -> bool:
-    """忙碌判定（与前端 busyGuard 同语义）：SSE 直连 worker 在跑，
-    或当前项目仍有后台 agent 任务运行中。"""
-    if any(not t.done() for t in agent_routes._CHAT_TASKS.values()):
-        return True
+    """忙碌判定（与前端 busyGuard 同语义）：当前项目仍有后台 agent 任务运行中。"""
     return bool(agent_task_manager.get_agent_task_manager().list_running(svc.active_project_id or ""))
 
 

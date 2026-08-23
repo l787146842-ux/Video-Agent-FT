@@ -28,10 +28,6 @@ from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_
 
 router = APIRouter()
 
-# 后台聊天 worker 单槽注册表：客户端断连（刷新/关标签）后 worker 转后台跑完，
-# 前端重载后轮询 /agent/running 同步结果；/agent/stop 显式取消（停止按钮专用）。
-_CHAT_TASKS: Dict[str, asyncio.Task] = {}
-
 # 空项目状态骨架的基线 token：新建项目即使没有任何内容，状态 JSON 也有固定骨架
 # （空列表/interaction 节），这部分不计入「已用」，避免新项目一创建就显示 0.3K
 _EMPTY_STATE_BASELINE_TOKENS: Optional[int] = None
@@ -172,16 +168,6 @@ async def get_agent_degradations():
     与 /agent/traces、/agent/gates 并列的调试端点：探测点（规格向导探测/
     闸机装配/流程检查点解析等）异常回落默认值时计数 +1，运行期健康信号。"""
     return {"degradations": get_degradations()}
-
-
-@router.get("/agent/running")
-async def agent_running():
-    """是否有聊天 worker 仍在运行（含客户端断连后转后台的）。
-
-    前端刷新/切换回来后轮询此端点：running=true 时显示忙态，
-    转 false 后重拉项目快照同步 Agent 成果。
-    """
-    return {"running": any(not t.done() for t in _CHAT_TASKS.values())}
 
 
 @router.post("/agent/tasks")

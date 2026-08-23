@@ -214,15 +214,15 @@ def test_truncate_resend_empty_conversation_400(client, svc):
 
 
 def test_truncate_resend_busy_409(client, svc, monkeypatch):
-    import src.video_agent.web.routes.agent as agent_mod
+    from src.video_agent.web import agent_task_manager as atm_mod
 
     _seed_resend_history(svc)
 
-    class _FakeTask:
-        def done(self):
-            return False
+    class _StubTM:
+        def list_running(self, project_id):
+            return [{"task_id": "agt-busy-1", "status": "running"}]
 
-    monkeypatch.setattr(agent_mod, "_CHAT_TASKS", {"bound": _FakeTask()})
+    monkeypatch.setattr(atm_mod, "get_agent_task_manager", lambda: _StubTM())
     r = client.post("/api/chat/truncate-resend", json={"text": "x"})
     assert r.status_code == 409
     assert r.json()["error_code"] == "AGENT_BUSY"
