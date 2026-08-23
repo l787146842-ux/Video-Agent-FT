@@ -42,7 +42,6 @@ FRONTEND_WHITELIST = {
     "src/web/components/right-panel/AgentTimeline.tsx": "时间线多事件形态渲染（拆分另行立项）",
     "src/web/components/right-panel/ChatMessageItem.tsx": "消息气泡多形态（拆分另行立项）",
     "src/web/components/right-panel/ConfirmActions.tsx": "确认卡/向导交互聚合（拆分另行立项）",
-    "src/web/components/right-panel/SkillDetailModal.tsx": "Skill 详情弹窗多 tab（拆分另行立项）",
     "src/web/hooks/use-sse.ts": "后台任务订阅协调中枢，事件类型多属合理",
     "src/web/lib/locale.ts": "i18n 字典集中管理（词条自然增长）",
     "src/web/lib/rich-input.ts": "富文本编辑器 DOM 操作集中（拆分另行立项）",
