@@ -63,6 +63,17 @@ def test_b3_pause_discipline_single_home():
     assert "workflow_pause 工具调用真正停下" in sd, "暂停纪律单家条款丢失"
 
 
+def test_finalization_to_document_clause():
+    """任务#6 C-1 快照锁：剧本定稿入文档的编排约定在 skill_discipline.md 单家在场：
+    用户表达定稿意图 → 先 workflow_pause 弹确认卡（存入文档/继续打磨）→
+    用户确认后调 document_write 写入（措辞为中性陈述，无禁令词）。"""
+    sd = load_prompt("planner/skill_discipline.md")
+    assert "存入文档" in sd, "定稿确认卡选项条款丢失"
+    assert "继续打磨" in sd, "定稿确认卡选项条款丢失"
+    assert "document_write" in sd, "定稿写入工具条款丢失"
+    assert "定稿" in sd
+
+
 def test_b3_agent_loop_templates_wired():
     """agent_loop 运行时文案走 feedback.md 分节（分节在场即接线有效；
     代码内置兜底允许保留但不得作为唯一来源）。"""
