@@ -45,9 +45,11 @@ class TestAgentTasksMigration:
         from src.video_agent.web.agent_task_manager import AgentTaskManager
 
         legacy = tmp_path / "agent_tasks.json"
+        now = time.time()
+        # 时间戳取近期值：本用例钉导入/停写契约，不受启动 TTL 清理影响
         legacy.write_text(json.dumps({"tasks": [
-            {"task_id": "agt-1", "project_id": "p1", "status": "running", "created_at": 1.0},
-            {"task_id": "agt-2", "project_id": "p1", "status": "done", "created_at": 2.0},
+            {"task_id": "agt-1", "project_id": "p1", "status": "running", "created_at": now},
+            {"task_id": "agt-2", "project_id": "p1", "status": "done", "created_at": now},
         ]}), encoding="utf-8")
         store = TaskStore(tmp_path / "state.sqlite3")
 
@@ -66,7 +68,7 @@ class TestAgentTasksMigration:
 
         legacy = tmp_path / "agent_tasks.json"
         legacy.write_text(json.dumps({"tasks": [
-            {"task_id": "agt-1", "project_id": "p1", "status": "done", "created_at": 1.0},
+            {"task_id": "agt-1", "project_id": "p1", "status": "done", "created_at": time.time()},
         ]}), encoding="utf-8")
         store = TaskStore(tmp_path / "state.sqlite3")
 

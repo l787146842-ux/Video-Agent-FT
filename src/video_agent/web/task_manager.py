@@ -267,7 +267,9 @@ class GenerationTaskManager:
             self._tasks[t["task_id"]] = t
             recovered += 1
         if isinstance(logs, list):
-            self._gen_logs = [l for l in logs if isinstance(l, dict)]
+            # 容量保护（E-3）：恢复路径同样收敛至写入侧上限，
+            # 防止历史超限载荷只进不出
+            self._gen_logs = [l for l in logs if isinstance(l, dict)][:_GEN_LOG_MAX]
         if recovered:
             logger.info(f"[TaskManager] 已恢复 {recovered} 个任务（中断任务已标记 failed）")
         # 数据 TTL——启动恢复后立即清理过期/超量任务（此前仅创建时清理，

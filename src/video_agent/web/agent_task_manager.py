@@ -364,14 +364,15 @@ class AgentTaskManager:
         for tid in stale:
             self._tasks.pop(tid, None)
         if len(self._tasks) > _TASK_MAX:
-            # 保留最新的（创建时间倒序），运行中的不清理
+            # 保留最新的（创建时间倒序），运行中的不清理；
+            # 非运行中保留 _TASK_MAX - running 条（总数收敛至上限）
             running = [tid for tid, r in self._tasks.items() if r.get("status") == "running"]
             done_sorted = sorted(
                 (tid for tid, r in self._tasks.items() if tid not in running),
                 key=lambda tid: self._tasks[tid].get("created_at", 0),
                 reverse=True,
             )
-            for tid in done_sorted[len(self._tasks) - len(running) - _TASK_MAX:]:
+            for tid in done_sorted[max(0, _TASK_MAX - len(running)):]:
                 self._tasks.pop(tid, None)
 
     def _persist(self) -> None:
@@ -416,11 +417,19 @@ class AgentTaskManager:
                 "snapshot": None,
                 "done_payload": None,
                 "fallback": None,
+                "workflow": None,
                 "error": "服务重启中断",
                 "pending_guidance": [],
                 "_subscribers": [],
                 "_task": None,
             }
+        # 写入侧容量保护（E-3）：启动恢复后立即按 TTL/上限清理并落盘，
+        # kv 表收敛至上限（此前仅 create 时清理，恢复路径历史只进不出）
+        try:
+            self._purge_stale()
+            self._persist()
+        except Exception as e:
+            logger.warning(f"[AgentTask] 启动 TTL 清理失败: {e}")
 
 
 _instance: Optional[AgentTaskManager] = None
