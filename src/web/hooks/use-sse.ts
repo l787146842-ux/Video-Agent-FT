@@ -375,7 +375,7 @@ function handleEvent(ev: SseEvent) {
       chatActions.appendReasoning(ev.text || '');
       break;
     case 'tool_started':
-      chatActions.toolStarted(ev.id, ev.name, ev.summary);
+      chatActions.toolStarted(ev.id, ev.name, ev.summary, ev.args);
       break;
     case 'tool_finished':
       chatActions.toolFinished(ev.id, ev.ok, ev.elapsed_ms || 0, ev.result_summary, ev.planning);

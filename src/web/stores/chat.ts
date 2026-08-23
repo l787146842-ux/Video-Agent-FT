@@ -19,6 +19,8 @@ export interface TimelineToolEntry {
   result_summary?: string;
   /** 规划级执行器标记（capability 注册表下发） */
   planning?: boolean;
+  /** 工具输入参数预览（后端裁剪脱敏，详情卡展开区用） */
+  args?: Record<string, unknown>;
   /** 运行态走秒计时起点（刷新/重连无起点时以恢复时刻为准） */
   started_at_ms?: number;
 }
@@ -152,10 +154,12 @@ export const chatActions = {
     }));
   },
 
-  /** 过程时间线：工具/操作开始（运行态条目） */
-  toolStarted(id: string, name: string, summary: string) {
+  /** 过程时间线：工具/操作开始（运行态条目；args 为后端裁剪脱敏后的输入预览） */
+  toolStarted(id: string, name: string, summary: string, args?: Record<string, unknown>) {
     setChatState(produce((s) => {
-      s.streamingTools.push({ id, name, summary, status: 'running', started_at_ms: Date.now() });
+      s.streamingTools.push({
+        id, name, summary, status: 'running', started_at_ms: Date.now(), args,
+      });
       // 状态文案走 i18n 键，不硬编码中文
       s.streamingStatus = t('rp.streaming.executing', {
         n: s.streamingTools.length,

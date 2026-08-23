@@ -227,7 +227,7 @@ export interface ChatMessage {
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
-export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** 大阶段标签（后端权威下发） */ stage?: string; /** 工具执行结果一句话摘要（与 SSE tool_finished 同口径） */ result_summary?: string; /** 规划级执行器标记（capability 注册表下发） */ planning?: boolean; }
+export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** 大阶段标签（后端权威下发） */ stage?: string; /** 工具执行结果一句话摘要（与 SSE tool_finished 同口径） */ result_summary?: string; /** 规划级执行器标记（capability 注册表下发） */ planning?: boolean; /** 工具输入参数预览（后端裁剪脱敏，详情卡展开区用） */ args?: Record<string, unknown>; }
 /** 闸机判定明细（后端 tracer.record_gate 产出，前端按结构渲染来源标注 chips） */
 export interface GateRecord {
   rule_id: string;
