@@ -58,7 +58,7 @@ def submit_image_task(
     import time
 
     from src.video_agent.utils import gen_id
-    from src.video_agent.web.prompt_refs import (
+    from src.video_agent.core.prompt_refs import (
         build_storyboard_media_map,
         resolve_prompt_mentions,
     )
@@ -308,7 +308,7 @@ def submit_video_task(
     import time
 
     from src.video_agent.utils import gen_id
-    from src.video_agent.web.prompt_refs import (
+    from src.video_agent.core.prompt_refs import (
         build_storyboard_media_map,
         resolve_prompt_mentions,
     )

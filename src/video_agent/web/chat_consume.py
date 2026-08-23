@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.config import settings
 from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core import workflow_runtime

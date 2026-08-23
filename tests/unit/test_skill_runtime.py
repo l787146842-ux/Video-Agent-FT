@@ -13,7 +13,7 @@ import pytest
 import src.video_agent.web.skill_docs as sd
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.skill_runtime import registry
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 
 
 @pytest.fixture(autouse=True)

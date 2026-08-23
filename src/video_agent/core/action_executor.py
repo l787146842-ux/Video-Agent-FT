@@ -7,7 +7,7 @@ Studio 状态操作执行器 — 从 actions.py 抽离；D-01 清偿下沉 core�
 
 对 web 层（生成管线/供应商配置）的依赖经 core/ports.py 端口倒置，
 web 层装配点注入实现（分层铁律：core 不 import web）；
-web/action_executor.py 保留 re-export 壳供存量消费方。
+web/action_executor.py re-export 壳已清退，消费方均直接导入本模块（任务#13 F-4）。
 """
 from datetime import datetime, timezone
 import re

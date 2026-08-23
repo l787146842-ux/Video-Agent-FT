@@ -36,7 +36,7 @@
 - **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
 - **控制流主体回归（2026-08-21 裁决，ADR-0004）**：模型永远唯一行动主体——每轮做什么由模型接到用户消息后发起工具调用（带附件首条消息也由模型接手，系统不静默自动分析）；`core/workflow_runtime.py` 降级为**账本 + 裁判数据层**（Skill 激活编译 `WorkflowDefinition`，canonical slug + revision + content hash，源 = sidecar 声明，`validate_sidecar` 注册期门禁；持久化 `WorkflowRun`，**仅 runtime reducer 可改**，StateManager 仍唯一写入点 Rule3；完成度只认客观探针），不发起任何行动；ADR-0003 机械直跑/审批直跑退役（驱动符号登记 `check_legacy_orchestration` 防复活）。顺序保障 = 刹车不是方向盘：阶段表/依赖图/`platform.stage_precondition` 闸内嵌工具执行路径首位，模型越阶即拒收回喂。「不暂停连跑」= 自主性档位（用户指令/开关授予模型豁免非平台硬暂停点；平台硬闸任何档位必停，Context ≠ Consent，授权留痕）。**原子轮提交**：一轮只提交一个 `TurnResult`（turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项（暂停卡唯一发行主体 = 模型 `workflow_pause`，单一活跃暂停槽位互斥，重复暂停拒收留痕；层 9 兜底引导卡（round_end_policies 的状态派生建议）≠ 暂停卡；暂停卡唯一发行主体仍为模型 workflow_pause，引导卡仅承载客观状态选项）；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
 - **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
-- **层级例外（已清偿，D-01 2026-08-22）**：动作执行器已下沉 `core/action_executor.py`，对 web 生成管线/供应商配置的依赖倒置为 `core/ports.py` 端口、web 装配点注入（`web/port_wiring.py`）；core→web 任何 import（含延迟/TYPE_CHECKING）一律禁止，web 侧仅留 re-export 壳待阶段二清退
+- **层级例外（已清偿，D-01 2026-08-22）**：动作执行器已下沉 `core/action_executor.py`，对 web 生成管线/供应商配置的依赖倒置为 `core/ports.py` 端口、web 装配点注入（`web/port_wiring.py`）；core→web 任何 import（含延迟/TYPE_CHECKING）一律禁止，web 侧 re-export 壳已阶段二清退（任务#13 F-4，消费方全部改指向 core 真身）
 
 ### Rule 3: StateManager 唯一写入点
 - `state/manager.py::StateManager` 是状态的**唯一写入点**；复杂嵌套操作允许直接操作 `state_dict`，但完成后**必须 `save()`**
@@ -241,7 +241,7 @@ src/video_agent/
 │     MCP 外部工具接入层为任务#37 预留扩展点）
 ├── web/
 │   ├── app.py / chat_service.py(+chat_opening/chat_consume) / sse.py / sse_protocol.py
-│   ├── port_wiring.py ← core 端口装配（D-01）；action_executor.py 等 4 件为 re-export 壳待清退
+│   ├── port_wiring.py ← core 端口装配（D-01）；action_executor 等 4 件 re-export 壳已清退（任务#13 F-4）
 │   ├── task_manager.py / skill_docs.py / routes/
 ├── state/  manager.py（唯一写入点）/ models.py / storyboard_ops.py / context_builder.py
 ├── adapters/  tools/  config.py  exceptions.py  utils/

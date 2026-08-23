@@ -153,7 +153,7 @@ def test_normalize_group_title_strips_prefixes():
 def test_add_group_title_normalized_on_write(tmp_path):
     """文本轨建组入口：标题落盘前归一。"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.action_executor import StateOperationExecutor
+    from src.video_agent.core.action_executor import StateOperationExecutor
     svc = StateManager(str(tmp_path / "ws"))
     ex = StateOperationExecutor(svc, gate_enabled=False)
     applied = ex.execute([{
@@ -184,7 +184,7 @@ def test_fc_create_group_title_normalized(tmp_path, monkeypatch):
 def test_patch_group_title_normalized_on_model_path(tmp_path):
     """复查补漏：模型经 patch_group 改名也归一（用户 REST 路径不受影响）。"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.action_executor import StateOperationExecutor
+    from src.video_agent.core.action_executor import StateOperationExecutor
     svc = StateManager(str(tmp_path / "ws"))
     ex = StateOperationExecutor(svc, gate_enabled=False)
     ex.execute([{
@@ -528,7 +528,7 @@ async def test_flow_directive_tool_sets_flag_and_clears(tmp_path, monkeypatch):
 async def test_flow_directive_text_track_sets_flag(tmp_path):
     from src.video_agent.state.manager import StateManager
     from src.video_agent.core import prompt_gates
-    from src.video_agent.web.action_executor import StateOperationExecutor
+    from src.video_agent.core.action_executor import StateOperationExecutor
     svc = StateManager(str(tmp_path / "ws"))
     ex = StateOperationExecutor(svc, gate_enabled=False)
     assert ex.execute([{"action": "flow_directive", "auto_continue": True}]) == 1

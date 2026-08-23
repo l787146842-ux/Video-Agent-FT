@@ -10,7 +10,7 @@ from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.context_builder import build_agent_context
 from src.video_agent.web.chat_service import truncate_history
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.tools.document_tools import (
     ReadUploadedDocTool, ReadUploadedDocInput,
     ReadSkillTool, ReadSkillInput,

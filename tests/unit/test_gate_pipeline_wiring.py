@@ -91,7 +91,7 @@ class TestUnifiedPipeline:
         import inspect
 
         from src.video_agent.core import fc_gates
-        from src.video_agent.web import action_executor
+        from src.video_agent.core import action_executor
 
         fc_src = inspect.getsource(fc_gates.prompt_gate)
         te_src = inspect.getsource(action_executor.StateOperationExecutor._gate_check)

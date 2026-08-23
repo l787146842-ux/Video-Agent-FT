@@ -5,7 +5,7 @@ import pytest
 
 from src.video_agent.core import prompt_gates, spec_rules
 from src.video_agent.core.live_metrics import get_live_context, record_live_context
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 
 
 # ---------- item 6：分镜提示词时长客观补全 ----------
@@ -408,7 +408,7 @@ def test_action_alias_normalization_groupid_payload(tmp_path):
     """9999 现场：弱模型把 add_draft 写成 type/groupId/payload 驼峰 schema，
     归一后必须命中分组写入，不再整批「拒绝盲建」。"""
     from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.action_executor import StateOperationExecutor
+    from src.video_agent.core.action_executor import StateOperationExecutor
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["keyElements"] = [{"id": "ke-1", "title": "程心", "drafts": []}]

@@ -14,7 +14,7 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 
 _MANIFEST_ALL_ON = (
     "```json skill_manifest\n"

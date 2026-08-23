@@ -7,7 +7,7 @@
 （apply_generate_video 生成提交入口前置校验，不新造平行闸体系）。
 """
 from src.video_agent.core import guard_pipeline, prompt_gates
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 
 # 关键元素：有图 / 无图两种客观状态
 KE_WITH_IMG = {"id": "ke-1", "title": "竹林场景",

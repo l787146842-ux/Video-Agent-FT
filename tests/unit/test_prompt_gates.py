@@ -4,7 +4,7 @@ import pytest
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 
 GOOD_SHOT_PROMPT = (
     "镜头总时长：15秒。缓慢推入中景，程心怀抱文物奔向舱门，背景冥王星冰原崩裂成二维平面，"

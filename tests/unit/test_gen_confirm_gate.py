@@ -6,7 +6,7 @@
 """
 from src.video_agent.core import guard_pipeline
 from src.video_agent.core.fc_tool_runner import FCToolRunner
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 
 CONF = {"id": "d1", "prompt": "x", "tag": "已确认"}
 UNCONF = {"id": "d2", "prompt": "y", "tag": "Agent"}

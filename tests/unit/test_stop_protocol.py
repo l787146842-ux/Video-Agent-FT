@@ -24,7 +24,7 @@ from src.video_agent.core.stop_signal import (
     is_stop_requested,
     request_stop,
 )
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.state.manager import StateManager
 
 

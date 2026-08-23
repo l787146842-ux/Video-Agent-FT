@@ -84,13 +84,13 @@ src/video_agent/web/chat_service.py:669:src.video_agent.core.spec_rules
 src/video_agent/web/generation_dispatch.py:88:src.video_agent.web.provider_config
 src/video_agent/web/generation_submit.py:308:time
 src/video_agent/web/generation_submit.py:310:src.video_agent.utils
-src/video_agent/web/generation_submit.py:311:src.video_agent.web.prompt_refs
+src/video_agent/web/generation_submit.py:311:src.video_agent.core.prompt_refs
 src/video_agent/web/generation_submit.py:315:src.video_agent.web.provider_config
 src/video_agent/web/generation_submit.py:316:src.video_agent.web.task_manager
 src/video_agent/web/generation_submit.py:361:src.video_agent.web.providers
 src/video_agent/web/generation_submit.py:58:time
 src/video_agent/web/generation_submit.py:60:src.video_agent.utils
-src/video_agent/web/generation_submit.py:61:src.video_agent.web.prompt_refs
+src/video_agent/web/generation_submit.py:61:src.video_agent.core.prompt_refs
 src/video_agent/web/generation_submit.py:65:src.video_agent.web.task_manager
 src/video_agent/web/mock_chat.py:33:src.video_agent.core
 src/video_agent/web/multimodal_builder.py:48:io

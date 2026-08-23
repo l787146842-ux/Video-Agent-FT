@@ -2,7 +2,7 @@
 import pytest
 
 import src.video_agent.web.skill_docs as sd
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.state.manager import StateManager
 
 

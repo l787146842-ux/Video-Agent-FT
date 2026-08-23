@@ -9,7 +9,7 @@ from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.web import provider_config as pc
 
 

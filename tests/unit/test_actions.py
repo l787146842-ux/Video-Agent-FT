@@ -1,7 +1,7 @@
 """StateOperationExecutor：别名、截断、选中态解析"""
 import pytest
 
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.state.manager import StateManager
 
 

@@ -9,7 +9,7 @@ import pytest
 from src.video_agent.core import prompt_gates
 from src.video_agent.state.provider_prefs import extract_production_params
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 
 
 # ---------- 问题1：总结去重 ----------

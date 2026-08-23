@@ -18,7 +18,7 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
-from src.video_agent.web.action_executor import StateOperationExecutor
+from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.web.chat_service import _consume_pending_confirmation
 from src.video_agent.web.generation import call_chat_completion
 from src.video_agent.web.url_safety import validate_external_url

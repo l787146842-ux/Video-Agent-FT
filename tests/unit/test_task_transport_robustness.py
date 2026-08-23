@@ -208,7 +208,7 @@ def svc(tmp_path):
 
 @pytest.fixture
 def executor(svc):
-    from src.video_agent.web.action_executor import StateOperationExecutor
+    from src.video_agent.core.action_executor import StateOperationExecutor
 
     return StateOperationExecutor(svc)
 

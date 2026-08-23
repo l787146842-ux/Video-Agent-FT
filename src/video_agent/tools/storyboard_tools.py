@@ -14,7 +14,7 @@ from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
 from src.video_agent.state import storyboard_ops as ops
-from src.video_agent.web.prompt_refs import media_of_draft
+from src.video_agent.core.prompt_refs import media_of_draft
 
 
 # ---------- Input Schemas ----------
