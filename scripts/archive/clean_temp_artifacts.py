@@ -9,14 +9,16 @@
 - 两个目录下的 __pycache__ 一律清。
 
 用法：
-    python scripts/clean_temp_artifacts.py            # dry-run
-    python scripts/clean_temp_artifacts.py --apply    # 真删
+    python scripts/archive/clean_temp_artifacts.py            # dry-run
+    python scripts/archive/clean_temp_artifacts.py --apply    # 真删
 """
 import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# 仓库根（脚本迁入 scripts/archive/ 后需三级 parent；曾经指向 scripts/
+# 导致清理路径永远不存在——死脚本伪装成清理机制）
+ROOT = Path(__file__).resolve().parent.parent.parent
 DAY = 86400
 
 RULES = [
