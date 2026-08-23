@@ -13,6 +13,12 @@
   禁止手工下调基线文件（棘轮只升不降）；
 - 与七文件阈值闸的关系：vitest.config.ts thresholds 的 80% 行覆盖闸针对对话
   核心模块逐文件硬门禁，本棘轮管整体面，两者并存互不替代。
+- CI 接线（影响面审查 FIX-3 落地）：ci.yml frontend-check 已在 vitest 之后
+  显式执行 `--require-summary` 硬门禁（产物缺失即 FAIL），与本脚本注释一致。
+- 已知限制（acceptance 内顺序）：acceptance.py 的 GATES 先于 SUITES 执行，
+  故 acceptance 场景下本闸读取的是「上一轮」vitest 产出的
+  coverage-summary.json（而非当轮新产物）；只要本地曾跑过 vitest 即口径有效，
+  CI 侧不存在此局限（vitest 与本闸同 job 串行）。
 
 退役条件（宪法 §13.14(c)）：当前端整体行覆盖率升至 90% 以上且连续两个季度
 无回退争议时，本门禁可裁决下账，度量转为纯观测。

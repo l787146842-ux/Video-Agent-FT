@@ -47,6 +47,8 @@ jobs:
       # Executor skill drift gate 已随任务#36 B5 执行器一步退役删除（执行器族不复存在）
       - name: Skill tool names gate (acceptance GATES 对齐：技能文档工具白名单)
         run: python scripts/scan_skills.py --gate
+      - name: Semantic colors gate (影响面审查 FIX-3：styles/*.css 硬编码颜色棘轮，对齐 acceptance GATES)
+        run: python scripts/check_semantic_colors.py
       - name: API contract check (OpenAPI -> TS types)
         run: python scripts/gen_api_types.py --check
 
@@ -89,6 +91,12 @@ jobs:
         run: npx eslint src/web/
       - name: Vitest unit tests
         run: npx vitest run
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Frontend coverage ratchet gate (影响面审查 FIX-3：整体行覆盖率棘轮，对齐 acceptance GATES)
+        run: python scripts/check_fe_cov_ratchet.py --require-summary
 
   # ---------- Job 3: 构建验证 ----------
   build:
