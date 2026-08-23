@@ -520,7 +520,7 @@ def test_fc_injects_provider_into_image_generate(monkeypatch):
 def test_image_generate_fallback_to_draft_provider(svc, monkeypatch):
     """provider 留空时回退草稿自带 providerId（8888 现场：草稿均为 custom-api）"""
     import asyncio
-    from src.video_agent.web import generation as gen_mod
+    from src.video_agent.web import generation_dispatch
     from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
 
     monkeypatch.setattr(StateManager, "_instance", svc)  # 工具内部走 get_instance，需绑定夹具
@@ -537,7 +537,8 @@ def test_image_generate_fallback_to_draft_provider(svc, monkeypatch):
         return "http://fake/img.png"
 
     # 工具已接入统一任务管线：patch 点在 generation 模块内的实际调用处
-    monkeypatch.setattr(gen_mod, "generate_image_via_provider", fake_gen)
+    # 任务#11 拆分：patch 目标迁至实现模块 generation_dispatch（承重壳仅 re-export）
+    monkeypatch.setattr(generation_dispatch, "generate_image_via_provider", fake_gen)
     result = asyncio.run(ImageGenerateTool().aexecute(
         GenerateImageInput(target="all_keyElements")))
     assert result.success and captured == [("custom-api", "")]
@@ -547,7 +548,7 @@ async def test_image_generate_fallback_to_first_configured_provider(svc, monkeyp
     """草稿也无 providerId 时回退配置中首个可用生图供应商；完全无配置时报明确错误"""
     import asyncio
     from src.video_agent.tools import document_tools
-    from src.video_agent.web import generation as gen_mod
+    from src.video_agent.web import generation_dispatch
     from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
 
     monkeypatch.setattr(StateManager, "_instance", svc)  # 工具内部走 get_instance，需绑定夹具
@@ -562,7 +563,8 @@ async def test_image_generate_fallback_to_first_configured_provider(svc, monkeyp
         captured.append((provider_id, model))
         return "http://fake/img.png"
 
-    monkeypatch.setattr(gen_mod, "generate_image_via_provider", fake_gen)
+    # 任务#11 拆分：patch 目标迁至实现模块 generation_dispatch（承重壳仅 re-export）
+    monkeypatch.setattr(generation_dispatch, "generate_image_via_provider", fake_gen)
     monkeypatch.setattr(
         pc, "first_available_image_provider_async",
         _async_return(("modelscope", "Z-Image-Turbo")),
@@ -649,7 +651,7 @@ def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch, set_global_s
 async def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch, set_global_setting):
     """草稿被前端回填 Grsai，但全局设置设定 Antigravity CLI → 实际生图走全局设置"""
     import asyncio
-    from src.video_agent.web import generation as gen_mod
+    from src.video_agent.web import generation_dispatch
     from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
 
     monkeypatch.setattr(StateManager, "_instance", svc)
@@ -669,7 +671,8 @@ async def test_image_generate_spec_prefers_over_draft_provider(svc, monkeypatch,
         captured.append((provider_id, model))
         return "http://fake/img.png"
 
-    monkeypatch.setattr(gen_mod, "generate_image_via_provider", fake_gen)
+    # 任务#11 拆分：patch 目标迁至实现模块 generation_dispatch（承重壳仅 re-export）
+    monkeypatch.setattr(generation_dispatch, "generate_image_via_provider", fake_gen)
     result = await ImageGenerateTool().aexecute(GenerateImageInput(target="all_keyElements"))
     assert result.success and result.data["submitted"] == 1
     await asyncio.sleep(0.3)

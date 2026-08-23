@@ -17,6 +17,8 @@ from src.video_agent.exceptions import GenerationError
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.document_tools import GenerateImageInput, ImageGenerateTool
 from src.video_agent.web import generation as gen_mod
+# 任务#11 拆分：generate_image_via_provider 的 patch 目标迁至实现模块（承重壳仅 re-export）
+from src.video_agent.web import generation_dispatch
 
 _BATCH = 12
 
@@ -98,7 +100,7 @@ async def test_batch_12_peak_concurrency_within_semaphore(svc, monkeypatch):
         active -= 1
         return f"http://fake/{prompt[-12:-1]}.png"
 
-    monkeypatch.setattr(gen_mod, "generate_image_via_provider", fake_gen)
+    monkeypatch.setattr(generation_dispatch, "generate_image_via_provider", fake_gen)
 
     result = await ImageGenerateTool().aexecute(
         GenerateImageInput(target="all_keyElements", provider_id="mock"))
@@ -143,7 +145,7 @@ async def test_batch_12_429_backoff_retries_to_success(svc, monkeypatch):
             raise GenerationError("HTTP 429 Too Many Requests")
         return f"http://fake/recovered-{idx}.png"
 
-    monkeypatch.setattr(gen_mod, "generate_image_via_provider", flaky_gen)
+    monkeypatch.setattr(generation_dispatch, "generate_image_via_provider", flaky_gen)
 
     result = await ImageGenerateTool().aexecute(
         GenerateImageInput(target="all_keyElements", provider_id="mock"))
@@ -203,7 +205,7 @@ async def test_batch_12_consecutive_failures_trip_circuit(svc, monkeypatch):
         calls["n"] += 1
         raise GenerationError("upstream 500 internal error")
 
-    monkeypatch.setattr(gen_mod, "generate_image_via_provider", dead_gen)
+    monkeypatch.setattr(generation_dispatch, "generate_image_via_provider", dead_gen)
 
     # 第一批：全部失败，连败台账累计 ≥ 熔断阈值
     result = await ImageGenerateTool().aexecute(

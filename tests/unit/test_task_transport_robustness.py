@@ -60,19 +60,21 @@ class TestSameModelCrossProviderCandidates:
 
     @pytest.mark.asyncio
     async def test_image_candidates_by_image_models(self, monkeypatch):
-        from src.video_agent.web import generation
+        # 任务#11 拆分：patch 目标迁至实现模块 generation_dispatch（承重壳仅 re-export）
+        from src.video_agent.web import generation_dispatch
 
-        _patch_providers(monkeypatch, generation)
-        cands = await generation._gen_fallback_candidates("main", "nano-banana", "image")
+        _patch_providers(monkeypatch, generation_dispatch)
+        cands = await generation_dispatch._gen_fallback_candidates("main", "nano-banana", "image")
         pids = [p for p, _ in cands]
         assert pids == ["main", "alt1"]  # alt4 的 image_models 无同名模型
 
     @pytest.mark.asyncio
     async def test_video_candidates_by_video_models(self, monkeypatch):
-        from src.video_agent.web import generation
+        # 任务#11 拆分：patch 目标迁至实现模块 generation_dispatch（承重壳仅 re-export）
+        from src.video_agent.web import generation_dispatch
 
-        _patch_providers(monkeypatch, generation)
-        cands = await generation._gen_fallback_candidates("main", "seedance-2.5", "video")
+        _patch_providers(monkeypatch, generation_dispatch)
+        cands = await generation_dispatch._gen_fallback_candidates("main", "seedance-2.5", "video")
         pids = [p for p, _ in cands]
         assert pids == ["main", "alt1"]
 
