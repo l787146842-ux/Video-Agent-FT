@@ -707,7 +707,7 @@ def test_spec_rules_standalone_doc_and_override(svc):
     assert "执行铁律.md" in names
     iron = spec_rules.find_iron_rules_doc(svc.state_dict)
     # 三条款设计（6666 二轮）：默认不再内嵌概念图前置状态行，闸机以「未跳过」为默认
-    assert "3. 回复精简" in iron["content"]
+    assert "3. 回复纪律见平台协议" in iron["content"]
     assert spec_rules.ELEMENT_IMAGE_PREREQ_ON not in iron["content"]
     spec = svc.state_dict["documents"][names.index("制片规格.md")]
     assert "执行铁律" not in spec["content"]

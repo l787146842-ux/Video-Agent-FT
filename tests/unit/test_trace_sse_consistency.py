@@ -206,7 +206,7 @@ def test_iron_rules_template_drops_clauses_4_5():
     from src.video_agent.core.spec_rules import _IRON_RULES_DOC_BODY
     assert "提示词质量" not in _IRON_RULES_DOC_BODY
     assert "产出形态" not in _IRON_RULES_DOC_BODY
-    for kept in ("执行优先", "拆解覆盖完整", "回复精简"):
+    for kept in ("执行优先", "拆解覆盖完整", "回复纪律见平台协议"):
         assert kept in _IRON_RULES_DOC_BODY, f"契约条款丢失: {kept}"
 
 
@@ -229,7 +229,9 @@ def test_iron_rules_migration_strips_old_clauses():
     assert ensure_iron_rules_doc(raw) is True
     content = raw["documents"][0]["content"]
     assert "提示词质量" not in content and "产出形态" not in content
-    assert "执行优先" in content and "回复精简" in content
+    # F-2：存量第 3 条「回复精简」同批升级为平台协议指针（幂等）
+    assert "回复精简" not in content and "回复纪律见平台协议" in content
+    assert "执行优先" in content
     assert ensure_iron_rules_doc(raw) is False  # 幂等
 
 

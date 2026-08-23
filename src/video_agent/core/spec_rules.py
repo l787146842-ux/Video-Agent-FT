@@ -5,7 +5,7 @@
 用户在文档面板可直接编辑、保存即生效；闸机按文档中的声明决定是否放行。
 老项目兼容：规格文档里仍带旧铁律章节时，ensure 时自动迁移进独立文档
 （保留用户改过的内容并从规格文档中移除该章节）。
-执行优先级：用户指令 > 铁律文档 + 制片规格 > Skill/系统默认。
+执行优先级：用户最新指令 > 铁律文档 + 制片规格 > Skill/系统默认。
 """
 import re
 from datetime import datetime, timezone
@@ -24,9 +24,13 @@ _ON_RE = re.compile(r"(?m)^\s*(?:-\s*)?元素概念图前置：开启")
 # 老项目规格文档内的铁律章节：从标题到下一个二级标题（或文末），整段迁移
 _IRON_SECTION_RE = re.compile(r"##\s*执行铁律[^\n]*\n.*?(?=\n##\s|\Z)", re.S)
 # 优先级文案升级（用户要求：制片规格与铁律文档同级）：仅精确替换旧措辞，
-# 用户改过其它内容不受影响
-_OLD_PRIORITY = "用户指令 > 本文档 > Skill/系统默认"
-_NEW_PRIORITY = "用户指令 > 本文档 + 制片规格 > Skill/系统默认"
+# 用户改过其它内容不受影响。措辞唯一源 = prompts/shared/iron_rules_header.md
+#（F-2 优先级链统一：「用户最新指令」对齐模型可见文档）
+_OLD_PRIORITIES = (
+    "用户指令 > 本文档 > Skill/系统默认",
+    "用户指令 > 本文档 + 制片规格 > Skill/系统默认",
+)
+_NEW_PRIORITY = "用户最新指令 > 本文档 + 制片规格 > Skill/系统默认"
 #删除「不得拦截/强制暂停」半句（暂停语义唯一源=Skill 文本，此句与
 # Skill 暂停条款打架只喂推理模型仲裁开销，且平台暂停由闸机代码驱动不受其影响）。
 # 容忍旧文档里的换行/空白差异；用户改过其它内容不受影响
@@ -36,15 +40,17 @@ _NO_BLOCK_RE = re.compile(r"；\s*系统不得拦截用户要求的操作，\s*�
 # 唯一表述——存量项目铁律里的默认第 4/5 条升级迁移时剥离（保留用户自加的第 6+ 条）
 _IRON_CLAUSE_45_RE = re.compile(
     r"(?m)^[ \t]*4\.[ \t]*提示词质量：[\s\S]*?^[ \t]*5\.[ \t]*产出形态：[\s\S]*?(?=^[ \t]*\d+\.[ \t]|\Z)")
+# F-2 回复精简双源合并：模型可见表述归 prompts/shared/output_discipline.md 条目 1，
+# 铁律第 3 条收敛为「回复纪律见平台协议」指针；存量文档同口径升级
+_IRON_CLAUSE_3_RE = re.compile(
+    r"(?m)^[ \t]*3\.[ \t]*回复精简[：:]?[\s\S]*?(?=^[ \t]*\d+\.[ \t]|\Z)")
 
 _IRON_RULES_DOC_BODY = f"""# {IRON_RULES_HEADING}（系统约定，按优先级执行：{_NEW_PRIORITY}）
 
 1. 执行优先：用户说什么就做什么。用户指令与本文档/制片规格/Skill 流程冲突时，先照常执行，
    再在回复末尾给出警告。
 2. 拆解覆盖完整（系统机器验收）。
-3. 回复精简：写入草稿的提示词正文只允许一句话汇总
-   （如「已写入 8 张关键元素提示词卡，详见左侧故事板」），
-   严禁在聊天正文逐卡罗列「1 组 1 卡、2 组 1 卡…」式清单。
+3. 回复纪律见平台协议。
 """
 
 
@@ -98,10 +104,13 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
         body = migrated or _IRON_RULES_DOC_BODY.strip()
         # 老项目迁移来的正文同步升级：优先级措辞（含制片规格同级）
         # + 删「不得拦截/强制暂停」半句
-        # + ：规格文档迁入的旧章节若带默认第 4/5 条同样剥离
-        body = body.replace(_OLD_PRIORITY, _NEW_PRIORITY)
+        # + ：规格文档迁入的旧章节若带默认第 4/5 条同样剥离；
+        # 第 3 条回复精简收敛为平台协议指针（F-2）
+        for old in _OLD_PRIORITIES:
+            body = body.replace(old, _NEW_PRIORITY)
         body = _NO_BLOCK_RE.sub("。", body)
-        body = _IRON_CLAUSE_45_RE.sub("", body).rstrip()
+        body = _IRON_CLAUSE_45_RE.sub("", body)
+        body = _IRON_CLAUSE_3_RE.sub("3. 回复纪律见平台协议。\n", body).rstrip()
         docs.insert(0, {
             "id": gen_id("doc"),
             "name": IRON_RULES_DOC_NAME,
@@ -124,15 +133,20 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
             changed = True
     # 老项目措辞升级（精确应用，不动用户其它编辑）：
     # ① 优先级文案（含制片规格同级）；② 删「不得拦截/强制暂停」半句；
-    # ③ ：剥离默认第 4/5 条（产出规范归 Skill 章节唯一表述）
+    # ③ ：剥离默认第 4/5 条（产出规范归 Skill 章节唯一表述）；
+    # ④ 第 3 条回复精简收敛为平台协议指针（F-2 双源合并）
     if iron is not None:
         content = str(iron.get("content") or "")
-        upgraded = content.replace(_OLD_PRIORITY, _NEW_PRIORITY)
+        upgraded = content
+        for old in _OLD_PRIORITIES:
+            upgraded = upgraded.replace(old, _NEW_PRIORITY)
         upgraded = _NO_BLOCK_RE.sub("。", upgraded)
         # 第 2 条措辞迁移（自检→系统机器验收， 后验收已由代码承担）
         upgraded = upgraded.replace("（自检核对）", "（系统机器验收）")
         if _IRON_CLAUSE_45_RE.search(upgraded):
             upgraded = _IRON_CLAUSE_45_RE.sub("", upgraded).rstrip() + "\n"
+        if _IRON_CLAUSE_3_RE.search(upgraded):
+            upgraded = _IRON_CLAUSE_3_RE.sub("3. 回复纪律见平台协议。\n", upgraded)
         if upgraded != content:
             iron["content"] = upgraded
             changed = True

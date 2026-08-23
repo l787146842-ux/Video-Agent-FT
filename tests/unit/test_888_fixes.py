@@ -125,7 +125,7 @@ def test_iron_rules_priority_mentions_spec_doc():
     state = {"documents": []}
     assert spec_rules.ensure_iron_rules_doc(state) is True
     iron = spec_rules.find_iron_rules_doc(state)
-    assert "用户指令 > 本文档 + 制片规格 > Skill/系统默认" in iron["content"]
+    assert "用户最新指令 > 本文档 + 制片规格 > Skill/系统默认" in iron["content"]
     # 幂等
     assert spec_rules.ensure_iron_rules_doc(state) is False
 
@@ -139,7 +139,7 @@ def test_iron_rules_old_priority_upgraded_in_place():
     state = {"documents": [{"name": "执行铁律.md", "content": old}]}
     assert spec_rules.ensure_iron_rules_doc(state) is True
     content = spec_rules.find_iron_rules_doc(state)["content"]
-    assert "用户指令 > 本文档 + 制片规格 > Skill/系统默认" in content
+    assert "用户最新指令 > 本文档 + 制片规格 > Skill/系统默认" in content
     assert "用户自定义条款：保持原样" in content
     assert spec_rules.ensure_iron_rules_doc(state) is False
 

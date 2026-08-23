@@ -21,8 +21,9 @@ def test_s7_iron_rules_template_carries_migrated_clauses():
     assert "提示词质量" not in body
     assert "产出形态" not in body
     assert "摄像机→主体→空间→音频" not in body
-    # 契约条款保留
-    assert "执行优先" in body and "拆解覆盖完整" in body and "回复精简" in body
+    # 契约条款保留（F-2：第 3 条收敛为平台协议指针，表述归 output_discipline.md）
+    assert "执行优先" in body and "拆解覆盖完整" in body and "回复纪律见平台协议" in body
+    assert "回复精简" not in body
     # C6 基线对齐：粒度裁量归模型+Skill，铁律刻意不承载粒度细则
     assert "宁缺毋滥" not in body
 

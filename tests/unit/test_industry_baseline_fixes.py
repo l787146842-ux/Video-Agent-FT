@@ -44,7 +44,7 @@ def test_iron_rules_default_body_three_clauses():
     body = spec_rules._IRON_RULES_DOC_BODY
     assert "1. 执行优先" in body
     assert "2. 拆解覆盖完整（系统机器验收）" in body
-    assert "3. 回复精简" in body
+    assert "3. 回复纪律见平台协议" in body
     # 旧条款已删（功能由闸门/系统行为兜底）
     assert "流程覆盖" not in body
     assert "分镜提示词必须包含" not in body
@@ -57,7 +57,7 @@ def test_ensure_iron_rules_doc_creates_three_clause_doc(tmp_path):
     assert changed
     doc = spec_rules.find_iron_rules_doc(svc.state_dict)
     assert doc is not None
-    assert "3. 回复精简" in doc["content"]
+    assert "3. 回复纪律见平台协议" in doc["content"]
     assert "流程覆盖" not in doc["content"]
 
 

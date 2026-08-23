@@ -84,6 +84,32 @@ def test_finalization_to_document_clause():
     assert "定稿" in sd
 
 
+def test_f2_prompt_dual_source_merge():
+    """F-2 双源合并快照锁：
+    ① 防虚报表述源唯一 = skill_discipline 第 9 条（含状态对账细节），
+       important_rules 只留一句引用式短述；
+    ② 回复精简模型可见表述归 output_discipline 条目 1，铁律模板只留指针；
+    ③ 优先级链三处措辞以 iron_rules_header 为唯一源对齐。"""
+    from src.video_agent.core.spec_rules import _IRON_RULES_DOC_BODY, _NEW_PRIORITY
+
+    ir = load_prompt("shared/important_rules.md")
+    assert "《Skill 流程纪律》第 9 条" in ir, "防虚报引用式短述丢失"
+    assert "动作通道唯一 = 工具调用，只在正文写不产生任何效果" not in ir, "防虚报双源回潮"
+    sd = load_prompt("planner/skill_discipline.md")
+    assert "状态对账" in sd, "防虚报表述源（第 9 条）丢失"
+
+    od = load_prompt("shared/output_discipline.md")
+    assert "已写入" in od and "一句话摘要" in od, "回复纪律表述源丢失"
+    assert "回复纪律见平台协议" in _IRON_RULES_DOC_BODY
+    assert "逐卡罗列" not in _IRON_RULES_DOC_BODY, "铁律模板复述回复纪律回潮"
+
+    header = load_prompt("shared/iron_rules_header.md")
+    assert _NEW_PRIORITY in header, "优先级链措辞与唯一源（iron_rules_header）不一致"
+    governance = (ROOT / "docs" / "GOVERNANCE.md").read_text(encoding="utf-8")
+    assert "用户最新指令 > 铁律文档 + 制片规格 > Skill/系统默认" in governance, \
+        "GOVERNANCE 裁决链措辞未对齐唯一源"
+
+
 def test_b3_agent_loop_templates_wired():
     """agent_loop 运行时文案走 feedback.md 分节（分节在场即接线有效；
     代码内置兜底允许保留但不得作为唯一来源）。"""

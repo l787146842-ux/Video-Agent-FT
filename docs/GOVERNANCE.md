@@ -62,7 +62,7 @@
 | 规格向导/剧本闸启停 | frontmatter 声明（registry.spec_wizard_active / script_required_active 纯读 frontmatter）；frontmatter 显式逃生门 | 文本启发式扫描 |
 | 阶段内创作引导 | 层 3 Skill 散文（纯散文，只管阶段内怎么写） | 平台层排序条款、frontmatter |
 
-**冲突裁决顺序（模型可见优先级）**：用户最新指令 > 铁律文档 + 制片规格 > Skill > 平台协议默认。代码校验层不参与裁决——它是客观事实，只对结果裁定并回报。
+**冲突裁决顺序（模型可见优先级，措辞对齐唯一源 prompts/shared/iron_rules_header.md）**：用户最新指令 > 铁律文档 + 制片规格 > Skill/系统默认。代码校验层不参与裁决——它是客观事实，只对结果裁定并回报。
 
 ### 13.4 症状归位表（不走捷径的核心）
 
