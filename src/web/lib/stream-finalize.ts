@@ -58,6 +58,7 @@ export function buildStopMessages(ctx: StopBuildContext): ChatMessage[] {
     if (inflightNote) metaParts.push(inflightNote);
     return [{
       sender: 'agent', text: ctx.text, meta: metaParts.join(' · '),
+      ts: Date.now(),
       modelName: ctx.model || undefined, suggestedActions: suggestion,
     }];
   }
@@ -66,6 +67,7 @@ export function buildStopMessages(ctx: StopBuildContext): ChatMessage[] {
   if (inflightNote) parts.push(inflightNote);
   return [{
     sender: 'agent', text: parts.join('\n'),
+    ts: Date.now(),
     modelName: ctx.model || undefined, suggestedActions: suggestion,
   }];
 }

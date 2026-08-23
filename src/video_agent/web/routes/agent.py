@@ -101,6 +101,8 @@ class ChatRequest(BaseModel):
     # 系统动作标记（如 gate_override=「本次放行」）：携带时用户消息持久化带
     # kind 标记，前端渲染为系统动作行而非用户气泡（LLM 语义不变）
     system_action: str = ""
+    # 截断重答的「用户消息已落盘」标记已撤出公共契约：改由后端内部
+    # contextvar（state.chat_tail_ops.user_message_persisted）传递
 
 
 class ChatResponse(BaseModel):

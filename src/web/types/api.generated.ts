@@ -259,6 +259,10 @@ export interface SkillFormatRequest {
   content: string;
 }
 
+export interface SnapshotRequest {
+  up_to_index?: number | unknown;
+}
+
 export interface SwitchProjectRequest {
   project_id: string;
 }
@@ -279,6 +283,13 @@ export interface TestConnectionResponse {
 export interface TimelinePushRequest {
   shot_group_id?: string;
   canvas_id?: string;
+}
+
+export interface TruncateResendRequest {
+  text?: string | unknown;
+  provider?: string | unknown;
+  model?: string | unknown;
+  thinking_level?: string | unknown;
 }
 
 export interface UndoStatusResponse {

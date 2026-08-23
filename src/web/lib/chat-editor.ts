@@ -63,9 +63,6 @@ export function useChatEditor() {
         const exists = Array.from(el.querySelectorAll('.skill-chip'))
           .some((n) => (n as HTMLElement).dataset.skillName === req.name);
         if (!exists) insertNodeAtCursor(el, createSkillChip(req.name), savedRange);
-      } else if (req.kind === 'edit_backfill') {
-        // 用户气泡「编辑」回填：与排队消息编辑同款换行追加语义
-        backfillText(req.text);
       } else {
         insertTextAtCursor(el, req.text, savedRange);
       }
@@ -126,8 +123,7 @@ export function useChatEditor() {
     mention.detectMention();
   }
 
-  /** 文本回填输入框（单一实现）：换行追加、不冲掉正在输入的内容；
-   * 排队消息「编辑」与用户气泡「编辑」（edit_backfill 桥接请求）共用同款语义 */
+  /** 文本回填输入框（单一实现）：换行追加、不冲掉正在输入的内容（排队消息「编辑」专用） */
   function backfillText(text: string) {
     const el = editorEl;
     if (!el || !text) return;

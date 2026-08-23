@@ -89,7 +89,27 @@ const [chatState, setChatState] = createStore<ChatState>(defaultChatState);
 
 export const chatActions = {
   addMessage(msg: ChatMessage) {
-    setChatState('messages', (prev) => [...prev, msg]);
+    setChatState('messages', (prev) => [...prev, { ...msg, ts: msg.ts ?? Date.now() }]);
+  },
+
+  /** 截断重答本地同步（与后端 truncate_chat_tail 同语义）：丢弃最后一条
+   * 非系统动作用户消息之后的全部消息；text 非空时替换该消息正文。
+   * 仅在 /chat/truncate-resend 成功后调用（旧回复消失，新任务流式接续）。 */
+  truncateTailForResend(newText?: string) {
+    setChatState('messages', (prev) => {
+      let idx = -1;
+      for (let i = prev.length - 1; i >= 0; i -= 1) {
+        const m = prev[i];
+        if (m.sender === 'user' && m.kind !== 'system_action') { idx = i; break; }
+      }
+      if (idx < 0) return prev;
+      const next = prev.slice(0, idx + 1);
+      const body = (newText || '').trim();
+      // 替换正文时同步清 parts（与后端替换语义对齐：旧图文排版随重写作废）；
+      // 纯重答路径（无 newText）不动
+      if (body) next[idx] = { ...next[idx], text: body, parts: undefined };
+      return next;
+    });
   },
 
   setInput(text: string) {
@@ -191,6 +211,7 @@ export const chatActions = {
       const turnId = payload.turn_id || undefined;
       s.messages.push({
         sender: 'agent',
+        ts: Date.now(),
         text: (payload.text || '').trim() || t('rp.msg.emptyReply'),
         meta: metaParts.join(' · '),
         // 类型收窄：confirm 唯一形态 = 问句文本（无暂停 = undefined）
@@ -225,13 +246,14 @@ export const chatActions = {
       (payload.documents_written || []).forEach((name) => {
         if (s.renderedDocCards.includes(name)) return;
         s.renderedDocCards.push(name);
-        s.messages.push({ sender: 'agent', docCard: name, text: '', turnId });
+        s.messages.push({ sender: 'agent', docCard: name, text: '', turnId, ts: Date.now() });
       });
       // 生图结果图片卡片
       if (payload.image_urls && payload.image_urls.length > 0) {
         s.messages.push({
           sender: 'agent',
           text: '',
+          ts: Date.now(),
           imageCard: { image_urls: payload.image_urls },
           turnId,
         });
@@ -244,6 +266,7 @@ export const chatActions = {
         s.messages.push({
           sender: 'agent',
           text: '',
+          ts: Date.now(),
           videoCard: {
             items: videoInserts.map((it) => ({
               url: it.url,
@@ -267,6 +290,7 @@ export const chatActions = {
       // 上游原始报文折叠展示（人话在气泡，raw 在折叠）
       s.messages.push({
         sender: 'agent', text: `⚠️ ${payload.message}`, modelName: s.streamingModel || undefined,
+        ts: Date.now(),
         settingsHint: !!action.settingsHint,
         errorKind: payload.kind,
         errorDetail: payload.raw || undefined,
@@ -332,7 +356,7 @@ export const chatActions = {
     setChatState(produce((s) => {
       if (s.renderedDocCards.includes(name)) return;
       s.renderedDocCards.push(name);
-      s.messages.push({ sender: 'agent', text: '', docCard: name, turnId });
+      s.messages.push({ sender: 'agent', text: '', docCard: name, turnId, ts: Date.now() });
     }));
   },
 
@@ -346,7 +370,7 @@ export const chatActions = {
       names.forEach((name) => {
         if (!name || s.renderedDocCards.includes(name)) return;
         s.renderedDocCards.push(name);
-        s.messages.push({ sender: 'agent', text: '', docCard: name });
+        s.messages.push({ sender: 'agent', text: '', docCard: name, ts: Date.now() });
       });
     }));
   },

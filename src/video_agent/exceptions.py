@@ -3,9 +3,10 @@
 
 层次结构：
     VideoAgentError (基类，面向用户的 message)
-    ├── AdapterError      — 供应商调用失败
-    ├── GenerationError   — 生成管线失败
-    └── StateError        — 状态操作失败
+    ├── AdapterError          — 供应商调用失败
+    ├── GenerationError       — 生成管线失败
+    └── StateError            — 状态操作失败
+        └── StateConflictError — 版本闸拒绝写入（409 冲突）
 
 路由层通过 @app.exception_handler(VideoAgentError) 统一处理。
 每个异常携带 error_code 供前端国际化翻译用（消息本身保持中文）。
@@ -66,3 +67,10 @@ class StateError(VideoAgentError):
     """状态操作失败（项目不存在、路径无效等）"""
     status_code = 400
     error_code = "STATE_ERROR"
+
+
+class StateConflictError(StateError):
+    """状态写入被版本闸拒绝：磁盘账本新于本实例已知号（别的实例写过更新数据），
+    本次破坏性写入（如截断）放弃落盘，调用方应以 409 冲突告知客户端重试。"""
+    status_code = 409
+    error_code = "STATE_CONFLICT"

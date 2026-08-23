@@ -4,7 +4,7 @@
  * 确定性验证，无需真实 LLM：
  * (a) tool_started/tool_finished/reasoning_delta 帧 → 时间线两面板呈现与耗时角标；
  * (b) 停止按钮 → 已累积文本落停止气泡（任务 #17 阶段化措辞）；
- * (c) 重新生成按钮 → 机械重发该回复前最近的用户消息；
+ * (c) 悬停工具条矩阵 / 末条原地编辑（truncate-resend）/ 重新生成 / 分支截断（任务 #17 新交互模型）；
  * (d) 排队引导 → 条目原位 spinner，轮间注入成功后引导上屏。
  *
  * SSE 保活：route.fulfill 一次性交付会立即结束流（忙态随之复位），
@@ -296,9 +296,22 @@ test.describe('停止按钮', () => {
   });
 });
 
-test.describe('重新生成（机械重发）', () => {
-  test('非末条 agent 回复点重新生成：重发其前最近用户消息', async ({ page }) => {
-    // 按任务次序给不同回复：首问回「回复甲」，之后一律「回复乙」
+test.describe('悬停工具条与截断重答（任务 #17 新交互模型）', () => {
+  /** 截断重答端点 mock：捕获 body，返回与 /agent/tasks 同形的 {task_id, project_id} */
+  async function wireTruncateRoute(
+    page: import('@playwright/test').Page,
+    captured: Array<Record<string, unknown>>,
+  ) {
+    await page.route(/\/api\/chat\/truncate-resend$/, (route) => {
+      captured.push(route.request().postDataJSON());
+      void route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ task_id: 'e2e-trunc', project_id: 'e2e-p' }),
+      });
+    });
+  }
+
+  test('悬停工具条矩阵：末条挂编辑/重新生成，历史轮不挂；分支挂全部 agent 回复', async ({ page }) => {
     const handle = await startSseServer({
       done: (taskNo) => ({
         text: taskNo === 1 ? '回复甲' : '回复乙',
@@ -313,23 +326,166 @@ test.describe('重新生成（机械重发）', () => {
     await sendMessage(page, '原始问题');
     const feed = page.getByTestId('chat-feed');
     await expect(feed).toContainText('回复甲', { timeout: 10000 });
-
-    // 发出第二条用户消息，使第一条 agent 回复变为非末条（挂重新生成按钮）
-    await sendMessage(page, '追加问题');
+    await sendMessage(page, '第二个问题');
     await expect(feed).toContainText('回复乙', { timeout: 10000 });
 
-    // 锺定「回复甲」气泡上的重新生成按钮（历史持久消息也挂同款按钮，不能用 first()）
-    const regenBtn = feed.locator('.chat-msg', { hasText: '回复甲' })
-      .locator('.msg-regenerate-btn').first();
-    await expect(regenBtn).toBeVisible({ timeout: 10000 });
-    const postsBefore = capturedBodies.length;
-    await regenBtn.click();
+    // 末条用户消息：复制+编辑（无分支/重新生成）；工具条带 HH:MM 时间戳
+    const lastUser = feed.locator('.chat-msg.user', { hasText: '第二个问题' });
+    await lastUser.hover();
+    await expect(lastUser.locator('[data-testid="msg-act-edit"]')).toBeVisible({ timeout: 10000 });
+    await expect(lastUser.locator('[data-testid="msg-act-copy"]')).toBeVisible();
+    await expect(lastUser.locator('[data-testid="msg-act-branch"]')).toHaveCount(0);
+    await expect(lastUser.locator('[data-testid="msg-act-regenerate"]')).toHaveCount(0);
+    await expect(lastUser.locator('.msg-hover-time')).toContainText(/^\d{2}:\d{2}$/);
 
-    // 机械重发：新任务携带的是第一条用户消息的原文
-    await expect.poll(() => capturedBodies.length, { timeout: 10000 })
-      .toBeGreaterThanOrEqual(postsBefore + 1);
-    const resent = capturedBodies[capturedBodies.length - 1];
-    expect(resent.message).toBe('原始问题');
+    // 末条 agent 回复：复制+分支+重新生成
+    const lastAgent = feed.locator('.chat-msg.agent', { hasText: '回复乙' });
+    await lastAgent.hover();
+    await expect(lastAgent.locator('[data-testid="msg-act-regenerate"]')).toBeVisible({ timeout: 10000 });
+    await expect(lastAgent.locator('[data-testid="msg-act-branch"]')).toBeVisible();
+    await expect(lastAgent.locator('[data-testid="msg-act-copy"]')).toBeVisible();
+
+    // 历史轮：agent 回复只留分支（无重新生成）；用户消息只留复制（无编辑）
+    const histAgent = feed.locator('.chat-msg.agent', { hasText: '回复甲' });
+    await histAgent.hover();
+    await expect(histAgent.locator('[data-testid="msg-act-branch"]')).toBeVisible({ timeout: 10000 });
+    await expect(histAgent.locator('[data-testid="msg-act-regenerate"]')).toHaveCount(0);
+    const histUser = feed.locator('.chat-msg.user', { hasText: '原始问题' });
+    await histUser.hover();
+    await expect(histUser.locator('[data-testid="msg-act-copy"]')).toBeVisible({ timeout: 10000 });
+    await expect(histUser.locator('[data-testid="msg-act-edit"]')).toHaveCount(0);
+    await handle.close();
+  });
+
+  test('末条用户消息原地编辑：旧回复消失，截断重答携带新正文', async ({ page }) => {
+    const handle = await startSseServer({
+      done: (taskNo) => ({
+        text: taskNo === 1 ? '旧回复' : '重答后的新回复',
+        elapsed_ms: 100, steps: 1, applied_actions: 0,
+      }),
+    });
+    const capturedBodies: Array<Record<string, unknown>> = [];
+    await wireAgentRoutes(page, handle, capturedBodies);
+    const truncateBodies: Array<Record<string, unknown>> = [];
+    await wireTruncateRoute(page, truncateBodies);
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await sendMessage(page, '原始问题');
+    const feed = page.getByTestId('chat-feed');
+    await expect(feed).toContainText('旧回复', { timeout: 10000 });
+
+    // 键盘通路：focus 经 :focus-within 点亮工具条，Enter 触发按钮——
+    // hover+click 在布局变化（新消息上屏）时会被相邻条目拦截指针事件
+    const lastUser = feed.locator('.chat-msg.user', { hasText: '原始问题' });
+    await lastUser.locator('[data-testid="msg-act-edit"]').focus();
+    await lastUser.locator('[data-testid="msg-act-edit"]').press('Enter');
+    const box = feed.locator('[data-testid="inline-edit-box"]');
+    await expect(box).toBeVisible({ timeout: 10000 });
+    const ta = box.locator('.inline-edit-textarea');
+    await expect(ta).toHaveValue('原始问题');
+
+    // 改写后发送 → POST truncate-resend {text}；旧回复消失，新回复流式接续
+    await ta.fill('改写后的问题');
+    await box.locator('[data-testid="inline-edit-send"]').click();
+    await expect.poll(() => truncateBodies.length, { timeout: 10000 }).toBe(1);
+    expect(truncateBodies[0].text).toBe('改写后的问题');
+    await expect(feed.locator('.user-bubble-text', { hasText: '改写后的问题' })).toBeVisible({ timeout: 10000 });
+    await expect(feed.locator('.chat-msg', { hasText: '旧回复' })).toHaveCount(0, { timeout: 10000 });
+    await expect(feed).toContainText('重答后的新回复', { timeout: 10000 });
+    await handle.close();
+  });
+
+  test('末条 agent 回复重新生成：truncate-resend 无 text，原地更新为新回复', async ({ page }) => {
+    const handle = await startSseServer({
+      done: (taskNo) => ({
+        text: taskNo === 1 ? '第一版回复' : '第二版回复',
+        elapsed_ms: 100, steps: 1, applied_actions: 0,
+      }),
+    });
+    const capturedBodies: Array<Record<string, unknown>> = [];
+    await wireAgentRoutes(page, handle, capturedBodies);
+    const truncateBodies: Array<Record<string, unknown>> = [];
+    await wireTruncateRoute(page, truncateBodies);
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await sendMessage(page, '写一首诗');
+    const feed = page.getByTestId('chat-feed');
+    await expect(feed).toContainText('第一版回复', { timeout: 10000 });
+
+    // 键盘通路（同上）：focus 点亮 :focus-within 工具条后 Enter 触发重新生成
+    const lastAgent = feed.locator('.chat-msg.agent', { hasText: '第一版回复' });
+    await lastAgent.locator('[data-testid="msg-act-regenerate"]').focus();
+    await lastAgent.locator('[data-testid="msg-act-regenerate"]').press('Enter');
+
+    // 无 text 截断重答（body 不带正文）；旧回复消失、新回复上屏，用户消息保留
+    await expect.poll(() => truncateBodies.length, { timeout: 10000 }).toBe(1);
+    expect(truncateBodies[0].text ?? null).toBeNull();
+    await expect(feed.locator('.chat-msg', { hasText: '第一版回复' })).toHaveCount(0, { timeout: 10000 });
+    await expect(feed).toContainText('第二版回复', { timeout: 10000 });
+    await expect(feed.locator('.user-bubble-text', { hasText: '写一首诗' })).toBeVisible();
+    await handle.close();
+  });
+
+  test('分支截断：以该消息为分叉点，分支对话不含被截断消息', async ({ page }) => {
+    const handle = await startSseServer({
+      done: (taskNo) => ({
+        text: taskNo === 1 ? '第一轮回复' : '第二轮回复',
+        elapsed_ms: 100, steps: 1, applied_actions: 0,
+      }),
+    });
+    const capturedBodies: Array<Record<string, unknown>> = [];
+    await wireAgentRoutes(page, handle, capturedBodies);
+
+    // 快照/分支端点 mock：捕获 up_to_index；分支 payload 只含分叉点及之前的消息
+    const snapshotBodies: Array<Record<string, unknown>> = [];
+    await page.route(/\/api\/conversations\/snapshot$/, (route) => {
+      snapshotBodies.push(route.request().postDataJSON());
+      void route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ snap_id: 'snap-1', title: '快照' }),
+      });
+    });
+    await page.route(/\/api\/conversations\/snapshots\/[^/]+\/branch$/, (route) => {
+      void route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          conversations: [{
+            id: 'c-branch', title: '分支对话',
+            messages: [
+              { sender: 'user', text: '第一个问题' },
+              { sender: 'agent', text: '第一轮回复' },
+            ],
+          }],
+          active_conversation_id: 'c-branch',
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await sendMessage(page, '第一个问题');
+    const feed = page.getByTestId('chat-feed');
+    await expect(feed).toContainText('第一轮回复', { timeout: 10000 });
+    await sendMessage(page, '第二个问题');
+    await expect(feed).toContainText('第二轮回复', { timeout: 10000 });
+
+    // 悬停历史 agent 回复「第一轮回复」→ 点分支
+    // force：工具条贴消息底缘，点击命中点可能被相邻下一条 .chat-msg 遮挡判定拦截
+    const target = feed.locator('.chat-msg.agent', { hasText: '第一轮回复' });
+    // 先读分叉点下标（点击后消息列表会被分支对话替换，元素可能失效）
+    const forkIdx = Number(await target.getAttribute('data-msg-index'));
+    await target.hover();
+    await target.locator('[data-testid="msg-act-branch"]').click({ force: true });
+
+    // 分叉点 = 该消息索引（含；与消息 data-msg-index 对齐，不依赖环境历史长度）；
+    // 切换后分支对话不含被截断的第二轮
+    await expect.poll(() => snapshotBodies.length, { timeout: 10000 }).toBe(1);
+    expect(snapshotBodies[0].up_to_index).toBe(forkIdx);
+    await expect(feed.locator('.chat-msg', { hasText: '第二个问题' })).toHaveCount(0, { timeout: 10000 });
+    await expect(feed.locator('.chat-msg', { hasText: '第二轮回复' })).toHaveCount(0, { timeout: 10000 });
+    await expect(feed).toContainText('第一轮回复', { timeout: 10000 });
     await handle.close();
   });
 });

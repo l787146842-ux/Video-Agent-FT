@@ -22,8 +22,15 @@ export interface MessageAffordance {
   gateTarget: boolean;
   /** 携带建议动作的消息（重试/继续按钮挂载点） */
   suggestedTarget: boolean;
-  /** 用户气泡可编辑（编辑控制点挂载位，点击回填输入框后作为新消息发送） */
+  /** 悬停工具条——编辑：仅最后一条用户消息（原地编辑 = 截断重答，忙碌隐藏） */
   editable: boolean;
+  /** 悬停工具条——重新生成：仅最后一条普通 agent 回复（截断重答无 text；
+   * 错误/停止气泡不挂——自带 suggestedActions 出口；忙碌隐藏） */
+  regenerable: boolean;
+  /** 悬停工具条——分支：全部 agent 回复（含历史；以该消息为分叉点截断快照） */
+  branchable: boolean;
+  /** 悬停工具条——复制：有正文文本的消息 */
+  copyable: boolean;
   /** 暂停卡生命周期（回看时可知旧卡是否仍有效） */
   confirmState: ConfirmState;
   /** 已回应暂停卡的「当时所选值」（仅 answered 态非空） */
@@ -69,12 +76,39 @@ function confirmStateFor(
   return 'expired';
 }
 
-/** 用户消息编辑挂载判定：有正文文本的普通用户消息可编辑；
- * 系统动作行（如「本次放行」留痕）非用户手打，不挂编辑。
- * 流式中不失效——编辑旧消息回填输入框与当前推理无冲突（发送走排队）。 */
-function isEditable(m: ChatMessage): boolean {
-  return m.sender === 'user' && m.kind !== 'system_action' && (m.text || '').trim() !== '';
+/** 最后一条可编辑的用户消息：有正文的普通用户消息（系统动作行非用户手打不挂）；
+ * 与后端截断重答目标同口径（最后一条非 system_action 用户消息）。 */
+function lastEditableUserIdx(messages: ChatMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m.sender === 'user' && m.kind !== 'system_action' && (m.text || '').trim() !== '') return i;
+  }
+  return -1;
 }
+
+/** 最后一条普通 agent 回复（重新生成挂载点）：有正文且非错误气泡
+ * （无 errorKind/errorDetail）、非停止/建议气泡（无 suggestedActions、正文不以
+ * ⚠️/⏹ 开头——存量库内无结构化字段的错误/停止气泡同口径跳过）、
+ * 非待回应暂停卡（带 confirm/confirmOptions——先回应再重答，防误截断卡片）、
+ * 非卡片派生条目。历史轮次不挂重新生成（只留末条）。 */
+function lastPlainAgentIdx(messages: ChatMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m.sender !== 'agent') continue;
+    const text = (m.text || '').trim();
+    if (!text) continue;
+    if (m.errorKind || m.errorDetail) continue;
+    if (text.startsWith('⚠️') || text.startsWith('⏹')) continue;
+    if ((m.suggestedActions || []).length) continue;
+    if (m.confirm || (m.confirmOptions || []).length) continue;
+    return i;
+  }
+  return -1;
+}
+
+/** 消息级分支的历史长度上限：后端历史装载裁 200 条，超限后本地绝对下标
+ * 与后端持久化下标错位（up_to_index 会截错位置），此时禁用消息级分支。 */
+export const BRANCH_MAX_MESSAGES = 200;
 
 /** 全量派生：与消息数组等长、同序（ChatFeed 按下标消费）。 */
 export function deriveAffordances(
@@ -83,13 +117,22 @@ export function deriveAffordances(
   const confirmTarget = confirmTargetIdx(messages, isStreaming);
   const gateTarget = gateWarningTargetIdx(messages, isStreaming);
   const suggestedTarget = suggestedTargetIndex(messages, isStreaming);
+  const lastEditableUser = lastEditableUserIdx(messages);
+  const lastPlainAgent = lastPlainAgentIdx(messages);
   return messages.map((m, idx) => {
     const state = confirmStateFor(messages, idx, confirmTarget);
     return {
       confirmTarget: idx === confirmTarget,
       gateTarget: idx === gateTarget,
       suggestedTarget: idx === suggestedTarget,
-      editable: isEditable(messages[idx]),
+      // 编辑/重新生成都走截断重答：忙碌（流式）中隐藏，只挂末条
+      editable: !isStreaming && idx === lastEditableUser,
+      regenerable: !isStreaming && idx === lastPlainAgent,
+      // 分支只挂有正文的 agent 回复；卡片派生条目（doc/图/视频卡，空正文）不挂；
+      // 超 BRANCH_MAX_MESSAGES 条时禁用（后端裁 200 条，绝对下标会错位）
+      branchable: messages.length <= BRANCH_MAX_MESSAGES
+        && m.sender === 'agent' && (m.text || '').trim() !== '',
+      copyable: (m.text || '').trim() !== '',
       confirmState: state,
       answeredValue: state === 'answered' ? answeredValueFor(messages, idx) : '',
     };

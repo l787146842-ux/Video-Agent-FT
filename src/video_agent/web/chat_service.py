@@ -42,6 +42,7 @@ from src.video_agent.web.provider_config import (
 from src.video_agent.web.error_payload import classify_exception, classify_legacy_code
 from src.video_agent.web.sse import sse_event_generator  # noqa: 1 （保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
+from src.video_agent.state import chat_tail_ops
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
@@ -57,6 +58,7 @@ from src.video_agent.core.sse_events import (
 from src.video_agent.core.stop_signal import is_stop_requested
 from src.video_agent.web.stop_manager import (
     persist_stop_trace,
+    retry_suggestion_if_user,
     snapshot_inflight_generations,
     stopped_event,
 )
@@ -71,47 +73,6 @@ __all__ = ["stream_worker", "non_stream_worker", "build_multimodal_content"]
 
 # 停止阶段措辞/痕迹文案/停止持久化已抽至 web/stop_manager.py（任务 #17 收尾，
 # 行数棘轮清偿：chat_service 回落 900 行以下）
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 async def stream_worker(body: Any, emit) -> None:
@@ -312,7 +273,6 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
                 return provider_id or settings.default_image_provider_id, aspect_ratio
     return settings.default_image_provider_id, aspect_ratio
 
-
 # ---------- 模型 fallback 链（退役：用户裁决 2026-08-20） ----------
 # 模型选择权归用户：选什么用什么，联不通直接报错。自动换厂商 fallback
 # （_fallback_candidates/_fallback_switch_payload/_is_retryable_adapter_error）
@@ -348,13 +308,17 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             # 暂停回应结构化消费：点选回应与 active_pause 匹配即落标记（展示层）
             pause_answered = consume_pause_response(
                 svc, getattr(body, "pause_response", None) or None)
-            svc.add_chat_message(
-                "user", user_text,
-                doc_blocks=getattr(body, "doc_blocks", None) or None,
-                skill_blocks=getattr(body, "skill_blocks", None) or None,
-                pause_answered=pause_answered,
-                kind=getattr(body, "system_action", "") or "",
-            )
+            # 截断重答：用户消息已在历史尾部落盘（含编辑后正文），
+            # 不重复持久化，避免气泡翻倍（内部 contextvar 守卫，非请求字段）；
+            # 其余路径照常落盘
+            if not chat_tail_ops.user_message_persisted.get():
+                svc.add_chat_message(
+                    "user", user_text,
+                    doc_blocks=getattr(body, "doc_blocks", None) or None,
+                    skill_blocks=getattr(body, "skill_blocks", None) or None,
+                    pause_answered=pause_answered,
+                    kind=getattr(body, "system_action", "") or "",
+                )
             # 规格卡自 write_spec 提交结果投影（用户消息之后）+ 即显事件
             if wiz_doc:
                 svc.add_chat_message("agent", "", doc_card=wiz_doc, turn_id=turn_id)
@@ -568,10 +532,12 @@ async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: 
     payload = classify_exception(e, message=friendly, raw=raw)
     if use_studio_context:
         async with svc.lock:
-            # 错误前缀统一为 ⚠️（与前端 streamError 渲染一致，刷新后不跳变）
+            # 错误前缀统一为 ⚠️（与前端 streamError 渲染一致，刷新后不跳变）；
+            # 「继续刚才的任务」建议随错误消息落盘（任务 #16，刷新后可重建）
             svc.add_chat_message(
                 "agent", f"⚠️ {friendly}", model_name=body.model or "",
                 error_detail=raw,
+                suggested_actions=retry_suggestion_if_user(svc),
             )
     await emit({
         "type": SSE_ERROR, "detail": friendly, "raw": raw,
@@ -696,11 +662,13 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         async with svc.lock:
             if use_studio_context:
                 bind_attachments(svc, body.attachments)
-                svc.add_chat_message(
-                    "user", user_text,
-                    doc_blocks=getattr(body, "doc_blocks", None) or None,
-                    skill_blocks=getattr(body, "skill_blocks", None) or None,
-                )
+                # 截断重答内部守卫（同流式轨）：用户消息已落盘时不重复持久化
+                if not chat_tail_ops.user_message_persisted.get():
+                    svc.add_chat_message(
+                        "user", user_text,
+                        doc_blocks=getattr(body, "doc_blocks", None) or None,
+                        skill_blocks=getattr(body, "skill_blocks", None) or None,
+                    )
                 # 规格卡自提交结果投影（用户消息之后），名字随载荷下发保 live 可见
                 if _wiz_doc_ns:
                     svc.add_chat_message("agent", "", doc_card=_wiz_doc_ns)
@@ -740,13 +708,15 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             # 暂停回应结构化消费（非流式路径同构）
             ns_pause_answered = consume_pause_response(
                 svc, getattr(body, "pause_response", None) or None)
-            svc.add_chat_message(
-                "user", user_text,
-                doc_blocks=getattr(body, "doc_blocks", None) or None,
-                skill_blocks=getattr(body, "skill_blocks", None) or None,
-                pause_answered=ns_pause_answered,
-                kind=getattr(body, "system_action", "") or "",
-            )
+            # 截断重答内部守卫（同流式轨）：用户消息已落盘时不重复持久化
+            if not chat_tail_ops.user_message_persisted.get():
+                svc.add_chat_message(
+                    "user", user_text,
+                    doc_blocks=getattr(body, "doc_blocks", None) or None,
+                    skill_blocks=getattr(body, "skill_blocks", None) or None,
+                    pause_answered=ns_pause_answered,
+                    kind=getattr(body, "system_action", "") or "",
+                )
             # 规格卡自提交结果投影（用户消息之后，非流式轨同步）
             if _wiz_doc_ns:
                 svc.add_chat_message("agent", "", doc_card=_wiz_doc_ns)
@@ -861,7 +831,6 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         # workflow 投影（非流式同构）
         "workflow": workflow_runtime.project(svc.state_dict, ns_turn_id),
     }
-
 
 # 开场编排域/消费压缩域实现体在 chat_opening.py / chat_consume.py，re-export 保持既有引用不变
 from src.video_agent.web.chat_opening import (

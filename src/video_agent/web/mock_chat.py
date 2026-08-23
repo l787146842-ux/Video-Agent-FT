@@ -12,6 +12,7 @@ from src.video_agent.core import workflow_runtime
 from src.video_agent.memory import MemoryManager
 from src.video_agent.web.attachments import bind_attachments, store_uploaded_docs
 from src.video_agent.web.mock_llm import mock_llm_reply
+from src.video_agent.state import chat_tail_ops
 
 
 async def mock_stream(svc, executor, body, user_text, llm_user_text,
@@ -47,13 +48,16 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
                     "value": str(_pr.get("value") or ""),
                     "label": str(_pr.get("label") or ""),
                 }
-            svc.add_chat_message(
-                "user", user_text,
-                doc_blocks=getattr(body, "doc_blocks", None) or None,
-                skill_blocks=getattr(body, "skill_blocks", None) or None,
-                pause_answered=_pause_answered,
-                kind=getattr(body, "system_action", "") or "",
-            )
+            # 截断重答：用户消息已在历史尾部落盘，不重复持久化
+            # （内部 contextvar 守卫，非请求字段）
+            if not chat_tail_ops.user_message_persisted.get():
+                svc.add_chat_message(
+                    "user", user_text,
+                    doc_blocks=getattr(body, "doc_blocks", None) or None,
+                    skill_blocks=getattr(body, "skill_blocks", None) or None,
+                    pause_answered=_pause_answered,
+                    kind=getattr(body, "system_action", "") or "",
+                )
             # 挂起补卡机制退役；向导规格卡投影由 chat_service
             # 按 write_spec 提交结果于用户消息后落库（mock 轨同构）
         #自查补漏：mock 路径 status 同走 key 化（#1 同类全覆盖）

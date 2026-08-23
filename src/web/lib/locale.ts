@@ -43,7 +43,6 @@ const zhCN = {
   // agent.executing 随 executing_actions 事件退役删除（见 ADR-0001）
   'rp.conv.close': '关闭对话',
   'rp.conv.create': '新建对话',
-  'rp.conv.branch': '分支当前对话（快照并派生新对话）',
   'rp.conv.busyGuard': 'Agent 正在回复，请稍后再操作对话窗口',
 
   // ---------- 输入区 ----------
@@ -136,7 +135,7 @@ const zhCN = {
   'rp.msg.continueTask': '继续完成',
   // 用户气泡编辑控制点与停止后继续建议（本地派生）
   'rp.msg.edit': '编辑',
-  'rp.msg.editTitle': '编辑并分支：创建新对话承载修改，原对话保持不变',
+  'rp.msg.editTitle': '编辑并重新发送（截断之后的回复并重答）',
   'rp.msg.continueLastTask': '继续刚才的任务',
   'rp.msg.imageResult': '生图结果',
   'rp.msg.imageTip': '{name} — 点击查看原图，按住拖动到画布',
@@ -203,7 +202,7 @@ const zhCN = {
   'rp.task.done': '后台 Agent 任务已完成',
   'rp.suggested.valueRejected': '建议动作文本异常（非人类可读），已拦截发送',
   'rp.msg.metaTokens': '{n} tokens',
-  'rp.msg.regenerate': '重新生成（机械重发该回复前的问题）',
+  'rp.msg.regenerate': '重新生成（截断之后的回复，按最后问题重答）',
   'rp.send.noProvider': '请先选择 Agent API 和对应模型',
   'rp.skill.manifestHint': '高级声明（skill_manifest，系统自动维护，无需编辑）',
 
@@ -294,9 +293,15 @@ const zhCN = {
   // ---------- 消息窗口化（长会话只渲染近段，向前按需展开） ----------
   'rp.feed.showEarlier': '显示更早的消息（{n} 条未显示）',
 
-  // ---------- 编辑历史消息 = 分支（原对话不变，修改在新对话发送） ----------
-  'rp.msg.editBranched': '已创建分支对话，修改后发送即可（原对话不受影响）',
-  'rp.msg.editBranchFailed': '创建分支失败：{error}',
+  // ---------- 消息悬停工具条与截断重答（任务 #17 新交互模型） ----------
+  'rp.msg.copy': '复制',
+  'rp.msg.copied': '已复制',
+  'rp.msg.branch': '分支：以此消息为分叉点创建新对话',
+  'rp.msg.branchedAt': '已从此消息创建分支对话',
+  'rp.msg.branchFailed': '创建分支失败：{error}',
+  'rp.msg.truncateFailed': '截断重答失败：{error}',
+  'rp.msg.editCancel': '取消',
+  'rp.msg.editSend': '发送',
 } satisfies Record<string, string>;
 
 /** 字典键联合类型：t() 编译期校验的单一来源（拼错的 key 无法通过 tsc） */

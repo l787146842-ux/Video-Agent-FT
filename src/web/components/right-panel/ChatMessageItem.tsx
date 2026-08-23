@@ -1,15 +1,14 @@
-import { For, createSignal, Show, onMount, onCleanup } from 'solid-js';
+import { createSignal, Show, onMount, onCleanup } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
 import {
-  FiCheckCircle, FiChevronRight, FiFileText,
+  FiChevronRight, FiFileText,
 } from 'solid-icons/fi';
-import { sendUserMessage } from '@/lib/agent-actions';
 import { chatState } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { openDocsPanel } from '@/stores/docs';
-import { isHumanReadableSuggestedValue } from '@/lib/suggested-guard';
-import { resendNearestUserMessage } from '@/lib/resend';
-import { editMessageInBranch } from '@/lib/edit-branch';
+import { truncateResendAction } from '@/lib/truncate-resend';
+import { branchAtMessage } from '@/lib/message-branch';
+import { copyText } from '@/lib/code-copy';
 import { absUrl } from '@/lib/chat-image-drag';
 import { t } from '@/lib/locale';
 import { RichBubble } from './RichBubble';
@@ -23,12 +22,25 @@ import { ImageLightbox } from './ImageLightbox';
 import { GateWarnings } from './GateWarnings';
 import { MemoryHits } from './MemoryHits';
 import { MarkdownBubble } from './MarkdownBubble';
+import { MessageHoverToolbar } from './MessageHoverToolbar';
+import { InlineEditBox } from './InlineEditBox';
+import { SuggestedActionBar } from './SuggestedActionBar';
+import { AnsweredOptions } from './AnsweredOptions';
 import type { ChatMessage } from '@/types';
+
+/** epoch ms → HH:MM（悬停工具条时间戳；无 ts 返回空串不显示） */
+function formatHHMM(ts?: number): string {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 /**
  * 单条聊天消息
  * user：右侧气泡（有 parts 时按文字+缩略图交错还原排版）；agent：markdown 渲染。
  * 支持 docCard（文档完成卡片）、imageCard（生图结果，可点击看原图/可拖拽）、confirm（阶段确认卡片 + 操作条）。
+ * 悬停工具条（任务 #17）：复制/编辑/分支/重新生成按 affordances 矩阵挂载，
+ * 仅悬停或键盘 focus-within 可见；编辑 = 原地编辑框 → 截断重答。
  */
 export function ChatMessageItem(props: {
   message: ChatMessage;
@@ -43,9 +55,13 @@ export function ChatMessageItem(props: {
   answeredValue?: string;
   /** 是否为最后一条携带建议动作的消息（重试/继续按钮挂载点） */
   isSuggestedTarget?: boolean;
-  /** 用户气泡编辑控制点挂载位（经 deriveAffordances 派生） */
+  /** 悬停工具条矩阵（均经 deriveAffordances 派生）：
+   * 编辑=末条用户消息；重新生成=末条普通 agent 回复；分支=agent 回复；复制=有正文 */
   editable?: boolean;
-  /** 消息在全局数组中的下标（搜索/轮次跳转的定位锚点 data-msg-index） */
+  regenerable?: boolean;
+  branchable?: boolean;
+  copyable?: boolean;
+  /** 消息在全局数组中的下标（分支分叉点 up_to_index / 搜索跳转锚点） */
   domIndex?: number;
 }) {
   const msg = () => props.message;
@@ -53,34 +69,40 @@ export function ChatMessageItem(props: {
   const navigate = useNavigate();
   /** 原图预览（lightbox）当前打开的图片地址 */
   const [lightboxUrl, setLightboxUrl] = createSignal('');
+  /** 原地编辑进行中（该用户消息气泡变为编辑框） */
+  const [editing, setEditing] = createSignal(false);
+  /** 重新生成 in-flight 守卫（与 InlineEditBox sending 同模式：响应回来前禁二次触发） */
+  const [regenerating, setRegenerating] = createSignal(false);
 
-  /** 建议动作 value 护栏（实现见 lib/suggested-guard）：
-   *  value 会直入用户气泡与 LLM 历史，契约 = 与 label 同值的人类可读文本 */
-
-  /** 重试 = 机械重发上一条用户消息原内容（含富文本附件），零模型猜测；
-   * continue/next = 发送后端下发的固定 value 文本
-   * （next=状态驱动下一步建议，点击即显式用户指令） */
-  const runSuggested = (act: { kind: 'retry' | 'continue' | 'next'; value: string }) => {
-    if (act.kind === 'retry') {
-      resendNearestUserMessage(chatState.messages.length - 1);
-      return;
-    }
-    if (act.value) {
-      if (!isHumanReadableSuggestedValue(act.value)) {
-        console.warn('[ChatMessageItem] 建议动作 value 非人类可读，拒发:', act.value);
-        showToast(t('rp.suggested.valueRejected'), 'warning');
-        return;
-      }
-      void sendUserMessage(act.value);
+  /** 悬停工具条动作 */
+  const doCopy = async () => {
+    const ok = await copyText(msg().text || '');
+    showToast(t(ok ? 'rp.msg.copied' : 'rp.code.copyFailed'), ok ? 'success' : 'warning');
+  };
+  const doBranch = () => {
+    const idx = props.domIndex ?? chatState.messages.indexOf(msg());
+    void branchAtMessage(idx);
+  };
+  /** 重新生成 = 截断重答无 text（机械重答最后一条用户消息，原地更新）；
+   * 双击守卫：请求未回前二次点击直接忽略 */
+  const doRegenerate = async () => {
+    if (regenerating()) return;
+    setRegenerating(true);
+    try {
+      await truncateResendAction();
+    } finally {
+      setRegenerating(false);
     }
   };
-
-  /** 轮级 regenerate：任意 agent 回复可重跑（机械重发其前最近用户消息，
-   * 与 retry 同语义，实现见 lib/resend）；末条已有 suggested retry 不重复挂载 */
-  const regenerate = () => {
-    const here = chatState.messages.indexOf(msg());
-    if (here > 0) resendNearestUserMessage(here - 1);
+  /** 原地编辑提交：截断重答带新正文；成功后关闭编辑框（消息列表已截断刷新） */
+  const submitEdit = async (text: string) => {
+    const ok = await truncateResendAction(text);
+    if (ok) setEditing(false);
+    return ok;
   };
+
+  /** 悬停工具条挂载判定：矩阵内任一动作可挂（系统动作行/卡片无动作不挂） */
+  const hasToolbar = () => !!(props.copyable || props.editable || props.branchable || props.regenerable);
 
   /** 过程时间线数据（从消息 trace/actionLog 重建，刷新后不丢） */
   const timeline = () => timelineFromMessage(msg());
@@ -135,32 +157,9 @@ export function ChatMessageItem(props: {
         <StageCard msg={msg} state={props.confirmState || 'none'} />
       </Show>
 
-      {/* 已回应暂停卡的「当时选了哪项」对勾标注（只读回看）。
-          匹配规则：所选值 = 其后首条用户消息文本，与选项 value/label 相等即命中；
-          无匹配只灰显不标对勾（防误标） */}
+      {/* 已回应暂停卡的「当时选了哪项」对勾标注（只读回看） */}
       <Show when={msg().confirm && (props.answeredValue || '') && (msg().confirmOptions || []).length > 0}>
-        <div class="answered-options">
-          <For each={msg().confirmOptions || []}>
-            {(opt) => {
-              const lines = (props.answeredValue || '')
-                .split('\n').map((s) => s.trim()).filter(Boolean);
-              const chosen = () =>
-                opt.value === props.answeredValue || opt.label === props.answeredValue
-                || lines.includes(opt.value ?? '') || lines.includes(opt.label ?? '');
-              return (
-                <span class={`answered-option${chosen() ? ' chosen' : ''}`}>
-                  <Show when={chosen()}>
-                    <FiCheckCircle size={12} class="answered-option-check" />
-                  </Show>
-                  {opt.label}
-                  <Show when={chosen()}>
-                    <span class="answered-option-tag">{t('rp.msg.chosen')}</span>
-                  </Show>
-                </span>
-              );
-            }}
-          </For>
-        </div>
+        <AnsweredOptions options={msg().confirmOptions || []} answeredValue={props.answeredValue || ''} />
       </Show>
 
       {/* 过程时间线（深度思考 + 已处理操作，折叠面板；内容不进下次 LLM 上下文） */}
@@ -203,35 +202,10 @@ export function ChatMessageItem(props: {
             <pre class="msg-error-detail-body">{msg().errorDetail}</pre>
           </details>
         </Show>
-        {/* 建议动作按钮（重试=机械重发上一条用户消息；继续=固定文本） */}
+        {/* 建议动作按钮（读持久化 suggestedActions，刷新后不丢；
+            重试=机械重发最近用户消息；继续=固定文本） */}
         <Show when={props.isSuggestedTarget && (msg().suggestedActions || []).length > 0}>
-          <div class="suggested-actions">
-            <For each={msg().suggestedActions || []}>
-              {(act) => (
-                <button
-                  type="button"
-                  class="suggested-action-btn"
-                  onClick={() => runSuggested(act)}
-                >
-                  {act.kind === 'retry'
-                    // 后端/本地派生可下发显式 label（如「继续刚才的任务」），无 label 回落「重试」
-                    ? (act.label || t('rp.msg.retry'))
-                    : (act.kind === 'next' && act.label ? act.label : t('rp.msg.continueTask'))}
-                </button>
-              )}
-            </For>
-          </div>
-        </Show>
-        {/* 轮级 regenerate：非末尾 agent 回复挂重跑按钮（末条已有 suggested retry） */}
-        <Show when={!props.isSuggestedTarget}>
-          <button
-            type="button"
-            class="msg-regenerate-btn"
-            title={t('rp.msg.regenerate')}
-            onClick={regenerate}
-          >
-            {t('rp.msg.regenerate')}
-          </button>
+          <SuggestedActionBar actions={msg().suggestedActions || []} />
         </Show>
       </Show>
 
@@ -240,44 +214,60 @@ export function ChatMessageItem(props: {
         <div class="system-action-line">{msg().text}</div>
       </Show>
 
-      {/* 用户气泡：Skill 块/文档块与正文、内联媒体同一个气泡展示 */}
-      <Show when={isUser() && msg().kind !== 'system_action' && (userText() || hasRefBlocks() || hasInlineMedia())}>
+      {/* 用户气泡：编辑中原地变为编辑框（截断重答）；正常态按 parts 还原排版 */}
+      <Show when={isUser() && msg().kind !== 'system_action'}>
         <Show
-          when={hasInlineMedia()}
+          when={editing() && props.editable}
           fallback={
-            <div class="chat-bubble">
-              <Show when={hasRefBlocks()}>
-                <UserRefBlocks message={msg()} />
+            <Show when={userText() || hasRefBlocks() || hasInlineMedia()}>
+              <Show
+                when={hasInlineMedia()}
+                fallback={
+                  <div class="chat-bubble">
+                    <Show when={hasRefBlocks()}>
+                      <UserRefBlocks message={msg()} />
+                    </Show>
+                    <Show when={userText()}>
+                      <span class="user-bubble-text">{userText()}</span>
+                    </Show>
+                  </div>
+                }
+              >
+                <RichBubble
+                  before={
+                    <Show when={hasRefBlocks()}>
+                      <UserRefBlocks message={msg()} />
+                    </Show>
+                  }
+                  parts={msg().parts || []}
+                  onImageClick={(url) => setLightboxUrl(absUrl(url))}
+                />
               </Show>
-              <Show when={userText()}>
-                <span class="user-bubble-text">{userText()}</span>
-              </Show>
-            </div>
+            </Show>
           }
         >
-          <RichBubble
-            before={
-              <Show when={hasRefBlocks()}>
-                <UserRefBlocks message={msg()} />
-              </Show>
-            }
-            parts={msg().parts || []}
-            onImageClick={(url) => setLightboxUrl(absUrl(url))}
+          <InlineEditBox
+            initial={msg().text || ''}
+            onCancel={() => setEditing(false)}
+            onSubmit={submitEdit}
           />
         </Show>
       </Show>
 
-      {/* 用户气泡编辑控制点：编辑即分支——快照派生新对话，原对话不变，
-          修改后的内容在新对话输入框确认后走统一发送入口发出 */}
-      <Show when={props.editable}>
-        <button
-          type="button"
-          class="msg-edit-btn"
-          title={t('rp.msg.editTitle')}
-          onClick={() => void editMessageInBranch(msg().text || '')}
-        >
-          {t('rp.msg.edit')}
-        </button>
+      {/* 悬停工具条（含 HH:MM 时间戳）：显隐归 CSS hover/focus-within */}
+      <Show when={hasToolbar()}>
+        <MessageHoverToolbar
+          time={formatHHMM(msg().ts)}
+          align={isUser() ? 'right' : 'left'}
+          copyable={props.copyable}
+          editable={props.editable && !editing()}
+          branchable={props.branchable}
+          regenerable={props.regenerable && !regenerating()}
+          onCopy={() => void doCopy()}
+          onEdit={() => setEditing(true)}
+          onBranch={doBranch}
+          onRegenerate={() => void doRegenerate()}
+        />
       </Show>
 
       {/* 内联媒体原图预览 lightbox（共享组件） */}

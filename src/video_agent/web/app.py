@@ -36,6 +36,7 @@ from src.video_agent.web.routes.runtime_settings import router as runtime_settin
 from src.video_agent.web.routes.memory import router as memory_router
 from src.video_agent.web.routes.video_batch import router as video_batch_router
 from src.video_agent.web.routes.snapshots import router as snapshots_router
+from src.video_agent.web.routes.chat import router as chat_router
 
 # 日志配置
 logger.remove()
@@ -312,6 +313,7 @@ app.include_router(runtime_settings_router, prefix="/api", tags=["runtime-settin
 app.include_router(memory_router, prefix="/api", tags=["memory"])
 app.include_router(video_batch_router, prefix="/api", tags=["video-batch"])
 app.include_router(snapshots_router, prefix="/api", tags=["snapshots"])
+app.include_router(chat_router, prefix="/api", tags=["chat"])
 
 
 # ---------- SPA 兜底 ----------

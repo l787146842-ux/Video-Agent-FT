@@ -181,6 +181,19 @@ export async function streamAgentChat(request: AgentChatRequest): Promise<void> 
   }
 }
 
+/** 接管外部已启动的 agent 任务（截断重答 /chat/truncate-resend 专用：
+ * 后端已建任务，响应体含实际模型）：进忙态 + startStream(model) 补流式
+ * 模型徽标后走 connectToTask 同一订阅/重连/收尾路径，无新订阅逻辑。 */
+export async function attachStartedTask(started: { task_id: string; project_id: string; model?: string }): Promise<void> {
+  if (streaming()) return;
+  const projectId = started.project_id || state.projectId || '';
+  setError(null);
+  studioActions.setAgentBusy(true);
+  chatActions.startStream(started.model || '');
+  projectTasks.set(projectId, started.task_id);
+  await connectToTask(started.task_id, projectId, false);
+}
+
 /** 断开订阅但保留后台任务（切项目/离开页面时调用） */
 export function disconnectAgentStream(): void {
   if (currentTask) {

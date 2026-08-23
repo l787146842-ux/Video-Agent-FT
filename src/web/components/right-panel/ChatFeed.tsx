@@ -168,6 +168,9 @@ export function ChatFeed() {
                 isGateTarget={affordances()[start() + g.indices[0]].gateTarget}
                 isSuggestedTarget={affordances()[start() + g.indices[0]].suggestedTarget}
                 editable={affordances()[start() + g.indices[0]].editable}
+                regenerable={affordances()[start() + g.indices[0]].regenerable}
+                branchable={affordances()[start() + g.indices[0]].branchable}
+                copyable={affordances()[start() + g.indices[0]].copyable}
                 confirmState={affordances()[start() + g.indices[0]].confirmState}
                 answeredValue={affordances()[start() + g.indices[0]].answeredValue}
                 domIndex={start() + g.indices[0]}
@@ -191,6 +194,9 @@ export function ChatFeed() {
                     isGateTarget={affordances()[start() + idx].gateTarget}
                     isSuggestedTarget={affordances()[start() + idx].suggestedTarget}
                     editable={affordances()[start() + idx].editable}
+                    regenerable={affordances()[start() + idx].regenerable}
+                    branchable={affordances()[start() + idx].branchable}
+                    copyable={affordances()[start() + idx].copyable}
                     confirmState={affordances()[start() + idx].confirmState}
                     answeredValue={affordances()[start() + idx].answeredValue}
                     domIndex={start() + idx}

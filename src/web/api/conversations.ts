@@ -5,7 +5,7 @@
  */
 import { apiFetch, apiPost, apiDelete } from './client';
 import type { Conversation } from '@/types';
-import type { BranchRequest, CreateConversationRequest } from '@/types/api.generated';
+import type { BranchRequest, CreateConversationRequest, SnapshotRequest } from '@/types/api.generated';
 
 export interface ConversationsPayload {
   conversations: Conversation[];
@@ -33,9 +33,12 @@ export function deleteConversation(id: string): Promise<ConversationsPayload> {
   return apiDelete<ConversationsPayload>(`/api/conversations/${encodeURIComponent(id)}`);
 }
 
-/** B11：把当前活跃对话打为不可变快照 */
-export function createSnapshot(): Promise<{ snap_id: string; title: string }> {
-  return apiPost<{ snap_id: string; title: string }>('/api/conversations/snapshot', {});
+/** B11：把当前活跃对话打为不可变快照。
+ * upToIndex（可选，分叉点）：仅截取至该索引（含）；越界后端 400
+ * （SNAPSHOT_INDEX_OUT_OF_RANGE）。不传 = 全量快照（旧行为）。 */
+export function createSnapshot(upToIndex?: number): Promise<{ snap_id: string; title: string }> {
+  const body: SnapshotRequest = upToIndex == null ? {} : { up_to_index: upToIndex };
+  return apiPost<{ snap_id: string; title: string }>('/api/conversations/snapshot', body);
 }
 
 /** B11：从快照派生分支对话（新对话装载快照消息并设为活跃） */

@@ -16,7 +16,26 @@ __all__ = [
     "stopped_note",
     "persist_stop_trace",
     "snapshot_inflight_generations",
+    "CONTINUE_LAST_TASK_SUGGESTION",
+    "retry_suggestion_if_user",
 ]
+
+# 「继续刚才的任务」建议动作（与前端 locale rp.msg.continueLastTask 同口径）：
+# kind=retry=点击走既有机械重发，失效走 suggestedTargetIndex 既有机制；
+# 随停止/错误消息落盘，刷新后历史装载即可重建（任务 #16）
+CONTINUE_LAST_TASK_SUGGESTION: List[Dict[str, str]] = [
+    {"kind": "retry", "label": "继续刚才的任务", "value": ""},
+]
+
+
+def retry_suggestion_if_user(svc) -> List[Dict[str, str]] | None:
+    """存在用户消息（可机械重发）时才给继续建议（与前端挂载条件同语义）。
+
+    返回新拷贝，避免多处落盘共享同一可变列表。
+    """
+    if any(m.get("sender") == "user" for m in svc.get_chat_messages()):
+        return [dict(a) for a in CONTINUE_LAST_TASK_SUGGESTION]
+    return None
 
 # 停止阶段 → 痕迹文案（与前端 locale 同一口径，后端持久化供刷新后恢复）
 _STOP_PHASE_TEXT = {
@@ -65,6 +84,10 @@ async def persist_stop_trace(
                 "agent", final_text, model_name=model or "",
                 meta=f"⏹ {note}",
                 turn_id=turn_id,
+                suggested_actions=retry_suggestion_if_user(svc),
             )
         else:
-            svc.add_chat_message("agent", f"⏹ {note}", turn_id=turn_id)
+            svc.add_chat_message(
+                "agent", f"⏹ {note}", turn_id=turn_id,
+                suggested_actions=retry_suggestion_if_user(svc),
+            )

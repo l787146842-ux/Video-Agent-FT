@@ -2,7 +2,6 @@
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatInput } from '../right-panel/ChatInput';
-import { requestEditBackfill, takeInsertRequests } from '@/lib/chat-input-bridge';
 
 const sendMock = vi.fn();
 
@@ -95,28 +94,5 @@ describe('ChatInput 键盘发送', () => {
     editor.textContent = '你好';
     fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
     expect(sendMock).not.toHaveBeenCalled();
-  });
-});
-
-describe('ChatInput 编辑回填通道（edit_backfill 桥接请求）', () => {
-  beforeEach(() => {
-    sendMock.mockClear();
-    takeInsertRequests(); // 清空跨用例残留的桥接请求
-  });
-
-  it('消费 edit_backfill 请求回填编辑器；已有内容时换行追加不冲掉', () => {
-    const { container } = render(() => <ChatInput />);
-    const editor = getEditor(container);
-    editor.textContent = '正在输入的内容';
-    requestEditBackfill('写一段开场白');
-    const text = editor.textContent || '';
-    expect(text).toContain('正在输入的内容');
-    expect(text).toContain('写一段开场白');
-  });
-
-  it('空文本回填请求不入队（防噪音）', () => {
-    render(() => <ChatInput />);
-    requestEditBackfill('   ');
-    expect(takeInsertRequests()).toEqual([]);
   });
 });

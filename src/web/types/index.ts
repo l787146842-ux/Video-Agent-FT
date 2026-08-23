@@ -221,6 +221,9 @@ export interface ChatMessage {
   /** 消息形态标记（system_action=系统动作行；其余为暂停卡语义种类，
    *  源自后端 pause_kind） */
   kind?: 'system_action' | 'remind' | 'collect' | 'stage_done' | 'confirm';
+  /** 本地产生时刻（epoch ms，悬停工具条 HH:MM 展示）；
+   *  后端持久化消息无此字段 → 工具条不显示时间 */
+  ts?: number;
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */

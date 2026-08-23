@@ -8,9 +8,10 @@
 """
 import json
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from loguru import logger
 from pydantic import BaseModel
 
@@ -18,6 +19,7 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.utils import gen_id
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import WORKSPACE_DIR
+from src.video_agent.web.error_payload import classify_legacy_code
 
 router = APIRouter()
 
@@ -42,6 +44,12 @@ class BranchRequest(BaseModel):
     title: str = ""
 
 
+class SnapshotRequest(BaseModel):
+    # 分叉点截断（任务 #16）：提供时快照仅含 messages[:up_to_index+1]（含该条）；
+    # 不提供时全量快照（既有调用零行为变化）
+    up_to_index: Optional[int] = None
+
+
 @router.get("/conversations/snapshots")
 async def list_snapshots():
     """列出当前项目全部快照（元信息，不含全文）。"""
@@ -63,8 +71,12 @@ async def list_snapshots():
 
 
 @router.post("/conversations/snapshot")
-async def create_snapshot():
-    """把当前活跃对话打为不可变快照（消息 + 状态 + trace 引用）。"""
+async def create_snapshot(body: SnapshotRequest = SnapshotRequest()):
+    """把当前活跃对话打为不可变快照（消息 + 状态 + trace 引用）。
+
+    up_to_index（可选，分叉点）：仅截取至该索引（含）；越界/为负返回 400
+    结构化错误。派生分支接口不变：分支装载快照内的全部消息。
+    """
     svc = StateManager.get_instance()
     async with svc.lock:
         payload = svc.list_conversations()
@@ -74,12 +86,22 @@ async def create_snapshot():
     )
     if active is None:
         raise HTTPException(status_code=400, detail="没有可快照的对话")
+    messages = list(active.get("messages") or [])
+    if body.up_to_index is not None:
+        if body.up_to_index < 0 or body.up_to_index >= len(messages):
+            msg = f"up_to_index 越界：{body.up_to_index}（当前对话共 {len(messages)} 条消息）"
+            return JSONResponse(
+                status_code=400,
+                content=classify_legacy_code("SNAPSHOT_INDEX_OUT_OF_RANGE", msg).http_body(
+                    "SNAPSHOT_INDEX_OUT_OF_RANGE"),
+            )
+        messages = messages[: body.up_to_index + 1]
     snap_id = gen_id("snap")
     record = {
         "snap_id": snap_id,
         "project_id": svc.active_project_id or "",
         "title": str(active.get("title") or "工作流快照"),
-        "messages": active.get("messages") or [],
+        "messages": messages,
         "state": svc.get_full_snapshot(),
         "created_at": time.time(),
     }

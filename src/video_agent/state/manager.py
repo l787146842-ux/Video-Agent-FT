@@ -31,6 +31,7 @@ from .repository_sqlite import SqliteStateRepository
 from .project_manager import ProjectManager
 from .context_builder import build_agent_context as _build_context
 from .undo_redo import UndoRedoMixin
+from . import chat_tail_ops
 
 # 后台 Agent 任务的按任务隔离实例：worker 上下文内 get_instance
 # 返回任务专属 StateManager，切项目/刷新不串写（根因：旧状态覆盖新项目）。
@@ -398,10 +399,13 @@ class StateManager(UndoRedoMixin):
             self._state_dirty = True
             self._context_cache.clear()
 
-    def save(self) -> None:
+    def save(self) -> bool:
         """持久化：写入当前项目 + 更新 index 时间戳（经 repo 接口；
         sqlite 后端下唯一落盘点为 state.sqlite3，JSON 镜像已退役，
         save_compat 在 sqlite 仓库为空实现）
+
+        返回是否真正落盘：版本闸放弃写入时返回 False（调用方据此判冲突，
+        破坏性写入路径不得静默放行）。
 
         版本账本闸（任务级隔离后全局单例在任务期间不刷新，
         切换/保存若用过期内存回写会抹掉后台任务的新数据）：磁盘账本比
@@ -424,7 +428,7 @@ class StateManager(UndoRedoMixin):
                     f"新于本实例已知 {self._known_version}（别的实例写过更新数据）"
                 )
                 self._known_version = disk_v
-                return
+                return False
             self._repo.save_project(pid, self._raw_state)
             self._repo.save_compat(self._raw_state)
             # 版号 +1 并随索引落盘（重启继承；读取/加载不触发递增）；
@@ -441,6 +445,7 @@ class StateManager(UndoRedoMixin):
             # 状态变更时失效上下文缓存
             self._context_cache.clear()
             logger.debug("[StateManager] Saved")
+            return True
         except Exception as e:
             logger.error(f"[StateManager] Save failed: {e}")
             raise StateError(f"状态持久化失败: {e}") from e
@@ -502,12 +507,13 @@ class StateManager(UndoRedoMixin):
 
     # save_state 兼容别名已清偿（全仓零调用方）
 
-    async def save_async(self) -> None:
+    async def save_async(self) -> bool:
         """异步立即落盘：写盘移 worker 线程，避免在 async 链路中阻塞事件循环。
 
         用于路由层显式保存（用户编辑保存等需要即时持久性保证的路径）。
+        返回是否真正落盘（同 save）。
         """
-        await asyncio.to_thread(self.save)
+        return await asyncio.to_thread(self.save)
 
     def save_debounced(self) -> None:
         """防抖落盘：合并 300ms 窗口内的多次变更，统一写一次盘（写盘移 worker 线程）。
@@ -714,6 +720,7 @@ class StateManager(UndoRedoMixin):
         pause_answered: Optional[Dict[str, str]] = None,
         kind: str = "",
         video_items: Optional[List[Dict[str, Any]]] = None,
+        suggested_actions: Optional[List[Dict[str, Any]]] = None,
     ):
         """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，防止状态文件无上限增长。
 
@@ -733,10 +740,15 @@ class StateManager(UndoRedoMixin):
         用户回应消息经 pause_answered 回携，前端「当时所选」对勾不再靠文本反推。
         pause_answered：用户回应暂停的结构化标记 {"pause_id", "value", "label"}。
         kind：消息形态标记（如 system_action=系统动作行，不渲染为用户气泡）。
+        suggested_actions：建议动作按钮列表（每项 {kind,label,value}，如
+        kind=retry「继续刚才的任务」），随错误/停止消息落盘，历史装载后前端
+        按既有 suggestedActions 渲染规则重建（刷新不再丢失）。
         """
         self._ensure_conversations()
         msgs = self._raw_state["chatMessages"]
-        entry: Dict[str, Any] = {"sender": sender, "text": text}
+        # 产生时刻（epoch ms，任务 #17 W1）：随消息落盘，历史装载透传带回，
+        # 前端悬停工具条显示 HH:MM；存量旧消息无此字段则前端不显示时间
+        entry: Dict[str, Any] = {"sender": sender, "text": text, "ts": int(time.time() * 1000)}
         if model_name:
             entry["modelName"] = model_name
         if image_urls:
@@ -785,10 +797,20 @@ class StateManager(UndoRedoMixin):
         if error_detail:
             # 错误气泡的技术详情（上游原始报文），前端折叠展示
             entry["errorDetail"] = error_detail
+        if suggested_actions:
+            # 建议动作按钮消毒（实现见 chat_tail_ops）
+            acts = chat_tail_ops.sanitize_suggested_actions(suggested_actions)
+            if acts:
+                entry["suggestedActions"] = acts
         msgs.append(entry)
         if len(msgs) > _CHAT_HISTORY_LIMIT:
             del msgs[: len(msgs) - _CHAT_HISTORY_LIMIT]
         self.save_debounced()
+
+    def truncate_chat_tail(self, keep_index: int, new_text: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """截断对话尾部（截断重答用）：契约与实现见 chat_tail_ops.truncate_chat_tail
+        （破坏性写入；落盘被版本闸拒绝时抛 StateConflictError）。"""
+        return chat_tail_ops.truncate_chat_tail(self, keep_index, new_text)
 
     def build_agent_context(self, asset_mode: str = "bound") -> str:
         """构建发送给 LLM 的 Studio 状态上下文（带缓存，状态未变时复用）"""
