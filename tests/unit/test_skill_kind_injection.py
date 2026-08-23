@@ -136,3 +136,20 @@ def test_style_kind_tiered_injection_keeps_style_semantics():
     # 分级注入结构未变：planner 全文 + 章节目录
     assert "UNIQUE_STY_PLAN" in block and "章节目录" in block
     assert "UNIQUE_STY_WP" not in block
+
+
+# ---------- 4) 任务#5 B-2：平台边界声明包壳 ----------
+
+def test_boundary_statement_wraps_selected_skill_block():
+    """B-2：选中 Skill 块外包平台边界声明（代码拼接，不改 skill 文件）；
+    声明在最前（效力从属语义先于正文），措辞为中性陈述
+    （不占用模型可见「严禁/不得」禁令预算）。"""
+    _save("边界桩", "# B\n正文 UNIQUE_BOUNDARY_MARK 优先级最高", {"kind": "pipeline"})
+    block = _pb().build_selected_skill_block("边界桩")
+    assert block.startswith("== 平台边界声明")
+    assert "效力从属于用户指令与平台铁律" in block
+    # 正文与 kind 语义仍在块内
+    assert "UNIQUE_BOUNDARY_MARK" in block
+    # 中性措辞钉死：不走严禁/不得句式
+    head = block.split("UNIQUE_BOUNDARY_MARK")[0]
+    assert "严禁" not in head and "不得" not in head

@@ -6,8 +6,9 @@ P3-15 新增：frontmatter 声明（含 custom_sections）vs 文档实际章节�
 任务 #9 新增：工具名白名单门禁（--gate）：Skill 流程文本出现名单外
 工具名即报错退出；名单从 src 注册表动态提取（防漂移）。
 任务 #5：声明源改文档头部 frontmatter（扫描前先剥离，防 YAML 键误判工具名）；
---gate 追加 tools_required 声明核对：声明工具不在平台注册表即输出
-PENDING 报告（复用「待平台补齐」约定，不阻断退出码）。
+--gate 追加 tools_required 存在性探针（任务#5 B-2）：声明工具不在
+平台工具注册表（tools/manager.py 注册清单）且不在待补齐豁免清单时
+输出 WARN 清单（先诊断，不升门禁失败/不阻断退出码）。
 """
 import re
 import sys
@@ -58,6 +59,19 @@ PENDING_PLATFORM_TOOLS = frozenset({
     "super_resolution",     # 视频超分/高帧率（MediaKit）
 })
 
+# tools_required 存在性探针的「待补齐豁免」清单（任务#5 B-2）：
+# 路线图工具尚未在平台注册为真实 FC 工具，Skill 声明它们是有意的
+# 前瞻声明，探针跳过不计 WARN；平台落地对应工具后应从本名单移除。
+# （storyboard_key_elements/shots/audio 等管线能力词汇另由
+# PIPELINE_CAPABILITY_TOOLS 统一识别，属已退役工具的阶段能力标记。）
+PENDING_ROUTE_EXEMPT_TOOLS = frozenset({
+    "audio_generate",      # 音频生成（当前为生成通道内部能力，未独立注册工具）
+    "video_assembler",     # 时间线组装（路线图工具）
+    "super_resolution",    # 视频超分（路线图工具，同 PENDING_PLATFORM_TOOLS）
+    "script_analyze",      # 剧本分析（路线图工具；亦属管线能力词汇）
+    "write_media_prompt",  # 媒体提示词编写（路线图工具；亦属管线能力词汇）
+})
+
 # 非工具的业务标识符（故事板字段/资产 ID/参数名等），形似工具名但不是工具引用
 DOMAIN_TOKENS = frozenset({
     "audio_layer", "audio_layers", "audio_id", "audio_infos",
@@ -102,6 +116,18 @@ def real_tool_names() -> frozenset:
     names.update(PIPELINE_CAPABILITY_TOOLS)
     names.add(CUSTOM_SECTION_EXECUTOR)
     return frozenset(names)
+
+
+def platform_tool_names() -> frozenset:
+    """平台工具注册表真实清单（tools/manager.py 注册口径，任务#5 B-2）：
+    tools_required 存在性探针的权威基准——不含管线能力词汇豁免注入
+    （那是 Skill 文本白名单口径，不是工具存在性口径）。"""
+    from loguru import logger
+    logger.disable("src.video_agent")
+    from src.video_agent.tools import ToolManager  # noqa: 触发注册
+    from src.video_agent.tools.canvas_tools import register_canvas_tools
+    register_canvas_tools()
+    return frozenset(ToolManager._tools)
 
 
 def tool_whitelist_issues(content: str, real_names: frozenset) -> list:
@@ -196,26 +222,32 @@ def _iter_skill_docs(d: pathlib.Path):
             yield p.name, main
 
 
-def tools_required_pending(slug: str, manifest, real_names: frozenset) -> list:
-    """tools_required 声明核对：声明工具不在平台工具注册表即计入 PENDING
-    报告（复用「待平台补齐」约定；报告性质，不阻断门禁退出码）。"""
+def tools_required_warn_probe(slug: str, manifest, platform_names: frozenset) -> list:
+    """tools_required 存在性探针（任务#5 B-2）：声明工具不在平台工具
+    注册表（manager.py 注册清单）、不在管线能力词汇表（已退役工具的
+    阶段能力标记，有意保留）且不在待补齐豁免清单（路线图工具的有意
+    豁免）时计入 WARN 清单；先诊断不升门禁失败，不阻断退出码。"""
     declared = (manifest or {}).get("tools_required")
     if not isinstance(declared, list):
         return []
     return [
         t for t in declared
         if isinstance(t, str) and t.strip()
-        and t not in real_names and t not in PENDING_PLATFORM_TOOLS
+        and t not in platform_names
+        and t not in PIPELINE_CAPABILITY_TOOLS
+        and t not in PENDING_ROUTE_EXEMPT_TOOLS
     ]
 
 
 def run_gate() -> int:
     """--gate 模式：工具名白名单校验，有问题退出码 1（acceptance 门禁项）；
-    tools_required 声明核对缺失输出 PENDING 报告（不阻断）。"""
+    tools_required 存在性探针缺失输出 WARN 清单（任务#5 B-2：先诊断
+    不升门禁失败，不阻断退出码）。"""
     d = pathlib.Path(__file__).parent.parent / "data" / "skills"
     real = real_tool_names()
+    platform = platform_tool_names()
     failed = []
-    pending = []
+    warned = []
     for slug, f in _iter_skill_docs(d):
         content = f.read_text(encoding="utf-8", errors="replace")
         # 扫描前先剥离 frontmatter：YAML 声明键（schema_version 等）非工具引用
@@ -225,18 +257,18 @@ def run_gate() -> int:
             failed.append(slug)
             for it in issues:
                 print(f"[skill_tool_names] FAIL {f.name}: {it}")
-        missing = tools_required_pending(slug, manifest, real)
+        missing = tools_required_warn_probe(slug, manifest, platform)
         if missing:
-            pending.append(slug)
-            print(f"[skill_tools_required] PENDING {slug}: 声明工具未入平台注册表 "
-                  f"{'、'.join(missing)}（{_PENDING_MARK}约定，平台落地后自动销账）")
+            warned.append(slug)
+            print(f"[skill_tools_required] WARN {slug}: 声明工具不在平台注册表"
+                  f"且不在待补齐豁免清单：{'、'.join(missing)}")
     if failed:
         print(f"[skill_tool_names] FAIL: {len(failed)} skill(s) off-whitelist")
         return 1
     print("[skill_tool_names] OK: all skill docs on tool whitelist")
-    if pending:
-        print(f"[skill_tools_required] PENDING: {len(pending)} skill(s) 待平台补齐"
-              f"（{'、'.join(pending)}）")
+    if warned:
+        print(f"[skill_tools_required] WARN: {len(warned)} skill(s) 声明工具未入平台注册表"
+              f"（{'、'.join(warned)}；诊断性质，不阻断门禁）")
     return 0
 
 
@@ -248,6 +280,7 @@ def main() -> None:
     mismatched = []
     whitelist_failed = []
     real = real_tool_names()
+    platform = platform_tool_names()
     total = 0
     for slug, f in _iter_skill_docs(d):
         content = f.read_text(encoding="utf-8", errors="replace")
@@ -292,10 +325,10 @@ def main() -> None:
             whitelist_failed.append(slug)
         lines.append(
             f"  工具名白名单: {'通过' if not wl_issues else wl_issues}")
-        # 任务 #5：tools_required 声明核对（PENDING 报告，报告性质）
-        missing = tools_required_pending(slug, manifest, real)
+        # 任务 #5 B-2：tools_required 存在性探针（WARN 报告，诊断性质）
+        missing = tools_required_warn_probe(slug, manifest, platform)
         if missing:
-            lines.append(f"  tools_required 待平台补齐: {missing}")
+            lines.append(f"  tools_required 未入平台注册表(WARN): {missing}")
         # 提取 <planner> 流程前 500 字，看流程是否与「剧本→规格→KE→分镜→提示词」不同
         flow = sections.get("planning", "").strip()
         if flow:
