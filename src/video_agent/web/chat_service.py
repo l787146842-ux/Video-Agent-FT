@@ -2,13 +2,12 @@
 Agent Chat Service — 聊天业务编排（从 routes/agent.py 抽离）。
 
 职责：
-- 流式 worker 执行（mock / 真实供应商，含模型 fallback 链）
+- 流式处理公共实现（mock / 真实供应商）：任务式后台任务与非流式共用
 - 非流式聊天编排
 - 会话持久化（用户/agent 消息、文档卡片、生图卡片）
 
 拆分（修复计划书 -6）：
 - 多模态内容构建 → multimodal_builder.py
-- SSE 事件推送 → sse.py
 routes/agent.py 仅保留路由定义和请求/响应模型。
 """
 import asyncio
@@ -40,7 +39,6 @@ from src.video_agent.web.provider_config import (
     load_merged_providers_async,
 )
 from src.video_agent.web.error_payload import classify_exception, classify_legacy_code
-from src.video_agent.web.sse import sse_event_generator  # noqa: 1 （保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state import chat_tail_ops
 from src.video_agent.core.planner import Planner, PlannerContext
@@ -68,47 +66,19 @@ from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.core.tracer import AgentTracer
 
-__all__ = ["stream_worker", "non_stream_worker", "build_multimodal_content"]
+__all__ = ["non_stream_worker", "build_multimodal_content"]
 
 # 停止阶段措辞/痕迹文案/停止持久化已抽至 web/stop_manager.py（任务 #17 收尾，
 # 行数棘轮清偿：chat_service 回落 900 行以下）
 
 
-async def stream_worker(body: Any, emit) -> None:
-    """流式聊天的后台 worker（mock + 真实供应商）。
-
-    Args:
-        body: ChatRequest 实例
-        emit: async callable(event_dict) 用于向队列推送 SSE 事件
-    """
-    request_id = body.request_id or ""
-    if not _acquire_request_slot(request_id):
-        _dup_msg = "相同请求正在处理中，请勿重复发送"
-        await emit({"type": SSE_ERROR, "detail": _dup_msg,
-                    "error_code": "DUPLICATE_REQUEST",
-                    **classify_legacy_code("DUPLICATE_REQUEST", _dup_msg).sse_fields()})
-        return
-    try:
-        svc = StateManager.get_instance()
-        await _stream_worker_impl(body, svc, emit)
-    except asyncio.CancelledError:
-        # 任务 #17 安全网：cancel 落在循环检查点之外（如开场编排/持久化阶段）
-        # 且停止标志在位（用户主动停止）时，收敛为 stopped 终态事件而非异常取消
-        if is_stop_requested("chat"):
-            await emit(stopped_event())
-            return
-        raise
-    finally:
-        _release_request_slot(request_id)
-
-
 async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_injector=None, stop_scope: str = "chat") -> None:
-    """流式处理公共实现（mock + 真实供应商）；供 SSE worker 与后台任务 worker 复用。
+    """流式处理公共实现（mock + 真实供应商）；任务式后台任务 worker 的核心主体。
 
     pending_injector：可选 callable → List[{id, text}]，轮间引导注入器，
     由后台任务路径装配（agent_task_manager.drain_pending_guidance）。
-    stop_scope：协作式停止标志作用域（任务 #17）——SSE 直连="chat"，
-    任务式传输=task_id（多任务并发互不串）。"""
+    stop_scope：协作式停止标志作用域（任务 #17）——任务式传输=task_id
+    （多任务并发互不串）。"""
     # 铁律文档每轮确保存在（宪法）：项目级生产契约唯一表述源，
     # 真实聊天/任务路径同样生效，不能只在 mock 路径创建
     from src.video_agent.core.spec_rules import ensure_iron_rules_doc

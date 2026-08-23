@@ -4,7 +4,7 @@
  * hooks/use-sse.ts 只负责事件分发与状态管理。
  * ：旧 postAgentChatStream（POST /api/agent/chat/stream 直连流）为死代码——
  * 真实链路已全量走任务式传输（startAgentTask + fetchAgentTaskEvents），已删除；
- * 后端同名路由的清退为遗留事项（牵连 routes/agent.py/chat_service/web/sse.py）。
+ * 后端同名路由已同步清退（routes/agent.py 只保留任务式端点）。
  */
 import type { AgentChatRequest } from '@/types';
 import type { GuidanceItem } from '@/types/api.generated';

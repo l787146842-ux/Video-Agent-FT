@@ -285,22 +285,3 @@ test.describe('Skill 「+」插入引用块并发送', () => {
         await expect(feed).toContainText('Skill 流程已启用', { timeout: 10000 });
     });
 });
-
-test.describe('SSE 流式端点', () => {
-    test('流式聊天 API 返回 SSE 格式', async ({ request }) => {
-        const resp = await request.post('/api/agent/chat/stream', {
-            data: {
-                message: '你好',
-                provider: 'mock',
-                model: 'mock-chat',
-            },
-        });
-        expect(resp.ok()).toBeTruthy();
-        const contentType = resp.headers()['content-type'] || '';
-        expect(contentType).toContain('text/event-stream');
-
-        const body = await resp.text();
-        expect(body).toContain('data:');
-        expect(body).toContain('"type"');
-    });
-});

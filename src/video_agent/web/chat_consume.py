@@ -19,7 +19,6 @@ from src.video_agent.web.mock_llm import mock_llm_reply
 from src.video_agent.web.multimodal_builder import (
     build_multimodal_content,
 )
-from src.video_agent.web.sse import sse_event_generator  # noqa: 1 （保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
@@ -29,7 +28,7 @@ from src.video_agent.tools.manager import ToolManager
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.state.models import ALL_CATEGORIES_TUPLE
 
-__all__ = ["stream_worker", "non_stream_worker", "build_multimodal_content"]
+__all__ = ["build_multimodal_content"]
 
 
 

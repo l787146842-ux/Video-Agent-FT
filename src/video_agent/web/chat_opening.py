@@ -18,7 +18,6 @@ from src.video_agent.web.multimodal_builder import (
 from src.video_agent.web.provider_config import (
     get_provider_config,
 )
-from src.video_agent.web.sse import sse_event_generator  # noqa: 1 （保留 sse.py 为正常模块；本行仅兼容旧导入路径）
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.planner import Planner, PlannerContext
@@ -28,7 +27,7 @@ from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.core.tracer import AgentTracer
 
-__all__ = ["stream_worker", "non_stream_worker", "build_multimodal_content"]
+__all__ = ["build_multimodal_content"]
 
 from src.video_agent.web.chat_consume import (
     _consume_pending_confirmation,

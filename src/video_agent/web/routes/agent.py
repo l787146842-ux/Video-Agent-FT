@@ -16,8 +16,7 @@ from pydantic import BaseModel
 
 from loguru import logger
 
-from src.video_agent.web.chat_service import stream_worker, non_stream_worker
-from src.video_agent.web.sse import sse_event_generator
+from src.video_agent.web.chat_service import non_stream_worker
 from src.video_agent.core.stop_signal import request_stop
 from src.video_agent.web.task_manager import snapshot_inflight_generations
 from src.video_agent.exceptions import AdapterError, GenerationError
@@ -134,25 +133,6 @@ async def agent_chat(body: ChatRequest):
         logger.warning(f"[Agent] LLM 调用失败: {e}")
         raise HTTPException(status_code=502, detail=str(e))
     return ChatResponse(**result)
-
-
-@router.post("/agent/chat/stream")
-async def agent_chat_stream(body: ChatRequest, request: Request):
-    """流式聊天端点（SSE）。业务逻辑委托给 chat_service.stream_worker。"""
-    queue: asyncio.Queue = asyncio.Queue()
-
-    async def emit(event: Dict[str, Any]) -> None:
-        await queue.put(event)
-
-    task = asyncio.create_task(stream_worker(body, emit))
-    _CHAT_TASKS["bound"] = task
-    task.add_done_callback(lambda _t: _CHAT_TASKS.pop("bound", None))
-
-    return StreamingResponse(
-        sse_event_generator(queue, task, request),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
-    )
 
 
 @router.get("/agent/traces")

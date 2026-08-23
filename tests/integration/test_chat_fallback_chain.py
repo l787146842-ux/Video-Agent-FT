@@ -11,7 +11,6 @@ import pytest
 
 from src.video_agent.adapters.base_chat import StreamChunk  # noqa: F401  (保留导入面与旧版对齐)
 from src.video_agent.exceptions import AdapterError
-from src.video_agent.state.manager import StateManager
 from src.video_agent.web import chat_service
 
 
@@ -79,23 +78,3 @@ async def test_task_path_retryable_error_direct(tmp_path, monkeypatch):
     assert "model_fallback" not in types, f"裁决：不得自动换模型: {types}"
     err = next(e for e in sent if e.get("type") == chat_service.SSE_ERROR)
     assert "瞬时故障" in (err.get("detail") or ""), err
-
-
-@pytest.mark.asyncio
-async def test_sse_direct_retryable_error_direct(tmp_path, monkeypatch):
-    """SSE 直连路径：worker 不得静默死亡，须有 error 终态且无切换事件。"""
-    _patch_env(monkeypatch)
-    svc = StateManager(str(tmp_path))
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-
-    events = []
-
-    async def emit(ev):
-        events.append(ev)
-
-    await chat_service.stream_worker(_make_body("req-sse-nofb"), emit)
-
-    types = [e.get("type") for e in events]
-    assert chat_service.SSE_ERROR in types, f"联不通必须直接报错: {events}"
-    assert "model_fallback" not in types, f"裁决：不得自动换模型: {types}"
-    assert chat_service.SSE_DONE not in types, "报错路径不再发 done"
