@@ -3,73 +3,18 @@ import {
   FiCheckCircle, FiChevronDown, FiLoader, FiXCircle, FiZap,
 } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
-import {
-  consolidateTimeline, formatElapsed, resultSummaryView, type TimelineItem,
-} from '@/lib/timeline';
-import type { ChatMessage, TraceAction } from '@/types';
+import { consolidateTimeline, formatElapsed, type TimelineItem } from '@/lib/timeline';
+import { TimelineDetail } from './TimelineDetail';
 
 // 耗时格式化与条目类型归 lib/timeline 单一事实源；保留 re-export 兼容既有导入
+// （重建/阶段推导函数同批迁入 lib/timeline，任务 #2 详情区分层减行）
+export { stageLabelFromMessage, timelineFromMessage } from '@/lib/timeline';
 export { formatElapsed };
 export type { TimelineItem };
-
-/**
- * 从已完成消息的 trace / actionLog 重建时间线数据（刷新页面后不丢）。
- * trace.steps[].actions 优先；旧消息无 actions 时用 actionLog 兜底。
- */
-export function timelineFromMessage(msg: ChatMessage): { reasoning: string; items: TimelineItem[] } {
-  const steps = msg.trace?.steps || [];
-  const reasoning = steps
-    .map((s) => s.reasoning || '')
-    .filter(Boolean)
-    .join('\n');
-  const items: TimelineItem[] = [];
-  steps.forEach((s) => {
-    (s.actions || []).forEach((a: TraceAction, i: number) => {
-      // 规划条目与 live 事件同构 id（llm-s{step}），历史重建也能命中合并降噪
-      const id = a.name === 'model_reasoning' ? `llm-s${s.step}` : `t-${s.step}-${i}`;
-      items.push({
-        id,
-        summary: a.summary || a.name,
-        status: a.ok ? 'done' : 'failed',
-        elapsed_ms: a.elapsed_ms,
-        // 后端持久化的结果摘要（与 live tool_finished 同口径）
-        result_summary: a.result_summary || undefined,
-        // 规划级执行器徽标（重建与 live 同源）
-        planning: a.planning || undefined,
-      });
-    });
-  });
-  if (!items.length && (msg.actionLog || []).length) {
-    msg.actionLog!.forEach((op, i) => {
-      items.push({ id: `l-${i}`, summary: op, status: 'done' });
-    });
-  }
-  return { reasoning, items };
-}
-
-/** 执行器工具 → 大阶段名： 起改为后端权威下发（trace 条目 stage 字段），
- * 前端不再硬编码推断，工具改名不会导致卡片退化（13.7 登记）。 */
-
-/**
- * 推导本轮完成的「大阶段」名：取 trace 条目携带的 stage（后端权威）；
- * 无 stage（旧消息）回退空串，卡片显示通用「阶段完成」。
- */
-export function stageLabelFromMessage(msg: ChatMessage): string {
-  const steps = msg.trace?.steps || [];
-  let label = '';
-  steps.forEach((s) => {
-    (s.actions || []).forEach((a: TraceAction) => {
-      if (a.stage) label = a.stage;
-    });
-  });
-  return label;
-}
 
 /** 单条时间线条目（合并条目带逐轮明细，点击展开；展开态用户可控） */
 function TimelineRow(props: { item: TimelineItem; now: () => number }) {
   const [open, setOpen] = createSignal(false);
-  /** result_summary 详情展开态（折叠=一句话摘要，展开=全文） */
-  const [resultOpen, setResultOpen] = createSignal(false);
   const item = () => props.item;
   return (
     <li class={`tl-item tl-item-${item().status}`}>
@@ -111,32 +56,9 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
           · {formatElapsed(Math.max(0, props.now() - (item().started_at_ms || 0)))}
         </span>
       </Show>
-      {/* 工具执行结果一句话摘要（与 summary 重复时不重复展示）；
-          多句摘要可点击展开全文（折叠态默认一句话，纯前端切换） */}
-      <Show
-        when={item().status !== 'running' && item().result_summary
-          && item().result_summary !== item().summary}
-      >
-        <Show
-          when={resultSummaryView(item().result_summary || '').expandable}
-          fallback={
-            <span class="tl-item-result" title={item().result_summary}>
-              ↳ {item().result_summary}
-            </span>
-          }
-        >
-          <button
-            type="button"
-            class={`tl-item-result tl-item-result-toggle${resultOpen() ? ' expanded' : ''}`}
-            onClick={() => setResultOpen(!resultOpen())}
-          >
-            ↳ {resultOpen()
-              ? item().result_summary
-              : resultSummaryView(item().result_summary || '').collapsed}
-            <FiChevronDown size={11} class={`tl-item-toggle-arrow${resultOpen() ? ' expanded' : ''}`} />
-          </button>
-        </Show>
-      </Show>
+      {/* 详情区（任务 #2 分级展开）：expand 档可折叠看输入/输出，
+          中间/不展开档保持单行结果摘要形态 */}
+      <TimelineDetail item={item()} />
       <Show when={open() && (item().details || []).length > 0}>
         <ul class="tl-sublist">
           <For each={item().details}>

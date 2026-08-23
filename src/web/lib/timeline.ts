@@ -9,12 +9,15 @@
  * 职责切分（前端体验规范）：status 栏 = 当前正在做的一件事；
  * 时间线 = 本轮已发生的全部账目。
  */
+import type { ChatMessage, TraceAction } from '@/types';
 
 /** 时间线单条操作条目（流式运行态与历史重建共用） */
 export interface TimelineItem {
   id: string;
   summary: string;
   status: 'running' | 'done' | 'failed';
+  /** 工具/操作名（分级展开判定依据；规划条目 = model_reasoning） */
+  name?: string;
   elapsed_ms?: number;
   /** 运行态走秒起点 */
   started_at_ms?: number;
@@ -22,6 +25,8 @@ export interface TimelineItem {
   result_summary?: string;
   /** 规划级执行器标记（不产真实媒体，前端挂「规划」徽标） */
   planning?: boolean;
+  /** 工具输入参数预览（后端裁剪脱敏，详情卡展开区用） */
+  args?: Record<string, unknown>;
   /** 合并条目的逐轮明细（点击展开） */
   details?: TimelineItem[];
 }
@@ -45,6 +50,106 @@ export function resultSummaryView(full: string): { expandable: boolean; collapse
 
 /** agent_loop 规划条目的 id 前缀（llm-s{step}），合并判定唯一依据 */
 const REASONING_ID_PREFIX = 'llm-s';
+
+/** 工具详情分级（任务 #2，纯函数 vitest 钉死）：
+ * expand = 可展开看输入参数预览 + 执行结果；
+ * output = 仅输出留痕（不显示输入）；none = 保持一行摘要。 */
+export type ToolDetailTier = 'expand' | 'output' | 'none';
+
+/** 值得展开档：产出/关键交互类工具 */
+const EXPAND_TIER_TOOLS = new Set([
+  'document_write', 'storyboard_create_group', 'storyboard_add_draft',
+  'storyboard_patch_draft', 'generate_image', 'generate_video',
+  'workflow_pause', 'canvas_add_node', 'canvas_update_node',
+  'canvas_batch_add_nodes',
+]);
+
+/** 中间档：仅输出留痕，不显示输入 */
+const OUTPUT_TIER_TOOLS = new Set([
+  'storyboard_delete_group', 'canvas_delete_node', 'storyboard_confirm_draft',
+  'storyboard_media_to_chat', 'read_draft', 'read_project_doc',
+  'read_uploaded_doc',
+]);
+
+export function toolDetailTier(name?: string): ToolDetailTier {
+  if (!name) return 'none';
+  if (EXPAND_TIER_TOOLS.has(name)) return 'expand';
+  if (OUTPUT_TIER_TOOLS.has(name)) return 'output';
+  return 'none';
+}
+
+/** 输入参数预览单值截断长度（后端已裁剪，前端再保一道显示级上限） */
+const ARG_VALUE_LIMIT = 120;
+
+/** args → 详情卡键值条目（纯函数，vitest 钉死）：非字符串值 JSON 化，
+ * 超长值截断加省略号（显示级兼容，后端已裁剪脱敏）。 */
+export function argsPreviewEntries(
+  args?: Record<string, unknown>,
+): { key: string; value: string }[] {
+  if (!args) return [];
+  return Object.entries(args).map(([key, raw]) => {
+    const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
+    return {
+      key,
+      value: text.length > ARG_VALUE_LIMIT ? `${text.slice(0, ARG_VALUE_LIMIT)}…` : text,
+    };
+  });
+}
+
+/**
+ * 从已完成消息的 trace / actionLog 重建时间线数据（刷新页面后不丢）。
+ * trace.steps[].actions 优先；旧消息无 actions 时用 actionLog 兜底。
+ */
+export function timelineFromMessage(
+  msg: ChatMessage,
+): { reasoning: string; items: TimelineItem[] } {
+  const steps = msg.trace?.steps || [];
+  const reasoning = steps
+    .map((s) => s.reasoning || '')
+    .filter(Boolean)
+    .join('\n');
+  const items: TimelineItem[] = [];
+  steps.forEach((s) => {
+    (s.actions || []).forEach((a: TraceAction, i: number) => {
+      // 规划条目与 live 事件同构 id（llm-s{step}），历史重建也能命中合并降噪
+      const id = a.name === 'model_reasoning' ? `llm-s${s.step}` : `t-${s.step}-${i}`;
+      items.push({
+        id,
+        name: a.name,
+        summary: a.summary || a.name,
+        status: a.ok ? 'done' : 'failed',
+        elapsed_ms: a.elapsed_ms,
+        // 后端持久化的结果摘要（与 live tool_finished 同口径）
+        result_summary: a.result_summary || undefined,
+        // 规划级执行器徽标（重建与 live 同源）
+        planning: a.planning || undefined,
+        // 输入参数预览（重建后详情卡展开区不丢，任务 #2）
+        args: a.args,
+      });
+    });
+  });
+  if (!items.length && (msg.actionLog || []).length) {
+    msg.actionLog!.forEach((op, i) => {
+      items.push({ id: `l-${i}`, summary: op, status: 'done' });
+    });
+  }
+  return { reasoning, items };
+}
+
+/**
+ * 推导本轮完成的「大阶段」名：取 trace 条目携带的 stage（后端权威）；
+ * 无 stage（旧消息）回退空串，卡片显示通用「阶段完成」。
+ */
+export function stageLabelFromMessage(msg: ChatMessage): string {
+  const steps = msg.trace?.steps || [];
+  let label = '';
+  steps.forEach((s) => {
+    (s.actions || []).forEach((a: TraceAction) => {
+      if (a.stage) label = a.stage;
+    });
+  });
+  return label;
+}
 
 /**
  * 合并连续规划条目为单条（纯函数，vitest 钉死）：

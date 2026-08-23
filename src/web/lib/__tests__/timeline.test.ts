@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  consolidateTimeline, formatElapsed, resultSummaryView, type TimelineItem,
+  argsPreviewEntries, consolidateTimeline, formatElapsed, resultSummaryView,
+  timelineFromMessage, toolDetailTier, type TimelineItem,
 } from '../timeline';
+import type { ChatMessage } from '@/types';
 
 /** 时间线降噪：连续规划条目合并（纯函数钉死） */
 
@@ -83,5 +85,84 @@ describe('resultSummaryView 详情展开视图', () => {
   it('空文本 → 不可展开且折叠为空', () => {
     expect(resultSummaryView('')).toEqual({ expandable: false, collapsed: '' });
     expect(resultSummaryView('   ')).toEqual({ expandable: false, collapsed: '' });
+  });
+});
+
+/** 任务 #2：工具详情分级（按工具名分档，纯函数钉死） */
+describe('toolDetailTier 工具详情分级', () => {
+  it('值得展开档：产出/关键交互类工具', () => {
+    [
+      'document_write', 'storyboard_create_group', 'storyboard_add_draft',
+      'storyboard_patch_draft', 'generate_image', 'generate_video',
+      'workflow_pause', 'canvas_add_node', 'canvas_update_node',
+      'canvas_batch_add_nodes',
+    ].forEach((n) => expect(toolDetailTier(n)).toBe('expand'));
+  });
+
+  it('中间档：仅输出留痕，不显示输入', () => {
+    [
+      'storyboard_delete_group', 'canvas_delete_node', 'storyboard_confirm_draft',
+      'storyboard_media_to_chat', 'read_draft', 'read_project_doc',
+      'read_uploaded_doc',
+    ].forEach((n) => expect(toolDetailTier(n)).toBe('output'));
+  });
+
+  it('不展开档：内部条目/读取类工具与未知名保持一行摘要', () => {
+    [
+      'flow_directive', 'mcp_tool_catalog', 'view_storyboard_media',
+      'canvas_list', 'canvas_read_nodes', 'canvas_list_assets', 'read_skill',
+      'model_reasoning', 'unknown_tool',
+    ].forEach((n) => expect(toolDetailTier(n)).toBe('none'));
+    expect(toolDetailTier(undefined)).toBe('none');
+  });
+});
+
+describe('argsPreviewEntries 输入参数预览', () => {
+  it('无 args → 空条目', () => {
+    expect(argsPreviewEntries(undefined)).toEqual([]);
+    expect(argsPreviewEntries({})).toEqual([]);
+  });
+
+  it('字符串值原样；非字符串值 JSON 化', () => {
+    const out = argsPreviewEntries({ name: '剧本.md', shots: [1, 2], meta: { k: 'v' } });
+    expect(out[0]).toEqual({ key: 'name', value: '剧本.md' });
+    expect(out[1]).toEqual({ key: 'shots', value: '[1,2]' });
+    expect(out[2].value).toBe('{"k":"v"}');
+  });
+
+  it('超长值显示级截断加省略号', () => {
+    const out = argsPreviewEntries({ content: 'x'.repeat(200) });
+    expect(out[0].value.length).toBe(121);
+    expect(out[0].value.endsWith('…')).toBe(true);
+  });
+});
+
+describe('timelineFromMessage 历史重建（任务 #2 携带 name/args）', () => {
+  it('trace 条目的 name/args/result_summary 同步重建', () => {
+    const msg = {
+      trace: {
+        steps: [{
+          step: 1,
+          actions: [{
+            name: 'document_write', summary: '写入文档 剧本.md', elapsed_ms: 120,
+            ok: true, result_summary: '已写入。待确认。', args: { content: '预览' },
+          }],
+        }],
+      },
+    } as unknown as ChatMessage;
+    const { items } = timelineFromMessage(msg);
+    expect(items[0].name).toBe('document_write');
+    expect(items[0].args).toEqual({ content: '预览' });
+    expect(items[0].result_summary).toBe('已写入。待确认。');
+    expect(items[0].id).toBe('t-1-0');
+  });
+
+  it('model_reasoning 条目重建为 llm-s{step} 同构 id', () => {
+    const msg = {
+      trace: {
+        steps: [{ step: 2, actions: [{ name: 'model_reasoning', summary: '规划', elapsed_ms: 5, ok: true }] }],
+      },
+    } as unknown as ChatMessage;
+    expect(timelineFromMessage(msg).items[0].id).toBe('llm-s2');
   });
 });
