@@ -47,6 +47,88 @@ afterEach(() => {
   clearSpies();
 });
 
+// ---------- 主动断开感知型假流（钉死假错误气泡回归） ----------
+// 简版 sseResponse 的 reader 感知不到 abort（真实浏览器 BodyStreamBuffer 会：
+// abort 后未决 read 以 AbortError reject）。本组用例用感知 abort 的假流复刻
+// 真实时序：终态路径关流 → parseSSE reject → catch 归属判定必须静默。
+const enc2 = new TextEncoder();
+function abortError(): Error {
+  const e = new Error('BodyStreamBuffer was aborted');
+  e.name = 'AbortError';
+  return e;
+}
+
+/** 按帧推送；abort 后（含挂起中的 read）以 AbortError reject */
+function abortableSseResponse(signal: AbortSignal, frames: Array<string | object>): Response {
+  const data = frames.map((f) => enc2.encode(`data: ${typeof f === 'string' ? f : JSON.stringify(f)}\n\n`));
+  let i = 0;
+  const reader = {
+    read: () => new Promise<{ done: boolean; value?: Uint8Array }>((resolve, reject) => {
+      if (signal.aborted) { reject(abortError()); return; }
+      queueMicrotask(() => {
+        if (signal.aborted) { reject(abortError()); return; }
+        if (i >= data.length) { resolve({ done: true, value: undefined }); return; }
+        resolve({ done: false, value: data[i] });
+        i += 1;
+      });
+    }),
+  };
+  return { ok: true, status: 200, body: { getReader: () => reader } } as unknown as Response;
+}
+
+/** 永不自然关流：仅 abort 时以 AbortError reject（运行中断开场景） */
+function pendingAbortableResponse(signal: AbortSignal): Response {
+  const reader = {
+    read: () => new Promise<never>((_resolve, reject) => {
+      if (signal.aborted) { reject(abortError()); return; }
+      signal.addEventListener('abort', () => reject(abortError()), { once: true });
+    }),
+  };
+  return { ok: true, status: 200, body: { getReader: () => reader } } as unknown as Response;
+}
+
+describe('正常完成后假错误气泡回归（主动断开不得误判为失败）', () => {
+  it('done 帧 → handleDone 主动关流：AbortError 静默，不产生错误消息', async () => {
+    vi.mocked(fetchAgentTaskEvents).mockImplementation((_id, signal) => Promise.resolve(abortableSseResponse(signal, [
+      { type: 'delta', text: '你好，' },
+      doneFrame('回复完成'),
+    ])));
+    await streamAgentChat(req);
+    await tick(); // 等 abort 引发的 AbortError rejection 进 connectToTask catch
+    expect(spies.finishStream).toHaveBeenCalledTimes(1);
+    expect(spies.streamError).not.toHaveBeenCalled();
+    expect(state.agentBusy).toBe(false);
+    expect(chatState.isStreaming).toBe(false);
+  });
+
+  it('error 帧落真错误气泡后主动关流：AbortError 不追加第二个误判气泡', async () => {
+    vi.mocked(fetchAgentTaskEvents).mockImplementation((_id, signal) => Promise.resolve(abortableSseResponse(signal, [
+      { type: 'error', code: 'err.auth.invalid_key', kind: 'auth', detail: 'API Key 无效' },
+    ])));
+    await streamAgentChat(req);
+    await tick();
+    expect(spies.streamError).toHaveBeenCalledTimes(1); // 真实错误保留，无重复
+    expect(state.agentBusy).toBe(false);
+  });
+
+  it('运行中主动断开（切项目 disconnect）：AbortError 静默不落气泡', async () => {
+    vi.mocked(fetchAgentTaskEvents).mockImplementation((_id, signal) => Promise.resolve(pendingAbortableResponse(signal)));
+    void streamAgentChat(req);
+    await tick();
+    disconnectAgentStream(); // 归属先置空再 abort（与切项目路径一致）
+    await tick(); // 等 AbortError rejection 进 catch
+    expect(spies.streamError).not.toHaveBeenCalled();
+    expect(state.agentBusy).toBe(false);
+  });
+
+  it('真实订阅失败（4xx 任务面错误）：仍产生错误消息（不被静默）', async () => {
+    vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([], 404));
+    await streamAgentChat(req);
+    expect(spies.streamError).toHaveBeenCalledTimes(1);
+    expect(state.agentBusy).toBe(false);
+  });
+});
+
 describe('收尾状态机（completed / error / stopped 终态）', () => {
   it('completed：done 帧 → finishStream + 忙态复位 + 订阅关闭', async () => {
     vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([

@@ -269,6 +269,7 @@ export interface SkillFormatRequest {
 
 export interface SnapshotRequest {
   up_to_index?: number | unknown;
+  pinned?: boolean;
 }
 
 export interface SwitchProjectRequest {

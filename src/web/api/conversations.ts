@@ -50,10 +50,19 @@ export function deleteConversation(id: string): Promise<ConversationsPayload> {
 
 /** B11：把当前活跃对话打为不可变快照。
  * upToIndex（可选，分叉点）：仅截取至该索引（含）；越界后端 400
- * （SNAPSHOT_INDEX_OUT_OF_RANGE）。不传 = 全量快照（旧行为）。 */
-export function createSnapshot(upToIndex?: number): Promise<{ snap_id: string; title: string }> {
+ * （SNAPSHOT_INDEX_OUT_OF_RANGE）。不传 = 全量快照（旧行为）。
+ * 响应 pruned：本次创建触发数量上限淘汰时被清理的快照 id 清单
+ * （非空时前端 toast 提示，淘汰对用户可见）。 */
+export interface CreateSnapshotResponse {
+  snap_id: string;
+  title: string;
+  /** 本次创建时被自动淘汰的快照 id 清单（空 = 未触发淘汰） */
+  pruned: string[];
+}
+
+export function createSnapshot(upToIndex?: number): Promise<CreateSnapshotResponse> {
   const body: SnapshotRequest = upToIndex == null ? {} : { up_to_index: upToIndex };
-  return apiPost<{ snap_id: string; title: string }>('/api/conversations/snapshot', body);
+  return apiPost<CreateSnapshotResponse>('/api/conversations/snapshot', body);
 }
 
 /** B11：从快照派生分支对话（新对话装载快照消息并设为活跃） */

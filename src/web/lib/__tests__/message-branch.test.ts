@@ -3,11 +3,13 @@
  *
  * 钉死 branchAtMessage 编排：以该消息下标为分叉点打截断快照
  * （up_to_index）→ 派生分支 → applyPayload 切换；忙碌守卫兜底；
- * 失败弹 toast 且不切换对话。
+ * 失败弹 toast 且不切换对话；后端带回非空 pruned 清单时弹淘汰提示。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { CreateSnapshotResponse } from '@/api/conversations';
 
-const snapshotMock = vi.fn(async (_idx?: number) => ({ snap_id: 's1', title: '快照' }));
+const snapshotMock = vi.fn(async (_idx?: number): Promise<CreateSnapshotResponse> => (
+  { snap_id: 's1', title: '快照', pruned: [] }));
 const branchApiMock = vi.fn(async (_id: string) => ({ conv: { id: 'c2', title: '分支' } }));
 vi.mock('@/api/conversations', () => ({
   createSnapshot: (idx?: number) => snapshotMock(idx),
@@ -59,5 +61,23 @@ describe('branchAtMessage', () => {
     expect(applyMock).not.toHaveBeenCalled();
     expect(toastMock).toHaveBeenCalled();
     expect(toastMock.mock.calls[0][0]).toContain('越界');
+  });
+
+  it('后端带回非空 pruned 清单：弹淘汰提示（数量可见）', async () => {
+    snapshotMock.mockResolvedValueOnce({
+      snap_id: 's9', title: '快照', pruned: ['snap-1-a', 'snap-2-b'],
+    });
+    const ok = await branchAtMessage(0);
+    expect(ok).toBe(true);
+    const pruneToast = toastMock.mock.calls.find((c) => String(c[0]).includes('清理'));
+    expect(pruneToast).toBeTruthy();
+    expect(String(pruneToast![0])).toContain('2');
+    expect(pruneToast![1]).toBe('info');
+  });
+
+  it('pruned 为空/缺省：不弹淘汰提示', async () => {
+    snapshotMock.mockResolvedValueOnce({ snap_id: 's10', title: '快照', pruned: [] });
+    await branchAtMessage(0);
+    expect(toastMock.mock.calls.find((c) => String(c[0]).includes('清理'))).toBeFalsy();
   });
 });

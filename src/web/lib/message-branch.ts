@@ -24,6 +24,10 @@ export async function branchAtMessage(upToIndex: number): Promise<boolean> {
   }
   try {
     const snap = await createSnapshot(upToIndex);
+    // 数量上限淘汰对用户可见：后端带回非空 pruned 清单即 toast 提示
+    if (snap.pruned && snap.pruned.length > 0) {
+      showToast(t('rp.msg.snapshotsPruned', { n: snap.pruned.length }), 'info', 5000);
+    }
     const payload = await branchSnapshot(snap.snap_id);
     // E-2：分支响应仅元信息，分支消息由 applyPayload 内经按会话拉消息接口装载
     await convActions.applyPayload(payload);

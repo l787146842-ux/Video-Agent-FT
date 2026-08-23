@@ -304,6 +304,7 @@ const zhCN = {
   'rp.msg.copied': '已复制',
   'rp.msg.branch': '分支：以此消息为分叉点创建新对话',
   'rp.msg.branchedAt': '已从此消息创建分支对话',
+  'rp.msg.snapshotsPruned': '为控制数量，已自动清理 {n} 个最旧快照',
   'rp.msg.branchFailed': '创建分支失败：{error}',
   'rp.msg.truncateFailed': '截断重答失败：{error}',
   'rp.msg.editCancel': '取消',

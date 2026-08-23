@@ -7,6 +7,7 @@
 - 快照列表可预览/删除。
 """
 import json
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -24,6 +25,11 @@ from src.video_agent.web.error_payload import classify_legacy_code
 
 router = APIRouter()
 
+# 文件名编码的创建时间戳：snap_id 形如 snap-<unix_ts>-<rand>（gen_id 约定），
+# 淘汰排序直接解析文件名，免全量反序列化快照正文（性能优化）；
+# 解析失败（存量手工文件/改名等）回落读正文 created_at，再失败视为最旧。
+_TS_FROM_STEM_RE = re.compile(r"^snap-(\d+)-[0-9a-f]+$")
+
 
 def _snap_dir(project_id: str):
     d = WORKSPACE_DIR / "snapshots" / (project_id or "_")
@@ -31,32 +37,69 @@ def _snap_dir(project_id: str):
     return d
 
 
-def _prune_snapshots(project_id: str) -> int:
+def _pinned_index(d) -> set:
+    """pinned 旁路索引（snap_id 集合）：淘汰豁免名单，免反序列化正文。"""
+    f = d / "_pinned.json"
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        return {str(x) for x in data} if isinstance(data, list) else set()
+    except Exception:
+        return set()
+
+
+def _save_pinned_index(d, ids: set) -> None:
+    atomic_write_text(d / "_pinned.json", json.dumps(sorted(ids), ensure_ascii=False))
+
+
+def _snap_files(d) -> List:
+    """快照文件清单（排除 `_` 前缀的旁路索引文件）。"""
+    return [f for f in d.glob("*.json") if not f.name.startswith("_")]
+
+
+def _created_at_for(f, fallback_read: bool = True) -> float:
+    """快照创建时间：优先文件名编码（零反序列化），回落正文 created_at，
+    再失败（损坏/缺字段）返回 0.0 = 视为最旧优先淘汰（既有兜底语义）。"""
+    m = _TS_FROM_STEM_RE.match(f.stem)
+    if m:
+        return float(m.group(1))
+    if not fallback_read:
+        return 0.0
+    try:
+        return float(json.loads(f.read_text(encoding="utf-8")).get("created_at") or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _prune_snapshots(project_id: str) -> List[str]:
     """每项目快照数量上限（默认 20，SNAPSHOT_MAX_PER_PROJECT 可配）。
 
-    超限淘汰最旧（按 created_at 升序）：快照数据结构无手动标记/置顶字段，
-    最简且语义清晰的策略即「最新优先保留」；淘汰在创建成功后执行，
-    新快照永不被当次淘汰。返回删除数量。
+    超限淘汰最旧（按创建时间升序）：pinned 快照豁免淘汰；其余「最新优先
+    保留」。淘汰在创建成功后执行，新快照永不被当次淘汰。
+    返回被淘汰的快照 id 清单（create 响应带回，前端据此提示用户）。
     """
     cap = max(1, int(settings.snapshot_max_per_project))
-    entries = []
-    for f in _snap_dir(project_id).glob("*.json"):
-        try:
-            created = float(json.loads(f.read_text(encoding="utf-8")).get("created_at") or 0.0)
-        except Exception:
-            created = 0.0  # 损坏/缺字段视为最旧，优先淘汰
-        entries.append((created, f))
-    removed = 0
-    for _, f in sorted(entries, key=lambda e: e[0]):
-        if len(entries) - removed <= cap:
+    d = _snap_dir(project_id)
+    pinned = _pinned_index(d)
+    entries = [(f, _created_at_for(f)) for f in _snap_files(d)]
+    # 旁路索引陈腐清理：指向已不存在文件的 pinned 条目随本次淘汰一并清除
+    existing_stems = {f.stem for f, _ in entries}
+    if pinned - existing_stems:
+        pinned &= existing_stems
+        _save_pinned_index(d, pinned)
+    evictable = [(f, ts) for f, ts in entries if f.stem not in pinned]
+    removed_ids: List[str] = []
+    over = len(entries) - cap
+    for f, _ts in sorted(evictable, key=lambda e: (e[1], e[0].name)):
+        if over <= 0:
             break
         try:
             f.unlink()
-            removed += 1
+            removed_ids.append(f.stem)
+            over -= 1
             logger.info(f"[Snapshot] 超出上限（{cap}），已淘汰最旧快照 {f.stem}")
         except OSError as e:
             logger.warning(f"[Snapshot] 淘汰快照失败 {f.name}: {e}")
-    return removed
+    return removed_ids
 
 
 def _read_snapshot(project_id: str, snap_id: str) -> Dict[str, Any]:
@@ -77,6 +120,8 @@ class SnapshotRequest(BaseModel):
     # 分叉点截断（任务 #16）：提供时快照仅含 messages[:up_to_index+1]（含该条）；
     # 不提供时全量快照（既有调用零行为变化）
     up_to_index: Optional[int] = None
+    # pinned：豁免数量上限淘汰（手动创建时可带；默认 false）
+    pinned: bool = False
 
 
 @router.get("/conversations/snapshots")
@@ -84,8 +129,10 @@ async def list_snapshots():
     """列出当前项目全部快照（元信息，不含全文）。"""
     svc = StateManager.get_instance()
     pid = svc.active_project_id or ""
+    d = _snap_dir(pid)
+    pinned = _pinned_index(d)
     out: List[Dict[str, Any]] = []
-    for f in sorted(_snap_dir(pid).glob("*.json"), reverse=True):
+    for f in sorted(_snap_files(d), reverse=True):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             out.append({
@@ -93,6 +140,7 @@ async def list_snapshots():
                 "title": data.get("title"),
                 "message_count": len(data.get("messages") or []),
                 "created_at": data.get("created_at"),
+                "pinned": bool(data.get("pinned")) or f.stem in pinned,
             })
         except Exception:
             continue
@@ -133,12 +181,17 @@ async def create_snapshot(body: SnapshotRequest = SnapshotRequest()):
         "messages": messages,
         "state": svc.get_full_snapshot(),
         "created_at": time.time(),
+        "pinned": bool(body.pinned),
     }
-    f = _snap_dir(record["project_id"]) / f"{snap_id}.json"
+    d = _snap_dir(record["project_id"])
+    f = d / f"{snap_id}.json"
     atomic_write_text(f, json.dumps(record, ensure_ascii=False))
-    _prune_snapshots(record["project_id"])
+    if body.pinned:
+        _save_pinned_index(d, _pinned_index(d) | {snap_id})
+    # 淘汰对用户可见：清单随响应带回，前端非空即 toast 提示
+    pruned = _prune_snapshots(record["project_id"])
     logger.info(f"[Snapshot] 已创建快照 {snap_id}（{len(record['messages'])} 条消息）")
-    return {"snap_id": snap_id, "title": record["title"]}
+    return {"snap_id": snap_id, "title": record["title"], "pruned": pruned}
 
 
 @router.get("/conversations/snapshots/{snap_id}")
@@ -174,8 +227,12 @@ async def branch_snapshot(snap_id: str, body: BranchRequest):
 async def delete_snapshot(snap_id: str):
     """删除快照（不影响任何对话）。"""
     svc = StateManager.get_instance()
-    f = _snap_dir(svc.active_project_id or "") / f"{snap_id}.json"
+    d = _snap_dir(svc.active_project_id or "")
+    f = d / f"{snap_id}.json"
     if not f.exists():
         raise HTTPException(status_code=404, detail="快照不存在")
     f.unlink()
+    pinned = _pinned_index(d)
+    if snap_id in pinned:
+        _save_pinned_index(d, pinned - {snap_id})
     return {"ok": True}

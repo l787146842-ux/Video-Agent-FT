@@ -148,7 +148,8 @@ async function connectToTask(taskId: string, projectId: string, recovering: bool
       if (currentTask?.taskId !== taskId) return; // 等待期间归属变化
     }
   }
-  // 仅当仍订阅本任务时清理（disconnectAgentStream/handleDone 已把 currentTask 置空）
+  // 仅当仍订阅本任务时清理（终态路径 done/error/stopped 与 disconnectAgentStream
+  // 已在 closeSubscription 前把 currentTask 置空，abort 引发的 AbortError 由上方归属判定跳过）
   if (currentTask?.taskId === taskId) {
     setStreaming(false);
     studioActions.setAgentBusy(false);
@@ -441,6 +442,12 @@ function handleEvent(ev: SseEvent) {
       setError(msg);
       // ：上游原始报文随错误消息下发，前端折叠展示
       chatActions.streamError({ ...payload, message: msg });
+      // 与其他终态路径对齐：先复位忙态并置空归属再关流——否则 abort 使 parseSSE
+      // reject（AbortError），catch 归属判定仍有效会把主动断开误判为第二个错误气泡
+      setStreaming(false);
+      studioActions.setAgentBusy(false);
+      if (currentTask) projectTasks.delete(currentTask.projectId);
+      currentTask = null;
       closeSubscription();
       break;
     }
@@ -477,8 +484,14 @@ function handleDone(payload: SseDonePayload) {
   }
   // ：toast 收敛——操作数已由阶段卡徽标/meta 展示、警告已常驻消息内，
   // 不再重复弹 toast（信息已在对话内可见的只展示一处）
-  // 任务已结束，关闭订阅（后台任务本身已完成，无需保留连接）
+  // 任务已结束：与其他终态路径（stopped/error/replay 终态）对齐——先复位忙态并置空
+  // currentTask，再关订阅。否则 closeSubscription 的 abort 使 parseSSE reject（AbortError），
+  // connectToTask 的 catch 归属判定仍有效，把主动断开误判为失败 → 落假错误气泡
+  //（「BodyStreamBuffer was aborted」+ 继续建议）
+  setStreaming(false);
+  studioActions.setAgentBusy(false);
   if (currentTask) projectTasks.delete(currentTask.projectId);
+  currentTask = null;
   closeSubscription();
 }
 
