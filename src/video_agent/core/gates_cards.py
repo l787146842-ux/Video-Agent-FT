@@ -306,6 +306,15 @@ GENERATION_CONFIRM_GATE_BLOCKED = _gate_msg("GENERATION_CONFIRM_BLOCKED", (
     "时才可直接触发生成。"
 ))
 
+# 生成前资产绑定检查（任务#12 E-6 禁令下沉：原李安 Skill「缺少场景参考图
+# 不启动视频生成」prose 禁令机检化）：判定见 guard_pipeline.evaluate_gen_asset_binding。
+GEN_ASSET_BINDING_BLOCKED = _gate_msg("GEN_ASSET_BINDING_BLOCKED", (
+    "流程拦截：目标分镜 sceneRefs 引用的关键元素还没有任何概念图（生成或上传），"
+    "视频生成已被资产绑定检查拦下。请先为相关关键元素生成或上传概念图"
+    "（确保分镜已引用对应元素），再重新发起视频生成——"
+    "缺少场景参考图直接生成会导致背景跳画与道具变形。"
+))
+
 # 分节键原为 SHOT_SEQUENCE（语义错位：实际承载「关键元素无概念图」警告），
 # 任务#10 更名为 ELEMENT_IMAGE_MISSING；常量名暂保留以限缩联动面。
 SHOT_SEQUENCE_GATE_ERROR = _gate_msg("ELEMENT_IMAGE_MISSING", (

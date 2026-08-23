@@ -51,11 +51,11 @@
       "head": "**key_element 设定图生成**\n\n- 使用 **TextToImag"
     },
     "prompt_draft": {
-      "chars": 3316,
+      "chars": 3385,
       "head": "**内切镜时长估算（视频提示词撰写前）**\n\n若 Storyboard shot"
     },
     "assembly": {
-      "chars": 1032,
+      "chars": 1117,
       "head": "**首尾帧衔接策略**\n\n- 第一个 shot：以对应场景 key_elemen"
     }
   },
@@ -349,7 +349,7 @@
   },
   "李安美学风格短片": {
     "planning": {
-      "chars": 5856,
+      "chars": 5511,
       "head": "**全局视频参数建立与风格选择：**\n\n1. **构思引导与子风格自动匹配**："
     },
     "storyboard_ke": {
@@ -357,7 +357,7 @@
       "head": "**关键元素（Elements）设计：**\n\n- **角色（element ch"
     },
     "storyboard_shot": {
-      "chars": 2755,
+      "chars": 2752,
       "head": "**分镜镜头（Shots）设计：**\n\n- **元素、场景与道具强锚定规范（防止"
     },
     "storyboard_audio": {
@@ -365,7 +365,7 @@
       "head": "**音频层（Audio Layers）设计：**\n\n- **旁白（narrati"
     },
     "generation": {
-      "chars": 2978,
+      "chars": 2944,
       "head": "**元素、图像与音色资产生成：**\n\n- **模型锁定与唯一性规范**：\n  -"
     },
     "prompt_draft": {

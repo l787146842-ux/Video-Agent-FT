@@ -89,6 +89,9 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
                      "元素概念图前置闸：元素无图时附警告（只警告不拦人）"),
         GateRuleMeta("skill.flow.storyboard_pending", LAYER_SKILL,
                      "故事板待确认窗口闸：结构未确认时附警告（只警告不拦人）"),
+        GateRuleMeta("skill.gen_asset_binding", LAYER_SKILL,
+                     "生成前资产绑定检查：分镜 sceneRefs 引用的关键元素"
+                     "无概念图时拦截视频生成（任务#12 E-6 禁令下沉）"),
         GateRuleMeta("skill.script_required", LAYER_SKILL,
                      "剧本原料闸：需剧本 Skill 原料缺失时反复提醒上传；"
                      "执行侧拦 agent 越阶结构操作，不拦用户；豁免/坚持旁路"),
@@ -803,6 +806,7 @@ from src.video_agent.core.gates_cards import (
     drafts_review_card,
     GENERATION_CONFIRM_GATE_ERROR,
     GENERATION_CONFIRM_GATE_BLOCKED,
+    GEN_ASSET_BINDING_BLOCKED,
     SHOT_SEQUENCE_GATE_ERROR,
     current_flow_step,
     system_continue_option,

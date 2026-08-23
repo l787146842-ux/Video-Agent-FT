@@ -38,7 +38,7 @@ BAN_RE = re.compile(r"严禁|不得")
 # Skill 直注禁令独立账本（C6）：data/skills/*.md 行级命中基线棘轮，只降不升；
 # 下调基线需同步完成对应存量的正文清洗（长期路线图 #33）。
 SKILLS_MD_DIR = ROOT / "data" / "skills"
-SKILL_BAN_BASELINE = 164
+SKILL_BAN_BASELINE = 157
 # 运行时组装总长观察阈值（字符）：P95 超限仅 WARN（周报观察项，不作硬门禁）
 P95_WARN_CHARS = 48000
 SECTIONS_SAMPLE_FILE = ROOT / "data" / "prompt_sections.jsonl"

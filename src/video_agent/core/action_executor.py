@@ -239,6 +239,31 @@ class StateOperationExecutor:
             return []
         return pairs
 
+    def _gen_asset_binding_gate(self, pairs: List[tuple]) -> List[tuple]:
+        """生成前资产绑定检查（文本轨，任务#12 E-6 禁令下沉）：判定唯一实现 =
+        guard_pipeline.evaluate_gen_asset_binding。
+
+        目标分镜的 sceneRefs 引用了无概念图的关键元素即整批硬拒
+        （先补图再生成为客观恢复路径）；override/未激活放行。"""
+        groups = [
+            g for g, d in pairs
+            if isinstance(g, dict) and (d.get("prompt") or "").strip()
+        ]
+        err, warns = guard_pipeline.evaluate_gen_asset_binding(
+            self.state, groups,
+            active=self.gate_enabled and prompt_gates.gate_mode() == "strict",
+            override=self.gate_override,
+            action="generate_video(text-track)",
+        )
+        for w in warns:
+            if w not in self.gate_warnings:
+                self.gate_warnings.append(w)
+        if err:
+            logger.info("[AssetGate] 拦截视频生成：目标分镜引用了无概念图的关键元素")
+            self._reject(err)
+            return []
+        return pairs
+
     async def execute_locked(self, actions: List[Dict[str, Any]]) -> int:
         """持 svc.lock 执行（与 FC Tool 路径的并发契约对齐）。
 

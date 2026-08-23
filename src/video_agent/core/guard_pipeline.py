@@ -197,6 +197,57 @@ def evaluate_gen_confirm(
     return msg, warns
 
 
+def evaluate_gen_asset_binding(
+    state: Dict[str, Any],
+    groups: List[Dict[str, Any]],
+    *,
+    active: bool,
+    override: Any = False,
+    action: str = "",
+) -> "tuple[Optional[str], List[str]]":
+    """生成前资产绑定检查统一判定（skill.gen_asset_binding 唯一实现，
+    任务#12 E-6 禁令下沉：原李安 Skill「缺少场景参考图不启动视频生成」
+    prose 禁令机检化）。
+
+    groups：本次视频生成目标分镜组（调用方筛好）；判定客观可查：
+    分镜 sceneRefs 引用的关键元素存在无概念图者即拦截
+    （prompt_gates.shot_references_missing_element_images 引用感知判定，
+    无 sceneRefs / 未引用关键元素的目标不误伤）。
+    返回 (硬拒原因, warnings)，与 gen_confirm 同语义：
+    - override 命中 → 不拒，附豁免警告；
+    - 未激活/空目标 → 不拒；
+    - 存在缺图引用 → 硬拒（先补图再生成为客观恢复路径，模型可自愈）。
+    判定经 tracer.record_gate 入审计。
+    """
+    warns: List[str] = []
+    if override in ("all", True):
+        w = "用户坚持跳过生成前资产绑定检查（仅警告），照常生成"
+        warns.append(w)
+        audit_verdicts([GateVerdict("skill.gen_asset_binding", "skill", True, w)],
+                       action=action, overridden=True)
+        return None, warns
+    if not active or not groups:
+        return None, warns
+    missing = [
+        str(g.get("title") or g.get("id") or "未命名分镜")
+        for g in groups
+        if isinstance(g, dict)
+        and prompt_gates.shot_references_missing_element_images(state, g)
+    ]
+    if not missing:
+        audit_verdicts([GateVerdict("skill.gen_asset_binding", "skill", True)],
+                       action=action)
+        return None, warns
+    msg = (
+        "资产绑定检查拦截（" + "、".join(missing[:5]) + "）："
+        + prompt_gates.GEN_ASSET_BINDING_BLOCKED
+    )
+    warns.append(msg)
+    audit_verdicts([GateVerdict("skill.gen_asset_binding", "skill", False, msg)],
+                   action=action)
+    return msg, warns
+
+
 def evaluate_tool_risk(
     name: str,
     *,
