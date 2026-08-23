@@ -70,6 +70,9 @@ PENDING_ROUTE_EXEMPT_TOOLS = frozenset({
     "super_resolution",    # 视频超分（路线图工具，同 PENDING_PLATFORM_TOOLS）
     "script_analyze",      # 剧本分析（路线图工具；亦属管线能力词汇）
     "write_media_prompt",  # 媒体提示词编写（路线图工具；亦属管线能力词汇）
+    # 音频驱动图生视频（路线图前瞻能力，同 PENDING_PLATFORM_TOOLS；
+    # 平台落地后移除）
+    "ImageToVideoByAudio",
 })
 
 # 非工具的业务标识符（故事板字段/资产 ID/参数名等），形似工具名但不是工具引用
