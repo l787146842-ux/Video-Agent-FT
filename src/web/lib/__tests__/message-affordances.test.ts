@@ -233,6 +233,26 @@ describe('deriveAffordances — 悬停工具条按钮矩阵（任务 #17）', ()
     expect(aff[1].copyable).toBe(false);
     expect(aff[2].copyable).toBe(true);
   });
+
+  it('存为文档挂含非空正文的助手消息（含历史轮）；用户消息不挂', () => {
+    const msgs = [user('一'), agent('旧定稿'), user('二'), agent('新定稿')];
+    const aff = deriveAffordances(msgs, false);
+    expect(aff[0].docSavable).toBe(false);
+    expect(aff[1].docSavable).toBe(true);
+    expect(aff[2].docSavable).toBe(false);
+    expect(aff[3].docSavable).toBe(true);
+  });
+
+  it('空正文/纯空白的助手消息与卡片派生条目不挂存为文档', () => {
+    const msgs = [
+      user('一'),
+      agent('   '),
+      agent('', { docCard: 'A.md', turnId: 't1' }),
+      agent('', { imageCard: { image_urls: ['/a.png'] } }),
+    ];
+    const aff = deriveAffordances(msgs, false);
+    expect(aff.every((a) => !a.docSavable)).toBe(true);
+  });
 });
 
 describe('deriveAffordances — 形状契约', () => {

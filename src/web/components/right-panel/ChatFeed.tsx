@@ -171,6 +171,7 @@ export function ChatFeed() {
                 regenerable={affordances()[start() + g.indices[0]].regenerable}
                 branchable={affordances()[start() + g.indices[0]].branchable}
                 copyable={affordances()[start() + g.indices[0]].copyable}
+                docSavable={affordances()[start() + g.indices[0]].docSavable}
                 confirmState={affordances()[start() + g.indices[0]].confirmState}
                 answeredValue={affordances()[start() + g.indices[0]].answeredValue}
                 domIndex={start() + g.indices[0]}
@@ -197,6 +198,7 @@ export function ChatFeed() {
                     regenerable={affordances()[start() + idx].regenerable}
                     branchable={affordances()[start() + idx].branchable}
                     copyable={affordances()[start() + idx].copyable}
+                    docSavable={affordances()[start() + idx].docSavable}
                     confirmState={affordances()[start() + idx].confirmState}
                     answeredValue={affordances()[start() + idx].answeredValue}
                     domIndex={start() + idx}

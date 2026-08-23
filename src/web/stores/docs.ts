@@ -4,6 +4,7 @@ import { saveProjectDocument, deleteProjectDocument } from '@/api/project';
 import { getSkillDocs, saveSkillDoc, type SkillDoc } from '@/api/docs';
 import { fetchResourceText } from '@/api/client';
 import { showToast } from '@/stores/toast';
+import { t } from '@/lib/locale';
 import type { DocRecord } from '@/types';
 
 /**
@@ -192,6 +193,37 @@ export async function createDoc(name: string): Promise<void> {
     startEdit();
   } catch (e) {
     showToast((e as Error).message || '新建文档失败', 'error');
+  }
+}
+
+/** 「存为文档」默认文档名（任务#6 C-2）：取正文首个非空行去掉 markdown
+ * 行首符号作摘要名（截 24 字符）；取不到时回落「剧本-YYYY-MM-DD」；
+ * 统一补 .md 后缀（面板内可再改名/编辑）。纯函数，供 vitest 钉死。 */
+export function defaultDocNameFor(text: string, now: Date = new Date()): string {
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const firstLine = (text.split(/\r?\n/).find((l) => l.trim() !== '') || '').trim();
+  const summary = firstLine.replace(/^[\s#>*`\-]+/, '').trim();
+  if (!summary) return `剧本-${date}.md`;
+  const base = summary.length > 24 ? `${summary.slice(0, 24)}…` : summary;
+  return base.endsWith('.md') ? base : `${base}.md`;
+}
+
+/** 把一条助手消息正文直接存为项目文档（不经 LLM 的确定性兜底）：
+ * PUT /api/project/document upsert（同名覆盖，第一版不做版本历史）→
+ * 成功后 toast + 打开文档面板并选中新文档。返回是否成功（供点击守卫复位）。 */
+export async function saveMessageAsDoc(text: string): Promise<boolean> {
+  const name = defaultDocNameFor(text);
+  try {
+    const data = await saveProjectDocument(name, text);
+    if (Array.isArray(data.documents)) {
+      setState('documents', data.documents as DocRecord[]);
+    }
+    showToast(t('rp.msg.docSaved', { name }), 'success');
+    void openDocsPanel(name);
+    return true;
+  } catch (e) {
+    showToast(t('rp.msg.docSaveFailed', { error: (e as Error).message || '' }), 'error');
+    return false;
   }
 }
 

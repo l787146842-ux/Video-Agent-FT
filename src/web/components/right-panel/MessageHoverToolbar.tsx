@@ -5,11 +5,11 @@
  * chat-feed-core.css（.chat-msg:hover / :focus-within），本组件只负责
  * 按 affordances 矩阵渲染按钮集与该消息的 HH:MM 时间戳：
  * - 用户消息：复制；最后一条额外「编辑」（非忙碌）
- * - agent 回复：复制、分支；最后一条额外「重新生成」
+ * - agent 回复：复制、分支、存为文档；最后一条额外「重新生成」
  * 按钮均为真实 <button>（Tab 可达），data-testid 供 e2e 钉死。
  */
 import { Show } from 'solid-js';
-import { FiCopy, FiEdit2, FiGitBranch, FiRefreshCw } from 'solid-icons/fi';
+import { FiCopy, FiEdit2, FiGitBranch, FiRefreshCw, FiSave } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
 
 export function MessageHoverToolbar(props: {
@@ -19,12 +19,15 @@ export function MessageHoverToolbar(props: {
   editable?: boolean;
   branchable?: boolean;
   regenerable?: boolean;
+  /** 存为文档（任务#6 C-2）：含正文的助手消息挂，点击不经 LLM 直接入文档面板 */
+  docSavable?: boolean;
   /** 用户消息右对齐 / agent 消息左对齐 */
   align?: 'left' | 'right';
   onCopy: () => void;
   onEdit?: () => void;
   onBranch?: () => void;
   onRegenerate?: () => void;
+  onSaveDoc?: () => void;
 }) {
   return (
     <div
@@ -80,6 +83,18 @@ export function MessageHoverToolbar(props: {
           onClick={() => props.onRegenerate?.()}
         >
           <FiRefreshCw size={13} />
+        </button>
+      </Show>
+      <Show when={props.docSavable}>
+        <button
+          type="button"
+          class="msg-act-btn"
+          data-testid="msg-act-save-doc"
+          title={t('rp.msg.saveDocTitle')}
+          aria-label={t('rp.msg.saveDoc')}
+          onClick={() => props.onSaveDoc?.()}
+        >
+          <FiSave size={13} />
         </button>
       </Show>
     </div>

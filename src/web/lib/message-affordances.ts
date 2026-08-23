@@ -31,6 +31,9 @@ export interface MessageAffordance {
   branchable: boolean;
   /** 悬停工具条——复制：有正文文本的消息 */
   copyable: boolean;
+  /** 悬停工具条——存为文档：助手消息且含非空文本（任务#6 C-2 确定性兜底，
+   * 点击直接把该条正文 upsert 进项目文档，不经 LLM） */
+  docSavable: boolean;
   /** 暂停卡生命周期（回看时可知旧卡是否仍有效） */
   confirmState: ConfirmState;
   /** 已回应暂停卡的「当时所选值」（仅 answered 态非空） */
@@ -133,6 +136,8 @@ export function deriveAffordances(
       branchable: messages.length <= BRANCH_MAX_MESSAGES
         && m.sender === 'agent' && (m.text || '').trim() !== '',
       copyable: (m.text || '').trim() !== '',
+      // 存为文档只挂助手消息：用户消息/空正文卡片派生条目不挂
+      docSavable: m.sender === 'agent' && (m.text || '').trim() !== '',
       confirmState: state,
       answeredValue: state === 'answered' ? answeredValueFor(messages, idx) : '',
     };

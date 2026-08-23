@@ -302,6 +302,11 @@ const zhCN = {
   'rp.msg.truncateFailed': '截断重答失败：{error}',
   'rp.msg.editCancel': '取消',
   'rp.msg.editSend': '发送',
+  // 存为文档（任务 #6 C-2：不经 LLM 的确定性兜底）
+  'rp.msg.saveDoc': '存为文档',
+  'rp.msg.saveDocTitle': '把该条回复正文存为项目文档',
+  'rp.msg.docSaved': '已存入文档：{name}',
+  'rp.msg.docSaveFailed': '存入文档失败：{error}',
 } satisfies Record<string, string>;
 
 /** 字典键联合类型：t() 编译期校验的单一来源（拼错的 key 无法通过 tsc） */

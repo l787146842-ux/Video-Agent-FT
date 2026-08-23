@@ -5,7 +5,7 @@ import {
 } from 'solid-icons/fi';
 import { chatState } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
-import { openDocsPanel } from '@/stores/docs';
+import { openDocsPanel, saveMessageAsDoc } from '@/stores/docs';
 import { truncateResendAction } from '@/lib/truncate-resend';
 import { branchAtMessage } from '@/lib/message-branch';
 import { copyText } from '@/lib/code-copy';
@@ -56,11 +56,13 @@ export function ChatMessageItem(props: {
   /** 是否为最后一条携带建议动作的消息（重试/继续按钮挂载点） */
   isSuggestedTarget?: boolean;
   /** 悬停工具条矩阵（均经 deriveAffordances 派生）：
-   * 编辑=末条用户消息；重新生成=末条普通 agent 回复；分支=agent 回复；复制=有正文 */
+   * 编辑=末条用户消息；重新生成=末条普通 agent 回复；分支=agent 回复；
+   * 复制=有正文；存为文档=含正文的助手消息 */
   editable?: boolean;
   regenerable?: boolean;
   branchable?: boolean;
   copyable?: boolean;
+  docSavable?: boolean;
   /** 消息在全局数组中的下标（分支分叉点 up_to_index / 搜索跳转锚点） */
   domIndex?: number;
 }) {
@@ -73,6 +75,8 @@ export function ChatMessageItem(props: {
   const [editing, setEditing] = createSignal(false);
   /** 重新生成 in-flight 守卫（与 InlineEditBox sending 同模式：响应回来前禁二次触发） */
   const [regenerating, setRegenerating] = createSignal(false);
+  /** 存为文档 in-flight 守卫（同模式：PUT 回来前禁二次触发） */
+  const [savingDoc, setSavingDoc] = createSignal(false);
 
   /** 悬停工具条动作 */
   const doCopy = async () => {
@@ -100,9 +104,18 @@ export function ChatMessageItem(props: {
     if (ok) setEditing(false);
     return ok;
   };
+  /** 存为文档（任务#6 C-2）：不经 LLM，把该条正文直接 upsert 进项目文档；
+   * 成功后 toast + 打开文档面板（stores/docs 内闭环）；双击守卫同重新生成 */
+  const doSaveDoc = async () => {
+    if (savingDoc()) return;
+    setSavingDoc(true);
+    try { await saveMessageAsDoc(msg().text || ''); } finally { setSavingDoc(false); }
+  };
 
   /** 悬停工具条挂载判定：矩阵内任一动作可挂（系统动作行/卡片无动作不挂） */
-  const hasToolbar = () => !!(props.copyable || props.editable || props.branchable || props.regenerable);
+  const hasToolbar = () => !!(
+    props.copyable || props.editable || props.branchable || props.regenerable || props.docSavable
+  );
 
   /** 过程时间线数据（从消息 trace/actionLog 重建，刷新后不丢） */
   const timeline = () => timelineFromMessage(msg());
@@ -263,10 +276,12 @@ export function ChatMessageItem(props: {
           editable={props.editable && !editing()}
           branchable={props.branchable}
           regenerable={props.regenerable && !regenerating()}
+          docSavable={props.docSavable && !savingDoc()}
           onCopy={() => void doCopy()}
           onEdit={() => setEditing(true)}
           onBranch={doBranch}
           onRegenerate={() => void doRegenerate()}
+          onSaveDoc={() => void doSaveDoc()}
         />
       </Show>
 
