@@ -5,7 +5,7 @@
  * 零模型猜测、不重写历史（对齐项目 retry 语义）。
  */
 import { chatState } from '@/stores/chat';
-import { submitMessage } from './submit-message';
+import { submitMessage } from '../submit-message';
 
 /** 机械重发 startIdx 之前（含）最近一条用户消息；无则不发。
  * 走统一发送入口（intent='resend'），序列化/校验/排队判定单点。 */

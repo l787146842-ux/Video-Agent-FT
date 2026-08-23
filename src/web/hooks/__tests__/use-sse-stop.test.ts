@@ -18,7 +18,7 @@ vi.mock('@/api/sse', () => ({
   postAgentTaskGuidance: vi.fn(),
 }));
 vi.mock('@/stores/history', () => ({ refreshHistoryStatus: vi.fn(async () => {}) }));
-vi.mock('@/lib/chat-input-bridge', () => ({ requestInsertMedia: vi.fn() }));
+vi.mock('@/lib/chat/chat-input-bridge', () => ({ requestInsertMedia: vi.fn() }));
 vi.mock('@/stores/toast', () => ({ showToast: vi.fn() }));
 
 import { streamAgentChat, disconnectAgentStream, stopAgentStream, sendGuidanceToTask, resumeAgentTasks } from '../use-sse';
@@ -28,7 +28,7 @@ import {
 import { chatState } from '@/stores/chat';
 import { state } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
-import { requestInsertMedia } from '@/lib/chat-input-bridge';
+import { requestInsertMedia } from '@/lib/chat/chat-input-bridge';
 import { req, hangingResponse, spies, clearSpies, resetChatTestState, tick } from './use-sse-testkit';
 
 beforeEach(() => {

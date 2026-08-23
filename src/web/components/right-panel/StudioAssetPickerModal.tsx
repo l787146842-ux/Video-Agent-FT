@@ -2,7 +2,7 @@ import { Show, For, createSignal, createMemo } from 'solid-js';
 import { FiX, FiImage, FiMusic, FiExternalLink } from 'solid-icons/fi';
 import { state } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
-import { requestInsertMedia } from '@/lib/chat-input-bridge';
+import { requestInsertMedia } from '@/lib/chat/chat-input-bridge';
 import { safeUrl, uid } from '@/lib/utils';
 import { t } from '@/lib/locale';
 import { useFocusTrap } from '@/lib/focus-trap';

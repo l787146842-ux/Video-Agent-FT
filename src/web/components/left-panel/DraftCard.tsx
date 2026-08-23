@@ -5,7 +5,7 @@ import { showToast } from '@/stores/toast';
 import { showContextMenu } from '@/components/shared/ContextMenu';
 import { confirmDialog } from '@/components/shared/ConfirmDialog';
 import { checkpointHistory, performUndo } from '@/stores/history';
-import { requestInsertMedia, requestInsertText } from '@/lib/chat-input-bridge';
+import { requestInsertMedia, requestInsertText } from '@/lib/chat/chat-input-bridge';
 import { draftToInlineMedia } from '@/lib/rich-input';
 import { safeUrl } from '@/lib/utils';
 import type { Draft, DraftType } from '@/types';

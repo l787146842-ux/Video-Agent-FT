@@ -18,7 +18,7 @@ import { getSkills } from '@/api/agent';
 import { ensureGlobalSettings } from '@/stores/global-settings';
 import { state, studioActions } from '@/stores/studio';
 import { chatActions } from '@/stores/chat';
-import { registerQueueStorageKey } from '@/lib/queue-storage';
+import { registerQueueStorageKey } from '@/lib/chat/queue-storage';
 import { resumeAgentTasks } from '@/hooks/use-sse';
 import { convActions, convState } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';

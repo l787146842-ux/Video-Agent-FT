@@ -2,7 +2,7 @@
  * 排队消息持久化存储层测试：旧格式条目的结构归一化。
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { registerQueueStorageKey, loadQueue } from '../queue-storage';
+import { registerQueueStorageKey, loadQueue } from '../chat/queue-storage';
 
 const KEY = 'ftdyb.queued.p1.conv-q';
 

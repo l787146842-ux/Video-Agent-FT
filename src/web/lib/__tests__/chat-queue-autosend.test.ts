@@ -23,7 +23,7 @@ vi.mock('@/stores/agent-prefs', () => ({
   agentModel: () => prefsMock.model,
 }));
 
-import { startQueuedAutosend } from '../chat-queue-autosend';
+import { startQueuedAutosend } from '../chat/chat-queue-autosend';
 import { submitMessage } from '@/lib/submit-message';
 import { chatState, chatActions } from '@/stores/chat';
 import type { QueuedMessage } from '@/stores/chat';

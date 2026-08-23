@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
  * 点击 retry 机械重发最近用户消息、无用户消息不挂建议
  */
 import { chatState, chatActions } from '../chat';
-import { resendNearestUserMessage } from '@/lib/resend';
+import { resendNearestUserMessage } from '@/lib/chat/resend';
 // 机械重发终点 mock（retry 点击 → submitMessage('resend')；不真起流）
 import { submitMessage } from '@/lib/submit-message';
 

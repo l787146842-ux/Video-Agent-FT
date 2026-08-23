@@ -7,7 +7,7 @@
  */
 import { For } from 'solid-js';
 import { sendUserMessage } from '@/lib/agent-actions';
-import { resendNearestUserMessage } from '@/lib/resend';
+import { resendNearestUserMessage } from '@/lib/chat/resend';
 import { chatState } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { isHumanReadableSuggestedValue } from '@/lib/suggested-guard';

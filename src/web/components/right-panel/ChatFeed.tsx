@@ -4,7 +4,7 @@ import { t } from '@/lib/locale';
 import { groupTurns, stabilizeGroups, type TurnGroup } from '@/lib/turn-groups';
 import { deriveAffordances } from '@/lib/message-affordances';
 import { computeFeedStart, expandFeedWindow, extraForIndex } from '@/lib/feed-window';
-import { scrollRequest } from '@/lib/chat-scroll-bridge';
+import { scrollRequest } from '@/lib/chat/chat-scroll-bridge';
 import { ChatMessageItem } from './ChatMessageItem';
 import { StreamingIndicator } from './StreamingIndicator';
 import { StreamingBubble } from './StreamingBubble';

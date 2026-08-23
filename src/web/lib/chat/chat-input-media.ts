@@ -6,7 +6,7 @@
 import { uploadFiles } from '@/api/upload';
 import { studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
-import { uid } from './utils';
+import { uid } from '../utils';
 import type { InlineMedia } from '@/types';
 
 export type InsertMedia = (media: InlineMedia) => void;

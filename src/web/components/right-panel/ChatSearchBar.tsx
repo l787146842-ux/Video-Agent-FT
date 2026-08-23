@@ -5,7 +5,7 @@ import { t } from '@/lib/locale';
 import {
   searchMessages, turnJumpEntries, type SearchHit, type TurnEntry,
 } from '@/lib/message-search';
-import { requestScrollToMessage } from '@/lib/chat-scroll-bridge';
+import { requestScrollToMessage } from '@/lib/chat/chat-scroll-bridge';
 
 /**
  * 消息搜索与轮次跳转条（会话标签栏下方展开）：

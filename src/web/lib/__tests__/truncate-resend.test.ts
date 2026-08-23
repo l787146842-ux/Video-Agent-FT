@@ -35,7 +35,7 @@ vi.mock('@/stores/toast', () => ({
   showToast: (msg: string, kind: string) => toastMock(msg, kind),
 }));
 
-import { truncateResendAction } from '../truncate-resend';
+import { truncateResendAction } from '../chat/truncate-resend';
 import { chatState, chatActions } from '@/stores/chat';
 import { state, studioActions } from '@/stores/studio';
 import { ApiError } from '@/api/client';

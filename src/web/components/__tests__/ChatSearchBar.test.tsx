@@ -8,7 +8,7 @@ import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const scrollMock = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/chat-scroll-bridge', () => ({ requestScrollToMessage: scrollMock }));
+vi.mock('@/lib/chat/chat-scroll-bridge', () => ({ requestScrollToMessage: scrollMock }));
 
 import { ChatSearchBar } from '../right-panel/ChatSearchBar';
 import { chatActions } from '@/stores/chat';

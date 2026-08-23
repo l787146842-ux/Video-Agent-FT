@@ -19,7 +19,7 @@ import {
   postAgentTaskGuidance,
   type AgentTaskInfo,
 } from '@/api/sse';
-import { requestInsertMedia } from '@/lib/chat-input-bridge';
+import { requestInsertMedia } from '@/lib/chat/chat-input-bridge';
 import { applyFallbackModel } from '@/stores/agent-prefs';
 import { uid } from '@/lib/utils';
 

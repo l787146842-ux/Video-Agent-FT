@@ -3,9 +3,9 @@
  *
  * 此前四条并行「发消息」路径各自携带序列化/校验/排队判定的变体：
  * - sendUserMessage@lib/agent-actions.ts（新消息）
- * - resendNearestUserMessage@lib/resend.ts（机械重发）
+ * - resendNearestUserMessage@lib/chat/resend.ts（机械重发）
  * - sendGuidanceToTask 引导登记@QueuedMessagesBar（轮间注入）
- * - 排队自动出队@lib/chat-queue-autosend.ts
+ * - 排队自动出队@lib/chat/chat-queue-autosend.ts
  *
  * 本模块是唯一收口：序列化（normalizeParts）/ 校验（内容、供应商模型）/
  * 排队判定（agentBusy 入队 + 引导登记 / queued 失败回队）单点实现；

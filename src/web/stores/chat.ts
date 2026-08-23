@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */ // 对话 store 核心（已登记 FRONTEND_WHITELIST）
 import { createStore, produce } from 'solid-js/store';
 import type { ChatMessage, SseDonePayload, RichContentPart, PendingDecisionPayload } from '@/types';
-import { saveQueue, loadQueue } from '@/lib/queue-storage';
+import { saveQueue, loadQueue } from '@/lib/chat/queue-storage';
 import { t } from '@/lib/locale';
 import { actionForKind, type ErrorPayload } from '@/lib/error-payload';
 import {

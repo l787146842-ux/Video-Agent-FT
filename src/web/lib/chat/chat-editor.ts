@@ -11,7 +11,7 @@ import {
   createMediaChip, createSkillChip, insertNodeAtCursor, insertTextAtCursor,
   serializeEditorToParts, editorToPlainText, getEditorSelection,
 } from '@/lib/rich-input';
-import { insertRequestCount, takeInsertRequests } from '@/lib/chat-input-bridge';
+import { insertRequestCount, takeInsertRequests } from '@/lib/chat/chat-input-bridge';
 import { t } from '@/lib/locale';
 import { useCanvasMention } from '@/hooks/use-canvas-mention';
 import type { CanvasNodeImageItem } from '@/api/canvas';

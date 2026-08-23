@@ -6,10 +6,10 @@ import {
 import { chatState } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { openDocsPanel, saveMessageAsDoc } from '@/stores/docs';
-import { truncateResendAction } from '@/lib/truncate-resend';
+import { truncateResendAction } from '@/lib/chat/truncate-resend';
 import { branchAtMessage } from '@/lib/message-branch';
 import { copyText } from '@/lib/code-copy';
-import { absUrl } from '@/lib/chat-image-drag';
+import { absUrl } from '@/lib/chat/chat-image-drag';
 import { t } from '@/lib/locale';
 import { RichBubble } from './RichBubble';
 import { AgentTimeline, timelineFromMessage } from './AgentTimeline';

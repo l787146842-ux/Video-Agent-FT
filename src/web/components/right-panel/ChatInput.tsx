@@ -2,9 +2,9 @@ import { createSignal, Show } from 'solid-js';
 import { state, studioActions } from '@/stores/studio';
 import { sendUserMessage } from '@/lib/agent-actions';
 import { stopAgentStream } from '@/hooks/use-sse';
-import { uploadAndInsert, handleUrlDrop } from '@/lib/chat-input-media';
-import { useChatEditor } from '@/lib/chat-editor';
-import { startQueuedAutosend } from '@/lib/chat-queue-autosend';
+import { uploadAndInsert, handleUrlDrop } from '@/lib/chat/chat-input-media';
+import { useChatEditor } from '@/lib/chat/chat-editor';
+import { startQueuedAutosend } from '@/lib/chat/chat-queue-autosend';
 import { agentSkill } from '@/stores/agent-prefs';
 import { openDocsPanel } from '@/stores/docs';
 import { ChatInputToolbar } from './ChatInputToolbar';
@@ -19,8 +19,8 @@ import { MediaLightbox } from './MediaLightbox';
  * 「添加到对话」、@ 提及、粘贴、拖拽、上传的媒体都以缩略块插入到光标处，
  * 发送时序列化为有序 parts，让 LLM 精确识别文字与媒体的对应关系。
  *
- * 模块分工：编辑区（ChatInputEditor + lib/chat-editor）、
- * 排队区（QueuedMessagesBar + lib/chat-queue-autosend）、粘贴拖拽（lib/chat-input-media），
+ * 模块分工：编辑区（ChatInputEditor + lib/chat/chat-editor）、
+ * 排队区（QueuedMessagesBar + lib/chat/chat-queue-autosend）、粘贴拖拽（lib/chat/chat-input-media），
  * 本文件只负责组装与拖拽摄取入口。
  */
 export function ChatInput() {
@@ -31,7 +31,7 @@ export function ChatInput() {
 
   const ed = useChatEditor();
 
-  // 排队自动出队（lib/chat-queue-autosend）：Agent 空闲即按序发队首消息
+  // 排队自动出队（lib/chat/chat-queue-autosend）：Agent 空闲即按序发队首消息
   startQueuedAutosend();
 
   /** 序列化编辑器并发送；成功后清空 */

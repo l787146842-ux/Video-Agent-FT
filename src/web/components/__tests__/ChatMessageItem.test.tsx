@@ -19,7 +19,7 @@ import type { ChatMessage } from '@/types';
 vi.mock('@solidjs/router', () => ({ useNavigate: () => () => {} }));
 
 const truncateMock = vi.fn(async (_text?: string) => true);
-vi.mock('@/lib/truncate-resend', () => ({
+vi.mock('@/lib/chat/truncate-resend', () => ({
   truncateResendAction: (text?: string) => truncateMock(text),
 }));
 

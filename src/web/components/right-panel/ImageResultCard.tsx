@@ -2,7 +2,7 @@ import { For, Show, createSignal, onMount, onCleanup } from 'solid-js';
 import { FiDownload, FiImage } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
 import { safeUrl } from '@/lib/utils';
-import { createImageDrag, absUrl } from '@/lib/chat-image-drag';
+import { createImageDrag, absUrl } from '@/lib/chat/chat-image-drag';
 import { endCanvasImageDrag } from '@/stores/canvas';
 import type { ImageCardData } from '@/types';
 import { ImageLightbox } from './ImageLightbox';

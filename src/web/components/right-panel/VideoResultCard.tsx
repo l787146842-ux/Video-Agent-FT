@@ -2,7 +2,7 @@ import { For, Show, createSignal, onMount, onCleanup } from 'solid-js';
 import { FiDownload, FiVideo } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
 import { safeUrl } from '@/lib/utils';
-import { absUrl } from '@/lib/chat-image-drag';
+import { absUrl } from '@/lib/chat/chat-image-drag';
 import type { VideoCardData } from '@/types';
 import { MediaLightbox } from './MediaLightbox';
 

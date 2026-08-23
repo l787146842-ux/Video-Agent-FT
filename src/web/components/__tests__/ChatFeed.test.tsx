@@ -14,7 +14,7 @@ import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ChatFeed } from '../right-panel/ChatFeed';
 import { chatState, chatActions, setChatState } from '@/stores/chat';
-import { requestScrollToMessage } from '@/lib/chat-scroll-bridge';
+import { requestScrollToMessage } from '@/lib/chat/chat-scroll-bridge';
 import type { ChatMessage } from '@/types';
 
 vi.mock('../right-panel/ChatMessageItem', () => ({

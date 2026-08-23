@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { chatState, chatActions, setChatState } from '../chat';
-import { registerQueueStorageKey } from '@/lib/queue-storage';
+import { registerQueueStorageKey } from '@/lib/chat/queue-storage';
 import type { SseDonePayload, AgentTraceStep } from '@/types';
 
 const donePayload = (extra?: Partial<SseDonePayload>): SseDonePayload => ({

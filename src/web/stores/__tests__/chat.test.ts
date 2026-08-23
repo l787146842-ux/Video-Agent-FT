@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 // 直接测试 chatActions 的状态转换逻辑（不依赖 DOM）
 // 由于 solid-js store 在 node 环境可用，直接 import
 import { chatState, chatActions, setChatState } from '../chat';
-import { registerQueueStorageKey } from '@/lib/queue-storage';
+import { registerQueueStorageKey } from '@/lib/chat/queue-storage';
 import { t } from '@/lib/locale';
 // 「继续刚才的任务」建议派生用例已拆出至 chat-continue-suggestion.test.ts（控制本文件行数）
 

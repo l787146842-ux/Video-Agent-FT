@@ -6,7 +6,7 @@ import { chatActions } from '@/stores/chat';
 import { editorToPlainText } from '@/lib/rich-input';
 import { deleteSkillDoc } from '@/api/docs';
 import { showToast } from '@/stores/toast';
-import { requestInsertSkill } from '@/lib/chat-input-bridge';
+import { requestInsertSkill } from '@/lib/chat/chat-input-bridge';
 import { isSkillEnabled } from '@/stores/skill-prefs';
 import { t } from '@/lib/locale';
 import { SkillDetailModal } from './SkillDetailModal';

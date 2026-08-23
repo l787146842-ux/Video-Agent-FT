@@ -1,13 +1,13 @@
 /**
  * 聊天输入编辑区：
  * contenteditable 编辑器 + @ 提及弹层。
- * 编辑器逻辑（光标记忆/桥接插入/回填/序列化）由 lib/chat-editor 的 useChatEditor 提供，
+ * 编辑器逻辑（光标记忆/桥接插入/回填/序列化）由 lib/chat/chat-editor 的 useChatEditor 提供，
  * 父组件创建后整体传入，保证发送与排队回填仍可触达同一编辑器实例。
  */
 import { Show } from 'solid-js';
 import { t } from '@/lib/locale';
-import { handlePasteImages } from '@/lib/chat-input-media';
-import type { useChatEditor } from '@/lib/chat-editor';
+import { handlePasteImages } from '@/lib/chat/chat-input-media';
+import type { useChatEditor } from '@/lib/chat/chat-editor';
 import type { CanvasNodeImageItem } from '@/api/canvas';
 import { MentionPopup } from './MentionPopup';
 
