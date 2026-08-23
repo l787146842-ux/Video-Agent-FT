@@ -1,7 +1,7 @@
 import { A, useLocation } from '@solidjs/router';
 import { Show } from 'solid-js';
 import {
-  FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiDatabase, FiList, FiMoon, FiSettings, FiSun,
+  FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiDatabase, FiFeather, FiList, FiMoon, FiSettings, FiSun,
 } from 'solid-icons/fi';
 import { useTheme } from '@/hooks/use-theme';
 import { ProjectSwitcher } from './ProjectSwitcher';
@@ -84,6 +84,15 @@ export function Header(props: {
 
       {/* 右侧操作区 */}
       <div class="studio-header-actions">
+        {/* Skill 工作台入口：创建/编辑/加入 Skill（三栏页面） */}
+        <A
+          href="/skills"
+          class={`theme-toggle-btn ${location.pathname.startsWith('/skills') ? 'active' : ''}`}
+          title="Skill 工作台"
+          aria-label="Skill 工作台"
+        >
+          <FiFeather size={16} />
+        </A>
         {/* 记忆管理入口：查看/置顶/删除 Agent 长期记忆（4.7） */}
         <button
           type="button"

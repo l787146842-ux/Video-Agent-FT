@@ -14,3 +14,6 @@
 @import "./code-block.css";
 @import "./health-banner.css";
 @import "./genlog.css";
+/* Skill 结构化视图与 Skill 工作台 */
+@import "./skill-structured.css";
+@import "./skill-studio.css";

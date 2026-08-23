@@ -22,6 +22,15 @@
   .splitter-h { height: var(--splitter-width); width: 100%; cursor: row-resize; background-color: var(--border-color); position: relative; z-index: 10; transition: background-color 0.2s; margin: -3px 0; }
   .splitter-h:hover, .splitter-h.dragging { background-color: var(--splitter-hover); }
 
+  /* 收起后的窄条展开按钮（AgentLayout / Skill 工作台左栏共用） */
+  .panel-reopen-col {
+    flex-shrink: 0; width: 28px; align-self: stretch;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-secondary); border-right: 1px solid var(--border-color);
+    color: var(--text-dim); cursor: pointer;
+  }
+  .panel-reopen-col:hover { color: var(--text-main); background: var(--bg-hover); }
+
   /* ---------- Header ---------- */
   .studio-header { height: 52px; background-color: var(--bg-secondary); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; z-index: 20; position: relative; min-width: 1120px; }
   .studio-header:has(.nav-toggle-arrow) { border-bottom: none; }
