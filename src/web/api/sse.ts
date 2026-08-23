@@ -1,33 +1,14 @@
 /**
  * SSE 流式请求封装（api 层）
- * 将 Agent 聊天的 HTTP POST + ReadableStream 读取集中于此，
+ * 任务式传输（POST 建任务 + 事件订阅）的 HTTP 封装集中于此，
  * hooks/use-sse.ts 只负责事件分发与状态管理。
+ * ：旧 postAgentChatStream（POST /api/agent/chat/stream 直连流）为死代码——
+ * 真实链路已全量走任务式传输（startAgentTask + fetchAgentTaskEvents），已删除；
+ * 后端同名路由的清退为遗留事项（牵连 routes/agent.py/chat_service/web/sse.py）。
  */
 import type { AgentChatRequest } from '@/types';
 import type { GuidanceItem } from '@/types/api.generated';
 import { apiFetch, apiPost } from './client';
-
-export interface SseStreamHandle {
-  reader: ReadableStreamDefaultReader<Uint8Array>;
-  abort: () => void;
-}
-
-/**
- * 发起 Agent 流式聊天请求，返回 ReadableStream reader。
- * 调用方负责逐块读取并解析 SSE 事件。
- */
-export async function postAgentChatStream(
-  request: AgentChatRequest,
-  signal: AbortSignal,
-): Promise<Response> {
-  const res = await fetch('/api/agent/chat/stream', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-    signal,
-  });
-  return res;
-}
 
 // ===== 任务式传输（D 批）：后台任务 + 事件订阅，刷新/切项目不中断 =====
 

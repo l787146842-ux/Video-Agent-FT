@@ -4,12 +4,11 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  postAgentChatStream,
   startAgentTask, fetchAgentTaskEvents, listAgentTasks, stopAgentTask, postAgentTaskGuidance,
 } from '../sse';
 import {
   canvasLlm, getSkills, getContextUsage, getRuntimeSettings, setRuntimeSettings,
-  getAgentMetrics, getAgentRunning, stopAgentTask as stopLegacyWorker,
+  getAgentMetrics,
 } from '../agent';
 import type { AgentChatRequest } from '@/types';
 
@@ -29,20 +28,6 @@ beforeEach(() => {
 });
 
 describe('sse.ts 任务式传输端点', () => {
-  it('postAgentChatStream：旧流式端点 POST body + signal 透传（Response 原样返回）', async () => {
-    const ctrl = new AbortController();
-    const fake = res({});
-    fetchMock.mockResolvedValue(fake);
-    const req = { message: '旧轨' } as AgentChatRequest;
-    const r = await postAgentChatStream(req, ctrl.signal);
-    expect(r).toBe(fake);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/agent/chat/stream');
-    expect(init.method).toBe('POST');
-    expect(init.signal).toBe(ctrl.signal);
-    expect(JSON.parse(init.body)).toEqual(req);
-  });
-
   it('startAgentTask：POST /api/agent/tasks 原样携带聊天请求体', async () => {
     fetchMock.mockResolvedValue(res({ task_id: 't1', project_id: 'p1' }));
     const req = { message: '你好', provider: 'mock', model: 'm' } as AgentChatRequest;
@@ -123,15 +108,9 @@ describe('agent.ts 关键端点拼装', () => {
     expect(JSON.parse(init.body)).toEqual({ model_fallback_enabled: false });
   });
 
-  it('看板/运行态/旧 worker 停止端点', async () => {
+  it('看板指标端点：GET /api/agent/metrics', async () => {
     fetchMock.mockResolvedValue(res({ traces_count: 0 }));
     await getAgentMetrics();
     expect(fetchMock.mock.calls[0][0]).toBe('/api/agent/metrics');
-    await getAgentRunning();
-    expect(fetchMock.mock.calls[1][0]).toBe('/api/agent/running');
-    await stopLegacyWorker();
-    const [url, init] = fetchMock.mock.calls[2];
-    expect(url).toBe('/api/agent/stop');
-    expect(init.method).toBe('POST');
   });
 });

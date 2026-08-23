@@ -1,6 +1,6 @@
 /**
  * Agent 聊天相关 API
- * 端点：/api/agent/chat, /api/agent/chat/stream
+ * 端点：/api/agent/chat（非流式）、/api/agent/metrics 等辅助端点
  */
 import { apiPost, apiFetch, apiPut } from './client';
 import type { AgentChatRequest, Skill } from '@/types';
@@ -89,15 +89,8 @@ export function getAgentMetrics(): Promise<AgentMetrics> {
   return apiFetch<AgentMetrics>('/api/agent/metrics');
 }
 
-/** 是否有聊天 worker 仍在运行（含刷新后转后台的） */
-export function getAgentRunning(): Promise<{ running: boolean }> {
-  return apiFetch<{ running: boolean }>('/api/agent/running');
-}
-
-/** 显式停止聊天 worker（停止按钮专用；刷新不调用，worker 续跑） */
-export function stopAgentTask(): Promise<{ ok: boolean; cancelled: number }> {
-  return apiPost<{ ok: boolean; cancelled: number }>('/api/agent/stop', {});
-}
-
+// ：原 getAgentRunning（GET /api/agent/running）与 stopAgentTask（POST /api/agent/stop）
+// 为死代码——真实停止链路为 sse.ts::stopAgentTask → /api/agent/tasks/{id}/stop，
+// 运行态由任务列表（listAgentTasks）派生；后端同名路由清退为遗留事项。
 // ：原 sendGuidance（POST /api/agent/guidance）为死代码——后端无该端点
 // （真实链路为 sse.ts::postAgentTaskGuidance → /api/agent/tasks/{id}/guidance），已删除。

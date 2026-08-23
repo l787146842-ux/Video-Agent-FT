@@ -10,7 +10,7 @@ import {
 } from '../canvas';
 import {
   getConversations, createConversation, activateConversation, deleteConversation,
-  createSnapshot, branchSnapshot,
+  getConversationMessages, createSnapshot, branchSnapshot,
 } from '../conversations';
 import {
   getSkillDocs, getSkillDocHistory, saveSkillDoc, formatSkillContent, deleteSkillDoc,
@@ -80,6 +80,11 @@ describe('conversations.ts 多对话管理端点', () => {
     const [url, init] = lastCall();
     expect(url).toBe('/api/conversations/c%202');
     expect(init.method).toBe('DELETE');
+  });
+
+  it('getConversationMessages：按会话拉消息（E-2 装载唯一通道），id 编码进路径', async () => {
+    await getConversationMessages('c 1');
+    expect(lastCall()[0]).toBe('/api/conversations/c%201/messages');
   });
 
   it('快照与分支（B11）：snapshot POST + branch 路径携 snap_id', async () => {
