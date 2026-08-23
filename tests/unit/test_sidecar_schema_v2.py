@@ -114,9 +114,6 @@ def test_gate_keys_drift_lock():
 def test_schema_accepts_full_valid_manifest():
     good = {
         "flow": {
-            "stage_executors": {"1": ["script_analyze"]},
-            "step_done_conditions": {"2": "assembly"},
-            "step_short_titles": {"1": "剧本分析"},
             "stages": {"assembly": {"done": "document:X.md",
                                      "skip": False,
                                      "executors": ["video_assembler"]}},
@@ -137,9 +134,8 @@ def test_schema_accepts_full_valid_manifest():
     ({"flow": {"steps": {"1": "a"}}}, "已废除"),
     ({"flow": {"step_stages": {"1": "spec"}}}, "已废除"),
     ({"flow": {"dependencies": {"2": [1]}}}, "已废除"),
-    ({"flow": {"step_done_conditions": {"1": "wonderland"}}}, "规范阶段键"),
-    ({"flow": {"stage_executors": {"1": "script_analyze"}}}, "数组"),
-    ({"flow": {"step_short_titles": {"1": ""}}}, "非空字符串"),
+    # 僵尸键（stage_executors/step_done_conditions/step_short_titles）声明即
+    # WARN 过渡告警（不拒注册）：钉死测试见 test_zombie_step_keys.py
     ({"flow": {"stages": {"spec": {"done": "X.md"}}}}, "document:"),
     ({"flow": {"stages": {"wonderland": {"skip": True}}}}, "不是规范阶段键"),
     ({"flow": {"stages": {"spec": {"skip": "yes"}}}}, "布尔值"),

@@ -50,12 +50,11 @@ def test_corpus_manifest_bidirectional():
 
 def test_skill_pipelines_parseable():
     """任务#5：flow.steps/dependencies 抄本通道废除，deps 口径随退；
-    可解析性钉 frontmatter 体检零问题 + 阶段调度声明（stage_executors/stages）存在。"""
+    可解析性钉 frontmatter 体检零问题（含 WARN 级）；B-4 僵尸键
+    （stage_executors）存量已随迁移脚本清零，此处钉死防复活。"""
     report = eval_skill_pipelines()
     assert report["pipeline_skill_count"] >= 5, "存量 Skill 管线应可解析"
     for s in report["pipeline_skills"]:
         assert s["issues"] == [], f"{s['skill']} frontmatter 体检异常: {s['issues']}"
-    with_sched = [
-        s for s in report["pipeline_skills"]
-        if s["stage_executors"] or s["stages"]]
-    assert with_sched, "至少一个 Skill 声明了阶段调度（stage_executors/stages）"
+        assert s["stage_executors"] == 0, (
+            f"{s['skill']} 僵尸键 stage_executors 残留（B-4 已废除，无消费者）")

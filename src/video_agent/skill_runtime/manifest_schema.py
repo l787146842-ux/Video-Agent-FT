@@ -16,11 +16,18 @@
 流程步骤抄本废除（用户裁决）：flow.steps / flow.step_stages /
 flow.dependencies 通道废止——Skill 正文 planner 是唯一流程源，
 frontmatter 声明这三键 = fail-hard 报出（注册期拒注册）。
-step 键控声明（stage_executors/step_done_conditions/step_short_titles）
-保留形状校验但不再对照 steps 检查引用（steps 已废除）。
 
-校验键清单（flow 下）：stage_executors / step_done_conditions /
-step_short_titles / stages.<规范键>.{done,skip,executors} /
+僵尸键废除迁移（B-4 补交）：step 键控声明 stage_executors /
+step_done_conditions / step_short_titles 的步骤号全部抄自已废除的
+flow.steps 通道，生产链路无实际消费者（现存读取点均被 steps/
+dependencies 空声明闸住 = 死路径）——声明即输出 WARN 级过渡告警
+（不拒注册）。时序：本版本 = WARN 过渡告警 + 存量迁移脚本清键
+（scripts/migrate_zombie_step_keys.py）；下一版本清验存量归零后
+升级为 fail-hard（同 DEPRECATED_FLOW_KEYS 语义）。
+
+校验键清单（flow 下）：僵尸键过渡告警（stage_executors /
+step_done_conditions / step_short_titles，声明即 WARN） /
+stages.<规范键>.{done,skip,executors} /
 布尔开关（spec_wizard/spec_gate/script_required）；顶层 pause.stage_pause；
 顶层 custom_sections（自定义章节→通用执行器通道，P3-15）；
 顶层 gates（键白名单 fail-hard）/ version / tools_required / source。
@@ -68,6 +75,11 @@ GATE_KEYS = (
 # 已废除的流程抄本通道（声明即 fail-hard：正文 planner 是唯一流程源）
 DEPRECATED_FLOW_KEYS = ("steps", "step_stages", "dependencies")
 
+# 僵尸键（B-4）：步骤号键控声明，步骤号来源 flow.steps 已废除，生产链路
+# 无消费者（现存读取点均被 steps/dependencies 空声明闸住 = 死路径）。
+# 本版本声明即 WARN 过渡告警（不拒注册）；下一版本存量清零后升 fail-hard。
+ZOMBIE_STEP_KEYS = ("stage_executors", "step_done_conditions", "step_short_titles")
+
 _FLOW_BOOL_KEYS = ("spec_wizard", "spec_gate", "script_required")
 _STAGE_OVERRIDE_KEYS = ("done", "skip", "executors")
 _DONE_PREFIX = "document:"
@@ -97,22 +109,6 @@ LANGUAGE_VALUES = _LANGUAGE_VALUES
 PAUSE_TRIGGER_VALUES = _PAUSE_TRIGGER_VALUES
 
 
-def _check_step_keyed(
-    name: str, raw: Any, check_value, issues: List[str],
-) -> None:
-    """step 键控声明形状校验（步骤号→声明值）。
-
-    steps 通道废除后不再对照 steps 检查步骤号引用，只校验值形状。
-    """
-    if raw is None:
-        return
-    if not isinstance(raw, dict):
-        issues.append(f"flow.{name} 必须是对象（步骤号→声明值）")
-        return
-    for k, v in raw.items():
-        check_value(name, k, v, issues)
-
-
 def _check_exec_list(name: str, k: Any, v: Any, issues: List[str]) -> None:
     if not isinstance(v, list) or not all(
         isinstance(x, str) and x.strip() for x in v
@@ -120,15 +116,17 @@ def _check_exec_list(name: str, k: Any, v: Any, issues: List[str]) -> None:
         issues.append(f"flow.{name}[{k}] 必须是非空字符串数组（执行器名）")
 
 
-def _check_stage_value(name: str, k: Any, v: Any, issues: List[str]) -> None:
-    if not isinstance(v, str) or v not in CANONICAL_STAGE_KEYS:
-        issues.append(
-            f"flow.{name}[{k}] 必须是规范阶段键（{'/'.join(CANONICAL_STAGE_KEYS)}）")
-
-
-def _check_str_value(name: str, k: Any, v: Any, issues: List[str]) -> None:
-    if not isinstance(v, str) or not v.strip():
-        issues.append(f"flow.{name}[{k}] 必须是非空字符串")
+def _check_zombie_step_keys(flow: Dict[str, Any], issues: List[str]) -> None:
+    """僵尸键过渡告警（B-4）：声明即 WARN，不拒注册、不再校验形状
+    （键已无消费者，形状对错无意义）。时序：本版本 WARN + 存量迁移
+    清键；下一版本升级为 fail-hard（同 DEPRECATED_FLOW_KEYS）。"""
+    for zk in ZOMBIE_STEP_KEYS:
+        if zk in flow:
+            issues.append(
+                WARN_PREFIX
+                + f"flow.{zk} 是已废除 steps 通道的僵尸键（无消费者），"
+                "请从 frontmatter 移除（scripts/migrate_zombie_step_keys.py）；"
+                "下一版本将升级为拒注册")
 
 
 def _check_custom_sections(raw: Any, issues: List[str]) -> None:
@@ -367,14 +365,7 @@ def validate_manifest_data(data: Any) -> List[str]:
             issues.append(
                 f"flow.{dk} 已废除：Skill 正文 planner 是唯一流程源，"
                 f"请从 frontmatter 移除该声明")
-    _check_step_keyed(
-        "stage_executors", flow.get("stage_executors"), _check_exec_list, issues)
-    _check_step_keyed(
-        "step_done_conditions", flow.get("step_done_conditions"),
-        _check_stage_value, issues)
-    _check_step_keyed(
-        "step_short_titles", flow.get("step_short_titles"),
-        _check_str_value, issues)
+    _check_zombie_step_keys(flow, issues)
     _check_stage_overrides(flow.get("stages"), issues)
     for bk in _FLOW_BOOL_KEYS:
         v = flow.get(bk)

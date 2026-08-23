@@ -47,7 +47,14 @@ def test_probe_consistent_declaration_clean():
         },
         "custom_sections": {"tone_design": "skill_section_run"},
     }
-    assert scan_skills.manifest_consistency_issues("s", _DOC_FULL, manifest) == []
+    # 僵尸键（stage_executors）声明仅产生 WARN 过渡告警，错误级为零；
+    # 执行器章节支撑探针不误报（一致性语义不变）。
+    from src.video_agent.skill_runtime.manifest_schema import split_issue_warnings
+
+    errors, warnings = split_issue_warnings(
+        scan_skills.manifest_consistency_issues("s", _DOC_FULL, manifest))
+    assert errors == []
+    assert any("stage_executors" in w for w in warnings)
 
 
 def test_probe_heading_style_section_no_false_positive():

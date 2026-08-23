@@ -176,11 +176,10 @@ def test_v3_scripts_nonempty_warns_unsupported(data):
 
 def test_v2_full_manifest_still_passes_unchanged():
     """v2 锁源样例（与 test_sidecar_schema_v2 同源）校验语义不动；
-    流程抄本三键（steps/step_stages/dependencies）已随任务#5 废除。"""
+    流程抄本三键（steps/step_stages/dependencies）已随任务#5 废除；
+    僵尸键（stage_executors 等）转 WARN 过渡告警（test_zombie_step_keys 钉死）。"""
     good = {
         "flow": {
-            "stage_executors": {"1": ["script_analyze"]},
-            "step_done_conditions": {"2": "assembly"},
             "spec_wizard": True, "spec_gate": True, "script_required": False,
         },
         "pause": {"stage_pause": True},
@@ -189,7 +188,6 @@ def test_v2_full_manifest_still_passes_unchanged():
 
 
 @pytest.mark.parametrize("data,keyword", [
-    ({"flow": {"step_done_conditions": {"1": "wonderland"}}}, "规范阶段键"),
     ({"flow": {"spec_wizard": "yes"}}, "布尔值"),
     ({"pause": {"stage_pause": "yes"}}, "布尔值"),
 ])
@@ -202,7 +200,7 @@ def test_v2_and_v3_keys_coexist():
     mixed = {
         "schema_version": 3,
         "kind": "pipeline",
-        "flow": {"stage_executors": {"1": ["script_analyze"]}},
+        "flow": {"spec_wizard": True},
         "pause": {"stage_pause": True},
         "requires_inputs": [{"type": "script"}],
         "language": {"prompt": "zh", "output": "auto"},
@@ -221,7 +219,7 @@ def test_frontmatter_roundtrip_passes_through_v3_keys(tmp_path):
         "requires_inputs": [{"type": "script", "required": True}],
         "language": {"prompt": "zh", "output": "zh"},
         "pause_points": [{"id": "gen", "trigger": "first_generation_call"}],
-        "flow": {"stage_executors": {"1": ["script_analyze"]}},
+        "flow": {"spec_wizard": True},
     }
     frontmatter.write_manifest("v3_probe", payload, directory=tmp_path)
     loaded = frontmatter.load_manifest("v3_probe", directory=tmp_path)

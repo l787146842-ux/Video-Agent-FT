@@ -56,7 +56,8 @@ class TestBadOutputNudge:
 
 
 # STAGE_MANIFEST（stage_executors 声明样例）的消费用例已退役，
-# 声明数据本身仍由 manifest schema 层测试钉死（test_sidecar_schema_v3）。
+# 僵尸键三组（stage_executors/step_done_conditions/step_short_titles）
+# 声明语义钉死见 test_zombie_step_keys.py（WARN 过渡告警，不拒注册）。
 
 
 class TestStageExecutorsDeclaration:
@@ -65,21 +66,17 @@ class TestStageExecutorsDeclaration:
     # registry.skill_stage_executors 与 exec_tools._stage_done_by_executors 不复存在，
     # 阶段完成度改由 pipeline_orchestrator.stage_done 客观探针判定（下方用例钉死）。
 
-    def test_ai_skill_manifest_declares_stage3_batch(self):
-        """单一事实源：AI-一站式 Skill 自己声明 step3 三拆解同批
-        （0818 B0：声明家迁 frontmatter，经 registry 统一入口读）。"""
+    def test_ai_skill_manifest_zombie_keys_cleared(self):
+        """B-4 存量清零钉死：AI-一站式 Skill frontmatter 不再声明僵尸键
+        （stage_executors/step_done_conditions/step_short_titles 步骤号来源
+        flow.steps 已废除，声明无消费者，迁移脚本已清存量）。"""
         from src.video_agent.skill_runtime import registry
+        from src.video_agent.skill_runtime.manifest_schema import ZOMBIE_STEP_KEYS
 
-        manifest = registry.skill_manifest_of("AI-短剧一站式生成")
-        stages = (manifest.get("flow") or {}).get("stage_executors") or {}
-        assert stages.get("3") == ["storyboard_key_elements", "storyboard_shots", "storyboard_audio"]
-
-    def test_ai_skill_manifest_declares_step2_spec_done(self):
-        """step2 完成度走客观声明（spec 文档存在=完成），掐掉冗余写规格轮。"""
-        from src.video_agent.skill_runtime import registry
-
-        manifest = registry.skill_manifest_of("AI-短剧一站式生成")
-        assert ((manifest.get("flow") or {}).get("step_done_conditions") or {}).get("2") == "spec"
+        manifest = registry.skill_manifest_of("AI-短剧一站式生成") or {}
+        flow = manifest.get("flow") or {}
+        for zk in ZOMBIE_STEP_KEYS:
+            assert zk not in flow, f"僵尸键 {zk} 残留于 AI-短剧一站式生成"
 
     def test_step_done_spec_condition_objective(self):
         """0818 B4：spec 阶段完成度走客观探针（spec 文档存在=完成）。"""

@@ -3,24 +3,6 @@ flow:
   spec_wizard: true
   spec_gate: true
   script_required: true
-  stage_executors:
-    '1':
-    - script_analyze
-    '3':
-    - storyboard_key_elements
-    - storyboard_shots
-    - storyboard_audio
-  step_done_conditions:
-    '2': spec
-  step_short_titles:
-    '1': 剧本分析
-    '2': 制作规格
-    '3': 关键元素拆解
-    '4': 设定图生成
-    '5': 分镜表格图
-    '6': 视频生成
-    '7': 音频生成
-    '8': 时间线组装
 pause:
   stage_pause: true
 schema_version: 3
