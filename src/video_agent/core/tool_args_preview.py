@@ -7,9 +7,13 @@ redact_tool_args 处理：时间线详情卡只展示「关键字段截断预览
 规则：
 - 长文本字段（document_write.content 等）只留前 PREVIEW_CHAR_LIMIT 字预览；
 - 键名含 base64/data_uri 等媒体负载关键字，或值形如 data: URI → 剔除为占位符；
+- 裸 base64 值形状启发式（FIX-6）：长（≥128）且前 512 字符全为 base64
+  字母表（含空白）的字符串视为媒体负载剔除——补通用键名下无 data: 前缀
+  base64 截断外泄的口子，与模块自述脱敏契约对齐；
 - 整体 args JSON 序列化后不得超过 MAX_ARGS_JSON_BYTES（超限逐字段降档截断）。
 """
 import json
+import re
 from typing import Any, Dict
 
 # 单字段长文本预览上限（字符）：document_write.content 全文不外出
@@ -22,6 +26,20 @@ _FALLBACK_STR_LIMIT = 120
 _SENSITIVE_KEY_TOKENS = ("base64", "data_uri", "datauri", "b64")
 # 脱敏占位符（值被剔除时的可见标记）
 REDACTED_PLACEHOLDER = "<已脱敏>"
+# 裸 base64 值形状启发式参数（FIX-6）：长度下限与前缀扫描窗口
+_BARE_B64_MIN_LEN = 128
+_BARE_B64_SCAN_LEN = 512
+# base64 字母表（含空白：换行/空格是 MIME 分块 base64 的合法形态）
+_BARE_B64_RE = re.compile(r"^[A-Za-z0-9+/=\s]+$")
+
+
+def _looks_like_bare_base64(value: str) -> bool:
+    """裸 base64 负载启发式：长（≥128）且前 512 字符全为 base64 字母表
+    （含空白）即判定为媒体负载。中文创作提示词含非 ASCII、代码片段含
+    括号/引号等标点，均在前缀窗口内即被排除，不误伤。"""
+    if len(value) < _BARE_B64_MIN_LEN:
+        return False
+    return bool(_BARE_B64_RE.match(value[:_BARE_B64_SCAN_LEN]))
 
 
 def truncate_text(text: str, limit: int = PREVIEW_CHAR_LIMIT) -> str:
@@ -42,6 +60,9 @@ def _redact_value(key: str, value: Any, str_limit: int) -> Any:
     if isinstance(value, str):
         # data URI 媒体负载：无论键名一律剔除
         if value.startswith("data:"):
+            return REDACTED_PLACEHOLDER
+        # 裸 base64 值形状启发式（通用键名下也不出后端）
+        if _looks_like_bare_base64(value):
             return REDACTED_PLACEHOLDER
         return truncate_text(value, str_limit)
     if isinstance(value, dict):
