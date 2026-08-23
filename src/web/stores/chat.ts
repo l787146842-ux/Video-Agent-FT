@@ -229,8 +229,6 @@ export const chatActions = {
         trace: payload.trace && (payload.trace.steps || []).length ? payload.trace : undefined,
         // 闸机拦截/降级等警告：随消息常驻展示，拦截类附「本次放行」按钮
         warnings: (payload.warnings || []).length ? payload.warnings : undefined,
-        // 记忆命中可视化（4.7）：随 done payload 下发
-        memoryHits: (payload.memory_hits || []).length ? payload.memory_hits : undefined,
         thinkingMs: thinkingMs || undefined,
         turnId,
         // 暂停卡语义种类：前端卡标题按 kind 渲染（remind=待补原料 /

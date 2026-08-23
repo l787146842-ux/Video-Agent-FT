@@ -20,7 +20,6 @@ import { ImageResultCard } from './ImageResultCard';
 import { VideoResultCard } from './VideoResultCard';
 import { ImageLightbox } from './ImageLightbox';
 import { GateWarnings } from './GateWarnings';
-import { MemoryHits } from './MemoryHits';
 import { MarkdownBubble } from './MarkdownBubble';
 import { MessageHoverToolbar } from './MessageHoverToolbar';
 import { InlineEditBox } from './InlineEditBox';
@@ -195,8 +194,6 @@ export function ChatMessageItem(props: {
         </Show>
         {/* 模型降级等警示 + 闸机拦截 chips + 本次放行（见 GateWarnings） */}
         <GateWarnings message={msg()} isGateTarget={props.isGateTarget} />
-        {/* 记忆命中可视化（见 MemoryHits） */}
-        <MemoryHits message={msg()} />
         {/* markdown 气泡抽出（高亮补刷 + 代码块复制委托在组件内接线） */}
         <MarkdownBubble text={msg().text} />
         {/* 鉴权/供应商类错误气泡附「检查 API 配置」跳转 */}

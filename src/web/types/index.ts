@@ -18,7 +18,7 @@
  *   ChatResponse/OkResponse/TestConnectionResponse/FetchModelsResponse、
  *   ConversationsPayload（api/conversations.ts）、画布读取结果族
  *   CanvasDropImageResult/CanvasNodeImagesResult/AllCanvasImagesResult（api/canvas.ts）、
- *   GenerationLogEntry（api/generate.ts 读形态）、MemoryRecordView（api/memory.ts）、
+ *   GenerationLogEntry（api/generate.ts 读形态）、
  *   SkillDoc/SkillDocVersion（api/docs.ts）、RuntimeSettings（api/agent.ts 读形态）、
  *   整板保存 payload（stores/studio/storyboard.ts，后端 ProjectStateUpdate 为粗粒度
  *   unknown 字段）——保留手写强类型，后端建模精细化后再迁。
@@ -201,8 +201,6 @@ export interface ChatMessage {
   decisionForm?: PendingDecisionPayload;
   /** 模型降级等警示行（常驻展示在 agent 气泡上，刷新后仍可见） */
   warnings?: string[];
-  /** 本轮 Agent 参考的长期记忆命中（折叠展示） */
-  memoryHits?: Array<{ date?: string; content: string }>;
   /** 执行轨迹（每轮 step/耗时/操作数，「执行轨迹」折叠区展示） */
   trace?: AgentTrace;
   /** ：鉴权/供应商类错误气泡附「检查 API 配置」跳转按钮 */
@@ -397,8 +395,6 @@ export interface SseDonePayload {
   fallback_model?: string;
   /** 执行轨迹（每轮 step/耗时/操作数） */
   trace?: AgentTrace;
-  /** 本轮 Agent 参考的长期记忆命中（4.7：前端「记忆参考」折叠展示） */
-  memory_hits?: Array<{ id?: string; date?: string; content: string }>;
   /** ：轮次唯一标识（前端同轮消息聚合为轮次容器） */
   turn_id?: string;
   /** ：建议动作按钮（retry=机械重发上一条用户消息；continue=发送固定文本；

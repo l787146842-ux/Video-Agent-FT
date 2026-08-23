@@ -107,22 +107,19 @@ describe('chatActions finishStream 分支补齐', () => {
     expect(chatState.messages[0].modelName).toBe('备模型');
   });
 
-  it('warnings/memoryHits/suggestedActions 有值才入库（空清单不入库）', () => {
+  it('warnings/suggestedActions 有值才入库（空清单不入库）', () => {
     chatActions.startStream();
     chatActions.finishStream(donePayload({
       warnings: ['降级提示'],
-      memory_hits: [{ content: '命中记忆' }],
       suggested_actions: [{ kind: 'retry', label: '重试', value: '' }],
     }));
     const withExtras = chatState.messages[0];
     expect(withExtras.warnings).toEqual(['降级提示']);
-    expect(withExtras.memoryHits).toHaveLength(1);
     expect(withExtras.suggestedActions).toHaveLength(1);
     chatActions.startStream();
-    chatActions.finishStream(donePayload({ warnings: [], memory_hits: [], suggested_actions: [] }));
+    chatActions.finishStream(donePayload({ warnings: [], suggested_actions: [] }));
     const plain = chatState.messages[1];
     expect(plain.warnings).toBeUndefined();
-    expect(plain.memoryHits).toBeUndefined();
     expect(plain.suggestedActions).toBeUndefined();
   });
 

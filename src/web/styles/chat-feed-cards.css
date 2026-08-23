@@ -30,11 +30,6 @@
 }
 .gate-override-btn:hover { background: color-mix(in srgb, var(--color-warning-strong) 20%, transparent); }
 
-.msg-memory-hits { margin: 6px 0 0; font-size: 11px; color: var(--text-muted); }
-.msg-memory-hits summary { cursor: pointer; user-select: none; }
-.memory-hit-line { display: flex; gap: 6px; padding: 3px 0; line-height: 1.5; }
-.memory-hit-date { color: var(--text-dim); white-space: nowrap; }
-
 /* ===== 长任务阶段进度条（流式中：推理轮次 + 故事板客观进度） ===== */
 .stage-progress { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; margin-bottom: 6px; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); }
 .stage-progress-round { display: flex; align-items: center; gap: 8px; }

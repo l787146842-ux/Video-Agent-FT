@@ -158,7 +158,6 @@ const zhCN = {
   'rp.msg.stoppedStreaming': '已在输出阶段停止',
   'rp.msg.stoppedInflight': '注意：仍有 {n} 项外部生成任务（出图/出视频）在供应商侧继续，本次停止不会撤销',
   'rp.msg.emptyReply': '（空回复）',
-  'rp.msg.memoryRefs': '记忆参考 {count} 条',
   'rp.msg.mediaInserted': 'Agent 已添加 {count} 个素材到对话输入框，确认后可发送',
   'rp.msg.gatePlatform': '平台',
   'rp.msg.gateSkill': 'Skill『{name}』',
