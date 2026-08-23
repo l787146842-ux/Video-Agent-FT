@@ -62,7 +62,6 @@ from src.video_agent.web.stop_manager import (
     snapshot_inflight_generations,
     stopped_event,
 )
-from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.base_chat import BaseChatAdapter
 from src.video_agent.adapters.factory import AdapterFactory
@@ -361,7 +360,6 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StateOperationExecutor,
-            summary_adapter=summary_adapter,
             chat_provider=cand_provider, chat_model=cand_model,
         )
         resolved_skill = _resolve_skill_name_for_injection(
@@ -778,7 +776,6 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StateOperationExecutor,
-            summary_adapter=summary_adapter,
             chat_provider=cand_provider, chat_model=cand_model,
         )
         applied_seen = False
@@ -825,7 +822,6 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         "documents_written": result.documents_written + ([_wiz_card_ns] if _wiz_card_ns else []),
         "image_urls": result.image_urls,
         "state": svc.get_full_snapshot() if use_studio_context else None,
-        "memory_hits": getattr(planner_ctx, "memory_hits", None) or [],
         "turn_id": ns_turn_id,
         "suggested_actions": result.suggested_actions,
         # workflow 投影（非流式同构）

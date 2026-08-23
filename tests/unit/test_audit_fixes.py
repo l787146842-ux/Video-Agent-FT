@@ -7,7 +7,6 @@
 - P1-4 system prompt 顺序：状态 JSON 殿后（利于前缀缓存）
 - P1-5 旧轮 read_* 全文回喂压缩
 - P1-6 truncate_messages 增量减法语义不变
-- P1-8 记忆系统项目维度隔离
 - P2-9 快照深拷贝防回写 + 请求幂等槽位
 """
 import pytest
@@ -20,8 +19,6 @@ from src.video_agent.core.fc_tool_runner import (
 )
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.token_budget import truncate_messages
-from src.video_agent.memory.manager import MemoryManager
-from src.video_agent.memory.models import MemoryRecord
 from src.video_agent.state.manager import StateManager
 from src.video_agent.web.chat_service import _acquire_request_slot, _release_request_slot
 from src.video_agent.web.routes.agent import ChatResponse
@@ -140,34 +137,6 @@ def test_truncate_messages_semantics():
         assert m not in out
     # 原列表未被修改
     assert len(messages) == 15
-
-
-# ---------- P1-8：记忆项目隔离 ----------
-
-@pytest.fixture
-def mem(tmp_path):
-    return MemoryManager(persist_dir=tmp_path / "memory", backend="json", summary_interval=1)
-
-
-class TestMemoryProjectIsolation:
-    def test_retrieve_filters_other_projects(self, mem):
-        mem._store.add(MemoryRecord(
-            content="赛博朋克风格短片规划已确认", keywords=["赛博朋克"], project_id="proj-A",
-        ))
-        # 同项目可见
-        assert mem.retrieve("赛博朋克", project_id="proj-A")
-        # 跨项目不可见
-        assert mem.retrieve("赛博朋克", project_id="proj-B") == []
-        # 未指定项目（兼容路径）可见
-        assert mem.retrieve("赛博朋克")
-
-    def test_legacy_records_without_project_stay_visible(self, mem):
-        mem._store.add(MemoryRecord(content="赛博朋克风格偏好", keywords=["赛博朋克"]))
-        assert mem.retrieve("赛博朋克", project_id="any-project")
-
-    async def test_record_dialog_tags_project(self, mem):
-        rec = await mem.record_dialog("我要做赛博朋克短片", "好的已规划", project_id="proj-X")
-        assert rec is not None and rec.project_id == "proj-X"
 
 
 # ---------- P2-9：快照深拷贝 + 幂等槽位 ----------

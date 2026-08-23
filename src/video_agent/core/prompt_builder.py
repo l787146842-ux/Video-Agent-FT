@@ -1,6 +1,6 @@
 """system prompt 组装（从 planner.py 拆出， 文件瘦身）。
 
-承载：协议/Skill 目录/选中草稿/记忆检索/状态 JSON/选中 Skill 全文（含分阶段聚焦块）的组装。
+承载：协议/Skill 目录/选中草稿/状态 JSON/选中 Skill 全文（含分阶段聚焦块）的组装。
 段落顺序：稳定内容在前，状态 JSON 殿后；选中 Skill 全文放在最末尾（近生成端，
 遵循度最高，避免被大段状态 JSON 淹没）。
 
@@ -21,7 +21,6 @@ from src.video_agent.skill_runtime import guard as skill_guard
 # v3 声明读取经模块属性访问（任务#35 B2：测试 patch registry.<fn> 即生效）
 from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.skill_runtime.registry import skill_flow_enabled
-from src.video_agent.memory import MemoryManager
 from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
 # MCP 两段式注入段 1（任务#37 B4）：外部工具目录文本块（名称+摘要，
 # schema 不进 FC tools；完整 schema 由 enable 后按需注入）
@@ -189,23 +188,8 @@ class PromptBuilder:
                 if note:
                     parts.append(("global_settings", note))
 
-            # 混合记忆检索注入（语义 + 关键词 + 时间衰减），按项目隔离；
-            # 命中明细写入 context.memory_hits（4.7：随 done payload 下发前端可视化）
-            if settings.memory_enabled:
-                query = self.memory_recall_query(context)
-                if query:
-                    project_id = self._get_project_id()
-                    mm = MemoryManager.get_instance()
-                    if hasattr(mm, "build_context_with_hits"):
-                        memory_ctx, hits = mm.build_context_with_hits(query, project_id=project_id)
-                        try:
-                            context.memory_hits = hits
-                        except Exception as e:
-                            logger.debug(f"[Planner] memory_hits 写入跳过: {e}")
-                    else:
-                        memory_ctx = mm.build_context(query, project_id=project_id)
-                    if memory_ctx:
-                        parts.append(("memory", memory_ctx))
+            # 混合记忆检索注入已随记忆系统退役删除（批次D：会话级压缩
+            # session_compact 是创作设定的唯一软性保护，见 planner/session_compact.md）
 
             # 生成渠道清单注入机制已整体清除——渠道唯一事实源为
             # 顶部「全局设置」（provider_config/provider_prefs），规格文档不再承载渠道
@@ -258,7 +242,6 @@ class PromptBuilder:
                     "catalog": sec_lens.get("catalog", 0),
                     "mcp_catalog": sec_lens.get("mcp_catalog", 0),
                     "iron_rules": sec_lens.get("iron_rules", 0),
-                    "memory": sec_lens.get("memory", 0),
                     "channels": sec_lens.get("channels", 0),
                     "state": len(state_json) if context.use_studio_context else 0,
                     "skill": len(selected_block),
@@ -673,37 +656,3 @@ class PromptBuilder:
             "与本阶段对应的章节——该章节已随全文注入且仅此一份，此处不再摘录重复，"
             "与全文同等效力、不受其他段落稀释 ==\n"
         )
-
-    @staticmethod
-    def last_user_text(context: "PlannerContext") -> str:
-        """从历史中取最近一条用户消息作为记忆检索 query 基底"""
-        for msg in reversed(context.history or []):
-            if msg.get("role") == "user":
-                content = msg.get("content", "")
-                if isinstance(content, str):
-                    return content
-                if isinstance(content, list):
-                    return " ".join(
-                        str(p.get("text", "")) for p in content
-                        if isinstance(p, dict) and p.get("type") == "text"
-                    )
-        return ""
-
-    def memory_recall_query(self, context: "PlannerContext") -> str:
-        """记忆召回 query 扩展：用户消息 + 当前阶段标签 + 激活 Skill 名拼接。
-
-        单靠最近一条用户消息常缺主题词（「继续」「改一下」类短消息
-        几乎检索不到任何记忆）；阶段标签与 Skill 名把检索维度拉回
-        当前制作上下文。阶段不可探测时只省掉该段，不影响主 query。"""
-        base = self.last_user_text(context)
-        parts: List[str] = [base] if base else []
-        try:
-            label = self._STAGE_LABELS.get(self.detect_stage(), "")
-            if label:
-                parts.append(label)
-        except Exception:
-            pass
-        skill = str(getattr(context, "skill_name", "") or "").strip()
-        if skill:
-            parts.append(skill)
-        return " ".join(parts)

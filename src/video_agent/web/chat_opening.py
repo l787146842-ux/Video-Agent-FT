@@ -22,7 +22,6 @@ from src.video_agent.web.sse import sse_event_generator  # noqa: 1 （保留 sse
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.planner import Planner, PlannerContext
-from src.video_agent.memory import MemoryManager
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.base_chat import BaseChatAdapter
 from src.video_agent.adapters.factory import AdapterFactory
@@ -159,10 +158,10 @@ def _build_prelude_notes(resolved_skill: str) -> List[tuple]:
 
 
 def _resolve_summary_adapter(body, candidates: List[tuple]) -> Optional[BaseChatAdapter]:
-    """解析记忆摘要专用 adapter：摘要无需主模型能力，固定走便宜模型省 token。
+    """解析会话压缩摘要专用 adapter：摘要无需主模型能力，固定走便宜模型省 token。
 
     优先级（策略表化）：模型策略表 summary 角色（provider:model）>
-    settings.memory_summary_model > fallback 链末位 > None（跟随主模型）。
+    fallback 链末位 > None（跟随主模型）。
     解析失败静默回落 None（摘要仍走主模型，功能不中断）。
     """
     try:
@@ -173,15 +172,11 @@ def _resolve_summary_adapter(body, candidates: List[tuple]) -> Optional[BaseChat
             return _create_chat_adapter(role["provider"], role["model"])
         if role:
             return _create_chat_adapter(role["provider"], body.model)
-        spec = (settings.memory_summary_model or "").strip()
-        if spec:
-            prov, _, mdl = spec.partition(":")
-            return _create_chat_adapter(prov or body.provider, mdl or body.model)
         if settings.model_fallback_enabled and len(candidates) > 1:
             cand_provider, cand_model = candidates[-1]
             return _create_chat_adapter(cand_provider, cand_model)
     except Exception as e:
-        logger.warning(f"[ChatService] 记忆摘要模型解析失败，回落主模型: {e}")
+        logger.warning(f"[ChatService] 压缩摘要模型解析失败，回落主模型: {e}")
     return None
 
 

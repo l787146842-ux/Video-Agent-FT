@@ -105,7 +105,7 @@ COUPLING_ROWS: List[CouplingRow] = [
         _sym(
             "src.video_agent.core.model_policy:resolve_role",
             "src.video_agent.core.model_policy:thinking_for",
-            "src.video_agent.core.planner:Planner._make_summarize_fn",
+            "src.video_agent.web.chat_opening:_resolve_summary_adapter",
         ),
     ),
     CouplingRow(

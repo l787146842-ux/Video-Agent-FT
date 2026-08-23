@@ -52,7 +52,7 @@
 - **工具消歧原则**：同名近义工具优先通过重写 description 互斥消歧；**改名/合并属高风险重构，必须单独评估立项**
 
 ### Rule 6: 指令治理（Prompt 外置 + 单一事实源 + 快照防漂移）
-- 所有 system prompt / 闸机文案 / 回喂模板存放在 `prompts/`（`planner/`、`gates/`、`shared/`、`memory/` 分区），经 `utils/prompts.py::load_prompt()` / `load_prompt_section()` 加载
+- 所有 system prompt / 闸机文案 / 回喂模板存放在 `prompts/`（`planner/`、`gates/`、`shared/` 分区），经 `utils/prompts.py::load_prompt()` / `load_prompt_section()` 加载
 - **禁止**在代码中硬编码超过 3 行的 prompt 字符串；代码只留组装逻辑
 - **快照防漂移**：提示词外置/迁移必须配快照测试，锁定迁移前后关键段落语义一致；无快照测试的迁移视为错误实现
 - **协议单轨**：平台协议唯一 = `prompts/planner/system_fc.md`（文本协议 `system.md` 已退役删除，ADR-0001 单轨）；共有段落抽到 `prompts/shared/` 经 `{{include}}` 引用拼装，不复制
@@ -244,7 +244,7 @@ src/video_agent/
 │   ├── port_wiring.py ← core 端口装配（D-01）；action_executor.py 等 4 件为 re-export 壳待清退
 │   ├── task_manager.py / skill_docs.py / routes/
 ├── state/  manager.py（唯一写入点）/ models.py / storyboard_ops.py / context_builder.py
-├── adapters/  tools/  memory/  config.py  exceptions.py  utils/
+├── adapters/  tools/  config.py  exceptions.py  utils/
 src/web/                    ← SolidJS SPA 唯一前端（§3）
 prompts/                    ← 指令治理外置资产（Rule6）
 tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 等快照

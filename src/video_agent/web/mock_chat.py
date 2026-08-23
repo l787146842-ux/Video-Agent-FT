@@ -1,7 +1,7 @@
 """mock 供应商的流式聊天模拟（从 chat_service.py 拆出）。
 
 仅调试/演示用：本地规则生成回复 + 模拟流式 delta 推送，
-与真实供应商路径共用 executor / 记忆 / 持久化通道。
+与真实供应商路径共用 executor / 持久化通道。
 """
 import asyncio
 import time
@@ -9,7 +9,6 @@ import uuid
 
 from src.video_agent.core.sse_events import SSE_DELTA, SSE_DONE, SSE_STATUS, status_event
 from src.video_agent.core import workflow_runtime
-from src.video_agent.memory import MemoryManager
 from src.video_agent.web.attachments import bind_attachments, store_uploaded_docs
 from src.video_agent.web.mock_llm import mock_llm_reply
 from src.video_agent.state import chat_tail_ops
@@ -91,7 +90,3 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
         "elapsed_ms": int((time.monotonic() - t0) * 1000),
         "turn_id": turn_id,
     }})
-    # 记忆系统：mock 路径同样记录（无 LLM 摘要，降级截取），按项目隔离（与 planner 真实路径对齐）
-    MemoryManager.get_instance().record_dialog_background(
-        user_text, visible, project_id=svc.active_project_id
-    )

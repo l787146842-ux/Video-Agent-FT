@@ -21,7 +21,6 @@ from loguru import logger
 
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
 from src.video_agent.config import settings
-from src.video_agent.memory import MemoryManager
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
@@ -112,8 +111,6 @@ class PlannerContext:
     # 降级状态构建器（token 保险丝）：system 段超预算时用「只留组标题/计数」的
     # 降级状态 JSON 重建 system prompt，保证请求不超窗发出
     degraded_state_builder: Optional[Callable[[], str]] = None
-    # 本轮记忆检索命中明细（4.7：随 done payload 下发前端可视化）
-    memory_hits: List[Dict[str, Any]] = field(default_factory=list)
     # 前奏时间线（//）：只登记真实发生的 system 动作（加载 Skill 流程基线），
     # 读取/存档由对应工具真实发生时记录，前奏不得冒充工具操作
     prelude_notes: List[tuple] = field(default_factory=list)
@@ -154,8 +151,6 @@ class PlannerResponse:
     confirmation_options: List[Dict[str, Any]] = field(default_factory=list)
     # 执行轨迹（每轮 step/耗时/操作数），前端「执行轨迹」折叠区展示
     trace: Dict[str, Any] = field(default_factory=dict)
-    # 本轮记忆检索命中明细（4.7：随 done payload 下发前端可视化）
-    memory_hits: List[Dict[str, Any]] = field(default_factory=list)
     # 建议动作按钮（重试/继续，确定性交互；详见 agent_loop 同名字段）
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
     # 暂停卡结构化标识（对标 AskUserQuestion 范式）：三个 confirm 产生源
@@ -195,7 +190,6 @@ class Planner:
         llm_adapter: Optional[BaseChatAdapter] = None,
         executor_factory: Optional[Callable[..., Any]] = None,
         skill_docs: Optional[Any] = None,
-        summary_adapter: Optional[BaseChatAdapter] = None,
         chat_provider: str = "",
         chat_model: str = "",
     ):
@@ -208,9 +202,6 @@ class Planner:
         self.executor_factory = executor_factory
         # skill_docs: Skill 文档目录提供者（web.skill_docs 模块或等价对象），None 时延迟导入
         self._skill_docs = skill_docs
-        # 记忆摘要专用 adapter（None = 跟随主模型）；由 web 层按
-        # settings.memory_summary_model / fallback 链末位装配
-        self.summary_adapter = summary_adapter
         # 当前对话聊天供应商（决策 E：执行器与主模型一致；web 层注入）
         self.chat_provider = chat_provider
         self.chat_model = chat_model
@@ -499,14 +490,6 @@ class Planner:
         # 暂停卡结构化签发（汇流点一）：FC workflow_pause 与轮末策略卡均在此汇流
         self._issue_pause(response)
 
-        # 记忆系统：后台异步记录本轮对话（不阻塞响应流），按项目隔离
-        if settings.memory_enabled:
-            MemoryManager.get_instance().record_dialog_background(
-                user_message, loop_result.text, self._make_summarize_fn(),
-                project_id=self.state_manager.active_project_id,
-            )
-        response.memory_hits = list(getattr(context, "memory_hits", None) or [])
-
         return response
 
     async def handle_message_stream(
@@ -619,7 +602,6 @@ class Planner:
             "action_log": result.action_log,
             "confirmation_options": result.confirmation_options,
             "trace": result.trace,
-            "memory_hits": result.memory_hits,
             "suggested_actions": result.suggested_actions,
             "pause_kind": result.pause_kind,
             # 协作式停止标记（任务 #17）：web 透传层据此落停止痕迹、不再发 done
@@ -634,39 +616,6 @@ class Planner:
         协议单轨（ADR-0001，P2e 收敛）：统一注入 system_fc.md，
         原 fc_mode 双分支已随文本协议退役删除。"""
         return self._prompt_builder.build_system_prompt(context)
-
-    def _make_summarize_fn(self):
-        """包装摘要调用：优先用注入的便宜模型 adapter（摘要无需主模型能力），
-        未配置时回落主模型；无 adapter 返回 None（降级截取）"""
-        adapter = self.summary_adapter or self.llm_adapter
-        if adapter is None:
-            return None
-        use_main = adapter is self.llm_adapter
-
-        async def _fn(prompt: str) -> str:
-            if use_main:
-                resp = await self._turn_executor.call_llm(
-                    "你是记忆整理助手。",
-                    [{"role": "user", "content": prompt}],
-                )
-            else:
-                # 摘要专用模型：直接裸调用（无工具、无状态注入），成本最小化；
-                # /：辅助摘要档位独立于主模型（策略表 summary 角色 > 全局设置）
-                from src.video_agent.core import model_policy
-
-                resp = await adapter.chat(
-                    [
-                        {"role": "system", "content": "你是记忆整理助手。"},
-                        {"role": "user", "content": prompt},
-                    ],
-                    timeout=settings.llm_timeout,
-                    thinking_level=model_policy.thinking_for(
-                        "summary", getattr(settings, "aux_thinking_level", "") or ""
-                    ),
-                )
-            return resp.content or ""
-
-        return _fn
 
     # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------
     #

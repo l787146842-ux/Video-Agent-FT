@@ -113,9 +113,6 @@ class Settings:
     # 注入 LLM 的图片长边上限（px）：vision 模型内部会重采样，原图内联纯浪费 token；
     # 注入前用 Pillow 缩放到此长边（0 = 不缩放）
     llm_image_max_edge: int = field(default_factory=lambda: _env_int("LLM_IMAGE_MAX_EDGE", 1024))
-    # 记忆摘要专用模型（格式 "provider:model"，仅 provider 则用其默认模型）：
-    # 摘要无需主模型能力，固定走便宜模型省 token；空 = 走 fallback 链末位（无链则主模型）
-    memory_summary_model: str = field(default_factory=lambda: os.getenv("MEMORY_SUMMARY_MODEL", ""))
 
     # 图片生成超时（秒）
     image_gen_timeout: int = field(default_factory=lambda: _env_int("IMAGE_GEN_TIMEOUT", 180))
@@ -240,13 +237,6 @@ class Settings:
     canvas_base_url: str = field(default_factory=lambda: os.getenv("CANVAS_BASE_URL", "http://127.0.0.1:3000"))
     canvas_timeout: int = field(default_factory=lambda: _env_int("CANVAS_TIMEOUT", 30))
     canvas_enabled: bool = field(default_factory=lambda: _env_bool("CANVAS_ENABLED", True))
-
-    # Agent 混合记忆系统
-    memory_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_ENABLED", True))
-    memory_vector_backend: str = field(default_factory=lambda: os.getenv("MEMORY_VECTOR_BACKEND", "chromadb"))
-    memory_max_results: int = field(default_factory=lambda: _env_int("MEMORY_MAX_RESULTS", 5))
-    memory_summary_interval: int = field(default_factory=lambda: _env_int("MEMORY_SUMMARY_INTERVAL", 10))
-    memory_time_decay_days: int = field(default_factory=lambda: _env_int("MEMORY_TIME_DECAY_DAYS", 30))
 
     # 画布 Provider 配置共享（HTTP 优先，文件兜底）
     # 注意：canvas_providers_file / canvas_env_file 默认为空，需通过环境变量配置；
