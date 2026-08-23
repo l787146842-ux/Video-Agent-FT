@@ -3,11 +3,13 @@
  * 对齐后端 routes/plugins.py 契约
  */
 import { apiFetch, apiPut, apiPost, apiDelete } from './client';
-import type { SkillDocSave, SkillFormatRequest } from '@/types/api.generated';
+import type { SkillDocSave, SkillFormatRequest, SkillAssistantRequest } from '@/types/api.generated';
 
 export interface SkillDoc {
   slug: string;
   name: string;
+  /** 调用规则描述（后端 _parse_doc 剥离「调用规则：」前缀后下发） */
+  description?: string;
   content?: string;
 }
 
@@ -49,4 +51,17 @@ export function formatSkillContent(content: string): Promise<{ content: string }
 /** 删除 Skill 文档 */
 export function deleteSkillDoc(slug: string): Promise<{ ok: boolean }> {
   return apiDelete<{ ok: boolean }>(`/api/skills/docs/${encodeURIComponent(slug)}`);
+}
+
+/** Skill 优化助手（非流式）：返回 reply + 解析出的更新后全文
+ * （content 为 null 时前端只展示回复、不覆盖预览） */
+export function assistantSkillChat(body: {
+  content: string;
+  messages: { role: string; content: string }[];
+  provider?: string;
+  model?: string;
+}): Promise<{ reply: string; content: string | null }> {
+  return apiPost<{ reply: string; content: string | null }>(
+    '/api/skills/assistant', body as SkillAssistantRequest,
+  );
 }
