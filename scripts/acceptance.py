@@ -28,6 +28,10 @@ GATES: List[Tuple[str, List[str]]] = [
     ("prompt_budget", [sys.executable, "scripts/check_prompt_budget.py"]),
     ("file_lines", [sys.executable, "scripts/check_file_lines.py"]),
     ("file_lines_frontend", [sys.executable, "scripts/check_file_lines.py", "--frontend"]),
+        # 任务 #4：语义色收口闸——styles/ 硬编码色值棘轮只减不增（白名单见脚本内）；
+        # 退役条件：白名单清偿归零后降级为零白名单硬门禁，样式体系迁离 tokens.css
+        # 时方可裁决整体退役（详见脚本头部注释，§13.14(c)）。
+        ("semantic_colors", [sys.executable, "scripts/check_semantic_colors.py"]),
     ("func_imports", [sys.executable, "scripts/check_func_imports.py"]),
     ("governance_refs", [sys.executable, "scripts/check_governance_refs.py"]),
     ("category_keys", [sys.executable, "scripts/check_category_keys.py"]),

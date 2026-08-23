@@ -9,8 +9,8 @@
   .tl-panel.expanded .tl-arrow { transform: rotate(180deg); }
   .tl-panel-body { display: none; padding: 4px 10px 8px; border-top: 1px solid var(--border-color); }
   .tl-panel.expanded .tl-panel-body { display: block; }
-  .tl-icon-thinking { color: #f0a94b; flex-shrink: 0; }
-  .tl-icon-done { color: #34d399; flex-shrink: 0; }
+  .tl-icon-thinking { color: var(--color-warning-strong); flex-shrink: 0; }
+  .tl-icon-done { color: var(--color-success); flex-shrink: 0; }
   .tl-reasoning { font-size: 11px; color: var(--text-muted); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
   /* 流式深度思考定高视窗：overflow-y:auto 可滚轮回看上文；
      自动跟随改为「用户在底部才追」（见 AgentTimeline） */
@@ -20,11 +20,11 @@
   .tl-item-list { margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; list-style: none; }
   .tl-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.7; }
   .tl-item-icon { flex-shrink: 0; }
-  .tl-item-icon.ok { color: #34d399; }
-  .tl-item-icon.failed { color: #ef4444; }
+  .tl-item-icon.ok { color: var(--color-success); }
+  .tl-item-icon.failed { color: var(--color-danger-strong); }
   .tl-item-icon.spin { color: var(--accent-blue); animation: tlSpin 1s linear infinite; }
   .tl-item-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tl-item-failed .tl-item-summary { color: #ef4444; }
+  .tl-item-failed .tl-item-summary { color: var(--color-danger-strong); }
   .tl-item-elapsed { color: var(--text-dim); flex-shrink: 0; }
   /* 降噪：合并规划条目的展开钮与逐轮明细子列表 */
   .tl-item { flex-wrap: wrap; }
@@ -40,6 +40,19 @@
   .tl-item-result-toggle { display: flex; align-items: center; gap: 4px; padding: 0; border: none; background: transparent; cursor: pointer; font-family: inherit; text-align: left; }
   .tl-item-result-toggle:hover { color: var(--text-main); }
   .tl-item-result.expanded { white-space: pre-wrap; overflow: visible; }
+  /* 任务 #2 分级展开：expand 档详情卡（折叠态一行摘要，展开看输入/输出） */
+  .tl-detail { flex-basis: 100%; margin-left: 19px; font-size: 11px; color: var(--text-dim); }
+  .tl-detail-toggle { display: flex; align-items: center; gap: 4px; max-width: 100%; padding: 0; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: inherit; color: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-detail-toggle:hover { color: var(--text-main); }
+  .tl-detail-body { margin-top: 3px; padding: 5px 8px; display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--border-color); border-radius: 5px; background: rgba(255, 255, 255, 0.03); }
+  .tl-detail-section { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tl-detail-label { font-size: 10px; font-weight: 600; color: var(--text-dim); letter-spacing: 0.04em; }
+  .tl-detail-kv { display: flex; gap: 6px; line-height: 1.6; min-width: 0; }
+  .tl-detail-key { flex-shrink: 0; color: var(--text-dim); }
+  .tl-detail-key::after { content: ':'; }
+  .tl-detail-val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+  .tl-detail-kv:hover .tl-detail-val { white-space: pre-wrap; overflow: visible; word-break: break-word; }
+  .tl-detail-result { color: var(--text-muted); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
   /* 规划级执行器徽标（欠账显性化：不产真实媒体的阶段据实标注） */
   .tl-planning-badge { flex-shrink: 0; font-size: 10px; line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(251,146,60,0.6); background: rgba(251,146,60,0.12); color: #fb923c; white-space: nowrap; }
   .skill-planning-badge { flex-shrink: 0; font-size: 10px; line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(251,146,60,0.6); background: rgba(251,146,60,0.12); color: #fb923c; white-space: nowrap; align-self: center; }

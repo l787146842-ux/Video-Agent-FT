@@ -12,12 +12,12 @@
 .chat-search-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 5px 8px; border: none; border-radius: 6px; background: none; cursor: pointer; transition: background 0.12s; }
 .chat-search-item:hover { background: rgba(255, 255, 255, 0.05); }
 .chat-search-tag { flex-shrink: 0; font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-color); color: var(--text-dim); }
-.chat-search-tag.ask { color: var(--accent-blue); border-color: rgba(59, 130, 246, 0.4); }
-.chat-search-tag.answer { color: var(--accent-emerald); border-color: rgba(52, 211, 153, 0.4); }
+.chat-search-tag.ask { color: var(--accent-blue); border-color: color-mix(in srgb, var(--color-info-strong) 40%, transparent); }
+.chat-search-tag.answer { color: var(--accent-emerald); border-color: color-mix(in srgb, var(--color-success) 40%, transparent); }
 .chat-search-snippet { flex: 1; min-width: 0; font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 搜索定位目标的一次性高亮闪烁 */
-@keyframes search-flash { 0% { background: rgba(59, 130, 246, 0.22); } 100% { background: transparent; } }
+@keyframes search-flash { 0% { background: color-mix(in srgb, var(--color-info-strong) 22%, transparent); } 100% { background: transparent; } }
 .search-flash { animation: search-flash 1.6s ease-out; border-radius: var(--radius-md); }
 
 /* 消息窗口化：头部折叠区展开入口 */
@@ -25,4 +25,4 @@
 .feed-show-earlier:hover { color: var(--text-main); border-color: var(--accent-blue); }
 
 /* 标签栏搜索按钮展开态 */
-.conv-tabs-add.active { color: var(--accent-blue); background: rgba(59, 130, 246, 0.1); }
+.conv-tabs-add.active { color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }

@@ -7,8 +7,8 @@
   .canvas-view .canvas-fallback,
   .canvas-view .canvas-drop-overlay,
   .canvas-view .canvas-agent-overlay { pointer-events: auto; }
-  .canvas-drop-overlay { position: absolute; inset: 0; z-index: 35; display: flex; align-items: center; justify-content: center; background: rgba(59, 130, 246, 0.08); border: 2px dashed rgba(59, 130, 246, 0.55); border-radius: 8px; margin: 8px; pointer-events: auto; }
-  .canvas-drop-hint { display: flex; align-items: center; gap: 10px; padding: 12px 22px; border-radius: 10px; background: var(--bg-secondary); border: 1px solid rgba(59, 130, 246, 0.45); color: var(--text-main); font-size: 13px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); pointer-events: none; }
+  .canvas-drop-overlay { position: absolute; inset: 0; z-index: 35; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-info-strong) 8%, transparent); border: 2px dashed color-mix(in srgb, var(--color-info-strong) 55%, transparent); border-radius: 8px; margin: 8px; pointer-events: auto; }
+  .canvas-drop-hint { display: flex; align-items: center; gap: 10px; padding: 12px 22px; border-radius: 10px; background: var(--bg-secondary); border: 1px solid color-mix(in srgb, var(--color-info-strong) 45%, transparent); color: var(--text-main); font-size: 13px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); pointer-events: none; }
   .canvas-persistent-layer { position: absolute; inset: 0; z-index: 0; }
   .canvas-persistent-layer .canvas-iframe { width: 100%; height: 100%; border: 0; display: block; }
   .canvas-iframe { width: 100%; height: 100%; border: 0; display: block; }
@@ -20,7 +20,7 @@
   .canvas-fallback { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; color: var(--text-dim); }
   .canvas-fallback p { margin: 0; }
   .canvas-fallback-hint { font-size: 11px; max-width: 320px; line-height: 1.5; }
-  .canvas-fallback code { background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  .canvas-fallback code { background: var(--color-code-inline-bg); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
   .canvas-fallback-actions { display: flex; gap: 8px; margin-top: 8px; }
   .canvas-fallback-actions button { display: inline-flex; align-items: center; gap: 5px; }
   /* 联动能力明示条：悬浮于画布左下角，不拦截画布操作（继承 .canvas-view 的 pointer-events:none） */
@@ -40,7 +40,7 @@
   .docs-file { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 12px; border-radius: 6px; cursor: pointer; color: var(--text-main); }
   button.docs-file { width: 100%; text-align: left; }
   .docs-file:hover { background: rgba(255, 255, 255, 0.06); }
-  .docs-file.active { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+  .docs-file.active { background: color-mix(in srgb, var(--color-info-strong) 18%, transparent); color: var(--color-info); }
   .docs-file svg { flex-shrink: 0; }
   .docs-file .docs-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .docs-empty { font-size: 11px; color: var(--text-muted); padding: 8px 12px; }
@@ -63,15 +63,15 @@
   .docs-rendered ol { list-style: decimal; } /* 阅读模式流程序号（全局 reset 吃掉后在此补回） */
   .docs-rendered ul { list-style: disc; }
   .docs-rendered li { margin: 3px 0; }
-  .docs-rendered blockquote { margin: 8px 0; padding: 8px 14px; border-left: 3px solid #3b82f6; background: rgba(59, 130, 246, 0.06); border-radius: 0 6px 6px 0; color: var(--text-muted); }
+  .docs-rendered blockquote { margin: 8px 0; padding: 8px 14px; border-left: 3px solid var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 6%, transparent); border-radius: 0 6px 6px 0; color: var(--text-muted); }
   .docs-rendered strong { color: var(--text-main); }
-  .docs-rendered code { background: rgba(255, 255, 255, 0.08); padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', monospace; font-size: 12px; }
+  .docs-rendered code { background: var(--color-code-inline-bg); padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', monospace; font-size: 12px; }
   .docs-mode-toggle { display: flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
   .docs-mode-toggle button { padding: 4px 10px; font-size: 11px; background: transparent; border: none; color: var(--text-muted); cursor: pointer; transition: all var(--dur-fast); }
-  .docs-mode-toggle button.active { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+  .docs-mode-toggle button.active { background: color-mix(in srgb, var(--color-info-strong) 18%, transparent); color: var(--color-info); }
   .docs-mode-toggle button + button { border-left: 1px solid var(--border-color); }
   .docs-new-btn { display: flex; align-items: center; justify-content: center; gap: 5px; width: calc(100% - 16px); margin: 8px; padding: 5px 8px; font-size: 11px; color: var(--text-muted); background: transparent; border: 1px dashed var(--border-color); border-radius: 6px; cursor: pointer; transition: all var(--dur-fast); }
-  .docs-new-btn:hover { color: #93c5fd; border-color: #3b82f6; background: rgba(59, 130, 246, 0.06); }
+  .docs-new-btn:hover { color: var(--color-info); border-color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 6%, transparent); }
   .docs-new-btn svg { flex-shrink: 0; display: block; }
   .docs-new-btn span { line-height: 1; }
   .docs-rename { padding: 8px; }
@@ -79,8 +79,8 @@
   .docs-rename-input:focus { border-color: var(--border-highlight); }
   .docs-edit-btn { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 6px; border: 1px solid var(--border-color); background: transparent; padding: 5px 10px; font-size: 11px; color: var(--text-muted); transition: color var(--dur-fast); }
   .docs-edit-btn:hover { color: var(--text-main); }
-  .docs-delete-btn { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.4); background: transparent; padding: 5px 8px; font-size: 11px; color: #f87171; transition: all var(--dur-fast); }
-  .docs-delete-btn:hover { background: rgba(239, 68, 68, 0.12); border-color: #ef4444; }
+  .docs-delete-btn { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--color-danger-strong) 40%, transparent); background: transparent; padding: 5px 8px; font-size: 11px; color: var(--color-danger); transition: all var(--dur-fast); }
+  .docs-delete-btn:hover { background: color-mix(in srgb, var(--color-danger-strong) 12%, transparent); border-color: var(--color-danger-strong); }
   .docs-save-btn { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 6px; border: none; background: var(--accent-blue); padding: 5px 10px; font-size: 11px; color: #fff; transition: opacity var(--dur-fast); }
   .docs-save-btn:hover { opacity: 0.85; }
 }
@@ -95,7 +95,7 @@
 .memory-item-meta { display: flex; align-items: center; gap: 10px; margin-top: 5px; font-size: 10px; color: var(--text-dim); }
 .memory-item-source { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .memory-item-delete { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: none; border-radius: 4px; background: none; color: var(--text-dim); cursor: pointer; }
-.memory-item-delete:hover { color: #ef4444; background: rgba(239, 68, 68, 0.12); }
+.memory-item-delete:hover { color: var(--color-danger-strong); background: color-mix(in srgb, var(--color-danger-strong) 12%, transparent); }
 .memory-item-pin { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: none; border-radius: 4px; background: none; color: var(--text-dim); cursor: pointer; }
-.memory-item-pin:hover { color: #f59e0b; background: rgba(245, 158, 11, 0.12); }
-.memory-item-pin.on { color: #f59e0b; }
+.memory-item-pin:hover { color: var(--color-warning-strong); background: color-mix(in srgb, var(--color-warning-strong) 12%, transparent); }
+.memory-item-pin.on { color: var(--color-warning-strong); }

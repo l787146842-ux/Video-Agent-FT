@@ -2,21 +2,21 @@
 @layer components {
   /* ---------- 按钮 ---------- */
   .btn-primary { display: flex; align-items: center; gap: 6px; background-color: var(--accent-blue); color: #ffffff; border: none; padding: 6px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
-  .btn-primary:hover { background-color: #2563eb; }
+  .btn-primary:hover { background-color: var(--color-info-deep); }
   .btn-primary:disabled { background-color: var(--bg-tertiary); color: var(--text-dim); cursor: not-allowed; opacity: 0.6; }
   .btn-primary.btn-purple { background-color: var(--accent-purple); }
   .btn-primary.btn-emerald { background-color: var(--accent-emerald); }
   .btn-secondary { background-color: var(--bg-hover); color: var(--text-main); border: 1px solid var(--border-color); padding: 6px 14px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; }
-  .btn-danger { background: #dc2626; color: #fff; border: none; padding: 6px 14px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; }
-  .btn-danger:hover { background: #b91c1c; }
+  .btn-danger { background: var(--color-danger-deep); color: #fff; border: none; padding: 6px 14px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; }
+  .btn-danger:hover { background: var(--color-danger-deeper); }
 
   /* ---------- Toast ---------- */
   .toast-container { position: fixed; right: 16px; top: 56px; z-index: var(--z-toast); width: 288px; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
   .toast { pointer-events: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; font-size: 12px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
-  .toast.success { border-color: rgba(16, 185, 129, 0.6); color: var(--accent-emerald); }
-  .toast.warning { border-color: rgba(245, 158, 11, 0.6); color: var(--accent-amber); }
-  .toast.error { border-color: rgba(239, 68, 68, 0.6); color: #f87171; }
-  .toast.info { border-color: rgba(59, 130, 246, 0.6); color: var(--text-main); }
+  .toast.success { border-color: color-mix(in srgb, var(--color-success-strong) 60%, transparent); color: var(--accent-emerald); }
+  .toast.warning { border-color: color-mix(in srgb, var(--color-warning-strong) 60%, transparent); color: var(--accent-amber); }
+  .toast.error { border-color: color-mix(in srgb, var(--color-danger-strong) 60%, transparent); color: var(--color-danger); }
+  .toast.info { border-color: color-mix(in srgb, var(--color-info-strong) 60%, transparent); color: var(--text-main); }
   .toast-message { flex: 1; min-width: 0; text-align: left; cursor: pointer; background: none; border: none; color: inherit; font-size: inherit; padding: 0; }
   .toast-message:hover { opacity: 0.8; }
   .toast-action { flex-shrink: 0; padding: 2px 8px; border: none; border-radius: 4px; background: var(--accent-amber); color: #000; font-weight: 600; font-size: inherit; cursor: pointer; }
@@ -31,13 +31,13 @@
   .context-menu { position: fixed; z-index: var(--z-picker-panel); min-width: 160px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 4px 0; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); }
   .context-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 12px; font-size: 12px; color: var(--text-main); background: none; border: none; cursor: pointer; text-align: left; transition: background 0.12s; }
   .context-menu-item:hover { background: var(--bg-hover); }
-  .context-menu-item.danger { color: #f87171; }
+  .context-menu-item.danger { color: var(--color-danger); }
 
   /* ---------- 确认对话框 ---------- */
   .confirm-overlay { position: fixed; inset: 0; z-index: var(--z-confirm); background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; }
   .confirm-modal { width: 360px; max-width: 90vw; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); }
   .confirm-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-main); }
-  .confirm-danger-icon { color: #ef4444; flex-shrink: 0; }
+  .confirm-danger-icon { color: var(--color-danger-strong); flex-shrink: 0; }
   .confirm-message { margin: 10px 0 0; font-size: 12px; color: var(--text-muted); line-height: 1.6; }
   .confirm-modal .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
@@ -57,7 +57,7 @@
   .icon-accent-emerald { color: var(--accent-emerald); }
   .animate-spin { animation: spin 1s linear infinite; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-  @keyframes boardFlash { 0% { border-color: var(--accent-blue); box-shadow: 0 0 10px rgba(59, 130, 246, 0.45); } 100% { border-color: var(--border-color); box-shadow: none; } }
+  @keyframes boardFlash { 0% { border-color: var(--accent-blue); box-shadow: 0 0 10px color-mix(in srgb, var(--color-info-strong) 45%, transparent); } 100% { border-color: var(--border-color); box-shadow: none; } }
   .board-flash > * { animation: boardFlash 1s ease-out; }
   .nav-chevron { margin-left: 3px; opacity: 0.7; vertical-align: middle; }
 

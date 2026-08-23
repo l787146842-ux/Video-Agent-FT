@@ -14,10 +14,10 @@
   .conv-tab.active { color: var(--text-main); border-bottom-color: var(--accent-blue); }
   .conv-tab-title { overflow: hidden; text-overflow: ellipsis; }
   .conv-tab-close { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; border: none; background: none; color: var(--text-dim); cursor: pointer; flex-shrink: 0; transition: all 0.12s; }
-  .conv-tab-close:hover { color: #f87171; background: rgba(239, 68, 68, 0.15); }
+  .conv-tab-close:hover { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger-strong) 15%, transparent); }
   .conv-tabs-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; padding: 0 2px 4px; flex-shrink: 0; }
   .conv-tabs-add { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; min-width: 24px; border-radius: 6px; border: none; background: none; color: var(--text-dim); cursor: pointer; transition: all 0.15s; }
-  .conv-tabs-add:hover { color: var(--accent-blue); background: rgba(59, 130, 246, 0.1); }
+  .conv-tabs-add:hover { color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }
 
   .chat-feed { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-anchor: none; }
   .chat-msg { display: flex; flex-direction: column; max-width: 88%; gap: 4px; }
@@ -53,14 +53,14 @@
   /* 已回应暂停卡的「当时所选」只读标注（回看对勾） */
   .answered-options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   .answered-option { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-size: 11px; color: var(--text-muted); border: 1px solid var(--border-color); background: var(--bg-tertiary); opacity: 0.7; }
-  .answered-option.chosen { opacity: 1; color: var(--text-main); border-color: rgba(52, 211, 153, 0.55); background: rgba(52, 211, 153, 0.1); }
+  .answered-option.chosen { opacity: 1; color: var(--text-main); border-color: color-mix(in srgb, var(--color-success) 55%, transparent); background: color-mix(in srgb, var(--color-success) 10%, transparent); }
   .answered-option-check { color: var(--accent-emerald); flex-shrink: 0; }
   .answered-option-tag { font-size: 10px; color: var(--accent-emerald); }
 
   /* 建议动作按钮（重试/继续，确定性交互替代手打） */
   .suggested-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-  .suggested-action-btn { padding: 5px 14px; font-size: 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(59, 130, 246, 0.5); background: rgba(59, 130, 246, 0.1); color: var(--text-main); transition: background 0.12s ease, border-color 0.12s ease; }
-  .suggested-action-btn:hover { background: rgba(59, 130, 246, 0.2); border-color: var(--accent-blue); }
+  .suggested-action-btn { padding: 5px 14px; font-size: 12px; border-radius: 8px; cursor: pointer; border: 1px solid color-mix(in srgb, var(--color-info-strong) 50%, transparent); background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); color: var(--text-main); transition: background 0.12s ease, border-color 0.12s ease; }
+  .suggested-action-btn:hover { background: color-mix(in srgb, var(--color-info-strong) 20%, transparent); border-color: var(--accent-blue); }
   /* 消息悬停工具条（任务 #17）：默认隐藏，鼠标悬停或键盘 focus-within 显示
      （按钮真实可 Tab，focus-within 保障键盘可访问性） */
   .msg-hover-toolbar { display: flex; align-items: center; gap: 4px; opacity: 0; pointer-events: none; transition: opacity 0.12s ease; }
@@ -78,7 +78,7 @@
   .inline-edit-cancel { border: 1px solid var(--border-color); background: transparent; color: var(--text-muted); }
   .inline-edit-cancel:hover:not(:disabled) { color: var(--text-main); border-color: var(--text-dim); }
   .inline-edit-send { border: 1px solid var(--accent-blue); background: var(--accent-blue); color: #ffffff; }
-  .inline-edit-send:hover:not(:disabled) { background: rgba(59, 130, 246, 0.85); }
+  .inline-edit-send:hover:not(:disabled) { background: color-mix(in srgb, var(--color-info-strong) 85%, transparent); }
   .inline-edit-cancel:disabled, .inline-edit-send:disabled { opacity: 0.5; cursor: not-allowed; }
 
 
@@ -92,10 +92,10 @@
     .user-bubble-text { white-space: pre-wrap; }
   .msg-ref-block { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 8px; font-size: 12px; line-height: 1.3; cursor: pointer; border: 1px solid transparent; max-width: 16em; }
   .msg-ref-block .msg-ref-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .msg-ref-doc { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.45); color: #93c5fd; }
-  .msg-ref-doc:hover { background: rgba(59, 130, 246, 0.25); }
-  .msg-ref-skill { background: rgba(139, 92, 246, 0.14); border-color: rgba(139, 92, 246, 0.5); color: #c4b5fd; }
-  .msg-ref-skill:hover { background: rgba(139, 92, 246, 0.25); }
+  .msg-ref-doc { background: color-mix(in srgb, var(--color-info-strong) 14%, transparent); border-color: color-mix(in srgb, var(--color-info-strong) 45%, transparent); color: var(--color-info); }
+  .msg-ref-doc:hover { background: color-mix(in srgb, var(--color-info-strong) 25%, transparent); }
+  .msg-ref-skill { background: color-mix(in srgb, var(--accent-purple) 14%, transparent); border-color: color-mix(in srgb, var(--accent-purple) 50%, transparent); color: var(--color-info-secondary); }
+  .msg-ref-skill:hover { background: color-mix(in srgb, var(--accent-purple) 25%, transparent); }
   .chat-markdown { box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word; }
 
   /* 流式指示器*/

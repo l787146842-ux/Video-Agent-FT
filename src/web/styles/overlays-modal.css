@@ -10,7 +10,7 @@
   .restore-picker-label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
   .restore-picker-groups { display: flex; flex-wrap: wrap; gap: 6px; }
   .restore-picker-group { padding: 6px 10px; font-size: 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-tertiary); color: var(--text-main); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: border-color 0.12s, color 0.12s; }
-  .restore-picker-group:hover { border-color: var(--accent-blue); color: #93c5fd; }
+  .restore-picker-group:hover { border-color: var(--accent-blue); color: var(--color-info); }
   .asset-modal-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); }
   .asset-modal-tabs { display: flex; gap: 2px; flex: 1; }
   .asset-modal-tabs button { padding: 6px 14px; background: transparent; border: 0; color: var(--text-dim); font-size: 13px; cursor: pointer; border-radius: 4px; transition: all var(--dur-fast); }
@@ -24,13 +24,13 @@
   .asset-modal-status { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 60px 20px; color: var(--text-dim); text-align: center; }
   .asset-modal-status p { margin: 0; font-size: 13px; }
   .asset-modal-status-hint { font-size: 11px; opacity: 0.7; }
-  .asset-modal-status code { background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  .asset-modal-status code { background: var(--color-code-inline-bg); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
   .asset-modal-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--border-color); background: var(--bg-primary); }
   .asset-modal-count { font-size: 12px; color: var(--text-dim); }
   .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
   .asset-card { position: relative; aspect-ratio: 1; border-radius: 8px; border: 2px solid var(--border-color); overflow: hidden; cursor: pointer; background: var(--bg-tertiary); transition: all var(--dur-fast); }
   .asset-card:hover { border-color: var(--accent-blue); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
-  .asset-card.selected { border-color: var(--accent-blue); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4); }
+  .asset-card.selected { border-color: var(--accent-blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-info-strong) 40%, transparent); }
   .asset-card img, .asset-card video { width: 100%; height: 100%; object-fit: cover; }
   .asset-card-name { position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 6px; font-size: 10px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.75)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .asset-card-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-dim); background-color: var(--bg-card); }
@@ -40,19 +40,19 @@
   .canvas-picker-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-main); }
   .canvas-picker-subheader { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
   .canvas-picker-current-name { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
-  .asset-card-canvas-tag { position: absolute; top: 4px; left: 4px; padding: 1px 5px; font-size: 9px; color: #fff; background: rgba(59, 130, 246, 0.75); border-radius: 3px; white-space: nowrap; max-width: 90%; overflow: hidden; text-overflow: ellipsis; }
+  .asset-card-canvas-tag { position: absolute; top: 4px; left: 4px; padding: 1px 5px; font-size: 9px; color: #fff; background: color-mix(in srgb, var(--color-info-strong) 75%, transparent); border-radius: 3px; white-space: nowrap; max-width: 90%; overflow: hidden; text-overflow: ellipsis; }
 
   /* ---------- 画布选择器下拉 ---------- */
   .canvas-selector { position: relative; flex: 1; max-width: 260px; }
   .canvas-selector-btn { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 10px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 12px; cursor: pointer; transition: border-color var(--dur-fast); }
   .canvas-selector-btn:hover { border-color: var(--accent-blue); }
-  .canvas-selector-kind { font-size: 10px; padding: 1px 5px; background: rgba(59, 130, 246, 0.15); color: #93c5fd; border-radius: 3px; white-space: nowrap; }
+  .canvas-selector-kind { font-size: 10px; padding: 1px 5px; background: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--color-info); border-radius: 3px; white-space: nowrap; }
   .canvas-selector-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .canvas-selector-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; max-height: 200px; overflow-y: auto; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); z-index: var(--z-picker-panel); padding: 4px; }
   .canvas-selector-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; background: transparent; border: 0; border-radius: 6px; color: var(--text-main); font-size: 12px; cursor: pointer; text-align: left; transition: background 0.12s; }
   .canvas-selector-item:hover { background: var(--bg-tertiary); }
-  .canvas-selector-item.active { background: rgba(59, 130, 246, 0.12); color: #93c5fd; }
-  .canvas-selector-item-kind { font-size: 10px; padding: 1px 5px; background: rgba(59, 130, 246, 0.15); color: #93c5fd; border-radius: 3px; white-space: nowrap; }
+  .canvas-selector-item.active { background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); color: var(--color-info); }
+  .canvas-selector-item-kind { font-size: 10px; padding: 1px 5px; background: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--color-info); border-radius: 3px; white-space: nowrap; }
   .canvas-selector-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .canvas-selector-empty { padding: 12px; text-align: center; font-size: 12px; color: var(--text-dim); }
 }

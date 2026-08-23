@@ -8,9 +8,9 @@
     .pill-section-title { padding: 6px 10px 3px; font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.04em; }
     .pill-section-scroll { max-height: 150px; overflow-y: auto; }
   .pill-option { width: 100%; text-align: left; background: transparent; border: none; padding: 7px 10px; font-size: 12px; color: var(--text-main); border-radius: 6px; cursor: pointer; transition: background 0.12s; }
-  .pill-option:hover { background: rgba(59, 130, 246, 0.1); }
-  .pill-option.selected { color: #93c5fd; background: rgba(59, 130, 246, 0.12); display: flex; align-items: center; justify-content: space-between; }
-  .pill-option.selected::after { content: '\2713'; font-size: 12px; font-weight: 700; color: #93c5fd; margin-left: 8px; flex-shrink: 0; }
+  .pill-option:hover { background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }
+  .pill-option.selected { color: var(--color-info); background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); display: flex; align-items: center; justify-content: space-between; }
+  .pill-option.selected::after { content: '\2713'; font-size: 12px; font-weight: 700; color: var(--color-info); margin-left: 8px; flex-shrink: 0; }
   .pill-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pill-option-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .pill-option-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--text-dim); }
@@ -23,22 +23,22 @@
   /* ===== Skill 选择器列表面板 ===== */
   .skill-picker { position: fixed; z-index: var(--z-picker-panel); width: 300px; max-width: calc(100vw - 24px); max-height: 360px; overflow-y: auto; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 6px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); }
   .skill-picker-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.12s; }
-  .skill-picker-card:hover { background: rgba(59, 130, 246, 0.08); }
-  .skill-picker-card.active { background: rgba(59, 130, 246, 0.12); }
-  .skill-picker-card.active .skill-picker-name { color: #93c5fd; }
+  .skill-picker-card:hover { background: color-mix(in srgb, var(--color-info-strong) 8%, transparent); }
+  .skill-picker-card.active { background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); }
+  .skill-picker-card.active .skill-picker-name { color: var(--color-info); }
   .skill-picker-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .skill-picker-name { font-size: 13px; font-weight: 500; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .skill-picker-desc { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .skill-picker-eye { flex-shrink: 0; width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.12s, color 0.12s; }
-  .skill-picker-eye:hover { background: rgba(59, 130, 246, 0.15); color: #93c5fd; }
+  .skill-picker-eye:hover { background: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--color-info); }
   .skill-picker-add { flex-shrink: 0; width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.12s, color 0.12s; }
-  .skill-picker-add:hover { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+  .skill-picker-add:hover { background: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success); }
   .skill-picker-delete { flex-shrink: 0; width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.12s, color 0.12s; opacity: 0; }
   .skill-picker-card:hover .skill-picker-delete { opacity: 1; }
-  .skill-picker-delete:hover { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+  .skill-picker-delete:hover { background: color-mix(in srgb, var(--color-danger-strong) 15%, transparent); color: var(--color-danger); }
   .skill-picker-confirm { display: flex; align-items: center; gap: 8px; width: 100%; }
-  .skill-picker-confirm-text { flex: 1; font-size: 12px; color: #f87171; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .skill-picker-confirm-yes { padding: 3px 10px; font-size: 11px; border: none; border-radius: 5px; background: #ef4444; color: #fff; cursor: pointer; transition: opacity 0.12s; }
+  .skill-picker-confirm-text { flex: 1; font-size: 12px; color: var(--color-danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .skill-picker-confirm-yes { padding: 3px 10px; font-size: 11px; border: none; border-radius: 5px; background: var(--color-danger-strong); color: #fff; cursor: pointer; transition: opacity 0.12s; }
   .skill-picker-confirm-yes:hover { opacity: 0.85; }
   .skill-picker-confirm-no { padding: 3px 10px; font-size: 11px; border: 1px solid var(--border-color); border-radius: 5px; background: transparent; color: var(--text-dim); cursor: pointer; transition: background 0.12s; }
   .skill-picker-confirm-no:hover { background: rgba(255, 255, 255, 0.06); }
@@ -57,18 +57,18 @@
   .skill-modal-body { flex: 1; overflow-y: auto; padding: 14px 18px; min-height: 120px; user-select: text; -webkit-user-select: text; cursor: text; }
   .skill-modal-intro { font-size: 13px; line-height: 1.7; color: var(--text-secondary); display: flex; flex-direction: column; gap: 10px; }
   .skill-modal-intro-editor { width: 100%; min-height: 80px; resize: vertical; padding: 10px 12px; font-size: 13px; line-height: 1.7; color: var(--text-main); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; font-family: inherit; transition: border-color var(--dur-fast); }
-  .skill-modal-intro-editor:focus { outline: none; border-color: rgba(59, 130, 246, 0.5); }
-  .skill-modal-intro-save { align-self: flex-end; display: flex; align-items: center; gap: 5px; padding: 5px 14px; font-size: 12px; border: none; border-radius: 6px; background: rgba(59, 130, 246, 0.15); color: #93c5fd; cursor: pointer; transition: background 0.12s; }
-  .skill-modal-intro-save:hover { background: rgba(59, 130, 246, 0.25); }
+  .skill-modal-intro-editor:focus { outline: none; border-color: color-mix(in srgb, var(--color-info-strong) 50%, transparent); }
+  .skill-modal-intro-save { align-self: flex-end; display: flex; align-items: center; gap: 5px; padding: 5px 14px; font-size: 12px; border: none; border-radius: 6px; background: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--color-info); cursor: pointer; transition: background 0.12s; }
+  .skill-modal-intro-save:hover { background: color-mix(in srgb, var(--color-info-strong) 25%, transparent); }
   .skill-modal-intro-save:disabled { opacity: 0.5; cursor: not-allowed; }
   .skill-modal-content { font-size: 12.5px; line-height: 1.7; }
   .skill-modal-content-raw { font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; font-family: 'Consolas', 'Monaco', monospace; color: var(--text-secondary); background: var(--bg-tertiary); border-radius: 8px; padding: 14px; }
   .skill-modal-view-toggle { display: flex; gap: 4px; margin-bottom: 10px; justify-content: flex-end; align-items: center; }
-  .skill-modal-copy-btn { display: flex; align-items: center; gap: 5px; margin-right: auto; padding: 5px 12px; font-size: 12px; border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 6px; background: rgba(59, 130, 246, 0.12); color: #93c5fd; cursor: pointer; transition: background 0.12s; }
-  .skill-modal-copy-btn:hover { background: rgba(59, 130, 246, 0.22); }
+  .skill-modal-copy-btn { display: flex; align-items: center; gap: 5px; margin-right: auto; padding: 5px 12px; font-size: 12px; border: 1px solid color-mix(in srgb, var(--color-info-strong) 40%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); color: var(--color-info); cursor: pointer; transition: background 0.12s; }
+  .skill-modal-copy-btn:hover { background: color-mix(in srgb, var(--color-info-strong) 22%, transparent); }
   .skill-modal-view-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.12s, color 0.12s; }
-  .skill-modal-view-btn:hover { background: rgba(59, 130, 246, 0.12); color: #93c5fd; }
-  .skill-modal-view-btn.active { background: rgba(59, 130, 246, 0.15); color: #93c5fd; border-color: rgba(59, 130, 246, 0.4); }
+  .skill-modal-view-btn:hover { background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); color: var(--color-info); }
+  .skill-modal-view-btn.active { background: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--color-info); border-color: color-mix(in srgb, var(--color-info-strong) 40%, transparent); }
   .skill-modal-footer { padding: 14px 18px; border-top: 1px solid var(--border-color); display: flex; justify-content: center; }
   .skill-use-btn { display: flex; align-items: center; gap: 8px; padding: 10px 28px; border: none; border-radius: 10px; font-size: 13px; font-weight: 600; color: #fff; cursor: pointer; background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa); transition: opacity var(--dur-fast), transform 0.1s; }
   .skill-use-btn:hover { opacity: 0.9; transform: translateY(-1px); }
@@ -76,14 +76,14 @@
 
   /* Skill 导入按钮（列表底部） */
   .skill-picker-import { display: flex; align-items: center; gap: 6px; padding: 9px 12px; margin-top: 4px; border-top: 1px solid var(--border-color); font-size: 12px; color: var(--text-dim); cursor: pointer; transition: color 0.12s, background 0.12s; border-radius: 0 0 8px 8px; }
-  .skill-picker-import:hover { color: #93c5fd; background: rgba(59, 130, 246, 0.06); }
+  .skill-picker-import:hover { color: var(--color-info); background: color-mix(in srgb, var(--color-info-strong) 6%, transparent); }
 
   /* Skill 导入弹窗 */
   .skill-import-modal { width: 560px; }
   .skill-import-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; flex: 1; }
   .skill-import-toolbar { display: flex; gap: 8px; }
   .skill-import-tool-btn { display: flex; align-items: center; gap: 5px; padding: 6px 12px; font-size: 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer; transition: background 0.12s, color 0.12s; }
-  .skill-import-tool-btn:hover { background: rgba(59, 130, 246, 0.1); color: #93c5fd; }
+  .skill-import-tool-btn:hover { background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); color: var(--color-info); }
   .skill-import-tool-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .skill-import-field { display: flex; flex-direction: column; gap: 4px; }
   .skill-import-label { font-size: 11px; color: var(--text-dim); font-weight: 500; }

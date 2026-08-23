@@ -41,14 +41,14 @@
 
 /* 浏览器断网（本机网络层）：琥珀——外部不可控，等待即可 */
 .health-banner.offline {
-  background: #92400e;
-  border-color: #b45309;
-  color: #fde68a;
+  background: var(--color-warning-banner-bg);
+  border-color: var(--color-warning-banner-border);
+  color: var(--color-warning-banner-text);
 }
 
 /* 后端失联（服务层）：红——可动作排查，措辞提示任务不受影响 */
 .health-banner.backend-down {
-  background: #7f1d1d;
-  border-color: #991b1b;
-  color: #fecaca;
+  background: var(--color-danger-banner-bg);
+  border-color: var(--color-danger-banner-border);
+  color: var(--color-danger-banner-text);
 }

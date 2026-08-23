@@ -17,6 +17,36 @@
   --accent-purple: #8b5cf6;
   --accent-emerald: #10b981;
   --accent-amber: #f59e0b;
+  /* ===== 语义状态色（danger/success/warning/info 硬编码收口，任务#4） =====
+     透明档不逐一设 token：使用处用
+     color-mix(in srgb, <实色档> N%, transparent) 现调（genlog.css 已有先例） */
+  /* 危险：错误/破坏性操作 */
+  --color-danger: #f87171;
+  --color-danger-strong: #ef4444;
+  --color-danger-deep: #dc2626;
+  --color-danger-deeper: #b91c1c;
+  --color-danger-banner-bg: #7f1d1d;
+  --color-danger-banner-border: #991b1b;
+  --color-danger-banner-text: #fecaca;
+  /* 成功：完成/在线/通过 */
+  --color-success: #34d399;
+  --color-success-strong: #10b981;
+  --color-success-deep: #059669;
+  /* 警示：排队/告警/思考中 */
+  --color-warning: #fbbf24;
+  --color-warning-strong: #f59e0b;
+  --color-warning-deep: #d97706;
+  --color-warning-banner-bg: #92400e;
+  --color-warning-banner-border: #b45309;
+  --color-warning-banner-text: #fde68a;
+  /* 信息：蓝色提示/选中；次级紫用于 skill 引用类标签 */
+  --color-info: #93c5fd;
+  --color-info-strong: #3b82f6;
+  --color-info-deep: #2563eb;
+  --color-info-secondary: #c4b5fd;
+  /* 中性代码底（非状态色，随本批收口避免散落各文件） */
+  --color-code-inline-bg: rgba(255, 255, 255, 0.08);
+  --color-code-block-bg: rgba(0, 0, 0, 0.4);
   --splitter-width: 6px;
   --splitter-hover: #60a5fa;
   --radius-sm: 6px;
@@ -72,6 +102,29 @@ html.light {
   --accent-purple: #8b5cf6;
   --accent-emerald: #10b981;
   --accent-amber: #f59e0b;
+  /* 语义状态色（亮色档）：文字档加深保对比度，实色/透明档基本沿用 */
+  --color-danger: #dc2626;
+  --color-danger-strong: #ef4444;
+  --color-danger-deep: #b91c1c;
+  --color-danger-deeper: #991b1b;
+  --color-danger-banner-bg: #fef2f2;
+  --color-danger-banner-border: #fecaca;
+  --color-danger-banner-text: #b91c1c;
+  --color-success: #059669;
+  --color-success-strong: #10b981;
+  --color-success-deep: #047857;
+  --color-warning: #b45309;
+  --color-warning-strong: #d97706;
+  --color-warning-deep: #92400e;
+  --color-warning-banner-bg: #fffbeb;
+  --color-warning-banner-border: #fde68a;
+  --color-warning-banner-text: #92400e;
+  --color-info: #2563eb;
+  --color-info-strong: #3b82f6;
+  --color-info-deep: #1d4ed8;
+  --color-info-secondary: #7c3aed;
+  --color-code-inline-bg: rgba(0, 0, 0, 0.06);
+  --color-code-block-bg: rgba(0, 0, 0, 0.05);
   --splitter-hover: #3b82f6;
 }
 
@@ -106,10 +159,10 @@ html.light {
   .chat-markdown ul { list-style: disc; }
   .chat-markdown ol { list-style: decimal; }
   .chat-markdown li { margin: 3px 0; }
-  .chat-markdown code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
-  .chat-markdown pre { background: rgba(0,0,0,0.4); padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+  .chat-markdown code { background: var(--color-code-inline-bg); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .chat-markdown pre { background: var(--color-code-block-bg); padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
   .chat-markdown pre code { background: transparent; padding: 0; }
-  .chat-markdown strong { color: #fff; font-weight: 600; }
+  .chat-markdown strong { color: var(--text-main); font-weight: 600; }
   .chat-markdown a { color: var(--accent-blue); text-decoration: underline; }
   .chat-markdown blockquote { padding-left: 12px; margin: 6px 0; border-left: 2px solid var(--border-color); color: var(--text-dim); }
   .chat-markdown h1 { font-size: 15px; margin: 8px 0 4px; font-weight: 600; }
@@ -117,10 +170,6 @@ html.light {
   .chat-markdown h3 { font-size: 13px; margin: 8px 0 4px; font-weight: 600; }
   .chat-markdown > *:first-child { margin-top: 0; }
   .chat-markdown > *:last-child { margin-bottom: 0; }
-
-  html.light .chat-markdown strong { color: #111827; }
-  html.light .chat-markdown code { background: rgba(0,0,0,0.06); }
-  html.light .chat-markdown pre { background: rgba(0,0,0,0.05); }
 
   /* 统一键盘焦点环（无障碍）：鼠标点击不显示（:focus-visible），
      Tab 键盘导航时所有可聚焦控件获得一致可见焦点 */

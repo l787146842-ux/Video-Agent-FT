@@ -12,7 +12,7 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: #ef4444;
+  background: var(--color-danger-strong);
   color: #fff;
   font-size: 10px;
   line-height: 16px;
@@ -123,8 +123,8 @@
   border: 1px solid var(--border-color);
 }
 .genlog-item--failed {
-  border-color: color-mix(in srgb, #ef4444 45%, transparent);
-  background: color-mix(in srgb, #ef4444 7%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--color-danger-strong) 45%, transparent);
+  background: color-mix(in srgb, var(--color-danger-strong) 7%, var(--bg-card));
 }
 .genlog-item-main {
   flex: 1;
@@ -150,8 +150,8 @@
   background: color-mix(in srgb, var(--accent-emerald) 14%, transparent);
 }
 .genlog-badge--failed {
-  color: #f87171;
-  background: color-mix(in srgb, #ef4444 16%, transparent);
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger-strong) 16%, transparent);
 }
 .genlog-badge--running {
   color: var(--accent-blue);
@@ -194,7 +194,7 @@
 }
 .genlog-error {
   font-size: 11px;
-  color: #f87171;
+  color: var(--color-danger);
   word-break: break-all;
 }
 
