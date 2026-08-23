@@ -24,6 +24,7 @@ WARN_LINES = 800
 # 九轮 B3b prompt_gates 拆分清偿（gates_cards 切出）：4→3；
 # 任务#23 fc_tool_runner 三段拆分清偿（fc_gates/fc_reconcile 切出）：3→2；
 # D-02 第一件 planner 拆分清偿（turn_executor 切出）：2→1
+# 台账：state/manager.py 现为 905 行（出自 1dda67b），待拆分清偿后再降：1→0
 OVER_900_BASELINE = 1
 
 # 白名单：文件相对路径 -> 理由（只减不增；拆分清偿后移除条目）
@@ -39,7 +40,6 @@ FRONTEND_WHITELIST = {
     "src/web/components/layout/SettingsView.tsx": "设置页聚合（拆分另行立项）",
     "src/web/components/middle-panel/params/ParamBase.tsx": "参数隔离改造 bucket 维度（拆分另行立项）",
     "src/web/components/middle-panel/PromptEditor.tsx": "提示词编辑器（拆分另行立项）",
-    "src/web/components/right-panel/AgentTimeline.tsx": "时间线多事件形态渲染（拆分另行立项）",
     "src/web/components/right-panel/ChatMessageItem.tsx": "消息气泡多形态（拆分另行立项）",
     "src/web/components/right-panel/ConfirmActions.tsx": "确认卡/向导交互聚合（拆分另行立项）",
     "src/web/hooks/use-sse.ts": "后台任务订阅协调中枢，事件类型多属合理",
