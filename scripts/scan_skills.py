@@ -9,10 +9,13 @@ P3-15 新增：frontmatter 声明（含 custom_sections）vs 文档实际章节�
 --gate 追加 tools_required 存在性探针（任务#5 B-2）：声明工具不在
 平台工具注册表（tools/manager.py 注册清单）且不在待补齐豁免清单时
 输出 WARN 清单（先诊断，不升门禁失败/不阻断退出码）。
+P1 整改（任务 #9）：--gate 追加内容卫生防回潮校验：frontmatter 剥离后
+正文再现 skill_name:/skill_description: 残留行或「最高/第一优先级」宣称即 FAIL。
 """
 import re
 import sys
 import pathlib
+from datetime import date
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
@@ -99,6 +102,32 @@ _PLACEHOLDER_RES = (
     re.compile(r"^code\d+$"),
     re.compile(r"^keyframe_\d+$"),
 )
+
+# ============================================================
+# P1 防回潮校验（任务 #9）：frontmatter 是唯一元数据源，正文不得
+# 再现 skill_name:/skill_description: 残留行；优先级宣称已改写为
+# 「强制基线」式正向表述，正文再现即 FAIL。
+# ============================================================
+_RESIDUE_META_RE = re.compile(
+    r"^\s*(skill_name|skill_description)\s*:", re.M)
+_PRIORITY_CLAIM_RE = re.compile(r"最高优先级|第一优先级")
+
+
+def content_hygiene_issues(body: str) -> list:
+    """正文卫生防回潮校验（frontmatter 剥离后的 body）：
+    ① 出现 skill_name:/skill_description: 残留行（元数据双源回潮）；
+    ② 出现「最高优先级/第一优先级」宣称（应使用「强制基线」式正向表述）。
+    返回问题清单（空 = 通过）。"""
+    issues = []
+    for m in _RESIDUE_META_RE.finditer(body or ""):
+        line_no = (body or "").count("\n", 0, m.start()) + 1
+        issues.append(f"第 {line_no} 行：正文元数据残留行 "
+                      f"{m.group(0).strip()!r}（frontmatter 为唯一元数据源）")
+    for m in _PRIORITY_CLAIM_RE.finditer(body or ""):
+        line_no = (body or "").count("\n", 0, m.start()) + 1
+        issues.append(f"第 {line_no} 行：优先级宣称 {m.group(0)!r}"
+                      f"（应改写为「强制基线」式正向表述）")
+    return issues
 
 
 def real_tool_names() -> frozenset:
@@ -244,12 +273,14 @@ def tools_required_warn_probe(slug: str, manifest, platform_names: frozenset) ->
 
 def run_gate() -> int:
     """--gate 模式：工具名白名单校验，有问题退出码 1（acceptance 门禁项）；
+    P1 防回潮校验：正文元数据残留行 / 优先级宣称即 FAIL（任务 #9）；
     tools_required 存在性探针缺失输出 WARN 清单（任务#5 B-2：先诊断
     不升门禁失败，不阻断退出码）。"""
     d = pathlib.Path(__file__).parent.parent / "data" / "skills"
     real = real_tool_names()
     platform = platform_tool_names()
     failed = []
+    hygiene_failed = []
     warned = []
     for slug, f in _iter_skill_docs(d):
         content = f.read_text(encoding="utf-8", errors="replace")
@@ -260,6 +291,11 @@ def run_gate() -> int:
             failed.append(slug)
             for it in issues:
                 print(f"[skill_tool_names] FAIL {f.name}: {it}")
+        hygiene = content_hygiene_issues(body)
+        if hygiene:
+            hygiene_failed.append(slug)
+            for it in hygiene:
+                print(f"[skill_content_hygiene] FAIL {f.name}: {it}")
         missing = tools_required_warn_probe(slug, manifest, platform)
         if missing:
             warned.append(slug)
@@ -267,19 +303,37 @@ def run_gate() -> int:
                   f"且不在待补齐豁免清单：{'、'.join(missing)}")
     if failed:
         print(f"[skill_tool_names] FAIL: {len(failed)} skill(s) off-whitelist")
+    if hygiene_failed:
+        print(f"[skill_content_hygiene] FAIL: {len(hygiene_failed)} skill(s) "
+              f"正文元数据残留或优先级宣称回潮")
+    if failed or hygiene_failed:
         return 1
     print("[skill_tool_names] OK: all skill docs on tool whitelist")
+    print("[skill_content_hygiene] OK: 无元数据残留行与优先级宣称")
     if warned:
         print(f"[skill_tools_required] WARN: {len(warned)} skill(s) 声明工具未入平台注册表"
               f"（{'、'.join(warned)}；诊断性质，不阻断门禁）")
     return 0
 
 
+def _install_ports_once() -> None:
+    """报表入口独立运行时装配 core 端口（幂等）：custom_sections 探针
+    经 SkillEntry.custom_section_text 走 skill_docs 端口，脚本场景不在
+    web/app.py lifespan 与 tests/conftest.py 既有装配点覆盖内。"""
+    from src.video_agent.web.port_wiring import install_core_ports
+    install_core_ports()
+
+
 def main() -> None:
+    _install_ports_once()
     OUT = pathlib.Path(__file__).parent / "skill_scan_report.md"
     d = pathlib.Path(__file__).parent.parent / "data" / "skills"
 
     lines = []
+    lines.append(f"生成日期: {date.today()}  "
+                 "生成方式: python scripts/scan_skills.py（报表入口；"
+                 "--gate 为门禁入口）")
+    lines.append("")
     mismatched = []
     whitelist_failed = []
     real = real_tool_names()

@@ -31,8 +31,6 @@ tools_required:
 version: '1.0'
 ---
 
-skill_name: "音乐MV（需上传音乐）"
-skill_description: "用于通过已上传的音乐生成音乐视频。生成渠道以全局设置为准。在关键阶段暂停以供用户确认；采用人机协作的单次（one-shot）流程。"
 <planner>
 **阶段逻辑与依赖关系：**
 1. 分析已上传的音乐，导出其节奏结构、精确时间（时间戳）和歌词 → **script_analyze**。
