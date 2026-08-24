@@ -50,8 +50,11 @@ FRONTEND_WHITELIST = {
     "src/web/types/api.generated.ts": "gen_api_types.py 生成物，随后端 schema 自然增长",
     "src/web/types/index.ts": "前后端契约类型集中单文件便于对照",
 }
-# 超限文件数棘轮基线（P4-23 设立；含白名单条目，清偿一件随降一件，禁止上调）
-FRONTEND_OVER_BASELINE = len(FRONTEND_WHITELIST)
+# 超限文件数棘轮基线（P4-23 设立；清偿一件随降一件，禁止上调）。
+# 字面常量而非 len(FRONTEND_WHITELIST) 动态自算（整改批 1.1：动态自算
+# 是恒真基线，与 scaffold 恒真问题同构）；2026-08-24 磁盘实测超限
+# 13 件，与白名单 13 条一致。只降不升；上调须书面裁决并同批修改本常量。
+FRONTEND_OVER_BASELINE = 13
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
