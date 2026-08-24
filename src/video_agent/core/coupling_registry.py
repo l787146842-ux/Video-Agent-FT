@@ -155,6 +155,40 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_generate_image",
             "src.video_agent.core.prompt_gates:SPEC_GATE_ERROR",
             "src.video_agent.core.prompt_gates:parse_hard_selections",
+            # P3 反向依赖下沉（任务 10）：web/provider_config.py 薄壳
+            # （实现体 core/provider_config.py；provider_models 随迁无壳）
+            "src.video_agent.web.provider_config:get_provider_config",
+            "src.video_agent.web.provider_config:load_merged_providers",
+            # 任务 22 P7-1 state/manager.py 拆分承重壳：对话域（实现体
+            # conversation_ops）/落盘闸（实现体 save_ops）/快照组装（实现体
+            # context_builder）；StateManager 公开 API 门面长期承重
+            "src.video_agent.state.manager:StateManager.add_chat_message",
+            "src.video_agent.state.manager:StateManager.create_conversation",
+            "src.video_agent.state.manager:StateManager.save",
+            "src.video_agent.state.manager:StateManager.board_version",
+            "src.video_agent.state.manager:StateManager.get_full_snapshot",
+            # 任务 23 P7-2 gate_registry 切出承重壳：注册表数据 + 别名表 +
+            # 归一函数（实现体 core/gate_registry.py，纯数据无判定）；
+            # guard_pipeline/planner_gate_session/routes/agent/scripts 经
+            # prompt_gates.* 引用，迁移需全量改引用
+            "src.video_agent.core.prompt_gates:GATE_RULES",
+            "src.video_agent.core.prompt_gates:GateRuleMeta",
+            "src.video_agent.core.prompt_gates:normalize_rule_id",
+            # 任务 24 P7-3 action_executor.py 动作域拆分承重壳：草稿/分组域
+            # （实现体 action_drafts）/文档媒体域（实现体 action_media）；
+            # 生成域实现体先例已切 action_gen；执行器门面（分派+闸机判定）
+            # 长期承重，实例方法壳保 patch 目标不变
+            "src.video_agent.core.action_executor:StateOperationExecutor._apply_draft_patch",
+            "src.video_agent.core.action_executor:StateOperationExecutor._apply_add_draft",
+            "src.video_agent.core.action_executor:StateOperationExecutor._apply_add_group",
+            "src.video_agent.core.action_executor:StateOperationExecutor._apply_write_document",
+            "src.video_agent.core.action_executor:StateOperationExecutor._apply_clear_media",
+            "src.video_agent.core.action_executor:StateOperationExecutor._apply_insert_chat_media",
+            # 任务 25 P7-4 chat_service.py 错误翻译域拆分承重壳：流式错误
+            # 出口 + 人话翻译（实现体 web/chat_errors.py）；tests 经
+            # chat_service.* 导入钉死，迁移需全量改引用
+            "src.video_agent.web.chat_service:_emit_stream_error",
+            "src.video_agent.web.chat_service:_friendly_stream_error",
             # skill_runtime/executors 与 exec_tools 承重壳已随任务#36 B5
             # 执行器一步退役删除（物理删除，不设观察期）
         ),

@@ -56,3 +56,5 @@ def test_s4_registered_shells_kept():
     cs = (SRC / "web/chat_service.py").read_text(encoding="utf-8")
     assert "from src.video_agent.web.chat_opening import" in cs
     assert "from src.video_agent.web.chat_consume import" in cs
+    # 任务 25 P7-4：错误翻译域承重壳（实现体 web/chat_errors.py）
+    assert "from src.video_agent.web.chat_errors import" in cs

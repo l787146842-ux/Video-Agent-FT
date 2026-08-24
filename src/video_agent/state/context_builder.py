@@ -1,15 +1,17 @@
 """
-Agent 上下文构建器 — 从 StateManager 抽离。
+Agent 上下文构建域 — 从 StateManager 抽离（P7-1 追加状态视图组装）。
 
-职责：将 raw state dict 转换为发送给 LLM 的精简 JSON 上下文。
-带缓存：状态未变时复用上次结果。
+职责：将 raw state dict 转换为各消费面的状态视图（纯函数组装，不落盘）：
+- build_agent_context：发送给 LLM 的精简 JSON 上下文（带缓存：状态未变时复用）
+- build_full_snapshot：完整状态深拷贝快照（前端刷新 / SSE done payload）
+- build_frontend_view：前端 camelCase JSON 视图（Pydantic 校验后序列化）
 """
 import json
 from typing import Any, Dict
 
 from src.video_agent.config import settings
 
-from .models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
+from .models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ProjectState
 
 
 def _dumps(snapshot: Dict[str, Any]) -> str:
@@ -208,6 +210,34 @@ def _build_analysis(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     if kp:
         out["key_points"] = kp[:6]
     return out
+
+
+def build_full_snapshot(raw_state: Dict[str, Any], board_version: int) -> Dict[str, Any]:
+    """完整状态快照（供前端刷新/SSE done payload）。
+
+    返回深拷贝（json round-trip），调用方可任意使用不会回写
+    污染内部状态；旧版浅拷贝共享嵌套引用的契约仅靠注释约束，过于脆弱。
+    快照仅在聊天完成/mock 路径低频调用，序列化开销可接受。
+    """
+    snap = json.loads(json.dumps(raw_state, ensure_ascii=False))
+    # 乐观锁版本号随快照下发（不写入状态 JSON 本体，避免污染 undo/快照）
+    snap["board_version"] = board_version
+    # E-2 消息单一来源：快照中对话只留元信息，消息副本不再随快照下发
+    #（活跃对话消息仍由顶层 chatMessages 携带；切会话走按会话拉消息接口）
+    for conv in snap.get("conversations") or []:
+        if isinstance(conv, dict):
+            conv.pop("messages", None)
+    return snap
+
+
+def build_frontend_view(raw_state: Dict[str, Any]) -> Dict[str, Any]:
+    """前端使用的 camelCase JSON 视图（Pydantic 校验后序列化；
+    校验失败降级为 raw dict 直出）。"""
+    try:
+        ps = ProjectState.model_validate(raw_state)
+        return ps.model_dump(by_alias=True, mode="json")
+    except Exception:
+        return dict(raw_state)
 
 
 def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:

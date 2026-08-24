@@ -9,12 +9,15 @@ Agent Chat Service — 聊天业务编排（从 routes/agent.py 抽离）。
 拆分（修复计划书 -6）：
 - 多模态内容构建 → multimodal_builder.py
 routes/agent.py 仅保留路由定义和请求/响应模型。
+
+错误翻译域（任务 25 P7-4，WARN 线清偿）切出至 web/chat_errors.py；
+本文件尾部留承重壳 re-export（coupling_registry R13 登记），
+既有引用与测试 patch 目标不变，错误语义零变更。
 """
 import asyncio
-import re
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
@@ -56,7 +59,6 @@ from src.video_agent.core.sse_events import (
 from src.video_agent.core.stop_signal import is_stop_requested
 from src.video_agent.web.stop_manager import (
     persist_stop_trace,
-    retry_suggestion_if_user,
     snapshot_inflight_generations,
     stopped_event,
 )
@@ -250,10 +252,10 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
 
 
 async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", wiz_doc: str = "", stop_scope: str = "chat") -> None:
-    """真实供应商的流式处理（含模型 fallback 链）。
+    """真实供应商的流式处理（单一候选：选什么用什么，联不通直接报错）。
 
-    主模型遇 5xx/超时等瞬时故障且尚未执行任何操作时，自动切换备用模型重试
-    （避免重复执行已落盘的操作）；成功时 done payload 携带 fallback_model 供前端标注。
+    聊天模型 fallback 链已退役（用户裁决 2026-08-20）；生图/生视频 fallback
+    属独立机制（generation.py），不在本裁决范围。
     pending_injector：轮间引导注入器，经 PlannerContext 传入循环。
     stop_scope：协作式停止标志作用域（任务 #17），透传 PlannerContext → agent_loop 检查点。
     """
@@ -268,7 +270,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
     turn_id = uuid.uuid4().hex[:12]
     _wiz_card_live = ""
 
-    # 短锁：绑定附件 + 附件文档存档 + 记录用户消息（仅一次，不随 fallback 重复）；
+    # 短锁：绑定附件 + 附件文档存档 + 记录用户消息（仅一次）；
     # 状态 JSON 改为惰性构建器：多步循环每一轮重新构建，模型每轮看到最新状态
     async with svc.lock:
         if use_studio_context:
@@ -307,8 +309,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
     # 用户裁决：模型选择权归用户——
     # 选什么用什么，联不通直接报错，不自动换厂商 fallback
     candidates = [(body.provider, body.model)]
-    # 会话级 compaction（恢复；：预热后台——便宜模型摘要与
-    # fallback 候选的 adapter 创建/端点解析并行，首 token 不被摘要往返阻塞；
+    # 会话级 compaction（恢复；：预热后台——便宜模型摘要的
+    # adapter 创建/端点解析并行，首 token 不被摘要往返阻塞；
     # 命中缓存时任务即刻完成，语义与同步等待完全一致）
     summary_adapter = _resolve_summary_adapter(body, candidates)
     _compact_task = asyncio.create_task(_maybe_compact_history(history, svc, summary_adapter))
@@ -409,7 +411,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                     final_payload = event.payload or {}
                     final_text = final_payload.get("text", "")
                 elif event.type == "error":
-                    # 透传上游结构化故障标记（-2）：保证 fallback 链判定不依赖文案
+                    # 透传上游结构化故障标记（-2）：保证故障判定不依赖文案
                     p = event.payload or {}
                     raise AdapterError(
                         event.text,
@@ -489,84 +491,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         return
 
 
-async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: bool) -> None:
-    """流式失败统一出口：持久化错误消息 + 发 error 事件。
-
-    ：错误分层——气泡只展示一句人话（friendly），
-    上游原始报文（raw）随 errorDetail 持久化 + payload raw 下发，前端折叠展示。
-    """
-    friendly, raw = _friendly_stream_error(e)
-    # 任务 #19：结构化归类（kind/code）随事件下发，前端按映射表做动作，不再猜文案
-    payload = classify_exception(e, message=friendly, raw=raw)
-    if use_studio_context:
-        async with svc.lock:
-            # 错误前缀统一为 ⚠️（与前端 streamError 渲染一致，刷新后不跳变）；
-            # 「继续刚才的任务」建议随错误消息落盘（任务 #16，刷新后可重建）
-            svc.add_chat_message(
-                "agent", f"⚠️ {friendly}", model_name=body.model or "",
-                error_detail=raw,
-                suggested_actions=retry_suggestion_if_user(svc),
-            )
-    await emit({
-        "type": SSE_ERROR, "detail": friendly, "raw": raw,
-        "error_code": getattr(e, "error_code", "INTERNAL_ERROR"),
-        **payload.sse_fields(),
-    })
-
-
-def _friendly_stream_error(e: Exception) -> Tuple[str, str]:
-    """上游错误人话翻译（反馈：裸 JSON 报错看不懂）。
-
-    返回 (friendly, raw)：friendly = 一句可操作的人话；
-    raw = 上游原始报文（未命中翻译时为空串，前端不渲染技术详情折叠）。
-    """
-    msg = str(e)
-    if "insufficient_user_quota" in msg or "预扣费" in msg:
-        m_remain = re.search(r"剩余额度[:：]\s*＄?\$?([\d.]+)", msg)
-        m_need = re.search(r"需要预扣费额度[:：]\s*＄?\$?([\d.]+)", msg)
-        detail = ""
-        if m_remain and m_need:
-            detail = f"（账户剩余 ${m_remain.group(1)}，本次需预扣 ${m_need.group(1)}）"
-        return (
-            f"上游供应商账户额度不足{detail}，无法预扣本次调用费用——这不是上下文超限。"
-            "上下文越长预扣越高，故常在任务后半程触发。"
-            "请为上游账户充值，或在 API 设置页切换其他供应商/模型后重试。",
-            msg,
-        )
-    status = getattr(e, "http_status", None)
-    # 中继拒收通知单（slow 队列等）优先翻译——须在 401/403 鉴权分支前，
-    # 否则 403 被误译为「Key 过期」；裁决：不自动换模型，只提示手动
-    low = msg.lower()
-    if "10605" in msg or "queuetype" in low or "中继拒收通知单" in msg:
-        return (
-            "上游排队拒收（slow 队列瞬时不接客）：非 Key 或上下文问题。"
-            "请稍后重试；如需可在选择器手动切换其他模型号再发。",
-            msg,
-        )
-    if status in (401, 403):
-        return (
-            f"鉴权失败（HTTP {status}）：API Key 未配置、已过期或不正确。"
-            "请到 API 设置页检查对应供应商的 Key 后重试。",
-            msg,
-        )
-    if status == 429:
-        return (
-            "上游供应商限流或配额不足（HTTP 429）。请稍后重试，或切换其他供应商/模型。",
-            msg,
-        )
-    if isinstance(status, int) and 500 <= status < 600:
-        return (
-            f"上游供应商瞬时故障（HTTP {status}）。请稍后重试；"
-            "如需可在选择器手动切换其他供应商/模型。",
-            msg,
-        )
-    low = msg.lower()
-    if "timeout" in low or "timed out" in low or "connect" in low:
-        return (
-            "上游供应商连接超时或失败。请检查网络，或切换其他供应商/模型后重试。",
-            msg,
-        )
-    return msg, ""
+# 错误翻译域实现体在 chat_errors.py（任务 25 P7-4）：_emit_stream_error /
+# _friendly_stream_error 经尾部 re-export 保持既有引用不变
 
 
 async def non_stream_worker(body: Any) -> Dict[str, Any]:
@@ -826,4 +752,13 @@ from src.video_agent.web.chat_consume import (
     _finalize_spec_params,
     _maybe_compact_history,
     consume_pause_response,
+)
+# 错误翻译域承重壳（实现体 chat_errors.py，任务 25 P7-4）：消费方为
+# _real_stream 内部调用与 tests（test_error_payload/test_relay_error_envelope/
+# test_truncate_resend 经 chat_service.* 导入），迁移需全量改引用；
+# 清偿属性（R14）：公开错误出口门面，测试钉死 chat_service 命名空间，
+# 长期承重，不设近期清偿轮次
+from src.video_agent.web.chat_errors import (
+    _emit_stream_error,
+    _friendly_stream_error,
 )

@@ -9,6 +9,12 @@ StateManager — Rule3: 唯一状态写入点。支持多项目。
 向后兼容：
 - CLI 路径（agent.py）通过 .state 属性获取 Pydantic 模型
 - Web 路径通过 .state_dict 获取 raw dict，供 Tool/Route 直接操作
+
+拆分清偿（P7-1，行数棘轮 >900 清零）：对话域/落盘闸/快照组装实现体分别切出至
+conversation_ops / save_ops / context_builder；本文件保留 StateManager 类本体
+与承重壳委托（壳清单登记于 coupling_registry R13），公开 API 零变化。
+清偿属性登记（R14）：方法壳为 StateManager 公开 API 门面，长期承重，
+不设近期清偿轮次；测试 monkeypatch 目标应为壳方法（调用方经实例方法查找）。
 """
 import asyncio
 import json
@@ -21,7 +27,6 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from src.video_agent.utils.paths import WORKSPACE_DIR, DATA_DIR
-from src.video_agent.utils import gen_id
 from src.video_agent.exceptions import StateError
 
 from .models import ProjectState, CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
@@ -29,9 +34,13 @@ from .models_pipeline import TaskStatus, AssetState, AssetStatus
 from .repository import StateRepository
 from .repository_sqlite import SqliteStateRepository
 from .project_manager import ProjectManager
-from .context_builder import build_agent_context as _build_context
+from .context_builder import (
+    build_agent_context as _build_context,
+    build_frontend_view as _build_frontend_view,
+    build_full_snapshot as _build_full_snapshot,
+)
 from .undo_redo import UndoRedoMixin
-from . import chat_tail_ops
+from . import chat_tail_ops, conversation_ops, save_ops
 
 # 后台 Agent 任务的按任务隔离实例：worker 上下文内 get_instance
 # 返回任务专属 StateManager，切项目/刷新不串写（根因：旧状态覆盖新项目）。
@@ -45,12 +54,8 @@ DEFAULT_WORKSPACE_DIR = WORKSPACE_DIR
 # 默认 demo 数据（首次启动时使用，从 data/demo_state.json 加载）
 _DEMO_STATE_FILE = DATA_DIR / "demo_state.json"
 
-# 聊天记录保留上限（超出后截断最旧的消息）
-_CHAT_HISTORY_LIMIT = 200
-
-# 落盘防抖窗口（秒）：合并短窗口内的多次变更统一写一次盘，
-# 避免 add_chat_message / Agent 动作等高频路径全量双写阻塞事件循环
-_SAVE_DEBOUNCE_SECONDS = 0.3
+# 聊天记录保留上限与落盘防抖窗口随实现体切出（conversation_ops.CHAT_HISTORY_LIMIT /
+# save_ops._SAVE_DEBOUNCE_SECONDS），本文件不再持有副本。
 
 
 def _load_default_state() -> Dict[str, Any]:
@@ -316,29 +321,13 @@ class StateManager(UndoRedoMixin):
         return s
 
     def to_frontend_dict(self) -> Dict[str, Any]:
-        """返回前端使用的 camelCase JSON 视图（Pydantic 校验后序列化）。"""
-        try:
-            ps = ProjectState.model_validate(self._raw_state)
-            return ps.model_dump(by_alias=True, mode="json")
-        except Exception:
-            return dict(self._raw_state)
+        """返回前端使用的 camelCase JSON 视图（实现见 context_builder.build_frontend_view）。"""
+        return _build_frontend_view(self._raw_state)
 
     def get_full_snapshot(self) -> Dict[str, Any]:
-        """返回完整状态快照（供前端刷新/SSE done payload）。
-
-         修复：返回深拷贝（json round-trip），调用方可任意使用不会回写
-        污染内部状态；旧版浅拷贝共享嵌套引用的契约仅靠注释约束，过于脆弱。
-        快照仅在聊天完成/mock 路径低频调用，序列化开销可接受。
-        """
-        snap = json.loads(json.dumps(self._raw_state, ensure_ascii=False))
-        # 乐观锁版本号随快照下发（不写入状态 JSON 本体，避免污染 undo/快照）
-        snap["board_version"] = self.board_version
-        # E-2 消息单一来源：快照中对话只留元信息，消息副本不再随快照下发
-        #（活跃对话消息仍由顶层 chatMessages 携带；切会话走按会话拉消息接口）
-        for conv in snap.get("conversations") or []:
-            if isinstance(conv, dict):
-                conv.pop("messages", None)
-        return snap
+        """返回完整状态快照（供前端刷新/SSE done payload）：
+        契约与实现见 context_builder.build_full_snapshot（深拷贝，调用方可任意使用）。"""
+        return _build_full_snapshot(self._raw_state, self.board_version)
 
     # ====== 写入（Rule3: 唯一写入点） ======
 
@@ -405,158 +394,39 @@ class StateManager(UndoRedoMixin):
             self._context_cache.clear()
 
     def save(self) -> bool:
-        """持久化：写入当前项目 + 更新 index 时间戳（经 repo 接口；
-        sqlite 后端下唯一落盘点为 state.sqlite3，JSON 镜像已退役，
-        save_compat 在 sqlite 仓库为空实现）
+        """持久化（版本账本闸主通路）：契约与实现见 save_ops.save。
 
         返回是否真正落盘：版本闸放弃写入时返回 False（调用方据此判冲突，
         破坏性写入路径不得静默放行）。
-
-        版本账本闸（任务级隔离后全局单例在任务期间不刷新，
-        切换/保存若用过期内存回写会抹掉后台任务的新数据）：磁盘账本比
-        本实例已知号新 → 别的实例已写更新，放弃本次写入，防旧实例盖新实例。
         """
-        pid = self._active_project_id
-        try:
-            index = self._repo.read_index()
-            disk_v = 0
-            for p in index.get("projects", []):
-                if p["id"] == pid:
-                    try:
-                        disk_v = int(p.get("board_version") or 0)
-                    except (TypeError, ValueError):
-                        disk_v = 0
-                    break
-            if self._known_version is not None and disk_v > self._known_version:
-                logger.warning(
-                    f"[StateManager] 放弃过期写入：项目 {pid} 磁盘账本 {disk_v} "
-                    f"新于本实例已知 {self._known_version}（别的实例写过更新数据）"
-                )
-                self._known_version = disk_v
-                return False
-            self._repo.save_project(pid, self._raw_state)
-            self._repo.save_compat(self._raw_state)
-            # 版号 +1 并随索引落盘（重启继承；读取/加载不触发递增）；
-            # 取磁盘与进程内账本的较大者，保证两本不分裂（9 项目乐观锁契约）
-            v = max(disk_v, StateManager._board_versions.get(pid, 0)) + 1
-            for p in index.get("projects", []):
-                if p["id"] == pid:
-                    p["updated_at"] = StateRepository.now_iso()
-                    StateManager._board_versions[p["id"]] = v
-                    p["board_version"] = v
-                    break
-            self._repo.write_index(index)
-            self._known_version = v
-            # 状态变更时失效上下文缓存
-            self._context_cache.clear()
-            logger.debug("[StateManager] Saved")
-            return True
-        except Exception as e:
-            logger.error(f"[StateManager] Save failed: {e}")
-            raise StateError(f"状态持久化失败: {e}") from e
+        return save_ops.save(self)
 
     def _disk_board_version(self, project_id: str) -> int:
-        """索引落盘的项目版本号（读不到为 0）。"""
-        try:
-            index = self._repo.read_index()
-            for p in index.get("projects", []):
-                if p["id"] == project_id:
-                    return int(p.get("board_version") or 0)
-        except (TypeError, ValueError) as _e:
-            logger.debug("[manager] 忽略异常: {}", _e)
-        return 0
+        """索引落盘的项目版本号（实现见 save_ops.disk_board_version）。"""
+        return save_ops.disk_board_version(self, project_id)
 
     def reload_if_stale(self) -> bool:
-        """磁盘账本比本实例已知号新（别的实例——如后台任务专属实例——写过
-        更新数据）时，从磁盘重载活跃项目状态，保证只读路径（context-usage
-        等）不返回陈旧值。返回是否重载。
-
-        本实例尚有防抖挂起写（_save_dirty）时跳过，避免冲掉未落盘的本地变更。
-        """
-        if self._save_dirty:
-            return False
-        pid = self._active_project_id
-        if not pid:
-            return False
-        disk_v = self._disk_board_version(pid)
-        if self._known_version is not None and disk_v <= self._known_version:
-            return False
-        loaded = self._repo.load_project(pid)
-        if loaded is None:
-            return False
-        self._raw_state = loaded
-        self._known_version = disk_v
-        self._state_dirty = True
-        self._context_cache.clear()
-        self._clear_undo_redo()
-        self._ensure_conversations()
-        return True
+        """磁盘账本新于本实例已知号时从磁盘重载（实现见 save_ops.reload_if_stale）。"""
+        return save_ops.reload_if_stale(self)
 
     @property
     def board_version(self) -> int:
-        """当前项目版本号（同项目所有实例共享一本账，重启从落盘继承）。"""
-        pid = self._active_project_id
-        if pid in StateManager._board_versions:
-            return StateManager._board_versions[pid]
-        try:
-            index = self._repo.read_index()
-            v = int(next(
-                (p.get("board_version") for p in index.get("projects", [])
-                 if p.get("id") == pid),
-                0,
-            ) or 0)
-        except (TypeError, ValueError):
-            v = 0
-        StateManager._board_versions[pid] = v
-        return v
+        """当前项目版本号（同项目所有实例共享一本账；实现见 save_ops.board_version）。"""
+        return save_ops.board_version(self)
 
     # save_state 兼容别名已清偿（全仓零调用方）
 
     async def save_async(self) -> bool:
-        """异步立即落盘：写盘移 worker 线程，避免在 async 链路中阻塞事件循环。
-
-        用于路由层显式保存（用户编辑保存等需要即时持久性保证的路径）。
-        返回是否真正落盘（同 save）。
-        """
-        return await asyncio.to_thread(self.save)
+        """异步立即落盘：写盘移 worker 线程（实现见 save_ops.save_async）。"""
+        return await save_ops.save_async(self)
 
     def save_debounced(self) -> None:
-        """防抖落盘：合并 300ms 窗口内的多次变更，统一写一次盘（写盘移 worker 线程）。
-
-        用于 add_chat_message / Agent 动作执行等高频路径。
-        无运行中事件循环时（CLI / 同步测试路径）退化为立即同步落盘，保证持久性语义。
-        """
-        self._save_dirty = True
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self._save_dirty = False
-            self.save()
-            return
-        if self._save_flush_task is None or self._save_flush_task.done():
-            self._save_flush_task = loop.create_task(self._debounced_flush())
-
-    async def _debounced_flush(self) -> None:
-        """防抖任务：窗口过后把脏状态一次性落盘（失败仅记录，下次变更会再触发）"""
-        try:
-            await asyncio.sleep(_SAVE_DEBOUNCE_SECONDS)
-            if self._save_dirty:
-                self._save_dirty = False
-                await asyncio.to_thread(self.save)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.error(f"[StateManager] 防抖落盘失败: {e}")
+        """防抖落盘：合并短窗口变更统一写一次盘（实现见 save_ops.save_debounced）。"""
+        save_ops.save_debounced(self)
 
     def flush_save(self) -> None:
-        """立即冲刷防抖落盘的挂起变更（服务关闭 / 需要持久性保证时调用）"""
-        was_dirty = self._save_dirty
-        self._save_dirty = False
-        if self._save_flush_task is not None and not self._save_flush_task.done():
-            self._save_flush_task.cancel()
-        self._save_flush_task = None
-        if was_dirty:
-            self.save()
+        """立即冲刷防抖落盘的挂起变更（实现见 save_ops.flush_save）。"""
+        save_ops.flush_save(self)
 
     def initialize_project(self, project_id: str, user_goal: str, project_name: str = "New Project") -> ProjectState:
         """初始化一个空项目（CLI 路径向后兼容）。"""
@@ -626,108 +496,39 @@ class StateManager(UndoRedoMixin):
     def get_chat_messages(self) -> List[Dict]:
         return self._raw_state.get("chatMessages", [])
 
-    # ====== 多对话管理（同一项目多个对话窗口） ======
+    # ====== 多对话管理（委托给 conversation_ops） ======
 
     def _ensure_conversations(self) -> List[Dict[str, Any]]:
-        """确保多对话结构存在并维护不变式：
-        chatMessages 始终是活跃对话 messages 的同一引用，
-        使 add_chat_message / 快照等既有路径无需改动。
-        旧项目首次访问时把既有 chatMessages 迁入首个对话。
-        """
-        convs = self._raw_state.get("conversations")
-        if not isinstance(convs, list) or not convs:
-            convs = [{
-                "id": "conv-main",
-                "title": "会话 1",
-                "messages": self._raw_state.get("chatMessages") or [],
-            }]
-            self._raw_state["conversations"] = convs
-            self._raw_state["activeConversationId"] = "conv-main"
-        active_id = self._raw_state.get("activeConversationId") or ""
-        active = next((c for c in convs if c.get("id") == active_id), None)
-        if active is None:
-            active = convs[0]
-            self._raw_state["activeConversationId"] = active["id"]
-        msgs = active.setdefault("messages", [])
-        if self._raw_state.get("chatMessages") is not msgs:
-            self._raw_state["chatMessages"] = msgs
-        return convs
-
-    def _conversations_payload(self) -> Dict[str, Any]:
-        """多对话完整响应（含全部消息，供前端切换时直接装载）"""
-        convs = self._ensure_conversations()
-        return {
-            "conversations": [
-                {"id": c.get("id", ""), "title": c.get("title", ""), "messages": c.get("messages", [])}
-                for c in convs
-            ],
-            "active_conversation_id": self._raw_state.get("activeConversationId", ""),
-        }
+        """确保多对话结构存在并维护 chatMessages 不变式
+        （实现见 conversation_ops.ensure_conversations）。"""
+        return conversation_ops.ensure_conversations(self)
 
     def list_conversations(self) -> Dict[str, Any]:
-        """列出当前项目的全部对话（含消息）+ 活跃对话 ID。
-
-        内部/兼容接口：HTTP 响应一律走 conversations_meta_payload（不含消息，
-        E-2 消息单一来源）；快照创建等后端内部路径仍可读本接口取活跃消息。
-        """
-        return self._conversations_payload()
+        """列出当前项目的全部对话（含消息）+ 活跃对话 ID
+        （实现见 conversation_ops.list_conversations）。"""
+        return conversation_ops.list_conversations(self)
 
     def conversations_meta_payload(self) -> Dict[str, Any]:
-        """多对话元信息响应（仅 id/title 等元信息，不含消息副本）。
-
-        E-2 消息单一来源：前端 convState 不再持有消息副本，
-        消息装载一律走 get_conversation_messages（GET /conversations/{id}/messages）。
-        """
-        payload = self._conversations_payload()
-        payload["conversations"] = [
-            {k: v for k, v in c.items() if k != "messages" and not str(k).startswith("_")}
-            for c in payload["conversations"]
-        ]
-        return payload
+        """多对话元信息响应（不含消息副本，E-2 消息单一来源；
+        实现见 conversation_ops.conversations_meta_payload）。"""
+        return conversation_ops.conversations_meta_payload(self)
 
     def get_conversation_messages(self, conversation_id: str) -> Optional[List[Dict[str, Any]]]:
-        """按会话 ID 取消息（消息单一来源装载接口）；会话不存在返回 None。"""
-        convs = self._ensure_conversations()
-        target = next((c for c in convs if c.get("id") == conversation_id), None)
-        if target is None:
-            return None
-        return list(target.get("messages") or [])
+        """按会话 ID 取消息（消息单一来源装载接口）；会话不存在返回 None
+        （实现见 conversation_ops.get_conversation_messages）。"""
+        return conversation_ops.get_conversation_messages(self, conversation_id)
 
     def create_conversation(self, title: str = "") -> Dict[str, Any]:
-        """新建对话并设为活跃（chatMessages 重新绑定到空列表）"""
-        convs = self._ensure_conversations()
-        cid = gen_id("conv")
-        conv = {"id": cid, "title": title.strip() or f"新会话 {len(convs) + 1}", "messages": []}
-        convs.append(conv)
-        self._raw_state["activeConversationId"] = cid
-        self._raw_state["chatMessages"] = conv["messages"]
-        self.save()
-        return self._conversations_payload()
+        """新建对话并设为活跃（实现见 conversation_ops.create_conversation）。"""
+        return conversation_ops.create_conversation(self, title)
 
     def switch_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        """切换活跃对话；不存在返回 None"""
-        convs = self._ensure_conversations()
-        target = next((c for c in convs if c.get("id") == conversation_id), None)
-        if target is None:
-            return None
-        self._raw_state["activeConversationId"] = conversation_id
-        self._raw_state["chatMessages"] = target.setdefault("messages", [])
-        self.save()
-        return self._conversations_payload()
+        """切换活跃对话；不存在返回 None（实现见 conversation_ops.switch_conversation）。"""
+        return conversation_ops.switch_conversation(self, conversation_id)
 
     def delete_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        """删除对话；仅剩一个时不允许删除；不存在返回 None"""
-        convs = self._ensure_conversations()
-        if len(convs) <= 1:
-            return None
-        target = next((c for c in convs if c.get("id") == conversation_id), None)
-        if target is None:
-            return None
-        convs.remove(target)
-        if self._raw_state.get("activeConversationId") == conversation_id:
-            return self.switch_conversation(convs[0]["id"])
-        self.save()
-        return self._conversations_payload()
+        """删除对话；仅剩一个时不允许删除（实现见 conversation_ops.delete_conversation）。"""
+        return conversation_ops.delete_conversation(self, conversation_id)
 
     def add_chat_message(
         self,
@@ -773,69 +574,16 @@ class StateManager(UndoRedoMixin):
         suggested_actions：建议动作按钮列表（每项 {kind,label,value}，如
         kind=retry「继续刚才的任务」），随错误/停止消息落盘，历史装载后前端
         按既有 suggestedActions 渲染规则重建（刷新不再丢失）。
+
+        实现体已切出：契约与实现见 conversation_ops.add_chat_message
+        （条目构建 build_chat_entry + 防抖落盘 + 截断保留上限）。
         """
-        self._ensure_conversations()
-        msgs = self._raw_state["chatMessages"]
-        # 产生时刻（epoch ms，任务 #17 W1）：随消息落盘，历史装载透传带回，
-        # 前端悬停工具条显示 HH:MM；存量旧消息无此字段则前端不显示时间
-        entry: Dict[str, Any] = {"sender": sender, "text": text, "ts": int(time.time() * 1000)}
-        if model_name:
-            entry["modelName"] = model_name
-        if image_urls:
-            entry["imageCard"] = {"image_urls": list(image_urls)}
-        if video_items:
-            items: List[Dict[str, Any]] = []
-            for it in video_items:
-                url = str((it or {}).get("url") or "")
-                if not url:
-                    continue
-                item: Dict[str, Any] = {"url": url}
-                if str((it or {}).get("name") or ""):
-                    item["name"] = str(it["name"])
-                if str((it or {}).get("thumb") or ""):
-                    item["thumb"] = str(it["thumb"])
-                items.append(item)
-            if items:
-                entry["videoCard"] = {"items": items}
-        if meta:
-            entry["meta"] = meta
-        if confirm:
-            entry["confirm"] = confirm
-        if applied_actions:
-            entry["appliedActions"] = applied_actions
-        if action_log:
-            entry["actionLog"] = list(action_log)
-        if doc_card:
-            entry["docCard"] = doc_card
-        if trace and trace.get("steps"):
-            entry["trace"] = trace
-        if doc_blocks:
-            entry["docBlocks"] = list(doc_blocks)
-        if skill_blocks:
-            entry["skillBlocks"] = list(skill_blocks)
-        if confirm_options:
-            entry["confirmOptions"] = list(confirm_options)
-        if turn_id:
-            entry["turnId"] = turn_id
-        if pause_id:
-            entry["pauseId"] = pause_id
-        if pause_answered:
-            entry["pauseAnsweredId"] = str(pause_answered.get("pause_id") or "")
-            entry["pauseAnsweredValue"] = str(pause_answered.get("value") or "")
-        if kind:
-            entry["kind"] = kind
-        if error_detail:
-            # 错误气泡的技术详情（上游原始报文），前端折叠展示
-            entry["errorDetail"] = error_detail
-        if suggested_actions:
-            # 建议动作按钮消毒（实现见 chat_tail_ops）
-            acts = chat_tail_ops.sanitize_suggested_actions(suggested_actions)
-            if acts:
-                entry["suggestedActions"] = acts
-        msgs.append(entry)
-        if len(msgs) > _CHAT_HISTORY_LIMIT:
-            del msgs[: len(msgs) - _CHAT_HISTORY_LIMIT]
-        self.save_debounced()
+        conversation_ops.add_chat_message(
+            self, sender, text, model_name, image_urls, meta, confirm,
+            applied_actions, action_log, doc_card, trace, doc_blocks,
+            skill_blocks, confirm_options, turn_id, error_detail, pause_id,
+            pause_answered, kind, video_items, suggested_actions,
+        )
 
     def truncate_chat_tail(self, keep_index: int, new_text: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """截断对话尾部（截断重答用）：契约与实现见 chat_tail_ops.truncate_chat_tail
