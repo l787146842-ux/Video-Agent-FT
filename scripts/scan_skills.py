@@ -10,7 +10,8 @@ P3-15 新增：frontmatter 声明（含 custom_sections）vs 文档实际章节�
 平台工具注册表（tools/manager.py 注册清单）且不在待补齐豁免清单时
 输出 WARN 清单（先诊断，不升门禁失败/不阻断退出码）。
 P1 整改（任务 #9）：--gate 追加内容卫生防回潮校验：frontmatter 剥离后
-正文再现 skill_name:/skill_description: 残留行或「最高/第一优先级」宣称即 FAIL。
+正文再现 skill_name:/skill_description: 残留行或「最高/第一优先级」宣称
+（词序无关，直连形态双向拦截）即 FAIL。
 """
 import re
 import sys
@@ -110,13 +111,16 @@ _PLACEHOLDER_RES = (
 # ============================================================
 _RESIDUE_META_RE = re.compile(
     r"^\s*(skill_name|skill_description)\s*:", re.M)
-_PRIORITY_CLAIM_RE = re.compile(r"最高优先级|第一优先级")
+# 优先级宣称检测（整改批 1.2 词序无关化）：直连形态双向拦截
+# （最高/第一优先级 与 优先级最高/优先级第一）。仅收紧连宣称，
+# 不拦带间隔的领域语句（如「参考图优先级为最高级别」），防误伤。
+_PRIORITY_CLAIM_RE = re.compile(r"(?:最高|第一)优先级|优先级(?:最高|第一)")
 
 
 def content_hygiene_issues(body: str) -> list:
     """正文卫生防回潮校验（frontmatter 剥离后的 body）：
     ① 出现 skill_name:/skill_description: 残留行（元数据双源回潮）；
-    ② 出现「最高优先级/第一优先级」宣称（应使用「强制基线」式正向表述）。
+    ② 出现「最高/第一优先级」宣称（词序无关；应使用「强制基线」式正向表述）。
     返回问题清单（空 = 通过）。"""
     issues = []
     for m in _RESIDUE_META_RE.finditer(body or ""):
