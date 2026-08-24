@@ -10,6 +10,10 @@ from pathlib import Path
 # 触发 loguru rotation rename 失败（WinError 32）。外部显式设置时从其值。
 os.environ.setdefault("LOG_FILE_ENABLED", "false")
 
+# P9：测试期关闭请求限流（0 = 不限流）——端点契约用例同进程内多次命中
+# /api/agent/chat 等受限端点，不应撞 10 req/min 令牌桶（生产默认不变）
+os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "0")
+
 # D-01：core 端口装配（测试侧装配点）——core 层经 core/ports.py 访问 web 层
 # 实现（生成管线/供应商配置/生成日志/Skill 文档），任何测试导入前完成注入。
 from src.video_agent.web.port_wiring import install_core_ports  # noqa: E402
@@ -58,15 +62,41 @@ def _test_skill_stubs(monkeypatch, _skill_mirror_dir):
 
 
 @pytest.fixture(autouse=True)
-def _state_backend_json():
-    """测试期状态后端钉 json（814E6：生产默认 sqlite，测试基线保持 json；
-    sqlite 行为由 test_repository_sqlite 直测覆盖）。"""
+def _state_backend_baseline():
+    """测试期状态后端基线（任务 #18 / P10 双维度守护）：
+    - STATE_BACKEND env 未显式设置 → 钉 json（814E6 既有基线，默认行为不变）；
+    - 显式设置（如 CI sqlite job 的 STATE_BACKEND=sqlite）→ 跟随 env，
+      让全量套件真正跑在该后端上，守护生产默认路径（sqlite）。
+    注意：env 须在进程启动前设置才影响 settings 单例初值；fixture 只负责
+    把运行期漂移钉回基线口径。"""
+    if os.environ.get("STATE_BACKEND"):
+        yield
+        return
+
     from src.video_agent.config import settings
 
     old = settings.state_backend
     object.__setattr__(settings, "state_backend", "json")
     yield
     object.__setattr__(settings, "state_backend", old)
+
+
+@pytest.fixture(autouse=True)
+def _state_singleton_isolation(tmp_path):
+    """任务 #18 / P10：StateManager 全局单例逐测试隔离到临时工作区。
+
+    根因：未绑定单例的代码路径（如 fc_tool_runner 的 PauseSlot 互斥检查）
+    经 get_instance() 惰性建实例时会落到真实 workspace/——sqlite 后端下
+    读到生产库中真实状态（如 active_pause），json 后端下则可能读/写生产
+    state.json；两者都是测试隔离缺陷。此夹具把单例钉到临时目录，
+    行为对两种后端一致；自带 tmp 夹具显式绑定单例的测试不受影响。
+    """
+    from src.video_agent.state.manager import StateManager
+
+    StateManager.reset_instance()
+    StateManager._instance = StateManager(str(tmp_path / "_singleton_ws"))
+    yield
+    StateManager.reset_instance()
 
 
 @pytest.fixture

@@ -1,6 +1,5 @@
 """P1-9 回归：防抖落盘合并 + flush_save 冲刷 + 同步上下文退化 + 聊天记录截断"""
 import asyncio
-import json
 
 import pytest
 
@@ -17,8 +16,9 @@ def svc(tmp_path):
 
 
 def _read_project_state(tmp_path, svc) -> dict:
-    state_file = tmp_path / "projects" / svc.active_project_id / "state.json"
-    return json.loads(state_file.read_text(encoding="utf-8"))
+    """任务 #18 / P10：落盘校验改经 repo 接口读回（后端无关：
+    json 读 state.json / sqlite 读唯一事实源），断言强度不变。"""
+    return svc._repo.load_project(svc.active_project_id)
 
 
 class TestSaveDebounce:

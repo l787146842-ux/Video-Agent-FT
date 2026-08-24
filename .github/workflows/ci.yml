@@ -52,9 +52,10 @@ jobs:
       - name: API contract check (OpenAPI -> TS types)
         run: python scripts/gen_api_types.py --check
 
-  # ---------- Job 1b: 后端测试（STATE_BACKEND=sqlite 显式维度，任务 #11） ----------
-  # sqlite 虽是默认后端（P3-16 翻转），此 job 显式钉死环境变量，
-  # 防默认值未来漂移时 CI 静默改口径；与矩阵 job 同套件、单 Python 版本控成本。
+  # ---------- Job 1b: 后端测试（STATE_BACKEND=sqlite 显式维度，任务 #11 建 / 任务 #18 激活） ----------
+  # 与主 pytest job 平行，守护生产默认路径（settings.state_backend 默认 sqlite）：
+  # conftest 基线夹具在 STATE_BACKEND 显式设置时跟随 env（任务 #18 / P10 修正，
+  # 此前无条件钉 json 使本 job 名存实亡），全量套件真实跑在 sqlite 后端上。
   backend-test-sqlite:
     runs-on: ubuntu-latest
     env:
