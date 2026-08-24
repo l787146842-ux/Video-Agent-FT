@@ -46,6 +46,12 @@ class _TraceContextState:
     pending_subs: List[Dict[str, Any]] = field(default_factory=list)
     # 轮前机械动作缓冲（先于 start_trace，start_trace 时收养进当轮时间线）
     pre_actions: List[Dict[str, Any]] = field(default_factory=list)
+    # 上下文治理事件（P4 降级事件化：truncate/degrade/compact/prune）——
+    # 内存采集、end_trace 随 step 落盘；热路径零磁盘 IO。
+    # pending 不在 start_step 重置（跨步累积，end_step 归档）；
+    # pre_* 缓冲轮前事件（如 compaction 先于 start_trace），随 start_trace 收养
+    pending_context_events: List[Dict[str, Any]] = field(default_factory=list)
+    pre_context_events: List[Dict[str, Any]] = field(default_factory=list)
 
 
 # 每任务上下文独立持有追踪态；未显式绑定时 _ctx() 惰性建档
@@ -68,6 +74,8 @@ class StepTrace:
     gates: List[Dict[str, Any]] = field(default_factory=list)
     # 本轮轮末卡片仲裁明细（候选策略/胜出者），供 /api/agent/traces 审计
     card_decisions: List[Dict[str, Any]] = field(default_factory=list)
+    # 本轮上下文治理事件（P4：truncate/degrade/compact/prune，无则不落盘省体积）
+    context_events: List[Dict[str, Any]] = field(default_factory=list)
     # 本轮 reasoning（深度思考）文本摘要（截断后）
     reasoning: str = ""
 
@@ -85,6 +93,23 @@ class TraceRecord:
     llm_calls: int = 0  # 本 trace 含模型调用次数（成本看板口径用）
 
     def to_dict(self) -> Dict[str, Any]:
+        steps: List[Dict[str, Any]] = []
+        for s in self.steps:
+            sd = {
+                "step": s.step,
+                "timing_ms": round(s.timing_ms, 1),
+                "token_usage": s.token_usage,
+                "actions_applied": s.actions_applied,
+                "finish_reason": s.finish_reason,
+                "actions": s.actions,
+                "gates": s.gates,
+                "card_decisions": s.card_decisions,
+                "reasoning": s.reasoning,
+            }
+            # 无事件不写键：历史 trace 格式不变，单条体积不增
+            if s.context_events:
+                sd["context_events"] = s.context_events
+            steps.append(sd)
         return {
             "trace_id": self.trace_id,
             "timestamp": self.timestamp,
@@ -93,20 +118,7 @@ class TraceRecord:
             "user_message_preview": self.user_message_preview,
             "user_id": self.user_id,
             "llm_calls": self.llm_calls,
-            "steps": [
-                {
-                    "step": s.step,
-                    "timing_ms": round(s.timing_ms, 1),
-                    "token_usage": s.token_usage,
-                    "actions_applied": s.actions_applied,
-                    "finish_reason": s.finish_reason,
-                    "actions": s.actions,
-                    "gates": s.gates,
-                    "card_decisions": s.card_decisions,
-                    "reasoning": s.reasoning,
-                }
-                for s in self.steps
-            ],
+            "steps": steps,
         }
 
 
@@ -180,6 +192,10 @@ class AgentTracer:
             # 轮前机械动作收养（向导机械写文档等）：完成态/运行态同一条目
             ctx.pre_actions = list(inherited.pre_actions)
             inherited.pre_actions = []
+        if inherited is not None and inherited.pre_context_events:
+            # 轮前上下文事件收养（compaction 先于 start_trace 等）
+            ctx.pre_context_events = list(inherited.pre_context_events)
+            inherited.pre_context_events = []
         _trace_ctx_var.set(ctx)
         trace_id = uuid.uuid4().hex[:12]
         ctx.current = TraceRecord(
@@ -194,6 +210,10 @@ class AgentTracer:
         if ctx.pre_actions:
             ctx.pending_actions.extend(ctx.pre_actions)
             ctx.pre_actions = []
+        # 轮前上下文事件收养进本轮 pending（随首个 end_step 归档落盘）
+        if ctx.pre_context_events:
+            ctx.pending_context_events = list(ctx.pre_context_events)
+            ctx.pre_context_events = []
         # 执行器子步骤缓冲：子步骤先于父工具完成时暂存，
         # 待父工具 record_action 时挂到父条目之后（持久化顺序 = live 顺序）
         return trace_id
@@ -355,6 +375,30 @@ class AgentTracer:
             "winner": str(winner or ""),
         })
 
+    def record_context_event(self, kind: str, detail: str = "") -> None:
+        """（P4 降级事件化）记录一次上下文治理事件：
+        kind ∈ truncate（轮组截断）/ degrade（system 降级保险丝）/
+        compact（会话 compaction）/ prune（回喂剪枝）。
+
+        只内存采集（当前 trace 在场入 pending，否则入轮前缓冲待
+        start_trace 收养），随 end_trace 落盘——截断热路径零磁盘 IO。
+        失败仅 log，绝不干扰主链路。"""
+        try:
+            if kind not in ("truncate", "degrade", "compact", "prune"):
+                return
+            entry = {
+                "ts": time.time(),
+                "kind": kind,
+                "detail": str(detail or "")[:200],
+            }
+            ctx = self._ctx()
+            if ctx.current is None:
+                ctx.pre_context_events.append(entry)
+            else:
+                ctx.pending_context_events.append(entry)
+        except Exception as e:
+            logger.debug(f"[Tracer] context event 记录失败（忽略）: {e}")
+
     def record_fallback(self, provider: str, model: str) -> None:
         """：记录一次模型降级切换（fallback 频率指标；内存滚动保留）。"""
         self._fallback_events.append({
@@ -429,11 +473,13 @@ class AgentTracer:
             gates=list(ctx.pending_gates),
             card_decisions=list(ctx.pending_cards),
             reasoning=reasoning,
+            context_events=list(ctx.pending_context_events),
         ))
         ctx.pending_actions = []
         ctx.pending_gates = []
         ctx.pending_cards = []
         ctx.pending_reasoning = []
+        ctx.pending_context_events = []
 
     def finish_trace(self, total_actions: int = 0) -> Dict[str, Any]:
         """完成追踪并存入历史，返回本次 trace 的 dict（供 done payload 下发前端展示）"""

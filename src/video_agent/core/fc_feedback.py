@@ -11,6 +11,7 @@ import re
 from typing import Any, Dict, List, Union
 
 from src.video_agent.config import settings
+from src.video_agent.core.context_prune import prune_tool_feedback
 from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.utils.prompts import load_prompt_section
 
@@ -208,6 +209,9 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
             # （一句话总结只报「执行成功」被模型吞掉）
             data = tr.get("data") or {}
             detail = str(data.get("detail") or "").strip()
+            # 上下文剪枝（P4）：只剪回喂进 history 的副本，白名单起步
+            # （生成类大返回）；写类工具不在白名单，其回喂行归 digest 杠杆管
+            detail = prune_tool_feedback(name, detail)
             if detail and total + len(detail) <= FEEDBACK_MAX_TOTAL_CHARS:
                 total += len(detail)
                 lines.append(f"- {name}：执行成功，{detail}")
@@ -216,6 +220,9 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
             continue
         data = tr.get("data") or {}
         body = render_read_result(name, data)
+        # 上下文剪枝（P4）：read_* 全文回喂超阈保留头尾、中段换 PRUNE 标记行
+        # （start= 续读兜底）；只剪回喂副本，工具原始返回/state/产物文件不动
+        body = prune_tool_feedback(name, body)
         if total + len(body) > FEEDBACK_MAX_TOTAL_CHARS:
             lines.append(f"- {name}：执行成功（全文因总量超限未附，请勿重复读取，按已有信息继续）")
             continue

@@ -16,6 +16,7 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core.ports import provider_config_port
+from src.video_agent.core.tracer import AgentTracer
 
 # tiktoken 为可选依赖：装了走精确估算，没装回退启发式（功能不中断）
 try:
@@ -146,6 +147,15 @@ def estimate_messages_tokens(messages: List[Dict[str, Any]]) -> int:
     return total
 
 
+def _record_context_event(kind: str, detail: str) -> None:
+    """（P4 降级事件化）截断/降级命中记入 tracer 上下文事件流；
+    失败仅 log，绝不干扰截断主链（截断本身是保底路径）。"""
+    try:
+        AgentTracer.get_instance().record_context_event(kind, detail)
+    except Exception as e:
+        logger.debug(f"[TokenBudget] context event 记录失败（忽略）: {e}")
+
+
 def _is_real_user_msg(msg: Dict[str, Any]) -> bool:
     """判定 user 消息是否为用户真实输入（与系统合成的回喂/注入相对）。
 
@@ -224,6 +234,12 @@ def truncate_messages(
             f"[TokenBudget] 消息截断: {current_tokens} -> {total} tokens "
             f"({len(messages)} -> {len(result)} 条)"
         )
+        if len(result) < len(messages):
+            _record_context_event(
+                "truncate",
+                f"轮组截断 {current_tokens}->{total} tokens，"
+                f"{len(messages)}->{len(result)} 条（保留首条+最近 {keep_recent} 条）",
+            )
 
     # 第二道保险丝：历史已删到保护边界仍超预算 → 首条 system 自身过大
     # （状态 JSON 大 + Skill 全文注入的场景），用降级器重建 system 段
@@ -235,6 +251,10 @@ def truncate_messages(
             logger.warning(
                 f"[TokenBudget] system 段超预算，已降级重建: {total} -> {new_total} tokens "
                 f"(预算 {max_tokens})"
+            )
+            _record_context_event(
+                "degrade",
+                f"system 段降级重建 {total}->{new_total} tokens（预算 {max_tokens}）",
             )
             total = new_total
     if total > max_tokens:

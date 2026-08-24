@@ -104,6 +104,13 @@ async def _maybe_compact_history(
         logger.info(
             f"[ChatService] 会话 compaction（{'token' if over_tokens else '条数'}触发）："
             f"{len(history)} 条 history 压缩为摘要+{keep} 条")
+    # 降级事件化（P4）：compaction 成功命中记入上下文事件流（旁路
+    # 失败路径的 live_metrics.record_degradation，不重复）；失败仅 log 不干扰主链
+    try:
+        AgentTracer.get_instance().record_context_event(
+            "compact", f"会话 compaction：{len(history)} 条 -> 摘要+{_HISTORY_COMPACT_KEEP} 条")
+    except Exception as _e:
+        logger.debug("[ChatService] compact 事件记录失败（忽略）: {}", _e)
     return [
         {"role": "user", "content": f"（会话摘要，较早对话已压缩；工作台状态 JSON 仍是最新事实源）{summary}"},
     ] + history[-_HISTORY_COMPACT_KEEP:]

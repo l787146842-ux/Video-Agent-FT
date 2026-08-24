@@ -100,6 +100,15 @@ class Settings:
     # 超过该字符数即替换为「摘要 + 状态已在工作台 JSON」指针；只消化已投影结果，
     # 最近 2 轮回喂保留原文；=0 一键关闭（对标 Anthropic tool-result 消化杠杆）
     tool_result_digest_chars: int = field(default_factory=lambda: _env_int("TOOL_RESULT_DIGEST_CHARS", 200))
+    # 工具结果回喂剪枝（P4，默认开）：白名单工具（read_*/生成类）的回喂副本
+    # 超过该字符数即保留头尾、中段替换为 PRUNE 标记行（start= 续读兜底）；
+    # 只剪回喂进 history 的副本，工具原始返回/state/产物文件不动；
+    # =0 一键整体关闭（回滚开关）。与 digest 杠杆职责互补（写类结果归 digest 管）
+    tool_result_prune_chars: int = field(default_factory=lambda: _env_int("TOOL_RESULT_PRUNE_CHARS", 6000))
+    # 剪枝保留的头部字符数（头部含文档标题/流程开头，约束密度高）
+    tool_result_prune_head: int = field(default_factory=lambda: _env_int("TOOL_RESULT_PRUNE_HEAD", 3000))
+    # 剪枝保留的尾部字符数（尾部含收尾约束/最近编辑位置）
+    tool_result_prune_tail: int = field(default_factory=lambda: _env_int("TOOL_RESULT_PRUNE_TAIL", 2000))
     # 会话级 compaction（恢复、 默认开）：history 条数达该阈值时用
     # 便宜模型把较早对话压成摘要+最近几条（0 = 关闭，仅靠 truncate_history 头尾截断）
     history_compact_threshold: int = field(default_factory=lambda: _env_int("HISTORY_COMPACT_THRESHOLD", 12))
