@@ -105,11 +105,51 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
     return result
 
 
+# 节点 → 客观探针键映射（整改批 3.1「账本无自报」）：completed_nodes 全量
+# 由 stage_done 探针重算；turn_commit 的自报 completed_node 降级为非权威
+# 提示——下次 sync 即被本重算覆盖，不再具有账本效力。
+# - collect_spec 与 write_spec 同证同源：规格文档在场即证明收集已发生；
+# - storyboard 三个结构节点用节点级探针（key_elements/shots_groups/
+#   audio_groups，运行时内部键，不可声明覆盖）；
+# - 两个评审节点的「已评审」客观证据 = 账本 DecisionResolved 事件
+#   （resolve_decision 提交），前置产物在场但未落账决议时不予完成
+#   （fail-closed：不因文档存在而跳过评审暂停）。
+_NODE_PROBE_KEYS = {
+    "analyze_script": "analysis",
+    "collect_spec": "spec",
+    "write_spec": "spec",
+}
+_NODE_STRUCTURE_KEYS = {
+    "storyboard_key_elements": "key_elements",
+    "storyboard_shots": "shots_groups",
+    "storyboard_audio": "audio_groups",
+}
+_REVIEW_NODES = ("review_spec", "review_key_elements")
+
+
+def _node_objectively_done(node_id: str, run: Dict[str, Any],
+                           state: Dict[str, Any], skill: str) -> bool:
+    """workflow_contract 单节点完成度客观判定（8/8 节点全覆盖）。"""
+    if node_id in _NODE_PROBE_KEYS:
+        return po.stage_done(_NODE_PROBE_KEYS[node_id], state, skill)
+    if node_id in _NODE_STRUCTURE_KEYS:
+        return po.stage_done(_NODE_STRUCTURE_KEYS[node_id], state, skill)
+    if node_id in _REVIEW_NODES:
+        prereq = "spec" if node_id == "review_spec" else "key_elements"
+        if not po.stage_done(prereq, state, skill):
+            return False
+        rid = str(run.get("run_id") or "")
+        return any(e.node_id == node_id and e.event_type == "DecisionResolved"
+                   for e in EventLedger(state).by_run(rid))
+    return False
+
+
 def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
-    """同步 WorkflowRun：定义变更重初始化；完成度按客观探针重算。
+    """同步 WorkflowRun：定义变更重初始化；完成度按客观探针全量重算。
 
     current_node = 阶段表首个未完成步；completed_nodes 只认 stage_done
-    （fail-closed）。run 块为 reducer 单一写入点。"""
+    探针与账本 DecisionResolved 事件（fail-closed），自报条目一律清偿。
+    run 块为 reducer 单一写入点。"""
     definition = compile_definition(skill)
     run = state.setdefault("workflow_run", {})
     if definition is None:
@@ -134,13 +174,14 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
                        ("run_version", 0), ("event_sequence", 0),
                        ("failure_state", None), ("created_at", now)):
         run.setdefault(key, copy.deepcopy(value))
-    completed = list(dict.fromkeys(str(x) for x in run.get("completed_nodes") or []))
-    if po.stage_done("analysis", state, skill) and "analyze_script" not in completed: completed.append("analyze_script")
-    if prompt_gates.has_spec_document(state) and "write_spec" not in completed: completed.append("write_spec")
-    run["completed_nodes"] = completed
-    if not run.get("current_node") or run.get("current_node") in completed:
+    # 账本无自报（整改批 3.1）：8/8 节点全量探针重算，覆盖任何历史自报条目
+    run["completed_nodes"] = [
+        n["node_id"] for n in definition["nodes"]
+        if _node_objectively_done(n["node_id"], run, state, skill)]
+    if not run.get("current_node") or run.get("current_node") in run["completed_nodes"]:
         for node in definition["nodes"]:
-            if node["node_id"] not in completed and all(x in completed for x in node.get("prerequisites") or []):
+            if node["node_id"] not in run["completed_nodes"] and all(
+                    x in run["completed_nodes"] for x in node.get("prerequisites") or []):
                 run["current_node"] = node["node_id"]; break
     if run.get("pending_decision"): run["status"] = "waiting_user"
     run["updated_at"] = now

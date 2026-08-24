@@ -102,6 +102,15 @@ def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
     audio = state.get(CAT_AUDIO_ITEMS) or []
     if key == "structure":
         return bool(ke) and bool(shots) and bool(audio)
+    # 节点级结构探针（整改批 3.1「账本无自报」）：workflow_contract 单节点
+    # 完成判定用。运行时内部键——frontmatter 声明白名单仍锁
+    # CANONICAL_STAGE_KEYS，这三键不可经 stages.<key>.done 声明覆盖。
+    if key == "key_elements":
+        return bool(ke)
+    if key == "shots_groups":
+        return bool(shots)
+    if key == "audio_groups":
+        return bool(audio)
     if key == "ke_media":
         return bool(ke) and _has_media(ke, "imgUrl")
     if key == "shot_media":
