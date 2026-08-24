@@ -1,7 +1,8 @@
-"""交错多模态内容构建：content_parts 保持文字↔媒体的排版对应关系
+﻿"""交错多模态内容构建：content_parts 保持文字↔媒体的排版对应关系
 
 P1-6 拆分后多模态构建逻辑位于 multimodal_builder 模块。
 """
+import src.video_agent.storage.media_urls as mu
 import src.video_agent.web.multimodal_builder as cs
 
 
@@ -17,7 +18,7 @@ def _fake_fetch(url: str):
 
 async def test_interleaved_text_image_order(monkeypatch):
     """文字-图片-文字按顺序交错，图片插在文字之间而非全部追加在末尾"""
-    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/a.png"))
+    monkeypatch.setattr(mu, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/a.png"))
     parts = [
         {"type": "text", "text": "请看"},
         {"type": "image", "url": "https://cdn/a.png", "name": "图A"},
@@ -47,7 +48,7 @@ async def test_video_audio_become_text_markers():
 
 async def test_video_with_poster_injects_frame_image(monkeypatch):
     """视频带首帧海报图时，除标记外额外注入 image_url，让模型「看到」画面"""
-    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/frame.png"))
+    monkeypatch.setattr(mu, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/frame.png"))
     parts = [
         {"type": "text", "text": "看这个"},
         {"type": "video", "url": "/workspace/v.mp4", "name": "分镜1", "thumb": "https://cdn/frame.png"},
@@ -75,7 +76,7 @@ async def test_trailing_note_appended():
 
 async def test_local_image_converted_to_data_uri(monkeypatch):
     """/workspace/ 本地图片转 base64 data URI 注入"""
-    monkeypatch.setattr(cs, "_read_image_data_uri", lambda url: "data:image/png;base64,AAA")
+    monkeypatch.setattr(mu, "read_image_data_uri", lambda url: "data:image/png;base64,AAA")
     parts = [{"type": "image", "url": "/workspace/assets/a.png", "name": "A"}]
     result = await cs._build_interleaved_content(parts)
     assert isinstance(result, list)
@@ -84,7 +85,7 @@ async def test_local_image_converted_to_data_uri(monkeypatch):
 
 async def test_build_multimodal_prefers_content_parts(monkeypatch):
     """build_multimodal_content 有 content_parts 时优先走交错路径"""
-    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/x.png"))
+    monkeypatch.setattr(mu, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/x.png"))
     parts = [
         {"type": "text", "text": "图"},
         {"type": "image", "url": "https://cdn/x.png", "name": "X"},
@@ -102,7 +103,7 @@ async def test_build_multimodal_fallback_without_parts():
 
 async def test_extra_bound_images_appended(monkeypatch):
     """已绑定素材图片追加到交错内容末尾（远程图服务端代下载后内联）"""
-    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/bound.png"))
+    monkeypatch.setattr(mu, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/bound.png"))
     parts = [{"type": "text", "text": "你好"}]
     result = await cs._build_interleaved_content(parts, "", ["https://cdn/bound.png"])
     assert isinstance(result, list)
@@ -112,7 +113,7 @@ async def test_extra_bound_images_appended(monkeypatch):
 
 async def test_build_multimodal_merges_bound_images(monkeypatch):
     """content_parts 路径仍注入 images 参数（已绑定素材），不丢失原有能力"""
-    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/bound.png"))
+    monkeypatch.setattr(mu, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/bound.png"))
     parts = [{"type": "text", "text": "你好"}]
     result = await cs.build_multimodal_content("x", [], ["https://cdn/bound.png"], parts)
     assert isinstance(result, list)
@@ -121,7 +122,7 @@ async def test_build_multimodal_merges_bound_images(monkeypatch):
 
 async def test_build_multimodal_dedupes_inline_and_bound(monkeypatch):
     """内联图片与已绑定素材重复时不重复注入"""
-    monkeypatch.setattr(cs, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/a.png"))
+    monkeypatch.setattr(mu, "fetch_remote_image_data_uri", _fake_fetch("https://cdn/a.png"))
     parts = [{"type": "image", "url": "https://cdn/a.png", "name": "A"}]
     result = await cs.build_multimodal_content("x", [], ["https://cdn/a.png"], parts)
     img_count = sum(1 for p in result if p.get("type") == "image_url")

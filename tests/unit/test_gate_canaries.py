@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""整改批 1.4：治理门禁 canary 制度化（acceptance.py GATES 14 道双向可失败性）。
+"""整改批 1.4：治理门禁 canary 制度化（acceptance.py GATES 全部道双向可失败性）。
 
 元教训：恒真基线/恒真门禁（永不失败）比缺门禁更危险——批次 1.1 的 scaffold
-与 FRONTEND_OVER_BASELINE 动态自算事故同构。本文件为 GATES 表全部 14 道门禁
+与 FRONTEND_OVER_BASELINE 动态自算事故同构。本文件为 GATES 表每道门禁
 各写「故意违规 → 非 0 + 干净语料 → 0」双向断言：违规侧证明门禁真的会咬人，
 干净侧证明不反噬。扫描面一律 monkeypatch 指向 tmp_path，不触碰真实仓库。
 
@@ -20,8 +20,8 @@ import pytest
 _EXPECTED_GATE_NAMES = [
     "contract", "prompt_budget", "file_lines", "file_lines_frontend",
     "semantic_colors", "func_imports", "governance_refs", "category_keys",
-    "legacy_orchestration", "doc_pointers", "scaffold_registry",
-    "cov_ratchet", "fe_cov_ratchet", "skill_tool_names",
+    "legacy_orchestration", "layer_imports", "doc_pointers",
+    "scaffold_registry", "cov_ratchet", "fe_cov_ratchet", "skill_tool_names",
 ]
 
 
@@ -238,8 +238,33 @@ def test_canary_legacy_orchestration_clean_passes(tmp_path, monkeypatch):
     assert gate.main() == 0
 
 
-# ---------- 10) doc_pointers ----------
+# ---------- 10) layer_imports（整改批 3.3：层间导入方向闸） ----------
 
+def test_canary_layer_imports_reverse_dependency_fails(tmp_path, monkeypatch):
+    import scripts.check_layer_imports as gate
+    pkg = tmp_path / "src" / "video_agent" / "tools"
+    pkg.mkdir(parents=True)
+    (pkg / "bad.py").write_text(
+        "from src.video_agent.web.skill_docs import list_skill_docs\n",
+        encoding="utf-8")
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    monkeypatch.setattr(gate, "SCAN_DIRS", ("src/video_agent/tools",))
+    assert gate.main() == 1
+
+
+def test_canary_layer_imports_clean_passes(tmp_path, monkeypatch):
+    import scripts.check_layer_imports as gate
+    pkg = tmp_path / "src" / "video_agent" / "tools"
+    pkg.mkdir(parents=True)
+    (pkg / "ok.py").write_text(
+        "from src.video_agent.storage.media_urls import resolve_injectable_url\n",
+        encoding="utf-8")
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    monkeypatch.setattr(gate, "SCAN_DIRS", ("src/video_agent/tools",))
+    assert gate.main() == 0
+
+
+# ---------- 11) doc_pointers ----------
 def _doc_pointers_scaffold(tmp_path, monkeypatch):
     import scripts.check_doc_pointers as gate
     pkg = tmp_path / "src" / "video_agent"

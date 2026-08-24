@@ -4,6 +4,10 @@ from pydantic import BaseModel, Field
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.core.generation_fallback import (
+    gen_fallback_candidates,
+    is_retryable_gen_error,
+)
 from src.video_agent.core.provider_config import get_provider_config
 from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
@@ -23,11 +27,6 @@ class GenerateVideoTool(BaseTool):
         return GenerateVideoParams
 
     async def aexecute(self, params: GenerateVideoParams) -> ToolResult:
-        from src.video_agent.web.generation import (
-            _gen_fallback_candidates,
-            _is_retryable_gen_error,
-        )
-
         # 同模型跨厂商降级（与 submit_video_task 同口径）：
         # 仅失败才切；模型取主厂商配置的首个视频模型，候选只收列出同名模型的厂商
         first_adapter = AdapterFactory.get_adapter("video_generation", params.adapter_provider)
@@ -38,7 +37,7 @@ class GenerateVideoTool(BaseTool):
             eff_model = str(models[0]) if models else ""
         candidates = [(params.adapter_provider, eff_model)]
         if settings.model_fallback_enabled and eff_model:
-            candidates = await _gen_fallback_candidates(
+            candidates = await gen_fallback_candidates(
                 params.adapter_provider, eff_model, "video"
             )
 
@@ -67,7 +66,7 @@ class GenerateVideoTool(BaseTool):
                 )
             except Exception as e:
                 last_error = str(e)
-                if idx == len(candidates) - 1 or not _is_retryable_gen_error(e):
+                if idx == len(candidates) - 1 or not is_retryable_gen_error(e):
                     return ToolResult(success=False, error=last_error)
                 logger.warning(
                     f"[generate_video] 厂商 {pid} 失败（{str(e)[:60]}），"

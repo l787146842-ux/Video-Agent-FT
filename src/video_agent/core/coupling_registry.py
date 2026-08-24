@@ -303,6 +303,23 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.core.planner:Planner._handle_fc_response",
         ) + (("testfile", "tests/unit/test_deterministic_triage.py"),),
     ),
+    CouplingRow(
+        "R28_layer_import_direction",
+        "批 3.3：core/tools 需要消费 web 层能力（媒体注入解析/降级链/文档与"
+        "生成任务面）时新增 tools→web 或 core→web import",
+        "一律改走 core/ports 端口（D-01）或 storage/core 公开 API（下沉先例："
+        "storage.media_urls / core.generation_fallback）；新门禁零豁免，"
+        "违规即 FAIL；壳模块 re-export 名单变更须同步本行 symbol",
+        _sym(
+            "src.video_agent.storage.media_urls:resolve_injectable_url",
+            "src.video_agent.core.generation_fallback:gen_fallback_candidates",
+            "src.video_agent.core.generation_fallback:is_retryable_gen_error",
+        ) + (
+            ("gate", "check_layer_imports.py"),
+            ("file", "src/video_agent/web/multimodal_builder.py"),
+            ("file", "src/video_agent/web/generation_dispatch.py"),
+        ),
+    ),
 ]
 
 

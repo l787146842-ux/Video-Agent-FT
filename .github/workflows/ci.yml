@@ -42,6 +42,8 @@ jobs:
         run: python scripts/check_category_keys.py
       - name: Legacy orchestration gate (0818 B5：退役编排机制防复活)
         run: python scripts/check_legacy_orchestration.py
+      - name: Layer imports gate (整改批 3.3：core/tools 禁止反向依赖 web 层)
+        run: python scripts/check_layer_imports.py
       - name: Scaffold registry gate (acceptance GATES 对齐：脚手架登记表 + 组件可导入)
         run: python scripts/check_scaffold_registry.py
       - name: Doc pointers gate (整改批 1.1：ADR/架构文件图/代码注释指针有效性)

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 7777 二轮复盘修复回归测试。
 
@@ -60,21 +60,21 @@ class TestSameModelCrossProviderCandidates:
 
     @pytest.mark.asyncio
     async def test_image_candidates_by_image_models(self, monkeypatch):
-        # 任务#11 拆分：patch 目标迁至实现模块 generation_dispatch（承重壳仅 re-export）
-        from src.video_agent.web import generation_dispatch
+        # 任务#11 拆分 → 批 3.3 下沉：实现体 = core.generation_fallback（公开 API）
+        from src.video_agent.core import generation_fallback
 
-        _patch_providers(monkeypatch, generation_dispatch)
-        cands = await generation_dispatch._gen_fallback_candidates("main", "nano-banana", "image")
+        _patch_providers(monkeypatch, generation_fallback)
+        cands = await generation_fallback.gen_fallback_candidates("main", "nano-banana", "image")
         pids = [p for p, _ in cands]
         assert pids == ["main", "alt1"]  # alt4 的 image_models 无同名模型
 
     @pytest.mark.asyncio
     async def test_video_candidates_by_video_models(self, monkeypatch):
-        # 任务#11 拆分：patch 目标迁至实现模块 generation_dispatch（承重壳仅 re-export）
-        from src.video_agent.web import generation_dispatch
+        # 任务#11 拆分 → 批 3.3 下沉：实现体 = core.generation_fallback（公开 API）
+        from src.video_agent.core import generation_fallback
 
-        _patch_providers(monkeypatch, generation_dispatch)
-        cands = await generation_dispatch._gen_fallback_candidates("main", "seedance-2.5", "video")
+        _patch_providers(monkeypatch, generation_fallback)
+        cands = await generation_fallback.gen_fallback_candidates("main", "seedance-2.5", "video")
         pids = [p for p, _ in cands]
         assert pids == ["main", "alt1"]
 
@@ -83,13 +83,13 @@ class TestGenRetryableJudgement:
     """只有失败才降级：可重试性判定"""
 
     def test_adapter_retryable_flag_respected(self):
-        from src.video_agent.web.generation import _is_retryable_gen_error
+        from src.video_agent.core.generation_fallback import is_retryable_gen_error
 
-        assert _is_retryable_gen_error(AdapterError("上游 502", retryable=True)) is True
-        assert _is_retryable_gen_error(AdapterError("鉴权失败", retryable=False)) is False
+        assert is_retryable_gen_error(AdapterError("上游 502", retryable=True)) is True
+        assert is_retryable_gen_error(AdapterError("鉴权失败", retryable=False)) is False
 
     def test_cause_chain_flag_respected(self):
-        from src.video_agent.web.generation import _is_retryable_gen_error
+        from src.video_agent.core.generation_fallback import is_retryable_gen_error
 
         try:
             try:
@@ -97,18 +97,18 @@ class TestGenRetryableJudgement:
             except AdapterError as inner:
                 raise RuntimeError("生成失败") from inner
         except RuntimeError as outer:
-            assert _is_retryable_gen_error(outer) is True
+            assert is_retryable_gen_error(outer) is True
 
     def test_moderation_not_retryable(self):
-        from src.video_agent.web.generation import _is_retryable_gen_error
+        from src.video_agent.core.generation_fallback import is_retryable_gen_error
 
-        assert _is_retryable_gen_error(RuntimeError("内容审核未通过")) is False
-        assert _is_retryable_gen_error(RuntimeError("供应商未配置")) is False
+        assert is_retryable_gen_error(RuntimeError("内容审核未通过")) is False
+        assert is_retryable_gen_error(RuntimeError("供应商未配置")) is False
 
     def test_plain_failure_retryable(self):
-        from src.video_agent.web.generation import _is_retryable_gen_error
+        from src.video_agent.core.generation_fallback import is_retryable_gen_error
 
-        assert _is_retryable_gen_error(RuntimeError("任务排队超时后失败")) is True
+        assert is_retryable_gen_error(RuntimeError("任务排队超时后失败")) is True
 
 
 # ---------- 规格制作参数：分辨率/分镜最大时长 ----------

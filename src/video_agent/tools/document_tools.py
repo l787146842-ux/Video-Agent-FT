@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core import prompt_gates
+from src.video_agent.core import ports, prompt_gates
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
@@ -277,15 +277,12 @@ class ReadSkillTool(BaseTool):
         return ReadSkillInput
 
     async def aexecute(self, params: ReadSkillInput) -> ToolResult:
-        from src.video_agent.web.skill_docs import (
-            list_skill_docs,
-            list_skill_sections,
-            resolve_skill_content,
-        )
+        # 整改批 3.3：经 skill_docs 端口消费（D-01 依赖倒置），消灭 tools→web 反向依赖
+        sd = ports.skill_docs_port()
 
         wanted = (params.name or "").strip()
         # 与 Planner 选中项注入共用同一套解析（仅文档 Skill，模糊匹配）
-        matched, content = resolve_skill_content(wanted)
+        matched, content = sd.resolve_skill_content(wanted)
         if not content:
             # canonical 身份兑底（Rule2 v6）：模型逐字复制显示名的误差
             # （去连字符/空格归一）经 registry 定位同身份条目
@@ -295,7 +292,7 @@ class ReadSkillTool(BaseTool):
         if not content:
             available: List[str] = []
             try:
-                available += [d.get("name", "") for d in list_skill_docs()]
+                available += [d.get("name", "") for d in sd.list_skill_docs()]
             except Exception as _e:
                 logger.debug("[document_tools] 忽略异常: {}", _e)
             return ToolResult(
@@ -306,7 +303,7 @@ class ReadSkillTool(BaseTool):
         # start 相对章节起点；未命中时回喂可用章节清单（不阻断，给模型纠错机会）
         section = (params.section or "").strip()
         if section:
-            toc = list_skill_sections(content)
+            toc = sd.list_skill_sections(content)
             hit = next((s for s in toc if s["title"] == section), None)
             if hit is None:
                 sec_norm = section.casefold().replace(" ", "")
@@ -384,7 +381,11 @@ class ImageGenerateTool(BaseTool):
     async def aexecute(self, params: GenerateImageInput) -> ToolResult:
         from src.video_agent.config import settings
         from src.video_agent.state import storyboard_ops as ops
-        from src.video_agent.web.generation import submit_image_task, wait_image_task
+
+        # 整改批 3.3：经 generation 端口消费（D-01 依赖倒置），消灭 tools→web 反向依赖
+        gen = ports.generation_port()
+        submit_image_task = gen.submit_image_task
+        wait_image_task = gen.wait_image_task
 
         # 聊天框出图开关：关 = Agent 在对话中不主动触发生图
         if not settings.chat_image_enabled:

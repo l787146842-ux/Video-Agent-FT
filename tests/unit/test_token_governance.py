@@ -120,7 +120,7 @@ def test_downscale_image():
     import io
     PIL = pytest.importorskip("PIL")
     from PIL import Image
-    from src.video_agent.web.multimodal_builder import _downscale_image
+    from src.video_agent.storage.media_urls import downscale_image as _downscale_image
 
     img = Image.new("RGB", (3000, 1500), "red")
     buf = io.BytesIO()

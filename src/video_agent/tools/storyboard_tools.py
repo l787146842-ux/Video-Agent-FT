@@ -16,6 +16,7 @@ from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.core.prompt_refs import media_of_draft
 from src.video_agent.core.provider_config import stamp_draft_spec_preference
+from src.video_agent.storage.media_urls import resolve_injectable_url
 
 
 # ---------- Input Schemas ----------
@@ -312,8 +313,6 @@ class ViewStoryboardMediaTool(BaseTool):
         return ViewStoryboardMediaInput
 
     async def aexecute(self, params: ViewStoryboardMediaInput) -> ToolResult:
-        from src.video_agent.web.multimodal_builder import _resolve_injectable_url
-
         svc = StateManager.get_instance()
         state = svc.state_dict
         limit = params.limit or settings.max_llm_images
@@ -377,7 +376,7 @@ class ViewStoryboardMediaTool(BaseTool):
             if not url:
                 notes.append(f"草稿「{label}」（draft_id={did}）没有图片媒体")
                 continue
-            data_uri = await _resolve_injectable_url(url)
+            data_uri = await resolve_injectable_url(url)
             if not data_uri:
                 notes.append(f"草稿「{label}」（draft_id={did}）的图片无法加载（文件缺失或外链已失效），URL: {url}")
                 continue

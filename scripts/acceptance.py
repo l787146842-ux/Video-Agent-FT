@@ -45,6 +45,10 @@ GATES: List[Tuple[str, List[str]]] = [
     ("category_keys", [sys.executable, "scripts/check_category_keys.py"]),
     # 退役条件：退役编排符号在长期演进中证实无复活风险（登记清单可整体清退）时裁决下账。
     ("legacy_orchestration", [sys.executable, "scripts/check_legacy_orchestration.py"]),
+    # 批 3.3：层间导入方向闸——core/tools 禁止 import src.video_agent.web.*；
+    # web 能力经 core/ports 端口（D-01）或 storage/core 公开 API（下沉先例）消费。
+    # 退役条件：反向依赖连续两季零检出、端口与公开 API 模式内化为开发惯例时裁决下账。
+    ("layer_imports", [sys.executable, "scripts/check_layer_imports.py"]),
     # 任务 #12 P8：文档指针漂移门禁（ADR 取代关系双边注记 / 宪法文件地图
     # 路径存在性 / 代码注释与 docstring 模块指针与退役符号）。
     # 退役条件：文档指针漂移连续两季零检出、双边注记与文件地图维护内化为开发惯例时裁决下账。
