@@ -28,7 +28,7 @@ def _fc_call(args: dict) -> ChatResponse:
 
 def test_b7_draft_provider_wins_over_global_settings(monkeypatch):
     """B7 用户裁决：草稿自身（中间面板直接选择）优先于全局设置。"""
-    import src.video_agent.web.provider_config as pc
+    import src.video_agent.core.provider_config as pc
 
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
     monkeypatch.setattr(pc, "spec_media_preference", lambda state, kind="image": ("provG", "mG"))
@@ -43,7 +43,7 @@ def test_b7_draft_provider_wins_over_global_settings(monkeypatch):
 
 def test_b7_global_settings_fallback_when_no_draft(monkeypatch):
     """无草稿选择时回落全局设置。"""
-    import src.video_agent.web.provider_config as pc
+    import src.video_agent.core.provider_config as pc
 
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
     monkeypatch.setattr(pc, "spec_media_preference", lambda state, kind="image": ("provG", "mG"))

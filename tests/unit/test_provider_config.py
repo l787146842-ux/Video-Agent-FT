@@ -2,7 +2,7 @@
 import json
 import pytest
 
-import src.video_agent.web.provider_config as pc
+import src.video_agent.core.provider_config as pc
 from src.video_agent.config import settings
 
 

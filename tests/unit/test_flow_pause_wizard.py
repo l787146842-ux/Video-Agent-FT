@@ -193,7 +193,7 @@ def test_merge_wizard_skipped_when_spec_collected():
 
 
 def test_channel_groups_from_providers(monkeypatch):
-    from src.video_agent.web import provider_config
+    from src.video_agent.core import provider_config
 
     monkeypatch.setattr(provider_config, "load_merged_providers", lambda: [
         {"id": "p1", "name": "即梦", "image_models": ["jm-5.0"], "video_models": []},
@@ -206,7 +206,7 @@ def test_channel_groups_from_providers(monkeypatch):
 
 
 def test_apply_spec_channel_selections_routes_by_model_list(monkeypatch):
-    from src.video_agent.web import provider_config
+    from src.video_agent.core import provider_config
 
     monkeypatch.setattr(provider_config, "load_merged_providers", lambda: [
         {"id": "p1", "name": "即梦", "image_models": ["jm-5.0"], "video_models": ["jm-video"]},
@@ -221,7 +221,7 @@ def test_apply_spec_channel_selections_routes_by_model_list(monkeypatch):
 
 
 def test_apply_spec_channel_selections_unknown_provider_noop(monkeypatch):
-    from src.video_agent.web import provider_config
+    from src.video_agent.core import provider_config
 
     monkeypatch.setattr(provider_config, "load_merged_providers", lambda: [
         {"id": "p1", "name": "即梦", "image_models": ["jm-5.0"], "video_models": []},

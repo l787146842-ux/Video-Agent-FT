@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.core.provider_config import get_provider_config
 from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 
@@ -26,7 +27,6 @@ class GenerateVideoTool(BaseTool):
             _gen_fallback_candidates,
             _is_retryable_gen_error,
         )
-        from src.video_agent.web.provider_config import get_provider_config
 
         # 同模型跨厂商降级（与 submit_video_task 同口径）：
         # 仅失败才切；模型取主厂商配置的首个视频模型，候选只收列出同名模型的厂商

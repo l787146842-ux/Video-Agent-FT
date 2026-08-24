@@ -17,10 +17,12 @@ from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
 from src.video_agent.state.manager import StateManager
 from src.video_agent.exceptions import GenerationError
-from src.video_agent.web.provider_config import (
+from src.video_agent.core.provider_config import (
     first_available_image_provider,
+    first_available_image_provider_async,
     resolve_provider_ref,
     spec_media_preference,
+    spec_production_params,
 )
 from src.video_agent.utils import gen_id
 
@@ -438,8 +440,6 @@ class ImageGenerateTool(BaseTool):
                 model = model or settings.default_image_model
                 logger.info(f"[image_generate] provider 未指定，回退全局设置默认出图渠道: {provider_id}/{model}")
         if not provider_id:
-            from src.video_agent.web.provider_config import first_available_image_provider_async
-
             provider_id, fb_model = await first_available_image_provider_async()
             if provider_id:
                 model = model or fb_model
@@ -451,8 +451,6 @@ class ImageGenerateTool(BaseTool):
 
         # 规格制作参数：图片分辨率由规格文档优先，
         # 其次草稿自带，最后全局默认（回退链与供应商链口径一致）
-        from src.video_agent.web.provider_config import spec_production_params
-
         spec_image_res = str(spec_production_params(state).get("image_resolution") or "")
 
         # 统一任务管线提交：提交即记录生成日志 + SSE 点亮前端卡片读秒，

@@ -15,6 +15,7 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.core.prompt_refs import media_of_draft
+from src.video_agent.core.provider_config import stamp_draft_spec_preference
 
 
 # ---------- Input Schemas ----------
@@ -128,7 +129,6 @@ class StoryboardPatchDraftTool(BaseTool):
                     ops.sync_shot_duration(group, draft, params.patch)
                     # 全局设置补印（与文本轨一致，草稿缺分辨率/时长时
                     # 按顶部「全局设置」填充，硬参数不依赖规格文档）
-                    from src.video_agent.web.provider_config import stamp_draft_spec_preference
                     cat = ops.category_for_group_type(str(group.get("group_type") or ""))
                     stamp_draft_spec_preference(svc.state_dict, draft, cat)
                     svc.save()
@@ -157,7 +157,6 @@ class StoryboardAddDraftTool(BaseTool):
             ops.sync_shot_duration(target_group, draft)
             # 全局设置补印（唯一权威源）：草稿未自带供应商时按全局设置填充，
             # 防前端默认首选供应商回填污染（参数栏与全局设置不一致）
-            from src.video_agent.web.provider_config import stamp_draft_spec_preference
             cat = ops.category_for_group_type(str(params.group_type or ""))
             stamp_draft_spec_preference(svc.state_dict, draft, cat)
             svc.save()

@@ -1,8 +1,8 @@
 src/video_agent/adapters/factory.py:48:openai_compat
-src/video_agent/adapters/factory.py:80:src.video_agent.web.provider_config
-src/video_agent/adapters/factory.py:85:openai_compat
-src/video_agent/adapters/factory.py:86:agy_cli
-src/video_agent/adapters/factory.py:87:video_compat
+src/video_agent/adapters/factory.py:82:src.video_agent.core.provider_config
+src/video_agent/adapters/factory.py:87:openai_compat
+src/video_agent/adapters/factory.py:88:agy_cli
+src/video_agent/adapters/factory.py:89:video_compat
 src/video_agent/adapters/openai_compat.py:270:src.video_agent.core.live_metrics
 src/video_agent/adapters/openai_compat.py:457:src.video_agent.utils.stream_notify
 src/video_agent/adapters/video_compat.py:372:asyncio
@@ -24,6 +24,7 @@ src/video_agent/core/prompt_builder.py:543:src.video_agent.skill_runtime.registr
 src/video_agent/core/prompt_gates.py:374:src.video_agent.state
 src/video_agent/core/prompt_gates.py:670:src.video_agent.skill_runtime.registry
 src/video_agent/core/prompt_gates.py:737:src.video_agent.skill_runtime.registry
+src/video_agent/core/provider_config.py:326:src.video_agent.state.provider_prefs
 src/video_agent/core/spec_rules.py:61:src.video_agent.core.prompt_gates
 src/video_agent/eval/quality.py:112:tempfile
 src/video_agent/eval/quality.py:113:pathlib
@@ -45,15 +46,10 @@ src/video_agent/tools/document_tools.py:278:src.video_agent.web.skill_docs
 src/video_agent/tools/document_tools.py:383:src.video_agent.config
 src/video_agent/tools/document_tools.py:384:src.video_agent.state
 src/video_agent/tools/document_tools.py:385:src.video_agent.web.generation
-src/video_agent/tools/document_tools.py:441:src.video_agent.web.provider_config
-src/video_agent/tools/document_tools.py:454:src.video_agent.web.provider_config
 src/video_agent/tools/document_tools.py:558:src.video_agent.tools.manager
-src/video_agent/tools/storyboard_tools.py:131:src.video_agent.web.provider_config
-src/video_agent/tools/storyboard_tools.py:160:src.video_agent.web.provider_config
 src/video_agent/tools/storyboard_tools.py:316:src.video_agent.web.multimodal_builder
 src/video_agent/tools/storyboard_tools.py:398:src.video_agent.tools.manager
 src/video_agent/tools/video/generate_video.py:25:src.video_agent.web.generation
-src/video_agent/tools/video/generate_video.py:29:src.video_agent.web.provider_config
 src/video_agent/web/app.py:111:src.video_agent.adapters.factory
 src/video_agent/web/app.py:268:src.video_agent.adapters.canvas_adapter
 src/video_agent/web/app.py:269:src.video_agent.state.manager
@@ -95,7 +91,6 @@ src/video_agent/web/generation_submit.py:65:src.video_agent.web.task_manager
 src/video_agent/web/mock_chat.py:33:src.video_agent.core
 src/video_agent/web/multimodal_builder.py:48:io
 src/video_agent/web/multimodal_builder.py:50:PIL
-src/video_agent/web/provider_config.py:326:src.video_agent.state.provider_prefs
 src/video_agent/web/routes/agent.py:175:src.video_agent.core
 src/video_agent/web/routes/agent.py:231:src.video_agent.web.chat_service
 src/video_agent/web/routes/agent.py:239:src.video_agent.web.agent_task_manager

@@ -8,7 +8,7 @@ import re
 from typing import Any, Dict, Optional, Tuple
 
 from src.video_agent.config import settings
-from src.video_agent.web.provider_config import spec_media_preference
+from src.video_agent.core.provider_config import spec_media_preference
 
 # 规格文档中「未确认占位」标记（三项参数标着「待确认」就放行）。
 # prompt_gates.spec_unconfirmed_params / apply_spec_selections 与解析正则同源消费。

@@ -23,7 +23,7 @@ monkeypatch 在测试期照常生效（与此前函数内延迟导入同一效�
 - provider_config ：load_merged_providers / get_provider_config /
                     spec_media_preference / spec_production_params /
                     stamp_draft_spec_preference / resolve_provider_ref
-                    （web/provider_config.py）
+                    （core/provider_config.py，P3 反向依赖下沉自 web 层迁入）
 - task_log        ：record_gate_gen_log(prompt, hard_errors)
                     （web 装配适配器 → task_manager.record_gen_log）
 - skill_docs      ：list_skill_docs / resolve_skill_content /
@@ -80,7 +80,7 @@ def generation_port() -> Any:
 
 
 def provider_config_port() -> Any:
-    """供应商配置端口（实现 = web/provider_config.py）"""
+    """供应商配置端口（实现 = core/provider_config.py）"""
     return _port("provider_config")
 
 
