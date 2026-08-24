@@ -12,6 +12,9 @@
 仅对 /api/agent/chat* 和 /api/generate* 端点生效。
 端点分档（P0-3）：聊天类用 rate，生成类用 generate_rate（批量生成需要更高配额），
 两组令牌桶按 (IP, 组) 独立计数互不影响。
+
+边界语义：0 的关闭语义由 app.py 装载守卫承载（rate>0 才挂载中间件）；
+本模块内 rate=0 = 全拒而非不限流（令牌桶容量 0 无令牌可消费）。
 """
 import time
 from typing import Dict, Tuple
@@ -24,6 +27,7 @@ from starlette.types import ASGIApp
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.web.error_payload import classify_legacy_code
 
 
 class _TokenBucket:
@@ -133,9 +137,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if not bucket.consume(rate):
             logger.warning(f"[RateLimit] IP {client_ip} 触发限流({group}): {request.url.path}")
+            # P9：非流式错误出口统一走 ErrorPayload 契约（RATE_LIMITED 已在
+            # 桥接表登记 → kind=quota / err.quota.rate_limited，状态码 429 不变）
+            payload = classify_legacy_code("RATE_LIMITED", "请求过于频繁，请稍后再试")
             return JSONResponse(
                 status_code=429,
-                content={"detail": "请求过于频繁，请稍后再试", "error_code": "RATE_LIMITED"},
+                content=payload.http_body("RATE_LIMITED"),
                 headers={"Retry-After": "60"},
             )
 

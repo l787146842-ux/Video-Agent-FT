@@ -13,8 +13,11 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from loguru import logger
+
+from src.video_agent.exceptions import VideoAgentError
+from src.video_agent.web.error_payload import LEGACY_VALIDATION_ERROR
 
 router = APIRouter()
 
@@ -27,7 +30,11 @@ def _help_args(command: str) -> list[str]:
     if not command:
         return ["--help"]
     if not _SAFE_SUBCOMMAND_RE.match(command):
-        raise HTTPException(status_code=400, detail="command 仅允许字母/数字/连字符的子命令名")
+        raise VideoAgentError(
+            "command 仅允许字母/数字/连字符的子命令名",
+            status_code=400,
+            error_code=LEGACY_VALIDATION_ERROR,
+        )
     return [command, "--help"]
 
 

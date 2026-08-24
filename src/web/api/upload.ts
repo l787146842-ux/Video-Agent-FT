@@ -3,6 +3,7 @@
  * 端点：POST /api/ai/upload（multipart/form-data）
  */
 import { ApiError } from './client';
+import { httpErrorPayload } from '@/lib/error-payload';
 
 export interface UploadedFile {
   name: string;
@@ -25,14 +26,15 @@ export async function uploadFiles(files: File[]): Promise<UploadedFile[]> {
 
   const res = await fetch('/api/ai/upload', { method: 'POST', body: form });
   if (!res.ok) {
-    let detail = res.statusText;
+    let body: Record<string, unknown> | null = null;
     try {
-      const body = (await res.json()) as { detail?: string };
-      detail = body.detail || detail;
+      body = (await res.json()) as Record<string, unknown>;
     } catch {
-      /* 非 JSON 错误响应，使用 statusText */
+      /* 非 JSON 错误响应，回落 statusText */
     }
-    throw new ApiError(res.status, detail);
+    // P9：multipart 旁路也走统一解析器，采信后端 ErrorPayload 结构化字段
+    const payload = httpErrorPayload(res.status, body, res.statusText);
+    throw new ApiError(res.status, payload.message || res.statusText, payload);
   }
   const data = (await res.json()) as UploadResponse;
   return data.files;

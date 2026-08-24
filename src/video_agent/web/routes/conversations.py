@@ -8,10 +8,12 @@
   GET /conversations/{id}/messages，前端不再持有消息副本；
 - 写入走 StateManager（Rule3 唯一写入点）+ svc.lock 临界区。
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
+from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.state.manager import StateManager
+from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
 
 router = APIRouter()
 
@@ -37,7 +39,7 @@ async def get_conversation_messages(conversation_id: str):
     svc = StateManager.get_instance()
     msgs = svc.get_conversation_messages(conversation_id)
     if msgs is None:
-        raise HTTPException(status_code=404, detail="对话不存在")
+        raise VideoAgentError("对话不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
     return {"conversation_id": conversation_id, "messages": msgs}
 
 
@@ -57,7 +59,7 @@ async def activate_conversation(conversation_id: str):
     async with svc.lock:
         payload = svc.switch_conversation(conversation_id)
     if payload is None:
-        raise HTTPException(status_code=404, detail="对话不存在")
+        raise VideoAgentError("对话不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
     return svc.conversations_meta_payload()
 
 
@@ -68,12 +70,16 @@ async def delete_conversation(conversation_id: str):
     convs = svc.conversations_meta_payload()["conversations"]
     exists = any(c["id"] == conversation_id for c in convs)
     if not exists:
-        raise HTTPException(status_code=404, detail="对话不存在")
+        raise VideoAgentError("对话不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
     if len(convs) <= 1:
-        raise HTTPException(status_code=400, detail="仅剩一个对话，不能关闭")
+        raise VideoAgentError(
+            "仅剩一个对话，不能关闭", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
     async with svc.lock:
         payload = svc.delete_conversation(conversation_id)
     if payload is None:
-        raise HTTPException(status_code=400, detail="仅剩一个对话，不能关闭")
+        raise VideoAgentError(
+            "仅剩一个对话，不能关闭", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
     return svc.conversations_meta_payload()
 

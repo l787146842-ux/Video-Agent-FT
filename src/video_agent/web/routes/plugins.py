@@ -5,14 +5,16 @@ Skill 下拉数据 = 仅文档 Skill（data/skills/*.md）。
 代码内置 Skill（编剧/分镜师/制片）已按用户要求彻底移除，不得再回到下拉框。
 文档 Skill 的 system_prompt 即文档全文——用户改文档就是改流程。
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 from loguru import logger
 
 import re
 from typing import Dict, List, Optional
 
+from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.web.chat_opening import _create_chat_adapter
+from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
 from src.video_agent.web.provider_config import load_merged_providers
 from src.video_agent.web.skill_docs import (
     get_skill_doc,
@@ -73,7 +75,9 @@ async def put_skill_doc(slug: str, body: SkillDocSave):
     try:
         doc = save_skill_doc(slug, body.content)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
     lint = lint_skill_content(body.content, slug=slug)
     return {"ok": True, "doc": doc, "lint": lint}
 
@@ -83,9 +87,13 @@ async def get_one_skill_doc(slug: str):
     try:
         doc = get_skill_doc(slug)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
     if not doc:
-        raise HTTPException(status_code=404, detail=f"Skill 文档 '{slug}' 不存在")
+        raise VideoAgentError(
+            f"Skill 文档 '{slug}' 不存在", status_code=404, error_code=LEGACY_NOT_FOUND
+        )
     return doc
 
 
@@ -95,7 +103,9 @@ async def get_skill_doc_history(slug: str):
     try:
         return {"versions": list_skill_doc_history(slug)}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
 
 
 @router.delete("/skills/docs/{slug}")
@@ -104,7 +114,9 @@ async def delete_one_skill_doc(slug: str):
     try:
         delete_skill_doc(slug)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
     return {"ok": True}
 
 
@@ -138,7 +150,9 @@ _FORMAT_SYSTEM = """你是一个 Skill 文档格式化专家。用户会给你�
 async def format_skill_content(body: SkillFormatRequest):
     """用 LLM 将任意文本整理为标准 Skill markdown 格式（LLM 不可用时返回原文）"""
     if not body.content.strip():
-        raise HTTPException(status_code=400, detail="内容不能为空")
+        raise VideoAgentError(
+            "内容不能为空", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
     try:
         adapter = _resolve_chat_adapter("", "")
         messages = [
@@ -220,13 +234,18 @@ async def skill_assistant(body: SkillAssistantRequest):
     content 为解析出的更新后全文（解析失败为 null）；前端覆盖预览草稿，
     落盘由用户点保存决定。"""
     if not body.content.strip() and not body.messages:
-        raise HTTPException(status_code=400, detail="内容不能为空")
+        raise VideoAgentError(
+            "内容不能为空", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
     try:
         adapter = _resolve_chat_adapter(body.provider, body.model)
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"chat 渠道不可用: {e}")
+        # P9：未预期异常——友好文案进 message，技术细节进 raw
+        raise VideoAgentError("chat 渠道不可用", status_code=503, raw=str(e)) from e
     if adapter is None:
-        raise HTTPException(status_code=503, detail="无可用聊天供应商，请先在 API 配置中添加")
+        raise VideoAgentError(
+            "无可用聊天供应商，请先在 API 配置中添加", status_code=503
+        )
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": _ASSISTANT_SYSTEM},
         {"role": "user", "content": f"当前 Skill 文档全文：\n\n{body.content}"},

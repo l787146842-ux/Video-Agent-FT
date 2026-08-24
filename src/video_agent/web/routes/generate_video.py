@@ -6,11 +6,12 @@ mock 供应商：走 mock 适配器（结果带 mock 标记）。
 import time
 from typing import Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from loguru import logger
 
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
+from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.utils import gen_id
@@ -44,7 +45,9 @@ async def generate_video(body: VideoGenRequest):
         try:
             adapter = AdapterFactory.get_adapter("video_generation", adapter_name)
         except ValueError:
-            raise HTTPException(status_code=500, detail=f"mock 适配器 '{adapter_name}' 未注册")
+            raise VideoAgentError(
+                f"mock 适配器 '{adapter_name}' 未注册", status_code=500
+            )
 
         image_url = body.images[0]["url"] if body.images else ""
         result = await adapter.generate(image_url=image_url, prompt=body.prompt)
@@ -71,12 +74,12 @@ async def generate_video(body: VideoGenRequest):
     try:
         adapter = AdapterFactory.get_adapter("video_generation", adapter_name)
     except ValueError:
-        raise HTTPException(
-            status_code=501,
-            detail=(
+        raise VideoAgentError(
+            (
                 f"供应商 '{adapter_name}' 的视频生成尚未配置。"
                 "请在 API 设置中为该供应商添加 video_models。"
             ),
+            status_code=501,
         )
 
     task_id = gen_id("vid")

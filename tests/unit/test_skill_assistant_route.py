@@ -13,6 +13,10 @@ from src.video_agent.web.routes import plugins as pr
 def client():
     app = FastAPI()
     app.include_router(pr.router, prefix="/api")
+    # P9：standalone 应用需注册统一转译 handler（与生产 app.py 同源）
+    from src.video_agent.exceptions import VideoAgentError
+    from src.video_agent.web.app import video_agent_error_handler
+    app.add_exception_handler(VideoAgentError, video_agent_error_handler)
     return TestClient(app)
 
 

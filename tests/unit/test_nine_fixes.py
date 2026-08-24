@@ -27,8 +27,13 @@ def svc(tmp_path):
 @pytest.fixture
 def client(svc):
     from src.video_agent.web.routes import project as project_routes
+    from src.video_agent.web.app import video_agent_error_handler
+    from src.video_agent.exceptions import VideoAgentError
     app = FastAPI()
     app.include_router(project_routes.router, prefix="/api")
+    # P9：standalone 应用需注册统一转译 handler（与生产 app.py 同源，
+    # 否则 VideoAgentError 无 handler 会被 TestClient 直接抛出）
+    app.add_exception_handler(VideoAgentError, video_agent_error_handler)
     return TestClient(app)
 
 

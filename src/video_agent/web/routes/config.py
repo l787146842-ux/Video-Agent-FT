@@ -5,11 +5,12 @@
 """
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from loguru import logger
 from pydantic import BaseModel
 
 from src.video_agent.config import settings
+from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import DATA_DIR
 
@@ -78,6 +79,7 @@ async def set_model_fallback(body: ModelFallbackPatch):
         _save_runtime_overrides({"model_fallback_enabled": body.enabled})
     except Exception as e:
         logger.warning(f"[Config] 运行时开关持久化失败（本次会话内仍生效）: {e}")
-        raise HTTPException(status_code=500, detail=f"开关保存失败: {e}") from e
+        # P9：未预期异常——友好文案进 message，技术细节进 raw
+        raise VideoAgentError("开关保存失败", status_code=500, raw=str(e)) from e
     logger.info(f"[Config] 模型降级开关已{'开启' if body.enabled else '关闭'}")
     return {"ok": True, "model_fallback_enabled": body.enabled}

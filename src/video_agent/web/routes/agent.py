@@ -10,8 +10,8 @@ import asyncio
 import json
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from loguru import logger
@@ -19,7 +19,12 @@ from loguru import logger
 from src.video_agent.web.chat_service import non_stream_worker
 from src.video_agent.core.stop_signal import request_stop
 from src.video_agent.web.task_manager import snapshot_inflight_generations
-from src.video_agent.exceptions import AdapterError, GenerationError
+from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
+from src.video_agent.web.error_payload import (
+    LEGACY_NOT_FOUND,
+    LEGACY_VALIDATION_ERROR,
+    classify_exception,
+)
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.live_metrics import get_degradations, get_live_context
 from src.video_agent.core.token_budget import context_window_for_model, estimate_tokens
@@ -118,16 +123,24 @@ class ChatResponse(BaseModel):
 
 @router.post("/agent/chat", response_model=ChatResponse)
 async def agent_chat(body: ChatRequest):
-    """非流式聊天端点（业务逻辑委托给 chat_service.non_stream_worker）"""
+    """非流式聊天端点（业务逻辑委托给 chat_service.non_stream_worker）
+
+    P9 错误出口统一：全部走 ErrorPayload 契约（code/kind/message/raw），
+    状态码语义维持原状（400 输入不合法 / 502 上游失败）"""
     if not body.message.strip() and not body.attachments:
-        raise HTTPException(status_code=400, detail="消息不能为空")
+        # 与 chat_service 非流式守卫同码（EMPTY_MESSAGE 已有，不新增）
+        raise VideoAgentError("消息不能为空", status_code=400, error_code="EMPTY_MESSAGE")
     try:
         result = await non_stream_worker(body)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
     except (GenerationError, AdapterError) as e:
         logger.warning(f"[Agent] LLM 调用失败: {e}")
-        raise HTTPException(status_code=502, detail=str(e))
+        # 沿用原 502 语义（不随异常自带 status_code 漂移），响应体走 ErrorPayload
+        payload = classify_exception(e)
+        return JSONResponse(status_code=502, content=payload.http_body(e.error_code))
     return ChatResponse(**result)
 
 
@@ -194,7 +207,9 @@ async def agent_task_events(task_id: str, request: Request):
     tm = get_agent_task_manager()
     q = tm.subscribe(task_id)
     if q is None:
-        raise HTTPException(status_code=404, detail=f"任务 '{task_id}' 不存在")
+        raise VideoAgentError(
+            f"任务 '{task_id}' 不存在", status_code=404, error_code=LEGACY_NOT_FOUND
+        )
 
     async def gen():
         try:

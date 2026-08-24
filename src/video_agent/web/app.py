@@ -19,7 +19,12 @@ from loguru import logger
 
 from src.video_agent.utils.paths import PROJECT_ROOT, STATIC_DIR, WORKSPACE_DIR, ASSETS_DIR, LOGS_DIR
 from src.video_agent.exceptions import VideoAgentError
-from src.video_agent.web.error_payload import classify_exception, classify_http_status, classify_legacy_code
+from src.video_agent.web.error_payload import (
+    LEGACY_NOT_FOUND,
+    classify_exception,
+    classify_http_status,
+    classify_legacy_code,
+)
 from src.video_agent.config import settings
 from src.video_agent.web.routes.config import router as config_router
 from src.video_agent.web.routes.providers import router as providers_router
@@ -204,8 +209,9 @@ async def api_key_auth(request: Request, call_next):
 @app.exception_handler(VideoAgentError)
 async def video_agent_error_handler(request: Request, exc: VideoAgentError):
     """业务异常统一转译为 JSON 响应（任务 #19：ErrorPayload 契约——
-    既有 detail/error_code 兼容字段 + 结构化 code/kind/message）"""
-    payload = classify_exception(exc)
+    既有 detail/error_code 兼容字段 + 结构化 code/kind/message；
+    P9：异常携带的 raw 技术细节随契约下发，非流式出口统一走本链路）"""
+    payload = classify_exception(exc, raw=getattr(exc, "raw", "") or "")
     return JSONResponse(
         status_code=exc.status_code,
         content=payload.http_body(exc.error_code),
@@ -250,6 +256,7 @@ def _studio_page() -> FileResponse:
     """
     dist_index = STATIC_DIR / "dist" / "index.html"
     if not dist_index.exists():
+        # SPA 入口运维兜底，非 API 消费面，豁免 P9 ErrorPayload 收编
         raise HTTPException(status_code=503, detail="前端产物缺失，请执行 npm run build 后重启服务")
     return FileResponse(str(dist_index), headers={"Cache-Control": "no-cache"})
 
@@ -324,7 +331,7 @@ async def spa_catch_all(full_path: str):
     /health、/、/canvas、/settings 等先匹配不受影响；
     /api 排除：未知接口保持 JSON 404，前端 fetch 报错语义不被 HTML 200 污染。"""
     if full_path == "api" or full_path.startswith("api/"):
-        raise HTTPException(status_code=404, detail="Not Found")
+        raise VideoAgentError("Not Found", status_code=404, error_code=LEGACY_NOT_FOUND)
     return _studio_page()
 
 

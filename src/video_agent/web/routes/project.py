@@ -4,13 +4,15 @@
 """
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 
+from src.video_agent.exceptions import StateConflictError, VideoAgentError
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 from src.video_agent.utils import gen_id
+from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
 
 router = APIRouter()
 
@@ -99,7 +101,11 @@ async def switch_project(body: SwitchProjectRequest):
     async with svc.lock:
         ok = svc.switch_project(body.project_id)
         if not ok:
-            raise HTTPException(status_code=404, detail=f"项目 '{body.project_id}' 不存在")
+            raise VideoAgentError(
+                f"项目 '{body.project_id}' 不存在",
+                status_code=404,
+                error_code=LEGACY_NOT_FOUND,
+            )
         snapshot = svc.get_full_snapshot()
     return {"ok": True, "project_id": body.project_id, "state": snapshot}
 
@@ -111,7 +117,11 @@ async def delete_project(body: DeleteProjectRequest):
     async with svc.lock:
         ok = svc.delete_project(body.project_id)
         if not ok:
-            raise HTTPException(status_code=400, detail="无法删除（至少保留一个项目）")
+            raise VideoAgentError(
+                "无法删除（至少保留一个项目）",
+                status_code=400,
+                error_code=LEGACY_VALIDATION_ERROR,
+            )
         snapshot = svc.get_full_snapshot()
     return {"ok": True, "state": snapshot}
 
@@ -126,7 +136,9 @@ async def save_project_document(body: DocumentSave):
     """文档面板手动编辑保存（upsert 到 state.documents）"""
     name = body.name.strip()
     if not name:
-        raise HTTPException(status_code=400, detail="文档名不能为空")
+        raise VideoAgentError(
+            "文档名不能为空", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
     svc = StateManager.get_instance()
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -157,7 +169,9 @@ async def delete_project_document(body: DocumentDelete):
     """删除指定名称的项目文档"""
     name = body.name.strip()
     if not name:
-        raise HTTPException(status_code=400, detail="文档名不能为空")
+        raise VideoAgentError(
+            "文档名不能为空", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
     svc = StateManager.get_instance()
     docs = svc.state_dict.setdefault("documents", [])
     svc.state_dict["documents"] = [d for d in docs if d.get("name") != name]
@@ -172,15 +186,11 @@ async def put_project_state(body: ProjectStateUpdate):
     async with svc.lock:
         # 乐观锁：陈旧 PUT 必须被拒，前端采纳响应版本跟进
         if body.base_version is not None and body.base_version != svc.board_version:
-            raise HTTPException(
-                status_code=409,
-                detail="版本冲突：状态已被其他窗口更新，请刷新后重试",
-            )
+            raise StateConflictError("版本冲突：状态已被其他窗口更新，请刷新后重试")
         # 过期写入防护：请求在途期间项目已切换，拒绝落盘（前端收到 409 静默丢弃）
         if body.project_id and body.project_id != svc.active_project_id:
-            raise HTTPException(
-                status_code=409,
-                detail=f"项目已切换（期望 '{svc.active_project_id}'，收到 '{body.project_id}'），丢弃本次过期保存",
+            raise StateConflictError(
+                f"项目已切换（期望 '{svc.active_project_id}'，收到 '{body.project_id}'），丢弃本次过期保存"
             )
         state = svc.state_dict
 

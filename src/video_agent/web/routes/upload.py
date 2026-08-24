@@ -13,13 +13,14 @@ import time
 import random
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query
-from fastapi.responses import Response
+from fastapi import APIRouter, UploadFile, File, Query
+from fastapi.responses import JSONResponse, Response
 
 from src.video_agent.adapters.fetch_adapter import get_media_fetch_adapter
-from src.video_agent.exceptions import AdapterError
+from src.video_agent.exceptions import AdapterError, VideoAgentError
 from src.video_agent.config import settings
 from src.video_agent.utils.paths import ASSETS_DIR
+from src.video_agent.web.error_payload import LEGACY_VALIDATION_ERROR, classify_exception
 
 router = APIRouter()
 
@@ -51,10 +52,11 @@ async def upload_files(files: list[UploadFile] = File(...)):
         ext = Path(f.filename or "file").suffix.lower()
         kind = ALLOWED_EXTS.get(ext)
         if not kind:
-            raise HTTPException(
+            raise VideoAgentError(
+                f"不支持的文件类型 '{ext or '(无扩展名)'}'，"
+                f"允许：{', '.join(sorted(ALLOWED_EXTS))}",
                 status_code=400,
-                detail=f"不支持的文件类型 '{ext or '(无扩展名)'}'，"
-                       f"允许：{', '.join(sorted(ALLOWED_EXTS))}",
+                error_code=LEGACY_VALIDATION_ERROR,
             )
 
         safe_name = f"{int(time.time())}-{random.randint(1000, 9999)}{ext}"
@@ -68,17 +70,19 @@ async def upload_files(files: list[UploadFile] = File(...)):
                         break
                     written += len(chunk)
                     if written > MAX_FILE_SIZE:
-                        raise HTTPException(
+                        raise VideoAgentError(
+                            f"文件 '{f.filename}' 超过 {settings.max_upload_size_mb}MB 上限",
                             status_code=413,
-                            detail=f"文件 '{f.filename}' 超过 {settings.max_upload_size_mb}MB 上限",
+                            error_code=LEGACY_VALIDATION_ERROR,
                         )
                     buf.write(chunk)
-        except HTTPException:
+        except VideoAgentError:
             dest.unlink(missing_ok=True)
             raise
         except Exception as e:
             dest.unlink(missing_ok=True)
-            raise HTTPException(status_code=500, detail=f"保存文件失败: {e}")
+            # P9：未预期异常——友好文案进 message，技术细节进 raw
+            raise VideoAgentError("保存文件失败", status_code=500, raw=str(e)) from e
 
         results.append({
             "name": f.filename or safe_name,
@@ -100,9 +104,13 @@ async def image_proxy(url: str = Query(..., description="图片 URL")):
     try:
         validate_external_url(url)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
     if not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="仅支持 http/https URL")
+        raise VideoAgentError(
+            "仅支持 http/https URL", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
     try:
         result = await get_media_fetch_adapter().download(
             url,
@@ -113,7 +121,10 @@ async def image_proxy(url: str = Query(..., description="图片 URL")):
             context="image-proxy",
         )
     except AdapterError as e:
-        raise HTTPException(status_code=502, detail=f"图片下载失败: {e}")
+        # 归类适配器自身结构化信息（auth/quota/network/upstream），
+        # 状态码沿用原 502 语义；友好前缀进 message，原始报文进 raw
+        payload = classify_exception(e, message=f"图片下载失败: {e}", raw=str(e))
+        return JSONResponse(status_code=502, content=payload.http_body(e.error_code))
     content_type = result.content_type or "application/octet-stream"
     return Response(
         content=result.content,

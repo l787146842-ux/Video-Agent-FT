@@ -38,6 +38,10 @@ def client(svc, tmp_path, monkeypatch):
     # 分支消息经按会话拉消息接口读回（E-2），需同时注册 conversations 路由
     app.include_router(conv_mod.router, prefix="/api")
     app.include_router(snapshots_mod.router, prefix="/api")
+    # P9：standalone 应用需注册统一转译 handler（与生产 app.py 同源）
+    from src.video_agent.exceptions import VideoAgentError
+    from src.video_agent.web.app import video_agent_error_handler
+    app.add_exception_handler(VideoAgentError, video_agent_error_handler)
     return TestClient(app)
 
 

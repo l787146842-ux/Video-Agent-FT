@@ -11,17 +11,22 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from loguru import logger
 from pydantic import BaseModel
 
 from src.video_agent.config import settings
+from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.state.manager import StateManager
 from src.video_agent.utils import gen_id
 from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import WORKSPACE_DIR
-from src.video_agent.web.error_payload import classify_legacy_code
+from src.video_agent.web.error_payload import (
+    LEGACY_NOT_FOUND,
+    LEGACY_VALIDATION_ERROR,
+    classify_legacy_code,
+)
 
 router = APIRouter()
 
@@ -105,11 +110,12 @@ def _prune_snapshots(project_id: str) -> List[str]:
 def _read_snapshot(project_id: str, snap_id: str) -> Dict[str, Any]:
     f = _snap_dir(project_id) / f"{snap_id}.json"
     if not f.exists():
-        raise HTTPException(status_code=404, detail="快照不存在")
+        raise VideoAgentError("快照不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
     try:
         return json.loads(f.read_text(encoding="utf-8"))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"快照读取失败: {e}")
+        # P9：未预期异常——友好文案进 message，技术细节进 raw
+        raise VideoAgentError("快照读取失败", status_code=500, raw=str(e)) from e
 
 
 class BranchRequest(BaseModel):
@@ -162,7 +168,9 @@ async def create_snapshot(body: SnapshotRequest = SnapshotRequest()):
         None,
     )
     if active is None:
-        raise HTTPException(status_code=400, detail="没有可快照的对话")
+        raise VideoAgentError(
+            "没有可快照的对话", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
     messages = list(active.get("messages") or [])
     if body.up_to_index is not None:
         if body.up_to_index < 0 or body.up_to_index >= len(messages):
@@ -230,7 +238,7 @@ async def delete_snapshot(snap_id: str):
     d = _snap_dir(svc.active_project_id or "")
     f = d / f"{snap_id}.json"
     if not f.exists():
-        raise HTTPException(status_code=404, detail="快照不存在")
+        raise VideoAgentError("快照不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
     f.unlink()
     pinned = _pinned_index(d)
     if snap_id in pinned:

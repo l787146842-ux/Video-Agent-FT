@@ -15,8 +15,11 @@ from loguru import logger
 import asyncio
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
+
+from src.video_agent.exceptions import VideoAgentError
+from src.video_agent.web.error_payload import LEGACY_VALIDATION_ERROR
 
 from .generate_common import (
     GenLogRequest,
@@ -68,7 +71,11 @@ async def get_generation_logs(limit: int = 100):
 async def add_generation_log(body: GenLogRequest):
     """前端补录生成日志（如音频规划等未走后绔任务通道的生成行为）"""
     if body.media_type not in ("image", "video", "audio"):
-        raise HTTPException(status_code=400, detail="media_type 必须为 image/video/audio")
+        raise VideoAgentError(
+            "media_type 必须为 image/video/audio",
+            status_code=400,
+            error_code=LEGACY_VALIDATION_ERROR,
+        )
     entry = _tm.record_gen_log(
         media_type=body.media_type, status=body.status, provider=body.provider,
         model=body.model, prompt=body.prompt, draft_id=body.draft_id,

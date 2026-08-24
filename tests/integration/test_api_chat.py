@@ -30,6 +30,50 @@ class TestAgentChatMock:
         resp = client.post("/api/agent/chat", json={"message": "", "provider": "mock"})
         assert resp.status_code == 400
 
+    def test_empty_message_error_payload(self, client):
+        """P9：空消息 400 出口走 ErrorPayload 契约（三层 + 兼容字段）"""
+        resp = client.post("/api/agent/chat", json={"message": "", "provider": "mock"})
+        body = resp.json()
+        assert body["detail"] == "消息不能为空"
+        assert body["message"] == "消息不能为空"
+        assert body["error_code"] == "EMPTY_MESSAGE"
+        assert body["kind"] == "unknown"
+        assert body["code"] == "err.unknown.empty_message"
+        assert "raw" not in body
+
+    def test_value_error_error_payload(self, client, monkeypatch):
+        """P9：ValueError→400 契约出口（友好文案 + error_code，状态码不变）"""
+        import src.video_agent.web.routes.agent as agent_mod
+
+        async def _boom(body):  # noqa: ARG001
+            raise ValueError("参数不合法")
+
+        monkeypatch.setattr(agent_mod, "non_stream_worker", _boom)
+        resp = client.post("/api/agent/chat", json={"message": "你好"})
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["detail"] == "参数不合法"
+        assert body["error_code"] == "VALIDATION_ERROR"
+        assert body["code"] == "err.unknown.validation_error"
+        assert body["kind"] == "unknown"
+
+    def test_adapter_error_error_payload(self, client, monkeypatch):
+        """P9：上游失败→502 契约出口（归类到 auth，raw 可空，状态码不变）"""
+        import src.video_agent.web.routes.agent as agent_mod
+        from src.video_agent.exceptions import AdapterError
+
+        async def _boom(body):  # noqa: ARG001
+            raise AdapterError("LLM 返回 HTTP 401: invalid key", http_status=401)
+
+        monkeypatch.setattr(agent_mod, "non_stream_worker", _boom)
+        resp = client.post("/api/agent/chat", json={"message": "你好"})
+        assert resp.status_code == 502
+        body = resp.json()
+        assert body["detail"] == "LLM 返回 HTTP 401: invalid key"
+        assert body["error_code"] == "ADAPTER_ERROR"
+        assert body["kind"] == "auth"
+        assert body["code"] == "err.auth.invalid_key"
+
     def test_mock_chat_returns_text(self, client, reset_state):
         resp = client.post("/api/agent/chat", json={
             "message": "你好",

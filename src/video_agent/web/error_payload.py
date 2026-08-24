@@ -11,6 +11,7 @@ ErrorPayload — 统一错误语义契约（任务 #19）。
 - code（命名空间 err.<kind>.<slug>，可扩展）：前端按 code/kind 做动作映射，
   不再猜测文案。
 - message：面向用户的人话（中文），raw：上游原始报文（折叠展示，可空）。
+  raw 字段面向本机可信场景，公网部署前需评估脱敏。
 
 SSE error 事件在既有字段（type/detail/error_code/raw）之上追加 code/kind/message，
 不破坏既有事件格式；HTTP 错误响应体在 detail/error_code 之上追加同名字段。
@@ -45,6 +46,12 @@ CODE_UPSTREAM_SERVER = "err.upstream.server_error"    # 5xx
 CODE_UPSTREAM_RELAY_REJECTED = "err.upstream.relay_rejected"  # 中继拒收通知单
 CODE_CONTENT_POLICY = "err.content.policy"            # 内容策略拒答
 CODE_UNKNOWN = "err.unknown"                          # 兜底
+
+# ---------- 非流式契约类出口的 legacy error_code（P9 错误出口统一） ----------
+# 未登记 _LEGACY_CODE_MAP → kind=unknown、code=err.unknown.<slug>（前端无特殊
+# affordance，仅展示友好文案），命名与既有码无冲突（先查后用）
+LEGACY_VALIDATION_ERROR = "VALIDATION_ERROR"  # 400 用户输入/契约校验不合法
+LEGACY_NOT_FOUND = "NOT_FOUND"                # 404 资源不存在
 
 
 @dataclass(frozen=True)

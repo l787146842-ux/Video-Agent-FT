@@ -3,14 +3,16 @@
 管理 StoryGroup 和 DraftRecord 的增删改查。
 数据源：StudioStateService（共享 + 持久化）。
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 import time
 import random
 
+from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import build_draft_dict
+from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
 
 router = APIRouter()
 
@@ -76,7 +78,9 @@ async def add_draft(group_id: str, body: DraftCreate):
                 group.setdefault("drafts", []).append(draft)
                 await svc.save_async()
                 return {"ok": True, "draft_id": draft["id"]}
-    raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
+    raise VideoAgentError(
+        f"Group {group_id} not found", status_code=404, error_code=LEGACY_NOT_FOUND
+    )
 
 
 class ReorderRequest(BaseModel):
@@ -90,7 +94,11 @@ async def reorder_groups(body: ReorderRequest):
     svc = StateManager.get_instance()
     groups = svc.state_dict.get(body.category)
     if groups is None:
-        raise HTTPException(status_code=400, detail=f"Invalid category: {body.category}")
+        raise VideoAgentError(
+            f"Invalid category: {body.category}",
+            status_code=400,
+            error_code=LEGACY_VALIDATION_ERROR,
+        )
 
     # 按新顺序重排
     id_to_group = {g["id"]: g for g in groups}
@@ -117,7 +125,9 @@ async def update_draft(draft_id: str, body: DraftPatch):
                     draft.update(patch)
                     await svc.save_async()
                     return {"ok": True}
-    raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found")
+    raise VideoAgentError(
+        f"Draft {draft_id} not found", status_code=404, error_code=LEGACY_NOT_FOUND
+    )
 
 
 @router.patch("/storyboard/groups/{group_id}")
@@ -134,4 +144,6 @@ async def update_group(group_id: str, body: GroupPatch):
                 group.update(patch)
                 await svc.save_async()
                 return {"ok": True}
-    raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
+    raise VideoAgentError(
+        f"Group {group_id} not found", status_code=404, error_code=LEGACY_NOT_FOUND
+    )

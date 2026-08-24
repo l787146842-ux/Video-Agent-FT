@@ -1,8 +1,11 @@
 """B9：视频批量生成队列 API（提交/查询/断点续跑/取消）。"""
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
+
+from src.video_agent.exceptions import VideoAgentError
+from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
 
 router = APIRouter()
 
@@ -29,7 +32,9 @@ async def create_video_batch(body: VideoBatchCreate):
             shot_group_ids=body.shot_group_ids,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise VideoAgentError(
+            str(e), status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        ) from e
 
 
 @router.get("/generate/video-batch")
@@ -48,7 +53,9 @@ async def get_video_batch(batch_id: str):
     try:
         return get_video_batch_manager().get(batch_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"批次 '{batch_id}' 不存在")
+        raise VideoAgentError(
+            f"批次 '{batch_id}' 不存在", status_code=404, error_code=LEGACY_NOT_FOUND
+        )
 
 
 @router.post("/generate/video-batch/{batch_id}/resume")
@@ -59,7 +66,9 @@ async def resume_video_batch(batch_id: str):
     try:
         return get_video_batch_manager().resume(batch_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"批次 '{batch_id}' 不存在")
+        raise VideoAgentError(
+            f"批次 '{batch_id}' 不存在", status_code=404, error_code=LEGACY_NOT_FOUND
+        )
 
 
 @router.post("/generate/video-batch/{batch_id}/cancel")
@@ -69,5 +78,7 @@ async def cancel_video_batch(batch_id: str):
 
     ok = get_video_batch_manager().cancel(batch_id)
     if not ok:
-        raise HTTPException(status_code=404, detail=f"批次 '{batch_id}' 不存在")
+        raise VideoAgentError(
+            f"批次 '{batch_id}' 不存在", status_code=404, error_code=LEGACY_NOT_FOUND
+        )
     return {"ok": True}

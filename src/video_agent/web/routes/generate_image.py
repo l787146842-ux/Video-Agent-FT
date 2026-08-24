@@ -7,12 +7,13 @@
 import time
 from typing import Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from loguru import logger
 
 from src.video_agent.adapters.factory import AdapterFactory
-from src.video_agent.exceptions import GenerationError
+from src.video_agent.exceptions import GenerationError, VideoAgentError
+from src.video_agent.web.error_payload import LEGACY_VALIDATION_ERROR
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, ALL_CATEGORIES_TUPLE
 from src.video_agent.utils import gen_id
@@ -44,7 +45,9 @@ async def generate_image(body: ImageGenRequest):
     mock 供应商：走 mock 适配器（结果标注 mock）。
     """
     if not body.prompt.strip():
-        raise HTTPException(status_code=400, detail="提示词不能为空")
+        raise VideoAgentError(
+            "提示词不能为空", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
 
     # ---------- mock 路径（仅显式选择） ----------
     if is_mock_provider(body.provider_id, body.model):
@@ -139,7 +142,9 @@ async def _generate_image_mock(body: ImageGenRequest):
     try:
         adapter = AdapterFactory.get_adapter("image_generation", adapter_name)
     except ValueError:
-        raise HTTPException(status_code=500, detail=f"mock 适配器 '{adapter_name}' 未注册")
+        raise VideoAgentError(
+            f"mock 适配器 '{adapter_name}' 未注册", status_code=500
+        )
 
     ref_url = body.reference_images[0]["url"] if body.reference_images else None
     result = await adapter.generate_image(prompt=body.prompt, reference_image=ref_url)

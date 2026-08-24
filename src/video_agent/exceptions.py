@@ -20,12 +20,22 @@ class VideoAgentError(Exception):
     status_code: int = 500  # 默认 HTTP 状态码
     error_code: str = "INTERNAL_ERROR"  # 错误码（前端可根据此码做国际化翻译）
 
-    def __init__(self, message: str, *, status_code: int = 0, error_code: str = ""):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int = 0,
+        error_code: str = "",
+        raw: str = "",
+    ):
         super().__init__(message)
         if status_code:
             self.status_code = status_code
         if error_code:
             self.error_code = error_code
+        # P9：未预期异常的技术细节（友好文案进 message，原始报文进 raw，
+        # exception_handler 转译时随 ErrorPayload.raw 下发，前端折叠展示）
+        self.raw = raw
 
 
 class AdapterError(VideoAgentError):
