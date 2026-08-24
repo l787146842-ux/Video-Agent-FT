@@ -72,6 +72,9 @@ async def merge_fc_response(
             visible = (response.content or "").strip()
             if not visible:
                 visible = fc_confirmation
-            return visible, response.finish_reason, 0, fc_tool_results, fc_warnings
+            # 整改批 1.2b 裁决（历史语义终结）：确认轮不再硬编 0，返回
+            # execute_fn 已解出的真实 fc_applied——暂停轮的工具执行事实
+            # 如实入账（停止相位/空输出重试守卫/applied_actions/trace）。
+            return visible, response.finish_reason, fc_applied, fc_tool_results, fc_warnings
         return response.content, response.finish_reason, fc_applied, fc_tool_results, fc_warnings
     return response.content, response.finish_reason, 0, [], []

@@ -342,6 +342,8 @@ async def run_agent_loop(
         # transient）：空响应或 MALFORMED_FUNCTION_CALL 连续发生 → nudge 重试至多 2 次，
         # 达到上限后以明确故障文案收尾（不再静默落为「没有返回可见回复」）；
         # 供应商侧错误已由上方 AdapterError 分流承接，不会误入本重试路径。
+        # 整改批 1.2b：暂停确认轮现有真实 fc_applied（含 workflow_pause 自身），
+        # 且正文有确认文案兜底，双条件均使其不入本重试（守卫语义保持正确）。
         bad_retries = 0
         while not str(content or "").strip() and fc_applied == 0 and bad_retries < 2:
             bad_retries += 1

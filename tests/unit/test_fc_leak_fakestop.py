@@ -58,7 +58,9 @@ async def test_planner_does_not_synthesize_action_blocks(svc, executor, monkeypa
     assert content == "拆解完成，请确认。"            # 正文原样返回
     assert holder["message"] == "已拆解完毕，请确认"   # 确认结构化上抛
     assert holder["options"] == [{"label": "继续下一步", "description": ""}]
-    assert fc_applied == 0                          # 确认轮不计 applied（历史语义保持）
+    # 整改批 1.2b 裁决（历史语义终结）：确认轮返回 execute 解出的真实
+    # fc_applied（此处桩值 2），不再硬编 0；暂停轮工具执行事实如实入账
+    assert fc_applied == 2
 
 
 async def test_fc_text_visible_as_is(executor):
