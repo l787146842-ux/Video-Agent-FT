@@ -5,7 +5,8 @@
 - trace 账本写满即轮转（agent_traces.jsonl → .1 → .2），盘点必须扫描全部
   轮转份，防只读主文件导致闸机触发统计系统性低估（误拆活跃闸）；
 - 读取顺序按轮转序号从旧到新：.2 → .1 → 主文件；
-- 聚合计数逻辑（total/blocked/overridden）不变，脏行跳过。
+- 聚合计数逻辑（total/blocked/overridden）不变，脏行跳过；
+- P5：统计口径经 normalize_rule_id 归一，原始签发值留痕在 raw_ids（防口径断裂）。
 """
 import json
 import pathlib
@@ -65,9 +66,11 @@ def test_stats_include_all_rotations(tmp_path: pathlib.Path):
     stats = runtime_gate_stats(base)
     # spec_gate：.2 拦 1 次 + .1 放行覆盖 1 次 = 2；若只读主文件则完全漏计
     assert stats["skill.flow.spec_gate"] == {
-        "total": 2, "blocked": 1, "overridden": 1}
+        "total": 2, "blocked": 1, "overridden": 1,
+        "raw_ids": {"skill.flow.spec_gate"}}
     assert stats["platform.gen_confirm"] == {
-        "total": 2, "blocked": 0, "overridden": 0}
+        "total": 2, "blocked": 0, "overridden": 0,
+        "raw_ids": {"platform.gen_confirm"}}
 
 
 def test_stats_only_main_present(tmp_path: pathlib.Path):
@@ -75,7 +78,8 @@ def test_stats_only_main_present(tmp_path: pathlib.Path):
     base = tmp_path / "agent_traces.jsonl"
     _write(base, [[_gate("platform.tool_risk", ok=False)]])
     assert runtime_gate_stats(base) == {
-        "platform.tool_risk": {"total": 1, "blocked": 1, "overridden": 0}}
+        "platform.tool_risk": {"total": 1, "blocked": 1, "overridden": 0,
+                               "raw_ids": {"platform.tool_risk"}}}
 
 
 def test_stats_dirty_lines_skipped(tmp_path: pathlib.Path):
@@ -85,4 +89,21 @@ def test_stats_dirty_lines_skipped(tmp_path: pathlib.Path):
     old.write_text("not-json\n\n", encoding="utf-8")
     _write(base, [[_gate("skill.cjk_min_ratio", ok=False)]])
     assert runtime_gate_stats(base) == {
-        "skill.cjk_min_ratio": {"total": 1, "blocked": 1, "overridden": 0}}
+        "skill.cjk_min_ratio": {"total": 1, "blocked": 1, "overridden": 0,
+                                "raw_ids": {"skill.cjk_min_ratio"}}}
+
+
+def test_stats_normalizes_alias_rule_ids(tmp_path: pathlib.Path):
+    """P5：历史别名 rule_id 统计侧归一到注册表正式条目，原始值留痕 raw_ids。
+
+    历史 trace 不改写：同一规则的新旧写法并入同一统计行，原始值并列可查。"""
+    base = tmp_path / "agent_traces.jsonl"
+    _write(base, [
+        [_gate("storyboard_prompt_structure", ok=False)],  # 旧写法（历史留痕）
+        [_gate("skill.prompt_structure", ok=False)],       # 正式 ID
+    ])
+    stats = runtime_gate_stats(base)
+    assert "storyboard_prompt_structure" not in stats
+    assert stats["skill.prompt_structure"] == {
+        "total": 2, "blocked": 2, "overridden": 0,
+        "raw_ids": {"storyboard_prompt_structure", "skill.prompt_structure"}}

@@ -253,5 +253,96 @@
     "expect_blocked": true,
     "expect_rule": "skill.cjk_min_ratio",
     "note": "语言闸边界拦截样本：英文为主 + 少量中文，占比低于地板"
+  },
+  {
+    "id": "ps_ok_all_structure",
+    "kind": "shot",
+    "prompt": "镜头总时长：13秒。缓慢环绕全景，雨夜霓虹下的站台，主角撑伞独立，水洼倒映车流光轨，镜头缓缓收至近景，色调青蓝克制，<雨声与远处车流>，no music，no subtitles。",
+    "manifest": { "gates": { "require_duration": true, "require_subtitle": true, "require_camera_language": true, "require_audio_layer": true } },
+    "expect_blocked": false,
+    "note": "P6 结构总闸正例：四结构维度齐备放行（guard_pipeline 签发点签 skill.prompt_structure ok）"
+  },
+  {
+    "id": "ps_ok_keyelement_composite",
+    "kind": "keyElement",
+    "prompt": "中年女舰长秦岚，银灰短发，左眼有一道旧伤疤，身穿深蓝色制服外套，肩章略有磨损，目光沉稳坚定，冷色顶光下的坚毅质感。",
+    "manifest": null,
+    "expect_blocked": false,
+    "note": "P6 结构总闸正例：关键元素字数/语言达标放行（默认策略，总闸组合判定通过）"
+  },
+  {
+    "id": "ps_ok_relaxed_manifest",
+    "kind": "shot",
+    "prompt": "长焦横移全景，黄昏码头渔船缓缓归港，海面泛着金色余晖，桅杆轻轻摇晃，海鸥掠过远处海平线，岸边人影被夕阳渐渐拉长，归港的汽笛声隐约传来，远处灯塔的轮廓在暮色里渐渐清晰，色调温暖克制，无字幕。",
+    "manifest": { "gates": { "require_duration": false, "require_audio_layer": false } },
+    "expect_blocked": false,
+    "note": "P6 结构总闸边界正例：manifest 关闭时长/音频维度后，无时长无音频包装亦放行（平台地板仍生效）"
+  },
+  {
+    "id": "ps_block_multi_missing",
+    "kind": "shot",
+    "prompt": "清晨的老茶馆里，人们围坐闲话家常，蒸汽从紫砂壶口缓缓升起，窗外梧桐叶上挂着昨夜的雨珠，阳光透过玻璃洒在旧木桌面上，尘埃在光柱中轻轻浮动，墙角的伞架还滴着水，色调暖灰克制。",
+    "manifest": { "gates": { "require_duration": true, "require_subtitle": true, "require_camera_language": true, "require_audio_layer": true } },
+    "expect_blocked": true,
+    "expect_rule": "skill.prompt_structure",
+    "note": "P6 结构总闸反例（复合形态）：字数达标但四结构维度全缺，组合签出四条硬伤；归因经 guard_pipeline 复合签发点（reject 文案含稳定前缀）"
+  },
+  {
+    "id": "ps_block_dual_floor",
+    "kind": "shot",
+    "prompt": "Slow push-in, the relic glows softly. 总时长：10秒。",
+    "manifest": null,
+    "expect_blocked": true,
+    "expect_rule": "skill.prompt_structure",
+    "note": "P6 结构总闸反例（双地板复合）：字数不足 + 正文几乎全英文，两条平台地板硬伤组合签发"
+  },
+  {
+    "id": "gen_confirm_unconfirmed_block",
+    "kind": "gen_confirm",
+    "prompt": "场景描述（不参与判定）：image_generate 目标草稿存在未确认 Prompt Draft",
+    "manifest": null,
+    "drafts": [ { "id": "d-1", "tag": "Agent", "prompt": "x" } ],
+    "expect_blocked": true,
+    "expect_rule": "platform.gen_confirm",
+    "note": "P6 生成确认闸边界：Skill 激活 strict 下存在未确认草稿即硬拒（模型跳确认非用户意志）；判定走 guard_pipeline.evaluate_gen_confirm"
+  },
+  {
+    "id": "gen_confirm_all_confirmed_pass",
+    "kind": "gen_confirm",
+    "prompt": "场景描述（不参与判定）：image_generate 目标草稿全部已用户确认",
+    "manifest": null,
+    "drafts": [ { "id": "d-1", "tag": "已确认", "prompt": "x" } ],
+    "expect_blocked": false,
+    "note": "P6 生成确认闸边界：全部草稿 tag=已确认即放行"
+  },
+  {
+    "id": "gen_confirm_override_pass",
+    "kind": "gen_confirm",
+    "prompt": "场景描述（不参与判定）：存在未确认草稿但用户坚持一次性豁免",
+    "manifest": null,
+    "drafts": [ { "id": "d-1", "tag": "Agent", "prompt": "x" } ],
+    "override": "all",
+    "expect_blocked": false,
+    "note": "P6 生成确认闸边界：gate_override=all 一次性豁免放行（硬拒降为警告留痕，决策 D 语义）"
+  },
+  {
+    "id": "spec_gate_declared_warn_only",
+    "kind": "spec_gate",
+    "prompt": "场景描述（不参与判定）：Skill 声明 flow.spec_gate 且未写规格文档时搭建故事板",
+    "manifest": null,
+    "skill": "水墨风格武侠短片",
+    "expect_blocked": false,
+    "expect_rule": "skill.flow.spec_gate",
+    "note": "P6 规格前置闸边界：声明 spec_gate 且无规格仍不硬拦（只警告不拦人，flow_gate 恒返回 None）；判定走 fc_gates.flow_gate"
+  },
+  {
+    "id": "spec_gate_skill_inactive",
+    "kind": "spec_gate",
+    "prompt": "场景描述（不参与判定）：未激活 Skill 时搭建故事板",
+    "manifest": null,
+    "skill": "",
+    "expect_blocked": false,
+    "expect_rule": "skill.flow.spec_gate",
+    "note": "P6 规格前置闸边界：无 Skill 激活时流程闸不适用（平台级流程闸只对显式声明的 Skill 生效）"
   }
 ]

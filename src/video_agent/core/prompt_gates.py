@@ -21,7 +21,6 @@
 """
 import json
 import re
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.video_agent.config import settings
@@ -37,71 +36,13 @@ from src.video_agent.state.models import (
 )
 from src.video_agent.utils.prompts import load_prompt_section
 
-# ---------- 闸机规则注册表（Policy-as-Data，宪法 §2.3； 恢复） ----------
-
-LAYER_PLATFORM = "platform"
-LAYER_SKILL = "skill"
-LAYER_SESSION = "session"
-
-
-@dataclass(frozen=True)
-class GateRuleMeta:
-    """闸机规则元信息（注册表条目）：稳定 rule_id + 层归属 + 中文描述"""
-    rule_id: str
-    layer: str
-    description: str
-
-
-# 规则注册表：平台层为硬边界（manifest 无权关闭，仅可经用户一次性申诉放行）；
-# Skill 层为内容结构/流程规则（manifest 可关/放宽/加严；流程闸只警告不拦人）。
-GATE_RULES: Dict[str, GateRuleMeta] = {
-    r.rule_id: r for r in (
-        GateRuleMeta("platform.prompt_write", LAYER_PLATFORM,
-                     "提示词写入统一判定入口（结构闸 + 流程闸组合）"),
-        GateRuleMeta("platform.shot_min_chars", LAYER_PLATFORM,
-                     "分镜提示词最短字数地板（防敷衍，不可被 Skill 降低）"),
-        GateRuleMeta("platform.element_min_chars", LAYER_PLATFORM,
-                     "关键元素提示词最短字数地板（防敷衍，不可被 Skill 降低）"),
-        GateRuleMeta("platform.gen_confirm", LAYER_PLATFORM,
-                     "生成确认闸：未经用户确认的 Prompt Draft 不触发生成"),
-        GateRuleMeta("platform.tool_risk", LAYER_PLATFORM,
-                     "工具风险分级闸（§2.7）：high 级且无既有确认原语覆盖的工具"
-                     "（画布写入/文档写入）须经用户显式同意方可执行"),
-        GateRuleMeta("skill.require_duration", LAYER_SKILL,
-                     "分镜提示词须写明镜头总时长"),
-        GateRuleMeta("skill.require_subtitle", LAYER_SKILL,
-                     "分镜提示词须含负面约束 no subtitles"),
-        GateRuleMeta("skill.require_camera_language", LAYER_SKILL,
-                     "分镜提示词须含镜头语言（景别/角度/运动）"),
-        GateRuleMeta("skill.require_audio_layer", LAYER_SKILL,
-                     "分镜提示词须含音频层（对白/音效/音乐或 no music）"),
-        GateRuleMeta("skill.cjk_min_ratio", LAYER_SKILL,
-                     "提示词正文中文占比下限（0 = 关闭该检查）"),
-        GateRuleMeta("skill.shot_min_chars", LAYER_SKILL,
-                     "分镜提示词最短字数（可被 manifest 抬高，不低于平台地板）"),
-        GateRuleMeta("skill.element_min_chars", LAYER_SKILL,
-                     "关键元素提示词最短字数（可被 manifest 抬高，不低于平台地板）"),
-        GateRuleMeta("skill.require_at_ref", LAYER_SKILL,
-                     "分镜提示词须含 @元素引用（加严规则，默认关闭）"),
-        GateRuleMeta("skill.flow.spec_gate", LAYER_SKILL,
-                     "规格文档前置闸：未写规格时附警告（只警告不拦人）"),
-        GateRuleMeta("skill.flow.element_image", LAYER_SKILL,
-                     "元素概念图前置闸：元素无图时附警告（只警告不拦人）"),
-        GateRuleMeta("skill.flow.storyboard_pending", LAYER_SKILL,
-                     "故事板待确认窗口闸：结构未确认时附警告（只警告不拦人）"),
-        GateRuleMeta("skill.gen_asset_binding", LAYER_SKILL,
-                     "生成前资产绑定检查：分镜 sceneRefs 引用的关键元素"
-                     "无概念图时拦截视频生成（任务#12 E-6 禁令下沉）"),
-        GateRuleMeta("skill.script_required", LAYER_SKILL,
-                     "剧本原料闸：需剧本 Skill 原料缺失时反复提醒上传；"
-                     "执行侧拦 agent 越阶结构操作，不拦用户；豁免/坚持旁路"),
-        GateRuleMeta("platform.stage_precondition", LAYER_PLATFORM,
-                     "阶段前置闸（控制流统一）：工具归属阶段的前置阶段"
-                     "未完成时拒收调用（frontmatter 声明依赖图为唯一事实源）；机械强制，"
-                     "manifest 无权关闭，仅用户坚持可一次性豁免放行并留痕"),
-    )
-}
-
+# 闸机规则注册表数据层切出至 core/gate_registry.py（任务 23 P7-2）：纯数据 + 归一函数，
+# 无判定逻辑；承重壳 re-export 保持既有引用路径不变（宪法 §12 登记壳，coupling_registry
+# R13 登记；gate_registry 顶层无依赖，不触 prompt_gates→gates_inputs 导入顺序约束）。
+from src.video_agent.core.gate_registry import (
+    LAYER_PLATFORM, LAYER_SKILL, LAYER_SESSION,
+    GateRuleMeta, GATE_RULES, RULE_ALIASES, normalize_rule_id,
+)
 
 # 镜头语言客观标记（提示词里出现任一即视为含摄像机层）
 _CAMERA_MARKERS = (

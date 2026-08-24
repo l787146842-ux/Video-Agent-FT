@@ -25,6 +25,13 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRACES = ROOT / "data" / "agent_traces.jsonl"
 SCRIPTS = ROOT / "scripts"
 
+# P5：注册表与归一化口径接入（统计侧归一，历史 trace 原始值不改写）
+sys.path.insert(0, str(ROOT))
+from src.video_agent.core.prompt_gates import (  # noqa: E402
+    GATE_RULES,
+    normalize_rule_id,
+)
+
 # 轮转份命名：主文件 agent_traces.jsonl + agent_traces.jsonl.N（N 越大越旧）
 _ROTATION_RE = re.compile(r"^.*?\.jsonl\.(\d+)$")
 
@@ -54,7 +61,10 @@ def trace_files(traces: pathlib.Path = TRACES) -> list:
 
 
 def runtime_gate_stats(traces: pathlib.Path = TRACES) -> dict:
-    """rule_id → {total, blocked, overridden}（只读扫描 trace 账本全部轮转份）。"""
+    """归一 rule_id → {total, blocked, overridden, raw_ids}。
+
+    只读扫描 trace 账本全部轮转份；统计口径经 normalize_rule_id 归一
+    （P5），原始签发值保留在 raw_ids 供报表并列展示，防口径断裂。"""
     stats: dict = {}
     files = trace_files(traces)
     if not files:
@@ -77,9 +87,12 @@ def _accumulate_from_file(path: pathlib.Path, stats: dict) -> None:
                 continue
             for step in trace.get("steps") or []:
                 for g in step.get("gates") or []:
-                    rid = str(g.get("rule_id") or "?")
+                    raw = str(g.get("rule_id") or "?")
+                    rid = normalize_rule_id(raw)
                     s = stats.setdefault(
-                        rid, {"total": 0, "blocked": 0, "overridden": 0})
+                        rid, {"total": 0, "blocked": 0, "overridden": 0,
+                              "raw_ids": set()})
+                    s["raw_ids"].add(raw)
                     s["total"] += 1
                     if not g.get("ok", True):
                         s["blocked"] += 1
@@ -106,13 +119,32 @@ def main() -> int:
     if not stats:
         print("（trace 账本无闸机判定记录）")
     else:
-        print("| rule_id | 判定总数 | 拦截数 | 放行覆盖数 | 折旧提示 |")
-        print("|---|---|---|---|---|")
+        print("| rule_id（归一） | 原始签发值 | 判定总数 | 拦截数 "
+              "| 放行覆盖数 | 折旧提示 |")
+        print("|---|---|---|---|---|---|")
         for rid in sorted(stats):
             s = stats[rid]
             hint = "零拦截，候选降级评估" if s["blocked"] == 0 else ""
-            print(f"| {rid} | {s['total']} | {s['blocked']} "
+            raw = " / ".join(sorted(s.get("raw_ids") or {rid}))
+            print(f"| {rid} | {raw} | {s['total']} | {s['blocked']} "
                   f"| {s['overridden']} | {hint} |")
+    print()
+    print("### 注册表对账（GATE_RULES vs trace 实际活跃）")
+    print()
+    registry_ids = set(GATE_RULES)
+    active_ids = set(stats)
+    unregistered = sorted(active_ids - registry_ids)
+    zero_sample = sorted(registry_ids - active_ids)
+    if unregistered:
+        print(f"- ⚠ 实际活跃但未登记进注册表：{', '.join(unregistered)}")
+    else:
+        print("- 实际活跃规则全部在注册表内（对账通过）")
+    print(f"- 零样本清单（注册表 {len(registry_ids)} 条，活跃 "
+          f"{len(active_ids & registry_ids)} 条，零触发 "
+          f"{len(zero_sample)} 条）：")
+    for rid in zero_sample:
+        meta = GATE_RULES[rid]
+        print(f"  - {rid}（{meta.layer}）：{meta.description}")
     print()
     print("## 二、CI 棘轮门禁清单（触发计数按季度审计人工补录）")
     print()

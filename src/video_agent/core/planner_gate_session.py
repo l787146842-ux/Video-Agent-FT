@@ -35,7 +35,8 @@ def consume_gate_overrides(state_manager: Any, user_message: Any) -> Any:
             )
             logger.info(f"[GateOverride] 消费 {len(taken)} 条一次性豁免，作用域={gate_override_scope}")
             AgentTracer.get_instance().record_gate(
-                "platform.gate_override", "session", True,
+                # override 留痕经统一归一出口（P5；正式 ID 归一为恒等，语义不变）
+                prompt_gates.normalize_rule_id("platform.gate_override"), "session", True,
                 overridden=True, message=f"一次性放行生效，作用域={gate_override_scope}",
                 scope=str(gate_override_scope),
             )

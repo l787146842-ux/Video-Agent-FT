@@ -5,8 +5,7 @@
 LLM 检查（judge 模式）：把场景发给 LLM，用 judge 提示词判定行为是否合规。
 
 用法：
-    python scripts/eval/run_eval.py --mode local
-    python scripts/eval/run_eval.py --mode judge --provider <id> --model <name>
+    python scripts/run_eval_pipeline.py            # 报告输出到 stdout
 """
 import asyncio
 from typing import Any, Dict, List, Tuple
