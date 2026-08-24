@@ -17,40 +17,37 @@ requires_inputs:
 - type: music
   required: true
 tools_required:
-- script_analyze
 - document_write
-- storyboard_key_elements
-- storyboard_shots
-- storyboard_audio
-- write_media_prompt
+- storyboard_create_group
+- storyboard_add_draft
+- storyboard_patch_draft
 - image_generate
 - generate_video
-- audio_generate
-- video_assembler
+- workflow_pause
 - ImageToVideoByAudio
 version: '1.0'
 ---
 
 <planner>
 **阶段逻辑与依赖关系：**
-1. 分析已上传的音乐，导出其节奏结构、精确时间（时间戳）和歌词 → **script_analyze**。
+1. 分析已上传的音乐，导出其节奏结构、精确时间（时间戳）和歌词（模型基于上传素材自行理解分析即可，无需工具调用）。
 2. 编写 制片规格.md（标题、类型、画幅、时长、视觉风格、语言；图像/视频生成渠道与分辨率遵循全局设置） → **document_write**。
-3. 生成故事板（关键元素、镜头列表、音频层） → **storyboard_key_elements / storyboard_shots / storyboard_audio**。并将上传的音频绑定到audio layer → **audio_generate**。
-4. 设置元素：如果用户已经上传了元素资源（如角色图像或参考库中的角色），请直接将其作为资产绑定到相应的关键元素上。否则，为所有元素生成图像 → **write_media_prompt、image_generate**。
-5. 为每个镜头生成一张关键帧图像以锁定视觉一致性；参考元素图像（第 3 步），后续镜头应参考之前类似的画面以保持连贯性 → **write_media_prompt、image_generate**。
-6. 为每个镜头生成最终视频；对于演唱场景，使用 **ImageToVideoByAudio**（待平台补齐工具：音频驱动口型同步视频生成）进行唇形同步，并结合歌词创造富有表现力的表演。对于非对口型场景，请使用 **generate_video**（MultiModalToVideo 多模态参考通道）以保持一致性。严格参考音频片段来驱动该镜头中的关键帧 → **write_media_prompt、generate_video**。
-7. 所有资源就绪后进行最终合成；然后引导用户导出 → **video_assembler**。
+3. 生成故事板（关键元素、镜头列表、音频层） → **storyboard_create_group / storyboard_add_draft / storyboard_patch_draft**。并将上传的音频经 storyboard_patch_draft 登记到对应草稿的参考字段（生成时系统自动挂接参考）；背景音乐等独立音频由系统音频生成通道按 audio_layers 配置产出（无需工具调用）。
+4. 设置元素：如果用户已经上传了元素资源（如角色图像或参考库中的角色），请直接经 storyboard_patch_draft 将其登记到相应关键元素的参考字段（生成时系统自动挂接参考）。否则，为所有元素生成图像（提示词先经 storyboard_patch_draft 写入草稿）→ image_generate。
+5. 为每个镜头生成一张关键帧图像以锁定视觉一致性；参考元素图像（第 3 步），后续镜头应参考之前类似的画面以保持连贯性（提示词先经 storyboard_patch_draft 写入草稿）→ image_generate。
+6. 为每个镜头生成最终视频；对于演唱场景，使用 **ImageToVideoByAudio**（待平台补齐工具：音频驱动口型同步视频生成）进行唇形同步，并结合歌词创造富有表现力的表演。对于非对口型场景，请使用 **generate_video**（MultiModalToVideo 多模态参考通道）以保持一致性。严格参考音频片段来驱动该镜头中的关键帧（提示词先经 storyboard_patch_draft 写入草稿）→ generate_video。
+7. 所有资源就绪后进行最终合成；时间线组装与导出由用户在工作台操作，Agent 引导即可（无对应工具调用）。
 
 **依赖关系：** 2→1；3→1,2；4→2；5→3；6→3,5；7→3,6。
 
-**注意 — 用户提供或预先存在的媒体（主要影响第 3-6 步）：** 在填充生成内容之前，先通过 **bind_asset** 将媒体绑定并分配到适当的分镜位置；避免重复生成用户已提供的内容。
+**注意 — 用户提供或预先存在的媒体（主要影响第 3-6 步）：** 在填充生成内容之前，先将媒体经 storyboard_patch_draft 登记到对应草稿的参考字段（生成时系统自动挂接参考），并分配到适当的分镜位置；避免重复生成用户已提供的内容。
 
-**何时暂停：** 不要一次性运行所有步骤。在上述每个关键阶段（例如：规格确定后、故事板后、元素图像后、关键帧后、镜头视频后、音频后）停止，与用户确认，然后再继续下一步。使用卡片或 reply_to_user 在继续前邀请用户进行审查。
+**何时暂停：** 不要一次性运行所有步骤。在上述每个关键阶段（例如：规格确定后、故事板后、元素图像后、关键帧后、镜头视频后、音频后）停止，与用户确认，然后再继续下一步。使用卡片或调用 workflow_pause 在继续前邀请用户进行审查。
 
 **音频驱动视频（口形同步）的依赖关系（唇形同步依赖的“音频驱动视频”能力待平台补齐，当前不可用，不得向用户虚报）：** 
    **先决条件链：** 在分镜脚本、起始帧和最终确定的驱动音频全部就绪并经用户确认之前，绝对不能开始最终视频生成。
-   **工作流修正：** 如果缺少驱动音频，请在视频合成前转向 `audio_generate`。
-    *   **用户覆盖与风险：** 如果用户要求在没有最终音频的情况下生成视频，您必须在 `reply_to_user` 中说明：“由于缺少驱动音频，现在生成将导致唇形同步精度下降。” 仅在获得用户明确确认后方可继续。
+   **工作流修正：** 如果缺少驱动音频，请在视频合成前转向音频生成——由系统音频生成通道按 audio_layers 配置产出（无需模型调用工具）。
+    *   **用户覆盖与风险：** 如果用户要求在没有最终音频的情况下生成视频，您必须直接向用户如实说明：“由于缺少驱动音频，现在生成将导致唇形同步精度下降。” 仅在获得用户明确确认后方可继续。
    **缺失音频资源恢复（工作流修正）：** 如果分镜脚本已准备就绪，但缺少所需的音频，请转向音频生成。
 </planner>
 
@@ -170,5 +167,5 @@ version: '1.0'
 <video_assembler>
 - 静音 `video_track`；根据时间戳（以及歌词提示（如使用））将每个镜头对齐到音乐时间线。
 - 对于使用 ImageToVideoByAudio 生成的唇形同步镜头，请勿更改播放速度或时间戳。如果两个唇形同步片段之间出现没有可用素材的空白（速度必须保持固定），请用现有素材中最合适的叙事/表演剪辑来填补。
-- 当根据逐行或逐短语的 `start_ms` / `end_ms` 构建分镜时间线时，增加 ±1 秒的缓冲区；如果缓冲区与相邻镜头重叠，请合并、在自然的短语边界处重新分割，或在生成前调整镜头边界——仍然保持每个镜头中的完整歌词单元（与 storyboard_key_elements / storyboard_shots / storyboard_audio 的规则相同）。
+- 当根据逐行或逐短语的 `start_ms` / `end_ms` 构建分镜时间线时，增加 ±1 秒的缓冲区；如果缓冲区与相邻镜头重叠，请合并、在自然的短语边界处重新分割，或在生成前调整镜头边界——仍然保持每个镜头中的完整歌词单元（与 storyboard_create_group / storyboard_add_draft / storyboard_patch_draft 阶段的规则相同）。
 </video_assembler>

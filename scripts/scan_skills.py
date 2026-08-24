@@ -66,14 +66,12 @@ PENDING_PLATFORM_TOOLS = frozenset({
 # tools_required 存在性探针的「待补齐豁免」清单（任务#5 B-2）：
 # 路线图工具尚未在平台注册为真实 FC 工具，Skill 声明它们是有意的
 # 前瞻声明，探针跳过不计 WARN；平台落地对应工具后应从本名单移除。
-# （storyboard_key_elements/shots/audio 等管线能力词汇另由
+# （整改批 2.1 清偿：script_analyze / write_media_prompt / audio_generate /
+# video_assembler 四项已随 Skill 正文清洗移除——文档不再声明、门禁不再
+# 豁免；storyboard_key_elements/shots/audio 等管线能力词汇由
 # PIPELINE_CAPABILITY_TOOLS 统一识别，属已退役工具的阶段能力标记。）
 PENDING_ROUTE_EXEMPT_TOOLS = frozenset({
-    "audio_generate",      # 音频生成（当前为生成通道内部能力，未独立注册工具）
-    "video_assembler",     # 时间线组装（路线图工具）
     "super_resolution",    # 视频超分（路线图工具，同 PENDING_PLATFORM_TOOLS）
-    "script_analyze",      # 剧本分析（路线图工具；亦属管线能力词汇）
-    "write_media_prompt",  # 媒体提示词编写（路线图工具；亦属管线能力词汇）
     # 音频驱动图生视频（路线图前瞻能力，同 PENDING_PLATFORM_TOOLS；
     # 平台落地后移除）
     "ImageToVideoByAudio",
@@ -140,8 +138,11 @@ def real_tool_names() -> frozenset:
     不维护第二份硬编码工具清单：import 即触发 ToolManager 注册
     （平台工具），画布工具在 web 侧按需注册，此处补注册凑全集
     （register 幂等）。新增/下线工具时本门禁口径自动跟随。
-    管线能力词汇（任务#36 B5 执行器退役，同名工具已删除）仍在
-    frontmatter 声明与 Skill 流程文本中出现，白名单保留豁免。
+    整改批 2.1 清偿：管线能力词汇（已退役工具的阶段标记）不再注入
+    本白名单——正文清洗后 Skill 流程文本一律使用真实工具名，散文再现
+    能力词即 FAIL（防回潮）；能力词仅作为 <章节标签>（_TAG_RE 豁免）
+    与 frontmatter/代码侧阶段标记存续，模型可见对照表见
+    prompts/planner/system_fc.md「Skill 文档能力词对照」段。
     """
     from loguru import logger
     logger.disable("src.video_agent")  # 注册期日志对门禁无意义，保持输出干净
@@ -149,7 +150,6 @@ def real_tool_names() -> frozenset:
     from src.video_agent.tools.canvas_tools import register_canvas_tools
     register_canvas_tools()
     names = set(ToolManager._tools)
-    names.update(PIPELINE_CAPABILITY_TOOLS)
     names.add(CUSTOM_SECTION_EXECUTOR)
     return frozenset(names)
 

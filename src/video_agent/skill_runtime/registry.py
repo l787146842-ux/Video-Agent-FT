@@ -27,6 +27,10 @@ from src.video_agent.skill_runtime.manifest_schema import (
 # STORYBOARD_STRUCTURE_TOOLS 降级为「章节声明 → 阶段能力」标记，仅供
 # pipeline_orchestrator 阶段裁剪、prompt_gates 音频闸、skill_docs/scan_skills
 # Skill lint 作客观探针；平台不再注册同名工具）。
+# 整改批 2.1：Skill 正文散文已全部清洗为真实工具名（scan_skills --gate
+# 白名单不再豁免本表词汇，散文再现即 FAIL）；模型可见的能力词→真实动作
+# 对照表唯一表述源 = prompts/planner/system_fc.md「Skill 文档能力词对照」
+# 段——本表增删词汇时须同批同步该段。
 PIPELINE_CAPABILITY_TOOLS = (
     "script_analyze",
     "storyboard_key_elements",

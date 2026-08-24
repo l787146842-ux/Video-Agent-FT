@@ -1,4 +1,4 @@
-# 会话级 compaction 模板（批次6 X3）
+# 会话级 compaction 模板
 
 > chat_service 在历史消息达到触发条件（token 超窗口 0.6 倍 或 条数达
 > HISTORY_COMPACT_THRESHOLD）时，用便宜模型把较早对话压缩为一段摘要，

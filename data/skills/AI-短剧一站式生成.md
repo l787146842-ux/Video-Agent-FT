@@ -22,16 +22,13 @@ pause_points:
   trigger: batch_boundary
   description: 每批分镜视频生成完毕后暂停，等待用户确认后再继续下一批或进入时间线组装。
 tools_required:
-- script_analyze
+- read_uploaded_doc
 - document_write
-- storyboard_key_elements
-- storyboard_shots
-- storyboard_audio
-- write_media_prompt
+- storyboard_create_group
+- storyboard_add_draft
+- storyboard_patch_draft
 - image_generate
 - generate_video
-- audio_generate
-- video_assembler
 - super_resolution
 - workflow_pause
 version: '1.0'
@@ -48,14 +45,14 @@ version: '1.0'
 
 **全流程阶段与依赖关系**
 
-1. 读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型 → **script_analyze**
+1. 读取并分析用户上传的剧本文件，提取角色、场景、关键道具，识别剧本类型（read_uploaded_doc）
 2. 将全局制作参数写入 制片规格.md（画幅比例、目标时长、影像风格基调、输出语言；图像/视频生成渠道与分辨率遵循全局设置）→ **document_write**
-3. 设计 Storyboard：登记所有 key_element（角色、场景、关键道具），将剧本拆解为有序 shot 列表，规划 audio_layer（BGM、旁白）→ **storyboard_key_elements / storyboard_shots / storyboard_audio**
-4. 生成所有 key_element 设定图（角色三视图、场景四视图）→ **write_media_prompt、image_generate**
-5. 生成每批次运镜轨迹示意图（分镜表格图），供视频生成阶段作视觉锚点参考，这步只用来给用户确认镜头逻辑是否符合预期，不作为视频生成的参考 → **write_media_prompt、image_generate**
-6. 逐 shot 生成视频，每镜仅引用对应 key_element 图像；仅在与上一镜连续性极强时额外引用上一镜视频作为 reference_video → **write_media_prompt、generate_video**
-7. 生成所有 audio_layer 音频资产（台词、BGM、旁白）→ **audio_generate**
-8. 按 Storyboard 顺序组装时间线，完成音画同步与剪辑输出 → **video_assembler**
+3. 设计 Storyboard：登记所有 key_element（角色、场景、关键道具），将剧本拆解为有序 shot 列表，规划 audio_layer（BGM、旁白）→ **storyboard_create_group / storyboard_add_draft / storyboard_patch_draft**
+4. 生成所有 key_element 设定图（角色三视图、场景四视图）：提示词先经 storyboard_patch_draft 写入草稿 → **image_generate**
+5. 生成每批次运镜轨迹示意图（分镜表格图），供视频生成阶段作视觉锚点参考，这步只用来给用户确认镜头逻辑是否符合预期，不作为视频生成的参考：提示词先经 storyboard_patch_draft 写入草稿 → **image_generate**
+6. 逐 shot 生成视频，每镜仅引用对应 key_element 图像；仅在与上一镜连续性极强时额外引用上一镜视频作为 reference_video：视频提示词先经 storyboard_patch_draft 写入草稿，再调用 **generate_video**
+7. 生成所有 audio_layer 音频资产（台词、BGM、旁白）→ 由系统音频生成通道按各 audio_layer 类型产出（无需工具调用）
+8. 按 Storyboard 顺序组装时间线，完成音画同步与剪辑输出——由用户在工作台操作，Agent 引导即可（无对应工具调用）
 
 **依赖关系：** 3→1,2；4→3；5→3；6→4,5；7→3；8→4,5,6,7
 
@@ -80,7 +77,7 @@ version: '1.0'
 
 - **A 类 — 成熟分镜剧本：** 已按场景/镜头明确划分，包含景别、运镜、台词等要素 → 可直接进入 Storyboard 设计阶段。
 - **B 类 — 散文体小说 / 纯对话文本：** 无镜头结构，仅有叙事或人物对话 → 须告知用户，建议先完成短剧化改编（将叙事转化为分镜脚本）再继续；不得自行补全剧本中未描述的角色外貌或场景细节，须向用户确认。
-- **C 类 — 半结构化剧本：** 有基本场景描述或简单镜头标注，但缺少完整分镜语法（景别/机位/运镜不全）→ 可直接进入 Storyboard 设计阶段，由 storyboard_key_elements / storyboard_shots / storyboard_audio 在拆解 shot 时补全缺失的分镜要素。
+- **C 类 — 半结构化剧本：** 有基本场景描述或简单镜头标注，但缺少完整分镜语法（景别/机位/运镜不全）→ 可直接进入 Storyboard 设计阶段，在拆解 shot 时补全缺失的分镜要素。
 
 **提取结构化信息**
 
@@ -167,7 +164,7 @@ version: '1.0'
 - 在视频生成阶段开始前，为每个 shot 生成一张运镜轨迹示意图作为视觉施工图纸。
 - 使用 **ImageToImage**，模型与分辨率按全局设置的默认渠道填写；同时上传该 shot 涉及的角色三视图和场景四视图作为 reference_image，确保画风/角色/场景一致。
 - 分镜表格图需包含四大要素：运镜轨迹箭头（推进/拉远/环绕/升降/跟随/固定各用不同颜色区分）、每切镜的中文动作说明、景别与时长标注、机位示意（相机图标+虚线轨迹）。
-- 具体提示词写法见 **Write the Prompt** 分区。
+- 具体提示词写法见下方「媒体提示词」章节。
 </image_generate>
 
 <generate_video>
@@ -182,8 +179,8 @@ version: '1.0'
 <audio_generate>
 **音频生成**
 
-- BGM（music 类型）：使用 **audio_generate**（text_to_instrumental 纯音乐通道），模型与分辨率按全局设置的默认渠道填写（注意：提示词中不得出现知名音乐人名字）。
-- 旁白（narration 类型）：使用 **audio_generate**（text_to_narration 旁白通道），模型与分辨率按全局设置的默认渠道填写。
+- BGM（music 类型）：由系统音频生成通道（text_to_instrumental 纯音乐通道）按草稿配置产出，模型与分辨率按全局设置的默认渠道填写（注意：提示词中不得出现知名音乐人名字）。
+- 旁白（narration 类型）：由系统音频生成通道（text_to_narration 旁白通道）按草稿配置产出，模型与分辨率按全局设置的默认渠道填写。
 </audio_generate>
 
 <write_media_prompt>
@@ -303,7 +300,7 @@ Reference images attached:\
 
 | 现象 | 原因 | 修复方向 |
 | --- | --- | --- |
-| 角色外貌跨 shot 漂移 | 提示词角色描述不够具体 | 在 Write the Prompt 中强化设定图特征词，重新生成该 shot |
+| 角色外貌跨 shot 漂移 | 提示词角色描述不够具体 | 在「媒体提示词」章节规则中强化设定图特征词，重新生成该 shot |
 | 跳轴 | 相邻 shot 机位跨过 180° 轴线 | 插入正面或过肩过渡 shot |
 | 镜头时长偏差 | 模型对绝对秒数不敏感 | 改用 slow / quick / lingering 节奏词，组装时用时间线裁剪微调 |
 | 字幕乱入 | 视频提示词未明确禁止 | 强化 no subtitles, no text overlay，重新生成 |

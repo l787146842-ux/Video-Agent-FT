@@ -64,10 +64,13 @@ def test_b3_pause_discipline_single_home():
 
 
 def test_f1_guide_card_boundary_reference():
-    """F-1 快照锁：引导卡/暂停卡边界定义单家在宪法 Rule2，
-    skill_discipline 第 2 条只引用不复述机制细节（防家规打架）。"""
+    """F-1 快照锁（整改批 2.2 修订）：引导卡/暂停卡边界定义单家在
+    ARCHITECTURE_RULES.md；skill_discipline 不复述机制细节，也不再向
+    模型可见层携带内部治理编号引用（「见宪法 Rule2」「层 9」属考古噪声，
+    模型无从查阅）——引用删除后反向钉死防复活。"""
     sd = load_prompt("planner/skill_discipline.md")
-    assert "引导卡与暂停卡的边界定义见宪法 Rule2" in sd, "边界定义引用丢失"
+    assert "宪法 Rule" not in sd and "层 9" not in sd, (
+        "模型可见层内部编号引用回潮（批 2.2 已清偿）")
     assert "由代码执行，不依赖模型自觉" not in sd, "机制细节复述回潮"
     rules = (ROOT / "ARCHITECTURE_RULES.md").read_text(encoding="utf-8")
     assert "引导卡仅承载客观状态选项" in rules, "宪法 Rule2 边界定义丢失"
