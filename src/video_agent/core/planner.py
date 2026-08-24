@@ -41,7 +41,7 @@ from src.video_agent.core.ports import skill_docs_port
 from src.video_agent.core.planner_output import assemble_response
 from src.video_agent.core import pipeline_orchestrator
 from src.video_agent.core import prompt_gates
-# 拆分协作臂：豁免消费/确定性分诊/FC 响应合并（同名委托保持既有调用/测试路径）
+from src.video_agent.core import fc_gates
 from src.video_agent.core import fc_response, planner_gate_session, planner_triage
 # D-02 拆分协作臂：单轮执行 + FC 响应消费 + 回喂治理 + 上下文预算装配
 from src.video_agent.core.turn_executor import TurnExecutor
@@ -275,8 +275,14 @@ class Planner:
             except Exception:
                 pass  # 裁剪失败不阻断对话，闸机层仍生效
         # Rule2 v6：选中 Skill 全文已硬注入 system prompt 时，read_skill
-        # 出工具 schema（关模型重读入口；前奏注记保时间线可见）
-        if context.skill_name and workflow_runtime.compile_definition(context.skill_name):
+        # 出工具 schema（关模型重读入口；前奏注记保时间线可见）。
+        # 整改批 2.4（续读断链修复）：剔除判定由 compile_definition 恒真
+        # 条件改为与 fc_tool_runner.read_skill 短路同款的
+        # fc_gates.skill_full_text_injected——compile_definition 对任何已注册
+        # Skill 恒真，曾把超长分级注入 Skill（水墨/3D国漫/李安等）的
+        # 目录+read_skill 续读入口一并关死；两处判定同源后，「全文真注入
+        # 才关入口、分级注入保续读」单一事实源成立。
+        if context.skill_name and fc_gates.skill_full_text_injected(context.skill_name):
             excluded.add("read_skill")
         # MCP 两段式注入（任务#37 B4）：白名单（interaction.mcp_enabled）外
         # 的 MCP 工具 schema 不下发（deny-first 可见性面；目录块已告知存在）
