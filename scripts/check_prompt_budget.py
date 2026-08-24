@@ -125,7 +125,11 @@ def runtime_total_p95():
     """从 live_metrics 落盘样本读组装总长序列，返回 (P95, 样本数)；无样本返回 (None, 0)。
 
     样本由 core/live_metrics.record_sections 在真实运行时追加（pytest 不落盘），
-    坏行忽略（样本文件允许有历史噪声）。"""
+    坏行忽略（样本文件允许有历史噪声）。
+
+    遥测盲区登记：stage_note 段在 prompt_builder 遥测别名表中映射为 None，
+    不进 prompt_sections.jsonl 分项字段（字段格式锁死）；其增长只体现在
+    本处统计的 total P95 里，分项报表看不到，观察总长时须知悉此口径。"""
     if not SECTIONS_SAMPLE_FILE.exists():
         return None, 0
     totals = []

@@ -6,21 +6,23 @@
 
 planner.py 保留 _build_system_prompt 等同名委托，既有调用/测试路径不变。
 """
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core import prompt_gates
-# gates_inputs 必须在 prompt_gates 之后导入（gates_script↔prompt_gates 尾块
-# re-export 对首入方向敏感；任务#35 B2 原料判定家族）
+# prompt_gates 保留顶层导入：gates_inputs 必须在其后导入（gates_script↔prompt_gates
+# 尾块 re-export 对首入方向敏感；任务#35 B2 原料判定家族）；段内条件判定已收归
+# planner 单一事实源（任务#15 P2 同源裁剪解释），本文件不再直接消费它
+from src.video_agent.core import prompt_gates  # noqa: F401
+# gates_inputs 必须在 prompt_gates 之后导入（见上方注释）
 from src.video_agent.core import gates_inputs
 # （审核）：顶层化（registry 顶层不依赖 core，无环；live_metrics 同包）
 from src.video_agent.core import live_metrics
 from src.video_agent.skill_runtime import guard as skill_guard
 # v3 声明读取经模块属性访问（任务#35 B2：测试 patch registry.<fn> 即生效）
 from src.video_agent.skill_runtime import registry as skill_registry
-from src.video_agent.skill_runtime.registry import skill_flow_enabled
 from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
 # MCP 两段式注入段 1（任务#37 B4）：外部工具目录文本块（名称+摘要，
 # schema 不进 FC tools；完整 schema 由 enable 后按需注入）
@@ -117,137 +119,69 @@ class PromptBuilder:
         self._get_project_id = get_project_id
         # 当前工作台 raw state（分阶段聚焦注入探测用；缺省不启用聚焦）
         self._get_raw_state = get_raw_state
+        # 每次组装前预计算的原始长度载体（段 builder 与遥测共用，
+        # 避免 state_builder 重复调用；任务#15 P2 注册制重构）
+        self._state_json = ""
+        self._selected_block = ""
 
     def build_system_prompt(self, context: "PlannerContext") -> str:
         """构建 system prompt：从 prompts/ 加载 + 注入状态上下文。
 
-        段落顺序为前缀缓存优化：稳定内容在前，状态 JSON 殿后；
-        选中 Skill 全文放在最末尾（近生成端，遵循度最高，避免被大段状态 JSON 淹没）。
+        段落注册制（任务#15 P2）：各段经 PROMPT_SECTIONS 登记（唯一 name +
+        order + builder），按 order 排序逐段构建，空串跳过；条件段的有无
+        由各段 builder 内部决定。段序与历史顺序 1:1（前缀缓存优化：稳定
+        内容在前，状态 JSON 殿后；选中 Skill 全文放在最末尾近生成端，
+        遵循度最高，避免被大段状态 JSON 淹没）。
+
+        同源裁剪解释（任务#15 P2）：stage_note 段只消费 planner 经
+        context 携带的裁剪解释（单一事实源），本处不再自行判定；
+        独立使用（不经 planner）时 note 缺省为空即回退为不注入。
 
         协议段唯一 = planner/system_fc.md（Tool 优先瘦身协议，共有段经
         {{include}} 从 shared/ 拼装）；文本协议 system.md 已退役删除
         （P2e 单轨收敛，ADR-0001），原 fc_mode 双分支随之移除。
         """
-        parts: List[Tuple[str, str]] = []
-
+        # 预计算共享原始数据：遥测/超限预警需要原始长度（非包壳后段长），
+        # 且 state_builder 每次组装只调一次（惰性构建按轮刷新语义不变）
         if context.use_studio_context:
-            # Rule4: 从 prompts/ 目录加载（稳定前缀第一段）；
-            # max_steps 模板化注入（消协议模板与 config 双写漂移）
-            protocol = render_prompt(
-                "planner/system_fc.md",
-                max_steps=settings.max_steps,
-            )
-            if protocol:
-                parts.append(("protocol", protocol))
-            # 协议单轨（ADR-0001）：文本协议 system.md 已随 P2e 退役删除，
-            # 动作通道唯一 = FC 工具（mock 通道除外，其输出为演示用固定文本）。
-
-        # 渐进式披露：不再注入全部 Skill 全文，
-        # 改为注入 Skill 目录（名称+摘要），全文由模型按需调 read_skill 加载
-        catalog = self.build_skill_catalog(context)
-        if catalog:
-            parts.append(("catalog", catalog))
-
-        # MCP 外部工具目录（两段式注入段 1）：仅名称+摘要常驻，
-        # 完整 schema 等 mcp_tool_catalog enable 后次回合进 FC tools
-        try:
-            mcp_block = mcp_catalog.catalog_block(self._get_raw_state()
-                                                  if self._get_raw_state else None)
-        except Exception:
-            mcp_block = ""
-        if mcp_block:
-            parts.append(("mcp_catalog", mcp_block))
-
-        # 铁律全文注入（宪法）：项目级生产契约的唯一表述源——
-        # 铁律文档在每轮对话开始时由系统 ensure，存在即注入，不与 Skill 激活绑定
-        # （协议模板不重复业务规则，铁律不能缺位）
-        if self._get_raw_state is not None:
-            iron_block = self.build_iron_rules_block()
-            if iron_block:
-                parts.append(("iron_rules", iron_block))
-
-        # 选中 Skill 全文块的硬保障说明：实际拼接移到状态 JSON 之后（靠末尾近生成端，
-        # 遵循度更高；避免被大段状态 JSON「淹没在中间」）
-        selected_block = ""
-        if context.skill_name:
-            selected_block = self.build_selected_skill_block(context.skill_name)
-
-        if context.use_studio_context:
-            if context.selected_draft_id:
-                parts.append((
-                    "selected_draft",
-                    f"\n用户当前选中的草稿：draft_id={context.selected_draft_id}"
-                    f"（类型 {context.selected_type or '未知'}）。",
-                ))
-
-            # 全局生成设置（前端「全局设置」页用户配置，热生效）：
-            # 分镜时长上限 + 默认生成渠道，Agent 拆镜/生成必须遵守；
-            # 阶段门控——规格规划阶段无消费方，不注入（context rot 治理）
-            if self.stage_allows_global_settings():
-                note = self.build_global_settings_note()
-                if note:
-                    parts.append(("global_settings", note))
-
-            # 混合记忆检索注入已随记忆系统退役删除（批次D：会话级压缩
-            # session_compact 是创作设定的唯一软性保护，见 planner/session_compact.md）
-
-            # 生成渠道清单注入机制已整体清除——渠道唯一事实源为
-            # 顶部「全局设置」（provider_config/provider_prefs），规格文档不再承载渠道
-
-            # 状态上下文殿后（每轮变化最大）：优先用惰性构建器按轮刷新，
-            # 让 LLM 在每一轮都看到上一轮执行后的最新状态（修复）
             if context.state_builder is not None:
                 state_json = context.state_builder()
             else:
                 state_json = context.state_json
-            if state_json:
-                parts.append(("state_json", "当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + state_json))
+        else:
+            state_json = ""
+        selected_block = ""
+        if context.skill_name:
+            selected_block = self.build_selected_skill_block(context.skill_name)
+        self._state_json = state_json
+        self._selected_block = selected_block
 
-            # 混合形态工具边界的可见性说明（裁剪生效时告诉模型哪些工具未开放、
-            # 应先完成什么，防止幻觉调用；放在状态 JSON 之后，不破坏稳定前缀缓存）；
-            # 仅对声明 spec_stage_trim 的 Skill 生效（与 planner 裁剪条件对齐）
-            if context.skill_name and self._get_raw_state is not None \
-                    and prompt_gates.gate_mode() == "strict":
-                try:
-                    stage_note = ""
-                    if skill_flow_enabled(context.skill_name, "spec_stage_trim"):
-                        _, stage_note = prompt_gates.stage_tool_restrictions(self._get_raw_state())
-                except Exception:
-                    stage_note = ""
-                if stage_note:
-                    parts.append(("stage_note", stage_note))
-
-            # 故事板客观进度描述（只报状态，暂停点归 Skill）
-            if context.skill_name:
-                progress_note = self.build_storyboard_progress_note()
-                if progress_note:
-                    parts.append(("storyboard_progress", progress_note))
-
-        # 选中 Skill 全文放在最后（近生成端）：长 system prompt 中部的指令遵循度
-        # 会衰减，而产出规范（提示词写法/分组规则）恰恰是最需要被严格执行的部分
-        if selected_block:
-            parts.append(("selected_skill", selected_block))
+        # 按注册表 order 排序逐段构建，空串跳过（段序与历史拼装顺序 1:1）
+        parts: List[Tuple[str, str]] = []
+        for spec in PROMPT_SECTIONS:
+            seg = spec.builder(self, context)
+            if seg:
+                parts.append((spec.name, seg))
 
         text = "\n\n".join(seg for _, seg in parts)
         # 组装明细入 live 注册表（context-usage 调试端点可读各段字符数）；
-        # 具名段组装后遥测直接读段名（消位置索引猜测，段序变动不失真）
+        # 遥测段名映射由 PROMPT_SECTIONS 自动生成（任务#15 P2：消除硬编码映射）；
+        # prompt_sections.jsonl 字段格式锁死不变（check_prompt_budget.py 消费，零破坏）
         try:
             sec_lens: Dict[str, int] = {}
             for name, seg in parts:
                 sec_lens[name] = sec_lens.get(name, 0) + len(seg)
-            live_metrics.record_sections(
-                self._get_project_id(),
-                {
-                    "protocol": sec_lens.get("protocol", 0) if context.use_studio_context else 0,
-                    "catalog": sec_lens.get("catalog", 0),
-                    "mcp_catalog": sec_lens.get("mcp_catalog", 0),
-                    "iron_rules": sec_lens.get("iron_rules", 0),
-                    "channels": sec_lens.get("channels", 0),
-                    "state": len(state_json) if context.use_studio_context else 0,
-                    "skill": len(selected_block),
-                    "total": len(text),
-                },
-            )
+            sections: Dict[str, int] = {key: 0 for key in _telemetry_section_keys()}
+            for name, n in sec_lens.items():
+                key = _SECTION_TELEMETRY_ALIAS.get(name)
+                if key is not None:
+                    sections[key] = sections.get(key, 0) + n
+            # state/skill 取原始长度（state 段带前缀行、Skill 段带边界包壳，
+            # 段长≠遥测口径，与历史口径保持一致）
+            sections["state"] = len(state_json) if context.use_studio_context else 0
+            sections["skill"] = len(selected_block)
+            sections["total"] = len(text)
+            live_metrics.record_sections(self._get_project_id(), sections)
         except Exception as _e:
             logger.debug("[prompt_builder] 忽略异常: {}", _e)
         # 遥测：组装超限预警（各段字符数入账，便于定位臃胀来源）
@@ -656,3 +590,175 @@ class PromptBuilder:
             "与本阶段对应的章节——该章节已随全文注入且仅此一份，此处不再摘录重复，"
             "与全文同等效力、不受其他段落稀释 ==\n"
         )
+
+
+# ---------- 段落注册表（任务#15 P2：提示词注册制） ----------
+#
+# 段序与历史过程式拼装顺序 1:1 登记（保前缀缓存约束：稳定段在前、
+# 状态 JSON 殿后、选中 Skill 最末近生成端）；重名/重序在模块加载期即 raise。
+# 条件段的有无由各 builder 内部决定，返回空串即被组装循环跳过。
+
+@dataclass(frozen=True)
+class PromptSectionSpec:
+    """system prompt 段落登记项：唯一 name + order（小者在前）+ builder。
+
+    builder 签名：(pb: PromptBuilder, context: PlannerContext) -> str；
+    返回空串 = 本轮不注入该段。
+    """
+    name: str
+    order: int
+    builder: Callable[["PromptBuilder", "PlannerContext"], str]
+
+
+def _sec_protocol(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """协议段（稳定前缀第一段）：从 prompts/ 目录加载（Rule4），
+    max_steps 模板化注入（消协议模板与 config 双写漂移）。"""
+    if not context.use_studio_context:
+        return ""
+    # 协议单轨（ADR-0001）：文本协议 system.md 已随 P2e 退役删除，
+    # 动作通道唯一 = FC 工具（mock 通道除外，其输出为演示用固定文本）。
+    return render_prompt("planner/system_fc.md", max_steps=settings.max_steps) or ""
+
+
+def _sec_catalog(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """Skill 目录（渐进式披露：名称+摘要常驻，全文按需 read_skill）。"""
+    return pb.build_skill_catalog(context)
+
+
+def _sec_mcp_catalog(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """MCP 外部工具目录（两段式注入段 1）：仅名称+摘要常驻，
+    完整 schema 等 mcp_tool_catalog enable 后次回合进 FC tools。"""
+    try:
+        return mcp_catalog.catalog_block(
+            pb._get_raw_state() if pb._get_raw_state else None) or ""
+    except Exception:
+        return ""
+
+
+def _sec_iron_rules(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """铁律全文注入（宪法）：项目级生产契约的唯一表述源——
+    铁律文档在每轮对话开始时由系统 ensure，存在即注入，不与 Skill 激活绑定
+    （协议模板不重复业务规则，铁律不能缺位）。"""
+    if pb._get_raw_state is None:
+        return ""
+    return pb.build_iron_rules_block()
+
+
+def _sec_selected_draft(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """前端当前选中的草稿指针（类型标注）。"""
+    if not (context.use_studio_context and context.selected_draft_id):
+        return ""
+    return (
+        f"\n用户当前选中的草稿：draft_id={context.selected_draft_id}"
+        f"（类型 {context.selected_type or '未知'}）。"
+    )
+
+
+def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """全局生成设置（前端「全局设置」页用户配置，热生效）：
+    分镜时长上限 + 默认生成渠道，Agent 拆镜/生成必须遵守；
+    阶段门控——规格规划阶段无消费方，不注入（context rot 治理）。"""
+    if not context.use_studio_context:
+        return ""
+    # 混合记忆检索注入已随记忆系统退役删除（批次D：会话级压缩
+    # session_compact 是创作设定的唯一软性保护，见 planner/session_compact.md）
+    # 生成渠道清单注入机制已整体清除——渠道唯一事实源为
+    # 顶部「全局设置」（provider_config/provider_prefs），规格文档不再承载渠道
+    if not pb.stage_allows_global_settings():
+        return ""
+    return pb.build_global_settings_note()
+
+
+def _sec_state_json(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """状态上下文殿后（每轮变化最大）：惰性构建器已按轮刷新，
+    让 LLM 在每一轮都看到上一轮执行后的最新状态（修复）。"""
+    if not (context.use_studio_context and pb._state_json):
+        return ""
+    return "当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + pb._state_json
+
+
+def _sec_stage_note(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """混合形态工具边界的可见性说明（同源裁剪解释，任务#15 P2）。
+
+    条件判定单一事实源归 planner._compute_excluded_tools：裁剪生效时
+    经 context.stage_note 携带解释文案；裁剪未生效（或独立使用
+    PromptBuilder 不经 planner）时 note 缺省为空即回退为不注入。
+    注入位置保持在状态 JSON 之后（不破坏前缀缓存约束）。
+    """
+    return context.stage_note
+
+
+def _sec_storyboard_progress(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """故事板客观进度描述（只报状态，暂停点归 Skill）。"""
+    if not (context.use_studio_context and context.skill_name):
+        return ""
+    return pb.build_storyboard_progress_note()
+
+
+def _sec_selected_skill(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """选中 Skill 全文放在最后（近生成端）：长 system prompt 中部的指令
+    遵循度会衰减，而产出规范（提示词写法/分组规则）恰恰是最需要被严格
+    执行的部分（实际拼接在状态 JSON 之后，避免被大段状态 JSON 淹没）。"""
+    return pb._selected_block
+
+
+def _validate_prompt_sections(
+    specs: Tuple[PromptSectionSpec, ...],
+) -> Tuple[PromptSectionSpec, ...]:
+    """模块加载期校验：重名/重序即 raise；按 order 升序返回。"""
+    names: set = set()
+    orders: Dict[int, str] = {}
+    for s in specs:
+        if s.name in names:
+            raise ValueError(f"PROMPT_SECTIONS 段名重复: {s.name}")
+        if s.order in orders:
+            raise ValueError(
+                f"PROMPT_SECTIONS 段序重复: order={s.order} "
+                f"({orders[s.order]} 与 {s.name})")
+        names.add(s.name)
+        orders[s.order] = s.name
+    return tuple(sorted(specs, key=lambda s: s.order))
+
+
+PROMPT_SECTIONS: Tuple[PromptSectionSpec, ...] = _validate_prompt_sections((
+    PromptSectionSpec("protocol", 10, _sec_protocol),
+    PromptSectionSpec("catalog", 20, _sec_catalog),
+    PromptSectionSpec("mcp_catalog", 30, _sec_mcp_catalog),
+    PromptSectionSpec("iron_rules", 40, _sec_iron_rules),
+    PromptSectionSpec("selected_draft", 50, _sec_selected_draft),
+    PromptSectionSpec("global_settings", 60, _sec_global_settings),
+    PromptSectionSpec("state_json", 70, _sec_state_json),
+    PromptSectionSpec("stage_note", 80, _sec_stage_note),
+    PromptSectionSpec("storyboard_progress", 90, _sec_storyboard_progress),
+    PromptSectionSpec("selected_skill", 100, _sec_selected_skill),
+))
+
+# 遥测字段别名（注册表段名 → prompt_sections.jsonl 字段）：None = 不入
+# jsonl（字段格式锁死，消费方 check_prompt_budget.py 零改动）；
+# state_json/selected_skill 的遥测值取原始长度（非段长），在组装处显式赋值
+_SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
+    "protocol": "protocol",
+    "catalog": "catalog",
+    "mcp_catalog": "mcp_catalog",
+    "iron_rules": "iron_rules",
+    "selected_draft": None,
+    "global_settings": None,
+    "state_json": None,
+    "stage_note": None,
+    "storyboard_progress": None,
+    "selected_skill": None,
+}
+# 不对应注册表段的兼容字段（渠道注入机制已退役，字段恒 0 保留防口径断裂）
+_TELEMETRY_COMPAT_KEYS: Tuple[str, ...] = ("channels",)
+
+
+def _telemetry_section_keys() -> List[str]:
+    """遥测字段清单：由段注册表自动生成（序 = 注册表 order），
+    别名表决定段名→jsonl 字段；兼容字段追加在后（历史字段序不变）。"""
+    keys: List[str] = []
+    for spec in PROMPT_SECTIONS:
+        key = _SECTION_TELEMETRY_ALIAS.get(spec.name)
+        if key is not None and key not in keys:
+            keys.append(key)
+    keys.extend(k for k in _TELEMETRY_COMPAT_KEYS if k not in keys)
+    return keys

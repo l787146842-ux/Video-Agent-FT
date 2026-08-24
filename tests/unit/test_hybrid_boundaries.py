@@ -10,7 +10,7 @@ from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.core.action_executor import StateOperationExecutor
-from src.video_agent.web import provider_config as pc
+from src.video_agent.core import provider_config as pc
 
 
 def _async_return(value):
@@ -292,15 +292,11 @@ def test_stage_restrictions_storyboard_ready():
 
 
 def test_planner_stage_pruning(svc, monkeypatch):
-    """planner._compute_excluded_tools：Skill 激活 + strict + 声明 spec_stage_trim 时按阶段裁剪"""
+    """planner._compute_excluded_tools：Skill 激活 + strict 时按阶段裁剪，
+    且裁剪⇔解释同源签发（任务#15 P2：spec_stage_trim 声明门控已废，
+    条件单一事实源归 planner；成对断言详见 test_prompt_assembly_snapshot）"""
     from src.video_agent.core.planner import Planner, PlannerContext
-    from src.video_agent.skill_runtime import registry
 
-    # S1：裁剪只对声明 spec_stage_trim 的 Skill 生效，本用例显式开启
-    monkeypatch.setattr(
-        registry, "skill_flow_enabled",
-        lambda skill, key: key == "spec_stage_trim",
-    )
     planner = Planner.__new__(Planner)  # 绕过重量级构造，只测裁剪逻辑
     planner.state_manager = svc
 
@@ -310,13 +306,17 @@ def test_planner_stage_pruning(svc, monkeypatch):
         ctx.skill_name = skill
         return ctx
 
-    # 无规格文档 + Skill 激活：故事板与生成工具都被裁剪
+    # 无规格文档 + Skill 激活：故事板与生成工具都被裁剪，且携带解释文案
     svc.state_dict["documents"] = []
-    excluded = planner._compute_excluded_tools(make_ctx("剧本生视频（需上传剧本）"))
+    ctx1 = make_ctx("剧本生视频（需上传剧本）")
+    excluded = planner._compute_excluded_tools(ctx1)
     assert "storyboard_create_group" in excluded and "image_generate" in excluded
-    # 无 Skill：不追加阶段裁剪
-    excluded2 = planner._compute_excluded_tools(make_ctx(""))
+    assert ctx1.stage_excluded_tools and "当前阶段工具边界" in ctx1.stage_note
+    # 无 Skill：不追加阶段裁剪，也不签发解释
+    ctx2 = make_ctx("")
+    excluded2 = planner._compute_excluded_tools(ctx2)
     assert "storyboard_create_group" not in excluded2
+    assert ctx2.stage_excluded_tools == frozenset() and ctx2.stage_note == ""
 
 
 # ---------- 首拆只允许关键元素（8888 事故：规格确认后一次性拆出分镜+音频） ----------
@@ -565,8 +565,9 @@ async def test_image_generate_fallback_to_first_configured_provider(svc, monkeyp
 
     # 任务#11 拆分：patch 目标迁至实现模块 generation_dispatch（承重壳仅 re-export）
     monkeypatch.setattr(generation_dispatch, "generate_image_via_provider", fake_gen)
+    # P3 下沉：document_tools 顶层 import 实现体，patch 目标 = 调用方命名空间
     monkeypatch.setattr(
-        pc, "first_available_image_provider_async",
+        document_tools, "first_available_image_provider_async",
         _async_return(("modelscope", "Z-Image-Turbo")),
     )
     result = await ImageGenerateTool().aexecute(GenerateImageInput(target="all_keyElements"))
@@ -580,7 +581,7 @@ async def test_image_generate_fallback_to_first_configured_provider(svc, monkeyp
     svc.state_dict["keyElements"][0]["drafts"][0]["providerId"] = ""
     svc.state_dict["keyElements"][0]["drafts"][0]["imageProviderId"] = ""
     monkeypatch.setattr(
-        pc, "first_available_image_provider_async",
+        document_tools, "first_available_image_provider_async",
         _async_return(("", "")),
     )
     result2 = await ImageGenerateTool().aexecute(GenerateImageInput(target="all_keyElements"))
@@ -598,14 +599,14 @@ _SPEC_PREF_DOC = (
 
 def test_extract_media_preference_antigravity_with_typo():
     """规格「图像生成 Antigravity CLI aotu 模型」解析为 gemini-cli/auto（含笔误容忍）"""
-    from src.video_agent.web.provider_config import extract_media_preference
+    from src.video_agent.core.provider_config import extract_media_preference
     pid, model = extract_media_preference(_SPEC_PREF_DOC, "image")
     assert pid == "gemini-cli" and model == "auto"
 
 
 def test_spec_media_preference_global_settings_sole_source(set_global_setting):
     """6666 二轮：生成渠道唯一来源为顶部全局设置，规格文档不再参与。"""
-    from src.video_agent.web.provider_config import spec_media_preference
+    from src.video_agent.core.provider_config import spec_media_preference
 
     set_global_setting("default_image_provider_id", "gemini-cli")
     set_global_setting("default_image_model", "auto")

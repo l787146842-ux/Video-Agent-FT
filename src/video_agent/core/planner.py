@@ -131,6 +131,11 @@ class PlannerContext:
     # 协作式停止标志作用域（端到端中断协议，任务 #17）：
     # SSE 直连="chat"；任务式传输=task_id（web 层按传输路径装配）
     stop_scope: str = "chat"
+    # 同源裁剪解释（任务#15 P2）：阶段探测驱动的工具裁剪结果与解释文案由
+    # _compute_excluded_tools 单一事实源签发，prompt_builder 只消费不自判：
+    # stage_note 非空 ⇔ 阶段裁剪生效（成对出现，消灭「静默裁剪」反模式）
+    stage_excluded_tools: frozenset = frozenset()
+    stage_note: str = ""
 
 
 @dataclass
@@ -235,8 +240,16 @@ class Planner:
     # 系统客观补下一步引导卡；本文件不承载流程 prose（归属见第十三章 13.3）
 
     def _compute_excluded_tools(self, context: PlannerContext) -> frozenset:
-        """按上下文计算本轮不下发的工具集（token 治理：schema 全量常驻是每轮固定开销）"""
+        """按上下文计算本轮不下发的工具集（token 治理：schema 全量常驻是每轮固定开销）。
+
+        同源裁剪解释（任务#15 P2）：阶段裁剪的 (excluded, note) 在此一并签发到
+        context（stage_excluded_tools/stage_note），prompt_builder 据此注入解释段，
+        裁剪与解释同源同条件，不再各自判定。
+        """
         excluded = set()
+        # 先复位再签发：防 context 对象跨轮复用时残留旧值
+        context.stage_excluded_tools = frozenset()
+        context.stage_note = ""
         if not context.use_studio_context:
             excluded |= _STUDIO_STATE_TOOLS
         if not settings.canvas_enabled:
@@ -251,10 +264,14 @@ class Planner:
         if context.skill_name and context.use_studio_context \
                 and prompt_gates.gate_mode() == "strict":
             try:
-                stage_excluded, _ = prompt_gates.stage_tool_restrictions(
+                stage_excluded, stage_note = prompt_gates.stage_tool_restrictions(
                     self.state_manager.state_dict
                 )
                 excluded |= set(stage_excluded)
+                # 裁剪非空才携带解释（两者成对，prompt_builder 见 note 即注入）
+                if stage_excluded:
+                    context.stage_excluded_tools = frozenset(stage_excluded)
+                    context.stage_note = stage_note
             except Exception:
                 pass  # 裁剪失败不阻断对话，闸机层仍生效
         # Rule2 v6：选中 Skill 全文已硬注入 system prompt 时，read_skill
