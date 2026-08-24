@@ -28,49 +28,49 @@ describe('chatActions 深度思考与工具时间线', () => {
   it('appendReasoning 累积文本、记录首末时刻并切换状态文案', () => {
     chatActions.startStream();
     chatActions.appendReasoning('先想');
-    const startMs = chatState.streamingReasoningStartMs;
+    const startMs = chatState.turnLedger.reasoningStartMs;
     expect(startMs).toBeGreaterThan(0);
-    expect(chatState.streamingReasoning).toBe('先想');
-    expect(chatState.streamingStatus).toBe('深度思考中…');
+    expect(chatState.turnLedger.reasoning).toBe('先想');
+    expect(chatState.turnLedger.statusText).toBe('深度思考中…');
     chatActions.appendReasoning('再想');
-    expect(chatState.streamingReasoning).toBe('先想再想');
-    expect(chatState.streamingReasoningStartMs).toBe(startMs); // 起点只记一次
-    expect(chatState.streamingReasoningEndMs).toBeGreaterThanOrEqual(startMs);
+    expect(chatState.turnLedger.reasoning).toBe('先想再想');
+    expect(chatState.turnLedger.reasoningStartMs).toBe(startMs); // 起点只记一次
+    expect(chatState.turnLedger.reasoningEndMs).toBeGreaterThanOrEqual(startMs);
   });
 
   it('toolStarted 追加运行态条目（带起点）并更新状态栏', () => {
     chatActions.startStream();
     chatActions.toolStarted('t1', 'image_generate', '生图');
-    expect(chatState.streamingTools.length).toBe(1);
-    expect(chatState.streamingTools[0].status).toBe('running');
-    expect(chatState.streamingTools[0].started_at_ms).toBeGreaterThan(0);
-    expect(chatState.streamingStatus).toContain('生图');
+    expect(chatState.turnLedger.items.length).toBe(1);
+    expect(chatState.turnLedger.items[0].status).toBe('running');
+    expect(chatState.turnLedger.items[0].started_at_ms).toBeGreaterThan(0);
+    expect(chatState.turnLedger.statusText).toContain('生图');
   });
 
   it('toolFinished 落完成态（耗时/结果摘要/规划标记）；失败态落 failed', () => {
     chatActions.startStream();
     chatActions.toolStarted('t1', 'audio_generate', '音频');
     chatActions.toolFinished('t1', true, 1200, '产出 3 段音频', true);
-    const ok = chatState.streamingTools[0];
+    const ok = chatState.turnLedger.items[0];
     expect(ok.status).toBe('done');
     expect(ok.elapsed_ms).toBe(1200);
     expect(ok.result_summary).toBe('产出 3 段音频');
     expect(ok.planning).toBe(true);
     chatActions.toolStarted('t2', 'gen', '生图');
     chatActions.toolFinished('t2', false, 50);
-    expect(chatState.streamingTools[1].status).toBe('failed');
+    expect(chatState.turnLedger.items[1].status).toBe('failed');
   });
 
   it('toolFinished 对未知 id 静默无副作用', () => {
     chatActions.startStream();
     chatActions.toolFinished('ghost', true, 10);
-    expect(chatState.streamingTools.length).toBe(0);
+    expect(chatState.turnLedger.items.length).toBe(0);
   });
 
   it('setStatus 直写状态栏', () => {
     chatActions.startStream();
     chatActions.setStatus('自定义状态');
-    expect(chatState.streamingStatus).toBe('自定义状态');
+    expect(chatState.turnLedger.statusText).toBe('自定义状态');
   });
 });
 
@@ -125,8 +125,8 @@ describe('chatActions finishStream 分支补齐', () => {
 
   it('深度思考耗时角标 = 末条 reasoning - 首条（无思考则不挂）', () => {
     chatActions.startStream();
-    setChatState('streamingReasoningStartMs', 1000);
-    setChatState('streamingReasoningEndMs', 3500);
+    setChatState('turnLedger', 'reasoningStartMs', 1000);
+    setChatState('turnLedger', 'reasoningEndMs', 3500);
     chatActions.finishStream(donePayload());
     expect(chatState.messages[0].thinkingMs).toBe(2500);
     chatActions.startStream();
@@ -162,14 +162,14 @@ describe('chatActions 错误/恢复/清理分支', () => {
       tools: [{ id: 't1', name: 'x', summary: 's', status: 'done' }], model: 'm1',
     });
     expect(chatState.isStreaming).toBe(true);
-    expect(chatState.streamingReasoning).toBe('已有思考');
+    expect(chatState.turnLedger.reasoning).toBe('已有思考');
     expect(chatState.streamingText).toBe('已有正文');
-    expect(chatState.streamingTools).toHaveLength(1);
-    expect(chatState.streamingReasoningStartMs).toBeGreaterThan(0);
+    expect(chatState.turnLedger.items).toHaveLength(1);
+    expect(chatState.turnLedger.reasoningStartMs).toBeGreaterThan(0);
     chatActions.clearStreaming();
     chatActions.restoreStreamingState({ text: '' });
-    expect(chatState.streamingReasoningStartMs).toBe(0);
-    expect(chatState.streamingReasoningEndMs).toBe(0);
+    expect(chatState.turnLedger.reasoningStartMs).toBe(0);
+    expect(chatState.turnLedger.reasoningEndMs).toBe(0);
   });
 
   it('clearStreaming 只清流式字段不产生消息（重连发现已完成的收尾语义）', () => {

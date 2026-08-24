@@ -10,7 +10,7 @@ import { t } from '@/lib/locale';
  */
 export function StreamingIndicator() {
   const noTimelineYet = () =>
-    !chatState.streamingTools.length && !chatState.streamingReasoning;
+    !chatState.turnLedger.items.length && !chatState.turnLedger.reasoning;
   return (
     <Show when={chatState.isStreaming && !chatState.streamingText && noTimelineYet()}>
       <div class="chat-msg agent">
@@ -21,7 +21,7 @@ export function StreamingIndicator() {
             <span class="typing-dots">
               <span /><span /><span />
             </span>
-            <span class="streaming-status-text">{chatState.streamingStatus || t('rp.streaming.thinking')}</span>
+            <span class="streaming-status-text">{chatState.turnLedger.statusText || t('rp.streaming.thinking')}</span>
           </div>
         </div>
       </div>

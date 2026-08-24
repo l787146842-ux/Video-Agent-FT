@@ -39,7 +39,7 @@ export function AssetCard(props: { asset: Asset }) {
   const bgStyle = () =>
     props.asset.type === 'image' && url()
       ? { 'background-image': `url('${url()}')` }
-      : { 'background-color': '#1e293b' };
+      : { 'background-color': 'var(--color-surface-placeholder)' };
 
   /** 视频首帧缩略图地址（追加 #t=0.1 强制浏览器渲染第一帧） */
   const videoThumbUrl = () => {

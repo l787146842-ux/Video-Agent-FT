@@ -1,63 +1,63 @@
 /* ===== 面板类：画布/设置视图 / 文档面板 / 记忆面板 ===== */
 @layer components {
   /* ---------- 画布 / 设置视图 ---------- */
-  .canvas-view { position: relative; width: 100%; height: 100%; overflow: hidden; z-index: 1; pointer-events: none; }
+  .canvas-view { position: relative; width: 100%; height: 100%; overflow: hidden; z-index: var(--z-raised); pointer-events: none; }
   /* 画布模式 Agent 侧栏容器（占满覆盖层内部，裁剪溢出） */
   .canvas-agent-panel { width: 100%; height: 100%; overflow: hidden; }
   .canvas-view .canvas-fallback,
   .canvas-view .canvas-drop-overlay,
   .canvas-view .canvas-agent-overlay { pointer-events: auto; }
-  .canvas-drop-overlay { position: absolute; inset: 0; z-index: 35; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-info-strong) 8%, transparent); border: 2px dashed color-mix(in srgb, var(--color-info-strong) 55%, transparent); border-radius: 8px; margin: 8px; pointer-events: auto; }
-  .canvas-drop-hint { display: flex; align-items: center; gap: 10px; padding: 12px 22px; border-radius: 10px; background: var(--bg-secondary); border: 1px solid color-mix(in srgb, var(--color-info-strong) 45%, transparent); color: var(--text-main); font-size: 13px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); pointer-events: none; }
-  .canvas-persistent-layer { position: absolute; inset: 0; z-index: 0; }
+  .canvas-drop-overlay { position: absolute; inset: 0; z-index: var(--z-drop-overlay); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--color-info-strong) 8%, transparent); border: 2px dashed color-mix(in srgb, var(--color-info-strong) 55%, transparent); border-radius: 8px; margin: 8px; pointer-events: auto; }
+  .canvas-drop-hint { display: flex; align-items: center; gap: 10px; padding: 12px 22px; border-radius: 10px; background: var(--bg-secondary); border: 1px solid color-mix(in srgb, var(--color-info-strong) 45%, transparent); color: var(--text-main); font-size: var(--font-md); box-shadow: 0 8px 28px color-mix(in srgb, var(--color-black) 45%, transparent); pointer-events: none; }
+  .canvas-persistent-layer { position: absolute; inset: 0; z-index: var(--z-base); }
   .canvas-persistent-layer .canvas-iframe { width: 100%; height: 100%; border: 0; display: block; }
   .canvas-iframe { width: 100%; height: 100%; border: 0; display: block; }
-  .canvas-agent-overlay { position: absolute; right: 0; top: 0; height: 100%; background: var(--bg-secondary); border-left: 1px solid var(--border-color); box-shadow: -4px 0 16px rgba(0, 0, 0, 0.4); transition: transform 0.2s; }
+  .canvas-agent-overlay { position: absolute; right: 0; top: 0; height: 100%; background: var(--bg-secondary); border-left: 1px solid var(--border-color); box-shadow: -4px 0 16px color-mix(in srgb, var(--color-black) 40%, transparent); transition: transform 0.2s; }
   .canvas-agent-overlay.collapsed { transform: translateX(100%); border-left: none; box-shadow: none; }
-  .agent-toggle-btn { position: absolute; left: -14px; top: 50%; transform: translateY(-50%); z-index: 40; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); transition: all var(--dur-fast); }
+  .agent-toggle-btn { position: absolute; left: -14px; top: 50%; transform: translateY(-50%); z-index: var(--z-popover); width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 8px color-mix(in srgb, var(--color-black) 40%, transparent); transition: all var(--dur-fast); }
   .agent-toggle-btn:hover { border-color: var(--accent-blue); background: var(--bg-hover); color: var(--text-main); }
-  .canvas-agent-drag { position: absolute; left: -6px; top: 0; width: 12px; height: 100%; cursor: col-resize; z-index: 30; }
+  .canvas-agent-drag { position: absolute; left: -6px; top: 0; width: 12px; height: 100%; cursor: col-resize; z-index: var(--z-floating); }
   .canvas-fallback { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; color: var(--text-dim); }
   .canvas-fallback p { margin: 0; }
-  .canvas-fallback-hint { font-size: 11px; max-width: 320px; line-height: 1.5; }
-  .canvas-fallback code { background: var(--color-code-inline-bg); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  .canvas-fallback-hint { font-size: var(--font-xs); max-width: 320px; line-height: 1.5; }
+  .canvas-fallback code { background: var(--color-code-inline-bg); padding: 1px 4px; border-radius: 3px; font-size: var(--font-xs); }
   .canvas-fallback-actions { display: flex; gap: 8px; margin-top: 8px; }
   .canvas-fallback-actions button { display: inline-flex; align-items: center; gap: 5px; }
   /* 联动能力明示条：悬浮于画布左下角，不拦截画布操作（继承 .canvas-view 的 pointer-events:none） */
-  .canvas-linkage-note { position: absolute; left: 12px; bottom: 12px; z-index: 20; padding: 4px 10px; border-radius: 999px; background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-muted); font-size: 11px; line-height: 1.4; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); pointer-events: none; user-select: none; }
+  .canvas-linkage-note { position: absolute; left: 12px; bottom: 12px; z-index: var(--z-sticky); padding: 4px 10px; border-radius: 999px; background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-muted); font-size: var(--font-xs); line-height: 1.4; box-shadow: 0 2px 8px color-mix(in srgb, var(--color-black) 35%, transparent); pointer-events: none; user-select: none; }
   .settings-view { width: 100%; height: 100%; }
   .settings-view iframe { width: 100%; height: 100%; border: 0; display: block; }
 
   /* ---------- 文档面板（可拖拽浮窗：无背板不拦截工作台操作，仅右上角 × 可关闭） ---------- */
   .docs-panel { position: fixed; inset: 0; z-index: var(--z-docs); background: transparent; display: flex; align-items: center; justify-content: center; pointer-events: none; }
   .docs-panel.hidden { display: none; }
-  .docs-panel-inner { pointer-events: auto; width: min(1080px, 92vw); height: min(720px, 88vh); display: flex; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6); }
+  .docs-panel-inner { pointer-events: auto; width: min(1080px, 92vw); height: min(720px, 88vh); display: flex; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px color-mix(in srgb, var(--color-black) 60%, transparent); }
   .docs-sidebar { width: 240px; flex-shrink: 0; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; }
-  .docs-sidebar-header { display: flex; align-items: center; gap: 8px; height: 44px; box-sizing: border-box; padding: 0 16px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--border-color); cursor: grab; user-select: none; flex-shrink: 0; }
+  .docs-sidebar-header { display: flex; align-items: center; gap: 8px; height: 44px; box-sizing: border-box; padding: 0 16px; font-size: var(--font-md); font-weight: 600; border-bottom: 1px solid var(--border-color); cursor: grab; user-select: none; flex-shrink: 0; }
   .docs-sidebar-header:active { cursor: grabbing; }
   .docs-file-list { flex: 1; overflow-y: auto; padding: 10px; }
-  .docs-section-title { font-size: 10px; color: var(--text-muted); margin: 12px 8px 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .docs-file { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 12px; border-radius: 6px; cursor: pointer; color: var(--text-main); }
+  .docs-section-title { font-size: var(--font-2xs); color: var(--text-muted); margin: 12px 8px 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .docs-file { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: var(--font-sm); border-radius: 6px; cursor: pointer; color: var(--text-main); }
   button.docs-file { width: 100%; text-align: left; }
-  .docs-file:hover { background: rgba(255, 255, 255, 0.06); }
+  .docs-file:hover { background: color-mix(in srgb, var(--color-white) 6%, transparent); }
   .docs-file.active { background: color-mix(in srgb, var(--color-info-strong) 18%, transparent); color: var(--color-info); }
   .docs-file svg { flex-shrink: 0; }
   .docs-file .docs-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .docs-empty { font-size: 11px; color: var(--text-muted); padding: 8px 12px; }
+  .docs-empty { font-size: var(--font-xs); color: var(--text-muted); padding: 8px 12px; }
   .docs-empty.centered { text-align: center; padding-top: 60px; padding-bottom: 60px; }
   .docs-content { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
   .docs-content-header { display: flex; align-items: center; justify-content: space-between; height: 44px; box-sizing: border-box; padding: 0 12px 0 20px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; cursor: grab; user-select: none; }
   .docs-content-header:active { cursor: grabbing; }
   .docs-panel-close { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-left: 4px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; transition: all var(--dur-fast); }
-  .docs-panel-close:hover { color: var(--text-main); background: rgba(255, 255, 255, 0.08); }
-  .docs-current-name { font-size: 13px; font-weight: 600; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .docs-panel-close:hover { color: var(--text-main); background: color-mix(in srgb, var(--color-white) 8%, transparent); }
+  .docs-current-name { font-size: var(--font-md); font-weight: 600; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .docs-content-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .docs-viewer { flex: 1; margin: 0; padding: 24px 28px; overflow-y: auto; font-size: 13px; line-height: 1.8; white-space: pre-wrap; word-break: break-word; font-family: inherit; color: var(--text-main); user-select: text; -webkit-user-select: text; }
-  .docs-editor { flex: 1; margin: 0; padding: 24px 28px; border: none; outline: none; resize: none; background: var(--bg-secondary); color: var(--text-main); font-size: 13px; line-height: 1.7; font-family: 'Consolas', monospace; width: 100%; user-select: text; -webkit-user-select: text; }
-  .docs-rendered { flex: 1; padding: 24px 28px; overflow-y: auto; font-size: 13px; line-height: 1.8; color: var(--text-main); user-select: text; -webkit-user-select: text; }
-  .docs-rendered h1 { font-size: 20px; font-weight: 700; margin: 16px 0 8px; color: var(--text-main); }
-  .docs-rendered h2 { font-size: 16px; font-weight: 600; margin: 14px 0 6px; }
-  .docs-rendered h3 { font-size: 14px; font-weight: 600; margin: 12px 0 4px; }
+  .docs-viewer { flex: 1; margin: 0; padding: 24px 28px; overflow-y: auto; font-size: var(--font-md); line-height: 1.8; white-space: pre-wrap; word-break: break-word; font-family: inherit; color: var(--text-main); user-select: text; -webkit-user-select: text; }
+  .docs-editor { flex: 1; margin: 0; padding: 24px 28px; border: none; outline: none; resize: none; background: var(--bg-secondary); color: var(--text-main); font-size: var(--font-md); line-height: 1.7; font-family: 'Consolas', monospace; width: 100%; user-select: text; -webkit-user-select: text; }
+  .docs-rendered { flex: 1; padding: 24px 28px; overflow-y: auto; font-size: var(--font-md); line-height: 1.8; color: var(--text-main); user-select: text; -webkit-user-select: text; }
+  .docs-rendered h1 { font-size: var(--font-3xl); font-weight: 700; margin: 16px 0 8px; color: var(--text-main); }
+  .docs-rendered h2 { font-size: var(--font-xl); font-weight: 600; margin: 14px 0 6px; }
+  .docs-rendered h3 { font-size: var(--font-lg); font-weight: 600; margin: 12px 0 4px; }
   .docs-rendered p { margin: 6px 0; }
   .docs-rendered ul, .docs-rendered ol { margin: 6px 0; padding-left: 22px; }
   .docs-rendered ol { list-style: decimal; } /* 阅读模式流程序号（全局 reset 吃掉后在此补回） */
@@ -65,22 +65,22 @@
   .docs-rendered li { margin: 3px 0; }
   .docs-rendered blockquote { margin: 8px 0; padding: 8px 14px; border-left: 3px solid var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 6%, transparent); border-radius: 0 6px 6px 0; color: var(--text-muted); }
   .docs-rendered strong { color: var(--text-main); }
-  .docs-rendered code { background: var(--color-code-inline-bg); padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', monospace; font-size: 12px; }
+  .docs-rendered code { background: var(--color-code-inline-bg); padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', monospace; font-size: var(--font-sm); }
   .docs-mode-toggle { display: flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
-  .docs-mode-toggle button { padding: 4px 10px; font-size: 11px; background: transparent; border: none; color: var(--text-muted); cursor: pointer; transition: all var(--dur-fast); }
+  .docs-mode-toggle button { padding: 4px 10px; font-size: var(--font-xs); background: transparent; border: none; color: var(--text-muted); cursor: pointer; transition: all var(--dur-fast); }
   .docs-mode-toggle button.active { background: color-mix(in srgb, var(--color-info-strong) 18%, transparent); color: var(--color-info); }
   .docs-mode-toggle button + button { border-left: 1px solid var(--border-color); }
-  .docs-new-btn { display: flex; align-items: center; justify-content: center; gap: 5px; width: calc(100% - 16px); margin: 8px; padding: 5px 8px; font-size: 11px; color: var(--text-muted); background: transparent; border: 1px dashed var(--border-color); border-radius: 6px; cursor: pointer; transition: all var(--dur-fast); }
+  .docs-new-btn { display: flex; align-items: center; justify-content: center; gap: 5px; width: calc(100% - 16px); margin: 8px; padding: 5px 8px; font-size: var(--font-xs); color: var(--text-muted); background: transparent; border: 1px dashed var(--border-color); border-radius: 6px; cursor: pointer; transition: all var(--dur-fast); }
   .docs-new-btn:hover { color: var(--color-info); border-color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 6%, transparent); }
   .docs-new-btn svg { flex-shrink: 0; display: block; }
   .docs-new-btn span { line-height: 1; }
   .docs-rename { padding: 8px; }
-  .docs-rename-input { width: 100%; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-primary); padding: 4px 8px; font-size: 12px; color: var(--text-main); outline: none; }
+  .docs-rename-input { width: 100%; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-primary); padding: 4px 8px; font-size: var(--font-sm); color: var(--text-main); outline: none; }
   .docs-rename-input:focus { border-color: var(--border-highlight); }
-  .docs-edit-btn { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 6px; border: 1px solid var(--border-color); background: transparent; padding: 5px 10px; font-size: 11px; color: var(--text-muted); transition: color var(--dur-fast); }
+  .docs-edit-btn { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 6px; border: 1px solid var(--border-color); background: transparent; padding: 5px 10px; font-size: var(--font-xs); color: var(--text-muted); transition: color var(--dur-fast); }
   .docs-edit-btn:hover { color: var(--text-main); }
-  .docs-delete-btn { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--color-danger-strong) 40%, transparent); background: transparent; padding: 5px 8px; font-size: 11px; color: var(--color-danger); transition: all var(--dur-fast); }
+  .docs-delete-btn { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--color-danger-strong) 40%, transparent); background: transparent; padding: 5px 8px; font-size: var(--font-xs); color: var(--color-danger); transition: all var(--dur-fast); }
   .docs-delete-btn:hover { background: color-mix(in srgb, var(--color-danger-strong) 12%, transparent); border-color: var(--color-danger-strong); }
-  .docs-save-btn { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 6px; border: none; background: var(--accent-blue); padding: 5px 10px; font-size: 11px; color: #fff; transition: opacity var(--dur-fast); }
+  .docs-save-btn { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: 6px; border: none; background: var(--accent-blue); padding: 5px 10px; font-size: var(--font-xs); color: var(--color-white); transition: opacity var(--dur-fast); }
   .docs-save-btn:hover { opacity: 0.85; }
 }

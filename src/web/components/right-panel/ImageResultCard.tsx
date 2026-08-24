@@ -1,14 +1,17 @@
 import { For, Show, createSignal, onMount, onCleanup } from 'solid-js';
-import { FiDownload, FiImage } from 'solid-icons/fi';
+import { FiBookmark, FiDownload, FiImage } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
 import { safeUrl } from '@/lib/utils';
 import { createImageDrag, absUrl } from '@/lib/chat/chat-image-drag';
 import { endCanvasImageDrag } from '@/stores/canvas';
+import { togglePinArtifact, isPinnedId, pinnedIdOf } from '@/stores/pinned';
 import type { ImageCardData } from '@/types';
 import { ImageLightbox } from './ImageLightbox';
 
 /**
  * 生图结果卡片 + 原图预览 lightbox（拖拽/下载/Esc 关闭）。
+ * 缩略图左上角钉住入口（F3）：钉到 PinnedRail 跨轮对照栏；
+ * 钉住职责划分见 stores/pinned.ts 头注释（不并入 lightbox/MediaViewer）。
  */
 export function ImageResultCard(props: { card: ImageCardData }) {
   const card = () => props.card;
@@ -57,6 +60,18 @@ export function ImageResultCard(props: { card: ImageCardData }) {
                       }}
                     />
                     <span class="image-card-label">{fname()}</span>
+                    <button
+                      type="button"
+                      class="image-card-pin"
+                      classList={{ pinned: isPinnedId(pinnedIdOf({ kind: 'image', url, name: fname() })) }}
+                      title="钉住到对照栏"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePinArtifact({ kind: 'image', url, name: fname() });
+                      }}
+                    >
+                      <FiBookmark size={12} />
+                    </button>
                     <button
                       type="button"
                       class="image-card-download"

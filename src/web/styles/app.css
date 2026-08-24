@@ -17,3 +17,5 @@
 /* Skill 结构化视图与 Skill 工作台 */
 @import "./skill-structured.css";
 @import "./skill-studio.css";
+/* 钉住对照侧栏（F3） */
+@import "./pinned-rail.css";

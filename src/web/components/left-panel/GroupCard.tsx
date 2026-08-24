@@ -91,7 +91,7 @@ export function GroupCard(props: {
         return {
           badge: g.shotType || '分镜',
           badgeStyle: {
-            background: 'rgba(139, 92, 246, 0.15)',
+            background: 'color-mix(in srgb, var(--accent-purple) 15%, transparent)',
             color: 'var(--accent-purple)',
           },
           desc: g.roughDesc || '',
@@ -103,7 +103,7 @@ export function GroupCard(props: {
         return {
           badge: (props.group as AudioGroup).timeRange || '音频',
           badgeStyle: {
-            background: 'rgba(16, 185, 129, 0.15)',
+            background: 'color-mix(in srgb, var(--accent-emerald) 15%, transparent)',
             color: 'var(--accent-emerald)',
           },
           desc: (props.group as AudioGroup).prompt || '',

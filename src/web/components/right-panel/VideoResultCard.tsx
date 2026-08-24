@@ -1,14 +1,16 @@
 import { For, Show, createSignal, onMount, onCleanup } from 'solid-js';
-import { FiDownload, FiVideo } from 'solid-icons/fi';
+import { FiBookmark, FiDownload, FiVideo } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
 import { safeUrl } from '@/lib/utils';
 import { absUrl } from '@/lib/chat/chat-image-drag';
+import { togglePinArtifact, isPinnedId, pinnedIdOf } from '@/stores/pinned';
 import type { VideoCardData } from '@/types';
 import { MediaLightbox } from './MediaLightbox';
 
 /**
  * 视频结果内联预览卡：复用 ImageResultCard 的结构与交互模式
  *（<video> 首帧 poster + 左上角 ▶ 角标；点击 lightbox 播放、悬停下载、Esc 关闭）。
+ * 缩略图左上角钉住入口（F3）：钉到 PinnedRail 跨轮对照栏。
  */
 export function VideoResultCard(props: { card: VideoCardData }) {
   const card = () => props.card;
@@ -50,6 +52,18 @@ export function VideoResultCard(props: { card: VideoCardData }) {
                     />
                     <span class="video-card-badge">▶</span>
                     <span class="image-card-label">{fname()}</span>
+                    <button
+                      type="button"
+                      class="image-card-pin"
+                      classList={{ pinned: isPinnedId(pinnedIdOf({ kind: 'video', url: item.url, name: fname() })) }}
+                      title="钉住到对照栏"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePinArtifact({ kind: 'video', url: item.url, name: fname(), thumb: item.thumb });
+                      }}
+                    >
+                      <FiBookmark size={12} />
+                    </button>
                     <button
                       type="button"
                       class="image-card-download"

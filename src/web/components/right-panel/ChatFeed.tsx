@@ -8,8 +8,7 @@ import { scrollRequest } from '@/lib/chat/chat-scroll-bridge';
 import { ChatMessageItem } from './ChatMessageItem';
 import { StreamingIndicator } from './StreamingIndicator';
 import { StreamingBubble } from './StreamingBubble';
-import { AgentTimeline } from './AgentTimeline';
-import { StageProgressBar } from './StageProgressBar';
+import { TurnLedgerCard } from './TurnLedgerCard';
 import { EmptyStateCard } from './EmptyStateCard';
 
 /** 判断是否接近底部（阈值 80px） */
@@ -67,7 +66,7 @@ export function ChatFeed() {
   createEffect(() => {
     void chatState.messages.length;
     void chatState.streamingText;
-    void chatState.streamingStatus;
+    void chatState.turnLedger.statusText;
     if (!autoScroll()) return;
     followupLeft = PIN_FOLLOWUP_FRAMES;
     if (rafId !== undefined) cancelAnimationFrame(rafId);
@@ -211,16 +210,12 @@ export function ChatFeed() {
         )}
       </For>
 
-      {/* 流式过程：阶段进度条 + 深度思考/工具操作时间线（完成并入消息 trace，不重复展示） */}
+      {/* 流式过程：轮次账本卡 live 相位（阶段进度条 + 深度思考/工具操作时间线，
+          数据源 = 归一后的本轮账本 turnLedger）；完成后相位翻转随消息入库，
+          settled 分支与流式块同一组件同构渲染（TurnLedgerCard），不重复展示 */}
       <Show when={chatState.isStreaming}>
         <div class="chat-msg agent">
-          <StageProgressBar />
-          <AgentTimeline
-            reasoning={() => chatState.streamingReasoning}
-            items={chatState.streamingTools}
-            live
-            liveStatus={() => chatState.streamingStatus}
-          />
+          <TurnLedgerCard phase="live" ledger={() => chatState.turnLedger} />
         </div>
       </Show>
 

@@ -68,7 +68,7 @@ export function DraftCard(props: {
     }
     // 分镜紫灰 / 其他深蓝（对齐旧版配色）
     return {
-      'background-color': props.type === 'shot' ? '#2e3346' : '#1e293b',
+      'background-color': props.type === 'shot' ? 'var(--color-surface-shot)' : 'var(--color-surface-placeholder)',
     };
   };
 
@@ -193,8 +193,8 @@ export function DraftCard(props: {
               class="draft-card-tag"
               style={{
                 background: props.type === 'shot'
-                  ? 'rgba(139, 92, 246, 0.85)'
-                  : 'rgba(59, 130, 246, 0.85)',
+                  ? 'color-mix(in srgb, var(--accent-purple) 85%, transparent)'
+                  : 'color-mix(in srgb, var(--accent-blue) 85%, transparent)',
               }}
             >
               {props.draft.tag}

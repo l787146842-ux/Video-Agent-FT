@@ -9,54 +9,54 @@
   .chat-input-box { display: flex; flex-direction: column; gap: 0; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 12px; position: relative; transition: border-color 0.2s; }
   .chat-input-box:focus-within { border-color: var(--accent-blue); }
   .chat-input-box.drag-over { border-color: var(--accent-blue); background-color: color-mix(in srgb, var(--color-info-strong) 5%, transparent); }
-  .chat-input-box textarea { width: 100%; flex: 1; background: none; border: none; color: var(--text-main); font-size: 13px; outline: none; resize: none; min-height: 44px; line-height: 1.5; padding-bottom: 8px; }
+  .chat-input-box textarea { width: 100%; flex: 1; background: none; border: none; color: var(--text-main); font-size: var(--font-md); outline: none; resize: none; min-height: 44px; line-height: 1.5; padding-bottom: 8px; }
   .chat-input-toolbar { display: flex; align-items: center; justify-content: space-between; padding-top: 8px; }
   .toolbar-left { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
   .toolbar-right { display: flex; align-items: center; gap: 6px; }
-  .toolbar-pill-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: 12px; color: var(--text-muted); background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .toolbar-pill-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: var(--font-sm); color: var(--text-muted); background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
   .toolbar-pill-btn:hover { color: var(--text-main); border-color: var(--accent-blue); background-color: color-mix(in srgb, var(--color-info-strong) 8%, transparent); }
   .toolbar-pill-btn.active { color: var(--color-info); border-color: var(--accent-blue); background-color: color-mix(in srgb, var(--color-info-strong) 12%, transparent); }
 
   /* 发送按钮*/
   .send-btn { width: 32px; height: 32px; border-radius: 50%; background-color: var(--bg-hover); border: 1px solid var(--border-color); color: var(--text-main); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
-  .send-btn:hover { background-color: var(--accent-blue); border-color: var(--accent-blue); color: #ffffff; }
-  .send-btn-busy { background-color: color-mix(in srgb, var(--color-danger-strong) 80%, transparent); border-color: var(--color-danger-strong); color: #ffffff; }
+  .send-btn:hover { background-color: var(--accent-blue); border-color: var(--accent-blue); color: var(--color-white); }
+  .send-btn-busy { background-color: color-mix(in srgb, var(--color-danger-strong) 80%, transparent); border-color: var(--color-danger-strong); color: var(--color-white); }
   .send-btn-busy:hover { background-color: var(--color-danger-strong); }
   /* 推理中的独立停止键（发送键保持可用，消息进排队） */
-  .send-btn-stop { background-color: color-mix(in srgb, var(--color-danger-strong) 80%, transparent); border-color: var(--color-danger-strong); color: #ffffff; }
+  .send-btn-stop { background-color: color-mix(in srgb, var(--color-danger-strong) 80%, transparent); border-color: var(--color-danger-strong); color: var(--color-white); }
   .send-btn-stop:hover { background-color: var(--color-danger-strong); }
 
   /* 排队引导区（推理中继续发送的消息，Agent 完成后自动发出） */
   .queued-bar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; padding: 7px 9px; border: 1px dashed color-mix(in srgb, var(--color-info-strong) 45%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--color-info-strong) 5%, transparent); }
   .queued-bar-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .queued-bar-title { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .queued-bar-clear { flex-shrink: 0; background: none; border: none; font-size: 11px; color: var(--text-dim); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+  .queued-bar-title { font-size: var(--font-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queued-bar-clear { flex-shrink: 0; background: none; border: none; font-size: var(--font-xs); color: var(--text-dim); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
   .queued-bar-clear:hover { color: var(--color-danger-strong); background: color-mix(in srgb, var(--color-danger-strong) 8%, transparent); }
   .queued-chip { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; background: var(--bg-tertiary); border: 1px solid var(--border-color); }
-  .queued-chip-text { flex: 1; min-width: 0; font-size: 12px; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queued-chip-text { flex: 1; min-width: 0; font-size: var(--font-sm); color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .queued-chip-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-  .queued-action { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: 11px; color: var(--text-muted); background: none; border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .queued-action { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: var(--font-xs); color: var(--text-muted); background: none; border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
   .queued-action:hover { color: var(--text-main); border-color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 8%, transparent); }
-  .queued-action-guide:hover { color: #ffffff; background-color: var(--accent-blue); border-color: var(--accent-blue); }
+  .queued-action-guide:hover { color: var(--color-white); background-color: var(--accent-blue); border-color: var(--accent-blue); }
   .queued-more-wrap { position: relative; display: inline-flex; }
   .queued-more-btn { padding: 3px 5px; }
-  .queued-more-menu { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: var(--z-queued-menu); display: flex; flex-direction: column; min-width: 150px; padding: 4px; background: #1f2430; border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); }
-  html.light .queued-more-menu { background: #ffffff; }
-  .queued-more-menu button { display: flex; align-items: center; gap: 7px; padding: 6px 9px; background: none; border: none; border-radius: 5px; font-size: 12px; color: var(--text-main); text-align: left; cursor: pointer; }
+  .queued-more-menu { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: var(--z-queued-menu); display: flex; flex-direction: column; min-width: 150px; padding: 4px; background: var(--color-surface-popover); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 6px 20px color-mix(in srgb, var(--color-black) 45%, transparent); }
+  html.light .queued-more-menu { background: var(--bg-secondary); }
+  .queued-more-menu button { display: flex; align-items: center; gap: 7px; padding: 6px 9px; background: none; border: none; border-radius: 5px; font-size: var(--font-sm); color: var(--text-main); text-align: left; cursor: pointer; }
   .queued-more-menu button:hover { background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }
 
   /* 上下文用量状态图标（发送按钮旁）：悬停显示已用多少K上下文 */
   .context-usage-wrap { position: relative; display: flex; align-items: center; }
-  .context-usage-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; font-size: 11px; color: var(--text-muted); background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .context-usage-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; font-size: var(--font-xs); color: var(--text-muted); background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 999px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
   .context-usage-btn:hover { color: var(--text-main); border-color: var(--accent-blue); background-color: color-mix(in srgb, var(--color-info-strong) 8%, transparent); }
   .context-usage-value { font-variant-numeric: tabular-nums; }
-  .context-usage-tip { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 80; padding: 6px 12px; background: #1f2430; border: 1px solid var(--border-color); color: var(--text-main); font-size: 12px; white-space: nowrap; border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity var(--dur-fast), transform var(--dur-fast); }
-  html.light .context-usage-tip { background: #ffffff; color: #1f2937; }
+  .context-usage-tip { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: var(--z-tip); padding: 6px 12px; background: var(--color-surface-popover); border: 1px solid var(--border-color); color: var(--text-main); font-size: var(--font-sm); white-space: nowrap; border-radius: 8px; box-shadow: 0 6px 20px color-mix(in srgb, var(--color-black) 45%, transparent); opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity var(--dur-fast), transform var(--dur-fast); }
+  html.light .context-usage-tip { background: var(--bg-secondary); color: var(--text-main); }
   .context-usage-wrap:hover .context-usage-tip { opacity: 1; transform: translateY(0); }
 
   /* 附件 */
   .pending-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 4px; }
-  .attachment-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; color: var(--text-main); max-width: 200px; }
+  .attachment-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; font-size: var(--font-sm); color: var(--text-main); max-width: 200px; }
   .attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .attachment-remove { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: none; border: none; color: var(--text-muted); cursor: pointer; flex-shrink: 0; }
   .attachment-remove:hover { color: var(--color-danger-strong); background-color: color-mix(in srgb, var(--color-danger-strong) 10%, transparent); }

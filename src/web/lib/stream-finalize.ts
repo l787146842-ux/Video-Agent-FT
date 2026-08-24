@@ -10,16 +10,15 @@
 import type { ChatMessage } from '@/types';
 import { t } from '@/lib/locale';
 import type { ChatState } from '@/stores/chat';
+import { emptyLedger } from '@/lib/turn-ledger';
 
 /** 流式收尾重置（done/错误/停止/重连收尾四处同语义，单一实现） */
 export function resetStreamFields(s: ChatState) {
   s.isStreaming = false;
   s.streamingText = '';
-  s.streamingStatus = '';
   s.streamingModel = '';
-  s.streamingReasoning = '';
-  s.streamingTools = [];
-  s.streamingReasoningStartMs = 0;
+  // 本轮账本整体复位（reasoning/items/状态文案/思考计时一次清零）
+  s.turnLedger = emptyLedger();
   s.roundStep = 0;
   s.roundMax = 0;
 }

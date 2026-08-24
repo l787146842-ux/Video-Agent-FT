@@ -13,8 +13,8 @@
   padding: 0 4px;
   border-radius: 8px;
   background: var(--color-danger-strong);
-  color: #fff;
-  font-size: 10px;
+  color: var(--color-white);
+  font-size: var(--font-2xs);
   line-height: 16px;
   text-align: center;
   font-weight: 600;
@@ -25,8 +25,8 @@
 .genlog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 90;
-  background: rgba(0, 0, 0, 0.45);
+  z-index: var(--z-fullscreen);
+  background: color-mix(in srgb, var(--color-black) 45%, transparent);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -40,7 +40,7 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 16px 48px color-mix(in srgb, var(--color-black) 35%, transparent);
   overflow: hidden;
 }
 
@@ -53,7 +53,7 @@
   border-bottom: 1px solid var(--border-color);
 }
 .genlog-title {
-  font-size: 14px;
+  font-size: var(--font-lg);
   font-weight: 600;
   color: var(--text-main);
 }
@@ -68,7 +68,7 @@
   border: 1px solid var(--border-color);
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -110,7 +110,7 @@
   padding: 40px 0;
   text-align: center;
   color: var(--text-dim);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 /* 单条日志卡片 */
@@ -142,7 +142,7 @@
 .genlog-badge {
   padding: 1px 8px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
 }
 .genlog-badge--ok {
@@ -161,30 +161,30 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text-main);
 }
 .genlog-model {
   padding: 1px 6px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
 }
 .genlog-time {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-dim);
   white-space: nowrap;
 }
 .genlog-row2 {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-muted);
 }
 .genlog-desc {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-muted);
   line-height: 1.5;
   display: -webkit-box;
@@ -193,7 +193,7 @@
   overflow: hidden;
 }
 .genlog-error {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--color-danger);
   word-break: break-all;
 }

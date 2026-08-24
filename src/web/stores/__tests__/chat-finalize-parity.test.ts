@@ -11,15 +11,16 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { chatState, chatActions } from '../chat';
 import type { ChatState } from '@/stores/chat';
 
-/** 收尾后统一后置态断言（四处共用）：流式累积字段一律清零 */
+/** 收尾后统一后置态断言（四处共用）：流式累积字段一律清零
+ *（F2 阶段一：流式临时态已并入轮次账本，复位即账本原子清零） */
 function expectStreamReset(s: ChatState) {
   expect(s.isStreaming).toBe(false);
   expect(s.streamingText).toBe('');
-  expect(s.streamingStatus).toBe('');
   expect(s.streamingModel).toBe('');
-  expect(s.streamingReasoning).toBe('');
-  expect(s.streamingTools).toEqual([]);
-  expect(s.streamingReasoningStartMs).toBe(0);
+  expect(s.turnLedger.reasoning).toBe('');
+  expect(s.turnLedger.items).toEqual([]);
+  expect(s.turnLedger.statusText).toBe('');
+  expect(s.turnLedger.reasoningStartMs).toBe(0);
   expect(s.roundStep).toBe(0);
   expect(s.roundMax).toBe(0);
 }
@@ -39,12 +40,19 @@ describe('四处收尾复用点后置态一致', () => {
     chatActions.clearStreaming();
   });
 
-  it('done 收尾：结果消息落库 + 流式字段清零', () => {
+  it('done 收尾：结果消息落库 + 流式字段清零；本轮账本相位翻转随消息入库', () => {
     midStream();
     chatActions.finishStream({ text: '最终回复', elapsed_ms: 900, steps: 1, applied_actions: 0 });
     expectStreamReset(chatState);
     expect(chatState.messages).toHaveLength(1);
     expect(chatState.messages[0].text).toBe('最终回复');
+    // 相位翻转：消息携带同一批 live 账目（settled），不从 trace 二次重建
+    const led = chatState.messages[0].ledger;
+    expect(led?.phase).toBe('settled');
+    expect(led?.items).toHaveLength(1);
+    expect(led?.items[0].summary).toBe('生图');
+    expect(led?.items[0].status).toBe('done');
+    expect(led?.reasoning).toBe('思考中');
   });
 
   it('错误收尾：错误气泡落库（带 errorKind）+ 流式字段清零', () => {

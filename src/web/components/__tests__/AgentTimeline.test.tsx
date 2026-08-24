@@ -53,6 +53,24 @@ describe('AgentTimeline 双折叠面板呈现', () => {
     expect(container.querySelector('.tl-reasoning-live')).toBeTruthy();
   });
 
+  it('显式 phase=live 与 live 别名同语义（F2 阶段二）', () => {
+    const { container } = render(() => (
+      <AgentTimeline reasoning="正在想" items={[doneItem('t-1-0', 'x', 100)]} phase="live" />
+    ));
+    panels(container).forEach((p) => expect(p.classList.contains('expanded')).toBe(true));
+    expect(container.querySelector('.tl-reasoning-live')).toBeTruthy();
+  });
+
+  it('phase 显式给出时优先于 live 别名（settled 定型形态）', () => {
+    const { container } = render(() => (
+      <AgentTimeline reasoning="思考" items={[doneItem('t-1-0', 'x', 100)]} phase="settled" live thinkingMs={1500} />
+    ));
+    panels(container).forEach((p) => expect(p.classList.contains('expanded')).toBe(false));
+    expect(container.querySelector('.tl-reasoning-live')).toBeNull();
+    // settled 相位耗时角标照常呈现
+    expect(container.querySelector('.tl-panel-elapsed')?.textContent).toContain('1.5s');
+  });
+
   it('无 reasoning 无 items → 整体不渲染', () => {
     const { container } = render(() => <AgentTimeline items={[]} />);
     expect(container.querySelector('.agent-timeline')).toBeNull();

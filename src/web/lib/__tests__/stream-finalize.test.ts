@@ -19,14 +19,20 @@ function streamingState(extra?: Partial<ChatState>): ChatState {
   return {
     messages: [{ sender: 'user', text: '旧消息', ts: 1 }],
     streamingText: '累积正文',
-    streamingStatus: '正在回复…',
     isStreaming: true,
     inputText: '输入框内容',
     streamingModel: '模型A',
-    streamingReasoning: '累积思考',
-    streamingTools: [{ id: 't1', name: 'gen', summary: '生图', status: 'running' }],
-    streamingReasoningStartMs: 1000,
-    streamingReasoningEndMs: 2000,
+    // F2 阶段一：流式临时态已并入轮次账本（phase=live）
+    turnLedger: {
+      phase: 'live',
+      turnId: undefined,
+      reasoning: '累积思考',
+      items: [{ id: 't1', name: 'gen', summary: '生图', status: 'running' }],
+      statusText: '正在回复…',
+      reasoningStartMs: 1000,
+      reasoningEndMs: 2000,
+      thinkingMs: undefined,
+    },
     queuedMessages: [{ id: 'q1', text: '排队', displayText: '排队', parts: [] }],
     renderedDocCards: ['规格.md'],
     roundStep: 2,
@@ -36,18 +42,18 @@ function streamingState(extra?: Partial<ChatState>): ChatState {
 }
 
 describe('resetStreamFields（done/错误/停止/重连收尾四处同语义）', () => {
-  it('清零全部流式累积字段', () => {
+  it('清零全部流式累积字段（含本轮账本整体复位）', () => {
     const s = streamingState();
     resetStreamFields(s);
     expect(s.isStreaming).toBe(false);
     expect(s.streamingText).toBe('');
-    expect(s.streamingStatus).toBe('');
     expect(s.streamingModel).toBe('');
-    expect(s.streamingReasoning).toBe('');
-    expect(s.streamingTools).toEqual([]);
-    expect(s.streamingReasoningStartMs).toBe(0);
-    // 现行为钉死：收尾重置面不含 EndMs（下一次 startStream 会清零，此处防误扩面）
-    expect(s.streamingReasoningEndMs).toBe(2000);
+    // 账本原子复位：reasoning/items/状态文案/思考计时一次清零
+    expect(s.turnLedger.reasoning).toBe('');
+    expect(s.turnLedger.items).toEqual([]);
+    expect(s.turnLedger.statusText).toBe('');
+    expect(s.turnLedger.reasoningStartMs).toBe(0);
+    expect(s.turnLedger.reasoningEndMs).toBe(0);
     expect(s.roundStep).toBe(0);
     expect(s.roundMax).toBe(0);
   });

@@ -9,6 +9,8 @@
  * ③ 重新生成 → truncate-resend 无 text；分支 → branchAtMessage(该消息下标)。
  * ④ 建议动作读持久化 suggestedActions（刷新/replay 恢复路径直读渲染，
  *    「继续刚才的任务」不丢）。
+ * 卡片/跳转/折叠分支、复制/存文档 hover 动作与过程时间线数据源
+ * （F2 账本消费面）见 ChatMessageItem-extra.test.tsx（前端 250 行红线拆分）。
  */
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';

@@ -10,6 +10,7 @@
  * 时间线 = 本轮已发生的全部账目。
  */
 import type { ChatMessage, TraceAction } from '@/types';
+import { ledgerFromSettled } from '@/lib/turn-ledger';
 
 /** 时间线单条操作条目（流式运行态与历史重建共用） */
 export interface TimelineItem {
@@ -98,42 +99,19 @@ export function argsPreviewEntries(
 
 /**
  * 从已完成消息的 trace / actionLog 重建时间线数据（刷新页面后不丢）。
- * trace.steps[].actions 优先；旧消息无 actions 时用 actionLog 兜底。
+ * F2 阶段一：重建逻辑收敛到 lib/turn-ledger 的 settled 归一入口
+ *（与 live 账本同构 LedgerItem[]）；本函数保留既有返回形态供渲染层消费。
  */
 export function timelineFromMessage(
   msg: ChatMessage,
 ): { reasoning: string; items: TimelineItem[] } {
-  const steps = msg.trace?.steps || [];
-  const reasoning = steps
-    .map((s) => s.reasoning || '')
-    .filter(Boolean)
-    .join('\n');
-  const items: TimelineItem[] = [];
-  steps.forEach((s) => {
-    (s.actions || []).forEach((a: TraceAction, i: number) => {
-      // 规划条目与 live 事件同构 id（llm-s{step}），历史重建也能命中合并降噪
-      const id = a.name === 'model_reasoning' ? `llm-s${s.step}` : `t-${s.step}-${i}`;
-      items.push({
-        id,
-        name: a.name,
-        summary: a.summary || a.name,
-        status: a.ok ? 'done' : 'failed',
-        elapsed_ms: a.elapsed_ms,
-        // 后端持久化的结果摘要（与 live tool_finished 同口径）
-        result_summary: a.result_summary || undefined,
-        // 规划级执行器徽标（重建与 live 同源）
-        planning: a.planning || undefined,
-        // 输入参数预览（重建后详情卡展开区不丢，任务 #2）
-        args: a.args,
-      });
-    });
+  const ledger = ledgerFromSettled({
+    trace: msg.trace,
+    actionLog: msg.actionLog,
+    thinkingMs: msg.thinkingMs,
+    turnId: msg.turnId,
   });
-  if (!items.length && (msg.actionLog || []).length) {
-    msg.actionLog!.forEach((op, i) => {
-      items.push({ id: `l-${i}`, summary: op, status: 'done' });
-    });
-  }
-  return { reasoning, items };
+  return { reasoning: ledger.reasoning, items: ledger.items };
 }
 
 /**

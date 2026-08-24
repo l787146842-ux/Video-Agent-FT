@@ -32,6 +32,7 @@
  */
 import type { ChatRequest } from './api.generated';
 import type { ErrorKind } from '@/lib/error-payload';
+import type { TurnLedger } from '@/lib/turn-ledger';
 
 // ===== 基础枚举 =====
 export type DraftType = 'keyElement' | 'shot' | 'audio';
@@ -203,6 +204,9 @@ export interface ChatMessage {
   warnings?: string[];
   /** 执行轨迹（每轮 step/耗时/操作数，「执行轨迹」折叠区展示） */
   trace?: AgentTrace;
+  /** 轮次账本（F2 阶段一：finishStream 相位翻转后的 live 账本快照，仅前端本地；
+   *  不随后端持久化——刷新/历史重建回落 ledgerFromSettled(trace) 同一归一入口） */
+  ledger?: TurnLedger;
   /** ：鉴权/供应商类错误气泡附「检查 API 配置」跳转按钮 */
   settingsHint?: boolean;
   /** 错误结构化归类（ErrorPayload.kind；渲染层按映射表扩展 affordance） */

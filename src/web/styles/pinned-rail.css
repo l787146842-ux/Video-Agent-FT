@@ -1,0 +1,151 @@
+/* ===== 钉住对照侧栏（F3 PinnedRail）=====
+   色值一律走 tokens.css 语义 token（check_semantic_colors 新文件零容忍）。 */
+
+.col-pinned {
+  min-width: 240px;
+  max-width: 480px;
+  border-left: 1px solid var(--border-color);
+}
+
+.pinned-rail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.pinned-rail-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.pinned-rail-header-icon { color: var(--accent-amber); flex-shrink: 0; }
+.pinned-rail-title { font-size: var(--font-md); font-weight: 600; }
+.pinned-rail-count { font-size: var(--font-xs); color: var(--text-dim); }
+.pinned-rail-clear {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--dur-fast), background-color var(--dur-fast);
+}
+.pinned-rail-clear:hover { color: var(--color-danger); background-color: var(--bg-hover); }
+
+/* 元数据列表（非激活项不挂媒体 src，仅图标+文件名） */
+.pinned-rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.pinned-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color var(--dur-fast), border-color var(--dur-fast);
+}
+.pinned-item:hover { background-color: var(--bg-hover); }
+.pinned-item.active {
+  color: var(--text-main);
+  border-color: color-mix(in srgb, var(--accent-blue) 50%, transparent);
+  background-color: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+}
+.pinned-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pinned-item-unpin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast), color var(--dur-fast);
+  flex-shrink: 0;
+}
+.pinned-item:hover .pinned-item-unpin,
+.pinned-item.active .pinned-item-unpin { opacity: 1; }
+.pinned-item-unpin:hover { color: var(--color-danger); }
+
+/* 激活项预览区 */
+.pinned-rail-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  padding: var(--space-2);
+  background-color: var(--bg-primary);
+}
+.pinned-preview-empty {
+  margin: auto;
+  font-size: var(--font-sm);
+  color: var(--text-dim);
+  text-align: center;
+}
+.pinned-preview-img,
+.pinned-preview-video {
+  max-width: 100%;
+  max-height: 100%;
+  margin: auto;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-tertiary);
+}
+.pinned-preview-video { width: 100%; }
+
+/* 文档预览：markdown 排版继承 .chat-markdown（tokens.css）；放行文本选择 */
+.pinned-doc {
+  user-select: text;
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  width: 100%;
+}
+
+/* ===== 卡片上的钉住入口按钮（生图卡/视频卡缩略图角标，伴 .image-card-download） ===== */
+.image-card-pin {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--color-code-block-bg);
+  color: var(--text-main);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.image-card-thumb:hover .image-card-pin,
+.image-card-pin.pinned { opacity: 1; }
+.image-card-pin:hover {
+  background: color-mix(in srgb, var(--color-info-strong) 80%, transparent);
+}
+.image-card-pin.pinned { color: var(--accent-amber); }

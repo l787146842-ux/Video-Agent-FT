@@ -61,13 +61,13 @@ export function Header(props: {
           <path
             d="M12 2l2.9 6.26L21.5 9.27l-4.75 4.28L18.18 20 12 16.77 5.82 20l1.43-6.45L2.5 9.27l6.6-1.01L12 2z"
             fill="url(#brandStarGrad)"
-            stroke="#b8860b"
+            style={{ stroke: 'var(--color-brand-gold-deep)' }}
             stroke-width="0.5"
           />
           <defs>
             <linearGradient id="brandStarGrad" x1="2" y1="2" x2="22" y2="22">
-              <stop offset="0%" stop-color="#ffd700" />
-              <stop offset="100%" stop-color="#dc2626" />
+              <stop offset="0%" style={{ 'stop-color': 'var(--color-brand-gold)' }} />
+              <stop offset="100%" style={{ 'stop-color': 'var(--color-brand-flame)' }} />
             </linearGradient>
           </defs>
         </svg>

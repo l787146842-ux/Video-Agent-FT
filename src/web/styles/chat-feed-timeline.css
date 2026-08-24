@@ -1,24 +1,24 @@
 /* ===== 过程时间线（agent 消息：深度思考 + 已处理操作折叠面板） ===== */
 @layer components {
   .agent-timeline { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; max-width: 100%; }
-  .tl-panel { border: 1px solid var(--border-color); border-radius: 6px; background: rgba(255, 255, 255, 0.02); overflow: hidden; }
+  .tl-panel { border: 1px solid var(--border-color); border-radius: 6px; background: color-mix(in srgb, var(--color-white) 2%, transparent); overflow: hidden; }
   .tl-panel-header { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 10px; background: none; border: none; font: inherit; text-align: left; cursor: pointer; user-select: none; }
-  .tl-panel-header:hover { background: rgba(255, 255, 255, 0.04); }
-  .tl-panel-title { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+  .tl-panel-header:hover { background: color-mix(in srgb, var(--color-white) 4%, transparent); }
+  .tl-panel-title { font-size: var(--font-xs); font-weight: 600; color: var(--text-muted); }
   .tl-arrow { margin-left: auto; color: var(--text-dim); transition: transform 0.2s; }
   .tl-panel.expanded .tl-arrow { transform: rotate(180deg); }
   .tl-panel-body { display: none; padding: 4px 10px 8px; border-top: 1px solid var(--border-color); }
   .tl-panel.expanded .tl-panel-body { display: block; }
   .tl-icon-thinking { color: var(--color-warning-strong); flex-shrink: 0; }
   .tl-icon-done { color: var(--color-success); flex-shrink: 0; }
-  .tl-reasoning { font-size: 11px; color: var(--text-muted); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+  .tl-reasoning { font-size: var(--font-xs); color: var(--text-muted); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
   /* 流式深度思考定高视窗：overflow-y:auto 可滚轮回看上文；
      自动跟随改为「用户在底部才追」（见 AgentTimeline） */
   .tl-reasoning-live { max-height: 102px; overflow-y: auto; }
   /* 深度思考完成后的耗时角标 */
-  .tl-panel-elapsed { font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
+  .tl-panel-elapsed { font-size: var(--font-2xs); color: var(--text-dim); flex-shrink: 0; }
   .tl-item-list { margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; list-style: none; }
-  .tl-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.7; }
+  .tl-item { display: flex; align-items: center; gap: 6px; font-size: var(--font-xs); color: var(--text-muted); line-height: 1.7; }
   .tl-item-icon { flex-shrink: 0; }
   .tl-item-icon.ok { color: var(--color-success); }
   .tl-item-icon.failed { color: var(--color-danger-strong); }
@@ -33,20 +33,20 @@
   .tl-item-toggle-arrow { flex-shrink: 0; transition: transform 0.15s; }
   .tl-item-toggle-arrow.expanded { transform: rotate(180deg); }
   .tl-sublist { flex-basis: 100%; margin: 2px 0 0 19px; padding: 0; display: flex; flex-direction: column; gap: 2px; list-style: none; }
-  .tl-subitem { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+  .tl-subitem { display: flex; align-items: center; gap: 6px; font-size: var(--font-xs); color: var(--text-dim); line-height: 1.6; }
   /* 工具执行结果一句话摘要（换行第二行，与明细子列表同降噪视觉级） */
-  .tl-item-result { flex-basis: 100%; margin-left: 19px; font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-item-result { flex-basis: 100%; margin-left: 19px; font-size: var(--font-xs); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* 多句结果摘要可点击展开全文（折叠态保持一句话降噪视觉级） */
   .tl-item-result-toggle { display: flex; align-items: center; gap: 4px; padding: 0; border: none; background: transparent; cursor: pointer; font-family: inherit; text-align: left; }
   .tl-item-result-toggle:hover { color: var(--text-main); }
   .tl-item-result.expanded { white-space: pre-wrap; overflow: visible; }
   /* 任务 #2 分级展开：expand 档详情卡（折叠态一行摘要，展开看输入/输出） */
-  .tl-detail { flex-basis: 100%; margin-left: 19px; font-size: 11px; color: var(--text-dim); }
+  .tl-detail { flex-basis: 100%; margin-left: 19px; font-size: var(--font-xs); color: var(--text-dim); }
   .tl-detail-toggle { display: flex; align-items: center; gap: 4px; max-width: 100%; padding: 0; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: inherit; color: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tl-detail-toggle:hover { color: var(--text-main); }
-  .tl-detail-body { margin-top: 3px; padding: 5px 8px; display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--border-color); border-radius: 5px; background: rgba(255, 255, 255, 0.03); }
+  .tl-detail-body { margin-top: 3px; padding: 5px 8px; display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--border-color); border-radius: 5px; background: color-mix(in srgb, var(--color-white) 3%, transparent); }
   .tl-detail-section { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .tl-detail-label { font-size: 10px; font-weight: 600; color: var(--text-dim); letter-spacing: 0.04em; }
+  .tl-detail-label { font-size: var(--font-2xs); font-weight: 600; color: var(--text-dim); letter-spacing: 0.04em; }
   .tl-detail-kv { display: flex; gap: 6px; line-height: 1.6; min-width: 0; }
   .tl-detail-key { flex-shrink: 0; color: var(--text-dim); }
   .tl-detail-key::after { content: ':'; }
@@ -54,7 +54,7 @@
   .tl-detail-kv:hover .tl-detail-val { white-space: pre-wrap; overflow: visible; word-break: break-word; }
   .tl-detail-result { color: var(--text-muted); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
   /* 规划级执行器徽标（欠账显性化：不产真实媒体的阶段据实标注） */
-  .tl-planning-badge { flex-shrink: 0; font-size: 10px; line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(251,146,60,0.6); background: rgba(251,146,60,0.12); color: #fb923c; white-space: nowrap; }
-  .skill-planning-badge { flex-shrink: 0; font-size: 10px; line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(251,146,60,0.6); background: rgba(251,146,60,0.12); color: #fb923c; white-space: nowrap; align-self: center; }
+  .tl-planning-badge { flex-shrink: 0; font-size: var(--font-2xs); line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(251,146,60,0.6); background: rgba(251,146,60,0.12); color: #fb923c; white-space: nowrap; }
+  .skill-planning-badge { flex-shrink: 0; font-size: var(--font-2xs); line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(251,146,60,0.6); background: rgba(251,146,60,0.12); color: #fb923c; white-space: nowrap; align-self: center; }
   @keyframes tlSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 }

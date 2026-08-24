@@ -32,6 +32,7 @@
   --color-success: #34d399;
   --color-success-strong: #10b981;
   --color-success-deep: #059669;
+  --color-success-tint: #d1fae5;   /* 音频等浅底亮色档（不随主题翻转） */
   /* 警示：排队/告警/思考中 */
   --color-warning: #fbbf24;
   --color-warning-strong: #f59e0b;
@@ -47,6 +48,22 @@
   /* 中性代码底（非状态色，随本批收口避免散落各文件） */
   --color-code-inline-bg: rgba(255, 255, 255, 0.08);
   --color-code-block-bg: rgba(0, 0, 0, 0.4);
+  /* ===== 中性黑白（任务#14 清账：阴影/遮罩/彩底白字收口） =====
+     透明档不逐一设 token：使用处用
+     color-mix(in srgb, var(--color-black|white) N%, transparent) 现调 */
+  --color-black: #000;
+  --color-white: #fff;
+  /* ===== 深色表面（媒体预览/浮层常驻深色底，不随亮色主题翻转） ===== */
+  --color-surface-preview: #0b0c10;      /* 媒体预览区深底 */
+  --color-surface-glass: #12141c;        /* 磨砂玻璃浮层底色（透明档 color-mix 现调） */
+  --color-surface-popover: #1f2430;      /* 输入区弹层深底 */
+  --color-surface-placeholder: #1e293b;  /* 媒体占位深底（透明档 color-mix 现调） */
+  --color-surface-shot: #2e3346;          /* 分镜紫灰卡片底 */
+  --color-surface-track: #2b3149;         /* 进度环轨道底 */
+  /* ===== 品牌星形渐变（固定品牌色，不随主题翻转） ===== */
+  --color-brand-gold: #ffd700;
+  --color-brand-gold-deep: #b8860b;
+  --color-brand-flame: #dc2626;
   --splitter-width: 6px;
   --splitter-hover: #60a5fa;
   --radius-sm: 6px;
@@ -61,12 +78,23 @@
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
-  /* 字阶 */
+  /* 字阶（任务#14 清账：按存量实测分布补档，等值映射保零视觉漂移；
+     字阶不随主题变，html.light 无需重复） */
+  --font-5xs: 7px;
+  --font-4xs: 8px;
+  --font-3xs: 9px;
+  --font-2xs: 10px;
   --font-xs: 11px;
   --font-sm: 12px;
   --font-md: 13px;
   --font-lg: 14px;
+  --font-md-lg: 15px;
   --font-xl: 16px;
+  --font-2xl: 18px;
+  --font-3xl: 20px;
+  --font-4xl: 22px;
+  --font-5xl: 36px;
+  --font-6xl: 48px;
   /* 层级（与现有弹层 z-index 对齐，新增弹层一律走此处） */
   --z-pill: 50;
   --z-mention: 60;
@@ -78,6 +106,22 @@
   --z-modal: 1000;
   --z-confirm: 1200;
   --z-docs: 8000;
+  /* 内容内部层级档（徽章/卡片/吸顶/拖柄/分割线等，值=实测原值，零漂移） */
+  --z-base: 0;
+  --z-raised: 1;
+  --z-card-badge: 2;
+  --z-tabs: 5;
+  --z-control: 8;
+  --z-splitter: 10;
+  --z-sticky: 20;
+  --z-affix: 21;
+  --z-floating: 30;
+  --z-drop-overlay: 35;
+  --z-popover: 40;
+  --z-mask: 60;
+  --z-tip: 80;
+  --z-fullscreen: 90;
+  --z-lightbox: 2000;
   /* 动效时长 */
   --dur-fast: 0.15s;
   --dur-base: 0.2s;

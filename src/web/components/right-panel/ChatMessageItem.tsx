@@ -1,30 +1,24 @@
 import { createSignal, Show, onMount, onCleanup } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
-import {
-  FiChevronRight, FiFileText,
-} from 'solid-icons/fi';
 import { chatState } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
-import { openDocsPanel, saveMessageAsDoc } from '@/stores/docs';
+import { saveMessageAsDoc } from '@/stores/docs';
 import { truncateResendAction } from '@/lib/chat/truncate-resend';
 import { branchAtMessage } from '@/lib/message-branch';
 import { copyText } from '@/lib/code-copy';
-import { absUrl } from '@/lib/chat/chat-image-drag';
 import { t } from '@/lib/locale';
-import { RichBubble } from './RichBubble';
-import { AgentTimeline, timelineFromMessage } from './AgentTimeline';
+import { settledLedgerForMessage } from '@/lib/turn-ledger';
+import { DocCard } from './doc-card-menu';
+import { UserBubble } from './UserBubble';
+import { TurnLedgerCard } from './TurnLedgerCard';
 import { ConfirmActions } from './ConfirmActions';
-import { StageCard } from './StageCard';
-import { UserRefBlocks } from './UserRefBlocks';
 import { ImageResultCard } from './ImageResultCard';
 import { VideoResultCard } from './VideoResultCard';
 import { ImageLightbox } from './ImageLightbox';
 import { GateWarnings } from './GateWarnings';
 import { MarkdownBubble } from './MarkdownBubble';
 import { MessageHoverToolbar } from './MessageHoverToolbar';
-import { InlineEditBox } from './InlineEditBox';
 import { SuggestedActionBar } from './SuggestedActionBar';
-import { AnsweredOptions } from './AnsweredOptions';
 import { DecisionFormCard, decisionFormFields } from './DecisionFormCard';
 import type { ChatMessage } from '@/types';
 
@@ -117,23 +111,9 @@ export function ChatMessageItem(props: {
     props.copyable || props.editable || props.branchable || props.regenerable || props.docSavable
   );
 
-  /** 过程时间线数据（从消息 trace/actionLog 重建，刷新后不丢） */
-  const timeline = () => timelineFromMessage(msg());
-
-  /** 用户消息是否含内联媒体（有则用富文本气泡还原排版） */
-  const hasInlineMedia = () => (msg().parts || []).some((p) => p.type !== 'text');
-
-  /** 用户消息是否带 Skill / 文档引用块（渲染进气泡内部） */
-  const hasRefBlocks = () =>
-    ((msg().docBlocks || []).length > 0) || ((msg().skillBlocks || []).length > 0);
-
-  /** 用户气泡正文：纯 Skill 唤起时正文与 Skill 块重名，隐藏正文只留块 */
-  const userText = () => {
-    const raw = msg().text || '';
-    const skills = msg().skillBlocks || [];
-    if (raw.trim() && skills.length === 1 && raw.trim() === skills[0]) return '';
-    return raw;
-  };
+  /** settled 账本数据源（F2 阶段二）：翻转账本优先/空账本回落 trace/actionLog
+   * 重建的判定归 lib/turn-ledger 单一纯函数（settledLedgerForMessage） */
+  const settledLedger = () => settledLedgerForMessage(msg());
 
   // Esc 关闭内联媒体原图预览（生图卡的预览由 ImageResultCard 自管）
   function onDocKeyDown(e: KeyboardEvent) {
@@ -144,43 +124,25 @@ export function ChatMessageItem(props: {
 
   return (
     <div class={`chat-msg ${isUser() ? 'user' : 'agent'}`} data-msg-index={props.domIndex}>
-      {/* 文档完成卡片（keyed Show 避免 String()/非空断言） */}
+      {/* 文档完成卡片（keyed Show 避免 String()/非空断言；卡片与右键菜单归 DocCard） */}
       <Show when={msg().docCard} keyed>
-        {(doc) => (
-          <button
-            type="button"
-            class="doc-card"
-            onClick={() => openDocsPanel(doc)}
-          >
-            <FiFileText size={15} class="doc-card-icon" />
-            <span class="doc-card-name">{doc}</span>
-            <span class="doc-card-status">{t('rp.msg.docDone')}</span>
-            <FiChevronRight size={12} class="doc-card-arrow" />
-          </button>
-        )}
+        {(doc) => <DocCard doc={doc} />}
       </Show>
 
       {/* 生图结果卡 / 视频结果内联预览卡（拖拽/下载/lightbox 均在各自 Card 内） */}
       <Show when={msg().imageCard} keyed>{(card) => <ImageResultCard card={card} />}</Show>
       <Show when={msg().videoCard} keyed>{(card) => <VideoResultCard card={card} />}</Show>
 
-      {/* 阶段完成卡：可展开、默认展开；正文=本轮概述（确认文案）+执行清单。
-          确认文案与模型正文判重防双显；历史消息同样可展开，暂停点回看不丢失） */}
-      <Show when={msg().confirm}>
-        <StageCard msg={msg} state={props.confirmState || 'none'} />
-      </Show>
-
-      {/* 已回应暂停卡的「当时选了哪项」对勾标注（只读回看） */}
-      <Show when={msg().confirm && (props.answeredValue || '') && (msg().confirmOptions || []).length > 0}>
-        <AnsweredOptions options={msg().confirmOptions || []} answeredValue={props.answeredValue || ''} />
-      </Show>
-
-      {/* 过程时间线（深度思考 + 已处理操作，折叠面板；内容不进下次 LLM 上下文） */}
+      {/* 轮次账本卡 settled 相位（F2 阶段二渲染统一）：阶段完成卡 + 已回应标注 +
+          过程时间线收敛为与流式块同一组件（TurnLedgerCard）的 settled 分支，
+          相位翻转 DOM 同构；内容不进下次 LLM 上下文 */}
       <Show when={!isUser()}>
-        <AgentTimeline
-          reasoning={timeline().reasoning}
-          items={timeline().items}
-          thinkingMs={msg().thinkingMs}
+        <TurnLedgerCard
+          phase="settled"
+          ledger={settledLedger}
+          message={msg}
+          confirmState={props.confirmState || 'none'}
+          answeredValue={props.answeredValue}
         />
       </Show>
 
@@ -225,44 +187,17 @@ export function ChatMessageItem(props: {
         <div class="system-action-line">{msg().text}</div>
       </Show>
 
-      {/* 用户气泡：编辑中原地变为编辑框（截断重答）；正常态按 parts 还原排版 */}
+      {/* 用户气泡：编辑中原地变为编辑框（截断重答）；正常态按 parts 还原排版
+          （排版还原细节归 UserBubble） */}
       <Show when={isUser() && msg().kind !== 'system_action'}>
-        <Show
-          when={editing() && props.editable}
-          fallback={
-            <Show when={userText() || hasRefBlocks() || hasInlineMedia()}>
-              <Show
-                when={hasInlineMedia()}
-                fallback={
-                  <div class="chat-bubble">
-                    <Show when={hasRefBlocks()}>
-                      <UserRefBlocks message={msg()} />
-                    </Show>
-                    <Show when={userText()}>
-                      <span class="user-bubble-text">{userText()}</span>
-                    </Show>
-                  </div>
-                }
-              >
-                <RichBubble
-                  before={
-                    <Show when={hasRefBlocks()}>
-                      <UserRefBlocks message={msg()} />
-                    </Show>
-                  }
-                  parts={msg().parts || []}
-                  onImageClick={(url) => setLightboxUrl(absUrl(url))}
-                />
-              </Show>
-            </Show>
-          }
-        >
-          <InlineEditBox
-            initial={msg().text || ''}
-            onCancel={() => setEditing(false)}
-            onSubmit={submitEdit}
-          />
-        </Show>
+        <UserBubble
+          message={msg()}
+          editing={editing}
+          editable={props.editable}
+          onSubmit={submitEdit}
+          onCancel={() => setEditing(false)}
+          onImageClick={setLightboxUrl}
+        />
       </Show>
 
       {/* 悬停工具条（含 HH:MM 时间戳）：显隐归 CSS hover/focus-within */}

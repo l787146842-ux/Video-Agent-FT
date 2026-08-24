@@ -11,10 +11,10 @@
   .confirm-option-radio { flex-shrink: 0; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--text-muted); }
   .confirm-option-card:hover .confirm-option-radio { border-color: var(--accent-blue); box-shadow: inset 0 0 0 3.5px var(--accent-blue); }
   .confirm-option-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .confirm-option-label { font-size: 13px; font-weight: 600; color: var(--text-main); line-height: 1.4; }
+  .confirm-option-label { font-size: var(--font-md); font-weight: 600; color: var(--text-main); line-height: 1.4; }
   .confirm-option-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
-  .confirm-btn { padding: 4px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); }
-  .confirm-btn.primary { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+  .confirm-btn { padding: 4px 12px; border-radius: 4px; font-size: var(--font-sm); cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); }
+  .confirm-btn.primary { background: var(--accent-blue); color: var(--color-white); border-color: var(--accent-blue); }
   .confirm-btn.secondary { background: var(--bg-tertiary); color: var(--text-muted); }
   .confirm-btn.secondary:hover { color: var(--text-main); }
   .confirm-btn.secondary.active { color: var(--color-info); border-color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }
@@ -22,21 +22,21 @@
   .confirm-btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
 
   /* 分页选择向导（多维度一次性收集：逐页选择，末页发送） */
-  .confirm-wizard { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(255, 255, 255, 0.02); }
-  .confirm-wizard-question { font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; }
+  .confirm-wizard { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: color-mix(in srgb, var(--color-white) 2%, transparent); }
+  .confirm-wizard-question { font-size: var(--font-md); font-weight: 600; color: var(--text-main); margin-bottom: 8px; }
   .confirm-option-card.selected { border-color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }
   .confirm-option-card.selected .confirm-option-radio { border-color: var(--accent-blue); box-shadow: inset 0 0 0 3.5px var(--accent-blue); }
   .confirm-wizard-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
   .confirm-wizard-actions { display: flex; align-items: center; gap: 6px; }
-  .confirm-wizard-hint { font-size: 11px; color: var(--text-dim); }
+  .confirm-wizard-hint { font-size: var(--font-xs); color: var(--text-dim); }
   /* 组内自定义输入框（「其它（自定义输入）」展开后在组内直接输入，支持 Ctrl+Enter 发送） */
   .confirm-custom-input { display: block; width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-main); font-size: 12.5px; line-height: 1.6; font-family: inherit; resize: vertical; outline: none; }
   .confirm-custom-input:focus { border-color: var(--accent-blue); }
   .confirm-custom-input::placeholder { color: var(--text-dim); }
   .confirm-wizard-pager { display: flex; align-items: center; gap: 8px; }
-  .confirm-wizard-arrow { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); cursor: pointer; font-size: 14px; line-height: 1; }
+  .confirm-wizard-arrow { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); cursor: pointer; font-size: var(--font-lg); line-height: 1; }
   .confirm-wizard-arrow:disabled { opacity: 0.35; cursor: not-allowed; }
-  .confirm-wizard-indicator { font-size: 12px; color: var(--text-muted); }
+  .confirm-wizard-indicator { font-size: var(--font-sm); color: var(--text-muted); }
   /* 确认卡片配色（体验规范：亮橙 #fb923c 体系，边框 rgba(251,146,60,0.6)、
      底色 0.12，亮度档对齐阶段完成卡；禁止 box-shadow/发光） */
   .confirm-wizard { border: 1px solid rgba(251, 146, 60, 0.6); border-radius: 12px; background: rgba(251, 146, 60, 0.12); }
@@ -56,39 +56,39 @@
   .confirm-wizard .confirm-btn.secondary.active { background: rgba(251, 146, 60, 0.22); border-color: #fb923c; color: #ffedd5; }
 
   /* 文档卡片 */
-  .doc-card { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(255, 255, 255, 0.03); cursor: pointer; max-width: 92%; }
+  .doc-card { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: color-mix(in srgb, var(--color-white) 3%, transparent); cursor: pointer; max-width: 92%; }
   .doc-card:hover { border-color: var(--accent-blue); }
   button.doc-card { width: 100%; font: inherit; text-align: left; }
   .doc-card .doc-card-icon { color: var(--accent-blue); flex-shrink: 0; }
   .doc-card .doc-card-arrow { flex-shrink: 0; opacity: 0.5; }
-  .doc-card-name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .doc-card-status { margin-left: auto; font-size: 10px; color: var(--accent-emerald); flex-shrink: 0; }
+  .doc-card-name { font-size: var(--font-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc-card-status { margin-left: auto; font-size: var(--font-2xs); color: var(--accent-emerald); flex-shrink: 0; }
 
   /* 阶段卡片（可展开、默认展开；正文=本轮概述+执行清单，与模型正文判重） */
   .stage-card { border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--color-success) 5%, transparent); margin-bottom: 6px; overflow: hidden; }
   .stage-card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; user-select: none; width: 100%; background: none; border: none; font: inherit; text-align: left; cursor: pointer; }
   .stage-card-header:hover { background: color-mix(in srgb, var(--color-success) 8%, transparent); }
   .stage-check { color: var(--color-success); flex-shrink: 0; }
-  .stage-card-title { font-size: 12px; font-weight: 600; color: var(--color-success); }
-  .stage-card-badge { font-size: 10px; color: var(--text-muted); background: rgba(255, 255, 255, 0.06); padding: 2px 7px; border-radius: 4px; }
+  .stage-card-title { font-size: var(--font-sm); font-weight: 600; color: var(--color-success); }
+  .stage-card-badge { font-size: var(--font-2xs); color: var(--text-muted); background: color-mix(in srgb, var(--color-white) 6%, transparent); padding: 2px 7px; border-radius: 4px; }
     /* 过期/已回应暂停卡徽标（降饱和虚线框，弱化但可读） */
     .stage-card-badge-stale { color: var(--text-dim); background: transparent; border: 1px dashed var(--border-color); }
   .stage-card-arrow { margin-left: auto; color: var(--text-dim); flex-shrink: 0; }
   .stage-card-body { padding: 2px 12px 10px; border-top: 1px dashed color-mix(in srgb, var(--color-success) 25%, transparent); }
-  .stage-card-summary { margin: 6px 0; font-size: 12px; line-height: 1.6; color: var(--text-color); }
+  .stage-card-summary { margin: 6px 0; font-size: var(--font-sm); line-height: 1.6; color: var(--text-color); }
   .stage-card-ops { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
-  .stage-card-ops li { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+  .stage-card-ops li { font-size: var(--font-xs); color: var(--text-muted); line-height: 1.5; }
 
   /* 闸机判定 chips（结构化来源标注「平台」/「Skill『xxx』」） */
   .gate-chip-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
-  .gate-chip { font-size: 10px; padding: 1px 7px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
+  .gate-chip { font-size: var(--font-2xs); padding: 1px 7px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
   .gate-chip-platform { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent); }
   .gate-chip-skill { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, transparent); border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent); }
-  .gate-chip-msg { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+  .gate-chip-msg { font-size: var(--font-xs); color: var(--text-muted); line-height: 1.5; }
   /* 闸机拦截合并折叠（同款报错 ×N，details 展开） */
   .msg-gate-collapse { width: 100%; }
-  .msg-gate-collapse-summary { cursor: pointer; font-size: 11px; color: var(--text-muted); user-select: none; }
-  .gate-chip-count { font-size: 11px; font-weight: 600; color: var(--color-warning-deep); }
+  .msg-gate-collapse-summary { cursor: pointer; font-size: var(--font-xs); color: var(--text-muted); user-select: none; }
+  .gate-chip-count { font-size: var(--font-xs); font-weight: 600; color: var(--color-warning-deep); }
   /* ===== 生图结果图片卡片 ===== */
   .image-card {
     border: 1px solid color-mix(in srgb, var(--color-info) 30%, transparent);
@@ -104,12 +104,12 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: var(--font-sm);
     color: var(--accent-blue);
     margin-bottom: 8px;
   }
   .image-card-provider {
-    font-size: 10px;
+    font-size: var(--font-2xs);
     color: var(--text-muted);
     margin-left: auto;
   }
@@ -152,9 +152,9 @@
     left: 0;
     right: 0;
     padding: 3px 5px;
-    background: rgba(0,0,0,0.65);
-    color: #fff;
-    font-size: 9px;
+    background: color-mix(in srgb, var(--color-black) 65%, transparent);
+    color: var(--color-white);
+    font-size: var(--font-3xs);
     text-align: center;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -168,8 +168,8 @@
     width: 22px;
     height: 22px;
     border-radius: 4px;
-    background: rgba(0,0,0,0.55);
-    color: #fff;
+    background: color-mix(in srgb, var(--color-black) 55%, transparent);
+    color: var(--color-white);
     border: none;
     cursor: pointer;
     display: flex;
@@ -192,7 +192,7 @@
     height: 100%;
     object-fit: cover;
     pointer-events: none;
-    background: #000;
+    background: var(--color-black);
   }
   .video-card-badge {
     position: absolute;
@@ -202,15 +202,15 @@
     height: 16px;
     padding: 0 3px;
     border-radius: 4px;
-    background: rgba(0, 0, 0, 0.78);
-    color: #fff;
-    font-size: 8px;
+    background: color-mix(in srgb, var(--color-black) 78%, transparent);
+    color: var(--color-white);
+    font-size: var(--font-4xs);
     line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    z-index: 2;
+    border: 1px solid color-mix(in srgb, var(--color-white) 40%, transparent);
+    z-index: var(--z-card-badge);
     pointer-events: none;
   }
 }

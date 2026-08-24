@@ -8,22 +8,12 @@ import {
   resetStreamFields, continueLastTaskSuggestion, buildStopMessages,
 } from '@/lib/stream-finalize';
 import type { StopPhase, StopInflightItem } from '@/lib/stream-finalize';
+import {
+  emptyLedger, ledgerFromLive, settleLedger, type TurnLedger, type LedgerItem,
+} from '@/lib/turn-ledger';
 
-/** 过程时间线条目（流式期间的工具/操作运行态，完成后从消息 trace 重建） */
-export interface TimelineToolEntry {
-  id: string;
-  name: string;
-  summary: string;
-  status: 'running' | 'done' | 'failed';
-  elapsed_ms?: number;
-  result_summary?: string;
-  /** 规划级执行器标记（capability 注册表下发） */
-  planning?: boolean;
-  /** 工具输入参数预览（后端裁剪脱敏，详情卡展开区用） */
-  args?: Record<string, unknown>;
-  /** 运行态走秒计时起点（刷新/重连无起点时以恢复时刻为准） */
-  started_at_ms?: number;
-}
+/** 过程时间线条目（F2 阶段一：并入轮次账本模型，保留别名兼容既有导入） */
+export type TimelineToolEntry = LedgerItem;
 
 /** 排队中的引导消息（Agent 推理中用户继续发送，当前任务完成后自动发出） */
 export interface QueuedMessage {
@@ -44,20 +34,13 @@ export interface ChatState {
   messages: ChatMessage[];
   /** 流式累积文本 */
   streamingText: string;
-  /** 流式状态提示（如 “正在思考…”） */
-  streamingStatus: string;
   isStreaming: boolean;
   inputText: string;
   /** 当前流式回复对应的模型名称 */
   streamingModel: string;
-  /** 流式深度思考（reasoning）累积文本（仅 UI 展示，不进下次上下文） */
-  streamingReasoning: string;
-  /** 流式过程时间线条目（tool_started/tool_finished 实时追加） */
-  streamingTools: TimelineToolEntry[];
-  /** 深度思考开始时刻（首条 reasoning 增量到达时记录，用于完成后的耗时角标） */
-  streamingReasoningStartMs: number;
-  /** 深度思考结束时刻（末条 reasoning 增量）；耗时角标 = 末-首，不混入工具执行时间 */
-  streamingReasoningEndMs: number;
+  /** 当前轮次账本（F2 阶段一：流式期临时态的单一数据体，
+   *  reasoning/items/statusText/思考计时同构归一；完成即相位翻转随消息入库） */
+  turnLedger: TurnLedger;
   /** 排队中的引导消息（推理中发送 → 当前任务完成后自动发出） */
   queuedMessages: QueuedMessage[];
   /** 本轮流已渲染过文档卡片的名称（doc_written 即显与 done 全量清单去重用） */
@@ -70,14 +53,10 @@ export interface ChatState {
 const defaultChatState: ChatState = {
   messages: [],
   streamingText: '',
-  streamingStatus: '',
   isStreaming: false,
   inputText: '',
   streamingModel: '',
-  streamingReasoning: '',
-  streamingTools: [],
-  streamingReasoningStartMs: 0,
-  streamingReasoningEndMs: 0,
+  turnLedger: emptyLedger(),
   queuedMessages: [],
   renderedDocCards: [],
   roundStep: 0,
@@ -123,12 +102,9 @@ export const chatActions = {
     setChatState(produce((s) => {
       s.isStreaming = true;
       s.streamingText = '';
-      s.streamingStatus = t('rp.streaming.connecting');
       s.streamingModel = modelName || '';
-      s.streamingReasoning = '';
-      s.streamingTools = [];
-      s.streamingReasoningStartMs = 0;
-      s.streamingReasoningEndMs = 0;
+      // 新轮账本：状态文案走 i18n 键，不硬编码中文
+      s.turnLedger = emptyLedger(t('rp.streaming.connecting'));
       s.renderedDocCards = [];
       s.roundStep = 0;
       s.roundMax = 0;
@@ -143,26 +119,27 @@ export const chatActions = {
     }));
   },
 
-  /** 追加深度思考（reasoning）增量 */
+  /** 追加深度思考（reasoning）增量（进本轮账本） */
   appendReasoning(text: string) {
     setChatState(produce((s) => {
-      if (!s.streamingReasoningStartMs) s.streamingReasoningStartMs = Date.now();
+      const led = s.turnLedger;
+      if (!led.reasoningStartMs) led.reasoningStartMs = Date.now();
       // 结束时刻随每条增量推进（思考与工具执行交错，角标只算思考区间）
-      s.streamingReasoningEndMs = Date.now();
-      s.streamingReasoning += text;
-      s.streamingStatus = t('rp.streaming.reasoning');
+      led.reasoningEndMs = Date.now();
+      led.reasoning += text;
+      led.statusText = t('rp.streaming.reasoning');
     }));
   },
 
-  /** 过程时间线：工具/操作开始（运行态条目；args 为后端裁剪脱敏后的输入预览） */
+  /** 过程时间线：工具/操作开始（运行态条目进账本；args 为后端裁剪脱敏后的输入预览） */
   toolStarted(id: string, name: string, summary: string, args?: Record<string, unknown>) {
     setChatState(produce((s) => {
-      s.streamingTools.push({
+      s.turnLedger.items.push({
         id, name, summary, status: 'running', started_at_ms: Date.now(), args,
       });
       // 状态文案走 i18n 键，不硬编码中文
-      s.streamingStatus = t('rp.streaming.executing', {
-        n: s.streamingTools.length,
+      s.turnLedger.statusText = t('rp.streaming.executing', {
+        n: s.turnLedger.items.length,
         summary: summary || name,
       });
     }));
@@ -172,7 +149,7 @@ export const chatActions = {
   toolFinished(id: string, ok: boolean, elapsedMs: number, resultSummary?: string, planning?: boolean) {
     setChatState(produce((s) => {
       // 参数名避开 i18n 惯用名 t，防止遮蔽外层 t 函数
-      const entry = s.streamingTools.find((item) => item.id === id);
+      const entry = s.turnLedger.items.find((item) => item.id === id);
       if (entry) {
         entry.status = ok ? 'done' : 'failed';
         entry.elapsed_ms = elapsedMs;
@@ -185,12 +162,12 @@ export const chatActions = {
   /** 追加流式文本片段 */
   appendDelta(text: string) {
     setChatState('streamingText', (prev) => prev + text);
-    setChatState('streamingStatus', t('rp.streaming.replying'));
+    setChatState('turnLedger', 'statusText', t('rp.streaming.replying'));
   },
 
   /** 设置状态提示 */
   setStatus(text: string) {
-    setChatState('streamingStatus', text);
+    setChatState('turnLedger', 'statusText', text);
   },
 
   /** 流式完成：将结果写入消息列表 */
@@ -206,8 +183,8 @@ export const chatActions = {
     if (payload.applied_actions > 0) metaParts.push(t('rp.msg.metaUpdated', { n: payload.applied_actions }));
 
     // 深度思考耗时角标（末条 reasoning - 首条 reasoning；无思考时 0）
-    const startMs = chatState.streamingReasoningStartMs;
-    const endMs = chatState.streamingReasoningEndMs;
+    const startMs = chatState.turnLedger.reasoningStartMs;
+    const endMs = chatState.turnLedger.reasoningEndMs;
     const thinkingMs = startMs && endMs && endMs >= startMs ? endMs - startMs : 0;
 
     setChatState(produce((s) => {
@@ -227,6 +204,9 @@ export const chatActions = {
         // 主模型故障 fallback 时标注实际生效的模型
         modelName: payload.fallback_model || s.streamingModel || undefined,
         trace: payload.trace && (payload.trace.steps || []).length ? payload.trace : undefined,
+        // F2 阶段一：本轮 live 账本相位翻转随消息入库（settled）——
+        // 完成后的时间线直接消费同一批账目，不再从 trace 二次重建
+        ledger: settleLedger(s.turnLedger, { thinkingMs, turnId }),
         // 闸机拦截/降级等警告：随消息常驻展示，拦截类附「本次放行」按钮
         warnings: (payload.warnings || []).length ? payload.warnings : undefined,
         thinkingMs: thinkingMs || undefined,
@@ -323,28 +303,29 @@ export const chatActions = {
       s.messages.push(...buildStopMessages({
         phase: opts?.phase, inflight: opts?.inflight,
         text: s.streamingText, model: s.streamingModel,
-        hasRunningTool: s.streamingTools.some((item) => item.status === 'running'),
+        hasRunningTool: s.turnLedger.items.some((item) => item.status === 'running'),
       }));
       resetStreamFields(s);
     }));
   },
 
-  /** 恢复流式状态（任务式传输重连：先回放服务端累计状态，再收实时增量） */
+  /** 恢复流式状态（任务式传输重连：先回放服务端累计状态，再收实时增量）。
+   * replay 快照经 ledgerFromLive 同一归一入口进账本（与 live 累积同模型） */
   restoreStreamingState(p: {
     reasoning?: string; text?: string; statusText?: string;
     tools?: TimelineToolEntry[]; model?: string;
   }) {
     setChatState(produce((s) => {
       s.isStreaming = true;
-      s.streamingReasoning = p.reasoning || '';
       s.streamingText = p.text || '';
-      s.streamingStatus = p.statusText || '';
-      s.streamingTools = p.tools || [];
       s.streamingModel = p.model || '';
       // 重连无原始思考起点：已有 reasoning 时以恢复时刻
-      // 为起点继续计时（角标不再恒 0），同步重置终点防旧值残留
-      s.streamingReasoningStartMs = p.reasoning ? Date.now() : 0;
-      s.streamingReasoningEndMs = p.reasoning ? Date.now() : 0;
+      // 为起点继续计时（角标不再恒 0）——归一函数内统一处理
+      s.turnLedger = ledgerFromLive({
+        tools: p.tools || [],
+        reasoning: p.reasoning || '',
+        statusText: p.statusText || '',
+      });
     }));
   },
 

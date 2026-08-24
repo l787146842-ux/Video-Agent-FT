@@ -18,7 +18,7 @@
 .chat-markdown .md-codeblock pre code {
   display: block;
   font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.55;
   tab-size: 4;
 }

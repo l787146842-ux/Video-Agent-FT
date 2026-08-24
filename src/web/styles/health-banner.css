@@ -14,8 +14,8 @@
   border: 1px solid transparent;
   border-top: none;
   font-size: var(--font-sm);
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  color: var(--color-white);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--color-black) 35%, transparent);
   animation: health-banner-in var(--dur-slow) ease both;
   user-select: none;
 }

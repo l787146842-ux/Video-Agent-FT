@@ -47,10 +47,10 @@ export function ChatInputToolbar(props: {
     refreshUsage();
   });
   // 推理中持续刷新：Agent 边执行边消耗上下文（每批操作落盘后用量都在变），
-  // 由 tool_started/tool_finished 事件（streamingTools 变化）驱动，不再固定轮询
+  // 由 tool_started/tool_finished 事件（本轮账本 turnLedger.items 变化）驱动，不再固定轮询
   createEffect(() => {
     if (!chatState.isStreaming) return;
-    void chatState.streamingTools.length;
+    void chatState.turnLedger.items.length;
     refreshUsage();
   });
   // 推理中 15s 轮询兜底（反馈：长规划轮没有工具事件，用量几分钟不动；

@@ -2,6 +2,8 @@ import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { FiChevronRight } from 'solid-icons/fi';
 import { useSplitter } from '@/hooks/use-splitter';
 import { Splitter } from './Splitter';
+import { PinnedRail } from './PinnedRail';
+import { pinned } from '@/stores/pinned';
 import LeftPanel from '@/components/left-panel/LeftPanel';
 import MiddlePanel from '@/components/middle-panel/MiddlePanel';
 import RightPanel from '@/components/right-panel/RightPanel';
@@ -20,6 +22,8 @@ export default function AgentLayout() {
   const leftSplit = useSplitter(320, { min: 240, max: 600, storageKey: 'splitLeft' });
   // 右栏：280-650px，向左拖拽变宽（invert）
   const rightSplit = useSplitter(360, { min: 280, max: 650, invert: true, storageKey: 'splitRight' });
+  // 钉住对照栏（F3）：有钉住项时才出现的最右分栏，宽度独立可调
+  const pinnedSplit = useSplitter(300, { min: 240, max: 480, invert: true, storageKey: 'splitPinned' });
 
   const [leftCollapsed, setLeftCollapsed] = createSignal(false);
   const [middleCollapsed, setMiddleCollapsed] = createSignal(false);
@@ -82,6 +86,14 @@ export default function AgentLayout() {
         <aside class="studio-col col-right" style={{ width: `${rightSplit.size()}px` }}>
           <RightPanel />
         </aside>
+
+        {/* F3 钉住对照分栏：仅在存在钉住产物时挂载（跨轮对照，见 PinnedRail 头注释） */}
+        <Show when={pinned().length > 0}>
+          <Splitter split={pinnedSplit} />
+          <aside class="studio-col col-pinned" style={{ width: `${pinnedSplit.size()}px` }}>
+            <PinnedRail />
+          </aside>
+        </Show>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import {
 } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
 import { consolidateTimeline, formatElapsed, type TimelineItem } from '@/lib/timeline';
+import type { TurnPhase } from '@/lib/turn-ledger';
 import { TimelineDetail } from './TimelineDetail';
 
 // 耗时格式化与条目类型归 lib/timeline 单一事实源；保留 re-export 兼容既有导入
@@ -80,25 +81,30 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
 /**
  * Agent 过程时间线（深度思考 + 已处理操作，两个折叠面板）。
  * 内容全部来自 SSE 一次性事件 / 消息 trace 字段，不进下次 LLM 上下文。
+ * F2 阶段二：phase 显式相位属性——live/settled 双相位同一组件同一 DOM 骨架，
+ * 流结束的相位翻转在渲染层同构（运行装饰只随相位增减，结构不重排）。
  */
 export function AgentTimeline(props: {
   /** 静态文本或响应式 getter（流式场景传  => chatState.streamingReasoning） */
   reasoning?: string | (() => string);
   items: TimelineItem[];
-  /** 流式中：操作面板默认展开，运行项显示旋转图标 */
+  /** 显式相位（F2 阶段二）：live=流式运行装饰（旋转图标/走秒/面板默认展开），
+   * settled=定型面板（消费 ledgerFromSettled 归一数据） */
+  phase?: TurnPhase;
+  /** 兼容别名：等同 phase='live'（两者同传时 phase 优先） */
   live?: boolean;
   /** 深度思考总耗时（毫秒，完成后展示在卡片角标） */
   thinkingMs?: number;
   /** 实时状态文案（状态栏=当前正在做的一件事），流式标题优先展示 */
   liveStatus?: () => string;
 }) {
-  // 深度思考面板：流式中自动展开（实时看思考流），完成后自动折叠（live 卸载后
-  // 消息重建时初始值为 false）；展开/折叠始终可由用户手动切换
-  // eslint-disable-next-line solid/reactivity
-  const [thinkOpen, setThinkOpen] = createSignal(!!props.live);
-  // live 仅取一次性初始值（流式入场时默认展开操作面板），后续展开态由用户控制
-  // eslint-disable-next-line solid/reactivity
-  const [opsOpen, setOpsOpen] = createSignal(!!props.live);
+  /** 相位判定单一出口：phase 显式给出时以其为准，未给出回落 live 兼容别名 */
+  const isLive = () => (props.phase !== undefined ? props.phase === 'live' : !!props.live);
+  // 深度思考面板：流式中自动展开（实时看思考流），完成后自动折叠（相位翻转后
+  // settled 实例重建时初始值为 false）；展开/折叠始终可由用户手动切换
+  const [thinkOpen, setThinkOpen] = createSignal(isLive());
+  // 初始值仅取一次（流式入场时默认展开操作面板），后续展开态由用户控制
+  const [opsOpen, setOpsOpen] = createSignal(isLive());
 
   const reasoningText = () =>
     (typeof props.reasoning === 'function' ? props.reasoning() : props.reasoning) || '';
@@ -111,7 +117,7 @@ export function AgentTimeline(props: {
   let reasoningRef: HTMLDivElement | undefined;
   createEffect(() => {
     void reasoningText();
-    if (props.live && reasoningRef) {
+    if (isLive() && reasoningRef) {
       requestAnimationFrame(() => {
         if (!reasoningRef) return;
         const nearBottom =
@@ -154,14 +160,14 @@ export function AgentTimeline(props: {
               <FiZap size={13} class="tl-icon-thinking" />
               <span class="tl-panel-title">{t('rp.timeline.thinking')}</span>
               {/* 思考完成后的耗时角标（流式中不显示） */}
-              <Show when={!props.live && props.thinkingMs}>
+              <Show when={!isLive() && props.thinkingMs}>
                 <span class="tl-panel-elapsed">· {formatElapsed(props.thinkingMs || 0)}</span>
               </Show>
               <FiChevronDown size={12} class="tl-arrow" />
             </button>
             <div class="tl-panel-body">
               <Show
-                when={!props.live}
+                when={!isLive()}
                 fallback={
                   // 流式中：定高视窗，旧文字随滚动隐藏，只显示最新几行
                   <div ref={reasoningRef} class="tl-reasoning tl-reasoning-live">
@@ -185,8 +191,8 @@ export function AgentTimeline(props: {
             >
               <FiCheckCircle size={13} class="tl-icon-done" />
               {/* 流式状态文案（正在执行第 N 项…）对读屏器可闻；历史重建态不挂 live */}
-              <span class="tl-panel-title" aria-live={props.live ? 'polite' : undefined}>
-                {props.live
+              <span class="tl-panel-title" aria-live={isLive() ? 'polite' : undefined}>
+                {isLive()
                   ? (props.liveStatus && props.liveStatus()
                     && props.liveStatus() !== t('rp.streaming.processing')
                     ? `${props.liveStatus()}（已完成 ${doneCount()} 项）`

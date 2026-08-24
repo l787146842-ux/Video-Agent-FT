@@ -23,7 +23,7 @@ describe('chatActions 流式状态机', () => {
     chatActions.startStream();
     expect(chatState.isStreaming).toBe(true);
     expect(chatState.streamingText).toBe('');
-    expect(chatState.streamingStatus).toBe('正在连接…');
+    expect(chatState.turnLedger.statusText).toBe('正在连接…');
   });
 
   it('appendDelta 累积文本', () => {
@@ -31,7 +31,7 @@ describe('chatActions 流式状态机', () => {
     chatActions.appendDelta('你好');
     chatActions.appendDelta('世界');
     expect(chatState.streamingText).toBe('你好世界');
-    expect(chatState.streamingStatus).toBe('正在回复…');
+    expect(chatState.turnLedger.statusText).toBe('正在回复…');
   });
 
   it('finishStream 将结果写入消息列表并清除流式状态', () => {
