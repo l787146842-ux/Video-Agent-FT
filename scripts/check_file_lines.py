@@ -36,7 +36,7 @@ FRONTEND_MAX_LINES = 250
 # 存量超限白名单（P4-23 首查登记，只减不增；拆分清偿一件移除一条）
 FRONTEND_WHITELIST = {
     "src/web/components/layout/GlobalSettingsView.tsx": "全局设置页多设置卡聚合（拆分另行立项）",
-    "src/web/components/layout/LayoutShell.tsx": "布局壳三栏骨架装配（拆分另行立项）",
+    # LayoutShell.tsx 已清偿至 250 行内（整改批 1.1：滞留条目删除）
     "src/web/components/layout/ProjectSwitcher.tsx": "项目切换器（拆分另行立项）",
     "src/web/components/layout/SettingsView.tsx": "设置页聚合（拆分另行立项）",
     "src/web/components/middle-panel/params/ParamBase.tsx": "参数隔离改造 bucket 维度（拆分另行立项）",

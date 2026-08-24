@@ -44,6 +44,8 @@ jobs:
         run: python scripts/check_legacy_orchestration.py
       - name: Scaffold registry gate (acceptance GATES 对齐：脚手架登记表 + 组件可导入)
         run: python scripts/check_scaffold_registry.py
+      - name: Doc pointers gate (整改批 1.1：ADR/架构文件图/代码注释指针有效性)
+        run: python scripts/check_doc_pointers.py
       # Executor skill drift gate 已随任务#36 B5 执行器一步退役删除（执行器族不复存在）
       - name: Skill tool names gate (acceptance GATES 对齐：技能文档工具白名单)
         run: python scripts/scan_skills.py --gate

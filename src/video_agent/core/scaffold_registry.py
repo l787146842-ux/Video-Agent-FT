@@ -153,9 +153,10 @@ SCAFFOLDS = (
 )
 
 # 棘轮基线（2-1 设立；每拆除一件随降，禁止上调）：scaffold 类计数只降不升。
-SCAFFOLD_COUNT_BASELINE = sum(
-    1 for e in SCAFFOLDS if e.classification == "scaffold"
-)
+# 字面常量而非对 SCAFFOLDS 动态求和（整改批 1.1：动态求和是恒真基线，
+# 棘轮名存实亡）；2026-08-24 磁盘实测 = 8。只降不升；上调须书面裁决
+# 并同批修改本常量。
+SCAFFOLD_COUNT_BASELINE = 8
 
 
 def scaffold_entries() -> tuple:

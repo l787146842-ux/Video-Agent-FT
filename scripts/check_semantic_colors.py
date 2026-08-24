@@ -6,7 +6,8 @@
 3. 层级台账：z-index 硬编码（未走 var(--z-*) 的数值）。
 
 规则：
-- 扫描 src/web/styles/*.css（tokens.css 为 token 定义源，豁免）；
+- 扫描 src/web/styles/**/*.css（rglob 递归，子目录同样受守；tokens.css
+  为 token 定义源，豁免）；
 - 存量无法即时清偿的残留登记在各 WHITELIST（文件 -> 允许上限，
   棘轮只减不增）：实际计数超过登记值即 FAIL；未在 WHITELIST 的
   文件出现硬编码即 FAIL（即新文件零容忍）；清偿一件随降一件，
@@ -100,7 +101,7 @@ def main() -> int:
     ]
     for name, regex, whitelist, baseline, payoff, decl in ledger:
         violations, over, total = [], [], 0
-        for p in sorted(STYLES.glob("*.css")):
+        for p in sorted(STYLES.rglob("*.css")):
             if p.name in EXEMPT:
                 continue
             text = p.read_text(encoding="utf-8")
