@@ -205,7 +205,6 @@ gates:
   require_at_ref: true
 flow:
   spec_wizard: true
-  spec_stage_trim: true
   spec_gate: true
 pause:
   stage_pause: true

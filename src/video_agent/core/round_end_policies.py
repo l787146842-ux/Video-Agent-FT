@@ -33,8 +33,8 @@ from src.video_agent.state.models import ALL_CATEGORIES_TUPLE, CAT_KEY_ELEMENTS,
 if TYPE_CHECKING:
     from src.video_agent.core.tracer import AgentTracer
 
-# 策略种类
-KIND_HARD_BREAK = "hard_break"
+# 策略种类（硬中断种类常量已随整改批 1.3 退役：零消费死词汇，
+# 防复活钉死见 tests/unit/test_dead_code_payoff.py）
 KIND_ARBITRABLE = "arbitrable"
 KIND_POST_PROCESS = "post_process"
 

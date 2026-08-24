@@ -32,8 +32,9 @@ router = APIRouter()
 async def get_agent_config():
     """前端 agentSkillSelect 下拉框数据源：仅文档 Skill（用户可见可编辑）。
 
-    历史教训：代码 Skill（SkillRegistry）曾在改造计划中被加回下拉，
-    导致用户删过的「编剧/分镜师/制片 Agent」复活。现永久移除。
+    历史教训：代码形态 Skill（内置类注册器）曾在改造计划中被加回下拉，
+    导致用户删过的「编剧/分镜师/制片 Agent」复活。现永久移除
+    （内置类注册器整包已随整改批 1.3 物理删除）。
     """
     doc_skills = [
         {

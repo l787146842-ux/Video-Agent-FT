@@ -107,7 +107,7 @@ def commit_turn(target: Any, result: Union[TurnResult, Mapping[str, Any]], *, ru
     if expected is not None and int(expected) != version: raise WorkflowConcurrencyError(f"expected {expected}, current {version}")
     original = copy.deepcopy(state)
     try:
-        now = _now(); run.setdefault("run_id", run_id); run.setdefault("workflow_id", skill or "adhoc"); run.setdefault("definition_revision", ""); run.setdefault("definition_hash", ""); run.setdefault("status", "running"); run.setdefault("current_node", turn.node_id); run.setdefault("completed_nodes", []); run.setdefault("pending_decision", None); run.setdefault("artifacts", []); run.setdefault("node_attempts", {}); run.setdefault("failure_state", None); run.setdefault("created_at", now)
+        now = _now(); run.setdefault("run_id", run_id); run.setdefault("workflow_id", skill or "adhoc"); run.setdefault("definition_revision", ""); run.setdefault("definition_hash", ""); run.setdefault("status", "running"); run.setdefault("current_node", turn.node_id); run.setdefault("completed_nodes", []); run.setdefault("pending_decision", None); run.setdefault("artifacts", []); run.setdefault("failure_state", None); run.setdefault("created_at", now)
         ledger = EventLedger(state); events = []; node_id = turn.node_id or str(run.get("current_node") or "")
         for index, item in enumerate(turn.timeline_events):
             etype = str(item.get("event_type") or item.get("eventType") or "ToolSucceeded")

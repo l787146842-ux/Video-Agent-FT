@@ -199,11 +199,8 @@ class Settings:
     # 状态驱动管线开关（阶段表/闸预检/账本同步总闸；默认开）
     pipeline_orchestrator_enabled: bool = field(
         default_factory=lambda: _env_bool("PIPELINE_ORCHESTRATOR_ENABLED", True))
-    # node_attempts 消费阈值（P3-16）：同一节点执行器失败累计达该次数时，
-    # gate_precheck 派生「重试/换渠道」引导卡数据交回模型决策
-    # （ADR-0004：runtime 只产出引导数据，不发起行动）
-    node_retry_guidance_threshold: int = field(
-        default_factory=lambda: _env_int("NODE_RETRY_GUIDANCE_THRESHOLD", 2))
+    # （节点失败记账与重试引导数据派生已随整改批 1.3 整体退役：
+    # 对应阈值配置、原语与消费链均已删除，防复活钉死见 tests/unit/test_dead_code_payoff.py）
     # （Workflow Runtime 驱动器开关已随 ADR-0004 主体回归退役：runtime 不再有
     # 驱动/直跑能力，账本与闸预检由 pipeline_orchestrator_enabled 统一管辖）
 

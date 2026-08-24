@@ -226,7 +226,7 @@ def test_sync_run_backfills_legacy_run_without_clearing():
           "usedSkills": ["AI-短剧一站式生成"]}
     run = workflow_runtime.sync_run(st, "AI-短剧一站式生成")
     assert run["artifacts"] == ["a.md"]
-    for key in ("run_version", "event_sequence", "status", "node_attempts"):
+    for key in ("run_version", "event_sequence", "status"):
         assert key in run, f"旧 run 缺字段补齐: {key}"
 
 

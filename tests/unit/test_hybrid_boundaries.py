@@ -293,7 +293,7 @@ def test_stage_restrictions_storyboard_ready():
 
 def test_planner_stage_pruning(svc, monkeypatch):
     """planner._compute_excluded_tools：Skill 激活 + strict 时按阶段裁剪，
-    且裁剪⇔解释同源签发（任务#15 P2：spec_stage_trim 声明门控已废，
+    且裁剪⇔解释同源签发（任务#15 P2：阶段裁剪的声明门控已废，
     条件单一事实源归 planner；成对断言详见 test_prompt_assembly_snapshot）"""
     from src.video_agent.core.planner import Planner, PlannerContext
 

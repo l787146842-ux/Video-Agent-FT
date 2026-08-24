@@ -16,15 +16,6 @@ from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core.action_executor import StateOperationExecutor
 
-_MANIFEST_ALL_ON = (
-    "```json skill_manifest\n"
-    '{"gates": {"require_duration": true, "require_subtitle": true,'
-    ' "require_camera_language": true, "require_audio_layer": true},'
-    ' "flow": {"spec_wizard": true, "spec_stage_trim": true},'
-    ' "pause": {"stage_pause": true}}\n'
-    "```\n"
-)
-
 
 @pytest.fixture(autouse=True)
 def isolate(tmp_path, monkeypatch):
@@ -69,10 +60,10 @@ def test_skill_flow_enabled_requires_declaration():
 
     sd.save_skill_doc("有声明", "# A\n正文")
     frontmatter.write_manifest(
-        "有声明", {"flow": {"spec_wizard": True, "spec_stage_trim": True}})
+        "有声明", {"flow": {"spec_wizard": True, "spec_gate": True}})
     sd.save_skill_doc("无声明", "# B\n> 调用规则：测试\n正文")
     assert registry.skill_flow_enabled("有声明", "spec_wizard") is True
-    assert registry.skill_flow_enabled("有声明", "spec_stage_trim") is True
+    assert registry.skill_flow_enabled("有声明", "spec_gate") is True
     assert registry.skill_flow_enabled("无声明", "spec_wizard") is False
     assert registry.skill_flow_enabled("不存在", "spec_wizard") is False
     assert registry.skill_flow_enabled("", "spec_wizard") is False
@@ -127,7 +118,7 @@ async def test_spec_pause_gate_fires_with_manifest(svc, monkeypatch):
     frontmatter.write_manifest("向导流程", {
         "gates": {"require_duration": True, "require_subtitle": True,
                   "require_camera_language": True, "require_audio_layer": True},
-        "flow": {"spec_wizard": True, "spec_stage_trim": True},
+        "flow": {"spec_wizard": True},
         "pause": {"stage_pause": True},
     })
     monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])

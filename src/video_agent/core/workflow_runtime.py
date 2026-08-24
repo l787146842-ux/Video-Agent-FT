@@ -122,15 +122,16 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
                     "slug": definition["slug"], "name": definition["name"], "revision": definition["revision"],
                     "status": "ready", "current_node": "analyze_script", "completed_nodes": [],
                     "pending_decision": None, "artifacts": [], "run_version": 0,
-                    "event_sequence": 0, "node_attempts": {}, "failure_state": None,
+                    "event_sequence": 0, "failure_state": None,
                     "created_at": now, "updated_at": now})
     elif run.get("definition_hash") and run.get("definition_hash") != definition["definition_hash"]:
-        run.setdefault("definition_change_detected", {"active_hash": run.get("definition_hash"), "available_hash": definition["definition_hash"]})
+        # 定义变更检测旗标已随整改批 1.3 删除（单点写入零消费）；
+        # 定义变更时保留旧 run 的早退语义不变
         return run
     for key, value in (("workflow_id", definition["workflow_id"]), ("definition_revision", definition["revision"]),
                        ("definition_hash", definition["definition_hash"]), ("status", "ready"),
                        ("completed_nodes", []), ("pending_decision", None), ("artifacts", []),
-                       ("run_version", 0), ("event_sequence", 0), ("node_attempts", {}),
+                       ("run_version", 0), ("event_sequence", 0),
                        ("failure_state", None), ("created_at", now)):
         run.setdefault(key, copy.deepcopy(value))
     completed = list(dict.fromkeys(str(x) for x in run.get("completed_nodes") or []))
@@ -203,35 +204,9 @@ def record_node_event(
         payload=dict(payload or {}))
 
 
-def bump_node_attempt(
-    state: Dict[str, Any], node_key: str, error: str = "",
-) -> int:
-    """node_attempts 记账原语（P3-16）：执行器一次真实执行失败 → 对应节点 +1。
-
-    只记账不决策（ADR-0004）：不发起重试、不改 current_node/completed_nodes；
-    消费（「重试/换渠道」引导卡数据派生）归 pipeline_orchestrator 闸预检。
-    无 run（Skill 未激活）不建壳返 0；成功清账归 clear_node_attempt。"""
-    run = state.get("workflow_run")
-    if not isinstance(run, dict) or not run.get("run_id") or not node_key:
-        return 0
-    entry = (run.get("node_attempts") or {}).get(str(node_key))
-    entry = dict(entry) if isinstance(entry, dict) else {}
-    entry["count"] = int(entry.get("count") or 0) + 1
-    entry["last_error"] = str(error or "")[:200]
-    entry["updated_at"] = datetime.now(timezone.utc).isoformat()
-    run.setdefault("node_attempts", {})[str(node_key)] = entry
-    return int(entry["count"])
-
-
-def clear_node_attempt(state: Dict[str, Any], node_key: str) -> bool:
-    """执行器成功后清失败记账：陈旧计数不得再次触发重试引导。
-
-    返回是否确有账目被清（调用方据此决定是否同步清引导数据）。"""
-    run = state.get("workflow_run")
-    if not isinstance(run, dict) or not node_key:
-        return False
-    attempts = run.get("node_attempts") or {}
-    return attempts.pop(str(node_key), None) is not None
+# 节点失败记账原语（bump/clear 两枚）已随整改批 1.3 删除：
+# 生产零写入（执行器一步退役后无调用方），消费链（重试引导卡派生）
+# 同批删除；防复活钉死见 tests/unit/test_dead_code_payoff.py
 
 
 def project(state: Dict[str, Any], turn_id: str = "") -> Dict[str, Any]:
@@ -335,7 +310,7 @@ class WorkflowRuntime:
         if run.get("pending_decision"): run["status"] = "waiting_user"
         return copy.deepcopy(run)
 
-__all__ = ["WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn", "compile_definition", "sync_run", "record_artifact", "apply_interaction", "reduce_interaction", "bump_node_attempt", "clear_node_attempt"]
+__all__ = ["WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn", "compile_definition", "sync_run", "record_artifact", "apply_interaction", "reduce_interaction"]
 
 # frontmatter 声明写入即失效编译缓存（声明变更不被缓存遮蔽）
 frontmatter.register_write_hook(clear_compile_cache)

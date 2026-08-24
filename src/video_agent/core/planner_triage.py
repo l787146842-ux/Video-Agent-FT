@@ -43,10 +43,8 @@ async def run_gate_precheck(
         live_metrics.record_degradation("planner_triage.control_flow_log")
     if outcome is None:
         return None
-    if outcome.kind == "retry_guidance":
-        # 引导数据已由 gate_precheck 入账 flowEvents（模型可见）：直接交接
-        # 模型循环，模型发起重试/换渠道工具调用（ADR-0004：runtime 不发起行动）
-        return None
+    # 重试引导分支已随整改批 1.3 删除（失败账本死链清偿，防复活见
+    # tests/unit/test_dead_code_payoff.py）
     if outcome.kind == "script_pending":
         # 三通道（Rule2 v6）：引导词归正文，卡=一句问句，kind=remind
         card = pause_composer.compose_remind_card(

@@ -6,12 +6,10 @@
 （层 9 由代码执行不依赖模型自觉；行动发起永远归模型，ADR-0004）。
 """
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
-from src.video_agent.config import settings
 from src.video_agent.core import gates_cards
 from src.video_agent.core import gates_inputs
 from src.video_agent.core import prompt_gates
@@ -395,53 +393,14 @@ def _spec_stage_pending(state: Dict[str, Any], skill: str) -> bool:
 
 @dataclass
 class OrchestratorOutcome:
-    kind: str  # script_pending / script_ack / spec_pending / retry_guidance
+    kind: str  # script_pending / script_ack / spec_pending
     message: str = ""
     options: List[Dict[str, str]] = None
     results: List[Any] = None
 
 
-# ---------- 重试引导卡数据派生（node_attempts 消费，P3-16） ----------
-#
-# 红线（ADR-0004）：runtime 永不发起行动——本节只从失败账本派生引导数据
-# 交回模型决策，重试/换渠道动作仍由模型发起工具调用。
-
-
-def derive_retry_guidance(
-    state: Dict[str, Any], skill: str = "",
-) -> Optional[Tuple[str, List[Dict[str, Any]], str]]:
-    """node_attempts 失败计数 ≥ 阈值的节点 → 派生「重试/换渠道」引导卡数据。
-
-    返回 (message, entries, signature)；无达标节点返 None。
-    只读账本事实，不改 current_node/completed_nodes/status；
-    signature（节点:计数 有序串）供幂等——同一账不重复入账。"""
-    run = state.get("workflow_run") or {}
-    attempts = run.get("node_attempts") or {}
-    threshold = int(settings.node_retry_guidance_threshold or 2)
-    entries: List[Dict[str, Any]] = []
-    for node_key in sorted(attempts):
-        item = attempts.get(node_key) or {}
-        count = int(item.get("count") or 0)
-        if count >= threshold:
-            entries.append({
-                "node": str(node_key),
-                "count": count,
-                "last_error": str(item.get("last_error") or "")[:200],
-            })
-    if not entries:
-        return None
-    parts = []
-    for e in entries:
-        err = f"（最近错误：{e['last_error']}）" if e["last_error"] else ""
-        parts.append(f"执行器 {e['node']} 已失败 {e['count']} 次{err}")
-    message = (
-        "重试引导（系统观测数据，由你决策）：" + "；".join(parts) + "。"
-        "可选动作：① 调整输入/补全原料后由你重新调用该执行器；"
-        "② 换渠道（更换供应商/模型或改用通用执行路径）再试；"
-        "③ 仍失败则向用户如实报告失败原因，禁止声称已完成。"
-    )
-    signature = ",".join(f"{e['node']}:{e['count']}" for e in entries)
-    return message, entries, signature
+# 重试引导卡派生（失败账本消费）已随整改批 1.3 删除：账本生产零写入，
+# 消费链死路；防复活钉死见 tests/unit/test_dead_code_payoff.py
 
 
 async def gate_precheck(
@@ -449,11 +408,10 @@ async def gate_precheck(
 ) -> Optional[OrchestratorOutcome]:
     """闸预检（Rule2 v6：runtime 闸节点；编排器定义层 + 兜底卡装配）。
 
-    产出三类机械兜底卡与一类引导数据，**永不执行阶段、永不抢先对话**：
+    产出两类机械兜底卡，**永不执行阶段、永不抢先对话**：
     - 原料闸：需剧本 Skill 剧本缺失且未豁免 → 提醒卡/上传回执；
-    - 重试引导：node_attempts 失败 ≥ 阈值 → 引导卡数据入账后交接
-      模型循环（重试动作由模型发起，ADR-0004）；
     - 规格闸：spec 阶段就绪且未完成 → spec_pending（向导收集卡）。
+    （重试引导卡派生已随整改批 1.3 删除：失败账本死链清偿。）
     其余一律 None = 交接模型循环（模型持主动权，按注入的流程清单
     调用执行器/ workflow_pause；顺序由 stage_precondition 闸否决越阶）。
     """
@@ -507,25 +465,7 @@ async def gate_precheck(
             card_msg, card_opts = prompt_gates.script_remind_card()
             return OrchestratorOutcome(
                 "script_pending", message=card_msg, options=card_opts)
-    # 重试引导（node_attempts 消费，P3-16）：失败 ≥ 阈值 → 派生引导卡数据
-    # 入账后交接模型循环（只写数据不执行、不抢先；重试由模型发起，ADR-0004）
-    guidance = derive_retry_guidance(state, skill)
-    if guidance is not None:
-        message, entries, signature = guidance
-        run = state.get("workflow_run") or {}
-        if str((run.get("retry_guidance") or {}).get("signature") or "") != signature:
-            run["retry_guidance"] = {
-                "signature": signature,
-                "entries": entries,
-                "derived_at": datetime.now(timezone.utc).isoformat(),
-            }
-            # flowEvents 经模型可见状态 JSON 注入（context_builder 既有通道）
-            state_manager.record_flow_event("retry_guidance", message)
-            state_manager.save_debounced()
-            logger.info("[ControlFlow] 重试引导派生 signature={}", signature)
-        return OrchestratorOutcome(
-            "retry_guidance", message=message,
-            options=[{"node": e["node"], "count": str(e["count"])} for e in entries])
+    # 重试引导（失败账本消费）已随整改批 1.3 删除（死链清偿）
     # 规格闸：spec 阶段就绪且未完成 → 向导收集卡（不执行、不抢先）
     if _spec_stage_pending(state, skill):
         return OrchestratorOutcome("spec_pending")

@@ -394,7 +394,7 @@ class FCToolRunner:
                     ledger.gen_failed_err = str(result.error or "执行失败")
             if result.success:
                 applied += 1
-                # node_attempts 成败记账随执行器退役删除（任务#36 B5）：
+                # 节点成败记账随执行器退役删除（任务#36 B5，整改批 1.3 清尾）：
                 # 连失败重试引导归 gate_precheck，通用路径工具不再入账
                 self._record_presented(name, args)
                 if name in ("storyboard_create_group", "storyboard_add_draft"):
@@ -533,7 +533,7 @@ class FCToolRunner:
                             self.gate_warnings.append(_tws)
             else:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
-                # node_attempts 失败记账随执行器退役删除（任务#36 B5）
+                # 节点失败记账随执行器退役删除（任务#36 B5，整改批 1.3 清尾）
                 if name == "document_write":
                     ledger.key_tool_failed.append(name)
                     ledger.key_tool_errors[name] = str(result.error or "执行失败")[:200]
