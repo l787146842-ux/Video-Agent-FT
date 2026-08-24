@@ -94,3 +94,20 @@ def test_route_llm_failure_content_null(client, monkeypatch):
 def test_route_empty_body_400(client):
     resp = client.post("/api/skills/assistant", json={"content": "", "messages": []})
     assert resp.status_code == 400
+
+
+# ---------- 整改批 2.1：可用工具名单动态化（消灭名单漂移源） ----------
+
+def test_assistant_system_allowlist_from_registry():
+    """可用工具清单唯一源 = 平台注册表：渲染结果含全部注册名，
+    且不再出现任何已退役能力词（历史硬编码清单曾混入幻影名）。"""
+    from src.video_agent.tools import ToolManager
+    from src.video_agent.tools.canvas_tools import register_canvas_tools
+    register_canvas_tools()
+    text = pr._assistant_system()
+    for name in ToolManager._tools:
+        assert name in text, f"注册工具 {name} 未进助手白名单"
+    for phantom in ("script_analyze", "write_media_prompt", "audio_generate",
+                    "video_assembler", "storyboard_key_elements",
+                    "storyboard_shots", "storyboard_audio"):
+        assert phantom not in text, f"幻影能力词 {phantom} 回潮进助手白名单"

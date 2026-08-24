@@ -13,6 +13,8 @@ import re
 from typing import Dict, List, Optional
 
 from src.video_agent.exceptions import VideoAgentError
+from src.video_agent.tools import ToolManager
+from src.video_agent.tools.canvas_tools import register_canvas_tools
 from src.video_agent.web.chat_opening import _create_chat_adapter
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
 from src.video_agent.web.provider_config import load_merged_providers
@@ -201,7 +203,7 @@ def _resolve_chat_adapter(provider: str, model: str):
     return _create_chat_adapter(provider, model)
 
 
-_ASSISTANT_SYSTEM = """你是 Skill 优化助手，帮助用户定制/优化影视创作 Agent 的 Skill 文档。
+_ASSISTANT_SYSTEM_TMPL = """你是 Skill 优化助手，帮助用户定制/优化影视创作 Agent 的 Skill 文档。
 用户会给你当前 Skill 文档全文与优化请求。
 输出要求：
 1. 先给不超过 150 字的简短说明（说明改了什么、为什么）；
@@ -209,10 +211,23 @@ _ASSISTANT_SYSTEM = """你是 Skill 优化助手，帮助用户定制/优化影�
 规则：
 - 保留原文档头部 YAML frontmatter 声明（如有），不删除不改写；
 - 保留「# 标题」与「> 调用规则：」行结构；
-- 不编造不存在的工具名（可用：script_analyze/document_write/read_uploaded_doc/read_project_doc/storyboard_key_elements/storyboard_shots/storyboard_audio/storyboard_patch_draft/write_media_prompt/image_generate/generate_video/audio_generate/video_assembler/workflow_pause）；
+- 工具名只允许使用平台真实注册清单：{tool_names}；文档中的章节标签是阶段标记而非工具名，把章节标签当工具名写进 tools_required 或流程指令都属编造；
 - 不写死厂商/模型/分辨率/时长参数（以全局设置为唯一权威源）；
 - 用户请求不明确时保持原文不变。
 """
+
+
+def _assistant_system() -> str:
+    """助手 system prompt（整改批 2.1：可用工具名单动态化）。
+
+    名单唯一源 = 平台注册表（ToolManager，画布工具补注册后取全集，
+    register 幂等）；消灭硬编码名单漂移源——历史清单混入
+    script_analyze / write_media_prompt / audio_generate / video_assembler
+    等已退役能力词，曾误导助手向用户 Skill 写入幻影工具名。
+    """
+    register_canvas_tools()
+    names = "/".join(sorted(ToolManager._tools))
+    return _ASSISTANT_SYSTEM_TMPL.format(tool_names=names)
 
 _ASSISTANT_BLOCK_RE = re.compile(r"```(?:markdown|md)?\s*\n(.*?)```", re.S | re.I)
 
@@ -248,7 +263,7 @@ async def skill_assistant(body: SkillAssistantRequest):
             "无可用聊天供应商，请先在 API 配置中添加", status_code=503
         )
     messages: List[Dict[str, str]] = [
-        {"role": "system", "content": _ASSISTANT_SYSTEM},
+        {"role": "system", "content": _assistant_system()},
         {"role": "user", "content": f"当前 Skill 文档全文：\n\n{body.content}"},
     ]
     # 会话历史截尾 10 条（控上下文预算），role 收敛 user/assistant
