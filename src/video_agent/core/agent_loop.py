@@ -1,8 +1,7 @@
 """
 Agent 多步执行循环（Rule2: 唯一实现）。
 
-位于 core 层（-1 层级理顺：编排骨架属核心层，不再放 web/；
-web/agent_loop.py 保留为 DEPRECATED 兼容 re-export）。
+位于 core 层（-1 层级理顺：编排骨架属核心层，不放 web/；原 web/ 层 re-export 壳已删除）。
 
 有界循环（最多 max_steps 步）：FC 工具步（tool_calls 在 llm_call 内执行，
 finish 非 stop 或无可见正文时继续下一步）与纯文本收尾步（

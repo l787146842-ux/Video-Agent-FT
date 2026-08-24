@@ -240,7 +240,7 @@ src/video_agent/
 │   （executors/exec_* 执行器族已随任务#36 B5 一步退役，防复活见 check_legacy_orchestration；
 │     MCP 外部工具接入层为任务#37 预留扩展点）
 ├── web/
-│   ├── app.py / chat_service.py(+chat_opening/chat_consume) / sse.py / sse_protocol.py
+│   ├── app.py / chat_service.py(+chat_opening/chat_consume) / sse_protocol.py
 │   ├── port_wiring.py ← core 端口装配（D-01）；action_executor 等 4 件 re-export 壳已清退（任务#13 F-4）
 │   ├── task_manager.py / skill_docs.py / routes/
 ├── state/  manager.py（唯一写入点）/ models.py / storyboard_ops.py / context_builder.py

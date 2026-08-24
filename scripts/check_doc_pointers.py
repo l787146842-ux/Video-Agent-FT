@@ -1,0 +1,191 @@
+"""文档指针漂移门禁（P8 审核整改落地：机械拦截代替人眼巡检）。
+
+四类检查：
+1. ADR 取代关系双边注记：任一 ADR 头部「取代注记/被取代注记」行引用
+   ADR-X，则 ADR-X 头部必须有注记行反向引用本 ADR（单边声明即 FAIL，
+   防 ADR-0004 取代 ADR-0003 而 0003 无被取代注记一类漂移）。
+2. ARCHITECTURE_RULES.md §十一 文件地图所列 src/video_agent 路径存在性
+   （防 web/sse.py 一类死指针）。
+3. src/video_agent 注释与 docstring 中引用的模块路径（形如 core/xxx.py、
+   web/xxx.py）必须存在；且不得提及退役编排符号（复用
+   check_legacy_orchestration 的 FORBIDDEN 清单，单一事实源，防两处漂移）。
+4. docs/ 顶层活文档（docs/*.md，不含 adr/audit-history/archive 历史档案）
+   中引用的模块路径（src/video_agent/... 全路径与 core/xxx.py 等包内相对
+   路径）必须存在；删除线段（~~...~~）为已退役标注，豁免不受检。
+
+退役条件：文档指针漂移连续两季零检出、ADR 双边注记、文件地图与 docs
+活文档模块路径维护内化为开发惯例时裁决下账（§13.14(c)）。
+输出纯 ASCII 前缀（验收乱码误读教训）。用法：python scripts/check_doc_pointers.py
+"""
+import ast
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
+import check_legacy_orchestration as _legacy  # noqa: E402  退役符号清单单一事实源
+
+ADR_DIR = ROOT / "docs" / "adr"
+ARCH_RULES = ROOT / "ARCHITECTURE_RULES.md"
+PKG = ROOT / "src" / "video_agent"
+
+# 注记行：头部清单行（- 开头）含「取代注记/被取代注记」
+NOTE_LINE = re.compile(r"^- .*取代注记")
+ADR_REF = re.compile(r"ADR-(\d{4})")
+# 文件地图目录行 / 路径 token / 括号内附属模块（如 (+chat_opening/chat_consume)）
+MAP_DIR = re.compile(r"├── ([A-Za-z_][\w]*)/")
+MAP_PY = re.compile(r"[A-Za-z_][\w]*\.py")
+MAP_PAREN = re.compile(r"\(\+([^)]+)\)")
+# 注释/docstring 中模块路径引用（限 src/video_agent 顶层包，至少一级目录）
+PATH_REF = re.compile(
+    r"\b(core|web|state|tools|adapters|utils|skill_runtime|storage|eval)"
+    r"(?:/[A-Za-z0-9_]+)+\.py\b"
+)
+# docs 活文档：全路径引用（src/video_agent/...）
+DOC_FULL_REF = re.compile(r"src/video_agent(?:/[A-Za-z0-9_]+)+\.py\b")
+# 删除线段（~~...~~）：已退役标注，剥除后不送检（防误伤历史表述）
+STRIKE = re.compile(r"~~.*?~~", re.S)
+
+
+def check_adr_bilateral() -> list:
+    """取代/被取代关系必须双边注记（单边声明即漂移）。"""
+    hits = []
+    texts = {}
+    for p in sorted(ADR_DIR.glob("*.md")):
+        m = re.match(r"(\d{4})", p.name)
+        if m:
+            texts[m.group(1)] = p.read_text(encoding="utf-8", errors="ignore")
+    for num, text in texts.items():
+        for line in text.splitlines():
+            if not NOTE_LINE.match(line):
+                continue
+            for ref in ADR_REF.findall(line):
+                if ref == num or ref not in texts:
+                    continue
+                # 对侧必须有一行注记反向引用本 ADR
+                want = re.compile(rf"^- .*取代注记.*ADR-{num}")
+                if not any(want.match(l) for l in texts[ref].splitlines()):
+                    hits.append(
+                        f"ADR-{num} note cites ADR-{ref} but ADR-{ref} has no "
+                        f"reciprocal supersede note citing ADR-{num}"
+                    )
+    return hits
+
+
+def check_arch_map() -> list:
+    """宪法文件地图所列路径必须存在。"""
+    hits = []
+    text = ARCH_RULES.read_text(encoding="utf-8", errors="ignore")
+    block = re.search(r"文件地图.*?```(.*?)```", text, re.S)
+    if not block:
+        return ["ARCHITECTURE_RULES.md file-map code block not found"]
+    cur = None
+    for line in block.group(1).splitlines():
+        dm = MAP_DIR.search(line)
+        if dm:
+            cur = dm.group(1)
+        if not cur:
+            continue
+        names = list(MAP_PY.findall(line))
+        for grp in MAP_PAREN.findall(line):
+            names += [n.strip() + ".py" for n in grp.split("/") if n.strip()]
+        for name in names:
+            # 目录内优先；顶层兜底（config.py/exceptions.py 与目录同行列举）
+            if not (PKG / cur / name).exists() and not (PKG / name).exists():
+                hits.append(f"file map pointer {cur}/{name} does not exist")
+    return hits
+
+
+def _docstring_spans(source: str) -> list:
+    """ast 提取全部 docstring 的行区间（module/class/function 首语句）。"""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    spans = []
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if isinstance(body, list) and body and isinstance(body[0], ast.Expr):
+            val = body[0].value
+            if isinstance(val, ast.Constant) and isinstance(val.value, str):
+                spans.append((val.lineno, val.end_lineno))
+    return spans
+
+
+def check_code_pointers() -> list:
+    """注释/docstring：模块路径引用必须存在 + 不得提及退役编排符号。"""
+    hits = []
+    for p in sorted(PKG.rglob("*.py")):
+        try:
+            source = p.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        rel = p.relative_to(ROOT).as_posix()
+        lines = source.splitlines()
+        spans = _docstring_spans(source)
+        segments = []  # (lineno, text)
+        for i, line in enumerate(lines, 1):
+            if line.lstrip().startswith("#"):
+                segments.append((i, line))
+        for lo, hi in spans:
+            segments.append((lo, "\n".join(lines[lo - 1:hi])))
+        for lineno, text in segments:
+            for ref in PATH_REF.finditer(text):
+                path = ref.group(0)
+                if not (PKG / path).exists():
+                    hits.append(
+                        f"{rel}:{lineno}: dead module pointer in comment/docstring: {path}"
+                    )
+            if _legacy.FORBIDDEN.search(text):
+                hits.append(
+                    f"{rel}:{lineno}: retired orchestration symbol in comment/docstring"
+                )
+    return hits
+
+
+def check_docs_pointers() -> list:
+    """docs 顶层活文档：模块路径引用必须存在（历史档案子目录不受检）。"""
+    hits = []
+    for p in sorted((ROOT / "docs").glob("*.md")):
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        rel = p.relative_to(ROOT).as_posix()
+        for i, line in enumerate(text.splitlines(), 1):
+            clean = STRIKE.sub("", line)
+            for m in DOC_FULL_REF.finditer(clean):
+                if not (ROOT / m.group(0)).exists():
+                    hits.append(
+                        f"{rel}:{i}: dead module pointer in doc: {m.group(0)}")
+            for m in PATH_REF.finditer(clean):
+                if not (PKG / m.group(0)).exists():
+                    hits.append(
+                        f"{rel}:{i}: dead module pointer in doc: {m.group(0)}")
+    return hits
+
+
+def main() -> int:
+    fails = []
+    fails += [f"[adr-bilateral] {h}" for h in check_adr_bilateral()]
+    fails += [f"[arch-map] {h}" for h in check_arch_map()]
+    fails += [f"[code-pointer] {h}" for h in check_code_pointers()]
+    fails += [f"[docs-pointer] {h}" for h in check_docs_pointers()]
+    if fails:
+        for h in fails[:30]:
+            print(f"[check_doc_pointers]   {h}")
+        print(
+            f"[check_doc_pointers] FAIL: {len(fails)} doc-drift issue(s). "
+            "ADR supersede relations need bilateral notes; file-map and "
+            "comment/docstring pointers must reference existing modules; "
+            "docs/*.md module pointers must exist; "
+            "retired orchestration symbols must not reappear in prose."
+        )
+        return 1
+    print(
+        "[check_doc_pointers] PASS: ADR notes bilateral; arch file map valid; "
+        "code comment/docstring pointers clean; docs module pointers valid"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

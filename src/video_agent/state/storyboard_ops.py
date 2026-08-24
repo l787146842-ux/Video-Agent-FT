@@ -1,7 +1,7 @@
 """
 故事板领域操作层 — 动作语义的唯一实现（Rule2 统一双轨）。
 
-FC Tool（tools/storyboard_tools.py）与文本解析 executor（web/action_executor.py）
+FC Tool（tools/storyboard_tools.py）与动作执行器（core/action_executor.py）
 双双委托本模块的纯函数操作 state_dict，两轨只保留各自的「解析层」差异：
 - FC 轨：pydantic 参数校验（Tool Input Schema）
 - 文本轨：action dict 的字段别名归一化（draft_id/target_id/id 等）

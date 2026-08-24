@@ -11,7 +11,7 @@
 本壳仅为存量消费方（routes/、tools/、eval/、core 端口装配 port_wiring、
 测试夹具）保留既有导入路径 `src.video_agent.web.generation`；
 后续清退：消费方逐批改指向三段实现模块后本壳整体退役
-（对齐 web/action_executor.py 壳的清退路线写法）。
+（对齐 action_executor 的 web 层 re-export 壳清退路线写法）。
 """
 import asyncio  # noqa: F401  # 测试经 gen_mod.asyncio 打桩，保留模块属性
 
