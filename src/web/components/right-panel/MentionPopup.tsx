@@ -55,6 +55,10 @@ export function MentionPopup(props: {
           );
         }}
       </For>
+      <Show when={!props.loading && props.items.length > 0 && props.canvasOnline !== false}>
+        {/* 诚实提示：后端启发式读整张智能画布，画布侧无选中态接口 */}
+        <div class="mention-popup-scope-note">{t('rp.mention.scope')}</div>
+      </Show>
     </div>
   );
 }

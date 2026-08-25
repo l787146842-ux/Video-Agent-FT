@@ -10,7 +10,7 @@ import inspect
 
 import pytest
 
-from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import stage_probes as po
 from src.video_agent.core.planner import Planner
 from src.video_agent.state.manager import StateManager
 

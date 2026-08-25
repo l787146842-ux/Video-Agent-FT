@@ -12,16 +12,17 @@ render 链（yaml.safe_dump，与 migrate_manifests_to_frontmatter 同口径）�
 只动 frontmatter 块，正文逐字不动；flow 清空后整键移除。
 --dir 指定目录（测试/演练用；默认 data/skills，兼容单文件与目录包形态）。
 
-用法：
-    python scripts/migrate_zombie_step_keys.py            # dry-run
-    python scripts/migrate_zombie_step_keys.py --apply    # 执行迁移
+用法（已归档于 scripts/archive/，root = parents[2]）：
+    python scripts/archive/migrate_zombie_step_keys.py            # dry-run
+    python scripts/archive/migrate_zombie_step_keys.py --apply    # 执行迁移
 """
 import argparse
 import sys
 from pathlib import Path
 from typing import List, Tuple
 
-ROOT = Path(__file__).resolve().parent.parent
+# 归档后脚本位于 scripts/archive/，仓库 root = parents[2]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 # 与 manifest_schema.ZOMBIE_STEP_KEYS 同值复制（脚本不反向依赖运行时语义，

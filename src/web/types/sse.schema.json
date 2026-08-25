@@ -1,0 +1,1849 @@
+{
+  "version": 1,
+  "source": "生成物勿手改：python scripts/gen_api_types.py。事实源 = core/sse_events.py TS_EVENT_FRAMES + web/error_payload.py + 工具 detail_tier 声明",
+  "frames": [
+    {
+      "name": "SseStatusEvent",
+      "schema": {
+        "properties": {
+          "type": {
+            "const": "status",
+            "title": "Type",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "key": {
+            "default": "",
+            "title": "Key",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseStatusEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseDeltaEvent",
+      "schema": {
+        "properties": {
+          "type": {
+            "const": "delta",
+            "title": "Type",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseDeltaEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseReasoningDeltaEvent",
+      "schema": {
+        "properties": {
+          "type": {
+            "const": "reasoning_delta",
+            "title": "Type",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseReasoningDeltaEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseToolStartedEvent",
+      "schema": {
+        "properties": {
+          "type": {
+            "const": "tool_started",
+            "title": "Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "args": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Args"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "name",
+          "summary"
+        ],
+        "title": "SseToolStartedEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseToolFinishedEvent",
+      "schema": {
+        "properties": {
+          "type": {
+            "const": "tool_finished",
+            "title": "Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "elapsed_ms": {
+            "title": "Elapsed Ms",
+            "type": "number"
+          },
+          "result_summary": {
+            "default": "",
+            "title": "Result Summary",
+            "type": "string"
+          },
+          "planning": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Planning"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "ok",
+          "elapsed_ms"
+        ],
+        "title": "SseToolFinishedEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseDocWrittenEvent",
+      "schema": {
+        "properties": {
+          "type": {
+            "const": "doc_written",
+            "title": "Type",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseDocWrittenEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseActionsAppliedEvent",
+      "schema": {
+        "properties": {
+          "type": {
+            "const": "actions_applied",
+            "title": "Type",
+            "type": "string"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Count"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Step"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Payload"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseActionsAppliedEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseStoppedInflightItem",
+      "schema": {
+        "properties": {
+          "task_id": {
+            "default": "",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "media_type": {
+            "default": "",
+            "title": "Media Type",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "draft_id": {
+            "default": "",
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "title": "SseStoppedInflightItem",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseStoppedEvent",
+      "schema": {
+        "$defs": {
+          "SseStoppedInflightItem": {
+            "properties": {
+              "task_id": {
+                "default": "",
+                "title": "Task Id",
+                "type": "string"
+              },
+              "media_type": {
+                "default": "",
+                "title": "Media Type",
+                "type": "string"
+              },
+              "model": {
+                "default": "",
+                "title": "Model",
+                "type": "string"
+              },
+              "draft_id": {
+                "default": "",
+                "title": "Draft Id",
+                "type": "string"
+              },
+              "summary": {
+                "default": "",
+                "title": "Summary",
+                "type": "string"
+              }
+            },
+            "title": "SseStoppedInflightItem",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "type": {
+            "const": "stopped",
+            "title": "Type",
+            "type": "string"
+          },
+          "phase": {
+            "default": "",
+            "title": "Phase",
+            "type": "string"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Step"
+          },
+          "inflight": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/$defs/SseStoppedInflightItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Inflight"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseStoppedEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseModelFallbackEvent",
+      "schema": {
+        "description": "模型降级即时联动帧（发射端已退役，帧骨架仅兼容旧任务 replay，\n与 sse_protocol.py 登记口径一致；导出供前端 use-sse 既有 handler 类型化）。",
+        "properties": {
+          "type": {
+            "const": "model_fallback",
+            "title": "Type",
+            "type": "string"
+          },
+          "provider": {
+            "default": "",
+            "title": "Provider",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseModelFallbackEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseErrorEvent",
+      "schema": {
+        "properties": {
+          "type": {
+            "const": "error",
+            "title": "Type",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Text"
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Raw"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error Code"
+          },
+          "code": {
+            "default": "",
+            "title": "Code",
+            "type": "string"
+          },
+          "kind": {
+            "default": "",
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseErrorEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseGuidanceInjectedEvent",
+      "schema": {
+        "properties": {
+          "type": {
+            "const": "guidance_injected",
+            "title": "Type",
+            "type": "string"
+          },
+          "id": {
+            "default": "",
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseGuidanceInjectedEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseDoneChatInsert",
+      "schema": {
+        "properties": {
+          "kind": {
+            "default": "",
+            "title": "Kind",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "thumb": {
+            "default": "",
+            "title": "Thumb",
+            "type": "string"
+          }
+        },
+        "title": "SseDoneChatInsert",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseDoneConfirmationOption",
+      "schema": {
+        "properties": {
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "group": {
+            "default": "",
+            "title": "Group",
+            "type": "string"
+          },
+          "value": {
+            "default": "",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "title": "SseDoneConfirmationOption",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseDoneSuggestedAction",
+      "schema": {
+        "properties": {
+          "kind": {
+            "default": "",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "default": "",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "title": "SseDoneSuggestedAction",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseDonePayload",
+      "schema": {
+        "$defs": {
+          "SseDoneChatInsert": {
+            "properties": {
+              "kind": {
+                "default": "",
+                "title": "Kind",
+                "type": "string"
+              },
+              "url": {
+                "default": "",
+                "title": "Url",
+                "type": "string"
+              },
+              "name": {
+                "default": "",
+                "title": "Name",
+                "type": "string"
+              },
+              "thumb": {
+                "default": "",
+                "title": "Thumb",
+                "type": "string"
+              }
+            },
+            "title": "SseDoneChatInsert",
+            "type": "object"
+          },
+          "SseDoneConfirmationOption": {
+            "properties": {
+              "label": {
+                "default": "",
+                "title": "Label",
+                "type": "string"
+              },
+              "description": {
+                "default": "",
+                "title": "Description",
+                "type": "string"
+              },
+              "group": {
+                "default": "",
+                "title": "Group",
+                "type": "string"
+              },
+              "value": {
+                "default": "",
+                "title": "Value",
+                "type": "string"
+              }
+            },
+            "title": "SseDoneConfirmationOption",
+            "type": "object"
+          },
+          "SseDoneSuggestedAction": {
+            "properties": {
+              "kind": {
+                "default": "",
+                "title": "Kind",
+                "type": "string"
+              },
+              "label": {
+                "default": "",
+                "title": "Label",
+                "type": "string"
+              },
+              "value": {
+                "default": "",
+                "title": "Value",
+                "type": "string"
+              }
+            },
+            "title": "SseDoneSuggestedAction",
+            "type": "object"
+          }
+        },
+        "description": "done.payload 全家桶（core PlannerResponse 核心字段 + web 层富化；\ntrace/state/workflow 为既有 dataclass 投影的 dict 透传）。",
+        "properties": {
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "applied_actions": {
+            "default": 0,
+            "title": "Applied Actions",
+            "type": "integer"
+          },
+          "steps": {
+            "default": 1,
+            "title": "Steps",
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "confirmation": {
+            "default": "",
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "pause_id": {
+            "default": "",
+            "title": "Pause Id",
+            "type": "string"
+          },
+          "documents_written": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Documents Written",
+            "type": "array"
+          },
+          "image_urls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Image Urls",
+            "type": "array"
+          },
+          "chat_inserts": {
+            "items": {
+              "$ref": "#/$defs/SseDoneChatInsert"
+            },
+            "title": "Chat Inserts",
+            "type": "array"
+          },
+          "action_log": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Action Log",
+            "type": "array"
+          },
+          "confirmation_options": {
+            "items": {
+              "$ref": "#/$defs/SseDoneConfirmationOption"
+            },
+            "title": "Confirmation Options",
+            "type": "array"
+          },
+          "suggested_actions": {
+            "items": {
+              "$ref": "#/$defs/SseDoneSuggestedAction"
+            },
+            "title": "Suggested Actions",
+            "type": "array"
+          },
+          "pause_kind": {
+            "default": "",
+            "title": "Pause Kind",
+            "type": "string"
+          },
+          "stopped": {
+            "default": false,
+            "title": "Stopped",
+            "type": "boolean"
+          },
+          "stop_phase": {
+            "default": "",
+            "title": "Stop Phase",
+            "type": "string"
+          },
+          "fallback_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fallback Model"
+          },
+          "elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Elapsed Ms"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Turn Id"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "State"
+          },
+          "trace": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Trace"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workflow"
+          }
+        },
+        "title": "SseDonePayload",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseDoneEvent",
+      "schema": {
+        "$defs": {
+          "SseDoneChatInsert": {
+            "properties": {
+              "kind": {
+                "default": "",
+                "title": "Kind",
+                "type": "string"
+              },
+              "url": {
+                "default": "",
+                "title": "Url",
+                "type": "string"
+              },
+              "name": {
+                "default": "",
+                "title": "Name",
+                "type": "string"
+              },
+              "thumb": {
+                "default": "",
+                "title": "Thumb",
+                "type": "string"
+              }
+            },
+            "title": "SseDoneChatInsert",
+            "type": "object"
+          },
+          "SseDoneConfirmationOption": {
+            "properties": {
+              "label": {
+                "default": "",
+                "title": "Label",
+                "type": "string"
+              },
+              "description": {
+                "default": "",
+                "title": "Description",
+                "type": "string"
+              },
+              "group": {
+                "default": "",
+                "title": "Group",
+                "type": "string"
+              },
+              "value": {
+                "default": "",
+                "title": "Value",
+                "type": "string"
+              }
+            },
+            "title": "SseDoneConfirmationOption",
+            "type": "object"
+          },
+          "SseDonePayload": {
+            "description": "done.payload 全家桶（core PlannerResponse 核心字段 + web 层富化；\ntrace/state/workflow 为既有 dataclass 投影的 dict 透传）。",
+            "properties": {
+              "text": {
+                "default": "",
+                "title": "Text",
+                "type": "string"
+              },
+              "applied_actions": {
+                "default": 0,
+                "title": "Applied Actions",
+                "type": "integer"
+              },
+              "steps": {
+                "default": 1,
+                "title": "Steps",
+                "type": "integer"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Warnings",
+                "type": "array"
+              },
+              "confirmation": {
+                "default": "",
+                "title": "Confirmation",
+                "type": "string"
+              },
+              "pause_id": {
+                "default": "",
+                "title": "Pause Id",
+                "type": "string"
+              },
+              "documents_written": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Documents Written",
+                "type": "array"
+              },
+              "image_urls": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Image Urls",
+                "type": "array"
+              },
+              "chat_inserts": {
+                "items": {
+                  "$ref": "#/$defs/SseDoneChatInsert"
+                },
+                "title": "Chat Inserts",
+                "type": "array"
+              },
+              "action_log": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Action Log",
+                "type": "array"
+              },
+              "confirmation_options": {
+                "items": {
+                  "$ref": "#/$defs/SseDoneConfirmationOption"
+                },
+                "title": "Confirmation Options",
+                "type": "array"
+              },
+              "suggested_actions": {
+                "items": {
+                  "$ref": "#/$defs/SseDoneSuggestedAction"
+                },
+                "title": "Suggested Actions",
+                "type": "array"
+              },
+              "pause_kind": {
+                "default": "",
+                "title": "Pause Kind",
+                "type": "string"
+              },
+              "stopped": {
+                "default": false,
+                "title": "Stopped",
+                "type": "boolean"
+              },
+              "stop_phase": {
+                "default": "",
+                "title": "Stop Phase",
+                "type": "string"
+              },
+              "fallback_model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Fallback Model"
+              },
+              "elapsed_ms": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Elapsed Ms"
+              },
+              "turn_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Turn Id"
+              },
+              "state": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "State"
+              },
+              "trace": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Trace"
+              },
+              "workflow": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Workflow"
+              }
+            },
+            "title": "SseDonePayload",
+            "type": "object"
+          },
+          "SseDoneSuggestedAction": {
+            "properties": {
+              "kind": {
+                "default": "",
+                "title": "Kind",
+                "type": "string"
+              },
+              "label": {
+                "default": "",
+                "title": "Label",
+                "type": "string"
+              },
+              "value": {
+                "default": "",
+                "title": "Value",
+                "type": "string"
+              }
+            },
+            "title": "SseDoneSuggestedAction",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "type": {
+            "const": "done",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/SseDonePayload"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseDoneEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "AgentTaskToolEntry",
+      "schema": {
+        "description": "replay.tools[i]：任务累计工具条目（重连重建时间线）。",
+        "properties": {
+          "id": {
+            "default": "",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "args": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Args"
+          },
+          "status": {
+            "default": "running",
+            "title": "Status",
+            "type": "string"
+          },
+          "elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Elapsed Ms"
+          },
+          "result_summary": {
+            "default": "",
+            "title": "Result Summary",
+            "type": "string"
+          },
+          "planning": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Planning"
+          },
+          "started_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started At Ms"
+          }
+        },
+        "title": "AgentTaskToolEntry",
+        "type": "object"
+      }
+    },
+    {
+      "name": "AgentTaskReplayPayload",
+      "schema": {
+        "$defs": {
+          "AgentTaskToolEntry": {
+            "description": "replay.tools[i]：任务累计工具条目（重连重建时间线）。",
+            "properties": {
+              "id": {
+                "default": "",
+                "title": "Id",
+                "type": "string"
+              },
+              "name": {
+                "default": "",
+                "title": "Name",
+                "type": "string"
+              },
+              "summary": {
+                "default": "",
+                "title": "Summary",
+                "type": "string"
+              },
+              "args": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Args"
+              },
+              "status": {
+                "default": "running",
+                "title": "Status",
+                "type": "string"
+              },
+              "elapsed_ms": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Elapsed Ms"
+              },
+              "result_summary": {
+                "default": "",
+                "title": "Result Summary",
+                "type": "string"
+              },
+              "planning": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Planning"
+              },
+              "started_at_ms": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Started At Ms"
+              }
+            },
+            "title": "AgentTaskToolEntry",
+            "type": "object"
+          }
+        },
+        "description": "任务流订阅首帧 replay.payload（web/agent_task_manager.subscribe）。",
+        "properties": {
+          "task_id": {
+            "default": "",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "project_id": {
+            "default": "",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "status": {
+            "default": "",
+            "title": "Status",
+            "type": "string"
+          },
+          "status_text": {
+            "default": "",
+            "title": "Status Text",
+            "type": "string"
+          },
+          "reasoning": {
+            "default": "",
+            "title": "Reasoning",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/$defs/AgentTaskToolEntry"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Snapshot"
+          },
+          "done_payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Done Payload"
+          },
+          "stopped_payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stopped Payload"
+          },
+          "docs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Docs",
+            "type": "array"
+          },
+          "wf_event_sequence": {
+            "default": 0,
+            "title": "Wf Event Sequence",
+            "type": "integer"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workflow"
+          },
+          "fallback": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fallback"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "error_payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error Payload"
+          }
+        },
+        "title": "AgentTaskReplayPayload",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseReplayEvent",
+      "schema": {
+        "$defs": {
+          "AgentTaskReplayPayload": {
+            "description": "任务流订阅首帧 replay.payload（web/agent_task_manager.subscribe）。",
+            "properties": {
+              "task_id": {
+                "default": "",
+                "title": "Task Id",
+                "type": "string"
+              },
+              "project_id": {
+                "default": "",
+                "title": "Project Id",
+                "type": "string"
+              },
+              "model": {
+                "default": "",
+                "title": "Model",
+                "type": "string"
+              },
+              "status": {
+                "default": "",
+                "title": "Status",
+                "type": "string"
+              },
+              "status_text": {
+                "default": "",
+                "title": "Status Text",
+                "type": "string"
+              },
+              "reasoning": {
+                "default": "",
+                "title": "Reasoning",
+                "type": "string"
+              },
+              "text": {
+                "default": "",
+                "title": "Text",
+                "type": "string"
+              },
+              "tools": {
+                "items": {
+                  "$ref": "#/$defs/AgentTaskToolEntry"
+                },
+                "title": "Tools",
+                "type": "array"
+              },
+              "snapshot": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Snapshot"
+              },
+              "done_payload": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Done Payload"
+              },
+              "stopped_payload": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Stopped Payload"
+              },
+              "docs": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Docs",
+                "type": "array"
+              },
+              "wf_event_sequence": {
+                "default": 0,
+                "title": "Wf Event Sequence",
+                "type": "integer"
+              },
+              "workflow": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Workflow"
+              },
+              "fallback": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Fallback"
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Error"
+              },
+              "error_payload": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Error Payload"
+              }
+            },
+            "title": "AgentTaskReplayPayload",
+            "type": "object"
+          },
+          "AgentTaskToolEntry": {
+            "description": "replay.tools[i]：任务累计工具条目（重连重建时间线）。",
+            "properties": {
+              "id": {
+                "default": "",
+                "title": "Id",
+                "type": "string"
+              },
+              "name": {
+                "default": "",
+                "title": "Name",
+                "type": "string"
+              },
+              "summary": {
+                "default": "",
+                "title": "Summary",
+                "type": "string"
+              },
+              "args": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Args"
+              },
+              "status": {
+                "default": "running",
+                "title": "Status",
+                "type": "string"
+              },
+              "elapsed_ms": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Elapsed Ms"
+              },
+              "result_summary": {
+                "default": "",
+                "title": "Result Summary",
+                "type": "string"
+              },
+              "planning": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Planning"
+              },
+              "started_at_ms": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Started At Ms"
+              }
+            },
+            "title": "AgentTaskToolEntry",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "type": {
+            "const": "replay",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/AgentTaskReplayPayload"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseReplayEvent",
+        "type": "object"
+      }
+    },
+    {
+      "name": "SseTaskStatusEvent",
+      "schema": {
+        "properties": {
+          "type": {
+            "const": "task_status",
+            "title": "Type",
+            "type": "string"
+          },
+          "status": {
+            "default": "",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SseTaskStatusEvent",
+        "type": "object"
+      }
+    }
+  ],
+  "error_contract": {
+    "payload_schema": {
+      "description": "统一错误负载（HTTP 响应与 SSE 事件共用；Pydantic 建模供\nsidecar 导出 TS 契约，发射/消费行为不变）",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "kind",
+        "message"
+      ],
+      "title": "ErrorPayload",
+      "type": "object"
+    },
+    "kinds": [
+      "auth",
+      "quota",
+      "network",
+      "upstream",
+      "content",
+      "unknown"
+    ],
+    "legacy_code_map": {
+      "ADAPTER_ERROR": {
+        "kind": "upstream",
+        "code": "err.upstream.server_error"
+      },
+      "FETCH_ERROR": {
+        "kind": "network",
+        "code": "err.network.connection"
+      },
+      "FORBIDDEN_ORIGIN": {
+        "kind": "auth",
+        "code": "err.auth.forbidden_origin"
+      },
+      "GENERATION_ERROR": {
+        "kind": "upstream",
+        "code": "err.upstream.server_error"
+      },
+      "NETWORK_ERROR": {
+        "kind": "network",
+        "code": "err.network.connection"
+      },
+      "PROBE_HTTP_ERROR": {
+        "kind": "upstream",
+        "code": "err.upstream.server_error"
+      },
+      "PROBE_TIMEOUT": {
+        "kind": "network",
+        "code": "err.network.timeout"
+      },
+      "RATE_LIMITED": {
+        "kind": "quota",
+        "code": "err.quota.rate_limited"
+      },
+      "TIMEOUT": {
+        "kind": "network",
+        "code": "err.network.timeout"
+      },
+      "UNAUTHORIZED": {
+        "kind": "auth",
+        "code": "err.auth.invalid_key"
+      },
+      "VIDEO_CONNECT_ERROR": {
+        "kind": "network",
+        "code": "err.network.connection"
+      },
+      "VIDEO_HTTP_ERROR": {
+        "kind": "upstream",
+        "code": "err.upstream.server_error"
+      },
+      "VIDEO_SUBMIT_FAILED": {
+        "kind": "upstream",
+        "code": "err.upstream.server_error"
+      },
+      "VIDEO_TIMEOUT": {
+        "kind": "network",
+        "code": "err.network.timeout"
+      }
+    }
+  },
+  "tool_detail_tiers": {
+    "canvas_add_node": "expand",
+    "canvas_batch_add_nodes": "expand",
+    "canvas_delete_node": "output",
+    "canvas_list": "output",
+    "canvas_list_assets": "output",
+    "canvas_read_nodes": "output",
+    "canvas_update_node": "expand",
+    "document_write": "expand",
+    "flow_directive": "output",
+    "generate_image": "expand",
+    "generate_video": "expand",
+    "image_generate": "expand",
+    "mcp_tool_catalog": "output",
+    "read_draft": "output",
+    "read_project_doc": "output",
+    "read_skill": "output",
+    "read_uploaded_doc": "output",
+    "storyboard_add_draft": "expand",
+    "storyboard_confirm_draft": "output",
+    "storyboard_create_group": "expand",
+    "storyboard_delete_group": "output",
+    "storyboard_media_to_chat": "output",
+    "storyboard_patch_draft": "expand",
+    "view_storyboard_media": "output",
+    "workflow_pause": "expand"
+  },
+  "tool_detail_tier_default": "output",
+  "tool_detail_internal_none": [
+    "model_reasoning"
+  ]
+}

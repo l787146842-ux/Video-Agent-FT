@@ -43,28 +43,6 @@ const EXEMPT: Record<string, string> = {
   DraftCreate: '草稿创建走手写保留通道（stores/studio 手写强类型）',
   DraftPatch: '同上',
   GroupPatch: '同上',
-  // 批 3.2 并存期豁免：SSE 载荷契约生成面（单一事实源 = core/sse_events
-  // TS_EVENT_FRAMES）；前端 SseEvent 联合仍为手写镜像，切换消费后逐个移除
-  SseStatusEvent: '批3.2 并存期：SSE 契约导出面（use-sse 切换消费后移除）',
-  SseDeltaEvent: '批3.2 并存期',
-  SseReasoningDeltaEvent: '批3.2 并存期',
-  SseToolStartedEvent: '批3.2 并存期',
-  SseToolFinishedEvent: '批3.2 并存期',
-  SseDocWrittenEvent: '批3.2 并存期',
-  SseActionsAppliedEvent: '批3.2 并存期',
-  SseStoppedInflightItem: '批3.2 并存期',
-  SseStoppedEvent: '批3.2 并存期',
-  SseErrorEvent: '批3.2 并存期',
-  SseGuidanceInjectedEvent: '批3.2 并存期',
-  SseDoneChatInsert: '批3.2 并存期',
-  SseDoneConfirmationOption: '批3.2 并存期',
-  SseDoneSuggestedAction: '批3.2 并存期',
-  SseDonePayload: '批3.2 并存期',
-  SseDoneEvent: '批3.2 并存期',
-  AgentTaskToolEntry: '批3.2 并存期',
-  AgentTaskReplayPayload: '批3.2 并存期',
-  SseReplayEvent: '批3.2 并存期',
-  SseTaskStatusEvent: '批3.2 并存期',
 };
 
 /** api/ 内与生成物同名、刻意保留的手写 interface（豁免清单登记项） */

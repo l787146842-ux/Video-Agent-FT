@@ -1,8 +1,13 @@
-﻿"""从 FastAPI OpenAPI schema 生成前端 TS 类型（前后端契约一致性）。
+﻿"""从 FastAPI OpenAPI schema + SSE sidecar 契约生成前端 TS 类型（前后端契约一致性）。
 
 用法：
-    python scripts/gen_api_types.py          # 生成 src/web/types/api.generated.ts
-    python scripts/gen_api_types.py --check  # 校验已有生成物与 schema 一致（CI 用，不一致退出码 1）
+    python scripts/gen_api_types.py          # 生成 sidecar + src/web/types/api.generated.ts
+    python scripts/gen_api_types.py --check  # 校验两份产物与后端契约一致（CI 用，漂移退出码 1）
+
+产物（--check 双门禁，同批漂移同批修）：
+1. src/web/types/sse.schema.json —— SSE 契约 sidecar（后端 Pydantic 模型/错误语义/
+   工具展示档元数据的 JSON 导出，本脚本生成模式自动重写，禁止手改）；
+2. src/web/types/api.generated.ts —— TS 类型（OpenAPI components + sidecar 全部契约）。
 
 生成的类型覆盖路由层请求/响应模型（components.schemas）；前端 API 边界
 类型以本生成物为唯一来源（tsc 编译期即契约门禁），视图态类型
@@ -20,9 +25,15 @@ from typing import Any, Dict, List
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 OUT_PATH = "src/web/types/api.generated.ts"
+# SSE 契约 sidecar（任务 #4）：后端契约模型 → JSON 单一事实源 → 本脚本消费生成 TS
+SIDECAR_PATH = "src/web/types/sse.schema.json"
 
 # 需要生成 TS 接口的 schema 名（OpenAPI components.schemas 子集，排除 FastAPI 内置）
 _SKIP = {"HTTPValidationError", "ValidationError"}
+
+# 非工具的时间线内部条目（展示档恒定 none，不经工具元数据；
+# 其余未知名走默认档 output——新工具至少留输出痕迹）
+_TOOL_DETAIL_INTERNAL_NONE = ("model_reasoning",)
 
 
 def ts_type(schema: Dict[str, Any], components: Dict[str, Any]) -> str:
@@ -44,9 +55,11 @@ def ts_type(schema: Dict[str, Any], components: Dict[str, Any]) -> str:
         if key in schema:
             parts = [ts_type(s, components) for s in schema[key]]
             # Optional[X] 会产生 X | null：收敛为 X | undefined 更贴合 TS 习惯
+            has_null = "null" in parts
             parts = [p for p in parts if p != "null"]
+            parts = list(dict.fromkeys(parts))  # 去重保序（int/float 同映射 number）
             if len(parts) == 1:
-                return f"{parts[0]} | undefined" if "null" in [ts_type(s, components) for s in schema[key]] else parts[0]
+                return f"{parts[0]} | undefined" if has_null else parts[0]
             return " | ".join(parts)
     t = schema.get("type")
     if t == "null":
@@ -62,6 +75,11 @@ def ts_type(schema: Dict[str, Any], components: Dict[str, Any]) -> str:
     if t == "object":
         props = schema.get("properties")
         if not props:
+            # Dict[str, X] 投影：additionalProperties 有 schema 时收窄值类型
+            # （Dict[str, Any] 的 additionalProperties 为空对象，退化为 unknown）
+            addl = schema.get("additionalProperties")
+            if isinstance(addl, dict) and addl:
+                return f"Record<string, {ts_type(addl, components)}>"
             return "Record<string, unknown>"
         # 内联对象（少见）：展开为索引签名
         return "Record<string, unknown>"
@@ -82,16 +100,151 @@ def gen_interface(name: str, schema: Dict[str, Any], components: Dict[str, Any])
     return "\n".join(lines)
 
 
-def build_output() -> str:
+# ===== SSE sidecar（任务 #4 批 1）：后端契约模型 → JSON 导出 =====
+
+def _collect_tool_detail_tiers() -> Dict[str, str]:
+    """工具展示档确定性采集：不依赖调用时刻的全局注册态。
+
+    全量 pytest 会话中其他测试会向 ToolManager 增删注册（如 MCP 目录工具），
+    直接读全局态会让 sidecar 随测试顺序漂移。故在隔离注册态上重放全部
+    标准注册入口（与 app 启动期 plugins.py 口径一致）采集，完成后原样恢复。
+    """
+    import src.video_agent.tools  # noqa: F401 基础工具注册（import 副作用，仅保模块就绪）
+    from src.video_agent.tools.canvas_tools import register_canvas_tools
+    from src.video_agent.tools.document_tools import register_document_tools
+    from src.video_agent.tools.manager import ToolManager
+    from src.video_agent.tools.mcp.catalog import McpToolCatalogTool
+    from src.video_agent.tools.storyboard_tools import register_storyboard_tools
+    from src.video_agent.tools.video.generate_video import GenerateVideoTool
+    from src.video_agent.tools.vision.generate_image import GenerateImageTool
+
+    saved = dict(ToolManager._tools)  # noqa: SLF001 隔离采集：快照 + 恢复
+    try:
+        ToolManager.reset()
+        ToolManager.register(GenerateImageTool())
+        ToolManager.register(GenerateVideoTool())
+        register_storyboard_tools()
+        register_document_tools()
+        register_canvas_tools()
+        ToolManager.register(McpToolCatalogTool())  # 运行时按需注册，契约面须覆盖
+        return ToolManager.get_tool_detail_tiers()
+    finally:
+        ToolManager.reset()
+        for tool in saved.values():
+            ToolManager.register(tool)
+
+
+def build_sidecar() -> Dict[str, Any]:
+    """从后端契约模型装配 sidecar（生成模式的权威来源；check 模式的漂移基准）。
+
+    内容四段：事件帧 schema（core/sse_events TS_EVENT_FRAMES）、错误语义契约
+    （web/error_payload：ErrorPayload 模型 + kind 封闭集 + legacy 桥接表）、
+    工具时间线展示档（各工具 detail_tier 声明）、默认档/内部 none 名单。
+    """
+    # 延迟导入：确保项目根在 sys.path（以模块方式运行时自动满足）
+    from src.video_agent.core.sse_events import TS_EVENT_FRAMES
+    from src.video_agent.web import error_payload as ep
+
+    frames = [
+        {"name": ts_name, "schema": model.model_json_schema(by_alias=True)}
+        for ts_name, model in TS_EVENT_FRAMES
+    ]
+    return {
+        "version": 1,
+        "source": (
+            "生成物勿手改：python scripts/gen_api_types.py。事实源 = "
+            "core/sse_events.py TS_EVENT_FRAMES + web/error_payload.py + 工具 detail_tier 声明"
+        ),
+        "frames": frames,
+        "error_contract": {
+            "payload_schema": ep.ErrorPayload.model_json_schema(),
+            "kinds": list(ep.ALL_KINDS),
+            "legacy_code_map": {
+                k: {"kind": kind, "code": code}
+                for k, (kind, code) in sorted(ep.LEGACY_CODE_MAP.items())
+            },
+        },
+        "tool_detail_tiers": dict(sorted(_collect_tool_detail_tiers().items())),
+        "tool_detail_tier_default": "output",
+        "tool_detail_internal_none": list(_TOOL_DETAIL_INTERNAL_NONE),
+    }
+
+
+def sidecar_text(sidecar: Dict[str, Any]) -> str:
+    return json.dumps(sidecar, ensure_ascii=False, indent=2) + "\n"
+
+
+# ===== TS 渲染：OpenAPI components + sidecar 契约 =====
+
+def _render_sse_section(sidecar: Dict[str, Any]) -> List[str]:
+    """sidecar → TS 分节：逐帧 interface + SseEvent 联合 + 错误契约常量 + 工具展示档常量"""
+    chunks: List[str] = [
+        f"// ===== SSE 事件载荷（sidecar：{SIDECAR_PATH}）=====",
+        "",
+    ]
+    # 帧内嵌套子模型统一汇入 components，供 $ref 解析（与 OpenAPI 段同机制）
+    components: Dict[str, Any] = {}
+    for frame in sidecar["frames"]:
+        for def_name, def_schema in (frame["schema"].get("$defs") or {}).items():
+            components[def_name] = def_schema
+    event_members: List[str] = []
+    for frame in sidecar["frames"]:
+        schema = {k: v for k, v in frame["schema"].items() if k != "$defs"}
+        chunks.append(gen_interface(frame["name"], schema, components))
+        chunks.append("")
+        type_schema = schema.get("properties", {}).get("type", {})
+        if isinstance(type_schema.get("const"), str):
+            event_members.append(frame["name"])
+    chunks.append("/** SSE 事件联合类型（判别列 = type 字面量；后端帧模型自动生成） */")
+    chunks.append("export type SseEvent =")
+    chunks.append("  | " + "\n  | ".join(event_members) + ";")
+    chunks.append("")
+
+    ec = sidecar["error_contract"]
+    chunks.append("// ===== 错误语义契约（来源：web/error_payload.py，sidecar 导出）=====")
+    chunks.append("")
+    chunks.append(gen_interface("ErrorPayloadContract", ec["payload_schema"], components))
+    chunks.append("")
+    kinds = ec["kinds"]
+    chunks.append("/** 错误归类封闭集合（后端 ALL_KINDS 生成，改动自动同步） */")
+    chunks.append("export const SSE_ERROR_KINDS = [" + ", ".join(f"'{k}'" for k in kinds) + "] as const;")
+    chunks.append("export type SseErrorKind = (typeof SSE_ERROR_KINDS)[number];")
+    chunks.append("/** legacy error_code → kind/code 桥接表（后端 LEGACY_CODE_MAP 生成） */")
+    chunks.append("export const SSE_LEGACY_ERROR_CODES: Record<string, { kind: SseErrorKind; code: string }> = {")
+    for legacy, pair in ec["legacy_code_map"].items():
+        chunks.append(f"  {legacy}: {{ kind: '{pair['kind']}', code: '{pair['code']}' }},")
+    chunks.append("};")
+    chunks.append("")
+
+    chunks.append("// ===== 工具时间线展示档（来源：各工具 detail_tier 声明，sidecar 导出）=====")
+    chunks.append("")
+    chunks.append("/** 工具名 → 展示档（expand=展开输入+结果 / output=仅输出留痕） */")
+    chunks.append("export const TOOL_DETAIL_TIERS: Record<string, 'expand' | 'output'> = {")
+    for tool, tier in sidecar["tool_detail_tiers"].items():
+        chunks.append(f"  {tool}: '{tier}',")
+    chunks.append("};")
+    chunks.append("/** 未登记工具/未知名的默认档（新工具至少留输出痕迹） */")
+    chunks.append(f"export const TOOL_DETAIL_TIER_DEFAULT = '{sidecar['tool_detail_tier_default']}' as const;")
+    chunks.append("/** 非工具内部条目（恒定 none，不经元数据） */")
+    internal = ", ".join(f"'{n}'" for n in sidecar["tool_detail_internal_none"])
+    chunks.append(f"export const TOOL_DETAIL_INTERNAL_NONE: readonly string[] = [{internal}] as const;")
+    chunks.append("")
+    return chunks
+
+
+def build_output(sidecar: Dict[str, Any] | None = None) -> str:
     # 延迟导入：确保项目根在 sys.path（以模块方式运行时自动满足）
     from src.video_agent.web.app import app
+
+    if sidecar is None:
+        sidecar = build_sidecar()
 
     spec = app.openapi()
     components = spec.get("components", {}).get("schemas", {})
     chunks: List[str] = [
         "/**",
         " * 自动生成 —— 请勿手工编辑。",
-        " * 来源：FastAPI OpenAPI schema（python scripts/gen_api_types.py）",
+        " * 来源：FastAPI OpenAPI schema + SSE sidecar（python scripts/gen_api_types.py）",
         " * 用途：前端 API 边界类型的唯一来源；",
         " * 视图态类型（ChatMessage 等纯 UI 形态）见手写 src/web/types/index.ts。",
         " */",
@@ -106,26 +259,18 @@ def build_output() -> str:
         chunks.append(gen_interface(name, schema, components))
         chunks.append("")
 
-    # ===== SSE 事件载荷（整改批 3.2）：core/sse_events 单一事实源导出 =====
-    # 事件帧模型不挂路由（不会出现在 OpenAPI components），显式枚举导出；
-    # 嵌套子模型经各帧 model_json_schema 的 $defs 合并后按 $ref 解析。
-    from src.video_agent.core.sse_events import TS_EVENT_FRAMES
-
-    chunks.append("// ===== SSE 事件载荷（来源：core/sse_events.py TS_EVENT_FRAMES）=====")
-    chunks.append("")
-    for ts_name, model in TS_EVENT_FRAMES:
-        schema = model.model_json_schema(by_alias=True)
-        local = dict(components)
-        for def_name, def_schema in (schema.get("$defs") or {}).items():
-            local[def_name] = def_schema
-        chunks.append(gen_interface(ts_name, schema, local))
-        chunks.append("")
+    chunks.extend(_render_sse_section(sidecar))
     return "\n".join(chunks)
 
 
-def main(out_path: str = OUT_PATH) -> int:
-    expected = build_output()
+def main(out_path: str = OUT_PATH, sidecar_path: str | None = None) -> int:
+    # sidecar 默认与 TS 产物同目录（双产物成对；tmp 目录注入时跟随 out_path）
+    if sidecar_path is None:
+        sidecar_path = str(Path(out_path).parent / Path(SIDECAR_PATH).name)
+    sidecar_expected = build_sidecar()
+    expected = build_output(sidecar_expected)
     if "--check" in sys.argv:
+        # 先比 TS 产物（漂移金丝雀测试只构造 TS 一侧，顺序保证先命中 TS 失败）
         try:
             with open(out_path, encoding="utf-8") as f:
                 current = f.read()
@@ -135,11 +280,24 @@ def main(out_path: str = OUT_PATH) -> int:
         if current.strip() != expected.strip():
             print("[gen_api_types] FAIL: contract drift - run python scripts/gen_api_types.py")
             return 1
-        print("[gen_api_types] OK: contract consistent")
+        # 再比 sidecar 产物（后端模型/元数据漂移第二道闸）
+        try:
+            with open(sidecar_path, encoding="utf-8") as f:
+                current_sidecar = f.read()
+        except FileNotFoundError:
+            print(f"[gen_api_types] FAIL: {sidecar_path} missing - run without --check first")
+            return 1
+        if current_sidecar.strip() != sidecar_text(sidecar_expected).strip():
+            print(f"[gen_api_types] FAIL: sidecar drift ({sidecar_path}) - run python scripts/gen_api_types.py")
+            return 1
+        print("[gen_api_types] OK: contract consistent (ts + sidecar)")
         return 0
+    Path(sidecar_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(sidecar_path, "w", encoding="utf-8") as f:
+        f.write(sidecar_text(sidecar_expected))
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(expected)
-    print(f"[gen_api_types] OK: generated {out_path}")
+    print(f"[gen_api_types] OK: generated {out_path} + {sidecar_path}")
     return 0
 
 

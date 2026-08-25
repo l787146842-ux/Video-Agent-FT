@@ -4,6 +4,7 @@ import { t } from '@/lib/locale';
 import type { ChatMessage } from '@/types';
 import { pickDimension, kindForDim, ConfigProviderModelSelect, type ConfirmOptionItem } from './ConfirmPicker';
 import { ConfirmOptionCards } from './ConfirmOptionCards';
+import { ConfirmCustomInput } from './ConfirmCustomInput';
 
 /** 无 group 的普通选项组使用的内部键 */
 const SINGLE_KEY = '__single__';
@@ -84,53 +85,27 @@ export function ConfirmActions(props: { message: ChatMessage }) {
     }
   };
 
-  const toggleCustom = (key: string, el?: HTMLButtonElement) => {
-    const open = !customOpen()[key];
+  const toggleCustom = (key: string, open: boolean) => {
     setCustomOpen({ ...customOpen(), [key]: open });
-    if (open) {
-      // 展开后聚焦组内输入框
-      requestAnimationFrame(() => {
-        el?.closest('.confirm-wizard')?.querySelector<HTMLTextAreaElement>('.confirm-custom-input')?.focus();
-      });
-    }
   };
 
-  /** 「其它（自定义输入）」按钮 + 组内输入框 */
+  /** 「其它（自定义输入）」块（渲染在 ConfirmCustomInput，互斥状态留在本组件） */
   const customBlock = (key: string) => (
-    <>
-      <button
-        type="button"
-        class={`confirm-btn secondary${customOpen()[key] || (customText()[key] || '').trim() ? ' active' : ''}`}
-        onClick={(e) => toggleCustom(key, e.currentTarget)}
-      >
-        {t('rp.confirm.customBtn')}
-      </button>
-      <Show when={customOpen()[key]}>
-        <textarea
-          class="confirm-custom-input"
-          rows={2}
-          placeholder={t('rp.confirm.customPlaceholder')}
-          value={customText()[key] || ''}
-          onInput={(e) => {
-            const v = e.currentTarget.value;
-            setCustomText({ ...customText(), [key]: v });
-            // 输入自定义内容即取消卡片选择（单选互斥）
-            if (v.trim() && picks()[key]) {
-              const next = { ...picks() };
-              delete next[key];
-              setPicks(next);
-            }
-          }}
-          onKeyDown={(e) => {
-            // Ctrl/Cmd+Enter 快捷发送（普通回车允许换行写多行）
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault();
-              void sendPicked((customText()[key] || '').trim());
-            }
-          }}
-        />
-      </Show>
-    </>
+    <ConfirmCustomInput
+      open={() => !!customOpen()[key]}
+      text={() => customText()[key] || ''}
+      onToggle={(open) => toggleCustom(key, open)}
+      onText={(v) => {
+        setCustomText({ ...customText(), [key]: v });
+        // 输入自定义内容即取消卡片选择（单选互斥）
+        if (v.trim() && picks()[key]) {
+          const next = { ...picks() };
+          delete next[key];
+          setPicks(next);
+        }
+      }}
+      onSend={(txt) => void sendPicked(txt)}
+    />
   );
 
   return (

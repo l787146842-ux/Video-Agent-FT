@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/check_bundle_size.mjs",
+    "check:size": "node scripts/check_bundle_size.mjs",
     "preview": "vite preview",
     "check": "tsc --noEmit && eslint src/web/",
     "lint": "eslint src/web/",
@@ -16,6 +17,7 @@
     "hooks": "python scripts/install_hooks.py"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.62.0",
     "@solidjs/testing-library": "^0.8.10",
     "@types/markdown-it": "^14.1.2",

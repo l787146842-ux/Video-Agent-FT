@@ -13,7 +13,7 @@ import pytest
 
 import src.video_agent.web.skill_docs as sd
 from src.video_agent.core import gates_inputs
-from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import stage_probes as po
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core.workflow_runtime import WorkflowRuntime

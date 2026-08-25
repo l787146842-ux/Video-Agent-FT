@@ -14,7 +14,9 @@
 - 任务#36 B5 执行器一步退役：executors/exec_* 执行器族模块导入
 - 任务#27 文本轨残留退役：web.action_parser 文本块解析通道 /
   parse_actions_from_reply / StudioActionExecutor 旧名（已按实际职责更名
-  StateOperationExecutor）/ pipeline_orchestrator 拓扑就绪集调度函数
+  StateOperationExecutor）/ stage_probes（旧名编排器模块）拓扑就绪集调度函数
+  - 任务#14 编排器正名：旧模块名 pipeline_orchestrator 防复活（已更名
+    stage_probes 纯数据层，同名复用即视为复活）
 spec_pause_card/spec_collect_card\uff08\u89c4\u683c\u5411\u5bfc\uff0c\u4e0d\u53d8\u57fa\u7ebf\uff09\u4e0d\u5728\u6e05\u5355\u5185\u3002
 \u8f93\u51fa\u7eaf ASCII\uff08\u9a8c\u6536\u4e71\u7801\u8bef\u8bfb\u6559\u8bad\uff09\u3002\u7528\u6cd5\uff1apython scripts/check_legacy_orchestration.py
 """
@@ -56,11 +58,15 @@ FORBIDDEN = re.compile(
     # 任务#27 文本轨残留退役：文本块动作解析通道防复活（动作通道唯一 = FC，
     # ADR-0001；action_parser 用导入路径形式扫描，不命中退役留痕注释）；
     # StudioActionExecutor 旧名防复活（已更名 StateOperationExecutor）；
-    # pipeline_orchestrator 拓扑就绪集调度函数防复活（存活消费语义已迁
-    # _spec_stage_pending 探针，ADR-0004 后 runtime 永不执行阶段）
+    # stage_probes（任务#14 正名前旧名编排器模块）拓扑就绪集调度函数防复活
+    # （存活消费语义已迁 _spec_stage_pending 探针，ADR-0004 后 runtime 永不执行
+    # 阶段）；旧模块名字面量同批入清单（\b 不命中配置字段
+    # pipeline_orchestrator_enabled，该字段为环境变量契约不改名）
     r"|StudioActionExecutor|def parse_actions_from_reply|parse_actions_from_reply\("
     r"|web\.action_parser|import action_parser"
     r"|\bnext_batch\b"
+    # 任务#14 编排器正名：旧模块名防复活（纯数据层已更名 stage_probes）
+    r"|\bpipeline_orchestrator\b"
 )
 
 
@@ -83,7 +89,7 @@ def main() -> int:
         print(
             f"[check_legacy_orchestration] FAIL: {len(hits)} legacy-orchestration reference(s). "
             "Retired by 0818 state-driven orchestration batch; extend "
-            "pipeline_orchestrator/frontmatter instead of reviving old mechanisms."
+            "stage_probes/frontmatter instead of reviving old mechanisms."
         )
         return 1
     print("[check_legacy_orchestration] PASS: no legacy orchestration symbols")

@@ -9,7 +9,7 @@
 任务#36 B5 执行器一步退役删除；组装方案文档改由通用主路径用
 document_write 写入，探针只看产物证据不关心供给侧。）
 """
-from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import stage_probes as po
 from src.video_agent.state.models import ASSEMBLY_PLAN_DOC_NAME
 
 

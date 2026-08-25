@@ -9,8 +9,6 @@
  * 消费覆盖防回退由 vitest 桥接测试 api-contract.test.ts 机械断言（只升不降）。
  *
  * 豁免清单（后端未建模为 Pydantic、OpenAPI 无对应 schema，或手写显著更精，留手写并登记）：
- * - SSE 事件族（SseStatusEvent/SseDonePayload 等）：SSE 流式载荷，后端 dict 直发；
- * - TaskResult / AgentTaskReplayPayload：任务式传输载荷，同上；
  * - ServerStateSnapshot / ChatMessage / Draft 等视图态：前端渲染形态，非 API 模型；
  * - 手写响应类型比生成物更精确的站点（生成物对 Dict 响应只能给出
  *   Record<string, unknown>）：ProjectListResponse/ProvidersResponse/
@@ -24,13 +22,36 @@
  *   unknown 字段）——保留手写强类型，后端建模精细化后再迁。
  * - 生成物消费基座站点（生成物为类型来源，手写只做收窄/精化，  登记）：
  *   GenerateImageRequest/GenerateVideoRequest（交集精化，api/generate.ts）、
- *   BatchImageRequest（Required 收窄必填）、CanvasDropImagePayload（交集精化，api/canvas.ts）。
+ *   BatchImageRequest（Required 收窄必填）、CanvasDropImagePayload（交集精化，api/canvas.ts）、
+ *   SSE 事件族（任务 #4：sidecar 生成帧为来源，本文件仅收窄 state/trace/
+ *   workflow 等视图态字段并组装 SseEvent 联合）。
  * - 前端无消费路径的生成物（后端端点专用/前端走通用端点）：ModelFallbackPatch
  *   （前端开关走通用 runtime PUT）、TimelinePushRequest（时间线回画布走 Agent
  *   工具路径）、Body_upload_files_api_ai_upload_post（multipart 上传）、
  *   DraftCreate/DraftPatch/GroupPatch（草稿操作走整板保存通道）、ProjectStateResponse（空 schema）。
  */
-import type { ChatRequest } from './api.generated';
+import type {
+  ChatRequest,
+  AgentTaskReplayPayload as GenAgentTaskReplayPayload,
+  AgentTaskToolEntry,
+  SseActionsAppliedEvent as GenSseActionsAppliedEvent,
+  SseDeltaEvent,
+  SseDocWrittenEvent,
+  SseDoneChatInsert,
+  SseDoneConfirmationOption,
+  SseDonePayload as GenSseDonePayload,
+  SseDoneSuggestedAction,
+  SseErrorEvent,
+  SseGuidanceInjectedEvent,
+  SseModelFallbackEvent,
+  SseReasoningDeltaEvent,
+  SseStatusEvent,
+  SseStoppedEvent as GenSseStoppedEvent,
+  SseStoppedInflightItem,
+  SseTaskStatusEvent,
+  SseToolFinishedEvent,
+  SseToolStartedEvent,
+} from './api.generated';
 import type { ErrorKind } from '@/lib/error-payload';
 import type { TurnLedger } from '@/lib/turn-ledger';
 
@@ -350,146 +371,80 @@ export interface WorkflowProjection {
   turn_events?: Array<Record<string, unknown>>;
 }
 
-// ===== SSE 事件（Agent 聊天流） =====
-// 契约锚点：事件名以后端 src/video_agent/core/sse_events.py 的 SSE_* 常量为唯一权威；
-// 新增/改名事件时两侧必须同步（后端常量 → 本联合类型 → use-sse.ts 的 switch）。
-export interface SseStatusEvent {
-  type: 'status';
-  text: string;
-  /** ：固定文案 i18n 键（前端 locale 字典同键翻译；缺失时回退 text） */
-  key?: string;
-  /** key 的插值参数 */
-  params?: Record<string, string | number>;
-}
-export interface SseDeltaEvent { type: 'delta'; text: string; }
-/** 深度思考（reasoning）增量：仅 UI 展示，不进下次 LLM 上下文 */
-export interface SseReasoningEvent { type: 'reasoning_delta'; text: string; }
-/** 过程时间线：工具/操作开始（args = 输入参数预览，后端已裁剪脱敏） */
-export interface SseToolStartedEvent { type: 'tool_started'; id: string; name: string; summary: string; args?: Record<string, unknown>; }
-/** 过程时间线：工具/操作完成 */
-export interface SseToolFinishedEvent {
-  type: 'tool_finished';
-  id: string;
-  ok: boolean;
-  elapsed_ms: number;
-  result_summary?: string;
-  /** 规划级执行器标记（后端 capability 注册表下发） */
-  planning?: boolean;
-}
-export interface SseDonePayload {
+// ===== SSE 事件（Agent 聊天流；任务 #4 契约生成化） =====
+// 契约锚点：事件帧以生成物（sidecar：sse.schema.json ← core/sse_events.py
+// TS_EVENT_FRAMES）为唯一来源；本段只做视图态收窄（state/trace/workflow 等
+// 生成物只能给 Record<string, unknown> 的字段精化为前端渲染形态）。
+export type {
+  AgentTaskToolEntry,
+  SseDeltaEvent,
+  SseDocWrittenEvent,
+  SseDoneChatInsert,
+  SseDoneConfirmationOption,
+  SseDoneSuggestedAction,
+  SseErrorEvent,
+  SseGuidanceInjectedEvent,
+  SseModelFallbackEvent,
+  SseReasoningDeltaEvent,
+  SseStatusEvent,
+  SseStoppedInflightItem,
+  SseTaskStatusEvent,
+  SseToolFinishedEvent,
+  SseToolStartedEvent,
+};
+
+/** 停止终态事件：phase 收窄为后端三阶段字面量（气泡措辞分支依据） */
+export type SseStoppedEvent = Omit<GenSseStoppedEvent, 'phase'> & {
+  phase?: 'thinking' | 'tool_executing' | 'streaming';
+};
+/** 操作已执行：payload.state 收窄为状态快照（推理中逐步刷新故事板） */
+export type SseActionsAppliedEvent = Omit<GenSseActionsAppliedEvent, 'payload'> & {
+  payload?: { count?: number; state?: ServerStateSnapshot | null };
+};
+/** done 载荷：账本四件套收窄必填；state/trace/workflow 收窄视图态 */
+export type SseDonePayload = Omit<GenSseDonePayload,
+  'text' | 'elapsed_ms' | 'steps' | 'applied_actions'
+  | 'chat_inserts' | 'confirmation_options' | 'suggested_actions'
+  | 'trace' | 'state' | 'workflow'> & {
   text: string;
   elapsed_ms: number;
   steps: number;
   applied_actions: number;
-  confirmation?: string;
-  /** 暂停卡结构化标识（用户点选回应时经 pause_response 结构化回携） */
-  pause_id?: string;
-  /** Rule2 v6：暂停卡语义种类（remind/collect/stage_done/confirm，卡标题渲染依据） */
-  pause_kind?: string;
-  documents_written?: string[];
-  warnings?: string[];
-  image_urls?: string[];
-  /** Agent 要求插入对话输入框的故事板媒体（insert_chat_media / storyboard_media_to_chat 产出） */
   chat_inserts?: Array<{ kind: MediaType; url: string; name: string; thumb?: string }>;
-  /** 本轮已执行操作的中文描述清单（前端展示具体操作内容） */
-  action_log?: string[];
-  /** 确认卡片的候选选项（单选卡片，点击即把 value||label 作为回复发送） */
   confirmation_options?: Array<{ label: string; description?: string; group?: string; value?: string }>;
-  /** 主模型故障时 fallback 实际使用的模型名（供气泡标注） */
-  fallback_model?: string;
-  /** 执行轨迹（每轮 step/耗时/操作数） */
-  trace?: AgentTrace;
-  /** ：轮次唯一标识（前端同轮消息聚合为轮次容器） */
-  turn_id?: string;
-  /** ：建议动作按钮（retry=机械重发上一条用户消息；continue=发送固定文本；
-   * next=状态驱动下一步建议） */
   suggested_actions?: Array<{ kind: 'retry' | 'continue' | 'next'; label: string; value: string }>;
-  /** 协作式停止标记（停止时 done payload 携带；stopped 事件已先行下发） */
-  stopped?: boolean;
-  /** 停止阶段（thinking/tool_executing/streaming，气泡措辞依据） */
-  stop_phase?: string;
-  /** workflow 投影（任务 #3：pending_decision_payload 驱动结构化决策表单） */
-  workflow?: WorkflowProjection | null;
+  trace?: AgentTrace;
   state?: ServerStateSnapshot | null;
-}
+  workflow?: WorkflowProjection | null;
+};
 export interface SseDoneEvent { type: 'done'; payload: SseDonePayload; }
-/** 停止终态事件（后端 agent_loop 协作式取消检查点命中时下发；
- *  在途外部生成任务登记由 web 透传层富化，第一版不做真实撤销） */
-export interface SseStoppedInflightItem {
-  task_id?: string;
-  media_type?: string;
-  model?: string;
-  draft_id?: string;
-  summary?: string;
-}
-export interface SseStoppedEvent {
-  type: 'stopped';
-  /** 停止阶段：thinking=思考 / tool_executing=工具执行 / streaming=输出 */
-  phase?: 'thinking' | 'tool_executing' | 'streaming';
-  step?: number;
-  /** 在途外部生成任务（出图/出视频）登记：仍在供应商侧继续，本次停止不撤销 */
-  inflight?: SseStoppedInflightItem[];
-}
-/** 操作已执行（携带最新状态快照）：推理中逐步刷新故事板，不必等全部完成 */
-export interface SseActionsAppliedEvent { type: 'actions_applied'; payload?: { count?: number; state?: ServerStateSnapshot | null }; }
-/** 后端 error 事件用 detail 字段，可携带 error_code 供前端 i18n 翻译；
- * 增结构化 code/kind（ErrorPayload 契约，镜像后端 web/error_payload.py） */
-export interface SseErrorEvent { type: 'error'; detail?: string; text?: string; error_code?: string; /** 上游原始报文（前端折叠展示） */ raw?: string; code?: string; kind?: string; }
-/** 模型降级即时联动：切换时刻即下发，前端立即把选择器跳到实际生效的组合 */
-export interface SseModelFallbackEvent { type: 'model_fallback'; provider?: string; model?: string; }
-/** 引导消息轮间注入成功：渲染用户气泡并从排队区移除对应条目 */
-export interface SseGuidanceInjectedEvent { type: 'guidance_injected'; id?: string; text?: string; }
-/** 文档写入即显：独立文档卡片立即渲染，不等整轮 done；
- * ：后端透传层打戳本轮 turn_id，即显卡严格归入轮次容器 */
-export interface SseDocWrittenEvent { type: 'doc_written'; name?: string; turn_id?: string; }
-/** 任务式传输：订阅时先回放累计状态（刷新/切项目重连后恢复进度） */
-export interface AgentTaskReplayPayload {
-  task_id?: string;
-  project_id?: string;
-  model?: string;
-  status?: string;
-  status_text?: string;
-  reasoning?: string;
-  text?: string;
-  tools?: Array<{
-    id?: string; name?: string; summary?: string; status?: string;
-    elapsed_ms?: number | null; result_summary?: string; started_at_ms?: number;
-    /** 规划级执行器标记 */
-    planning?: boolean;
-  }>;
+/** 任务式传输 replay 快照：嵌套载荷收窄为上述视图态类型 */
+export type AgentTaskReplayPayload = Omit<GenAgentTaskReplayPayload,
+  'snapshot' | 'done_payload' | 'stopped_payload' | 'workflow' | 'fallback' | 'error_payload'> & {
   snapshot?: ServerStateSnapshot | null;
   done_payload?: SseDonePayload | null;
   /** 停止终态事件负载（status=stopped 时携带，刷新后恢复停止痕迹） */
   stopped_payload?: SseStoppedEvent | null;
-  /** Rule2 v6：断连期间已写文档累积账本（replay 补渲染文档卡） */
-  docs?: string[];
-  /** workflow 事件序列高水位（重连按 sequence 补发/去重依据） */
-  wf_event_sequence?: number;
-  /** workflow 投影（run 快照 + pending_decision_payload + 本轮事件序列，
-   *  重载/重连同源重建；任务 #3 结构化决策表单数据源） */
   workflow?: WorkflowProjection | null;
   fallback?: { provider?: string; model?: string } | null;
-  error?: string | null;
   /** 错误结构化归类（replay 同源下发；旧记录无此字段时为 null） */
   error_payload?: { code?: string; kind?: string; raw?: string } | null;
-}
+};
 export interface SseReplayEvent { type: 'replay'; payload?: AgentTaskReplayPayload; }
-/** 任务状态变更通知（后端 agent_task_manager 下发，如 cancelled）；
- * 前后端契约对齐：前端联合类型须覆盖后端 break 条件引用的事件 */
-export interface SseTaskStatusEvent { type: 'task_status'; status?: string; }
+/** 前端事件联合（成员 = 生成物帧；收窄版替换同名生成帧） */
 export type SseEvent =
   | SseStatusEvent
   | SseDeltaEvent
-  | SseReasoningEvent
+  | SseReasoningDeltaEvent
   | SseToolStartedEvent
   | SseToolFinishedEvent
-  | SseActionsAppliedEvent
-  | SseDoneEvent
-  | SseStoppedEvent
-  | SseErrorEvent
-  | SseModelFallbackEvent
-  | SseGuidanceInjectedEvent
   | SseDocWrittenEvent
+  | SseActionsAppliedEvent
+  | SseStoppedEvent
+  | SseModelFallbackEvent
+  | SseErrorEvent
+  | SseGuidanceInjectedEvent
+  | SseDoneEvent
   | SseReplayEvent
   | SseTaskStatusEvent;
 

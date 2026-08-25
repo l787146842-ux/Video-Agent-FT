@@ -64,7 +64,7 @@ class TestStageExecutorsDeclaration:
     # test_registry_parses_stage_executors / test_registry_undeclared_returns_empty /
     # test_stage_done_requires_all_executors 已随任务#36 B5 执行器一步退役删除：
     # registry.skill_stage_executors 与 exec_tools._stage_done_by_executors 不复存在，
-    # 阶段完成度改由 pipeline_orchestrator.stage_done 客观探针判定（下方用例钉死）。
+    # 阶段完成度改由 stage_probes.stage_done 客观探针判定（下方用例钉死）。
 
     def test_ai_skill_manifest_zombie_keys_cleared(self):
         """B-4 存量清零钉死：AI-一站式 Skill frontmatter 不再声明僵尸键
@@ -80,7 +80,7 @@ class TestStageExecutorsDeclaration:
 
     def test_step_done_spec_condition_objective(self):
         """0818 B4：spec 阶段完成度走客观探针（spec 文档存在=完成）。"""
-        from src.video_agent.core import pipeline_orchestrator as po
+        from src.video_agent.core import stage_probes as po
 
         with_spec = {"documents": [{"name": "Final_Video_Spec.md", "content": "画幅 16:9"}]}
         assert po.stage_done("spec", with_spec) is True

@@ -37,7 +37,7 @@ def runner(monkeypatch):
     # 边界判定按当前阶段：默认放行所有类别（structure 阶段语义）
     monkeypatch.setattr(
         "src.video_agent.core.fc_gates."
-        "pipeline_orchestrator.current_stage",
+        "stage_probes.current_stage",
         lambda state, skill: SimpleNamespace(key="structure", title="结构搭建"),
     )
     return r
@@ -109,7 +109,7 @@ def test_shot_not_mentioned_ke_not_required(strict, runner):
 def test_stage_boundary_rejects_offstage_kind(strict, runner, monkeypatch):
     monkeypatch.setattr(
         "src.video_agent.core.fc_gates."
-        "pipeline_orchestrator.current_stage",
+        "stage_probes.current_stage",
         lambda state, skill: SimpleNamespace(key="ke_media", title="元素图生成"),
     )
     err = runner._structure_integrity_gate(

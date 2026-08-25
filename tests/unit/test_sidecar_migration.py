@@ -155,7 +155,7 @@ def test_all_product_frontmatters_validate_clean():
 def test_stage_table_skill_aware_trimming():
     """阶段表 skill 感知：无 video_assembler 章节的 Skill 无组装阶段；
     spec_wizard 冻结值决定规格阶段存在性。"""
-    from src.video_agent.core import pipeline_orchestrator as po
+    from src.video_agent.core import stage_probes as po
 
     keys = [s.key for s in po.stage_table("商品宣传短片")]
     assert "assembly" not in keys

@@ -11,8 +11,13 @@
    trace 账本写满即轮转（agent_traces.jsonl.1 / .2 …），本脚本 glob
    agent_traces.jsonl* 扫描全部轮转份，按轮转序号从旧到新
    （.2 → .1 → 主文件）顺序读取，防只读主文件导致触发统计系统性低估。
-2. CI 棘轮门禁（scripts/check_*.py）：触发计数不自动持久化，输出清单表，
-   由季度审计按 acceptance 运行记录人工补录「近 N 轮触发次数」。
+2. 遥测自动落盘（任务#3）：闸机判定出口（guard_pipeline.audit_verdicts）
+   每次判定轻量 append 一行到 data/gate_trigger_counts.jsonl（字段：
+   ts/rule_id/ok/skill/layer/action/overridden），替代原「每季度人工
+   补录」；本脚本按 rule_id 汇总计数并输出注册表覆盖率，使「连续 N 轮
+   零触发降档」成为可计算判定。脏行跳过，只读不写。
+3. CI 棘轮门禁（scripts/check_*.py）：不在遥测旁路覆盖范围，仍输出清单表
+   （触发情况由 CI 运行记录佐证，不再要求人工补录进本表）。
 
 用法：python scripts/audit_gate_triggers.py   （输出 markdown 盘点表）
 """
@@ -23,6 +28,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRACES = ROOT / "data" / "agent_traces.jsonl"
+COUNTS = ROOT / "data" / "gate_trigger_counts.jsonl"
 SCRIPTS = ROOT / "scripts"
 
 # P5：注册表与归一化口径接入（统计侧归一，历史 trace 原始值不改写）
@@ -101,8 +107,60 @@ def _accumulate_from_file(path: pathlib.Path, stats: dict) -> None:
 
 
 def ci_gate_inventory() -> list:
-    """scripts/check_*.py 棘轮门禁清单（触发计数待季度审计人工补录）。"""
+    """scripts/check_*.py 棘轮门禁清单（不在遥测旁路覆盖范围）。"""
     return sorted(p.name for p in SCRIPTS.glob("check_*.py"))
+
+
+def count_files(counts: pathlib.Path = COUNTS) -> list:
+    """遥测计数文件全部份（主文件 + 可选 .N 轮转份，旧→新）。
+
+    当前旁路只写主文件无轮转；兼容 .N 命名以防后续引入轮转时
+    统计口径再次断裂（同 trace_files 思路）。"""
+    if not counts.parent.exists():
+        return []
+    base = counts.name
+    found: list = []
+    for p in counts.parent.glob(base + "*"):
+        if not p.is_file():
+            continue
+        if p.name == base:
+            found.append((0, p))
+            continue
+        m = _ROTATION_RE.match(p.name) if p.name.startswith(base + ".") else None
+        if m:
+            found.append((int(m.group(1)), p))
+    found.sort(key=lambda t: -t[0])
+    return [p for _, p in found]
+
+
+def trigger_count_stats(counts: pathlib.Path = COUNTS) -> dict:
+    """遥测旁路汇总：归一 rule_id → {total, blocked, overridden}。
+
+    数据源 = data/gate_trigger_counts.jsonl（闸机判定出口自动落盘）；
+    脏行/缺字段行跳过，rule_id 经 normalize_rule_id 归一（同 trace 口径）。"""
+    stats: dict = {}
+    for path in count_files(counts):
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(rec, dict) or not rec.get("rule_id"):
+                    continue
+                rid = normalize_rule_id(str(rec["rule_id"]))
+                s = stats.setdefault(
+                    rid, {"total": 0, "blocked": 0, "overridden": 0})
+                s["total"] += 1
+                # 脏数据口径收紧：仅显式 ok=False 计拦截，缺字段/脏值按放行
+                if rec.get("ok") is False:
+                    s["blocked"] += 1
+                if rec.get("overridden"):
+                    s["overridden"] += 1
+    return stats
 
 
 def main() -> int:
@@ -146,12 +204,43 @@ def main() -> int:
         meta = GATE_RULES[rid]
         print(f"  - {rid}（{meta.layer}）：{meta.description}")
     print()
-    print("## 二、CI 棘轮门禁清单（触发计数按季度审计人工补录）")
+    print("## 二、遥测自动落盘（数据源：data/gate_trigger_counts.jsonl，"
+          "guard_pipeline.audit_verdicts 判定出口自动 append）")
     print()
-    print("| 门禁脚本 | 近 N 轮触发次数（人工补录） |")
-    print("|---|---|")
+    cfiles = count_files()
+    if cfiles:
+        print(f"> 扫描 {len(cfiles)} 个计数文件（旧→新）："
+              + " → ".join(p.name for p in cfiles))
+        print()
+    cstats = trigger_count_stats()
+    if not cstats:
+        print("（遥测账本无记录：尚未产生判定，或落盘刚启用）")
+    else:
+        print("| rule_id（归一） | 判定总数 | 拦截数 | 放行覆盖数 | 折旧提示 |")
+        print("|---|---|---|---|---|")
+        for rid in sorted(cstats):
+            s = cstats[rid]
+            hint = "零拦截，候选降级评估" if s["blocked"] == 0 else ""
+            print(f"| {rid} | {s['total']} | {s['blocked']} "
+                  f"| {s['overridden']} | {hint} |")
+    print()
+    registry_ids = set(GATE_RULES)
+    covered = set(cstats) & registry_ids
+    total_rules = len(registry_ids)
+    rate = (len(covered) * 100.0 / total_rules) if total_rules else 0.0
+    print(f"- 注册表覆盖率：{len(covered)}/{total_rules}"
+          f"（{rate:.1f}%）条规则在遥测账本中有判定记录")
+    zero = sorted(registry_ids - set(cstats))
+    if zero:
+        print(f"- 遥测零触发清单（{len(zero)} 条）：" + "、".join(zero))
+    print()
+    print("## 三、CI 棘轮门禁清单（不在遥测旁路覆盖范围，触发情况"
+          "由 CI 运行记录佐证，不再人工补录进本表）")
+    print()
+    print("| 门禁脚本 |")
+    print("|---|")
     for name in ci_gate_inventory():
-        print(f"| scripts/{name} | |")
+        print(f"| scripts/{name} |")
     print()
     print("> 折旧规则见 docs/脚手架折旧规程.md 第五节：连续 N 轮零触发的门禁"
           "降级为软警告（保留不删）并下账 scaffold_registry。")

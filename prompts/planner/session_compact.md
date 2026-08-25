@@ -1,12 +1,16 @@
 # 会话级 compaction 模板
 
 > chat_service 在历史消息达到触发条件（token 超窗口 0.6 倍 或 条数达
-> HISTORY_COMPACT_THRESHOLD）时，用便宜模型把较早对话压缩为一段摘要，
-> 置于 history 首条（对齐 Anthropic compaction 实践：保留决策与约束，
-> 丢弃冗余过程）。正文取 TEMPLATE 分节（load_prompt_section）。
+> HISTORY_COMPACT_THRESHOLD）时，用便宜模型把较早对话压缩为一段摘要
+> （对齐 Anthropic compaction 实践：保留决策与约束，丢弃冗余过程）。
+> 注入形态（对齐业界主流）：摘要不再伪装成 history 首条 user 消息，
+> 而是作为专用「会话摘要」段注入 system prompt、紧随协议段之后
+> （prompt_builder session_summary 段；interaction.session_summary.active
+> 每请求标记是否生效），history 本体只留最近 KEEP 条。
+> 正文取 TEMPLATE 分节（load_prompt_section）。
 
 ## TEMPLATE
-你是会话摘要助手。请把下面「影视创作 Agent」的较早对话整理为一份交接摘要（对齐 handoff 四段式：目标与现状 / 已定约束 / 未决事项 / 关键产物）。
+你是会话摘要助手。请把下面「影视创作 Agent」的较早对话整理为一份交接摘要（对齐 handoff 四段式：目标与现状 / 已定约束 / 未决事项 / 关键产物）。摘要将以系统级「会话摘要」段的形式注入后续对话的 system prompt：用第三人称客观交接语气书写，自指与新注入位置自洽（开头不必写「以下是之前的对话摘要」之类的引导语，直接按下方格式输出）。
 
 必须保留：
 - 用户的创作目标、已确认的规格与偏好（题材/风格/画幅/时长/模型选择等）

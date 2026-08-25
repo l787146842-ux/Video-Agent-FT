@@ -11,6 +11,11 @@
  */
 import type { ChatMessage, TraceAction } from '@/types';
 import { ledgerFromSettled } from '@/lib/turn-ledger';
+import {
+  TOOL_DETAIL_INTERNAL_NONE,
+  TOOL_DETAIL_TIER_DEFAULT,
+  TOOL_DETAIL_TIERS,
+} from '@/types/api.generated';
 
 /** 时间线单条操作条目（流式运行态与历史重建共用） */
 export interface TimelineItem {
@@ -52,31 +57,19 @@ export function resultSummaryView(full: string): { expandable: boolean; collapse
 /** agent_loop 规划条目的 id 前缀（llm-s{step}），合并判定唯一依据 */
 const REASONING_ID_PREFIX = 'llm-s';
 
-/** 工具详情分级（任务 #2，纯函数 vitest 钉死）：
+/** 工具详情分级（任务 #2 引入，任务 #4 元数据驱动，纯函数 vitest 钉死）：
  * expand = 可展开看输入参数预览 + 执行结果；
- * output = 仅输出留痕（不显示输入）；none = 保持一行摘要。 */
+ * output = 仅输出留痕（不显示输入）；none = 保持一行摘要（仅内部条目）。 */
 export type ToolDetailTier = 'expand' | 'output' | 'none';
 
-/** 值得展开档：产出/关键交互类工具 */
-const EXPAND_TIER_TOOLS = new Set([
-  'document_write', 'storyboard_create_group', 'storyboard_add_draft',
-  'storyboard_patch_draft', 'generate_image', 'generate_video',
-  'workflow_pause', 'canvas_add_node', 'canvas_update_node',
-  'canvas_batch_add_nodes',
-]);
-
-/** 中间档：仅输出留痕，不显示输入 */
-const OUTPUT_TIER_TOOLS = new Set([
-  'storyboard_delete_group', 'canvas_delete_node', 'storyboard_confirm_draft',
-  'storyboard_media_to_chat', 'read_draft', 'read_project_doc',
-  'read_uploaded_doc',
-]);
-
+/** 分级不再硬编码工具名白名单：消费生成物 TOOL_DETAIL_TIERS（后端各工具
+ * detail_tier 声明经 sidecar 生成）；未声明者走默认档 output（新工具至少
+ * 留输出痕迹，不再静默落入 none）；model_reasoning 等非工具内部条目经
+ * TOOL_DETAIL_INTERNAL_NONE 名单登记恒定 none。 */
 export function toolDetailTier(name?: string): ToolDetailTier {
-  if (!name) return 'none';
-  if (EXPAND_TIER_TOOLS.has(name)) return 'expand';
-  if (OUTPUT_TIER_TOOLS.has(name)) return 'output';
-  return 'none';
+  if (!name) return TOOL_DETAIL_TIER_DEFAULT;
+  if ((TOOL_DETAIL_INTERNAL_NONE as readonly string[]).includes(name)) return 'none';
+  return TOOL_DETAIL_TIERS[name] ?? TOOL_DETAIL_TIER_DEFAULT;
 }
 
 /** 输入参数预览单值截断长度（后端已裁剪，前端再保一道显示级上限） */

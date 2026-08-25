@@ -22,8 +22,9 @@
   .add-group-btn { width: 100%; padding: 10px; margin-top: 6px; border: 1px dashed var(--border-color); border-radius: var(--radius-md); background: transparent; color: var(--text-dim); font-size: var(--font-md); cursor: pointer; transition: all 0.15s; }
   .add-group-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 6%, transparent); }
 
-  /* 文字可复制：分组卡片内容 + 提示词 + 对话框 */
-  .sb-title, .sb-desc, .draft-card, .prompt-textarea, .chat-msg { user-select: text; -webkit-user-select: text; cursor: text; }
+  /* 文字可复制：分组卡片内容 + 提示词 + 对话框 + 聊天富文本输入框
+     （全局 user-select:none 见 tokens.css；输入区不豁免会阻断光标选词复制） */
+  .sb-title, .sb-desc, .draft-card, .prompt-textarea, .rich-chat-input, .chat-msg { user-select: text; -webkit-user-select: text; cursor: text; }
 
   .sb-group { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 10px; transition: border-color 0.2s; }
   .sb-group:hover { border-color: color-mix(in srgb, var(--color-info-strong) 40%, transparent); }

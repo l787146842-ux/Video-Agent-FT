@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import stage_probes as po
 from src.video_agent.skill_runtime import registry
 
 _SKILL = "dag-test-skill"

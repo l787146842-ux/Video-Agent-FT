@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.video_agent.core import gates_cards
-from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import stage_probes as po
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import manifest_schema
 from src.video_agent.skill_runtime import registry
@@ -169,7 +169,7 @@ def test_stage_done_declaration_channel_any_stage(done_cond_env):
 
 def test_current_flow_step_consumes_step_done_conditions(monkeypatch):
     """消费接线：gates_cards.current_flow_step 声明优先（注册钩子在
-    pipeline_orchestrator 导入期落地），声明步可越过 v1 硬规则边界。"""
+    stage_probes 导入期落地），声明步可越过 v1 硬规则边界。"""
     assert gates_cards._STEP_DONE_PROBE is po.step_done_probe
     monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
         "flow": {

@@ -53,7 +53,7 @@
 |---------|-----------|-----------|
 | 平台对话协议 | 层 1 system.md / system_fc.md | Skill、铁律、执行器 |
 | 项目级生产契约 | 层 4 铁律文档 | system.md 硬编码、执行器常量 |
-| 阶段顺序与暂停点 | 平台闸机刹车（`platform.stage_precondition` 内嵌工具执行路径首位；账本/探针归 `core/workflow_runtime.py`，定义层承自 `pipeline_orchestrator`/frontmatter 声明 `data/skills/<slug>.md` 头部 YAML 块的 flow/pause） | Skill 散文、system.md、回喂话术、模型循环猜序 |
+| 阶段顺序与暂停点 | 平台闸机刹车（`platform.stage_precondition` 内嵌工具执行路径首位；账本/探针归 `core/workflow_runtime.py`，定义层承自 `stage_probes`/frontmatter 声明 `data/skills/<slug>.md` 头部 YAML 块的 flow/pause） | Skill 散文、system.md、回喂话术、模型循环猜序 |
 | 单一执行器的输出格式与边界 | 层 3 Skill 对应章节是唯一表述源；层 6 只承载任务目标与格式锚点 | system.md |
 | 模型能力参数（分辨率/时长/渠道） | 层 5 制片规格（运行时动态注入）+ 全局设置 | Skill 硬编码数值、执行器写死数值 |
 | 可机械校验的约束 | 层 7/9 代码校验（拒收或修正） | 任何 prose 层重复表述 |
@@ -70,7 +70,7 @@
 
 | 症状 | 正确归位层 | 禁止的捷径（历史事故） |
 |------|-----------|---------------------|
-| 模型该暂停时没暂停 | 编排器阶段边界机械暂停（pipeline_orchestrator）+ frontmatter pause 声明 | 在多层同时加“必须暂停”prose（5555） |
+| 模型该暂停时没暂停 | 阶段边界机械暂停（stage_probes 阶段表/探针层）+ frontmatter pause 声明 | 在多层同时加“必须暂停”prose（5555） |
 | 模型输出缺字段/格式错 | 层 6 执行器拒收+重试+格式锚点 | 只在 prose 加“必须携带 X 字段”（8888） |
 | 模型虚报完成 | 层 7 客观状态核验 + 只警告不拦人 | 硬拦截没收暂停（4444） |
 | 产出数量失控 | 铁律+Skill+执行器任务词三处**同步**写比例约束，自检限轮数 | 单向穷举表述与克制条款并存（8888） |

@@ -92,7 +92,7 @@ class TestOrchestratorConfluenceIssuesPause:
 
     @pytest.mark.parametrize("kind", ["script_pending", "spec_pending"])
     async def test_mechanical_cards_carry_pause_id(self, svc, monkeypatch, kind):
-        from src.video_agent.core import pipeline_orchestrator as po
+        from src.video_agent.core import stage_probes as po
 
         async def fake_precheck(state_manager, skill, user_message=""):
             return po.OrchestratorOutcome(
@@ -111,7 +111,7 @@ class TestOrchestratorConfluenceIssuesPause:
         assert active.get("pause_id") == resp.pause_id
 
     async def test_handoff_returns_none(self, svc, monkeypatch):
-        from src.video_agent.core import pipeline_orchestrator as po
+        from src.video_agent.core import stage_probes as po
 
         async def fake_precheck(state_manager, skill, user_message=""):
             return None

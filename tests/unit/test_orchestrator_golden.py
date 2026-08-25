@@ -11,7 +11,7 @@
 """
 import pytest
 
-from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import stage_probes as po
 from src.video_agent.skill_runtime import registry
 
 SKILL = "AI-短剧一站式生成"

@@ -27,6 +27,15 @@
     color: var(--text-dim);
     text-align: center;
   }
+  /* 成功加载态的诚实提示：整画布而非选中项，次要文字色小字号，低调 */
+  .mention-popup-scope-note {
+    padding: 5px 10px 4px;
+    margin-top: 2px;
+    border-top: 1px solid var(--border-color);
+    font-size: var(--font-2xs);
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
   .mention-item {
     display: flex;
     align-items: center;

@@ -72,6 +72,7 @@ const zhCN = {
   'rp.mention.offline': '画布未连接，画布图片引用不可用（故事板素材仍可 @ 引用）',
   'rp.mention.none': '画布内暂无图片',
   'rp.mention.noMatch': '无匹配图片',
+  'rp.mention.scope': '当前引用的是整张智能画布的图片，暂无法识别你的选中项',
   'rp.lightbox.alt': '原图预览',
   'rp.lightbox.download': '下载',
   'rp.lightbox.close': '关闭 (Esc)',

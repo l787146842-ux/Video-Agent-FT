@@ -117,6 +117,22 @@ def set_global_setting():
 
 
 @pytest.fixture(autouse=True)
+def _gate_telemetry_isolation(tmp_path):
+    """任务#3：闸机遥测旁路测试隔离——测试期落盘点指向临时目录，
+    防存量用例（如 test_tool_risk_gate）副作用写入生产遥测账本
+    gate_trigger_counts.jsonl；显式 monkeypatch 该路径的用例不受影响
+    （后套的 monkeypatch 覆盖本夹具，结束时各自恢复）。"""
+    from src.video_agent.core import guard_pipeline
+
+    monkeypatch_obj = pytest.MonkeyPatch()
+    monkeypatch_obj.setattr(
+        guard_pipeline, "GATE_TRIGGER_COUNTS",
+        tmp_path / "gate_trigger_counts.jsonl")
+    yield
+    monkeypatch_obj.undo()
+
+
+@pytest.fixture(autouse=True)
 def _degradation_watchdog(request):
     """批5 劣化即红守卫（全 tests/ 覆盖：unit + integration）。
 

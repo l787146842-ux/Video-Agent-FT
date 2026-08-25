@@ -2,9 +2,10 @@ import { FiFilm } from 'solid-icons/fi';
 import { generateVideo } from '@/lib/generate-actions';
 import { studioActions } from '@/stores/studio';
 import {
-  ParamGroup, ParamSelect, ProviderModelSelects,
-  btnPrimary, ExportButton,
+  ParamGroup, ParamSelect, btnPrimary,
 } from './ParamBase';
+import { ProviderModelSelects } from './ProviderModelSelects';
+import { ExportButton } from './ExportButton';
 import type { Draft, DraftType } from '@/types';
 
 /** 视频参数：模式/API/模型/分辨率/时长/画幅 + 保存/生成 */

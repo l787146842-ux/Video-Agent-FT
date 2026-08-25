@@ -36,8 +36,10 @@ async def test_token_condition_triggers_below_count_threshold(tmp_path, monkeypa
     adapter = _FakeAdapter()
     out = await chat_consume._maybe_compact_history(hist, svc, adapter)
     assert adapter.calls == 1, "token 条件必须独立触发 compaction"
-    assert len(out) == 1 + chat_consume._HISTORY_COMPACT_KEEP
-    assert "会话摘要" in out[0]["content"]
+    # 任务#16：history 只留最近 KEEP 条，摘要经 system 专用段注入（active 标记）
+    assert len(out) == chat_consume._HISTORY_COMPACT_KEEP
+    cached = (svc.state_dict.get("interaction") or {}).get("session_summary") or {}
+    assert cached.get("active") is True
 
 
 @pytest.mark.asyncio

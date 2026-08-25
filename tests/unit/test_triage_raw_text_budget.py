@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import stage_probes as po
 from src.video_agent.state.manager import StateManager
 
 ROOT = Path(__file__).resolve().parent.parent.parent

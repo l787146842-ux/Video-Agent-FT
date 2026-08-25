@@ -20,7 +20,7 @@ import pytest
 from src.video_agent.skill_runtime import manifest_schema as ms
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATE_SCRIPT = ROOT / "scripts" / "migrate_zombie_step_keys.py"
+MIGRATE_SCRIPT = ROOT / "scripts" / "archive" / "migrate_zombie_step_keys.py"
 
 
 @pytest.fixture(scope="module")

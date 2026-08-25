@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """一次性迁移：为 data/skills_manifests/*.json 写入 flow.step_stages 显式声明。
 
-P3-12（sidecar schema v2）：step→stage 映射从 pipeline_orchestrator 关键词
+P3-12（sidecar schema v2）：step→stage 映射从 stage_probes（任务#14 正名
+前旧名编排器模块）关键词
 启发式改为 sidecar 显式声明。映射表 = 当前启发式结果 + 逐条人工核对 skill
 文档语义（7 规范阶段：analysis/spec/structure/ke_media/shot_media/
 audio_assets/assembly）。两处刻意留白（声明会制造阶段 DAG 环 = 调度死锁，

@@ -6,24 +6,25 @@
  * /api/{gemini-cli,codex,jimeng}/status|help、/api/jimeng/login/*|logout|credit。
  *
  * ：视图子域切至 settings/（SidePanel/ProviderDetail/RunningHubGuide/
- * CliAccountCard/FetchModelsModal/CliModal）；状态与动作仍全部留在本组件，
- * 子组件经 SettingsApi 单对象消费，行为零变更。
+ * CliAccountCard/FetchModelsModal/CliModal）；CLI/拉取模型/验证域动作切至
+ * use-cli-ops/use-model-fetch/use-provider-verify，子组件经 SettingsApi
+ * 单对象消费，行为零变更。
  */
 import { createSignal, Show, onMount } from 'solid-js';
 import { A } from '@solidjs/router';
 import { FiArrowLeft } from 'solid-icons/fi';
 import { getProviders } from '@/api/providers';
-import { apiPost, apiPut } from '@/api/client';
-import type { ProviderProbeRequest } from '@/types/api.generated';
+import { apiPut } from '@/api/client';
 import { showToast } from '@/stores/toast';
 import { studioActions } from '@/stores/studio';
 import type { ApiProvider } from '@/types';
 import {
-  CLI_PROTOCOLS, imageModeLabel, newProvider,
+  CLI_PROTOCOLS, newProvider,
   type EditableProvider, type ModelKind, type SettingsApi,
 } from './settings-meta';
 import { useCliOps } from './use-cli-ops';
 import { useModelFetch } from './use-model-fetch';
+import { useProviderVerify } from './use-provider-verify';
 import { SettingsSidePanel } from './settings/SettingsSidePanel';
 import { ProviderDetail } from './settings/ProviderDetail';
 import { CliModal } from './settings/CliModal';
@@ -40,8 +41,6 @@ export default function SettingsView() {
   const [keyInput, setKeyInput] = createSignal('');
   const [rhCoin, setRhCoin] = createSignal('');
   const [rhWallet, setRhWallet] = createSignal('');
-  // 验证结果内联显示（画布同款：点击验证后直接在卡片底部展示，不用 toast）
-  const [verifyResult, setVerifyResult] = createSignal<{ ok: boolean; text: string } | null>(null);
 
   onMount(async () => {
     await reload();
@@ -78,7 +77,7 @@ export default function SettingsView() {
     setKeyInput('');
     setRhCoin('');
     setRhWallet('');
-    setVerifyResult(null);
+    verify.resetVerify();
   }
 
   function patch(field: string, value: unknown) {
@@ -87,6 +86,9 @@ export default function SettingsView() {
 
   // 拉取模型域（fetched/savedCats + 拉取/应用动作）收敛在 use-model-fetch
   const mf = useModelFetch(current, keyInput, patch);
+
+  // 验证地址/协议域（verifyResult + test-connection/probe-async）收敛在 use-provider-verify
+  const verify = useProviderVerify(current, keyInput, imageMode, patch);
 
   /** 保存全部（可给当前平台附加覆盖字段，如 api_key/clear_key/wallet_api_key） */
   async function saveAll(overrides?: Record<string, unknown>): Promise<boolean> {
@@ -154,51 +156,7 @@ export default function SettingsView() {
     switchSel(Math.max(0, Math.min(sel(), providers().length - 2)));
   }
 
-  /** test-connection / probe-async / fetch-models 三端点同构请求体（生成物唯一来源） */
-  function probeBody(): ProviderProbeRequest {
-    const p = current();
-    return {
-      base_url: p?.base_url, api_key: keyInput() || '', provider_id: p?.id,
-      protocol: p?.protocol, image_request_mode: imageMode(),
-    };
-  }
-
-  // ---------- 验证地址 / 验证协议（画布同款：结果内联在卡片底部） ----------
-  async function verifyAddress() {
-    const p = current();
-    if (!p) return;
-    try {
-      const r = await apiPost<{ ok: boolean; status: number; message: string; model_count: number; image_request_mode?: string }>(
-        '/api/providers/test-connection',
-        probeBody(),
-      );
-      if (r.ok) {
-        setVerifyResult({
-          ok: true,
-          text: `地址验证通过 - 找到 ${r.model_count} 个模型 - 图片接口: ${imageModeLabel(r.image_request_mode || imageMode())}`,
-        });
-      } else {
-        setVerifyResult({ ok: false, text: `地址验证失败: ${r.message}` });
-      }
-    } catch (e) {
-      setVerifyResult({ ok: false, text: `地址验证失败: ${(e as Error).message}` });
-    }
-  }
-
-  async function verifyProtocol() {
-    const p = current();
-    if (!p) return;
-    try {
-      const r = await apiPost<{ ok: boolean | null; protocol: string; message: string }>(
-        '/api/providers/probe-async',
-        probeBody(),
-      );
-      setVerifyResult({ ok: r.ok !== false, text: r.message || `协议识别：${r.protocol}` });
-      if (r.ok && r.protocol && r.protocol !== p.protocol) patch('protocol', r.protocol);
-    } catch (e) {
-      setVerifyResult({ ok: false, text: `协议验证失败: ${(e as Error).message}` });
-    }
-  }
+  // ---------- 验证地址 / 验证协议：实现收敛于 use-provider-verify ----------
 
   // ---------- CLI 操作：实现收敛于 use-cli-ops ----------
   // ---------- 拉取模型：实现收敛于 use-model-fetch ----------
@@ -226,10 +184,10 @@ export default function SettingsView() {
   const api: SettingsApi = {
     current, providers, sel, proto, isCli, imageMode,
     keyInput, setKeyInput, rhCoin, setRhCoin, rhWallet, setRhWallet,
-    verifyResult, cliStatus: cli.cliStatus, patch, saveAll,
+    verifyResult: verify.verifyResult, cliStatus: cli.cliStatus, patch, saveAll,
     switchSel, addProvider, selectOrAddCli, removeCurrent,
     commitKey: () => void commitKey(), clearKey: () => void clearKey(),
-    verifyAddress: () => void verifyAddress(), verifyProtocol: () => void verifyProtocol(),
+    verifyAddress: () => void verify.verifyAddress(), verifyProtocol: () => void verify.verifyProtocol(),
     patchModel, removeModel, addModel,
     fetchModels: () => void mf.fetchModels(),
     jimengLogin: () => void cli.jimengLogin(), jimengCredit: () => void cli.jimengCredit(),

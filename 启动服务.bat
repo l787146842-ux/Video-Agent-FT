@@ -23,6 +23,14 @@ if exist "static\dist\index.html" for /f %%i in ('powershell -NoProfile -Command
 if "%NEED_BUILD%"=="1" (
   echo [build] dist missing or stale, running npm run build ...
   call npm run build
+  REM errorlevel check: npm run build now chains vite build + size-budget gate;
+  REM the size gate can fail AFTER dist/index.html is written, so the old
+  REM "if not exist" probe alone cannot catch a failed build.
+  if errorlevel 1 (
+    echo [build] npm run build exited with error - check output above
+    pause
+    exit /b 1
+  )
   if not exist "static\dist\index.html" (
     echo [build] build failed, run npm run build manually then restart
     pause

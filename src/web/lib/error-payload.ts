@@ -1,30 +1,30 @@
 /**
- * ErrorPayload — 统一错误语义契约（任务 #19）。
+ * ErrorPayload — 统一错误语义契约（任务 #19；任务 #4 契约生成化）。
  *
- * 后端镜像：src/video_agent/web/error_payload.py（kind 集合与 code 命名空间
- * 两侧同批维护；后端 HTTP 错误响应与 SSE error 事件共用同一结构）。
+ * 单一事实源：后端 src/video_agent/web/error_payload.py 经 sidecar
+ * （src/web/types/sse.schema.json）生成到 api.generated.ts；本文件只消费
+ * 生成物并做前端收窄（kind 收窄为封闭字面量集合），不再人工镜像。
+ * 后端 HTTP 错误响应与 SSE error 事件共用同一结构。
  *
  * 此前 chat store 对错误文案做 /401|403|token|鉴权/ 正则猜测决定是否挂
  * 「检查 API 配置」按钮——两套机制并存（SSE 走 error_code，HTTP 走猜文案）。
  * 本模块是前端唯一归口：api/client.ts 的 HTTP 失败与 hooks/use-sse.ts 的
  * 错误事件都解析为 ErrorPayload，chat store 按 ERROR_ACTION_MAP 做动作。
  */
+import {
+  SSE_ERROR_KINDS,
+  SSE_LEGACY_ERROR_CODES,
+  type ErrorPayloadContract,
+  type SseErrorKind,
+} from '@/types/api.generated';
 
-/** kind 归类（封闭集合，后端 ALL_KINDS 镜像；改动需双侧同批） */
-export const ERROR_KINDS = ['auth', 'quota', 'network', 'upstream', 'content', 'unknown'] as const;
-export type ErrorKind = typeof ERROR_KINDS[number];
+/** kind 归类（封闭集合，后端 ALL_KINDS 生成，改动自动同步） */
+export const ERROR_KINDS = SSE_ERROR_KINDS;
+export type ErrorKind = SseErrorKind;
 
-/** 统一错误负载（HTTP 失败响应体与 SSE error 事件解析后的同一形态） */
-export interface ErrorPayload {
-  /** 错误码命名空间 err.<kind>.<slug>（如 err.auth.invalid_key） */
-  code: string;
-  /** 归类（前端动作映射的键） */
-  kind: ErrorKind;
-  /** 面向用户的人话 */
-  message: string;
-  /** 上游原始报文（技术详情折叠，可空） */
-  raw?: string;
-}
+/** 统一错误负载（HTTP 失败响应体与 SSE error 事件解析后的同一形态；
+ * 生成物 ErrorPayloadContract 收窄 kind 为封闭字面量） */
+export type ErrorPayload = Omit<ErrorPayloadContract, 'kind'> & { kind: ErrorKind };
 
 /** kind → 交互动作描述（错误气泡 affordance 单一事实源；集中一处可扩展） */
 export interface ErrorAction {
@@ -56,24 +56,9 @@ export function actionForKind(kind: ErrorKind | string | null | undefined): Erro
   return ERROR_ACTION_MAP[normalizeKind(kind)] || ERROR_ACTION_MAP.unknown;
 }
 
-/** 既有（legacy）error_code → kind/code 桥接（后端 _LEGACY_CODE_MAP 镜像；
+/** 既有（legacy）error_code → kind/code 桥接（后端 LEGACY_CODE_MAP 生成；
  * 后端未携带 code/kind 的旧响应/旧记录兜底归类） */
-const LEGACY_CODE_MAP: Record<string, { kind: ErrorKind; code: string }> = {
-  UNAUTHORIZED: { kind: 'auth', code: 'err.auth.invalid_key' },
-  FORBIDDEN_ORIGIN: { kind: 'auth', code: 'err.auth.forbidden_origin' },
-  RATE_LIMITED: { kind: 'quota', code: 'err.quota.rate_limited' },
-  TIMEOUT: { kind: 'network', code: 'err.network.timeout' },
-  PROBE_TIMEOUT: { kind: 'network', code: 'err.network.timeout' },
-  NETWORK_ERROR: { kind: 'network', code: 'err.network.connection' },
-  FETCH_ERROR: { kind: 'network', code: 'err.network.connection' },
-  VIDEO_CONNECT_ERROR: { kind: 'network', code: 'err.network.connection' },
-  VIDEO_TIMEOUT: { kind: 'network', code: 'err.network.timeout' },
-  ADAPTER_ERROR: { kind: 'upstream', code: 'err.upstream.server_error' },
-  GENERATION_ERROR: { kind: 'upstream', code: 'err.upstream.server_error' },
-  PROBE_HTTP_ERROR: { kind: 'upstream', code: 'err.upstream.server_error' },
-  VIDEO_SUBMIT_FAILED: { kind: 'upstream', code: 'err.upstream.server_error' },
-  VIDEO_HTTP_ERROR: { kind: 'upstream', code: 'err.upstream.server_error' },
-};
+const LEGACY_CODE_MAP: Record<string, { kind: ErrorKind; code: string }> = SSE_LEGACY_ERROR_CODES;
 
 export function legacyCodePayload(legacyCode: string | null | undefined, message: string, raw?: string): ErrorPayload {
   const hit = LEGACY_CODE_MAP[(legacyCode || '').trim()];

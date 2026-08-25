@@ -119,11 +119,11 @@ class TestPayloadShape:
     """契约形态（HTTP 与 SSE 共用；兼容字段不破坏既有消费）"""
 
     def test_sse_fields(self):
-        p = ErrorPayload("err.auth.invalid_key", "auth", "鉴权失败", raw="r")
+        p = ErrorPayload(code="err.auth.invalid_key", kind="auth", message="鉴权失败", raw="r")
         assert p.sse_fields() == {"code": "err.auth.invalid_key", "kind": "auth", "message": "鉴权失败"}
 
     def test_http_body_compat_fields(self):
-        p = ErrorPayload("err.quota.rate_limited", "quota", "限流", raw="上游原文")
+        p = ErrorPayload(code="err.quota.rate_limited", kind="quota", message="限流", raw="上游原文")
         body = p.http_body("RATE_LIMITED")
         # 既有消费字段（detail/error_code）仍在 + 新契约字段
         assert body["detail"] == "限流"
@@ -134,7 +134,7 @@ class TestPayloadShape:
         assert body["raw"] == "上游原文"
 
     def test_http_body_no_raw_when_empty(self):
-        body = ErrorPayload("err.unknown", "unknown", "x").http_body()
+        body = ErrorPayload(code="err.unknown", kind="unknown", message="x").http_body()
         assert "raw" not in body and "error_code" not in body
 
     def test_all_kinds_closed_set(self):

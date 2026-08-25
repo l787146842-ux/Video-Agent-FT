@@ -11,6 +11,7 @@ import { usePromptMediaDrop } from '@/hooks/use-prompt-media-drop';
 import { MediaLightbox } from '@/components/right-panel/MediaLightbox';
 import { RefAssetBar } from './RefAssetBar';
 import { PromptMentionPopup } from './PromptMentionPopup';
+import { promptEditorKeyDown } from './prompt-editor-keys';
 
 /**
  * Prompt 编辑器：折叠/展开 + 参考素材横条（RefAssetBar）
@@ -176,57 +177,7 @@ export function PromptEditor() {
                   const files = drop.onDrop(e);
                   if (files.length) void drop.addFiles(files);
                 }}
-                onKeyDown={(e) => {
-                  if (mention.mentionActive()) {
-                    const list = mention.mentionItems();
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      mention.setMentionIdx((i) => (i + 1) % Math.max(1, list.length));
-                      return;
-                    }
-                    if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      mention.setMentionIdx((i) => (i - 1 + list.length) % Math.max(1, list.length));
-                      return;
-                    }
-                    if (e.key === 'Enter' && list.length > 0) {
-                      e.preventDefault();
-                      const idx = mention.mentionIdx();
-                      if (idx >= 0 && idx < list.length) mention.insertMentionChip(list[idx]);
-                      return;
-                    }
-                    if (e.key === 'Escape') {
-                      e.preventDefault();
-                      mention.closeMention();
-                    }
-                  }
-                  // @ 缩略块删除：Backspace/Delete 紧邻 chip 时整体删除（视频 chip 等原生难删）
-                  if (e.key === 'Backspace' || e.key === 'Delete') {
-                    const sel = window.getSelection();
-                    if (sel && sel.isCollapsed && sel.rangeCount) {
-                      const range = sel.getRangeAt(0);
-                      const node = range.startContainer;
-                      let chip: HTMLElement | null = null;
-                      if (node.nodeType === Node.TEXT_NODE) {
-                        if (e.key === 'Backspace' && range.startOffset === 0) {
-                          const prev = node.previousSibling as HTMLElement | null;
-                          if (prev && prev.classList && prev.classList.contains('mention-chip')) chip = prev;
-                        }
-                      } else {
-                        const idx2 = e.key === 'Backspace' ? range.startOffset - 1 : range.startOffset;
-                        const child = (node as HTMLElement).childNodes
-                          ? ((node as HTMLElement).childNodes[idx2] as HTMLElement | undefined)
-                          : undefined;
-                        if (child && child.classList && child.classList.contains('mention-chip')) chip = child;
-                      }
-                      if (chip) {
-                        e.preventDefault();
-                        chip.remove();
-                        syncPrompt();
-                      }
-                    }
-                  }
-                }}
+                onKeyDown={(e) => promptEditorKeyDown(e, mention, syncPrompt)}
                 onBlur={() => {
                   setState('editingDraftId', '');
                   persistPrompt();

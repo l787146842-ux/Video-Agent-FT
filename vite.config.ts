@@ -57,6 +57,11 @@ export default defineConfig({
     // outDir 相对 root 解析；用绝对路径避免歧义
     outDir: resolve(__dirname, 'static/dist'),
     emptyOutDir: true,
+    // 体积预算（任务 #6）：入口 chunk 硬闸在 scripts/check_bundle_size.mjs
+    //（build 脚本串联，超限即失败，上限 55 kB = 实测 50.05 kB 上浮 ~10%）；
+    // 此处仅对齐 vite 自带告警线：最大非入口 chunk（SkillStructuredView
+    // 141.15 kB）上浮 ~10% → 155 kB，超限只告警不阻断
+    chunkSizeWarningLimit: 155,
     rollupOptions: {
       // 入口：src/web/index.html（root 下的 index.html）
       input: resolve(__dirname, 'src/web/index.html'),

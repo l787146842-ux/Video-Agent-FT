@@ -2,8 +2,9 @@ import { FiMusic } from 'solid-icons/fi';
 import { generateAudio } from '@/lib/generate-actions';
 import { studioActions } from '@/stores/studio';
 import {
-  ParamGroup, ParamSelect, ProviderModelSelects, btnPrimary,
+  ParamGroup, ParamSelect, btnPrimary,
 } from './ParamBase';
+import { ProviderModelSelects } from './ProviderModelSelects';
 import type { Draft, DraftType } from '@/types';
 
 /** 音频参数：模式/规划 API/模型/音色 + 生成规划 */

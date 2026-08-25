@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""audit_gate_triggers 轮转扫描单测（任务#10）。
+"""audit_gate_triggers 轮转扫描单测（任务#10）+ 遥测闭环（任务#3）。
 
 钉死契约：
 - trace 账本写满即轮转（agent_traces.jsonl → .1 → .2），盘点必须扫描全部
@@ -7,11 +7,22 @@
 - 读取顺序按轮转序号从旧到新：.2 → .1 → 主文件；
 - 聚合计数逻辑（total/blocked/overridden）不变，脏行跳过；
 - P5：统计口径经 normalize_rule_id 归一，原始签发值留痕在 raw_ids（防口径断裂）。
+- 任务#3：判定出口（audit_verdicts）遥测旁路每次判定 append 一行到
+  gate_trigger_counts.jsonl；写入失败吞异常不影响主链路；汇总侧
+  trigger_count_stats 按归一 rule_id 统计（脏行跳过，兼容 .N 轮转份）。
 """
 import json
 import pathlib
 
-from scripts.audit_gate_triggers import runtime_gate_stats, trace_files
+from scripts.audit_gate_triggers import (
+    count_files,
+    runtime_gate_stats,
+    trace_files,
+    trigger_count_stats,
+)
+
+from src.video_agent.core import guard_pipeline
+from src.video_agent.core.guard_pipeline import GateVerdict
 
 
 def _write(path: pathlib.Path, gates_per_trace: list) -> None:
@@ -107,3 +118,122 @@ def test_stats_normalizes_alias_rule_ids(tmp_path: pathlib.Path):
     assert stats["skill.prompt_structure"] == {
         "total": 2, "blocked": 2, "overridden": 0,
         "raw_ids": {"storyboard_prompt_structure", "skill.prompt_structure"}}
+
+
+# ---------- 任务#3：遥测旁路落盘（写入侧） ----------
+
+def test_telemetry_append_format(tmp_path, monkeypatch):
+    """判定出口每次 audit_verdicts 逐条 append，字段齐全且 rule_id 已归一。"""
+    path = tmp_path / "gate_trigger_counts.jsonl"
+    monkeypatch.setattr(guard_pipeline, "GATE_TRIGGER_COUNTS", path)
+    guard_pipeline.audit_verdicts(
+        [GateVerdict("platform.gen_confirm", "platform", True),
+         GateVerdict("skill.prompt_structure", "skill", False, "硬伤")],
+        skill_name="李安美学", action="storyboard_prompt_write",
+        overridden=True,
+    )
+    lines = [json.loads(x) for x in
+             path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(lines) == 2
+    rec = lines[0]
+    # 必备字段：时间戳 / rule_id / 判定结果 / skill
+    assert rec["ts"] and rec["epoch"] > 0
+    assert rec["rule_id"] == "platform.gen_confirm" and rec["ok"] is True
+    assert rec["skill"] == "李安美学" and rec["layer"] == "platform"
+    assert rec["action"] == "storyboard_prompt_write"
+    assert rec["overridden"] is True
+    assert lines[1]["rule_id"] == "skill.prompt_structure"
+    assert lines[1]["ok"] is False
+
+
+def test_telemetry_appends_not_overwrites(tmp_path, monkeypatch):
+    """多次判定累加追加，不覆写历史行（遥测账本只增）。"""
+    path = tmp_path / "gate_trigger_counts.jsonl"
+    monkeypatch.setattr(guard_pipeline, "GATE_TRIGGER_COUNTS", path)
+    for _ in range(3):
+        guard_pipeline.audit_verdicts(
+            [GateVerdict("platform.tool_risk", "platform", False)])
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 3
+
+
+def test_telemetry_write_failure_never_raises(tmp_path, monkeypatch):
+    """写入失败（路径是目录）吞异常，audit_verdicts 正常返回不影响主链路。"""
+    bad = tmp_path / "gate_trigger_counts.jsonl"
+    bad.mkdir()  # open(目录, "a") 必抛 IsADirectoryError
+    monkeypatch.setattr(guard_pipeline, "GATE_TRIGGER_COUNTS", bad)
+    # 不抛即通过（判定逻辑与 tracer 审计不受旁路故障影响）
+    guard_pipeline.audit_verdicts(
+        [GateVerdict("platform.gen_confirm", "platform", True)])
+
+
+# ---------- 任务#3：遥测汇总（读取侧） ----------
+
+def _count_line(rule_id: str, ok: bool = True, overridden: bool = False,
+                skill: str = "") -> str:
+    return json.dumps({"ts": "2026-08-25T00:00:00+00:00", "epoch": 1.0,
+                       "rule_id": rule_id, "ok": ok, "skill": skill,
+                       "layer": "skill", "action": "", "overridden": overridden},
+                      ensure_ascii=False)
+
+
+def test_trigger_count_stats_aggregate(tmp_path):
+    """按归一 rule_id 统计 total/blocked/overridden；别名并入正式条目。"""
+    base = tmp_path / "gate_trigger_counts.jsonl"
+    base.write_text(
+        _count_line("skill.prompt_structure", ok=False)
+        + "\n" + _count_line("storyboard_prompt_structure", ok=False)
+        + "\n" + _count_line("skill.flow.spec_gate", overridden=True)
+        + "\nnot-json\n\n"           # 脏行/空行跳过
+        + json.dumps({"ok": True})   # 缺 rule_id 行跳过
+        + "\n", encoding="utf-8")
+    stats = trigger_count_stats(base)
+    assert stats["skill.prompt_structure"] == {
+        "total": 2, "blocked": 2, "overridden": 0}
+    assert stats["skill.flow.spec_gate"] == {
+        "total": 1, "blocked": 0, "overridden": 1}
+
+
+def test_trigger_count_stats_rotations(tmp_path):
+    """兼容 .N 轮转份：旧→新全部纳入，无关文件过滤。"""
+    base = tmp_path / "gate_trigger_counts.jsonl"
+    (tmp_path / "gate_trigger_counts.jsonl.1").write_text(
+        _count_line("platform.gen_confirm", ok=False), encoding="utf-8")
+    (tmp_path / "gate_trigger_counts.jsonl.bak").write_text(
+        _count_line("platform.gen_confirm"), encoding="utf-8")
+    base.write_text(_count_line("platform.gen_confirm"), encoding="utf-8")
+    names = [p.name for p in count_files(base)]
+    assert names == ["gate_trigger_counts.jsonl.1", "gate_trigger_counts.jsonl"]
+    assert trigger_count_stats(base)["platform.gen_confirm"]["total"] == 2
+
+
+def test_trigger_count_stats_missing_file(tmp_path):
+    """账本不存在时返回空 dict（落盘刚启用/未产生判定，不报错）。"""
+    assert trigger_count_stats(tmp_path / "gate_trigger_counts.jsonl") == {}
+
+
+def test_trigger_count_stats_dirty_ok_semantics(tmp_path):
+    """脏数据口径收紧（任务#12）：仅显式 ok=False 计拦截。
+
+    ok 缺失/None/脏值按放行计（计入 total 不计 blocked），
+    防脏数据系统性虚高拦截数导致活跃闸被误判折旧信号。
+    """
+    base = tmp_path / "gate_trigger_counts.jsonl"
+
+    def _dirty(ok_value=None, include_ok=True):
+        rec = {"ts": "2026-08-25T00:00:00+00:00", "epoch": 1.0,
+               "rule_id": "platform.gen_confirm", "layer": "platform",
+               "action": "", "overridden": False}
+        if include_ok:
+            rec["ok"] = ok_value
+        return json.dumps(rec, ensure_ascii=False)
+
+    base.write_text(
+        _count_line("platform.gen_confirm", ok=False)  # 唯一真拦截
+        + "\n" + _dirty(include_ok=False)              # ok 缺失 → 放行
+        + "\n" + _dirty(ok_value=None)                 # ok=null → 放行
+        + "\n" + _dirty(ok_value="no")                 # 脏值 → 放行
+        + "\n", encoding="utf-8")
+    stats = trigger_count_stats(base)
+    assert stats["platform.gen_confirm"] == {
+        "total": 4, "blocked": 1, "overridden": 0}

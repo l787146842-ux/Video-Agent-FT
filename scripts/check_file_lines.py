@@ -35,14 +35,14 @@ WHITELIST = {}
 FRONTEND_MAX_LINES = 250
 # 存量超限白名单（P4-23 首查登记，只减不增；拆分清偿一件移除一条）
 FRONTEND_WHITELIST = {
-    "src/web/components/layout/GlobalSettingsView.tsx": "全局设置页多设置卡聚合（拆分另行立项）",
+    # GlobalSettingsView.tsx 已拆至 global-settings/（任务 #15 清偿：条目删除）
     # LayoutShell.tsx 已清偿至 250 行内（整改批 1.1：滞留条目删除）
-    "src/web/components/layout/ProjectSwitcher.tsx": "项目切换器（拆分另行立项）",
-    "src/web/components/layout/SettingsView.tsx": "设置页聚合（拆分另行立项）",
-    "src/web/components/middle-panel/params/ParamBase.tsx": "参数隔离改造 bucket 维度（拆分另行立项）",
-    "src/web/components/middle-panel/PromptEditor.tsx": "提示词编辑器（拆分另行立项）",
-    "src/web/components/right-panel/ConfirmActions.tsx": "确认卡/向导交互聚合（拆分另行立项）",
-    "src/web/hooks/use-sse.ts": "后台任务订阅协调中枢，事件类型多属合理",
+    # ProjectSwitcher.tsx 项目动作已切至 use-project-actions（任务 #15 清偿：条目删除）
+    # SettingsView.tsx 验证域已切至 use-provider-verify（任务 #15 清偿：条目删除）
+    # ParamBase.tsx 已拆出 ProviderModelSelects/ExportButton（任务 #15 清偿：条目删除）
+    # PromptEditor.tsx 键盘处理已切至 prompt-editor-keys（任务 #15 清偿：条目删除）
+    # ConfirmActions.tsx 自定义输入块已切至 ConfirmCustomInput（任务 #15 清偿：条目删除）
+    # hooks/use-sse.ts 连接状态机已抽至 lib/sse-connection + sse-events（任务 #18 清偿：条目删除）
     "src/web/lib/locale.ts": "i18n 字典集中管理（词条自然增长）",
     "src/web/lib/rich-input.ts": "富文本编辑器 DOM 操作集中（拆分另行立项）",
     "src/web/stores/chat.ts": "对话 store 核心（P4-19 覆盖率闸保护中）",
@@ -53,8 +53,9 @@ FRONTEND_WHITELIST = {
 # 超限文件数棘轮基线（P4-23 设立；清偿一件随降一件，禁止上调）。
 # 字面常量而非 len(FRONTEND_WHITELIST) 动态自算（整改批 1.1：动态自算
 # 是恒真基线，与 scaffold 恒真问题同构）；2026-08-24 磁盘实测超限
-# 13 件，与白名单 13 条一致。只降不升；上调须书面裁决并同批修改本常量。
-FRONTEND_OVER_BASELINE = 13
+# 13 件，与白名单 13 条一致。只降不升；上调须书面裁决并同批修改本常量；
+# 任务 #18 use-sse.ts 连接状态机抽至 lib/sse-connection + sse-events：7→6
+FRONTEND_OVER_BASELINE = 6
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"

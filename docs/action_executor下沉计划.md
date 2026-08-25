@@ -2,8 +2,9 @@
 
 > **性质：部分清偿（欠账 D-01 登记于项目外清单 E:\07 天问\未清偿债务与事故清单-2026-08-22.md）；阶段二复审到期日 2026-09-30。**
 
-- 状态：阶段一已完成（2026-08-22，D-01 清偿批）；阶段二待启动
-- 对象：~~`src/video_agent/web/action_executor.py`~~（885 行）→ 已下沉 `src/video_agent/core/action_executor.py`；web 侧仅留 re-export 壳待阶段二清退
+- 状态：阶段一已完成（2026-08-22，D-01 清偿批）；阶段二大部分已完成
+  （任务 24 P7-3），剩余为实例方法壳的最终收编与销账
+- 对象：~~`src/video_agent/web/action_executor.py`~~（885 行）→ 已下沉 `src/video_agent/core/action_executor.py`；web 侧 re-export 壳已清退，消费方均直接导入 core（任务 #13 F-4）
 - 问题：按分层约束，故事板写域与动作语义应在 core/state 层；该文件因依赖
   web 生成管线（`web/generation.py`）暂留 web 层，曾是 core→web 边界上最大
  的一块未下沉债务（已于 2026-08-22 清偿）。
@@ -46,13 +47,14 @@
    与 Rule4 Adapter 体系一致）；
 3. 生成动作域迁入 core（或 skill_runtime）后经构造注入装配，集成测试回归。
 
-### 阶段二：故事板写域收编（前置：阶段一完成）
+### 阶段二：故事板写域收编（前置：阶段一完成）— 大部分已完成（任务 24 P7-3），剩余为实例方法壳的最终收编与 I09 销账
 
 1. `_apply_add_draft/_apply_draft_patch/_apply_group_patch/_apply_delete_*`
-   等故事板写域逐节对照 `state/storyboard_ops.py`（动作语义唯一实现既有原则）；
-2. 重复逻辑归 storyboard_ops，action_executor 仅保留动作分发薄壳直至消费方迁完；
-3. 消费方（mock 演示通道等）迁移后，action_executor 空壳删除，
-   scaffold_registry I09 下账。
+   等故事板写域实现体已切出 `core/action_drafts.py`，12 处委托
+   `state/storyboard_ops.py` 纯函数（动作语义唯一实现既有原则）；
+2. action_executor 仅保留实例方法壳（patch 目标不变），待最终收编；
+3. web 消费方已直接导入 core（re-export 壳已清退，任务 #13 F-4）；
+   剩余：实例方法壳收编删除后，scaffold_registry I09 下账。
 
 ## 验收（每阶段）
 

@@ -2,7 +2,8 @@
 """整改批 3.2：SSE 载荷编译期契约钉死。
 
 ① 在役事件常量 ↔ TS 导出帧的 type 字面量一一对应（新增事件忘登记即红）；
-② 已退役事件（model_fallback 发射端删除 / step_started 内部事件）不得回流；
+② 内部事件（step_started）不透传；model_fallback 发射端已退役但保留兼容帧
+   （任务 #4：sse_protocol.py 仍登记、use-sse.ts 保留 case 接旧 replay）；
 ③ gen_api_types 输出含 SSE 分节且逐帧导出（--check 门禁的内容基础）。
 """
 import sys
@@ -41,11 +42,12 @@ def test_every_live_event_constant_has_frame():
 
 
 def test_retired_or_internal_events_not_exported():
-    """model_fallback 发射端已退役；step_started 为内部事件不透传——
-    二者不得出现在前端契约面（防退役回流/内部泄漏）。"""
+    """step_started 为内部事件不透传（不得出现在前端契约面）；
+    model_fallback 发射端已退役但保留兼容帧（任务 #4：前端 case 保留接旧
+    replay，sse_protocol.py 仍登记，联合不可排除故导出帧保留）。"""
     exported = _frame_literals()
-    assert se.SSE_MODEL_FALLBACK not in exported
     assert se.SSE_STEP_STARTED not in exported
+    assert se.SSE_MODEL_FALLBACK in exported
 
 
 def test_generated_output_contains_sse_section_and_all_frames():

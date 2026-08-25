@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import stage_probes as po
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager

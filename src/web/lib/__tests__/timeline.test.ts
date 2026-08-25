@@ -88,32 +88,34 @@ describe('resultSummaryView 详情展开视图', () => {
   });
 });
 
-/** 任务 #2：工具详情分级（按工具名分档，纯函数钉死） */
+/** 任务 #2：工具详情分级（任务 #4：后端 detail_tier 元数据驱动，纯函数钉死） */
 describe('toolDetailTier 工具详情分级', () => {
-  it('值得展开档：产出/关键交互类工具', () => {
+  it('值得展开档：产出/关键交互类工具（后端 detail_tier=expand 声明生成）', () => {
     [
       'document_write', 'storyboard_create_group', 'storyboard_add_draft',
       'storyboard_patch_draft', 'generate_image', 'generate_video',
-      'workflow_pause', 'canvas_add_node', 'canvas_update_node',
-      'canvas_batch_add_nodes',
+      'image_generate', 'workflow_pause', 'canvas_add_node',
+      'canvas_update_node', 'canvas_batch_add_nodes',
     ].forEach((n) => expect(toolDetailTier(n)).toBe('expand'));
   });
 
-  it('中间档：仅输出留痕，不显示输入', () => {
+  it('输出留痕档：读取/平台闸口类工具（后端 detail_tier=output 声明生成）', () => {
     [
       'storyboard_delete_group', 'canvas_delete_node', 'storyboard_confirm_draft',
       'storyboard_media_to_chat', 'read_draft', 'read_project_doc',
-      'read_uploaded_doc',
+      'read_uploaded_doc', 'flow_directive', 'view_storyboard_media',
+      'canvas_list', 'canvas_read_nodes', 'canvas_list_assets', 'read_skill',
+      'mcp_tool_catalog',
     ].forEach((n) => expect(toolDetailTier(n)).toBe('output'));
   });
 
-  it('不展开档：内部条目/读取类工具与未知名保持一行摘要', () => {
-    [
-      'flow_directive', 'mcp_tool_catalog', 'view_storyboard_media',
-      'canvas_list', 'canvas_read_nodes', 'canvas_list_assets', 'read_skill',
-      'model_reasoning', 'unknown_tool',
-    ].forEach((n) => expect(toolDetailTier(n)).toBe('none'));
-    expect(toolDetailTier(undefined)).toBe('none');
+  it('默认档：未知工具/无名条目至少留输出痕迹（不再静默 none）', () => {
+    expect(toolDetailTier('unknown_tool')).toBe('output');
+    expect(toolDetailTier(undefined)).toBe('output');
+  });
+
+  it('内部条目恒定 none（TOOL_DETAIL_INTERNAL_NONE 名单登记）', () => {
+    expect(toolDetailTier('model_reasoning')).toBe('none');
   });
 });
 

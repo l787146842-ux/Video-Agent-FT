@@ -1,6 +1,6 @@
 /**
  * 自动生成 —— 请勿手工编辑。
- * 来源：FastAPI OpenAPI schema（python scripts/gen_api_types.py）
+ * 来源：FastAPI OpenAPI schema + SSE sidecar（python scripts/gen_api_types.py）
  * 用途：前端 API 边界类型的唯一来源；
  * 视图态类型（ChatMessage 等纯 UI 形态）见手写 src/web/types/index.ts。
  */
@@ -40,11 +40,11 @@ export interface ChatRequest {
   provider?: string;
   model?: string;
   ms_model?: string;
-  messages?: Record<string, unknown>[];
+  messages?: Record<string, string>[];
   images?: string[];
   videos?: string[];
-  attachments?: Record<string, unknown>[];
-  content_parts?: Record<string, unknown>[];
+  attachments?: Record<string, string>[];
+  content_parts?: Record<string, string>[];
   selected_draft_id?: string;
   selected_type?: string;
   context_mode?: string;
@@ -56,7 +56,7 @@ export interface ChatRequest {
   gate_overrides?: string[];
   user_id?: string;
   thinking_level?: string;
-  pause_response?: Record<string, unknown>;
+  pause_response?: Record<string, string>;
   system_action?: string;
 }
 
@@ -172,7 +172,7 @@ export interface ImageGenRequest {
   size?: string;
   aspect_ratio?: string;
   resolution?: string;
-  reference_images?: Record<string, unknown>[];
+  reference_images?: Record<string, string>[];
   draft_id?: string;
   draft_type?: string;
 }
@@ -320,9 +320,9 @@ export interface VideoGenRequest {
   duration?: number;
   resolution?: string;
   aspect_ratio?: string;
-  images?: Record<string, unknown>[];
-  videos?: Record<string, unknown>[];
-  audios?: Record<string, unknown>[];
+  images?: Record<string, string>[];
+  videos?: Record<string, string>[];
+  audios?: Record<string, string>[];
   enhance_prompt?: boolean;
   multimodal?: boolean;
   draft_id?: string;
@@ -334,13 +334,13 @@ export interface ViewSize {
   height: number;
 }
 
-// ===== SSE 事件载荷（来源：core/sse_events.py TS_EVENT_FRAMES）=====
+// ===== SSE 事件载荷（sidecar：src/web/types/sse.schema.json）=====
 
 export interface SseStatusEvent {
   type: 'status';
   text?: string;
   key?: string;
-  params?: Record<string, unknown>;
+  params?: Record<string, string | number>;
 }
 
 export interface SseDeltaEvent {
@@ -355,17 +355,17 @@ export interface SseReasoningDeltaEvent {
 
 export interface SseToolStartedEvent {
   type: 'tool_started';
-  id?: string;
-  name?: string;
-  summary?: string;
+  id: string;
+  name: string;
+  summary: string;
   args?: Record<string, unknown> | undefined;
 }
 
 export interface SseToolFinishedEvent {
   type: 'tool_finished';
-  id?: string;
-  ok?: boolean;
-  elapsed_ms?: number;
+  id: string;
+  ok: boolean;
+  elapsed_ms: number;
   result_summary?: string;
   planning?: boolean | undefined;
 }
@@ -396,6 +396,12 @@ export interface SseStoppedEvent {
   phase?: string;
   step?: number | undefined;
   inflight?: SseStoppedInflightItem[] | undefined;
+}
+
+export interface SseModelFallbackEvent {
+  type: 'model_fallback';
+  provider?: string;
+  model?: string;
 }
 
 export interface SseErrorEvent {
@@ -451,6 +457,7 @@ export interface SseDonePayload {
   pause_kind?: string;
   stopped?: boolean;
   stop_phase?: string;
+  fallback_model?: string | undefined;
   elapsed_ms?: number | undefined;
   turn_id?: string | undefined;
   state?: Record<string, unknown> | undefined;
@@ -504,3 +511,85 @@ export interface SseTaskStatusEvent {
   type: 'task_status';
   status?: string;
 }
+
+/** SSE 事件联合类型（判别列 = type 字面量；后端帧模型自动生成） */
+export type SseEvent =
+  | SseStatusEvent
+  | SseDeltaEvent
+  | SseReasoningDeltaEvent
+  | SseToolStartedEvent
+  | SseToolFinishedEvent
+  | SseDocWrittenEvent
+  | SseActionsAppliedEvent
+  | SseStoppedEvent
+  | SseModelFallbackEvent
+  | SseErrorEvent
+  | SseGuidanceInjectedEvent
+  | SseDoneEvent
+  | SseReplayEvent
+  | SseTaskStatusEvent;
+
+// ===== 错误语义契约（来源：web/error_payload.py，sidecar 导出）=====
+
+export interface ErrorPayloadContract {
+  code: string;
+  kind: string;
+  message: string;
+  raw?: string;
+}
+
+/** 错误归类封闭集合（后端 ALL_KINDS 生成，改动自动同步） */
+export const SSE_ERROR_KINDS = ['auth', 'quota', 'network', 'upstream', 'content', 'unknown'] as const;
+export type SseErrorKind = (typeof SSE_ERROR_KINDS)[number];
+/** legacy error_code → kind/code 桥接表（后端 LEGACY_CODE_MAP 生成） */
+export const SSE_LEGACY_ERROR_CODES: Record<string, { kind: SseErrorKind; code: string }> = {
+  ADAPTER_ERROR: { kind: 'upstream', code: 'err.upstream.server_error' },
+  FETCH_ERROR: { kind: 'network', code: 'err.network.connection' },
+  FORBIDDEN_ORIGIN: { kind: 'auth', code: 'err.auth.forbidden_origin' },
+  GENERATION_ERROR: { kind: 'upstream', code: 'err.upstream.server_error' },
+  NETWORK_ERROR: { kind: 'network', code: 'err.network.connection' },
+  PROBE_HTTP_ERROR: { kind: 'upstream', code: 'err.upstream.server_error' },
+  PROBE_TIMEOUT: { kind: 'network', code: 'err.network.timeout' },
+  RATE_LIMITED: { kind: 'quota', code: 'err.quota.rate_limited' },
+  TIMEOUT: { kind: 'network', code: 'err.network.timeout' },
+  UNAUTHORIZED: { kind: 'auth', code: 'err.auth.invalid_key' },
+  VIDEO_CONNECT_ERROR: { kind: 'network', code: 'err.network.connection' },
+  VIDEO_HTTP_ERROR: { kind: 'upstream', code: 'err.upstream.server_error' },
+  VIDEO_SUBMIT_FAILED: { kind: 'upstream', code: 'err.upstream.server_error' },
+  VIDEO_TIMEOUT: { kind: 'network', code: 'err.network.timeout' },
+};
+
+// ===== 工具时间线展示档（来源：各工具 detail_tier 声明，sidecar 导出）=====
+
+/** 工具名 → 展示档（expand=展开输入+结果 / output=仅输出留痕） */
+export const TOOL_DETAIL_TIERS: Record<string, 'expand' | 'output'> = {
+  canvas_add_node: 'expand',
+  canvas_batch_add_nodes: 'expand',
+  canvas_delete_node: 'output',
+  canvas_list: 'output',
+  canvas_list_assets: 'output',
+  canvas_read_nodes: 'output',
+  canvas_update_node: 'expand',
+  document_write: 'expand',
+  flow_directive: 'output',
+  generate_image: 'expand',
+  generate_video: 'expand',
+  image_generate: 'expand',
+  mcp_tool_catalog: 'output',
+  read_draft: 'output',
+  read_project_doc: 'output',
+  read_skill: 'output',
+  read_uploaded_doc: 'output',
+  storyboard_add_draft: 'expand',
+  storyboard_confirm_draft: 'output',
+  storyboard_create_group: 'expand',
+  storyboard_delete_group: 'output',
+  storyboard_media_to_chat: 'output',
+  storyboard_patch_draft: 'expand',
+  view_storyboard_media: 'output',
+  workflow_pause: 'expand',
+};
+/** 未登记工具/未知名的默认档（新工具至少留输出痕迹） */
+export const TOOL_DETAIL_TIER_DEFAULT = 'output' as const;
+/** 非工具内部条目（恒定 none，不经元数据） */
+export const TOOL_DETAIL_INTERNAL_NONE: readonly string[] = ['model_reasoning'] as const;

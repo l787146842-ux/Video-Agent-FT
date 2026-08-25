@@ -177,12 +177,13 @@ def test_stage_note_standalone_builder_fallback():
 # ---------- 段落注册表（任务#15 P2：提示词注册制） ----------
 
 def test_prompt_sections_registry_names_and_order():
-    """10 个具名段全覆盖，段序与历史拼装顺序 1:1（保前缀缓存约束）"""
+    """11 个具名段全覆盖，段序与历史拼装顺序 1:1（保前缀缓存约束）；
+    session_summary 为任务#16 新增专用摘要段，紧随协议段，既有各段相对顺序不变"""
     from src.video_agent.core.prompt_builder import PROMPT_SECTIONS
     assert [s.name for s in PROMPT_SECTIONS] == [
-        "protocol", "catalog", "mcp_catalog", "iron_rules", "selected_draft",
-        "global_settings", "state_json", "stage_note", "storyboard_progress",
-        "selected_skill",
+        "protocol", "session_summary", "catalog", "mcp_catalog", "iron_rules",
+        "selected_draft", "global_settings", "state_json", "stage_note",
+        "storyboard_progress", "selected_skill",
     ]
     orders = [s.order for s in PROMPT_SECTIONS]
     assert orders == sorted(orders) and len(set(orders)) == len(orders)

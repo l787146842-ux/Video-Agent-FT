@@ -71,13 +71,16 @@ class TestMaybeCompactHistory:
         adapter = self._FakeAdapter()
         out = await chat_service._maybe_compact_history(hist, svc, adapter)
         assert adapter.calls == 1
-        # 摘要首条 + 最近 KEEP 条
-        assert len(out) == 1 + chat_service._HISTORY_COMPACT_KEEP
-        assert "会话摘要" in out[0]["content"]
+        # 任务#16 注入形态：摘要不再伪装成 history 首条 user 消息，
+        # history 只留最近 KEEP 条；摘要经 interaction.session_summary
+        # active 标记由 system 专用段注入
+        assert len(out) == chat_service._HISTORY_COMPACT_KEEP
+        assert out == hist[-chat_service._HISTORY_COMPACT_KEEP:]
         # 摘要缓存到 interaction（批 3.4：键 = 较早消息内容指纹 fp）
         cached = (svc.state_dict.get("interaction") or {}).get("session_summary") or {}
         assert cached.get("fp"), "内容指纹缓存键缺失"
         assert cached.get("text")
+        assert cached.get("active") is True, "压缩生效必须置 active 供 system 摘要段注入"
 
     async def test_cache_reuse_no_second_call(self, tmp_path, monkeypatch):
         from types import SimpleNamespace
@@ -102,7 +105,10 @@ class TestMaybeCompactHistory:
         adapter = self._FakeAdapter()
         out = await chat_service._maybe_compact_history(hist, svc, adapter)
         assert adapter.calls == 0, "命中缓存不得再调模型"
-        assert "缓存摘要" in out[0]["content"]
+        assert len(out) == _HISTORY_COMPACT_KEEP
+        cached = (svc.state_dict.get("interaction") or {}).get("session_summary") or {}
+        assert cached.get("text") == "缓存摘要"
+        assert cached.get("active") is True, "缓存命中同样是压缩生效，必须置 active"
 
     async def test_cache_invalidated_by_content_edit_not_just_count(
             self, tmp_path, monkeypatch):
@@ -133,7 +139,9 @@ class TestMaybeCompactHistory:
         adapter = self._FakeAdapter()
         out = await chat_service._maybe_compact_history(edited, svc, adapter)
         assert adapter.calls == 1, "内容指纹变化必须失效重建，不得复用陈旧摘要"
-        assert "陈旧摘要" not in out[0]["content"]
+        cached = (svc.state_dict.get("interaction") or {}).get("session_summary") or {}
+        assert cached.get("text") != "陈旧摘要"
+        assert len(out) == _HISTORY_COMPACT_KEEP
 
 
 class TestGateOverridesStore:

@@ -3,7 +3,7 @@
 遍历 web/sse_protocol.py 注册表，逐事件断言四段链完整：
 1. 发射段：登记的每个后端发射方源码中存在该事件的发射（常量或字面量）；
 2. 透传段：transport=passthrough 的事件出现在 chat_service 透传白名单；
-3. 前端段：非 internal 事件在 use-sse.ts 存在对应 case handler；
+3. 前端段：非 internal 事件在前端事件路由源码存在对应 case handler；
 4. 一致性：sse_events.py 的全部常量均已登记（新增事件不登记即红）。
 """
 import re
@@ -17,9 +17,12 @@ from src.video_agent.web.sse_protocol import PASSTHROUGH_EVENT_TYPES, SSE_EVENT_
 ROOT = Path(__file__).resolve().parents[2]
 VA = ROOT / "src" / "video_agent"
 USE_SSE = ROOT / "src" / "web" / "hooks" / "use-sse.ts"
+# SSE 契约重构后事件路由自 use-sse.ts 下沉至 lib/sse-events.ts，
+# 两处任一命中即算前端段链完整（防再次搬家断链）
+SSE_EVENTS_TS = ROOT / "src" / "web" / "lib" / "sse-events.ts"
 
 _chat_service_src = (VA / "web" / "chat_service.py").read_text(encoding="utf-8")
-_use_sse_src = USE_SSE.read_text(encoding="utf-8")
+_use_sse_src = USE_SSE.read_text(encoding="utf-8") + SSE_EVENTS_TS.read_text(encoding="utf-8")
 
 
 def test_r4_registry_covers_all_event_constants():
@@ -104,9 +107,9 @@ def test_r4_transport_segment(spec):
     ids=lambda s: s.event_type,
 )
 def test_r4_frontend_handler_segment(spec):
-    """前端段：非 internal 事件在 use-sse.ts 存在 case handler。"""
+    """前端段：非 internal 事件在前端事件路由（sse-events.ts / use-sse.ts）存在 case handler。"""
     assert re.search(rf"case\s+'{re.escape(spec.frontend_case)}'\s*:", _use_sse_src), (
-        f"四段链断链（前端段）：use-sse.ts 缺 case '{spec.frontend_case}'"
+        f"四段链断链（前端段）：前端事件路由缺 case '{spec.frontend_case}'"
         f"（事件 {spec.event_type}，事故溯源：{spec.incident}）"
     )
 

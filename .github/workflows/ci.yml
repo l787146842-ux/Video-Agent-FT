@@ -53,7 +53,7 @@ jobs:
         run: python scripts/scan_skills.py --gate
       - name: Semantic colors gate (影响面审查 FIX-3：styles/*.css 硬编码颜色棘轮，对齐 acceptance GATES)
         run: python scripts/check_semantic_colors.py
-      - name: API contract check (OpenAPI -> TS types)
+      - name: API contract check (OpenAPI + SSE sidecar -> TS types；任务 #4 双产物：api.generated.ts 与 sse.schema.json 同闸校验)
         run: python scripts/gen_api_types.py --check
 
   # ---------- Job 1b: 后端测试（STATE_BACKEND=sqlite 显式维度，任务 #11 建 / 任务 #18 激活） ----------
@@ -151,6 +151,16 @@ jobs:
         run: npx playwright install chromium --with-deps
       - name: Run E2E smoke tests
         run: npx playwright test
+      # 任务 #11：失败时留存 trace/截图（retries=1 + trace on-first-retry 的产物），
+      # if: always() 保证失败也上传，便于 CI 红后离线复盘
+      - name: Upload Playwright trace artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-trace
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # ---------- Job 5: 评测流水线（814E5：黄金语料回归 + Skill 管线可解析性） ----------
   eval-pipeline:

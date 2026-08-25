@@ -2,9 +2,10 @@ import { Show } from 'solid-js';
 import { FiZap } from 'solid-icons/fi';
 import { generateImage } from '@/lib/generate-actions';
 import {
-  ParamGroup, ParamSelect, ProviderModelSelects,
-  btnPrimary, ExportButton,
+  ParamGroup, ParamSelect, btnPrimary,
 } from './ParamBase';
+import { ProviderModelSelects } from './ProviderModelSelects';
+import { ExportButton } from './ExportButton';
 import { studioActions } from '@/stores/studio';
 import type { Draft } from '@/types';
 
