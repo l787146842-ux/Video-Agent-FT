@@ -1,6 +1,6 @@
-"""闸预检协作臂（ADR-0004：主体回归，runtime 只做账本与裁判）。
+"""闸预检协作臂。
 
-模型永远唯一行动主体（ADR-0004，取代 ADR-0003 的 runtime 直跑）：
+模型永远唯一行动主体：
 workflow_runtime 降级为账本 + 裁判数据层，永不发起行动；本模块只在轮始
 装配两类机械兜底卡（原料闸提醒/规格向导，系统派生引导卡非行动发起），
 **永不执行阶段、永不抢先对话**；其余一律交接模型循环（模型持主动权），
@@ -11,7 +11,7 @@ from typing import Any, Callable, Optional
 
 from loguru import logger
 
-from src.video_agent.core import pipeline_orchestrator as _po
+from src.video_agent.core import stage_probes as _po
 from src.video_agent.core import live_metrics
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import pause_composer
@@ -43,10 +43,8 @@ async def run_gate_precheck(
         live_metrics.record_degradation("planner_triage.control_flow_log")
     if outcome is None:
         return None
-    # 重试引导分支已随整改批 1.3 删除（失败账本死链清偿，防复活见
-    # tests/unit/test_dead_code_payoff.py）
     if outcome.kind == "script_pending":
-        # 三通道（Rule2 v6）：引导词归正文，卡=一句问句，kind=remind
+        # 三通道：引导词归正文，卡=一句问句，kind=remind
         card = pause_composer.compose_remind_card(
             "剧本尚未收到，请选择原料提供方式。", outcome.options or [])
         resp = response_factory(

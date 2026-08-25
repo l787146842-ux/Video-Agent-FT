@@ -1,5 +1,5 @@
 """
-供应商调用分发（任务#11 拆分清偿，2026-08-23：generation.py 三段之一）。
+供应商调用分发（generation.py 三段之一）。
 
 职责：端点解析 + Chat Completions 调用 + 生图供应商路由 + 降级链判定。
 实际 HTTP 调用逻辑在 adapters/（openai_compat / agy_cli / canvas_adapter），
@@ -64,7 +64,7 @@ async def resolve_openai_endpoint_async(provider_id: str, model: str) -> Tuple[s
             api_key = await get_api_key_async("custom-api")
             if effective_model in ("auto", ""):
                 # 可配置回退模型（CLI_AUTO_CHAT_MODEL）：反代未注册默认模型时
-                # 无需改代码，改环境变量即可（曾硬编码 gemini-3.1-flash-image 导致 400）
+                # 无需改代码，改环境变量即可
                 effective_model = settings.cli_auto_chat_model
                 logger.info(
                     "[Generation] 提示：若反代报 model not register，请在 .env 设置 "
@@ -186,8 +186,8 @@ async def call_chat_completion_stream(
     response_format：结构化输出声明（如 {"type":"json_object"}），
     端点不支持时适配器兼容探针自动剥离降级。
     返回 (完整内容, finish_reason)。失败抛 GenerationError。
-    reasoning_sink（可选）：传入 list 则累积推理模型的思考增量（黑匣子取证用，
-    888），不进上下文。
+    reasoning_sink（可选）：传入 list 则累积推理模型的思考增量（黑匣子取证用），
+    不进上下文。
     """
     base_url, api_key, effective_model = await resolve_openai_endpoint_async(provider_id, model)
     adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=effective_model)
@@ -209,7 +209,7 @@ async def call_chat_completion_stream(
                 reasoning_sink.append(chunk.text)
             elif chunk.type == "done":
                 # 透传真实 finish_reason（length=撞输出上限被截断），
-                # 不再一律当 stop：截断检测靠它（888）
+                # 不再一律当 stop：截断检测靠它
                 finish_reason = getattr(chunk, "finish_reason", "") or "stop"
     except AdapterError as e:
         raise GenerationError(str(e)) from e
@@ -295,8 +295,7 @@ async def _try_canvas_image_generation(
 
 # ---------- 生成侧降级链 ----------
 #
-# 整改批 3.3：实现已下沉 core/generation_fallback.py 公开 API（tools 层
-# 改消费公开接口，消灭 tools→web 反向依赖）；本模块保留薄 re-export 壳，
+# 实现位于 core/generation_fallback.py 公开 API；本模块保留薄 re-export 壳，
 # web 内部消费点（generation.py 壳 / generation_submit.py）零改动。
 
 from src.video_agent.core.generation_fallback import (  # noqa: E402,F401

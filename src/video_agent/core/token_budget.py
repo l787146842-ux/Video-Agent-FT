@@ -139,8 +139,7 @@ def estimate_messages_tokens(messages: List[Dict[str, Any]]) -> int:
                 if part.get("type") == "text":
                     total += estimate_tokens(part.get("text", ""))
                 elif part.get("type") == "image_url":
-                    # vision token 计入预算（此前漏计，带图历史
-                    # 的截断决策失真）；固定成本取 settings.image_token_estimate
+                    # vision token 计入预算；固定成本取 settings.image_token_estimate
                     total += settings.image_token_estimate
         # 每条消息的 role/metadata 开销约 4 token
         total += 4
@@ -148,7 +147,7 @@ def estimate_messages_tokens(messages: List[Dict[str, Any]]) -> int:
 
 
 def _record_context_event(kind: str, detail: str) -> None:
-    """（P4 降级事件化）截断/降级命中记入 tracer 上下文事件流；
+    """截断/降级命中记入 tracer 上下文事件流；
     失败仅 log，绝不干扰截断主链（截断本身是保底路径）。"""
     try:
         AgentTracer.get_instance().record_context_event(kind, detail)
@@ -178,14 +177,12 @@ def window_recent_turns(
     messages: List[Dict[str, Any]],
     max_user_turns: int = 10,
 ) -> List[Dict[str, Any]]:
-    """聊天入口历史窗口（整改批 3.4：统一管线入口）。
+    """聊天入口历史窗口（统一管线入口）。
 
     取最近 max_user_turns 个**真实用户轮**（含各自后续回喂），轮组原子
-    不劈半——替代散落在 chat_service 流式/非流式与 plugins 助手通道的
-    messages[-10:] 条数硬切：条数切会从 assistant/回喂半截开刀（供应商
-    400 风险由调用方 truncate_history 掩盖），且把系统合成回喂也计入
-    窗口稀释真实上下文。窗口语义单一事实源 = 本函数（前端
-    CHAT_HISTORY_WINDOW 仅作 UI 提示对齐）。"""
+    不劈半——条数硬切会从 assistant/回喂半截开刀（供应商 400 风险），
+    且把系统合成回喂也计入窗口稀释真实上下文。窗口语义单一事实源 =
+    本函数（前端 CHAT_HISTORY_WINDOW 仅作 UI 提示对齐）。"""
     if max_user_turns <= 0 or not messages:
         return list(messages)
     turns = 0

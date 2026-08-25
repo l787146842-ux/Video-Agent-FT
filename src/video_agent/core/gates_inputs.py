@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""原料闸 v3 判定家族（requires_inputs 声明消费，任务#35 B2）。
+"""原料闸 v3 判定家族（requires_inputs 声明消费）。
 
 frontmatter v3 `requires_inputs` 声明优先于 v2 `flow.script_required`，两路语义
 不叠加（声明了 v3 清单就只按清单判定；未声明回落 script_required 旧路径，

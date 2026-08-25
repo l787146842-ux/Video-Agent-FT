@@ -1,21 +1,15 @@
-"""轮末策略状态机（清偿：agent_loop 轮末注入点收敛为单一路径）。
+"""轮末策略状态机：agent_loop 轮末注入点收敛为单一声明式策略表。
 
-原 run_agent_loop 轮末段 10+ 个竞争 if 块（流程门禁暂停/失败警告/闸机自愈/
-规格文档暂停/规格审阅卡/向导接管/规格收集/结构自检/结构卡/阶段兜底卡/虚报检测）
-按书写顺序决定最终 confirmation——仲裁逻辑隐式且不可观测。本模块将其收敛为
-声明式策略表：
-
-- 策略按 priority 升序执行（初始表逐字节复制重构前代码顺序，零行为变更）；
+- 策略按 priority 升序执行；
 - kind 语义：hard_break=命中即中止本轮；arbitrable=竞争暂停卡（按现行
   「先到先得 + not confirmation 守卫」语义顺序求值）；post_process=副作用块
   （警告/自愈/选项覆盖/审计），全部执行；
-- 仲裁可观测（#4）：命中候选与胜出者经 tracer.record_card_decision 入 trace，
+- 仲裁可观测：命中候选与胜出者经 tracer.record_card_decision 入 trace，
   /api/agent/traces 可见（对话区暂不渲染，决策点）。
 
 归属层：层 9 系统兜底卡唯一代码落点（宪法 13.3）。FC 轨的 flow_gate_pause
-仍由 agent_loop 在工具执行后早返处理（位置与重构前一致），共用本表 policy_id。
-虚报检测（原 agent_loop 内联）随唯一消费点迁入本模块；agent_loop 保留
-re-export 壳（13.7 惯例，测试 patch/导入路径不变）。
+仍由 agent_loop 在工具执行后早返处理，共用本表 policy_id。
+agent_loop 保留 re-export 壳（测试 patch/导入路径不变）。
 """
 import re
 from dataclasses import dataclass, field
@@ -33,18 +27,17 @@ from src.video_agent.state.models import ALL_CATEGORIES_TUPLE, CAT_KEY_ELEMENTS,
 if TYPE_CHECKING:
     from src.video_agent.core.tracer import AgentTracer
 
-# 策略种类（硬中断种类常量已随整改批 1.3 退役：零消费死词汇，
-# 防复活钉死见 tests/unit/test_dead_code_payoff.py）
+# 策略种类
 KIND_ARBITRABLE = "arbitrable"
 KIND_POST_PROCESS = "post_process"
 
-# 执行器动作白名单（阶段完成兜底卡触发条件，原 agent_loop 内联常量）
+# 执行器动作白名单（阶段完成兜底卡触发条件）
 _EXECUTOR_ACTIONS = (
     "script_analyze", "storyboard_key_elements", "storyboard_shots",
     "storyboard_audio", "write_media_prompt", "audio_generate", "video_assembler",
 )
 
-# ---------- 虚报检测（自 agent_loop 迁入：唯一消费点 = false_claim_audit） ----------
+# ---------- 虚报检测（唯一消费点 = false_claim_audit） ----------
 
 _STRUCTURE_CLAIM_RE = re.compile(
     r"(?:已完成|完成|已创建|已拆解|已写入)\s*(?:关键元素)?(?:拆解|拆分|分组|故事板)"
@@ -102,7 +95,7 @@ class RoundEndContext:
     result_text: str = ""
     # fakestop：轮末策略机械追加的建议动作（agent_loop 回读并入 result）
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
-    # 仲裁记录（#4：候选 + 胜出者）
+    # 仲裁记录（候选 + 胜出者）
     candidates: List[str] = field(default_factory=list)
     winner: str = ""
 
@@ -127,7 +120,7 @@ async def run_round_end_policies(
     tracer: Optional["AgentTracer"] = None,
     policies: Optional[List[RoundEndPolicy]] = None,
 ) -> RoundEndContext:
-    """按优先级顺序执行策略表（语义 = 重构前书写顺序，零行为变更）。
+    """按优先级顺序执行策略表。
 
     仲裁可观测：arbitrable 策略条件为真即入候选名单；最终 confirmation
     非空时记录胜出者（第一个真正写入 confirmation 的策略）。
@@ -161,7 +154,7 @@ async def run_round_end_policies(
     return ctx
 
 
-# ---------- 各策略实现（优先级 = 重构前代码书写顺序， 裁决零行为变更） ----------
+# ---------- 各策略实现 ----------
 
 def _cond_partial_fail_warnings(ctx: RoundEndContext) -> bool:
     return bool(ctx.total_exec) and ctx.applied < ctx.total_exec
@@ -174,7 +167,6 @@ async def _apply_partial_fail_warnings(ctx: RoundEndContext, emit: Callable) -> 
             f"（原因：{ctx.gate_rejections[0][:60]}…）"
         )
     elif not ctx.gate_rejections:
-        # 4-4 双轨退役：stream_consumed 分支已删（流式预执行不复存在）
         failed_desc = ""
         try:
             failed_desc = "；".join(
@@ -265,7 +257,7 @@ def _structure_kinds(ctx: RoundEndContext) -> set:
 
 
 def _cond_structure_stage_review(ctx: RoundEndContext) -> bool:
-    # 暂停点归位 Skill 阶段边界（13.3/C6，用户裁决）：
+    # 暂停点归位 Skill 阶段边界：
     # 平台不再强制自检轮/首建硬暂停；故事板阶段完成且模型未暂停才注入审阅卡
     return (
         not ctx.confirmation
@@ -289,7 +281,7 @@ async def _apply_structure_stage_review(ctx: RoundEndContext, emit: Callable) ->
 
 
 def _cond_stage_done_fallback(ctx: RoundEndContext) -> bool:
-    # + ：声明驱动 + 平台兜底双语义； 一条龙豁免引导卡
+    # 声明驱动 + 平台兜底双语义；一条龙豁免引导卡
     if ctx.confirmation or ctx.gate_heal or ctx.applied <= 0:
         return False
     if prompt_gates.flow_auto_continue(ctx.executor.state):
@@ -318,15 +310,14 @@ async def _apply_stage_done_fallback(ctx: RoundEndContext, emit: Callable) -> No
 
 
 def _cond_false_claim_audit(ctx: RoundEndContext) -> bool:
-    # 虚报检测与正文拼接收纳在同一块内（原 agent_loop 5-731 语义）；
-    # 单轨化：文本动作块通道已退役，正文即模型可见文本，无需清洗
+    # 虚报检测与正文拼接收纳在同一块内；正文即模型可见文本，无需清洗
     return bool((ctx.content or "").strip())
 
 
 async def _apply_false_claim_audit(ctx: RoundEndContext, emit: Callable) -> None:
     visible = (ctx.content or "").strip()
     if visible and not ctx.gate_heal:
-        # 虚报警告（×）：声称完成结构搭建但故事板实际为空 → 只警告不拦人
+        # 虚报警告：声称完成结构搭建但故事板实际为空 → 只警告不拦人
         if (
             ctx.confirmation
             and _claims_structure_done(visible)
@@ -383,7 +374,7 @@ def _iter_storyboard_drafts(state: Dict[str, Any]) -> List[Dict[str, Any]]:
 def suggest_next_actions(state: Dict[str, Any]) -> List[Dict[str, str]]:
     """按工作台客观状态返回下一步建议（空列表 = 不建议）。
 
-      中性化：只报客观状态（未确认/停摆），不点名下一步流程
+    只报客观状态（未确认/停摆），不点名下一步流程
     （排序意见归 Skill）；确认类建议仅针对客观待确认对象。
     """
     try:
@@ -414,7 +405,7 @@ def suggest_next_actions(state: Dict[str, Any]) -> List[Dict[str, str]]:
     return []
 
 
-# 策略表（优先级 = 重构前代码书写顺序；15 为失败警告块，原位于 flow_gate 早返之后）
+# 策略表（优先级升序执行）
 ROUND_END_POLICIES: List[RoundEndPolicy] = [
     RoundEndPolicy("partial_fail_warnings", KIND_POST_PROCESS, 15,
                    _cond_partial_fail_warnings, _apply_partial_fail_warnings),

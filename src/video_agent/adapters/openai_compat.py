@@ -306,14 +306,14 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         self._apply_thinking_level(payload, thinking_level)
         self._apply_response_format(payload, response_format)
 
-        # 同轮请求标识（幂等语义，任务 #26）：一次 chat 调用生成一个 id，
+        # 同轮请求标识（幂等语义）：一次 chat 调用生成一个 id，
         # 重试全程复用同一 payload + 同一标识（随 X-Request-Id 下发），
         # 供上游按标识去重，避免同轮请求被当多次新请求重复计费。
         request_id = new_request_id()
         _req_headers = {"X-Request-Id": request_id}
         try:
             client = self._get_client(timeout)
-            # 分流入口（任务 #26）：transient（429/5xx/超时/连接错误）指数退避
+            # 分流入口：transient（429/5xx/超时/连接错误）指数退避
             # 重试（上限/退避走 config）；permanent 4xx 立即上抛结构化错误
             resp = await dispatch_chat_request(
                 lambda: client.post(
@@ -332,7 +332,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     kind=KIND_UPSTREAM,
                 ) from e
         except AdapterError as e:
-            # / 优雅降级：严格端点不认 reasoning_effort/
+            # 优雅降级：严格端点不认 reasoning_effort/
             # response_format 报 400 → 剥离字段重试一次（兼容探针；
             # permanent 400 中唯一允许的一次纠正式重提，非盲目重试）
             if getattr(e, "http_status", None) == 400 and self._strip_unsupported_on_400(
@@ -370,7 +370,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                 p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") != "image_url"
             )
         # 中继拒收通知单识别（200 包错误）——命中即抛错，不当稿子返回；
-        # 归类为 permanent/refusal（模型拒答同源处置，任务 #26：不重试不 nudge）
+        # 归类为 permanent/refusal（模型拒答同源处置：不重试不 nudge）
         _env_status = detect_relay_error_envelope(content)
         if _env_status is not None:
             raise AdapterError(
@@ -429,7 +429,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     yield chunk
                 return
             except AdapterError as e:
-                # / 优雅降级：严格端点不认 reasoning_effort/
+                # 优雅降级：严格端点不认 reasoning_effort/
                 # response_format 报 400 → 剥离字段重试（兼容探针；
                 # AdapterError 报文携原始 body 前 200 字，可供点名判定）
                 if (
@@ -441,8 +441,8 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     and self._strip_unsupported_on_400(payload, str(e))
                 ):
                     continue
-                # 结构化判定（-2）：优先用 retryable 标记，无标记旧异常回落
-                # 分类器结构化判定（任务 #26，替代脆弱的文案匹配）
+                # 结构化判定：优先用 retryable 标记，无标记旧异常回落
+                # 分类器结构化判定（替代脆弱的文案匹配）
                 flag = getattr(e, "retryable", None)
                 if flag is None:
                     flag = is_transient_error(e)
@@ -476,7 +476,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             ) as resp:
                 if resp.status_code != 200:
                     body = (await resp.aread()).decode("utf-8", errors="replace")[:200]
-                    # 分类器统一判定（任务 #26）：429/5xx = transient 才进重试循环
+                    # 分类器统一判定：429/5xx = transient 才进重试循环
                     raise build_status_error(resp.status_code, body, context="chat-stream")
 
                 ctype = resp.headers.get("content-type", "")

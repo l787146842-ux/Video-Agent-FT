@@ -1,16 +1,14 @@
 """
-Studio 状态操作执行器 — 从 actions.py 抽离；D-01 清偿下沉 core（定义源）。
+Studio 状态操作执行器（定义源）。
 
 职责：执行结构化动作 dict 列表，操作 StateManager 共享状态并自动持久化。
-动作来源 = FC 工具调用 / mock 结构化动作（动作通道唯一 = FC，ADR-0001；
-文本块解析已随文本轨退役删除，任务#27）。
+动作来源 = FC 工具调用 / mock 结构化动作（动作通道唯一 = FC）。
 
 对 web 层（生成管线/供应商配置）的依赖经 core/ports.py 端口倒置，
-web 层装配点注入实现（分层铁律：core 不 import web）；
-web 层 re-export 壳已清退，消费方均直接导入本模块（任务#13 F-4）。
+web 层装配点注入实现（分层铁律：core 不 import web）。
 
-动作域拆分（任务 24 P7-3）：本文件为承重门面（分派入口 + 闸机判定 +
-批次状态），域实现体切出三件——生成域 core/action_gen.py（先例）、
+动作域拆分：本文件为承重门面（分派入口 + 闸机判定 +
+批次状态），域实现体三件——生成域 core/action_gen.py、
 草稿/分组域 core/action_drafts.py、文档/媒体域 core/action_media.py；
 实例方法壳保留（测试 patch 目标不变）。
 """
@@ -25,7 +23,7 @@ from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 # 生成动作域切入 core/action_gen.py（实例方法壳保留，patch 目标不变）
 from src.video_agent.core.action_gen import apply_generate_image, apply_generate_video
-# 草稿/分组域与文档/媒体域实现体（任务 24 P7-3 切出；实例方法壳保留）
+# 草稿/分组域与文档/媒体域实现体（实例方法壳保留）
 from src.video_agent.core.action_drafts import (
     add_group_core,
     append_draft_to_group,
@@ -70,13 +68,12 @@ class StateOperationExecutor:
         self.gate_enabled = gate_enabled
         # 闸机规则（Skill 激活时注入 parse_gate_rules 结果；
         # None = 用平台默认规则，保证无 Skill 场景不炸）
-        # （原 skill_runtime executors 注入通道已随任务#36 B5 执行器退役删除）
         self.gate_rules: Optional[Dict[str, Any]] = None
         # 决策 D：用户坚持（user_override）时硬伤降为警告照常放行
         self.gate_override: bool = False
         # 本批次闸机警告（eval 回归读取核验闸机判定；每次 execute 重置）
         self.gate_warnings: List[str] = []
-        # 当前激活的 Skill 名称（执行器/agent_loop 注入；：平台行为按 Skill 声明驱动）
+        # 当前激活的 Skill 名称（执行器/agent_loop 注入；平台行为按 Skill 声明驱动）
         self.skill_name: str = ""
         # 结构阶段开关：True = add_draft 内联详细提示词被剥离（默认，主模型直出结构路径）；
         # 执行器按阶段设置（write_media_prompt 等提示词阶段必须关闭）
@@ -89,7 +86,7 @@ class StateOperationExecutor:
         # 已执行操作的中文描述清单（供前端「阶段完成」卡片展开查看具体操作，随消息持久化）
         self.action_log: List[str] = []
         # 成功动作的逐动作实测耗时（ms），与 action_log 下标对齐；
-        # agent_loop 用其替换时间线均摊耗时（文本轨此前均摊是白谎）
+        # agent_loop 用其替换时间线均摊耗时
         self.last_action_durations: List[float] = []
         # 本批次被流程闸机拦截的原因清单（每次 execute 重置）：
         # 供 agent_loop 回喂模型自愈（对齐 Tool 模式错误回传闭环），
@@ -101,8 +98,6 @@ class StateOperationExecutor:
         # 本批次被结构纯净闸剥离的内联详细提示词条数（每次 execute 重置）：
         # 剥离后草稿无提示词，正文追加更正说明防虚报
         self.prompts_stripped: int = 0
-        # 4-4 双轨退役：流式「边写边填」计数器（stream_preapplied/stream_consumed）
-        # 与累加批次状态已删（流式预执行为文本轨基础设施）
 
     def _reject(self, reason: str) -> None:
         """记录一条闸机拦截原因（去重）"""
@@ -150,10 +145,6 @@ class StateOperationExecutor:
             self.svc.discard_last_undo()
         return applied
 
-    # 文本动作轨的异步执行器动作（execute_async/_dispatch_async_action/
-    # _ASYNC_EXECUTOR_ACTIONS）已随任务#36 B5 执行器一步退役删除：
-    # 管线阶段改由通用主路径直走平台工具，无外部调用方。
-
     @staticmethod
     def _is_mutating(action: Dict[str, Any]) -> bool:
         """判断操作是否可能变更状态（流程信号类操作不入 undo 栈）"""
@@ -184,7 +175,7 @@ class StateOperationExecutor:
         return ops.sync_shot_duration(group, draft, patch)
 
     def _gate_check(self, prompt: str, kind: str, group: Optional[Dict[str, Any]] = None) -> bool:
-        """写入前闸机（委托统一闸机管线，宪法 §2.0； 恢复接线，与 FC 轨同源判定）。
+        """写入前闸机（委托统一闸机管线，宪法 §2.0，与 FC 轨同源判定）。
 
         返回 True = 放行。闸机未启用 / 模式非 strict 时恒放行；
         strict 拦截的写入返回 False，模型下一轮看到状态缺失后自行补写（自愈）。"""
@@ -233,7 +224,7 @@ class StateOperationExecutor:
             presented.append(draft_id)
 
     def _gen_confirm_gate(self, pairs: List[tuple]) -> List[tuple]:
-        """生成确认闸（文本轨， 双轨收敛一期）：判定唯一实现 =
+        """生成确认闸：判定唯一实现 =
         guard_pipeline.evaluate_gen_confirm（与 FC 轨逐字节一致）。
 
         目标草稿存在未确认即整批硬拒（语义：模型跳确认非用户意志；
@@ -259,7 +250,7 @@ class StateOperationExecutor:
         return pairs
 
     def _gen_asset_binding_gate(self, pairs: List[tuple]) -> List[tuple]:
-        """生成前资产绑定检查（文本轨，任务#12 E-6 禁令下沉）：判定唯一实现 =
+        """生成前资产绑定检查：判定唯一实现 =
         guard_pipeline.evaluate_gen_asset_binding。
 
         目标分镜的 sceneRefs 引用了无概念图的关键元素即整批硬拒
@@ -291,8 +282,6 @@ class StateOperationExecutor:
         """
         async with self.svc.lock:
             return self.execute(actions)
-
-    # （execute_async_locked 已随任务#36 B5 执行器退役删除，异步执行器动作不再存在）
 
     # ---------- 内部方法 ----------
 
@@ -356,7 +345,7 @@ class StateOperationExecutor:
         """draft_type → 状态类别键；委托领域层唯一实现"""
         return ops.categories_for_type(draft_type, strict=strict)
 
-    # ---------- 草稿/分组域承重壳（实现体 core/action_drafts.py，任务 24 P7-3） ----------
+    # ---------- 草稿/分组域承重壳（实现体 core/action_drafts.py） ----------
 
     def _apply_draft_patch(self, action: Dict) -> bool:
         """草稿 patch（含 confirm 复用路径）；定义源 = core/action_drafts.py"""
@@ -406,7 +395,7 @@ class StateOperationExecutor:
         """一条龙指令机械登记；定义源 = core/action_drafts.py"""
         return apply_flow_directive(self, action)
 
-    # ---------- 文档/媒体域承重壳（实现体 core/action_media.py，任务 24 P7-3） ----------
+    # ---------- 文档/媒体域承重壳（实现体 core/action_media.py） ----------
 
     def _apply_write_document(self, action: Dict[str, Any]) -> bool:
         """写入/更新项目文档工件；定义源 = core/action_media.py"""

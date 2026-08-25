@@ -1,8 +1,9 @@
-﻿"""SSE 事件名常量（后端唯一权威定义， 契约集中化）。
+"""SSE 事件名常量（后端唯一权威定义， 契约集中化）。
 
 Agent 聊天流协议：任务式事件流（GET /api/agent/tasks/{id}/events）的 SSE data 帧均为
-{"type": <下列常量>, ...}。前端联合类型见 src/web/types/index.ts 的 SseEvent，
-改动任一事件名/字段时两侧必须同步。
+{"type": <下列常量>, ...}。前端联合类型已由本文件 Pydantic 模型经
+scripts/gen_api_types.py 生成（api.generated.ts 的 SseEvent），
+改动任一事件名/字段时重新运行生成器即双侧同步（--check 门禁钉死）。
 
 放在 core 层（而非 web 层）的原因：事件的生产者（planner/agent_loop/
 fc_tool_runner）在 core 层，web 层（chat_service/mock_chat）可以引用 core，
@@ -29,19 +30,18 @@ SSE_DOC_WRITTEN = "doc_written"
 SSE_MODEL_FALLBACK = "model_fallback"
 # 本轮结束（携带完整 payload，含状态快照）
 SSE_DONE = "done"
-# 停止终态（端到端中断协议，任务 #17）：用户主动停止的明确终态事件。
+# 停止终态（端到端中断协议）：用户主动停止的明确终态事件。
 # 携带 phase=thinking/tool_executing/streaming（前端措辞区分）与
 # inflight=在途外部生成任务登记（web 透传层富化）；任何中断都有痕迹、都有出口。
 SSE_STOPPED = "stopped"
 # 错误（携带 detail，可携带 error_code 供前端 i18n；
 # 增 raw = 上游原始报文，前端「技术详情」折叠展示；
-# 任务 #19：增结构化 code/kind/message（ErrorPayload 契约，见 web/error_payload.py））
+# 结构化 code/kind/message（ErrorPayload 契约，见 web/error_payload.py））
 SSE_ERROR = "error"
 # 本轮操作已执行（agent_loop 内部事件，前端目前忽略）
 SSE_ACTIONS_APPLIED = "actions_applied"
 # 多步循环的轮次开始（agent_loop 内部事件，前端目前忽略）
 SSE_STEP_STARTED = "step_started"
-# executing_actions 已随文本块执行路径退役删除（ADR-0001）
 # 引导消息轮间注入成功（携带 id/text）：前端据此渲染用户气泡
 # 并从排队区移除对应条目（未被注入的条目由排队区兜底在任务结束后发出）
 SSE_GUIDANCE_INJECTED = "guidance_injected"
@@ -64,14 +64,14 @@ def status_event(key: str, text: str, params: dict | None = None) -> dict:
 
 
 # ============================================================
-# SSE 载荷编译期契约（整改批 3.2）：Pydantic 模型 = 前端 TS 类型的
+# SSE 载荷编译期契约：Pydantic 模型 = 前端 TS 类型的
 # 单一事实源。发射侧仍为裸 dict（零运行时开销，不受影响）；本节模型
 # 仅服务 scripts/gen_api_types.py 的 TS 导出与 --check 门禁——事件名或
 # 字段变更时 TS 契约漂移即 CI 红。
 # 深层结构（trace/state/workflow 快照）已有各自 dataclass 投影，此处以
-# Dict[str, Any] 透传并注释来源，待后续批次逐个收紧。
+# Dict[str, Any] 透传并注释来源。
 # ============================================================
-from typing import Any, Dict, List, Literal, Optional  # noqa: E402
+from typing import Any, Dict, List, Literal, Optional, Union  # noqa: E402
 
 from pydantic import BaseModel, Field  # noqa: E402
 
@@ -85,7 +85,9 @@ class SseStatusEvent(_SseFrame):
     type: Literal["status"]
     text: str = ""
     key: str = ""
-    params: Dict[str, Any] = Field(default_factory=dict)
+    # 插值参数仅标量（前端 i18n 字典插值契约；Dict[str, Any] 会使
+    # 生成类型退化为 Record<string, unknown>，消费侧 parseRoundParams 无法收窄）
+    params: Dict[str, Union[str, int, float]] = Field(default_factory=dict)
 
 
 class SseDeltaEvent(_SseFrame):
@@ -100,17 +102,19 @@ class SseReasoningDeltaEvent(_SseFrame):
 
 class SseToolStartedEvent(_SseFrame):
     type: Literal["tool_started"]
-    id: str = ""
-    name: str = ""
-    summary: str = ""
+    # id/name/summary 为发射侧必携字段（无默认 → 生成 TS 必填，
+    # 对齐前端消费侧 toolStarted(id, name, summary) 签名）
+    id: str
+    name: str
+    summary: str
     args: Optional[Dict[str, Any]] = None
 
 
 class SseToolFinishedEvent(_SseFrame):
     type: Literal["tool_finished"]
-    id: str = ""
-    ok: bool = True
-    elapsed_ms: float = 0
+    id: str
+    ok: bool
+    elapsed_ms: float
     result_summary: str = ""
     planning: Optional[bool] = None
 
@@ -142,6 +146,14 @@ class SseStoppedEvent(_SseFrame):
     phase: str = ""            # thinking | tool_executing | streaming
     step: Optional[int] = None
     inflight: Optional[List[SseStoppedInflightItem]] = None
+
+
+class SseModelFallbackEvent(_SseFrame):
+    """模型降级即时联动帧（发射端已退役，帧骨架仅兼容旧任务 replay，
+    与 sse_protocol.py 登记口径一致；导出供前端 use-sse 既有 handler 类型化）。"""
+    type: Literal["model_fallback"]
+    provider: str = ""
+    model: str = ""
 
 
 class SseErrorEvent(_SseFrame):
@@ -199,6 +211,9 @@ class SseDonePayload(BaseModel):
     pause_kind: str = ""
     stopped: bool = False
     stop_phase: str = ""
+    # 兼容字段：旧任务 replay 的 done_payload 可能携带；
+    # 现行契约下降级走 model_fallback/replay.fallback 通道，发射端不再写入
+    fallback_model: Optional[str] = None
     elapsed_ms: Optional[int] = None
     turn_id: Optional[str] = None
     state: Optional[Dict[str, Any]] = None      # ServerStateSnapshot 投影
@@ -256,8 +271,8 @@ class SseTaskStatusEvent(_SseFrame):
 
 
 # 事件帧注册表（TS 导出顺序 = 本表顺序；payload-only 模型经 $ref 随帧导出）。
-# 新增/改名事件必须同批维护：常量 + 本表 + web/sse_protocol.py 登记 +
-# 前端 index.ts 联合类型（test_sse_contract_parity 双向对拍）。
+# 新增/改名事件必须同批维护：常量 + 本表 + web/sse_protocol.py 登记，
+# 前端联合类型随生成器自动同步（test_sse_contract_parity 对拍生成物）。
 TS_EVENT_FRAMES: List[tuple] = [
     ("SseStatusEvent", SseStatusEvent),
     ("SseDeltaEvent", SseDeltaEvent),
@@ -268,6 +283,7 @@ TS_EVENT_FRAMES: List[tuple] = [
     ("SseActionsAppliedEvent", SseActionsAppliedEvent),
     ("SseStoppedInflightItem", SseStoppedInflightItem),
     ("SseStoppedEvent", SseStoppedEvent),
+    ("SseModelFallbackEvent", SseModelFallbackEvent),
     ("SseErrorEvent", SseErrorEvent),
     ("SseGuidanceInjectedEvent", SseGuidanceInjectedEvent),
     ("SseDoneChatInsert", SseDoneChatInsert),

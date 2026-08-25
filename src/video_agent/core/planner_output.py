@@ -1,7 +1,7 @@
-"""轮次产出组装域（自 planner.py 切出）。
+"""轮次产出组装域。
 
 承载：agent_loop 结束后的轮末组装——FC 闸机警告并入、暂停轮客观完成
-记账、纯工具轮占位文案替换、双轨收集器去重合并、PlannerResponse 构造。
+记账、纯工具轮占位文案替换、收集器去重合并、PlannerResponse 构造。
 
 response_factory 以 callable 注入（同 agent_loop 的 llm_call 惯例），
 避免与 planner.py 循环导入；planner.py 传入 PlannerResponse 类本身。
@@ -44,7 +44,7 @@ def assemble_response(
 ) -> Any:
     """轮末组装 PlannerResponse（planner.handle_message 尾段唯一落点）。
 
-    双轨对齐：FC 轨闸机警告并入 warnings；文本轨 executor 与 FC 轨收集器
+    FC 轨闸机警告并入 warnings；executor 与收集器
     的 chat_inserts/documents 按 URL/名称去重保序；文档卡片已即时可见，
     正文不重复补「本轮已写入文档」交代（防同屏双显）。
     """
@@ -57,7 +57,7 @@ def assemble_response(
                 loop_result.warnings.append(w)
                 seen.add(w)
 
-    # 成果正文通道（三通道分离 A）：本轮成功执行的阶段工具成果由层 9
+    # 成果正文通道：本轮成功执行的阶段工具成果由层 9
     # 确定性渲染进正文（模型只短交代，成果展示不再依赖模型自觉）；
     # 判重内置——模型 prose 已含总结时不重复追加。
     _state = getattr(executor, "state", None) or {}
@@ -90,7 +90,7 @@ def assemble_response(
                 f"已执行 {loop_result.applied_actions} 个操作：" + "；".join(merged_log[:12])
             )
 
-    # chat_inserts：FC 路径收集 + 文本解析路径 executor 收集，按 URL 去重
+    # chat_inserts：FC 路径收集 + executor 收集，按 URL 去重
     merged_inserts: List[Dict[str, Any]] = []
     seen_urls = set()
     for it in ((chat_inserts_collector or []) + executor.chat_inserts):

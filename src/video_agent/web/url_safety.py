@@ -1,11 +1,10 @@
-"""URL 安全校验（SSRF 防护）——单一事实源（B6/F37 加固）。
+"""URL 安全校验（SSRF 防护）——单一事实源。
 
 供 eval/quality.py 与外部图片代理等场景使用；与 routes/providers.py 的
 内网黑名单语义保持一致：私网地址拒绝，本机回环/本地反代显式放行。
 
-B6/F37 加固：
-1. 协议白名单——仅 http/https（file:/gopher:/data: 等一律拒绝，此前 hostname
-   为空或异常时直接放行）；
+加固要点：
+1. 协议白名单——仅 http/https（file:/gopher:/data: 等一律拒绝）；
 2. 域名解析后复验——DNS 指向内网/回环的域名一并拒绝（堵 DNS rebinding；
    回环仅对字面量 localhost/127.x 放行，域名解析到回环同样拒绝）。
 """
@@ -55,7 +54,7 @@ def validate_external_url(url: str) -> None:
     except ValueError as e:
         if "禁止" in str(e):
             raise
-        # host 是域名：DNS 解析后复验（B6/F37），解析失败拒绝（保守）
+        # host 是域名：DNS 解析后复验，解析失败拒绝（保守）
     try:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
     except OSError as e:

@@ -1,10 +1,10 @@
-"""版本闸与防抖落盘域（自 manager.py 切出，行数棘轮清偿 P7-1）。
+"""版本闸与防抖落盘域（自 manager.py 切出）。
 
 职责：StateManager 的持久化防护簇——版本账本闸（乐观锁防旧盖新）、
 防抖合并落盘（高频路径不阻塞事件循环）、磁盘账本读取与陈旧重载。
 
-本模块只依赖 StateManager 的既有接口/内部属性（同包受控访问，
-chat_tail_ops 先例），不反向 import manager（类级账本经
+本模块只依赖 StateManager 的既有接口/内部属性（同包受控访问），
+不反向 import manager（类级账本经
 ``type(svc)._board_versions`` 访问），无循环依赖。
 """
 import asyncio
@@ -38,7 +38,7 @@ def disk_board_version(svc: "StateManager", project_id: str) -> int:
 
 def save(svc: "StateManager") -> bool:
     """持久化：写入当前项目 + 更新 index 时间戳（经 repo 接口；
-    sqlite 后端下唯一落盘点为 state.sqlite3，JSON 镜像已退役，
+    sqlite 后端下唯一落盘点为 state.sqlite3，
     save_compat 在 sqlite 仓库为空实现）
 
     返回是否真正落盘：版本闸放弃写入时返回 False（调用方据此判冲突，
@@ -70,7 +70,7 @@ def save(svc: "StateManager") -> bool:
         svc._repo.save_project(pid, svc._raw_state)
         svc._repo.save_compat(svc._raw_state)
         # 版号 +1 并随索引落盘（重启继承；读取/加载不触发递增）；
-        # 取磁盘与进程内账本的较大者，保证两本不分裂（9 项目乐观锁契约）
+        # 取磁盘与进程内账本的较大者，保证两本不分裂
         v = max(disk_v, board_versions.get(pid, 0)) + 1
         for p in index.get("projects", []):
             if p["id"] == pid:

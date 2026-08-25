@@ -10,11 +10,11 @@ StateManager — Rule3: 唯一状态写入点。支持多项目。
 - CLI 路径（agent.py）通过 .state 属性获取 Pydantic 模型
 - Web 路径通过 .state_dict 获取 raw dict，供 Tool/Route 直接操作
 
-拆分清偿（P7-1，行数棘轮 >900 清零）：对话域/落盘闸/快照组装实现体分别切出至
+实现拆分：对话域/落盘闸/快照组装实现体分别切出至
 conversation_ops / save_ops / context_builder；本文件保留 StateManager 类本体
 与承重壳委托（壳清单登记于 coupling_registry R13），公开 API 零变化。
-清偿属性登记（R14）：方法壳为 StateManager 公开 API 门面，长期承重，
-不设近期清偿轮次；测试 monkeypatch 目标应为壳方法（调用方经实例方法查找）。
+方法壳为 StateManager 公开 API 门面，长期承重；
+测试 monkeypatch 目标应为壳方法（调用方经实例方法查找）。
 """
 import asyncio
 import json
@@ -43,7 +43,7 @@ from .undo_redo import UndoRedoMixin
 from . import chat_tail_ops, conversation_ops, save_ops
 
 # 后台 Agent 任务的按任务隔离实例：worker 上下文内 get_instance
-# 返回任务专属 StateManager，切项目/刷新不串写（根因：旧状态覆盖新项目）。
+# 返回任务专属 StateManager，切项目/刷新不串写。
 _task_state_var: ContextVar[Optional["StateManager"]] = ContextVar(
     "agent_task_state", default=None,
 )
@@ -53,9 +53,6 @@ DEFAULT_WORKSPACE_DIR = WORKSPACE_DIR
 
 # 默认 demo 数据（首次启动时使用，从 data/demo_state.json 加载）
 _DEMO_STATE_FILE = DATA_DIR / "demo_state.json"
-
-# 聊天记录保留上限与落盘防抖窗口随实现体切出（conversation_ops.CHAT_HISTORY_LIMIT /
-# save_ops._SAVE_DEBOUNCE_SECONDS），本文件不再持有副本。
 
 
 def _load_default_state() -> Dict[str, Any]:
@@ -71,8 +68,8 @@ def _load_default_state() -> Dict[str, Any]:
 # ---------- 内部工具函数 ----------
 
 def _set_path_dict(obj: Any, path: str, value: Any) -> None:
-    """按点号路径设置 dict/list 元素（纯 dict 路径， 后续：CLI 下线后
-    Pydantic 对象分支已移除，非 dict/list 中间节点显式报错而非静默 setattr）。"""
+    """按点号路径设置 dict/list 元素（纯 dict 路径；非 dict/list 中间节点
+    显式报错而非静默 setattr）。"""
     parts = path.split(".")
     current = obj
     for i, part in enumerate(parts[:-1]):
@@ -107,8 +104,7 @@ def _set_path_dict(obj: Any, path: str, value: Any) -> None:
 class StateManager(UndoRedoMixin):
     """Rule3: 唯一状态写入点。支持多项目。
 
-    版本账本（888 ：双实例各算各的号导致正常保存被拒）：
-    `_board_versions` 类级共享（同项目所有实例同一本账），
+    版本账本：`_board_versions` 类级共享（同项目所有实例同一本账），
     随项目文件落盘，进程重启后从落盘值继承，不断号。
 
     设计 §1.3：多项目管理内置于 StateManager，不另设 service 层。
@@ -123,7 +119,7 @@ class StateManager(UndoRedoMixin):
 
     _board_versions: Dict[str, int] = {}
 
-    # 单例（替代原 StudioStateService）
+    # 单例
     _instance: Optional["StateManager"] = None
 
     @classmethod
@@ -229,7 +225,7 @@ class StateManager(UndoRedoMixin):
         """加载：优先从索引找活跃项目，否则迁移旧 studio_state.json。
 
         读写均经 self._repo 接口（sqlite 后端下索引/项目体都在
-        state.sqlite3；任务 #24 镜像退役后无 JSON 镜像旁路）。
+        state.sqlite3）。
         """
         self._repo.ensure_dirs()
 
@@ -414,8 +410,6 @@ class StateManager(UndoRedoMixin):
         """当前项目版本号（同项目所有实例共享一本账；实现见 save_ops.board_version）。"""
         return save_ops.board_version(self)
 
-    # save_state 兼容别名已清偿（全仓零调用方）
-
     async def save_async(self) -> bool:
         """异步立即落盘：写盘移 worker 线程（实现见 save_ops.save_async）。"""
         return await save_ops.save_async(self)
@@ -509,7 +503,7 @@ class StateManager(UndoRedoMixin):
         return conversation_ops.list_conversations(self)
 
     def conversations_meta_payload(self) -> Dict[str, Any]:
-        """多对话元信息响应（不含消息副本，E-2 消息单一来源；
+        """多对话元信息响应（不含消息副本，消息单一来源；
         实现见 conversation_ops.conversations_meta_payload）。"""
         return conversation_ops.conversations_meta_payload(self)
 

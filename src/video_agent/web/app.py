@@ -76,11 +76,10 @@ async def lifespan(_app: FastAPI):
     from src.video_agent.web.port_wiring import install_core_ports
     from src.video_agent.state.manager import StateManager
     from src.video_agent.config import settings
-    install_core_ports()  # D-01：core 端口装配（生成管线/供应商配置/日志/Skill 文档）
+    install_core_ports()  # core 端口装配（生成管线/供应商配置/日志/Skill 文档）
     register_adapters()
     load_runtime_settings()  # 运行时设置（fallback 开关等）持久化覆盖，热生效
-    # 代码内置 Skill（编剧/分镜师/制片）已按用户要求彻底移除，不再注册；
-    # 下拉框与 Skill 目录只保留 data/skills/*.md 文档 Skill。
+    # Skill 下拉框与目录只保留 data/skills/*.md 文档 Skill
     ensure_default_skill_docs()
     StateManager.get_instance()  # 触发加载/初始化
     # 数据 TTL 启动清理——技能历史版本全量收敛（每 slug 保留最近 N 版）；
@@ -95,7 +94,7 @@ async def lifespan(_app: FastAPI):
     if settings.canvas_enabled:
         from src.video_agent.tools.canvas_tools import register_canvas_tools
         register_canvas_tools()
-        # 画布版本漂移探测（-5）：fire-and-forget，失败/离线不阻塞启动
+        # 画布版本漂移探测：fire-and-forget，失败/离线不阻塞启动
 
         async def _check_canvas_version():
             from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
@@ -208,9 +207,9 @@ async def api_key_auth(request: Request, call_next):
 # ---------- 统一异常处理 ----------
 @app.exception_handler(VideoAgentError)
 async def video_agent_error_handler(request: Request, exc: VideoAgentError):
-    """业务异常统一转译为 JSON 响应（任务 #19：ErrorPayload 契约——
+    """业务异常统一转译为 JSON 响应（ErrorPayload 契约——
     既有 detail/error_code 兼容字段 + 结构化 code/kind/message；
-    P9：异常携带的 raw 技术细节随契约下发，非流式出口统一走本链路）"""
+    异常携带的 raw 技术细节随契约下发，非流式出口统一走本链路）"""
     payload = classify_exception(exc, raw=getattr(exc, "raw", "") or "")
     return JSONResponse(
         status_code=exc.status_code,
@@ -256,7 +255,7 @@ def _studio_page() -> FileResponse:
     """
     dist_index = STATIC_DIR / "dist" / "index.html"
     if not dist_index.exists():
-        # SPA 入口运维兜底，非 API 消费面，豁免 P9 ErrorPayload 收编
+        # SPA 入口运维兜底，非 API 消费面，豁免 ErrorPayload 收编
         raise HTTPException(status_code=503, detail="前端产物缺失，请执行 npm run build 后重启服务")
     return FileResponse(str(dist_index), headers={"Cache-Control": "no-cache"})
 
@@ -299,7 +298,7 @@ async def health():
 @app.get("/canvas", include_in_schema=False)
 @app.get("/settings", include_in_schema=False)
 async def spa_fallback():
-    """SPA 客户端路由回退：画布 / API 配置刷新或直接访问时返回新前端页面（A-5）"""
+    """SPA 客户端路由回退：画布 / API 配置刷新或直接访问时返回新前端页面"""
     return _studio_page()
 
 

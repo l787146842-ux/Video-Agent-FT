@@ -1,9 +1,8 @@
-"""闸机豁免消费域（自 planner.py 切出；handle_message 瘦身）。
+"""闸机豁免消费域。
 
 会话层一次性豁免（gate_overrides，§2.4）的消费与作用域判定：
 唯一权威入口 = 前端「本次放行」按钮随消息登记 interaction.gate_overrides，
-单次消费即清除、留痕入 trace（C5：正则猜自然语言豁免入口已退役，
-「坚持/听我的/直接写」类话术不再降级闸门，误伤面归零）。
+单次消费即清除、留痕入 trace。
 返回作用域（False = 无豁免）；消费失败不阻断对话（本轮无豁免放行）。
 """
 from typing import Any
@@ -35,7 +34,7 @@ def consume_gate_overrides(state_manager: Any, user_message: Any) -> Any:
             )
             logger.info(f"[GateOverride] 消费 {len(taken)} 条一次性豁免，作用域={gate_override_scope}")
             AgentTracer.get_instance().record_gate(
-                # override 留痕经统一归一出口（P5；正式 ID 归一为恒等，语义不变）
+                # override 留痕经统一归一出口（正式 ID 归一为恒等，语义不变）
                 prompt_gates.normalize_rule_id("platform.gate_override"), "session", True,
                 overridden=True, message=f"一次性放行生效，作用域={gate_override_scope}",
                 scope=str(gate_override_scope),

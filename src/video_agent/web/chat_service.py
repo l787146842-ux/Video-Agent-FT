@@ -1,16 +1,16 @@
 """
-Agent Chat Service — 聊天业务编排（从 routes/agent.py 抽离）。
+Agent Chat Service — 聊天业务编排。
 
 职责：
 - 流式处理公共实现（mock / 真实供应商）：任务式后台任务与非流式共用
 - 非流式聊天编排
 - 会话持久化（用户/agent 消息、文档卡片、生图卡片）
 
-拆分（修复计划书 -6）：
+模块结构：
 - 多模态内容构建 → multimodal_builder.py
 routes/agent.py 仅保留路由定义和请求/响应模型。
 
-错误翻译域（任务 25 P7-4，WARN 线清偿）切出至 web/chat_errors.py；
+错误翻译域位于 web/chat_errors.py；
 本文件尾部留承重壳 re-export（coupling_registry R13 登记），
 既有引用与测试 patch 目标不变，错误语义零变更。
 """
@@ -71,8 +71,7 @@ from src.video_agent.core.tracer import AgentTracer
 
 __all__ = ["non_stream_worker", "build_multimodal_content"]
 
-# 停止阶段措辞/痕迹文案/停止持久化已抽至 web/stop_manager.py（任务 #17 收尾，
-# 行数棘轮清偿：chat_service 回落 900 行以下）
+# 停止阶段措辞/痕迹文案/停止持久化见 web/stop_manager.py
 
 
 async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_injector=None, stop_scope: str = "chat") -> None:
@@ -80,7 +79,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
 
     pending_injector：可选 callable → List[{id, text}]，轮间引导注入器，
     由后台任务路径装配（agent_task_manager.drain_pending_guidance）。
-    stop_scope：协作式停止标志作用域（任务 #17）——任务式传输=task_id
+    stop_scope：协作式停止标志作用域——任务式传输=task_id
     （多任务并发互不串）。"""
     # 铁律文档每轮确保存在（宪法）：项目级生产契约唯一表述源，
     # 真实聊天/任务路径同样生效，不能只在 mock 路径创建
@@ -150,7 +149,7 @@ def start_agent_task(body: Any) -> Dict[str, Any]:
     """任务式传输：提交即返回 task_id，worker 后台运行。
 
     刷新/切项目只断订阅不杀任务；worker 绑定提交时所属项目（任务级 StateManager），
-    不会把旧项目状态写进新项目（根因之一）。
+    不会把旧项目状态写进新项目。
     """
     from src.video_agent.utils import gen_id
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
@@ -192,14 +191,14 @@ async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_di
         async def emit(event: Dict[str, Any]) -> None:
             tm.emit(task_id, event)
 
-        # 恢复：轮间引导注入器——注册到本任务的排队消息逐轮被消费
+        # 轮间引导注入器——注册到本任务的排队消息逐轮被消费
         # （agent_loop 第 2 轮起调用），注入成功即 guidance_injected 事件下发。
         def pending_injector() -> List[Dict[str, Any]]:
             return tm.drain_pending_guidance(task_id)
 
         await _stream_worker_impl(body, svc, emit, pending_injector=pending_injector, stop_scope=task_id)
     except asyncio.CancelledError:
-        # 任务 #17：用户主动停止（停止标志在位）且检查点未来得及发 stopped
+        # 用户主动停止（停止标志在位）且检查点未来得及发 stopped
         # 终态事件时补发，保证任何中断都有痕迹；随后原样上抛（asyncio 任务以
         # cancelled 终结，_on_done 会保留 stopped 状态不覆盖）
         if is_stop_requested(task_id):
@@ -245,20 +244,13 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
                 return provider_id or settings.default_image_provider_id, aspect_ratio
     return settings.default_image_provider_id, aspect_ratio
 
-# ---------- 模型 fallback 链（退役：用户裁决 2026-08-20） ----------
-# 模型选择权归用户：选什么用什么，联不通直接报错。自动换厂商 fallback
-# （_fallback_candidates/_fallback_switch_payload/_is_retryable_adapter_error）
-# 已删除；model_fallback 事件骨架仅留兼容旧任务 replay（协议表见退役注记）。
-# 生图/生视频 fallback 属独立机制（generation.py），不在本裁决范围。
-
 
 async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", wiz_doc: str = "", stop_scope: str = "chat") -> None:
     """真实供应商的流式处理（单一候选：选什么用什么，联不通直接报错）。
 
-    聊天模型 fallback 链已退役（用户裁决 2026-08-20）；生图/生视频 fallback
-    属独立机制（generation.py），不在本裁决范围。
+    生图/生视频 fallback 属独立机制（generation.py）。
     pending_injector：轮间引导注入器，经 PlannerContext 传入循环。
-    stop_scope：协作式停止标志作用域（任务 #17），透传 PlannerContext → agent_loop 检查点。
+    stop_scope：协作式停止标志作用域，透传 PlannerContext → agent_loop 检查点。
     """
     history = truncate_history([
         {"role": m.get("role", "user"), "content": m.get("content", "")}
@@ -310,9 +302,9 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
     # 用户裁决：模型选择权归用户——
     # 选什么用什么，联不通直接报错，不自动换厂商 fallback
     candidates = [(body.provider, body.model)]
-    # 会话级 compaction（恢复；：预热后台——便宜模型摘要的
+    # 会话级 compaction：预热后台——便宜模型摘要的
     # adapter 创建/端点解析并行，首 token 不被摘要往返阻塞；
-    # 命中缓存时任务即刻完成，语义与同步等待完全一致）
+    # 命中缓存时任务即刻完成，语义与同步等待完全一致
     summary_adapter = _resolve_summary_adapter(body, candidates)
     _compact_task = asyncio.create_task(_maybe_compact_history(history, svc, summary_adapter))
 
@@ -362,7 +354,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             pending_injector=pending_injector,
             # 轮始客观推进信号（decision 消费/闸预检分诊；runtime 不据此自主行动）
             advance_signal=advance_signal,
-            # 协作式停止标志作用域（任务 #17）：SSE 直连="chat"，任务式传输=task_id
+            # 协作式停止标志作用域：SSE 直连="chat"，任务式传输=task_id
             stop_scope=stop_scope,
         )
 
@@ -402,7 +394,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                     # 仅 UI 展示用，不进下次 LLM 上下文
                     await emit(event.payload or {"type": event.type, "text": event.text})
                 elif event.type == SSE_STOPPED:
-                    # 停止终态事件透传（任务 #17）：agent_loop 检查点已发 phase/step，
+                    # 停止终态事件透传：agent_loop 检查点已发 phase/step，
                     # web 透传层负责富化在途外部生成任务登记（core 层不感知 web 注册表）。
                     # 第一版不做真实撤销/补偿，仅登记 + 文案告知供应商侧仍在进行
                     _sp = dict(event.payload or {"type": SSE_STOPPED})
@@ -426,7 +418,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             await _emit_stream_error(svc, body, e, emit, use_studio_context)
             return
 
-        # --- 停止路径（任务 #17）：stopped 终态事件已由检查点先行下发，
+        # --- 停止路径：stopped 终态事件已由检查点先行下发，
         # 此处只落停止痕迹消息供刷新后恢复，不再发 done（stopped 即终态）
         if final_payload.get("stopped"):
             # 停止痕迹持久化（stop_manager）；stopped 即终态，不再发 done
@@ -492,7 +484,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         return
 
 
-# 错误翻译域实现体在 chat_errors.py（任务 25 P7-4）：_emit_stream_error /
+# 错误翻译域实现体在 chat_errors.py：_emit_stream_error /
 # _friendly_stream_error 经尾部 re-export 保持既有引用不变
 
 
@@ -631,29 +623,11 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         body.skill_name or "", body.skill_slug or "", svc.state_dict, user_text,
     )
     prelude_notes = _build_prelude_notes(resolved_skill)
-    planner_ctx = PlannerContext(
-        history=history, selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
-        state_builder=state_builder,
-        degraded_state_builder=(
-            (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
-        ),
-        skill_name=resolved_skill,
-        # 分诊只认用户原话（附件预览问号不参与提问判定）
-        raw_user_text=user_text,
-        prelude_notes=prelude_notes,
-        use_studio_context=use_studio_context, asset_mode=body.asset_mode,
-        image_generation_provider=image_provider2,
-        image_generation_aspect_ratio=image_aspect_ratio2,
-        user_id=getattr(body, "user_id", "") or "",
-        thinking_level=getattr(body, "thinking_level", "") or "",
-        advance_signal=advance_signal,
-        # 任务 #17：非流式无停止端点，独立 scope 防被 SSE 路径停止标志误杀
-        stop_scope="nonstream",
-    )
 
     # 用户裁决：单一候选 = 用户所选，联不通直接报错
     candidates = [(body.provider, body.model)]
-    # 会话级 compaction（恢复；：同流式路径——预热后台）
+    # 会话级 compaction：同流式路径——预热后台；PlannerContext
+    # 在取回压缩结果之后构建，history 必须是压缩后列表，与流式轨同构
     summary_adapter = _resolve_summary_adapter(body, candidates)
     _compact_task = asyncio.create_task(_maybe_compact_history(history, svc, summary_adapter))
     result = None
@@ -670,6 +644,25 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         if _compact_task is not None:
             history = await _compact_task
             _compact_task = None
+        planner_ctx = PlannerContext(
+            history=history, selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
+            state_builder=state_builder,
+            degraded_state_builder=(
+                (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
+            ),
+            skill_name=resolved_skill,
+            # 分诊只认用户原话（附件预览问号不参与提问判定）
+            raw_user_text=user_text,
+            prelude_notes=prelude_notes,
+            use_studio_context=use_studio_context, asset_mode=body.asset_mode,
+            image_generation_provider=image_provider2,
+            image_generation_aspect_ratio=image_aspect_ratio2,
+            user_id=getattr(body, "user_id", "") or "",
+            thinking_level=getattr(body, "thinking_level", "") or "",
+            advance_signal=advance_signal,
+            # 非流式无停止端点，独立 scope 防被 SSE 路径停止标志误杀
+            stop_scope="nonstream",
+        )
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StateOperationExecutor,
@@ -693,8 +686,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     if result is None:  # 理论不可达（最后候选失败已 raise），防御兜底
         raise last_err or GenerationError("无可用聊天模型")
 
-    #自查补漏：turn_id 提升到 if 外，非流式返回体与流式 done payload
-    # 契约对齐（turn_id + suggested_actions 同构， 一致性）
+    # turn_id 提升到 if 外，非流式返回体与流式 done payload
+    # 契约对齐（turn_id + suggested_actions 同构，一致性）
     ns_turn_id = uuid.uuid4().hex[:12]
     if use_studio_context:
         async with svc.lock:
@@ -754,11 +747,10 @@ from src.video_agent.web.chat_consume import (
     _maybe_compact_history,
     consume_pause_response,
 )
-# 错误翻译域承重壳（实现体 chat_errors.py，任务 25 P7-4）：消费方为
+# 错误翻译域承重壳（实现体 chat_errors.py）：消费方为
 # _real_stream 内部调用与 tests（test_error_payload/test_relay_error_envelope/
 # test_truncate_resend 经 chat_service.* 导入），迁移需全量改引用；
-# 清偿属性（R14）：公开错误出口门面，测试钉死 chat_service 命名空间，
-# 长期承重，不设近期清偿轮次
+# 公开错误出口门面，测试钉死 chat_service 命名空间，长期承重
 from src.video_agent.web.chat_errors import (
     _emit_stream_error,
     _friendly_stream_error,

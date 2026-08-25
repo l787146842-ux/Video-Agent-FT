@@ -1,5 +1,5 @@
 /**
- * hooks/use-sse.ts 收尾状态机测试（任务 #30 传输层补强；按主题拆分）。
+ * hooks/use-sse.ts 收尾状态机测试。
  *
  * 以可控 fake 注入替代真实传输层（@/api/sse 整体 mock），钉死：
  * - 收尾状态机（completed/error/stopped 各终态清理忙态与订阅）；

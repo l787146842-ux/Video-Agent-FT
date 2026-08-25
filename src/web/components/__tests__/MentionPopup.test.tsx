@@ -41,7 +41,7 @@ describe('MentionPopup 画布引用诚实提示', () => {
     expect(screen.getByText(t('rp.mention.offline'))).toBeTruthy();
   });
 
-  it('画布离线且 items 非空时也不展示 scope 提示（任务 #11 离线排除）', () => {
+  it('画布离线且 items 非空时也不展示 scope 提示（离线排除）', () => {
     render(() => <MentionPopup {...baseProps} loading={false} canvasOnline={false} items={items} />);
     expect(screen.queryByText(t('rp.mention.scope'))).toBeNull();
   });

@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import time
 from typing import Any, Dict, Optional, Type
 
@@ -78,7 +78,7 @@ class AdapterFactory:
     def register_from_config(cls):
         """根据合并后的 provider 配置动态注册所有适配器（启动时调用）"""
         # 延迟 import 保防环：core.provider_config 顶层依赖 adapters.canvas_adapter，
-        # 顶层化会形成 adapters 包 ↔ core.provider_config 部分初始化环（P3 下沉时核验）
+        # 顶层化会形成 adapters 包 ↔ core.provider_config 部分初始化环
         from src.video_agent.core.provider_config import (
             CLI_PROTOCOLS,
             get_api_key,

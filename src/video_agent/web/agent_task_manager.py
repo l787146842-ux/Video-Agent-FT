@@ -21,9 +21,9 @@ from src.video_agent.web.task_store import TaskStore
 
 _TASK_MAX = 50
 
-# 任务 #24：任务表持久化单源收敛 —— data/agent_tasks.json 停写，
-# 落盘迁入 workspace/state.sqlite3 kv 表（事务性，见 task_store）；
-# 旧文件仅作首启一次性导入兜底，导入后保留只读一个版本周期
+# 任务表持久化单源收敛 —— 落盘走 workspace/state.sqlite3 kv 表
+# （事务性，见 task_store）；旧 JSON 文件仅作首启一次性导入兜底，
+# 导入后保留只读一个版本周期
 _STORE_KEY = "agent_tasks"
 
 
@@ -79,12 +79,12 @@ class AgentTaskManager:
             "tools": [],
             "snapshot": None,
             "done_payload": None,
-            # 停止终态事件（任务 #17）：stopped 事件完整负载，replay 携带供刷新后恢复痕迹
+            # 停止终态事件：stopped 事件完整负载，replay 携带供刷新后恢复痕迹
             "stopped_payload": None,
-            # 降级即时联动（D-A）：最近一次 fallback 切换实际生效的厂商/模型，
+            # 降级即时联动：最近一次 fallback 切换实际生效的厂商/模型，
             # 随 replay 下发，刷新重连后前端仍能把选择器跳到正确组合
             "fallback": None,
-            # 任务 #3：最近一次 done 载荷的 workflow 投影（run 快照 +
+            # 最近一次 done 载荷的 workflow 投影（run 快照 +
             # pending_decision_payload），随 replay 同源下发供刷新后重建决策表单
             "workflow": None,
             "error": None,
@@ -113,7 +113,7 @@ class AgentTaskManager:
         self._notify(record, {"type": "task_status", "status": "cancelled"})
         return True
 
-    # ====== 轮间引导注入（恢复：机制重新接线） ======
+    # ====== 轮间引导注入 ======
 
     def add_pending_guidance(self, task_id: str, item: Dict[str, Any]) -> bool:
         """把用户排队消息登记到运行中任务，供 planner 轮间注入。
@@ -164,17 +164,17 @@ class AgentTaskManager:
         if not record:
             return
         if task.cancelled():
-            # 任务 #17：worker 已在 CancelledError 落地时发过 stopped 终态事件
+            # worker 已在 CancelledError 落地时发过 stopped 终态事件
             # （协作式停止）时，保留 stopped 状态，不覆盖为 cancelled
             if record["status"] != "stopped":
                 record["status"] = "cancelled"
-            # 取消路径原先完全静默，必须留痕
+            # 取消路径必须留痕
             logger.warning(f"[AgentTask] {task_id} 后台任务被取消")
         elif task.exception():
             exc = task.exception()
             record["status"] = "error"
             record["error"] = str(exc)
-            # 任务 #19：结构化归类随 replay 下发（刷新恢复后前端映射表仍能命中）
+            # 结构化归类随 replay 下发（刷新恢复后前端映射表仍能命中）
             _p = classify_exception(exc)  # type: ignore[arg-type]
             record["error_payload"] = {"code": _p.code, "kind": _p.kind, "raw": _p.raw}
             logger.error(f"[AgentTask] {task_id} 后台异常: {exc}")
@@ -219,12 +219,12 @@ class AgentTaskManager:
                 "stopped_payload": record.get("stopped_payload"),
                 "docs": list(record.get("docs") or []),
                 "wf_event_sequence": int(record.get("wf_event_sequence") or 0),
-                # 任务 #3：workflow 投影（run 快照 + pending_decision_payload +
+                # workflow 投影（run 快照 + pending_decision_payload +
                 # turn_events），前端 replay 分支据此重建结构化决策表单
                 "workflow": record.get("workflow"),
                 "fallback": record.get("fallback"),
                 "error": record["error"],
-                # 任务 #19：结构化错误归类（code/kind/raw；旧记录无此键时为 None）
+                # 结构化错误归类（code/kind/raw；旧记录无此键时为 None）
                 "error_payload": record.get("error_payload"),
             },
         })
@@ -260,7 +260,7 @@ class AgentTaskManager:
                 "id": event.get("id", ""),
                 "name": event.get("name", ""),
                 "summary": event.get("summary", ""),
-                # 输入参数预览（后端已裁剪脱敏，任务 #2）：重连 replay 后
+                # 输入参数预览（后端已裁剪脱敏）：重连 replay 后
                 # 详情卡展开区不丢
                 "args": event.get("args") or {},
                 "status": "running",
@@ -296,29 +296,29 @@ class AgentTaskManager:
             record["done_payload"] = payload
             if payload.get("state"):
                 record["snapshot"] = payload["state"]
-            # v2 收尾：workflow 事件序列高水位（重连按 sequence 补发/去重依据）
+            # workflow 事件序列高水位（重连按 sequence 补发/去重依据）
             _wf = payload.get("workflow") or {}
             _seq = int(_wf.get("event_sequence") or 0)
             if _seq > int(record.get("wf_event_sequence") or 0):
                 record["wf_event_sequence"] = _seq
-            # 任务 #3：workflow 投影入账（含 pending_decision_payload），
+            # workflow 投影入账（含 pending_decision_payload），
             # replay 携带供刷新/重连后同源重建结构化决策表单
             if _wf:
                 record["workflow"] = _wf
         elif etype == "doc_written":
-            # Rule2 v6 产物账本累积：断连重连 replay 补渲染文档卡
+            # 产物账本累积：断连重连 replay 补渲染文档卡
             _dn = str(event.get("name") or "")
             if _dn and _dn not in record.setdefault("docs", []):
                 record["docs"].append(_dn)
         elif etype == "stopped":
-            # 停止终态（任务 #17）：落终态标记与完整负载，供 replay 恢复痕迹
+            # 停止终态：落终态标记与完整负载，供 replay 恢复痕迹
             record["status"] = "stopped"
             record["stopped_payload"] = event
             record["status_text"] = "已被用户停止"
         elif etype == "error":
             record["status"] = "error"
             record["error"] = str(event.get("detail") or event.get("text") or "")
-            # 任务 #19：error 事件携带结构化归类时入账，replay 同源下发
+            # error 事件携带结构化归类时入账，replay 同源下发
             if event.get("code") or event.get("kind"):
                 record["error_payload"] = {
                     "code": str(event.get("code") or ""),
@@ -356,7 +356,7 @@ class AgentTaskManager:
     # ====== 清理 / 落盘 ======
 
     def _purge_stale(self) -> None:
-        # TTL 口径显式登记（三维审查建议项）：此处 3600s 是 agent 任务内存/kv
+        # TTL 口径显式登记：此处 3600s 是 agent 任务内存/kv
         # 台账的有意短 TTL（test_task_table_capacity 钉死），与
         # settings.task_ttl_seconds（86400，归 generate_common/task_manager
         # 的生成任务台账）双口径并存、各管各账，非配置漂移。
@@ -427,8 +427,8 @@ class AgentTaskManager:
                 "_subscribers": [],
                 "_task": None,
             }
-        # 写入侧容量保护（E-3）：启动恢复后立即按 TTL/上限清理并落盘，
-        # kv 表收敛至上限（此前仅 create 时清理，恢复路径历史只进不出）
+        # 写入侧容量保护：启动恢复后立即按 TTL/上限清理并落盘，
+        # kv 表收敛至上限
         try:
             self._purge_stale()
             self._persist()

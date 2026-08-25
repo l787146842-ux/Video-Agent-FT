@@ -1,12 +1,11 @@
 """
 Agent 多步执行循环（Rule2: 唯一实现）。
 
-位于 core 层（-1 层级理顺：编排骨架属核心层，不放 web/；原 web/ 层 re-export 壳已删除）。
+位于 core 层（编排骨架属核心层，不放 web/）。
 
 有界循环（最多 max_steps 步）：FC 工具步（tool_calls 在 llm_call 内执行，
 finish 非 stop 或无可见正文时继续下一步）与纯文本收尾步（
-单轨化，ADR-0001：文本动作块解析路径已退役；暂停确认经
-llm_call 第 5 元组结构化上抛，不经文本块）。
+暂停确认经 llm_call 第 5 元组结构化上抛，不经文本块）。
 
 llm_call / context_builder 以 callable 注入，便于单元测试。
 """
@@ -28,7 +27,7 @@ from src.video_agent.core.sse_events import (
     SSE_TOOL_STARTED,
     status_event,
 )
-# 协作式停止（端到端中断协议，任务 #17）：检查点只读标志注册表，
+# 协作式停止（端到端中断协议）：检查点只读标志注册表，
 # 停止信号不经闸机/工具执行器传递
 from src.video_agent.core.stop_signal import (
     STOP_PHASE_STREAMING,
@@ -42,23 +41,23 @@ from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.turn_frame import emit_prelude_events
 from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
-# （轮末闸机分支收敛为声明式策略表（层 9 唯一落点）
+# 轮末闸机分支收敛为声明式策略表（层 9 唯一落点）
 from src.video_agent.core.round_end_policies import (
     RoundEndContext,
-    _claims_structure_done,  # noqa: 1 re-export 壳（测试导入路径不变，13.7 惯例）
+    _claims_structure_done,  # noqa: 1 re-export 壳（测试导入路径不变）
     run_round_end_policies,
     suggest_next_actions,
 )
 from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.exceptions import AdapterError
-# （漂移进度通道绑定顶层化；spec_wizard_active 经模块属性访问
+# spec_wizard_active 经模块属性访问
 # （测试 patch 目标=registry 命名空间，顶层 from-import 会冻结绑定导致 patch 失效）
 from src.video_agent.skill_runtime.progress import (
     bind_progress_emitter,
     unbind_progress_emitter,
 )
 
-# 执行器已下沉 core（D-01）：顶层导入替代旧 TYPE_CHECKING 下的 web 延迟引用
+# 执行器已下沉 core：顶层导入替代旧 TYPE_CHECKING 下的 web 延迟引用
 from src.video_agent.core.action_executor import StateOperationExecutor
 
 MAX_STEPS = settings.max_steps
@@ -112,19 +111,15 @@ class AgentLoopResult:
     # retry=机械重发上一条用户消息（value 空，前端取历史原文）；
     # continue=发送固定文本推进新一步
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
-    # 协作式停止标记（端到端中断协议，任务 #17）：
+    # 协作式停止标记（端到端中断协议）：
     # stopped=True 表示本循环经检查点命中用户停止信号干净退出；
     # stop_phase=thinking/tool_executing/streaming（前端气泡措辞依据）
     stopped: bool = False
     stop_phase: str = ""
 
 
-# split_actions / _extract_confirmation（文本动作别名归一）已删除
-# （暂停确认唯一经 workflow_pause FC 工具结构化上抛，
-# 不存在需归一的文本动作别名（对齐「只有一个 AskUserQuestion」）。
-
-# 防虚报检测（_STRUCTURE_CLAIM_RE/_claims_structure_done） 随唯一消费点
-# 迁入 round_end_policies；本文件顶部保留 re-export 壳，测试导入路径不变。
+# 防虚报检测（_STRUCTURE_CLAIM_RE/_claims_structure_done）归
+# round_end_policies；本文件顶部保留 re-export 壳，测试导入路径不变。
 
 
 async def run_agent_loop(
@@ -145,7 +140,7 @@ async def run_agent_loop(
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
     user_text 可以是纯文本 str，也可以是多模态 content parts 列表（含 image_url）。
-    stop_scope（端到端中断协议，任务 #17）：协作式停止标志作用域
+    stop_scope（端到端中断协议）：协作式停止标志作用域
     （SSE 直连="chat"；任务式传输=task_id），每步检查点读取，命中即干净收尾。
     """
 
@@ -155,14 +150,14 @@ async def run_agent_loop(
                 await on_event(event)
             except Exception as _e:
                 # 承重接线遥测：事件通道静默降级不再只进 debug 日志，
-                # 断线经 /api/agent/degradations 可见（型防复发）
+                # 断线经 /api/agent/degradations 可见
                 live_metrics.record_degradation("agent_loop.event_emit")
                 logger.debug("[agent_loop] 忽略异常: {}", _e)
 
     result = AgentLoopResult()
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
 
-    # 协作式停止（任务 #17）：循环开始无条件清除残留标志（上一任务被停止后
+    # 协作式停止：循环开始无条件清除残留标志（上一任务被停止后
     # 未及清理时，不得误杀新任务；带代际的收尾清理见 _finalize_stop）；
     # 包装 stream_hook 跟踪是否已产生流式正文（阶段判定用）
     clear_stop(stop_scope)
@@ -185,7 +180,7 @@ async def run_agent_loop(
     user_preview = user_text if isinstance(user_text, str) else str(user_text)[:80]
     tracer.start_trace(user_preview, user_id=user_id)
 
-    # 恢复：执行器进度通道双轨接线（统一循环级绑定，FC/文本轨同覆盖）。
+    # 执行器进度通道双轨接线（统一循环级绑定，FC/文本轨同覆盖）。
     # 执行器内部批次边界（emit_timeline_note/emit_state_refresh/emit_progress）
     # 经此通道实时推时间线子项与故事板刷新——卡片一张张流式亮，不再结束才一把出现。
     # contextvar 任务级隔离：异常路径随任务消亡，正常路径在循环结束后解绑。
@@ -244,7 +239,7 @@ async def run_agent_loop(
             unbind_progress_emitter(_progress_token)
             raise
         except AdapterError as _adapter_err:
-            # 错误分类分流（任务 #26）：供应商错误到达此处时，要么 transient
+            # 错误分类分流：供应商错误到达此处时，要么 transient
             # 重试已在适配层（dispatch_chat_request/with_retry）耗尽，要么是
             # permanent（鉴权/参数/拒答）错误——两类都不具循环内重试价值：
             # nudge 只用于模型侧空/畸形输出，循环侧不再对同一 transient
@@ -259,15 +254,14 @@ async def run_agent_loop(
     for step in range(1, max_steps + 1):
         result.steps = step
         tracer.start_step()
-        # 检查点 1（模型调用前，任务 #17）：上轮工具批已完成、本轮思考未开始，
+        # 检查点 1（模型调用前）：上轮工具批已完成、本轮思考未开始，
         # 命中即思考阶段停止；不改变正常路径行为（无标志时零开销）
         _stop_err = _stop_if_requested(STOP_PHASE_THINKING)
         if _stop_err is not None:
             return await _finalize_stop(_stop_err)
         if step == 1:
             # 前奏明细：读 Skill/文档等准备动作记入第一步时间线
-            # （live 与持久化同条目；历史 runtime 直跑
-            # 消费方已随 ADR-0004 退役，现唯一消费方 = 本循环）
+            # （live 与持久化同条目；唯一消费方 = 本循环）
             await emit_prelude_events(
                 prelude_notes,
                 lambda name, summary, ms, ok: tracer.record_action(name, summary, ms, ok),
@@ -308,7 +302,7 @@ async def run_agent_loop(
                 })
         system_prompt = context_builder()  # 每步刷新，让 LLM 看到上一步执行后的最新状态
 
-        # 过程时间线：模型推理轮本身也作为操作条目可见（v6：仅创作型
+        # 过程时间线：模型推理轮本身也作为操作条目可见（仅创作型
         # 交接轮进入本循环，文案为节点内创作语义，非确定性阶段规划）
         await emit({
             "type": SSE_TOOL_STARTED,
@@ -329,7 +323,7 @@ async def run_agent_loop(
         plan_total = float(plan_ms or 0.0)
         # 透明度兑现：本轮 token 用量入账 trace（轮次账单数据源）
         step_tokens = int((fc_extra or {}).get("token_usage") or 0)
-        # 检查点 2（模型调用返回后，任务 #17）：FC 工具批已在 llm_call 内执行完毕，
+        # 检查点 2（模型调用返回后）：FC 工具批已在 llm_call 内执行完毕，
         # 此时命中按刚经历的阶段标记（工具批/流式输出/思考）干净退出
         _stop_err = _stop_if_requested(
             STOP_PHASE_TOOL_EXECUTING if fc_applied > 0
@@ -338,11 +332,11 @@ async def run_agent_loop(
         if _stop_err is not None:
             return await _finalize_stop(_stop_err)
 
-        # 空/畸形响应防护（任务 #26 分类：permanent-ish 模型侧问题，非供应商
-        # transient）：空响应或 MALFORMED_FUNCTION_CALL 连续发生 → nudge 重试至多 2 次，
+        # 空/畸形响应防护（模型侧问题，非供应商 transient）：空响应或
+        # MALFORMED_FUNCTION_CALL 连续发生 → nudge 重试至多 2 次，
         # 达到上限后以明确故障文案收尾（不再静默落为「没有返回可见回复」）；
         # 供应商侧错误已由上方 AdapterError 分流承接，不会误入本重试路径。
-        # 整改批 1.2b：暂停确认轮现有真实 fc_applied（含 workflow_pause 自身），
+        # 暂停确认轮现有真实 fc_applied（含 workflow_pause 自身），
         # 且正文有确认文案兜底，双条件均使其不入本重试（守卫语义保持正确）。
         bad_retries = 0
         while not str(content or "").strip() and fc_applied == 0 and bad_retries < 2:
@@ -368,7 +362,7 @@ async def run_agent_loop(
             content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
             plan_total += float(plan_ms or 0.0)
             step_tokens = int((fc_extra or {}).get("token_usage") or 0)
-        # 规划耗时只算纯模型规划（反馈）：FC 工具执行时间由各工具条目独立展示，
+        # 规划耗时只算纯模型规划：FC 工具执行时间由各工具条目独立展示，
         # 不再把工具耗时叠进规划行导致「规划很慢」的错觉
         await emit({
             "type": SSE_TOOL_FINISHED,
@@ -387,8 +381,6 @@ async def run_agent_loop(
                             token_usage=step_tokens)
             break
 
-        # Skill 声明式流程门禁已退役（顺序归编排器）。
-
         if finish_reason == "length":
             result.warnings.append(
                 f"第 {step} 轮回复被 max_tokens 截断，工具调用/正文可能不完整"
@@ -398,8 +390,7 @@ async def run_agent_loop(
         fc_confirmation = str((fc_extra or {}).get("confirmation") or "")
         fc_confirmation_options = list((fc_extra or {}).get("confirmation_options") or [])
 
-        # FC 路径：tool_calls 已在 llm_call 内部执行；正文原样可见（单轨化后
-        # 无文本动作块通道，ADR-0001，无需清洗）
+        # FC 路径：tool_calls 已在 llm_call 内部执行；正文原样可见（无需清洗）
         if fc_applied > 0 or fc_confirmation:
             result.applied_actions += fc_applied
             if fc_applied:
@@ -412,8 +403,8 @@ async def run_agent_loop(
                 f"confirm={bool(fc_confirmation)} finish={finish_reason or '-'}"
             )
             if fc_confirmation:
-                # 虚报审计（×）：FC 确认轮同样承重——声称拆完但故事板
-                # 为空 → 只附警告不拦人（系统不没收模型暂停）；单轨化不豁免审计
+                # 虚报审计：FC 确认轮同样承重——声称拆完但故事板
+                # 为空 → 只附警告不拦人（系统不没收模型暂停）
                 if (
                     _claims_structure_done(visible, fc_confirmation)
                     and prompt_gates.storyboard_is_empty(executor.state)
@@ -474,11 +465,9 @@ async def run_agent_loop(
             })
             continue
 
-        # 纯文本轮（FC 单轨， / ADR-0001）：模型本轮未发出工具调用，
-        # 即本轮为面向用户的回复，循环进入收尾。文本动作块解析路径已随
-        # 双轨退役删除；正文拼接收纳由轮末策略 false_claim_audit 单一执行
-        # （与历史文本路径同源，防双处拼接重复；虚报/假停兜底等机械闸机
-        # 与原文本路径同一策略表，零新增）。
+        # 纯文本轮：模型本轮未发出工具调用，即本轮为面向用户的回复，
+        # 循环进入收尾。正文拼接收纳由轮末策略 false_claim_audit 单一执行
+        # （虚报/假停兜底等机械闸机同一策略表）。
         _re_ctx = RoundEndContext(
             step=step,
             executor=executor,

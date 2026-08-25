@@ -1,13 +1,11 @@
 """
-TaskStore — 任务表/运行台账的事务性 KV 存储（任务 #24 存储层单一事实源收敛）。
+TaskStore — 任务表/运行台账的事务性 KV 存储（存储层单一事实源）。
 
-背景：agent_tasks.json / generation_tasks.json 此前各自以 data/*.json 整文件
-原子重写方式落盘（写放大 + 无事务 + 与项目状态库并存三源）。收敛后统一进
-workspace/state.sqlite3 的 kv 表：一个 key 一行、整份 JSON 载荷存 TEXT blob 列。
+任务表统一进 workspace/state.sqlite3 的 kv 表：一个 key 一行、
+整份 JSON 载荷存 TEXT blob 列。
 
-选型坦承（任务 #24 非目标）：本表定位「带事务的 KV」，不做规范化拆表——
-任务表规模小（上限 50/200 条）、整进整出语义与旧文件完全一致，
-blob 列实现成本最小且天然单语句事务原子。
+本表定位「带事务的 KV」，不做规范化拆表——任务表规模小
+（上限 50/200 条）、整进整出语义，blob 列实现成本最小且天然单语句事务原子。
 
 与 SqliteStateRepository 共用同一 DB 文件（WAL 下多连接并发读写安全），
 但职责互不交叉：projects/meta 表归状态仓库，kv 表归本模块。

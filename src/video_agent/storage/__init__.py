@@ -7,7 +7,6 @@
     storage = get_storage()
     url = storage.save(raw_bytes, "gen-xxx.png", "image/png")
 
-B6/F42：S3 骨架已删除（STORAGE_BACKEND=s3 是幻影开关，零生产调用方）；
 当前唯一后端为 LocalStorageAdapter。新增后端时按 adapters 同法注册并接线。
 """
 from typing import Optional

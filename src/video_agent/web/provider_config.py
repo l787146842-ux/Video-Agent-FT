@@ -1,14 +1,13 @@
-"""薄 re-export 壳（P3 反向依赖下沉：审核整改执行计划任务 10）。
+"""薄 re-export 壳。
 
 provider_config 实为领域服务（仅依赖 adapters/config/state.models/utils），
-历史上错置于 web 层，导致 tools/document_tools 顶层 import web 的唯一分层
-违规。实现体已物理下沉至 src/video_agent/core/provider_config.py；
+实现体位于 src/video_agent/core/provider_config.py；
 web 侧 12+ 消费方经本壳兼容，import 零改动。
 
 属性查找归一：本壳不做绑定快照（import * 会冻结引用，patch 实现体到不了
 经壳属性查找的调用方），改用模块 __getattr__ 实时转发至实现体——
 monkeypatch 实现体 src.video_agent.core.provider_config 即对所有经本壳的
-属性查找生效，壳/实现双轨不再存在。from-import 消费方仍在导入时刻绑定
+属性查找生效。from-import 消费方仍在导入时刻绑定
 （既有行为不变）。
 """
 from src.video_agent.core import provider_config as _core_pc

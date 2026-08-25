@@ -1,5 +1,5 @@
 /**
- * ChatMessageItem 交互控制点组件测试（任务 #17 新交互模型）。
+ * ChatMessageItem 交互控制点组件测试。
  *
  * 钉死契约：
  * ① 悬停工具条矩阵：editable 挂「编辑」、regenerable 挂「重新生成」、
@@ -77,7 +77,7 @@ describe('悬停工具条矩阵挂载', () => {
     expect(container.querySelector('[data-testid="msg-hover-toolbar"]')).toBeNull();
   });
 
-  it('历史消息带 ts（后端落盘 epoch ms）时工具条显示 HH:MM（任务 #17 W1）', () => {
+  it('历史消息带 ts（后端落盘 epoch ms）时工具条显示 HH:MM', () => {
     const msg: ChatMessage = { sender: 'user', text: '历史消息', ts: new Date(2026, 7, 23, 9, 5).getTime() };
     const { container } = render(() => <ChatMessageItem message={msg} isLast={false} copyable />);
     const time = container.querySelector('.msg-hover-time');

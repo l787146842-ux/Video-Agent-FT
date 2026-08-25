@@ -26,7 +26,7 @@ DROP_CLAMP_MARGIN = 80
 # 节点间最小间距（世界坐标 px）
 NODE_GAP = 50
 
-# 画布版本漂移记录文件（P1-5：对接的画布版本，供更新后比对告警）
+# 画布版本漂移记录文件（对接的画布版本，供更新后比对告警）
 _CANVAS_VERSION_FILE = DATA_DIR / "canvas_integration.json"
 
 
@@ -35,7 +35,7 @@ def _validate_write_payload(
     connections: List[Dict[str, Any]],
     viewport: Dict[str, Any],
 ) -> None:
-    """画布写回前的结构校验（P1-5）。
+    """画布写回前的结构校验。
 
     adapter 硬编码了画布内部 schema（smart-image 的 images[]、viewport x/y/scale 等），
     画布是快速迭代的第三方项目，schema 漂移时宁可抛 AdapterError 也不写坏画布（Rule 7 边界自保）。
@@ -447,7 +447,7 @@ class CanvasAdapter:
         失败抛 AdapterError。"""
         return await self._request("POST", "/api/online-image", json=payload)
 
-    # ---------- 版本漂移探测（P1-5） ----------
+    # ---------- 版本漂移探测 ----------
 
     async def get_app_info(self) -> Dict[str, Any]:
         """读取画布 /api/app-info（含 version 字段）"""
@@ -499,8 +499,8 @@ def fetch_canvas_providers_sync(timeout: float = 3.0) -> List[Dict[str, Any]]:
     """从画布 HTTP API 读取 provider 配置（同步版；Rule7: 画布交互统一经此适配器）。
 
     供 web/provider_config.load_canvas_providers 在同步上下文（asyncio.to_thread
-    包装前）调用。任何异常/非 200/空列表均静默返回 []，由调用方降级到文件兜底，
-    行为与迁移前的 httpx.get 直调完全一致（timeout=3.0，trust_env=False）。
+    包装前）调用。任何异常/非 200/空列表均静默返回 []，由调用方降级到文件兜底
+    （timeout=3.0，trust_env=False）。
     """
     try:
         with httpx.Client(timeout=timeout, trust_env=False) as client:

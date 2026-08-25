@@ -1,5 +1,5 @@
 """
-Agent 上下文构建域 — 从 StateManager 抽离（P7-1 追加状态视图组装）。
+Agent 上下文构建域 — 从 StateManager 抽离。
 
 职责：将 raw state dict 转换为各消费面的状态视图（纯函数组装，不落盘）：
 - build_agent_context：发送给 LLM 的精简 JSON 上下文（带缓存：状态未变时复用）
@@ -216,13 +216,13 @@ def build_full_snapshot(raw_state: Dict[str, Any], board_version: int) -> Dict[s
     """完整状态快照（供前端刷新/SSE done payload）。
 
     返回深拷贝（json round-trip），调用方可任意使用不会回写
-    污染内部状态；旧版浅拷贝共享嵌套引用的契约仅靠注释约束，过于脆弱。
+    污染内部状态。
     快照仅在聊天完成/mock 路径低频调用，序列化开销可接受。
     """
     snap = json.loads(json.dumps(raw_state, ensure_ascii=False))
     # 乐观锁版本号随快照下发（不写入状态 JSON 本体，避免污染 undo/快照）
     snap["board_version"] = board_version
-    # E-2 消息单一来源：快照中对话只留元信息，消息副本不再随快照下发
+    # 消息单一来源：快照中对话只留元信息，消息副本不再随快照下发
     #（活跃对话消息仍由顶层 chatMessages 携带；切会话走按会话拉消息接口）
     for conv in snap.get("conversations") or []:
         if isinstance(conv, dict):

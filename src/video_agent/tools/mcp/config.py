@@ -1,4 +1,4 @@
-"""MCP 接入层：服务器配置加载（任务#37 B4 §2.5 config.py）。
+"""MCP 接入层：服务器配置加载。
 
 配置文件 = data/mcp_servers.json（风格对齐 data/api_providers.json）；
 无配置文件 = 零工具（deny-first 的配置面：不声明即不存在）。

@@ -1,4 +1,4 @@
-"""草稿/分组动作域（自 action_executor.py 切出，零行为变更；任务 24 P7-3）。
+"""草稿/分组动作域。
 
 承载：草稿/分组的增删改动作（add_draft/add_group/update_draft/
 update_group/delete_draft/delete_group/flow_directive）——分组定位
@@ -45,7 +45,7 @@ def apply_draft_patch(ex: "StateOperationExecutor", action: Dict) -> bool:
                 and prompt_gates.storyboard_pending(ex.state):
             logger.info("[FlowGate] 提示词写入时故事板待确认（警告，不拦人）")
             ex.gate_warnings.append(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
-        # 客观补全（888）：@引用与镜头时长可从 sceneRefs/duration 算出来，
+        # 客观补全：@引用与镜头时长可从 sceneRefs/duration 算出来，
         # 写入前按 Skill 声明的规则自动补印，不指望模型自觉、也不重复拒绝重写
         if ex._kind_of_group(group) == "shot":
             filled_refs = prompt_gates.autofill_at_refs(
@@ -75,7 +75,7 @@ def apply_draft_patch(ex: "StateOperationExecutor", action: Dict) -> bool:
 
 
 def stamp_spec_resolution(ex: "StateOperationExecutor", group: Dict[str, Any], draft: Dict[str, Any]) -> None:
-    """分辨率补印（需求； 唯一权威源=全局设置）：草稿缺分辨率时按全局设置填充，
+    """分辨率补印（唯一权威源=全局设置）：草稿缺分辨率时按全局设置填充，
     参数栏与全局设置一致，防前端硬编码回填污染。"""
     if not isinstance(draft, dict):
         return
@@ -131,14 +131,12 @@ def apply_delete_group(ex: "StateOperationExecutor", action: Dict) -> bool:
 
 def apply_add_group(ex: "StateOperationExecutor", action: Dict) -> bool:
     """创建新的故事板分组（关键元素 / 分镜 / 音频）"""
-    # 首拆只允许关键元素：首次搭建批次内创建 shot/audio 分组直接拒绝
     group_type = str(
         action.get("group_type") or action.get("draft_type")
         or action.get("kind") or action.get("target_type") or ""
     ).strip()
-    # 首拆只允许关键元素的平台自加限制已清除（流程以 Skill 为准）；
     # 客观依赖（分镜 sceneRefs 必须引用已存在元素）由 fc_tool_runner
-    # _structure_integrity_gate 校验兜底（任务#36 护栏移植，承接原 exec_common）
+    # _structure_integrity_gate 校验兜底
     return apply_add_group_inner(ex, action)
 
 
@@ -178,7 +176,7 @@ def add_group_core(ex: "StateOperationExecutor", action: Dict) -> bool:
         or action.get("element_id") or action.get("element_name")
         or action.get("group_title") or "Agent 新建分组"
     )
-    # 标题确定性归一（剥英文标识/编号前缀， 自动修正，双轨共用 ops）
+    # 标题确定性归一（剥英文标识/编号前缀，双轨共用 ops）
     _raw_title = str(title)
     title = ops.normalize_group_title(_raw_title)
     if title != _raw_title:
@@ -200,7 +198,7 @@ def add_group_core(ex: "StateOperationExecutor", action: Dict) -> bool:
     if cat_key == CAT_SHOTS:
         rough = pick("roughDesc")
         if isinstance(rough, str) and len(rough) > 200:
-            # 概述截断（888）：超长 roughDesc 撑爆卡片/上下文
+            # 概述截断：超长 roughDesc 撑爆卡片/上下文
             rough = rough[:200] + "…"
         new_group["roughDesc"] = rough
         if not desc and rough:
@@ -295,21 +293,20 @@ def apply_add_draft(ex: "StateOperationExecutor", action: Dict) -> bool:
         action.get("group_type") or action.get("groupType")
         or action.get("draft_type") or action.get("kind") or ""
     )
-    # 首拆只允许关键元素的平台自加限制已清除
     draft_data = action.get("draft") or action.get("payload") or {}
     if not draft_data and action.get("patch"):
-        # 898 回归：模型把建卡字段放进 patch/fields 而非 draft 时
+        # 模型把建卡字段放进 patch/fields 而非 draft 时
         # 不得静默落成空默认草稿，提示词必须写入
         draft_data = action.get("patch") or {}
 
     label = str(draft_data.get("label") or "").strip()
     group = None
     if str(group_id) in ("", "current") and label:
-        # 未指定有效分组时按 label 名称智能匹配（proj-1786169643），
+        # 未指定有效分组时按 label 名称智能匹配，
         # 优先于「current → 第一个分组」的旧兜底
         group = match_group_by_label(ex, label)
     # 显式 group_id 或前端已选中草稿时才走 find_group；
-    # 「current + 无选中」会盲捡第一个分组（888），交给下方多分组防护
+    # 「current + 无选中」会盲捡第一个分组，交给下方多分组防护
     if group is None and (
         str(group_id) not in ("", "current")
         or str(getattr(ex, "selected_draft_id", "") or "").strip()
@@ -317,7 +314,7 @@ def apply_add_draft(ex: "StateOperationExecutor", action: Dict) -> bool:
         group = ex._find_group(group_id, group_type)
         if group is None and str(group_id) not in ("", "current"):
             # 显式 group_id 但未带 group_type：跨全类别按 id 定位
-            # （888 别名归一化场景：type/groupId/payload 驼峰 schema）
+            # （别名归一化场景：type/groupId/payload 驼峰 schema）
             for cat_key in ALL_CATEGORIES:
                 group = next(
                     (g for g in ex.state.get(cat_key, [])
@@ -335,7 +332,7 @@ def apply_add_draft(ex: "StateOperationExecutor", action: Dict) -> bool:
             if isinstance(g, dict)
         ]
         if len(all_groups) > 1:
-            # 888 ：未携带有效 group_id 且 label 无法定位时盲捡第一个分组，
+            # 未携带有效 group_id 且 label 无法定位时盲捡第一个分组，
             # 提示词全污染进程心组——多分组场景直接拒绝并回喂模型纠正
             ex.gate_rejections.append(
                 "add_draft 未指定有效分组且 label 无法定位；"
@@ -368,8 +365,8 @@ def apply_add_draft(ex: "StateOperationExecutor", action: Dict) -> bool:
 
 
 def match_group_by_label(ex: "StateOperationExecutor", label: str) -> Optional[Dict[str, Any]]:
-    """按草稿 label 名称模糊匹配目标分组（proj-1786169643 ：
-    add_draft 未携带有效 group_id 时盲捡第一个分组，导致提示词全进程心组）。
+    """按草稿 label 名称模糊匹配目标分组（防 add_draft 未携带有效
+    group_id 时盲捡第一个分组，导致提示词全进第一个分组）。
 
     取 label 第一段（按 - / — 切分，如「艾AA - 角色概念图」→「艾AA」），
     与分组标题（剥 [Element_X] 前缀后）双向包含匹配。

@@ -1,4 +1,4 @@
-"""core 层端口注册表（D-01 清偿：依赖倒置，action_executor 下沉 core）。
+"""core 层端口注册表（依赖倒置，action_executor 下沉 core）。
 
 宪法铁律：core 层不得 import web 层（含延迟导入与 TYPE_CHECKING）。
 core 需要 web 层提供的能力（生成管线 / 供应商配置 / 生成日志面板 /
@@ -6,7 +6,7 @@ Skill 文档域）时，经本注册表访问「端口」；端口实现由 web 
 （`web/port_wiring.install_core_ports`）注入。
 
 端口持有实现模块/对象的引用，属性在调用时解析——web 模块属性上的
-monkeypatch 在测试期照常生效（与此前函数内延迟导入同一效果）。
+monkeypatch 在测试期照常生效。
 
 装配点（缺失端口时访问器抛 PortNotInstalledError）：
 - web/app.py lifespan（生产服务）
@@ -23,7 +23,7 @@ monkeypatch 在测试期照常生效（与此前函数内延迟导入同一效�
 - provider_config ：load_merged_providers / get_provider_config /
                     spec_media_preference / spec_production_params /
                     stamp_draft_spec_preference / resolve_provider_ref
-                    （core/provider_config.py，P3 反向依赖下沉自 web 层迁入）
+                    （core/provider_config.py）
 - task_log        ：record_gate_gen_log(prompt, hard_errors)
                     （web 装配适配器 → task_manager.record_gen_log）
 - skill_docs      ：list_skill_docs / resolve_skill_content /

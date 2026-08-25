@@ -1,8 +1,8 @@
 /**
- * SSE 连接状态机（任务 #18 自 hooks/use-sse.ts 抽出的纯逻辑层）：归属判定/指数
+ * SSE 连接状态机（自 hooks/use-sse.ts 抽出的纯逻辑层）：归属判定/指数
  * 退避重连调度/终态清理顺序/轮间注入判定均为纯函数；连接生命周期经
  * createSseConnection 工厂组装，所有 I/O（HTTP/定时）与响应式副作用由 deps 注入。
- * 订阅模型（D 批）：POST 取 task_id → 订阅事件流（先 replay 快照再增量）；
+ * 订阅模型：POST 取 task_id → 订阅事件流（先 replay 快照再增量）；
  * 刷新/切项目只断订阅，后台任务继续；切回时 resume 重连；停止才取消。
  */
 import type { SseEvent, AgentChatRequest } from '@/types';
@@ -128,7 +128,7 @@ export function createSseConnection(deps: SseConnectionDeps) {
         if (!ownsTask(currentTask, taskId)) return;
         if (!isRetriableSubscribeError(err) || attempt >= MAX_RECONNECT_ATTEMPTS) {
           const msg = (err as Error).message || '未知错误';
-          // 任务 #19：订阅失败结构化归类（HTTP 状态按码归类；fetch/读流中断 = network）
+          // 订阅失败结构化归类（HTTP 状态按码归类；fetch/读流中断 = network）
           const payload = err instanceof SseHttpError
             ? makeErrorPayload(msg, kindFromHttpStatus(err.status))
             : makeErrorPayload(msg, 'network', 'err.network.connection');
@@ -164,7 +164,7 @@ export function createSseConnection(deps: SseConnectionDeps) {
       projectTasks.set(started.project_id || projectId, started.task_id);
       await connectToTask(started.task_id, started.project_id || projectId, false);
     } catch (err) {
-      // 任务 #19：建任务失败——ApiError 携带后端结构化负载；非 ApiError（fetch 网络层）归 network
+      // 建任务失败——ApiError 携带后端结构化负载；非 ApiError（fetch 网络层）归 network
       const payload: ErrorPayload = err instanceof ApiError ? err.payload
         : makeErrorPayload((err as Error).message || '未知错误', 'network', 'err.network.connection');
       fx.setErrorText(payload.message);
@@ -199,7 +199,7 @@ export function createSseConnection(deps: SseConnectionDeps) {
     if (!shouldQueueGuidance(currentTask, text)) return;
     void transport.postGuidance(currentTask!.taskId, id, text).catch(() => { /* 回落自动出队 */ });
   }
-  /** 真正停止后台任务（停止按钮）。任务 #17：等 /stop 响应拿在途外部生成任务登记
+  /** 真正停止后台任务（停止按钮）。等 /stop 响应拿在途外部生成任务登记
    *（inflight）后一并交 cancelStream 措辞；短超时不阻塞 UI（任务可能已结束） */
   async function stop(): Promise<void> {
     const task = currentTask;

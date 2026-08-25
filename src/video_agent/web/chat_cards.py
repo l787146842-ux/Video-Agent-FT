@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""聊天卡片纯辅助函数（任务 #12 交叉验证：chat_service.py 行数棘轮越线等价归位）。
+"""聊天卡片纯辅助函数。
 
 doc_written 打戳与视频内联卡条目过滤均为无副作用纯函数，供
 chat_service._real_stream 透传/持久化路径消费；独立成模块同时便于单测钉死。
@@ -10,7 +10,7 @@ from src.video_agent.core.sse_events import SSE_DOC_WRITTEN
 
 
 def _stamp_doc_written(payload: Optional[Dict[str, Any]], turn_id: str) -> Dict[str, Any]:
-    """ ：doc_written 即显事件打戳本轮 turn_id。
+    """doc_written 即显事件打戳本轮 turn_id。
 
     发射端（agent_loop/fc_tool_runner）无 turn_id 概念，打戳归透传层
     （turn_id 在 _real_stream 起始生成）；前端即显卡据此与 done 主消息

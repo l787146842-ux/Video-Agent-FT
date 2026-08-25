@@ -1,11 +1,11 @@
-"""多对话与聊天消息域（自 manager.py 切出，行数棘轮清偿 P7-1）。
+"""多对话与聊天消息域（自 manager.py 切出）。
 
 职责：同一项目多对话窗口的结构维护（不变式：chatMessages 始终指向
 活跃对话 messages 的同一引用）+ 聊天条目构建与追加（防抖落盘 +
 尾部截断保留上限）。
 
-本模块只依赖 StateManager 的既有接口/内部属性（同包受控访问，
-chat_tail_ops 先例），不反向 import manager，无循环依赖。
+本模块只依赖 StateManager 的既有接口/内部属性（同包受控访问），
+不反向 import manager，无循环依赖。
 """
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -63,7 +63,7 @@ def list_conversations(svc: "StateManager") -> Dict[str, Any]:
     """列出当前项目的全部对话（含消息）+ 活跃对话 ID。
 
     内部/兼容接口：HTTP 响应一律走 conversations_meta_payload（不含消息，
-    E-2 消息单一来源）；快照创建等后端内部路径仍可读本接口取活跃消息。
+    消息单一来源）；快照创建等后端内部路径仍可读本接口取活跃消息。
     """
     return conversations_payload(svc)
 
@@ -71,7 +71,7 @@ def list_conversations(svc: "StateManager") -> Dict[str, Any]:
 def conversations_meta_payload(svc: "StateManager") -> Dict[str, Any]:
     """多对话元信息响应（仅 id/title 等元信息，不含消息副本）。
 
-    E-2 消息单一来源：前端 convState 不再持有消息副本，
+    消息单一来源：前端 convState 不再持有消息副本，
     消息装载一律走 get_conversation_messages（GET /conversations/{id}/messages）。
     """
     payload = conversations_payload(svc)
@@ -154,7 +154,7 @@ def build_chat_entry(
 ) -> Dict[str, Any]:
     """构建单条聊天记录条目（纯函数，不落盘）。
 
-    产生时刻（epoch ms，任务 #17 W1）：随消息落盘，历史装载透传带回，
+    产生时刻（epoch ms）：随消息落盘，历史装载透传带回，
     前端悬停工具条显示 HH:MM；存量旧消息无此字段则前端不显示时间。
     """
     entry: Dict[str, Any] = {"sender": sender, "text": text, "ts": int(time.time() * 1000)}

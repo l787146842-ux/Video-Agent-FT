@@ -1,5 +1,5 @@
 """
-生成任务提交与等待（任务#11 拆分清偿，2026-08-23：generation.py 三段之三）。
+生成任务提交与等待（generation.py 三段之三）。
 
 职责：生图/生视频异步任务的统一提交管线（GenerationTaskManager 登记 +
 @引用解析 + 参考素材挂接 + 同模型跨厂商降级 + 生成日志/SSE 闭环），
@@ -102,7 +102,7 @@ def submit_image_task(
         pass  # 无事件循环（单元测试）时不可等待，靠任务状态轮询兜底
     prev_tag = draft.get("tag") or ""
     draft["tag"] = "生成中"
-    # 生成日志：提交即记录 started；前端据此立即点亮卡片转圈（改进2）
+    # 生成日志：提交即记录 started；前端据此立即点亮卡片转圈
     tm.record_gen_log(
         media_type="image", status="started", provider=provider_id, model=model,
         prompt=eff_prompt, draft_id=draft.get("id", ""), requested_size=size_note,
@@ -429,7 +429,7 @@ def submit_video_task(
                         else:
                             adapter_name_c = pid or "modelscope"
                         adapter_c = AdapterFactory.get_adapter("video_generation", adapter_name_c)
-                    # 有界并发（P3-13）：供应商提交调用经 video 通道节流
+                    # 有界并发：供应商提交调用经 video 通道节流
                     # （信号量 + 429 退避 + 连败熔断）；异步任务的长轮询等待
                     # 不占并发位，避免长任务饿死保守并发上限
                     result = await video_channel.run(

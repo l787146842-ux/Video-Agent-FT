@@ -123,7 +123,7 @@ class BranchRequest(BaseModel):
 
 
 class SnapshotRequest(BaseModel):
-    # 分叉点截断（任务 #16）：提供时快照仅含 messages[:up_to_index+1]（含该条）；
+    # 分叉点截断：提供时快照仅含 messages[:up_to_index+1]（含该条）；
     # 不提供时全量快照（既有调用零行为变化）
     up_to_index: Optional[int] = None
     # pinned：豁免数量上限淘汰（手动创建时可带；默认 false）

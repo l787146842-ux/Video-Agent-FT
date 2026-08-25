@@ -23,7 +23,7 @@
  * - 生成物消费基座站点（生成物为类型来源，手写只做收窄/精化，  登记）：
  *   GenerateImageRequest/GenerateVideoRequest（交集精化，api/generate.ts）、
  *   BatchImageRequest（Required 收窄必填）、CanvasDropImagePayload（交集精化，api/canvas.ts）、
- *   SSE 事件族（任务 #4：sidecar 生成帧为来源，本文件仅收窄 state/trace/
+ *   SSE 事件族（sidecar 生成帧为来源，本文件仅收窄 state/trace/
  *   workflow 等视图态字段并组装 SseEvent 联合）。
  * - 前端无消费路径的生成物（后端端点专用/前端走通用端点）：ModelFallbackPatch
  *   （前端开关走通用 runtime PUT）、TimelinePushRequest（时间线回画布走 Agent
@@ -218,7 +218,7 @@ export interface ChatMessage {
   actionLog?: string[];
   /** 确认卡片的候选选项（单选卡片，点击即把 value||label 作为回复发送； value 机械消费） */
   confirmOptions?: Array<{ label: string; description?: string; group?: string; value?: string }>;
-  /** 结构化决策表单（任务 #3：workflow pending_decision schema→表单数据驱动；
+  /** 结构化决策表单（workflow pending_decision schema→表单数据驱动；
    *  提交走既有暂停回应/消息通道，留痕同普通用户消息） */
   decisionForm?: PendingDecisionPayload;
   /** 模型降级等警示行（常驻展示在 agent 气泡上，刷新后仍可见） */
@@ -327,7 +327,7 @@ export interface TaskResult {
   mock?: boolean;
 }
 
-// ===== 结构化决策表单（任务 #3：workflow pending_decision 投影契约） =====
+// ===== 结构化决策表单（workflow pending_decision 投影契约） =====
 /** 决策表单单字段（数据驱动：产出侧写入 schema.fields 即渲染，
  *  「几个分镜？画幅选哪个？」类多字段参数决策） */
 export interface DecisionFormField {
@@ -366,12 +366,12 @@ export interface WorkflowProjection {
   completed_nodes?: string[];
   event_sequence?: number;
   pending_decision?: boolean;
-  /** 结构化决策表单数据源（任务 #3；无挂起决策时缺省） */
+  /** 结构化决策表单数据源（无挂起决策时缺省） */
   pending_decision_payload?: PendingDecisionPayload | null;
   turn_events?: Array<Record<string, unknown>>;
 }
 
-// ===== SSE 事件（Agent 聊天流；任务 #4 契约生成化） =====
+// ===== SSE 事件（Agent 聊天流；契约生成化） =====
 // 契约锚点：事件帧以生成物（sidecar：sse.schema.json ← core/sse_events.py
 // TS_EVENT_FRAMES）为唯一来源；本段只做视图态收窄（state/trace/workflow 等
 // 生成物只能给 Record<string, unknown> 的字段精化为前端渲染形态）。

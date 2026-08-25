@@ -1,18 +1,16 @@
-"""脚手架注册表（正向设计改造 2-1；0A 清单审定后入账）。
+"""脚手架注册表。
 
 业界依据（Anthropic《Effective Harnesses for Long-Running Agents》）：harness 的每个
 组件都是一条「模型做不到 X」的假设；假设会过期，模型升级即逐件拆测。
 
-本注册表把-born 补丁从「隐形债务」变为「登记资产」：
+本注册表把补丁从「隐形债务」变为「登记资产」：
 - classification=scaffold：对模型能力缺口的补偿，可折旧，入拆除仪式
   （docs/脚手架折旧规程.md）；必须有可证伪的 assumption 与 retest_policy；
 - classification=invariant：工程/物理约束，长期承重，季度审计但不入拆除仪式。
 
 棘轮（scripts/check_scaffold_registry.py + test_scaffold_registry.py 钉死）：
 scaffold 计数只降不升，基线 = SCAFFOLD_COUNT_BASELINE；新增脚手架必须经宪法
-13.5 决策树（含 ：eval 证明缺口存在）并上调基线的书面裁决。
-
-存量清单来源：docs/audit-history/scaffold-registry-draft.md（2026-08-19 审定入账）。
+13.5 决策树（含 eval 证明缺口存在）并上调基线的书面裁决。
 """
 from dataclasses import dataclass
 
@@ -31,19 +29,12 @@ class ScaffoldEntry:
 
 SCAFFOLDS = (
     # ---------- 脚手架（可折旧） ----------
-    # （stream_suppressor 流式围栏抑制）已随 单轨化删除：
-    # 确认改经结构化 FC 工具上抛，文本块通道整体退役（ADR-0001），
-    # 流式正文无围栏可抑；stream_suppressor.py 文件同批删除。
-    # （action_parser 退化信号探测）已随 4-4 双轨退役删除（ADR-0001）。
     ScaffoldEntry(
         "S03", "src.video_agent.core.agent_loop:_bad_output_nudge",
         "模型会连续产出空/畸形输出",
         "bad_output_retry trace 计数；audit 回归",
         "每次主模型切换",
         "scaffold"),
-    # （Planner._ADVANCE_CORPUS/_ADHOC_VERBS 概率路由语料）已随
-    # 控制流统一删除（ADR-0002）： 证明语料路由错过
-    # 一次=全程失控；改为确定性分诊（客观状态事实，零措辞）。
     ScaffoldEntry(
         "S05", "src.video_agent.skill_runtime.registry:fallback_skill_from_state",
         "请求会丢失 skill 名，需回退 usedSkills 末位",
@@ -80,16 +71,12 @@ SCAFFOLDS = (
         "层 9 回归",
         "编排器接管暂停点后",
         "scaffold"),
-    # S11（exec_common:_executor_thinking）与 S12（exec_common:_resolve_cascade_fast）
-    # 已随任务#36 B5 执行器一步退役删除（承重组件随模块物理删除）。
     ScaffoldEntry(
         "S13", "src.video_agent.core.round_end_policies:_cond_aborted_continuation_audit",
         "模型会说「马上继续」却以 stop 收尾（audit-0819 假停取证）",
         "audit-0819-fakestop 回归",
         "每次主模型切换",
         "scaffold"),
-    # （chat_opening._channel_supports_fc 附件全文直注）已随 4-4 双轨退役
-    # 删除（非 FC 聊天通道整体移除，ADR-0001）。
     # ---------- 不变量（长期承重） ----------
     ScaffoldEntry(
         "I01", "src.video_agent.core.token_budget:truncate_messages",
@@ -152,9 +139,9 @@ SCAFFOLDS = (
         "invariant"),
 )
 
-# 棘轮基线（2-1 设立；每拆除一件随降，禁止上调）：scaffold 类计数只降不升。
-# 字面常量而非对 SCAFFOLDS 动态求和（整改批 1.1：动态求和是恒真基线，
-# 棘轮名存实亡）；2026-08-24 磁盘实测 = 8。只降不升；上调须书面裁决
+# 棘轮基线（每拆除一件随降，禁止上调）：scaffold 类计数只降不升。
+# 字面常量而非对 SCAFFOLDS 动态求和（动态求和是恒真基线，
+# 棘轮名存实亡）。只降不升；上调须书面裁决
 # 并同批修改本常量。
 SCAFFOLD_COUNT_BASELINE = 8
 

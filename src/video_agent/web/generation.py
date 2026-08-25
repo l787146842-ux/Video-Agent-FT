@@ -1,6 +1,6 @@
-"""供应商调用管线 re-export 承重壳（任务#11 拆分清偿，2026-08-23）。
+"""供应商调用管线 re-export 承重壳。
 
-实现已按职责切分为三段（D-02 拆分范式，对外符号不变）：
+实现按职责切分为三段（对外符号不变）：
 - `web/generation_dispatch.py`：端点解析 / Chat Completions / 生图供应商
   路由 / 同模型跨厂商降级判定；
 - `web/generation_channel.py`：BoundedChannel 有界并发三件套
@@ -9,9 +9,7 @@
   分镜视频参考素材收集。
 
 本壳仅为存量消费方（routes/、tools/、eval/、core 端口装配 port_wiring、
-测试夹具）保留既有导入路径 `src.video_agent.web.generation`；
-后续清退：消费方逐批改指向三段实现模块后本壳整体退役
-（对齐 action_executor 的 web 层 re-export 壳清退路线写法）。
+测试夹具）保留既有导入路径 `src.video_agent.web.generation`。
 """
 import asyncio  # noqa: F401  # 测试经 gen_mod.asyncio 打桩，保留模块属性
 

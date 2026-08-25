@@ -1,13 +1,13 @@
-"""FC 工具执行段（任务#23 D1：巨石三段拆分 2/3；回喂家族早已切入 fc_feedback.py）。
+"""FC 工具执行段。
 
 三段结构：
 - 闸机裁决 = core/fc_gates.py（闸机链组合；判定实现唯一归 guard_pipeline）
 - 执行 = 本文件（tool_calls 执行循环 + 过程时间线事件 + trace 记账）
-- 批末对账 = core/fc_reconcile.py（客观账本为主、措辞兜底，见该模块 D2 说明）
+- 批末对账 = core/fc_reconcile.py（客观账本为主、措辞兜底）
 
 execute() 返回 FCExecuteResult（结构化命名元组）：调用方按字段名取用，
 位置解包仍兼容（历史调用/测试不破坏），新增字段不再是隐性破坏。
-闸机方法对 fc_gates 保留同名承重壳（壳清单见文件尾部注释，13.7 惯例），
+闸机方法对 fc_gates 保留同名承重壳（壳清单见文件尾部注释），
 既有调用/测试 patch 路径不变。
 """
 import json
@@ -90,9 +90,8 @@ class FCToolRunner:
 
     def __init__(self, tool_manager) -> None:
         self.tool_manager = tool_manager
-        # 当前对话使用的聊天供应商/模型（决策 E：与主模型一致，
-        # 由 chat_service/planner 注入；执行器已随任务#36 B5 退役，
-        # 属性保留仅为注入方兼容）
+        # 当前对话使用的聊天供应商/模型（与主模型一致，
+        # 由 chat_service/planner 注入）
         self.chat_provider: str = ""
         self.chat_model: str = ""
         # 用户坚持作用域（False / True / "all" / "element_image"）：覆盖对应闸机
@@ -286,13 +285,10 @@ class FCToolRunner:
             # current/空引用 → 真实 id（闸机与工具调用前，防命中错误卡片/绕过闸机）
             fc_gates.resolve_current_refs(ctx, name, args)
 
-            # 执行器供应商/模型绑定与 skill_name 强注已随任务#36 B5 退役
-            # （执行器工具不再注册；通用路径工具无此参数）
-
             # 过程时间线：工具开始（前端渲染运行态条目）
             tool_event_id = str(call.get("id") or f"fc-{ci}") if isinstance(call, dict) else f"fc-{ci}"
             start_summary = describe_fc_tool(name, args)
-            # 输入参数预览（裁剪脱敏，任务 #2）：随 started 事件下发并同步
+            # 输入参数预览（裁剪脱敏）：随 started 事件下发并同步
             # 落盘 trace（刷新重建后详情卡展开区不丢）
             args_preview = tool_args_preview.redact_tool_args(name, args)
             if on_event is not None:
@@ -310,7 +306,7 @@ class FCToolRunner:
                 "adapter_provider" not in args or args.get("adapter_provider") in ("mock", "", None)
             ):
                 _sp, _sm = ports.provider_config_port().spec_media_preference(self._raw_state())
-                # 用户裁决：模型能力参数唯一权威源 = 全局设置；优先级 =
+                # 模型能力参数唯一权威源 = 全局设置；优先级 =
                 # 草稿自身（用户在中间面板的直接选择）> 全局设置 > 平台默认
                 if image_provider:
                     args["adapter_provider"] = image_provider
@@ -326,7 +322,7 @@ class FCToolRunner:
                     logger.info("[Planner] Injected image gen aspect ratio from draft: %s",
                                 image_aspect_ratio)
             # --- image_generate（批量工具）同轨注入：LLM 未传 provider 时依次回退
-            # 用户裁决：草稿自身（用户直接选择）> 全局设置 > 平台默认；
+            # 草稿自身（用户直接选择）> 全局设置 > 平台默认；
             # 防传空导致「供应商 '' 未配置」---
             if name == "image_generate" and not str(args.get("provider_id") or "").strip():
                 spec_pid, spec_model = ports.provider_config_port().spec_media_preference(self._raw_state())
@@ -356,7 +352,7 @@ class FCToolRunner:
                 wanted_skill = str(args.get("name") or "").strip()
                 same_skill = bool(wanted_skill) and wanted_skill == injected_skill.strip()
                 # 续读参数（section/start）一律真读：分级注入时全文未全量注入，
-                # 短路会断掉模型的章节续读能力（任务#36 B5）
+                # 短路会断掉模型的章节续读能力
                 has_cont = bool(str(args.get("section") or "").strip()) \
                     or _as_start(args.get("start")) > 0
                 if same_skill and not has_cont and fc_gates.skill_full_text_injected(wanted_skill):
@@ -371,7 +367,7 @@ class FCToolRunner:
             else:
                 result = await self.tool_manager.invoke_tool(name, args)
             _tool_ms = (time.monotonic() - _tool_t0) * 1000
-            # 主体回归（ADR-0004）单一活跃暂停槽位互斥：已有未消费暂停时
+            # 单一活跃暂停槽位互斥：已有未消费暂停时
             # 拒收重复 workflow_pause，结构化拒因回喂模型并进 trace（不静默吞掉）
             if name == "workflow_pause" and result.success:
                 try:
@@ -394,8 +390,6 @@ class FCToolRunner:
                     ledger.gen_failed_err = str(result.error or "执行失败")
             if result.success:
                 applied += 1
-                # 节点成败记账随执行器退役删除（任务#36 B5，整改批 1.3 清尾）：
-                # 连失败重试引导归 gate_precheck，通用路径工具不再入账
                 self._record_presented(name, args)
                 if name in ("storyboard_create_group", "storyboard_add_draft"):
                     structure_created = True
@@ -476,7 +470,7 @@ class FCToolRunner:
                     doc_name = str(args.get("name") or args.get("key") or "").strip()
                     if doc_name:
                         docs_written.append(doc_name)
-                        # 修复（恢复四段链）：文档卡片即写即显，不等整轮 done。
+                        # 文档卡片即写即显，不等整轮 done。
                         # 前端按名称去重，done payload 的 documents_written 仍携带全量
                         # 供服务端持久化与刷新重建。
                         if on_event is not None:
@@ -524,7 +518,7 @@ class FCToolRunner:
                     inserts = data["chat_inserts"]
                     if isinstance(inserts, list):
                         chat_inserts.extend(inserts)
-                # --- ：工具成功结果携带的警告（如建组闸机回喂清单）
+                # --- 工具成功结果携带的警告（如建组闸机回喂清单）
                 # 升级为轮末用户可见警告，不得只留在 trace（静默丢失禁令） ---
                 if data and isinstance(data.get("warnings"), list):
                     for _tw in data["warnings"]:
@@ -533,7 +527,6 @@ class FCToolRunner:
                             self.gate_warnings.append(_tws)
             else:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
-                # 节点失败记账随执行器退役删除（任务#36 B5，整改批 1.3 清尾）
                 if name == "document_write":
                     ledger.key_tool_failed.append(name)
                     ledger.key_tool_errors[name] = str(result.error or "执行失败")[:200]
@@ -579,7 +572,7 @@ class FCToolRunner:
                         name, result.error, self._tool_fail_counts[name],
                     ),
                 })
-        # 批末对账（fc_reconcile）：客观账本为主、措辞兜底（D2）
+        # 批末对账（fc_reconcile）：客观账本为主、措辞兜底
         ledger.doc_written = doc_written
         ledger.docs_written = docs_written
         ledger.structure_created = structure_created
@@ -603,7 +596,7 @@ class FCToolRunner:
         )
 
 
-# ---------- 承重壳清单（13.7 登记；测试 patch 目标与旧 import 路径不变） ----------
+# ---------- 承重壳清单（测试 patch 目标与旧 import 路径不变） ----------
 # 闸机裁决段承重壳（实现体 core/fc_gates.py）：
 #   FCToolRunner._prompt_gate / _stage_precondition_gate / _flow_gate /
 #   _structure_integrity_gate / _gen_confirm_gate / _tool_risk_gate /

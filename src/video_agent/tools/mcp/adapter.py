@@ -1,4 +1,4 @@
-"""MCP 接入层：工具适配器（任务#37 B4 §2.5 adapter.py）。
+"""MCP 接入层：工具适配器。
 
 McpToolAdapter 就是 BaseTool：复用 ToolManager.register（注册期 risk
 强制校验同口径），name = mcp__<server>__<tool>（双下划线三段式）。
@@ -118,7 +118,7 @@ class McpToolAdapter(BaseTool):
 
 
 def _truncate_result(name: str, result: Any) -> ToolResult:
-    """结果通道预算：超 settings.mcp_result_max_chars 截断附警告（B4 §2.5）。"""
+    """结果通道预算：超 settings.mcp_result_max_chars 截断附警告。"""
     limit = max(200, int(getattr(settings, "mcp_result_max_chars", 4000)))
     try:
         serialized = result if isinstance(result, str) else json.dumps(

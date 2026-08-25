@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""FC 闸机裁决段（任务#23 D1：fc_tool_runner 巨石三段拆分 1/3）。
+"""FC 闸机裁决段。
 
 三段结构：闸机裁决（本模块）→ 执行（fc_tool_runner）→ 批末对账（fc_reconcile）。
 
@@ -11,7 +11,7 @@ web 层引用（生成日志面板）经 GateContext.record_gen_log 注入，
 保住分层（core 不顶层依赖 web）。
 
 FCToolRunner 对本模块每个闸函数保留同名承重壳方法（壳清单登记于
-fc_tool_runner.py 尾部注释，13.7 惯例），既有调用/测试 patch 路径不变。
+fc_tool_runner.py 尾部注释），既有调用/测试 patch 路径不变。
 """
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -19,13 +19,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core import guard_pipeline, pipeline_orchestrator, prompt_gates
+from src.video_agent.core import guard_pipeline, stage_probes, prompt_gates
 from src.video_agent.core.live_metrics import record_degradation
-# 分级注入阈值（read_skill 短路判定与 prompt_builder 同口径，任务#36 B5）
+# 分级注入阈值（read_skill 短路判定与 prompt_builder 同口径）
 from src.video_agent.core.prompt_builder import GENERIC_FULL_INJECT_LIMIT
 from src.video_agent.skill_runtime.registry import resolve_entry, skill_flow_enabled
 from src.video_agent.state import storyboard_ops as ops
-# MCP 命名空间判定（任务#37 B4：外部工具同管线过 risk 闸，不旁路）
+# MCP 命名空间判定：外部工具同管线过 risk 闸，不旁路
 from src.video_agent.tools.mcp.policy import is_mcp_tool
 from src.video_agent.state.models import (
     ALL_CATEGORIES_TUPLE,
@@ -35,8 +35,8 @@ from src.video_agent.state.models import (
 
 # §2.7 风险分级：high 级且无既有确认原语覆盖的工具名单，执行前须用户一次性确认
 # （platform.tool_risk 闸）。生成类 high（image_generate）由 gen_confirm 闸覆盖。
-# MCP 外部工具（mcp__* 命名空间）不在此名单内也强制过闸（任务#37 B4：
-# 外部副作用不可信，high 级一律经 guard_pipeline 确认闸，判定不旁路）。
+# MCP 外部工具（mcp__* 命名空间）不在此名单内也强制过闸（外部副作用不可信，
+# high 级一律经 guard_pipeline 确认闸，判定不旁路）。
 TOOL_RISK_CONFIRM_TOOLS = frozenset({
     "canvas_add_node", "canvas_update_node", "canvas_delete_node",
     "canvas_batch_add_nodes", "document_write",
@@ -47,8 +47,7 @@ PAUSE_WINDOW_READONLY = frozenset({
     "workflow_pause",
 })
 
-# 分组类型边界（任务#36 护栏移植③，原 exec_common._apply_actions 的
-# only_group_type 下沉）：阶段 → 允许建组类别。与阶段前置闸分工：
+# 分组类型边界：阶段 → 允许建组类别。与阶段前置闸分工：
 # 前置闸管「阶段没到不许来」，本闸管「来了只许干本阶段的事」。
 STAGE_ALLOWED_GROUP_KINDS: Dict[str, Tuple[str, ...]] = {
     "structure": ("keyElement", "shot", "audio"),  # 结构阶段三类皆可建
@@ -74,7 +73,7 @@ class GateContext:
     selected_type: str = ""
     warnings: List[str] = field(default_factory=list)
     gate_repeat: Dict[str, int] = field(default_factory=dict)
-    # 对话内单图工具每批调用次数（prose 禁令下沉工具层，13.6 审计）
+    # 对话内单图工具每批调用次数（prose 禁令下沉工具层）
     gen_image_calls: int = 0
     state: Callable[[], Dict[str, Any]] = lambda: {}
     tool_risk_of: Callable[[str], str] = lambda name: "high"
@@ -122,9 +121,7 @@ def resolve_current_refs(ctx: GateContext, name: str, args: Dict[str, Any]) -> N
 def skill_full_text_injected(skill_name: str) -> bool:
     """选中 Skill 的全文是否真的直注入 system prompt（read_skill 短路前提）。
 
-    判定与 prompt_builder.build_selected_skill_block 同构（任务#36 B5 通用
-    主路径；整改批 3.5：SKILL_RUNTIME_MODE 回退闸已 fail-hard 退役，
-    通用主路径为唯一路径，legacy 直注分支随之删除）：
+    判定与 prompt_builder.build_selected_skill_block 同构：
     全文 ≤ min(GENERIC_FULL_INJECT_LIMIT, max_doc_chars) → 直注；
     超长分级注入（只注 planner 章节+章节目录）→ 未全量注入，续读必须真读。
     直注分支内 prompt_builder 仍按 max_doc_chars 硬截断，故短路阈值与其
@@ -165,7 +162,7 @@ def strip_structure_prompt(ctx: GateContext, name: str, args: Dict[str, Any]) ->
 
 def pause_window_error(name: str, paused_this_batch: bool) -> Optional[str]:
     """轮内暂停纪律闸：workflow_pause 后同批续执行拒收（暂停点必须真停，
-    读只读工具与暂停工具本身豁免）——轮内暂停纪律否决权（执行路径内嵌，ADR-0004）。"""
+    读只读工具与暂停工具本身豁免）——轮内暂停纪律否决权（执行路径内嵌）。"""
     if paused_this_batch and name not in PAUSE_WINDOW_READONLY:
         return (
             "本轮已用 workflow_pause 请求用户确认，请等待用户回应后再继续执行；"
@@ -181,10 +178,10 @@ def stage_precondition_gate(ctx: GateContext, name: str) -> Optional[str]:
     if not ctx.injected_skill or prompt_gates.gate_mode() != "strict":
         return None
     try:
-        err = pipeline_orchestrator.evaluate_stage_precondition(
+        err = stage_probes.evaluate_stage_precondition(
             name, ctx.state(), ctx.injected_skill)
     except Exception as exc:
-        # 整改批 3.4（fail-open 清偿）：判定异常不再无声放行——探针失明时
+        # 判定异常不再无声放行——探针失明时
         # fail-closed 拦截 + 降级遥测留痕；err 落入下方共享的 override/
         # 审计逻辑，用户仍可经「本次放行」（gate_override）一次性豁免。
         record_degradation("fc_gates.stage_precondition_probe")
@@ -242,7 +239,7 @@ def tool_risk_gate(ctx: GateContext, name: str) -> Optional[str]:
     工具生效；确认回携 = flow_directive 一条龙同意 / 用户「本次放行」，
     无同意硬拒（禁止静默放行），拦截/豁免 verdict 入审计。
     适用范围 = TOOL_RISK_CONFIRM_TOOLS 名单 + 全部 MCP 外部工具
-    （任务#37 B4：外部工具统一风控，risk 闸不得旁路）。"""
+    （外部工具统一风控，risk 闸不得旁路）。"""
     if name not in TOOL_RISK_CONFIRM_TOOLS and not is_mcp_tool(name):
         return None
     if ctx.tool_risk_of(name) != "high":
@@ -261,7 +258,7 @@ def tool_risk_gate(ctx: GateContext, name: str) -> Optional[str]:
 
 
 def gen_confirm_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[str]:
-    """生成确认闸（FC 轨， 双轨收敛一期）：判定唯一实现 =
+    """生成确认闸（FC 轨）：判定唯一实现 =
     guard_pipeline.evaluate_gen_confirm（与文本轨逐字节一致）。"""
     if name != "image_generate":
         return None
@@ -307,8 +304,7 @@ def gen_confirm_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optio
 def structure_integrity_gate(
     ctx: GateContext, name: str, args: Dict[str, Any],
 ) -> Optional[str]:
-    """建组结构完整性闸（任务#36 护栏移植，原 exec_common._apply_actions
-    三条机械校验的通用工具级下沉，逐条同语义）：
+    """建组结构完整性闸（三条机械校验的通用工具级下沉，逐条同语义）：
     ① 无标题 add_group 拒收（防整批分组全落默认标题）；
     ② 分镜 sceneRefs 完整度（非空且覆盖标题提及的关键元素）；
     ③ 分组类型边界（only_group_type 按当前阶段推导）。
@@ -320,7 +316,7 @@ def structure_integrity_gate(
     title = str(args.get("title") or "").strip()
     kind = prompt_gates.normalize_structure_kind(
         str(args.get("group_type") or ""))
-    # ① 无标题拒收：宁缺毋滥（原  无标题 add_group 拒收同语义）
+    # ① 无标题拒收：宁缺毋滥
     if not title:
         return (
             "storyboard_create_group 被拒收：未携带非空 title。"
@@ -328,7 +324,7 @@ def structure_integrity_gate(
         )
     # ③ 分组类型边界：当前阶段只允许对应类别（越界 = 阶段串线）
     try:
-        cur = pipeline_orchestrator.current_stage(
+        cur = stage_probes.current_stage(
             ctx.state(), ctx.injected_skill)
     except Exception:
         cur = None
@@ -394,7 +390,7 @@ def prompt_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[s
         kind = {"keyelement": "keyElement", "shot": "shot", "audio": "audio"}.get(gt, "")
     else:
         return None
-    # 客观补全（888）：@引用与镜头时长可从 sceneRefs/duration 算出来，
+    # 客观补全：@引用与镜头时长可从 sceneRefs/duration 算出来，
     # 写入前按 Skill 声明的规则自动补印回待写入参数，不指望模型自觉
     if kind == "shot" and prompt:
         group: Optional[Dict[str, Any]] = None
@@ -436,7 +432,7 @@ def prompt_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[s
             and prompt_gates.storyboard_pending(ctx.state()):
         ctx.warnings.append(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
         logger.info("[FlowGate] 提示词写入时故事板待确认（警告，不拦人）")
-    # 统一闸机管线（宪法 §2.0 单一组合实现； 恢复接线，与文本轨同源判定）
+    # 统一闸机管线（宪法 §2.0 单一组合实现；与文本轨同源判定）
     outcome = guard_pipeline.evaluate_prompt_write(
         prompt, kind, ctx.state(),
         gate_rules=ctx.gate_rules,
@@ -452,7 +448,7 @@ def prompt_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[s
         return None
     hard = outcome.hard_errors
     logger.info(f"[PromptGate] 拦截不合格提示词写入（{kind}）: {hard}")
-    # 错误日志入账：闸机拦截写入生成日志（顶栏日志面板可见，恢复错误日志可见性）
+    # 错误日志入账：闸机拦截写入生成日志（顶栏日志面板可见）
     ctx.record_gen_log(prompt, hard)
     # 闸机校准：连续相同拦截升级指引，防模型陷入「拦截-重写-再拦截」空转
     sig = f"{kind}|{'|'.join(sorted(hard))}"
@@ -500,7 +496,7 @@ def run_gate_chain(
             if pg_err:
                 res.prompt_gate_blocked = 1
                 err = pg_err
-    # 对话内单图工具每批最多一次（prose 下沉工具层，13.6 审计）。
+    # 对话内单图工具每批最多一次（prose 下沉工具层）。
     # 需要多张时模型改用 image_generate 批量工具（两者分工互斥，见 system_fc.md）
     if err is None and name == "generate_image":
         ctx.gen_image_calls += 1

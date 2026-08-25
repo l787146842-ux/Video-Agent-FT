@@ -1,4 +1,4 @@
-"""SSE 事件协议注册表（式四段链断链防复发机制化）。
+"""SSE 事件协议注册表。
 
 宪法 13.7「新增 SSE 事件」条目要求四段链同步：
     工具层 emit → planner 白名单 → chat_service 透传 → 前端 handler
@@ -70,15 +70,15 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
     SseEventSpec(
         SSE_DOC_WRITTEN, ("core/fc_tool_runner.py", "web/chat_service.py"),
         "passthrough", "doc_written",
-        "四段链补齐；透传段为 chat_service 专属分支"
-        "并打戳本轮 turn_id；v2 批2 向导规格卡投影发射源自"
+        "四段链：透传段为 chat_service 专属分支"
+        "并打戳本轮 turn_id；向导规格卡投影发射自"
         " chat_consume 迁入 chat_service（单一发射源）",
     ),
     SseEventSpec(
         SSE_MODEL_FALLBACK, ("web/chat_service.py",),
         "direct", "model_fallback",
-        "退役（用户裁决 2026-08-20：模型选择权归用户，不自动换模型，"
-        "联不通直接报错）；事件骨架仅留兼容旧任务 replay，发射端已删",
+        "退役：模型选择权归用户，不自动换模型，"
+        "联不通直接报错；事件骨架仅留兼容旧任务 replay，发射端已删",
     ),
     SseEventSpec(
         SSE_GUIDANCE_INJECTED, ("core/agent_loop.py",),
@@ -95,7 +95,7 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
     SseEventSpec(
         SSE_STOPPED, ("core/agent_loop.py", "web/chat_service.py"),
         "passthrough", "stopped",
-        "任务 #17 端到端中断协议：协作式取消检查点命中发终态事件（不变式：任何中断都有痕迹、都有出口）；"
+        "端到端中断协议：协作式取消检查点命中发终态事件（不变式：任何中断都有痕迹、都有出口）；"
         "透传段为 chat_service 专属分支并富化在途外部生成任务登记（inflight，第一版不撤销）",
     ),
     SseEventSpec(
@@ -106,7 +106,6 @@ SSE_EVENT_REGISTRY: Tuple[SseEventSpec, ...] = (
         SSE_STEP_STARTED, ("core/agent_loop.py",),
         "internal", "", "内部事件（前端忽略，登记防误依赖）",
     ),
-    # executing_actions 事件随文本块执行路径退役删除（ADR-0001）
 )
 
 

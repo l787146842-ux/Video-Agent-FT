@@ -5,9 +5,9 @@ Skill 文档化存储层。
 存放在 data/skills/。渐进式披露：上下文只注入 Skill 目录（名称+摘要），
 全文由模型调 read_skill 按需加载——"流程即数据"。
 
-插件包约定（任务#5）：单文件 <slug>.md 与目录包 <slug>/<slug>.md
+插件包约定：单文件 <slug>.md 与目录包 <slug>/<slug>.md
 （包内其余文件为资源）双形态兼容；平台声明与正文合一，写在文档头部
-YAML frontmatter（`---` 包裹块），外置 JSON sidecar 已退役。
+YAML frontmatter（`---` 包裹块）。
 
 文档格式约定：
     ---
@@ -31,16 +31,12 @@ from src.video_agent.utils.paths import SKILL_DOCS_DIR
 from src.video_agent.config import settings
 # 标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
 from src.video_agent.core import live_metrics
-# （审核）：pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
+# pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
 from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: 1
 # frontmatter 声明解析/体检（frontmatter 顶层不依赖本模块，无环）
 from src.video_agent.skill_runtime import frontmatter
 
 _SLUG_RE = re.compile(r"^[\w一-鿿-]{1,64}$")  # 允许中英文/数字/下划线/连字符
-
-# 外来工具名映射层（FOREIGN_TOOL_MAP + build_foreign_tool_note）
-# 已删除（清偿，用户裁决）：运行时不再做工具名翻译；进项目的 Skill
-# 必须在导入期改为本项目的工具名（归将来专用 Skill 系统职责）。
 
 # 版本历史：保存前把旧版备份到 .history/，每个 slug 保留最近 N 版
 _HISTORY_DIR_NAME = ".history"
@@ -52,7 +48,7 @@ _HISTORY_MAX = 10
 # 只能靠「识别当前阶段 → 重复强调对应章节」来逼近同等遵循度。
 # 值支持一对多：旧 tag（如 storyboard_designer）三拆重构后同时映射到全部拆分 stage，
 # 保证存量 Skill 的整节内容对三个拆解执行器同等注入（与旧执行器语义一致）。
-# 执行器名对齐批：本项目 skill 文档章节 tag 一律用真实执行器/工具名；
+# 本项目 skill 文档章节 tag 一律用真实执行器/工具名；
 # 源平台遗留名（media_generator/storyboard_designer 等）仅作外来 Skill 兼容别名保留。
 SECTION_TAG_STAGES: Dict[str, Union[str, Tuple[str, ...]]] = {
     "planner": "planning",
@@ -168,7 +164,7 @@ def list_skill_sections(content: str) -> List[Dict[str, Any]]:
     与 split_skill_sections 同口径双格式：
     1. flova 原生 <tag>…</tag> 章节：title = tag 名，区间覆盖整个标签块；
     2. Markdown 标题式：title = 标题文本（去 # 前缀），区间从标题行到下一标题前。
-    任务#36 B5：分级注入章节目录与 read_skill（section/start）续读共用。
+    分级注入章节目录与 read_skill（section/start）续读共用。
     """
     content = content or ""
     out: List[Dict[str, Any]] = []
@@ -271,7 +267,7 @@ def _refresh_runtime_registry() -> None:
 def _parse_doc(slug: str, content: str) -> Dict[str, Any]:
     name = slug
     description = ""
-    # 在剥离 frontmatter 后的正文上找标题/描述（P2-3）：YAML 注释行
+    # 在剥离 frontmatter 后的正文上找标题/描述：YAML 注释行
     # （`# ...`）与声明键混在全文扫描里会污染显示名
     body = frontmatter.strip_frontmatter(content)
     for line in body.splitlines():
@@ -398,7 +394,7 @@ def _backup_skill_doc(slug: str, target: Path) -> None:
 
 
 def prune_all_skill_history() -> int:
-    """：启动时裁剪全部 Skill 历史——每 slug 只保留最近 _HISTORY_MAX 版。
+    """启动时裁剪全部 Skill 历史——每 slug 只保留最近 _HISTORY_MAX 版。
 
     历史文件的堆积来自保存时的增量裁剪与旧版本遗留；此函数按 slug 分组
     （文件名 `{slug}-{毫秒时间戳}.md`）做一次全量收敛，返回删除数。"""
@@ -466,8 +462,7 @@ _GATE_RULES_LINT_RE = re.compile(
     r"```(?:json|js)?\s*gate_rules\s*\n(.*?)```", re.S | re.I
 )
 
-# Skill 平台行为统一声明块正则（声明已迁文档头部 frontmatter，
-# 本正则仅用于 lint 提示「文档内 manifest 块不再消费」）
+# Skill 平台行为统一声明块正则（仅用于 lint 提示「文档内 manifest 块不再消费」）
 _SKILL_MANIFEST_BLOCK_RE = re.compile(
     r"```(?:json|js)?\s*skill_manifest\s*\n(.*?)```", re.S | re.I
 )
@@ -527,7 +522,7 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
                 warnings.append("gate_rules 不是 JSON 对象，已回落默认闸机规则")
         except Exception:
             warnings.append("gate_rules JSON 解析失败，已回落默认闸机规则")
-    # 声明迁 frontmatter——文档内 manifest 块不再消费，显式提示
+    # 文档内 manifest 块不再消费，显式提示
     if _SKILL_MANIFEST_BLOCK_RE.search(content):
         warnings.append(
             "skill_manifest 块不再消费：平台声明已迁文档头部 frontmatter，请从正文移除该块"
@@ -631,7 +626,7 @@ def _lint_prose_obligations(content: str, slug: str) -> List[str]:
     """散文含对话义务而 frontmatter 未声明 pause → 告警显性化分歧。
 
     平台以机械卡/闸兜底对话义务；Skill 散文与 frontmatter 声明
-    分歧时不再静默丢弃（P1 单一家原则的编辑期提示），只告警不阻断。
+    分歧时不再静默丢弃，只告警不阻断。
     """
     if not slug:
         return []
@@ -662,7 +657,6 @@ def resolve_skill_content(wanted: str) -> tuple:
     """按名称解析 Skill 全文（仅文档 Skill，模糊匹配）。
 
     read_skill 工具与 Planner 选中项硬注入共用同一套解析，保证两处行为一致。
-    代码内置 Skill（编剧/分镜师/制片）已彻底移除，不再是解析来源。
     返回 (display_name, content)，未命中返回 ("", "")；content 已剥离
     frontmatter（声明经元数据头单独注入，正文注入不携带 YAML 头）。
     """

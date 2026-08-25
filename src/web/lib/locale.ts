@@ -40,7 +40,6 @@ const zhCN = {
   'agent.roundStart': '第 {step} 轮推理中…（执行上轮操作后继续规划）',
   'agent.planning': '正在推理…（模型正在读状态并规划操作）',
   'agent.actionsApplied': '已应用 {count} 个操作',
-  // agent.executing 随 executing_actions 事件退役删除（见 ADR-0001）
   'rp.conv.close': '关闭对话',
   'rp.conv.create': '新建对话',
   'rp.conv.busyGuard': 'Agent 正在回复，请稍后再操作对话窗口',
@@ -184,7 +183,7 @@ const zhCN = {
   'rp.confirm.hintPick': '选择后点击发送',
   'rp.confirm.pickProvider': '请选择 API 厂商…',
 
-  // ---------- 结构化决策表单（任务 #3：schema→表单数据驱动） ----------
+  // ---------- 结构化决策表单（schema→表单数据驱动） ----------
   'rp.decision.submit': '提交',
   'rp.decision.hint': '填写完成后提交',
   'rp.decision.sent': '已提交',
@@ -300,7 +299,7 @@ const zhCN = {
   // ---------- 消息窗口化（长会话只渲染近段，向前按需展开） ----------
   'rp.feed.showEarlier': '显示更早的消息（{n} 条未显示）',
 
-  // ---------- 消息悬停工具条与截断重答（任务 #17 新交互模型） ----------
+  // ---------- 消息悬停工具条与截断重答 ----------
   'rp.msg.copy': '复制',
   'rp.msg.copied': '已复制',
   'rp.msg.branch': '分支：以此消息为分叉点创建新对话',
@@ -310,7 +309,7 @@ const zhCN = {
   'rp.msg.truncateFailed': '截断重答失败：{error}',
   'rp.msg.editCancel': '取消',
   'rp.msg.editSend': '发送',
-  // 存为文档（任务 #6 C-2：不经 LLM 的确定性兜底）
+  // 存为文档（不经 LLM 的确定性兜底）
   'rp.msg.saveDoc': '存为文档',
   'rp.msg.saveDocTitle': '把该条回复正文存为项目文档',
   'rp.msg.docSaved': '已存入文档：{name}',

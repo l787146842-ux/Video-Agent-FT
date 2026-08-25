@@ -1,20 +1,19 @@
 """
 SqliteStateRepository — SQLite 持久化层（与 StateRepository 同接口的可替换实现）。
 
-动机（审查报告 3.1）：
+动机：
 - JSON 文件方案在高频防抖落盘、并发读写、大状态（聊天历史/故事板）下存在写放大与竞争风险；
 - SQLite 提供事务原子性、单文件部署、按需查询能力，且仍保持零外部依赖（标准库 sqlite3）。
 
-切换方式：STATE_BACKEND 默认 sqlite（P3-16 翻转，等价性测试守护）；
+切换方式：STATE_BACKEND 默认 sqlite；
 设 STATE_BACKEND=json 仅可回落到「未迁入 sqlite 的旧 JSON 工作区」。
 迁移策略：首次启用且数据库为空时，自动从 workspace/projects/*/state.json + index.json 导入；
 兼容文件 studio_state.json 经 StateManager._load → load_compat 一次性迁入。
 
-镜像退役（任务 #24 存储层单一事实源收敛）：SQLite 为项目状态唯一事实源，
-P3-16 双写回退期的 JSON 镜像（projects/*/state.json + index.json + studio_state.json）
-已停写。代价明示：sqlite 写入后回退 STATE_BACKEND=json 不再无损续跑
-（json 侧只剩迁入前的陈旧文件）；STATE_BACKEND=json 保留为测试基线与
-旧 JSON 工作区回落路径，不承担生产数据连续性承诺。
+单一事实源：SQLite 为项目状态唯一事实源，无 JSON 镜像。
+代价明示：sqlite 写入后回退 STATE_BACKEND=json 不再无损续跑；
+STATE_BACKEND=json 保留为测试基线与旧 JSON 工作区回落路径，
+不承担生产数据连续性承诺。
 """
 import json
 import shutil
@@ -51,8 +50,8 @@ class SqliteStateRepository:
     def __init__(self, workspace_dir: Path):
         self._workspace_dir = workspace_dir
         self._projects_dir = workspace_dir / "projects"
-        # 兼容旧版 studio_state.json：镜像已退役（任务 #24），仅保留只读入口
-        # 供 StateManager._load 一次性迁移（load_compat），不再有任何写入方
+        # 兼容旧版 studio_state.json：仅保留只读入口
+        # 供 StateManager._load 一次性迁移（load_compat）
         self._state_file = workspace_dir / "studio_state.json"
         self._db_file = workspace_dir / "state.sqlite3"
         self._lock = threading.Lock()
@@ -137,7 +136,7 @@ class SqliteStateRepository:
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('index', ?)",
                 (json.dumps(index, ensure_ascii=False),),
             )
-        # index.json 镜像已退役（任务 #24）：SQLite 为唯一事实源
+        # SQLite 为唯一事实源，无 index.json 镜像
 
     def save_project(self, project_id: str, state: Dict[str, Any]) -> None:
         self._validate_id(project_id)
@@ -148,7 +147,7 @@ class SqliteStateRepository:
                 "INSERT OR REPLACE INTO projects (id, state, updated_at) VALUES (?, ?, ?)",
                 (project_id, state_text, now),
             )
-        # state.json 镜像已退役（任务 #24）：SQLite 为唯一事实源
+        # SQLite 为唯一事实源，无 state.json 镜像
 
     def load_project(self, project_id: str) -> Optional[Dict[str, Any]]:
         self._validate_id(project_id)
@@ -166,8 +165,8 @@ class SqliteStateRepository:
         self._validate_id(project_id)
         with self._lock, self._connect() as conn:
             conn.execute("DELETE FROM projects WHERE id=?", (project_id,))
-        # 镜像已停写，但镜像回退期遗留的旧项目目录可能仍在：删除项目时
-        # 顺带清掉残留目录，防止回退 json 后端时已删项目借陈旧文件复活
+        # 遗留的旧项目目录可能仍在：删除项目时顺带清掉残留目录，
+        # 防止回退 json 后端时已删项目借陈旧文件复活
         try:
             pdir = self._projects_dir / project_id
             if pdir.exists():
@@ -176,11 +175,11 @@ class SqliteStateRepository:
             logger.warning(f"[SqliteRepo] 镜像目录删除失败（{project_id}）: {e}")
 
     def save_compat(self, state: Dict[str, Any]) -> None:
-        """镜像退役（任务 #24）：studio_state.json 停写。
+        """studio_state.json 不写入。
 
         保留空实现维持 StateRepository 接口对齐（StateManager.save /
         ProjectManager 无需感知后端差异）。该文件仅余只读身份：
-        启动时经 load_compat 一次性迁入 SQLite，之后不再更新。
+        启动时经 load_compat 一次性迁入 SQLite。
         """
         return
 

@@ -1,5 +1,5 @@
 """
-多模态内容构建器（从 chat_service.py 拆分，修复计划书 P1-6）。
+多模态内容构建器。
 
 职责：
 - /workspace/ 本地图片 → base64 data URI（云端 LLM 无法访问 127.0.0.1，必须内联）
@@ -8,9 +8,8 @@
 
 纯构建逻辑，不涉及会话编排与 SSE。
 
-整改批 3.3：媒体 URL → 可注入形式的解析实现已下沉至
-storage/media_urls.py 公开 API（tools 层改消费公开接口，消灭 tools→web
-反向依赖）；本模块保留薄 re-export 壳——web 内部调用点与既有测试的
+媒体 URL → 可注入形式的解析实现位于 storage/media_urls.py 公开 API；
+本模块保留薄 re-export 壳——web 内部调用点与既有测试的
 patch 目标（本模块命名空间的旧私有名）保持不变。
 """
 from typing import Any, Dict, List, Optional

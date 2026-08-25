@@ -1,4 +1,4 @@
-"""/api/generate 视频生成端点（从 generate.py 拆出）。
+"""/api/generate 视频生成端点。
 
 真实供应商：通过 OpenAICompatVideoAdapter 调用异步视频生成 API。
 mock 供应商：走 mock 适配器（结果带 mock 标记）。

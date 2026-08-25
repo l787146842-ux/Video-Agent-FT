@@ -74,7 +74,7 @@ def _channel_dim_from_hints(text: str) -> str:
 
 def _configured_names(kind: str) -> List[str]:
     """本项目已配置的供应商显示名与模型名（kind=image/video；
-    经 provider_config 端口读取（D-01 倒置），读取失败返回空）。"""
+    经 provider_config 端口读取，读取失败返回空）。"""
     try:
         names: List[str] = []
         key = "image_models" if kind == "image" else "video_models"

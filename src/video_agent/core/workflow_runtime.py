@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Workflow Runtime — 账本 + 裁判数据层（宪法 Rule2 主体回归，ADR-0004）。
+"""Workflow Runtime — 账本 + 裁判数据层。
 
 正向设计（业界基准：Anthropic workflows-vs-agents / Claude Code hooks 公理 /
 Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复；
@@ -7,15 +7,14 @@ Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复；
 模型永远是唯一行动主体，运行时做持久状态、产物账本、投影与裁判数据，
 不发起任何行动；越阶由 stage_precondition 闸在工具执行路径首位否决。
 
-职责边界（主体回归后）：
+职责边界：
 - Skill 激活编译 ``WorkflowDefinition``（canonical slug + revision + content hash，
   源 = frontmatter 声明，``validate_manifest`` 注册期门禁）；
 - 持久化 ``WorkflowRun``（current_node/completed_nodes/pending_gate/artifacts），
   **仅本模块 reducer 可改**（StateManager 仍唯一写入点，Rule3）；
   interaction 暂停旗标同经 ``reduce_interaction`` 单一写入；
 - 完成度只认客观探针（stage_done，fail-closed）；
-- 历史机械直跑/审批直跑能力随 ADR-0004 退役（防复活归
-  check_legacy_orchestration 门禁）；「不暂停连跑」语义归自主性档位。
+- 「不暂停连跑」语义归自主性档位。
 """
 import copy
 import uuid
@@ -26,12 +25,15 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import gates_inputs
-from src.video_agent.core import pipeline_orchestrator as po
+from src.video_agent.core import stage_probes as po
 from src.video_agent.core import prompt_gates
 from src.video_agent.skill_runtime import registry
 from src.video_agent.skill_runtime import frontmatter
 from src.video_agent.skill_runtime.manifest_schema import split_issue_warnings
-from src.video_agent.core.workflow_contract import WorkflowDefinitionError, default_v2_workflow
+from src.video_agent.core.workflow_contract import (
+    WorkflowDefinition, WorkflowDefinitionError, default_v2_workflow,
+    DEFAULT_V2_NODE_TITLES,
+)
 from src.video_agent.core.workflow_events import EventLedger
 from src.video_agent.core.turn_commit import (
     TurnCommit, TurnResult, WorkflowCommitError, commit_turn,
@@ -54,11 +56,59 @@ def canonical_slug(name: str) -> str:
     return registry._norm_name(name).replace("-", "").replace("_", "")
 
 
+def _workflow_stages_decl(manifest: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """frontmatter flow.stages 数组形态（workflow 结构声明）。
+
+    未声明/非数组返空表 → 回落 default_v2_workflow（零回归红线）；
+    dict 形态 = 阶段覆盖声明（stage_probes.stage_table 消费），不属本通道。
+    形状合法性归 validate_manifest（注册期 fail-hard），本函数只容错读。"""
+    stages = ((manifest or {}).get("flow") or {}).get("stages")
+    if not isinstance(stages, list):
+        return []
+    return [
+        s for s in stages
+        if isinstance(s, dict) and str(s.get("key") or "").strip()
+    ]
+
+
+def _definition_from_stages(slug: str, stages: List[Dict[str, Any]]) -> WorkflowDefinition:
+    """声明式 workflow 编译：flow.stages 数组 → 节点拓扑（线性前置链）。
+
+    review 节点执行器固定 workflow_pause（暂停语义）；probe 节点完成度
+    挂客观探针（schema 白名单钉死）。节点字段形状与默认定义同构
+    （from_sidecar 单一校验入口）。"""
+    nodes_raw: List[Dict[str, Any]] = []
+    prev: Optional[str] = None
+    for st in stages:
+        key = str(st.get("key") or "").strip()
+        review = bool(st.get("review"))
+        executor = "workflow_pause" if review else str(st.get("executor") or key).strip()
+        nodes_raw.append({
+            "node_id": key, "executor": executor,
+            "deterministic": True if review else bool(st.get("deterministic")),
+            "prerequisites": [prev] if prev else [],
+            "done_predicate": {"type": "state", "node": key},
+            "artifact_schema": {},
+            "decision_schema": {"type": "approval"} if review else {},
+            "approval_policy": {"required": review},
+            "retry_policy": {"max_attempts": 1},
+            "next_transition": {}})
+        prev = key
+    return WorkflowDefinition.from_sidecar(
+        {"workflow": {"workflow_id": f"skill:{slug}", "revision": "1",
+                      "nodes": nodes_raw}},
+        workflow_id=f"skill:{slug}", skill_id=slug)
+
+
 def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
     """Skill 激活编译 WorkflowDefinition（canonical slug + revision + hash）。
 
     源 = frontmatter 声明（validate_manifest 注册期门禁）+ 阶段表；编译失败
     （未注册 Skill）返回 None（runtime 不启用，回落模型循环旧路径）。
+    数据驱动：frontmatter flow.stages 数组声明优先派生节点
+    拓扑与标题（标题随声明自带）；未声明回落 default_v2_workflow
+    （默认 workflow 自带标题 DEFAULT_V2_NODE_TITLES）——未声明 skill
+    编译结果逐字段不变（零回归红线，快照对拍钉死）。
     per-turn 缓存（轮始 clear_compile_cache；同轮多次调用共享）。"""
     cache_key = canonical_slug(skill) or str(skill or "")
     if cache_key in _COMPILE_CACHE:
@@ -70,10 +120,10 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
         return None
     # v2 收尾：frontmatter 体检门禁——非法声明拒入 workflow（计划§1/§6：
     # 无效声明不能“只告警后继续”驱动运行时；散文通道仍可工作）
-    # 问题分级（任务#5 B-1）：只按错误级拒入；WARN 级（开放注册降级/
+    # 问题分级：只按错误级拒入；WARN 级（开放注册降级/
     # 废除键过渡告警）记录日志后放行，与注册门禁同口径。
-    _issues = frontmatter.validate_manifest(
-        frontmatter.load_manifest(str(entry.slug or skill)))
+    manifest = frontmatter.load_manifest(str(entry.slug or skill))
+    _issues = frontmatter.validate_manifest(manifest)
     issues, _warns = split_issue_warnings(_issues)
     for _w in _warns:
         logger.warning("[WorkflowRuntime] frontmatter 告警（{}）: {}", skill, _w)
@@ -83,12 +133,15 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
             skill, ";".join(issues))
         _COMPILE_CACHE[cache_key] = None
         return None
-    definition = default_v2_workflow(str(entry.slug or skill))
-    titles = {"analyze_script": "剧本分析", "collect_spec": "规格候选收集",
-              "write_spec": "规格文档", "review_spec": "规格审核",
-              "storyboard_key_elements": "关键元素拆解",
-              "review_key_elements": "关键元素审核",
-              "storyboard_shots": "分镜设计", "storyboard_audio": "音频层设计"}
+    # 数据驱动：声明式 stages 优先，未声明回落默认定义
+    stages_decl = _workflow_stages_decl(manifest)
+    if stages_decl:
+        definition = _definition_from_stages(str(entry.slug or skill), stages_decl)
+        titles = {str(st["key"]).strip(): str(st.get("title") or "").strip()
+                  for st in stages_decl}
+    else:
+        definition = default_v2_workflow(str(entry.slug or skill))
+        titles = DEFAULT_V2_NODE_TITLES
     nodes = [{**node.to_dict(), "key": node.node_id,
               "title": titles.get(node.node_id, node.node_id),
               "executors": [] if node.executor == "workflow_pause" else [node.executor]}
@@ -105,7 +158,7 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
     return result
 
 
-# 节点 → 客观探针键映射（整改批 3.1「账本无自报」）：completed_nodes 全量
+# 节点 → 客观探针键映射（账本无自报）：completed_nodes 全量
 # 由 stage_done 探针重算；turn_commit 的自报 completed_node 降级为非权威
 # 提示——下次 sync 即被本重算覆盖，不再具有账本效力。
 # - collect_spec 与 write_spec 同证同源：规格文档在场即证明收集已发生；
@@ -114,6 +167,11 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
 # - 两个评审节点的「已评审」客观证据 = 账本 DecisionResolved 事件
 #   （resolve_decision 提交），前置产物在场但未落账决议时不予完成
 #   （fail-closed：不因文档存在而跳过评审暂停）。
+# 声明式 workflow（flow.stages 数组）的节点→探针映射随声明自带
+# （probe 白名单钉死归 manifest_schema）：无探针声明在 schema 门禁
+# 即 ERROR 级拒入（fail-closed 选型：与「非法声明拒入」同口径，
+# 不采用「无探针暂停」放行——那会产出永远无法客观完成的死节点）；
+# 运行时 _declared_node_done 再兼一层探针缺失 = 未完成双保险。
 _NODE_PROBE_KEYS = {
     "analyze_script": "analysis",
     "collect_spec": "spec",
@@ -127,9 +185,40 @@ _NODE_STRUCTURE_KEYS = {
 _REVIEW_NODES = ("review_spec", "review_key_elements")
 
 
+def _declared_node_done(decls: List[Dict[str, Any]], node_id: str,
+                        run: Dict[str, Any], state: Dict[str, Any],
+                        skill: str) -> bool:
+    """声明式 stage 完成度判定（默认定义语义的同构镜像，fail-closed）：
+    probe 节点 = 客观探针在场；review 节点 = 前置探针在场 + 账本
+    DecisionResolved（前置探针取声明链上最近一个 probe 节点，与默认
+    定义 review_spec→spec / review_key_elements→key_elements 同构）。
+    声明外未知节点 → False。"""
+    idx = next((i for i, st in enumerate(decls)
+                if str(st.get("key") or "").strip() == node_id), -1)
+    if idx < 0:
+        return False
+    decl = decls[idx]
+    if decl.get("review"):
+        prereq = next(
+            (str(decls[j].get("probe") or "")
+             for j in range(idx - 1, -1, -1)
+             if str(decls[j].get("probe") or "")), "")
+        if not prereq or not po.stage_done(prereq, state, skill):
+            return False
+        rid = str(run.get("run_id") or "")
+        return any(e.node_id == node_id and e.event_type == "DecisionResolved"
+                   for e in EventLedger(state).by_run(rid))
+    probe = str(decl.get("probe") or "")
+    return po.stage_done(probe, state, skill) if probe else False
+
+
 def _node_objectively_done(node_id: str, run: Dict[str, Any],
                            state: Dict[str, Any], skill: str) -> bool:
-    """workflow_contract 单节点完成度客观判定（8/8 节点全覆盖）。"""
+    """workflow_contract 单节点完成度客观判定（默认 8/8 节点全覆盖；
+    声明式 workflow 节点走 _declared_node_done 同源口径）。"""
+    decls = _workflow_stages_decl(registry.skill_manifest_of(skill))
+    if decls:
+        return _declared_node_done(decls, node_id, run, state, skill)
     if node_id in _NODE_PROBE_KEYS:
         return po.stage_done(_NODE_PROBE_KEYS[node_id], state, skill)
     if node_id in _NODE_STRUCTURE_KEYS:
@@ -148,7 +237,7 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
     """同步 WorkflowRun：定义变更重初始化；完成度按客观探针全量重算。
 
     current_node = 阶段表首个未完成步；completed_nodes 只认 stage_done
-    探针与账本 DecisionResolved 事件（fail-closed），自报条目一律清偿。
+    探针与账本 DecisionResolved 事件（fail-closed），自报条目无账本效力。
     run 块为 reducer 单一写入点。"""
     definition = compile_definition(skill)
     run = state.setdefault("workflow_run", {})
@@ -156,16 +245,16 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
         run.setdefault("failure_state", {"code": "INVALID_SKILL", "skill": skill})
         return run
     now = datetime.now(timezone.utc).isoformat()
+    first_node = definition["nodes"][0]["node_id"]
     if not run:
         run.update({"run_id": f"run_{uuid.uuid4().hex}", "workflow_id": definition["workflow_id"],
                     "definition_revision": definition["revision"], "definition_hash": definition["definition_hash"],
                     "slug": definition["slug"], "name": definition["name"], "revision": definition["revision"],
-                    "status": "ready", "current_node": "analyze_script", "completed_nodes": [],
+                    "status": "ready", "current_node": first_node, "completed_nodes": [],
                     "pending_decision": None, "artifacts": [], "run_version": 0,
                     "event_sequence": 0, "failure_state": None,
                     "created_at": now, "updated_at": now})
     elif run.get("definition_hash") and run.get("definition_hash") != definition["definition_hash"]:
-        # 定义变更检测旗标已随整改批 1.3 删除（单点写入零消费）；
         # 定义变更时保留旧 run 的早退语义不变
         return run
     for key, value in (("workflow_id", definition["workflow_id"]), ("definition_revision", definition["revision"]),
@@ -174,7 +263,7 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
                        ("run_version", 0), ("event_sequence", 0),
                        ("failure_state", None), ("created_at", now)):
         run.setdefault(key, copy.deepcopy(value))
-    # 账本无自报（整改批 3.1）：8/8 节点全量探针重算，覆盖任何历史自报条目
+    # 账本无自报：8/8 节点全量探针重算，覆盖任何历史自报条目
     run["completed_nodes"] = [
         n["node_id"] for n in definition["nodes"]
         if _node_objectively_done(n["node_id"], run, state, skill)]
@@ -211,9 +300,9 @@ def reduce_interaction(
     pop_flags: tuple = (),
     flush: bool = False,
 ) -> Dict[str, Any]:
-    """interaction 暂停旗标唯一写入点（reducer 语义，Rule2 v6）。
+    """interaction 暂停旗标唯一写入点（reducer 语义）。
 
-    散落直写已收敛到此；flush=True 时即时落盘（暂停闭环等承重路径）。
+    散落直写禁止；flush=True 时即时落盘（暂停闭环等承重路径）。
     控制流可观测：写入经 [ControlFlow] 日志留痕。"""
     inter = apply_interaction(svc.state_dict, set_flags, pop_flags)
     if flush:
@@ -245,18 +334,13 @@ def record_node_event(
         payload=dict(payload or {}))
 
 
-# 节点失败记账原语（bump/clear 两枚）已随整改批 1.3 删除：
-# 生产零写入（执行器一步退役后无调用方），消费链（重试引导卡派生）
-# 同批删除；防复活钉死见 tests/unit/test_dead_code_payoff.py
-
-
 def project(state: Dict[str, Any], turn_id: str = "") -> Dict[str, Any]:
     """workflow 投影（done 载荷/重连 replay 同源）。
 
     run 级快照 + 本轮事件序列（前端历史重载与实时 SSE 一致重建）。
     只读派生，不改状态。
 
-    任务 #3：``pending_decision_payload`` —— 布尔旗标之外附决策完整结构
+    ``pending_decision_payload`` —— 布尔旗标之外附决策完整结构
     （token/node_id/message/schema/options，DecisionRequest 五元组透传），
     前端渲染层据此 schema→表单数据驱动（schema.fields = 多字段参数表单：
     每项 {key, label, type=text|number|select, options?, default?, required?}；
@@ -291,8 +375,7 @@ def project(state: Dict[str, Any], turn_id: str = "") -> Dict[str, Any]:
 def record_artifact(state: Dict[str, Any], skill: str, name: str) -> None:
     """产物账本一等条目（ArtifactCommitted）：reducer 单一写入。
 
-    伪轮次（turn_id=artifact:{name} 走 commit_turn）退役，
-    改为独立事件入账 + run.artifacts 单一写入（行为等价：幂等去重）。"""
+    独立事件入账 + run.artifacts 单一写入（幂等去重）。"""
     if not name:
         return
     run = state.get("workflow_run") or {}
@@ -320,7 +403,7 @@ class WorkflowRuntime:
     def start_run(self, *, input_present: Optional[bool] = None) -> Dict[str, Any]:
         run = sync_run(self.state, self.skill); ledger = EventLedger(self.state)
         ledger.append("RunStarted", run_id=run["run_id"], idempotency_key=f"run:{run['run_id']}:started", payload={"workflow_id": run.get("workflow_id")})
-        # 原料闸（任务#35 B2）：v3 requires_inputs 声明优先（任一 required 项
+        # 原料闸：v3 requires_inputs 声明优先（任一 required 项
         # 未满足即 waiting_user），未声明回落 v2 script_required，两路不叠加。
         if input_present is False:
             missing = True
@@ -332,8 +415,13 @@ class WorkflowRuntime:
         else:
             missing = False
         if missing:
-            run["status"] = "waiting_user"; run["pending_decision"] = {"token": f"input:{run['run_id']}", "node_id": "analyze_script", "schema": {"type": "input", "required": True}}
-            ledger.append("InputRequested", run_id=run["run_id"], node_id="analyze_script", idempotency_key=f"run:{run['run_id']}:input", payload={"status": "waiting_user"})
+            # 原料闸挂首节点（默认定义首节点 = analyze_script，行为不变；
+            # 声明式 workflow 挂其声明首节点）
+            _def = compile_definition(self.skill)
+            _input_node = (_def["nodes"][0]["node_id"]
+                           if _def and _def.get("nodes") else "analyze_script")
+            run["status"] = "waiting_user"; run["pending_decision"] = {"token": f"input:{run['run_id']}", "node_id": _input_node, "schema": {"type": "input", "required": True}}
+            ledger.append("InputRequested", run_id=run["run_id"], node_id=_input_node, idempotency_key=f"run:{run['run_id']}:input", payload={"status": "waiting_user"})
         run["event_sequence"] = max((x.sequence for x in ledger.by_run(run["run_id"])), default=0)
         if hasattr(self.state_manager, "save"): self.state_manager.save()
         return copy.deepcopy(run)

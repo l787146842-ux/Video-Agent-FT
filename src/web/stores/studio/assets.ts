@@ -1,4 +1,4 @@
-/** Studio store · 素材域（批次6 从 studio.ts 拆出）：未归类素材的选择/删除/移入/还原 */
+/** Studio store · 素材域（自 studio.ts 拆出）：未归类素材的选择/删除/移入/还原 */
 import type { AnyGroup, Draft, DraftType } from '@/types';
 import { showToast } from '@/stores/toast';
 import { uid } from '@/lib/utils';

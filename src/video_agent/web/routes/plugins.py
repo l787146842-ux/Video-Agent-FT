@@ -35,9 +35,8 @@ router = APIRouter()
 async def get_agent_config():
     """前端 agentSkillSelect 下拉框数据源：仅文档 Skill（用户可见可编辑）。
 
-    历史教训：代码形态 Skill（内置类注册器）曾在改造计划中被加回下拉，
-    导致用户删过的「编剧/分镜师/制片 Agent」复活。现永久移除
-    （内置类注册器整包已随整改批 1.3 物理删除）。
+    代码形态 Skill（内置类注册器）不进下拉（注册器整包已移除），
+    防用户删过的「编剧/分镜师/制片 Agent」复活。
     """
     doc_skills = [
         {
@@ -57,8 +56,8 @@ async def get_agent_config():
 
 
 def _planning_executors_of(skill_name: str):
-    """规划级执行器名单（前端契约字段保留）：执行器已随任务#36 B5
-    一步退役，永远返回空名单（前端据实标注，空 = 无规划级欠账）。"""
+    """规划级执行器名单（前端契约字段保留）：执行器已退役，
+    永远返回空名单（前端据实标注，空 = 无规划级欠账）。"""
     return []
 
 
@@ -219,12 +218,10 @@ _ASSISTANT_SYSTEM_TMPL = """你是 Skill 优化助手，帮助用户定制/优�
 
 
 def _assistant_system() -> str:
-    """助手 system prompt（整改批 2.1：可用工具名单动态化）。
+    """助手 system prompt（可用工具名单动态化）。
 
     名单唯一源 = 平台注册表（ToolManager，画布工具补注册后取全集，
-    register 幂等）；消灭硬编码名单漂移源——历史清单混入
-    script_analyze / write_media_prompt / audio_generate / video_assembler
-    等已退役能力词，曾误导助手向用户 Skill 写入幻影工具名。
+    register 幂等），不硬编码名单（防幻影工具名误导助手）。
     """
     register_canvas_tools()
     names = "/".join(sorted(ToolManager._tools))
@@ -267,7 +264,7 @@ async def skill_assistant(body: SkillAssistantRequest):
         {"role": "system", "content": _assistant_system()},
         {"role": "user", "content": f"当前 Skill 文档全文：\n\n{body.content}"},
     ]
-    # 会话历史截尾（批 3.4 统一口径）：真实用户轮组原子窗口，
+    # 会话历史截尾（统一口径）：真实用户轮组原子窗口，
     # 语义单一事实源 = token_budget.window_recent_turns（默认 10 轮）
     hist_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
     for m in window_recent_turns(hist_dicts):

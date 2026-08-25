@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""FC 批末对账段（任务#23 D1/D2：fc_tool_runner 巨石三段拆分 3/3）。
+"""FC 批末对账段。
 
 三段结构：闸机裁决（fc_gates）→ 执行（fc_tool_runner）→ 批末对账（本模块）。
 
-防虚报范式（D2）：对账以执行段收集的客观成败账本（BatchLedger）为第一依据
+防虚报范式：对账以执行段收集的客观成败账本（BatchLedger）为第一依据
 ——同 workflow_runtime.sync_run 的客观探针范式（完成度只认探针，fail-closed），
 批末覆盖只由「探针不一致」触发；措辞匹配（_FALLBACK_CLAIM_MARKERS）降为
 兜底判别器，只判断模型暂停文案是否带生成类声称，不再独立承载任何裁决。
@@ -18,7 +18,7 @@ from src.video_agent.core import workflow_runtime
 from src.video_agent.skill_runtime.registry import stage_label_for_tool
 from src.video_agent.state.manager import StateManager
 
-# 兜底判别器（D2）：仅用于判断模型暂停文案是否带生成类声称；
+# 兜底判别器：仅用于判断模型暂停文案是否带生成类声称；
 # 覆盖的触发权归客观账本（gen_failed_err/gen_succeeded），不归本表
 _FALLBACK_CLAIM_MARKERS = (
     "已触发", "已为您触发", "开始生成", "正在生成", "生成中",
@@ -90,7 +90,7 @@ def _reconcile_spec_doc_boundary(
 def _reconcile_stage_review_card(
     ledger: BatchLedger, state_provider: Callable[[], Dict[str, Any]],
 ) -> None:
-    """暂停点归位 Skill 阶段边界（13.3/C6，用户裁决）：
+    """暂停点归位 Skill 阶段边界：
     平台不再「关键元素首建后硬暂停」；仅当本批把故事板推进到阶段完成
     （Skill 声明的组别齐）且模型未自行暂停时，注入审阅卡；
     模型自发暂停一律保留其文案与选项（平台不覆盖）。"""
@@ -198,7 +198,7 @@ def _reconcile_spec_takeover(
 
 def _reconcile_key_tool_failure(ledger: BatchLedger) -> None:
     """关键工具（document_write）存在失败且模型带确认声称完成 → 覆盖为诚实文案
-    （执行器族已随任务#36 B5 退役，关键步骤防虚报收敛到文档写入）。"""
+    （关键步骤防虚报收敛到文档写入）。"""
     if not (ledger.confirmation and ledger.key_tool_failed and not ledger.spec_write_rejected):
         return
     # 失败工具名映射为用户友好名（内部英文名不出现在用户文案）

@@ -33,7 +33,7 @@ function formatHHMM(ts?: number): string {
  * 单条聊天消息
  * user：右侧气泡（有 parts 时按文字+缩略图交错还原排版）；agent：markdown 渲染。
  * 支持 docCard（文档完成卡片）、imageCard（生图结果，可点击看原图/可拖拽）、confirm（阶段确认卡片 + 操作条）。
- * 悬停工具条（任务 #17）：复制/编辑/分支/重新生成按 affordances 矩阵挂载，
+ * 悬停工具条：复制/编辑/分支/重新生成按 affordances 矩阵挂载，
  * 仅悬停或键盘 focus-within 可见；编辑 = 原地编辑框 → 截断重答。
  */
 export function ChatMessageItem(props: {
@@ -98,7 +98,7 @@ export function ChatMessageItem(props: {
     if (ok) setEditing(false);
     return ok;
   };
-  /** 存为文档（任务#6 C-2）：不经 LLM，把该条正文直接 upsert 进项目文档；
+  /** 存为文档：不经 LLM，把该条正文直接 upsert 进项目文档；
    * 成功后 toast + 打开文档面板（stores/docs 内闭环）；双击守卫同重新生成 */
   const doSaveDoc = async () => {
     if (savingDoc()) return;

@@ -1,5 +1,5 @@
 """
-/api/generate — 生成任务端点（拆分后的聚合出口）
+/api/generate — 生成任务端点
 
 - 图片端点：generate_image.py（/generate/image、/canvas-image-tasks、/generate/batch-image）
 - 视频端点：generate_video.py（/generate/video、/canvas-video）
@@ -69,7 +69,7 @@ async def get_generation_logs(limit: int = 100):
 
 @router.post("/generation-logs")
 async def add_generation_log(body: GenLogRequest):
-    """前端补录生成日志（如音频规划等未走后绔任务通道的生成行为）"""
+    """前端补录生成日志（如音频规划等未走后台任务通道的生成行为）"""
     if body.media_type not in ("image", "video", "audio"):
         raise VideoAgentError(
             "media_type 必须为 image/video/audio",

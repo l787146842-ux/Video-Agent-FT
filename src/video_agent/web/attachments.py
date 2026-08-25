@@ -153,8 +153,6 @@ def attachment_context(attachments: List[Dict[str, str]]) -> str:
     为 LLM 构建素材说明：文本类文档（.md/.txt）默认只注入清单（名称+字数+前 200 字预览），
     正文已存入 uploadedDocs，需要全文时调用 read_uploaded_doc 按需检索；
     其他类型给出明确的能力说明，避免 LLM 乱猜「我看不到素材」或假装看过。
-
-    4-4 双轨退役（ADR-0001）：非 FC 通道的 full_text 全文直注降级路径已删除。
     """
     parts: List[str] = []
     for att in attachments[:_MAX_ATTACHMENTS]:

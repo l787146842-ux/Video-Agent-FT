@@ -1,4 +1,4 @@
-"""Skill 执行器校验/应用层（A1：主模型产出，本层按 Skill 章节把关）。
+"""Skill 执行器校验/应用层（主模型产出，本层按 Skill 章节把关）。
 
 职责：
 - 结构阶段剥离内联提示词（storyboard_key_elements / storyboard_shots / storyboard_audio 只建结构）
@@ -76,13 +76,13 @@ def skill_requires_stage_pause(skill_name: str) -> bool:
     """按 Skill 声明判断是否要求阶段暂停（对外 bool 兼容语义，调用方不改行为）。
 
     判定 = skill_pause_points 非空；四级优先级见 skill_pause_points。
-    v2 存量（无 pause_points 声明）行为与旧实现逐一等价：
+    v2 存量（无 pause_points 声明）按以下顺序回落：
     manifest pause.stage_pause > pause_rules 声明块 > 关键词兜底。"""
     return bool(skill_pause_points(skill_name))
 
 
 # stage_pause（bool）机械转暂停点清单的两个锚点（与 scripts/archive/migrate_manifests_v3.py
-# V3_ANCHOR_PAUSE_POINTS 同口径：迁移完成后两侧语义自然合流，id 与 trigger 同名）
+# V3_ANCHOR_PAUSE_POINTS 同口径：两侧语义自然合流，id 与 trigger 同名）
 _STAGE_PAUSE_ANCHOR_POINTS: Tuple[Dict[str, Any], ...] = (
     {"id": "storyboard_structure_ready", "trigger": "storyboard_structure_ready"},
     {"id": "first_generation_call", "trigger": "first_generation_call"},
@@ -118,7 +118,7 @@ def _clean_pause_points(raw: List[Any]) -> List[Dict[str, Any]]:
 
 
 def skill_pause_points(skill_name: str) -> List[Dict[str, Any]]:
-    """通用暂停点清单（任务#35 B3），四级优先级：
+    """通用暂停点清单，四级优先级：
 
     1. manifest pause_points 声明（v3，列表形态即接管；非法项 fail-closed 丢弃）；
     2. pause.stage_pause（bool 机械转两锚点：storyboard_structure_ready/

@@ -1,5 +1,5 @@
 /**
- * SSE 事件路由层（任务 #18 自 hooks/use-sse.ts 抽出的纯逻辑）：消费 SseEvent，
+ * SSE 事件路由层（自 hooks/use-sse.ts 抽出的纯逻辑）：消费 SseEvent，
  * 写侧效果全部经注入的 fx，归属/终态清理经 ctx 回调；不做 I/O、不持连接状态。
  * 顺序铁律：终态路径经 ctx.finalize 收尾——先复位忙态、置空归属、再关订阅，
  * 顺序搞反会产生假错误气泡（见 lib/sse-connection.finalizeTerminal 注释）。
@@ -118,7 +118,7 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
         if (ctx.isRecovering()) {
           if (p.snapshot) fx.syncSnapshot(p.snapshot);
           if (p.snapshot?.chatMessages) fx.chat.loadMessages(p.snapshot.chatMessages);
-          // 任务 #3：持久化消息不携 decisionForm，replay 同源重建结构化决策表单
+          // 持久化消息不携 decisionForm，replay 同源重建结构化决策表单
           if (p.workflow?.pending_decision_payload) {
             fx.chat.applyDecisionForm(p.workflow.pending_decision_payload);
           }
@@ -131,7 +131,7 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
         break;
       }
       if (p.status === 'error') {
-        // 任务 #19：replay 同源下发 error_payload（code/kind/raw），
+        // replay 同源下发 error_payload（code/kind/raw），
         // 旧记录无此字段时归 unknown（映射表仍能给出默认 affordance）
         const rp = p.error_payload;
         fx.chat.streamError({
@@ -143,7 +143,7 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
         ctx.finalize(p.project_id);
         break;
       }
-      // 停止终态 replay（任务 #17：刷新/重连后恢复停止痕迹）
+      // 停止终态 replay（刷新/重连后恢复停止痕迹）
       if (p.status === 'stopped') {
         if (ctx.isRecovering() && p.snapshot?.chatMessages) {
           // 恢复场景：后端已把停止痕迹消息持久化进历史，直接采用快照
@@ -184,7 +184,7 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
         model: p.model || '',
       });
       if (p.snapshot) fx.syncSnapshot(p.snapshot);
-      // 任务 #3：运行中重连同样重建待回应决策表单（token 幂等不双挂）
+      // 运行中重连同样重建待回应决策表单（token 幂等不双挂）
       if (p.workflow?.pending_decision_payload) {
         fx.chat.applyDecisionForm(p.workflow.pending_decision_payload);
       }
@@ -227,7 +227,7 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
     // 任务状态变更（cancelled 等）：后端下发后即关流，流结束走连接状态机正常收尾
     case 'task_status': break;
     case 'stopped': {
-      // 停止终态（任务 #17）：协作式取消检查点命中，落停止痕迹后关流收尾；
+      // 停止终态：协作式取消检查点命中，落停止痕迹后关流收尾；
       // 归属守卫：用户已点停止按钮时本地已落气泡并置空归属，此处防重复气泡
       if (!ctx.hasOwnership()) break;
       fx.chat.cancelStream({ phase: ev.phase, inflight: ev.inflight });
@@ -235,7 +235,7 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
       break;
     }
     case 'error': {
-      // 任务 #19：错误事件 → ErrorPayload（与 HTTP 失败共用 lib/error-payload 解析器）；
+      // 错误事件 → ErrorPayload（与 HTTP 失败共用 lib/error-payload 解析器）；
       // 旧事件（仅 error_code）的 i18n 翻译通道保留作 message 兜底
       const payload = sseErrorPayload(ev);
       const msg = ev.code ? payload.message : resolveErrorMessage(ev.error_code, payload.message);

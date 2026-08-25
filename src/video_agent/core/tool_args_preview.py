@@ -1,4 +1,4 @@
-"""工具输入参数预览（裁剪脱敏）纯函数域（任务 #2 时间线分级展开）。
+"""工具输入参数预览（裁剪脱敏）纯函数域（时间线分级展开）。
 
 tool_started SSE 事件与 tracer.record_action 落盘的 args 一律经本模块
 redact_tool_args 处理：时间线详情卡只展示「关键字段截断预览」，
@@ -7,9 +7,9 @@ redact_tool_args 处理：时间线详情卡只展示「关键字段截断预览
 规则：
 - 长文本字段（document_write.content 等）只留前 PREVIEW_CHAR_LIMIT 字预览；
 - 键名含 base64/data_uri 等媒体负载关键字，或值形如 data: URI → 剔除为占位符；
-- 裸 base64 值形状启发式（FIX-6）：长（≥128）且前 512 字符全为 base64
-  字母表（含空白）的字符串视为媒体负载剔除——补通用键名下无 data: 前缀
-  base64 截断外泄的口子，与模块自述脱敏契约对齐；
+- 裸 base64 值形状启发式：长（≥128）且前 512 字符全为 base64
+  字母表（含空白）的字符串视为媒体负载剔除——通用键名下无 data: 前缀
+  base64 截断外泄的口子同样堵上，与模块自述脱敏契约对齐；
 - 整体 args JSON 序列化后不得超过 MAX_ARGS_JSON_BYTES（超限逐字段降档截断）。
 """
 import json
@@ -26,7 +26,7 @@ _FALLBACK_STR_LIMIT = 120
 _SENSITIVE_KEY_TOKENS = ("base64", "data_uri", "datauri", "b64")
 # 脱敏占位符（值被剔除时的可见标记）
 REDACTED_PLACEHOLDER = "<已脱敏>"
-# 裸 base64 值形状启发式参数（FIX-6）：长度下限与前缀扫描窗口
+# 裸 base64 值形状启发式参数：长度下限与前缀扫描窗口
 _BARE_B64_MIN_LEN = 128
 _BARE_B64_SCAN_LEN = 512
 # base64 字母表（含空白：换行/空格是 MIME 分块 base64 的合法形态）

@@ -4,11 +4,11 @@ Planner — 对话式 Agent 的唯一入口（Rule1）。
 设计方案核心：
 - Planner 直接持有 LLM Adapter 引用（Rule6: 外部调用走 Adapter），不经过 Tool Manager
 - Tool Manager 只管理"业务 Tool"（故事板操作、生图、文档等）
-- 动作通道唯一 = FC 工具调用（4-4 双轨退役，ADR-0001）
+- 动作通道唯一 = FC 工具调用
 - 多步循环（MAX_STEPS），LLM 可请求 continue 推进下一轮
 - 流式通过 AsyncGenerator 穿透（SSE）
 
-D-02 拆分：单轮 llm_call/FC 响应消费/回喂治理/上下文预算装配切出
+单轮 llm_call/FC 响应消费/回喂治理/上下文预算装配切出
 core/turn_executor.py（TurnExecutor）；本文件保留入口编排、契约
 数据结构、工具裁剪与轮末组装委托。
 """
@@ -24,7 +24,7 @@ from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
-# MCP 两段式注入段 2（任务#37 B4）：未启用 MCP 工具 schema 不进 FC payload
+# MCP 两段式注入段 2：未启用 MCP 工具 schema 不进 FC payload
 from src.video_agent.tools.mcp import catalog as mcp_catalog
 from src.video_agent.utils.prompts import load_prompt, load_prompt_section, render_prompt
 from src.video_agent.core.agent_loop import MAX_STEPS, run_agent_loop
@@ -33,22 +33,24 @@ from src.video_agent.core.fc_tool_runner import (
     FCToolRunner,
 )
 from src.video_agent.core.prompt_builder import PromptBuilder
-# 动作执行器与操作描述已下沉 core（D-01）；顶层导入替代旧 web 延迟导入
+# 动作执行器与操作描述已下沉 core；顶层导入替代旧 web 延迟导入
 from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.core.action_descriptions import aggregate_action_log
 from src.video_agent.core.ports import skill_docs_port
 # 轮末组装域切入 planner_output
 from src.video_agent.core.planner_output import assemble_response
-from src.video_agent.core import pipeline_orchestrator
+# 阶段表/探针/闸预检纯数据层（导入期同时落地
+# step_done_probe 注册钩子，不得删除）
+from src.video_agent.core import stage_probes
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import fc_gates
 from src.video_agent.core import fc_response, planner_gate_session, planner_triage
-# D-02 拆分协作臂：单轮执行 + FC 响应消费 + 回喂治理 + 上下文预算装配
+# 单轮执行协作臂：单轮执行 + FC 响应消费 + 回喂治理 + 上下文预算装配
 from src.video_agent.core.turn_executor import TurnExecutor
 from src.video_agent.core.live_metrics import record_degradation
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
-# Workflow Runtime（宪法 Rule2 主体回归，ADR-0004）：账本 + 裁判数据层
+# Workflow Runtime：账本 + 裁判数据层
 from src.video_agent.core import workflow_runtime
 
 
@@ -67,8 +69,6 @@ _CANVAS_TOOLS = frozenset({
 })
 
 # 后台节点任务登记；drain 供测试/关停等待
-# （collect_spec 规格候选预取已随任务#36 B5 执行器退役删除：
-# 规格收集改由模型按 skill_discipline 第 6 条用 workflow_pause 分组向导完成）
 _BG_TASKS: set = set()
 
 
@@ -80,10 +80,7 @@ async def drain_background_tasks() -> None:
         except Exception:
             pass
 
-# 曾设流式预执行阶段边界延迟集合：随 4-4 文本轨退役删除
-# （流式「边写边填」预执行为文本轨基础设施，FC 轨动作经 tool_calls 执行）。
-
-# 选中 Skill 时的流程提醒（恢复外置：prompts/planner/feedback.md 单一事实源）
+# 选中 Skill 时的流程提醒（外置：prompts/planner/feedback.md 单一事实源）
 _SKILL_REMINDER = load_prompt_section("planner/feedback.md", "SKILL_REMINDER") or (
     "【提醒】当前有选中 Skill：遵守其阶段划分与暂停点，到达确认点时用 "
     "workflow_pause 真正停下，不要一口气做完全部阶段。")
@@ -96,7 +93,7 @@ class PlannerContext:
     selected_draft_id: str = ""
     selected_type: str = ""
     state_json: str = ""
-    # 状态 JSON 的惰性构建器（修复）：多步循环每一轮都会调用一次，
+    # 状态 JSON 的惰性构建器：多步循环每一轮都会调用一次，
     # 保证模型在每轮看到上一轮执行后的最新工作台状态。
     # 传入 state_json 字符串是旧调用方式的兼容降级（整段固定不变）。
     state_builder: Optional[Callable[[], str]] = None
@@ -111,27 +108,27 @@ class PlannerContext:
     # 降级状态构建器（token 保险丝）：system 段超预算时用「只留组标题/计数」的
     # 降级状态 JSON 重建 system prompt，保证请求不超窗发出
     degraded_state_builder: Optional[Callable[[], str]] = None
-    # 前奏时间线（//）：只登记真实发生的 system 动作（加载 Skill 流程基线），
+    # 前奏时间线：只登记真实发生的 system 动作（加载 Skill 流程基线），
     # 读取/存档由对应工具真实发生时记录，前奏不得冒充工具操作
     prelude_notes: List[tuple] = field(default_factory=list)
-    # 多用户归属（基础）：可选用户标识，入 trace 审计
+    # 多用户归属：可选用户标识，入 trace 审计
     user_id: str = ""
     # 会话级推理档位（对话栏「推理等级」选择器下发；""=模型原生能力）
     thinking_level: str = ""
-    # 恢复：轮间引导注入器（任务式传输注册的排队消息，逐轮消费）。
+    # 轮间引导注入器（任务式传输注册的排队消息，逐轮消费）。
     # 由 web 层按 task_id 装配（agent_task_manager.drain_pending_guidance）；
     # None = 无注入（非任务路径）。
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None
-    # 轮始客观推进信号（主体回归后用途：输入类 decision 消费/闸预检分诊；
-    # runtime 不再据此自主行动，ADR-0004）：
+    # 轮始客观推进信号（输入类 decision 消费/闸预检分诊；
+    # runtime 不据此自主行动）：
     # "pause"=上轮暂停被消费；"wizard"=规格向导回应被消费；
     # "continue"=点选系统派生继续选项；"attachment"=本轮带附件。
     # 空串 = 自由对话轮（提问等），交接模型循环。
     advance_signal: str = ""
-    # 协作式停止标志作用域（端到端中断协议，任务 #17）：
+    # 协作式停止标志作用域（端到端中断协议）：
     # SSE 直连="chat"；任务式传输=task_id（web 层按传输路径装配）
     stop_scope: str = "chat"
-    # 同源裁剪解释（任务#15 P2）：阶段探测驱动的工具裁剪结果与解释文案由
+    # 同源裁剪解释：阶段探测驱动的工具裁剪结果与解释文案由
     # _compute_excluded_tools 单一事实源签发，prompt_builder 只消费不自判：
     # stage_note 非空 ⇔ 阶段裁剪生效（成对出现，消灭「静默裁剪」反模式）
     stage_excluded_tools: frozenset = frozenset()
@@ -164,7 +161,7 @@ class PlannerResponse:
     pause_id: str = ""
     # 暂停卡语义种类（remind/collect/stage_done/confirm，前端标题渲染唯一依据）
     pause_kind: str = ""
-    # 协作式停止标记（任务 #17）：随 done payload 下发，web 透传层据此
+    # 协作式停止标记：随 done payload 下发，web 透传层据此
     # 落停止痕迹消息并不再发 done（stopped 终态事件已由 agent_loop 先行下发）
     stopped: bool = False
     stop_phase: str = ""
@@ -207,7 +204,7 @@ class Planner:
         self.executor_factory = executor_factory
         # skill_docs: Skill 文档目录提供者（web.skill_docs 模块或等价对象），None 时延迟导入
         self._skill_docs = skill_docs
-        # 当前对话聊天供应商（决策 E：执行器与主模型一致；web 层注入）
+        # 当前对话聊天供应商（与主模型一致；web 层注入）
         self.chat_provider = chat_provider
         self.chat_model = chat_model
         # 按上下文裁剪的工具集合（handle_message 时计算）
@@ -224,14 +221,14 @@ class Planner:
         self._fc_runner = FCToolRunner(self.tool_manager)
         self._fc_runner.chat_provider = self.chat_provider
         self._fc_runner.chat_model = self.chat_model
-        # 拆出的协作臂（D-02）：单轮执行 + FC 响应消费 + 回喂治理 +
+        # 拆出的协作臂：单轮执行 + FC 响应消费 + 回喂治理 +
         # 上下文预算装配；handle_message 每轮 bind_turn 后委托 llm_call，
         # 摘要路径复用其 call_llm（预算管线同一实现）
         self._turn_executor = TurnExecutor(self)
 
     def _get_skill_docs(self):
         """Skill 文档提供者：优先注入实例，缺省经 core 端口取 web 层实现
-        （D-01 依赖倒置：装配点注入，core 不 import web）"""
+        （依赖倒置：装配点注入，core 不 import web）"""
         if self._skill_docs is None:
             self._skill_docs = skill_docs_port()
         return self._skill_docs
@@ -242,7 +239,7 @@ class Planner:
     def _compute_excluded_tools(self, context: PlannerContext) -> frozenset:
         """按上下文计算本轮不下发的工具集（token 治理：schema 全量常驻是每轮固定开销）。
 
-        同源裁剪解释（任务#15 P2）：阶段裁剪的 (excluded, note) 在此一并签发到
+        同源裁剪解释：阶段裁剪的 (excluded, note) 在此一并签发到
         context（stage_excluded_tools/stage_note），prompt_builder 据此注入解释段，
         裁剪与解释同源同条件，不再各自判定。
         """
@@ -274,17 +271,14 @@ class Planner:
                     context.stage_note = stage_note
             except Exception:
                 pass  # 裁剪失败不阻断对话，闸机层仍生效
-        # Rule2 v6：选中 Skill 全文已硬注入 system prompt 时，read_skill
+        # 选中 Skill 全文已硬注入 system prompt 时，read_skill
         # 出工具 schema（关模型重读入口；前奏注记保时间线可见）。
-        # 整改批 2.4（续读断链修复）：剔除判定由 compile_definition 恒真
-        # 条件改为与 fc_tool_runner.read_skill 短路同款的
-        # fc_gates.skill_full_text_injected——compile_definition 对任何已注册
-        # Skill 恒真，曾把超长分级注入 Skill（水墨/3D国漫/李安等）的
-        # 目录+read_skill 续读入口一并关死；两处判定同源后，「全文真注入
-        # 才关入口、分级注入保续读」单一事实源成立。
+        # 剔除判定与 fc_tool_runner.read_skill 短路同款的
+        # fc_gates.skill_full_text_injected——「全文真注入才关入口、
+        # 分级注入保续读」单一事实源。
         if context.skill_name and fc_gates.skill_full_text_injected(context.skill_name):
             excluded.add("read_skill")
-        # MCP 两段式注入（任务#37 B4）：白名单（interaction.mcp_enabled）外
+        # MCP 两段式注入：白名单（interaction.mcp_enabled）外
         # 的 MCP 工具 schema 不下发（deny-first 可见性面；目录块已告知存在）
         try:
             excluded |= set(mcp_catalog.inactive_tool_names())
@@ -344,7 +338,7 @@ class Planner:
         """
         对话处理（多步循环）—— 流式/非流式统一入口。
         委托给 run_agent_loop 统一循环骨架；动作通道唯一 = FC 工具调用
-        （4-4 双轨退役；文本块解析仅消费系统内部合成的确认块与 mock 输出）。
+        （文本块解析仅消费系统内部合成的确认块与 mock 输出）。
         stream_hook: 可选 async callable(text)，流式模式下每段 LLM 增量文本回调。
         """
         # 当前 Skill 归属：请求未携带 Skill 时回退项目 usedSkills 末位，
@@ -363,7 +357,7 @@ class Planner:
         # 会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
         self._chat_thinking_level = context.thinking_level or ""
 
-        # 构建 executor（文本解析路径用）：优先注入的工厂，缺省 core 层实现（D-01 下沉）
+        # 构建 executor（文本解析路径用）：优先注入的工厂，缺省 core 层实现
         factory = self.executor_factory
         if factory is None:
             factory = StateOperationExecutor
@@ -389,11 +383,11 @@ class Planner:
         except Exception as _e:
             logger.warning("[GateOverride] gate_override 装配失败（豁免未传达执行器）: {}", _e)
 
-        # Workflow Runtime（宪法 Rule2 主体回归，ADR-0004）：runtime 降级为
-        # 「账本 + 裁判数据层」——轮始只做 run 同步（RunStarted 幂等）与客观
-        # 数据预取；本轮做什么永远由模型接到用户消息后发起工具调用，
-        # runtime 无自主行动能力；越阶由 stage_precondition 闸在工具执行
-        # 路径首位否决（防越阶靠刹车，不没收方向盘）。
+        # Workflow Runtime：runtime 为「账本 + 裁判数据层」——轮始只做
+        # run 同步（RunStarted 幂等）与客观数据预取；本轮做什么永远由模型
+        # 接到用户消息后发起工具调用，runtime 无自主行动能力；越阶由
+        # stage_precondition 闸在工具执行路径首位否决（防越阶靠刹车，
+        # 不没收方向盘）。
         if settings.pipeline_orchestrator_enabled and context.skill_name:
             # 轮始 run 同步（RunStarted 幂等）+ 输入类 decision 消费
             # （waiting_user→ready，DecisionResolved 入事件账本）。
@@ -407,16 +401,14 @@ class Planner:
                         _rt.resolve_decision(
                             str(_pend.get("token") or ""),
                             str(context.advance_signal))
-                # collect_spec 规格候选后台预取已随任务#36 B5 执行器退役删除；
-                # 规格收集交互改由模型按 skill_discipline 第 6 条主动发起
             except Exception as _e:
                 # 承重接线遥测：轮始 run 同步失败 fail-open 不阻断对话
                 record_degradation("planner.run_sync")
                 logger.debug("[WorkflowRuntime] 轮始 run 同步跳过: {}", _e)
 
-        # Rule2 主体回归（ADR-0004）：轮始闸预检只装配兜底卡（原料闸/规格闸，
-        # 层 9 由代码执行不依赖模型自觉）；其余交接模型循环，越阶由
-        # stage_precondition 闸在工具执行路径否决。
+        # 轮始闸预检只装配兜底卡（原料闸/规格闸，层 9 由代码执行不依赖
+        # 模型自觉）；其余交接模型循环，越阶由 stage_precondition 闸
+        # 在工具执行路径否决。
         if settings.pipeline_orchestrator_enabled and context.skill_name:
             # 闸预检只认用户原话——user_message 可能是多模态拼装
             # （附件预览含剧本对白问号，不得参与豁免/回执意图判定）
@@ -431,10 +423,7 @@ class Planner:
             if _orch is not None:
                 return _orch
 
-        # 门禁链与剧本闸装配退役，顺序与原料闸能力
-        # 迁入 pipeline_orchestrator（状态驱动、机械回卡）。
-
-        # 单轮执行委托 TurnExecutor（D-02 拆分）：收集器在此定义、跨多步
+        # 单轮执行委托 TurnExecutor：收集器在此定义、跨多步
         # 共享，轮末由 assemble_response 统一合并
         image_urls_collector: List[str] = []
         # chat_inserts_collector 用于跨多步收集「插入对话输入框」的媒体
@@ -470,8 +459,7 @@ class Planner:
         def context_builder() -> str:
             return self._build_system_prompt(context)
 
-        # 委托给统一循环（步间收权已删——模型循环不再被中途夺权，
-        # 越阶/越暂停由闸机在工具调用点否决）
+        # 委托给统一循环（越阶/越暂停由闸机在工具调用点否决）
         loop_result = await run_agent_loop(
             user_message,
             llm_call=self._turn_executor.llm_call,
@@ -487,9 +475,9 @@ class Planner:
             stop_scope=context.stop_scope,
         )
 
-        # 轮末组装委托 planner_output（切出）：warnings 并入/总结强入/
-        # 占位替换/双轨收集器去重/原料提醒卡覆盖/响应构造，行为不变。
-        # 聚合工具顶层导入（D-01 下沉 core；patch 目标=本命名空间）
+        # 轮末组装委托 planner_output：warnings 并入/总结强入/
+        # 占位替换/收集器去重/原料提醒卡覆盖/响应构造。
+        # 聚合工具顶层导入（patch 目标=本命名空间）
         response = assemble_response(
             loop_result,
             executor=executor,
@@ -505,7 +493,7 @@ class Planner:
             ).strip(),
             aggregate_action_log=aggregate_action_log,
         )
-        # 协作式停止标记透传（任务 #17）：轮末组装不改停止语义，
+        # 协作式停止标记透传：轮末组装不改停止语义，
         # 只把循环的 stopped/stop_phase 随响应下发（web 层据此落痕迹）
         response.stopped = bool(loop_result.stopped)
         response.stop_phase = str(loop_result.stop_phase or "")
@@ -538,8 +526,8 @@ class Planner:
         async def on_event(event: Dict[str, Any]) -> None:
             etype = event.get("type", "")
             if etype == "step_started":
-                # 队列级 status 走 status_event key+params（i18n 残留清偿，
-                # 同 模式）；payload 携带完整 status 事件，chat_service 透传
+                # 队列级 status 走 status_event key+params；payload 携带完整
+                # status 事件，chat_service 透传
                 step = event.get("step", 1)
                 max_steps = event.get("max_steps", MAX_STEPS)
                 if step > 1:
@@ -563,7 +551,7 @@ class Planner:
                 ))
             elif etype in ("reasoning_delta", "tool_started", "tool_finished", "guidance_injected", "doc_written", "stopped"):
                 # 过程时间线事件穿透（前端渲染深度思考/工具条目）；
-                # stopped=停止终态事件（任务 #17：agent_loop 检查点发出，
+                # stopped=停止终态事件（agent_loop 检查点发出，
                 # web 透传层富化在途登记后作为终态帧下发）
                 await queue.put(PlannerEvent(type=etype, text=event.get("text", ""), payload=event))
 
@@ -587,7 +575,7 @@ class Planner:
         task = asyncio.create_task(_run())
 
         # 消费队列事件并 yield；消费方提前关闭（如 SSE 客户端断连）时
-        # 必须取消后台任务，否则孤儿任务继续烧 token 并写状态（-1）
+        # 必须取消后台任务，否则孤儿任务继续烧 token 并写状态
         try:
             while True:
                 item = await queue.get()
@@ -627,7 +615,7 @@ class Planner:
             "trace": result.trace,
             "suggested_actions": result.suggested_actions,
             "pause_kind": result.pause_kind,
-            # 协作式停止标记（任务 #17）：web 透传层据此落停止痕迹、不再发 done
+            # 协作式停止标记：web 透传层据此落停止痕迹、不再发 done
             "stopped": bool(result.stopped),
             "stop_phase": result.stop_phase,
         })
@@ -636,16 +624,14 @@ class Planner:
 
     def _build_system_prompt(self, context: PlannerContext) -> str:
         """构建 system prompt（委托 PromptBuilder；段落顺序为前缀缓存优化）。
-        协议单轨（ADR-0001，P2e 收敛）：统一注入 system_fc.md，
-        原 fc_mode 双分支已随文本协议退役删除。"""
+        协议单轨：统一注入 system_fc.md。"""
         return self._prompt_builder.build_system_prompt(context)
 
     # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------
     #
     # 轮始只装配原料闸/规格闸兜底卡（由代码执行不依赖模型自觉）；其余交接
-    # 模型循环；越阶/越暂停由闸机在工具调用点否决（ADR-0004 主体回归）。
-    # _bg_collect_spec 后台规格候选节点已随任务#36 B5 执行器退役删除。
-    
+    # 模型循环；越阶/越暂停由闸机在工具调用点否决。
+
     async def _run_gate_precheck(
         self, context: "PlannerContext", user_message: Any = "",
     ) -> Optional["PlannerResponse"]:
@@ -702,7 +688,7 @@ class Planner:
         gate_override: Any = False,
     ) -> FCExecuteResult:
         """执行 Function Calling 返回的 tool_calls（委托 FCToolRunner.execute，
-        任务#23 三段拆分后返回结构化 FCExecuteResult；位置解包仍兼容，
+        返回结构化 FCExecuteResult；位置解包仍兼容，
         新调用方按字段名取用）。"""
         return await self._fc_runner.execute(
             response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,

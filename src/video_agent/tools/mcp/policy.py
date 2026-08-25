@@ -1,4 +1,4 @@
-"""MCP 接入层：deny 规则、risk 解析与启用集（白名单）读写（任务#37 B4）。
+"""MCP 接入层：deny 规则、risk 解析与启用集（白名单）读写。
 
 deny-first（宪法 §2.7 同口径，外部工具统一风控铁律）：
 - deny_servers（整批 deny）→ deny_tools（单个 deny）→ deny 命中的工具

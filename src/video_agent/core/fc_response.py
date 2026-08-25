@@ -1,4 +1,4 @@
-"""FC 响应合并域（自 planner.py 切出；handle_message 瘦身）。
+"""FC 响应合并域。
 
 LLM 响应中 FC tool_calls 的执行与收集器合并胶水：执行委托注入的
 execute_fn（Planner._execute_fc_tools，测试可 monkeypatch），
@@ -72,9 +72,9 @@ async def merge_fc_response(
             visible = (response.content or "").strip()
             if not visible:
                 visible = fc_confirmation
-            # 整改批 1.2b 裁决（历史语义终结）：确认轮不再硬编 0，返回
-            # execute_fn 已解出的真实 fc_applied——暂停轮的工具执行事实
-            # 如实入账（停止相位/空输出重试守卫/applied_actions/trace）。
+            # 确认轮返回 execute_fn 已解出的真实 fc_applied——暂停轮的
+            # 工具执行事实如实入账（停止相位/空输出重试守卫/
+            # applied_actions/trace）。
             return visible, response.finish_reason, fc_applied, fc_tool_results, fc_warnings
         return response.content, response.finish_reason, fc_applied, fc_tool_results, fc_warnings
     return response.content, response.finish_reason, 0, [], []

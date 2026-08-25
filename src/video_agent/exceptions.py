@@ -33,7 +33,7 @@ class VideoAgentError(Exception):
             self.status_code = status_code
         if error_code:
             self.error_code = error_code
-        # P9：未预期异常的技术细节（友好文案进 message，原始报文进 raw，
+        # 未预期异常的技术细节（友好文案进 message，原始报文进 raw，
         # exception_handler 转译时随 ErrorPayload.raw 下发，前端折叠展示）
         self.raw = raw
 
@@ -45,8 +45,7 @@ class AdapterError(VideoAgentError):
     - retryable: 是否为瞬时故障（5xx / 429 / 超时 / 连接失败），可重试/切备用模型
     - http_status: 上游 HTTP 状态码（如有），供日志与监控分档
     - kind: 错误类别（upstream/auth/quota/param/refusal/timeout/network/unknown），
-      字段口径与任务 #19 的 ErrorPayload 对齐（#19 落地后直接复用，
-      不再另造并行结构）；取值见 adapters/errors.py 的 KIND_* 常量
+      字段口径与 ErrorPayload 对齐；取值见 adapters/errors.py 的 KIND_* 常量
     """
     status_code = 502
     error_code = "ADAPTER_ERROR"

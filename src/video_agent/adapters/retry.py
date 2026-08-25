@@ -10,7 +10,7 @@ Adapter 请求重试辅助 — 对瞬时故障（429/5xx、超时、连接错误
         base_delay=1.0,
     )
 
-设计原则（任务 #26 错误分类分流）：
+设计原则：
 - 可重试性由 adapters/errors.py 分类器唯一判定：transient（429/5xx/超时/
   连接错误/流中断）才重试；permanent（其余 4xx）不重试直接穿过
 - 指数退避：delay = base_delay * 2^(attempt-1)
@@ -40,7 +40,7 @@ RETRYABLE_EXCEPTIONS = (
 
 
 def _is_retryable_status(status_code: int) -> bool:
-    """可重试性按分类器唯一判定（任务 #26）：429/5xx = transient，其余 4xx 不重试"""
+    """可重试性按分类器唯一判定：429/5xx = transient，其余 4xx 不重试"""
     return is_transient_status(status_code)
 
 
@@ -86,7 +86,7 @@ async def with_retry(
                     )
                     await asyncio.sleep(delay)
                     continue
-                # 末次尝试仍收到 transient 响应（429/5xx）：绝不把失败响应当成功返回（-2 契约修复）
+                # 末次尝试仍收到 transient 响应（429/5xx）：绝不把失败响应当成功返回
                 _body = ""
                 try:
                     _body = result.text[:200]

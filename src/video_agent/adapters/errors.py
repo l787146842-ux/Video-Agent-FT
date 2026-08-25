@@ -1,5 +1,5 @@
 """
-错误分类器 — 供应商故障按 transient/permanent 分流（任务 #26）。
+错误分类器 — 供应商故障按 transient/permanent 分流。
 
 分类规则表：
 ===========+===================================+===============================
@@ -12,9 +12,8 @@
            | 其他 4xx、模型明确拒答/中继拒收     | （kind 区分，不重试不 nudge）
 ===========+===================================+===============================
 
-对齐说明：结构化错误字段（kind/retryable/http_status/message）按任务 #19 的
-ErrorPayload 口径自定义（kind=upstream/auth/quota 等）；#19 落地后直接复用
-该结构，不再另造并行口径。
+对齐说明：结构化错误字段（kind/retryable/http_status/message）按
+ErrorPayload 口径定义（kind=upstream/auth/quota 等）。
 
 设计原则：
 - 未知异常一律 permanent（不盲目重试，避免重复计费请求反复提交）
@@ -30,7 +29,7 @@ from src.video_agent.exceptions import AdapterError
 TRANSIENT = "transient"  # 瞬时故障：指数退避重试
 PERMANENT = "permanent"  # 永久故障：立即上抛，不重试
 
-# ---------- kind（与任务 #19 ErrorPayload.kind 对齐） ----------
+# ---------- kind（与 ErrorPayload.kind 对齐） ----------
 KIND_UPSTREAM = "upstream"  # 供应商侧 5xx / 通用服务故障
 KIND_AUTH = "auth"          # 401/403 鉴权/授权失败
 KIND_QUOTA = "quota"        # 429 限流/配额不足

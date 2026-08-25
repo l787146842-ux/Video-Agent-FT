@@ -88,7 +88,7 @@ describe('resultSummaryView 详情展开视图', () => {
   });
 });
 
-/** 任务 #2：工具详情分级（任务 #4：后端 detail_tier 元数据驱动，纯函数钉死） */
+/** 工具详情分级（后端 detail_tier 元数据驱动，纯函数钉死） */
 describe('toolDetailTier 工具详情分级', () => {
   it('值得展开档：产出/关键交互类工具（后端 detail_tier=expand 声明生成）', () => {
     [
@@ -139,7 +139,7 @@ describe('argsPreviewEntries 输入参数预览', () => {
   });
 });
 
-describe('timelineFromMessage 历史重建（任务 #2 携带 name/args）', () => {
+describe('timelineFromMessage 历史重建（携带 name/args）', () => {
   it('trace 条目的 name/args/result_summary 同步重建', () => {
     const msg = {
       trace: {

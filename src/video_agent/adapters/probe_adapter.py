@@ -1,16 +1,16 @@
 """
 ProviderProbeAdapter — 供应商连接探测 / 模型列表拉取（Rule4: 外部调用走 Adapter）。
 
-收编 web/routes/providers.py 的 httpx 直调旁路：
+覆盖场景：
 - fetch-models / test-connection：GET {base_url}/models 拉取模型清单
 - probe-async：探测 /models 端点原始响应（协议检测）
 
-错误语义与迁移前完全一致：
+错误语义：
 - 超时 → ProbeTimeoutError（路由层回「连接超时」类文案）
 - HTTP 错误状态 → ProbeHTTPError（携带 status_code 与响应体前 200 字符）
-- 探测端点非 200 不抛异常，返回 status_code + raw 由路由层决策（与原逻辑一致）
+- 探测端点非 200 不抛异常，返回 status_code + raw 由路由层决策
 
-超时值沿用迁移前原值：模型清单 15s / 协议探测 12s。
+超时值：模型清单 15s / 协议探测 12s。
 """
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
@@ -20,7 +20,7 @@ import httpx
 from src.video_agent.adapters.retry import with_retry
 from src.video_agent.exceptions import AdapterError
 
-# 迁移前沿用值：fetch-models/test-connection 15s，probe-async 12s
+# 超时值：fetch-models/test-connection 15s，probe-async 12s
 PROBE_TIMEOUT_MODELS = 15.0
 PROBE_TIMEOUT_DETECT = 12.0
 
@@ -126,7 +126,7 @@ class ProviderProbeAdapter:
     ) -> ProbeResult:
         """探测 /models 端点并返回原始结果（协议检测用）。
 
-        与迁移前行为一致：非 200 不抛异常；content-type 为 JSON 时解析为对象，
+        非 200 不抛异常；content-type 为 JSON 时解析为对象，
         否则截取响应文本前 500 字符装入 {"text": ...}；JSON 解析失败原样上抛。
 
         Raises:

@@ -1,17 +1,16 @@
 """
 MediaFetchAdapter — 远程媒体资源下载统一入口（Rule4: 外部调用走 Adapter）。
 
-收编 web 层两类 httpx 直调旁路：
+覆盖两类下载场景：
 - multimodal_builder 远程图片服务端代下载（失败静默降级为文本清单）
 - routes/upload /api/image-proxy 代理下载（失败转 502）
 
-设计（与既有 adapter 模式对齐）：
-- 供应商无关的通用 HTTP GET 客户端，超时/重定向/代理策略全部参数化，
-  调用方沿用各自原有取值（行为零变化）
-- 默认不对非 2xx 抛异常，返回 status_code 由调用方决策（与原逻辑一致）；
-  raise_on_http_error=True 时 >=400 抛 FetchError（image-proxy 的 raise_for_status 语义）
+设计：
+- 供应商无关的通用 HTTP GET 客户端，超时/重定向/代理策略全部参数化
+- 默认不对非 2xx 抛异常，返回 status_code 由调用方决策；
+  raise_on_http_error=True 时 >=400 抛 FetchError（raise_for_status 语义）
 - max_retries>0 时复用 retry.with_retry（指数退避 + 前端状态栏可视化）；
-  默认 0 = 单次尝试，与迁移前行为完全一致
+  默认 0 = 单次尝试
 """
 from typing import Optional
 
@@ -55,11 +54,11 @@ class MediaFetchAdapter:
         """GET 下载 url，返回 FetchResult。
 
         Args:
-            timeout: 请求超时（秒），各调用点沿用迁移前的原值
+            timeout: 请求超时（秒）
             follow_redirects: 是否跟随重定向
             trust_env: False 时禁用系统代理（本地回环场景）
             raise_on_http_error: True 时 >=400 抛 FetchError（raise_for_status 语义）
-            max_retries: 最大重试次数（0 = 单次尝试，与迁移前行为一致）
+            max_retries: 最大重试次数（0 = 单次尝试）
             context: 日志/重试提示的上下文标识
 
         Raises:

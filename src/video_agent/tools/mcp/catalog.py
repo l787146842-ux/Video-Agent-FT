@@ -1,4 +1,4 @@
-"""MCP 接入层：目录工具与两段式注入（任务#37 B4 §2.5 catalog.py）。
+"""MCP 接入层：目录工具与两段式注入。
 
 懒加载/目录摘要策略（两阶段，防上下文膨胀）：
 - 阶段 1（system prompt 常驻）：catalog_block() 只给「外部工具目录」
@@ -21,7 +21,7 @@ from src.video_agent.tools.mcp.adapter import ADAPTERS, get_adapter
 _ALLOWED_ACTIONS = ("list", "detail", "enable", "disable")
 
 # 注册期加载的 policy 配置上下文（register_mcp_tools 写入 / unregister 清空）：
-# 目录工具的上限判定消费真实配置，不再传死配置 {} 给 max_active_tools
+# 目录工具的上限判定消费真实配置
 _POLICY_CFG: Dict[str, Any] = {}
 
 
@@ -50,6 +50,7 @@ class McpToolCatalogTool(BaseTool):
         "指定工具完整参数；action=enable 启用工具（次回合其 schema 才可用）；"
         "action=disable 停用。外部工具默认拒绝，必须先 enable 再调用。")
     risk = "low"
+    detail_tier = "output"  # 平台闸口：仅输出留痕
 
     def get_input_schema(self):
         return McpCatalogInput

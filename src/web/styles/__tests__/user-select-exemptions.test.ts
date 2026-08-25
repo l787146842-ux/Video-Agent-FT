@@ -1,5 +1,5 @@
 /**
- * user-select 豁免台账钉死（体验规范映射任务 #20）。
+ * user-select 豁免台账钉死（体验规范映射）。
  *
  * tokens.css 全局 body user-select: none；需复制的区域必须显式豁免
  * user-select: text（left-panel.css「文字可复制」豁免清单）。

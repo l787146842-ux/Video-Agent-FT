@@ -1,5 +1,5 @@
 /**
- * 截断重答动作通道测试（任务 #17：编辑与重新生成同源）。
+ * 截断重答动作通道测试（编辑与重新生成同源）。
  *
  * 钉死 truncateResendAction 编排：
  * ① 成功 = POST /chat/truncate-resend → 本地截断 → attachStartedTask 接管

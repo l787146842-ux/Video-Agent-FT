@@ -1,7 +1,7 @@
 /**
  * 参数控件基础件：容器/通用下拉/按钮类名/保存动作。
- * ProviderModelSelects 与 ExportButton 已按职责切至同目录
- * （任务 #15 白名单清偿），消费方直接 import 新位置。
+ * ProviderModelSelects 与 ExportButton 已按职责切至同目录，
+ * 消费方直接 import 新位置。
  */
 import { For, createEffect, type ParentProps } from 'solid-js';
 import { findDraftRecord, persistBoard, state } from '@/stores/studio';

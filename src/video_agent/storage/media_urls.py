@@ -1,13 +1,12 @@
-"""媒体 URL → 可注入形式解析（整改批 3.3 自 web/multimodal_builder 下沉）。
+"""媒体 URL → 可注入形式解析。
 
 职责：把待注入 LLM 的媒体 URL 统一转为可被供应商直读的形式——
 - /workspace/ 本地文件 → 读盘转 base64 data URI（越界/不存在/超限返回空）
 - http(s) 远程链接 → 服务端代下载转 data URI（失败返回空）
 - 其他（已是 data: URI 等）→ 原样透传
 
-分层依据（批 3.3）：tools 层曾以方法内延迟导入消费本组符号的 web 层私有
-版本（tools→web 反向依赖）；媒体 URL 的本地读取/内联本质是存储读取域，
-故落 storage 包公开 API。web/multimodal_builder 保留薄 re-export 壳
+分层依据：媒体 URL 的本地读取/内联本质是存储读取域，故落 storage 包
+公开 API。web/multimodal_builder 保留薄 re-export 壳
 （web 消费方与既有测试 patch 目标不变）。
 """
 import asyncio

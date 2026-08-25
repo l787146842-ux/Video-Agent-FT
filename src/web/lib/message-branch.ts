@@ -1,5 +1,5 @@
 /**
- * 消息级分支（悬停工具条「分支」动作，任务 #17）。
+ * 消息级分支（悬停工具条「分支」动作）。
  *
  * 以选中消息为分叉点：POST /api/conversations/snapshot {up_to_index}
  * 打截断快照（仅含该消息及之前内容）→ 派生分支对话 → applyPayload

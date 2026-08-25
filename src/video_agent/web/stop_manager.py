@@ -1,4 +1,4 @@
-"""停止/在途登记小模块（任务 #17 端到端中断协议，从 chat_service.py 抽出）。
+"""停止/在途登记小模块（端到端中断协议）。
 
 职责（不变式：任何中断都有痕迹、都有出口）：
 - 停止阶段措辞与痕迹文案（与前端 locale 同一口径，持久化供刷新后恢复）
@@ -22,7 +22,7 @@ __all__ = [
 
 # 「继续刚才的任务」建议动作（与前端 locale rp.msg.continueLastTask 同口径）：
 # kind=retry=点击走既有机械重发，失效走 suggestedTargetIndex 既有机制；
-# 随停止/错误消息落盘，刷新后历史装载即可重建（任务 #16）
+# 随停止/错误消息落盘，刷新后历史装载即可重建
 CONTINUE_LAST_TASK_SUGGESTION: List[Dict[str, str]] = [
     {"kind": "retry", "label": "继续刚才的任务", "value": ""},
 ]

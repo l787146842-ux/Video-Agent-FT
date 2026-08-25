@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.video_agent.config import settings
 from src.video_agent.core.spec_rules import find_spec_doc
-# v3 language 声明读取（任务#35 B2）：registry 顶层不依赖 core，无环；
+# v3 language 声明读取：registry 顶层不依赖 core，无环；
 # 经模块属性访问保住测试 patch 目标（monkeypatch registry.skill_language 即生效）
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.models import (
@@ -36,7 +36,7 @@ from src.video_agent.state.models import (
 )
 from src.video_agent.utils.prompts import load_prompt_section
 
-# 闸机规则注册表数据层切出至 core/gate_registry.py（任务 23 P7-2）：纯数据 + 归一函数，
+# 闸机规则注册表数据层在 core/gate_registry.py：纯数据 + 归一函数，
 # 无判定逻辑；承重壳 re-export 保持既有引用路径不变（宪法 §12 登记壳，coupling_registry
 # R13 登记；gate_registry 顶层无依赖，不触 prompt_gates→gates_inputs 导入顺序约束）。
 from src.video_agent.core.gate_registry import (
@@ -66,11 +66,11 @@ _CJK_MIN_RATIO = 0.15
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _WS_RE = re.compile(r"\s")
 
-# 时长语义解析（-4）：数字 + 秒/s/sec/seconds（可带「时长/镜头总时长」前缀）
+# 时长语义解析：数字 + 秒/s/sec/seconds（可带「时长/镜头总时长」前缀）
 _DURATION_RE = re.compile(
     r"\d+(?:\.\d+)?\s*(?:秒|s|sec|seconds)", re.IGNORECASE
 )
-# 字幕负面约束同义词（-4）：任一命中即视为已声明「字幕后期添加」
+# 字幕负面约束同义词：任一命中即视为已声明「字幕后期添加」
 _SUBTITLE_NEGATIONS = (
     "no subtitles",
     "无字幕",
@@ -96,7 +96,7 @@ _DEFAULT_GATE_RULES: Dict[str, Any] = {
     "require_subtitle": False,
     "require_camera_language": False,
     "require_audio_layer": False,
-    # @引用（888）：声明开启后分镜提示词写入时系统按 sceneRefs 客观补印，
+    # @引用：声明开启后分镜提示词写入时系统按 sceneRefs 客观补印，
     # 不出题给模型；未声明的 Skill 一律不动（验收跟着技能声明走）
     "require_at_ref": False,
     "subtitle_synonyms": list(_SUBTITLE_NEGATIONS),
@@ -157,9 +157,8 @@ def gate_mode() -> str:
 
 # ---------- 闸机豁免（指令优先级声明见 shared/iron_rules_header.md） ----------
 
-# 闸机豁免作用域枚举：只认前端「本次放行」按钮携带的 scope（C5，任务#22：
-# 正则猜自然语言豁免入口已退役——「坚持/听我的/直接写」类话术不再降级闸门，
-# 误伤面归零；豁免唯一权威入口 = GateWarnings 按钮随消息携带 gate_overrides）。
+# 闸机豁免作用域枚举：只认前端「本次放行」按钮携带的 scope
+#（豁免唯一权威入口 = GateWarnings 按钮随消息携带 gate_overrides）。
 GATE_STRUCTURE = "structure"            # 提示词结构闸（字数/语言/时长/字幕/音频/镜头语言）
 GATE_ELEMENT_IMAGE = "element_image"    # 元素概念图前置闸
 GATE_FLOW_PAUSE = "flow_pause"          # 流程暂停兜底闸（总结/规格暂停卡）：仅 scope=all 豁免，
@@ -229,7 +228,7 @@ def text_mentions_spec_doc(text: str) -> bool:
 
 
 # ---------- 剧本原料闸----------
-# 剧本闸家族实现体切出至 core/gates_script.py（文件瘦身）；
+# 剧本闸家族实现体在 core/gates_script.py；
 # 本文件尾部 re-export 保持既有引用路径不变（登记壳，见尾块注释）。
 
 
@@ -269,7 +268,7 @@ def shot_references_missing_element_images(
     group: Optional[Dict[str, Any]] = None,
     scene_refs: Optional[List[Any]] = None,
 ) -> bool:
-    """分镜 sceneRefs 引用了无图关键元素时返回 True（引用感知，-4）。
+    """分镜 sceneRefs 引用了无图关键元素时返回 True（引用感知）。
 
     group 优先取其 sceneRefs；新建分组场景可显式传 scene_refs。
     无 sceneRefs / 未引用任何关键元素 → False（不误伤无关分镜）。
@@ -342,8 +341,7 @@ def autofill_shot_duration(
     group: Optional[Dict[str, Any]],
     rules: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """分镜提示词时长自动补全（888 ：模型漏写时长 → 整批 12 条被结构闸拒绝
-    → 纠正重试仍漏 → 零进展熔断）。
+    """分镜提示词时长自动补全。
 
     提示词未写明镜头时长且所属分镜组的 duration 字段可用时，在末尾追加
     「镜头总时长：X」——生视频模型只认提示词正文，客观补印比拒绝重写
@@ -370,8 +368,7 @@ def autofill_at_refs(
     raw_state: Dict[str, Any] | None = None,
     rules: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """分镜提示词 @引用系统自动补写（888 ：规则注入到位但模型没写，
-    8 条提示词一条 @ 都没有）。
+    """分镜提示词 @引用系统自动补写。
 
     确定性任务收归系统（三问判别法：答案能从 sceneRefs 算出来、对错机器可判）：
     分镜组引用的关键元素标题是明摆着的数据，缺失时客观补印一行，
@@ -408,12 +405,11 @@ def autofill_at_refs(
 _SPEC_LANG_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?输出语言(?:\*\*)?\s*[:：]\s*(.+)$")
 
-# 语言闸硬拒稳定信号（前缀供调用方稳定判别；原 exec_media_writer
-# 批内即时纠正消费已随任务#36 B5 执行器退役删除）
+# 语言闸硬拒稳定信号（前缀供调用方稳定判别）
 LANG_EN_HARD_PREFIX = "提示词正文几乎全是英文"
 
 def spec_output_language(raw_state: Optional[Dict[str, Any]]) -> str:
-    """：规格文档里用户选定的「输出语言」维度值（未选/无规格返回空串）。"""
+    """规格文档里用户选定的「输出语言」维度值（未选/无规格返回空串）。"""
     if not raw_state:
         return ""
     doc = find_spec_doc(raw_state)
@@ -430,9 +426,9 @@ def resolve_prompt_language(
 ) -> str:
     """ 语言单一事实源裁决：用户选择（规格输出语言）> Skill 声明
     （v3 language.prompt=en 或 cjk_min_ratio<=0 = 英文锁定）> 平台默认（中文）。
-    注入句与语言闸读同一结果，by construction 不可能再打架（C1 延伸）。
+    注入句与语言闸读同一结果，by construction 不可能再打架。
 
-    v3 放宽（任务#35 B2）：frontmatter 声明 language.prompt=en 即按声明放宽，
+    v3 放宽：frontmatter 声明 language.prompt=en 即按声明放宽，
     读取路径经 registry API；未声明维持现状（skill 定位：显式传入 >
     usedSkills 末位兜底，与「当前 Skill 归属」单一实现同源）。"""
     sel = spec_output_language(raw_state)
@@ -504,7 +500,7 @@ def validate_prompt_write(
 
     # 语言闸（shot / keyElement 通用）：中文输入环境下正文应以中文书写，
     # 仅专业技术术语可保留英文。阈值可由 manifest gates.cjk_min_ratio 调整
-    # （英文锁定的 Skill 声明极低阈值即等效关闭；：文案不再冒用 Skill 名义）
+    # （英文锁定的 Skill 声明极低阈值即等效关闭）
     total_chars = len(_WS_RE.sub("", text))
     cjk_chars = len(_CJK_RE.findall(text))
     if total_chars and cjk_chars / total_chars < cjk_min_ratio:
@@ -593,7 +589,7 @@ def storyboard_is_empty(raw_state: Dict[str, Any]) -> bool:
 
 
 def present_structure_kinds(raw_state: Dict[str, Any]) -> List[str]:
-    """：故事板现存的分组类别（审阅卡文案用）。"""
+    """故事板现存的分组类别（审阅卡文案用）。"""
     kinds: List[str] = []
     if raw_state.get(CAT_KEY_ELEMENTS):
         kinds.append("keyElement")
@@ -627,7 +623,7 @@ def flow_auto_continue(raw_state: Dict[str, Any]) -> bool:
 
 
 def clear_flow_directive(raw_state: Dict[str, Any]) -> bool:
-    """：任务开始清除上一任务残留的一条龙标记（按消息生效语义）；返回是否清除。"""
+    """任务开始清除上一任务残留的一条龙标记（按消息生效语义）；返回是否清除。"""
     inter = raw_state.get("interaction")
     if inter and inter.get("auto_continue"):
         inter["auto_continue"] = False
@@ -654,8 +650,8 @@ def drafts_confirmed(raw_state: Dict[str, Any], drafts: List[Dict[str, Any]]) ->
 
 # ---------- 阶段探测驱动的工具裁剪（混合形态第一层：工具可见性边界） ----------
 
-# 故事板结构工具集（无规格文档阶段不下发； 补洞：三个拆解
-# 执行器与提示词编写执行器同入名单—— 越阶入口正是它们，
+# 故事板结构工具集（无规格文档阶段不下发；三个拆解
+# 执行器与提示词编写执行器同入名单——越阶入口正是它们，
 # 可见性软层与阶段前置硬闸 platform.stage_precondition 双层一致）
 STORYBOARD_STAGE_TOOLS = frozenset({
     "storyboard_create_group", "storyboard_patch_draft", "storyboard_add_draft",

@@ -1,8 +1,7 @@
-"""错误翻译域（自 chat_service.py 切出；任务 25 P7-4，行数棘轮 WARN 线清偿）。
+"""错误翻译域。
 
 上游错误人话翻译（friendly/raw 分层）+ 流式失败统一出口（持久化错误消息 +
-发 error 事件）。纯结构搬移：代码逐字迁移，错误语义（error_code 契约、
-friendly/raw 分层）零变更；chat_service 原位留承重壳 re-export 保持既有
+发 error 事件）。chat_service 原位留承重壳 re-export 保持既有
 引用与测试 patch 目标不变（宪法 §12 登记壳，coupling_registry R13 登记）。
 """
 import re
@@ -18,16 +17,16 @@ __all__ = ["_emit_stream_error", "_friendly_stream_error"]
 async def _emit_stream_error(svc, body, e: Exception, emit, use_studio_context: bool) -> None:
     """流式失败统一出口：持久化错误消息 + 发 error 事件。
 
-    ：错误分层——气泡只展示一句人话（friendly），
+    错误分层——气泡只展示一句人话（friendly），
     上游原始报文（raw）随 errorDetail 持久化 + payload raw 下发，前端折叠展示。
     """
     friendly, raw = _friendly_stream_error(e)
-    # 任务 #19：结构化归类（kind/code）随事件下发，前端按映射表做动作，不再猜文案
+    # 结构化归类（kind/code）随事件下发，前端按映射表做动作，不再猜文案
     payload = classify_exception(e, message=friendly, raw=raw)
     if use_studio_context:
         async with svc.lock:
             # 错误前缀统一为 ⚠️（与前端 streamError 渲染一致，刷新后不跳变）；
-            # 「继续刚才的任务」建议随错误消息落盘（任务 #16，刷新后可重建）
+            # 「继续刚才的任务」建议随错误消息落盘（刷新后可重建）
             svc.add_chat_message(
                 "agent", f"⚠️ {friendly}", model_name=body.model or "",
                 error_detail=raw,

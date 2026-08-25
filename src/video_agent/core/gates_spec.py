@@ -1,4 +1,4 @@
-"""制片规格向导家族（自 prompt_gates.py 切出）：维度提取/候选解析/向导拼装/规格落盘。
+"""制片规格向导家族：维度提取/候选解析/向导拼装/规格落盘。
 被测试 patch 的符号（_channel_groups/skill_spec_dimensions/gate_mode）经 _pg 模块属性引用，
 patch prompt_gates 模块即可生效。"""
 import json
@@ -61,7 +61,7 @@ def _dedupe(items) -> List[str]:
 
 
 def skill_spec_dimensions(skill_name: str) -> List[str]:
-    """客观提取 Skill 规格编写步骤声明的维度清单（10.12-：不改 skill）。
+    """客观提取 Skill 规格编写步骤声明的维度清单（不改 skill）。
 
     优先解析「建议条目：…」整段（去括号注解后按 /、，、；切分，不截断）；
     无建议条目时回退解析括号枚举；硬参数维度（渠道/分辨率/分镜最大时长）
@@ -146,7 +146,7 @@ _CHANNEL_GROUP_VIDEO = "出视频渠道（API 厂商/模型）"
 
 def _channel_groups() -> List[Dict[str, Any]]:
     """出图/出视频渠道选项组（组内选项仅为占位：前端渲染为厂商+模型下拉）。
-    供应商配置经 provider_config 端口读取（D-01 倒置），加载失败时静默返回空
+    供应商配置经 provider_config 端口读取，加载失败时静默返回空
     （不阻断参数向导）。"""
     try:
         providers = provider_config_port().load_merged_providers()
@@ -284,9 +284,9 @@ def merge_spec_param_wizard(
     """
     content = _spec_doc_content(state)
     if not content.strip():
-        # 三通道分离 C：规格向导前移到阶段 1 边界——无规格文档但软候选
+        # 规格向导前移到阶段 1 边界——无规格文档但软候选
         # 在场（script_analyze 已跑过、内层模型已按剧本出题）时仍构建向导，
-        # 修复阶段 1 边界 early-return 空窗（1111 事故：模型自造规格组）。
+        # 修复阶段 1 边界 early-return 空窗。
         _cands = ((state or {}).get("interaction") or {}).get(
             "spec_soft_candidates") or {}
         if not any(
@@ -324,7 +324,7 @@ def spec_pause_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
 def spec_collect_card(state: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
     """script_analyze 后的规格收集向导（交互收集必须在规格文档
     写入之前；只渲染 Skill 声明的软维度）。
-     平台不内嵌总结（总结展示归编排器暂停卡声明）。"""
+    平台不内嵌总结（总结展示归编排器暂停卡声明）。"""
     _m, opts = build_spec_param_options("", state)
     return SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY, opts
 
@@ -336,7 +336,7 @@ def apply_spec_param_selections(
 
     - 用户明确给出某参数值（向导逐行回传或自由表述）→ 覆盖该行并去掉待确认标记；
     - 参数仍缺值但用户表达了确认意图（确认成片规格/继续…）且
-      allow_confirm_intent=True（仅当上一轮暂停确为规格暂停时， ：
+      allow_confirm_intent=True（仅当上一轮暂停确为规格暂停时：
       总结暂停的「确认」不能误定稿规格）→ 按文档当前展示值定稿；
     - 调整类反馈 → 不动，交给模型处理。
     """
@@ -389,7 +389,7 @@ def assemble_spec_doc(
     selections: Dict[str, str],
     model_filled: Optional[Dict[str, str]] = None,
 ) -> str:
-    """按「Skill 维度」机械拼装键值清单规格文档（方案乙；：
+    """按「Skill 维度」机械拼装键值清单规格文档（
     出图/出视频渠道、图片分辨率、视频分辨率、分镜最大时长由顶部
     「全局设置」唯一提供，不再写入规格文档）。
 

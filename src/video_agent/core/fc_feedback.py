@@ -1,11 +1,11 @@
-"""FC 工具结果回喂家族（自 fc_tool_runner.py 切出，零行为变更）。
+"""FC 工具结果回喂家族。
 
 承载：工具结果回喂消息的格式化（read_* 全文「借阅归还」、执行器 detail 随喂、
 view_storyboard_media 多模态回喂）与旧轮回喂的惰性压缩/图片剥离（token 治理）
 + 已投影工具结果的消化（tool-result 消化杠杆）+ FC 工具中文简述。
 
-fc_tool_runner.py 对本模块全部符号保留 re-export（壳清单登记于该文件尾部注释，
-13.7 惯例），既有调用/测试的 import 路径不变。
+fc_tool_runner.py 对本模块全部符号保留 re-export（壳清单登记于该文件尾部注释），
+既有调用/测试的 import 路径不变。
 """
 import re
 from typing import Any, Dict, List, Union
@@ -15,7 +15,7 @@ from src.video_agent.core.context_prune import prune_tool_feedback
 from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.utils.prompts import load_prompt_section
 
-# 回喂模板外置（恢复）：prompts/planner/feedback.md 为单一事实源，代码留内置兜底
+# 回喂模板外置：prompts/planner/feedback.md 为单一事实源，代码留内置兜底
 _FEEDBACK_FILE = "planner/feedback.md"
 
 # 回喂消息的识别前缀（与 format_tool_results 首行保持一致）
@@ -55,7 +55,7 @@ def should_compress_feedback(messages: List[Dict[str, Any]], context_window: int
     """惰性压缩决策：消息估算总量达到 token 预算的 feedback_compress_ratio
     才压缩旧轮全文回喂；未达到则保留全文保质量（短对话零损失）。
 
-     恢复：预算按当前模型窗口计算（传 context_window），
+    预算按当前模型窗口计算（传 context_window），
     未传/传 0 回落全局 settings.context_window_size（兼容旧调用）。"""
     ratio = min(max(settings.feedback_compress_ratio, 0.0), 1.0)
     if ratio >= 1.0:
@@ -72,10 +72,8 @@ def compress_prior_feedback(
     """把 messages 里已有的工具结果回喂消息压缩为占位文案（原地修改）。
 
     时机：新一次回喂 append 之前调用，因此现存的所有回喂消息都属「旧轮」。
-    read_* 全文只保留最近 keep_recent 条（整改批 3.4 近因保护：与
-    digest_projected_tool_results 的 keep_recent 语义对齐；此前 docstring
-    声称「只保留最近」而实现无差别压缩全部——含最近一批刚回喂的全文，
-    同一 assistant turn 多 FC 批时即自伤，失真已清偿），更早的以一句话
+    read_* 全文只保留最近 keep_recent 条（近因保护：与
+    digest_projected_tool_results 的 keep_recent 语义对齐），更早的以一句话
     占位——约束效力靠提示词延续，全文本身已写入草稿/文档，需要时模型
     可重新 read。
     多模态回喂（含图片 parts 的 list content）同样压成纯文本占位，
@@ -214,7 +212,7 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
             # （一句话总结只报「执行成功」被模型吞掉）
             data = tr.get("data") or {}
             detail = str(data.get("detail") or "").strip()
-            # 上下文剪枝（P4）：只剪回喂进 history 的副本，白名单起步
+            # 上下文剪枝：只剪回喂进 history 的副本，白名单起步
             # （生成类大返回）；写类工具不在白名单，其回喂行归 digest 杠杆管
             detail = prune_tool_feedback(name, detail)
             if detail and total + len(detail) <= FEEDBACK_MAX_TOTAL_CHARS:
@@ -225,7 +223,7 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
             continue
         data = tr.get("data") or {}
         body = render_read_result(name, data)
-        # 上下文剪枝（P4）：read_* 全文回喂超阈保留头尾、中段换 PRUNE 标记行
+        # 上下文剪枝：read_* 全文回喂超阈保留头尾、中段换 PRUNE 标记行
         # （start= 续读兜底）；只剪回喂副本，工具原始返回/state/产物文件不动
         body = prune_tool_feedback(name, body)
         if total + len(body) > FEEDBACK_MAX_TOTAL_CHARS:

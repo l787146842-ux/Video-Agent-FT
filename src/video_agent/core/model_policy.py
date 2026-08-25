@@ -15,7 +15,7 @@ ROLES = ("orchestration", "generation_strong", "summary", "executor")
 _ROLE_KEYS = ("provider", "model", "thinking_level")
 _THINKING_VALUES = ("", "low", "medium", "high")
 
-# 通用搭配默认（用户裁决，取代 「默认空」）：
+# 通用搭配默认：
 # 摘要/执行器机械 = 照章办事的结构化产出，不需要深推理——低档防思考
 # 吃光输出预算（根因）；编排/生成跟随主模型全力。用户可在全局
 # 设置页覆盖（UI 可见可改）。
@@ -52,7 +52,7 @@ def resolve_role(role: str) -> Optional[Dict[str, str]]:
 
 
 def thinking_for(role: str, fallback: str = "") -> str:
-    """角色思考档位（补洞）：用户配置 > env 覆写（调用方 fallback）
+    """角色思考档位：用户配置 > env 覆写（调用方 fallback）
     > 通用搭配默认；**不要求 provider 已设**（跟随主模型也可单独定档）。
     """
     entry = _policy().get(role) or {}
@@ -96,8 +96,7 @@ def normalize_policy(payload: Any) -> Dict[str, Dict[str, str]]:
             else:
                 cleaned[key] = val
         if cleaned.get("provider") or cleaned.get("thinking_level"):
-            # 补洞：档位可独立于供应商设置（跟随主模型也可定档）；
-            # 旧实现无 provider 即丢弃整行，导致分层表「推理」下拉空转。
+            # 档位可独立于供应商设置（跟随主模型也可定档）
             out[role] = cleaned
     return out
 

@@ -6,7 +6,7 @@
  * ② 运行态条目走秒计时（500ms 刷新 now），完成态显示最终耗时角标；
  * ③ 连续规划轮合并条目（consolidateTimeline）可点击展开逐轮明细；
  * ④ 结果摘要（result_summary）与 summary 重复时不重复展示。
- * 任务 #2 分级展开详情卡用例见 TimelineDetail.test.tsx（行数门禁分文件）。
+ * 分级展开详情卡用例见 TimelineDetail.test.tsx（行数门禁分文件）。
  */
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi, afterEach } from 'vitest';

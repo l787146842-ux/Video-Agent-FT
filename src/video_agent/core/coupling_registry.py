@@ -1,7 +1,7 @@
-"""耦合注册表（全量清偿：宪法 13.7 耦合表机器可读化）。
+"""耦合注册表（宪法 13.7 耦合表机器可读化）。
 
-13.7「改 A 必须同步检查 B」原为宪法内散文表，靠 AI 读到并记住——记性不可靠。
-本注册表把全部耦合行转为数据（policy-as-data 同源），每行声明强制方式：
+13.7「改 A 必须同步检查 B」的耦合行全部转为数据（policy-as-data 同源），
+每行声明强制方式：
 
 - file   ：关键文件必须存在（路径相对仓库根）
 - symbol ：模块属性必须可导入（module:attr，改名/删除即红）
@@ -11,8 +11,7 @@
 - prose  ：确不可机械化，必须给理由（降级声明，非遗漏）
 
 遍历测试：tests/unit/test_coupling_registry.py（注册表每行强制项真实存在；
-prose 行必须有理由）。宪法 13.7 正文由该注册表 + 遍历测试承接（落指针）。
-行编号 - 与宪法 13.7 原表行序对应，便于销账对照。
+prose 行必须有理由）。宪法 13.7 正文由该注册表 + 遍历测试承接。
 """
 from dataclasses import dataclass, field
 from typing import List, Tuple
@@ -148,18 +147,17 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.core.prompt_gates:script_present",
             # chat_service 尾部承重壳
             "src.video_agent.web.chat_service:_acquire_request_slot",
-            # 新壳
+            # 承重壳
             "src.video_agent.core.fc_tool_runner:format_tool_results",
-            # 任务#23 三段拆分承重壳：闸机方法壳（实现体 fc_gates）
+            # 三段拆分承重壳：闸机方法壳（实现体 fc_gates）
             "src.video_agent.core.fc_tool_runner:FCToolRunner._prompt_gate",
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_generate_image",
             "src.video_agent.core.prompt_gates:SPEC_GATE_ERROR",
             "src.video_agent.core.prompt_gates:parse_hard_selections",
-            # P3 反向依赖下沉（任务 10）：web/provider_config.py 薄壳
-            # （实现体 core/provider_config.py；provider_models 随迁无壳）
+            # web/provider_config.py 薄壳（实现体 core/provider_config.py）
             "src.video_agent.web.provider_config:get_provider_config",
             "src.video_agent.web.provider_config:load_merged_providers",
-            # 任务 22 P7-1 state/manager.py 拆分承重壳：对话域（实现体
+            # state/manager.py 拆分承重壳：对话域（实现体
             # conversation_ops）/落盘闸（实现体 save_ops）/快照组装（实现体
             # context_builder）；StateManager 公开 API 门面长期承重
             "src.video_agent.state.manager:StateManager.add_chat_message",
@@ -167,30 +165,27 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.state.manager:StateManager.save",
             "src.video_agent.state.manager:StateManager.board_version",
             "src.video_agent.state.manager:StateManager.get_full_snapshot",
-            # 任务 23 P7-2 gate_registry 切出承重壳：注册表数据 + 别名表 +
+            # gate_registry 切出承重壳：注册表数据 + 别名表 +
             # 归一函数（实现体 core/gate_registry.py，纯数据无判定）；
             # guard_pipeline/planner_gate_session/routes/agent/scripts 经
             # prompt_gates.* 引用，迁移需全量改引用
             "src.video_agent.core.prompt_gates:GATE_RULES",
             "src.video_agent.core.prompt_gates:GateRuleMeta",
             "src.video_agent.core.prompt_gates:normalize_rule_id",
-            # 任务 24 P7-3 action_executor.py 动作域拆分承重壳：草稿/分组域
+            # action_executor.py 动作域拆分承重壳：草稿/分组域
             # （实现体 action_drafts）/文档媒体域（实现体 action_media）；
-            # 生成域实现体先例已切 action_gen；执行器门面（分派+闸机判定）
-            # 长期承重，实例方法壳保 patch 目标不变
+            # 执行器门面（分派+闸机判定）长期承重，实例方法壳保 patch 目标不变
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_draft_patch",
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_add_draft",
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_add_group",
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_write_document",
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_clear_media",
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_insert_chat_media",
-            # 任务 25 P7-4 chat_service.py 错误翻译域拆分承重壳：流式错误
+            # chat_service.py 错误翻译域拆分承重壳：流式错误
             # 出口 + 人话翻译（实现体 web/chat_errors.py）；tests 经
             # chat_service.* 导入钉死，迁移需全量改引用
             "src.video_agent.web.chat_service:_emit_stream_error",
             "src.video_agent.web.chat_service:_friendly_stream_error",
-            # skill_runtime/executors 与 exec_tools 承重壳已随任务#36 B5
-            # 执行器一步退役删除（物理删除，不设观察期）
         ),
     ),
     CouplingRow(
@@ -296,7 +291,7 @@ COUPLING_ROWS: List[CouplingRow] = [
         _sym(
             "src.video_agent.core.planner_gate_session:consume_gate_overrides",
             "src.video_agent.core.planner_triage:run_gate_precheck",
-            "src.video_agent.core.pipeline_orchestrator:gate_precheck",
+            "src.video_agent.core.stage_probes:gate_precheck",
             "src.video_agent.core.fc_response:merge_fc_response",
             "src.video_agent.core.planner:Planner._run_gate_precheck",
             "src.video_agent.core.turn_executor:TurnExecutor.llm_call",

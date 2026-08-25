@@ -1,16 +1,13 @@
 """
 供应商配置与 API Key 的唯一读写入口。
 
-之前 routes/agent.py、routes/generate.py、routes/providers.py 各自维护一份
-_get_provider_config / _get_api_key / 模型分类逻辑，已全部收敛到这里。
-
 - 供应商配置：data/api_providers.json
 - API Key：进程环境变量优先，其次 API/.env
 - .env 写入带消毒（去换行）与线程锁，防止 value 注入其他键
 
-所有权声明（任务 #24 存储层单一事实源收敛）：api_providers.json 定位
-「配置文件」而非运行时数据（用户在 api-settings 页面手工维护、需 diff/
-备份语义），豁免迁入 sqlite，维持文件为唯一权威源不动。
+所有权声明：api_providers.json 定位「配置文件」而非运行时数据（用户在
+api-settings 页面手工维护、需 diff/备份语义），豁免迁入 sqlite，
+维持文件为唯一权威源不动。
 """
 import asyncio
 import json
@@ -407,7 +404,7 @@ def stamp_draft_spec_preference(raw_state: Dict[str, Any], draft: Dict[str, Any]
     kind = "image"
     if cat_key == CAT_SHOTS and str(draft.get("mediaType") or "").strip().lower() == "video":
         kind = "video"
-    # 按种类参数隔离（2026-08-15）：补印写本种类字段，旧共享字段同步保留供旧链路回退
+    # 按种类参数隔离：补印写本种类字段，旧共享字段同步保留供旧链路回退
     pid_field = "imageProviderId" if kind == "image" else "videoProviderId"
     model_field = "imageModel" if kind == "image" else "videoModel"
     if str(draft.get(pid_field) or draft.get("providerId") or "").strip():

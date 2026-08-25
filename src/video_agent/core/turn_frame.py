@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-"""轮帧公共域（agent_loop 前奏登记抽公共）。
+"""轮帧公共域（agent_loop 前奏登记）。
 
 节点内模型循环（agent_loop step1）的前奏时间线登记：只登记真实
 发生的 system 准备动作，前奏不冒充工具操作。
 一切机械动作进转录一等条目（运行态/持久化同条目）。
-（历史 runtime 机械直跑消费方已随 ADR-0004 退役，现唯一消费方 = agent_loop。）
 """
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 

@@ -1,7 +1,7 @@
 """
 本地文件存储适配器 — 将文件写入 workspace/assets/ 目录。
 
-这是默认存储后端，行为与原 persist_data_uri 完全兼容：
+这是默认存储后端：
 - 文件落盘到 ASSETS_DIR
 - 返回 /workspace/assets/{filename} 格式的相对 URL
 """

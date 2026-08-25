@@ -1,4 +1,4 @@
-"""mock 供应商的流式聊天模拟（从 chat_service.py 拆出）。
+"""mock 供应商的流式聊天模拟。
 
 仅调试/演示用：本地规则生成回复 + 模拟流式 delta 推送，
 与真实供应商路径共用 executor / 持久化通道。
@@ -57,9 +57,9 @@ async def mock_stream(svc, executor, body, user_text, llm_user_text,
                     pause_answered=_pause_answered,
                     kind=getattr(body, "system_action", "") or "",
                 )
-            # 挂起补卡机制退役；向导规格卡投影由 chat_service
+            # 向导规格卡投影由 chat_service
             # 按 write_spec 提交结果于用户消息后落库（mock 轨同构）
-        #自查补漏：mock 路径 status 同走 key 化（#1 同类全覆盖）
+        # mock 路径 status 同走 key 化（同类全覆盖）
         await emit(status_event("agent.mockRunning", "mock 模式：本地规则生成…", {}))
         # 单轨化：mock 动作以结构化 dict 直达执行器，不经文本块解析
         visible, actions = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))

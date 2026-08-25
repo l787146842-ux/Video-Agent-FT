@@ -1,4 +1,4 @@
-"""开场编排域（自 chat_service.py 切出）：请求幂等/历史截断/技能解析/暂停闭环消费前的拼装。"""
+"""开场编排域：请求幂等/历史截断/技能解析/暂停闭环消费前的拼装。"""
 import asyncio
 import re
 import time
@@ -145,7 +145,7 @@ def _resolve_skill_name_for_injection(
 
 
 def _build_prelude_notes(resolved_skill: str) -> List[tuple]:
-    """前奏时间线（只登记真实发生的事件， ：不得用假操作冒充工具动作）。
+    """前奏时间线（只登记真实发生的事件，不得用假操作冒充工具动作）。
 
     只保留「加载 Skill 流程基线」——它对应 prompt_builder 每轮真实注入当前 Skill 的
     <planner> 章节；「读取/存档上传文档」由 read_uploaded_doc 工具真实发生时记录，
@@ -182,8 +182,7 @@ def _resolve_summary_adapter(body, candidates: List[tuple]) -> Optional[BaseChat
 def _create_chat_adapter(provider_id: str, model: str):
     """按供应商协议创建 chat adapter。
 
-    4-4 双轨退役（ADR-0001）：非 FC 聊天通道（gemini-cli 协议
-    agy CLI）已删除，CLI 协议仅保留生图职能；选中 CLI 供应商聊天直接报
+    CLI 协议仅保留生图职能；选中 CLI 供应商聊天直接报
     人话错误（错误分层气泡展示）。
     """
     cfg = get_provider_config(provider_id)
@@ -207,7 +206,7 @@ def _build_meta_note(elapsed_secs: float, steps: int, applied: int) -> str:
 
 
 def _record_active_skill(svc, body: Any) -> None:
-    """：当前技能三本账收敛——本轮实际激活了 Skill（skill_name/skill_slug
+    """当前技能三本账收敛——本轮实际激活了 Skill（skill_name/skill_slug
     可解析到已注册 Skill）就记入项目 usedSkills，不再依赖消息携带 chip；
     usedSkills 是唯一持久事实源（localStorage 仅作跨会话记忆）。"""
     name = str(getattr(body, "skill_name", "") or "").strip()
@@ -233,9 +232,8 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
 
     暂停闭环（消费上轮暂停态）+ 规格定稿/向导消费 + 附件降级注入，
     返回 (拼好的 LLM 用户消息文本, 轮始客观推进信号, 向导落盘文档名)。
-    信号供输入类 decision 消费与闸预检分诊（主体回归后 runtime 不据此
-    自主行动，ADR-0004）；仅流程推进轮（暂停消费/向导回应/继续选项点选/
-    带附件）产生。
+    信号供输入类 decision 消费与闸预检分诊（runtime 不据此自主行动）；
+    仅流程推进轮（暂停消费/向导回应/继续选项点选/带附件）产生。
     落盘文档名供调用方于用户消息后投影文档卡（提交结果同源）。
     调用方需保证同一请求只调一次。
     """
@@ -252,7 +250,7 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
                 svc, pause_value=str(_pr.get("value") or ""))
             spec_finalize_note = _finalize_spec_params(svc, user_text)
             spec_wizard_note, wiz_doc = _consume_spec_wizard(svc, user_text)
-    # 4-4 双轨退役：聊天通道均为 FC，附件统一走清单+read_uploaded_doc 渐进式披露
+    # 聊天通道均为 FC，附件统一走清单+read_uploaded_doc 渐进式披露
     attachment_note = (
         attachment_context(body.attachments) if body.attachments else ""
     )
@@ -274,7 +272,7 @@ async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_conte
 
 
 def _store_gate_overrides(svc, overrides) -> None:
-    """（§2.4）：把用户「本次放行」的 rule_id 列表写入 interaction，
+    """把用户「本次放行」的 rule_id 列表写入 interaction，
     由本次请求的 Planner 消费一次即清除（单次生效、全程留痕）。
     调用方需持有 svc.lock。"""
     cleaned = [r for r in (overrides or []) if isinstance(r, str) and r.strip()]

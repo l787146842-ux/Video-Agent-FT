@@ -132,6 +132,7 @@ def _fuzzy_pick(items: List[Dict[str, Any]], wanted: str, keys: List[str]) -> Op
 class DocumentWriteTool(BaseTool):
     name = "document_write"
     risk = "high"  # §2.7：文档写入属 high，需平台闸机 + 用户确认
+    detail_tier = "expand"  # 产出类：展开看输入参数+执行结果
     description = "写入/更新项目文档工件（如制作规格、脚本大纲）。已存在同名文档则覆盖。"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -142,7 +143,7 @@ class DocumentWriteTool(BaseTool):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         content = str(params.content or "")
         is_spec = prompt_gates.is_spec_doc_name(params.name)
-        # 铁律文档保护（888）：铁律由系统维护 + 用户在文档面板手改，
+        # 铁律文档保护：铁律由系统维护 + 用户在文档面板手改，
         # 模型只读不得整篇重写（会盖掉用户编辑）
         if IRON_RULES_HEADING in str(params.name or ""):
             return ToolResult(
@@ -150,7 +151,7 @@ class DocumentWriteTool(BaseTool):
                 error=("《执行铁律.md》由系统维护、用户在文档面板手动编辑，模型不得整篇重写"
                        "（会盖掉用户的修改）。如需调整流程开关，按用户指令由系统幂等合并对应声明行即可。"),
             )
-        # 规格向导拒收模型手写规格（方案乙）：规格由系统按向导选定拼装
+        # 规格向导拒收模型手写规格：规格由系统按向导选定拼装
         if is_spec:
             from src.video_agent.skill_runtime.registry import spec_wizard_active
 
@@ -200,6 +201,7 @@ class DocumentWriteTool(BaseTool):
 class ReadUploadedDocTool(BaseTool):
     name = "read_uploaded_doc"
     risk = "low"  # §2.7：只读
+    detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "按需读取用户上传的素材文档（故事/剧本等）全文。"
         "上传文档正文不会自动注入上下文，清单里只有名称/字数/预览，"
@@ -252,7 +254,7 @@ def _resolve_uploaded_doc(docs: list, name: str, doc_id: str) -> tuple:
 
 def _slice_content(content: str, start: int) -> tuple:
     """分段读取：返回 (切片正文, 续读提示)。超出上限时提示下一段 start 值，
-    超长文档不再丢尾部（取代旧的一刀切截断）"""
+    超长文档不再丢尾部"""
     max_chars = settings.max_doc_chars
     start = max(0, start)
     body = content[start:start + max_chars]
@@ -267,6 +269,7 @@ def _slice_content(content: str, start: int) -> tuple:
 class ReadSkillTool(BaseTool):
     name = "read_skill"
     risk = "low"  # §2.7：只读
+    detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "按需加载指定 Skill 的完整流程文档。上下文里只有 Skill 目录（名称+摘要），"
         "执行任务前必须先调用本工具读取对应 Skill 全文，不要凭目录摘要自行推测流程。"
@@ -277,7 +280,7 @@ class ReadSkillTool(BaseTool):
         return ReadSkillInput
 
     async def aexecute(self, params: ReadSkillInput) -> ToolResult:
-        # 整改批 3.3：经 skill_docs 端口消费（D-01 依赖倒置），消灭 tools→web 反向依赖
+        # 经 skill_docs 端口消费（依赖倒置），消灭 tools→web 反向依赖
         sd = ports.skill_docs_port()
 
         wanted = (params.name or "").strip()
@@ -299,7 +302,7 @@ class ReadSkillTool(BaseTool):
                 success=False,
                 error=f"未找到 Skill「{wanted}」。可用 Skill：{'、'.join(available) or '无'}",
             )
-        # 章节续读（任务#36 B5）：section 命中章节目录时只返回该章节全文，
+        # 章节续读：section 命中章节目录时只返回该章节全文，
         # start 相对章节起点；未命中时回喂可用章节清单（不阻断，给模型纠错机会）
         section = (params.section or "").strip()
         if section:
@@ -338,6 +341,7 @@ class ReadSkillTool(BaseTool):
 class ReadProjectDocTool(BaseTool):
     name = "read_project_doc"
     risk = "low"  # §2.7：只读
+    detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "按需读取项目规格文档（write_document 产出，如 Final_Video_Spec.md）全文。"
         "工作台状态 JSON 的 documents 节只有清单（名称/摘要），"
@@ -370,6 +374,7 @@ class ReadProjectDocTool(BaseTool):
 class ImageGenerateTool(BaseTool):
     name = "image_generate"
     risk = "high"  # §2.7：生成类（外部副作用/花钱），经生成确认闸覆盖
+    detail_tier = "expand"  # 产出类
     description = (
         "触发图片生成（危险操作）。仅当用户明确要求'生成/出图/执行'时才可调用。"
         "系统会自动将 sceneRefs 引用的关键元素概念图作为参考图注入。"
@@ -382,7 +387,7 @@ class ImageGenerateTool(BaseTool):
         from src.video_agent.config import settings
         from src.video_agent.state import storyboard_ops as ops
 
-        # 整改批 3.3：经 generation 端口消费（D-01 依赖倒置），消灭 tools→web 反向依赖
+        # 经 generation 端口消费（依赖倒置），消灭 tools→web 反向依赖
         gen = ports.generation_port()
         submit_image_task = gen.submit_image_task
         wait_image_task = gen.wait_image_task
@@ -418,7 +423,7 @@ class ImageGenerateTool(BaseTool):
         if not targets:
             return ToolResult(success=False, error="未找到有提示词的草稿")
 
-        # 供应商回退链（修复； 唯一权威源=全局设置）：LLM 参数 → 全局设置 → 草稿自带 providerId
+        # 供应商回退链（唯一权威源=全局设置）：LLM 参数 → 全局设置 → 草稿自带 providerId
         # → 配置中首个可用生图供应商；LLM 常传空 provider，不回退会报「供应商 '' 未配置」
         provider_id = resolve_provider_ref(str(params.provider_id or "").strip())
         model = str(params.model or "").strip()
@@ -497,6 +502,7 @@ class ImageGenerateTool(BaseTool):
 class FlowDirectiveTool(BaseTool):
     name = "flow_directive"
     risk = "medium"  # §2.7 裁决：写交互状态、按消息生效即清，从严定 medium
+    detail_tier = "output"  # 内部路由指令，仅输出留痕
     description = (
         "流程指令：仅当用户本条消息明确要求一条龙/自动推进时才以 auto_continue=true 发出，"
         "豁免本条消息的流程暂停（规格收集/故事板审阅等卡片不再弹出，"
@@ -531,6 +537,7 @@ class FlowDirectiveTool(BaseTool):
 class WorkflowPauseTool(BaseTool):
     name = "workflow_pause"
     risk = "medium"  # §2.7：写交互暂停态，用户回应即可撤销
+    detail_tier = "expand"  # 关键交互：暂停请求展开可见输入
     description = "暂停工作流并请求用户确认。用于拆解完成后请用户过目再继续的场景。"
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -546,14 +553,10 @@ class WorkflowPauseTool(BaseTool):
         return ToolResult(success=True, data={"paused": True, "message": params.message})
 
 
-# RequestConfirmationTool（同义别名工具）已删除——暂停确认
-# 单一正名 = workflow_pause（对齐业界「只有一个 AskUserQuestion」）。
-
-
 # ---------- 注册 ----------
 
 def register_document_tools():
-    """注册文档 & 生成 & 暂停 Tool（workflow_step 随 workflows 引擎下线）"""
+    """注册文档 & 生成 & 暂停 Tool"""
     from src.video_agent.tools.manager import ToolManager
     ToolManager.register(DocumentWriteTool())
     ToolManager.register(ReadUploadedDocTool())

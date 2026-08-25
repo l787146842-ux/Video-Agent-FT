@@ -1,7 +1,7 @@
-﻿from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel
 from loguru import logger
-from .base import BaseTool, RISK_TIERS, ToolResult
+from .base import BaseTool, DETAIL_TIERS, RISK_TIERS, ToolResult
 
 class ToolManager:
     _tools: Dict[str, BaseTool] = {}
@@ -46,6 +46,20 @@ class ToolManager:
         tool = cls._tools.get(name)
         risk = str(getattr(tool, "risk", "") or "").strip().lower() if tool else ""
         return risk if risk in RISK_TIERS else "high"
+
+    @classmethod
+    def get_tool_detail_tiers(cls) -> Dict[str, str]:
+        """全部已注册工具的前端时间线展示档（sidecar 导出的单一事实源）。
+
+        仅收录显式声明 detail_tier 的工具；未声明者不入表，前端按默认档
+        output 处理（新工具至少留输出痕迹，与 base.DETAIL_TIERS 注释同口径）。
+        """
+        out: Dict[str, str] = {}
+        for name, tool in cls._tools.items():
+            tier = str(getattr(tool, "detail_tier", "") or "").strip().lower()
+            if tier in DETAIL_TIERS:
+                out[name] = tier
+        return out
 
     @classmethod
     def get_all_tool_schemas(cls, exclude=None) -> List[Dict[str, Any]]:

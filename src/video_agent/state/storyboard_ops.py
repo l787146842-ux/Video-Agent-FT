@@ -43,7 +43,7 @@ _TITLE_CJK_RE = re.compile(r"[一-鿿]")
 
 
 def normalize_group_title(title: str) -> str:
-    """：分组标题确定性归一（双轨建组入口共用）。"""
+    """分组标题确定性归一（双轨建组入口共用）。"""
     t = str(title or "").strip()
     if not t:
         return t

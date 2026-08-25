@@ -1,10 +1,16 @@
-﻿import asyncio
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel, Field
 
 # 风险分级合法枚举（宪法 §2.7 单一事实源；注册校验/闸机消费同引用）
 RISK_TIERS = ("low", "medium", "high")
+
+# 前端时间线展示档合法枚举（展示档元数据驱动，前端不硬编码工具名）：
+# expand=可展开看输入参数预览+执行结果；output=仅输出留痕（不显示输入）。
+# 未声明者前端默认归 output（新工具至少留输出痕迹）；非工具内部条目
+# （如 model_reasoning）不经本属性，由 sidecar 独立名单登记 none。
+DETAIL_TIERS = ("expand", "output")
 
 
 class ToolEvent(BaseModel):
@@ -39,6 +45,9 @@ class BaseTool(ABC):
     # 必须由子类显式声明；未声明者在 ToolManager.register 被拒绝注册
     # （deny-by-default，不得静默放行）。
     risk: str = ""
+    # 前端时间线展示档：取值见 DETAIL_TIERS；空 = 未声明，
+    # 前端默认 output（展示档非安全闸，不 deny-by-default，但声明优先）。
+    detail_tier: str = ""
 
     @abstractmethod
     def get_input_schema(self) -> Type[BaseModel]:

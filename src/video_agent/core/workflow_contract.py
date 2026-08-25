@@ -98,6 +98,17 @@ class WorkflowDefinition:
                    "nodes": [n.to_dict() for n in nodes]}
         return cls(payload["workflow_id"] or "workflow", payload["revision"], nodes, _hash(payload), str(skill_id or ""))
 
+# 默认 workflow 自带节点标题（硬编码标题表归注册数据；
+# frontmatter flow.stages 声明式 workflow 的标题则随声明自带）。
+DEFAULT_V2_NODE_TITLES: Dict[str, str] = {
+    "analyze_script": "剧本分析", "collect_spec": "规格候选收集",
+    "write_spec": "规格文档", "review_spec": "规格审核",
+    "storyboard_key_elements": "关键元素拆解",
+    "review_key_elements": "关键元素审核",
+    "storyboard_shots": "分镜设计", "storyboard_audio": "音频层设计",
+}
+
+
 def default_v2_workflow(skill_id: str = "") -> WorkflowDefinition:
     def node(node_id: str, executor: str, deterministic: bool, prerequisites: Sequence[str] = (), approval: bool = False) -> Dict[str, Any]:
         return {"node_id": node_id, "executor": executor, "deterministic": deterministic,
@@ -115,4 +126,4 @@ def default_v2_workflow(skill_id: str = "") -> WorkflowDefinition:
              node("storyboard_audio", "storyboard_audio", False, ("storyboard_shots",))]
     return WorkflowDefinition.from_sidecar({"workflow": {"workflow_id": "video_storyboard_v2", "revision": "2", "nodes": nodes}}, workflow_id="video_storyboard_v2", skill_id=skill_id)
 
-__all__ = ["WorkflowDefinition", "WorkflowDefinitionError", "WorkflowNode", "default_v2_workflow"]
+__all__ = ["WorkflowDefinition", "WorkflowDefinitionError", "WorkflowNode", "default_v2_workflow", "DEFAULT_V2_NODE_TITLES"]

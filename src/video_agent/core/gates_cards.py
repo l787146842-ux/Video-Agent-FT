@@ -1,9 +1,9 @@
-"""闸机文案/卡片族（自 prompt_gates.py 切出， 拆分模式延续）。
+"""闸机文案/卡片族。
 
 闸机文案外置加载（_gate_msg/_gate_json，prompts/gates/messages.md 单一事实源）
 + 全部用户可见文案常量与卡片组装（规格闸/结构暂停卡/规格审阅选项/草稿审阅卡/
 生成确认闸/镜头顺序闸）。prompt_gates 尾部 re-export 保持既有引用路径不变
-（宪法 §12 登记壳；零行为变更，代码逐字迁移）。
+（宪法 §12 登记壳）。
 """
 import json
 import re
@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
 from src.video_agent.utils.prompts import load_prompt_section
 
-# ---------- 闸机文案外置（宪法 §2.3； 恢复） ----------
+# ---------- 闸机文案外置（宪法 §2.3） ----------
 #
 # prompts/gates/messages.md 是闸机文案单一事实源；代码内置文案仅作分节
 # 缺失时的兜底（行为不回退）。回喂模型与展示用户用同一源，防两套说辞。
@@ -40,7 +40,7 @@ SPEC_GATE_ERROR = _gate_msg("SPEC_GATE", (
     "本次操作已按用户要求照常执行，规格文档仍建议补写。"
 ))
 
-# 结构搭建阶段内联提示词的容忍上限（字符）：保留兼容常量，
+# 结构搭建阶段内联提示词的容忍上限（字符）：
 # 当前策略下不再剥离内联提示词，详细内容随建卡一并写入
 STRUCTURE_INLINE_PROMPT_MAX = 40
 
@@ -125,11 +125,9 @@ def spec_review_options(state: Optional[Dict[str, Any]] = None) -> List[Dict[str
     一律「按当前 Skill 流程推进」；流程排序意见归 Skill）。"""
     return list(SPEC_DOC_OPTIONS)
 
-# script_analyze 后的规格收集暂停卡（原「确认总结」闸被用户判定多余——
-# 规格交互本身就是暂停点；改为解析完成后直接进入规格收集向导）。
-# 方案乙：收集完成后规格文档由系统机械拼装，模型不再手写。
-#总结直接内嵌表述（不再「见上」）；删除开发者视角的
-# 「按 Skill 声明」与全局设置解释句（用户审定）。
+# script_analyze 后的规格收集暂停卡（规格交互本身就是暂停点，
+# 解析完成后直接进入规格收集向导）。
+# 收集完成后规格文档由系统机械拼装，模型不再手写。
 SPEC_COLLECT_PAUSED_MSG = (
     "剧本读完了。一句话故事总结：{summary}\n"
     "接下来我为这部片子拼装一份制片规格，请逐项选定以下维度"
@@ -147,10 +145,10 @@ SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY = (
     "选完发给我，自动拼装规格并请您审阅。"
 )
 
-# 规格文档拼装/写入后的系统级暂停文案（模型幻觉已暂停、实际直冲拆解）：
+# 规格文档拼装/写入后的系统级暂停文案：
 # 模型同批未自发 workflow_pause 时，由执行层注入此文案；
-# 下一步不写死具体阶段（启用条件按规格流程客观特征自动检测，；后续阶段以各自流程为准）；
-# 模型自填项必须逐条过目（888 ：风格类参数模型拍板用户不知情）
+# 下一步不写死具体阶段（启用条件按规格流程客观特征自动检测；后续阶段以各自流程为准）；
+# 模型自填项必须逐条过目
 SPEC_DOC_PAUSED_MSG = (
     "制片规格已按您的选定拼装完成，请审阅规格条目；未选维度由模型根据剧本拟定自填，请逐条过目，"
     "如需调整直接告诉我。确认后按当前 Skill 流程推进下一阶段。"
@@ -220,62 +218,21 @@ def parse_hard_selections(user_text: str) -> Dict[str, str]:
     return out
 
 
-# ---------- 软制作参数（复盘：维度来自 Skill，平台不预设） ----------
+# ---------- 软制作参数（维度来自 Skill，平台不预设） ----------
 # 向导的软维度 = Skill 规格编写步骤客观声明的维度（如「AI-短剧」画幅比例/
 # 目标时长/影像风格基调/输出语言）；候选由内层模型按剧本逐维出题，落
 # interaction.spec_soft_candidates；用户不选则放行、模型自填（不拦人）。
-# 平台固定六维及「声音风格/目标观众」文案已于整体删除。
 _SPEC_WRITE_ENUM_RE = re.compile(r"[（(]([^（）()]+)[）)]")
 _SPEC_WRITE_VERB_RE = re.compile(r"写入|编写|初始化|拟定")
 # 规格维度优先解析「建议条目：…」整段（去掉括号注解后按 /、，、；切分）
 _SPEC_SUGGESTED_RE = re.compile(r"建议条目\s*[:：]\s*([^）)；。\n]+)")
 
 
+# ---------- 规格文档系统拼装（模型不手写规格） ----------
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ---------- 规格文档系统拼装（方案乙：模型不手写规格） ----------
-
-
-# （C3/）：提示词草案写入后 Skill 要求暂停审阅，模型该停没停时
-# 层 9 兜底注入（与规格审阅卡同构；10.7「Skill 暂停点 + 层 9 兜底缺一不可」）
+# 提示词草案写入后 Skill 要求暂停审阅，模型该停没停时
+# 层 9 兜底注入（与规格审阅卡同构；「Skill 暂停点 + 层 9 兜底缺一不可」）
 DRAFTS_REVIEW_MSG = (
     "提示词草案已写入，请在左侧故事板审阅草案内容；"
     "确认后我将按全局设置中的生成渠道触发生成。"
@@ -306,8 +263,7 @@ GENERATION_CONFIRM_GATE_BLOCKED = _gate_msg("GENERATION_CONFIRM_BLOCKED", (
     "时才可直接触发生成。"
 ))
 
-# 生成前资产绑定检查（任务#12 E-6 禁令下沉：原李安 Skill「缺少场景参考图
-# 不启动视频生成」prose 禁令机检化）：判定见 guard_pipeline.evaluate_gen_asset_binding。
+# 生成前资产绑定检查：判定见 guard_pipeline.evaluate_gen_asset_binding。
 GEN_ASSET_BINDING_BLOCKED = _gate_msg("GEN_ASSET_BINDING_BLOCKED", (
     "流程拦截：目标分镜 sceneRefs 引用的关键元素还没有任何概念图（生成或上传），"
     "视频生成已被资产绑定检查拦下。请先为相关关键元素生成或上传概念图"
@@ -315,21 +271,18 @@ GEN_ASSET_BINDING_BLOCKED = _gate_msg("GEN_ASSET_BINDING_BLOCKED", (
     "缺少场景参考图直接生成会导致背景跳画与道具变形。"
 ))
 
-# 分节键原为 SHOT_SEQUENCE（语义错位：实际承载「关键元素无概念图」警告），
-# 任务#10 更名为 ELEMENT_IMAGE_MISSING；常量名暂保留以限缩联动面。
 SHOT_SEQUENCE_GATE_ERROR = _gate_msg("ELEMENT_IMAGE_MISSING", (
     "流程警告：关键元素还没有任何概念图（生成或上传）。按 Skill 流程建议先让元素概念图就绪"
     "再编制分镜提示词（镜头可参考元素图像）；本次分镜提示词已按用户要求照常写入，"
     "若后续生成视频需要参考图，请先补足元素图像。"
 ))
 
-# ---------- 三通道分离 C：下一步机械派生（frontmatter 声明唯一源） ----------
+# ---------- 下一步机械派生（frontmatter 声明唯一源） ----------
 #
-# 业界依据（Claude Code/Codex：确认 UI 由系统从即将执行的动作渲染，模型不撰写
-# 确认界面；Flova：暂停点与下一步是 Skill 工作流声明的属性）。1111 事故：
-# 模型自造「继续故事板拆分」跳过规格阶段——下一步 label 改为机械派生。
-# 阶段短名由 frontmatter flow.step_short_titles 声明（平台硬编码退役）。
-# 任务#5：flow.steps 抄本废除（正文 planner 是唯一流程源），真实数据不再
+# 确认 UI 由系统从即将执行的动作渲染，模型不撰写确认界面；
+# 暂停点与下一步是 Skill 工作流声明的属性，下一步 label 机械派生。
+# 阶段短名由 frontmatter flow.step_short_titles 声明。
+# flow.steps 抄本废除（正文 planner 是唯一流程源），真实数据不再
 # 声明 steps，本通道自然退化；消费代码保留兼容内存 manifest（测试同构）。
 
 
@@ -346,7 +299,7 @@ def _flow_steps_of(skill_name: str) -> Dict[int, str]:
     return out
 
 
-# step_done_conditions 声明探针注入口：单一实现在 pipeline_orchestrator
+# step_done_conditions 声明探针注入口：单一实现在 stage_probes
 # （本模块被 prompt_gates 导入，反向顶层 import 成环，故注册钩子解耦）。
 # 签名：(step_no, state, skill) -> Optional[bool]，None = 未声明回落旧规则。
 _STEP_DONE_PROBE: Optional[Callable[[Any, Dict[str, Any], str], Optional[bool]]] = None
@@ -396,7 +349,7 @@ def current_flow_step(state: Dict[str, Any], skill_name: str) -> int:
 
 def _flow_short_of(skill_name: str) -> Dict[int, str]:
     """frontmatter flow.step_short_titles 活读（步骤号→短标题）；
-    平台阶段短名改按 Skill 声明，代码硬编码退役。"""
+    阶段短名按 Skill 声明。"""
     from src.video_agent.skill_runtime.registry import skill_manifest_of
 
     manifest = skill_manifest_of(str(skill_name or "").strip())

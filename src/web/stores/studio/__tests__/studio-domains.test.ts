@@ -1,4 +1,4 @@
-/** 批次6：studio store 按域拆分后的行为回归 */
+/** studio store 按域拆分后的行为回归 */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { studioActions, state, setState } from '@/stores/studio';
 import type { KeyElementGroup, ShotGroup, AudioGroup } from '@/types';

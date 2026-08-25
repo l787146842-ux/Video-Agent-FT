@@ -1,4 +1,4 @@
-/** Studio store 组合出口（批次6 按域拆分后）。
+/** Studio store 组合出口（按域拆分后）。
  * 域实现：studio/ui.ts（选中态/页签/弹窗/附件/生成态）、
  *         studio/storyboard.ts（分组/草稿编辑、服务端同步、持久化）、
  *         studio/assets.ts（未归类素材）。

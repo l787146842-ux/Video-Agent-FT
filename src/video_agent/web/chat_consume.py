@@ -1,4 +1,4 @@
-"""消费/压缩域（自 chat_service.py 切出）：会话 compaction/暂停态消费/规格向导消费/卡片枚举压缩。"""
+"""消费/压缩域：会话 compaction/暂停态消费/规格向导消费/卡片枚举压缩。"""
 import asyncio
 import hashlib
 import re
@@ -11,7 +11,11 @@ from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.config import settings
 from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core import workflow_runtime
-from src.video_agent.core.token_budget import context_window_for_model, estimate_messages_tokens
+from src.video_agent.core.token_budget import (
+    context_window_for_model,
+    estimate_messages_tokens,
+    estimate_tokens,
+)
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.generation import resolve_openai_endpoint
@@ -33,14 +37,14 @@ __all__ = ["build_multimodal_content"]
 
 
 
-# 会话级 compaction（恢复）：压缩后仍完整保留的最近消息条数
+# 会话级 compaction：压缩后仍完整保留的最近消息条数
 _HISTORY_COMPACT_KEEP = 4
 # 分层采样预算：摘要输入最多采样的较早消息条数（头 6 + 中段跨步 + 尾 10）
 _HISTORY_SAMPLE_CAP = 24
 
 
 def _history_fingerprint(older: List[Dict[str, Any]]) -> str:
-    """摘要失效键（整改批 3.4）：较早消息的**内容指纹**而非消息条数。
+    """摘要失效键：较早消息的**内容指纹**而非消息条数。
 
     条数键的缺陷：编辑重发/截断重答不改变总数时命中陈旧摘要；内容指纹
     对任何增删改都失效重建。对全文计算（不受采样截断影响）。"""
@@ -58,9 +62,93 @@ def _history_fingerprint(older: List[Dict[str, Any]]) -> str:
     return h.hexdigest()
 
 
+def _set_summary_active(svc, active: bool) -> None:
+    """摘要注入形态标记：system prompt 的专用摘要段
+    （prompt_builder session_summary 段，紧随协议段）按
+    interaction.session_summary.active 决定本轮是否注入。
+    压缩生效置 True；未触发/失败回落原 history 时置 False
+    （防上一轮残留标记把陈旧摘要注入未压缩的完整历史）。
+    只动标记位，异常不影响压缩主链。"""
+    try:
+        if svc is None:
+            return
+        interaction = svc.state_dict.setdefault("interaction", {})
+        cached = interaction.get("session_summary")
+        if not isinstance(cached, dict):
+            if not active:
+                return
+            cached = {}
+            interaction["session_summary"] = cached
+        if bool(cached.get("active")) == bool(active):
+            return
+        cached["active"] = bool(active)
+        svc.save_debounced()
+    except Exception as _e:
+        logger.debug("[ChatService] summary active 标记设置失败（忽略）: {}", _e)
+
+
+def _extract_artifact_names(state: Dict[str, Any], older: List[Dict[str, Any]],
+                            cap: int = 20) -> List[str]:
+    """关键产物名基线候选（探针口径）：取当前工作台已有
+    产物的标识（文档名/上传文档名/分组标题/草稿 label）为候选池，
+    与被压缩段正文求交集——只有实际在被压缩对话中出现过的才算基线项，
+    避免把从未谈论过的产物误判为摘要漏保留。短于 2 字符的候选舍弃
+    （单字符易在摘要中偶然子串命中）。"""
+    blob = "\n".join(str(m.get("content") or "") for m in older)
+    names: List[str] = []
+    for key in ("documents", "uploadedDocs"):
+        for d in state.get(key) or []:
+            n = str(d.get("name") or "").strip()
+            if n:
+                names.append(n)
+    for cat in ALL_CATEGORIES_TUPLE:
+        for g in state.get(cat) or []:
+            t = str(g.get("title") or "").strip()
+            if t:
+                names.append(t)
+            for dr in g.get("drafts") or []:
+                lb = str(dr.get("label") or "").strip()
+                if lb:
+                    names.append(lb)
+    seen: set = set()
+    out: List[str] = []
+    for n in names:
+        if len(n) < 2 or n in seen:
+            continue
+        seen.add(n)
+        if n in blob:
+            out.append(n)
+            if len(out) >= cap:
+                break
+    return out
+
+
+def _compact_probe_metrics(state: Dict[str, Any], older: List[Dict[str, Any]],
+                           summary: str) -> str:
+    """压缩结果客观探针：指标拼入 compact 上下文事件 detail
+    入 trace。① 摘要长度（字符数 + token 近似，与截断体系共用
+    estimate_tokens 口径）；② 关键产物名命中率（基线 = 被压缩段中
+    实际出现过的产物标识，见 _extract_artifact_names）。只记录不阻断：
+    任何异常返回空串，压缩主流程照常。"""
+    try:
+        text = summary or ""
+        chars = len(text)
+        tokens = estimate_tokens(text)
+        base = _extract_artifact_names(state or {}, older or [])
+        if base:
+            hits = sum(1 for n in base if n in text)
+            artifact = f"artifact_name_hit={hits}/{len(base)}"
+        else:
+            artifact = "artifact_name_hit=无基线"
+        return f"summary_chars={chars} summary_tokens≈{tokens} {artifact}"
+    except Exception as _e:
+        logger.debug("[ChatService] compaction 探针计算失败（忽略）: {}", _e)
+        return ""
+
+
 def _sample_older_dialog(older: List[Dict[str, Any]],
                          cap: int = _HISTORY_SAMPLE_CAP) -> str:
-    """分层采样拼装摘要输入（整改批 3.4：不再只取 older[-20:]）。
+    """分层采样拼装摘要输入（分层采样而非只取尾部窗口）。
 
     头部定锚（任务起点）+ 中段等距跨步 + 尾部贴近期保留窗，超预算时
     中段均匀抽稀——任意位置的决策都有机会进入摘要，而不是只有最近 20 条。"""
@@ -83,7 +171,7 @@ def _sample_older_dialog(older: List[Dict[str, Any]],
 async def _maybe_compact_history(
     history: List[Dict[str, Any]], svc, adapter,
 ) -> List[Dict[str, Any]]:
-    """会话级 compaction（恢复）：历史超阈值时用便宜模型把较早消息压成摘要。
+    """会话级 compaction：历史超阈值时用便宜模型把较早消息压成摘要。
 
     触发双条件（token 驱动 + 条数兜底）：estimate_messages_tokens(history)
     超过窗口 0.6 倍，或条数达 history_compact_threshold（阈值 0 = 整体关闭）；
@@ -91,10 +179,17 @@ async def _maybe_compact_history(
     对齐 Anthropic compaction 实践：保留决策与约束、丢弃冗余过程，
     并保留可回溯引用（文档名/任务 ID/草稿编号——丢内容留路径）。
     摘要按较早消息的**内容指纹**缓存于 interaction.session_summary
-    （任何增删改即失效重建；整改批 3.4 前为消息条数键）；失败静默回落
-    原 history（compaction 是优化不是前置条件）。"""
+    （任何增删改即失效重建）；失败静默回落
+    原 history（compaction 是优化不是前置条件）。
+
+    注入形态：摘要不伪装成 history 首条 user
+    消息，而是经 interaction.session_summary.active 每请求标记，由
+    system prompt 的专用摘要段（prompt_builder session_summary 段，
+    紧随协议段）注入；history 本体只留最近 KEEP 条。压缩事件连同
+    客观探针（摘要长度/产物名命中率）全量事件化入 trace。"""
     threshold = int(getattr(settings, "history_compact_threshold", 0) or 0)
     if threshold <= 0 or adapter is None:
+        _set_summary_active(svc, False)
         return history
     # token 条件：按窗口 0.6 倍；窗口与 planner 截断同源（按模型查表，
     # 消除大窗口模型摘要过早/小窗口模型 token 条件空转的口径偏差）；
@@ -107,12 +202,14 @@ async def _maybe_compact_history(
     token_limit = int(window * 0.6)
     over_tokens = estimate_messages_tokens(history) > token_limit
     if len(history) < threshold and not over_tokens:
+        _set_summary_active(svc, False)
         return history
     interaction = svc.state_dict.setdefault("interaction", {})
     cached = interaction.get("session_summary") or {}
     keep = _HISTORY_COMPACT_KEEP
     older = history[:-keep] if len(history) > keep else []
     if not older:
+        _set_summary_active(svc, False)
         return history
     fp = _history_fingerprint(older)
     summary = ""
@@ -139,24 +236,30 @@ async def _maybe_compact_history(
             # 承重接线遥测：compaction 失败回落原 history 不再是纯静默
             live_metrics.record_degradation("chat_consume.session_compact")
             logger.warning(f"[ChatService] 会话 compaction 失败，保留原 history: {e}")
+            _set_summary_active(svc, False)
             return history
         if not summary:
+            _set_summary_active(svc, False)
             return history
         interaction["session_summary"] = {"fp": fp, "text": summary[:1000]}
         svc.save_debounced()
         logger.info(
             f"[ChatService] 会话 compaction（{'token' if over_tokens else '条数'}触发）："
             f"{len(history)} 条 history 压缩为摘要+{keep} 条（采样较早 {len(older)} 条）")
-    # 降级事件化（P4）：compaction 成功命中记入上下文事件流（旁路
-    # 失败路径的 live_metrics.record_degradation，不重复）；失败仅 log 不干扰主链
+    # 注入形态标记：压缩生效 → system 专用摘要段本轮注入
+    _set_summary_active(svc, True)
+    # 降级事件化：compaction 成功命中记入上下文事件流（旁路
+    # 失败路径的 live_metrics.record_degradation，不重复）；失败仅 log 不干扰主链；
+    # 客观探针（摘要长度/产物名命中率）拼入同一事件 detail
     try:
-        AgentTracer.get_instance().record_context_event(
-            "compact", f"会话 compaction：{len(history)} 条 -> 摘要+{_HISTORY_COMPACT_KEEP} 条")
+        detail = f"会话 compaction：{len(history)} 条 -> 摘要+{_HISTORY_COMPACT_KEEP} 条"
+        probe = _compact_probe_metrics(svc.state_dict, older, summary)
+        if probe:
+            detail += f" | {probe}"
+        AgentTracer.get_instance().record_context_event("compact", detail)
     except Exception as _e:
         logger.debug("[ChatService] compact 事件记录失败（忽略）: {}", _e)
-    return [
-        {"role": "user", "content": f"（会话摘要，较早对话已压缩；工作台状态 JSON 仍是最新事实源）{summary}"},
-    ] + history[-_HISTORY_COMPACT_KEEP:]
+    return history[-_HISTORY_COMPACT_KEEP:]
 
 
 def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
@@ -337,8 +440,7 @@ def _consume_spec_wizard(svc, user_text: str) -> Tuple[str, str]:
             "options": [], "node_id": "review_spec"}
     # write_spec 节点提交——文档 artifact 与阶段推进进 reducer
     # 单事务（ArtifactCommitted + StageSucceeded(write_spec) +
-    # current_node→review_spec）；Web 直写旁路与挂起补卡机制
-    # 退役；卡片投影由调用方按提交结果于用户消息后落库（顺序同轮聚合）。
+    # current_node→review_spec）；卡片投影由调用方按提交结果于用户消息后落库（顺序同轮聚合）。
     try:
         workflow_runtime.commit_turn(
             state, workflow_runtime.TurnResult(
@@ -355,7 +457,7 @@ def _consume_spec_wizard(svc, user_text: str) -> Tuple[str, str]:
     except Exception as e:
         logger.warning("[SpecWizard] write_spec 节点提交失败（本轮不落盘）: {}", e)
         return "", ""
-    # 轮前机械动作落转录（Rule2 v6：start_trace 收养进当轮时间线）
+    # 轮前机械动作落转录（start_trace 收养进当轮时间线）
     try:
         AgentTracer.get_instance().record_pre_turn(
             "write_document", f"写入文档 {name}", ok=True)

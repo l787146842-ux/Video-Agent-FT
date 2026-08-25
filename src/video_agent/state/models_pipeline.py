@@ -1,7 +1,7 @@
 """
 CLI / Workflow 生成管线专用模型。
 
-从 models.py 拆分而来（Phase 4），包含：
+包含：
 - 资产管理（AssetState）
 - 时间线 / 轨道 / 片段（TimelineState / Track / Clip）
 - 任务调度（TaskState / TaskOutput）

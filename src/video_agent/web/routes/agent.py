@@ -1,7 +1,7 @@
 """
 /api/agent — Agent 聊天端点（路由层，业务逻辑委托给 chat_service.py）
 
-流程：服务端构建上下文 → 多步 LLM 循环（默认≤6 轮，AGENT_MAX_STEPS 可调）→ 经 Function Calling 工具调用执行动作（动作通道唯一，ADR-0001）→ 持久化 → 返回。
+流程：服务端构建上下文 → 多步 LLM 循环（默认≤6 轮，AGENT_MAX_STEPS 可调）→ 经 Function Calling 工具调用执行动作（动作通道唯一）→ 持久化 → 返回。
 
 - 上下文注入在服务端完成（前端只发消息本体 + 选中态），服务端是唯一事实源；
 - 仅当 provider 为空/mock 时走 mock；真实供应商失败返回 502 + 真实错误。
@@ -54,8 +54,6 @@ def _empty_state_baseline() -> int:
 
 class ChatRequest(BaseModel):
     message: str
-    # （ChatRequest.system_prompt 已随整改批 3.5 删除：后端零读取、前端
-    # 零发送，Skill 全文由服务端按 skill_name 硬注入，字段无存在意义）
     # 请求幂等键：前端每次发送生成唯一 id，同 id 处理中时拒绝重复提交
     request_id: str = ""
     provider: str = ""
@@ -100,7 +98,7 @@ class ChatRequest(BaseModel):
     # 系统动作标记（如 gate_override=「本次放行」）：携带时用户消息持久化带
     # kind 标记，前端渲染为系统动作行而非用户气泡（LLM 语义不变）
     system_action: str = ""
-    # 截断重答的「用户消息已落盘」标记已撤出公共契约：改由后端内部
+    # 截断重答的「用户消息已落盘」标记由后端内部
     # contextvar（state.chat_tail_ops.user_message_persisted）传递
 
 
@@ -112,8 +110,7 @@ class ChatResponse(BaseModel):
     confirmation: str = ""
     pause_id: str = ""
     documents_written: List[str] = []
-    # 修复：补齐 non_stream_worker 实际返回的字段，
-    # 此前被 response_model 静默过滤导致非流式端点丢失生图结果
+    # non_stream_worker 实际返回的字段（避免被 response_model 静默过滤）
     image_urls: List[str] = []
     chat_inserts: List[Dict[str, Any]] = []
     action_log: List[str] = []
@@ -124,7 +121,7 @@ class ChatResponse(BaseModel):
 async def agent_chat(body: ChatRequest):
     """非流式聊天端点（业务逻辑委托给 chat_service.non_stream_worker）
 
-    P9 错误出口统一：全部走 ErrorPayload 契约（code/kind/message/raw），
+    错误出口统一：全部走 ErrorPayload 契约（code/kind/message/raw），
     状态码语义维持原状（400 输入不合法 / 502 上游失败）"""
     if not body.message.strip() and not body.attachments:
         # 与 chat_service 非流式守卫同码（EMPTY_MESSAGE 已有，不新增）
@@ -152,13 +149,13 @@ async def get_agent_traces(limit: int = 50):
 
 @router.get("/agent/metrics")
 async def get_agent_metrics():
-    """：成本看板聚合——轨迹数/平均耗时/轮次/操作数/闸机拦截率/降级频率。"""
+    """成本看板聚合——轨迹数/平均耗时/轮次/操作数/闸机拦截率/降级频率。"""
     return AgentTracer.get_instance().metrics()
 
 
 @router.get("/agent/gates")
 async def get_agent_gates(limit: int = 50):
-    """ 恢复：获取最近 N 条闸机判定（rule_id/层/结果/是否被申诉放行）+ 规则注册表概览。
+    """获取最近 N 条闸机判定（rule_id/层/结果/是否被申诉放行）+ 规则注册表概览。
 
     与 /agent/traces 并列的调试端点：闸机策略分层的审计入口，
     平台层规则（platform.*）不可被 Skill manifest 配置（地板模型强制不变量）。"""
@@ -175,7 +172,7 @@ async def get_agent_gates(limit: int = 50):
 
 @router.get("/agent/degradations")
 async def get_agent_degradations():
-    """ ：核心探测点意外降级计数（接线断裂可观测， 防复发）。
+    """核心探测点意外降级计数（接线断裂可观测）。
 
     与 /agent/traces、/agent/gates 并列的调试端点：探测点（规格向导探测/
     闸机装配/流程检查点解析等）异常回落默认值时计数 +1，运行期健康信号。"""
@@ -245,7 +242,7 @@ async def agent_task_events(task_id: str, request: Request):
 async def stop_agent_task(task_id: str):
     """真正停止后台任务（停止按钮调用）；刷新/切项目不调用。
 
-    端到端中断协议（任务 #17）：先登记在途外部生成任务、
+    端到端中断协议：先登记在途外部生成任务、
     置任务作用域停止标志（scope=task_id），再 cancel；响应携带在途项说明。
     """
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
@@ -257,14 +254,14 @@ async def stop_agent_task(task_id: str):
 
 
 class GuidanceItem(BaseModel):
-    """：排队消息登记体（id=前端排队条目 id，text=纯文本正文）。"""
+    """排队消息登记体（id=前端排队条目 id，text=纯文本正文）。"""
     id: str
     text: str
 
 
 @router.post("/agent/tasks/{task_id}/guidance")
 async def register_task_guidance(task_id: str, item: GuidanceItem):
-    """把用户推理中发送的排队消息登记到运行中任务，供轮间注入（恢复）。
+    """把用户推理中发送的排队消息登记到运行中任务，供轮间注入。
 
     任务不存在/已结束时返回 ok=False，前端回落「任务结束后自动出队重发」。"""
     from src.video_agent.web.agent_task_manager import get_agent_task_manager

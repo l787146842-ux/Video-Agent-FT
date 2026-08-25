@@ -57,7 +57,7 @@ export function resultSummaryView(full: string): { expandable: boolean; collapse
 /** agent_loop 规划条目的 id 前缀（llm-s{step}），合并判定唯一依据 */
 const REASONING_ID_PREFIX = 'llm-s';
 
-/** 工具详情分级（任务 #2 引入，任务 #4 元数据驱动，纯函数 vitest 钉死）：
+/** 工具详情分级（后端 detail_tier 元数据驱动，纯函数 vitest 钉死）：
  * expand = 可展开看输入参数预览 + 执行结果；
  * output = 仅输出留痕（不显示输入）；none = 保持一行摘要（仅内部条目）。 */
 export type ToolDetailTier = 'expand' | 'output' | 'none';

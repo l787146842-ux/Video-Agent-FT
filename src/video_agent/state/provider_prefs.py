@@ -38,13 +38,13 @@ def resolve_spec_media_preference(
 
 
 def resolve_spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
-    """制作参数单一事实源（顶部「全局设置」，不再扫描规格文档）。
+    """制作参数单一事实源（顶部「全局设置」）。
 
     返回执行器/生成管线关心的三个键：
     - image_resolution：图片分辨率（如 1K/2K/4K）
     - video_resolution：视频分辨率（如 480p/720p/1080p）
     - shot_max_duration：分镜最大时长（秒，解析「N 秒/Ns」）
-    规格文档不再承载这些硬参数，旧文档残留行也不参与决策。
+    规格文档不承载这些硬参数。
     """
     return {
         "image_resolution": settings.default_image_resolution,
@@ -54,10 +54,7 @@ def resolve_spec_production_params(raw_state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def extract_production_params(content: str) -> Dict[str, Any]:
-    """制作参数单一事实源（全局设置；content 仅保留签名兼容）。
-
-    旧版本按规格文档正文解析，现统一改为全局设置，避免两套说辞。
-    """
+    """制作参数单一事实源（全局设置；content 仅保留签名兼容）。"""
     return resolve_spec_production_params({})
 
 

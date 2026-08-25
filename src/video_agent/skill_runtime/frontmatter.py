@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Skill 平台声明 frontmatter 存储（任务#5：配置与正文合一）。
+"""Skill 平台声明 frontmatter 存储（配置与正文合一）。
 
-声明从外置 JSON sidecar（data/skills_manifests/，已退役删除）迁入 Skill
-文档头部 YAML frontmatter（`---` 包裹块，Claude Code 式）——一个 md 即一个
-插件单元；目录包形态（data/skills/<slug>/<slug>.md + 资源文件）与单文件
-形态兼容（插件包约定）。
+声明存于 Skill 文档头部 YAML frontmatter（`---` 包裹块，Claude Code 式）——
+一个 md 即一个插件单元；目录包形态（data/skills/<slug>/<slug>.md + 资源文件）
+与单文件形态兼容（插件包约定）。
 
 读写均为活读不快照：任意键原样透传，消费语义归 manifest_schema 校验器。
 正文是唯一流程源：flow.steps/step_stages/dependencies 通道废除，
@@ -45,7 +44,7 @@ def _fire_write_hooks() -> None:
 def _skills_dir() -> Path:
     """Skill 文档根目录（随 skill_docs 端口实现的 SKILL_DOCS_DIR 镜像切换，
     测试隔离同语义）。宪法铁律：skill_runtime 不 import web 层，
-    经 core.ports.skill_docs_port 端口访问（D-01 依赖倒置）。"""
+    经 core.ports.skill_docs_port 端口访问（依赖倒置）。"""
     return Path(ports.skill_docs_port().SKILL_DOCS_DIR)
 
 

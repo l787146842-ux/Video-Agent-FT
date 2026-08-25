@@ -1,8 +1,8 @@
-"""闸机规则注册表数据层（任务 23 P7-2：自 prompt_gates.py 切出）。
+"""闸机规则注册表数据层。
 
 纯数据与归一化函数，无任何判定逻辑；顶层不依赖 core 其他模块（无环）。
 prompt_gates 原位留承重壳 re-export 保持既有引用路径不变
-（宪法 §12 登记壳；零行为变更，代码逐字迁移；登记见 coupling_registry R13）。
+（宪法 §12 登记壳；登记见 coupling_registry R13）。
 
 承载：GateRuleMeta 定义 + GATE_RULES 注册表数据 + RULE_ALIASES 别名表
 + normalize_rule_id() 归一函数。判定逻辑（各族校验/audit_verdicts 等）
@@ -11,7 +11,7 @@ prompt_gates 原位留承重壳 re-export 保持既有引用路径不变
 from dataclasses import dataclass
 from typing import Dict
 
-# ---------- 闸机规则注册表（Policy-as-Data，宪法 §2.3； 恢复） ----------
+# ---------- 闸机规则注册表（Policy-as-Data，宪法 §2.3） ----------
 
 LAYER_PLATFORM = "platform"
 LAYER_SKILL = "skill"
@@ -79,11 +79,8 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
     )
 }
 
-# rule_id 别名归一表（旧写法 → 注册表正式条目，单向只读映射）。
-# 来源依据（P5 实测扫描，不凭空造）：data/agent_traces.jsonl* 全部轮转份与
-# guard_pipeline 实际签发值均已是正式 ID；storyboard_prompt_structure 为
-# 注册表时代前的下划线命名遗存（tests/e2e/studio.spec.ts mock 帧留痕），
-# 归一后历史口径可并入 skill.prompt_structure。（P7-2 已随本模块切出。）
+# rule_id 别名归一表（旧写法 → 注册表正式条目，单向只读映射），
+# 归一后历史口径可并入 skill.prompt_structure。
 RULE_ALIASES: Dict[str, str] = {
     "storyboard_prompt_structure": "skill.prompt_structure",
 }

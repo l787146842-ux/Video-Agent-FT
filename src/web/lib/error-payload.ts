@@ -1,5 +1,5 @@
 /**
- * ErrorPayload — 统一错误语义契约（任务 #19；任务 #4 契约生成化）。
+ * ErrorPayload — 统一错误语义契约。
  *
  * 单一事实源：后端 src/video_agent/web/error_payload.py 经 sidecar
  * （src/web/types/sse.schema.json）生成到 api.generated.ts；本文件只消费
@@ -95,7 +95,7 @@ export function httpErrorPayload(
   const message = typeof body?.message === 'string' ? body.message : '';
   const text = detail || message || fallbackText;
   const raw = typeof body?.raw === 'string' ? body.raw : undefined;
-  // 后端已带结构化字段（任务 #19 契约）：直接采信
+  // 后端已带结构化字段：直接采信
   if (typeof body?.code === 'string' && body.code) {
     return { code: body.code, kind: normalizeKind(body.kind), message: text, raw };
   }

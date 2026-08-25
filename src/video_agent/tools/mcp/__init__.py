@@ -1,4 +1,4 @@
-"""MCP 外部工具接入层（任务#37，B4 定稿实现）。
+"""MCP 外部工具接入层。
 
 deny-first 三层纵深（外部工具不可信，宪法 §2.7 同口径）：
 1. 配置面：无 data/mcp_servers.json = 零工具；deny_servers/deny_tools
@@ -8,7 +8,7 @@ deny-first 三层纵深（外部工具不可信，宪法 §2.7 同口径）：
 3. 执行面：未启用直调拒执行（adapter）+ high 级工具经 guard_pipeline
    的 platform.tool_risk 确认闸（fc_gates 接线），无用户同意硬拒。
 
-模块分工（B4 §2.5）：config.py 配置 / client.py 连接 / adapter.py 适配 /
+模块分工：config.py 配置 / client.py 连接 / adapter.py 适配 /
 policy.py deny 与 risk / catalog.py 目录与启停。
 """
 import asyncio
@@ -47,7 +47,7 @@ def register_mcp_tools(client_factory: Optional[ClientFactory] = None) -> int:
     servers: Dict[str, Any] = cfg.get("servers") or {}
     policy_cfg: Dict[str, Any] = cfg.get("policy") or {}
     # 注册期 policy 配置写入目录模块上下文（catalog enable 上限判定
-    # 消费真实配置，不再传死配置 {}）
+    # 消费真实配置）
     mcp_catalog.set_policy_cfg(policy_cfg)
     if not servers:
         return 0

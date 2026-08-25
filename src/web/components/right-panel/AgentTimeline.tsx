@@ -8,7 +8,7 @@ import type { TurnPhase } from '@/lib/turn-ledger';
 import { TimelineDetail } from './TimelineDetail';
 
 // 耗时格式化与条目类型归 lib/timeline 单一事实源；保留 re-export 兼容既有导入
-// （重建/阶段推导函数同批迁入 lib/timeline，任务 #2 详情区分层减行）
+// （重建/阶段推导函数同批迁入 lib/timeline，详情区分层减行）
 export { stageLabelFromMessage, timelineFromMessage } from '@/lib/timeline';
 export { formatElapsed };
 export type { TimelineItem };
@@ -57,7 +57,7 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
           · {formatElapsed(Math.max(0, props.now() - (item().started_at_ms || 0)))}
         </span>
       </Show>
-      {/* 详情区（任务 #2 分级展开）：expand 档可折叠看输入/输出，
+      {/* 详情区（分级展开）：expand 档可折叠看输入/输出，
           中间/不展开档保持单行结果摘要形态 */}
       <TimelineDetail item={item()} />
       <Show when={open() && (item().details || []).length > 0}>

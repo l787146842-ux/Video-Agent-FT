@@ -1,7 +1,7 @@
-"""生成动作域（自 action_executor.py 切出，零行为变更；D-01 随执行器下沉 core）。
+"""生成动作域。
 
-承载：生图/分镜视频生成动作（结构化动作 dict 直达，不经文本解析，
-ADR-0001）——参数回退链
+承载：生图/分镜视频生成动作（结构化动作 dict 直达，不经文本解析）——
+参数回退链
 （LLM 指定 → 草稿自身 → 全局设置 → 平台默认）、生成确认闸接入、
 参数回写草稿、任务提交。执行器以参数传入（ex），实例方法壳保留在
 StateOperationExecutor（测试 patch 目标=执行器实例属性，不变）。
@@ -68,9 +68,9 @@ def apply_generate_image(ex: "StateOperationExecutor", action: Dict) -> bool:
     if not pairs:
         return False
 
-    # 用户裁决：模型能力参数唯一权威源 = 全局设置；优先级 =
+    # 模型能力参数唯一权威源 = 全局设置；优先级 =
     # LLM 指定 > 草稿自身（用户在预览框的直接选择）> 全局设置 > 平台默认。
-    # 防前端默认首选供应商（如 Grsai）覆盖全局设置中配置的生图渠道
+    # 防前端默认首选供应商覆盖全局设置中配置的生图渠道
     spec_pid, spec_model = ("", "")
     if not provider_id:
         spec_pid, spec_model = provider_config_port().spec_media_preference(ex.state)
@@ -141,7 +141,7 @@ def apply_generate_video(ex: "StateOperationExecutor", action: Dict) -> bool:
     if not pairs:
         return False
 
-    # 生成前资产绑定检查（任务#12 E-6）：sceneRefs 引用的关键元素
+    # 生成前资产绑定检查：sceneRefs 引用的关键元素
     # 无概念图时整批拦截，先补图再生成
     pairs = ex._gen_asset_binding_gate(pairs)
     if not pairs:

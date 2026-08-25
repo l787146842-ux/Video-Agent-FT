@@ -2,8 +2,8 @@
 
 Skill 文档（data/skills/*.md 或目录包 data/skills/<slug>/<slug>.md）
 仍是唯一数据源与下拉框数据源；平台声明随文档头部 YAML frontmatter
-合一（任务#5，外置 JSON sidecar 已退役）。本注册表保存每个 Skill
-解析后的章节与能力声明清单（任务#36 B5 执行器退役后不再对应已注册
+合一。本注册表保存每个 Skill
+解析后的章节与能力声明清单（不对应已注册
 工具，仅作阶段裁剪/闸机的客观探针）。
 """
 from dataclasses import dataclass, field
@@ -23,12 +23,11 @@ from src.video_agent.skill_runtime.manifest_schema import (
     split_issue_warnings,
 )
 
-# 管线能力词汇表（任务#36 B5：执行器已一步退役，原 SKILL_EXECUTOR_TOOLS/
-# STORYBOARD_STRUCTURE_TOOLS 降级为「章节声明 → 阶段能力」标记，仅供
-# pipeline_orchestrator 阶段裁剪、prompt_gates 音频闸、skill_docs/scan_skills
-# Skill lint 作客观探针；平台不再注册同名工具）。
-# 整改批 2.1：Skill 正文散文已全部清洗为真实工具名（scan_skills --gate
-# 白名单不再豁免本表词汇，散文再现即 FAIL）；模型可见的能力词→真实动作
+# 管线能力词汇表：「章节声明 → 阶段能力」标记，仅供
+# stage_probes 阶段裁剪、prompt_gates 音频闸、skill_docs/scan_skills
+# Skill lint 作客观探针；平台不注册同名工具。
+# Skill 正文散文已全部清洗为真实工具名（scan_skills --gate
+# 白名单不豁免本表词汇，散文再现即 FAIL）；模型可见的能力词→真实动作
 # 对照表唯一表述源 = prompts/planner/system_fc.md「Skill 文档能力词对照」
 # 段——本表增删词汇时须同批同步该段。
 PIPELINE_CAPABILITY_TOOLS = (
@@ -42,7 +41,6 @@ PIPELINE_CAPABILITY_TOOLS = (
 )
 
 # 能力 → 需要的 Skill 章节（stage 键，与 skill_docs.split_skill_sections 对齐）
-# （原 TOOL_STAGES 同数据，随执行器退役改名）
 CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
     "script_analyze": ("planning",),
     "storyboard_key_elements": ("storyboard_ke",),
@@ -53,9 +51,9 @@ CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
     "video_assembler": ("assembly",),
 }
 
-# P3-15 自定义章节通道：frontmatter 顶层声明 custom_sections（章节标识→通道名），
-# 非管线类 Skill 不必套固定 7 章节模板也能声明自定义章节（执行器形态已退役，
-# 现仅作章节声明探针；不参与固定章节词汇表与漂移门禁口径）。
+# 自定义章节通道：frontmatter 顶层声明 custom_sections（章节标识→通道名），
+# 非管线类 Skill 不必套固定 7 章节模板也能声明自定义章节（
+# 仅作章节声明探针；不参与固定章节词汇表与漂移门禁口径）。
 CUSTOM_SECTION_EXECUTOR = "skill_section_run"
 
 # 大阶段展示标签（后端权威下发，随 trace 条目 stage 字段持久化；
@@ -143,9 +141,8 @@ class SkillEntry:
     def available_tools(self) -> List[str]:
         """该 Skill 的管线能力声明清单（对应章节非空才成立）。
 
-        任务#36 B5 执行器退役后：名单不再是已注册工具，而是阶段裁剪/
-        音频闸/lint 的客观探针（同名工具已删除）。
-        P3-15：声明 custom_sections 且任一标识可解析出非空章节时，
+        名单是阶段裁剪/音频闸/lint 的客观探针（非已注册工具）。
+        声明 custom_sections 且任一标识可解析出非空章节时，
         追加自定义章节通道标记。
         """
         tools = [t for t in PIPELINE_CAPABILITY_TOOLS if self.section_for(t)]
@@ -173,7 +170,7 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
     doc = sd.get_skill_doc(slug)
     if not doc:
         return None
-    # 声明唯一源 = 文档头部 frontmatter（任务#5 合一）；manifest 经
+    # 声明唯一源 = 文档头部 frontmatter；manifest 经
     # SkillEntry.manifest 属性活读，注册不快照。章节解析只对剥离声明块
     # 后的正文（YAML 头不是 Skill 正文，不得混入章节/探针）。
     content = frontmatter.strip_frontmatter(doc.get("content") or "")
@@ -188,12 +185,12 @@ def _load_entry(slug: str) -> Optional[SkillEntry]:
 def register_skill(slug: str) -> Optional[SkillEntry]:
     """解析并注册一个 Skill；文档不存在或无法解析时返回 None。
 
-    C4 fail-hard（任务#22）：frontmatter schema 校验失败拒绝注册，替代旧
-    「只告警不阻断」——坏声明不能带病上线，修好 data/skills/<slug>.md
+    fail-hard：frontmatter schema 校验失败拒绝注册——
+    坏声明不能带病上线，修好 data/skills/<slug>.md
     头部 frontmatter 才能注册；单个坏 Skill 拒注册不截断 sync_all 批次。
     消费端 fail-closed 清洗仍保留（兜注册后 frontmatter 被改坏的活读场景）。
 
-    问题分级（任务#5 B-1）：只有错误级问题拒注册；WARN 级（开放注册
+    问题分级：只有错误级问题拒注册；WARN 级（开放注册
     降级/废除键过渡告警）只输出告警日志，不阻断注册。
     """
     entry = _load_entry(slug)
@@ -242,7 +239,7 @@ def refresh_skill(slug: str) -> Optional[SkillEntry]:
 def sync_all(force: bool = False) -> int:
     """启动/首次使用时全量注册 data/skills 下的 Skill（幂等，可重复调用）。
 
-    插件包约定双形态（任务#5）：单文件 <slug>.md 与目录包
+    插件包约定双形态：单文件 <slug>.md 与目录包
     <slug>/<slug>.md（包内其余文件为资源）同等扫描。
     直接扫描 SKILL_DOCS_DIR，不经过 list_skill_docs/ensure_default_skill_docs，
     避免与文档系统互相递归。
@@ -269,8 +266,8 @@ def sync_all(force: bool = False) -> int:
     )
     seen_canon: Dict[str, str] = {}
     for slug in slugs:
-        # v2 收尾：canonical 身份碰撞拒注册（计划§6：alias 必须显式
-        # 登记；归一碰撞 = 配置错误，不得双注册同身份 Skill）。
+        # canonical 身份碰撞拒注册：alias 必须显式
+        # 登记；归一碰撞 = 配置错误，不得双注册同身份 Skill。
         canon = _norm_name(slug)
         if canon in seen_canon:
             logger.error(
@@ -279,7 +276,7 @@ def sync_all(force: bool = False) -> int:
             continue
         try:
             # fail-hard 拒注册的 Skill 不计入、不占 canonical 身份
-            #（C4：schema 违规 = 未注册，身份留给修复后的合法文件）
+            #（schema 违规 = 未注册，身份留给修复后的合法文件）
             if _load_entry(slug) is not None and register_skill(slug) is not None:
                 seen_canon[canon] = slug
                 count += 1
@@ -320,7 +317,7 @@ def list_entries() -> List[SkillEntry]:
 
 
 def _norm_name(s: str) -> str:
-    """名称归一化（canonical 身份，Rule2 v6）：小写 + 去空格/连字符/
+    """名称归一化（canonical 身份）：小写 + 去空格/连字符/
     下划线/扩展名——「AI短剧一站式生成」与「AI-短剧一站式生成」同身份。"""
     return (
         (s or "").strip().casefold()
@@ -332,7 +329,7 @@ def _norm_name(s: str) -> str:
 def resolve_entry(wanted: str) -> Optional[SkillEntry]:
     """按 Skill 名称/别名模糊定位注册条目（精确 → 归一化相等 → 双向包含）。
 
- ：包含匹配收紧为**唯一命中才返回**——近似名 Skill 并存时
+    包含匹配收紧为**唯一命中才返回**——近似名 Skill 并存时
     （如「古风甜宠短剧」vs「古风短剧」）多命中记 warning 并返回 None，
     宁可要求选准也不静默错配。
     """
@@ -400,24 +397,22 @@ def skill_flow_enabled(skill_name: str, key: str) -> bool:
 
 
 def spec_wizard_active(skill_name: str) -> bool:
-    """规格向导启用判定（frontmatter 唯一源，文本启发式退役）。
+    """规格向导启用判定（frontmatter 唯一源）。
 
-    frontmatter flow.spec_wizard 显式声明；未声明 = 不启用（引擎零预设）。
-    存量 Skill 的现值已由迁移脚本冻结进 frontmatter。"""
+    frontmatter flow.spec_wizard 显式声明；未声明 = 不启用（引擎零预设）。"""
     manifest = skill_manifest_of(skill_name)
     return bool(((manifest or {}).get("flow") or {}).get("spec_wizard"))
 
 
 def script_required_active(skill_name: str) -> bool:
-    """剧本原料闸启用判定（frontmatter 唯一源，文本启发式退役）。
+    """剧本原料闸启用判定（frontmatter 唯一源）。
 
-    frontmatter flow.script_required 显式声明；未声明 = 不启用。
-    存量 Skill 的现值已由迁移脚本冻结进 frontmatter。"""
+    frontmatter flow.script_required 显式声明；未声明 = 不启用。"""
     manifest = skill_manifest_of(skill_name)
     return bool(((manifest or {}).get("flow") or {}).get("script_required"))
 
 
-# ---------- v3 声明读取 API（任务#35 B2：requires_inputs/kind/language 消费） ----------
+# ---------- v3 声明读取 API（requires_inputs/kind/language 消费） ----------
 # 与 spec_wizard_active/script_required_active 同模块属性访问模式（调用方经
 # registry.<fn> 引用，测试 patch 目标稳定）；未声明 = 零预设（空表/空串/空 dict），
 # 非法声明项 fail-closed 丢弃（注册期告警在 validate_manifest，消费侧不二次报错）。
@@ -452,19 +447,19 @@ def skill_requires_inputs(skill_name: str) -> List[Dict[str, Any]]:
 def skill_kind(skill_name: str) -> str:
     """manifest kind 声明（v3：pipeline|style|reference）；未声明/非已知值返回空串。
 
-    展示/消费口径；注入策略解析用 skill_injection_kind（任务#5 B-1：
+    展示/消费口径；注入策略解析用 skill_injection_kind（
     未知 kind 开放注册降级，不返回空串而返回默认策略）。"""
     manifest = skill_manifest_of(skill_name)
     v = (manifest or {}).get("kind")
     return str(v) if v in KIND_VALUES else ""
 
 
-# 默认注入策略（未声明 kind / 未知 kind 开放注册降级同口径，任务#5 B-1）
+# 默认注入策略（未声明 kind / 未知 kind 开放注册降级同口径）
 DEFAULT_INJECTION_KIND = "pipeline"
 
 
 def skill_injection_kind(skill_name: str) -> str:
-    """注入策略维度解析（任务#5 B-1：kind 只管注入策略这一个维度）。
+    """注入策略维度解析（kind 只管注入策略这一个维度）。
 
     已知 kind（pipeline/style/reference）直接返回；声明了未知 kind
     降级为默认（pipeline）策略并输出告警（开放注册，不拒服务）；
@@ -531,8 +526,8 @@ def match_skill_name_from_text(text: str) -> str:
     return matched
 
 
-# ---------- （审核）：pause 声明解析下沉 ----------
-# 原属 web/skill_docs；guard 需顶层消费，为避免 skill_runtime→web 反向依赖下沉本包；
+# ---------- pause 声明解析下沉 ----------
+# guard 需顶层消费，为避免 skill_runtime→web 反向依赖下沉本包；
 # web/skill_docs 保留 re-export（兼容既有导入路径）。
 _PAUSE_RULES_BLOCK_RE = re.compile(
     r"```(?:json|js)?\s*pause_rules\s*\n(.*?)```", re.S | re.I

@@ -1,11 +1,10 @@
 """
-有界并发通道（任务#11 拆分清偿，2026-08-23：generation.py 三段之二）。
+有界并发通道（generation.py 三段之二）。
 
 BoundedChannel 三件套：信号量 + 429 退避 + 连败熔断。
-自生图单点节流抽为通用通道并推广到媒体生成族（P3-13）：
 image/video/audio 三通道各自独立信号量与熔断台账，互不干扰。
 有界并发只作用于「模型发起的执行器批内部」的供应商调用，
-runtime 自身不发起生成（ADR-0004）。
+runtime 自身不发起生成。
 """
 import asyncio
 import time

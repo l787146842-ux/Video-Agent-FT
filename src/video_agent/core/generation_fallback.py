@@ -1,10 +1,8 @@
-"""生成侧降级链（整改批 3.3 自 web/generation_dispatch 下沉）。
+"""生成侧降级链。
 
 职责：同模型跨厂商 fallback 候选链 + 失败可重试性判定。
-依赖全部在 core/config 层（settings + core/provider_config），无 web 依赖——
-tools/video/generate_video 曾以方法内延迟导入消费 web 层私有版本
-（tools→web 反向依赖，批 3.3 清偿）；web/generation_dispatch 保留薄
-re-export 壳（web 消费方零改动）。
+依赖全部在 core/config 层（settings + core/provider_config），无 web 依赖；
+web/generation_dispatch 保留薄 re-export 壳（web 消费方零改动）。
 """
 from typing import List
 

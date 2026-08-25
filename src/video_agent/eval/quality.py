@@ -1,5 +1,5 @@
 """
-产出质量评估集 — /666 样本回归 + LLM-as-judge。
+产出质量评估集 — 样本回归 + LLM-as-judge。
 
 本地检查（确定性）：闸机规则 / 确认闭环 / SSRF / with_retry 等可直接断言；
 LLM 检查（judge 模式）：把场景发给 LLM，用 judge 提示词判定行为是否合规。

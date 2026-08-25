@@ -22,7 +22,7 @@ from loguru import logger
 from src.video_agent.config import settings
 from src.video_agent.utils.paths import DATA_DIR
 
-# reasoning 文本持久化长度（仅展示用，防 trace 膨胀；：保留尾部，头部省略）
+# reasoning 文本持久化长度（仅展示用，防 trace 膨胀；保留尾部，头部省略）
 _REASONING_HEAD_NOTE = "…（前文思考已截断）"
 
 
@@ -30,9 +30,6 @@ _REASONING_HEAD_NOTE = "…（前文思考已截断）"
 class _TraceContextState:
     """单任务上下文的追踪态（ContextVar 持有，并行任务各持一份互不串线）。
 
-    串线缺陷根因（#16）：旧实现以实例属性存「当前 trace」，SSE 断连后
-    任务转后台继续跑、用户同时开新会话时两个任务互相覆盖；改为随
-    contextvar 隔离（先例：StateManager._task_state_var / create_task_bound），
     asyncio 任务创建时自动拷贝上下文，后台 worker 与新会话各写各的。
     """
     current: Optional["TraceRecord"] = None  # 本上下文当前 trace
@@ -46,7 +43,7 @@ class _TraceContextState:
     pending_subs: List[Dict[str, Any]] = field(default_factory=list)
     # 轮前机械动作缓冲（先于 start_trace，start_trace 时收养进当轮时间线）
     pre_actions: List[Dict[str, Any]] = field(default_factory=list)
-    # 上下文治理事件（P4 降级事件化：truncate/degrade/compact/prune）——
+    # 上下文治理事件（降级事件化：truncate/degrade/compact/prune）——
     # 内存采集、end_trace 随 step 落盘；热路径零磁盘 IO。
     # pending 不在 start_step 重置（跨步累积，end_step 归档）；
     # pre_* 缓冲轮前事件（如 compaction 先于 start_trace），随 start_trace 收养
@@ -70,11 +67,11 @@ class StepTrace:
     finish_reason: str = ""
     # 本轮执行的操作明细（工具/ studio-actions），供前端时间线逐条展示
     actions: List[Dict[str, Any]] = field(default_factory=list)
-    # 本轮闸机判定明细（恢复：rule_id/层/结果/是否被申诉放行），供审计与前端展示
+    # 本轮闸机判定明细（rule_id/层/结果/是否被申诉放行），供审计与前端展示
     gates: List[Dict[str, Any]] = field(default_factory=list)
     # 本轮轮末卡片仲裁明细（候选策略/胜出者），供 /api/agent/traces 审计
     card_decisions: List[Dict[str, Any]] = field(default_factory=list)
-    # 本轮上下文治理事件（P4：truncate/degrade/compact/prune，无则不落盘省体积）
+    # 本轮上下文治理事件（truncate/degrade/compact/prune，无则不落盘省体积）
     context_events: List[Dict[str, Any]] = field(default_factory=list)
     # 本轮 reasoning（深度思考）文本摘要（截断后）
     reasoning: str = ""
@@ -127,7 +124,7 @@ class AgentTracer:
     追踪器（单例）—— 内存保留最近 N 条 + JSONL 文件持久化。
     文件超限自动轮转（保留 trace_rotation_keep 份），重载按 trace_id 去重。
 
-    并发隔离（#16）：「当前 trace」及各 step 缓冲随 contextvar 按上下文持有，
+    并发隔离：「当前 trace」及各 step 缓冲随 contextvar 按上下文持有，
     后台任务转续与新会话并行时 span 归属各自正确（全局流：traces/gates/
     control_flow/fallback 仍实例共享，属进程级审计口径，与任务归属无关）。
     """
@@ -137,10 +134,9 @@ class AgentTracer:
 
     def __init__(self):
         self._traces: Deque[TraceRecord] = deque(maxlen=self.MAX_TRACES)
-        # 全局闸机判定流（恢复审计）：不依附单次 trace，供 /api/agent/gates 调试端点
+        # 全局闸机判定流（审计）：不依附单次 trace，供 /api/agent/gates 调试端点
         self._recent_gates: Deque[Dict[str, Any]] = deque(maxlen=100)
-        # 控制流结构化事件流（分诊/阶段批/交接/回收）——
-        # 教训：路由决策无日志可查只能考古；控制流必须可观测
+        # 控制流结构化事件流（分诊/阶段批/交接/回收）——控制流必须可观测
         self._control_flow: Deque[Dict[str, Any]] = deque(maxlen=200)
         # 模型降级事件计数（fallback 频率指标；record_fallback 写入）
         self._fallback_events: Deque[Dict[str, Any]] = deque(maxlen=200)
@@ -295,7 +291,7 @@ class AgentTracer:
     def record_pre_turn(
         self, name: str, summary: str = "", elapsed_ms: float = 0.0, ok: bool = True,
     ) -> None:
-        """轮前机械动作登记：缓冲待 start_trace 收养（Rule2 v6）。
+        """轮前机械动作登记：缓冲待 start_trace 收养。
 
         开场编排（向导机械落盘等）先于 agent_loop.start_trace 发生，
         直记 record_action 会落进上一轮残迹被清空——轮前缓冲根治。"""
@@ -323,7 +319,7 @@ class AgentTracer:
         message: str = "",
         scope: str = "",
     ) -> None:
-        """记录一条闸机判定（恢复审计）：归档到当前 step + 全局调试流"""
+        """记录一条闸机判定（审计）：归档到当前 step + 全局调试流"""
         entry = {
             "ts": time.time(),
             "rule_id": rule_id,
@@ -343,9 +339,9 @@ class AgentTracer:
             ctx.pending_gates.append(entry)
 
     def record_control_flow(self, event: str, detail: str = "", skill_name: str = "") -> None:
-        """：控制流结构化事件（分诊 triage / 阶段批 stage_batch /
+        """控制流结构化事件（分诊 triage / 阶段批 stage_batch /
         交接 handoff / 回收 reclaim / 发卡 card）——滚动保留，调用方同步打日志，
-        控制流决策永不无据可查（教训）。"""
+        控制流决策永不无据可查。"""
         self._control_flow.append({
             "ts": time.time(),
             "event": str(event or ""),
@@ -363,7 +359,7 @@ class AgentTracer:
         candidates: List[str],
         winner: str,
     ) -> None:
-        """ （#4 仲裁可观测）：记录一次轮末卡片仲裁——
+        """记录一次轮末卡片仲裁——
         全部命中候选策略 + 胜出者，随 step 归档，/api/agent/traces 可审计。"""
         ctx = self._ctx()
         if ctx.current is None:
@@ -376,7 +372,7 @@ class AgentTracer:
         })
 
     def record_context_event(self, kind: str, detail: str = "") -> None:
-        """（P4 降级事件化）记录一次上下文治理事件：
+        """记录一次上下文治理事件：
         kind ∈ truncate（轮组截断）/ degrade（system 降级保险丝）/
         compact（会话 compaction）/ prune（回喂剪枝）。
 
@@ -400,21 +396,21 @@ class AgentTracer:
             logger.debug(f"[Tracer] context event 记录失败（忽略）: {e}")
 
     def record_fallback(self, provider: str, model: str) -> None:
-        """：记录一次模型降级切换（fallback 频率指标；内存滚动保留）。"""
+        """记录一次模型降级切换（fallback 频率指标；内存滚动保留）。"""
         self._fallback_events.append({
             "ts": time.time(), "provider": provider, "model": model,
         })
 
     def record_llm_call(self) -> None:
-        """（审核）：当前 trace 模型调用 +1——成本看板平均耗时仅聚合含模型调用的轮。"""
+        """当前 trace 模型调用 +1——成本看板平均耗时仅聚合含模型调用的轮。"""
         current = self._ctx().current
         if current is not None:
             current.llm_calls += 1
 
     def metrics(self) -> Dict[str, Any]:
-        """：成本看板聚合（内存 + 文件 trace，按 trace_id 去重）。
+        """成本看板聚合（内存 + 文件 trace，按 trace_id 去重）。
 
-        ：平均耗时仅聚合 llm_calls>0 的 trace（零模型调用的引导卡/直出卡
+        平均耗时仅聚合 llm_calls>0 的 trace（零模型调用的引导卡/直出卡
         不再拉低均值）；旧 trace 无 llm_calls 字段时回落全量口径。
         """
         traces = self.get_recent_traces(limit=200)
@@ -510,7 +506,7 @@ class AgentTracer:
 
     def _rotate_if_needed(self) -> None:
         max_bytes = int(getattr(settings, "trace_file_max_bytes", 2_000_000))
-        # 运行时残留策略（#16）：保留份数收紧为 2 份（原 3 份）——
+        # 运行时残留策略：保留份数收紧为 2 份——
         # trace 仅供近期审计/重建，历史归档归文件备份，不留过多残留
         keep = int(getattr(settings, "trace_rotation_keep", 2))
         try:

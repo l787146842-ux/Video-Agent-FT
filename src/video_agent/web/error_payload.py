@@ -1,30 +1,31 @@
 """
-ErrorPayload — 统一错误语义契约（任务 #19）。
+ErrorPayload — 统一错误语义契约。
 
-此前前端对错误文案做正则猜测（/401|403|token|鉴权/）决定交互动作，
-与 SSE error_code 通道并存两套机制。本模块把错误语义结构化为单一契约，
 后端 HTTP 错误响应与 SSE error 事件共用同一结构：
 
     { "code": "err.auth.invalid_key", "kind": "auth", "message": "...", "raw": "..." }
 
 - kind（归类，封闭集合）：auth / quota / network / upstream / content / unknown
 - code（命名空间 err.<kind>.<slug>，可扩展）：前端按 code/kind 做动作映射，
-  不再猜测文案。
+  不猜测文案。
 - message：面向用户的人话（中文），raw：上游原始报文（折叠展示，可空）。
   raw 字段面向本机可信场景，公网部署前需评估脱敏。
 
 SSE error 事件在既有字段（type/detail/error_code/raw）之上追加 code/kind/message，
 不破坏既有事件格式；HTTP 错误响应体在 detail/error_code 之上追加同名字段。
-前端镜像见 src/web/lib/error-payload.ts（两侧 kind 集合与 code 命名空间同批维护）。
+前端镜像已契约生成化：kind 集合与 legacy code 映射经
+scripts/gen_api_types.py 的 sidecar 导出为前端 TS 常量（单一事实源），
+src/web/lib/error-payload.ts 消费生成物，不再两侧人工同批维护。
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
 
 from src.video_agent.exceptions import AdapterError
 
-# ---------- kind 归类（封闭集合；前端 error-payload.ts 镜像，改动需双侧同批） ----------
+# ---------- kind 归类（封闭集合；经 sidecar 导出前端，改动自动生成同步） ----------
 KIND_AUTH = "auth"        # 鉴权失败（401/403、Key 无效/过期）
 KIND_QUOTA = "quota"      # 额度/限流（429、余额不足、预扣费失败）
 KIND_NETWORK = "network"  # 网络层（超时、断连、DNS）
@@ -47,16 +48,18 @@ CODE_UPSTREAM_RELAY_REJECTED = "err.upstream.relay_rejected"  # 中继拒收通�
 CODE_CONTENT_POLICY = "err.content.policy"            # 内容策略拒答
 CODE_UNKNOWN = "err.unknown"                          # 兜底
 
-# ---------- 非流式契约类出口的 legacy error_code（P9 错误出口统一） ----------
+# ---------- 非流式契约类出口的 legacy error_code（错误出口统一） ----------
 # 未登记 _LEGACY_CODE_MAP → kind=unknown、code=err.unknown.<slug>（前端无特殊
 # affordance，仅展示友好文案），命名与既有码无冲突（先查后用）
 LEGACY_VALIDATION_ERROR = "VALIDATION_ERROR"  # 400 用户输入/契约校验不合法
 LEGACY_NOT_FOUND = "NOT_FOUND"                # 404 资源不存在
 
 
-@dataclass(frozen=True)
-class ErrorPayload:
-    """统一错误负载（HTTP 响应与 SSE 事件共用）"""
+class ErrorPayload(BaseModel):
+    """统一错误负载（HTTP 响应与 SSE 事件共用；Pydantic 建模供
+    sidecar 导出 TS 契约，发射/消费行为不变）"""
+
+    model_config = ConfigDict(frozen=True)
 
     code: str
     kind: str
@@ -83,8 +86,9 @@ class ErrorPayload:
 
 
 # ---------- 既有（legacy）error_code → kind/code 映射 ----------
-# 旧通道 error_code 未下线期间的归类桥接；未登记者归 unknown（code 附 slug 可读）
-_LEGACY_CODE_MAP = {
+# 旧通道 error_code 未下线期间的归类桥接；未登记者归 unknown（code 附 slug 可读）。
+# 公开常量：sidecar 导出前端桥接表的单一事实源。
+LEGACY_CODE_MAP = {
     "UNAUTHORIZED": (KIND_AUTH, CODE_AUTH_INVALID_KEY),
     "FORBIDDEN_ORIGIN": (KIND_AUTH, CODE_AUTH_FORBIDDEN_ORIGIN),
     "RATE_LIMITED": (KIND_QUOTA, CODE_QUOTA_RATE_LIMITED),
@@ -141,8 +145,8 @@ def _upstream_status(exc: Exception) -> Optional[int]:
 def classify_legacy_code(legacy_code: str, message: str = "", raw: str = "") -> ErrorPayload:
     """仅凭既有 error_code 归类（DUPLICATE_REQUEST 等 worker 直发场景）"""
     code = (legacy_code or "").strip()
-    if code in _LEGACY_CODE_MAP:
-        kind, new_code = _LEGACY_CODE_MAP[code]
+    if code in LEGACY_CODE_MAP:
+        kind, new_code = LEGACY_CODE_MAP[code]
         return ErrorPayload(code=new_code, kind=kind, message=message, raw=raw)
     slug = code.lower() if code else "internal"
     return ErrorPayload(code=f"{CODE_UNKNOWN}.{slug}", kind=KIND_UNKNOWN, message=message, raw=raw)
@@ -160,44 +164,44 @@ def classify_exception(exc: Exception, *, message: Optional[str] = None, raw: st
 
     # 1) 额度不足（文案特征优先，上游常以 400 包裹）
     if any(h in msg or h in low for h in _QUOTA_HINTS):
-        return ErrorPayload(CODE_QUOTA_INSUFFICIENT, KIND_QUOTA, msg, raw)
+        return ErrorPayload(code=CODE_QUOTA_INSUFFICIENT, kind=KIND_QUOTA, message=msg, raw=raw)
     # 2) 中继拒收（可在 403 状态上出现，须先于鉴权分支）
     if any(h in msg or h in low for h in _RELAY_HINTS):
-        return ErrorPayload(CODE_UPSTREAM_RELAY_REJECTED, KIND_UPSTREAM, msg, raw)
+        return ErrorPayload(code=CODE_UPSTREAM_RELAY_REJECTED, kind=KIND_UPSTREAM, message=msg, raw=raw)
     # 3) 上游 HTTP 状态归类
     if isinstance(status, int):
         if status in (401, 403):
             code = CODE_AUTH_INVALID_KEY if status == 401 else CODE_AUTH_FORBIDDEN
-            return ErrorPayload(code, KIND_AUTH, msg, raw)
+            return ErrorPayload(code=code, kind=KIND_AUTH, message=msg, raw=raw)
         if status == 429:
-            return ErrorPayload(CODE_QUOTA_RATE_LIMITED, KIND_QUOTA, msg, raw)
+            return ErrorPayload(code=CODE_QUOTA_RATE_LIMITED, kind=KIND_QUOTA, message=msg, raw=raw)
         if 500 <= status < 600:
-            return ErrorPayload(CODE_UPSTREAM_SERVER, KIND_UPSTREAM, msg, raw)
+            return ErrorPayload(code=CODE_UPSTREAM_SERVER, kind=KIND_UPSTREAM, message=msg, raw=raw)
     # 4) 内容策略拒答
     if any(h in msg or h in low for h in _CONTENT_HINTS):
-        return ErrorPayload(CODE_CONTENT_POLICY, KIND_CONTENT, msg, raw)
+        return ErrorPayload(code=CODE_CONTENT_POLICY, kind=KIND_CONTENT, message=msg, raw=raw)
     # 5) 网络层（异常类型优先，文案关键词次之；须先于泛化 error_code 桥接，
     #    否则 AdapterError 默认 ADAPTER_ERROR 会把超时/断连吞进 upstream）
     _net = _network_exception_code(exc)
     if _net:
-        return ErrorPayload(_net, KIND_NETWORK, msg, raw)
+        return ErrorPayload(code=_net, kind=KIND_NETWORK, message=msg, raw=raw)
     if any(h in low for h in _NETWORK_HINTS):
         code = CODE_NETWORK_TIMEOUT if ("timeout" in low or "timed out" in low) else CODE_NETWORK_CONNECTION
-        return ErrorPayload(code, KIND_NETWORK, msg, raw)
+        return ErrorPayload(code=code, kind=KIND_NETWORK, message=msg, raw=raw)
     # 6) 既有 error_code 桥接
     if legacy_code:
         return classify_legacy_code(legacy_code, msg, raw)
     # 7) 兜底
-    return ErrorPayload(CODE_UNKNOWN, KIND_UNKNOWN, msg, raw)
+    return ErrorPayload(code=CODE_UNKNOWN, kind=KIND_UNKNOWN, message=msg, raw=raw)
 
 
 def classify_http_status(status: int, message: str = "", raw: str = "") -> ErrorPayload:
     """仅凭 HTTP 状态码归类（中间件直发场景，如 API Key 校验 401）"""
     if status in (401, 403):
         code = CODE_AUTH_INVALID_KEY if status == 401 else CODE_AUTH_FORBIDDEN
-        return ErrorPayload(code, KIND_AUTH, message, raw)
+        return ErrorPayload(code=code, kind=KIND_AUTH, message=message, raw=raw)
     if status == 429:
-        return ErrorPayload(CODE_QUOTA_RATE_LIMITED, KIND_QUOTA, message, raw)
+        return ErrorPayload(code=CODE_QUOTA_RATE_LIMITED, kind=KIND_QUOTA, message=message, raw=raw)
     if isinstance(status, int) and status >= 500:
-        return ErrorPayload(CODE_UPSTREAM_SERVER, KIND_UPSTREAM, message, raw)
-    return ErrorPayload(CODE_UNKNOWN, KIND_UNKNOWN, message, raw)
+        return ErrorPayload(code=CODE_UPSTREAM_SERVER, kind=KIND_UPSTREAM, message=message, raw=raw)
+    return ErrorPayload(code=CODE_UNKNOWN, kind=KIND_UNKNOWN, message=message, raw=raw)

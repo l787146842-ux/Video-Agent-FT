@@ -1,5 +1,5 @@
 /**
- * ChatMessageItem 渲染分支与 hover 动作补强（任务 #13 F0 安全绳扩围）。
+ * ChatMessageItem 渲染分支与 hover 动作补强。
  * 主交互契约见 ChatMessageItem.test.tsx（前端 250 行红线拆分）。
  *
  * 钉死契约：

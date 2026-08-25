@@ -1,4 +1,4 @@
-"""MCP 接入层：连接管理（任务#37 B4 §2.5 client.py）。
+"""MCP 接入层：连接管理。
 
 基于 mcp SDK 的懒连接客户端：首次需要才建连/起子进程；工具清单
 健康缓存（仿 canvas_health_cache_seconds 模式）；任何异常统一收敛为

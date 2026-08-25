@@ -1,5 +1,5 @@
 """
-TurnExecutor — 单轮 LLM 调用 + FC 响应消费 + 回喂治理（D-02 planner 拆分切出）。
+TurnExecutor — 单轮 LLM 调用 + FC 响应消费 + 回喂治理。
 
 职责边界（内聚三件）：
 - 单轮执行 llm_call：流式/非流式主模型调用、协作式停止检查点、
@@ -41,14 +41,14 @@ from src.video_agent.core.tracer import AgentTracer
 
 
 class TurnExecutor:
-    """单轮执行器（planner 拆分的协作臂；职责边界见模块 docstring）。
+    """单轮执行器（职责边界见模块 docstring）。
 
     构造时持 Planner 实例引用；每轮 handle_message 先重置轮级属性，
     再 bind_turn 装配本轮收集器后把 llm_call 委托进 run_agent_loop。
     记忆摘要路径复用 call_llm（预算管线与主调用同一实现）。
     直驱自洽：未经 bind_turn 直接调 llm_call（测试/工具）时，
-    tracer 现场回落 get_instance()、收集器回落构造期默认空列表，
-    与旧 planner 闭包实现的自洽性对齐（仅 _context 需调用方提供）。
+    tracer 现场回落 get_instance()、收集器回落构造期默认空列表
+    （仅 _context 需调用方提供）。
     """
 
     def __init__(self, planner: Any):
@@ -103,7 +103,7 @@ class TurnExecutor:
     async def call_llm(self, system: str, messages: List[Dict[str, Any]]) -> ChatResponse:
         """
         LLM 调用（§2.2）：支持 function calling 的 adapter 传入 tool schemas；
-        不支持的（mock/演示）纯文本调用（4-4 后不再作为生产动作通道）。
+        不支持的（mock/演示）纯文本调用。
         """
         p = self.planner
         full_messages = [{"role": "system", "content": system}] + messages
@@ -114,7 +114,7 @@ class TurnExecutor:
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
         max_tokens = int(self.context_window() * settings.token_budget_ratio)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=p._system_degrader)
-        # 实时上下文度量（反馈）：截断后的真实消息记入 live 注册表，
+        # 实时上下文度量：截断后的真实消息记入 live 注册表，
         # context-usage 接口推理中即可看到用量随轮次增长
         record_live_context(p.state_manager.active_project_id, full_messages)
 
@@ -131,7 +131,7 @@ class TurnExecutor:
             )
         else:
             # 模式 B：纯文本对话（adapter 不支持 function calling 的保底通道；
-            # 不携带工具调用，文本轨不产生动作——动作通道唯一 = 工具调用，ADR-0001）
+            # 不携带工具调用，文本轨不产生动作——动作通道唯一 = 工具调用）
             return await p.llm_adapter.chat(
                 full_messages, timeout=settings.llm_timeout,
                 thinking_level=getattr(p, "_chat_thinking_level", "") or "",
@@ -147,7 +147,7 @@ class TurnExecutor:
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
         max_tokens = int(self.context_window() * settings.token_budget_ratio)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=p._system_degrader)
-        # 实时上下文度量（反馈）：同 call_llm，推理中用量可见
+        # 实时上下文度量：同 call_llm，推理中用量可见
         record_live_context(p.state_manager.active_project_id, full_messages)
 
         if p.llm_adapter is None:
@@ -183,7 +183,7 @@ class TurnExecutor:
 
     async def llm_call(self, system_prompt: str, messages: List[Dict[str, Any]], hook=None) -> tuple:
         # 主模型调用计数（成本看板平均耗时口径）；未 bind_turn 直驱时
-        # 现场回落单例（与旧 planner 闭包实现自洽性对齐）
+        # 现场回落单例
         tracer = self._tracer or AgentTracer.get_instance()
         tracer.record_llm_call()
         context = self._context
@@ -191,7 +191,7 @@ class TurnExecutor:
         # _handle_fc_response 写入本 holder，随 5 元组上抛 agent_loop，
         # 不再合成 studio-actions 文本块回绕解析（对齐 AskUserQuestion 范式）
         _confirm_holder: Dict[str, Any] = {}
-        # 纯规划计时（反馈）：只量模型流/调用本身，FC 工具执行时间
+        # 纯规划计时：只量模型流/调用本身，FC 工具执行时间
         # 不计入规划条目，避免规划行虚高掩盖工具耗时
         _t_plan = time.monotonic()
         # 流式路径：使用 chat_stream + hook 回调
@@ -202,14 +202,13 @@ class TurnExecutor:
             # 透明度兑现：流内 usage 机会性收集（中继未下发则 0）
             _stream_usage_tokens = 0
             async for chunk in self.call_llm_stream(system_prompt, messages):
-                # 协作式停止（任务 #17）：流式消费中命中停止标志即提前断流，
+                # 协作式停止：流式消费中命中停止标志即提前断流，
                 # 不再继续烧 token；后续阶段判定/收尾归 agent_loop 检查点
                 if is_stop_requested(context.stop_scope):
                     break
                 if chunk.type == "text_delta" and chunk.text:
                     content_parts.append(chunk.text)
-                    # 单轨化：确认走结构化 workflow_pause 工具，
-                    # studio-actions 文本块通道已退役（ADR-0001）——
+                    # 确认走结构化 workflow_pause 工具——
                     # 正文原样透传，流式抑制器同批下账
                     await hook(chunk.text)
                 elif chunk.type == "reasoning_delta" and chunk.text:
@@ -238,7 +237,7 @@ class TurnExecutor:
             response = await self.call_llm(system_prompt, messages)
             plan_ms = (time.monotonic() - _t_plan) * 1000
 
-        # 检查点（工具批执行前，任务 #17）：模型已返回 tool_calls 但尚未执行，
+        # 检查点（工具批执行前）：模型已返回 tool_calls 但尚未执行，
         # 命中停止标志即抛 AgentStoppedError（agent_loop 捕获后干净收尾）；
         # 停止信号不经 fc_tool_runner 闸机传递，只在循环边界拦截
         if response.tool_calls and is_stop_requested(context.stop_scope):

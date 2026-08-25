@@ -1,4 +1,4 @@
-"""文档/媒体动作域（自 action_executor.py 切出，零行为变更；任务 24 P7-3）。
+"""文档/媒体动作域。
 
 承载：write_document（项目文档工件写入/更新）、bind_asset（素材绑定）、
 clear_media（卡片媒体清空）、insert_chat_media（故事板媒体 → 前端对话

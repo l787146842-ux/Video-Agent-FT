@@ -21,9 +21,9 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.utils.paths import DATA_DIR
 from src.video_agent.web.task_store import TaskStore
 
-# 任务 #24：任务表持久化单源收敛 —— data/generation_tasks.json 停写，
-# 落盘迁入 workspace/state.sqlite3 kv 表（事务性，见 task_store）；
-# 旧文件仅作首启一次性导入兜底，导入后保留只读一个版本周期
+# 任务表持久化单源收敛 —— 落盘走 workspace/state.sqlite3 kv 表
+# （事务性，见 task_store）；旧 JSON 文件仅作首启一次性导入兜底，
+# 导入后保留只读一个版本周期
 _STORE_KEY = "generation_tasks"
 
 
@@ -267,13 +267,13 @@ class GenerationTaskManager:
             self._tasks[t["task_id"]] = t
             recovered += 1
         if isinstance(logs, list):
-            # 容量保护（E-3）：恢复路径同样收敛至写入侧上限，
+            # 容量保护：恢复路径同样收敛至写入侧上限，
             # 防止历史超限载荷只进不出
             self._gen_logs = [l for l in logs if isinstance(l, dict)][:_GEN_LOG_MAX]
         if recovered:
             logger.info(f"[TaskManager] 已恢复 {recovered} 个任务（中断任务已标记 failed）")
-        # 数据 TTL——启动恢复后立即清理过期/超量任务（此前仅创建时清理，
-        # 历史任务记录只进不出；gen 日志保留，任务表按 TTL 收敛）
+        # 数据 TTL——启动恢复后立即清理过期/超量任务
+        # （gen 日志保留，任务表按 TTL 收敛）
         try:
             self._purge_stale()
         except Exception as e:
@@ -332,7 +332,7 @@ def get_task_manager() -> GenerationTaskManager:
 
 
 def snapshot_inflight_generations() -> List[Dict[str, Any]]:
-    """在途外部生成任务快照（端到端中断协议，任务 #17）。
+    """在途外部生成任务快照（端到端中断协议）。
 
     停止路径调用：列出仍在 processing/pending 的图片/视频生成任务。
     第一版不做真实撤销（供应商侧无统一取消通道），只登记 + 文案告知

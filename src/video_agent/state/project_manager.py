@@ -57,7 +57,7 @@ class ProjectManager:
 
     def create_project(self, name: str, active_id: str) -> str:
         """新建项目：冲刷当前挂起变更 → 创建新项目 → 更新索引 → 返回 project_id"""
-        # 冲刷当前项目挂起变更（不脏不写；：不再内存全量回写）
+        # 冲刷当前项目挂起变更（不脏不写）
         if active_id:
             self._flush_state()
 
@@ -103,7 +103,7 @@ class ProjectManager:
         if project_id == active_id:
             return True
 
-        # 冲刷当前项目挂起变更（不脏不写；：不再内存全量回写）
+        # 冲刷当前项目挂起变更（不脏不写）
         if active_id:
             self._flush_state()
 

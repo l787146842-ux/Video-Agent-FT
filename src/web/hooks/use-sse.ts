@@ -1,5 +1,5 @@
 /**
- * Agent 后台任务流式订阅——Solid 响应式封装层（任务 #18 瘦身）。
+ * Agent 后台任务流式订阅——Solid 响应式封装层。
  *
  * 连接状态机纯逻辑在 lib/sse-connection（归属/重连调度/终态清理顺序），
  * 事件路由在 lib/sse-events（replay 快照 → 增量）；本文件只做 signal 接线、

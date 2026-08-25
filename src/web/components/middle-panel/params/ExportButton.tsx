@@ -1,6 +1,6 @@
 /**
  * 导出下拉按钮：导出到文件夹（浏览器下载）/ 导出到画布（手动画布选择器）
- * ——自 ParamBase 切出（任务 #15 白名单清偿），行为零变更。
+ * ——自 ParamBase 切出，行为零变更。
  */
 import { For, createSignal, createEffect, createResource, onCleanup } from 'solid-js';
 import { FiDownload, FiGrid, FiChevronUp, FiChevronRight } from 'solid-icons/fi';

@@ -1,4 +1,4 @@
-"""system prompt 组装（从 planner.py 拆出， 文件瘦身）。
+"""system prompt 组装。
 
 承载：协议/Skill 目录/选中草稿/状态 JSON/选中 Skill 全文（含分阶段聚焦块）的组装。
 段落顺序：稳定内容在前，状态 JSON 殿后；选中 Skill 全文放在最末尾（近生成端，
@@ -13,18 +13,17 @@ from loguru import logger
 
 from src.video_agent.config import settings
 # prompt_gates 保留顶层导入：gates_inputs 必须在其后导入（gates_script↔prompt_gates
-# 尾块 re-export 对首入方向敏感；任务#35 B2 原料判定家族）；段内条件判定已收归
-# planner 单一事实源（任务#15 P2 同源裁剪解释），本文件不再直接消费它
+# 尾块 re-export 对首入方向敏感；原料判定家族）；段内条件判定已收归
+# planner 单一事实源，本文件不再直接消费它
 from src.video_agent.core import prompt_gates  # noqa: F401
 # gates_inputs 必须在 prompt_gates 之后导入（见上方注释）
 from src.video_agent.core import gates_inputs
-# （审核）：顶层化（registry 顶层不依赖 core，无环；live_metrics 同包）
 from src.video_agent.core import live_metrics
 from src.video_agent.skill_runtime import guard as skill_guard
-# v3 声明读取经模块属性访问（任务#35 B2：测试 patch registry.<fn> 即生效）
+# v3 声明读取经模块属性访问（测试 patch registry.<fn> 即生效）
 from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
-# MCP 两段式注入段 1（任务#37 B4）：外部工具目录文本块（名称+摘要，
+# MCP 两段式注入段 1：外部工具目录文本块（名称+摘要，
 # schema 不进 FC tools；完整 schema 由 enable 后按需注入）
 from src.video_agent.tools.mcp import catalog as mcp_catalog
 from src.video_agent.utils.prompts import load_prompt, render_prompt
@@ -36,7 +35,7 @@ if TYPE_CHECKING:
 # 提醒清理草稿/缩短 Skill 全文（token 治理的组装层可观测性）
 _SYSTEM_PROMPT_WARN_CHARS = 60000
 
-# 平台边界声明（任务#5 B-2）：skill 注入时代码拼接在正文包壳外，
+# 平台边界声明：skill 注入时代码拼接在正文包壳外，
 # 消解个别 skill 自称「优先级最高」的僭越；措辞用中性陈述
 # （不走严禁/不得句式，避免占用模型可见禁令预算）。
 _SKILL_BOUNDARY_STATEMENT = (
@@ -44,20 +43,20 @@ _SKILL_BOUNDARY_STATEMENT = (
     "其效力从属于用户指令与平台铁律；两者冲突时按用户指令与平台铁律执行 =="
 )
 
-# 通用主路径分级注入阈值（任务#36 B5）：全文超过该字符数时不再直注全文，
+# 通用主路径分级注入阈值：全文超过该字符数时不再直注全文，
 # 改为「planner 章节全文 + 章节目录（标题+字符区间）」，其余章节经
 # read_skill（section/start）按需续读；≤ 阈值全文直注。
 # 与 read_skill 短路判定（fc_tool_runner._skill_full_text_injected）同口径。
 GENERIC_FULL_INJECT_LIMIT = 20000
 
-# v3 元数据头展示标签（任务#35 B2/B3：kind 目录口径 + 暂停 trigger 文案）
+# v3 元数据头展示标签（kind 目录口径 + 暂停 trigger 文案）
 _KIND_LABELS = {
     "pipeline": "流程型（固定流水线）",
     "style": "风格型（美学指导）",
     "reference": "参考型（知识素材）",
 }
 
-# kind 差异化注入策略（任务#5 B-1：kind 只管注入策略这一个维度）：
+# kind 差异化注入策略（kind 只管注入策略这一个维度）：
 # pipeline = 现状全文/分级注入（强约束执行规范）；style = 风格层注入
 # （强调贯穿全流程的美学约束语义）；reference = 低权重参考资料语义注入。
 # 注入形态仍走同一组装结构（全文直注/分级注入），只换包壳语义，
@@ -84,7 +83,7 @@ def _kind_block_suffix(kind: str) -> str:
 
 
 def _kind_baseline_statement(kind: str) -> str:
-    """执行基准声明（kind 差异化，任务#5 B-1）。pipeline/未知 kind 保持
+    """执行基准声明（kind 差异化）。pipeline/未知 kind 保持
     现状口径；style 追加风格层声明；reference 换低权重参考资料语义。"""
     if kind == "reference":
         return _KIND_REFERENCE_NOTE
@@ -120,26 +119,25 @@ class PromptBuilder:
         # 当前工作台 raw state（分阶段聚焦注入探测用；缺省不启用聚焦）
         self._get_raw_state = get_raw_state
         # 每次组装前预计算的原始长度载体（段 builder 与遥测共用，
-        # 避免 state_builder 重复调用；任务#15 P2 注册制重构）
+        # 避免 state_builder 重复调用）
         self._state_json = ""
         self._selected_block = ""
 
     def build_system_prompt(self, context: "PlannerContext") -> str:
         """构建 system prompt：从 prompts/ 加载 + 注入状态上下文。
 
-        段落注册制（任务#15 P2）：各段经 PROMPT_SECTIONS 登记（唯一 name +
+        段落注册制：各段经 PROMPT_SECTIONS 登记（唯一 name +
         order + builder），按 order 排序逐段构建，空串跳过；条件段的有无
         由各段 builder 内部决定。段序与历史顺序 1:1（前缀缓存优化：稳定
         内容在前，状态 JSON 殿后；选中 Skill 全文放在最末尾近生成端，
         遵循度最高，避免被大段状态 JSON 淹没）。
 
-        同源裁剪解释（任务#15 P2）：stage_note 段只消费 planner 经
+        同源裁剪解释：stage_note 段只消费 planner 经
         context 携带的裁剪解释（单一事实源），本处不再自行判定；
         独立使用（不经 planner）时 note 缺省为空即回退为不注入。
 
         协议段唯一 = planner/system_fc.md（Tool 优先瘦身协议，共有段经
-        {{include}} 从 shared/ 拼装）；文本协议 system.md 已退役删除
-        （P2e 单轨收敛，ADR-0001），原 fc_mode 双分支随之移除。
+        {{include}} 从 shared/ 拼装）。
         """
         # 预计算共享原始数据：遥测/超限预警需要原始长度（非包壳后段长），
         # 且 state_builder 每次组装只调一次（惰性构建按轮刷新语义不变）
@@ -165,7 +163,7 @@ class PromptBuilder:
 
         text = "\n\n".join(seg for _, seg in parts)
         # 组装明细入 live 注册表（context-usage 调试端点可读各段字符数）；
-        # 遥测段名映射由 PROMPT_SECTIONS 自动生成（任务#15 P2：消除硬编码映射）；
+        # 遥测段名映射由 PROMPT_SECTIONS 自动生成（消除硬编码映射）；
         # prompt_sections.jsonl 字段格式锁死不变（check_prompt_budget.py 消费，零破坏）
         try:
             sec_lens: Dict[str, int] = {}
@@ -198,7 +196,7 @@ class PromptBuilder:
         """故事板客观进度描述（纯数据）——只报三类有无，
         暂停点指向已注入的 Skill 流程基线，平台不给排序意见；
         顺带同批暂停建议（建议非强制，省往返）。
-        文案外置 prompts/shared/storyboard_progress.md（批3 指令收敛，Rule6）。"""
+        文案外置 prompts/shared/storyboard_progress.md。"""
         if self._get_raw_state is None:
             return ""
         try:
@@ -216,7 +214,7 @@ class PromptBuilder:
             ke_mark=mark(ke), sh_mark=mark(sh), au_mark=mark(au))
 
     def stage_allows_global_settings(self) -> bool:
-        """ ：全局设置注入的阶段门控——规格规划阶段（无任何分组）
+        """全局设置注入的阶段门控——规格规划阶段（无任何分组）
         时长上限/渠道/分辨率都没有消费方，不注入；故事板阶段起才注入。
         无法探测阶段时保守注入（不失约束）。"""
         if self._get_raw_state is None:
@@ -228,7 +226,7 @@ class PromptBuilder:
 
     def build_global_settings_note(self) -> str:
         """全局生成设置注入块：分镜最大时长 + 默认出图/出视频渠道 + 聊天出图开关。
-        文案外置 prompts/shared/global_settings.md（批3 指令收敛，Rule6），
+        文案外置 prompts/shared/global_settings.md，
         代码只留动态行组装。"""
         image_line = ""
         if settings.default_image_provider_id:
@@ -251,7 +249,7 @@ class PromptBuilder:
         )
 
     def build_iron_rules_block(self) -> str:
-        """当前项目「执行铁律.md」全文注入块（宪法 ：项目级契约唯一表述源）。
+        """当前项目「执行铁律.md」全文注入块（项目级契约唯一表述源）。
 
         无铁律文档（未开工的新项目）或读取失败时返回空串，不阻断对话。
         """
@@ -264,7 +262,7 @@ class PromptBuilder:
             return ""
         if not content:
             return ""
-        # 头部文案外置 prompts/shared/iron_rules_header.md（批3 指令收敛，Rule6）
+        # 头部文案外置 prompts/shared/iron_rules_header.md
         header = load_prompt("shared/iron_rules_header.md").strip()
         return header + "\n" + content
 
@@ -280,7 +278,7 @@ class PromptBuilder:
                 name = d.get("name") or d.get("slug") or ""
                 desc = (d.get("description") or "").strip() or "未提供摘要"
                 lines.append(f"- {name}：{desc}")
-        except Exception:  # 文档目录读取失败不阻断对话（降级遥测可见，批5）
+        except Exception:  # 文档目录读取失败不阻断对话（降级遥测可见）
             live_metrics.record_degradation("prompt_builder.catalog")
         if not lines:
             return ""
@@ -298,12 +296,9 @@ class PromptBuilder:
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 的注入块（任务#36 B5：通用主路径唯一主路径）。
+        """选中 Skill 的注入块（通用主路径唯一主路径）。
 
-        整改批 3.5：SKILL_RUNTIME_MODE 回退闸 fail-hard 退役——legacy 全文
-        直注（_build_unsectioned_skill_block/build_stage_focus_block 已物理
-        删除）与 executors 弃用告警分支一并清除，残留环境变量在 Settings
-        启动期即拒。注入策略经 registry.skill_injection_kind 解析（kind
+        注入策略经 registry.skill_injection_kind 解析（kind
         差异化；未知 kind 开放注册降级 pipeline），按 kind 换块标题/基准
         声明语义，注入形态 = 元数据头 + 通用分级注入，段落顺序不变
         （前缀缓存约束）。
@@ -313,7 +308,7 @@ class PromptBuilder:
         except Exception:
             kind = "pipeline"
         block = self.build_generic_skill_block(skill_name, kind)
-        # v3 元数据头（任务#35 B2/B3）：拼在 Skill 块正文之前；未声明任何
+        # v3 元数据头：拼在 Skill 块正文之前；未声明任何
         # v3 键时返回空串（未迁移 v2 manifest 零增量）；选中块本身仍在
         # system prompt 最末段（近生成端），不破坏稳定段在前的前缀缓存排序
         header = self.build_skill_metadata_header(skill_name)
@@ -323,7 +318,7 @@ class PromptBuilder:
             assembled = block
         if not assembled:
             return ""
-        # 平台边界声明包壳（任务#5 B-2）：代码拼接，不改 skill 文件；
+        # 平台边界声明包壳：代码拼接，不改 skill 文件；
         # 声明 skill 内容效力从属于用户指令与平台铁律
         return _SKILL_BOUNDARY_STATEMENT + "\n\n" + assembled
 
@@ -399,12 +394,11 @@ class PromptBuilder:
         )
 
     def build_generic_skill_block(self, skill_name: str, kind: str = "pipeline") -> str:
-        """通用主路径注入块（任务#36 B5）：全文直注或分级注入。
+        """通用主路径注入块：全文直注或分级注入。
 
         - ≤ GENERIC_FULL_INJECT_LIMIT：全文直注（超 max_doc_chars 硬截断）；
         - 超长：planner 章节全文 + 章节目录（标题+字符区间）+ 续读指令，
           其余章节由模型执行对应环节前调 read_skill（section/start）续读。
-        执行器形态与 legacy 全文直注回退均已退役（整改批 3.5 fail-hard），
         本块为选中 Skill 的唯一注入形态。
         """
         sd = self._get_skill_docs()
@@ -484,10 +478,7 @@ class PromptBuilder:
         ]
         return "\n".join(lines)
 
-    # sidecar 流程清单注入段（_build_generic_flow_steps）随任务#5 废除：
-    # flow.steps 抄本通道退役，正文 planner 是唯一流程源，平台不再注入机械步骤清单。
-
-    # ---------- 分阶段聚焦注入（legacy 全文兜底路径专用） ----------
+    # ---------- 分阶段聚焦注入 ----------
 
     _STAGE_LABELS = {
         "planning": "规格规划",
@@ -496,8 +487,6 @@ class PromptBuilder:
         "generation": "素材生成",
         "assembly": "组装导出",
     }
-    # 注：_FOCUS_MAX_CHARS（聚焦摘录截断上限）随 P3-17 单注入收敛删除——
-    # 聚焦块不再重复章节正文，截断需求随之消失（全文截断仍由 max_doc_chars 管）
 
     def detect_stage(self) -> str:
         """根据工作台状态推断当前制作阶段（每轮构建 system prompt 时实时计算）：
@@ -524,7 +513,7 @@ class PromptBuilder:
         return "generation"
 
 
-# ---------- 段落注册表（任务#15 P2：提示词注册制） ----------
+# ---------- 段落注册表（提示词注册制） ----------
 #
 # 段序与历史过程式拼装顺序 1:1 登记（保前缀缓存约束：稳定段在前、
 # 状态 JSON 殿后、选中 Skill 最末近生成端）；重名/重序在模块加载期即 raise。
@@ -547,9 +536,33 @@ def _sec_protocol(pb: "PromptBuilder", context: "PlannerContext") -> str:
     max_steps 模板化注入（消协议模板与 config 双写漂移）。"""
     if not context.use_studio_context:
         return ""
-    # 协议单轨（ADR-0001）：文本协议 system.md 已随 P2e 退役删除，
-    # 动作通道唯一 = FC 工具（mock 通道除外，其输出为演示用固定文本）。
+    # 协议单轨：动作通道唯一 = FC 工具
+    #（mock 通道除外，其输出为演示用固定文本）。
     return render_prompt("planner/system_fc.md", max_steps=settings.max_steps) or ""
+
+
+def _sec_session_summary(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """会话摘要专用段：紧跟协议段之后。
+    压缩摘要置于 system 段而非伪装成 history 首条 user 消息；
+    是否注入按 interaction.session_summary.active 每轮判定（由
+    chat_consume._maybe_compact_history 每请求签发：压缩生效置 True，
+    未触发/失败回落同步清除），文本取 session_summary 缓存
+    （内容指纹失效机制不变）。摘要自指措辞与新注入位置自洽：
+    以第三人称交接陈述呈现，工作台状态 JSON 仍是最新事实源。"""
+    if pb._get_raw_state is None:
+        return ""
+    try:
+        cached = ((pb._get_raw_state() or {}).get("interaction") or {}).get("session_summary") or {}
+    except Exception:
+        return ""
+    text = str(cached.get("text") or "").strip()
+    if not (cached.get("active") and text):
+        return ""
+    return (
+        "== 会话摘要（较早对话已被系统压缩；下文工作台状态 JSON 仍是最新事实源）==\n"
+        "以下是本会话较早对话的交接摘要（细节可按摘要中的产物引用回溯定位）：\n"
+        + text
+    )
 
 
 def _sec_catalog(pb: "PromptBuilder", context: "PlannerContext") -> str:
@@ -592,8 +605,8 @@ def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
     阶段门控——规格规划阶段无消费方，不注入（context rot 治理）。"""
     if not context.use_studio_context:
         return ""
-    # 混合记忆检索注入已随记忆系统退役删除（批次D：会话级压缩
-    # session_compact 是创作设定的唯一软性保护，见 planner/session_compact.md）
+    # 会话级压缩 session_compact 是创作设定的唯一软性保护，
+    # 见 planner/session_compact.md；
     # 生成渠道清单注入机制已整体清除——渠道唯一事实源为
     # 顶部「全局设置」（provider_config/provider_prefs），规格文档不再承载渠道
     if not pb.stage_allows_global_settings():
@@ -603,14 +616,14 @@ def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
 
 def _sec_state_json(pb: "PromptBuilder", context: "PlannerContext") -> str:
     """状态上下文殿后（每轮变化最大）：惰性构建器已按轮刷新，
-    让 LLM 在每一轮都看到上一轮执行后的最新状态（修复）。"""
+    让 LLM 在每一轮都看到上一轮执行后的最新状态。"""
     if not (context.use_studio_context and pb._state_json):
         return ""
     return "当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + pb._state_json
 
 
 def _sec_stage_note(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """混合形态工具边界的可见性说明（同源裁剪解释，任务#15 P2）。
+    """混合形态工具边界的可见性说明（同源裁剪解释）。
 
     条件判定单一事实源归 planner._compute_excluded_tools：裁剪生效时
     经 context.stage_note 携带解释文案；裁剪未生效（或独立使用
@@ -654,6 +667,8 @@ def _validate_prompt_sections(
 
 PROMPT_SECTIONS: Tuple[PromptSectionSpec, ...] = _validate_prompt_sections((
     PromptSectionSpec("protocol", 10, _sec_protocol),
+    # 会话摘要专用段：紧随协议段，既有各段相对顺序不变
+    PromptSectionSpec("session_summary", 15, _sec_session_summary),
     PromptSectionSpec("catalog", 20, _sec_catalog),
     PromptSectionSpec("mcp_catalog", 30, _sec_mcp_catalog),
     PromptSectionSpec("iron_rules", 40, _sec_iron_rules),
@@ -670,6 +685,9 @@ PROMPT_SECTIONS: Tuple[PromptSectionSpec, ...] = _validate_prompt_sections((
 # state_json/selected_skill 的遥测值取原始长度（非段长），在组装处显式赋值
 _SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
     "protocol": "protocol",
+    # 会话摘要段不进 jsonl 分项（字段格式锁死，消费方零改动；
+    # 其增长只体现在 total 口径）
+    "session_summary": None,
     "catalog": "catalog",
     "mcp_catalog": "mcp_catalog",
     "iron_rules": "iron_rules",
@@ -680,7 +698,7 @@ _SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
     "storyboard_progress": None,
     "selected_skill": None,
 }
-# 不对应注册表段的兼容字段（渠道注入机制已退役，字段恒 0 保留防口径断裂）
+# 不对应注册表段的兼容字段（恒 0 保留防口径断裂）
 _TELEMETRY_COMPAT_KEYS: Tuple[str, ...] = ("channels",)
 
 

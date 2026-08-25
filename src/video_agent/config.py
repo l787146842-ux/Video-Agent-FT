@@ -58,7 +58,7 @@ class Settings:
     # LLM 超时（秒）
     llm_timeout: int = field(default_factory=lambda: _env_int("LLM_TIMEOUT", 120))
     llm_stream_timeout: int = field(default_factory=lambda: _env_int("LLM_STREAM_TIMEOUT", 180))
-    # Adapter 瞬时故障重试（任务 #26）：仅 transient（429/5xx/超时/连接错误）
+    # Adapter 瞬时故障重试：仅 transient（429/5xx/超时/连接错误）
     # 走指数退避重试，上限与退避基准统一走 config；permanent 不重试立即上抛
     adapter_retry_max: int = field(default_factory=lambda: _env_int("ADAPTER_RETRY_MAX", 2))
     adapter_retry_base_delay: float = field(
@@ -79,7 +79,7 @@ class Settings:
     llm_thinking_level: str = field(default_factory=lambda: os.getenv("LLM_THINKING_LEVEL", ""))
     # 辅助摘要调用档位（记忆摘要/会话压缩； 全局设置页可调，默认=原生）
     aux_thinking_level: str = field(default_factory=lambda: os.getenv("AUX_THINKING_LEVEL", ""))
-    # trace 持久化的 reasoning 尾部保留字符数（·：头部截断，仅展示用）
+    # trace 持久化的 reasoning 尾部保留字符数（头部截断，仅展示用）
     trace_reasoning_max_chars: int = field(default_factory=lambda: _env_int("TRACE_REASONING_MAX_CHARS", 2000))
     # CLI 协议（如 gemini-cli/Antigravity CLI）路由到 custom-api 反代时 auto 的回退模型：
     # 聊天已对齐画布行为改走本机 agy CLI，此值仅影响带参考图的生图编辑等
@@ -89,18 +89,16 @@ class Settings:
     # Token 预算管理
     context_window_size: int = field(default_factory=lambda: _env_int("CONTEXT_WINDOW_SIZE", 128000))
     token_budget_ratio: float = field(default_factory=lambda: float(os.getenv("TOKEN_BUDGET_RATIO", "0.8")))
-    # 单张图片的 vision token 固定估算（此前多模态消息的 image_url
-    # 部分不计入预算，截断决策对带图历史失真）；取常见高分辨率档保守值
+    # 单张图片的 vision token 固定估算；取常见高分辨率档保守值
     image_token_estimate: int = field(default_factory=lambda: _env_int("IMAGE_TOKEN_ESTIMATE", 1200))
     # 旧轮 read_* 回喂全文的惰性压缩阈值：消息总量达到预算的该比例才压缩，
-    # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）；
-    # 收紧 0.5→0.35（历史是上下文膨胀大头，提早压缩）
+    # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）
     feedback_compress_ratio: float = field(default_factory=lambda: float(os.getenv("FEEDBACK_COMPRESS_RATIO", "0.35")))
     # tool-result 消化（默认开）：历史中已投影进状态 JSON 的写类工具结果回喂行
     # 超过该字符数即替换为「摘要 + 状态已在工作台 JSON」指针；只消化已投影结果，
     # 最近 2 轮回喂保留原文；=0 一键关闭（对标 Anthropic tool-result 消化杠杆）
     tool_result_digest_chars: int = field(default_factory=lambda: _env_int("TOOL_RESULT_DIGEST_CHARS", 200))
-    # 工具结果回喂剪枝（P4，默认开）：白名单工具（read_*/生成类）的回喂副本
+    # 工具结果回喂剪枝（默认开）：白名单工具（read_*/生成类）的回喂副本
     # 超过该字符数即保留头尾、中段替换为 PRUNE 标记行（start= 续读兜底）；
     # 只剪回喂进 history 的副本，工具原始返回/state/产物文件不动；
     # =0 一键整体关闭（回滚开关）。与 digest 杠杆职责互补（写类结果归 digest 管）
@@ -109,7 +107,7 @@ class Settings:
     tool_result_prune_head: int = field(default_factory=lambda: _env_int("TOOL_RESULT_PRUNE_HEAD", 3000))
     # 剪枝保留的尾部字符数（尾部含收尾约束/最近编辑位置）
     tool_result_prune_tail: int = field(default_factory=lambda: _env_int("TOOL_RESULT_PRUNE_TAIL", 2000))
-    # 会话级 compaction（恢复、 默认开）：history 条数达该阈值时用
+    # 会话级 compaction（默认开）：history 条数达该阈值时用
     # 便宜模型把较早对话压成摘要+最近几条（0 = 关闭，仅靠 truncate_history 头尾截断）
     history_compact_threshold: int = field(default_factory=lambda: _env_int("HISTORY_COMPACT_THRESHOLD", 12))
     # 工作台状态 JSON 紧凑序列化（模型读紧凑 JSON 无损，约省 20-30% token）；
@@ -167,11 +165,9 @@ class Settings:
     max_shot_duration: int = 5
 
     def __post_init__(self) -> None:
-        # SKILL_RUNTIME_MODE/SKILL_RUNTIME 已随整改批 3.5 fail-hard 退役：
+        # SKILL_RUNTIME_MODE/SKILL_RUNTIME 已退役（fail-hard）：
         # 通用主路径（元数据头 + 全文分级注入）为唯一 Skill 注入路径，
-        # legacy 全文直注与 executors 执行器形态的代码均已物理删除。
-        # 残留环境变量一律启动即拒——防"以为仍处回退闸保护中"的错觉
-        # （原 deprecated 告警降级路径一并清除，不留静默兼容）。
+        # 残留环境变量一律启动即拒——防"以为仍处回退闸保护中"的错觉。
         _stale = str(os.getenv("SKILL_RUNTIME_MODE")
                      or os.getenv("SKILL_RUNTIME") or "").strip()
         if _stale:
@@ -184,21 +180,15 @@ class Settings:
     model_policy: dict = field(default_factory=dict)
     # 执行器誊写批的快模型（"provider" 或 "provider:model"）；空 = 回落主模型
     executor_fast_model: str = field(default_factory=lambda: os.getenv("EXECUTOR_FAST_MODEL", ""))
-    # 执行器机械调用的思考档位（low/medium/high）；空 = 沿用全局 llm_thinking_level
-    # （用户裁决）：默认空（不硬编码降档）；要降档由全局设置配置
-    # 全局设置「推理档位」卡退役，UI 语义归模型分层策略
-    # executor/summary 行（通用搭配默认 low）；本字段仅保留作 env 覆写回落。
+    # 执行器机械调用的思考档位（low/medium/high）；空 = 沿用全局 llm_thinking_level；
+    # 默认空（不硬编码降档）；要降档由模型分层策略
+    # executor/summary 行配置（通用搭配默认 low）；本字段仅保留作 env 覆写回落。
     executor_thinking_level: str = field(default_factory=lambda: os.getenv("EXECUTOR_THINKING_LEVEL", ""))
-    # 剧本正文注入上限（合一，原 10000/12000 分阶段硬编码废除）；
-    # 仅超模型上下文硬窗时才截断，截断附可见警告
+    # 剧本正文注入上限；仅超模型上下文硬窗时才截断，截断附可见警告
     script_inject_limit: int = field(default_factory=lambda: _env_int("SCRIPT_INJECT_LIMIT", 20000))
     # 状态驱动管线开关（阶段表/闸预检/账本同步总闸；默认开）
     pipeline_orchestrator_enabled: bool = field(
         default_factory=lambda: _env_bool("PIPELINE_ORCHESTRATOR_ENABLED", True))
-    # （节点失败记账与重试引导数据派生已随整改批 1.3 整体退役：
-    # 对应阈值配置、原语与消费链均已删除，防复活钉死见 tests/unit/test_dead_code_payoff.py）
-    # （Workflow Runtime 驱动器开关已随 ADR-0004 主体回归退役：runtime 不再有
-    # 驱动/直跑能力，账本与闸预检由 pipeline_orchestrator_enabled 统一管辖）
 
     # 任务管理
     task_ttl_seconds: int = field(default_factory=lambda: _env_int("TASK_TTL_SECONDS", 86400))
@@ -206,12 +196,12 @@ class Settings:
     # 每项目快照数量上限（超限时创建后淘汰最旧；≤ 0 按 1 处理）
     snapshot_max_per_project: int = field(
         default_factory=lambda: _env_int("SNAPSHOT_MAX_PER_PROJECT", 20))
-    # Agent trace JSONL 体积轮转（.1）
+    # Agent trace JSONL 体积轮转
     trace_file_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_FILE_MAX_BYTES", 2_000_000))
-    # 运行时残留策略（#16）：轮转保留份数收紧为 2 份（原 3）——trace 供近期审计，
-    # 历史归档归文件备份；可用 TRACE_ROTATION_KEEP 环境变量覆盖
+    # 轮转保留份数（trace 供近期审计，历史归档归文件备份）；
+    # 可用 TRACE_ROTATION_KEEP 环境变量覆盖
     trace_rotation_keep: int = field(default_factory=lambda: _env_int("TRACE_ROTATION_KEEP", 2))
-    # （审核）：trace 总容量上限（主文件+.N 合计，超则从最旧丢弃）
+    # trace 总容量上限（主文件+.N 合计，超则从最旧丢弃）
     trace_total_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_TOTAL_MAX_BYTES", 20_000_000))
 
     # 上传限制
@@ -220,7 +210,7 @@ class Settings:
     # 请求限流（每分钟每 IP 最大请求数，0 = 不限流）
     rate_limit_per_minute: int = field(default_factory=lambda: _env_int("RATE_LIMIT_PER_MINUTE", 10))
     # 生成类端点（/api/generate*）单独配额：批量生图/生视频会连续提交多个任务，
-    # 与聊天共用低配额会误伤正常批量操作（-3）
+    # 与聊天共用低配额会误伤正常批量操作
     rate_limit_generate_per_minute: int = field(default_factory=lambda: _env_int("RATE_LIMIT_GENERATE_PER_MINUTE", 60))
     # 是否信任 X-Forwarded-For 头提取客户端 IP（仅在可信反向代理后置 true；
     # 本机直连部署下该头可被伪造，用于绕过 IP 级限流）
@@ -230,9 +220,9 @@ class Settings:
     storage_backend: str = field(default_factory=lambda: os.getenv("STORAGE_BACKEND", "local"))
 
     # 项目状态持久化后端（"json" | "sqlite"）：默认 sqlite（事务原子性
-    # 与并发安全，多用户基础）且为项目状态唯一事实源（任务 #24：JSON 镜像
-    # 已退役停写，首启自动从旧 JSON 文件一次性导入）；STATE_BACKEND=json 仅
-    # 保留为测试基线与旧 JSON 工作区回落路径，sqlite 写入后回退不再无损
+    # 与并发安全）且为项目状态唯一事实源（首启自动从旧 JSON 文件一次性导入）；
+    # STATE_BACKEND=json 仅保留为测试基线与旧 JSON 工作区回落路径，
+    # sqlite 写入后回退不再无损
     state_backend: str = field(default_factory=lambda: os.getenv("STATE_BACKEND", "sqlite"))
 
     # 画布画布集成
@@ -256,7 +246,7 @@ class Settings:
     canvas_shell_offset_x: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_X", 96))
     canvas_shell_offset_y: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_Y", 16))
 
-    # MCP 外部工具接入层（任务#37 B4）：总开关（无配置文件 = 零工具，
+    # MCP 外部工具接入层：总开关（无配置文件 = 零工具，
     # deny-first）；活动工具上限（mcp_tool_catalog enable 超限拒收）；
     # 单结果回喂字符上限（超限截断附警告，防外部结果撑爆上下文）
     mcp_enabled: bool = field(default_factory=lambda: _env_bool("MCP_ENABLED", True))

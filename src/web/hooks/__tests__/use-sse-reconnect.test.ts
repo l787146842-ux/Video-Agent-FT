@@ -1,6 +1,5 @@
 /**
- * SSE 重连策略集成测试（任务 #30 传输层补强；按主题拆分并入；
- * 任务 #18：纯函数单测移至 lib/__tests__/sse-connection.test.ts）。
+ * SSE 重连策略集成测试（纯函数单测另见 lib/__tests__/sse-connection.test.ts）。
  *
  * 契约：网络/传输层瞬断 → 重连（后台任务仍在跑）；
  * 用户取消（AbortError）与任务面错误（4xx）→ 不重连。
