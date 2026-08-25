@@ -30,6 +30,9 @@ _MANIFEST = {
             "2": "将全局制作参数写入 Final_Video_Spec.md",
             "3": "设计 Storyboard：登记所有 key_element，拆解 shot 列表",
         },
+        # 整改批 3.5：描述关键词启发式已退役（声明权威）——step→stage 映射
+        # 一律显式声明，不再依赖 hints 文案猜测
+        "step_stages": {"1": "analysis", "2": "spec", "3": "structure"},
         "dependencies": {"3": [1, 2]},
     }
 }

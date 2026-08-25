@@ -36,7 +36,6 @@ export interface CanvasDropImageRequest {
 
 export interface ChatRequest {
   message: string;
-  system_prompt?: string;
   request_id?: string;
   provider?: string;
   model?: string;

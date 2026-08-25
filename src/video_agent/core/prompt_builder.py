@@ -298,33 +298,21 @@ class PromptBuilder:
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 的注入块（任务#36 B5：通用主路径切换）。
+        """选中 Skill 的注入块（任务#36 B5：通用主路径唯一主路径）。
 
-        settings.skill_runtime（SKILL_RUNTIME_MODE）降级为 deprecated 全局回退闸：
-        - auto（默认）：通用主路径 build_generic_skill_block——元数据头 +
-          全文分级注入（≤20000 直注；超长给 planner 章节全文 + 章节目录）；
-        - executors：执行器形态已一步退役（用户裁决不设观察期），按通用主路径
-          执行并记弃用告警；
-        - legacy：强制旧全文直注行为，保留作事故回退。
-
-        kind 差异化注入（任务#5 B-1）：经 registry.skill_injection_kind
-        解析注入策略（未知 kind 开放注册降级为 pipeline），按 kind 换
-        块标题/基准声明语义，注入形态与段落顺序不变。
+        整改批 3.5：SKILL_RUNTIME_MODE 回退闸 fail-hard 退役——legacy 全文
+        直注（_build_unsectioned_skill_block/build_stage_focus_block 已物理
+        删除）与 executors 弃用告警分支一并清除，残留环境变量在 Settings
+        启动期即拒。注入策略经 registry.skill_injection_kind 解析（kind
+        差异化；未知 kind 开放注册降级 pipeline），按 kind 换块标题/基准
+        声明语义，注入形态 = 元数据头 + 通用分级注入，段落顺序不变
+        （前缀缓存约束）。
         """
-        mode = str(getattr(settings, "skill_runtime", "auto") or "auto").strip().lower()
         try:
             kind = skill_registry.skill_injection_kind(skill_name)
         except Exception:
             kind = "pipeline"
-        if mode == "legacy":
-            block = self._build_unsectioned_skill_block(skill_name, kind)
-        else:
-            if mode == "executors":
-                logger.warning(
-                    "[Planner] skill_runtime=executors 已弃用（执行器一步退役，任务#36 B5），"
-                    "按通用主路径执行；请移除 SKILL_RUNTIME_MODE/SKILL_RUNTIME 环境变量"
-                )
-            block = self.build_generic_skill_block(skill_name, kind)
+        block = self.build_generic_skill_block(skill_name, kind)
         # v3 元数据头（任务#35 B2/B3）：拼在 Skill 块正文之前；未声明任何
         # v3 键时返回空串（未迁移 v2 manifest 零增量）；选中块本身仍在
         # system prompt 最末段（近生成端），不破坏稳定段在前的前缀缓存排序
@@ -410,42 +398,14 @@ class PromptBuilder:
             + "\n".join(lines)
         )
 
-    def _build_unsectioned_skill_block(self, skill_name: str, kind: str = "pipeline") -> str:
-        """无可识别章节的 Skill：全文直注兜底。
-
-        非 FC 通道（如 agy CLI）调不了 read_skill，若只给目录，模型等于看不到
-        流程规范（888 项目保障）；外来工具名映射对照表同步追加。
-        """
-        sd = self._get_skill_docs()
-        try:
-            display, content = sd.resolve_skill_content(skill_name)
-        except Exception:  # 解析失败不阻断对话
-            logger.warning(f"[Planner] 选中 Skill「{skill_name}」解析失败，降级为仅目录")
-            return ""
-        content = (content or "").strip()
-        if not content:
-            return ""
-        if len(content) > settings.max_doc_chars:
-            content = content[:settings.max_doc_chars] + "\n……（Skill 全文超长，已截断）"
-        # 外来工具名映射注记已随 删除（导入期转换归专用 Skill 系统）
-        discipline = load_prompt("planner/skill_discipline.md") or ""
-        base = (
-            f"== 当前选中 Skill「{display or skill_name}」全文（本 Skill 无注册执行器章节，"
-            f"全文直接注入，{_kind_block_suffix(kind)}）==\n"
-            f"{_kind_baseline_statement(kind)}\n\n"
-            f"{content}\n\n"
-            f"{discipline}"
-        )
-        # 当前阶段聚焦块追加在最末尾（离生成端最近，遵循度最高）
-        return base + self.build_stage_focus_block(content)
-
     def build_generic_skill_block(self, skill_name: str, kind: str = "pipeline") -> str:
         """通用主路径注入块（任务#36 B5）：全文直注或分级注入。
 
         - ≤ GENERIC_FULL_INJECT_LIMIT：全文直注（超 max_doc_chars 硬截断）；
         - 超长：planner 章节全文 + 章节目录（标题+字符区间）+ 续读指令，
           其余章节由模型执行对应环节前调 read_skill（section/start）续读。
-        执行器形态已一步退役，本块为选中 Skill 的唯一注入形态（legacy 除外）。
+        执行器形态与 legacy 全文直注回退均已退役（整改批 3.5 fail-hard），
+        本块为选中 Skill 的唯一注入形态。
         """
         sd = self._get_skill_docs()
         try:
@@ -562,34 +522,6 @@ class PromptBuilder:
         if any(not str(d.get("prompt") or "").strip() for d in drafts):
             return "prompt_draft"
         return "generation"
-
-    def build_stage_focus_block(self, content: str) -> str:
-        """当前阶段聚焦指针块（P3-17：「全文 + 阶段聚焦重复注入」合并为单注入）。
-
-        旧实现把当前阶段对应章节的内容在全文之后再摘录重注一遍（同章节注两遍，
-        纯 token 浪费）；现实现保留「末尾近生成端强调」的意图，但只注入指针
-        （指向全文中对应章节），章节正文在组装结果中仅出现一次。
-        无法识别阶段或章节时返回空串（行为不变）。"""
-        stage = self.detect_stage()
-        if not stage:
-            return ""
-        split_sections = getattr(self._get_skill_docs(), "split_skill_sections", None)
-        if split_sections is None:
-            return ""
-        try:
-            sections = split_sections(content) or {}
-        except Exception:
-            return ""
-        focus = (sections.get(stage) or "").strip()
-        if not focus:
-            return ""
-        label = self._STAGE_LABELS.get(stage, stage)
-        return (
-            f"\n\n== 【当前阶段重点 · {label}】工作台状态显示任务正处于该阶段，"
-            "本阶段的全部产出（字段/结构/提示词写法与顺序）必须逐条遵守上文 Skill 全文中"
-            "与本阶段对应的章节——该章节已随全文注入且仅此一份，此处不再摘录重复，"
-            "与全文同等效力、不受其他段落稀释 ==\n"
-        )
 
 
 # ---------- 段落注册表（任务#15 P2：提示词注册制） ----------

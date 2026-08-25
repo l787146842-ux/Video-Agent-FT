@@ -200,67 +200,25 @@ def current_stage(state: Dict[str, Any], skill: str) -> Optional[StageSpec]:
 # ---------- 3A：frontmatter dependencies 消费（DAG 调度） ----------
 #
 # 任务#5：step_stages/dependencies 声明通道废除（正文 planner 是唯一流程源），
-# 真实数据不再声明；消费代码保留兼容内存 manifest（测试同构口径）。
-#
-# step 描述关键词 → 平台规范阶段（仅作未声明回落兜底）。顺序即优先级：
-# assembly 等特化阶段在前，structure 作为兼底放最后。首选通道 =
-# flow.step_stages 显式声明（schema v2，注册期门禁校验）。
-_STEP_STAGE_HINTS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
-    ("analysis", ("分析", "读取并", "剧本文件")),
-    ("spec", ("规格", "参数写入", "Final_Video_Spec")),
-    ("assembly", ("组装", "时间线", "剪辑")),
-    ("ke_media", ("设定图", "概念图", "三视图", "运镜轨迹", "分镜表格图")),
-    ("shot_media", ("生成视频", "逐 shot")),
-    ("audio_assets", ("音频", "BGM", "旁白")),
-    ("structure", ("Storyboard", "故事板", "key_element", "拆解")),
-)
-
-# 遥测：step→stage 映射来源分布（命中率计数，为将来下线启发式留证据）。
-# explicit=step_stages 声明命中；declared_absent=声明阶段不在当前阶段表
-# （边被吸收；声明权威不回退启发式）；只计数不落盘。
-_STEP_STAGE_STATS: Dict[str, int] = {
-    "explicit": 0, "executors": 0, "heuristic": 0,
-    "declared_absent": 0, "unmapped": 0,
-}
-
-
-def step_stage_stats() -> Dict[str, int]:
-    """step→stage 映射来源遥测快照（explicit 占比 = 启发式下线证据）。"""
-    return dict(_STEP_STAGE_STATS)
-
-
-def reset_step_stage_stats() -> None:
-    """测试用：清零映射来源计数。"""
-    for k in _STEP_STAGE_STATS:
-        _STEP_STAGE_STATS[k] = 0
-
-
 def _step_to_stage(
     step_no: Any, manifest: Optional[Dict[str, Any]], table: List[StageSpec],
 ) -> Optional[str]:
     """frontmatter step 号 → 平台规范阶段：① step_stages 显式声明（权威）；
-    ② stage_executors 执行器交集；③ 描述关键词启发式（回落，遥测记账）。"""
+    ② stage_executors 执行器交集。
+    （描述关键词启发式回落与映射来源遥测已随整改批 3.5 退役：生产注册期
+    fail-hard 禁声明 steps/dependencies，启发式分支生产不可达，且其
+    「零误判」遥测只计数不落盘、无可核查证据——按折旧规程下账；
+    显式声明通道保留以兼容内存 manifest 注入的测试同构口径。）"""
     flow = ((manifest or {}).get("flow") or {})
     keys = {s.key for s in table}
     declared = str((flow.get("step_stages") or {}).get(str(step_no)) or "").strip()
     if declared:
-        if declared in keys:
-            _STEP_STAGE_STATS["explicit"] += 1
-            return declared
-        _STEP_STAGE_STATS["declared_absent"] += 1
-        return None
+        return declared if declared in keys else None
     execs = (flow.get("stage_executors") or {}).get(str(step_no)) or []
     if execs:
         for spec in table:
             if set(execs) & set(spec.executors):
-                _STEP_STAGE_STATS["executors"] += 1
                 return spec.key
-    desc = str((flow.get("steps") or {}).get(str(step_no)) or "")
-    for key, kws in _STEP_STAGE_HINTS:
-        if key in keys and any(k in desc for k in kws):
-            _STEP_STAGE_STATS["heuristic"] += 1
-            return key
-    _STEP_STAGE_STATS["unmapped"] += 1
     return None
 
 

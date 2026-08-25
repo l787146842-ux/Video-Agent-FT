@@ -24,7 +24,9 @@ from src.video_agent.skill_runtime import manifest_schema
 from src.video_agent.skill_runtime import registry
 
 
-# ---------- ① step_stages 显式映射 ----------
+# ---------- ① step_stages 显式映射（批 3.5 修订：启发式回落与来源遥测
+# 已随 _STEP_STAGE_HINTS 一并退役——生产注册期 fail-hard 禁声明
+# steps/dependencies，启发式不可达且遥测无可核查证据；显式声明通道保留） ----------
 
 
 _DECL_MANIFEST = {
@@ -32,7 +34,7 @@ _DECL_MANIFEST = {
         "spec_wizard": True,
         "steps": {
             "1": "读取并分析剧本文件",
-            "2": "组装时间线",          # 文案故意误导：启发式会判 assembly
+            "2": "组装时间线",
             "3": "生成所有音频资产",
         },
         "dependencies": {"2": [1], "3": [2]},
@@ -46,24 +48,19 @@ _ENTRY = SimpleNamespace(available_tools=["script_analyze"])
 def decl_env(monkeypatch):
     monkeypatch.setattr(registry, "skill_manifest_of", lambda name: _DECL_MANIFEST)
     monkeypatch.setattr(registry, "resolve_entry", lambda name: _ENTRY)
-    po.reset_step_stage_stats()
     yield
-    po.reset_step_stage_stats()
 
 
-def test_step_stages_declaration_beats_heuristic(decl_env):
-    """声明权威：step2 文案含「组装」但声明 spec → 以声明为准。"""
+def test_step_stages_declaration_is_authoritative(decl_env):
+    """声明权威：step_stages 显式映射直接生效（无启发式回退路径）。"""
     deps = po._stage_dependencies("任意Skill")
     assert deps.get("spec") == ["analysis"]
     assert deps.get("audio_assets") == ["spec"]
-    stats = po.step_stage_stats()
-    assert stats["explicit"] == 3
-    assert stats["heuristic"] == 0
 
 
 def test_step_stages_declared_absent_is_absorbed(monkeypatch):
     """声明阶段不在当前阶段表（无 video_assembler → 无 assembly 阶段）：
-    边被吸收，不回退启发式（声明权威），记 declared_absent 遥测。"""
+    边被吸收，不回退任何启发式（声明权威）。"""
     manifest = {
         "flow": {
             "steps": {"1": "分析剧本", "2": "组装时间线剪辑输出"},
@@ -73,27 +70,9 @@ def test_step_stages_declared_absent_is_absorbed(monkeypatch):
     }
     monkeypatch.setattr(registry, "skill_manifest_of", lambda name: manifest)
     monkeypatch.setattr(registry, "resolve_entry", lambda name: _ENTRY)
-    po.reset_step_stage_stats()
     assert "assembly" not in {s.key for s in po.stage_table("任意Skill")}
     deps = po._stage_dependencies("任意Skill")
     assert "assembly" not in deps
-    stats = po.step_stage_stats()
-    assert stats["declared_absent"] == 1
-    assert stats["heuristic"] == 0  # 文案含「组装/剪辑」也不得回退启发式
-
-
-def test_undeclared_step_falls_back_to_heuristic_with_telemetry(monkeypatch):
-    """未声明回落启发式并记遥测（命中率计数 = 启发式下线证据）。"""
-    manifest = {"flow": {
-        "steps": {"1": "读取并分析剧本文件", "2": "生成所有音频资产"},
-        "dependencies": {"2": [1]},
-    }}
-    monkeypatch.setattr(registry, "skill_manifest_of", lambda name: manifest)
-    monkeypatch.setattr(registry, "resolve_entry", lambda name: _ENTRY)
-    po.reset_step_stage_stats()
-    po._stage_dependencies("任意Skill")
-    stats = po.step_stage_stats()
-    assert stats["heuristic"] == 2 and stats["explicit"] == 0
 
 
 # ---------- ② manifest_schema 全键校验（frontmatter 合一） ----------

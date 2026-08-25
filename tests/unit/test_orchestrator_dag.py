@@ -36,6 +36,13 @@ _MANIFEST = {
             "3": [1, 2], "4": [3], "5": [3], "6": [4, 5], "7": [3],
             "8": [4, 5, 6, 7],
         },
+        # 整改批 3.5：描述关键词启发式已退役（声明权威）——step→stage
+        # 映射一律显式声明
+        "step_stages": {
+            "1": "analysis", "2": "spec", "3": "structure",
+            "4": "ke_media", "5": "ke_media", "6": "shot_media",
+            "7": "audio_assets", "8": "assembly",
+        },
     }
 }
 

@@ -121,17 +121,15 @@ def resolve_current_refs(ctx: GateContext, name: str, args: Dict[str, Any]) -> N
 def skill_full_text_injected(skill_name: str) -> bool:
     """选中 Skill 的全文是否真的直注入 system prompt（read_skill 短路前提）。
 
-    判定与 prompt_builder.build_selected_skill_block 同构（任务#36 B5 通用主路径）：
-    - legacy：全文直注；
-    - 通用主路径：全文 ≤ min(GENERIC_FULL_INJECT_LIMIT, max_doc_chars) → 直注；
-      超长分级注入（只注 planner 章节+章节目录）→ 未全量注入，续读必须真读。
-      直注分支内 prompt_builder 仍按 max_doc_chars 硬截断，故短路阈值与其
-      单一来源对齐：max_doc_chars 低于分级阈值时，超出部分并未注入。
+    判定与 prompt_builder.build_selected_skill_block 同构（任务#36 B5 通用
+    主路径；整改批 3.5：SKILL_RUNTIME_MODE 回退闸已 fail-hard 退役，
+    通用主路径为唯一路径，legacy 直注分支随之删除）：
+    全文 ≤ min(GENERIC_FULL_INJECT_LIMIT, max_doc_chars) → 直注；
+    超长分级注入（只注 planner 章节+章节目录）→ 未全量注入，续读必须真读。
+    直注分支内 prompt_builder 仍按 max_doc_chars 硬截断，故短路阈值与其
+    单一来源对齐：max_doc_chars 低于分级阈值时，超出部分并未注入。
     内容长度不可探测时保守返回 False（不短路，不失续读能力）。
     """
-    mode = str(getattr(settings, "skill_runtime", "auto") or "auto").strip().lower()
-    if mode == "legacy":
-        return True
     try:
         entry = resolve_entry(skill_name)
     except Exception:

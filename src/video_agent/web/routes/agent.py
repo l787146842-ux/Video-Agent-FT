@@ -54,9 +54,8 @@ def _empty_state_baseline() -> int:
 
 class ChatRequest(BaseModel):
     message: str
-    # DEPRECATED：后端已不再使用（Skill 全文改由服务端按 skill_name 硬注入），
-    # 仅为 legacy 前端兼容保留，新前端不再发送
-    system_prompt: str = ""
+    # （ChatRequest.system_prompt 已随整改批 3.5 删除：后端零读取、前端
+    # 零发送，Skill 全文由服务端按 skill_name 硬注入，字段无存在意义）
     # 请求幂等键：前端每次发送生成唯一 id，同 id 处理中时拒绝重复提交
     request_id: str = ""
     provider: str = ""

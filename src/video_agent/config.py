@@ -166,22 +166,18 @@ class Settings:
     # 分镜最大时长（秒）：Agent 自拆分镜单镜时长上限与新建分镜默认时长
     max_shot_duration: int = 5
 
-    # Skill 运行时回退闸（deprecated，任务#36 B5：执行器一步退役后通用主路径
-    # 为唯一主路径，本开关降级为事故回退闸；计划名 SKILL_RUNTIME_MODE，
-    # 同名环境变量优先；SKILL_RUNTIME 为旧名兼容）：
-    # auto = 通用主路径（默认：元数据头 + 全文分级注入）；
-    # executors = 已弃用（执行器已物理删除），按 auto 行为执行并记弃用告警；
-    # legacy = 强制旧全文直注行为，仅保留作事故回退。
-    skill_runtime: str = field(default_factory=lambda: (
-        os.getenv("SKILL_RUNTIME_MODE") or os.getenv("SKILL_RUNTIME", "auto")))
-
     def __post_init__(self) -> None:
-        # 启动路径一次性废弃告警：SKILL_RUNTIME_MODE=executors 执行器形态已退役，
-        # 运行时按 auto 语义执行不变（prompt_builder 另有同口径告警）
-        if str(self.skill_runtime or "auto").strip().lower() == "executors":
-            logging.getLogger(__name__).warning(
-                "SKILL_RUNTIME_MODE=executors 已废弃（执行器形态已退役，任务#36 B5），"
-                "实际按 auto 通用主路径执行；请移除 SKILL_RUNTIME_MODE/SKILL_RUNTIME 环境变量")
+        # SKILL_RUNTIME_MODE/SKILL_RUNTIME 已随整改批 3.5 fail-hard 退役：
+        # 通用主路径（元数据头 + 全文分级注入）为唯一 Skill 注入路径，
+        # legacy 全文直注与 executors 执行器形态的代码均已物理删除。
+        # 残留环境变量一律启动即拒——防"以为仍处回退闸保护中"的错觉
+        # （原 deprecated 告警降级路径一并清除，不留静默兼容）。
+        _stale = str(os.getenv("SKILL_RUNTIME_MODE")
+                     or os.getenv("SKILL_RUNTIME") or "").strip()
+        if _stale:
+            raise ValueError(
+                f"SKILL_RUNTIME_MODE/SKILL_RUNTIME={_stale!r} 已退役（整改批 3.5）："
+                "通用主路径为唯一 Skill 注入路径，请移除该环境变量后重启")
 
     # 模型分层策略表（编排/生成/摘要/执行器四角色，热更新于 runtime_settings.json；
     # 字段语义见 core/model_policy.py；空 = 跟随主模型/既有回落链）
