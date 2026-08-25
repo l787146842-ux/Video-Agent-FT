@@ -7,7 +7,9 @@
  * ② 确认文案与模型正文判重：正文已含同句时卡 body 不再双显；
  * ③ appliedActions 徽标「已执行 N 个操作」；
  * ④ answered/expired 生命周期徽标；
- * ⑤ 展开/折叠点击切换 body 可见性。
+ * ⑤ 展开/折叠点击切换 body 可见性；
+ * ⑥ 批次C 判重调位：active 且带选项时题面让位问卷卡三段式①防双显，
+ *    无选项暂停与 answered/expired 回看态题面照常呈现。
  */
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect } from 'vitest';
@@ -70,6 +72,32 @@ describe('StageCard 正文判重与展开折叠', () => {
     const { container } = render(() => <StageCard msg={() => msg()} state="none" />);
     expect(container.querySelector('.stage-card-arrow')).toBeNull();
     expect(container.querySelector('.stage-card-body')).toBeNull();
+  });
+
+  it('批次C 判重调位：active 且带选项时题面让位问卷卡（body 不双显）', () => {
+    const m = msg({
+      text: '正文内容',
+      confirm: '请确认规格',
+      confirmOptions: [{ label: '确认，继续' }],
+    });
+    const { container } = render(() => <StageCard msg={() => m} state="active" />);
+    expect(container.querySelector('.stage-card-summary')).toBeNull();
+  });
+
+  it('active 无选项暂停题面照常呈现（问卷卡无题面行，无处可让）', () => {
+    const m = msg({ text: '正文内容', confirm: '请确认规格' });
+    const { container } = render(() => <StageCard msg={() => m} state="active" />);
+    expect(container.querySelector('.stage-card-summary')?.textContent).toContain('请确认规格');
+  });
+
+  it('answered 回看态题面照常呈现（问卷卡已随非末条卸载）', () => {
+    const m = msg({
+      text: '正文内容',
+      confirm: '请确认规格',
+      confirmOptions: [{ label: '确认，继续' }],
+    });
+    const { container } = render(() => <StageCard msg={() => m} state="answered" />);
+    expect(container.querySelector('.stage-card-summary')?.textContent).toContain('请确认规格');
   });
 });
 

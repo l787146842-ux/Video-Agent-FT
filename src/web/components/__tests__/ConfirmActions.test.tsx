@@ -10,7 +10,9 @@
  * ④ 多组选项走分页向导：逐页选择、末页合并发一条（F0 安全绳扩围）；
  * ⑤ 自定义输入与卡片选择互斥，Ctrl+Enter 快捷发送；
  * ⑥ 厂商/模型维度渲染级联下拉而非选项卡（888 反馈）；
- * ⑦ 发送被拦截（返回 false）时解锁允许重试。
+ * ⑦ 发送被拦截（返回 false）时解锁允许重试；
+ * ⑧ 批次C 三段式问卷卡用例拆归 ConfirmActions-three-segment.test.tsx
+ *    （前端行数红线内拆分，向导翻页题面断言随三段式调位同步更新）。
  */
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -135,8 +137,9 @@ describe('ConfirmActions 分页向导（多组选项）', () => {
 
   it('逐页选择、翻页导航，末页发送合并为一条消息（机械 value + 换行连接）', async () => {
     const { container, getByText } = render(() => <ConfirmActions message={groupedMessage()} />);
-    // 第 1 页：组标题 + 页码指示；prev 首页禁用
-    expect(container.querySelector('.confirm-wizard-question')?.textContent).toBe('画风');
+    // 第 1 页：总题面 + 页内子题面（组标题）+ 页码指示；prev 首页禁用
+    const q1 = container.querySelectorAll('.confirm-wizard-question');
+    expect(q1[q1.length - 1].textContent).toBe('画风');
     expect(container.querySelector('.confirm-wizard-indicator')?.textContent).toContain('1/2');
     const arrows = container.querySelectorAll('.confirm-wizard-arrow');
     expect((arrows[0] as HTMLButtonElement).disabled).toBe(true);
@@ -144,8 +147,9 @@ describe('ConfirmActions 分页向导（多组选项）', () => {
     expect((getByText('下一步') as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(container.querySelectorAll('.confirm-option-card')[0]);
     await fireEvent.click(getByText('下一步'));
-    // 第 2 页：选画幅后末页出现「发送」（非「下一步」）
-    expect(container.querySelector('.confirm-wizard-question')?.textContent).toBe('画幅');
+    // 第 2 页：选画幅后末页出现「发送」（非「下一步」）；页内子题面随页切换
+    const q2 = container.querySelectorAll('.confirm-wizard-question');
+    expect(q2[q2.length - 1].textContent).toBe('画幅');
     expect(container.querySelector('.confirm-wizard-indicator')?.textContent).toContain('2/2');
     await fireEvent.click(container.querySelectorAll('.confirm-option-card')[0]);
     await fireEvent.click(getByText('发送'));

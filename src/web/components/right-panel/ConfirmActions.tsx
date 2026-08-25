@@ -10,11 +10,10 @@ import { ConfirmCustomInput } from './ConfirmCustomInput';
 const SINGLE_KEY = '__single__';
 
 /**
- * 确认操作区（当前待回应的 confirm 消息渲染）：所有引导交互统一放进
- * confirm-wizard 组容器：带 group 的选项渲染分页向导（逐页选择，末页发送，
- * 各维度合并为一条消息）；无 group 的渲染单选卡片；厂商/模型维度改用下拉框
- * （ConfirmPicker，888 反馈）；「其它（自定义输入）」在组内展开输入框直接发送；
- * 无候选选项时渲染「确认，继续 / 我要调整」按钮。
+ * 确认操作区（当前待回应的 confirm 消息渲染）：引导交互统一放进 confirm-wizard
+ * 组容器，按三段式问卷卡组织（批次C）：① 题面（msg.confirm）独立成行；② 选项区
+ * 紧随（带 group → 分页向导；无 group → 单选卡片；厂商/模型 → 下拉框 888 反馈）；
+ * ③ 「其它（自定义输入）」兜底段组内展开输入框直接发送；无选项时渲染「确认，继续 / 我要调整」按钮。
  */
 export function ConfirmActions(props: { message: ChatMessage }) {
   const msg = () => props.message;
@@ -117,6 +116,8 @@ export function ConfirmActions(props: { message: ChatMessage }) {
             /* 无翻页的单组选项：选中卡片后点右下角「发送」；
                厂商/模型维度直接下拉选择（888 反馈） */
             <div class="confirm-wizard">
+              {/* 批次C 三段式①题面独立成行（StageCard 判重同步调位防双显） */}
+              <Show when={msg().confirm}><div class="confirm-wizard-question">{msg().confirm}</div></Show>
               <Show
                 when={singleDim()}
                 fallback={(
@@ -151,6 +152,10 @@ export function ConfirmActions(props: { message: ChatMessage }) {
           }
         >
           <div class="confirm-wizard">
+            {/* 批次C 三段式①总题面独立成行；与页内子题面（组标题）同句时隐去防双显 */}
+            <Show
+              when={msg().confirm && (msg().confirm || '').trim() !== (curGroup().title || '').trim()}
+            ><div class="confirm-wizard-question">{msg().confirm}</div></Show>
             <div class="confirm-wizard-question">{curGroup().title}</div>
             <Show
               when={wizardDim()}

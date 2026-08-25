@@ -22,10 +22,14 @@ export function StageCard(props: {
   const [open, setOpen] = createSignal(true);
   const msg = () => props.msg();
   const confirmText = () => msg().confirm || '';
-  /** 确认文案与模型正文判重：正文已包含同样句子时卡片只留执行清单 */
+  /** 确认文案与模型正文判重：正文已包含同样句子时卡片只留执行清单；
+   * 批次C 判重调位：active 暂停卡带选项时，题面已由问卷卡三段式①
+   * （confirm-wizard-question）独立成行接管，阶段卡让位防双显；
+   * 无选项的暂停（仅「确认，继续」按钮）题面无处可让，照常呈现 */
   const bodyText = () => {
     const c = confirmText().trim();
     if (!c) return '';
+    if (props.state === 'active' && (msg().confirmOptions || []).length > 0) return '';
     const norm = (s: string) => s.replace(/[\s“”'"]/g, '');
     if (norm(msg().text || '').includes(norm(c))) return '';
     return c;

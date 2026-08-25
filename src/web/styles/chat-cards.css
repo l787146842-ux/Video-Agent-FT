@@ -54,6 +54,11 @@
   .confirm-wizard .confirm-btn.secondary { background: transparent; border-color: rgba(251, 146, 60, 0.45); color: #fdba74; }
   .confirm-wizard .confirm-btn.secondary:hover { background: rgba(251, 146, 60, 0.12); color: #ffedd5; }
   .confirm-wizard .confirm-btn.secondary.active { background: rgba(251, 146, 60, 0.22); border-color: #fb923c; color: #ffedd5; }
+  /* 批次C：亮橙问卷卡禁发光钉死——保留亮橙色系本身，高亮/悬停/选中态
+     一律不得挂 box-shadow/text-shadow 光晕（选项 radio 的 inset 实心填充
+     是单选选中态形态，非光晕，不在此禁范围） */
+  .confirm-wizard, .confirm-option-card, .confirm-option-card:hover,
+  .confirm-option-card.selected, .confirm-btn.primary { box-shadow: none; text-shadow: none; }
 
   /* 文档卡片 */
   .doc-card { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: color-mix(in srgb, var(--color-white) 3%, transparent); cursor: pointer; max-width: 92%; }
