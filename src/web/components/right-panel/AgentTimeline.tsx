@@ -97,6 +97,8 @@ export function AgentTimeline(props: {
   thinkingMs?: number;
   /** 实时状态文案（状态栏=当前正在做的一件事），流式标题优先展示 */
   liveStatus?: () => string;
+  /** 附加根类（批次B：settled 相位淡入类由 TurnLedgerCard 透传） */
+  class?: string;
 }) {
   /** 相位判定单一出口：phase 显式给出时以其为准，未给出回落 live 兼容别名 */
   const isLive = () => (props.phase !== undefined ? props.phase === 'live' : !!props.live);
@@ -148,7 +150,7 @@ export function AgentTimeline(props: {
 
   return (
     <Show when={hasReasoning() || hasItems()}>
-      <div class="agent-timeline">
+      <div class={`agent-timeline${props.class ? ` ${props.class}` : ''}`}>
         {/* 深度思考面板（reasoning 模型才有文本；普通模型不显示该面板） */}
         <Show when={hasReasoning()}>
           <div class={`tl-panel ${thinkOpen() ? 'expanded' : ''}`}>

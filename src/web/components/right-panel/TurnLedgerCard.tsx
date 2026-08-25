@@ -20,6 +20,13 @@ import { StageProgressBar } from './StageProgressBar';
 import { StageCard } from './StageCard';
 import { AnsweredOptions } from './AnsweredOptions';
 
+/** 批次B：prefers-reduced-motion 检测（jsdom 下 matchMedia 缺失时回落允许动画，
+ * 测试以 matchMedia mock 真实断言 reduce 场景） */
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 export function TurnLedgerCard(props: {
   /** 显式相位：live=流式累积中；settled=已完成（含停止/出错后的定型） */
   phase: TurnPhase;
@@ -36,6 +43,11 @@ export function TurnLedgerCard(props: {
   /** settled 相位消息访问器（live 相位不消费，缺失时以空消息兜底） */
   const msg = (): ChatMessage => (props.message ? props.message() : { sender: 'agent', text: '' });
 
+  /** 批次B账本翻转淡入：settled 新挂载卡片 120ms opacity 0→1 淡入；
+   * reduced-motion 时为空串（opacity 直接呈现，无过渡）。相位翻转时
+   * fallback 子件新建即带类，CSS animation 随挂载播放一次 */
+  const fadeClass = prefersReducedMotion() ? '' : 'ledger-fade-in';
+
   return (
     <Show
       when={props.phase === 'live'}
@@ -44,12 +56,16 @@ export function TurnLedgerCard(props: {
           {/* 阶段完成卡：可展开、默认展开；正文=本轮概述（确认文案）+执行清单。
               确认文案与模型正文判重防双显；历史消息同样可展开，暂停点回看不丢失） */}
           <Show when={msg().confirm}>
-            <StageCard msg={msg} state={props.confirmState || 'none'} />
+            <StageCard msg={msg} state={props.confirmState || 'none'} class={fadeClass} />
           </Show>
 
           {/* 已回应暂停卡的「当时选了哪项」对勾标注（只读回看） */}
           <Show when={msg().confirm && (props.answeredValue || '') && (msg().confirmOptions || []).length > 0}>
-            <AnsweredOptions options={msg().confirmOptions || []} answeredValue={props.answeredValue || ''} />
+            <AnsweredOptions
+              options={msg().confirmOptions || []}
+              answeredValue={props.answeredValue || ''}
+              class={fadeClass}
+            />
           </Show>
 
           {/* 过程时间线（深度思考 + 已处理操作；settled 定型面板形态，
@@ -59,6 +75,7 @@ export function TurnLedgerCard(props: {
             reasoning={() => props.ledger().reasoning}
             items={props.ledger().items}
             thinkingMs={props.ledger().thinkingMs}
+            class={fadeClass}
           />
         </>
       }

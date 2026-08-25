@@ -13,7 +13,12 @@ import type { ChatMessage } from '@/types';
  * 面板（trace 同源、含 result_summary），本卡只留操作数徽标，不再双处呈现
  *（项目体验基线：信息已在对话内可见的只展示一处）。
  */
-export function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'answered' | 'expired' | 'none' }) {
+export function StageCard(props: {
+  msg: () => ChatMessage;
+  state: 'active' | 'answered' | 'expired' | 'none';
+  /** 附加根类（批次B：settled 相位淡入类由 TurnLedgerCard 透传） */
+  class?: string;
+}) {
   const [open, setOpen] = createSignal(true);
   const msg = () => props.msg();
   const confirmText = () => msg().confirm || '';
@@ -38,7 +43,7 @@ export function StageCard(props: { msg: () => ChatMessage; state: 'active' | 'an
   };
 
   return (
-    <div class={`stage-card ${open() ? 'expanded' : ''}`}>
+    <div class={`stage-card ${open() ? 'expanded' : ''} ${props.class || ''}`}>
       <button
         type="button"
         class="stage-card-header"

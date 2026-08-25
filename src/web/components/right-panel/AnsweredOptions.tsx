@@ -17,9 +17,11 @@ export interface ConfirmOption {
 export function AnsweredOptions(props: {
   options: ConfirmOption[];
   answeredValue: string;
+  /** 附加根类（批次B：settled 相位淡入类由 TurnLedgerCard 透传） */
+  class?: string;
 }) {
   return (
-    <div class="answered-options">
+    <div class={`answered-options${props.class ? ` ${props.class}` : ''}`}>
       <For each={props.options}>
         {(opt) => {
           const lines = (props.answeredValue || '')

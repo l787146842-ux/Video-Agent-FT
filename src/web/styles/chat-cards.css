@@ -79,6 +79,14 @@
   .stage-card-ops { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
   .stage-card-ops li { font-size: var(--font-xs); color: var(--text-muted); line-height: 1.5; }
 
+  /* 批次B：账本翻转淡入——settled 相位新挂载卡片 opacity 0→1 120ms，
+     相位翻转不闪跳；纯 opacity 动画不涉色值。reduced-motion 下禁用 */
+  .ledger-fade-in { animation: ledger-fade-in 120ms ease-out both; }
+  @keyframes ledger-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .ledger-fade-in { animation: none; }
+  }
+
   /* 闸机判定 chips（结构化来源标注「平台」/「Skill『xxx』」） */
   .gate-chip-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
   .gate-chip { font-size: var(--font-2xs); padding: 1px 7px; border-radius: 4px; flex-shrink: 0; white-space: nowrap; }
