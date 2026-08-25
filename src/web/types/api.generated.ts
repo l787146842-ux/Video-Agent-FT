@@ -29,9 +29,9 @@ export interface CanvasDropImageRequest {
   /** 目标画布 ID（空则自动推断最近活跃画布） */
   canvas_id?: string;
   /** 落点相对画布 iframe 的屏幕坐标 */
-  drop?: DropPoint | unknown;
+  drop?: DropPoint | undefined;
   /** 画布 iframe 可视尺寸 */
-  view?: ViewSize | unknown;
+  view?: ViewSize | undefined;
 }
 
 export interface ChatRequest {
@@ -71,7 +71,7 @@ export interface ChatResponse {
   image_urls?: string[];
   chat_inserts?: Record<string, unknown>[];
   action_log?: string[];
-  state?: Record<string, unknown> | unknown;
+  state?: Record<string, unknown> | undefined;
 }
 
 export interface CreateConversationRequest {
@@ -106,18 +106,18 @@ export interface DraftCreate {
 }
 
 export interface DraftPatch {
-  label?: string | unknown;
-  tag?: string | unknown;
-  prompt?: string | unknown;
-  imgUrl?: string | unknown;
-  videoUrl?: string | unknown;
-  model?: string | unknown;
-  mode?: string | unknown;
-  aspectRatio?: string | unknown;
-  resolution?: string | unknown;
-  duration?: string | unknown;
-  timbre?: string | unknown;
-  refAssets?: string[] | unknown;
+  label?: string | undefined;
+  tag?: string | undefined;
+  prompt?: string | undefined;
+  imgUrl?: string | undefined;
+  videoUrl?: string | undefined;
+  model?: string | undefined;
+  mode?: string | undefined;
+  aspectRatio?: string | undefined;
+  resolution?: string | undefined;
+  duration?: string | undefined;
+  timbre?: string | undefined;
+  refAssets?: string[] | undefined;
 }
 
 export interface DropPoint {
@@ -150,14 +150,14 @@ export interface GenLogRequest {
 }
 
 export interface GroupPatch {
-  title?: string | unknown;
-  desc?: string | unknown;
-  roughDesc?: string | unknown;
-  duration?: string | unknown;
-  timeRange?: string | unknown;
-  shotType?: string | unknown;
-  sceneRefs?: string[] | unknown;
-  prompt?: string | unknown;
+  title?: string | undefined;
+  desc?: string | undefined;
+  roughDesc?: string | undefined;
+  duration?: string | undefined;
+  timeRange?: string | undefined;
+  shotType?: string | undefined;
+  sceneRefs?: string[] | undefined;
+  prompt?: string | undefined;
 }
 
 export interface GuidanceItem {
@@ -187,12 +187,12 @@ export interface NewProjectRequest {
 
 export interface OkResponse {
   ok?: boolean;
-  board_version?: number | unknown;
+  board_version?: number | undefined;
 }
 
 export interface OkWithStateResponse {
   ok?: boolean;
-  state?: Record<string, unknown> | unknown;
+  state?: Record<string, unknown> | undefined;
   project_id?: string;
 }
 
@@ -205,13 +205,13 @@ export interface ProjectStateResponse {
 }
 
 export interface ProjectStateUpdate {
-  project_id?: string | unknown;
-  base_version?: number | unknown;
-  keyElements?: unknown[] | unknown;
-  shots?: unknown[] | unknown;
-  audioItems?: unknown[] | unknown;
-  assets?: unknown[] | unknown;
-  chatMessages?: unknown[] | unknown;
+  project_id?: string | undefined;
+  base_version?: number | undefined;
+  keyElements?: unknown[] | undefined;
+  shots?: unknown[] | undefined;
+  audioItems?: unknown[] | undefined;
+  assets?: unknown[] | undefined;
+  chatMessages?: unknown[] | undefined;
 }
 
 export interface ProviderProbeRequest {
@@ -233,17 +233,17 @@ export interface ReorderRequest {
 }
 
 export interface RuntimeSettingsUpdate {
-  model_fallback_enabled?: boolean | unknown;
-  chat_image_enabled?: boolean | unknown;
-  default_image_provider_id?: string | unknown;
-  default_image_model?: string | unknown;
-  default_video_provider_id?: string | unknown;
-  default_video_model?: string | unknown;
-  default_image_resolution?: string | unknown;
-  default_video_resolution?: string | unknown;
-  max_shot_duration?: number | unknown;
-  script_inject_limit?: number | unknown;
-  model_policy?: Record<string, unknown> | unknown;
+  model_fallback_enabled?: boolean | undefined;
+  chat_image_enabled?: boolean | undefined;
+  default_image_provider_id?: string | undefined;
+  default_image_model?: string | undefined;
+  default_video_provider_id?: string | undefined;
+  default_video_model?: string | undefined;
+  default_image_resolution?: string | undefined;
+  default_video_resolution?: string | undefined;
+  max_shot_duration?: number | undefined;
+  script_inject_limit?: number | undefined;
+  model_policy?: Record<string, unknown> | undefined;
 }
 
 export interface SkillAssistantMessage {
@@ -267,7 +267,7 @@ export interface SkillFormatRequest {
 }
 
 export interface SnapshotRequest {
-  up_to_index?: number | unknown;
+  up_to_index?: number | undefined;
   pinned?: boolean;
 }
 
@@ -294,10 +294,10 @@ export interface TimelinePushRequest {
 }
 
 export interface TruncateResendRequest {
-  text?: string | unknown;
-  provider?: string | unknown;
-  model?: string | unknown;
-  thinking_level?: string | unknown;
+  text?: string | undefined;
+  provider?: string | undefined;
+  model?: string | undefined;
+  thinking_level?: string | undefined;
 }
 
 export interface UndoStatusResponse {
@@ -310,7 +310,7 @@ export interface VideoBatchCreate {
   model?: string;
   resolution?: string;
   duration?: number;
-  shot_group_ids?: string[] | unknown;
+  shot_group_ids?: string[] | undefined;
 }
 
 export interface VideoGenRequest {
@@ -332,4 +332,175 @@ export interface VideoGenRequest {
 export interface ViewSize {
   width: number;
   height: number;
+}
+
+// ===== SSE 事件载荷（来源：core/sse_events.py TS_EVENT_FRAMES）=====
+
+export interface SseStatusEvent {
+  type: 'status';
+  text?: string;
+  key?: string;
+  params?: Record<string, unknown>;
+}
+
+export interface SseDeltaEvent {
+  type: 'delta';
+  text?: string;
+}
+
+export interface SseReasoningDeltaEvent {
+  type: 'reasoning_delta';
+  text?: string;
+}
+
+export interface SseToolStartedEvent {
+  type: 'tool_started';
+  id?: string;
+  name?: string;
+  summary?: string;
+  args?: Record<string, unknown> | undefined;
+}
+
+export interface SseToolFinishedEvent {
+  type: 'tool_finished';
+  id?: string;
+  ok?: boolean;
+  elapsed_ms?: number;
+  result_summary?: string;
+  planning?: boolean | undefined;
+}
+
+export interface SseDocWrittenEvent {
+  type: 'doc_written';
+  name?: string;
+  turn_id?: string | undefined;
+}
+
+export interface SseActionsAppliedEvent {
+  type: 'actions_applied';
+  count?: number | undefined;
+  step?: number | undefined;
+  payload?: Record<string, unknown> | undefined;
+}
+
+export interface SseStoppedInflightItem {
+  task_id?: string;
+  media_type?: string;
+  model?: string;
+  draft_id?: string;
+  summary?: string;
+}
+
+export interface SseStoppedEvent {
+  type: 'stopped';
+  phase?: string;
+  step?: number | undefined;
+  inflight?: SseStoppedInflightItem[] | undefined;
+}
+
+export interface SseErrorEvent {
+  type: 'error';
+  detail?: string | undefined;
+  text?: string | undefined;
+  raw?: string | undefined;
+  error_code?: string | undefined;
+  code?: string;
+  kind?: string;
+  message?: string;
+}
+
+export interface SseGuidanceInjectedEvent {
+  type: 'guidance_injected';
+  id?: string;
+  text?: string;
+}
+
+export interface SseDoneChatInsert {
+  kind?: string;
+  url?: string;
+  name?: string;
+  thumb?: string;
+}
+
+export interface SseDoneConfirmationOption {
+  label?: string;
+  description?: string;
+  group?: string;
+  value?: string;
+}
+
+export interface SseDoneSuggestedAction {
+  kind?: string;
+  label?: string;
+  value?: string;
+}
+
+export interface SseDonePayload {
+  text?: string;
+  applied_actions?: number;
+  steps?: number;
+  warnings?: string[];
+  confirmation?: string;
+  pause_id?: string;
+  documents_written?: string[];
+  image_urls?: string[];
+  chat_inserts?: SseDoneChatInsert[];
+  action_log?: string[];
+  confirmation_options?: SseDoneConfirmationOption[];
+  suggested_actions?: SseDoneSuggestedAction[];
+  pause_kind?: string;
+  stopped?: boolean;
+  stop_phase?: string;
+  elapsed_ms?: number | undefined;
+  turn_id?: string | undefined;
+  state?: Record<string, unknown> | undefined;
+  trace?: Record<string, unknown> | undefined;
+  workflow?: Record<string, unknown> | undefined;
+}
+
+export interface SseDoneEvent {
+  type: 'done';
+  payload?: SseDonePayload;
+}
+
+export interface AgentTaskToolEntry {
+  id?: string;
+  name?: string;
+  summary?: string;
+  args?: Record<string, unknown> | undefined;
+  status?: string;
+  elapsed_ms?: number | undefined;
+  result_summary?: string;
+  planning?: boolean | undefined;
+  started_at_ms?: number | undefined;
+}
+
+export interface AgentTaskReplayPayload {
+  task_id?: string;
+  project_id?: string;
+  model?: string;
+  status?: string;
+  status_text?: string;
+  reasoning?: string;
+  text?: string;
+  tools?: AgentTaskToolEntry[];
+  snapshot?: Record<string, unknown> | undefined;
+  done_payload?: Record<string, unknown> | undefined;
+  stopped_payload?: Record<string, unknown> | undefined;
+  docs?: string[];
+  wf_event_sequence?: number;
+  workflow?: Record<string, unknown> | undefined;
+  fallback?: Record<string, unknown> | undefined;
+  error?: string | undefined;
+  error_payload?: Record<string, unknown> | undefined;
+}
+
+export interface SseReplayEvent {
+  type: 'replay';
+  payload?: AgentTaskReplayPayload;
+}
+
+export interface SseTaskStatusEvent {
+  type: 'task_status';
+  status?: string;
 }

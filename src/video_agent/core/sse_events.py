@@ -1,4 +1,4 @@
-"""SSE 事件名常量（后端唯一权威定义， 契约集中化）。
+﻿"""SSE 事件名常量（后端唯一权威定义， 契约集中化）。
 
 Agent 聊天流协议：任务式事件流（GET /api/agent/tasks/{id}/events）的 SSE data 帧均为
 {"type": <下列常量>, ...}。前端联合类型见 src/web/types/index.ts 的 SseEvent，
@@ -62,6 +62,225 @@ def status_event(key: str, text: str, params: dict | None = None) -> dict:
         "params": params or {},
     }
 
+
+# ============================================================
+# SSE 载荷编译期契约（整改批 3.2）：Pydantic 模型 = 前端 TS 类型的
+# 单一事实源。发射侧仍为裸 dict（零运行时开销，不受影响）；本节模型
+# 仅服务 scripts/gen_api_types.py 的 TS 导出与 --check 门禁——事件名或
+# 字段变更时 TS 契约漂移即 CI 红。
+# 深层结构（trace/state/workflow 快照）已有各自 dataclass 投影，此处以
+# Dict[str, Any] 透传并注释来源，待后续批次逐个收紧。
+# ============================================================
+from typing import Any, Dict, List, Literal, Optional  # noqa: E402
+
+from pydantic import BaseModel, Field  # noqa: E402
+
+
+class _SseFrame(BaseModel):
+    """判别字段基座：type 为必填字面量（TS 侧生成 '字面量' 判别列）。"""
+    type: str
+
+
+class SseStatusEvent(_SseFrame):
+    type: Literal["status"]
+    text: str = ""
+    key: str = ""
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SseDeltaEvent(_SseFrame):
+    type: Literal["delta"]
+    text: str = ""
+
+
+class SseReasoningDeltaEvent(_SseFrame):
+    type: Literal["reasoning_delta"]
+    text: str = ""
+
+
+class SseToolStartedEvent(_SseFrame):
+    type: Literal["tool_started"]
+    id: str = ""
+    name: str = ""
+    summary: str = ""
+    args: Optional[Dict[str, Any]] = None
+
+
+class SseToolFinishedEvent(_SseFrame):
+    type: Literal["tool_finished"]
+    id: str = ""
+    ok: bool = True
+    elapsed_ms: float = 0
+    result_summary: str = ""
+    planning: Optional[bool] = None
+
+
+class SseDocWrittenEvent(_SseFrame):
+    type: Literal["doc_written"]
+    name: str = ""
+    turn_id: Optional[str] = None
+
+
+class SseActionsAppliedEvent(_SseFrame):
+    type: Literal["actions_applied"]
+    count: Optional[int] = None
+    step: Optional[int] = None
+    # web 透传层快照形态：payload.count + payload.state（ServerStateSnapshot）
+    payload: Optional[Dict[str, Any]] = None
+
+
+class SseStoppedInflightItem(BaseModel):
+    task_id: str = ""
+    media_type: str = ""       # image | video
+    model: str = ""
+    draft_id: str = ""
+    summary: str = ""          # 前 60 字
+
+
+class SseStoppedEvent(_SseFrame):
+    type: Literal["stopped"]
+    phase: str = ""            # thinking | tool_executing | streaming
+    step: Optional[int] = None
+    inflight: Optional[List[SseStoppedInflightItem]] = None
+
+
+class SseErrorEvent(_SseFrame):
+    type: Literal["error"]
+    detail: Optional[str] = None
+    text: Optional[str] = None
+    raw: Optional[str] = None
+    error_code: Optional[str] = None
+    code: str = ""
+    kind: str = ""
+    message: str = ""
+
+
+class SseGuidanceInjectedEvent(_SseFrame):
+    type: Literal["guidance_injected"]
+    id: str = ""
+    text: str = ""
+
+
+class SseDoneChatInsert(BaseModel):
+    kind: str = ""             # image | video | audio
+    url: str = ""
+    name: str = ""
+    thumb: str = ""
+
+
+class SseDoneConfirmationOption(BaseModel):
+    label: str = ""
+    description: str = ""
+    group: str = ""
+    value: str = ""
+
+
+class SseDoneSuggestedAction(BaseModel):
+    kind: str = ""             # retry | continue | next
+    label: str = ""
+    value: str = ""
+
+
+class SseDonePayload(BaseModel):
+    """done.payload 全家桶（core PlannerResponse 核心字段 + web 层富化；
+    trace/state/workflow 为既有 dataclass 投影的 dict 透传）。"""
+    text: str = ""
+    applied_actions: int = 0
+    steps: int = 1
+    warnings: List[str] = Field(default_factory=list)
+    confirmation: str = ""
+    pause_id: str = ""
+    documents_written: List[str] = Field(default_factory=list)
+    image_urls: List[str] = Field(default_factory=list)
+    chat_inserts: List[SseDoneChatInsert] = Field(default_factory=list)
+    action_log: List[str] = Field(default_factory=list)
+    confirmation_options: List[SseDoneConfirmationOption] = Field(default_factory=list)
+    suggested_actions: List[SseDoneSuggestedAction] = Field(default_factory=list)
+    pause_kind: str = ""
+    stopped: bool = False
+    stop_phase: str = ""
+    elapsed_ms: Optional[int] = None
+    turn_id: Optional[str] = None
+    state: Optional[Dict[str, Any]] = None      # ServerStateSnapshot 投影
+    trace: Optional[Dict[str, Any]] = None      # AgentTrace（core/tracer.py）
+    workflow: Optional[Dict[str, Any]] = None   # WorkflowProjection 投影
+
+
+class SseDoneEvent(_SseFrame):
+    type: Literal["done"]
+    payload: SseDonePayload = Field(default_factory=SseDonePayload)
+
+
+class AgentTaskToolEntry(BaseModel):
+    """replay.tools[i]：任务累计工具条目（重连重建时间线）。"""
+    id: str = ""
+    name: str = ""
+    summary: str = ""
+    args: Optional[Dict[str, Any]] = None
+    status: str = "running"    # running | done | failed
+    elapsed_ms: Optional[float] = None
+    result_summary: str = ""
+    planning: Optional[bool] = None
+    started_at_ms: Optional[int] = None
+
+
+class AgentTaskReplayPayload(BaseModel):
+    """任务流订阅首帧 replay.payload（web/agent_task_manager.subscribe）。"""
+    task_id: str = ""
+    project_id: str = ""
+    model: str = ""
+    status: str = ""           # running|done|error|cancelled|stopped|interrupted
+    status_text: str = ""
+    reasoning: str = ""
+    text: str = ""
+    tools: List[AgentTaskToolEntry] = Field(default_factory=list)
+    snapshot: Optional[Dict[str, Any]] = None
+    done_payload: Optional[Dict[str, Any]] = None   # SseDonePayload 原样 dict
+    stopped_payload: Optional[Dict[str, Any]] = None
+    docs: List[str] = Field(default_factory=list)
+    wf_event_sequence: int = 0
+    workflow: Optional[Dict[str, Any]] = None
+    fallback: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    error_payload: Optional[Dict[str, Any]] = None  # {code,kind,raw}
+
+
+class SseReplayEvent(_SseFrame):
+    type: Literal["replay"]
+    payload: AgentTaskReplayPayload = Field(default_factory=AgentTaskReplayPayload)
+
+
+class SseTaskStatusEvent(_SseFrame):
+    type: Literal["task_status"]
+    status: str = ""
+
+
+# 事件帧注册表（TS 导出顺序 = 本表顺序；payload-only 模型经 $ref 随帧导出）。
+# 新增/改名事件必须同批维护：常量 + 本表 + web/sse_protocol.py 登记 +
+# 前端 index.ts 联合类型（test_sse_contract_parity 双向对拍）。
+TS_EVENT_FRAMES: List[tuple] = [
+    ("SseStatusEvent", SseStatusEvent),
+    ("SseDeltaEvent", SseDeltaEvent),
+    ("SseReasoningDeltaEvent", SseReasoningDeltaEvent),
+    ("SseToolStartedEvent", SseToolStartedEvent),
+    ("SseToolFinishedEvent", SseToolFinishedEvent),
+    ("SseDocWrittenEvent", SseDocWrittenEvent),
+    ("SseActionsAppliedEvent", SseActionsAppliedEvent),
+    ("SseStoppedInflightItem", SseStoppedInflightItem),
+    ("SseStoppedEvent", SseStoppedEvent),
+    ("SseErrorEvent", SseErrorEvent),
+    ("SseGuidanceInjectedEvent", SseGuidanceInjectedEvent),
+    ("SseDoneChatInsert", SseDoneChatInsert),
+    ("SseDoneConfirmationOption", SseDoneConfirmationOption),
+    ("SseDoneSuggestedAction", SseDoneSuggestedAction),
+    ("SseDonePayload", SseDonePayload),
+    ("SseDoneEvent", SseDoneEvent),
+    ("AgentTaskToolEntry", AgentTaskToolEntry),
+    ("AgentTaskReplayPayload", AgentTaskReplayPayload),
+    ("SseReplayEvent", SseReplayEvent),
+    ("SseTaskStatusEvent", SseTaskStatusEvent),
+]
+
 __all__ = [
     "SSE_STATUS",
     "SSE_DELTA",
@@ -77,4 +296,5 @@ __all__ = [
     "SSE_STEP_STARTED",
     "SSE_GUIDANCE_INJECTED",
     "status_event",
+    "TS_EVENT_FRAMES",
 ]

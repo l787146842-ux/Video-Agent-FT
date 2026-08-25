@@ -32,17 +32,39 @@ const apiModules = Object.entries(corpusModules)
 
 /** 无前端消费路径的生成物（与 types/index.ts 豁免清单同源；新增需附原因） */
 const EXEMPT: Record<string, string> = {
-  ChatResponse: '前端 AgentChatResponse/ChatResponse 手写更精（state 视图态）',
-  OkResponse: '生成物 board_version 为 unknown 粗型，前端按端点各自精型',
-  TestConnectionResponse: 'SettingsView 验证按端点精型消费（含 status/message）',
-  FetchModelsResponse: 'settings-meta.FetchedModels 手写更精（all 必填）',
-  ProjectStateResponse: '后端空 schema（Dict 响应）',
-  ModelFallbackPatch: '前端 fallback 开关走通用 runtime PUT（RuntimeSettingsUpdate）',
-  TimelinePushRequest: 'B9b 时间线回画布由 Agent 工具路径触发，前端无按钮消费',
-  Body_upload_files_api_ai_upload_post: 'multipart 上传，不走 JSON 请求体',
-  DraftCreate: '草稿操作走整板保存通道（stores/studio 手写强类型）',
+  ChatResponse: '前端 AgentChatResponse/ChatResponse 手写镜像（state 视图态）',
+  OkResponse: '仅字段 board_version 为 unknown 宽松型，前端按说明性消费',
+  TestConnectionResponse: 'SettingsView 验证端点精确断言，仅用 status/message',
+  FetchModelsResponse: 'settings-meta.FetchedModels 手写镜像（all 字段）',
+  ProjectStateResponse: '后端宽松 schema（Dict 对应）',
+  ModelFallbackPatch: '前端 fallback 设置走 runtime PUT（RuntimeSettingsUpdate）',
+  TimelinePushRequest: 'B9b 时间线回放由 Agent 任务流下发，前端暂无按钮消费',
+  Body_upload_files_api_ai_upload_post: 'multipart 上传非 JSON 契约',
+  DraftCreate: '草稿创建走手写保留通道（stores/studio 手写强类型）',
   DraftPatch: '同上',
   GroupPatch: '同上',
+  // 批 3.2 并存期豁免：SSE 载荷契约生成面（单一事实源 = core/sse_events
+  // TS_EVENT_FRAMES）；前端 SseEvent 联合仍为手写镜像，切换消费后逐个移除
+  SseStatusEvent: '批3.2 并存期：SSE 契约导出面（use-sse 切换消费后移除）',
+  SseDeltaEvent: '批3.2 并存期',
+  SseReasoningDeltaEvent: '批3.2 并存期',
+  SseToolStartedEvent: '批3.2 并存期',
+  SseToolFinishedEvent: '批3.2 并存期',
+  SseDocWrittenEvent: '批3.2 并存期',
+  SseActionsAppliedEvent: '批3.2 并存期',
+  SseStoppedInflightItem: '批3.2 并存期',
+  SseStoppedEvent: '批3.2 并存期',
+  SseErrorEvent: '批3.2 并存期',
+  SseGuidanceInjectedEvent: '批3.2 并存期',
+  SseDoneChatInsert: '批3.2 并存期',
+  SseDoneConfirmationOption: '批3.2 并存期',
+  SseDoneSuggestedAction: '批3.2 并存期',
+  SseDonePayload: '批3.2 并存期',
+  SseDoneEvent: '批3.2 并存期',
+  AgentTaskToolEntry: '批3.2 并存期',
+  AgentTaskReplayPayload: '批3.2 并存期',
+  SseReplayEvent: '批3.2 并存期',
+  SseTaskStatusEvent: '批3.2 并存期',
 };
 
 /** api/ 内与生成物同名、刻意保留的手写 interface（豁免清单登记项） */

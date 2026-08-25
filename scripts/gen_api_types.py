@@ -1,4 +1,4 @@
-"""从 FastAPI OpenAPI schema 生成前端 TS 类型（前后端契约一致性）。
+﻿"""从 FastAPI OpenAPI schema 生成前端 TS 类型（前后端契约一致性）。
 
 用法：
     python scripts/gen_api_types.py          # 生成 src/web/types/api.generated.ts
@@ -11,6 +11,7 @@
 输出约定：成败信息一律带 ASCII 前缀（OK: / FAIL:），
 防 Windows GBK 终端乱码把失败误读成通过——验收只认退出码，不人眼读文案。
 """
+import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -31,6 +32,14 @@ def ts_type(schema: Dict[str, Any], components: Dict[str, Any]) -> str:
     if "$ref" in schema:
         name = schema["$ref"].rsplit("/", 1)[-1]
         return name
+    # 字面量判别列（整改批 3.2）：Literal["x"] → JSON Schema const/单值 enum，
+    # 生成 TS 字面量类型，前端联合类型可收窄
+    if "const" in schema:
+        v = schema["const"]
+        return f"'{v}'" if isinstance(v, str) else json.dumps(v)
+    if "enum" in schema and isinstance(schema["enum"], list) and len(schema["enum"]) == 1:
+        v = schema["enum"][0]
+        return f"'{v}'" if isinstance(v, str) else json.dumps(v)
     for key in ("anyOf", "oneOf"):
         if key in schema:
             parts = [ts_type(s, components) for s in schema[key]]
@@ -40,6 +49,8 @@ def ts_type(schema: Dict[str, Any], components: Dict[str, Any]) -> str:
                 return f"{parts[0]} | undefined" if "null" in [ts_type(s, components) for s in schema[key]] else parts[0]
             return " | ".join(parts)
     t = schema.get("type")
+    if t == "null":
+        return "null"
     if t == "array":
         return f"{ts_type(schema.get('items', {}), components)}[]"
     if t == "string":
@@ -93,6 +104,21 @@ def build_output() -> str:
         if schema.get("type") != "object" and "properties" not in schema:
             continue
         chunks.append(gen_interface(name, schema, components))
+        chunks.append("")
+
+    # ===== SSE 事件载荷（整改批 3.2）：core/sse_events 单一事实源导出 =====
+    # 事件帧模型不挂路由（不会出现在 OpenAPI components），显式枚举导出；
+    # 嵌套子模型经各帧 model_json_schema 的 $defs 合并后按 $ref 解析。
+    from src.video_agent.core.sse_events import TS_EVENT_FRAMES
+
+    chunks.append("// ===== SSE 事件载荷（来源：core/sse_events.py TS_EVENT_FRAMES）=====")
+    chunks.append("")
+    for ts_name, model in TS_EVENT_FRAMES:
+        schema = model.model_json_schema(by_alias=True)
+        local = dict(components)
+        for def_name, def_schema in (schema.get("$defs") or {}).items():
+            local[def_name] = def_schema
+        chunks.append(gen_interface(ts_name, schema, local))
         chunks.append("")
     return "\n".join(chunks)
 
