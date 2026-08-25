@@ -66,29 +66,34 @@ def should_compress_feedback(messages: List[Dict[str, Any]], context_window: int
     return estimate_messages_tokens(messages) >= threshold
 
 
-def compress_prior_feedback(messages: List[Dict[str, Any]]) -> None:
+def compress_prior_feedback(
+    messages: List[Dict[str, Any]], keep_recent: int = 2,
+) -> None:
     """把 messages 里已有的工具结果回喂消息压缩为占位文案（原地修改）。
 
     时机：新一次回喂 append 之前调用，因此现存的所有回喂消息都属「旧轮」。
-    read_* 全文只保留最近，更早的以一句话占位——约束效力靠提示词延续，
-    全文本身已写入草稿/文档，需要时模型可重新 read。
+    read_* 全文只保留最近 keep_recent 条（整改批 3.4 近因保护：与
+    digest_projected_tool_results 的 keep_recent 语义对齐；此前 docstring
+    声称「只保留最近」而实现无差别压缩全部——含最近一批刚回喂的全文，
+    同一 assistant turn 多 FC 批时即自伤，失真已清偿），更早的以一句话
+    占位——约束效力靠提示词延续，全文本身已写入草稿/文档，需要时模型
+    可重新 read。
     多模态回喂（含图片 parts 的 list content）同样压成纯文本占位，
     旧轮图片不再占用 vision token。
     """
-    for m in messages:
-        content = m.get("content", "")
-        if m.get("role") != "user":
-            continue
-        if isinstance(content, str) and content.startswith(FEEDBACK_MARKER):
-            m["content"] = FEEDBACK_COMPRESSED
-        elif isinstance(content, list):
-            first_text = next(
-                (p.get("text", "") for p in content
-                 if isinstance(p, dict) and p.get("type") == "text"),
-                "",
-            )
-            if first_text.startswith(FEEDBACK_MARKER):
-                m["content"] = FEEDBACK_COMPRESSED
+    fb_idx = [
+        i for i, m in enumerate(messages)
+        if m.get("role") == "user" and (
+            (isinstance(m.get("content"), str)
+             and str(m["content"]).startswith(FEEDBACK_MARKER))
+            or (isinstance(m.get("content"), list)
+                and next((p.get("text", "") for p in m["content"]
+                          if isinstance(p, dict) and p.get("type") == "text"),
+                         "").startswith(FEEDBACK_MARKER)))
+    ]
+    eligible = fb_idx[:-keep_recent] if keep_recent > 0 else fb_idx
+    for i in eligible:
+        messages[i]["content"] = FEEDBACK_COMPRESSED
 
 
 def digest_projected_tool_results(

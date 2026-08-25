@@ -94,9 +94,10 @@ class TestLazyFeedbackCompression:
         assert should_compress_feedback(msgs) is True
 
     def test_compression_still_works_when_triggered(self):
-        """触发压缩后旧轮全文确实被替换为占位"""
+        """触发压缩后旧轮全文确实被替换为占位（近因保护下用 keep_recent=0
+        表达「全部视为旧轮」的极端压力口径）。"""
         msgs = [
             {"role": "user", "content": FEEDBACK_MARKER + "\n- read_skill：三万字全文"},
         ]
-        compress_prior_feedback(msgs)
+        compress_prior_feedback(msgs, keep_recent=0)
         assert msgs[0]["content"] == FEEDBACK_COMPRESSED

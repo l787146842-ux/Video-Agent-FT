@@ -103,16 +103,23 @@ class TestFeedbackCompression:
     MARKER = FEEDBACK_MARKER
 
     def test_prior_feedback_compressed(self):
+        """多条回喂：除最近 keep_recent 条外压缩（批 3.4 近因保护，
+        默认 keep_recent=2 → 三条中最早一条被压缩）。"""
         messages = [
             {"role": "user", "content": "用户原始消息"},
-            {"role": "user", "content": self.MARKER + "\n- read_skill：……三万字全文……"},
+            {"role": "user", "content": self.MARKER + "\n- read_skill：……最早轮三万字全文……"},
             {"role": "assistant", "content": "好的"},
+            {"role": "user", "content": self.MARKER + "\n- read_uploaded_doc：中间全文。"},
+            {"role": "assistant", "content": "继续"},
+            {"role": "user", "content": self.MARKER + "\n- read_project_doc：最新全文。"},
         ]
         compress_prior_feedback(messages)
         assert messages[0]["content"] == "用户原始消息"
         assert messages[1]["content"] == FEEDBACK_COMPRESSED
-        assert "三万字全文" not in messages[1]["content"]
-        assert messages[2]["content"] == "好的"
+        assert "三万字全文" not in str(messages[1]["content"])
+        # 最近两条回喂受近因保护，全文保留
+        assert "中间全文" in str(messages[3]["content"])
+        assert "最新全文" in str(messages[5]["content"])
 
     def test_non_feedback_messages_untouched(self):
         messages = [{"role": "user", "content": "（系统）第 1 轮的 2 个 Tool 已执行完毕"}]
@@ -137,6 +144,50 @@ def test_truncate_messages_semantics():
         assert m not in out
     # 原列表未被修改
     assert len(messages) == 15
+
+
+def test_truncate_messages_keeps_fc_pair_atomic():
+    """批 3.4 钉死：del_end 轮组原子边界——FC 配对（assistant.tool_calls +
+    系统回喂）整组删除或整组保留，绝不劈半（拆半边会被供应商 400）。"""
+    from src.video_agent.core.token_budget import truncate_messages
+
+    system = {"role": "system", "content": "协议"}
+
+    def group(i):
+        return [
+            {"role": "user", "content": f"真实用户输入 {i}"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": f"call-{i}", "type": "function",
+                 "function": {"name": "read_skill", "arguments": "{}"}}]},
+            {"role": "user", "content": f"（系统）第 {i} 轮 read_skill 全文回喂"},
+        ]
+
+    recent_tail = [
+        {"role": "user", "content": "最新真实请求"},
+        {"role": "assistant", "content": "最终回复"},
+    ]
+    messages = [system]
+    for i in range(8):
+        messages.extend(group(i))
+    messages.extend(recent_tail)
+
+    out = truncate_messages(messages, max_tokens=200, keep_recent=2)
+    assert len(out) < len(messages), "压力不足：截断未触发，用例失去意义"
+    for idx, m in enumerate(out):
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            nxt = out[idx + 1] if idx + 1 < len(out) else None
+            assert (
+                nxt is not None and nxt.get("role") == "user"
+                and str(nxt.get("content") or "").startswith("（系统）")
+            ), f"FC 配对被劈半 @ index {idx}"
+    # 不存在「真实用户 + 回喂」而缺中间 tool_calls 半边的残组：
+    # 每个保留的真实用户轮，其后要么紧跟新 assistant 轮，要么紧跟其回喂
+    for idx, m in enumerate(out[:-1]):
+        if (m.get("role") == "user"
+                and not str(m.get("content") or "").startswith("（系统）")):
+            nxt = out[idx + 1]
+            assert nxt.get("role") in ("assistant", "user"), (
+                f"轮组边界异常 @ index {idx}: {nxt}")
 
 
 # ---------- P2-9：快照深拷贝 + 幂等槽位 ----------

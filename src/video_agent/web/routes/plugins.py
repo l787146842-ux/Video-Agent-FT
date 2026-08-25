@@ -13,6 +13,7 @@ import re
 from typing import Dict, List, Optional
 
 from src.video_agent.exceptions import VideoAgentError
+from src.video_agent.core.token_budget import window_recent_turns
 from src.video_agent.tools import ToolManager
 from src.video_agent.tools.canvas_tools import register_canvas_tools
 from src.video_agent.web.chat_opening import _create_chat_adapter
@@ -266,10 +267,12 @@ async def skill_assistant(body: SkillAssistantRequest):
         {"role": "system", "content": _assistant_system()},
         {"role": "user", "content": f"当前 Skill 文档全文：\n\n{body.content}"},
     ]
-    # 会话历史截尾 10 条（控上下文预算），role 收敛 user/assistant
-    for m in body.messages[-10:]:
-        role = m.role if m.role in ("user", "assistant") else "user"
-        messages.append({"role": role, "content": m.content})
+    # 会话历史截尾（批 3.4 统一口径）：真实用户轮组原子窗口，
+    # 语义单一事实源 = token_budget.window_recent_turns（默认 10 轮）
+    hist_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
+    for m in window_recent_turns(hist_dicts):
+        role = m["role"] if m["role"] in ("user", "assistant") else "user"
+        messages.append({"role": role, "content": m["content"]})
     try:
         result = await adapter.generate(messages, temperature=0.3)
         text = (result.text or "").strip()

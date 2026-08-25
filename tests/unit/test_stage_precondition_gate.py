@@ -139,6 +139,36 @@ def test_runner_gate_rejects_and_override_passes(dag_env, svc, monkeypatch):
     assert any("用户坚持放行" in w for w in runner.gate_warnings)
 
 
+@pytest.mark.allow_degradation
+def test_probe_exception_fails_closed_with_telemetry(dag_env, svc, monkeypatch):
+    """整改批 3.4：判定异常不再无声放行（fail-open 清偿）——fail-closed
+    拦截 + 降级遥测留痕；gate_override「本次放行」仍可豁免不死锁。"""
+    from src.video_agent.core import live_metrics
+
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+    svc.state_dict["analysis"] = {"summary": "一句话总结"}
+
+    def _boom(*a, **k):
+        raise RuntimeError("探针炸了")
+
+    monkeypatch.setattr(po, "evaluate_stage_precondition", _boom)
+    key = "fc_gates.stage_precondition_probe@_global"
+
+    def _count() -> int:
+        rec = live_metrics._DEGRADATIONS.get(key)
+        return rec["count"] if rec else 0
+
+    runner = FCToolRunner(tool_manager=None)
+    before = _count()
+    err = runner._stage_precondition_gate("storyboard_key_elements", _SKILL)
+    assert err is not None and "暂时不可用" in err and "本次放行" in err
+    assert _count() == before + 1, "fail-closed 拦截必须落降级遥测"
+
+    # 用户坚持：override 豁免路径对 fail-closed 文案同样生效
+    runner.gate_override = True
+    assert runner._stage_precondition_gate("storyboard_key_elements", _SKILL) is None
+
+
 def test_runner_gate_inactive_without_skill(dag_env, svc, monkeypatch):
     """无 Skill 注入时闸机不启用（日常对话零误伤）"""
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))

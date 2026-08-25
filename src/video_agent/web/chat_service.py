@@ -57,6 +57,7 @@ from src.video_agent.core.sse_events import (
     status_event,
 )
 from src.video_agent.core.stop_signal import is_stop_requested
+from src.video_agent.core.token_budget import window_recent_turns
 from src.video_agent.web.stop_manager import (
     persist_stop_trace,
     snapshot_inflight_generations,
@@ -261,7 +262,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
     """
     history = truncate_history([
         {"role": m.get("role", "user"), "content": m.get("content", "")}
-        for m in body.messages[-10:]
+        for m in window_recent_turns(body.messages)
     ])
 
     # 轮次唯一标识——本轮持久化的正文/文档卡/图片卡共用同一 turnId，
@@ -583,7 +584,7 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
 
     # 真实供应商
     history = truncate_history([
-        {"role": m.get("role", "user"), "content": m.get("content", "")} for m in body.messages[-10:]
+        {"role": m.get("role", "user"), "content": m.get("content", "")} for m in window_recent_turns(body.messages)
     ])
 
     # 多模态内容构建（有 content_parts 时按排版顺序交错；

@@ -74,29 +74,66 @@ class TestMaybeCompactHistory:
         # 摘要首条 + 最近 KEEP 条
         assert len(out) == 1 + chat_service._HISTORY_COMPACT_KEEP
         assert "会话摘要" in out[0]["content"]
-        # 摘要缓存到 interaction
-        assert (svc.state_dict.get("interaction") or {}).get("session_summary", {}).get("count")
+        # 摘要缓存到 interaction（批 3.4：键 = 较早消息内容指纹 fp）
+        cached = (svc.state_dict.get("interaction") or {}).get("session_summary") or {}
+        assert cached.get("fp"), "内容指纹缓存键缺失"
+        assert cached.get("text")
 
     async def test_cache_reuse_no_second_call(self, tmp_path, monkeypatch):
         from types import SimpleNamespace
 
         from src.video_agent.state.manager import StateManager
+        from src.video_agent.web.chat_consume import (
+            _HISTORY_COMPACT_KEEP,
+            _history_fingerprint,
+        )
 
         monkeypatch.setattr(
             chat_consume, "settings",
             SimpleNamespace(history_compact_threshold=2, llm_timeout=10),
         )
         svc = StateManager(str(tmp_path))
-        # 预置与当前消息数匹配的缓存摘要
-        msg_count = len(svc.get_chat_messages())
-        svc.state_dict.setdefault("interaction", {})["session_summary"] = {
-            "count": msg_count, "text": "缓存摘要",
-        }
         hist = [{"role": "user", "content": f"m{i}"} for i in range(6)]
+        # 预置与当前较早消息**内容指纹**匹配的缓存摘要（批 3.4：fp 键）
+        older = hist[:-_HISTORY_COMPACT_KEEP]
+        svc.state_dict.setdefault("interaction", {})["session_summary"] = {
+            "fp": _history_fingerprint(older), "text": "缓存摘要",
+        }
         adapter = self._FakeAdapter()
         out = await chat_service._maybe_compact_history(hist, svc, adapter)
         assert adapter.calls == 0, "命中缓存不得再调模型"
         assert "缓存摘要" in out[0]["content"]
+
+    async def test_cache_invalidated_by_content_edit_not_just_count(
+            self, tmp_path, monkeypatch):
+        """批 3.4 指纹键语义：条数不变但内容被编辑重发 → 缓存必须失效重建。"""
+        from types import SimpleNamespace
+
+        from src.video_agent.state.manager import StateManager
+        from src.video_agent.web.chat_consume import (
+            _HISTORY_COMPACT_KEEP,
+            _history_fingerprint,
+        )
+
+        monkeypatch.setattr(
+            chat_consume, "settings",
+            SimpleNamespace(history_compact_threshold=2, llm_timeout=10),
+        )
+        svc = StateManager(str(tmp_path))
+        hist = [{"role": "user", "content": f"m{i}"} for i in range(6)]
+        older = hist[:-_HISTORY_COMPACT_KEEP]
+        stale_fp = _history_fingerprint(older)
+        edited = [dict(m) for m in hist]
+        edited[0]["content"] = "m0（已编辑重发）"      # 条数不变，内容变化
+        edited_older = edited[:-_HISTORY_COMPACT_KEEP]
+        assert _history_fingerprint(edited_older) != stale_fp
+        svc.state_dict.setdefault("interaction", {})["session_summary"] = {
+            "fp": stale_fp, "text": "陈旧摘要",
+        }
+        adapter = self._FakeAdapter()
+        out = await chat_service._maybe_compact_history(edited, svc, adapter)
+        assert adapter.calls == 1, "内容指纹变化必须失效重建，不得复用陈旧摘要"
+        assert "陈旧摘要" not in out[0]["content"]
 
 
 class TestGateOverridesStore:

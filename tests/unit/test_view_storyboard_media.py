@@ -141,12 +141,13 @@ def test_strip_prior_feedback_images():
 
 
 def test_compress_prior_feedback_handles_list_content():
-    """惰性压缩同样覆盖多模态回喂（list content）"""
+    """旧轮压缩同样覆盖多模态回喂（list content）——批 3.4 近因保护下
+    用 keep_recent=0 表达「该条已属旧轮」的压力口径。"""
     msgs = [
         {"role": "user", "content": [
-            {"type": "text", "text": FEEDBACK_MARKER + "全文……"},
+            {"type": "text", "text": FEEDBACK_MARKER + "全文。"},
             {"type": "image_url", "image_url": {"url": "data:image/png;base64,X"}},
         ]},
     ]
-    compress_prior_feedback(msgs)
+    compress_prior_feedback(msgs, keep_recent=0)
     assert isinstance(msgs[0]["content"], str)

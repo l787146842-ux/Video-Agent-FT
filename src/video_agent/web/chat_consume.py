@@ -1,5 +1,6 @@
 """消费/压缩域（自 chat_service.py 切出）：会话 compaction/暂停态消费/规格向导消费/卡片枚举压缩。"""
 import asyncio
+import hashlib
 import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -34,6 +35,49 @@ __all__ = ["build_multimodal_content"]
 
 # 会话级 compaction（恢复）：压缩后仍完整保留的最近消息条数
 _HISTORY_COMPACT_KEEP = 4
+# 分层采样预算：摘要输入最多采样的较早消息条数（头 6 + 中段跨步 + 尾 10）
+_HISTORY_SAMPLE_CAP = 24
+
+
+def _history_fingerprint(older: List[Dict[str, Any]]) -> str:
+    """摘要失效键（整改批 3.4）：较早消息的**内容指纹**而非消息条数。
+
+    条数键的缺陷：编辑重发/截断重答不改变总数时命中陈旧摘要；内容指纹
+    对任何增删改都失效重建。对全文计算（不受采样截断影响）。"""
+    h = hashlib.sha1()
+    for m in older:
+        role = str(m.get("role") or "")
+        content = m.get("content", "")
+        h.update(role.encode("utf-8", "ignore"))
+        h.update(b"\x00")
+        if isinstance(content, str):
+            h.update(content.encode("utf-8", "ignore"))
+        else:  # 多模态 list content：稳定序列化
+            h.update(repr(content).encode("utf-8", "ignore"))
+        h.update(b"\x1e")
+    return h.hexdigest()
+
+
+def _sample_older_dialog(older: List[Dict[str, Any]],
+                         cap: int = _HISTORY_SAMPLE_CAP) -> str:
+    """分层采样拼装摘要输入（整改批 3.4：不再只取 older[-20:]）。
+
+    头部定锚（任务起点）+ 中段等距跨步 + 尾部贴近期保留窗，超预算时
+    中段均匀抽稀——任意位置的决策都有机会进入摘要，而不是只有最近 20 条。"""
+    n = len(older)
+    if n <= cap:
+        idx = list(range(n))
+    else:
+        head, tail = 6, 10
+        mid_budget = max(1, cap - head - tail)
+        span = n - head - tail
+        step = max(1, span // mid_budget)
+        mid = list(range(head, n - tail, step))[:mid_budget]
+        idx = sorted(set(list(range(head)) + mid + list(range(n - tail, n))))
+    return "\n".join(
+        f"{'user' if older[i].get('role') == 'user' else 'agent'}: "
+        f"{str(older[i].get('content', ''))[:300]}"
+        for i in idx)
 
 
 async def _maybe_compact_history(
@@ -44,9 +88,11 @@ async def _maybe_compact_history(
     触发双条件（token 驱动 + 条数兜底）：estimate_messages_tokens(history)
     超过窗口 0.6 倍，或条数达 history_compact_threshold（阈值 0 = 整体关闭）；
     长消息少条数的历史（大段回喂/附件）靠 token 条件命中，反之靠条数。
-    对齐 Anthropic compaction 实践：保留决策与约束、丢弃冗余过程；
-    摘要按对话消息数缓存于 interaction.session_summary（消息数变化即失效重建），
-    失败静默回落原 history（compaction 是优化不是前置条件）。"""
+    对齐 Anthropic compaction 实践：保留决策与约束、丢弃冗余过程，
+    并保留可回溯引用（文档名/任务 ID/草稿编号——丢内容留路径）。
+    摘要按较早消息的**内容指纹**缓存于 interaction.session_summary
+    （任何增删改即失效重建；整改批 3.4 前为消息条数键）；失败静默回落
+    原 history（compaction 是优化不是前置条件）。"""
     threshold = int(getattr(settings, "history_compact_threshold", 0) or 0)
     if threshold <= 0 or adapter is None:
         return history
@@ -64,19 +110,16 @@ async def _maybe_compact_history(
         return history
     interaction = svc.state_dict.setdefault("interaction", {})
     cached = interaction.get("session_summary") or {}
-    msg_count = len(svc.get_chat_messages())
+    keep = _HISTORY_COMPACT_KEEP
+    older = history[:-keep] if len(history) > keep else []
+    if not older:
+        return history
+    fp = _history_fingerprint(older)
     summary = ""
-    if cached.get("count") == msg_count and str(cached.get("text") or "").strip():
+    if cached.get("fp") == fp and str(cached.get("text") or "").strip():
         summary = str(cached["text"])
     else:
-        keep = _HISTORY_COMPACT_KEEP
-        older = history[:-keep] if len(history) > keep else []
-        if not older:
-            return history
-        dialog = "\n".join(
-            f"{'user' if m.get('role') == 'user' else 'agent'}: {str(m.get('content', ''))[:300]}"
-            for m in older[-20:]
-        )
+        dialog = _sample_older_dialog(older)
         from src.video_agent.utils.prompts import load_prompt_section
 
         tpl = load_prompt_section("planner/session_compact.md", "TEMPLATE")
@@ -99,11 +142,11 @@ async def _maybe_compact_history(
             return history
         if not summary:
             return history
-        interaction["session_summary"] = {"count": msg_count, "text": summary[:1000]}
+        interaction["session_summary"] = {"fp": fp, "text": summary[:1000]}
         svc.save_debounced()
         logger.info(
             f"[ChatService] 会话 compaction（{'token' if over_tokens else '条数'}触发）："
-            f"{len(history)} 条 history 压缩为摘要+{keep} 条")
+            f"{len(history)} 条 history 压缩为摘要+{keep} 条（采样较早 {len(older)} 条）")
     # 降级事件化（P4）：compaction 成功命中记入上下文事件流（旁路
     # 失败路径的 live_metrics.record_degradation，不重复）；失败仅 log 不干扰主链
     try:

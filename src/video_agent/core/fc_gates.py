@@ -20,6 +20,7 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline, pipeline_orchestrator, prompt_gates
+from src.video_agent.core.live_metrics import record_degradation
 # 分级注入阈值（read_skill 短路判定与 prompt_builder 同口径，任务#36 B5）
 from src.video_agent.core.prompt_builder import GENERIC_FULL_INJECT_LIMIT
 from src.video_agent.skill_runtime.registry import resolve_entry, skill_flow_enabled
@@ -182,8 +183,17 @@ def stage_precondition_gate(ctx: GateContext, name: str) -> Optional[str]:
     try:
         err = pipeline_orchestrator.evaluate_stage_precondition(
             name, ctx.state(), ctx.injected_skill)
-    except Exception:
-        return None  # 判定异常不阻断对话（闸机失败-open 惯例，审计可查）
+    except Exception as exc:
+        # 整改批 3.4（fail-open 清偿）：判定异常不再无声放行——探针失明时
+        # fail-closed 拦截 + 降级遥测留痕；err 落入下方共享的 override/
+        # 审计逻辑，用户仍可经「本次放行」（gate_override）一次性豁免。
+        record_degradation("fc_gates.stage_precondition_probe")
+        logger.warning(
+            "[Gate] stage_precondition 探针异常，fail-closed 拦截 {}: {}",
+            name, exc)
+        err = (
+            f"阶段前置校验暂时不可用（系统探针异常），已拦截 {name} 调用；"
+            "确认流程无误后可点「本次放行」继续。")
     if err is None:
         return None
     if ctx.gate_override in (True, "all"):
