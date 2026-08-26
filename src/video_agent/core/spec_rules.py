@@ -5,7 +5,8 @@
 用户在文档面板可直接编辑、保存即生效；闸机按文档中的声明决定是否放行。
 老项目兼容：规格文档里仍带旧铁律章节时，ensure 时自动迁移进独立文档
 （保留用户改过的内容并从规格文档中移除该章节）。
-执行优先级：用户最新指令 > 铁律文档 + 制片规格 > Skill/系统默认。
+执行优先级链唯一表述源 = prompts/shared/iron_rules_header.md
+（用户最新指令 > 铁律文档 + 制片规格 > Skill/系统默认）。
 """
 import re
 from datetime import datetime, timezone
@@ -26,12 +27,17 @@ _ON_RE = re.compile(r"(?m)^\s*(?:-\s*)?元素概念图前置：开启")
 # 老项目规格文档内的铁律章节：从标题到下一个二级标题（或文末），整段迁移
 _IRON_SECTION_RE = re.compile(r"##\s*执行铁律[^\n]*\n.*?(?=\n##\s|\Z)", re.S)
 # 优先级文案升级：仅精确替换旧措辞，
-# 用户改过其它内容不受影响。措辞唯一源 = prompts/shared/iron_rules_header.md
+# 用户改过其它内容不受影响。措辞唯一源 = prompts/shared/iron_rules_header.md；
+# 铁律文档内只留链本体 + 指向头部的指针（单源收敛：完整声明含硬闸
+# 效力边界只在头部，_NEW_PRIORITY 保留链本体供快照锁与迁移替换同口径）
 _OLD_PRIORITIES = (
     "用户指令 > 本文档 > Skill/系统默认",
     "用户指令 > 本文档 + 制片规格 > Skill/系统默认",
 )
 _NEW_PRIORITY = "用户最新指令 > 本文档 + 制片规格 > Skill/系统默认"
+# 铁律文档内落盘口径 = 链本体 + 指向头部的指针（单源收敛：完整声明含
+# 硬闸效力边界只在头部，快照锁只钉链本体与头部一致）
+_NEW_PRIORITY_POINTER = _NEW_PRIORITY + "（优先级链完整声明与硬闸效力边界见平台注入的《执行铁律》头部）"
 # 容忍旧文档里的换行/空白差异；用户改过其它内容不受影响
 _NO_BLOCK_RE = re.compile(r"；\s*系统不得拦截用户要求的操作，\s*也不得强制暂停等待确认。")
 
@@ -65,7 +71,7 @@ def _upgrade_clause_3(body: str) -> str:
         return body
     return _IRON_CLAUSE_3_RE.sub(_CLAUSE_3_POINTER, body)
 
-_IRON_RULES_DOC_BODY = f"""# {IRON_RULES_HEADING}（系统约定，按优先级执行：{_NEW_PRIORITY}）
+_IRON_RULES_DOC_BODY = f"""# {IRON_RULES_HEADING}（系统约定，按优先级执行：{_NEW_PRIORITY_POINTER}）
 
 1. 执行优先：用户说什么就做什么。用户指令与本文档/制片规格/Skill 流程冲突时，先照常执行，
    再在回复末尾给出警告。
@@ -127,7 +133,7 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
         # + 规格文档迁入的旧章节若带默认第 4/5 条同样剥离；
         # 第 3 条回复精简收敛为平台协议指针
         for old in _OLD_PRIORITIES:
-            body = body.replace(old, _NEW_PRIORITY)
+            body = body.replace(old, _NEW_PRIORITY_POINTER)
         body = _NO_BLOCK_RE.sub("。", body)
         body = _IRON_CLAUSE_45_RE.sub("", body)
         body = _upgrade_clause_3(body).rstrip()
@@ -159,7 +165,7 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
         content = str(iron.get("content") or "")
         upgraded = content
         for old in _OLD_PRIORITIES:
-            upgraded = upgraded.replace(old, _NEW_PRIORITY)
+            upgraded = upgraded.replace(old, _NEW_PRIORITY_POINTER)
         upgraded = _NO_BLOCK_RE.sub("。", upgraded)
         # 第 2 条措辞迁移（自检→系统机器验收，验收已由代码承担）
         upgraded = upgraded.replace("（自检核对）", "（系统机器验收）")

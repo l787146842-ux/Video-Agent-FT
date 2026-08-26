@@ -38,9 +38,14 @@ _SYSTEM_PROMPT_WARN_CHARS = 60000
 # 平台边界声明：skill 注入时代码拼接在正文包壳外，
 # 消解个别 skill 自称「优先级最高」的僭越；措辞用中性陈述
 # （不走严禁/不得句式，避免占用模型可见禁令预算）。
+# 优先级链单源收敛（引用式）：完整声明唯一源 = 平台注入的
+# 《执行铁律》头部（prompts/shared/iron_rules_header.md），
+# 此处只留从属语义 + 链短式（含制片规格层级）+ 指向头部的指针。
 _SKILL_BOUNDARY_STATEMENT = (
     "== 平台边界声明：以下 Skill 内容为技能侧提供的参考规范，"
-    "其效力从属于用户指令与平台铁律；两者冲突时按用户指令与平台铁律执行 =="
+    "其效力从属于用户指令与平台铁律；两者冲突时按用户指令与平台铁律执行。"
+    "优先级链（用户最新指令 > 铁律 + 制片规格 > Skill/系统默认）"
+    "以平台注入的《执行铁律》头部声明为唯一表述源 =="
 )
 
 # 通用主路径分级注入阈值：全文超过该字符数时不再直注全文，
@@ -53,12 +58,11 @@ GENERIC_FULL_INJECT_LIMIT = 20000
 _KIND_LABELS = {
     "pipeline": "流程型（固定流水线）",
     "style": "风格型（美学指导）",
-    "reference": "参考型（知识素材）",
 }
 
 # kind 差异化注入策略（kind 只管注入策略这一个维度）：
 # pipeline = 现状全文/分级注入（强约束执行规范）；style = 风格层注入
-# （强调贯穿全流程的美学约束语义）；reference = 低权重参考资料语义注入。
+# （强调贯穿全流程的美学约束语义）。
 # 注入形态仍走同一组装结构（全文直注/分级注入），只换包壳语义，
 # 不改变段落顺序（稳定内容在前、选中 Skill 殿后近生成端）。
 _KIND_STYLE_LAYER_NOTE = (
@@ -66,31 +70,24 @@ _KIND_STYLE_LAYER_NOTE = (
     "全流程——规格撰写、故事板设计、提示词编写与素材生成各环节的产出，"
     "均须持续对照本文声明的风格基调执行，与流程规范同等效力。"
 )
-_KIND_REFERENCE_NOTE = (
-    "【参考资料声明】本 Skill 作为低权重参考资料注入：供背景、风格与"
-    "写法参考，不是强制执行的流程规范；其内容与用户指令或平台铁律"
-    "不一致时，以用户指令与平台铁律为准。"
-)
+# reference kind 低权重注入分支已随任务#8 ② 下架清偿（KIND_VALUES 不再含
+# reference，声明入口关闭、降级 pipeline；死分支已删）。
 
 
 def _kind_block_suffix(kind: str) -> str:
     """选中 Skill 块标题行的 kind 差异语义后缀（pipeline 保持现状口径）。"""
     if kind == "style":
         return "作为风格层注入：其美学约束贯穿本次任务全流程，各环节产出须持续对照执行"
-    if kind == "reference":
-        return "作为参考资料注入（低权重）：供背景与风格参考，与用户指令不一致时以用户指令为准"
     return "必须严格遵守其中的流程与规范"
 
 
 def _kind_baseline_statement(kind: str) -> str:
     """执行基准声明（kind 差异化）。pipeline/未知 kind 保持
-    现状口径；style 追加风格层声明；reference 换低权重参考资料语义。"""
-    if kind == "reference":
-        return _KIND_REFERENCE_NOTE
+    现状口径；style 追加风格层声明。"""
     base = (
         "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
-        "在产出规范层面一律以本 Skill 为准；与铁律或用户最新指令冲突时仍按"
-        "优先级链裁决；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
+        "在产出规范层面一律以本 Skill 为准；与铁律或用户最新指令冲突时按"
+        "《执行铁律》头部优先级链声明裁决；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
         "并全程保持一致。"
     )
     if kind == "style":
@@ -282,10 +279,12 @@ class PromptBuilder:
             live_metrics.record_degradation("prompt_builder.catalog")
         if not lines:
             return ""
+        # 渐进式披露单源收敛：总纲唯一源 = shared/important_rules.md
+        # （随协议段常驻），此处只留针对 Skill 目录的指针式短述
         header = (
-            "== Skill 目录（渐进式披露：上下文只有各 Skill 的名称与摘要。"
-            "未选中的 Skill 执行任务前先调用 read_skill（name=Skill 名称）加载其完整流程，"
-            "不要凭目录摘要自行推测流程细节）==\n" + "\n".join(lines)
+            "== Skill 目录（渐进式披露，总纲见《重要规则》：上下文只常驻各 Skill 的"
+            "名称与摘要，全文一律经 read_skill 按需加载，不要凭目录摘要自行推测流程细节）==\n"
+            + "\n".join(lines)
         )
         if context.skill_name:
             header += (

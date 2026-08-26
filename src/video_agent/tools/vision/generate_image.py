@@ -2,6 +2,7 @@ from typing import Type, Optional
 from pydantic import BaseModel, Field
 
 from src.video_agent.tools.base import BaseTool, ToolResult
+from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 
 class GenerateImageParams(BaseModel):
@@ -57,5 +58,8 @@ class GenerateImageTool(BaseTool):
                 }
             )
 
+        except GenerationCancelled:
+            # 取消穿透：不得被错误兜底吞咽为失败结果，上抛收敛至停止分支
+            raise
         except Exception as e:
             return ToolResult(success=False, error=str(e))

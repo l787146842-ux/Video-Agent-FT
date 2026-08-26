@@ -18,6 +18,7 @@ from src.video_agent.core import ports
 from src.video_agent.skill_runtime import frontmatter
 from src.video_agent.skill_runtime.manifest_schema import (
     KIND_VALUES,
+    LANGUAGE_EN_CATEGORY_VALUES,
     LANGUAGE_VALUES,
     REQUIRES_INPUT_TYPES,
     split_issue_warnings,
@@ -421,8 +422,10 @@ def script_required_active(skill_name: str) -> bool:
 def skill_requires_inputs(skill_name: str) -> List[Dict[str, Any]]:
     """manifest requires_inputs 声明（v3）：规范化后的原料需求清单。
 
-    每项 {type, required, hint}；required 缺省 true；白名单外 type/非法项丢弃。
-    未声明返回空表（回落旧 script_required 判定，两路语义不叠加）。"""
+    每项 {type, required, hint, features}；required 缺省 true；白名单外
+    type/非法项丢弃；features = 声明轴标记清单（如 voice_reference，
+    任务#8 ④，缺省空表）。未声明返回空表（回落旧 script_required
+    判定，两路语义不叠加）。"""
     manifest = skill_manifest_of(skill_name)
     raw = (manifest or {}).get("requires_inputs")
     if not isinstance(raw, list):
@@ -436,16 +439,37 @@ def skill_requires_inputs(skill_name: str) -> List[Dict[str, Any]]:
             continue
         req = item.get("required")
         hint = item.get("hint")
+        feats_raw = item.get("features")
+        if not isinstance(feats_raw, list):
+            feats_raw = []
+        feats = [
+            str(x).strip() for x in feats_raw
+            if isinstance(x, str) and x.strip()
+        ]
         out.append({
             "type": t,
             "required": True if req is None else bool(req),
             "hint": str(hint or "").strip(),
+            "features": feats,
         })
     return out
 
 
+def skill_declares_feature(skill_name: str, feature: str) -> bool:
+    """Skill 的 requires_inputs 是否声明某声明轴标记（features 维度）。
+
+    任务#8 ④：闸机软提醒跟随声明（如 voice_reference 音色参考轴），
+    未声明返回 False（零预设，消费端自行决定是否回落状态探测）。"""
+    if not skill_name or not feature:
+        return False
+    return any(
+        feature in (item.get("features") or [])
+        for item in skill_requires_inputs(skill_name)
+    )
+
+
 def skill_kind(skill_name: str) -> str:
-    """manifest kind 声明（v3：pipeline|style|reference）；未声明/非已知值返回空串。
+    """manifest kind 声明（v3：pipeline|style）；未声明/非已知值返回空串。
 
     展示/消费口径；注入策略解析用 skill_injection_kind（
     未知 kind 开放注册降级，不返回空串而返回默认策略）。"""
@@ -461,7 +485,7 @@ DEFAULT_INJECTION_KIND = "pipeline"
 def skill_injection_kind(skill_name: str) -> str:
     """注入策略维度解析（kind 只管注入策略这一个维度）。
 
-    已知 kind（pipeline/style/reference）直接返回；声明了未知 kind
+    已知 kind（pipeline/style）直接返回；声明了未知 kind
     降级为默认（pipeline）策略并输出告警（开放注册，不拒服务）；
     未声明 kind 回落默认策略（零预设）。"""
     manifest = skill_manifest_of(skill_name)
@@ -490,6 +514,26 @@ def skill_language(skill_name: str) -> Dict[str, str]:
         v = raw.get(key)
         if v in LANGUAGE_VALUES:
             out[key] = str(v)
+    return out
+
+
+def skill_prompt_en_categories(skill_name: str) -> List[str]:
+    """manifest language.prompt_en_categories 声明（任务#8 ①）：
+    产物类别级语言闸豁免清单（keyElement|shot|audio 子集）。
+
+    只保留白名单内取值、去重保序；未声明返回空表（语言闸维持
+    平台中文地板，豁免不泛化）。"""
+    manifest = skill_manifest_of(skill_name)
+    raw = (manifest or {}).get("language")
+    if not isinstance(raw, dict):
+        return []
+    cats = raw.get("prompt_en_categories")
+    if not isinstance(cats, list):
+        return []
+    out: List[str] = []
+    for c in cats:
+        if c in LANGUAGE_EN_CATEGORY_VALUES and c not in out:
+            out.append(str(c))
     return out
 
 

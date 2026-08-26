@@ -20,6 +20,7 @@ from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple, U
 from loguru import logger
 
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
+from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
@@ -587,6 +588,14 @@ class Planner:
                 task.cancel()
 
         # 处理结果
+        if error_holder and isinstance(error_holder[0], GenerationCancelled):
+            # 取消穿透闭环：分流为 stopped 终态，不进 error 分支
+            _cancel_exc = error_holder[0]
+            yield PlannerEvent(type="stopped", text=str(_cancel_exc), payload={
+                "type": "stopped", "phase": "tool_executing",
+                "detail": str(_cancel_exc),
+            })
+            return
         if error_holder:
             exc = error_holder[0]
             yield PlannerEvent(type="error", text=str(exc), payload={

@@ -1,4 +1,5 @@
-"""SqliteStateRepository 单元测试：接口与 JSON 仓库对齐 + 自动迁移 + 镜像退役（任务 #24）"""
+"""SqliteStateRepository 单元测试：接口与 JSON 仓库对齐 + 自动迁移 + 镜像退役（任务 #24）
++ JSON 回落冷备语义钉死（任务 #10：非热双写，损坏隔离后冷恢复一次）"""
 import json
 
 import pytest
@@ -101,3 +102,56 @@ class TestAutoMigration:
         repo2 = SqliteStateRepository(tmp_path)
         assert repo2.load_project("proj-new") is not None
         assert repo2.load_project("proj-old") is None  # 未迁移（DB 非空）
+
+
+class TestColdBackupRecovery:
+    """冷备语义钉死（任务 #10）：SQLite 为主、JSON 为冷备，
+    非持续热双写；损坏/缺失时经同一条冷恢复路径尽力恢复一次。"""
+
+    def test_corrupt_db_quarantined_and_rebuilt(self, tmp_path):
+        """SQLite 损坏 → 隔离（改名保留现场，不删除）+ 重建可用空库，不崩溃"""
+        (tmp_path / "state.sqlite3").write_bytes(
+            b"this is definitely not a sqlite database")
+        repo = SqliteStateRepository(tmp_path)
+        # 重建后的空库可用（读写正常）
+        repo.save_project("proj-1", {"project_id": "proj-1"})
+        assert repo.load_project("proj-1") == {"project_id": "proj-1"}
+        # 损坏文件被隔离为带时间戳的改名副本（现场保留）
+        quarantined = list(tmp_path.glob("state.sqlite3.corrupt-*"))
+        assert quarantined, "损坏文件应被改名隔离而非删除"
+        # 新库文件已重建
+        assert (tmp_path / "state.sqlite3").exists()
+
+    def test_corrupt_db_cold_restores_from_json(self, tmp_path):
+        """损坏隔离后 DB 为空 → 触发 JSON 冷备一次性恢复（best-effort）"""
+        projects = tmp_path / "projects"
+        pdir = projects / "proj-cold"
+        pdir.mkdir(parents=True)
+        state = {"project_id": "proj-cold", "project_name": "冷备项目"}
+        (pdir / "state.json").write_text(
+            json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        index = {"active_project_id": "proj-cold",
+                 "projects": [{"id": "proj-cold", "name": "冷备项目"}]}
+        (projects / "index.json").write_text(
+            json.dumps(index, ensure_ascii=False), encoding="utf-8")
+        # 损坏的 DB 在场（模拟运行中损坏后重启）
+        (tmp_path / "state.sqlite3").write_bytes(b"\x00garbage\x01")
+        repo = SqliteStateRepository(tmp_path)
+        # 冷备恢复生效：JSON 工作区的项目被一次性导回
+        assert repo.load_project("proj-cold") == state
+        assert repo.read_index() == index
+
+    def test_no_hot_dual_write_during_normal_lifecycle(self, tmp_path):
+        """正常生命周期非热双写：多次写入后仍无任何 JSON 镜像产出，
+        JSON 既不写也不读（冷备身份）"""
+        repo = SqliteStateRepository(tmp_path)
+        for i in range(3):
+            repo.save_project("proj-hot", {"project_id": "proj-hot", "v": i})
+            repo.write_index({"active_project_id": "proj-hot",
+                              "projects": [{"id": "proj-hot"}]})
+            repo.save_compat({"project_id": "proj-hot", "v": i})
+        assert not (tmp_path / "projects" / "proj-hot" / "state.json").exists()
+        assert not (tmp_path / "projects" / "index.json").exists()
+        assert not (tmp_path / "studio_state.json").exists()
+        # 数据唯一来源仍是 SQLite
+        assert repo.load_project("proj-hot")["v"] == 2

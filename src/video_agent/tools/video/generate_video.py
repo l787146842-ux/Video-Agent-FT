@@ -10,6 +10,7 @@ from src.video_agent.core.generation_fallback import (
 )
 from src.video_agent.core.provider_config import get_provider_config
 from src.video_agent.tools.base import BaseTool, ToolResult
+from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 
 class GenerateVideoParams(BaseModel):
@@ -67,6 +68,9 @@ class GenerateVideoTool(BaseTool):
                         "video_url": completed_result.video_url,
                     },
                 )
+            except GenerationCancelled:
+                # 取消穿透：不得被 fallback 重试/错误兜底吞咽，上抛收敛至停止分支
+                raise
             except Exception as e:
                 last_error = str(e)
                 if idx == len(candidates) - 1 or not is_retryable_gen_error(e):

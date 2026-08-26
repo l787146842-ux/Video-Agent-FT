@@ -6,8 +6,12 @@ web/generation_dispatch 保留薄 re-export 壳（web 消费方零改动）。
 """
 from typing import List
 
+from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.config import settings
-from src.video_agent.core.provider_config import load_merged_providers_async
+from src.video_agent.core.provider_config import (
+    exclude_retired_mock_providers,
+    load_merged_providers_async,
+)
 
 # 不可重试的失败特征：内容审核/鉴权/配置类错误换厂商也无意义，直接报错
 _NON_RETRYABLE_GEN_HINTS = (
@@ -22,7 +26,10 @@ def is_retryable_gen_error(e: Exception) -> bool:
     优先结构化标记（AdapterError.retryable，含 __cause__ 转译链）；
     无标记时除内容审核/鉴权/配置类特征外默认可重试（生成失败多为
     厂商容量/排队问题，同模型换厂商有机会）。
+    取消例外：GenerationCancelled 显式不可重试（不得换厂商续跑，穿透上抛）。
     """
+    if isinstance(e, GenerationCancelled):
+        return False
     for obj in (e, getattr(e, "__cause__", None)):
         flag = getattr(obj, "retryable", None)
         if isinstance(flag, bool):
@@ -44,7 +51,7 @@ async def gen_fallback_candidates(provider_id: str, model: str, kind: str) -> Li
     if not str(model or "").strip():
         return candidates[:limit]
     try:
-        providers = await load_merged_providers_async()
+        providers = exclude_retired_mock_providers(await load_merged_providers_async())
     except Exception:
         return candidates[:limit]
     models_key = "image_models" if kind == "image" else "video_models"

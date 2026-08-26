@@ -17,6 +17,7 @@ from typing import Any, Dict, List, NamedTuple, Optional
 from loguru import logger
 
 from src.video_agent.adapters.base_chat import ChatResponse
+from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.core import fc_gates, fc_reconcile, prompt_gates
 from src.video_agent.core import ports
 from src.video_agent.core import workflow_runtime
@@ -346,26 +347,48 @@ class FCToolRunner:
                 ctx, name, args, paused_this_batch=paused_this_batch)
             gate_error = chain.error
             prompt_gate_blocked += chain.prompt_gate_blocked
-            if gate_error is not None:
-                result = ToolResult(success=False, error=gate_error)
-            elif name == "read_skill" and injected_skill:
-                wanted_skill = str(args.get("name") or "").strip()
-                same_skill = bool(wanted_skill) and wanted_skill == injected_skill.strip()
-                # 续读参数（section/start）一律真读：分级注入时全文未全量注入，
-                # 短路会断掉模型的章节续读能力
-                has_cont = bool(str(args.get("section") or "").strip()) \
-                    or _as_start(args.get("start")) > 0
-                if same_skill and not has_cont and fc_gates.skill_full_text_injected(wanted_skill):
-                    result = ToolResult(success=True, data={
-                        "content": f"Skill「{wanted_skill}」全文已在本轮 system prompt 中注入，无需重复读取，直接遵循其中的规则即可。",
-                        "already_injected": True,
-                    })
-                    logger.info(f"[Planner] read_skill 短路：「{wanted_skill}」全文已直注，跳过工具调用")
+            try:
+                if gate_error is not None:
+                    result = ToolResult(success=False, error=gate_error)
+                elif name == "read_skill" and injected_skill:
+                    wanted_skill = str(args.get("name") or "").strip()
+                    same_skill = bool(wanted_skill) and wanted_skill == injected_skill.strip()
+                    # 续读参数（section/start）一律真读：分级注入时全文未全量注入，
+                    # 短路会断掉模型的章节续读能力
+                    has_cont = bool(str(args.get("section") or "").strip()) \
+                        or _as_start(args.get("start")) > 0
+                    if same_skill and not has_cont and fc_gates.skill_full_text_injected(wanted_skill):
+                        result = ToolResult(success=True, data={
+                            "content": f"Skill「{wanted_skill}」全文已在本轮 system prompt 中注入，无需重复读取，直接遵循其中的规则即可。",
+                            "already_injected": True,
+                        })
+                        logger.info(f"[Planner] read_skill 短路：「{wanted_skill}」全文已直注，跳过工具调用")
+                    else:
+                        # 未全量直注（分级注入/其他 Skill/续读）：按需真读全文或章节
+                        result = await self.tool_manager.invoke_tool(name, args)
                 else:
-                    # 未全量直注（分级注入/其他 Skill/续读）：按需真读全文或章节
                     result = await self.tool_manager.invoke_tool(name, args)
-            else:
-                result = await self.tool_manager.invoke_tool(name, args)
+            except GenerationCancelled:
+                # 取消穿透：先记本工具账本/trace（取消态）再上抛，
+                # 任何中断都有痕迹（不静默吞，不吞为失败结果）
+                _cancel_desc = describe_fc_tool(name, args)
+                if name in ("image_generate", "generate_image", "generate_video"):
+                    ledger.gen_failed_err = "生成任务已被取消"
+                if on_event is not None:
+                    await on_event({
+                        "type": SSE_TOOL_FINISHED,
+                        "id": tool_event_id,
+                        "ok": False,
+                        "elapsed_ms": round((time.monotonic() - _tool_t0) * 1000, 1),
+                        "result_summary": "已被用户取消",
+                    })
+                tracer.record_action(
+                    name=name, summary=_cancel_desc,
+                    elapsed_ms=(time.monotonic() - _tool_t0) * 1000, ok=False,
+                    stage=stage_label_for_tool(name),
+                    result_summary="已被用户取消", args=args_preview,
+                )
+                raise
             _tool_ms = (time.monotonic() - _tool_t0) * 1000
             # 单一活跃暂停槽位互斥：已有未消费暂停时
             # 拒收重复 workflow_pause，结构化拒因回喂模型并进 trace（不静默吞掉）

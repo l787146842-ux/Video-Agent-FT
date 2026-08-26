@@ -168,6 +168,16 @@ def load_merged_providers() -> List[Dict[str, Any]]:
     return merged
 
 
+def exclude_retired_mock_providers(providers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """mock 演示通道退役过滤的唯一收口点（批次F 退役兼容）。
+
+    存量用户配置里 protocol=mock 的条目不进入任何消费路径
+    （下拉框/聊天默认解析/生成 fallback 链/首可用生图兜底）；
+    消费方一律经本函数过滤，禁止各自内联判定。
+    """
+    return [p for p in providers if str(p.get("protocol") or "") != "mock"]
+
+
 async def load_merged_providers_async() -> List[Dict[str, Any]]:
     """异步入口（聊天/工具/生成链路）：合并含画布 HTTP 拉取，事件循环内不阻塞。"""
     return await asyncio.to_thread(load_merged_providers)
@@ -215,7 +225,7 @@ def first_available_image_provider() -> Tuple[str, str]:
     供调用方（如 image_generate 工具）在未指定供应商时兜底解析，
     避免 LLM 传空 provider 导致「供应商 '' 未配置」的生图失败。
     """
-    for p in load_merged_providers():
+    for p in exclude_retired_mock_providers(load_merged_providers()):
         if not p.get("enabled", True):
             continue
         models = [m for m in (p.get("image_models") or []) if m]

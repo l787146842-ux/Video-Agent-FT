@@ -533,10 +533,12 @@ async def test_concurrent_double_click_creates_single_task(svc, monkeypatch):
 
 
 def test_start_agent_task_failure_returns_structured_500(client, svc, monkeypatch):
-    """不可预检的起任务失败：结构化 500（截断已生效的极小窗口接受）。"""
+    """不可预检的起任务失败：结构化 500，且截断必须回滚——
+    尾部快照原样恢复（起任务失败→消息回滚），不得遗留截断后的半成品对话。"""
     import src.video_agent.web.chat_service as cs
 
     _seed_resend_history(svc)
+    texts_before = [m["text"] for m in svc.get_chat_messages()]
 
     def boom(body):
         raise RuntimeError("任务注册器故障")
@@ -547,6 +549,9 @@ def test_start_agent_task_failure_returns_structured_500(client, svc, monkeypatc
     body = r.json()
     assert body["error_code"] == "INTERNAL_ERROR"
     assert "起任务失败" in body["detail"]
+    # 起任务失败→消息回滚：被截断丢弃的尾部与被替换的正文原样恢复
+    assert [m["text"] for m in svc.get_chat_messages()] == texts_before
+    assert texts_before == ["第一轮问题", "第一轮回答", "原问题", "旧回答"]
 
 
 # ---------- 6. 契约扩展：显式 provider/model/thinking_level ----------

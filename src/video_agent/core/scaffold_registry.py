@@ -31,8 +31,10 @@ SCAFFOLDS = (
     # ---------- 脚手架（可折旧） ----------
     ScaffoldEntry(
         "S03", "src.video_agent.core.agent_loop:_bad_output_nudge",
-        "模型会连续产出空/畸形输出",
-        "bad_output_retry trace 计数；audit 回归",
+        "模型会连续产出空/畸形输出（失败恢复分级后收窄为恢复策略分派表"
+        " bad_output 分支唯一实现；工具失败/闸机拦截/供应商错误各有分级"
+        "出口，不再经 nudge，见 core/recovery_policy.py）",
+        "bad_output_retry trace 计数；recovery_policy 分派表回归；audit 回归",
         "每次主模型切换",
         "scaffold"),
     ScaffoldEntry(
@@ -132,8 +134,8 @@ SCAFFOLDS = (
         "I09", "src.video_agent.core.action_executor",
         "承重壳（审核整改批 8 登记）：层级例外已清偿（D-01，2026-08-22）——执行器下沉 core，"
         "对 web 生成管线/供应商配置的依赖倒置为 core/ports.py 端口，"
-        "web 层装配点注入；web 侧仅留 re-export 壳，删壳路线见 "
-        "docs/action_executor下沉计划.md 阶段二；对外行为冻结不变",
+        "web 层装配点注入；web 侧 re-export 壳已阶段二清退（任务#13 F-4，"
+        "消费方全部改指向 core 真身，见 docs/action_executor下沉计划.md）；对外行为冻结不变",
         "action_executor 相关集成测试",
         "下沉计划阶段验收",
         "invariant"),

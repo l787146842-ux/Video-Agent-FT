@@ -11,6 +11,8 @@ import asyncio
 from contextvars import ContextVar
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
+
 from src.video_agent.exceptions import StateConflictError
 
 # 截断重答内部标记（后端自用，不属公共请求契约）：/chat/truncate-resend
@@ -108,3 +110,20 @@ def truncate_chat_tail(svc, keep_index: int, new_text: Optional[str] = None) -> 
             "（磁盘账本新于本实例，别的实例写过更新数据）",
         )
     return entry
+
+
+def restore_chat_tail(svc, keep_index: int, tail_entries: List[Dict[str, Any]]) -> None:
+    """截断重答回滚：把截断前取的尾部快照（自 keep_index 起）原样恢复并立即落盘。
+
+    用于截断已生效而起任务失败的极小窗口：破坏性截断不得遗留半成品状态。
+    临界区内无其他写者，版本闸拒绝理论不可达；真发生时只留告警不再抛
+    （回滚失败不得遮盖原始 500）。
+    """
+    svc._ensure_conversations()
+    msgs = svc._raw_state["chatMessages"]
+    msgs[keep_index:] = tail_entries
+    svc._state_dirty = True
+    svc._context_cache.clear()
+    if not svc.save():
+        logger.warning(
+            f"[ChatTail] 项目 {svc.active_project_id} 截断回滚落盘被版本闸拒绝（内存态已恢复）")

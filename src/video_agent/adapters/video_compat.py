@@ -35,6 +35,7 @@ from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils.paths import ASSETS_DIR
 from .base import BaseVideoAdapter, VideoGenerationResponse
+from .cancel_token import GenerationCancelled, current_cancel_token, interruptible_sleep
 
 
 # MMG 满血2.0 类中转站（video_request_mode="openai"）的合法时长（官方文档限定）
@@ -368,15 +369,20 @@ class OpenAICompatVideoAdapter(BaseVideoAdapter):
 
         官方文档：completed 后文件可能延迟就绪，/content 可能暂时 502/503，
         重试同一地址即可，不重建任务。
+        重试间隔等待经可中断睡眠承接取消令牌（用户停止时提前退出，
+        不再睡满 10s×3 的退避窗口）。
         """
-        import asyncio
         for attempt in range(3):
             try:
                 dl = await client.get(f"/videos/{task_id}/content", timeout=300)
             except httpx.HTTPError:
                 return ""
             if dl.status_code in (502, 503):
-                await asyncio.sleep(10)
+                _tok = current_cancel_token()
+                if not await interruptible_sleep(10, _tok):
+                    raise GenerationCancelled(
+                        f"成片下载重试已被取消（task={task_id}，供应商侧任务可能仍在进行）"
+                    )
                 continue
             if dl.status_code != 200 or len(dl.content) <= 1024:
                 return ""

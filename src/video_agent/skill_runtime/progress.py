@@ -34,8 +34,14 @@ def bind_progress_emitter(on_event: Optional[ProgressEmitter]):
 
 
 def unbind_progress_emitter(token) -> None:
-    """解绑进度事件通道（与 bind_progress_emitter 成对使用）。"""
-    _progress_var.reset(token)
+    """解绑进度事件通道（与 bind_progress_emitter 成对使用）。
+    幂等：跨上下文/重复解绑静默忽略（统一 try/finally 收尾前提）。"""
+    if token is None:
+        return
+    try:
+        _progress_var.reset(token)
+    except (ValueError, LookupError):
+        pass
 
 
 async def emit_progress(text: str) -> None:

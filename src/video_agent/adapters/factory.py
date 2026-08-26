@@ -1,10 +1,14 @@
-import asyncio
 import time
 from typing import Any, Dict, Optional, Type
 
 from loguru import logger
 from .base import BaseVideoAdapter, BaseImageAdapter
 from .base_chat import BaseChatAdapter
+from .cancel_token import (
+    GenerationCancelled,
+    current_cancel_token,
+    interruptible_sleep,
+)
 
 
 class AdapterFactory:
@@ -81,6 +85,7 @@ class AdapterFactory:
         # 顶层化会形成 adapters 包 ↔ core.provider_config 部分初始化环
         from src.video_agent.core.provider_config import (
             CLI_PROTOCOLS,
+            exclude_retired_mock_providers,
             get_api_key,
             load_merged_providers,
         )
@@ -88,7 +93,8 @@ class AdapterFactory:
         from .agy_cli import AgyCliImageAdapter
         from .video_compat import OpenAICompatVideoAdapter
 
-        for p in load_merged_providers():
+        # mock 退役供应商不注册适配器（过滤经唯一收口点，禁止内联判定）
+        for p in exclude_retired_mock_providers(load_merged_providers()):
             if not p.get("enabled", True):
                 continue
             pid = p.get("id", "")
@@ -147,16 +153,30 @@ async def wait_until_complete(adapter: Any, task_id: str, timeout: int = 1200) -
     通用长任务轮询辅助函数（渐进退避）。
     - completed → 返回结果
     - failed → 立即抛 GenerationTaskFailed（不再空转到超时）
+    - 取消令牌命中 → 立即抛 GenerationCancelled（协作式中断，不等硬取消）
     - 查询本身出错 → 记录并重试，直到超时
 
     轮询间隔渐进策略：前 3 次 2s，之后 5s，超过 60s 后 10s。
+
+    取消检查点协议：每圈头部读上下文取消令牌（agent_loop 绑定，
+    scope=stop_scope）；等待经 interruptible_sleep 切片睡，取消响应
+    延迟有界。供应商侧任务已提交时可能仍在进行，web 层 inflight
+    登记兜底告知（第一版不撤销）。
     """
     start_time = time.time()
     poll_count = 0
 
     while time.time() - start_time < timeout:
+        _cancel_tok = current_cancel_token()
+        if _cancel_tok is not None and _cancel_tok.cancelled:
+            raise GenerationCancelled(
+                f"生成任务 {task_id} 已被取消（供应商侧可能仍在进行，"
+                "详见在途任务登记）"
+            )
         try:
             result = await adapter.fetch_result(task_id)
+        except GenerationCancelled:
+            raise
         except Exception as e:
             logger.error(f"Error fetching result for task {task_id}: {e}")
             result = None
@@ -169,7 +189,8 @@ async def wait_until_complete(adapter: Any, task_id: str, timeout: int = 1200) -
                     f"Generation task {task_id} failed: {result.error_msg}"
                 )
 
-        # 渐进退避：前 3 次 2s，之后 5s，超过 60s 后 10s
+        # 渐进退避：前 3 次 2s，之后 5s，超过 60s 后 10s；
+        # 可中断等待：取消命中提前醒来，圈头检查点抛出
         elapsed = time.time() - start_time
         poll_count += 1
         if poll_count <= 3:
@@ -178,6 +199,6 @@ async def wait_until_complete(adapter: Any, task_id: str, timeout: int = 1200) -
             interval = 5
         else:
             interval = 10
-        await asyncio.sleep(interval)
+        await interruptible_sleep(interval, _cancel_tok)
 
     raise TimeoutError(f"Task {task_id} timeout after {timeout} seconds")

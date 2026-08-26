@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel
 from loguru import logger
+from src.video_agent.adapters.cancel_token import GenerationCancelled
 from .base import BaseTool, DETAIL_TIERS, RISK_TIERS, ToolResult
 
 class ToolManager:
@@ -110,6 +111,9 @@ class ToolManager:
                 return ToolResult(success=False, error=f"Validation Error: {str(e)}")
 
             return await tool.aexecute(params)
+        except GenerationCancelled:
+            # 协作式取消不得被兜底吞咽：穿透上抛，收敛至 agent_loop 停止分支
+            raise
         except Exception as e:
             logger.error(f"Error invoking tool {name}: {e}")
             return ToolResult(success=False, error=str(e))

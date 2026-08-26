@@ -196,3 +196,37 @@ def test_get_available_providers_filters_mock_entries(monkeypatch):
     assert "mock-demo" not in ids  # mock 条目不对外暴露
     assert "openai" in ids         # 真实启用条目照常返回
     assert "disabled-one" not in ids
+
+
+_MOCK_MERGED = [
+    {"id": "mock-demo", "name": "Mock 演示", "enabled": True, "protocol": "mock",
+     "chat_models": ["mock-chat"], "image_models": ["mock-img"]},
+    {"id": "real", "name": "真实厂", "enabled": True,
+     "chat_models": ["real-chat"], "image_models": ["real-img"]},
+]
+
+
+def test_mock_filter_single_chokepoint_all_consumers(monkeypatch):
+    """收口钉死：mock 过滤唯一经 exclude_retired_mock_providers，
+    首可用生图兜底与聊天默认解析统一消费同一过滤口径"""
+    monkeypatch.setattr(pc, "load_merged_providers", lambda: list(_MOCK_MERGED))
+    # 首可用生图兜底：mock 条目即使排在前头也不得命中
+    pid, model = pc.first_available_image_provider()
+    assert (pid, model) == ("real", "real-img")
+    # 聊天默认解析（截断重答路由）：mock 条目不进候选
+    from src.video_agent.web.routes import chat as chat_routes
+    monkeypatch.setattr(
+        chat_routes.provider_config, "load_merged_providers",
+        lambda: list(_MOCK_MERGED))
+    assert chat_routes._resolve_chat_target() == ("real", "real-chat")
+
+
+def test_mock_filter_excludes_only_protocol_mock():
+    """过滤口径只认 protocol=mock；无 protocol 字段/其他协议不受影响"""
+    kept = pc.exclude_retired_mock_providers([
+        {"id": "a"},
+        {"id": "b", "protocol": "openai"},
+        {"id": "c", "protocol": "mock"},
+        {"id": "d", "protocol": ""},
+    ])
+    assert [p["id"] for p in kept] == ["a", "b", "d"]

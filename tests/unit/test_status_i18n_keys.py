@@ -56,7 +56,8 @@ def test_s1_frontend_locale_has_queue_status_keys():
 
 
 def test_s1_frontend_meta_uses_locale_keys():
-    chat = _read("src/web/stores/chat.ts")
+    # chat store 拆分后 done meta 文案实现归 stores/chat/done-message.ts（buildDoneMeta）
+    chat = _read("src/web/stores/chat/done-message.ts")
     for key in ("rp.msg.metaTime", "rp.msg.metaRounds", "rp.msg.metaUpdated"):
         assert f"'{key}'" in chat, f"chat.ts meta 未走 locale: {key}"
     locale = _read("src/web/lib/locale.ts")

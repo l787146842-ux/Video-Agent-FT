@@ -50,6 +50,22 @@ from src.video_agent.core.round_end_policies import (
 )
 from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.exceptions import AdapterError
+# 失败恢复分级：循环骨架不再硬编码恢复语义，重试预算与处置动作
+# 全部来自恢复策略分派表（policy-as-data，与闸机哲学一致）
+from src.video_agent.core.recovery_policy import (
+    FAILURE_ADAPTER,
+    FAILURE_BAD_OUTPUT,
+    classify_step_failure,
+    recovery_for,
+)
+# 取消令牌贯穿：循环开始绑定 context-scoped 令牌（scope=stop_scope），
+# FC 工具批 → adapters 长任务经 contextvars 免传参观察同一令牌
+from src.video_agent.adapters.cancel_token import (
+    CancellationToken,
+    GenerationCancelled,
+    bind_cancel_token,
+    unbind_cancel_token,
+)
 # spec_wizard_active 经模块属性访问
 # （测试 patch 目标=registry 命名空间，顶层 from-import 会冻结绑定导致 patch 失效）
 from src.video_agent.skill_runtime.progress import (
@@ -84,7 +100,10 @@ def _unpack_llm(ret: Tuple) -> Tuple[str, str, int, float, Dict[str, Any]]:
 def _bad_output_nudge(attempt: int) -> str:
     """空/畸形输出续写引导：重试时随 messages 附一句，
     明确要求本步直接产出工具调用或可见回复（只临时附加，不入历史）。
-    文案外置 prompts/planner/feedback.md::BAD_OUTPUT_NUDGE（指令收敛，Rule6）。"""
+    文案外置 prompts/planner/feedback.md::BAD_OUTPUT_NUDGE（指令收敛，Rule6）。
+    失败恢复分级后身份收窄：仅为恢复策略分派表 bad_output 分支
+    （action=nudge_retry）的实现体；工具失败/闸机拦截/供应商错误
+    各有其分级出口，不再经 nudge（见 core/recovery_policy.py）。"""
     tpl = load_prompt_section("planner/feedback.md", "BAD_OUTPUT_NUDGE")
     if tpl:
         return tpl.replace("{{attempt}}", str(attempt))
@@ -161,354 +180,407 @@ async def run_agent_loop(
     # 未及清理时，不得误杀新任务；带代际的收尾清理见 _finalize_stop）；
     # 包装 stream_hook 跟踪是否已产生流式正文（阶段判定用）
     clear_stop(stop_scope)
-    _streamed = {"on": False}
-    if stream_hook is not None:
-        async def _stream_hook_tracked(text: str) -> None:
-            _streamed["on"] = True
-            await stream_hook(text)
-        _hook_use: Optional[Callable[[str], Awaitable[None]]] = _stream_hook_tracked
-    else:
-        _hook_use = None
-
-    skill = str(getattr(executor, "skill_name", "") or "")
-    if not skill:
-        # 请求未携带 Skill 时回退项目 usedSkills 末位（单一实现）
-        skill = fallback_skill_from_state(getattr(executor, "state", None) or {})
-
-    # 链路追踪：记录本次对话执行过程
-    tracer = AgentTracer.get_instance()
-    user_preview = user_text if isinstance(user_text, str) else str(user_text)[:80]
-    tracer.start_trace(user_preview, user_id=user_id)
-
-    # 执行器进度通道双轨接线（统一循环级绑定，FC/文本轨同覆盖）。
-    # 执行器内部批次边界（emit_timeline_note/emit_state_refresh/emit_progress）
-    # 经此通道实时推时间线子项与故事板刷新——卡片一张张流式亮，不再结束才一把出现。
-    # contextvar 任务级隔离：异常路径随任务消亡，正常路径在循环结束后解绑。
-    _progress_token = bind_progress_emitter(emit)
-
-    def _stop_if_requested(phase: str) -> Optional[AgentStoppedError]:
-        """检查点：读停止标志，命中返回携带阶段标记与代际 token 的异常对象
-        （由调用方收尾；收尾清理按代匹配，不误清快速重连后的新停止请求）"""
-        sid = current_stop_id(stop_scope)
-        if sid:
-            return AgentStoppedError(phase, result.steps, stop_id=sid)
-        return None
-
-    async def _finalize_stop(err: AgentStoppedError) -> AgentLoopResult:
-        """用户停止的干净收尾：trace 步人账、发明确终态事件、清标志、解绑进度通道。
-        不变式：任何中断都有痕迹（stopped 事件 + result.stopped）、都有出口
-        （前端据终态事件落停止气泡并挂「继续刚才的任务」）。"""
-        result.stopped = True
-        result.stop_phase = err.phase
-        _step_no = err.step or result.steps
-        tracer.end_step(
-            _step_no, actions_applied=0,
-            finish_reason="stopped_by_user", token_usage=0,
-        )
-        logger.info(f"[AgentLoop] 已被用户停止：phase={err.phase} step={_step_no}")
-        await emit({"type": SSE_STOPPED, "phase": err.phase, "step": _step_no})
-        # 代际匹配清理：收尾期间若已有新停止请求（快速重连场景），不清
-        if err.stop_id:
-            clear_stop(stop_scope, err.stop_id)
+    # 取消令牌贯穿 adapters：绑定上下文作用域令牌，长工具调用（视频生成
+    # 轮询等）在检查点观察同一令牌协作退出；cancelled 判定内置同 scope
+    # 停止标志观察，停止端点置标志即生效。inflight 登记保留为兜底
+    # （已提交供应商侧的不可撤销任务），不再是唯一中断手段
+    cancel_token = CancellationToken(scope=stop_scope)
+    _cancel_bind = bind_cancel_token(cancel_token)
+    _progress_token = None
+    # 统一解绑：bind 之后主逻辑全部包在 try/finally 内，任何出口
+    #（正常/stopped/异常/取消穿透）都经 finally 幂等解绑，不再分散收尾
+    try:
+        _streamed = {"on": False}
+        if stream_hook is not None:
+            async def _stream_hook_tracked(text: str) -> None:
+                _streamed["on"] = True
+                await stream_hook(text)
+            _hook_use: Optional[Callable[[str], Awaitable[None]]] = _stream_hook_tracked
         else:
-            clear_stop(stop_scope)
-        unbind_progress_emitter(_progress_token)
-        result.trace = tracer.finish_trace(total_actions=result.applied_actions)
-        return result
+            _hook_use = None
 
-    async def _await_llm_with_stop_guard(phase_when_streamed: str, extra_messages: Optional[List[Dict[str, Any]]] = None):
-        """llm_call 调用统一守门：
-        - AgentStoppedError（planner 层工具批执行前检查点抛出）→ 干净收尾；
-        - CancelledError 硬取消落地：有停止标志 = 用户停止 → 收敛为干净收尾
-          （阶段按已产生流式正文与否判定），无标志 = 异常取消原样上抛。
-        返回 (None, 收尾结果) 表示已被停止（调用方直接返回），否则 (5 元组, None)。"""
-        # 无附加消息时直传原列表引用：llm_call 内的回喂 append（read_* 全文
-        # 渐进式披露回路）与惰性压缩都靠原地修改生效，拼新副本会丢回喂；
-        # 带 extra_messages（坏输出重试 nudge）才拼副本，nudge 不持久化
-        _msgs = messages if not extra_messages else messages + list(extra_messages)
-        try:
-            return _unpack_llm(await llm_call(system_prompt, _msgs, _hook_use)), None
-        except AgentStoppedError as _stop_err:
-            return None, await _finalize_stop(_stop_err)
-        except asyncio.CancelledError:
+        skill = str(getattr(executor, "skill_name", "") or "")
+        if not skill:
+            # 请求未携带 Skill 时回退项目 usedSkills 末位（单一实现）
+            skill = fallback_skill_from_state(getattr(executor, "state", None) or {})
+
+        # 链路追踪：记录本次对话执行过程
+        tracer = AgentTracer.get_instance()
+        user_preview = user_text if isinstance(user_text, str) else str(user_text)[:80]
+        tracer.start_trace(user_preview, user_id=user_id)
+
+        # 执行器进度通道双轨接线（统一循环级绑定，FC/文本轨同覆盖）。
+        # 执行器内部批次边界（emit_timeline_note/emit_state_refresh/emit_progress）
+        # 经此通道实时推时间线子项与故事板刷新——卡片一张张流式亮，不再结束才一把出现。
+        # 解绑统一在 finally（幂等），异常路径也不再泄漏绑定。
+        _progress_token = bind_progress_emitter(emit)
+
+        def _stop_if_requested(phase: str) -> Optional[AgentStoppedError]:
+            """检查点：读停止标志，命中返回携带阶段标记与代际 token 的异常对象
+            （由调用方收尾；收尾清理按代匹配，不误清快速重连后的新停止请求）"""
             sid = current_stop_id(stop_scope)
             if sid:
-                _ph = phase_when_streamed if _streamed["on"] else STOP_PHASE_THINKING
-                return None, await _finalize_stop(
-                    AgentStoppedError(_ph, result.steps, stop_id=sid))
-            unbind_progress_emitter(_progress_token)
-            raise
-        except AdapterError as _adapter_err:
-            # 错误分类分流：供应商错误到达此处时，要么 transient
-            # 重试已在适配层（dispatch_chat_request/with_retry）耗尽，要么是
-            # permanent（鉴权/参数/拒答）错误——两类都不具循环内重试价值：
-            # nudge 只用于模型侧空/畸形输出，循环侧不再对同一 transient
-            # 反复 nudge。清理进度通道后原样上抛，由上层统一错误路径承接。
-            unbind_progress_emitter(_progress_token)
-            logger.warning(
-                f"[AgentLoop] llm_call 供应商错误（kind={getattr(_adapter_err, 'kind', '')} "
-                f"retryable={getattr(_adapter_err, 'retryable', None)}）：不 nudge，直接上抛"
-            )
-            raise
+                return AgentStoppedError(phase, result.steps, stop_id=sid)
+            return None
 
-    for step in range(1, max_steps + 1):
-        result.steps = step
-        tracer.start_step()
-        # 检查点 1（模型调用前）：上轮工具批已完成、本轮思考未开始，
-        # 命中即思考阶段停止；不改变正常路径行为（无标志时零开销）
-        _stop_err = _stop_if_requested(STOP_PHASE_THINKING)
-        if _stop_err is not None:
-            return await _finalize_stop(_stop_err)
-        if step == 1:
-            # 前奏明细：读 Skill/文档等准备动作记入第一步时间线
-            # （live 与持久化同条目；唯一消费方 = 本循环）
-            await emit_prelude_events(
-                prelude_notes,
-                lambda name, summary, ms, ok: tracer.record_action(name, summary, ms, ok),
-                emit,
+        async def _finalize_stop(err: AgentStoppedError) -> AgentLoopResult:
+            """用户停止的干净收尾：trace 步人账、发明确终态事件、清标志。
+            不变式：任何中断都有痕迹（stopped 事件 + result.stopped）、都有出口
+            （前端据终态事件落停止气泡并挂「继续刚才的任务」）；
+            进度通道/取消令牌解绑统一在 finally。"""
+            # 取消令牌先行触发：尚在执行中的 adapters 长任务（轮询/下载）
+            # 在下一检查点协作退出，不等 task.cancel() 硬取消先落
+            cancel_token.cancel()
+            result.stopped = True
+            result.stop_phase = err.phase
+            _step_no = err.step or result.steps
+            tracer.end_step(
+                _step_no, actions_applied=0,
+                finish_reason="stopped_by_user", token_usage=0,
             )
-        await emit({"type": SSE_STEP_STARTED, "step": step, "max_steps": max_steps})
-        if step > 1:
-            # 多步循环"静默期"提示：上一步工具执行完到本步首 token 之间可能耗时数十秒，
-            # 前端状态栏需明确告知正在进行第几轮思考（status 事件全链路已透传）
-            await emit(status_event(
-                "agent.roundThinking",
-                f"第 {step - 1} 轮操作已完成，继续思考中（第 {step}/{max_steps} 轮）…",
-                {"prev": step - 1, "step": step, "max": max_steps},
-            ))
-        # 步间注入：任务执行期间收到的用户引导消息在上一步操作完成、
-        # 本步 LLM 调用之前送达；首步尚无操作可打断，一律不注入
-        if step > 1 and pending_injector is not None:
+            logger.info(f"[AgentLoop] 已被用户停止：phase={err.phase} step={_step_no}")
+            await emit({"type": SSE_STOPPED, "phase": err.phase, "step": _step_no})
+            # 代际匹配清理：收尾期间若已有新停止请求（快速重连场景），不清
+            if err.stop_id:
+                clear_stop(stop_scope, err.stop_id)
+            else:
+                clear_stop(stop_scope)
+            result.trace = tracer.finish_trace(total_actions=result.applied_actions)
+            return result
+
+        async def _await_llm_with_stop_guard(phase_when_streamed: str, extra_messages: Optional[List[Dict[str, Any]]] = None):
+            """llm_call 调用统一守门：
+            - AgentStoppedError（planner 层工具批执行前检查点抛出）→ 干净收尾；
+            - CancelledError 硬取消落地：有停止标志 = 用户停止 → 收敛为干净收尾
+              （阶段按已产生流式正文与否判定），无标志 = 异常取消原样上抛。
+            返回 (None, 收尾结果) 表示已被停止（调用方直接返回），否则 (5 元组, None)。"""
+            # 无附加消息时直传原列表引用：llm_call 内的回喂 append（read_* 全文
+            # 渐进式披露回路）与惰性压缩都靠原地修改生效，拼新副本会丢回喂；
+            # 带 extra_messages（坏输出重试 nudge）才拼副本，nudge 不持久化
+            _msgs = messages if not extra_messages else messages + list(extra_messages)
             try:
-                pending_items = pending_injector() or []
-            except Exception:
-                pending_items = []
-            for item in pending_items:
-                gid = str(item.get("id") or "")
-                gtext = str(item.get("text") or "").strip()
-                if not gtext:
-                    continue
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        f"（任务执行期间收到您的指令：{gtext}）"
-                        "请优先处理；若为提问先回答，处理完继续原任务。"
-                    ),
-                })
-                await emit({
-                    "type": "guidance_injected",
-                    "id": gid,
-                    "text": gtext,
-                })
-        system_prompt = context_builder()  # 每步刷新，让 LLM 看到上一步执行后的最新状态
+                return _unpack_llm(await llm_call(system_prompt, _msgs, _hook_use)), None
+            except AgentStoppedError as _stop_err:
+                return None, await _finalize_stop(_stop_err)
+            except asyncio.CancelledError:
+                sid = current_stop_id(stop_scope)
+                if sid:
+                    _ph = phase_when_streamed if _streamed["on"] else STOP_PHASE_THINKING
+                    return None, await _finalize_stop(
+                        AgentStoppedError(_ph, result.steps, stop_id=sid))
+                cancel_token.cancel()
+                raise
+            except AdapterError as _adapter_err:
+                # 恢复分派表 adapter_error 分支（action=escalate）：供应商错误
+                # 到达此处时，要么 transient 重试已在适配层
+                # （dispatch_chat_request/with_retry）耗尽，要么是 permanent
+                # （鉴权/参数/拒答）——两类都不具循环内重试价值：
+                # nudge 只用于模型侧空/畸形输出，循环侧不再对同一 transient
+                # 反复 nudge。解绑由 finally 统一完成，此处原样上抛，
+                # 由上层统一错误路径承接。
+                _adapter_pol = recovery_for(
+                    classify_step_failure(adapter_error=_adapter_err))
+                cancel_token.cancel()
+                logger.warning(
+                    f"[AgentLoop] llm_call 供应商错误（kind={getattr(_adapter_err, 'kind', '')} "
+                    f"retryable={getattr(_adapter_err, 'retryable', None)}）："
+                    f"恢复策略={_adapter_pol.action}，不 nudge，直接上抛"
+                )
+                raise
 
-        # 过程时间线：模型推理轮本身也作为操作条目可见（仅创作型
-        # 交接轮进入本循环，文案为节点内创作语义，非确定性阶段规划）
-        await emit({
-            "type": SSE_TOOL_STARTED,
-            "id": f"llm-s{step}",
-            "name": "model_reasoning",
-            "summary": f"模型创作规划（节点内第 {step} 轮）",
-        })
-        # 规划条目先占位入 trace（保证持久化顺序 = live 顺序：规划→工具），
-        # 耗时在 llm_call 返回后补填
-        _plan_rec = tracer.record_action(
-            "model_reasoning", f"模型创作规划（节点内第 {step} 轮）", 0.0, True,
-        )
-        content, finish_reason, fc_applied, plan_ms, fc_extra = (None, "", 0, 0.0, {})
-        _unpacked, _stopped_result = await _await_llm_with_stop_guard(STOP_PHASE_STREAMING)
-        if _stopped_result is not None:
-            return _stopped_result
-        content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
-        plan_total = float(plan_ms or 0.0)
-        # 透明度兑现：本轮 token 用量入账 trace（轮次账单数据源）
-        step_tokens = int((fc_extra or {}).get("token_usage") or 0)
-        # 检查点 2（模型调用返回后）：FC 工具批已在 llm_call 内执行完毕，
-        # 此时命中按刚经历的阶段标记（工具批/流式输出/思考）干净退出
-        _stop_err = _stop_if_requested(
-            STOP_PHASE_TOOL_EXECUTING if fc_applied > 0
-            else (STOP_PHASE_STREAMING if _streamed["on"] else STOP_PHASE_THINKING)
-        )
-        if _stop_err is not None:
-            return await _finalize_stop(_stop_err)
-
-        # 空/畸形响应防护（模型侧问题，非供应商 transient）：空响应或
-        # MALFORMED_FUNCTION_CALL 连续发生 → nudge 重试至多 2 次，
-        # 达到上限后以明确故障文案收尾（不再静默落为「没有返回可见回复」）；
-        # 供应商侧错误已由上方 AdapterError 分流承接，不会误入本重试路径。
-        # 暂停确认轮现有真实 fc_applied（含 workflow_pause 自身），
-        # 且正文有确认文案兜底，双条件均使其不入本重试（守卫语义保持正确）。
-        bad_retries = 0
-        while not str(content or "").strip() and fc_applied == 0 and bad_retries < 2:
-            bad_retries += 1
-            logger.warning(f"[AgentLoop] 第 {step} 轮输出异常（空/畸形），重试 {bad_retries}/2")
-            await emit(status_event("agent.badRetry", f"第 {step} 轮输出异常，重试中…", {"step": step}))
-            tracer.record_action(
-                name="bad_output_retry",
-                summary=f"模型输出异常（空/畸形），自动重做（第 {bad_retries} 次）",
-                elapsed_ms=0.0,
-                ok=True,
-            )
-            # 检查点（重试模型调用前）：停止优先于坏输出重试
+        for step in range(1, max_steps + 1):
+            result.steps = step
+            tracer.start_step()
+            # 检查点 1（模型调用前）：上轮工具批已完成、本轮思考未开始，
+            # 命中即思考阶段停止；不改变正常路径行为（无标志时零开销）
             _stop_err = _stop_if_requested(STOP_PHASE_THINKING)
             if _stop_err is not None:
                 return await _finalize_stop(_stop_err)
-            _unpacked, _stopped_result = await _await_llm_with_stop_guard(
-                STOP_PHASE_STREAMING,
-                extra_messages=[{"role": "user", "content": _bad_output_nudge(bad_retries)}],
+            if step == 1:
+                # 前奏明细：读 Skill/文档等准备动作记入第一步时间线
+                # （live 与持久化同条目；唯一消费方 = 本循环）
+                await emit_prelude_events(
+                    prelude_notes,
+                    lambda name, summary, ms, ok: tracer.record_action(name, summary, ms, ok),
+                    emit,
+                )
+            await emit({"type": SSE_STEP_STARTED, "step": step, "max_steps": max_steps})
+            if step > 1:
+                # 多步循环"静默期"提示：上一步工具执行完到本步首 token 之间可能耗时数十秒，
+                # 前端状态栏需明确告知正在进行第几轮思考（status 事件全链路已透传）
+                await emit(status_event(
+                    "agent.roundThinking",
+                    f"第 {step - 1} 轮操作已完成，继续思考中（第 {step}/{max_steps} 轮）…",
+                    {"prev": step - 1, "step": step, "max": max_steps},
+                ))
+            # 步间注入：任务执行期间收到的用户引导消息在上一步操作完成、
+            # 本步 LLM 调用之前送达；首步尚无操作可打断，一律不注入
+            if step > 1 and pending_injector is not None:
+                try:
+                    pending_items = pending_injector() or []
+                except Exception:
+                    pending_items = []
+                for item in pending_items:
+                    gid = str(item.get("id") or "")
+                    gtext = str(item.get("text") or "").strip()
+                    if not gtext:
+                        continue
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"（任务执行期间收到您的指令：{gtext}）"
+                            "请优先处理；若为提问先回答，处理完继续原任务。"
+                        ),
+                    })
+                    await emit({
+                        "type": "guidance_injected",
+                        "id": gid,
+                        "text": gtext,
+                    })
+            system_prompt = context_builder()  # 每步刷新，让 LLM 看到上一步执行后的最新状态
+
+            # 过程时间线：模型推理轮本身也作为操作条目可见（仅创作型
+            # 交接轮进入本循环，文案为节点内创作语义，非确定性阶段规划）
+            await emit({
+                "type": SSE_TOOL_STARTED,
+                "id": f"llm-s{step}",
+                "name": "model_reasoning",
+                "summary": f"模型创作规划（节点内第 {step} 轮）",
+            })
+            # 规划条目先占位入 trace（保证持久化顺序 = live 顺序：规划→工具），
+            # 耗时在 llm_call 返回后补填
+            _plan_rec = tracer.record_action(
+                "model_reasoning", f"模型创作规划（节点内第 {step} 轮）", 0.0, True,
             )
+            content, finish_reason, fc_applied, plan_ms, fc_extra = (None, "", 0, 0.0, {})
+            _unpacked, _stopped_result = await _await_llm_with_stop_guard(STOP_PHASE_STREAMING)
             if _stopped_result is not None:
                 return _stopped_result
             content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
-            plan_total += float(plan_ms or 0.0)
+            plan_total = float(plan_ms or 0.0)
+            # 透明度兑现：本轮 token 用量入账 trace（轮次账单数据源）
             step_tokens = int((fc_extra or {}).get("token_usage") or 0)
-        # 规划耗时只算纯模型规划：FC 工具执行时间由各工具条目独立展示，
-        # 不再把工具耗时叠进规划行导致「规划很慢」的错觉
-        await emit({
-            "type": SSE_TOOL_FINISHED,
-            "id": f"llm-s{step}",
-            "ok": True,
-            "elapsed_ms": round(plan_total, 1),
-            "result_summary": f"Agent 规划完成（第 {step} 轮）",
-        })
-        _plan_rec["elapsed_ms"] = round(plan_total, 1)
-        if bad_retries == 2 and not str(content or "").strip() and fc_applied == 0:
-            result.text = "输出异常：模型连续返回空/畸形输出，已重试 2 次；请重试或检查模型配置。"
-            result.warnings.append("模型连续 3 次输出异常（空/畸形），已终止本轮")
-            # 一键重试按钮（机械重发上一条用户消息，零模型猜测）
-            result.suggested_actions.append({"kind": "retry", "label": "重试", "value": ""})
-            tracer.end_step(step, actions_applied=0, finish_reason="bad_output",
-                            token_usage=step_tokens)
-            break
-
-        if finish_reason == "length":
-            result.warnings.append(
-                f"第 {step} 轮回复被 max_tokens 截断，工具调用/正文可能不完整"
+            # 检查点 2（模型调用返回后）：FC 工具批已在 llm_call 内执行完毕，
+            # 此时命中按刚经历的阶段标记（工具批/流式输出/思考）干净退出
+            _stop_err = _stop_if_requested(
+                STOP_PHASE_TOOL_EXECUTING if fc_applied > 0
+                else (STOP_PHASE_STREAMING if _streamed["on"] else STOP_PHASE_THINKING)
             )
+            if _stop_err is not None:
+                return await _finalize_stop(_stop_err)
 
-        # 结构化暂停确认：本轮 FC 批经 workflow_pause 产生
-        fc_confirmation = str((fc_extra or {}).get("confirmation") or "")
-        fc_confirmation_options = list((fc_extra or {}).get("confirmation_options") or [])
+            # 空/畸形响应防护（模型侧问题，非供应商 transient）：经恢复分派表
+            # bad_output 分支（action=nudge_retry）处置——重试上限取自分派表
+            # （数据驱动，不再硬编码）；达到上限后以明确故障文案收尾
+            # （不再静默落为「没有返回可见回复」）。
+            # 其余失败类型各有分级出口：供应商错误由上方 AdapterError 分流
+            # 承接（escalate），工具失败经 fc_feedback 回喂降级（feedback_degrade），
+            # 闸机拦截结构化上报不重试（structured_report，见 recovery_policy）。
+            # 暂停确认轮现有真实 fc_applied（含 workflow_pause 自身），
+            # 且正文有确认文案兜底，双条件均使其不入本重试（守卫语义保持正确）。
+            _bad_pol = recovery_for(FAILURE_BAD_OUTPUT)
+            bad_retries = 0
+            while not str(content or "").strip() and fc_applied == 0 and bad_retries < _bad_pol.max_retries:
+                bad_retries += 1
+                logger.warning(f"[AgentLoop] 第 {step} 轮输出异常（空/畸形），重试 {bad_retries}/{_bad_pol.max_retries}")
+                await emit(status_event("agent.badRetry", f"第 {step} 轮输出异常，重试中…", {"step": step}))
+                tracer.record_action(
+                    name="bad_output_retry",
+                    summary=f"模型输出异常（空/畸形），自动重做（第 {bad_retries} 次）",
+                    elapsed_ms=0.0,
+                    ok=True,
+                )
+                # 检查点（重试模型调用前）：停止优先于坏输出重试
+                _stop_err = _stop_if_requested(STOP_PHASE_THINKING)
+                if _stop_err is not None:
+                    return await _finalize_stop(_stop_err)
+                _unpacked, _stopped_result = await _await_llm_with_stop_guard(
+                    STOP_PHASE_STREAMING,
+                    extra_messages=[{"role": "user", "content": _bad_output_nudge(bad_retries)}],
+                )
+                if _stopped_result is not None:
+                    return _stopped_result
+                content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
+                plan_total += float(plan_ms or 0.0)
+                step_tokens = int((fc_extra or {}).get("token_usage") or 0)
+            # 规划耗时只算纯模型规划：FC 工具执行时间由各工具条目独立展示，
+            # 不再把工具耗时叠进规划行导致「规划很慢」的错觉
+            await emit({
+                "type": SSE_TOOL_FINISHED,
+                "id": f"llm-s{step}",
+                "ok": True,
+                "elapsed_ms": round(plan_total, 1),
+                "result_summary": f"Agent 规划完成（第 {step} 轮）",
+            })
+            _plan_rec["elapsed_ms"] = round(plan_total, 1)
+            # 坏输出收尾仅在「预算耗尽」时生效（bad_retries>0 保证确曾重试）；
+            # 若分派表预算为 0，空输出落入下方通用空响应兜底路径
+            if bad_retries > 0 and bad_retries == _bad_pol.max_retries and not str(content or "").strip() and fc_applied == 0:
+                result.text = (
+                    f"输出异常：模型连续返回空/畸形输出，已重试 {_bad_pol.max_retries} 次；"
+                    "请重试或检查模型配置。"
+                )
+                result.warnings.append(
+                    f"模型连续 {bad_retries + 1} 次输出异常（空/畸形），已终止本轮")
+                # 一键重试按钮（机械重发上一条用户消息，零模型猜测）
+                result.suggested_actions.append({"kind": "retry", "label": "重试", "value": ""})
+                tracer.end_step(step, actions_applied=0, finish_reason="bad_output",
+                                token_usage=step_tokens)
+                break
 
-        # FC 路径：tool_calls 已在 llm_call 内部执行；正文原样可见（无需清洗）
-        if fc_applied > 0 or fc_confirmation:
-            result.applied_actions += fc_applied
-            if fc_applied:
-                await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": fc_applied})
-            visible = (content or "").strip()
-            if visible:
-                result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
-            logger.info(
-                f"[AgentLoop] step={step} fc_applied={fc_applied} "
-                f"confirm={bool(fc_confirmation)} finish={finish_reason or '-'}"
+            if finish_reason == "length":
+                result.warnings.append(
+                    f"第 {step} 轮回复被 max_tokens 截断，工具调用/正文可能不完整"
+                )
+
+            # 结构化暂停确认：本轮 FC 批经 workflow_pause 产生
+            fc_confirmation = str((fc_extra or {}).get("confirmation") or "")
+            fc_confirmation_options = list((fc_extra or {}).get("confirmation_options") or [])
+
+            # FC 路径：tool_calls 已在 llm_call 内部执行；正文原样可见（无需清洗）
+            if fc_applied > 0 or fc_confirmation:
+                result.applied_actions += fc_applied
+                if fc_applied:
+                    await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": fc_applied})
+                visible = (content or "").strip()
+                if visible:
+                    result.text = f"{result.text}\n\n{visible}".strip() if result.text else visible
+                logger.info(
+                    f"[AgentLoop] step={step} fc_applied={fc_applied} "
+                    f"confirm={bool(fc_confirmation)} finish={finish_reason or '-'}"
+                )
+                if fc_confirmation:
+                    # 虚报审计：FC 确认轮同样承重——声称拆完但故事板
+                    # 为空 → 只附警告不拦人（系统不没收模型暂停）
+                    if (
+                        _claims_structure_done(visible, fc_confirmation)
+                        and prompt_gates.storyboard_is_empty(executor.state)
+                    ):
+                        result.warnings.append(
+                            "检测到虚报：正文声称已完成结构搭建，但故事板实际仍为空；"
+                            "已按用户确认语义保留当前暂停（系统不没收模型暂停）。"
+                        )
+                    # 暂停等待用户确认：终止循环，把确认请求（含候选选项）带回给前端
+                    result.confirmation = fc_confirmation
+                    result.confirmation_options = fc_confirmation_options
+                    # 三通道分离 B：超长 pause message 原文进正文通道
+                    # （成果展示归正文；判重内置，防与模型 prose 重复）
+                    _pause_overflow = str((fc_extra or {}).get("pause_overflow") or "").strip()
+                    if _pause_overflow and _pause_overflow not in (result.text or ""):
+                        result.text = (
+                            f"{result.text}\n\n{_pause_overflow}".strip()
+                            if result.text else _pause_overflow
+                        )
+                    tracer.end_step(
+                        step, actions_applied=fc_applied,
+                        finish_reason=finish_reason or "confirmation",
+                        token_usage=step_tokens,
+                    )
+                    break
+                # 6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
+                # 不再固定追加 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）
+                if finish_reason in ("stop", "end_turn") and visible:
+                    # 状态驱动下一步建议：收尾且无既有建议时按客观状态下发
+                    if not result.suggested_actions:
+                        result.suggested_actions.extend(suggest_next_actions(executor.state))
+                    tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
+                                    token_usage=step_tokens)
+                    break
+                if step == max_steps:
+                    result.warnings.append(f"已达到多步上限（{max_steps} 轮），循环终止")
+                    result.suggested_actions.append(
+                        {"kind": "continue", "label": "继续完成", "value": "继续完成"})
+                    tracer.end_step(step, actions_applied=fc_applied, finish_reason="max_steps",
+                                    token_usage=step_tokens)
+                    break
+                tracer.end_step(step, actions_applied=fc_applied,
+                                finish_reason=finish_reason or "fc_continue",
+                                token_usage=step_tokens)
+                # 回喂：让下一步 LLM 知道工具已执行（文案外置 feedback.md::STEP_FEEDBACK，
+                # 指令收敛 Rule6）
+                messages.append({"role": "assistant", "content": content or f"（已执行 {fc_applied} 个工具调用）"})
+                _step_fb = load_prompt_section("planner/feedback.md", "STEP_FEEDBACK")
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        _step_fb.replace("{{step}}", str(step)).replace("{{count}}", str(fc_applied))
+                        if _step_fb else (
+                            f"（系统）第 {step} 轮的 {fc_applied} 个 Tool 已执行完毕，工作台状态已刷新到 system prompt。"
+                            "请继续完成任务；全部完成后直接回复文本即可。"
+                        )
+                    ),
+                })
+                continue
+
+            # 纯文本轮：模型本轮未发出工具调用，即本轮为面向用户的回复，
+            # 循环进入收尾。正文拼接收纳由轮末策略 false_claim_audit 单一执行
+            # （虚报/假停兜底等机械闸机同一策略表）。
+            # 闸机拦截分级（恢复分派表 gate_rejection 分支，action=
+            # structured_report）：gate_rejections 随上下文入轮末策略表，
+            # 由 gate_heal 发改写指引卡完成结构化上报，循环层不机械重试
+            _re_ctx = RoundEndContext(
+                step=step,
+                executor=executor,
+                content=content,
+                skill=skill,
+                confirmation="",
+                confirmation_options=[],
+                wants_continue=False,
+                total_exec=0,
+                applied=0,
+                executable=[],
+                gate_rejections=list(getattr(executor, "gate_rejections", None) or []),
+                spec_wizard_pending=False,
+                result_text=result.text,
             )
-            if fc_confirmation:
-                # 虚报审计：FC 确认轮同样承重——声称拆完但故事板
-                # 为空 → 只附警告不拦人（系统不没收模型暂停）
-                if (
-                    _claims_structure_done(visible, fc_confirmation)
-                    and prompt_gates.storyboard_is_empty(executor.state)
-                ):
-                    result.warnings.append(
-                        "检测到虚报：正文声称已完成结构搭建，但故事板实际仍为空；"
-                        "已按用户确认语义保留当前暂停（系统不没收模型暂停）。"
-                    )
-                # 暂停等待用户确认：终止循环，把确认请求（含候选选项）带回给前端
-                result.confirmation = fc_confirmation
-                result.confirmation_options = fc_confirmation_options
-                # 三通道分离 B：超长 pause message 原文进正文通道
-                # （成果展示归正文；判重内置，防与模型 prose 重复）
-                _pause_overflow = str((fc_extra or {}).get("pause_overflow") or "").strip()
-                if _pause_overflow and _pause_overflow not in (result.text or ""):
-                    result.text = (
-                        f"{result.text}\n\n{_pause_overflow}".strip()
-                        if result.text else _pause_overflow
-                    )
+            await run_round_end_policies(_re_ctx, emit, tracer=tracer)
+            if _re_ctx.result_warnings:
+                result.warnings.extend(_re_ctx.result_warnings)
+            result.text = _re_ctx.result_text
+            # fakestop：轮末策略机械追加的建议动作（仅当无既有建议时生效）
+            if _re_ctx.suggested_actions and not result.suggested_actions:
+                result.suggested_actions.extend(_re_ctx.suggested_actions)
+            if _re_ctx.confirmation or _re_ctx.hard_break:
+                # 轮末策略注入的暂停卡（规格审阅/规格收集等）：带回前端
+                result.confirmation = _re_ctx.confirmation
+                result.confirmation_options = _re_ctx.confirmation_options
                 tracer.end_step(
-                    step, actions_applied=fc_applied,
-                    finish_reason=finish_reason or "confirmation",
+                    step, actions_applied=0,
+                    finish_reason=_re_ctx.hard_break_finish or "confirmation",
                     token_usage=step_tokens,
                 )
                 break
-            # 6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
-            # 不再固定追加 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）
-            if finish_reason in ("stop", "end_turn") and visible:
-                # 状态驱动下一步建议：收尾且无既有建议时按客观状态下发
-                if not result.suggested_actions:
-                    result.suggested_actions.extend(suggest_next_actions(executor.state))
-                tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
-                                token_usage=step_tokens)
-                break
-            if step == max_steps:
-                result.warnings.append(f"已达到多步上限（{max_steps} 轮），循环终止")
-                result.suggested_actions.append(
-                    {"kind": "continue", "label": "继续完成", "value": "继续完成"})
-                tracer.end_step(step, actions_applied=fc_applied, finish_reason="max_steps",
-                                token_usage=step_tokens)
-                break
-            tracer.end_step(step, actions_applied=fc_applied,
-                            finish_reason=finish_reason or "fc_continue",
+            # 正常收尾：状态驱动下一步建议
+            if not result.suggested_actions:
+                result.suggested_actions.extend(suggest_next_actions(executor.state))
+            tracer.end_step(step, actions_applied=0, finish_reason=finish_reason or "stop",
                             token_usage=step_tokens)
-            # 回喂：让下一步 LLM 知道工具已执行（文案外置 feedback.md::STEP_FEEDBACK，
-            # 指令收敛 Rule6）
-            messages.append({"role": "assistant", "content": content or f"（已执行 {fc_applied} 个工具调用）"})
-            _step_fb = load_prompt_section("planner/feedback.md", "STEP_FEEDBACK")
-            messages.append({
-                "role": "user",
-                "content": (
-                    _step_fb.replace("{{step}}", str(step)).replace("{{count}}", str(fc_applied))
-                    if _step_fb else (
-                        f"（系统）第 {step} 轮的 {fc_applied} 个 Tool 已执行完毕，工作台状态已刷新到 system prompt。"
-                        "请继续完成任务；全部完成后直接回复文本即可。"
-                    )
-                ),
-            })
-            continue
-
-        # 纯文本轮：模型本轮未发出工具调用，即本轮为面向用户的回复，
-        # 循环进入收尾。正文拼接收纳由轮末策略 false_claim_audit 单一执行
-        # （虚报/假停兜底等机械闸机同一策略表）。
-        _re_ctx = RoundEndContext(
-            step=step,
-            executor=executor,
-            content=content,
-            skill=skill,
-            confirmation="",
-            confirmation_options=[],
-            wants_continue=False,
-            total_exec=0,
-            applied=0,
-            executable=[],
-            gate_rejections=list(getattr(executor, "gate_rejections", None) or []),
-            spec_wizard_pending=False,
-            result_text=result.text,
-        )
-        await run_round_end_policies(_re_ctx, emit, tracer=tracer)
-        if _re_ctx.result_warnings:
-            result.warnings.extend(_re_ctx.result_warnings)
-        result.text = _re_ctx.result_text
-        # fakestop：轮末策略机械追加的建议动作（仅当无既有建议时生效）
-        if _re_ctx.suggested_actions and not result.suggested_actions:
-            result.suggested_actions.extend(_re_ctx.suggested_actions)
-        if _re_ctx.confirmation or _re_ctx.hard_break:
-            # 轮末策略注入的暂停卡（规格审阅/规格收集等）：带回前端
-            result.confirmation = _re_ctx.confirmation
-            result.confirmation_options = _re_ctx.confirmation_options
-            tracer.end_step(
-                step, actions_applied=0,
-                finish_reason=_re_ctx.hard_break_finish or "confirmation",
-                token_usage=step_tokens,
-            )
             break
-        # 正常收尾：状态驱动下一步建议
-        if not result.suggested_actions:
-            result.suggested_actions.extend(suggest_next_actions(executor.state))
-        tracer.end_step(step, actions_applied=0, finish_reason=finish_reason or "stop",
-                        token_usage=step_tokens)
-        break
-
-    # 正常路径解绑进度通道（异常路径 contextvar 随任务消亡）
-    unbind_progress_emitter(_progress_token)
+    except GenerationCancelled:
+        # 取消穿透闭环：工具/adapters 检查点协作退出（GenerationCancelled）
+        # 收敛 _finalize_stop 同款收尾：end_step + stopped 事件 + finish_trace；
+        # 解绑统一在 finally
+        # 代际快照：收尾期间若已有新停止请求（快速重连场景），不误清
+        sid = current_stop_id(stop_scope)
+        cancel_token.cancel()
+        result.stopped = True
+        result.stop_phase = STOP_PHASE_TOOL_EXECUTING
+        _step_no = result.steps
+        AgentTracer.get_instance().end_step(
+            _step_no, actions_applied=0,
+            finish_reason="cancelled_by_user", token_usage=0,
+        )
+        logger.info(f"[AgentLoop] 生成任务已被取消：step={_step_no}")
+        await emit({"type": SSE_STOPPED, "phase": STOP_PHASE_TOOL_EXECUTING, "step": _step_no})
+        clear_stop(stop_scope, sid)
+        result.trace = AgentTracer.get_instance().finish_trace(
+            total_actions=result.applied_actions)
+        # 与 _finalize_stop 同语义直接返回：不再落空文本兜底文案
+        return result
+    finally:
+        # 统一解绑（幂等）：任何出口都经此收尾，不再有分散解绑点
+        unbind_progress_emitter(_progress_token)
+        unbind_cancel_token(_cancel_bind)
     if not result.text:
         if result.confirmation:
             # 暂停轮无正文兜底：用暂停说明作为可见回复，

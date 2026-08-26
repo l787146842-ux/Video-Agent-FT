@@ -287,7 +287,7 @@ class ReadSkillTool(BaseTool):
         # 与 Planner 选中项注入共用同一套解析（仅文档 Skill，模糊匹配）
         matched, content = sd.resolve_skill_content(wanted)
         if not content:
-            # canonical 身份兑底（Rule2 v6）：模型逐字复制显示名的误差
+            # canonical 身份兜底（Rule2 v6）：模型逐字复制显示名的误差
             # （去连字符/空格归一）经 registry 定位同身份条目
             entry = registry.resolve_entry(wanted)
             if entry is not None and str(entry.content or "").strip():

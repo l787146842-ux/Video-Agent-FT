@@ -21,12 +21,13 @@ _EXPECTED_GATE_NAMES = [
     "contract", "prompt_budget", "file_lines", "file_lines_frontend",
     "semantic_colors", "func_imports", "governance_refs", "category_keys",
     "legacy_orchestration", "layer_imports", "doc_pointers",
-    "scaffold_registry", "cov_ratchet", "fe_cov_ratchet", "skill_tool_names",
+    "arch_anchors", "scaffold_registry", "cov_ratchet", "fe_cov_ratchet",
+    "skill_tool_names",
 ]
 
 
 def test_acceptance_gates_table_complete():
-    """GATES 表 14 道门禁一个不少（掉闸 = 治理失明）。"""
+    """GATES 表门禁一个不少（掉闸 = 治理失明）。"""
     from scripts.acceptance import GATES
     assert [name for name, _ in GATES] == _EXPECTED_GATE_NAMES
 

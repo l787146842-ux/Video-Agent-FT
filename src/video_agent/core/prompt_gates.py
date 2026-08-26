@@ -490,6 +490,14 @@ def validate_prompt_write(
     shot_min_chars = int(gate.get("shot_min_chars", _SHOT_PROMPT_MIN_CHARS))
     element_min_chars = int(gate.get("element_min_chars", _ELEMENT_PROMPT_MIN_CHARS))
     cjk_min_ratio = float(gate.get("cjk_min_ratio", _CJK_MIN_RATIO))
+    # 当前 Skill 归属（与 resolve_prompt_language 同源的 usedSkills 末位兜底）：
+    # 类别级语言豁免与音色声明轴都从声明读取，不硬编码探测
+    _cur_skill = ""
+    try:
+        _cur_skill = registry.fallback_skill_from_state(
+            raw_state if isinstance(raw_state, dict) else None)
+    except Exception:
+        pass
     # 语言单一事实源接入用户选择（规格输出语言 > Skill 声明）；
     # 英文/中英双语关闭语言闸，中文选择在 Skill 英文锁定时恢复平台地板
     _lang = resolve_prompt_language(raw_state, gate)
@@ -497,6 +505,17 @@ def validate_prompt_write(
         cjk_min_ratio = 0.0
     elif cjk_min_ratio <= 0:
         cjk_min_ratio = float(_CJK_MIN_RATIO)
+    # 类别级语言闸豁免（任务#8 ①）：Skill 声明 language.prompt_en_categories
+    # 含当前类别时，仅该类别放宽为英文；其余类别维持中文地板
+    # （豁免只按声明类别生效，防泛化）
+    try:
+        if (
+            _cur_skill
+            and kind in registry.skill_prompt_en_categories(_cur_skill)
+        ):
+            cjk_min_ratio = 0.0
+    except Exception:
+        pass  # 声明读取失败回落现状判定（不误拦）
 
     # 语言闸（shot / keyElement 通用）：中文输入环境下正文应以中文书写，
     # 仅专业技术术语可保留英文。阈值可由 manifest gates.cjk_min_ratio 调整
@@ -539,11 +558,21 @@ def validate_prompt_write(
             camera_markers = gate.get("camera_markers") or _CAMERA_MARKERS
             if not any(m in text or m in lower for m in camera_markers):
                 hard.append("分镜视频提示词缺少镜头语言：须写明景别/角度/运动（如 缓慢推入、环绕、cut to new angle）")
-        # 软提醒：有对白且项目存在音色参考，但未说明音色参考分配
+        # 软提醒：有对白且存在音色参考——音色在场优先跟随 Skill 声明轴
+        # （requires_inputs.features 含 voice_reference，任务#8 ④）；
+        # 未声明者回落状态探测（零预设，不回潮硬编码唯探测）
+        _voice_declared = False
+        try:
+            _voice_declared = bool(
+                _cur_skill
+                and registry.skill_declares_feature(_cur_skill, "voice_reference")
+            )
+        except Exception:
+            pass
         if (
             raw_state is not None
             and _DIALOGUE_RE.search(text)
-            and has_voice_reference(raw_state)
+            and (_voice_declared or has_voice_reference(raw_state))
             and "音色参考" not in text
         ):
             soft.append(

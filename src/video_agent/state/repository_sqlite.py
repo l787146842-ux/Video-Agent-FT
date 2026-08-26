@@ -14,6 +14,19 @@ SqliteStateRepository — SQLite 持久化层（与 StateRepository 同接口的
 代价明示：sqlite 写入后回退 STATE_BACKEND=json 不再无损续跑；
 STATE_BACKEND=json 保留为测试基线与旧 JSON 工作区回落路径，
 不承担生产数据连续性承诺。
+
+JSON 回落冷备语义（审核结论钉死，非热双写）：
+- 持续写入只落 SQLite：save_project/write_index 不产出任何 JSON 镜像，
+  save_compat 为空实现（studio_state.json 不再被写）；
+- JSON 仅作为冷备在恢复路径被读取一次：
+  ① 首次启用且 DB 为空 → _auto_migrate_from_json 一次性导入；
+  ② SQLite 文件损坏/不可读 → 隔离损坏文件（改名 .corrupt-<时间戳>
+     保留现场，不删除）重建空库，随后经同一条冷恢复路径从 JSON
+     工作区尽力恢复一次（best-effort：JSON 是迁入时点快照，
+     之后的增量只在 SQLite）；
+- 正常生命周期内 JSON 既不写也不读（冷备身份，非双写副本）。
+语义由 tests/unit/test_repository_sqlite.py 钉死（无镜像写入 +
+损坏隔离冷恢复两条用例）。
 """
 import json
 import shutil
@@ -55,16 +68,67 @@ class SqliteStateRepository:
         self._state_file = workspace_dir / "studio_state.json"
         self._db_file = workspace_dir / "state.sqlite3"
         self._lock = threading.Lock()
+        self._last_bootstrap_error: Optional[Exception] = None
 
         self._workspace_dir.mkdir(parents=True, exist_ok=True)
         self._projects_dir.mkdir(parents=True, exist_ok=True)
-        with self._lock, self._connect() as conn:
-            conn.executescript(_SCHEMA)
+        if not self._try_bootstrap_schema():
+            # 冷备恢复语义：SQLite 损坏/不可读时不直接崩溃——
+            # 隔离损坏文件保留现场，重建空库后由
+            # _auto_migrate_from_json 从 JSON 冷备尽力恢复一次
+            self._quarantine_corrupt_db(self._last_bootstrap_error)
+            self._try_bootstrap_schema()
         self._auto_migrate_from_json()
+
+    def _try_bootstrap_schema(self) -> bool:
+        """尝试建表；失败时先关闭连接再返回 False。
+
+        Windows 兼容：损坏文件上的失败连接仍持有文件句柄，
+        不显式 close 则后续改名隔离会被 WinError 32（文件占用）拦住。
+        """
+        conn: Optional[sqlite3.Connection] = None
+        try:
+            conn = self._connect()
+            conn.executescript(_SCHEMA)
+            return True
+        except sqlite3.DatabaseError as e:
+            self._last_bootstrap_error = e
+            return False
+        finally:
+            if conn is not None:
+                conn.close()
+
+    def _quarantine_corrupt_db(self, cause: Exception) -> None:
+        """隔离损坏的数据库文件（改名保留现场，不删除）。
+
+        改名带时间戳避免与后续重建冲突；WAL 侧车文件（-wal/-shm）
+        一并隔离。Windows 兼容：用 Path.replace（同盘原子改名），
+        目标名带时间戳不覆盖既有文件。重建后 DB 为空，
+        随即触发 JSON 冷备的一次性恢复路径。
+        """
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        for suffix in ("", "-wal", "-shm"):
+            f = self._db_file.parent / (self._db_file.name + suffix)
+            if f.exists():
+                try:
+                    f.replace(f.parent / f"{f.name}.corrupt-{ts}")
+                except OSError as mv_err:
+                    logger.warning(f"[SqliteRepo] 损坏文件隔离失败 {f.name}: {mv_err}")
+        logger.error(
+            f"[SqliteRepo] SQLite 损坏（{cause}）：已隔离并重建空库，"
+            "随后从 JSON 冷备尽力恢复一次（JSON 为迁入时点快照，"
+            "其后增量无法找回）"
+        )
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_file, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")  # 并发读 + 写不阻塞读
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")  # 并发读 + 写不阻塞读
+        except sqlite3.DatabaseError:
+            # 损坏文件上 PRAGMA 即失败：必须显式 close 释放文件句柄，
+            # 否则 Windows 下后续改名隔离被 WinError 32（文件占用）拦住
+            conn.close()
+            raise
         return conn
 
     # ====== 自动迁移（仅 DB 为空时） ======
