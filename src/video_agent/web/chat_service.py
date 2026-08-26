@@ -40,7 +40,7 @@ from src.video_agent.core.provider_config import (
 from src.video_agent.web.error_payload import classify_exception, classify_legacy_code
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state import chat_tail_ops
-from src.video_agent.core.planner import Planner, PlannerContext
+from src.video_agent.core.planner import Planner, PlannerContext, PlannerResponse
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
     SSE_DELTA,
@@ -61,6 +61,7 @@ from src.video_agent.web.stop_manager import (
 )
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.base_chat import BaseChatAdapter
+from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.core.tracer import AgentTracer
@@ -360,6 +361,9 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         applied_seen = False
         final_text = ""
         final_payload: Dict[str, Any] = {}
+        # 停止终态目击（stopped 事件已透传）：防防御路径无 done 时误发 done
+        _stopped_seen = False
+        _stop_phase_seen = ""
         try:
             async for event in planner.handle_message_stream(llm_user_content, planner_ctx):
                 if event.type == "status":
@@ -398,6 +402,8 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
                     # 第一版不做真实撤销/补偿，仅登记 + 文案告知供应商侧仍在进行
                     _sp = dict(event.payload or {"type": SSE_STOPPED})
                     _sp.setdefault("inflight", snapshot_inflight_generations())
+                    _stopped_seen = True
+                    _stop_phase_seen = str(_sp.get("phase") or "")
                     await emit(_sp)
                 elif event.type == "done":
                     final_payload = event.payload or {}
@@ -418,11 +424,13 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
             return
 
         # --- 停止路径：stopped 终态事件已由检查点先行下发，
-        # 此处只落停止痕迹消息供刷新后恢复，不再发 done（stopped 即终态）
-        if final_payload.get("stopped"):
+        # 此处只落停止痕迹消息供刷新后恢复，不再发 done（stopped 即终态）；
+        # 取消穿透防御路径（仅 stopped 事件无 done）同归此分支
+        if _stopped_seen or final_payload.get("stopped"):
             # 停止痕迹持久化（stop_manager）；stopped 即终态，不再发 done
             await persist_stop_trace(
-                svc, final_text, str(final_payload.get("stop_phase") or "thinking"),
+                svc, final_text,
+                str(final_payload.get("stop_phase") or _stop_phase_seen or "thinking"),
                 cand_model or "", turn_id, use_studio_context,
             )
             return
@@ -650,6 +658,13 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
             result = await planner.handle_message(llm_user_content, planner_ctx, on_event=_on_event)
             used_model = cand_model
             break
+        except GenerationCancelled as _cancel_exc:
+            # 取消穿透闭环：分流为 stopped 终态，不进下方 error 分支
+            logger.info(f"[ChatService] 生成任务已被取消（非流式）: {_cancel_exc}")
+            result = PlannerResponse(
+                stopped=True, stop_phase="tool_executing", text=str(_cancel_exc))
+            used_model = cand_model
+            break
         except (GenerationError, AdapterError) as e:
             # 单一候选、不自动换模型——失败直接报错
             logger.warning(f"[ChatService] LLM 非流式调用失败 ({cand_provider}/{cand_model}): {e}")
@@ -685,6 +700,10 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
         "state": svc.get_full_snapshot() if use_studio_context else None,
         "turn_id": ns_turn_id,
         "suggested_actions": result.suggested_actions,
+        # 协作式停止标记（取消穿透分流同构）：与流式 done payload 的 stopped/stop_phase 对齐
+        #（getattr 兼容测试打桩返回的无 stopped 属性对象）
+        "stopped": bool(getattr(result, "stopped", False)),
+        "stop_phase": getattr(result, "stop_phase", ""),
         # workflow 投影（非流式同构）
         "workflow": workflow_runtime.project(svc.state_dict, ns_turn_id),
     }

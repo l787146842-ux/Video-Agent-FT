@@ -43,6 +43,9 @@ class GenerationTaskManager:
         # 生成日志环形缓冲（最新在前）：图/视频/音频每次生成的成败记录，
         # 供顶部导航「生成日志」面板展示（照搬画布日志风格）
         self._gen_logs: List[Dict[str, Any]] = []
+        # event_seq 契约：管理器级帧序号计数器，每条通知从 1 单调递增
+        # （前端按 (task_id, event_seq) 去重）
+        self._event_seq = 0
         # 任务表 + 生成日志落盘：重启后 processing 任务不再永久丢失回调
         # store/legacy_file 可注入（测试隔离）；生产默认全局库 + data/ 旧文件
         self._store = store or TaskStore()
@@ -127,13 +130,33 @@ class GenerationTaskManager:
             self._sse_subscribers.remove(q)
 
     def notify(self, event_data: Dict[str, Any]) -> None:
-        """向所有 SSE 订阅者推送事件"""
-        msg = json.dumps(event_data, ensure_ascii=False)
+        """向所有 SSE 订阅者推送事件（每帧附 event_seq；终态队列满时补投）"""
+        # event_seq 契约（发射侧）：单调递增帧序号，前端按 (task_id, event_seq) 去重
+        self._event_seq += 1
+        stamped = {**event_data, "event_seq": self._event_seq}
+        # 终态判定：生成任务成败状态或结构化终态类型；终态丢失 = 前端永挂
+        terminal = (
+            stamped.get("status") in ("succeeded", "failed", "completed", "cancelled")
+            or stamped.get("type") in ("done", "error", "stopped", "task_status")
+        )
+        msg = json.dumps(stamped, ensure_ascii=False)
         dead: List[asyncio.Queue] = []
         for q in self._sse_subscribers:
             try:
                 q.put_nowait(msg)
             except asyncio.QueueFull:
+                if terminal:
+                    # 终态补投：先清空积压再强投本条；仍失败才摘除订阅者
+                    while True:
+                        try:
+                            q.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                    try:
+                        q.put_nowait(msg)
+                        continue
+                    except asyncio.QueueFull:
+                        pass
                 dead.append(q)
         for q in dead:
             self._sse_subscribers.remove(q)

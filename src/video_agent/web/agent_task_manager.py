@@ -21,6 +21,9 @@ from src.video_agent.web.task_store import TaskStore
 
 _TASK_MAX = 50
 
+# 终态事件类型：队列满时必须补投（先清积压再强投），终态丢失 = 前端永挂
+_TERMINAL_EVENT_TYPES = ("done", "error", "stopped", "task_status")
+
 # 任务表持久化单源收敛 —— 落盘走 workspace/state.sqlite3 kv 表
 # （事务性，见 task_store）；旧 JSON 文件仅作首启一次性导入兜底，
 # 导入后保留只读一个版本周期
@@ -90,6 +93,8 @@ class AgentTaskManager:
             "error": None,
             # 轮间引导注入队列（用户推理中发送的排队消息，planner 逐轮消费）
             "pending_guidance": [],
+            # event_seq 契约：record 级帧序号计数器，每 task 从 1 单调递增
+            "_event_seq": 0,
             "_subscribers": [],
             "_task": None,
         }
@@ -205,6 +210,9 @@ class AgentTaskManager:
         record.setdefault("_subscribers", []).append(q)
         q.put_nowait({
             "type": "replay",
+            # replay 快照帧携带当前最新 seq：前端按 (task_id, event_seq) 去重，
+            # 快照与后续增量帧不重复消费
+            "event_seq": int(record.get("_event_seq") or 0),
             "payload": {
                 "task_id": task_id,
                 "project_id": record["project_id"],
@@ -238,11 +246,28 @@ class AgentTaskManager:
                 subs.remove(q)
 
     def _notify(self, record: Dict[str, Any], event: Dict[str, Any]) -> None:
+        # event_seq 契约（发射侧）：record 级计数器，每 task 从 1 单调递增；
+        # 前端按 (task_id, event_seq) 去重（replay/终态快照帧携带原始 seq）
+        record["_event_seq"] = int(record.get("_event_seq") or 0) + 1
+        stamped = {**event, "event_seq": record["_event_seq"]}
+        terminal = stamped.get("type") in _TERMINAL_EVENT_TYPES
         dead: List[asyncio.Queue] = []
         for q in list(record.get("_subscribers") or []):
             try:
-                q.put_nowait(event)
+                q.put_nowait(stamped)
             except asyncio.QueueFull:
+                if terminal:
+                    # 终态补投：先清空积压再强投本条；仍失败才摘除订阅者
+                    while True:
+                        try:
+                            q.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                    try:
+                        q.put_nowait(stamped)
+                        continue
+                    except asyncio.QueueFull:
+                        pass
                 dead.append(q)
         for q in dead:
             record["_subscribers"].remove(q)
@@ -424,6 +449,7 @@ class AgentTaskManager:
                 "workflow": None,
                 "error": "服务重启中断",
                 "pending_guidance": [],
+                "_event_seq": 0,
                 "_subscribers": [],
                 "_task": None,
             }

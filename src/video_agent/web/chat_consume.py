@@ -1,5 +1,4 @@
 """消费/压缩域：会话 compaction/暂停态消费/规格向导消费/卡片枚举压缩。"""
-import asyncio
 import hashlib
 import re
 import time
@@ -28,7 +27,6 @@ from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgent
 from src.video_agent.adapters.base_chat import BaseChatAdapter
 from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.tools.manager import ToolManager
-from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.state.models import ALL_CATEGORIES_TUPLE
 
 __all__ = ["build_multimodal_content"]
@@ -149,8 +147,20 @@ def _sample_older_dialog(older: List[Dict[str, Any]],
     """分层采样拼装摘要输入（分层采样而非只取尾部窗口）。
 
     头部定锚（任务起点）+ 中段等距跨步 + 尾部贴近期保留窗，超预算时
-    中段均匀抽稀——任意位置的决策都有机会进入摘要，而不是只有最近 20 条。"""
-    n = len(older)
+    中段均匀抽稀——任意位置的决策都有机会进入摘要，而不是只有最近 20 条。
+
+    采样前过滤系统回喂型消息（信息密度治理）：工具回喂/压缩占位/
+    暂停回应提示等「（系统）」前缀条目是运行时模板，不承载用户决策，
+    采入只会稀释摘要；步间注入的用户引导消息解包还原用户原文后保留
+    （真实用户意图，不丢）。过滤只作用于采样视角，不改 history 本体
+    与指纹（_history_fingerprint 仍对全量计算，失效语义不变）。"""
+    items: List[Tuple[str, str]] = []
+    for m in older:
+        text = _dialog_sample_text(m)
+        if not text:
+            continue
+        items.append(("user" if m.get("role") == "user" else "agent", text))
+    n = len(items)
     if n <= cap:
         idx = list(range(n))
     else:
@@ -160,10 +170,40 @@ def _sample_older_dialog(older: List[Dict[str, Any]],
         step = max(1, span // mid_budget)
         mid = list(range(head, n - tail, step))[:mid_budget]
         idx = sorted(set(list(range(head)) + mid + list(range(n - tail, n))))
-    return "\n".join(
-        f"{'user' if older[i].get('role') == 'user' else 'agent'}: "
-        f"{str(older[i].get('content', ''))[:300]}"
-        for i in idx)
+    return "\n".join(f"{role}: {text[:300]}" for role, text in (items[i] for i in idx))
+
+
+# 系统回喂型消息签名（compaction 采样过滤单一事实源）：
+# 「（系统）」前缀条目均为系统回喂进 LLM 上下文的运行时模板
+# （prompts/planner/feedback.md：FEEDBACK_MARKER/FEEDBACK_COMPRESSED/
+# STEP_FEEDBACK/BAD_OUTPUT_NUDGE，含暂停回应提示与规格向导回执），
+# 非真实用户/助手对话，不进采样
+_SYSTEM_REFEED_PREFIXES = ("（系统）", "（系统提示：", "（系统：")
+
+# 步间注入的用户引导包装（agent_loop pending_injector）：
+# 外层是系统包装，内层是真实用户指令——解包取原文进采样
+_GUIDANCE_WRAP_RE = re.compile(
+    r"^（任务执行期间收到您的指令：(.*?)）"
+    r"请优先处理；若为提问先回答，处理完继续原任务。$",
+    re.S,
+)
+
+
+def _dialog_sample_text(msg: Dict[str, Any]) -> str:
+    """单条消息的采样视角文本：系统回喂型消息返回空串（过滤）；
+    步间引导消息解包还原用户原文；多模态 content 保持 repr 采样口径。"""
+    content = msg.get("content", "")
+    if not isinstance(content, str):
+        return str(content).strip()
+    text = content.strip()
+    if not text:
+        return ""
+    m = _GUIDANCE_WRAP_RE.match(text)
+    if m:
+        return m.group(1).strip()
+    if text.startswith(_SYSTEM_REFEED_PREFIXES):
+        return ""
+    return text
 
 
 async def _maybe_compact_history(

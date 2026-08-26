@@ -8,6 +8,7 @@
 """
 import asyncio
 import json
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Request
@@ -115,6 +116,9 @@ class ChatResponse(BaseModel):
     chat_inserts: List[Dict[str, Any]] = []
     action_log: List[str] = []
     state: Optional[Dict[str, Any]] = None
+    # 用户停止终态字段（避免被 response_model 静默过滤）
+    stopped: bool = False
+    stop_phase: str = ""
 
 
 @router.post("/agent/chat", response_model=ChatResponse)
@@ -213,7 +217,19 @@ async def agent_task_events(task_id: str, request: Request):
             # 响应体无数据会被中间代理 idle 断开；SSE 注释帧前端 parseSSE
             # 天然跳过（非 data: 行），零前端变更
             idle_polls = 0
+            # 订阅存活绝对上限：大于最长任务时长（30min）的保险丝，
+            # 超过即 break 交 finally 清理，防僵尸订阅永驻
+            deadline = time.monotonic() + 45 * 60
             while True:
+                if time.monotonic() > deadline:
+                    # 保险丝熔断前下发结构化终态帧：前端落错误气泡而非静默断流
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "error", "kind": "stream_timeout",
+                            "message": "订阅超时，任务仍在后台运行，刷新可重连",
+                        }, ensure_ascii=False) + "\n\n"
+                    )
+                    break
                 if await request.is_disconnected():
                     break
                 try:

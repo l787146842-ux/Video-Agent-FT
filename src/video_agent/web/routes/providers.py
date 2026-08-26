@@ -129,6 +129,8 @@ def public_provider(p: Dict[str, Any]) -> Dict[str, Any]:
 @router.get("/providers", response_model=ProvidersResponse)
 async def get_providers():
     """获取所有 provider 配置（脱敏，合并本地 + 画布）"""
+    # 管理视图豁免：展示存量条目（含退役 mock）供用户清理，
+    # 不经 exclude_retired_mock_providers 过滤（消费路径才过滤）
     providers = load_merged_providers()
     adapter = get_canvas_adapter()
     canvas_online = await adapter.is_online()

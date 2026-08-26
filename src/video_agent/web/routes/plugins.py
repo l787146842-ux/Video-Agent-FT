@@ -18,7 +18,10 @@ from src.video_agent.tools import ToolManager
 from src.video_agent.tools.canvas_tools import register_canvas_tools
 from src.video_agent.web.chat_opening import _create_chat_adapter
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
-from src.video_agent.core.provider_config import load_merged_providers
+from src.video_agent.core.provider_config import (
+    exclude_retired_mock_providers,
+    load_merged_providers,
+)
 from src.video_agent.web.skill_docs import (
     get_skill_doc,
     list_skill_docs,
@@ -193,7 +196,8 @@ def _resolve_chat_adapter(provider: str, model: str):
     （CLI 通道拒绝 + OpenAI 端点解析 + 连接池复用）。
     依赖已在顶层导入（无循环依赖，方法内 import 为宪法第六章所禁）。"""
     if not provider:
-        for p in load_merged_providers():
+        # mock 退役过滤经唯一收口点（provider_config.exclude_retired_mock_providers）
+        for p in exclude_retired_mock_providers(load_merged_providers()):
             if (p.get("protocol") or "") not in ("gemini-cli", "codex", "jimeng"):
                 provider = str(p.get("id") or "")
                 if provider:

@@ -21,7 +21,6 @@ from .generate_common import (
     VideoGenRequest,
     _new_task,
     _notify_sse,
-    _tasks,
     _tm,
     _track_task,
     _writeback_if_complete,
@@ -121,7 +120,7 @@ async def generate_video(body: VideoGenRequest):
 
     async def _run_video_generation():
         t0 = time.monotonic()
-        task = _tasks.get(task_id)
+        task = _tm.tasks.get(task_id)
         size_note = f"{body.resolution} ({body.aspect_ratio}, {body.duration}s)"
         try:
             result = await adapter.generate(

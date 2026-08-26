@@ -15,6 +15,7 @@
    provider/model，任何 4xx 都在破坏性截断之前返回；
 3. 冲刷在途防抖写后执行截断（版本闸拒绝 → 409 STATE_CONFLICT，不起任务）。
 """
+import copy
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter
@@ -67,7 +68,8 @@ def _resolve_chat_target() -> Tuple[str, str]:
     由发送管线按既有逻辑报错。
     """
     candidates = [
-        p for p in provider_config.load_merged_providers()
+        p for p in provider_config.exclude_retired_mock_providers(
+            provider_config.load_merged_providers())
         if p.get("enabled") and (p.get("chat_models") or [])
     ]
     if not candidates:
@@ -88,8 +90,10 @@ def _resolve_resend_target(body: TruncateResendRequest) -> Tuple[str, str]:
     if not model and provider == default_provider:
         model = default_model
     if provider:
+        # 与 _resolve_chat_target 同集合：退役 mock 供应商不得被显式命中
         chosen = next(
-            (p for p in provider_config.load_merged_providers()
+            (p for p in provider_config.exclude_retired_mock_providers(
+                provider_config.load_merged_providers())
              if p.get("id") == provider),
             None,
         )
@@ -156,6 +160,9 @@ async def truncate_resend(body: TruncateResendRequest):
             return _error(400, "INVALID_CHAT_TARGET", str(e))
         history = _history_before(msgs, idx)
         # ---- 破坏性截断（先冲刷在途防抖写，版本闸拒绝 → 409 冲突）----
+        # 截断前尾部内存快照（同临界区）：起任务失败时原样回滚，
+        # 破坏性截断不得遗留半成品状态
+        tail_snapshot = copy.deepcopy(msgs[idx:])
         await chat_tail_ops.flush_pending_saves(svc)
         try:
             entry = svc.truncate_chat_tail(idx, replace_with)
@@ -178,7 +185,9 @@ async def truncate_resend(body: TruncateResendRequest):
         try:
             result = chat_service.start_agent_task(req)
         except Exception as e:
-            # 不可预检的失败（极小窗口）：结构化 500，不遗留孤儿任务
+            # 不可预检的失败（极小窗口）：先回滚截断尾部快照，
+            # 再结构化 500，不遗留孤儿任务也不遗留半成品对话
+            chat_tail_ops.restore_chat_tail(svc, idx, tail_snapshot)
             return _error(500, "INTERNAL_ERROR", f"起任务失败: {e}")
         finally:
             chat_tail_ops.user_message_persisted.reset(token)

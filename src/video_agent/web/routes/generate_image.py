@@ -23,7 +23,6 @@ from .generate_common import (
     BatchImageGenRequest,
     _new_task,
     _notify_sse,
-    _tasks,
     _tm,
     _track_task,
     _writeback_if_complete,
@@ -66,7 +65,7 @@ async def generate_image(body: ImageGenRequest):
 
     async def _run_generation():
         t0 = time.monotonic()
-        task = _tasks.get(task_id)
+        task = _tm.tasks.get(task_id)
         # 提取参考素材 URL（@ 引用的素材），随请求发送给多模态模型
         ref_urls = [r.get("url", "") for r in (body.reference_images or []) if r.get("url")]
         try:
@@ -217,7 +216,7 @@ async def batch_generate_image(body: BatchImageGenRequest):
 
         async def _run(tid=task_id, p=prompt_text, pid=provider_id, m=model_name, s=size, ar=aspect_ratio, res=resolution, sn=size_note, did=draft.get("id", "")):
             t0 = time.monotonic()
-            task = _tasks.get(tid)
+            task = _tm.tasks.get(tid)
             try:
                 url = await generate_image_via_provider(pid, m, p, size=s, aspect_ratio=ar, resolution=res)
                 if task:

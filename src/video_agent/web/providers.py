@@ -11,7 +11,10 @@ from dotenv import load_dotenv
 
 from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.utils.paths import PROJECT_ROOT
-from src.video_agent.core.provider_config import load_merged_providers
+from src.video_agent.core.provider_config import (
+    exclude_retired_mock_providers,
+    load_merged_providers,
+)
 
 # 加载根目录 .env（运行环境变量）
 load_dotenv(PROJECT_ROOT / ".env")
@@ -20,11 +23,8 @@ load_dotenv(PROJECT_ROOT / ".env")
 def get_available_providers() -> List[Dict[str, Any]]:
     """返回所有已启用的 provider 列表（合并本地 + 画布，供 /api/config 等端点使用）"""
     result = []
-    for p in load_merged_providers():
-        # 审查修复批：mock 演示通道已于批次F 退役，存量用户配置里的
-        # mock 条目不再对外暴露（下拉框不可选）
-        if p.get("protocol") == "mock":
-            continue
+    # mock 演示通道退役过滤统一经 provider_config 收口点（批次F）
+    for p in exclude_retired_mock_providers(load_merged_providers()):
         if p.get("enabled", True):
             result.append({
                 "id": p.get("id", ""),

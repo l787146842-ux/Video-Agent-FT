@@ -2,7 +2,6 @@
 
 被 generate_image.py / generate_video.py / generate.py 共用，本身不注册路由。
 """
-import asyncio
 import time
 from typing import Any, Dict, List
 
@@ -21,9 +20,6 @@ from src.video_agent.web.task_manager import (
 
 _tm = get_task_manager()
 
-# 向后兼容别名（供 actions.py 等模块导入）
-_tasks = _tm.tasks
-
 
 def _notify_sse(event_data: Dict[str, Any]) -> None:
     """向所有 SSE 订阅者推送任务完成事件"""
@@ -35,10 +31,8 @@ def _track_task(coro) -> None:
     _tm.track(coro)
 
 
-def _log_task_exception(task: asyncio.Task) -> None:
-    """兼容别名"""
-    pass
-
+# 向后兼容别名 _tasks/_log_task_exception 已清偿（任务 #12 批次2：
+# 消费方改指向 _tm.tasks 真身后删除，兼容层移除计划同批销账）。
 
 # 任务保留时长（秒）：超过后在下一次写入时清理，防止内存无限增长
 _TASK_TTL_SECONDS = settings.task_ttl_seconds
@@ -105,7 +99,7 @@ class GenLogRequest(BaseModel):
 
 async def poll_task(task_id: str) -> Dict[str, Any]:
     """通用任务状态轮询（图片/视频端点共用）"""
-    task = _tasks.get(task_id)
+    task = _tm.tasks.get(task_id)
     if not task:
         return {"status": "not_found"}
 

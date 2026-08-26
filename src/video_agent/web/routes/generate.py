@@ -12,6 +12,7 @@
 """
 from loguru import logger
 import asyncio
+import json
 import time
 
 from fastapi import APIRouter
@@ -84,9 +85,86 @@ async def add_generation_log(body: GenLogRequest):
     return {"ok": True, "log": entry}
 
 
+# 生成任务终态集合（SSE 回放快照与前端降级判定共用口径）
+_TERMINAL_STATUSES = ("succeeded", "completed", "failed")
+
+
+def _terminal_snapshot(task_id: str, task: dict) -> str:
+    """终态任务 → SSE 回放帧（与 _notify_sse 终态事件同形，前端同一路径消费）"""
+    payload = {
+        "task_id": task_id,
+        "status": task.get("status"),
+        "kind": "video" if task.get("adapter_type") == "video_generation" else "image",
+        "draft_id": task.get("draft_id", ""),
+        "elapsed": task.get("elapsed") or round(time.time() - task.get("created_at", time.time()), 1),
+    }
+    if task.get("video_url"):
+        payload["video_url"] = task["video_url"]
+    if task.get("result"):
+        payload["result"] = task["result"]
+    if task.get("error"):
+        payload["error"] = task["error"]
+    return json.dumps(payload, ensure_ascii=False)
+
+
+@router.get("/generate/events/{task_id}")
+async def generate_events_for_task(task_id: str):
+    """按任务定向的生成 SSE 事件流（任务7/P0：前端 generate-polling 唯一订阅口）。
+
+    正向设计消除「连接前事件已发出」竞速：先订阅再探终态——
+    任务已终态立即回放快照并关流；否则只转发本任务帧，
+    晚到的订阅者由轮询降级兜底（前端 sseFirstThenPoll）。
+    """
+    queue = _tm.subscribe()
+
+    async def event_stream():
+        try:
+            # 订阅后探终态：订阅 → 探测期间到达的 notify 已入队，不漏帧
+            task = _tm.get_task(task_id)
+            if task is None:
+                # 任务不存在（已 TTL 清理/从未创建）：下发失败帧立即关流，
+                # 前端降级轮询会拿到 not_found，不得挂死等
+                yield f"data: {json.dumps({'task_id': task_id, 'status': 'failed', 'error': '任务不存在或已清理'}, ensure_ascii=False)}\n\n"
+                return
+            if task.get("status") in _TERMINAL_STATUSES:
+                yield f"data: {_terminal_snapshot(task_id, task)}\n\n"
+                return
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=30)
+                except asyncio.TimeoutError:
+                    # 心跳保活
+                    yield ": heartbeat\n\n"
+                    continue
+                try:
+                    data = json.loads(msg)
+                except (TypeError, ValueError):
+                    continue
+                if data.get("task_id") != task_id:
+                    continue
+                yield f"data: {msg}\n\n"
+                if data.get("status") in _TERMINAL_STATUSES:
+                    return  # 终态即关流（按任务订阅不长期占用广播队列）
+        except asyncio.CancelledError as _e:
+            logger.debug("[generate] 忽略异常: {}", _e)
+        finally:
+            _tm.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.get("/generate/events")
 async def generate_events():
-    """生成任务 SSE 事件流：任务完成/失败时即时推送，替代前端 2s 轮询"""
+    """生成任务 SSE 全局广播流（待迁移，P3）。
+
+    唯一消费方：前端全局生成事件总线（lib/generation-events.ts，卡片转圈/
+    生成日志角标）。按任务定向链路（generate-polling）已全量切到
+    /generate/events/{task_id}；待总线改造为按任务订阅后本端点退役。
+    """
     queue = _tm.subscribe()
 
     async def event_stream():
