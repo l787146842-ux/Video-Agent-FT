@@ -26,8 +26,24 @@ STYLE_KIND_SKILLS = {
 _KIND_LINE = re.compile(r"^kind:\s*(\S+)\s*$", re.M)
 
 
+def _skill_doc(stem: str) -> Path:
+    """插件包双形态（P2-4）：单文件 <stem>.md 优先，目录包 <stem>/<stem>.md 次之。"""
+    single = SKILLS_DIR / f"{stem}.md"
+    return single if single.exists() else SKILLS_DIR / stem / f"{stem}.md"
+
+
+def _iter_skill_docs():
+    for f in sorted(SKILLS_DIR.glob("*.md")):
+        yield f.stem, f
+    for p in sorted(SKILLS_DIR.iterdir(), key=lambda x: x.name):
+        if p.is_dir() and not p.name.startswith("."):
+            main = p / f"{p.name}.md"
+            if main.exists():
+                yield p.name, main
+
+
 def _kind_of(stem: str) -> str:
-    text = (SKILLS_DIR / f"{stem}.md").read_text(encoding="utf-8")
+    text = _skill_doc(stem).read_text(encoding="utf-8")
     m = _KIND_LINE.search(text)
     return m.group(1) if m else ""
 
@@ -35,17 +51,17 @@ def _kind_of(stem: str) -> str:
 def test_aesthetic_skills_declare_style_kind():
     """四个美学型 Skill 的 kind 声明 = style（批 2.3 落地钉死）。"""
     for stem in sorted(STYLE_KIND_SKILLS):
-        assert (SKILLS_DIR / f"{stem}.md").exists(), f"存量 Skill 缺失: {stem}"
+        assert _skill_doc(stem).exists(), f"存量 Skill 缺失: {stem}"
         assert _kind_of(stem) == "style", f"{stem} kind 应回 style"
 
 
 def test_no_skill_declares_unknown_or_reference_kind_yet():
     """全量口径：现存声明只允许 pipeline/style；
     reference 已下架（任务#8 ②），出现即回 WARN 降级，数据侧不允许再现。"""
-    for f in sorted(SKILLS_DIR.glob("*.md")):
-        kind = _kind_of(f.stem)
+    for stem, _f in _iter_skill_docs():
+        kind = _kind_of(stem)
         assert kind in ("pipeline", "style"), (
-            f"{f.name} kind={kind!r} 未登记于批 2.3 裁决口径")
+            f"{stem} kind={kind!r} 未登记于批 2.3 裁决口径")
 
 
 def test_style_injection_note_wired_for_real_skill_name():

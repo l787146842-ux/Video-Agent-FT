@@ -12,13 +12,21 @@ GOLDEN = ROOT / "tests/fixtures/skill_sections_golden.json"
 SKILLS_DIR = ROOT / "data/skills"
 
 
+def _skill_doc_path(stem: str) -> Path:
+    """插件包双形态（P2-4）：单文件 <stem>.md 优先，目录包 <stem>/<stem>.md 次之。"""
+    single = SKILLS_DIR / f"{stem}.md"
+    if single.exists():
+        return single
+    return SKILLS_DIR / stem / f"{stem}.md"
+
+
 # ---------- #6 章节解析黄金快照（R6 模式：劣化即红） ----------
 
 def test_s6_skill_sections_golden_pinned():
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
     assert len(golden) >= 16, "快照覆盖的存量 Skill 数量不得缩水"
     for stem, expected in golden.items():
-        doc = SKILLS_DIR / f"{stem}.md"
+        doc = _skill_doc_path(stem)
         assert doc.exists(), f"存量 Skill 缺失: {stem}"
         got = split_skill_sections(doc.read_text(encoding="utf-8"))
         got_fingerprint = {k: {"chars": len(v), "head": v.strip()[:40]} for k, v in got.items()}

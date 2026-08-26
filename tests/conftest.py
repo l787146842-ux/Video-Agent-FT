@@ -30,6 +30,13 @@ def _skill_mirror_dir(tmp_path_factory):
     mirror = tmp_path_factory.mktemp("skills_mirror")
     for f in Path(REAL_DIR).glob("*.md"):
         shutil.copy2(f, mirror / f.name)
+    # P2-4：目录包 Skill（<slug>/<slug>.md + references/ 附属资源）整包入镜像，
+    # 否则镜像丢包 → 依赖生产 Skill 的用例静默丢失目录包条目。
+    for p in Path(REAL_DIR).iterdir():
+        if not p.is_dir() or p.name.startswith("."):
+            continue
+        if (p / (p.name + ".md")).exists():
+            shutil.copytree(p, mirror / p.name)
     fixture_dir = Path(__file__).parent / "fixtures" / "skills"
     for f in fixture_dir.glob("*.md"):
         if f.name != "README.md":

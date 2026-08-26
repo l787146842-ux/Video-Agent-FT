@@ -105,11 +105,12 @@ def test_probe_real_skills_all_consistent():
 
     skills_dir = ROOT / "data" / "skills"
     total = 0
-    for f in sorted(skills_dir.glob("*.md")):
+    # P2-4：双形态遍历（单文件 + 目录包 <slug>/<slug>.md）
+    for stem, f in scan_skills._iter_skill_docs(skills_dir):
         content = f.read_text(encoding="utf-8")
-        manifest = frontmatter.load_manifest(f.stem, directory=skills_dir)
-        issues = scan_skills.manifest_consistency_issues(f.stem, content, manifest)
-        assert issues == [], f"Skill「{f.stem}」探针不一致: {issues}"
+        manifest = frontmatter.load_manifest(stem, directory=skills_dir)
+        issues = scan_skills.manifest_consistency_issues(stem, content, manifest)
+        assert issues == [], f"Skill「{stem}」探针不一致: {issues}"
         total += 1
     assert total >= 16
 

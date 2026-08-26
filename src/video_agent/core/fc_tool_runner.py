@@ -353,10 +353,12 @@ class FCToolRunner:
                 elif name == "read_skill" and injected_skill:
                     wanted_skill = str(args.get("name") or "").strip()
                     same_skill = bool(wanted_skill) and wanted_skill == injected_skill.strip()
-                    # 续读参数（section/start）一律真读：分级注入时全文未全量注入，
-                    # 短路会断掉模型的章节续读能力
+                    # 续读参数（section/start）与目录包资源（resource）一律真读：
+                    # 分级注入时全文未全量注入，短路会断掉模型的章节续读/
+                    # 资源按需加载能力（P2-4）
                     has_cont = bool(str(args.get("section") or "").strip()) \
-                        or _as_start(args.get("start")) > 0
+                        or _as_start(args.get("start")) > 0 \
+                        or bool(str(args.get("resource") or "").strip())
                     if same_skill and not has_cont and fc_gates.skill_full_text_injected(wanted_skill):
                         result = ToolResult(success=True, data={
                             "content": f"Skill「{wanted_skill}」全文已在本轮 system prompt 中注入，无需重复读取，直接遵循其中的规则即可。",

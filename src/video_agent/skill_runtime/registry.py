@@ -7,7 +7,8 @@ Skill 文档（data/skills/*.md 或目录包 data/skills/<slug>/<slug>.md）
 工具，仅作阶段裁剪/闸机的客观探针）。
 """
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import json
 import re
@@ -159,9 +160,46 @@ class SkillEntry:
         parts = [self.sections.get(s, "") for s in stages]
         return "\n\n".join(p for p in parts if p and p.strip()).strip()
 
+    @property
+    def package_root(self) -> Optional[Path]:
+        """目录包根（data/skills/<slug>/）；单文件形态返回 None。
+
+        与 frontmatter.resolve_doc_path 双形态口径同源：单文件优先，
+        单文件存在时同名目录包不视为包（身份唯一）。"""
+        doc = frontmatter.resolve_doc_path(self.slug)
+        if doc is None or doc.parent.name != self.slug:
+            return None
+        return doc.parent
+
+    @property
+    def resource_manifest(self) -> List[str]:
+        """目录包资源清单（P2-4 按需加载白名单，fail-closed）：
+        references/ 下文本类资源的包内相对路径清单（排序）；
+        单文件形态/无 references/ 目录 = 空清单（零资源合法）。
+
+        清单即声明：read_skill（resource=…）只放行清单内资源，
+        清单外一律拒绝；二进制资源不开放经文本工具读取。"""
+        root = self.package_root
+        if root is None:
+            return []
+        refs = root / RESOURCE_DIR_NAME
+        if not refs.is_dir():
+            return []
+        return sorted(
+            f.relative_to(root).as_posix()
+            for f in refs.rglob("*")
+            if f.is_file() and f.suffix.lower() in _RESOURCE_TEXT_SUFFIXES
+        )
+
 
 _registry: Dict[str, SkillEntry] = {}
 _synced: bool = False
+
+# 目录包资源分层（P2-4）：附属资源唯一开放子目录 = references/；
+# 资源清单只收录文本类后缀（二进制资源不经 read_skill 文本通道开放）。
+RESOURCE_DIR_NAME = "references"
+_RESOURCE_TEXT_SUFFIXES = frozenset(
+    {".md", ".txt", ".json", ".yaml", ".yml", ".csv"})
 
 
 def _load_entry(slug: str) -> Optional[SkillEntry]:
@@ -370,6 +408,35 @@ def tool_sections(skill_name: str, tool: str) -> str:
     if entry is None:
         return ""
     return entry.section_for(tool)
+
+
+def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], str]:
+    """目录包资源按需加载解析（P2-4，fail-closed 单一实现）。
+
+    只放行资源清单（目录包 references/ 实际文件列表）内的资源；
+    声明外资源（清单外路径/绝对路径/.. 穿越/单文件形态）一律拒绝。
+    返回 (资源绝对路径, "")；失败返回 (None, 错误说明)。"""
+    entry = resolve_entry(wanted)
+    if entry is None:
+        return None, f"未找到 Skill「{wanted}」"
+    root = entry.package_root
+    if root is None:
+        return None, (
+            f"Skill「{entry.name}」为单文件形态，无附属资源；"
+            "仅目录包（<slug>/<slug>.md）支持 resource 参数按需读取 references/ 资源")
+    rel = str(resource or "").strip().replace("\\", "/")
+    parts = [p for p in rel.split("/") if p and p != "."]
+    if not rel or not parts or ".." in parts:
+        return None, (
+            f"资源路径 {resource!r} 非法（只允许包内 references/ 相对路径）")
+    manifest = entry.resource_manifest
+    rel_norm = "/".join(parts)
+    if rel_norm not in set(manifest):
+        listed = "、".join(manifest[:10]) or "无"
+        return None, (
+            f"资源 {resource!r} 不在 Skill「{entry.name}」资源清单内"
+            f"（fail-closed：声明外资源一律拒绝）。可用资源：{listed}")
+    return root / rel_norm, ""
 
 
 def tool_available(skill_name: str, tool: str) -> bool:

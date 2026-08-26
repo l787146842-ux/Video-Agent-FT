@@ -158,25 +158,34 @@ def test_v3_pause_points_illegal(data, keyword):
     assert issues and any(keyword in i for i in issues)
 
 
-# ---------- ① v3 新键：scripts（声明非空即告警暂不支持） ----------
+# ---------- ① v3 新键：scripts（键声明静态校验；平台绝不自动执行，P2-4） ----------
 
 
 @pytest.mark.parametrize("data", [
     {"scripts": {}},
     {"scripts": []},
+    {"scripts": {"build": "render.py"}},
+    {"scripts": {"build": "scripts/render.py", "lint": "tools/lint.sh"}},
 ])
-def test_v3_scripts_empty_is_undeclared(data):
+def test_v3_scripts_valid_declaration(data):
+    """键声明形状合法 = 零 issue（静态校验口径；路径存在性归
+    scan_skills 资源探针 WARN 核对，schema 只管形状）。"""
     assert ms.validate_manifest_data(data) == []
 
 
-@pytest.mark.parametrize("data", [
-    {"scripts": {"build": "render.py"}},
-    {"scripts": ["x"]},
-    {"scripts": "x"},
+@pytest.mark.parametrize("data,keyword", [
+    ({"scripts": ["x"]}, "对象"),
+    ({"scripts": "x"}, "对象"),
+    ({"scripts": {"": "render.py"}}, "脚本名"),
+    ({"scripts": {"build": ""}}, "非空字符串"),
+    ({"scripts": {"build": 5}}, "非空字符串"),
+    ({"scripts": {"build": "/etc/passwd"}}, "包内相对路径"),
+    ({"scripts": {"build": "C:/x.py"}}, "包内相对路径"),
+    ({"scripts": {"build": "../escape.py"}}, "包内相对路径"),
 ])
-def test_v3_scripts_nonempty_warns_unsupported(data):
+def test_v3_scripts_illegal(data, keyword):
     issues = ms.validate_manifest_data(data)
-    assert issues and any("暂不支持" in i for i in issues)
+    assert issues and any(keyword in i for i in issues)
 
 
 # ---------- ② v2 兼容不回归 ----------

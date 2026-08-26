@@ -32,7 +32,8 @@ executor?,deterministic?}，compile_definition 据此派生节点拓扑；
 未声明回落 default_v2_workflow，零回归） /
 布尔开关（spec_wizard/spec_gate/script_required）；顶层 pause.stage_pause；
 顶层 custom_sections（自定义章节→通用执行器通道）；
-顶层 gates（键白名单 fail-hard）/ version / tools_required / source。
+顶层 gates（键白名单 fail-hard）/ version / tools_required / source /
+scripts（键声明静态校验，绝不自动执行）。
 
 gates 键白名单与 core.prompt_gates._DEFAULT_GATE_RULES 键集同值复制
 （skill_runtime 不得反向 import core，分层约束），漂移由
@@ -375,13 +376,38 @@ def _check_pause_points(raw: Any, issues: List[str]) -> None:
                     "（缺失则该项忽略）")
 
 
+def _is_safe_relative_path(v: str) -> bool:
+    """包内相对路径静态校验：拒绝绝对路径（/ 或盘符开头）、父目录穿越（.. 段）
+    与反斜杠形态（统一 / 口径）。只校形状，不解文件系统。"""
+    s = str(v or "").strip()
+    if not s or s.startswith("/") or "\\" in s or ":" in s:
+        return False
+    return ".." not in [p for p in s.split("/") if p]
+
+
 def _check_scripts(raw: Any, issues: List[str]) -> None:
-    """scripts：字段允许存在，但声明非空即注册期告警「暂不支持」
-    （插件包资源约定未落地脚本执行；空声明 = 未声明，零预设）。"""
-    if raw is None:
+    """scripts：脚本键声明（P2-4）——只做键声明的静态校验，平台**绝不自动执行**
+    任何脚本（声明仅供资源清单探针/人工查阅，执行语义从未存在）。
+
+    形状：对象 {脚本名: 包内相对路径}；空声明 = 未声明（零预设）。
+    已声明形状非法按 fail-closed 报出（注册期拒注册）；声明路径在包内是否存在
+    由 scripts/scan_skills.py 资源清单探针 WARN 核对（schema 只管形状）。"""
+    if raw is None or raw == {} or raw == []:
         return
-    if raw:  # 非空对象/数组/字符串等均视为「已声明」
-        issues.append("scripts 暂不支持（当前版本不消费该键，声明已忽略）")
+    if not isinstance(raw, dict):
+        issues.append("scripts 必须是对象（脚本名→包内相对路径；平台只做静态校验绝不执行）")
+        return
+    for k, v in raw.items():
+        if not isinstance(k, str) or not k.strip():
+            issues.append(f"scripts 脚本名 {k!r} 必须是非空字符串")
+            continue
+        if not isinstance(v, str) or not v.strip():
+            issues.append(f"scripts[{k}] 必须是非空字符串（包内相对路径）")
+            continue
+        if not _is_safe_relative_path(v):
+            issues.append(
+                f"scripts[{k}] 路径 {v!r} 必须是包内相对路径"
+                "（禁止绝对路径/盘符/.. 穿越）")
 
 
 def _check_workflow_stages(stages: Any, issues: List[str]) -> None:

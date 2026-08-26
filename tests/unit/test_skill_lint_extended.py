@@ -93,6 +93,11 @@ def test_inventory_skills_lint_health_report():
     告警计数作为健康快照打印（供人工审阅，不作为失败条件）"""
     assert SKILLS_DIR.exists(), "data/skills 目录缺失"
     files = sorted(SKILLS_DIR.glob("*.md"))
+    # P2-4 目录包形态：<slug>/<slug>.md 同计入存量体检口径
+    files += sorted(
+        p / (p.name + ".md") for p in SKILLS_DIR.iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+        and (p / (p.name + ".md")).exists())
     assert len(files) >= 16, f"存量 Skill 数量异常：{len(files)}"
     total_warnings = 0
     for f in files:

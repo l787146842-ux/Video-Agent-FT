@@ -12,6 +12,9 @@ P3-15 新增：frontmatter 声明（含 custom_sections）vs 文档实际章节�
 P1 整改（任务 #9）：--gate 追加内容卫生防回潮校验：frontmatter 剥离后
 正文再现 skill_name:/skill_description: 残留行或「最高/第一优先级」宣称
 （词序无关，直连形态双向拦截）即 FAIL。
+P2-4 新增：目录包资源探针（WARN，诊断性质）：正文 read_skill(resource=…)
+指针悬空 / scripts 声明路径不存在 / references/ 孤儿资源 → WARN 清单，
+不阻断退出码（注册期形状校验在 manifest_schema，此处只做存在性核对）。
 """
 import re
 import sys
@@ -286,13 +289,69 @@ def frontmatter_meta_warn_probe(slug: str, manifest) -> list:
     ]
 
 
+# 正文 read_skill(resource=…) 按需加载指针（P2-4 目录包）
+_RESOURCE_POINTER_RE = re.compile(
+    r"read_skill\s*\([^)]*resource\s*=\s*[\"']([^\"']+)[\"']")
+
+
+def package_resource_warn_probe(slug: str, path: pathlib.Path,
+                                body: str, manifest) -> list:
+    """目录包资源探针（P2-4）：诊断性质，WARN 不阻断退出码。
+    ① 正文 read_skill(resource=…) 指针必须落在包内实际存在的文件上，
+       悬空 = 文档与资源漂移（含路径穿越/单文件形态打指针）；
+    ② scripts 键声明路径必须在目录包内实际存在（平台只做静态校验，
+       绝不执行；形状非法在注册期 manifest_schema 已 fail-hard，此处只
+       做存在性核对）；
+    ③ references/ 下实际资源无正文指针引用 = 孤儿资源（渐进披露第三层
+       入口缺失，模型永远发现不了该资源）。"""
+    warns = []
+    pkg_root = path.parent if path.parent.name == slug else None
+    pointed = set()
+    for m in _RESOURCE_POINTER_RE.finditer(body or ""):
+        rel = m.group(1).strip().replace("\\", "/")
+        parts = [p for p in rel.split("/") if p and p != "."]
+        if not parts or ".." in parts:
+            warns.append(f"resource 指针非法 {rel!r}（只允许包内相对路径）")
+            continue
+        pointed.add("/".join(parts))
+        if pkg_root is None:
+            warns.append(f"单文件形态出现 resource 指针 {rel!r}"
+                         f"（附属资源仅目录包支持）")
+        elif not (pkg_root / "/".join(parts)).is_file():
+            warns.append(f"resource 指针悬空 {rel!r}（包内文件不存在）")
+    scripts = (manifest or {}).get("scripts")
+    if isinstance(scripts, dict) and scripts:
+        for name in sorted(scripts):
+            rel = scripts[name]
+            if not isinstance(rel, str) or not rel.strip():
+                continue  # 形状非法归注册期 fail-hard，此处不重复报
+            if pkg_root is None:
+                warns.append(f"scripts 声明 {name!r} 但 Skill 为单文件形态"
+                             f"（脚本仅目录包有效）")
+            elif not (pkg_root / rel.replace("\\", "/")).is_file():
+                warns.append(f"scripts 声明 {name!r} 文件不存在：{rel!r}")
+    if pkg_root is not None:
+        ref_dir = pkg_root / "references"
+        if ref_dir.is_dir():
+            for rf in sorted(ref_dir.rglob("*")):
+                if not rf.is_file() or rf.name.startswith("."):
+                    continue
+                rel = rf.relative_to(pkg_root).as_posix()
+                if rel not in pointed:
+                    warns.append(f"孤儿资源 references/ 下 {rel!r} 无正文"
+                                 f" read_skill(resource=…) 指针引用")
+    return warns
+
+
 def run_gate() -> int:
     """--gate 模式：工具名白名单校验，有问题退出码 1（acceptance 门禁项）；
     P1 防回潮校验：正文元数据残留行 / 优先级宣称即 FAIL（任务 #9）；
     tools_required 存在性探针缺失输出 WARN 清单（任务#5 B-2：先诊断
     不升门禁失败，不阻断退出码）；
     frontmatter name/description 存在性探针缺失输出 WARN 清单
-    （P1-10 裁决 R1：级别 WARN 不升 FAIL，不触门禁冻结）。"""
+    （P1-10 裁决 R1：级别 WARN 不升 FAIL，不触门禁冻结）；
+    目录包资源探针输出 WARN 清单（P2-4：指针悬空/孤儿资源，
+    诊断性质，不阻断退出码）。"""
     d = pathlib.Path(__file__).parent.parent / "data" / "skills"
     real = real_tool_names()
     platform = platform_tool_names()
@@ -300,6 +359,7 @@ def run_gate() -> int:
     hygiene_failed = []
     warned = []
     meta_warned = []
+    pkg_warned = []
     for slug, f in _iter_skill_docs(d):
         content = f.read_text(encoding="utf-8", errors="replace")
         # 扫描前先剥离 frontmatter：YAML 声明键（schema_version 等）非工具引用
@@ -324,6 +384,11 @@ def run_gate() -> int:
             meta_warned.append(slug)
             print(f"[skill_frontmatter_meta] WARN {slug}: frontmatter 缺 "
                   f"{'、'.join(meta_missing)}（渐进披露第一层摘要声明）")
+        pkg_issues = package_resource_warn_probe(slug, f, body, manifest)
+        if pkg_issues:
+            pkg_warned.append(slug)
+            for it in pkg_issues:
+                print(f"[skill_package_resource] WARN {slug}: {it}")
     if failed:
         print(f"[skill_tool_names] FAIL: {len(failed)} skill(s) off-whitelist")
     if hygiene_failed:
@@ -339,6 +404,10 @@ def run_gate() -> int:
     if meta_warned:
         print(f"[skill_frontmatter_meta] WARN: {len(meta_warned)} skill(s) "
               f"frontmatter name/description 缺失（{'、'.join(meta_warned)}；"
+              f"诊断性质，不阻断门禁）")
+    if pkg_warned:
+        print(f"[skill_package_resource] WARN: {len(pkg_warned)} skill(s) "
+              f"目录包资源指针/孤儿资源问题（{'、'.join(pkg_warned)}；"
               f"诊断性质，不阻断门禁）")
     return 0
 
@@ -417,6 +486,10 @@ def main() -> None:
         meta_missing = frontmatter_meta_warn_probe(slug, manifest)
         if meta_missing:
             lines.append(f"  frontmatter name/description 缺失(WARN): {meta_missing}")
+        # P2-4：目录包资源探针（WARN 报告，诊断性质）
+        pkg_issues = package_resource_warn_probe(slug, f, body, manifest)
+        if pkg_issues:
+            lines.append(f"  目录包资源探针(WARN): {pkg_issues}")
         # 提取 <planner> 流程前 500 字，看流程是否与「剧本→规格→KE→分镜→提示词」不同
         flow = sections.get("planning", "").strip()
         if flow:
