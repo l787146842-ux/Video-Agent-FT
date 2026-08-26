@@ -14,10 +14,16 @@ routes/agent.py 仅保留路由定义和请求/响应模型。
 本文件尾部留承重壳 re-export（coupling_registry R13 登记），
 既有引用与测试 patch 目标不变，错误语义零变更。
 """
+from __future__ import annotations
+
 import asyncio
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    # 类型收窄引用：运行期不做 isinstance/pydantic 校验，仅标注，防循环导入
+    from src.video_agent.web.routes.agent import ChatRequest
 
 from loguru import logger
 
@@ -71,7 +77,7 @@ __all__ = ["non_stream_worker", "build_multimodal_content"]
 # 停止阶段措辞/痕迹文案/停止持久化见 web/stop_manager.py
 
 
-def _require_chat_provider(body: Any) -> None:
+def _require_chat_provider(body: ChatRequest) -> None:
     """空供应商明确报错（演示兜底已删除）：
     走既有 error_payload 分类机制（VideoAgentError → classify_exception）。"""
     if not (getattr(body, "provider", "") or "").strip():
@@ -80,7 +86,7 @@ def _require_chat_provider(body: Any) -> None:
             status_code=400, error_code="PROVIDER_NOT_CONFIGURED")
 
 
-async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_injector=None, stop_scope: str = "chat") -> None:
+async def _stream_worker_impl(body: ChatRequest, svc: StateManager, emit, pending_injector=None, stop_scope: str = "chat") -> None:
     """流式处理公共实现（真实供应商）；任务式后台任务 worker 的核心主体。
 
     pending_injector：可选 callable → List[{id, text}]，轮间引导注入器，
@@ -145,7 +151,7 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
     await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal, wiz_doc=_wiz_doc, stop_scope=stop_scope)
 
 
-def start_agent_task(body: Any) -> Dict[str, Any]:
+def start_agent_task(body: ChatRequest) -> Dict[str, Any]:
     """任务式传输：提交即返回 task_id，worker 后台运行。
 
     刷新/切项目只断订阅不杀任务；worker 绑定提交时所属项目（任务级 StateManager），
@@ -168,7 +174,7 @@ def start_agent_task(body: Any) -> Dict[str, Any]:
     return {"task_id": record["task_id"], "project_id": project_id}
 
 
-async def _run_agent_task(body: Any, project_id: str, task_id: str, workspace_dir: str) -> None:
+async def _run_agent_task(body: ChatRequest, project_id: str, task_id: str, workspace_dir: str) -> None:
     """后台任务 worker：绑定任务专属 StateManager，事件经 task_manager.emit 下发。"""
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
 
@@ -495,7 +501,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
 # _friendly_stream_error 经尾部 re-export 保持既有引用不变
 
 
-async def non_stream_worker(body: Any) -> Dict[str, Any]:
+async def non_stream_worker(body: ChatRequest) -> Dict[str, Any]:
     """非流式聊天的业务逻辑（从 routes/agent.py 抽离）。
 
     路由层仅做参数校验 + 调用本函数 + 响应包装。
@@ -518,7 +524,7 @@ async def non_stream_worker(body: Any) -> Dict[str, Any]:
         _release_request_slot(request_id)
 
 
-async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
+async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]:
     """非流式聊天主体（幂等槽位由 non_stream_worker 管理）"""
     svc = StateManager.get_instance()
     # 铁律文档每轮确保存在（宪法），非流式路径同样生效

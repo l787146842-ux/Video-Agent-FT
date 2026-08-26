@@ -1,8 +1,14 @@
 """开场编排域：请求幂等/历史截断/技能解析/暂停闭环消费前的拼装。"""
+from __future__ import annotations
+
 import asyncio
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    # 类型收窄引用：仅标注不做运行期校验，防循环导入
+    from src.video_agent.web.routes.agent import ChatRequest
 
 from loguru import logger
 
@@ -203,7 +209,7 @@ def _build_meta_note(elapsed_secs: float, steps: int, applied: int) -> str:
     return " · ".join(parts)
 
 
-def _record_active_skill(svc, body: Any) -> None:
+def _record_active_skill(svc, body: ChatRequest) -> None:
     """当前技能三本账收敛——本轮实际激活了 Skill（skill_name/skill_slug
     可解析到已注册 Skill）就记入项目 usedSkills，不再依赖消息携带 chip；
     usedSkills 是唯一持久事实源（localStorage 仅作跨会话记忆）。"""
@@ -225,7 +231,7 @@ def _record_active_skill(svc, body: Any) -> None:
         svc.record_used_skill(slug)
 
 
-async def _prepare_chat_opening(svc, body: Any, user_text: str, use_studio_context: bool):
+async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_studio_context: bool):
     """开场公共编排（流式/非流式双路径单一实现，消除双份复制）。
 
     暂停闭环（消费上轮暂停态）+ 规格定稿/向导消费 + 附件降级注入，
