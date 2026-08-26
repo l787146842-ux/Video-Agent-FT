@@ -409,7 +409,7 @@ def is_flow_continue_value(value: str) -> bool:
 
 
 def flow_continue_note(state: Dict[str, Any], skill_name: str) -> str:
-    """用户点选系统派生继续选项后回喂模型的机械指令（下一轮不再猜下一步）。"""
+    """用户点选系统派生继续选项后回喂模型的机械指令（后续轮次不再猜下一步）。"""
     steps = _flow_steps_of(skill_name)
     if not steps:
         return ""

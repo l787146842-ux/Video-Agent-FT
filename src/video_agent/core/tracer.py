@@ -294,7 +294,7 @@ class AgentTracer:
         """轮前机械动作登记：缓冲待 start_trace 收养。
 
         开场编排（向导机械落盘等）先于 agent_loop.start_trace 发生，
-        直记 record_action 会落进上一轮残迹被清空——轮前缓冲根治。"""
+        直记 record_action 会落进先前轮次残迹被清空——轮前缓冲根治。"""
         self._ctx().pre_actions.append({
             "name": name, "summary": summary,
             "elapsed_ms": round(elapsed_ms, 1), "ok": ok,

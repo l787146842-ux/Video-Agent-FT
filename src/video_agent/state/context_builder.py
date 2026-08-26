@@ -168,7 +168,7 @@ def build_agent_context(
             }
             for d in raw_state.get("uploadedDocs", [])
         ],
-        # 交互阶段状态：让模型看到上一轮是否停在「等待确认」暂停点，
+        # 交互阶段状态：让模型看到先前轮次是否停在「等待确认」暂停点，
         # 避免用户回复确认后模型感知不到进度、从头重复同一套操作
         "interaction": _build_interaction(raw_state),
         # 剧本分析摘要（script_analyze 产出）：一句话总结 + 关键要点，

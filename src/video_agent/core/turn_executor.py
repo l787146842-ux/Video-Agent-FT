@@ -274,14 +274,14 @@ class TurnExecutor:
                         feedback = feedback + [{"type": "text", "text": reminder}]
                     else:
                         feedback += reminder
-                # token 治理：新一轮回喂入库前，把更早轮次的 read_* 全文
+                # token 治理：新轮次回喂入库前，把更早轮次的 read_* 全文
                 # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
                 # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
                 # 短对话保留全文；选中 Skill 不受影响（它硬注入在 system prompt 里）
                 if should_compress_feedback(messages, self.context_window()):
                     compress_prior_feedback(messages)
                 # 按需调图：新回喂带图片时，先剥离旧轮已加载的图片，
-                # 上下文始终只保留最新一轮的画面（vision token 治理）
+                # 上下文始终只保留最新轮次的画面（vision token 治理）
                 if isinstance(feedback, list):
                     strip_prior_feedback_images(messages)
                 messages.append({"role": "user", "content": feedback})

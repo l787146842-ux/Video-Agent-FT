@@ -23,7 +23,7 @@ from src.video_agent.utils import gen_id
 def new_request_id() -> str:
     """同轮请求标识（幂等语义）：一次 chat 调用生成一个 id，
     重试全程复用同一标识（随 X-Request-Id 请求头下发），供上游按标识
-    去重，避免同一轮请求被当多次新请求重复计费。"""
+    去重，避免同轮请求被当多次新请求重复计费。"""
     return gen_id("chat-req")
 
 

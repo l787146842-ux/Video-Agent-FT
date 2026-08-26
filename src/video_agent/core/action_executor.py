@@ -178,7 +178,7 @@ class StateOperationExecutor:
         """写入前闸机（委托统一闸机管线，宪法 §2.0，与 FC 轨同源判定）。
 
         返回 True = 放行。闸机未启用 / 模式非 strict 时恒放行；
-        strict 拦截的写入返回 False，模型下一轮看到状态缺失后自行补写（自愈）。"""
+        strict 拦截的写入返回 False，模型下个轮次看到状态缺失后自行补写（自愈）。"""
         if not self.gate_enabled or kind not in ("shot", "keyElement") or not str(prompt or "").strip():
             return True
         if prompt_gates.gate_mode() == "off":

@@ -11,7 +11,7 @@
   识别为「用户主动停止」而非异常取消。
 - is_stop_requested(scope)：agent_loop 每步检查点读取（模型调用前 /
   工具批边界），命中即干净收尾退出循环并发 stopped 终态事件。
-- clear_stop(scope, stop_id)：循环开始与收尾时清理，防上一轮残留标志误杀新任务；
+- clear_stop(scope, stop_id)：循环开始与收尾时清理，防先前轮次残留标志误杀新任务；
   代际 token（防与 in-flight cancel 竞态）：request_stop 返回单调递增的
   stop_id，带 id 的清理仅在当前代际匹配时生效——旧运行收尾不得误清
   快速重连后新发的停止请求；不带 id（循环开头残留清理）无条件清除。

@@ -5,7 +5,7 @@ Planner — 对话式 Agent 的唯一入口（Rule1）。
 - Planner 直接持有 LLM Adapter 引用（Rule6: 外部调用走 Adapter），不经过 Tool Manager
 - Tool Manager 只管理"业务 Tool"（故事板操作、生图、文档等）
 - 动作通道唯一 = FC 工具调用
-- 多步循环（MAX_STEPS），LLM 可请求 continue 推进下一轮
+- 多步循环（MAX_STEPS），LLM 可请求 continue 推进后续轮次
 - 流式通过 AsyncGenerator 穿透（SSE）
 
 单轮 llm_call/FC 响应消费/回喂治理/上下文预算装配切出
@@ -94,8 +94,8 @@ class PlannerContext:
     selected_draft_id: str = ""
     selected_type: str = ""
     state_json: str = ""
-    # 状态 JSON 的惰性构建器：多步循环每一轮都会调用一次，
-    # 保证模型在每轮看到上一轮执行后的最新工作台状态。
+    # 状态 JSON 的惰性构建器：多步循环每个轮次都会调用一次，
+    # 保证模型在每轮看到先前轮次执行后的最新工作台状态。
     # 传入 state_json 字符串是旧调用方式的兼容降级（整段固定不变）。
     state_builder: Optional[Callable[[], str]] = None
     skill_name: str = ""         # 前端当前选中的 Skill 名称（目录标注用，提高相关性判断准确率）

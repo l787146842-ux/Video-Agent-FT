@@ -358,7 +358,7 @@ class StateManager(UndoRedoMixin):
         """记录一条流程事件（截断/部分完成等事实进账本）。
 
         只写 raw state 的 flowEvents 列表（chat_service 用 get_full_snapshot
-        构建模型可见状态 JSON，模型下一轮能直接看到「上次只完成一半」），
+        构建模型可见状态 JSON，模型下个轮次能直接看到「上次只完成一半」），
         不走 update（避免污染 undo 栈）。
         """
         events = self._raw_state.get("flowEvents")

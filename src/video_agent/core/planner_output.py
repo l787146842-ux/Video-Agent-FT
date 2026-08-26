@@ -71,13 +71,13 @@ def assemble_response(
             )
     elif loop_result.confirmation and analysis_summary:
         # 无成果块命中时的历史语义兜底：暂停轮补一行客观事实（判重内置），
-        # 防模型 prose 停留在执行前承诺导致下一轮误判未执行而重跑执行器。
+        # 防模型 prose 停留在执行前承诺导致后续轮次误判未执行而重跑执行器。
         _t = str(loop_result.text or "")
         if _t.strip() and "剧本分析已完成" not in _t:
             loop_result.text = _t.rstrip() + "\n\n（剧本分析已完成并存档工作台）"
 
     # 纯工具轮无总结文字时，用实际操作清单替换无信息量的占位文案：
-    # 占位文案进入历史后模型看不出上一轮做了什么（读文档/写文档/请求确认），
+    # 占位文案进入历史后模型看不出先前轮次做了什么（读文档/写文档/请求确认），
     # 用户下一条「确认」进来就会失去参照、从头重复同一套操作
     # 粗粒度聚合（阶段反馈不逐卡罗列）：聚合函数由调用方注入，
     # 保持 core 不依赖 web 层（与 executor_factory 回落模式同惯例）

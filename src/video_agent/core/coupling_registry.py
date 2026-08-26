@@ -33,7 +33,7 @@ COUPLING_ROWS: List[CouplingRow] = [
     CouplingRow(
         "R_workflow_runtime_subject_return",
         "Workflow Runtime 控制流范式变更（宪法 Rule2 主体回归 / ADR-0004）",
-        "账本+裁判数据层 sync_run/compile_definition + 选项面归一 + reducer 单一写入 + 1111 黄金轮次契约",
+        "账本+裁判数据层 sync_run/compile_definition + 选项面归一 + reducer 单一写入 + 黄金轮次契约",
         _sym(
             "src.video_agent.core.workflow_runtime:sync_run",
             "src.video_agent.core.workflow_runtime:reduce_interaction",

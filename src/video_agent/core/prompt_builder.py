@@ -614,7 +614,7 @@ def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
 
 def _sec_state_json(pb: "PromptBuilder", context: "PlannerContext") -> str:
     """状态上下文殿后（每轮变化最大）：惰性构建器已按轮刷新，
-    让 LLM 在每一轮都看到上一轮执行后的最新状态。"""
+    让 LLM 在每个轮次都看到先前轮次执行后的最新状态。"""
     if not (context.use_studio_context and pb._state_json):
         return ""
     return "当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + pb._state_json
