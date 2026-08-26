@@ -68,7 +68,7 @@ python scripts/run_eval_pipeline.py    # 闸机黄金语料评测
 | `docs/脚手架折旧规程.md` | 脚手架拆除仪式 + 棘轮门禁折旧 + scripts/archive 到期策略 |
 | `docs/前端体验规范.md` | 飞天品牌/确认卡片/@面板等视觉交互强制约束 |
 | `docs/adr/` | 架构决策记录（取代关系须双边注记） |
-| `docs/audit-history/` | 历史审计文书（完结标注，不随代码演进） |
+| 历史审计文书 | 已归档删除，见 git tag `audit-history-archive-20260826` |
 | `docs/长期路线图-2026-08-22.md` | 长期项登记（不排期、不立项） |
 
 ## 五、机器门禁速查（清单唯一事实源 = scripts/acceptance.py GATES 表）
@@ -80,6 +80,5 @@ python scripts/run_eval_pipeline.py    # 闸机黄金语料评测
 
 ## 六、未清偿债务
 
-未清偿项集中登记于**项目外清单**（不入仓）：
-`E:\07 天问\未清偿债务与事故清单-2026-08-22.md`（GOVERNANCE §13.10）。
+未清偿项集中登记于仓内清单 `docs/未清偿债务清单.md`（GOVERNANCE §13.10）。
 清偿一条、清单删一条；不再开「第 N 轮」修复计划书。

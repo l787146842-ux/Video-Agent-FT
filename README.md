@@ -93,7 +93,7 @@ workspace/                运行时状态与资产（gitignore）
 ## 文档索引
 
 > 文档分层（五轮 S8）：`docs/` 根目录只放**现行有效规范**；
-> 历史审核报告/整改计划书/恢复文书归档于 `docs/audit-history/`（按轮次检索）。
+> 历史审核文书已归档删除，见 git tag `audit-history-archive-20260826`。
 
 | 文档 | 内容 |
 |---|---|
@@ -102,8 +102,6 @@ workspace/                运行时状态与资产（gitignore）
 | [docs/配置说明.md](docs/配置说明.md) | 各配置文件的权威关系与加载优先级 |
 | [docs/前端体验规范.md](docs/前端体验规范.md) | 品牌/视觉/交互细节强制规范 |
 | [docs/对画布的需求清单.md](docs/对画布的需求清单.md) | 需要画布侧实现的能力（postMessage 协议等） |
-| [docs/audit-history/兼容层移除计划.md](docs/audit-history/兼容层移除计划.md) | 兼容层清偿台账（已完结：版本节点与 D-05 兼容别名尾巴全部清偿，归档于 audit-history） |
-| [docs/audit-history/](docs/audit-history/) | 历轮审核报告与整改计划书归档 |
 | [tests/fixtures/canvas/README.md](tests/fixtures/canvas/README.md) | 画布 API 契约夹具的录制与刷新方法 |
 
 ## 环境与安全
