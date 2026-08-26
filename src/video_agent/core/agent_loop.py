@@ -44,7 +44,7 @@ from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # 轮末闸机分支收敛为声明式策略表（层 9 唯一落点）
 from src.video_agent.core.round_end_policies import (
     RoundEndContext,
-    _claims_structure_done,  # noqa: 1 re-export 壳（测试导入路径不变）
+    _claims_structure_done,  # 防虚报检测实现体（批次E：re-export 壳已清偿，测试直连实现体）
     run_round_end_policies,
     suggest_next_actions,
 )
@@ -119,7 +119,7 @@ class AgentLoopResult:
 
 
 # 防虚报检测（_STRUCTURE_CLAIM_RE/_claims_structure_done）归
-# round_end_policies；本文件顶部保留 re-export 壳，测试导入路径不变。
+# round_end_policies；测试导入路径已直连实现体（批次E 壳清偿）。
 
 
 async def run_agent_loop(

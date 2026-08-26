@@ -11,7 +11,8 @@
 import pytest
 
 from src.video_agent.core.action_executor import StateOperationExecutor
-from src.video_agent.core.agent_loop import run_agent_loop, _claims_structure_done
+from src.video_agent.core.agent_loop import run_agent_loop
+from src.video_agent.core.round_end_policies import _claims_structure_done
 from src.video_agent.state.manager import StateManager
 
 
