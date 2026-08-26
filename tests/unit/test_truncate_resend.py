@@ -553,8 +553,7 @@ def test_start_agent_task_failure_returns_structured_500(client, svc, monkeypatc
 
 def _patch_providers(monkeypatch, providers):
     # patch 目标归一为实现体（与 test_flow_pause_wizard 口径对齐）：
-    # web/provider_config.py 是薄 re-export 壳，patch 壳仅对经壳属性查找的
-    # 调用方生效；实现体才是单一事实源
+    # core/provider_config.py 是单一事实源（批次E：web 薄壳已清偿删除）
     import src.video_agent.core.provider_config as pc
     monkeypatch.setattr(pc, "load_merged_providers", lambda: providers)
 

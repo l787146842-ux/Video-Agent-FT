@@ -309,7 +309,7 @@ def _resolve_provider_display_name(provider_id: str) -> str:
     if not provider_id:
         return ""
     try:
-        from src.video_agent.web.provider_config import get_provider_config
+        from src.video_agent.core.provider_config import get_provider_config
         cfg = get_provider_config(provider_id)
         if cfg and cfg.get("name"):
             return str(cfg["name"])

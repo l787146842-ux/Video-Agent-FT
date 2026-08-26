@@ -26,7 +26,7 @@ from src.video_agent.state import chat_tail_ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.web import agent_task_manager
 from src.video_agent.web import chat_service
-from src.video_agent.web import provider_config
+from src.video_agent.core import provider_config
 from src.video_agent.web.error_payload import classify_legacy_code
 from src.video_agent.web.routes import agent as agent_routes
 

@@ -120,7 +120,8 @@ COUPLING_ROWS: List[CouplingRow] = [
         "api_providers.json chat_models_meta.context_window → token_budget → planner 传递",
         _sym(
             "src.video_agent.core.token_budget:context_window_for_model",
-            "src.video_agent.web.provider_config:get_provider_config",
+            # 批次E：web/provider_config 薄壳已清偿，指针直连实现体
+            "src.video_agent.core.provider_config:get_provider_config",
         ),
     ),
     CouplingRow(
@@ -154,9 +155,8 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_generate_image",
             "src.video_agent.core.prompt_gates:SPEC_GATE_ERROR",
             "src.video_agent.core.prompt_gates:parse_hard_selections",
-            # web/provider_config.py 薄壳（实现体 core/provider_config.py）
-            "src.video_agent.web.provider_config:get_provider_config",
-            "src.video_agent.web.provider_config:load_merged_providers",
+            # （批次E：web 层 provider_config 薄壳已清偿删除，
+            # 消费方全部直连 core/provider_config.py）
             # state/manager.py 拆分承重壳：对话域（实现体
             # conversation_ops）/落盘闸（实现体 save_ops）/快照组装（实现体
             # context_builder）；StateManager 公开 API 门面长期承重

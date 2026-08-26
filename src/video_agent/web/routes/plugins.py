@@ -18,7 +18,7 @@ from src.video_agent.tools import ToolManager
 from src.video_agent.tools.canvas_tools import register_canvas_tools
 from src.video_agent.web.chat_opening import _create_chat_adapter
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
-from src.video_agent.web.provider_config import load_merged_providers
+from src.video_agent.core.provider_config import load_merged_providers
 from src.video_agent.web.skill_docs import (
     get_skill_doc,
     list_skill_docs,

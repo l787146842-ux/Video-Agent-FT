@@ -498,7 +498,7 @@ class CanvasAdapter:
 def fetch_canvas_providers_sync(timeout: float = 3.0) -> List[Dict[str, Any]]:
     """从画布 HTTP API 读取 provider 配置（同步版；Rule7: 画布交互统一经此适配器）。
 
-    供 web/provider_config.load_canvas_providers 在同步上下文（asyncio.to_thread
+    供 core/provider_config.load_canvas_providers 在同步上下文（asyncio.to_thread
     包装前）调用。任何异常/非 200/空列表均静默返回 []，由调用方降级到文件兜底
     （timeout=3.0，trust_env=False）。
     """

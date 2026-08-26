@@ -1,7 +1,7 @@
 """
 Provider 可用列表 + 适配器注册。
 
-配置读取统一走 web/provider_config.py；本模块只负责：
+配置读取统一走 core/provider_config.py；本模块只负责：
 - get_available_providers()：给前端下拉框的已启用供应商列表
 - register_adapters()：启动时按 data/api_providers.json 动态注册真实适配器
 """
@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.utils.paths import PROJECT_ROOT
-from src.video_agent.web.provider_config import load_merged_providers
+from src.video_agent.core.provider_config import load_merged_providers
 
 # 加载根目录 .env（运行环境变量）
 load_dotenv(PROJECT_ROOT / ".env")

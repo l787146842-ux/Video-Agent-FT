@@ -68,11 +68,11 @@ src/video_agent/web/chat_service.py:155:src.video_agent.web.agent_task_manager
 src/video_agent/web/chat_service.py:173:src.video_agent.web.agent_task_manager
 src/video_agent/web/chat_service.py:525:src.video_agent.core.spec_rules
 src/video_agent/web/chat_service.py:86:src.video_agent.core.spec_rules
-src/video_agent/web/generation_dispatch.py:88:src.video_agent.web.provider_config
+src/video_agent/web/generation_dispatch.py:88:src.video_agent.core.provider_config
 src/video_agent/web/generation_submit.py:308:time
 src/video_agent/web/generation_submit.py:310:src.video_agent.utils
 src/video_agent/web/generation_submit.py:311:src.video_agent.core.prompt_refs
-src/video_agent/web/generation_submit.py:315:src.video_agent.web.provider_config
+src/video_agent/web/generation_submit.py:315:src.video_agent.core.provider_config
 src/video_agent/web/generation_submit.py:316:src.video_agent.web.task_manager
 src/video_agent/web/generation_submit.py:361:src.video_agent.web.providers
 src/video_agent/web/generation_submit.py:58:time
@@ -103,6 +103,6 @@ src/video_agent/web/skill_docs.py:264:src.video_agent.skill_runtime.registry
 src/video_agent/web/skill_docs.py:370:src.video_agent.skill_runtime.registry
 src/video_agent/web/skill_docs.py:456:src.video_agent.skill_runtime.registry
 src/video_agent/web/skill_docs.py:491:src.video_agent.skill_runtime.registry
-src/video_agent/web/task_manager.py:314:src.video_agent.web.provider_config
+src/video_agent/web/task_manager.py:314:src.video_agent.core.provider_config
 src/video_agent/web/video_batch.py:151:src.video_agent.web.generation
 src/video_agent/web/video_batch.py:57:src.video_agent.web.generation

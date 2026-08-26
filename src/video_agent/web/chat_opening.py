@@ -13,7 +13,7 @@ from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.multimodal_builder import (
     build_multimodal_content,
 )
-from src.video_agent.web.provider_config import (
+from src.video_agent.core.provider_config import (
     get_provider_config,
 )
 from src.video_agent.state.manager import StateManager

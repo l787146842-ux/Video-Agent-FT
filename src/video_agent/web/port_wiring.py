@@ -4,7 +4,7 @@ core 层不得 import web 层；本模块是唯一的「web → core 端口」�
 装配点：web/app.py lifespan / tests/conftest.py / scripts/run_eval_pipeline.py。
 幂等：重复调用仅覆盖既有端口，无副作用。
 provider_config 端口实现位于 core/provider_config.py
-（web/provider_config.py 仅存薄 re-export 壳），仍由本装配点统一注入。
+（批次E：web 层同名薄壳已清偿删除），仍由本装配点统一注入。
 """
 from src.video_agent.core import ports, provider_config
 from src.video_agent.web import generation, skill_docs

@@ -14,7 +14,7 @@ from loguru import logger
 
 from src.video_agent.exceptions import AdapterError, GenerationError
 from src.video_agent.config import settings
-from src.video_agent.web.provider_config import (
+from src.video_agent.core.provider_config import (
     CLI_PROTOCOLS,
     get_api_key,
     get_api_key_async,
@@ -84,7 +84,7 @@ def resolve_openai_endpoint(provider_id: str, model: str) -> Tuple[str, str, str
     语义与 resolve_openai_endpoint_async 完全一致，只把异步 provider_config
     访问换成同步版（画布 HTTP 拉取在调用方线程内执行）。
     """
-    from src.video_agent.web.provider_config import (
+    from src.video_agent.core.provider_config import (
         CLI_PROTOCOLS,
         get_api_key,
         get_provider_config,

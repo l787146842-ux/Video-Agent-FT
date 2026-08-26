@@ -49,7 +49,7 @@ from src.video_agent.web.generation_submit import (  # noqa: F401
 )
 # 存量消费方经本模块转引的邻居符号（保持导入路径兼容）
 from src.video_agent.web.task_manager import get_task_manager  # noqa: F401
-from src.video_agent.web.provider_config import (  # noqa: F401
+from src.video_agent.core.provider_config import (  # noqa: F401
     resolve_provider_ref,
     resolve_provider_ref_async,
 )

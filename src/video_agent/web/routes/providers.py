@@ -2,7 +2,7 @@
 /api/providers — Provider 配置管理端点
 支持：GET（读取）、PUT（保存）、POST fetch-models（拉取模型）、POST test-connection（测试连接）
 
-配置/Key 的读写、模型分类、协议检测统一走 web/provider_config.py（唯一入口）。
+配置/Key 的读写、模型分类、协议检测统一走 core/provider_config.py（唯一入口）。
 """
 import glob as glob_mod
 import ipaddress
@@ -15,7 +15,7 @@ from fastapi import APIRouter, Request
 from loguru import logger
 from pydantic import BaseModel
 
-from src.video_agent.web.provider_config import (
+from src.video_agent.core.provider_config import (
     CLI_PROTOCOLS,
     classify_models,
     clear_env_key,

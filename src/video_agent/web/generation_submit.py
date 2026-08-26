@@ -15,7 +15,7 @@ from loguru import logger
 from src.video_agent.exceptions import GenerationError
 from src.video_agent.config import settings
 from src.video_agent.web.task_manager import get_task_manager
-from src.video_agent.web.provider_config import (
+from src.video_agent.core.provider_config import (
     get_provider_config,
     resolve_provider_ref,
 )

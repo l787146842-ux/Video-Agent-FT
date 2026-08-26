@@ -32,7 +32,7 @@ from src.video_agent.web.multimodal_builder import (
     build_multimodal_content,
     _TYPE_TO_CATEGORY,
 )
-from src.video_agent.web.provider_config import (
+from src.video_agent.core.provider_config import (
     get_provider_config,
     load_merged_providers,
     load_merged_providers_async,
