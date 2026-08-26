@@ -5,7 +5,7 @@ import type {
   DraftType, Draft, SubTab, AnyGroup, ServerStateSnapshot,
 } from '@/types';
 import { putProjectState, getProjectState } from '@/api/project';
-import { ApiError } from '@/api/client';
+import { ApiError, buildAuthHeaders } from '@/api/client';
 import { showToast } from '@/stores/toast';
 import { debounce, uid } from '@/lib/utils';
 import {
@@ -144,23 +144,26 @@ if (typeof window !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && boardDirty) void persistBoardInner.flush();
   });
-  // 页面卸载（/关闭）：keepalive 尽力送达；超 keepalive 配额时退化为普通 fetch 兜底
+  // 页面卸载（/关闭）：keepalive 尽力送达；超 keepalive 配额时退化为普通 fetch 兜底。
+  // 鉴权头走 buildAuthHeaders 唯一出口：生产模式中间件对 /api/ 强制校验，
+  // 裸 fetch 会被 401 截断导致卸载冲刷无效（任务#12 批次2 追加修复）。
   window.addEventListener('pagehide', () => {
     if (!boardDirty || !state.projectId) return;
     persistBoardInner.cancel();
     const payload = JSON.stringify(boardSavePayload());
+    const headers = { 'Content-Type': 'application/json', ...buildAuthHeaders() };
     try {
       void fetch('/api/project/state', {
         method: 'PUT',
         keepalive: true,
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: payload,
       });
     } catch {
       try {
         void fetch('/api/project/state', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: payload,
         });
       } catch { /* 静默：卸载期最后防线，不阻塞页面退出 */ }

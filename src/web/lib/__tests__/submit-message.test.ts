@@ -29,6 +29,7 @@ import { submitMessage, normalizeParts } from '../submit-message';
 import { streamAgentChat, sendGuidanceToTask } from '@/hooks/use-sse';
 import { chatState, chatActions, type QueuedMessage } from '@/stores/chat';
 import { studioActions } from '@/stores/studio';
+import { agentActions } from '@/stores/agent-state';
 import { showToast } from '@/stores/toast';
 
 function makeEntry(id: string, text: string, parts: RichContentPart[] = []): QueuedMessage {
@@ -41,7 +42,7 @@ beforeEach(() => {
   chatActions.loadMessages([]);
   chatActions.clearQueuedMessages();
   chatActions.setInput('');
-  studioActions.setAgentBusy(false);
+  agentActions.setAgentBusy(false);
   studioActions.setPendingAttachments([]);
   vi.mocked(streamAgentChat).mockClear();
   vi.mocked(sendGuidanceToTask).mockClear();
@@ -94,7 +95,7 @@ describe('submitMessage 序列化与校验（四路径单点）', () => {
 
 describe("intent='new' 忙碌排队判定", () => {
   it('忙碌中发送 → 入队 + 登记引导，不新建任务', async () => {
-    studioActions.setAgentBusy(true);
+    agentActions.setAgentBusy(true);
     const ok = await submitMessage('new', { input: '换个风格' });
     expect(ok).toBe(true);
     expect(streamAgentChat).not.toHaveBeenCalled();
@@ -104,7 +105,7 @@ describe("intent='new' 忙碌排队判定", () => {
   });
 
   it('忙碌中暂停回应拒收（不得排队重发双发）', async () => {
-    studioActions.setAgentBusy(true);
+    agentActions.setAgentBusy(true);
     const ok = await submitMessage('new', {
       input: '选A', pauseResponse: { pause_id: 'p1', value: 'A' },
     });

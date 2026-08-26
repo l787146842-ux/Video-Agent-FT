@@ -27,7 +27,7 @@ vi.mock('@/stores/toast', () => ({
 }));
 
 import { branchAtMessage } from '../message-branch';
-import { studioActions } from '@/stores/studio';
+import { agentActions } from '@/stores/agent-state';
 
 describe('branchAtMessage', () => {
   beforeEach(() => {
@@ -35,7 +35,7 @@ describe('branchAtMessage', () => {
     branchApiMock.mockClear();
     applyMock.mockClear();
     toastMock.mockClear();
-    studioActions.setAgentBusy(false);
+    agentActions.setAgentBusy(false);
   });
 
   it('以消息下标为分叉点：snapshot 带 up_to_index → branch → applyPayload', async () => {
@@ -47,7 +47,7 @@ describe('branchAtMessage', () => {
   });
 
   it('忙碌中拒发（分支会切换活跃对话）', async () => {
-    studioActions.setAgentBusy(true);
+    agentActions.setAgentBusy(true);
     const ok = await branchAtMessage(1);
     expect(ok).toBe(false);
     expect(snapshotMock).not.toHaveBeenCalled();

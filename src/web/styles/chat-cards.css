@@ -37,23 +37,23 @@
   .confirm-wizard-arrow { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); cursor: pointer; font-size: var(--font-lg); line-height: 1; }
   .confirm-wizard-arrow:disabled { opacity: 0.35; cursor: not-allowed; }
   .confirm-wizard-indicator { font-size: var(--font-sm); color: var(--text-muted); }
-  /* 确认卡片配色（体验规范：亮橙 #fb923c 体系，边框 rgba(251,146,60,0.6)、
-     底色 0.12，亮度档对齐阶段完成卡；禁止 box-shadow/发光） */
-  .confirm-wizard { border: 1px solid rgba(251, 146, 60, 0.6); border-radius: 12px; background: rgba(251, 146, 60, 0.12); }
-  .confirm-option-card { background: rgba(251, 146, 60, 0.12); border-color: rgba(251, 146, 60, 0.35); }
-  .confirm-option-card:hover { border-color: rgba(251, 146, 60, 0.65); background: rgba(251, 146, 60, 0.2); }
-  .confirm-option-card.selected { border-color: #fb923c; background: rgba(251, 146, 60, 0.3); }
-  .confirm-option-radio { border-color: rgba(251, 146, 60, 0.65); }
-  .confirm-option-card.selected .confirm-option-radio { border-color: #fb923c; box-shadow: inset 0 0 0 3.5px #fb923c; }
-  .confirm-option-label { color: #ffedd5; }
-  .confirm-option-card.selected .confirm-option-label { color: #fff; }
-  .confirm-option-desc { color: rgba(255, 237, 213, 0.72); }
-  .confirm-option-card.selected .confirm-option-desc { color: #fed7aa; }
-  .confirm-btn.primary { background: #fb923c; border-color: transparent; color: #fff; }
+  /* 确认卡片配色（体验规范：亮橙体系，基准色见 tokens.css --color-confirm 族；
+     亮度档对齐阶段完成卡；禁止 box-shadow/发光） */
+  .confirm-wizard { border: 1px solid var(--color-confirm-border); border-radius: 12px; background: var(--color-confirm-bg); }
+  .confirm-option-card { background: var(--color-confirm-bg); border-color: var(--color-confirm-border-soft); }
+  .confirm-option-card:hover { border-color: var(--color-confirm-border-strong); background: var(--color-confirm-bg-hover); }
+  .confirm-option-card.selected { border-color: var(--color-confirm); background: var(--color-confirm-bg-selected); }
+  .confirm-option-radio { border-color: var(--color-confirm-border-strong); }
+  .confirm-option-card.selected .confirm-option-radio { border-color: var(--color-confirm); box-shadow: inset 0 0 0 3.5px var(--color-confirm); }
+  .confirm-option-label { color: var(--color-confirm-text); }
+  .confirm-option-card.selected .confirm-option-label { color: var(--color-white); }
+  .confirm-option-desc { color: var(--color-confirm-text-soft); }
+  .confirm-option-card.selected .confirm-option-desc { color: var(--color-confirm-text-strong); }
+  .confirm-btn.primary { background: var(--color-confirm); border-color: transparent; color: var(--color-white); }
   .confirm-btn.primary:hover { filter: brightness(1.08); }
-  .confirm-wizard .confirm-btn.secondary { background: transparent; border-color: rgba(251, 146, 60, 0.45); color: #fdba74; }
-  .confirm-wizard .confirm-btn.secondary:hover { background: rgba(251, 146, 60, 0.12); color: #ffedd5; }
-  .confirm-wizard .confirm-btn.secondary.active { background: rgba(251, 146, 60, 0.22); border-color: #fb923c; color: #ffedd5; }
+  .confirm-wizard .confirm-btn.secondary { background: transparent; border-color: var(--color-confirm-border-faint); color: var(--color-confirm-text-bright); }
+  .confirm-wizard .confirm-btn.secondary:hover { background: var(--color-confirm-bg); color: var(--color-confirm-text); }
+  .confirm-wizard .confirm-btn.secondary.active { background: var(--color-confirm-bg-active); border-color: var(--color-confirm); color: var(--color-confirm-text); }
   /* 批次C：亮橙问卷卡禁发光钉死——保留亮橙色系本身，高亮/悬停/选中态
      一律不得挂 box-shadow/text-shadow 光晕（选项 radio 的 inset 实心填充
      是单选选中态形态，非光晕，不在此禁范围） */
@@ -70,17 +70,17 @@
   .doc-card-status { margin-left: auto; font-size: var(--font-2xs); color: var(--accent-emerald); flex-shrink: 0; }
 
   /* 阶段卡片（可展开、默认展开；正文=本轮概述+执行清单，与模型正文判重） */
-  .stage-card { border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--color-success) 5%, transparent); margin-bottom: 6px; overflow: hidden; }
+  .stage-card { border: 1px solid var(--color-stage-border); border-radius: 8px; background: var(--color-stage-bg); margin-bottom: 6px; overflow: hidden; }
   .stage-card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; user-select: none; width: 100%; background: none; border: none; font: inherit; text-align: left; cursor: pointer; }
-  .stage-card-header:hover { background: color-mix(in srgb, var(--color-success) 8%, transparent); }
-  .stage-check { color: var(--color-success); flex-shrink: 0; }
-  .stage-card-title { font-size: var(--font-sm); font-weight: 600; color: var(--color-success); }
+  .stage-card-header:hover { background: var(--color-stage-bg-hover); }
+  .stage-check { color: var(--color-stage); flex-shrink: 0; }
+  .stage-card-title { font-size: var(--font-sm); font-weight: 600; color: var(--color-stage); }
   .stage-card-badge { font-size: var(--font-2xs); color: var(--text-muted); background: color-mix(in srgb, var(--color-white) 6%, transparent); padding: 2px 7px; border-radius: 4px; }
     /* 过期/已回应暂停卡徽标（降饱和虚线框，弱化但可读） */
     .stage-card-badge-stale { color: var(--text-dim); background: transparent; border: 1px dashed var(--border-color); }
   .stage-card-arrow { margin-left: auto; color: var(--text-dim); flex-shrink: 0; }
-  .stage-card-body { padding: 2px 12px 10px; border-top: 1px dashed color-mix(in srgb, var(--color-success) 25%, transparent); }
-  .stage-card-summary { margin: 6px 0; font-size: var(--font-sm); line-height: 1.6; color: var(--text-color); }
+  .stage-card-body { padding: 2px 12px 10px; border-top: 1px dashed var(--color-stage-divider); }
+  .stage-card-summary { margin: 6px 0; font-size: var(--font-sm); line-height: 1.6; color: var(--text-main); }
   .stage-card-ops { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
   .stage-card-ops li { font-size: var(--font-xs); color: var(--text-muted); line-height: 1.5; }
 

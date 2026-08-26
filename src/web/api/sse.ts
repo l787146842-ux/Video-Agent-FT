@@ -8,7 +8,7 @@
  */
 import type { AgentChatRequest } from '@/types';
 import type { GuidanceItem } from '@/types/api.generated';
-import { apiFetch, apiPost } from './client';
+import { apiFetch, apiPost, buildAuthHeaders } from './client';
 
 // ===== 任务式传输：后台任务 + 事件订阅，刷新/切项目不中断 =====
 
@@ -25,7 +25,13 @@ export function startAgentTask(request: AgentChatRequest) {
 }
 
 export async function fetchAgentTaskEvents(taskId: string, signal: AbortSignal): Promise<Response> {
-  return fetch(`/api/agent/tasks/${encodeURIComponent(taskId)}/events`, { signal });
+  // 鉴权头经 client 唯一出口注入（任务7/P0）：生产模式 api_key_auth 对
+  // /api/ 强制 X-API-Key，裸 fetch 必 401；SSE 流式响应由调用方读流，
+  // 故不走 apiFetch（其只解析 JSON）。
+  return fetch(`/api/agent/tasks/${encodeURIComponent(taskId)}/events`, {
+    headers: buildAuthHeaders(),
+    signal,
+  });
 }
 
 export async function listAgentTasks(projectId: string): Promise<AgentTaskInfo[]> {

@@ -47,9 +47,7 @@ export const uiActions = {
     setState('isPromptCollapsed', (v) => !v);
   },
 
-  setAgentBusy(busy: boolean) {
-    setState('agentBusy', busy);
-  },
+  /* setAgentBusy 已迁 chat/agent 域（任务 #11）：见 stores/agent-state.ts */
 
   setShowAllAssets(show: boolean) {
     setState('showAllAssets', show);

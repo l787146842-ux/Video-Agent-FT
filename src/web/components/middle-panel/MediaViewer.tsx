@@ -11,7 +11,7 @@ import { GenTypeTabs } from './GenTypeTabs';
 import { PreviewEmpty } from './PreviewEmpty';
 import { GenProgress } from './GenProgress';
 import { MediaContent } from './MediaContent';
-import { PreviewLightbox } from './PreviewLightbox';
+import { Lightbox } from '@/components/Lightbox';
 
 /**
  * 预览媒体区：图片 / 视频 / 音频 / 空态 / 生成中进度环
@@ -179,7 +179,7 @@ export function MediaViewer() {
 
       {/* 图片放大查看 lightbox（支持滚轮缩放 + 鼠标按住拖拽平移） */}
       <Show when={lightboxUrl()}>
-        <PreviewLightbox url={lightboxUrl()} onClose={() => setLightboxUrl('')} />
+        <Lightbox mode="zoom" url={lightboxUrl()} onClose={() => setLightboxUrl('')} />
       </Show>
 
       {/* 导航定位按钮（右下角）：左面板自动定位到当前预览对应的

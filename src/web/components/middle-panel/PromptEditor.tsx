@@ -8,7 +8,7 @@ import {
 } from '@/lib/prompt-ref-utils';
 import { usePromptMention, type MentionItem } from '@/hooks/use-prompt-mention';
 import { usePromptMediaDrop } from '@/hooks/use-prompt-media-drop';
-import { MediaLightbox } from '@/components/right-panel/MediaLightbox';
+import { Lightbox } from '@/components/Lightbox';
 import { RefAssetBar } from './RefAssetBar';
 import { PromptMentionPopup } from './PromptMentionPopup';
 import { promptEditorKeyDown } from './prompt-editor-keys';
@@ -204,7 +204,8 @@ export function PromptEditor() {
 
         {/* @ 缩略块点击放大预览 */}
         <Show when={preview()}>
-          <MediaLightbox
+          <Lightbox
+            mode="media"
             url={preview()!.url}
             kind={preview()!.kind}
             onClose={() => setPreview(null)}

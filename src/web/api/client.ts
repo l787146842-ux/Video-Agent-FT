@@ -51,10 +51,18 @@ async function readError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, payload.message || res.statusText, payload);
 }
 
-export async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+/** 鉴权头唯一出口（任务7/P0）：所有 /api/ 请求（含 SSE 流式 fetch）
+ * 经此注入 X-API-Key——生产模式中间件对 /api/ 强制校验，项目内不得
+ * 再出现裸 fetch/EventSource 直连 /api/（EventSource 结构性无法带自定义头）。 */
+export function buildAuthHeaders(): Record<string, string> {
   const key = getGlobalApiKey();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {};
   if (key) headers['X-API-Key'] = key;
+  return headers;
+}
+
+export async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...buildAuthHeaders() };
   const res = await fetch(path, {
     headers,
     ...opts,
@@ -121,7 +129,8 @@ export async function fetchMediaBlob(url: string): Promise<Blob> {
   const fetchUrl = isCrossOrigin
     ? `/api/image-proxy?url=${encodeURIComponent(fullUrl)}`
     : fullUrl;
-  const res = await fetch(fetchUrl);
+  // 代理分支走 /api/ 需鉴权头；同源直取不携头（key 不得随跨域请求泄露给第三方）
+  const res = await fetch(fetchUrl, isCrossOrigin ? { headers: buildAuthHeaders() } : undefined);
   if (!res.ok) throw new Error(`媒体下载失败 (HTTP ${res.status})`);
   return res.blob();
 }

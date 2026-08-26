@@ -14,7 +14,7 @@ import { TurnLedgerCard } from './TurnLedgerCard';
 import { ConfirmActions } from './ConfirmActions';
 import { ImageResultCard } from './ImageResultCard';
 import { VideoResultCard } from './VideoResultCard';
-import { ImageLightbox } from './ImageLightbox';
+import { Lightbox } from '@/components/Lightbox';
 import { GateWarnings } from './GateWarnings';
 import { MarkdownBubble } from './MarkdownBubble';
 import { MessageHoverToolbar } from './MessageHoverToolbar';
@@ -219,7 +219,7 @@ export function ChatMessageItem(props: {
       </Show>
 
       {/* 内联媒体原图预览 lightbox（共享组件） */}
-      <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl('')} />
+      <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl('')} />
 
       {/* 元信息（轮次容器内已上提到组头，不重复渲染） */}
       <Show when={msg().meta && !props.hideChrome}>

@@ -12,6 +12,7 @@
  * 四路径都以 intent 调用本入口，行为差异只体现在 intent 分支。
  */
 import { state, studioActions } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { chatState, chatActions, type QueuedMessage } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { streamAgentChat, sendGuidanceToTask } from '@/hooks/use-sse';
@@ -129,7 +130,7 @@ export async function submitMessage(intent: SubmitIntent, payload: SubmitPayload
   const docBlocks = docAttachments.map((a) => a.name);
 
   // Agent 推理中：不阻断用户，消息进入排队引导区，当前任务完成后自动发送
-  if (state.agentBusy) {
+  if (agentState.agentBusy) {
     // 暂停回应不入队：pause_response 只对当前活动暂停有意义，
     // 排队重发会在任务结束后把同一回答再发一遍（连点双发断点）；直接拒收提示
     if (payload.pauseResponse) {

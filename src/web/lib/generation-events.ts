@@ -1,5 +1,8 @@
 /**
- * 全局生成事件总线 — 订阅 /api/generate/events（自动重连）。
+ * 全局生成事件总线 — 订阅 /api/generate/events（fetch 传输 + 自动重连）。
+ *
+ * 任务7/P0：传输由 EventSource 切换为 createReconnectingSSE 的
+ * fetch + ReadableStream（携带 X-API-Key），生产模式不再 401。
  *
  * 作用：
  * 1. Agent/批量触发的生成任务（前端未主动提交）也能驱动 UI：
@@ -7,7 +10,11 @@
  * 2. 每条事件刷新「生成日志」面板数据与未读角标（改进3）。
  *
  * 去重：手动路径（generate-actions.ts）提交的任务会 registerManualTask，
- * 其结果处理由各自的 pollAndPreview* 负责，本总线跳过避免重复写回/toast。
+ * 其结果处理由各自的 pollAndPreview* 负责，本总线跳过避免重复写回/toast；
+ * 终态帧到达时事件驱动主动释放（TTL 仅作兜底）。
+ * 帧级去重：消费后端 event_seq（每 task_id 单调递增，随 notify 帧下发，
+ * replay/终态快照帧带原始 seq），防重连窗口 replay 与增量同源双达；
+ * 无该字段的帧兼容跳过不去重。
  */
 import { createReconnectingSSE } from './reconnecting-sse';
 import { state, studioActions } from '@/stores/studio';
@@ -18,6 +25,8 @@ import type { Draft } from '@/types';
 
 interface GenerateEvent {
   task_id?: string;
+  /** 契约：每 task_id 单调递增整数，随 notify 帧下发；replay/终态快照帧带原始 seq；旧帧可缺省 */
+  event_seq?: number;
   status?: string;
   kind?: string;
   draft_id?: string;
@@ -30,10 +39,43 @@ interface GenerateEvent {
 /** 手动路径提交的任务 id（全局总线跳过，避免与其轮询/SSE 重复处理） */
 const manualTaskIds = new Set<string>();
 
-/** 手动路径提交任务后登记（15 分钟后自动释放，防集合无限增长） */
+/** 手动任务登记 TTL 兜底：对齐视频任务 30 分钟上限留 5 分钟余量；
+ * 正常由终态帧事件驱动释放，不依赖到期 */
+const MANUAL_TASK_TTL_MS = 35 * 60 * 1000;
+
+/** 手动路径提交任务后登记（终态帧到达事件驱动释放；TTL 仅兜底防集合无限增长） */
 export function registerManualTask(taskId: string): void {
   manualTaskIds.add(taskId);
-  setTimeout(() => manualTaskIds.delete(taskId), 15 * 60 * 1000);
+  setTimeout(() => manualTaskIds.delete(taskId), MANUAL_TASK_TTL_MS);
+}
+
+// ===== event_seq 帧级去重（无该字段的帧兼容跳过不去重） =====
+const EVENT_SEQ_SEEN_LIMIT = 500;
+const seenEventKeys = new Set<string>();
+const seqBaselineByTask = new Map<string, number>();
+
+/** 判重并入表：键 `${task_id}:${event_seq}`，命中=重复帧；
+ * 新 seq 小于基线视为回绕/后端重启——重置基线并清该任务历史键（防新帧被旧键误判）；
+ * 表超 500 条整体清空回绕（短窗口内可能漏去重，优于无界增长） */
+export function isDuplicateEventSeq(taskId: string, seq: number): boolean {
+  const key = `${taskId}:${seq}`;
+  const baseline = seqBaselineByTask.get(taskId);
+  if (baseline !== undefined && seq < baseline) {
+    for (const seen of [...seenEventKeys]) {
+      if (seen.startsWith(`${taskId}:`)) seenEventKeys.delete(seen);
+    }
+  }
+  seqBaselineByTask.set(taskId, seq);
+  if (seenEventKeys.has(key)) return true;
+  seenEventKeys.add(key);
+  if (seenEventKeys.size > EVENT_SEQ_SEEN_LIMIT) seenEventKeys.clear();
+  return false;
+}
+
+/** 重置去重表（测试用） */
+export function resetEventSeqDedupe(): void {
+  seenEventKeys.clear();
+  seqBaselineByTask.clear();
 }
 
 let initialized = false;
@@ -101,6 +143,10 @@ export function initGenerationEvents(): void {
       return;
     }
 
+    // event_seq 帧级去重：重复帧整体跳过（含未读角标/日志刷新）；无字段帧兼容不去重
+    if (ev.task_id && typeof ev.event_seq === 'number'
+      && isDuplicateEventSeq(ev.task_id, ev.event_seq)) return;
+
     // 生成日志联动：新事件 → 未读角标 + 静默刷新（面板打开时即时可见）
     if (ev.status) {
       bumpGenLogUnread();
@@ -112,7 +158,11 @@ export function initGenerationEvents(): void {
     const taskId = ev.task_id || '';
     const draftId = ev.draft_id || '';
     if (!draftId || !ev.status) return;
-    if (manualTaskIds.has(taskId)) return; // 手动路径自行处理
+    if (manualTaskIds.has(taskId)) {
+      // 事件驱动释放：终态帧到达 = 手动路径处理完成，主动移除（不再只等 TTL）
+      if (ev.status === 'succeeded' || ev.status === 'failed') manualTaskIds.delete(taskId);
+      return; // 手动路径自行处理
+    }
 
     const rec = findDraftRecord(draftId);
     if (!rec) return;

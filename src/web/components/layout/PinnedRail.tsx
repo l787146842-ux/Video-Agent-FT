@@ -16,7 +16,7 @@ import { safeUrl } from '@/lib/utils';
  *
  * 职责划分（三者不合并）：
  * - middle-panel MediaViewer = 生成工作区预览（跟随故事板选中草稿，单产物）；
- * - ImageLightbox/MediaLightbox = 临时全屏查看（Esc 即走，不留驻）；
+ * - Lightbox（统一预览灯箱） = 临时全屏查看（Esc 即走，不留驻）；
  * - PinnedRail（本组件）= 跨轮对照钉住（≤3 个产物并置，会话内常驻）。
  *
  * 内存纪律：仅激活项挂载媒体 src（图片 loading=lazy、视频 preload=none）；

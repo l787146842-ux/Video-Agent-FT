@@ -3,7 +3,7 @@ import { FiPlus, FiSearch, FiX } from 'solid-icons/fi';
 import { ChatFeed } from './ChatFeed';
 import { ChatInput } from './ChatInput';
 import { ChatSearchBar } from './ChatSearchBar';
-import { state } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { convState, convActions } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
 import { useSplitter } from '@/hooks/use-splitter';
@@ -28,7 +28,7 @@ export default function RightPanel() {
 
   /** Agent 回复中禁止新建/切换/关闭对话（后端写入活跃对话，避免串话） */
   function busyGuard(): boolean {
-    if (state.agentBusy) {
+    if (agentState.agentBusy) {
       showToast(t('rp.conv.busyGuard'), 'warning');
       return true;
     }
@@ -91,8 +91,8 @@ export default function RightPanel() {
             <FiPlus size={13} />
           </button>
           <span
-            class={`agent-status-dot ${state.agentBusy ? 'busy' : ''}`}
-            title={state.agentBusy ? t('rp.header.busy') : t('rp.header.idle')}
+            class={`agent-status-dot ${agentState.agentBusy ? 'busy' : ''}`}
+            title={agentState.agentBusy ? t('rp.header.busy') : t('rp.header.idle')}
           />
         </div>
       </div>

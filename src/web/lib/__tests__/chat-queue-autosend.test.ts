@@ -27,9 +27,9 @@ import { startQueuedAutosend } from '../chat/chat-queue-autosend';
 import { submitMessage } from '@/lib/submit-message';
 import { chatState, chatActions } from '@/stores/chat';
 import type { QueuedMessage } from '@/stores/chat';
-import { studioActions } from '@/stores/studio';
+import { agentActions } from '@/stores/agent-state';
 
-busyMock.setBusy = (v: boolean) => studioActions.setAgentBusy(v);
+busyMock.setBusy = (v: boolean) => agentActions.setAgentBusy(v);
 
 /** 在响应式 root 内启动自动出队并等待 effect 首拍执行完 */
 async function runAutosendOneTick(): Promise<void> {
@@ -45,7 +45,7 @@ beforeEach(() => {
   prefsMock.model = 'mock-model';
   chatActions.loadMessages([]);
   chatActions.clearQueuedMessages();
-  studioActions.setAgentBusy(false);
+  agentActions.setAgentBusy(false);
   vi.mocked(submitMessage).mockClear();
 });
 
@@ -82,7 +82,7 @@ describe('startQueuedAutosend（排队自动出队）', () => {
   });
 
   it('Agent 忙碌中：不出队（等任务结束后再发）', async () => {
-    studioActions.setAgentBusy(true);
+    agentActions.setAgentBusy(true);
     chatActions.enqueueMessage({ id: 'q1', text: '排队中', displayText: '排队中', parts: [] });
     await runAutosendOneTick();
     expect(submitMessage).not.toHaveBeenCalled();

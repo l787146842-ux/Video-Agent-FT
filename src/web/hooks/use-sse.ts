@@ -8,6 +8,7 @@
 import { createSignal } from 'solid-js';
 import type { AgentChatRequest } from '@/types';
 import { chatActions } from '@/stores/chat';
+import { agentActions } from '@/stores/agent-state';
 import { convActions } from '@/stores/conversations';
 import { state, studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
@@ -28,7 +29,7 @@ const fx: SseEventFx = {
   chat: chatActions,
   setStreaming: (v) => setStreaming(v),
   setErrorText: (m) => setError(m),
-  setAgentBusy: (v) => studioActions.setAgentBusy(v),
+  setAgentBusy: (v) => agentActions.setAgentBusy(v),
   syncSnapshot: (s) => { studioActions.syncFromServer(s); convActions.syncFromServer(s); },
   markBoardApplied: () => studioActions.markBoardApplied(),
   applyFallbackModel: (provider, model) => applyFallbackModel(provider, model),

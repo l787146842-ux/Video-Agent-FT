@@ -37,7 +37,7 @@ vi.mock('@/stores/toast', () => ({
 
 import { truncateResendAction } from '../chat/truncate-resend';
 import { chatState, chatActions } from '@/stores/chat';
-import { state, studioActions } from '@/stores/studio';
+import { agentState, agentActions } from '@/stores/agent-state';
 import { ApiError } from '@/api/client';
 
 describe('truncateResendAction', () => {
@@ -45,7 +45,7 @@ describe('truncateResendAction', () => {
     apiMock.mockClear();
     attachMock.mockClear();
     toastMock.mockClear();
-    studioActions.setAgentBusy(false);
+    agentActions.setAgentBusy(false);
     chatActions.loadMessages([
       { sender: 'user', text: '第二问' },
       { sender: 'agent', text: '旧回复' },
@@ -70,12 +70,12 @@ describe('truncateResendAction', () => {
   });
 
   it('忙碌中拒发（兜底守卫）：不调 API、消息列表不动', async () => {
-    studioActions.setAgentBusy(true);
+    agentActions.setAgentBusy(true);
     const ok = await truncateResendAction('x');
     expect(ok).toBe(false);
     expect(apiMock).not.toHaveBeenCalled();
     expect(chatState.messages.length).toBe(2);
-    expect(state.agentBusy).toBe(true);
+    expect(agentState.agentBusy).toBe(true);
   });
 
   it('后端拒绝（如 409 AGENT_BUSY）：本地不截断，toast 报错', async () => {

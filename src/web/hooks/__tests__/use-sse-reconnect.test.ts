@@ -20,7 +20,7 @@ vi.mock('@/stores/toast', () => ({ showToast: vi.fn() }));
 
 import { streamAgentChat, disconnectAgentStream } from '../use-sse';
 import { startAgentTask, fetchAgentTaskEvents, stopAgentTask, listAgentTasks, postAgentTaskGuidance } from '@/api/sse';
-import { state } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { showToast } from '@/stores/toast';
 import { requestInsertMedia } from '@/lib/chat/chat-input-bridge';
 import { req, sseResponse, doneFrame, spies, clearSpies, resetChatTestState } from './use-sse-testkit';
@@ -71,7 +71,7 @@ describe('重连指数退避与订阅重试归类（集成）', () => {
 
     await p;
     expect(spies.finishStream.mock.calls[0][0].text).toBe('重连后完成');
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('重试耗尽（3 次退避后仍失败）：归类 network 落错误，不再重连', async () => {
@@ -90,7 +90,7 @@ describe('重连指数退避与订阅重试归类（集成）', () => {
     expect(spies.streamError.mock.calls[0][0]).toEqual(expect.objectContaining({
       kind: 'network', code: 'err.network.connection',
     }));
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('任务面 4xx（404 任务已清理）：不重连，按状态归类落错误', async () => {

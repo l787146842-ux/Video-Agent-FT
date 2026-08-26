@@ -65,6 +65,20 @@ describe('applyDecisionForm（replay 重建通道）', () => {
     expect(chatState.messages.filter((m) => m.decisionForm?.token === pd.token)).toHaveLength(1);
   });
 
+  it('空 token 投影：以 schema 首字段 key + 问句组合去重（replay 不双挂）', () => {
+    const noToken: PendingDecisionPayload = {
+      message: '几个分镜？',
+      schema: { type: 'decision', fields: [{ key: 'shots', label: '几个分镜？', type: 'number' }] },
+    };
+    chatActions.applyDecisionForm(noToken); // 无载体 → 派生独立卡
+    chatActions.applyDecisionForm(noToken); // 同首字段 key + 同问句 → 命中去重
+    expect(chatState.messages.length).toBe(1);
+    expect(chatState.messages[0].decisionForm?.schema?.fields?.[0]?.key).toBe('shots');
+    // 问句不同视为新决策，不去重
+    chatActions.applyDecisionForm({ ...noToken, message: '画幅选哪个？' });
+    expect(chatState.messages.length).toBe(2);
+  });
+
   it('不跨用户消息向前附挂（用户已回应后旧决策不复活），无载体派生独立卡', () => {
     chatActions.addMessage({ sender: 'agent', text: '', confirm: '请审阅' });
     chatActions.addMessage({ sender: 'user', text: '确认' });

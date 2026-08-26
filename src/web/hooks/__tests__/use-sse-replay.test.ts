@@ -19,7 +19,7 @@ vi.mock('@/stores/toast', () => ({ showToast: vi.fn() }));
 
 import { streamAgentChat, disconnectAgentStream, resumeAgentTasks } from '../use-sse';
 import { startAgentTask, fetchAgentTaskEvents, stopAgentTask, listAgentTasks, postAgentTaskGuidance } from '@/api/sse';
-import { state } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { showToast } from '@/stores/toast';
 import { requestInsertMedia } from '@/lib/chat/chat-input-bridge';
 import { req, sseResponse, doneFrame, spies, clearSpies, resetChatTestState } from './use-sse-testkit';
@@ -88,7 +88,7 @@ describe('replay 快照 → 增量衔接', () => {
     expect(spies.streamError.mock.calls[0][0]).toEqual(expect.objectContaining({
       code: 'err.quota.rate_limited', kind: 'quota', message: '额度用尽',
     }));
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('replay stopped（非恢复场景）：按 stopped_payload 补落停止痕迹', async () => {
@@ -118,7 +118,7 @@ describe('replay 快照 → 增量衔接', () => {
     expect(spies.loadMessages).toHaveBeenCalledWith([snapshotMsg]);
     expect(spies.clearStreaming).toHaveBeenCalled();
     expect(spies.finishStream).not.toHaveBeenCalled(); // 不再走增量收尾，避免消息重复
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('恢复场景 replay stopped：采用已持久化的停止痕迹快照', async () => {

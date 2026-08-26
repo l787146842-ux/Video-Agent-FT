@@ -19,7 +19,7 @@ export interface StudioState {
   assetLibraryOpen: boolean;
   apiProviders: ApiProvider[];
   skills: Skill[];
-  agentBusy: boolean;
+  /* agentBusy 已迁 chat/agent 域（任务 #11）：见 stores/agent-state.ts */
   pendingAttachments: PendingAttachment[];
   keyElements: KeyElementGroup[];
   shots: ShotGroup[];
@@ -64,7 +64,6 @@ const defaultState: StudioState = {
   assetLibraryOpen: false,
   apiProviders: [],
   skills: [],
-  agentBusy: false,
   pendingAttachments: [],
   keyElements: [],
   shots: [],

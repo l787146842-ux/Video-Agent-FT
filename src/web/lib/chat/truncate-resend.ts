@@ -16,7 +16,7 @@ import { ApiError } from '@/api/client';
 import { attachStartedTask } from '@/hooks/use-sse';
 import { chatActions } from '@/stores/chat';
 import { agentProvider, agentModel, agentThinkingLevel } from '@/stores/agent-prefs';
-import { state } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { showToast } from '@/stores/toast';
 import { t } from '@/lib/locale';
 
@@ -25,7 +25,7 @@ import { t } from '@/lib/locale';
  * 返回 true = 已受理（本地已截断、新任务订阅已建立）。
  */
 export async function truncateResendAction(text?: string): Promise<boolean> {
-  if (state.agentBusy) {
+  if (agentState.agentBusy) {
     showToast(t('rp.conv.busyGuard'), 'warning');
     return false;
   }

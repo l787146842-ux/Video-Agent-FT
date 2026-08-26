@@ -2,7 +2,7 @@
 @layer components {
   /* ---------- 布局骨架 ---------- */
   .panel-column { display: flex; flex-direction: column; height: 100%; position: relative; }
-    /* 覆盖层路由（画布/API 配置/全局设置）窄视口兑底：顶栏 min-width 超宽时整壳横向滚动 */
+    /* 覆盖层路由（画布/API 配置/全局设置）窄视口兜底：顶栏 min-width 超宽时整壳横向滚动 */
     .overlay-shell { overflow-x: auto; }
   /* 窄视口保护：三栏总宽约 912px，窗口更窄时界面不再压缩重叠，
      改为横向滚动兜底（桌面优先，不做响应式重排） */

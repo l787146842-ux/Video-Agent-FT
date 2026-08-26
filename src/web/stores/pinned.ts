@@ -6,7 +6,7 @@ import { showToast } from '@/stores/toast';
  *
  * 职责划分（三者不合并）：
  * - middle-panel MediaViewer = 生成工作区预览（跟随故事板选中草稿）；
- * - ImageLightbox/MediaLightbox = 临时全屏查看（Esc 即走）；
+ * - Lightbox（统一预览灯箱） = 临时全屏查看（Esc 即走）；
  * - 本 store 驱动的 PinnedRail = 跨轮对照钉住（多产物并置比对，会话内常驻）。
  *
  * 轻量约束：上限 PINNED_MAX=3；doc 只持文档名元数据，正文由

@@ -11,6 +11,7 @@ import {
   getAgentMetrics,
 } from '../agent';
 import type { AgentChatRequest } from '@/types';
+import { setGlobalApiKey } from '../client';
 
 const fetchMock = vi.fn();
 
@@ -25,6 +26,7 @@ function res(body: unknown, status = 200): Response {
 beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal('fetch', fetchMock);
+  localStorage.clear();
 });
 
 describe('sse.ts 任务式传输端点', () => {
@@ -46,6 +48,17 @@ describe('sse.ts 任务式传输端点', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/agent/tasks/task%2F%E7%A9%BA%E6%A0%BC/events');
     expect(init.signal).toBe(ctrl.signal);
+  });
+
+  it('fetchAgentTaskEvents：生产模式鉴权头携带（X-API-Key 经 client 唯一出口注入）', async () => {
+    setGlobalApiKey('sk-sse-001');
+    fetchMock.mockResolvedValue(res({}));
+    await fetchAgentTaskEvents('t1', new AbortController().signal);
+    expect(fetchMock.mock.calls[0][1].headers['X-API-Key']).toBe('sk-sse-001');
+    // 未配置 Key（开发模式）时不携头，后端不校验无害
+    setGlobalApiKey('');
+    await fetchAgentTaskEvents('t2', new AbortController().signal);
+    expect(fetchMock.mock.calls[1][1].headers['X-API-Key']).toBeUndefined();
   });
 
   it('listAgentTasks：project_id 进查询串；缺 tasks 回落空数组', async () => {

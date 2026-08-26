@@ -72,6 +72,8 @@ export interface ChatResponse {
   chat_inserts?: Record<string, unknown>[];
   action_log?: string[];
   state?: Record<string, unknown> | undefined;
+  stopped?: boolean;
+  stop_phase?: string;
 }
 
 export interface CreateConversationRequest {

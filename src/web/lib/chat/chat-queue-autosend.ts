@@ -6,14 +6,14 @@
  * 纯响应式副作用，调用方在组件作用域内调用一次即可。
  */
 import { createEffect } from 'solid-js';
-import { state } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { chatState, chatActions } from '@/stores/chat';
 import { submitMessage } from '@/lib/submit-message';
 import { agentProvider, agentModel } from '@/stores/agent-prefs';
 
 export function startQueuedAutosend() {
   createEffect(() => {
-    if (state.agentBusy) return;
+    if (agentState.agentBusy) return;
     if (!agentProvider() || !agentModel()) return;
     const q = chatState.queuedMessages;
     if (!q.length) return;

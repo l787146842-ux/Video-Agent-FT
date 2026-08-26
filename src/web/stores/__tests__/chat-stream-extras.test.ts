@@ -47,6 +47,19 @@ describe('chatActions 深度思考与工具时间线', () => {
     expect(chatState.turnLedger.statusText).toContain('生图');
   });
 
+  it('toolStarted 按 id upsert：同 id 重复到达就地更新不双登（replay 与增量同源双达）', () => {
+    chatActions.startStream();
+    chatActions.toolStarted('t1', 'image_generate', '生图');
+    chatActions.toolStarted('t1', 'image_generate', '生图（replay 重建）', { prompt: 'x' });
+    expect(chatState.turnLedger.items.length).toBe(1);
+    expect(chatState.turnLedger.items[0].summary).toBe('生图（replay 重建）');
+    expect(chatState.turnLedger.items[0].args).toEqual({ prompt: 'x' });
+    expect(chatState.turnLedger.items[0].status).toBe('running');
+    // 不同 id 仍新增
+    chatActions.toolStarted('t2', 'gen_video', '生视频');
+    expect(chatState.turnLedger.items.length).toBe(2);
+  });
+
   it('toolFinished 落完成态（耗时/结果摘要/规划标记）；失败态落 failed', () => {
     chatActions.startStream();
     chatActions.toolStarted('t1', 'audio_generate', '音频');

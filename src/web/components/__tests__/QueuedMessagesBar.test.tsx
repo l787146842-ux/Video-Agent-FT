@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueuedMessagesBar } from '../right-panel/QueuedMessagesBar';
 import { chatActions } from '@/stores/chat';
 import type { QueuedMessage } from '@/stores/chat';
-import { studioActions } from '@/stores/studio';
+import { agentActions } from '@/stores/agent-state';
 
 vi.mock('@/lib/submit-message', () => ({
   submitMessage: vi.fn(() => Promise.resolve(true)),
@@ -32,7 +32,7 @@ function queued(id: string, text: string, parts: QueuedMessage['parts'] = []): Q
 describe('QueuedMessagesBar 在侧边聊天中打开', () => {
   beforeEach(() => {
     chatActions.clearQueuedMessages();
-    studioActions.setAgentBusy(false);
+    agentActions.setAgentBusy(false);
     vi.mocked(submitMessage).mockClear();
     vi.mocked(showToast).mockClear();
     vi.mocked(convActions.create).mockClear();
@@ -70,7 +70,7 @@ describe('QueuedMessagesBar 在侧边聊天中打开', () => {
   });
 
   it('Agent 忙碌时拦截新建对话：toast 警示且消息保留在排队', async () => {
-    studioActions.setAgentBusy(true);
+    agentActions.setAgentBusy(true);
     chatActions.enqueueMessage(queued('q-busy', '忙碌中排队'));
     const { container } = render(() => <QueuedMessagesBar onEdit={vi.fn()} />);
     await fireEvent.click(container.querySelector('.queued-more-btn') as HTMLElement);
@@ -103,7 +103,7 @@ describe('QueuedMessagesBar 在侧边聊天中打开', () => {
 describe('QueuedMessagesBar 队列操作（引导/删除/编辑/关闭排队）', () => {
   beforeEach(() => {
     chatActions.clearQueuedMessages();
-    studioActions.setAgentBusy(false);
+    agentActions.setAgentBusy(false);
     vi.mocked(submitMessage).mockClear();
     vi.mocked(showToast).mockClear();
   });

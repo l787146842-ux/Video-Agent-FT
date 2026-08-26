@@ -1,5 +1,6 @@
 import { createSignal, Show } from 'solid-js';
 import { state, studioActions } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { sendUserMessage } from '@/lib/agent-actions';
 import { stopAgentStream } from '@/hooks/use-sse';
 import { uploadAndInsert, handleUrlDrop } from '@/lib/chat/chat-input-media';
@@ -11,7 +12,7 @@ import { ChatInputToolbar } from './ChatInputToolbar';
 import { ChatInputEditor } from './ChatInputEditor';
 import { PendingAttachmentBar } from './PendingAttachmentBar';
 import { QueuedMessagesBar } from './QueuedMessagesBar';
-import { MediaLightbox } from './MediaLightbox';
+import { Lightbox } from '@/components/Lightbox';
 
 /**
  * 聊天输入区（富文本版）：
@@ -61,7 +62,7 @@ export function ChatInput() {
     void openDocsPanel(sk?.id?.startsWith('doc:') ? sk.id.slice(4) : undefined);
   }
 
-  const busy = () => state.agentBusy;
+  const busy = () => agentState.agentBusy;
 
   return (
     <div class="chat-input-area">
@@ -111,7 +112,8 @@ export function ChatInput() {
 
       {/* 双击缩略块放大预览原图/原视频 */}
       <Show when={preview()}>
-        <MediaLightbox
+        <Lightbox
+          mode="media"
           url={preview()!.url}
           kind={preview()!.kind}
           onClose={() => setPreview(null)}

@@ -26,7 +26,7 @@ import {
   startAgentTask, fetchAgentTaskEvents, stopAgentTask, listAgentTasks, postAgentTaskGuidance,
 } from '@/api/sse';
 import { chatState } from '@/stores/chat';
-import { state } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { showToast } from '@/stores/toast';
 import { requestInsertMedia } from '@/lib/chat/chat-input-bridge';
 import { req, hangingResponse, spies, clearSpies, resetChatTestState, tick } from './use-sse-testkit';
@@ -83,7 +83,7 @@ describe('停止按钮与终态痕迹', () => {
     expect(spies.cancelStream).toHaveBeenCalledWith({
       inflight: [{ task_id: 'g1', media_type: 'image', summary: '海报' }],
     });
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('无活动任务时点停止：仍落 cancelStream（本地推导阶段）', async () => {
@@ -108,7 +108,7 @@ describe('停止按钮与终态痕迹', () => {
       kind: 'retry', label: '继续刚才的任务',
     }));
     expect(chatState.isStreaming).toBe(false);
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('resumeAgentTasks：无运行任务不建订阅；空 projectId 早退', async () => {

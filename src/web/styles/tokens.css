@@ -60,6 +60,11 @@
   --color-surface-placeholder: #1e293b;  /* 媒体占位深底（透明档 color-mix 现调） */
   --color-surface-shot: #2e3346;          /* 分镜紫灰卡片底 */
   --color-surface-track: #2b3149;         /* 进度环轨道底 */
+  /* ===== 确认卡橙族/阶段卡翡翠绿族（任务 #11 规范色板 token 化）：暗色档与存量硬编码等值（零漂移）；亮色档 html.light 翻转加深保对比 ===== */
+  --color-confirm: #fb923c; --color-confirm-border: rgba(251, 146, 60, 0.6); --color-confirm-border-soft: rgba(251, 146, 60, 0.35); --color-confirm-border-strong: rgba(251, 146, 60, 0.65); --color-confirm-border-faint: rgba(251, 146, 60, 0.45);
+  --color-confirm-bg: rgba(251, 146, 60, 0.12); --color-confirm-bg-hover: rgba(251, 146, 60, 0.2); --color-confirm-bg-selected: rgba(251, 146, 60, 0.3); --color-confirm-bg-active: rgba(251, 146, 60, 0.22);
+  --color-confirm-text: #ffedd5; --color-confirm-text-strong: #fed7aa; --color-confirm-text-soft: rgba(255, 237, 213, 0.72); --color-confirm-text-bright: #fdba74;
+  --color-stage: #34d399; --color-stage-border: rgba(52, 211, 153, 0.3); --color-stage-bg: rgba(52, 211, 153, 0.05); --color-stage-bg-hover: rgba(52, 211, 153, 0.08); --color-stage-divider: rgba(52, 211, 153, 0.25);
   /* ===== 品牌星形渐变（固定品牌色，不随主题翻转） ===== */
   --color-brand-gold: #ffd700;
   --color-brand-gold-deep: #b8860b;
@@ -95,6 +100,10 @@
   --font-4xl: 22px;
   --font-5xl: 36px;
   --font-6xl: 48px;
+  /* 二代字阶正向标尺（任务 #11，只加不迁）：语义命名 12/13/14/16/18/20；
+     存量 --font-* 旧档保留不动（零视觉漂移）。折旧方向：新样式一律走 --fs-*，
+     旧档（--font-5xs…--font-6xl）随触碰逐步迁出，不再扩新用法 */
+  --fs-caption: 12px; --fs-body-sm: 13px; --fs-body: 14px; --fs-title-sm: 16px; --fs-title: 18px; --fs-headline: 20px;
   /* 层级（与现有弹层 z-index 对齐，新增弹层一律走此处） */
   --z-pill: 50;
   --z-mention: 60;
@@ -169,6 +178,11 @@ html.light {
   --color-info-secondary: #7c3aed;
   --color-code-inline-bg: rgba(0, 0, 0, 0.06);
   --color-code-block-bg: rgba(0, 0, 0, 0.05);
+  /* 确认卡橙族亮色档：文字/边框加深保白底对比；彩底档沿用浅橙染 */
+  --color-confirm: #ea580c; --color-confirm-border: rgba(234, 88, 12, 0.6); --color-confirm-border-soft: rgba(234, 88, 12, 0.35); --color-confirm-border-strong: rgba(234, 88, 12, 0.65); --color-confirm-border-faint: rgba(234, 88, 12, 0.45);
+  --color-confirm-text: #9a3412; --color-confirm-text-strong: #7c2d12; --color-confirm-text-soft: rgba(154, 52, 18, 0.72); --color-confirm-text-bright: #c2410c;
+  /* 阶段卡翡翠绿族亮色档：对齐 --color-success 亮色取值 */
+  --color-stage: #059669; --color-stage-border: rgba(5, 150, 105, 0.35); --color-stage-bg: rgba(5, 150, 105, 0.06); --color-stage-bg-hover: rgba(5, 150, 105, 0.1); --color-stage-divider: rgba(5, 150, 105, 0.3);
   --splitter-hover: #3b82f6;
 }
 

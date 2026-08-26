@@ -7,10 +7,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 // 直接测试 chatActions 的状态转换逻辑（不依赖 DOM）
 // 由于 solid-js store 在 node 环境可用，直接 import
-import { chatState, chatActions, setChatState } from '../chat';
-import { registerQueueStorageKey } from '@/lib/chat/queue-storage';
+import { chatState, chatActions } from '../chat';
 import { t } from '@/lib/locale';
 // 「继续刚才的任务」建议派生用例已拆出至 chat-continue-suggestion.test.ts（控制本文件行数）
+// 排队消息持久化用例已拆出至 chat-queue-persist.test.ts（任务 #21 行数门禁清偿）
 
 describe('chatActions 流式状态机', () => {
   beforeEach(() => {
@@ -81,12 +81,59 @@ describe('chatActions 流式状态机', () => {
     });
   });
 
+  it('finishStream 落账幂等：同 turn_id 终态帧重复派发不双落（审查修复）', () => {
+    chatActions.startStream();
+    const payload = {
+      text: '正文', elapsed_ms: 1000, steps: 1, applied_actions: 0,
+      turn_id: 'turn-dup', documents_written: ['规格.md'],
+    };
+    chatActions.finishStream(payload);
+    const afterFirst = chatState.messages.length; // 主气泡 + 文档卡
+    expect(afterFirst).toBe(2);
+    // 交错场景：同一 done 再次到达（replay/增量同源双达）不得重复落账
+    chatActions.finishStream(payload);
+    expect(chatState.messages.length).toBe(afterFirst);
+    // 无 turn_id 的旧帧不受幂等约束（行为与修复前一致）
+    chatActions.startStream();
+    chatActions.finishStream({ text: '无 turnId', elapsed_ms: 100, steps: 1, applied_actions: 0 });
+    chatActions.startStream();
+    chatActions.finishStream({ text: '无 turnId', elapsed_ms: 100, steps: 1, applied_actions: 0 });
+    expect(chatState.messages.length).toBe(afterFirst + 2);
+  });
+
   it('streamError 写入错误消息并清除流式状态', () => {
     chatActions.startStream();
     chatActions.streamError({ code: 'err.network.timeout', kind: 'network', message: '网络超时' });
     expect(chatState.isStreaming).toBe(false);
     expect(chatState.messages.length).toBe(1);
     expect(chatState.messages[0].text).toContain('网络超时');
+  });
+
+  it('streamError/cancelStream turn_id 幂等：同轮终态帧重复派发不双落（审查修复）', () => {
+    chatActions.startStream();
+    chatActions.docWritten('规格.md', 'turn-term'); // 流式中唯一 turn_id 打戳源
+    chatActions.streamError({ code: 'err.network.timeout', kind: 'network', message: '网络超时' });
+    const afterFirst = chatState.messages.length; // 文档卡 + 错误气泡
+    // replay 错误与增量错误同源双达：守卫命中跳过
+    chatActions.streamError({ code: 'err.network.timeout', kind: 'network', message: '网络超时' });
+    expect(chatState.messages.length).toBe(afterFirst);
+    // 同轮停止终态帧双达：同样命中守卫跳过
+    chatActions.cancelStream();
+    expect(chatState.messages.length).toBe(afterFirst);
+  });
+
+  it('cancelStream turn_id 幂等：停止气泡同轮不双落（迟到 stopped 帧防重）', () => {
+    chatActions.startStream();
+    chatActions.docWritten('规格.md', 'turn-stop');
+    chatActions.cancelStream();
+    const afterStop = chatState.messages.length;
+    expect(chatState.messages[afterStop - 1].turnId).toBe('turn-stop');
+    chatActions.cancelStream(); // 迟到 stopped 帧/replay 补落
+    expect(chatState.messages.length).toBe(afterStop);
+    // 无 turn 上下文（未打戳）时不受守卫约束，行为与修复前一致
+    chatActions.startStream();
+    chatActions.cancelStream();
+    expect(chatState.messages.length).toBe(afterStop + 1);
   });
 
   it('cancelStream 保留已有流式文本为消息', () => {
@@ -187,60 +234,5 @@ describe('chatActions 流式状态机', () => {
     chatActions.applyNonStreamDocs([]);
     chatActions.applyNonStreamDocs(['']);
     expect(chatState.messages.filter((m) => m.docCard).length).toBe(0);
-  });
-});
-
-describe('排队消息持久化', () => {
-  const KEY_A = 'ftdyb.queued.p1.conv-a';
-  const KEY_B = 'ftdyb.queued.p1.conv-b';
-  const q = (id: string, text: string) => ({ id, text, displayText: text, parts: [] });
-
-  beforeEach(() => {
-    localStorage.clear();
-    registerQueueStorageKey(() => KEY_A);
-    chatActions.clearQueuedMessages();
-  });
-
-  it('入队即落盘；模拟刷新后 loadMessages 按键恢复', () => {
-    chatActions.enqueueMessage(q('q1', '先做关键元素'));
-    chatActions.enqueueMessage(q('q2', '再生图'));
-    expect(JSON.parse(localStorage.getItem(KEY_A) || '[]').length).toBe(2);
-    // 模拟刷新：内存态丢失，存储仍在
-    setChatState('queuedMessages', []);
-    chatActions.loadMessages([]);
-    expect(chatState.queuedMessages.map((m) => m.id)).toEqual(['q1', 'q2']);
-  });
-
-  it('删除/清空同步落盘（清空移除键）', () => {
-    chatActions.enqueueMessage(q('q1', 'a'));
-    chatActions.enqueueMessage(q('q2', 'b'));
-    chatActions.removeQueuedMessage('q1');
-    expect(JSON.parse(localStorage.getItem(KEY_A) || '[]').map((m: { id: string }) => m.id)).toEqual(['q2']);
-    chatActions.clearQueuedMessages();
-    expect(localStorage.getItem(KEY_A)).toBeNull();
-  });
-
-  it('切换对话键后互不串流（按项目+对话隔离）', () => {
-    chatActions.enqueueMessage(q('q1', 'conv-a 的排队'));
-    registerQueueStorageKey(() => KEY_B);
-    chatActions.loadMessages([]);
-    expect(chatState.queuedMessages.length).toBe(0);
-    chatActions.enqueueMessage(q('q9', 'conv-b 的排队'));
-    registerQueueStorageKey(() => KEY_A);
-    chatActions.loadMessages([]);
-    expect(chatState.queuedMessages.map((m) => m.id)).toEqual(['q1']);
-  });
-
-  it('存储内容损坏时回落空队列不抛异常', () => {
-    localStorage.setItem(KEY_A, '{不是合法 JSON');
-    expect(() => chatActions.loadMessages([])).not.toThrow();
-    expect(chatState.queuedMessages.length).toBe(0);
-  });
-
-  it('未注册键时保持纯内存态（旧行为兜底）', () => {
-    registerQueueStorageKey(() => '');
-    chatActions.enqueueMessage(q('q1', '内存态'));
-    expect(chatState.queuedMessages.length).toBe(1);
-    expect(localStorage.length).toBe(0);
   });
 });

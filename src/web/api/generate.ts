@@ -1,7 +1,9 @@
 /**
  * 生成管线 API（图片/视频）
  * 端点：/api/canvas-image-tasks, /api/canvas-video, /api/tasks
- * SSE：/api/generate/events
+ * SSE：按任务定向订阅由 lib/generate-polling.ts 消费 /api/generate/events/{task_id}
+ *（fetch + ReadableStream 携带鉴权头；旧 EventSource 版 waitForTaskViaSSE
+ * 为无引用死代码，已随任务7/P0 退役删除）
  */
 import { apiPost, apiFetch } from './client';
 import type { TaskResult } from '@/types';
@@ -99,56 +101,6 @@ export interface BatchImageResponse {
 /** 批量提交生图任务（左侧面板"批量生成"按钮） */
 export function batchImage(body: BatchImageRequest) {
   return apiPost<BatchImageResponse>('/api/generate/batch-image', body);
-}
-
-// ===== SSE 任务等待 =====
-
-/**
- * 通过 EventSource 等待指定任务完成
- * 超时或连接失败返回 null（调用方降级为轮询）
- */
-export function waitForTaskViaSSE(
-  taskId: string,
-  timeoutSec: number,
-): Promise<TaskResult | null> {
-  return new Promise((resolve) => {
-    let resolved = false;
-    const timer = setTimeout(() => { cleanup(); resolve(null); }, timeoutSec * 1000);
-
-    let es: EventSource | null = null;
-    try {
-      es = new EventSource('/api/generate/events');
-    } catch {
-      clearTimeout(timer);
-      resolve(null);
-      return;
-    }
-
-    function cleanup() {
-      if (es) { es.close(); es = null; }
-      clearTimeout(timer);
-    }
-
-    es.onmessage = (event: MessageEvent) => {
-      if (resolved) return;
-      try {
-        const data = JSON.parse(event.data);
-        if (data.task_id === taskId) {
-          resolved = true;
-          cleanup();
-          resolve(data as TaskResult);
-        }
-      } catch { /* 忽略解析错误 */ }
-    };
-
-    es.onerror = () => {
-      if (!resolved) {
-        resolved = true;
-        cleanup();
-        resolve(null);
-      }
-    };
-  });
 }
 
 // ===== 生成日志（顶部导航「生成日志」面板） =====

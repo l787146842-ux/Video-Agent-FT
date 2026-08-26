@@ -3,7 +3,7 @@
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatInput } from '../right-panel/ChatInput';
-import { studioActions } from '@/stores/studio';
+import { agentActions } from '@/stores/agent-state';
 
 const sendMock = vi.fn();
 
@@ -102,7 +102,7 @@ describe('ChatInput 键盘发送', () => {
 /** 发送/停止键显隐互斥（规范 §二：Agent 运行时只保留停止键，
  *  发送键仅空闲态显示；同一时刻只出现一个） */
 describe('发送/停止键显隐互斥（台账 #3）', () => {
-  afterEach(() => studioActions.setAgentBusy(false));
+  afterEach(() => agentActions.setAgentBusy(false));
 
   const sendBtn = (c: HTMLElement) => c.querySelector('button.send-btn:not(.send-btn-stop)');
   const stopBtn = (c: HTMLElement) => c.querySelector('button.send-btn.send-btn-stop');
@@ -115,15 +115,15 @@ describe('发送/停止键显隐互斥（台账 #3）', () => {
 
   it('运行态：停止键显示、发送键隐藏', () => {
     const { container } = render(() => <ChatInput />);
-    studioActions.setAgentBusy(true);
+    agentActions.setAgentBusy(true);
     expect(stopBtn(container)).toBeTruthy();
     expect(sendBtn(container)).toBeNull();
   });
 
   it('运行→空闲：恢复互斥发送键（两态往返不双显）', () => {
     const { container } = render(() => <ChatInput />);
-    studioActions.setAgentBusy(true);
-    studioActions.setAgentBusy(false);
+    agentActions.setAgentBusy(true);
+    agentActions.setAgentBusy(false);
     expect(sendBtn(container)).toBeTruthy();
     expect(stopBtn(container)).toBeNull();
   });

@@ -6,7 +6,7 @@ import { createImageDrag, absUrl } from '@/lib/chat/chat-image-drag';
 import { endCanvasImageDrag } from '@/stores/canvas';
 import { togglePinArtifact, isPinnedId, pinnedIdOf } from '@/stores/pinned';
 import type { ImageCardData } from '@/types';
-import { ImageLightbox } from './ImageLightbox';
+import { Lightbox } from '@/components/Lightbox';
 
 /**
  * 生图结果卡片 + 原图预览 lightbox（拖拽/下载/Esc 关闭）。
@@ -95,7 +95,7 @@ export function ImageResultCard(props: { card: ImageCardData }) {
       </Show>
 
       {/* 原图预览 lightbox（共享组件；Esc 关闭见上方监听） */}
-      <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl('')} />
+      <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl('')} />
     </>
   );
 }

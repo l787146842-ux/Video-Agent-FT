@@ -4,6 +4,7 @@
  * （见 stores/studio.ts），此处仅保留拖拽排序的细粒度端点。
  */
 import type { ReorderRequest } from '@/types/api.generated';
+import { buildAuthHeaders } from './client';
 
 /** 分组排序持久化（拖拽排序后调用；静默失败不阻塞 UI） */
 export function reorderGroups(category: string, groupIds: string[]): void {
@@ -11,7 +12,7 @@ export function reorderGroups(category: string, groupIds: string[]): void {
   const body: ReorderRequest = { category, group_ids: groupIds };
   fetch('/api/storyboard/reorder', {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...buildAuthHeaders() },
     body: JSON.stringify(body),
   }).catch(() => {
     /* 排序已本地生效，后端同步失败忽略 */

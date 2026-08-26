@@ -22,7 +22,7 @@ vi.mock('@/stores/toast', () => ({ showToast: vi.fn() }));
 import { streamAgentChat, disconnectAgentStream, stopAgentStream, useAgentStream } from '../use-sse';
 import { startAgentTask, fetchAgentTaskEvents, stopAgentTask, listAgentTasks, postAgentTaskGuidance } from '@/api/sse';
 import { chatState } from '@/stores/chat';
-import { state } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { showToast } from '@/stores/toast';
 import { requestInsertMedia } from '@/lib/chat/chat-input-bridge';
 import { ApiError } from '@/api/client';
@@ -97,7 +97,7 @@ describe('正常完成后假错误气泡回归（主动断开不得误判为失�
     await tick(); // 等 abort 引发的 AbortError rejection 进 connectToTask catch
     expect(spies.finishStream).toHaveBeenCalledTimes(1);
     expect(spies.streamError).not.toHaveBeenCalled();
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
     expect(chatState.isStreaming).toBe(false);
   });
 
@@ -108,7 +108,7 @@ describe('正常完成后假错误气泡回归（主动断开不得误判为失�
     await streamAgentChat(req);
     await tick();
     expect(spies.streamError).toHaveBeenCalledTimes(1); // 真实错误保留，无重复
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('运行中主动断开（切项目 disconnect）：AbortError 静默不落气泡', async () => {
@@ -118,14 +118,14 @@ describe('正常完成后假错误气泡回归（主动断开不得误判为失�
     disconnectAgentStream(); // 归属先置空再 abort（与切项目路径一致）
     await tick(); // 等 AbortError rejection 进 catch
     expect(spies.streamError).not.toHaveBeenCalled();
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('真实订阅失败（4xx 任务面错误）：仍产生错误消息（不被静默）', async () => {
     vi.mocked(fetchAgentTaskEvents).mockResolvedValue(sseResponse([], 404));
     await streamAgentChat(req);
     expect(spies.streamError).toHaveBeenCalledTimes(1);
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 });
 
@@ -140,7 +140,7 @@ describe('收尾状态机（completed / error / stopped 终态）', () => {
     expect(spies.finishStream).toHaveBeenCalledTimes(1);
     expect(spies.finishStream.mock.calls[0][0].text).toBe('回复完成');
     expect(spies.appendDelta).toHaveBeenCalledWith('你好，');
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
     expect(chatState.isStreaming).toBe(false);
   });
 
@@ -154,7 +154,7 @@ describe('收尾状态机（completed / error / stopped 终态）', () => {
       code: 'err.auth.invalid_key', kind: 'auth', message: 'API Key 无效', raw: 'upstream 401',
     }));
     expect(useAgentStream().error()).toBe('API Key 无效');
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('error（旧事件仅 error_code）：legacy 桥接归类仍可用', async () => {
@@ -176,7 +176,7 @@ describe('收尾状态机（completed / error / stopped 终态）', () => {
     expect(spies.cancelStream.mock.calls[0][0]).toEqual({
       phase: 'thinking', inflight: [{ task_id: 'g1', media_type: 'image' }],
     });
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('流式中已点停止按钮（currentTask 置空）：服务端迟到 stopped 帧不重复落气泡', async () => {
@@ -196,7 +196,7 @@ describe('建任务失败归类（streamAgentChat catch）', () => {
     vi.mocked(startAgentTask).mockRejectedValue(new ApiError(401, 'Key 无效', payload));
     await streamAgentChat(req);
     expect(spies.streamError.mock.calls[0][0]).toEqual(payload);
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('fetch 网络层失败（非 ApiError）：归 network', async () => {
@@ -205,7 +205,7 @@ describe('建任务失败归类（streamAgentChat catch）', () => {
     expect(spies.streamError.mock.calls[0][0]).toEqual(expect.objectContaining({
       kind: 'network', code: 'err.network.connection',
     }));
-    expect(state.agentBusy).toBe(false);
+    expect(agentState.agentBusy).toBe(false);
   });
 
   it('忙碌中重复发起：早退不建新任务', async () => {

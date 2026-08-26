@@ -5,7 +5,7 @@ import { safeUrl } from '@/lib/utils';
 import { absUrl } from '@/lib/chat/chat-image-drag';
 import { togglePinArtifact, isPinnedId, pinnedIdOf } from '@/stores/pinned';
 import type { VideoCardData } from '@/types';
-import { MediaLightbox } from './MediaLightbox';
+import { Lightbox } from '@/components/Lightbox';
 
 /**
  * 视频结果内联预览卡：复用 ImageResultCard 的结构与交互模式
@@ -88,7 +88,7 @@ export function VideoResultCard(props: { card: VideoCardData }) {
 
       {/* 视频播放 lightbox（共享组件，autoplay + 下载；Esc 关闭见上方监听） */}
       <Show when={lightboxUrl()}>
-        <MediaLightbox url={lightboxUrl()} kind="video" onClose={() => setLightboxUrl('')} />
+        <Lightbox mode="media" url={lightboxUrl()} kind="video" onClose={() => setLightboxUrl('')} />
       </Show>
     </>
   );

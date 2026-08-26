@@ -7,7 +7,7 @@
  *
  * 忙碌守卫：分支会切换活跃对话，流式中禁止（UI 层点击时兜底提示）。
  */
-import { state } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { convActions } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
 import { createSnapshot, branchSnapshot } from '@/api/conversations';
@@ -18,7 +18,7 @@ import { t } from '@/lib/locale';
  * 返回 true = 分支创建成功（已切换到新对话）。
  */
 export async function branchAtMessage(upToIndex: number): Promise<boolean> {
-  if (state.agentBusy) {
+  if (agentState.agentBusy) {
     showToast(t('rp.conv.busyGuard'), 'warning');
     return false;
   }

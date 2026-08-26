@@ -4,7 +4,7 @@ import {
 } from 'solid-icons/fi';
 import { chatState, chatActions } from '@/stores/chat';
 import type { QueuedMessage } from '@/stores/chat';
-import { state as studioState } from '@/stores/studio';
+import { agentState } from '@/stores/agent-state';
 import { showToast } from '@/stores/toast';
 import { submitMessage } from '@/lib/submit-message';
 import { convActions } from '@/stores/conversations';
@@ -46,7 +46,7 @@ export function QueuedMessagesBar(props: {
   /** 在侧边聊天中打开：新建对话窗口并把这条消息发过去（Agent 忙碌时禁止新建对话） */
   async function openInSideChat(item: QueuedMessage) {
     setMenuId('');
-    if (studioState.agentBusy) {
+    if (agentState.agentBusy) {
       showToast(t('rp.queue.openSideBusy'), 'warning');
       return;
     }

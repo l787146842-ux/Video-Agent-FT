@@ -2,7 +2,7 @@
  * 文件上传 API
  * 端点：POST /api/ai/upload（multipart/form-data）
  */
-import { ApiError } from './client';
+import { ApiError, buildAuthHeaders } from './client';
 import { httpErrorPayload } from '@/lib/error-payload';
 
 export interface UploadedFile {
@@ -24,7 +24,7 @@ export async function uploadFiles(files: File[]): Promise<UploadedFile[]> {
   const form = new FormData();
   files.forEach((f) => form.append('files', f));
 
-  const res = await fetch('/api/ai/upload', { method: 'POST', body: form });
+  const res = await fetch('/api/ai/upload', { method: 'POST', headers: buildAuthHeaders(), body: form });
   if (!res.ok) {
     let body: Record<string, unknown> | null = null;
     try {
