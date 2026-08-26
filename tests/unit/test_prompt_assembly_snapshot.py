@@ -83,7 +83,7 @@ def build_snapshot_scenarios():
 
 
 def test_assembly_snapshot_matches_golden():
-    """注册制重构不改变组装输出：逐字节与改造前采集的 golden 一致"""
+    """组装输出逐字节与 golden 一致（P2-2 段序手术后 golden 已同批重采）"""
     assert FIXTURE.exists(), "golden 缺失：须先在改造前采集基线"
     golden = json.loads(FIXTURE.read_text(encoding="utf-8"))
     actual = build_snapshot_scenarios()
@@ -177,13 +177,15 @@ def test_stage_note_standalone_builder_fallback():
 # ---------- 段落注册表（任务#15 P2：提示词注册制） ----------
 
 def test_prompt_sections_registry_names_and_order():
-    """11 个具名段全覆盖，段序与历史拼装顺序 1:1（保前缀缓存约束）；
-    session_summary 为任务#16 新增专用摘要段，紧随协议段，既有各段相对顺序不变"""
+    """11 个具名段全覆盖，段序与拼装顺序 1:1（保前缀缓存约束）；
+    P2-2 段序手术：session_summary 15→65（compaction 激活不再击穿稳定前缀）、
+    selected_draft 50→75（UI 点击不再击穿 global_settings 前缀），
+    其余各段相对顺序不变"""
     from src.video_agent.core.prompt_builder import PROMPT_SECTIONS
     assert [s.name for s in PROMPT_SECTIONS] == [
-        "protocol", "session_summary", "catalog", "mcp_catalog", "iron_rules",
-        "selected_draft", "global_settings", "state_json", "stage_note",
-        "storyboard_progress", "selected_skill",
+        "protocol", "catalog", "mcp_catalog", "iron_rules",
+        "global_settings", "session_summary", "state_json", "selected_draft",
+        "stage_note", "storyboard_progress", "selected_skill",
     ]
     orders = [s.order for s in PROMPT_SECTIONS]
     assert orders == sorted(orders) and len(set(orders)) == len(orders)

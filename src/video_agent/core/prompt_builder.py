@@ -540,7 +540,8 @@ def _sec_protocol(pb: "PromptBuilder", context: "PlannerContext") -> str:
 
 
 def _sec_session_summary(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """会话摘要专用段：紧跟协议段之后。
+    """会话摘要专用段：位于全局设置段之后、状态 JSON 段之前
+    （P2-2 段序手术：compaction 激活不再击穿稳定前缀）。
     压缩摘要置于 system 段而非伪装成 history 首条 user 消息；
     是否注入按 interaction.session_summary.active 每轮判定（由
     chat_consume._maybe_compact_history 每请求签发：压缩生效置 True，
@@ -588,7 +589,8 @@ def _sec_iron_rules(pb: "PromptBuilder", context: "PlannerContext") -> str:
 
 
 def _sec_selected_draft(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """前端当前选中的草稿指针（类型标注）。"""
+    """前端当前选中的草稿指针（类型标注）：位于状态 JSON 段之后
+    （P2-2 段序手术：UI 点击切换不再击穿前缀稳定段）。"""
     if not (context.use_studio_context and context.selected_draft_id):
         return ""
     return (
@@ -665,14 +667,17 @@ def _validate_prompt_sections(
 
 PROMPT_SECTIONS: Tuple[PromptSectionSpec, ...] = _validate_prompt_sections((
     PromptSectionSpec("protocol", 10, _sec_protocol),
-    # 会话摘要专用段：紧随协议段，既有各段相对顺序不变
-    PromptSectionSpec("session_summary", 15, _sec_session_summary),
     PromptSectionSpec("catalog", 20, _sec_catalog),
     PromptSectionSpec("mcp_catalog", 30, _sec_mcp_catalog),
     PromptSectionSpec("iron_rules", 40, _sec_iron_rules),
-    PromptSectionSpec("selected_draft", 50, _sec_selected_draft),
     PromptSectionSpec("global_settings", 60, _sec_global_settings),
+    # P2-2 段序手术：摘要段后移至全局设置之后、状态 JSON 之前——
+    # compaction 激活不再击穿协议/目录等稳定前缀（KV-cache 友好）
+    PromptSectionSpec("session_summary", 65, _sec_session_summary),
     PromptSectionSpec("state_json", 70, _sec_state_json),
+    # P2-2 段序手术：选中草稿指针后移至状态 JSON 之后——
+    # UI 点击切换草稿不再击穿 global_settings 及以前的稳定前缀
+    PromptSectionSpec("selected_draft", 75, _sec_selected_draft),
     PromptSectionSpec("stage_note", 80, _sec_stage_note),
     PromptSectionSpec("storyboard_progress", 90, _sec_storyboard_progress),
     PromptSectionSpec("selected_skill", 100, _sec_selected_skill),

@@ -2,7 +2,8 @@
 
 批 1：摘要不再伪装成 history 首条 user 消息——history 只留最近 KEEP 条，
 摘要经 interaction.session_summary.active 标记由 prompt_builder 的
-session_summary 段（紧随协议段）注入；未触发/失败回落同步清除标记。
+session_summary 段（P2-2 段序手术后位于全局设置段之后、状态 JSON 段之前）
+注入；未触发/失败回落同步清除标记。
 批 2：压缩结果客观探针（摘要长度/关键产物名命中率）拼入 compact
 上下文事件 detail；探针只记录不阻断。
 """
@@ -16,11 +17,12 @@ from src.video_agent.web import chat_consume
 
 # ---------- 批 1：注入形态 ----------
 
-def test_session_summary_section_registered_right_after_protocol():
-    """专用摘要段登记在协议段之后、Skill 目录段之前（既有段相对顺序不变）"""
+def test_session_summary_section_registered_before_state_json():
+    """P2-2 段序手术：专用摘要段登记在全局设置段之后、状态 JSON 段之前
+    （compaction 激活不再击穿稳定前缀）"""
     names = [s.name for s in pb_mod.PROMPT_SECTIONS]
-    assert names.index("session_summary") == names.index("protocol") + 1
-    assert names.index("session_summary") < names.index("catalog")
+    assert names.index("session_summary") == names.index("global_settings") + 1
+    assert names.index("session_summary") < names.index("state_json")
 
 
 def test_section_injects_when_active():

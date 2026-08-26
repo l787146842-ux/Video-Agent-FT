@@ -60,7 +60,8 @@ def _history_fingerprint(older: List[Dict[str, Any]]) -> str:
 
 def _set_summary_active(svc, active: bool) -> None:
     """摘要注入形态标记：system prompt 的专用摘要段
-    （prompt_builder session_summary 段，紧随协议段）按
+    （prompt_builder session_summary 段，位于全局设置段之后、
+    状态 JSON 段之前）按
     interaction.session_summary.active 决定本轮是否注入。
     压缩生效置 True；未触发/失败回落原 history 时置 False
     （防先前轮次残留标记把陈旧摘要注入未压缩的完整历史）。
@@ -223,7 +224,8 @@ async def _maybe_compact_history(
     注入形态：摘要不伪装成 history 首条 user
     消息，而是经 interaction.session_summary.active 每请求标记，由
     system prompt 的专用摘要段（prompt_builder session_summary 段，
-    紧随协议段）注入；history 本体只留最近 KEEP 条。压缩事件连同
+    位于全局设置段之后、状态 JSON 段之前）注入；history 本体只留最近
+    KEEP 条。压缩事件连同
     客观探针（摘要长度/产物名命中率）全量事件化入 trace。"""
     threshold = int(getattr(settings, "history_compact_threshold", 0) or 0)
     if threshold <= 0 or adapter is None:
