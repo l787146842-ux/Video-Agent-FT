@@ -14,6 +14,7 @@ class GenerateImageParams(BaseModel):
 class GenerateImageTool(BaseTool):
     name = "generate_image"
     risk = "high"  # §2.7：生成类（外部副作用/花钱）
+    approval_tier = "confirm"  # P2-5 首批显式声明：执行前确认卡（花钱/外部副作用）
     detail_tier = "expand"  # 产出类
     description = (
         "根据传入的提示词和可选的参考图片，生成一张图片并返回图片地址。"

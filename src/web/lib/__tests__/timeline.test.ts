@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  argsPreviewEntries, consolidateTimeline, formatElapsed, resultSummaryView,
-  timelineFromMessage, toolDetailTier, type TimelineItem,
+  approvalInteractionLabel, argsPreviewEntries, consolidateTimeline, formatElapsed,
+  resultSummaryView, timelineFromMessage, toolApprovalTier, toolDetailTier, type TimelineItem,
 } from '../timeline';
 import type { ChatMessage } from '@/types';
 
@@ -116,6 +116,37 @@ describe('toolDetailTier 工具详情分级', () => {
 
   it('内部条目恒定 none（TOOL_DETAIL_INTERNAL_NONE 名单登记）', () => {
     expect(toolDetailTier('model_reasoning')).toBe('none');
+  });
+});
+
+/** 工具审批分级正交轴（任务 P2-5；后端 approval_tier 元数据驱动，纯函数钉死） */
+describe('toolApprovalTier 工具审批分级', () => {
+  it('confirm 档：生成族首批显式声明 + high 风险推导档（后端生效档生成）', () => {
+    [
+      'generate_image', 'generate_video', 'image_generate',
+      'document_write', 'canvas_add_node', 'canvas_update_node',
+      'canvas_delete_node', 'canvas_batch_add_nodes',
+    ].forEach((n) => expect(toolApprovalTier(n)).toBe('confirm'));
+  });
+
+  it('none 档：只读/可撤销写状态类工具（后端推导档生成）', () => {
+    [
+      'read_skill', 'read_draft', 'read_uploaded_doc', 'read_project_doc',
+      'view_storyboard_media', 'storyboard_media_to_chat', 'canvas_list',
+      'canvas_read_nodes', 'canvas_list_assets', 'workflow_pause',
+      'flow_directive', 'mcp_tool_catalog',
+    ].forEach((n) => expect(toolApprovalTier(n)).toBe('none'));
+  });
+
+  it('默认档：未登记工具/无名条目按 high 口径 deny-by-default 一律 confirm', () => {
+    expect(toolApprovalTier('unknown_tool')).toBe('confirm');
+    expect(toolApprovalTier(undefined)).toBe('confirm');
+  });
+
+  it('approvalInteractionLabel 确认卡/审批交互档位映射', () => {
+    expect(approvalInteractionLabel('confirm')).toBe('需确认');
+    expect(approvalInteractionLabel('review')).toBe('需审批');
+    expect(approvalInteractionLabel('none')).toBe('');
   });
 });
 

@@ -6,6 +6,13 @@ from pydantic import BaseModel, Field
 # 风险分级合法枚举（宪法 §2.7 单一事实源；注册校验/闸机消费同引用）
 RISK_TIERS = ("low", "medium", "high")
 
+# 审批分级正交轴合法枚举（任务 P2-5；与 risk 正交：risk 答「多危险」，
+# approval_tier 答「执行前要人做什么」）：
+# none=无需审批直接执行；confirm=执行前确认卡（用户点确认才跑）；
+# review=执行后人工审批复核。未声明者按生效档推导（见 manager，
+# high risk 默认 confirm，deny-by-default 同口径）。
+APPROVAL_TIERS = ("none", "confirm", "review")
+
 # 前端时间线展示档合法枚举（展示档元数据驱动，前端不硬编码工具名）：
 # expand=可展开看输入参数预览+执行结果；output=仅输出留痕（不显示输入）。
 # 未声明者前端默认归 output（新工具至少留输出痕迹）；非工具内部条目
@@ -45,6 +52,10 @@ class BaseTool(ABC):
     # 必须由子类显式声明；未声明者在 ToolManager.register 被拒绝注册
     # （deny-by-default，不得静默放行）。
     risk: str = ""
+    # 审批分级正交轴（任务 P2-5）：取值见 APPROVAL_TIERS；空 = 未声明，
+    # 生效档由 ToolManager 推导（high risk 默认 confirm，其余默认 none）。
+    # 声明了非法取值会在 ToolManager.register 被拒绝（注册校验强化，§2.7）。
+    approval_tier: str = ""
     # 前端时间线展示档：取值见 DETAIL_TIERS；空 = 未声明，
     # 前端默认 output（展示档非安全闸，不 deny-by-default，但声明优先）。
     detail_tier: str = ""

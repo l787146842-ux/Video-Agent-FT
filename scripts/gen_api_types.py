@@ -102,8 +102,9 @@ def gen_interface(name: str, schema: Dict[str, Any], components: Dict[str, Any])
 
 # ===== SSE sidecar（任务 #4 批 1）：后端契约模型 → JSON 导出 =====
 
-def _collect_tool_detail_tiers() -> Dict[str, str]:
-    """工具展示档确定性采集：不依赖调用时刻的全局注册态。
+def _collect_tool_tiers() -> tuple[Dict[str, str], Dict[str, str]]:
+    """工具元数据确定性采集：不依赖调用时刻的全局注册态。
+    返回 (展示档表, 审批档表)，两表同一次隔离注册态上采集（任务 P2-5）。
 
     全量 pytest 会话中其他测试会向 ToolManager 增删注册（如 MCP 目录工具），
     直接读全局态会让 sidecar 随测试顺序漂移。故在隔离注册态上重放全部
@@ -127,7 +128,7 @@ def _collect_tool_detail_tiers() -> Dict[str, str]:
         register_document_tools()
         register_canvas_tools()
         ToolManager.register(McpToolCatalogTool())  # 运行时按需注册，契约面须覆盖
-        return ToolManager.get_tool_detail_tiers()
+        return ToolManager.get_tool_detail_tiers(), ToolManager.get_tool_approval_tiers()
     finally:
         ToolManager.reset()
         for tool in saved.values():
@@ -137,9 +138,10 @@ def _collect_tool_detail_tiers() -> Dict[str, str]:
 def build_sidecar() -> Dict[str, Any]:
     """从后端契约模型装配 sidecar（生成模式的权威来源；check 模式的漂移基准）。
 
-    内容四段：事件帧 schema（core/sse_events TS_EVENT_FRAMES）、错误语义契约
+    内容五段：事件帧 schema（core/sse_events TS_EVENT_FRAMES）、错误语义契约
     （web/error_payload：ErrorPayload 模型 + kind 封闭集 + legacy 桥接表）、
-    工具时间线展示档（各工具 detail_tier 声明）、默认档/内部 none 名单。
+    工具时间线展示档（各工具 detail_tier 声明）、默认档/内部 none 名单、
+    工具审批分级档（任务 P2-5：生效 approval_tier 表 + 默认档）。
     """
     # 延迟导入：确保项目根在 sys.path（以模块方式运行时自动满足）
     from src.video_agent.core.sse_events import TS_EVENT_FRAMES
@@ -149,11 +151,13 @@ def build_sidecar() -> Dict[str, Any]:
         {"name": ts_name, "schema": model.model_json_schema(by_alias=True)}
         for ts_name, model in TS_EVENT_FRAMES
     ]
+    detail_tiers, approval_tiers = _collect_tool_tiers()
     return {
         "version": 1,
         "source": (
             "生成物勿手改：python scripts/gen_api_types.py。事实源 = "
-            "core/sse_events.py TS_EVENT_FRAMES + web/error_payload.py + 工具 detail_tier 声明"
+            "core/sse_events.py TS_EVENT_FRAMES + web/error_payload.py + "
+            "工具 detail_tier/approval_tier 声明"
         ),
         "frames": frames,
         "error_contract": {
@@ -164,9 +168,13 @@ def build_sidecar() -> Dict[str, Any]:
                 for k, (kind, code) in sorted(ep.LEGACY_CODE_MAP.items())
             },
         },
-        "tool_detail_tiers": dict(sorted(_collect_tool_detail_tiers().items())),
+        "tool_detail_tiers": dict(sorted(detail_tiers.items())),
         "tool_detail_tier_default": "output",
         "tool_detail_internal_none": list(_TOOL_DETAIL_INTERNAL_NONE),
+        # 任务 P2-5：生效审批分级（显式声明 + 推导档统一收录）；默认档
+        # confirm = 未登记工具按 high risk 口径 deny-by-default
+        "tool_approval_tiers": dict(sorted(approval_tiers.items())),
+        "tool_approval_tier_default": "confirm",
     }
 
 
@@ -228,6 +236,18 @@ def _render_sse_section(sidecar: Dict[str, Any]) -> List[str]:
     chunks.append("/** 非工具内部条目（恒定 none，不经元数据） */")
     internal = ", ".join(f"'{n}'" for n in sidecar["tool_detail_internal_none"])
     chunks.append(f"export const TOOL_DETAIL_INTERNAL_NONE: readonly string[] = [{internal}] as const;")
+    chunks.append("")
+
+    # 任务 P2-5：审批分级正交轴（与展示档正交；前端确认卡/审批交互映射依据）
+    chunks.append("// ===== 工具审批分级档（来源：各工具 approval_tier 声明/推导，sidecar 导出）=====")
+    chunks.append("")
+    chunks.append("/** 工具名 → 生效审批档（none=无需审批 / confirm=执行前确认卡 / review=人工审批复核） */")
+    chunks.append("export const TOOL_APPROVAL_TIERS: Record<string, 'none' | 'confirm' | 'review'> = {")
+    for tool, tier in sidecar["tool_approval_tiers"].items():
+        chunks.append(f"  {tool}: '{tier}',")
+    chunks.append("};")
+    chunks.append("/** 未登记工具的默认档（high risk 口径，deny-by-default） */")
+    chunks.append(f"export const TOOL_APPROVAL_TIER_DEFAULT = '{sidecar['tool_approval_tier_default']}' as const;")
     chunks.append("")
     return chunks
 

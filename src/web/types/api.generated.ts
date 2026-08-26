@@ -595,3 +595,36 @@ export const TOOL_DETAIL_TIERS: Record<string, 'expand' | 'output'> = {
 export const TOOL_DETAIL_TIER_DEFAULT = 'output' as const;
 /** 非工具内部条目（恒定 none，不经元数据） */
 export const TOOL_DETAIL_INTERNAL_NONE: readonly string[] = ['model_reasoning'] as const;
+
+// ===== 工具审批分级档（来源：各工具 approval_tier 声明/推导，sidecar 导出）=====
+
+/** 工具名 → 生效审批档（none=无需审批 / confirm=执行前确认卡 / review=人工审批复核） */
+export const TOOL_APPROVAL_TIERS: Record<string, 'none' | 'confirm' | 'review'> = {
+  canvas_add_node: 'confirm',
+  canvas_batch_add_nodes: 'confirm',
+  canvas_delete_node: 'confirm',
+  canvas_list: 'none',
+  canvas_list_assets: 'none',
+  canvas_read_nodes: 'none',
+  canvas_update_node: 'confirm',
+  document_write: 'confirm',
+  flow_directive: 'none',
+  generate_image: 'confirm',
+  generate_video: 'confirm',
+  image_generate: 'confirm',
+  mcp_tool_catalog: 'none',
+  read_draft: 'none',
+  read_project_doc: 'none',
+  read_skill: 'none',
+  read_uploaded_doc: 'none',
+  storyboard_add_draft: 'none',
+  storyboard_confirm_draft: 'none',
+  storyboard_create_group: 'none',
+  storyboard_delete_group: 'none',
+  storyboard_media_to_chat: 'none',
+  storyboard_patch_draft: 'none',
+  view_storyboard_media: 'none',
+  workflow_pause: 'none',
+};
+/** 未登记工具的默认档（high risk 口径，deny-by-default） */
+export const TOOL_APPROVAL_TIER_DEFAULT = 'confirm' as const;

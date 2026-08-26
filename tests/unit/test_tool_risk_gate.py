@@ -139,6 +139,12 @@ class _OkRiskTool(_NoRiskTool):
     risk = "low"
 
 
+class _BadApprovalTool(_NoRiskTool):
+    name = "_probe_bad_approval"
+    risk = "low"
+    approval_tier = "sign-off"  # 非法取值：注册期拒收（任务 P2-5）
+
+
 class TestRegistrationEnforcement:
     def test_register_rejects_undeclared_risk(self):
         with pytest.raises(ValueError):
@@ -170,6 +176,49 @@ class TestRegistrationEnforcement:
         assert ToolManager.get_tool_risk("__not_registered__") == "high"
         assert ToolManager.get_tool_risk("document_write") == "high"
         assert ToolManager.get_tool_risk("read_skill") == "low"
+
+
+# ---------- 审批分级正交轴（任务 P2-5） ----------
+
+class TestApprovalTier:
+    def test_generation_family_declares_confirm(self):
+        """生成族首批显式声明 approval_tier（与 risk 正交的第二轴）。"""
+        from src.video_agent.tools.document_tools import ImageGenerateTool
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        from src.video_agent.tools.vision.generate_image import GenerateImageTool
+        for cls in (GenerateImageTool, GenerateVideoTool, ImageGenerateTool):
+            assert cls.approval_tier == "confirm", (
+                f"生成族 {cls.name} 应首批显式声明 approval_tier=confirm"
+            )
+
+    def test_register_rejects_invalid_approval_tier(self):
+        with pytest.raises(ValueError):
+            ToolManager.register(_BadApprovalTool())
+        assert "_probe_bad_approval" not in ToolManager._tools
+
+    def test_effective_tier_declared_then_derived(self):
+        """生效档：显式声明优先；未声明按 risk 推导（high→confirm，其余 none）；
+        未注册工具按 high 口径一律 confirm（deny-by-default 同口径）。"""
+        from src.video_agent.tools.document_tools import (
+            DocumentWriteTool,
+            ReadSkillTool,
+        )
+        from src.video_agent.tools.vision.generate_image import GenerateImageTool
+        ToolManager.register(GenerateImageTool())
+        ToolManager.register(DocumentWriteTool())
+        ToolManager.register(ReadSkillTool())
+        assert ToolManager.get_tool_approval_tier("generate_image") == "confirm"
+        assert ToolManager.get_tool_approval_tier("document_write") == "confirm"
+        assert ToolManager.get_tool_approval_tier("read_skill") == "none"
+        assert ToolManager.get_tool_approval_tier("__not_registered__") == "confirm"
+
+    def test_get_tool_approval_tiers_covers_registry(self):
+        """全量生效档表收录已注册工具（sidecar 导出的单一事实源）。"""
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(GenerateVideoTool())
+        tiers = ToolManager.get_tool_approval_tiers()
+        assert tiers["generate_video"] == "confirm"
+        assert all(v in ("none", "confirm", "review") for v in tiers.values())
 
 
 # ---------- platform.tool_risk 确认闸（FC 轨消费） ----------

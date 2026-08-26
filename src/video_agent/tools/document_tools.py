@@ -48,6 +48,10 @@ class ReadSkillInput(BaseModel):
     start: int = Field(
         0, ge=0, description="读取起始位置（字符偏移，相对全文原文）；正文超长时工具会返回"
         "下一段的 start 值，传入即可续读（section 指定时以该章节为基准续读）")
+    resource: str = Field(
+        "", description="可选：目录包 Skill 的附属资源路径（如 references/五行特效提示词库.md，"
+        "主文对应环节会给出按需加载指引）；传入则只返回该资源文件内容（超长可按 start 续读），"
+        "仅清单内资源可读；单文件 Skill 不支持本参数")
 
 
 class ReadProjectDocInput(BaseModel):
@@ -274,6 +278,7 @@ class ReadSkillTool(BaseTool):
         "按需加载指定 Skill 的完整流程文档。上下文里只有 Skill 目录（名称+摘要），"
         "执行任务前必须先调用本工具读取对应 Skill 全文，不要凭目录摘要自行推测流程。"
         "选中 Skill 超长分级注入时，按章节目录传 section（章节标题）或 start（字符偏移）续读对应章节。"
+        "目录包 Skill 的附属参考资料（主文标注「按需加载」处）传 resource（如 references/…）单独读取。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -302,6 +307,26 @@ class ReadSkillTool(BaseTool):
                 success=False,
                 error=f"未找到 Skill「{wanted}」。可用 Skill：{'、'.join(available) or '无'}",
             )
+        # 目录包资源按需加载（P2-4）：resource 与正文/章节互斥，
+        # 只放行资源清单内文件（fail-closed 归 registry.resolve_skill_resource）
+        resource = (params.resource or "").strip()
+        if resource:
+            res_path, res_err = registry.resolve_skill_resource(wanted, resource)
+            if res_path is None:
+                return ToolResult(success=False, error=res_err)
+            try:
+                res_text = res_path.read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeDecodeError) as e:
+                return ToolResult(success=False, error=f"资源读取失败 {resource}: {e}")
+            start = max(0, params.start)
+            if start >= len(res_text) and res_text:
+                return ToolResult(
+                    success=False,
+                    error=f"资源已读完（共 {len(res_text)} 字，无后续内容）")
+            body, note = _slice_content(res_text, start)
+            return ToolResult(success=True, data={
+                "name": matched, "resource": resource, "content": body + note,
+            })
         # 章节续读：section 命中章节目录时只返回该章节全文，
         # start 相对章节起点；未命中时回喂可用章节清单（不阻断，给模型纠错机会）
         section = (params.section or "").strip()
@@ -374,6 +399,7 @@ class ReadProjectDocTool(BaseTool):
 class ImageGenerateTool(BaseTool):
     name = "image_generate"
     risk = "high"  # §2.7：生成类（外部副作用/花钱），经生成确认闸覆盖
+    approval_tier = "confirm"  # P2-5 首批显式声明：执行前确认卡（花钱/外部副作用）
     detail_tier = "expand"  # 产出类
     description = (
         "触发图片生成（危险操作）。仅当用户明确要求'生成/出图/执行'时才可调用。"

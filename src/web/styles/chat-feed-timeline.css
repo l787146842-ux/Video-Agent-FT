@@ -56,5 +56,9 @@
   /* 规划级执行器徽标（欠账显性化：不产真实媒体的阶段据实标注） */
   .tl-planning-badge { flex-shrink: 0; font-size: var(--font-2xs); line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid var(--color-confirm-border); background: var(--color-confirm-bg); color: var(--color-confirm); white-space: nowrap; }
   .skill-planning-badge { flex-shrink: 0; font-size: var(--font-2xs); line-height: 1; padding: 2px 5px; border-radius: 4px; border: 1px solid var(--color-confirm-border); background: var(--color-confirm-bg); color: var(--color-confirm); white-space: nowrap; align-self: center; }
+  /* 任务 P2-5 审批档交互徽标（confirm=需确认橙 / review=需审批黄；none 档不挂） */
+  .tl-approval-badge { flex-shrink: 0; font-size: var(--font-2xs); line-height: 1; padding: 2px 5px; border-radius: 4px; white-space: nowrap; }
+  .tl-approval-confirm { border: 1px solid var(--color-confirm-border); background: var(--color-confirm-bg); color: var(--color-confirm); }
+  .tl-approval-review { border: 1px solid color-mix(in srgb, var(--color-warning) 45%, transparent); background: color-mix(in srgb, var(--color-warning) 12%, transparent); color: var(--color-warning); }
   @keyframes tlSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 }

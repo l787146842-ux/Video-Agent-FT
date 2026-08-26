@@ -4,7 +4,8 @@
  * 钉死契约：
  * ① expand 档：折叠态一句话结果（一眼信息不变），展开看输入参数预览+执行结果；
  * ② 中间档：仅输出留痕，不渲染详情卡与输入（即使携带 args）；
- * ③ 不展开档：保持单行摘要形态；运行态不渲染详情区。
+ * ③ 不展开档：保持单行摘要形态；运行态不渲染详情区；
+ * ④ 任务 P2-5：审批档交互徽标映射（confirm=需确认 / none 不挂）。
  */
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect } from 'vitest';
@@ -88,5 +89,28 @@ describe('时间线分级展开：中间档与不展开档', () => {
     ));
     expect(container.querySelector('.tl-detail-toggle')).toBeNull();
     expect(container.querySelector('.tl-item-result')).toBeNull();
+  });
+});
+
+describe('时间线审批档交互徽标（任务 P2-5 正交轴映射）', () => {
+  it('confirm 档工具（生成族）挂「需确认」徽标（expand 档折叠钮内）', () => {
+    const { container } = render(() => (
+      <AgentTimeline items={[doneItem('t-1-0', '生成图片', 8000, {
+        name: 'generate_image', result_summary: '产出 1 张图',
+        args: { prompt: '水墨山水' },
+      })]} />
+    ));
+    const badge = container.querySelector('.tl-approval-confirm');
+    expect(badge?.textContent).toBe('需确认');
+    expect(container.querySelector('.tl-approval-review')).toBeNull();
+  });
+
+  it('none 档工具（只读类）不挂审批徽标', () => {
+    const { container } = render(() => (
+      <AgentTimeline items={[doneItem('t-1-0', '读取技能', 30, {
+        name: 'read_skill', result_summary: '读取完成',
+      })]} />
+    ));
+    expect(container.querySelector('.tl-approval-badge')).toBeNull();
   });
 });

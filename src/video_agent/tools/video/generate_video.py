@@ -22,6 +22,7 @@ class GenerateVideoParams(BaseModel):
 class GenerateVideoTool(BaseTool):
     name = "generate_video"
     risk = "high"  # §2.7：生成类（外部副作用/花钱）
+    approval_tier = "confirm"  # P2-5 首批显式声明：执行前确认卡（花钱/外部副作用）
     detail_tier = "expand"  # 产出类
     description = "根据传入的首帧图片和提示词，生成高清视频并返回结果。"
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source": "生成物勿手改：python scripts/gen_api_types.py。事实源 = core/sse_events.py TS_EVENT_FRAMES + web/error_payload.py + 工具 detail_tier 声明",
+  "source": "生成物勿手改：python scripts/gen_api_types.py。事实源 = core/sse_events.py TS_EVENT_FRAMES + web/error_payload.py + 工具 detail_tier/approval_tier 声明",
   "frames": [
     {
       "name": "SseStatusEvent",
@@ -1845,5 +1845,33 @@
   "tool_detail_tier_default": "output",
   "tool_detail_internal_none": [
     "model_reasoning"
-  ]
+  ],
+  "tool_approval_tiers": {
+    "canvas_add_node": "confirm",
+    "canvas_batch_add_nodes": "confirm",
+    "canvas_delete_node": "confirm",
+    "canvas_list": "none",
+    "canvas_list_assets": "none",
+    "canvas_read_nodes": "none",
+    "canvas_update_node": "confirm",
+    "document_write": "confirm",
+    "flow_directive": "none",
+    "generate_image": "confirm",
+    "generate_video": "confirm",
+    "image_generate": "confirm",
+    "mcp_tool_catalog": "none",
+    "read_draft": "none",
+    "read_project_doc": "none",
+    "read_skill": "none",
+    "read_uploaded_doc": "none",
+    "storyboard_add_draft": "none",
+    "storyboard_confirm_draft": "none",
+    "storyboard_create_group": "none",
+    "storyboard_delete_group": "none",
+    "storyboard_media_to_chat": "none",
+    "storyboard_patch_draft": "none",
+    "view_storyboard_media": "none",
+    "workflow_pause": "none"
+  },
+  "tool_approval_tier_default": "confirm"
 }

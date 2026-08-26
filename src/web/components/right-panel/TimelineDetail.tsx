@@ -1,7 +1,8 @@
 import { For, Show, createSignal } from 'solid-js';
 import { FiChevronDown } from 'solid-icons/fi';
 import {
-  argsPreviewEntries, resultSummaryView, toolDetailTier, type TimelineItem,
+  approvalInteractionLabel,
+  argsPreviewEntries, resultSummaryView, toolApprovalTier, toolDetailTier, type TimelineItem,
 } from '@/lib/timeline';
 
 /**
@@ -9,15 +10,31 @@ import {
  * - expand 档：可折叠详情卡。折叠态 = 一句话结果摘要（一眼信息不变），
  *   展开后看「输入参数」截断预览 +「执行结果」全文；
  * - output / none 档：保持现状（结果摘要一行留痕，多句可展开全文，不显示输入）。
+ * 任务 P2-5：审批分级正交轴映射——confirm/review 档工具挂交互档徽标，
+ * 档位判定见 lib/timeline.toolApprovalTier（后端 approval_tier 元数据驱动）。
  */
 export function TimelineDetail(props: { item: TimelineItem }) {
   const [open, setOpen] = createSignal(false);
   const [resultOpen, setResultOpen] = createSignal(false);
   const tier = () => toolDetailTier(props.item.name);
+  const approval = () => toolApprovalTier(props.item.name);
+  /* 徽标只在有工具名依据时挂：无名条目无法归因到具体工具，
+   * 不按 deny-by-default 默认档徒增视觉噪声（默认档守住执行边界即可） */
+  const approvalLabel = () => (
+    props.item.name ? approvalInteractionLabel(approval()) : ''
+  );
   const entries = () => argsPreviewEntries(props.item.args);
   const result = () => props.item.result_summary || '';
   const showResult = () => !!result() && result() !== props.item.summary;
   const hasDetail = () => entries().length > 0 || showResult();
+
+  /** 审批档交互徽标（confirm=需确认 / review=需审批；none 档不渲染）；
+   * 函数式：多个分支位点各自实例化（Solid JSX 节点不可多处复用） */
+  const approvalBadge = () => (
+    <Show when={approvalLabel()}>
+      <span class={`tl-approval-badge tl-approval-${approval()}`}>{approvalLabel()}</span>
+    </Show>
+  );
 
   return (
     <Show when={props.item.status !== 'running'}>
@@ -31,6 +48,7 @@ export function TimelineDetail(props: { item: TimelineItem }) {
               fallback={
                 <span class="tl-item-result" title={result()}>
                   ↳ {result()}
+                  {approvalBadge()}
                 </span>
               }
             >
@@ -41,6 +59,7 @@ export function TimelineDetail(props: { item: TimelineItem }) {
               >
                 ↳ {resultOpen() ? result() : resultSummaryView(result()).collapsed}
                 <FiChevronDown size={11} class={`tl-item-toggle-arrow${resultOpen() ? ' expanded' : ''}`} />
+                {approvalBadge()}
               </button>
             </Show>
           </Show>
@@ -56,6 +75,7 @@ export function TimelineDetail(props: { item: TimelineItem }) {
           >
             ↳ {showResult() ? resultSummaryView(result()).collapsed : '输入参数'}
             <FiChevronDown size={11} class={`tl-item-toggle-arrow${open() ? ' expanded' : ''}`} />
+            {approvalBadge()}
           </button>
           <Show when={open()}>
             <div class="tl-detail-body">

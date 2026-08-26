@@ -12,6 +12,8 @@
 import type { ChatMessage, TraceAction } from '@/types';
 import { ledgerFromSettled } from '@/lib/turn-ledger';
 import {
+  TOOL_APPROVAL_TIER_DEFAULT,
+  TOOL_APPROVAL_TIERS,
   TOOL_DETAIL_INTERNAL_NONE,
   TOOL_DETAIL_TIER_DEFAULT,
   TOOL_DETAIL_TIERS,
@@ -70,6 +72,26 @@ export function toolDetailTier(name?: string): ToolDetailTier {
   if (!name) return TOOL_DETAIL_TIER_DEFAULT;
   if ((TOOL_DETAIL_INTERNAL_NONE as readonly string[]).includes(name)) return 'none';
   return TOOL_DETAIL_TIERS[name] ?? TOOL_DETAIL_TIER_DEFAULT;
+}
+
+/** 工具审批分级正交轴（任务 P2-5，与展示档正交，纯函数 vitest 钉死）：
+ * none = 无需审批直接执行；confirm = 执行前确认卡；review = 人工审批复核。 */
+export type ToolApprovalTier = 'none' | 'confirm' | 'review';
+
+/** 消费生成物 TOOL_APPROVAL_TIERS（后端生效 approval_tier 经 sidecar 生成）；
+ * 未登记工具走默认档 confirm（high risk 口径，deny-by-default，
+ * 与后端 ToolManager.get_tool_approval_tier 同源）。 */
+export function toolApprovalTier(name?: string): ToolApprovalTier {
+  if (!name) return TOOL_APPROVAL_TIER_DEFAULT;
+  return TOOL_APPROVAL_TIERS[name] ?? TOOL_APPROVAL_TIER_DEFAULT;
+}
+
+/** 审批档 → 确认卡/审批交互映射文案（任务 P2-5 前端确认卡档位映射）：
+ * confirm 档挂「需确认」交互档徽标，review 档挂「需审批」；none 档无交互不挂。 */
+export function approvalInteractionLabel(tier: ToolApprovalTier): string {
+  if (tier === 'confirm') return '需确认';
+  if (tier === 'review') return '需审批';
+  return '';
 }
 
 /** 输入参数预览单值截断长度（后端已裁剪，前端再保一道显示级上限） */
