@@ -63,6 +63,8 @@ class StepTrace:
     step: int = 0
     timing_ms: float = 0.0
     token_usage: int = 0
+    # P2-1 KV-cache 遥测：本轮供应商前缀缓存命中 token（0 = 未命中/端点未返回）
+    cached_tokens: int = 0
     actions_applied: int = 0
     finish_reason: str = ""
     # 本轮执行的操作明细（工具/ studio-actions），供前端时间线逐条展示
@@ -106,6 +108,9 @@ class TraceRecord:
             # 无事件不写键：历史 trace 格式不变，单条体积不增
             if s.context_events:
                 sd["context_events"] = s.context_events
+            # 同口径：缓存命中为 0 不写键（历史格式不变，体积不增）
+            if s.cached_tokens:
+                sd["cached_tokens"] = s.cached_tokens
             steps.append(sd)
         return {
             "trace_id": self.trace_id,
@@ -444,8 +449,9 @@ class AgentTracer:
         actions_applied: int = 0,
         finish_reason: str = "",
         token_usage: int = 0,
+        cached_tokens: int = 0,
     ) -> None:
-        """记录一步的完成"""
+        """记录一步的完成（cached_tokens：P2-1 KV-cache 命中遥测）"""
         ctx = self._ctx()
         if ctx.current is None:
             return
@@ -463,6 +469,7 @@ class AgentTracer:
             step=step,
             timing_ms=timing_ms,
             token_usage=token_usage,
+            cached_tokens=cached_tokens,
             actions_applied=actions_applied,
             finish_reason=finish_reason,
             actions=list(ctx.pending_actions),

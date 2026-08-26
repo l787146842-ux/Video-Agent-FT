@@ -145,12 +145,14 @@ def build_agent_context(
              "isBound": a.get("isBound", False), "url": _u(a.get("url", ""))}
             for a in assets
         ],
-        # 规格文档清单（渐进式披露）：仅名称/时间/字数/前 200 字预览，
-        # 全文不注入，模型开工前调 read_project_doc 按需读取
+        # 规格文档清单（渐进式披露）：仅名称/字数/前 200 字预览，
+        # 全文不注入，模型开工前调 read_project_doc 按需读取。
+        # P2-1 易变字段隔离：updated_at 每次落盘必变，内容未变时也会击穿
+        # 提示词前缀字节稳定性（供应商 KV-cache 命中），故移出模型可见面；
+        # 前端视图（build_frontend_view）仍随 raw state 携带，行为不变。
         "documents": [
             {
                 "name": d.get("name", ""),
-                "updated_at": d.get("updated_at", ""),
                 "char_count": len(d.get("content", "") or ""),
                 "preview": ((d.get("content", "") or "")[:200]).replace("\n", " "),
             }

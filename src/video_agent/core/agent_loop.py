@@ -360,6 +360,8 @@ async def run_agent_loop(
             plan_total = float(plan_ms or 0.0)
             # 透明度兑现：本轮 token 用量入账 trace（轮次账单数据源）
             step_tokens = int((fc_extra or {}).get("token_usage") or 0)
+            # P2-1 KV-cache 遥测：本轮前缀缓存命中 token 同步入账 step trace
+            step_cached = int((fc_extra or {}).get("cached_tokens") or 0)
             # 检查点 2（模型调用返回后）：FC 工具批已在 llm_call 内执行完毕，
             # 此时命中按刚经历的阶段标记（工具批/流式输出/思考）干净退出
             _stop_err = _stop_if_requested(
@@ -403,6 +405,7 @@ async def run_agent_loop(
                 content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
                 plan_total += float(plan_ms or 0.0)
                 step_tokens = int((fc_extra or {}).get("token_usage") or 0)
+                step_cached = int((fc_extra or {}).get("cached_tokens") or 0)
             # 规划耗时只算纯模型规划：FC 工具执行时间由各工具条目独立展示，
             # 不再把工具耗时叠进规划行导致「规划很慢」的错觉
             await emit({
@@ -425,7 +428,7 @@ async def run_agent_loop(
                 # 一键重试按钮（机械重发上一条用户消息，零模型猜测）
                 result.suggested_actions.append({"kind": "retry", "label": "重试", "value": ""})
                 tracer.end_step(step, actions_applied=0, finish_reason="bad_output",
-                                token_usage=step_tokens)
+                                token_usage=step_tokens, cached_tokens=step_cached)
                 break
 
             if finish_reason == "length":
@@ -474,7 +477,7 @@ async def run_agent_loop(
                     tracer.end_step(
                         step, actions_applied=fc_applied,
                         finish_reason=finish_reason or "confirmation",
-                        token_usage=step_tokens,
+                        token_usage=step_tokens, cached_tokens=step_cached,
                     )
                     break
                 # 6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
@@ -484,18 +487,18 @@ async def run_agent_loop(
                     if not result.suggested_actions:
                         result.suggested_actions.extend(suggest_next_actions(executor.state))
                     tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
-                                    token_usage=step_tokens)
+                                    token_usage=step_tokens, cached_tokens=step_cached)
                     break
                 if step == max_steps:
                     result.warnings.append(f"已达到多步上限（{max_steps} 轮），循环终止")
                     result.suggested_actions.append(
                         {"kind": "continue", "label": "继续完成", "value": "继续完成"})
                     tracer.end_step(step, actions_applied=fc_applied, finish_reason="max_steps",
-                                    token_usage=step_tokens)
+                                    token_usage=step_tokens, cached_tokens=step_cached)
                     break
                 tracer.end_step(step, actions_applied=fc_applied,
                                 finish_reason=finish_reason or "fc_continue",
-                                token_usage=step_tokens)
+                                token_usage=step_tokens, cached_tokens=step_cached)
                 # 回喂：让下一步 LLM 知道工具已执行（文案外置 feedback.md::STEP_FEEDBACK，
                 # 指令收敛 Rule6）
                 messages.append({"role": "assistant", "content": content or f"（已执行 {fc_applied} 个工具调用）"})
@@ -547,14 +550,14 @@ async def run_agent_loop(
                 tracer.end_step(
                     step, actions_applied=0,
                     finish_reason=_re_ctx.hard_break_finish or "confirmation",
-                    token_usage=step_tokens,
+                    token_usage=step_tokens, cached_tokens=step_cached,
                 )
                 break
             # 正常收尾：状态驱动下一步建议
             if not result.suggested_actions:
                 result.suggested_actions.extend(suggest_next_actions(executor.state))
             tracer.end_step(step, actions_applied=0, finish_reason=finish_reason or "stop",
-                            token_usage=step_tokens)
+                            token_usage=step_tokens, cached_tokens=step_cached)
             break
     except GenerationCancelled:
         # 取消穿透闭环：工具/adapters 检查点协作退出（GenerationCancelled）

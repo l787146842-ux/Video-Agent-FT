@@ -6,12 +6,13 @@ context-usage 接口优先取新鲜 live 值，静态估算作兜底——推理
 看到用量随步骤增长。
 """
 from loguru import logger
+from collections import deque
 import json
 import os
 import pathlib
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from src.video_agent.core.token_budget import estimate_messages_tokens
 
@@ -125,3 +126,54 @@ def get_degradations() -> List[Dict[str, Any]]:
 def reset_degradations() -> None:
     """测试用：清空降级计数。"""
     _DEGRADATIONS.clear()
+
+
+# ---------- P2-1 KV-cache 命中率滚动指标 ----------
+# turn_executor 每次 LLM 调用后把供应商返回的 (prompt, cached) token 记入
+# 滚动窗口，汇聚为前缀缓存命中率；context-usage 端点暴露，段序手术（P2-2/P2-3）
+# 的收益量化依据。只内存不落盘（运行期健康信号，同降级计数口径）。
+_CACHE_WINDOW = 50  # 滚动上限：防遥测自身膨胀，新样本挤掉最旧
+# project_id → deque[(prompt_tokens, cached_tokens)]
+_CACHE_SAMPLES: Dict[str, Deque[Tuple[int, int]]] = {}
+
+
+def record_cache_usage(
+    project_id: str, prompt_tokens: int, cached_tokens: int,
+) -> None:
+    """记录一次 LLM 调用的 prompt/缓存命中 token（滚动窗口）。
+
+    端点未返回 usage（prompt_tokens=0）不入样：命中率汇聚不被无数据调用稀释；
+    异常静默，遥测不阻断主流程。
+    """
+    if not project_id:
+        return
+    try:
+        prompt_tokens = max(0, int(prompt_tokens or 0))
+        cached_tokens = max(0, int(cached_tokens or 0))
+        if prompt_tokens <= 0:
+            return
+        dq = _CACHE_SAMPLES.setdefault(project_id, deque(maxlen=_CACHE_WINDOW))
+        dq.append((prompt_tokens, cached_tokens))
+    except Exception as _e:
+        logger.debug("[live_metrics] 缓存遥测忽略异常: {}", _e)
+
+
+def get_cache_stats(project_id: str) -> Dict[str, Any]:
+    """滚动窗口内的缓存命中汇聚（调试端点暴露用）：
+    hit_rate = 窗口内命中 token 总和 / prompt token 总和；无样本时全 0。"""
+    dq = _CACHE_SAMPLES.get(project_id or "")
+    if not dq:
+        return {"samples": 0, "prompt_tokens": 0, "cached_tokens": 0, "hit_rate": 0.0}
+    prompt_total = sum(p for p, _ in dq)
+    cached_total = sum(c for _, c in dq)
+    return {
+        "samples": len(dq),
+        "prompt_tokens": prompt_total,
+        "cached_tokens": cached_total,
+        "hit_rate": round(cached_total / prompt_total, 3) if prompt_total else 0.0,
+    }
+
+
+def reset_cache_stats() -> None:
+    """测试用：清空缓存命中样本。"""
+    _CACHE_SAMPLES.clear()

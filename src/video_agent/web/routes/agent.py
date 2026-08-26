@@ -27,7 +27,7 @@ from src.video_agent.web.error_payload import (
     classify_exception,
 )
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.core.live_metrics import get_degradations, get_live_context
+from src.video_agent.core.live_metrics import get_cache_stats, get_degradations, get_live_context
 from src.video_agent.core.token_budget import context_window_for_model, estimate_tokens
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
@@ -294,6 +294,7 @@ async def get_context_usage(model: str = ""):
     - chars: 上下文字符总数
     - est_tokens: 估算 token 数（与 token_budget 截断同口径：中文约1.5字/token）
     - window_tokens: 当前模型上下文窗口（供前端算圆环填充比）
+    - cache_*: P2-1 KV-cache 遥测——供应商前缀缓存命中汇聚（滚动窗口口径）
     """
     svc = StateManager.get_instance()
     # 后台任务专属实例写盘后，全局单例内存可能陈旧（反馈：用量一直 0）；
@@ -314,10 +315,16 @@ async def get_context_usage(model: str = ""):
     # 上下文规模，180s 有效期内直接采用，静态估算作兜底
     live = get_live_context(svc.active_project_id)
     est_tokens = int(live["est_tokens"]) if live else state_tokens + history_tokens
+    # P2-1 KV-cache 遥测：最近 LLM 调用的前缀缓存命中汇聚（无样本时全 0）
+    cache_stats = get_cache_stats(svc.active_project_id)
     return {
         "chars": chars,
         "est_tokens": est_tokens,
         "state_chars": len(state_json),
         "history_chars": len(history_json),
         "window_tokens": context_window_for_model(model) if model else 0,
+        "cache_hit_rate": cache_stats["hit_rate"],
+        "cache_sample_count": cache_stats["samples"],
+        "cache_prompt_tokens": cache_stats["prompt_tokens"],
+        "cache_cached_tokens": cache_stats["cached_tokens"],
     }

@@ -28,7 +28,7 @@ from src.video_agent.core.fc_tool_runner import (
     should_compress_feedback,
     strip_prior_feedback_images,
 )
-from src.video_agent.core.live_metrics import record_live_context
+from src.video_agent.core.live_metrics import record_cache_usage, record_live_context
 from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS, status_event
 from src.video_agent.core.stop_signal import (
     STOP_PHASE_TOOL_EXECUTING,
@@ -201,6 +201,9 @@ class TurnExecutor:
             stream_tool_calls: List[Dict[str, Any]] = []
             # 透明度兑现：流内 usage 机会性收集（中继未下发则 0）
             _stream_usage_tokens = 0
+            # P2-1 KV-cache 遥测：流内 prompt/缓存命中 token 同机会性收集
+            _stream_prompt_tokens = 0
+            _stream_cached_tokens = 0
             async for chunk in self.call_llm_stream(system_prompt, messages):
                 # 协作式停止：流式消费中命中停止标志即提前断流，
                 # 不再继续烧 token；后续阶段判定/收尾归 agent_loop 检查点
@@ -228,14 +231,26 @@ class TurnExecutor:
                 elif chunk.type == "done":
                     finish = chunk.finish_reason or "stop"
                     _stream_usage_tokens = int(getattr(chunk, "usage_tokens", 0) or 0)
+                    _stream_prompt_tokens = int(getattr(chunk, "prompt_tokens", 0) or 0)
+                    _stream_cached_tokens = int(getattr(chunk, "cached_tokens", 0) or 0)
             content = "".join(content_parts)
             response = ChatResponse(content=content, finish_reason=finish,
                                     tool_calls=stream_tool_calls,
-                                    token_usage=_stream_usage_tokens)
+                                    token_usage=_stream_usage_tokens,
+                                    prompt_tokens=_stream_prompt_tokens,
+                                    cached_tokens=_stream_cached_tokens)
             plan_ms = (time.monotonic() - _t_plan) * 1000
         else:
             response = await self.call_llm(system_prompt, messages)
             plan_ms = (time.monotonic() - _t_plan) * 1000
+
+        # P2-1 KV-cache 遥测：本轮命中样本入滚动窗口（汇聚命中率由
+        # live_metrics 承担，context-usage 端点暴露）；无 usage 时静默不入样
+        record_cache_usage(
+            getattr(getattr(self.planner, "state_manager", None), "active_project_id", "") or "",
+            getattr(response, "prompt_tokens", 0),
+            getattr(response, "cached_tokens", 0),
+        )
 
         # 检查点（工具批执行前）：模型已返回 tool_calls 但尚未执行，
         # 命中停止标志即抛 AgentStoppedError（agent_loop 捕获后干净收尾）；
@@ -288,6 +303,8 @@ class TurnExecutor:
         _extra: Dict[str, Any] = {}
         # 透明度兑现：本轮 token 用量随 5 元组上抛（agent_loop 入账 trace）
         _extra["token_usage"] = int(getattr(response, "token_usage", 0) or 0)
+        # P2-1 KV-cache 遥测：缓存命中同随 5 元组上抛（agent_loop 入账 trace step）
+        _extra["cached_tokens"] = int(getattr(response, "cached_tokens", 0) or 0)
         if _confirm_holder.get("message"):
             _extra.update({
                 "confirmation": _confirm_holder["message"],

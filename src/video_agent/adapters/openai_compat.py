@@ -23,6 +23,7 @@ from .base_chat import (
     ChatResponse,
     StreamChunk,
     dispatch_chat_request,
+    extract_prompt_cache_usage,
     new_request_id,
 )
 from .base import BaseImageAdapter, ImageGenerationResponse
@@ -381,12 +382,16 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         # 透明度兑现：usage.total_tokens 入响应（轮次账单数据源，缺失保 0）
         _usage = data.get("usage") or {}
         _total_tokens = int(_usage.get("total_tokens") or 0) if isinstance(_usage, dict) else 0
+        # P2-1 KV-cache 遥测：同口径提取 prompt/缓存命中 token（缺失保 0）
+        _prompt_tokens, _cached_tokens = extract_prompt_cache_usage(_usage)
         return ChatResponse(
             content=content,
             finish_reason=choices[0].get("finish_reason", "") or "",
             tool_calls=tool_calls,
             raw=data,
             token_usage=_total_tokens,
+            prompt_tokens=_prompt_tokens,
+            cached_tokens=_cached_tokens,
         )
 
     async def chat_stream(
@@ -503,15 +508,20 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                             yield StreamChunk(type="text_delta", text=content)
                         fr = choices[0].get("finish_reason", "") or "stop"
                         _ju = data.get("usage") or {}
+                        _ju_prompt, _ju_cached = extract_prompt_cache_usage(_ju)
                         yield StreamChunk(
                             type="done", finish_reason=fr,
-                            usage_tokens=int(_ju.get("total_tokens") or 0) if isinstance(_ju, dict) else 0)
+                            usage_tokens=int(_ju.get("total_tokens") or 0) if isinstance(_ju, dict) else 0,
+                            prompt_tokens=_ju_prompt, cached_tokens=_ju_cached)
                     return
 
                 last_finish = ""
                 # 透明度兑现：机会性收集流内 usage（include_usage 端点在末段
                 # 下发 choices 为空的 usage chunk；未下发则保 0，不强求不变更请求体）
                 _stream_tokens = 0
+                # P2-1 KV-cache 遥测：同机会性收集 prompt/缓存命中 token
+                _stream_prompt = 0
+                _stream_cached = 0
                 # 通知单头部累积器——中继把拒收缝进 200 流时，首段即识别抛错
                 _env_head = ""
                 _env_done = False
@@ -534,6 +544,10 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     _u = data.get("usage")
                     if isinstance(_u, dict) and _u.get("total_tokens"):
                         _stream_tokens = int(_u.get("total_tokens") or 0)
+                    if isinstance(_u, dict):
+                        _p, _c = extract_prompt_cache_usage(_u)
+                        if _p or _c:
+                            _stream_prompt, _stream_cached = _p, _c
                     if not choices:
                         continue
                     # 追踪 finish_reason（通常在最后一个 chunk 中携带）
@@ -587,7 +601,9 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                     )
                 # 流结束后 yield done chunk 携带 finish_reason（+ 机会性 usage）
                 yield StreamChunk(type="done", finish_reason=last_finish or "stop",
-                                  usage_tokens=_stream_tokens)
+                                  usage_tokens=_stream_tokens,
+                                  prompt_tokens=_stream_prompt,
+                                  cached_tokens=_stream_cached)
         except AdapterError:
             raise
         except httpx.TimeoutException:

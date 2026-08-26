@@ -9,7 +9,7 @@ with_retry 指数退避重试（上限/退避走 config）；permanent（400/401
 立即上抛结构化 AdapterError（kind 区分），不重试。
 """
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, List, Optional
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import httpx
 from pydantic import BaseModel
@@ -58,6 +58,31 @@ async def dispatch_chat_request(
     return resp
 
 
+def extract_prompt_cache_usage(usage: Any) -> Tuple[int, int]:
+    """从供应商 usage 提取 (prompt_tokens, cached_tokens)。
+
+    P2-1 KV-cache 遥测：统一各家 prompt cache 命中字段命名差异——
+    - OpenAI 系：prompt_tokens + prompt_tokens_details.cached_tokens
+    - Anthropic 中继：input_tokens + cache_read_input_tokens
+    - DeepSeek：prompt_tokens + prompt_cache_hit_tokens
+    缺失/畸形一律回落 (0, 0)：遥测可降级，不影响主流程。
+    """
+    if not isinstance(usage, dict):
+        return 0, 0
+    prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    details = usage.get("prompt_tokens_details")
+    cached = 0
+    if isinstance(details, dict):
+        cached = int(details.get("cached_tokens") or 0)
+    if cached <= 0:
+        cached = int(
+            usage.get("prompt_cache_hit_tokens")
+            or usage.get("cache_read_input_tokens")
+            or 0
+        )
+    return max(0, prompt), max(0, min(cached, prompt) if prompt > 0 else cached)
+
+
 class ChatResponse(BaseModel):
     """LLM 调用结果"""
     content: str = ""
@@ -67,6 +92,10 @@ class ChatResponse(BaseModel):
     # 本轮消耗 token（usage.total_tokens；透明度兑现：轮次账单数据源，
     # 端点未返回 usage 时保持 0，消费方按「有则展示」降级）
     token_usage: int = 0
+    # P2-1 KV-cache 遥测：本轮 prompt token 与供应商前缀缓存命中 token
+    #（提取口径见 extract_prompt_cache_usage；端点未返回时保 0）
+    prompt_tokens: int = 0
+    cached_tokens: int = 0
 
 
 class StreamChunk(BaseModel):
@@ -78,6 +107,10 @@ class StreamChunk(BaseModel):
     finish_reason: str = ""  # 仅在 type="done" 时携带（stop / length / tool_calls）
     # 仅在 type="done" 时机会性携带（中继在流内下发 usage 才有值，不强求）
     usage_tokens: int = 0
+    # 仅在 type="done" 时机会性携带：本轮 prompt token 与前缀缓存命中 token
+    #（P2-1 KV-cache 遥测，流内未下发 usage 时保 0）
+    prompt_tokens: int = 0
+    cached_tokens: int = 0
 
 
 class BaseChatAdapter(ABC):
