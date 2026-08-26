@@ -111,8 +111,8 @@
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
-      "chars": 4255,
-      "head": "**强制基线、适用于所有prompt编写情况（含图像、视频、音频提示词）：当用户"
+      "chars": 4052,
+      "head": "**图像生成提示词 (TextToImage, ImageToImage)**\n"
     },
     "assembly": {
       "chars": 39,
@@ -171,8 +171,8 @@
       "head": "**元素图像生成（风格基准测试；具体渠道与模型由全局设置决定，本文档不指定）**"
     },
     "prompt_draft": {
-      "chars": 4872,
-      "head": "**强制基线、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言"
+      "chars": 4761,
+      "head": "**图像生成提示词 (TextToImage, ImageToImage)**\n"
     },
     "assembly": {
       "chars": 128,
@@ -231,8 +231,8 @@
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage** "
     },
     "prompt_draft": {
-      "chars": 4279,
-      "head": "**强制基线、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言"
+      "chars": 4168,
+      "head": "**图像生成提示词 (TextToImage, ImageToImage)**\n"
     },
     "assembly": {
       "chars": 321,
@@ -261,8 +261,8 @@
       "head": "**元素图像生成**\n- 使用 **TextToImage**。对于处于不同状态"
     },
     "prompt_draft": {
-      "chars": 2499,
-      "head": "**强制基线、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言"
+      "chars": 2388,
+      "head": "**图像生成提示词 (TextToImage, ImageToImage) 所有"
     },
     "assembly": {
       "chars": 179,
@@ -321,8 +321,8 @@
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
-      "chars": 3613,
-      "head": "**强制基线、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言"
+      "chars": 3502,
+      "head": "**图像生成提示词 (TextToImage, ImageToImage)**\n"
     },
     "assembly": {
       "chars": 305,
@@ -351,7 +351,7 @@
       "head": "## 资产生成与绑定顺序\n- 先绑定用户已提供的资源。人物参考图直接注册并绑定为"
     },
     "prompt_draft": {
-      "chars": 4462,
+      "chars": 4407,
       "head": "## 共同写作规则\n- 使用 Markdown 分级标题与固定模块顺序，不使用表"
     },
     "assembly": {
@@ -441,8 +441,8 @@
       "head": "**元素生成**\n- **图像：** 如果用户已指定了元素的资产（例如产品图像、"
     },
     "prompt_draft": {
-      "chars": 4623,
-      "head": "**强制基线、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言"
+      "chars": 4512,
+      "head": "**图像生成提示词 (TextToImage, ImageToImage)**\n"
     },
     "assembly": {
       "chars": 129,
@@ -471,8 +471,8 @@
       "head": "**元素图像生成**\n- 使用 **TextToImage**。对于不同外观或年"
     },
     "prompt_draft": {
-      "chars": 5870,
-      "head": "**强制基线、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言"
+      "chars": 5760,
+      "head": "**图像生成提示词（TextToImage, ImageToImage）—— 图"
     },
     "assembly": {
       "chars": 359,

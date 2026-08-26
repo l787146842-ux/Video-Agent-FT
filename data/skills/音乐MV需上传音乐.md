@@ -103,7 +103,6 @@ version: '1.0'
 </generate_video>
 
 <write_media_prompt>
-**强制基线、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言环境时，提示词prompt需要用中文书写。但是prompt中有关旁白/对话的内容要严格遵循制片规格中的Output Language。**
 **图像生成提示词（TextToImage, ImageToImage）—— 图像提示词编写指南：**
 
 **所有图像提示词的通用原则：**
