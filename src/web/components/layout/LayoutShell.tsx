@@ -26,6 +26,7 @@ import {
   performRedo, performUndo, refreshHistoryStatus,
 } from '@/stores/history';
 import { uid } from '@/lib/utils';
+import { bootFail, warnBootTaskResume } from '@/lib/boot-fallback';
 import type { AssetPickerItem } from '@/api/providers';
 import { initCanvasBridge, broadcastThemeChange } from '@/lib/canvas-bridge';
 import { useTheme } from '@/hooks/use-theme';
@@ -104,12 +105,12 @@ export function LayoutShell(props: ParentProps) {
     // 全局生成设置（顶栏入口/参数栏自动填充共用）预热加载
     void ensureGlobalSettings();
 
-    // 后端未就绪时静默降级为默认空状态
+    // 后端未就绪降级为默认空状态（行为不变；warn+toast 信号见 lib/boot-fallback）
     const [snapshot, cfg, provs, skills] = await Promise.all([
-      getProjectState().catch(() => null),
-      getAppConfig().catch(() => null),
-      getProviders().catch(() => null),
-      getSkills().catch(() => null),
+      getProjectState().catch(bootFail('project-state')),
+      getAppConfig().catch(bootFail('app-config')),
+      getProviders().catch(bootFail('providers')),
+      getSkills().catch(bootFail('skills')),
     ]);
 
     if (snapshot) {
@@ -142,9 +143,8 @@ export function LayoutShell(props: ParentProps) {
     // /agent/running；任务已完成时 resumeAgentTasks 内部静默返回。
     const pid = state.projectId || '';
     if (!pid) return;
-    try {
-      await resumeAgentTasks(pid);
-    } catch { /* 后端未就绪静默 */ }
+    // 失败不阻塞启动（降级行为不变），仅加可观测信号（lib/boot-fallback）
+    try { await resumeAgentTasks(pid); } catch (err) { warnBootTaskResume(err); }
   }
 
   // 项目切换后也自动恢复该项目的后台任务订阅（刷新/切回都能继续看到进度）
