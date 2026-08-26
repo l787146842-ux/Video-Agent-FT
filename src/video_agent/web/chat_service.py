@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
@@ -251,250 +252,324 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
     return settings.default_image_provider_id, aspect_ratio
 
 
+@dataclass
+class _StreamCtx:
+    """_real_stream 三段拆分（P1-4）的参数收敛：全部入参与各阶段中间结果。
+
+    仅文件内部使用，模块命名空间导出不变（尾部承重壳 re-export 保持）。
+    """
+    svc: Any
+    executor: Any
+    body: ChatRequest
+    user_text: str
+    llm_user_text: str
+    llm_user_content: Any
+    use_studio_context: bool
+    emit: Any
+    t0: float
+    pending_injector: Any = None
+    advance_signal: str = ""
+    wiz_doc: str = ""
+    stop_scope: str = "chat"
+    # --- 准备段中间结果 ---
+    history: List[Dict[str, Any]] = field(default_factory=list)
+    turn_id: str = ""
+    wiz_card_live: str = ""
+    state_builder: Any = None
+    image_provider: str = ""
+    image_aspect_ratio: str = ""
+    candidates: List[tuple] = field(default_factory=list)
+    compact_task: Any = None
+    planner: Any = None
+    cand_provider: str = ""
+    cand_model: str = ""
+    # --- 分发段结果 ---
+    final_text: str = ""
+    final_payload: Dict[str, Any] = field(default_factory=dict)
+    stopped_seen: bool = False
+    stop_phase_seen: str = ""
+
+
+async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
+    """三段之一（准备）：history/compaction 预热/PlannerContext 装配。
+
+    adapter 创建失败经既有出口发错并返回 None（调用方终止流）。
+    """
+    ctx.history = truncate_history([
+        {"role": m.get("role", "user"), "content": m.get("content", "")}
+        for m in window_recent_turns(ctx.body.messages)
+    ])
+
+    # 轮次唯一标识——本轮持久化的正文/文档卡/图片卡共用同一 turnId，
+    # 前端据此把产出聚合进同次容器（消除消息流碎片化）；随 done payload
+    # 下发，流式端与历史重载端同构
+    ctx.turn_id = uuid.uuid4().hex[:12]
+    ctx.wiz_card_live = ""
+
+    # 短锁：绑定附件 + 附件文档存档 + 记录用户消息（仅一次）；
+    # 状态 JSON 改为惰性构建器：多步循环每一轮重新构建，模型每轮看到最新状态
+    async with ctx.svc.lock:
+        if ctx.use_studio_context:
+            bind_attachments(ctx.svc, ctx.body.attachments)
+            store_uploaded_docs(ctx.svc, ctx.body.attachments)
+            # 暂停回应结构化消费：点选回应与 active_pause 匹配即落标记（展示层）
+            pause_answered = consume_pause_response(
+                ctx.svc, getattr(ctx.body, "pause_response", None) or None)
+            # 截断重答：用户消息已在历史尾部落盘（含编辑后正文），
+            # 不重复持久化，避免气泡翻倍（内部 contextvar 守卫，非请求字段）；
+            # 其余路径照常落盘
+            if not chat_tail_ops.user_message_persisted.get():
+                ctx.svc.add_chat_message(
+                    "user", ctx.user_text,
+                    doc_blocks=getattr(ctx.body, "doc_blocks", None) or None,
+                    skill_blocks=getattr(ctx.body, "skill_blocks", None) or None,
+                    pause_answered=pause_answered,
+                    kind=getattr(ctx.body, "system_action", "") or "",
+                )
+            # 规格卡自 write_spec 提交结果投影（用户消息之后）+ 即显事件
+            if ctx.wiz_doc:
+                ctx.svc.add_chat_message("agent", "", doc_card=ctx.wiz_doc, turn_id=ctx.turn_id)
+                ctx.wiz_card_live = ctx.wiz_doc
+                await ctx.emit({"type": SSE_DOC_WRITTEN, "name": ctx.wiz_doc,
+                            "turn_id": ctx.turn_id})
+
+    ctx.state_builder = (
+        (lambda: ctx.svc.build_agent_context(ctx.body.asset_mode)) if ctx.use_studio_context else None
+    )
+
+    # --- 解析中间面板选中的生图 provider + 画面比例（注入 generate_image 工具用）---
+    ctx.image_provider, ctx.image_aspect_ratio = _resolve_selected_draft_media_config(
+        ctx.svc, ctx.body.selected_draft_id, ctx.body.selected_type
+    )
+
+    # 用户裁决：模型选择权归用户——
+    # 选什么用什么，联不通直接报错，不自动换厂商 fallback
+    ctx.candidates = [(ctx.body.provider, ctx.body.model)]
+    # 会话级 compaction：预热后台——便宜模型摘要的
+    # adapter 创建/端点解析并行，首 token 不被摘要往返阻塞；
+    # 命中缓存时任务即刻完成，语义与同步等待完全一致
+    summary_adapter = _resolve_summary_adapter(ctx.body, ctx.candidates)
+    ctx.compact_task = asyncio.create_task(_maybe_compact_history(ctx.history, ctx.svc, summary_adapter))
+
+    # 单一候选：首候选即终选（原循环所有路径均在首轮 return，行为等价）
+    ctx.cand_provider, ctx.cand_model = ctx.candidates[0]
+    try:
+        llm_adapter = _create_chat_adapter(ctx.cand_provider, ctx.cand_model)
+    except GenerationError as e:
+        logger.warning(f"[ChatService] 所选供应商 {ctx.cand_provider}/{ctx.cand_model} 端点解析失败: {e}")
+        if ctx.compact_task is not None and not ctx.compact_task.done():
+            ctx.compact_task.cancel()
+        await _emit_stream_error(ctx.svc, ctx.body, e, ctx.emit, ctx.use_studio_context)
+        return None
+    # 进入候选前取回压缩结果（预热失败/超时由 _maybe_compact_history 内部回落原 history）
+    if ctx.compact_task is not None:
+        ctx.history = await ctx.compact_task
+        ctx.compact_task = None
+
+    ctx.planner = Planner(
+        state_manager=ctx.svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
+        executor_factory=StateOperationExecutor,
+        chat_provider=ctx.cand_provider, chat_model=ctx.cand_model,
+    )
+    resolved_skill = _resolve_skill_name_for_injection(
+        ctx.body.skill_name or "", ctx.body.skill_slug or "", ctx.svc.state_dict, ctx.user_text,
+    )
+    prelude_notes = _build_prelude_notes(resolved_skill)
+    return PlannerContext(
+        history=ctx.history,
+        selected_draft_id=ctx.body.selected_draft_id,
+        selected_type=ctx.body.selected_type,
+        state_builder=ctx.state_builder,
+        degraded_state_builder=(
+            (lambda: ctx.svc.build_agent_context_degraded(ctx.body.asset_mode)) if ctx.use_studio_context else None
+        ),
+        skill_name=resolved_skill,
+        # 分诊只认用户原话（附件预览问号不参与提问判定）
+        raw_user_text=ctx.user_text,
+        prelude_notes=prelude_notes,
+        use_studio_context=ctx.use_studio_context,
+        asset_mode=ctx.body.asset_mode,
+        image_generation_provider=ctx.image_provider,
+        image_generation_aspect_ratio=ctx.image_aspect_ratio,
+        user_id=getattr(ctx.body, "user_id", "") or "",
+        # 会话级推理档位（对话栏选择器下发；""=模型原生）
+        thinking_level=getattr(ctx.body, "thinking_level", "") or "",
+        # 轮间引导注入器（任务式传输路径；非任务路径为 None）
+        pending_injector=ctx.pending_injector,
+        # 轮始客观推进信号（decision 消费/闸预检分诊；runtime 不据此自主行动）
+        advance_signal=ctx.advance_signal,
+        # 协作式停止标志作用域：SSE 直连="chat"，任务式传输=task_id
+        stop_scope=ctx.stop_scope,
+    )
+
+
+async def _stream_dispatch(ctx: _StreamCtx, planner_ctx: PlannerContext) -> bool:
+    """三段之二（分发）：Planner 事件流逐类透传。
+
+    LLM 流式调用失败经既有出口发错并返回 False（调用方终止流）。
+    """
+    # 局部别名：事件透传分支保持原字面形态（test_status_i18n_keys 源码扫描钉死）
+    emit = ctx.emit
+    svc = ctx.svc
+    applied_seen = False
+    ctx.final_text = ""
+    ctx.final_payload = {}
+    # 停止终态目击（stopped 事件已透传）：防防御路径无 done 时误发 done
+    ctx.stopped_seen = False
+    ctx.stop_phase_seen = ""
+    try:
+        async for event in ctx.planner.handle_message_stream(ctx.llm_user_content, planner_ctx):
+            if event.type == "status":
+                # payload 携带完整 status_event（key+params）时原样透传，
+                # 前端按 locale 翻译；无 payload 回落纯 text（动态自由文本路径）
+                await emit(event.payload or {"type": SSE_STATUS, "text": event.text})
+            elif event.type == "delta":
+                await emit({"type": SSE_DELTA, "text": event.text})
+            elif event.type == "actions_applied":
+                applied_seen = True
+                _ap = event.payload or {}
+                await emit(_ap.get("status_event") or {"type": SSE_STATUS, "text": event.text})
+                # 逐步可见：每批操作落盘后立即下发最新状态快照，
+                # 前端不必等全部完成，推理中就能看到新建的分组/提示词
+                if ctx.use_studio_context:
+                    await emit({
+                        "type": SSE_ACTIONS_APPLIED,
+                        "payload": {
+                            "count": (event.payload or {}).get("count", 0),
+                            "state": svc.get_full_snapshot(),
+                        },
+                    })
+            elif event.type == SSE_DOC_WRITTEN:
+                # 即显事件透传时打戳本轮 turn_id（打戳逻辑
+                # 抽 _stamp_doc_written 便于单测钉死）
+                await emit(_stamp_doc_written(event.payload, ctx.turn_id))
+            elif event.type in (
+                "reasoning_delta", "tool_started", "tool_finished", SSE_GUIDANCE_INJECTED,
+            ):
+                # 过程时间线事件透传（深度思考增量 / 工具开始与完成 / 引导注入），
+                # 仅 UI 展示用，不进下次 LLM 上下文
+                await emit(event.payload or {"type": event.type, "text": event.text})
+            elif event.type == SSE_STOPPED:
+                # 停止终态事件透传：agent_loop 检查点已发 phase/step，
+                # web 透传层负责富化在途外部生成任务登记（core 层不感知 web 注册表）。
+                # 第一版不做真实撤销/补偿，仅登记 + 文案告知供应商侧仍在进行
+                _sp = dict(event.payload or {"type": SSE_STOPPED})
+                _sp.setdefault("inflight", snapshot_inflight_generations())
+                ctx.stopped_seen = True
+                ctx.stop_phase_seen = str(_sp.get("phase") or "")
+                await emit(_sp)
+            elif event.type == "done":
+                ctx.final_payload = event.payload or {}
+                ctx.final_text = ctx.final_payload.get("text", "")
+            elif event.type == "error":
+                # 透传上游结构化故障标记（-2）：保证故障判定不依赖文案
+                p = event.payload or {}
+                raise AdapterError(
+                    event.text,
+                    retryable=p.get("retryable"),
+                    http_status=p.get("http_status"),
+                )
+    except (GenerationError, AdapterError) as e:
+        # 单一候选、不自动换模型——失败直接报错；
+        # 已执行过操作同样直接报错（避免重复落盘）
+        logger.warning(f"[ChatService] LLM 流式调用失败 ({ctx.cand_provider}/{ctx.cand_model}): {e}")
+        await _emit_stream_error(ctx.svc, ctx.body, e, ctx.emit, ctx.use_studio_context)
+        return False
+    return True
+
+
+async def _stream_finalize(ctx: _StreamCtx) -> None:
+    """三段之三（收尾）：停止痕迹或成功持久化 + done（终态事件出口不变）。"""
+    # --- 停止路径：stopped 终态事件已由检查点先行下发，
+    # 此处只落停止痕迹消息供刷新后恢复，不再发 done（stopped 即终态）；
+    # 取消穿透防御路径（仅 stopped 事件无 done）同归此分支
+    if ctx.stopped_seen or ctx.final_payload.get("stopped"):
+        # 停止痕迹持久化（stop_manager）；stopped 即终态，不再发 done
+        await persist_stop_trace(
+            ctx.svc, ctx.final_text,
+            str(ctx.final_payload.get("stop_phase") or ctx.stop_phase_seen or "thinking"),
+            ctx.cand_model or "", ctx.turn_id, ctx.use_studio_context,
+        )
+        return
+
+    # --- 成功路径：持久化 + done ---
+    video_items = _video_card_items(ctx.final_payload)
+    if ctx.use_studio_context and (
+        ctx.final_text or ctx.final_payload.get("image_urls")
+        or ctx.final_payload.get("confirmation") or video_items
+    ):
+        applied = ctx.final_payload.get("applied_actions") or 0
+        async with ctx.svc.lock:
+            if ctx.final_text or ctx.final_payload.get("confirmation"):
+                ctx.svc.add_chat_message(
+                    "agent", ctx.final_text, model_name=ctx.cand_model or "",
+                    meta=_build_meta_note(
+                        time.monotonic() - ctx.t0,
+                        ctx.final_payload.get("steps") or 1,
+                        applied,
+                    ),
+                    confirm=ctx.final_payload.get("confirmation") or "",
+                    applied_actions=applied,
+                    action_log=ctx.final_payload.get("action_log") or [],
+                    trace=ctx.final_payload.get("trace") or {},
+                    confirm_options=ctx.final_payload.get("confirmation_options") or None,
+                    turn_id=ctx.turn_id,
+                    pause_id=str(ctx.final_payload.get("pause_id") or ""),
+                    # 暂停卡语义种类持久化（前端历史重载按 kind 渲染标题）
+                    kind=str(ctx.final_payload.get("pause_kind") or ""),
+                )
+            # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合）
+            for doc_name in (ctx.final_payload.get("documents_written") or []):
+                ctx.svc.add_chat_message("agent", "", doc_card=doc_name, turn_id=ctx.turn_id)
+            # 生图卡片随历史持久化（独立消息条目，与前端 finishStream 的两条消息结构一致，
+            # 否则刷新页面后聊天记录里的图片卡片会丢失）
+            image_urls = ctx.final_payload.get("image_urls") or []
+            if image_urls:
+                ctx.svc.add_chat_message("agent", "", image_urls=image_urls, turn_id=ctx.turn_id)
+            # 视频卡同构持久化（独立消息条目，同轮 turnId 聚合）
+            if video_items:
+                ctx.svc.add_chat_message("agent", "", video_items=video_items, turn_id=ctx.turn_id)
+
+    # 产物账本同轮下发：向导机械落盘的规格文档并入 documents_written
+    if ctx.wiz_card_live:
+        _docs = list(ctx.final_payload.get("documents_written") or [])
+        if ctx.wiz_card_live not in _docs:
+            _docs.append(ctx.wiz_card_live)
+        ctx.final_payload["documents_written"] = _docs
+    done_payload: Dict[str, Any] = {
+        **ctx.final_payload,
+        "state": ctx.svc.get_full_snapshot() if ctx.use_studio_context else None,
+        "elapsed_ms": int((time.monotonic() - ctx.t0) * 1000),
+        "turn_id": ctx.turn_id,
+        # workflow 投影（run 快照 + 本轮事件，重连 replay 同源）
+        "workflow": workflow_runtime.project(ctx.svc.state_dict, ctx.turn_id),
+    }
+    await ctx.emit({"type": SSE_DONE, "payload": done_payload})
+
+
 async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", wiz_doc: str = "", stop_scope: str = "chat") -> None:
     """真实供应商的流式处理（单一候选：选什么用什么，联不通直接报错）。
 
     生图/生视频 fallback 属独立机制（generation.py）。
     pending_injector：轮间引导注入器，经 PlannerContext 传入循环。
     stop_scope：协作式停止标志作用域，透传 PlannerContext → agent_loop 检查点。
+
+    P1-4：函数体拆为 _stream_prepare/_stream_dispatch/_stream_finalize 三段，
+    参数经 _StreamCtx 收敛；签名、事件语义与错误出口零变更。
     """
-    history = truncate_history([
-        {"role": m.get("role", "user"), "content": m.get("content", "")}
-        for m in window_recent_turns(body.messages)
-    ])
-
-    # 轮次唯一标识——本轮持久化的正文/文档卡/图片卡共用同一 turnId，
-    # 前端据此把产出聚合进同次容器（消除消息流碎片化）；随 done payload
-    # 下发，流式端与历史重载端同构
-    turn_id = uuid.uuid4().hex[:12]
-    _wiz_card_live = ""
-
-    # 短锁：绑定附件 + 附件文档存档 + 记录用户消息（仅一次）；
-    # 状态 JSON 改为惰性构建器：多步循环每一轮重新构建，模型每轮看到最新状态
-    async with svc.lock:
-        if use_studio_context:
-            bind_attachments(svc, body.attachments)
-            store_uploaded_docs(svc, body.attachments)
-            # 暂停回应结构化消费：点选回应与 active_pause 匹配即落标记（展示层）
-            pause_answered = consume_pause_response(
-                svc, getattr(body, "pause_response", None) or None)
-            # 截断重答：用户消息已在历史尾部落盘（含编辑后正文），
-            # 不重复持久化，避免气泡翻倍（内部 contextvar 守卫，非请求字段）；
-            # 其余路径照常落盘
-            if not chat_tail_ops.user_message_persisted.get():
-                svc.add_chat_message(
-                    "user", user_text,
-                    doc_blocks=getattr(body, "doc_blocks", None) or None,
-                    skill_blocks=getattr(body, "skill_blocks", None) or None,
-                    pause_answered=pause_answered,
-                    kind=getattr(body, "system_action", "") or "",
-                )
-            # 规格卡自 write_spec 提交结果投影（用户消息之后）+ 即显事件
-            if wiz_doc:
-                svc.add_chat_message("agent", "", doc_card=wiz_doc, turn_id=turn_id)
-                _wiz_card_live = wiz_doc
-                await emit({"type": SSE_DOC_WRITTEN, "name": wiz_doc,
-                            "turn_id": turn_id})
-
-    state_builder = (
-        (lambda: svc.build_agent_context(body.asset_mode)) if use_studio_context else None
+    ctx = _StreamCtx(
+        svc=svc, executor=executor, body=body, user_text=user_text,
+        llm_user_text=llm_user_text, llm_user_content=llm_user_content,
+        use_studio_context=use_studio_context, emit=emit, t0=t0,
+        pending_injector=pending_injector, advance_signal=advance_signal,
+        wiz_doc=wiz_doc, stop_scope=stop_scope,
     )
-
-    # --- 解析中间面板选中的生图 provider + 画面比例（注入 generate_image 工具用）---
-    image_provider, image_aspect_ratio = _resolve_selected_draft_media_config(
-        svc, body.selected_draft_id, body.selected_type
-    )
-
-    # 用户裁决：模型选择权归用户——
-    # 选什么用什么，联不通直接报错，不自动换厂商 fallback
-    candidates = [(body.provider, body.model)]
-    # 会话级 compaction：预热后台——便宜模型摘要的
-    # adapter 创建/端点解析并行，首 token 不被摘要往返阻塞；
-    # 命中缓存时任务即刻完成，语义与同步等待完全一致
-    summary_adapter = _resolve_summary_adapter(body, candidates)
-    _compact_task = asyncio.create_task(_maybe_compact_history(history, svc, summary_adapter))
-
-    for idx, (cand_provider, cand_model) in enumerate(candidates):
-        try:
-            llm_adapter = _create_chat_adapter(cand_provider, cand_model)
-        except GenerationError as e:
-            logger.warning(f"[ChatService] 所选供应商 {cand_provider}/{cand_model} 端点解析失败: {e}")
-            if _compact_task is not None and not _compact_task.done():
-                _compact_task.cancel()
-            await _emit_stream_error(svc, body, e, emit, use_studio_context)
-            return
-        # 进入候选前取回压缩结果（预热失败/超时由 _maybe_compact_history 内部回落原 history）
-        if _compact_task is not None:
-            history = await _compact_task
-            _compact_task = None
-
-        planner = Planner(
-            state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
-            executor_factory=StateOperationExecutor,
-            chat_provider=cand_provider, chat_model=cand_model,
-        )
-        resolved_skill = _resolve_skill_name_for_injection(
-            body.skill_name or "", body.skill_slug or "", svc.state_dict, user_text,
-        )
-        prelude_notes = _build_prelude_notes(resolved_skill)
-        planner_ctx = PlannerContext(
-            history=history,
-            selected_draft_id=body.selected_draft_id,
-            selected_type=body.selected_type,
-            state_builder=state_builder,
-            degraded_state_builder=(
-                (lambda: svc.build_agent_context_degraded(body.asset_mode)) if use_studio_context else None
-            ),
-            skill_name=resolved_skill,
-            # 分诊只认用户原话（附件预览问号不参与提问判定）
-            raw_user_text=user_text,
-            prelude_notes=prelude_notes,
-            use_studio_context=use_studio_context,
-            asset_mode=body.asset_mode,
-            image_generation_provider=image_provider,
-            image_generation_aspect_ratio=image_aspect_ratio,
-            user_id=getattr(body, "user_id", "") or "",
-            # 会话级推理档位（对话栏选择器下发；""=模型原生）
-            thinking_level=getattr(body, "thinking_level", "") or "",
-            # 轮间引导注入器（任务式传输路径；非任务路径为 None）
-            pending_injector=pending_injector,
-            # 轮始客观推进信号（decision 消费/闸预检分诊；runtime 不据此自主行动）
-            advance_signal=advance_signal,
-            # 协作式停止标志作用域：SSE 直连="chat"，任务式传输=task_id
-            stop_scope=stop_scope,
-        )
-
-        applied_seen = False
-        final_text = ""
-        final_payload: Dict[str, Any] = {}
-        # 停止终态目击（stopped 事件已透传）：防防御路径无 done 时误发 done
-        _stopped_seen = False
-        _stop_phase_seen = ""
-        try:
-            async for event in planner.handle_message_stream(llm_user_content, planner_ctx):
-                if event.type == "status":
-                    # payload 携带完整 status_event（key+params）时原样透传，
-                    # 前端按 locale 翻译；无 payload 回落纯 text（动态自由文本路径）
-                    await emit(event.payload or {"type": SSE_STATUS, "text": event.text})
-                elif event.type == "delta":
-                    await emit({"type": SSE_DELTA, "text": event.text})
-                elif event.type == "actions_applied":
-                    applied_seen = True
-                    _ap = event.payload or {}
-                    await emit(_ap.get("status_event") or {"type": SSE_STATUS, "text": event.text})
-                    # 逐步可见：每批操作落盘后立即下发最新状态快照，
-                    # 前端不必等全部完成，推理中就能看到新建的分组/提示词
-                    if use_studio_context:
-                        await emit({
-                            "type": SSE_ACTIONS_APPLIED,
-                            "payload": {
-                                "count": (event.payload or {}).get("count", 0),
-                                "state": svc.get_full_snapshot(),
-                            },
-                        })
-                elif event.type == SSE_DOC_WRITTEN:
-                    # 即显事件透传时打戳本轮 turn_id（打戳逻辑
-                    # 抽 _stamp_doc_written 便于单测钉死）
-                    await emit(_stamp_doc_written(event.payload, turn_id))
-                elif event.type in (
-                    "reasoning_delta", "tool_started", "tool_finished", SSE_GUIDANCE_INJECTED,
-                ):
-                    # 过程时间线事件透传（深度思考增量 / 工具开始与完成 / 引导注入），
-                    # 仅 UI 展示用，不进下次 LLM 上下文
-                    await emit(event.payload or {"type": event.type, "text": event.text})
-                elif event.type == SSE_STOPPED:
-                    # 停止终态事件透传：agent_loop 检查点已发 phase/step，
-                    # web 透传层负责富化在途外部生成任务登记（core 层不感知 web 注册表）。
-                    # 第一版不做真实撤销/补偿，仅登记 + 文案告知供应商侧仍在进行
-                    _sp = dict(event.payload or {"type": SSE_STOPPED})
-                    _sp.setdefault("inflight", snapshot_inflight_generations())
-                    _stopped_seen = True
-                    _stop_phase_seen = str(_sp.get("phase") or "")
-                    await emit(_sp)
-                elif event.type == "done":
-                    final_payload = event.payload or {}
-                    final_text = final_payload.get("text", "")
-                elif event.type == "error":
-                    # 透传上游结构化故障标记（-2）：保证故障判定不依赖文案
-                    p = event.payload or {}
-                    raise AdapterError(
-                        event.text,
-                        retryable=p.get("retryable"),
-                        http_status=p.get("http_status"),
-                    )
-        except (GenerationError, AdapterError) as e:
-            # 单一候选、不自动换模型——失败直接报错；
-            # 已执行过操作同样直接报错（避免重复落盘）
-            logger.warning(f"[ChatService] LLM 流式调用失败 ({cand_provider}/{cand_model}): {e}")
-            await _emit_stream_error(svc, body, e, emit, use_studio_context)
-            return
-
-        # --- 停止路径：stopped 终态事件已由检查点先行下发，
-        # 此处只落停止痕迹消息供刷新后恢复，不再发 done（stopped 即终态）；
-        # 取消穿透防御路径（仅 stopped 事件无 done）同归此分支
-        if _stopped_seen or final_payload.get("stopped"):
-            # 停止痕迹持久化（stop_manager）；stopped 即终态，不再发 done
-            await persist_stop_trace(
-                svc, final_text,
-                str(final_payload.get("stop_phase") or _stop_phase_seen or "thinking"),
-                cand_model or "", turn_id, use_studio_context,
-            )
-            return
-
-        # --- 成功路径：持久化 + done ---
-        video_items = _video_card_items(final_payload)
-        if use_studio_context and (
-            final_text or final_payload.get("image_urls")
-            or final_payload.get("confirmation") or video_items
-        ):
-            applied = final_payload.get("applied_actions") or 0
-            async with svc.lock:
-                if final_text or final_payload.get("confirmation"):
-                    svc.add_chat_message(
-                        "agent", final_text, model_name=cand_model or "",
-                        meta=_build_meta_note(
-                            time.monotonic() - t0,
-                            final_payload.get("steps") or 1,
-                            applied,
-                        ),
-                        confirm=final_payload.get("confirmation") or "",
-                        applied_actions=applied,
-                        action_log=final_payload.get("action_log") or [],
-                        trace=final_payload.get("trace") or {},
-                        confirm_options=final_payload.get("confirmation_options") or None,
-                        turn_id=turn_id,
-                        pause_id=str(final_payload.get("pause_id") or ""),
-                        # 暂停卡语义种类持久化（前端历史重载按 kind 渲染标题）
-                        kind=str(final_payload.get("pause_kind") or ""),
-                    )
-                # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合）
-                for doc_name in (final_payload.get("documents_written") or []):
-                    svc.add_chat_message("agent", "", doc_card=doc_name, turn_id=turn_id)
-                # 生图卡片随历史持久化（独立消息条目，与前端 finishStream 的两条消息结构一致，
-                # 否则刷新页面后聊天记录里的图片卡片会丢失）
-                image_urls = final_payload.get("image_urls") or []
-                if image_urls:
-                    svc.add_chat_message("agent", "", image_urls=image_urls, turn_id=turn_id)
-                # 视频卡同构持久化（独立消息条目，同轮 turnId 聚合）
-                if video_items:
-                    svc.add_chat_message("agent", "", video_items=video_items, turn_id=turn_id)
-
-        # 产物账本同轮下发：向导机械落盘的规格文档并入 documents_written
-        if _wiz_card_live:
-            _docs = list(final_payload.get("documents_written") or [])
-            if _wiz_card_live not in _docs:
-                _docs.append(_wiz_card_live)
-            final_payload["documents_written"] = _docs
-        done_payload: Dict[str, Any] = {
-            **final_payload,
-            "state": svc.get_full_snapshot() if use_studio_context else None,
-            "elapsed_ms": int((time.monotonic() - t0) * 1000),
-            "turn_id": turn_id,
-            # workflow 投影（run 快照 + 本轮事件，重连 replay 同源）
-            "workflow": workflow_runtime.project(svc.state_dict, turn_id),
-        }
-        await emit({"type": SSE_DONE, "payload": done_payload})
+    planner_ctx = await _stream_prepare(ctx)
+    if planner_ctx is None:
         return
+    if not await _stream_dispatch(ctx, planner_ctx):
+        return
+    await _stream_finalize(ctx)
 
 
 # 错误翻译域实现体在 chat_errors.py：_emit_stream_error /
