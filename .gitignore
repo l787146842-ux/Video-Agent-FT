@@ -32,9 +32,17 @@ Thumbs.db
 .idea/
 .vscode/
 .codebuddy/
+.qoder/
+
+# 会话临时 diff 产物（批次补丁中间物，不入仓）
+*.diff
+
+# 会话诊断脚本（本地排障用，移出跟踪保留本地；任务 #12 批次2）
+diag-session.mjs
 
 # 历史参考/旧版备份（不入库）
 .ref_old/
+.zz_risk_backup/
 
 # B6/F45：恢复现场归档副本不入库（本地保留，备份盘另存）
 docs/archive/
