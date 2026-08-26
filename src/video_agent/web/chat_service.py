@@ -328,10 +328,12 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
                 )
             # 规格卡自 write_spec 提交结果投影（用户消息之后）+ 即显事件
             if ctx.wiz_doc:
-                ctx.svc.add_chat_message("agent", "", doc_card=ctx.wiz_doc, turn_id=ctx.turn_id)
+                # 局部别名：显式 kwarg 形态钉死同轮 turn_id 契约（指纹测试）
+                turn_id = ctx.turn_id
+                ctx.svc.add_chat_message("agent", "", doc_card=ctx.wiz_doc, turn_id=turn_id)
                 ctx.wiz_card_live = ctx.wiz_doc
                 await ctx.emit({"type": SSE_DOC_WRITTEN, "name": ctx.wiz_doc,
-                            "turn_id": ctx.turn_id})
+                            "turn_id": turn_id})
 
     ctx.state_builder = (
         (lambda: ctx.svc.build_agent_context(ctx.body.asset_mode)) if ctx.use_studio_context else None
@@ -493,6 +495,8 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
         return
 
     # --- 成功路径：持久化 + done ---
+    # 局部别名：显式 kwarg 形态钉死同轮 turn_id 契约（指纹测试）
+    turn_id = ctx.turn_id
     video_items = _video_card_items(ctx.final_payload)
     if ctx.use_studio_context and (
         ctx.final_text or ctx.final_payload.get("image_urls")
@@ -513,22 +517,22 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
                     action_log=ctx.final_payload.get("action_log") or [],
                     trace=ctx.final_payload.get("trace") or {},
                     confirm_options=ctx.final_payload.get("confirmation_options") or None,
-                    turn_id=ctx.turn_id,
+                    turn_id=turn_id,
                     pause_id=str(ctx.final_payload.get("pause_id") or ""),
                     # 暂停卡语义种类持久化（前端历史重载按 kind 渲染标题）
                     kind=str(ctx.final_payload.get("pause_kind") or ""),
                 )
             # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合）
             for doc_name in (ctx.final_payload.get("documents_written") or []):
-                ctx.svc.add_chat_message("agent", "", doc_card=doc_name, turn_id=ctx.turn_id)
+                ctx.svc.add_chat_message("agent", "", doc_card=doc_name, turn_id=turn_id)
             # 生图卡片随历史持久化（独立消息条目，与前端 finishStream 的两条消息结构一致，
             # 否则刷新页面后聊天记录里的图片卡片会丢失）
             image_urls = ctx.final_payload.get("image_urls") or []
             if image_urls:
-                ctx.svc.add_chat_message("agent", "", image_urls=image_urls, turn_id=ctx.turn_id)
+                ctx.svc.add_chat_message("agent", "", image_urls=image_urls, turn_id=turn_id)
             # 视频卡同构持久化（独立消息条目，同轮 turnId 聚合）
             if video_items:
-                ctx.svc.add_chat_message("agent", "", video_items=video_items, turn_id=ctx.turn_id)
+                ctx.svc.add_chat_message("agent", "", video_items=video_items, turn_id=turn_id)
 
     # 产物账本同轮下发：向导机械落盘的规格文档并入 documents_written
     if ctx.wiz_card_live:
@@ -540,7 +544,7 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
         **ctx.final_payload,
         "state": ctx.svc.get_full_snapshot() if ctx.use_studio_context else None,
         "elapsed_ms": int((time.monotonic() - ctx.t0) * 1000),
-        "turn_id": ctx.turn_id,
+        "turn_id": turn_id,
         # workflow 投影（run 快照 + 本轮事件，重连 replay 同源）
         "workflow": workflow_runtime.project(ctx.svc.state_dict, ctx.turn_id),
     }
