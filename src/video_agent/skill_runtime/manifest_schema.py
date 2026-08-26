@@ -127,16 +127,21 @@ _DONE_PREFIX = "document:"
 _PAUSE_KEYS = ("stage_pause",)
 
 # custom_sections 声明的合法执行器白名单（自定义章节通道）：
-# 通道单一 = 通用章节执行器 skill_section_run（与 prompts/planner/
-# executor_runtime.md「无专属执行器的章节用 skill_section_run」同源语义）；
-# 未来若增专属通用执行器，先在此登记再允许声明（fail-closed）。
+# 通道单一 = 无专属执行器的章节统一走通用章节执行器 skill_section_run；
+# 白名单即本常量，未来若增专属通用执行器，先在此登记再允许声明（fail-closed）。
 CUSTOM_SECTION_EXECUTORS = ("skill_section_run",)
 
 # ---------- v3 键白名单 ----------
 SCHEMA_VERSION = 3
-_KIND_VALUES = ("pipeline", "style", "reference")
-_REQUIRES_INPUT_TYPES = ("script", "music", "video", "image", "doc")
+# kind 登记表：reference（低权重参考资料型）已随任务#8 裁决下架——
+# 存量 Skill 无数据承载，注入策略分支失去声明入口；再声明按未知 kind
+# 开放注册降级为 pipeline 并 WARN。
+_KIND_VALUES = ("pipeline", "style")
+# 原料类型白名单：audio = 音色参考等音频原料（任务#8 ④ 音色声明轴）
+_REQUIRES_INPUT_TYPES = ("script", "music", "video", "image", "doc", "audio")
 _LANGUAGE_VALUES = ("zh", "en", "auto")
+# language.prompt_en_categories 合法取值：产物类别级语言闸豁免（任务#8 ①）
+_LANGUAGE_EN_CATEGORY_VALUES = ("keyElement", "shot", "audio")
 _PAUSE_TRIGGER_VALUES = (
     "spec_finalized", "storyboard_structure_ready",
     "first_generation_call", "batch_boundary", "free_text",
@@ -147,6 +152,7 @@ _PAUSE_TRIGGER_VALUES = (
 KIND_VALUES = _KIND_VALUES
 REQUIRES_INPUT_TYPES = _REQUIRES_INPUT_TYPES
 LANGUAGE_VALUES = _LANGUAGE_VALUES
+LANGUAGE_EN_CATEGORY_VALUES = _LANGUAGE_EN_CATEGORY_VALUES
 PAUSE_TRIGGER_VALUES = _PAUSE_TRIGGER_VALUES
 
 
@@ -250,7 +256,7 @@ def _check_schema_version(data: Dict[str, Any], issues: List[str]) -> None:
 
 
 def _check_kind(data: Dict[str, Any], issues: List[str]) -> None:
-    """kind：开放注册——已知 pipeline/style/reference 走各自
+    """kind：开放注册——已知 pipeline/style 走各自
     注入策略；未知取值不拒注册，降级为默认（pipeline）注入策略并输出
     WARN（注册期告警/遥测），为 writing/office 等新场景预留扩展位。
     kind 只管注入策略这一个维度，闸机语义/UI 呈现不绑到 kind 上。"""
@@ -265,8 +271,10 @@ def _check_kind(data: Dict[str, Any], issues: List[str]) -> None:
 
 
 def _check_requires_inputs(raw: Any, issues: List[str]) -> None:
-    """requires_inputs：数组，每项 {type, required, hint}；
-    type 白名单 script|music|video|image|doc，required 缺省 true。"""
+    """requires_inputs：数组，每项 {type, required, hint, features}；
+    type 白名单 script|music|video|image|doc|audio，required 缺省 true；
+    features = 可选声明轴标记清单（非空字符串数组，如 voice_reference，
+    任务#8 ④：音色参考声明轴，供闸机软提醒跟随声明）。"""
     if raw is None:
         return
     if not isinstance(raw, list):
@@ -287,14 +295,26 @@ def _check_requires_inputs(raw: Any, issues: List[str]) -> None:
         hint = item.get("hint")
         if hint is not None and (not isinstance(hint, str) or not hint.strip()):
             issues.append(f"requires_inputs[{i}].hint 必须是非空字符串")
+        feats = item.get("features")
+        if feats is not None:
+            if not isinstance(feats, list) or not feats or not all(
+                isinstance(x, str) and x.strip() for x in feats
+            ):
+                issues.append(
+                    f"requires_inputs[{i}].features 必须是非空字符串数组"
+                    "（声明轴标记，如 voice_reference）")
 
 
 def _check_language(raw: Any, issues: List[str]) -> None:
-    """language：对象 {prompt, output}，取值 zh|en|auto。"""
+    """language：对象 {prompt, output, prompt_en_categories}。
+
+    prompt/output 取值 zh|en|auto；prompt_en_categories = 产物类别级
+    语言闸豁免清单（keyElement|shot|audio 子集，任务#8 ①：如场景单图
+    必须英文的 Skill 声明 keyElement 豁免，其余类别维持中文地板）。"""
     if raw is None:
         return
     if not isinstance(raw, dict):
-        issues.append("language 必须是对象 {prompt, output}")
+        issues.append("language 必须是对象 {prompt, output, prompt_en_categories}")
         return
     for key in ("prompt", "output"):
         v = raw.get(key)
@@ -302,6 +322,19 @@ def _check_language(raw: Any, issues: List[str]) -> None:
             issues.append(
                 f"language.{key} 必须是 {'/'.join(_LANGUAGE_VALUES)} 之一"
                 f"（实际 {v!r}）")
+    cats = raw.get("prompt_en_categories")
+    if cats is not None:
+        if not isinstance(cats, list) or not cats:
+            issues.append(
+                "language.prompt_en_categories 必须是非空数组"
+                f"（{'/'.join(_LANGUAGE_EN_CATEGORY_VALUES)} 子集）")
+        else:
+            for i, c in enumerate(cats):
+                if c not in _LANGUAGE_EN_CATEGORY_VALUES:
+                    issues.append(
+                        f"language.prompt_en_categories[{i}] 必须是 "
+                        f"{'/'.join(_LANGUAGE_EN_CATEGORY_VALUES)} 之一"
+                        f"（实际 {c!r}）")
 
 
 def _check_pause_points(raw: Any, issues: List[str]) -> None:

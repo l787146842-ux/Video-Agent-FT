@@ -1,11 +1,11 @@
 ﻿# -*- coding: utf-8 -*-
-"""\u9632\u590d\u6d3b\u95e8\u7981\uff080818 \u67b6\u6784\u677f\u6b63\u6279 B5\uff09\uff1a\u5df2\u9000\u5f79\u7f16\u6392\u673a\u5236\u7b26\u53f7\u96f6\u6b8b\u7559\u3002
+"""防复活门禁（0818 架构板正批 B5）：已退役编排机制符号零残留。
 
-\u72b6\u6001\u9a71\u52a8\u7f16\u6392\u91cd\u6784\uff08B0-B4\uff09\u673a\u68b0\u9000\u5f79\u4e86\u8001\u673a\u5236\uff1b\u65e0\u95e8\u7981\u5219\u590d\u6d3b\u53ef\u80fd\u56de\u6f6e\u2014\u2014
-\u672c\u811a\u672c\u626b\u63cf src/tests/scripts \u4e2d\u9000\u5f79\u7b26\u53f7\uff0c\u547d\u4e2d\u4efb\u4e00\u5373\u975e\u96f6\u9000\u51fa\u3002
-\u9000\u5f79\u6e05\u5355\uff08\u7b26\u53f7\u975e\u6982\u5ff5\uff0c\u540c\u540d\u590d\u7528\u5373\u89c6\u4e3a\u590d\u6d3b\uff09\uff1a
-- FlowGateSet \u95f8\u673a\u94fe / skill_pipeline_plan \u8c03\u5ea6\u5de5\u5177 / auto_retry \u76f2\u91cd\u8bd5
-- prepend_script_summary/maybe_prepend \u603b\u7ed3\u6ce8\u5165\u94fe / skill_declares_summary
+状态驱动编排重构（B0-B4）机械退役了老机制；无门禁则复活可能回潮——
+本脚本扫描 src/tests/scripts 中退役符号，命中任一即非零退出。
+退役清单（符号非概念，同名复用即视为复活）：
+- FlowGateSet 闸机链 / skill_pipeline_plan 调度工具 / auto_retry 盲重试
+- prepend_script_summary/maybe_prepend 总结注入链 / skill_declares_summary
 - dag.py 正则通道（parse_steps 等）/ parse_skill_manifest 文档通道
 - 五轮 S4 兼容壳：planner 委托方法组 / _split_actions、save_state 别名（P2d 结构性测试减负承接）
 - 已迁 prose 防复述：暂停邀请确认（暂停纪律单家）/ 同批发出（暂停时机建议归 Skill）
@@ -17,8 +17,8 @@
   StateOperationExecutor）/ stage_probes（旧名编排器模块）拓扑就绪集调度函数
   - 任务#14 编排器正名：旧模块名 pipeline_orchestrator 防复活（已更名
     stage_probes 纯数据层，同名复用即视为复活）
-spec_pause_card/spec_collect_card\uff08\u89c4\u683c\u5411\u5bfc\uff0c\u4e0d\u53d8\u57fa\u7ebf\uff09\u4e0d\u5728\u6e05\u5355\u5185\u3002
-\u8f93\u51fa\u7eaf ASCII\uff08\u9a8c\u6536\u4e71\u7801\u8bef\u8bfb\u6559\u8bad\uff09\u3002\u7528\u6cd5\uff1apython scripts/check_legacy_orchestration.py
+spec_pause_card/spec_collect_card（规格向导，不变基线）不在清单内。
+输出纯 ASCII（验收乱码误读教训）。用法：python scripts/check_legacy_orchestration.py
 """
 import pathlib
 import re
