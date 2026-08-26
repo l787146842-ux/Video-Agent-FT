@@ -133,10 +133,10 @@ def test_b1_generate_image_once_per_batch():
     calls = [
         {"id": "c1", "type": "function", "function": {
             "name": "generate_image",
-            "arguments": json.dumps({"prompt": "一只猫", "adapter_provider": "mock"})}},
+            "arguments": json.dumps({"prompt": "一只猫", "adapter_provider": "prov-x"})}},
         {"id": "c2", "type": "function", "function": {
             "name": "generate_image",
-            "arguments": json.dumps({"prompt": "一只狗", "adapter_provider": "mock"})}},
+            "arguments": json.dumps({"prompt": "一只狗", "adapter_provider": "prov-x"})}},
     ]
     applied, confirmation, _u, _i, _l, _o, tool_results, _d, warnings, _overflow = asyncio.run(
         runner.execute(ChatResponse(content="", tool_calls=calls))

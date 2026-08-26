@@ -122,7 +122,7 @@ export async function submitMessage(intent: SubmitIntent, payload: SubmitPayload
 
   const skill = agentSkill();
 
-  // 纯文本正文：媒体以 [图片:名称] 占位符保留位置（message 字段 / 历史 / mock 用）
+  // 纯文本正文：媒体以 [图片:名称] 占位符保留位置（message 字段 / 历史用）
   const message = partsToPlainText(parts).trim() || '请查看我上传的素材';
 
   // 文档/Skill 引用块：发送后才真正附加，消息里以可点击的块状展示（不再拼纯文本前缀）

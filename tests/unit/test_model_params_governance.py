@@ -35,7 +35,7 @@ def test_b7_draft_provider_wins_over_global_settings(monkeypatch):
     recorder = _Recorder()
     runner = FCToolRunner(recorder)
     asyncio.run(runner.execute(
-        _fc_call({"prompt": "一只猫", "adapter_provider": "mock"}),
+        _fc_call({"prompt": "一只猫", "adapter_provider": ""}),
         image_provider="provD",
     ))
     assert recorder.last_args["adapter_provider"] == "provD"  # 草稿选择优先
@@ -50,7 +50,7 @@ def test_b7_global_settings_fallback_when_no_draft(monkeypatch):
     recorder = _Recorder()
     runner = FCToolRunner(recorder)
     asyncio.run(runner.execute(
-        _fc_call({"prompt": "一只猫", "adapter_provider": "mock"}),
+        _fc_call({"prompt": "一只猫", "adapter_provider": ""}),
         image_provider="",
     ))
     assert recorder.last_args["adapter_provider"] == "provG"  # 全局设置兜底

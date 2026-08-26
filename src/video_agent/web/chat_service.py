@@ -2,7 +2,7 @@
 Agent Chat Service — 聊天业务编排。
 
 职责：
-- 流式处理公共实现（mock / 真实供应商）：任务式后台任务与非流式共用
+- 流式处理公共实现（真实供应商）：任务式后台任务与非流式共用
 - 非流式聊天编排
 - 会话持久化（用户/agent 消息、文档卡片、生图卡片）
 
@@ -28,16 +28,12 @@ from src.video_agent.core import workflow_runtime
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.chat_cards import _stamp_doc_written, _video_card_items
 from src.video_agent.web.generation import resolve_openai_endpoint
-from src.video_agent.web.mock_chat import mock_stream
-from src.video_agent.web.mock_llm import mock_llm_reply
 from src.video_agent.web.multimodal_builder import (
     build_multimodal_content,
     _TYPE_TO_CATEGORY,
 )
 from src.video_agent.web.provider_config import (
     get_provider_config,
-    is_mock_provider,
-    is_mock_provider_async,
     load_merged_providers,
     load_merged_providers_async,
 )
@@ -74,15 +70,23 @@ __all__ = ["non_stream_worker", "build_multimodal_content"]
 # 停止阶段措辞/痕迹文案/停止持久化见 web/stop_manager.py
 
 
+def _require_chat_provider(body: Any) -> None:
+    """空供应商明确报错（演示兜底已删除）：
+    走既有 error_payload 分类机制（VideoAgentError → classify_exception）。"""
+    if not (getattr(body, "provider", "") or "").strip():
+        raise VideoAgentError(
+            "尚未配置聊天供应商，请先到「设置」中配置聊天供应商",
+            status_code=400, error_code="PROVIDER_NOT_CONFIGURED")
+
+
 async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_injector=None, stop_scope: str = "chat") -> None:
-    """流式处理公共实现（mock + 真实供应商）；任务式后台任务 worker 的核心主体。
+    """流式处理公共实现（真实供应商）；任务式后台任务 worker 的核心主体。
 
     pending_injector：可选 callable → List[{id, text}]，轮间引导注入器，
     由后台任务路径装配（agent_task_manager.drain_pending_guidance）。
     stop_scope：协作式停止标志作用域——任务式传输=task_id
     （多任务并发互不串）。"""
-    # 铁律文档每轮确保存在（宪法）：项目级生产契约唯一表述源，
-    # 真实聊天/任务路径同样生效，不能只在 mock 路径创建
+    # 铁律文档每轮确保存在（宪法）：项目级生产契约唯一表述源，聊天路径生效
     from src.video_agent.core.spec_rules import ensure_iron_rules_doc
     try:
         ensure_iron_rules_doc(svc.state_dict)
@@ -133,13 +137,8 @@ async def _stream_worker_impl(body: Any, svc: StateManager, emit, pending_inject
         videos=body.videos or [],
     )
 
-    # ---------- mock：模拟流式 ----------
-    if is_mock_provider(body.provider, body.model):
-        await mock_stream(
-            svc, executor, body, user_text, llm_user_text,
-            use_studio_context, emit, t0, meta_builder=_build_meta_note,
-        )
-        return
+    # ---------- 空供应商：明确报错（不再有演示兜底） ----------
+    _require_chat_provider(body)
 
     # ---------- 真实供应商 ----------
     await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal, wiz_doc=_wiz_doc, stop_scope=stop_scope)
@@ -543,36 +542,8 @@ async def _non_stream_inner(body: Any, user_text: str) -> Dict[str, Any]:
     async with svc.lock:
         _record_active_skill(svc, body)
 
-    # mock 路径
-    _wiz_card = ""
-    if is_mock_provider(body.provider, body.model):
-        async with svc.lock:
-            if use_studio_context:
-                bind_attachments(svc, body.attachments)
-                # 截断重答内部守卫（同流式轨）：用户消息已落盘时不重复持久化
-                if not chat_tail_ops.user_message_persisted.get():
-                    svc.add_chat_message(
-                        "user", user_text,
-                        doc_blocks=getattr(body, "doc_blocks", None) or None,
-                        skill_blocks=getattr(body, "skill_blocks", None) or None,
-                    )
-                # 规格卡自提交结果投影（用户消息之后），名字随载荷下发保 live 可见
-                if _wiz_doc_ns:
-                    svc.add_chat_message("agent", "", doc_card=_wiz_doc_ns)
-                _wiz_card = _wiz_doc_ns
-            # 单轨化：mock 动作以结构化 dict 直达执行器，不经文本块解析
-            visible, actions = mock_llm_reply(llm_user_text, svc.build_agent_context(body.asset_mode))
-            applied = executor.execute(actions)
-            if use_studio_context:
-                svc.add_chat_message("agent", visible, model_name=body.model or "")
-        return {
-            "text": visible, "applied_actions": applied, "steps": 1,
-            "warnings": ["当前为 mock 供应商，回复由本地规则生成，未调用真实 LLM"],
-            "confirmation": "",
-            "documents_written": executor.documents_written + ([_wiz_card] if _wiz_card else []),
-            "state": svc.get_full_snapshot(),
-            "workflow": workflow_runtime.project(svc.state_dict),
-        }
+    # 空供应商：明确报错（不再有演示兜底）
+    _require_chat_provider(body)
 
     # 真实供应商
     history = truncate_history([

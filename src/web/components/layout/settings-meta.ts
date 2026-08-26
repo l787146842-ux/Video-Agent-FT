@@ -25,7 +25,6 @@ export const PROTOCOL_OPTIONS = [
   { value: 'jimeng', label: '即梦 CLI' },
   { value: 'codex', label: 'OpenAI Codex CLI' },
   { value: 'gemini-cli', label: 'Antigravity CLI' },
-  { value: 'mock', label: 'Mock（本地演示）' },
 ];
 
 export const CLI_PROTOCOLS = new Set(['jimeng', 'codex', 'gemini-cli']);
@@ -39,7 +38,7 @@ export const IMAGE_MODE_OPTIONS = [
 ];
 export const imageModeLabel = (v: string) => IMAGE_MODE_OPTIONS.find((o) => o.value === v)?.label || v;
 /** 内置平台（画布不显示删除按钮） */
-export const BUILTIN_IDS = new Set(['modelscope', 'runninghub', 'volcengine', 'mock']);
+export const BUILTIN_IDS = new Set(['modelscope', 'runninghub', 'volcengine']);
 
 export const CLI_ENTRIES = [
   { key: 'jimeng', label: '即梦 CLI', protocol: 'jimeng', statusPath: '/api/jimeng/status', helpPath: '/api/jimeng/help' },

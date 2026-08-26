@@ -56,6 +56,17 @@ export function actionForKind(kind: ErrorKind | string | null | undefined): Erro
   return ERROR_ACTION_MAP[normalizeKind(kind)] || ERROR_ACTION_MAP.unknown;
 }
 
+/** code 级覆盖：个别 code 的 affordance 比其所属 kind 更明确（集中一处可扩展）。
+ * 未配置供应商归 unknown，但应附「检查 API 配置」跳转按钮。 */
+const CODE_ACTION_OVERRIDES: Record<string, ErrorAction> = {
+  'err.unknown.provider_not_configured': { settingsHint: true },
+};
+
+/** 按完整负载解析动作（code 覆盖优先于 kind 映射） */
+export function actionForPayload(payload: Pick<ErrorPayload, 'code' | 'kind'>): ErrorAction {
+  return CODE_ACTION_OVERRIDES[payload.code] || actionForKind(payload.kind);
+}
+
 /** 既有（legacy）error_code → kind/code 桥接（后端 LEGACY_CODE_MAP 生成；
  * 后端未携带 code/kind 的旧响应/旧记录兜底归类） */
 const LEGACY_CODE_MAP: Record<string, { kind: ErrorKind; code: string }> = SSE_LEGACY_ERROR_CODES;

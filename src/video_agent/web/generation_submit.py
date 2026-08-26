@@ -312,10 +312,13 @@ def submit_video_task(
         build_storyboard_media_map,
         resolve_prompt_mentions,
     )
-    from src.video_agent.web.provider_config import is_mock_provider
     from src.video_agent.web.task_manager import get_task_manager, writeback_if_complete
 
     provider_id = resolve_provider_ref(provider_id)
+
+    # 空供应商：明确报错（演示兜底已删除）
+    if not (provider_id or "").strip():
+        raise GenerationError("尚未配置生成供应商，请先到「设置」中配置生成供应商")
 
     # 连败熔断：上游持续限流时新提交直接报错，不再起整批任务（与生图同口径）
     if video_channel.circuit_open(provider_id):
@@ -357,12 +360,8 @@ def submit_video_task(
 
     media_refs_payload = out_images + out_videos + out_audios
 
-    # 供应商适配器：真实供应商从启动注册的适配器表取；mock 解析为 mock_video
-    from src.video_agent.web.providers import resolve_adapter_name
-    if is_mock_provider(provider_id, model):
-        adapter_name = resolve_adapter_name(provider_id, "video")
-    else:
-        adapter_name = provider_id or "modelscope"
+    # 供应商适配器：从启动注册的适配器表取
+    adapter_name = provider_id or "modelscope"
     try:
         adapter = AdapterFactory.get_adapter("video_generation", adapter_name)
     except ValueError as e:
@@ -371,7 +370,7 @@ def submit_video_task(
         ) from e
 
     # 空模型兜底：供应商配置的第一个视频模型
-    if not model and not is_mock_provider(provider_id, model):
+    if not model:
         cfg0 = get_provider_config(provider_id)
         if cfg0:
             defaults = [m for m in (cfg0.get("video_models") or []) if m]
@@ -424,10 +423,7 @@ def submit_video_task(
                     if idx == 0:
                         adapter_c = adapter
                     else:
-                        if is_mock_provider(pid, mdl):
-                            adapter_name_c = resolve_adapter_name(pid, "video")
-                        else:
-                            adapter_name_c = pid or "modelscope"
+                        adapter_name_c = pid or "modelscope"
                         adapter_c = AdapterFactory.get_adapter("video_generation", adapter_name_c)
                     # 有界并发：供应商提交调用经 video 通道节流
                     # （信号量 + 429 退避 + 连败熔断）；异步任务的长轮询等待

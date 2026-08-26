@@ -103,7 +103,7 @@ class TurnExecutor:
     async def call_llm(self, system: str, messages: List[Dict[str, Any]]) -> ChatResponse:
         """
         LLM 调用（§2.2）：支持 function calling 的 adapter 传入 tool schemas；
-        不支持的（mock/演示）纯文本调用。
+        不支持的供应商走纯文本调用。
         """
         p = self.planner
         full_messages = [{"role": "system", "content": system}] + messages
@@ -119,7 +119,7 @@ class TurnExecutor:
         record_live_context(p.state_manager.active_project_id, full_messages)
 
         if p.llm_adapter is None:
-            # 无 adapter 时返回空响应（mock 路径由上层处理）
+            # 无 adapter 时返回空响应
             return ChatResponse(content="", finish_reason="stop")
 
         if p.llm_adapter.supports_function_calling:

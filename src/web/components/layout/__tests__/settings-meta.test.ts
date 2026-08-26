@@ -44,8 +44,8 @@ describe('settings-meta 常量一致性', () => {
     });
   });
 
-  it('内置平台集合含 mock（演示平台不得显示删除）', () => {
-    expect(BUILTIN_IDS.has('mock')).toBe(true);
+  it('内置平台集合含 modelscope（内置平台不得显示删除）', () => {
+    expect(BUILTIN_IDS.has('modelscope')).toBe(true);
   });
 });
 

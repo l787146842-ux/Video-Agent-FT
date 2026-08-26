@@ -21,7 +21,6 @@ from src.video_agent.web.provider_config import (
     get_canvas_provider_ids_async,
     get_provider_config,
     get_provider_config_async,
-    is_mock_provider_async,
     load_merged_providers_async,
     resolve_provider_ref_async,
 )
@@ -333,7 +332,7 @@ async def generate_image_via_provider(
     # 模型解析优先级：规格文档指定（LLM action 参数）→ 预览框草稿参数
     # （action_executor 已按此链传入）→ 供应商配置的第一个图片模型
     cfg0 = await get_provider_config_async(provider_id)
-    if cfg0 and not model and not await is_mock_provider_async(provider_id, model):
+    if cfg0 and not model:
         defaults = [m for m in (cfg0.get("image_models") or []) if m]
         if defaults:
             model = defaults[0]

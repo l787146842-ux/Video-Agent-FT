@@ -324,7 +324,6 @@ export interface TaskResult {
   video_url?: string;
   error?: string;
   elapsed?: string;
-  mock?: boolean;
 }
 
 // ===== 结构化决策表单（workflow pending_decision 投影契约） =====

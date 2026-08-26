@@ -80,14 +80,14 @@ def _resolve_resend_target(body: TruncateResendRequest) -> Tuple[str, str]:
     """解析重答的 provider/model（截断前预检，非法抛 ValueError → 400）。
 
     显式传入 → 校验供应商存在且启用、模型在其聊天模型清单内；
-    未传入 → 沿用服务端默认解析。mock 供应商恒可用（调试/演示通道）。
+    未传入 → 沿用服务端默认解析。
     """
     default_provider, default_model = _resolve_chat_target()
     provider = (body.provider or "").strip() or default_provider
     model = (body.model or "").strip()
     if not model and provider == default_provider:
         model = default_model
-    if provider and provider != "mock":
+    if provider:
         chosen = next(
             (p for p in provider_config.load_merged_providers()
              if p.get("id") == provider),

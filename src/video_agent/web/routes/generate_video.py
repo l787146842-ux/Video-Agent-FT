@@ -1,7 +1,7 @@
 """/api/generate 视频生成端点。
 
 真实供应商：通过 OpenAICompatVideoAdapter 调用异步视频生成 API。
-mock 供应商：走 mock 适配器（结果带 mock 标记）。
+未配置供应商：明确报错（演示兜底已删除）。
 """
 import time
 from typing import Dict, List
@@ -16,8 +16,6 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.utils import gen_id
 from src.video_agent.web.generation import collect_shot_video_refs
-from src.video_agent.web.provider_config import is_mock_provider
-from src.video_agent.web.providers import resolve_adapter_name
 
 from .generate_common import (
     VideoGenRequest,
@@ -38,36 +36,13 @@ async def generate_video(body: VideoGenRequest):
     """
     提交视频生成任务。
     真实供应商：通过 OpenAICompatVideoAdapter 调用异步视频生成 API。
-    mock 供应商：走 mock 适配器（结果带 mock 标记）。
+    未配置供应商：明确报错。
     """
-    if is_mock_provider(body.provider_id, body.model):
-        adapter_name = resolve_adapter_name(body.provider_id, "video")
-        try:
-            adapter = AdapterFactory.get_adapter("video_generation", adapter_name)
-        except ValueError:
-            raise VideoAgentError(
-                f"mock 适配器 '{adapter_name}' 未注册", status_code=500
-            )
-
-        image_url = body.images[0]["url"] if body.images else ""
-        result = await adapter.generate(image_url=image_url, prompt=body.prompt)
-        _new_task(
-            result.task_id,
-            status=result.status,
-            adapter_type="video_generation",
-            adapter_name=adapter_name,
-            draft_id=body.draft_id,
-            draft_type=body.draft_type,
-            mock=True,
-            video_url=None,
-        )
-        _tm.record_gen_log(
-            media_type="video", status="succeeded", provider=body.provider_id, model=body.model or "mock-video",
-            prompt=body.prompt, draft_id=body.draft_id, mock=True, source="manual",
-            task_id=result.task_id,
-        )
-        logger.info(f"[Generate] [MOCK] 视频任务已提交: {result.task_id}")
-        return {"task_id": result.task_id, "mock": True}
+    # 空供应商：明确报错（不再有演示兜底）
+    if not (body.provider_id or "").strip():
+        raise VideoAgentError(
+            "尚未配置生成供应商，请先到「设置」中配置生成供应商",
+            status_code=400, error_code="PROVIDER_NOT_CONFIGURED")
 
     # ---------- 真实供应商：异步任务 ----------
     adapter_name = body.provider_id or "modelscope"

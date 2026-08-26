@@ -1,4 +1,4 @@
-"""provider_config：.env 写入消毒、key 读写、mock 判定、画布配置合并（全部重定向到临时目录）"""
+"""provider_config：.env 写入消毒、key 读写、可用供应商判定、画布配置合并（全部重定向到临时目录）"""
 import json
 import pytest
 
@@ -56,14 +56,6 @@ def test_get_key_preview_masks(monkeypatch):
     assert preview.endswith("1234")
 
 
-def test_is_mock_provider():
-    assert pc.is_mock_provider("", "") is True
-    assert pc.is_mock_provider("mock", "anything") is True
-    assert pc.is_mock_provider("real-provider", "mock-image") is True
-    # 未知 provider 但模型非 mock：不是 mock（会在后续解析端点时报配置错误）
-    assert pc.is_mock_provider("real-provider", "gpt-5.5") is False
-
-
 def test_provider_key_env_sanitized():
     assert pc.provider_key_env("modelscope") == "MODELSCOPE_API_KEY"
     name = pc.provider_key_env("weird id!!")
@@ -73,7 +65,7 @@ def test_provider_key_env_sanitized():
 
 def test_load_providers_fallback_when_missing():
     providers = pc.load_api_providers()
-    assert any(p["id"] == "mock" for p in providers)
+    assert any(p["id"] == "modelscope" for p in providers)
 
 
 # ---------- 画布配置合并测试 ----------

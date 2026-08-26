@@ -45,11 +45,7 @@ def _patch_providers(monkeypatch, module):
     async def _load():
         return list(_PROVIDERS)
 
-    async def _not_mock(pid, model=None):
-        return False
-
     monkeypatch.setattr(module, "load_merged_providers_async", _load)
-    monkeypatch.setattr(module, "is_mock_provider_async", _not_mock)
 
 
 class TestSameModelCrossProviderCandidates:

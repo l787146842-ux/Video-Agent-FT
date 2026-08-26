@@ -303,7 +303,7 @@ class FCToolRunner:
 
             # --- 生图模型强制注入：草稿自身（中间面板直接选择）> 全局设置 > 平台默认 ---
             if name == "generate_image" and (
-                "adapter_provider" not in args or args.get("adapter_provider") in ("mock", "", None)
+                "adapter_provider" not in args or args.get("adapter_provider") in ("", None)
             ):
                 _sp, _sm = ports.provider_config_port().spec_media_preference(self._raw_state())
                 # 模型能力参数唯一权威源 = 全局设置；优先级 =

@@ -3,7 +3,7 @@ import { createStore, produce } from 'solid-js/store';
 import type { ChatMessage, SseDonePayload, RichContentPart, PendingDecisionPayload } from '@/types';
 import { saveQueue, loadQueue } from '@/lib/chat/queue-storage';
 import { t } from '@/lib/locale';
-import { actionForKind, type ErrorPayload } from '@/lib/error-payload';
+import { actionForPayload, type ErrorPayload } from '@/lib/error-payload';
 import {
   resetStreamFields, continueLastTaskSuggestion, buildStopMessages,
 } from '@/lib/stream-finalize';
@@ -266,10 +266,10 @@ export const chatActions = {
     }));
   },
 
-  /** 流式错误：输入为结构化 ErrorPayload，affordance 查 ERROR_ACTION_MAP
-   * 单一映射表（不做正则猜文案）；会话中已有用户消息时派生「继续刚才的任务」 */
+  /** 流式错误：输入为结构化 ErrorPayload，affordance 按完整负载解析
+   *  （code 覆盖优先于 kind 映射；不做正则猜文案）；会话中已有用户消息时派生「继续刚才的任务」 */
   streamError(payload: ErrorPayload) {
-    const action = actionForKind(payload.kind);
+    const action = actionForPayload(payload);
     setChatState(produce((s) => {
       // auth →「检查 API 配置」跳转；quota/network 等 affordance 由映射表集中决定；
       // 上游原始报文折叠展示（人话在气泡，raw 在折叠）

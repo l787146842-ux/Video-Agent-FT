@@ -30,7 +30,7 @@ beforeEach(() => {
 describe('sse.ts 任务式传输端点', () => {
   it('startAgentTask：POST /api/agent/tasks 原样携带聊天请求体', async () => {
     fetchMock.mockResolvedValue(res({ task_id: 't1', project_id: 'p1' }));
-    const req = { message: '你好', provider: 'mock', model: 'm' } as AgentChatRequest;
+    const req = { message: '你好', provider: 'provA', model: 'm' } as AgentChatRequest;
     const info = await startAgentTask(req);
     expect(info).toEqual({ task_id: 't1', project_id: 'p1' });
     const [url, init] = fetchMock.mock.calls[0];

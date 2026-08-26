@@ -536,8 +536,7 @@ def _sec_protocol(pb: "PromptBuilder", context: "PlannerContext") -> str:
     max_steps 模板化注入（消协议模板与 config 双写漂移）。"""
     if not context.use_studio_context:
         return ""
-    # 协议单轨：动作通道唯一 = FC 工具
-    #（mock 通道除外，其输出为演示用固定文本）。
+    # 协议单轨：动作通道唯一 = FC 工具。
     return render_prompt("planner/system_fc.md", max_steps=settings.max_steps) or ""
 
 

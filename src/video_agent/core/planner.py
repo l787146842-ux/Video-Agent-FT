@@ -338,7 +338,7 @@ class Planner:
         """
         对话处理（多步循环）—— 流式/非流式统一入口。
         委托给 run_agent_loop 统一循环骨架；动作通道唯一 = FC 工具调用
-        （文本块解析仅消费系统内部合成的确认块与 mock 输出）。
+        （文本块解析仅消费系统内部合成的确认块）。
         stream_hook: 可选 async callable(text)，流式模式下每段 LLM 增量文本回调。
         """
         # 当前 Skill 归属：请求未携带 Skill 时回退项目 usedSkills 末位，

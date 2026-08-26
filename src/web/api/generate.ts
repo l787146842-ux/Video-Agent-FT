@@ -168,7 +168,6 @@ export interface GenerationLogEntry {
   result_url: string;
   elapsed: number;
   requested_size: string;
-  mock: boolean;
   source: string;
   ts: string;
 }

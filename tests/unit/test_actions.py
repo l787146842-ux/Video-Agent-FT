@@ -18,7 +18,7 @@ def executor(svc):
 # test_parse_actions_block / test_parse_dict_with_actions_key /
 # test_truncated_json_yields_no_actions 已随任务#27 文本轨残留退役删除：
 # 被测对象（web/action_parser.py 文本块容错解析）整文件退役，
-# 动作通道唯一 = FC 工具调用（ADR-0001）；mock 演示通道早已改结构化 dict 直达。
+# 动作通道唯一 = FC 工具调用（ADR-0001）；演示通道早已改结构化 dict 直达。
 
 
 def test_add_group_with_draft(svc, executor):

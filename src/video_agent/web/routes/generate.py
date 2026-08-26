@@ -7,9 +7,8 @@
 - 共享设施：generate_common.py（任务管理、SSE 通知、请求模型、轮询）
 
 原则：
-- 只有用户显式选择 mock 供应商（或 provider 为空）才走 mock，且结果会标注 mock=True；
-- 真实供应商失败 → 返回真实错误（HTTP 4xx/5xx + detail），绝不回退假图；
-- 视频生成尚未接入真实供应商 → 非 mock 一律 501，明确告知。
+- 未配置供应商 → 明确报错（演示兜底已删除）；
+- 真实供应商失败 → 返回真实错误（HTTP 4xx/5xx + detail），绝不回退假图。
 """
 from loguru import logger
 import asyncio

@@ -15,16 +15,18 @@ from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.base import ToolResult
 
 
-def test_iron_rules_ensured_on_real_chat(tmp_path):
-    """真实聊天/任务路径每轮确保《执行铁律.md》存在（不能只在 mock 路径创建）。"""
+def test_iron_rules_ensured_on_real_chat(tmp_path, monkeypatch):
+    """真实聊天/任务路径每轮确保《执行铁律.md》存在。"""
     from src.video_agent.core.spec_rules import find_iron_rules_doc
     from src.video_agent.state.manager import StateManager
     from src.video_agent.web.chat_service import _stream_worker_impl
-    from tests.unit.test_agent_task_transport import _mock_body
+    from tests.unit.test_agent_task_transport import _fake_body, _stub_chat_planner
+
+    _stub_chat_planner(monkeypatch)
 
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["documents"] = []
-    body = _mock_body()
+    body = _fake_body()
 
     async def emit(_ev):
         pass

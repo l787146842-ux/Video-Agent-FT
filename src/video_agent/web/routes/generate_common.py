@@ -44,9 +44,6 @@ def _log_task_exception(task: asyncio.Task) -> None:
 _TASK_TTL_SECONDS = settings.task_ttl_seconds
 _TASK_MAX = settings.task_max
 
-# mock 视频用可播放的示例视频，而不是死链
-MOCK_VIDEO_URL = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
-
 
 def _new_task(task_id: str, **fields: Any) -> Dict[str, Any]:
     return _tm.create_task(task_id, **fields)
@@ -125,14 +122,9 @@ async def poll_task(task_id: str) -> Dict[str, Any]:
                 # result 可能是 VideoGenerationResponse 或 ImageGenerationResponse，
                 # 两者字段不重叠，getattr 是跨类型的合理探测（非冗余防御）
                 if getattr(result, "video_url", None):
-                    # mock 视频适配器返回的是演示占位地址，替换为可播放的示例视频
-                    task["video_url"] = MOCK_VIDEO_URL if task.get("mock") else result.video_url
+                    task["video_url"] = result.video_url
                 if getattr(result, "image_urls", None):
-                    urls = result.image_urls
-                    if task.get("mock"):
-                        # mock 图片适配器的 mock-storage.local 是死链，换成可显示的占位图
-                        urls = [f"https://picsum.photos/seed/{task_id}/1280/720"]
-                    task["result"] = {"images": urls}
+                    task["result"] = {"images": result.image_urls}
                 _writeback_if_complete(task_id)
             elif result.status == "failed":
                 task["status"] = "failed"

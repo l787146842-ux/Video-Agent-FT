@@ -7,7 +7,7 @@ from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 class GenerateImageParams(BaseModel):
     prompt: str = Field(..., description="图片生成的视觉提示词")
     reference_image: Optional[str] = Field(None, description="参考图片的本地路径")
-    adapter_provider: str = Field("mock", description="后台使用的适配器名称")
+    adapter_provider: str = Field("", description="后台使用的适配器名称")
     aspect_ratio: Optional[str] = Field(None, description="画面比例，如 16:9、9:16、1:1")
 
 class GenerateImageTool(BaseTool):
@@ -24,6 +24,8 @@ class GenerateImageTool(BaseTool):
         return GenerateImageParams
 
     async def aexecute(self, params: GenerateImageParams) -> ToolResult:
+        if not (params.adapter_provider or "").strip():
+            return ToolResult(success=False, error="尚未配置生成供应商，请先到「设置」中配置生成供应商")
         try:
             adapter = AdapterFactory.get_adapter("image_generation", params.adapter_provider)
             

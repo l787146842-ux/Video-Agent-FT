@@ -79,7 +79,6 @@ src/video_agent/web/generation_submit.py:58:time
 src/video_agent/web/generation_submit.py:60:src.video_agent.utils
 src/video_agent/web/generation_submit.py:61:src.video_agent.core.prompt_refs
 src/video_agent/web/generation_submit.py:65:src.video_agent.web.task_manager
-src/video_agent/web/mock_chat.py:33:src.video_agent.core
 src/video_agent/web/routes/agent.py:166:src.video_agent.core
 src/video_agent/web/routes/agent.py:189:src.video_agent.web.chat_service
 src/video_agent/web/routes/agent.py:197:src.video_agent.web.agent_task_manager

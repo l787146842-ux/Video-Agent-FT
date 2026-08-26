@@ -153,7 +153,6 @@ class GenerationTaskManager:
         result_url: str = "",
         elapsed: float = 0.0,
         requested_size: str = "",
-        mock: bool = False,
         source: str = "",
         task_id: str = "",
     ) -> Dict[str, Any]:
@@ -194,7 +193,6 @@ class GenerationTaskManager:
             "result_url": result_url,
             "elapsed": round(elapsed, 1),
             "requested_size": requested_size,
-            "mock": mock,
             "source": source,
             "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
@@ -399,7 +397,7 @@ def writeback_if_complete(task_id: str) -> None:
                     for other_field in ("imgUrl", "videoUrl", "audioUrl"):
                         if other_field != field:
                             draft[other_field] = ""
-                    draft["tag"] = "mock 演示" if task.get("mock") else "已生成"
+                    draft["tag"] = "已生成"
                     svc.save()
                     logger.info(f"[Generate] Writeback: draft {draft_id} → {field}={url[:60]}")
                     return

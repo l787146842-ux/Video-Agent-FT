@@ -1,7 +1,7 @@
 """/api/generate 图片生成端点。
 
 原则：
-- 只有用户显式选择 mock 供应商（或 provider 为空）才走 mock，且结果会标注 mock=True；
+- 未配置供应商 → 明确报错（演示兜底已删除）；
 - 真实供应商失败 → 返回真实错误（HTTP 4xx/5xx + detail），绝不回退假图。
 """
 import time
@@ -11,15 +11,12 @@ from fastapi import APIRouter
 
 from loguru import logger
 
-from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.exceptions import GenerationError, VideoAgentError
 from src.video_agent.web.error_payload import LEGACY_VALIDATION_ERROR
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, ALL_CATEGORIES_TUPLE
 from src.video_agent.utils import gen_id
 from src.video_agent.web.generation import generate_image_via_provider, image_size_for
-from src.video_agent.web.provider_config import is_mock_provider
-from src.video_agent.web.providers import resolve_adapter_name
 
 from .generate_common import (
     ImageGenRequest,
@@ -42,16 +39,18 @@ async def generate_image(body: ImageGenRequest):
     """
     提交图片生成任务。
     真实供应商：OpenAI 兼容 /images/generations，失败回退 chat 生图；再失败 → 报错。
-    mock 供应商：走 mock 适配器（结果标注 mock）。
+    未配置供应商：明确报错。
     """
     if not body.prompt.strip():
         raise VideoAgentError(
             "提示词不能为空", status_code=400, error_code=LEGACY_VALIDATION_ERROR
         )
 
-    # ---------- mock 路径（仅显式选择） ----------
-    if is_mock_provider(body.provider_id, body.model):
-        return await _generate_image_mock(body)
+    # 空供应商：明确报错（不再有演示兜底）
+    if not (body.provider_id or "").strip():
+        raise VideoAgentError(
+            "尚未配置生成供应商，请先到「设置」中配置生成供应商",
+            status_code=400, error_code="PROVIDER_NOT_CONFIGURED")
 
     # ---------- 真实供应商：异步任务（立即返回 task_id，前端轮询进度与耗时） ----------
     task_id = gen_id("img")
@@ -136,35 +135,6 @@ async def generate_image(body: ImageGenRequest):
     return {"task_id": task_id, "status": "processing"}
 
 
-async def _generate_image_mock(body: ImageGenRequest):
-    """mock 适配器路径——响应带 mock 标记，前端/用户能分辨"""
-    adapter_name = resolve_adapter_name(body.provider_id, "image")
-    try:
-        adapter = AdapterFactory.get_adapter("image_generation", adapter_name)
-    except ValueError:
-        raise VideoAgentError(
-            f"mock 适配器 '{adapter_name}' 未注册", status_code=500
-        )
-
-    ref_url = body.reference_images[0]["url"] if body.reference_images else None
-    result = await adapter.generate_image(prompt=body.prompt, reference_image=ref_url)
-
-    _new_task(
-        result.task_id,
-        status=result.status,
-        adapter_type="image_generation",
-        adapter_name=adapter_name,
-        draft_id=body.draft_id,
-        draft_type=body.draft_type,
-        prompt=body.prompt,
-        model=body.model or "mock-image",
-        mock=True,
-        result=None,
-    )
-    logger.info(f"[Generate] [MOCK] 图片任务已提交: {result.task_id}")
-    return {"task_id": result.task_id, "mock": True}
-
-
 @router.get("/generate/image/{task_id}")
 @router.get("/canvas-image-tasks/{task_id}")
 async def poll_image_task(task_id: str):
@@ -202,8 +172,10 @@ async def batch_generate_image(body: BatchImageGenRequest):
     if not targets:
         return {"task_ids": [], "count": 0, "detail": "未找到有提示词的草稿"}
 
-    if is_mock_provider(body.provider_id, body.model):
-        return {"task_ids": [], "count": 0, "detail": "mock 供应商不支持批量生成，请逐个操作"}
+    if not (body.provider_id or "").strip():
+        raise VideoAgentError(
+            "尚未配置生成供应商，请先到「设置」中配置生成供应商",
+            status_code=400, error_code="PROVIDER_NOT_CONFIGURED")
 
     task_ids: List[str] = []
     for group, draft in targets:

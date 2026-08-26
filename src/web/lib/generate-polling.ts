@@ -75,7 +75,7 @@ export async function pollAndPreviewImage(taskId: string, draftId: string): Prom
         imgUrl: data.result.images[0],
         videoUrl: '',
         audioUrl: '',
-        tag: data.mock ? 'mock 演示' : '已生成',
+        tag: '已生成',
       });
       const sec = data.elapsed || finishGeneration(draftId);
       finishGeneration(draftId);
@@ -102,7 +102,7 @@ export async function pollAndPreviewVideo(taskId: string, draftId: string): Prom
     const t = findDraftRecord(draftId)?.type || 'shot';
     const url = data.video_url || data.result?.images?.[0];
     if ((data.status === 'succeeded' || data.status === 'completed') && url) {
-      patchDraft(draftId, t, { mediaType: 'video', genType: 'video', videoUrl: url, imgUrl: '', audioUrl: '', tag: data.mock ? 'mock 演示' : '已生成' });
+      patchDraft(draftId, t, { mediaType: 'video', genType: 'video', videoUrl: url, imgUrl: '', audioUrl: '', tag: '已生成' });
       const sec = data.elapsed || finishGeneration(draftId);
       finishGeneration(draftId);
       showToast(`视频渲染完成！耗时 ${sec}s`, 'success');

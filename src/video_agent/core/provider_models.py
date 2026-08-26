@@ -43,11 +43,11 @@ class ProviderBase(BaseModel):
 
 class OpenAIProvider(ProviderBase):
     """OpenAI 兼容协议供应商（包含 OpenAI / APIMart / 火山引擎 / Gemini 反代 / RunningHub 等）"""
-    protocol: Literal["openai", "apimart", "volcengine", "gemini", "runninghub", "mock"] = "openai"
+    protocol: Literal["openai", "apimart", "volcengine", "gemini", "runninghub"] = "openai"
 
     @model_validator(mode="after")
     def check_base_url(self) -> "OpenAIProvider":
-        if self.protocol != "mock" and not self.base_url:
+        if not self.base_url:
             logger.debug(
                 f"[ProviderModels] OpenAI 供应商 '{self.id}' 未配置 base_url"
             )
@@ -70,7 +70,7 @@ class CliProvider(ProviderBase):
 
 # 允许的协议类型（runninghub：ComfyUI 云工作流平台，走 OpenAI 风格请求，
 # 与 detect_protocol() 的检测结果保持一致）
-VALID_PROTOCOLS = {"openai", "gemini-cli", "codex", "jimeng", "volcengine", "apimart", "mock", "gemini", "runninghub"}
+VALID_PROTOCOLS = {"openai", "gemini-cli", "codex", "jimeng", "volcengine", "apimart", "gemini", "runninghub"}
 
 # CLI 协议集合
 _CLI_PROTOCOLS = {"gemini-cli", "codex", "jimeng"}

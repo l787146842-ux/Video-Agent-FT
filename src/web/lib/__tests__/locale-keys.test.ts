@@ -23,7 +23,6 @@ const BACKEND_STATUS_KEYS = [
   'agent.opsDone',
   'agent.gateHeal',
   'agent.modelFallback',
-  'agent.mockRunning',
   'agent.planning',
   'agent.actionsApplied',
 ];

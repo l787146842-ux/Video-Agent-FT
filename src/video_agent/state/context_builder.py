@@ -217,7 +217,7 @@ def build_full_snapshot(raw_state: Dict[str, Any], board_version: int) -> Dict[s
 
     返回深拷贝（json round-trip），调用方可任意使用不会回写
     污染内部状态。
-    快照仅在聊天完成/mock 路径低频调用，序列化开销可接受。
+    快照仅在聊天完成路径低频调用，序列化开销可接受。
     """
     snap = json.loads(json.dumps(raw_state, ensure_ascii=False))
     # 乐观锁版本号随快照下发（不写入状态 JSON 本体，避免污染 undo/快照）

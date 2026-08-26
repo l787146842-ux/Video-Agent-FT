@@ -1,4 +1,4 @@
-"""POST /api/skills/assistant 契约测试（mock adapter，不触网）。
+"""POST /api/skills/assistant 契约测试（stub 适配器，不触网）。
 
 验证：代码块提取 / 无代码块回落 null / LLM 失败回落 null。
 """

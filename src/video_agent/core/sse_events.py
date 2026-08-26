@@ -6,7 +6,7 @@ scripts/gen_api_types.py 生成（api.generated.ts 的 SseEvent），
 改动任一事件名/字段时重新运行生成器即双侧同步（--check 门禁钉死）。
 
 放在 core 层（而非 web 层）的原因：事件的生产者（planner/agent_loop/
-fc_tool_runner）在 core 层，web 层（chat_service/mock_chat）可以引用 core，
+fc_tool_runner）在 core 层，web 层（chat_service 等）可以引用 core，
 反过来则违反分层铁律。
 """
 

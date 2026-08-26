@@ -79,7 +79,7 @@ def _configured_names(kind: str) -> List[str]:
         names: List[str] = []
         key = "image_models" if kind == "image" else "video_models"
         for p in provider_config_port().load_merged_providers():
-            if not p.get("enabled", True) or (p.get("protocol") or "") == "mock":
+            if not p.get("enabled", True):
                 continue
             nm = str(p.get("name") or "").strip()
             if nm:

@@ -32,7 +32,7 @@ def test_s2_add_chat_message_stores_turn_id(svc):
 
 
 def test_s2_stream_and_nonstream_paths_carry_turn_id():
-    """G4 同类覆盖：流式/非流式/mock 三条路径的持久化与 done payload 均带 turn_id"""
+    """G4 同类覆盖：流式/非流式两条路径的持久化与 done payload 均带 turn_id"""
     cs = (ROOT / "src/video_agent/web/chat_service.py").read_text(encoding="utf-8")
     # 流式：生成一次、持久化共用、done payload 下发
     # （v2 批2 +1：向导规格卡投影 add_chat_message 同轮 turn_id）
@@ -46,6 +46,3 @@ def test_s2_stream_and_nonstream_paths_carry_turn_id():
     assert '"turn_id": turn_id' in cs
     # 非流式路径同样携带
     assert "turn_id=ns_turn_id" in cs
-    mock = (ROOT / "src/video_agent/web/mock_chat.py").read_text(encoding="utf-8")
-    assert "turn_id=turn_id" in mock
-    assert '"turn_id": turn_id' in mock

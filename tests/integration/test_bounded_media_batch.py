@@ -1,4 +1,4 @@
-"""P3-13 黄金用例：12 个 key_element 批量出图（mock 供应商）。
+"""P3-13 黄金用例：12 个 key_element 批量出图（桩供应商）。
 
 有界并行三件套（BoundedChannel）全链路验证——模型发起的执行器批内部
 （ImageGenerateTool → submit_image_task 统一提交管线 → image 通道 → 供应商）：
@@ -69,7 +69,7 @@ def _seed_key_elements(svc, n: int = _BATCH):
                 "label": "概念图",
                 "tag": "已确认",
                 "prompt": f"概念图提示词 {i}：白发老者站在冥王星冰原上，宿命感。",
-                "providerId": "mock",
+                "providerId": "prov-m",
                 "aspectRatio": "16:9",
             }],
         }
@@ -103,7 +103,7 @@ async def test_batch_12_peak_concurrency_within_semaphore(svc, monkeypatch):
     monkeypatch.setattr(generation_dispatch, "generate_image_via_provider", fake_gen)
 
     result = await ImageGenerateTool().aexecute(
-        GenerateImageInput(target="all_keyElements", provider_id="mock"))
+        GenerateImageInput(target="all_keyElements", provider_id="prov-m"))
     assert result.success and result.data["submitted"] == _BATCH
 
     outcomes = await _wait_all(result.data["task_ids"])
@@ -148,7 +148,7 @@ async def test_batch_12_429_backoff_retries_to_success(svc, monkeypatch):
     monkeypatch.setattr(generation_dispatch, "generate_image_via_provider", flaky_gen)
 
     result = await ImageGenerateTool().aexecute(
-        GenerateImageInput(target="all_keyElements", provider_id="mock"))
+        GenerateImageInput(target="all_keyElements", provider_id="prov-m"))
     assert result.success and result.data["submitted"] == _BATCH
 
     outcomes = await _wait_all(result.data["task_ids"])
@@ -162,7 +162,7 @@ async def test_batch_12_429_backoff_retries_to_success(svc, monkeypatch):
     # 429 退避生效：退避序列含 backoff_base=5s（重试前真实等待过）
     assert 5.0 in backoff_waits
     # 恢复型场景不得误触发熔断
-    assert not gen_mod.image_circuit_open("mock")
+    assert not gen_mod.image_circuit_open("prov-m")
 
 
 async def test_channel_429_backoff_series_exact():
@@ -184,7 +184,7 @@ async def test_channel_429_backoff_series_exact():
     _patched = asyncio.sleep
     asyncio.sleep = fake_sleep
     try:
-        url = await ch.run("mock", flaky)
+        url = await ch.run("prov-m", flaky)
     finally:
         asyncio.sleep = _patched
     assert url == "http://fake/ok.png"
@@ -209,17 +209,17 @@ async def test_batch_12_consecutive_failures_trip_circuit(svc, monkeypatch):
 
     # 第一批：全部失败，连败台账累计 ≥ 熔断阈值
     result = await ImageGenerateTool().aexecute(
-        GenerateImageInput(target="all_keyElements", provider_id="mock"))
+        GenerateImageInput(target="all_keyElements", provider_id="prov-m"))
     assert result.success and result.data["submitted"] == _BATCH
     outcomes = await _wait_all(result.data["task_ids"])
     assert not any(ok for ok, _ in outcomes)
-    assert gen_mod.image_circuit_open("mock")
+    assert gen_mod.image_circuit_open("prov-m")
 
     # 熔断后第二批：提交口确定性拦截（抛 GenerationError），供应商零新增调用
     before = calls["n"]
     with pytest.raises(GenerationError) as ei:
         await ImageGenerateTool().aexecute(
-            GenerateImageInput(target="all_keyElements", provider_id="mock"))
+            GenerateImageInput(target="all_keyElements", provider_id="prov-m"))
     assert "熔断" in str(ei.value)
     assert calls["n"] == before, "熔断开路后不得再触碰供应商"
 
@@ -234,8 +234,8 @@ async def test_channel_circuit_blocks_without_touching_provider():
 
     for _ in range(6):
         with pytest.raises(GenerationError):
-            await ch.run("mock", boom)
-    assert ch.circuit_open("mock")
+            await ch.run("prov-m", boom)
+    assert ch.circuit_open("prov-m")
 
     touched = {"n": 0}
 
@@ -244,14 +244,14 @@ async def test_channel_circuit_blocks_without_touching_provider():
         return "x"
 
     with pytest.raises(GenerationError) as ei:
-        await ch.run("mock", guard)
+        await ch.run("prov-m", guard)
     assert touched["n"] == 0
     assert "熔断" in str(ei.value)
 
     # 冷却窗口过后（台账人工恢复口径=reset）通道可恢复放行
     ch.reset()
-    assert not ch.circuit_open("mock")
-    assert await ch.run("mock", guard) == "x"
+    assert not ch.circuit_open("prov-m")
+    assert await ch.run("prov-m", guard) == "x"
 
 
 # ---------- bounded_gather 原语：同批多目标 gather + 通道 ----------
@@ -276,7 +276,7 @@ async def test_bounded_gather_keeps_order_and_isolates_failures():
 
     ch = gen_mod.BoundedChannel("gather-test", 2)
     results = await gen_mod.bounded_gather(
-        ch, [("mock", make_fn(i)) for i in range(6)])
+        ch, [("prov-m", make_fn(i)) for i in range(6)])
     assert results[0] == "ok-0"
     assert isinstance(results[1], GenerationError)
     assert results[5] == "ok-5"

@@ -55,7 +55,7 @@ describe('增量事件路由与异常帧', () => {
       { type: 'tool_started', id: 'tl1', name: 'gen_image', summary: '生成海报', args: { prompt: '赛博海报' } },
       { type: 'tool_finished', id: 'tl1', ok: true, elapsed_ms: 900, result_summary: '出图完成' },
       { type: 'doc_written', name: '剧本.md', turn_id: 'turn-1' },
-      { type: 'model_fallback', provider: 'mock', model: 'mock-chat' },
+      { type: 'model_fallback', provider: 'provA', model: 'model-A' },
       { type: 'guidance_injected', id: 'q1', text: '换个风格' },
       { type: 'actions_applied', payload: { count: 2, state: snapshot } },
       { type: 'task_status', status: 'running' },

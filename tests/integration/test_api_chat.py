@@ -1,4 +1,10 @@
-"""集成测试：/api/agent/chat 端到端（使用 FastAPI TestClient）"""
+"""集成测试：/api/agent/chat 端到端（使用 FastAPI TestClient）
+
+演示兜底已彻底删除：聊天链路经 stub 适配器/Planner 验证传输与持久化契约，
+未配置供应商时明确报错（PROVIDER_NOT_CONFIGURED）。
+"""
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -23,16 +29,37 @@ def client():
     return TestClient(app)
 
 
-class TestAgentChatMock:
-    """mock 供应商路径的端到端测试"""
+def _stub_chat_planner(monkeypatch, reply_text: str = "stub 回答"):
+    """stub 聊天链路内部（适配器端点解析 + Planner 循环），保传输/持久化契约。
+
+    与 test_truncate_resend 的流式 stub 同模式：不触网、不依赖任何供应商配置。
+    """
+    import src.video_agent.web.chat_service as cs
+
+    monkeypatch.setattr(cs, "_create_chat_adapter", lambda p, m: object())
+    monkeypatch.setattr(cs, "_resolve_summary_adapter", lambda body, cands: None)
+
+    async def fake_handle_message(self, content, ctx, on_event=None):  # noqa: ARG001
+        return SimpleNamespace(
+            text=reply_text, applied_actions=0, steps=1, warnings=[],
+            confirmation="", action_log=[], confirmation_options=[],
+            pause_id="", pause_kind="", image_urls=[], documents_written=[],
+            suggested_actions=None,
+        )
+
+    monkeypatch.setattr(cs.Planner, "handle_message", fake_handle_message)
+
+
+class TestAgentChatContract:
+    """错误契约出口（ErrorPayload 三层 + 兼容字段）"""
 
     def test_empty_message_rejected(self, client):
-        resp = client.post("/api/agent/chat", json={"message": "", "provider": "mock"})
+        resp = client.post("/api/agent/chat", json={"message": "", "provider": "provA"})
         assert resp.status_code == 400
 
     def test_empty_message_error_payload(self, client):
         """P9：空消息 400 出口走 ErrorPayload 契约（三层 + 兼容字段）"""
-        resp = client.post("/api/agent/chat", json={"message": "", "provider": "mock"})
+        resp = client.post("/api/agent/chat", json={"message": "", "provider": "provA"})
         body = resp.json()
         assert body["detail"] == "消息不能为空"
         assert body["message"] == "消息不能为空"
@@ -74,69 +101,61 @@ class TestAgentChatMock:
         assert body["kind"] == "auth"
         assert body["code"] == "err.auth.invalid_key"
 
-    def test_mock_chat_returns_text(self, client, reset_state):
-        resp = client.post("/api/agent/chat", json={
-            "message": "你好",
-            "provider": "mock",
-            "model": "mock-chat",
-        })
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "text" in data
-        assert len(data["text"]) > 0
-        assert data["steps"] >= 1
+    def test_provider_not_configured_error_payload(self, client):
+        """批次F：未配置聊天供应商 → 400 明确报错（不再有演示兜底），
+        错误码走既有 ErrorPayload 分类机制（前端据此挂「检查 API 配置」按钮）"""
+        resp = client.post("/api/agent/chat", json={"message": "你好", "provider": ""})
+        assert resp.status_code == 400
+        body = resp.json()
+        assert "配置聊天供应商" in body["detail"]
+        assert body["error_code"] == "PROVIDER_NOT_CONFIGURED"
+        assert body["kind"] == "unknown"
+        assert body["code"] == "err.unknown.provider_not_configured"
 
-    def test_mock_chat_applies_actions(self, client, reset_state):
-        """修改类指令应触发 studio-actions"""
-        resp = client.post("/api/agent/chat", json={
-            "message": "修改提示词",
-            "provider": "mock",
-            "model": "mock-chat",
-        })
-        assert resp.status_code == 200
-        data = resp.json()
-        # mock 路径对"修改"关键词会执行 update_draft
-        assert data["applied_actions"] >= 0
 
-    def test_mock_chat_add_group(self, client, reset_state):
-        """拆解类指令应创建分组"""
-        resp = client.post("/api/agent/chat", json={
-            "message": "拆解这个文档",
-            "provider": "mock",
-            "model": "mock-chat",
-        })
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["applied_actions"] >= 1
-        # 验证状态中确实创建了分组
-        state = data.get("state") or reset_state.state
-        assert len(state.get("keyElements", [])) > 0 or len(state.get("shots", [])) > 0
+class TestAgentChatBehavior:
+    """聊天链路行为（stub 适配器/Planner，不触网）"""
 
-    def test_chat_history_persisted(self, client, reset_state):
+    def test_chat_history_persisted(self, client, reset_state, monkeypatch):
         """对话应被持久化到 chatMessages"""
-        client.post("/api/agent/chat", json={
+        _stub_chat_planner(monkeypatch)
+        resp = client.post("/api/agent/chat", json={
             "message": "你好",
-            "provider": "mock",
-            "model": "mock-chat",
+            "provider": "provA",
+            "model": "model-A",
         })
+        assert resp.status_code == 200
         messages = reset_state.get_chat_messages()
         # 至少有 user + agent 两条
         assert len(messages) >= 2
         assert messages[-2]["sender"] == "user"
         assert messages[-1]["sender"] == "agent"
 
-    def test_context_mode_none_skips_context_injection(self, client, reset_state):
-        """context_mode=none 时不注入工作台上下文，但仍返回 state"""
+    def test_context_mode_none_skips_context_injection(self, client, reset_state, monkeypatch):
+        """context_mode=none 时不注入工作台上下文，state 不下发（非流式同构）"""
+        _stub_chat_planner(monkeypatch)
         resp = client.post("/api/agent/chat", json={
             "message": "纯文本对话",
-            "provider": "mock",
-            "model": "mock-chat",
+            "provider": "provA",
+            "model": "model-A",
             "context_mode": "none",
         })
         assert resp.status_code == 200
         data = resp.json()
-        # mock 路径仍返回 state（供前端刷新），但不注入协议上下文
         assert "text" in data
+        assert data.get("state") is None
+
+    def test_selected_draft_context(self, client, reset_state, monkeypatch):
+        """选中态参数应被接受"""
+        _stub_chat_planner(monkeypatch)
+        resp = client.post("/api/agent/chat", json={
+            "message": "确认这个草稿",
+            "provider": "provA",
+            "model": "model-A",
+            "selected_draft_id": "ke-1-d1",
+            "selected_type": "keyElement",
+        })
+        assert resp.status_code == 200
 
 
 class TestAgentChatValidation:
@@ -144,17 +163,6 @@ class TestAgentChatValidation:
 
     def test_missing_message_field_returns_422(self, client):
         """缺少必填字段 message 时 FastAPI 返回 422 验证错误"""
-        resp = client.post("/api/agent/chat", json={"provider": "mock"})
+        resp = client.post("/api/agent/chat", json={"provider": "provA"})
         # message 是必填字段，缺失时 FastAPI 返回 422
         assert resp.status_code == 422
-
-    def test_selected_draft_context(self, client, reset_state):
-        """选中态参数应被接受"""
-        resp = client.post("/api/agent/chat", json={
-            "message": "确认这个草稿",
-            "provider": "mock",
-            "model": "mock-chat",
-            "selected_draft_id": "ke-1-d1",
-            "selected_type": "keyElement",
-        })
-        assert resp.status_code == 200

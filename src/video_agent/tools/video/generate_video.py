@@ -16,7 +16,7 @@ class GenerateVideoParams(BaseModel):
     image_url: str = Field(..., description="首帧图片路径或URL")
     prompt: str = Field(..., description="视频生成的动态描述提示词")
     duration: int = Field(5, description="生成的视频时长，默认5秒")
-    adapter_provider: str = Field("mock", description="后台使用的适配器名称")
+    adapter_provider: str = Field("", description="后台使用的适配器名称")
 
 class GenerateVideoTool(BaseTool):
     name = "generate_video"
@@ -28,6 +28,8 @@ class GenerateVideoTool(BaseTool):
         return GenerateVideoParams
 
     async def aexecute(self, params: GenerateVideoParams) -> ToolResult:
+        if not (params.adapter_provider or "").strip():
+            return ToolResult(success=False, error="尚未配置生成供应商，请先到「设置」中配置生成供应商")
         # 同模型跨厂商降级（与 submit_video_task 同口径）：
         # 仅失败才切；模型取主厂商配置的首个视频模型，候选只收列出同名模型的厂商
         first_adapter = AdapterFactory.get_adapter("video_generation", params.adapter_provider)

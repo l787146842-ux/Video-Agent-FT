@@ -38,17 +38,6 @@ CLI_PROTOCOLS = {"jimeng", "codex", "gemini-cli"}
 # ---------- 默认 Provider 配置 ----------
 DEFAULT_PROVIDERS: List[Dict[str, Any]] = [
     {
-        "id": "mock",
-        "name": "Mock (本地测试)",
-        "base_url": "",
-        "protocol": "mock",
-        "enabled": True,
-        "primary": False,
-        "image_models": ["mock-image"],
-        "chat_models": ["mock-chat"],
-        "video_models": ["mock-video"],
-    },
-    {
         "id": "modelscope",
         "name": "ModelScope",
         "base_url": "https://api-inference.modelscope.cn/v1",
@@ -221,15 +210,13 @@ async def get_provider_config_async(provider_id: str) -> Optional[Dict[str, Any]
 
 
 def first_available_image_provider() -> Tuple[str, str]:
-    """返回第一个可用的非 mock 生图供应商 (id, model)，无则返回空串。
+    """返回第一个可用的生图供应商 (id, model)，无则返回空串。
 
     供调用方（如 image_generate 工具）在未指定供应商时兜底解析，
     避免 LLM 传空 provider 导致「供应商 '' 未配置」的生图失败。
     """
     for p in load_merged_providers():
         if not p.get("enabled", True):
-            continue
-        if p.get("protocol") == "mock":
             continue
         models = [m for m in (p.get("image_models") or []) if m]
         if models:
@@ -310,7 +297,7 @@ def spec_media_preference(raw_state: Dict[str, Any], kind: str = "image") -> Tup
 
 
 async def first_available_image_provider_async() -> Tuple[str, str]:
-    """异步版：第一个可用的非 mock 生图供应商 (id, model)。"""
+    """异步版：第一个可用的生图供应商 (id, model)。"""
     return first_available_image_provider()
 
 
@@ -454,21 +441,6 @@ def resolve_provider_ref(ref: str) -> str:
 async def resolve_provider_ref_async(ref: str) -> str:
     """异步版：解析供应商标识（显示名 → 内部 id）"""
     return resolve_provider_ref(ref)
-
-
-def is_mock_provider(provider_id: str, model: str = "") -> bool:
-    """判定是否应走 mock 路径：仅当用户显式选择 mock（或什么都没配）"""
-    if not provider_id or provider_id == "mock":
-        return True
-    if model.startswith("mock"):
-        return True
-    cfg = get_provider_config(provider_id)
-    return bool(cfg and cfg.get("protocol") == "mock")
-
-
-async def is_mock_provider_async(provider_id: str, model: str = "") -> bool:
-    """异步版：判断是否为 mock 供应商"""
-    return is_mock_provider(provider_id, model)
 
 
 # ---------- API Key 管理 ----------

@@ -2,7 +2,7 @@
 Studio 状态操作执行器（定义源）。
 
 职责：执行结构化动作 dict 列表，操作 StateManager 共享状态并自动持久化。
-动作来源 = FC 工具调用 / mock 结构化动作（动作通道唯一 = FC）。
+动作来源 = FC 工具调用（动作通道唯一 = FC）。
 
 对 web 层（生成管线/供应商配置）的依赖经 core/ports.py 端口倒置，
 web 层装配点注入实现（分层铁律：core 不 import web）。
@@ -49,7 +49,7 @@ from src.video_agent.core.action_descriptions import describe_action
 
 class StateOperationExecutor:
     """
-    执行结构化动作 dict 列表（FC 轨工具 / mock 结构化动作直达，不经文本解析）。
+    执行结构化动作 dict 列表（FC 轨工具直达，不经文本解析）。
     操作 StudioStateService 共享状态，执行后自动持久化。
     """
 
@@ -64,7 +64,7 @@ class StateOperationExecutor:
         # 前端当前选中的草稿——"current" 的唯一正确解释
         self.selected_draft_id = selected_draft_id
         self.selected_type = selected_type
-        # 提示词结构闸机开关（Skill 流程激活时由 Planner 打开，日常微调/mock 不拦截）
+        # 提示词结构闸机开关（Skill 流程激活时由 Planner 打开，日常微调不拦截）
         self.gate_enabled = gate_enabled
         # 闸机规则（Skill 激活时注入 parse_gate_rules 结果；
         # None = 用平台默认规则，保证无 Skill 场景不炸）
@@ -277,7 +277,7 @@ class StateOperationExecutor:
     async def execute_locked(self, actions: List[Dict[str, Any]]) -> int:
         """持 svc.lock 执行（与 FC Tool 路径的并发契约对齐）。
 
-        调用方已持有 svc.lock 时（如 chat_service mock 路径）必须改用同步 execute，
+        调用方已持有 svc.lock 时必须改用同步 execute，
         asyncio.Lock 不可重入，嵌套获取会死锁。
         """
         async with self.svc.lock:

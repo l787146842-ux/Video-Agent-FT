@@ -56,8 +56,14 @@ def client(svc, monkeypatch):
         atm_mod, "get_agent_task_manager",
         lambda: SimpleNamespace(list_running=lambda project_id="": []),
     )
-    # 默认供应商/模型解析钉死（不读真实 data/api_providers.json）
-    monkeypatch.setattr(chat_mod, "_resolve_chat_target", lambda: ("mock", "mock-chat"))
+    # 默认供应商/模型解析钉死（不读真实 data/api_providers.json）；
+    # 供应商清单同步钉死（重答预检校验供应商存在且启用）
+    monkeypatch.setattr(chat_mod, "_resolve_chat_target", lambda: ("prov-x", "model-x"))
+    import src.video_agent.core.provider_config as pc
+    monkeypatch.setattr(
+        pc, "load_merged_providers",
+        lambda: [{"id": "prov-x", "enabled": True, "chat_models": ["model-x"]}],
+    )
 
     app = FastAPI()
     app.include_router(chat_mod.router, prefix="/api")
@@ -149,7 +155,7 @@ def test_truncate_resend_replaces_text_and_discards_tail(client, svc, capture_st
     _seed_resend_history(svc)
     r = client.post("/api/chat/truncate-resend", json={"text": "改过的问题"})
     assert r.status_code == 200
-    assert r.json() == {"task_id": "agt-test", "project_id": "proj_001", "model": "mock-chat"}
+    assert r.json() == {"task_id": "agt-test", "project_id": "proj_001", "model": "model-x"}
 
     msgs = svc.get_chat_messages()
     assert [m["text"] for m in msgs] == ["第一轮问题", "第一轮回答", "改过的问题"]
@@ -159,7 +165,7 @@ def test_truncate_resend_replaces_text_and_discards_tail(client, svc, capture_st
     body = capture_start["body"]
     assert body.message == "改过的问题"
     assert capture_start["persisted_flag"] is True  # 内部守卫：发送管线不重复落盘
-    assert body.provider == "mock" and body.model == "mock-chat"
+    assert body.provider == "prov-x" and body.model == "model-x"
     # 携带重答前的历史（用户消息之前）
     assert body.messages == [
         {"role": "user", "content": "第一轮问题"},
@@ -443,7 +449,12 @@ async def test_truncate_flushes_inflight_debounce_no_loss(svc, ws_dir, monkeypat
         atm_mod, "get_agent_task_manager",
         lambda: SimpleNamespace(list_running=lambda project_id="": []),
     )
-    monkeypatch.setattr(chat_mod, "_resolve_chat_target", lambda: ("mock", "mock-chat"))
+    monkeypatch.setattr(chat_mod, "_resolve_chat_target", lambda: ("prov-x", "model-x"))
+    import src.video_agent.core.provider_config as pc
+    monkeypatch.setattr(
+        pc, "load_merged_providers",
+        lambda: [{"id": "prov-x", "enabled": True, "chat_models": ["model-x"]}],
+    )
     monkeypatch.setattr(
         cs, "start_agent_task",
         lambda body: {"task_id": "agt-d", "project_id": "proj_001"},
@@ -501,7 +512,12 @@ async def test_concurrent_double_click_creates_single_task(svc, monkeypatch):
 
     fake = _FakeTM()
     monkeypatch.setattr(atm_mod, "get_agent_task_manager", lambda: fake)
-    monkeypatch.setattr(chat_mod, "_resolve_chat_target", lambda: ("mock", "mock-chat"))
+    monkeypatch.setattr(chat_mod, "_resolve_chat_target", lambda: ("prov-x", "model-x"))
+    import src.video_agent.core.provider_config as pc
+    monkeypatch.setattr(
+        pc, "load_merged_providers",
+        lambda: [{"id": "prov-x", "enabled": True, "chat_models": ["model-x"]}],
+    )
 
     body = chat_mod.TruncateResendRequest(text="改过的问题")
     r1, r2 = await asyncio.gather(
@@ -598,7 +614,7 @@ def test_resend_explicit_provider_default_model(client, svc, capture_start, monk
 
 def _non_stream_body():
     return SimpleNamespace(
-        request_id="req-ns", message="改过的问题", provider="mock", model="mock-chat",
+        request_id="req-ns", message="改过的问题", provider="prov-x", model="model-x",
         messages=[], attachments=[], selected_draft_id="", selected_type="",
         skill_name="", skill_slug="", asset_mode="bound", context_mode="studio",
         doc_blocks=[], skill_blocks=[], gate_overrides=[], user_id="",
@@ -607,8 +623,28 @@ def _non_stream_body():
     )
 
 
-async def test_non_stream_skips_user_persist_when_flag_set(svc):
+def _stub_non_stream_planner(monkeypatch):
+    """桩掉适配器解析与 Planner，非流式轨不触网（传输契约验证用）。"""
     import src.video_agent.web.chat_service as cs
+
+    monkeypatch.setattr(cs, "_create_chat_adapter", lambda p, m: object())
+    monkeypatch.setattr(cs, "_resolve_summary_adapter", lambda body, cands: None)
+
+    async def fake_handle_message(self, content, ctx, on_event=None):  # noqa: ARG001
+        return SimpleNamespace(
+            text="stub 回答", applied_actions=0, steps=1, warnings=[],
+            confirmation="", action_log=[], confirmation_options=[],
+            pause_id="", pause_kind="", image_urls=[], documents_written=[],
+            suggested_actions=None,
+        )
+
+    monkeypatch.setattr(cs.Planner, "handle_message", fake_handle_message)
+
+
+async def test_non_stream_skips_user_persist_when_flag_set(svc, monkeypatch):
+    import src.video_agent.web.chat_service as cs
+
+    _stub_non_stream_planner(monkeypatch)
 
     senders = []
     orig_add = svc.add_chat_message
@@ -631,9 +667,11 @@ async def test_non_stream_skips_user_persist_when_flag_set(svc):
     assert "agent" in senders  # agent 回复照常落盘
 
 
-async def test_non_stream_persists_user_message_by_default(svc):
+async def test_non_stream_persists_user_message_by_default(svc, monkeypatch):
     """对照：无守卫标记时非流式轨照常落盘用户消息。"""
     import src.video_agent.web.chat_service as cs
+
+    _stub_non_stream_planner(monkeypatch)
 
     senders = []
     orig_add = svc.add_chat_message

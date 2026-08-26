@@ -15,13 +15,14 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.web.agent_task_manager import get_agent_task_manager
 
 
-def _mock_body(**overrides):
+def _fake_body(**overrides):
     base = dict(
         request_id="req-test",
         message="你好",
+        messages=[],
         attachments=[],
-        provider="mock",
-        model="mock-x",
+        provider="prov-x",
+        model="model-x",
         context_mode="studio",
         selected_draft_id="",
         selected_type="",
@@ -33,6 +34,11 @@ def _mock_body(**overrides):
         doc_blocks=[],
         skill_blocks=[],
         asset_mode="bound",
+        gate_overrides=[],
+        user_id="",
+        thinking_level="",
+        pause_response={},
+        system_action="",
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -54,19 +60,51 @@ def test_task_bound_state_isolation(tmp_path):
     assert StateManager.get_instance() is not bound
 
 
+class _Evt:
+    def __init__(self, type_: str, payload=None, text: str = ""):
+        self.type = type_
+        self.payload = payload
+        self.text = text
+
+
+def _stub_chat_planner(monkeypatch):
+    """桩掉适配器解析与 Planner，worker 不触网（传输契约验证用）。"""
+    import src.video_agent.web.chat_service as cs
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(cs, "_create_chat_adapter", lambda p, m: object())
+    monkeypatch.setattr(cs, "_resolve_summary_adapter", lambda body, cands: None)
+
+    async def fake_stream(self, content, ctx):
+        yield _Evt("done", {"text": "桩回答"})
+
+    monkeypatch.setattr(cs.Planner, "handle_message_stream", fake_stream)
+
+    async def fake_handle_message(self, content, ctx, on_event=None):  # noqa: ARG001
+        return SimpleNamespace(
+            text="桩回答", applied_actions=0, steps=1, warnings=[],
+            confirmation="", action_log=[], confirmation_options=[],
+            pause_id="", pause_kind="", image_urls=[], documents_written=[],
+            suggested_actions=None,
+        )
+
+    monkeypatch.setattr(cs.Planner, "handle_message", fake_handle_message)
+
+
 @pytest.mark.asyncio
-async def test_agent_task_mock_runs_to_done(tmp_path, monkeypatch):
-    """提交 mock 任务 → worker 后台跑完 → 状态 done，订阅收到 replay+done。"""
+async def test_agent_task_runs_to_done(tmp_path, monkeypatch):
+    """提交任务 → worker 后台跑完（桩 Planner）→ 状态 done，订阅收到 replay+done。"""
     ws = str(tmp_path / "ws")
     submission_svc = StateManager(ws)
     monkeypatch.setattr(
         StateManager, "get_instance",
         classmethod(lambda cls: submission_svc),
     )
+    _stub_chat_planner(monkeypatch)
 
     from src.video_agent.web.chat_service import start_agent_task
 
-    result = start_agent_task(_mock_body())
+    result = start_agent_task(_fake_body())
     task_id = result["task_id"]
     assert result["project_id"] == submission_svc.active_project_id
 

@@ -13,7 +13,7 @@ import { studioActions } from '@/stores/studio';
 import type { AgentChatRequest } from '@/types';
 
 export const req: AgentChatRequest = {
-  message: '你好', provider: 'mock', model: 'mock-chat',
+  message: '你好', provider: 'provA', model: 'model-A',
 } as AgentChatRequest;
 
 const enc = new TextEncoder();
