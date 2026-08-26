@@ -8,6 +8,8 @@
     python scripts/acceptance.py              # 全量（四件套 + 四门禁）
     python scripts/acceptance.py --quick      # 快验（仅四门禁 + tsc）
     python scripts/acceptance.py --with-eval  # 全量 + 评测管线（终验用，较慢）
+    python scripts/acceptance.py --with-e2e   # 追加 playwright e2e 精简集（任务 P2-7
+                                              # 可选档；不改 GATES 表、不改 --quick/默认档）
 
 宪法口径（六轮 S6 修订）：§5.5/§10 验收 = 本脚本全 PASS；CI Job 拆分不变，
 本地与 CI 组件同构。子进程统一注入 LOG_FILE_ENABLED=false（六轮 S4 联动），
@@ -86,6 +88,14 @@ SUITES: List[Tuple[str, List[str]]] = [
 EVAL: List[Tuple[str, List[str]]] = [
     ("eval_pipeline", [sys.executable, "scripts/run_eval_pipeline.py"]),
 ]
+# 任务 P2-7：playwright e2e 精简集可选档（--with-e2e 显式传入才追加）。
+# 非 GATES 条目、非默认验收组成部分：不碰 --quick/全量既有行为，
+# 不引入新门禁（闸门只减不增）；只跑最稳的刷新重建/流式聊天两条 spec。
+E2E: List[Tuple[str, List[str]]] = [
+    ("playwright_e2e", ["npx", "playwright", "test",
+                        "tests/e2e/refresh-rebuild.spec.ts",
+                        "tests/e2e/chat-stream.spec.ts"]),
+]
 
 
 def run_step(name: str, cmd: List[str], env: dict) -> Tuple[bool, float]:
@@ -108,6 +118,8 @@ def main() -> int:
         steps += [("tsc", ["npx", "tsc", "--noEmit"])]
     if "--with-eval" in args:
         steps += EVAL
+    if "--with-e2e" in args:
+        steps += E2E
 
     env = dict(os.environ)
     env["LOG_FILE_ENABLED"] = "false"  # S4：验收子进程不写生产日志文件
