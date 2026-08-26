@@ -110,7 +110,7 @@ async def lifespan(_app: FastAPI):
         )
     yield
     # ---------- 关闭清理：冲刷防抖落盘 + 释放 Adapter HTTP 连接池 ----------
-    # 防抖落盘可能有挂起变更，关闭前必须冲刷，避免丢失最后一轮写入
+    # 防抖落盘可能有挂起变更，关闭前必须冲刷，避免丢失最后轮次写入
     StateManager.get_instance().flush_save()
     from src.video_agent.adapters.factory import AdapterFactory
     for adapter_type in ("chat", "image_generation", "video_generation"):

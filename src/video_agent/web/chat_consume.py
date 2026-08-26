@@ -63,7 +63,7 @@ def _set_summary_active(svc, active: bool) -> None:
     （prompt_builder session_summary 段，紧随协议段）按
     interaction.session_summary.active 决定本轮是否注入。
     压缩生效置 True；未触发/失败回落原 history 时置 False
-    （防上一轮残留标记把陈旧摘要注入未压缩的完整历史）。
+    （防先前轮次残留标记把陈旧摘要注入未压缩的完整历史）。
     只动标记位，异常不影响压缩主链。"""
     try:
         if svc is None:
@@ -336,7 +336,7 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
 
 
 def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "") -> str:
-    """消费「等待确认」暂停态：用户的新消息即是对上一轮暂停的回应。
+    """消费「等待确认」暂停态：用户的新消息即是对先前轮次暂停的回应。
 
     暂停态只写不清会让模型永远停在上一阶段；只清不带则模型看不到
     「用户已确认」的信号，两者都会导致从头重复同一套操作（读同一文档→
@@ -351,14 +351,14 @@ def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "
         workflow_runtime.reduce_interaction(
             svc, set_flags={"spec_collected": True}, pop_flags=("pending_pause_kind",))
     else:
-        # 暂停语义标记（summary/spec/collect）随回应消费清除，避免残留影响下一轮
+        # 暂停语义标记（summary/spec/collect）随回应消费清除，避免残留影响后续轮次
         workflow_runtime.reduce_interaction(svc, pop_flags=("pending_pause_kind",))
     # 故事板待确认窗口（步骤3→步骤4 分界）：不依赖 awaiting_confirmation，
     # 用户任何新消息到达即视为已审阅故事板，解除提示词写入封锁
     if interaction.get("storyboard_pending"):
         workflow_runtime.reduce_interaction(
             svc, set_flags={"storyboard_pending": False}, flush=True)
-    # 确认闭环：上一轮展示过提示词草案（drafts_presented）且用户新消息到达，
+    # 确认闭环：先前轮次展示过提示词草案（drafts_presented）且用户新消息到达，
     # 将未被重写过的草稿晋升为「已确认」（生成闸的前置条件）；
     # 期间被重写的草稿 tag 已在写入时重置，不会被误晋升
     presented = [d for d in (interaction.get("drafts_presented") or []) if d]
@@ -412,7 +412,7 @@ def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "
         _skill = str(_used[-1] or "") if _used else ""
         flow_note = prompt_gates.flow_continue_note(svc.state_dict, _skill)
     return (
-        "\n\n（系统提示：上一轮已通过 workflow_pause 暂停等待确认，"
+        "\n\n（系统提示：先前轮次已通过 workflow_pause 暂停等待确认，"
         f"暂停内容：{paused_msg}。本条消息即对该暂停的回应：表示确认时，按当前 Skill 流程"
         f"把当前阶段产出物做完；{spec_note}{flow_note}暂停点以 Skill 阶段边界为准；"
         "已完成的步骤（已读文档/已写规格）不必重复；"

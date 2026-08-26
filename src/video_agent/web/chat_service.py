@@ -307,7 +307,7 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
     ctx.wiz_card_live = ""
 
     # 短锁：绑定附件 + 附件文档存档 + 记录用户消息（仅一次）；
-    # 状态 JSON 改为惰性构建器：多步循环每一轮重新构建，模型每轮看到最新状态
+    # 状态 JSON 改为惰性构建器：多步循环每个轮次重新构建，模型每轮看到最新状态
     async with ctx.svc.lock:
         if ctx.use_studio_context:
             bind_attachments(ctx.svc, ctx.body.attachments)

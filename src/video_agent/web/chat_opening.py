@@ -79,7 +79,7 @@ def truncate_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """组装发给 LLM 的历史：assistant 超长消息截断，user 消息全文保留。
 
     截断策略（质量优化版）：
-    - 最新一条 assistant 回复：保留前 2000 字（上一轮的决策/下一步与当前追问最相关）；
+    - 最新一条 assistant 回复：保留前 2000 字（先前轮次的决策/下一步与当前追问最相关）；
     - 更早的 assistant 回复：保留头 300 + 尾 300（旧版只留头部，
       会丢掉结尾的下一步建议与待确认事项）；
     - 截断处附说明，让模型知道完整内容可从工作台状态 JSON 获取。

@@ -59,7 +59,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
                 error_code=LEGACY_VALIDATION_ERROR,
             )
 
-        safe_name = f"{int(time.time())}-{random.randint(1000, 9999)}{ext}"
+        safe_name = f"{int(time.time())}-{random.randint(1000, 9_999)}{ext}"
         dest = UPLOAD_DIR / safe_name
         written = 0
         try:
