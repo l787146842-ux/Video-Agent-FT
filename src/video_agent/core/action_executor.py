@@ -183,16 +183,10 @@ class StateOperationExecutor:
             return True
         if prompt_gates.gate_mode() == "off":
             return True
-        # 元素概念图前置判定（引用感知，与 FC 轨的全量判定各自算好传入统一管线）
-        element_missing = (
-            kind == "shot"
-            and prompt_gates.shot_references_missing_element_images(self.state, group=group)
-        )
         outcome = guard_pipeline.evaluate_prompt_write(
             str(prompt), kind, self.state,
             gate_rules=self.gate_rules,
             gate_override=self.gate_override,
-            element_image_missing=element_missing,
         )
         self.gate_warnings.extend(outcome.warnings)
         guard_pipeline.audit_verdicts(
@@ -200,14 +194,6 @@ class StateOperationExecutor:
             skill_name=str(getattr(self, "skill_name", "") or ""),
             overridden=outcome.overridden,
         )
-        # 元素概念图前置被用户覆盖：落盘铁律覆盖声明（有规格文档时）
-        if outcome.element_image_override_hit:
-            try:
-                from src.video_agent.core.spec_rules import apply_element_image_override
-
-                apply_element_image_override(self.state)
-            except Exception as _e:
-                logger.debug("[action_executor] 忽略异常: {}", _e)
         if outcome.ok:
             return True
         logger.info(f"[PromptGate] 拦截不合格提示词写入（{kind}）: {outcome.hard_errors}")

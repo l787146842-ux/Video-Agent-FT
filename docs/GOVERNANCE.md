@@ -231,7 +231,7 @@
 
 | 口径 | 冻结基线（2026-08-26） | 唯一事实源 |
 |---|---|---|
-| 运行时闸机规则 | 20 条（platform 6 / skill 14） | `core/gate_registry.py::GATE_RULES` |
+| 运行时闸机规则 | 18 条（platform 6 / skill 12） | `core/gate_registry.py::GATE_RULES` |
 | 验收门禁脚本 | acceptance.py GATES 表现状 | `scripts/acceptance.py` |
 
 新增任一条须同时满足：① 事故/用例依据（入册时写入闸机条目的 `origin`
@@ -242,3 +242,7 @@
 `tests/unit/test_gate_messages_coverage.py` 钉死（每条 rule_id 均在
 `GATE_MESSAGE_SECTIONS` 覆盖矩阵登记，非空分节必须存在于
 prompts/gates/messages.md）。
+
+> 退役登记（2026-08-26，裁决 R7）：`skill.require_at_ref` 与
+> `skill.flow.element_image`（均为「历史存量-待裁决」）退役下账，
+> 基线 20→18（platform 6 / skill 12）；消费点同批清零（P1-7）。

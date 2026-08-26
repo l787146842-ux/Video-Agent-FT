@@ -189,66 +189,9 @@ def test_live_metrics_record_and_expiry(monkeypatch):
 
 
 # ============================================================
-# 888 事故二轮修复回归（2026-08-10）：@自动补写 / 版本账本统一 /
+# 888 事故二轮修复回归（2026-08-10）：版本账本统一 /
 # 流程事件账本 / 截断禁报成功 / 铁律保护 / 回话模板去矛盾
 # ============================================================
-
-# ---------- B3：@引用系统自动补写（确定性任务收归系统） ----------
-
-def test_at_ref_autofill_declared_appends_missing_refs():
-    """声明 require_at_ref 的技能：分镜提示词缺 @ 时按 sceneRefs 客观补印。"""
-    state = {"keyElements": [
-        {"id": "ke-1", "title": "程心"},
-        {"id": "ke-2", "title": "AA"},
-    ]}
-    group = {"id": "shot-1", "sceneRefs": ["ke-1", "ke-2"]}
-    out = prompt_gates.autofill_at_refs(
-        "中景，程心与AA对话。", "shot", group, state,
-        rules={"require_at_ref": True},
-    )
-    assert "@程心" in out and "@AA" in out
-
-
-def test_at_ref_autofill_undeclared_noop():
-    """未声明 require_at_ref 的 Skill 一律不动（验收跟声明走，换技能不误伤）。"""
-    state = {"keyElements": [{"id": "ke-1", "title": "程心"}]}
-    group = {"id": "shot-1", "sceneRefs": ["ke-1"]}
-    prompt = "中景，程心独行。"
-    assert prompt_gates.autofill_at_refs(prompt, "shot", group, state) == prompt
-    assert prompt_gates.autofill_at_refs(
-        prompt, "shot", group, state, rules={"require_at_ref": False},
-    ) == prompt
-
-
-def test_at_ref_autofill_existing_ref_not_duplicated():
-    state = {"keyElements": [{"id": "ke-1", "title": "程心"}]}
-    group = {"id": "shot-1", "sceneRefs": ["ke-1"]}
-    prompt = "中景，@程心 独行。"
-    assert prompt_gates.autofill_at_refs(
-        prompt, "shot", group, state, rules={"require_at_ref": True},
-    ) == prompt
-
-
-def test_fc_track_autofills_at_refs(monkeypatch):
-    """FC 轨写分镜提示词同样客观补 @（与时长补印同路，防模型绕过执行器
-    直接建卡写词时漏 @）。"""
-    from src.video_agent.core.fc_tool_runner import FCToolRunner
-
-    runner = FCToolRunner(tool_manager=None)
-    state = {
-        "keyElements": [{"id": "ke-1", "title": "程心",
-                         "drafts": [{"imgUrl": "http://x/c.png"}]}],
-        "shots": [{"id": "shot-1", "title": "镜1", "sceneRefs": ["ke-1"],
-                   "duration": "10s", "drafts": [{"id": "1-1", "label": "分镜"}]}],
-    }
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
-    runner._gate_rules = {"require_at_ref": True}
-    args = {"draft_id": "1-1", "draft_type": "shot",
-            "patch": {"prompt": "中景，程心在走廊独行，冷光。"}}
-    runner._prompt_gate("storyboard_patch_draft", args, injected_skill="任意")
-    # 补印后的文本必须回写进待写入的 args
-    assert "@程心" in args["patch"]["prompt"]
-
 
 # ---------- B1：版本账本全站统一（重启不断号、双实例同一本账） ----------
 

@@ -14,7 +14,7 @@ GATE_TRIGGER_COUNTS（data/gate_trigger_counts.jsonl），
 旁路只记不改判定，任何异常吞掉不影响主链路。
 
 语义基线（用户第一）：
-- 流程闸（元素概念图前置/故事板待确认窗口）只警告不拦人；
+- 流程闸（故事板待确认窗口）只警告不拦人；
 - 结构闸（字数/语言/时长/字幕/音频/镜头语言）strict 模式拒收重写；
 - 用户坚持（gate_override 作用域覆盖）时硬伤降为警告放行。
 """
@@ -78,7 +78,6 @@ class GateCheckOutcome:
     warnings: List[str] = field(default_factory=list)
     verdicts: List[GateVerdict] = field(default_factory=list)
     overridden: bool = False              # 用户坚持放行过任一闸
-    element_image_override_hit: bool = False  # 元素概念图前置被用户覆盖（落盘声明用）
 
 
 def _append_trigger_counts(
@@ -151,16 +150,13 @@ def evaluate_prompt_write(
     gate_rules: Optional[Dict[str, Any]] = None,
     gate_override: Any = False,
     gate_enabled: bool = True,
-    element_image_missing: bool = False,
     mode: Optional[str] = None,
 ) -> GateCheckOutcome:
-    """提示词写入统一判定（决策 D + 结构条款 + 流程闸组合；§2.0 唯一组合实现）。
+    """提示词写入统一判定（决策 D + 结构条款组合；§2.0 唯一组合实现）。
 
     参数（两轨只注入，不各自组装判定）：
     - gate_rules: Skill manifest 解析出的可配置规则（parse_gate_rules 结果）；
-    - gate_override: 用户坚持作用域（False/"all"/"element_image"…）；
-    - element_image_missing: 元素概念图前置是否不满足（FC 轨按全量元素判定、
-      文本轨按 sceneRefs 引用感知判定，各自算好传入，判定组合仍在本处）。
+    - gate_override: 用户坚持作用域（False/"all"…）。
 
     返回 GateCheckOutcome；ok=False 时调用方必须拒绝写入并回喂 reject_message。
     """
@@ -172,21 +168,6 @@ def evaluate_prompt_write(
     if mode == "off":
         out.verdicts.append(GateVerdict("platform.prompt_write", "platform", True))
         return out
-
-    # 流程闸：元素概念图前置（只警告不拦人；用户坚持时降为提示）
-    if kind == "shot" and mode == "strict" and element_image_missing:
-        if prompt_gates.override_covers(gate_override, prompt_gates.GATE_ELEMENT_IMAGE):
-            out.warnings.append(
-                "用户坚持跳过元素概念图前置（仅警告）：" + prompt_gates.SHOT_SEQUENCE_GATE_ERROR
-            )
-            out.overridden = True
-            out.element_image_override_hit = True
-        else:
-            out.warnings.append(prompt_gates.SHOT_SEQUENCE_GATE_ERROR)
-        out.verdicts.append(GateVerdict(
-            "skill.flow.element_image", "skill", True,
-            prompt_gates.SHOT_SEQUENCE_GATE_ERROR,
-        ))
 
     # 结构闸：写入即校验（拒收重写，自愈闭环）
     ok, hard, _soft = prompt_gates.validate_prompt_write(
@@ -362,16 +343,12 @@ def prompt_write_verdict(
     - ok=False：调用方必须拒绝写入并把 message 回喂模型（自愈闭环）；
     - ok=True 且 message 非空：写入放行，message 作为警告随结果展示；
     - user_override=True（决策 D：用户坚持）：硬伤降为警告照常放行。
-    流程闸（元素图/待确认窗口）按只警告不拦人语义处置。
     """
     out = evaluate_prompt_write(
         prompt, kind, state,
         gate_rules=gate_rules,
         gate_override="all" if user_override else False,
         gate_enabled=gate_enabled,
-        element_image_missing=(
-            kind == "shot" and prompt_gates.element_images_missing(state)
-        ),
         mode=mode,
     )
     if not out.ok:

@@ -95,7 +95,7 @@ class FCToolRunner:
         # 由 chat_service/planner 注入）
         self.chat_provider: str = ""
         self.chat_model: str = ""
-        # 用户坚持作用域（False / True / "all" / "element_image"）：覆盖对应闸机
+        # 用户坚持作用域（False / True / "all"）：覆盖对应闸机
         self.gate_override: Any = False
         # 本批闸机警告（随 execute 返回/时间线可见）
         self.gate_warnings: List[str] = []

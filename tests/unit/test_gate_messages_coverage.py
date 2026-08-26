@@ -45,7 +45,6 @@ def test_flow_gates_with_user_visible_copy_are_covered():
     must_have_copy = {
         "platform.gen_confirm",
         "skill.flow.spec_gate",
-        "skill.flow.element_image",
         "skill.flow.storyboard_pending",
         "skill.gen_asset_binding",
         "skill.script_required",

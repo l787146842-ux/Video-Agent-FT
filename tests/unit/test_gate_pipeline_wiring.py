@@ -60,16 +60,6 @@ class TestUnifiedPipeline:
         assert out.overridden is True
         assert any("仅为警告" in w for w in out.warnings)
 
-    def test_element_image_flow_gate_warn_only(self):
-        """流程闸只警告不拦人（4444 语义）"""
-        state = _empty_state()
-        state["keyElements"] = [{"id": "ke-1", "title": "A", "drafts": [{"id": "d1"}]}]
-        out = evaluate_prompt_write(
-            _OK_SHOT, "shot", state, element_image_missing=True,
-        )
-        assert out.ok is True, "元素图缺失只警告，不得拦截写入"
-        assert prompt_gates.SHOT_SEQUENCE_GATE_ERROR in out.warnings
-
     def test_verdicts_structured(self):
         out = evaluate_prompt_write(_BAD_EN_SHOT, "shot", _empty_state())
         assert any(
@@ -104,7 +94,6 @@ class TestMessagesExternalized:
         pairs = [
             (prompt_gates.SPEC_GATE_ERROR, "SPEC_GATE"),
             (prompt_gates.STORYBOARD_PENDING_GATE_ERROR, "STORYBOARD_PENDING"),
-            (prompt_gates.SHOT_SEQUENCE_GATE_ERROR, "ELEMENT_IMAGE_MISSING"),
             (prompt_gates.GENERATION_CONFIRM_GATE_ERROR, "GENERATION_CONFIRM"),
             (prompt_gates.GENERATION_CONFIRM_GATE_BLOCKED, "GENERATION_CONFIRM_BLOCKED"),
         ]

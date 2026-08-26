@@ -271,12 +271,6 @@ GEN_ASSET_BINDING_BLOCKED = _gate_msg("GEN_ASSET_BINDING_BLOCKED", (
     "缺少场景参考图直接生成会导致背景跳画与道具变形。"
 ))
 
-SHOT_SEQUENCE_GATE_ERROR = _gate_msg("ELEMENT_IMAGE_MISSING", (
-    "流程警告：关键元素还没有任何概念图（生成或上传）。按 Skill 流程建议先让元素概念图就绪"
-    "再编制分镜提示词（镜头可参考元素图像）；本次分镜提示词已按用户要求照常写入，"
-    "若后续生成视频需要参考图，请先补足元素图像。"
-))
-
 # ---------- 下一步机械派生（frontmatter 声明唯一源） ----------
 #
 # 确认 UI 由系统从即将执行的动作渲染，模型不撰写确认界面；

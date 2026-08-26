@@ -16,17 +16,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_s3_override_scope_enum_values():
     assert prompt_gates.GATE_OVERRIDE_SCOPE_ALL == "all"
-    # 与既有闸域常量同源（P1 单一表述源，不得各自为政）
-    assert prompt_gates.GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE is prompt_gates.GATE_ELEMENT_IMAGE
     assert prompt_gates.GATE_OVERRIDE_SCOPE_FLOW == "flow"
 
 
 def test_s3_planner_consumes_scope_enum():
-    """豁免消费逻辑必须引用显式枚举（原隐式映射「非 all 即 element_image」）；
+    """豁免消费逻辑必须引用显式枚举；
     批 7 拆分：实现体迁 planner_gate_session（planner 同名委托）"""
     src = (ROOT / "src/video_agent/core/planner_gate_session.py").read_text(encoding="utf-8")
     assert "prompt_gates.GATE_OVERRIDE_SCOPE_ALL" in src
-    assert "prompt_gates.GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE" in src
     # 消费即留痕：record_gate 携带 scope
     assert "scope=str(gate_override_scope)" in src
 

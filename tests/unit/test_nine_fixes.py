@@ -85,8 +85,8 @@ def test_put_state_without_version_still_allowed(client, svc):
 # ---------- B：执行器 @ 引用规则移植 ----------
 # test_write_prompt_batch_shot_injects_at_rule / test_write_prompt_batch_keyelement_no_at_rule
 # 已随任务#36 B5 执行器一步退役删除：被测对象（executors._write_prompt_batch）
-# 不复存在；@ 引用客观补印改由 fc_tool_runner 提示词闸 autofill_at_refs 承接
-# （见 test_888_fixes.test_fc_track_autofills_at_refs）。
+# 不复存在；@ 引用补印机制（autofill_at_refs）已随 require_at_ref 闸机
+# 退役一并删除（裁决 R7）。
 
 
 # ---------- C3：视频参考三桶 + 新上限 ----------

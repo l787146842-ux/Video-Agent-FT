@@ -14,9 +14,10 @@ from src.video_agent.core.tracer import AgentTracer
 
 
 def consume_gate_overrides(state_manager: Any, user_message: Any) -> Any:
-    """消费本轮一次性豁免并返回作用域（False/"all"/"element_image"）。
+    """消费本轮一次性豁免并返回作用域（False/"all"）。
 
-    显式枚举判定：scope=all 或 platform.* 前缀 → ALL；其余 → ELEMENT_IMAGE。
+    显式枚举判定：scope=all 或 platform.* 前缀 → ALL；其余历史 scope
+    无对应活跃闸机 → 不豁免。
     全程留痕（§2.4）：实际消费 scope 入 trace；消费失败本轮视为无豁免。
     """
     gate_override_scope: Any = False
@@ -26,12 +27,9 @@ def consume_gate_overrides(state_manager: Any, user_message: Any) -> Any:
         if taken:
             interaction["gate_overrides"] = []
             state_manager.save()
-            gate_override_scope = (
-                prompt_gates.GATE_OVERRIDE_SCOPE_ALL
-                if any(str(r) == prompt_gates.GATE_OVERRIDE_SCOPE_ALL
-                       or str(r).startswith("platform.") for r in taken)
-                else prompt_gates.GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE
-            )
+            if any(str(r) == prompt_gates.GATE_OVERRIDE_SCOPE_ALL
+                   or str(r).startswith("platform.") for r in taken):
+                gate_override_scope = prompt_gates.GATE_OVERRIDE_SCOPE_ALL
             logger.info(f"[GateOverride] 消费 {len(taken)} 条一次性豁免，作用域={gate_override_scope}")
             AgentTracer.get_instance().record_gate(
                 # override 留痕经统一归一出口（正式 ID 归一为恒等，语义不变）

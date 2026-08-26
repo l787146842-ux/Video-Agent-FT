@@ -86,22 +86,6 @@
     "note": "814E5 校准（S1 语义）：业务闸默认全关，未声明 manifest 时仅平台地板生效；同样本在声明默认闸的 Skill 下应拦（见 documentary_relaxed 反向验证）"
   },
   {
-    "id": "at_ref_missing",
-    "kind": "shot",
-    "prompt": "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。",
-    "manifest": { "gates": { "require_at_ref": true } },
-    "expect_blocked": false,
-    "note": "814E5 校准：require_at_ref 走客观补印（autofill_at_refs）不拦截——确定性任务收归系统，不出题给模型"
-  },
-  {
-    "id": "at_ref_present",
-    "kind": "shot",
-    "prompt": "镜头总时长：12秒。缓慢推入中景，@Element_主角 在冰原上奔跑，怀中紧抱文物，背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。",
-    "manifest": { "gates": { "require_at_ref": true } },
-    "expect_blocked": false,
-    "note": "加严规则带 @元素引用后放行"
-  },
-  {
     "id": "ke_too_short",
     "kind": "keyElement",
     "prompt": "老者白发",

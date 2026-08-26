@@ -96,9 +96,6 @@ _DEFAULT_GATE_RULES: Dict[str, Any] = {
     "require_subtitle": False,
     "require_camera_language": False,
     "require_audio_layer": False,
-    # @引用：声明开启后分镜提示词写入时系统按 sceneRefs 客观补印，
-    # 不出题给模型；未声明的 Skill 一律不动（验收跟着技能声明走）
-    "require_at_ref": False,
     "subtitle_synonyms": list(_SUBTITLE_NEGATIONS),
     "camera_markers": list(_CAMERA_MARKERS),
     "audio_markers": list(_AUDIO_MARKERS),
@@ -160,14 +157,11 @@ def gate_mode() -> str:
 # 闸机豁免作用域枚举：只认前端「本次放行」按钮携带的 scope
 #（豁免唯一权威入口 = GateWarnings 按钮随消息携带 gate_overrides）。
 GATE_STRUCTURE = "structure"            # 提示词结构闸（字数/语言/时长/字幕/音频/镜头语言）
-GATE_ELEMENT_IMAGE = "element_image"    # 元素概念图前置闸
 GATE_FLOW_PAUSE = "flow_pause"          # 流程暂停兜底闸（总结/规格暂停卡）：仅 scope=all 豁免，
 # 「跳过概念图」等特定意图不涵盖（用户只是不想等图，不是不要交互分界）
 
 # 一次性放行作用域枚举——前端按钮/后端消费/trace 记录三端引用同一语义。
-# 值与上方闸域常量同源（单一表述源：ELEMENT_IMAGE 即 GATE_ELEMENT_IMAGE 别名）。
 GATE_OVERRIDE_SCOPE_ALL = "all"                          # 本轮闸机全部豁免（单次生效）
-GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE = GATE_ELEMENT_IMAGE   # 仅元素概念图前置闸豁免
 GATE_OVERRIDE_SCOPE_FLOW = "flow"                        # 流程门禁豁免（用户坚持全速推进）
 
 
@@ -184,13 +178,6 @@ def override_covers(scope: Any, gate: str) -> bool:
         return True
     return scope == gate
 
-
-# 元素概念图前置被用户覆盖后的正文提示（必须让用户知道如何恢复默认）
-ELEMENT_IMAGE_OVERRIDE_WARNING = (
-    "已按你的要求跳过「元素概念图前置」，分镜提示词已直接写入，"
-    "并已把该覆盖记录到「执行铁律.md」文档；"
-    "如需恢复默认流程（先出元素概念图），可在文档面板修改执行铁律文档，或直接让我帮你改回来。"
-)
 
 # 用户坚持全速推进（scope=all）时，系统暂停兜底卡豁免注入的正文提示
 FLOW_PAUSE_OVERRIDE_WARNING = (
@@ -246,21 +233,6 @@ def has_spec_document(raw_state: Dict[str, Any]) -> bool:
         if is_spec_doc_name(d.get("name") or ""):
             return True
     return False
-
-
-def element_images_missing(raw_state: Dict[str, Any]) -> bool:
-    """关键元素已建卡但没有任何概念图（生成或上传）时返回 True。
-
-    Skill 流程时序：镜头提示词必须在元素图像就绪后才编制（镜头要参考元素图）。
-    关键元素尚未建卡时返回 False（不适用本闸门）。
-    """
-    ke_drafts = [
-        d
-        for g in raw_state.get(CAT_KEY_ELEMENTS) or []
-        for d in (g.get("drafts") or [])
-        if isinstance(d, dict)
-    ]
-    return bool(ke_drafts) and not any((d.get("imgUrl") or "").strip() for d in ke_drafts)
 
 
 def shot_references_missing_element_images(
@@ -359,47 +331,6 @@ def autofill_shot_duration(
     if not duration:
         return text
     return text.rstrip() + f"\n镜头总时长：{duration}"
-
-
-def autofill_at_refs(
-    prompt: str,
-    kind: str,
-    group: Optional[Dict[str, Any]],
-    raw_state: Dict[str, Any] | None = None,
-    rules: Optional[Dict[str, Any]] = None,
-) -> str:
-    """分镜提示词 @引用系统自动补写。
-
-    确定性任务收归系统（三问判别法：答案能从 sceneRefs 算出来、对错机器可判）：
-    分镜组引用的关键元素标题是明摆着的数据，缺失时客观补印一行，
-    不指望模型自觉；未声明 require_at_ref 的 Skill 原样返回，不误伤。
-    """
-    if kind != "shot" or not str(prompt or "").strip() or not group:
-        return prompt
-    gate = rules or _DEFAULT_GATE_RULES
-    if not gate.get("require_at_ref", False):
-        return prompt
-    refs = group.get("sceneRefs") or []
-    if not refs:
-        return prompt
-    ke_groups = (raw_state or {}).get(CAT_KEY_ELEMENTS) or []
-    titles: List[str] = []
-    for ref in refs:
-        r = str(ref or "").strip()
-        if not r:
-            continue
-        hit = next(
-            (k for k in ke_groups
-             if isinstance(k, dict) and (k.get("id") == r or k.get("title") == r)),
-            None,
-        )
-        t = str((hit or {}).get("title") or r).strip()
-        if t and t not in titles:
-            titles.append(t)
-    missing = [t for t in titles if f"@{t}" not in str(prompt)]
-    if not missing:
-        return prompt
-    return str(prompt).rstrip() + "\n出场元素：" + "、".join(f"@{t}" for t in missing)
 
 
 _SPEC_LANG_LINE_RE = re.compile(
@@ -578,14 +509,6 @@ def validate_prompt_write(
             soft.append(
                 "该镜头含对白且项目已有音色参考音频，建议在提示词中写明哪个角色使用哪个音色参考，"
                 "并在草稿 refAssets/timbre 中绑定对应音频，以保证跨镜头声音一致"
-            )
-        # 软提醒（流程时序）：关键元素还没有任何图像（生成/上传）就写分镜提示词——
-        # 按 Skill 流程应先引导用户出图/上传元素图像，镜头需参考元素图像；
-        # 仅作软提醒，不再升级为拦截（调用方照常写入并附警告）
-        if raw_state is not None and element_images_missing(raw_state):
-            soft.append(
-                "关键元素目前还没有任何概念图（生成或上传），按 Skill 流程应先暂停引导用户"
-                "生成/上传元素图像，就绪后再编制分镜提示词（镜头要参考元素图像）"
             )
     else:  # keyElement
         if len(text) < element_min_chars:
@@ -773,7 +696,6 @@ from src.video_agent.core.gates_cards import (
     GENERATION_CONFIRM_GATE_ERROR,
     GENERATION_CONFIRM_GATE_BLOCKED,
     GEN_ASSET_BINDING_BLOCKED,
-    SHOT_SEQUENCE_GATE_ERROR,
     current_flow_step,
     system_continue_option,
     is_flow_continue_value,

@@ -198,7 +198,6 @@ gates:
   require_subtitle: true
   require_camera_language: true
   require_audio_layer: true
-  require_at_ref: true
 flow:
   spec_wizard: true
   spec_gate: true

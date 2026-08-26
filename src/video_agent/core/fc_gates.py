@@ -390,7 +390,7 @@ def prompt_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[s
         kind = {"keyelement": "keyElement", "shot": "shot", "audio": "audio"}.get(gt, "")
     else:
         return None
-    # 客观补全：@引用与镜头时长可从 sceneRefs/duration 算出来，
+    # 客观补全：镜头时长可从 duration 算出来，
     # 写入前按 Skill 声明的规则自动补印回待写入参数，不指望模型自觉
     if kind == "shot" and prompt:
         group: Optional[Dict[str, Any]] = None
@@ -413,12 +413,6 @@ def prompt_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[s
         if group is not None:
             target = patch if name == "storyboard_patch_draft" else draft
             if isinstance(target, dict):
-                filled_refs = prompt_gates.autofill_at_refs(
-                    prompt, "shot", group, ctx.state(), rules=ctx.gate_rules,
-                )
-                if filled_refs != prompt:
-                    target["prompt"] = filled_refs
-                    prompt = filled_refs
                 filled_dur = prompt_gates.autofill_shot_duration(
                     prompt, "shot", group, rules=ctx.gate_rules,
                 )
@@ -437,7 +431,6 @@ def prompt_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[s
         prompt, kind, ctx.state(),
         gate_rules=ctx.gate_rules,
         gate_override=ctx.gate_override,
-        element_image_missing=prompt_gates.element_images_missing(ctx.state()),
     )
     ctx.warnings.extend(outcome.warnings)
     guard_pipeline.audit_verdicts(

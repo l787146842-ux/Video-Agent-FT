@@ -107,7 +107,7 @@ WORKFLOW_STAGE_PROBE_KEYS = CANONICAL_STAGE_KEYS + (
 GATE_KEYS = (
     "shot_min_chars", "element_min_chars", "cjk_min_ratio",
     "require_duration", "require_subtitle", "require_camera_language",
-    "require_audio_layer", "require_at_ref",
+    "require_audio_layer",
     "subtitle_synonyms", "camera_markers", "audio_markers",
 )
 

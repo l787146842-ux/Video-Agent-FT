@@ -18,12 +18,7 @@ from src.video_agent.utils import gen_id
 
 IRON_RULES_HEADING = "执行铁律"
 IRON_RULES_DOC_NAME = "执行铁律.md"
-ELEMENT_IMAGE_PREREQ_ON = "元素概念图前置：开启（当前生效）"
-ELEMENT_IMAGE_PREREQ_OFF = "元素概念图前置：已由用户跳过（当前生效）"
 
-# 状态行必须出现在行首（说明文字里的引号示例不算），避免误判
-_OFF_RE = re.compile(r"(?m)^\s*(?:-\s*)?元素概念图前置：已由用户跳过")
-_ON_RE = re.compile(r"(?m)^\s*(?:-\s*)?元素概念图前置：开启")
 # 老项目规格文档内的铁律章节：从标题到下一个二级标题（或文末），整段迁移
 _IRON_SECTION_RE = re.compile(r"##\s*执行铁律[^\n]*\n.*?(?=\n##\s|\Z)", re.S)
 # 优先级文案升级：仅精确替换旧措辞，
@@ -107,7 +102,7 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
 
     - 不存在则创建（默认条款）；
     - 老项目规格文档里仍带铁律章节的：整段迁入独立文档（保留用户编辑），
-      并从规格文档中移除该章节；迁移出的「已由用户跳过」状态一并同步。
+      并从规格文档中移除该章节。
     """
     docs = raw_state.get("documents")
     if docs is None:
@@ -145,18 +140,6 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
             "updated_at": now,
         })
         changed = True
-    elif migrated:
-        # 独立文档已存在且规格文档里还有旧章节：章节已从规格剥离；
-        # 若旧章节里用户已声明「跳过元素概念图前置」，把状态同步进独立文档
-        iron_content = str(iron.get("content") or "")
-        if _OFF_RE.search(migrated) and not _OFF_RE.search(iron_content):
-            if _ON_RE.search(iron_content):
-                iron["content"] = _ON_RE.sub(
-                    f"- {ELEMENT_IMAGE_PREREQ_OFF}", iron_content, count=1,
-                )
-            else:
-                iron["content"] = iron_content.rstrip() + f"\n- {ELEMENT_IMAGE_PREREQ_OFF}\n"
-            changed = True
     # 老项目措辞升级（精确应用，不动用户其它编辑）：
     # ① 优先级文案（含制片规格同级）；② 删「不得拦截/强制暂停」半句；
     # ③ 剥离默认第 4/5 条（产出规范归 Skill 章节唯一表述）；
@@ -176,29 +159,3 @@ def ensure_iron_rules_doc(raw_state: Dict[str, Any]) -> bool:
             iron["content"] = upgraded
             changed = True
     return changed
-
-
-def spec_element_image_override(raw_state: Dict[str, Any]) -> bool:
-    """铁律是否声明「元素概念图前置已由用户跳过」（优先读独立铁律文档，
-    老项目未迁移时回落规格文档内嵌章节）。"""
-    doc = find_iron_rules_doc(raw_state) or find_spec_doc(raw_state)
-    if not doc:
-        return False
-    return bool(_OFF_RE.search(str(doc.get("content") or "")))
-
-
-def apply_element_image_override(raw_state: Dict[str, Any]) -> bool:
-    """把铁律中「元素概念图前置」改为「已由用户跳过」（幂等），返回是否发生修改。"""
-    doc = find_iron_rules_doc(raw_state) or find_spec_doc(raw_state)
-    if not doc:
-        return False
-    content = str(doc.get("content") or "")
-    if _OFF_RE.search(content):
-        return False
-    if _ON_RE.search(content):
-        content = _ON_RE.sub(f"- {ELEMENT_IMAGE_PREREQ_OFF}", content, count=1)
-    else:
-        # 标准状态行被用户改掉了：追加一行声明，保证闸机可读
-        content = content.rstrip() + f"\n- {ELEMENT_IMAGE_PREREQ_OFF}\n"
-    doc["content"] = content
-    return True

@@ -324,78 +324,6 @@ def test_fc_flow_gate_passes_with_spec(monkeypatch):
     assert runner._flow_gate("storyboard_create_group", injected_skill="任意 Skill") is None
 
 
-# ---------- 元素图像时序硬闸（666 项目事故：无概念图先写分镜提示词） ----------
-
-def _seed_ke_without_image(svc):
-    svc.state_dict["keyElements"] = [{
-        "id": "ke-test", "title": "Element_测试",
-        "drafts": [{"id": "draft-ke", "label": "元素", "imgUrl": ""}],
-    }]
-
-
-def test_element_images_missing_helper():
-    assert prompt_gates.element_images_missing({}) is False  # 未建卡不适用
-    assert prompt_gates.element_images_missing({"keyElements": [
-        {"drafts": [{"imgUrl": ""}]}]}) is True
-    assert prompt_gates.element_images_missing({"keyElements": [
-        {"drafts": [{"imgUrl": "http://x/a.png"}]}]}) is False
-
-
-def test_executor_writes_shot_prompt_before_element_images_with_warning(svc):
-    _seed_ke_without_image(svc)
-    _seed_shot(svc)
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": GOOD_SHOT_PROMPT},
-    }])
-    assert applied == 1
-    assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == GOOD_SHOT_PROMPT
-    assert ex.gate_warnings and "概念图" in ex.gate_warnings[0]
-    # 元素图像就绪后同样放行
-    svc.state_dict["keyElements"][0]["drafts"][0]["imgUrl"] = "http://x/a.png"
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": GOOD_SHOT_PROMPT},
-    }])
-    assert applied == 1
-
-
-def test_fc_gate_warns_shot_prompt_before_element_images(monkeypatch):
-    runner = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {
-        "keyElements": [{"id": "ke-1", "title": "Element_测试", "drafts": [{"imgUrl": ""}]}],
-        "shots": [{"id": "shot-1", "title": "Shot_测试", "sceneRefs": ["Element_测试"],
-                   "drafts": [{"id": "1-1", "label": "分镜"}]}],
-    }))
-    err = runner._prompt_gate(
-        "storyboard_patch_draft",
-        {"draft_id": "1-1", "draft_type": "shot", "patch": {"prompt": GOOD_SHOT_PROMPT}},
-        injected_skill="任意 Skill",
-    )
-    assert err is None
-    assert runner.gate_warnings and "概念图" in runner.gate_warnings[0]
-
-
-def test_shot_without_scene_refs_not_blocked_by_missing_element_images(svc):
-    """引用感知（P1-4）：未引用无图元素的分镜不误伤"""
-    svc.state_dict["keyElements"] = [{
-        "id": "ke-test", "title": "Element_测试",
-        "drafts": [{"id": "draft-ke", "label": "元素", "imgUrl": ""}],
-    }]
-    svc.state_dict["shots"] = [{
-        "id": "shot-standalone", "title": "Shot_独立", "duration": "10s",
-        "sceneRefs": [],
-        "drafts": [{"id": "draft-s", "label": "分镜", "mediaType": "video", "prompt": ""}],
-    }]
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-s", "draft_type": "shot",
-        "patch": {"prompt": GOOD_SHOT_PROMPT},
-    }])
-    assert applied == 1  # 不引用无图元素 → 放行
-
-
 # ---------- 结构纯净闸 + 故事板待确认窗口（888 项目事故：步骤3+4 合并且虚报） ----------
 
 def test_fc_strips_structure_prompt_on_first_batch():
@@ -657,47 +585,16 @@ def test_button_gate_overrides_consumed_once():
     assert planner_gate_session.consume_gate_overrides(svc, "任意文本") is False
 
 
-def test_button_gate_overrides_element_scope():
-    """C5：非 all 的按钮 scope 映射为元素图作用域"""
-    from src.video_agent.core import planner_gate_session
-
-    class _Svc:
-        state_dict = {"interaction": {"gate_overrides": ["element_image"]}}
-
-        def save(self):
-            pass
-
-    assert (
-        planner_gate_session.consume_gate_overrides(_Svc(), "")
-        == prompt_gates.GATE_OVERRIDE_SCOPE_ELEMENT_IMAGE
-    )
-
-
 def test_override_covers_matrix():
     """M1：作用域覆盖矩阵（含旧布尔语义兼容：True 等价 all）"""
     assert prompt_gates.override_covers(True, prompt_gates.GATE_STRUCTURE)
     assert prompt_gates.override_covers("all", prompt_gates.GATE_STRUCTURE)
-    assert prompt_gates.override_covers("all", prompt_gates.GATE_ELEMENT_IMAGE)
-    assert prompt_gates.override_covers("element_image", prompt_gates.GATE_ELEMENT_IMAGE)
-    assert not prompt_gates.override_covers("element_image", prompt_gates.GATE_STRUCTURE)
+    assert not prompt_gates.override_covers("flow", prompt_gates.GATE_STRUCTURE)
     assert not prompt_gates.override_covers("", prompt_gates.GATE_STRUCTURE)
-    assert not prompt_gates.override_covers(False, prompt_gates.GATE_ELEMENT_IMAGE)
+    assert not prompt_gates.override_covers(False, prompt_gates.GATE_STRUCTURE)
 
 
-def test_narrow_scope_still_rejects_bad_structure(svc):
-    """M1：用户只要求跳过概念图时，敷衍提示词仍被结构闸打回（不再全局降级）"""
-    _seed_shot(svc)
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    ex.gate_override = prompt_gates.GATE_ELEMENT_IMAGE
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": "太短了"},
-    }])
-    assert applied == 0  # 结构闸拒绝写入，回喂模型重写
-    assert ex.gate_rejections
-
-
-def test_spec_rules_standalone_doc_and_override(svc):
+def test_spec_rules_standalone_doc(svc):
     from src.video_agent.core import spec_rules
 
     # 铁律为独立文档：写规格文档后 ensure，规格正文不含铁律章节
@@ -706,31 +603,21 @@ def test_spec_rules_standalone_doc_and_override(svc):
     names = [d["name"] for d in svc.state_dict["documents"]]
     assert "执行铁律.md" in names
     iron = spec_rules.find_iron_rules_doc(svc.state_dict)
-    # 三条款设计（6666 二轮）：默认不再内嵌概念图前置状态行，闸机以「未跳过」为默认
     assert "3. 回复纪律见平台协议" in iron["content"]
-    assert spec_rules.ELEMENT_IMAGE_PREREQ_ON not in iron["content"]
     spec = svc.state_dict["documents"][names.index("制片规格.md")]
     assert "执行铁律" not in spec["content"]
     # 幂等：不再重复创建
     assert spec_rules.ensure_iron_rules_doc(svc.state_dict) is False
 
-    assert not spec_rules.spec_element_image_override(svc.state_dict)
-    assert spec_rules.apply_element_image_override(svc.state_dict)
-    assert spec_rules.spec_element_image_override(svc.state_dict)
-    assert spec_rules.ELEMENT_IMAGE_PREREQ_OFF in spec_rules.find_iron_rules_doc(svc.state_dict)["content"]
-    # 幂等：再次调用不再修改
-    assert not spec_rules.apply_element_image_override(svc.state_dict)
-
 
 def test_spec_rules_migrate_legacy_appendix():
-    """老项目：规格文档里的铁律章节自动迁入独立文档（保留用户编辑内容与跳过状态）。"""
+    """老项目：规格文档里的铁律章节自动迁入独立文档（保留用户编辑内容）。"""
     from src.video_agent.core import spec_rules
 
     legacy = (
         "# 规格\n时长：60s\n\n"
         "## 执行铁律（系统约定，按优先级执行：用户指令 > 本文档 > Skill/系统默认）\n"
         "1. 拆解覆盖完整：所有有台词的具名角色都必须单独建组。\n"
-        "- 元素概念图前置：已由用户跳过（当前生效）\n"
     )
     state = {"documents": [{"name": "制片规格.md", "content": legacy}]}
     assert spec_rules.ensure_iron_rules_doc(state) is True
@@ -740,79 +627,8 @@ def test_spec_rules_migrate_legacy_appendix():
     iron = spec_rules.find_iron_rules_doc(state)
     assert iron is not None
     assert "拆解覆盖完整" in iron["content"]  # 用户内容原样保留
-    # 旧章节里的跳过状态可继续被闸机读取
-    assert spec_rules.spec_element_image_override(state)
     # 迁移完成后幂等
     assert spec_rules.ensure_iron_rules_doc(state) is False
-
-
-def test_executor_user_override_allows_shot_prompt_without_images(svc):
-    from src.video_agent.core import spec_rules
-
-    _seed_ke_without_image(svc)
-    _seed_shot(svc)
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    ex.gate_override = True  # 用户坚持「跳过出图」
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": GOOD_SHOT_PROMPT},
-    }])
-    assert applied == 1
-    assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == GOOD_SHOT_PROMPT
-    assert ex.gate_warnings and "元素概念图前置" in ex.gate_warnings[0]
-    # 覆盖声明已写入规格文档（无规格文档时创建不了，此处项目无 spec：警告但未落盘）
-    assert spec_rules.find_spec_doc(svc.state_dict) is None
-
-
-def test_executor_override_writes_spec_when_exists(svc):
-    from src.video_agent.core import spec_rules
-
-    _seed_ke_without_image(svc)
-    _seed_shot(svc)
-    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "# 规格\n"}]
-    spec_rules.ensure_iron_rules_doc(svc.state_dict)
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    ex.gate_override = True
-    assert ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": GOOD_SHOT_PROMPT},
-    }]) == 1
-    assert spec_rules.spec_element_image_override(svc.state_dict)
-
-
-def test_executor_no_override_still_writes_with_warning(svc):
-    _seed_ke_without_image(svc)
-    _seed_shot(svc)
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": GOOD_SHOT_PROMPT},
-    }])
-    assert applied == 1
-    assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == GOOD_SHOT_PROMPT
-    assert ex.gate_warnings and "概念图" in ex.gate_warnings[0]
-
-
-def test_fc_runner_user_override_allows(monkeypatch):
-    runner = FCToolRunner(tool_manager=None)
-    runner.gate_override = True
-    runner.gate_warnings = []
-    state = {
-        "keyElements": [{"title": "Element_测试", "drafts": [{"id": "k1"}]}],
-        "shots": [],
-    }
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
-    err = runner._prompt_gate(
-        "storyboard_add_draft",
-        {
-            "group_type": "shot",
-            "scene_refs": ["Element_测试"],
-            "draft": {"prompt": GOOD_SHOT_PROMPT},
-        },
-        injected_skill="任意 Skill",
-    )
-    assert err is None
-    assert runner.gate_warnings
 
 
 # ---------- 卡片枚举压缩（8888 事故：正文逐卡罗列既耗 token 又撑长卡片） ----------
