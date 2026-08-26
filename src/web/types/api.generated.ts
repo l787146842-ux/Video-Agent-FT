@@ -209,11 +209,11 @@ export interface ProjectStateResponse {
 export interface ProjectStateUpdate {
   project_id?: string | undefined;
   base_version?: number | undefined;
-  keyElements?: unknown[] | undefined;
-  shots?: unknown[] | undefined;
-  audioItems?: unknown[] | undefined;
-  assets?: unknown[] | undefined;
-  chatMessages?: unknown[] | undefined;
+  keyElements?: Record<string, unknown>[] | undefined;
+  shots?: Record<string, unknown>[] | undefined;
+  audioItems?: Record<string, unknown>[] | undefined;
+  assets?: Record<string, unknown>[] | undefined;
+  chatMessages?: Record<string, unknown>[] | undefined;
 }
 
 export interface ProviderProbeRequest {

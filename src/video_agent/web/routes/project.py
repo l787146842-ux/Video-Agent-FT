@@ -50,11 +50,14 @@ class ProjectStateUpdate(BaseModel):
     # （如防抖 PUT 在途期间用户切换了项目），必须拒绝，否则旧项目数据会污染新项目
     project_id: Optional[str] = None
     base_version: Optional[int] = None
-    keyElements: Optional[list] = None
-    shots: Optional[list] = None
-    audioItems: Optional[list] = None
-    assets: Optional[list] = None
-    chatMessages: Optional[list] = None
+    # 五列表收窄为参数化 Dict 形态：落盘链路为裸 json.dumps（元素须保持 dict），
+    # 且前端元素字段远多于 models.py 对应模型（无 extra=allow 会静默丢字段），
+    # 故不模型化元素；全量建模见 docs/未清偿债务清单.md D-06
+    keyElements: Optional[List[Dict[str, Any]]] = None
+    shots: Optional[List[Dict[str, Any]]] = None
+    audioItems: Optional[List[Dict[str, Any]]] = None
+    assets: Optional[List[Dict[str, Any]]] = None
+    chatMessages: Optional[List[Dict[str, Any]]] = None
 
 
 class NewProjectRequest(BaseModel):

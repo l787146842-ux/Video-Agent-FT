@@ -18,8 +18,9 @@
  *   CanvasDropImageResult/CanvasNodeImagesResult/AllCanvasImagesResult（api/canvas.ts）、
  *   GenerationLogEntry（api/generate.ts 读形态）、
  *   SkillDoc/SkillDocVersion（api/docs.ts）、RuntimeSettings（api/agent.ts 读形态）、
- *   整板保存 payload（stores/studio/storyboard.ts，后端 ProjectStateUpdate 为粗粒度
- *   unknown 字段）——保留手写强类型，后端建模精细化后再迁。
+ *   整板保存 payload（stores/studio/storyboard.ts，后端 ProjectStateUpdate 五列表
+ *   已收窄为 Record<string, unknown>[] 但元素仍宽于手写 Draft/Group/Asset）
+ *   ——保留手写强类型，后端全量建模后再迁（docs/未清偿债务清单.md D-06）。
  * - 生成物消费基座站点（生成物为类型来源，手写只做收窄/精化，  登记）：
  *   GenerateImageRequest/GenerateVideoRequest（交集精化，api/generate.ts）、
  *   BatchImageRequest（Required 收窄必填）、CanvasDropImagePayload（交集精化，api/canvas.ts）、
