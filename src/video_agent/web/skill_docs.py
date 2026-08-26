@@ -266,9 +266,9 @@ def _refresh_runtime_registry() -> None:
 def _parse_doc(slug: str, content: str) -> Dict[str, Any]:
     name = slug
     description = ""
-    # 在剥离 frontmatter 后的正文上找标题/描述：YAML 注释行
-    # （`# ...`）与声明键混在全文扫描里会污染显示名
-    body = frontmatter.strip_frontmatter(content)
+    # 目录摘要唯一权威源 = frontmatter name/description 声明（渐进披露
+    # 第一层）；H1/引文启发式仅作未声明时的兜底（外来/存量 Skill 兼容）
+    declaration, body, _err = frontmatter.split_frontmatter(content)
     for line in body.splitlines():
         line = line.strip()
         if line.startswith("# ") and name == slug:
@@ -281,6 +281,13 @@ def _parse_doc(slug: str, content: str) -> Dict[str, Any]:
             )
         if name != slug and description:
             break
+    fm = declaration or {}
+    fm_name = str(fm.get("name") or "").strip()
+    fm_desc = str(fm.get("description") or "").strip()
+    if fm_name:
+        name = fm_name
+    if fm_desc:
+        description = fm_desc
     return {"id": f"doc:{slug}", "slug": slug, "name": name,
             "description": description, "content": content}
 

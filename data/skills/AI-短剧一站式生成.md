@@ -1,4 +1,6 @@
 ---
+name: AI-短剧一站式生成
+description: 一站式生成短剧，按顺序确认关键信息后推进流程，适合从创意到成片快速完成。
 flow:
   spec_wizard: true
   spec_gate: true

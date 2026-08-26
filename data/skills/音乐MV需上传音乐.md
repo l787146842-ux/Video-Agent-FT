@@ -1,4 +1,6 @@
 ---
+name: 音乐MV需上传音乐
+description: 基于已上传音乐制作音乐MV，先分析节奏结构、时间戳与歌词，再推进故事板与生成。
 flow:
   spec_wizard: true
   spec_gate: true

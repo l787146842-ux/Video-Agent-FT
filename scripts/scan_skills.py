@@ -275,17 +275,31 @@ def tools_required_warn_probe(slug: str, manifest, platform_names: frozenset) ->
     ]
 
 
+def frontmatter_meta_warn_probe(slug: str, manifest) -> list:
+    """frontmatter name/description 存在性探针（P1-10 裁决 R1）：
+    渐进披露第一层（Skill 目录摘要）的权威声明缺失时计入 WARN 清单；
+    级别 WARN 不升 FAIL——不触门禁冻结，不阻断退出码（诊断性质）。"""
+    return [
+        key for key in ("name", "description")
+        if not (isinstance((manifest or {}).get(key), str)
+                and str((manifest or {}).get(key)).strip())
+    ]
+
+
 def run_gate() -> int:
     """--gate 模式：工具名白名单校验，有问题退出码 1（acceptance 门禁项）；
     P1 防回潮校验：正文元数据残留行 / 优先级宣称即 FAIL（任务 #9）；
     tools_required 存在性探针缺失输出 WARN 清单（任务#5 B-2：先诊断
-    不升门禁失败，不阻断退出码）。"""
+    不升门禁失败，不阻断退出码）；
+    frontmatter name/description 存在性探针缺失输出 WARN 清单
+    （P1-10 裁决 R1：级别 WARN 不升 FAIL，不触门禁冻结）。"""
     d = pathlib.Path(__file__).parent.parent / "data" / "skills"
     real = real_tool_names()
     platform = platform_tool_names()
     failed = []
     hygiene_failed = []
     warned = []
+    meta_warned = []
     for slug, f in _iter_skill_docs(d):
         content = f.read_text(encoding="utf-8", errors="replace")
         # 扫描前先剥离 frontmatter：YAML 声明键（schema_version 等）非工具引用
@@ -305,6 +319,11 @@ def run_gate() -> int:
             warned.append(slug)
             print(f"[skill_tools_required] WARN {slug}: 声明工具不在平台注册表"
                   f"且不在待补齐豁免清单：{'、'.join(missing)}")
+        meta_missing = frontmatter_meta_warn_probe(slug, manifest)
+        if meta_missing:
+            meta_warned.append(slug)
+            print(f"[skill_frontmatter_meta] WARN {slug}: frontmatter 缺 "
+                  f"{'、'.join(meta_missing)}（渐进披露第一层摘要声明）")
     if failed:
         print(f"[skill_tool_names] FAIL: {len(failed)} skill(s) off-whitelist")
     if hygiene_failed:
@@ -317,6 +336,10 @@ def run_gate() -> int:
     if warned:
         print(f"[skill_tools_required] WARN: {len(warned)} skill(s) 声明工具未入平台注册表"
               f"（{'、'.join(warned)}；诊断性质，不阻断门禁）")
+    if meta_warned:
+        print(f"[skill_frontmatter_meta] WARN: {len(meta_warned)} skill(s) "
+              f"frontmatter name/description 缺失（{'、'.join(meta_warned)}；"
+              f"诊断性质，不阻断门禁）")
     return 0
 
 
@@ -390,6 +413,10 @@ def main() -> None:
         missing = tools_required_warn_probe(slug, manifest, platform)
         if missing:
             lines.append(f"  tools_required 未入平台注册表(WARN): {missing}")
+        # P1-10（裁决 R1）：frontmatter name/description 存在性探针（WARN，诊断性质）
+        meta_missing = frontmatter_meta_warn_probe(slug, manifest)
+        if meta_missing:
+            lines.append(f"  frontmatter name/description 缺失(WARN): {meta_missing}")
         # 提取 <planner> 流程前 500 字，看流程是否与「剧本→规格→KE→分镜→提示词」不同
         flow = sections.get("planning", "").strip()
         if flow:
