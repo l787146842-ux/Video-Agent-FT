@@ -292,18 +292,6 @@ async def _try_canvas_image_generation(
         return None
 
 
-# ---------- 生成侧降级链 ----------
-#
-# 实现位于 core/generation_fallback.py 公开 API；本模块保留薄 re-export 壳，
-# web 内部消费点（generation.py 壳 / generation_submit.py）零改动。
-
-from src.video_agent.core.generation_fallback import (  # noqa: E402,F401
-    _NON_RETRYABLE_GEN_HINTS,
-    gen_fallback_candidates as _gen_fallback_candidates,
-    is_retryable_gen_error as _is_retryable_gen_error,
-)
-
-
 async def generate_image_via_provider(
     provider_id: str,
     model: str,

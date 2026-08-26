@@ -15,10 +15,7 @@ import asyncio  # noqa: F401  # 测试经 gen_mod.asyncio 打桩，保留模块�
 
 from src.video_agent.web.generation_dispatch import (  # noqa: F401
     _IMAGE_1K_SIZES,
-    _NON_RETRYABLE_GEN_HINTS,
     _RESOLUTION_MULTIPLIERS,
-    _gen_fallback_candidates,
-    _is_retryable_gen_error,
     _try_canvas_image_generation,
     call_chat_completion,
     call_chat_completion_stream,

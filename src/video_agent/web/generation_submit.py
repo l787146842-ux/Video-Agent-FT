@@ -21,9 +21,13 @@ from src.video_agent.core.provider_config import (
 )
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 from src.video_agent.state import storyboard_ops as ops
+# 批次E：生成侧降级链直连实现体 core/generation_fallback，保私有别名使
+# 本模块内用法零改动。
+from src.video_agent.core.generation_fallback import (
+    gen_fallback_candidates as _gen_fallback_candidates,
+    is_retryable_gen_error as _is_retryable_gen_error,
+)
 from src.video_agent.web.generation_dispatch import (
-    _gen_fallback_candidates,
-    _is_retryable_gen_error,
     image_size_for,
 )
 from src.video_agent.web.generation_channel import (
