@@ -1,37 +1,37 @@
 {
   "3D国漫古装精品短剧": {
     "planning": {
-      "chars": 4720,
+      "chars": 4737,
       "head": "**启动协议**\n用户触发本Skill时，首先判断用户属于以下哪种场景，并据此选"
     },
     "storyboard_ke": {
-      "chars": 2479,
+      "chars": 2511,
       "head": "**全局风格锁定**\n所有视觉设计统一采用3D建模风格：以3D CGI渲染质感呈"
     },
     "storyboard_shot": {
-      "chars": 7865,
+      "chars": 7944,
       "head": "**拆解shot列表**\n- 每个shot = 一次生成任务，时长遵循全局设置中"
     },
     "storyboard_audio": {
-      "chars": 680,
+      "chars": 695,
       "head": "**设计audio_layer**\n- **BGM**：全剧至少规划一条背景音乐"
     },
     "generation": {
-      "chars": 5232,
+      "chars": 5250,
       "head": "**key_element设定图生成**\n- **角色设定图：** 使用 **T"
     },
     "prompt_draft": {
-      "chars": 17263,
+      "chars": 17285,
       "head": "**全局提示词撰写原则（适用于所有提示词类型）**\n- **风格关键词强制写入（"
     },
     "assembly": {
-      "chars": 896,
+      "chars": 894,
       "head": "**跨镜空间一致性策略**\n- 跨镜空间一致性在视频生成阶段已通过参考帧机制保障"
     }
   },
   "AI-短剧一站式生成": {
     "planning": {
-      "chars": 1906,
+      "chars": 1919,
       "head": "**启动协议**\n\n用户触发本 Skill 时，按顺序确认以下信息后再推进：\n\n"
     },
     "storyboard_ke": {
@@ -39,7 +39,7 @@
       "head": "**设计 key_element**\n\n- 登记所有**主要角色**（eleme"
     },
     "storyboard_shot": {
-      "chars": 1210,
+      "chars": 1216,
       "head": "**拆解 shot 列表**\n\n- 每个 shot = 一次生成任务，时长遵循全"
     },
     "storyboard_audio": {
@@ -55,17 +55,17 @@
       "head": "**内切镜时长估算（视频提示词撰写前）**\n\n若 Storyboard shot"
     },
     "assembly": {
-      "chars": 1110,
+      "chars": 1113,
       "head": "**首尾帧衔接策略**\n\n- 第一个 shot：以对应场景 key_elemen"
     }
   },
   "人文纪录短片": {
     "planning": {
-      "chars": 1397,
+      "chars": 1412,
       "head": "**全片流程与阶段依赖：**\n1. 和用户确认并建立 制片规格.md（片名、题材"
     },
     "storyboard_ke": {
-      "chars": 934,
+      "chars": 937,
       "head": "**全球人文纪录片剧本与剧情规划规范**\n一、 核心叙事理念：观察生活，而非“拍"
     },
     "storyboard_shot": {
@@ -91,11 +91,11 @@
   },
   "剧情短片音色参考": {
     "planning": {
-      "chars": 2455,
+      "chars": 2465,
       "head": "**完整视频的阶段逻辑和依赖关系：**\n\n1. **剧本获取（二选一）：**\n "
     },
     "storyboard_ke": {
-      "chars": 698,
+      "chars": 695,
       "head": "**脚本忠实度（强制基线）**\n\n- **用户上传了剧本时：** 分镜中的**对"
     },
     "storyboard_shot": {
@@ -107,11 +107,11 @@
       "head": "**如何设计独立音频**\n\n- **背景音乐：** 至少一个全局背景音轨；风格和"
     },
     "generation": {
-      "chars": 712,
+      "chars": 718,
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
-      "chars": 4250,
+      "chars": 4255,
       "head": "**强制基线、适用于所有prompt编写情况（含图像、视频、音频提示词）：当用户"
     },
     "assembly": {
@@ -121,20 +121,20 @@
   },
   "剧本生视频需上传剧本": {
     "planning": {
-      "chars": 871,
+      "chars": 869,
       "head": "**完整视频的阶段逻辑和依赖关系：**\n1. 通读用户上传或粘贴的剧本，用一句话"
     },
     "storyboard_ke": {
-      "chars": 94,
-      "head": "**本节职责（强制基线）**：只创建关键元素（keyElement）分组，**不"
+      "chars": 103,
+      "head": "**本节职责（强制基线）**：只创建关键元素（keyElement）分组，**分"
     },
     "storyboard_shot": {
       "chars": 90,
       "head": "**本节职责（强制基线）**：只创建分镜（shot）分组，分镜必须通过 scen"
     },
     "storyboard_audio": {
-      "chars": 76,
-      "head": "**本节职责（强制基线）**：只创建音频（audio）分组，**不得**创建或修"
+      "chars": 87,
+      "head": "**本节职责（强制基线）**：只创建音频（audio）分组，**关键元素与分镜分"
     },
     "generation": {
       "chars": 90,
@@ -181,15 +181,15 @@
   },
   "古风甜宠短剧": {
     "planning": {
-      "chars": 2282,
+      "chars": 2275,
       "head": "**整体流程与里程碑节点**\n按以下阶段顺序推进，每个里程碑结束后必须暂停并获得"
     },
     "storyboard_ke": {
-      "chars": 1025,
+      "chars": 1019,
       "head": "**设计 key elements**\n- 必须包含：**男主**、**女主**"
     },
     "storyboard_shot": {
-      "chars": 933,
+      "chars": 934,
       "head": "**设计分镜**\n- 总镜头数目标：10～14 个，覆盖完整剧本情节，整体时长遵"
     },
     "storyboard_audio": {
@@ -197,16 +197,16 @@
       "head": "**设计独立音频轨道**\n- 背景音乐（bgm）：至少一条贯穿全片的古风甜宠风格"
     },
     "generation": {
-      "chars": 1606,
+      "chars": 1612,
       "head": "**角色形象图生成（阶段 2）**\n- 使用 **ImageToImage**，"
     },
     "prompt_draft": {
-      "chars": 2410,
+      "chars": 2397,
       "head": "**全局强制基线：** 所有提示词均使用**中文**撰写。视频中人物台词与旁白文"
     },
     "assembly": {
-      "chars": 322,
-      "head": "- 严格按故事板镜头顺序组装时间线，不得自行调换镜头次序。\n- 情感高潮镜头（对"
+      "chars": 325,
+      "head": "- 严格按故事板镜头顺序组装时间线（自行调换镜头次序排除在外）。\n- 情感高潮镜"
     }
   },
   "商品宣传短片": {
@@ -233,6 +233,10 @@
     "prompt_draft": {
       "chars": 4279,
       "head": "**强制基线、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言"
+    },
+    "assembly": {
+      "chars": 321,
+      "head": "**最终组装与导出引导**\n- 组装顺序按已确认故事板的时间轴执行：先核对每个镜"
     }
   },
   "多人对话访谈": {
@@ -271,15 +275,15 @@
       "head": "两条硬规则：\n1. 文本命名化：每句文案是一个新定义或本体命名，可引用可复述。禁"
     },
     "storyboard_ke": {
-      "chars": 1187,
+      "chars": 1193,
       "head": "把已确认 Manifesto 文本拆为画面序列。文本先在，镜头数时长节奏全由文本"
     },
     "storyboard_shot": {
-      "chars": 1187,
+      "chars": 1193,
       "head": "把已确认 Manifesto 文本拆为画面序列。文本先在，镜头数时长节奏全由文本"
     },
     "storyboard_audio": {
-      "chars": 1187,
+      "chars": 1193,
       "head": "把已确认 Manifesto 文本拆为画面序列。文本先在，镜头数时长节奏全由文本"
     },
     "generation": {
@@ -319,45 +323,53 @@
     "prompt_draft": {
       "chars": 3613,
       "head": "**强制基线、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语言"
+    },
+    "assembly": {
+      "chars": 305,
+      "head": "**最终组装与导出引导**\n- 组装前核对：逐镜头确认视频、元素绑定与音频层均已"
     }
   },
   "未来科幻真人电影": {
     "planning": {
-      "chars": 2722,
+      "chars": 2732,
       "head": "## 工作定位\n以超写实真人未来科幻电影的制片与美术指导方式执行「创意梳理—资产"
     },
     "storyboard_ke": {
-      "chars": 1043,
+      "chars": 1062,
       "head": "## 故事与段落结构\n- 先输出 100–200 字故事核心梗概，再按时间轴输出"
     },
     "storyboard_shot": {
-      "chars": 886,
+      "chars": 896,
       "head": "## 风格化美术设计\n- 先将已选择的风格转化为贯穿 key_element、场"
     },
+    "storyboard_audio": {
+      "chars": 308,
+      "head": "## 段落级音频层规划\n- 每个剧情段落对应一条 audio_layer，与已确"
+    },
     "generation": {
-      "chars": 1932,
+      "chars": 1989,
       "head": "## 资产生成与绑定顺序\n- 先绑定用户已提供的资源。人物参考图直接注册并绑定为"
     },
     "prompt_draft": {
-      "chars": 4413,
+      "chars": 4462,
       "head": "## 共同写作规则\n- 使用 Markdown 分级标题与固定模块顺序，不使用表"
     },
     "assembly": {
-      "chars": 477,
+      "chars": 479,
       "head": "## 段落级剪辑与统一调色\n- 每个剧情段落对应一个 final_shot，按已"
     }
   },
   "李安美学风格短片": {
     "planning": {
-      "chars": 5431,
+      "chars": 5440,
       "head": "**全局视频参数建立与风格选择：**\n\n1. **构思引导与子风格自动匹配**："
     },
     "storyboard_ke": {
-      "chars": 689,
+      "chars": 696,
       "head": "**关键元素（Elements）设计：**\n\n- **角色（element ch"
     },
     "storyboard_shot": {
-      "chars": 2752,
+      "chars": 2834,
       "head": "**分镜镜头（Shots）设计：**\n\n- **元素、场景与道具强锚定规范（防止"
     },
     "storyboard_audio": {
@@ -365,29 +377,29 @@
       "head": "**音频层（Audio Layers）设计：**\n\n- **旁白（narrati"
     },
     "generation": {
-      "chars": 2922,
+      "chars": 2962,
       "head": "**元素、图像与音色资产生成：**\n\n- **模型锁定与唯一性规范**：\n  -"
     },
     "prompt_draft": {
-      "chars": 20498,
+      "chars": 20576,
       "head": "**强制基线规则**：当项目环境或用户输入为中文时，提示词主体（Subject、"
     },
     "assembly": {
-      "chars": 2436,
+      "chars": 2439,
       "head": "**时间轴装配与节奏控制：**\n\n- **剪辑律动与风格化装配**：保持整体慢节"
     }
   },
   "水墨风格武侠短片": {
     "planning": {
-      "chars": 3945,
+      "chars": 3939,
       "head": "**全流程阶段逻辑与协同编排：**\n\n1. **确立全局规格**：在生成任务启动"
     },
     "storyboard_ke": {
-      "chars": 5635,
+      "chars": 5628,
       "head": "**设计 key_element（核心元素）：**\n- **element ch"
     },
     "storyboard_shot": {
-      "chars": 6594,
+      "chars": 6607,
       "head": "**设计 shot（镜头）：**\n- **分镜时长与节奏动态规划规范（解决全量5"
     },
     "storyboard_audio": {
@@ -395,11 +407,11 @@
       "head": "**设计 audio_layer（独立音频轨道）：**\n- **背景音乐（bgm"
     },
     "generation": {
-      "chars": 3553,
+      "chars": 3575,
       "head": "**视觉元素生成策略（具体渠道与模型由全局设置决定，本文档不指定）：**\n- *"
     },
     "prompt_draft": {
-      "chars": 20394,
+      "chars": 20420,
       "head": "**语系优先与主导风格写作规范：**\n- **语言一致性高阶规则**：当用户使用"
     },
     "assembly": {
@@ -439,7 +451,7 @@
   },
   "音乐MV需上传音乐": {
     "planning": {
-      "chars": 1672,
+      "chars": 1680,
       "head": "**阶段逻辑与依赖关系：**\n1. 分析已上传的音乐，导出其节奏结构、精确时间（"
     },
     "storyboard_ke": {

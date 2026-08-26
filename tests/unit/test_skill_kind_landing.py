@@ -13,9 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS_DIR = ROOT / "data" / "skills"
 
-# 用户裁决（三波整改计划批次 2.3）：美学型 → style；知识参考型 → reference；
-# 其余保持 pipeline。当前 16 个存量 Skill 无纯知识参考型，reference 暂无
-# 数据承载（schema 与注入分支保留，桩测试覆盖语义）。
+# 用户裁决（三波整改计划批次 2.3）：美学型 → style；其余保持 pipeline。
+# 任务#8 ②：reference kind 已裁决下架（声明入口关闭，存量无数据承载；
+# prompt_builder 内残留分支随声明入口关闭变为死路径，待后续批次清理）。
 STYLE_KIND_SKILLS = {
     "李安美学风格短片",
     "水墨风格武侠短片",
@@ -41,7 +41,7 @@ def test_aesthetic_skills_declare_style_kind():
 
 def test_no_skill_declares_unknown_or_reference_kind_yet():
     """全量口径：现存声明只允许 pipeline/style；
-    reference 尚无数据承载，出现即须同步补该类型的消费验证再合入。"""
+    reference 已下架（任务#8 ②），出现即回 WARN 降级，数据侧不允许再现。"""
     for f in sorted(SKILLS_DIR.glob("*.md")):
         kind = _kind_of(f.stem)
         assert kind in ("pipeline", "style"), (
@@ -59,5 +59,6 @@ def test_style_injection_note_wired_for_real_skill_name():
 
     assert "风格层" in _kind_baseline_statement("style")
     assert "风格层" in _kind_block_suffix("style")
-    assert "参考资料" in _kind_baseline_statement("reference")
+    # reference 已下架（任务#8 ②）：声明入口关闭后该分支不可达，
+    # 不再钉死其文案（残留实现归 prompt_builder，待后续批次清理）。
     assert _KIND_STYLE_LAYER_NOTE in _kind_baseline_statement("style")

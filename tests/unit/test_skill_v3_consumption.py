@@ -246,6 +246,51 @@ def test_language_gate_read_path_patchable(monkeypatch):
     assert ok and not hard
 
 
+def test_language_gate_category_exemption_by_declaration(svc):
+    """任务#8 ①：language.prompt_en_categories 按产物类别豁免语言闸，
+    豁免只按声明类别生效；未声明者写英文仍被拦（防豁免泛化）。"""
+    _save("类别豁免", "# K\n正文", {
+        "language": {"prompt_en_categories": ["keyElement"]}})
+    state = {"usedSkills": ["类别豁免"]}
+    # 声明豁免类别：英文提示词通过语言闸
+    ok, hard, _ = prompt_gates.validate_prompt_write(
+        _LONG_EN_PROMPT, "keyElement", state)
+    assert ok and not hard
+    # 未豁免类别：同一英文提示词仍被拦（豁免不泛化到全类别）
+    ok2, hard2, _ = prompt_gates.validate_prompt_write(
+        _LONG_EN_PROMPT, "shot", state)
+    assert not ok2 and any(
+        prompt_gates.LANG_EN_HARD_PREFIX in h for h in hard2)
+    # 未声明 skill：写英文仍被拦
+    _save("类别未声明", "# N\n正文")
+    state2 = {"usedSkills": ["类别未声明"]}
+    ok3, hard3, _ = prompt_gates.validate_prompt_write(
+        _LONG_EN_PROMPT, "keyElement", state2)
+    assert not ok3 and any(
+        prompt_gates.LANG_EN_HARD_PREFIX in h for h in hard3)
+
+
+def test_voice_reference_soft_note_follows_declaration(svc):
+    """任务#8 ④：音色软提醒跟随 requires_inputs.features 声明轴；
+    未声明者回落状态探测（零预设）。"""
+    _save("音色声明", "# V\n正文", {
+        "requires_inputs": [{
+            "type": "audio", "required": False,
+            "features": ["voice_reference"]}]})
+    shot_text = "角色面对镜头说：{我们出发吧}。" + "中文场景描述。" * 20
+    # 声明轴在场（项目状态无任何音频）：软提醒仍触发
+    state = {"usedSkills": ["音色声明"]}
+    ok, _hard, soft = prompt_gates.validate_prompt_write(
+        shot_text, "shot", state)
+    assert ok and any("音色参考" in s for s in soft)
+    # 未声明且状态无音频：软提醒不触发（零预设回落）
+    _save("音色未声明", "# W\n正文")
+    state2 = {"usedSkills": ["音色未声明"]}
+    ok2, _h2, soft2 = prompt_gates.validate_prompt_write(
+        shot_text, "shot", state2)
+    assert ok2 and not any("音色参考" in s for s in soft2)
+
+
 # ---------- 5) 通用暂停点：四级优先级 + bool 兼容 ----------
 
 _ANCHORS = ("storyboard_structure_ready", "first_generation_call")

@@ -3,7 +3,8 @@
 
 钉死：
 1) kind 只管注入策略一个维度：pipeline=现状全文/分级注入口径（强约束），
-   style=风格层语义（贯穿全流程的美学约束），reference=低权重参考资料语义；
+   style=风格层语义（贯穿全流程的美学约束）；reference 已随任务#8 ②
+   裁决下架（声明入口关闭，再声明降级 pipeline 并 WARN）；
 2) 注入形态与段落顺序不变（仍是全文直注/分级注入结构，选中块殿后）；
 3) kind 开放注册：未知 kind 不拒注册，降级为默认（pipeline）策略并告警；
 4) 未声明 kind = 默认策略（零预设，行为与现状一致）。
@@ -44,14 +45,21 @@ def _pb():
 def test_injection_kind_known_values_and_default():
     _save("流程向", manifest={"kind": "pipeline"})
     _save("风格向", manifest={"kind": "style"})
-    _save("参考向", manifest={"kind": "reference"})
     _save("零声明")
     assert registry.skill_injection_kind("流程向") == "pipeline"
     assert registry.skill_injection_kind("风格向") == "style"
-    assert registry.skill_injection_kind("参考向") == "reference"
     # 未声明 = 默认策略（零预设）
     assert registry.skill_injection_kind("零声明") == registry.DEFAULT_INJECTION_KIND
     assert registry.skill_injection_kind("不存在") == registry.DEFAULT_INJECTION_KIND
+
+
+def test_reference_kind_retired_falls_back_to_pipeline():
+    """任务#8 ②：reference 下架——声明入口关闭，注入策略降级 pipeline，
+    展示口径 skill_kind 不再回传已下架取值（注册保留，不拒服务）。"""
+    _save("参考向", manifest={"kind": "reference"})
+    assert registry.get_entry("参考向") is not None  # 未拒注册
+    assert registry.skill_injection_kind("参考向") == "pipeline"
+    assert registry.skill_kind("参考向") == ""
 
 
 def test_injection_kind_unknown_falls_back_with_registration_kept():
@@ -91,14 +99,12 @@ def test_style_kind_injected_as_style_layer():
     assert "【执行基准声明】" in block
 
 
-def test_reference_kind_injected_as_low_weight_reference():
+def test_reference_kind_retired_uses_pipeline_framing():
+    """任务#8 ②：reference 声明失效后注入帧式回归 pipeline（强约束口径）。"""
     _save("参考桩", "# R\n参考正文 UNIQUE_REF_MARK", {"kind": "reference"})
     block = _pb().build_selected_skill_block("参考桩")
-    # 低权重参考资料语义
-    assert "作为参考资料注入（低权重）" in block
-    assert "【参考资料声明】" in block and "以用户指令与平台铁律为准" in block
-    # reference 不用强约束执行基准声明
-    assert "【执行基准声明】" not in block
+    assert "必须严格遵守其中的流程与规范" in block
+    assert "【执行基准声明】" in block
     assert "UNIQUE_REF_MARK" in block
 
 

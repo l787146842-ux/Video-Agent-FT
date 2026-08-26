@@ -37,10 +37,18 @@ _mig_spec.loader.exec_module(mig)
     {"schema_version": 2},
     {"kind": "pipeline"},
     {"kind": "style"},
-    {"kind": "reference"},
 ])
 def test_v3_defaults_and_valid_scalars(data):
     assert ms.validate_manifest_data(data) == []
+
+
+def test_reference_kind_retired_warns_open_registration():
+    """任务#8 ②：reference kind 下架——再声明输出 WARN 过渡告警
+    （开放注册不拒入，降级 pipeline），而非错误级。"""
+    issues = ms.validate_manifest_data({"kind": "reference"})
+    errors, warnings = ms.split_issue_warnings(issues)
+    assert errors == []
+    assert any("reference" in w and "登记表" in w for w in warnings)
 
 
 @pytest.mark.parametrize("data,keyword", [
