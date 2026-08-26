@@ -697,17 +697,16 @@ _SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
     "storyboard_progress": None,
     "selected_skill": None,
 }
-# 不对应注册表段的兼容字段（恒 0 保留防口径断裂）
-_TELEMETRY_COMPAT_KEYS: Tuple[str, ...] = ("channels",)
+# 批次E：渠道机制退役后的恒 0 兼容字段 channels 已清偿
+# （唯一消费方 check_prompt_budget.py 不读该字段）。
 
 
 def _telemetry_section_keys() -> List[str]:
     """遥测字段清单：由段注册表自动生成（序 = 注册表 order），
-    别名表决定段名→jsonl 字段；兼容字段追加在后（历史字段序不变）。"""
+    别名表决定段名→jsonl 字段。"""
     keys: List[str] = []
     for spec in PROMPT_SECTIONS:
         key = _SECTION_TELEMETRY_ALIAS.get(spec.name)
         if key is not None and key not in keys:
             keys.append(key)
-    keys.extend(k for k in _TELEMETRY_COMPAT_KEYS if k not in keys)
     return keys

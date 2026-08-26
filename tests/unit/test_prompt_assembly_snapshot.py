@@ -208,8 +208,9 @@ def test_prompt_sections_registry_rejects_duplicates():
 
 
 def test_telemetry_section_fields_format_locked(monkeypatch):
-    """prompt_sections.jsonl 字段格式锁死：八个字段与历史顺序完全一致
-    （消费方 check_prompt_budget.py 零改动）"""
+    """prompt_sections.jsonl 字段格式锁死：七个字段与现行顺序完全一致
+    （消费方 check_prompt_budget.py 零改动；批次E：恒 0 兼容字段
+    channels 已清偿）"""
     from src.video_agent.core import live_metrics
     from src.video_agent.core.planner import PlannerContext
     from src.video_agent.core.prompt_builder import PromptBuilder
@@ -222,7 +223,6 @@ def test_telemetry_section_fields_format_locked(monkeypatch):
     pb.build_system_prompt(PlannerContext(use_studio_context=True,
                                           state_json='{"a": 1}'))
     assert list(captured) == ["protocol", "catalog", "mcp_catalog", "iron_rules",
-                              "channels", "state", "skill", "total"]
-    assert captured["channels"] == 0  # 渠道机制退役兼容字段恒 0
+                              "state", "skill", "total"]
     assert captured["state"] == len('{"a": 1}')
     assert captured["total"] > 0
