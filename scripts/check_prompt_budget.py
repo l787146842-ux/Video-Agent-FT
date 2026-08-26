@@ -11,8 +11,8 @@
 - include 引用完整性：{{include:path}} 目标文件存在。
 
 Skill 直注禁令独立账本（C6，任务#22）：data/skills/*.md 的「严禁/不得」
-不并入 BUDGET=8，单独计账：当前 WARN 观察项（正文清洗留长期路线图 #33），
-基线棘轮锁死当前计数（157）——超过基线即 FAIL，只降不升。
+不并入 BUDGET=8，单独计账：当前 WARN 观察项，
+基线棘轮锁死当前计数（0，任务#8 清洗后清零）——超过基线即 FAIL，只降不升。
 
 另附运行时观察项（P3-17，非硬门禁不影响退出码）：
 - 读 live_metrics 落盘的组装样本（data/prompt_sections.jsonl），统计组装总长
@@ -38,10 +38,11 @@ CODE_DIRS = ["src/video_agent/core", "src/video_agent/skill_runtime", "src/video
 BUDGET = 8
 BYTE_BUDGET = 7168
 BAN_RE = re.compile(r"严禁|不得")
-# Skill 直注禁令独立账本（C6）：data/skills/*.md 行级命中基线棘轮，只降不升；
-# 下调基线需同步完成对应存量的正文清洗（长期路线图 #33）。
+# Skill 直注禁令独立账本（C6）：data/skills/*.md 行级命中基线棘轮，只降不升。
+# 任务#8（路线图 #33）完成 16 个 skill 正文禁令系统性清洗：157→0（全部转为
+# 正向基线/「X排除在外」声明式表述，语义不变），基线随之显式下调至 0。
 SKILLS_MD_DIR = ROOT / "data" / "skills"
-SKILL_BAN_BASELINE = 157
+SKILL_BAN_BASELINE = 0
 # 运行时组装总长观察阈值（字符）：P95 超限仅 WARN（周报观察项，不作硬门禁）
 P95_WARN_CHARS = 48000
 SECTIONS_SAMPLE_FILE = ROOT / "data" / "prompt_sections.jsonl"

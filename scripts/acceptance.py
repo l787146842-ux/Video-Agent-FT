@@ -53,6 +53,11 @@ GATES: List[Tuple[str, List[str]]] = [
     # 路径存在性 / 代码注释与 docstring 模块指针与退役符号）。
     # 退役条件：文档指针漂移连续两季零检出、双边注记与文件地图维护内化为开发惯例时裁决下账。
     ("doc_pointers", [sys.executable, "scripts/check_doc_pointers.py"]),
+    # 任务 #12 批次2：宪法锚点闸——ARCHITECTURE_RULES 承重条款的路径+
+    # 不变量符号存在性（锚点登记表在脚本内）。
+    # 退役条件：宪法条款全面数据化（锚点并入机器可读登记表且脚本清单清空），
+    # 或锚点漂移连续两季零检出、修宪同批更新锚点内化为惯例时裁决下账。
+    ("arch_anchors", [sys.executable, "scripts/check_arch_anchors.py"]),
     # 退役条件：脚手架类全部退役、注册计数归零时裁决下账（详见脚本头部注释）。
     ("scaffold_registry", [sys.executable, "scripts/check_scaffold_registry.py"]),
     # 任务 #11：core 覆盖率棘轮（只升不降，基线 scripts/cov_baseline.txt）；

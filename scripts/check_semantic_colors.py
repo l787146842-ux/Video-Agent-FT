@@ -20,8 +20,9 @@
 - 中性黑白灰：rgba(0,0,0,*) 阴影/遮罩、rgba(255,255,255,*) 提亮、
   #fff/#ffffff 彩底白字与亮色面板底、深灰面板底（#1f2430/#1e293b/#0b0c10 等）；
 - code-block.css：hljs 语法高亮色板（第三方配色规范，不随主题语义走）；
-- chat-cards.css / chat-feed-timeline.css：planning/confirm 橙色规范色板
-  （体验规范刻意设计，注释已明示）；
+- confirm/stage 橙色/翡翠绿规范色板已 token 化清偿（任务 #11：
+  tokens.css 新增 --color-confirm-* / --color-stage-* 双主题档，
+  chat-cards.css / chat-feed-timeline.css 硬编码归零，条目删除）；
 - chat-input-picker.css：skill-use-btn 装饰渐变（#6366f1 系品牌渐变）。
 字阶/层级台账的保留项：半像素档（10.5/11.5/12.5px）、em 相对档、
 inherit 继承档等无法等值 token 化的特殊值，清偿至仅剩这些值后封顶。
@@ -58,8 +59,8 @@ def count_decl(regex: re.Pattern, text: str) -> int:
 # 白名单：文件 -> 允许的硬编码色计数上限（任务#4 首查登记，棘轮只减不增；
 # 清偿一处随降一处，禁止上调；条目归零后移除）
 WHITELIST = {
-    "chat-cards.css": 26,            # planning/confirm 橙色规范色板（体验规范豁免）
-    "chat-feed-timeline.css": 6,     # planning 橙色徽章（体验规范豁免）
+    # chat-cards.css / chat-feed-timeline.css 已清偿归零（任务 #11：
+    # confirm/stage 规范色板 token 化至 --color-confirm-* / --color-stage-*：条目删除）
     "chat-input-picker.css": 3,      # skill-use-btn 装饰渐变（#6366f1 系品牌渐变）
     "code-block.css": 19,            # hljs 语法高亮色板（第三方规范配色）
 }

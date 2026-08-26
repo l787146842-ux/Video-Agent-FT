@@ -43,9 +43,9 @@ FRONTEND_WHITELIST = {
     # PromptEditor.tsx 键盘处理已切至 prompt-editor-keys（任务 #15 清偿：条目删除）
     # ConfirmActions.tsx 自定义输入块已切至 ConfirmCustomInput（任务 #15 清偿：条目删除）
     # hooks/use-sse.ts 连接状态机已抽至 lib/sse-connection + sse-events（任务 #18 清偿：条目删除）
+    # stores/chat.ts 已拆分为 chat/ 域组合出口（25 行：任务 #12 批次2 清偿：条目删除）
     "src/web/lib/locale.ts": "i18n 字典集中管理（词条自然增长）",
     "src/web/lib/rich-input.ts": "富文本编辑器 DOM 操作集中（拆分另行立项）",
-    "src/web/stores/chat.ts": "对话 store 核心（P4-19 覆盖率闸保护中）",
     "src/web/stores/studio/storyboard.ts": "故事板域集中本地编辑/同步/持久化属合理",
     "src/web/types/api.generated.ts": "gen_api_types.py 生成物，随后端 schema 自然增长",
     "src/web/types/index.ts": "前后端契约类型集中单文件便于对照",
@@ -54,8 +54,9 @@ FRONTEND_WHITELIST = {
 # 字面常量而非 len(FRONTEND_WHITELIST) 动态自算（整改批 1.1：动态自算
 # 是恒真基线，与 scaffold 恒真问题同构）；2026-08-24 磁盘实测超限
 # 13 件，与白名单 13 条一致。只降不升；上调须书面裁决并同批修改本常量；
-# 任务 #18 use-sse.ts 连接状态机抽至 lib/sse-connection + sse-events：7→6
-FRONTEND_OVER_BASELINE = 6
+# 任务 #18 use-sse.ts 连接状态机抽至 lib/sse-connection + sse-events：7→6；
+# 任务 #12 批次2 stores/chat.ts 拆分为 chat/ 域组合出口（存量条目陈旧销账）：6→5
+FRONTEND_OVER_BASELINE = 5
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"

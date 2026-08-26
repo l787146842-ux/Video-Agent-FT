@@ -11,8 +11,8 @@
 3. 四位重复数字事故号（如 2222/8888，\\b(\\d)\\1{3}\\b）；
 4. 「X轮」轮次批注（一至七轮）。
 
-预算 = 36（任务#12 E8 前端残余与 fc_tool_runner 拆分产物域清扫后实测下调：
-56→45→36；棘轮只降不升）。
+预算 = 33（任务#12 批次2 门禁溯源 origin 措辞收敛后实测下调：
+56→45→36→33；棘轮只降不升）。
 输出纯 ASCII（防 Windows 终端乱码把失败误读成通过）。
 
 用法：python scripts/check_governance_refs.py   （退出码非 0 即失败）
@@ -23,7 +23,7 @@ import re
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCAN_DIRS = ["src/video_agent", "src/web"]
 EXTS = {".py", ".ts", ".tsx"}
-BUDGET = 36
+BUDGET = 33
 PATTERN = re.compile(r"事故|814[A-Z][0-9]?|\b(\d)\1{3}\b|[一二三四五六七]轮")
 
 
