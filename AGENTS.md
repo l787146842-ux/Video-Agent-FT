@@ -74,7 +74,7 @@ python scripts/run_eval_pipeline.py    # 闸机黄金语料评测
 ## 五、机器门禁速查（清单唯一事实源 = scripts/acceptance.py GATES 表）
 
 契约（gen_api_types --check）/ 提示词预算 / 文件行数双棘轮 / 语义色收口 /
-方法内 import / 治理叙事标记 / 类别 Key / 退役符号防复活 / 层间导入方向 /
+方法内 import / 类别 Key / 退役符号防复活 / 层间导入方向 /
 文档指针 / 宪法锚点 / 脚手架计数 / 前后端覆盖率棘轮 / Skill 工具名对齐。
 每条带退役条件声明；新增门禁必须先立项（GOVERNANCE §13.14(e)/(f)）。
 

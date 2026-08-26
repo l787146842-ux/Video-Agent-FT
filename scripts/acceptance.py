@@ -39,8 +39,6 @@ GATES: List[Tuple[str, List[str]]] = [
         ("semantic_colors", [sys.executable, "scripts/check_semantic_colors.py"]),
     # 退役条件：方法内 import 存量清零且基线冻结后裁决下账（宪法 §六 禁令内化）。
     ("func_imports", [sys.executable, "scripts/check_func_imports.py"]),
-    # 退役条件：治理叙事标记预算降至 0 且连续两季无反弹时裁决下账。
-    ("governance_refs", [sys.executable, "scripts/check_governance_refs.py"]),
     # 退役条件：类别 Key 硬编码字面量清零、CAT_* 单一事实源全域收敛时裁决下账。
     ("category_keys", [sys.executable, "scripts/check_category_keys.py"]),
     # 退役条件：退役编排符号在长期演进中证实无复活风险（登记清单可整体清退）时裁决下账。

@@ -83,5 +83,6 @@ def test_registry_covers_constitution_row_count():
     # 宪法 13.7 原表 26 行全量登记；行数变化必须同批更新本断言
     # （0818 架构板正批：R19 流程门禁行随门禁链退役删除；
     # 整改计划批 7：R27 planner 拆分委托行登记；
-    # 2026-08-20 v6：Workflow Runtime 控制流行登记）
-    assert len(COUPLING_ROWS) == 28
+    # 2026-08-20 v6：Workflow Runtime 控制流行登记；
+    # 2026-08-26：R23 governance_refs 门禁行随门禁退役删除）
+    assert len(COUPLING_ROWS) == 27

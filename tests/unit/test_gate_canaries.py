@@ -19,7 +19,7 @@ import pytest
 
 _EXPECTED_GATE_NAMES = [
     "contract", "prompt_budget", "file_lines", "file_lines_frontend",
-    "semantic_colors", "func_imports", "governance_refs", "category_keys",
+    "semantic_colors", "func_imports", "category_keys",
     "legacy_orchestration", "layer_imports", "doc_pointers",
     "arch_anchors", "scaffold_registry", "cov_ratchet", "fe_cov_ratchet",
     "skill_tool_names",
@@ -168,29 +168,6 @@ def test_canary_func_imports_new_hit_fails(tmp_path, monkeypatch):
 def test_canary_func_imports_top_level_passes(tmp_path, monkeypatch):
     gate = _func_imports_scaffold(
         tmp_path, monkeypatch, "import os\n\ndef f():\n    return os\n")
-    assert gate.main() == 0
-
-
-# ---------- 7) governance_refs ----------
-
-def test_canary_governance_refs_over_budget_fails(tmp_path, monkeypatch):
-    import scripts.check_governance_refs as gate
-    d = tmp_path / "src" / "video_agent"
-    d.mkdir(parents=True)
-    (d / "a.py").write_text("# 某次事故复盘\n", encoding="utf-8")
-    monkeypatch.setattr(gate, "ROOT", tmp_path)
-    monkeypatch.setattr(gate, "SCAN_DIRS", ["src/video_agent"])
-    monkeypatch.setattr(gate, "BUDGET", 0)
-    assert gate.main() == 1
-
-
-def test_canary_governance_refs_clean_passes(tmp_path, monkeypatch):
-    import scripts.check_governance_refs as gate
-    d = tmp_path / "src" / "video_agent"
-    d.mkdir(parents=True)
-    (d / "a.py").write_text("# plain comment\n", encoding="utf-8")
-    monkeypatch.setattr(gate, "ROOT", tmp_path)
-    monkeypatch.setattr(gate, "SCAN_DIRS", ["src/video_agent"])
     assert gate.main() == 0
 
 

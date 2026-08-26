@@ -36,8 +36,6 @@ jobs:
         run: python scripts/check_file_lines.py --frontend
       - name: Func-import gate (四轮 R0：方法内 import 防新增，宪法第六章)
         run: python scripts/check_func_imports.py
-      - name: Governance refs gate (七轮 S3/F3：治理叙事标记预算棘轮，宪法 §9 兜底)
-        run: python scripts/check_governance_refs.py
       - name: Category keys gate (九轮 B2：类别 Key 字面量门禁，CAT_* 单一事实源)
         run: python scripts/check_category_keys.py
       - name: Legacy orchestration gate (0818 B5：退役编排机制防复活)

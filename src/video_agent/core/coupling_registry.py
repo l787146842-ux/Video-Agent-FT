@@ -248,15 +248,9 @@ COUPLING_ROWS: List[CouplingRow] = [
         "R22_acceptance_components",
         "验收组件改名/新增",
         "scripts/acceptance.py GATES/SUITES/EVAL 表 + CI Job 同构",
-        (("gate", "check_governance_refs.py"), ("gate", "check_prompt_budget.py"),
+        (("gate", "check_prompt_budget.py"),
          ("gate", "check_file_lines.py"), ("gate", "check_func_imports.py"),
          ("gate", "gen_api_types.py"), ("gate", "check_category_keys.py")),
-    ),
-    CouplingRow(
-        "R23_governance_refs_gate",
-        "治理叙事门禁变更",
-        "acceptance GATES 表 + CI Job1 + BUDGET 棘轮（禁止上调）",
-        (("gate", "check_governance_refs.py"),),
     ),
     CouplingRow(
         "R24_log_file_switch",
