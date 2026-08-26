@@ -15,23 +15,22 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ChatFeed } from '../right-panel/ChatFeed';
 import { chatState, chatActions, setChatState } from '@/stores/chat';
 import { requestScrollToMessage } from '@/lib/chat/chat-scroll-bridge';
+import type { MessageAffordance } from '@/lib/message-affordances';
 import type { ChatMessage } from '@/types';
 
 vi.mock('../right-panel/ChatMessageItem', () => ({
   ChatMessageItem: (props: {
-    message: ChatMessage; isLast: boolean; isGateTarget?: boolean;
-    isSuggestedTarget?: boolean; confirmState?: string; editable?: boolean;
-    domIndex?: number;
+    message: ChatMessage; affordance: MessageAffordance; domIndex?: number;
   }) => (
     <div
       class="mock-msg"
       data-msg-index={props.domIndex}
       data-sender={props.message.sender}
-      data-confirm-target={props.isLast ? '1' : '0'}
-      data-gate-target={props.isGateTarget ? '1' : '0'}
-      data-suggested-target={props.isSuggestedTarget ? '1' : '0'}
-      data-editable={props.editable ? '1' : '0'}
-      data-confirm-state={props.confirmState || 'none'}
+      data-confirm-target={props.affordance.confirmTarget ? '1' : '0'}
+      data-gate-target={props.affordance.gateTarget ? '1' : '0'}
+      data-suggested-target={props.affordance.suggestedTarget ? '1' : '0'}
+      data-editable={props.affordance.editable ? '1' : '0'}
+      data-confirm-state={props.affordance.confirmState || 'none'}
     >
       {props.message.text || props.message.docCard || ''}
     </div>

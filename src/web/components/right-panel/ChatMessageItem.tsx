@@ -20,6 +20,7 @@ import { MarkdownBubble } from './MarkdownBubble';
 import { MessageHoverToolbar } from './MessageHoverToolbar';
 import { SuggestedActionBar } from './SuggestedActionBar';
 import { DecisionFormCard, decisionFormFields } from './DecisionFormCard';
+import type { MessageAffordance } from '@/lib/message-affordances';
 import type { ChatMessage } from '@/types';
 
 /** epoch ms → HH:MM（悬停工具条时间戳；无 ts 返回空串不显示） */
@@ -38,25 +39,15 @@ function formatHHMM(ts?: number): string {
  */
 export function ChatMessageItem(props: {
   message: ChatMessage;
-  isLast: boolean;
-  /** 是否为最后一条含闸机拦截警告的消息（「本次放行」按钮挂载点） */
-  isGateTarget?: boolean;
-  /** 暂停卡生命周期（answered/expired 时阶段卡挂徽标，回看不迷惑） */
-  confirmState?: 'active' | 'answered' | 'expired' | 'none';
+  /** 交互挂载派生结果（唯一判定源 lib/message-affordances.deriveAffordances）：
+   * 确认卡挂载点（原 isLast 语义）/ 闸机「本次放行」挂载点 / 建议动作挂载点 /
+   * 悬停工具条矩阵（编辑=末条用户消息；重新生成=末条普通 agent 回复；
+   * 分支=agent 回复；复制=有正文；存为文档=含正文的助手消息）/
+   * 暂停卡生命周期（answered/expired 时阶段卡挂徽标，回看不迷惑）
+   * 与已回应暂停卡的「当时所选值」 */
+  affordance: MessageAffordance;
   /** 轮次容器内渲染——作者名/meta 上提到组头，本条不再重复 */
   hideChrome?: boolean;
-  /** 已回应暂停卡的「当时所选值」（其后首条用户消息文本） */
-  answeredValue?: string;
-  /** 是否为最后一条携带建议动作的消息（重试/继续按钮挂载点） */
-  isSuggestedTarget?: boolean;
-  /** 悬停工具条矩阵（均经 deriveAffordances 派生）：
-   * 编辑=末条用户消息；重新生成=末条普通 agent 回复；分支=agent 回复；
-   * 复制=有正文；存为文档=含正文的助手消息 */
-  editable?: boolean;
-  regenerable?: boolean;
-  branchable?: boolean;
-  copyable?: boolean;
-  docSavable?: boolean;
   /** 消息在全局数组中的下标（分支分叉点 up_to_index / 搜索跳转锚点） */
   domIndex?: number;
 }) {
@@ -108,7 +99,8 @@ export function ChatMessageItem(props: {
 
   /** 悬停工具条挂载判定：矩阵内任一动作可挂（系统动作行/卡片无动作不挂） */
   const hasToolbar = () => !!(
-    props.copyable || props.editable || props.branchable || props.regenerable || props.docSavable
+    props.affordance.copyable || props.affordance.editable || props.affordance.branchable
+    || props.affordance.regenerable || props.affordance.docSavable
   );
 
   /** settled 账本数据源（F2 阶段二）：翻转账本优先/空账本回落 trace/actionLog
@@ -141,8 +133,8 @@ export function ChatMessageItem(props: {
           phase="settled"
           ledger={settledLedger}
           message={msg}
-          confirmState={props.confirmState || 'none'}
-          answeredValue={props.answeredValue}
+          confirmState={props.affordance.confirmState}
+          answeredValue={props.affordance.answeredValue}
         />
       </Show>
 
@@ -155,7 +147,7 @@ export function ChatMessageItem(props: {
           </span>
         </Show>
         {/* 模型降级等警示 + 闸机拦截 chips + 本次放行（见 GateWarnings） */}
-        <GateWarnings message={msg()} isGateTarget={props.isGateTarget} />
+        <GateWarnings message={msg()} isGateTarget={props.affordance.gateTarget} />
         {/* markdown 气泡抽出（高亮补刷 + 代码块复制委托在组件内接线） */}
         <MarkdownBubble text={msg().text} />
         {/* 鉴权/供应商类错误气泡附「检查 API 配置」跳转 */}
@@ -177,7 +169,7 @@ export function ChatMessageItem(props: {
         </Show>
         {/* 建议动作按钮（读持久化 suggestedActions，刷新后不丢；
             重试=机械重发最近用户消息；继续=固定文本） */}
-        <Show when={props.isSuggestedTarget && (msg().suggestedActions || []).length > 0}>
+        <Show when={props.affordance.suggestedTarget && (msg().suggestedActions || []).length > 0}>
           <SuggestedActionBar actions={msg().suggestedActions || []} />
         </Show>
       </Show>
@@ -193,7 +185,7 @@ export function ChatMessageItem(props: {
         <UserBubble
           message={msg()}
           editing={editing}
-          editable={props.editable}
+          editable={props.affordance.editable}
           onSubmit={submitEdit}
           onCancel={() => setEditing(false)}
           onImageClick={setLightboxUrl}
@@ -205,11 +197,11 @@ export function ChatMessageItem(props: {
         <MessageHoverToolbar
           time={formatHHMM(msg().ts)}
           align={isUser() ? 'right' : 'left'}
-          copyable={props.copyable}
-          editable={props.editable && !editing()}
-          branchable={props.branchable}
-          regenerable={props.regenerable && !regenerating()}
-          docSavable={props.docSavable && !savingDoc()}
+          copyable={props.affordance.copyable}
+          editable={props.affordance.editable && !editing()}
+          branchable={props.affordance.branchable}
+          regenerable={props.affordance.regenerable && !regenerating()}
+          docSavable={props.affordance.docSavable && !savingDoc()}
           onCopy={() => void doCopy()}
           onEdit={() => setEditing(true)}
           onBranch={doBranch}
@@ -227,7 +219,7 @@ export function ChatMessageItem(props: {
       </Show>
 
       {/* 确认操作区（仅最后一条）：fields 非空时决策表单接管，否则回落确认卡 */}
-      <Show when={props.isLast && decisionFormFields(msg()).length > 0} fallback={<Show when={props.isLast && (msg().confirm || msg().decisionForm)}><ConfirmActions message={msg()} /></Show>}>
+      <Show when={props.affordance.confirmTarget && decisionFormFields(msg()).length > 0} fallback={<Show when={props.affordance.confirmTarget && (msg().confirm || msg().decisionForm)}><ConfirmActions message={msg()} /></Show>}>
         <DecisionFormCard message={msg()} />
       </Show>
     </div>

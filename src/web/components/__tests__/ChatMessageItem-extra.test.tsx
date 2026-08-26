@@ -12,6 +12,7 @@
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatMessageItem } from '../right-panel/ChatMessageItem';
+import type { MessageAffordance } from '@/lib/message-affordances';
 import type { ChatMessage } from '@/types';
 
 // 本测试不触路由：useNavigate 以记录式跳转桩替代（避免 Router 上下文依赖）
@@ -40,6 +41,14 @@ vi.mock('@/stores/toast', () => ({
   dismissToast: vi.fn(),
 }));
 
+/** affordance 对象构造器：默认全不挂，按需覆写（替代散落布尔 props） */
+const AFF_DEFAULT: MessageAffordance = {
+  confirmTarget: false, gateTarget: false, suggestedTarget: false,
+  editable: false, regenerable: false, branchable: false, copyable: false,
+  docSavable: false, confirmState: 'none', answeredValue: '',
+};
+const aff = (o: Partial<MessageAffordance> = {}): MessageAffordance => ({ ...AFF_DEFAULT, ...o });
+
 describe('卡片与跳转分支（F0 安全绳扩围）', () => {
   beforeEach(() => {
     openDocsPanelMock.mockClear();
@@ -48,7 +57,7 @@ describe('卡片与跳转分支（F0 安全绳扩围）', () => {
 
   it('docCard 渲染文档完成卡，点击打开文档面板', async () => {
     const msg: ChatMessage = { sender: 'agent', text: '', docCard: '剧本分析' };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true })} />);
     const cardBtn = container.querySelector('.doc-card') as HTMLButtonElement;
     expect(cardBtn).toBeTruthy();
     expect(cardBtn.textContent).toContain('剧本分析');
@@ -58,7 +67,7 @@ describe('卡片与跳转分支（F0 安全绳扩围）', () => {
 
   it('settingsHint 错误气泡附「检查 API 配置」跳转（导航 /settings）', async () => {
     const msg: ChatMessage = { sender: 'agent', text: '鉴权失败', settingsHint: true };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true })} />);
     const btn = container.querySelector('.gate-override-btn') as HTMLButtonElement;
     expect(btn).toBeTruthy();
     await fireEvent.click(btn);
@@ -67,7 +76,7 @@ describe('卡片与跳转分支（F0 安全绳扩围）', () => {
 
   it('errorDetail 渲染可折叠技术详情（默认收起不干扰人话气泡）', () => {
     const msg: ChatMessage = { sender: 'agent', text: '出错了', errorDetail: 'HTTP 500 upstream' };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true })} />);
     const details = container.querySelector('.msg-error-detail') as HTMLDetailsElement;
     expect(details).toBeTruthy();
     expect(container.querySelector('.msg-error-detail-body')?.textContent).toBe('HTTP 500 upstream');
@@ -75,30 +84,30 @@ describe('卡片与跳转分支（F0 安全绳扩围）', () => {
 
   it('hideChrome：轮次容器内不重复渲染作者名与 meta', () => {
     const msg: ChatMessage = { sender: 'agent', text: '正文', modelName: 'deepchat', meta: '耗时 3s' };
-    const bare = render(() => <ChatMessageItem message={msg} isLast={false} />);
+    const bare = render(() => <ChatMessageItem message={msg} affordance={aff()} />);
     expect(bare.container.querySelector('.msg-author')?.textContent).toBe('deepchat');
     expect(bare.container.querySelector('.msg-meta')?.textContent).toBe('耗时 3s');
-    const grouped = render(() => <ChatMessageItem message={msg} isLast={false} hideChrome />);
+    const grouped = render(() => <ChatMessageItem message={msg} affordance={aff()} hideChrome />);
     expect(grouped.container.querySelector('.msg-author')).toBeNull();
     expect(grouped.container.querySelector('.msg-meta')).toBeNull();
   });
 
   it('system_action 用户消息渲染系统动作行，不占用户气泡形态', () => {
     const msg: ChatMessage = { sender: 'user', text: '本次放行', kind: 'system_action' };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast={false} />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff()} />);
     expect(container.querySelector('.system-action-line')?.textContent).toBe('本次放行');
     expect(container.querySelector('.chat-bubble')).toBeNull();
   });
 
   it('纯 Skill 唤起：正文与 Skill 块同名时隐藏正文只留块', () => {
     const msg: ChatMessage = { sender: 'user', text: '古风甜宠短剧', skillBlocks: ['古风甜宠短剧'] };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast={false} />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff()} />);
     expect(container.querySelector('.user-bubble-text')).toBeNull();
   });
 
   it('正文与 Skill 块不同名时正文照常展示', () => {
     const msg: ChatMessage = { sender: 'user', text: '用这个风格再来一段', skillBlocks: ['古风甜宠短剧'] };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast={false} />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff()} />);
     expect(container.querySelector('.user-bubble-text')?.textContent).toBe('用这个风格再来一段');
   });
 
@@ -110,7 +119,7 @@ describe('卡片与跳转分支（F0 安全绳扩围）', () => {
       confirmOptions: [{ label: '确认，继续' }, { label: '我要调整' }],
     };
     const { container } = render(() => (
-      <ChatMessageItem message={msg} isLast={false} confirmState="answered" answeredValue="确认，继续" />
+      <ChatMessageItem message={msg} affordance={aff({ confirmState: 'answered', answeredValue: '确认，继续' })} />
     ));
     const answered = container.querySelector('.answered-options');
     expect(answered).toBeTruthy();
@@ -127,7 +136,7 @@ describe('复制与存为文档 hover 动作', () => {
 
   it('复制正文成功 → success toast（copyText 携带正文）', async () => {
     const msg: ChatMessage = { sender: 'agent', text: '待复制正文' };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast copyable />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, copyable: true })} />);
     await fireEvent.click(container.querySelector('[data-testid="msg-act-copy"]') as HTMLButtonElement);
     await Promise.resolve();
     expect(copyMock).toHaveBeenCalledWith('待复制正文');
@@ -138,7 +147,7 @@ describe('复制与存为文档 hover 动作', () => {
     let resolveSave!: () => void;
     saveDocMock.mockImplementationOnce(() => new Promise<void>((r) => { resolveSave = r; }));
     const msg: ChatMessage = { sender: 'agent', text: '存为文档的正文' };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast docSavable />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, docSavable: true })} />);
     const btn = container.querySelector('[data-testid="msg-act-save-doc"]') as HTMLButtonElement;
     expect(btn).toBeTruthy();
     await fireEvent.click(btn);
@@ -173,7 +182,7 @@ describe('过程时间线数据源（F2 账本消费面：settledLedgerForMessag
         }],
       },
     };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true })} />);
     const timeline = container.querySelector('.agent-timeline');
     expect(timeline?.textContent).toContain('账本账目');
     expect(timeline?.textContent).toContain('账本思考');
@@ -192,7 +201,7 @@ describe('过程时间线数据源（F2 账本消费面：settledLedgerForMessag
         }],
       },
     };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true })} />);
     const timeline = container.querySelector('.agent-timeline');
     expect(timeline?.textContent).toContain('分析剧本');
     expect(timeline?.textContent).toContain('历史思考');
@@ -209,7 +218,7 @@ describe('过程时间线数据源（F2 账本消费面：settledLedgerForMessag
       },
       actionLog: ['新建关键元素分组「主角」'],
     };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true })} />);
     const timeline = container.querySelector('.agent-timeline');
     expect(timeline?.textContent).toContain('新建关键元素分组「主角」');
   });

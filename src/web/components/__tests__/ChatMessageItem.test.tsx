@@ -15,6 +15,7 @@
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ChatMessageItem } from '../right-panel/ChatMessageItem';
+import type { MessageAffordance } from '@/lib/message-affordances';
 import type { ChatMessage } from '@/types';
 
 // 本测试不触路由：useNavigate 以空跳转桩替代（避免 Router 上下文依赖）
@@ -34,24 +35,32 @@ vi.mock('@/lib/agent-actions', () => ({
   sendUserMessage: () => Promise.resolve(true),
 }));
 
+/** affordance 对象构造器：默认全不挂，按需覆写（替代散落布尔 props） */
+const AFF_DEFAULT: MessageAffordance = {
+  confirmTarget: false, gateTarget: false, suggestedTarget: false,
+  editable: false, regenerable: false, branchable: false, copyable: false,
+  docSavable: false, confirmState: 'none', answeredValue: '',
+};
+const aff = (o: Partial<MessageAffordance> = {}): MessageAffordance => ({ ...AFF_DEFAULT, ...o });
+
 describe('悬停工具条矩阵挂载', () => {
   beforeEach(() => { truncateMock.mockClear(); branchMock.mockClear(); });
 
   it('editable 用户消息挂「编辑」；未挂标志不渲染对应按钮', () => {
     const msg: ChatMessage = { sender: 'user', text: '写一段开场白' };
-    const a = render(() => <ChatMessageItem message={msg} isLast editable copyable />);
+    const a = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, editable: true, copyable: true })} />);
     expect(a.container.querySelector('[data-testid="msg-act-edit"]')).toBeTruthy();
     expect(a.container.querySelector('[data-testid="msg-act-copy"]')).toBeTruthy();
     expect(a.container.querySelector('[data-testid="msg-act-branch"]')).toBeNull();
     const plain: ChatMessage = { sender: 'user', text: '历史消息' };
-    const b = render(() => <ChatMessageItem message={plain} isLast={false} copyable />);
+    const b = render(() => <ChatMessageItem message={plain} affordance={aff({ copyable: true })} />);
     expect(b.container.querySelector('[data-testid="msg-act-edit"]')).toBeNull();
   });
 
   it('分支按钮以该消息全局下标为分叉点调 branchAtMessage', async () => {
     const msg: ChatMessage = { sender: 'agent', text: '回复正文' };
     const { container } = render(() => (
-      <ChatMessageItem message={msg} isLast branchable copyable domIndex={3} />
+      <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, branchable: true, copyable: true })} domIndex={3} />
     ));
     const btn = container.querySelector('[data-testid="msg-act-branch"]') as HTMLButtonElement;
     expect(btn).toBeTruthy();
@@ -62,7 +71,7 @@ describe('悬停工具条矩阵挂载', () => {
   it('重新生成按钮调 truncate-resend（无 text）', async () => {
     const msg: ChatMessage = { sender: 'agent', text: '末条回复' };
     const { container } = render(() => (
-      <ChatMessageItem message={msg} isLast regenerable copyable />
+      <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, regenerable: true, copyable: true })} />
     ));
     const btn = container.querySelector('[data-testid="msg-act-regenerate"]') as HTMLButtonElement;
     expect(btn).toBeTruthy();
@@ -73,13 +82,13 @@ describe('悬停工具条矩阵挂载', () => {
 
   it('无任何矩阵标志的消息不渲染工具条（系统卡片等）', () => {
     const msg: ChatMessage = { sender: 'agent', text: '' };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast={false} />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff()} />);
     expect(container.querySelector('[data-testid="msg-hover-toolbar"]')).toBeNull();
   });
 
   it('历史消息带 ts（后端落盘 epoch ms）时工具条显示 HH:MM', () => {
     const msg: ChatMessage = { sender: 'user', text: '历史消息', ts: new Date(2026, 7, 23, 9, 5).getTime() };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast={false} copyable />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ copyable: true })} />);
     const time = container.querySelector('.msg-hover-time');
     expect(time).toBeTruthy();
     expect(time?.textContent).toMatch(/^\d{2}:\d{2}$/);
@@ -87,7 +96,7 @@ describe('悬停工具条矩阵挂载', () => {
 
   it('无 ts 的存量旧消息不渲染时间（兜底不变）', () => {
     const msg: ChatMessage = { sender: 'user', text: '存量消息' };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast={false} copyable />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ copyable: true })} />);
     expect(container.querySelector('[data-testid="msg-hover-toolbar"]')).toBeTruthy();
     expect(container.querySelector('.msg-hover-time')).toBeNull();
   });
@@ -98,7 +107,7 @@ describe('悬停工具条矩阵挂载', () => {
     truncateMock.mockImplementationOnce(() => new Promise<boolean>((r) => { resolveFirst = r; }));
     const msg: ChatMessage = { sender: 'agent', text: '末条回复' };
     const { container } = render(() => (
-      <ChatMessageItem message={msg} isLast regenerable copyable />
+      <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, regenerable: true, copyable: true })} />
     ));
     const btn = container.querySelector('[data-testid="msg-act-regenerate"]') as HTMLButtonElement;
     await fireEvent.click(btn);
@@ -115,7 +124,7 @@ describe('原地编辑（末条用户消息编辑的唯一形态）', () => {
 
   it('点编辑后原地变编辑框（预填原文）；发送调 truncate-resend {text} 并关闭', async () => {
     const msg: ChatMessage = { sender: 'user', text: '写一段开场白' };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast editable copyable />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, editable: true, copyable: true })} />);
     await fireEvent.click(container.querySelector('[data-testid="msg-act-edit"]') as HTMLButtonElement);
     const box = container.querySelector('[data-testid="inline-edit-box"]');
     expect(box).toBeTruthy();
@@ -131,7 +140,7 @@ describe('原地编辑（末条用户消息编辑的唯一形态）', () => {
 
   it('取消不发送，编辑框关闭回到原气泡', async () => {
     const msg: ChatMessage = { sender: 'user', text: '写一段开场白' };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast editable />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, editable: true })} />);
     await fireEvent.click(container.querySelector('[data-testid="msg-act-edit"]') as HTMLButtonElement);
     await fireEvent.click(container.querySelector('[data-testid="inline-edit-cancel"]') as HTMLButtonElement);
     expect(truncateMock).not.toHaveBeenCalled();
@@ -142,7 +151,7 @@ describe('原地编辑（末条用户消息编辑的唯一形态）', () => {
   it('发送失败（truncate-resend 拒绝）时编辑框保持打开不丢草稿', async () => {
     truncateMock.mockResolvedValueOnce(false);
     const msg: ChatMessage = { sender: 'user', text: '原句' };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast editable />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, editable: true })} />);
     await fireEvent.click(container.querySelector('[data-testid="msg-act-edit"]') as HTMLButtonElement);
     const ta = container.querySelector('.inline-edit-textarea') as HTMLTextAreaElement;
     fireEvent.input(ta, { target: { value: '新句' } });
@@ -159,7 +168,7 @@ describe('停止后继续建议按钮（读持久化 suggestedActions）', () =>
       text: '（已停止）',
       suggestedActions: [{ kind: 'retry', label: '继续刚才的任务', value: '' }],
     };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast isSuggestedTarget />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, suggestedTarget: true })} />);
     const btn = container.querySelector('.suggested-action-btn') as HTMLButtonElement;
     expect(btn).toBeTruthy();
     expect(btn.textContent).toBe('继续刚才的任务');
@@ -171,7 +180,7 @@ describe('停止后继续建议按钮（读持久化 suggestedActions）', () =>
       text: '（已停止）',
       suggestedActions: [{ kind: 'retry', label: '', value: '' }],
     };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast isSuggestedTarget />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true, suggestedTarget: true })} />);
     const btn = container.querySelector('.suggested-action-btn') as HTMLButtonElement;
     expect(btn.textContent).toBe('重试');
   });
@@ -188,7 +197,7 @@ describe('视频内联卡持久化渲染（replay/刷新恢复路径）', () => 
         items: [{ url: '/media/v.mp4', name: '开场.mp4', thumb: '/media/v.jpg' }],
       },
     };
-    const { container } = render(() => <ChatMessageItem message={msg} isLast />);
+    const { container } = render(() => <ChatMessageItem message={msg} affordance={aff({ confirmTarget: true })} />);
     const card = container.querySelector('.video-card');
     expect(card).toBeTruthy();
     expect(card?.textContent).toContain('开场.mp4');
