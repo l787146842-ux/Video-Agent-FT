@@ -209,3 +209,16 @@
 **(d) 引用一致性职责口径**：README 与宪法（ARCHITECTURE_RULES）的引用一致性
 纳入既有门禁 `scripts/check_governance_refs.py` 的职责范围（不改脚本逻辑，仅文档口径；
 机械校验能力就绪后由该门禁承接）。
+
+**(e) 追溯立项登记（2026-08-26 用户裁决认可）**：以下三项组件先落地后立项，
+经用户裁决追溯认可，就表登记不回退；后续变更按同层既有规程走（门禁退役条件见 (c)、
+脚手架入账见 13.5 Q0）：
+
+| # | 登记项 | 落地形态 | 来源 |
+|---|------|---------|------|
+| 1 | 闸机触发计数台账 `data/gate_trigger_counts.jsonl` | 读端 `scripts/audit_gate_triggers.py` 重写；写端 `_append_trigger_counts` 落入 `core/guard_pipeline.py` | 8/25 铺垫会话（391c515）/ 批次A（4f63cf2） |
+| 2 | 前端产物体积门禁 `scripts/check_bundle_size.mjs` | 挂入 npm run build 链 | 8/25 铺垫会话（391c515） |
+| 3 | 批次A 夹带的非纯减法改动 | `pipeline_orchestrator.py` → `stage_probes.py` 改名重写（相似度 55%）+ `core/guard_pipeline.py` 运行时写入器 | 批次A（4f63cf2） |
+
+> 登记口径：追溯立项 · 2026-08-26 用户裁决认可。教训重申：新增台账/门禁/改名重写
+> 属立项级动作，须先立项后动手；本节仅为既有事实的治理留痕，不构成先斩后奏的先例。
