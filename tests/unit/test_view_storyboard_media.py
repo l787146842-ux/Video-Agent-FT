@@ -29,13 +29,14 @@ def fake_resolve(monkeypatch):
     """模拟图片解析成功：任何 URL 都转成伪 data URI。
 
     批 3.3 下沉后工具层直接持有公开函数引用：patch 目标 =
-    tools.storyboard_tools 命名空间（mb 壳别名一并 patch，覆盖 web 侧调用）。"""
+    tools.storyboard_tools 命名空间（mb 模块内同名导入一并 patch，
+    覆盖 web 侧调用；批次E：壳已清偿，不再用旧私有名）。"""
     import src.video_agent.tools.storyboard_tools as st
 
     async def _resolve(url: str) -> str:
         return f"data:image/png;base64,{abs(hash(url)) % 100000}" if url else ""
     monkeypatch.setattr(st, "resolve_injectable_url", _resolve)
-    monkeypatch.setattr(mb, "_resolve_injectable_url", _resolve)
+    monkeypatch.setattr(mb, "resolve_injectable_url", _resolve)
     return _resolve
 
 

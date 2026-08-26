@@ -8,23 +8,15 @@
 
 纯构建逻辑，不涉及会话编排与 SSE。
 
-媒体 URL → 可注入形式的解析实现位于 storage/media_urls.py 公开 API；
-本模块保留薄 re-export 壳——web 内部调用点与既有测试的
-patch 目标（本模块命名空间的旧私有名）保持不变。
+媒体 URL → 可注入形式的解析直连实现体 storage/media_urls.py 公开 API
+（批次E：旧私有名 re-export 壳已清偿）。
 """
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.storage.media_urls import (
-    MAX_IMAGE_BYTES as _MAX_IMAGE_BYTES,
-    REMOTE_FETCH_TIMEOUT as _REMOTE_FETCH_TIMEOUT,
-    downscale_image as _downscale_image,
-    fetch_remote_image_data_uri,
-    read_image_data_uri as _read_image_data_uri,
-    resolve_injectable_url as _resolve_injectable_url,
-)
+from src.video_agent.storage.media_urls import resolve_injectable_url
 from src.video_agent.web.attachments import attachment_context, collect_image_urls
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
@@ -98,7 +90,7 @@ async def build_multimodal_content(
     content_parts_list: List[Dict[str, Any]] = [{"type": "text", "text": text}]
     injected_urls: List[str] = []
     for img_url in image_urls[:max_images]:
-        url = await _resolve_injectable_url(img_url)
+        url = await resolve_injectable_url(img_url)
         if not url:
             continue
         content_parts_list.append({"type": "image_url", "image_url": {"url": url}})
@@ -301,7 +293,7 @@ async def _build_interleaved_content(
                 # 超出模型单次上传上限：保留位置标记但不注入，避免请求报错
                 text_buf.append(f"[图片: {name}]（超出单次上传上限，未发送给模型）")
                 continue
-            img = await _resolve_injectable_url(url)
+            img = await resolve_injectable_url(url)
             if not img:
                 continue
             flush_text()
@@ -313,7 +305,7 @@ async def _build_interleaved_content(
             text_buf.append(f"[{ptype}: {name}]")
             thumb = part.get("thumb", "") if ptype == "video" else ""
             if thumb and injected < max_images:
-                img = await _resolve_injectable_url(thumb)
+                img = await resolve_injectable_url(thumb)
                 if img:
                     flush_text()
                     result.append({"type": "image_url", "image_url": {"url": img}})
@@ -322,7 +314,7 @@ async def _build_interleaved_content(
     for img_url in (extra_images or []):
         if injected >= max_images:
             break
-        url = await _resolve_injectable_url(img_url)
+        url = await resolve_injectable_url(img_url)
         if not url:
             continue
         flush_text()
