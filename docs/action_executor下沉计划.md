@@ -29,6 +29,8 @@
 - 登记同步：`func_imports_baseline.txt` 刷新（177→126 条）、
   ARCHITECTURE_RULES.md 层级例外条款改「已清偿」、scaffold_registry I09
   更新为清偿后形态、coupling_registry 符号路径改 core。
+- 后续清偿（2026-08-26）：消费方中的 mock 演示通道已于批次F 彻底退役
+  删除，不再存在。
 
 ## 现状边界（下沉前禁改）
 

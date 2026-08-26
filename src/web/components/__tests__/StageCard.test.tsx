@@ -9,7 +9,10 @@
  * ④ answered/expired 生命周期徽标；
  * ⑤ 展开/折叠点击切换 body 可见性；
  * ⑥ 批次C 判重调位：active 且带选项时题面让位问卷卡三段式①防双显，
- *    无选项暂停与 answered/expired 回看态题面照常呈现。
+ *    无选项暂停与 answered/expired 回看态题面照常呈现；
+ * ⑦ 审查修复批：让位须与「问卷卡确实接管题面」同条件——消息同时携带
+ *    decisionForm（fields 非空）时不让位（form.message 可能为空，
+ *    让位会导致题面消失）。
  */
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect } from 'vitest';
@@ -98,6 +101,40 @@ describe('StageCard 正文判重与展开折叠', () => {
     });
     const { container } = render(() => <StageCard msg={() => m} state="answered" />);
     expect(container.querySelector('.stage-card-summary')?.textContent).toContain('请确认规格');
+  });
+
+  it('审查修复批：同时携带 decisionForm（fields 非空）与选项时不让位，题面可见', () => {
+    // 交互面由 DecisionFormCard 接管（题面取 form.message），阶段卡不再让位
+    const m = msg({
+      text: '正文内容',
+      confirm: '进入分镜设计前需要确认几个参数',
+      confirmOptions: [{ label: '确认，继续' }],
+      decisionForm: {
+        token: 'decision:run_1',
+        message: '进入分镜设计前需要确认几个参数',
+        schema: { type: 'decision', fields: [{ key: 'shots', label: '几个分镜？', type: 'number' }] },
+        options: [],
+      },
+    });
+    const { container } = render(() => <StageCard msg={() => m} state="active" />);
+    expect(container.querySelector('.stage-card-summary')?.textContent)
+      .toContain('进入分镜设计前需要确认几个参数');
+  });
+
+  it('审查修复批：form.message 为空时题面不消失（不让位兼容）', () => {
+    const m = msg({
+      text: '正文内容',
+      confirm: '请确认分镜参数',
+      confirmOptions: [{ label: '确认，继续' }],
+      decisionForm: {
+        token: 'decision:run_2',
+        message: '',
+        schema: { type: 'decision', fields: [{ key: 'shots', label: '几个分镜？', type: 'number' }] },
+        options: [],
+      },
+    });
+    const { container } = render(() => <StageCard msg={() => m} state="active" />);
+    expect(container.querySelector('.stage-card-summary')?.textContent).toContain('请确认分镜参数');
   });
 });
 

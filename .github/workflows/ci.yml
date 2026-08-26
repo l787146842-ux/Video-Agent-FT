@@ -24,8 +24,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-      - name: Run pytest (任务 #11：--cov=src/video_agent/core 并入本次运行，免重复全量)
-        run: python -m pytest tests/ -q --tb=short --cov=src/video_agent/core --cov-report=xml
+      - name: Run pytest (任务 #11：--cov=src/video_agent/core 并入本次运行，免重复全量；审查修复批：-n auto 并行自适应 CI 核数)
+        run: python -m pytest tests/ -n auto -q --tb=short --cov=src/video_agent/core --cov-report=xml
       - name: Coverage ratchet gate (任务 #11：core 覆盖率棘轮，只升不降)
         run: python scripts/check_cov_ratchet.py --require-xml
       - name: Prompt budget gate (宪法 §13.6：模型可见严禁数量 + system.md 体量)
@@ -75,8 +75,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-      - name: Run pytest (STATE_BACKEND=sqlite)
-        run: python -m pytest tests/ -q --tb=short
+      - name: Run pytest (STATE_BACKEND=sqlite；审查修复批：-n auto 并行自适应 CI 核数)
+        run: python -m pytest tests/ -n auto -q --tb=short
 
   # ---------- Job 2: 前端类型检查 + Lint + 单元测试 ----------
   frontend-check:

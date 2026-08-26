@@ -15,7 +15,8 @@ if [ -n "$SKIP_PRECOMMIT" ]; then
 fi
 
 echo "[pre-commit] 1/2 pytest unit tests..."
-python -m pytest tests/unit/ -q --tb=line
+# 审查修复批：并发度显式指定（pytest.ini addopts 不再硬编码 -n）
+python -m pytest tests/unit/ -q --tb=line -n 8
 echo "[pre-commit] 2/2 vitest frontend tests..."
 npx vitest run --silent
 

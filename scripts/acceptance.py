@@ -72,8 +72,9 @@ GATES: List[Tuple[str, List[str]]] = [
     ("skill_tool_names", [sys.executable, "scripts/scan_skills.py", "--gate"]),
 ]
 SUITES: List[Tuple[str, List[str]]] = [
-    # --cov 产出 coverage.xml，供下一轮 cov_ratchet 闸对比（与 CI 度量口径同构）
-    ("pytest", [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=line",
+    # --cov 产出 coverage.xml，供下一轮 cov_ratchet 闸对比（与 CI 度量口径同构）；
+    # 审查修复批：并发度显式指定（addopts 不再硬编码 -n），本地稳妥值 -n 8
+    ("pytest", [sys.executable, "-m", "pytest", "tests/", "-n", "8", "-q", "--tb=line",
                 "--cov=src/video_agent/core", "--cov-report=xml"]),
     ("vitest", ["npx", "vitest", "run", "--silent"]),
     ("tsc", ["npx", "tsc", "--noEmit"]),

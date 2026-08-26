@@ -178,3 +178,21 @@ def test_get_api_key_canvas_fallback(canvas_env, tmp_path, monkeypatch):
 
     key = pc.get_api_key("modelscope")
     assert key == "sk-from-canvas"
+
+
+# ---------- 审查修复批：mock 演示通道退役后存量条目不再对外暴露 ----------
+
+def test_get_available_providers_filters_mock_entries(monkeypatch):
+    """存量用户配置里的 protocol=mock 条目不进下拉框（批次F 退役兼容）"""
+    import src.video_agent.web.providers as wp
+    monkeypatch.setattr(wp, "load_merged_providers", lambda: [
+        {"id": "mock-demo", "name": "Mock 演示", "enabled": True, "protocol": "mock"},
+        {"id": "openai", "name": "OpenAI", "enabled": True,
+         "chat_models": ["gpt-4o"]},
+        {"id": "disabled-one", "name": "已停用", "enabled": False},
+    ])
+    result = wp.get_available_providers()
+    ids = [p["id"] for p in result]
+    assert "mock-demo" not in ids  # mock 条目不对外暴露
+    assert "openai" in ids         # 真实启用条目照常返回
+    assert "disabled-one" not in ids

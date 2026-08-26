@@ -21,6 +21,10 @@ def get_available_providers() -> List[Dict[str, Any]]:
     """返回所有已启用的 provider 列表（合并本地 + 画布，供 /api/config 等端点使用）"""
     result = []
     for p in load_merged_providers():
+        # 审查修复批：mock 演示通道已于批次F 退役，存量用户配置里的
+        # mock 条目不再对外暴露（下拉框不可选）
+        if p.get("protocol") == "mock":
+            continue
         if p.get("enabled", True):
             result.append({
                 "id": p.get("id", ""),

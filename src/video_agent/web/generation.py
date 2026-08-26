@@ -10,6 +10,10 @@
 
 本壳仅为存量消费方（routes/、tools/、eval/、core 端口装配 port_wiring、
 测试夹具）保留既有导入路径 `src.video_agent.web.generation`。
+
+登记（审查修复批）：本壳仅为兼容保留，新代码一律直接导入
+`web/generation_dispatch.py` / `web/generation_submit.py`，
+不再经本壳转引；存量消费方逐步改向后可整体清偿。
 """
 import asyncio  # noqa: F401  # 测试经 gen_mod.asyncio 打桩，保留模块属性
 
