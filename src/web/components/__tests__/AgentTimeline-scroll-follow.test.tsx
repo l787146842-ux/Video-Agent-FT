@@ -1,5 +1,5 @@
 /**
- * 批次G 断言③（前端体验规范 §二 深度思考视窗 / 台账 #8，814G9）：
+ * 批次G 断言③（前端体验规范 §二 深度思考视窗 / 台账 #8）：
  * 流式思考视窗自动跟随的分支断言——
  * ① 用户停在底部附近（距底 <60px）时新思考内容自动跟随滚到底；
  * ② 用户上滚查看历史（距底 ≥60px）时新内容不打断、不强制拉底。
@@ -16,7 +16,7 @@ function mockGeometry(el: HTMLElement, scrollHeight: number, clientHeight: numbe
   Object.defineProperty(el, 'clientHeight', { configurable: true, value: clientHeight });
 }
 
-describe('深度思考视窗「停在底部才跟随」分支（台账 #8 / 814G9）', () => {
+describe('深度思考视窗「停在底部才跟随」分支（台账 #8）', () => {
   beforeEach(() => {
     // rAF 回调同步执行：跟随分支在信号更新后立即落断言，无需等帧
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 0; });
