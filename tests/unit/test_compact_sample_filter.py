@@ -14,7 +14,7 @@ def test_system_refeed_messages_filtered():
     older = [
         {"role": "user", "content": "我要做一个古风甜宠短剧"},
         {"role": "assistant", "content": "好的，先拆解故事板"},
-        {"role": "user", "content": "（系统）第 1 轮的 3 个 Tool 已执行完毕，工作台状态已刷新到 system prompt。请继续完成任务；全部完成后直接回复文本即可。"},
+        {"role": "user", "content": "（系统）第 1 轮的 3 个 Tool 已执行完毕，工作台状态已刷新（见对话末尾最新的工作台状态 JSON）。请继续完成任务；全部完成后直接回复文本即可。"},
         {"role": "user", "content": "（系统）此前轮次工具读回的文档全文已从上下文移除以节约空间；其中的流程与约束仍须遵守，如确需复核原文请重新调用对应 read_* 工具。"},
         {"role": "user", "content": "（系统）本轮调用的工具已执行完毕，结果如下："},
         {"role": "user", "content": "（系统提示：上一轮已通过 workflow_pause 暂停等待确认，暂停内容：请审阅规格文档。）"},

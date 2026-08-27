@@ -34,8 +34,8 @@ def build_agent_context(
         raw_state: StateManager 内部的 raw dict
         asset_mode: "bound" 仅已绑定资产 / "all" 全部
         cache: 可选缓存字典（状态变更时由 StateManager 清空）
-        degraded: 降级模式（system 超预算保险丝用）——草稿细节不注入，
-                  只留组标题/编号/草稿计数，大幅压缩 system 段体积
+        degraded: 降级模式（预算保险丝用）——草稿细节不注入，
+                  只留组标题/编号/草稿计数，大幅压缩状态上下文体积
 
     Returns:
         JSON 字符串
@@ -243,7 +243,7 @@ def build_frontend_view(raw_state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:
-    """降级快照：只保留组标题/编号/草稿计数（system 超预算保险丝的第二道防线）。
+    """降级快照：只保留组标题/编号/草稿计数（预算保险丝的第二道防线）。
     模型看到后可调 read_draft / read_project_doc 按需取细节。"""
 
     def _groups(cat_key: str) -> list:

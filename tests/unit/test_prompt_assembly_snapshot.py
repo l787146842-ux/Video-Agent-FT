@@ -3,8 +3,10 @@
 
 快照锁语义：改造（注册制重构）前后组装结果逐字节一致——golden 在改造前
 由 build_snapshot_scenarios() 对现网代码采集落 tests/fixtures/prompt_assembly_golden.json；
-stage_note 新增注入属行为变更场景，不在快照范围内，单独成对断言
-（见 test_stage_note_prune_explain_pairing）。
+stage_note 新增注入属行为变更场景，不在快照范围内，单独成对断言。
+P2-3 段通道手术：状态上下文（状态 JSON/边界说明/故事板进度）移出
+system 段，改经 build_state_tail_message 以 history 尾部消息（user 通道）
+注入；golden 含尾部消息场景，同批重采。
 """
 import json
 import pathlib
@@ -79,11 +81,41 @@ def build_snapshot_scenarios():
         use_studio_context=True, state_json='{"legacy": true}',
     ))
 
+    # ---------- P2-3：状态上下文 history 尾部消息（user 通道）场景 ----------
+
+    # T1 状态 JSON + 选中草稿指针（草稿指针留在 system，不进尾部消息）
+    pb = _pb(raw_with_ke)
+    ctx = PlannerContext(
+        use_studio_context=True,
+        state_json='{"project": "快照项目", "keyElements": 1}',
+        selected_draft_id="draft-9", selected_type="shot",
+    )
+    out["tail_state_draft"] = pb.build_state_tail_message(ctx)
+
+    # T2 状态 JSON + 故事板客观进度（选中 Skill + state_builder）
+    pb = _pb(raw_with_ke)
+    ctx = PlannerContext(
+        use_studio_context=True,
+        state_builder=lambda: '{"phase": "storyboard"}',
+        skill_name="快照Skill-A",
+    )
+    out["tail_skill_progress"] = pb.build_state_tail_message(ctx)
+
+    # T3 状态 JSON + 同源裁剪解释（stage_note 随状态同通道迁移）
+    pb = _pb(raw_with_ke)
+    ctx = PlannerContext(
+        use_studio_context=True,
+        state_json='{"phase": "planning"}',
+        stage_note="== 当前阶段工具边界：部分工具本阶段不可用 ==",
+    )
+    out["tail_stage_note"] = pb.build_state_tail_message(ctx)
+
     return out
 
 
 def test_assembly_snapshot_matches_golden():
-    """组装输出逐字节与 golden 一致（P2-2 段序手术后 golden 已同批重采）"""
+    """组装输出逐字节与 golden 一致（P2-3 段通道手术后 golden 已同批重采：
+    system 场景不再含状态上下文，新增尾部消息场景）"""
     assert FIXTURE.exists(), "golden 缺失：须先在改造前采集基线"
     golden = json.loads(FIXTURE.read_text(encoding="utf-8"))
     actual = build_snapshot_scenarios()
@@ -125,9 +157,18 @@ def _build_with_ctx(ctx, svc):
     return pb.build_system_prompt(ctx)
 
 
+def _tail_with_ctx(ctx, svc):
+    """同链路的 history 尾部状态消息（P2-3 后裁剪解释的注入面）"""
+    from src.video_agent.core.prompt_builder import PromptBuilder
+    pb = PromptBuilder(lambda: _StubSkillDocs(), lambda: "proj-snap",
+                       lambda: svc.state_dict)
+    return pb.build_state_tail_message(ctx)
+
+
 def test_stage_note_prune_explain_pairing(svc):
-    """裁剪⇔解释成对：excluded 非空 → context 携带 note 且组装结果可见解释段
-    （消灭「静默裁剪」：裁了工具却不告诉模型）"""
+    """裁剪⇔解释成对：excluded 非空 → context 携带 note 且尾部消息可见解释
+    （消灭「静默裁剪」：裁了工具却不告诉模型）；P2-3 后解释随状态同通道，
+    不再进 system（system 成跨步稳定前缀）"""
     svc.state_dict["documents"] = []  # 无规格文档 → 阶段裁剪生效
     planner = _make_planner(svc)
     ctx = _make_ctx()
@@ -135,9 +176,9 @@ def test_stage_note_prune_explain_pairing(svc):
     assert "storyboard_create_group" in excluded and "image_generate" in excluded
     assert ctx.stage_excluded_tools and ctx.stage_note
     assert "当前阶段工具边界" in ctx.stage_note
-    # 组装结果必须包含同一份解释（同源，非各自拼装）
-    text = _build_with_ctx(ctx, svc)
-    assert ctx.stage_note in text
+    # 同源解释必须随尾部消息注入（非各自拼装），且不再出现在 system 段
+    assert ctx.stage_note in _tail_with_ctx(ctx, svc)
+    assert ctx.stage_note not in _build_with_ctx(ctx, svc)
 
 
 def test_stage_note_absent_when_no_pruning(svc):
@@ -150,6 +191,7 @@ def test_stage_note_absent_when_no_pruning(svc):
     assert "image_generate" not in excluded  # 结构就位，阶段裁剪未生效
     assert ctx.stage_excluded_tools == frozenset() and ctx.stage_note == ""
     assert "当前阶段工具边界" not in _build_with_ctx(ctx, svc)
+    assert "当前阶段工具边界" not in _tail_with_ctx(ctx, svc)
 
 
 def test_stage_note_absent_without_skill(svc):
@@ -161,6 +203,7 @@ def test_stage_note_absent_without_skill(svc):
     assert "storyboard_create_group" not in excluded
     assert ctx.stage_note == ""
     assert "当前阶段工具边界" not in _build_with_ctx(ctx, svc)
+    assert "当前阶段工具边界" not in _tail_with_ctx(ctx, svc)
 
 
 def test_stage_note_standalone_builder_fallback():
@@ -172,20 +215,21 @@ def test_stage_note_standalone_builder_fallback():
     ctx = PlannerContext(use_studio_context=True, skill_name="快照Skill-A",
                          state_json='{"a": 1}')
     assert "当前阶段工具边界" not in pb.build_system_prompt(ctx)
+    assert "当前阶段工具边界" not in pb.build_state_tail_message(ctx)
 
 
 # ---------- 段落注册表（任务#15 P2：提示词注册制） ----------
 
 def test_prompt_sections_registry_names_and_order():
-    """11 个具名段全覆盖，段序与拼装顺序 1:1（保前缀缓存约束）；
-    P2-2 段序手术：session_summary 15→65（compaction 激活不再击穿稳定前缀）、
-    selected_draft 50→75（UI 点击不再击穿 global_settings 前缀），
-    其余各段相对顺序不变"""
+    """8 个具名段全覆盖，段序与拼装顺序 1:1（保前缀缓存约束）；
+    P2-2 段序手术：session_summary 15→65、selected_draft 50→75；
+    P2-3 段通道手术：state_json/stage_note/storyboard_progress 移出
+    system 段（改经 history 尾部消息注入），不再登记于注册表"""
     from src.video_agent.core.prompt_builder import PROMPT_SECTIONS
     assert [s.name for s in PROMPT_SECTIONS] == [
         "protocol", "catalog", "mcp_catalog", "iron_rules",
-        "global_settings", "session_summary", "state_json", "selected_draft",
-        "stage_note", "storyboard_progress", "selected_skill",
+        "global_settings", "session_summary", "selected_draft",
+        "selected_skill",
     ]
     orders = [s.order for s in PROMPT_SECTIONS]
     assert orders == sorted(orders) and len(set(orders)) == len(orders)

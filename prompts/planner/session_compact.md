@@ -5,7 +5,7 @@
 > （对齐 Anthropic compaction 实践：保留决策与约束，丢弃冗余过程）。
 > 注入形态（对齐业界主流）：摘要不再伪装成 history 首条 user 消息，
 > 而是作为专用「会话摘要」段注入 system prompt、位于全局设置段之后、
-> 状态 JSON 段之前（后移以免压缩激活击穿稳定前缀）
+> 选中草稿段之前（后移以免压缩激活击穿稳定前缀）
 > （prompt_builder session_summary 段；interaction.session_summary.active
 > 每请求标记是否生效），history 本体只留最近 KEEP 条。
 > 正文取 TEMPLATE 分节（load_prompt_section）。

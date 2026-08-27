@@ -4,7 +4,7 @@
 - P0-1 多步循环状态 JSON 按轮刷新（state_builder 惰性构建）
 - P0-2 非流式 ChatResponse 补齐 image_urls/chat_inserts/action_log 字段
 - P0-3 PlannerContext 不再有 extra_system 空转字段
-- P1-4 system prompt 顺序：状态 JSON 殿后（利于前缀缓存）
+- P1-4/P2-3 状态上下文出 system：history 尾部消息注入，system 字节跨步稳定
 - P1-5 旧轮 read_* 全文回喂压缩
 - P1-6 truncate_messages 增量减法语义不变
 - P2-9 快照深拷贝防回写 + 请求幂等槽位
@@ -37,7 +37,8 @@ def svc(tmp_path):
 
 class TestStateRefreshPerStep:
     def test_state_builder_called_each_build(self):
-        """state_builder 每次构建 prompt 都重新调用，反映最新状态"""
+        """state_builder 每次构建都重新调用，反映最新状态（P2-3 后状态经
+        history 尾部消息注入）；且 system 本体字节在状态变化时保持稳定"""
         planner = Planner()
         box = {"state": '{"version": 1}'}
         ctx = PlannerContext(
@@ -45,32 +46,42 @@ class TestStateRefreshPerStep:
             state_builder=lambda: box["state"],
         )
         p1 = planner._build_system_prompt(ctx)
-        assert '"version": 1' in p1
-        # 模拟第一轮执行后状态变更：第二次构建必须看到新状态
+        t1 = planner._prompt_builder.build_state_tail_message(ctx)
+        assert '"version": 1' in t1          # 模型仍可见状态（尾部消息）
+        assert '"version": 1' not in p1       # 状态不再进 system 段
+        # 模拟第一轮执行后状态变更：尾部消息必须看到新状态，
+        # system 本体字节逐字节不变（供应商前缀缓存命中前提）
         box["state"] = '{"version": 2, "newGroup": "grp-x"}'
         p2 = planner._build_system_prompt(ctx)
-        assert '"version": 2' in p2 and "grp-x" in p2
-        assert '"version": 1' not in p2
+        t2 = planner._prompt_builder.build_state_tail_message(ctx)
+        assert '"version": 2' in t2 and "grp-x" in t2
+        assert '"version": 1' not in t2
+        assert p1 == p2
 
     def test_legacy_state_json_string_still_works(self):
-        """旧调用方式（固定字符串）兼容降级不破坏"""
+        """旧调用方式（固定字符串）兼容降级不破坏：经尾部消息可见"""
         planner = Planner()
         ctx = PlannerContext(use_studio_context=True, state_json='{"legacy": true}')
         prompt = planner._build_system_prompt(ctx)
-        assert '"legacy": true' in prompt
+        assert '"legacy": true' not in prompt
+        tail = planner._prompt_builder.build_state_tail_message(ctx)
+        assert '"legacy": true' in tail
 
-    def test_state_json_is_last_section(self):
-        """P1-4：逐轮变化的状态 JSON 殿后，稳定内容构成可缓存前缀"""
+    def test_state_json_out_of_system_into_tail(self):
+        """P1-4/P2-3：逐轮变化的状态 JSON 不再殿后于 system，改以 history 尾部
+        消息注入（近生成端，遵循度最高）；system（含 Skill 块）成跨步稳定前缀"""
         planner = Planner()
         ctx = PlannerContext(
             use_studio_context=True,
             state_builder=lambda: "STATE_AT_TAIL_MARKER",
         )
         prompt = planner._build_system_prompt(ctx)
-        assert prompt.endswith("STATE_AT_TAIL_MARKER")
-        # 协议段在状态段之前（稳定前缀；audit-0819b：锚点随文本块退役
+        assert "STATE_AT_TAIL_MARKER" not in prompt
+        tail = planner._prompt_builder.build_state_tail_message(ctx)
+        assert tail.endswith("STATE_AT_TAIL_MARKER")
+        # 协议段仍在 system（稳定前缀；audit-0819b：锚点随文本块退役
         # 改钉暂停协议表述，语义不变）
-        assert prompt.index("workflow_pause") < prompt.index("STATE_AT_TAIL_MARKER")
+        assert "workflow_pause" in prompt
 
 
 # ---------- P0-2：响应模型字段 ----------

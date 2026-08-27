@@ -1,8 +1,10 @@
 """system prompt 组装。
 
-承载：协议/Skill 目录/选中草稿/状态 JSON/选中 Skill 全文（含分阶段聚焦块）的组装。
-段落顺序：稳定内容在前，状态 JSON 殿后；选中 Skill 全文放在最末尾（近生成端，
-遵循度最高，避免被大段状态 JSON 淹没）。
+承载：协议/Skill 目录/选中草稿/选中 Skill 全文（含分阶段聚焦块）的组装。
+段落顺序：稳定内容在前，选中 Skill 全文放在最末尾（近生成端，遵循度最高）。
+逐轮变化的状态上下文（状态 JSON/工具边界说明/故事板客观进度）不占
+system 段，经 build_state_tail_message 以 history 尾部消息（user 通道）
+每步注入——system 段（含 Skill 块）成为跨步稳定前缀（供应商 KV-cache 友好）。
 
 planner.py 保留 _build_system_prompt 等同名委托，既有调用/测试路径不变。
 """
@@ -126,8 +128,9 @@ class PromptBuilder:
         段落注册制：各段经 PROMPT_SECTIONS 登记（唯一 name +
         order + builder），按 order 排序逐段构建，空串跳过；条件段的有无
         由各段 builder 内部决定。段序与历史顺序 1:1（前缀缓存优化：稳定
-        内容在前，状态 JSON 殿后；选中 Skill 全文放在最末尾近生成端，
-        遵循度最高，避免被大段状态 JSON 淹没）。
+        内容在前，选中 Skill 全文放在最末尾近生成端，遵循度最高）。
+        状态上下文（状态 JSON/工具边界说明/故事板进度）已移出 system 段，
+        见 build_state_tail_message（history 尾部消息注入，不在此登记）。
 
         同源裁剪解释：stage_note 段只消费 planner 经
         context 携带的裁剪解释（单一事实源），本处不再自行判定；
@@ -136,8 +139,9 @@ class PromptBuilder:
         协议段唯一 = planner/system_fc.md（Tool 优先瘦身协议，共有段经
         {{include}} 从 shared/ 拼装）。
         """
-        # 预计算共享原始数据：遥测/超限预警需要原始长度（非包壳后段长），
-        # 且 state_builder 每次组装只调一次（惰性构建按轮刷新语义不变）
+        # 预计算共享原始数据：遥测/超限预警需要原始长度（非包壳后段长）。
+        # state 已移出 system 段（经 history 尾部消息注入），此处仅为
+        # 遥测口径保留长度采集；选中 Skill 块仍在 system 最末段
         if context.use_studio_context:
             if context.state_builder is not None:
                 state_json = context.state_builder()
@@ -171,8 +175,8 @@ class PromptBuilder:
                 key = _SECTION_TELEMETRY_ALIAS.get(name)
                 if key is not None:
                     sections[key] = sections.get(key, 0) + n
-            # state/skill 取原始长度（state 段带前缀行、Skill 段带边界包壳，
-            # 段长≠遥测口径，与历史口径保持一致）
+            # state 已移出 system 段（history 尾部消息），遥测仍记原始长度，
+            # 观测口径不变；Skill 段带边界包壳，取原始长度与历史口径一致
             sections["state"] = len(state_json) if context.use_studio_context else 0
             sections["skill"] = len(selected_block)
             sections["total"] = len(text)
@@ -188,6 +192,43 @@ class PromptBuilder:
                 "建议清理草稿/缩短 Skill 全文或依赖降级保险丝"
             )
         return text
+
+    def build_state_tail_message(
+        self,
+        context: "PlannerContext",
+        state_builder_override: Optional[Callable[[], str]] = None,
+    ) -> str:
+        """状态上下文 history 尾部消息（user 通道，作为 history 最后一条注入）。
+
+        状态 JSON/工具边界说明/故事板客观进度不占 system 段：每步以尾部
+        消息注入，让 LLM 在每个轮次都看到先前轮次执行后的最新状态（近生成
+        端，遵循度最高）；system 段（含 Skill 块）由此成为跨步稳定前缀。
+        内部次序与原 system 段相对顺序一致（状态 JSON → 边界说明 → 故事板进度）。
+        返回空串 = 本轮不注入。
+
+        state_builder_override：预算保险丝降级重建时替换状态构建器（只留
+        组标题/计数的降级状态），语义同 context.degraded_state_builder。
+        """
+        if not context.use_studio_context:
+            return ""
+        builder = state_builder_override or context.state_builder
+        if builder is not None:
+            state_json = builder()
+        else:
+            state_json = context.state_json
+        parts: List[str] = []
+        if state_json:
+            parts.append("当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + state_json)
+        # 同源裁剪解释：条件判定单一事实源归 planner._compute_excluded_tools，
+        # 裁剪生效时经 context.stage_note 携带；未生效缺省为空即不注入。
+        # 随状态同通道迁移：静默裁剪消除语义不变，只是不再击穿 system 前缀。
+        if context.stage_note:
+            parts.append(context.stage_note)
+        if context.skill_name:
+            note = self.build_storyboard_progress_note()
+            if note:
+                parts.append(note)
+        return "\n\n".join(parts)
 
     def build_storyboard_progress_note(self) -> str:
         """故事板客观进度描述（纯数据）——只报三类有无，
@@ -515,8 +556,10 @@ class PromptBuilder:
 # ---------- 段落注册表（提示词注册制） ----------
 #
 # 段序与历史过程式拼装顺序 1:1 登记（保前缀缓存约束：稳定段在前、
-# 状态 JSON 殿后、选中 Skill 最末近生成端）；重名/重序在模块加载期即 raise。
+# 选中 Skill 最末近生成端）；重名/重序在模块加载期即 raise。
 # 条件段的有无由各 builder 内部决定，返回空串即被组装循环跳过。
+# 状态上下文（状态 JSON/边界说明/故事板进度）不在本表登记：已移出
+# system 段，经 build_state_tail_message 以 history 尾部消息注入。
 
 @dataclass(frozen=True)
 class PromptSectionSpec:
@@ -540,8 +583,8 @@ def _sec_protocol(pb: "PromptBuilder", context: "PlannerContext") -> str:
 
 
 def _sec_session_summary(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """会话摘要专用段：位于全局设置段之后、状态 JSON 段之前
-    （P2-2 段序手术：compaction 激活不再击穿稳定前缀）。
+    """会话摘要专用段：位于全局设置段之后（P2-2 段序手术：compaction 激活
+    不再击穿稳定前缀；状态上下文已移出 system 段，不再参与段序锚定）。
     压缩摘要置于 system 段而非伪装成 history 首条 user 消息；
     是否注入按 interaction.session_summary.active 每轮判定（由
     chat_consume._maybe_compact_history 每请求签发：压缩生效置 True，
@@ -589,8 +632,9 @@ def _sec_iron_rules(pb: "PromptBuilder", context: "PlannerContext") -> str:
 
 
 def _sec_selected_draft(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """前端当前选中的草稿指针（类型标注）：位于状态 JSON 段之后
-    （P2-2 段序手术：UI 点击切换不再击穿前缀稳定段）。"""
+    """前端当前选中的草稿指针（类型标注）：位于会话摘要段之后、选中 Skill 段
+    之前（P2-2 段序手术：UI 点击切换不再击穿前缀稳定段；状态上下文已移出
+    system 段，不再参与段序锚定）。"""
     if not (context.use_studio_context and context.selected_draft_id):
         return ""
     return (
@@ -614,36 +658,11 @@ def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
     return pb.build_global_settings_note()
 
 
-def _sec_state_json(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """状态上下文殿后（每轮变化最大）：惰性构建器已按轮刷新，
-    让 LLM 在每个轮次都看到先前轮次执行后的最新状态。"""
-    if not (context.use_studio_context and pb._state_json):
-        return ""
-    return "当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + pb._state_json
-
-
-def _sec_stage_note(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """混合形态工具边界的可见性说明（同源裁剪解释）。
-
-    条件判定单一事实源归 planner._compute_excluded_tools：裁剪生效时
-    经 context.stage_note 携带解释文案；裁剪未生效（或独立使用
-    PromptBuilder 不经 planner）时 note 缺省为空即回退为不注入。
-    注入位置保持在状态 JSON 之后（不破坏前缀缓存约束）。
-    """
-    return context.stage_note
-
-
-def _sec_storyboard_progress(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """故事板客观进度描述（只报状态，暂停点归 Skill）。"""
-    if not (context.use_studio_context and context.skill_name):
-        return ""
-    return pb.build_storyboard_progress_note()
-
-
 def _sec_selected_skill(pb: "PromptBuilder", context: "PlannerContext") -> str:
     """选中 Skill 全文放在最后（近生成端）：长 system prompt 中部的指令
     遵循度会衰减，而产出规范（提示词写法/分组规则）恰恰是最需要被严格
-    执行的部分（实际拼接在状态 JSON 之后，避免被大段状态 JSON 淹没）。"""
+    执行的部分。状态上下文已移出 system 段（history 尾部消息注入），
+    Skill 块不再有大段状态 JSON 前置淹没问题。"""
     return pb._selected_block
 
 
@@ -671,15 +690,16 @@ PROMPT_SECTIONS: Tuple[PromptSectionSpec, ...] = _validate_prompt_sections((
     PromptSectionSpec("mcp_catalog", 30, _sec_mcp_catalog),
     PromptSectionSpec("iron_rules", 40, _sec_iron_rules),
     PromptSectionSpec("global_settings", 60, _sec_global_settings),
-    # P2-2 段序手术：摘要段后移至全局设置之后、状态 JSON 之前——
+    # P2-2 段序手术：摘要段后移至全局设置之后——
     # compaction 激活不再击穿协议/目录等稳定前缀（KV-cache 友好）
     PromptSectionSpec("session_summary", 65, _sec_session_summary),
-    PromptSectionSpec("state_json", 70, _sec_state_json),
-    # P2-2 段序手术：选中草稿指针后移至状态 JSON 之后——
-    # UI 点击切换草稿不再击穿 global_settings 及以前的稳定前缀
+    # P2-2 段序手术：选中草稿指针后移——
+    # UI 点击切换草稿不再击穿 global_settings 及以前的稳定前缀。
+    # 状态上下文（原 order 70/80/90 的 state_json/stage_note/
+    # storyboard_progress）已移出 system 段：经 build_state_tail_message
+    # 以 history 尾部消息（user 通道）每步注入，system 成跨步稳定前缀。
+    # selected_draft 每请求才可能变（UI 点击），跨步稳定，留在 system。
     PromptSectionSpec("selected_draft", 75, _sec_selected_draft),
-    PromptSectionSpec("stage_note", 80, _sec_stage_note),
-    PromptSectionSpec("storyboard_progress", 90, _sec_storyboard_progress),
     PromptSectionSpec("selected_skill", 100, _sec_selected_skill),
 ))
 
@@ -696,9 +716,6 @@ _SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
     "iron_rules": "iron_rules",
     "selected_draft": None,
     "global_settings": None,
-    "state_json": None,
-    "stage_note": None,
-    "storyboard_progress": None,
     "selected_skill": None,
 }
 # 批次E：渠道机制退役后的恒 0 兼容字段 channels 已清偿

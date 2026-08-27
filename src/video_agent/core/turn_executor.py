@@ -19,6 +19,8 @@ import json
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from loguru import logger
+
 from src.video_agent.adapters.base_chat import ChatResponse, StreamChunk
 from src.video_agent.config import settings
 from src.video_agent.core.fc_tool_runner import (
@@ -36,7 +38,11 @@ from src.video_agent.core.stop_signal import (
     current_stop_id,
     is_stop_requested,
 )
-from src.video_agent.core.token_budget import context_window_for_model, truncate_messages
+from src.video_agent.core.token_budget import (
+    context_window_for_model,
+    estimate_messages_tokens,
+    truncate_messages,
+)
 from src.video_agent.core.tracer import AgentTracer
 
 
@@ -100,6 +106,55 @@ class TurnExecutor:
         model = getattr(p.llm_adapter, "model", "") if p.llm_adapter else ""
         return context_window_for_model(model, provider_id=getattr(p, "chat_provider", "") or "")
 
+    def _state_tail_message(self) -> str:
+        """状态上下文 history 尾部消息（user 通道；单一事实源 = prompt_builder）。
+
+        状态 JSON/工具边界说明/故事板进度已移出 system 段，改在每次调用时
+        作为 history 最后一条消息注入：system（含 Skill 块）成为跨步稳定前缀
+        （供应商 KV-cache 友好）；消息只存在于当次请求，不入持久化历史，
+        也不进会话压缩采样面。context 缺失（直驱/独立）时不组装 → 零增量。"""
+        ctx = self._context
+        pb = getattr(self.planner, "_prompt_builder", None)
+        if ctx is None or pb is None:
+            return ""
+        try:
+            return pb.build_state_tail_message(ctx)
+        except Exception:
+            return ""
+
+    def _degrade_state_tail(
+        self,
+        full_messages: List[Dict[str, Any]],
+        max_tokens: int,
+        state_tail: str,
+    ) -> List[Dict[str, Any]]:
+        """预算保险丝：截断后仍超预算时用降级状态（只留组标题/计数）
+        重建尾部状态消息。状态上下文移出 system 段后，降级重建点同步迁移：
+        原 system_degrader 只负责 system 本体。只记录不阻断主链。"""
+        if not state_tail or not full_messages:
+            return full_messages
+        if estimate_messages_tokens(full_messages) <= max_tokens:
+            return full_messages
+        ctx = self._context
+        deg_builder = getattr(ctx, "degraded_state_builder", None) if ctx is not None else None
+        pb = getattr(self.planner, "_prompt_builder", None)
+        if deg_builder is None or pb is None:
+            return full_messages
+        try:
+            degraded = pb.build_state_tail_message(ctx, state_builder_override=deg_builder)
+        except Exception:
+            return full_messages
+        if degraded and degraded != state_tail and full_messages[-1].get("content") == state_tail:
+            full_messages[-1] = {"role": "user", "content": degraded}
+            logger.warning(
+                f"[TurnExecutor] 状态尾部消息超预算，已降级重建（预算 {max_tokens} tokens）")
+            try:
+                (self._tracer or AgentTracer.get_instance()).record_context_event(
+                    "degrade", f"history 尾部状态消息降级重建（预算 {max_tokens} tokens）")
+            except Exception:
+                pass
+        return full_messages
+
     async def call_llm(self, system: str, messages: List[Dict[str, Any]]) -> ChatResponse:
         """
         LLM 调用（§2.2）：支持 function calling 的 adapter 传入 tool schemas；
@@ -107,13 +162,20 @@ class TurnExecutor:
         """
         p = self.planner
         full_messages = [{"role": "system", "content": system}] + messages
+        # 状态上下文出 system：每次调用以 history 尾部消息（user 通道）注入，
+        # system（含 Skill 块）成跨步稳定前缀；不入持久化历史/压缩采样面
+        state_tail = self._state_tail_message()
+        if state_tail:
+            full_messages.append({"role": "user", "content": state_tail})
         # tool-result 消化：已投影进状态 JSON 的写类工具结果超阈值行替换为
         # 指针（最近 2 轮回喂保留原文；TOOL_RESULT_DIGEST_CHARS=0 一键关）
         digest_projected_tool_results(
             full_messages, int(settings.tool_result_digest_chars))
-        # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
+        # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝，
+        # 尾部状态消息的降级重建见 _degrade_state_tail
         max_tokens = int(self.context_window() * settings.token_budget_ratio)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=p._system_degrader)
+        full_messages = self._degrade_state_tail(full_messages, max_tokens, state_tail)
         # 实时上下文度量：截断后的真实消息记入 live 注册表，
         # context-usage 接口推理中即可看到用量随轮次增长
         record_live_context(p.state_manager.active_project_id, full_messages)
@@ -144,12 +206,17 @@ class TurnExecutor:
         """流式 LLM 调用"""
         p = self.planner
         full_messages = [{"role": "system", "content": system}] + messages
+        # 状态上下文出 system：同 call_llm（流式/非流式两通道同口径）
+        state_tail = self._state_tail_message()
+        if state_tail:
+            full_messages.append({"role": "user", "content": state_tail})
         # tool-result 消化：同 call_llm（已投影结果超阈值行换指针）
         digest_projected_tool_results(
             full_messages, int(settings.tool_result_digest_chars))
-        # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
+        # Token 预算截断：同 call_llm（含尾部状态消息降级重建）
         max_tokens = int(self.context_window() * settings.token_budget_ratio)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=p._system_degrader)
+        full_messages = self._degrade_state_tail(full_messages, max_tokens, state_tail)
         # 实时上下文度量：同 call_llm，推理中用量可见
         record_live_context(p.state_manager.active_project_id, full_messages)
         # P2-6 可见指纹链：同 call_llm（流式/非流式两通道同口径）
