@@ -5,6 +5,11 @@
  * 视图态类型（ChatMessage 等纯 UI 形态）见手写 src/web/types/index.ts。
  */
 
+export interface ActiveSkillRequest {
+  slug: string;
+  source?: string;
+}
+
 export interface BatchImageGenRequest {
   target?: string;
   provider_id?: string;

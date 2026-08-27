@@ -1,7 +1,7 @@
 import { createSignal, For, Show, onCleanup } from 'solid-js';
 import { FiEye, FiZap, FiChevronDown, FiPlus, FiTrash2 } from 'solid-icons/fi';
 import { state, refreshSkills } from '@/stores/studio';
-import { agentSkillId, setAgentSkill } from '@/stores/agent-prefs';
+import { agentSkillId, activateSkill, deactivateSkill, setAgentSkill } from '@/stores/agent-prefs';
 import { chatActions } from '@/stores/chat';
 import { editorToPlainText } from '@/lib/rich-input';
 import { deleteSkillDoc } from '@/api/docs';
@@ -49,24 +49,19 @@ export function SkillPicker() {
       // 面板在按钮上方展开，水平左对齐按钮，且不超出视口
       const panelW = 300;
       let left = rect.left;
-      if (left + panelW > window.innerWidth - 12) {
-        left = window.innerWidth - panelW - 12;
-      }
+      if (left + panelW > window.innerWidth - 12) left = window.innerWidth - panelW - 12;
       if (left < 12) left = 12;
-      setPanelStyle({
-        left: `${left}px`,
-        bottom: `${window.innerHeight - rect.top + 6}px`,
-      });
+      setPanelStyle({ left: `${left}px`, bottom: `${window.innerHeight - rect.top + 6}px` });
     }
     setOpen(!open());
   }
 
   /**
-   * 「+」/ 卡片点击：激活 Skill 并把名称以引用块（图标+名称 chip）插入对话输入框。
-   * 只有随消息发送给 Agent 后，Skill 才会真正生效并写入文档面板（图4）。
+   * 「+」/ 卡片点击：激活 Skill（写项目态 + 后端留痕，批 C）并把名称以
+   * 引用块（图标+名称 chip）插入对话输入框；随消息发送后写入文档面板。
    */
   function insertSkillToInput(skill: Skill) {
-    setAgentSkill(skill.id);
+    void activateSkill(skill.id, 'user');
     requestInsertSkill(skill.name);
     setOpen(false);
     showToast(t('rp.skill.inserted', { name: skill.name }), 'success');
@@ -86,7 +81,9 @@ export function SkillPicker() {
     try {
       await deleteSkillDoc(slug);
       await refreshSkills();
-      if (agentSkillId() === skill.id) setAgentSkill('');
+      if (agentSkillId() === skill.id) void deactivateSkill();
+      // 已删文档不再可作建议（建议值与文档清单同源校验）
+      setAgentSkill('');
       showToast(t('rp.skill.deleted', { name: skill.name }), 'success');
     } catch (err) {
       showToast(t('rp.skill.deleteFailed', { error: (err as Error).message }), 'error');
@@ -109,12 +106,12 @@ export function SkillPicker() {
 
       <Show when={open()}>
         <div class="skill-picker" style={panelStyle()}>
-          {/* B4/F28·D2：「不使用技能」卡——默认态，显式选择才激活 Skill 流程/闸机。
+          {/* B4/F28·D2：「不使用技能」卡——摘除项目态绑定回到自由对话（批 C）。
               同时清空输入框里已插入的 Skill 引用块（防正文匹配回退重新绑定） */}
           <div
             class={`skill-picker-card skill-picker-none ${agentSkillId() === '' ? 'active' : ''}`}
             onClick={() => {
-              setAgentSkill('');
+              void deactivateSkill();
               const editor = document.getElementById('chatInputTextarea');
               if (editor) {
                 editor.querySelectorAll('.skill-chip').forEach((n) => n.remove());

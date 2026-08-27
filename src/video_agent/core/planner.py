@@ -326,6 +326,10 @@ class Planner:
                     "pause_id": response.pause_id,
                     "message": response.confirmation,
                     "options": list(response.confirmation_options or []),
+                    # 发行轮次戳（批 C）：供轮始自愈对账计算卡龄，
+                    # 超阈未消费的残留卡自动退役（防永远停在旧阶段）
+                    "issued_turn_seq": int(
+                        self.state_manager.state_dict.get("turn_seq") or 0),
                 },
             })
         except Exception as _e:

@@ -22,6 +22,7 @@ from src.video_agent.core.provider_config import (
     exclude_retired_mock_providers,
     load_merged_providers,
 )
+from src.video_agent.state.manager import StateManager
 from src.video_agent.web.skill_docs import (
     get_skill_doc,
     list_skill_docs,
@@ -68,6 +69,37 @@ def _planning_executors_of(skill_name: str):
 async def get_skill_docs():
     """文档面板：Skill 文档列表（含全文）"""
     return {"docs": list_skill_docs()}
+
+
+class ActiveSkillRequest(BaseModel):
+    slug: str
+    source: str = "user"
+
+
+@router.post("/skills/active")
+async def set_active_skill(body: ActiveSkillRequest):
+    """项目态 Skill 激活/摘除（批 C：激活事实归项目态）。
+
+    slug 非空 = 激活（校验文档存在 + usedSkills 留账）；
+    slug 空 = 摘除，回到自由对话。状态写入唯一走 StateManager。
+    """
+    svc = StateManager.get_instance()
+    slug = str(body.slug or "").strip()
+    source = "suggested" if body.source == "suggested" else "user"
+    if slug:
+        if not get_skill_doc(slug):
+            raise VideoAgentError(
+                f"Skill '{slug}' 不存在", status_code=404,
+                error_code=LEGACY_NOT_FOUND,
+            )
+        svc.record_used_skill(slug)
+    svc.set_active_skill(slug, source)
+    svc.record_flow_event(
+        "skill_active",
+        f"活跃 Skill {'摘除（自由对话）' if not slug else '激活 ' + slug}（来源：{'建议采纳' if source == 'suggested' else '用户选择'}）",
+    )
+    logger.info(f"[Skills] 活跃 Skill 绑定更新: slug={slug or '（摘除）'} source={source}")
+    return {"ok": True, "active_skill": svc.state_dict.get("activeSkill")}
 
 
 class SkillDocSave(BaseModel):

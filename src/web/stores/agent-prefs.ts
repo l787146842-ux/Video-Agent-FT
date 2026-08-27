@@ -1,13 +1,16 @@
 import { createSignal } from 'solid-js';
-import { state } from '@/stores/studio-core';
+import { state, setState } from '@/stores/studio-core';
 import {
   apiProvidersFor, preferredProviderIdForKind, providerModels,
 } from '@/lib/providers';
+import { setActiveSkillApi } from '@/api/docs';
+import { showToast } from '@/stores/toast';
 
 /**
- * Agent 聊天偏好：供应商/模型/技能/资产范围
- * localStorage 持久化（keys 与旧版一致）+ 响应式 signal。
- * Pill 下拉显示与 sendUserMessage 发送共用同一份状态。
+ * Agent 聊天偏好：供应商/模型/技能/资产范围。
+ * 供应商/模型/资产：localStorage 持久化（keys 与旧版一致）+ 响应式 signal。
+ * 技能（批 C）：KEY_SKILL 降级为「建议值」（跨会话记忆，不自动生效）；
+ * 激活事实归项目态（后端 activeSkill，随快照下发），新项目默认自由对话。
  */
 
 export const KEY_PROVIDER = 'studioAgentProvider';
@@ -73,8 +76,14 @@ export function setAgentModel(v: string) {
 }
 
 export function agentSkillId(): string {
-  // ·：默认无技能——localStorage 无值/失效时返回空（不自动回落第一个技能），
-  // 用户显式选择 Skill 才激活流程/闸机；SkillPicker 提供「不使用技能」卡。
+  // 批 C：激活事实归项目态（后端 activeSkill 为权威，随快照下发）。
+  // 已登记绑定：slug 空串 = 显式自由对话。
+  const active = state.activeSkill;
+  if (active) return active.slug ? `doc:${active.slug}` : '';
+  // 未登记绑定的存量项目：保持旧口径（全局建议值校验后生效），
+  // 不丢失既有选择；新项目（无 usedSkills）默认自由对话，
+  // 全局值仅以建议形态呈现（suggestedSkillId + 采纳芯片）。
+  if (!state.usedSkills.length) return '';
   const id = skillId();
   if (id && state.skills.some((s) => s.id === id)) return id;
   return '';
@@ -85,9 +94,56 @@ export function agentSkill() {
   return state.skills.find((s) => s.id === id);
 }
 
+/** 建议值（批 C）：全局 KEY_SKILL 仅作可一键采纳的建议，不自动激活；
+ * 无效/无记录返回空（建议不呈现）。 */
+export function suggestedSkillId(): string {
+  const id = skillId();
+  if (id && state.skills.some((s) => s.id === id)) return id;
+  return '';
+}
+
+/** 写入建议值（跨会话记忆；不再是激活动作，激活走 activateSkill） */
 export function setAgentSkill(v: string) {
   localStorage.setItem(KEY_SKILL, v);
   setSkillSig(v);
+}
+
+/** 激活 Skill 到项目态（批 C）：乐观写本地态 + 后端落盘；
+ * 同步更新全局建议值（不丢失）。失败回滚本地态。 */
+export async function activateSkill(skillId: string, source: 'user' | 'suggested' = 'user'): Promise<boolean> {
+  const slug = skillId.startsWith('doc:') ? skillId.slice(4) : '';
+  if (!slug) return false;
+  const prev = state.activeSkill;
+  setState('activeSkill', { slug, source });
+  setAgentSkill(skillId);
+  try {
+    await setActiveSkillApi(slug, source);
+    return true;
+  } catch (err) {
+    setState('activeSkill', prev);
+    showToast(`Skill 激活失败：${(err as Error).message}`, 'error');
+    return false;
+  }
+}
+
+/** 摘除活跃 Skill（批 C）：回到自由对话（写项目态 + 后端留痕）；
+ * 全局建议值不受影响（不丢失）。 */
+export async function deactivateSkill(): Promise<boolean> {
+  const prev = state.activeSkill;
+  setState('activeSkill', { slug: '', source: 'user' });
+  try {
+    await setActiveSkillApi('', 'user');
+    return true;
+  } catch (err) {
+    setState('activeSkill', prev);
+    showToast(`Skill 摘除失败：${(err as Error).message}`, 'error');
+    return false;
+  }
+}
+
+/** 忽略建议（批 C）：仅清全局建议值，不动项目态（激活事实与建议分离） */
+export function dismissSkillSuggestion() {
+  setAgentSkill('');
 }
 
 export function agentAssetMode(): 'bound' | 'all' {

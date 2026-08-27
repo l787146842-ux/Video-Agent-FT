@@ -3,7 +3,9 @@
  * 对齐后端 routes/plugins.py 契约
  */
 import { apiFetch, apiPut, apiPost, apiDelete } from './client';
-import type { SkillDocSave, SkillFormatRequest, SkillAssistantRequest } from '@/types/api.generated';
+import type {
+  SkillDocSave, SkillFormatRequest, SkillAssistantRequest, ActiveSkillRequest,
+} from '@/types/api.generated';
 
 export interface SkillDoc {
   slug: string;
@@ -51,6 +53,15 @@ export function formatSkillContent(content: string): Promise<{ content: string }
 /** 删除 Skill 文档 */
 export function deleteSkillDoc(slug: string): Promise<{ ok: boolean }> {
   return apiDelete<{ ok: boolean }>(`/api/skills/docs/${encodeURIComponent(slug)}`);
+}
+
+/** 项目态 Skill 激活/摘除（批 C）：slug 空 = 摘除回到自由对话；
+ * 激活事实写项目态（随快照下发），全局 KEY_SKILL 仅作建议值 */
+export function setActiveSkillApi(
+  slug: string, source: 'user' | 'suggested' = 'user',
+): Promise<{ ok: boolean; active_skill?: { slug: string; source: string } | null }> {
+  const body: ActiveSkillRequest = { slug, source };
+  return apiPost('/api/skills/active', body);
 }
 
 /** Skill 优化助手（非流式）：返回 reply + 解析出的更新后全文

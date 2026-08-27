@@ -1,7 +1,7 @@
 import { createMemo, createSignal, Show, type JSX } from 'solid-js';
 import { FiCode, FiCopy, FiEdit2, FiEye, FiMoreHorizontal } from 'solid-icons/fi';
 import {
-  parseSkillStructure, serializeSkillStructure, type SkillStructure,
+  parseSkillStructure, serializeSkillStructure, frontmatterMeta, type SkillStructure,
 } from '@/lib/skill-structure';
 import { saveSkillCopy } from '@/stores/skill-studio';
 import { SkillStructuredRead } from './SkillStructuredRead';
@@ -33,6 +33,9 @@ export function SkillStructuredView(props: {
   const [saving, setSaving] = createSignal(false);
 
   const parsed = createMemo(() => parseSkillStructure(props.raw));
+  // 名称/描述展示权威 = frontmatter 元数据（与后端 /api/skills 解析同口径，
+  // 批 C）：正文无 `# ` 标题的文档不再显示「未命名」
+  const meta = createMemo(() => frontmatterMeta(props.raw));
 
   function startEdit() {
     if (viewMode() === 'read') setStruct(parseSkillStructure(props.raw));
@@ -131,7 +134,7 @@ export function SkillStructuredView(props: {
             fallback={<pre class="sks-raw">{props.raw}</pre>}
           >
             <div class="sks-scroll">
-              <SkillStructuredRead struct={parsed()} />
+              <SkillStructuredRead struct={parsed()} meta={meta()} />
             </div>
           </Show>
         }
@@ -148,7 +151,7 @@ export function SkillStructuredView(props: {
         >
           <div class="sks-scroll">
             <Show when={struct()}>
-              <SkillStructuredEdit struct={struct()!} onChange={setStruct} />
+              <SkillStructuredEdit struct={struct()!} onChange={setStruct} meta={meta()} />
             </Show>
           </div>
         </Show>

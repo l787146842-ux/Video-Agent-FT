@@ -2,11 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import type { ApiProvider, Skill } from '@/types';
 
 /**
- * 输入区 pill 选择持久化 —— API/模型/Skill 记住上次选择（localStorage），
+ * 输入区 pill 选择持久化 —— API/模型/资产范围记住上次选择（localStorage），
  * 默认值预填，供应商失效时回退首选可用项。
- * 代码内置 Skill（production-agent 等）已彻底移除：默认不再预填。
- * 基线：默认无技能——残留无效 Skill id 同样返回空
- * （不自动回落第一个文档 Skill），由「不使用技能」卡承载默认态。
+ * 技能（批 C）：KEY_SKILL 降级为建议值——新项目（无 usedSkills）默认自由
+ * 对话，全局值仅以 suggestedSkillId 呈现；激活事实归项目态（activeSkill），
+ * 未登记绑定的存量项目保持旧口径（全局值校验后生效，不丢失）。
  */
 
 const PROVIDERS: ApiProvider[] = [
@@ -44,25 +44,47 @@ describe('stores/agent-prefs（pill 持久化）', () => {
     expect(prefs.agentAssetMode()).toBe('bound');
   });
 
-  it('记住上次选择：从 localStorage 恢复供应商/模型/技能', async () => {
+  it('新项目（无 usedSkills）默认自由对话，全局值仅作建议（批 C）', async () => {
+    const prefs = await loadPrefs({ studioAgentSkill: 'doc:demo' }, PROVIDERS, DOC_SKILLS);
+    expect(prefs.agentSkillId()).toBe('');
+    expect(prefs.suggestedSkillId()).toBe('doc:demo');
+    expect(prefs.agentSkill()).toBeUndefined();
+  });
+
+  it('存量项目（有 usedSkills、未登记绑定）保持旧口径从 localStorage 恢复', async () => {
     const prefs = await loadPrefs({
       studioAgentProvider: 'volcengine',
       studioAgentModel: 'vc-1',
       studioAgentSkill: 'doc:demo',
       studioAgentAssetMode: 'all',
     }, PROVIDERS, DOC_SKILLS);
+    const core = await import('@/stores/studio-core');
+    core.setState('usedSkills', ['demo']);
     expect(prefs.agentProvider()).toBe('volcengine');
     expect(prefs.agentModel()).toBe('vc-1');
     expect(prefs.agentSkillId()).toBe('doc:demo');
     expect(prefs.agentAssetMode()).toBe('all');
   });
 
+  it('项目态绑定为权威：agentSkillId 从 activeSkill 派生（批 C）', async () => {
+    const prefs = await loadPrefs({ studioAgentSkill: 'doc:other' }, PROVIDERS, DOC_SKILLS);
+    const core = await import('@/stores/studio-core');
+    core.setState('activeSkill', { slug: 'demo', source: 'user' });
+    expect(prefs.agentSkillId()).toBe('doc:demo');
+    expect(prefs.agentSkill()?.id).toBe('doc:demo');
+    // 摘除态（空 slug）= 显式自由对话，不再回落建议值/usedSkills
+    core.setState('activeSkill', { slug: '', source: 'user' });
+    expect(prefs.agentSkillId()).toBe('');
+    expect(prefs.suggestedSkillId()).toBe('doc:other');
+  });
+
   it('残留的已删除代码 Skill id（production-agent）回退到默认无技能（D2 基线）', async () => {
     const prefs = await loadPrefs({ studioAgentSkill: 'production-agent' }, PROVIDERS, DOC_SKILLS);
     expect(prefs.agentSkillId()).toBe('');
+    expect(prefs.suggestedSkillId()).toBe('');
   });
 
-  it('选择即写入 localStorage', async () => {
+  it('选择即写入 localStorage（建议值语义，批 C）', async () => {
     const prefs = await loadPrefs({});
     prefs.setAgentProvider('volcengine');
     expect(localStorage.getItem('studioAgentProvider')).toBe('volcengine');
@@ -72,6 +94,15 @@ describe('stores/agent-prefs（pill 持久化）', () => {
     expect(localStorage.getItem('studioAgentSkill')).toBe('doc:other');
     prefs.setAgentAssetMode('all');
     expect(localStorage.getItem('studioAgentAssetMode')).toBe('all');
+  });
+
+  it('忽略建议只清全局值不动项目态（批 C）', async () => {
+    const prefs = await loadPrefs({ studioAgentSkill: 'doc:demo' }, PROVIDERS, DOC_SKILLS);
+    const core = await import('@/stores/studio-core');
+    core.setState('activeSkill', { slug: 'demo', source: 'user' });
+    prefs.dismissSkillSuggestion();
+    expect(localStorage.getItem('studioAgentSkill')).toBe('');
+    expect(prefs.agentSkillId()).toBe('doc:demo');
   });
 
   it('记录的供应商已失效（无 chat 模型）时回退首选可用项', async () => {

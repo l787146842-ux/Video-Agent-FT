@@ -38,6 +38,9 @@ export interface StudioState {
   editingDraftId: string;
   /** 当前项目已发送给 Agent 的 Skill slug（文档面板只展示这些 Skill 文档） */
   usedSkills: string[];
+  /** 项目态活跃 Skill 绑定（批 C）：激活事实归项目态；slug 空串 = 显式自由对话；
+   * null = 未登记过绑定的存量项目（回落 usedSkills 旧口径，建议值另见 agent-prefs） */
+  activeSkill: { slug: string; source: 'user' | 'suggested' } | null;
   /** Agent 联动更新故事板的时间戳（驱动左面板闪烁动画） */
   lastAppliedAt: number;
   /** 预览框导航按钮触发左面板定位的计数（驱动滚动到选中卡片并闪烁） */
@@ -79,6 +82,7 @@ const defaultState: StudioState = {
   projectId: '',
   editingDraftId: '',
   usedSkills: [],
+  activeSkill: null,
   lastAppliedAt: 0,
   locateTick: 0,
   locateGroupId: '',

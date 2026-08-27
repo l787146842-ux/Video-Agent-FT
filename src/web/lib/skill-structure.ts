@@ -25,10 +25,11 @@ export interface SkillStructure {
   description: string;
   sections: SkillSection[];
   format: 'tag' | 'heading';
-  /** name 来源：heading `# ` 行 / 旧式 `skill_name:` 行 / 无 */
-  nameStyle: 'heading' | 'legacy' | 'none';
-  /** description 来源：`>` 引用块 / 旧式 `skill_description:` 行 / 无 */
-  descStyle: 'quote' | 'legacy' | 'none';
+  /** name 来源：heading `# ` 行 / 无（旧式 `skill_name:` 行声明已退役，
+   * 名称/描述单一权威 = 后端 frontmatter 元数据，见 frontmatterMeta） */
+  nameStyle: 'heading' | 'none';
+  /** description 来源：`>` 引用块 / 无 */
+  descStyle: 'quote' | 'none';
 }
 
 /** 章节 tag 白名单（对齐后端 SECTION_TAG_STAGES 键） */
@@ -99,25 +100,11 @@ const TAG_RE = new RegExp(
   `<(${SECTION_TAGS.join('|')})>([\\s\\S]*?)</\\1>`, 'gi',
 );
 
-/** 解析 Skill 全文为结构化模型 */
+/** 解析 Skill 全文为结构化模型（正文口径：只认 `# ` 标题与 `>` 引用块；
+ * 名称/描述的展示权威在 frontmatter 元数据，见 frontmatterMeta） */
 export function parseSkillStructure(content: string): SkillStructure {
   const { frontmatter, body } = splitFrontmatter(content || '');
-  // 旧式声明行（skill_name/skill_description）提取后剔出正文，
-  // 序列化按 nameStyle/descStyle 原样写回（round-trip 无损）
-  let legacyName = '';
-  let legacyDesc = '';
-  const lines: string[] = [];
-  for (const line of body.split('\n')) {
-    if (!legacyName) {
-      const nm = line.match(/^\s*skill_name\s*[:=]\s*["']?(.*?)["']?\s*$/i);
-      if (nm) { legacyName = nm[1]; continue; }
-    }
-    if (!legacyDesc) {
-      const dm = line.match(/^\s*skill_description\s*[:=]\s*["']?(.*?)["']?\s*$/i);
-      if (dm) { legacyDesc = dm[1]; continue; }
-    }
-    lines.push(line);
-  }
+  const lines: string[] = body.split('\n');
 
   // 1) name：首个 `# ` 行；2) description：标题后首个连续 > 引用块
   let name = '';
@@ -159,10 +146,10 @@ export function parseSkillStructure(content: string): SkillStructure {
     }
     pushPreamble(rest.slice(cursor));
     return {
-      frontmatter, name: name || legacyName, description: description || stripDescPrefix(legacyDesc),
+      frontmatter, name, description,
       sections, format: 'tag',
-      nameStyle: name ? 'heading' : legacyName ? 'legacy' : 'none',
-      descStyle: description ? 'quote' : legacyDesc ? 'legacy' : 'none',
+      nameStyle: name ? 'heading' : 'none',
+      descStyle: description ? 'quote' : 'none',
     };
   }
 
@@ -184,10 +171,10 @@ export function parseSkillStructure(content: string): SkillStructure {
     });
   }
   return {
-    frontmatter, name: name || legacyName, description: description || stripDescPrefix(legacyDesc),
+    frontmatter, name, description,
     sections, format: 'heading',
-    nameStyle: name ? 'heading' : legacyName ? 'legacy' : 'none',
-    descStyle: description ? 'quote' : legacyDesc ? 'legacy' : 'none',
+    nameStyle: name ? 'heading' : 'none',
+    descStyle: description ? 'quote' : 'none',
   };
 }
 
@@ -195,18 +182,10 @@ export function parseSkillStructure(content: string): SkillStructure {
 export function serializeSkillStructure(s: SkillStructure): string {
   const out: string[] = [];
   if (s.frontmatter.trim()) out.push(s.frontmatter.trim());
-  if (s.name.trim()) {
-    out.push(s.nameStyle === 'legacy'
-      ? `skill_name: "${s.name.trim()}"`
-      : `# ${s.name.trim()}`);
-  }
+  if (s.name.trim()) out.push(`# ${s.name.trim()}`);
   if (s.description.trim()) {
-    if (s.descStyle === 'legacy') {
-      out.push(`skill_description: "${s.description.trim()}"`);
-    } else {
-      const descLines = s.description.trim().split('\n');
-      out.push(descLines.map((l, i) => (i === 0 ? `> 调用规则：${l}` : `> ${l}`)).join('\n'));
-    }
+    const descLines = s.description.trim().split('\n');
+    out.push(descLines.map((l, i) => (i === 0 ? `> 调用规则：${l}` : `> ${l}`)).join('\n'));
   }
   for (const sec of s.sections) {
     if (sec.kind === 'preamble') out.push(sec.body.trim());
@@ -214,6 +193,27 @@ export function serializeSkillStructure(s: SkillStructure): string {
     else out.push(`${sec.rawHead || `## ${sec.title}`}\n\n${sec.body.trim()}`);
   }
   return out.filter((p) => p !== '').join('\n\n') + '\n';
+}
+
+/** frontmatter 元数据只读解析（批 C）：名称/描述的单一权威 = 后端
+ * skill_docs.py 的 frontmatter 解析，前端只在无网/编辑期做同口径读取。
+ * 仅识别 `name:`/`description:` 键（与后端 _parse_doc 对齐），
+ * 不写回——修改走源码模式的 frontmatter 原文。 */
+export function frontmatterMeta(content: string): { name: string; description: string } {
+  const { frontmatter } = splitFrontmatter(content || '');
+  let name = '';
+  let description = '';
+  for (const line of frontmatter.split('\n')) {
+    if (!name) {
+      const m = line.match(/^\s*name\s*:\s*["']?(.*?)["']?\s*$/);
+      if (m) { name = m[1].trim(); continue; }
+    }
+    if (!description) {
+      const m = line.match(/^\s*description\s*:\s*["']?(.*?)["']?\s*$/);
+      if (m) { description = m[1].trim(); continue; }
+    }
+  }
+  return { name, description };
 }
 
 /** 新建 Skill 空白模板（三段式骨架） */

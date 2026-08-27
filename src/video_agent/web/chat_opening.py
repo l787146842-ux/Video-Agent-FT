@@ -37,6 +37,8 @@ from src.video_agent.web.chat_consume import (
     _consume_pending_confirmation,
     _consume_spec_wizard,
     _finalize_spec_params,
+    advance_turn_seq,
+    reconcile_stale_active_pause,
 )
 
 
@@ -212,7 +214,9 @@ def _build_meta_note(elapsed_secs: float, steps: int, applied: int) -> str:
 def _record_active_skill(svc, body: ChatRequest) -> None:
     """当前技能三本账收敛——本轮实际激活了 Skill（skill_name/skill_slug
     可解析到已注册 Skill）就记入项目 usedSkills，不再依赖消息携带 chip；
-    usedSkills 是唯一持久事实源（localStorage 仅作跨会话记忆）。"""
+    usedSkills 是唯一持久事实源（localStorage 仅作跨会话记忆）。
+    批 C：同步写项目态 activeSkill 显式绑定（来源=用户选择），
+    后续轮次兜底归属读它而非 usedSkills 末位。"""
     name = str(getattr(body, "skill_name", "") or "").strip()
     slug = str(getattr(body, "skill_slug", "") or "").strip()
     if not name and not slug:
@@ -229,6 +233,7 @@ def _record_active_skill(svc, body: ChatRequest) -> None:
             logger.warning(f"[ChatService] 按名称解析 Skill slug 失败: {e}")
     if slug:
         svc.record_used_skill(slug)
+        svc.set_active_skill(slug, "user")
 
 
 async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_studio_context: bool):
@@ -248,6 +253,12 @@ async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_stud
     pause_value = str((getattr(body, "pause_response", None) or {}).get("value") or "")
     if use_studio_context:
         async with svc.lock:
+            # 轮始计账与自愈对账（批 C）：先递增轮次序号，再退役过期残留
+            # 暂停卡（存量死态/超阈未消费），避免模型永远停在旧阶段；
+            # 本轮若正回应活跃卡（pause_id 匹配）则不自愈，归消费链处理
+            advance_turn_seq(svc)
+            reconcile_stale_active_pause(
+                svc, pause_response=getattr(body, "pause_response", None))
             # 三通道分离 C：点选回携 value 传入，命中系统继续选项时机械生成下一步指令；
             # 三态消费（ADR-0006）：用户原文与结构化回携同传，供
             # accept/decline/cancel-supersede 分类与 trace 留痕

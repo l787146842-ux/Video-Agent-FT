@@ -8,6 +8,7 @@ import { showToast } from '@/stores/toast';
 import { agentProvider, agentModel } from '@/stores/agent-prefs';
 import {
   parseSkillStructure, serializeSkillStructure, sanitizeSkillSlug, blankSkillTemplate,
+  frontmatterMeta,
 } from '@/lib/skill-structure';
 
 /**
@@ -116,7 +117,8 @@ export async function saveDraft(): Promise<void> {
   const raw = draftRaw();
   let slug = selectedSlug();
   if (!slug) {
-    const base = sanitizeSkillSlug(parseSkillStructure(raw).name);
+    // 名称权威：正文 `# ` 标题优先，无则回落 frontmatter 元数据（批 C）
+    const base = sanitizeSkillSlug(parseSkillStructure(raw).name || frontmatterMeta(raw).name);
     if (!base) {
       showToast('Skill 名称不合法，无法生成标识', 'error');
       return;
@@ -139,8 +141,14 @@ export async function saveDraft(): Promise<void> {
 /** 另存为副本：标题追加（副本）后存为新 Skill */
 export async function saveSkillCopy(raw: string): Promise<void> {
   const s = parseSkillStructure(raw);
-  const baseName = `${s.name || '未命名 Skill'}（副本）`;
+  // 原名：正文标题优先，无则回落 frontmatter 元数据（批 C）
+  const originName = s.name || frontmatterMeta(raw).name || '未命名 Skill';
+  const baseName = `${originName}（副本）`;
   s.name = baseName;
+  // 副本 frontmatter name 同步改名，保证元数据权威口径与副本标题一致
+  if (s.frontmatter && /^\s*name\s*:/m.test(s.frontmatter)) {
+    s.frontmatter = s.frontmatter.replace(/^(\s*name\s*:\s*).*/m, `$1${baseName}`);
+  }
   const slug = uniqueSlug(sanitizeSkillSlug(baseName) || 'skill-copy');
   try {
     await saveSkillDoc(slug, serializeSkillStructure(s));

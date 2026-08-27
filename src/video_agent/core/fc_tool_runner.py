@@ -650,6 +650,10 @@ class FCToolRunner:
                             "pause_id": pause_id_issued,
                             "message": _final_pause_message,
                             "options": list(ledger.confirmation_options or []),
+                            # 发行轮次戳（批 C）：供轮始自愈对账计算卡龄，
+                            # 超阈未消费的残留卡自动退役（防永远停在旧阶段）
+                            "issued_turn_seq": int(
+                                _svc_pw.state_dict.get("turn_seq") or 0),
                         },
                     }, flush=True)
                 tracer.record_control_flow(

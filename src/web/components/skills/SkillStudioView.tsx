@@ -7,7 +7,7 @@ import {
   undoDraft, redoDraft, canUndo, canRedo, loadAllDocs, newDraft, resetAssistant,
   selectSkill, studioLoading,
 } from '@/stores/skill-studio';
-import { parseSkillStructure } from '@/lib/skill-structure';
+import { parseSkillStructure, frontmatterMeta } from '@/lib/skill-structure';
 import { useSplitter } from '@/hooks/use-splitter';
 import { Splitter } from '@/components/layout/Splitter';
 import { SkillStructuredView } from './SkillStructuredView';
@@ -53,12 +53,15 @@ export default function SkillStudioView() {
 
   const draftName = createMemo(() => {
     if (studioLoading()) return '…';
+    // 名称权威：正文 `# ` 标题优先，无则回落 frontmatter 元数据（批 C）
+    const draftNameOf = (raw: string) =>
+      parseSkillStructure(raw).name || frontmatterMeta(raw).name;
     // 草稿改名未保存时面包屑跟随草稿（左栏列表仍展示落盘名）
-    if (dirty()) return parseSkillStructure(draftRaw()).name || '未命名';
+    if (dirty()) return draftNameOf(draftRaw()) || '未命名';
     if (selectedSlug()) {
       return allDocs().find((d) => d.slug === selectedSlug())?.name || '';
     }
-    return parseSkillStructure(draftRaw()).name || '新建草稿';
+    return draftNameOf(draftRaw()) || '新建草稿';
   });
 
   return (

@@ -467,6 +467,9 @@ export interface ServerStateSnapshot {
   project_name?: string;
   /** 当前项目已发送给 Agent 的 Skill slug 列表（文档面板只展示这些 Skill 文档） */
   usedSkills?: string[];
+  /** 项目态活跃 Skill 绑定（批 C）：slug 空串 = 显式自由对话；
+   * 未登记过绑定的存量项目无此键（前端回落 usedSkills 旧口径） */
+  activeSkill?: { slug: string; source: 'user' | 'suggested' } | null;
   /** 多对话列表（仅元信息，E-2）；活跃对话消息由顶层 chatMessages 携带 */
   conversations?: Conversation[];
   /** 活跃对话 ID */

@@ -1,0 +1,64 @@
+/* ===== 活跃 Skill 芯片（批 C）：输入框上方绑定态/建议态 =====
+   全部走 tokens.css 变量；透明档用 color-mix 现调（tokens.css 纪律） */
+
+.active-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 2px 6px 2px 8px;
+  margin-bottom: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-info-secondary) 45%, transparent);
+  border-radius: var(--radius-sm);
+  background-color: color-mix(in srgb, var(--color-info-secondary) 10%, transparent);
+  color: var(--color-info-secondary);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+.active-skill-chip-icon { flex: none; }
+.active-skill-chip-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.active-skill-chip-source {
+  color: var(--text-dim);
+  font-size: var(--font-2xs);
+  flex: none;
+}
+.active-skill-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 1px;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--dur-fast) ease, background-color var(--dur-fast) ease;
+}
+.active-skill-chip-remove:hover {
+  color: var(--text-main);
+  background-color: var(--bg-hover);
+}
+/* 采纳按钮（建议态专用） */
+.active-skill-chip-adopt {
+  flex: none;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  background-color: color-mix(in srgb, var(--color-info-secondary) 18%, transparent);
+  color: var(--color-info-secondary);
+  font-size: var(--font-2xs);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) ease;
+}
+.active-skill-chip-adopt:hover {
+  background-color: color-mix(in srgb, var(--color-info-secondary) 30%, transparent);
+}
+/* 建议态：中性灰档区别于已激活绑定态 */
+.active-skill-chip-suggested {
+  color: var(--text-muted);
+  border-color: var(--border-color);
+  background-color: var(--bg-tertiary);
+}

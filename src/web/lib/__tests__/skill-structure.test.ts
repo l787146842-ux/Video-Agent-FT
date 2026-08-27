@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseSkillStructure, serializeSkillStructure, splitFrontmatter,
   sanitizeSkillSlug, blankSkillTemplate, stripDescPrefix, sectionMeta,
+  frontmatterMeta,
 } from '@/lib/skill-structure';
 
 const TAG_FIXTURE = `---
@@ -90,7 +91,7 @@ describe('parseSkillStructure（标题式）', () => {
   });
 });
 
-describe('旧式 skill_name/skill_description 声明行', () => {
+describe('旧式 skill_name/skill_description 声明行已退役（批 C）', () => {
   const LEGACY_FIXTURE = `---
 version: '1.0'
 ---
@@ -101,21 +102,36 @@ skill_description: "旧式描述"
 流程
 </planner>
 `;
-  it('提取 name/description 且剔出正文', () => {
+  it('不再解析为名称/描述（正文口径只认 `# ` 标题与 `>` 引用块）', () => {
     const s = parseSkillStructure(LEGACY_FIXTURE);
-    expect(s.name).toBe('旧式 Skill');
-    expect(s.description).toBe('旧式描述');
-    expect(s.nameStyle).toBe('legacy');
-    expect(s.descStyle).toBe('legacy');
-    expect(s.sections.every((x) => !x.body.includes('skill_name'))).toBe(true);
+    expect(s.name).toBe('');
+    expect(s.description).toBe('');
+    expect(s.nameStyle).toBe('none');
+    expect(s.descStyle).toBe('none');
   });
-  it('序列化写回旧式行且 round-trip 无损', () => {
-    const once = parseSkillStructure(LEGACY_FIXTURE);
-    const out = serializeSkillStructure(once);
-    expect(out).toContain('skill_name: "旧式 Skill"');
-    expect(out).toContain('skill_description: "旧式描述"');
-    expect(out).not.toContain('# 旧式 Skill');
-    expect(parseSkillStructure(out)).toEqual(once);
+  it('声明行留在正文不再剔出（结构化视图名称/描述权威 = frontmatter 元数据）', () => {
+    const s = parseSkillStructure(LEGACY_FIXTURE);
+    expect(s.sections.some((x) => x.body.includes('skill_name'))).toBe(true);
+  });
+});
+
+describe('frontmatterMeta（名称/描述展示权威，批 C）', () => {
+  it('读取 name/description 键（与后端 _parse_doc 同口径）', () => {
+    const content = `---
+name: 演示 Skill
+description: 需要演示时调用
+---
+
+# 正文标题
+`;
+    expect(frontmatterMeta(content)).toEqual({ name: '演示 Skill', description: '需要演示时调用' });
+  });
+  it('带引号值去引号', () => {
+    const m = frontmatterMeta(`---\nname: "引号名"\ndescription: '引号描述'\n---\n`);
+    expect(m).toEqual({ name: '引号名', description: '引号描述' });
+  });
+  it('无 frontmatter 返回空', () => {
+    expect(frontmatterMeta('# 仅正文')).toEqual({ name: '', description: '' });
   });
 });
 

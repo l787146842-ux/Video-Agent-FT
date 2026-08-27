@@ -255,6 +255,9 @@ export const storyboardActions = {
       if (Array.isArray(snapshot.assets)) s.assets = snapshot.assets;
       if (Array.isArray(snapshot.documents)) s.documents = snapshot.documents;
       if (Array.isArray(snapshot.usedSkills)) s.usedSkills = snapshot.usedSkills;
+      // 项目态活跃 Skill 绑定（批 C）：键在场即同步（含摘除态空 slug）；
+      // 存量项目无此键时保留本地态（回落旧口径）
+      if ('activeSkill' in snapshot) s.activeSkill = snapshot.activeSkill || null;
       if (snapshot.project_name) s.projectName = snapshot.project_name;
       if (snapshot.project_id) s.projectId = snapshot.project_id;
       if (typeof snapshot.board_version === 'number') s.boardVersion = snapshot.board_version;
@@ -289,6 +292,8 @@ export const storyboardActions = {
       s.assets = snapshot.assets || [];
       s.documents = snapshot.documents || [];
       s.usedSkills = snapshot.usedSkills || [];
+      // 项目切换：新项目无绑定登记即回落自由对话（建议值另由 agent-prefs 呈现）
+      s.activeSkill = snapshot.activeSkill || null;
       s.projectName = snapshot.project_name || '';
       s.projectId = snapshot.project_id || '';
       if (typeof snapshot.board_version === 'number') s.boardVersion = snapshot.board_version;

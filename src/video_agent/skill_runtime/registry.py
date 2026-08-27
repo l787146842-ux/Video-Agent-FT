@@ -618,14 +618,19 @@ def skill_prompt_en_categories(skill_name: str) -> List[str]:
 
 
 def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
-    """项目最近使用的 Skill 兜底：请求未携带 Skill 名时，
-    回退 usedSkills 末位，保证后续轮次（继续/拆分分镜）仍绑定同一执行器。
+    """项目当前 Skill 归属兜底：请求未携带 Skill 名时，优先读项目态显式
+    绑定 activeSkill（批 C：空串 = 显式自由对话，不再回落末位）；未登记过
+    绑定的存量项目保持旧口径回落 usedSkills 末位，保证后续轮次（继续/
+    拆分分镜）仍绑定同一执行器。
 
     这是「当前 Skill 归属」的单一实现：chat_service / planner / agent_loop
-    统一走这里，禁止各自再写一份 usedSkills 兜底（单一事实源）。
+    统一走这里，禁止各自再写一份兜底（单一事实源）。
     """
     if not isinstance(raw_state, dict):
         return ""
+    active = raw_state.get("activeSkill")
+    if isinstance(active, dict):
+        return str(active.get("slug") or "")
     used = raw_state.get("usedSkills") or []
     return str(used[-1] or "") if used else ""
 

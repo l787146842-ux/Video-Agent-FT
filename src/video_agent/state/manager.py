@@ -354,6 +354,19 @@ class StateManager(UndoRedoMixin):
             used.append(slug)
             self.save()
 
+    def set_active_skill(self, slug: str, source: str = "user") -> None:
+        """写入项目态当前活跃 Skill 绑定（批 C：激活语义归项目态）。
+
+        slug 为空串 = 显式自由对话（摘除）；source 记激活来源（用户选择/
+        建议采纳）。与 usedSkills 同属项目事实（随完整快照下发前端），
+        不走 update（避免污染 undo 栈）。
+        """
+        self._raw_state["activeSkill"] = {
+            "slug": str(slug or ""),
+            "source": "suggested" if source == "suggested" else "user",
+        }
+        self.save()
+
     def record_flow_event(self, kind: str, detail: str) -> None:
         """记录一条流程事件（截断/部分完成等事实进账本）。
 

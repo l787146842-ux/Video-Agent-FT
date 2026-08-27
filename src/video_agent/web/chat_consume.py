@@ -354,6 +354,65 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
     }
 
 
+def advance_turn_seq(svc) -> int:
+    """轮次序号递增（批 C：轮始计账）。
+
+    turn_seq 是项目态的轮次计数（顶层键，不走 update 免入 undo 栈），
+    供暂停卡戳发行轮次与轮始自愈对账计算卡龄。
+    调用方需持有 svc.lock。"""
+    seq = int(svc.state_dict.get("turn_seq") or 0) + 1
+    svc.state_dict["turn_seq"] = seq
+    svc.save_debounced()
+    return seq
+
+
+# 自愈退役阈值：暂停卡发行后超过该轮次仍未被消费即视为失效残留。
+# 轮始递增后口径：发行轮 N 的卡在 N+3 轮轮始被退役（中间两轮容错）。
+PAUSE_STALE_AFTER_TURNS = 3
+
+
+def reconcile_stale_active_pause(
+    svc, pause_response: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """轮始自愈对账（批 C）：退役过期残留的 active_pause。
+
+    失效探针（成立任一即退役）：
+    - 无发行轮次戳（存量死态，如 666 残留）；
+    - 卡龄（当前 turn_seq - issued_turn_seq）≥ PAUSE_STALE_AFTER_TURNS。
+    本轮请求正是在回应该卡（pause_id 匹配）时不自愈，让正常消费链处理。
+    退役 = reduce_interaction pop active_pause + 控制流 trace 留痕。
+    调用方需持有 svc.lock；返回是否发生了退役。"""
+    interaction = svc.state_dict.get("interaction") or {}
+    active = interaction.get("active_pause")
+    if not isinstance(active, dict):
+        return False
+    pid = str(active.get("pause_id") or "").strip()
+    if not pid:
+        return False
+    _pr_pid = str((pause_response or {}).get("pause_id") or "").strip()
+    if _pr_pid and _pr_pid == pid:
+        return False
+    turn_seq = int(svc.state_dict.get("turn_seq") or 0)
+    issued = active.get("issued_turn_seq")
+    if issued is None:
+        reason = "缺发行轮次戳（存量残留）"
+    else:
+        age = turn_seq - int(issued)
+        if age < PAUSE_STALE_AFTER_TURNS:
+            return False
+        reason = f"发行后 {age} 轮未消费（阈值 {PAUSE_STALE_AFTER_TURNS}）"
+    workflow_runtime.reduce_interaction(
+        svc, pop_flags=("active_pause",), flush=True)
+    try:
+        AgentTracer.get_instance().record_control_flow(
+            "pause_self_heal",
+            f"自愈退役：active_pause 过期残留（pause_id={pid}）—{reason}")
+    except Exception as _e:
+        logger.debug("[PauseSelfHeal] trace 留痕失败（不影响退役）: {}", _e)
+    logger.info(f"[PauseSelfHeal] 退役过期暂停卡 pause_id={pid}，{reason}")
+    return True
+
+
 def _consume_pending_confirmation(
     svc, user_text: str = "", pause_value: str = "",
     pause_response: Optional[Dict[str, Any]] = None,

@@ -7,10 +7,13 @@ import {
 /**
  * Skill 结构化行内编辑模式：名称输入框 / 描述 textarea（200 限）/
  * 各章节自适应 textarea（可展开）。修改经 onChange 上抛结构化草稿。
+ * 批 C：名称/描述的权威在 frontmatter 元数据——元数据在场时此处只读，
+ * 修改走源码模式的 frontmatter 原文。
  */
 export function SkillStructuredEdit(props: {
   struct: SkillStructure;
   onChange: (next: SkillStructure) => void;
+  meta?: { name: string; description: string };
 }) {
   const set = (patch: Partial<SkillStructure>) =>
     props.onChange({ ...props.struct, ...patch });
@@ -26,24 +29,44 @@ export function SkillStructuredEdit(props: {
         <h2 class="sks-h2">Skill调用规则</h2>
         <p class="sks-hint">当开启多个 Skill 时，告诉 AI 在什么情况下应该调用这个 Skill。</p>
         <div class="sks-label">Skill 名称</div>
-        <input
-          class="sks-input"
-          value={props.struct.name}
-          placeholder="Skill 名称"
-          onInput={(e) => set({ name: e.currentTarget.value })}
-        />
-        <div class="sks-label">Skill调用规则</div>
-        <div class="sks-edit-desc">
-          <textarea
-            class="sks-input sks-textarea"
-            rows={2}
-            maxLength={200}
-            value={props.struct.description}
-            placeholder="一句话说明何时使用本 Skill"
-            onInput={(e) => set({ description: e.currentTarget.value })}
+        <Show
+          when={!props.meta?.name}
+          fallback={(
+            <>
+              <div class="sks-box">{props.meta?.name}</div>
+              <p class="sks-hint">名称由文档头部元数据声明，请在源码模式修改。</p>
+            </>
+          )}
+        >
+          <input
+            class="sks-input"
+            value={props.struct.name}
+            placeholder="Skill 名称"
+            onInput={(e) => set({ name: e.currentTarget.value })}
           />
-          <span class="sks-count">{props.struct.description.length}/200</span>
-        </div>
+        </Show>
+        <div class="sks-label">Skill调用规则</div>
+        <Show
+          when={!props.meta?.description}
+          fallback={(
+            <>
+              <div class="sks-box">{props.meta?.description}</div>
+              <p class="sks-hint">调用规则由文档头部元数据声明，请在源码模式修改。</p>
+            </>
+          )}
+        >
+          <div class="sks-edit-desc">
+            <textarea
+              class="sks-input sks-textarea"
+              rows={2}
+              maxLength={200}
+              value={props.struct.description}
+              placeholder="一句话说明何时使用本 Skill"
+              onInput={(e) => set({ description: e.currentTarget.value })}
+            />
+            <span class="sks-count">{props.struct.description.length}/200</span>
+          </div>
+        </Show>
       </section>
       <For each={props.struct.sections}>
         {(sec, i) => (

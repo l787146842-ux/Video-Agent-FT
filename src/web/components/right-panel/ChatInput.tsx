@@ -11,6 +11,7 @@ import { openDocsPanel } from '@/stores/docs';
 import { ChatInputToolbar } from './ChatInputToolbar';
 import { ChatInputEditor } from './ChatInputEditor';
 import { PendingAttachmentBar } from './PendingAttachmentBar';
+import { ActiveSkillChip } from './ActiveSkillChip';
 import { QueuedMessagesBar } from './QueuedMessagesBar';
 import { Lightbox } from '@/components/Lightbox';
 
@@ -83,6 +84,9 @@ export function ChatInput() {
         }}
       >
         <QueuedMessagesBar onEdit={ed.backfillText} />
+
+        {/* 活跃 Skill 芯片（批 C）：项目态绑定/建议采纳，摘除回自由对话 */}
+        <ActiveSkillChip />
 
         <PendingAttachmentBar />
 
