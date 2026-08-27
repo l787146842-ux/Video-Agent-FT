@@ -257,10 +257,12 @@ async def run_window(
             for t in tasks:
                 _quiet_cancel(t)
             await _record_cancelled(name, args, tool_calls[i], i, t0, on_event)
-            batch_checkpoint.maybe_rollback_on_cancel(
-                StateManager.get_instance(), batch_cp, cancelled_tool=name,
-                ledger=ledger, tool_names=batch_tools,
-                tool_manager=runner.tool_manager)
+            # 回滚实际发生时失效轮内幂等账本（与串行主循环取消分支同口径）
+            if batch_checkpoint.maybe_rollback_on_cancel(
+                    StateManager.get_instance(), batch_cp, cancelled_tool=name,
+                    ledger=ledger, tool_names=batch_tools,
+                    tool_manager=runner.tool_manager):
+                runner._idempotency.reset()
             raise
         except asyncio.CancelledError:
             for t in tasks:

@@ -13,6 +13,7 @@ import pytest
 from src.video_agent.core import batch_checkpoint as bc
 from src.video_agent.core.fc_reconcile import BatchLedger
 from src.video_agent.state.manager import StateManager
+from src.video_agent.tools.base import ToolResult
 
 
 # ---------- 风险分级桩（不新造名单：只模拟 ToolManager.get_tool_risk 接口） ----------
@@ -36,6 +37,7 @@ class _FakeSvc:
     def __init__(self, state=None, restore_error=None):
         self.state = state if state is not None else {"keyElements": [], "marker": "pre"}
         self.restore_error = restore_error
+        self.restore_refuse = False
         self.restored = []
 
     def snapshot_state(self):
@@ -46,6 +48,8 @@ class _FakeSvc:
             raise self.restore_error
         self.restored.append(snapshot)
         self.state = copy.deepcopy(snapshot)
+        if self.restore_refuse:
+            return False  # 版本闸放弃落盘：内存已回滚、磁盘未落
         return True
 
 
@@ -119,6 +123,35 @@ def test_should_rollback_stub_without_risk_capability_excludes():
 class _RiskStubBroken:
     def get_tool_risk(self, name):
         raise RuntimeError("注册表异常")
+
+
+# ---------- 回滚触发边界：未执行型拒收判定（修 1） ----------
+
+
+def test_is_unexecuted_rejection_gate_error():
+    """闸机拒收（gate_error 非 None）从未执行 → 不触发回滚判定。"""
+    ok_result = ToolResult(success=True, data={})
+    fail_result = ToolResult(success=False, error="任意失败")
+    assert bc.is_unexecuted_rejection("风险工具需确认", ok_result) is True
+    assert bc.is_unexecuted_rejection("阶段前置不满足", fail_result) is True
+
+
+def test_is_unexecuted_rejection_validation_code():
+    """入参校验型拒收（error_code=validation：未知字段/白名单/格式非法）零副作用。"""
+    rejected = ToolResult(success=False, error="Validation Error: 未知字段",
+                          error_code="validation", retryable=False)
+    assert bc.is_unexecuted_rejection(None, rejected) is True
+
+
+def test_is_unexecuted_rejection_executed_failure_not_excluded():
+    """确实执行过且失败的结果（未标注/非 validation 码）仍进回滚判定。"""
+    plain = ToolResult(success=False, error="落盘失败")
+    upstream = ToolResult(success=False, error="供应商失败",
+                          error_code="upstream", retryable=True)
+    assert bc.is_unexecuted_rejection(None, plain) is False
+    assert bc.is_unexecuted_rejection(None, upstream) is False
+    # 非 ToolResult 结果（测试 stub）不崩且不豁免（保守：进判定）
+    assert bc.is_unexecuted_rejection(None, object()) is False
 
 
 # ---------- 批首检查点触发条件与批内工具名提取 ----------
@@ -213,6 +246,19 @@ def test_maybe_rollback_failure_logs_and_does_not_reraise():
     ok = bc.maybe_rollback(svc, snap, failed_tool="t", tool_names=["t"],
                            tool_manager=_RiskStub({"t": "low"}))
     assert ok is False  # 静默返回，未抛出
+
+
+def test_maybe_rollback_restore_refused_by_version_gate_reports_false():
+    """修 3：restore_snapshot 返回 False（save() 被版本闸放弃落盘）时不得虚报成功：
+    内存已回滚、磁盘未落 → 记 warning 并返回 False（接线点按未回滚处置）。"""
+    svc = _FakeSvc()
+    svc.restore_refuse = True  # 模拟版本闸放弃：内态已换、落盘被拒返回 False
+    snap = svc.snapshot_state()
+    svc.state["marker"] = "half"
+    ok = bc.maybe_rollback(svc, snap, failed_tool="t", tool_names=["t"],
+                           tool_manager=_RiskStub({"t": "low"}))
+    assert ok is False
+    assert svc.restored  # restore_snapshot 确实被调用过（失败来自落盘闸而非未执行）
 
 
 def test_maybe_rollback_on_cancel_uses_cancelled_semantics():

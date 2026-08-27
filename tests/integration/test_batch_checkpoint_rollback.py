@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """批 6 集成回归：批级检查点+条件回滚（L1 · 高风险批）。
 
-钉死三个场景（缺陷现场 = 取消留半截态）：
+钉死五个场景（缺陷现场 = 取消留半截态 + 评审修复的回滚边界）：
 ① 批内取消留半截态 → 状态回滚到批前快照（GenerationCancelled 照常穿透上抛）；
 ② 纯状态写批失败 → 回滚；
-③ 含外部副作用批（文档写入成功）后续失败 → 不回滚只留痕。
+③ 含外部副作用批（文档写入成功）后续失败 → 不回滚只留痕；
+④ 批内先成功后拒收（闸机拒收/入参校验拒收）→ 不回滚，成功写入保留；
+⑤ 执行失败 → 回滚且中止本批后续调用，幂等账本失效（同键重提重新执行）。
+另钉修 2 时序：非 high 桩工具写文档成功 + 后续失败 → 不回滚（doc_written 即时记账）。
 
 工具桩经 StateManager.update 写状态（Rule 3 受控写面），风险分级走
 既有 get_tool_risk 接口语义，不新造副作用名单。
@@ -179,3 +182,190 @@ async def test_low_risk_readonly_batch_no_checkpoint_no_rollback(svc):
     result = await runner.execute(_batch(("read_only", {})))
     assert result.applied == 0
     _assert_state_equals(svc, before)
+
+
+# ---------- ④ 拒收不触发回滚（修 1：回滚触发边界） ----------
+
+
+def _append_ke(svc, gid):
+    svc.update("keyElements", svc.state_dict.get("keyElements", []) + [
+        {"id": gid, "title": f"组-{gid}", "drafts": []}])
+
+
+async def test_success_then_validation_rejection_no_rollback(svc):
+    """批内先成功写入再遇入参校验型拒收（error_code=validation，从未执行）：
+    不回滚，先前成功写入保留（拒收零副作用，与已回喂的成功状态一致）。"""
+    async def write_ok(args):
+        _append_ke(svc, "g-keep")
+        return ToolResult(success=True, data={})
+
+    async def validation_reject(args):
+        return ToolResult(
+            success=False,
+            error="Validation Error: 入参含未知字段（已拒收，未执行）: foo",
+            error_code="validation", retryable=False)
+
+    tm = _ScriptedToolManager()
+    tm.add(_FakeTool("state_write_med", "medium"), write_ok)
+    tm.add(_FakeTool("patch_stub", "medium"), validation_reject)
+    runner = FCToolRunner(tool_manager=tm)
+
+    result = await runner.execute(
+        _batch(("state_write_med", {}), ("patch_stub", {})))
+    assert result.applied == 1
+    assert result.tool_results[1]["ok"] is False
+    assert any(g.get("id") == "g-keep"
+               for g in svc.state_dict.get("keyElements", [])), (
+        "入参校验拒收触发了回滚，抹掉了同批先前成功写入")
+
+
+async def test_success_then_gate_rejection_no_rollback(svc, monkeypatch):
+    """批内先成功写入再遇闸机拒收（gate_error，工具体未进入）：不回滚。
+    闸机链经 monkeypatch 注入 medium 风险工具的拒因（避开 high 排除条件干扰）。"""
+    from src.video_agent.core import fc_gates
+
+    _real_chain = fc_gates.run_gate_chain
+
+    def _chain_with_reject(ctx, name, args, *, paused_this_batch):
+        if name == "gate_reject_med":
+            return fc_gates.GateChainResult(error="闸机拒收：阶段前置条件不满足")
+        return _real_chain(ctx, name, args, paused_this_batch=paused_this_batch)
+
+    monkeypatch.setattr(fc_gates, "run_gate_chain", _chain_with_reject)
+
+    invoked = []
+
+    async def write_ok(args):
+        _append_ke(svc, "g-gate-keep")
+        return ToolResult(success=True, data={})
+
+    async def should_not_run(args):
+        invoked.append("body")
+        return ToolResult(success=True, data={})
+
+    tm = _ScriptedToolManager()
+    tm.add(_FakeTool("state_write_med", "medium"), write_ok)
+    tm.add(_FakeTool("gate_reject_med", "medium"), should_not_run)
+    runner = FCToolRunner(tool_manager=tm)
+
+    result = await runner.execute(
+        _batch(("state_write_med", {}), ("gate_reject_med", {})))
+    assert result.applied == 1
+    assert invoked == []  # 闸机拒收：工具体未执行（零副作用）
+    assert any(g.get("id") == "g-gate-keep"
+               for g in svc.state_dict.get("keyElements", [])), (
+        "闸机拒收触发了回滚，抹掉了同批先前成功写入")
+    # 拒收后本批仍可继续执行（拒收不中止批：仅回滚才中止）
+    assert result.tool_results[1]["ok"] is False
+
+
+# ---------- ⑤ 执行失败 → 回滚且中止后续调用（修 1 后半） ----------
+
+
+async def test_failure_rollback_aborts_rest_of_batch(svc):
+    """批内先成功后执行失败：回滚抹掉先前写入，且中止本批后续调用（仿问即停：
+    不得在已恢复状态上继续执行产生矛盾回喂）。"""
+    before = svc.snapshot_state()
+    invoked = []
+
+    async def write_ok(args):
+        invoked.append("first")
+        _append_ke(svc, "g-wiped")
+        return ToolResult(success=True, data={})
+
+    async def write_then_fail(args):
+        invoked.append("failer")
+        _append_ke(svc, "g-half")
+        return ToolResult(success=False, error="执行中落盘失败")
+
+    async def should_not_run(args):
+        invoked.append("after")
+        return ToolResult(success=True, data={})
+
+    tm = _ScriptedToolManager()
+    tm.add(_FakeTool("state_write_med", "medium"), write_ok)
+    tm.add(_FakeTool("write_fail_med", "medium"), write_then_fail)
+    tm.add(_FakeTool("write_after_med", "medium"), should_not_run)
+    runner = FCToolRunner(tool_manager=tm)
+
+    result = await runner.execute(_batch(
+        ("state_write_med", {}), ("write_fail_med", {}), ("write_after_med", {})))
+    assert "after" not in invoked  # 回滚发生后本批后续调用中止（未执行）
+    assert all(g.get("id") not in ("g-wiped", "g-half")
+               for g in svc.state_dict.get("keyElements", [])), "回滚未抹掉半截写入"
+    assert result.applied == 1
+    assert len(result.tool_results) == 2  # 失败后中止：第三个调用无回喂条目
+    _assert_state_equals(svc, before)
+
+
+# ---------- 修 2：doc_written 判定时序（即时记账） ----------
+
+
+def _append_doc(svc, name):
+    svc.update("documents", svc.state_dict.get("documents", []) + [
+        {"id": f"doc-{name}", "name": name, "content": "正文"}])
+
+
+async def test_nonhigh_doc_write_then_failure_no_rollback(svc):
+    """修 2 时序回归：非 high 桩工具（medium）写文档成功 + 后续执行失败：
+    判定点读得到文档写标志 → 不回滚，文档保留（若批末才赋值则误回滚）。"""
+    async def write_doc(args):
+        _append_doc(svc, "时序文档.md")
+        return ToolResult(success=True, data={})
+
+    async def fail_now(args):
+        return ToolResult(success=False, error="后续步骤失败")
+
+    tm = _ScriptedToolManager()
+    # 两个工具均非 high：若账本缺文档写标志，保守条件会放行回滚 → 误抹文档
+    tm.add(_FakeTool("document_write", "medium"), write_doc)
+    tm.add(_FakeTool("state_write_med", "medium"), fail_now)
+    runner = FCToolRunner(tool_manager=tm)
+
+    result = await runner.execute(
+        _batch(("document_write", {"name": "时序文档.md"}), ("state_write_med", {})))
+    assert result.applied == 1
+    assert any(d.get("name") == "时序文档.md"
+               for d in svc.state_dict.get("documents", [])), (
+        "doc_written 时序缺口复发：判定点读不到文档写标志导致误回滚")
+    assert result.docs_written == ["时序文档.md"]
+
+
+# ---------- 修 4：回滚后失效轮内幂等账本 ----------
+
+
+async def test_rollback_resets_idempotency_ledger(svc):
+    """回滚实际发生 → 轮内幂等账本失效：同键重提不命中陈旧成功缓存，重新执行补写。"""
+    calls = {"n": 0}
+
+    async def write_ok(args):
+        calls["n"] += 1
+        _append_ke(svc, f"g-idem-{calls['n']}")
+        return ToolResult(success=True, data={})
+
+    async def fail_once_then_ok(args):
+        # 首次失败触发回滚；第二批不再失败（行为按调用次数脚本化）
+        if calls["n"] == 1:
+            return ToolResult(success=False, error="首次执行失败")
+        return ToolResult(success=True, data={})
+
+    tm = _ScriptedToolManager()
+    tm.add(_FakeTool("state_write_med", "medium"), write_ok)
+    tm.add(_FakeTool("write_fail_med", "medium"), fail_once_then_ok)
+    runner = FCToolRunner(tool_manager=tm)
+
+    # 批 1：键 k1 写成功 → 后续失败触发回滚（账本失效）
+    r1 = await runner.execute(_batch(
+        ("state_write_med", {"idempotency_key": "k1"}),
+        ("write_fail_med", {})))
+    assert r1.applied == 1
+    assert all(g.get("id") != "g-idem-1"
+               for g in svc.state_dict.get("keyElements", []))
+    # 批 2（同一轮）：同键重提若命中陈旧缓存则不会补写；失效后应重新执行
+    r2 = await runner.execute(_batch(
+        ("state_write_med", {"idempotency_key": "k1"})))
+    assert r2.applied == 1
+    assert calls["n"] == 2  # 未命中陈旧成功缓存：真实补写发生
+    assert any(g.get("id") == "g-idem-2"
+               for g in svc.state_dict.get("keyElements", [])), (
+        "回滚后同键命中陈旧成功缓存，写入被回滚却永不补写")

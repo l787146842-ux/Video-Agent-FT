@@ -24,11 +24,26 @@ __all__ = [
     "take_checkpoint",
     "batch_tool_names",
     "batch_has_risky_tool",
+    "is_unexecuted_rejection",
     "should_rollback",
     "maybe_rollback",
     "maybe_rollback_on_failure",
     "maybe_rollback_on_cancel",
 ]
+
+
+def is_unexecuted_rejection(gate_error: Optional[str], result: Any) -> bool:
+    """回滚触发边界判定：未执行型拒收零副作用，不触发回滚。
+
+    两类来源都从未执行、无任何状态写入：
+    - 闸机拒收（gate_error 非 None，工具体未进入）；
+    - 入参校验型拒收（error_code="validation"：未知字段/白名单外字段/
+      格式非法，写入动作发生前即原子拒收）。
+    仅「确实执行过且失败」的结果才进入回滚判定（接线点据此分流）。
+    """
+    if gate_error is not None:
+        return True
+    return str(getattr(result, "error_code", "") or "") == "validation"
 
 
 def batch_tool_names(response: Any) -> list:
@@ -111,7 +126,13 @@ def maybe_rollback(
     tool_names: Iterable[str] = (),
     tool_manager: Any = None,
 ) -> bool:
-    """按保守条件执行回滚；回滚自身失败只记日志不二次抛出。返回是否实际回滚。"""
+    """按保守条件执行回滚；回滚自身失败只记日志不二次抛出。返回是否实际回滚。
+
+    时序契约：调用方（接线点）须在副作用发生时即时把成败标志记入账本
+    （与生成族记账同节拍），判定时才读得到——批末才赋值的字段此处恒为空。
+    取消分支同理：取消穿透时供应商任务通常尚未提交（生成族已即时记
+    gen_failed_err 排除），回滚内部态为期望行为。
+    """
     if snapshot is None:
         return False
     gen_succeeded = bool(getattr(ledger, "gen_succeeded", False))
@@ -132,7 +153,16 @@ def maybe_rollback(
         return False
     try:
         svc = svc or StateManager.get_instance()
-        svc.restore_snapshot(snapshot)
+        restored = svc.restore_snapshot(snapshot)
+        if not restored:
+            # save() 被版本闸放弃落盘：内存已回滚、磁盘未落，不得虚报成功；
+            # 返回 False 让接线点按「未回滚」处置（幂等账本失效/中止批不适用）
+            logger.warning(
+                "[BatchCheckpoint] 批内{}（{}）回滚写入被版本闸放弃"
+                "（磁盘有更新数据），内存态与磁盘不一致",
+                reason, failed_tool or "unknown",
+            )
+            return False
         logger.warning(
             "[BatchCheckpoint] 批内{}（{}）且无外部副作用标志，"
             "状态已回滚至批前检查点", reason, failed_tool or "unknown",

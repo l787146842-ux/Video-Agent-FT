@@ -60,7 +60,7 @@ class ConfirmDraftInput(BaseModel):
 
 class MediaToChatInput(BaseModel):
     draft_ids: List[str] = Field(default_factory=list, description="要插入的草稿 ID 数组（与 target 二选一，优先）")
-    target: str = Field("", description="批量目标: current | all | all_keyElements | all_shots | all_audio")
+    target: str = Field("", description="批量目标: all | all_keyElements | all_shots | all_audio（与 draft_ids 二选一）")
     media_type: str = Field("", description="媒体类型过滤: image | video | audio（可选）")
     limit: int = Field(0, description="插入数量上限（0 = 系统默认）")
 
@@ -261,6 +261,16 @@ class StoryboardMediaToChatTool(BaseTool):
                 "all_audio": (CAT_AUDIO_ITEMS,),
                 "all": ALL_CATEGORIES_TUPLE,
             }.get(target, ())
+            # target 结构化校验（与同族 view_storyboard_media 同口径）：
+            # draft_ids/target 均未命中合法取值时结构化报错，附合法取值清单，
+            # 不落入「没找到带媒体的目标草稿」误导回喂（如传 current 等不支持值）
+            if not cat_keys:
+                return ToolResult(
+                    success=False,
+                    error="参数无效：请传 draft_ids（草稿 ID 数组）或 "
+                          "target（all | all_keyElements | all_shots | all_audio）",
+                    error_code="validation", retryable=False,
+                )
             for cat_key in cat_keys:
                 for group in state.get(cat_key, []):
                     for draft in group.get("drafts", []):

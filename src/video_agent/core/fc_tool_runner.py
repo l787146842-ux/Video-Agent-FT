@@ -434,8 +434,13 @@ class FCToolRunner:
                         stage=stage_label_for_tool(name),
                         result_summary="已被用户取消", args=args_preview,
                     )
-                    # 取消留半截态修复（批 6）：穿透上抛前过保守条件判定（不吞异常）
-                    batch_checkpoint.maybe_rollback_on_cancel(StateManager.get_instance(), _batch_cp, cancelled_tool=name, ledger=ledger, tool_names=_batch_tools, tool_manager=self.tool_manager)
+                    # 取消留半截态修复（批 6）：穿透上抛前过保守条件判定（不吞异常）；
+                    # 回滚实际发生时失效轮内幂等账本（防同键重试命中陈旧成功缓存）
+                    if batch_checkpoint.maybe_rollback_on_cancel(
+                            StateManager.get_instance(), _batch_cp, cancelled_tool=name,
+                            ledger=ledger, tool_names=_batch_tools,
+                            tool_manager=self.tool_manager):
+                        self._idempotency.reset()
                     raise
             _tool_ms = _ro_hit.elapsed_ms if _ro_hit is not None else (time.monotonic() - _tool_t0) * 1000
             # 幂等键记账（T4）：非空键的执行结果（含失败）入轮内账本；
@@ -552,9 +557,12 @@ class FCToolRunner:
                     _pause_break = True
                 if name in ("document_write", "write_document"):
                     doc_written = True
+                    # 即时同步进账本（与生成族记账同节拍）：循环中段的回滚判定读得到文档写标志，不留时序缺口；批末重复赋值同值无害
+                    ledger.doc_written = True
                     doc_name = str(args.get("name") or args.get("key") or "").strip()
                     if doc_name:
                         docs_written.append(doc_name)
+                        ledger.docs_written = list(docs_written)
                         # 文档卡片即写即显，不等整轮 done。
                         # 前端按名称去重，done payload 的 documents_written 仍携带全量
                         # 供服务端持久化与刷新重建。
@@ -665,8 +673,17 @@ class FCToolRunner:
                         retryable=bool(getattr(result, "retryable", False)),
                     ),
                 })
-                # 批级检查点（批 6）：失败分支经保守条件判定回滚（判定全在核心新模块）；取消分支同理在穿透上抛前判定（见本文件上方 GenerationCancelled 处）
-                batch_checkpoint.maybe_rollback_on_failure(StateManager.get_instance(), _batch_cp, failed_tool=name, ledger=ledger, tool_names=_batch_tools, tool_manager=self.tool_manager)
+                # 批级检查点（批 6）：回滚触发边界排除未执行型拒收（闸机拒收/入参校验拒收零副作用，判定在 core/batch_checkpoint.py）；
+                # 仅确实执行过且失败的调用才过保守条件判定。回滚实际发生：失效轮内幂等账本（防同键命中陈旧成功缓存）
+                # 并中止本批后续调用（仿 _pause_break：不得在已恢复状态上继续执行产生矛盾回喂）；
+                # 取消分支同理在穿透上抛前判定（见本文件上方 GenerationCancelled 处）
+                if not batch_checkpoint.is_unexecuted_rejection(gate_error, result):
+                    if batch_checkpoint.maybe_rollback_on_failure(
+                            StateManager.get_instance(), _batch_cp, failed_tool=name,
+                            ledger=ledger, tool_names=_batch_tools,
+                            tool_manager=self.tool_manager):
+                        self._idempotency.reset()
+                        break
         # 批末对账（fc_reconcile）：客观账本为主、措辞兜底
         ledger.doc_written = doc_written
         ledger.docs_written = docs_written
