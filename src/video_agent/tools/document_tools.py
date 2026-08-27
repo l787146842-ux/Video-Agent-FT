@@ -417,11 +417,12 @@ class ImageGenerateTool(BaseTool):
         submit_image_task = gen.submit_image_task
         wait_image_task = gen.wait_image_task
 
-        # 聊天框出图开关：关 = Agent 在对话中不主动触发生图
+        # 聊天框出图开关：关 = Agent 在对话中不主动触发生图；
+        # T5：开关关闭属环境配置问题，原参重试无效，需用户到全局设置开启后重试
         if not settings.chat_image_enabled:
             return ToolResult(success=False, error=(
                 "聊天框出图已在全局设置中关闭，如需生图请先在顶栏「全局设置」开启「聊天框出图」。"
-            ))
+            ), error_code="other")
 
         svc = StateManager.get_instance()
         state = svc.state_dict
@@ -446,7 +447,11 @@ class ImageGenerateTool(BaseTool):
                             targets.append((g, d, "shot" if cat == CAT_SHOTS else "keyElement"))
 
         if not targets:
-            return ToolResult(success=False, error="未找到有提示词的草稿")
+            # T5：目标参数未命中带提示词的草稿，属入参定位问题（改参可重试）
+            return ToolResult(
+                success=False, error="未找到有提示词的草稿",
+                error_code="validation", retryable=False,
+            )
 
         # 供应商回退链（唯一权威源=全局设置）：LLM 参数 → 全局设置 → 草稿自带 providerId
         # → 配置中首个可用生图供应商；LLM 常传空 provider，不回退会报「供应商 '' 未配置」
@@ -476,9 +481,10 @@ class ImageGenerateTool(BaseTool):
                 model = model or fb_model
                 logger.info(f"[image_generate] provider 未指定，回退配置首个可用生图供应商: {provider_id}/{model}")
         if not provider_id:
+            # T5：供应商回退链全部落空属环境配置问题，原参重试无效，需先配置生图供应商再重试
             return ToolResult(success=False, error=(
                 "当前工作区未配置任何可用的生图供应商，请先在 API 配置页添加供应商与 API Key。"
-            ))
+            ), error_code="other")
 
         # 规格制作参数：图片分辨率由规格文档优先，
         # 其次草稿自带，最后全局默认（回退链与供应商链口径一致）

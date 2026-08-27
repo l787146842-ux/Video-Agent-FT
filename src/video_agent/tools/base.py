@@ -38,11 +38,18 @@ class ToolResult(BaseModel):
     - data: 业务数据（供 LLM 或前端使用）
     - error: 失败时的错误信息
     - events: 执行过程中产生的结构化事件（可选，供前端实时反馈）
+    - error_code: 结构化错误轴（T5）——失败路径的分类码，与
+      core/fc_feedback.classify_tool_failure 口径对齐：validation=参数校验失败；
+      exception=未捕获异常兜底；upstream=上游/生成失败；timeout=超时；
+      canvas=画布读写失败；空串=未标注（消费端回落文本分类），成功结果恒为空。
+    - retryable: 生产端标注该失败是否可重试（供失败回喂文案微调；默认 False）
     """
     success: bool
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     events: List[ToolEvent] = Field(default_factory=list)
+    error_code: str = ""
+    retryable: bool = False
 
 class BaseTool(ABC):
     name: str = ""

@@ -248,7 +248,11 @@ class CanvasUpdateNodeTool(BaseTool):
         _, _ = await _load_and_save(params.canvas_id, mutate)
 
         if not found:
-            return ToolResult(success=False, error=f"节点 '{params.node_id}' 不存在")
+            # T5：画布节点不存在属画布侧定位失败，原参重试无效（换 node_id 才有意义）
+            return ToolResult(
+                success=False, error=f"节点 '{params.node_id}' 不存在",
+                error_code="canvas", retryable=False,
+            )
         return ToolResult(success=True, data={"node_id": params.node_id, "updated": True})
 
 
@@ -281,7 +285,11 @@ class CanvasDeleteNodeTool(BaseTool):
         _, _ = await _load_and_save(params.canvas_id, mutate)
 
         if not found:
-            return ToolResult(success=False, error=f"节点 '{params.node_id}' 不存在")
+            # T5：画布节点不存在属画布侧定位失败，原参重试无效（换 node_id 才有意义）
+            return ToolResult(
+                success=False, error=f"节点 '{params.node_id}' 不存在",
+                error_code="canvas", retryable=False,
+            )
         return ToolResult(success=True, data={"node_id": params.node_id, "deleted": True})
 
 

@@ -265,16 +265,27 @@ def classify_tool_failure(error_text: str) -> str:
     return "other"
 
 
-def compose_failure_feedback(name: str, error_text: str, fail_count: int) -> str:
+def compose_failure_feedback(
+    name: str, error_text: str, fail_count: int,
+    error_code: str = "", retryable: bool = False,
+) -> str:
     """执行器失败结构化回喂（层 8）：客观报告 + 单句下一步。
 
+    T5 结构化错误轴：生产端已标注 error_code 时直接用作分类前缀，
+    未标注回落文本分类（classify_tool_failure）；retryable 微调重试建议。
     同工具第二次失败升级建议为「不得重试、向用户说明」，
     掐掉主模型盲重试空转。
     """
-    kind = classify_tool_failure(error_text)
+    kind = str(error_code or "") or classify_tool_failure(error_text)
     raw = str(error_text or "未知错误")[:120]
     if fail_count >= 2:
         hint = "不得再次重试该工具，向用户说明原因并给出替代选择"
+    elif kind == "validation":
+        hint = "入参/定位问题：按错误信息修正入参后再试，不得用原参重试"
+    elif retryable:
+        hint = "生产端标注该失败可重试：可用原参或调整参数重试一次"
+    elif kind in ("canvas", "other"):
+        hint = "该失败不宜原参盲重试，先向用户说明困难或换替代方案"
     else:
         hint = "可调整参数后重试一次，或先向用户说明困难"
     return f"[{kind}] {raw} 建议：{hint}"

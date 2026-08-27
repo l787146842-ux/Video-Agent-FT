@@ -618,6 +618,10 @@ class FCToolRunner:
                     "name": name, "ok": False,
                     "error": compose_failure_feedback(
                         name, result.error, self._tool_fail_counts[name],
+                        # T5 结构化错误轴：生产端已标注则透传分类码/可重试标志，
+                        # 未标注回落文本分类（getattr 兼容测试 stub 返回非 ToolResult）
+                        error_code=str(getattr(result, "error_code", "") or ""),
+                        retryable=bool(getattr(result, "retryable", False)),
                     ),
                 })
         # 批末对账（fc_reconcile）：客观账本为主、措辞兜底

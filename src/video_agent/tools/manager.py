@@ -139,7 +139,11 @@ class ToolManager:
             try:
                 params = schema_class.model_validate(kwargs)
             except Exception as e:
-                return ToolResult(success=False, error=f"Validation Error: {str(e)}")
+                # T5 结构化错误轴：入参校验失败不可用原参重试，须改参
+                return ToolResult(
+                    success=False, error=f"Validation Error: {str(e)}",
+                    error_code="validation", retryable=False,
+                )
 
             return await tool.aexecute(params)
         except GenerationCancelled:
@@ -147,4 +151,5 @@ class ToolManager:
             raise
         except Exception as e:
             logger.error(f"Error invoking tool {name}: {e}")
-            return ToolResult(success=False, error=str(e))
+            # T5 结构化错误轴：未捕获异常兜底（未标可重试，重试与否留待回喂侧判断）
+            return ToolResult(success=False, error=str(e), error_code="exception")

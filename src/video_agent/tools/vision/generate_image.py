@@ -27,7 +27,12 @@ class GenerateImageTool(BaseTool):
 
     async def aexecute(self, params: GenerateImageParams) -> ToolResult:
         if not (params.adapter_provider or "").strip():
-            return ToolResult(success=False, error="尚未配置生成供应商，请先到「设置」中配置生成供应商")
+            # T5：供应商未配置=入参/配置问题，改参（补 provider）后可重试
+            return ToolResult(
+                success=False,
+                error="尚未配置生成供应商，请先到「设置」中配置生成供应商",
+                error_code="validation", retryable=False,
+            )
         try:
             adapter = AdapterFactory.get_adapter("image_generation", params.adapter_provider)
             
@@ -42,7 +47,11 @@ class GenerateImageTool(BaseTool):
             )
             
             if result.status == "failed":
-                 return ToolResult(success=False, error=result.error_msg)
+                 # T5：上游明确失败，单次可再试（换参/重试一次）
+                 return ToolResult(
+                     success=False, error=result.error_msg,
+                     error_code="upstream", retryable=True,
+                 )
 
             # 同步完成的适配器（如 agy CLI 直接出图）：初始结果已带图片 URL，
             # 直接进入轮询会调到 fetch_result 拿到空列表，导致 image_urls 丢失
@@ -63,4 +72,5 @@ class GenerateImageTool(BaseTool):
             # 取消穿透：不得被错误兜底吞咽为失败结果，上抛收敛至停止分支
             raise
         except Exception as e:
-            return ToolResult(success=False, error=str(e))
+            # T5：未分类异常兜底，不标可重试（防盲重试空转）
+            return ToolResult(success=False, error=str(e), error_code="upstream")

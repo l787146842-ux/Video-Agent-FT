@@ -34,7 +34,12 @@ class GenerateVideoTool(BaseTool):
 
     async def aexecute(self, params: GenerateVideoParams) -> ToolResult:
         if not (params.adapter_provider or "").strip():
-            return ToolResult(success=False, error="尚未配置生成供应商，请先到「设置」中配置生成供应商")
+            # T5：供应商未配置=入参/配置问题，改参后可重试
+            return ToolResult(
+                success=False,
+                error="尚未配置生成供应商，请先到「设置」中配置生成供应商",
+                error_code="validation", retryable=False,
+            )
         # 同模型跨厂商降级（与 submit_video_task 同口径）：
         # 仅失败才切；模型取主厂商配置的首个视频模型，候选只收列出同名模型的厂商
         first_adapter = AdapterFactory.get_adapter("video_generation", params.adapter_provider)
@@ -78,9 +83,14 @@ class GenerateVideoTool(BaseTool):
             except Exception as e:
                 last_error = str(e)
                 if idx == len(candidates) - 1 or not is_retryable_gen_error(e):
-                    return ToolResult(success=False, error=last_error)
+                    # T5：跨厂商降级链未成功/不可重试错误；降级已内部耗尽，不标可重试
+                    return ToolResult(
+                        success=False, error=last_error,
+                        error_code="upstream", retryable=False,
+                    )
                 logger.warning(
                     f"[generate_video] 厂商 {pid} 失败（{str(e)[:60]}），"
                     f"同模型 {mdl} 切换厂商 {candidates[idx + 1][0]} 重试"
                 )
-        return ToolResult(success=False, error=last_error)
+        # T5：降级链全部耗尽，同口径标注上游失败且不可重试
+        return ToolResult(success=False, error=last_error, error_code="upstream")
