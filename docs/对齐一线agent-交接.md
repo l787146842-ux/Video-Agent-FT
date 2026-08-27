@@ -32,8 +32,29 @@
 |---|---|---|---|---|---|
 | 第 0 步 | 交接文档骨架 | ✅ | `bed84d9` | pre-commit 通过 | |
 | 批 1 | 工具表面修正（T6/T7/T1/T8） | ✅ | `464e0b3` | 定点 136 passed；`--quick` 退出码 0 | 新增 `canvas_read_prompt_max_chars`(2000)/`canvas_asset_page_size`(50) 入 config |
-| 批 3 | 结构化错误轴（T5） | ❌ 顺延 | — | — | 本窗口任务范围未含批 3，按下述操作手册续做 |
+| 批 3 | 结构化错误轴（T5） | ✅ | `83940db` | 定点 159 passed；`--quick` 退出码 0；`gen_api_types --check` 退出码 0 | 见下方批 3 完成说明 |
 | 批 2（可选） | 闭集枚举最小子集（T3） | 未启动 | — | — | 仅当余量 <75 次且批 1/3 全绿 |
+
+### 批 3 完成说明（T5 结构化错误轴）
+
+**立轴**：`tools/base.py::ToolResult` 新增 `error_code: str = ""`、`retryable: bool = False`（带默认值，既有构造零影响）。口径集：`validation`/`exception`/`upstream`/`timeout`/`canvas`/`other`，与 `core/fc_feedback.classify_tool_failure` 对齐；空串=未标注，消费端回落文本分类。
+
+**生产端标注**：
+- `tools/manager.py`：入参校验失败=`validation`；未捕获异常兜底=`exception`。
+- `tools/vision/generate_image.py`：未配置供应商=`validation`；上游明确失败=`upstream`+retryable=True；异常兜底=`upstream`。
+- `tools/video/generate_video.py`：未配置供应商=`validation`；跨厂商降级链耗尽/不可重试错误=`upstream`+retryable=False。
+- `tools/document_tools.py`（image_generate 生成段）：开关关闭/无可用供应商=`other`；目标未命中草稿=`validation`。
+- `tools/canvas_tools.py`（写路径）：update/delete 节点不存在=`canvas`。
+
+**消费端接入（做到哪一步）**：
+- ✅ `core/fc_feedback.compose_failure_feedback` 新增可选参 `error_code`/`retryable`（旧签名兼容）：已标注时 error_code 直接作分类前缀，按 validation/可重试/canvas/other 微调重试建议；二次失败升级逻辑不变。`fc_tool_runner` 失败分支已透传（getattr 兼容测试 stub）。
+- ⏩ **顺延**：`core/recovery_policy.py` 未接入——分派表只认循环级失败类型键（bad_output/tool_failure/…），不认单工具 error_code，无自然消费位置，强行接入会扩大耦合。待批 6（检查点/回滚）需要按错误码判定回滚条件时一并接入更自然。
+- ⏩ **顺延**：`format_tool_results` 回喂消息体未携带 error_code（仅经 compose_failure_feedback 间接生效），前端/回喂面如需展示再补。
+
+**坑与修法**：
+1. hint 分支初版把「不宜盲重试」给了除 exception 外所有已标注码，撞既有断言 `test_adapter_stream_protocol.py`（文本分类 output_format 首败必须仍可给「重试一次」提示）——收窄为仅 `canvas`/`other` 生效。
+2. **措辞微变风险点**：文本分类回落码 `other` 现在也走「不宜原参盲重试」文案（旧为「可调整参数后重试一次」）；下个窗口跑 `--with-eval` 若发现模型重试行为异常，把该分支退回默认文案即可（单点改动）。
+3. `document_tools.py` 编辑时曾误删/重复 if 行，已当场修复并经 `--quick` 全绿；修改该文件时注意 image_generate 的多个 `if not provider_id` 链。
 
 ## 3. 未完成批次操作手册
 
