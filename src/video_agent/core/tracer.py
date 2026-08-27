@@ -9,6 +9,7 @@ actions/reasoning 供前端「过程时间线」折叠面板展示（不进 LLM 
 随消息 trace 字段持久化，刷新页面后可重建。
 通过 /api/agent/traces 端点暴露最近 50 条 trace（调试用）。
 """
+import hashlib
 import time
 import uuid
 from collections import deque
@@ -24,6 +25,34 @@ from src.video_agent.utils.paths import DATA_DIR
 
 # reasoning 文本持久化长度（仅展示用，防 trace 膨胀；保留尾部，头部省略）
 _REASONING_HEAD_NOTE = "…（前文思考已截断）"
+# 指纹分隔符（不可打印字符，防 content 拼接歧义碰撞）
+_FP_PART_SEP = "\u0001"
+_FP_MSG_SEP = "\n"
+
+
+def fingerprint_messages(messages: List[Dict[str, Any]], prev: str = "") -> str:
+    """P2-6 模型可见指纹链：对可见消息计算确定性指纹（sha256 前 16 hex）。
+
+    链式：prev（上一条指纹）参与哈希，篡改任一环即后续全链对不上。
+    规范化口径：role+content 顺序序列化；content 为多模态列表时文本段保留、
+    非文本段归一为 [类型] 占位（审计口径 = 模型实际看到了什么）。
+    """
+    norm: List[str] = []
+    for m in messages or []:
+        role = str(m.get("role", "") if isinstance(m, dict) else "")
+        content = m.get("content", "") if isinstance(m, dict) else ""
+        if isinstance(content, list):
+            parts: List[str] = []
+            for p in content:
+                if isinstance(p, dict):
+                    ptype = str(p.get("type", "") or "")
+                    parts.append(str(p.get("text", "") or "") if ptype == "text" else f"[{ptype}]")
+                else:
+                    parts.append(str(p))
+            content = _FP_PART_SEP.join(parts)
+        norm.append(f"{role}{_FP_PART_SEP}{content}")
+    payload = f"{prev}|" + _FP_MSG_SEP.join(norm)
+    return hashlib.sha256(payload.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
 @dataclass
@@ -49,6 +78,10 @@ class _TraceContextState:
     # pre_* 缓冲轮前事件（如 compaction 先于 start_trace），随 start_trace 收养
     pending_context_events: List[Dict[str, Any]] = field(default_factory=list)
     pre_context_events: List[Dict[str, Any]] = field(default_factory=list)
+    # P2-6 可见指纹链：当前 step 已录指纹（end_step 归档）+ 链上一条指纹
+    # （start_trace 新建态自然重置为 ""，链头无前驱）
+    pending_prompt_fps: List[Dict[str, Any]] = field(default_factory=list)
+    last_prompt_fp: str = ""
 
 
 # 每任务上下文独立持有追踪态；未显式绑定时 _ctx() 惰性建档
@@ -75,6 +108,8 @@ class StepTrace:
     card_decisions: List[Dict[str, Any]] = field(default_factory=list)
     # 本轮上下文治理事件（truncate/degrade/compact/prune，无则不落盘省体积）
     context_events: List[Dict[str, Any]] = field(default_factory=list)
+    # 本轮模型可见消息指纹链（P2-6，无则不落盘省体积）
+    prompt_fingerprints: List[Dict[str, Any]] = field(default_factory=list)
     # 本轮 reasoning（深度思考）文本摘要（截断后）
     reasoning: str = ""
 
@@ -111,6 +146,9 @@ class TraceRecord:
             # 同口径：缓存命中为 0 不写键（历史格式不变，体积不增）
             if s.cached_tokens:
                 sd["cached_tokens"] = s.cached_tokens
+            # 同口径：无指纹不写键（历史格式不变）
+            if s.prompt_fingerprints:
+                sd["prompt_fingerprints"] = s.prompt_fingerprints
             steps.append(sd)
         return {
             "trace_id": self.trace_id,
@@ -145,6 +183,8 @@ class AgentTracer:
         self._control_flow: Deque[Dict[str, Any]] = deque(maxlen=200)
         # 模型降级事件计数（fallback 频率指标；record_fallback 写入）
         self._fallback_events: Deque[Dict[str, Any]] = deque(maxlen=200)
+        # P2-6 断言审计：模型调用无在场 trace 的累计次数（理想恒 0）
+        self._unlogged_llm_calls = 0
         self._persist_path = DATA_DIR / "agent_traces.jsonl"
 
     @staticmethod
@@ -412,6 +452,33 @@ class AgentTracer:
         if current is not None:
             current.llm_calls += 1
 
+    def record_prompt_fingerprint(self, messages: List[Dict[str, Any]]) -> bool:
+        """P2-6 可见指纹链：模型调用前对可见消息录指纹（链式入当前 step）。
+
+        断言口径「凡入 llm_call 必入 trace」（Model-visible means logged）：
+        无在场 trace 时告警 + 计数（不中断主链），返回 False；已入链返回 True。
+        失败仅 log，绝不干扰主链路。
+        """
+        try:
+            ctx = self._ctx()
+            if ctx.current is None:
+                self._unlogged_llm_calls += 1
+                logger.warning(
+                    "[Tracer] 模型调用无在场 trace，指纹未落盘"
+                    "（违反「凡入 llm_call 必入 trace」，累计 %d 次）", self._unlogged_llm_calls)
+                return False
+            fp = fingerprint_messages(messages, prev=ctx.last_prompt_fp)
+            ctx.pending_prompt_fps.append({
+                "fp": fp,
+                "prev": ctx.last_prompt_fp,
+                "msgs": len(messages or []),
+            })
+            ctx.last_prompt_fp = fp
+            return True
+        except Exception as e:
+            logger.debug(f"[Tracer] 指纹记录失败（忽略）: {e}")
+            return False
+
     def metrics(self) -> Dict[str, Any]:
         """成本看板聚合（内存 + 文件 trace，按 trace_id 去重）。
 
@@ -441,6 +508,8 @@ class AgentTracer:
             "gate_intercept_rate": round(intercepts / len(gates), 3) if gates else 0.0,
             "fallback_count": len(self._fallback_events),
             "recent_fallbacks": list(reversed(list(self._fallback_events)))[:10],
+            # P2-6 断言审计：理想恒 0，非 0 即有模型调用未入 trace
+            "unlogged_llm_calls": self._unlogged_llm_calls,
         }
 
     def end_step(
@@ -477,12 +546,14 @@ class AgentTracer:
             card_decisions=list(ctx.pending_cards),
             reasoning=reasoning,
             context_events=list(ctx.pending_context_events),
+            prompt_fingerprints=list(ctx.pending_prompt_fps),
         ))
         ctx.pending_actions = []
         ctx.pending_gates = []
         ctx.pending_cards = []
         ctx.pending_reasoning = []
         ctx.pending_context_events = []
+        ctx.pending_prompt_fps = []
 
     def finish_trace(self, total_actions: int = 0) -> Dict[str, Any]:
         """完成追踪并存入历史，返回本次 trace 的 dict（供 done payload 下发前端展示）"""

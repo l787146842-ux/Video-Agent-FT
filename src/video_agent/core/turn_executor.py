@@ -117,6 +117,9 @@ class TurnExecutor:
         # 实时上下文度量：截断后的真实消息记入 live 注册表，
         # context-usage 接口推理中即可看到用量随轮次增长
         record_live_context(p.state_manager.active_project_id, full_messages)
+        # P2-6 可见指纹链：截断后的最终消息 = 模型实际所见，链式指纹入 trace；
+        # 断言口径「凡入 llm_call 必入 trace」（无在场 trace 时告警，不中断）
+        (self._tracer or AgentTracer.get_instance()).record_prompt_fingerprint(full_messages)
 
         if p.llm_adapter is None:
             # 无 adapter 时返回空响应
@@ -149,6 +152,8 @@ class TurnExecutor:
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=p._system_degrader)
         # 实时上下文度量：同 call_llm，推理中用量可见
         record_live_context(p.state_manager.active_project_id, full_messages)
+        # P2-6 可见指纹链：同 call_llm（流式/非流式两通道同口径）
+        (self._tracer or AgentTracer.get_instance()).record_prompt_fingerprint(full_messages)
 
         if p.llm_adapter is None:
             return
