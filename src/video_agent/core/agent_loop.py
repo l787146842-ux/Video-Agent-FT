@@ -508,7 +508,7 @@ async def run_agent_loop(
                     "content": (
                         _step_fb.replace("{{step}}", str(step)).replace("{{count}}", str(fc_applied))
                         if _step_fb else (
-                            f"（系统）第 {step} 轮的 {fc_applied} 个 Tool 已执行完毕，工作台状态已刷新到 system prompt。"
+                            f"（系统）第 {step} 轮的 {fc_applied} 个 Tool 已执行完毕，工作台状态已随本轮消息刷新（见对话末尾最新的工作台状态 JSON）。"
                             "请继续完成任务；全部完成后直接回复文本即可。"
                         )
                     ),
