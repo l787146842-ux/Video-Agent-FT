@@ -33,7 +33,7 @@
 | 第 0 步 | 交接文档骨架 | ✅ | `bed84d9` | pre-commit 通过 | |
 | 批 1 | 工具表面修正（T6/T7/T1/T8） | ✅ | `464e0b3` | 定点 136 passed；`--quick` 退出码 0 | 新增 `canvas_read_prompt_max_chars`(2000)/`canvas_asset_page_size`(50) 入 config |
 | 批 3 | 结构化错误轴（T5） | ✅ | `83940db` | 定点 159 passed；`--quick` 退出码 0；`gen_api_types --check` 退出码 0 | 见下方批 3 完成说明 |
-| 批 2（可选） | 闭集枚举最小子集（T3） | 未启动 | — | — | 仅当余量 <75 次且批 1/3 全绿 |
+| 批 2 | 闭集枚举最小子集（T3） | ✅ | （待回填） | 定点全绿；`--quick` 退出码 0 | 仅动 3 处入参闭集枚举 + 拒收用例 |
 
 ### 批 3 完成说明（T5 结构化错误轴）
 
@@ -64,7 +64,7 @@
 ### 批 2 · 闭集枚举进 Schema（T3）
 
 1. `src/video_agent/tools/storyboard_tools.py` 约 L24：`group_type` 入参 → `Literal["keyElement","shot","audio"]`。
-2. `src/video_agent/tools/canvas_tools.py` 约 L32 与 L298（`CanvasAddNodeInput.node_type`、`CanvasBatchNodeInput.node_type`）→ Literal 四值 `"smart-image" | "smart-prompt" | "text" | "image"`。
+2. `src/video_agent/tools/canvas_tools.py` 约 L32 与 L321（`CanvasAddNodeInput.node_type`、`CanvasBatchNodeInput.node_type`）→ Literal 四值 `"smart-image" | "smart-prompt" | "text" | "image"`。
 3. 混合集 `target`（image_generate 的 target 参数）**不动**，留给批 4 连同写类入参硬化一起做成"校验+结构化报错"。
 4. 注意拒收语义变化：枚举拒收属行为变化，须跑 `python scripts/run_eval_pipeline.py` 核对黄金语料。
 5. 验收：定点测试 + `acceptance.py --quick`；独立 commit。
@@ -101,8 +101,8 @@
 
 ## 4. 已知坑点清单
 
-1. `fc_tool_runner.py` 已 687 行，逼近行数棘轮，且 L458-473 消费原始 args dict——批级新逻辑一律落新模块，不要在此文件加逻辑。
-2. 字段白名单唯一事实源 = `state/storyboard_ops.py::ALLOWED_DRAFT_FIELDS/GROUP_FIELDS`（L25-35），校验器只能**引用**，禁止复制（P1）。
+1. `fc_tool_runner.py` 已 691 行，逼近行数棘轮，且 L287-296 消费原始 args dict——批级新逻辑一律落新模块，不要在此文件加逻辑。
+2. 字段白名单唯一事实源 = `state/storyboard_ops.py::ALLOWED_DRAFT_FIELDS/ALLOWED_GROUP_FIELDS`（L25-35），校验器只能**引用**，禁止复制（P1）。
 3. `turn_commit` L108/L153-154 是 `state.clear(); state.update()` 直接字典改法，批 6 的回滚**不得沿用**，必须走 StateManager 接口。
 4. T2 两步走纪律：先"错误可见"并跑评测，通过后才允许 `extra="forbid"` 收紧；不得一步到位。
 5. 批 6 回滚边界：外部副作用（生成/画布写/文件）不可回滚，保守回滚条件必须排除。

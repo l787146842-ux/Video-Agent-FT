@@ -5,7 +5,7 @@
 写操作遵循：读取最新画布 → 修改 nodes → save_canvas 写回。
 """
 import time
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Literal, Optional, Type
 
 from pydantic import BaseModel, Field
 from loguru import logger
@@ -30,7 +30,7 @@ class CanvasReadNodesInput(BaseModel):
 
 class CanvasAddNodeInput(BaseModel):
     canvas_id: str = Field(..., description="画布 ID")
-    node_type: str = Field("smart-image", description="节点类型: smart-image | smart-prompt | text | image")
+    node_type: Literal["smart-image", "smart-prompt", "text", "image"] = Field("smart-image", description="节点类型（闭集枚举）: smart-image | smart-prompt | text | image")
     title: str = Field("", description="节点标题")
     x: int = Field(100, description="节点 X 坐标")
     y: int = Field(100, description="节点 Y 坐标")
@@ -318,7 +318,7 @@ class CanvasListAssetsTool(BaseTool):
 
 
 class CanvasBatchNodeInput(BaseModel):
-    node_type: str = Field("smart-image", description="节点类型")
+    node_type: Literal["smart-image", "smart-prompt", "text", "image"] = Field("smart-image", description="节点类型（闭集枚举）: smart-image | smart-prompt | text | image")
     title: str = Field("", description="节点标题")
     x: int = Field(100, description="X 坐标")
     y: int = Field(100, description="Y 坐标")

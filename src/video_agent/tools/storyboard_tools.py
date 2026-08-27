@@ -3,7 +3,7 @@
 
 每个 Tool 对应一个前端故事板操作，内部通过 StudioStateService 修改状态。
 """
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Literal, Optional, Type
 
 from pydantic import BaseModel, Field
 from loguru import logger
@@ -21,7 +21,7 @@ from src.video_agent.storage.media_urls import resolve_injectable_url
 # ---------- Input Schemas ----------
 
 class CreateGroupInput(BaseModel):
-    group_type: str = Field(..., description="分组类型: keyElement | shot | audio")
+    group_type: Literal["keyElement", "shot", "audio"] = Field(..., description="分组类型（闭集枚举）: keyElement | shot | audio")
     title: str = Field(..., description="分组标题")
     desc: str = Field("", description="分组描述")
     duration: str = Field("", description="时长（shot 类型用）")

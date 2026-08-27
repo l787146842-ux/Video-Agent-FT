@@ -236,3 +236,32 @@ class TestRegistration:
         assert "canvas_update_node" in names
         assert "canvas_delete_node" in names
         assert "canvas_list_assets" in names
+
+
+class TestNodeTypeEnumClosedSet:
+    """批 2 T3：node_type 闭集枚举，集外值经 invoke_tool 拒收 validation"""
+
+    def setup_method(self):
+        register_canvas_tools()
+
+    async def test_add_node_invalid_node_type_rejected(self):
+        result = await ToolManager.invoke_tool(
+            "canvas_add_node", {"canvas_id": "c1", "node_type": "video"}
+        )
+        assert result.success is False
+        assert result.error_code == "validation"
+        assert result.retryable is False
+
+    async def test_batch_node_invalid_node_type_rejected(self):
+        result = await ToolManager.invoke_tool(
+            "canvas_batch_add_nodes",
+            {"canvas_id": "c1", "nodes": [{"node_type": "video"}]},
+        )
+        assert result.success is False
+        assert result.error_code == "validation"
+        assert result.retryable is False
+
+    def test_valid_node_types_accepted(self):
+        for nt in ("smart-image", "smart-prompt", "text", "image"):
+            params = CanvasAddNodeInput.model_validate({"canvas_id": "c1", "node_type": nt})
+            assert params.node_type == nt
