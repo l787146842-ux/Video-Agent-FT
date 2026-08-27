@@ -58,7 +58,10 @@ def apply_draft_patch(ex: "StateOperationExecutor", action: Dict) -> bool:
             str(patch.get("prompt") or ""), ex._kind_of_group(group), group=group,
         ):
             return False
-    ok = ops.patch_draft(draft, patch)
+    ok, dropped = ops.patch_draft(draft, patch)
+    if dropped:
+        # 文本轨容忍路径：白名单外字段丢弃并留痕（拒收口径归 FC 轨工具层）
+        logger.warning(f"[StudioActions] update_draft 白名单外字段被丢弃: {dropped}")
     stamp_spec_resolution(ex, group, draft)
     if ok and str(patch.get("prompt") or "").strip():
         ex._record_presented(draft.get("id", ""))
@@ -106,7 +109,11 @@ def apply_group_patch(ex: "StateOperationExecutor", action: Dict) -> bool:
     group = ex._find_group(group_id, group_type)
     if not group:
         return False
-    return ops.patch_group(group, patch)
+    ok, dropped = ops.patch_group(group, patch)
+    if dropped:
+        # 文本轨容忍路径：白名单外字段丢弃并留痕（拒收口径归 FC 轨工具层）
+        logger.warning(f"[StudioActions] update_group 白名单外字段被丢弃: {dropped}")
+    return ok
 
 
 def apply_delete_draft(ex: "StateOperationExecutor", action: Dict) -> bool:

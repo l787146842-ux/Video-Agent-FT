@@ -121,12 +121,24 @@ class StoryboardPatchDraftTool(BaseTool):
     async def aexecute(self, params: PatchDraftInput) -> ToolResult:
         svc = StateManager.get_instance()
 
+        # T2 第一步「错误可见」：白名单外字段原子拒收（不写入任何字段，
+        # 避免部分写入后报错）；差集只引用 ALLOWED_DRAFT_FIELDS，不复制名单（P1）
+        dropped = ops.dropped_patch_fields(params.patch, ops.ALLOWED_DRAFT_FIELDS)
+        if dropped:
+            return ToolResult(
+                success=False,
+                error=(f"Validation Error: patch 含白名单外字段（已拒收，未写入草稿）: "
+                       f"{', '.join(dropped)}。合法字段: {', '.join(ops.ALLOWED_DRAFT_FIELDS)}"),
+                error_code="validation", retryable=False,
+            )
+
         async with svc.lock:
             found = ops.find_draft(svc.state_dict, params.draft_id, params.draft_type)
             if found:
                 group, draft = found
                 # 统一白名单（含 imageResolution/genType，与文本轨一致）
-                if ops.patch_draft(draft, params.patch):
+                changed, _ = ops.patch_draft(draft, params.patch)
+                if changed:
                     # 时长参数同步：分镜提示词写入时把分镜时长补印到草稿时长参数
                     ops.sync_shot_duration(group, draft, params.patch)
                     # 全局设置补印（与文本轨一致，草稿缺分辨率/时长时

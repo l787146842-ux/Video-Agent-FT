@@ -1,6 +1,7 @@
 """
 文档 & 生成 Tool — write_document / read_uploaded_doc / image_generate / workflow_pause
 """
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Type
 
@@ -395,6 +396,29 @@ class ReadProjectDocTool(BaseTool):
         })
 
 
+# T2 第一步：混合集 target 结构化校验——具体 draft_id 需为 ASCII 字母数字/
+# 下划线/连字符/点号（不得含空格/中文等明显非法字符），长度≤64。
+_TARGET_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
+_TARGET_VALID_HINT = (
+    "target 合法取值: all_keyElements | all_shots | 具体 draft_id"
+    "（或「组号-卡序号」编号，如 '1-2'）"
+)
+
+
+def _sample_draft_ids(state: Dict[str, Any], limit: int = 5) -> str:
+    """采样可用 draft_id 嵌入结构化报错文案，帮助模型一次改对。"""
+    ids: List[str] = []
+    for cat in ALL_CATEGORIES_TUPLE:
+        for g in state.get(cat, []) or []:
+            for d in g.get("drafts", []) or []:
+                did = str(d.get("id") or "")
+                if did and did not in ids:
+                    ids.append(did)
+                if len(ids) >= limit:
+                    return "、".join(ids)
+    return "、".join(ids) if ids else "无"
+
+
 class ImageGenerateTool(BaseTool):
     name = "image_generate"
     risk = "high"  # §2.7：生成类（外部副作用/花钱），经生成确认闸覆盖
@@ -440,16 +464,44 @@ class ImageGenerateTool(BaseTool):
                     if (d.get("prompt") or "").strip():
                         targets.append((g, d, "shot"))
         else:
-            for cat in ALL_CATEGORIES_TUPLE:
-                for g in state.get(cat, []):
-                    for d in g.get("drafts", []):
-                        if d.get("id") == params.target and (d.get("prompt") or "").strip():
-                            targets.append((g, d, "shot" if cat == CAT_SHOTS else "keyElement"))
+            # T2 第一步：混合集 target 结构化校验——具体 draft_id 经
+            # storyboard_ops.find_draft 既有路径校验存在性（引用不复制）；
+            # 格式非法/未命中统一 error_code="validation"，文案附合法取值说明与采样
+            target = str(params.target or "").strip()
+            hint = f"{_TARGET_VALID_HINT}。可用 draft_id 采样: {_sample_draft_ids(state)}"
+            if not _TARGET_ID_RE.match(target) or target == "current":
+                return ToolResult(
+                    success=False,
+                    error=f"Validation Error: target 取值 '{target}' 格式非法（不得含空格/中文）。{hint}",
+                    error_code="validation", retryable=False,
+                )
+            hit = ops.find_draft(state, target)
+            if not hit:
+                return ToolResult(
+                    success=False,
+                    error=f"Validation Error: target '{target}' 未命中任何草稿。{hint}",
+                    error_code="validation", retryable=False,
+                )
+            group, draft = hit
+            if not (draft.get("prompt") or "").strip():
+                return ToolResult(
+                    success=False,
+                    error=f"Validation Error: 草稿 '{target}' 没有提示词，请先写入提示词（storyboard_patch_draft）再生图",
+                    error_code="validation", retryable=False,
+                )
+            cat = next(
+                (c for c in ALL_CATEGORIES_TUPLE
+                 if any(g.get("id") == group.get("id") for g in state.get(c, []) or [])),
+                CAT_KEY_ELEMENTS,
+            )
+            targets.append((group, draft, "shot" if cat == CAT_SHOTS else "keyElement"))
 
         if not targets:
             # T5：目标参数未命中带提示词的草稿，属入参定位问题（改参可重试）
             return ToolResult(
-                success=False, error="未找到有提示词的草稿",
+                success=False,
+                error=(f"Validation Error: 未找到有提示词的草稿。{_TARGET_VALID_HINT}；"
+                       f"可用 draft_id 采样: {_sample_draft_ids(state)}"),
                 error_code="validation", retryable=False,
             )
 

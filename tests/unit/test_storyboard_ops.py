@@ -43,22 +43,41 @@ async def test_fc_patch_covers_image_resolution_and_gen_type(svc):
 
 @pytest.mark.asyncio
 async def test_fc_and_text_track_patch_equivalence(svc):
-    """同一 patch 经 FC 轨与文本轨执行后，draft 状态必须逐字段一致"""
+    """同一合法 patch 经 FC 轨与文本轨执行后，draft 状态必须逐字段一致"""
     _, draft = _first_draft(svc)
-    patch = {"label": "等价测试", "tag": "已确认", "aspectRatio": "9:16", "unknownField": "应被忽略"}
+    patch = {"label": "等价测试", "tag": "已确认", "aspectRatio": "9:16"}
 
     tool = StoryboardPatchDraftTool()
     r1 = await tool.aexecute(PatchDraftInput(draft_id=draft["id"], patch=dict(patch)))
     assert r1.success
     fc_snapshot = dict(draft)
 
-    # 还原后走文本轨
+    # 还原后走文本轨（标签已确认 → 重写同值不作废，两轨同口径）
     executor = StateOperationExecutor(svc)
     executor.execute([{"action": "update_draft", "draft_id": draft["id"], "patch": patch}])
     text_snapshot = dict(draft)
 
     assert fc_snapshot == text_snapshot
-    assert "unknownField" not in text_snapshot  # 白名单外字段两轨都不写入
+
+
+@pytest.mark.asyncio
+async def test_unknown_field_fc_rejects_text_track_tolerates(svc):
+    """批 4a 口径：白名单外字段——FC 轨原子拒收（报错不写入），
+    文本轨容忍丢弃留痕（保模型动作链不断），两轨都不写入该字段"""
+    _, draft = _first_draft(svc)
+    patch = {"label": "应拒收", "unknownField": "x"}
+
+    tool = StoryboardPatchDraftTool()
+    r1 = await tool.aexecute(PatchDraftInput(draft_id=draft["id"], patch=dict(patch)))
+    assert r1.success is False
+    assert r1.error_code == "validation" and r1.retryable is False
+    assert "unknownField" in str(r1.error)
+    assert draft.get("label") != "应拒收"  # 原子拒收：合法字段也不部分写入
+
+    executor = StateOperationExecutor(svc)
+    executor.execute([{"action": "update_draft", "draft_id": draft["id"], "patch": patch}])
+    assert draft.get("label") == "应拒收"  # 文本轨容忍：白名单内字段照常写入
+    assert "unknownField" not in draft  # 白名单外字段两轨都不写入
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,34 @@
 from typing import Any, Dict, List, Optional, Type
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from loguru import logger
 from src.video_agent.adapters.cancel_token import GenerationCancelled
 from .base import APPROVAL_TIERS, BaseTool, DETAIL_TIERS, RISK_TIERS, ToolResult
+
+
+def detect_unknown_fields(schema_class: Type[BaseModel], kwargs: Dict[str, Any]) -> List[str]:
+    """model_validate 前的未知字段检测（T2 第一步「错误可见」，模块级纯函数）。
+
+    Pydantic v2 默认 extra='ignore'：未知字段被静默丢弃且不产生 ValidationError，
+    必须在校验前主动比对键集。返回排序后的被丢弃字段名列表，便于单测与文案渲染。
+    """
+    if not isinstance(kwargs, dict):
+        return []
+    return sorted(set(kwargs) - set(schema_class.model_fields))
+
+
+def format_validation_error(exc: ValidationError, schema_class: Type[BaseModel]) -> str:
+    """ValidationError 字段级渲染：解析 loc/type/msg 生成可读清单（替换裸 str(e)），
+    并附该 schema 合法字段清单，帮助模型一次改对。"""
+    lines: List[str] = []
+    for err in exc.errors():
+        loc = ".".join(str(p) for p in (err.get("loc") or ()) if str(p) != "__root__")
+        msg = str(err.get("msg") or "").strip()
+        etype = str(err.get("type") or "")
+        lines.append(f"- {loc or '(root)'}: {msg} ({etype})")
+    detail = "\n".join(lines) if lines else str(exc)
+    allowed = ", ".join(schema_class.model_fields)
+    return f"Validation Error: 入参校验失败，请修正以下字段后重试：\n{detail}\n合法字段: {allowed}"
+
 
 class ToolManager:
     _tools: Dict[str, BaseTool] = {}
@@ -135,11 +161,33 @@ class ToolManager:
             tool = cls.get_tool(name)
             schema_class = tool.get_input_schema()
             
+            # T2 第一步「错误可见」：Pydantic v2 默认 extra='ignore' 会静默丢弃未知字段，
+            # model_validate 前主动比对键集，非空即拒收（对全部工具生效，新工具自动继承）。
+            # 平台容忍路径：显式声明 extra='allow' 的自由入参模型（如 MCP 适配器，
+            # 参数按远端 JSON Schema 自校验）与零声明字段模型不参与比对。
+            extra_mode = schema_class.model_config.get("extra", "ignore")
+            if extra_mode != "allow" and schema_class.model_fields:
+                unknown = detect_unknown_fields(schema_class, kwargs)
+                if unknown:
+                    allowed = ", ".join(schema_class.model_fields)
+                    return ToolResult(
+                        success=False,
+                        error=(f"Validation Error: 入参含未知字段（已拒收，未执行）: "
+                               f"{', '.join(unknown)}；该工具合法字段: {allowed}"),
+                        error_code="validation", retryable=False,
+                    )
+
             # Pydantic validation
             try:
                 params = schema_class.model_validate(kwargs)
+            except ValidationError as e:
+                # T5 结构化错误轴：入参校验失败不可用原参重试，须改参（字段级渲染）
+                return ToolResult(
+                    success=False, error=format_validation_error(e, schema_class),
+                    error_code="validation", retryable=False,
+                )
             except Exception as e:
-                # T5 结构化错误轴：入参校验失败不可用原参重试，须改参
+                # 非 pydantic 校验异常兜底，保持 validation 口径不变
                 return ToolResult(
                     success=False, error=f"Validation Error: {str(e)}",
                     error_code="validation", retryable=False,

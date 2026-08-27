@@ -201,13 +201,21 @@ def find_group(
     return None
 
 
-def patch_draft(draft: Dict[str, Any], patch: Dict[str, Any]) -> bool:
-    """按 ALLOWED_DRAFT_FIELDS 白名单就地更新 draft，返回是否有字段被修改。
+def dropped_patch_fields(patch: Dict[str, Any], allowed: Tuple[str, ...]) -> List[str]:
+    """白名单差集：返回 patch 中不在允许集内的字段名（排序，确定性输出）。
+    名单唯一事实源 = ALLOWED_DRAFT_FIELDS/ALLOWED_GROUP_FIELDS，只引用不复制（P1）。"""
+    return sorted(set(patch or {}) - set(allowed))
+
+
+def patch_draft(draft: Dict[str, Any], patch: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """按 ALLOWED_DRAFT_FIELDS 白名单就地更新 draft，返回 (是否有字段被修改, 被丢弃字段名列表)。
+    被丢弃字段透出给调用方（T2 第一步「错误可见」），由调用方决定拒收/告警口径。
 
     确认状态闭环：提示词被重写（值变化且非空）时，「已确认」标记作废
     （tag 重置为 Agent）——用户提修改 → 模型重写 → 需重新经用户确认，
     避免旧确认被静默继承到新版本提示词。
     """
+    dropped = dropped_patch_fields(patch, ALLOWED_DRAFT_FIELDS)
     new_prompt = patch.get("prompt")
     prompt_changed = (
         "prompt" in patch
@@ -221,17 +229,18 @@ def patch_draft(draft: Dict[str, Any], patch: Dict[str, Any]) -> bool:
             changed = True
     if prompt_changed and "tag" not in patch and draft.get("tag") == "已确认":
         draft["tag"] = "Agent"
-    return changed
+    return changed, dropped
 
 
-def patch_group(group: Dict[str, Any], patch: Dict[str, Any]) -> bool:
-    """按 ALLOWED_GROUP_FIELDS 白名单就地更新 group，返回是否有字段被修改。"""
+def patch_group(group: Dict[str, Any], patch: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """按 ALLOWED_GROUP_FIELDS 白名单就地更新 group，返回 (是否有字段被修改, 被丢弃字段名列表)。"""
+    dropped = dropped_patch_fields(patch, ALLOWED_GROUP_FIELDS)
     changed = False
     for field in ALLOWED_GROUP_FIELDS:
         if field in patch:
             group[field] = patch[field]
             changed = True
-    return changed
+    return changed, dropped
 
 
 def sync_shot_duration(group: Dict[str, Any], draft: Dict[str, Any], patch: Optional[Dict[str, Any]] = None) -> bool:

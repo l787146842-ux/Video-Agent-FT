@@ -48,7 +48,8 @@ def _seed_ke_draft(svc, tag="Agent", prompt="白发老者站在冥王星冰原�
 def test_patch_prompt_invalidates_confirmation():
     """重写即作废：已确认草稿的提示词被重写后 tag 重置为 Agent"""
     draft = {"id": "d1", "tag": "已确认", "prompt": "旧提示词"}
-    assert ops.patch_draft(draft, {"prompt": "新提示词内容"}) is True
+    changed, dropped = ops.patch_draft(draft, {"prompt": "新提示词内容"})
+    assert changed is True and dropped == []
     assert draft["tag"] == "Agent"
 
 
