@@ -246,3 +246,7 @@ prompts/gates/messages.md）。
 > 退役登记（2026-08-26，裁决 R7）：`skill.require_at_ref` 与
 > `skill.flow.element_image`（均为「历史存量-待裁决」）退役下账，
 > 基线 20→18（platform 6 / skill 12）；消费点同批清零（P1-7）。
+
+> 裁决登记（2026-08-27，裁决 R10）：提示词大换序方案采用 A 案（state 出
+> system，经 history 尾部消息每步注入，system 成字节级稳定前缀），执行于提交 2a1ec34；
+> B 案（skill 块前移）不采纳。段体积基线见 `docs/段体积基线简表-2026-08-27.md`。

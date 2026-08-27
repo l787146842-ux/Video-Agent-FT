@@ -417,7 +417,10 @@ def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], 
 
     只放行资源清单（目录包 references/ 实际文件列表）内的资源；
     声明外资源（清单外路径/绝对路径/.. 穿越/单文件形态）一律拒绝。
-    返回 (资源绝对路径, "")；失败返回 (None, 错误说明)。"""
+    返回 (资源绝对路径, "")；失败返回 (None, 错误说明)。
+
+    口径演进：三级资源加载采用「资源清单即声明」（references/ 目录），
+    替代计划书早期 assets|scripts 目录字面约定，能力等价且更收敛。"""
     entry = resolve_entry(wanted)
     if entry is None:
         return None, f"未找到 Skill「{wanted}」"
