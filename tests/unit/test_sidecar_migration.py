@@ -146,10 +146,18 @@ def test_unknown_gate_key_rejected():
 
 
 def test_all_product_frontmatters_validate_clean():
-    """全量盘点钉死：产品 Skill 的 frontmatter 体检零告警。"""
-    for f in sorted(sd.SKILL_DOCS_DIR.glob("*.md")):
-        issues = validate_manifest_data(frontmatter.load_manifest(f.stem))
-        assert issues == [], f"{f.stem}: {issues}"
+    """全量盘点钉死：产品 Skill 的 frontmatter 体检零告警。
+    双形态枚举（与 scan_skills._iter_skill_docs 同口径）：单文件 *.md +
+    目录包 <slug>/<slug>.md，目录包主文档不漏入体检。"""
+    slugs = [f.stem for f in sorted(sd.SKILL_DOCS_DIR.glob("*.md"))]
+    slugs += sorted(
+        p.name for p in sd.SKILL_DOCS_DIR.iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+        and (p / f"{p.name}.md").exists()
+    )
+    for slug in slugs:
+        issues = validate_manifest_data(frontmatter.load_manifest(slug))
+        assert issues == [], f"{slug}: {issues}"
 
 
 def test_stage_table_skill_aware_trimming():

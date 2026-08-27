@@ -12,7 +12,6 @@
 import type { ChatMessage, TraceAction } from '@/types';
 import { ledgerFromSettled } from '@/lib/turn-ledger';
 import {
-  TOOL_APPROVAL_TIER_DEFAULT,
   TOOL_APPROVAL_TIERS,
   TOOL_DETAIL_INTERNAL_NONE,
   TOOL_DETAIL_TIER_DEFAULT,
@@ -79,11 +78,12 @@ export function toolDetailTier(name?: string): ToolDetailTier {
 export type ToolApprovalTier = 'none' | 'confirm' | 'review';
 
 /** 消费生成物 TOOL_APPROVAL_TIERS（后端生效 approval_tier 经 sidecar 生成）；
- * 未登记工具走默认档 confirm（high risk 口径，deny-by-default，
- * 与后端 ToolManager.get_tool_approval_tier 同源）。 */
+ * 展示层口径：未登记工具名（MCP 动态工具/历史改名工具）返回 none——
+ * 不挂交互档徽标，避免误标「需确认」；执行边界 deny-by-default 由
+ * 后端 ToolManager.get_tool_approval_tier 持有，不靠展示层徽标兜底。 */
 export function toolApprovalTier(name?: string): ToolApprovalTier {
-  if (!name) return TOOL_APPROVAL_TIER_DEFAULT;
-  return TOOL_APPROVAL_TIERS[name] ?? TOOL_APPROVAL_TIER_DEFAULT;
+  if (!name) return 'none';
+  return TOOL_APPROVAL_TIERS[name] ?? 'none';
 }
 
 /** 审批档 → 确认卡/审批交互映射文案（任务 P2-5 前端确认卡档位映射）：

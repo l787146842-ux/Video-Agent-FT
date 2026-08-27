@@ -138,9 +138,11 @@ describe('toolApprovalTier 工具审批分级', () => {
     ].forEach((n) => expect(toolApprovalTier(n)).toBe('none'));
   });
 
-  it('默认档：未登记工具/无名条目按 high 口径 deny-by-default 一律 confirm', () => {
-    expect(toolApprovalTier('unknown_tool')).toBe('confirm');
-    expect(toolApprovalTier(undefined)).toBe('confirm');
+  it('未登记工具名（MCP 动态工具/历史改名）展示层返回 none，不误挂徽标', () => {
+    expect(toolApprovalTier('unknown_tool')).toBe('none');
+    expect(toolApprovalTier(undefined)).toBe('none');
+    // 登记工具不受影响（执行边界 deny-by-default 仍由后端持有）
+    expect(toolApprovalTier('generate_image')).toBe('confirm');
   });
 
   it('approvalInteractionLabel 确认卡/审批交互档位映射', () => {

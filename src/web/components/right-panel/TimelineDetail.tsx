@@ -18,8 +18,9 @@ export function TimelineDetail(props: { item: TimelineItem }) {
   const [resultOpen, setResultOpen] = createSignal(false);
   const tier = () => toolDetailTier(props.item.name);
   const approval = () => toolApprovalTier(props.item.name);
-  /* 徽标只在有工具名依据时挂：无名条目无法归因到具体工具，
-   * 不按 deny-by-default 默认档徒增视觉噪声（默认档守住执行边界即可） */
+  /* 徽标只在有工具名依据且登记了交互档时挂：无名条目与未登记工具名
+   *（MCP 动态工具/历史改名）展示层返回 none，不误挂「需确认」；
+   * 执行边界 deny-by-default 由后端持有，不靠徽标兜底 */
   const approvalLabel = () => (
     props.item.name ? approvalInteractionLabel(approval()) : ''
   );
