@@ -24,6 +24,7 @@ from src.video_agent.core import ports
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
 from src.video_agent.core import tool_args_preview
+from src.video_agent.core.gates_cards import PAUSE_SLOT_ASSERTION_NOTE
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED,
 )
@@ -410,14 +411,12 @@ class FCToolRunner:
                                .get("active_pause") or {})
                     if _active.get("pause_id"):
                         logger.warning(
-                            "[PauseSlot] 防御断言命中：已有活跃暂停卡（pause_id={}）时"
-                            "再次发行 workflow_pause，新卡覆盖旧卡",
-                            _active.get("pause_id"),
+                            "[PauseSlot] 防御断言命中（旧 pause_id={}）：{}",
+                            _active.get("pause_id"), PAUSE_SLOT_ASSERTION_NOTE,
                         )
                         tracer.record_control_flow(
                             "pause_slot_collision",
-                            f"已有活跃暂停（旧 pause_id={_active.get('pause_id')}）时"
-                            "重复发行 workflow_pause；防御断言只告警留痕，不作拒因回喂")
+                            f"{PAUSE_SLOT_ASSERTION_NOTE}（旧 pause_id={_active.get('pause_id')}）")
                 except Exception as _e:
                     logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
             # 生成类工具成败记录（批末对账用客观账本）

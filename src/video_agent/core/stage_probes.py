@@ -16,10 +16,34 @@ from loguru import logger
 from src.video_agent.core import gates_cards
 from src.video_agent.core import gates_inputs
 from src.video_agent.core import prompt_gates
+from src.video_agent.core import workflow_runtime
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.models import (
     ASSEMBLY_PLAN_DOC_NAME, CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS,
 )
+
+# 粘性豁免（script_waived 模式泛化，批 B）：同类确认批过一次不再问。
+# 确认类别 → interaction 豁免旗标名；写入统一经 workflow_runtime.reduce_interaction
+# （interaction 旗标唯一写入点），gate_precheck 判定短路只读本表；
+# 与 ADR-0004 条款 3 自主性档位概念衔接（用户显式确认授予的豁免留痕）。
+CONFIRMATION_WAIVER_FLAGS: Dict[str, str] = {
+    "script": "script_waived",
+}
+
+
+def waive_confirmation_category(state_manager: Any, category: str) -> bool:
+    """按确认类别记账豁免（同类确认批过一次不再问）；未知类别返回 False。"""
+    flag = CONFIRMATION_WAIVER_FLAGS.get(category)
+    if not flag:
+        return False
+    workflow_runtime.reduce_interaction(state_manager, set_flags={flag: True})
+    return True
+
+
+def confirmation_category_waived(state: Dict[str, Any], category: str) -> bool:
+    """确认类别是否已豁免（只读；豁免旗标名归 CONFIRMATION_WAIVER_FLAGS）。"""
+    flag = CONFIRMATION_WAIVER_FLAGS.get(category)
+    return bool(flag and ((state or {}).get("interaction") or {}).get(flag))
 
 
 @dataclass(frozen=True)
@@ -383,20 +407,18 @@ async def gate_precheck(
     table = stage_table(skill)
     # 原料闸：analysis 在表且未完成时才判定
     if any(s.key == "analysis" and not stage_done("analysis", state, skill) for s in table):
-        inter = state.setdefault("interaction", {})
         reqs = registry.skill_requires_inputs(skill)
         if reqs:
             # v3 原料闸：requires_inputs 声明优先，任一 required
             # 项客观未满足即拦截；与 v2 script_required 两路不叠加（声明了
             # v3 清单就不再重复走旧判定，未声明才回落下方旧分支）。
             missing = gates_inputs.missing_required_inputs(state, skill)
-            if inter.get("script_waived"):
+            if confirmation_category_waived(state, "script"):
                 missing = [m for m in missing if m["type"] != "script"]
             waived_now = False
             if any(m["type"] == "script" for m in missing):
                 if prompt_gates.script_waive_intent(msg):
-                    inter["script_waived"] = True
-                    state_manager.save_debounced()
+                    waive_confirmation_category(state_manager, "script")
                     waived_now = True
                     missing = [m for m in missing if m["type"] != "script"]
                 elif prompt_gates.script_upload_ack_intent(msg):
@@ -416,11 +438,10 @@ async def gate_precheck(
         elif (
             registry.script_required_active(skill)
             and not prompt_gates.script_present(state)
-            and not inter.get("script_waived")
+            and not confirmation_category_waived(state, "script")
         ):
             if prompt_gates.script_waive_intent(msg):
-                inter["script_waived"] = True
-                state_manager.save_debounced()
+                waive_confirmation_category(state_manager, "script")
                 return None  # 豁免：交接模型循环
             if prompt_gates.script_upload_ack_intent(msg):
                 return OrchestratorOutcome(

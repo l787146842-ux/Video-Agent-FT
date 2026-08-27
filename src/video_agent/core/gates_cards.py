@@ -49,6 +49,13 @@ STORYBOARD_PENDING_GATE_ERROR = _gate_msg("STORYBOARD_PENDING", (
     "本次提示词已按用户要求照常写入，请同时在回复中提示用户审阅左侧故事板。"
 ))
 
+# 单一活跃暂停槽位防御断言告警文案（批 B 外置；运维侧可观测告警，
+# 非闸机规则条目，故不登记 GATE_MESSAGE_SECTIONS 覆盖矩阵）
+PAUSE_SLOT_ASSERTION_NOTE = _gate_msg("PAUSE_SLOT_ASSERTION", (
+    "单一活跃暂停槽位冲突：已有未消费的暂停卡时再次发行 workflow_pause，"
+    "新卡覆盖旧卡解除死锁；防御断言只告警留痕，不作拒因回喂。"
+))
+
 _STORYBOARD_STRUCTURE_PAUSED = _gate_json("STORYBOARD_STRUCTURE_PAUSED", {
     "message": (
         "关键元素拆分已建立，请审阅左侧故事板的元素拆分结果（数量/命名/描述）；"

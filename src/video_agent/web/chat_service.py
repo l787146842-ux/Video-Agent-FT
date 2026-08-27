@@ -525,6 +525,8 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
                     pause_id=str(ctx.final_payload.get("pause_id") or ""),
                     # 暂停卡语义种类持久化（前端历史重载按 kind 渲染标题）
                     kind=str(ctx.final_payload.get("pause_kind") or ""),
+                    # quick-actions 芯片持久化（提醒类兜底卡出槽后不丢，刷新可重建）
+                    suggested_actions=ctx.final_payload.get("suggested_actions") or None,
                 )
             # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合）
             for doc_name in (ctx.final_payload.get("documents_written") or []):
@@ -776,6 +778,7 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
                     turn_id=ns_turn_id,
                     pause_id=result.pause_id,
                     kind=result.pause_kind or "",
+                    suggested_actions=result.suggested_actions or None,
                 )
             if result.image_urls:
                 svc.add_chat_message("agent", "", image_urls=result.image_urls, turn_id=ns_turn_id)

@@ -1,7 +1,8 @@
 """暂停回应结构化闭环（对标 AskUserQuestion 范式）。
 
-三个 confirm 产生源（FC workflow_pause / 闸预检兜底卡 / 轮末策略卡）在两个
-汇流点统一签发 pause_id 并登记 interaction.active_pause；用户点选回应经
+confirm 产生源（FC workflow_pause / 轮末策略卡）在汇流点一统一签发 pause_id
+并登记 interaction.active_pause；原料闸/规格闸提醒类兜底卡已出槽（批 B，
+不登记不签发，正文注入 + quick-actions 芯片）；用户点选回应经
 ChatRequest.pause_response 结构化回携，消费匹配后随用户消息持久化
 pauseAnsweredId/Value——前端「当时所选」对勾从权威登记派生，不再文本反推。
 登记不改变 awaiting_confirmation 既有语义（分诊/消费链零行为变更）。
@@ -87,16 +88,18 @@ class TestLoopConfluenceIssuesPause:
         assert done and not (done[0].payload or {}).get("pause_id")
 
 
-class TestOrchestratorConfluenceIssuesPause:
-    """汇流点二：兜底卡（script_pending / spec_pending；批 12 后 paused 机械卡退场）"""
+class TestOrchestratorConfluenceSlotFree:
+    """汇流点二：提醒类兜底卡出槽（批 B）——不签发 pause_id、不登记
+    active_pause；提醒文案归正文通道（下一轮经 history 模型可见），
+    候选项降级为 quick-actions 芯片（点击 = 普通用户消息）。"""
 
     @pytest.mark.parametrize("kind", ["script_pending", "spec_pending"])
-    async def test_mechanical_cards_carry_pause_id(self, svc, monkeypatch, kind):
+    async def test_mechanical_cards_do_not_occupy_pause_slot(self, svc, monkeypatch, kind):
         from src.video_agent.core import stage_probes as po
 
         async def fake_precheck(state_manager, skill, user_message=""):
             return po.OrchestratorOutcome(
-                kind=kind, message="机械卡文案", options=[{"label": "确认"}])
+                kind=kind, message="机械卡文案", options=[{"label": "确认继续"}])
 
         monkeypatch.setattr(po, "gate_precheck", fake_precheck)
         planner = Planner(state_manager=svc, llm_adapter=None)
@@ -105,10 +108,56 @@ class TestOrchestratorConfluenceIssuesPause:
             PlannerContext(skill_name="AI-短剧一站式生成"), "继续")
 
         assert resp is not None
-        assert resp.confirmation
-        assert resp.pause_id, f"{kind} 机械卡必须签发 pause_id"
-        active = (svc.state_dict.get("interaction") or {}).get("active_pause") or {}
-        assert active.get("pause_id") == resp.pause_id
+        assert resp.text.strip(), "提醒文案归正文通道（禁空正文，模型可见）"
+        assert not resp.confirmation, "提醒类兜底卡不占暂停槽（无确认卡）"
+        assert resp.pause_id == "", f"{kind} 提醒卡不签发 pause_id"
+        assert "active_pause" not in (svc.state_dict.get("interaction") or {}), \
+            f"{kind} 提醒卡不登记 active_pause"
+
+    async def test_script_remind_options_become_quick_action_chips(self, svc, monkeypatch):
+        from src.video_agent.core import stage_probes as po
+
+        async def fake_precheck(state_manager, skill, user_message=""):
+            return po.OrchestratorOutcome(
+                kind="script_pending", message="请上传剧本",
+                options=[{"label": "确认从零原创（无需剧本）", "value": "waive_script"},
+                         {"label": "我去上传/粘贴剧本", "value": "upload_script"}])
+
+        monkeypatch.setattr(po, "gate_precheck", fake_precheck)
+        planner = Planner(state_manager=svc, llm_adapter=None)
+
+        resp = await planner._run_gate_precheck(
+            PlannerContext(skill_name="AI-短剧一站式生成"), "继续")
+
+        assert resp.suggested_actions == [
+            {"kind": "next", "label": "确认从零原创（无需剧本）",
+             "value": "确认从零原创（无需剧本）"},
+            {"kind": "next", "label": "我去上传/粘贴剧本",
+             "value": "我去上传/粘贴剧本"},
+        ], "芯片 value = label（人类可读契约，机械 token 不外露）"
+        assert not resp.confirmation_options
+
+    async def test_spec_wizard_options_become_quick_action_chips(self, svc, monkeypatch):
+        from src.video_agent.core import stage_probes as po
+        from src.video_agent.core import prompt_gates as pg
+
+        async def fake_precheck(state_manager, skill, user_message=""):
+            return po.OrchestratorOutcome(kind="spec_pending")
+
+        monkeypatch.setattr(po, "gate_precheck", fake_precheck)
+        monkeypatch.setattr(pg, "spec_collect_card", lambda state: (
+            "剧本读完了。",
+            [{"label": "画幅比例：16:9 横屏", "group": "画幅比例"}]))
+        planner = Planner(state_manager=svc, llm_adapter=None)
+
+        resp = await planner._run_gate_precheck(
+            PlannerContext(skill_name="AI-短剧一站式生成"), "继续")
+
+        assert "请逐项选定规格维度后发送" in resp.text
+        assert resp.suggested_actions == [
+            {"kind": "next", "label": "画幅比例：16:9 横屏",
+             "value": "画幅比例：16:9 横屏"},
+        ], "逐行「维度：值」文本由规格向导消费机械解析落盘"
 
     async def test_handoff_returns_none(self, svc, monkeypatch):
         from src.video_agent.core import stage_probes as po
@@ -234,6 +283,42 @@ class TestPauseSlotMutex:
         assert invoked == ["workflow_pause"], "暂停后同批后续调用不执行（问即停）"
         assert all(t.get("ok") for t in out[6]), "悬挂调用不产生拒因回喂"
         assert out[1], "暂停文案照常上抛"
+
+    @pytest.mark.asyncio
+    async def test_defensive_assertion_hit_keeps_state_clean(self, svc):
+        """防御断言命中时状态干净（批 A 遗留债回归）：重复暂停照常受理发行，
+        暂停三态以新卡为准一次事务覆写，无「状态说已暂停、结果被拒」的混合死态；
+        消费侧标记（last_pause_decision）只由消费写入，发行不污染。"""
+        from src.video_agent.adapters.base_chat import ChatResponse
+        from src.video_agent.core.fc_tool_runner import FCToolRunner
+        from src.video_agent.tools.manager import ToolManager
+
+        inter = svc.state_dict.setdefault("interaction", {})
+        inter["awaiting_confirmation"] = True
+        inter["confirmation_message"] = "旧卡文案"
+        inter["active_pause"] = {"pause_id": "old123", "message": "旧卡文案", "options": []}
+
+        runner = FCToolRunner(ToolManager)
+        resp = ChatResponse(content="", finish_reason="tool_calls", tool_calls=[
+            {"id": "wp3", "type": "function", "function": {
+                "name": "workflow_pause",
+                "arguments": '{"message": "第二次暂停请求"}'}}])
+        result = await runner.execute(resp)
+
+        assert result.applied == 1, "防御断言只告警留痕，发行不被拒收"
+        pause_tr = [t for t in result.tool_results if t.get("name") == "workflow_pause"]
+        assert pause_tr and pause_tr[0].get("ok"), "工具本体照常受理（无拒因回喂残留）"
+        new_pid = result.pause_id
+        assert new_pid and new_pid != "old123"
+        inter_after = svc.state_dict.get("interaction") or {}
+        active = inter_after.get("active_pause") or {}
+        assert active.get("pause_id") == new_pid, "active_pause 以新卡覆写（旧卡无残留）"
+        assert active.get("message") == result.confirmation
+        assert inter_after.get("awaiting_confirmation") is True
+        assert inter_after.get("confirmation_message") == result.confirmation, \
+            "暂停三态同源一致（无混合死态）"
+        assert "last_pause_decision" not in inter_after, \
+            "消费侧标记只由消费写入，发行路径不污染"
 
 
 class TestPersistedMarkers:

@@ -2,7 +2,7 @@
 """1111 黄金轮次契约（宪法 Rule2 主体回归 / ADR-0004，用户审定裁决钉死）。
 
 对照 tests/fixtures/workflow_1111_baseline.json（修复前基线）断言：
-① 轮1 缺剧本 → kind=remind 引导卡（层 9 兜底，由代码执行不依赖模型自觉）；
+① 轮1 缺剧本 → 正文提醒 + quick-actions 芯片（层 9 兜底，由代码执行不依赖模型自觉；批 B 出槽：不占暂停槽）；
 ② 轮3 带附件推进 → 交接模型循环（主体回归：模型永远唯一行动主体，
    runtime 不自主执行执行器；越阶靠 stage_precondition 闸刹车）；
 ③ 自由提问（无推进信号）→ 交接模型循环（不错抓）；
@@ -36,7 +36,7 @@ def test_baseline_records_pre_fix_planning_rounds():
 
 @pytest.mark.asyncio
 async def test_turn1_script_missing_remind_card_zero_llm(tmp_path):
-    """① 缺剧本 → remind 卡：零模型、正文非空、卡为短问句（三通道）。"""
+    """① 缺剧本 → 出槽提醒：零模型、正文非空、芯片在场、不占暂停槽。"""
     from src.video_agent.core.planner import Planner, PlannerContext
     from src.video_agent.state.manager import StateManager
 
@@ -47,10 +47,19 @@ async def test_turn1_script_missing_remind_card_zero_llm(tmp_path):
     result = await planner.handle_message(
         "开始制作", PlannerContext(skill_name=SKILL))
     assert result.steps == 1
-    assert result.pause_kind == "remind"
     assert result.text.strip(), "引导词归正文通道（禁空正文）"
-    assert result.confirmation and result.confirmation != result.text, \
-        "卡=一句问句，不复述正文"
+    # 批 B 出槽：提醒类不登记暂停槽，无确认卡/无 pause_id/无 active_pause
+    assert not result.confirmation, "提醒出槽：不再发行确认卡"
+    assert result.pause_id in (None, ""), "提醒出槽：不签发 pause_id"
+    inter = svc.state_dict.get("interaction") or {}
+    assert not inter.get("active_pause"), "提醒出槽：不占用暂停槽"
+    assert not inter.get("awaiting_confirmation"), "提醒出槽：不置等待确认旗"
+    # quick-actions 芯片：value=人类可读 label（点击=普通用户消息）
+    chips = result.suggested_actions or []
+    assert chips, "提醒卡选项转为 quick-actions 芯片"
+    for chip in chips:
+        assert chip.get("kind") == "next"
+        assert chip.get("label") and chip.get("value") == chip["label"]
     StateManager.reset_instance()
 
 

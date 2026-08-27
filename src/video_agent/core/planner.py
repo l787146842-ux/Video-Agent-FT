@@ -303,20 +303,21 @@ class Planner:
 
         return _degrade
 
-    # ---------- 暂停卡结构化签发（单一实现，两个汇流点共用） ----------
+    # ---------- 暂停卡结构化签发（单一实现，汇流点一专用） ----------
     def _issue_pause(self, response: "PlannerResponse") -> None:
         """为携带 confirmation 的响应签发 pause_id 并登记 interaction.active_pause。
 
         汇流点一（handle_message 轮末组装后）覆盖 FC workflow_pause 与轮末策略卡；
-        汇流点二（_run_gate_precheck）覆盖原料闸/规格闸兜底卡。登记不改变
+        汇流点二（_run_gate_precheck）的提醒类兜底卡已出槽（批 B），改走正文注入 +
+        quick-actions 芯片，不再经本方法登记。登记不改变
         awaiting_confirmation 既有语义（消费链零行为变更），只叠加结构化标识。
         """
         if not response.confirmation:
             return
         if response.pause_id:
             # 问即停（ADR-0006）：发行点（FCToolRunner）已以同一 pause_id 原子
-            # 登记暂停三态，汇流点不重复签发（幂等；闸兜底卡/轮末策略卡
-            # 无预置 pause_id 时仍走下方签发路径）
+            # 登记暂停三态，汇流点不重复签发（幂等；轮末策略卡无预置
+            # pause_id 时仍走下方签发路径）
             return
         response.pause_id = uuid.uuid4().hex[:12]
         try:
@@ -645,8 +646,9 @@ class Planner:
 
     # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------
     #
-    # 轮始只装配原料闸/规格闸兜底卡（由代码执行不依赖模型自觉）；其余交接
-    # 模型循环；越阶/越暂停由闸机在工具调用点否决。
+    # 轮始只装配原料闸/规格闸兜底卡（由代码执行不依赖模型自觉）；提醒类不占
+    # 暂停槽（正文注入 + quick-actions 芯片）；其余交接模型循环；越阶/越暂停
+    # 由闸机在工具调用点否决。
 
     async def _run_gate_precheck(
         self, context: "PlannerContext", user_message: Any = "",
@@ -654,7 +656,7 @@ class Planner:
         """轮始闸预检；返回 None = 交接模型循环（实现体 planner_triage）。"""
         return await planner_triage.run_gate_precheck(
             self.state_manager, context.skill_name, user_message,
-            PlannerResponse, self._issue_pause)
+            PlannerResponse)
 
     async def _handle_fc_response(
         self,

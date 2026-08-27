@@ -201,7 +201,8 @@ async def test_planner_question_stays_in_model_loop(tmp_path):
 
 @pytest.mark.asyncio
 async def test_planner_script_missing_mechanical_card(tmp_path):
-    """需剧本 Skill 且剧本缺失 → 机械提醒卡（模型零调用，兜底卡保留）"""
+    """需剧本 Skill 且剧本缺失 → 机械提醒（模型零调用；批 B 出槽：
+    正文 + quick-actions 芯片，不签发确认卡）"""
     from src.video_agent.core.planner import Planner, PlannerContext
     from src.video_agent.state.manager import StateManager
 
@@ -212,5 +213,7 @@ async def test_planner_script_missing_mechanical_card(tmp_path):
     result = await planner.handle_message(
         "开始制作", PlannerContext(skill_name=SKILL))
     assert result.steps == 1
-    assert result.confirmation, "原料闸兜底卡必须机械签发"
+    assert result.text.strip(), "原料闸兜底提醒归正文通道（禁空正文）"
+    assert not result.confirmation, "提醒出槽：不再机械签发确认卡"
+    assert result.suggested_actions, "提醒选项转为 quick-actions 芯片"
     StateManager.reset_instance()
