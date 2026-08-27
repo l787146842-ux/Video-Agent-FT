@@ -37,7 +37,7 @@
 | 批 4 | 写类入参硬化第一步「错误可见」（T2） | ✅ 第一步 | `6841532` | 定点 129 passed；`--quick` 退出码 0 | 未知字段可见报错（manager 层全工具生效）+ patch 白名单原子拒收 + image_generate target 结构化校验；**第二步 `extra="forbid"` 未做**（待评测通过后另批） |
 | 批 5 | 幂等键与轮内去重账本（T4） | ✅ | `eff16b5` | 定点 109 passed；`--quick` 退出码 0；`gen_api_types --check` 退出码 0 | 新增 `core/idempotency_ledger.py`（随轮不持久化）；写类 Input 加可选 `idempotency_key`（storyboard 5 个 / document 2 个 / canvas 4 个）；`fc_tool_runner.py` 仅最小接线（691→705 行），同键命中跳过闸机链与实际执行，首次失败也缓存，闸机拒收与取消不记账 |
 | 批 6 | 批级检查点+条件回滚（L1） | ✅ | `94242cb` | 定点 150 passed；`--quick` 退出码 0；批末全量退出码 0；评测 38 条/误杀漏放 0/准确率 1.0 | 新增 `StateManager.snapshot_state/restore_snapshot` 受控写面（禁 clear()/update() 直接字典改法）+ `core/batch_checkpoint.py`（保守白名单条件：失败/取消 且 无 risk=high 工具 且 生成族无成败 且 无文档写标志才回滚）；`fc_tool_runner.py` 接线净增 9 行（705→714）；`recovery_policy.py` 无需按 error_code 细化，零改动；集成测试三场景（取消/纯状态写失败回滚、含副作用不回滚只留痕） |
-| 批 7 | 只读受限并行（L3，默认关） | ✅ | （本批提交，哈希待回填） | 定点 105 passed；`--quick` 退出码 0；批末全量退出码 0 | **开关默认关**（`readonly_parallel_enabled`，env `READONLY_PARALLEL_ENABLED`）：仅连续 risk=low 只读段在闸机链按序裁决全部放行后窗口内并行、结果按原序回填；任一失败回退串行消费剩余，`GenerationCancelled` 穿透；新增 `core/readonly_parallel.py`（段识别+窗口调度），`fc_tool_runner.py` 接线净增 19 行（714→733，`_dispatch_tool` 抽取复用 read_skill 短路）；**翻开开关属行为变化，须另跑 `run_eval_pipeline.py` 评测验收** |
+| 批 7 | 只读受限并行（L3，默认关） | ✅ | `3824c21` | 定点 105 passed；`--quick` 退出码 0；批末全量退出码 0 | **开关默认关**（`readonly_parallel_enabled`，env `READONLY_PARALLEL_ENABLED`）：仅连续 risk=low 只读段在闸机链按序裁决全部放行后窗口内并行、结果按原序回填；任一失败回退串行消费剩余，`GenerationCancelled` 穿透；新增 `core/readonly_parallel.py`（段识别+窗口调度），`fc_tool_runner.py` 接线净增 19 行（714→733，`_dispatch_tool` 抽取复用 read_skill 短路）；**翻开开关属行为变化，须另跑 `run_eval_pipeline.py` 评测验收** |
 
 ### 批 3 完成说明（T5 结构化错误轴）
 
