@@ -41,6 +41,23 @@ def test_fingerprint_chained_by_prev():
     assert fingerprint_messages(_MSGS_A, prev="") != fingerprint_messages(_MSGS_A, prev=fp1)
 
 
+def test_fingerprint_no_cross_message_collision():
+    """无歧义序列化：单条消息 content 内伪造分隔符（旧口径的 \n 与 \x01，
+    及新口径的 json 结构字符）无法构造与两条消息同指纹的碰撞。"""
+    forged_single = [
+        {"role": "user", "content": "X\nassistant\u0001Y"},
+    ]
+    forged_json = [
+        {"role": "user", "content": 'X"],["assistant","Y'},
+    ]
+    two_msgs = [
+        {"role": "user", "content": "X"},
+        {"role": "assistant", "content": "Y"},
+    ]
+    assert fingerprint_messages(forged_single) != fingerprint_messages(two_msgs)
+    assert fingerprint_messages(forged_json) != fingerprint_messages(two_msgs)
+
+
 def test_fingerprint_normalizes_multimodal_content():
     msgs = [{
         "role": "user",

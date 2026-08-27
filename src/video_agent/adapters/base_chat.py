@@ -58,6 +58,17 @@ async def dispatch_chat_request(
     return resp
 
 
+def _safe_int(v: Any) -> int:
+    """稳健取整：非数字/转换失败/负数一律回落 0。
+
+    遥测可降级：供应商返回畸形值时不得抛异常击穿响应解析主链路。"""
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return 0
+    return n if n > 0 else 0
+
+
 def extract_prompt_cache_usage(usage: Any) -> Tuple[int, int]:
     """从供应商 usage 提取 (prompt_tokens, cached_tokens)。
 
@@ -66,20 +77,25 @@ def extract_prompt_cache_usage(usage: Any) -> Tuple[int, int]:
     - Anthropic 中继：input_tokens + cache_read_input_tokens
     - DeepSeek：prompt_tokens + prompt_cache_hit_tokens
     缺失/畸形一律回落 (0, 0)：遥测可降级，不影响主流程。
+    Anthropic 口径：input_tokens 不含 cache_read_input_tokens，命中取自
+    该字段时分母补全（prompt += cached），避免命中量被钳到极低。
     """
     if not isinstance(usage, dict):
         return 0, 0
-    prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    prompt = _safe_int(usage.get("prompt_tokens"))
+    if prompt == 0:
+        prompt = _safe_int(usage.get("input_tokens"))
     details = usage.get("prompt_tokens_details")
     cached = 0
     if isinstance(details, dict):
-        cached = int(details.get("cached_tokens") or 0)
+        cached = _safe_int(details.get("cached_tokens"))
     if cached <= 0:
-        cached = int(
-            usage.get("prompt_cache_hit_tokens")
-            or usage.get("cache_read_input_tokens")
-            or 0
-        )
+        cached = _safe_int(usage.get("prompt_cache_hit_tokens"))
+    if cached <= 0:
+        cached = _safe_int(usage.get("cache_read_input_tokens"))
+        if cached > 0:
+            # Anthropic 语义：input_tokens 不含命中量，补全分母再钳制
+            prompt += cached
     return max(0, prompt), max(0, min(cached, prompt) if prompt > 0 else cached)
 
 

@@ -25,16 +25,17 @@ from src.video_agent.utils.paths import DATA_DIR
 
 # reasoning 文本持久化长度（仅展示用，防 trace 膨胀；保留尾部，头部省略）
 _REASONING_HEAD_NOTE = "…（前文思考已截断）"
-# 指纹分隔符（不可打印字符，防 content 拼接歧义碰撞）
+# 多模态非文本段归一后各段的连接符（整条消息再经 json 序列化，无歧义）
 _FP_PART_SEP = "\u0001"
-_FP_MSG_SEP = "\n"
 
 
 def fingerprint_messages(messages: List[Dict[str, Any]], prev: str = "") -> str:
     """P2-6 模型可见指纹链：对可见消息计算确定性指纹（sha256 前 16 hex）。
 
     链式：prev（上一条指纹）参与哈希，篡改任一环即后续全链对不上。
-    规范化口径：role+content 顺序序列化；content 为多模态列表时文本段保留、
+    规范化口径：每条消息无歧义序列化（json.dumps([role, content])，
+    content 内任何字符均被转义），再以 "," 连接——content 内伪造分隔符
+    无法构造跨消息碰撞；content 为多模态列表时文本段保留、
     非文本段归一为 [类型] 占位（审计口径 = 模型实际看到了什么）。
     """
     norm: List[str] = []
@@ -50,8 +51,10 @@ def fingerprint_messages(messages: List[Dict[str, Any]], prev: str = "") -> str:
                 else:
                     parts.append(str(p))
             content = _FP_PART_SEP.join(parts)
-        norm.append(f"{role}{_FP_PART_SEP}{content}")
-    payload = f"{prev}|" + _FP_MSG_SEP.join(norm)
+        if not isinstance(content, str):
+            content = str(content)
+        norm.append(json.dumps([role, content], ensure_ascii=True))
+    payload = f"{prev}|" + ",".join(norm)
     return hashlib.sha256(payload.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 

@@ -14,6 +14,8 @@
 import importlib.util
 import pathlib
 
+import pytest
+
 from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.document_tools import ReadSkillInput, ReadSkillTool
 
@@ -76,6 +78,35 @@ def test_resolve_resource_single_file_rejected():
     path, err = registry.resolve_skill_resource(SINGLE, REF1)
     assert path is None
     assert "单文件" in err
+
+
+def test_resource_manifest_excludes_symlinks(tmp_path, monkeypatch):
+    """符号链接不进资源清单：白名单后缀链接可读包外文件，
+    fail-closed 排除；清单不含链接 → resolve 同口径拒绝。"""
+    pkg = tmp_path / "sympkg"
+    refs = pkg / "references"
+    refs.mkdir(parents=True)
+    (pkg / "sympkg.md").write_text("正文", encoding="utf-8")
+    (refs / "real.md").write_text("真身", encoding="utf-8")
+    outside = tmp_path / "outside.md"
+    outside.write_text("包外内容", encoding="utf-8")
+    link = refs / "link.md"
+    try:
+        link.symlink_to(outside)
+    except OSError as e:
+        pytest.skip(f"当前 Windows 环境无法创建符号链接：{e}")
+    monkeypatch.setattr(
+        registry.SkillEntry, "package_root", property(lambda self: pkg))
+    entry = registry.SkillEntry(
+        slug="sympkg", name="sympkg", content="", sections={})
+    # 清单只含真实文件，符号链接被排除（is_symlink 分支）
+    assert entry.resource_manifest == ["references/real.md"]
+    # 链接名即使在白名单后缀也不在清单 → 拒绝。双保险：
+    # 即使绕过清单，解析后逃逸包根同样被 resolve 守卫拦截。
+    monkeypatch.setattr(registry, "resolve_entry", lambda wanted: entry)
+    path, err = registry.resolve_skill_resource("sympkg", "references/link.md")
+    assert path is None
+    assert "资源清单" in err
 
 
 # ---------- ③ read_skill 工具端到端 ----------

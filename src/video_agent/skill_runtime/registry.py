@@ -178,7 +178,8 @@ class SkillEntry:
         单文件形态/无 references/ 目录 = 空清单（零资源合法）。
 
         清单即声明：read_skill（resource=…）只放行清单内资源，
-        清单外一律拒绝；二进制资源不开放经文本工具读取。"""
+        清单外一律拒绝；二进制资源不开放经文本工具读取；
+        符号链接不收录（白名单后缀链接可读包外文件，fail-closed 排除）。"""
         root = self.package_root
         if root is None:
             return []
@@ -188,7 +189,8 @@ class SkillEntry:
         return sorted(
             f.relative_to(root).as_posix()
             for f in refs.rglob("*")
-            if f.is_file() and f.suffix.lower() in _RESOURCE_TEXT_SUFFIXES
+            if f.is_file() and not f.is_symlink()
+            and f.suffix.lower() in _RESOURCE_TEXT_SUFFIXES
         )
 
 
@@ -436,7 +438,15 @@ def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], 
         return None, (
             f"资源 {resource!r} 不在 Skill「{entry.name}」资源清单内"
             f"（fail-closed：声明外资源一律拒绝）。可用资源：{listed}")
-    return root / rel_norm, ""
+    target = root / rel_norm
+    # 双保险：解析后仍必须落在包根内（防符号链接/联接指向包外）
+    try:
+        if not target.resolve().is_relative_to(root.resolve()):
+            return None, (
+                f"资源 {resource!r} 解析后逃逸包根（fail-closed：拒绝）")
+    except OSError as e:
+        return None, f"资源 {resource!r} 解析失败（拒绝）：{e}"
+    return target, ""
 
 
 def tool_available(skill_name: str, tool: str) -> bool:

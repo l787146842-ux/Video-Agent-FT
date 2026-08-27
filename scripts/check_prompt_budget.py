@@ -10,7 +10,8 @@
 - 动作定义唯一性：协议模板不再内联动作清单（文本动作定义已随 4-4 双轨退役删除，ADR-0001）；
 - include 引用完整性：{{include:path}} 目标文件存在。
 
-Skill 直注禁令独立账本（C6，任务#22）：data/skills/*.md 的「严禁/不得」
+Skill 直注禁令独立账本（C6，任务#22）：Skill 模型可见注入面（主文档双形态 +
+目录包 references/ 资源）的「严禁/不得」
 不并入 BUDGET=8，单独计账：当前 WARN 观察项，
 基线棘轮锁死当前计数（0，任务#8 清洗后清零）——超过基线即 FAIL，只降不升。
 
@@ -38,7 +39,7 @@ CODE_DIRS = ["src/video_agent/core", "src/video_agent/skill_runtime", "src/video
 BUDGET = 8
 BYTE_BUDGET = 7168
 BAN_RE = re.compile(r"严禁|不得")
-# Skill 直注禁令独立账本（C6）：data/skills/*.md 行级命中基线棘轮，只降不升。
+# Skill 直注禁令独立账本（C6）：Skill 模型可见注入面行级命中基线棘轮，只降不升。
 # 任务#8（路线图 #33）完成 16 个 skill 正文禁令系统性清洗：157→0（全部转为
 # 正向基线/「X排除在外」声明式表述，语义不变），基线随之显式下调至 0。
 SKILLS_MD_DIR = ROOT / "data" / "skills"
@@ -110,13 +111,30 @@ def collect_violations() -> list:
 
 
 def collect_skill_ban_violations() -> list:
-    """Skill 直注禁令独立账本（C6）：data/skills/*.md 行级「严禁/不得」命中。
+    """Skill 直注禁令独立账本（C6）：Skill 模型可见注入面行级「严禁/不得」命中。
 
     与 BUDGET=8 主账本分离（Skill 正文清洗留长期路线图 #33，不在本门禁扩面）。
+    枚举口径与 scan_skills._iter_skill_docs 同形态双轨：单文件 *.md 与
+    目录包 <slug>/<slug>.md 主文档；目录包 references/ 资源同扫（它们经
+    read_skill(resource=…) 成为模型可见注入面）。
     """
     out = []
-    for f in sorted(SKILLS_MD_DIR.glob("*.md")):
-        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+    targets = sorted(SKILLS_MD_DIR.glob("*.md"))
+    for p in sorted(SKILLS_MD_DIR.iterdir(), key=lambda x: x.name):
+        if not p.is_dir() or p.name.startswith("."):
+            continue
+        main = p / f"{p.name}.md"
+        if main.exists():
+            targets.append(main)
+        refs = p / "references"
+        if refs.is_dir():
+            targets.extend(f for f in sorted(refs.rglob("*")) if f.is_file())
+    for f in targets:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
             if BAN_RE.search(line):
                 out.append(f"{f.relative_to(ROOT)}:{i}")
     return out

@@ -38,8 +38,16 @@ def test_extract_openai_style():
 
 
 def test_extract_anthropic_relay_style():
+    # Anthropic 语义：input_tokens 不含 cache_read_input_tokens，
+    # 分母补全：800 + 512 = 1312，命中 512 不被钳低报。
     usage = {"input_tokens": 800, "cache_read_input_tokens": 512, "output_tokens": 10}
-    assert extract_prompt_cache_usage(usage) == (800, 512)
+    assert extract_prompt_cache_usage(usage) == (1312, 512)
+
+
+def test_extract_anthropic_large_cache_read_not_underreported():
+    # 命中量远大于 input_tokens 时，分母补全后命中不被 min 钳到极低。
+    usage = {"input_tokens": 100, "cache_read_input_tokens": 9900}
+    assert extract_prompt_cache_usage(usage) == (10000, 9900)
 
 
 def test_extract_deepseek_style():
@@ -52,6 +60,20 @@ def test_extract_missing_or_invalid_returns_zeros():
     assert extract_prompt_cache_usage({}) == (0, 0)
     assert extract_prompt_cache_usage({"total_tokens": 10}) == (0, 0)
     assert extract_prompt_cache_usage("not-a-dict") == (0, 0)
+
+
+def test_extract_non_numeric_values_do_not_raise():
+    # docstring 承诺畸形回落 (0,0)：非数字值不得抛异常击穿响应解析。
+    assert extract_prompt_cache_usage({"prompt_tokens": "abc"}) == (0, 0)
+    assert extract_prompt_cache_usage(
+        {"input_tokens": "x", "cache_read_input_tokens": "y"}) == (0, 0)
+    assert extract_prompt_cache_usage(
+        {"prompt_tokens": -5, "prompt_tokens_details": {"cached_tokens": None}}
+    ) == (0, 0)
+    # 部分畸形不拖累有效字段。
+    assert extract_prompt_cache_usage(
+        {"prompt_tokens": 500, "prompt_tokens_details": {"cached_tokens": "bad"}}
+    ) == (500, 0)
 
 
 def test_extract_cached_capped_by_prompt():
