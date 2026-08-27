@@ -54,6 +54,11 @@ class Settings:
 
     # Agent 多步循环
     max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 6))
+    # 只读受限并行（批 7 · L3，默认关）：仅连续 risk=low 只读工具段在闸机链
+    # 按序裁决全部放行后于窗口内并行执行，结果按原序回填；写类/中高危仍串行。
+    # 翻开（READONLY_PARALLEL_ENABLED=1）属行为变化，须重跑评测验收。
+    readonly_parallel_enabled: bool = field(
+        default_factory=lambda: _env_bool("READONLY_PARALLEL_ENABLED", False))
 
     # LLM 超时（秒）
     llm_timeout: int = field(default_factory=lambda: _env_int("LLM_TIMEOUT", 120))

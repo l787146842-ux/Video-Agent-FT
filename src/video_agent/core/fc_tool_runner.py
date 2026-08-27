@@ -22,6 +22,7 @@ from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.core import fc_gates, fc_reconcile, prompt_gates
 from src.video_agent.core import batch_checkpoint
 from src.video_agent.core import ports
+from src.video_agent.core import readonly_parallel
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
 from src.video_agent.core import tool_args_preview
@@ -195,6 +196,27 @@ class FCToolRunner:
         risk = str(getattr(tool, "risk", "") or "").strip().lower()
         return risk if risk in ("low", "medium", "high") else "high"
 
+    async def _dispatch_tool(self, name: str, args: Dict[str, Any], injected_skill: str) -> ToolResult:
+        """闸机放行后的单调用派发（串行主循环与批 7 只读并行窗口共用同一派发面）：
+        read_skill 全文直注短路 → 常规调用。"""
+        if name == "read_skill" and injected_skill:
+            wanted_skill = str(args.get("name") or "").strip()
+            same_skill = bool(wanted_skill) and wanted_skill == injected_skill.strip()
+            # 续读参数（section/start）与目录包资源（resource）一律真读：
+            # 分级注入时全文未全量注入，短路会断掉模型的章节续读/
+            # 资源按需加载能力（P2-4）
+            has_cont = bool(str(args.get("section") or "").strip()) \
+                or _as_start(args.get("start")) > 0 \
+                or bool(str(args.get("resource") or "").strip())
+            if same_skill and not has_cont and fc_gates.skill_full_text_injected(wanted_skill):
+                logger.info(f"[Planner] read_skill 短路：「{wanted_skill}」全文已直注，跳过工具调用")
+                return ToolResult(success=True, data={
+                    "content": f"Skill「{wanted_skill}」全文已在本轮 system prompt 中注入，无需重复读取，直接遵循其中的规则即可。",
+                    "already_injected": True,
+                })
+            # 未全量直注（分级注入/其他 Skill/续读）：按需真读全文或章节
+        return await self.tool_manager.invoke_tool(name, args)
+
     def _record_presented(self, name: str, args: Dict[str, Any]) -> None:
         """FC 轨记录本轮写入过提示词的草稿：patch_draft 带非空 prompt 成功时，
         解析实际 draft_id 记入 interaction.drafts_presented（用户回应时晋升已确认）"""
@@ -288,6 +310,9 @@ class FCToolRunner:
         _batch_cp = batch_checkpoint.take_checkpoint() if batch_checkpoint.batch_has_risky_tool(
             response, self.tool_manager) else None
         _batch_tools = batch_checkpoint.batch_tool_names(response)
+        # 只读受限并行（批 7，默认关）：识别连续 low 只读段；开关关/无窗口时返回空计划，
+        # 执行路径与现状完全等价；段识别与窗口调度一律归 core/readonly_parallel.py
+        _ro_plan, _ro_pre = readonly_parallel.plan_batch(response.tool_calls, self.tool_manager)
         # 结构纯净闸/故事板强制暂停用的批内标志
         structure_created = False
         structure_kinds: set = set()  # 本批搭建的结构类别（shot 优先决定暂停文案）
@@ -303,6 +328,14 @@ class FCToolRunner:
                 args = {}
             # current/空引用 → 真实 id（闸机与工具调用前，防命中错误卡片/绕过闸机）
             fc_gates.resolve_current_refs(ctx, name, args)
+
+            # 批 7 只读并行窗口：命中窗口起点时整窗调度（闸机按序裁决 →
+            # 全部放行后并行执行 → 结果按原序回填 _ro_pre）
+            if ci in _ro_plan:
+                prompt_gate_blocked += await readonly_parallel.run_window(
+                    self, ctx, ledger, response.tool_calls, _ro_plan[ci], _ro_pre,
+                    paused_this_batch=paused_this_batch, injected_skill=injected_skill,
+                    on_event=on_event, batch_cp=_batch_cp, batch_tools=_batch_tools)
 
             # 过程时间线：工具开始（前端渲染运行态条目）
             tool_event_id = str(call.get("id") or f"fc-{ci}") if isinstance(call, dict) else f"fc-{ci}"
@@ -360,7 +393,11 @@ class FCToolRunner:
             # 空键直通过不去重，判定语义唯一归 core/idempotency_ledger.py
             _idem_key = str(args.get("idempotency_key") or "").strip()
             _idem_cached = self._idempotency.check(_idem_key)
-            if _idem_cached is not None:
+            _ro_hit = _ro_pre.pop(ci, None)
+            if _ro_hit is not None:
+                # 批 7 并行窗口预执行结果按原序回填（闸机裁决已在窗口内按序完成）
+                result, gate_error = _ro_hit.result, _ro_hit.gate_error
+            elif _idem_cached is not None:
                 result, gate_error = _idem_cached, None
             else:
                 # 结构纯净闸：内联详细提示词剥离（闸机链之前，回喂时附说明）
@@ -375,26 +412,8 @@ class FCToolRunner:
                 try:
                     if gate_error is not None:
                         result = ToolResult(success=False, error=gate_error)
-                    elif name == "read_skill" and injected_skill:
-                        wanted_skill = str(args.get("name") or "").strip()
-                        same_skill = bool(wanted_skill) and wanted_skill == injected_skill.strip()
-                        # 续读参数（section/start）与目录包资源（resource）一律真读：
-                        # 分级注入时全文未全量注入，短路会断掉模型的章节续读/
-                        # 资源按需加载能力（P2-4）
-                        has_cont = bool(str(args.get("section") or "").strip()) \
-                            or _as_start(args.get("start")) > 0 \
-                            or bool(str(args.get("resource") or "").strip())
-                        if same_skill and not has_cont and fc_gates.skill_full_text_injected(wanted_skill):
-                            result = ToolResult(success=True, data={
-                                "content": f"Skill「{wanted_skill}」全文已在本轮 system prompt 中注入，无需重复读取，直接遵循其中的规则即可。",
-                                "already_injected": True,
-                            })
-                            logger.info(f"[Planner] read_skill 短路：「{wanted_skill}」全文已直注，跳过工具调用")
-                        else:
-                            # 未全量直注（分级注入/其他 Skill/续读）：按需真读全文或章节
-                            result = await self.tool_manager.invoke_tool(name, args)
                     else:
-                        result = await self.tool_manager.invoke_tool(name, args)
+                        result = await self._dispatch_tool(name, args, injected_skill)
                 except GenerationCancelled:
                     # 取消穿透：先记本工具账本/trace（取消态）再上抛，
                     # 任何中断都有痕迹（不静默吞，不吞为失败结果）
@@ -418,7 +437,7 @@ class FCToolRunner:
                     # 取消留半截态修复（批 6）：穿透上抛前过保守条件判定（不吞异常）
                     batch_checkpoint.maybe_rollback_on_cancel(StateManager.get_instance(), _batch_cp, cancelled_tool=name, ledger=ledger, tool_names=_batch_tools, tool_manager=self.tool_manager)
                     raise
-            _tool_ms = (time.monotonic() - _tool_t0) * 1000
+            _tool_ms = _ro_hit.elapsed_ms if _ro_hit is not None else (time.monotonic() - _tool_t0) * 1000
             # 幂等键记账（T4）：非空键的执行结果（含失败）入轮内账本；
             # 空键与闸机拒收不记账（拒收无副作用，待模型改参/用户确认后重新裁决）
             if gate_error is None:
