@@ -248,10 +248,13 @@ async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_stud
     pause_value = str((getattr(body, "pause_response", None) or {}).get("value") or "")
     if use_studio_context:
         async with svc.lock:
-            # 三通道分离 C：点选回携 value 传入，命中系统继续选项时机械生成下一步指令
+            # 三通道分离 C：点选回携 value 传入，命中系统继续选项时机械生成下一步指令；
+            # 三态消费（ADR-0006）：用户原文与结构化回携同传，供
+            # accept/decline/cancel-supersede 分类与 trace 留痕
             _pr = getattr(body, "pause_response", None) or {}
             pending_confirm_note = _consume_pending_confirmation(
-                svc, pause_value=str(_pr.get("value") or ""))
+                svc, user_text, pause_value=str(_pr.get("value") or ""),
+                pause_response=_pr)
             spec_finalize_note = _finalize_spec_params(svc, user_text)
             spec_wizard_note, wiz_doc = _consume_spec_wizard(svc, user_text)
     # 聊天通道均为 FC，附件统一走清单+read_uploaded_doc 渐进式披露

@@ -138,7 +138,7 @@ def test_b1_generate_image_once_per_batch():
             "name": "generate_image",
             "arguments": json.dumps({"prompt": "一只狗", "adapter_provider": "prov-x"})}},
     ]
-    applied, confirmation, _u, _i, _l, _o, tool_results, _d, warnings, _overflow = asyncio.run(
+    applied, confirmation, _u, _i, _l, _o, tool_results, _d, warnings, _overflow, _pause_id = asyncio.run(
         runner.execute(ChatResponse(content="", tool_calls=calls))
     )
     assert applied == 1  # 第二个被拦截

@@ -28,7 +28,7 @@ def _fc(*calls):
 
 def _unpack(res):
     (applied, confirmation, _urls, _inserts, _log, opts,
-     _tr, _docs, _warn, overflow) = res
+     _tr, _docs, _warn, overflow, _pause_id) = res
     return applied, confirmation, opts, overflow
 
 

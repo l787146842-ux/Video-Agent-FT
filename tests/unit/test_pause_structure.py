@@ -134,8 +134,12 @@ class TestConsumePauseResponse:
         marker = consume_pause_response(
             svc, {"pause_id": "abc123", "value": "确认推进", "label": "确认"})
 
-        assert marker == {"pause_id": "abc123", "value": "确认推进", "label": "确认"}
+        # 三态消费（ADR-0006）：点选缺省 accept，随标记落盘可重建
+        assert marker == {"pause_id": "abc123", "value": "确认推进",
+                          "label": "确认", "decision": "accept"}
         assert "active_pause" not in (svc.state_dict.get("interaction") or {})
+        assert (svc.state_dict.get("interaction") or {})\
+            .get("last_pause_decision") == "accept"
 
     def test_mismatch_returns_none_and_keeps_registration(self, svc):
         inter = svc.state_dict.setdefault("interaction", {})
@@ -152,17 +156,16 @@ class TestConsumePauseResponse:
 
 
 class TestPauseSlotMutex:
-    """单一活跃暂停槽位互斥（主体回归，ADR-0004）：已有未消费暂停时
-    重复 workflow_pause 被拒收（结构化拒因回喂，不静默吞掉）。"""
+    """单一活跃暂停槽位防御断言（问即停，ADR-0006）：已有未消费暂停时
+    重复 workflow_pause 照常发行（新卡覆盖旧卡解除死锁），只告警 +
+    trace 留痕，不再以拒因回喂模型；发行确认后暂停三态事务写入。"""
 
     @pytest.mark.asyncio
-    async def test_duplicate_pause_rejected_when_slot_occupied(self, svc):
+    async def test_duplicate_pause_overrides_old_card(self, svc):
         from src.video_agent.adapters.base_chat import ChatResponse
         from src.video_agent.core.fc_tool_runner import FCToolRunner
         from src.video_agent.tools.manager import ToolManager
 
-        # （原 register_skill_runtime_tools 已随任务#36 B5 执行器退役删除；
-        # workflow_pause 是平台工具，不依赖执行器注册）
         inter = svc.state_dict.setdefault("interaction", {})
         inter["active_pause"] = {"pause_id": "existing1", "message": "m", "options": []}
 
@@ -173,11 +176,16 @@ class TestPauseSlotMutex:
                 "arguments": '{"message": "再暂停一次"}'}}])
         result = await runner.execute(resp)
         applied, confirmation = result[0], result[1]
-        assert applied == 0, "槽位被占用时暂停不计为成功动作"
-        assert not confirmation, "重复暂停不上抛 confirmation（防双暂停）"
+        assert applied == 1, "防御断言只告警留痕，不再拒收（解除死锁）"
+        assert confirmation, "重复暂停照常上抛 confirmation（新卡覆盖旧卡）"
+        new_pid = result.pause_id
+        assert new_pid and new_pid != "existing1"
+        active = (svc.state_dict.get("interaction") or {}).get("active_pause") or {}
+        assert active.get("pause_id") == new_pid, "新卡登记覆盖旧卡"
+        assert active.get("message") == confirmation
 
     @pytest.mark.asyncio
-    async def test_pause_accepted_when_slot_free(self, svc):
+    async def test_pause_issues_atomic_state_when_slot_free(self, svc):
         from src.video_agent.adapters.base_chat import ChatResponse
         from src.video_agent.core.fc_tool_runner import FCToolRunner
         from src.video_agent.tools.manager import ToolManager
@@ -189,6 +197,43 @@ class TestPauseSlotMutex:
                 "arguments": '{"message": "请确认是否继续"}'}}])
         result = await runner.execute(resp)
         assert result[0] == 1, "槽位空闲时暂停正常受理"
+        # 事务性写入（ADR-0006）：三态在发行确认后一次原子落盘，
+        # 工具体不写状态；卡片文案与登记同源同口径
+        inter = svc.state_dict.get("interaction") or {}
+        assert result.pause_id, "发行点必须签发 pause_id"
+        assert inter.get("awaiting_confirmation") is True
+        assert inter.get("confirmation_message") == result[1]
+        active = inter.get("active_pause") or {}
+        assert active.get("pause_id") == result.pause_id
+        assert active.get("message") == result[1]
+
+    @pytest.mark.asyncio
+    async def test_pause_breaks_same_batch(self, svc):
+        """问即停：暂停发行成功即结束本批，同批后续调用不执行也不回喂拒因"""
+        import json as _json
+
+        from src.video_agent.adapters.base_chat import ChatResponse
+        from src.video_agent.core.fc_tool_runner import FCToolRunner
+        from src.video_agent.tools.base import ToolResult
+
+        invoked = []
+
+        class StubManager:
+            async def invoke_tool(self, name, args):
+                invoked.append(name)
+                return ToolResult(success=True, data={"paused": True})
+
+        runner = FCToolRunner(StubManager())
+        resp = ChatResponse(content="", finish_reason="tool_calls", tool_calls=[
+            {"id": "c1", "function": {"name": "workflow_pause",
+                                      "arguments": _json.dumps({"message": "请确认"})}},
+            {"id": "c2", "function": {"name": "storyboard_create_group",
+                                      "arguments": "{}"}},
+        ])
+        out = await runner.execute(resp)
+        assert invoked == ["workflow_pause"], "暂停后同批后续调用不执行（问即停）"
+        assert all(t.get("ok") for t in out[6]), "悬挂调用不产生拒因回喂"
+        assert out[1], "暂停文案照常上抛"
 
 
 class TestPersistedMarkers:

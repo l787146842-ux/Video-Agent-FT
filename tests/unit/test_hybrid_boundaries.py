@@ -421,7 +421,7 @@ def test_fc_spec_doc_written_injects_system_pause(monkeypatch):
             "name": "document_write",
             "arguments": json.dumps({"name": "制片规格.md", "content": "标题：测试"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow = asyncio.run(
+    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow, _pause_id = asyncio.run(
         # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户一次性同意
         runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
     assert applied == 1
@@ -442,7 +442,7 @@ def test_fc_spec_doc_written_keeps_model_pause(monkeypatch):
             "name": "workflow_pause",
             "arguments": json.dumps({"message": "请审阅规格"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow = asyncio.run(
+    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow, _pause_id = asyncio.run(
         # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户一次性同意
         runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
     assert docs_written == ["制片规格.md"]
@@ -461,7 +461,7 @@ def test_fc_non_spec_doc_written_no_pause(monkeypatch):
             "name": "document_write",
             "arguments": json.dumps({"name": "大纲.md", "content": "正文"})}},
     ])
-    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow = asyncio.run(
+    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow, _pause_id = asyncio.run(
         # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户一次性同意
         runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
     assert applied == 1
@@ -722,7 +722,7 @@ def test_honest_pause_kept_when_generation_failed(monkeypatch):
             "name": "workflow_pause",
             "arguments": json.dumps({"message": "提示词草案已写好，请审阅确认。"})}},
     ])
-    applied, confirmation, *_rest, _warns, _overflow = asyncio.run(runner.execute(response))
+    applied, confirmation, *_rest, _warns, _overflow, _pause_id = asyncio.run(runner.execute(response))
     # v2 批4：诚实暂停不被没收——闸警告与模型原文在确认/正文通道可见
     assert "提示词草案已写好，请审阅确认。" in (confirmation + _overflow)
     assert "闸" in confirmation or "请过目以上成果" in confirmation
@@ -830,7 +830,7 @@ def test_fc_patch_current_rejects_bad_prompt(monkeypatch):
             "name": "storyboard_patch_draft",
             "arguments": json.dumps({"draft_id": "current", "patch": {"prompt": "x"}})}},
     ])
-    applied, confirmation, *_rest, tool_results, _docs, _warnings, _overflow = asyncio.run(
+    applied, confirmation, *_rest, tool_results, _docs, _warnings, _overflow, _pause_id = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill",
                        selected_draft_id="d2", selected_type="keyElement"))
     assert applied == 0

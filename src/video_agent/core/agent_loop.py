@@ -132,9 +132,13 @@ class AgentLoopResult:
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
     # 协作式停止标记（端到端中断协议）：
     # stopped=True 表示本循环经检查点命中用户停止信号干净退出；
-    # stop_phase=thinking/tool_executing/streaming（前端气泡措辞依据）
+    # stop_phase=thinking/tool_executing/streaming（前端气泡措辞依据）；
+    # 问即停（ADR-0006）复用同一通道：暂停发行成功置
+    # stopped=True/stop_phase="pause"（web 层对 pause 相位豁免照常发 done）
     stopped: bool = False
     stop_phase: str = ""
+    # 问即停（ADR-0006）：发行点签发的暂停卡标识（随 done payload 下发）
+    pause_id: str = ""
 
 
 # 防虚报检测（_STRUCTURE_CLAIM_RE/_claims_structure_done）归
@@ -439,9 +443,10 @@ async def run_agent_loop(
             # 结构化暂停确认：本轮 FC 批经 workflow_pause 产生
             fc_confirmation = str((fc_extra or {}).get("confirmation") or "")
             fc_confirmation_options = list((fc_extra or {}).get("confirmation_options") or [])
+            fc_pause_id = str((fc_extra or {}).get("pause_id") or "")
 
             # FC 路径：tool_calls 已在 llm_call 内部执行；正文原样可见（无需清洗）
-            if fc_applied > 0 or fc_confirmation:
+            if fc_applied > 0 or fc_confirmation or fc_pause_id:
                 result.applied_actions += fc_applied
                 if fc_applied:
                     await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": fc_applied})
@@ -452,7 +457,7 @@ async def run_agent_loop(
                     f"[AgentLoop] step={step} fc_applied={fc_applied} "
                     f"confirm={bool(fc_confirmation)} finish={finish_reason or '-'}"
                 )
-                if fc_confirmation:
+                if fc_confirmation or fc_pause_id:
                     # 虚报审计：FC 确认轮同样承重——声称拆完但故事板
                     # 为空 → 只附警告不拦人（系统不没收模型暂停）
                     if (
@@ -466,6 +471,12 @@ async def run_agent_loop(
                     # 暂停等待用户确认：终止循环，把确认请求（含候选选项）带回给前端
                     result.confirmation = fc_confirmation
                     result.confirmation_options = fc_confirmation_options
+                    result.pause_id = fc_pause_id
+                    # 问即停（ADR-0006）：暂停发行成功 = 本轮结束、控制流冻结；
+                    # 复用协作式停止通道标记（stop_phase="pause"，非用户停止；
+                    # web 层对 pause 相位豁免，照常走成功路径发 done）
+                    result.stopped = True
+                    result.stop_phase = "pause"
                     # 三通道分离 B：超长 pause message 原文进正文通道
                     # （成果展示归正文；判重内置，防与模型 prose 重复）
                     _pause_overflow = str((fc_extra or {}).get("pause_overflow") or "").strip()

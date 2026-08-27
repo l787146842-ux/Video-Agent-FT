@@ -303,11 +303,14 @@ async def _maybe_compact_history(
 
 
 def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
-    """消费暂停回应结构化回携（对标 AskUserQuestion 范式）。
+    """消费暂停回应结构化回携（对标 AskUserQuestion 范式，三态消费，
+    ADR-0006）。
 
-    用户点选暂停卡选项时请求携带 {"pause_id", "value", "label"}；与
-    interaction.active_pause 登记匹配即清除登记并返回持久化标记
-    {"pause_id", "value", "label"}；不匹配（旧卡/自由打字）返回 None。
+    用户点选暂停卡选项时请求携带 {"pause_id", "value", "label"[, "decision"]}；
+    与 interaction.active_pause 登记匹配即清除登记并返回持久化标记
+    {"pause_id", "value", "label", "decision"}（decision 缺省 accept，
+    卡片拒绝/取消选项为 decline）；不匹配（旧卡/自由打字）返回 None。
+    决策经 reduce_interaction 落盘并进控制流 trace。
     LLM 语义不变：消息正文仍照常入 history，本函数只产出展示层标记。
     调用方需持有 svc.lock。
     """
@@ -318,7 +321,14 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
     active = interaction.get("active_pause") or {}
     if str(active.get("pause_id") or "") != pid:
         return None
-    workflow_runtime.reduce_interaction(svc, pop_flags=("active_pause",))
+    decision = (
+        "decline"
+        if str((pause_response or {}).get("decision") or "").strip() == "decline"
+        else "accept"
+    )
+    workflow_runtime.reduce_interaction(
+        svc, set_flags={"last_pause_decision": decision},
+        pop_flags=("active_pause",), flush=True)
     # review decision 解析（审阅卡确认即解除 review_spec 挂起）
     try:
         _used = svc.state_dict.get("usedSkills") or []
@@ -330,15 +340,30 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
                 _tok, str((pause_response or {}).get("value") or "confirm"))
     except Exception as _e:
         logger.debug("[WorkflowRuntime] review decision 解析跳过: {}", _e)
+    try:
+        AgentTracer.get_instance().record_control_flow(
+            "pause_consumed",
+            f"暂停卡结构化回应消费：decision={decision} pause_id={pid}")
+    except Exception as _e:
+        logger.debug("[ConfirmFlow] 控制流留痕跳过: {}", _e)
     return {
         "pause_id": pid,
         "value": str((pause_response or {}).get("value") or ""),
         "label": str((pause_response or {}).get("label") or ""),
+        "decision": decision,
     }
 
 
-def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "") -> str:
+def _consume_pending_confirmation(
+    svc, user_text: str = "", pause_value: str = "",
+    pause_response: Optional[Dict[str, Any]] = None,
+) -> str:
     """消费「等待确认」暂停态：用户的新消息即是对先前轮次暂停的回应。
+
+    三态消费（问即停，ADR-0006）：accept = 点选选项（结构化回携）；
+    decline = 卡片拒绝/取消选项；cancel-supersede = 自由打字新指令取代
+    悬挂暂停（用户消息文本即回应）。三种回应全部经 reduce_interaction 落盘
+    last_pause_decision 并进控制流 trace；supersede 同步清除 active_pause。
 
     暂停态只写不清会让模型永远停在上一阶段；只清不带则模型看不到
     「用户已确认」的信号，两者都会导致从头重复同一套操作（读同一文档→
@@ -347,6 +372,36 @@ def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "
     调用方需持有 svc.lock。
     """
     interaction = svc.state_dict.get("interaction") or {}
+    # 三态分类：结构化回携在场且匹配（或未登记时宽容受理）= accept/decline；
+    # 否则有悬挂暂停且带新文本 = cancel-supersede（新指令取代暂停）
+    _pr = pause_response or {}
+    _pr_pid = str(_pr.get("pause_id") or "").strip()
+    _active = interaction.get("active_pause") or {}
+    _active_pid = str(_active.get("pause_id") or "")
+    _decision = ""
+    if _pr_pid and (not _active_pid or _pr_pid == _active_pid):
+        _decision = (
+            "decline"
+            if str(_pr.get("decision") or "").strip() == "decline" else "accept"
+        )
+    elif (interaction.get("awaiting_confirmation") or _active_pid) \
+            and str(user_text or "").strip():
+        _decision = "cancel-supersede"
+    if _decision:
+        # supersede：悬挂暂停被新指令取代，同步清除 active_pause；
+        # accept/decline 的登记清除归 consume_pause_response（持久化标记同源）
+        _pop = ("active_pause",) if (
+            _decision == "cancel-supersede" and _active_pid) else ()
+        workflow_runtime.reduce_interaction(
+            svc, set_flags={"last_pause_decision": _decision},
+            pop_flags=_pop, flush=True)
+        try:
+            AgentTracer.get_instance().record_control_flow(
+                "pause_consumed",
+                f"暂停态随新消息消费：decision={_decision}"
+                + (f" pause_id={_active_pid}" if _active_pid else ""))
+        except Exception as _e:
+            logger.debug("[ConfirmFlow] 控制流留痕跳过: {}", _e)
     pause_kind = interaction.get("pending_pause_kind")
     if pause_kind == "collect":
         # 规格收集暂停的回应：视为已进入收集环节（后续由 _consume_spec_wizard 拼装）
@@ -413,6 +468,14 @@ def _consume_pending_confirmation(svc, user_text: str = "", pause_value: str = "
         _used = svc.state_dict.get("usedSkills") or []
         _skill = str(_used[-1] or "") if _used else ""
         flow_note = prompt_gates.flow_continue_note(svc.state_dict, _skill)
+    # decline（卡片拒绝/取消选项）：告知模型原方案作废，按新消息处置；
+    # accept/cancel-supersede 维持既有客观提示口径（测试钉死关键字样不变）
+    if _decision == "decline":
+        return (
+            "\n\n（系统提示：先前轮次通过 workflow_pause 发起的暂停已被用户拒绝/取消"
+            f"（暂停内容：{paused_msg}）。该暂停对应的方案不再生效；"
+            "请按用户本条消息的内容处置，不要继续当时等待确认的流程。）"
+        )
     return (
         "\n\n（系统提示：先前轮次已通过 workflow_pause 暂停等待确认，"
         f"暂停内容：{paused_msg}。本条消息即对该暂停的回应：表示确认时，按当前 Skill 流程"

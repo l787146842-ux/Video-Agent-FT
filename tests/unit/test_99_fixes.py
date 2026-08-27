@@ -82,7 +82,7 @@ def test_99_fc_spec_review_card_not_remerged_with_wizard(monkeypatch):
             "name": "document_write",
             "arguments": json.dumps({"name": "制片规格.md", "content": _SPEC_CONFIRMED})}},
     ])
-    _applied, confirmation, _urls, _inserts, _log, conf_opts, _results, _docs, _warnings, _overflow = asyncio.run(
+    _applied, confirmation, _urls, _inserts, _log, conf_opts, _results, _docs, _warnings, _overflow, _pause_id = asyncio.run(
         # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户
         # 一次性同意（「本次放行」回携），测试原意的规格审阅卡逻辑不变
         runner.execute(response, injected_skill="任意 Skill", gate_override="all"))

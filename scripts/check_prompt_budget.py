@@ -119,6 +119,8 @@ def collect_skill_ban_violations() -> list:
     read_skill(resource=…) 成为模型可见注入面）。
     """
     out = []
+    if not SKILLS_MD_DIR.is_dir():  # 目录缺失视同零命中（与 glob 容错口径一致）
+        return out
     targets = sorted(SKILLS_MD_DIR.glob("*.md"))
     for p in sorted(SKILLS_MD_DIR.iterdir(), key=lambda x: x.name):
         if not p.is_dir() or p.name.startswith("."):

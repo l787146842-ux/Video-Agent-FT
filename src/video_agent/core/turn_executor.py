@@ -377,11 +377,14 @@ class TurnExecutor:
         _extra["token_usage"] = int(getattr(response, "token_usage", 0) or 0)
         # P2-1 KV-cache 遥测：缓存命中同随 5 元组上抛（agent_loop 入账 trace step）
         _extra["cached_tokens"] = int(getattr(response, "cached_tokens", 0) or 0)
-        if _confirm_holder.get("message"):
+        if _confirm_holder.get("message") or _confirm_holder.get("pause_id"):
             _extra.update({
-                "confirmation": _confirm_holder["message"],
+                "confirmation": _confirm_holder.get("message") or "",
                 "confirmation_options": _confirm_holder.get("options") or [],
                 # 三通道分离 B：超长 pause message 原文随正文下发
                 "pause_overflow": _confirm_holder.get("overflow") or "",
+                # 问即停（ADR-0006）：发行点签发的 pause_id 随 5 元组上抛，
+                # 供 agent_loop 带回前端与 _issue_pause 幂等登记
+                "pause_id": _confirm_holder.get("pause_id") or "",
             })
         return content, finish, fc_applied, plan_ms, _extra

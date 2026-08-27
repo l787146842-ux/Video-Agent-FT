@@ -9,7 +9,6 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import ports, prompt_gates
-from src.video_agent.core import workflow_runtime
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import registry
@@ -570,12 +569,10 @@ class WorkflowPauseTool(BaseTool):
         return WorkflowPauseInput
 
     async def aexecute(self, params: WorkflowPauseInput) -> ToolResult:
-        svc = StateManager.get_instance()
-        async with svc.lock:
-            workflow_runtime.reduce_interaction(svc, set_flags={
-                "awaiting_confirmation": True,
-                "confirmation_message": params.message or "请确认以上内容，确认后我将继续。",
-            }, flush=True)
+        """只提交审批事实，不写暂停状态（问即停事务写入，ADR-0006）：
+        awaiting_confirmation/confirmation_message/active_pause 由发行点
+        （core/fc_tool_runner.py）在发行确认后经 reduce_interaction 一次
+        原子写入，防「工具已写状态但卡片未达用户」的半提交态。"""
         return ToolResult(success=True, data={"paused": True, "message": params.message})
 
 
