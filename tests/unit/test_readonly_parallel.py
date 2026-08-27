@@ -367,3 +367,54 @@ def test_generation_cancelled_leaves_trace_events(monkeypatch, parallel_on):
     assert cancelled_trace and cancelled_trace[0]["ok"] is False
     assert "已被用户取消" in cancelled_trace[0]["result_summary"]
     assert any(e["type"] == SSE_TOOL_STARTED and e.get("id") == "c0" for e in events)
+
+
+def test_cancelled_backfills_trace_for_pre_consumed_calls(monkeypatch, parallel_on):
+    """窗口内第 2 个调用被取消：取消点之前已成功消费入 pre 的第 1 个调用
+    补留痕（started/finished 事件对 + trace ok=True）；取消事件照常补发，
+    GenerationCancelled 正常穿透（主循环因穿透走不到回填消费点，不得静默丢痕）。"""
+    from src.video_agent.core.sse_events import SSE_TOOL_FINISHED, SSE_TOOL_STARTED
+    from src.video_agent.core.tracer import AgentTracer
+
+    # read_a 快完成先被消费入 pre；read_b 随后命中取消（确定性：顺序消费下
+    # pos 0 必先于 pos 1 被消费，不依赖计时精度）
+    tm = _TimingToolManager(
+        {"read_a": "low", "read_b": "low"},
+        delay={"read_a": 0.01, "read_b": 0.03},
+        cancel_names={"read_b"})
+    events = []
+
+    async def on_event(ev):
+        events.append(ev)
+
+    recorded = []
+    _orig_record = AgentTracer.record_action
+
+    def _spy_record(self, *a, **k):
+        recorded.append(k)
+        return _orig_record(self, *a, **k)
+
+    monkeypatch.setattr(AgentTracer, "record_action", _spy_record)
+
+    runner = FCToolRunner(tool_manager=tm)
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+    response = ChatResponse(content="", tool_calls=_calls(("read_a", "1"), ("read_b", "2")))
+    with pytest.raises(GenerationCancelled):
+        asyncio.run(runner.execute(response, injected_skill="", on_event=on_event))
+
+    # 第 1 个已成功调用（c0）：完整留痕 = started/finished 事件对 + trace ok=True
+    a_seq = [(e["type"], e.get("id")) for e in events if e.get("id") == "c0"]
+    assert a_seq == [(SSE_TOOL_STARTED, "c0"), (SSE_TOOL_FINISHED, "c0")]
+    a_finished = [e for e in events
+                  if e.get("id") == "c0" and e["type"] == SSE_TOOL_FINISHED]
+    assert a_finished[0]["ok"] is True
+    a_traces = [k for k in recorded if k.get("name") == "read_a"]
+    assert a_traces and all(k.get("ok") is True for k in a_traces)
+    # 被取消调用（c1）：取消事件照常补发（红× + 取消文案）
+    b_finished = [e for e in events
+                  if e.get("id") == "c1" and e["type"] == SSE_TOOL_FINISHED]
+    assert b_finished and b_finished[0]["ok"] is False
+    assert "已被用户取消" in b_finished[0]["result_summary"]
+    assert any(e["type"] == SSE_TOOL_STARTED and e.get("id") == "c1" for e in events)
+    # 被取消调用不得被记成成功留痕；未消费的第 2 个之后无多余事件（本例无）
+    assert not any(k.get("name") == "read_b" and k.get("ok") is True for k in recorded)

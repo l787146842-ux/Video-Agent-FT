@@ -16,8 +16,10 @@
    其后调用回到主循环串行逐调用裁决（不二次过闸）；
 3. 全部放行后并行执行（asyncio 任务 + 按序消费），结果按原序回填；
    窗口内任一调用失败/异常即回退串行消费剩余调用；
-4. `GenerationCancelled` 显式穿透：先记本调用账本/trace（取消态）与
-   批级检查点回滚判定再上抛，不得被并行调度吞咽。
+4. `GenerationCancelled` 显式穿透：先给取消点之前已消费入 pre 的调用
+   补留痕（事件对 + trace，与串行路径「取消前完成的均有痕迹」同口径），
+   再记本调用账本/trace（取消态）与批级检查点回滚判定后上抛，
+   不得被并行调度吞咽。
 
 开关关闭（默认）时 `plan_batch` 返回空计划，执行路径与现状完全等价。
 """
@@ -192,6 +194,54 @@ async def _record_cancelled(
         logger.debug("[ReadOnlyParallel] 取消 trace 记账失败（不影响穿透）: {}", e)
 
 
+async def _record_pre_consumed(
+    tool_calls: List[Any], consumed: List[Tuple[int, str, Dict[str, Any]]],
+    pre: Dict[int, PreExecuted], on_event: Any,
+) -> None:
+    """取消点之前已消费入 pre 的窗口调用补留痕（与主循环正常消费同口径）。
+    窗口调度先于主循环事件，异常穿透后主循环永远走不到这些回填消费点，
+    故在穿透前补发 started/finished 事件对 + trace 记账（成败按结果记，
+    不吞异常；事件/记账失败仅告警，不影响取消穿透）。"""
+    for i, name, args in consumed:
+        hit = pre.get(i)
+        if hit is None:
+            continue
+        call = tool_calls[i]
+        tool_event_id = str(call.get("id") or f"fc-{i}") if isinstance(call, dict) else f"fc-{i}"
+        desc = describe_fc_tool(name, args)
+        args_preview = tool_args_preview.redact_tool_args(name, args)
+        ok = bool(hit.result.success)
+        result_summary = desc if ok else str(hit.result.error or "执行失败")[:120]
+        if on_event is not None:
+            try:
+                await on_event({
+                    "type": SSE_TOOL_STARTED,
+                    "id": tool_event_id,
+                    "name": name,
+                    "summary": desc,
+                    "args": args_preview,
+                })
+                await on_event({
+                    "type": SSE_TOOL_FINISHED,
+                    "id": tool_event_id,
+                    "ok": ok,
+                    "elapsed_ms": round(hit.elapsed_ms, 1),
+                    "result_summary": result_summary,
+                })
+            except Exception as e:
+                logger.debug("[ReadOnlyParallel] 已消费补记事件下发失败（不影响穿透）: {}", e)
+        try:
+            AgentTracer.get_instance().record_action(
+                name=name, summary=desc,
+                elapsed_ms=hit.elapsed_ms, ok=ok,
+                stage=stage_label_for_tool(name),
+                result_summary=result_summary,
+                args=args_preview,
+            )
+        except Exception as e:
+            logger.debug("[ReadOnlyParallel] 已消费补记 trace 记账失败（不影响穿透）: {}", e)
+
+
 async def run_window(
     runner: Any,
     ctx: Any,
@@ -256,6 +306,9 @@ async def run_window(
         except GenerationCancelled:
             for t in tasks:
                 _quiet_cancel(t)
+            # 取消点之前已消费入 pre 的窗口调用先补留痕（主循环因穿透走不到
+            # 其回填消费点），再记取消与回滚判定；口径与正常完成路径一致。
+            await _record_pre_consumed(tool_calls, passed[:pos], pre, on_event)
             await _record_cancelled(name, args, tool_calls[i], i, t0, on_event)
             # 回滚实际发生时失效轮内幂等账本（与串行主循环取消分支同口径）
             if batch_checkpoint.maybe_rollback_on_cancel(
