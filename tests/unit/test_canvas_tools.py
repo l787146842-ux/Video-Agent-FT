@@ -3,6 +3,7 @@ Canvas Tools 单元测试 — mock CanvasAdapter。
 """
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
+from types import SimpleNamespace
 
 from src.video_agent.tools.canvas_tools import (
     CanvasListTool,
@@ -76,6 +77,35 @@ class TestCanvasReadNodesTool:
         assert result.success
         assert result.data["node_count"] == 2
         assert result.data["nodes"][0]["id"] == "n1"
+
+    @pytest.mark.asyncio
+    async def test_prompt_truncated_over_budget(self):
+        """T8：prompt 超阈值截断 + 截断标记（阈值走 config settings）"""
+        tool = CanvasReadNodesTool()
+        long_prompt = "赛博朋克" * 100  # 400 字符，配合下方阈值 10 模拟超限
+        canvas = dict(MOCK_CANVAS, nodes=[
+            {"id": "n2", "type": "smart-prompt", "title": "提示词", "x": 0, "y": 0, "prompt": long_prompt},
+        ])
+        adapter = _mock_adapter()
+        adapter.get_canvas = AsyncMock(return_value=canvas)
+        fake_settings = SimpleNamespace(canvas_read_prompt_max_chars=10, canvas_asset_page_size=50)
+        with patch("src.video_agent.tools.canvas_tools.get_canvas_adapter", return_value=adapter), \
+             patch("src.video_agent.tools.canvas_tools.settings", fake_settings):
+            result = await tool.aexecute(CanvasReadNodesInput(canvas_id="c1"))
+        node = result.data["nodes"][0]
+        assert result.success
+        assert node["prompt"] == long_prompt[:10]
+        assert node["prompt_truncated"] is True
+
+    @pytest.mark.asyncio
+    async def test_prompt_within_budget_not_truncated(self):
+        """未超阈值的 prompt 原样返回，无截断标记"""
+        tool = CanvasReadNodesTool()
+        with patch("src.video_agent.tools.canvas_tools.get_canvas_adapter", return_value=_mock_adapter()):
+            result = await tool.aexecute(CanvasReadNodesInput(canvas_id="c1"))
+        node = result.data["nodes"][1]
+        assert node["prompt"] == "赛博朋克"
+        assert "prompt_truncated" not in node
 
 
 class TestCanvasAddNodeTool:
@@ -160,6 +190,39 @@ class TestCanvasListAssetsTool:
             result = await tool.aexecute(CanvasListAssetsInput())
         assert result.success
         assert "assets" in result.data
+        assert result.data["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_list_assets_paginated_has_more(self):
+        """T8：超限返回截断页 + has_more=True（页大小走 config settings）"""
+        tool = CanvasListAssetsTool()
+        adapter = _mock_adapter()
+        adapter.list_assets = AsyncMock(return_value={
+            "items": [{"url": f"/output/{i}.png"} for i in range(5)],
+        })
+        fake_settings = SimpleNamespace(canvas_read_prompt_max_chars=2000, canvas_asset_page_size=2)
+        with patch("src.video_agent.tools.canvas_tools.get_canvas_adapter", return_value=adapter), \
+             patch("src.video_agent.tools.canvas_tools.settings", fake_settings):
+            result = await tool.aexecute(CanvasListAssetsInput())
+        assert result.success
+        assert len(result.data["assets"]["items"]) == 2
+        assert result.data["has_more"] is True
+        assert result.data["count"] == 2
+        assert result.data["total"] == 5
+
+    @pytest.mark.asyncio
+    async def test_list_assets_explicit_limit(self):
+        """显式 limit 入参覆盖默认页大小"""
+        tool = CanvasListAssetsTool()
+        adapter = _mock_adapter()
+        adapter.list_assets = AsyncMock(return_value={
+            "items": [{"url": f"/output/{i}.png"} for i in range(5)],
+        })
+        with patch("src.video_agent.tools.canvas_tools.get_canvas_adapter", return_value=adapter):
+            result = await tool.aexecute(CanvasListAssetsInput(limit=3))
+        assert result.success
+        assert len(result.data["assets"]["items"]) == 3
+        assert result.data["has_more"] is True
 
 
 class TestRegistration:

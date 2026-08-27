@@ -245,6 +245,11 @@ class Settings:
     # 画布独立迭代若改了外壳布局，可通过环境变量调整，不影响功能（结果会被夹取到可视区内）
     canvas_shell_offset_x: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_X", 96))
     canvas_shell_offset_y: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_Y", 16))
+    # 画布读工具输出预算（对齐输出预算哲学）：canvas_read_nodes 单节点 prompt 截断阈值；
+    # canvas_list_assets 默认页大小（超限返回 has_more=True）
+    canvas_read_prompt_max_chars: int = field(default_factory=lambda: _env_int(
+        "CANVAS_READ_PROMPT_MAX_CHARS", 2000))
+    canvas_asset_page_size: int = field(default_factory=lambda: _env_int("CANVAS_ASSET_PAGE_SIZE", 50))
 
     # MCP 外部工具接入层：总开关（无配置文件 = 零工具，
     # deny-first）；活动工具上限（mcp_tool_catalog enable 超限拒收）；

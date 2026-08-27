@@ -17,9 +17,9 @@ class GenerateImageTool(BaseTool):
     approval_tier = "confirm"  # P2-5 首批显式声明：执行前确认卡（花钱/外部副作用）
     detail_tier = "expand"  # 产出类
     description = (
-        "根据传入的提示词和可选的参考图片，生成一张图片并返回图片地址。"
-        "每次调用只产出一张图；需要多张图片时请改用 image_generate 批量工具"
-        "（本工具每轮调用次数由系统限制）。"
+        "根据传入的提示词和可选的参考图片，生成单张图片并返回图片地址（单张应急轨）。"
+        "危险/花钱操作，仅当用户明确要求出图时才可调用，执行前会弹确认卡；"
+        "需要多张/批量出图时请改用工作台批量工具 image_generate（本工具每轮调用次数由系统限制）。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

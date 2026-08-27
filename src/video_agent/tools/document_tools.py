@@ -367,7 +367,7 @@ class ReadProjectDocTool(BaseTool):
     risk = "low"  # §2.7：只读
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "按需读取项目规格文档（write_document 产出，如 Final_Video_Spec.md）全文。"
+        "按需读取项目规格文档（document_write 产出，如 Final_Video_Spec.md）全文。"
         "工作台状态 JSON 的 documents 节只有清单（名称/摘要），"
         "开工前必须先读规格文档并遵守其中约束。"
     )
@@ -401,8 +401,8 @@ class ImageGenerateTool(BaseTool):
     approval_tier = "confirm"  # P2-5 首批显式声明：执行前确认卡（花钱/外部副作用）
     detail_tier = "expand"  # 产出类
     description = (
-        "触发图片生成（危险操作）。仅当用户明确要求'生成/出图/执行'时才可调用。"
-        "系统会自动将 sceneRefs 引用的关键元素概念图作为参考图注入。"
+        "触发工作台批量图片生成（批量轨，危险操作）。仅当用户明确要求'生成/出图/执行'时才可调用，执行前会弹确认卡；"
+        "单张应急出图请改用 generate_image。系统会自动将 sceneRefs 引用的关键元素概念图作为参考图注入。"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

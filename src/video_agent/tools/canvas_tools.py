@@ -12,6 +12,7 @@ from loguru import logger
 
 from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
+from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils import gen_id
 
@@ -55,8 +56,7 @@ class CanvasDeleteNodeInput(BaseModel):
 
 
 class CanvasListAssetsInput(BaseModel):
-    """无参数"""
-    pass
+    limit: int = Field(0, description="返回条数上限（0 = 用默认页大小）")
 
 
 # ---------- 辅助函数 ----------
@@ -168,7 +168,13 @@ class CanvasReadNodesTool(BaseTool):
                 "y": n.get("y", 0),
             }
             if n.get("prompt"):
-                item["prompt"] = n["prompt"]
+                raw = n["prompt"]
+                cap = settings.canvas_read_prompt_max_chars
+                if len(raw) > cap:
+                    item["prompt"] = raw[:cap]
+                    item["prompt_truncated"] = True
+                else:
+                    item["prompt"] = raw
             if n.get("images"):
                 item["images_count"] = len(n["images"])
                 item["first_image"] = n["images"][0].get("url", "") if n["images"] else ""
@@ -291,7 +297,16 @@ class CanvasListAssetsTool(BaseTool):
     async def aexecute(self, params: CanvasListAssetsInput) -> ToolResult:
         adapter = get_canvas_adapter()
         assets = await adapter.list_assets()
-        return ToolResult(success=True, data={"assets": assets})
+        page = params.limit if params.limit and params.limit > 0 else settings.canvas_asset_page_size
+        if isinstance(assets, dict) and isinstance(assets.get("items"), list):
+            items = assets["items"]
+            if len(items) > page:
+                paged = dict(assets, items=items[:page])
+                return ToolResult(success=True, data={
+                    "assets": paged, "has_more": True,
+                    "count": page, "total": len(items),
+                })
+        return ToolResult(success=True, data={"assets": assets, "has_more": False})
 
 
 class CanvasBatchNodeInput(BaseModel):
