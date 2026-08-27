@@ -1,7 +1,7 @@
 import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Type
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # 风险分级合法枚举（宪法 §2.7 单一事实源；注册校验/闸机消费同引用）
 RISK_TIERS = ("low", "medium", "high")
@@ -18,6 +18,17 @@ APPROVAL_TIERS = ("none", "confirm", "review")
 # 未声明者前端默认归 output（新工具至少留输出痕迹）；非工具内部条目
 # （如 model_reasoning）不经本属性，由 sidecar 独立名单登记 none。
 DETAIL_TIERS = ("expand", "output")
+
+
+class StrictToolInput(BaseModel):
+    """写类工具入参共享基类（批 4b，T2 第二步）：extra="forbid" 单一事实源。
+
+    Pydantic 机制层拒收未声明字段，与 manager.detect_unknown_fields（批 4a，
+    先于校验给出字段清单文案）构成双保险：即便绕过 manager 直调
+    model_validate 也拦得住。只读/交互控制面工具入参与 extra="allow"
+    自由入参模型（MCP 适配器等）不继承本基类，豁免路径不变。
+    """
+    model_config = ConfigDict(extra="forbid")
 
 
 class ToolEvent(BaseModel):

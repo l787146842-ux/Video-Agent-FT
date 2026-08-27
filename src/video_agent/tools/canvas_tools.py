@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Literal, Optional, Type
 from pydantic import BaseModel, Field
 from loguru import logger
 
-from src.video_agent.tools.base import BaseTool, ToolResult
+from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
 from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
@@ -28,7 +28,10 @@ class CanvasReadNodesInput(BaseModel):
     canvas_id: str = Field(..., description="画布 ID")
 
 
-class CanvasAddNodeInput(BaseModel):
+# 写类 Input 统一继承 StrictToolInput（extra="forbid"，批 4b 单一事实源）；
+# 只读 Input 保持 BaseModel 原样，不扩大拒收面。
+
+class CanvasAddNodeInput(StrictToolInput):
     canvas_id: str = Field(..., description="画布 ID")
     node_type: Literal["smart-image", "smart-prompt", "text", "image"] = Field("smart-image", description="节点类型（闭集枚举）: smart-image | smart-prompt | text | image")
     title: str = Field("", description="节点标题")
@@ -40,7 +43,7 @@ class CanvasAddNodeInput(BaseModel):
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
-class CanvasUpdateNodeInput(BaseModel):
+class CanvasUpdateNodeInput(StrictToolInput):
     canvas_id: str = Field(..., description="画布 ID")
     node_id: str = Field(..., description="要修改的节点 ID")
     title: Optional[str] = Field(None, description="新标题")
@@ -52,7 +55,7 @@ class CanvasUpdateNodeInput(BaseModel):
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
-class CanvasDeleteNodeInput(BaseModel):
+class CanvasDeleteNodeInput(StrictToolInput):
     canvas_id: str = Field(..., description="画布 ID")
     node_id: str = Field(..., description="要删除的节点 ID")
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
@@ -320,7 +323,8 @@ class CanvasListAssetsTool(BaseTool):
         return ToolResult(success=True, data={"assets": assets, "has_more": False})
 
 
-class CanvasBatchNodeInput(BaseModel):
+class CanvasBatchNodeInput(StrictToolInput):
+    # 嵌套子项同属写类路径：纳入后嵌套层未知字段也被 Pydantic 拒
     node_type: Literal["smart-image", "smart-prompt", "text", "image"] = Field("smart-image", description="节点类型（闭集枚举）: smart-image | smart-prompt | text | image")
     title: str = Field("", description="节点标题")
     x: int = Field(100, description="X 坐标")
@@ -330,7 +334,7 @@ class CanvasBatchNodeInput(BaseModel):
     content: str = Field("", description="文本内容")
 
 
-class CanvasBatchUpdateInput(BaseModel):
+class CanvasBatchUpdateInput(StrictToolInput):
     canvas_id: str = Field(..., description="画布 ID")
     nodes: List[CanvasBatchNodeInput] = Field(..., description="要批量添加的节点数组")
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")

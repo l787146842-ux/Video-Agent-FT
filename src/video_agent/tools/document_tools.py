@@ -13,7 +13,7 @@ from src.video_agent.core import ports, prompt_gates
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import registry
-from src.video_agent.tools.base import BaseTool, ToolResult
+from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
 from src.video_agent.state.manager import StateManager
 from src.video_agent.exceptions import GenerationError
@@ -29,7 +29,10 @@ from src.video_agent.utils import gen_id
 
 # ---------- Input Schemas ----------
 
-class WriteDocumentInput(BaseModel):
+# 写类 Input 继承 StrictToolInput（extra="forbid"，批 4b）；
+# 只读/交互控制面（workflow_pause/flow_directive）保持 BaseModel 原样。
+
+class WriteDocumentInput(StrictToolInput):
     name: str = Field(..., description="文档名称（如 Final_Video_Spec.md）")
     content: str = Field(..., description="文档 Markdown 全文")
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
@@ -60,7 +63,7 @@ class ReadProjectDocInput(BaseModel):
     start: int = Field(0, ge=0, description="读取起始位置（字符偏移）；正文超长时工具会返回下一段的 start 值，传入即可续读")
 
 
-class GenerateImageInput(BaseModel):
+class GenerateImageInput(StrictToolInput):
     target: str = Field("all_keyElements", description="目标: all_keyElements | all_shots | 具体 draft_id")
     provider_id: str = Field("", description="生图供应商 ID（可留空，系统自动回退草稿自带供应商或配置中首个可用生图供应商）")
     model: str = Field("", description="生图模型名（可留空，自动用供应商默认模型）")

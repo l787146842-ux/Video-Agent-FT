@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Optional, Type
 from pydantic import BaseModel, Field
 from loguru import logger
 
-from src.video_agent.tools.base import BaseTool, ToolResult
+from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
 from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
@@ -20,7 +20,10 @@ from src.video_agent.storage.media_urls import resolve_injectable_url
 
 # ---------- Input Schemas ----------
 
-class CreateGroupInput(BaseModel):
+# 写类 Input 统一继承 StrictToolInput（extra="forbid"，批 4b 单一事实源）；
+# 只读/交互控制面 Input 保持 BaseModel 原样，不扩大拒收面。
+
+class CreateGroupInput(StrictToolInput):
     group_type: Literal["keyElement", "shot", "audio"] = Field(..., description="分组类型（闭集枚举）: keyElement | shot | audio")
     title: str = Field(..., description="分组标题")
     desc: str = Field("", description="分组描述")
@@ -32,27 +35,27 @@ class CreateGroupInput(BaseModel):
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
-class PatchDraftInput(BaseModel):
+class PatchDraftInput(StrictToolInput):
     draft_id: str = Field(..., description="草稿 ID 或 'current'")
     draft_type: str = Field("", description="草稿类型: keyElement | shot | audio")
     patch: Dict[str, Any] = Field(..., description="要更新的字段字典")
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
-class AddDraftInput(BaseModel):
+class AddDraftInput(StrictToolInput):
     group_id: str = Field("current", description="目标分组 ID 或 'current'")
     group_type: str = Field("", description="分组类型")
     draft: Dict[str, Any] = Field(..., description="新草稿数据")
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
-class DeleteGroupInput(BaseModel):
+class DeleteGroupInput(StrictToolInput):
     group_id: str = Field(..., description="要删除的分组 ID")
     group_type: str = Field("", description="分组类型")
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
-class ConfirmDraftInput(BaseModel):
+class ConfirmDraftInput(StrictToolInput):
     draft_id: str = Field("current", description="草稿 ID 或 'current'")
     draft_type: str = Field("", description="草稿类型")
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")

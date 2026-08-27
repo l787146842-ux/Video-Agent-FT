@@ -1,20 +1,22 @@
-"""批 4a（T2 第一步「错误可见」）：写类入参未知字段可见报错 + target 结构化校验。
+"""批 4a（T2 第一步「错误可见」）+ 批 4b（T2 第二步 extra="forbid"）：写类入参未知字段可见报错 + target 结构化校验。
 
 覆盖：
 ① manager 层未知字段可见性（字段名入文案、合法字段清单入文案、
    error_code="validation"、retryable=False，且工具未被执行）；
 ② 合法字段不误伤；
 ③ patch_draft/patch_group 白名单丢弃透出 + storyboard_patch_draft 原子拒收；
-④ image_generate target 未命中/格式非法结构化报错。
+④ image_generate target 未命中/格式非法结构化报错；
+⑤ 批 4b：写类 Input 直调 model_validate 传未知字段抛 ValidationError（含嵌套层）、
+   经 invoke_tool 仍先命中批 4a 字段清单文案、合法入参与豁免模型不受影响。
 
 回归锚点见 test_tool_error_axis.py（保持原样）。
 """
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
-from src.video_agent.tools.base import BaseTool, ToolResult
+from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
 from src.video_agent.tools.manager import ToolManager, detect_unknown_fields
 from src.video_agent.tools.storyboard_tools import PatchDraftInput, StoryboardPatchDraftTool
 
@@ -223,3 +225,139 @@ class TestImageGenerateTargetValidation:
         _seed_draft(svc)
         r = await ImageGenerateTool().aexecute(GenerateImageInput(target="current"))
         assert r.success is False and r.error_code == "validation"
+
+
+# ---------- ⑤ 批 4b：写类 Input extra="forbid" 机制层双保险 ----------
+
+_STRICT_INPUTS = [
+    "src.video_agent.tools.storyboard_tools:CreateGroupInput",
+    "src.video_agent.tools.storyboard_tools:PatchDraftInput",
+    "src.video_agent.tools.storyboard_tools:AddDraftInput",
+    "src.video_agent.tools.storyboard_tools:DeleteGroupInput",
+    "src.video_agent.tools.storyboard_tools:ConfirmDraftInput",
+    "src.video_agent.tools.document_tools:WriteDocumentInput",
+    "src.video_agent.tools.document_tools:GenerateImageInput",
+    "src.video_agent.tools.canvas_tools:CanvasAddNodeInput",
+    "src.video_agent.tools.canvas_tools:CanvasUpdateNodeInput",
+    "src.video_agent.tools.canvas_tools:CanvasDeleteNodeInput",
+    "src.video_agent.tools.canvas_tools:CanvasBatchUpdateInput",
+    "src.video_agent.tools.canvas_tools:CanvasBatchNodeInput",
+]
+
+
+def _load_input_class(ref: str):
+    mod_path, cls_name = ref.split(":")
+    import importlib
+    return getattr(importlib.import_module(mod_path), cls_name)
+
+
+class TestStrictToolInputConfig:
+    """单一事实源：写类 Input 均继承 StrictToolInput（extra='forbid'）"""
+
+    @pytest.mark.parametrize("ref", _STRICT_INPUTS)
+    def test_write_inputs_inherit_strict_base(self, ref):
+        cls = _load_input_class(ref)
+        assert issubclass(cls, StrictToolInput)
+        assert cls.model_config.get("extra") == "forbid"
+
+    @pytest.mark.parametrize("ref", [
+        "src.video_agent.tools.storyboard_tools:MediaToChatInput",
+        "src.video_agent.tools.storyboard_tools:ReadDraftInput",
+        "src.video_agent.tools.storyboard_tools:ViewStoryboardMediaInput",
+        "src.video_agent.tools.document_tools:WorkflowPauseInput",
+        "src.video_agent.tools.document_tools:FlowDirectiveInput",
+        "src.video_agent.tools.document_tools:ReadUploadedDocInput",
+        "src.video_agent.tools.canvas_tools:CanvasReadNodesInput",
+        "src.video_agent.tools.canvas_tools:CanvasListAssetsInput",
+    ])
+    def test_readonly_and_control_plane_not_tightened(self, ref):
+        """只读/交互控制面不收紧，避免扩大拒收面"""
+        cls = _load_input_class(ref)
+        assert not issubclass(cls, StrictToolInput)
+        assert cls.model_config.get("extra", "ignore") != "forbid"
+
+
+class TestDirectModelValidateRejectsUnknown:
+    """绕过 manager 直调 model_validate：Pydantic 机制层也拦得住"""
+
+    @pytest.mark.parametrize("ref", _STRICT_INPUTS)
+    def test_unknown_field_raises_validation_error(self, ref):
+        cls = _load_input_class(ref)
+        with pytest.raises(ValidationError) as exc_info:
+            cls.model_validate({"totally_unknown_field": 1})
+        assert any(e.get("type") == "extra_forbidden" for e in exc_info.value.errors())
+
+    def test_nested_batch_node_unknown_field_rejected(self):
+        """嵌套子项未知字段同样被拒（CanvasBatchNodeInput 一并收紧）"""
+        from src.video_agent.tools.canvas_tools import CanvasBatchUpdateInput
+        with pytest.raises(ValidationError):
+            CanvasBatchUpdateInput.model_validate({
+                "canvas_id": "c1",
+                "nodes": [{"title": "节点", "nested_bogus": "x"}],
+            })
+
+    def test_valid_payload_still_passes(self):
+        from src.video_agent.tools.storyboard_tools import CreateGroupInput
+        from src.video_agent.tools.canvas_tools import CanvasBatchUpdateInput
+        ok = CreateGroupInput.model_validate({"group_type": "shot", "title": "分镜1"})
+        assert ok.group_type == "shot"
+        batch = CanvasBatchUpdateInput.model_validate({
+            "canvas_id": "c1", "nodes": [{"title": "n1"}], "idempotency_key": "",
+        })
+        assert len(batch.nodes) == 1
+
+
+class _StrictProbeInput(StrictToolInput):
+    group_id: str
+
+
+class _StrictProbeTool(BaseTool):
+    name = "strict_probe"
+    risk = "medium"
+    executed = False
+
+    def get_input_schema(self):
+        return _StrictProbeInput
+
+    async def aexecute(self, params):
+        _StrictProbeTool.executed = True
+        return ToolResult(success=True, data={})
+
+
+class TestInvokeToolStillHitsBatch4aFirst:
+    """经 invoke_tool 传未知字段：批 4a 字段清单文案先生效（双保险并存无害）"""
+
+    async def test_unknown_field_via_manager_preferred_path(self):
+        ToolManager.reset()
+        _StrictProbeTool.executed = False
+        ToolManager.register(_StrictProbeTool())
+        try:
+            r = await ToolManager.invoke_tool("strict_probe", {"group_id": "g1", "bogus": 1})
+            assert r.success is False
+            assert r.error_code == "validation" and r.retryable is False
+            # 批 4a 文案特征：未知字段名 + 合法字段清单（非 Pydantic 字段级渲染）
+            assert "未知字段" in str(r.error)
+            assert "bogus" in str(r.error) and "group_id" in str(r.error)
+            assert _StrictProbeTool.executed is False
+        finally:
+            ToolManager.reset()
+
+    async def test_valid_payload_via_manager_executes(self):
+        ToolManager.reset()
+        _StrictProbeTool.executed = False
+        ToolManager.register(_StrictProbeTool())
+        try:
+            r = await ToolManager.invoke_tool("strict_probe", {"group_id": "g1"})
+            assert r.success is True and _StrictProbeTool.executed is True
+        finally:
+            ToolManager.reset()
+
+    async def test_permissive_model_still_exempt(self):
+        """批 4a 豁免路径不动：extra='allow' 自由入参模型任意键放行"""
+        ToolManager.reset()
+        ToolManager.register(_PermissiveTool())
+        try:
+            r = await ToolManager.invoke_tool("harden_permissive", {"anything": 1, "more": "x"})
+            assert r.success is True
+        finally:
+            ToolManager.reset()
