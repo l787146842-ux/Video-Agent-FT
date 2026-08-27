@@ -169,8 +169,12 @@ class TestPauseIssueTurnStamp:
     async def test_fc_pause_stamps_turn_seq(self, svc):
         from src.video_agent.adapters.base_chat import ChatResponse
         from src.video_agent.core.fc_tool_runner import FCToolRunner
+        from src.video_agent.tools.document_tools import register_document_tools
         from src.video_agent.tools.manager import ToolManager
 
+        # 显式重注册：同 worker 其它用例的 ToolManager.reset() 可能清空全局注册表，
+        # 本用例不依赖导入副作用（与 test_fc_tool_feedback 同口径）
+        register_document_tools()
         svc.state_dict["turn_seq"] = 9
         runner = FCToolRunner(ToolManager)
         resp = ChatResponse(content="", finish_reason="tool_calls", tool_calls=[

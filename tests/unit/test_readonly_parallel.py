@@ -1,8 +1,8 @@
-"""批 7 · 只读受限并行（L3，默认关）：段识别 + 窗口调度 + 失败/取消卫生。
+"""批 7 · 只读受限并行（L3，默认开）：段识别 + 窗口调度 + 失败/取消卫生。
 
 钉死六件事：
-① 开关关闭（默认）= 与现状串行行为等价（逐调用串行、无重叠）；
-② 开关开启 + 连续 low 只读段 = 并行执行、结果按原序回填；
+① 开关关闭（env 可关）= 与现状串行行为等价（逐调用串行、无重叠）；
+② 开关开启（默认）+ 连续 low 只读段 = 并行执行、结果按原序回填；
 ③ 混入写类/高危/未注册工具即断段（段前后仍各自串行，写类绝不进并行）；
 ④ 闸机链按序拦截：拒收的调用不进入并行执行，其后调用回串行裁决；
 ⑤ 窗口内失败回退串行消费剩余调用；
@@ -113,6 +113,11 @@ def parallel_on(set_global_setting):
     set_global_setting("readonly_parallel_enabled", True)
 
 
+@pytest.fixture
+def parallel_off(set_global_setting):
+    set_global_setting("readonly_parallel_enabled", False)
+
+
 # ---------- 段识别（纯单元） ----------
 
 
@@ -135,18 +140,25 @@ def test_find_windows_unregistered_defaults_high():
     assert rp.find_readonly_windows(calls, _NoRiskCapability()) == {}
 
 
-def test_plan_batch_switch_off_returns_empty():
-    """开关默认关：计划恒空（执行路径与现状等价的机械保证）。"""
+def test_plan_batch_switch_off_returns_empty(parallel_off):
+    """开关显式关闭：计划恒空（执行路径与现状等价的机械保证）。"""
     tm = _TimingToolManager({"a": "low", "b": "low"})
     calls = _calls(("a", ""), ("b", ""))
     assert rp.plan_batch(calls, tm) == ({}, {})
 
 
+def test_plan_batch_switch_on_returns_windows(parallel_on):
+    """开关显式开启（默认）：连续 low 段入窗计划。"""
+    tm = _TimingToolManager({"a": "low", "b": "low"})
+    calls = _calls(("a", ""), ("b", ""))
+    assert rp.plan_batch(calls, tm) == ({0: [0, 1]}, {})
+
+
 # ---------- ① 开关关闭 = 串行等价 ----------
 
 
-def test_switch_off_keeps_serial_execution(monkeypatch):
-    """默认关：连续 low 只读调用仍逐调用串行（并发峰值=1、顺序不变）。"""
+def test_switch_off_keeps_serial_execution(monkeypatch, parallel_off):
+    """显式关：连续 low 只读调用仍逐调用串行（并发峰值=1、顺序不变）。"""
     tm = _TimingToolManager({"read_a": "low", "read_b": "low", "read_c": "low"})
     result = _execute(monkeypatch, tm, _calls(("read_a", "1"), ("read_b", "2"), ("read_c", "3")))
     assert tm.max_active == 1

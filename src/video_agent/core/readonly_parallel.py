@@ -1,4 +1,4 @@
-"""只读受限并行（批 7 · L3，默认关；接线点 = core/fc_tool_runner.py）。
+"""只读受限并行（批 7 · L3，默认开；接线点 = core/fc_tool_runner.py）。
 
 仅对批内**连续** risk=low 只读工具段做受限并行执行，降低连续读类调用的
 等待；闸机链仍逐调用按序裁决，写类/中高危/未注册工具一律串行。
@@ -21,7 +21,7 @@
    再记本调用账本/trace（取消态）与批级检查点回滚判定后上抛，
    不得被并行调度吞咽。
 
-开关关闭（默认）时 `plan_batch` 返回空计划，执行路径与现状完全等价。
+开关关闭（env 可关回串行）时 `plan_batch` 返回空计划，执行路径与现状完全等价。
 """
 import asyncio
 import json
@@ -99,7 +99,7 @@ def find_readonly_windows(tool_calls: List[Any], tool_manager: Any) -> Dict[int,
 
 
 def plan_batch(tool_calls: List[Any], tool_manager: Any) -> Tuple[Dict[int, List[int]], Dict[int, PreExecuted]]:
-    """批级并行计划（接线面）：开关关闭（默认）或无可并行段时返回空计划，
+    """批级并行计划（接线面）：开关关闭（env 可关回串行）或无可并行段时返回空计划，
     主循环代码路径与现状完全等价。返回 (窗口计划, 预执行结果回填字典)。"""
     if not settings.readonly_parallel_enabled:
         return {}, {}
