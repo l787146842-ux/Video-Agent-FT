@@ -20,6 +20,7 @@ from loguru import logger
 from src.video_agent.adapters.base_chat import ChatResponse
 from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.core import fc_gates, fc_reconcile, prompt_gates
+from src.video_agent.core import batch_checkpoint
 from src.video_agent.core import ports
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
@@ -283,6 +284,10 @@ class FCToolRunner:
         tool_results: List[Dict[str, Any]] = []
         doc_written = False
         docs_written: List[str] = []  # 本批写入的文档名（供前端渲染文档卡片）
+        # 批级检查点（批 6）：本批含写类/中高危工具时批首打快照，失败/取消回滚判定全在 core/batch_checkpoint.py
+        _batch_cp = batch_checkpoint.take_checkpoint() if batch_checkpoint.batch_has_risky_tool(
+            response, self.tool_manager) else None
+        _batch_tools = batch_checkpoint.batch_tool_names(response)
         # 结构纯净闸/故事板强制暂停用的批内标志
         structure_created = False
         structure_kinds: set = set()  # 本批搭建的结构类别（shot 优先决定暂停文案）
@@ -410,6 +415,8 @@ class FCToolRunner:
                         stage=stage_label_for_tool(name),
                         result_summary="已被用户取消", args=args_preview,
                     )
+                    # 取消留半截态修复（批 6）：穿透上抛前过保守条件判定（不吞异常）
+                    batch_checkpoint.maybe_rollback_on_cancel(StateManager.get_instance(), _batch_cp, cancelled_tool=name, ledger=ledger, tool_names=_batch_tools, tool_manager=self.tool_manager)
                     raise
             _tool_ms = (time.monotonic() - _tool_t0) * 1000
             # 幂等键记账（T4）：非空键的执行结果（含失败）入轮内账本；
@@ -639,6 +646,8 @@ class FCToolRunner:
                         retryable=bool(getattr(result, "retryable", False)),
                     ),
                 })
+                # 批级检查点（批 6）：失败分支经保守条件判定回滚（判定全在核心新模块）；取消分支同理在穿透上抛前判定（见本文件上方 GenerationCancelled 处）
+                batch_checkpoint.maybe_rollback_on_failure(StateManager.get_instance(), _batch_cp, failed_tool=name, ledger=ledger, tool_names=_batch_tools, tool_manager=self.tool_manager)
         # 批末对账（fc_reconcile）：客观账本为主、措辞兜底
         ledger.doc_written = doc_written
         ledger.docs_written = docs_written

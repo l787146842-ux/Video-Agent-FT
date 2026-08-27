@@ -17,6 +17,7 @@ conversation_ops / save_ops / context_builder；本文件保留 StateManager 类
 测试 monkeypatch 目标应为壳方法（调用方经实例方法查找）。
 """
 import asyncio
+import copy
 import json
 import time
 from contextvars import ContextVar, Token
@@ -324,6 +325,29 @@ class StateManager(UndoRedoMixin):
         """返回完整状态快照（供前端刷新/SSE done payload）：
         契约与实现见 context_builder.build_full_snapshot（深拷贝，调用方可任意使用）。"""
         return _build_full_snapshot(self._raw_state, self.board_version)
+
+    # ====== 批级检查点（批 6：条件回滚的快照/恢复公开 API） ======
+
+    def snapshot_state(self) -> Dict[str, Any]:
+        """整态深拷贝快照（批级检查点用；参考 _push_undo 的 deepcopy 先例）。
+
+        与 get_full_snapshot 的前端视图快照不同：不做 json round-trip/
+        不附加 board_version/不裁剪对话消息，恢复时可原样写回。"""
+        return copy.deepcopy(self._raw_state)
+
+    def restore_snapshot(self, snapshot: Dict[str, Any]) -> bool:
+        """把整态恢复到快照时刻（批级条件回滚的唯一写面，Rule 3）。
+
+        经 StateManager 自身受控写面写回：当前态先压 undo 栈留痕
+        （恢复本身可被 undo 复核）、落盘持久化、重建多对话不变式。
+        禁止绕开本方法对 state_dict 做 clear()/update() 直接字典改法。
+        """
+        self._push_undo()
+        self._raw_state = copy.deepcopy(snapshot)
+        self._state_dirty = True
+        self._context_cache.clear()
+        self._ensure_conversations()
+        return self.save()
 
     # ====== 写入（Rule3: 唯一写入点） ======
 
