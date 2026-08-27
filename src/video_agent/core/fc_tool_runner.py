@@ -25,6 +25,7 @@ from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
 from src.video_agent.core import tool_args_preview
 from src.video_agent.core.gates_cards import PAUSE_SLOT_ASSERTION_NOTE
+from src.video_agent.core.idempotency_ledger import IdempotencyLedger
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED,
 )
@@ -113,6 +114,8 @@ class FCToolRunner:
         self._selected_type = ""
         # 闸机校准：(kind+原因签名) 连续相同拦截计数，用于升级重写指引文案
         self._gate_repeat: Dict[str, int] = {}
+        # 幂等键轮内账本（T4）：同键重复提交去重，生命周期随轮、不持久化
+        self._idempotency = IdempotencyLedger()
 
     # ---------- 闸机裁决段承重壳（实现体 = core/fc_gates.py） ----------
 
@@ -229,6 +232,7 @@ class FCToolRunner:
         """
         self._turn_tool_names = set()
         self._turn_stage_label = ""
+        self._idempotency.reset()  # T4：幂等键账本随轮生命周期，轮始清空
 
     async def execute(
         self, response: ChatResponse, image_provider: str = "", image_aspect_ratio: str = "",
@@ -347,60 +351,71 @@ class FCToolRunner:
                     logger.info("[Planner] Injected image_generate provider from global settings: %s/%s",
                                 spec_pid, spec_model)
 
-            # 结构纯净闸：内联详细提示词剥离（闸机链之前，回喂时附说明）
-            if fc_gates.strip_structure_prompt(ctx, name, args):
-                ledger.prompt_stripped = True
-            # 闸机链（fc_gates.run_gate_chain）：轮内暂停纪律 → 阶段前置（平台不变量）
-            # → 规格前置 → 工具风险 → 生成确认 → 建组结构完整性 → 提示词结构 → 生图配额
-            chain = fc_gates.run_gate_chain(
-                ctx, name, args, paused_this_batch=paused_this_batch)
-            gate_error = chain.error
-            prompt_gate_blocked += chain.prompt_gate_blocked
-            try:
-                if gate_error is not None:
-                    result = ToolResult(success=False, error=gate_error)
-                elif name == "read_skill" and injected_skill:
-                    wanted_skill = str(args.get("name") or "").strip()
-                    same_skill = bool(wanted_skill) and wanted_skill == injected_skill.strip()
-                    # 续读参数（section/start）与目录包资源（resource）一律真读：
-                    # 分级注入时全文未全量注入，短路会断掉模型的章节续读/
-                    # 资源按需加载能力（P2-4）
-                    has_cont = bool(str(args.get("section") or "").strip()) \
-                        or _as_start(args.get("start")) > 0 \
-                        or bool(str(args.get("resource") or "").strip())
-                    if same_skill and not has_cont and fc_gates.skill_full_text_injected(wanted_skill):
-                        result = ToolResult(success=True, data={
-                            "content": f"Skill「{wanted_skill}」全文已在本轮 system prompt 中注入，无需重复读取，直接遵循其中的规则即可。",
-                            "already_injected": True,
-                        })
-                        logger.info(f"[Planner] read_skill 短路：「{wanted_skill}」全文已直注，跳过工具调用")
+            # 幂等键轮内去重（T4）：同键命中直接用首次结果，跳过闸机链与实际执行；
+            # 空键直通过不去重，判定语义唯一归 core/idempotency_ledger.py
+            _idem_key = str(args.get("idempotency_key") or "").strip()
+            _idem_cached = self._idempotency.check(_idem_key)
+            if _idem_cached is not None:
+                result, gate_error = _idem_cached, None
+            else:
+                # 结构纯净闸：内联详细提示词剥离（闸机链之前，回喂时附说明）
+                if fc_gates.strip_structure_prompt(ctx, name, args):
+                    ledger.prompt_stripped = True
+                # 闸机链（fc_gates.run_gate_chain）：轮内暂停纪律 → 阶段前置（平台不变量）
+                # → 规格前置 → 工具风险 → 生成确认 → 建组结构完整性 → 提示词结构 → 生图配额
+                chain = fc_gates.run_gate_chain(
+                    ctx, name, args, paused_this_batch=paused_this_batch)
+                gate_error = chain.error
+                prompt_gate_blocked += chain.prompt_gate_blocked
+                try:
+                    if gate_error is not None:
+                        result = ToolResult(success=False, error=gate_error)
+                    elif name == "read_skill" and injected_skill:
+                        wanted_skill = str(args.get("name") or "").strip()
+                        same_skill = bool(wanted_skill) and wanted_skill == injected_skill.strip()
+                        # 续读参数（section/start）与目录包资源（resource）一律真读：
+                        # 分级注入时全文未全量注入，短路会断掉模型的章节续读/
+                        # 资源按需加载能力（P2-4）
+                        has_cont = bool(str(args.get("section") or "").strip()) \
+                            or _as_start(args.get("start")) > 0 \
+                            or bool(str(args.get("resource") or "").strip())
+                        if same_skill and not has_cont and fc_gates.skill_full_text_injected(wanted_skill):
+                            result = ToolResult(success=True, data={
+                                "content": f"Skill「{wanted_skill}」全文已在本轮 system prompt 中注入，无需重复读取，直接遵循其中的规则即可。",
+                                "already_injected": True,
+                            })
+                            logger.info(f"[Planner] read_skill 短路：「{wanted_skill}」全文已直注，跳过工具调用")
+                        else:
+                            # 未全量直注（分级注入/其他 Skill/续读）：按需真读全文或章节
+                            result = await self.tool_manager.invoke_tool(name, args)
                     else:
-                        # 未全量直注（分级注入/其他 Skill/续读）：按需真读全文或章节
                         result = await self.tool_manager.invoke_tool(name, args)
-                else:
-                    result = await self.tool_manager.invoke_tool(name, args)
-            except GenerationCancelled:
-                # 取消穿透：先记本工具账本/trace（取消态）再上抛，
-                # 任何中断都有痕迹（不静默吞，不吞为失败结果）
-                _cancel_desc = describe_fc_tool(name, args)
-                if name in ("image_generate", "generate_image", "generate_video"):
-                    ledger.gen_failed_err = "生成任务已被取消"
-                if on_event is not None:
-                    await on_event({
-                        "type": SSE_TOOL_FINISHED,
-                        "id": tool_event_id,
-                        "ok": False,
-                        "elapsed_ms": round((time.monotonic() - _tool_t0) * 1000, 1),
-                        "result_summary": "已被用户取消",
-                    })
-                tracer.record_action(
-                    name=name, summary=_cancel_desc,
-                    elapsed_ms=(time.monotonic() - _tool_t0) * 1000, ok=False,
-                    stage=stage_label_for_tool(name),
-                    result_summary="已被用户取消", args=args_preview,
-                )
-                raise
+                except GenerationCancelled:
+                    # 取消穿透：先记本工具账本/trace（取消态）再上抛，
+                    # 任何中断都有痕迹（不静默吞，不吞为失败结果）
+                    _cancel_desc = describe_fc_tool(name, args)
+                    if name in ("image_generate", "generate_image", "generate_video"):
+                        ledger.gen_failed_err = "生成任务已被取消"
+                    if on_event is not None:
+                        await on_event({
+                            "type": SSE_TOOL_FINISHED,
+                            "id": tool_event_id,
+                            "ok": False,
+                            "elapsed_ms": round((time.monotonic() - _tool_t0) * 1000, 1),
+                            "result_summary": "已被用户取消",
+                        })
+                    tracer.record_action(
+                        name=name, summary=_cancel_desc,
+                        elapsed_ms=(time.monotonic() - _tool_t0) * 1000, ok=False,
+                        stage=stage_label_for_tool(name),
+                        result_summary="已被用户取消", args=args_preview,
+                    )
+                    raise
             _tool_ms = (time.monotonic() - _tool_t0) * 1000
+            # 幂等键记账（T4）：非空键的执行结果（含失败）入轮内账本；
+            # 空键与闸机拒收不记账（拒收无副作用，待模型改参/用户确认后重新裁决）
+            if gate_error is None:
+                self._idempotency.record(_idem_key, result)
             # 单一活跃暂停槽位（ADR-0004/0006）：降级为防御性断言——已有未消费
             # 暂停时重复 workflow_pause 只告警 + trace 留痕，照常发行（新卡覆盖
             # 旧卡解除死锁），不再以拒因回喂模型（旧「执行后拒收」形态退役）

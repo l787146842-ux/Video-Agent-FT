@@ -912,3 +912,62 @@ def test_fc_media_to_chat_current_uses_selected_draft(monkeypatch):
     assert tm.captured and tm.captured[0][0] == "storyboard_media_to_chat"
     args = tm.captured[0][1]
     assert args.get("draft_ids") == ["d2"]
+
+
+# ---------- 幂等键轮内去重接线（T4） ----------
+
+class _CountingToolManager:
+    """每次调用返回带序号的结果，便于区分首次与重复调用的返回体"""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def invoke_tool(self, name, args):
+        self.calls += 1
+        return ToolResult(success=True, data={"seq": self.calls})
+
+
+def _idem_add_draft_call(key: str, call_id: str):
+    return {"id": call_id, "type": "function", "function": {
+        "name": "storyboard_add_draft",
+        "arguments": json.dumps({
+            "group_id": "ke-2", "group_type": "keyElement",
+            "draft": {"label": "新草稿"}, "idempotency_key": key})}}
+
+
+def test_fc_idempotency_key_short_circuits_same_key(monkeypatch):
+    """同批同键：第二次调用短路返回首次结果，真实执行只发生一次；
+    异键/空键不受影响照常执行"""
+    import asyncio
+    tm = _CountingToolManager()
+    runner = FCToolRunner(tool_manager=tm)
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(_fc_state_with_two_ke_groups))
+    response = ChatResponse(content="", tool_calls=[
+        _idem_add_draft_call("idem-1", "c1"),
+        _idem_add_draft_call("idem-1", "c2"),  # 同键重复提交
+        _idem_add_draft_call("idem-2", "c3"),  # 异键照常执行
+        _idem_add_draft_call("", "c4"),        # 空键直通过
+    ])
+    applied, *_rest, tool_results, _docs, _warnings, _overflow, _pause_id = asyncio.run(
+        runner.execute(response, injected_skill=""))
+    assert applied == 4
+    assert tm.calls == 3  # 同键第二次被短路，未真实执行
+    assert tool_results[0]["data"] == {"seq": 1}
+    assert tool_results[1]["data"] == {"seq": 1}  # 命中返回首次结果
+    assert tool_results[2]["data"] == {"seq": 2}
+    assert tool_results[3]["data"] == {"seq": 3}
+
+
+def test_fc_idempotency_key_reset_between_turns(monkeypatch):
+    """跨轮：reset_turn_tracking 后同键不串，重新真实执行"""
+    import asyncio
+    tm = _CountingToolManager()
+    runner = FCToolRunner(tool_manager=tm)
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(_fc_state_with_two_ke_groups))
+    response = ChatResponse(content="", tool_calls=[_idem_add_draft_call("idem-1", "c1")])
+    asyncio.run(runner.execute(response, injected_skill=""))
+    assert tm.calls == 1
+    runner.reset_turn_tracking()  # 轮始重置（planner 每轮调用）
+    out = asyncio.run(runner.execute(response, injected_skill=""))
+    assert tm.calls == 2
+    assert out.tool_results[0]["data"] == {"seq": 2}

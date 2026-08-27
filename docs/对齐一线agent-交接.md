@@ -34,7 +34,8 @@
 | 批 1 | 工具表面修正（T6/T7/T1/T8） | ✅ | `464e0b3` | 定点 136 passed；`--quick` 退出码 0 | 新增 `canvas_read_prompt_max_chars`(2000)/`canvas_asset_page_size`(50) 入 config |
 | 批 3 | 结构化错误轴（T5） | ✅ | `83940db` | 定点 159 passed；`--quick` 退出码 0；`gen_api_types --check` 退出码 0 | 见下方批 3 完成说明 |
 | 批 2 | 闭集枚举最小子集（T3） | ✅ | `ff1e954` | 定点全绿；`--quick` 退出码 0；评测 38 条/误杀漏放 0/准确率 1.0 | 仅动 3 处入参闭集枚举 + 拒收用例 |
-| 批 4 | 写类入参硬化第一步「错误可见」（T2） | ✅ 第一步 | （待回填） | 定点 129 passed；`--quick` 退出码 0 | 未知字段可见报错（manager 层全工具生效）+ patch 白名单原子拒收 + image_generate target 结构化校验；**第二步 `extra="forbid"` 未做**（待评测通过后另批） |
+| 批 4 | 写类入参硬化第一步「错误可见」（T2） | ✅ 第一步 | `6841532` | 定点 129 passed；`--quick` 退出码 0 | 未知字段可见报错（manager 层全工具生效）+ patch 白名单原子拒收 + image_generate target 结构化校验；**第二步 `extra="forbid"` 未做**（待评测通过后另批） |
+| 批 5 | 幂等键与轮内去重账本（T4） | ✅ | （本批提交，哈希待回填） | 定点 109 passed；`--quick` 退出码 0；`gen_api_types --check` 退出码 0 | 新增 `core/idempotency_ledger.py`（随轮不持久化）；写类 Input 加可选 `idempotency_key`（storyboard 5 个 / document 2 个 / canvas 4 个）；`fc_tool_runner.py` 仅最小接线（691→705 行），同键命中跳过闸机链与实际执行，首次失败也缓存，闸机拒收与取消不记账 |
 
 ### 批 3 完成说明（T5 结构化错误轴）
 
@@ -102,7 +103,7 @@
 
 ## 4. 已知坑点清单
 
-1. `fc_tool_runner.py` 已 691 行，逼近行数棘轮，且 L287-296 消费原始 args dict——批级新逻辑一律落新模块，不要在此文件加逻辑。
+1. `fc_tool_runner.py` 已 705 行（批 5 幂等键接线后，净增 14 行），逼近行数棘轮，且 L290 附近消费原始 args dict——批级新逻辑一律落新模块，不要在此文件加逻辑（幂等判定已唯一归 `core/idempotency_ledger.py`）。
 2. 字段白名单唯一事实源 = `state/storyboard_ops.py::ALLOWED_DRAFT_FIELDS/ALLOWED_GROUP_FIELDS`（L25-35），校验器只能**引用**，禁止复制（P1）。
 3. `turn_commit` L108/L153-154 是 `state.clear(); state.update()` 直接字典改法，批 6 的回滚**不得沿用**，必须走 StateManager 接口。
 4. T2 两步走纪律：先"错误可见"并跑评测，通过后才允许 `extra="forbid"` 收紧；不得一步到位。

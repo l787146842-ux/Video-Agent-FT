@@ -29,28 +29,33 @@ class CreateGroupInput(BaseModel):
     shot_type: str = Field("", description="镜头语言（shot 类型用）")
     scene_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组")
     draft: Optional[Dict[str, Any]] = Field(None, description="附带草稿（可选）")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class PatchDraftInput(BaseModel):
     draft_id: str = Field(..., description="草稿 ID 或 'current'")
     draft_type: str = Field("", description="草稿类型: keyElement | shot | audio")
     patch: Dict[str, Any] = Field(..., description="要更新的字段字典")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class AddDraftInput(BaseModel):
     group_id: str = Field("current", description="目标分组 ID 或 'current'")
     group_type: str = Field("", description="分组类型")
     draft: Dict[str, Any] = Field(..., description="新草稿数据")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class DeleteGroupInput(BaseModel):
     group_id: str = Field(..., description="要删除的分组 ID")
     group_type: str = Field("", description="分组类型")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class ConfirmDraftInput(BaseModel):
     draft_id: str = Field("current", description="草稿 ID 或 'current'")
     draft_type: str = Field("", description="草稿类型")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class MediaToChatInput(BaseModel):

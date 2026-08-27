@@ -32,6 +32,7 @@ from src.video_agent.utils import gen_id
 class WriteDocumentInput(BaseModel):
     name: str = Field(..., description="文档名称（如 Final_Video_Spec.md）")
     content: str = Field(..., description="文档 Markdown 全文")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class ReadUploadedDocInput(BaseModel):
@@ -63,6 +64,7 @@ class GenerateImageInput(BaseModel):
     target: str = Field("all_keyElements", description="目标: all_keyElements | all_shots | 具体 draft_id")
     provider_id: str = Field("", description="生图供应商 ID（可留空，系统自动回退草稿自带供应商或配置中首个可用生图供应商）")
     model: str = Field("", description="生图模型名（可留空，自动用供应商默认模型）")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class WorkflowPauseInput(BaseModel):

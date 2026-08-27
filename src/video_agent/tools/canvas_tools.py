@@ -37,6 +37,7 @@ class CanvasAddNodeInput(BaseModel):
     prompt: str = Field("", description="提示词（smart-prompt 类型用）")
     image_url: str = Field("", description="图片 URL（smart-image/image 类型用）")
     content: str = Field("", description="文本内容（text 类型用）")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class CanvasUpdateNodeInput(BaseModel):
@@ -48,11 +49,13 @@ class CanvasUpdateNodeInput(BaseModel):
     prompt: Optional[str] = Field(None, description="新提示词")
     image_url: Optional[str] = Field(None, description="新图片 URL")
     content: Optional[str] = Field(None, description="新文本内容")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class CanvasDeleteNodeInput(BaseModel):
     canvas_id: str = Field(..., description="画布 ID")
     node_id: str = Field(..., description="要删除的节点 ID")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class CanvasListAssetsInput(BaseModel):
@@ -330,6 +333,7 @@ class CanvasBatchNodeInput(BaseModel):
 class CanvasBatchUpdateInput(BaseModel):
     canvas_id: str = Field(..., description="画布 ID")
     nodes: List[CanvasBatchNodeInput] = Field(..., description="要批量添加的节点数组")
+    idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
 class CanvasBatchUpdateTool(BaseTool):
