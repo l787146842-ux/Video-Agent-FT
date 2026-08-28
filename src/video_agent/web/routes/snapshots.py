@@ -28,6 +28,8 @@ from src.video_agent.web.error_payload import (
     classify_legacy_code,
 )
 
+from .conversations import ConversationsMetaResponse
+
 router = APIRouter()
 
 # 文件名编码的创建时间戳：snap_id 形如 snap-<unix_ts>-<rand>（gen_id 约定），
@@ -209,7 +211,7 @@ async def get_snapshot(snap_id: str):
     return _read_snapshot(svc.active_project_id or "", snap_id)
 
 
-@router.post("/conversations/snapshots/{snap_id}/branch")
+@router.post("/conversations/snapshots/{snap_id}/branch", response_model=ConversationsMetaResponse)
 async def branch_snapshot(snap_id: str, body: BranchRequest):
     """从快照派生新对话（分支）：消息装载进新对话并设为活跃；当前状态不动。"""
     svc = StateManager.get_instance()

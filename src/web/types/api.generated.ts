@@ -87,6 +87,16 @@ export interface ChatResponse {
   stop_phase?: string;
 }
 
+export interface ConversationMeta {
+  id: string;
+  title: string;
+}
+
+export interface ConversationsMetaResponse {
+  conversations: ConversationMeta[];
+  active_conversation_id: string;
+}
+
 export interface CreateConversationRequest {
   title?: string;
 }
@@ -314,8 +324,8 @@ export interface TruncateResendRequest {
 }
 
 export interface UndoStatusResponse {
-  can_undo?: boolean;
-  can_redo?: boolean;
+  can_undo: boolean;
+  can_redo: boolean;
 }
 
 export interface VideoBatchCreate {

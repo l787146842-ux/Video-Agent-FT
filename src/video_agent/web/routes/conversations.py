@@ -10,6 +10,7 @@
 """
 from fastapi import APIRouter
 from pydantic import BaseModel
+from typing import List
 
 from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.state.manager import StateManager
@@ -22,7 +23,18 @@ class CreateConversationRequest(BaseModel):
     title: str = ""
 
 
-@router.get("/conversations")
+class ConversationMeta(BaseModel):
+    """对话元信息（E-2 消息单一来源：不含消息副本；后端多余键静默过滤）"""
+    id: str
+    title: str
+
+
+class ConversationsMetaResponse(BaseModel):
+    conversations: List[ConversationMeta]
+    active_conversation_id: str
+
+
+@router.get("/conversations", response_model=ConversationsMetaResponse)
 async def list_conversations():
     """列出当前项目的全部对话（元信息，不含消息）+ 活跃对话 ID"""
     return StateManager.get_instance().conversations_meta_payload()
@@ -43,7 +55,7 @@ async def get_conversation_messages(conversation_id: str):
     return {"conversation_id": conversation_id, "messages": msgs}
 
 
-@router.post("/conversations")
+@router.post("/conversations", response_model=ConversationsMetaResponse)
 async def create_conversation(body: CreateConversationRequest):
     """新建对话并设为活跃（响应只含元信息，新对话消息为空列表）"""
     svc = StateManager.get_instance()
@@ -52,7 +64,7 @@ async def create_conversation(body: CreateConversationRequest):
     return svc.conversations_meta_payload()
 
 
-@router.post("/conversations/{conversation_id}/activate")
+@router.post("/conversations/{conversation_id}/activate", response_model=ConversationsMetaResponse)
 async def activate_conversation(conversation_id: str):
     """切换活跃对话（响应只含元信息；目标对话消息经 messages 接口装载）"""
     svc = StateManager.get_instance()
@@ -63,7 +75,7 @@ async def activate_conversation(conversation_id: str):
     return svc.conversations_meta_payload()
 
 
-@router.delete("/conversations/{conversation_id}")
+@router.delete("/conversations/{conversation_id}", response_model=ConversationsMetaResponse)
 async def delete_conversation(conversation_id: str):
     """删除对话（仅剩一个时拒绝）"""
     svc = StateManager.get_instance()

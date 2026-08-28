@@ -5,14 +5,14 @@
  * 前端据此刷新标签栏；目标对话消息经 getConversationMessages 单独装载。
  */
 import { apiFetch, apiPost, apiDelete } from './client';
-import type { ChatMessage, Conversation } from '@/types';
-import type { BranchRequest, CreateConversationRequest, SnapshotRequest } from '@/types/api.generated';
+import type { ChatMessage } from '@/types';
+import type {
+  BranchRequest, ConversationsMetaResponse, CreateConversationRequest, SnapshotRequest,
+} from '@/types/api.generated';
 
-export interface ConversationsPayload {
-  /** 对话元信息列表（不含消息副本，E-2） */
-  conversations: Conversation[];
-  active_conversation_id: string;
-}
+/** 对话列表/增删切响应（后端 ConversationsMetaResponse 生成物为唯一来源；
+ * 别名仅保消费方旧名，无二次收窄） */
+export type ConversationsPayload = ConversationsMetaResponse;
 
 /** 按会话拉消息的响应（消息单一来源装载接口） */
 export interface ConversationMessagesResponse {

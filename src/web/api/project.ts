@@ -5,7 +5,7 @@
 import { apiFetch, apiPost, apiPut } from './client';
 import type { Project, ServerStateSnapshot, DocRecord } from '@/types';
 import type {
-  DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, OkResponse, SwitchProjectRequest,
+  DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, OkResponse, SwitchProjectRequest, UndoStatusResponse,
 } from '@/types/api.generated';
 
 export interface ProjectListResponse {
@@ -18,11 +18,6 @@ export interface OkWithStateResponse {
   state?: ServerStateSnapshot | null;
   project_id?: string;
   message?: string;
-}
-
-export interface UndoStatusResponse {
-  can_undo: boolean;
-  can_redo: boolean;
 }
 
 export function getProjects() {

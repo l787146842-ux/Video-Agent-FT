@@ -12,9 +12,8 @@
  * - ServerStateSnapshot / ChatMessage / Draft 等视图态：前端渲染形态，非 API 模型；
  * - 手写响应类型比生成物更精确的站点（生成物对 Dict 响应只能给出
  *   Record<string, unknown>）：ProjectListResponse/ProvidersResponse/
- *   UndoStatusResponse/OkWithStateResponse（api/project.ts、api/providers.ts）、
- *   ChatResponse、
- *   ConversationsPayload（api/conversations.ts）、画布读取结果族
+ *   OkWithStateResponse（api/project.ts、api/providers.ts）、
+ *   ChatResponse、画布读取结果族
  *   CanvasDropImageResult/CanvasNodeImagesResult/AllCanvasImagesResult（api/canvas.ts）、
  *   GenerationLogEntry（api/generate.ts 读形态）、
  *   SkillDoc/SkillDocVersion（api/docs.ts）、RuntimeSettings（api/agent.ts 读形态）、
@@ -35,6 +34,7 @@ import type {
   ChatRequest,
   AgentTaskReplayPayload as GenAgentTaskReplayPayload,
   AgentTaskToolEntry,
+  ConversationMeta,
   SseActionsAppliedEvent as GenSseActionsAppliedEvent,
   SseDeltaEvent,
   SseDocWrittenEvent,
@@ -450,8 +450,9 @@ export type SseEvent =
 
 // ===== 后端状态快照 =====
 /** 单个对话（同一项目支持多对话窗口）：仅元信息（E-2 消息单一来源，
- * 消息唯一存于 chat store；装载走 GET /conversations/{id}/messages 或快照 chatMessages） */
-export interface Conversation { id: string; title: string; }
+ * 消息唯一存于 chat store；装载走 GET /conversations/{id}/messages 或快照 chatMessages）。
+ * 以后端 ConversationMeta 生成物为唯一来源（标签栏形态 = 后端元信息同形） */
+export type Conversation = ConversationMeta;
 
 export interface ServerStateSnapshot {
   /** 快照所属项目 ID（持久化请求回传，后端据此丢弃跨项目的过期写入） */

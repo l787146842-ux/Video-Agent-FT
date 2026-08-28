@@ -41,8 +41,9 @@ class OkWithStateResponse(BaseModel):
 
 
 class UndoStatusResponse(BaseModel):
-    can_undo: bool = False
-    can_redo: bool = False
+    # 无默认值：端点恒回传两字段，契约层必填（前端生成物免可选判空）
+    can_undo: bool
+    can_redo: bool
 
 
 class ProjectStateUpdate(BaseModel):
