@@ -1,7 +1,7 @@
 {
   "3D国漫古装精品短剧": {
     "planning": {
-      "chars": 4737,
+      "chars": 4740,
       "head": "**启动协议**\n用户触发本Skill时，首先判断用户属于以下哪种场景，并据此选"
     },
     "storyboard_ke": {
@@ -31,7 +31,7 @@
   },
   "AI-短剧一站式生成": {
     "planning": {
-      "chars": 1919,
+      "chars": 1922,
       "head": "**启动协议**\n\n用户触发本 Skill 时，按顺序确认以下信息后再推进：\n\n"
     },
     "storyboard_ke": {
@@ -111,7 +111,7 @@
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
-      "chars": 4052,
+      "chars": 4020,
       "head": "**图像生成提示词 (TextToImage, ImageToImage)**\n"
     },
     "assembly": {
@@ -141,8 +141,8 @@
       "head": "**制作参数基准：** 出图/出视频渠道与分辨率一律遵循顶部导航栏「全局设置」，"
     },
     "prompt_draft": {
-      "chars": 92,
-      "head": "**强制基线、适用于所有prompt编写情况：当用户使用中文输入或是加载中文语料"
+      "chars": 55,
+      "head": "**强制基线、适用于所有prompt编写情况：提示词须包含景别、运镜、光线与材质"
     },
     "assembly": {
       "chars": 39,
@@ -201,8 +201,8 @@
       "head": "**角色形象图生成（阶段 2）**\n- 使用 **ImageToImage**，"
     },
     "prompt_draft": {
-      "chars": 2397,
-      "head": "**全局强制基线：** 所有提示词均使用**中文**撰写。视频中人物台词与旁白文"
+      "chars": 2380,
+      "head": "**全局强制基线：** 视频中人物台词与旁白文本语言依剧本设定（默认中文）。\n*"
     },
     "assembly": {
       "chars": 325,
@@ -231,7 +231,7 @@
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage** "
     },
     "prompt_draft": {
-      "chars": 4168,
+      "chars": 4139,
       "head": "**图像生成提示词 (TextToImage, ImageToImage)**\n"
     },
     "assembly": {
@@ -261,7 +261,7 @@
       "head": "**元素图像生成**\n- 使用 **TextToImage**。对于处于不同状态"
     },
     "prompt_draft": {
-      "chars": 2388,
+      "chars": 2386,
       "head": "**图像生成提示词 (TextToImage, ImageToImage) 所有"
     },
     "assembly": {
@@ -321,7 +321,7 @@
       "head": "**元素资产生成**\n- **图像：** 使用 **TextToImage**。"
     },
     "prompt_draft": {
-      "chars": 3502,
+      "chars": 3473,
       "head": "**图像生成提示词 (TextToImage, ImageToImage)**\n"
     },
     "assembly": {
@@ -347,11 +347,11 @@
       "head": "## 段落级音频层规划\n- 每个剧情段落对应一条 audio_layer，与已确"
     },
     "generation": {
-      "chars": 1989,
+      "chars": 1985,
       "head": "## 资产生成与绑定顺序\n- 先绑定用户已提供的资源。人物参考图直接注册并绑定为"
     },
     "prompt_draft": {
-      "chars": 4407,
+      "chars": 4316,
       "head": "## 共同写作规则\n- 使用 Markdown 分级标题与固定模块顺序，不使用表"
     },
     "assembly": {
@@ -381,8 +381,8 @@
       "head": "**元素、图像与音色资产生成：**\n\n- **模型锁定与唯一性规范**：\n  -"
     },
     "prompt_draft": {
-      "chars": 20576,
-      "head": "**强制基线规则**：当项目环境或用户输入为中文时，提示词主体（Subject、"
+      "chars": 20475,
+      "head": "**规避导演与影片名称（安全与合规控制）**：在撰写图像与视频提示词时，**一律"
     },
     "assembly": {
       "chars": 2439,
@@ -411,8 +411,8 @@
       "head": "**视觉元素生成策略（具体渠道与模型由全局设置决定，本文档不指定）：**\n- *"
     },
     "prompt_draft": {
-      "chars": 17264,
-      "head": "**语系优先与主导风格写作规范：**\n- **语言一致性高阶规则**：当用户使用"
+      "chars": 17093,
+      "head": "- 涉及对白台词、旁白等配音文本时，必须严格遵循 制片规格.md 所规定的输出语"
     },
     "assembly": {
       "chars": 366,
@@ -441,7 +441,7 @@
       "head": "**元素生成**\n- **图像：** 如果用户已指定了元素的资产（例如产品图像、"
     },
     "prompt_draft": {
-      "chars": 4512,
+      "chars": 4483,
       "head": "**图像生成提示词 (TextToImage, ImageToImage)**\n"
     },
     "assembly": {
@@ -471,7 +471,7 @@
       "head": "**元素图像生成**\n- 使用 **TextToImage**。对于不同外观或年"
     },
     "prompt_draft": {
-      "chars": 5760,
+      "chars": 5731,
       "head": "**图像生成提示词（TextToImage, ImageToImage）—— 图"
     },
     "assembly": {

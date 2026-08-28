@@ -15,6 +15,9 @@ P1 整改（任务 #9）：--gate 追加内容卫生防回潮校验：frontmatte
 P2-4 新增：目录包资源探针（WARN，诊断性质）：正文 read_skill(resource=…)
 指针悬空 / scripts 声明路径不存在 / references/ 孤儿资源 → WARN 清单，
 不阻断退出码（注册期形状校验在 manifest_schema，此处只做存在性核对）。
+任务#2 新增：正文语言声明探针（--gate）：产物提示词语言统一以
+prompt_gates.resolve_prompt_language（用户选择 > frontmatter language
+声明 > 平台默认）为唯一裁决源；正文再现声明性语言规则即 FAIL。
 """
 import re
 import sys
@@ -132,6 +135,86 @@ def content_hygiene_issues(body: str) -> list:
         line_no = (body or "").count("\n", 0, m.start()) + 1
         issues.append(f"第 {line_no} 行：优先级宣称 {m.group(0)!r}"
                       f"（应改写为「强制基线」式正向表述）")
+    return issues
+
+
+# ============================================================
+# 任务#2：正文语言声明探针。产物提示词语言的唯一裁决源 =
+# prompt_gates.resolve_prompt_language（用户选择 > frontmatter language
+# 声明 > 平台默认），Skill 正文不得再重复声明。判定目标是「声明性语言规则」
+#（提示词/正文该用哪种语言书写）；引用示例提示词内容、英文双引号/英文标签等
+# 格式与术语要求、旁白语言等创意约束不属提示词语言声明（防误伤）。
+# ============================================================
+_LANG_CLAIM_RES = (
+    # 提示词/正文 + 书写类动词 + 语言词（如「提示词写成英文描述」
+    #「提示词正文用中文书写」「prompt 输出英文」）
+    re.compile(
+        r"(?:提示词|prompt|正文)[^。\n]{0,40}?"
+        r"(?:写成|书写|撰写|输出|使用|用)[^。\n]{0,20}?"
+        r"(?:中文|英文|英语)",
+        re.I),
+    # 倒装书写式（如「用中文书写」「以英文输出」）
+    re.compile(r"(?:用|以|使用)(?:中文|英文|英语)[^。\n]{0,12}?(?:书写|写成|撰写|输出)"),
+    # 「提示词正文必须为…英文描述」式断定（任务#11 放宽：裸「为」字断定，
+    # 允许 (必须|须|均|一律)?为 / 裸「一律」；负向后视防「分为/作为/称为/
+    # 视为/改为」等事实描述误伤，如「正文分为中文、英文双语」放行；
+    # 「提示词环境」指工作环境而非产物，主语后接「环境」不判声明）
+    re.compile(
+        r"(?:提示词|正文|prompt)(?!环境)[^。\n]{0,40}?"
+        r"(?:(?:必须|须|均|一律)?(?<![分成作称译改记视为当])为|一律)[^。\n]{0,20}?"
+        r"(?:中文|英文|英语)",
+        re.I),
+    # 任务#11：「通常/默认/一般 + 语言词」弱倾向断定（如「提示词通常英文」）
+    re.compile(
+        r"(?:提示词|正文|prompt)(?!环境)[^。，；\n]{0,20}?"
+        r"(?:通常|默认|一般|多为)[^。，；\n]{0,12}?"
+        r"(?:中文|英文|英语)",
+        re.I),
+    # 任务#11：「均/一律/全部/统一/始终 + 语言词」全称断定（如「提示词一律英文」）
+    re.compile(
+        r"(?:提示词|正文|prompt)(?!环境)[^。，；\n]{0,20}?"
+        r"(?:均|一律|全部|统一|始终)[^。，；\n]{0,12}?"
+        r"(?:中文|英文|英语)",
+        re.I),
+    # 语言用途分配（如「中文仅用于字段标题」）
+    re.compile(r"(?:中文|英文|英语)(?:仅|只|一律)?用于"),
+    # 语言词直接修饰产物名词（如「英文正向提示词」「英文描述」「英文正文」；
+    # 任务#11 放宽：覆盖「英文正向视觉描述」类偏正句式）
+    re.compile(r"(?:中文|英文|英语)(?:正向)?(?:视觉)?(?:的)?(?:提示词|正文|描述)"),
+    # 键值式声明（如「语言：中文」）
+    re.compile(r"语言[:：]\s*(?:中文|英文|英语)", re.I),
+)
+# 豁免后缀：语言词紧接格式/术语类名词 = 格式要求（如「英文双引号」
+#「特定英文标签」），不是书写语言声明。
+_LANG_CLAIM_EXEMPT_SUFFIX_RE = re.compile(r"^(?:双引号|单引号|引号|括号|标签|指令|字体|字符)")
+
+
+def language_claim_issues(body: str) -> list:
+    """正文语言声明收口校验（任务#2，frontmatter 剥离后的 body）：
+    产物提示词语言统一以 resolve_prompt_language 为唯一裁决源，
+    正文出现声明性语言规则即问题。返回问题清单（空 = 通过）。"""
+    hits = []
+    for pat in _LANG_CLAIM_RES:
+        for m in pat.finditer(body or ""):
+            seg = m.group(0)
+            lang = re.search(r"中文|英文|英语", seg)
+            if lang:
+                after = (body or "")[m.start() + lang.end():]
+                if _LANG_CLAIM_EXEMPT_SUFFIX_RE.match(after):
+                    continue
+            hits.append((m.start(), m.end(), seg))
+    hits.sort()
+    issues = []
+    last_end = -1
+    for start, end, seg in hits:
+        if start < last_end:
+            continue  # 与已报告片段重叠，去重
+        last_end = end
+        line_no = (body or "").count("\n", 0, start) + 1
+        issues.append(
+            f"第 {line_no} 行：声明性语言规则 {seg.strip()!r}"
+            f"（产物提示词语言统一由 frontmatter language 声明经 "
+            f"resolve_prompt_language 裁决，见 prompts/shared/language.md）")
     return issues
 
 
@@ -351,12 +434,15 @@ def run_gate() -> int:
     frontmatter name/description 存在性探针缺失输出 WARN 清单
     （P1-10 裁决 R1：级别 WARN 不升 FAIL，不触门禁冻结）；
     目录包资源探针输出 WARN 清单（P2-4：指针悬空/孤儿资源，
-    诊断性质，不阻断退出码）。"""
+    诊断性质，不阻断退出码）；
+    正文语言声明探针：正文再现声明性语言规则即 FAIL（任务#2：
+    产物提示词语言唯一裁决源 = resolve_prompt_language）。"""
     d = pathlib.Path(__file__).parent.parent / "data" / "skills"
     real = real_tool_names()
     platform = platform_tool_names()
     failed = []
     hygiene_failed = []
+    lang_failed = []
     warned = []
     meta_warned = []
     pkg_warned = []
@@ -374,6 +460,11 @@ def run_gate() -> int:
             hygiene_failed.append(slug)
             for it in hygiene:
                 print(f"[skill_content_hygiene] FAIL {f.name}: {it}")
+        lang_issues = language_claim_issues(body)
+        if lang_issues:
+            lang_failed.append(slug)
+            for it in lang_issues:
+                print(f"[skill_lang_claim] FAIL {f.name}: {it}")
         missing = tools_required_warn_probe(slug, manifest, platform)
         if missing:
             warned.append(slug)
@@ -394,10 +485,14 @@ def run_gate() -> int:
     if hygiene_failed:
         print(f"[skill_content_hygiene] FAIL: {len(hygiene_failed)} skill(s) "
               f"正文元数据残留或优先级宣称回潮")
-    if failed or hygiene_failed:
+    if lang_failed:
+        print(f"[skill_lang_claim] FAIL: {len(lang_failed)} skill(s) "
+              f"正文再现声明性语言规则（语言声明唯一源 = frontmatter language）")
+    if failed or hygiene_failed or lang_failed:
         return 1
     print("[skill_tool_names] OK: all skill docs on tool whitelist")
     print("[skill_content_hygiene] OK: 无元数据残留行与优先级宣称")
+    print("[skill_lang_claim] OK: 正文无声明性语言规则")
     if warned:
         print(f"[skill_tools_required] WARN: {len(warned)} skill(s) 声明工具未入平台注册表"
               f"（{'、'.join(warned)}；诊断性质，不阻断门禁）")
