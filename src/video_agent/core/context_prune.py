@@ -18,7 +18,7 @@ from src.video_agent.core.tracer import AgentTracer
 # 剪枝标记行（按工具类分流）：N=省略字符数
 # - read_* 类：start=续读起点（对齐 read_* 的 start 协议，有真实续读路径）
 PRUNE_MARKER_TEMPLATE = "⟦PRUNE: 中段省略 {n} 字，可用 read_* 工具 start={start} 续读⟧"
-# - 生成类（generate_image/image_generate/generate_video）：结果无续读路径，
+# - 生成类（image_generate/generate_video）：结果无续读路径，
 #   中性告知按头尾信息继续，防模型误以为可续读而重复生成
 PRUNE_MARKER_TEMPLATE_GEN = "⟦PRUNE: 中段省略 {n} 字，按已有头尾信息继续，勿重复生成⟧"
 # 标记行近似开销（字符）：净缩短守卫用，防自定义参数下剪后反而更长
@@ -31,7 +31,7 @@ PRUNE_READ_TOOLS = frozenset({
     "read_skill", "read_project_doc", "read_uploaded_doc", "read_draft",
 })
 PRUNE_GENERATION_TOOLS = frozenset({
-    "generate_image", "image_generate", "generate_video",
+    "image_generate", "generate_video",
 })
 PRUNE_FEEDBACK_TOOLS = PRUNE_READ_TOOLS | PRUNE_GENERATION_TOOLS
 

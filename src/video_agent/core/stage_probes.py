@@ -306,7 +306,6 @@ _PLATFORM_TOOL_STAGE: Dict[str, str] = {
     # 提示词编写/媒体生成：结构完成后才开放（ke_media 前置=[structure]）
     "write_media_prompt": "ke_media",
     "image_generate": "ke_media",
-    "generate_image": "ke_media",
     "generate_video": "ke_media",
 }
 _STAGE_TITLES: Dict[str, str] = {s.key: s.title for s in CANONICAL_STAGES}

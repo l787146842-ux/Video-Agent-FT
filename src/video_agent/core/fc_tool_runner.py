@@ -353,41 +353,38 @@ class FCToolRunner:
                 })
             _tool_t0 = time.monotonic()
 
-            # --- 生图模型强制注入：草稿自身（中间面板直接选择）> 全局设置 > 平台默认 ---
-            if name == "generate_image" and (
-                "adapter_provider" not in args or args.get("adapter_provider") in ("", None)
-            ):
-                _sp, _sm = ports.provider_config_port().spec_media_preference(self._raw_state())
-                # 模型能力参数唯一权威源 = 全局设置；优先级 =
-                # 草稿自身（用户在中间面板的直接选择）> 全局设置 > 平台默认
-                if image_provider:
-                    args["adapter_provider"] = image_provider
-                    logger.info("[Planner] Injected image gen provider from draft: %s",
-                                image_provider)
-                elif _sp:
-                    args["adapter_provider"] = _sp
-                    logger.info("[Planner] Injected image gen provider from global settings: %s", _sp)
-            # --- 画面比例注入：用中间面板选中的比例 ---
-            if name == "generate_image" and image_aspect_ratio:
-                if not args.get("aspect_ratio"):
-                    args["aspect_ratio"] = image_aspect_ratio
-                    logger.info("[Planner] Injected image gen aspect ratio from draft: %s",
-                                image_aspect_ratio)
-            # --- image_generate（批量工具）同轨注入：LLM 未传 provider 时依次回退
-            # 草稿自身（用户直接选择）> 全局设置 > 平台默认；
-            # 防传空导致「供应商 '' 未配置」---
-            if name == "image_generate" and not str(args.get("provider_id") or "").strip():
-                spec_pid, spec_model = ports.provider_config_port().spec_media_preference(self._raw_state())
-                if image_provider:
-                    args["provider_id"] = image_provider
-                    logger.info("[Planner] Injected image_generate provider from draft: %s",
-                                image_provider)
-                elif spec_pid:
-                    args["provider_id"] = spec_pid
-                    if spec_model and not str(args.get("model") or "").strip():
-                        args["model"] = spec_model
-                    logger.info("[Planner] Injected image_generate provider from global settings: %s/%s",
-                                spec_pid, spec_model)
+            # --- image_generate（统一生图工具）同轨注入：按 mode 分流，
+            # 优先级 = 草稿自身（中间面板直接选择）> 全局设置 > 平台默认；
+            # single 模式补 adapter_provider/aspect_ratio，batch 模式补
+            # provider_id/model；防传空导致「供应商 '' 未配置」---
+            if name == "image_generate":
+                _img_single = str(args.get("mode") or "batch").strip().lower() == "single"
+                if _img_single:
+                    if "adapter_provider" not in args or args.get("adapter_provider") in ("", None):
+                        _sp, _sm = ports.provider_config_port().spec_media_preference(self._raw_state())
+                        if image_provider:
+                            args["adapter_provider"] = image_provider
+                            logger.info("[Planner] Injected image_generate(single) provider from draft: %s",
+                                        image_provider)
+                        elif _sp:
+                            args["adapter_provider"] = _sp
+                            logger.info("[Planner] Injected image_generate(single) provider from global settings: %s", _sp)
+                    if image_aspect_ratio and not args.get("aspect_ratio"):
+                        args["aspect_ratio"] = image_aspect_ratio
+                        logger.info("[Planner] Injected image_generate(single) aspect ratio from draft: %s",
+                                    image_aspect_ratio)
+                elif not str(args.get("provider_id") or "").strip():
+                    spec_pid, spec_model = ports.provider_config_port().spec_media_preference(self._raw_state())
+                    if image_provider:
+                        args["provider_id"] = image_provider
+                        logger.info("[Planner] Injected image_generate provider from draft: %s",
+                                    image_provider)
+                    elif spec_pid:
+                        args["provider_id"] = spec_pid
+                        if spec_model and not str(args.get("model") or "").strip():
+                            args["model"] = spec_model
+                        logger.info("[Planner] Injected image_generate provider from global settings: %s/%s",
+                                    spec_pid, spec_model)
 
             # 幂等键轮内去重（T4）：同键命中直接用首次结果，跳过闸机链与实际执行；
             # 空键直通过不去重，判定语义唯一归 core/idempotency_ledger.py
@@ -418,7 +415,7 @@ class FCToolRunner:
                     # 取消穿透：先记本工具账本/trace（取消态）再上抛，
                     # 任何中断都有痕迹（不静默吞，不吞为失败结果）
                     _cancel_desc = describe_fc_tool(name, args)
-                    if name in ("image_generate", "generate_image", "generate_video"):
+                    if name in ("image_generate", "generate_video"):
                         ledger.gen_failed_err = "生成任务已被取消"
                     if on_event is not None:
                         await on_event({
@@ -466,7 +463,7 @@ class FCToolRunner:
                 except Exception as _e:
                     logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
             # 生成类工具成败记录（批末对账用客观账本）
-            if name in ("image_generate", "generate_image", "generate_video"):
+            if name in ("image_generate", "generate_video"):
                 if result.success:
                     ledger.gen_succeeded = True
                 elif not ledger.gen_failed_err:
@@ -600,7 +597,7 @@ class FCToolRunner:
                     last_stage_label = _stage_lbl
                     self._turn_stage_label = _stage_lbl
                 tool_results.append({"name": name, "ok": True, "data": result.data})
-                # --- 收集 generate_image 产出的图片 URL ---
+                # --- 收集 image_generate（single 模式）产出的图片 URL ---
                 data = result.data
                 if data and "image_urls" in data:
                     urls = data["image_urls"]

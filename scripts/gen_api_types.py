@@ -117,12 +117,10 @@ def _collect_tool_tiers() -> tuple[Dict[str, str], Dict[str, str]]:
     from src.video_agent.tools.mcp.catalog import McpToolCatalogTool
     from src.video_agent.tools.storyboard_tools import register_storyboard_tools
     from src.video_agent.tools.video.generate_video import GenerateVideoTool
-    from src.video_agent.tools.vision.generate_image import GenerateImageTool
 
     saved = dict(ToolManager._tools)  # noqa: SLF001 隔离采集：快照 + 恢复
     try:
         ToolManager.reset()
-        ToolManager.register(GenerateImageTool())
         ToolManager.register(GenerateVideoTool())
         register_storyboard_tools()
         register_document_tools()

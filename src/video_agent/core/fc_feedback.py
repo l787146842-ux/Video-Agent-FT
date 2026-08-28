@@ -322,7 +322,9 @@ def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
         return f"加载 Skill「{str(args.get('name') or '未知')}」完整流程"
     if name == "read_project_doc":
         return f"读取规格文档「{str(args.get('name') or '未知')}」"
-    if name in ("generate_image", "image_generate"):
+    if name == "image_generate":
+        if str(args.get("mode") or "batch").strip().lower() == "single":
+            return "对话内单张生图"
         return "发起生图"
     if name == "generate_video":
         return "发起视频生成"

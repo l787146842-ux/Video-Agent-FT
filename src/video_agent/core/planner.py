@@ -145,7 +145,7 @@ class PlannerResponse:
     warnings: List[str] = field(default_factory=list)
     confirmation: str = ""
     documents_written: List[str] = field(default_factory=list)
-    image_urls: List[str] = field(default_factory=list)  # generate_image 工具产出的图片 URL
+    image_urls: List[str] = field(default_factory=list)  # image_generate（single 模式）产出的图片 URL
     # 待插入前端对话输入框的故事板媒体（insert_chat_media / storyboard_media_to_chat 产出）
     chat_inserts: List[Dict[str, Any]] = field(default_factory=list)
     # 已执行操作的中文描述清单（前端「阶段完成」卡片展开用，随消息持久化）

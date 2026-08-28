@@ -68,8 +68,7 @@ STAGE_LABELS: Dict[str, str] = {
     "write_media_prompt": "媒体提示词编写",
     "audio_generate": "音频生成",
     "video_assembler": "时间线组装",
-    "image_generate": "设定图生成",
-    "generate_image": "对话出图",
+    "image_generate": "生图",
     "generate_video": "视频生成",
     "skill_section_run": "自定义章节执行",
 }

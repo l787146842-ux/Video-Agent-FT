@@ -259,8 +259,10 @@ def tool_risk_gate(ctx: GateContext, name: str) -> Optional[str]:
 
 def gen_confirm_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[str]:
     """生成确认闸（FC 轨）：判定唯一实现 =
-    guard_pipeline.evaluate_gen_confirm（与文本轨逐字节一致）。"""
-    if name != "image_generate":
+    guard_pipeline.evaluate_gen_confirm（与文本轨逐字节一致）。
+    仅覆盖 image_generate 批量轨；mode='single' 单张应急轨无目标草稿，
+    不参与草稿确认校验（与原单张工具行为等价）。"""
+    if name != "image_generate" or str(args.get("mode") or "batch").strip().lower() == "single":
         return None
     # 一条龙：用户本条消息的显式指令作为本批生成同意（留痕），不弹确认闸
     if prompt_gates.flow_auto_continue(ctx.state()):
@@ -489,14 +491,17 @@ def run_gate_chain(
             if pg_err:
                 res.prompt_gate_blocked = 1
                 err = pg_err
-    # 对话内单图工具每批最多一次（prose 下沉工具层）。
-    # 需要多张时模型改用 image_generate 批量工具（两者分工互斥，见 system_fc.md）
-    if err is None and name == "generate_image":
+    # 单张应急轨（mode='single'）每批最多一次（prose 下沉工具层）。
+    # 需要多张时模型改用批量轨（mode='batch'，见 system_fc.md）
+    if (
+        err is None and name == "image_generate"
+        and str(args.get("mode") or "batch").strip().lower() == "single"
+    ):
         ctx.gen_image_calls += 1
         if ctx.gen_image_calls > 1:
             err = (
-                "generate_image 每轮只调用一次；"
-                "需要多张图片时改用 image_generate 批量工具（明确 target 范围）。"
+                "image_generate（mode='single'）每轮只调用一次；"
+                "需要多张图片时改用批量模式（mode='batch'，明确 target 范围）。"
             )
     res.error = err
     return res

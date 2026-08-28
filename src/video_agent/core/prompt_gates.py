@@ -612,7 +612,8 @@ STORYBOARD_STAGE_TOOLS = frozenset({
     "storyboard_key_elements", "storyboard_shots", "storyboard_audio",
     "write_media_prompt",
 })
-# 草稿生成工具集（故事板结构就绪前不下发；对话内直出的 generate_image 不受影响）
+# 草稿生成工具集（故事板结构就绪前不下发；image_generate 的单张应急轨
+# mode='single' 经阶段前置闸同口径判定，不单独豁免可见性）
 GENERATION_STAGE_TOOLS = frozenset({"image_generate", "generate_video"})
 
 

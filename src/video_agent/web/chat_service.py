@@ -341,7 +341,7 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
         (lambda: ctx.svc.build_agent_context(ctx.body.asset_mode)) if ctx.use_studio_context else None
     )
 
-    # --- 解析中间面板选中的生图 provider + 画面比例（注入 generate_image 工具用）---
+    # --- 解析中间面板选中的生图 provider + 画面比例（注入 image_generate 工具用）---
     ctx.image_provider, ctx.image_aspect_ratio = _resolve_selected_draft_media_config(
         ctx.svc, ctx.body.selected_draft_id, ctx.body.selected_type
     )

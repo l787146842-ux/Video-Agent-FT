@@ -45,7 +45,7 @@
 
 **生产端标注**：
 - `tools/manager.py`：入参校验失败=`validation`；未捕获异常兜底=`exception`。
-- `tools/vision/generate_image.py`：未配置供应商=`validation`；上游明确失败=`upstream`+retryable=True；异常兜底=`upstream`。
+- `tools/document_tools.py`（image_generate 的 single 模式）：未配置供应商=`validation`；上游明确失败=`upstream`+retryable=True；异常兜底=`upstream`。
 - `tools/video/generate_video.py`：未配置供应商=`validation`；跨厂商降级链耗尽/不可重试错误=`upstream`+retryable=False。
 - `tools/document_tools.py`（image_generate 生成段）：开关关闭/无可用供应商=`other`；目标未命中草稿=`validation`。
 - `tools/canvas_tools.py`（写路径）：update/delete 节点不存在=`canvas`。
