@@ -10,15 +10,24 @@
 - 任务#3：判定出口（audit_verdicts）遥测旁路每次判定 append 一行到
   gate_trigger_counts.jsonl；写入失败吞异常不影响主链路；汇总侧
   trigger_count_stats 按归一 rule_id 统计（脏行跳过，兼容 .N 轮转份）。
+- 任务#4：超期未裁决点名口径钉死——观测窗不足半年不得点名降级候选（
+  数据不足不虚构超期）；安全类闸机永不进候选（折旧规程 §5.4）；
+  待裁决台账登记超半年才点名，日期不可解析的条目跳过。
 """
+import datetime
 import json
 import pathlib
 
 from scripts.audit_gate_triggers import (
+    MIN_OBSERVATION_DAYS,
+    SAFE_RUNTIME_RULES,
     count_files,
+    pending_rulings_overdue,
     runtime_gate_stats,
+    telemetry_window,
     trace_files,
     trigger_count_stats,
+    zero_trigger_candidates,
 )
 
 from src.video_agent.core import guard_pipeline
@@ -237,3 +246,77 @@ def test_trigger_count_stats_dirty_ok_semantics(tmp_path):
     stats = trigger_count_stats(base)
     assert stats["platform.gen_confirm"] == {
         "total": 4, "blocked": 1, "overridden": 0}
+
+
+# ---------- 任务#4：超期未裁决点名口径 ----------
+
+def _epoch_line(rule_id: str, epoch: float) -> str:
+    return json.dumps({"ts": "2026-01-01T00:00:00+00:00", "epoch": epoch,
+                       "rule_id": rule_id, "ok": True, "layer": "skill",
+                       "action": "", "overridden": False},
+                      ensure_ascii=False)
+
+
+def test_telemetry_window_short_span_insufficient(tmp_path):
+    """遥测只有数天数据 → 数据不足，不得据零点名单降级候选。"""
+    base = tmp_path / "gate_trigger_counts.jsonl"
+    day = 86400.0
+    base.write_text(_epoch_line("platform.gen_confirm", 1_700_000_000.0)
+                    + "\n" + _epoch_line("platform.gen_confirm",
+                                         1_700_000_000.0 + 2 * day)
+                    + "\n", encoding="utf-8")
+    win = telemetry_window(base)
+    assert 1.9 < win["days"] < 2.1
+    assert win["sufficient"] is False
+
+
+def test_telemetry_window_long_span_sufficient(tmp_path):
+    """观测窗满两季审计周期（≥ 182 天）→ 降级候选可计算。"""
+    base = tmp_path / "gate_trigger_counts.jsonl"
+    day = 86400.0
+    base.write_text(_epoch_line("platform.gen_confirm", 1_700_000_000.0)
+                    + "\n" + _epoch_line("platform.gen_confirm",
+                                         1_700_000_000.0 + 200 * day)
+                    + "\n", encoding="utf-8")
+    win = telemetry_window(base)
+    assert win["days"] >= MIN_OBSERVATION_DAYS
+    assert win["sufficient"] is True
+
+
+def test_telemetry_window_empty_ledger_insufficient(tmp_path):
+    """账本不存在/无有效记录 → days=0 且数据不足（不报错不虚构）。"""
+    win = telemetry_window(tmp_path / "gate_trigger_counts.jsonl")
+    assert win == {"days": 0.0, "start": "", "end": "", "sufficient": False}
+
+
+def test_zero_trigger_candidates_excludes_safe_and_active():
+    """降级候选 = 注册表 − 有触发 − 安全豁免；安全类永不进候选。"""
+    registry = {"skill.a": 1, "skill.b": 2, "platform.tool_risk": 3}
+    cstats = {"skill.a": {"total": 3, "blocked": 0, "overridden": 0}}
+    cands = zero_trigger_candidates(
+        cstats, registry=registry,
+        safe=frozenset({"platform.tool_risk"}))
+    assert cands == ["skill.b"]  # skill.a 有触发；安全类豁免；只剩 skill.b
+
+
+def test_zero_trigger_candidates_all_safe_is_empty():
+    """零触发清单全是安全类闸 → 候选为空（零触发是常态非折旧信号）。"""
+    registry = {rid: rid for rid in SAFE_RUNTIME_RULES}
+    assert zero_trigger_candidates({}, registry=registry) == []
+
+
+def test_pending_rulings_overdue_threshold():
+    """登记超半年点名、未满半年不点名、日期不可解析跳过（不虚构）。"""
+    today = datetime.date(2026, 8, 28)
+    items = (
+        ("gate.x 退役复核", "2025-12-01", "复设条件 X"),   # 270 天前 → 超期
+        ("gate.y 退役复核", "2026-08-20", "复设条件 Y"),   # 8 天前 → 未超
+        ("gate.z 登记日脏值", "not-a-date", "复设条件 Z"),  # 跳过
+    )
+    overdue = pending_rulings_overdue(items=items, today=today)
+    assert [name for name, _, _ in overdue] == ["gate.x 退役复核"]
+
+
+def test_pending_rulings_default_registry_empty():
+    """生产登记台账为空属正常态（存量已随 R6/R7/R11 清偿），不虚构超期。"""
+    assert pending_rulings_overdue() == []

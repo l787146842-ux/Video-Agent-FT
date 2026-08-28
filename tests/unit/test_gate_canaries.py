@@ -20,8 +20,8 @@ import pytest
 _EXPECTED_GATE_NAMES = [
     "contract", "prompt_budget", "file_lines", "file_lines_frontend",
     "semantic_colors", "func_imports", "category_keys",
-    "legacy_orchestration", "layer_imports", "doc_pointers",
-    "arch_anchors", "scaffold_registry", "cov_ratchet", "fe_cov_ratchet",
+    "legacy_orchestration", "layer_imports", "ref_integrity",
+    "scaffold_registry", "cov_ratchet", "fe_cov_ratchet",
     "skill_tool_names",
 ]
 
@@ -242,11 +242,14 @@ def test_canary_layer_imports_clean_passes(tmp_path, monkeypatch):
     assert gate.main() == 0
 
 
-# ---------- 11) doc_pointers ----------
+# ---------- 11) ref_integrity（裁决 R11：doc_pointers + arch_anchors 合并） ----------
 def _doc_pointers_scaffold(tmp_path, monkeypatch):
     import scripts.check_doc_pointers as gate
     pkg = tmp_path / "src" / "video_agent"
     pkg.mkdir(parents=True)
+    # 锚点布局：合并后 main() 含宪法锚点校验，脚手架锚点指向 tmp 内真文件，
+    # 防真实 ANCHORS 在 tmp ROOT 下恒失败（防静默掉闸的双向可失败性不变）。
+    (pkg / "anchor.py").write_text("AnchorSym = 1\n", encoding="utf-8")
     (tmp_path / "docs" / "adr").mkdir(parents=True)
     (tmp_path / "ARCHITECTURE_RULES.md").write_text(
         "## 文件地图\n```\n```\n", encoding="utf-8")
@@ -254,6 +257,8 @@ def _doc_pointers_scaffold(tmp_path, monkeypatch):
     monkeypatch.setattr(gate, "ADR_DIR", tmp_path / "docs" / "adr")
     monkeypatch.setattr(gate, "ARCH_RULES", tmp_path / "ARCHITECTURE_RULES.md")
     monkeypatch.setattr(gate, "PKG", pkg)
+    monkeypatch.setattr(gate, "ANCHORS",
+                        [("Rule1", "src/video_agent/anchor.py", "AnchorSym")])
     return gate, pkg
 
 
@@ -265,6 +270,30 @@ def test_canary_doc_pointers_dead_pointer_fails(tmp_path, monkeypatch):
 
 
 def test_canary_doc_pointers_clean_passes(tmp_path, monkeypatch):
+    gate, pkg = _doc_pointers_scaffold(tmp_path, monkeypatch)
+    (pkg / "a.py").write_text("# plain\nx = 1\n", encoding="utf-8")
+    assert gate.main() == 0
+
+
+def test_canary_ref_integrity_anchor_missing_fails(tmp_path, monkeypatch):
+    """宪法锚点合并后仍双向可失败：承重路径缺失即漂移。"""
+    gate, pkg = _doc_pointers_scaffold(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        gate, "ANCHORS", [("Rule1", "src/video_agent/core/ghost.py", "Ghost")])
+    (pkg / "a.py").write_text("# plain\nx = 1\n", encoding="utf-8")
+    assert gate.main() == 1
+
+
+def test_canary_ref_integrity_anchor_symbol_missing_fails(tmp_path, monkeypatch):
+    """半漂移（文件在、承重符号搬走）必须命中。"""
+    gate, pkg = _doc_pointers_scaffold(tmp_path, monkeypatch)
+    (pkg / "moved.py").write_text("OtherSym = 1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        gate, "ANCHORS", [("Rule1", "src/video_agent/moved.py", "AnchorSym")])
+    assert gate.main() == 1
+
+
+def test_canary_ref_integrity_anchor_intact_passes(tmp_path, monkeypatch):
     gate, pkg = _doc_pointers_scaffold(tmp_path, monkeypatch)
     (pkg / "a.py").write_text("# plain\nx = 1\n", encoding="utf-8")
     assert gate.main() == 0

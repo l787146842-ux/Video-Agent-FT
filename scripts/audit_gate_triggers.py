@@ -18,9 +18,17 @@
    零触发降档」成为可计算判定。脏行跳过，只读不写。
 3. CI 棘轮门禁（scripts/check_*.py）：不在遥测旁路覆盖范围，仍输出清单表
    （触发情况由 CI 运行记录佐证，不再要求人工补录进本表）。
+4. 超期未裁决点名（治理瘦身第二批，任务#4）：把「到期必裁决」（GOVERNANCE
+   §13.14(b)）从季度人工仪式变为机器点名——输出（a）遥测观测窗与零触发
+   降级候选（安全类豁免）、（b）已登记待裁决条目超期复核、（c）脚手架
+   条目季度审计义务清单。不写任何台账（裁决留痕仍在既有台账），只读幂等；
+   识别口径缺历史数据时如实标注「数据不足、暂不列入」，不虚构超期。
+   登记待裁决台账（PENDING_RULINGS）为空属正常态（存量已随 R6/R7/R11
+   裁决清偿）；新裁决事项入账后本脚本自动点名。
 
 用法：python scripts/audit_gate_triggers.py   （输出 markdown 盘点表）
 """
+import datetime
 import json
 import pathlib
 import re
@@ -37,6 +45,36 @@ from src.video_agent.core.prompt_gates import (  # noqa: E402
     GATE_RULES,
     normalize_rule_id,
 )
+from src.video_agent.core.scaffold_registry import scaffold_entries  # noqa: E402
+
+# ---------- 超期识别口径（折旧规程第五节 + GOVERNANCE §13.14(b)） ----------
+
+# 折旧规程 §5.4 豁免登记（Policy-as-Data）：安全类闸机不参与折旧，
+# 零触发是常态而非折旧信号。运行时闸 = 平台硬边界族（生成确认/
+# 工具风险/阶段前置）；CI 棘轮 = 反向依赖方向/退役符号防复活/
+# 类型契约。登记口径从严：拿不准的不豁免（宁可多审不可误拆）。
+SAFE_RUNTIME_RULES = frozenset({
+    "platform.gen_confirm",
+    "platform.tool_risk",
+    "platform.stage_precondition",
+})
+SAFE_CI_GATES = frozenset({
+    "check_layer_imports.py",
+    "check_legacy_orchestration.py",
+    "gen_api_types.py",
+})
+
+# 审计周期口径（折旧规程第二节：季度脚手架审计）：半年 = 两季窗口，
+# 观测跨度不足半年即「数据不足」——防短窗口（如遥测刚启用数天）
+# 把「尚无记录」误判为「连续零触发」而虚构超期。
+MIN_OBSERVATION_DAYS = 182
+
+# 已登记待裁决台账（格式 (条目名, 登记日期 YYYY-MM-DD, 裁决要求/复设条件)）：
+# 超 MIN_PENDING_DAYS 未见裁决留痕即点名复核。存量「历史存量-待裁决」
+# 项已随裁决 R6（governance_refs）/ R7（require_at_ref、element_image）
+# 清偿，表为空属正常态；新增待裁决事项在此登记，只加不改台账本体。
+_PENDING_RULINGS: tuple = ()
+MIN_PENDING_DAYS = 182
 
 # 轮转份命名：主文件 agent_traces.jsonl + agent_traces.jsonl.N（N 越大越旧）
 _ROTATION_RE = re.compile(r"^.*?\.jsonl\.(\d+)$")
@@ -133,11 +171,13 @@ def count_files(counts: pathlib.Path = COUNTS) -> list:
     return [p for _, p in found]
 
 
-def trigger_count_stats(counts: pathlib.Path = COUNTS) -> dict:
+def trigger_count_stats(counts: pathlib.Path = COUNTS,
+                        epochs: list = None) -> dict:
     """遥测旁路汇总：归一 rule_id → {total, blocked, overridden}。
 
     数据源 = data/gate_trigger_counts.jsonl（闸机判定出口自动落盘）；
-    脏行/缺字段行跳过，rule_id 经 normalize_rule_id 归一（同 trace 口径）。"""
+    脏行/缺字段行跳过，rule_id 经 normalize_rule_id 归一（同 trace 口径）。
+    epochs（可选 list）：传入时同步收集每行有效 epoch，供观测窗计算。"""
     stats: dict = {}
     for path in count_files(counts):
         with path.open("r", encoding="utf-8", errors="ignore") as f:
@@ -151,6 +191,10 @@ def trigger_count_stats(counts: pathlib.Path = COUNTS) -> dict:
                     continue
                 if not isinstance(rec, dict) or not rec.get("rule_id"):
                     continue
+                if epochs is not None:
+                    ep = rec.get("epoch")
+                    if isinstance(ep, (int, float)) and ep > 0:
+                        epochs.append(float(ep))
                 rid = normalize_rule_id(str(rec["rule_id"]))
                 s = stats.setdefault(
                     rid, {"total": 0, "blocked": 0, "overridden": 0})
@@ -161,6 +205,59 @@ def trigger_count_stats(counts: pathlib.Path = COUNTS) -> dict:
                 if rec.get("overridden"):
                     s["overridden"] += 1
     return stats
+
+
+def telemetry_window(counts: pathlib.Path = COUNTS) -> dict:
+    """遥测观测窗：{days, start, end, sufficient}。
+
+    跨度 = 有效记录最大/最小 epoch 之差；无有效记录时 days=0。
+    sufficient = 跨度 >= MIN_OBSERVATION_DAYS（半年/两季审计周期）；
+    不足时「连续 N 轮零触发」不可计算，不得据此点名降级候选。"""
+    epochs: list = []
+    trigger_count_stats(counts, epochs=epochs)
+    if not epochs:
+        return {"days": 0.0, "start": "", "end": "", "sufficient": False}
+    lo, hi = min(epochs), max(epochs)
+
+    def _d(ep: float) -> str:
+        return datetime.datetime.fromtimestamp(
+            ep, datetime.timezone.utc).date().isoformat()
+
+    days = (hi - lo) / 86400.0
+    return {"days": days, "start": _d(lo), "end": _d(hi),
+            "sufficient": days >= MIN_OBSERVATION_DAYS}
+
+
+def zero_trigger_candidates(cstats: dict, registry: dict = None,
+                            safe: frozenset = SAFE_RUNTIME_RULES) -> list:
+    """注册表内零触发且非安全类的降级候选（返回排序后 rule_id 列表）。
+
+    口径（折旧规程 §5.3/5.4）：注册表有条目、遥测账本无判定记录，
+    且不在安全豁免清单。安全类（平台硬边界/画布边界/密钥边界）零触发是
+    常态而非折旧信号，永不进候选。本函数只算集合差，不判断观测窗是否足够——
+    窗口不足时由调用方改输出「数据不足、暂不列入」，不得据此降级。"""
+    reg = registry if registry is not None else GATE_RULES
+    return sorted((set(reg) - set(cstats)) - set(safe))
+
+
+def pending_rulings_overdue(
+        items: tuple = None, today: datetime.date = None,
+        min_days: int = MIN_PENDING_DAYS) -> list:
+    """已登记待裁决条目的超期复核点名：(条目名, 登记日期, 要求) 中登记日期
+    距今超 min_days 者返回（登记日期不可解析的条目跳过不虚构）。"""
+    pool = _PENDING_RULINGS if items is None else items
+    if today is None:
+        today = datetime.date.today()
+    overdue = []
+    for item in pool:
+        name, registered, requirement = item
+        try:
+            reg_date = datetime.date.fromisoformat(registered)
+        except (TypeError, ValueError):
+            continue
+        if (today - reg_date).days > min_days:
+            overdue.append(item)
+    return overdue
 
 
 def main() -> int:
@@ -213,6 +310,7 @@ def main() -> int:
               + " → ".join(p.name for p in cfiles))
         print()
     cstats = trigger_count_stats()
+    win = telemetry_window()
     if not cstats:
         print("（遥测账本无记录：尚未产生判定，或落盘刚启用）")
     else:
@@ -237,13 +335,50 @@ def main() -> int:
     print("## 三、CI 棘轮门禁清单（不在遥测旁路覆盖范围，触发情况"
           "由 CI 运行记录佐证，不再人工补录进本表）")
     print()
-    print("| 门禁脚本 |")
-    print("|---|")
+    print("| 门禁脚本 | 折旧豁免 |")
+    print("|---|---|")
     for name in ci_gate_inventory():
-        print(f"| scripts/{name} |")
+        exempt = "安全类（折旧规程 §5.4 豁免）" if name in SAFE_CI_GATES else ""
+        print(f"| scripts/{name} | {exempt} |")
+    print()
+    print("## 四、超期未裁决点名（折旧规程 §5 + GOVERNANCE §13.14(b)，"
+          "机器点名不代替裁决；裁决留痕仍在既有台账）")
+    print()
+    # (a) 遥测观测窗 + 零触发降级候选（安全类豁免）
+    if win["days"] > 0:
+        print(f"- 遥测观测窗：{win['start']} → {win['end']}（跨度 "
+              f"{win['days']:.1f} 天，降级判定要求 ≥ "
+              f"{MIN_OBSERVATION_DAYS} 天 = 两季审计周期）")
+    else:
+        print("- 遥测观测窗：无有效记录（落盘刚启用或尚未产生判定）")
+    if win["sufficient"]:
+        cands = zero_trigger_candidates(cstats)
+        if cands:
+            print("- 连续零触发降级候选（非安全类，待季度审计裁决"
+                  "降档/保留/下账）：" + "、".join(cands))
+        else:
+            print("- 连续零触发降级候选：无（非安全类规则均有触发记录）")
+    else:
+        print("- 降级候选：数据不足、暂不列入（观测窗未满两季审计周期，"
+              "不虚构超期；安全类闸机豁免折旧永不列入）")
+    # (b) 已登记待裁决条目超期复核（登记台账在脚本内，只点名不写台账）
+    overdue = pending_rulings_overdue()
+    if overdue:
+        print(f"- 待裁决条目超期复核（{len(overdue)} 条，登记超 "
+              f"{MIN_PENDING_DAYS} 天）：")
+        for name, registered, requirement in overdue:
+            print(f"  - {name}（登记 {registered}）：{requirement}")
+    else:
+        print("- 待裁决条目：无超期（登记台账为空属正常态，存量已随"
+              "裁决 R6/R7/R11 清偿）")
+    # (c) 脚手架条目季度审计义务（拆除仪式人工执行，本表只点名）
+    print("- 脚手架条目（季度审计义务，拆除仪式见折旧规程第三节）：")
+    for e in scaffold_entries():
+        print(f"  - {e.sid}（{e.component}）：复审政策 = {e.retest_policy}")
     print()
     print("> 折旧规则见 docs/脚手架折旧规程.md 第五节：连续 N 轮零触发的门禁"
-          "降级为软警告（保留不删）并下账 scaffold_registry。")
+          "降级为软警告（保留不删）并下账 scaffold_registry；安全类闸机"
+          "（§5.4）不参与折旧。")
     return 0
 
 

@@ -1,6 +1,7 @@
-"""文档指针漂移门禁（P8 审核整改落地：机械拦截代替人眼巡检）。
+"""引用完整性门禁（治理瘦身第一批，裁决 R11：doc_pointers 与 arch_anchors
+合并为一条门禁，检查能力取并集不缩水）。
 
-四类检查：
+五类检查：
 1. ADR 取代关系双边注记：任一 ADR 头部「取代注记/被取代注记」行引用
    ADR-X，则 ADR-X 头部必须有注记行反向引用本 ADR（单边声明即 FAIL，
    防 ADR-0004 取代 ADR-0003 而 0003 无被取代注记一类漂移）。
@@ -12,9 +13,15 @@
 4. docs/ 顶层活文档（docs/*.md，不含 adr/audit-history/archive 历史档案）
    中引用的模块路径（src/video_agent/... 全路径与 core/xxx.py 等包内相对
    路径）必须存在；删除线段（~~...~~）为已退役标注，豁免不受检。
+5. 宪法锚点（原 check_arch_anchors 职责）：ARCHITECTURE_RULES 承重条款的
+   路径 + 不变量符号存在性（锚点登记表 ANCHORS 在脚本内，人工审定的不变量
+   登记表，非全文指针扫描）；锚点文件不可解析按漂移处理（不静默放行）。
+   增删宪法承重条款时必须同批更新 ANCHORS（门禁冻结见 GOVERNANCE §13.14(f)）。
 
-退役条件：文档指针漂移连续两季零检出、ADR 双边注记、文件地图与 docs
-活文档模块路径维护内化为开发惯例时裁决下账（§13.14(c)）。
+退役条件（§13.14(c)，两源条件取并集）：指针/锚点漂移连续两季零检出、
+ADR 双边注记、文件地图、docs 活文档模块路径与修宪同批更新锚点内化为开发
+惯例时裁决下账；或宪法条款全面数据化（锚点并入机器可读登记表且 ANCHORS
+清单清空）时裁决锚点部分下账。
 输出纯 ASCII 前缀（验收乱码误读教训）。用法：python scripts/check_doc_pointers.py
 """
 import ast
@@ -29,6 +36,44 @@ import check_legacy_orchestration as _legacy  # noqa: E402  退役符号清单�
 ADR_DIR = ROOT / "docs" / "adr"
 ARCH_RULES = ROOT / "ARCHITECTURE_RULES.md"
 PKG = ROOT / "src" / "video_agent"
+
+# 宪法锚点登记表（原 check_arch_anchors.py，随合并迁入）：
+# (宪法条款, 相对路径, 顶层符号或 None 仅校验路径)。
+ANCHORS = [
+    # Rule 1：Planner 唯一入口
+    ("Rule1", "src/video_agent/core/planner.py", "Planner"),
+    # Rule 2：节点内有界模型循环唯一实现 + MAX_STEPS 读 settings
+    ("Rule2", "src/video_agent/core/agent_loop.py", "run_agent_loop"),
+    # Rule 2：Workflow Runtime 账本+裁判数据层（主体回归，ADR-0004）
+    ("Rule2", "src/video_agent/core/workflow_runtime.py", "WorkflowRuntime"),
+    # Rule 2：动作语义唯一实现（故事板领域逻辑）
+    ("Rule2", "src/video_agent/state/storyboard_ops.py", None),
+    # Rule 2 层级例外清偿（D-01）：core 端口 + web 装配点注入
+    ("Rule2-D01", "src/video_agent/core/ports.py", None),
+    ("Rule2-D01", "src/video_agent/web/port_wiring.py", None),
+    ("Rule2-D01", "src/video_agent/core/action_executor.py", None),
+    # Rule 3：StateManager 唯一写入点
+    ("Rule3", "src/video_agent/state/manager.py", "StateManager"),
+    # Rule 4：外部调用必须走 Adapter
+    ("Rule4", "src/video_agent/adapters/base_chat.py", "BaseChatAdapter"),
+    ("Rule4", "src/video_agent/adapters/base.py", None),
+    # Rule 5：Tool 统一注册（risk 分级 deny-by-default）
+    ("Rule5", "src/video_agent/tools/base.py", "BaseTool"),
+    # Rule 6：提示词外置单一事实源 + 闸机文案外置
+    ("Rule6", "src/video_agent/utils/prompts.py", "load_prompt"),
+    ("Rule6", "prompts/planner/system_fc.md", None),
+    ("Rule6", "prompts/gates/messages.md", None),
+    # Rule 7：画布边界（交互唯一封装）
+    ("Rule7", "src/video_agent/adapters/canvas_adapter.py", None),
+    # §2.0/§2.3：闸机管线唯一入口 + Policy-as-Data 注册表
+    ("S2.0", "src/video_agent/core/guard_pipeline.py", None),
+    ("S2.3", "src/video_agent/core/gate_registry.py", "GATE_RULES"),
+    # §3：前端唯一入口（SolidJS SPA）与 web 装配
+    ("S3", "src/web/app.tsx", None),
+    ("S3", "src/video_agent/web/app.py", None),
+    # 指令治理层（原第十三章迁出，与总纲同权）
+    ("Ch13", "docs/GOVERNANCE.md", None),
+]
 
 # 注记行：头部清单行（- 开头）含「取代注记/被取代注记」
 NOTE_LINE = re.compile(r"^- .*取代注记")
@@ -163,26 +208,67 @@ def check_docs_pointers() -> list:
     return hits
 
 
+def _top_level_names(path: pathlib.Path):
+    """ast 提取模块顶层定义符号（类/函数/异步函数/赋值/注解赋值）。"""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+    except SyntaxError:
+        return None  # 解析失败按漂移处理由调用方报错（不静默放行）
+    names = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for t in targets:
+                if isinstance(t, ast.Name):
+                    names.add(t.id)
+    return names
+
+
+def check_anchors() -> list:
+    """宪法锚点：承重条款的路径存在 + 不变量符号定义（原 arch_anchors 闸）。"""
+    hits = []
+    for clause, rel, symbol in ANCHORS:
+        p = ROOT / rel
+        if not p.exists():
+            hits.append(f"[{clause}] anchor path missing: {rel}")
+            continue
+        if symbol is None or not rel.endswith(".py"):
+            continue
+        names = _top_level_names(p)
+        if names is None:
+            hits.append(f"[{clause}] anchor file not parseable: {rel}")
+        elif symbol not in names:
+            hits.append(
+                f"[{clause}] invariant symbol '{symbol}' not defined in {rel}")
+    return hits
+
+
 def main() -> int:
     fails = []
     fails += [f"[adr-bilateral] {h}" for h in check_adr_bilateral()]
     fails += [f"[arch-map] {h}" for h in check_arch_map()]
     fails += [f"[code-pointer] {h}" for h in check_code_pointers()]
     fails += [f"[docs-pointer] {h}" for h in check_docs_pointers()]
+    fails += [f"[anchor] {h}" for h in check_anchors()]
     if fails:
         for h in fails[:30]:
-            print(f"[check_doc_pointers]   {h}")
+            print(f"[ref_integrity]   {h}")
         print(
-            f"[check_doc_pointers] FAIL: {len(fails)} doc-drift issue(s). "
+            f"[ref_integrity] FAIL: {len(fails)} reference-integrity issue(s). "
             "ADR supersede relations need bilateral notes; file-map and "
             "comment/docstring pointers must reference existing modules; "
             "docs/*.md module pointers must exist; "
-            "retired orchestration symbols must not reappear in prose."
+            "retired orchestration symbols must not reappear in prose; "
+            "constitutional anchors (paths + invariant symbols) must be "
+            "updated in the same batch as the constitutional change."
         )
         return 1
     print(
-        "[check_doc_pointers] PASS: ADR notes bilateral; arch file map valid; "
-        "code comment/docstring pointers clean; docs module pointers valid"
+        "[ref_integrity] PASS: ADR notes bilateral; arch file map valid; "
+        "code/docs pointers clean; "
+        f"{len(ANCHORS)} constitutional anchors intact"
     )
     return 0
 

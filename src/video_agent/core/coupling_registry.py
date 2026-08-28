@@ -132,13 +132,6 @@ COUPLING_ROWS: List[CouplingRow] = [
         + (("prose", "description 质量与裁剪集归属属内容审查"),),
     ),
     CouplingRow(
-        "R12_fc_confirm_loop",
-        "FC 确认回环变更",
-        "planner 合成 studio-actions JSON 拼回正文 → agent_loop 单路径消费；双轨同测",
-        (("testfile", "tests/unit/test_transport_wiring_four.py"),)
-        + (("prose", "FC 暂停语义合成 studio-actions 单路径消费，双轨同测由该行测试覆盖"),),
-    ),
-    CouplingRow(
         "R13_split_module_shells",
         "拆分模块新增顶层符号",
         "re-export 壳清单 + 测试 patch 目标改为调用方命名空间",
