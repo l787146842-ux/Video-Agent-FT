@@ -3,8 +3,9 @@ import { state, setState } from '@/stores/studio-core';
 import {
   apiProvidersFor, preferredProviderIdForKind, providerModels,
 } from '@/lib/providers';
-import { setActiveSkillApi } from '@/api/docs';
+import { setActiveSkillApi, setActiveStyleLayersApi } from '@/api/docs';
 import { showToast } from '@/stores/toast';
+import type { Skill } from '@/types';
 
 /**
  * Agent 聊天偏好：供应商/模型/技能/资产范围。
@@ -118,6 +119,10 @@ export async function activateSkill(skillId: string, source: 'user' | 'suggested
   setAgentSkill(skillId);
   try {
     await setActiveSkillApi(slug, source);
+    // 组合激活（任务 #11）：新主流程若已在风格层清单内则同步摘除（与后端摈除同口径）
+    if ((state.activeStyleSkills || []).includes(slug)) {
+      setState('activeStyleSkills', (state.activeStyleSkills || []).filter((s) => s !== slug));
+    }
     return true;
   } catch (err) {
     setState('activeSkill', prev);
@@ -144,6 +149,43 @@ export async function deactivateSkill(): Promise<boolean> {
 /** 忽略建议（批 C）：仅清全局建议值，不动项目态（激活事实与建议分离） */
 export function dismissSkillSuggestion() {
   setAgentSkill('');
+}
+
+// ===== 风格层组合激活（任务 #11：1 pipeline 可选 + N style 层） =====
+// 激活事实归项目态（后端 styleSkills，随快照下发），与主流程激活同语义。
+
+/** Skill id → slug（doc: 前缀剥离；与 SkillPicker 同源口径） */
+export function skillSlugOf(skill: Skill): string {
+  return (skill.slug as string) || skill.id.replace(/^doc:/, '');
+}
+
+/** 当前叠加的风格层 slug 清单（项目态权威） */
+export function activeStyleSlugs(): string[] {
+  return state.activeStyleSkills || [];
+}
+
+/** 某风格型 Skill 是否已叠加为风格层 */
+export function isStyleLayerActive(skill: Skill): boolean {
+  return activeStyleSlugs().includes(skillSlugOf(skill));
+}
+
+/** 切换风格层叠加态：全量替换式写项目态（乐观写本地 + 失败回滚）。
+ * 仅 kind=style 的 Skill 可勾选（SkillPicker 按 kind 过滤）；
+ * 后端对非法条目返 400/404，前端 toast 回显并回滚。 */
+export async function toggleStyleLayer(skill: Skill): Promise<boolean> {
+  const slug = skillSlugOf(skill);
+  if (!slug) return false;
+  const prev = [...(state.activeStyleSkills || [])];
+  const next = prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug];
+  setState('activeStyleSkills', next);
+  try {
+    await setActiveStyleLayersApi({ slugs: next });
+    return true;
+  } catch (err) {
+    setState('activeStyleSkills', prev);
+    showToast(`风格层更新失败：${(err as Error).message}`, 'error');
+    return false;
+  }
 }
 
 export function agentAssetMode(): 'bound' | 'all' {

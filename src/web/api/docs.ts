@@ -5,7 +5,7 @@
 import { apiFetch, apiPut, apiPost, apiDelete } from './client';
 import type {
   SkillDoc, SkillDocHistoryResponse, SkillDocsResponse, SkillDocSave, SkillDocVersion,
-  SkillFormatRequest, SkillAssistantRequest, ActiveSkillRequest,
+  SkillFormatRequest, SkillAssistantRequest, ActiveSkillRequest, ActiveStyleLayersRequest,
 } from '@/types/api.generated';
 
 /** Skill 文档/历史版本：以后端生成物为唯一来源（豁免清单已清偿） */
@@ -52,6 +52,15 @@ export function setActiveSkillApi(
 ): Promise<{ ok: boolean; active_skill?: { slug: string; source: string } | null }> {
   const body: ActiveSkillRequest = { slug, source };
   return apiPost('/api/skills/active', body);
+}
+
+/** 风格层组合激活（任务 #11：1 pipeline 可选 + N style 层）：
+ * slugs = 全量替换式清单（传当前勾选全集；空清单 = 摘除全部风格层）。
+ * 后端校验仅放行 kind=style 的 Skill，非风格型报 400（前端 toast 回显） */
+export function setActiveStyleLayersApi(
+  body: ActiveStyleLayersRequest,
+): Promise<{ ok: boolean; style_skills: string[] }> {
+  return apiPost('/api/skills/active-styles', body);
 }
 
 /** Skill 优化助手（非流式）：返回 reply + 解析出的更新后全文

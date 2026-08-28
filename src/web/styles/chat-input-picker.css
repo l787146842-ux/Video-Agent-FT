@@ -43,6 +43,14 @@
   .skill-picker-confirm-no { padding: 3px 10px; font-size: var(--font-xs); border: 1px solid var(--border-color); border-radius: 5px; background: transparent; color: var(--text-dim); cursor: pointer; transition: background 0.12s; }
   .skill-picker-confirm-no:hover { background: color-mix(in srgb, var(--color-white) 6%, transparent); }
 
+  /* ===== 风格层多选区（任务 #11：1 pipeline 可选 + N style 层） ===== */
+  .skill-picker-style-header { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px 4px; margin-top: 4px; border-top: 1px solid var(--border-color); }
+  .skill-picker-style-title { font-size: var(--font-sm); font-weight: 600; color: var(--text-main); }
+  .skill-picker-style-hint { font-size: var(--font-xs); color: var(--text-dim); }
+  .skill-picker-check { flex-shrink: 0; width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--border-color); background: transparent; color: transparent; display: flex; align-items: center; justify-content: center; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+  .skill-picker-card.skill-picker-style.active .skill-picker-check { background: var(--color-info-strong); border-color: var(--color-info-strong); color: var(--color-white); }
+  .skill-picker-card.skill-picker-style.active .skill-picker-name { color: var(--color-info); }
+
   /* ===== Skill 详情弹窗 ===== */
   .skill-modal-backdrop { position: fixed; inset: 0; z-index: var(--z-picker-panel); background: color-mix(in srgb, var(--color-black) 60%, transparent); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
   .skill-modal { width: 520px; max-width: 90vw; max-height: 75vh; display: flex; flex-direction: column; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: 0 24px 64px color-mix(in srgb, var(--color-black) 60%, transparent); overflow: hidden; }
