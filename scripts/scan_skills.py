@@ -517,7 +517,6 @@ def _install_ports_once() -> None:
 
 def main() -> None:
     _install_ports_once()
-    OUT = pathlib.Path(__file__).parent / "skill_scan_report.md"
     d = pathlib.Path(__file__).parent.parent / "data" / "skills"
 
     lines = []
@@ -593,8 +592,7 @@ def main() -> None:
             lines.append("  <planner> 流程预览: （无 planner 章节）")
         lines.append("")
 
-    OUT.write_text("\n".join(lines), encoding="utf-8")
-    print(f"written: {OUT}")
+    print("\n".join(lines))
     tail = f"（{'、'.join(mismatched)}）" if mismatched else ""
     print(f"[scan_skills] frontmatter 一致性探针: 共 {total} 个 skill，"
           f"{len(mismatched)} 个不一致{tail}")
