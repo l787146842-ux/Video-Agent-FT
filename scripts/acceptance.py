@@ -49,7 +49,7 @@ GATES: List[Tuple[str, List[str]]] = [
     # web 能力经 core/ports 端口（D-01）或 storage/core 公开 API（下沉先例）消费。
     # 退役条件：反向依赖连续两季零检出、端口与公开 API 模式内化为开发惯例时裁决下账。
     ("layer_imports", [sys.executable, "scripts/check_layer_imports.py"]),
-    # 治理瘦身第一批（裁决 R11）：doc_pointers 与 arch_anchors 合并为引用完整性闸，
+    # 治理瘦身第一批：doc_pointers 与 arch_anchors 合并为引用完整性闸，
     # 脚本本体保留 check_doc_pointers.py（ADR 双边注记 / 宪法文件地图 /
     # 代码与 docs 模块指针 / 退役符号防复述 / 宪法锚点路径+不变量符号）。
     # 退役条件：指针/锚点漂移连续两季零检出、双边注记与修宪同批更新锚点内化为

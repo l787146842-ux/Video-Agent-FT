@@ -85,6 +85,6 @@ def test_registry_covers_constitution_row_count():
     # 整改计划批 7：R27 planner 拆分委托行登记；
     # 2026-08-20 v6：Workflow Runtime 控制流行登记；
     # 2026-08-26：R23 governance_refs 门禁行随门禁退役删除；
-    # 2026-08-28 裁决 R12：R12_fc_confirm_loop 行退役删除——
+    # 2026-08-28：R12_fc_confirm_loop 行退役删除——
     # studio-actions 拼回正文回绕解析形态已整体退役）
     assert len(COUPLING_ROWS) == 26

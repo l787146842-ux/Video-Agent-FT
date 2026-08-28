@@ -1,4 +1,4 @@
-"""引用完整性门禁（治理瘦身第一批，裁决 R11：doc_pointers 与 arch_anchors
+"""引用完整性门禁（治理瘦身第一批：doc_pointers 与 arch_anchors
 合并为一条门禁，检查能力取并集不缩水）。
 
 五类检查：

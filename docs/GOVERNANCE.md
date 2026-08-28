@@ -207,11 +207,7 @@
 登记时同步登记退役条件。折旧执行流程见折旧规程第五节。
 
 **(d) 引用一致性职责口径**：README 与宪法（ARCHITECTURE_RULES）的引用一致性
-由开发纪律维护（原 governance_refs 门禁已退役，见下方退役记录）。
-
-> **退役记录**：governance_refs 门禁（`scripts/check_governance_refs.py`，
-> 治理叙事标记预算棘轮）于 2026-08-26 退役下账——依据：存量 33 处治理叙事
-> 标记清零、退役条件达成（脚本头声明），用户裁决 R6「清零即下账」。
+由开发纪律维护（原 governance_refs 门禁已于 2026-08-26 退役下账）。
 
 **(e) 追溯立项登记（2026-08-26 用户裁决认可）**：以下三项组件先落地后立项，
 经用户裁决追溯认可，就表登记不回退；后续变更按同层既有规程走（门禁退役条件见 (c)、
@@ -242,36 +238,3 @@
 `tests/unit/test_gate_messages_coverage.py` 钉死（每条 rule_id 均在
 `GATE_MESSAGE_SECTIONS` 覆盖矩阵登记，非空分节必须存在于
 prompts/gates/messages.md）。
-
-> 退役登记（2026-08-26，裁决 R7）：`skill.require_at_ref` 与
-> `skill.flow.element_image`（均为「历史存量-待裁决」）退役下账，
-> 基线 20→18（platform 6 / skill 12）；消费点同批清零（P1-7）。
-
-> 裁决登记（2026-08-27，裁决 R10）：提示词大换序方案采用 A 案（state 出
-> system，经 history 尾部消息每步注入，system 成字节级稳定前缀），执行于提交 2a1ec34；
-> B 案（skill 块前移）不采纳。段体积基线见 `docs/段体积基线简表-2026-08-27.md`。
-
-> **裁决登记（2026-08-28，裁决 R11）：治理瘦身第一批（用户显式裁决专项）。**
-> ① **合并**：`doc_pointers` 与 `arch_anchors` 合并为一条引用完整性闸（GATES
-> 名 `ref_integrity`，脚本本体保留 `scripts/check_doc_pointers.py`——复用成本
-> 最低：canary 脚手架/CI step/legacy FORBIDDEN 单一事实源依赖均在其侧；
-> ANCHORS 锚点登记表整体迁入，五类检查取并集不缩水，合并后双向 canary 验证）；
-> `scripts/check_arch_anchors.py` 全库无残留引用后删除。验收门禁基线 15→14，
-> ci.yml 与 AGENTS.md 第五节同批同步。**复设条件**：锚点校验职责需独立裁决口径，
-> 或合并脚本行数超红线需再拆分时，经裁决重新分立。
-> ② **func_imports 保留不退役**：取证——当次运行 PASS（存量 108 处白名单、
-> 零新增检出）；git 历史显示基线自钉死以来仅有迁移/清偿类提交（无新增漂移）。
-> 但退役条件「存量清零」未达成（108 处均为防循环依赖的合法 lazy import，
-> 长期非零），且层间导入方向闸只拦层级反向依赖、无法承接「防新增方法内
-> import」——证据不满足退役条件，保留。**复设/复议条件**：存量清零或出现能承接
-> 防新增职责的机制时，再行裁决。
-> ③ **legacy_orchestration 保留不退役**：取证——当次运行 PASS 零检出；但本闸是
-> 退役编排符号防复活的唯一机制（FORBIDDEN 清单同时是引用完整性闸的单一事实源），
-> 退役条件「长期演进证实无复活风险」未达成，无其他机制承接——保留。
-> **复议条件**：退役符号清单长期零触发且防复活职责数据化（并入机器可读登记表）
-> 时，再行裁决。本批未新增任何门禁（闸门只减不增），GATES 终态 14 条：
-> 目标 ≤12 条未达成，如实登记——两条退役候选取证后均不满足退役条件，不硬凑。
-
-> **裁决登记（2026-08-28，裁决 R12）：治理瘦身第三批（耦合/脚手架台账逐条瘦身）。**
-> **退役 1 条**：耦合行 `R12_fc_confirm_loop` 退役删除。依据：该行防的耦合形态是「planner 合成 studio-actions JSON 拼回正文 → agent_loop 单路径消费」，而该形态已整体退役——core/turn_executor.py 明记「不再合成 studio-actions 文本块回绕解析（对齐 AskUserQuestion 范式）」，确认信号改结构化直通；_handle_fc_response/merge_fc_response 委托链耦合已由 R27 行（含同名 symbol 强制项）承接，其钉死测试 test_transport_wiring_four.py 实为 P0 接线四件（doc_written/guidance/FC warnings/fallback 退役锁），与该行的回环耦合无关，测试文件保留。复设条件：若 studio-actions 文本块回绕解析形态复活，重新登记同行。同批更新：耦合表行数断言 27→26（test_coupling_registry.py）。
-> **其余全保留**：8 条 scaffold（S03/S05-S10/S13 均活跃消费中，退役须走拆除仪式带 eval 证据，本批无证据支持）与 9 条 invariant（物理/经济约束长期承重）不动，SCAFFOLD_COUNT_BASELINE 维持 8；其余 26 行耦合行的强制项全部存活（遍历测试绿）且被防耦合仍真实存在。无存疑项需登记。

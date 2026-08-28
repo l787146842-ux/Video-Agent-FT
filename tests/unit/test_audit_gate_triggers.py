@@ -318,5 +318,5 @@ def test_pending_rulings_overdue_threshold():
 
 
 def test_pending_rulings_default_registry_empty():
-    """生产登记台账为空属正常态（存量已随 R6/R7/R11 清偿），不虚构超期。"""
+    """生产登记台账为空属正常态（存量已随既有退役/合并裁决清偿），不虚构超期。"""
     assert pending_rulings_overdue() == []

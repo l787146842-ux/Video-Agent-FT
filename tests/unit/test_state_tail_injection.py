@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""P2-3（R10-A）：状态上下文出 system —— history 尾部消息（user 通道）注入。
+"""P2-3（提示词大换序 A 案）：状态上下文出 system —— history 尾部消息（user 通道）注入。
 
 钉死两类核心断言：
 1. 「state 内容仍被模型可见」：状态 JSON 经 history 最后一条消息注入，

@@ -23,7 +23,7 @@
    降级候选（安全类豁免）、（b）已登记待裁决条目超期复核、（c）脚手架
    条目季度审计义务清单。不写任何台账（裁决留痕仍在既有台账），只读幂等；
    识别口径缺历史数据时如实标注「数据不足、暂不列入」，不虚构超期。
-   登记待裁决台账（PENDING_RULINGS）为空属正常态（存量已随 R6/R7/R11
+   登记待裁决台账（PENDING_RULINGS）为空属正常态（存量已随既有退役/合并
    裁决清偿）；新裁决事项入账后本脚本自动点名。
 
 用法：python scripts/audit_gate_triggers.py   （输出 markdown 盘点表）
@@ -71,8 +71,8 @@ MIN_OBSERVATION_DAYS = 182
 
 # 已登记待裁决台账（格式 (条目名, 登记日期 YYYY-MM-DD, 裁决要求/复设条件)）：
 # 超 MIN_PENDING_DAYS 未见裁决留痕即点名复核。存量「历史存量-待裁决」
-# 项已随裁决 R6（governance_refs）/ R7（require_at_ref、element_image）
-# 清偿，表为空属正常态；新增待裁决事项在此登记，只加不改台账本体。
+# 项已随既有退役裁决清偿（governance_refs / require_at_ref /
+# element_image），表为空属正常态；新增待裁决事项在此登记，只加不改台账本体。
 _PENDING_RULINGS: tuple = ()
 MIN_PENDING_DAYS = 182
 
@@ -370,7 +370,7 @@ def main() -> int:
             print(f"  - {name}（登记 {registered}）：{requirement}")
     else:
         print("- 待裁决条目：无超期（登记台账为空属正常态，存量已随"
-              "裁决 R6/R7/R11 清偿）")
+              "既有退役/合并裁决清偿）")
     # (c) 脚手架条目季度审计义务（拆除仪式人工执行，本表只点名）
     print("- 脚手架条目（季度审计义务，拆除仪式见折旧规程第三节）：")
     for e in scaffold_entries():

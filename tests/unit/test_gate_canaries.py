@@ -242,7 +242,7 @@ def test_canary_layer_imports_clean_passes(tmp_path, monkeypatch):
     assert gate.main() == 0
 
 
-# ---------- 11) ref_integrity（裁决 R11：doc_pointers + arch_anchors 合并） ----------
+# ---------- 11) ref_integrity（doc_pointers + arch_anchors 合并） ----------
 def _doc_pointers_scaffold(tmp_path, monkeypatch):
     import scripts.check_doc_pointers as gate
     pkg = tmp_path / "src" / "video_agent"
