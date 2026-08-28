@@ -43,8 +43,10 @@ class TestSelectedSkillLightweightHint:
         assert "read_skill" in prompt
         # 正文零注入：全文片段不进 system prompt
         assert SKILL_MARKER not in prompt, "任务#12 批次B 后选中 Skill 正文不应注入"
-        # 历史全文直注形态措辞已退役（含 Skill 流程纪律随注入块下发的形态）
-        assert "全文" not in prompt or "全文未注入" in prompt or "全文一律" in prompt or "全文同样不注入" in prompt
+        # 历史全文直注形态措辞已退役；「全文」字面仅允许来自《Skill 流程纪律》
+        # 挂回块（用户内容，第 10 条"定稿全文写入"）与目录口径白名单短语，
+        # 不得出现直注形态陈述（如"全文直注"）。
+        assert "全文直注" not in prompt
 
     def test_fuzzy_selected_name_lightweight_hint(self, doc_skill):
         planner = Planner()

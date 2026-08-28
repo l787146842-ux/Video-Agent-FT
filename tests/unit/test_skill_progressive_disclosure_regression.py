@@ -74,10 +74,29 @@ def test_system_prompt_has_no_skill_body_for_long_skill():
     assert "章节目录" not in text
 
 
+def _style_body_probe(style_content: str) -> str:
+    """风格层正文独有探针：取 <planner> 标签内首个非空行（标签本身不在章节拆分
+    结果里，取首行会撞标签漏报）；无标签时回落首个非标题非空行。"""
+    lines = style_content.splitlines()
+    try:
+        idx = next(i for i, ln in enumerate(lines) if ln.strip() == "<planner>")
+    except StopIteration:
+        idx = -1
+    pool = lines[idx + 1:] if idx >= 0 else lines
+    return next(
+        (ln.strip() for ln in pool
+         if ln.strip() and not ln.strip().startswith("#")
+         and not ln.strip().startswith("<")),
+        "")
+
+
 def test_combo_activation_keeps_style_body_out_of_system_prompt():
     """组合激活（1 pipeline + N style 层）：主流程与各风格层正文
     都不进 system prompt；风格层只在目录段以名称可见。"""
     primary_probe = "启动协议"  # 主流程 planner 章节原文锚点
+    # 存在性前置钉死（与 BODY_PROBE 口径对齐：防探针失效假绿）
+    _, primary_content = sd.resolve_skill_content(PRIMARY_SKILL)
+    assert primary_probe in primary_content
     raw = _base_state(
         activeSkill={"slug": PRIMARY_SKILL, "source": "user"},
         styleSkills=list(STYLE_SKILLS),
@@ -85,15 +104,12 @@ def test_combo_activation_keeps_style_body_out_of_system_prompt():
     text = _pb(raw).build_system_prompt(_ctx(PRIMARY_SKILL))
     # 主流程正文零注入
     assert primary_probe not in text
-    # 风格层正文同样零注入（取风格层源文件的独有短语做探针）
+    # 风格层正文同样零注入（取标签内正文片段做探针，并钉其确在源文件）
     for style_name in STYLE_SKILLS:
         _, style_content = sd.resolve_skill_content(style_name)
-        # 取正文首行非空片段作该风格层的独有探针
-        probe = next(
-            (ln.strip() for ln in style_content.splitlines()
-             if ln.strip() and not ln.strip().startswith("#")),
-            "")
-        assert probe and probe not in text, f"风格层正文泄漏: {style_name}"
+        probe = _style_body_probe(style_content)
+        assert probe and probe in style_content, f"探针失效: {style_name}"
+        assert probe not in text, f"风格层正文泄漏: {style_name}"
     # 风格层只在目录段可见（名称提示 + read_skill 按需指引）
     assert "另有风格层叠加生效" in text
     for style_name in STYLE_SKILLS:

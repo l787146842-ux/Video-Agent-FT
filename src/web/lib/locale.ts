@@ -94,7 +94,7 @@ const zhCN = {
   'rp.skill.noneOptionHint': '不激活任何 Skill，自由对话模式',
   'rp.skill.import': '导入 Skill',
   'rp.skill.styleSection': '叠加风格层',
-  'rp.skill.styleSectionHint': '可多选；风格约束与主流程同时生效',
+  'rp.skill.styleSectionHint': '可多选；风格层在目录中告知模型，由模型按需读取',
   'rp.skill.styleAsPrimaryTip': '「{name}」已是当前主流程，不能同时叠加为风格层',
   'rp.skill.styleCheck': '勾选为风格层',
   'rp.skillDetail.noIntro': '暂无简介',

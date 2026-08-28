@@ -130,7 +130,7 @@ class PromptBuilder:
                 if key is not None:
                     sections[key] = sections.get(key, 0) + n
             # state 已移出 system 段（history 尾部消息），遥测仍记原始长度，
-            # 观测口径不变；Skill 段带边界包壳，取原始长度与历史口径一致
+            # 观测口径不变；Skill 段为轻量状态块（含《Skill 流程纪律》全文），取原始长度
             sections["state"] = len(state_json) if context.use_studio_context else 0
             sections["skill"] = len(selected_block)
             sections["total"] = len(text)
@@ -299,7 +299,7 @@ class PromptBuilder:
                     header += (
                         "\n另有风格层叠加生效："
                         + "、".join(style_names)
-                        + "（正文同样不注入，需要时用 read_skill 逐个按需阅读）。"
+                        + "（正文同样不注入，执行产出前先 read_skill 读取各风格层）。"
                     )
             except Exception:
                 pass
@@ -309,9 +309,14 @@ class PromptBuilder:
         """选中 Skill 的轻量状态块（任务#12 批次B：正文零注入）。
     
         只含：选中 Skill 名称 + read_skill 按需加载指引 + 元数据头
-        （版本/来源/类型/暂停点/原料就绪状态）；全文由模型执行前调
-        read_skill 按需读取。段序不变（段注册表 order 100 最末，
-        保前缀缓存约束）。解析失败/内容为空返回空串（降级为仅目录）。
+        （版本/来源/类型/暂停点/原料就绪状态）+《Skill 流程纪律》全文；
+        Skill 正文由模型执行前调 read_skill 按需读取。段序不变（段注册表
+        order 100 最末，保前缀缓存约束）。解析失败/内容为空返回空串（降级为仅目录）。
+    
+        纪律全文挂回（任务#12 评审修复批，用户裁决）：原唯一注入点（全文直注
+        块，已退役并登记防复活）随批次B 删除，三处常驻文案（system_fc.md/
+        important_rules.md/feedback.md）仍引用《Skill 流程纪律》为唯一表述源，
+        随选中 Skill 挂回使其重新可达（文本本身不改）。
         """
         sd = self._get_skill_docs()
         try:
@@ -330,6 +335,13 @@ class PromptBuilder:
         header = self.build_skill_metadata_header(skill_name)
         if header:
             parts.append(header)
+        # 《Skill 流程纪律》全文随选中 Skill 注入（原注入点已退役，此处为唯一注入面）
+        try:
+            discipline = load_prompt("planner/skill_discipline.md")
+        except Exception:
+            discipline = ""
+        if discipline.strip():
+            parts.append(discipline.strip())
         return "\n\n".join(parts)
     
     def build_skill_metadata_header(self, skill_name: str) -> str:

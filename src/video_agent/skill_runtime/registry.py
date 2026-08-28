@@ -621,7 +621,7 @@ def skill_prompt_en_categories(skill_name: str) -> List[str]:
 # 风格层叠加清单存项目态 styleSkills（随快照下发），目录段可见性告知见
 # prompt_builder 目录段（正文注入已随任务#12 批次B 退役）。
 
-# 风格层叠加上限（防无节制膨胀；预算兜底另有分级注入/裁剪机制）
+# 风格层叠加上限（防无节制膨胀；预算兜底另有上下文压缩/裁剪机制）
 MAX_STYLE_LAYERS = 8
 
 

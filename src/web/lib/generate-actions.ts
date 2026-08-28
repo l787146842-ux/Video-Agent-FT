@@ -180,7 +180,7 @@ export async function generateAudio(): Promise<void> {
   try {
     const data = await canvasLlm({
       message: `请根据以下内容生成可执行的音频规划，生成模式：${mode}，目标音色：${timbre}。包含旁白、对白、环境音、音乐、时间点和音色建议。不要声称已经生成音频文件。\n\n${draft.prompt || ''}`,
-      // 后端 system_prompt 字段已废弃不再使用（Skill 全文由服务端按 skill_name 硬注入），不再随请求携带
+      // 后端 system_prompt 字段已废弃不再使用（Skill 正文不注入，由 read_skill 按需读取），不再随请求携带
       provider,
       model,
       ms_model: provider === 'modelscope' ? model : '',

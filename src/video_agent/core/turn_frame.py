@@ -17,7 +17,7 @@ async def emit_prelude_events(
 ) -> None:
     """前奏时间线（live 事件 + trace 条目同构登记）。
 
-    只登记真实发生的 system 准备动作（加载 Skill 流程基线等）；
+    只登记真实发生的 system 准备动作（绑定 Skill：轻量状态块+流程纪律）；
     读取/存档由对应工具真实发生时记录，前奏不冒充工具操作。
     """
     for pi, (pname, psummary) in enumerate(prelude_notes or []):

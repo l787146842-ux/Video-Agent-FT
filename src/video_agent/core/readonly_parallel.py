@@ -138,7 +138,6 @@ def _resolve_task_result(task: "asyncio.Task") -> ToolResult:
 
 async def _take_result(
     task: "asyncio.Task", runner: Any, name: str, args: Dict[str, Any],
-    injected_skill: str,
 ) -> ToolResult:
     """按序取单调用结果：未完成/被取消的任务回退串行重执（只读无副作用）；
     已完成直接取结果（不重复执行）。取消穿透不吞。"""
@@ -146,7 +145,7 @@ async def _take_result(
         return _resolve_task_result(task)
     _quiet_cancel(task)
     try:
-        return await runner._dispatch_tool(name, args, injected_skill)
+        return await runner._dispatch_tool(name, args)
     except GenerationCancelled:
         raise
     except asyncio.CancelledError:
@@ -251,7 +250,6 @@ async def run_window(
     pre: Dict[int, PreExecuted],
     *,
     paused_this_batch: bool,
-    injected_skill: str,
     on_event: Any,
     batch_cp: Optional[dict],
     batch_tools: List[str],
@@ -282,7 +280,7 @@ async def run_window(
         if chain.error is not None:
             # 拒收即断并行：已放行调用按序串行执行，拒收调用记拒因回填，
             # 其后调用不入窗口，由主循环串行逐调用裁决
-            await _serial_drain(runner, passed, pre, injected_skill=injected_skill)
+            await _serial_drain(runner, passed, pre)
             pre[i] = PreExecuted(ToolResult(success=False, error=chain.error), chain.error, 0.0)
             return prompt_blocked
         passed.append((i, name, args))
@@ -290,7 +288,7 @@ async def run_window(
     # 全部放行 → 窗口内并行执行，按序消费回填：任一失败/异常即置串行标志，
     # 剩余调用取消并行任务后串行重执（已完成的取结果不重复执行）
     tasks = [
-        asyncio.ensure_future(runner._dispatch_tool(name, args, injected_skill))
+        asyncio.ensure_future(runner._dispatch_tool(name, args))
         for _i, name, args in passed
     ]
     serial = False
@@ -298,7 +296,7 @@ async def run_window(
         t0 = time.monotonic()
         try:
             if serial:
-                result = await _take_result(tasks[pos], runner, name, args, injected_skill)
+                result = await _take_result(tasks[pos], runner, name, args)
             else:
                 result = await tasks[pos]
                 if not result.success:
@@ -327,7 +325,7 @@ async def run_window(
 
 async def _serial_drain(
     runner: Any, passed: List[Tuple[int, str, Dict[str, Any]]],
-    pre: Dict[int, PreExecuted], *, injected_skill: str,
+    pre: Dict[int, PreExecuted],
 ) -> None:
     """闸机拒收断并行时：已放行调用按序串行执行回填（不二次过闸）。"""
     for i, name, args in passed:
@@ -335,7 +333,7 @@ async def _serial_drain(
             continue
         t0 = time.monotonic()
         try:
-            result = await runner._dispatch_tool(name, args, injected_skill)
+            result = await runner._dispatch_tool(name, args)
         except GenerationCancelled:
             raise  # 取消穿透：不得被串行收尾吞咽
         except Exception as e:  # 与主循环失败口径一致：异常转失败结果不炸批

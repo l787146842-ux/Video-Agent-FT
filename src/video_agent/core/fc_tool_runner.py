@@ -185,7 +185,7 @@ class FCToolRunner:
         risk = str(getattr(tool, "risk", "") or "").strip().lower()
         return risk if risk in ("low", "medium", "high") else "high"
 
-    async def _dispatch_tool(self, name: str, args: Dict[str, Any], injected_skill: str) -> ToolResult:
+    async def _dispatch_tool(self, name: str, args: Dict[str, Any]) -> ToolResult:
         """闸机放行后的单调用派发（串行主循环与批 7 只读并行窗口共用同一派发面）：
         含 read_skill 在内全部常规分发真执行（任务#12：短路已废）。"""
         return await self.tool_manager.invoke_tool(name, args)
@@ -307,7 +307,7 @@ class FCToolRunner:
             if ci in _ro_plan:
                 prompt_gate_blocked += await readonly_parallel.run_window(
                     self, ctx, ledger, response.tool_calls, _ro_plan[ci], _ro_pre,
-                    paused_this_batch=paused_this_batch, injected_skill=injected_skill,
+                    paused_this_batch=paused_this_batch,
                     on_event=on_event, batch_cp=_batch_cp, batch_tools=_batch_tools)
 
             # 过程时间线：工具开始（前端渲染运行态条目）
@@ -383,7 +383,7 @@ class FCToolRunner:
                     if gate_error is not None:
                         result = ToolResult(success=False, error=gate_error)
                     else:
-                        result = await self._dispatch_tool(name, args, injected_skill)
+                        result = await self._dispatch_tool(name, args)
                 except GenerationCancelled:
                     # 取消穿透：先记本工具账本/trace（取消态）再上抛，
                     # 任何中断都有痕迹（不静默吞，不吞为失败结果）

@@ -2,7 +2,9 @@
 """防复活门禁（0818 架构板正批 B5）：已退役编排机制符号零残留。
 
 状态驱动编排重构（B0-B4）机械退役了老机制；无门禁则复活可能回潮——
-本脚本扫描 src/tests/scripts 中退役符号，命中任一即非零退出。
+本脚本扫描退役符号：主清单扫 src/tests/scripts；任务#12 批次B 注入面
+清单只扫 src/scripts/prompts（不扫 tests：防回归测试的 not hasattr 断言
+合法含这些字面量），命中任一即非零退出。
 退役清单（符号非概念，同名复用即视为复活）：
 - FlowGateSet 闸机链 / skill_pipeline_plan 调度工具 / auto_retry 盲重试
 - prepend_script_summary/maybe_prepend 总结注入链 / skill_declares_summary
@@ -19,6 +21,11 @@
   fetch_canvas_providers_sync 画布 provider 拉取 / 旧映射表名 / 旧直连端点
   - 任务#14 编排器正名：旧模块名 pipeline_orchestrator 防复活（已更名
     stage_probes 纯数据层，同名复用即视为复活）
+- 任务#12 批次B L2 注入路径拆除（渐进式披露，用户书面裁决：闸机变更已批准）：
+  skill_full_text_injected / build_style_combo / build_generic_skill_block /
+  _build_tiered_skill_block / GENERIC_FULL_INJECT_LIMIT / STYLE_COMBO_SOFT_LIMIT /
+  skill_style_combo.md —— 全文直注/分级注入/组合注入全部废止，正文一律经
+  read_skill 按需读取；退役条件：渐进式披露被用户裁决废止时方可复活。
 spec_pause_card/spec_collect_card（规格向导，不变基线）不在清单内。
 输出纯 ASCII（验收乱码误读教训）。用法：python scripts/check_legacy_orchestration.py
 """
@@ -27,6 +34,10 @@ import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCAN_DIRS = ["src/video_agent", "tests", "scripts"]
+# 任务#12 批次B 注入面退役符号：只扫 src/scripts 的 *.py 与 prompts 的 *.md
+# （不扫 tests：防回归测试的 not hasattr 断言合法含这些字面量，
+# 调整扫描范围而非削弱断言）
+SCAN_DIRS_L2 = ["src/video_agent", "scripts"]
 SELF = pathlib.Path(__file__).resolve()
 
 FORBIDDEN = re.compile(
@@ -78,20 +89,35 @@ FORBIDDEN = re.compile(
     r"|/api/online-image\b"
 )
 
+# 任务#12 批次B：L2 注入路径拆除（渐进式披露）——全文直注/分级注入/组合注入
+# 全部废止，系统只注入 L1 目录与轻量状态提示，正文经 read_skill 按需读取；
+# 退役条件：渐进式披露被用户裁决废止时方可复活（闸机变更用户书面裁决已取得）。
+FORBIDDEN_L2_INJECTION = re.compile(
+    r"skill_full_text_injected|build_style_combo|build_generic_skill_block"
+    r"|_build_tiered_skill_block|GENERIC_FULL_INJECT_LIMIT|STYLE_COMBO_SOFT_LIMIT"
+    r"|skill_style_combo\.md"
+)
+
+
+def _scan(pattern: re.Pattern, dirs, globs):
+    for d in dirs:
+        for g in globs:
+            for p in (ROOT / d).rglob(g):
+                if p.resolve() == SELF:
+                    continue
+                try:
+                    text = p.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                for i, line in enumerate(text.splitlines(), 1):
+                    if pattern.search(line):
+                        yield p.relative_to(ROOT).as_posix(), i, line.strip()[:70]
+
 
 def main() -> int:
-    hits = []
-    for d in SCAN_DIRS:
-        for p in (ROOT / d).rglob("*.py"):
-            if p.resolve() == SELF:
-                continue
-            try:
-                text = p.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                continue
-            for i, line in enumerate(text.splitlines(), 1):
-                if FORBIDDEN.search(line):
-                    hits.append((p.relative_to(ROOT).as_posix(), i, line.strip()[:70]))
+    hits = list(_scan(FORBIDDEN, SCAN_DIRS, ["*.py"]))
+    hits += list(_scan(FORBIDDEN_L2_INJECTION, SCAN_DIRS_L2, ["*.py"]))
+    hits += list(_scan(FORBIDDEN_L2_INJECTION, ["prompts"], ["*.md"]))
     if hits:
         for rel, n, line in hits[:20]:
             print(f"[check_legacy_orchestration]   {rel}:{n}: {line}")

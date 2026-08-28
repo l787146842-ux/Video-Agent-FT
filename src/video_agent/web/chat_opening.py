@@ -123,11 +123,11 @@ def _resolve_skill_name_for_injection(
     skill_name: str, skill_slug: str, raw_state: Optional[Dict[str, Any]] = None,
     user_text: str = "",
 ) -> str:
-    """Skill 全文硬注入的键名兜底：前端选中项（skill_name）优先；
+    """Skill 名称绑定的键名兜底：前端选中项（skill_name）优先；
     选中项为空但消息携带了 Skill 引用块（skill_slug）时，按 slug 解析出 Skill 名称，
-    保证「随消息发送过的 Skill 必定全文注入」；两者皆空时先按消息文本匹配已注册 Skill
-    （直接发 Skill 名也要能绑定），再回退项目 usedSkills 末位
-    （后续轮次不带 Skill 导致执行器「未注册」）。
+    保证「随消息发送过的 Skill 必定完成绑定」；两者皆空时先按消息文本匹配已注册 Skill
+    （直接发 Skill 名也要能绑定），再回退项目 usedSkills 末位（后续轮次不带 Skill 导致绑定丢失）。
+    绑定只驱动轻量状态块（目录+状态提示+流程纪律）；Skill 正文一律由模型调 read_skill 按需读取。
     """
     if skill_name:
         return skill_name
@@ -154,12 +154,12 @@ def _resolve_skill_name_for_injection(
 def _build_prelude_notes(resolved_skill: str) -> List[tuple]:
     """前奏时间线（只登记真实发生的事件，不得用假操作冒充工具动作）。
 
-    只保留「加载 Skill 流程基线」——它对应 prompt_builder 每轮真实注入当前 Skill 的
-    <planner> 章节；「读取/存档上传文档」由 read_uploaded_doc 工具真实发生时记录，
-    前奏不冒充读取。"""
+    只保留「绑定 Skill」——它对应 prompt_builder 每轮真实注入的轻量状态块（选中名称+
+    元数据+《Skill 流程纪律》）；Skill 正文不在此列（由模型调 read_skill 真实发生时
+    记录）；「读取/存档上传文档」由 read_uploaded_doc 工具真实发生时记录，前奏不冒充读取。"""
     notes: List[tuple] = []
     if resolved_skill:
-        notes.append(("system", f"加载 Skill「{resolved_skill}」流程规范进上下文"))
+        notes.append(("system", f"已绑定 Skill「{resolved_skill}」：正文经 read_skill 按需加载"))
     return notes
 
 

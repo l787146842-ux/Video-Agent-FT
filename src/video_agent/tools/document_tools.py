@@ -49,7 +49,7 @@ class ReadUploadedDocInput(BaseModel):
 class ReadSkillInput(BaseModel):
     name: str = Field(..., description="Skill 名称（与 Skill 目录中的名称一致）")
     section: str = Field(
-        "", description="可选：章节标题（来自分级注入的章节目录，如 planner/提示词写法），"
+        "", description="可选：章节标题（以 Skill 正文里的标题为准，如 planner/提示词写法），"
         "传入则只返回该章节全文；不传返回 Skill 全文（或按 start 续读）")
     start: int = Field(
         0, ge=0, description="读取起始位置（字符偏移，相对全文原文）；正文超长时工具会返回"
@@ -291,7 +291,7 @@ class ReadSkillTool(BaseTool):
     description = (
         "按需加载指定 Skill 的完整流程文档。上下文里只有 Skill 目录（名称+摘要），"
         "执行任务前必须先调用本工具读取对应 Skill 全文，不要凭目录摘要自行推测流程。"
-        "选中 Skill 超长分级注入时，按章节目录传 section（章节标题）或 start（字符偏移）续读对应章节。"
+        "全文超长时，按返回提示传 start（字符偏移）续读；要读某一章节时传 section（章节标题）。"
         "目录包 Skill 的附属参考资料（主文标注「按需加载」处）传 resource（如 references/…）单独读取。"
     )
 

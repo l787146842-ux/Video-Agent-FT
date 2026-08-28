@@ -39,8 +39,11 @@ vi.mock('@/api/generate', () => ({
 
 import {
   initGenerationEvents, registerManualTask, isDuplicateEventSeq, resetEventSeqDedupe,
+  pruneStaleGenerations, restoreActiveGenerations,
 } from '../generation-events';
-import { studioActions } from '@/stores/studio';
+import { state, studioActions } from '@/stores/studio';
+import { genLogs } from '@/stores/generation-log';
+import { getActiveGenTasks } from '@/api/generate';
 
 /** 向总线注入一帧（JSON 序列化后经 SSE 回调投递） */
 function emit(ev: Record<string, unknown>): void {
@@ -123,5 +126,44 @@ describe('manualTaskIds 事件驱动释放', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('pruneStaleGenerations（本地读秒与后端权威任务对账）', () => {
+  it('后端已无任务的草稿立即停读秒；生成日志标 failed 时纠正标签', async () => {
+    state.activeGenerations = { 'd-stale': { start: Date.now(), kind: 'image' } };
+    vi.mocked(getActiveGenTasks).mockResolvedValueOnce({ tasks: [] } as never);
+    // 最新生成日志为 failed：卡在「生成中」的标签纠正为「生成失败」
+    vi.mocked(genLogs).mockReturnValueOnce([{ draft_id: 'd-stale', status: 'failed' }] as never);
+    await pruneStaleGenerations();
+    expect(studioActions.finishGeneration).toHaveBeenCalledWith('d-stale');
+    expect(studioActions.updateDraftLocal).toHaveBeenCalledWith(
+      'image', 'd-stale', { tag: '生成失败' },
+    );
+    state.activeGenerations = {};
+  });
+
+  it('后端仍在处理中的草稿不动；无活跃读秒时短路', async () => {
+    state.activeGenerations = { 'd-live': { start: Date.now(), kind: 'image' } };
+    vi.mocked(getActiveGenTasks).mockResolvedValueOnce({ tasks: [{ draft_id: 'd-live' }] } as never);
+    await pruneStaleGenerations();
+    expect(studioActions.finishGeneration).not.toHaveBeenCalled();
+    state.activeGenerations = {};
+    await pruneStaleGenerations(); // 无活跃读秒：短路不请求后端（无新调用）
+    expect(studioActions.finishGeneration).not.toHaveBeenCalled();
+  });
+});
+
+describe('restoreActiveGenerations（刷新后按后端任务回填读秒）', () => {
+  it('按任务创建时间回填起点；无效草稿跳过', async () => {
+    vi.mocked(getActiveGenTasks).mockResolvedValueOnce({
+      tasks: [
+        { draft_id: 'd-r1', created_at: 100, kind: 'video' },
+        { draft_id: '', created_at: 0, kind: 'image' },
+      ],
+    } as never);
+    await restoreActiveGenerations();
+    expect(studioActions.startGeneration).toHaveBeenCalledWith('d-r1', 'video', 100000);
+    expect(studioActions.startGeneration).toHaveBeenCalledTimes(1);
   });
 });

@@ -164,7 +164,7 @@ def list_skill_sections(content: str) -> List[Dict[str, Any]]:
     与 split_skill_sections 同口径双格式：
     1. flova 原生 <tag>…</tag> 章节：title = tag 名，区间覆盖整个标签块；
     2. Markdown 标题式：title = 标题文本（去 # 前缀），区间从标题行到下一标题前。
-    分级注入章节目录与 read_skill（section/start）续读共用。
+    read_skill（section/start）续读的章节目录与探针/序列化消费共用。
     """
     content = content or ""
     out: List[Dict[str, Any]] = []
@@ -511,7 +511,7 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
     ]
     if not available:
         warnings.append(
-            "未识别到任何管线能力章节：选中该 Skill 时按自由型处理（全文直注，无阶段裁剪）"
+            "未识别到任何管线能力章节：选中该 Skill 时按自由型处理（无阶段裁剪）"
         )
     # 三拆部分缺失：故事板章节只覆盖了部分拆解能力
     split_tools = ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")

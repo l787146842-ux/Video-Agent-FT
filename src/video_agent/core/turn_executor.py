@@ -364,7 +364,7 @@ class TurnExecutor:
                 # token 治理：新轮次回喂入库前，把更早轮次的 read_* 全文
                 # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
                 # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
-                # 短对话保留全文；选中 Skill 不受影响（它硬注入在 system prompt 里）
+                # 短对话保留全文；选中 Skill 正文经 read_* 回喂，同样落入压缩面（轻量状态块在 system 不受影响）
                 if should_compress_feedback(messages, self.context_window()):
                     compress_prior_feedback(messages)
                 # 按需调图：新回喂带图片时，先剥离旧轮已加载的图片，

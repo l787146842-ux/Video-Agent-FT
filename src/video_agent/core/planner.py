@@ -108,7 +108,7 @@ class PlannerContext:
     # 降级状态构建器（token 保险丝）：system 段超预算时用「只留组标题/计数」的
     # 降级状态 JSON 重建 system prompt，保证请求不超窗发出
     degraded_state_builder: Optional[Callable[[], str]] = None
-    # 前奏时间线：只登记真实发生的 system 动作（加载 Skill 流程基线），
+    # 前奏时间线：只登记真实发生的 system 动作（绑定 Skill：轻量状态块+流程纪律），
     # 读取/存档由对应工具真实发生时记录，前奏不得冒充工具操作
     prelude_notes: List[tuple] = field(default_factory=list)
     # 多用户归属：可选用户标识，入 trace 审计

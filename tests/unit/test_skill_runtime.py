@@ -70,15 +70,15 @@ def test_prompt_draft_section_merges_write_media_prompt_and_write_the_prompt():
 
 
 def test_selected_block_lightweight_keeps_discipline_pointer():
-    """回归（7777 事故）：防虚报语义在任务#12 批次B 后不再随选中 Skill 块
-    下发（正文零注入）；轻量块只含名称 + read_skill 指引，防虚报条款的
-    单家仍是 skill_discipline.md 第 9 条（外置文件在场，不经本块注入）。"""
+    """回归（7777 事故）：防虚报语义随《Skill 流程纪律》全文到达模型——
+    任务#12 批次B 后正文零注入，纪律全文经评审修复批（用户裁决）挂回选中
+    Skill 轻量块；Skill 正文仍零注入，纪律单家仍是 skill_discipline.md。"""
     from src.video_agent.utils.prompts import load_prompt
 
     _write(
         "demo-fc",
         "# 演示防虚报\n> 调用规则：测试\n"
-        "<storyboard_key_elements>\n关键元素\n</storyboard_key_elements>\n",
+        "<storyboard_key_elements>\nUNIQUE_BODY_MARK_FX\n</storyboard_key_elements>\n",
     )
     pb = PromptBuilder(
         lambda: sd,
@@ -86,9 +86,10 @@ def test_selected_block_lightweight_keeps_discipline_pointer():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("演示防虚报")
-    # 轻量块零正文：防虚报条款不随块下发，也不夹带其他正文
-    assert "必须真的调用" not in block
-    assert "关键元素" not in block
+    # 防虚报条款（纪律第 9 条）随轻量块挂回在场，但不夹带 Skill 正文
+    # （正文探针用独有标记：纪律第 7 条含"关键元素"字样，不能再用通用词）
+    assert "必须真的调用" in block and "才可声称完成" in block
+    assert "UNIQUE_BODY_MARK_FX" not in block
     assert "read_skill" in block
     # 防虚报条款外置单家仍在场（宪法 Rule 6 单一事实源）
     discipline = load_prompt("planner/skill_discipline.md")

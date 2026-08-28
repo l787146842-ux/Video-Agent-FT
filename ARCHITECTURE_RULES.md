@@ -32,7 +32,7 @@
 - `core/agent_loop.py::run_agent_loop()` 是节点内有界模型循环的**唯一实现**；`MAX_STEPS` 读 `settings.max_steps`
 - **动作通道唯一 = FC 工具调用**（`core/fc_tool_runner.py`）；禁止恢复自由文本动作解析与非 FC 动作通道
 - **确认单轨化**：暂停确认唯一经 `workflow_pause` FC 工具产生，经 llm_call 第 5 元组结构化上抛；`agent_loop` 纯文本轮仅收尾（轮末策略照常承重）
-- **无执行器子代理**：管线阶段由通用主路径直走平台工具（`prompt_builder` 分级注入）；防虚报收敛到 `fc_tool_runner` 关键步骤探针；退役符号登记 `check_legacy_orchestration` 防复活，禁止恢复
+- **无执行器子代理**：管线阶段由通用主路径直走平台工具（`prompt_builder` 只注入 L1 目录与轻量状态提示，Skill 正文经 read_skill 按需读取，任务#12）；防虚报收敛到 `fc_tool_runner` 关键步骤探针；退役符号登记 `check_legacy_orchestration` 防复活，禁止恢复
 - **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
 - **控制流主体回归（ADR-0004）**：模型永远唯一行动主体——每轮做什么由模型接到用户消息后发起工具调用（带附件首条消息也由模型接手，系统不静默自动分析）；`core/workflow_runtime.py` 降级为**账本 + 裁判数据层**（Skill 激活编译 `WorkflowDefinition`，canonical slug + revision + content hash，源 = sidecar 声明，`validate_sidecar` 注册期门禁；持久化 `WorkflowRun`，**仅 runtime reducer 可改**，StateManager 仍唯一写入点 Rule3；完成度只认客观探针），不发起任何行动；ADR-0003 机械直跑/审批直跑退役（驱动符号登记 `check_legacy_orchestration` 防复活）。顺序保障 = 刹车不是方向盘：阶段表/依赖图/`platform.stage_precondition` 闸内嵌工具执行路径首位，模型越阶即拒收回喂。「不暂停连跑」= 自主性档位（用户指令/开关授予模型豁免非平台硬暂停点；平台硬闸任何档位必停，Context ≠ Consent，授权留痕）。**原子轮提交**：一轮只提交一个 `TurnResult`（turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项（暂停卡唯一发行主体 = 模型 `workflow_pause`，单一活跃暂停槽位互斥，重复暂停拒收留痕；层 9 兜底引导卡（round_end_policies 的状态派生建议）≠ 暂停卡；暂停卡唯一发行主体仍为模型 workflow_pause，引导卡仅承载客观状态选项）；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
 - **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
@@ -112,7 +112,7 @@
 
 ### 2.8 Skill 宪法（Skill = 注册表 + 通用主路径）
 - Skill 上传/保存/删除 = `data/skills/*.md` 唯一数据源 + 自动解析文档头部 frontmatter 声明（v3，任务#5 合一）→ 刷新注册表；下拉框数据源不变。插件包约定：单文件与目录包 `<slug>/<slug>.md` 双形态兼容。
-- 管线阶段由通用主路径直走平台工具：`prompt_builder` 按预算分级注入（≤阈值全文直注；超长 planner 章节+章节目录），无执行器子代理（任务#36 B5 一步退役）。
+- 管线阶段由通用主路径直走平台工具：`prompt_builder` 正文零注入（只注入 L1 元数据目录与轻量状态提示，正文经 read_skill 按需读取，任务#12），无执行器子代理（任务#36 B5 一步退役）。
 - 关键步骤失败**禁止绕过回喂/虚报**：`fc_tool_runner` 按客观探针（document_write 等工作台状态）覆写完成文案，模型不得假装已执行。
 - 注册表是数据（policy-as-data），不得散落硬编码；外部工具接入层（MCP）为任务#37 预留扩展点，不得在注册表外私设工具通道。
 

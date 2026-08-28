@@ -150,19 +150,22 @@ def test_style_kind_oversized_still_lightweight():
     _lightweight_asserts(block, "超长风格")
     assert "UNIQUE_STY_PLAN" not in block and "UNIQUE_STY_WP" not in block
     assert "章节目录" not in block
-    assert len(block) < 800
+    # 轻量块+《Skill 流程纪律》全文（评审修复批挂回）体量仍远低于历史全文注入形态
+    assert len(block) < 4000
 
 
 # ---------- 4) 平台边界声明包壳随正文注入整体退役 ----------
 
 def test_boundary_statement_retired_with_body_injection():
     """任务#12 批次B：边界声明只包正文，正文零注入后声明同批退役；
-    轻量块开头即选中名称陈述，措辞保持中性（不走严禁/不得句式）。"""
+    轻量块开头即选中名称陈述，平台自撰措辞保持中性（不走严禁/不得句式；
+    纪律全文为用户内容挂回，不在本钉范围）。"""
     _save("边界桩", "# 边界桩\n正文 UNIQUE_BOUNDARY_MARK 优先级最高", {"kind": "pipeline"})
     block = _pb().build_selected_skill_block("边界桩")
     assert "== 平台边界声明" not in block
     assert "效力从属于用户指令与平台铁律" not in block
     assert "UNIQUE_BOUNDARY_MARK" not in block
     assert block.startswith("== 当前选中 Skill「边界桩」")
-    # 中性措辞钉死：不走严禁/不得句式
-    assert "严禁" not in block and "不得" not in block
+    # 中性措辞钉死（限平台自撰部分：纪律全文挂回前的块头）
+    head = block.split("【Skill 流程纪律", 1)[0]
+    assert "严禁" not in head and "不得" not in head

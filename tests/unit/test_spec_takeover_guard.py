@@ -12,12 +12,13 @@ from src.video_agent.tools.base import ToolResult
 
 
 def test_prelude_only_real_events():
-    """前奏只登记「加载 Skill 流程基线」；不得出现假「读取并存档上传文档」。"""
+    """前奏只登记「绑定 Skill」真实事件；不得出现假「读取并存档上传文档」。"""
     from src.video_agent.web.chat_service import _build_prelude_notes
 
     notes = _build_prelude_notes("AI-短剧一站式生成")
     assert len(notes) == 1
-    assert "加载 Skill「AI-短剧一站式生成」流程规范进上下文" in notes[0][1]
+    assert "已绑定 Skill「AI-短剧一站式生成」" in notes[0][1]
+    assert "正文经 read_skill 按需加载" in notes[0][1]
     assert "读取并存档" not in str(notes)
     assert "读取上传文档" not in str(notes)
     assert _build_prelude_notes("") == []
