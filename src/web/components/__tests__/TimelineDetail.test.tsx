@@ -83,7 +83,7 @@ describe('时间线分级展开：中间档与不展开档', () => {
   it('运行态条目不渲染详情区（未完成无输出可看）', () => {
     const { container } = render(() => (
       <AgentTimeline items={[{
-        id: 't-1-0', summary: '生图中', status: 'running', name: 'generate_image',
+        id: 't-1-0', summary: '生图中', status: 'running', name: 'image_generate',
         args: { prompt: '赛博朋克城市' }, result_summary: '产出 1 张图',
       }]} live />
     ));
@@ -96,7 +96,7 @@ describe('时间线审批档交互徽标（任务 P2-5 正交轴映射）', () =
   it('confirm 档工具（生成族）挂「需确认」徽标（expand 档折叠钮内）', () => {
     const { container } = render(() => (
       <AgentTimeline items={[doneItem('t-1-0', '生成图片', 8000, {
-        name: 'generate_image', result_summary: '产出 1 张图',
+        name: 'image_generate', result_summary: '产出 1 张图',
         args: { prompt: '水墨山水' },
       })]} />
     ));

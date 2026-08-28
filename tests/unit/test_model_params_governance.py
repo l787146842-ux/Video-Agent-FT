@@ -8,7 +8,7 @@ from src.video_agent.tools.base import ToolResult
 
 
 class _Recorder:
-    """记录 generate_image 实际收到的参数（B7 优先级验证用）。"""
+    """记录 image_generate（mode='single'）实际收到的参数（B7 优先级验证用）。"""
 
     def __init__(self):
         self.last_args = None
@@ -19,9 +19,11 @@ class _Recorder:
 
 
 def _fc_call(args: dict) -> ChatResponse:
+    args = dict(args)
+    args.setdefault("mode", "single")
     return ChatResponse(content="", tool_calls=[
         {"id": "c1", "type": "function", "function": {
-            "name": "generate_image",
+            "name": "image_generate",
             "arguments": json.dumps(args, ensure_ascii=False)}},
     ])
 

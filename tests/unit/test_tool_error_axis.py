@@ -78,7 +78,7 @@ class TestFailureFeedbackAxis:
 
     def test_error_code_as_kind_prefix(self):
         msg = compose_failure_feedback(
-            "generate_image", "上游 500", 1, error_code="upstream", retryable=True,
+            "image_generate", "上游 500", 1, error_code="upstream", retryable=True,
         )
         assert msg.startswith("[upstream]")
         assert "可重试" in msg

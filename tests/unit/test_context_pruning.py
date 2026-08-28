@@ -133,13 +133,13 @@ class TestPruneMarkerByToolKind:
 
     def test_generation_tool_marker_neutral_no_resume(self):
         """生成类无续读路径：中性告知模板，不再提示续读"""
-        out = prune_tool_feedback("generate_image", "字" * 12000, 6000, 3000, 2000)
+        out = prune_tool_feedback("image_generate", "字" * 12000, 6000, 3000, 2000)
         assert "按已有头尾信息继续，勿重复生成" in out
         assert "续读" not in out and "start=" not in out
 
-    def test_generation_video_and_alias_same_template(self):
-        """generate_video / image_generate 别名同走生成类模板"""
-        for name in ("generate_video", "image_generate"):
+    def test_generation_video_alias_same_template(self):
+        """generate_video 同走生成类模板"""
+        for name in ("generate_video",):
             out = prune_tool_feedback(name, "字" * 12000, 6000, 3000, 2000)
             assert "勿重复生成" in out and "续读" not in out
 

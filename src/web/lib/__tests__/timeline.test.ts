@@ -93,7 +93,7 @@ describe('toolDetailTier 工具详情分级', () => {
   it('值得展开档：产出/关键交互类工具（后端 detail_tier=expand 声明生成）', () => {
     [
       'document_write', 'storyboard_create_group', 'storyboard_add_draft',
-      'storyboard_patch_draft', 'generate_image', 'generate_video',
+      'storyboard_patch_draft', 'generate_video',
       'image_generate', 'workflow_pause', 'canvas_add_node',
       'canvas_update_node', 'canvas_batch_add_nodes',
     ].forEach((n) => expect(toolDetailTier(n)).toBe('expand'));
@@ -123,7 +123,7 @@ describe('toolDetailTier 工具详情分级', () => {
 describe('toolApprovalTier 工具审批分级', () => {
   it('confirm 档：生成族首批显式声明 + high 风险推导档（后端生效档生成）', () => {
     [
-      'generate_image', 'generate_video', 'image_generate',
+      'generate_video', 'image_generate',
       'document_write', 'canvas_add_node', 'canvas_update_node',
       'canvas_delete_node', 'canvas_batch_add_nodes',
     ].forEach((n) => expect(toolApprovalTier(n)).toBe('confirm'));
@@ -142,7 +142,7 @@ describe('toolApprovalTier 工具审批分级', () => {
     expect(toolApprovalTier('unknown_tool')).toBe('none');
     expect(toolApprovalTier(undefined)).toBe('none');
     // 登记工具不受影响（执行边界 deny-by-default 仍由后端持有）
-    expect(toolApprovalTier('generate_image')).toBe('confirm');
+    expect(toolApprovalTier('image_generate')).toBe('confirm');
   });
 
   it('approvalInteractionLabel 确认卡/审批交互档位映射', () => {

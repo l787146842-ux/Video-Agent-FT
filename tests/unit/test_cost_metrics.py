@@ -8,7 +8,7 @@ def test_b10_metrics_aggregates_fallback_and_gates():
     tracer.start_step()
     tracer.record_gate("platform.gen_confirm", "platform", False, message="未确认")
     tracer.record_gate("skill.flow.spec_gate", "skill", True)
-    tracer.record_action("generate_image", "生成设定图", 100.0, True)
+    tracer.record_action("image_generate", "生成设定图", 100.0, True)
     tracer.end_step(1, actions_applied=1, finish_reason="stop")
     tracer.finish_trace(total_actions=1)
     tracer.record_fallback("provB", "m1")

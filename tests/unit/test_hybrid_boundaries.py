@@ -259,8 +259,6 @@ def test_stage_restrictions_no_spec():
     assert "storyboard_create_group" in excluded
     assert "read_draft" in excluded
     assert "image_generate" in excluded and "generate_video" in excluded
-    # 对话内直出生图不受裁剪
-    assert "generate_image" not in excluded
     assert "document_write" not in excluded
     assert "规格" in note
 

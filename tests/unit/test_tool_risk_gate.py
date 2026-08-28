@@ -1,8 +1,9 @@
 """宪法 §2.7 工具风险分级落地回归：
 
 - BaseTool.risk 声明位 + 注册期 deny-by-default 强制校验；
-- 24 个平台工具逐一声明且与审核定级表一致（任务#36 B5：8 个 Skill
-  执行器工具已随执行器一步退役物理删除，不再计入）；
+- 23 个平台工具逐一声明且与审核定级表一致（任务#36 B5：8 个 Skill
+  执行器工具已随执行器一步退役物理删除，不再计入；双生图工具合并后
+  generate_image 已并入 image_generate 的 mode='single'）；
 - high 级且无既有确认原语覆盖的工具（画布写入/文档写入）经
   platform.tool_risk 确认闸：无同意硬拒、同意回携放行、verdict 入审计。
 """
@@ -39,9 +40,9 @@ EXPECTED_RISK = {
     "storyboard_add_draft": "medium",
     "storyboard_delete_group": "medium",
     "storyboard_confirm_draft": "medium",
-    # high（8）：生成/文档写入/外部副作用
+    # high（7）：生成/文档写入/外部副作用（双生图工具合并：
+    # generate_image 已并入 image_generate 的 mode='single'）
     "image_generate": "high",
-    "generate_image": "high",
     "generate_video": "high",
     "canvas_add_node": "high",
     "canvas_update_node": "high",
@@ -83,7 +84,6 @@ def _all_tool_classes():
         ViewStoryboardMediaTool,
     )
     from src.video_agent.tools.video.generate_video import GenerateVideoTool
-    from src.video_agent.tools.vision.generate_image import GenerateImageTool
 
     return [
         CanvasListTool, CanvasReadNodesTool, CanvasListAssetsTool,
@@ -92,7 +92,7 @@ def _all_tool_classes():
         WorkflowPauseTool, FlowDirectiveTool,
         StoryboardCreateGroupTool, StoryboardPatchDraftTool, StoryboardAddDraftTool,
         StoryboardDeleteGroupTool, StoryboardConfirmDraftTool,
-        ImageGenerateTool, GenerateImageTool, GenerateVideoTool,
+        ImageGenerateTool, GenerateVideoTool,
         CanvasAddNodeTool, CanvasUpdateNodeTool, CanvasDeleteNodeTool,
         CanvasBatchUpdateTool, DocumentWriteTool,
     ]
@@ -101,7 +101,7 @@ def _all_tool_classes():
 class TestDeclarationCoverage:
     def test_all_platform_tools_declare_expected_risk(self):
         classes = _all_tool_classes()
-        assert len(classes) == 24
+        assert len(classes) == 23
         declared = {}
         for cls in classes:
             assert cls.name in EXPECTED_RISK, f"定级表缺少 {cls.name}"
@@ -185,8 +185,7 @@ class TestApprovalTier:
         """生成族首批显式声明 approval_tier（与 risk 正交的第二轴）。"""
         from src.video_agent.tools.document_tools import ImageGenerateTool
         from src.video_agent.tools.video.generate_video import GenerateVideoTool
-        from src.video_agent.tools.vision.generate_image import GenerateImageTool
-        for cls in (GenerateImageTool, GenerateVideoTool, ImageGenerateTool):
+        for cls in (GenerateVideoTool, ImageGenerateTool):
             assert cls.approval_tier == "confirm", (
                 f"生成族 {cls.name} 应首批显式声明 approval_tier=confirm"
             )
@@ -201,13 +200,13 @@ class TestApprovalTier:
         未注册工具按 high 口径一律 confirm（deny-by-default 同口径）。"""
         from src.video_agent.tools.document_tools import (
             DocumentWriteTool,
+            ImageGenerateTool,
             ReadSkillTool,
         )
-        from src.video_agent.tools.vision.generate_image import GenerateImageTool
-        ToolManager.register(GenerateImageTool())
+        ToolManager.register(ImageGenerateTool())
         ToolManager.register(DocumentWriteTool())
         ToolManager.register(ReadSkillTool())
-        assert ToolManager.get_tool_approval_tier("generate_image") == "confirm"
+        assert ToolManager.get_tool_approval_tier("image_generate") == "confirm"
         assert ToolManager.get_tool_approval_tier("document_write") == "confirm"
         assert ToolManager.get_tool_approval_tier("read_skill") == "none"
         assert ToolManager.get_tool_approval_tier("__not_registered__") == "confirm"

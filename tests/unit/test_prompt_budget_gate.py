@@ -120,8 +120,8 @@ def test_b1_no_text_action_protocol_injected_after_44():
         assert legacy_action not in text                # 文本动作定义已删
 
 
-def test_b1_generate_image_once_per_batch():
-    """F10-1 下沉：对话内单图工具每批最多一次（prose 禁令 → 工具层计数器）。"""
+def test_b1_single_image_once_per_batch():
+    """F10-1 下沉：单张应急轨（image_generate mode='single'）每批最多一次（prose 禁令 → 工具层计数器）。"""
     from src.video_agent.core.fc_tool_runner import FCToolRunner
     from src.video_agent.tools.base import ToolResult
 
@@ -132,11 +132,11 @@ def test_b1_generate_image_once_per_batch():
     runner = FCToolRunner(_Stub())
     calls = [
         {"id": "c1", "type": "function", "function": {
-            "name": "generate_image",
-            "arguments": json.dumps({"prompt": "一只猫", "adapter_provider": "prov-x"})}},
+            "name": "image_generate",
+            "arguments": json.dumps({"mode": "single", "prompt": "一只猫", "adapter_provider": "prov-x"})}},
         {"id": "c2", "type": "function", "function": {
-            "name": "generate_image",
-            "arguments": json.dumps({"prompt": "一只狗", "adapter_provider": "prov-x"})}},
+            "name": "image_generate",
+            "arguments": json.dumps({"mode": "single", "prompt": "一只狗", "adapter_provider": "prov-x"})}},
     ]
     applied, confirmation, _u, _i, _l, _o, tool_results, _d, warnings, _overflow, _pause_id = asyncio.run(
         runner.execute(ChatResponse(content="", tool_calls=calls))
