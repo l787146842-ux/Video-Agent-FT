@@ -35,19 +35,19 @@ export function FetchModelsModal(props: {
     if (s.video.has(m)) return 'video';
     if (s.chat.has(m)) return 'chat';
     const f = props.fetched();
-    if (f.image_models.includes(m)) return 'image';
-    if (f.video_models.includes(m)) return 'video';
+    if ((f.image_models ?? []).includes(m)) return 'image';
+    if ((f.video_models ?? []).includes(m)) return 'video';
     return 'chat';
   };
 
   const modalRows = () => {
     const f = props.fetched();
     const q = mSearch().trim().toLowerCase();
-    return f.all.filter((m) => (!q || m.toLowerCase().includes(q)) && (mTab() === 'all' || catOf(m) === mTab()));
+    return (f.all ?? []).filter((m) => (!q || m.toLowerCase().includes(q)) && (mTab() === 'all' || catOf(m) === mTab()));
   };
   const catCount = (cat: ModelCat | 'all') => {
     const f = props.fetched();
-    const list = cat === 'all' ? f.all : f.all.filter((m) => catOf(m) === cat);
+    const list = cat === 'all' ? (f.all ?? []) : (f.all ?? []).filter((m) => catOf(m) === cat);
     return { on: list.filter((m) => checked().has(m)).length, total: list.length };
   };
   function toggleChecked(m: string) {
@@ -60,9 +60,9 @@ export function FetchModelsModal(props: {
   function applyFetched() {
     const f = props.fetched();
     props.onApply({
-      image: f.all.filter((m) => catOf(m) === 'image' && checked().has(m)),
-      chat: f.all.filter((m) => catOf(m) === 'chat' && checked().has(m)),
-      video: f.all.filter((m) => catOf(m) === 'video' && checked().has(m)),
+      image: (f.all ?? []).filter((m) => catOf(m) === 'image' && checked().has(m)),
+      chat: (f.all ?? []).filter((m) => catOf(m) === 'chat' && checked().has(m)),
+      video: (f.all ?? []).filter((m) => catOf(m) === 'video' && checked().has(m)),
     });
   }
 

@@ -27,7 +27,7 @@ export function useModelFetch(
       const body: ProviderProbeRequest = {
         base_url: p.base_url, api_key: keyInput() || '', provider_id: p.id, protocol: p.protocol,
       };
-      const data = await apiPost<FetchedModels & { error?: string }>(
+      const data = await apiPost<FetchedModels>(
         '/api/providers/fetch-models',
         body,
       );
@@ -45,7 +45,16 @@ export function useModelFetch(
       const all = Array.from(new Set([
         ...(data.all || []), ...saved.image, ...saved.chat, ...saved.video,
       ])).sort();
-      setFetched({ ...data, all, total: all.length });
+      // 归一化补齐缺省字段：视图态信号拿到的始终是完整清单形态
+      setFetched({
+        ...data,
+        all,
+        image_models: data.image_models ?? [],
+        chat_models: data.chat_models ?? [],
+        video_models: data.video_models ?? [],
+        total: all.length,
+        protocol: data.protocol ?? 'openai',
+      });
     } catch (e) {
       showToast(`拉取模型失败：${(e as Error).message}`, 'error');
     }

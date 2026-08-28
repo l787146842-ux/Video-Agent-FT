@@ -5,7 +5,7 @@
 import { apiFetch, apiPost, apiPut } from './client';
 import type { Project, ServerStateSnapshot, DocRecord } from '@/types';
 import type {
-  DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, SwitchProjectRequest,
+  DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, OkResponse, SwitchProjectRequest,
 } from '@/types/api.generated';
 
 export interface ProjectListResponse {
@@ -75,7 +75,7 @@ export function putProjectState(
     >
   >,
 ) {
-  return apiPut<{ ok: boolean; board_version?: number }>('/api/project/state', patch);
+  return apiPut<OkResponse>('/api/project/state', patch);
 }
 
 export function undoAction() {

@@ -5,6 +5,7 @@
  * SettingsView 经具名导入消费，语义与切出前逐字一致。
  */
 import type { ApiProvider } from '@/types';
+import type { FetchModelsResponse } from '@/types/api.generated';
 
 export interface EditableProvider extends ApiProvider {
   api_key?: string;
@@ -84,10 +85,8 @@ export const RH_GUIDE = {
 export type ModelKind = 'chat_models' | 'image_models' | 'video_models';
 export type ModelCat = 'image' | 'chat' | 'video';
 
-export interface FetchedModels {
-  all: string[]; image_models: string[]; chat_models: string[]; video_models: string[];
-  total: number; protocol: string;
-}
+/** fetch-models 读形态：以生成物为唯一来源（use-model-fetch 归一化补齐缺省字段） */
+export type FetchedModels = FetchModelsResponse;
 
 export function newProvider(id: string): EditableProvider {
   return {

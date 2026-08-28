@@ -5,7 +5,7 @@
  */
 import { createSignal } from 'solid-js';
 import { apiPost } from '@/api/client';
-import type { ProviderProbeRequest } from '@/types/api.generated';
+import type { ProviderProbeRequest, TestConnectionResponse } from '@/types/api.generated';
 import { imageModeLabel, type EditableProvider } from './settings-meta';
 
 export function useProviderVerify(
@@ -30,7 +30,7 @@ export function useProviderVerify(
     const p = current();
     if (!p) return;
     try {
-      const r = await apiPost<{ ok: boolean; status: number; message: string; model_count: number; image_request_mode?: string }>(
+      const r = await apiPost<TestConnectionResponse>(
         '/api/providers/test-connection',
         probeBody(),
       );

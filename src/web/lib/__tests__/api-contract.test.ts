@@ -33,9 +33,6 @@ const apiModules = Object.entries(corpusModules)
 /** 无前端消费路径的生成物（与 types/index.ts 豁免清单同源；新增需附原因） */
 const EXEMPT: Record<string, string> = {
   ChatResponse: '前端 AgentChatResponse/ChatResponse 手写镜像（state 视图态）',
-  OkResponse: '仅字段 board_version 为 unknown 宽松型，前端按说明性消费',
-  TestConnectionResponse: 'SettingsView 验证端点精确断言，仅用 status/message',
-  FetchModelsResponse: 'settings-meta.FetchedModels 手写镜像（all 字段）',
   ProjectStateResponse: '后端宽松 schema（Dict 对应）',
   ModelFallbackPatch: '前端 fallback 设置走 runtime PUT（RuntimeSettingsUpdate）',
   TimelinePushRequest: 'B9b 时间线回放由 Agent 任务流下发，前端暂无按钮消费',

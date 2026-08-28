@@ -13,7 +13,7 @@
  * - 手写响应类型比生成物更精确的站点（生成物对 Dict 响应只能给出
  *   Record<string, unknown>）：ProjectListResponse/ProvidersResponse/
  *   UndoStatusResponse/OkWithStateResponse（api/project.ts、api/providers.ts）、
- *   ChatResponse/OkResponse/TestConnectionResponse/FetchModelsResponse、
+ *   ChatResponse、
  *   ConversationsPayload（api/conversations.ts）、画布读取结果族
  *   CanvasDropImageResult/CanvasNodeImagesResult/AllCanvasImagesResult（api/canvas.ts）、
  *   GenerationLogEntry（api/generate.ts 读形态）、
