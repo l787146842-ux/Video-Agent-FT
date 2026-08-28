@@ -99,6 +99,10 @@ class ChatRequest(BaseModel):
     # 系统动作标记（如 gate_override=「本次放行」）：携带时用户消息持久化带
     # kind 标记，前端渲染为系统动作行而非用户气泡（LLM 语义不变）
     system_action: str = ""
+    # 重试续跑标记（任务#6）：错误/停止气泡「重试/继续」建议动作点击时前端携带；
+    # 后端据此把上轮失败现场归档（trace/错误消息）渲染为前置块注入，
+    # 带上下文续跑而非从零重来；取不到现场静默回落机械重发，重试本身不受影响。
+    resume_failed: bool = False
     # 截断重答的「用户消息已落盘」标记由后端内部
     # contextvar（state.chat_tail_ops.user_message_persisted）传递
 

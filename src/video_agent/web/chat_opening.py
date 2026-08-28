@@ -15,6 +15,7 @@ from loguru import logger
 from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.config import settings
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
+from src.video_agent.web.chat_retry_context import build_retry_resume_note
 from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.multimodal_builder import (
     build_multimodal_content,
@@ -240,7 +241,10 @@ async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_stud
     """开场公共编排（流式/非流式双路径单一实现，消除双份复制）。
 
     暂停闭环（消费上轮暂停态）+ 规格定稿/向导消费 + 附件降级注入，
-    返回 (拼好的 LLM 用户消息文本, 轮始客观推进信号, 向导落盘文档名)。
+    返回 (拼好的 LLM 用户消息文本, 轮始客观推进信号, 向导落盘文档名,
+    重试续跑前置块)。续跑块单独返回而非 prepend 进文本：
+    多模态构建层 content_parts 分支不使用 text 参数，
+    须经 build_multimodal_content(leading_note=…) 才两条支路都不丢；
     信号供输入类 decision 消费与闸预检分诊（runtime 不据此自主行动）；
     仅流程推进轮（暂停消费/向导回应/继续选项点选/带附件）产生。
     落盘文档名供调用方于用户消息后投影文档卡（提交结果同源）。
@@ -275,6 +279,14 @@ async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_stud
     llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
     if attachment_note:
         llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
+    # 重试带上下文续跑（任务#6）：前端重试动作携 resume_failed 标记，
+    # 把上轮失败现场归档渲染为前置块单独返回，由调用方经
+    # build_multimodal_content(leading_note=…) 注入（content_parts 交错分支
+    # 不使用 text 参数，prepend 会被静默丢弃）；持久化气泡仍用 user_text；
+    # 取不到现场时返回空串，静默回落机械重发。
+    resume_note = ""
+    if getattr(body, "resume_failed", False):
+        resume_note = build_retry_resume_note(svc)
     # 轮始客观推进信号（零语料：只认消费结果/附件/继续选项行格式）
     if pending_confirm_note:
         advance_signal = "pause"
@@ -286,7 +298,7 @@ async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_stud
         advance_signal = "attachment"
     else:
         advance_signal = ""
-    return llm_user_text, advance_signal, wiz_doc
+    return llm_user_text, advance_signal, wiz_doc, resume_note
 
 
 def _store_gate_overrides(svc, overrides) -> None:

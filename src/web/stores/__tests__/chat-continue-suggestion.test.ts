@@ -49,15 +49,23 @@ describe('chatActions「继续刚才的任务」建议（kind=retry 走机械重
     expect(acts?.[0].label).toBe('继续刚才的任务');
   });
 
-  it('streamError 点击 retry 机械重发最近一条用户消息', () => {
+  it('streamError 点击 retry 重发最近一条用户消息并携续跑标记（任务#6）', () => {
     chatActions.addMessage({ sender: 'user', text: '旧问题' });
     chatActions.addMessage({ sender: 'agent', text: '旧回复' });
     chatActions.addMessage({ sender: 'user', text: '新问题' });
     chatActions.startStream();
     chatActions.streamError({ code: 'err.upstream.server_error', kind: 'upstream', message: '供应商流中断' });
-    // 与 ChatMessageItem.runSuggested 点击 retry 同入口（末条下标起找最近用户消息）
-    resendNearestUserMessage(chatState.messages.length - 1);
+    // 与 SuggestedActionBar 点击 retry 同入口（末条下标起找最近用户消息 + 续跑标记）
+    resendNearestUserMessage(chatState.messages.length - 1, { resumeFailed: true });
     expect(submitMessage).toHaveBeenCalledTimes(1);
+    expect(submitMessage).toHaveBeenCalledWith('resend', { input: '新问题', resumeFailed: true });
+  });
+
+  it('无续跑标记的机械重发不携带 resumeFailed（轮级 regenerate 等同源入口语义不变）', () => {
+    chatActions.addMessage({ sender: 'user', text: '新问题' });
+    chatActions.startStream();
+    chatActions.streamError({ code: 'err.upstream.server_error', kind: 'upstream', message: '供应商流中断' });
+    resendNearestUserMessage(chatState.messages.length - 1);
     expect(submitMessage).toHaveBeenCalledWith('resend', { input: '新问题' });
   });
 

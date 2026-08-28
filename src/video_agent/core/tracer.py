@@ -128,6 +128,9 @@ class TraceRecord:
     user_message_preview: str = ""  # 前 80 字符
     user_id: str = ""  # 多用户归属（基础，完整鉴权另行立项）
     llm_calls: int = 0  # 本 trace 含模型调用次数（成本看板口径用）
+    # 失败现场摘要（仅失败轮非空）：异常上抛路径的 partial trace 归档，
+    # 重试带上下文续跑（web/chat_retry_context）据此还原「在何处失败」
+    error: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         steps: List[Dict[str, Any]] = []
@@ -153,7 +156,7 @@ class TraceRecord:
             if s.prompt_fingerprints:
                 sd["prompt_fingerprints"] = s.prompt_fingerprints
             steps.append(sd)
-        return {
+        d = {
             "trace_id": self.trace_id,
             "timestamp": self.timestamp,
             "total_ms": round(self.total_ms, 1),
@@ -163,6 +166,10 @@ class TraceRecord:
             "llm_calls": self.llm_calls,
             "steps": steps,
         }
+        # 失败现场：无错误不写键（历史成功 trace 格式不变，体积不增）
+        if self.error:
+            d["error"] = self.error
+        return d
 
 
 class AgentTracer:
@@ -454,6 +461,18 @@ class AgentTracer:
         current = self._ctx().current
         if current is not None:
             current.llm_calls += 1
+
+    def record_error(self, summary: str) -> None:
+        """登记本轮失败现场摘要（异常上抛路径归档前调用）。
+
+        无在场 trace（异常先于 start_trace）时静默跳过；
+        失败仅 log，绝不干扰主链路。"""
+        try:
+            current = self._ctx().current
+            if current is not None and summary:
+                current.error = str(summary)[:500]
+        except Exception as e:
+            logger.debug(f"[Tracer] 失败现场登记失败（忽略）: {e}")
 
     def record_prompt_fingerprint(self, messages: List[Dict[str, Any]]) -> bool:
         """P2-6 可见指纹链：模型调用前对可见消息录指纹（链式入当前 step）。

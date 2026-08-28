@@ -39,6 +39,11 @@ export interface CanvasDropImageRequest {
   view?: ViewSize | undefined;
 }
 
+export interface CanvasSelectNodesRequest {
+  /** 要设为选中的画布节点 id 列表 */
+  node_ids: string[];
+}
+
 export interface ChatRequest {
   message: string;
   request_id?: string;
@@ -63,6 +68,7 @@ export interface ChatRequest {
   thinking_level?: string;
   pause_response?: Record<string, string>;
   system_action?: string;
+  resume_failed?: boolean;
 }
 
 export interface ChatResponse {

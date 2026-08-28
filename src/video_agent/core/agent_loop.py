@@ -591,6 +591,25 @@ async def run_agent_loop(
             total_actions=result.applied_actions)
         # 与 _finalize_stop 同语义直接返回：不再落空文本兜底文案
         return result
+    except Exception as _failure_exc:
+        # 失败现场 trace 归档（审计 §2.5 闭环）：异常上抛前把已完成步与
+        # 失败摘要落账，重试带上下文续跑（web/chat_retry_context）据此
+        # 还原进度；归档失败不掩盖原异常，原样上抛由上层错误路径承接。
+        try:
+            _t = AgentTracer.get_instance()
+            _t.record_error(str(_failure_exc))
+            # 循环内已完成过该 step 的 end_step（如异常发生在归档之后）时，
+            # 不重复记同一 step 号（末条相等即跳过），只落失败摘要与归档。
+            _cur = _t._current
+            _last_done = _cur.steps[-1].step if (_cur and _cur.steps) else 0
+            if _last_done != (result.steps or 1):
+                _t.end_step(
+                    result.steps or 1, actions_applied=0, finish_reason="error",
+                )
+            result.trace = _t.finish_trace(total_actions=result.applied_actions)
+        except Exception as _archive_e:
+            logger.debug("[agent_loop] 失败现场 trace 归档失败（忽略）: {}", _archive_e)
+        raise
     finally:
         # 统一解绑（幂等）：任何出口都经此收尾，不再有分散解绑点
         unbind_progress_emitter(_progress_token)

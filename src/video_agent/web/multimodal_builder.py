@@ -36,6 +36,7 @@ async def build_multimodal_content(
     selected_draft_id: str = "",
     selected_type: str = "",
     videos: Optional[List[str]] = None,
+    leading_note: str = "",
 ) -> Any:
     """构建多模态 LLM 输入（文本 + 图片 parts）。无图片时返回纯文本。
 
@@ -44,6 +45,11 @@ async def build_multimodal_content(
 
     content_parts（可选）：前端富文本输入框按用户排版顺序序列化的有序片段。
     存在时优先走交错构建路径，保证 LLM 精确识别「文字 ↔ 媒体」的对应关系。
+    注意：此分支不使用 text 参数（排版以 parts 为准），需前置的系统注记
+    一律经 leading_note 传入（如重试续跑失败现场前置块，任务#6），
+    直接改 text 会在本分支被静默丢弃。
+    leading_note（可选）：用户原消息之前的系统前置注记，两条支路都前置；
+    空串时行为与旧版逐字节一致。
 
     素材超限策略（多模态模型单次上传有数量限制）：
     - 最多注入 settings.max_llm_images 张图片，优先注入与当前选中草稿相关的素材；
@@ -66,7 +72,13 @@ async def build_multimodal_content(
             selected_draft_id=selected_draft_id, selected_type=selected_type,
         )
         trailing = "\n\n".join(x for x in (note, manifest) if x)
-        return await _build_interleaved_content(content_parts, trailing, extra)
+        return await _build_interleaved_content(
+            content_parts, trailing, extra, leading_note=leading_note)
+
+    # 纯文本支路：前置注记（如重试续跑失败现场块）前置到用户文本之前；
+    # 附件/清单等既有后置语义不变。
+    if leading_note:
+        text = f"{leading_note}\n\n{text}"
 
     image_urls = collect_image_urls(attachments) if attachments else []
     for img_url in (images or []):
@@ -253,9 +265,11 @@ async def _build_interleaved_content(
     content_parts: List[Dict[str, str]],
     trailing_note: str = "",
     extra_images: Optional[List[str]] = None,
+    leading_note: str = "",
 ) -> Any:
     """按有序 content_parts 构建交错多模态内容。
 
+    - leading_note → 前置文本（用户原消息之前的系统注记，如重试续跑失败现场块）
     - text  → 文本 part（相邻片段合并）
     - image → image_url part（/workspace/ 本地图转 data URI），插在文字之间
     - video/audio → 文本标记 [video: 名称]/[audio: 名称]（当前 vision LLM 无法
@@ -269,6 +283,10 @@ async def _build_interleaved_content(
     result: List[Dict[str, Any]] = []
     text_buf: List[str] = []
     max_images = settings.max_llm_images
+    if leading_note:
+        # 前置注记先进缓冲：后随用户文本/媒体按原排版交错，
+        # 相邻文本自然合并为同一 text part，无媒体时降级纯文本同样保留。
+        text_buf.append(f"{leading_note}\n\n")
 
     def flush_text() -> None:
         if not text_buf:

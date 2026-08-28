@@ -37,6 +37,9 @@ export interface SubmitPayload {
   pauseResponse?: { pause_id: string; value: string; label?: string };
   /** 系统动作标记（如「本次放行」留痕，渲染为系统动作行） */
   systemAction?: 'system_action';
+  /** 重试续跑标记（任务#6）：错误/停止气泡「重试/继续」建议动作携带；
+   *  后端据此注入上轮失败现场前置块带上下文续跑（取不到现场静默回落机械重发） */
+  resumeFailed?: boolean;
   /** queued/guidance 意图的原排队条目：
    *  queued 失败回队保留原 id 与顺序；guidance 移队首并登记轮间注入 */
   queuedEntry?: QueuedMessage;
@@ -223,6 +226,8 @@ export async function submitMessage(intent: SubmitIntent, payload: SubmitPayload
     ...(payload.pauseResponse ? { pause_response: payload.pauseResponse } : {}),
     // 系统动作标记：后端随用户消息持久化 kind，刷新后仍可重建系统动作行
     ...(payload.systemAction ? { system_action: payload.systemAction } : {}),
+    // 重试续跑标记：后端据此注入失败现场前置块（带上下文续跑，任务#6）
+    ...(payload.resumeFailed ? { resume_failed: true } : {}),
     // 会话级推理档位（''=默认/模型原生）
     thinking_level: agentThinkingLevel(),
   };

@@ -124,7 +124,8 @@ async def _stream_worker_impl(body: ChatRequest, svc: StateManager, emit, pendin
     use_studio_context = body.context_mode != "none"
     # 开场公共编排：暂停闭环 + 规格定稿/向导 + 附件降级注入
     # + 轮始客观推进信号（decision 消费/闸预检分诊用）
-    llm_user_text, advance_signal, _wiz_doc = await _prepare_chat_opening(
+    # + 重试续跑前置块（任务#6，经 leading_note 传多模态构建层）
+    llm_user_text, advance_signal, _wiz_doc, _resume_note = await _prepare_chat_opening(
         svc, body, user_text, use_studio_context)
 
     # 会话层一次性豁免：随消息登记，Planner 本次消费
@@ -138,11 +139,12 @@ async def _stream_worker_impl(body: ChatRequest, svc: StateManager, emit, pendin
         _record_active_skill(svc, body)
 
     # 多模态内容构建（有 content_parts 时按排版顺序交错；
-    # 传入选中草稿信息用于素材超限时的优先级注入）
+    # 传入选中草稿信息用于素材超限时的优先级注入；
+    # 续跑前置块经 leading_note 传入，防 content_parts 分支静默丢弃）
     llm_user_content = await build_multimodal_content(
         llm_user_text, body.attachments, body.images or [], body.content_parts or None,
         selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
-        videos=body.videos or [],
+        videos=body.videos or [], leading_note=_resume_note,
     )
 
     # ---------- 空供应商：明确报错（不再有演示兜底） ----------
@@ -628,8 +630,8 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
     )
 
     use_studio_context = body.context_mode != "none"
-    # 开场公共编排：同流式路径（暂停闭环 + 规格定稿/向导 + 附件降级 + 推进信号）
-    llm_user_text, advance_signal, _wiz_doc_ns = await _prepare_chat_opening(
+    # 开场公共编排：同流式路径（暂停闭环 + 规格定稿/向导 + 附件降级 + 推进信号 + 续跑块）
+    llm_user_text, advance_signal, _wiz_doc_ns, _resume_note_ns = await _prepare_chat_opening(
         svc, body, user_text, use_studio_context)
 
     # 会话层一次性豁免：同流式路径
@@ -650,11 +652,12 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
     ])
 
     # 多模态内容构建（有 content_parts 时按排版顺序交错；
-    # 传入选中草稿信息用于素材超限时的优先级注入）
+    # 传入选中草稿信息用于素材超限时的优先级注入；
+    # 续跑前置块经 leading_note 传入，防 content_parts 分支静默丢弃）
     llm_user_content = await build_multimodal_content(
         llm_user_text, body.attachments, body.images or [], body.content_parts or None,
         selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
-        videos=body.videos or [],
+        videos=body.videos or [], leading_note=_resume_note_ns,
     )
 
     _wiz_card_ns = ""

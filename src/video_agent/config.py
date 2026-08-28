@@ -179,6 +179,20 @@ class Settings:
             raise ValueError(
                 f"SKILL_RUNTIME_MODE/SKILL_RUNTIME={_stale!r} 已退役（整改批 3.5）："
                 "通用主路径为唯一 Skill 注入路径，请移除该环境变量后重启")
+        # 画布旧环境变量已退役（画布集成收敛到 canvas-agent 单后端）：
+        # 检测到旧键只警告不 raise（仿 SKILL_RUNTIME 显式处置，旧键已无读取方，
+        # 硬拒会阻断正常启动）；新键 = CANVAS_AGENT_URL / CANVAS_AGENT_TOKEN
+        #（画布站点地址另见 INFINITE_CANVAS_URL）。
+        for _stale_canvas_key in (
+            "CANVAS_BASE_URL", "CANVAS_PROVIDERS_URL",
+            "CANVAS_PROVIDERS_FILE", "CANVAS_ENV_FILE",
+        ):
+            if str(os.getenv(_stale_canvas_key) or "").strip():
+                logging.getLogger(__name__).warning(
+                    f"[Config] 环境变量 {_stale_canvas_key} 已退役（画布集成收敛到 "
+                    "canvas-agent 单后端），不再被读取；新键为 CANVAS_AGENT_URL / "
+                    "CANVAS_AGENT_TOKEN（画布站点地址用 INFINITE_CANVAS_URL），"
+                    "请移除旧键以免误导")
 
     # 模型分层策略表（编排/生成/摘要/执行器四角色，热更新于 runtime_settings.json；
     # 字段语义见 core/model_policy.py；空 = 跟随主模型/既有回落链）
@@ -230,22 +244,23 @@ class Settings:
     # sqlite 写入后回退不再无损
     state_backend: str = field(default_factory=lambda: os.getenv("STATE_BACKEND", "sqlite"))
 
-    # 画布画布集成
-    canvas_base_url: str = field(default_factory=lambda: os.getenv("CANVAS_BASE_URL", "http://127.0.0.1:3000"))
+    # 画布集成（infinite-canvas 单后端，经 canvas-agent HTTP 协议）
     canvas_timeout: int = field(default_factory=lambda: _env_int("CANVAS_TIMEOUT", 30))
     canvas_enabled: bool = field(default_factory=lambda: _env_bool("CANVAS_ENABLED", True))
 
-    # 画布 Provider 配置共享（HTTP 优先，文件兜底）
-    # 注意：canvas_providers_file / canvas_env_file 默认为空，需通过环境变量配置；
-    # 为空时画布配置共享功能自动降级（仅通过 HTTP 接口获取）。
-    canvas_providers_url: str = field(default_factory=lambda: os.getenv(
-        "CANVAS_PROVIDERS_URL", "http://127.0.0.1:3000/api/providers"))
-    canvas_providers_file: str = field(default_factory=lambda: os.getenv(
-        "CANVAS_PROVIDERS_FILE", ""))
-    canvas_env_file: str = field(default_factory=lambda: os.getenv(
-        "CANVAS_ENV_FILE", ""))
     canvas_health_cache_seconds: int = field(default_factory=lambda: _env_int(
         "CANVAS_HEALTH_CACHE_SECONDS", 30))
+    # infinite-canvas canvas-agent 通道：
+    # agent HTTP 服务地址；token 默认空 = 自动回退读 ~/.infinite-canvas/canvas-agent.json
+    #（canvas-agent 首次启动生成）；画布站点地址（前端 iframe 嵌入引导用）
+    canvas_agent_url: str = field(default_factory=lambda: os.getenv(
+        "CANVAS_AGENT_URL", "http://127.0.0.1:17371"))
+    canvas_agent_token: str = field(default_factory=lambda: os.getenv("CANVAS_AGENT_TOKEN", ""))
+    infinite_canvas_url: str = field(default_factory=lambda: os.getenv(
+        "INFINITE_CANVAS_URL", "http://localhost:3000"))
+    # canvas_get_state TTL 快照缓存（秒，1–2s 抗高频读）；写路径一律绕过缓存
+    canvas_agent_state_cache_seconds: float = field(default_factory=lambda: float(
+        os.getenv("CANVAS_AGENT_STATE_CACHE_SECONDS", "1.5")))
     # 画布外壳 UI 在画布 iframe 内的偏移估计（侧栏宽 + stage 边距），用于拖放落点换算；
     # 画布独立迭代若改了外壳布局，可通过环境变量调整，不影响功能（结果会被夹取到可视区内）
     canvas_shell_offset_x: int = field(default_factory=lambda: _env_int("CANVAS_SHELL_OFFSET_X", 96))

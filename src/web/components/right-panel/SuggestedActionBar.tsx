@@ -2,7 +2,7 @@
  * 建议动按钮条（任务 #17：错误/停止气泡的唯一建议渲染通道）。
  *
  * 读消息持久化的 suggestedActions（刷新后不丢）：
- * - retry = 机械重发最近用户消息原内容（「继续刚才的任务」沿用此语义）
+ * - retry = 重发最近用户消息原内容，携带 resumeFailed 标记（任务#6：后端据此注入失败现场前置块带上下文续跑；现场取不到时后端静默回落机械重发）
  * - continue/next = 发送后端下发的固定 value（人类可读护栏在 suggested-guard）
  */
 import { For } from 'solid-js';
@@ -24,7 +24,8 @@ export function SuggestedActionBar(props: { actions: SuggestedAction[] }) {
   /** value 直入用户气泡与 LLM 历史，契约 = 人类可读文本 */
   const run = (act: SuggestedAction) => {
     if (act.kind === 'retry') {
-      resendNearestUserMessage(chatState.messages.length - 1);
+      // 任务#6：携带续跑标记，后端取失败现场注入前置块；取不到静默回落机械重发
+      resendNearestUserMessage(chatState.messages.length - 1, { resumeFailed: true });
       return;
     }
     if (act.value) {
