@@ -16,7 +16,9 @@
  *   CanvasDropImageResult/CanvasNodeImagesResult/AllCanvasImagesResult（api/canvas.ts）、
  *   整板保存 payload（stores/studio/storyboard.ts，后端 ProjectStateUpdate 五列表
  *   已收窄为 Record<string, unknown>[] 但元素仍宽于手写 Draft/Group/Asset）
- *   ——保留手写强类型，后端全量建模后再迁（docs/未清偿债务清单.md D-06）。
+ *   ——保留手写强类型：整板保存条目随 D-06 专项清偿后删（docs/未清偿债务清单.md）；
+ *   ProvidersResponse/OkWithStateResponse/ChatResponse/画布族后端建模代价过大，
+ *   任务 #10 裁决保留（2026-08-28），后端全量建模后再迁。
  * - 生成物消费基座站点（生成物为类型来源，手写只做收窄/精化，  登记）：
  *   GenerateImageRequest/GenerateVideoRequest（交集精化，api/generate.ts）、
  *   BatchImageRequest（Required 收窄必填）、CanvasDropImagePayload（交集精化，api/canvas.ts）、
