@@ -74,6 +74,12 @@ GATES: List[Tuple[str, List[str]]] = [
     # 工具名/能力覆盖改由 scan_skills --gate 与 tool_risk 门禁承接）
     # 退役条件：Skill 工具名与平台工具注册表完全对齐、漂移计数连续两季为零时裁决下账。
     ("skill_tool_names", [sys.executable, "scripts/scan_skills.py", "--gate"]),
+    # 任务 #9：CSS 体积棘轮（只减不增，度量 static/dist 全部 stylesheet 产物，
+    # 基线 scripts/css_size_baseline.txt 首钉 153007 字节 = 149.42 kB，
+    # 度量口径与 check_bundle_size.mjs 同框）。
+    # 退役条件：实测体积降至 100 kB 以下且连续两季无回弹时裁决下账；
+    # 或样式体系迁离单文件汇总（按路由懒加载分包）致本口径失效时一并裁决。
+    ("css_size", ["node", "scripts/check_css_size.mjs"]),
 ]
 SUITES: List[Tuple[str, List[str]]] = [
     # --cov 产出 coverage.xml，供下一轮 cov_ratchet 闸对比（与 CI 度量口径同构）；
