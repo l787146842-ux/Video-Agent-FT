@@ -21,6 +21,15 @@ export function GroupHeader(props: {
   const [titleVal, setTitleVal] = createSignal('');
   const [badgeVal, setBadgeVal] = createSignal('');
 
+  /** 左上角标题：剥离 Element_/Shot_ 等英文前缀与非中文字符，纯中文展示（无中文时回退原文）；
+   * 仅显示层剥离，数据层标题（如新建组的 `Element_未命名`）原样存储（台账 #10，口径同 b6011a5） */
+  const displayTitle = () => {
+    const raw = props.title() || '';
+    const stripped = raw.replace(/^[A-Za-z]+[_\-\s]?/, '').trim();
+    const chineseOnly = stripped.replace(/[A-Za-z0-9_\-.\s]+/g, '').trim();
+    return chineseOnly || stripped || raw;
+  };
+
   /** 编辑退出兼容（Q3）：任一编辑态下点击输入框以外的任何地方 → 强制失焦
    *  （部分浏览器点 draggable 区域不会自然移焦，onBlur 不触发导致退不出编辑） */
   createEffect(() => {
@@ -70,7 +79,7 @@ export function GroupHeader(props: {
             title="双击编辑标题"
             onDblClick={() => { setTitleVal(props.title()); setEditingTitle(true); }}
           >
-            {props.title()}
+            {displayTitle()}
             {props.titleSuffix()}
           </span>
         }>

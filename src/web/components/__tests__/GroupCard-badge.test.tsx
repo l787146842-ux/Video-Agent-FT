@@ -8,10 +8,9 @@
  *
  * 与条款无关的旁路子件（草稿卡/场景引用/描述/微调行）以桩替代控制测试面。
  *
- * 已知缺口（同批报告，不在本文件断言）：条款「左上标题纯中文（剥离
- * Element_ 等英文前缀）」的展示层剥离逻辑已在后续重构中丢失，当前
- * UI 原样显示带前缀标题——属违反条款的冲突项，交上级裁决（宪法 §3
- * UI 改动须用户目测，本任务只补测试不改 UI）。
+ * 任务 #15（用户裁决后补）：条款「左上标题纯中文（剥离 Element_ 等英文前缀）」
+ * 的展示层剥离逻辑已在 034747f 重构中丢失，现已按 b6011a5 原口径恢复于
+ * GroupHeader（仅显示层剥离，数据层标题原样存储），本文件补正向防回归断言。
  */
 import { render, fireEvent } from '@solidjs/testing-library';
 import { describe, it, expect, vi } from 'vitest';
@@ -179,5 +178,62 @@ describe('分组卡右上徽标 = 元素类型（台账 #10）', () => {
     fireEvent.keyDown(input2, { key: 'Enter' });
     expect(container.querySelector('.sb-title-input')).toBeNull();
     expect(container.querySelector('.sb-title')!.textContent).toContain('月球');
+  });
+});
+
+describe('分组卡左上标题纯中文（剥离英文前缀，台账 #10，任务 #15）', () => {
+  function titleText(container: HTMLElement): string {
+    const span = container.querySelector('.sb-title span[title="双击编辑标题"]');
+    expect(span).toBeTruthy();
+    return (span!.textContent || '').trim();
+  }
+
+  it('三类新建组的 Element_/Shot_/Audio_ 前缀均不显示（正向防回归）', () => {
+    const cases: Array<[AnyGroup, DraftType]> = [
+      [{ id: 'g1', title: 'Element_未命名', drafts: [draft('d1', '手动')] } as KeyElementGroup, 'keyElement'],
+      [{
+        id: 'g2', title: 'Shot_未命名',
+        drafts: [{ id: 'd2', label: '分镜 1', mediaType: 'video', videoUrl: '', prompt: '' }],
+      } as ShotGroup, 'shot'],
+      [{
+        id: 'g3', title: 'Audio_未命名',
+        drafts: [{ id: 'd3', label: '音频 1', mediaType: 'audio', audioUrl: '', prompt: '' }],
+      } as AudioGroup, 'audio'],
+    ];
+    for (const [group, type] of cases) {
+      const text = titleText(setup(group, type).container);
+      expect(text).not.toMatch(/^(Element|Shot|Audio)_/);
+      expect(text).toBe('未命名');
+    }
+  });
+
+  it('剥离口径同 b6011a5：标题本身含下划线时去非中文字符；无中文回退原文', () => {
+    // 标题本身含下划线：剥离英文前缀后再去非中文字符（原实现口径）
+    const withUnderscore: KeyElementGroup = {
+      id: 'g1', title: 'Element_月球_基地', drafts: [draft('d1', '手动')],
+    };
+    expect(titleText(setup(withUnderscore, 'keyElement').container)).toBe('月球基地');
+    // 无中文可留：回退原文（不显示空标题）
+    const noChinese: KeyElementGroup = {
+      id: 'g2', title: 'BGM', drafts: [draft('d2', '手动')],
+    };
+    expect(titleText(setup(noChinese, 'keyElement').container)).toBe('BGM');
+    // 纯中文标题不受影响
+    const pure: KeyElementGroup = {
+      id: 'g3', title: '开场', drafts: [draft('d3', '手动')],
+    };
+    expect(titleText(setup(pure, 'keyElement').container)).toBe('开场');
+  });
+
+  it('仅显示层剥离：双击编辑时输入框承载数据层原标题（含前缀）', () => {
+    const group: KeyElementGroup = {
+      id: 'g1', title: 'Element_未命名', drafts: [draft('d1', '手动')],
+    };
+    const { container } = setup(group, 'keyElement');
+    expect(titleText(container)).toBe('未命名');
+    fireEvent.dblClick(container.querySelector('.sb-title span[title="双击编辑标题"]') as HTMLElement);
+    const input = container.querySelector('.sb-title-input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    expect(input.value).toBe('Element_未命名');
   });
 });
