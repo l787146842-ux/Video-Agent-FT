@@ -23,6 +23,7 @@ from src.video_agent.core.provider_config import (
     load_merged_providers,
 )
 from src.video_agent.state.manager import StateManager
+from src.video_agent.skill_runtime import registry as skill_registry
 from src.video_agent.web.skill_docs import (
     get_skill_doc,
     list_skill_docs,
@@ -74,6 +75,9 @@ async def get_agent_config():
             "system_prompt": d["content"],
             "source": "doc",
             "slug": d["slug"],
+            # kind 目录口径（任务 #11）：前端据此区分主流程候选与可叠加风格层；
+            # 未声明 kind 的存量 Skill 下发空串（零预设，不硬归类）
+            "kind": skill_registry.skill_kind(d["name"]),
             # 欠账显性化——规划级执行器名单随契约下发，
             # 前端据实标注（不硬编码工具名）
             "planning_executors": _planning_executors_of(d["name"]),
@@ -118,12 +122,66 @@ async def set_active_skill(body: ActiveSkillRequest):
             )
         svc.record_used_skill(slug)
     svc.set_active_skill(slug, source)
+    # 组合激活（任务 #11）：新主流程若已在风格层清单内则摘除（同一 Skill 不得双占两层）
+    if slug:
+        styles = skill_registry.style_skills_from_state(svc.state_dict)
+        if slug in styles:
+            svc.set_style_skills([s for s in styles if s != slug])
     svc.record_flow_event(
         "skill_active",
         f"活跃 Skill {'摘除（自由对话）' if not slug else '激活 ' + slug}（来源：{'建议采纳' if source == 'suggested' else '用户选择'}）",
     )
     logger.info(f"[Skills] 活跃 Skill 绑定更新: slug={slug or '（摘除）'} source={source}")
     return {"ok": True, "active_skill": svc.state_dict.get("activeSkill")}
+
+
+class ActiveStyleLayersRequest(BaseModel):
+    slugs: List[str] = []
+
+
+@router.post("/skills/active-styles")
+async def set_active_style_layers(body: ActiveStyleLayersRequest):
+    """项目态风格层组合激活（任务 #11：1 pipeline 可选 + N style 层）。
+
+    slugs = 全量替换式清单（前端传当前勾选全集；空清单 = 摘除全部风格层）。
+    冲突处理：只有 kind=style 的 Skill 可进风格层（流程型/未知 kind 拒绝）；
+    与当前主流程同 slug 的条目自动摘除；去重保序；上限 MAX_STYLE_LAYERS。
+    状态写入唯一走 StateManager；注入拼装与预算兜底见 prompt_builder。
+    """
+    svc = StateManager.get_instance()
+    primary = ""
+    active = svc.state_dict.get("activeSkill")
+    if isinstance(active, dict):
+        primary = str(active.get("slug") or "")
+    clean: List[str] = []
+    for raw_slug in body.slugs or []:
+        slug = str(raw_slug or "").strip()
+        if not slug or slug in clean or slug == primary:
+            continue
+        if not get_skill_doc(slug):
+            raise VideoAgentError(
+                f"Skill '{slug}' 不存在", status_code=404,
+                error_code=LEGACY_NOT_FOUND,
+            )
+        # 注入策略维度判定（未声明 kind 降级 pipeline → 同样拒绝进风格层）
+        if skill_registry.skill_injection_kind(slug) != "style":
+            raise VideoAgentError(
+                f"Skill '{slug}' 不是风格型（kind=style），不能作为风格层叠加；"
+                "流程型 Skill 只能作为主流程激活",
+                status_code=400, error_code=LEGACY_VALIDATION_ERROR,
+            )
+        clean.append(slug)
+        if len(clean) >= skill_registry.MAX_STYLE_LAYERS:
+            break
+    svc.set_style_skills(clean)
+    for slug in clean:
+        svc.record_used_skill(slug)
+    svc.record_flow_event(
+        "skill_styles",
+        f"风格层清单更新：{'、'.join(clean) if clean else '（全部摘除）'}",
+    )
+    logger.info(f"[Skills] 风格层组合更新: {clean or '（摘除）'}")
+    return {"ok": True, "style_skills": svc.state_dict.get("styleSkills") or []}
 
 
 class SkillDocSave(BaseModel):

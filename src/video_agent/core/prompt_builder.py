@@ -56,6 +56,11 @@ _SKILL_BOUNDARY_STATEMENT = (
 # 与 read_skill 短路判定（fc_tool_runner._skill_full_text_injected）同口径。
 GENERIC_FULL_INJECT_LIMIT = 20000
 
+# 组合注入观察线（任务 #11：1 pipeline 可选 + N style 层）：
+# 主流程块 + 风格层组合块合计超过此值时，风格层先强制走既有分级注入；
+# 仍超限则按清单顺序截断（被截风格层记 warning，不静默）。
+STYLE_COMBO_SOFT_LIMIT = GENERIC_FULL_INJECT_LIMIT * 2
+
 # v3 元数据头展示标签（kind 目录口径 + 暂停 trigger 文案）
 _KIND_LABELS = {
     "pipeline": "流程型（固定流水线）",
@@ -152,6 +157,13 @@ class PromptBuilder:
         selected_block = ""
         if context.skill_name:
             selected_block = self.build_selected_skill_block(context.skill_name)
+        # 组合激活（任务 #11）：风格层块拼在选中主流程块之后（同样近生成端）；
+        # 无主流程时风格层单独生效（1 pipeline 可选）
+        combo_block = self.build_style_combo(len(selected_block))
+        if combo_block:
+            selected_block = (
+                selected_block + "\n\n" + combo_block if selected_block else combo_block
+            )
         self._state_json = state_json
         self._selected_block = selected_block
 
@@ -333,6 +345,22 @@ class PromptBuilder:
                 "按分级注入规则给章节目录，按需 read_skill 续读）；"
                 "其他 Skill 需要时仍要先 read_skill。"
             )
+        # 组合激活（任务 #11）：风格层叠加时目录段同步告知，免模型另去推测
+        if self._get_raw_state is not None:
+            try:
+                raw = self._get_raw_state() or {}
+                style_names: List[str] = []
+                for s in skill_registry.style_skills_from_state(raw):
+                    entry = skill_registry.resolve_entry(s)
+                    style_names.append(entry.name if entry is not None else s)
+                if style_names:
+                    header += (
+                        "\n另有风格层叠加生效："
+                        + "、".join(style_names)
+                        + "（全文已在下方随选中 Skill 一并注入）。"
+                    )
+            except Exception:
+                pass
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
@@ -361,6 +389,107 @@ class PromptBuilder:
         # 平台边界声明包壳：代码拼接，不改 skill 文件；
         # 声明 skill 内容效力从属于用户指令与平台铁律
         return _SKILL_BOUNDARY_STATEMENT + "\n\n" + assembled
+
+    # ---------- 组合激活（任务 #11：1 pipeline 可选 + N style 层） ----------
+
+    def _build_one_style_block(self, slug: str, force_tiered: bool = False) -> str:
+        """单个风格层注入块：元数据头 + 通用注入形态（kind 语义自动带上）。
+
+        不重复包平台边界声明（组合外层已有包壳/声明，不重复占预算）；
+        解析失败/空内容返回空串（单个坏风格层不阻断其余注入）。"""
+        try:
+            kind = skill_registry.skill_injection_kind(slug)
+        except Exception:
+            kind = "style"
+        block = self.build_generic_skill_block(slug, kind, force_tiered=force_tiered)
+        if not block:
+            return ""
+        header = self.build_skill_metadata_header(slug)
+        return (header + "\n\n" + block) if header else block
+
+    def build_style_combo(self, primary_len: int = 0) -> str:
+        """风格层组合注入块（拼在选中主流程块之后）。
+
+        预算口径（组合注入不得无节制膨胀）：
+        ① 每个风格层自身超 2 万字照既有分级注入；
+        ② 主流程块 + 组合块合计超 STYLE_COMBO_SOFT_LIMIT 观察线 →
+          全部风格层强制改分级注入（既有机制）；
+        ③ 仍超限 → 按清单顺序保留前几个，被截风格层记 warning 并留模型可见注记。
+        无风格层/无 raw state 返回空串（存量行为零变化）。
+        """
+        if self._get_raw_state is None:
+            return ""
+        try:
+            raw = self._get_raw_state() or {}
+        except Exception:
+            return ""
+        styles = skill_registry.style_skills_from_state(raw)
+        if not styles:
+            return ""
+        # 与主流程同 slug 不双注入（路由层已摈除，此处兜底）
+        primary_slug = ""
+        active = raw.get("activeSkill")
+        if isinstance(active, dict):
+            primary_slug = str(active.get("slug") or "")
+        if primary_slug:
+            styles = [s for s in styles if s != primary_slug]
+        if not styles:
+            return ""
+
+        def _assemble(slugs: List[str], forced: bool) -> Tuple[List[str], List[str]]:
+            """返回 (块清单, 展示名清单)，空块丢弃。"""
+            blocks: List[str] = []
+            names: List[str] = []
+            for s in slugs:
+                b = self._build_one_style_block(s, force_tiered=forced)
+                if not b:
+                    continue
+                blocks.append(b)
+                entry = skill_registry.resolve_entry(s)
+                names.append(entry.name if entry is not None else s)
+            return blocks, names
+
+        def _header(names: List[str]) -> str:
+            return render_prompt(
+                "shared/skill_style_combo.md",
+                count=len(names), names="、".join(names)) or ""
+
+        blocks, names = _assemble(styles, forced=False)
+        if not blocks:
+            return ""
+        assembled = _header(names) + "\n\n" + "\n\n".join(blocks)
+        if primary_len + len(assembled) > STYLE_COMBO_SOFT_LIMIT:
+            # 兜底第一级：全部风格层强制分级注入（既有机制，不新造裁剪通道）
+            logger.warning(
+                f"[PromptBuilder] 风格层组合超观察线（主流程块 {primary_len} + 组合 "
+                f"{len(assembled)} > {STYLE_COMBO_SOFT_LIMIT}），强制分级注入")
+            blocks, names = _assemble(styles, forced=True)
+            if not blocks:
+                return ""
+            assembled = _header(names) + "\n\n" + "\n\n".join(blocks)
+        if primary_len + len(assembled) > STYLE_COMBO_SOFT_LIMIT:
+            # 兜底第二级：按清单顺序截断（留前舍后，被截风格层记 warning）
+            kept: List[str] = []
+            kept_names: List[str] = []
+            size = 0
+            for b, n in zip(blocks, names):
+                if size + len(b) + primary_len > STYLE_COMBO_SOFT_LIMIT and kept:
+                    break
+                kept.append(b)
+                kept_names.append(n)
+                size += len(b)
+            dropped = names[len(kept):]
+            if dropped:
+                logger.warning(
+                    f"[PromptBuilder] 风格层组合仍超观察线，按顺序截断："
+                    f"未注入 {dropped}")
+            assembled = _header(kept_names) + "\n\n" + "\n\n".join(kept)
+            if dropped:
+                assembled += (
+                    f"\n\n（另有风格层因组合超预算暂缓注入：{'、'.join(dropped)}；"
+                    "需要时可用 read_skill 按需阅读）"
+                )
+        return assembled
 
     def build_skill_metadata_header(self, skill_name: str) -> str:
         """frontmatter 元数据头：version/source / kind / requires_inputs 未满足项 /
@@ -433,13 +562,17 @@ class PromptBuilder:
             + "\n".join(lines)
         )
 
-    def build_generic_skill_block(self, skill_name: str, kind: str = "pipeline") -> str:
+    def build_generic_skill_block(
+        self, skill_name: str, kind: str = "pipeline", force_tiered: bool = False,
+    ) -> str:
         """通用主路径注入块：全文直注或分级注入。
 
         - ≤ GENERIC_FULL_INJECT_LIMIT：全文直注（超 max_doc_chars 硬截断）；
         - 超长：planner 章节全文 + 章节目录（标题+字符区间）+ 续读指令，
           其余章节由模型执行对应环节前调 read_skill（section/start）续读。
         本块为选中 Skill 的唯一注入形态。
+        force_tiered：组合注入超预算时的强制分级开关（任务 #11，
+        复用既有分级机制，不新造裁剪通道）。
         """
         sd = self._get_skill_docs()
         try:
@@ -451,7 +584,7 @@ class PromptBuilder:
         if not content:
             return ""
         discipline = load_prompt("planner/skill_discipline.md") or ""
-        if len(content) <= GENERIC_FULL_INJECT_LIMIT:
+        if not force_tiered and len(content) <= GENERIC_FULL_INJECT_LIMIT:
             # 全文直注（与旧兜底同口径：max_doc_chars 硬截断防撑爆上下文）
             body = content
             if len(body) > settings.max_doc_chars:

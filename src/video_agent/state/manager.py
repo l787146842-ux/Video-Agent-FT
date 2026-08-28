@@ -391,6 +391,15 @@ class StateManager(UndoRedoMixin):
         }
         self.save()
 
+    def set_style_skills(self, slugs: List[str]) -> None:
+        """写入项目态叠加风格层清单（任务 #11：1 pipeline 可选 + N style 层）。
+
+        只存清洗后的 slug 清单（去重保序由调用方/消费方清洗保障，
+        此处原样落盘）；空清单 = 摘除全部风格层。与 activeSkill/usedSkills
+        同属项目事实（随完整快照下发前端），不走 update（避免污染 undo 栈）。"""
+        self._raw_state["styleSkills"] = [str(s) for s in (slugs or [])]
+        self.save()
+
     def record_flow_event(self, kind: str, detail: str) -> None:
         """记录一条流程事件（截断/部分完成等事实进账本）。
 
