@@ -39,7 +39,8 @@ GATES: List[Tuple[str, List[str]]] = [
         # 退役条件：白名单清偿归零后降级为零白名单硬门禁，样式体系迁离 tokens.css
         # 时方可裁决整体退役（详见脚本头部注释，§13.14(c)）。
         ("semantic_colors", [sys.executable, "scripts/check_semantic_colors.py"]),
-    # 退役条件：方法内 import 存量清零且基线冻结后裁决下账（宪法 §六 禁令内化）。
+    # 退役条件：合法存量清单自然缩减至空并删除基线文件后裁决下账（宪法 §六 禁令内化；
+    # 存量均为合法 lazy import 已裁决长期保留，本闸为纯防新增断言，基线只减不增）。
     ("func_imports", [sys.executable, "scripts/check_func_imports.py"]),
     # 退役条件：类别 Key 硬编码字面量清零、CAT_* 单一事实源全域收敛时裁决下账。
     ("category_keys", [sys.executable, "scripts/check_category_keys.py"]),

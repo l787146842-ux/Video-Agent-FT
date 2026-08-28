@@ -5,13 +5,11 @@ src/video_agent/adapters/factory.py:88:agy_cli
 src/video_agent/adapters/factory.py:89:video_compat
 src/video_agent/adapters/openai_compat.py:270:src.video_agent.core.live_metrics
 src/video_agent/adapters/openai_compat.py:457:src.video_agent.utils.stream_notify
-src/video_agent/adapters/video_compat.py:372:asyncio
 src/video_agent/adapters/video_compat.py:392:base64
 src/video_agent/adapters/video_compat.py:393:pathlib
 src/video_agent/adapters/video_compat.py:394:urllib.parse
 src/video_agent/core/__init__.py:18:planner
 src/video_agent/core/__init__.py:21:agent
-src/video_agent/core/action_executor.py:215:src.video_agent.core.spec_rules
 src/video_agent/core/gates_cards.py:338:src.video_agent.skill_runtime.registry
 src/video_agent/core/gates_cards.py:369:src.video_agent.core
 src/video_agent/core/gates_cards.py:400:src.video_agent.skill_runtime.registry
@@ -72,9 +70,7 @@ src/video_agent/web/generation_dispatch.py:88:src.video_agent.core.provider_conf
 src/video_agent/web/generation_submit.py:308:time
 src/video_agent/web/generation_submit.py:310:src.video_agent.utils
 src/video_agent/web/generation_submit.py:311:src.video_agent.core.prompt_refs
-src/video_agent/web/generation_submit.py:315:src.video_agent.core.provider_config
 src/video_agent/web/generation_submit.py:316:src.video_agent.web.task_manager
-src/video_agent/web/generation_submit.py:361:src.video_agent.web.providers
 src/video_agent/web/generation_submit.py:58:time
 src/video_agent/web/generation_submit.py:60:src.video_agent.utils
 src/video_agent/web/generation_submit.py:61:src.video_agent.core.prompt_refs
