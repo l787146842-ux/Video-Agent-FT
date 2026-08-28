@@ -14,6 +14,7 @@ import {
 import { insertRequestCount, takeInsertRequests } from '@/lib/chat/chat-input-bridge';
 import { t } from '@/lib/locale';
 import { useCanvasMention } from '@/hooks/use-canvas-mention';
+import { selectCanvasNodes } from '@/api/canvas';
 import type { CanvasNodeImageItem } from '@/api/canvas';
 import type { InlineMedia } from '@/types';
 
@@ -80,8 +81,18 @@ export function useChatEditor() {
     return null;
   }
 
+  /** 反向联动：@ 选中画布节点图片后，同步把源节点设为画布当前选中。
+   * item.id 形如 node-{nodeId}-{序}（后端 /api/canvas/node-images 与选中态同口径）；
+   * 失败不影响插入主流程。 */
+  function syncSelectionToCanvas(item: CanvasNodeImageItem) {
+    const m = /^node-(.+)-\d+$/.exec(item.id);
+    if (!m) return;
+    void selectCanvasNodes([m[1]]).catch(() => { /* 联动失败静默 */ });
+  }
+
   /** 选中一个 @ 图片：把光标处的 @query 替换为内联缩略块 */
   function selectMentionItem(item: CanvasNodeImageItem) {
+    syncSelectionToCanvas(item);
     const el = editorEl;
     const sel = window.getSelection();
     if (!el || !sel || !sel.rangeCount) { mention.closeMention(); return; }

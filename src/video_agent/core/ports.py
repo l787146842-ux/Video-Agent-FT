@@ -28,6 +28,8 @@ monkeypatch 在测试期照常生效。
                     （web 装配适配器 → task_manager.record_gen_log）
 - skill_docs      ：list_skill_docs / resolve_skill_content /
                     split_skill_sections 等（web/skill_docs.py）
+- assets          ：iter_items（本地素材库扫描；
+                    web/routes/assets_library.py）
 """
 from typing import Any, Dict, Optional
 
@@ -45,6 +47,7 @@ def install_ports(
     provider_config: Optional[Any] = None,
     task_log: Optional[Any] = None,
     skill_docs: Optional[Any] = None,
+    assets: Optional[Any] = None,
 ) -> None:
     """装配端口（幂等；只覆盖本次传入的非 None 端口）。"""
     if generation is not None:
@@ -55,6 +58,8 @@ def install_ports(
         _PORTS["task_log"] = task_log
     if skill_docs is not None:
         _PORTS["skill_docs"] = skill_docs
+    if assets is not None:
+        _PORTS["assets"] = assets
 
 
 def clear_ports() -> None:
@@ -92,3 +97,8 @@ def task_log_port() -> Any:
 def skill_docs_port() -> Any:
     """Skill 文档域端口（实现 = web/skill_docs.py）"""
     return _port("skill_docs")
+
+
+def assets_port() -> Any:
+    """本地素材库端口（iter_items 扫描；实现 = web/routes/assets_library.py）"""
+    return _port("assets")

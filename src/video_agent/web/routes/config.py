@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from loguru import logger
 from pydantic import BaseModel
 
+from src.video_agent.adapters.infinite_canvas_backend import resolve_canvas_agent_token
 from src.video_agent.config import settings
 from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.utils.fileio import atomic_write_text
@@ -54,16 +55,32 @@ def _apply_runtime_overrides() -> None:
 _apply_runtime_overrides()
 
 
+def _bound_to_loopback() -> bool:
+    """服务是否仅回环绑定（决定 agent_token 可否下发前端）；
+    0.0.0.0/其他地址绑定局域网可达，下发真实 token 会泄漏画布写入口"""
+    return (settings.host or "").strip().lower() in ("127.0.0.1", "localhost", "::1")
+
+
 @router.get("/config")
 async def get_config():
     """前端 loadCanvasApiConfig() 调用"""
-    return {
+    resp = {
         "chat_models": DEFAULT_CHAT_MODELS,
         "image_models": DEFAULT_IMAGE_MODELS,
         "video_models": DEFAULT_VIDEO_MODELS,
-        "canvas_url": settings.canvas_base_url,
+        "canvas_url": settings.infinite_canvas_url,
         "model_fallback_enabled": bool(settings.model_fallback_enabled),
     }
+    # 嵌入引导参数（画布站点 / canvas-agent 地址 / token，仅本机回环使用）：
+    # 前端据此拼 iframe src {站点}/#agentUrl=...&agentToken=...
+    # 安全闸：非回环绑定时不下发真实 token（返回空串），回环时行为不变；
+    # 下发范围说明见 docs/配置说明.md 画布集成迁移说明段。
+    resp["infinite_canvas_embed"] = {
+        "canvas_url": settings.infinite_canvas_url,
+        "agent_url": settings.canvas_agent_url,
+        "agent_token": resolve_canvas_agent_token() if _bound_to_loopback() else "",
+    }
+    return resp
 
 
 class ModelFallbackPatch(BaseModel):

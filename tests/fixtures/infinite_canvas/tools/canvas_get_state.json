@@ -1,0 +1,23 @@
+{
+  "request": {
+    "name": "canvas_get_state",
+    "input": {}
+  },
+  "response": {
+    "ok": true,
+    "result": {
+      "projectId": "o2ZLrMMy3tXKvPUAuW3dM",
+      "title": "无限画布 1",
+      "nodes": [],
+      "connections": [],
+      "selectedNodeIds": [],
+      "viewport": {
+        "x": 0,
+        "y": 0,
+        "k": 1
+      },
+      "hasCanvas": true,
+      "clientId": "o8BgRS_qHfKAWmeOcTbEh"
+    }
+  }
+}

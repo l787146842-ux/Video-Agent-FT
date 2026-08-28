@@ -10,7 +10,6 @@ from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.core.action_executor import StateOperationExecutor
-from src.video_agent.core import provider_config as pc
 
 
 def _async_return(value):
@@ -18,14 +17,6 @@ def _async_return(value):
     async def _f():
         return value
     return _f
-
-
-@pytest.fixture(autouse=True)
-def reset_provider_cache():
-    """供应商合并结果带 TTL 缓存：每个用例前清空，避免串用其他夹具的临时配置。"""
-    pc.reset_provider_caches()
-    yield
-    pc.reset_provider_caches()
 
 
 @pytest.fixture

@@ -1,0 +1,50 @@
+{
+  "request": {
+    "name": "canvas_apply_ops",
+    "input": {
+      "ops": [
+        {
+          "type": "update_node",
+          "id": "fixture-scratch-node",
+          "metadata": {
+            "content": "fixture-updated"
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "ok": true,
+    "result": {
+      "projectId": "o2ZLrMMy3tXKvPUAuW3dM",
+      "title": "无限画布 1",
+      "nodes": [
+        {
+          "id": "fixture-scratch-node",
+          "type": "text",
+          "title": "契约夹具临时节点",
+          "position": {
+            "x": -9000,
+            "y": -9000
+          },
+          "width": 240,
+          "height": 120,
+          "metadata": {
+            "content": "fixture-updated",
+            "status": "idle",
+            "fontSize": 14
+          }
+        }
+      ],
+      "connections": [],
+      "selectedNodeIds": [
+        "fixture-scratch-node"
+      ],
+      "viewport": {
+        "x": 0,
+        "y": 0,
+        "k": 1
+      }
+    }
+  }
+}

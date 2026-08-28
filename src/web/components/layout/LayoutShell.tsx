@@ -28,10 +28,9 @@ import {
 import { uid } from '@/lib/utils';
 import { bootFail, warnBootTaskResume } from '@/lib/boot-fallback';
 import type { AssetPickerItem } from '@/api/providers';
-import { initCanvasBridge, broadcastThemeChange } from '@/lib/canvas-bridge';
-import { useTheme } from '@/hooks/use-theme';
 import {
   setCanvasIframe, setCanvasError, canvasOverlayDragging,
+  setCanvasEmbed, canvasIframeSrc,
 } from '@/stores/canvas';
 
 /**
@@ -45,7 +44,6 @@ import {
  */
 export function LayoutShell(props: ParentProps) {
   const location = useLocation();
-  const { theme } = useTheme();
   const [headerHidden, setHeaderHidden] = createSignal(false);
   const [loading, setLoading] = createSignal(true);
 
@@ -98,8 +96,8 @@ export function LayoutShell(props: ParentProps) {
     // 全局生成事件总线：agent/批量生成驱动卡片转圈 + 生成日志联动
     initGenerationEvents();
 
-    // 画布 iframe 卸载时清引用（画布当前不发送 postMessage，无需监听握手；
-    // 在线状态经后端 API 探测，见 stores/canvas.probeCanvasOnline）
+    // 画布 iframe 卸载时清引用（在线状态经后端 API 探测，
+    // 见 stores/canvas.probeCanvasOnline；跨源 postMessage 通道已移除）
     onCleanup(() => setCanvasIframe(undefined));
 
     // 全局生成设置（顶栏入口/参数栏自动填充共用）预热加载
@@ -134,6 +132,8 @@ export function LayoutShell(props: ParentProps) {
       providers: (provs?.providers || []).filter((p) => p.enabled !== false),
       skills: skills ?? undefined,
     });
+    // 后端下发的画布嵌入引导参数（画布站点 / canvas-agent / token）
+    setCanvasEmbed(cfg?.infinite_canvas_embed);
     setLoading(false);
   });
 
@@ -154,23 +154,17 @@ export function LayoutShell(props: ParentProps) {
     void resumeAgentTasks(pid);
   });
 
-  // 画布 iframe 初始化：等待 loading 结束后 DOM 就绪，设置 src 并启动桥接
-  let bridgeInitialized = false;
+  // 画布 iframe 初始化：等待 loading 结束后 DOM 就绪，设置引导 src（后端配置下发）
+  let iframeInitialized = false;
   createEffect(() => {
-    if (loading() || bridgeInitialized) return;
+    if (loading() || iframeInitialized) return;
     // Show 渲染后 iframe 才在 DOM 中，等待一帧确保 ref 就绪
     requestAnimationFrame(() => {
-      if (bridgeInitialized || !canvasIframeRef) return;
-      bridgeInitialized = true;
+      if (iframeInitialized || !canvasIframeRef) return;
+      iframeInitialized = true;
       setCanvasIframe(canvasIframeRef);
-      canvasIframeRef.src = state.canvasUrl || 'http://127.0.0.1:3000';
-      initCanvasBridge(() => canvasIframeRef);
+      canvasIframeRef.src = canvasIframeSrc();
     });
-  });
-
-  // 主题变更 → 通知画布（当前唯一生效的画布 postMessage 通道）
-  createEffect(() => {
-    broadcastThemeChange(theme());
   });
 
   return (

@@ -1,0 +1,30 @@
+{
+  "request": {
+    "name": "canvas_apply_ops",
+    "input": {
+      "ops": [
+        {
+          "type": "delete_node",
+          "ids": [
+            "fixture-scratch-node"
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "ok": true,
+    "result": {
+      "projectId": "o2ZLrMMy3tXKvPUAuW3dM",
+      "title": "无限画布 1",
+      "nodes": [],
+      "connections": [],
+      "selectedNodeIds": [],
+      "viewport": {
+        "x": 0,
+        "y": 0,
+        "k": 1
+      }
+    }
+  }
+}

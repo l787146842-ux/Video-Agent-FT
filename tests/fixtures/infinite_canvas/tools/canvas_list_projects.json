@@ -1,0 +1,28 @@
+{
+  "request": {
+    "name": "canvas_list_projects",
+    "input": {
+      "page": 1,
+      "pageSize": 100
+    }
+  },
+  "response": {
+    "ok": true,
+    "result": {
+      "total": 1,
+      "page": 1,
+      "pageSize": 100,
+      "items": [
+        {
+          "id": "o2ZLrMMy3tXKvPUAuW3dM",
+          "title": "无限画布 1",
+          "createdAt": "2026-08-27T17:34:36.468Z",
+          "updatedAt": "2026-08-27T17:34:37.079Z",
+          "nodeCount": 0,
+          "connectionCount": 0
+        }
+      ],
+      "hint": "用 site_navigate 跳转 /canvas/{id} 打开对应画布"
+    }
+  }
+}

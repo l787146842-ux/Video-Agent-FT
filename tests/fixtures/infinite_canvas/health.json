@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "protocolVersion": 6,
+  "hasCanvas": true,
+  "clients": 1,
+  "codexBusy": false,
+  "conversation": {
+    "revision": 3,
+    "conversationId": "f5616dfb-6228-402e-970a-bca920d709ed",
+    "threadId": "",
+    "status": "failed",
+    "mcpStatuses": {},
+    "sourceClientId": "o8BgRS_qHfKAWmeOcTbEh",
+    "error": "Codex app-server exited: 1"
+  }
+}

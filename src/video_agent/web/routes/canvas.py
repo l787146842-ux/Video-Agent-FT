@@ -1,13 +1,15 @@
 """
-画布交互路由 — 对话栏生成的图片拖放进画布画布。
+画布交互路由 — 对话栏生成的图片拖放进画布、画布图片回读、选中态读取。
 
-背景：本项目与画布画布跨域（iframe 嵌入），浏览器原生 HTML5 拖拽事件
+背景：本项目与画布跨域（iframe 嵌入），浏览器原生 HTML5 拖拽事件
 不会投递进跨域 iframe（实证：同源 iframe 可投递，跨域完全不投递），
-因此前端在拖拽时显示自有放置层捕获落点，再调本接口经 CanvasAdapter
-走画布既有公开 HTTP API 写入图片节点（Rule 4: 只走 Adapter；Rule 7: 不改画布）。
+因此前端在拖拽时显示自有放置层捕获落点，再调本接口经 CanvasBackend
+协议写入图片节点（Rule 4: 只走 Adapter；Rule 7: 不改画布）。
+路由层不判后端类型，响应契约前端零感知。
 """
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
@@ -15,6 +17,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
+from src.video_agent.adapters.canvas_schema import INFINITE_CANVAS_IMAGE_MEDIA_FIELD
 from src.video_agent.config import settings
 from src.video_agent.state.models import CAT_SHOTS
 from src.video_agent.exceptions import AdapterError
@@ -68,11 +71,48 @@ def _local_asset_path(url: str) -> Optional[Path]:
     return full if full.exists() else None
 
 
-def _absolutize(url: str, request: Request) -> str:
-    """相对 URL 转绝对（供画布服务侧引用本项目图片）。"""
+def _node_image_refs(node: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """提取节点内图片引用 (url, name)：infinite-canvas image 节点读 metadata.content；
+    防御性兜底读 node.url/src/data.url。"""
+    refs: List[Tuple[str, str]] = []
+    meta = node.get("metadata")
+    if isinstance(meta, dict) and str(node.get("type") or "") == "image":
+        url = str(meta.get(INFINITE_CANVAS_IMAGE_MEDIA_FIELD) or "").strip()
+        if url:
+            refs.append((url, str(node.get("title") or "")))
+            return refs
+    direct_url = node.get("url") or node.get("src") or ""
+    if not direct_url and isinstance(node.get("data"), dict):
+        direct_url = node["data"].get("url") or node["data"].get("src") or ""
+    if direct_url:
+        refs.append((str(direct_url), str(node.get("name") or node.get("title") or "")))
+    return refs
+
+
+def _absolutize_canvas_url(url: str) -> str:
+    """相对地址补全为画布站点绝对地址（防御性兜底；写入时已绝对化）。
+    兜底基址用画布站点（settings.infinite_canvas_url）：adapter.base_url
+    现为 canvas-agent，无静态服务。"""
     if url.startswith(("http://", "https://", "data:", "blob:")):
         return url
-    return f"{str(request.base_url).rstrip('/')}/{url.lstrip('/')}"
+    base = (settings.infinite_canvas_url or "").rstrip("/")
+    return f"{base}{url if url.startswith('/') else '/' + url}"
+
+
+def _parse_updated_at(value: Any) -> int:
+    """updatedAt 兼容数值毫秒与 ISO 字符串（夹具/契约口径为 ISO 时间戳）"""
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str) and value.strip():
+        raw = value.strip()
+        try:
+            return int(raw)
+        except ValueError:
+            try:
+                return int(datetime.fromisoformat(raw).timestamp() * 1000)
+            except ValueError:
+                return 0
+    return 0
 
 
 @router.get("/canvas/node-images")
@@ -105,17 +145,15 @@ async def list_canvas_node_images():
     items = []
     seen_urls: set = set()
     for node in canvas.get("nodes") or []:
-        for img in node.get("images") or []:
-            url = (img.get("url") or "").strip()
+        for ref_url, ref_name in _node_image_refs(node):
+            url = ref_url.strip()
             if not url or url in seen_urls:
                 continue
             seen_urls.add(url)
-            # 相对地址补全为画布源绝对地址
-            if not url.startswith(("http://", "https://", "data:", "blob:")):
-                url = f"{adapter.base_url}{url if url.startswith('/') else '/' + url}"
+            url = _absolutize_canvas_url(url)
             items.append({
                 "id": f"node-{node.get('id', '')}-{len(items)}",
-                "name": img.get("name") or f"image-{len(items) + 1}",
+                "name": ref_name or f"image-{len(items) + 1}",
                 "url": url,
                 "thumb": url,
                 "category": "画布节点",
@@ -142,7 +180,7 @@ async def list_canvases_for_picker():
             "id": c.get("id", ""),
             "title": c.get("title", "未命名画布"),
             "kind": str(c.get("kind") or "normal").strip().lower(),
-            "updated_at": int(c.get("updated_at") or 0),
+            "updated_at": _parse_updated_at(c.get("updatedAt", c.get("updated_at"))),
         }
         for c in canvases
         if not c.get("deleted_at")
@@ -157,7 +195,6 @@ async def list_all_canvas_node_images(canvas_id: str = ""):
     """返回指定画布（或当前活跃画布）中节点内的图片。
 
     canvas_id 参数：指定画布 ID（手动画布选择器）；空则自动推断最近活跃画布。
-    智能画布读 node.images[]，普通画布防御性读取 node.url/src。
     供中间预览框右键"导入画布内的图片"弹窗使用（只读，Rule 7）。
     """
     adapter = get_canvas_adapter()
@@ -205,8 +242,7 @@ async def list_all_canvas_node_images(canvas_id: str = ""):
         if not url or url in seen_urls:
             return
         seen_urls.add(url)
-        if not url.startswith(("http://", "https://", "data:", "blob:")):
-            url = f"{adapter.base_url}{url if url.startswith('/') else '/' + url}"
+        url = _absolutize_canvas_url(url)
         items.append({
             "id": f"{cv_id}-{len(items)}",
             "name": name or f"image-{len(items) + 1}",
@@ -217,41 +253,31 @@ async def list_all_canvas_node_images(canvas_id: str = ""):
         })
 
     for node in canvas.get("nodes") or []:
-        # 智能画布：node.images[] 数组
-        for img in node.get("images") or []:
-            _add_url(img.get("url") or "", img.get("name") or "")
-        # 普通画布防御性读取：node.url / node.src / node.data.url
-        if not (node.get("images") or []):
-            direct_url = node.get("url") or node.get("src") or ""
-            if not direct_url and isinstance(node.get("data"), dict):
-                direct_url = node["data"].get("url") or node["data"].get("src") or ""
-            if direct_url:
-                _add_url(direct_url, node.get("name") or node.get("title") or "")
+        for ref_url, ref_name in _node_image_refs(node):
+            _add_url(ref_url, ref_name)
 
     return {"items": items, "canvas_online": True, "canvas_title": cv_title, "canvas_kind": cv_kind}
 
 
 @router.post("/canvas/drop-image")
 async def drop_image_to_canvas(body: CanvasDropImageRequest, request: Request):
-    """把一张图片写入指定画布（或当前活跃画布），根据画布类型创建对应节点格式。"""
+    """把一张图片写入指定画布（或当前活跃画布），创建图片节点。
+
+    图片引用物化经协议 prepare_drop_image 落地：无二次上传，
+    节点直接引用素材绝对 URL。"""
     adapter = get_canvas_adapter()
 
     name = body.name or Path(urlparse(body.url).path).name or "image.png"
 
-    # 1) 本地素材：读字节并上传到画布素材库
-    image_url = ""
+    # 1) 物化图片引用（后端差异在协议实现内吸收）
     local = _local_asset_path(body.url)
-    if local:
-        mime = _MIME_BY_SUFFIX.get(local.suffix.lower(), "image/png")
-        try:
-            uploaded = await adapter.upload_files([(local.name, local.read_bytes(), mime)])
-            if uploaded:
-                image_url = uploaded[0]["url"]
-                name = uploaded[0].get("name") or name
-        except AdapterError as exc:
-            logger.warning(f"[CanvasDrop] 上传画布素材库失败，回退为引用本站 URL: {exc}")
-    if not image_url:
-        image_url = _absolutize(body.url, request)
+    mime = _MIME_BY_SUFFIX.get(local.suffix.lower(), "image/png") if local else "image/png"
+    prepared = await adapter.prepare_drop_image(
+        url=body.url, name=name, local_path=local, mime=mime,
+        public_base=str(request.base_url),
+    )
+    image_url = str(prepared.get("url") or "")
+    name = str(prepared.get("name") or name)
 
     # 2) 定位目标画布：优先用前端指定的 canvas_id
     target = None
@@ -282,6 +308,38 @@ async def drop_image_to_canvas(body: CanvasDropImageRequest, request: Request):
         canvas_kind=canvas_kind,
     )
     return {**result, "image_url": image_url}
+
+
+@router.get("/canvas/selection")
+async def get_canvas_selection():
+    """读取当前画布选中节点（转发适配器选中态读取）。
+
+    响应契约：{"supported": bool, "nodes": [...], "canvas_online": bool}。
+    经 canvas_get_selection 读取；离线/读取失败不抛错，回空选中。"""
+    adapter = get_canvas_adapter()
+    try:
+        online = await adapter.is_online()
+    except Exception:
+        online = False
+    if not online:
+        return {"supported": False, "nodes": [], "canvas_online": False}
+    try:
+        selection = await adapter.get_selection()
+    except AdapterError as exc:
+        logger.debug("[canvas] 选中态读取失败: {}", exc)
+        return {"supported": False, "nodes": [], "canvas_online": True}
+    return {**selection, "canvas_online": True}
+
+
+class CanvasSelectNodesRequest(BaseModel):
+    node_ids: List[str] = Field(..., description="要设为选中的画布节点 id 列表")
+
+
+@router.post("/canvas/select-nodes")
+async def select_canvas_nodes(body: CanvasSelectNodesRequest):
+    """反向联动：把指定节点设为画布当前选中（经适配器 canvas_select_nodes op）。"""
+    adapter = get_canvas_adapter()
+    return await adapter.select_nodes(body.node_ids)
 
 
 class TimelinePushRequest(BaseModel):

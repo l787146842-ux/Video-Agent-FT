@@ -119,8 +119,7 @@ const zhCN = {
   'rp.skillImport.save': '保存 Skill',
 
   // ---------- 画布视图 ----------
-  // 联动能力明示：画布 postMessage 协议未实现，当前仅素材读写经 HTTP API 生效
-  'canvas.linkage.pending': '画布联动开发中，当前支持素材同步',
+  // （选中态联动已实现：轮询 /api/canvas/selection + canvas_select_nodes 反向选中）
 
   // ---------- 消息卡片 ----------
   'rp.msg.docDone': '已完成',

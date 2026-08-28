@@ -35,6 +35,7 @@ from src.video_agent.web.routes.conversations import router as conversations_rou
 from src.video_agent.web.routes.generate import router as generate_router
 from src.video_agent.web.routes.plugins import router as plugins_router
 from src.video_agent.web.routes.upload import router as upload_router
+from src.video_agent.web.routes.assets_library import router as assets_library_router
 from src.video_agent.web.routes.canvas import router as canvas_router
 from src.video_agent.web.routes.cli_status import router as cli_status_router
 from src.video_agent.web.routes.runtime_settings import router as runtime_settings_router, load_runtime_settings
@@ -312,6 +313,7 @@ app.include_router(conversations_router, prefix="/api", tags=["conversations"])
 app.include_router(generate_router, prefix="/api", tags=["generate"])
 app.include_router(plugins_router, prefix="/api", tags=["plugins"])
 app.include_router(upload_router, prefix="/api", tags=["upload"])
+app.include_router(assets_library_router, prefix="/api", tags=["assets-library"])
 app.include_router(canvas_router, prefix="/api", tags=["canvas"])
 app.include_router(cli_status_router, prefix="/api", tags=["cli-status"])
 app.include_router(runtime_settings_router, prefix="/api", tags=["runtime-settings"])

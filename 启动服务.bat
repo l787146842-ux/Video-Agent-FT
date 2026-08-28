@@ -11,9 +11,11 @@ REM ============================================================
 REM THIS FILE MUST STAY 100% ASCII.
 REM Editors re-save it as UTF-8 and corrupt any non-ASCII byte
 REM (Chinese paths were destroyed twice this way). The Canvas
-REM directory is therefore discovered at runtime via ASCII
+REM directories are therefore discovered at runtime via ASCII
 REM wildcards below - never hardcode non-ASCII paths here.
 REM ============================================================
+REM The launcher always starts the infinite-canvas stack
+REM (canvas-agent + web dev server + Agent backend).
 
 REM Frontend artifact pre-check: dist is the only frontend; rebuild when missing
 REM or when src/web is newer than the artifact (build failure aborts launch)
@@ -53,32 +55,53 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":3000 " ^| findstr LISTENING
   if errorlevel 1 echo [cleanup] FAILED to kill PID %%p - access denied. Close its window manually or run this script as Administrator
 )
 
-REM Locate the Canvas project at runtime (ASCII wildcards only).
-REM Last match wins; today exactly one directory under E:\07* has main.py.
-set "CANVAS_DIR="
-for /d %%a in ("E:\07*") do (
-  for /d %%b in ("%%a\*") do if exist "%%b\main.py" set "CANVAS_DIR=%%b"
-)
-REM NEVER put unescaped ( ) inside echo text within a ( ) block: a literal
-REM ) closes the block early, and the pause/exit below then execute
-REM UNCONDITIONALLY - the launcher dies even when discovery succeeded.
-if not defined CANVAS_DIR (
-  echo [launcher] Canvas project not found under E:\07*\* - no main.py
-  pause
-  exit /b 1
-)
+REM ============================================================
+REM infinite-canvas stack
+REM ============================================================
 
-REM Start Canvas service (port 3000); child window keeps open on crash
-echo [1/2] Starting Canvas service (port 3000)...
-start "Canvas Server" cmd /c "chcp 65001 >nul & cd /d %CANVAS_DIR% && python main.py || (echo. & echo [launcher] Canvas exited with error - see log above & pause)"
+REM --- canvas-agent (port 17371) ---
+REM Launch the locked 0.6.0 package straight from the npx cache with node.
+REM NEVER call npx here: on this machine its download step can hang 10+
+REM minutes. The cache path below is pure ASCII and may stay hardcoded.
+set "CANVAS_AGENT_JS=C:\Users\ASUS\AppData\Local\npm-cache\_npx\9a1dd9a4da0bffe2\node_modules\@basketikun\canvas-agent\dist\index.js"
+netstat -ano | findstr ":17371 " | findstr LISTENING >nul 2>&1
+if not errorlevel 1 (
+  echo [launcher] canvas-agent already listening on 17371 - skip launch
+  goto CANVAS_SITE_FLOW
+)
+if not exist "%CANVAS_AGENT_JS%" (
+  echo [launcher] canvas-agent cache NOT found:
+  echo   %CANVAS_AGENT_JS%
+  echo [launcher] start it manually in another terminal, then rerun or connect by hand:
+  echo   npx -y @basketikun/canvas-agent@0.6.0
+  goto CANVAS_SITE_FLOW
+)
+echo [1/3] Starting canvas-agent (port 17371)...
+start "Canvas Agent" cmd /c "node "%CANVAS_AGENT_JS%" || (echo. & echo [launcher] canvas-agent exited with error - see log above & pause)"
 
-REM Wait for Canvas
+:CANVAS_SITE_FLOW
+REM --- infinite-canvas web dev server (port 3000) ---
+REM The repo lives outside this workspace in a non-ASCII directory;
+REM discover it at runtime via ASCII wildcards: E:\09*\*\web
+set "IC_WEB_DIR="
+for /d %%a in ("E:\09*") do (
+  for /d %%b in ("%%a\*") do if exist "%%b\web\package.json" set "IC_WEB_DIR=%%b\web"
+)
+if not defined IC_WEB_DIR (
+  echo [launcher] infinite-canvas web dir not found under E:\09*\*\web - no web\package.json
+  echo [launcher] start it manually: npm run dev inside the infinite-canvas web folder
+  goto START_AGENT_FLOW
+)
+echo [2/3] Starting infinite-canvas web dev server (port 3000)...
+start "Infinite Canvas Web" cmd /c "chcp 65001 >nul & cd /d "%IC_WEB_DIR%" && npm run dev || (echo. & echo [launcher] infinite-canvas web exited with error - see log above & pause)"
 timeout /t 3 /nobreak >nul
+goto START_AGENT_FLOW
 
-REM Start Agent service (port 8080); child window keeps open on crash
-echo [2/2] Starting Agent service (port 8080)...
+:START_AGENT_FLOW
+REM Start Agent service (port 8080); child window keeps open on crash.
+echo [3/3] Starting Agent service (port 8080)...
 set PORT=8080
-start "Agent Server" cmd /c "chcp 65001 >nul & cd /d %~dp0 && set PORT=8080 && python -m src.video_agent.web || (echo. & echo [launcher] Agent exited with error - see log above & pause)"
+start "Agent Server" cmd /c "chcp 65001 >nul & cd /d "%~dp0" && set PORT=8080 && python -m src.video_agent.web || (echo. & echo [launcher] Agent exited with error - see log above & pause)"
 
 REM Wait for Agent
 timeout /t 3 /nobreak >nul
@@ -88,5 +111,5 @@ echo.
 echo Opening Studio ...
 start http://localhost:8080/
 echo.
-echo Services started. Do not close the two console windows.
+echo Services started. Do not close the console windows.
 pause

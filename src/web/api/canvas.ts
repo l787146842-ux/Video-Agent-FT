@@ -2,7 +2,9 @@
  * 画布交互 API（对话栏图片拖入画布 + @ 菜单读取画布节点图片）
  */
 import { apiPost, apiFetch } from './client';
-import type { CanvasDropImageRequest, DropPoint, ViewSize } from '@/types/api.generated';
+import type {
+  CanvasDropImageRequest, CanvasSelectNodesRequest, DropPoint, ViewSize,
+} from '@/types/api.generated';
 
 /** 生成物 drop/view 为 unknown 粗型，精化为坐标/尺寸强类型（豁免清单登记） */
 export type CanvasDropImagePayload = CanvasDropImageRequest & {
@@ -80,4 +82,35 @@ export interface CanvasListResult {
 /** 获取所有未删除画布列表（供手动画布选择器使用） */
 export function fetchCanvasList(): Promise<CanvasListResult> {
   return apiFetch<CanvasListResult>('/api/canvas/list');
+}
+
+/** 画布选中节点（对端 compactNode 形状：id/type/title/metadata 等） */
+export interface CanvasSelectionNode {
+  id: string;
+  type?: string;
+  title?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CanvasSelectionResult {
+  supported: boolean;
+  nodes: CanvasSelectionNode[];
+  canvas_online: boolean;
+}
+
+/** 读取当前画布选中节点（轮询订阅） */
+export function fetchCanvasSelection(): Promise<CanvasSelectionResult> {
+  return apiFetch<CanvasSelectionResult>('/api/canvas/selection');
+}
+
+export interface CanvasSelectNodesResult {
+  supported: boolean;
+  selected: number;
+  reason?: string;
+}
+
+/** 反向联动：把指定节点设为画布当前选中 */
+export function selectCanvasNodes(nodeIds: string[]): Promise<CanvasSelectNodesResult> {
+  const body: CanvasSelectNodesRequest = { node_ids: nodeIds };
+  return apiPost<CanvasSelectNodesResult>('/api/canvas/select-nodes', body);
 }

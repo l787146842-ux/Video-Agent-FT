@@ -20,3 +20,9 @@ LOGS_DIR = PROJECT_ROOT / "logs"
 SKILL_DOCS_DIR = DATA_DIR / "skills"
 PROVIDERS_FILE = DATA_DIR / "api_providers.json"
 ENV_FILE = API_DIR / ".env"
+
+# 素材库元数据（本地化）
+# 分类/标签/展示名元数据；扫描事实源仍是 ASSETS_DIR 目录本身
+ASSET_LIBRARY_FILE = DATA_DIR / "asset_library.json"
+# 缩略图懒生成缓存目录（下划线前缀：素材扫描与列表接口一律跳过）
+ASSET_THUMBS_DIR = ASSETS_DIR / "_thumbs"

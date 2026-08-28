@@ -8,6 +8,7 @@ provider_config 端口实现位于 core/provider_config.py
 """
 from src.video_agent.core import ports, provider_config
 from src.video_agent.web import generation, skill_docs
+from src.video_agent.web.routes import assets_library
 from src.video_agent.web.task_manager import get_task_manager
 
 
@@ -24,6 +25,14 @@ class _TaskLogPort:
         )
 
 
+class _AssetsPort:
+    """本地素材库扫描端口（tools/canvas_list_assets 经此读取，
+    避免 tools 层对 web 层的反向依赖；只读复用 assets_library 扫描函数）。"""
+
+    def iter_items(self, category: str = "", q: str = ""):
+        return assets_library._iter_items(category, q)
+
+
 def install_core_ports() -> None:
     """把 web 层实现注入 core 端口注册表（幂等）。"""
     ports.install_ports(
@@ -31,4 +40,5 @@ def install_core_ports() -> None:
         provider_config=provider_config,
         skill_docs=skill_docs,
         task_log=_TaskLogPort(),
+        assets=_AssetsPort(),
     )

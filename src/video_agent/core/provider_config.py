@@ -14,13 +14,10 @@ import json
 import os
 import re
 import threading
-import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
-from src.video_agent.adapters.canvas_adapter import fetch_canvas_providers_sync
 from src.video_agent.config import settings
 from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS
 from src.video_agent.utils.fileio import atomic_write_text
@@ -74,98 +71,13 @@ def save_api_providers(providers: List[Dict[str, Any]]) -> None:
     logger.info(f"[ProviderConfig] 已保存 {len(providers)} 个供应商配置")
 
 
-# ---------- 画布配置共享（本地兜底 + 画布增强） ----------
-
-# 缓存画布 provider id 集合（路由判断用）
-_canvas_ids_cache: Optional[Set[str]] = None
-_canvas_ids_cache_time: float = 0.0
-
-
-def reset_provider_caches() -> None:
-    """清空供应商/画布缓存（测试隔离与配置热更新用）。"""
-    global _canvas_ids_cache, _canvas_ids_cache_time
-    _canvas_ids_cache = None
-    _canvas_ids_cache_time = 0.0
-
-
-def load_canvas_providers() -> List[Dict[str, Any]]:
-    """从画布读取 provider 配置（HTTP 优先，文件兜底）。
-    任何异常均静默返回 []，不影响 Agent 正常运行。"""
-    # 1. 尝试 HTTP API（Rule4/Rule7：画布交互统一经 canvas_adapter）
-    providers = fetch_canvas_providers_sync()
-    if providers:
-        logger.debug(f"[ProviderConfig] 从画布 HTTP 读取到 {len(providers)} 个 provider")
-        return providers
-
-    # 2. 兜底：读磁盘文件（环境变量未配置时跳过）
-    try:
-        if settings.canvas_providers_file:
-            canvas_file = Path(settings.canvas_providers_file)
-            if canvas_file.exists():
-                data = json.loads(canvas_file.read_text(encoding="utf-8"))
-                if isinstance(data, list) and data:
-                    logger.debug(f"[ProviderConfig] 从画布文件读取到 {len(data)} 个 provider")
-                    return data
-    except Exception:
-        pass  # 文件不存在或损坏，静默跳过
-
-    return []
-
+# ---------- provider 列表入口 ----------
 
 def load_merged_providers() -> List[Dict[str, Any]]:
-    """合并本地 + 画布的 provider 列表（按 id 去重，画布优先 + 模型并集）。
+    """provider 列表唯一入口（纯本地文件源 data/api_providers.json）。
 
-    合并规则：
-    - 两者 id 相同时，连接设置（base_url/protocol/name）用画布的（已验证）
-    - 模型列表（image_models/chat_models/video_models）取并集去重
-    - 画布没有而本地有的 provider，保留本地配置
-    - 本地没有而画布有的 provider，追加画布配置
-    同时更新 canvas_provider_ids 缓存供路由层使用。"""
-    global _canvas_ids_cache, _canvas_ids_cache_time
-
-    local = load_api_providers()
-    canvas = load_canvas_providers()
-
-    canvas_ids = {p.get("id") for p in canvas if p.get("id")}
-    local_map = {p.get("id"): p for p in local if p.get("id")}
-
-    _MODEL_FIELDS = ("image_models", "chat_models", "video_models")
-
-    # 画布优先：id 相同时用画布版本，但模型列表取并集
-    merged: List[Dict[str, Any]] = []
-    for p in canvas:
-        pid = p.get("id", "")
-        if not pid:
-            continue
-        item = dict(p)
-        item["_source"] = "canvas"
-        # 如果本地也有同 id 的 provider，合并模型列表
-        local_p = local_map.get(pid)
-        if local_p:
-            for field in _MODEL_FIELDS:
-                canvas_models = list(item.get(field) or [])
-                local_models = list(local_p.get(field) or [])
-                # 并集去重（保持顺序：画布在前，本地补充）
-                seen = set(canvas_models)
-                union = list(canvas_models)
-                for m in local_models:
-                    if m not in seen:
-                        union.append(m)
-                        seen.add(m)
-                item[field] = union
-        merged.append(item)
-
-    # 本地中 id 不在画布的追加（本地独有）
-    for p in local:
-        pid = p.get("id", "")
-        if pid and pid not in canvas_ids:
-            merged.append(p)
-
-    # 更新缓存（路由层用于判断 provider 是否画布可处理）
-    _canvas_ids_cache = canvas_ids
-    _canvas_ids_cache_time = time.time()
-
-    return merged
+    保留函数名与签名（调用面广），历史画布合并逻辑已随画布通道退役移除。"""
+    return load_api_providers()
 
 
 def exclude_retired_mock_providers(providers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -179,24 +91,8 @@ def exclude_retired_mock_providers(providers: List[Dict[str, Any]]) -> List[Dict
 
 
 async def load_merged_providers_async() -> List[Dict[str, Any]]:
-    """异步入口（聊天/工具/生成链路）：合并含画布 HTTP 拉取，事件循环内不阻塞。"""
+    """异步入口（聊天/工具/生成链路）：事件循环内不阻塞。"""
     return await asyncio.to_thread(load_merged_providers)
-
-
-def get_canvas_provider_ids() -> Set[str]:
-    """获取画布的 provider id 集合（带缓存，供路由层判断用）"""
-    global _canvas_ids_cache, _canvas_ids_cache_time
-    cache_ttl = settings.canvas_health_cache_seconds
-    if _canvas_ids_cache is None or (time.time() - _canvas_ids_cache_time) > cache_ttl:
-        # 重新加载以刷新缓存
-        load_merged_providers()
-    return _canvas_ids_cache or set()
-
-
-async def get_canvas_provider_ids_async() -> Set[str]:
-    """异步版：获取画布 provider id 集合（带缓存，事件循环内不阻塞）"""
-    await load_merged_providers_async()
-    return _canvas_ids_cache or set()
 
 
 def get_provider_config(provider_id: str) -> Optional[Dict[str, Any]]:
@@ -469,7 +365,7 @@ def provider_key_env(provider_id: str) -> str:
 
 
 def runninghub_wallet_key_env() -> str:
-    """RunningHub 账户余额 Key 的环境变量名（与画布一致：标准模型/视频模型走余额）"""
+    """RunningHub 账户余额 Key 的环境变量名（标准模型/视频模型走余额）"""
     return "RUNNINGHUB_WALLET_API_KEY"
 
 
@@ -485,62 +381,21 @@ def read_env_keys() -> Dict[str, str]:
     return keys
 
 
-def _read_canvas_env_keys() -> Dict[str, str]:
-    """读取画布的 API/.env 文件中的键值对（第三级 fallback）"""
-    keys: Dict[str, str] = {}
-    if not settings.canvas_env_file:
-        return keys
-    try:
-        canvas_env = Path(settings.canvas_env_file)
-        if canvas_env.exists():
-            for line in canvas_env.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    keys[k.strip()] = v.strip()
-    except Exception as _e:
-        logger.debug("[provider_config] 忽略异常: {}", _e)
-    return keys
-
-
 def get_api_key(provider_id: str) -> str:
     """解析某供应商的 API Key：
     1. 进程环境变量
     2. Agent 本地 API/.env
-    3. 画布 API/.env（仅对来源于画布的 provider 启用）
     """
     env_name = provider_key_env(provider_id)
     val = os.getenv(env_name, "")
     if val:
         return val
-    val = read_env_keys().get(env_name, "")
-    if val:
-        return val
-    # 第三级：如果该 provider 来源于画布，尝试读画布的 .env
-    canvas_ids = get_canvas_provider_ids()
-    if provider_id in canvas_ids:
-        val = _read_canvas_env_keys().get(env_name, "")
-        if val:
-            logger.debug(f"[ProviderConfig] Key '{env_name}' 从画布 .env 解析")
-            return val
-    return ""
+    return read_env_keys().get(env_name, "")
 
 
 async def get_api_key_async(provider_id: str) -> str:
-    """异步版：解析某供应商的 API Key（画布 id 集合走异步缓存路径）"""
-    env_name = provider_key_env(provider_id)
-    val = os.getenv(env_name, "")
-    if val:
-        return val
-    val = read_env_keys().get(env_name, "")
-    if val:
-        return val
-    canvas_ids = await get_canvas_provider_ids_async()
-    if provider_id in canvas_ids:
-        val = _read_canvas_env_keys().get(env_name, "")
-        if val:
-            return val
-    return ""
+    """异步版：解析某供应商的 API Key"""
+    return get_api_key(provider_id)
 
 
 def resolve_api_key(api_key: str, provider_id: str) -> str:

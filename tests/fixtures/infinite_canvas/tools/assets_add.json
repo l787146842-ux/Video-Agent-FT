@@ -1,0 +1,19 @@
+{
+  "request": {
+    "name": "assets_add",
+    "input": {
+      "kind": "image",
+      "title": "契约夹具测试素材",
+      "imageUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "source": "fixture-recorder"
+    }
+  },
+  "response": {
+    "ok": true,
+    "result": {
+      "ok": true,
+      "id": "6DPwml9r-UfKZrTHqMhcD",
+      "kind": "image"
+    }
+  }
+}

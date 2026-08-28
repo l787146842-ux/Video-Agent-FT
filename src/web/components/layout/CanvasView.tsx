@@ -4,16 +4,14 @@ import {
 import {
   FiChevronLeft, FiChevronRight, FiImage, FiRefreshCw,
 } from 'solid-icons/fi';
-import { state } from '@/stores/studio';
 import { useSplitter } from '@/hooks/use-splitter';
 import RightPanel from '@/components/right-panel/RightPanel';
 import {
   getCanvasIframe, canvasError, setCanvasError, setCanvasOverlayDragging,
-  canvasImageDrag, endCanvasImageDrag, probeCanvasOnline,
+  canvasImageDrag, endCanvasImageDrag, probeCanvasOnline, canvasSiteUrl,
 } from '@/stores/canvas';
 import { showToast } from '@/stores/toast';
 import { dropImageToCanvas } from '@/api/canvas';
-import { t } from '@/lib/locale';
 
 /**
  * 画布模式（路由 /canvas）
@@ -40,8 +38,10 @@ export default function CanvasView() {
   // 拖拽时禁用 iframe pointer-events，防止 iframe 吐掉 mousemove 事件
   createEffect(() => setCanvasOverlayDragging(panelSplit.dragging()));
 
-  // 进入画布视图时探测画布服务在线状态（离线则显示错误覆盖层，而非永久空白 iframe）
-  onMount(() => { void probeCanvasOnline(); });
+  // 进入画布视图时探测画布服务在线状态（离线则显示错误覆盖层，而非永久空白 iframe）。
+  // 首次探测带宽限重探：画布编辑器客户端尚未接入 canvas-agent 时后端会短暂误报离线，
+  // 直接亮失败覆盖层会闪现误导（宽限后重探一次再判定）。
+  onMount(() => { void probeCanvasOnline(2500); });
 
   /**
    * 对话栏图片拖进画布：原生拖拽事件无法投递进跨域 iframe（实证），
@@ -74,8 +74,8 @@ export default function CanvasView() {
     try {
       getCanvasIframe()?.contentWindow?.location.reload();
     } catch { /* 忽略跨域异常 */ }
-    // 重新探测：服务仍离线时覆盖层立即回来，避免空白等待
-    void probeCanvasOnline();
+    // 重新探测：重载后编辑器需数秒重连，同样给宽限；仍离线时覆盖层回来
+    void probeCanvasOnline(2500);
   }
 
   function dismissError() {
@@ -107,7 +107,7 @@ export default function CanvasView() {
           <FiImage size={48} />
           <p>画布加载失败</p>
           <p class="canvas-fallback-hint">
-            检查画布画布是否在 <code>{state.canvasUrl}</code> 启动，
+            检查画布是否在 <code>{canvasSiteUrl()}</code> 启动，
             且 X-Frame-Options 允许被嵌入
           </p>
           <div class="canvas-fallback-actions">
@@ -120,10 +120,6 @@ export default function CanvasView() {
           </div>
         </div>
       </Show>
-
-      {/* 联动能力明示：画布当前无选中跟随/节点级联动（postMessage 协议未实现），
-          避免用户误以为选中会跟随；待画布侧实现后可移除（见 docs/对画布的需求清单.md） */}
-      <div class="canvas-linkage-note">{t('canvas.linkage.pending')}</div>
 
       {/* 右侧 Agent 覆盖层 */}
       <aside

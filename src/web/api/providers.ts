@@ -10,11 +10,19 @@ export interface ProvidersResponse {
   canvas_online: boolean;
 }
 
+/** 后端下发的画布嵌入引导参数（画布站点 / canvas-agent / token，仅本机回环） */
+export interface InfiniteCanvasEmbedConfig {
+  canvas_url: string;
+  agent_url: string;
+  agent_token: string;
+}
+
 export interface AppConfig {
   chat_models: string[];
   image_models: string[];
   video_models: string[];
   canvas_url: string;
+  infinite_canvas_embed?: InfiniteCanvasEmbedConfig;
 }
 
 /** 全部供应商配置（脱敏）+ 画布在线状态 */

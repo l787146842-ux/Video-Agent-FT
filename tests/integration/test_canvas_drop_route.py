@@ -1,10 +1,15 @@
-"""集成测试：POST /api/canvas/drop-image（FastAPI TestClient + mock CanvasAdapter）"""
+"""集成测试：画布路由（FastAPI TestClient + CanvasBackend 协议层打桩）。
+
+打桩点在 CanvasBackend 协议层（路由只依赖协议）。
+覆盖端点：/canvas/drop-image、/canvas/selection、/canvas/node-images、
+/canvas/all-node-images、/canvas/list。
+"""
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.video_agent.web.app import app
-from src.video_agent.adapters.canvas_adapter import CanvasAdapter, reset_canvas_adapter
+from src.video_agent.adapters.canvas_adapter import reset_canvas_adapter
 from src.video_agent.exceptions import AdapterError
 
 
@@ -15,9 +20,48 @@ def _reset_adapter():
     reset_canvas_adapter()
 
 
+def _absolutize(public_base: str, url: str) -> str:
+    if url.startswith(("http://", "https://", "data:", "blob:")):
+        return url
+    return f"{public_base.rstrip('/')}/{url.lstrip('/')}"
+
+
+def _fake_backend() -> MagicMock:
+    """CanvasBackend 协议桩：节点直接引用素材绝对 URL，无二次上传"""
+    fake = MagicMock(name="CanvasBackend")
+    fake.base_url = "http://canvas-fixture:3000"
+    fake.is_online = AsyncMock(return_value=True)
+    fake.list_canvases = AsyncMock(return_value=[
+        {"id": "c1", "title": "画布A", "kind": "smart", "updated_at": 100, "deleted_at": None},
+    ])
+    fake.find_active_canvas = AsyncMock(
+        return_value={"id": "c1", "title": "画布A", "kind": "smart"})
+    fake.find_active_smart_canvas = AsyncMock(
+        return_value={"id": "c1", "title": "画布A", "kind": "smart"})
+    fake.add_image_node = AsyncMock(
+        return_value={"node_id": "n-x", "canvas_id": "c1", "canvas_title": "画布A"})
+    fake.get_selection = AsyncMock(return_value={
+        "supported": True,
+        "nodes": [{"id": "n1", "nodeType": "image"}],
+    })
+    fake.get_canvas = AsyncMock(return_value={"title": "画布A", "nodes": []})
+
+    async def _prepare(*, url, name, local_path, mime, public_base):
+        return {"url": _absolutize(public_base, url), "name": name}
+
+    fake.prepare_drop_image = AsyncMock(side_effect=_prepare)
+    return fake
+
+
 @pytest.fixture
-def client():
-    return TestClient(app)
+def fake():
+    return _fake_backend()
+
+
+@pytest.fixture
+def client(fake):
+    with patch("src.video_agent.web.routes.canvas.get_canvas_adapter", return_value=fake):
+        yield TestClient(app)
 
 
 class TestDropImageRoute:
@@ -25,48 +69,33 @@ class TestDropImageRoute:
         resp = client.post("/api/canvas/drop-image", json={})
         assert resp.status_code == 422
 
-    def test_no_active_canvas_returns_404(self, client):
-        # 路由现用 find_active_canvas（支持任意画布类型，不再仅限智能画布）
-        with patch.object(
-            CanvasAdapter, "find_active_canvas", new_callable=AsyncMock, return_value=None
-        ), patch.object(
-            CanvasAdapter, "upload_files", new_callable=AsyncMock, return_value=[]
-        ):
-            resp = client.post("/api/canvas/drop-image", json={
-                "url": "https://example.com/x.png",
-                "view": {"width": 1000, "height": 600},
-            })
+    def test_no_active_canvas_returns_404(self, client, fake):
+        fake.find_active_canvas = AsyncMock(return_value=None)
+        resp = client.post("/api/canvas/drop-image", json={
+            "url": "https://example.com/x.png",
+            "view": {"width": 1000, "height": 600},
+        })
         assert resp.status_code == 404
         assert "画布" in resp.json()["detail"]
 
-    def test_external_url_written_without_upload(self, client):
-        """外部 URL：跳过上传，直接以绝对 URL 建节点"""
-        with patch.object(
-            CanvasAdapter, "find_active_canvas", new_callable=AsyncMock,
-            return_value={"id": "c1", "title": "画布A"},
-        ), patch.object(
-            CanvasAdapter, "upload_files", new_callable=AsyncMock,
-        ) as up, patch.object(
-            CanvasAdapter, "add_image_node", new_callable=AsyncMock,
-            return_value={"node_id": "smart-x", "canvas_id": "c1", "canvas_title": "画布A"},
-        ) as add:
-            resp = client.post("/api/canvas/drop-image", json={
-                "url": "https://example.com/x.png",
-                "name": "x.png",
-                "drop": {"x": 500, "y": 300},
-                "view": {"width": 1000, "height": 600},
-            })
+    def test_external_url_written_without_upload(self, client, fake):
+        """外部 URL：不物化为本站资源，直接以绝对 URL 建节点"""
+        resp = client.post("/api/canvas/drop-image", json={
+            "url": "https://example.com/x.png",
+            "name": "x.png",
+            "drop": {"x": 500, "y": 300},
+            "view": {"width": 1000, "height": 600},
+        })
         assert resp.status_code == 200
         data = resp.json()
-        assert data["node_id"] == "smart-x"
+        assert data["node_id"] == "n-x"
         assert data["image_url"] == "https://example.com/x.png"
-        up.assert_not_called()
-        _, kwargs = add.call_args
+        _, kwargs = fake.add_image_node.call_args
         assert kwargs["drop_point"] == (500.0, 300.0)
         assert kwargs["view_size"] == (1000.0, 600.0)
 
-    def test_local_asset_uploaded_then_written(self, client, tmp_path, monkeypatch):
-        """本站素材：读本地字节上传到画布素材库，以画布本地 URL 建节点"""
+    def test_local_asset_materialized_then_written(self, client, fake, tmp_path, monkeypatch):
+        """本站素材：经协议 prepare_drop_image 物化后建节点（本站绝对 URL，无二次上传）"""
         import src.video_agent.web.routes.canvas as canvas_route
 
         assets = tmp_path / "assets"
@@ -74,73 +103,108 @@ class TestDropImageRoute:
         (assets / "gen-1.png").write_bytes(b"\x89PNG-fake")
         monkeypatch.setattr(canvas_route, "ASSETS_DIR", assets)
 
-        with patch.object(
-            CanvasAdapter, "upload_files", new_callable=AsyncMock,
-            return_value=[{"url": "/assets/input/ai_ref_1.png", "name": "gen-1.png", "kind": "image"}],
-        ) as up, patch.object(
-            CanvasAdapter, "find_active_canvas", new_callable=AsyncMock,
-            return_value={"id": "c1", "title": "画布A"},
-        ), patch.object(
-            CanvasAdapter, "add_image_node", new_callable=AsyncMock,
-            return_value={"node_id": "smart-y", "canvas_id": "c1", "canvas_title": "画布A"},
-        ) as add:
-            resp = client.post("/api/canvas/drop-image", json={
-                "url": "/workspace/assets/gen-1.png",
-            })
+        resp = client.post("/api/canvas/drop-image", json={
+            "url": "/workspace/assets/gen-1.png",
+        })
         assert resp.status_code == 200
         data = resp.json()
-        assert data["image_url"] == "/assets/input/ai_ref_1.png"
-        # 上传的是本地文件字节
-        args, _ = up.call_args
-        (fname, content, mime), = args[0]
-        assert fname == "gen-1.png"
-        assert content == b"\x89PNG-fake"
-        assert mime == "image/png"
-        # 节点引用画布本地 URL
-        _, kwargs = add.call_args
-        assert kwargs["image"]["url"] == "/assets/input/ai_ref_1.png"
+        _, kwargs = fake.prepare_drop_image.call_args
+        assert kwargs["local_path"] is not None  # 本站素材被识别
+        assert data["image_url"].startswith("http")
+        assert data["image_url"].endswith("/workspace/assets/gen-1.png")
+        _, add_kwargs = fake.add_image_node.call_args
+        assert add_kwargs["image"]["url"] == data["image_url"]
 
-    def test_upload_failure_falls_back_to_absolute_url(self, client, tmp_path, monkeypatch):
-        """上传失败：回退为本站绝对 URL，功能不中断"""
-        import src.video_agent.web.routes.canvas as canvas_route
-
-        assets = tmp_path / "assets"
-        assets.mkdir()
-        (assets / "gen-2.png").write_bytes(b"\x89PNG-fake")
-        monkeypatch.setattr(canvas_route, "ASSETS_DIR", assets)
-
-        with patch.object(
-            CanvasAdapter, "upload_files", new_callable=AsyncMock,
-            side_effect=AdapterError("画布服务响应超时"),
-        ), patch.object(
-            CanvasAdapter, "find_active_canvas", new_callable=AsyncMock,
-            return_value={"id": "c1", "title": "画布A"},
-        ), patch.object(
-            CanvasAdapter, "add_image_node", new_callable=AsyncMock,
-            return_value={"node_id": "smart-z", "canvas_id": "c1", "canvas_title": "画布A"},
-        ) as add:
-            resp = client.post("/api/canvas/drop-image", json={"url": "/workspace/assets/gen-2.png"})
-        assert resp.status_code == 200
-        _, kwargs = add.call_args
-        assert kwargs["image"]["url"].endswith("/workspace/assets/gen-2.png")
-        assert kwargs["image"]["url"].startswith("http")
-
-    def test_path_traversal_rejected(self, client, tmp_path, monkeypatch):
-        """/workspace/assets/ 之外的文件不得被读取上传"""
+    def test_path_traversal_rejected(self, client, fake, tmp_path, monkeypatch):
+        """/workspace/assets/ 之外的文件不得被识别为本站素材（防目录穿越）"""
         import src.video_agent.web.routes.canvas as canvas_route
         monkeypatch.setattr(canvas_route, "ASSETS_DIR", tmp_path / "assets")
 
-        with patch.object(
-            CanvasAdapter, "upload_files", new_callable=AsyncMock,
-        ) as up, patch.object(
-            CanvasAdapter, "find_active_canvas", new_callable=AsyncMock,
-            return_value={"id": "c1", "title": "画布A"},
-        ), patch.object(
-            CanvasAdapter, "add_image_node", new_callable=AsyncMock,
-            return_value={"node_id": "smart-w", "canvas_id": "c1", "canvas_title": "画布A"},
-        ):
-            resp = client.post("/api/canvas/drop-image", json={
-                "url": "/workspace/assets/../secrets.txt",
-            })
+        resp = client.post("/api/canvas/drop-image", json={
+            "url": "/workspace/assets/../secrets.txt",
+        })
         assert resp.status_code == 200
-        up.assert_not_called()
+        _, kwargs = fake.prepare_drop_image.call_args
+        assert kwargs["local_path"] is None
+
+
+class TestSelectionRoute:
+    def test_selection_forwarded(self, client):
+        resp = client.get("/api/canvas/selection")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["canvas_online"] is True
+        assert data["supported"] is True
+        assert data["nodes"] == [{"id": "n1", "nodeType": "image"}]
+
+    def test_selection_offline(self, client, fake):
+        fake.is_online = AsyncMock(return_value=False)
+        resp = client.get("/api/canvas/selection")
+        assert resp.status_code == 200
+        assert resp.json() == {"supported": False, "nodes": [], "canvas_online": False}
+
+    def test_selection_adapter_error_returns_empty(self, client, fake):
+        fake.get_selection = AsyncMock(side_effect=AdapterError("画布页未连接"))
+        resp = client.get("/api/canvas/selection")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["supported"] is False
+        assert data["nodes"] == []
+        assert data["canvas_online"] is True
+
+
+class TestNodeImagesRoutes:
+    """node-images / all-node-images：节点图片引用提取（metadata.content）"""
+
+    def test_node_images(self, client, fake):
+        fake.get_canvas = AsyncMock(return_value={
+            "title": "画布A",
+            "nodes": [
+                {"id": "n1", "type": "image", "title": "a.png",
+                 "position": {"x": 0, "y": 0},
+                 "metadata": {"content": "http://127.0.0.1:8080/workspace/assets/a.png"}},
+                # text 节点 content 是正文，不得当图片提取
+                {"id": "n2", "type": "text", "metadata": {"content": "正文文本"}},
+            ],
+        })
+        resp = client.get("/api/canvas/node-images")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["canvas_online"] is True
+        assert len(data["items"]) == 1
+        assert data["items"][0]["url"] == "http://127.0.0.1:8080/workspace/assets/a.png"
+
+    def test_node_images_offline(self, client, fake):
+        fake.is_online = AsyncMock(return_value=False)
+        resp = client.get("/api/canvas/node-images")
+        assert resp.status_code == 200
+        assert resp.json() == {"items": [], "canvas_online": False}
+
+    def test_all_node_images_by_canvas_id(self, client, fake):
+        fake.get_canvas = AsyncMock(return_value={
+            "title": "画布A",
+            "nodes": [{"id": "n1", "type": "image", "title": "b",
+                       "metadata": {"content": "http://127.0.0.1:8080/workspace/assets/b.png"}}],
+        })
+        resp = client.get("/api/canvas/all-node-images", params={"canvas_id": "c1"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["canvas_online"] is True
+        assert len(data["items"]) == 1
+        assert data["items"][0]["url"].endswith("/b.png")
+
+
+class TestCanvasListRoute:
+    def test_list_with_online_flag(self, client):
+        resp = client.get("/api/canvas/list")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["canvas_online"] is True
+        assert data["canvases"][0]["id"] == "c1"
+        assert data["canvases"][0]["kind"] == "smart"
+
+    def test_list_offline(self, client, fake):
+        fake.is_online = AsyncMock(return_value=False)
+        resp = client.get("/api/canvas/list")
+        assert resp.status_code == 200
+        assert resp.json() == {"canvases": [], "canvas_online": False}

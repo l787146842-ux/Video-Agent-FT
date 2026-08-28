@@ -1,13 +1,14 @@
 # FTDYB — 影视创作 Agent 工作台（Video Agent Studio）
 
 对话式影视创作 Agent：以自然语言驱动「故事 → 剧本 → 分镜 → 关键帧 → 视频/音频」全流程，
-与第三方画布项目**画布**（大熊画布，端口 3000）配合，素材与节点直接落到画布上。
+与第三方画布项目 **infinite-canvas**（端口 3000，经 canvas-agent 协议接入）配合，素材与节点直接落到画布上。
 
 ## 与画布的关系与边界
 
-- 画布是**独立迭代的第三方项目**，代码不在本仓库内。
-- **架构铁律 Rule 7**：任何时候禁止修改画布的任何文件；所有交互只走其既有公开接口
-  （HTTP API / iframe 嵌入），统一封装在 `src/video_agent/adapters/canvas_adapter.py`。
+- 画布（infinite-canvas）是**独立迭代的第三方项目**，代码不在本仓库内。
+- **架构铁律 Rule 7**：任何时候禁止修改或 fork 画布的任何文件；仅依赖三个公开面：
+  Canvas Agent HTTP 协议（`/api/tools`）、hash 引导（`#agentUrl`/`#agentToken`）、（可选）插件 SDK；
+  统一封装在 `src/video_agent/adapters/infinite_canvas_backend.py`（工厂入口 `adapters/canvas_adapter.py`）。
 - 画布侧的新能力需求一律写入 [docs/对画布的需求清单.md](docs/对画布的需求清单.md)，不做单边侵入。
 - 完整约束见 [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md)（AI 协作最高优先级约束）。
 
@@ -30,16 +31,18 @@
 启动服务.bat
 ```
 
-依次拉起画布 → 本项目 → 打开 http://localhost:8080/ 。
+依次拉起 canvas-agent → 画布站点 → 本项目 → 打开 http://localhost:8080/ 。
 
 ### 手动启动
 
 ```bash
-# 1. 画布（画布，先行）
-cd E:\07 天问\熊布
-python main.py            # http://127.0.0.1:3000
+# 1. canvas-agent（先行，端口 17371）
+npx -y @basketikun/canvas-agent@0.6.0
 
-# 2. 本项目（Agent 服务）
+# 2. infinite-canvas 画布站点（端口 3000，代码在本仓库之外，禁止修改）
+npm run dev
+
+# 3. 本项目（Agent 服务）
 pip install -r requirements.txt
 python -m src.video_agent.web   # http://127.0.0.1:8080
 ```
@@ -86,7 +89,7 @@ src/web/                  前端（SolidJS SPA）
 static/                   构建产物 dist/ + images/（api-settings 嵌入页已 SPA 化移除）
 prompts/                  外置 Prompt（Rule 6）
 data/                     供应商配置 / 技能文档（data/ 整体 gitignore；技能文档 data/skills/*.md 例外入库，是产品数据源）
-tests/                    unit / integration / e2e / fixtures/canvas（契约夹具）
+tests/                    unit / integration / e2e
 workspace/                运行时状态与资产（gitignore）
 ```
 
@@ -101,8 +104,7 @@ workspace/                运行时状态与资产（gitignore）
 | [docs/GOVERNANCE.md](docs/GOVERNANCE.md) | 指令治理层方法论（原宪法第十三章，与总纲同权） |
 | [docs/配置说明.md](docs/配置说明.md) | 各配置文件的权威关系与加载优先级 |
 | [docs/前端体验规范.md](docs/前端体验规范.md) | 品牌/视觉/交互细节强制规范 |
-| [docs/对画布的需求清单.md](docs/对画布的需求清单.md) | 需要画布侧实现的能力（postMessage 协议等） |
-| [tests/fixtures/canvas/README.md](tests/fixtures/canvas/README.md) | 画布 API 契约夹具的录制与刷新方法 |
+| [docs/对画布的需求清单.md](docs/对画布的需求清单.md) | 需要画布侧实现的能力与集成边界声明 |
 
 ## 环境与安全
 

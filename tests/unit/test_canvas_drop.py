@@ -1,16 +1,28 @@
 """
-画布拖放（对话栏图片 -> 画布节点）单元测试 — mock httpx 响应。
-覆盖：upload_files / find_active_smart_canvas / add_image_node / _resolve_drop_world_point。
+画布拖放（对话栏图片 -> 画布节点）单元测试。
+
+InfiniteCanvasBackend：MockTransport 重放夹具 + 协议层打桩。覆盖
+add_image_node / add_nodes_batch（一次批量提交）/ update_node / delete_node /
+get_selection / _resolve_drop_point / prepare_drop_image（无二次上传）。
 """
+import json
+from pathlib import Path
+
 import pytest
 import httpx
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
-from src.video_agent.adapters.canvas_adapter import (
-    CanvasAdapter,
-    _resolve_drop_world_point,
-    reset_canvas_adapter,
+from src.video_agent.adapters.canvas_adapter import reset_canvas_adapter
+from src.video_agent.adapters.infinite_canvas_backend import (
+    InfiniteCanvasBackend,
+    _resolve_drop_point,
 )
+
+FIXTURES = Path(__file__).parent.parent / "fixtures" / "infinite_canvas"
+
+
+def _load(name: str) -> dict:
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
 @pytest.fixture(autouse=True)
@@ -20,155 +32,234 @@ def _reset_singleton():
     reset_canvas_adapter()
 
 
-@pytest.fixture
-def adapter():
-    return CanvasAdapter(base_url="http://test-canvas:8000", timeout=5)
+def _ic_backend_with_recorder():
+    """MockTransport 重放夹具，并记录 /api/tools 请求体"""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/tools":
+            body = json.loads(request.content)
+            calls.append(body)
+            name = body.get("name") or ""
+            if name == "canvas_apply_ops":
+                op_type = ((body.get("input") or {}).get("ops") or [{}])[0].get("type", "")
+                fx = f"tools/canvas_apply_ops_{op_type}.json"
+            else:
+                fx = f"tools/{name}.json"
+            return httpx.Response(200, json=_load(fx)["response"])
+        return httpx.Response(404, json={"ok": False, "error": "not found"})
+
+    backend = InfiniteCanvasBackend(base_url="http://fixture.local", token="t", timeout=5)
+    backend.client = lambda: httpx.AsyncClient(  # type: ignore[method-assign]
+        base_url="http://fixture.local", transport=httpx.MockTransport(handler), timeout=5
+    )
+    return backend, calls
 
 
-def _mock_response(json_data, status_code=200):
-    resp = MagicMock()
-    resp.status_code = status_code
-    resp.json.return_value = json_data
-    resp.raise_for_status = MagicMock()
-    if status_code >= 400:
-        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "error", request=MagicMock(), response=resp
-        )
-        resp.text = str(json_data)
-    return resp
+# update/delete 用的带节点状态（夹具 canvas_get_state 为空画布，此处协议层打桩）
+_IC_STATE_WITH_NODES = {
+    "projectId": "c1", "title": "测试画布", "hasCanvas": True,
+    "nodes": [
+        {"id": "img1", "type": "image", "title": "pic", "width": 320, "height": 320,
+         "position": {"x": 10, "y": 20}, "metadata": {"content": "http://a/x.png"}},
+        {"id": "txt1", "type": "text", "title": "note",
+         "position": {"x": 400, "y": 20}, "metadata": {"content": "hello"}},
+    ],
+    "connections": [{"id": "conn1", "fromNodeId": "txt1", "toNodeId": "img1"}],
+    "viewport": {"x": 0, "y": 0, "k": 1},
+}
 
 
-class TestUploadFiles:
-    @pytest.mark.asyncio
-    async def test_success(self, adapter):
-        mock_resp = _mock_response({"files": [{"url": "/assets/input/ai_ref_a.png", "name": "a.png", "kind": "image"}]})
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp) as post:
-            result = await adapter.upload_files([("a.png", b"\x89PNG", "image/png")])
-        assert len(result) == 1
-        assert result[0]["url"] == "/assets/input/ai_ref_a.png"
-        # multipart 字段名为 files
-        _, kwargs = post.call_args
-        assert kwargs["files"][0][0] == "files"
-
-    @pytest.mark.asyncio
-    async def test_empty_list(self, adapter):
-        assert await adapter.upload_files([]) == []
-
-    @pytest.mark.asyncio
-    async def test_filters_entries_without_url(self, adapter):
-        mock_resp = _mock_response({"files": [{"name": "bad"}, {"url": "/assets/input/ok.png"}]})
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
-            result = await adapter.upload_files([("a.png", b"x", "image/png")])
-        assert [f["url"] for f in result] == ["/assets/input/ok.png"]
+def _ic_backend_stubbed():
+    """带节点状态的协议层打桩实例（_get_state/_apply_ops）"""
+    backend = InfiniteCanvasBackend(base_url="http://fixture.local", token="t", timeout=5)
+    backend._get_state = AsyncMock(return_value=json.loads(json.dumps(_IC_STATE_WITH_NODES)))  # type: ignore[method-assign]
+    backend._apply_ops = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    return backend
 
 
-class TestFindActiveSmartCanvas:
-    @pytest.mark.asyncio
-    async def test_picks_latest_updated_smart(self, adapter):
-        canvases = [
-            {"id": "c1", "kind": "smart", "updated_at": 100},
-            {"id": "c2", "kind": "smart", "updated_at": 300},
-            {"id": "c3", "kind": "classic", "updated_at": 999},
-            {"id": "c4", "kind": "smart", "updated_at": 200, "deleted_at": 1},
-        ]
-        mock_resp = _mock_response({"canvases": canvases})
-        with patch("httpx.AsyncClient.request", new_callable=AsyncMock, return_value=mock_resp):
-            result = await adapter.find_active_smart_canvas()
-        assert result["id"] == "c2"
+class TestResolveDropPointInfinite:
+    """落点换算：屏幕坐标 → 画布世界坐标"""
 
-    @pytest.mark.asyncio
-    async def test_no_smart_canvas_returns_none(self, adapter):
-        mock_resp = _mock_response({"canvases": [{"id": "c3", "kind": "classic", "updated_at": 1}]})
-        with patch("httpx.AsyncClient.request", new_callable=AsyncMock, return_value=mock_resp):
-            assert await adapter.find_active_smart_canvas() is None
-
-
-class TestResolveDropWorldPoint:
-    def _canvas(self, viewport):
+    def _state(self, viewport):
         return {"viewport": viewport}
 
     def test_no_drop_point_returns_viewport_center(self):
-        canvas = self._canvas({"x": 0, "y": 0, "scale": 1})
-        wx, wy = _resolve_drop_world_point(canvas, None, (1000, 600))
+        wx, wy = _resolve_drop_point(self._state({"x": 0, "y": 0, "k": 1}), None, (1000, 600))
         assert (wx, wy) == (500, 300)
 
     def test_drop_point_with_shell_offset(self):
-        canvas = self._canvas({"x": 0, "y": 0, "scale": 1})
-        wx, wy = _resolve_drop_world_point(canvas, (596, 216), (1000, 600))
-        # 默认外壳偏移 (96, 16)：world = drop - offset
+        wx, wy = _resolve_drop_point(self._state({"x": 0, "y": 0, "k": 1}), (596, 216), (1000, 600))
         assert (wx, wy) == (500, 200)
 
     def test_scale_and_viewport(self):
-        canvas = self._canvas({"x": 100, "y": 50, "scale": 2})
-        wx, wy = _resolve_drop_world_point(canvas, (496, 266), (1000, 600))
-        # world = (drop - offset - viewport) / scale
+        wx, wy = _resolve_drop_point(self._state({"x": 100, "y": 50, "k": 2}), (496, 266), (1000, 600))
         assert wx == (496 - 96 - 100) / 2
         assert wy == (266 - 16 - 50) / 2
 
-    def test_out_of_view_clamped_into_visible_rect(self):
-        canvas = self._canvas({"x": 0, "y": 0, "scale": 1})
-        # 落点远超可视区（偏移估计失效场景）→ 夹取回可视世界矩形内
-        wx, wy = _resolve_drop_world_point(canvas, (-5000, 99999), (1000, 600))
+    def test_out_of_view_clamped(self):
+        wx, wy = _resolve_drop_point(self._state({"x": 0, "y": 0, "k": 1}), (-5000, 99999), (1000, 600))
         assert 80 <= wx <= 920
         assert 80 <= wy <= 520
 
-    def test_zero_scale_falls_back_to_one(self):
-        canvas = self._canvas({"x": 0, "y": 0, "scale": 0})
-        wx, wy = _resolve_drop_world_point(canvas, None, (1000, 600))
+    def test_zero_k_falls_back_to_one(self):
+        wx, wy = _resolve_drop_point(self._state({"x": 0, "y": 0, "k": 0}), None, (1000, 600))
         assert (wx, wy) == (500, 300)
 
 
-class TestAddImageNode:
-    def _canvas_payload(self):
-        return {
-            "id": "c1",
-            "title": "测试画布",
-            "icon": "sparkles",
-            "kind": "smart",
-            "updated_at": 100,
-            # n0 显式远离视口中心（无坐标节点会被避让算法视为占据原点，
-            # 导致新节点被挤开，无法验证「默认放视口中心」语义）
-            "nodes": [{"id": "n0", "type": "smart-image", "x": -2000, "y": -2000,
-                      "images": [{"url": "https://example.com/n0.png", "name": "n0.png"}]}],
-            "connections": [],
-            "viewport": {"x": 0, "y": 0, "scale": 1},
-            "logs": [],
-            "settings": {"engine": "api"},
-        }
+class TestInfiniteCanvasDrop:
+    @pytest.mark.asyncio
+    async def test_add_image_node_emits_add_op(self):
+        """拖放图片：单条 add_node op 直发，URL 绝对化存 metadata.content"""
+        backend, calls = _ic_backend_with_recorder()
+        result = await backend.add_image_node(
+            _load("tools/canvas_get_state.json")["response"]["result"]["projectId"],
+            image={"url": "/workspace/assets/x.png", "name": "x.png", "kind": "image"},
+            view_size=(1000, 600),
+        )
+        assert result["canvas_id"]
+        assert result["node_id"]
+        apply_calls = [c for c in calls if c["name"] == "canvas_apply_ops"]
+        assert len(apply_calls) == 1
+        op = apply_calls[0]["input"]["ops"][0]
+        assert op["type"] == "add_node"
+        assert op["nodeType"] == "image"
+        url = op["metadata"]["content"]
+        assert url.startswith("http") and url.endswith("/workspace/assets/x.png")
 
     @pytest.mark.asyncio
-    async def test_appends_smart_image_node_and_saves(self, adapter):
-        canvas = self._canvas_payload()
+    async def test_add_nodes_batch_single_apply_call(self):
+        """批量追加：一次 canvas_apply_ops 提交全部 add_node op"""
+        backend, calls = _ic_backend_with_recorder()
+        nodes = [
+            {"id": f"b{i}", "type": "smart-image", "title": f"图{i}",
+             "x": 100 + (i % 4) * 400, "y": 100 + (i // 4) * 300,
+             "images": [{"url": f"http://a/{i}.png", "name": f"{i}.png"}]}
+            for i in range(3)
+        ]
+        ids = await backend.add_nodes_batch("", nodes=nodes)
+        assert ids == ["b0", "b1", "b2"]
+        apply_calls = [c for c in calls if c["name"] == "canvas_apply_ops"]
+        assert len(apply_calls) == 1  # 一次批量提交（≤ APPLY_OPS_BATCH_SIZE）
+        ops = apply_calls[0]["input"]["ops"]
+        assert [o["type"] for o in ops] == ["add_node"] * 3
+        assert ops[2]["position"] == {"x": 100 + (2 % 4) * 400, "y": 100 + (2 // 4) * 300}
 
-        async def fake_request(self, method, path, **kwargs):
-            if method == "GET":
-                return {"canvas": canvas}
-            if method == "PUT":
-                self._last_put = kwargs["json"]
-                return {"canvas": {**canvas, "updated_at": 200}}
-            raise AssertionError(method)
+    @pytest.mark.asyncio
+    async def test_update_node_existing_emits_update_op(self):
+        backend = _ic_backend_stubbed()
+        ok = await backend.update_node(
+            "c1", node_id="img1",
+            patch={"title": "新图", "x": 100, "y": None, "prompt": None,
+                   "image_url": "/workspace/assets/new.png", "content": None},
+        )
+        assert ok is True
+        ops = backend._apply_ops.call_args[0][0]
+        assert len(ops) == 1
+        op = ops[0]
+        assert op["type"] == "update_node" and op["id"] == "img1"
+        assert op["patch"]["position"] == {"x": 100.0, "y": 20.0}  # y 未传，保持原值
+        assert op["patch"]["title"] == "新图"
+        assert op["metadata"]["content"].endswith("/workspace/assets/new.png")
 
-        with patch.object(CanvasAdapter, "_request", autospec=True) as m:
-            m.side_effect = fake_request
-            result = await adapter.add_image_node(
-                "c1",
-                image={"url": "/assets/input/x.png", "name": "x.png", "kind": "image"},
-                view_size=(1000, 600),
+    @pytest.mark.asyncio
+    async def test_update_node_text_content(self):
+        backend = _ic_backend_stubbed()
+        ok = await backend.update_node(
+            "c1", node_id="txt1",
+            patch={"title": None, "x": None, "y": None, "prompt": "新提示词",
+                   "image_url": None, "content": None},
+        )
+        assert ok is True
+        op = backend._apply_ops.call_args[0][0][0]
+        assert op["metadata"]["content"] == "新提示词"
+        assert "title" not in op["patch"]
+
+    @pytest.mark.asyncio
+    async def test_update_node_missing_returns_false(self):
+        backend = _ic_backend_stubbed()
+        ok = await backend.update_node("c1", node_id="ghost", patch={"title": "x"})
+        assert ok is False
+        backend._apply_ops.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_node_cleans_connections(self):
+        backend = _ic_backend_stubbed()
+        ok = await backend.delete_node("c1", node_id="txt1")
+        assert ok is True
+        ops = backend._apply_ops.call_args[0][0]
+        assert ops[0] == {"type": "delete_node", "ids": ["txt1"]}
+        assert ops[1] == {"type": "delete_connections", "ids": ["conn1"]}
+
+    @pytest.mark.asyncio
+    async def test_delete_node_missing_returns_false(self):
+        backend = _ic_backend_stubbed()
+        assert await backend.delete_node("c1", node_id="ghost") is False
+        backend._apply_ops.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_add_node_single_op(self):
+        backend = _ic_backend_stubbed()
+        result = await backend.add_node(
+            "c1",
+            node={"id": "txt-new", "type": "text", "title": "T", "x": 10, "y": 20, "content": "hi"},
+        )
+        assert result == {"node_id": "txt-new", "canvas_id": "c1"}
+        op = backend._apply_ops.call_args[0][0][0]
+        assert op["type"] == "add_node"
+        assert op["nodeType"] == "text"
+        assert op["metadata"]["content"] == "hi"
+
+    @pytest.mark.asyncio
+    async def test_get_selection_replay(self):
+        backend, _ = _ic_backend_with_recorder()
+        sel = await backend.get_selection()
+        assert sel["supported"] is True
+        assert sel["nodes"] == _load("tools/canvas_get_selection.json")["response"]["result"]["nodes"]
+
+    @pytest.mark.asyncio
+    async def test_select_nodes_replay(self):
+        """反向选中：canvas_select_nodes 工具调用，空列表短路不发请求"""
+        backend, calls = _ic_backend_with_recorder()
+        out = await backend.select_nodes(["n1", "n2"])
+        assert out == {"supported": True, "selected": 2}
+        assert calls[-1] == {"name": "canvas_select_nodes", "input": {"ids": ["n1", "n2"]}}
+        empty = await backend.select_nodes([])
+        assert empty == {"supported": True, "selected": 0}
+        assert len(calls) == 1  # 空列表未发新请求
+
+    @pytest.mark.asyncio
+    async def test_find_active_canvas_current_page(self):
+        backend, _ = _ic_backend_with_recorder()
+        active = await backend.find_active_canvas()
+        assert active is not None
+        assert active["id"] == _load("tools/canvas_get_state.json")["response"]["result"]["projectId"]
+
+
+class TestPrepareDropImageInfinite:
+    """拖放物化：直接引用本站绝对 URL，无二次上传"""
+
+    @pytest.mark.asyncio
+    async def test_external_url_passthrough(self):
+        backend = InfiniteCanvasBackend(base_url="http://fixture.local", token="t", timeout=5)
+        out = await backend.prepare_drop_image(
+            url="https://example.com/a.png", name="a.png",
+            local_path=None, mime="image/png", public_base="http://testserver/",
+        )
+        assert out["url"] == "https://example.com/a.png"
+
+    @pytest.mark.asyncio
+    async def test_local_asset_referenced_without_upload(self, tmp_path):
+        backend = InfiniteCanvasBackend(base_url="http://fixture.local", token="t", timeout=5)
+        f = tmp_path / "gen-1.png"
+        f.write_bytes(b"\x89PNG-fake")
+        with patch.object(
+            InfiniteCanvasBackend, "upload_files", new_callable=AsyncMock
+        ) as up:
+            out = await backend.prepare_drop_image(
+                url="/workspace/assets/gen-1.png", name="gen-1.png",
+                local_path=f, mime="image/png", public_base="http://testserver/",
             )
-
-        assert result["canvas_id"] == "c1"
-        assert result["canvas_title"] == "测试画布"
-        put = adapter._last_put
-        new_nodes = [n for n in put["nodes"] if n["id"] != "n0"]
-        assert len(new_nodes) == 1
-        node = new_nodes[0]
-        assert node["type"] == "smart-image"
-        assert node["scale"] == 2
-        assert node["images"] == [{"url": "/assets/input/x.png", "name": "x.png", "kind": "image"}]
-        # 原节点保留 + 基底版本号传递（乐观锁）
-        assert put["nodes"][0]["id"] == "n0"
-        assert put["base_updated_at"] == 100
-        assert put["settings"] == {"engine": "api"}
-        # 默认放视口中心（1000x600 视口，节点半宽 224）
-        assert node["x"] == round(500 - 224)
-        assert node["y"] == round(300 - 224)
+        up.assert_not_called()  # 无二次上传：节点直接引用素材绝对 URL
+        assert out["url"] == "http://testserver/workspace/assets/gen-1.png"

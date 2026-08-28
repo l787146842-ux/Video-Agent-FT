@@ -58,10 +58,10 @@
 - **协议单轨**：平台协议唯一 = `prompts/planner/system_fc.md`（文本协议 `system.md` 已退役删除，ADR-0001 单轨）；共有段落抽到 `prompts/shared/` 经 `{{include}}` 引用拼装，不复制
 - 纪律条款外置为独立 md（如 `planner/skill_discipline.md`），不得内联代码
 
-### Rule 7: 画布边界 — 任何时候都禁止修改
-- 画布是**独立迭代项目**，代码不在本仓库，**任何时候禁止修改其任何文件**
-- 与画布交互只走其既有公开接口（HTTP/WS/iframe），统一封装在 `adapters/canvas_adapter.py`
-- 画布既有接口之外的能力一律视为不可实现；确需新能力只能向画布项目提需求
+### Rule 7: 画布边界 — 任何时候都禁止修改（fork/改源码均禁止）
+- 画布（infinite-canvas）是**独立迭代项目**，代码不在本仓库，**任何时候禁止修改或 fork 其任何文件**
+- 仅依赖三个公开面：① Canvas Agent HTTP 协议（`/api/tools` 工具调用 + `/health`，封装于 `adapters/infinite_canvas_backend.py`）；② hash 引导（iframe 加载时注入 `#agentUrl`/`#agentToken`）；③（可选）画布插件 SDK。除此之外一律视为不可实现，确需新能力只能向画布项目提需求（见 `docs/对画布的需求清单.md`）
+- **已知集成边界**：画布内生成的图存于画布浏览器端（本地存储），服务端无法回读原图，只能通过 config 节点连线回读导出 URL；素材录制遗留一条测试素材（见 `workspace/assets`），属已知残留不影响功能
 
 ---
 
@@ -185,7 +185,7 @@
 ## 八、接入外部平台专项规则
 
 - **LLM 供应商**：必须实现 `BaseChatAdapter`（`chat()`+`chat_stream()`）；不支持 FC 时 `supports_function_calling=False`；流式 `tool_calls[].function.arguments` 必须 `json.loads()`；超时读 settings；错误抛 `AdapterError`
-- **画布/设计工具**：作为 Tool 接入；HTTP 封装在 Adapter；结果经 StateManager 持久化；画布边界见 Rule 7
+- **画布/设计工具**：作为 Tool 接入；HTTP 封装在 Adapter（infinite-canvas 唯一后端，经 canvas-agent 协议）；结果经 StateManager 持久化；画布边界见 Rule 7
 - **CLI 工具**：`asyncio.create_subprocess_exec()`，禁止 `subprocess.run()` 阻塞；`await asyncio.sleep()`；解析失败抛 `AdapterError` 不返假数据
 - **桌面端**：复用 `/api/agent/chat`，不得另写状态管理/LLM 逻辑
 

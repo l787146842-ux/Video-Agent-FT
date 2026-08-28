@@ -1,8 +1,9 @@
 """
-画布操作 Tool 集 — 通过 CanvasAdapter 操作画布画布（Rule5: 统一注册）。
+画布操作 Tool 集 — 通过 CanvasBackend 协议操作画布（Rule5: 统一注册）。
 
-每个 Tool 继承 BaseTool，内部只调 CanvasAdapter（不碰 httpx）。
-写操作遵循：读取最新画布 → 修改 nodes → save_canvas 写回。
+每个 Tool 继承 BaseTool，内部只调协议方法（不碰 httpx、不判后端类型）：
+写操作经端口落地为增量 ops 直发（见 adapters/canvas_port.py 节点级写方法组）。
+canvas_list_assets 读本地素材库（经 core/ports assets 端口）。
 """
 import time
 from typing import Any, Dict, List, Literal, Optional, Type
@@ -12,8 +13,9 @@ from loguru import logger
 
 from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
+from src.video_agent.adapters.canvas_schema import INFINITE_CANVAS_IMAGE_MEDIA_FIELD
 from src.video_agent.config import settings
-from src.video_agent.exceptions import AdapterError
+from src.video_agent.core.ports import assets_port
 from src.video_agent.utils import gen_id
 
 
@@ -93,43 +95,6 @@ def _build_node_dict(node_id: str, node_type: str, title: str, x: int, y: int,
     return node
 
 
-async def _load_and_save(canvas_id: str, mutate_fn, max_retries: int = 3):
-    """
-    通用画布读写流程（带 409 冲突自动重试）：
-    1. 读取最新画布
-    2. 执行 mutate_fn(canvas) 修改
-    3. 写回画布（带乐观锁）
-    4. 若 409 冲突，重新读取 + 重新应用（最多 max_retries 次）
-    返回 (修改后的画布, mutate_fn 的返回值)
-    """
-    adapter = get_canvas_adapter()
-
-    for attempt in range(1, max_retries + 1):
-        canvas = await adapter.get_canvas(canvas_id)
-        result = mutate_fn(canvas)
-        try:
-            await adapter.save_canvas(
-                canvas_id,
-                title=canvas.get("title", "未命名画布"),
-                icon=canvas.get("icon", "🧩"),
-                nodes=canvas.get("nodes", []),
-                connections=canvas.get("connections", []),
-                viewport=canvas.get("viewport", {}),
-                logs=canvas.get("logs", []),
-                settings_dict=canvas.get("settings", {}),
-                base_updated_at=int(canvas.get("updated_at") or 0),
-            )
-            return canvas, result
-        except AdapterError as e:
-            if e.status_code == 409 and attempt < max_retries:
-                logger.warning(f"[CanvasTools] 画布写入冲突，第 {attempt} 次重试: {canvas_id}")
-                continue
-            raise
-
-    # 不应到达此处，但作为安全兆底
-    raise AdapterError(f"画布写入失败：超过 {max_retries} 次重试仍冲突")
-
-
 # ---------- Tool 实现 ----------
 
 class CanvasListTool(BaseTool):
@@ -144,8 +109,10 @@ class CanvasListTool(BaseTool):
     async def aexecute(self, params: CanvasListInput) -> ToolResult:
         adapter = get_canvas_adapter()
         canvases = await adapter.list_canvases()
+        # canvas_list_projects 实际返回 camelCase（nodeCount）；snake_case 兜底防御形状漂移
         summary = [
-            {"id": c.get("id"), "title": c.get("title"), "node_count": c.get("node_count", 0)}
+            {"id": c.get("id"), "title": c.get("title"),
+             "node_count": c.get("nodeCount", c.get("node_count", 0))}
             for c in canvases
         ]
         return ToolResult(success=True, data={"canvases": summary, "count": len(summary)})
@@ -164,28 +131,26 @@ class CanvasReadNodesTool(BaseTool):
         adapter = get_canvas_adapter()
         canvas = await adapter.get_canvas(params.canvas_id)
         nodes = canvas.get("nodes", [])
+        # get_canvas 透传 canvas_get_state 原始形状：{id, type, title, position:{x,y},
+        # metadata}，正文/图片 URL 统一在 metadata.content（与 routes/canvas.py
+        # _node_image_refs、generation_dispatch _read_infinite_canvas_generated_url 同口径）
         summary = []
         for n in nodes:
+            pos = n.get("position") or {}
             item = {
                 "id": n.get("id"),
-                "type": n.get("type", "smart-image"),
+                "type": n.get("type", ""),
                 "title": n.get("title", ""),
-                "x": n.get("x", 0),
-                "y": n.get("y", 0),
+                "x": pos.get("x", 0),
+                "y": pos.get("y", 0),
             }
-            if n.get("prompt"):
-                raw = n["prompt"]
-                cap = settings.canvas_read_prompt_max_chars
-                if len(raw) > cap:
-                    item["prompt"] = raw[:cap]
-                    item["prompt_truncated"] = True
-                else:
-                    item["prompt"] = raw
-            if n.get("images"):
-                item["images_count"] = len(n["images"])
-                item["first_image"] = n["images"][0].get("url", "") if n["images"] else ""
-            if n.get("content"):
-                item["content"] = n["content"][:200]
+            content = str((n.get("metadata") or {}).get(INFINITE_CANVAS_IMAGE_MEDIA_FIELD) or "")
+            if str(n.get("type") or "") == "image":
+                if content:
+                    item["images_count"] = 1
+                    item["first_image"] = content
+            elif content:
+                item["content"] = content[:200]
             summary.append(item)
         return ToolResult(success=True, data={
             "canvas_id": params.canvas_id,
@@ -210,13 +175,12 @@ class CanvasAddNodeTool(BaseTool):
             node_id, params.node_type, params.title, params.x, params.y,
             prompt=params.prompt, image_url=params.image_url, content=params.content,
         )
-
-        def mutate(canvas):
-            canvas.setdefault("nodes", []).append(new_node)
-            return node_id
-
-        _, result_id = await _load_and_save(params.canvas_id, mutate)
-        return ToolResult(success=True, data={"node_id": result_id, "canvas_id": params.canvas_id})
+        adapter = get_canvas_adapter()
+        result = await adapter.add_node(params.canvas_id, node=new_node)
+        return ToolResult(success=True, data={
+            "node_id": result.get("node_id") or node_id,
+            "canvas_id": params.canvas_id,
+        })
 
 
 class CanvasUpdateNodeTool(BaseTool):
@@ -229,29 +193,18 @@ class CanvasUpdateNodeTool(BaseTool):
         return CanvasUpdateNodeInput
 
     async def aexecute(self, params: CanvasUpdateNodeInput) -> ToolResult:
-        found = False
-
-        def mutate(canvas):
-            nonlocal found
-            for node in canvas.get("nodes", []):
-                if node.get("id") == params.node_id:
-                    found = True
-                    if params.title is not None:
-                        node["title"] = params.title
-                    if params.x is not None:
-                        node["x"] = params.x
-                    if params.y is not None:
-                        node["y"] = params.y
-                    if params.prompt is not None:
-                        node["prompt"] = params.prompt
-                    if params.content is not None:
-                        node["content"] = params.content
-                    if params.image_url is not None:
-                        node["images"] = [{"url": params.image_url, "name": node.get("title", "image")}]
-                    return True
-            return False
-
-        _, _ = await _load_and_save(params.canvas_id, mutate)
+        patch: Dict[str, Any] = {
+            "title": params.title,
+            "x": params.x,
+            "y": params.y,
+            "prompt": params.prompt,
+            "image_url": params.image_url,
+            "content": params.content,
+        }
+        adapter = get_canvas_adapter()
+        found = await adapter.update_node(
+            params.canvas_id, node_id=params.node_id, patch=patch
+        )
 
         if not found:
             # T5：画布节点不存在属画布侧定位失败，原参重试无效（换 node_id 才有意义）
@@ -272,23 +225,8 @@ class CanvasDeleteNodeTool(BaseTool):
         return CanvasDeleteNodeInput
 
     async def aexecute(self, params: CanvasDeleteNodeInput) -> ToolResult:
-        found = False
-
-        def mutate(canvas):
-            nonlocal found
-            nodes = canvas.get("nodes", [])
-            new_nodes = [n for n in nodes if n.get("id") != params.node_id]
-            if len(new_nodes) < len(nodes):
-                found = True
-            canvas["nodes"] = new_nodes
-            # 同时清理相关连线
-            canvas["connections"] = [
-                c for c in canvas.get("connections", [])
-                if c.get("from") != params.node_id and c.get("to") != params.node_id
-            ]
-            return found
-
-        _, _ = await _load_and_save(params.canvas_id, mutate)
+        adapter = get_canvas_adapter()
+        found = await adapter.delete_node(params.canvas_id, node_id=params.node_id)
 
         if not found:
             # T5：画布节点不存在属画布侧定位失败，原参重试无效（换 node_id 才有意义）
@@ -303,24 +241,25 @@ class CanvasListAssetsTool(BaseTool):
     name = "canvas_list_assets"
     risk = "low"  # §2.7：只读
     detail_tier = "output"  # 读取类：仅输出留痕
-    description = "列出画布素材库中的所有素材（图片/工作流等）"
+    description = "列出本地素材库中的所有素材（图片/视频/音频）"
 
     def get_input_schema(self) -> Type[BaseModel]:
         return CanvasListAssetsInput
 
     async def aexecute(self, params: CanvasListAssetsInput) -> ToolResult:
-        adapter = get_canvas_adapter()
-        assets = await adapter.list_assets()
+        # 素材库事实源在本地（workspace/assets/ + data/asset_library.json），
+        # 经 core/ports assets 端口复用 assets_library 扫描，不经画布后端。
+        items = assets_port().iter_items("", "")
+        total = len(items)
         page = params.limit if params.limit and params.limit > 0 else settings.canvas_asset_page_size
-        if isinstance(assets, dict) and isinstance(assets.get("items"), list):
-            items = assets["items"]
-            if len(items) > page:
-                paged = dict(assets, items=items[:page])
-                return ToolResult(success=True, data={
-                    "assets": paged, "has_more": True,
-                    "count": page, "total": len(items),
-                })
-        return ToolResult(success=True, data={"assets": assets, "has_more": False})
+        if total > page:
+            return ToolResult(success=True, data={
+                "assets": {"items": items[:page], "total": total},
+                "has_more": True, "count": page, "total": total,
+            })
+        return ToolResult(success=True, data={
+            "assets": {"items": items, "total": total}, "has_more": False,
+        })
 
 
 class CanvasBatchNodeInput(StrictToolInput):
@@ -350,24 +289,21 @@ class CanvasBatchUpdateTool(BaseTool):
         return CanvasBatchUpdateInput
 
     async def aexecute(self, params: CanvasBatchUpdateInput) -> ToolResult:
+        nodes: List[Dict[str, Any]] = []
         new_ids: List[str] = []
-
-        def mutate(canvas):
-            nodes_list = canvas.setdefault("nodes", [])
-            for n in params.nodes:
-                node_id = _gen_node_id()
-                new_ids.append(node_id)
-                node = _build_node_dict(
-                    node_id, n.node_type, n.title, n.x, n.y,
-                    prompt=n.prompt, image_url=n.image_url, content=n.content,
-                )
-                nodes_list.append(node)
-            return len(new_ids)
-
-        _, count = await _load_and_save(params.canvas_id, mutate)
+        for n in params.nodes:
+            node_id = _gen_node_id()
+            new_ids.append(node_id)
+            nodes.append(_build_node_dict(
+                node_id, n.node_type, n.title, n.x, n.y,
+                prompt=n.prompt, image_url=n.image_url, content=n.content,
+            ))
+        adapter = get_canvas_adapter()
+        # 一次批量提交（一次批量 ops）
+        await adapter.add_nodes_batch(params.canvas_id, nodes=nodes)
         return ToolResult(success=True, data={
             "canvas_id": params.canvas_id,
-            "added_count": count,
+            "added_count": len(new_ids),
             "node_ids": new_ids,
         })
 

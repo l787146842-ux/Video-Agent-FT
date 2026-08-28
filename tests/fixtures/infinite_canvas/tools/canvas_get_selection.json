@@ -1,0 +1,12 @@
+{
+  "request": {
+    "name": "canvas_get_selection",
+    "input": {}
+  },
+  "response": {
+    "ok": true,
+    "result": {
+      "nodes": []
+    }
+  }
+}

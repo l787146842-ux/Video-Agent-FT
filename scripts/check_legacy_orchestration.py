@@ -15,6 +15,8 @@
 - 任务#27 文本轨残留退役：web.action_parser 文本块解析通道 /
   parse_actions_from_reply / StudioActionExecutor 旧名（已按实际职责更名
   StateOperationExecutor）/ stage_probes（旧名编排器模块）拓扑就绪集调度函数
+- 任务#9 熊布画布通道退役（infinite-canvas 单后端）：XiongBu 后端类族 /
+  fetch_canvas_providers_sync 画布 provider 拉取 / 旧映射表名 / 旧直连端点
   - 任务#14 编排器正名：旧模块名 pipeline_orchestrator 防复活（已更名
     stage_probes 纯数据层，同名复用即视为复活）
 spec_pause_card/spec_collect_card（规格向导，不变基线）不在清单内。
@@ -67,6 +69,13 @@ FORBIDDEN = re.compile(
     r"|\bnext_batch\b"
     # 任务#14 编排器正名：旧模块名防复活（纯数据层已更名 stage_probes）
     r"|\bpipeline_orchestrator\b"
+    # 任务#9 熊布画布通道退役（阶段 7 彻底清理，回退能力消失）：旧后端类族/
+    # provider 拉取合并/旧映射表名/旧直连端点防复活（映射表已更名
+    # CANVAS_TOOL_*，infinite-canvas 单后端，经 canvas-agent 协议）
+    r"|XiongBu|XIONG_BU|xiong-bu|fetch_canvas_providers_sync"
+    r"|XIONG_BU_TO_INFINITE_CANVAS_NODE_TYPE|XIONG_BU_NODE_TYPE_TO_CANONICAL"
+    r"|CANONICAL_TO_XIONG_BU_NODE_TYPE"
+    r"|/api/online-image\b"
 )
 
 

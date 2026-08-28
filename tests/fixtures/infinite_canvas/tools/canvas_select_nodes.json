@@ -1,0 +1,14 @@
+{
+  "request": {
+    "name": "canvas_select_nodes",
+    "input": {
+      "ids": ["n1"]
+    }
+  },
+  "response": {
+    "ok": true,
+    "result": {
+      "applied": 1
+    }
+  }
+}

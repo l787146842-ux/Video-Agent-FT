@@ -18,10 +18,8 @@ from src.video_agent.core.provider_config import (
     CLI_PROTOCOLS,
     get_api_key,
     get_api_key_async,
-    get_canvas_provider_ids_async,
     get_provider_config,
     get_provider_config_async,
-    load_merged_providers_async,
     resolve_provider_ref_async,
 )
 from src.video_agent.adapters.openai_compat import (
@@ -49,7 +47,7 @@ async def resolve_openai_endpoint_async(provider_id: str, model: str) -> Tuple[s
     api_key = await get_api_key_async(provider_id)
     effective_model = model
 
-    # OpenAI 协议：base_url 未以 /v1 结尾时自动补全（与画布 upstream_models_url 逻辑一致）
+    # OpenAI 协议：base_url 未以 /v1 结尾时自动补全
     protocol = (cfg.get("protocol") or "openai").lower()
     if base_url and protocol == "openai" and not base_url.endswith("/v1"):
         base_url += "/v1"
@@ -82,7 +80,7 @@ def resolve_openai_endpoint(provider_id: str, model: str) -> Tuple[str, str, str
     """同步版端点解析（供 chat_service 等非事件循环路径使用）。
 
     语义与 resolve_openai_endpoint_async 完全一致，只把异步 provider_config
-    访问换成同步版（画布 HTTP 拉取在调用方线程内执行）。
+    访问换成同步版。
     """
     from src.video_agent.core.provider_config import (
         CLI_PROTOCOLS,
@@ -255,19 +253,14 @@ async def _try_canvas_image_generation(
     size: str = "1024x1024",
     aspect_ratio: str = "",
 ) -> Optional[str]:
-    """尝试通过画布执行生图。
-    仅当画布在线且目标 provider 存在于画布配置中时才尝试。
-    返回图片 URL，不适用或失败时返回 None。"""
-    # 判断 provider 是否画布可处理
-    canvas_ids = await get_canvas_provider_ids_async()
-    if provider_id not in canvas_ids:
-        return None  # Agent 独有的 provider，跳过画布
-
+    """尝试通过画布执行生图（经 CanvasBackend 端口）。
+    返回图片 URL，不适用或失败时返回 None（调用方静默 fallthrough 本地直连）。
+    闸口判定 = is_online（含 hasCanvas 语义：服务在线但画布页未开时返回 False）。
+    """
     adapter = get_canvas_adapter()
     if not await adapter.is_online():
-        return None  # 画布离线
+        return None  # 画布离线（含“服务在线但画布页未开”）
 
-    # 画布在线且能处理该 provider，发起请求
     payload: Dict[str, Any] = {
         "provider_id": provider_id,
         "model": model,
@@ -281,15 +274,55 @@ async def _try_canvas_image_generation(
     logger.info(f"[Generation] 生图路由到画布: provider={provider_id}, model={model}")
     try:
         result = await adapter.generate_image_online(payload)
-        # 画布 /api/online-image 返回格式: {"images": [...], ...}
-        images = result.get("images") or []
-        if images:
-            return images[0]
-        logger.warning("[Generation] 画布生图未返回图片，fallthrough 到本地")
-        return None
     except Exception as e:
         logger.warning(f"[Generation] 画布生图失败，fallthrough 到本地: {e}")
         return None
+
+    # infinite-canvas 返回格式: {"status", "tasks", "raw"}，图片落在画布图片节点上，回读取 URL
+    if isinstance(result.get("tasks"), list):
+        url = await _read_infinite_canvas_generated_url(adapter, result)
+        if url:
+            return url
+    logger.warning("[Generation] 画布生图未返回图片，fallthrough 到本地")
+    return None
+
+
+async def _read_infinite_canvas_generated_url(
+    adapter: Any, result: Dict[str, Any]
+) -> Optional[str]:
+    """从画布状态回读 infinite-canvas 在线生图的产物图片 URL。
+    生成流程为 config 节点 → 图片节点连线，图片存 metadata.content；
+    只采纳 http(s) 地址（画布侧新图多为浏览器内 blob/存储，服务端不可取，
+    取不到时返回 None 由调用方 fallthrough）。"""
+    config_ids = {
+        str(t.get("id"))
+        for t in result.get("tasks") or []
+        if isinstance(t, dict) and str(t.get("id") or "").startswith("config-")
+    }
+    if not config_ids:
+        return None
+    try:
+        state = await adapter.get_canvas("")  # infinite-canvas：当前连接页状态
+    except Exception:
+        return None
+    linked: set = set()
+    for conn in state.get("connections") or []:
+        if not isinstance(conn, dict):
+            continue
+        frm, to = conn.get("fromNodeId"), conn.get("toNodeId")
+        if frm in config_ids and to:
+            linked.add(to)
+        if to in config_ids and frm:
+            linked.add(frm)
+    for node in state.get("nodes") or []:
+        if not isinstance(node, dict) or node.get("id") not in linked:
+            continue
+        if node.get("type") != "image":
+            continue
+        content = str((node.get("metadata") or {}).get("content") or "")
+        if content.startswith(("http://", "https://")):
+            return content
+    return None
 
 
 async def generate_image_via_provider(
@@ -304,7 +337,7 @@ async def generate_image_via_provider(
 ) -> str:
     """
     统一图片生成（智能路由）：
-    1. 画布在线 + provider 存在于画布 → 通过画布 API 执行（不带参考图时）
+    1. 画布在线 → 经画布生图通道执行（不带参考图时）
     2. CLI 协议（gemini-cli）→ AgyCliImageAdapter（不支持参考图）
     3. 其他供应商 → OpenAICompatImageAdapter 本地直连（支持参考图多模态）
     返回图片 URL。失败抛 GenerationError。
@@ -326,7 +359,7 @@ async def generate_image_via_provider(
             model = defaults[0]
             logger.info(f"[Generation] 模型未指定，回退供应商 '{provider_id}' 默认模型: {model}")
 
-    # ① 尝试画布路由（画布在线 + provider 画布可处理；带参考图时跳过，画布不接收参考图）
+    # ① 尝试画布路由（画布在线；带参考图时跳过，画布不接收参考图）
     if not refs:
         canvas_result = await _try_canvas_image_generation(
             provider_id, model, prompt, size=size, aspect_ratio=aspect_ratio
