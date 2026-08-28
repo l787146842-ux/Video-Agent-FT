@@ -21,8 +21,6 @@ from loguru import logger
 from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline, stage_probes, prompt_gates
 from src.video_agent.core.live_metrics import record_degradation
-# 分级注入阈值（read_skill 短路判定与 prompt_builder 同口径）
-from src.video_agent.core.prompt_builder import GENERIC_FULL_INJECT_LIMIT
 from src.video_agent.skill_runtime.registry import resolve_entry, skill_flow_enabled
 from src.video_agent.state import storyboard_ops as ops
 # MCP 命名空间判定：外部工具同管线过 risk 闸，不旁路
@@ -116,28 +114,6 @@ def resolve_current_refs(ctx: GateContext, name: str, args: Dict[str, Any]) -> N
                     ids.append(found[1]["id"])
                 args["draft_ids"] = ids
                 args["target"] = ""
-
-
-def skill_full_text_injected(skill_name: str) -> bool:
-    """选中 Skill 的全文是否真的直注入 system prompt（read_skill 短路前提）。
-
-    判定与 prompt_builder.build_selected_skill_block 同构：
-    全文 ≤ min(GENERIC_FULL_INJECT_LIMIT, max_doc_chars) → 直注；
-    超长分级注入（只注 planner 章节+章节目录）→ 未全量注入，续读必须真读。
-    直注分支内 prompt_builder 仍按 max_doc_chars 硬截断，故短路阈值与其
-    单一来源对齐：max_doc_chars 低于分级阈值时，超出部分并未注入。
-    内容长度不可探测时保守返回 False（不短路，不失续读能力）。
-    """
-    try:
-        entry = resolve_entry(skill_name)
-    except Exception:
-        entry = None
-    content = str((entry.content if entry is not None else "") or "").strip()
-    if not content:
-        return False
-    limit = min(GENERIC_FULL_INJECT_LIMIT,
-                int(getattr(settings, "max_doc_chars", GENERIC_FULL_INJECT_LIMIT)))
-    return len(content) <= limit
 
 
 def strip_structure_prompt(ctx: GateContext, name: str, args: Dict[str, Any]) -> bool:

@@ -53,7 +53,6 @@ _SKILL_BOUNDARY_STATEMENT = (
 # 通用主路径分级注入阈值：全文超过该字符数时不再直注全文，
 # 改为「planner 章节全文 + 章节目录（标题+字符区间）」，其余章节经
 # read_skill（section/start）按需续读；≤ 阈值全文直注。
-# 与 read_skill 短路判定（fc_tool_runner._skill_full_text_injected）同口径。
 GENERIC_FULL_INJECT_LIMIT = 20000
 
 # 组合注入观察线（任务 #11：1 pipeline 可选 + N style 层）：

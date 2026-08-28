@@ -62,15 +62,6 @@ _PAUSE_WINDOW_READONLY = fc_gates.PAUSE_WINDOW_READONLY  # noqa: 1
 _STAGE_ALLOWED_GROUP_KINDS = fc_gates.STAGE_ALLOWED_GROUP_KINDS  # noqa: 1
 
 
-def _as_start(raw: Any) -> int:
-    """read_skill 续读起点容错解析：非数字（模型偶发传「开头」等描述、
-    None/缺失）一律归 0，不得抛 ValueError 中断整批工具执行。"""
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return 0
-
-
 class FCExecuteResult(NamedTuple):
     """execute() 结构化返回（杜绝位置解包：字段名即契约）。
 
@@ -154,10 +145,6 @@ class FCToolRunner:
         except Exception:  # 记录失败不影响主链路
             pass
 
-    @staticmethod
-    def _skill_full_text_injected(skill_name: str) -> bool:
-        return fc_gates.skill_full_text_injected(skill_name)
-
     def _resolve_current_refs(self, name: str, args: Dict[str, Any]) -> None:
         fc_gates.resolve_current_refs(self._gate_ctx(), name, args)
 
@@ -200,23 +187,7 @@ class FCToolRunner:
 
     async def _dispatch_tool(self, name: str, args: Dict[str, Any], injected_skill: str) -> ToolResult:
         """闸机放行后的单调用派发（串行主循环与批 7 只读并行窗口共用同一派发面）：
-        read_skill 全文直注短路 → 常规调用。"""
-        if name == "read_skill" and injected_skill:
-            wanted_skill = str(args.get("name") or "").strip()
-            same_skill = bool(wanted_skill) and wanted_skill == injected_skill.strip()
-            # 续读参数（section/start）与目录包资源（resource）一律真读：
-            # 分级注入时全文未全量注入，短路会断掉模型的章节续读/
-            # 资源按需加载能力（P2-4）
-            has_cont = bool(str(args.get("section") or "").strip()) \
-                or _as_start(args.get("start")) > 0 \
-                or bool(str(args.get("resource") or "").strip())
-            if same_skill and not has_cont and fc_gates.skill_full_text_injected(wanted_skill):
-                logger.info(f"[Planner] read_skill 短路：「{wanted_skill}」全文已直注，跳过工具调用")
-                return ToolResult(success=True, data={
-                    "content": f"Skill「{wanted_skill}」全文已在本轮 system prompt 中注入，无需重复读取，直接遵循其中的规则即可。",
-                    "already_injected": True,
-                })
-            # 未全量直注（分级注入/其他 Skill/续读）：按需真读全文或章节
+        含 read_skill 在内全部常规分发真执行（任务#12：短路已废）。"""
         return await self.tool_manager.invoke_tool(name, args)
 
     def _record_presented(self, name: str, args: Dict[str, Any]) -> None:
@@ -744,6 +715,6 @@ class FCToolRunner:
 # 闸机裁决段承重壳（实现体 core/fc_gates.py）：
 #   FCToolRunner._prompt_gate / _stage_precondition_gate / _flow_gate /
 #   _structure_integrity_gate / _gen_confirm_gate / _tool_risk_gate /
-#   _strip_structure_prompt / _resolve_current_refs / _skill_full_text_injected
+#   _strip_structure_prompt / _resolve_current_refs
 # 批末对账段（实现体 core/fc_reconcile.py）：execute() 尾部 reconcile_batch 调用
 # 回喂家族承重壳（实现体 core/fc_feedback.py）：本文件顶部 re-export 清单

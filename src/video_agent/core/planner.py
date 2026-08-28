@@ -44,7 +44,6 @@ from src.video_agent.core.planner_output import assemble_response
 # step_done_probe 注册钩子，不得删除）
 from src.video_agent.core import stage_probes
 from src.video_agent.core import prompt_gates
-from src.video_agent.core import fc_gates
 from src.video_agent.core import fc_response, planner_gate_session, planner_triage
 # 单轮执行协作臂：单轮执行 + FC 响应消费 + 回喂治理 + 上下文预算装配
 from src.video_agent.core.turn_executor import TurnExecutor
@@ -272,13 +271,8 @@ class Planner:
                     context.stage_note = stage_note
             except Exception:
                 pass  # 裁剪失败不阻断对话，闸机层仍生效
-        # 选中 Skill 全文已硬注入 system prompt 时，read_skill
-        # 出工具 schema（关模型重读入口；前奏注记保时间线可见）。
-        # 剔除判定与 fc_tool_runner.read_skill 短路同款的
-        # fc_gates.skill_full_text_injected——「全文真注入才关入口、
-        # 分级注入保续读」单一事实源。
-        if context.skill_name and fc_gates.skill_full_text_injected(context.skill_name):
-            excluded.add("read_skill")
+        # read_skill 全程可见（任务#12 渐进式披露：L2 正文经 read_skill 按需读取，
+        # 选中 Skill 全文直注时也不关重读入口）
         # MCP 两段式注入：白名单（interaction.mcp_enabled）外
         # 的 MCP 工具 schema 不下发（deny-first 可见性面；目录块已告知存在）
         try:

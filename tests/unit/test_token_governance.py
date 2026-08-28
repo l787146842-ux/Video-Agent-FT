@@ -1,5 +1,6 @@
-"""批次3 Token 治理：工具裁剪 / 紧凑 JSON / 降级快照 / 窗口表 / 图片缩放 / read_skill 短路"""
+"""批次3 Token 治理：工具裁剪 / 紧凑 JSON / 降级快照 / 窗口表 / 图片缩放 / read_skill 全程真读"""
 import json
+from typing import Any
 
 import pytest
 
@@ -143,9 +144,9 @@ def test_downscale_image():
 
 
 @pytest.mark.asyncio
-async def test_read_skill_short_circuit(monkeypatch):
-    """read_skill 对已硬注入的 Skill 短路，不真正调用工具
-    （任务#36 B5：短路前提 = 全文 ≤ 分级阈值且内容可解析）"""
+async def test_read_skill_always_dispatched(monkeypatch):
+    """read_skill 全程真读（任务#12 批次A）：同名 Skill 已注入也不短路，
+    调用照常派发到工具真执行；读取其他 Skill 同样真读。"""
     from src.video_agent.core.planner import Planner
     from src.video_agent.core import fc_gates
     from src.video_agent.adapters.base_chat import ChatResponse
@@ -184,12 +185,12 @@ async def test_read_skill_short_circuit(monkeypatch):
             tool_calls=[{"id": "c1", "type": "function",
                          "function": {"name": "read_skill", "arguments": '{"name": "分镜师"}'}}],
         )
-        # 已注入同名 Skill → 短路
+        # 已注入同名 Skill → 仍真读（短路已废）
         applied, *_rest, tool_results, _docs, _warnings, _overflow, _pause_id = await planner._execute_fc_tools(
             response, injected_skill="分镜师"
         )
-        assert invoked == []  # 工具未被调用
-        assert tool_results[0]["ok"] and tool_results[0]["data"].get("already_injected")
+        assert invoked == ["分镜师"], "已注入同名 Skill 也必须派发真读"
+        assert tool_results[0]["ok"] and not tool_results[0]["data"].get("already_injected")
 
         # 读取另一个 Skill → 正常调用
         response2 = ChatResponse(
@@ -198,36 +199,18 @@ async def test_read_skill_short_circuit(monkeypatch):
                          "function": {"name": "read_skill", "arguments": '{"name": "编剧"}'}}],
         )
         await planner._execute_fc_tools(response2, injected_skill="分镜师")
-        assert invoked == ["编剧"]
+        assert invoked == ["分镜师", "编剧"]
     finally:
         ToolManager.reset()
 
 
-def test_read_skill_start_tolerant_parsing():
-    """M2：续读起点容错（_as_start）——非数字字符串不得抛 ValueError 中断整批。
-
-    四例：start="开头"（非数字描述）/ "100"（数字串）/ None / 缺失。
-    """
-    from src.video_agent.core.fc_tool_runner import _as_start
-    assert _as_start("开头") == 0
-    assert _as_start("100") == 100
-    assert _as_start(None) == 0
-    assert _as_start({}.get("start")) == 0  # 缺失键
-
-
 @pytest.mark.asyncio
-async def test_read_skill_non_numeric_start_no_batch_abort(monkeypatch):
-    """M2 接线：start="开头" 不再抛 ValueError 中断整批（归 0 无续读 →
-    全文已直注时短路照常成立）；start="100" 属续读参数 → 真读不短路。"""
+async def test_read_skill_non_numeric_start_no_batch_abort():
+    """非数字 start 不中断整批：调用照常派发到工具，由工具按自身
+    schema 裁决；数字 start 续读同样真读（短路已废，任务#12 批次A）。"""
     from src.video_agent.core.planner import Planner
-    from src.video_agent.core import fc_gates
     from src.video_agent.adapters.base_chat import ChatResponse
 
-    class _Entry:
-        content = "短全文（低于分级阈值，已直注）"
-
-    monkeypatch.setattr(fc_gates, "resolve_entry",
-                        lambda n: _Entry() if n == "分镜师" else None)
     invoked = []
 
     class _SpyTool(BaseTool):
@@ -239,7 +222,7 @@ async def test_read_skill_non_numeric_start_no_batch_abort(monkeypatch):
             class In(BaseModel):
                 name: str = ""
                 section: str = ""
-                start: int = 0
+                start: Any = 0
             return In
 
         async def aexecute(self, params):
@@ -258,9 +241,8 @@ async def test_read_skill_non_numeric_start_no_batch_abort(monkeypatch):
         )
         _applied, *_rest, tool_results, _docs, _warnings, _overflow, _pause_id = \
             await planner._execute_fc_tools(resp, injected_skill="分镜师")
-        assert tool_results[0]["ok"], "非数字 start 不得中断整批（历史行为抛 ValueError）"
-        assert tool_results[0]["data"].get("already_injected")
-        assert invoked == []
+        assert invoked == [("分镜师", "开头")], "非数字 start 不得中断整批，调用照常派发"
+        assert tool_results[0]["ok"]
 
         resp2 = ChatResponse(
             content="",
@@ -269,22 +251,6 @@ async def test_read_skill_non_numeric_start_no_batch_abort(monkeypatch):
                                       "arguments": '{"name": "分镜师", "start": "100"}'}}],
         )
         await planner._execute_fc_tools(resp2, injected_skill="分镜师")
-        assert invoked == [("分镜师", 100)], "数字 start=100 属续读，必须真读"
+        assert invoked[-1] == ("分镜师", "100"), "数字 start=100 属续读，必须真读"
     finally:
         ToolManager.reset()
-
-
-def test_short_circuit_threshold_aligns_max_doc_chars(monkeypatch, set_global_setting):
-    """m3：短路阈值与 prompt_builder 实际注入口径单一来源对齐——
-    max_doc_chars 调到 20000 以下时，直注分支会硬截断，全文并未全量
-    注入 → 短路不成立（续读必须真读）。"""
-    from src.video_agent.core import fc_gates
-
-    class _Entry:
-        content = "x" * 8000  # 低于 20000 分级阈值，高于 5000 截断线
-
-    monkeypatch.setattr(fc_gates, "resolve_entry", lambda n: _Entry())
-    set_global_setting("max_doc_chars", 5000)
-    assert fc_gates.skill_full_text_injected("分镜师") is False
-    set_global_setting("max_doc_chars", 30000)
-    assert fc_gates.skill_full_text_injected("分镜师") is True
