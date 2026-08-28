@@ -135,7 +135,7 @@ SCAFFOLDS = (
         "承重壳（审核整改批 8 登记）：层级例外已清偿（D-01，2026-08-22）——执行器下沉 core，"
         "对 web 生成管线/供应商配置的依赖倒置为 core/ports.py 端口，"
         "web 层装配点注入；web 侧 re-export 壳已阶段二清退（任务#13 F-4，"
-        "消费方全部改指向 core 真身，见 docs/action_executor下沉计划.md）；对外行为冻结不变",
+        "消费方全部改指向 core 真身）；对外行为冻结不变",
         "action_executor 相关集成测试",
         "下沉计划阶段验收",
         "invariant"),
