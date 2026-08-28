@@ -22,7 +22,7 @@ _EXPECTED_GATE_NAMES = [
     "semantic_colors", "func_imports", "category_keys",
     "legacy_orchestration", "layer_imports", "ref_integrity",
     "scaffold_registry", "cov_ratchet", "fe_cov_ratchet",
-    "skill_tool_names",
+    "skill_tool_names", "css_size",
 ]
 
 
