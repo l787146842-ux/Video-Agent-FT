@@ -14,8 +14,6 @@
  *   Record<string, unknown>）：ProvidersResponse/OkWithStateResponse
  *   （api/providers.ts、api/project.ts）、ChatResponse、画布读取结果族
  *   CanvasDropImageResult/CanvasNodeImagesResult/AllCanvasImagesResult（api/canvas.ts）、
- *   GenerationLogEntry（api/generate.ts 读形态）、
- *   SkillDoc/SkillDocVersion（api/docs.ts）、
  *   整板保存 payload（stores/studio/storyboard.ts，后端 ProjectStateUpdate 五列表
  *   已收窄为 Record<string, unknown>[] 但元素仍宽于手写 Draft/Group/Asset）
  *   ——保留手写强类型，后端全量建模后再迁（docs/未清偿债务清单.md D-06）。

@@ -35,6 +35,30 @@ from src.video_agent.web.skill_docs import (
 router = APIRouter()
 
 
+# ---------- Skill 文档响应模型 ----------
+
+class SkillDoc(BaseModel):
+    """Skill 文档（列表/单读同形；_parse_doc 恒下发 slug/name，多余键静默过滤）"""
+    slug: str
+    name: str
+    description: str = ""
+    content: str = ""
+
+
+class SkillDocsResponse(BaseModel):
+    docs: List[SkillDoc] = []
+
+
+class SkillDocVersion(BaseModel):
+    """Skill 文档历史版本（保存前自动备份，新→旧；两键恒下发）"""
+    version: str
+    content: str
+
+
+class SkillDocHistoryResponse(BaseModel):
+    versions: List[SkillDocVersion] = []
+
+
 @router.get("/plugins/ftdyb-agent/config")
 async def get_agent_config():
     """前端 agentSkillSelect 下拉框数据源：仅文档 Skill（用户可见可编辑）。
@@ -65,7 +89,7 @@ def _planning_executors_of(skill_name: str):
     return []
 
 
-@router.get("/skills/docs")
+@router.get("/skills/docs", response_model=SkillDocsResponse)
 async def get_skill_docs():
     """文档面板：Skill 文档列表（含全文）"""
     return {"docs": list_skill_docs()}
@@ -120,7 +144,7 @@ async def put_skill_doc(slug: str, body: SkillDocSave):
     return {"ok": True, "doc": doc, "lint": lint}
 
 
-@router.get("/skills/docs/{slug}")
+@router.get("/skills/docs/{slug}", response_model=SkillDoc)
 async def get_one_skill_doc(slug: str):
     try:
         doc = get_skill_doc(slug)
@@ -135,7 +159,7 @@ async def get_one_skill_doc(slug: str):
     return doc
 
 
-@router.get("/skills/docs/{slug}/history")
+@router.get("/skills/docs/{slug}/history", response_model=SkillDocHistoryResponse)
 async def get_skill_doc_history(slug: str):
     """Skill 文档历史版本（新→旧，含全文；前端可查看/回滚）"""
     try:

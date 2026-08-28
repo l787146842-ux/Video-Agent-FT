@@ -10,6 +10,11 @@ export interface ActiveSkillRequest {
   source?: string;
 }
 
+export interface AddGenerationLogResponse {
+  ok?: boolean;
+  log?: GenerationLogEntry;
+}
+
 export interface BatchImageGenRequest {
   target?: string;
   provider_id?: string;
@@ -172,6 +177,28 @@ export interface GenLogRequest {
   source?: string;
 }
 
+export interface GenerationLogEntry {
+  id?: string;
+  task_id?: string;
+  media_type?: string;
+  status?: string;
+  provider?: string;
+  provider_name?: string;
+  model?: string;
+  prompt?: string;
+  draft_id?: string;
+  error?: string;
+  result_url?: string;
+  elapsed?: number;
+  requested_size?: string;
+  source?: string;
+  ts?: string;
+}
+
+export interface GenerationLogsResponse {
+  logs?: GenerationLogEntry[];
+}
+
 export interface GroupPatch {
   title?: string | undefined;
   desc?: string | undefined;
@@ -308,8 +335,28 @@ export interface SkillAssistantRequest {
   model?: string;
 }
 
+export interface SkillDoc {
+  slug: string;
+  name: string;
+  description?: string;
+  content?: string;
+}
+
+export interface SkillDocHistoryResponse {
+  versions?: SkillDocVersion[];
+}
+
 export interface SkillDocSave {
   content: string;
+}
+
+export interface SkillDocVersion {
+  version: string;
+  content: string;
+}
+
+export interface SkillDocsResponse {
+  docs?: SkillDoc[];
 }
 
 export interface SkillFormatRequest {

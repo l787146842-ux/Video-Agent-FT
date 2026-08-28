@@ -4,26 +4,16 @@
  */
 import { apiFetch, apiPut, apiPost, apiDelete } from './client';
 import type {
-  SkillDocSave, SkillFormatRequest, SkillAssistantRequest, ActiveSkillRequest,
+  SkillDoc, SkillDocHistoryResponse, SkillDocsResponse, SkillDocSave, SkillDocVersion,
+  SkillFormatRequest, SkillAssistantRequest, ActiveSkillRequest,
 } from '@/types/api.generated';
 
-export interface SkillDoc {
-  slug: string;
-  name: string;
-  /** 调用规则描述（后端 _parse_doc 剥离「调用规则：」前缀后下发） */
-  description?: string;
-  content?: string;
-}
-
-/** Skill 文档历史版本（后端保存前自动备份，保留最近 10 版） */
-export interface SkillDocVersion {
-  version: string;
-  content: string;
-}
+/** Skill 文档/历史版本：以后端生成物为唯一来源（豁免清单已清偿） */
+export type { SkillDoc, SkillDocVersion };
 
 /** Skill 文档历史版本列表（新→旧，含全文） */
 export async function getSkillDocHistory(slug: string): Promise<SkillDocVersion[]> {
-  const data = await apiFetch<{ versions?: SkillDocVersion[] }>(
+  const data = await apiFetch<SkillDocHistoryResponse>(
     `/api/skills/docs/${encodeURIComponent(slug)}/history`,
   );
   return Array.isArray(data.versions) ? data.versions : [];
@@ -31,7 +21,7 @@ export async function getSkillDocHistory(slug: string): Promise<SkillDocVersion[
 
 /** Skill 文档列表（含全文） */
 export async function getSkillDocs(): Promise<SkillDoc[]> {
-  const data = await apiFetch<{ docs?: SkillDoc[] }>('/api/skills/docs');
+  const data = await apiFetch<SkillDocsResponse>('/api/skills/docs');
   return Array.isArray(data.docs) ? data.docs : [];
 }
 

@@ -8,7 +8,9 @@
 import { apiPost, apiFetch } from './client';
 import type { TaskResult } from '@/types';
 import type {
-  BatchImageGenRequest, GenLogRequest, ImageGenRequest, VideoGenRequest,
+  AddGenerationLogResponse,
+  BatchImageGenRequest, GenLogRequest, GenerationLogEntry, GenerationLogsResponse,
+  ImageGenRequest, VideoGenRequest,
 } from '@/types/api.generated';
 
 // ===== 请求体（以生成物为唯一来源；必填收窄与精化字段用交集登记） =====
@@ -105,33 +107,17 @@ export function batchImage(body: BatchImageRequest) {
 
 // ===== 生成日志（顶部导航「生成日志」面板） =====
 
-export interface GenerationLogEntry {
-  id: string;
-  task_id: string;
-  media_type: 'image' | 'video' | 'audio' | 'error';
-  status: 'started' | 'succeeded' | 'failed';
-  provider: string;
-  /** 供应商显示名（API 配置页名称，如 Grsai），优先展示 */
-  provider_name: string;
-  model: string;
-  prompt: string;
-  draft_id: string;
-  error: string;
-  result_url: string;
-  elapsed: number;
-  requested_size: string;
-  source: string;
-  ts: string;
-}
+/** 生成日志条目：以后端 GenerationLogEntry 生成物为唯一来源（豁免清单已清偿） */
+export type { GenerationLogEntry };
 
 /** 查询生成日志（时间倒序，图/视频/音频无论成败均有记录） */
 export function getGenerationLogs(limit = 100) {
-  return apiFetch<{ logs: GenerationLogEntry[] }>(`/api/generation-logs?limit=${limit}`);
+  return apiFetch<GenerationLogsResponse>(`/api/generation-logs?limit=${limit}`);
 }
 
 /** 前端补录生成日志（如音频规划等未走后端任务通道的生成行为） */
 export function addGenerationLog(body: GenLogRequest) {
-  return apiPost<{ ok: boolean }>('/api/generation-logs', body);
+  return apiPost<AddGenerationLogResponse>('/api/generation-logs', body);
 }
 
 // ===== 图片尺寸工具 =====

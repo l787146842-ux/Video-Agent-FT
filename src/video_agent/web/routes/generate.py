@@ -17,6 +17,8 @@ import time
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from typing import List
 
 from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.web.error_payload import LEGACY_VALIDATION_ERROR
@@ -32,6 +34,38 @@ from .generate_video import router as _video_router
 router = APIRouter()
 router.include_router(_image_router)
 router.include_router(_video_router)
+
+
+# ---------- 生成日志响应模型 ----------
+
+class GenerationLogEntry(BaseModel):
+    """生成日志条目（读形态；字段全带默认值容忍存量落盘缺键）"""
+    id: str = ""
+    task_id: str = ""
+    # image/video/audio/error（error = 系统错误事件记录）
+    media_type: str = ""
+    # started/succeeded/failed
+    status: str = ""
+    provider: str = ""
+    provider_name: str = ""
+    model: str = ""
+    prompt: str = ""
+    draft_id: str = ""
+    error: str = ""
+    result_url: str = ""
+    elapsed: float = 0.0
+    requested_size: str = ""
+    source: str = ""
+    ts: str = ""
+
+
+class GenerationLogsResponse(BaseModel):
+    logs: List[GenerationLogEntry] = []
+
+
+class AddGenerationLogResponse(BaseModel):
+    ok: bool = True
+    log: GenerationLogEntry = GenerationLogEntry()
 
 
 @router.get("/tasks/{task_id}")
@@ -61,13 +95,13 @@ async def get_active_tasks():
 
 # ---------- 生成日志（顶部导航「生成日志」面板数据源） ----------
 
-@router.get("/generation-logs")
+@router.get("/generation-logs", response_model=GenerationLogsResponse)
 async def get_generation_logs(limit: int = 100):
     """生成日志查询：图/视频/音频每次生成的成败记录（时间倒序）"""
     return {"logs": _tm.get_gen_logs(limit)}
 
 
-@router.post("/generation-logs")
+@router.post("/generation-logs", response_model=AddGenerationLogResponse)
 async def add_generation_log(body: GenLogRequest):
     """前端补录生成日志（如音频规划等未走后台任务通道的生成行为）"""
     if body.media_type not in ("image", "video", "audio"):

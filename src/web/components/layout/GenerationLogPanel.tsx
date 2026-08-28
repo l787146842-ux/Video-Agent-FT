@@ -104,8 +104,8 @@ export function GenerationLogPanel() {
                 <div class={log.status === 'failed' ? 'genlog-item genlog-item--failed' : 'genlog-item'}>
                   <div class="genlog-item-main">
                     <div class="genlog-row1">
-                      <StatusBadge status={log.status} />
-                      <span class="genlog-provider"><KindIcon kind={log.media_type} /> {log.provider_name || log.provider || '未知供应商'}</span>
+                      <StatusBadge status={log.status || ''} />
+                      <span class="genlog-provider"><KindIcon kind={log.media_type || ''} /> {log.provider_name || log.provider || '未知供应商'}</span>
                       <Show when={log.model}>
                         <span class="genlog-model">{log.model}</span>
                       </Show>
@@ -126,9 +126,9 @@ export function GenerationLogPanel() {
                   <Show when={log.result_url && log.media_type !== 'audio'}>
                     <div class="genlog-thumb-wrap">
                       <Show when={log.media_type === 'video'} fallback={
-                        <img class="genlog-thumb" src={safeUrl(log.result_url)} alt="生成结果" loading="lazy" />
+                        <img class="genlog-thumb" src={safeUrl(log.result_url || '')} alt="生成结果" loading="lazy" />
                       }>
-                        <video class="genlog-thumb" src={safeUrl(log.result_url)} muted preload="metadata" />
+                        <video class="genlog-thumb" src={safeUrl(log.result_url || '')} muted preload="metadata" />
                       </Show>
                     </div>
                   </Show>
