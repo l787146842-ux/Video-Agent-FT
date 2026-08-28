@@ -9,14 +9,16 @@ Token 预算管理 — 估算 token 并自动截断历史消息。
 自动截断历史消息（保留最近 N 条 + 首条 system）；首条 system 自身超预算时，
 可通过 system_degrader 降级重建（第二道保险丝）。
 """
+import json
 import re
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core.ports import provider_config_port
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.utils.paths import DATA_DIR
 
 # tiktoken 为可选依赖：装了走精确估算，没装回退启发式（功能不中断）
 try:
@@ -26,48 +28,33 @@ try:
 except Exception:  # ImportError 或离线环境下 encoding 数据不可用
     _ENC = None
 
-# 模型名关键字 → 上下文窗口（token）。只收录确定值；未命中回落全局 CONTEXT_WINDOW_SIZE。
-# 新模型接入时按供应商文档扩充本表即可。
-# 匹配语义：子串先到先得——通用键（如 claude）必须置于特化键之前，
-# 特化键仅当窗口值与通用键不同时才值得单列。
-_MODEL_CONTEXT_WINDOWS = {
-    "gemini-3": 1_000_000,
-    "gemini-2": 1_000_000,
-    "gemini-1.5": 1_000_000,
-    "gpt-4.1": 1_000_000,
-    "gpt-4.1-mini": 1_000_000,
-    "gpt-4o": 128_000,
-    "gpt-4o-mini": 128_000,
-    "gpt-4-turbo": 128_000,
-    "gpt-5": 400_000,
-    "o1": 200_000,
-    "o3": 200_000,
-    "o4": 200_000,
-    "deepseek": 128_000,
-    "deepseek-r1": 128_000,
-    "deepseek-v3": 128_000,
-    "qwen": 128_000,
-    "qwen3": 128_000,
-    "claude": 200_000,
-    "kimi": 128_000,
-    "moonshot": 128_000,
-    "glm": 128_000,
-    "doubao": 128_000,
-    "ark": 128_000,
-    "seed": 128_000,
-    "mistral": 128_000,
-    "llama": 128_000,
-    "phi": 128_000,
-    "command-r": 128_000,
-    "yi": 128_000,
-}
+# 模型上下文窗口表外置于 data/model_context_windows.json（子串 → 窗口大小）。
+# 匹配语义：子串先到先得，键序即优先级（与原硬编码表一致）；
+# 未命中回落全局 CONTEXT_WINDOW_SIZE 并打 warning（不再静默兜底）。
+_CONTEXT_WINDOWS_FILE = DATA_DIR / "model_context_windows.json"
+_MODEL_CONTEXT_WINDOWS: Optional[Dict[str, int]] = None
+_WARNED_MODELS: Set[str] = set()
+
+
+def _load_context_windows() -> Dict[str, int]:
+    """懒加载并缓存窗口表；文件缺失/损坏时按空表降级（每次查表都会 warning）。"""
+    global _MODEL_CONTEXT_WINDOWS
+    if _MODEL_CONTEXT_WINDOWS is None:
+        try:
+            data = json.loads(_CONTEXT_WINDOWS_FILE.read_text(encoding="utf-8"))
+            _MODEL_CONTEXT_WINDOWS = {str(k): int(v) for k, v in data.items()}
+        except Exception as e:
+            logger.warning(f"[TokenBudget] 模型上下文窗口表加载失败，按空表降级: {e}")
+            _MODEL_CONTEXT_WINDOWS = {}
+    return _MODEL_CONTEXT_WINDOWS
 
 
 def context_window_for_model(model: str, provider_id: str = "") -> int:
     """按模型名查上下文窗口；未收录的模型回落 settings.context_window_size。
 
     ：供应商元数据（api_providers.json 的模型条目 context_window）优先，
-    硬编码子串表仅作兜底（同族不同型号窗口可表达，不因表过期而失真）。"""
+    data/model_context_windows.json 子串表仅作兜底（同族不同型号窗口可表达，
+    不因表过期而失真）。"""
     m = (model or "").lower()
     if provider_id:
         try:
@@ -79,9 +66,15 @@ def context_window_for_model(model: str, provider_id: str = "") -> int:
                         return win
         except Exception:
             pass  # 元数据不可用：回落查表（已日志化的降级路径）
-    for key, window in _MODEL_CONTEXT_WINDOWS.items():
+    for key, window in _load_context_windows().items():
         if key in m:
             return window
+    if m and m not in _WARNED_MODELS:
+        _WARNED_MODELS.add(m)
+        logger.warning(
+            f"[TokenBudget] 模型 {model!r} 未收录于 model_context_windows.json，"
+            f"回落保守窗口 {settings.context_window_size}"
+        )
     return settings.context_window_size
 
 

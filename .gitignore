@@ -6,12 +6,14 @@ API/.env
 # 运行时数据（L-0821C 根因修复：skill 文档（含头部 frontmatter 声明）是配置资产，
 # 曾被 data/ 整体忽略导致新文件不入仓、改动无法回滚；任务#5 声明与正文合一，
 # 外置 skills_manifests 已退役；
-# 运行时状态文件仍被 data/* 覆盖忽略，api_providers 含密钥绝不入库）
+# 运行时状态文件仍被 data/* 覆盖忽略，api_providers 含密钥绝不入库；
+# 配置资产类文件逐条白名单放行）
 workspace/
 logs/
 data/*
 !data/skills/
 !data/mcp_servers.json.example
+!data/model_context_windows.json
 resp.txt
 server_log.txt
 
