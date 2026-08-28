@@ -164,8 +164,10 @@ class FCToolRunner:
     def _prompt_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
         return fc_gates.prompt_gate(self._gate_ctx(injected_skill), name, args)
 
-    def _stage_precondition_gate(self, name: str, injected_skill: str) -> Optional[str]:
-        return fc_gates.stage_precondition_gate(self._gate_ctx(injected_skill), name)
+    def _stage_precondition_gate(
+        self, name: str, injected_skill: str, args: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        return fc_gates.stage_precondition_gate(self._gate_ctx(injected_skill), name, args)
 
     def _flow_gate(self, name: str, injected_skill: str) -> Optional[str]:
         return fc_gates.flow_gate(self._gate_ctx(injected_skill), name)

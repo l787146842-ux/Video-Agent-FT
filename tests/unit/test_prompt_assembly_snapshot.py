@@ -173,7 +173,8 @@ def test_stage_note_prune_explain_pairing(svc):
     planner = _make_planner(svc)
     ctx = _make_ctx()
     excluded = planner._compute_excluded_tools(ctx)
-    assert "storyboard_create_group" in excluded and "image_generate" in excluded
+    assert "storyboard_create_group" in excluded and "generate_video" in excluded
+    assert "image_generate" not in excluded  # 单张应急轨任意阶段可见
     assert ctx.stage_excluded_tools and ctx.stage_note
     assert "当前阶段工具边界" in ctx.stage_note
     # 同源解释必须随尾部消息注入（非各自拼装），且不再出现在 system 段

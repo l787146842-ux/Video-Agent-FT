@@ -612,9 +612,11 @@ STORYBOARD_STAGE_TOOLS = frozenset({
     "storyboard_key_elements", "storyboard_shots", "storyboard_audio",
     "write_media_prompt",
 })
-# 草稿生成工具集（故事板结构就绪前不下发；image_generate 的单张应急轨
-# mode='single' 经阶段前置闸同口径判定，不单独豁免可见性）
-GENERATION_STAGE_TOOLS = frozenset({"image_generate", "generate_video"})
+# 草稿生成工具集（故事板结构就绪前不下发）。image_generate 不入裁剪集：
+# 其单张应急轨（mode='single'）任意阶段可见（应急出图覆盖空项目场景，
+# 等价旧独立单张工具），批量轨由阶段前置硬闸（platform.stage_precondition）
+# 在执行时按 mode 拦截兜底。
+GENERATION_STAGE_TOOLS = frozenset({"generate_video"})
 
 
 def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
@@ -623,6 +625,7 @@ def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
     返回 (excluded: frozenset, note: str)。检测信号全部客观可查：
     - 无规格文档 → 故事板结构工具 + 生成工具都不下发（先写规格）；
     - 有规格但故事板为空 → 生成工具不下发（先建结构）；
+    - 生成工具裁剪不含 image_generate（其单张应急轨任意阶段可见）；
     - 其他阶段 → 不追加裁剪。
     裁剪只是第一层（软）：文本动作轨不受影响，由既有闸机做第二层兜底。
     """
@@ -632,12 +635,14 @@ def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
         if spec_wizard_active(_current_skill_of(raw_state)):
             return (
                 STORYBOARD_STAGE_TOOLS | GENERATION_STAGE_TOOLS,
-                "【当前阶段工具边界】成片规格尚未定稿：故事板与生成类工具暂未开放。"
+                "【当前阶段工具边界】成片规格尚未定稿：故事板与视频生成工具暂未开放。"
+                "image_generate 仅可用单张应急出图（mode='single'），批量轨需待结构就位。"
                 "规格文档将由系统按向导选定自动拼装，请等待用户完成参数选定与规格审阅。",
             )
         return (
             STORYBOARD_STAGE_TOOLS | GENERATION_STAGE_TOOLS,
-            "【当前阶段工具边界】成片规格尚未定稿：故事板与生成类工具暂未开放。"
+            "【当前阶段工具边界】成片规格尚未定稿：故事板与视频生成工具暂未开放。"
+            "image_generate 仅可用单张应急出图（mode='single'），批量轨需待结构就位。"
             "请先用 document_write 写入 制片规格.md（暂停点以当前 Skill『何时暂停』为准），"
             "规格就位后系统会自动开放后续工具。",
         )
@@ -648,7 +653,8 @@ def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
     if not has_groups:
         return (
             GENERATION_STAGE_TOOLS,
-            "【当前阶段工具边界】故事板结构尚未建立：生成类工具暂未开放。"
+            "【当前阶段工具边界】故事板结构尚未建立：视频生成工具暂未开放。"
+            "image_generate 仅可用单张应急出图（mode='single'），批量轨需待结构就位。"
             "请先搭建关键元素/分镜/音频分组，结构就位后系统会自动开放生成工具。",
         )
     return frozenset(), ""

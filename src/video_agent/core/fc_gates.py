@@ -171,15 +171,18 @@ def pause_window_error(name: str, paused_this_batch: bool) -> Optional[str]:
     return None
 
 
-def stage_precondition_gate(ctx: GateContext, name: str) -> Optional[str]:
+def stage_precondition_gate(
+    ctx: GateContext, name: str, args: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
     """阶段前置闸（platform.stage_precondition）：
     工具归属阶段的前置阶段未完成 → 拒收（机械强制，不依赖控制流入口）。
-    仅 strict 模式启用；用户坚持（gate_override）可一次性豁免并留痕。"""
+    仅 strict 模式启用；用户坚持（gate_override）可一次性豁免并留痕。
+    args 传入时支持 mode 级豁免（image_generate 单张应急轨任意阶段放行）。"""
     if not ctx.injected_skill or prompt_gates.gate_mode() != "strict":
         return None
     try:
         err = stage_probes.evaluate_stage_precondition(
-            name, ctx.state(), ctx.injected_skill)
+            name, ctx.state(), ctx.injected_skill, args)
     except Exception as exc:
         # 判定异常不再无声放行——探针失明时
         # fail-closed 拦截 + 降级遥测留痕；err 落入下方共享的 override/
@@ -477,7 +480,7 @@ def run_gate_chain(
     res = GateChainResult()
     err = pause_window_error(name, paused_this_batch)
     if err is None:
-        err = stage_precondition_gate(ctx, name)
+        err = stage_precondition_gate(ctx, name, args)
     if err is None:
         err = flow_gate(ctx, name)
     if err is None:

@@ -258,7 +258,9 @@ def test_stage_restrictions_no_spec():
         {"documents": [], "keyElements": [], "shots": [], "audioItems": []})
     assert "storyboard_create_group" in excluded
     assert "read_draft" in excluded
-    assert "image_generate" in excluded and "generate_video" in excluded
+    # image_generate 单张应急轨任意阶段可见（空项目恰是应急出图场景），
+    # 不入裁剪集；批量轨由阶段前置硬闸按 mode 拦截（见 test_stage_precondition_gate）
+    assert "image_generate" not in excluded and "generate_video" in excluded
     assert "document_write" not in excluded
     assert "规格" in note
 
@@ -300,7 +302,8 @@ def test_planner_stage_pruning(svc, monkeypatch):
     svc.state_dict["documents"] = []
     ctx1 = make_ctx("剧本生视频（需上传剧本）")
     excluded = planner._compute_excluded_tools(ctx1)
-    assert "storyboard_create_group" in excluded and "image_generate" in excluded
+    assert "storyboard_create_group" in excluded and "generate_video" in excluded
+    assert "image_generate" not in excluded  # 单张应急轨任意阶段可见
     assert ctx1.stage_excluded_tools and "当前阶段工具边界" in ctx1.stage_note
     # 无 Skill：不追加阶段裁剪，也不签发解释
     ctx2 = make_ctx("")

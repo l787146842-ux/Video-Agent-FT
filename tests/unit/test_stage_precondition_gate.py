@@ -91,6 +91,32 @@ def test_media_tools_blocked_before_structure(dag_env):
         assert po.evaluate_stage_precondition(tool, state, _SKILL) is not None, tool
 
 
+def test_image_generate_single_exempt_batch_still_gated(dag_env):
+    """image_generate 双轨分判：单张应急轨（mode='single'）任意阶段放行，
+    批量轨（含缺省不传 mode）仍按阶段前置判定（结构未完成必拒）。"""
+    state = {}
+    _analysis_done(state)
+    _spec_done(state)  # 结构未完成 → ke_media 前置缺失（空项目同态）
+    assert po.evaluate_stage_precondition(
+        "image_generate", state, _SKILL, {"mode": "single"}) is None
+    assert po.evaluate_stage_precondition(
+        "image_generate", state, _SKILL, {"mode": "batch"}) is not None
+    assert po.evaluate_stage_precondition(
+        "image_generate", state, _SKILL, {"prompt": "一张图"}) is not None  # 缺省=batch
+    assert po.evaluate_stage_precondition("image_generate", state, _SKILL) is not None
+
+
+def test_image_generate_single_via_runner_gate(dag_env, svc, monkeypatch):
+    """FC 执行路径层：single 轨豁免同样生效（闸机链传 args 同口径）"""
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+    svc.state_dict["analysis"] = {"summary": "一句话总结"}
+    runner = FCToolRunner(tool_manager=None)
+    assert runner._stage_precondition_gate(
+        "image_generate", _SKILL, {"mode": "single"}) is None
+    assert runner._stage_precondition_gate(
+        "image_generate", _SKILL, {"mode": "batch"}) is not None
+
+
 def test_passes_after_preconditions_done(dag_env, svc):
     """前置就位即放行；script_analyze 无前置恒放行"""
     state = svc.state_dict

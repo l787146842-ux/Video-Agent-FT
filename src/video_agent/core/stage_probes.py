@@ -334,6 +334,7 @@ def _effective_stage_deps(skill: str, table: List[StageSpec]) -> Dict[str, List[
 
 def evaluate_stage_precondition(
     tool_name: str, state: Dict[str, Any], skill: str,
+    args: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     """阶段前置闸判定（platform.stage_precondition，GATE_RULES 登记）。
 
@@ -342,6 +343,11 @@ def evaluate_stage_precondition(
     未声明前置回落线性链，与 3A 调度同构且更保守）。无 Skill 激活不启用。
     """
     if not skill:
+        return None
+    # image_generate 单张应急轨（mode='single'）任意阶段放行（等价旧独立
+    # 单张工具，应急出图覆盖空项目场景）；批量轨（默认）照常按阶段判定。
+    if (tool_name == "image_generate" and args is not None
+            and str(args.get("mode") or "batch").strip().lower() == "single"):
         return None
     table = stage_table(skill)
     if not table:
