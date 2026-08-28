@@ -57,7 +57,7 @@
   /* 附件 */
   .pending-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 4px; }
   .attachment-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; font-size: var(--font-sm); color: var(--text-main); max-width: 200px; }
-  .attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* .attachment-name 单行截断已归组至 chat-input-picker.css（任务#9 CSS 棘轮） */
   .attachment-remove { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: none; border: none; color: var(--text-muted); cursor: pointer; flex-shrink: 0; }
   .attachment-remove:hover { color: var(--color-danger-strong); background-color: color-mix(in srgb, var(--color-danger-strong) 10%, transparent); }
   .attachment-thumb { width: 36px; height: 36px; border-radius: 4px; object-fit: cover; border: 1px solid var(--border-color); }

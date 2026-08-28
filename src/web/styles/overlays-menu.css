@@ -10,7 +10,7 @@
   .project-option { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; font-size: var(--font-md); color: var(--text-muted); border-radius: 6px; cursor: pointer; transition: background 0.12s; }
   .project-option:hover { background: var(--bg-hover); }
   .project-option.active { background: var(--bg-tertiary); color: var(--text-main); }
-  .project-option-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* .project-option-name 名称截断已归组至本文件导出菜单段（任务#9 CSS 棘轮） */
   .project-option-time { font-size: var(--font-xs); color: var(--text-dim); }
   .project-option-delete { padding: 3px; color: var(--text-dim); cursor: pointer; transition: color 0.12s; }
   .project-option-delete:hover { color: var(--color-danger-strong); }
@@ -38,8 +38,10 @@
   .export-canvas-sub { margin-top: 2px; padding: 4px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 2px; max-height: 160px; overflow-y: auto; }
   .export-canvas-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: var(--font-sm); color: var(--text-main); background: transparent; border: 0; border-radius: 6px; cursor: pointer; transition: background 0.12s; text-align: left; }
   .export-canvas-item:hover { background: var(--bg-tertiary); }
-  .export-canvas-kind { font-size: var(--font-2xs); padding: 1px 5px; background: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--color-info); border-radius: 3px; white-space: nowrap; }
-  .export-canvas-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 类型徽章/名称截断口径合并（任务#9 CSS 棘轮：同值声明去重，形态不变；
+     画布选择器同源规则自 overlays-modal.css 归组至此，装载位只后移不提前） */
+  .canvas-selector-kind, .canvas-selector-item-kind, .export-canvas-kind { font-size: var(--font-2xs); padding: 1px 5px; background: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--color-info); border-radius: 3px; white-space: nowrap; }
+  .canvas-selector-name, .canvas-selector-item-name, .project-option-name, .export-canvas-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .export-canvas-loading { padding: 8px 10px; font-size: var(--font-xs); color: var(--text-dim); text-align: center; }
 }
 

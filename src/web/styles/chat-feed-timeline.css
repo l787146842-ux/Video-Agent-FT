@@ -23,7 +23,7 @@
   .tl-item-icon.ok { color: var(--color-success); }
   .tl-item-icon.failed { color: var(--color-danger-strong); }
   .tl-item-icon.spin { color: var(--accent-blue); animation: tlSpin 1s linear infinite; }
-  .tl-item-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* .tl-item-summary 单行截断已归组至 chat-input-picker.css（任务#9 CSS 棘轮） */
   .tl-item-failed .tl-item-summary { color: var(--color-danger-strong); }
   .tl-item-elapsed { color: var(--text-dim); flex-shrink: 0; }
   /* 降噪：合并规划条目的展开钮与逐轮明细子列表 */

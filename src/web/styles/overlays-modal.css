@@ -46,13 +46,11 @@
   .canvas-selector { position: relative; flex: 1; max-width: 260px; }
   .canvas-selector-btn { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 10px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: var(--font-sm); cursor: pointer; transition: border-color var(--dur-fast); }
   .canvas-selector-btn:hover { border-color: var(--accent-blue); }
-  .canvas-selector-kind { font-size: var(--font-2xs); padding: 1px 5px; background: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--color-info); border-radius: 3px; white-space: nowrap; }
-  .canvas-selector-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* .canvas-selector-kind/.canvas-selector-name 已归组至 overlays-menu.css（任务#9 CSS 棘轮） */
   .canvas-selector-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; max-height: 200px; overflow-y: auto; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 8px 24px color-mix(in srgb, var(--color-black) 45%, transparent); z-index: var(--z-picker-panel); padding: 4px; }
   .canvas-selector-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; background: transparent; border: 0; border-radius: 6px; color: var(--text-main); font-size: var(--font-sm); cursor: pointer; text-align: left; transition: background 0.12s; }
   .canvas-selector-item:hover { background: var(--bg-tertiary); }
   .canvas-selector-item.active { background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); color: var(--color-info); }
-  .canvas-selector-item-kind { font-size: var(--font-2xs); padding: 1px 5px; background: color-mix(in srgb, var(--color-info-strong) 15%, transparent); color: var(--color-info); border-radius: 3px; white-space: nowrap; }
-  .canvas-selector-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* .canvas-selector-item-kind/.canvas-selector-item-name 已归组至 overlays-menu.css（任务#9 CSS 棘轮） */
   .canvas-selector-empty { padding: 12px; text-align: center; font-size: var(--font-sm); color: var(--text-dim); }
 }
