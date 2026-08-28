@@ -11,6 +11,7 @@
    正文逐字不动、其余声明保留；flow 清空后整键移除；幂等（重跑零命中）。
 """
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,11 @@ from src.video_agent.skill_runtime import manifest_schema as ms
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATE_SCRIPT = ROOT / "scripts" / "archive" / "migrate_zombie_step_keys.py"
+
+# Windows GBK 控制台钉子：子进程强制 UTF-8 输出 + 读取侧显式 UTF-8 解码，
+# 避免环境编码错配时读取线程 UnicodeDecodeError 把 stdout 打成 None，
+# 把真实失败伪装成通过（编码中立，Linux CI 不受影响）。
+_CHILD_UTF8_ENV = {**os.environ, "PYTHONUTF8": "1"}
 
 
 @pytest.fixture(scope="module")
@@ -146,13 +152,15 @@ def test_cli_defaults_to_dry_run(migrate_mod, tmp_path):
     before = f.read_text(encoding="utf-8")
     r = subprocess.run(
         [sys.executable, str(MIGRATE_SCRIPT), "--dir", str(d)],
-        capture_output=True, text=True)
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=_CHILD_UTF8_ENV)
     assert r.returncode == 0
     assert "DRY-RUN" in r.stdout
     assert f.read_text(encoding="utf-8") == before
     r2 = subprocess.run(
         [sys.executable, str(MIGRATE_SCRIPT), "--dir", str(d), "--apply"],
-        capture_output=True, text=True)
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=_CHILD_UTF8_ENV)
     assert r2.returncode == 0
     assert "APPLY" in r2.stdout
     assert "stage_executors" not in f.read_text(encoding="utf-8")
