@@ -37,7 +37,9 @@ _WARNED_MODELS: Set[str] = set()
 
 
 def _load_context_windows() -> Dict[str, int]:
-    """懒加载并缓存窗口表；文件缺失/损坏时按空表降级（每次查表都会 warning）。"""
+    """懒加载并缓存窗口表；文件缺失/损坏时按空表降级。
+    加载警告只在首次加载失败时打一次（结果已缓存，后续查表不再触发）；
+    模型未收录的警告另在 context_window_for_model 按模型名去重。"""
     global _MODEL_CONTEXT_WINDOWS
     if _MODEL_CONTEXT_WINDOWS is None:
         try:

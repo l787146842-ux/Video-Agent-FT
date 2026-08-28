@@ -13,6 +13,7 @@
 无回退争议时，本门禁可裁决下账，度量转为纯观测。
 """
 import argparse
+import os
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -52,7 +53,10 @@ def read_baseline() -> float | None:
 
 
 def write_baseline(value: float) -> None:
-    BASELINE_FILE.write_text(f"{value:.2f}\n", encoding="utf-8")
+    # 临时文件 + os.replace 原子替换，防写一半崩溃留下损坏基线
+    tmp = BASELINE_FILE.with_name(BASELINE_FILE.name + ".tmp")
+    tmp.write_text(f"{value:.2f}\n", encoding="utf-8")
+    os.replace(tmp, BASELINE_FILE)
 
 
 def main() -> int:

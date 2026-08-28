@@ -5,7 +5,8 @@
 
 - func_imports_baseline.txt = 合法存量清单（白名单），只许减少不许增加；
 - 任何白名单之外的方法内 import 即失败（防增量漂移）；
-- 白名单随文件删除/顶层化自然缩减，--refresh 只剔除已消失条目（不收编新增）。
+- 白名单随文件删除/顶层化自然缩减，--refresh 只剔除已消失条目（不收编新增；
+  基线缺失/为空时拒绝刷新，防产出空白名单）。
 
 退役条件见 acceptance.py GATES 表本闸条目（单一事实源，不在此复述）。
 用法：
@@ -44,6 +45,13 @@ def main() -> int:
     base_keys = {ln.rsplit(":", 2)[0] + ":" + ln.rsplit(":", 1)[-1] for ln in baseline}
     cur_keys = {ln.rsplit(":", 2)[0] + ":" + ln.rsplit(":", 1)[-1] for ln in current}
     if "--refresh" in sys.argv:
+        # 基线缺失/为空时拒绝刷新：空白名单会让后续门禁把全部存量误判为新增，
+        # 且不覆写文件（从 git 恢复后重试）
+        if not baseline:
+            print(f"[check_func_imports] WARNING: 基线文件缺失或为空（{BASELINE}），"
+                  "拒绝生成空白名单（会把全部存量误判为新增违规）；"
+                  "请先从 git 恢复：git checkout HEAD -- scripts/func_imports_baseline.txt")
+            return 1
         # 只减不增：仅剔除已自然消失的存量条目，绝不收编新增违规
         kept = [ln for ln in baseline if ln.rsplit(":", 2)[0] + ":" + ln.rsplit(":", 1)[-1] in cur_keys]
         with open(BASELINE, "w", encoding="utf-8") as fh:

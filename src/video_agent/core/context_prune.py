@@ -32,6 +32,8 @@ PRUNE_READ_TOOLS = frozenset({
 })
 PRUNE_GENERATION_TOOLS = frozenset({
     "image_generate", "generate_video",
+    # 遗留别名：老会话历史中的旧生图工具名，同走生成类剪枝标记（防落入 read_* 可续读误导分支）
+    "generate_image",
 })
 PRUNE_FEEDBACK_TOOLS = PRUNE_READ_TOOLS | PRUNE_GENERATION_TOOLS
 

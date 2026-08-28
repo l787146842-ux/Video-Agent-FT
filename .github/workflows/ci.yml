@@ -44,7 +44,7 @@ jobs:
         run: python scripts/check_layer_imports.py
       - name: Scaffold registry gate (acceptance GATES 对齐：脚手架登记表 + 组件可导入)
         run: python scripts/check_scaffold_registry.py
-      - name: Reference integrity gate (治理瘦身第一批裁决 R11：文档指针漂移与宪法锚点合并为一条引用完整性闸)
+      - name: Reference integrity gate (文档指针漂移与宪法锚点合并为一条引用完整性闸)
         run: python scripts/check_doc_pointers.py
       # Executor skill drift gate 已随任务#36 B5 执行器一步退役删除（执行器族不复存在）
       - name: Skill tool names gate (acceptance GATES 对齐：技能文档工具白名单)
