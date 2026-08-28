@@ -3,15 +3,10 @@
  * 严格对齐后端 routes/project.py 契约
  */
 import { apiFetch, apiPost, apiPut } from './client';
-import type { Project, ServerStateSnapshot, DocRecord } from '@/types';
+import type { ServerStateSnapshot, DocRecord } from '@/types';
 import type {
-  DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, OkResponse, SwitchProjectRequest, UndoStatusResponse,
+  DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, OkResponse, ProjectListResponse, SwitchProjectRequest, UndoStatusResponse,
 } from '@/types/api.generated';
-
-export interface ProjectListResponse {
-  projects: Project[];
-  active_project_id: string;
-}
 
 export interface OkWithStateResponse {
   ok: boolean;

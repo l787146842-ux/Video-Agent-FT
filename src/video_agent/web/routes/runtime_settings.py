@@ -56,6 +56,28 @@ class RuntimeSettingsUpdate(BaseModel):
     model_policy: Optional[Dict[str, Any]] = None
 
 
+class PolicyRow(BaseModel):
+    """模型分层策略单行（normalize_policy 白名单三键）"""
+    provider: str = ""
+    model: str = ""
+    thinking_level: str = ""
+
+
+class RuntimeSettings(BaseModel):
+    """运行时设置读形态（GET/PUT 响应同形；字段恒下发，契约层必填）"""
+    model_fallback_enabled: bool
+    chat_image_enabled: bool
+    default_image_provider_id: str
+    default_image_model: str
+    default_video_provider_id: str
+    default_video_model: str
+    default_image_resolution: str
+    default_video_resolution: str
+    max_shot_duration: int
+    script_inject_limit: int
+    model_policy: Dict[str, PolicyRow]
+
+
 def _current_dict() -> Dict[str, Any]:
     from src.video_agent.core import model_policy as mp
 
@@ -75,13 +97,13 @@ def _current_dict() -> Dict[str, Any]:
     }
 
 
-@router.get("/settings/runtime")
+@router.get("/settings/runtime", response_model=RuntimeSettings)
 async def get_runtime_settings():
     """读取当前运行时设置（全局设置页 + 顶栏开关状态）"""
     return _current_dict()
 
 
-@router.put("/settings/runtime")
+@router.put("/settings/runtime", response_model=RuntimeSettings)
 async def put_runtime_settings(body: RuntimeSettingsUpdate):
     """热更新运行时设置：内存即时生效 + 落盘持久化（仅应用请求中提供的字段）"""
     payload = body.model_dump(exclude_none=True)

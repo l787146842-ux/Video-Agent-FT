@@ -19,8 +19,16 @@ router = APIRouter()
 
 # ---------- Response Models ----------
 
+class ProjectItem(BaseModel):
+    """项目索引条目（与前端 Project 同形；索引多余键静默过滤）"""
+    id: str
+    name: str
+    created_at: str = ""
+    updated_at: str = ""
+
+
 class ProjectListResponse(BaseModel):
-    projects: List[Dict[str, Any]] = []
+    projects: List[ProjectItem] = []
     active_project_id: str = ""
 
 

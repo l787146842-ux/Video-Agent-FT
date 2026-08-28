@@ -11,12 +11,11 @@
  * 豁免清单（后端未建模为 Pydantic、OpenAPI 无对应 schema，或手写显著更精，留手写并登记）：
  * - ServerStateSnapshot / ChatMessage / Draft 等视图态：前端渲染形态，非 API 模型；
  * - 手写响应类型比生成物更精确的站点（生成物对 Dict 响应只能给出
- *   Record<string, unknown>）：ProjectListResponse/ProvidersResponse/
- *   OkWithStateResponse（api/project.ts、api/providers.ts）、
- *   ChatResponse、画布读取结果族
+ *   Record<string, unknown>）：ProvidersResponse/OkWithStateResponse
+ *   （api/providers.ts、api/project.ts）、ChatResponse、画布读取结果族
  *   CanvasDropImageResult/CanvasNodeImagesResult/AllCanvasImagesResult（api/canvas.ts）、
  *   GenerationLogEntry（api/generate.ts 读形态）、
- *   SkillDoc/SkillDocVersion（api/docs.ts）、RuntimeSettings（api/agent.ts 读形态）、
+ *   SkillDoc/SkillDocVersion（api/docs.ts）、
  *   整板保存 payload（stores/studio/storyboard.ts，后端 ProjectStateUpdate 五列表
  *   已收窄为 Record<string, unknown>[] 但元素仍宽于手写 Draft/Group/Asset）
  *   ——保留手写强类型，后端全量建模后再迁（docs/未清偿债务清单.md D-06）。
@@ -35,6 +34,7 @@ import type {
   AgentTaskReplayPayload as GenAgentTaskReplayPayload,
   AgentTaskToolEntry,
   ConversationMeta,
+  ProjectItem,
   SseActionsAppliedEvent as GenSseActionsAppliedEvent,
   SseDeltaEvent,
   SseDocWrittenEvent,
@@ -495,9 +495,5 @@ export interface GroupRecord {
 export type AgentChatRequest = ChatRequest;
 
 // ===== 项目 =====
-export interface Project {
-  id: string;
-  name: string;
-  created_at?: string;
-  updated_at?: string;
-}
+/** 项目索引条目：以后端 ProjectItem 生成物为唯一来源（项目列表形态同形） */
+export type Project = ProjectItem;

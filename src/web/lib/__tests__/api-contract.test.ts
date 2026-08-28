@@ -44,7 +44,7 @@ const EXEMPT: Record<string, string> = {
 
 /** api/ 内与生成物同名、刻意保留的手写 interface（豁免清单登记项） */
 const SHADOW_WHITELIST = new Set([
-  'ProjectListResponse', 'OkWithStateResponse', 'ProvidersResponse',
+  'OkWithStateResponse', 'ProvidersResponse',
 ]);
 
 describe('契约桥接', () => {

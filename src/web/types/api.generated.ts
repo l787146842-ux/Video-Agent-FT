@@ -219,8 +219,21 @@ export interface OkWithStateResponse {
   project_id?: string;
 }
 
+export interface PolicyRow {
+  provider?: string;
+  model?: string;
+  thinking_level?: string;
+}
+
+export interface ProjectItem {
+  id: string;
+  name: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ProjectListResponse {
-  projects?: Record<string, unknown>[];
+  projects?: ProjectItem[];
   active_project_id?: string;
 }
 
@@ -253,6 +266,20 @@ export interface ProvidersResponse {
 export interface ReorderRequest {
   category: string;
   group_ids: string[];
+}
+
+export interface RuntimeSettings {
+  model_fallback_enabled: boolean;
+  chat_image_enabled: boolean;
+  default_image_provider_id: string;
+  default_image_model: string;
+  default_video_provider_id: string;
+  default_video_model: string;
+  default_image_resolution: string;
+  default_video_resolution: string;
+  max_shot_duration: number;
+  script_inject_limit: number;
+  model_policy: Record<string, PolicyRow>;
 }
 
 export interface RuntimeSettingsUpdate {

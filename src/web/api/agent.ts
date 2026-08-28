@@ -4,7 +4,10 @@
  */
 import { apiPost, apiFetch, apiPut } from './client';
 import type { AgentChatRequest, Skill } from '@/types';
-import type { RuntimeSettingsUpdate } from '@/types/api.generated';
+import type { RuntimeSettings, RuntimeSettingsUpdate } from '@/types/api.generated';
+
+/** 运行时设置读形态：以后端 RuntimeSettings 生成物为唯一来源（豁免清单已清偿） */
+export type { RuntimeSettings };
 
 /** 非流式聊天响应 */
 export interface AgentChatResponse {
@@ -42,24 +45,6 @@ export interface ContextUsage {
 export function getContextUsage(model?: string): Promise<ContextUsage> {
   const qs = model ? `?model=${encodeURIComponent(model)}` : '';
   return apiFetch<ContextUsage>(`/api/agent/context-usage${qs}`);
-}
-
-/** 运行时设置：全局生成默认 + 模型 fallback 开关（热生效，持久化于后端） */
-export interface RuntimeSettings {
-  model_fallback_enabled: boolean;
-  /** 聊天框出图开关：关 = Agent 在对话中不主动触发生图 */
-  chat_image_enabled: boolean;
-  default_image_provider_id: string;
-  default_image_model: string;
-  default_video_provider_id: string;
-  default_video_model: string;
-  default_image_resolution: string;
-  default_video_resolution: string;
-  /** 分镜最大时长（秒）：Agent 自拆分镜单镜上限 */
-  max_shot_duration: number;
-  /** ：旧「推理档位」两键退役（归模型分层策略 summary/executor 行） */
-  /** ：模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型） */
-  model_policy: Record<string, { provider: string; model: string; thinking_level: string }>;
 }
 
 export function getRuntimeSettings(): Promise<RuntimeSettings> {

@@ -7,6 +7,7 @@ import { For } from 'solid-js';
 import { apiProvidersFor, providerModels } from '@/lib/providers';
 import { ParamGroup, ParamSelect } from '@/components/middle-panel/params/ParamBase';
 import type { RuntimeSettings } from '@/api/agent';
+import type { PolicyRow } from '@/types/api.generated';
 
 /** ：模型分层策略表四角色（编排/生成/摘要/执行器） */
 const MODEL_POLICY_ROLES = [
@@ -29,7 +30,7 @@ export function ModelPolicySection(props: {
   set: (patch: Partial<RuntimeSettings>) => void;
 }) {
   /** ：单角色策略局部更新（保留其他角色与其他键） */
-  function setPolicyRole(roleKey: string, patch: { provider?: string; model?: string; thinking_level?: string }) {
+  function setPolicyRole(roleKey: string, patch: Partial<PolicyRow>) {
     const policy = { ...(props.gs()?.model_policy || {}) };
     const cur = { ...(policy[roleKey] || { provider: '', model: '', thinking_level: '' }) };
     policy[roleKey] = { ...cur, ...patch };
