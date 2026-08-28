@@ -64,17 +64,24 @@ def test_no_skill_declares_unknown_or_reference_kind_yet():
             f"{stem} kind={kind!r} 未登记于批 2.3 裁决口径")
 
 
-def test_style_injection_note_wired_for_real_skill_name():
-    """代码侧消费链在场：style kind → 风格层声明注入（与桩测试互补，
-    这里钉 prompt_builder 差异化文案本身不丢失）。"""
-    from src.video_agent.core.prompt_builder import (
-        _KIND_STYLE_LAYER_NOTE,
-        _kind_baseline_statement,
-        _kind_block_suffix,
-    )
+def test_style_kind_display_note_wired_for_real_skill_name():
+    """代码侧消费链在场：style kind → 元数据头「类型」展示行（目录展示口径）。
+    任务#12 批次B：差异化正文注入分支退役，kind 语义保留在注册表解析与
+    元数据头展示；_KIND_LABELS 文案不丢失。"""
+    from src.video_agent.core.prompt_builder import _KIND_LABELS
 
-    assert "风格层" in _kind_baseline_statement("style")
-    assert "风格层" in _kind_block_suffix("style")
-    # reference 已下架（任务#8 ②）：声明入口关闭后该分支不可达，
-    # 不再钉死其文案（残留实现归 prompt_builder，待后续批次清理）。
-    assert _KIND_STYLE_LAYER_NOTE in _kind_baseline_statement("style")
+    assert "风格型" in _KIND_LABELS["style"]
+    assert "流程型" in _KIND_LABELS["pipeline"]
+    # 展示口径钉死：真实美学型 Skill 的元数据头携带风格型类型行，
+    # 且正文零注入（轻量块内不含风格正文）。
+    from src.video_agent.core.prompt_builder import PromptBuilder
+    from src.video_agent.web import skill_docs
+
+    pb = PromptBuilder(
+        lambda: skill_docs,
+        lambda: "proj",
+        lambda: {"keyElements": [], "shots": [], "audioItems": []},
+    )
+    block = pb.build_selected_skill_block("李安美学风格短片")
+    assert "类型：风格型（美学指导）" in block
+    assert "read_skill" in block

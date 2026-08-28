@@ -662,9 +662,9 @@ def _norm_skill_name(s: str) -> str:
 def resolve_skill_content(wanted: str) -> tuple:
     """按名称解析 Skill 全文（仅文档 Skill，模糊匹配）。
 
-    read_skill 工具与 Planner 选中项硬注入共用同一套解析，保证两处行为一致。
+    read_skill 工具与 Planner 选中段存在性检查共用同一套解析，保证两处行为一致。
     返回 (display_name, content)，未命中返回 ("", "")；content 已剥离
-    frontmatter（声明经元数据头单独注入，正文注入不携带 YAML 头）。
+    frontmatter（声明经元数据头单独展示，正文读取不携带 YAML 头）。
     """
     wanted = (wanted or "").strip()
     wn = _norm_skill_name(wanted)

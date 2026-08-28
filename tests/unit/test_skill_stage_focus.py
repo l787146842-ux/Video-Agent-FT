@@ -1,5 +1,7 @@
-"""Skill 章节解析与通用主路径注入块（本文件覆盖章节解析与通用全文直注回归；
-legacy 全文直注/阶段聚焦单注入收敛的钉测试见 test_prompt_single_injection_p317.py，P3-17）"""
+"""Skill 章节解析与选中 Skill 轻量段（本文件覆盖章节解析与正文零注入回归；
+遥测/预算观察项钉测试见 test_prompt_single_injection_p317.py）。
+章节解析（split_skill_sections）随任务#12 裁决保留：供阶段裁剪闸、
+音频闸、lint、scan_skills 等探针消费，仅注入面退役。"""
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.web import skill_docs
 
@@ -46,7 +48,7 @@ def test_split_sections_empty():
     assert skill_docs.split_skill_sections("") == {}
 
 
-# ---------- 通用主路径注入块（执行器形态已一步退役） ----------
+# ---------- 选中 Skill 轻量段（任务#12 批次B：正文零注入） ----------
 
 def _pb(raw_state):
     return PromptBuilder(
@@ -56,22 +58,24 @@ def _pb(raw_state):
     )
 
 
-def test_generic_block_full_text_instead_of_executor_list():
-    """任务#36 B5：执行器退役后短 Skill（≤20000 字符）全文直注，
-    不再是「只注入执行器清单不注入全文」形态（断言不弱化，方向反转）。"""
+def test_selected_block_lightweight_for_real_skill():
+    """任务#12 批次B：真实存量 Skill 选中后只产出轻量状态提示，
+    章节原文（如 planner 启动协议）不进 system prompt；
+    执行器清单形态与全文直注形态措辞均已退役。"""
     from src.video_agent.skill_runtime import registry
 
     registry.reset_registry()  # 隔离：确保按真实 data/skills 目录重新注册
     state = {"keyElements": [], "shots": [], "audioItems": []}
     pb = _pb(state)
     block = pb.build_selected_skill_block("AI-短剧一站式生成")
-    # 全文直注：章节原文进 prompt（执行器形态的「全文不注入」已反转）
-    # 锚点随任务 #12 交叉验证更新：James 批 16 Skill 内容清退移除「Seedance 2.5」
-    # 供应商字样，改钉清退后文档中稳定存在的章节原文（planner 启动协议）。
-    assert "启动协议" in block
-    # 执行器清单措辞随退役删除
+    # 轻量状态提示：名称 + read_skill 指引
+    assert "当前选中 Skill" in block and "read_skill" in block
+    # 正文零注入：章节原文不进块（锚点：planner 启动协议）
+    assert "启动协议" not in block
+    # 历史注入形态措辞已退役
     assert "已注册独立执行器" not in block
     assert "== 当前 Skill 的流程基线" not in block
+    assert "全文" in block and "未注入" in block
 
 
 def test_unsectioned_skill_block_is_empty():

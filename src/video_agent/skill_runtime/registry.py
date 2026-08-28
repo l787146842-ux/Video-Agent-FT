@@ -618,36 +618,8 @@ def skill_prompt_en_categories(skill_name: str) -> List[str]:
 
 # ---------- 组合激活（任务 #11：1 pipeline 可选 + N style 层） ----------
 # 主流程归属仍走 activeSkill（单值，现状语义：新选择替换旧选择）；
-# 风格层叠加清单存项目态 styleSkills（随快照下发），注入拼装见
-# prompt_builder 组合段（预算超限走既有分级注入/裁剪机制）。
-
-# 风格层叠加上限（防无节制膨胀；预算兜底另有分级注入/裁剪机制）
-MAX_STYLE_LAYERS = 8
-
-
-def style_skills_from_state(raw_state: Optional[Dict[str, Any]]) -> List[str]:
-    """项目态叠加风格层清单（清洗后）：非空字符串、去重保序、上限截断。
-
-    未登记/非法形状返回空表（零预设，存量项目行为零变化）。"""
-    if not isinstance(raw_state, dict):
-        return []
-    raw = raw_state.get("styleSkills")
-    if not isinstance(raw, list):
-        return []
-    out: List[str] = []
-    for item in raw:
-        s = str(item or "").strip()
-        if s and s not in out:
-            out.append(s)
-        if len(out) >= MAX_STYLE_LAYERS:
-            break
-    return out
-
-
-# ---------- 组合激活（任务 #11：1 pipeline 可选 + N style 层） ----------
-# 主流程归属仍走 activeSkill（单值，现状语义：新选择替换旧选择）；
-# 风格层叠加清单存项目态 styleSkills（随快照下发），注入拼装见
-# prompt_builder 组合段（预算超限走既有分级注入/裁剪机制）。
+# 风格层叠加清单存项目态 styleSkills（随快照下发），目录段可见性告知见
+# prompt_builder 目录段（正文注入已随任务#12 批次B 退役）。
 
 # 风格层叠加上限（防无节制膨胀；预算兜底另有分级注入/裁剪机制）
 MAX_STYLE_LAYERS = 8

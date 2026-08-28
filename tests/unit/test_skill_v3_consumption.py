@@ -185,7 +185,7 @@ def _pb(raw_state):
 
 
 def test_metadata_header_full_v3_declaration():
-    _save("元数据全", "# 风格指导\n正文散文", {
+    _save("元数据全", "# 风格指导\n正文散文 UNIQUE_META_BODY_MARK", {
         "kind": "style",
         "requires_inputs": [{"type": "script"}],
         "language": {"prompt": "en"},
@@ -201,8 +201,10 @@ def test_metadata_header_full_v3_declaration():
     assert "英文书写" in block
     assert "平台会在以下节点兜底保证暂停" in block
     assert "规格定稿后" in block and "每批生成后" in block
-    # 位置：元数据头在 Skill 全文之前
-    assert block.index("== Skill 元数据") < block.index("风格指导")
+    # 位置：元数据头跟在轻量标题行之后（任务#12 批次B：正文零注入，
+    # 块内只有标题行与元数据头两部分）
+    assert block.index("== 当前选中 Skill") < block.index("== Skill 元数据")
+    assert "UNIQUE_META_BODY_MARK" not in block  # 正文不进块（正文探针）
     # 原料到达后缺失提示消失
     block2 = _pb({"uploadedDocs": [{"name": "a.md", "content": "x"}]}).build_selected_skill_block("元数据全")
     assert "原料未就绪" not in block2

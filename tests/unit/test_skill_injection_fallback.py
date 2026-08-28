@@ -1,7 +1,8 @@
-"""选中 Skill 硬注入测试。
+"""选中 Skill 轻量状态提示测试。
 
-背景（888 项目事故）：若 Skill 与剧本只给目录/预览，模型等于看不到
-流程规范与原文，产出质量直接劣化——选中 Skill 必须全文硬注入。
+任务#12 批次B：选中 Skill 全文硬注入退役——选中段收敛为轻量状态提示
+（选中名称 + read_skill 按需加载指引 + 元数据头），正文零注入；
+流程规范由模型执行前调 read_skill 读取（read_skill 门禁短路已随批次A 解除）。
 
 4-4 双轨退役（ADR-0001）：原 TestNonFcChannelFallback（非 FC 通道附件
 全文直注）已随通道删除移除，替换为 CLI 聊天拦截断言（见文末）。
@@ -29,26 +30,29 @@ def doc_skill(tmp_path, monkeypatch):
     return skill_dir
 
 
-class TestSelectedSkillHardInjection:
-    """用户选中的 Skill 必须全文进 system prompt（不依赖模型自觉调 read_skill）"""
+class TestSelectedSkillLightweightHint:
+    """用户选中的 Skill 以轻量状态提示进 system prompt（正文零注入，
+    流程规范由模型执行前调 read_skill 按需读取）"""
 
-    def test_selected_skill_full_text_injected(self, doc_skill):
+    def test_selected_skill_lightweight_hint_only(self, doc_skill):
         planner = Planner()
         ctx = PlannerContext(use_studio_context=False, skill_name="测试流程 Skill")
         prompt = planner._build_system_prompt(ctx)
         assert "当前选中 Skill" in prompt
-        assert SKILL_MARKER in prompt, "选中 Skill 全文未注入 system prompt"
-        # 流程纪律强化段：针对 888 项目事故（模型读到了 Skill 却一口气做完全部阶段）
-        assert "Skill 流程纪律" in prompt
-        assert "workflow_pause" in prompt
-        # 纪律条款必须来自外置文件（宪法 Rule 6 单一事实源），而不是代码硬编码
-        assert "不默认" in prompt
+        # read_skill 按需加载指引在场（批次A 后全程可见）
+        assert "read_skill" in prompt
+        # 正文零注入：全文片段不进 system prompt
+        assert SKILL_MARKER not in prompt, "任务#12 批次B 后选中 Skill 正文不应注入"
+        # 历史全文直注形态措辞已退役（含 Skill 流程纪律随注入块下发的形态）
+        assert "全文" not in prompt or "全文未注入" in prompt or "全文一律" in prompt or "全文同样不注入" in prompt
 
-    def test_fuzzy_selected_name_still_injected(self, doc_skill):
+    def test_fuzzy_selected_name_lightweight_hint(self, doc_skill):
         planner = Planner()
         ctx = PlannerContext(use_studio_context=False, skill_name="测试流程Skill.md")
         prompt = planner._build_system_prompt(ctx)
-        assert SKILL_MARKER in prompt
+        # 模糊名解析后仍产出轻量提示，正文零注入
+        assert "当前选中 Skill" in prompt
+        assert SKILL_MARKER not in prompt
 
     def test_no_selection_only_catalog(self, doc_skill):
         planner = Planner()

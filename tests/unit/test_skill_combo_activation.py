@@ -7,10 +7,8 @@
 3) /api/skills/active-styles 端点：全量替换式清单——非存在 404、
    非 style 拒绝 400、与主流程同 slug 摘除、去重保序、上限截断、空清单全摘；
 4) 主流程激活时若已在风格层清单内则摘除（同一 Skill 不得双占两层）；
-5) build_style_combo 注入拼装：组合头文案（外置模板）+ 各风格层块、
-   与主流程同 slug 兜底去重、无风格层空串（存量行为零变化）；
-6) 组合超预算口径：先强制既有分级注入，仍超按清单顺序截断并留
-   模型可见注记（不静默）。
+5) 任务#12 批次B：组合注入（build_style_combo）退役——风格层只在
+   Skill 目录段可见（名称提示 + read_skill 按需读取指引），正文零注入。
 """
 import pytest
 from fastapi import FastAPI
@@ -28,7 +26,9 @@ from src.video_agent.web.routes import plugins
 
 @pytest.fixture(autouse=True)
 def isolate(tmp_path, monkeypatch):
-    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", tmp_path / "skills")
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", skills_dir)
     registry.reset_registry()
     yield
     registry.reset_registry()
@@ -166,111 +166,53 @@ class TestActiveStyleLayersEndpoint:
         assert svc.state_dict["styleSkills"] == []
 
 
-# ---------- 4) build_style_combo 注入拼装 ----------
+# ---------- 4) 组合注入退役：风格层只在目录段可见（任务#12 批次B） ----------
 
-def test_combo_empty_when_no_style_skills():
-    assert _pb({}).build_style_combo() == ""
-    assert _pb({"styleSkills": []}).build_style_combo() == ""
+def test_combo_injection_api_retired():
+    """build_style_combo/_build_one_style_block/STYLE_COMBO_SOFT_LIMIT
+    已随任务#12 批次B 退役，模块不再暴露这些符号。"""
+    assert not hasattr(pb_mod, "build_style_combo")
+    assert not hasattr(PromptBuilder, "build_style_combo")
+    assert not hasattr(PromptBuilder, "_build_one_style_block")
+    assert not hasattr(pb_mod, "STYLE_COMBO_SOFT_LIMIT")
 
 
-def test_combo_assembles_header_and_blocks():
+def test_catalog_notes_style_layers_without_body():
+    """风格层叠加时目录段同步告知（名称在场 + 正文零注入指引）。"""
     _seed_combo_skills()
     raw = {"styleSkills": ["风格甲", "风格乙"]}
-    block = _pb(raw).build_style_combo()
-    # 外置模板头（计数与名单）
-    assert "叠加风格层（2 个）" in block
+    ctx = _ctx("")
+    block = _pb(raw).build_skill_catalog(ctx)
+    assert "另有风格层叠加生效" in block
     assert "风格甲" in block and "风格乙" in block
-    # 各风格层正文都在（组合注入）
-    assert "MARK_STYLE_A" in block and "MARK_STYLE_B" in block
-    # 风格层语义（kind 差异化注入）
-    assert "风格层" in block
-
-
-def test_combo_dedup_against_primary():
-    _seed_combo_skills()
-    raw = {
-        "activeSkill": {"slug": "风格甲", "source": "user"},
-        "styleSkills": ["风格甲", "风格乙"],
-    }
-    block = _pb(raw).build_style_combo()
-    assert "MARK_STYLE_B" in block
-    assert block.count("MARK_STYLE_A") == 0
-
-
-def test_combo_forced_tiered_when_over_budget(monkeypatch):
-    """超观察线第一级兜底：全部风格层强制既有分级注入（不新造裁剪通道）。"""
-    filler = "填充。" * 400
-    _save(
-        "大风格甲",
-        f"# 大风格甲\n<planner>\n总纲 MARK_BIG_A_PLAN\n</planner>\n"
-        f"<write_media_prompt>\n美学 MARK_BIG_A_WP\n{filler}</write_media_prompt>\n",
-        {"kind": "style"},
-    )
-    monkeypatch.setattr(pb_mod, "STYLE_COMBO_SOFT_LIMIT", 1500)
-    block = _pb({"styleSkills": ["大风格甲"]}).build_style_combo()
-    # 分级注入形态：planner 章节全文 + 章节目录，其余章节不直注
-    assert "章节目录" in block and "MARK_BIG_A_PLAN" in block
-    assert "MARK_BIG_A_WP" not in block
-
-
-def test_combo_truncates_with_model_visible_note(monkeypatch):
-    """超观察线第二级兜底：按清单顺序截断，被截风格层留模型可见注记。"""
-    _seed_combo_skills()
-    monkeypatch.setattr(pb_mod, "STYLE_COMBO_SOFT_LIMIT", 400)
-    block = _pb({"styleSkills": ["风格甲", "风格乙"]}).build_style_combo()
-    assert "MARK_STYLE_A" in block
-    assert "MARK_STYLE_B" not in block
-    assert "暂缓注入" in block and "风格乙" in block
     assert "read_skill" in block
+    # 风格层正文零注入
+    assert "MARK_STYLE_A" not in block and "MARK_STYLE_B" not in block
 
 
-# ---------- 4.5) 组合空/异常路径（坏层不阻断、兜底返空） ----------
+def test_catalog_style_note_absent_without_style_skills():
+    _save("垫底", "# 垫底\n正文")  # 避免空目录触发默认文档生成探针
+    block = _pb({}).build_skill_catalog(_ctx(""))
+    assert "另有风格层叠加生效" not in block
+    block2 = _pb({"styleSkills": []}).build_skill_catalog(_ctx(""))
+    assert "另有风格层叠加生效" not in block2
 
-def test_combo_empty_when_raw_state_raises():
-    """raw state 读取异常 → 返空串（存量行为零变化，不抛给调用方）。"""
+
+def test_catalog_style_note_survives_bad_state():
+    """raw state 读取异常 → 目录段照常产出（风格层注记静默省略）。"""
+    _save("垫底", "# 垫底\n正文")
     def boom():
         raise RuntimeError("state unavailable")
-    assert PromptBuilder(lambda: sd, lambda: "proj", boom).build_style_combo() == ""
+    block = PromptBuilder(lambda: sd, lambda: "proj", boom).build_skill_catalog(_ctx(""))
+    assert "Skill 目录" in block
+    assert "另有风格层叠加生效" not in block
 
 
-def test_combo_empty_when_only_primary_in_styles():
-    """风格层清单仅含主流程同 slug → 兜底去重后返空串（不双注入）。"""
+def test_catalog_style_note_skips_missing_layers():
+    """不存在的风格层：目录段仍标注清单内名称，坏层不阻断。"""
     _seed_combo_skills()
-    raw = {
-        "activeSkill": {"slug": "流程甲", "source": "user"},
-        "styleSkills": ["流程甲"],
-    }
-    assert _pb(raw).build_style_combo() == ""
-
-
-def test_combo_skips_missing_style_layers():
-    """不存在/解析失败的风格层静默跳过，不阻断其余注入；全坏返空串。"""
-    _seed_combo_skills()
-    block = _pb({"styleSkills": ["不存在", "风格甲"]}).build_style_combo()
-    assert "MARK_STYLE_A" in block and "不存在" not in block
-    assert _pb({"styleSkills": ["不存在"]}).build_style_combo() == ""
-
-
-def test_combo_kind_lookup_failure_falls_back_to_style(monkeypatch):
-    """kind 查询抛异常 → 降级 style 口径，注入不中断。"""
-    _seed_combo_skills()
-
-    def boom(_slug):
-        raise RuntimeError("registry broken")
-
-    monkeypatch.setattr(registry, "skill_injection_kind", boom)
-    block = _pb({"styleSkills": ["风格甲"]}).build_style_combo()
-    assert "MARK_STYLE_A" in block
-
-
-def test_combo_empty_when_forced_tiered_yields_nothing(monkeypatch):
-    """超观察线强制分级后若全部块为空 → 返空串（不产出残壳）。"""
-    _seed_combo_skills()
-    monkeypatch.setattr(pb_mod, "STYLE_COMBO_SOFT_LIMIT", 5)
-    builder = _pb({"styleSkills": ["风格甲"]})
-    builder._build_one_style_block = (
-        lambda slug, force_tiered=False: "" if force_tiered else "块内容")
-    assert builder.build_style_combo() == ""
+    block = _pb({"styleSkills": ["不存在", "风格甲"]}).build_skill_catalog(_ctx(""))
+    assert "风格甲" in block
 
 
 # ---------- 5) build_system_prompt 组合链路 ----------
@@ -283,7 +225,9 @@ def _ctx(skill_name: str):
     return ctx
 
 
-def test_system_prompt_combines_primary_and_styles():
+def test_system_prompt_combo_body_zero_injection():
+    """任务#12 批次B：1 pipeline + N style 层组合激活后，主流程与风格层
+    正文都不进 system prompt；风格层只在目录段以名称可见。"""
     _seed_combo_skills()
     raw = {
         "keyElements": [], "shots": [], "audioItems": [],
@@ -291,17 +235,21 @@ def test_system_prompt_combines_primary_and_styles():
         "styleSkills": ["风格甲"],
     }
     text = _pb(raw).build_system_prompt(_ctx("流程甲"))
-    assert "MARK_PIPELINE_A" in text and "MARK_STYLE_A" in text
-    # 组合块拼在选中主流程块之后（同近生成端，风格层更靠后）
-    assert text.index("MARK_PIPELINE_A") < text.index("MARK_STYLE_A")
+    # 正文零注入（主流程与风格层都不例外）
+    assert "MARK_PIPELINE_A" not in text
+    assert "MARK_STYLE_A" not in text
+    # 目录段：主流程选中提示 + 风格层名称都在，配 read_skill 指引
+    assert "当前选中 Skill" in text and "read_skill" in text
+    assert "另有风格层叠加生效" in text and "风格甲" in text
 
 
 def test_system_prompt_styles_only_without_primary():
-    """1 pipeline 可选：无主流程时风格层单独生效。"""
+    """1 pipeline 可选：无主流程时风格层单独生效（同样只在目录可见）。"""
     _seed_combo_skills()
     raw = {
         "keyElements": [], "shots": [], "audioItems": [],
         "styleSkills": ["风格甲"],
     }
     text = _pb(raw).build_system_prompt(_ctx(""))
-    assert "MARK_STYLE_A" in text
+    assert "MARK_STYLE_A" not in text
+    assert "另有风格层叠加生效" in text and "风格甲" in text

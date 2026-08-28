@@ -1,7 +1,9 @@
 """system prompt 组装。
 
-承载：协议/Skill 目录/选中草稿/选中 Skill 全文（含分阶段聚焦块）的组装。
-段落顺序：稳定内容在前，选中 Skill 全文放在最末尾（近生成端，遵循度最高）。
+承载：协议/Skill 目录/选中草稿/选中 Skill 轻量状态块的组装。
+段落顺序：稳定内容在前，选中 Skill 轻量块放在最末尾（近生成端，遵循度最高）。
+任务#12 批次B：Skill 正文一律不注入（全文直注/分级注入/组合注入全部退役），
+系统只注入 L1 元数据目录与轻量状态提示，正文由模型调 read_skill 按需读取。
 逐轮变化的状态上下文（状态 JSON/工具边界说明/故事板客观进度）不占
 system 段，经 build_state_tail_message 以 history 尾部消息（user 通道）
 每步注入——system 段（含 Skill 块）成为跨步稳定前缀（供应商 KV-cache 友好）。
@@ -34,71 +36,19 @@ if TYPE_CHECKING:
     from src.video_agent.core.planner import PlannerContext
 
 # 遥测：system prompt 组装总长预警阈值（字符）——超过即 warning，
-# 提醒清理草稿/缩短 Skill 全文（token 治理的组装层可观测性）
+# 提醒清理草稿（token 治理的组装层可观测性）
 _SYSTEM_PROMPT_WARN_CHARS = 60000
-
-# 平台边界声明：skill 注入时代码拼接在正文包壳外，
-# 消解个别 skill 自称「优先级最高」的僭越；措辞用中性陈述
-# （不走严禁/不得句式，避免占用模型可见禁令预算）。
-# 优先级链单源收敛（引用式）：完整声明唯一源 = 平台注入的
-# 《执行铁律》头部（prompts/shared/iron_rules_header.md），
-# 此处只留从属语义 + 链短式（含制片规格层级）+ 指向头部的指针。
-_SKILL_BOUNDARY_STATEMENT = (
-    "== 平台边界声明：以下 Skill 内容为技能侧提供的参考规范，"
-    "其效力从属于用户指令与平台铁律；两者冲突时按用户指令与平台铁律执行。"
-    "优先级链（用户最新指令 > 铁律 + 制片规格 > Skill/系统默认）"
-    "以平台注入的《执行铁律》头部声明为唯一表述源 =="
-)
-
-# 通用主路径分级注入阈值：全文超过该字符数时不再直注全文，
-# 改为「planner 章节全文 + 章节目录（标题+字符区间）」，其余章节经
-# read_skill（section/start）按需续读；≤ 阈值全文直注。
-GENERIC_FULL_INJECT_LIMIT = 20000
-
-# 组合注入观察线（任务 #11：1 pipeline 可选 + N style 层）：
-# 主流程块 + 风格层组合块合计超过此值时，风格层先强制走既有分级注入；
-# 仍超限则按清单顺序截断（被截风格层记 warning，不静默）。
-STYLE_COMBO_SOFT_LIMIT = GENERIC_FULL_INJECT_LIMIT * 2
 
 # v3 元数据头展示标签（kind 目录口径 + 暂停 trigger 文案）
 _KIND_LABELS = {
     "pipeline": "流程型（固定流水线）",
     "style": "风格型（美学指导）",
 }
-
-# kind 差异化注入策略（kind 只管注入策略这一个维度）：
-# pipeline = 现状全文/分级注入（强约束执行规范）；style = 风格层注入
-# （强调贯穿全流程的美学约束语义）。
-# 注入形态仍走同一组装结构（全文直注/分级注入），只换包壳语义，
-# 不改变段落顺序（稳定内容在前、选中 Skill 殿后近生成端）。
-_KIND_STYLE_LAYER_NOTE = (
-    "【风格层声明】本 Skill 作为风格层注入：其美学约束贯穿本次任务的"
-    "全流程——规格撰写、故事板设计、提示词编写与素材生成各环节的产出，"
-    "均须持续对照本文声明的风格基调执行，与流程规范同等效力。"
-)
+# Skill 正文注入家族（全文直注/分级注入/组合注入/平台边界包壳/
+# kind 差异化声明）已随任务#12 批次B 整体退役：正文一律经
+# read_skill 按需读取，系统只注入 L1 目录与轻量状态提示。
 # reference kind 低权重注入分支已随任务#8 ② 下架清偿（KIND_VALUES 不再含
 # reference，声明入口关闭、降级 pipeline；死分支已删）。
-
-
-def _kind_block_suffix(kind: str) -> str:
-    """选中 Skill 块标题行的 kind 差异语义后缀（pipeline 保持现状口径）。"""
-    if kind == "style":
-        return "作为风格层注入：其美学约束贯穿本次任务全流程，各环节产出须持续对照执行"
-    return "必须严格遵守其中的流程与规范"
-
-
-def _kind_baseline_statement(kind: str) -> str:
-    """执行基准声明（kind 差异化）。pipeline/未知 kind 保持
-    现状口径；style 追加风格层声明。"""
-    base = (
-        "【执行基准声明】本次任务的产出规范（分组/命名/字段结构/提示词写法与顺序等）"
-        "在产出规范层面一律以本 Skill 为准；与铁律或用户最新指令冲突时按"
-        "《执行铁律》头部优先级链声明裁决；Skill 内如提供多种可选写法，选最贴合本次需求的一种"
-        "并全程保持一致。"
-    )
-    if kind == "style":
-        return base + "\n" + _KIND_STYLE_LAYER_NOTE
-    return base
 
 
 _PAUSE_TRIGGER_LABELS = {
@@ -132,7 +82,7 @@ class PromptBuilder:
         段落注册制：各段经 PROMPT_SECTIONS 登记（唯一 name +
         order + builder），按 order 排序逐段构建，空串跳过；条件段的有无
         由各段 builder 内部决定。段序与历史顺序 1:1（前缀缓存优化：稳定
-        内容在前，选中 Skill 全文放在最末尾近生成端，遵循度最高）。
+        内容在前，选中 Skill 轻量块放在最末尾近生成端）。
         状态上下文（状态 JSON/工具边界说明/故事板进度）已移出 system 段，
         见 build_state_tail_message（history 尾部消息注入，不在此登记）。
 
@@ -145,7 +95,7 @@ class PromptBuilder:
         """
         # 预计算共享原始数据：遥测/超限预警需要原始长度（非包壳后段长）。
         # state 已移出 system 段（经 history 尾部消息注入），此处仅为
-        # 遥测口径保留长度采集；选中 Skill 块仍在 system 最末段
+        # 遥测口径保留长度采集；选中 Skill 轻量块仍在 system 最末段
         if context.use_studio_context:
             if context.state_builder is not None:
                 state_json = context.state_builder()
@@ -156,13 +106,6 @@ class PromptBuilder:
         selected_block = ""
         if context.skill_name:
             selected_block = self.build_selected_skill_block(context.skill_name)
-        # 组合激活（任务 #11）：风格层块拼在选中主流程块之后（同样近生成端）；
-        # 无主流程时风格层单独生效（1 pipeline 可选）
-        combo_block = self.build_style_combo(len(selected_block))
-        if combo_block:
-            selected_block = (
-                selected_block + "\n\n" + combo_block if selected_block else combo_block
-            )
         self._state_json = state_json
         self._selected_block = selected_block
 
@@ -200,7 +143,7 @@ class PromptBuilder:
                 f"[PromptBuilder] system prompt 组装超阈值：总长 {len(text)} 字符 > "
                 f"{_SYSTEM_PROMPT_WARN_CHARS}（选中Skill块={len(selected_block)}，"
                 f"状态JSON≈{len(state_json) if context.use_studio_context else 0}）；"
-                "建议清理草稿/缩短 Skill 全文或依赖降级保险丝"
+                "建议清理草稿或依赖降级保险丝"
             )
         return text
 
@@ -243,7 +186,8 @@ class PromptBuilder:
 
     def build_storyboard_progress_note(self) -> str:
         """故事板客观进度描述（纯数据）——只报三类有无，
-        暂停点指向已注入的 Skill 流程基线，平台不给排序意见；
+        暂停点以当前 Skill 流程基线为准（正文经 read_skill 按需读取），
+        平台不给排序意见；
         顺带同批暂停建议（建议非强制，省往返）。
         文案外置 prompts/shared/storyboard_progress.md。"""
         if self._get_raw_state is None:
@@ -340,11 +284,10 @@ class PromptBuilder:
         )
         if context.skill_name:
             header += (
-                f"\n用户当前在前端选中了「{context.skill_name}」，其完整流程已注入下方（超长时"
-                "按分级注入规则给章节目录，按需 read_skill 续读）；"
-                "其他 Skill 需要时仍要先 read_skill。"
+                f"\n用户当前在前端选中了「{context.skill_name}」，其正文同样不注入，"
+                "执行该 Skill 前先用 read_skill 读取全文；其他 Skill 需要时也要先 read_skill。"
             )
-        # 组合激活（任务 #11）：风格层叠加时目录段同步告知，免模型另去推测
+        # 组合激活（任务 #11）：风格层叠加时目录段同步告知（正文不注入，只在目录可见）
         if self._get_raw_state is not None:
             try:
                 raw = self._get_raw_state() or {}
@@ -356,144 +299,43 @@ class PromptBuilder:
                     header += (
                         "\n另有风格层叠加生效："
                         + "、".join(style_names)
-                        + "（全文已在下方随选中 Skill 一并注入）。"
+                        + "（正文同样不注入，需要时用 read_skill 逐个按需阅读）。"
                     )
             except Exception:
                 pass
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 的注入块（通用主路径唯一主路径）。
-
-        注入策略经 registry.skill_injection_kind 解析（kind
-        差异化；未知 kind 开放注册降级 pipeline），按 kind 换块标题/基准
-        声明语义，注入形态 = 元数据头 + 通用分级注入，段落顺序不变
-        （前缀缓存约束）。
+        """选中 Skill 的轻量状态块（任务#12 批次B：正文零注入）。
+    
+        只含：选中 Skill 名称 + read_skill 按需加载指引 + 元数据头
+        （版本/来源/类型/暂停点/原料就绪状态）；全文由模型执行前调
+        read_skill 按需读取。段序不变（段注册表 order 100 最末，
+        保前缀缓存约束）。解析失败/内容为空返回空串（降级为仅目录）。
         """
+        sd = self._get_skill_docs()
         try:
-            kind = skill_registry.skill_injection_kind(skill_name)
-        except Exception:
-            kind = "pipeline"
-        block = self.build_generic_skill_block(skill_name, kind)
-        # v3 元数据头：拼在 Skill 块正文之前；未声明任何
-        # v3 键时返回空串（未迁移 v2 manifest 零增量）；选中块本身仍在
-        # system prompt 最末段（近生成端），不破坏稳定段在前的前缀缓存排序
+            display, content = sd.resolve_skill_content(skill_name)
+        except Exception:  # 解析失败不阻断对话（降级遥测可见）
+            logger.warning(f"[Planner] 选中 Skill「{skill_name}」解析失败，降级为仅目录")
+            return ""
+        if not str(content or "").strip():
+            return ""
+        name = display or skill_name
+        parts: List[str] = [
+            f"== 当前选中 Skill「{name}」：全文未注入，执行该 Skill 前先用 "
+            "read_skill(name=本 Skill 名) 读取全文；章节可按 section/start 续读，"
+            "不要凭目录摘要推测流程细节 ==",
+        ]
         header = self.build_skill_metadata_header(skill_name)
-        if header and block:
-            assembled = header + "\n\n" + block
-        else:
-            assembled = block
-        if not assembled:
-            return ""
-        # 平台边界声明包壳：代码拼接，不改 skill 文件；
-        # 声明 skill 内容效力从属于用户指令与平台铁律
-        return _SKILL_BOUNDARY_STATEMENT + "\n\n" + assembled
-
-    # ---------- 组合激活（任务 #11：1 pipeline 可选 + N style 层） ----------
-
-    def _build_one_style_block(self, slug: str, force_tiered: bool = False) -> str:
-        """单个风格层注入块：元数据头 + 通用注入形态（kind 语义自动带上）。
-
-        不重复包平台边界声明（组合外层已有包壳/声明，不重复占预算）；
-        解析失败/空内容返回空串（单个坏风格层不阻断其余注入）。"""
-        try:
-            kind = skill_registry.skill_injection_kind(slug)
-        except Exception:
-            kind = "style"
-        block = self.build_generic_skill_block(slug, kind, force_tiered=force_tiered)
-        if not block:
-            return ""
-        header = self.build_skill_metadata_header(slug)
-        return (header + "\n\n" + block) if header else block
-
-    def build_style_combo(self, primary_len: int = 0) -> str:
-        """风格层组合注入块（拼在选中主流程块之后）。
-
-        预算口径（组合注入不得无节制膨胀）：
-        ① 每个风格层自身超 2 万字照既有分级注入；
-        ② 主流程块 + 组合块合计超 STYLE_COMBO_SOFT_LIMIT 观察线 →
-          全部风格层强制改分级注入（既有机制）；
-        ③ 仍超限 → 按清单顺序保留前几个，被截风格层记 warning 并留模型可见注记。
-        无风格层/无 raw state 返回空串（存量行为零变化）。
-        """
-        if self._get_raw_state is None:
-            return ""
-        try:
-            raw = self._get_raw_state() or {}
-        except Exception:
-            return ""
-        styles = skill_registry.style_skills_from_state(raw)
-        if not styles:
-            return ""
-        # 与主流程同 slug 不双注入（路由层已摈除，此处兜底）
-        primary_slug = ""
-        active = raw.get("activeSkill")
-        if isinstance(active, dict):
-            primary_slug = str(active.get("slug") or "")
-        if primary_slug:
-            styles = [s for s in styles if s != primary_slug]
-        if not styles:
-            return ""
-
-        def _assemble(slugs: List[str], forced: bool) -> Tuple[List[str], List[str]]:
-            """返回 (块清单, 展示名清单)，空块丢弃。"""
-            blocks: List[str] = []
-            names: List[str] = []
-            for s in slugs:
-                b = self._build_one_style_block(s, force_tiered=forced)
-                if not b:
-                    continue
-                blocks.append(b)
-                entry = skill_registry.resolve_entry(s)
-                names.append(entry.name if entry is not None else s)
-            return blocks, names
-
-        def _header(names: List[str]) -> str:
-            return render_prompt(
-                "shared/skill_style_combo.md",
-                count=len(names), names="、".join(names)) or ""
-
-        blocks, names = _assemble(styles, forced=False)
-        if not blocks:
-            return ""
-        assembled = _header(names) + "\n\n" + "\n\n".join(blocks)
-        if primary_len + len(assembled) > STYLE_COMBO_SOFT_LIMIT:
-            # 兜底第一级：全部风格层强制分级注入（既有机制，不新造裁剪通道）
-            logger.warning(
-                f"[PromptBuilder] 风格层组合超观察线（主流程块 {primary_len} + 组合 "
-                f"{len(assembled)} > {STYLE_COMBO_SOFT_LIMIT}），强制分级注入")
-            blocks, names = _assemble(styles, forced=True)
-            if not blocks:
-                return ""
-            assembled = _header(names) + "\n\n" + "\n\n".join(blocks)
-        if primary_len + len(assembled) > STYLE_COMBO_SOFT_LIMIT:
-            # 兜底第二级：按清单顺序截断（留前舍后，被截风格层记 warning）
-            kept: List[str] = []
-            kept_names: List[str] = []
-            size = 0
-            for b, n in zip(blocks, names):
-                if size + len(b) + primary_len > STYLE_COMBO_SOFT_LIMIT and kept:
-                    break
-                kept.append(b)
-                kept_names.append(n)
-                size += len(b)
-            dropped = names[len(kept):]
-            if dropped:
-                logger.warning(
-                    f"[PromptBuilder] 风格层组合仍超观察线，按顺序截断："
-                    f"未注入 {dropped}")
-            assembled = _header(kept_names) + "\n\n" + "\n\n".join(kept)
-            if dropped:
-                assembled += (
-                    f"\n\n（另有风格层因组合超预算暂缓注入：{'、'.join(dropped)}；"
-                    "需要时可用 read_skill 按需阅读）"
-                )
-        return assembled
-
+        if header:
+            parts.append(header)
+        return "\n\n".join(parts)
+    
     def build_skill_metadata_header(self, skill_name: str) -> str:
         """frontmatter 元数据头：version/source / kind / requires_inputs 未满足项 /
-        language / 暂停点清单，注入在选中 Skill 块全文之前。
-
+        language / 暂停点清单，随选中 Skill 轻量块注入（正文零注入后的运营状态面）。
+    
         未声明任何元数据键（零 frontmatter）返回空串，行为零变化；
         原料未就绪探测需 raw state，缺省（None）时只省掉该段。
         """
@@ -557,108 +399,11 @@ class PromptBuilder:
         if not lines:
             return ""
         return (
-            "== Skill 元数据（frontmatter 声明，执行下方 Skill 内容前先读）==\n"
+            "== Skill 元数据（frontmatter 声明；正文经 read_skill 按需读取）==\n"
             + "\n".join(lines)
         )
 
-    def build_generic_skill_block(
-        self, skill_name: str, kind: str = "pipeline", force_tiered: bool = False,
-    ) -> str:
-        """通用主路径注入块：全文直注或分级注入。
-
-        - ≤ GENERIC_FULL_INJECT_LIMIT：全文直注（超 max_doc_chars 硬截断）；
-        - 超长：planner 章节全文 + 章节目录（标题+字符区间）+ 续读指令，
-          其余章节由模型执行对应环节前调 read_skill（section/start）续读。
-        本块为选中 Skill 的唯一注入形态。
-        force_tiered：组合注入超预算时的强制分级开关（任务 #11，
-        复用既有分级机制，不新造裁剪通道）。
-        """
-        sd = self._get_skill_docs()
-        try:
-            display, content = sd.resolve_skill_content(skill_name)
-        except Exception:  # 解析失败不阻断对话
-            logger.warning(f"[Planner] 选中 Skill「{skill_name}」解析失败，降级为仅目录")
-            return ""
-        content = (content or "").strip()
-        if not content:
-            return ""
-        discipline = load_prompt("planner/skill_discipline.md") or ""
-        if not force_tiered and len(content) <= GENERIC_FULL_INJECT_LIMIT:
-            # 全文直注（与旧兜底同口径：max_doc_chars 硬截断防撑爆上下文）
-            body = content
-            if len(body) > settings.max_doc_chars:
-                body = body[:settings.max_doc_chars] + "\n……（Skill 全文超长，已截断）"
-            base = (
-                f"== 当前选中 Skill「{display or skill_name}」全文"
-                f"（{_kind_block_suffix(kind)}）==\n"
-                f"{_kind_baseline_statement(kind)}\n\n"
-                f"{body}\n\n"
-                f"{discipline}"
-            )
-            return base
-        return self._build_tiered_skill_block(
-            sd, skill_name, display or skill_name, content, discipline, kind)
-
-    def _build_tiered_skill_block(
-        self, sd: Any, skill_name: str, display: str, content: str, discipline: str,
-        kind: str = "pipeline",
-    ) -> str:
-        """分级注入块（全文 > GENERIC_FULL_INJECT_LIMIT）：planner 章节全文 +
-        章节目录（标题+字符区间）+ 续读指令。章节区间与 read_skill 续读同口径
-        （skill_docs.list_skill_sections）。planner 章节缺失时回落全文首段截断。"""
-        try:
-            sections = sd.split_skill_sections(content) or {}
-        except Exception:
-            sections = {}
-        planner = (sections.get("planning") or "").strip()
-        try:
-            toc = sd.list_skill_sections(content) or []
-        except Exception:
-            toc = []
-        lines: List[str] = [
-            f"== 当前选中 Skill「{display}」（全文 {len(content)} 字，超过分级注入阈值"
-            f" {GENERIC_FULL_INJECT_LIMIT}，按分级规则注入，{_kind_block_suffix(kind)}）==",
-            _kind_baseline_statement(kind),
-        ]
-        if planner:
-            lines += [
-                "",
-                "== 流程规划章节（全文注入，必须按此顺序与阶段边界执行）==",
-                planner,
-            ]
-        else:
-            # 无 planner 章节：回落全文首段截断，保底不丢流程入口
-            head = content[:GENERIC_FULL_INJECT_LIMIT]
-            lines += [
-                "",
-                "== Skill 正文首段（未识别到流程规划章节，先注入前 "
-                f"{GENERIC_FULL_INJECT_LIMIT} 字）==",
-                head,
-            ]
-        if toc:
-            lines += [
-                "",
-                "== 章节目录（标题与字符区间；执行对应环节前先调用 "
-                "read_skill（name=本 Skill，section=章节标题，或 start=区间起点）续读该章节"
-                "全文，不要凭目录猜测章节内容）==",
-            ]
-            lines += [f"- {t['title']}（第 {t['start']}~{t['end']} 字）" for t in toc]
-        lines += [
-            "",
-            "执行纪律（与全文同等效力）：",
-            discipline.strip() if discipline else "- 严格按流程顺序推进，不跳阶段。",
-        ]
-        return "\n".join(lines)
-
-    # ---------- 分阶段聚焦注入 ----------
-
-    _STAGE_LABELS = {
-        "planning": "规格规划",
-        "storyboard": "故事板结构",
-        "prompt_draft": "提示词草案",
-        "generation": "素材生成",
-        "assembly": "组装导出",
-    }
+    # ---------- 分阶段探测 ----------
 
     def detect_stage(self) -> str:
         """根据工作台状态推断当前制作阶段（每轮构建 system prompt 时实时计算）：
@@ -791,7 +536,7 @@ def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
 
 
 def _sec_selected_skill(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """选中 Skill 全文放在最后（近生成端）：长 system prompt 中部的指令
+    """选中 Skill 轻量状态块放在最后（近生成端）：长 system prompt 中部的指令
     遵循度会衰减，而产出规范（提示词写法/分组规则）恰恰是最需要被严格
     执行的部分。状态上下文已移出 system 段（history 尾部消息注入），
     Skill 块不再有大段状态 JSON 前置淹没问题。"""

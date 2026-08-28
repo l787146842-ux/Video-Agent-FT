@@ -69,10 +69,12 @@ def test_prompt_draft_section_merges_write_media_prompt_and_write_the_prompt():
     assert "写法规范" in sec
 
 
-def test_generic_block_forbids_false_claims():
-    """回归（7777 事故）：防虚报条款必须明确要求「真实调用工具后才可声称完成」。
-    任务#36 B5：执行器退役后该语义由 skill_discipline.md 第 9 条承接，
-    随通用主路径全文直注/分级注入均下发（断言不弱化）。"""
+def test_selected_block_lightweight_keeps_discipline_pointer():
+    """回归（7777 事故）：防虚报语义在任务#12 批次B 后不再随选中 Skill 块
+    下发（正文零注入）；轻量块只含名称 + read_skill 指引，防虚报条款的
+    单家仍是 skill_discipline.md 第 9 条（外置文件在场，不经本块注入）。"""
+    from src.video_agent.utils.prompts import load_prompt
+
     _write(
         "demo-fc",
         "# 演示防虚报\n> 调用规则：测试\n"
@@ -84,10 +86,13 @@ def test_generic_block_forbids_false_claims():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("演示防虚报")
-    assert "必须真的调用" in block
-    assert "才可声称完成" in block
-    assert "虚报结果会被状态对账识破" in block
-    assert "无需手动调用" not in block
+    # 轻量块零正文：防虚报条款不随块下发，也不夹带其他正文
+    assert "必须真的调用" not in block
+    assert "关键元素" not in block
+    assert "read_skill" in block
+    # 防虚报条款外置单家仍在场（宪法 Rule 6 单一事实源）
+    discipline = load_prompt("planner/skill_discipline.md")
+    assert "必须真的调用" in discipline and "才可声称完成" in discipline
 
 
 # test_executor_runtime_block_lists_tools（执行器清单注入断言）已随任务#36 B5
@@ -157,9 +162,10 @@ def test_add_draft_label_smart_matching(tmp_path):
     assert len(kes["[Element_Dual_Vector_Foil] 二向箔"]["drafts"]) == 1
 
 
-def test_generic_block_includes_flow_with_full_text():
-    """任务#36 B5：通用主路径下 <planner> 流程随全文直注（执行器「流程基线」
-    专属段退役；原 P0-2 钉的「流程可见」语义由全文直注承接）。"""
+def test_selected_block_lightweight_flow_via_read_skill():
+    """任务#12 批次B：<planner> 流程不再随全文直注（执行器「流程基线」
+    专属段与全文直注均已退役）；流程可见性由 read_skill 按需读取承接，
+    轻量块携带读取指引。"""
     _write(
         "flow-skill",
         "# 流程\n> 调用规则：测试\n"
@@ -173,8 +179,10 @@ def test_generic_block_includes_flow_with_full_text():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("流程")
-    assert "阶段逻辑" in block
-    assert "script_analyze" in block
+    # 正文零注入：阶段逻辑不进块；读取指引在场
+    assert "阶段逻辑" not in block
+    assert "script_analyze" not in block
+    assert "read_skill" in block
     assert "== 当前 Skill 的流程基线" not in block  # 执行器形态专属段已退役
 
 
