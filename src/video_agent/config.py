@@ -10,6 +10,7 @@
 import logging
 import os
 from dataclasses import dataclass, field
+from typing import List
 
 from dotenv import load_dotenv
 
@@ -137,6 +138,14 @@ class Settings:
     # 按该 token 预算注入（按章节边界切齐），其余经 read_skill(section/start)
     # 按需续读；存量超大 Skill（如 88KB）自动走续读路径，不击穿上下文预算。
     skill_inject_max_tokens: int = field(default_factory=lambda: _env_int("SKILL_INJECT_MAX_TOKENS", 5000))
+    # Skill 开关与目录规模化（批5/对齐 Flova 卡片开关）：
+    # skills_disabled = 被停用 Skill 的 slug 列表（默认空 = 全启用，存量不受影响；
+    # 写入点归 web/routes/runtime_settings 既有热更新通道）；
+    # skill_catalog_max_entries = 目录段条目预算，超预算按最近使用序截断、
+    # 尾部附指针行（目录段序 order=20 不动，保前缀缓存）
+    skills_disabled: List[str] = field(default_factory=list)
+    skill_catalog_max_entries: int = field(
+        default_factory=lambda: _env_int("SKILL_CATALOG_MAX_ENTRIES", 30))
 
     # 多模态模型单次请求可注入的图片上限（多数 vision 模型限制 4~10 张，
     # 超限会直接报错；超出部分降级为文本清单，LLM 仍可知晓其存在）

@@ -26,6 +26,17 @@ def svc(tmp_path):
     StateManager.reset_instance()
 
 
+@pytest.fixture(autouse=True)
+def _ensure_platform_tools():
+    # 显式重注册：同序其它用例的 ToolManager.reset() 可能清空全局
+    # 注册表，确认闸读 approval_tier 后未注册即拦，本文件不依赖导入副作用
+    #（与 test_pause_structure 同口径）
+    from src.video_agent.tools.document_tools import register_document_tools
+    from src.video_agent.tools.storyboard_tools import register_storyboard_tools
+    register_storyboard_tools()
+    register_document_tools()
+
+
 def _seed_ke_draft(svc, tag="Agent", prompt="白发老者站在冥王星冰原上，手持拐杖，伦勃朗式光影，宿命感。"):
     svc.state_dict["keyElements"] = [{
         "id": "ke-t", "title": "Element_测试",

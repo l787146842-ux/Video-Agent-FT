@@ -7,10 +7,11 @@
   关：联不通直接按上游报错。
 - default_* 系列：全局出图/出视频渠道与分辨率默认值，新建草稿补印与 Agent 生成回退链共用；
 - chat_image_enabled：聊天框出图开关（关 = Agent 在对话中不主动触发生图）；
+- skills_disabled：被停用的 Skill slug 列表（批5，对齐 Flova 卡片开关；空 = 全启用）；
 - max_shot_duration：Agent 自拆分镜的单镜最大时长（秒）。
 """
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter
 from loguru import logger
@@ -31,6 +32,10 @@ _STR_KEYS = (
     "default_image_resolution", "default_video_resolution",
 )
 _INT_KEYS = ("max_shot_duration",)
+# Skill 启停开关（批5/对齐 Flova 卡片开关）：存被停用 Skill 的 slug 列表；
+# 目录过滤/ list_skills 同源消费（宪法 §六：可调参数归 config.settings，
+# 写入点归本既有热更新通道，不另开旁路存储）
+_LIST_KEYS = ("skills_disabled",)
 # 剧本注入上限（字符）热更新键，独立钳制区间（不与秒数共用 clamp）
 _CHAR_LIMIT_KEYS = ("script_inject_limit",)
 # 推理档位旧键名（退役：仅作存量迁移用，API 表面已移除；
@@ -49,6 +54,8 @@ class RuntimeSettingsUpdate(BaseModel):
     default_image_resolution: Optional[str] = None
     default_video_resolution: Optional[str] = None
     max_shot_duration: Optional[int] = None
+    # 被停用的 Skill slug 列表（批5；空列表 = 全部启用）
+    skills_disabled: Optional[List[str]] = None
     # 剧本正文注入上限（字符）
     script_inject_limit: Optional[int] = None
     # 模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型；
@@ -74,8 +81,24 @@ class RuntimeSettings(BaseModel):
     default_image_resolution: str
     default_video_resolution: str
     max_shot_duration: int
+    skills_disabled: List[str]
     script_inject_limit: int
     model_policy: Dict[str, PolicyRow]
+
+
+def _sanitize_slug_list(value: Any) -> Optional[List[str]]:
+    """Skill slug 列表清洗（开关写入唯一规整口）：非列表拒收；
+    逐项转非空字符串、去重保序、限长防滥用。"""
+    if not isinstance(value, list):
+        return None
+    out: List[str] = []
+    for item in value:
+        s = str(item or "").strip()
+        if s and s not in out:
+            out.append(s)
+        if len(out) >= 200:
+            break
+    return out
 
 
 def _current_dict() -> Dict[str, Any]:
@@ -91,6 +114,7 @@ def _current_dict() -> Dict[str, Any]:
         "default_image_resolution": settings.default_image_resolution,
         "default_video_resolution": settings.default_video_resolution,
         "max_shot_duration": settings.max_shot_duration,
+        "skills_disabled": list(settings.skills_disabled or []),
         "script_inject_limit": settings.script_inject_limit,
         # 推理档位两键退役（归模型分层策略），GET 不再下发
         "model_policy": mp.current_policy(),
@@ -123,6 +147,10 @@ async def put_runtime_settings(body: RuntimeSettingsUpdate):
                 continue
         elif key in _STR_KEYS:
             value = str(value or "").strip()
+        elif key in _LIST_KEYS:
+            value = _sanitize_slug_list(value)
+            if value is None:
+                continue
         elif key == "model_policy":
             # 策略表结构白名单清洗（4 角色 × 3 键）
             from src.video_agent.core import model_policy as mp
@@ -159,6 +187,11 @@ def load_runtime_settings() -> None:
         for key in _STR_KEYS:
             if key in data:
                 object.__setattr__(settings, key, str(data[key] or ""))
+        for key in _LIST_KEYS:
+            if key in data:
+                value = _sanitize_slug_list(data[key])
+                if value is not None:
+                    object.__setattr__(settings, key, value)
         for key in _INT_KEYS:
             if key in data:
                 try:

@@ -267,20 +267,43 @@ class PromptBuilder:
         return header + "\n" + content
 
     def build_skill_catalog(self, context: "PlannerContext") -> str:
-        """构建 Skill 目录（渐进式披露的「目录」）：全部文档 Skill 的名称+摘要常驻，
+        """构建 Skill 目录（渐进式披露的「目录」）：启用文档 Skill 的名称+摘要常驻，
         选中 Skill 正文头部经预算注入，全文由模型判断相关性后调 read_skill 按需加载。
-        文案外置 prompts/shared/skill_catalog.md（批4：口径从「正文一律不注入」
-        改为「正文经渐进披露注入」）；代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
+        批5（对齐 Flova 卡片开关）：开关过滤（settings.skills_disabled 里的 slug 不进目录）
+        + 条目预算（settings.skill_catalog_max_entries，超预算按项目 usedSkills 最近使用序
+        截断，尾部附「另有 N 个已启用 Skill 未列出」指针行）。
+        文案外置 prompts/shared/skill_catalog.md；代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
         list_skill_docs = self._get_skill_docs().list_skill_docs
 
-        lines: List[str] = []
+        docs: List[Dict[str, Any]] = []
         try:
-            for d in list_skill_docs():
-                name = d.get("name") or d.get("slug") or ""
-                desc = (d.get("description") or "").strip() or "未提供摘要"
-                lines.append(f"- {name}：{desc}")
+            docs = list(list_skill_docs())
         except Exception:  # 文档目录读取失败不阻断对话（降级遥测可见）
             live_metrics.record_degradation("prompt_builder.catalog")
+        # 开关过滤（批5）：被停用 slug 不进目录（默认空 = 全启用，存量行为不变）
+        disabled = set(settings.skills_disabled or [])
+        docs = [d for d in docs if str(d.get("slug") or "") not in disabled]
+        # 条目预算（批5）：超预算按最近使用序截断——项目 usedSkills 登记过的 slug
+        # 按使用序从近到远在前，其余保持原序（稳定排序；无使用记录时目录顺序不变）
+        recency: Dict[str, int] = {}
+        if self._get_raw_state is not None:
+            try:
+                used = (self._get_raw_state() or {}).get("usedSkills") or []
+                recency = {str(s or ""): i for i, s in enumerate(used)}
+            except Exception:
+                recency = {}
+        docs.sort(key=lambda d: -recency.get(str(d.get("slug") or ""), -1))
+        max_entries = int(settings.skill_catalog_max_entries or 0)
+        omitted = 0
+        if max_entries > 0 and len(docs) > max_entries:
+            omitted = len(docs) - max_entries
+            docs = docs[:max_entries]
+
+        lines: List[str] = []
+        for d in docs:
+            name = d.get("name") or d.get("slug") or ""
+            desc = (d.get("description") or "").strip() or "未提供摘要"
+            lines.append(f"- {name}：{desc}")
         if not lines:
             return ""
         # 渐进式披露单源收敛：总纲唯一源 = shared/important_rules.md
@@ -289,6 +312,9 @@ class PromptBuilder:
             load_prompt_section("shared/skill_catalog.md", "HEADER")
             + "\n" + "\n".join(lines)
         )
+        if omitted:
+            header += "\n" + render_prompt_section(
+                "shared/skill_catalog.md", "OMITTED", count=omitted)
         if context.skill_name:
             header += "\n" + render_prompt_section(
                 "shared/skill_catalog.md", "SELECTED",

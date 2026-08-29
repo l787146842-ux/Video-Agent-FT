@@ -66,6 +66,10 @@ class ReadProjectDocInput(BaseModel):
     start: int = Field(0, ge=0, description="读取起始位置（字符偏移）；正文超长时工具会返回下一段的 start 值，传入即可续读")
 
 
+class ListSkillsInput(BaseModel):
+    """list_skills 无参数（只读全量名单）；保留空入参模型保 FC schema 形状一致。"""
+
+
 class GenerateImageInput(StrictToolInput):
     mode: str = Field("batch", description="生图模式: batch=工作台批量出图（面向故事板草稿，默认）| single=对话内单张应急出图（需传 prompt）")
     # --- batch 模式参数 ---
@@ -415,6 +419,40 @@ class ReadSkillTool(BaseTool):
         return ToolResult(success=True, data={"name": matched, "content": out})
 
 
+class ListSkillsTool(BaseTool):
+    name = "list_skills"
+    risk = "low"  # §2.7：只读无副作用（批5，对齐 Flova 卡片开关的名单探针）
+    detail_tier = "output"  # 读取类：仅输出留痕
+    description = (
+        "列出当前全部启用的 Skill（名称+摘要，只读）。经开关停用的 Skill 不在此列；"
+        "目录段因预算截断未列全时，或需核对可用 Skill 名单时调用本工具；"
+        "具体 Skill 全文仍经 read_skill 按需读取。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return ListSkillsInput
+
+    async def aexecute(self, params: ListSkillsInput) -> ToolResult:
+        # 经 skill_docs 端口消费（依赖倒置，与 read_skill 同源）；
+        # 开关过滤口径与目录段同源（settings.skills_disabled 存被停用 slug）
+        sd = ports.skill_docs_port()
+        try:
+            docs = sd.list_skill_docs()
+        except Exception as e:
+            return ToolResult(success=False, error=f"Skill 名单读取失败：{e}")
+        disabled = set(settings.skills_disabled or [])
+        skills = [
+            {
+                "name": d.get("name") or d.get("slug") or "",
+                "slug": d.get("slug") or "",
+                "description": (d.get("description") or "").strip(),
+            }
+            for d in docs
+            if str(d.get("slug") or "") not in disabled
+        ]
+        return ToolResult(success=True, data={"skills": skills, "count": len(skills)})
+
+
 class ReadProjectDocTool(BaseTool):
     name = "read_project_doc"
     risk = "low"  # §2.7：只读
@@ -759,8 +797,9 @@ def register_document_tools():
     ToolManager.register(DocumentWriteTool())
     ToolManager.register(ReadUploadedDocTool())
     ToolManager.register(ReadSkillTool())
+    ToolManager.register(ListSkillsTool())
     ToolManager.register(ReadProjectDocTool())
     ToolManager.register(ImageGenerateTool())
     ToolManager.register(WorkflowPauseTool())
     ToolManager.register(FlowDirectiveTool())
-    logger.info("[Tools] 8 document/generation/workflow/flow tools registered")
+    logger.info("[Tools] 8 document/skill/generation/workflow/flow tools registered")

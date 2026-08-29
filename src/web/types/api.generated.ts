@@ -309,6 +309,7 @@ export interface RuntimeSettings {
   default_image_resolution: string;
   default_video_resolution: string;
   max_shot_duration: number;
+  skills_disabled: string[];
   script_inject_limit: number;
   model_policy: Record<string, PolicyRow>;
 }
@@ -323,6 +324,7 @@ export interface RuntimeSettingsUpdate {
   default_image_resolution?: string | undefined;
   default_video_resolution?: string | undefined;
   max_shot_duration?: number | undefined;
+  skills_disabled?: string[] | undefined;
   script_inject_limit?: number | undefined;
   model_policy?: Record<string, unknown> | undefined;
 }
@@ -675,6 +677,7 @@ export const TOOL_DETAIL_TIERS: Record<string, 'expand' | 'output'> = {
   flow_directive: 'output',
   generate_video: 'expand',
   image_generate: 'expand',
+  list_skills: 'output',
   mcp_tool_catalog: 'output',
   read_draft: 'output',
   read_project_doc: 'output',
@@ -709,6 +712,7 @@ export const TOOL_APPROVAL_TIERS: Record<string, 'none' | 'confirm' | 'review'> 
   flow_directive: 'none',
   generate_video: 'confirm',
   image_generate: 'confirm',
+  list_skills: 'none',
   mcp_tool_catalog: 'none',
   read_draft: 'none',
   read_project_doc: 'none',

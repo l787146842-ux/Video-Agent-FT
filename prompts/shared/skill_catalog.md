@@ -9,3 +9,6 @@
 
 ## STYLE_LAYERS
 另有风格层叠加生效：{{style_names}}（风格层正文不经预算注入，执行产出前先 read_skill 读取各风格层）。
+
+## OMITTED
+（另有 {{count}} 个已启用 Skill 未列出：目录按最近使用序截断；需要完整名单可调 list_skills，具体 Skill 全文仍经 read_skill 按需读取）
