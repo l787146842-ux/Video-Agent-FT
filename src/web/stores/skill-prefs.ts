@@ -1,56 +1,29 @@
-import { createSignal } from 'solid-js';
-
 /**
- * Skill 全局「加入」可用集（Skill 工作台左栏 加入/移除 控制）。
- * localStorage 持久化；null（无记录）= 全部可用（兼容现状：
- * 旧版本所有文档 Skill 都出现在输入框选择器）。
- * 首次 加入/移除 操作时以当前全量列表实体化默认。
+ * Skill 启停开关（批7/对齐 Flova 卡片开关）：
+ * 数据源 = 后端 runtime_settings.skills_disabled（批5 通道；存被停用 slug，
+ * 加入=停用 / 移除=启用；空 = 全启用）。Skill 工作台左栏开关写入；
+ * SkillPicker / 风格层据此过滤展示。
+ * GET/PUT 走 global-settings store（类型唯一源 api.generated.ts，
+ * 乐观更新 + 失败回滚在内），不另开旁路存储。
  */
+import { ensureGlobalSettings, globalSettings, updateGlobalSettings } from './global-settings';
+import { showToast } from '@/stores/toast';
 
-const KEY_ENABLED = 'ftdyb.enabledSkills';
-
-function load(): string[] | null {
-  try {
-    const raw = localStorage.getItem(KEY_ENABLED);
-    if (!raw) return null;
-    const arr = JSON.parse(raw) as unknown;
-    return Array.isArray(arr) ? (arr as string[]) : null;
-  } catch {
-    return null;
-  }
-}
-
-const [enabled, setEnabled] = createSignal<string[] | null>(load());
-
-/** 响应式信号：null = 全部可用 */
-export function enabledSkillSlugs(): string[] | null {
-  return enabled();
-}
-
-/** 某 slug 是否已加入可用集（无记录时全部可用） */
+/** 某 slug 是否启用中（设置未加载时回落全启用——与后端默认空列表同口径） */
 export function isSkillEnabled(slug: string): boolean {
-  const e = enabled();
-  return e === null ? true : e.includes(slug);
+  const disabled = globalSettings()?.skills_disabled ?? [];
+  return !disabled.includes(slug);
 }
 
-function persist(next: string[]) {
-  try {
-    localStorage.setItem(KEY_ENABLED, JSON.stringify(next));
-  } catch {
-    /* localStorage 不可用时仅会话内生效 */
+/** 启停切换：PUT runtime_settings 更新 skills_disabled（加入=停用、移除=启用） */
+export async function toggleSkillEnabled(slug: string): Promise<void> {
+  const gs = await ensureGlobalSettings();
+  if (!gs) {
+    showToast('全局设置读取失败，开关暂不可用', 'error');
+    return;
   }
-  setEnabled(next);
-}
-
-/** 加入/移除切换（allSlugs 供首次操作实体化「默认全部」） */
-export function toggleSkillEnabled(slug: string, allSlugs: string[]) {
-  const cur = enabled() ?? allSlugs;
-  persist(cur.includes(slug) ? cur.filter((s) => s !== slug) : [...cur, slug]);
-}
-
-/** 显式设置加入状态（幂等） */
-export function setSkillEnabled(slug: string, on: boolean, allSlugs: string[]) {
-  const cur = enabled() ?? allSlugs;
-  if (on === cur.includes(slug)) return;
-  persist(on ? [...cur, slug] : cur.filter((s) => s !== slug));
+  const next = new Set(gs.skills_disabled);
+  if (next.has(slug)) next.delete(slug);
+  else next.add(slug);
+  await updateGlobalSettings({ skills_disabled: [...next] });
 }

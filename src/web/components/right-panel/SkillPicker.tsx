@@ -68,7 +68,7 @@ export function SkillPicker() {
     return skill.id.startsWith('doc:') || (skill.source as string) === 'doc';
   }
 
-  /** 仅展示已加入可用集的 Skill（全局加入集，工作台左栏控制） */
+  /** 仅展示已启用的 Skill（启停开关见 Skill 工作台左栏，批7） */
   const visibleSkills = () => state.skills.filter((s) => isSkillEnabled((s.slug as string) || s.id.replace(/^doc:/, '')));
 
   /** 任务 #11 组合激活：主流程候选（风格型另走风格层多选区；未声明 kind 按流程型） */

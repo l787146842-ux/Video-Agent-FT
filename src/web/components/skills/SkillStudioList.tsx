@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from 'solid-js';
-import { FiCheck, FiChevronsLeft, FiFilePlus, FiPlus, FiTrash2 } from 'solid-icons/fi';
+import { FiChevronsLeft, FiFilePlus, FiTrash2 } from 'solid-icons/fi';
 import {
   allDocs, selectedSlug, selectSkill, newDraft, removeSkill, studioLoading,
 } from '@/stores/skill-studio';
@@ -7,12 +7,11 @@ import { isSkillEnabled, toggleSkillEnabled } from '@/stores/skill-prefs';
 
 /**
  * Skill 工作台左栏：全部 Skill 列表。
- * 每项：加入/移除（控制输入框可选集）+ 删除（内联二次确认）；
- * 点击卡片选中进中间预览；顶部「新建」空白草稿。
+ * 每项：启停开关（批7/对齐 Flova 卡片开关，写 runtime_settings.skills_disabled）
+ * + 删除（内联二次确认）；点击卡片选中进中间预览；顶部「新建」空白草稿。
  */
 export function SkillStudioList(props: { onCollapse: () => void }) {
   const [confirmingSlug, setConfirmingSlug] = createSignal<string | null>(null);
-  const allSlugs = () => allDocs().map((d) => d.slug);
 
   return (
     <div class="skst-list">
@@ -38,7 +37,7 @@ export function SkillStudioList(props: { onCollapse: () => void }) {
             const enabled = () => isSkillEnabled(doc.slug);
             return (
               <div
-                class={`skst-item ${selectedSlug() === doc.slug ? 'active' : ''}`}
+                class={`skst-item ${selectedSlug() === doc.slug ? 'active' : ''} ${enabled() ? '' : 'off'}`}
                 onClick={() => selectSkill(doc.slug)}
               >
                 <div class="skst-item-info">
@@ -49,14 +48,16 @@ export function SkillStudioList(props: { onCollapse: () => void }) {
                 </div>
                 <button
                   type="button"
-                  class={`skst-join ${enabled() ? 'on' : ''}`}
-                  title={enabled() ? '移除（输入框不可选）' : '加入（输入框可选）'}
+                  role="switch"
+                  aria-checked={enabled()}
+                  class={`skst-switch ${enabled() ? 'on' : ''}`}
+                  title={enabled() ? '启用中：点击停用（不再进 Agent Skill 目录）' : '已停用：点击启用'}
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleSkillEnabled(doc.slug, allSlugs());
+                    void toggleSkillEnabled(doc.slug);
                   }}
                 >
-                  {enabled() ? <FiCheck size={13} /> : <FiPlus size={13} />}
+                  <span class="skst-knob" />
                 </button>
                 <Show
                   when={confirmingSlug() === doc.slug}

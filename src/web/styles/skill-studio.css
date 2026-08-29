@@ -26,18 +26,20 @@
 .skst-item-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .skst-item-name { font-size: var(--font-md); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .skst-item-desc { font-size: var(--font-xs); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.skst-join {
-  flex-shrink: 0; width: 26px; height: 26px; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-dim); cursor: pointer; border: 1px solid var(--border-color);
+/* 启停开关（批7/对齐 Flova 卡片开关）：写 runtime_settings.skills_disabled */
+.skst-switch {
+  display: flex; align-items: center; padding: 2px;
+  width: 30px; height: 18px; border-radius: 9px;
+  border: 1px solid var(--border-color); background: var(--bg-hover); cursor: pointer;
 }
-.skst-join.on { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 40%, transparent); }
-.skst-join:hover { background: var(--bg-hover); }
-.skst-del {
-  flex-shrink: 0; width: 26px; height: 26px; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-dim); cursor: pointer; opacity: 0;
+.skst-knob {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--text-dim); transition: 0.15s;
 }
+.skst-switch.on { background: color-mix(in srgb, var(--color-success) 30%, transparent); }
+.skst-switch.on .skst-knob { transform: translateX(12px); background: var(--color-success); }
+.skst-item.off { color: var(--text-dim); }
+.skst-del { opacity: 0; }
 .skst-item:hover .skst-del { opacity: 1; }
 .skst-del:hover { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger-strong) 12%, transparent); }
 .skst-confirm { display: flex; gap: 4px; }
@@ -82,8 +84,8 @@
 .skst-msg.assistant { align-self: flex-start; background: var(--bg-secondary); border: 1px solid var(--border-color); }
 .skst-msg-text.dim { color: var(--text-dim); }
 
-/* 左栏收起/展开按钮 */
-.skst-collapse {
+/* 左栏收起/展开按钮（与删除钮共用方形图标钮基类） */
+.skst-collapse, .skst-del {
   width: 26px; height: 26px; border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
   color: var(--text-dim); cursor: pointer;
