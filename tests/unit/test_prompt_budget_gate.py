@@ -28,26 +28,6 @@ def test_b1_prompt_budget_gate_passes():
     assert gate.main() == 0
 
 
-def test_c6_skill_ban_independent_ledger():
-    """C6（任务#22）：data/skills/*.md 直注禁令独立账本，不并入 BUDGET=8；
-    基线棘轮只降不升：当前计数不得超基线。"""
-    import scripts.check_prompt_budget as gate
-
-    viols = gate.collect_skill_ban_violations()
-    assert len(viols) <= gate.SKILL_BAN_BASELINE, "Skill 直注禁令上涨，超出棘轮基线"
-    # 与主账本分离：主账本扫描面不含 data/skills
-    assert gate.SKILLS_MD_DIR == gate.ROOT / "data" / "skills"
-    assert "data/skills" not in "|".join(gate.CODE_DIRS)
-
-
-def test_c6_skill_ban_ratchet_blocks_increase(monkeypatch):
-    """C6：超过基线即 FAIL（棘轮只降不升，观察项 ≠ 免死金牌）。"""
-    import scripts.check_prompt_budget as gate
-
-    monkeypatch.setattr(gate, "SKILL_BAN_BASELINE", len(gate.collect_skill_ban_violations()) - 1)
-    assert gate.main() == 1
-
-
 def test_model_visible_prompts_carry_no_internal_ticket_numbers():
     """整改批 2.2：模型可见提示词层（prompts/**/*.md）不含内部编号
     （任务#N / 批次N / ADR-NNNN / 宪法 RuleN / 层 N / Pn-N 等）——

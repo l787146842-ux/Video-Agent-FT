@@ -70,10 +70,10 @@ GATES: List[Tuple[str, List[str]]] = [
     # 此处读的是上一轮 vitest 产物（详见 check_fe_cov_ratchet.py 头部注释）。
     # 退役条件：前端整体行覆盖率 >= 90% 且连续两季无回退争议时裁决下账（§13.14(c)）。
     ("fe_cov_ratchet", [sys.executable, "scripts/check_fe_cov_ratchet.py"]),
-    # executor_skill_drift 闸已随任务#36 B5 执行器一步退役删除（执行器族不复存在，
-    # 工具名/能力覆盖改由 scan_skills --gate 与 tool_risk 门禁承接）
-    # 退役条件：Skill 工具名与平台工具注册表完全对齐、漂移计数连续两季为零时裁决下账。
-    ("skill_tool_names", [sys.executable, "scripts/scan_skills.py", "--gate"]),
+    # executor_skill_drift 闸已随任务#36 B5 执行器一步退役删除（执行器族不复存在）。
+    # skill_tool_names 闸已退役（2026-08-29 用户裁决删工具名白名单，Skill 系统
+    # 修复批 A；裁决依据见 docs/Skill系统审核报告-20260829.md §7 第 5 条）；
+    # scan_skills --gate 保留内容卫生/语言声明等探针（FAIL 口径不变）。
     # 任务 #9：CSS 体积棘轮（只减不增，度量 static/dist 全部 stylesheet 产物，
     # 基线 scripts/css_size_baseline.txt 首钉 153007 字节 = 149.42 kB，
     # 度量口径与 check_bundle_size.mjs 同框）。

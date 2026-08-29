@@ -195,15 +195,13 @@ def test_frontmatter_roundtrip_preserves_extension_keys(skills_dir):
 
 
 def test_scan_probe_does_not_flag_extension_keys():
-    """一致性探针（--gate 同源 validate_manifest）对逃生舱键零报出；
-    工具名白名单扫描先剥离 frontmatter，YAML 键不进入正文扫描面）。"""
+    """一致性探针（--gate 同源 validate_manifest）对逃生舱键零报出。"""
     manifest = {
         "metadata": {"version": "1.2", "acme.market_id": "m-42"},
         "x-acme-review": "pending",
     }
     assert scan_skills.manifest_consistency_issues(
         "逃生舱", "正文", manifest) == []
-    # frontmatter 剥离后正文为空 → 工具名扫描零命中
+    # frontmatter 剥离口径仍可用（正文自标题起始，YAML 键不入正文面）
     _fm, body, err = frontmatter.split_frontmatter(_DOC)
     assert err == "" and body.startswith("# 逃生舱技能")
-    assert scan_skills.tool_whitelist_issues(body, frozenset()) == []

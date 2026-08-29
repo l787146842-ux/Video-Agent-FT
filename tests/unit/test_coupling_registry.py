@@ -87,5 +87,6 @@ def test_registry_covers_constitution_row_count():
     # 2026-08-26：R23 governance_refs 门禁行随门禁退役删除；
     # 2026-08-28：R12_fc_confirm_loop 行退役删除——
     # studio-actions 拼回正文回绕解析形态已整体退役；
-    # 2026-08-29 批4/ADR-0007：R29 注入攻击模式表→中性化→两注入面耦合行登记）
-    assert len(COUPLING_ROWS) == 27
+    # 2026-08-30 Skill 系统修复批 A：R29 注入模式表→中性化耦合行退役删除（
+    # 2026-08-29 用户裁决撤除中性化层）
+    assert len(COUPLING_ROWS) == 26

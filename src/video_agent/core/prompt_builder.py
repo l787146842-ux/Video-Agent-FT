@@ -3,9 +3,8 @@
 承载：协议/Skill 目录/选中草稿/选中 Skill 预算注入块的组装。
 段落顺序：稳定内容在前，选中 Skill 块放在最末尾（近生成端，遵循度最高）。
 批4/ADR-0007（Skill 是指令性制作手册）：选中 Skill 正文经渐进披露预算化注入（头部按章节边界切齐，
-其余经 read_skill 续读）；正文入上下文前经 skill_sanitize 机械中性化（注入攻击句式/同意宣称）；
-官方 Skill 干净注入，仅外部来源附来源标记。压制性包壳已退役（业界不给 skill 内容贴符咒，
-安全靠机械装置：动作单轨/确认闸/§2.4 中性化/platform 闸）。
+其余经 read_skill 续读）；官方 Skill 干净注入，仅外部来源附来源标记。压制性包壳已退役（业界不给
+skill 内容贴符咒，安全靠机械装置：动作单轨/确认闸/platform 闸不可关）。
 逐轮变化的状态上下文（状态 JSON/工具边界说明/故事板客观进度）不占
 system 段，经 build_state_tail_message 以 history 尾部消息（user 通道）
 每步注入——system 段（含 Skill 块）成为跨步稳定前缀（供应商 KV-cache 友好）。
@@ -25,7 +24,6 @@ from src.video_agent.core import prompt_gates  # noqa: F401
 # gates_inputs 必须在 prompt_gates 之后导入（见上方注释）
 from src.video_agent.core import gates_inputs
 from src.video_agent.core import live_metrics
-from src.video_agent.core import skill_sanitize
 from src.video_agent.core.token_budget import estimate_tokens
 from src.video_agent.skill_runtime import guard as skill_guard
 # v3 声明读取经模块属性访问（测试 patch registry.<fn> 即生效）
@@ -341,8 +339,7 @@ class PromptBuilder:
         渐进披露：正文头部按 settings.skill_inject_max_tokens 预算注入（按章节边界切齐、
         不切半句），超出部分附 read_skill(section/start) 续读指引；短 Skill 全文一次注入；
         存量超大 Skill（88KB 量级）自动走续读。块内组成：选中提示行 + 元数据头 +
-        《Skill 流程纪律》全文 + 正文头部（+续读指引）。正文入上下文前经
-        skill_sanitize 机械中性化（注入攻击句式/同意宣称，外置模式表数据驱动）。
+        《Skill 流程纪律》全文 + 正文头部（+续读指引）。
         压制性包壳已退役：官方干净注入，仅外部来源附来源标记（不加约束性措辞）。
         段序不变（段注册表 order 100 最末，保前缀缓存约束）。
         解析失败/内容为空返回空串（降级为仅目录）。
@@ -357,8 +354,6 @@ class PromptBuilder:
         if not content:
             return ""
         name = display or skill_name
-        # 机械中性化在切分前执行（切分偏移与 read_skill 续读口径同源一致）
-        content = skill_sanitize.neutralize_skill_text(content)
         head, cut, truncated = self._budget_head(content, sd)
         hint = render_prompt_section(
             "shared/skill_selected.md",

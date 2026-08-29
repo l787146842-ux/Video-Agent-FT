@@ -304,21 +304,6 @@ COUPLING_ROWS: List[CouplingRow] = [
             ("file", "src/video_agent/web/generation_dispatch.py"),
         ),
     ),
-    CouplingRow(
-        "R29_skill_sanitize_patterns",
-        "批4/ADR-0007：注入攻击模式表（prompts/gates/injection_patterns.md）或"
-        "中性化口径变更",
-        "skill_sanitize 是唯一消费点，选中预算注入与 read_skill 两个注入面"
-        "同源口径（先中性化再切分）；模式收紧只紧不松",
-        _sym(
-            "src.video_agent.core.skill_sanitize:neutralize_skill_text",
-            "src.video_agent.core.prompt_builder:PromptBuilder.build_selected_skill_block",
-            "src.video_agent.tools.document_tools:ReadSkillTool.aexecute",
-        ) + (
-            ("file", "prompts/gates/injection_patterns.md"),
-            ("testfile", "tests/unit/test_prompt_assembly_snapshot.py"),
-        ),
-    ),
 ]
 
 

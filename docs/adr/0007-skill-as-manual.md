@@ -24,6 +24,12 @@
    - 动作单轨 FC + guard_pipeline 唯一判定；scripts 键只静态校验绝不执行
      （Flova skill 本就无脚本，零差异）。
 
+> 注记（2026-08-30，Skill 系统修复批 A）：2026-08-29 用户裁决撤除中性化层——
+> 批4 随本 ADR 落地的正文机械中性化（`core/skill_sanitize.py` +
+> `prompts/gates/injection_patterns.md` 模式表）整体删除；本 ADR 四条红线不含
+> 中性化，红线语义由确认闸/动作单轨/platform 闸机械执行，§2.4 Context≠Consent
+> 条款原样保留（裁决依据见 `docs/Skill系统审核报告-20260829.md` §7 第 1/3 条）。
+
 ## 总原则（每批自查）
 
 系统与 Skill 冲突时，修系统，不改 Skill 迁就系统；每一条涉及 Skill 的改动

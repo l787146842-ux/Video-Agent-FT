@@ -11,7 +11,7 @@ from loguru import logger
 from src.video_agent.config import settings
 from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
-from src.video_agent.core import ports, prompt_gates, skill_sanitize
+from src.video_agent.core import ports, prompt_gates
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import registry
@@ -348,10 +348,8 @@ class ReadSkillTool(BaseTool):
                 success=False,
                 error=f"未找到 Skill「{wanted}」。可用 Skill：{'、'.join(available) or '无'}",
             )
-        # 批4/ADR-0007（§2.4 防线）：read_skill 输出统一机械中性化，与选中注入
-        # 同源口径（先中性化再切分，章节/续读偏移一致）；不加任何前置包壳，
+        # 批4/ADR-0007：read_skill 直接输出正文，不加任何前置包壳，
         # 仅外部来源附来源标记短句（同源外置）
-        content = skill_sanitize.neutralize_skill_text(content)
         source_note = _skill_source_note(matched)
         # 目录包资源按需加载（P2-4）：resource 与正文/章节互斥，
         # 只放行资源清单内文件（fail-closed 归 registry.resolve_skill_resource）

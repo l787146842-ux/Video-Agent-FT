@@ -22,7 +22,7 @@ _EXPECTED_GATE_NAMES = [
     "semantic_colors", "func_imports", "category_keys",
     "legacy_orchestration", "layer_imports", "ref_integrity",
     "scaffold_registry", "cov_ratchet", "fe_cov_ratchet",
-    "skill_tool_names", "css_size",
+    "css_size",
 ]
 
 
@@ -58,7 +58,6 @@ def _budget_scaffold(tmp_path, monkeypatch, md_text):
     monkeypatch.setattr(gate, "ROOT", tmp_path)
     monkeypatch.setattr(gate, "PROMPTS", tmp_path / "prompts")
     monkeypatch.setattr(gate, "CODE_DIRS", ["no_such_dir"])
-    monkeypatch.setattr(gate, "SKILLS_MD_DIR", tmp_path / "no_skills")
     return gate
 
 
@@ -381,35 +380,3 @@ def test_canary_fe_cov_ratchet_improved_passes(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv",
                         ["check_fe_cov_ratchet.py", "--summary", str(summary)])
     assert gate.main() == 0
-
-
-# ---------- 14) skill_tool_names（scan_skills --gate） ----------
-
-def _skills_gate_scaffold(tmp_path, monkeypatch, md_name, md_text):
-    import scripts.scan_skills as gate
-    skills = tmp_path / "data" / "skills"
-    # 批3 单一包形态：<slug>/SKILL.md；name/description 注册期必填，
-    # name 取正文 H1 与显示名口径一致。
-    slug = md_name[:-3] if md_name.endswith(".md") else md_name
-    pkg = skills / slug
-    pkg.mkdir(parents=True)
-    (pkg / "SKILL.md").write_text(
-        f"---\nname: {md_text.splitlines()[0].lstrip('# ').strip()}\n"
-        f"description: 闸门禁测试桩\n---\n" + md_text, encoding="utf-8")
-    # run_gate 以 __file__ 相对定位 data/skills：指向 tmp 布局
-    monkeypatch.setattr(gate, "__file__", str(tmp_path / "scripts" / "scan_skills.py"))
-    return gate
-
-
-def test_canary_skill_gate_priority_claim_fails(tmp_path, monkeypatch):
-    gate = _skills_gate_scaffold(
-        tmp_path, monkeypatch, "违规样例.md",
-        "# 违规\n正文宣称：优先级最高。\n")
-    assert gate.run_gate() == 1
-
-
-def test_canary_skill_gate_clean_passes(tmp_path, monkeypatch):
-    gate = _skills_gate_scaffold(
-        tmp_path, monkeypatch, "干净样例.md",
-        "# 干净\n> 调用规则：测试\n正文遵守强制基线式表述。\n")
-    assert gate.run_gate() == 0

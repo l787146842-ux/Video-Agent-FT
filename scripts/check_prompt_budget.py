@@ -10,13 +10,9 @@
 - 动作定义唯一性：协议模板不再内联动作清单（文本动作定义已随 4-4 双轨退役删除，ADR-0001）；
 - include 引用完整性：{{include:path}} 目标文件存在。
 
-Skill 直注禁令独立账本（C6，任务#22）：Skill 模型可见注入面（目录包
-<slug>/SKILL.md 主文档 + references/ 资源）的「严禁/不得」
-不并入 BUDGET=8，单独计账：当前 WARN 观察项，
-基线棘轮锁死当前计数（0，任务#8 清洗后清零）——超过基线即 FAIL，只降不升。
-探针按 source 分口径（批 3）：基线棘轮只统计 platform 源（含未声明），
-外部源（imported|community 等非 platform 声明）单列观察项（仿 P95 写法，
-不并入基线、不阻断退出码）。
+（Skill 直注禁令独立账本（C6，任务#22）已于 2026-08-30 随 Skill 系统修复
+批 A 退役删除：2026-08-29 用户裁决删禁令账本，Skill 内容信任作者，
+平台只守机械边界；主预算账本不受影响。）
 
 另附运行时观察项（P3-17，非硬门禁不影响退出码）：
 - 读 live_metrics 落盘的组装样本（data/prompt_sections.jsonl），统计组装总长
@@ -42,11 +38,6 @@ CODE_DIRS = ["src/video_agent/core", "src/video_agent/skill_runtime", "src/video
 BUDGET = 8
 BYTE_BUDGET = 7168
 BAN_RE = re.compile(r"严禁|不得")
-# Skill 直注禁令独立账本（C6）：Skill 模型可见注入面行级命中基线棘轮，只降不升。
-# 任务#8（路线图 #33）完成 16 个 skill 正文禁令系统性清洗：157→0（全部转为
-# 正向基线/「X排除在外」声明式表述，语义不变），基线随之显式下调至 0。
-SKILLS_MD_DIR = ROOT / "data" / "skills"
-SKILL_BAN_BASELINE = 0
 # 运行时组装总长观察阈值（字符）：P95 超限仅 WARN（周报观察项，不作硬门禁）
 P95_WARN_CHARS = 48000
 SECTIONS_SAMPLE_FILE = ROOT / "data" / "prompt_sections.jsonl"
@@ -113,91 +104,6 @@ def collect_violations() -> list:
     return out
 
 
-def _skill_source(text: str) -> str:
-    """frontmatter 顶层 source 声明（探针按 source 分口径）；未声明返回空串。"""
-    lines = (text or "").splitlines()
-    if not lines or lines[0].strip() != "---":
-        return ""
-    for line in lines[1:]:
-        if line.strip() == "---":
-            break
-        m = re.match(r"^source:\s*(.+?)\s*$", line)
-        if m:
-            return m.group(1).strip().strip("\"'")
-    return ""
-
-
-def _is_external_source(source: str) -> bool:
-    """非空且非 platform 的 source 声明 = 外部源（基线棘轮不统计）。"""
-    return bool(source.strip()) and source.strip().lower() != "platform"
-
-
-def _iter_skill_packages():
-    """枚举 Skill 目录包（单一包形态 <slug>/SKILL.md）：
-    yield (主文档, 模型可见注入面文件清单)；注入面 = 主文档 +
-    references/ 资源（它们经 read_skill(resource=…) 成为模型可见）。"""
-    if not SKILLS_MD_DIR.is_dir():  # 目录缺失视同零命中（与 glob 容错口径一致）
-        return
-    for p in sorted(SKILLS_MD_DIR.iterdir(), key=lambda x: x.name):
-        if not p.is_dir() or p.name.startswith("."):
-            continue
-        main = p / "SKILL.md"
-        if not main.exists():
-            continue
-        files = [main]
-        refs = p / "references"
-        if refs.is_dir():
-            files.extend(f for f in sorted(refs.rglob("*")) if f.is_file())
-        yield main, files
-
-
-def _ban_hits(files) -> list:
-    out = []
-    for f in files:
-        try:
-            text = f.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        for i, line in enumerate(text.splitlines(), 1):
-            if BAN_RE.search(line):
-                out.append(f"{f.relative_to(ROOT)}:{i}")
-    return out
-
-
-def collect_skill_ban_violations() -> list:
-    """Skill 直注禁令独立账本（C6）：Skill 模型可见注入面行级「严禁/不得」命中。
-
-    与 BUDGET=8 主账本分离（Skill 正文清洗留长期路线图 #33，不在本门禁扩面）。
-    枚举口径 = 单一包形态 <slug>/SKILL.md 主文档 + references/ 资源。
-    按 source 分口径：只统计 platform 源（含未声明），外部源另走观察项。
-    """
-    out = []
-    for main, files in _iter_skill_packages():
-        try:
-            source = _skill_source(main.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError):
-            continue
-        if _is_external_source(source):
-            continue
-        out.extend(_ban_hits(files))
-    return out
-
-
-def collect_external_skill_ban_violations() -> list:
-    """外部源（imported|community 等非 platform 声明）的禁令命中观察项：
-    探针按 source 分口径（批 3）单列，不并入基线棘轮、不阻断退出码。"""
-    out = []
-    for main, files in _iter_skill_packages():
-        try:
-            source = _skill_source(main.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError):
-            continue
-        if not _is_external_source(source):
-            continue
-        out.extend(_ban_hits(files))
-    return out
-
-
 def runtime_total_p95():
     """从 live_metrics 落盘样本读组装总长序列，返回 (P95, 样本数)；无样本返回 (None, 0)。
 
@@ -257,29 +163,6 @@ def main() -> int:
             if not target.exists():
                 print(f"[check_prompt_budget] include 目标缺失: {f.relative_to(ROOT)} -> {m.group(1)}")
                 ok = False
-
-    # 4.5）Skill 直注禁令独立账本（C6）：WARN 观察项 + 基线棘轮（超基线 FAIL）
-    skill_viols = collect_skill_ban_violations()
-    if len(skill_viols) > SKILL_BAN_BASELINE:
-        print(
-            f"[check_prompt_budget] Skill 直注禁令 {len(skill_viols)} 处"
-            f"（基线 {SKILL_BAN_BASELINE}，棘轮只降不升）FAIL"
-        )
-        ok = False
-    else:
-        print(
-            f"[check_prompt_budget] Skill 直注禁令独立账本: {len(skill_viols)} 处"
-            f"（基线 {SKILL_BAN_BASELINE}，棘轮锁死；只统计 platform 源）"
-            f"WARN-观察项（不并入 BUDGET={BUDGET}）"
-        )
-
-    # 4.6）外部源单列观察项（探针按 source 分口径，仿 P95 写法：只 WARN 不阻断）
-    ext_viols = collect_external_skill_ban_violations()
-    if ext_viols:
-        print(
-            f"[check_prompt_budget] 外部源 Skill 直注禁令观察项: {len(ext_viols)} 处"
-            f"（source 分口径单列，不并入基线棘轮）WARN"
-        )
 
     # 5）运行时组装总长遥测（P3-17 周报观察项：只 WARN 不失败，不改退出码）
     p95, n = runtime_total_p95()
