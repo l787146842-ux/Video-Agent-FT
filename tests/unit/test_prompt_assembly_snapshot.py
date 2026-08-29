@@ -12,6 +12,7 @@ system 段，改经 build_state_tail_message 以 history 尾部消息（user 通
 目录段口径同步改）；注入面全部合法化属预期行为变更，快照只刷一轮。
 批6 重采：system_fc 工具清单新增 get_skill_asset 素材描述符一句，
 三个含 protocol 段的场景同批重采（预期行为变更，快照只刷一轮）。
+评审修复小批重采（2026-08-30）：prompts/shared/language.md 语言探针条款由“拦截”改诊断口径（scan_skills --gate 随批 A 退役门禁后降级为纯诊断脚本），含语言规则段的三个场景同批重采（口径纠偏，快照只刷一轮）。
 """
 import json
 import pathlib

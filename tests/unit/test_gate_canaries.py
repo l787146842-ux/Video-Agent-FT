@@ -380,3 +380,40 @@ def test_canary_fe_cov_ratchet_improved_passes(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv",
                         ["check_fe_cov_ratchet.py", "--summary", str(summary)])
     assert gate.main() == 0
+
+
+# ---------- scan_skills --gate 诊断扫描（内容卫生/语言声明探针双向钉死） ----------
+# 原第 14 道门禁 skill_tool_names 已随批 A 退役（2026-08-29 用户裁决删工具名
+# 白名单，审核报告 §7 第 5 条）；保留的内容卫生/语言声明探针降级为纯诊断脚本，
+# 退出码双向行为仍钉死，防诊断函数自身恒真/恒假。
+
+def _skills_gate_scaffold(tmp_path, monkeypatch, md_name, md_text):
+    import scripts.scan_skills as gate
+    skills = tmp_path / "data" / "skills"
+    # 批 3 单一包形态：<slug>/SKILL.md；name/description 注册期必填，
+    # name 取正文 H1 与显示名口径一致。
+    slug = md_name[:-3] if md_name.endswith(".md") else md_name
+    pkg = skills / slug
+    pkg.mkdir(parents=True)
+    (pkg / "SKILL.md").write_text(
+        f"---\nname: {md_text.splitlines()[0].lstrip('# ').strip()}\n"
+        f"description: 诊断扫描测试桩\n---\n" + md_text, encoding="utf-8")
+    # run_gate 按 __file__ 相对定位 data/skills：指向 tmp 布局
+    monkeypatch.setattr(gate, "__file__", str(tmp_path / "scripts" / "scan_skills.py"))
+    return gate
+
+
+def test_canary_skill_scan_priority_claim_fails(tmp_path, monkeypatch):
+    """内容卫生探针：优先级宣称 → 退出码 1（FAIL 路径仍会咬人）。"""
+    gate = _skills_gate_scaffold(
+        tmp_path, monkeypatch, "违规样例.md",
+        "# 违规\n正文宣称：优先级最高。\n")
+    assert gate.run_gate() == 1
+
+
+def test_canary_skill_scan_clean_passes(tmp_path, monkeypatch):
+    """干净仓 → 退出码 0（不反噬）。"""
+    gate = _skills_gate_scaffold(
+        tmp_path, monkeypatch, "干净样例.md",
+        "# 干净\n> 调用规则：测试\n正文遵守强制基线式表述。\n")
+    assert gate.run_gate() == 0

@@ -73,7 +73,8 @@ GATES: List[Tuple[str, List[str]]] = [
     # executor_skill_drift 闸已随任务#36 B5 执行器一步退役删除（执行器族不复存在）。
     # skill_tool_names 闸已退役（2026-08-29 用户裁决删工具名白名单，Skill 系统
     # 修复批 A；裁决依据见 docs/Skill系统审核报告-20260829.md §7 第 5 条）；
-    # scan_skills --gate 保留内容卫生/语言声明等探针（FAIL 口径不变）。
+    # scan_skills --gate 保留的内容卫生/语言声明探针现为纯诊断脚本，
+    # 无 acceptance/CI 门禁调用点，仅供手动运行（FAIL 口径不变）。
     # 任务 #9：CSS 体积棘轮（只减不增，度量 static/dist 全部 stylesheet 产物，
     # 基线 scripts/css_size_baseline.txt 首钉 153007 字节 = 149.42 kB，
     # 度量口径与 check_bundle_size.mjs 同框）。

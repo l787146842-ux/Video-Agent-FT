@@ -353,8 +353,9 @@ def package_resource_warn_probe(slug: str, path: pathlib.Path,
 
 
 def run_gate() -> int:
-    """--gate 模式（acceptance 门禁项）：
-    P1 防回潮校验：正文元数据残留行 / 优先级宣称即 FAIL（任务 #9）；
+    """--gate 模式（纯诊断脚本，手动运行；无 acceptance/CI 门禁调用点，
+    2026-08-29 用户裁决退役工具名白名单后随批 A 降级）：
+    P1 防回潮校验：正文元数据残留行 / 优先级宣称即诊断 FAIL（任务 #9）；
     tools_required 存在性探针缺失输出 WARN 清单（任务#5 B-2：先诊断
     不升门禁失败，不阻断退出码）；
     frontmatter name/description 存在性探针缺失输出 WARN 清单
