@@ -104,8 +104,11 @@ async def test_99_text_spec_review_card_not_remerged_with_wizard(svc, monkeypatc
     from src.video_agent.web import skill_docs as sd
 
     monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: list(_CHANNEL_OPTS))
+    # M2 门户：镜像内文档须可注册（frontmatter 必填键），
+    # 否则覆盖可注册夹具桩后污染同进程后续用例的注册口径计数。
     sd.save_skill_doc(
         "测试流程Skill",
+        "---\nname: 测试流程Skill\ndescription: 测试桩\n---\n"
         "# T\n> 调用规则：测试\n将全局制作参数写入 Final_Video_Spec.md"
         "（画幅比例、目标时长）→ document_write\n",
     )
@@ -134,8 +137,11 @@ async def test_99_model_spec_write_rejected_when_wizard_active(svc, monkeypatch)
     from src.video_agent.web import skill_docs as sd
 
     monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: list(_CHANNEL_OPTS))
+    # M2 门户：镜像内文档须可注册（frontmatter 必填键），
+    # 否则覆盖可注册夹具桩后污染同进程后续用例的注册口径计数。
     sd.save_skill_doc(
         "测试流程Skill",
+        "---\nname: 测试流程Skill\ndescription: 测试桩\n---\n"
         "# T\n> 调用规则：测试\n将全局制作参数写入 Final_Video_Spec.md"
         "（画幅比例、目标时长）→ document_write\n",
     )

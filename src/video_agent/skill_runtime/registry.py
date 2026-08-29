@@ -16,6 +16,7 @@ import re
 
 from loguru import logger
 
+from src.video_agent.config import settings  # 叶子依赖：停用开关活读（门户）
 from src.video_agent.core import ports
 from src.video_agent.skill_runtime import frontmatter
 from src.video_agent.skill_runtime.manifest_schema import (
@@ -407,6 +408,32 @@ def list_entries() -> List[SkillEntry]:
     return list(_registry.values())
 
 
+# ---------- 可加载性门户（M2，2026-08-30 用户裁决：停用=真停用） ----------
+# 全部消费面（目录段/兜底/文本匹配/注入支路/read_skill/风格层…）只调这三个函数，
+# 禁止各消费点复述开关过滤（P1 单一事实源）。判定顺序：先注册维、再开关维；
+# 开关活读 settings.skills_disabled（热切换即时生效，不缓存）。
+
+
+def disabled_slugs() -> frozenset:
+    """被停用 slug 集合（每次调用活读；空集 = 全启用）。"""
+    return frozenset(settings.skills_disabled or [])
+
+
+def loadable_entries() -> List[SkillEntry]:
+    """已注册 ∧ 未停用的条目，按 slug 显式排序（防 refresh 重插导致目录顺序漂移）。"""
+    _ensure_synced()
+    dis = disabled_slugs()
+    return [_registry[s] for s in sorted(_registry) if s not in dis]
+
+
+def resolve_loadable_entry(wanted: str) -> Optional[SkillEntry]:
+    """resolve_entry 命中后查开关：停用/未注册返回 None。"""
+    entry = resolve_entry(wanted)
+    if entry is None or entry.slug in disabled_slugs():
+        return None
+    return entry
+
+
 def _norm_name(s: str) -> str:
     """名称归一化（canonical 身份）：小写 + 去空格/连字符/
     下划线/扩展名——「AI短剧一站式生成」与「AI-短剧一站式生成」同身份。"""
@@ -530,8 +557,10 @@ def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], 
     references/ 下图/音/视频后缀与 assets/ 下登记后缀（媒体+文档）的实际文件可解析，
     但仅供调用方转成元数据描述符（名/大小/类型）按引用消费，不按文本读；
     同样受包内路径/符号链接/包根逃逸守卫（与文本资源同口径只紧不松）。"""
-    entry = resolve_entry(wanted)
+    entry = resolve_loadable_entry(wanted)
     if entry is None:
+        if resolve_entry(wanted) is not None:
+            return None, f"Skill「{wanted}」已停用，不可加载（停用=真停用）"
         return None, f"未找到 Skill「{wanted}」"
     root = entry.package_root
     if root is None:
@@ -771,11 +800,11 @@ def style_skills_from_state(raw_state: Optional[Dict[str, Any]]) -> List[str]:
 
 
 def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
-    """项目当前 Skill 归属兜底：请求未携带 Skill 名时，优先读项目态显式
-    绑定 activeSkill（批 C：空串 = 显式自由对话，不再回落末位）；未登记过
-    绑定的存量项目保持旧口径回落 usedSkills 末位，保证后续轮次（继续/
-    拆分分镜）仍绑定同一执行器。
+    """项目当前 Skill 归属兜底（可加载性门户收口，M2 停用=真停用）。
 
+    候选序列 = activeSkill → usedSkills 倒序，取首个命中门户者；全盲返回空。
+    不改项目态（不清 activeSkill/usedSkills，重新启用后自动恢复）；
+    显式自由对话（批 C：activeSkill 已登记且 slug 为空）即终止不再滑落。
     这是「当前 Skill 归属」的单一实现：chat_service / planner / agent_loop
     统一走这里，禁止各自再写一份兜底（单一事实源）。
     """
@@ -783,14 +812,22 @@ def fallback_skill_from_state(raw_state: Optional[Dict[str, Any]]) -> str:
         return ""
     active = raw_state.get("activeSkill")
     if isinstance(active, dict):
-        return str(active.get("slug") or "")
-    used = raw_state.get("usedSkills") or []
-    return str(used[-1] or "") if used else ""
+        slug = str(active.get("slug") or "").strip()
+        if not slug:
+            return ""  # 显式自由对话（批 C）：不回落 usedSkills
+        if resolve_loadable_entry(slug) is not None:
+            return slug
+    for item in reversed(list(raw_state.get("usedSkills") or [])):
+        cand = str(item or "").strip()
+        if cand and resolve_loadable_entry(cand) is not None:
+            return cand
+    return ""
 
 
 def match_skill_name_from_text(text: str) -> str:
-    """消息文本里出现已注册 Skill 名时自动绑定（用户直接发 Skill 名/文档按钮引用，
-    但请求未带 skill_slug；确定性匹配，不依赖模型自觉）。
+    """消息文本里出现可加载（已注册 ∧ 未停用）Skill 名时自动绑定（用户直接发
+    Skill 名/文档按钮引用，但请求未带 skill_slug；确定性匹配，不依赖模型自觉）。
+    停用项不参与自动挑选（M2 停用=真停用，门户收口）。
 
     按名称/标识匹配：命中多个时取最后一个（用户最新提到的 Skill 更可能是当前意图）。
     """
@@ -798,7 +835,7 @@ def match_skill_name_from_text(text: str) -> str:
     if not body:
         return ""
     matched = ""
-    for entry in list_entries():
+    for entry in loadable_entries():
         name = str(entry.name or "")
         slug = str(entry.slug or "")
         if name and name in body:

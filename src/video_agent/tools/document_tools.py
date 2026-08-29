@@ -330,20 +330,23 @@ class ReadSkillTool(BaseTool):
         sd = ports.skill_docs_port()
 
         wanted = (params.name or "").strip()
-        # 与 Planner 选中项注入共用同一套解析（仅文档 Skill，模糊匹配）
+        # 与 Planner 选中项注入共用同一套解析（仅文档 Skill，模糊匹配）；
+        # 可加载性门户在 resolve_skill_content 内收口（M2 停用=真停用）
         matched, content = sd.resolve_skill_content(wanted)
         if not content:
             # canonical 身份兜底（Rule2 v6）：模型逐字复制显示名的误差
-            # （去连字符/空格归一）经 registry 定位同身份条目
-            entry = registry.resolve_entry(wanted)
+            # （去连字符/空格归一）经 registry 定位同身份条目（同走门户）
+            entry = registry.resolve_loadable_entry(wanted)
             if entry is not None and str(entry.content or "").strip():
                 matched, content = entry.name, entry.content
         if not content:
-            available: List[str] = []
-            try:
-                available += [d.get("name", "") for d in sd.list_skill_docs()]
-            except Exception as _e:
-                logger.debug("[document_tools] 忽略异常: {}", _e)
+            if registry.resolve_entry(wanted) is not None:
+                # 已注册但被开关停用：报错区分「已停用」与「不存在」
+                return ToolResult(
+                    success=False,
+                    error=f"Skill「{wanted}」已停用，不可读取（停用=真停用）",
+                )
+            available = [e.name for e in registry.loadable_entries()]
             return ToolResult(
                 success=False,
                 error=f"未找到 Skill「{wanted}」。可用 Skill：{'、'.join(available) or '无'}",
@@ -438,22 +441,19 @@ class ListSkillsTool(BaseTool):
         return ListSkillsInput
 
     async def aexecute(self, params: ListSkillsInput) -> ToolResult:
-        # 经 skill_docs 端口消费（依赖倒置，与 read_skill 同源）；
-        # 开关过滤口径与目录段同源（settings.skills_disabled 存被停用 slug）
-        sd = ports.skill_docs_port()
+        # 名单与 count 统一从可加载性门户派生（单一事实源：已注册 ∧ 未停用，
+        # 开关活读；M2 停用=真停用，不再在本工具内联复述过滤）
         try:
-            docs = sd.list_skill_docs()
+            entries = registry.loadable_entries()
         except Exception as e:
             return ToolResult(success=False, error=f"Skill 名单读取失败：{e}")
-        disabled = set(settings.skills_disabled or [])
         skills = [
             {
-                "name": d.get("name") or d.get("slug") or "",
-                "slug": d.get("slug") or "",
-                "description": (d.get("description") or "").strip(),
+                "name": e.name,
+                "slug": e.slug,
+                "description": str((e.manifest or {}).get("description") or "").strip(),
             }
-            for d in docs
-            if str(d.get("slug") or "") not in disabled
+            for e in entries
         ]
         return ToolResult(success=True, data={"skills": skills, "count": len(skills)})
 

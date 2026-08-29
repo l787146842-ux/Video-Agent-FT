@@ -278,8 +278,9 @@ class PromptBuilder:
             docs = list(list_skill_docs())
         except Exception:  # 文档目录读取失败不阻断对话（降级遥测可见）
             live_metrics.record_degradation("prompt_builder.catalog")
-        # 开关过滤（批5）：被停用 slug 不进目录（默认空 = 全启用，存量行为不变）
-        disabled = set(settings.skills_disabled or [])
+        # 开关过滤（批5；M2 门户收口：过滤谓词唯一源 = registry.disabled_slugs，
+        # 活读开关；被停用 slug 不进目录，默认空 = 全启用，存量行为不变）
+        disabled = skill_registry.disabled_slugs()
         docs = [d for d in docs if str(d.get("slug") or "") not in disabled]
         # 条目预算（批5）：超预算按最近使用序截断——项目 usedSkills 登记过的 slug
         # 按使用序从近到远在前，其余保持原序（稳定排序；无使用记录时目录顺序不变）
@@ -323,8 +324,12 @@ class PromptBuilder:
                 raw = self._get_raw_state() or {}
                 style_names: List[str] = []
                 for s in skill_registry.style_skills_from_state(raw):
-                    entry = skill_registry.resolve_entry(s)
-                    style_names.append(entry.name if entry is not None else s)
+                    entry = skill_registry.resolve_loadable_entry(s)
+                    if entry is not None:
+                        style_names.append(entry.name)
+                    elif skill_registry.resolve_entry(s) is None:
+                        style_names.append(s)  # 未注册：维持现状原样展示
+                    # 已停用：不进目录段（M2 停用=真停用）
                 if style_names:
                     header += "\n" + render_prompt_section(
                         "shared/skill_catalog.md", "STYLE_LAYERS",

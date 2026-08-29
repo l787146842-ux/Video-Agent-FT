@@ -2,6 +2,7 @@
 import pytest
 
 import src.video_agent.web.skill_docs as sd
+from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.document_tools import ReadSkillInput, ReadSkillTool
 
 
@@ -10,13 +11,19 @@ def skills_dir(tmp_path, monkeypatch):
     d = tmp_path / "skills"
     d.mkdir()
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
-    return d
+    # M2 门户：read_skill 放行须可加载（已注册）→ 隔离注册表，
+    # 用例内懒同步只扫本临时目录；用例后重置防污染。
+    registry.reset_registry()
+    yield d
+    registry.reset_registry()
 
 
 def _save_long_skill():
     filler = "章节正文填充。" * 50
+    # frontmatter 必填键（name/description）：注册期要求，可注册才可加载（M2 门户）
     sd.save_skill_doc(
         "续读演示",
+        "---\nname: 续读演示\ndescription: 测试桩\n---\n"
         "# 续读演示\n> 调用规则：测试\n"
         f"<planner>\n流程总纲 SEC_PLANNER_BODY\n{filler}</planner>\n"
         f"<storyboard_key_elements>\n关键元素规范 SEC_KE_BODY\n{filler}</storyboard_key_elements>\n",
@@ -48,6 +55,7 @@ async def test_read_skill_section_fuzzy_title(skills_dir):
     """章节标题大小写/空格容差"""
     sd.save_skill_doc(
         "英文章节",
+        "---\nname: 英文章节\ndescription: 测试桩\n---\n"
         "# 英文章节\n> 调用规则：测试\n<Write_The_Prompt>\nMARK_EN\n</Write_The_Prompt>\n",
     )
     res = await ReadSkillTool().aexecute(

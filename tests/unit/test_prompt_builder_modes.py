@@ -8,6 +8,7 @@ import pytest
 
 import src.video_agent.web.skill_docs as sd
 from src.video_agent.core.prompt_builder import PromptBuilder
+from src.video_agent.skill_runtime import registry
 
 
 @pytest.fixture
@@ -15,7 +16,11 @@ def skills_dir(tmp_path, monkeypatch):
     d = tmp_path / "skills"
     d.mkdir()
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
-    return d
+    # M2 门户：选中项注入放行须可加载（已注册）→ 隔离注册表，
+    # 用例内懒同步只扫本临时目录；用例后重置防污染。
+    registry.reset_registry()
+    yield d
+    registry.reset_registry()
 
 
 def _pb():
@@ -30,6 +35,7 @@ def test_selected_skill_block_full_injection_for_short_skill(skills_dir):
     """短 Skill（批4/ADR-0007）：预算内全文一次注入 + 流程纪律"""
     sd.save_skill_doc(
         "演示4",
+        "---\nname: 演示4\ndescription: 测试桩\n---\n"
         "# 演示4\n> 调用规则：测试\n"
         "<script_analyze>\n分析\n</script_analyze>\n"
         "<storyboard_key_elements>\n关键元素\n</storyboard_key_elements>\n"
@@ -53,6 +59,7 @@ def test_selected_skill_block_budget_head_for_oversized_skill(skills_dir):
     filler = "正文填充内容。" * 100
     sd.save_skill_doc(
         "超长流程",
+        "---\nname: 超长流程\ndescription: 测试桩\n---\n"
         "# 超长流程\n> 调用规则：测试\n"
         f"<planner>\n流程总纲 UNIQUE_PLANNER_MARK\n{filler}</planner>\n"
         f"<storyboard_key_elements>\n关键元素规范 UNIQUE_KE_MARK\n{filler * 20}</storyboard_key_elements>\n"
@@ -75,6 +82,13 @@ def test_selected_skill_block_budget_head_for_oversized_skill(skills_dir):
 
 def test_selected_skill_block_empty_for_unknown_skill(skills_dir):
     """不存在的 Skill：返空串（降级为仅目录）"""
+    # 预置一个带章节 tag 的可注册桩：避免空目录触发 ensure_default 补默认文档，
+    # 懒同步注册默认文档会打 heading_fallback 降级遥测（降级看门狗拦截）
+    sd.save_skill_doc(
+        "探针桩",
+        "---\nname: 探针桩\ndescription: 测试桩\n---\n"
+        "# 探针桩\n<script_analyze>\n占位\n</script_analyze>\n",
+    )
     assert _pb().build_selected_skill_block("不存在") == ""
 
 
@@ -94,6 +108,13 @@ def test_system_prompt_over_threshold_warns(skills_dir, monkeypatch):
     import src.video_agent.core.prompt_builder as pb_mod
     from src.video_agent.core.planner import PlannerContext
 
+    # 预置带章节 tag 的可注册桩：避免空目录触发 ensure_default 补默认文档，
+    # 懒同步注册默认文档会打 heading_fallback 降级遥测（降级看门狗拦截）
+    sd.save_skill_doc(
+        "探针桩",
+        "---\nname: 探针桩\ndescription: 测试桩\n---\n"
+        "# 探针桩\n<script_analyze>\n占位\n</script_analyze>\n",
+    )
     monkeypatch.setattr(pb_mod, "_SYSTEM_PROMPT_WARN_CHARS", 0)
     text = _pb().build_system_prompt(PlannerContext(use_studio_context=False, skill_name=""))
     assert text

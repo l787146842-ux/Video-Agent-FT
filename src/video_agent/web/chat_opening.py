@@ -126,25 +126,35 @@ def _resolve_skill_name_for_injection(
     """Skill 名称绑定的键名兜底：前端选中项（skill_name）优先；
     选中项为空但消息携带了 Skill 引用块（skill_slug）时，按 slug 解析出 Skill 名称，
     保证「随消息发送过的 Skill 必定完成绑定」；两者皆空时先按消息文本匹配已注册 Skill
-    （直接发 Skill 名也要能绑定），再回退项目 usedSkills 末位（后续轮次不带 Skill 导致绑定丢失）。
+    （直接发 Skill 名也要能绑定），再回退项目 usedSkills 倒序。
+    可加载性门户（M2，2026-08-30 裁决停用=真停用）：选中名/slug 支路命中后过门户，
+    被拒（停用）则滑落下一支路（文本匹配/兜底/空）；未注册选中名维持现状原样返回。
     绑定只驱动轻量状态块（目录+状态提示+流程纪律）；Skill 正文一律由模型调 read_skill 按需读取。
     """
-    if skill_name:
-        return skill_name
-    if skill_slug:
-        try:
-            from src.video_agent.web import skill_docs as sd
-            doc = sd.get_skill_doc(skill_slug)
-            if doc:
-                return str(doc.get("name") or skill_slug)
-        except Exception as e:
-            logger.warning(f"[ChatService] Skill slug({skill_slug}) 解析名称失败: {e}")
-        return skill_slug
     from src.video_agent.skill_runtime.registry import (
         fallback_skill_from_state,
         match_skill_name_from_text,
+        resolve_entry,
+        resolve_loadable_entry,
     )
 
+    if skill_name:
+        if resolve_loadable_entry(skill_name) is not None:
+            return skill_name
+        if resolve_entry(skill_name) is None:
+            return skill_name  # 未注册：维持现状（不拦存量项目）
+        # 已停用：滑落下一支路（M2 停用=真停用）
+    if skill_slug:
+        if resolve_loadable_entry(skill_slug) is not None:
+            try:
+                from src.video_agent.web import skill_docs as sd
+                doc = sd.get_skill_doc(skill_slug)
+                if doc:
+                    return str(doc.get("name") or skill_slug)
+            except Exception as e:
+                logger.warning(f"[ChatService] Skill slug({skill_slug}) 解析名称失败: {e}")
+            return skill_slug
+        # 已停用：滑落下一支路（M2 停用=真停用）
     text_match = match_skill_name_from_text(user_text)
     if text_match:
         return text_match

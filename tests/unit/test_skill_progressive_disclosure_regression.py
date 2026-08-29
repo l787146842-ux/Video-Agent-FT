@@ -158,7 +158,9 @@ def test_metadata_header_exception_branches_degrade_to_empty(tmp_skills):
     """manifest/kind/语言/暂停点查询异常分支：各自降级不抛，无其余字段时头返空"""
     from src.video_agent.skill_runtime import guard as skill_guard
 
-    sd.save_skill_doc("炸桩", "# 炸桩\n正文")
+    # M2 门户：选中项注入放行须可加载（已注册）→ 带 frontmatter 必填键可注册
+    sd.save_skill_doc(
+        "炸桩", "---\nname: 炸桩\ndescription: 测试桩\n---\n# 炸桩\n正文")
     pb = _pb_raw({})
 
     orig_m, orig_k = registry.skill_manifest_of, registry.skill_kind

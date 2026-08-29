@@ -31,6 +31,7 @@ from src.video_agent.utils.paths import SKILL_DOCS_DIR
 from src.video_agent.config import settings
 # 标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
 from src.video_agent.core import live_metrics
+from src.video_agent.skill_runtime import registry as _skill_registry
 # pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
 from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: 1
 # frontmatter 声明解析/体检（frontmatter 顶层不依赖本模块，无环）
@@ -682,17 +683,26 @@ def resolve_skill_content(wanted: str) -> tuple:
     def names(c: Dict[str, Any]) -> List[str]:
         return [str(c.get("name", "")), str(c.get("alias", ""))]
 
+    # 可加载性门户（M2，2026-08-30 裁决：停用=真停用）：候选命中后，
+    # 以该 slug 经 resolve_loadable_entry 可解析为放行条件，否则继续匹配/
+    # 返回空（磁盘读机制保留，门户只管准入）。
+    def _loadable(c: Dict[str, Any]) -> bool:
+        return _skill_registry.resolve_loadable_entry(
+            str(c.get("alias") or "")) is not None
+
     # 1. 精确 → 2. 归一化相等 → 3. 双向包含（防单字误匹配）
     for c in candidates:
-        if wanted in names(c):
+        if wanted in names(c) and _loadable(c):
             return str(c.get("name", "")), frontmatter.strip_frontmatter(
                 str(c.get("content", "")))
     for c in candidates:
-        if any(_norm_skill_name(n) == wn for n in names(c) if n):
+        if _loadable(c) and any(_norm_skill_name(n) == wn for n in names(c) if n):
             return str(c.get("name", "")), frontmatter.strip_frontmatter(
                 str(c.get("content", "")))
     if len(wn) >= 2:
         for c in candidates:
+            if not _loadable(c):
+                continue
             for n in names(c):
                 nn = _norm_skill_name(n)
                 if nn and len(nn) >= 2 and (wn in nn or nn in wn):

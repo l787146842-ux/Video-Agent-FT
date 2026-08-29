@@ -14,20 +14,26 @@ import pytest
 
 import src.video_agent.web.skill_docs as skill_docs_mod
 from src.video_agent.core.planner import Planner, PlannerContext
+from src.video_agent.skill_runtime import registry
 
 SKILL_MARKER = "SKILL_FLOW_MARKER_888"
 
 
 @pytest.fixture
 def doc_skill(tmp_path, monkeypatch):
-    """临时文档 Skill 目录 + 一个测试 Skill"""
+    """临时文档 Skill 目录 + 一个测试 Skill（M2 门户：放行须可加载，
+    带 frontmatter 必填键可注册 + 隔离注册表防污染）"""
     skill_dir = tmp_path / "skills"
     skill_dir.mkdir()
     monkeypatch.setattr(skill_docs_mod, "SKILL_DOCS_DIR", skill_dir)
+    registry.reset_registry()
     skill_docs_mod.save_skill_doc(
-        "demo-flow", f"# 测试流程 Skill\n> 调用规则：测试用\n{SKILL_MARKER} 完整流程正文",
+        "demo-flow",
+        "---\nname: 测试流程 Skill\ndescription: 测试桩\n---\n"
+        f"# 测试流程 Skill\n> 调用规则：测试用\n{SKILL_MARKER} 完整流程正文",
     )
-    return skill_dir
+    yield skill_dir
+    registry.reset_registry()
 
 
 class TestSelectedSkillLightweightHint:

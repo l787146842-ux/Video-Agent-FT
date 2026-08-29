@@ -56,17 +56,24 @@ class TestSetActiveSkill:
 
 
 class TestFallbackActiveSkillPriority:
+    # M2（2026-08-30 裁决停用=真停用）：兜底候选须命中可加载性门户，
+    # 探针改用真实注册条目（未注册候选不再被兜底返回）。
     def test_active_binding_wins_over_used(self):
-        state = {"activeSkill": {"slug": "current", "source": "user"},
-                 "usedSkills": ["old-a", "old-b"]}
-        assert registry.fallback_skill_from_state(state) == "current"
+        entries = registry.loadable_entries()
+        a, b = entries[0].slug, entries[1].slug
+        state = {"activeSkill": {"slug": a, "source": "user"}, "usedSkills": [b]}
+        assert registry.fallback_skill_from_state(state) == a
 
     def test_empty_slug_explicit_free_chat_no_fallback(self):
-        state = {"activeSkill": {"slug": "", "source": "user"}, "usedSkills": ["old-a"]}
+        entries = registry.loadable_entries()
+        state = {"activeSkill": {"slug": "", "source": "user"},
+                 "usedSkills": [entries[0].slug]}
         assert registry.fallback_skill_from_state(state) == ""
 
     def test_legacy_project_keeps_last_used(self):
-        assert registry.fallback_skill_from_state({"usedSkills": ["a", "b"]}) == "b"
+        entries = registry.loadable_entries()
+        a, b = entries[0].slug, entries[1].slug
+        assert registry.fallback_skill_from_state({"usedSkills": [a, b]}) == b
         assert registry.fallback_skill_from_state({}) == ""
 
 

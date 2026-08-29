@@ -15,6 +15,7 @@ import src.video_agent.web.skill_docs as skill_docs_mod
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
 from src.video_agent.core.fc_tool_runner import format_tool_results
 from src.video_agent.core.planner import Planner, PlannerContext
+from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.document_tools import (
     ReadProjectDocInput,
@@ -32,14 +33,20 @@ def svc(tmp_path, monkeypatch):
     StateManager.reset_instance()
     instance = StateManager(str(tmp_path))
     StateManager._instance = instance
-    # 文档 Skill：临时目录 + 一个测试 Skill（代替已删除的代码内置 Skill）
+    # 文档 Skill：临时目录 + 一个测试 Skill（代替已删除的代码内置 Skill）；
+    # M2 门户：read_skill 放行须可加载（已注册）→ 带 frontmatter 必填键
+    # 可注册 + 隔离注册表，用例后重置防污染。
     skill_dir = tmp_path / "skills"
     skill_dir.mkdir()
     monkeypatch.setattr(skill_docs_mod, "SKILL_DOCS_DIR", skill_dir)
+    registry.reset_registry()
     skill_docs_mod.save_skill_doc(
-        "demo-flow", f"# 测试流程 Skill\n> 调用规则：测试用\n{SKILL_MARKER} 完整流程正文",
+        "demo-flow",
+        "---\nname: 测试流程 Skill\ndescription: 测试桩\n---\n"
+        f"# 测试流程 Skill\n> 调用规则：测试用\n{SKILL_MARKER} 完整流程正文",
     )
     yield instance
+    registry.reset_registry()
     StateManager.reset_instance()
 
 

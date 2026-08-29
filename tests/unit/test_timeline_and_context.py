@@ -17,6 +17,7 @@ from src.video_agent.tools.document_tools import (
     ReadProjectDocTool, ReadProjectDocInput,
 )
 from src.video_agent.tools.storyboard_tools import StoryboardReadDraftTool, ReadDraftInput
+from src.video_agent.skill_runtime import registry
 import src.video_agent.web.skill_docs as skill_docs_mod
 
 
@@ -315,14 +316,22 @@ async def test_read_skill_tool(tmp_path, monkeypatch, svc):
     skill_dir = tmp_path / "skills"
     skill_dir.mkdir()
     monkeypatch.setattr(skill_docs_mod, "SKILL_DOCS_DIR", skill_dir)
+    # M2 门户：read_skill 放行须可加载（已注册）→ 文档带 frontmatter 必填键可注册；
+    # 隔离注册表，用例后重置避免污染后续用例的懒同步目录。
+    registry.reset_registry()
     skill_docs_mod.save_skill_doc(
-        "music-mv", "# 音乐MV制作\n> 调用规则：制作音乐MV时使用\n## 流程\n完整流程正文……",
+        "music-mv",
+        "---\nname: 音乐MV制作\ndescription: 测试桩\n---\n"
+        "# 音乐MV制作\n> 调用规则：制作音乐MV时使用\n## 流程\n完整流程正文……",
     )
     tool = ReadSkillTool()
-    ok = await tool.aexecute(ReadSkillInput(name="音乐MV制作"))
-    assert ok.success and "完整流程正文" in ok.data["content"]
-    miss = await tool.aexecute(ReadSkillInput(name="不存在的技能"))
-    assert not miss.success and "可用 Skill" in miss.error
+    try:
+        ok = await tool.aexecute(ReadSkillInput(name="音乐MV制作"))
+        assert ok.success and "完整流程正文" in ok.data["content"]
+        miss = await tool.aexecute(ReadSkillInput(name="不存在的技能"))
+        assert not miss.success and "可用 Skill" in miss.error
+    finally:
+        registry.reset_registry()
 
 
 def _seed_storyboard(svc):
@@ -372,19 +381,29 @@ def test_system_prompt_contains_catalog_not_full_text(tmp_path, monkeypatch, svc
     skill_dir = tmp_path / "skills"
     skill_dir.mkdir()
     monkeypatch.setattr(skill_docs_mod, "SKILL_DOCS_DIR", skill_dir)
+    # M2 门户：选中项正文注入经 resolve_skill_content，放行须可加载（已注册）→
+    # 文档带 frontmatter 必填键 + 隔离注册表（用例后重置防污染）
+    registry.reset_registry()
     skill_docs_mod.save_skill_doc(
-        "demo-skill", "# 演示技能\n> 调用规则：演示用\n大段流程正文经预算注入 system prompt……",
+        "demo-skill",
+        "---\nname: 演示技能\ndescription: 测试桩\n---\n"
+        "# 演示技能\n> 调用规则：演示用\n大段流程正文经预算注入 system prompt……",
     )
     skill_docs_mod.save_skill_doc(
-        "other-skill", "# 未选技能\n> 调用规则：演示用\n未选技能的正文不应进 system prompt……",
+        "other-skill",
+        "---\nname: 未选技能\ndescription: 测试桩\n---\n"
+        "# 未选技能\n> 调用规则：演示用\n未选技能的正文不应进 system prompt……",
     )
     planner = Planner()
     ctx = PlannerContext(use_studio_context=False, skill_name="演示技能")
-    prompt = planner._build_system_prompt(ctx)
-    assert "Skill 目录" in prompt and "演示技能" in prompt
-    assert "read_skill" in prompt
-    # 选中项提示在场，短正文预算内全文注入（批4/ADR-0007）
-    assert "当前选中 Skill" in prompt
-    assert "大段流程正文经预算注入 system prompt" in prompt
-    # 未选中的 Skill 仍只有目录，全文不注入
-    assert "未选技能的正文不应进 system prompt" not in prompt
+    try:
+        prompt = planner._build_system_prompt(ctx)
+        assert "Skill 目录" in prompt and "演示技能" in prompt
+        assert "read_skill" in prompt
+        # 选中项提示在场，短正文预算内全文注入（批4/ADR-0007）
+        assert "当前选中 Skill" in prompt
+        assert "大段流程正文经预算注入 system prompt" in prompt
+        # 未选中的 Skill 仍只有目录，全文不注入
+        assert "未选技能的正文不应进 system prompt" not in prompt
+    finally:
+        registry.reset_registry()
