@@ -3,7 +3,8 @@
 
 Skill 下拉数据 = 仅文档 Skill（data/skills/<slug>/SKILL.md 单一包形态）。
 代码内置 Skill（编剧/分镜师/制片）已按用户要求彻底移除，不得再回到下拉框。
-文档 Skill 的 system_prompt 即文档全文——用户改文档就是改流程。
+文档 Skill 的 system_prompt 即磁盘全文（含 frontmatter 声明头）——对话栏详情弹窗
+以它为源编辑保存整文件覆盖，含声明头才不会抹掉必填键导致拒注册；用户改文档就是改流程。
 """
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -77,7 +78,9 @@ async def get_agent_config():
             "id": f"doc:{e.slug}",
             "name": e.name,
             "description": str((e.manifest or {}).get("description") or "").strip(),
-            "system_prompt": e.content,
+            # 磁盘全文含 frontmatter 下发（对话栏弹窗编辑保存整文件覆盖不丢声明头；
+            # 注册派生只影响「哪些包出现」，不改变内容形状；磁盘读取失败兜底注册解析正文）
+            "system_prompt": (get_skill_doc(e.slug) or {}).get("content") or e.content,
             "source": "doc",
             "slug": e.slug,
             # kind 目录口径（任务 #11）：前端据此区分主流程候选与可叠加风格层；

@@ -4,7 +4,7 @@
 对齐业界「发现→注册→加载」：磁盘存在 ≠ 可加载，注册是加载的唯一门户。
 钉死七件事：
 ① 坏包（缺 frontmatter name）在目录段/list_skills/文本匹配/slug 注入/
-   resolve_skill_content/read_skill//api/skills 七面全盲；
+   resolve_skill_content/read_skill//api/skills 七面全盲（显式选择被拒不双滑落，空绑定）；
 ② 同夹具下好包四消费面行为与现状一致；
 ③ 注册后改坏 frontmatter → refresh_skill 拒注册摘除 → 消费面立即盲；
 ④ 磁盘直增未注册包不进目录，sync_all 后才可加载（发现→注册边界）；
@@ -81,9 +81,9 @@ def test_bad_package_blind_on_catalog_list_match_injection(portal_env):
     assert "好包" in block  # 好包不受影响（目录面）
 
     assert registry.match_skill_name_from_text("请按坏包的流程执行") == ""
-    # slug 注入支路：被拒滑落 → 文本匹配空 → 兜底空
+    # slug 注入支路：显式选择被拒 → 空绑定，不双滑落到文本匹配/兜底（M3 收紧）
     assert _resolve_skill_name_for_injection("", "bad-pack", _base_state(), "") == ""
-    # 选中名支路（M3 收紧）：磁盘存在但被拒注册 → 滑落，不得绑定
+    # 选中名支路（M3 收紧）：磁盘存在但被拒注册 → 空绑定，不得绑定也不双滑落
     assert _resolve_skill_name_for_injection("坏包", "", _base_state(), "") == ""
     # 磁盘根本不存在的名字：维持现状原样返回（不拦存量项目）
     assert _resolve_skill_name_for_injection("从未存在", "", _base_state(), "") == "从未存在"
@@ -193,8 +193,12 @@ def test_api_skills_excludes_rejected_but_docs_keeps_full(portal_env):
 
     resp = client.get("/api/plugins/ftdyb-agent/config")
     assert resp.status_code == 200, resp.text
-    slugs = {s["slug"] for s in resp.json()["skills"]}
+    skills = resp.json()["skills"]
+    slugs = {s["slug"] for s in skills}
     assert slugs == {"good-pack"}  # 对话栏不出现被拒包
+    # 内容形状不变：system_prompt 仍为含 frontmatter 的磁盘全文（弹窗保存不抹声明头）
+    for s in skills:
+        assert s["system_prompt"].startswith("---") and "name:" in s["system_prompt"]
 
     resp2 = client.get("/api/skills/docs")
     assert resp2.status_code == 200, resp2.text

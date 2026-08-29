@@ -171,9 +171,11 @@ def _channel_groups() -> List[Dict[str, Any]]:
 
 
 def _current_skill_of(state: Optional[Dict[str, Any]]) -> str:
-    """状态里的当前 Skill 名（usedSkills 末位），无则空串。"""
-    used = ((state or {}).get("usedSkills") or [])
-    return str(used[-1] or "") if used else ""
+    """状态里的当前 Skill 名：经门户单一事实源 registry.fallback_skill_from_state
+    收口（M2 停用=真停用），停用项不再被当作当前归属（flow 声明随之失活）。"""
+    from src.video_agent.skill_runtime.registry import fallback_skill_from_state
+
+    return fallback_skill_from_state(state)
 
 
 def _spec_dim_unresolved(content: str, dim: str) -> bool:

@@ -17,6 +17,7 @@ from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import BaseTool, ToolResult
 from src.video_agent.tools.manager import ToolManager
+from src.video_agent.utils.prompts import render_prompt_section
 
 
 class SkillSectionRunInput(BaseModel):
@@ -53,8 +54,14 @@ class SkillSectionRunTool(BaseTool):
             # 当前选中 Skill 唯一实现 = registry.fallback_skill_from_state
             svc = StateManager.get_instance()
             wanted = registry.fallback_skill_from_state(svc.state_dict)
-        entry = registry.resolve_entry(wanted) if wanted else None
+        # 可加载性门户（M2 停用=真停用）：显式传参也过门户，停用项章节正文不可读出；
+        # 已注册但停用者以「已停用」语义拒载（外置文案，空则内置短句兜底）
+        entry = registry.resolve_loadable_entry(wanted) if wanted else None
         if entry is None:
+            if wanted and registry.resolve_entry(wanted) is not None:
+                return ToolResult(success=False, error=render_prompt_section(
+                    "shared/skill_load_reject.md", "DISABLED", name=wanted)
+                    or f"Skill「{wanted}」已停用，不可执行（停用=真停用）")
             return ToolResult(
                 success=False,
                 error=("无法定位当前 Skill：请传 skill 参数（Skill 名称），"

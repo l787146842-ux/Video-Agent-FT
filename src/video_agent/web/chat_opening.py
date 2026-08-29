@@ -128,11 +128,13 @@ def _resolve_skill_name_for_injection(
     保证「随消息发送过的 Skill 必定完成绑定」；两者皆空时先按消息文本匹配已注册 Skill
     （直接发 Skill 名也要能绑定），再回退项目 usedSkills 倒序。
     可加载性门户（M2，2026-08-30 裁决停用=真停用；M3 批2：注册表=加载唯一门户）：
-    选中名/slug 支路命中后过门户，被拒（停用/被拒注册）则滑落下一支路（文本匹配/兜底/空）；
-    磁盘根本不存在的选中名维持现状原样返回（不拦存量项目）。
+    显式选择（选中名/消息 slug）被门户拒绝（停用/被拒注册）时空绑定，不双滑落到文本自动匹配；
+    磁盘存在性与注册维同口径归一化比较（带空格/.md 后缀的变体名不漏过分界）；
+    磁盘根本不存在的选中名维持现状原样返回（不拦存量项目）；仅未显式选择时才走文本匹配/兜底支路。
     绑定只驱动轻量状态块（目录+状态提示+流程纪律）；Skill 正文一律由模型调 read_skill 按需读取。
     """
     from src.video_agent.skill_runtime.registry import (
+        _norm_name,
         fallback_skill_from_state,
         match_skill_name_from_text,
         resolve_entry,
@@ -143,19 +145,24 @@ def _resolve_skill_name_for_injection(
         if resolve_loadable_entry(skill_name) is not None:
             return skill_name
         if resolve_entry(skill_name) is None:
-            # 磁盘存在同名包但被拒注册（坏 frontmatter 等）：不可加载（M3），滑落；
-            # 磁盘根本不存在：维持现状原样返回（不拦存量项目）
+            # 磁盘存在性与注册维同口径归一化比较（带空格/.md 后缀的归一化变体名
+            # 不漏过分界被原样绑定）；磁盘存在但被拒注册（坏 frontmatter 等）：
+            # 不可加载（M3）→ 走下方空绑定；磁盘根本不存在：维持现状原样返回（不拦存量项目）
             try:
                 from src.video_agent.web import skill_docs as sd
 
-                on_disk = any(
-                    skill_name in (str(d.get("name") or ""), str(d.get("slug") or ""))
+                target = _norm_name(skill_name)
+                on_disk = bool(target) and any(
+                    target in (_norm_name(str(d.get("name") or "")),
+                               _norm_name(str(d.get("slug") or "")))
                     for d in sd.list_skill_docs())
             except Exception:
                 on_disk = False
             if not on_disk:
                 return skill_name
-        # 已停用/被拒注册：滑落下一支路
+        # 显式选择被门户拒绝（停用/被拒注册）：空绑定，不双滑落到文本自动匹配，
+        # 防用户选了停用的 A 却被静默绑到消息里提到的 B（评审修复批 #8）
+        return ""
     if skill_slug:
         if resolve_loadable_entry(skill_slug) is not None:
             try:
@@ -166,7 +173,8 @@ def _resolve_skill_name_for_injection(
             except Exception as e:
                 logger.warning(f"[ChatService] Skill slug({skill_slug}) 解析名称失败: {e}")
             return skill_slug
-        # 已停用：滑落下一支路（M2 停用=真停用）
+        # 显式选择被门户拒绝：空绑定，不双滑落（同上）
+        return ""
     text_match = match_skill_name_from_text(user_text)
     if text_match:
         return text_match

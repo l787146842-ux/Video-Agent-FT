@@ -183,10 +183,12 @@ class DocumentWriteTool(BaseTool):
             )
         # 规格向导拒收模型手写规格：规格由系统按向导选定拼装
         if is_spec:
-            from src.video_agent.skill_runtime.registry import spec_wizard_active
+            from src.video_agent.skill_runtime.registry import (
+                fallback_skill_from_state, spec_wizard_active,
+            )
 
-            _used = svc.state_dict.get("usedSkills") or []
-            if spec_wizard_active(str(_used[-1] or "") if _used else ""):
+            # 当前归属经门户单一事实源收口（M2 停用=真停用）：停用项的 flow 声明不再生效
+            if spec_wizard_active(fallback_skill_from_state(svc.state_dict)):
                 if prompt_gates.has_spec_document(svc.state_dict):
                     return ToolResult(
                         success=False,
@@ -341,10 +343,13 @@ class ReadSkillTool(BaseTool):
                 matched, content = entry.name, entry.content
         if not content:
             # 拒载文案外置 shared/skill_load_reject.md（M3 批2）：三类语义区分——
-            # 已停用（开关注销）/ 未注册被拒（磁盘存在但注册失败，附工作台修复指引）/ 未找到
-            if registry.resolve_entry(wanted) is not None:
+            # 已停用（仅真停用才报，在册启用项不误报）/ 未注册被拒 / 未找到；
+            # 外置文案空串时内置短句兜底，不降级空 error（文案兜底）
+            _reg = registry.resolve_entry(wanted)
+            if _reg is not None and _reg.slug in registry.disabled_slugs():
                 return ToolResult(success=False, error=render_prompt_section(
-                    "shared/skill_load_reject.md", "DISABLED", name=wanted))
+                    "shared/skill_load_reject.md", "DISABLED", name=wanted)
+                    or f"Skill「{wanted}」已停用，不可读取（停用=真停用）")
             # 磁盘存在同名包但未注册/被拒注册（坏 frontmatter 等）：发现→注册→
             # 加载，未过注册不得加载；工作台 /api/skills/docs 仍可见供修复
             try:
@@ -353,11 +358,13 @@ class ReadSkillTool(BaseTool):
                 disk_docs = []
             if _fuzzy_pick(disk_docs, wanted, ["name", "slug"]) is not None:
                 return ToolResult(success=False, error=render_prompt_section(
-                    "shared/skill_load_reject.md", "UNREGISTERED", name=wanted))
+                    "shared/skill_load_reject.md", "UNREGISTERED", name=wanted)
+                    or f"Skill「{wanted}」未通过注册，不可加载（请到 Skill 工作台修复）")
             available = [e.name for e in registry.loadable_entries()]
             return ToolResult(success=False, error=render_prompt_section(
                 "shared/skill_load_reject.md", "NOT_FOUND",
-                name=wanted, available="、".join(available) or "无"))
+                name=wanted, available="、".join(available) or "无")
+                or f"未找到 Skill「{wanted}」")
         # 批4/ADR-0007：read_skill 直接输出正文，不加任何前置包壳，
         # 仅外部来源附来源标记短句（同源外置）
         source_note = _skill_source_note(matched)

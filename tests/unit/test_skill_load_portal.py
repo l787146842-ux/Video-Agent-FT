@@ -5,7 +5,7 @@
 - 门户三件套：disabled_slugs 活读 / loadable_entries 排序剔除停用 /
   resolve_loadable_entry 先注册维再开关维；
 - 停用 → match_skill_name_from_text 不解析出该项；
-- 停用 → 注入支路（选中名/消息 slug）被拒并滑落下一支路；
+- 停用 → 注入支路：显式选择（选中名/消息 slug）被拒时空绑定，不双滑落到文本自动匹配；
 - 停用 → fallback_skill_from_state 跳过停用项取启用项、全停用返回空，
   且不改项目态（重新启用后自动恢复）；
 - 停用 → read_skill 三形态（全文/章节/资源）拒绝且报错含「停用」语义；
@@ -13,6 +13,8 @@
 - 动态切换：停用即盲、清 skills_disabled 即恢复（活读，不起新进程）；
 - 存量行为保持：skills_disabled=[] 时目录段与 list_skills 与现状一致。
 """
+import pytest
+
 import src.video_agent.web.skill_docs as sd
 from src.video_agent.core.planner import PlannerContext
 from src.video_agent.core.prompt_builder import PromptBuilder
@@ -105,20 +107,23 @@ def test_match_text_blind_when_disabled(set_global_setting):
     assert registry.match_skill_name_from_text(f"请跑{victim.slug}") == ""
 
 
-def test_injection_branch_rejects_disabled_and_slips(set_global_setting):
-    """停用 → 选中名/消息 slug 支路不解析出该项，滑落兜底取启用项。"""
+def test_injection_branch_rejects_disabled_no_double_slide(set_global_setting):
+    """停用 → 显式选择（选中名/消息 slug）被门户拒绝时空绑定，不双滑落到文本匹配/兜底。"""
     entries = registry.loadable_entries()
     victim, other = entries[0], entries[1]
     assert _resolve_skill_name_for_injection(victim.name, "", {}) == victim.name
     assert _resolve_skill_name_for_injection("", victim.slug, {}) == victim.name
 
     set_global_setting("skills_disabled", [victim.slug])
-    # 无可用候选：两分支都被拒且无兜底 → 空
-    assert _resolve_skill_name_for_injection("", victim.slug, {}) == ""
-    # 项目态有启用项：滑落到兜底取启用项（不取停用项）
+    # 显式选择被拒：即使项目态/消息文本有启用项也不静默替代（防选了停用的 A 被绑到 B）
     state = {"usedSkills": [victim.slug, other.slug]}
-    assert _resolve_skill_name_for_injection("", victim.slug, state) == other.slug
-    assert _resolve_skill_name_for_injection(victim.name, "", state) == other.slug
+    assert _resolve_skill_name_for_injection(victim.name, "", state) == ""
+    assert _resolve_skill_name_for_injection("", victim.slug, state) == ""
+    assert _resolve_skill_name_for_injection(
+        victim.name, "", state, f"请按{other.name}的流程执行") == ""
+    # 未显式选择才走文本匹配/兜底支路（存量自动绑定不受影响）
+    assert _resolve_skill_name_for_injection("", "", state, f"请按{other.name}的流程执行") == other.name
+    assert _resolve_skill_name_for_injection("", "", state) == other.slug
     # 未注册选中名维持现状：原样返回（不拦存量项目）
     assert _resolve_skill_name_for_injection("未登记的名字", "", {}) == "未登记的名字"
 
@@ -268,3 +273,118 @@ def test_budget_head_section_probe_failure_falls_back(set_global_setting):
     assert truncated is True
     assert 0 < cut < len(content)
     assert head == content[:cut].rstrip()
+
+
+# ---------- 三维评审修复批（2026-08-30）：对话栏/章节执行器/归属门户/归一化分界 ----------
+
+
+def _api_client():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from src.video_agent.web.routes import plugins as plugins_routes
+
+    app = FastAPI()
+    app.include_router(plugins_routes.router, prefix="/api")
+    return TestClient(app)
+
+
+def _api_slugs(client):
+    resp = client.get("/api/plugins/ftdyb-agent/config")
+    assert resp.status_code == 200, resp.text
+    return {s["slug"]: s for s in resp.json()["skills"]}
+
+
+def test_disabled_skill_not_in_api_skills_hot_switch(set_global_setting):
+    """停用项不进 /api/skills（对话栏）：热切换同款写法——停用即盲、清除即恢复。"""
+    victim = _lonely_entry()
+    client = _api_client()
+    assert victim.slug in _api_slugs(client)
+    set_global_setting("skills_disabled", [victim.slug])
+    assert victim.slug not in _api_slugs(client)
+    set_global_setting("skills_disabled", [])
+    assert victim.slug in _api_slugs(client)
+
+
+def test_api_skills_system_prompt_keeps_frontmatter():
+    """system_prompt 下发含 frontmatter 的磁盘全文：对话栏详情弹窗以它为源，
+    编辑保存整文件覆盖不抹声明头（防拒注册连锁失明）；注册派生只影响哪些包出现。"""
+    skills = _api_client().get("/api/plugins/ftdyb-agent/config").json()["skills"]
+    assert skills
+    for s in skills:
+        assert s["system_prompt"].lstrip("\ufeff").startswith("---"), \
+            f"{s['slug']} 的 system_prompt 缺 frontmatter 声明头"
+        head = s["system_prompt"].split("---")[1]
+        assert "name:" in head and "description:" in head
+
+
+_PORTAL_DOC = (
+    "---\nname: 章节测试包\ndescription: 门户补测桩\n"
+    "custom_sections:\n  tone_design: skill_section_run\n"
+    "flow:\n  spec_wizard: true\n---\n"
+    "# 章节测试包\n> 调用规则：测试\n"
+    "<tone_design>\n音色档案正文探针\n</tone_design>\n"
+)
+
+
+@pytest.fixture
+def portal_pack(tmp_path, monkeypatch):
+    """隔离目录：一个带自定义章节 + spec_wizard 声明的在册包（供两项门户用例共用）"""
+    d = tmp_path / "skills"
+    d.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
+    registry.reset_registry()
+    sd.save_skill_doc("portal-pack", _PORTAL_DOC)
+    yield
+    registry.reset_registry()
+
+
+async def test_skill_section_run_rejects_disabled(portal_pack, set_global_setting):
+    """skill_section_run 过门户：显式传参的停用项自定义章节正文不可读出，
+    拒载带「已停用」语义（非「无法定位」）；启用时正文可读（存量不变）。"""
+    from src.video_agent.tools.skill_tools import (
+        SkillSectionRunInput, SkillSectionRunTool,
+    )
+
+    tool = SkillSectionRunTool()
+    ok = await tool.aexecute(SkillSectionRunInput(section="tone_design", skill="章节测试包"))
+    assert ok.success and "音色档案正文探针" in ok.data["content"]
+    set_global_setting("skills_disabled", ["portal-pack"])
+    off = await tool.aexecute(SkillSectionRunInput(section="tone_design", skill="章节测试包"))
+    assert not off.success and "已停用" in off.error
+
+
+def test_owner_portal_deactivates_spec_wizard(portal_pack, set_global_setting):
+    """归属直读收口（gates_spec._current_skill_of / DocumentWriteTool 同源）：
+    停用后当前归属为空，spec_wizard_active 随之失活；启用时声明生效。"""
+    from src.video_agent.core import gates_spec
+    from src.video_agent.skill_runtime.registry import spec_wizard_active
+
+    state = _base_state(usedSkills=["章节测试包"])
+    assert gates_spec._current_skill_of(state) == "章节测试包"
+    assert spec_wizard_active(gates_spec._current_skill_of(state))
+    set_global_setting("skills_disabled", ["portal-pack"])
+    assert gates_spec._current_skill_of(state) == ""
+    assert not spec_wizard_active(gates_spec._current_skill_of(state))
+
+
+def test_rejected_on_disk_variant_name_not_bound(tmp_path, monkeypatch):
+    """归一化分界：被拒注册包的变体名（带空格/.md 后缀）磁盘存在性命中归一化比较，
+    不得漏过分界被原样绑定（应空绑定）；磁盘根本不存在的变体名维持现状原样返回。"""
+    d = tmp_path / "skills"
+    d.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
+    registry.reset_registry()
+    try:
+        # 缺 description 必填键 → 注册被拒，但磁盘存在（名称「迟到坏包」）
+        sd.save_skill_doc("late-bad", "---\nname: 迟到坏包\n---\n# 迟到坏包\n正文\n")
+        assert registry.resolve_entry("迟到坏包") is None
+        assert _resolve_skill_name_for_injection("迟到坏包", "", _base_state(), "") == ""
+        # 归一化变体名（.md 后缀/空格）：旧口径元组精确相等会漏过被原样绑定，
+        # 新口径与注册维同归一化 → 磁盘存在 → 空绑定（不拦不绑）
+        assert _resolve_skill_name_for_injection("迟到坏包 .md", "", _base_state(), "") == ""
+        assert _resolve_skill_name_for_injection("迟到 坏包", "", _base_state(), "") == ""
+        # 磁盘根本不存在的名字：维持现状原样返回（不拦存量项目）
+        assert _resolve_skill_name_for_injection("从未存在.md", "", _base_state(), "") == "从未存在.md"
+    finally:
+        registry.reset_registry()
