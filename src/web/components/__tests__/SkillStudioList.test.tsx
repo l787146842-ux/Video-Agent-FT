@@ -19,9 +19,13 @@ const docsMock = vi.hoisted(() => ({
 vi.mock('@/api/docs', () => docsMock);
 
 const agentMock = vi.hoisted(() => ({
-  getRuntimeSettings: vi.fn(async () => ({ skills_disabled: ['skill-b'] })),
+  getRuntimeSettings: vi.fn(async () => ({
+    skills_disabled: ['skill-b'],
+    // 批 B：RuntimeSettings 新增必填字段，mock 同步补齐（默认档）
+    execution_preference: 'confirm_before_gen',
+  })),
   setRuntimeSettings: vi.fn(async (body: { skills_disabled?: string[] }) => (
-    { skills_disabled: body.skills_disabled ?? [] }
+    { skills_disabled: body.skills_disabled ?? [], execution_preference: 'confirm_before_gen' }
   )),
 }));
 vi.mock('@/api/agent', () => agentMock);

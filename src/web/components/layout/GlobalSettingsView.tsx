@@ -7,6 +7,7 @@ import { ParamGroup, ParamSelect } from '@/components/middle-panel/params/ParamB
 import type { RuntimeSettings } from '@/api/agent';
 import { ModelPolicySection } from './global-settings/ModelPolicySection';
 import { CostMetricsSection } from './global-settings/CostMetricsSection';
+import { ExecutionPreferenceSection } from './global-settings/ExecutionPreferenceSection';
 
 /**
  * 全局模型选择设置页（路由 /global-settings，替代旧顶栏自动切换按钮）：
@@ -14,7 +15,8 @@ import { CostMetricsSection } from './global-settings/CostMetricsSection';
  * 聊天框出图开关、自动切换开关。改动即时热生效并持久化；
  * 工作台自动出图/出视频与 Agent 任务参数自动填入均按此设置。
  * ：模型分层策略表与成本看板切至 global-settings/（ModelPolicySection/
- * CostMetricsSection），行为零变更。
+ * CostMetricsSection），行为零变更；执行偏好三档（花钱生成是否先弹确认卡）
+ * 切至 ExecutionPreferenceSection（批 B）。
  */
 export default function GlobalSettingsView() {
   onMount(() => { void ensureGlobalSettings(); });
@@ -168,6 +170,9 @@ export default function GlobalSettingsView() {
             </button>
             <p class="gs-hint">开启时模型联不通/出不了图视频自动换同模型其他 API 厂商；关闭则直接按上游报错。</p>
           </section>
+
+          {/* 执行偏好三档（花钱生成是否先弹确认卡；批 B） */}
+          <ExecutionPreferenceSection gs={gs} set={set} />
 
           {/* 模型分层策略表（四角色自动路由；空 = 跟随主模型） */}
           <ModelPolicySection gs={gs} set={set} />

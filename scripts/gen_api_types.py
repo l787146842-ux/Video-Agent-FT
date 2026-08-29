@@ -136,12 +136,17 @@ def _collect_tool_tiers() -> tuple[Dict[str, str], Dict[str, str]]:
 def build_sidecar() -> Dict[str, Any]:
     """从后端契约模型装配 sidecar（生成模式的权威来源；check 模式的漂移基准）。
 
-    内容五段：事件帧 schema（core/sse_events TS_EVENT_FRAMES）、错误语义契约
+    内容六段：事件帧 schema（core/sse_events TS_EVENT_FRAMES）、错误语义契约
     （web/error_payload：ErrorPayload 模型 + kind 封闭集 + legacy 桥接表）、
     工具时间线展示档（各工具 detail_tier 声明）、默认档/内部 none 名单、
-    工具审批分级档（任务 P2-5：生效 approval_tier 表 + 默认档）。
+    工具审批分级档（任务 P2-5：生效 approval_tier 表 + 默认档）、
+    执行偏好三档枚举（批 B：config 白名单 + 默认档）。
     """
     # 延迟导入：确保项目根在 sys.path（以模块方式运行时自动满足）
+    from src.video_agent.config import (
+        EXECUTION_PREFERENCE_DEFAULT,
+        EXECUTION_PREFERENCE_VALUES,
+    )
     from src.video_agent.core.sse_events import TS_EVENT_FRAMES
     from src.video_agent.web import error_payload as ep
 
@@ -173,6 +178,11 @@ def build_sidecar() -> Dict[str, Any]:
         # confirm = 未登记工具按 high risk 口径 deny-by-default
         "tool_approval_tiers": dict(sorted(approval_tiers.items())),
         "tool_approval_tier_default": "confirm",
+        # 批 B：执行偏好三档白名单（事实源 = config.EXECUTION_PREFERENCE_VALUES）
+        "execution_preference": {
+            "values": list(EXECUTION_PREFERENCE_VALUES),
+            "default": EXECUTION_PREFERENCE_DEFAULT,
+        },
     }
 
 
@@ -246,6 +256,18 @@ def _render_sse_section(sidecar: Dict[str, Any]) -> List[str]:
     chunks.append("};")
     chunks.append("/** 未登记工具的默认档（high risk 口径，deny-by-default） */")
     chunks.append(f"export const TOOL_APPROVAL_TIER_DEFAULT = '{sidecar['tool_approval_tier_default']}' as const;")
+    chunks.append("")
+
+    # 批 B：执行偏好三档（花钱生成动作是否先弹确认卡；前端设置页三选与契约收窄同引用）
+    chunks.append("// ===== 执行偏好三档（来源：config.py 白名单枚举，sidecar 导出）=====")
+    chunks.append("")
+    ep = sidecar["execution_preference"]
+    chunks.append("/** 执行偏好三档枚举（花钱生成动作是否先弹确认卡） */")
+    chunks.append("export const EXECUTION_PREFERENCE_VALUES = ["
+                  + ", ".join(f"'{v}'" for v in ep["values"]) + "] as const;")
+    chunks.append("export type ExecutionPreference = (typeof EXECUTION_PREFERENCE_VALUES)[number];")
+    chunks.append("/** 默认档（= 现状行为：每次花钱生成前弹确认卡） */")
+    chunks.append(f"export const EXECUTION_PREFERENCE_DEFAULT = '{ep['default']}' as const;")
     chunks.append("")
     return chunks
 

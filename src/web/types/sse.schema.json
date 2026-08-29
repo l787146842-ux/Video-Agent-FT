@@ -1875,5 +1875,13 @@
     "view_storyboard_media": "none",
     "workflow_pause": "none"
   },
-  "tool_approval_tier_default": "confirm"
+  "tool_approval_tier_default": "confirm",
+  "execution_preference": {
+    "values": [
+      "auto_decide",
+      "confirm_before_gen",
+      "generate_directly"
+    ],
+    "default": "confirm_before_gen"
+  }
 }

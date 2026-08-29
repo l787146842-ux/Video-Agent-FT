@@ -62,6 +62,17 @@ class ToolManager:
                 f"Tool '{tool.name}' declares invalid approval_tier {approval!r}; "
                 f"must be one of {APPROVAL_TIERS}."
             )
+        # 花钱生成声明轴（批 B）：允许不声明（默认非花钱，偏好不放宽），
+        # 但声明了非 bool 取值同样拒收（与 approval_tier 同款注册期校验）
+        costly = getattr(tool, "costly", False)
+        if not isinstance(costly, bool):
+            logger.error(
+                f"拒绝注册工具 '{tool.name}'：costly 取值非法（仅支持 bool，"
+                "Skill 系统修复批 B 花钱生成声明轴）"
+            )
+            raise ValueError(
+                f"Tool '{tool.name}' declares invalid costly {costly!r}; must be bool."
+            )
         cls._tools[tool.name] = tool
         cls._schema_cache = None  # 注册新工具时失效缓存
         logger.debug(f"Registered tool: {tool.name} (risk={risk})")
@@ -104,6 +115,16 @@ class ToolManager:
         """全部已注册工具的生效审批分级（sidecar 导出的单一事实源，任务 P2-5）：
         显式声明与推导档统一收录，前端确认卡/审批交互按本表映射。"""
         return {name: cls.get_tool_approval_tier(name) for name in cls._tools}
+
+    @classmethod
+    def is_costly_tool(cls, name: str) -> bool:
+        """工具是否花钱生成（批 B costly 声明轴）：仅显式声明 True 者算数。
+        未声明者默认非花钱（执行偏好不放宽其确认闸）；未注册工具同判非花钱，
+        照 high 口径兜底拦截（兜底语义零改动，偏好不放宽未注册者）。"""
+        tool = cls._tools.get(name)
+        if tool is None:
+            return False
+        return bool(getattr(tool, "costly", False))
 
     @classmethod
     def get_tool_detail_tiers(cls) -> Dict[str, str]:

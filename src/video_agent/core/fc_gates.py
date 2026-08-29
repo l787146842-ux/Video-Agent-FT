@@ -223,6 +223,8 @@ def tool_risk_gate(
     无同意硬拒（禁止静默放行），拦截/豁免 verdict 入审计。
     豁免：image_generate 批量轨被 gen_confirm 闸专属覆盖（不双闸）；
     mode='single' 无目标草稿、不在覆盖内，回本闸默认拦。
+    执行偏好三档（批 B）：花钱生成工具（costly 声明轴）可经偏好前置分支
+    放行（判定归 evaluate_tool_risk，本闸只注入参数）。
     MCP 外部工具（mcp__* 命名空间）不得旁路 risk 闸（外部副作用不可信）。"""
     if name in CONFIRM_PRIMITIVE_COVERED_TOOLS:
         mode = str((args or {}).get("mode") or "batch").strip().lower()
@@ -237,6 +239,11 @@ def tool_risk_gate(
         name,
         override=ctx.gate_override,
         flow_consent=prompt_gates.flow_auto_continue(ctx.state()),
+        # 执行偏好分流只放宽花钱生成声明轴（数据驱动，不硬编码工具名单）；
+        # 未声明花钱（含未注册/非花钱高危）者兜底拦截语义零改动（批 B 红线）
+        costly=ToolManager.is_costly_tool(name),
+        skill_active=bool(ctx.injected_skill)
+        and prompt_gates.gate_mode() == "strict",
     )
     for w in warns:
         if w not in ctx.warnings:

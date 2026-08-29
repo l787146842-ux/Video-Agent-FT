@@ -212,6 +212,7 @@ class StateOperationExecutor:
     def _gen_confirm_gate(self, pairs: List[tuple]) -> List[tuple]:
         """生成确认闸：判定唯一实现 =
         guard_pipeline.evaluate_gen_confirm（与 FC 轨逐字节一致）。
+        执行偏好三档前置分支亦在该唯一实现内（本轨复用即自动同语义，批 B）。
 
         目标草稿存在未确认即整批硬拒（语义：模型跳确认非用户意志；
         override/未激活放行）；不再各自手写「跳过未确认项」镜像判定。"""

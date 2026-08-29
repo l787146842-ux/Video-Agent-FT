@@ -262,6 +262,49 @@ def test_fc_gen_gate_no_targets_passes(monkeypatch):
         "image_generate", {"target": "all_keyElements"}, injected_skill="任意") is None
 
 
+def test_fc_gen_gate_exec_preference_auto_decide(monkeypatch, set_global_setting):
+    """批 B：auto_decide + 活跃 Skill 在场 → 系统代发同意放行（留痕警告）；
+    无活跃 Skill → 闸不激活按现状放行（与今日逐字节一致）。"""
+    state = {"keyElements": [{
+        "id": "ke-1", "title": "E", "drafts": [
+            {"id": "d1", "tag": "Agent", "prompt": "深空背景中的二向箔，冷白荧光。"},
+        ]}]}
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
+    set_global_setting("execution_preference", "auto_decide")
+    runner = FCToolRunner(tool_manager=None)
+    assert runner._gen_confirm_gate(
+        "image_generate", {"target": "all_keyElements"},
+        injected_skill="任意 Skill") is None
+    assert runner.gate_warnings and "自动决定" in runner.gate_warnings[0]
+    # 无活跃 Skill → 闸不激活，不拒无警告（现状语义）
+    runner2 = FCToolRunner(tool_manager=None)
+    assert runner2._gen_confirm_gate(
+        "image_generate", {"target": "all_keyElements"}, injected_skill="") is None
+    assert runner2.gate_warnings == []
+
+
+def test_fc_gen_gate_exec_preference_generate_directly(monkeypatch, set_global_setting):
+    """批 B：generate_directly 恒免确认（未确认草稿也放行，留痕警告）；
+    回默认档后同场景恢复拦截（红线语义随时可回退）。"""
+    state = {"keyElements": [{
+        "id": "ke-1", "title": "E", "drafts": [
+            {"id": "d1", "tag": "Agent", "prompt": "深空背景中的二向箔，冷白荧光。"},
+        ]}]}
+    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
+    set_global_setting("execution_preference", "generate_directly")
+    runner = FCToolRunner(tool_manager=None)
+    assert runner._gen_confirm_gate(
+        "image_generate", {"target": "all_keyElements"},
+        injected_skill="任意 Skill") is None
+    assert runner.gate_warnings and "直接生成" in runner.gate_warnings[0]
+    # 回落默认档 → 同场景恢复拦截（免确认仅由偏好控制，不侵入兜底逻辑）
+    set_global_setting("execution_preference", "confirm_before_gen")
+    runner3 = FCToolRunner(tool_manager=None)
+    err = runner3._gen_confirm_gate(
+        "image_generate", {"target": "all_keyElements"}, injected_skill="任意 Skill")
+    assert err and "拦截" in err
+
+
 # ---------- 阶段探测工具裁剪 ----------
 
 def test_stage_restrictions_no_spec():

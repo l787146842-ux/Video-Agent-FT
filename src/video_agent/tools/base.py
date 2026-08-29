@@ -77,6 +77,10 @@ class BaseTool(ABC):
     # 前端时间线展示档：取值见 DETAIL_TIERS；空 = 未声明，
     # 前端默认 output（展示档非安全闸，不 deny-by-default，但声明优先）。
     detail_tier: str = ""
+    # 花钱生成声明轴（Skill 系统修复批 B）：True = 花钱生成动作（生图/生视频）。
+    # 执行偏好三档只对声明花钱的工具放宽确认闸；未声明者默认非花钱，
+    # 偏好不放宽（不硬编码工具名单，数据驱动）；声明非 bool 值注册期拒收。
+    costly: bool = False
 
     @abstractmethod
     def get_input_schema(self) -> Type[BaseModel]:

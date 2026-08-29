@@ -27,6 +27,7 @@ from loguru import logger
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from src.video_agent.config import normalize_exec_pref, settings
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.utils.paths import DATA_DIR
@@ -201,6 +202,11 @@ def evaluate_prompt_write(
     return out
 
 
+def _exec_pref() -> str:
+    """当前执行偏好（白名单口径，脏值回落默认档；枚举与清洗口归 config 单一事实源）。"""
+    return normalize_exec_pref(settings.execution_preference)
+
+
 def evaluate_gen_confirm(
     drafts: List[Dict[str, Any]],
     *,
@@ -212,6 +218,9 @@ def evaluate_gen_confirm(
 
     drafts：目标草稿（已含提示词者由调用方筛好）；active：Skill 激活且 strict；
     override：用户坚持作用域。返回 (硬拒原因, warnings)，双轨语义逐字节一致：
+    - 执行偏好前置分支（2026-08-30 裁决）：generate_directly 恒放行，
+      auto_decide 且活跃 Skill 指导在场放行（系统代发同意，均留痕）；
+      默认档 confirm_before_gen 不命中，行为与现状逐字节一致；
     - override 命中 → 不拒，附豁免警告；
     - 未激活/空目标 → 不拒（空目标交工具自身报「未找到」）；
     - 全部已确认 → 不拒；
@@ -219,6 +228,19 @@ def evaluate_gen_confirm(
     判定经 tracer.record_gate 入审计（前端 chips 同源）。
     """
     warns: List[str] = []
+    pref = _exec_pref()
+    if pref == "generate_directly":
+        w = "执行偏好「直接生成」：免确认直接生成（系统代发同意，留痕）"
+        warns.append(w)
+        audit_verdicts([GateVerdict("platform.gen_confirm", "platform", True, w)],
+                       action=action, overridden=True)
+        return None, warns
+    if pref == "auto_decide" and active:
+        w = "执行偏好「自动决定」：活跃 Skill 指导在场，本次生成免逐次确认（系统代发同意，留痕）"
+        warns.append(w)
+        audit_verdicts([GateVerdict("platform.gen_confirm", "platform", True, w)],
+                       action=action, overridden=True)
+        return None, warns
     if override in ("all", True):
         w = "用户坚持跳过生成确认闸（仅警告），照常生成"
         warns.append(w)
@@ -290,6 +312,8 @@ def evaluate_tool_risk(
     *,
     override: Any = False,
     flow_consent: bool = False,
+    costly: bool = False,
+    skill_active: bool = False,
 ) -> "tuple[Optional[str], List[str]]":
     """工具风险分级确认闸（宪法 §2.7：high 必须平台闸机 + 用户确认）。
 
@@ -301,6 +325,10 @@ def evaluate_tool_risk(
     - 用户「本次放行」（gate_overrides 单次消费）= 一次性同意；
     - 无同意 → 硬拒（Context ≠ Consent，禁止静默放行），
       拒因回喂模型，由其暂停向用户发起确认邀请。
+    执行偏好前置分支（2026-08-30 裁决，仅对花钱生成工具放宽）：
+    costly=True 时 generate_directly 恒放行、auto_decide 且活跃 Skill 指导在场
+    （skill_active）放行，均系统代发同意并留痕；未声明花钱（含未注册/
+    非花钱高危）者不命中本分支，兜底拦截语义零改动。
     判定经 audit_verdicts 入审计（rule_id = platform.tool_risk）。
     返回 (硬拒原因, warnings)。
     """
@@ -317,6 +345,21 @@ def evaluate_tool_risk(
         audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
                        action=name, overridden=True)
         return None, warns
+    if costly:
+        pref = _exec_pref()
+        if pref == "generate_directly":
+            w = f"执行偏好「直接生成」：花钱工具 {name} 免确认直接执行（系统代发同意，留痕）"
+            warns.append(w)
+            audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
+                           action=name, overridden=True)
+            return None, warns
+        if pref == "auto_decide" and skill_active:
+            w = (f"执行偏好「自动决定」：活跃 Skill 指导在场，花钱工具 {name} "
+                 "免逐次确认（系统代发同意，留痕）")
+            warns.append(w)
+            audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
+                           action=name, overridden=True)
+            return None, warns
     msg = prompt_gates.TOOL_RISK_BLOCKED_MSG.replace("{{name}}", name)
     warns.append(msg)
     audit_verdicts([GateVerdict("platform.tool_risk", "platform", False, msg)],

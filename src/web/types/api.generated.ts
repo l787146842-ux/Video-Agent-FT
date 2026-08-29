@@ -311,6 +311,7 @@ export interface RuntimeSettings {
   max_shot_duration: number;
   skills_disabled: string[];
   script_inject_limit: number;
+  execution_preference: string;
   model_policy: Record<string, PolicyRow>;
 }
 
@@ -326,6 +327,7 @@ export interface RuntimeSettingsUpdate {
   max_shot_duration?: number | undefined;
   skills_disabled?: string[] | undefined;
   script_inject_limit?: number | undefined;
+  execution_preference?: string | undefined;
   model_policy?: Record<string, unknown> | undefined;
 }
 
@@ -731,3 +733,11 @@ export const TOOL_APPROVAL_TIERS: Record<string, 'none' | 'confirm' | 'review'> 
 };
 /** 未登记工具的默认档（high risk 口径，deny-by-default） */
 export const TOOL_APPROVAL_TIER_DEFAULT = 'confirm' as const;
+
+// ===== 执行偏好三档（来源：config.py 白名单枚举，sidecar 导出）=====
+
+/** 执行偏好三档枚举（花钱生成动作是否先弹确认卡） */
+export const EXECUTION_PREFERENCE_VALUES = ['auto_decide', 'confirm_before_gen', 'generate_directly'] as const;
+export type ExecutionPreference = (typeof EXECUTION_PREFERENCE_VALUES)[number];
+/** 默认档（= 现状行为：每次花钱生成前弹确认卡） */
+export const EXECUTION_PREFERENCE_DEFAULT = 'confirm_before_gen' as const;

@@ -21,6 +21,22 @@ from src.video_agent.utils.paths import PROJECT_ROOT
 load_dotenv(PROJECT_ROOT / ".env")
 
 
+# 执行偏好三档白名单枚举（2026-08-30 用户裁决，Skill 系统修复批 B）：
+# 单一事实源——路由层清洗/下发、core 确认闸分流、sidecar 契约导出同引用。
+# auto_decide = 有活跃 Skill 指导的常规生成流免逐次确认（代发同意留痕）；
+# confirm_before_gen = 每次生成前确认（默认档，行为与现状一致）；
+# generate_directly = 免确认直接执行（留痕）。
+EXECUTION_PREFERENCE_VALUES = ("auto_decide", "confirm_before_gen", "generate_directly")
+EXECUTION_PREFERENCE_DEFAULT = "confirm_before_gen"
+
+
+def normalize_exec_pref(value) -> str:
+    """执行偏好白名单清洗（唯一规整口）：命中枚举原样返回，
+    其余（非法/空/脏值）回落默认档。"""
+    v = str(value or "").strip().lower()
+    return v if v in EXECUTION_PREFERENCE_VALUES else EXECUTION_PREFERENCE_DEFAULT
+
+
 def _env_int(key: str, default: int) -> int:
     try:
         return int(os.getenv(key, str(default)))
@@ -146,6 +162,14 @@ class Settings:
     skills_disabled: List[str] = field(default_factory=list)
     skill_catalog_max_entries: int = field(
         default_factory=lambda: _env_int("SKILL_CATALOG_MAX_ENTRIES", 30))
+    # 执行偏好三档（2026-08-30 用户裁决，Skill 系统修复批 B）：管花钱生成动作
+    # （生成图片/生成视频）要不要先弹确认卡——
+    # auto_decide = 有活跃 Skill 指导的常规生成流免逐次确认（系统代发同意并留痕）；
+    # confirm_before_gen = 每次生成前确认（默认档，行为与现状一致）；
+    # generate_directly = 免确认直接执行（留痕）。
+    # 枚举白名单清洗归路由层（web/routes/runtime_settings），
+    # 写入点归既有热更新通道，未注册/非花钱高危工具的兜底拦截不受本档影响。
+    execution_preference: str = "confirm_before_gen"
 
     # 多模态模型单次请求可注入的图片上限（多数 vision 模型限制 4~10 张，
     # 超限会直接报错；超出部分降级为文本清单，LLM 仍可知晓其存在）

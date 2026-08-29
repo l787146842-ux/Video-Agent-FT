@@ -237,11 +237,14 @@ def _fc_call(name, args):
     ])
 
 
-def _run(monkeypatch, name, args, *, gate_override=False, state=None):
+def _run(monkeypatch, name, args, *, gate_override=False, state=None,
+         injected_skill=""):
     runner = FCToolRunner(tool_manager=_StubTM())
     monkeypatch.setattr(
         FCToolRunner, "_raw_state", staticmethod(lambda: state or {}))
-    res = asyncio_run(runner.execute(_fc_call(name, args), gate_override=gate_override))
+    res = asyncio_run(runner.execute(
+        _fc_call(name, args), gate_override=gate_override,
+        injected_skill=injected_skill))
     return runner, res
 
 
@@ -401,3 +404,136 @@ class TestImageGenerateSingleRiskGate:
         err = fc_gates.tool_risk_gate(
             ctx, "__not_registered__", {})
         assert err and "高风险工具确认闸拦截" in err
+
+
+# ---------- 批 B 执行偏好：costly 声明轴 + 三档分流 ----------
+
+class _BadCostlyTool(_NoRiskTool):
+    name = "_probe_bad_costly"
+    risk = "low"
+    costly = "yes"  # 非 bool 值注册期拒收（仿 approval_tier 校验）
+
+
+class TestCostlyAxis:
+    def test_only_generation_family_declares_costly(self):
+        """花钱声明轴仅两个生成工具显式声明，其余默认 False
+        （偏好不放宽；数据驱动，不硬编码工具名单）。"""
+        costly = {cls.name for cls in _all_tool_classes()
+                  if getattr(cls, "costly", False)}
+        assert costly == {"image_generate", "generate_video"}
+
+    def test_register_rejects_non_bool_costly(self):
+        with pytest.raises(ValueError):
+            ToolManager.register(_BadCostlyTool())
+        assert "_probe_bad_costly" not in ToolManager._tools
+
+    def test_is_costly_tool_default_false_and_unregistered(self):
+        from src.video_agent.tools.document_tools import (
+            DocumentWriteTool,
+            ImageGenerateTool,
+        )
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(ImageGenerateTool())
+        ToolManager.register(GenerateVideoTool())
+        ToolManager.register(DocumentWriteTool())
+        assert ToolManager.is_costly_tool("image_generate") is True
+        assert ToolManager.is_costly_tool("generate_video") is True
+        assert ToolManager.is_costly_tool("document_write") is False
+        assert ToolManager.is_costly_tool("__not_registered__") is False
+
+
+class TestExecPreferenceToolRisk:
+    """批 B：执行偏好只放宽花钱生成（costly 轴）；非花钱高危 /
+    未注册兜底拦截语义零改动（红线）。"""
+
+    def test_generate_directly_costly_passes_with_trace(self, monkeypatch,
+                                                        set_global_setting):
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(GenerateVideoTool())
+        set_global_setting("execution_preference", "generate_directly")
+        tracer = AgentTracer.get_instance()
+        runner, res = _run(monkeypatch, "generate_video", {"target": "all_shots"})
+        assert res[0] == 1, "generate_directly：花钱生成免确认放行"
+        assert any("执行偏好「直接生成」" in w for w in runner.gate_warnings)
+        recent = tracer.get_recent_gates(10)
+        assert any(g["rule_id"] == "platform.tool_risk" and g["overridden"]
+                   for g in recent), "偏好放行必须留痕（platform.tool_risk）"
+
+    def test_generate_directly_non_costly_still_blocked(self, monkeypatch,
+                                                        set_global_setting):
+        """红线：非花钱高危（document_write / canvas_*）在 generate_directly 下仍拦。"""
+        set_global_setting("execution_preference", "generate_directly")
+        runner, res = _run(monkeypatch, "document_write",
+                           {"name": "大纲.md", "content": "x"})
+        assert res[0] == 0, "document_write 不受偏好放宽，必须拦"
+        assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
+        for name in ("canvas_add_node", "canvas_delete_node"):
+            _r, r2 = _run(monkeypatch, name, {"canvas_id": "cv-1"})
+            assert r2[0] == 0, f"{name} 不受偏好放宽，必须拦"
+
+    def test_generate_directly_unregistered_still_blocked(self, monkeypatch,
+                                                          set_global_setting):
+        """红线：未注册工具仍按 deny-by-default 拦截，偏好不放宽。"""
+        set_global_setting("execution_preference", "generate_directly")
+        _runner, res = _run(monkeypatch, "__ghost_tool__", {})
+        assert res[0] == 0
+
+    def test_auto_decide_with_skill_passes_with_trace(self, monkeypatch,
+                                                      set_global_setting):
+        from src.video_agent.core import stage_probes
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(GenerateVideoTool())
+        set_global_setting("execution_preference", "auto_decide")
+        # 桩掉阶段前置探针（前置阶段已满足），聚焦本闸偏好分流语义；
+        # Skill 暂停点纪律不在此闸，不受本桩影响（红线）
+        monkeypatch.setattr(
+            stage_probes, "evaluate_stage_precondition", lambda *a, **k: None)
+        tracer = AgentTracer.get_instance()
+        runner, res = _run(monkeypatch, "generate_video", {"target": "all_shots"},
+                           injected_skill="未注册的在场 Skill")
+        assert res[0] == 1, "auto_decide：活跃 Skill 指导在场放行"
+        assert any("执行偏好「自动决定」" in w for w in runner.gate_warnings)
+        recent = tracer.get_recent_gates(10)
+        assert any(g["rule_id"] == "platform.tool_risk" and g["overridden"]
+                   for g in recent), "偏好放行必须留痕"
+
+    def test_auto_decide_without_skill_still_blocked(self, monkeypatch,
+                                                     set_global_setting):
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(GenerateVideoTool())
+        set_global_setting("execution_preference", "auto_decide")
+        runner, res = _run(monkeypatch, "generate_video", {"target": "all_shots"})
+        assert res[0] == 0, "auto_decide：无活跃 Skill 时仍拦（现状语义）"
+        assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
+
+    def test_auto_decide_non_costly_still_blocked(self, monkeypatch,
+                                                  set_global_setting):
+        """红线：非花钱高危在 auto_decide + 活跃 Skill 下仍拦。"""
+        set_global_setting("execution_preference", "auto_decide")
+        _runner, res = _run(monkeypatch, "document_write",
+                            {"name": "大纲.md", "content": "x"},
+                            injected_skill="未注册的在场 Skill")
+        assert res[0] == 0
+
+    def test_default_pref_costly_still_blocked(self, monkeypatch,
+                                               set_global_setting):
+        """默认档语义不变：花钱生成无同意仍拦。"""
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(GenerateVideoTool())
+        set_global_setting("execution_preference", "confirm_before_gen")
+        _runner, res = _run(monkeypatch, "generate_video", {"target": "all_shots"})
+        assert res[0] == 0
+
+    def test_gate_ctx_injects_skill_active_branch(self, set_global_setting):
+        """单元直测：tool_risk_gate 经 GateContext 注入 skill_active，
+        判定归 evaluate_tool_risk（宪法 §2.0 单一判定点）。"""
+        from src.video_agent.core import fc_gates
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(GenerateVideoTool())
+        set_global_setting("execution_preference", "auto_decide")
+        ctx = fc_gates.GateContext(state=lambda: {}, injected_skill="未注册的在场 Skill")
+        assert fc_gates.tool_risk_gate(
+            ctx, "generate_video", {"target": "all_shots"}) is None
+        ctx2 = fc_gates.GateContext(state=lambda: {})
+        assert fc_gates.tool_risk_gate(
+            ctx2, "generate_video", {"target": "all_shots"})
