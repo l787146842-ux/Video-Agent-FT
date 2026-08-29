@@ -177,4 +177,14 @@ describe('工具函数', () => {
     expect(s.name).toBe('新 Skill');
     expect(s.sections.map((x) => x.title)).toContain('流程规划');
   });
+  it('blankSkillTemplate 含可注册 frontmatter（name/description 非空）', () => {
+    const raw = blankSkillTemplate();
+    const s = parseSkillStructure(raw);
+    expect(s.frontmatter.startsWith('---\n')).toBe(true);
+    expect(s.frontmatter).toContain('name:');
+    expect(s.frontmatter).toContain('description:');
+    const meta = frontmatterMeta(raw);
+    expect(meta.name).toBe('新 Skill');
+    expect(meta.description).toBe('一句话说明何时使用本 Skill');
+  });
 });

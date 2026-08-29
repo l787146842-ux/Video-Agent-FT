@@ -216,9 +216,15 @@ export function frontmatterMeta(content: string): { name: string; description: s
   return { name, description };
 }
 
-/** 新建 Skill 空白模板（三段式骨架） */
+/** 新建 Skill 空白模板（三段式骨架）：头部含最小可注册 frontmatter
+ *（注册侧必填即 name/description 非空，见 registry.py 注册校验） */
 export function blankSkillTemplate(): string {
   return [
+    '---',
+    'name: 新 Skill',
+    'description: 一句话说明何时使用本 Skill',
+    '---',
+    '',
     '# 新 Skill',
     '',
     '> 调用规则：一句话说明何时使用本 Skill',
