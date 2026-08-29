@@ -112,6 +112,11 @@ async def test_pause_window_skips_same_batch_continuation(svc):
             invoked.append(name)
             return ToolResult(success=True, data={"paused": True, "message": "x"})
 
+    # 显式重注册：同 worker 其它用例的 ToolManager.reset() 可能清空全局
+    # 注册表，确认闸读 approval_tier 后未注册即拦，本用例不依赖导入副作用
+    from src.video_agent.tools.document_tools import register_document_tools
+
+    register_document_tools()
     StateManager.reset_instance()
     StateManager._instance = svc
     runner = FCToolRunner(StubManager())

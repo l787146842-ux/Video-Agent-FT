@@ -4,8 +4,11 @@
 - 23 个平台工具逐一声明且与审核定级表一致（任务#36 B5：8 个 Skill
   执行器工具已随执行器一步退役物理删除，不再计入；双生图工具合并后
   generate_image 已并入 image_generate 的 mode='single'）；
-- high 级且无既有确认原语覆盖的工具（画布写入/文档写入）经
-  platform.tool_risk 确认闸：无同意硬拒、同意回携放行、verdict 入审计。
+- 确认闸数据驱动（P0-1）：生效条件 = approval_tier=confirm（推导含
+  high→confirm、未注册→confirm）+ risk=high 双保险；
+- generate_video 漏闸补齐两态：无同意硬拒 / 同意回携放行；
+- image_generate single 模式同类漏闸补齐（行为变更，高危默认拦）；
+- 拦截/豁免均经 platform.tool_risk verdict 入审计。
 """
 import json
 
@@ -300,6 +303,13 @@ class TestToolRiskGate:
                    for g in recent), "拦截必须经 audit_verdicts 留痕"
 
     def test_low_and_medium_tools_unaffected(self, monkeypatch):
+        # 显式重注册：同 worker 其它用例的 ToolManager.reset() 可能清空全局
+        # 注册表（本文件 generate_video 用例同口径），不依赖导入副作用
+        from src.video_agent.tools.document_tools import register_document_tools
+        from src.video_agent.tools.storyboard_tools import register_storyboard_tools
+
+        register_storyboard_tools()
+        register_document_tools()
         # low 直执行、medium 按现状（无新闸行为变化）
         for name in (("read_draft", {"draft_id": "1-1"}),
                      ("storyboard_patch_draft", {"draft_id": "d1", "patch": {}}),
@@ -311,3 +321,83 @@ class TestToolRiskGate:
         err, warns = guard_pipeline.evaluate_tool_risk("document_write")
         assert err and warns, "无同意必须硬拒，禁止静默放行"
         assert prompt_gates.GATE_RULES["platform.tool_risk"].layer == "platform"
+
+
+class TestGenerateVideoConfirmGate:
+    """P0-1 数据驱动后 generate_video 漏闸补齐：无同意硬拒 / 有同意放行。"""
+
+    def test_generate_video_blocked_without_consent(self, monkeypatch):
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(GenerateVideoTool())
+        runner, res = _run(monkeypatch, "generate_video", {"target": "all_shots"})
+        assert res[0] == 0, "generate_video 未经用户确认不得执行（花钱操作）"
+        assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
+        tool_results = res[6]
+        assert tool_results and tool_results[0]["ok"] is False
+
+    def test_generate_video_override_allows_with_trace(self, monkeypatch):
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(GenerateVideoTool())
+        tracer = AgentTracer.get_instance()
+        tracer.start_trace("t")
+        tracer.start_step()
+        runner, res = _run(monkeypatch, "generate_video", {"target": "all_shots"},
+                           gate_override="all")
+        assert res[0] == 1, "用户「本次放行」（scope=all）应放行"
+        assert any("用户坚持放行高风险工具确认闸" in w for w in runner.gate_warnings)
+        recent = tracer.get_recent_gates(10)
+        assert any(g["rule_id"] == "platform.tool_risk" and g["overridden"]
+                   for g in recent), "豁免必须留痕（platform.tool_risk verdict）"
+
+    def test_generate_video_flow_directive_consent_allows(self, monkeypatch):
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(GenerateVideoTool())
+        state = {"interaction": {"auto_continue": True}}
+        runner, res = _run(monkeypatch, "generate_video", {"target": "all_shots"},
+                           state=state)
+        assert res[0] == 1, "一条龙指令 = 本批显式同意（留痕）"
+        assert any("显式同意" in w for w in runner.gate_warnings)
+
+
+class TestImageGenerateSingleRiskGate:
+    """image_generate mode='single' 同类漏闸补齐（行为变更：高危默认拦，
+    对齐业界；批量轨仍由 gen_confirm 闸专属覆盖，不双闸）。"""
+
+    def test_single_blocked_without_consent(self, monkeypatch):
+        runner, res = _run(monkeypatch, "image_generate",
+                           {"mode": "single", "prompt": "一只猫",
+                            "adapter_provider": "prov-x"})
+        assert res[0] == 0, "single 模式花钱生图未经用户确认不得执行"
+        assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
+        tool_results = res[6]
+        assert tool_results and tool_results[0]["ok"] is False
+
+    def test_single_override_allows_with_trace(self, monkeypatch):
+        tracer = AgentTracer.get_instance()
+        tracer.start_trace("t")
+        tracer.start_step()
+        runner, res = _run(monkeypatch, "image_generate",
+                           {"mode": "single", "prompt": "一只猫",
+                            "adapter_provider": "prov-x"},
+                           gate_override="all")
+        assert res[0] == 1, "用户「本次放行」应放行（留痕）"
+        recent = tracer.get_recent_gates(10)
+        assert any(g["rule_id"] == "platform.tool_risk" and g["overridden"]
+                   for g in recent)
+
+    def test_batch_not_gated_by_tool_risk(self):
+        """批量轨豁免：被 gen_confirm 闸专属覆盖，本闸不双拦。"""
+        from src.video_agent.core import fc_gates
+        ctx = fc_gates.GateContext(state=lambda: {})
+        assert fc_gates.tool_risk_gate(ctx, "image_generate", {"mode": "batch"}) is None
+        assert fc_gates.tool_risk_gate(ctx, "image_generate", {}) is None  # 缺省=batch
+        assert fc_gates.tool_risk_gate(ctx, "image_generate") is None
+
+    def test_single_predicate_arms_for_registered_and_unregistered(self):
+        """未注册工具同口径 deny-by-default：tier=confirm + risk=high 双命中。"""
+        from src.video_agent.core import fc_gates
+        ctx = fc_gates.GateContext(
+            state=lambda: {}, tool_risk_of=lambda name: "high")
+        err = fc_gates.tool_risk_gate(
+            ctx, "__not_registered__", {})
+        assert err and "高风险工具确认闸拦截" in err

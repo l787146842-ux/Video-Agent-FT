@@ -72,6 +72,11 @@ class _TM:
     async def invoke_tool(self, name, args):
         return ToolResult(success=True, data={})
 
+    def get_tool(self, name):
+        """确认闸双保险（ctx.tool_risk_of 经 get_tool().risk 读数）的最小桩：
+        桩内工具一律声明 low（只读桩）。"""
+        return type("_StubTool", (), {"risk": "low"})
+
 
 def test_boundary_pause_strips_model_continue_and_prepends_system(monkeypatch):
     """v2 批4：阶段边界选项面 = 系统派生唯一入口——

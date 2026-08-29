@@ -57,7 +57,8 @@ from src.video_agent.core.fc_feedback import (
 )
 
 # 闸机常量定义源 = core/fc_gates.py；顶层重新绑定（承重壳，旧路径兼容）
-_TOOL_RISK_CONFIRM_TOOLS = fc_gates.TOOL_RISK_CONFIRM_TOOLS  # noqa: 1
+# （原 _TOOL_RISK_CONFIRM_TOOLS 壳已随确认闸数据驱动化退役：
+# 硬编码名单删除，生效范围改读 approval_tier，见 fc_gates.tool_risk_gate）
 _PAUSE_WINDOW_READONLY = fc_gates.PAUSE_WINDOW_READONLY  # noqa: 1
 _STAGE_ALLOWED_GROUP_KINDS = fc_gates.STAGE_ALLOWED_GROUP_KINDS  # noqa: 1
 
@@ -171,8 +172,8 @@ class FCToolRunner:
     def _gen_confirm_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
         return fc_gates.gen_confirm_gate(self._gate_ctx(injected_skill), name, args)
 
-    def _tool_risk_gate(self, name: str) -> Optional[str]:
-        return fc_gates.tool_risk_gate(self._gate_ctx(), name)
+    def _tool_risk_gate(self, name: str, args: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        return fc_gates.tool_risk_gate(self._gate_ctx(), name, args)
 
     # ---------- 执行段 ----------
 

@@ -22,6 +22,12 @@ class FakeToolManager:
         return [{"type": "function", "function": {"name": "fake_tool", "parameters": {}}}]
 
     @classmethod
+    def get_tool(cls, name: str):
+        """确认闸双保险（ctx.tool_risk_of 经 get_tool().risk 读数）的最小桩：
+        桩内工具一律声明 low（只读桩）。"""
+        return SimpleNamespace(risk="low")
+
+    @classmethod
     async def invoke_tool(cls, name: str, args: dict):
         cls.invoked.append((name, args))
         return SimpleNamespace(success=True, error="", data=None)

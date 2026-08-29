@@ -39,6 +39,7 @@ def test_b7_draft_provider_wins_over_global_settings(monkeypatch):
     asyncio.run(runner.execute(
         _fc_call({"prompt": "一只猫", "adapter_provider": ""}),
         image_provider="provD",
+        gate_override="all",  # single 轨确认闸已补齐（高危默认拦），本用例聚焦注入优先级，用户坚持放行
     ))
     assert recorder.last_args["adapter_provider"] == "provD"  # 草稿选择优先
 
@@ -54,6 +55,7 @@ def test_b7_global_settings_fallback_when_no_draft(monkeypatch):
     asyncio.run(runner.execute(
         _fc_call({"prompt": "一只猫", "adapter_provider": ""}),
         image_provider="",
+        gate_override="all",  # single 轨确认闸已补齐（高危默认拦），本用例聚焦供应商回落，用户坚持放行
     ))
     assert recorder.last_args["adapter_provider"] == "provG"  # 全局设置兜底
 

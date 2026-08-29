@@ -278,6 +278,15 @@ GEN_ASSET_BINDING_BLOCKED = _gate_msg("GEN_ASSET_BINDING_BLOCKED", (
     "缺少场景参考图直接生成会导致背景跳画与道具变形。"
 ))
 
+# 高风险工具确认闸拒因（宪法 §2.7）：消费端 = guard_pipeline.evaluate_tool_risk，
+# {{name}} 占位由代码侧 replace 还原；内置兜底与外置分节等值，
+# 防外置文案缺失时静默回落两套说辞。
+TOOL_RISK_BLOCKED_MSG = _gate_msg("TOOL_RISK_BLOCKED", (
+    "高风险工具确认闸拦截：'{{name}}' 为 high 级操作（宪法 §2.7），"
+    "未经用户显式同意不得执行。请先用 workflow_pause 向用户说明本次将执行的"
+    "操作并请求确认；用户同意后（点「本次放行」或本条消息明确指示）再重新发起。"
+))
+
 # ---------- 下一步机械派生（frontmatter 声明唯一源） ----------
 #
 # 确认 UI 由系统从即将执行的动作渲染，模型不撰写确认界面；

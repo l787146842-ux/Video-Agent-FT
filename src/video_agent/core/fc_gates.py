@@ -25,20 +25,20 @@ from src.video_agent.skill_runtime.registry import resolve_entry, skill_flow_ena
 from src.video_agent.state import storyboard_ops as ops
 # MCP 命名空间判定：外部工具同管线过 risk 闸，不旁路
 from src.video_agent.tools.mcp.policy import is_mcp_tool
+# 审批分级生效档（approval_tier）唯一推导源：显式声明优先，未声明者
+# high→confirm、其余 none，未注册一律 confirm（deny-by-default，§2.7）
+from src.video_agent.tools.manager import ToolManager
 from src.video_agent.state.models import (
     ALL_CATEGORIES_TUPLE,
     CAT_KEY_ELEMENTS,
     CAT_SHOTS,
 )
 
-# §2.7 风险分级：high 级且无既有确认原语覆盖的工具名单，执行前须用户一次性确认
-# （platform.tool_risk 闸）。生成类 high（image_generate）由 gen_confirm 闸覆盖。
-# MCP 外部工具（mcp__* 命名空间）不在此名单内也强制过闸（外部副作用不可信，
-# high 级一律经 guard_pipeline 确认闸，判定不旁路）。
-TOOL_RISK_CONFIRM_TOOLS = frozenset({
-    "canvas_add_node", "canvas_update_node", "canvas_delete_node",
-    "canvas_batch_add_nodes", "document_write",
-})
+# §2.7 确认闸豁免集：被 gen_confirm 闸专属覆盖的工具（不双闸）。
+# 仅覆盖 image_generate 批量轨（有目标草稿可校验）；mode='single'
+# 无目标草稿、不在 gen_confirm 覆盖内，回本闸默认拦（高危默认拦）。
+# 生效范围不再用硬编码名单，改读 approval_tier（数据驱动，未注册→confirm）。
+CONFIRM_PRIMITIVE_COVERED_TOOLS = frozenset({"image_generate"})
 # 轮内暂停纪律豁免集：workflow_pause 请求确认后，同批仅读类工具与暂停工具本身可行
 PAUSE_WINDOW_READONLY = frozenset({
     "read_draft", "read_skill", "read_project_doc", "read_uploaded_doc",
@@ -212,14 +212,24 @@ def flow_gate(ctx: GateContext, name: str) -> Optional[str]:
     return None
 
 
-def tool_risk_gate(ctx: GateContext, name: str) -> Optional[str]:
+def tool_risk_gate(
+    ctx: GateContext, name: str, args: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
     """高风险工具确认闸（platform.tool_risk，宪法 §2.7）：判定唯一实现 =
-    guard_pipeline.evaluate_tool_risk。仅对 high 且无既有确认原语覆盖的
-    工具生效；确认回携 = flow_directive 一条龙同意 / 用户「本次放行」，
+    guard_pipeline.evaluate_tool_risk。生效条件数据驱动 = 审批分级生效档
+    approval_tier == "confirm"（推导规则含 high→confirm、未注册→confirm，
+    deny-by-default）；保留 risk==high 双保险（防未来 confirm+低风险误弹卡）。
+    确认回携 = flow_directive 一条龙同意 / 用户「本次放行」，
     无同意硬拒（禁止静默放行），拦截/豁免 verdict 入审计。
-    适用范围 = TOOL_RISK_CONFIRM_TOOLS 名单 + 全部 MCP 外部工具
-    （外部工具统一风控，risk 闸不得旁路）。"""
-    if name not in TOOL_RISK_CONFIRM_TOOLS and not is_mcp_tool(name):
+    豁免：image_generate 批量轨被 gen_confirm 闸专属覆盖（不双闸）；
+    mode='single' 无目标草稿、不在覆盖内，回本闸默认拦。
+    MCP 外部工具（mcp__* 命名空间）不得旁路 risk 闸（外部副作用不可信）。"""
+    if name in CONFIRM_PRIMITIVE_COVERED_TOOLS:
+        mode = str((args or {}).get("mode") or "batch").strip().lower()
+        if mode != "single":
+            return None
+    if ToolManager.get_tool_approval_tier(name) != "confirm" \
+            and not is_mcp_tool(name):
         return None
     if ctx.tool_risk_of(name) != "high":
         return None
@@ -240,7 +250,7 @@ def gen_confirm_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optio
     """生成确认闸（FC 轨）：判定唯一实现 =
     guard_pipeline.evaluate_gen_confirm（与文本轨逐字节一致）。
     仅覆盖 image_generate 批量轨；mode='single' 单张应急轨无目标草稿，
-    不参与草稿确认校验（与原单张工具行为等价）。"""
+    不参与草稿确认校验（其花钱确认由 tool_risk 闸默认拦，高危默认拦）。"""
     if name != "image_generate" or str(args.get("mode") or "batch").strip().lower() == "single":
         return None
     # 一条龙：用户本条消息的显式指令作为本批生成同意（留痕），不弹确认闸
@@ -460,7 +470,7 @@ def run_gate_chain(
     if err is None:
         err = flow_gate(ctx, name)
     if err is None:
-        err = tool_risk_gate(ctx, name)
+        err = tool_risk_gate(ctx, name, args)
     if err is None:
         err = gen_confirm_gate(ctx, name, args)
         if err is None:

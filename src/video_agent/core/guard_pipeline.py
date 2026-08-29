@@ -293,9 +293,9 @@ def evaluate_tool_risk(
 ) -> "tuple[Optional[str], List[str]]":
     """工具风险分级确认闸（宪法 §2.7：high 必须平台闸机 + 用户确认）。
 
-    适用范围 = high 级且无既有确认原语覆盖的工具（画布写入/文档写入，
-    名单归 fc_gates.TOOL_RISK_CONFIRM_TOOLS）；生成类 high
-    （image_generate 等）由 gen_confirm 闸覆盖，不重复设闸。
+    适用范围 = 审批分级生效档 approval_tier=confirm 的工具（数据驱动：
+    high→confirm、未注册→confirm，deny-by-default）；image_generate 批量轨
+    由 gen_confirm 闸专属覆盖，不重复设闸（single 轨不在覆盖内，回本闸默认拦）。
     确认回携机制与 gen_confirm 同源（§2.4）：
     - flow_directive 一条龙指令 = 本批显式同意（留痕）；
     - 用户「本次放行」（gate_overrides 单次消费）= 一次性同意；
@@ -317,11 +317,7 @@ def evaluate_tool_risk(
         audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
                        action=name, overridden=True)
         return None, warns
-    msg = (
-        f"高风险工具确认闸拦截：'{name}' 为 high 级操作（宪法 §2.7），"
-        "未经用户显式同意不得执行。请先用 workflow_pause 向用户说明本次将执行的"
-        "操作并请求确认；用户同意后（点「本次放行」或本条消息明确指示）再重新发起。"
-    )
+    msg = prompt_gates.TOOL_RISK_BLOCKED_MSG.replace("{{name}}", name)
     warns.append(msg)
     audit_verdicts([GateVerdict("platform.tool_risk", "platform", False, msg)],
                    action=name)

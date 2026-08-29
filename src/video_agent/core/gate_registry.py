@@ -48,8 +48,9 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
                      "test_gen_confirm_gate 钉死；2026-08-21 门禁触发盘点"
                      "有真实拦截记录"),
         GateRuleMeta("platform.tool_risk", LAYER_PLATFORM,
-                     "工具风险分级闸（§2.7）：high 级且无既有确认原语覆盖的工具"
-                     "（画布写入/文档写入）须经用户显式同意方可执行",
+                     "工具风险分级闸（§2.7）：审批分级生效档 approval_tier=confirm"
+                     "（high 默认/未注册默认，数据驱动）的工具须经用户显式同意"
+                     "方可执行；image_generate 批量轨由 gen_confirm 闸专属覆盖",
                      "宪法 §2.7 风险分级设立；test_tool_risk_gate 钉死"),
         GateRuleMeta("skill.prompt_structure", LAYER_SKILL,
                      "提示词结构总闸（guard_pipeline 合成判定）：字数/语言/时长/"
@@ -113,7 +114,7 @@ GATE_MESSAGE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     "platform.shot_min_chars": (),
     "platform.element_min_chars": (),
     "platform.gen_confirm": ("GENERATION_CONFIRM", "GENERATION_CONFIRM_BLOCKED"),
-    "platform.tool_risk": (),
+    "platform.tool_risk": ("TOOL_RISK_BLOCKED",),
     "platform.stage_precondition": (),
     "skill.prompt_structure": (),
     "skill.require_duration": (),

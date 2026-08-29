@@ -121,7 +121,9 @@ def test_b1_no_text_action_protocol_injected_after_44():
 
 
 def test_b1_single_image_once_per_batch():
-    """F10-1 下沉：单张应急轨（image_generate mode='single'）每批最多一次（prose 禁令 → 工具层计数器）。"""
+    """F10-1 下沉：单张应急轨（image_generate mode='single'）每批最多一次（prose 禁令 → 工具层计数器）。
+    注：single 轨确认闸已补齐（高危默认拦，行为变更），本用例聚焦每批限次，
+    经用户「本次放行」（gate_override='all'）过确认闸。"""
     from src.video_agent.core.fc_tool_runner import FCToolRunner
     from src.video_agent.tools.base import ToolResult
 
@@ -139,7 +141,7 @@ def test_b1_single_image_once_per_batch():
             "arguments": json.dumps({"mode": "single", "prompt": "一只狗", "adapter_provider": "prov-x"})}},
     ]
     applied, confirmation, _u, _i, _l, _o, tool_results, _d, warnings, _overflow, _pause_id = asyncio.run(
-        runner.execute(ChatResponse(content="", tool_calls=calls))
+        runner.execute(ChatResponse(content="", tool_calls=calls), gate_override="all")
     )
-    assert applied == 1  # 第二个被拦截
+    assert applied == 1  # 第二个被拦截（每批限次）
     assert any("每轮只调用一次" in str(t.get("error") or "") for t in tool_results)

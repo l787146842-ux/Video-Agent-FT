@@ -209,6 +209,15 @@ class TestPauseSlotMutex:
     重复 workflow_pause 照常发行（新卡覆盖旧卡解除死锁），只告警 +
     trace 留痕，不再以拒因回喂模型；发行确认后暂停三态事务写入。"""
 
+    @pytest.fixture(autouse=True)
+    def _ensure_platform_tools(self):
+        # 显式重注册：同 worker 其它用例的 ToolManager.reset() 可能清空全局
+        # 注册表，确认闸读 approval_tier 后未注册即拦，本类不依赖导入副作用
+        #（与 test_batch_c_active_skill_and_self_heal 同口径）
+        from src.video_agent.tools.document_tools import register_document_tools
+
+        register_document_tools()
+
     @pytest.mark.asyncio
     async def test_duplicate_pause_overrides_old_card(self, svc):
         from src.video_agent.adapters.base_chat import ChatResponse

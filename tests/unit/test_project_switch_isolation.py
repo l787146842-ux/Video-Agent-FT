@@ -127,7 +127,10 @@ def test_takeover_skipped_when_spec_finalized(monkeypatch):
             "arguments": json.dumps({"message": "关键元素拆解完成，请审阅"})}},
     ])
     _res = asyncio.run(
-        runner.execute(response, injected_skill="AI-短剧一站式生成"))
+        runner.execute(response, injected_skill="AI-短剧一站式生成",
+                       # 桩无注册信息 → 确认闸默认拦；本用例聚焦暂停卡接管
+                       # 语义，经「本次放行」等价通道显式同意放行（闸不放松）
+                       gate_override="all"))
     confirmation, overflow = _res[1], _res[9]
     # v2 批4：卡问句系统组装、模型原文进正文通道；且不被规格卡接管
     assert "请过目以上成果" in confirmation

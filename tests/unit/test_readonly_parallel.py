@@ -52,6 +52,11 @@ class _TimingToolManager:
     def get_tool_risk(self, name):
         return self._risks.get(name, "high")
 
+    def get_tool(self, name):
+        """确认闸双保险（ctx.tool_risk_of 经 get_tool().risk 读数）的最小桩：
+        按声明风险返回，未注册归 high（与真 ToolManager 口径一致）。"""
+        return type("_StubTool", (), {"risk": self.get_tool_risk(name)})
+
     def _delay_of(self, name):
         return self._delay[name] if isinstance(self._delay, dict) else self._delay
 
@@ -213,9 +218,11 @@ def test_high_risk_tool_breaks_window_and_never_parallel(monkeypatch, parallel_o
     risks = {"read_a": "low", "read_b": "low", "canvas_write": "high",
              "read_c": "low", "read_d": "low"}
     tm = _TimingToolManager(risks)
+    # 写类 high 工具缺用户同意会被确认闸拦（测试焦点=并行窗口形态，
+    # 经「本次放行」等价通道显式同意放行，闸语义不放松）
     result = _execute(monkeypatch, tm, _calls(
         ("read_a", "1"), ("read_b", "2"), ("canvas_write", "3"),
-        ("read_c", "4"), ("read_d", "5")))
+        ("read_c", "4"), ("read_d", "5")), gate_override="all")
     assert tm.invoked == ["read_a", "read_b", "canvas_write", "read_c", "read_d"]
     assert result.applied == 5
     assert [r["data"]["tag"] for r in result.tool_results] == ["1", "2", "3", "4", "5"]
@@ -234,7 +241,9 @@ def test_unregistered_tool_breaks_window(monkeypatch, parallel_on):
                              "read_c": "low", "read_d": "low"})
     calls = _calls(("read_a", "1"), ("read_b", "2"), ("ghost_tool", "3"),
                    ("read_c", "4"), ("read_d", "5"))
-    result = _execute(monkeypatch, tm, calls)
+    # 未注册工具的确认闸拦截语义由 test_tool_risk_gate 钉死；本用例聚焦
+    # 断段后的执行形态，经「本次放行」等价通道显式同意放行到工具层报 not found
+    result = _execute(monkeypatch, tm, calls, gate_override="all")
     assert tm.invoked == ["read_a", "read_b", "ghost_tool", "read_c", "read_d"]
     # ghost_tool 未注册（工具层报 not found 失败）→ 不计入 applied
     assert result.applied == 4
@@ -264,7 +273,8 @@ def test_gate_rejected_call_not_executed_in_window(monkeypatch, parallel_on):
 
     monkeypatch.setattr(fc_gates, "run_gate_chain", fake_chain)
     tm = _TimingToolManager({"read_a": "low", "read_b": "low", "read_c": "low"})
-    result = _execute(monkeypatch, tm, _calls(("read_a", "1"), ("read_b", "2"), ("read_c", "3")))
+    result = _execute(monkeypatch, tm, _calls(("read_a", "1"), ("read_b", "2"), ("read_c", "3")),
+                      gate_override="all")
     # read_b 未被执行；a/c 照常执行且顺序不变
     assert tm.invoked == ["read_a", "read_c"]
     assert result.applied == 2
@@ -306,7 +316,9 @@ def _run_failure_scenario(monkeypatch):
         monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
         response = ChatResponse(content="", tool_calls=_calls(
             ("read_a", "1"), ("read_b", "2"), ("read_c", "3")))
-        task = asyncio.ensure_future(runner.execute(response, injected_skill=""))
+        # 自造工具名未注册 → 确认闸默认拦；本场景聚焦失败回退形态，显式同意放行
+        task = asyncio.ensure_future(runner.execute(
+            response, injected_skill="", gate_override="all"))
         await asyncio.sleep(0.05)  # 等窗口起飞：a 已失败、b/c 阻塞于 hold
         hold_ev.set()
         result = await task
@@ -352,8 +364,9 @@ def test_generation_cancelled_propagates_not_swallowed(monkeypatch, parallel_on)
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
     response = ChatResponse(content="", tool_calls=_calls(
         ("read_a", "1"), ("read_b", "2"), ("read_c", "3")))
+    # 自造工具名未注册 → 确认闸默认拦；本场景聚焦取消穿透，显式同意放行
     with pytest.raises(GenerationCancelled):
-        asyncio.run(runner.execute(response, injected_skill=""))
+        asyncio.run(runner.execute(response, injected_skill="", gate_override="all"))
 
 
 def test_generation_cancelled_leaves_trace_events(monkeypatch, parallel_on):
@@ -370,8 +383,10 @@ def test_generation_cancelled_leaves_trace_events(monkeypatch, parallel_on):
     runner = FCToolRunner(tool_manager=tm)
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
     response = ChatResponse(content="", tool_calls=_calls(("read_a", "1"), ("read_b", "2")))
+    # 自造工具名未注册 → 确认闸默认拦；本场景聚焦取消留痕，显式同意放行
     with pytest.raises(GenerationCancelled):
-        asyncio.run(runner.execute(response, injected_skill="", on_event=on_event))
+        asyncio.run(runner.execute(
+            response, injected_skill="", on_event=on_event, gate_override="all"))
     cancelled_trace = [
         e for e in events
         if e.get("id") == "c0" and e["type"] == SSE_TOOL_FINISHED
@@ -411,8 +426,10 @@ def test_cancelled_backfills_trace_for_pre_consumed_calls(monkeypatch, parallel_
     runner = FCToolRunner(tool_manager=tm)
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
     response = ChatResponse(content="", tool_calls=_calls(("read_a", "1"), ("read_b", "2")))
+    # 自造工具名未注册 → 确认闸默认拦；本场景聚焦取消补痕，显式同意放行
     with pytest.raises(GenerationCancelled):
-        asyncio.run(runner.execute(response, injected_skill="", on_event=on_event))
+        asyncio.run(runner.execute(
+            response, injected_skill="", on_event=on_event, gate_override="all"))
 
     # 第 1 个已成功调用（c0）：完整留痕 = started/finished 事件对 + trace ok=True
     a_seq = [(e["type"], e.get("id")) for e in events if e.get("id") == "c0"]
