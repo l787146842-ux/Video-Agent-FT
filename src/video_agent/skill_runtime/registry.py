@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import hashlib
 import json
 import re
 
@@ -171,6 +172,19 @@ class SkillEntry:
         return doc.parent
 
     @property
+    def declared_resources(self) -> Dict[str, Dict[str, Any]]:
+        """frontmatter resources 资源清单声明（批6 版本锁，活读）：
+        {包内相对路径: {sha256, size, mime}}；未声明/非法形状返回空 dict
+        （形状问题归 manifest_schema WARN，消费侧 fail-closed 零预设）。"""
+        raw = (self.manifest or {}).get("resources")
+        if not isinstance(raw, dict):
+            return {}
+        return {
+            k: v for k, v in raw.items()
+            if isinstance(k, str) and k.strip() and isinstance(v, dict)
+        }
+
+    @property
     def resource_manifest(self) -> List[str]:
         """目录包资源清单（P2-4 按需加载白名单，fail-closed）：
         references/ 下文本类资源的包内相对路径清单（排序）；
@@ -215,6 +229,19 @@ RESOURCE_MEDIA_SUFFIXES = {
     ".webm": "video",
 }
 
+# 素材资源子目录约定（批6：对齐 Flova 素材捆绑）：目录包 assets/ 放图/文档/
+# 视频/音频素材，按引用消费（描述符通道，二进制不进文本/上下文）；
+# references/ 保留给文本参考（resource_manifest 口径不变）。
+ASSET_DIR_NAME = "assets"
+
+# 文档类素材后缀（仅 assets/ 通道）：与媒体资源同走描述符按引用消费，
+# 不按文本读；白名单外后缀仍 fail-closed 拒绝。
+ASSET_DOC_SUFFIXES = {
+    ".pdf": "document", ".doc": "document", ".docx": "document",
+    ".pptx": "document", ".xlsx": "document",
+}
+ASSET_DESCRIPTOR_SUFFIXES = {**RESOURCE_MEDIA_SUFFIXES, **ASSET_DOC_SUFFIXES}
+
 
 def _load_entry(slug: str) -> Optional[SkillEntry]:
     """从磁盘读取一个 Skill 文档并解析章节；不存在返回 None。"""
@@ -242,6 +269,8 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
     坏声明不能带病上线，修好 data/skills/<slug>/SKILL.md
     头部 frontmatter 才能注册；单个坏 Skill 拒注册不截断 sync_all 批次。
     消费端 fail-closed 清洗仍保留（兜注册后 frontmatter 被改坏的活读场景）。
+    版本锁（批6）：resources 声明的 sha256 与实际资源文件不符（或声明文件
+    不在场）= 素材被篡改，拒注册；无清单/未声明 hash 的包不受影响。
 
     问题分级：只有错误级问题拒注册；WARN 级（开放注册
     降级/废除键过渡告警）只输出告警日志，不阻断注册。
@@ -262,6 +291,9 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
             errors.append(
                 f"frontmatter 缺必填键 {key}（Agent Skills 开放标准："
                 "name/description 为渐进披露第一层目录摘要的权威声明）")
+    # 版本锁（批6）：声明的 sha256 与实际资源不符 = 素材被篡改，硬拒注册；
+    # 与 manifest_schema 分工：形状校验 WARN 宽松，hash 核验在此硬拒。
+    errors.extend(resource_lock_errors(entry))
     if errors:
         # 拒注册同时摘除陈旧条目（refresh/重注册路径：frontmatter 改坏后
         # 旧注册态不得继续可用）
@@ -431,6 +463,59 @@ def tool_sections(skill_name: str, tool: str) -> str:
     return entry.section_for(tool)
 
 
+def _sha256_of(path: Path) -> str:
+    """文件内容 sha256（分块，素材文件可能较大）。"""
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def resource_lock_errors(entry: SkillEntry) -> List[str]:
+    """资源清单版本锁核验（批6）：返回错误级问题清单（空 = 通过）。
+
+    版本锁语义：已声明的 sha256 与实际文件不符 = 素材被篡改；声明文件
+    不在场（悬空）= 锁无法核验；声明值非字符串 = 锁无法读——三者均拒注册。
+    「声明了锁」与「锁通过」是两件事：声明存在即进入核验，不得静默回落零预设；
+    未声明 sha256 的条目不锁；无 resources 声明的包整体不受影响（向后兼容）。
+    路径形状非法归 manifest_schema WARN，此处只对有效形状做存在性 + hash 核验。
+    """
+    root = entry.package_root
+    if root is None:
+        return []
+    errors: List[str] = []
+    for rel, meta in entry.declared_resources.items():
+        if "sha256" not in meta:
+            continue  # 未声明版本锁（零预设）
+        sha = meta["sha256"]
+        parts = [p for p in rel.replace("\\", "/").split("/") if p and p != "."]
+        if not parts or ".." in parts or ":" in rel or rel.lstrip().startswith("/"):
+            errors.append(
+                f"resources 声明路径 {rel!r} 非法（只允许包内相对路径，版本锁无法建立）")
+            continue
+        if not isinstance(sha, str) or not sha.strip():
+            errors.append(
+                f"resources[{rel}].sha256 声明非法（必须是 64 位十六进制字符串；"
+                "声明了锁却不可读 = 版本锁无法建立，拒注册）")
+            continue
+        target = root / "/".join(parts)
+        if not target.is_file() or target.is_symlink():
+            errors.append(
+                f"resources 声明资源 {rel!r} 不在场（悬空）或为符号链接，版本锁核验失败")
+            continue
+        try:
+            actual = _sha256_of(target)
+        except OSError as e:
+            errors.append(f"resources 声明资源 {rel!r} 读取失败，版本锁核验失败：{e}")
+            continue
+        if actual.lower() != sha.strip().lower():
+            errors.append(
+                f"resources 声明资源 {rel!r} sha256 不符（声明 {sha.strip()[:12]}…，"
+                f"实际 {actual[:12]}…）：素材已变动，版本锁破坏")
+    return errors
+
+
 def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], str]:
     """目录包资源按需加载解析（P2-4，fail-closed 单一实现）。
 
@@ -439,12 +524,13 @@ def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], 
     返回 (资源绝对路径, "")；失败返回 (None, 错误说明)。
 
     口径演进：三级资源加载采用「资源清单即声明」（references/ 目录），
-    替代计划书早期 assets|scripts 目录字面约定，能力等价且更收敛。
+    替代计划书早期 scripts 目录字面约定，能力等价且更收敛；批6 起
+    assets/ 素材子目录同走描述符通道放行。
 
-    媒体资源（批4：二进制禁入文本通道）：图/音/视频后缀的实际文件
-    （RESOURCE_MEDIA_SUFFIXES）同样可解析，但仅供调用方转成元数据
-    描述符（名/大小/类型）消费，不按文本读；同样受包内路径/
-    符号链接/包根逃逸守卫（与文本资源同口径只紧不松）。"""
+    媒体/素材资源（批4 二进制禁入文本通道，批6 放行 assets/）：
+    references/ 下图/音/视频后缀与 assets/ 下登记后缀（媒体+文档）的实际文件可解析，
+    但仅供调用方转成元数据描述符（名/大小/类型）按引用消费，不按文本读；
+    同样受包内路径/符号链接/包根逃逸守卫（与文本资源同口径只紧不松）。"""
     entry = resolve_entry(wanted)
     if entry is None:
         return None, f"未找到 Skill「{wanted}」"
@@ -457,19 +543,25 @@ def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], 
     parts = [p for p in rel.split("/") if p and p != "."]
     if not rel or not parts or ".." in parts:
         return None, (
-            f"资源路径 {resource!r} 非法（只允许包内 references/ 相对路径）")
+            f"资源路径 {resource!r} 非法（只允许包内 references/ 或 "
+            f"{ASSET_DIR_NAME}/ 相对路径）")
     manifest = entry.resource_manifest
     rel_norm = "/".join(parts)
     target = root / rel_norm
     if rel_norm not in set(manifest):
-        # 媒体资源例外通道（批4）：仅限 references/ 下图/音/视频后缀的
-        # 实际文件可解析为描述符（不进文本清单、不按文本读）；
-        # 其余仍 fail-closed 拒绝
+        # 描述符例外通道：仅限 references/ 下图/音/视频后缀或 assets/ 下登记后缀
+        #（批4 媒体通道，批6 扩展素材目录）的实际文件可解析为描述符，
+        # 不按文本读；其余仍 fail-closed 拒绝
+        suffix = target.suffix.lower()
         is_media = (
-            parts[0] == RESOURCE_DIR_NAME
-            and target.suffix.lower() in RESOURCE_MEDIA_SUFFIXES
-            and target.is_file()
+            target.is_file()
             and not target.is_symlink()
+            and (
+                (parts[0] == RESOURCE_DIR_NAME
+                 and suffix in RESOURCE_MEDIA_SUFFIXES)
+                or (parts[0] == ASSET_DIR_NAME
+                    and suffix in ASSET_DESCRIPTOR_SUFFIXES)
+            )
         )
         if not is_media:
             listed = "、".join(manifest[:10]) or "无"

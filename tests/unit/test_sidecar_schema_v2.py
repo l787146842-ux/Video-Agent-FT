@@ -103,9 +103,38 @@ def test_schema_accepts_full_valid_manifest():
         "version": "1.0",
         "tools_required": ["script_analyze"],
         "source": "用户导入",
+        # 批6：资源清单 + 版本锁声明（合法形状零告警）
+        "resources": {"assets/参考图.png": {
+            "sha256": "ab" * 32, "size": 1024, "mime": "image/png"}},
     }
     assert manifest_schema.validate_manifest_data(good) == []
     assert manifest_schema.validate_manifest_data(None) == []  # 零声明合法
+
+
+def test_resources_shape_issues_are_warn_first_version():
+    """批6 resources 键白名单：沿用僵尸键演进时序——首版形状问题一律 WARN
+    （不拒注册），下一版本升硬；与「已声明 hash 不符 = 注册期硬拒」分层勿混。"""
+    bad_shapes = [
+        {"resources": "不是对象"},
+        {"resources": {"assets/a.png": "不是对象"}},
+        {"resources": {"assets/a.png": {"sha256": 123}}},
+        {"resources": {"assets/a.png": {"sha256": "abc"}}},  # 非 64 位十六进制
+        {"resources": {"assets/a.png": {"size": -1}}},
+        {"resources": {"assets/a.png": {"mime": ""}}},
+        {"resources": {"../逃逸.png": {}}},
+        {"resources": {"": {}}},
+    ]
+    for manifest in bad_shapes:
+        issues = manifest_schema.validate_manifest_data(manifest)
+        errors, warnings = manifest_schema.split_issue_warnings(issues)
+        assert errors == [], (manifest, errors)
+        assert warnings, manifest
+
+
+def test_resources_undeclared_is_legal():
+    """无 resources 声明的存量包零告警（向后兼容）。"""
+    assert manifest_schema.validate_manifest_data({"resources": None}) == []
+    assert manifest_schema.validate_manifest_data({"resources": {}}) == []
 
 
 @pytest.mark.parametrize("manifest,keyword", [

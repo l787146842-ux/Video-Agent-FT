@@ -10,6 +10,8 @@ system 段，改经 build_state_tail_message 以 history 尾部消息（user 通
 批4/ADR-0007 重锁裁决依据（用户裁决 2026-08-29）：Skill 是指令性制作手册，
 选中 Skill 正文改经渐进披露预算化注入（正文头部入 system，旧压制性包壳退役，
 目录段口径同步改）；注入面全部合法化属预期行为变更，快照只刷一轮。
+批6 重采：system_fc 工具清单新增 get_skill_asset 素材描述符一句，
+三个含 protocol 段的场景同批重采（预期行为变更，快照只刷一轮）。
 """
 import json
 import pathlib

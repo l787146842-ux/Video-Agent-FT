@@ -197,16 +197,18 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R16_manifest_whitelist_keys",
-        "frontmatter 声明键（gates/flow/pause）变更",
+        "frontmatter 声明键（gates/flow/pause/resources）变更",
         "任务#5：声明唯一源 = Skill 文档头部 YAML frontmatter（外置 JSON sidecar 退役）；消费点：parse_gate_rules/agent_loop/fc_gates/planner 裁剪/"
-        "prompt_builder/registry pause 节",
+        "prompt_builder/registry pause 节；批6：resources 素材清单（形状校验 manifest_schema 首版 WARN，版本锁核验 resource_lock_errors 硬拒）",
         _sym(
             "src.video_agent.core.prompt_gates:parse_gate_rules",
             "src.video_agent.core.fc_gates:prompt_gate",
             "src.video_agent.core.planner:Planner._compute_excluded_tools",
             "src.video_agent.core.prompt_builder:PromptBuilder.build_system_prompt",
             "src.video_agent.skill_runtime.registry:parse_pause_rules",
-        ) + (("testfile", "tests/unit/test_skill_manifest.py"),),
+            "src.video_agent.skill_runtime.registry:resource_lock_errors",
+        ) + (("testfile", "tests/unit/test_skill_manifest.py"),)
+        + (("testfile", "tests/unit/test_skill_package_resources.py"),),
     ),
     CouplingRow(
         "R17_channel_rules_source",

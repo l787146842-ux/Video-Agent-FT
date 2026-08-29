@@ -9,10 +9,17 @@
 ③ read_skill 工具端到端：resource 参数返回资源全文、拒绝语义一致；
 ④ scan_skills.package_resource_warn_probe：真实包零告警、悬空指针/
    孤儿资源命中（诊断性质，不阻断退出码）。
+批6 追加：
+⑤ resolve_skill_resource 放行 assets/（媒体+文档素材描述符通道）；
+⑥ 版本锁：已声明 sha256 不符/悬空 → 注册期硬拒；匹配照常；无声明包不受影响；
+⑦ get_skill_asset 只读返回描述符（二进制不进上下文）；
+⑧ scan 探针 assets 孤儿/悬空。
 （原单文件形态对照用例随批3 单一包形态收敛退役。）
 """
+import hashlib
 import importlib.util
 import pathlib
+import shutil
 
 import pytest
 
@@ -246,5 +253,190 @@ def test_scan_probe_scripts_declaration_existence(tmp_path):
         "demo", doc, "正文", manifest)
     assert any("scripts" in w and "不存在" in w for w in warns), warns
     (pkg / "render.py").write_text("# noop", encoding="utf-8")
+    assert scan_skills.package_resource_warn_probe(
+        "demo", doc, "正文", manifest) == []
+
+
+# ---------- ⑤ 批6：resolve_skill_resource 放行 assets/ ----------
+
+
+def _asset_pkg(tmp_path, slug="assetpkg"):
+    pkg = tmp_path / slug
+    (pkg / "assets").mkdir(parents=True)
+    (pkg / f"{slug}.md").write_text("正文", encoding="utf-8")
+    return pkg
+
+
+def _patch_entry(monkeypatch, pkg, slug="assetpkg"):
+    entry = registry.SkillEntry(slug=slug, name=slug, content="", sections={})
+    monkeypatch.setattr(
+        registry.SkillEntry, "package_root", property(lambda self: pkg))
+    monkeypatch.setattr(registry, "resolve_entry", lambda wanted: entry)
+    return entry
+
+
+def test_resolve_asset_descriptor_channel(tmp_path, monkeypatch):
+    """assets/ 下媒体与文档素材走描述符通道放行；白名单外后缀/穿越仍拒绝。"""
+    pkg = _asset_pkg(tmp_path)
+    _patch_entry(monkeypatch, pkg)
+    (pkg / "assets" / "ref.png").write_bytes(b"\x89PNG fake-binary")
+    (pkg / "assets" / "spec.pdf").write_bytes(b"%PDF fake-doc")
+    path, err = registry.resolve_skill_resource("assetpkg", "assets/ref.png")
+    assert err == "" and path is not None
+    path2, err2 = registry.resolve_skill_resource("assetpkg", "assets/spec.pdf")
+    assert err2 == "" and path2 is not None
+    # 白名单外后缀仍 fail-closed（不进描述符通道）
+    (pkg / "assets" / "run.exe").write_bytes(b"MZ")
+    path3, err3 = registry.resolve_skill_resource("assetpkg", "assets/run.exe")
+    assert path3 is None and "资源清单" in err3
+    # 路径穿越拒绝（与文本资源同口径）
+    path4, err4 = registry.resolve_skill_resource(
+        "assetpkg", "assets/../assetpkg.md")
+    assert path4 is None and "非法" in err4
+
+
+# ---------- ⑥ 批6：版本锁（注册期 hash 硬拒） ----------
+# 幂等重注册夹具惯例：测试包落会话级镜像目录（conftest 钉的
+# SKILL_DOCS_DIR），夹具退出时注销 + 清目录，不污染其他测试。
+
+
+@pytest.fixture
+def lock_env():
+    from src.video_agent.core import ports
+
+    base = pathlib.Path(ports.skill_docs_port().SKILL_DOCS_DIR)
+    created = []
+
+    def make(slug, resources_yaml="", asset_bytes=b"asset-bytes-b6"):
+        pkg = base / slug
+        (pkg / "assets").mkdir(parents=True)
+        (pkg / "assets" / "ref.png").write_bytes(asset_bytes)
+        (pkg / "SKILL.md").write_text(
+            f"---\nname: {slug}\ndescription: 批6 版本锁测试包\n"
+            f"{resources_yaml}---\n正文\n", encoding="utf-8")
+        created.append(pkg)
+        return pkg
+
+    yield make
+    for pkg in created:
+        registry.unregister_skill(pkg.name)
+        shutil.rmtree(pkg, ignore_errors=True)
+
+
+_LOCK_ASSET = b"asset-bytes-b6"
+_LOCK_SHA = hashlib.sha256(_LOCK_ASSET).hexdigest()
+
+
+def test_version_lock_hash_match_registers(lock_env):
+    """声明的 sha256 与实际素材一致 → 照常注册（版本锁通过）。"""
+    lock_env("b6lock-ok", resources_yaml=(
+        "resources:\n  assets/ref.png:\n"
+        f"    sha256: {_LOCK_SHA}\n    size: {len(_LOCK_ASSET)}\n"
+        "    mime: image/png\n"))
+    entry = registry.register_skill("b6lock-ok")
+    assert entry is not None
+    # 版本锁声明同步透传到素材描述符（消费端可见锁状态）
+    declared = entry.declared_resources
+    assert declared["assets/ref.png"]["sha256"] == _LOCK_SHA
+
+
+def test_version_lock_hash_mismatch_rejects_registration(lock_env):
+    """素材被篡改（声明 sha256 与实际不符）→ 拒注册。"""
+    lock_env("b6lock-bad", resources_yaml=(
+        "resources:\n  assets/ref.png:\n    sha256: \"" + "0" * 64 + "\"\n"))
+    assert registry.register_skill("b6lock-bad") is None
+    assert registry.get_entry("b6lock-bad") is None
+    errs = registry.resource_lock_errors(
+        registry.SkillEntry(slug="b6lock-bad", name="b6lock-bad",
+                            content="", sections={}))
+    assert any("sha256 不符" in e for e in errs)
+
+
+def test_version_lock_dangling_declared_rejects_registration(lock_env):
+    """声明了锁但文件不在场（悬空）→ 锁无法核验，拒注册。"""
+    lock_env("b6lock-missing", resources_yaml=(
+        "resources:\n  assets/ghost.png:\n    sha256: \"" + "0" * 64 + "\"\n"))
+    assert registry.register_skill("b6lock-missing") is None
+
+
+def test_no_resources_declaration_backward_compat(lock_env):
+    """无 resources 声明的包照常注册（存量 16 包同口径，向后兼容）。"""
+    lock_env("b6lock-none")
+    assert registry.register_skill("b6lock-none") is not None
+    # 存量真实包（无清单无 hash）行为零变化：照常可读资源清单口径
+    assert registry.resolve_entry(NO_REF) is not None
+
+
+# ---------- ⑦ 批6：get_skill_asset 只读返回描述符 ----------
+
+
+async def test_get_skill_asset_returns_read_only_descriptor(
+        tmp_path, monkeypatch):
+    """描述符含路径/名/大小/类型；二进制不进返回体（不按文本读）。"""
+    from src.video_agent.tools.document_tools import (
+        GetSkillAssetInput, GetSkillAssetTool)
+
+    pkg = _asset_pkg(tmp_path)
+    _patch_entry(monkeypatch, pkg)
+    (pkg / "assets" / "ref.png").write_bytes(b"\x89PNG fake-binary")
+    res = await GetSkillAssetTool().aexecute(
+        GetSkillAssetInput(name="assetpkg", path="assets/ref.png"))
+    assert res.success, res.error
+    assert res.data["media_kind"] == "image"
+    assert res.data["size"] > 0
+    assert res.data["name"] == "ref.png"
+    assert res.data["path"].endswith("ref.png")
+    assert "content" not in res.data  # 二进制不进文本/上下文通道
+    assert "\x89PNG" not in str(res.data)
+
+
+async def test_get_skill_asset_rejects_outside_assets(tmp_path, monkeypatch):
+    from src.video_agent.tools.document_tools import (
+        GetSkillAssetInput, GetSkillAssetTool)
+
+    pkg = _asset_pkg(tmp_path)
+    _patch_entry(monkeypatch, pkg)
+    (pkg / "assets" / "ref.png").write_bytes(b"x")
+    # 非 assets/ 路径：直接拒收（文本参考仍走 read_skill）
+    res = await GetSkillAssetTool().aexecute(
+        GetSkillAssetInput(name="assetpkg", path="references/a.md"))
+    assert not res.success and "assets/" in res.error
+    # assets/ 下不存在的文件：fail-closed 拒绝
+    res2 = await GetSkillAssetTool().aexecute(
+        GetSkillAssetInput(name="assetpkg", path="assets/ghost.png"))
+    assert not res2.success and res2.error
+
+
+async def test_get_skill_asset_surfaces_declared_sha256(lock_env):
+    """经注册的真实包：描述符携带 resources 声明的锁（版本锁可见）。"""
+    from src.video_agent.tools.document_tools import (
+        GetSkillAssetInput, GetSkillAssetTool)
+
+    lock_env("b6lock-desc", resources_yaml=(
+        "resources:\n  assets/ref.png:\n    sha256: \"" + _LOCK_SHA + "\"\n"))
+    assert registry.register_skill("b6lock-desc") is not None
+    res = await GetSkillAssetTool().aexecute(
+        GetSkillAssetInput(name="b6lock-desc", path="assets/ref.png"))
+    assert res.success, res.error
+    assert res.data["sha256"] == _LOCK_SHA
+
+
+# ---------- ⑧ 批6：scan 探针 assets 孤儿/悬空 ----------
+
+
+def test_scan_probe_assets_orphan_and_dangling(tmp_path):
+    pkg = tmp_path / "demo"
+    (pkg / "assets").mkdir(parents=True)
+    doc = pkg / "SKILL.md"
+    doc.write_text("正文", encoding="utf-8")
+    (pkg / "assets" / "orphan.png").write_bytes(b"x")  # 在场未声明 = 孤儿
+    manifest = {"resources": {"assets/ghost.png": {"sha256": "0" * 64}}}
+    warns = scan_skills.package_resource_warn_probe(
+        "demo", doc, "正文", manifest)  # 声明不在场 = 悬空
+    assert any("悬空" in w for w in warns), warns
+    assert any("孤儿素材" in w for w in warns), warns
+    # 声明与在场文件对齐后零告警（孤儿消失、悬空落地）
+    (pkg / "assets" / "ghost.png").write_bytes(b"y")
+    (pkg / "assets" / "orphan.png").unlink()
     assert scan_skills.package_resource_warn_probe(
         "demo", doc, "正文", manifest) == []

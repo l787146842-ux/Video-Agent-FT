@@ -16,6 +16,9 @@ P1 整改（任务 #9）：--gate 追加内容卫生防回潮校验：frontmatte
 P2-4 新增：目录包资源探针（WARN，诊断性质）：正文 read_skill(resource=…)
 指针悬空 / scripts 声明路径不存在 / references/ 孤儿资源 → WARN 清单，
 不阻断退出码（注册期形状校验在 manifest_schema，此处只做存在性核对）。
+批6 扩展：assets/ 素材孤儿（文件在场但 frontmatter resources 未声明）/
+悬空（resources 声明了但文件不存在）同口径 WARN；已声明 sha256 不符的
+硬拒归注册期版本锁，探针不重复拦截。
 任务#2 新增：正文语言声明探针（--gate）：产物提示词语言统一以
 prompt_gates.resolve_prompt_language（用户选择 > frontmatter language
 声明 > 平台默认）为唯一裁决源；正文再现声明性语言规则即 FAIL。
@@ -385,14 +388,18 @@ _RESOURCE_POINTER_RE = re.compile(
 
 def package_resource_warn_probe(slug: str, path: pathlib.Path,
                                 body: str, manifest) -> list:
-    """目录包资源探针（P2-4）：诊断性质，WARN 不阻断退出码。
+    """目录包资源探针（P2-4）：诊断性质，WARN 不阻断退出码（外部源同维持
+    WARN，对齐批3 source 分口径纪律）。
     ① 正文 read_skill(resource=…) 指针必须落在包内实际存在的文件上，
        悬空 = 文档与资源漂移（含路径穿越）；
     ② scripts 键声明路径必须在目录包内实际存在（平台只做静态校验，
        绝不执行；形状非法在注册期 manifest_schema 已 fail-hard，此处只
        做存在性核对）；
     ③ references/ 下实际资源无正文指针引用 = 孤儿资源（渐进披露第三层
-       入口缺失，模型永远发现不了该资源）。"""
+       入口缺失，模型永远发现不了该资源）；
+    ④ assets/ 素材孤儿/悬空（批6）：frontmatter resources 声明了但文件不存在 =
+       悬空；assets/ 下文件在场但未在 resources 声明 = 孤儿（版本锁盲区）。
+       sha256 不符归注册期硬拒，探针只管存在性。"""
     warns = []
     pkg_root = path.parent  # 单一包形态：主文档恒在 <slug>/ 包内
     pointed = set()
@@ -423,6 +430,31 @@ def package_resource_warn_probe(slug: str, path: pathlib.Path,
                 if rel not in pointed:
                     warns.append(f"孤儿资源 references/ 下 {rel!r} 无正文"
                                  f" read_skill(resource=…) 指针引用")
+    # ④ assets/ 素材孤儿/悬空（批6）：版本锁声明（resources）与实际文件对账；
+    # 形状非法归注册期/manifest_schema WARN，此处只收有效条目做存在性核对。
+    declared = set()
+    resources = (manifest or {}).get("resources")
+    if isinstance(resources, dict):
+        declared = {
+            str(k).strip().replace("\\", "/")
+            for k, v in resources.items()
+            if isinstance(k, str) and k.strip() and isinstance(v, dict)
+        }
+    for rel in sorted(declared):
+        parts = [p for p in rel.split("/") if p and p != "."]
+        if not parts or ".." in parts:
+            continue  # 非法形状归 manifest_schema WARN，不重复报
+        if not (pkg_root / rel).is_file():
+            warns.append(f"resources 声明 {rel!r} 文件不存在（悬空）")
+    asset_dir = pkg_root / "assets"
+    if asset_dir.is_dir():
+        for af in sorted(asset_dir.rglob("*")):
+            if not af.is_file() or af.name.startswith("."):
+                continue
+            rel = af.relative_to(pkg_root).as_posix()
+            if rel not in declared:
+                warns.append(f"孤儿素材 assets/ 下 {rel!r} 未在 frontmatter "
+                             f"resources 声明（版本锁盲区）")
     return warns
 
 
@@ -433,8 +465,8 @@ def run_gate() -> int:
     不升门禁失败，不阻断退出码）；
     frontmatter name/description 存在性探针缺失输出 WARN 清单
     （P1-10 裁决 R1：级别 WARN 不升 FAIL，不触门禁冻结）；
-    目录包资源探针输出 WARN 清单（P2-4：指针悬空/孤儿资源，
-    诊断性质，不阻断退出码）；
+    目录包资源探针输出 WARN 清单（P2-4：指针悬空/孤儿资源，批6 追加
+    assets/ 素材孤儿/悬空；诊断性质，不阻断退出码）；
     正文语言声明探针：正文再现声明性语言规则即 FAIL（任务#2：
     产物提示词语言唯一裁决源 = resolve_prompt_language）。
 

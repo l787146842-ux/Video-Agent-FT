@@ -70,6 +70,13 @@ class ListSkillsInput(BaseModel):
     """list_skills 无参数（只读全量名单）；保留空入参模型保 FC schema 形状一致。"""
 
 
+class GetSkillAssetInput(BaseModel):
+    name: str = Field(..., description="Skill 名称（与 Skill 目录中的名称一致）")
+    path: str = Field(
+        ..., description="目录包内素材相对路径（必须在 assets/ 下，如 assets/场景参考图.png）；"
+        "文本参考资料不走本工具，用 read_skill(resource=…)")
+
+
 class GenerateImageInput(StrictToolInput):
     mode: str = Field("batch", description="生图模式: batch=工作台批量出图（面向故事板草稿，默认）| single=对话内单张应急出图（需传 prompt）")
     # --- batch 模式参数 ---
@@ -453,6 +460,59 @@ class ListSkillsTool(BaseTool):
         return ToolResult(success=True, data={"skills": skills, "count": len(skills)})
 
 
+class GetSkillAssetTool(BaseTool):
+    name = "get_skill_asset"
+    risk = "low"  # §2.7：只读元数据（批6 素材描述符）
+    detail_tier = "output"  # 读取类：仅输出留痕
+    description = (
+        "取 Skill 目录包 assets/ 下素材资源的描述符（路径/名/大小/类型，只读）："
+        "图/文档/音/视频素材按引用消费——拿到描述符后把其中 path 传给生成类工具"
+        "（image_generate/generate_video 等）作参考素材；二进制内容不进对话上下文，"
+        "不要尝试读取素材正文。文本参考资料仍经 read_skill(resource=…) 读取。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return GetSkillAssetInput
+
+    async def aexecute(self, params: GetSkillAssetInput) -> ToolResult:
+        rel = (params.path or "").strip().replace("\\", "/")
+        parts = [p for p in rel.split("/") if p and p != "."]
+        if not parts or parts[0] != registry.ASSET_DIR_NAME:
+            return ToolResult(
+                success=False,
+                error=(f"素材路径 {params.path!r} 非法（只允许包内 "
+                       f"{registry.ASSET_DIR_NAME}/ 相对路径；文本参考走 "
+                       "read_skill(resource=…)）"),
+                error_code="validation", retryable=False,
+            )
+        # fail-closed 归单一实现（包内路径/符号链接/逃逸守卫同口径）
+        res_path, res_err = registry.resolve_skill_resource(params.name, rel)
+        if res_path is None:
+            return ToolResult(success=False, error=res_err)
+        kind = registry.ASSET_DESCRIPTOR_SUFFIXES.get(res_path.suffix.lower(), "")
+        try:
+            size = res_path.stat().st_size
+        except OSError:
+            size = -1
+        # 描述符只含元数据（路径/名/大小/类型 + 版本锁声明）；二进制不进上下文，
+        # 生成类工具经 path 按引用消费（宪法 Rule 4 走 Adapter 通道）
+        entry = registry.resolve_entry(params.name)
+        declared = (entry.declared_resources if entry else {}).get(
+            "/".join(parts)) or {}
+        sha = declared.get("sha256")
+        data: Dict[str, Any] = {
+            "skill": entry.name if entry else params.name,
+            "name": res_path.name,
+            "asset": rel,
+            "path": str(res_path),
+            "size": size,
+            "media_kind": kind,
+        }
+        if isinstance(sha, str) and sha.strip():
+            data["sha256"] = sha.strip()
+        return ToolResult(success=True, data=data)
+
+
 class ReadProjectDocTool(BaseTool):
     name = "read_project_doc"
     risk = "low"  # §2.7：只读
@@ -798,8 +858,9 @@ def register_document_tools():
     ToolManager.register(ReadUploadedDocTool())
     ToolManager.register(ReadSkillTool())
     ToolManager.register(ListSkillsTool())
+    ToolManager.register(GetSkillAssetTool())
     ToolManager.register(ReadProjectDocTool())
     ToolManager.register(ImageGenerateTool())
     ToolManager.register(WorkflowPauseTool())
     ToolManager.register(FlowDirectiveTool())
-    logger.info("[Tools] 8 document/skill/generation/workflow/flow tools registered")
+    logger.info("[Tools] 9 document/skill/generation/workflow/flow tools registered")

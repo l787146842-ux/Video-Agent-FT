@@ -106,7 +106,7 @@ SCAFFOLDS = (
         "invariant"),
     ScaffoldEntry(
         "I05", "src.video_agent.core.prompt_builder:PromptBuilder.build_skill_catalog",
-        "上下文经济学不变量：渐进式披露（目录常驻+开关过滤+正文预算注入+全文/资源按需）",
+        "上下文经济学不变量：渐进式披露（目录常驻+开关过滤+正文预算注入+全文/资源按需+素材按引用描述符）",
         "prompt_builder 单测",
         "季度审计",
         "invariant"),

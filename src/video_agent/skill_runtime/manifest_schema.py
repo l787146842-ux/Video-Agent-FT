@@ -33,7 +33,9 @@ executor?,deterministic?}，compile_definition 据此派生节点拓扑；
 布尔开关（spec_wizard/spec_gate/script_required）；顶层 pause.stage_pause；
 顶层 custom_sections（自定义章节→通用执行器通道）；
 顶层 gates（键白名单 fail-hard）/ version / tools_required / source /
-scripts（键声明静态校验，绝不自动执行）。
+scripts（键声明静态校验，绝不自动执行）/ resources（目录包资源清单 +
+版本锁声明，批6：形状校验首版 WARN、下版升硬；已声明 sha256 与实际
+文件不符的硬拒归注册期版本锁，见 registry.register_skill）。
 
 gates 键白名单与 core.prompt_gates._DEFAULT_GATE_RULES 键集同值复制
 （skill_runtime 不得反向 import core，分层约束），漂移由
@@ -410,6 +412,55 @@ def _check_scripts(raw: Any, issues: List[str]) -> None:
                 "（禁止绝对路径/盘符/.. 穿越）")
 
 
+_RESOURCE_SHA256_HEX = frozenset("0123456789abcdefABCDEF")
+
+
+def _check_resources(raw: Any, issues: List[str]) -> None:
+    """resources：目录包资源清单（批6 素材+版本锁）{rel_path: {sha256, size, mime}}。
+
+    未声明合法（零声明 = 最小闸，存量包不受影响）。形状校验沿用僵尸键演进时序：
+    本版本一律 WARN 过渡告警（不拒注册）；下一版本升级为 fail-hard。
+    分层口径勿混：形状宽松，但已声明的 sha256 与实际文件不符 = 版本锁破坏，
+    由注册期硬拒（归 registry.register_skill，不在此处）。
+    """
+    if raw is None:
+        return
+    if not isinstance(raw, dict):
+        issues.append(
+            WARN_PREFIX
+            + "resources 必须是对象（包内相对路径→{sha256, size, mime}）；"
+            "下一版本将升级为拒注册")
+        return
+    for k, v in raw.items():
+        if not isinstance(k, str) or not k.strip():
+            issues.append(
+                WARN_PREFIX + f"resources 清单键 {k!r} 必须是非空字符串（包内相对路径）")
+            continue
+        if not _is_safe_relative_path(k):
+            issues.append(
+                WARN_PREFIX + f"resources[{k}] 路径必须是包内相对路径"
+                "（禁止绝对路径/盘符/.. 穿越）")
+        if not isinstance(v, dict):
+            issues.append(
+                WARN_PREFIX + f"resources[{k}] 必须是对象 {{sha256, size, mime}}")
+            continue
+        sha = v.get("sha256")
+        if sha is not None and (
+            not isinstance(sha, str) or len(sha) != 64
+            or any(c not in _RESOURCE_SHA256_HEX for c in sha)
+        ):
+            issues.append(
+                WARN_PREFIX + f"resources[{k}].sha256 必须是 64 位十六进制字符串")
+        size = v.get("size")
+        if size is not None and (
+            isinstance(size, bool) or not isinstance(size, int) or size < 0
+        ):
+            issues.append(WARN_PREFIX + f"resources[{k}].size 必须是非负整数")
+        mime = v.get("mime")
+        if mime is not None and (not isinstance(mime, str) or not mime.strip()):
+            issues.append(WARN_PREFIX + f"resources[{k}].mime 必须是非空字符串")
+
+
 def _check_workflow_stages(stages: Any, issues: List[str]) -> None:
     """flow.stages 数组形态 = workflow 结构声明。
 
@@ -568,4 +619,5 @@ def validate_manifest_data(data: Any) -> List[str]:
     _check_language(data.get("language"), issues)
     _check_pause_points(data.get("pause_points"), issues)
     _check_scripts(data.get("scripts"), issues)
+    _check_resources(data.get("resources"), issues)
     return issues
