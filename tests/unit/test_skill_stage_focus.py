@@ -1,7 +1,7 @@
-"""Skill 章节解析与选中 Skill 轻量段（本文件覆盖章节解析与正文零注入回归；
+"""Skill 章节解析与选中 Skill 段（本文件覆盖章节解析与正文预算注入回归，批4/ADR-0007；
 遥测/预算观察项钉测试见 test_prompt_single_injection_p317.py）。
 章节解析（split_skill_sections）随任务#12 裁决保留：供阶段裁剪闸、
-音频闸、lint、scan_skills 等探针消费，仅注入面退役。"""
+音频闸、lint、scan_skills 等探针消费，也供预算切分按章节边界切齐。"""
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.web import skill_docs
 
@@ -48,7 +48,7 @@ def test_split_sections_empty():
     assert skill_docs.split_skill_sections("") == {}
 
 
-# ---------- 选中 Skill 轻量段（任务#12 批次B：正文零注入） ----------
+# ---------- 选中 Skill 段（批4/ADR-0007：正文预算化注入） ----------
 
 def _pb(raw_state):
     return PromptBuilder(
@@ -58,24 +58,25 @@ def _pb(raw_state):
     )
 
 
-def test_selected_block_lightweight_for_real_skill():
-    """任务#12 批次B：真实存量 Skill 选中后只产出轻量状态提示，
-    章节原文（如 planner 启动协议）不进 system prompt；
-    执行器清单形态与全文直注形态措辞均已退役。"""
+def test_selected_block_budget_head_for_real_skill():
+    """批4/ADR-0007：真实存量 Skill 选中后正文头部经预算注入（头部锚点：
+    planner 启动协议），预算外尾部零注入并附 read_skill 续读指引；
+    执行器清单形态与全文硬直注形态措辞保持退役。"""
     from src.video_agent.skill_runtime import registry
 
     registry.reset_registry()  # 隔离：确保按真实 data/skills 目录重新注册
     state = {"keyElements": [], "shots": [], "audioItems": []}
     pb = _pb(state)
     block = pb.build_selected_skill_block("AI-短剧一站式生成")
-    # 轻量状态提示：名称 + read_skill 指引
+    # 选中提示 + 续读指引在场（该存量 Skill 超预算，走截断路径）
     assert "当前选中 Skill" in block and "read_skill" in block
-    # 正文零注入：章节原文不进块（锚点：planner 启动协议）
-    assert "启动协议" not in block
-    # 历史注入形态措辞已退役
+    assert "正文头部到此为止" in block
+    # 头部探针（正文前部）经预算注入；尾部探针（预算外、全文唯一）零注入
+    assert "启动协议" in block
+    assert "**导出基准**" not in block
+    # 历史注入形态措辞保持退役（压制性包壳同批退役）
     assert "已注册独立执行器" not in block
     assert "== 当前 Skill 的流程基线" not in block
-    assert "全文" in block and "未注入" in block
 
 
 def test_unsectioned_skill_block_is_empty():

@@ -69,8 +69,8 @@ def test_style_kind_display_note_wired_for_real_skill_name():
 
     assert "风格型" in _KIND_LABELS["style"]
     assert "流程型" in _KIND_LABELS["pipeline"]
-    # 展示口径钉死：真实美学型 Skill 的元数据头携带风格型类型行，
-    # 且正文零注入（轻量块内不含风格正文）。
+    # 展示口径钉死：真实美学型 Skill 的元数据头携带风格型类型行；
+    # 该存量 Skill 超预算，选中段附 read_skill 续读指引（批4/ADR-0007）。
     from src.video_agent.core.prompt_builder import PromptBuilder
     from src.video_agent.web import skill_docs
 

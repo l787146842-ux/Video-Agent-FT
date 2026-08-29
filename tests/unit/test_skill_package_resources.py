@@ -134,6 +134,70 @@ async def test_read_skill_resource_denied_absent_package():
     assert "资源清单" in res.error
 
 
+# ---------- ③-b 批4：二进制资源禁入文本通道（媒体例外通道） ----------
+
+
+def test_resolve_resource_media_descriptor_channel(tmp_path, monkeypatch):
+    """references/ 下图/音/视频资源走媒体例外通道（返回文件位置供元数据描述符解析）；
+    references/ 外媒体与不存在的媒体文件仍 fail-closed 拒绝。"""
+    pkg = tmp_path / "mediapkg"
+    refs = pkg / "references"
+    refs.mkdir(parents=True)
+    (pkg / "mediapkg.md").write_text("正文", encoding="utf-8")
+    (refs / "ref.png").write_bytes(b"\x89PNG fake-binary")
+    entry = registry.SkillEntry(
+        slug="mediapkg", name="mediapkg", content="", sections={})
+    monkeypatch.setattr(
+        registry.SkillEntry, "package_root", property(lambda self: pkg))
+    monkeypatch.setattr(registry, "resolve_entry", lambda wanted: entry)
+    path, err = registry.resolve_skill_resource("mediapkg", "references/ref.png")
+    assert err == "" and path is not None
+    # references/ 外媒体：不在清单也无媒体通道 → 拒绝（fail-closed）
+    (pkg / "root.png").write_bytes(b"x")
+    path2, err2 = registry.resolve_skill_resource("mediapkg", "root.png")
+    assert path2 is None and err2
+    # 不存在的媒体文件：媒体通道要求实际文件在场 → 拒绝（fail-closed）
+    path3, err3 = registry.resolve_skill_resource(
+        "mediapkg", "references/ghost.png")
+    assert path3 is None and err3
+
+
+async def test_read_skill_media_resource_returns_descriptor(
+        tmp_path, monkeypatch):
+    """批4：媒体资源只返回元数据描述符（名/大小/类型），不按文本读入上下文。"""
+    import src.video_agent.tools.document_tools as dt
+
+    pkg = tmp_path / "mediapkg"
+    refs = pkg / "references"
+    refs.mkdir(parents=True)
+    (pkg / "mediapkg.md").write_text("正文", encoding="utf-8")
+    (refs / "ref.png").write_bytes(b"\x89PNG fake-binary")
+    entry = registry.SkillEntry(
+        slug="mediapkg", name="mediapkg", content="", sections={})
+    monkeypatch.setattr(
+        registry.SkillEntry, "package_root", property(lambda self: pkg))
+    monkeypatch.setattr(registry, "resolve_entry", lambda wanted: entry)
+
+    class _StubDocs:
+        def resolve_skill_content(self, name):
+            return "mediapkg", "正文"
+
+        def list_skill_sections(self, content):
+            return []
+
+        def list_skill_docs(self):
+            return []
+
+    monkeypatch.setattr(dt.ports, "skill_docs_port", lambda: _StubDocs())
+    res = await ReadSkillTool().aexecute(
+        ReadSkillInput(name="mediapkg", resource="references/ref.png"))
+    assert res.success, res.error
+    assert res.data["media_kind"] == "image"
+    assert res.data["size"] > 0
+    assert "元数据描述符" in res.data["content"]
+    assert "\x89PNG" not in res.data["content"]  # 二进制不按文本读
+
+
 # ---------- ④ scan 资源探针（WARN，诊断性质） ----------
 
 

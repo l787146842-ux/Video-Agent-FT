@@ -203,6 +203,18 @@ RESOURCE_DIR_NAME = "references"
 _RESOURCE_TEXT_SUFFIXES = frozenset(
     {".md", ".txt", ".json", ".yaml", ".yml", ".csv"})
 
+# 媒体资源后缀（批4：二进制资源禁入文本通道）：图/音/视频后缀只解析为
+# 元数据描述符（名/大小/类型）供引用消费，不按文本读入上下文。
+# 不进文本资源清单（resource_manifest 口径不变，fail-closed 不变）。
+RESOURCE_MEDIA_SUFFIXES = {
+    ".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image",
+    ".webp": "image", ".bmp": "image",
+    ".mp3": "audio", ".wav": "audio", ".m4a": "audio", ".flac": "audio",
+    ".aac": "audio", ".ogg": "audio",
+    ".mp4": "video", ".mov": "video", ".avi": "video", ".mkv": "video",
+    ".webm": "video",
+}
+
 
 def _load_entry(slug: str) -> Optional[SkillEntry]:
     """从磁盘读取一个 Skill 文档并解析章节；不存在返回 None。"""
@@ -422,12 +434,17 @@ def tool_sections(skill_name: str, tool: str) -> str:
 def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], str]:
     """目录包资源按需加载解析（P2-4，fail-closed 单一实现）。
 
-    只放行资源清单（目录包 references/ 实际文件列表）内的资源；
+    只放行资源清单（目录包 references/ 实际文件列表）内的文本资源；
     声明外资源（清单外路径/绝对路径/.. 穿越）一律拒绝。
     返回 (资源绝对路径, "")；失败返回 (None, 错误说明)。
 
     口径演进：三级资源加载采用「资源清单即声明」（references/ 目录），
-    替代计划书早期 assets|scripts 目录字面约定，能力等价且更收敛。"""
+    替代计划书早期 assets|scripts 目录字面约定，能力等价且更收敛。
+
+    媒体资源（批4：二进制禁入文本通道）：图/音/视频后缀的实际文件
+    （RESOURCE_MEDIA_SUFFIXES）同样可解析，但仅供调用方转成元数据
+    描述符（名/大小/类型）消费，不按文本读；同样受包内路径/
+    符号链接/包根逃逸守卫（与文本资源同口径只紧不松）。"""
     entry = resolve_entry(wanted)
     if entry is None:
         return None, f"未找到 Skill「{wanted}」"
@@ -443,12 +460,22 @@ def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], 
             f"资源路径 {resource!r} 非法（只允许包内 references/ 相对路径）")
     manifest = entry.resource_manifest
     rel_norm = "/".join(parts)
-    if rel_norm not in set(manifest):
-        listed = "、".join(manifest[:10]) or "无"
-        return None, (
-            f"资源 {resource!r} 不在 Skill「{entry.name}」资源清单内"
-            f"（fail-closed：声明外资源一律拒绝）。可用资源：{listed}")
     target = root / rel_norm
+    if rel_norm not in set(manifest):
+        # 媒体资源例外通道（批4）：仅限 references/ 下图/音/视频后缀的
+        # 实际文件可解析为描述符（不进文本清单、不按文本读）；
+        # 其余仍 fail-closed 拒绝
+        is_media = (
+            parts[0] == RESOURCE_DIR_NAME
+            and target.suffix.lower() in RESOURCE_MEDIA_SUFFIXES
+            and target.is_file()
+            and not target.is_symlink()
+        )
+        if not is_media:
+            listed = "、".join(manifest[:10]) or "无"
+            return None, (
+                f"资源 {resource!r} 不在 Skill「{entry.name}」资源清单内"
+                f"（fail-closed：声明外资源一律拒绝）。可用资源：{listed}")
     # 双保险：解析后仍必须落在包根内（防符号链接/联接指向包外）
     try:
         if not target.resolve().is_relative_to(root.resolve()):

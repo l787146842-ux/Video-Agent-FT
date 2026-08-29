@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
-"""任务#12 批次B 防回归测试（普通测试，不新增门禁）：
-
-系统只做两件事——L1 元数据目录（name+description）常驻注入 + 提供
-read_skill 工具；任何 Skill 正文（全文直注/分级注入/组合注入）都
-不进 system prompt。
-1) 真实超 2 万字 Skill 的独有短语作探针：选中后 system prompt
-   只含目录行 + 轻量状态提示，正文零注入；
-2) 组合激活（1 pipeline + N style 层）后风格层正文同样不进
-   system prompt，风格层只在目录段以名称可见。
+"""任务#12 批次B 防回归测试（普通测试，不新增门禁）；
+批4/ADR-0007 口径刷新：选中 Skill 正文改经渐进披露预算化注入——
+1) 真实超 2 万字 Skill：正文头部按预算注入（头部探针在场），
+   预算外尾部探针零注入，附 read_skill 续读指引；
+2) 组合激活（1 pipeline + N style 层）：主流程正文头部预算注入，
+   风格层正文仍零注入（只在目录段以名称可见）。
 """
 import pytest
 
@@ -17,10 +14,13 @@ from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core.planner import PlannerContext
 from src.video_agent.skill_runtime import frontmatter, registry
 
-# 探针：真实超长 Skill（约 4.1 万字，>2 万字口径）正文中的独有短语；
+# 探针：真实超长 Skill（约 4 万字）正文中的独有短语；
 # 同时钉该短语确实存在于 data/skills 源文件（防探针失效静默通过）
 LONG_SKILL_NAME = "3D国漫古装精品短剧"
+# 头部探针（正文前部，预算头部内）+ 尾部探针（全文唯一且远离头部，
+# 预算外）：一正一反钉预算切分边界（批4/ADR-0007）
 BODY_PROBE = "影像风格固定为3D古风，无需用户确认。"
+TAIL_PROBE = "**导出基准**"
 
 PRIMARY_SKILL = "AI-短剧一站式生成"  # 存量 pipeline 型
 STYLE_SKILLS = ["李安美学风格短片", "水墨风格武侠短片"]  # 存量 style 型
@@ -51,26 +51,31 @@ def _base_state(**extra):
 
 
 def test_probe_phrase_exists_in_source_skill():
-    """前置钉死：探针短语确在超 2 万字源文件中（防探针失效假绿）。"""
+    """前置钉死：头/尾探针确在超 2 万字源文件中，且尾部探针不在头部区间（防探针失效假绿）。"""
     _, content = sd.resolve_skill_content(LONG_SKILL_NAME)
     assert len(content) > 20000
     assert BODY_PROBE in content
+    assert TAIL_PROBE in content
+    # 尾部探针远离头部预算区间且全文唯一（反向探针有效性）
+    assert content.find(TAIL_PROBE) > 9000 and content.count(TAIL_PROBE) == 1
 
 
-def test_system_prompt_has_no_skill_body_for_long_skill():
-    """选中真实超长 Skill：system prompt 只含目录行 + 轻量状态提示，
-    正文片段（探针短语）零注入。"""
+def test_system_prompt_long_skill_head_budget_injection():
+    """选中真实超长 Skill（批4/ADR-0007）：正文头部按预算注入，
+    预算外尾部零注入，附 read_skill 续读指引。"""
     text = _pb(_base_state()).build_system_prompt(_ctx(LONG_SKILL_NAME))
-    # 正文零注入（探针）
-    assert BODY_PROBE not in text
+    # 头部探针经预算注入在场；尾部探针零注入（全文按需，不击穿预算）
+    assert BODY_PROBE in text
+    assert TAIL_PROBE not in text
     # 目录行在场（L1 元数据：名称 + 摘要）
     assert "Skill 目录" in text and LONG_SKILL_NAME in text
-    # 轻量状态提示在场（选中名称 + read_skill 按需加载指引）
+    # 选中提示 + 续读指引在场（渐进披露口径）
     assert f"当前选中 Skill「{LONG_SKILL_NAME}」" in text
-    assert "read_skill" in text and "全文未注入" in text
-    # 历史注入形态措辞全部退役
+    assert "read_skill" in text and "正文头部到此为止" in text
+    # 历史注入形态措辞全部退役（压制性包壳同批退役）
     assert "【执行基准声明】" not in text
     assert "== 平台边界声明" not in text
+    assert "以后者为准" not in text
     assert "章节目录" not in text
 
 
@@ -91,9 +96,9 @@ def _style_body_probe(style_content: str) -> str:
 
 
 def test_combo_activation_keeps_style_body_out_of_system_prompt():
-    """组合激活（1 pipeline + N style 层）：主流程与各风格层正文
-    都不进 system prompt；风格层只在目录段以名称可见。"""
-    primary_probe = "启动协议"  # 主流程 planner 章节原文锚点
+    """组合激活（1 pipeline + N style 层，批4/ADR-0007）：主流程正文头部
+    预算注入；风格层正文零注入，只在目录段以名称可见。"""
+    primary_probe = "启动协议"  # 主流程正文锚点（短桩，预算内全文注入）
     # 存在性前置钉死（与 BODY_PROBE 口径对齐：防探针失效假绿）
     _, primary_content = sd.resolve_skill_content(PRIMARY_SKILL)
     assert primary_probe in primary_content
@@ -102,9 +107,9 @@ def test_combo_activation_keeps_style_body_out_of_system_prompt():
         styleSkills=list(STYLE_SKILLS),
     )
     text = _pb(raw).build_system_prompt(_ctx(PRIMARY_SKILL))
-    # 主流程正文零注入
-    assert primary_probe not in text
-    # 风格层正文同样零注入（取标签内正文片段做探针，并钉其确在源文件）
+    # 主流程正文头部经预算注入（短正文预算内全文在场）
+    assert primary_probe in text
+    # 风格层正文仍零注入（取标签内正文片段做探针，并钉其确在源文件）
     for style_name in STYLE_SKILLS:
         _, style_content = sd.resolve_skill_content(style_name)
         probe = _style_body_probe(style_content)

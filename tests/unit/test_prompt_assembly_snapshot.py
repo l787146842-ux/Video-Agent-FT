@@ -7,6 +7,9 @@ stage_note 新增注入属行为变更场景，不在快照范围内，单独成
 P2-3 段通道手术：状态上下文（状态 JSON/边界说明/故事板进度）移出
 system 段，改经 build_state_tail_message 以 history 尾部消息（user 通道）
 注入；golden 含尾部消息场景，同批重采。
+批4/ADR-0007 重锁裁决依据（用户裁决 2026-08-29）：Skill 是指令性制作手册，
+选中 Skill 正文改经渐进披露预算化注入（正文头部入 system，旧压制性包壳退役，
+目录段口径同步改）；注入面全部合法化属预期行为变更，快照只刷一轮。
 """
 import json
 import pathlib
@@ -115,7 +118,8 @@ def build_snapshot_scenarios():
 
 def test_assembly_snapshot_matches_golden():
     """组装输出逐字节与 golden 一致（P2-3 段通道手术后 golden 已同批重采：
-    system 场景不再含状态上下文，新增尾部消息场景）"""
+    system 场景不再含状态上下文，新增尾部消息场景；批4/ADR-0007 重锁：
+    选中 Skill 正文预算注入入 system，旧压制性包壳退役）"""
     assert FIXTURE.exists(), "golden 缺失：须先在改造前采集基线"
     golden = json.loads(FIXTURE.read_text(encoding="utf-8"))
     actual = build_snapshot_scenarios()

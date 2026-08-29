@@ -367,14 +367,13 @@ async def test_read_draft_tool(svc):
 
 
 def test_system_prompt_contains_catalog_not_full_text(tmp_path, monkeypatch, svc):
-    """新契约（任务#12 批次B）：所有 Skill 正文一律不进 system prompt；
-    未选中 Skill 只进目录，选中 Skill 只产轻量状态提示（名称 +
-    read_skill 按需读取指引），流程规范由模型执行前调 read_skill 读取"""
+    """新契约（批4/ADR-0007）：未选中 Skill 只进目录；选中 Skill 正文头部经渐进披露
+    预算注入（短正文预算内全文在场），预算外其余部分经 read_skill 续读"""
     skill_dir = tmp_path / "skills"
     skill_dir.mkdir()
     monkeypatch.setattr(skill_docs_mod, "SKILL_DOCS_DIR", skill_dir)
     skill_docs_mod.save_skill_doc(
-        "demo-skill", "# 演示技能\n> 调用规则：演示用\n大段流程正文必须进 system prompt……",
+        "demo-skill", "# 演示技能\n> 调用规则：演示用\n大段流程正文经预算注入 system prompt……",
     )
     skill_docs_mod.save_skill_doc(
         "other-skill", "# 未选技能\n> 调用规则：演示用\n未选技能的正文不应进 system prompt……",
@@ -384,8 +383,8 @@ def test_system_prompt_contains_catalog_not_full_text(tmp_path, monkeypatch, svc
     prompt = planner._build_system_prompt(ctx)
     assert "Skill 目录" in prompt and "演示技能" in prompt
     assert "read_skill" in prompt
-    # 选中项轻量状态提示在场，正文零注入
+    # 选中项提示在场，短正文预算内全文注入（批4/ADR-0007）
     assert "当前选中 Skill" in prompt
-    assert "大段流程正文必须进 system prompt" not in prompt
+    assert "大段流程正文经预算注入 system prompt" in prompt
     # 未选中的 Skill 仍只有目录，全文不注入
     assert "未选技能的正文不应进 system prompt" not in prompt

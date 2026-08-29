@@ -92,6 +92,20 @@ def load_prompt_section(relative_path: str, section: str) -> str:
     return m.group(1).strip()
 
 
+def render_prompt_section(relative_path: str, section: str, **kwargs: Any) -> str:
+    """加载文件分节并做 {{variable}} 变量替换（分节 + 渲染合一入口）。
+
+    分节口径同 load_prompt_section（## KEY 到下一个 ## 标题）；
+    变量替换口径同 render_prompt（仅 {{variable}}，不支持 {{#if}}）。
+    未命中分节返回空串（调用方自决降级）。"""
+    text = load_prompt_section(relative_path, section)
+    if not text:
+        return ""
+    for key, value in kwargs.items():
+        text = text.replace("{{" + key + "}}", str(value))
+    return text
+
+
 def render_prompt(relative_path: str, **kwargs: Any) -> str:
     """加载并渲染 Handlebars 风格的模板（仅支持简单变量替换和 {{#if}}）。
 

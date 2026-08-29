@@ -207,10 +207,10 @@ def test_metadata_header_full_v3_declaration():
     assert "英文书写" in block
     assert "平台会在以下节点兜底保证暂停" in block
     assert "规格定稿后" in block and "每批生成后" in block
-    # 位置：元数据头跟在轻量标题行之后（任务#12 批次B：正文零注入，
-    # 块内只有标题行与元数据头两部分）
+    # 位置：元数据头跟在选中标题行之后（批4/ADR-0007：正文头部随预算注入，
+    # 块内顺序 = 标题行 → 元数据头 → 纪律 → 正文头部）
     assert block.index("== 当前选中 Skill") < block.index("== Skill 元数据")
-    assert "UNIQUE_META_BODY_MARK" not in block  # 正文不进块（正文探针）
+    assert "UNIQUE_META_BODY_MARK" in block  # 短正文预算内全文注入（正文探针）
     # 原料到达后缺失提示消失
     block2 = _pb({"uploadedDocs": [{"name": "a.md", "content": "x"}]}).build_selected_skill_block("元数据全")
     assert "原料未就绪" not in block2

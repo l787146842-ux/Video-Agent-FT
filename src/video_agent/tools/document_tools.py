@@ -11,7 +11,7 @@ from loguru import logger
 from src.video_agent.config import settings
 from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
-from src.video_agent.core import ports, prompt_gates
+from src.video_agent.core import ports, prompt_gates, skill_sanitize
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import registry
@@ -27,6 +27,7 @@ from src.video_agent.core.provider_config import (
     spec_production_params,
 )
 from src.video_agent.utils import gen_id
+from src.video_agent.utils.prompts import render_prompt_section
 
 
 # ---------- Input Schemas ----------
@@ -284,14 +285,29 @@ def _slice_content(content: str, start: int) -> tuple:
     return body, note
 
 
+def _skill_source_note(skill_name: str) -> str:
+    """外部来源标记（批4/ADR-0007）：仅外部/社区来源附中性来源短句，
+    文案同源外置 shared/skill_source.md（不内联）；平台来源干净返回。"""
+    try:
+        source = (registry.skill_manifest_of(skill_name) or {}).get("source")
+    except Exception:
+        return ""
+    if not isinstance(source, str) or not source.strip():
+        return ""
+    if source.strip().lower() == "platform":
+        return ""
+    return render_prompt_section(
+        "shared/skill_source.md", "READ_NOTE", source=source.strip())
+
+
 class ReadSkillTool(BaseTool):
     name = "read_skill"
     risk = "low"  # §2.7：只读
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "按需加载指定 Skill 的完整流程文档。上下文里只有 Skill 目录（名称+摘要），"
-        "执行任务前必须先调用本工具读取对应 Skill 全文，不要凭目录摘要自行推测流程。"
-        "全文超长时，按返回提示传 start（字符偏移）续读；要读某一章节时传 section（章节标题）。"
+        "Skill 正文/章节/附属资源的按需续读工具。选中 Skill 的正文头部已按渐进披露"
+        "预算注入，其余按上下文中的续读指引传 start（字符偏移）续读；读指定章节传 section。"
+        "未选中的 Skill 执行前先调用本工具读取全文，勿凭 Skill 目录摘要自行推测流程。"
         "目录包 Skill 的附属参考资料（主文标注「按需加载」处）传 resource（如 references/…）单独读取。"
     )
 
@@ -321,6 +337,11 @@ class ReadSkillTool(BaseTool):
                 success=False,
                 error=f"未找到 Skill「{wanted}」。可用 Skill：{'、'.join(available) or '无'}",
             )
+        # 批4/ADR-0007（§2.4 防线）：read_skill 输出统一机械中性化，与选中注入
+        # 同源口径（先中性化再切分，章节/续读偏移一致）；不加任何前置包壳，
+        # 仅外部来源附来源标记短句（同源外置）
+        content = skill_sanitize.neutralize_skill_text(content)
+        source_note = _skill_source_note(matched)
         # 目录包资源按需加载（P2-4）：resource 与正文/章节互斥，
         # 只放行资源清单内文件（fail-closed 归 registry.resolve_skill_resource）
         resource = (params.resource or "").strip()
@@ -328,6 +349,21 @@ class ReadSkillTool(BaseTool):
             res_path, res_err = registry.resolve_skill_resource(wanted, resource)
             if res_path is None:
                 return ToolResult(success=False, error=res_err)
+            # 批4：二进制资源禁入文本通道——图/音/视频后缀只返回元数据描述符，
+            # 不按文本读（防二进制垃圾进上下文）
+            media_kind = registry.RESOURCE_MEDIA_SUFFIXES.get(res_path.suffix.lower())
+            if media_kind is not None:
+                try:
+                    size = res_path.stat().st_size
+                except OSError:
+                    size = -1
+                return ToolResult(success=True, data={
+                    "name": matched, "resource": resource,
+                    "media_kind": media_kind, "size": size,
+                    "content": (
+                        f"二进制资源元数据描述符：名称={resource}，类型={media_kind}，"
+                        f"大小={size} 字节（图/音/视频资源按引用消费，不按文本读入）"),
+                })
             try:
                 res_text = res_path.read_text(encoding="utf-8-sig")
             except (OSError, UnicodeDecodeError) as e:
@@ -364,8 +400,9 @@ class ReadSkillTool(BaseTool):
                     success=False,
                     error=f"章节「{section}」已读完（共 {len(sec_text)} 字，无后续内容）")
             body, note = _slice_content(sec_text, start)
+            out = body + note + ("\n" + source_note if source_note else "")
             return ToolResult(success=True, data={
-                "name": matched, "section": hit["title"], "content": body + note,
+                "name": matched, "section": hit["title"], "content": out,
             })
         # 全文按需读：start>0 时按字符偏移续读（复用 read_uploaded_doc 分段先例）
         start = max(0, params.start)
@@ -374,7 +411,8 @@ class ReadSkillTool(BaseTool):
                 success=False,
                 error=f"Skill 已读完（共 {len(content)} 字，无后续内容）")
         body, note = _slice_content(content, start)
-        return ToolResult(success=True, data={"name": matched, "content": body + note})
+        out = body + note + ("\n" + source_note if source_note else "")
+        return ToolResult(success=True, data={"name": matched, "content": out})
 
 
 class ReadProjectDocTool(BaseTool):

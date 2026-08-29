@@ -7,8 +7,8 @@
 3) /api/skills/active-styles 端点：全量替换式清单——非存在 404、
    非 style 拒绝 400、与主流程同 slug 摘除、去重保序、上限截断、空清单全摘；
 4) 主流程激活时若已在风格层清单内则摘除（同一 Skill 不得双占两层）；
-5) 任务#12 批次B：组合注入（build_style_combo）退役——风格层只在
-   Skill 目录段可见（名称提示 + read_skill 按需读取指引），正文零注入。
+5) 批4/ADR-0007：主流程正文头部经渐进披露预算注入；风格层只在
+   Skill 目录段可见（名称提示 + read_skill 按需读取指引），风格层正文零注入。
 """
 import pytest
 from fastapi import FastAPI
@@ -232,8 +232,8 @@ def _ctx(skill_name: str):
 
 
 def test_system_prompt_combo_body_zero_injection():
-    """任务#12 批次B：1 pipeline + N style 层组合激活后，主流程与风格层
-    正文都不进 system prompt；风格层只在目录段以名称可见。"""
+    """批4/ADR-0007：1 pipeline + N style 层组合激活后，主流程正文头部经预算注入，
+    风格层正文零注入（只在目录段以名称可见）。"""
     _seed_combo_skills()
     raw = {
         "keyElements": [], "shots": [], "audioItems": [],
@@ -241,8 +241,8 @@ def test_system_prompt_combo_body_zero_injection():
         "styleSkills": ["风格甲"],
     }
     text = _pb(raw).build_system_prompt(_ctx("流程甲"))
-    # 正文零注入（主流程与风格层都不例外）
-    assert "MARK_PIPELINE_A" not in text
+    # 主流程正文头部预算注入（短正文预算内全文在场）；风格层正文零注入
+    assert "MARK_PIPELINE_A" in text
     assert "MARK_STYLE_A" not in text
     # 目录段：主流程选中提示 + 风格层名称都在，配 read_skill 指引
     assert "当前选中 Skill" in text and "read_skill" in text

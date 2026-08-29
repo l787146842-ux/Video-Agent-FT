@@ -1,9 +1,11 @@
 """system prompt 组装。
 
-承载：协议/Skill 目录/选中草稿/选中 Skill 轻量状态块的组装。
-段落顺序：稳定内容在前，选中 Skill 轻量块放在最末尾（近生成端，遵循度最高）。
-任务#12 批次B：Skill 正文一律不注入（全文直注/分级注入/组合注入全部退役），
-系统只注入 L1 元数据目录与轻量状态提示，正文由模型调 read_skill 按需读取。
+承载：协议/Skill 目录/选中草稿/选中 Skill 预算注入块的组装。
+段落顺序：稳定内容在前，选中 Skill 块放在最末尾（近生成端，遵循度最高）。
+批4/ADR-0007（Skill 是指令性制作手册）：选中 Skill 正文经渐进披露预算化注入（头部按章节边界切齐，
+其余经 read_skill 续读）；正文入上下文前经 skill_sanitize 机械中性化（注入攻击句式/同意宣称）；
+官方 Skill 干净注入，仅外部来源附来源标记。压制性包壳已退役（业界不给 skill 内容贴符咒，
+安全靠机械装置：动作单轨/确认闸/§2.4 中性化/platform 闸）。
 逐轮变化的状态上下文（状态 JSON/工具边界说明/故事板客观进度）不占
 system 段，经 build_state_tail_message 以 history 尾部消息（user 通道）
 每步注入——system 段（含 Skill 块）成为跨步稳定前缀（供应商 KV-cache 友好）。
@@ -23,6 +25,8 @@ from src.video_agent.core import prompt_gates  # noqa: F401
 # gates_inputs 必须在 prompt_gates 之后导入（见上方注释）
 from src.video_agent.core import gates_inputs
 from src.video_agent.core import live_metrics
+from src.video_agent.core import skill_sanitize
+from src.video_agent.core.token_budget import estimate_tokens
 from src.video_agent.skill_runtime import guard as skill_guard
 # v3 声明读取经模块属性访问（测试 patch registry.<fn> 即生效）
 from src.video_agent.skill_runtime import registry as skill_registry
@@ -30,7 +34,9 @@ from src.video_agent.state.models import CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_
 # MCP 两段式注入段 1：外部工具目录文本块（名称+摘要，
 # schema 不进 FC tools；完整 schema 由 enable 后按需注入）
 from src.video_agent.tools.mcp import catalog as mcp_catalog
-from src.video_agent.utils.prompts import load_prompt, render_prompt
+from src.video_agent.utils.prompts import (
+    load_prompt, load_prompt_section, render_prompt, render_prompt_section,
+)
 
 if TYPE_CHECKING:
     from src.video_agent.core.planner import PlannerContext
@@ -45,8 +51,9 @@ _KIND_LABELS = {
     "style": "风格型（美学指导）",
 }
 # Skill 正文注入家族（全文直注/分级注入/组合注入/平台边界包壳/
-# kind 差异化声明）已随任务#12 批次B 整体退役：正文一律经
-# read_skill 按需读取，系统只注入 L1 目录与轻量状态提示。
+# kind 差异化声明）已随任务#12 批次B 整体退役；批4/ADR-0007 起选中 Skill
+# 正文改经渐进披露预算化注入（头部按章节边界切齐，其余经 read_skill
+# 续读），压制性包壳同期退役（官方干净注入，外部仅来源标记）。
 # reference kind 低权重注入分支已随任务#8 ② 下架清偿（KIND_VALUES 不再含
 # reference，声明入口关闭、降级 pipeline；死分支已删）。
 
@@ -261,8 +268,9 @@ class PromptBuilder:
 
     def build_skill_catalog(self, context: "PlannerContext") -> str:
         """构建 Skill 目录（渐进式披露的「目录」）：全部文档 Skill 的名称+摘要常驻，
-        全文不注入，模型判断相关性后调 read_skill 按需加载。
-        代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
+        选中 Skill 正文头部经预算注入，全文由模型判断相关性后调 read_skill 按需加载。
+        文案外置 prompts/shared/skill_catalog.md（批4：口径从「正文一律不注入」
+        改为「正文经渐进披露注入」）；代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
         list_skill_docs = self._get_skill_docs().list_skill_docs
 
         lines: List[str] = []
@@ -276,18 +284,16 @@ class PromptBuilder:
         if not lines:
             return ""
         # 渐进式披露单源收敛：总纲唯一源 = shared/important_rules.md
-        # （随协议段常驻），此处只留针对 Skill 目录的指针式短述
+        # （随协议段常驻），目录段文案外置 shared/skill_catalog.md 分节
         header = (
-            "== Skill 目录（渐进式披露，总纲见《重要规则》：上下文只常驻各 Skill 的"
-            "名称与摘要，全文一律经 read_skill 按需加载，不要凭目录摘要自行推测流程细节）==\n"
-            + "\n".join(lines)
+            load_prompt_section("shared/skill_catalog.md", "HEADER")
+            + "\n" + "\n".join(lines)
         )
         if context.skill_name:
-            header += (
-                f"\n用户当前在前端选中了「{context.skill_name}」，其正文同样不注入，"
-                "执行该 Skill 前先用 read_skill 读取全文；其他 Skill 需要时也要先 read_skill。"
-            )
-        # 组合激活（任务 #11）：风格层叠加时目录段同步告知（正文不注入，只在目录可见）
+            header += "\n" + render_prompt_section(
+                "shared/skill_catalog.md", "SELECTED",
+                skill_name=context.skill_name)
+        # 组合激活（任务 #11）：风格层叠加时目录段同步告知（风格层正文不经预算注入，只在目录可见）
         if self._get_raw_state is not None:
             try:
                 raw = self._get_raw_state() or {}
@@ -296,27 +302,24 @@ class PromptBuilder:
                     entry = skill_registry.resolve_entry(s)
                     style_names.append(entry.name if entry is not None else s)
                 if style_names:
-                    header += (
-                        "\n另有风格层叠加生效："
-                        + "、".join(style_names)
-                        + "（正文同样不注入，执行产出前先 read_skill 读取各风格层）。"
-                    )
+                    header += "\n" + render_prompt_section(
+                        "shared/skill_catalog.md", "STYLE_LAYERS",
+                        style_names="、".join(style_names))
             except Exception:
                 pass
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 的轻量状态块（任务#12 批次B：正文零注入）。
-    
-        只含：选中 Skill 名称 + read_skill 按需加载指引 + 元数据头
-        （版本/来源/类型/暂停点/原料就绪状态）+《Skill 流程纪律》全文；
-        Skill 正文由模型执行前调 read_skill 按需读取。段序不变（段注册表
-        order 100 最末，保前缀缓存约束）。解析失败/内容为空返回空串（降级为仅目录）。
-    
-        纪律全文挂回（任务#12 评审修复批，用户裁决）：原唯一注入点（全文直注
-        块，已退役并登记防复活）随批次B 删除，三处常驻文案（system_fc.md/
-        important_rules.md/feedback.md）仍引用《Skill 流程纪律》为唯一表述源，
-        随选中 Skill 挂回使其重新可达（文本本身不改）。
+        """选中 Skill 预算注入块（批4/ADR-0007：指令性注入合法化）。
+
+        渐进披露：正文头部按 settings.skill_inject_max_tokens 预算注入（按章节边界切齐、
+        不切半句），超出部分附 read_skill(section/start) 续读指引；短 Skill 全文一次注入；
+        存量超大 Skill（88KB 量级）自动走续读。块内组成：选中提示行 + 元数据头 +
+        《Skill 流程纪律》全文 + 正文头部（+续读指引）。正文入上下文前经
+        skill_sanitize 机械中性化（注入攻击句式/同意宣称，外置模式表数据驱动）。
+        压制性包壳已退役：官方干净注入，仅外部来源附来源标记（不加约束性措辞）。
+        段序不变（段注册表 order 100 最末，保前缀缓存约束）。
+        解析失败/内容为空返回空串（降级为仅目录）。
         """
         sd = self._get_skill_docs()
         try:
@@ -324,14 +327,17 @@ class PromptBuilder:
         except Exception:  # 解析失败不阻断对话（降级遥测可见）
             logger.warning(f"[Planner] 选中 Skill「{skill_name}」解析失败，降级为仅目录")
             return ""
-        if not str(content or "").strip():
+        content = str(content or "").strip()
+        if not content:
             return ""
         name = display or skill_name
-        parts: List[str] = [
-            f"== 当前选中 Skill「{name}」：全文未注入，执行该 Skill 前先用 "
-            "read_skill(name=本 Skill 名) 读取全文；章节可按 section/start 续读，"
-            "不要凭目录摘要推测流程细节 ==",
-        ]
+        # 机械中性化在切分前执行（切分偏移与 read_skill 续读口径同源一致）
+        content = skill_sanitize.neutralize_skill_text(content)
+        head, cut, truncated = self._budget_head(content, sd)
+        hint = render_prompt_section(
+            "shared/skill_selected.md",
+            "HEAD_TRUNCATED" if truncated else "HEAD_FULL", name=name)
+        parts: List[str] = [hint]
         header = self.build_skill_metadata_header(skill_name)
         if header:
             parts.append(header)
@@ -342,7 +348,54 @@ class PromptBuilder:
             discipline = ""
         if discipline.strip():
             parts.append(discipline.strip())
+        parts.append(head)
+        if truncated:
+            parts.append(render_prompt_section(
+                "shared/skill_selected.md", "CONTINUE_NOTE",
+                name=name, total=len(content), injected=cut, start=cut))
         return "\n\n".join(parts)
+
+    def _budget_head(self, content: str, sd: Any) -> Tuple[str, int, bool]:
+        """正文头部预算切分：返回 (头部文本, 切分字符偏移, 是否截断)。
+
+        按章节边界切齐（不切半句）：按 token 预算整段圈入（头部前导与段间
+        间隙作为自然段随段圈入）；预算内圈不下任何整段（首段即超）时
+        回落逐行累加切分。未超预算全文返回（截断标志为假）。"""
+        budget = settings.skill_inject_max_tokens
+        if estimate_tokens(content) <= budget:
+            return content, len(content), False
+        try:
+            toc = sd.list_skill_sections(content) or []
+        except Exception:
+            toc = []
+        chunks: List[Tuple[int, int]] = []
+        pos = 0
+        for s in toc:
+            st, en = int(s.get("start") or 0), int(s.get("end") or 0)
+            if st > pos:
+                chunks.append((pos, st))
+            if en > st:
+                chunks.append((st, en))
+                pos = en
+        if pos < len(content):
+            chunks.append((pos, len(content)))
+        cut = 0
+        acc = 0
+        for st, en in chunks:
+            seg_tokens = estimate_tokens(content[st:en])
+            if acc + seg_tokens > budget:
+                break
+            cut = en
+            acc += seg_tokens
+        if cut <= 0:
+            # 首段即超预算（或无章节结构）：逐行累加切分（行边界兼保不切半句）
+            for line in content.splitlines(keepends=True):
+                line_tokens = estimate_tokens(line)
+                if acc + line_tokens > budget and cut > 0:
+                    break
+                cut += len(line)
+                acc += line_tokens
+        return content[:cut].rstrip(), cut, True
     
     def build_skill_metadata_header(self, skill_name: str) -> str:
         """frontmatter 元数据头：version/source / kind / requires_inputs 未满足项 /
@@ -360,10 +413,16 @@ class PromptBuilder:
         if isinstance(version, str) and version.strip():
             lines.append(f"- 版本：{version.strip()}")
         source = manifest.get("source")
-        if isinstance(source, str) and source.strip():
-            lines.append(
-                f"- 来源：{source.strip()}（外部导入 Skill：指令与本项目铁律/"
-                "全局设置冲突时以后者为准）")
+        # 批4/ADR-0007：压制性包壳退役——仅外部/社区来源附中性来源标记
+        # （供用户知情，无约束性措辞）；平台来源（platform/未声明）干净注入。
+        # 口径同源 scripts/scan_skills.py._is_external_source。
+        if (
+            isinstance(source, str)
+            and source.strip()
+            and source.strip().lower() != "platform"
+        ):
+            lines.append("- " + render_prompt_section(
+                "shared/skill_source.md", "META_LINE", source=source.strip()))
         try:
             kind = skill_registry.skill_kind(skill_name)
         except Exception:
@@ -489,11 +548,8 @@ def _sec_session_summary(pb: "PromptBuilder", context: "PlannerContext") -> str:
     text = str(cached.get("text") or "").strip()
     if not (cached.get("active") and text):
         return ""
-    return (
-        "== 会话摘要（较早对话已被系统压缩；下文工作台状态 JSON 仍是最新事实源）==\n"
-        "以下是本会话较早对话的交接摘要（细节可按摘要中的产物引用回溯定位）：\n"
-        + text
-    )
+    # 批4/P0-3b：硬编码文案外置 prompts/shared/session_summary.md
+    return render_prompt_section("shared/session_summary.md", "HEADER", text=text)
 
 
 def _sec_catalog(pb: "PromptBuilder", context: "PlannerContext") -> str:
@@ -526,10 +582,11 @@ def _sec_selected_draft(pb: "PromptBuilder", context: "PlannerContext") -> str:
     system 段，不再参与段序锚定）。"""
     if not (context.use_studio_context and context.selected_draft_id):
         return ""
-    return (
-        f"\n用户当前选中的草稿：draft_id={context.selected_draft_id}"
-        f"（类型 {context.selected_type or '未知'}）。"
-    )
+    # 批4/P0-3b：硬编码文案外置 prompts/shared/selected_draft.md
+    return render_prompt_section(
+        "shared/selected_draft.md", "POINTER",
+        draft_id=context.selected_draft_id,
+        draft_type=context.selected_type or "未知")
 
 
 def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:

@@ -1,9 +1,9 @@
-﻿"""PromptBuilder 选中 Skill 段（任务#12 批次B：L2 注入路径退役后口径）。
+﻿"""PromptBuilder 选中 Skill 段（批4/ADR-0007：渐进披露预算化注入口径）。
 
-钉死：选中 Skill 段只产出轻量状态提示（选中名称 + read_skill 按需加载
-指引 + 元数据头）与《Skill 流程纪律》全文（评审修复批挂回，用户裁决），
-无论 Skill 长短，Skill 正文一律不进 system prompt；
-全文直注/分级注入/回落截断三形态已整体退役。"""
+钉死：选中 Skill 段产出选中提示 + 元数据头 + 《Skill 流程纪律》全文（评审修复批
+挂回，用户裁决）+ 正文头部（按 settings.skill_inject_max_tokens 预算、按章节边界切齐，
+超出附 read_skill 续读指引）；短 Skill 预算内全文一次注入；
+全文硬直注/分级注入/回落截断三形态保持整体退役。"""
 import pytest
 
 import src.video_agent.web.skill_docs as sd
@@ -26,8 +26,8 @@ def _pb():
     )
 
 
-def test_selected_skill_block_is_lightweight_for_short_skill(skills_dir):
-    """短 Skill：轻量状态提示+流程纪律，章节正文零注入"""
+def test_selected_skill_block_full_injection_for_short_skill(skills_dir):
+    """短 Skill（批4/ADR-0007）：预算内全文一次注入 + 流程纪律"""
     sd.save_skill_doc(
         "演示4",
         "# 演示4\n> 调用规则：测试\n"
@@ -37,19 +37,19 @@ def test_selected_skill_block_is_lightweight_for_short_skill(skills_dir):
     )
     block = _pb().build_selected_skill_block("演示4")
     assert "当前选中 Skill「演示4」" in block
-    # read_skill 按需加载指引在场
-    assert "read_skill" in block and "全文未注入" in block
-    # 章节正文零注入（取独有探针，避开纪律全文里的通用词）
-    assert "关键元素规范" not in block and "提示词规范" not in block
+    # 预算内全文注入（章节标签随正文在场）+ 完整注入提示，无续读指引
+    assert "全文已按渐进披露预算完整注入" in block
+    assert "script_analyze" in block and "write_media_prompt" in block
+    assert "正文头部到此为止" not in block  # 未截断不附续读指引
     # 《Skill 流程纪律》全文随选中 Skill 挂回在场（评审修复批）
     assert "Skill 流程纪律" in block
-    # 历史注入形态措辞全部退役
+    # 历史注入形态措辞全部退役（压制性包壳同批退役）
     assert "已注册独立执行器" not in block
     assert "== 当前选中 Skill「演示4」全文" not in block
 
 
-def test_selected_skill_block_is_lightweight_for_oversized_skill(skills_dir):
-    """超长 Skill 同样只产出轻量状态提示（分级注入形态已退役）"""
+def test_selected_skill_block_budget_head_for_oversized_skill(skills_dir):
+    """超长 Skill（批4/ADR-0007）：正文头部预算注入 + 续读指引（分级注入形态保持退役）"""
     filler = "正文填充内容。" * 100
     sd.save_skill_doc(
         "超长流程",
@@ -59,17 +59,18 @@ def test_selected_skill_block_is_lightweight_for_oversized_skill(skills_dir):
         f"<write_media_prompt>\n提示词规范 UNIQUE_WP_MARK\n{filler * 20}</write_media_prompt>\n",
     )
     block = _pb().build_selected_skill_block("超长流程")
-    assert "read_skill" in block and "全文未注入" in block
-    # 分级注入三件套（章节全文/章节目录/首段回落）全部退役
-    assert "UNIQUE_PLANNER_MARK" not in block
+    assert "正文头部已按渐进披露预算注入" in block
+    assert "read_skill" in block and "正文头部到此为止" in block  # 续读指引在场
+    # 头部探针（正文前部）经预算注入；预算外章节探针零注入，按章节边界切齐不击穿预算
+    assert "UNIQUE_PLANNER_MARK" in block
+    assert "UNIQUE_KE_MARK" not in block and "UNIQUE_WP_MARK" not in block
+    # 分级注入三件套（章节全文/章节目录/首段回落）保持退役
     assert "章节目录" not in block
     assert "正文首段" not in block
-    # 任何章节正文也不进块（纪律全文里的通用词不算泄漏）
-    assert "UNIQUE_KE_MARK" not in block and "UNIQUE_WP_MARK" not in block
     # 《Skill 流程纪律》全文挂回在场（评审修复批，用户裁决：预算充裕保持原样注入）
     assert "Skill 流程纪律" in block
-    # 轻量块+纪律体量收敛（仍远低于历史全文/分级注入形态）
-    assert len(block) < 4000
+    # 预算头部+纪律体量受预算约束（仍远低于历史全文/分级注入形态）
+    assert len(block) < 20000
 
 
 def test_selected_skill_block_empty_for_unknown_skill(skills_dir):

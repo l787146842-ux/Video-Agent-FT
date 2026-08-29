@@ -5,8 +5,8 @@
 ① manifest_schema 校验——未声明合法、非法声明 fail-closed；
 ② registry 注册——声明+章节可解析 → skill_section_run 进 available_tools；
 ③ 回落——未声明/解析不到/非法声明者维持现行为（不产生半死通道）；
-④ 接线——执行器退役后含自定义章节的短 Skill 走通用主路径全文直注，
-   章节原文随全文进 prompt（不再有执行器清单/章节标识单独下发形态）。
+④ 接线——执行器退役后含自定义章节的短 Skill 走渐进披露预算注入（批4：
+   短正文预算内全文入 prompt，章节原文随之在场；不再有执行器清单/章节标识单独下发形态）。
 """
 import re
 
@@ -143,12 +143,12 @@ def test_custom_sections_illegal_declaration_fail_hard():
     assert entry is not None and entry.custom_sections
 
 
-# ---------- ④ 接线：轻量选中段与自定义章节（任务#12 批次B） ----------
+# ---------- ④ 接线：选中段与自定义章节（批4/ADR-0007：正文预算注入） ----------
 
 
 def test_selected_block_lightweight_with_custom_sections():
-    """任务#12 批次B：含自定义章节的 Skill 选中后同样只有轻量状态提示；
-    章节原文（含自定义章节）不进 system prompt，由 read_skill 按需读取。"""
+    """批4/ADR-0007：含自定义章节的短 Skill 选中后正文预算内全文注入，
+    章节原文（含自定义章节）随正文在场。"""
     _write("interview2", _DOC_CUSTOM)
     frontmatter.write_manifest(
         "interview2", {"name": "访谈音色", "description": "测试桩",
@@ -159,17 +159,16 @@ def test_selected_block_lightweight_with_custom_sections():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("访谈音色")
-    # 轻量状态提示：名称 + read_skill 指引 + 正文零注入
+    # 选中提示在场；短正文预算内全文注入（自定义章节原文随正文在场）
     assert "== 当前选中 Skill「访谈音色」" in block
-    assert "read_skill" in block
-    assert "tone_design" not in block
-    assert "音色档案" not in block
-    # 执行器清单措辞已随退役删除
+    assert "tone_design" in block
+    assert "音色档案" in block
+    # 执行器清单措辞已随退役删除（压制性包壳同批退役）
     assert "已注册独立执行器" not in block
 
 
 def test_selected_block_lightweight_without_declaration():
-    """未声明 custom_sections 的 Skill：轻量块同样零正文增量。"""
+    """未声明 custom_sections 的 Skill：正文同样经预算注入，无自定义章节额外段。"""
     _write("fixed", "# 固定\n> 调用规则：测试\n"
            "<script_analyze>\n分析\n</script_analyze>\n")
     pb = PromptBuilder(
@@ -179,4 +178,4 @@ def test_selected_block_lightweight_without_declaration():
     )
     block = pb.build_selected_skill_block("固定")
     assert "== 自定义章节" not in block
-    assert "分析" not in block
+    assert "分析" in block  # 短正文预算内全文注入

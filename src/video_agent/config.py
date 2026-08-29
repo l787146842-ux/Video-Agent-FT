@@ -133,6 +133,11 @@ class Settings:
     max_doc_chars: int = field(default_factory=lambda: _env_int("MAX_DOC_CHARS", 30000))
     max_attachments: int = field(default_factory=lambda: _env_int("MAX_ATTACHMENTS", 5))
 
+    # 选中 Skill 正文预算化注入（批4/ADR-0007 渐进披露）：选中 Skill 正文头部
+    # 按该 token 预算注入（按章节边界切齐），其余经 read_skill(section/start)
+    # 按需续读；存量超大 Skill（如 88KB）自动走续读路径，不击穿上下文预算。
+    skill_inject_max_tokens: int = field(default_factory=lambda: _env_int("SKILL_INJECT_MAX_TOKENS", 5000))
+
     # 多模态模型单次请求可注入的图片上限（多数 vision 模型限制 4~10 张，
     # 超限会直接报错；超出部分降级为文本清单，LLM 仍可知晓其存在）
     max_llm_images: int = field(default_factory=lambda: _env_int("MAX_LLM_IMAGES", 9))

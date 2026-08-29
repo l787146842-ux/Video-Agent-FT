@@ -78,8 +78,8 @@ def test_prompt_draft_section_merges_write_media_prompt_and_write_the_prompt():
 
 def test_selected_block_lightweight_keeps_discipline_pointer():
     """回归（7777 事故）：防虚报语义随《Skill 流程纪律》全文到达模型——
-    任务#12 批次B 后正文零注入，纪律全文经评审修复批（用户裁决）挂回选中
-    Skill 轻量块；Skill 正文仍零注入，纪律单家仍是 skill_discipline.md。"""
+    纪律全文经评审修复批（用户裁决）挂回选中 Skill 块；批4/ADR-0007：
+    Skill 正文头部经预算注入（短桩预算内全文），纪律单家仍是 skill_discipline.md。"""
     from src.video_agent.utils.prompts import load_prompt
 
     _write(
@@ -93,11 +93,9 @@ def test_selected_block_lightweight_keeps_discipline_pointer():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("演示防虚报")
-    # 防虚报条款（纪律第 9 条）随轻量块挂回在场，但不夹带 Skill 正文
-    # （正文探针用独有标记：纪律第 7 条含"关键元素"字样，不能再用通用词）
+    # 防虚报条款（纪律第 9 条）随选中块挂回在场；正文头部同经预算注入在场（批4）
     assert "必须真的调用" in block and "才可声称完成" in block
-    assert "UNIQUE_BODY_MARK_FX" not in block
-    assert "read_skill" in block
+    assert "UNIQUE_BODY_MARK_FX" in block
     # 防虚报条款外置单家仍在场（宪法 Rule 6 单一事实源）
     discipline = load_prompt("planner/skill_discipline.md")
     assert "必须真的调用" in discipline and "才可声称完成" in discipline
@@ -170,10 +168,9 @@ def test_add_draft_label_smart_matching(tmp_path):
     assert len(kes["[Element_Dual_Vector_Foil] 二向箔"]["drafts"]) == 1
 
 
-def test_selected_block_lightweight_flow_via_read_skill():
-    """任务#12 批次B：<planner> 流程不再随全文直注（执行器「流程基线」
-    专属段与全文直注均已退役）；流程可见性由 read_skill 按需读取承接，
-    轻量块携带读取指引。"""
+def test_selected_block_flow_body_budget_injection():
+    """批4/ADR-0007：<planner> 流程正文经渐进披露预算注入（短桩预算内全文）；
+    执行器「流程基线」专属段与全文硬注入形态仍保持退役。"""
     _write(
         "flow-skill",
         "# 流程\n> 调用规则：测试\n"
@@ -187,10 +184,9 @@ def test_selected_block_lightweight_flow_via_read_skill():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("流程")
-    # 正文零注入：阶段逻辑不进块；读取指引在场
-    assert "阶段逻辑" not in block
-    assert "script_analyze" not in block
-    assert "read_skill" in block
+    # 正文头部预算注入：阶段逻辑在场；执行器形态专属段保持退役
+    assert "阶段逻辑" in block
+    assert "script_analyze" in block
     assert "== 当前 Skill 的流程基线" not in block  # 执行器形态专属段已退役
 
 
