@@ -237,25 +237,24 @@ def test_metadata_header_no_raw_state_skips_input_probe(tmp_skills):
 
 @pytest.mark.allow_degradation
 def test_catalog_list_failure_degrades_to_empty(tmp_skills, monkeypatch):
-    """目录读取失败：返空串 + 降级遥测可见（不阻断对话）"""
+    """目录读取失败：返空串 + 降级遥测可见（不阻断对话）。
+    M3 批2：目录段数据源 = 注册表门户，降级分支改由 loadable_entries 抛错触发"""
     def boom():
-        raise RuntimeError("docs unavailable")
-    monkeypatch.setattr(sd, "list_skill_docs", boom)
+        raise RuntimeError("registry unavailable")
+    monkeypatch.setattr(registry, "loadable_entries", boom)
     ctx = PlannerContext()
     ctx.use_studio_context = True
     assert _pb_raw({}).build_skill_catalog(ctx) == ""
 
 
-def test_catalog_entry_fallbacks_slug_and_default_desc(tmp_skills):
-    """目录行兜底：无 name 回落 slug；空摘要回落占位文案"""
-    sd.save_skill_doc("兜底桩", "# 兜底桩\n正文")
+def test_catalog_entry_fallbacks_slug_and_default_desc(tmp_skills, monkeypatch):
+    """目录行防御性兜底：空摘要回落占位文案（M3 批2 后注册派生 name 恒有值、
+    description 注册期必填，本分支只剩防御面——直接钉门户返回形状）"""
+    from types import SimpleNamespace
+
+    stub = [SimpleNamespace(slug="slug-only", name="slug-only", manifest={})]
+    monkeypatch.setattr(registry, "loadable_entries", lambda: stub)
     ctx = PlannerContext()
     ctx.use_studio_context = True
-
-    class _StubDocs:
-        def list_skill_docs(self):
-            return [{"slug": "slug-only", "description": "  "}]
-
-    pb = PromptBuilder(lambda: _StubDocs(), lambda: "proj", lambda: {})
-    block = pb.build_skill_catalog(ctx)
+    block = PromptBuilder(lambda: sd, lambda: "proj", lambda: {}).build_skill_catalog(ctx)
     assert "slug-only：未提供摘要" in block

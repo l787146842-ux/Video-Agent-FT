@@ -23,7 +23,10 @@ FIXTURE = pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "prompt_ass
 
 
 class _StubSkillDocs:
-    """确定性 Skill 文档提供者（与 data/skills 隔离，快照不受内容清扫影响）"""
+    """确定性 Skill 文档提供者（与 data/skills 隔离，快照不受内容清扫影响）。
+    M3 批2 后目录段改由注册表门户派生，本 stub 仅剩 resolve_skill_content/
+    list_skill_sections 消费面（选中段正文解析）；目录段数据见
+    snapshot_skills 夹具（隔离目录 + 真实注册，内容同本 stub）。"""
 
     def list_skill_docs(self):
         return [
@@ -41,6 +44,33 @@ class _StubSkillDocs:
 
     def list_skill_sections(self, content):
         return []
+
+
+@pytest.fixture
+def snapshot_skills(tmp_path, monkeypatch):
+    """M3 批2：目录段注册派生的快照隔离环境——两个桩包写入临时目录并真实注册，
+    名称/摘要与 _StubSkillDocs 一致（golden 目录段字节不变）；与镜像/生产目录隔离，
+    快照不受其它测试镜内增减影响。"""
+    from src.video_agent.web import skill_docs as sd
+    from src.video_agent.skill_runtime import registry as reg
+
+    d = tmp_path / "skills"
+    d.mkdir()
+    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
+    reg.reset_registry()
+    sd.save_skill_doc(
+        "snapshot-a",
+        "---\nname: 快照Skill-A\ndescription: 摘要甲\n---\n"
+        "## 流程规划\n第一步：撰写规格。\n第二步：搭建故事板。",
+    )
+    sd.save_skill_doc(
+        "snapshot-b",
+        "---\nname: 快照Skill-B\ndescription: 摘要乙\n---\n"
+        "# 快照Skill-B\n正文乙",
+    )
+    reg.sync_all(force=True)
+    yield d
+    reg.reset_registry()
 
 
 def build_snapshot_scenarios():
@@ -119,10 +149,11 @@ def build_snapshot_scenarios():
     return out
 
 
-def test_assembly_snapshot_matches_golden():
+def test_assembly_snapshot_matches_golden(snapshot_skills):
     """组装输出逐字节与 golden 一致（P2-3 段通道手术后 golden 已同批重采：
     system 场景不再含状态上下文，新增尾部消息场景；批4/ADR-0007 重锁：
-    选中 Skill 正文预算注入入 system，旧压制性包壳退役）"""
+    选中 Skill 正文预算注入入 system，旧压制性包壳退役；M3 批2：目录段改注册派生，
+    隔离夹具内容与旧 stub 一致，golden 零漂移无需重采）"""
     assert FIXTURE.exists(), "golden 缺失：须先在改造前采集基线"
     golden = json.loads(FIXTURE.read_text(encoding="utf-8"))
     actual = build_snapshot_scenarios()

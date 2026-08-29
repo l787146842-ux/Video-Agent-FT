@@ -127,8 +127,9 @@ def _resolve_skill_name_for_injection(
     选中项为空但消息携带了 Skill 引用块（skill_slug）时，按 slug 解析出 Skill 名称，
     保证「随消息发送过的 Skill 必定完成绑定」；两者皆空时先按消息文本匹配已注册 Skill
     （直接发 Skill 名也要能绑定），再回退项目 usedSkills 倒序。
-    可加载性门户（M2，2026-08-30 裁决停用=真停用）：选中名/slug 支路命中后过门户，
-    被拒（停用）则滑落下一支路（文本匹配/兜底/空）；未注册选中名维持现状原样返回。
+    可加载性门户（M2，2026-08-30 裁决停用=真停用；M3 批2：注册表=加载唯一门户）：
+    选中名/slug 支路命中后过门户，被拒（停用/被拒注册）则滑落下一支路（文本匹配/兜底/空）；
+    磁盘根本不存在的选中名维持现状原样返回（不拦存量项目）。
     绑定只驱动轻量状态块（目录+状态提示+流程纪律）；Skill 正文一律由模型调 read_skill 按需读取。
     """
     from src.video_agent.skill_runtime.registry import (
@@ -142,8 +143,19 @@ def _resolve_skill_name_for_injection(
         if resolve_loadable_entry(skill_name) is not None:
             return skill_name
         if resolve_entry(skill_name) is None:
-            return skill_name  # 未注册：维持现状（不拦存量项目）
-        # 已停用：滑落下一支路（M2 停用=真停用）
+            # 磁盘存在同名包但被拒注册（坏 frontmatter 等）：不可加载（M3），滑落；
+            # 磁盘根本不存在：维持现状原样返回（不拦存量项目）
+            try:
+                from src.video_agent.web import skill_docs as sd
+
+                on_disk = any(
+                    skill_name in (str(d.get("name") or ""), str(d.get("slug") or ""))
+                    for d in sd.list_skill_docs())
+            except Exception:
+                on_disk = False
+            if not on_disk:
+                return skill_name
+        # 已停用/被拒注册：滑落下一支路
     if skill_slug:
         if resolve_loadable_entry(skill_slug) is not None:
             try:

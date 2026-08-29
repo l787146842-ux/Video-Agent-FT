@@ -66,24 +66,27 @@ async def get_agent_config():
 
     代码形态 Skill（内置类注册器）不进下拉（注册器整包已移除），
     防用户删过的「编剧/分镜师/制片 Agent」复活。
+
+    M3 批2（2026-08-30 裁决：注册表=加载唯一门户）：对话栏从注册条目派生，
+    与 AI 可用性对齐——被拒注册包（坏 frontmatter/版本锁不符）不出现在对话栏；
+    修复入口留在工作台 /api/skills/docs（磁盘全量，不动）。
     """
-    doc_skills = [
-        {
-            "id": d["id"],
-            "name": d["name"],
-            "description": d["description"],
-            "system_prompt": d["content"],
+    doc_skills = []
+    for e in skill_registry.loadable_entries():
+        doc_skills.append({
+            "id": f"doc:{e.slug}",
+            "name": e.name,
+            "description": str((e.manifest or {}).get("description") or "").strip(),
+            "system_prompt": e.content,
             "source": "doc",
-            "slug": d["slug"],
+            "slug": e.slug,
             # kind 目录口径（任务 #11）：前端据此区分主流程候选与可叠加风格层；
             # 未声明 kind 的存量 Skill 下发空串（零预设，不硬归类）
-            "kind": skill_registry.skill_kind(d["name"]),
+            "kind": skill_registry.skill_kind(e.name),
             # 欠账显性化——规划级执行器名单随契约下发，
             # 前端据实标注（不硬编码工具名）
-            "planning_executors": _planning_executors_of(d["name"]),
-        }
-        for d in list_skill_docs()
-    ]
+            "planning_executors": _planning_executors_of(e.name),
+        })
     return {"skills": doc_skills}
 
 

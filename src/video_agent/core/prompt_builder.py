@@ -270,18 +270,15 @@ class PromptBuilder:
         批5（对齐 Flova 卡片开关）：开关过滤（settings.skills_disabled 里的 slug 不进目录）
         + 条目预算（settings.skill_catalog_max_entries，超预算按项目 usedSkills 最近使用序
         截断，尾部附「另有 N 个已启用 Skill 未列出」指针行）。
+        M3 批2（2026-08-30 裁决：注册表=加载唯一门户）：数据源从磁盘 list_skill_docs 切为
+        registry.loadable_entries（发现→注册→加载；被拒注册包不进目录），description 取
+        frontmatter manifest（与注册同权威源）；recency 排序/预算截断/降级遥测语义不变。
         文案外置 prompts/shared/skill_catalog.md；代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
-        list_skill_docs = self._get_skill_docs().list_skill_docs
-
-        docs: List[Dict[str, Any]] = []
+        entries: List[Any] = []
         try:
-            docs = list(list_skill_docs())
-        except Exception:  # 文档目录读取失败不阻断对话（降级遥测可见）
+            entries = list(skill_registry.loadable_entries())
+        except Exception:  # 注册表读取失败不阻断对话（降级遥测可见）
             live_metrics.record_degradation("prompt_builder.catalog")
-        # 开关过滤（批5；M2 门户收口：过滤谓词唯一源 = registry.disabled_slugs，
-        # 活读开关；被停用 slug 不进目录，默认空 = 全启用，存量行为不变）
-        disabled = skill_registry.disabled_slugs()
-        docs = [d for d in docs if str(d.get("slug") or "") not in disabled]
         # 条目预算（批5）：超预算按最近使用序截断——项目 usedSkills 登记过的 slug
         # 按使用序从近到远在前，其余保持原序（稳定排序；无使用记录时目录顺序不变）
         recency: Dict[str, int] = {}
@@ -291,17 +288,17 @@ class PromptBuilder:
                 recency = {str(s or ""): i for i, s in enumerate(used)}
             except Exception:
                 recency = {}
-        docs.sort(key=lambda d: -recency.get(str(d.get("slug") or ""), -1))
+        entries.sort(key=lambda e: -recency.get(e.slug, -1))
         max_entries = int(settings.skill_catalog_max_entries or 0)
         omitted = 0
-        if max_entries > 0 and len(docs) > max_entries:
-            omitted = len(docs) - max_entries
-            docs = docs[:max_entries]
+        if max_entries > 0 and len(entries) > max_entries:
+            omitted = len(entries) - max_entries
+            entries = entries[:max_entries]
 
         lines: List[str] = []
-        for d in docs:
-            name = d.get("name") or d.get("slug") or ""
-            desc = (d.get("description") or "").strip() or "未提供摘要"
+        for e in entries:
+            name = e.name or e.slug or ""
+            desc = str((e.manifest or {}).get("description") or "").strip() or "未提供摘要"
             lines.append(f"- {name}：{desc}")
         if not lines:
             return ""

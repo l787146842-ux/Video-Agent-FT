@@ -340,17 +340,24 @@ class ReadSkillTool(BaseTool):
             if entry is not None and str(entry.content or "").strip():
                 matched, content = entry.name, entry.content
         if not content:
+            # 拒载文案外置 shared/skill_load_reject.md（M3 批2）：三类语义区分——
+            # 已停用（开关注销）/ 未注册被拒（磁盘存在但注册失败，附工作台修复指引）/ 未找到
             if registry.resolve_entry(wanted) is not None:
-                # 已注册但被开关停用：报错区分「已停用」与「不存在」
-                return ToolResult(
-                    success=False,
-                    error=f"Skill「{wanted}」已停用，不可读取（停用=真停用）",
-                )
+                return ToolResult(success=False, error=render_prompt_section(
+                    "shared/skill_load_reject.md", "DISABLED", name=wanted))
+            # 磁盘存在同名包但未注册/被拒注册（坏 frontmatter 等）：发现→注册→
+            # 加载，未过注册不得加载；工作台 /api/skills/docs 仍可见供修复
+            try:
+                disk_docs = sd.list_skill_docs()
+            except Exception:
+                disk_docs = []
+            if _fuzzy_pick(disk_docs, wanted, ["name", "slug"]) is not None:
+                return ToolResult(success=False, error=render_prompt_section(
+                    "shared/skill_load_reject.md", "UNREGISTERED", name=wanted))
             available = [e.name for e in registry.loadable_entries()]
-            return ToolResult(
-                success=False,
-                error=f"未找到 Skill「{wanted}」。可用 Skill：{'、'.join(available) or '无'}",
-            )
+            return ToolResult(success=False, error=render_prompt_section(
+                "shared/skill_load_reject.md", "NOT_FOUND",
+                name=wanted, available="、".join(available) or "无"))
         # 批4/ADR-0007：read_skill 直接输出正文，不加任何前置包壳，
         # 仅外部来源附来源标记短句（同源外置）
         source_note = _skill_source_note(matched)
