@@ -5,11 +5,11 @@
 拆分产物——附属参考内容拆至同名目录 references/ 下）。
 口径钉死：
 ① registry 包形态识别（package_root/resource_manifest）；
-② resolve_skill_resource：清单内放行 / 清单外与路径穿越一律拒绝 /
-   单文件形态拒绝（fail-closed）；
+② resolve_skill_resource：清单内放行 / 清单外与路径穿越一律拒绝（fail-closed）；
 ③ read_skill 工具端到端：resource 参数返回资源全文、拒绝语义一致；
 ④ scan_skills.package_resource_warn_probe：真实包零告警、悬空指针/
    孤儿资源命中（诊断性质，不阻断退出码）。
+（原单文件形态对照用例随批3 单一包形态收敛退役。）
 """
 import importlib.util
 import pathlib
@@ -30,7 +30,7 @@ _spec.loader.exec_module(scan_skills)
 PKG = "水墨风格武侠短片"
 REF1 = "references/五行特效与爆发态提示词库.md"
 REF2 = "references/武打剪辑律动与多轨音效设计参考.md"
-SINGLE = "李安美学风格短片"  # 存量单文件形态对照
+NO_REF = "李安美学风格短片"  # 无附属资源的目录包对照
 
 
 # ---------- ① 包形态识别 ----------
@@ -44,10 +44,10 @@ def test_package_entry_shape():
     assert set(entry.resource_manifest) == {REF1, REF2}
 
 
-def test_single_file_entry_has_no_package_root():
-    entry = registry.resolve_entry(SINGLE)
+def test_no_reference_package_has_empty_manifest():
+    entry = registry.resolve_entry(NO_REF)
     assert entry is not None
-    assert entry.package_root is None
+    assert entry.package_root is not None
     assert entry.resource_manifest == []
 
 
@@ -68,16 +68,16 @@ def test_resolve_resource_outside_manifest_rejected():
 
 
 def test_resolve_resource_traversal_rejected():
-    for bad in ("../README.md", "references/../水墨风格武侠短片.md", ".."):
+    for bad in ("../README.md", "references/../SKILL.md", ".."):
         path, err = registry.resolve_skill_resource(PKG, bad)
         assert path is None, bad
         assert "非法" in err, bad
 
 
-def test_resolve_resource_single_file_rejected():
-    path, err = registry.resolve_skill_resource(SINGLE, REF1)
+def test_resolve_resource_absent_package_rejected():
+    path, err = registry.resolve_skill_resource(NO_REF, REF1)
     assert path is None
-    assert "单文件" in err
+    assert "资源清单" in err
 
 
 def test_resource_manifest_excludes_symlinks(tmp_path, monkeypatch):
@@ -127,19 +127,19 @@ async def test_read_skill_resource_denied_outside_manifest():
     assert "fail-closed" in res.error
 
 
-async def test_read_skill_resource_denied_single_file():
+async def test_read_skill_resource_denied_absent_package():
     res = await ReadSkillTool().aexecute(
-        ReadSkillInput(name=SINGLE, resource=REF1))
+        ReadSkillInput(name=NO_REF, resource=REF1))
     assert not res.success
-    assert "单文件" in res.error
+    assert "资源清单" in res.error
 
 
 # ---------- ④ scan 资源探针（WARN，诊断性质） ----------
 
 
 def _real_doc(slug: str) -> pathlib.Path:
-    single = SKILLS_DIR / f"{slug}.md"
-    return single if single.exists() else SKILLS_DIR / slug / f"{slug}.md"
+    # 批3 单一包形态：只认 <slug>/SKILL.md
+    return SKILLS_DIR / slug / "SKILL.md"
 
 
 def test_scan_probe_real_package_clean():
@@ -150,12 +150,12 @@ def test_scan_probe_real_package_clean():
     content = f.read_text(encoding="utf-8")
     manifest, body, _err = frontmatter.split_frontmatter(content)
     assert scan_skills.package_resource_warn_probe(PKG, f, body, manifest) == []
-    # 单文件存量无指针无 scripts → 同样零告警（不误报）
-    f2 = _real_doc(SINGLE)
+    # 无附属资源的目录包无指针无 scripts → 同样零告警（不误报）
+    f2 = _real_doc(NO_REF)
     content2 = f2.read_text(encoding="utf-8")
     manifest2, body2, _err2 = frontmatter.split_frontmatter(content2)
     assert scan_skills.package_resource_warn_probe(
-        SINGLE, f2, body2, manifest2) == []
+        NO_REF, f2, body2, manifest2) == []
 
 
 def test_scan_probe_dangling_pointer_and_orphan(tmp_path):

@@ -10,7 +10,7 @@ step_short_titles：步骤号来源 flow.steps 通道已废除（声明即 fail-
 默认 dry-run（只报告命中，不落盘）；--apply 真删。写入复用 frontmatter
 render 链（yaml.safe_dump，与 migrate_manifests_to_frontmatter 同口径），
 只动 frontmatter 块，正文逐字不动；flow 清空后整键移除。
---dir 指定目录（测试/演练用；默认 data/skills，兼容单文件与目录包形态）。
+--dir 指定目录（测试/演练用；默认 data/skills，单一包形态 <slug>/SKILL.md）。
 
 用法（已归档于 scripts/archive/，root = parents[2]）：
     python scripts/archive/migrate_zombie_step_keys.py            # dry-run
@@ -31,11 +31,11 @@ ZOMBIE_KEYS = ("stage_executors", "step_done_conditions", "step_short_titles")
 
 
 def iter_skill_docs(d: Path) -> List[Path]:
-    """单文件 <slug>.md 与目录包 <slug>/<slug>.md 双形态。"""
-    files = sorted(d.glob("*.md"))
+    """单一包形态（批3）：只认 <slug>/SKILL.md 目录包。"""
+    files = []
     for p in sorted(d.iterdir()):
-        pkg = p / f"{p.name}.md"
-        if p.is_dir() and pkg.exists():
+        pkg = p / "SKILL.md"
+        if p.is_dir() and not p.name.startswith(".") and pkg.exists():
             files.append(pkg)
     return files
 

@@ -53,7 +53,8 @@ def test_registry_manifest_from_frontmatter():
     """registry 声明唯一源 = 文档头部 frontmatter；注入正文已剥离声明块。"""
     from src.video_agent.skill_runtime import registry
 
-    f = sd.SKILL_DOCS_DIR / "frontmatter测试桩.md"
+    # 批3 单一包形态：<slug>/SKILL.md
+    f = sd.SKILL_DOCS_DIR / "frontmatter测试桩" / "SKILL.md"
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(_DOC_WITH_FRONTMATTER, encoding="utf-8")
     entry = registry._load_entry("frontmatter测试桩")
@@ -68,7 +69,7 @@ def test_registry_zero_declaration():
     """无 frontmatter = 零声明合法（引擎零预设）。"""
     from src.video_agent.skill_runtime import registry
 
-    f = sd.SKILL_DOCS_DIR / "零声明桩.md"
+    f = sd.SKILL_DOCS_DIR / "零声明桩" / "SKILL.md"
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text("# 零声明\n正文", encoding="utf-8")
     entry = registry._load_entry("零声明桩")
@@ -87,7 +88,8 @@ def test_deprecated_flow_keys_fail_hard():
 def test_parse_error_sentinel_fails_validation(tmp_path):
     """YAML 解析失败不静默：load_manifest 返回 _parse_error 哨兵，
     体检转为问题报出（注册期 fail-hard）。"""
-    f = tmp_path / "坏声明桩.md"
+    f = tmp_path / "坏声明桩" / "SKILL.md"
+    f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text("---\nflow: [未闭合\n---\n正文", encoding="utf-8")
     data = frontmatter.load_manifest("坏声明桩", directory=tmp_path)
     assert data and "_parse_error" in data
@@ -99,7 +101,8 @@ def test_load_manifest_decode_error_returns_parse_error(tmp_path):
     """P1-1（正确性审查）：非 UTF-8 回存的 md 不得击穿 fail-closed——
     UnicodeDecodeError 捕获后走 _parse_error 哨兵（拒注册/拒入），
     而不是返回 None 被当成「零声明合法」静默放行。"""
-    f = tmp_path / "坏编码桩.md"
+    f = tmp_path / "坏编码桩" / "SKILL.md"
+    f.parent.mkdir(parents=True, exist_ok=True)
     # UTF-16 字节序列（记事本另存形态）：utf-8 解码必抛 UnicodeDecodeError
     f.write_bytes("---\nflow: {}\n---\n正文".encode("utf-16"))
     data = frontmatter.load_manifest("坏编码桩", directory=tmp_path)
@@ -116,7 +119,8 @@ def test_bom_frontmatter_detected(tmp_path):
     assert err == "" and declaration == {"flow": {"spec_gate": True}}
     assert body.startswith("# A")
     # 落盘带 BOM 字节：load_manifest 照常读到声明
-    f = tmp_path / "BOM桩.md"
+    f = tmp_path / "BOM桩" / "SKILL.md"
+    f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(content, encoding="utf-8")
     assert frontmatter.load_manifest("BOM桩", directory=tmp_path) == {
         "flow": {"spec_gate": True}}
@@ -147,13 +151,12 @@ def test_unknown_gate_key_rejected():
 
 def test_all_product_frontmatters_validate_clean():
     """全量盘点钉死：产品 Skill 的 frontmatter 体检零告警。
-    双形态枚举（与 scan_skills._iter_skill_docs 同口径）：单文件 *.md +
-    目录包 <slug>/<slug>.md，目录包主文档不漏入体检。"""
-    slugs = [f.stem for f in sorted(sd.SKILL_DOCS_DIR.glob("*.md"))]
-    slugs += sorted(
+    单一包形态枚举（与 scan_skills._iter_skill_docs 同口径）：
+    <slug>/SKILL.md 目录包主文档不漏入体检。"""
+    slugs = sorted(
         p.name for p in sd.SKILL_DOCS_DIR.iterdir()
         if p.is_dir() and not p.name.startswith(".")
-        and (p / f"{p.name}.md").exists()
+        and (p / "SKILL.md").exists()
     )
     for slug in slugs:
         issues = validate_manifest_data(frontmatter.load_manifest(slug))

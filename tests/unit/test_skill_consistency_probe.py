@@ -105,7 +105,7 @@ def test_probe_real_skills_all_consistent():
 
     skills_dir = ROOT / "data" / "skills"
     total = 0
-    # P2-4：双形态遍历（单文件 + 目录包 <slug>/<slug>.md）
+    # 批3 单一包形态遍历：<slug>/SKILL.md 目录包（_iter 同口径）
     for stem, f in scan_skills._iter_skill_docs(skills_dir):
         content = f.read_text(encoding="utf-8")
         manifest = frontmatter.load_manifest(stem, directory=skills_dir)

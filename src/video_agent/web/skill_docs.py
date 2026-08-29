@@ -5,9 +5,9 @@ Skill 文档化存储层。
 存放在 data/skills/。渐进式披露：上下文只注入 Skill 目录（名称+摘要），
 全文由模型调 read_skill 按需加载——"流程即数据"。
 
-插件包约定：单文件 <slug>.md 与目录包 <slug>/<slug>.md
-（包内其余文件为资源）双形态兼容；平台声明与正文合一，写在文档头部
-YAML frontmatter（`---` 包裹块）。
+单一包形态（Agent Skills 开放标准）：每个 Skill = <slug>/SKILL.md
+目录包（包内其余文件为资源）；平台声明与正文合一，写在文档头部
+YAML frontmatter（`---` 包裹块，name/description 注册期必填）。
 
 文档格式约定：
     ---
@@ -191,6 +191,8 @@ def list_skill_sections(content: str) -> List[Dict[str, Any]]:
 
 DEFAULT_SKILL_SLUG = "script-to-video"
 DEFAULT_SKILL_DOC = """---
+name: 剧本生视频（需上传剧本）
+description: 用户上传剧本/故事文档以生成视频；关键阶段暂停供确认，生成均经用户明确指令执行。
 schema_version: 3
 version: "1.0"
 gates:
@@ -241,15 +243,20 @@ pause:
 
 
 def ensure_default_skill_docs() -> None:
-    """启动时确保至少存在默认 Skill 文档"""
+    """启动时确保至少存在默认 Skill 文档（单一包形态 <slug>/SKILL.md）"""
     SKILL_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    has_any = any(SKILL_DOCS_DIR.glob("*.md")) or any(
+    has_any = any(
         p.is_dir() and not p.name.startswith(".")
-        and (p / f"{p.name}.md").exists() for p in SKILL_DOCS_DIR.iterdir()
+        and (p / frontmatter.SKILL_DOC_NAME).exists()
+        for p in SKILL_DOCS_DIR.iterdir()
     )
     if not has_any:
-        atomic_write_text(SKILL_DOCS_DIR / f"{DEFAULT_SKILL_SLUG}.md", DEFAULT_SKILL_DOC)
-        logger.info(f"[SkillDocs] 已生成默认 Skill 文档: {DEFAULT_SKILL_SLUG}.md")
+        target = SKILL_DOCS_DIR / DEFAULT_SKILL_SLUG / frontmatter.SKILL_DOC_NAME
+        target.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(target, DEFAULT_SKILL_DOC)
+        logger.info(
+            f"[SkillDocs] 已生成默认 Skill 文档: "
+            f"{DEFAULT_SKILL_SLUG}/{frontmatter.SKILL_DOC_NAME}")
     _refresh_runtime_registry()
 
 
@@ -300,34 +307,24 @@ def _validate_slug(slug: str) -> str:
 
 
 def skill_doc_path(slug: str) -> Optional[Path]:
-    """Skill 主文档路径解析（插件包约定双形态）：单文件优先，
-    目录包 <slug>/<slug>.md 次之；均不存在返回 None。"""
-    f = SKILL_DOCS_DIR / f"{slug}.md"
-    if f.exists():
-        return f
-    pkg = SKILL_DOCS_DIR / slug / f"{slug}.md"
-    if pkg.exists():
-        return pkg
-    return None
+    """Skill 主文档路径解析（单一包形态，与 frontmatter.resolve_doc_path
+    同口径）：只认 <slug>/SKILL.md；不存在返回 None。"""
+    f = SKILL_DOCS_DIR / slug / frontmatter.SKILL_DOC_NAME
+    return f if f.exists() else None
 
 
 def list_skill_docs() -> List[Dict[str, Any]]:
     ensure_default_skill_docs()
     docs = []
-    for f in sorted(SKILL_DOCS_DIR.glob("*.md")):
-        try:
-            # utf-8-sig：容忍 Windows 记事本回存的 BOM（写入侧保持 utf-8）
-            docs.append(_parse_doc(f.stem, f.read_text(encoding="utf-8-sig")))
-        except OSError as e:
-            logger.warning(f"[SkillDocs] 读取失败 {f.name}: {e}")
-    # 目录包形态（插件包约定）：主文档 = 包内同名 md，包内其余文件为资源
+    # 单一包形态：每个 Skill = <slug>/SKILL.md 目录包
     for p in sorted(SKILL_DOCS_DIR.iterdir(), key=lambda x: x.name):
         if not p.is_dir() or p.name.startswith("."):
             continue
-        main = p / f"{p.name}.md"
+        main = p / frontmatter.SKILL_DOC_NAME
         if not main.exists():
             continue
         try:
+            # utf-8-sig：容忍 Windows 记事本回存的 BOM（写入侧保持 utf-8）
             docs.append(_parse_doc(p.name, main.read_text(encoding="utf-8-sig")))
         except OSError as e:
             logger.warning(f"[SkillDocs] 读取失败 {main}: {e}")
@@ -347,8 +344,9 @@ def save_skill_doc(slug: str, content: str) -> Dict[str, Any]:
     if not content.strip():
         raise ValueError("Skill 文档内容不能为空")
     SKILL_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    # 已存在的目录包写回包内主文档；新建落单文件形态
-    target = skill_doc_path(slug) or (SKILL_DOCS_DIR / f"{slug}.md")
+    # 单一包形态：主文档 = <slug>/SKILL.md（新建/写回同口径）
+    target = skill_doc_path(slug) or (
+        SKILL_DOCS_DIR / slug / frontmatter.SKILL_DOC_NAME)
     # 导入来源标记（插件包约定）：新建文档且含外来平台分析类章节 tag、
     # frontmatter 又未声明 source 时补 source="用户导入"（元数据头随注入
     # 下发信任提示）；本地词汇表文档与已有文档编辑不动，保证保存逐字节忠实
@@ -367,7 +365,8 @@ def save_skill_doc(slug: str, content: str) -> Dict[str, Any]:
     if target.exists():
         _backup_skill_doc(slug, target)
     atomic_write_text(target, content)
-    logger.info(f"[SkillDocs] 已保存 Skill 文档: {slug}.md")
+    logger.info(
+        f"[SkillDocs] 已保存 Skill 文档: {slug}/{frontmatter.SKILL_DOC_NAME}")
     try:
         from src.video_agent.skill_runtime.registry import refresh_skill
 
@@ -447,7 +446,7 @@ def list_skill_doc_history(slug: str) -> List[Dict[str, Any]]:
 
 
 def delete_skill_doc(slug: str) -> None:
-    """删除指定 Skill 文档（单文件或目录包主文档），不存在时抛出 ValueError"""
+    """删除指定 Skill 主文档（目录包 <slug>/SKILL.md），不存在时抛出 ValueError"""
     slug = _validate_slug(slug)
     f = skill_doc_path(slug)
     if f is None:

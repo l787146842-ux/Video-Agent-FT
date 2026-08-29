@@ -57,7 +57,7 @@ class ReadSkillInput(BaseModel):
     resource: str = Field(
         "", description="可选：目录包 Skill 的附属资源路径（如 references/五行特效提示词库.md，"
         "主文对应环节会给出按需加载指引）；传入则只返回该资源文件内容（超长可按 start 续读），"
-        "仅清单内资源可读；单文件 Skill 不支持本参数")
+        "仅清单内资源可读；无附属资源的 Skill 不支持本参数")
 
 
 class ReadProjectDocInput(BaseModel):

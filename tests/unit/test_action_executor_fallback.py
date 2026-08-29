@@ -150,7 +150,10 @@ def test_spec_wizard_declared_true_still_active():
         "显式向导测试桩",
         "# 显式向导测试桩\n> 调用规则：测试\n",
     )
-    frontmatter.write_manifest("显式向导测试桩", {"flow": {"spec_wizard": True}})
+    frontmatter.write_manifest(
+        "显式向导测试桩",
+        {"name": "显式向导测试桩", "description": "测试桩",
+         "flow": {"spec_wizard": True}})
     registry.register_skill("显式向导测试桩")
     assert registry.spec_wizard_active("显式向导测试桩") is True
     registry.reset_registry()
@@ -162,7 +165,10 @@ def test_spec_wizard_stub_skill_inactive():
     from src.video_agent.web import skill_docs as sd
 
     # 自包含桩（不依赖已退役用例留下的 Skill 文档）：无 frontmatter flow 声明
-    sd.save_skill_doc("向导隐性测试桩", "# 向导隐性测试桩\n> 调用规则：测试\n")
+    sd.save_skill_doc(
+        "向导隐性测试桩",
+        "---\nname: 向导隐性测试桩\ndescription: 测试桩\n---\n"
+        "# 向导隐性测试桩\n> 调用规则：测试\n")
     registry.register_skill("向导隐性测试桩")
     assert registry.spec_wizard_active("向导隐性测试桩") is False
     registry.reset_registry()
@@ -178,7 +184,10 @@ def test_spec_wizard_manifest_false_escape_hatch():
         "false向导测试桩",
         "# false向导测试桩\n> 调用规则：测试\n",
     )
-    frontmatter.write_manifest("false向导测试桩", {"flow": {"spec_wizard": False}})
+    frontmatter.write_manifest(
+        "false向导测试桩",
+        {"name": "false向导测试桩", "description": "测试桩",
+         "flow": {"spec_wizard": False}})
     registry.register_skill("false向导测试桩")
     assert registry.spec_wizard_active("false向导测试桩") is False
 

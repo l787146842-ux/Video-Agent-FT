@@ -8,6 +8,8 @@
 ④ 接线——执行器退役后含自定义章节的短 Skill 走通用主路径全文直注，
    章节原文随全文进 prompt（不再有执行器清单/章节标识单独下发形态）。
 """
+import re
+
 import pytest
 
 import src.video_agent.web.skill_docs as sd
@@ -27,7 +29,11 @@ def isolate(tmp_path, monkeypatch):
 
 
 def _write(slug: str, content: str):
-    sd.save_skill_doc(slug, content)
+    # 批3：name/description 注册期必填；name 取正文 H1（保持原显示名口径），正文一字不动。
+    m = re.search(r"(?m)^# (.+)$", content)
+    name = m.group(1).strip() if m else slug
+    sd.save_skill_doc(
+        slug, f"---\nname: {name}\ndescription: 测试桩\n---\n" + content)
 
 
 # 仅含自定义 tag 章节的文档（固定 7 章节词汇表全部落空）
@@ -67,7 +73,8 @@ def test_schema_custom_sections_fail_closed():
 def test_custom_sections_registers_generic_executor():
     _write("interview", _DOC_CUSTOM)
     frontmatter.write_manifest(
-        "interview", {"custom_sections": {"tone_design": "skill_section_run"}})
+        "interview", {"name": "interview", "description": "测试桩",
+                      "custom_sections": {"tone_design": "skill_section_run"}})
     entry = registry.get_entry("interview")
     assert entry is not None
     # 固定 7 章节全落空，仅自定义通道成立
@@ -86,7 +93,8 @@ def test_custom_sections_coexist_with_fixed_tools():
     )
     _write("mix", content)
     frontmatter.write_manifest(
-        "mix", {"custom_sections": {"my_tag": "skill_section_run",
+        "mix", {"name": "mix", "description": "测试桩",
+                "custom_sections": {"my_tag": "skill_section_run",
                                     "planning": "skill_section_run"}})
     entry = registry.get_entry("mix")
     # stage 键解析链同源：planning 走 sections，my_tag 走任意 <tag>
@@ -109,7 +117,8 @@ def test_custom_sections_unresolvable_not_registered():
     """声明了但文档无对应章节：fail-closed，不注册半死通道。"""
     _write("hollow", "# 空\n> 调用规则：测试\n正文\n")
     frontmatter.write_manifest(
-        "hollow", {"custom_sections": {"不存在章节": "skill_section_run"}})
+        "hollow", {"name": "hollow", "description": "测试桩",
+                   "custom_sections": {"不存在章节": "skill_section_run"}})
     entry = registry.get_entry("hollow")
     assert "skill_section_run" not in entry.available_tools
     assert registry.tool_sections("hollow", "skill_section_run") == ""
@@ -128,7 +137,8 @@ def test_custom_sections_illegal_declaration_fail_hard():
     # 合法声明照常注册
     _write("livebad", _DOC_CUSTOM)
     frontmatter.write_manifest(
-        "livebad", {"custom_sections": {"tone_design": "skill_section_run"}})
+        "livebad", {"name": "livebad", "description": "测试桩",
+                    "custom_sections": {"tone_design": "skill_section_run"}})
     entry = registry.get_entry("livebad")
     assert entry is not None and entry.custom_sections
 
@@ -141,7 +151,8 @@ def test_selected_block_lightweight_with_custom_sections():
     章节原文（含自定义章节）不进 system prompt，由 read_skill 按需读取。"""
     _write("interview2", _DOC_CUSTOM)
     frontmatter.write_manifest(
-        "interview2", {"custom_sections": {"tone_design": "skill_section_run"}})
+        "interview2", {"name": "访谈音色", "description": "测试桩",
+                       "custom_sections": {"tone_design": "skill_section_run"}})
     pb = PromptBuilder(
         lambda: sd,
         lambda: "proj",

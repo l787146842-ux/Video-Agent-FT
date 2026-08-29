@@ -13,11 +13,8 @@ SKILLS_DIR = ROOT / "data/skills"
 
 
 def _skill_doc_path(stem: str) -> Path:
-    """插件包双形态（P2-4）：单文件 <stem>.md 优先，目录包 <stem>/<stem>.md 次之。"""
-    single = SKILLS_DIR / f"{stem}.md"
-    if single.exists():
-        return single
-    return SKILLS_DIR / stem / f"{stem}.md"
+    """单一包形态（批3）：只认 <stem>/SKILL.md。"""
+    return SKILLS_DIR / stem / "SKILL.md"
 
 
 # ---------- #6 章节解析黄金快照（R6 模式：劣化即红） ----------

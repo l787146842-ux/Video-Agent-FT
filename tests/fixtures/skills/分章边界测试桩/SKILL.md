@@ -1,3 +1,7 @@
+---
+name: 分章边界测试桩
+description: 测试桩：三章节分章边界解析用例
+---
 # 分章边界测试桩
 > 调用规则：测试
 <storyboard_key_elements>

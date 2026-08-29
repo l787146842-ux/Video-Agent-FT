@@ -58,9 +58,12 @@ def test_default_gate_rules_business_gates_off():
 def test_skill_flow_enabled_requires_declaration():
     from src.video_agent.skill_runtime import frontmatter
 
-    sd.save_skill_doc("有声明", "# A\n正文")
+    sd.save_skill_doc(
+        "有声明",
+        "---\nname: 有声明\ndescription: 测试桩\n---\n# A\n正文")
     frontmatter.write_manifest(
-        "有声明", {"flow": {"spec_wizard": True, "spec_gate": True}})
+        "有声明", {"name": "有声明", "description": "测试桩",
+                   "flow": {"spec_wizard": True, "spec_gate": True}})
     sd.save_skill_doc("无声明", "# B\n> 调用规则：测试\n正文")
     assert registry.skill_flow_enabled("有声明", "spec_wizard") is True
     assert registry.skill_flow_enabled("有声明", "spec_gate") is True
@@ -116,6 +119,7 @@ async def test_spec_pause_gate_fires_with_manifest(svc, monkeypatch):
 
     sd.save_skill_doc("向导流程", "# 向导\n正文")
     frontmatter.write_manifest("向导流程", {
+        "name": "向导流程", "description": "测试桩",
         "gates": {"require_duration": True, "require_subtitle": True,
                   "require_camera_language": True, "require_audio_layer": True},
         "flow": {"spec_wizard": True},
@@ -157,12 +161,20 @@ def test_stage_pause_recognizes_manifest():
     from src.video_agent.skill_runtime import frontmatter
 
     # 无关键词、仅 frontmatter 声明 → 生效
-    sd.save_skill_doc("仅清单暂停", "# A\n正文")
-    frontmatter.write_manifest("仅清单暂停", {"pause": {"stage_pause": True}})
+    sd.save_skill_doc(
+        "仅清单暂停",
+        "---\nname: 仅清单暂停\ndescription: 测试桩\n---\n# A\n正文")
+    frontmatter.write_manifest(
+        "仅清单暂停", {"name": "仅清单暂停", "description": "测试桩",
+                      "pause": {"stage_pause": True}})
     assert skill_requires_stage_pause("仅清单暂停") is True
     # frontmatter 显式 false 覆盖『何时暂停』关键词（声明优先）
-    sd.save_skill_doc("清单关闭", "# B\n何时暂停：每阶段后。")
-    frontmatter.write_manifest("清单关闭", {"pause": {"stage_pause": False}})
+    sd.save_skill_doc(
+        "清单关闭",
+        "---\nname: 清单关闭\ndescription: 测试桩\n---\n# B\n何时暂停：每阶段后。")
+    frontmatter.write_manifest(
+        "清单关闭", {"name": "清单关闭", "description": "测试桩",
+                    "pause": {"stage_pause": False}})
     assert skill_requires_stage_pause("清单关闭") is False
 
 

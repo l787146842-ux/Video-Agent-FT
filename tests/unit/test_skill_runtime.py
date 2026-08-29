@@ -8,6 +8,8 @@
 _apply_actions 护栏）已随退役删除；建组护栏由
 tests/unit/test_structure_integrity_gate.py 在通用闸机链钉死。
 """
+import re
+
 import pytest
 
 import src.video_agent.web.skill_docs as sd
@@ -26,7 +28,12 @@ def isolate(tmp_path, monkeypatch):
 
 
 def _write(slug: str, content: str):
-    sd.save_skill_doc(slug, content)
+    # 批3：name/description 注册期必填；name 取正文 H1（与原显示名口径一致，
+    # 避免声明头覆盖展示名导致按名解析失联），正文一字不动。
+    m = re.search(r"(?m)^# (.+)$", content)
+    name = m.group(1).strip() if m else slug
+    sd.save_skill_doc(
+        slug, f"---\nname: {name}\ndescription: 测试桩\n---\n" + content)
 
 
 def test_save_registers_and_delete_unregisters():

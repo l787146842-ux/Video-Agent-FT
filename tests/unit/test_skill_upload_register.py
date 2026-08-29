@@ -18,6 +18,7 @@ def skills_dir(tmp_path, monkeypatch):
 def test_save_registers_executors():
     sd.save_skill_doc(
         "上传技能",
+        "---\nname: 上传技能\ndescription: 测试桩\n---\n"
         "# 上传技能\n> 调用规则：测试\n"
         "<script_analyze>\n分析\n</script_analyze>\n"
         "<storyboard_key_elements>\n关键元素\n</storyboard_key_elements>\n",
@@ -34,11 +35,13 @@ def test_save_registers_executors():
 def test_edit_refreshes_registry():
     sd.save_skill_doc(
         "编辑技能",
+        "---\nname: 编辑技能\ndescription: 测试桩\n---\n"
         "# 编辑技能\n> 调用规则：测试\n<script_analyze>\n分析\n</script_analyze>\n",
     )
     assert "script_analyze" in registry.resolve_entry("编辑技能").available_tools
     sd.save_skill_doc(
         "编辑技能",
+        "---\nname: 编辑技能\ndescription: 测试桩\n---\n"
         "# 编辑技能\n> 调用规则：测试\n<storyboard_shots>\n分镜\n</storyboard_shots>\n",
     )
     entry = registry.resolve_entry("编辑技能")
@@ -49,6 +52,7 @@ def test_edit_refreshes_registry():
 def test_delete_unregisters():
     sd.save_skill_doc(
         "删除技能",
+        "---\nname: 删除技能\ndescription: 测试桩\n---\n"
         "# 删除技能\n> 调用规则：测试\n<script_analyze>\n分析\n</script_analyze>\n",
     )
     assert registry.resolve_entry("删除技能") is not None

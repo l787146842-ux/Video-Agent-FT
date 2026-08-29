@@ -178,7 +178,8 @@ def test_metadata_header_missing_input_without_hint(tmp_skills):
     """原料未就绪且声明无 hint：回落类型标签兜底文案"""
     sd.save_skill_doc("需乐桩", "# 需乐桩\n正文")
     frontmatter.write_manifest(
-        "需乐桩", {"requires_inputs": [{"type": "music", "required": True}]})
+        "需乐桩", {"name": "需乐桩", "description": "测试桩",
+                   "requires_inputs": [{"type": "music", "required": True}]})
     registry.register_skill("需乐桩")
     block = _pb_raw({}).build_skill_metadata_header("需乐桩")
     assert "原料未就绪：本 Skill 需要音乐素材" in block
@@ -205,7 +206,9 @@ def test_metadata_header_unknown_input_type_label_fallback(
 def test_metadata_header_language_zh_line(tmp_skills):
     """language.prompt=zh：语言闸生效告知行（运营状态面）"""
     sd.save_skill_doc("中文桩", "# 中文桩\n正文")
-    frontmatter.write_manifest("中文桩", {"language": {"prompt": "zh"}})
+    frontmatter.write_manifest(
+        "中文桩", {"name": "中文桩", "description": "测试桩",
+                   "language": {"prompt": "zh"}})
     registry.register_skill("中文桩")
     block = _pb_raw({}).build_skill_metadata_header("中文桩")
     assert "用中文书写（平台语言闸生效）" in block
@@ -215,8 +218,9 @@ def test_metadata_header_no_raw_state_skips_input_probe(tmp_skills):
     """无 raw state 提供者：原料探测段整体省略，其余字段照常"""
     sd.save_skill_doc("需乐桩2", "# 需乐桩2\n正文")
     frontmatter.write_manifest(
-        "需乐桩2", {"requires_inputs": [{"type": "music", "required": True}],
-                     "version": "1.0"})
+        "需乐桩2", {"name": "需乐桩2", "description": "测试桩",
+                    "requires_inputs": [{"type": "music", "required": True}],
+                    "version": "1.0"})
     registry.register_skill("需乐桩2")
     pb = PromptBuilder(lambda: sd, lambda: "proj", None)
     block = pb.build_skill_metadata_header("需乐桩2")

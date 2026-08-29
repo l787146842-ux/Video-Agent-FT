@@ -26,7 +26,10 @@ def _register_flow_skill(monkeypatch):
     from src.video_agent.skill_runtime import registry
     from src.video_agent.web import skill_docs as sd
 
-    sd.save_skill_doc("流程测试", "# 流程测试\n> 调用规则：测试\n")
+    sd.save_skill_doc(
+        "流程测试",
+        "---\nname: 流程测试\ndescription: 测试桩\n---\n"
+        "# 流程测试\n> 调用规则：测试\n")
     registry.register_skill("流程测试")
     monkeypatch.setattr(
         registry, "skill_manifest_of",

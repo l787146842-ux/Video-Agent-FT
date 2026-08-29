@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Skill 平台声明 frontmatter 存储（配置与正文合一）。
 
-声明存于 Skill 文档头部 YAML frontmatter（`---` 包裹块，Claude Code 式）——
-一个 md 即一个插件单元；目录包形态（data/skills/<slug>/<slug>.md + 资源文件）
-与单文件形态兼容（插件包约定）。
+声明存于 Skill 文档头部 YAML frontmatter（`---` 包裹块，Agent Skills
+开放标准）——每个 Skill 就是一个目录包 data/skills/<slug>/SKILL.md，
+包内其余文件为资源（references/ 等）。
 
 读写均为活读不快照：任意键原样透传，消费语义归 manifest_schema 校验器。
 正文是唯一流程源：flow.steps/step_stages/dependencies 通道废除，
@@ -48,20 +48,17 @@ def _skills_dir() -> Path:
     return Path(ports.skill_docs_port().SKILL_DOCS_DIR)
 
 
-def resolve_doc_path(slug: str, directory: Optional[Path] = None) -> Optional[Path]:
-    """Skill 主文档路径解析（插件包约定双形态）：
+# 单一包形态主文档名（Agent Skills 开放标准）
+SKILL_DOC_NAME = "SKILL.md"
 
-    单文件 data/skills/<slug>.md 优先；目录包 data/skills/<slug>/<slug>.md
-    （包内其余文件为资源）。均不存在返回 None。
+
+def resolve_doc_path(slug: str, directory: Optional[Path] = None) -> Optional[Path]:
+    """Skill 主文档路径解析（单一包形态，唯一解析入口）：
+    只认 data/skills/<slug>/SKILL.md；不存在返回 None。
     """
     base = Path(directory) if directory is not None else _skills_dir()
-    f = base / f"{slug}.md"
-    if f.exists():
-        return f
-    pkg = base / slug / f"{slug}.md"
-    if pkg.exists():
-        return pkg
-    return None
+    f = base / slug / SKILL_DOC_NAME
+    return f if f.exists() else None
 
 
 def split_frontmatter(
@@ -153,7 +150,7 @@ def write_manifest(
     文档（测试/迁移用）。data 为空/None = 清除声明块。
     """
     base = Path(directory) if directory is not None else _skills_dir()
-    f = resolve_doc_path(slug, directory) or (base / f"{slug}.md")
+    f = resolve_doc_path(slug, directory) or (base / slug / SKILL_DOC_NAME)
     f.parent.mkdir(parents=True, exist_ok=True)
     old = ""
     if f.exists():

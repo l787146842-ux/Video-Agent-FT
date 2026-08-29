@@ -51,9 +51,15 @@ def svc(tmp_path):
 
 
 def _save(name: str, content: str = "", manifest=None):
-    sd.save_skill_doc(name, content or f"# {name}\n正文")
-    if manifest is not None:
-        frontmatter.write_manifest(name, manifest)
+    content = content or f"# {name}\n正文"
+    if manifest is None:
+        # 批3：name/description 注册期必填，零预设仍带最小声明头
+        sd.save_skill_doc(
+            name, f"---\nname: {name}\ndescription: 测试桩\n---\n" + content)
+    else:
+        sd.save_skill_doc(name, content)
+        frontmatter.write_manifest(
+            name, {"name": name, "description": "测试桩", **manifest})
     registry.register_skill(name)
 
 

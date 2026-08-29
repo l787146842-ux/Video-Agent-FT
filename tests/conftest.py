@@ -26,21 +26,17 @@ def _skill_mirror_dir(tmp_path_factory):
     """R2：测试期 Skill 目录镜像——生产 data/skills 与夹具桩拷入临时镜像，
     测试读写全部落镜像（含 .history 备份机制原样工作），生产目录零污染。"""
     from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
+    from src.video_agent.skill_runtime.frontmatter import SKILL_DOC_NAME
 
     mirror = tmp_path_factory.mktemp("skills_mirror")
-    for f in Path(REAL_DIR).glob("*.md"):
-        shutil.copy2(f, mirror / f.name)
-    # P2-4：目录包 Skill（<slug>/<slug>.md + references/ 附属资源）整包入镜像，
-    # 否则镜像丢包 → 依赖生产 Skill 的用例静默丢失目录包条目。
-    for p in Path(REAL_DIR).iterdir():
-        if not p.is_dir() or p.name.startswith("."):
-            continue
-        if (p / (p.name + ".md")).exists():
-            shutil.copytree(p, mirror / p.name)
-    fixture_dir = Path(__file__).parent / "fixtures" / "skills"
-    for f in fixture_dir.glob("*.md"):
-        if f.name != "README.md":
-            shutil.copy2(f, mirror / f.name)
+    # 批3 单一包形态：每个 Skill = <slug>/SKILL.md 目录包，生产目录与夹具
+    # 桩一律整包入镜像（含 references/ 附属资源），平铺单文件形态已退役。
+    for src_dir in (Path(REAL_DIR), Path(__file__).parent / "fixtures" / "skills"):
+        for p in src_dir.iterdir():
+            if not p.is_dir() or p.name.startswith("."):
+                continue
+            if (p / SKILL_DOC_NAME).exists():
+                shutil.copytree(p, mirror / p.name)
     # 任务#5：声明与正文合一（文档头部 frontmatter），随 md 拷贝天然进镜像；
     # 原外置 sidecar 镜像块随 data/skills_manifests/ 退役删除
     return mirror

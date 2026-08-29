@@ -132,6 +132,8 @@ def test_existing_warn_paths_unchanged():
 
 _DOC = (
     "---\n"
+    "name: 逃生舱技能\n"
+    "description: 测试桩：metadata/x- 逃生舱键注册链路\n"
     "schema_version: 3\n"
     "kind: pipeline\n"
     "metadata:\n"
@@ -156,7 +158,10 @@ def skills_dir(tmp_path, monkeypatch):
 
 def test_register_skill_with_extension_keys_no_warnings(skills_dir):
     """带 metadata/x- 键的 Skill 正常注册：entry 落地、注册期零告警。"""
-    (skills_dir / "逃生舱技能.md").write_text(_DOC, encoding="utf-8")
+    # 批3 单一包形态：<slug>/SKILL.md
+    pkg = skills_dir / "逃生舱技能"
+    pkg.mkdir()
+    (pkg / "SKILL.md").write_text(_DOC, encoding="utf-8")
     sink = io.StringIO()
     handler = logger.add(sink, level="WARNING", format="{message}")
     try:

@@ -91,7 +91,9 @@ _SAMPLE_FM = (
 
 
 def _write_skill(d: Path, slug: str = "测试技能") -> Path:
-    f = d / f"{slug}.md"
+    # 批3 单一包形态：CLI 扫描只认 <slug>/SKILL.md 目录包
+    f = d / slug / "SKILL.md"
+    f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(_SAMPLE_FM + _SAMPLE_BODY, encoding="utf-8")
     return f
 

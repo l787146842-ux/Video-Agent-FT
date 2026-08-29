@@ -92,20 +92,19 @@ def test_inventory_skills_lint_health_report():
     """16 存量 Skill 体检（只读不改，G1）：lint 全量可执行、结构合法；
     告警计数作为健康快照打印（供人工审阅，不作为失败条件）"""
     assert SKILLS_DIR.exists(), "data/skills 目录缺失"
-    files = sorted(SKILLS_DIR.glob("*.md"))
-    # P2-4 目录包形态：<slug>/<slug>.md 同计入存量体检口径
-    files += sorted(
-        p / (p.name + ".md") for p in SKILLS_DIR.iterdir()
+    # 批3 单一包形态：每个存量 Skill = <slug>/SKILL.md 目录包
+    packages = sorted(
+        (p, p / "SKILL.md") for p in SKILLS_DIR.iterdir()
         if p.is_dir() and not p.name.startswith(".")
-        and (p / (p.name + ".md")).exists())
-    assert len(files) >= 16, f"存量 Skill 数量异常：{len(files)}"
+        and (p / "SKILL.md").exists())
+    assert len(packages) >= 16, f"存量 Skill 数量异常：{len(packages)}"
     total_warnings = 0
-    for f in files:
+    for pkg, f in packages:
         content = f.read_text(encoding="utf-8")
-        result = sd.lint_skill_content(content, slug=f.stem)
+        result = sd.lint_skill_content(content, slug=pkg.name)
         assert isinstance(result.get("available_tools"), list)
         assert isinstance(result.get("warnings"), list)
         total_warnings += len(result["warnings"])
         if result["warnings"]:
-            print(f"  [{f.stem}] " + " | ".join(result["warnings"]))
-    print(f"[体检] {len(files)} 个存量 Skill，共 {total_warnings} 条 lint 告警")
+            print(f"  [{pkg.name}] " + " | ".join(result["warnings"]))
+    print(f"[体检] {len(packages)} 个存量 Skill，共 {total_warnings} 条 lint 告警")

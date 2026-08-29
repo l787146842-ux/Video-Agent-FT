@@ -388,8 +388,14 @@ def test_canary_fe_cov_ratchet_improved_passes(tmp_path, monkeypatch):
 def _skills_gate_scaffold(tmp_path, monkeypatch, md_name, md_text):
     import scripts.scan_skills as gate
     skills = tmp_path / "data" / "skills"
-    skills.mkdir(parents=True)
-    (skills / md_name).write_text(md_text, encoding="utf-8")
+    # 批3 单一包形态：<slug>/SKILL.md；name/description 注册期必填，
+    # name 取正文 H1 与显示名口径一致。
+    slug = md_name[:-3] if md_name.endswith(".md") else md_name
+    pkg = skills / slug
+    pkg.mkdir(parents=True)
+    (pkg / "SKILL.md").write_text(
+        f"---\nname: {md_text.splitlines()[0].lstrip('# ').strip()}\n"
+        f"description: 闸门禁测试桩\n---\n" + md_text, encoding="utf-8")
     # run_gate 以 __file__ 相对定位 data/skills：指向 tmp 布局
     monkeypatch.setattr(gate, "__file__", str(tmp_path / "scripts" / "scan_skills.py"))
     return gate

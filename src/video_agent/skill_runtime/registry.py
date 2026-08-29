@@ -1,8 +1,8 @@
 """Skill 上传即注册：文档章节 → 注册表条目。
 
-Skill 文档（data/skills/*.md 或目录包 data/skills/<slug>/<slug>.md）
-仍是唯一数据源与下拉框数据源；平台声明随文档头部 YAML frontmatter
-合一。本注册表保存每个 Skill
+Skill 目录包（单一形态 data/skills/<slug>/SKILL.md，Agent Skills
+开放标准）仍是唯一数据源与下拉框数据源；平台声明随文档头部 YAML
+frontmatter 合一。本注册表保存每个 Skill
 解析后的章节与能力声明清单（不对应已注册
 工具，仅作阶段裁剪/闸机的客观探针）。
 """
@@ -161,10 +161,10 @@ class SkillEntry:
 
     @property
     def package_root(self) -> Optional[Path]:
-        """目录包根（data/skills/<slug>/）；单文件形态返回 None。
+        """目录包根（data/skills/<slug>/）；主文档不在场返回 None。
 
-        与 frontmatter.resolve_doc_path 双形态口径同源：单文件优先，
-        单文件存在时同名目录包不视为包（身份唯一）。"""
+        单一包形态（<slug>/SKILL.md）下与 frontmatter.resolve_doc_path
+        同源：主文档存在即包根 = 其父目录。"""
         doc = frontmatter.resolve_doc_path(self.slug)
         if doc is None or doc.parent.name != self.slug:
             return None
@@ -174,10 +174,11 @@ class SkillEntry:
     def resource_manifest(self) -> List[str]:
         """目录包资源清单（P2-4 按需加载白名单，fail-closed）：
         references/ 下文本类资源的包内相对路径清单（排序）；
-        单文件形态/无 references/ 目录 = 空清单（零资源合法）。
+        无 references/ 目录 = 空清单（零资源合法）。
 
         清单即声明：read_skill（resource=…）只放行清单内资源，
         清单外一律拒绝；二进制资源不开放经文本工具读取；
+        无 references/ 目录 = 空清单（零资源合法）；
         符号链接不收录（白名单后缀链接可读包外文件，fail-closed 排除）。"""
         root = self.package_root
         if root is None:
@@ -226,12 +227,14 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
     """解析并注册一个 Skill；文档不存在或无法解析时返回 None。
 
     fail-hard：frontmatter schema 校验失败拒绝注册——
-    坏声明不能带病上线，修好 data/skills/<slug>.md
+    坏声明不能带病上线，修好 data/skills/<slug>/SKILL.md
     头部 frontmatter 才能注册；单个坏 Skill 拒注册不截断 sync_all 批次。
     消费端 fail-closed 清洗仍保留（兜注册后 frontmatter 被改坏的活读场景）。
 
     问题分级：只有错误级问题拒注册；WARN 级（开放注册
     降级/废除键过渡告警）只输出告警日志，不阻断注册。
+    name/description 为注册期必填（Agent Skills 开放标准：渐进披露
+    第一层目录摘要的权威声明），缺失即拒注册。
     """
     entry = _load_entry(slug)
     if entry is None:
@@ -240,13 +243,20 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
         frontmatter.validate_manifest(entry.manifest))
     for w in warnings:
         logger.warning(f"[SkillRuntime] Skill「{entry.name}」frontmatter 告警：{w}")
+    manifest = entry.manifest or {}
+    for key in ("name", "description"):
+        v = manifest.get(key)
+        if not isinstance(v, str) or not v.strip():
+            errors.append(
+                f"frontmatter 缺必填键 {key}（Agent Skills 开放标准："
+                "name/description 为渐进披露第一层目录摘要的权威声明）")
     if errors:
         # 拒注册同时摘除陈旧条目（refresh/重注册路径：frontmatter 改坏后
         # 旧注册态不得继续可用）
         _registry.pop(slug, None)
         logger.error(
             f"[SkillRuntime] Skill「{entry.name}」frontmatter schema 校验失败，"
-            f"拒绝注册（fail-hard，修复 data/skills/{slug}.md 头部声明 "
+            f"拒绝注册（fail-hard，修复 data/skills/{slug}/SKILL.md 头部声明 "
             f"后经 refresh_skill 重试）：{'；'.join(errors)}"
         )
         return None
@@ -279,8 +289,7 @@ def refresh_skill(slug: str) -> Optional[SkillEntry]:
 def sync_all(force: bool = False) -> int:
     """启动/首次使用时全量注册 data/skills 下的 Skill（幂等，可重复调用）。
 
-    插件包约定双形态：单文件 <slug>.md 与目录包
-    <slug>/<slug>.md（包内其余文件为资源）同等扫描。
+    单一包形态（Agent Skills 开放标准）：只扫 <slug>/SKILL.md 目录包。
     直接扫描 SKILL_DOCS_DIR，不经过 list_skill_docs/ensure_default_skill_docs，
     避免与文档系统互相递归。
     """
@@ -297,12 +306,11 @@ def sync_all(force: bool = False) -> int:
     # 每个 Skill 都是独立的注册单元。一个遗留的非法/损坏 slug 不能
     # 截断整个注册批次，否则后面的有效 Skill 会静默消失，运行时
     # 只能错误地回落到模型流程。
-    slugs: List[str] = sorted(f.stem for f in directory.glob("*.md") if f.stem)
-    # 目录包：隐藏目录（.history 等）不参与注册
-    slugs += sorted(
+    # 目录包：<slug>/SKILL.md；隐藏目录（.history 等）不参与注册。
+    slugs: List[str] = sorted(
         p.name for p in directory.iterdir()
         if p.is_dir() and not p.name.startswith(".")
-        and (p / f"{p.name}.md").exists()
+        and (p / frontmatter.SKILL_DOC_NAME).exists()
     )
     seen_canon: Dict[str, str] = {}
     for slug in slugs:
@@ -415,7 +423,7 @@ def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], 
     """目录包资源按需加载解析（P2-4，fail-closed 单一实现）。
 
     只放行资源清单（目录包 references/ 实际文件列表）内的资源；
-    声明外资源（清单外路径/绝对路径/.. 穿越/单文件形态）一律拒绝。
+    声明外资源（清单外路径/绝对路径/.. 穿越）一律拒绝。
     返回 (资源绝对路径, "")；失败返回 (None, 错误说明)。
 
     口径演进：三级资源加载采用「资源清单即声明」（references/ 目录），
@@ -426,8 +434,8 @@ def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], 
     root = entry.package_root
     if root is None:
         return None, (
-            f"Skill「{entry.name}」为单文件形态，无附属资源；"
-            "仅目录包（<slug>/<slug>.md）支持 resource 参数按需读取 references/ 资源")
+            f"Skill「{entry.name}」主文档（<slug>/SKILL.md）不在场，"
+            "无法定位目录包资源")
     rel = str(resource or "").strip().replace("\\", "/")
     parts = [p for p in rel.split("/") if p and p != "."]
     if not rel or not parts or ".." in parts:

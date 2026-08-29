@@ -11,7 +11,7 @@
    completed_nodes/current_node/StageSucceeded、中途异常状态回滚；
 ④ WorkflowRuntime：缺原料 start_run → waiting_user+InputRequested；
    resolve_decision 旧 token 拒绝；recover_run 恢复 sequence/status；
-⑤ registry.sync_all 单文件非法不截断批次（Codex 中断1 修复钉死）。
+⑤ registry.sync_all 非法包不截断批次（Codex 中断1 修复钉死）。
 """
 import pytest
 
@@ -236,11 +236,13 @@ def test_alias_collision_rejected_at_registration(tmp_path, monkeypatch):
     from src.video_agent.skill_runtime import registry
 
     d = tmp_path / "skills"
-    d.mkdir()
-    (d / "AI-短剧一站式生成.md").write_text(
-        "# A\n> 调用规则：测试\n正文", encoding="utf-8")
-    (d / "AI短剧一站式生成.md").write_text(
-        "# B\n> 调用规则：测试\n正文", encoding="utf-8")
+    # 批3 单一包形态：<slug>/SKILL.md（name/description 注册期必填）
+    for slug, h1 in (("AI-短剧一站式生成", "# A"), ("AI短剧一站式生成", "# B")):
+        pkg = d / slug
+        pkg.mkdir(parents=True)
+        (pkg / "SKILL.md").write_text(
+            f"---\nname: {slug}\ndescription: 测试桩\n---\n"
+            f"{h1}\n> 调用规则：测试\n正文", encoding="utf-8")
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
     registry.reset_registry()
     try:
@@ -265,7 +267,10 @@ def test_invalid_manifest_rejected_from_workflow(tmp_path, monkeypatch):
     d = tmp_path / "skills"
     d.mkdir()
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
-    sd.save_skill_doc(slug, "# 门禁技能\n> 调用规则：测试\n正文")
+    sd.save_skill_doc(
+        slug,
+        f"---\nname: {slug}\ndescription: 测试桩\n---\n"
+        "# 门禁技能\n> 调用规则：测试\n正文")
     registry.reset_registry()
     try:
         registry.sync_all(force=True)
@@ -274,6 +279,7 @@ def test_invalid_manifest_rejected_from_workflow(tmp_path, monkeypatch):
         assert workflow_runtime.compile_definition(slug) is not None
         # 注入非法声明（白名单外闸键 + 已废除流程抄本键）→ workflow 拒入
         frontmatter.write_manifest(slug, {
+            "name": slug, "description": "测试桩",
             "gates": {"unknown_gate": True},
             "flow": {"steps": {"1": "a"}}})
         assert workflow_runtime.compile_definition(slug) is None
@@ -286,10 +292,16 @@ def test_sync_all_skips_invalid_file_without_aborting_batch(tmp_path, monkeypatc
     from src.video_agent.skill_runtime import registry
 
     d = tmp_path / "skills"
-    d.mkdir()
-    (d / "good.md").write_text("# 好技能\n> 调用规则：测试\n正文", encoding="utf-8")
-    # 非法标识（含空格/特殊字符的 slug 由文件名带入）→ _load_entry 校验失败
-    (d / "bad slug!.md").write_text("# x", encoding="utf-8")
+    # 批3 单一包形态：<slug>/SKILL.md；name/description 注册期必填
+    good = d / "good"
+    good.mkdir(parents=True)
+    (good / "SKILL.md").write_text(
+        "---\nname: good\ndescription: 测试桩\n---\n"
+        "# 好技能\n> 调用规则：测试\n正文", encoding="utf-8")
+    # 非法标识（含空格/特殊字符的 slug 由包目录名带入）→ _load_entry 校验失败
+    bad = d / "bad slug!"
+    bad.mkdir()
+    (bad / "SKILL.md").write_text("# x", encoding="utf-8")
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
     registry.reset_registry()
     try:

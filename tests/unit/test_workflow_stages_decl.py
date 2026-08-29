@@ -35,8 +35,8 @@ def declared_skill(tmp_path, monkeypatch):
     from src.video_agent.core import workflow_runtime as wr
 
     d = tmp_path / "skills"
-    d.mkdir()
-    shutil.copyfile(FIXTURE, d / f"{SLUG}.md")
+    (d / SLUG).mkdir(parents=True)
+    shutil.copyfile(FIXTURE, d / SLUG / "SKILL.md")
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
     registry.reset_registry()
     wr.clear_compile_cache()
@@ -194,9 +194,10 @@ def test_invalid_decl_rejected_at_registration(tmp_path, monkeypatch):
     from src.video_agent.core import workflow_runtime as wr
 
     d = tmp_path / "skills"
-    d.mkdir()
-    (d / "bad-flow.md").write_text(
-        "---\nflow:\n  stages:\n    - key: a\n      title: t\n---\n"
+    (d / "bad-flow").mkdir(parents=True)
+    (d / "bad-flow" / "SKILL.md").write_text(
+        "---\nname: bad-flow\ndescription: 无效声明测试桩\n"
+        "flow:\n  stages:\n    - key: a\n      title: t\n---\n"
         "# 坏声明技能\n> 调用规则：测试\n正文", encoding="utf-8")
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", d)
     registry.reset_registry()

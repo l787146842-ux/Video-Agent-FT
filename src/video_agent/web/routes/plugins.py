@@ -1,7 +1,7 @@
 """
 /api/plugins + /api/skills — 技能配置端点
 
-Skill 下拉数据 = 仅文档 Skill（data/skills/*.md）。
+Skill 下拉数据 = 仅文档 Skill（data/skills/<slug>/SKILL.md 单一包形态）。
 代码内置 Skill（编剧/分镜师/制片）已按用户要求彻底移除，不得再回到下拉框。
 文档 Skill 的 system_prompt 即文档全文——用户改文档就是改流程。
 """

@@ -62,8 +62,10 @@ def test_parse_doc_ignores_yaml_comment_title():
 
 def test_get_skill_doc_reads_bom_file(tmp_path):
     """P2-2：Windows 记事本带 BOM 回存的 md 照常解析标题/描述。"""
-    sd.SKILL_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    (sd.SKILL_DOCS_DIR / "bom桩.md").write_text(
+    # 批3 单一包形态：<slug>/SKILL.md
+    pkg = sd.SKILL_DOCS_DIR / "bom桩"
+    pkg.mkdir(parents=True, exist_ok=True)
+    (pkg / "SKILL.md").write_text(
         "\ufeff# BOM 标题\n> 调用规则：测试\n正文", encoding="utf-8")
     doc = sd.get_skill_doc("bom桩")
     assert doc is not None and doc["name"] == "BOM 标题"
@@ -76,13 +78,13 @@ def test_save_skill_doc_foreign_requires_section_tag(tmp_path):
     # 散文提及工具名（无章节 tag）→ 保存逐字节忠实，不注 source
     prose = "# 散文桩\n正文提及 resource_prepare_and_analyze 工具名\n"
     sd.save_skill_doc("散文桩", prose)
-    assert (tmp_path / "skills" / "散文桩.md").read_text(
+    assert (tmp_path / "skills" / "散文桩" / "SKILL.md").read_text(
         encoding="utf-8") == prose
     # 含外来章节 tag → 新建文档补 source 来源标记
     sd.save_skill_doc(
         "章节桩", "# 章节桩\n<resource_prepare_and_analyze>\n分析正文\n"
         "</resource_prepare_and_analyze>\n")
-    saved = (tmp_path / "skills" / "章节桩.md").read_text(encoding="utf-8")
+    saved = (tmp_path / "skills" / "章节桩" / "SKILL.md").read_text(encoding="utf-8")
     assert "source: 用户导入" in saved
 
 
@@ -91,7 +93,7 @@ def test_save_skill_doc_unclosed_header_keeps_original(tmp_path):
     保存原文让 lint 警告暴露，避免新块掩盖未闭合头。"""
     content = "---\nversion: '1.0'\n# 未闭合头桩\n正文提及工具名但头部未闭合\n"
     sd.save_skill_doc("未闭合头桩", content)
-    assert (tmp_path / "skills" / "未闭合头桩.md").read_text(
+    assert (tmp_path / "skills" / "未闭合头桩" / "SKILL.md").read_text(
         encoding="utf-8") == content
 
 

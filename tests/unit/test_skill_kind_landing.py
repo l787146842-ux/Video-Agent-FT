@@ -27,17 +27,14 @@ _KIND_LINE = re.compile(r"^kind:\s*(\S+)\s*$", re.M)
 
 
 def _skill_doc(stem: str) -> Path:
-    """插件包双形态（P2-4）：单文件 <stem>.md 优先，目录包 <stem>/<stem>.md 次之。"""
-    single = SKILLS_DIR / f"{stem}.md"
-    return single if single.exists() else SKILLS_DIR / stem / f"{stem}.md"
+    """单一包形态（批3）：只认 <stem>/SKILL.md。"""
+    return SKILLS_DIR / stem / "SKILL.md"
 
 
 def _iter_skill_docs():
-    for f in sorted(SKILLS_DIR.glob("*.md")):
-        yield f.stem, f
     for p in sorted(SKILLS_DIR.iterdir(), key=lambda x: x.name):
         if p.is_dir() and not p.name.startswith("."):
-            main = p / f"{p.name}.md"
+            main = p / "SKILL.md"
             if main.exists():
                 yield p.name, main
 

@@ -11,7 +11,7 @@ def test_skill_doc_step2_no_hard_param_wizard_text():
     硬参数改为顶部「全局设置」，交互维度锁定 Skill 声明的建议条目。"""
     content = (
         Path(__file__).resolve().parents[2]
-        / "data" / "skills" / "剧本生视频需上传剧本.md"
+        / "data" / "skills" / "剧本生视频需上传剧本" / "SKILL.md"
     ).read_text(encoding="utf-8")
     assert "候选项覆盖 出图渠道/出视频渠道" not in content
     assert "图片分辨率（1K/2K/4K）" not in content

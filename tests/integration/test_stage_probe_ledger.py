@@ -114,6 +114,7 @@ def test_declaration_channel_covers_spec_stage(svc, tmp_path, monkeypatch):
     try:
         sd.save_skill_doc("声明覆盖Skill", "# A\n> 调用规则：测试\n<planner>x</planner>")
         frontmatter.write_manifest("声明覆盖Skill", {
+            "name": "声明覆盖Skill", "description": "测试桩",
             "flow": {"stages": {"spec": {"done": "document:定制规格.md"}}}})
         registry.register_skill("声明覆盖Skill")
 

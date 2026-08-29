@@ -96,6 +96,7 @@ def test_prompt_heading_wins_over_storyboard_keyword():
 def test_legacy_tag_skill_registers_all_split_executors():
     sd.save_skill_doc(
         "legacy-demo",
+        "---\nname: legacy-demo\ndescription: 测试桩\n---\n"
         "skill_name: \"旧标签演示\"\n"
         "<planner>\n流程\n</planner>\n"
         "<storyboard_designer>\n故事板整节\n</storyboard_designer>\n"
@@ -113,6 +114,7 @@ def test_legacy_tag_skill_registers_all_split_executors():
 def test_heading_skill_registers_all_split_executors():
     sd.save_skill_doc(
         "heading-demo",
+        "---\nname: heading-demo\ndescription: 测试桩\n---\n"
         "# 标题式演示\n> 调用规则：测试\n\n## 故事板设计\n故事板正文\n",
     )
     entry = registry.get_entry("heading-demo")
@@ -124,7 +126,7 @@ def test_heading_skill_registers_all_split_executors():
 def test_unknown_tag_or_heading_registers_nothing_without_error():
     content = "<unknown_tool>\n正文\n</unknown_tool>\n"
     assert split_skill_sections(content) == {}
-    sd.save_skill_doc("unknown-demo", "# 未知\n> 调用规则：测试\n<unknown_tool>\n正文\n</unknown_tool>\n")
+    sd.save_skill_doc("unknown-demo", "---\nname: unknown-demo\ndescription: 测试桩\n---\n# 未知\n> 调用规则：测试\n<unknown_tool>\n正文\n</unknown_tool>\n")
     entry = registry.get_entry("unknown-demo")
     assert entry is not None and entry.available_tools == []
 
@@ -191,6 +193,7 @@ def test_pause_rules_overrides_keyword_detection():
     """显式声明 false 时，即使正文含「何时暂停」关键词也不暂停（声明优先）"""
     sd.save_skill_doc(
         "pause-demo",
+        "---\nname: pause-demo\ndescription: 测试桩\n---\n"
         "# 暂停演示\n\n```json pause_rules\n{\"stage_pause\": false}\n```\n\n"
         "**何时暂停**：每阶段后暂停\n<planner>\n流程\n</planner>\n",
     )
@@ -200,6 +203,7 @@ def test_pause_rules_overrides_keyword_detection():
 def test_pause_keyword_fallback_without_declaration():
     sd.save_skill_doc(
         "pause-demo2",
+        "---\nname: 关键词兜底\ndescription: 测试桩\n---\n"
         "# 关键词兜底\n<planner>\n**何时暂停**：每阶段后\n</planner>\n",
     )
     assert skill_requires_stage_pause("关键词兜底") is True

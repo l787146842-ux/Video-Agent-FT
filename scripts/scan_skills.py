@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""扫描 data/skills/*.md，输出每个 Skill 的结构摘要，用于诊断指令冲突。
+"""扫描 data/skills/<slug>/SKILL.md（单一包形态），输出每个 Skill 的结构摘要，
+用于诊断指令冲突。
 
 P3-15 新增：frontmatter 声明（含 custom_sections）vs 文档实际章节一致性探针
 （诊断先行，报告性质，不进 acceptance GATES）。
@@ -332,16 +333,21 @@ def manifest_consistency_issues(slug: str, content: str, manifest) -> list:
 
 
 def _iter_skill_docs(d: pathlib.Path):
-    """遍历 Skill 主文档（插件包约定双形态）：单文件 *.md 优先，
-    目录包 <slug>/<slug>.md 次之；yield (slug, path)。"""
-    for f in sorted(d.glob("*.md")):
-        yield f.stem, f
+    """遍历 Skill 主文档（单一包形态 <slug>/SKILL.md）；yield (slug, path)。"""
     for p in sorted(d.iterdir(), key=lambda x: x.name):
         if not p.is_dir() or p.name.startswith("."):
             continue
-        main = p / f"{p.name}.md"
+        main = p / frontmatter.SKILL_DOC_NAME
         if main.exists():
             yield p.name, main
+
+
+def _is_external_source(manifest) -> bool:
+    """外部源判定（探针按 source 分口径）：frontmatter source 声明了非
+    platform 取值（如 imported|community|用户导入）= 外部源；
+    未声明或声明 platform = 平台源（维持现有严口径）。"""
+    src = (manifest or {}).get("source")
+    return isinstance(src, str) and bool(src.strip()) and src.strip().lower() != "platform"
 
 
 def tools_required_warn_probe(slug: str, manifest, platform_names: frozenset) -> list:
@@ -381,14 +387,14 @@ def package_resource_warn_probe(slug: str, path: pathlib.Path,
                                 body: str, manifest) -> list:
     """目录包资源探针（P2-4）：诊断性质，WARN 不阻断退出码。
     ① 正文 read_skill(resource=…) 指针必须落在包内实际存在的文件上，
-       悬空 = 文档与资源漂移（含路径穿越/单文件形态打指针）；
+       悬空 = 文档与资源漂移（含路径穿越）；
     ② scripts 键声明路径必须在目录包内实际存在（平台只做静态校验，
        绝不执行；形状非法在注册期 manifest_schema 已 fail-hard，此处只
        做存在性核对）；
     ③ references/ 下实际资源无正文指针引用 = 孤儿资源（渐进披露第三层
        入口缺失，模型永远发现不了该资源）。"""
     warns = []
-    pkg_root = path.parent if path.parent.name == slug else None
+    pkg_root = path.parent  # 单一包形态：主文档恒在 <slug>/ 包内
     pointed = set()
     for m in _RESOURCE_POINTER_RE.finditer(body or ""):
         rel = m.group(1).strip().replace("\\", "/")
@@ -397,10 +403,7 @@ def package_resource_warn_probe(slug: str, path: pathlib.Path,
             warns.append(f"resource 指针非法 {rel!r}（只允许包内相对路径）")
             continue
         pointed.add("/".join(parts))
-        if pkg_root is None:
-            warns.append(f"单文件形态出现 resource 指针 {rel!r}"
-                         f"（附属资源仅目录包支持）")
-        elif not (pkg_root / "/".join(parts)).is_file():
+        if not (pkg_root / "/".join(parts)).is_file():
             warns.append(f"resource 指针悬空 {rel!r}（包内文件不存在）")
     scripts = (manifest or {}).get("scripts")
     if isinstance(scripts, dict) and scripts:
@@ -408,10 +411,7 @@ def package_resource_warn_probe(slug: str, path: pathlib.Path,
             rel = scripts[name]
             if not isinstance(rel, str) or not rel.strip():
                 continue  # 形状非法归注册期 fail-hard，此处不重复报
-            if pkg_root is None:
-                warns.append(f"scripts 声明 {name!r} 但 Skill 为单文件形态"
-                             f"（脚本仅目录包有效）")
-            elif not (pkg_root / rel.replace("\\", "/")).is_file():
+            if not (pkg_root / rel.replace("\\", "/")).is_file():
                 warns.append(f"scripts 声明 {name!r} 文件不存在：{rel!r}")
     if pkg_root is not None:
         ref_dir = pkg_root / "references"
@@ -436,7 +436,11 @@ def run_gate() -> int:
     目录包资源探针输出 WARN 清单（P2-4：指针悬空/孤儿资源，
     诊断性质，不阻断退出码）；
     正文语言声明探针：正文再现声明性语言规则即 FAIL（任务#2：
-    产物提示词语言唯一裁决源 = resolve_prompt_language）。"""
+    产物提示词语言唯一裁决源 = resolve_prompt_language）。
+
+    探针按 source 分口径（批 3）：platform（存量，含未声明）维持上述
+    严口径；外部源（imported|community 等非 platform 声明）的 3 条
+    FAIL 探针（工具白名单/内容卫生/语言声明）降为 WARN，不阻断退出码。"""
     d = pathlib.Path(__file__).parent.parent / "data" / "skills"
     real = real_tool_names()
     platform = platform_tool_names()
@@ -446,25 +450,42 @@ def run_gate() -> int:
     warned = []
     meta_warned = []
     pkg_warned = []
+    ext_warned = []
     for slug, f in _iter_skill_docs(d):
         content = f.read_text(encoding="utf-8", errors="replace")
         # 扫描前先剥离 frontmatter：YAML 声明键（schema_version 等）非工具引用
         manifest, body, _err = frontmatter.split_frontmatter(content)
+        external = _is_external_source(manifest)
         issues = tool_whitelist_issues(body, real)
         if issues:
-            failed.append(slug)
-            for it in issues:
-                print(f"[skill_tool_names] FAIL {f.name}: {it}")
+            if external:
+                ext_warned.append(slug)
+                for it in issues:
+                    print(f"[skill_tool_names] WARN {f.name}: （外部源）{it}")
+            else:
+                failed.append(slug)
+                for it in issues:
+                    print(f"[skill_tool_names] FAIL {f.name}: {it}")
         hygiene = content_hygiene_issues(body)
         if hygiene:
-            hygiene_failed.append(slug)
-            for it in hygiene:
-                print(f"[skill_content_hygiene] FAIL {f.name}: {it}")
+            if external:
+                ext_warned.append(slug)
+                for it in hygiene:
+                    print(f"[skill_content_hygiene] WARN {f.name}: （外部源）{it}")
+            else:
+                hygiene_failed.append(slug)
+                for it in hygiene:
+                    print(f"[skill_content_hygiene] FAIL {f.name}: {it}")
         lang_issues = language_claim_issues(body)
         if lang_issues:
-            lang_failed.append(slug)
-            for it in lang_issues:
-                print(f"[skill_lang_claim] FAIL {f.name}: {it}")
+            if external:
+                ext_warned.append(slug)
+                for it in lang_issues:
+                    print(f"[skill_lang_claim] WARN {f.name}: （外部源）{it}")
+            else:
+                lang_failed.append(slug)
+                for it in lang_issues:
+                    print(f"[skill_lang_claim] FAIL {f.name}: {it}")
         missing = tools_required_warn_probe(slug, manifest, platform)
         if missing:
             warned.append(slug)
@@ -504,6 +525,10 @@ def run_gate() -> int:
         print(f"[skill_package_resource] WARN: {len(pkg_warned)} skill(s) "
               f"目录包资源指针/孤儿资源问题（{'、'.join(pkg_warned)}；"
               f"诊断性质，不阻断门禁）")
+    if ext_warned:
+        print(f"[skill_tool_names] WARN: {len(set(ext_warned))} 个外部源 skill "
+              f"（{'、'.join(sorted(set(ext_warned)))}）3 条 FAIL 探针按 source "
+              f"分口径降为 WARN（观察项，不阻断门禁）")
     return 0
 
 

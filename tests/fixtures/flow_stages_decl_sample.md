@@ -1,4 +1,6 @@
 ---
+name: 流程声明样例技能
+description: 测试夹具：flow.stages 数组形态（自定义三步结构）声明样例
 schema_version: 3
 kind: pipeline
 flow:
