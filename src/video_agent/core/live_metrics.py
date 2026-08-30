@@ -38,8 +38,8 @@ def record_live_context(project_id: str, messages: List[Dict[str, Any]]) -> None
 # system prompt 组装明细（prompt_builder 写入，context-usage 返回）
 _SECTIONS: Dict[str, Dict[str, int]] = {}
 
-# 运行时组装总长遥测样本：追加式 JSONL，供
-# scripts/check_prompt_budget.py 周报观察项统计 P95（只观察不作硬门禁）
+# 运行时组装总长遥测样本：追加式 JSONL（原消费方
+# scripts/check_prompt_budget.py 已随 C1a 裁决 2026-08-31 退役；样本保留供调试端点）
 _SAMPLES_PATH = pathlib.Path(__file__).resolve().parents[3] / "data" / "prompt_sections.jsonl"
 _SAMPLES_MAX_LINES = 4000   # 滚动上限：超出即裁剪，防遥测自身膨胀
 _SAMPLES_KEEP_LINES = 2000  # 裁剪时保留最近 N 条

@@ -18,7 +18,7 @@
 > **治理总纲：按业界最高标准执行，禁止走捷径。** 具体含义：
 > 1. **策略即数据（Policy-as-Data）**：所有闸机/安全规则以注册表数据表达，带稳定 `rule_id`、层级归属、外置文案；禁止散落硬编码。
 > 2. **单一事实源（Single Source of Truth）**：状态写入归 StateManager、循环归 agent_loop、入口归 Planner、提示词归 `prompts/`、前端类型归 `gen_api_types` 生成物、耦合行归 `core/coupling_registry.py`。
-> 3. **评测驱动（Evaluation-Driven）**：闸机行为由黄金语料库校准，误杀/漏放计数劣化即测试失败；提示词迁移由快照测试锁语义。
+> 3. **评测驱动（Evaluation-Driven）**：平台固定地板行为由客观回归测试钉死（C1a 裁决 2026-08-31：黄金语料闸机校准与提示词快照测试退役）。
 > 4. **deny-overrides 分层合并**：平台硬边界永远优先，Skill 配置只能加强或持平，不能削弱。
 > 5. **小批交付、即时提交**：每批独立 commit、独立验收；禁止攒大批未提交改动（本仓库已因此丢过整批工作，见 §5）。
 > 6. **验收 = 一键脚本 + 用户目测**：`python scripts/acceptance.py` 全 PASS（测试套件 + 门禁清单以脚本内 `SUITES`/`GATES` 表为准，不写死数量，**只认进程退出码**——Windows 终端乱码曾把契约门禁失败伪装成通过；`--with-eval` 补评测管线）；UI 变更必须构建后由**用户目测反馈**确认（不派浏览器子代理截图代目测，可做轻量定点代码级验证），缺一项不算完成。
@@ -59,7 +59,7 @@
 ### Rule 6: 指令治理（Prompt 外置 + 单一事实源 + 快照防漂移）
 - 所有 system prompt / 闸机文案 / 回喂模板存放在 `prompts/`（`planner/`、`gates/`、`shared/` 分区），经 `utils/prompts.py::load_prompt()` / `load_prompt_section()` 加载
 - **禁止**在代码中硬编码超过 3 行的 prompt 字符串；代码只留组装逻辑
-- **快照防漂移**：提示词外置/迁移必须配快照测试，锁定迁移前后关键段落语义一致；无快照测试的迁移视为错误实现
+- **快照防漂移**（C1a 裁决 2026-08-31 退役）：提示词外置/迁移语义由外置单一事实源 + 回归测试保障，快照测试不再作为强制项
 - **协议单轨**：平台协议唯一 = `prompts/planner/system_fc.md`（文本协议 `system.md` 已退役删除，ADR-0001 单轨）；共有段落抽到 `prompts/shared/` 经 `{{include}}` 引用拼装，不复制
 - 纪律条款外置为独立 md（如 `planner/skill_discipline.md`），不得内联代码
 
@@ -107,7 +107,7 @@
 - 闸机触发/放行、工具调用、截断/回滚全部入 trace（执行器输出校验/黑匣子档案已随任务#36 B5 执行器退役删除）
 
 ### 2.6 校准闭环（评测驱动）
-- `tests/fixtures/gate_corpus/` 黄金语料（合法/应拦两组真实风格样例，带期望 verdict）；按 规则×Skill profile 遍历，误杀/漏放计数劣化即测试失败
+- `tests/fixtures/gate_corpus/` 黄金语料（C1a 裁决 2026-08-31 退役删除；闸机校准改由平台固定地板回归测试承载）
 - **闸机校准经验**：连续相同原因拦截必须升级改写指引（合并相同 verdict、附「第 N 次被拦」差异化提示），防模型陷入「拦截-重写-再拦截」空转；拦截事件入生成日志面板可见
 
 ### 2.7 工具风险分级（Tool Risk Tiers）
@@ -210,7 +210,7 @@
 ## 十、测试要求
 
 - 新增 Tool→单测；新增路由→集成测试（TestClient）；新增 Adapter→mock 测试；改核心（Planner/StateManager/agent_loop/闸机）→回归测试
-- 闸机改动→黄金语料校准测试；提示词迁移→快照测试；动作通道改动→FC 单轨一致性测试；新增 SSE 事件→sse_protocol 注册表登记
+- 闸机改动→平台固定地板回归测试；提示词迁移→外置单一事实源断言；动作通道改动→FC 单轨一致性测试；新增 SSE 事件→sse_protocol 注册表登记
 - 耦合行变更→同批更新 `core/coupling_registry.py`（遍历测试钉死，漏改即红）
 
 ```bash
@@ -254,7 +254,7 @@ src/video_agent/
 ├── adapters/  tools/  config.py  exceptions.py  utils/
 src/web/                    ← SolidJS SPA 唯一前端（§3）
 prompts/                    ← 指令治理外置资产（Rule6）
-tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 等快照
+tests/fixtures/             ← 技能夹具 + skill_pause_golden 等快照
 ```
 
 ---
@@ -265,11 +265,11 @@ tests/fixtures/             ← 技能夹具 + gate_corpus + skill_pause_golden 
 
 - [ ] 没有修改画布项目的任何文件（Rule 7）
 - [ ] 没有绕过 Planner / StateManager / Adapter / Tool 体系（Rule 1-5）
-- [ ] 没有硬编码 prompt >3 行；提示词迁移带快照测试；文案治理迁移同批更新锁旧文案的断言测试（Rule 6）
+- [ ] 没有硬编码 prompt >3 行；文案治理迁移同批更新锁旧文案的断言测试（Rule 6；快照测试已随 C1a 裁决退役）
 - [ ] 没有 manifest 削弱平台硬边界；触碰项有负面用例（§2.2）
 - [ ] 工具已声明 risk 分级；high 级工具带平台闸机与确认（§2.7）
-- [ ] Skill 改动符合单一形态 `<slug>/SKILL.md` 与三级加载；官方 Skill 干净注入无包壳，仅外部导入带来源标记；关键步骤失败未被虚报完成（§2.8）
-- [ ] 闸机改动带黄金语料校准；连续拦截有升级指引（§2.6）
+- [ ] Skill 改动符合单一形态 `<slug>/SKILL.md` 与三级加载；官方 Skill 干净注入无包壳，仅外部导入带来源标记（§2.8；关键步骤防虚报探针已随 C1a 裁决退役）
+- [ ] 闸机改动带平台固定地板回归；连续拦截有升级指引（§2.6；黄金语料校准已随 C1a 裁决退役）
 - [ ] UI 改动符合 §3 与 `docs/前端体验规范.md`，且构建后经用户目测反馈确认
 - [ ] 没有 box-shadow/发光出现在确认卡片；品牌仍为「飞天」
 - [ ] 没有裸 restore/checkout -- .；本批已 commit；未跟踪文件已核对（§5）

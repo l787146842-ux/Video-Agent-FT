@@ -30,7 +30,8 @@ GATES: List[Tuple[str, List[str]]] = [
     # 退役条件：前后端类型同源（不再依赖生成产物桥接）时方可裁决下账。
     ("contract", [sys.executable, "scripts/gen_api_types.py", "--check"]),
     # 退役条件：模型可见禁令存量清零、预算降为 0 硬闸后，指令治理完全数据化时裁决下账。
-    ("prompt_budget", [sys.executable, "scripts/check_prompt_budget.py"]),
+    # prompt_budget 闸已随 C1a 裁决 2026-08-31 退役删除（提示词预算门禁与快照测试
+    # 五组删除之组5；脚本 scripts/check_prompt_budget.py 同批删除）。
     # 退役条件：超红线文件全部拆分归零且行数红线内化为开发惯例时裁决下账。
     ("file_lines", [sys.executable, "scripts/check_file_lines.py"]),
     # 退役条件：前端超红线文件全部拆分归零且行数红线内化为开发惯例时裁决下账。

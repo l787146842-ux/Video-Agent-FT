@@ -18,7 +18,7 @@ import pytest
 # ---------- 门禁表完整性（防静默掉闸） ----------
 
 _EXPECTED_GATE_NAMES = [
-    "contract", "prompt_budget", "file_lines", "file_lines_frontend",
+    "contract", "file_lines", "file_lines_frontend",
     "semantic_colors", "func_imports", "category_keys",
     "legacy_orchestration", "layer_imports", "ref_integrity",
     "scaffold_registry", "cov_ratchet", "fe_cov_ratchet",
@@ -48,29 +48,7 @@ def test_canary_contract_consistent_passes(monkeypatch):
     assert main(out_path=OUT_PATH) == 0
 
 
-# ---------- 2) prompt_budget ----------
-
-def _budget_scaffold(tmp_path, monkeypatch, md_text):
-    import scripts.check_prompt_budget as gate
-    prompts = tmp_path / "prompts" / "planner"
-    prompts.mkdir(parents=True)
-    (prompts / "system_fc.md").write_text(md_text, encoding="utf-8")
-    monkeypatch.setattr(gate, "ROOT", tmp_path)
-    monkeypatch.setattr(gate, "PROMPTS", tmp_path / "prompts")
-    monkeypatch.setattr(gate, "CODE_DIRS", ["no_such_dir"])
-    return gate
-
-
-def test_canary_prompt_budget_over_fails(tmp_path, monkeypatch):
-    import scripts.check_prompt_budget as _g
-    gate = _budget_scaffold(tmp_path, monkeypatch,
-                            "\n".join(["严禁超预算"] * (_g.BUDGET + 1)))
-    assert gate.main() == 1
-
-
-def test_canary_prompt_budget_clean_passes(tmp_path, monkeypatch):
-    gate = _budget_scaffold(tmp_path, monkeypatch, "正常提示词正文\n")
-    assert gate.main() == 0
+# ---------- 2) prompt_budget 已随 C1a 裁决 2026-08-31 退役删除（组5） ----------
 
 
 # ---------- 3/4) file_lines 后端档 + 前端档 ----------

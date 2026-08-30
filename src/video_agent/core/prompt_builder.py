@@ -124,7 +124,7 @@ class PromptBuilder:
         text = "\n\n".join(seg for _, seg in parts)
         # 组装明细入 live 注册表（context-usage 调试端点可读各段字符数）；
         # 遥测段名映射由 PROMPT_SECTIONS 自动生成（消除硬编码映射）；
-        # prompt_sections.jsonl 字段格式锁死不变（check_prompt_budget.py 消费，零破坏）
+        # prompt_sections.jsonl 字段格式锁死不变（原消费方 check_prompt_budget.py 已随 C1a 裁决退役）
         try:
             sec_lens: Dict[str, int] = {}
             for name, seg in parts:
@@ -673,7 +673,7 @@ PROMPT_SECTIONS: Tuple[PromptSectionSpec, ...] = _validate_prompt_sections((
 ))
 
 # 遥测字段别名（注册表段名 → prompt_sections.jsonl 字段）：None = 不入
-# jsonl（字段格式锁死，消费方 check_prompt_budget.py 零改动）；
+# jsonl（字段格式锁死；原消费方 check_prompt_budget.py 已随 C1a 裁决退役）；
 # state_json/selected_skill 的遥测值取原始长度（非段长），在组装处显式赋值
 _SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
     "protocol": "protocol",
@@ -688,7 +688,7 @@ _SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
     "selected_skill": None,
 }
 # 批次E：渠道机制退役后的恒 0 兼容字段 channels 已清偿
-# （唯一消费方 check_prompt_budget.py 不读该字段）。
+# （原唯一消费方 check_prompt_budget.py 已随 C1a 裁决退役）。
 
 
 def _telemetry_section_keys() -> List[str]:
