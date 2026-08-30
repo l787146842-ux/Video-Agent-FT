@@ -152,16 +152,6 @@ def test_lint_partial_split_warns_missing_executors():
     )
 
 
-def test_lint_bad_gate_rules_warns():
-    content = (
-        "<planner>\n流程\n</planner>\n"
-        "```json gate_rules\n{shot_min_chars: 坏JSON}\n```\n"
-        "**何时暂停**：每阶段后\n"
-    )
-    lint = lint_skill_content(content)
-    assert any("gate_rules" in w for w in lint["warnings"])
-
-
 def test_lint_no_pause_declaration_warns():
     lint = lint_skill_content("<planner>\n流程（无任何暂停表述）\n</planner>")
     assert any("暂停" in w for w in lint["warnings"])

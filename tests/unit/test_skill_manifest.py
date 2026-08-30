@@ -36,23 +36,6 @@ def svc(tmp_path):
 # 体检/加载语义由 test_sidecar_migration 覆盖） ----------
 
 
-def test_manifest_gates_override_legacy_gate_rules():
-    """并存时 frontmatter 声明优先（冲突键覆盖旧 gate_rules 块）"""
-    content = (
-        "```json gate_rules\n" '{"require_duration": true}' "\n```\n"
-    )
-    rules = prompt_gates.parse_gate_rules(
-        content, manifest={"gates": {"require_duration": False}})
-    assert rules["require_duration"] is False
-
-
-def test_default_gate_rules_business_gates_off():
-    rules = prompt_gates.parse_gate_rules("")
-    for key in ("require_duration", "require_subtitle",
-                "require_camera_language", "require_audio_layer"):
-        assert rules[key] is False
-
-
 # ---------- flow 开关 ----------
 
 def test_skill_flow_enabled_requires_declaration():
@@ -72,17 +55,17 @@ def test_skill_flow_enabled_requires_declaration():
     assert registry.skill_flow_enabled("", "spec_wizard") is False
 
 
-# ---------- 端到端：英文锁定 Skill 不再被语言闸打回 ----------
+# ---------- 端到端：C1a 裁决 gates 键退役（英文锁定只经 language 声明轴） ----------
 
-def test_english_prompt_passes_when_cjk_ratio_declared_low():
-    rules = prompt_gates.parse_gate_rules(
-        "", manifest={"gates": {"cjk_min_ratio": 0}})
+def test_gates_key_retired_language_floor_platform_only():
+    """C1a 裁决 2026-08-31：gates.cjk_min_ratio 调整轴退役——
+    英文正文无 language 声明时仍被平台语言闸打回。"""
     ok, hard, _ = prompt_gates.validate_prompt_write(
         "A monolithic black slab rises over the desert at dawn, extreme wide shot, "
         "slow push-in, hard rim light, no subtitles. This is a long English body "
         "prompt that clearly exceeds the minimum character budget for shots.",
-        "shot", rules=rules)
-    assert ok and not hard
+        "shot")
+    assert not ok and any(prompt_gates.LANG_EN_HARD_PREFIX in h for h in hard)
 
 
 # ---------- 端到端：规格暂停闸只对声明 spec_wizard 的 Skill 生效 ----------

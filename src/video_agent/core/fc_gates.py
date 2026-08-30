@@ -21,7 +21,7 @@ from loguru import logger
 from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline, stage_probes, prompt_gates
 from src.video_agent.core.live_metrics import record_degradation
-from src.video_agent.skill_runtime.registry import resolve_entry, skill_flow_enabled
+from src.video_agent.skill_runtime.registry import resolve_entry
 from src.video_agent.state import storyboard_ops as ops
 # MCP 命名空间判定：外部工具同管线过 risk 闸，不旁路
 from src.video_agent.tools.mcp.policy import is_mcp_tool
@@ -66,7 +66,6 @@ class GateContext:
 
     injected_skill: str = ""
     gate_override: Any = False
-    gate_rules: Optional[Dict[str, Any]] = None
     selected_draft_id: str = ""
     selected_type: str = ""
     warnings: List[str] = field(default_factory=list)
@@ -187,29 +186,6 @@ def stage_precondition_gate(
         skill_name=ctx.injected_skill, action=name,
     )
     return err
-
-
-def flow_gate(ctx: GateContext, name: str) -> Optional[str]:
-    """规格前置（与文本轨对齐）：只对显式声明 flow.spec_gate 的 Skill
-    生效，且不硬拦——规格未写入时追加一条可视线索到操作时间线，
-    模型后续自行决定补写（用户指令优先）。返回恒 None（不再硬拒绝）。"""
-    if not ctx.injected_skill or prompt_gates.gate_mode() != "strict":
-        return None
-    if name not in ("storyboard_create_group", "storyboard_add_draft"):
-        return None
-    if prompt_gates.has_spec_document(ctx.state()):
-        return None
-    declared = False
-    try:
-        declared = skill_flow_enabled(ctx.injected_skill, "spec_gate")
-    except Exception:
-        declared = False
-    if not declared:
-        return None
-    # 执行侧强制已接管（ensure_spec_gate 拦截越阶工具调用），
-    # 此处不再向用户追加 ⚠ 警告（只记日志，模型侧由拦截回喂知晓）
-    logger.info(f"[FlowGate] {name}：规格文档未写入（Skill 声明 spec_gate，执行侧门禁生效）")
-    return None
 
 
 def tool_risk_gate(
@@ -388,46 +364,11 @@ def prompt_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[s
         kind = {"keyelement": "keyElement", "shot": "shot", "audio": "audio"}.get(gt, "")
     else:
         return None
-    # 客观补全：镜头时长可从 duration 算出来，
-    # 写入前按 Skill 声明的规则自动补印回待写入参数，不指望模型自觉
-    if kind == "shot" and prompt:
-        group: Optional[Dict[str, Any]] = None
-        if name == "storyboard_patch_draft":
-            found = ops.find_draft(
-                ctx.state(), str(args.get("draft_id") or ""),
-                str(args.get("draft_type") or ""),
-                selected_draft_id=ctx.selected_draft_id,
-                selected_type=ctx.selected_type,
-            )
-            if found:
-                group = found[0]
-        else:
-            group = {
-                "id": str(args.get("group_id") or ""),
-                "title": str(args.get("title") or ""),
-                "sceneRefs": args.get("sceneRefs") or [],
-                "duration": str(args.get("duration") or ""),
-            }
-        if group is not None:
-            target = patch if name == "storyboard_patch_draft" else draft
-            if isinstance(target, dict):
-                filled_dur = prompt_gates.autofill_shot_duration(
-                    prompt, "shot", group, rules=ctx.gate_rules,
-                )
-                if filled_dur and filled_dur != prompt:
-                    target["prompt"] = filled_dur
-                    prompt = filled_dur
     if not prompt or kind not in ("shot", "keyElement"):
         return None
-    # 故事板待确认窗口（步骤3→步骤4 分界）：流程闸，只警告不拦人
-    if prompt_gates.gate_mode() == "strict" \
-            and prompt_gates.storyboard_pending(ctx.state()):
-        ctx.warnings.append(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
-        logger.info("[FlowGate] 提示词写入时故事板待确认（警告，不拦人）")
     # 统一闸机管线（宪法 §2.0 单一组合实现；与文本轨同源判定）
     outcome = guard_pipeline.evaluate_prompt_write(
         prompt, kind, ctx.state(),
-        gate_rules=ctx.gate_rules,
         gate_override=ctx.gate_override,
     )
     ctx.warnings.extend(outcome.warnings)
@@ -474,8 +415,6 @@ def run_gate_chain(
     err = pause_window_error(name, paused_this_batch)
     if err is None:
         err = stage_precondition_gate(ctx, name, args)
-    if err is None:
-        err = flow_gate(ctx, name)
     if err is None:
         err = tool_risk_gate(ctx, name, args)
     if err is None:

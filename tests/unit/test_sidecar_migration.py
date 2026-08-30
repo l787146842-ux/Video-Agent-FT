@@ -142,9 +142,8 @@ def test_archived_migrate_script_check_still_passes():
 
 
 def test_unknown_gate_key_rejected():
-    """gates 键白名单 fail-hard：未登记的闸键拒注册（任务#5）。"""
-    issues = validate_manifest_data({"gates": {"unknown_gate": True}})
-    assert any("unknown_gate" in i for i in issues)
+    """C1a 裁决 2026-08-31：gates 键全链路退役——声明不再校验（忽略不报错）。"""
+    assert validate_manifest_data({"gates": {"unknown_gate": True}}) == []
     assert validate_manifest_data(
         {"gates": {"require_subtitle": True}}) == []
 

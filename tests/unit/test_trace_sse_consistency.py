@@ -99,10 +99,10 @@ def test_spec_chinese_selection_blocks_english_prompt():
 
 
 def test_user_selection_overrides_skill_english_lock():
-    """优先级：用户选择 > Skill 声明。Skill 声明英文锁定但用户选中文 → 中文生效。"""
+    """优先级：用户选择 > Skill 声明。C1a 裁决后 gates 调整轴退役，
+    用户选中文时英文提示词仍被平台语言闸打回。"""
     _ok, hard, _ = prompt_gates.validate_prompt_write(
-        _ENG, "keyElement", _spec_state("输出语言：中文"),
-        rules={"cjk_min_ratio": 0})
+        _ENG, "keyElement", _spec_state("输出语言：中文"))
     assert any("几乎全是英文" in h for h in hard)
 
 

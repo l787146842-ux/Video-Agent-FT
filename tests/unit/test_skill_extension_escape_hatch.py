@@ -94,19 +94,19 @@ def test_extension_keys_coexist_with_business_keys():
     }
     assert ms.validate_manifest_data(manifest) == []
     # 共存时业务键非法仍照常报出（逃生舱不得遮蔽 fail-closed）
-    bad = dict(manifest, gates={"unknown_gate": True})
+    bad = dict(manifest, version="")
     errors, _ = ms.split_issue_warnings(ms.validate_manifest_data(bad))
-    assert any("不是平台登记的闸键" in e for e in errors)
+    assert any("非空字符串" in e for e in errors)
 
 
 # ---------- ③ 既有 WARN / fail-hard 行为不变 ----------
 
 
 @pytest.mark.parametrize("manifest,keyword", [
-    # gates 未知键 fail-hard（拒注册）
-    ({"gates": {"unknown_gate": True}}, "不是平台登记的闸键"),
     # 废除 flow 通道 fail-hard
     ({"flow": {"steps": {"1": "a"}}}, "已废除"),
+    # version 形状 fail-hard
+    ({"version": ""}, "非空字符串"),
 ])
 def test_existing_fail_hard_paths_unchanged(manifest, keyword):
     errors, warnings = ms.split_issue_warnings(

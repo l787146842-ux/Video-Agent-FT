@@ -2,13 +2,14 @@
 
 钉死此前未覆盖分支：
 ① has_voice_reference / has_spec_document 的脏数据容忍分支；
-② shot_references_missing_element_images 的 scene_refs 显式传参 / 脏引用容忍；
 ③ resolve_kind_by_draft_id 空 ID / 未命中 / shot / audio 分档；
-④ autofill_shot_duration 时长补全追加分支；
-⑤ resolve_prompt_language 声明读取异常回落 / cjk_min_ratio=0 英文锁定 / 非法值容忍；
+⑤ resolve_prompt_language 声明读取异常回落；
 ⑥ validate_prompt_write 内三处 registry 声明读取异常降级分支；
 ⑦ present_structure_kinds / storyboard_stage_complete 异常回落 /
    drafts_confirmed 空列表 / stage_tool_restrictions 规格向导在场裁剪。
+（C1a 裁决 2026-08-31：② shot_references_missing_element_images 与
+④ autofill_shot_duration 随技能级闸层删除退役；⑤ 的 cjk_min_ratio
+调整轴退役，英文锁定只经 language 声明轴。）
 """
 import pytest
 
@@ -42,22 +43,6 @@ def test_has_spec_document_skips_non_dict_entries():
     assert pg.has_spec_document(state2) is False
 
 
-# ---------- ② sceneRefs 缺图判定 ----------
-
-def test_shot_refs_missing_via_explicit_scene_refs():
-    """新建分组场景显式传 scene_refs（无 group）：引用无图关键元素 → True"""
-    state = {"keyElements": [{"id": "ke-1", "title": "主角", "drafts": [{}]}]}
-    assert pg.shot_references_missing_element_images(
-        state, group=None, scene_refs=["ke-1"]) is True
-
-
-def test_shot_refs_missing_tolerates_dirty_refs_and_groups():
-    """非字符串引用 / 非 dict 关键元素组：容忍不炸，不误报"""
-    state = {"keyElements": ["脏组", {"id": "ke-9", "title": "t", "drafts": [{"imgUrl": "x.png"}]}]}
-    assert pg.shot_references_missing_element_images(
-        state, group={"sceneRefs": [123, None]}) is False
-
-
 # ---------- ③ resolve_kind_by_draft_id ----------
 
 _STATE_KINDS = {
@@ -81,23 +66,6 @@ def test_resolve_kind_shot_and_audio_prefixes():
     assert pg.resolve_kind_by_draft_id(_STATE_KINDS, "d-ke") == "keyElement"
 
 
-# ---------- ④ autofill_shot_duration ----------
-
-def test_autofill_duration_appends_when_missing():
-    """提示词未写时长且分组 duration 可用：末尾补印「镜头总时长」"""
-    out = pg.autofill_shot_duration(
-        "主角缓缓抬头望向远方", "shot", {"duration": "15秒"},
-        rules={"require_duration": True})
-    assert out.endswith("镜头总时长：15秒")
-
-
-def test_autofill_duration_noop_for_non_shot_or_no_duration():
-    assert pg.autofill_shot_duration("任意正文", "keyElement", {"duration": "15秒"},
-                                     rules={"require_duration": True}) == "任意正文"
-    assert pg.autofill_shot_duration("正文", "shot", {"duration": ""},
-                                     rules={"require_duration": True}) == "正文"
-
-
 # ---------- ⑤ resolve_prompt_language ----------
 
 def test_resolve_language_registry_exception_falls_back_to_chinese(monkeypatch):
@@ -105,16 +73,6 @@ def test_resolve_language_registry_exception_falls_back_to_chinese(monkeypatch):
     monkeypatch.setattr(pg.registry, "fallback_skill_from_state",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("registry 故障")))
     assert pg.resolve_prompt_language({}, skill_name="") == "中文"
-
-
-def test_resolve_language_cjk_zero_locks_english():
-    """cjk_min_ratio<=0（英文锁定 Skill）→ 英文"""
-    assert pg.resolve_prompt_language({}, skill_rules={"cjk_min_ratio": 0}) == "英文"
-
-
-def test_resolve_language_invalid_cjk_value_tolerated():
-    """cjk_min_ratio 非法值：容忍回落中文判定"""
-    assert pg.resolve_prompt_language({}, skill_rules={"cjk_min_ratio": "abc"}) == "中文"
 
 
 # ---------- ⑥ validate_prompt_write registry 异常降级 ----------

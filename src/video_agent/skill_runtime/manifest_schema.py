@@ -32,15 +32,13 @@ executor?,deterministic?}，compile_definition 据此派生节点拓扑；
 未声明回落 default_v2_workflow，零回归） /
 布尔开关（spec_wizard/spec_gate/script_required）；顶层 pause.stage_pause；
 顶层 custom_sections（自定义章节→通用执行器通道）；
-顶层 gates（键白名单 fail-hard）/ version / tools_required / source /
+顶层 version / tools_required / source /
 scripts（键声明静态校验，绝不自动执行）/ resources（目录包资源清单 +
-版本锁声明，批6：形状校验首版 WARN、下版升硬；已声明 sha256 与实际
-文件不符的硬拒归注册期版本锁，见 registry.register_skill）。
+版本锁声明，批6：形状校验首版 WARN、下版升硬；记账面保留、执法退役，
+见 registry.register_skill）。
 
-gates 键白名单与 core.prompt_gates._DEFAULT_GATE_RULES 键集同值复制
-（skill_runtime 不得反向 import core，分层约束），漂移由
-tests/unit/test_sidecar_schema_v2.py 的锁源断言钉死；规范阶段键
-同 stage_probes.CANONICAL_STAGES 复制口径。
+（C1a 裁决 2026-08-31：顶层 gates 键全链路删除——技能级闸层退役，
+结构校验收归平台固定地板，frontmatter 不再承载闸键声明。）
 
 扩展逃生舱约定（对齐 Agent Skills 开放标准）：
 frontmatter 顶层 `metadata` 自由 map（string→string，开放标准
@@ -103,15 +101,6 @@ CANONICAL_STAGE_KEYS = (
 # 形态里仍不可经 stages.<key>.done 覆盖，此处仅作探针挂接白名单）。
 WORKFLOW_STAGE_PROBE_KEYS = CANONICAL_STAGE_KEYS + (
     "key_elements", "shots_groups", "audio_groups",
-)
-
-# gates 键白名单（与 prompt_gates._DEFAULT_GATE_RULES 键集同源复制；
-# 未知 gate 名 fail-hard 拒注册——声明了平台不消费的闸键 = 配置漂移）
-GATE_KEYS = (
-    "shot_min_chars", "element_min_chars", "cjk_min_ratio",
-    "require_duration", "require_subtitle", "require_camera_language",
-    "require_audio_layer",
-    "subtitle_synonyms", "camera_markers", "audio_markers",
 )
 
 # 已废除的流程抄本通道（声明即 fail-hard：正文 planner 是唯一流程源）
@@ -197,23 +186,6 @@ def _check_custom_sections(raw: Any, issues: List[str]) -> None:
             issues.append(
                 f"custom_sections[{k}] 执行器必须是 "
                 f"{'/'.join(CUSTOM_SECTION_EXECUTORS)} 之一（实际 {v!r}）")
-
-
-def _check_gates(raw: Any, issues: List[str]) -> None:
-    """gates：键白名单 fail-hard——未知 gate 名拒注册。
-
-    白名单 = prompt_gates._DEFAULT_GATE_RULES 键集（平台消费的全部闸键）；
-    值类型清洗归消费端 parse_gate_rules。"""
-    if raw is None:
-        return
-    if not isinstance(raw, dict):
-        issues.append("gates 必须是对象（闸键→声明值）")
-        return
-    for k in raw:
-        if k not in GATE_KEYS:
-            issues.append(
-                f"gates.{k} 不是平台登记的闸键"
-                f"（白名单：{'/'.join(GATE_KEYS)}）")
 
 
 def _check_version(raw: Any, issues: List[str]) -> None:
@@ -600,7 +572,6 @@ def validate_manifest_data(data: Any) -> List[str]:
         if v is not None and not isinstance(v, bool):
             issues.append(f"flow.{bk} 必须是布尔值")
     _check_custom_sections(data.get("custom_sections"), issues)
-    _check_gates(data.get("gates"), issues)
     _check_version(data.get("version"), issues)
     _check_tools_required(data.get("tools_required"), issues)
     _check_source(data.get("source"), issues)

@@ -40,20 +40,6 @@ def apply_draft_patch(ex: "StateOperationExecutor", action: Dict) -> bool:
     group, draft = result
     # 闸机：strict 模式拒绝结构不合格的提示词写入（不含提示词的其它字段 patch 不受影响）
     if "prompt" in patch:
-        # 故事板待确认窗口（步骤3→步骤4 分界）：流程闸，只警告不拦人
-        if ex.gate_enabled and prompt_gates.gate_mode() == "strict" \
-                and prompt_gates.storyboard_pending(ex.state):
-            logger.info("[FlowGate] 提示词写入时故事板待确认（警告，不拦人）")
-            ex.gate_warnings.append(prompt_gates.STORYBOARD_PENDING_GATE_ERROR)
-        # 客观补全：镜头时长可从 duration 算出来，
-        # 写入前按 Skill 声明的规则自动补印，不指望模型自觉、也不重复拒绝重写
-        if ex._kind_of_group(group) == "shot":
-            filled_dur = prompt_gates.autofill_shot_duration(
-                str(patch.get("prompt") or ""), "shot", group,
-                rules=ex.gate_rules,
-            )
-            if filled_dur and filled_dur != patch.get("prompt"):
-                patch["prompt"] = filled_dur
         if not ex._gate_check(
             str(patch.get("prompt") or ""), ex._kind_of_group(group), group=group,
         ):
@@ -249,13 +235,6 @@ def append_draft_to_group(ex: "StateOperationExecutor", group: Dict, draft_data:
                 f"[FlowGate] 剥离 add_draft 内联详细提示词（{len(inline_prompt)} 字，"
                 "结构阶段只建骨架）"
             )
-    if ex._kind_of_group(group) == "shot" and str(data.get("prompt") or "").strip():
-        filled_dur = prompt_gates.autofill_shot_duration(
-            str(data.get("prompt") or ""), "shot", group,
-            rules=ex.gate_rules,
-        )
-        if filled_dur and filled_dur != data.get("prompt"):
-            data = {**data, "prompt": filled_dur}
     if not ex._gate_check(str(data.get("prompt") or ""), ex._kind_of_group(group), group=group):
         return None
     draft = ops.append_draft(group, data)

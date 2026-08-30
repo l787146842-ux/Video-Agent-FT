@@ -379,17 +379,15 @@ def test_v2_manifest_pause_semantics_unchanged():
 
 
 def test_v2_manifest_gate_and_language_unchanged(svc):
-    """v2 manifest（script_required + gates）：原料闸走旧提醒卡，
-    语言闸维持 cjk_min_ratio 现状口径。"""
+    """C1a 裁决 2026-08-31：gates 键退役——v2 manifest 的 gates.cjk_min_ratio
+    不再影响语言闸（英文锁定只经 language 声明轴）；原料闸旧提醒卡路径不变。"""
     _save("v2完整", "# V2\n正文", {
         "flow": {"script_required": True},
         "gates": {"cjk_min_ratio": 0},
     })
-    # v2 英文锁定口径不变：由调用方传入 parse_gate_rules 结果（现状机制）
-    v2_rules = prompt_gates.parse_gate_rules(
-        "", manifest={"gates": {"cjk_min_ratio": 0}})
+    # gates 声明已退役：语言裁决忽略 gates，未声明 language 仍为中文
     assert prompt_gates.resolve_prompt_language(
-        {"usedSkills": ["v2完整"]}, v2_rules) == "英文"
+        {"usedSkills": ["v2完整"]}) == "中文"
     _save("v2无声明", "# V3\n正文")
     assert prompt_gates.resolve_prompt_language({"usedSkills": ["v2无声明"]}) == "中文"
 

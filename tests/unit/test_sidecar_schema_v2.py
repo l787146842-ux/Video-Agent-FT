@@ -9,7 +9,7 @@
 钉死三件事：
 ① flow.step_stages 显式声明优先于启发式（声明权威；未声明回落并记遥测）；
 ② manifest_schema 全键校验（合法/非法用例，fail-closed；未声明键合法；
-   废除键 fail-hard；gates 键白名单与 prompt_gates 锁源）；
+   废除键 fail-hard；C1a 裁决 2026-08-31 gates 键全链路删除）；
 ③ step_done_conditions 声明探针消费（stage_done 任意阶段声明通道同构 +
    gates_cards.current_flow_step 声明优先接线）。
 """
@@ -84,12 +84,6 @@ def test_canonical_stage_keys_drift_lock():
         s.key for s in po.CANONICAL_STAGES)
 
 
-def test_gate_keys_drift_lock():
-    """gates 键白名单锁源：与 prompt_gates._DEFAULT_GATE_RULES 键集一致
-    （manifest_schema docstring 承诺；漂移即本钉报出）。"""
-    assert set(manifest_schema.GATE_KEYS) == set(prompt_gates._DEFAULT_GATE_RULES)
-
-
 def test_schema_accepts_full_valid_manifest():
     good = {
         "flow": {
@@ -99,7 +93,6 @@ def test_schema_accepts_full_valid_manifest():
             "spec_wizard": True, "spec_gate": True, "script_required": False,
         },
         "pause": {"stage_pause": True},
-        "gates": {"require_subtitle": True, "cjk_min_ratio": 0.2},
         "version": "1.0",
         "tools_required": ["script_analyze"],
         "source": "用户导入",
@@ -149,8 +142,6 @@ def test_resources_undeclared_is_legal():
     ({"flow": {"stages": {"spec": {"skip": "yes"}}}}, "布尔值"),
     ({"flow": {"spec_wizard": "yes"}}, "布尔值"),
     ({"pause": {"stage_pause": "yes"}}, "布尔值"),
-    # gates 键白名单 fail-hard（未登记闸键拒注册）
-    ({"gates": {"unknown_gate": True}}, "不是平台登记的闸键"),
     ({"version": ""}, "非空字符串"),
     ({"tools_required": [""]}, "非空字符串"),
 ])

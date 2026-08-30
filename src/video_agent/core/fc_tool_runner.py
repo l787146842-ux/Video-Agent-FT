@@ -101,8 +101,6 @@ class FCToolRunner:
         self.gate_warnings: List[str] = []
         # 本轮同工具失败计数（结构化回喂升级用）
         self._tool_fail_counts: Dict[str, int] = {}
-        # Skill 可配置闸机规则（测试/执行器注入 parse_gate_rules 结果）
-        self._gate_rules: Optional[Dict[str, Any]] = None
         # 前端当前选中的草稿（对齐文本轨 "current" 语义）；execute 时按请求注入
         self._selected_draft_id = ""
         self._selected_type = ""
@@ -127,7 +125,6 @@ class FCToolRunner:
         return fc_gates.GateContext(
             injected_skill=injected_skill,
             gate_override=self.gate_override,
-            gate_rules=getattr(self, "_gate_rules", None),
             selected_draft_id=getattr(self, "_selected_draft_id", ""),
             selected_type=getattr(self, "_selected_type", ""),
             warnings=self.gate_warnings,
@@ -156,9 +153,6 @@ class FCToolRunner:
         self, name: str, injected_skill: str, args: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         return fc_gates.stage_precondition_gate(self._gate_ctx(injected_skill), name, args)
-
-    def _flow_gate(self, name: str, injected_skill: str) -> Optional[str]:
-        return fc_gates.flow_gate(self._gate_ctx(injected_skill), name)
 
     def _strip_structure_prompt(self, name: str, args: Dict[str, Any], injected_skill: str) -> bool:
         return fc_gates.strip_structure_prompt(self._gate_ctx(injected_skill), name, args)
@@ -714,8 +708,9 @@ class FCToolRunner:
 
 # ---------- 承重壳清单（测试 patch 目标与旧 import 路径不变） ----------
 # 闸机裁决段承重壳（实现体 core/fc_gates.py）：
-#   FCToolRunner._prompt_gate / _stage_precondition_gate / _flow_gate /
+#   FCToolRunner._prompt_gate / _stage_precondition_gate /
 #   _structure_integrity_gate / _gen_confirm_gate / _tool_risk_gate /
 #   _strip_structure_prompt / _resolve_current_refs
+# （C1a 裁决 2026-08-31：_flow_gate 随技能级闸层删除退役）
 # 批末对账段（实现体 core/fc_reconcile.py）：execute() 尾部 reconcile_batch 调用
 # 回喂家族承重壳（实现体 core/fc_feedback.py）：本文件顶部 re-export 清单

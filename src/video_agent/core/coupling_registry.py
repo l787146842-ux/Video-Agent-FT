@@ -146,7 +146,6 @@ COUPLING_ROWS: List[CouplingRow] = [
             # 三段拆分承重壳：闸机方法壳（实现体 fc_gates）
             "src.video_agent.core.fc_tool_runner:FCToolRunner._prompt_gate",
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_generate_image",
-            "src.video_agent.core.prompt_gates:SPEC_GATE_ERROR",
             "src.video_agent.core.prompt_gates:parse_hard_selections",
             # （批次E：web 层 provider_config 薄壳已清偿删除，
             # 消费方全部直连 core/provider_config.py）
@@ -197,11 +196,11 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R16_manifest_whitelist_keys",
-        "frontmatter 声明键（gates/flow/pause/resources）变更",
-        "任务#5：声明唯一源 = Skill 文档头部 YAML frontmatter（外置 JSON sidecar 退役）；消费点：parse_gate_rules/agent_loop/fc_gates/planner 裁剪/"
-        "prompt_builder/registry pause 节；批6：resources 素材清单（形状校验 manifest_schema 首版 WARN，版本锁核验 resource_lock_errors 硬拒）",
+        "frontmatter 声明键（flow/pause/resources）变更",
+        "任务#5：声明唯一源 = Skill 文档头部 YAML frontmatter（外置 JSON sidecar 退役）；消费点：agent_loop/fc_gates/planner 裁剪/"
+        "prompt_builder/registry pause 节；批6：resources 素材清单（形状校验 manifest_schema 首版 WARN，版本锁核验记账保留、执法退役）；"
+        "C1a 裁决 2026-08-31：gates 键全链路删除（parse_gate_rules 退役）",
         _sym(
-            "src.video_agent.core.prompt_gates:parse_gate_rules",
             "src.video_agent.core.fc_gates:prompt_gate",
             "src.video_agent.core.planner:Planner._compute_excluded_tools",
             "src.video_agent.core.prompt_builder:PromptBuilder.build_system_prompt",

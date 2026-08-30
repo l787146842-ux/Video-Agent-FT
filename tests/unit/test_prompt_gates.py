@@ -12,45 +12,12 @@ GOOD_SHOT_PROMPT = (
     "<急促的呼吸声与远方空间坍缩的轰鸣>，no music，no subtitles。"
 )
 
-# S1：业务闸默认全关，需要结构检查的 Skill 通过 gate_rules/manifest 声明开启；
-# 本文件大量用例验证各业务闸的拦截能力，统一用这份显式开启的规则
-ALL_GATES_ON = {
-    "require_duration": True,
-    "require_subtitle": True,
-    "require_camera_language": True,
-    "require_audio_layer": True,
-}
 
-
-# ---------- 校验规则 ----------
+# ---------- 校验规则（C1a 裁决 2026-08-31：平台固定地板＝字数+语言闸） ----------
 
 def test_shot_prompt_complete_passes():
     ok, hard, _ = prompt_gates.validate_prompt_write(GOOD_SHOT_PROMPT, "shot")
     assert ok and not hard
-
-
-def test_shot_prompt_missing_no_subtitles():
-    ok, hard, _ = prompt_gates.validate_prompt_write(
-        "缓慢推入中景，主体奔跑，空间崩裂，<音效轰鸣>，no music。", "shot",
-        rules=ALL_GATES_ON)
-    assert not ok
-    assert any("字幕" in e for e in hard)
-
-
-def test_shot_prompt_missing_audio_layer():
-    ok, hard, _ = prompt_gates.validate_prompt_write(
-        "缓慢推入中景，主体在冰原上奔跑，背景崩裂成平面，光影克制，no subtitles。", "shot",
-        rules=ALL_GATES_ON)
-    assert not ok
-    assert any("音频层" in e for e in hard)
-
-
-def test_shot_prompt_missing_camera():
-    ok, hard, _ = prompt_gates.validate_prompt_write(
-        "程心怀抱文物奔向舱门，背景冥王星冰原崩裂，<呼吸声与轰鸣>，no music，no subtitles。",
-        "shot", rules=ALL_GATES_ON)
-    assert not ok
-    assert any("镜头语言" in e for e in hard)
 
 
 def test_shot_prompt_too_short():
@@ -60,17 +27,16 @@ def test_shot_prompt_too_short():
 
 
 def test_shot_prompt_missing_duration():
-    """镜头时长强制条款（需声明 require_duration）：未写明本镜头总时长即打回"""
+    """C1a 裁决：require_duration 技能闸退役——未写时长不再打回（平台地板只守字数+语言）"""
     ok, hard, _ = prompt_gates.validate_prompt_write(
-        "缓慢推入中景，主体奔跑，空间崩裂，<音效轰鸣>，no music，no subtitles。", "shot",
-        rules=ALL_GATES_ON)
-    assert not ok
-    assert any("时长" in e for e in hard)
+        "缓慢推入中景，主体在冰原上奔跑，怀中紧抱文物，背景冥王星冰原崩裂成平面，"
+        "前景飘散的冰晶在冷光中闪烁，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。", "shot")
+    assert ok and not hard
 
 
-def test_business_gates_off_by_default():
-    """S1 回归：无声明时业务闸（时长/字幕/音频层/镜头语言）全部不校验，
-    引擎不预设任何 Skill 的提示词规范；字数下限与语言闸等客观防护仍在。"""
+def test_business_gates_retired_platform_floor_only():
+    """C1a 裁决回归：技能级闸层删除——时长/字幕/音频层/镜头语言不再校验，
+    平台固定地板（字数下限+语言闸）仍在。"""
     ok, hard, _ = prompt_gates.validate_prompt_write(
         "缓慢推入中景，主体在冰原上奔跑，怀中紧抱文物，背景冥王星冰原崩裂成平面，"
         "前景飘散的冰晶在冷光中闪烁，光影克制，色调深青，整体氛围冷峻肃杀，宿命感强烈而庄重，如史诗末章。", "shot")
@@ -201,16 +167,13 @@ def test_executor_rejects_bad_update_draft_by_default(svc):
 def test_executor_user_override_writes_bad_prompt_with_warning(svc):
     _seed_shot(svc)
     ex = StateOperationExecutor(svc, gate_enabled=True)
-    ex.gate_rules = dict(ALL_GATES_ON)  # 显式声明业务闸（S1：默认全关）
     ex.gate_override = True  # 用户坚持：照常写入 + 警告
     applied = ex.execute([{
         "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
         "patch": {"prompt": "太短了"},
     }])
     assert applied == 1
-    # 时长客观补印（888 事故）：漏写镜头时长时自动追加分镜组 duration，写入文本以原文开头
     assert svc.state_dict["shots"][0]["drafts"][0]["prompt"].startswith("太短了")
-    assert "镜头总时长" in svc.state_dict["shots"][0]["drafts"][0]["prompt"]
     assert ex.gate_warnings and "警告" in ex.gate_warnings[0]
 
 
@@ -307,26 +270,7 @@ def test_executor_spec_gate_inactive_without_skill(svc):
     assert applied == 1
 
 
-def test_fc_flow_gate_warns_and_allows_create_group_without_spec(monkeypatch):
-    """814G5/0818：_flow_gate 不向用户追加 ⚠、不硬拦（恒 None）；
-    越阶顺序控制已归编排器（旧门禁链退役）。"""
-    runner = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {"documents": []}))
-    err = runner._flow_gate("storyboard_create_group", injected_skill="剧本生视频（需上传剧本）")
-    assert err is None
-    assert not runner.gate_warnings  # 814G5：不再向用户追加警告
-
-
-def test_fc_flow_gate_passes_with_spec(monkeypatch):
-    runner = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
-        lambda: {"documents": [{"name": "制片规格.md", "content": "正文"}]}))
-    assert runner._flow_gate("storyboard_create_group", injected_skill="任意 Skill") is None
-
-
-# ---------- 结构纯净闸 + 故事板待确认窗口（888 项目事故：步骤3+4 合并且虚报） ----------
-
-def test_fc_strips_structure_prompt_on_first_batch():
+def test_fc_strips_structure_prompt_on_first_batch(monkeypatch):
     """FC 轨：首次搭建批次剥离内联详细提示词（P0-2）"""
     runner = FCToolRunner(tool_manager=None)
     args = {"group_type": "keyElement", "title": "Element_测试",
@@ -440,100 +384,6 @@ def test_fc_gate_passes_good_prompt(monkeypatch):
         {"draft_id": "1-1", "draft_type": "shot", "patch": {"prompt": GOOD_SHOT_PROMPT}},
         injected_skill="任意 Skill",
     ) is None
-
-
-# ---------- Skill 可配置闸机规则（W20） ----------
-
-
-def test_parse_gate_rules_valid():
-    content = (
-        "```json gate_rules\n"
-        '{"shot_min_chars": 200, "require_duration": false, '
-        '"subtitle_synonyms": ["不要字幕"]}\n'
-        "```"
-    )
-    rules = prompt_gates.parse_gate_rules(content)
-    assert rules["shot_min_chars"] == 200
-    assert rules["require_duration"] is False
-    assert "不要字幕" in rules["subtitle_synonyms"]
-
-
-def test_parse_gate_rules_invalid_falls_back():
-    assert prompt_gates.parse_gate_rules("") == prompt_gates._DEFAULT_GATE_RULES
-    assert prompt_gates.parse_gate_rules(
-        "```json gate_rules\nnot-json\n```") == prompt_gates._DEFAULT_GATE_RULES
-    assert prompt_gates.parse_gate_rules(
-        '```json gate_rules\n{"shot_min_chars": -5}\n```'
-    )["shot_min_chars"] == prompt_gates._SHOT_PROMPT_MIN_CHARS
-
-
-def test_validate_with_rules_require_duration_off():
-    prompt = (
-        "缓慢推入中景，程心怀抱文物奔向舱门，背景冥王星冰原崩裂成二维平面，"
-        "前景冰晶闪烁，色调深青克制，<急促呼吸声与轰鸣>，no music，no subtitles。"
-    )
-    ok, hard, _ = prompt_gates.validate_prompt_write(
-        prompt, "shot", rules={"require_duration": False, "shot_min_chars": 10})
-    assert ok and not hard
-
-
-def test_validate_with_custom_subtitle_synonym():
-    prompt = (
-        "镜头总时长：15秒。缓慢推入中景，程心怀抱文物奔向舱门，背景冥王星冰原"
-        "崩裂成二维平面，前景冰晶在冷光中闪烁，色调深青克制，"
-        "<急促呼吸声与轰鸣>，no music，不要字幕。"
-    )
-    ok, hard, _ = prompt_gates.validate_prompt_write(
-        prompt, "shot", rules={"subtitle_synonyms": ["不要字幕"]})
-    assert ok and not hard
-
-
-def test_executor_uses_skill_gate_rules_as_rejection(svc):
-    svc.state_dict["shots"] = [{
-        "id": "shot-1", "title": "S", "duration": "10s", "sceneRefs": [],
-        "drafts": [{"id": "d1", "mediaType": "video", "prompt": ""}],
-    }]
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    ex.gate_rules = {"shot_min_chars": 200}
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "d1", "draft_type": "shot",
-        "patch": {"prompt": GOOD_SHOT_PROMPT},
-    }])
-    assert applied == 0  # 决策 D：Skill 规则把最短字数提到 200 → 拒绝写入
-    assert ex.gate_rejections
-    # 用户坚持 → 照常写入并警告
-    ex2 = StateOperationExecutor(svc, gate_enabled=True)
-    ex2.gate_rules = {"shot_min_chars": 200}
-    ex2.gate_override = True
-    applied2 = ex2.execute([{
-        "action": "update_draft", "draft_id": "d1", "draft_type": "shot",
-        "patch": {"prompt": GOOD_SHOT_PROMPT},
-    }])
-    assert applied2 == 1
-    assert ex2.gate_warnings and "过短" in ex2.gate_warnings[0]
-
-
-def test_fc_runner_uses_skill_gate_rules_as_rejection(monkeypatch):
-    runner = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    runner._gate_rules = {"shot_min_chars": 10_000}
-    err = runner._prompt_gate(
-        "storyboard_patch_draft",
-        {"draft_id": "1-1", "draft_type": "shot", "patch": {"prompt": GOOD_SHOT_PROMPT}},
-        injected_skill="任意 Skill",
-    )
-    assert err is not None and "过短" in err
-    runner2 = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    runner2._gate_rules = {"shot_min_chars": 10_000}
-    runner2.gate_override = True
-    err2 = runner2._prompt_gate(
-        "storyboard_patch_draft",
-        {"draft_id": "1-1", "draft_type": "shot", "patch": {"prompt": GOOD_SHOT_PROMPT}},
-        injected_skill="任意 Skill",
-    )
-    assert err2 is None
-    assert runner2.gate_warnings and "过短" in runner2.gate_warnings[0]
 
 
 def test_fc_gate_off_mode(monkeypatch):

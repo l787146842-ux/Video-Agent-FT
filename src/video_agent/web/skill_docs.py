@@ -196,11 +196,6 @@ name: 剧本生视频（需上传剧本）
 description: 用户上传剧本/故事文档以生成视频；关键阶段暂停供确认，生成均经用户明确指令执行。
 schema_version: 3
 version: "1.0"
-gates:
-  require_duration: true
-  require_subtitle: true
-  require_camera_language: true
-  require_audio_layer: true
 flow:
   spec_wizard: true
   spec_gate: true
@@ -463,10 +458,6 @@ def delete_skill_doc(slug: str) -> None:
 
 
 # Skill 暂停点显式声明解析已下沉 skill_runtime.registry，本文件经顶部 import re-export。
-# gate_rules 块格式校验用（与 prompt_gates.parse_gate_rules 的正则保持一致）
-_GATE_RULES_LINT_RE = re.compile(
-    r"```(?:json|js)?\s*gate_rules\s*\n(.*?)```", re.S | re.I
-)
 
 # Skill 平台行为统一声明块正则（仅用于 lint 提示「文档内 manifest 块不再消费」）
 _SKILL_MANIFEST_BLOCK_RE = re.compile(
@@ -519,24 +510,14 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
     if present and len(present) < 3:
         missing = [t for t in split_tools if t not in available]
         warnings.append("故事板章节仅覆盖部分拆解能力，未声明：" + "、".join(missing))
-    # gate_rules 块格式校验（非法时 prompt_gates 静默回落默认，这里显式告知）
-    gm = _GATE_RULES_LINT_RE.search(content)
-    if gm:
-        try:
-            data = json.loads(gm.group(1))
-            if not isinstance(data, dict):
-                warnings.append("gate_rules 不是 JSON 对象，已回落默认闸机规则")
-        except Exception:
-            warnings.append("gate_rules JSON 解析失败，已回落默认闸机规则")
     # 文档内 manifest 块不再消费，显式提示
     if _SKILL_MANIFEST_BLOCK_RE.search(content):
         warnings.append(
             "skill_manifest 块不再消费：平台声明已迁文档头部 frontmatter，请从正文移除该块"
         )
-    elif gm or _PAUSE_RULES_BLOCK_RE.search(content):
+    elif _PAUSE_RULES_BLOCK_RE.search(content):
         warnings.append(
-            "检测到旧式 gate_rules/pause_rules 块：建议迁移为文档头部 frontmatter 声明"
-            "（并存时两块各自表述属于指令分身）"
+            "检测到旧式 pause_rules 块：建议迁移为文档头部 frontmatter 声明"
         )
     # 外来平台章节 tag 信任提示（导入 Skill 的来源标记通道；只告警不阻断）
     _foreign = sorted({t for t in _FOREIGN_SECTION_TAGS if f"<{t}>" in content})

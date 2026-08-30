@@ -66,9 +66,6 @@ class StateOperationExecutor:
         self.selected_type = selected_type
         # 提示词结构闸机开关（Skill 流程激活时由 Planner 打开，日常微调不拦截）
         self.gate_enabled = gate_enabled
-        # 闸机规则（Skill 激活时注入 parse_gate_rules 结果；
-        # None = 用平台默认规则，保证无 Skill 场景不炸）
-        self.gate_rules: Optional[Dict[str, Any]] = None
         # 决策 D：用户坚持（user_override）时硬伤降为警告照常放行
         self.gate_override: bool = False
         # 本批次闸机警告（eval 回归读取核验闸机判定；每次 execute 重置）
@@ -185,7 +182,6 @@ class StateOperationExecutor:
             return True
         outcome = guard_pipeline.evaluate_prompt_write(
             str(prompt), kind, self.state,
-            gate_rules=self.gate_rules,
             gate_override=self.gate_override,
         )
         self.gate_warnings.extend(outcome.warnings)
@@ -233,31 +229,6 @@ class StateOperationExecutor:
                 self.gate_warnings.append(w)
         if err:
             logger.info("[GenGate] 拦截生成：目标草稿 Prompt Draft 未全部经用户确认")
-            return []
-        return pairs
-
-    def _gen_asset_binding_gate(self, pairs: List[tuple]) -> List[tuple]:
-        """生成前资产绑定检查：判定唯一实现 =
-        guard_pipeline.evaluate_gen_asset_binding。
-
-        目标分镜的 sceneRefs 引用了无概念图的关键元素即整批硬拒
-        （先补图再生成为客观恢复路径）；override/未激活放行。"""
-        groups = [
-            g for g, d in pairs
-            if isinstance(g, dict) and (d.get("prompt") or "").strip()
-        ]
-        err, warns = guard_pipeline.evaluate_gen_asset_binding(
-            self.state, groups,
-            active=self.gate_enabled and prompt_gates.gate_mode() == "strict",
-            override=self.gate_override,
-            action="generate_video(text-track)",
-        )
-        for w in warns:
-            if w not in self.gate_warnings:
-                self.gate_warnings.append(w)
-        if err:
-            logger.info("[AssetGate] 拦截视频生成：目标分镜引用了无概念图的关键元素")
-            self._reject(err)
             return []
         return pairs
 

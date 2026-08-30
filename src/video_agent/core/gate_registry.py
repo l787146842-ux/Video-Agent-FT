@@ -29,20 +29,22 @@ class GateRuleMeta:
     origin: str
 
 
-# 规则注册表：平台层为硬边界（manifest 无权关闭，仅可经用户一次性申诉放行）；
-# Skill 层为内容结构/流程规则（manifest 可关/放宽/加严；流程闸只警告不拦人）。
+# 规则注册表：平台层为硬边界（manifest 无权关闭，仅可经用户一次性申诉放行）。
+# C1a 裁决（2026-08-31）：技能级闸层整体删除——Skill 层闸键（结构可调闸/
+# 流程警告闸/原料闸/资产绑定闸）全链路退役，结构校验收归 platform.prompt_write
+# 固定地板；退休执行体见 C1b 机械工作流层退役批。
 GATE_RULES: Dict[str, GateRuleMeta] = {
     r.rule_id: r for r in (
         GateRuleMeta("platform.prompt_write", LAYER_PLATFORM,
-                     "提示词写入统一判定入口（结构闸 + 流程闸组合）",
-                     "validate_prompt_write 钉死回归（test_prompt_gates/"
-                     "test_skill_v3_consumption）+ gate_corpus 黄金语料校准"),
+                     "提示词写入统一判定入口（结构闸组合签发点：字数地板+语言闸，固定不可调）",
+                     "validate_prompt_write 钉死回归（test_prompt_gates）；"
+                     "C1a 裁决收归平台层（原 skill.prompt_structure 退役）"),
         GateRuleMeta("platform.shot_min_chars", LAYER_PLATFORM,
-                     "分镜提示词最短字数地板（防敷衍）",
-                     "gate_corpus 黄金语料 + test_prompt_gates 结构闸校准钉死"),
+                     "分镜提示词最短字数地板（防敷衍，固定不可调）",
+                     "test_prompt_gates 结构闸校准钉死"),
         GateRuleMeta("platform.element_min_chars", LAYER_PLATFORM,
-                     "关键元素提示词最短字数地板（防敷衍）",
-                     "gate_corpus 黄金语料 + test_prompt_gates 结构闸校准钉死"),
+                     "关键元素提示词最短字数地板（防敷衍，固定不可调）",
+                     "test_prompt_gates 结构闸校准钉死"),
         GateRuleMeta("platform.gen_confirm", LAYER_PLATFORM,
                      "生成确认闸：未经用户确认的 Prompt Draft 不触发生成",
                      "test_gen_confirm_gate 钉死；2026-08-21 门禁触发盘点"
@@ -52,49 +54,6 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
                      "（high 默认/未注册默认，数据驱动）的工具须经用户显式同意"
                      "方可执行；image_generate 批量轨由 gen_confirm 闸专属覆盖",
                      "宪法 §2.7 风险分级设立；test_tool_risk_gate 钉死"),
-        GateRuleMeta("skill.prompt_structure", LAYER_SKILL,
-                     "提示词结构总闸（guard_pipeline 合成判定）：字数/语言/时长/"
-                     "字幕/音频/镜头语言结构校验的组合签发点",
-                     "test_gate_pipeline_wiring 钉死；2026-08-21 门禁触发盘点"
-                     "有真实拦截记录"),
-        GateRuleMeta("skill.require_duration", LAYER_SKILL,
-                     "分镜提示词须写明镜头总时长",
-                     "gate_corpus 黄金语料 + test_prompt_gates 结构闸校准钉死"),
-        GateRuleMeta("skill.require_subtitle", LAYER_SKILL,
-                     "分镜提示词须含负面约束 no subtitles",
-                     "gate_corpus 黄金语料 + test_prompt_gates 结构闸校准钉死"),
-        GateRuleMeta("skill.require_camera_language", LAYER_SKILL,
-                     "分镜提示词须含镜头语言（景别/角度/运动）",
-                     "gate_corpus 黄金语料 + test_prompt_gates 结构闸校准钉死"),
-        GateRuleMeta("skill.require_audio_layer", LAYER_SKILL,
-                     "分镜提示词须含音频层（对白/音效/音乐或 no music）",
-                     "gate_corpus 黄金语料 + test_prompt_gates 结构闸校准钉死"),
-        GateRuleMeta("skill.cjk_min_ratio", LAYER_SKILL,
-                     "提示词正文中文占比下限（0 = 关闭该检查）",
-                     "test_skill_v3_consumption 语言闸口径钉死（manifest 放宽用例）"),
-        GateRuleMeta("skill.shot_min_chars", LAYER_SKILL,
-                     "分镜提示词最短字数（可被 manifest 抬高）",
-                     "gate_corpus 黄金语料 + test_prompt_gates 结构闸校准钉死"),
-        GateRuleMeta("skill.element_min_chars", LAYER_SKILL,
-                     "关键元素提示词最短字数（可被 manifest 抬高）",
-                     "gate_corpus 黄金语料 + test_prompt_gates 结构闸校准钉死"),
-        GateRuleMeta("skill.flow.spec_gate", LAYER_SKILL,
-                     "规格文档前置闸：未写规格时附警告（只警告不拦人）",
-                     "add_spec_gate.py 入册（scripts/archive）；"
-                     "2026-08-21 门禁触发盘点有判定记录"),
-        GateRuleMeta("skill.flow.storyboard_pending", LAYER_SKILL,
-                     "故事板待确认窗口闸：结构未确认时附警告（只警告不拦人）",
-                     "GOVERNANCE §13.4 症状归位表暂停语义（只警告不拦人）"),
-        GateRuleMeta("skill.gen_asset_binding", LAYER_SKILL,
-                     "生成前资产绑定检查：分镜 sceneRefs 引用的关键元素"
-                     "无概念图时拦截视频生成（任务#12 E-6 禁令下沉）",
-                     "任务#12 E-6 禁令下沉（背景跳画/道具变形）；"
-                     "test_gen_asset_binding_gate 钉死"),
-        GateRuleMeta("skill.script_required", LAYER_SKILL,
-                     "剧本原料闸：需剧本 Skill 原料缺失时反复提醒上传；"
-                     "执行侧拦 agent 越阶结构操作，不拦用户；豁免/坚持旁路",
-                     "Skill 原料声明（剧本生视频需上传剧本等，frontmatter "
-                     "requires_inputs）；gates_script 家族承接"),
         GateRuleMeta("platform.stage_precondition", LAYER_PLATFORM,
                      "阶段前置闸（控制流统一）：工具归属阶段的前置阶段"
                      "未完成时拒收调用（frontmatter 声明依赖图为唯一事实源）；机械强制，"
@@ -116,19 +75,6 @@ GATE_MESSAGE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     "platform.gen_confirm": ("GENERATION_CONFIRM", "GENERATION_CONFIRM_BLOCKED"),
     "platform.tool_risk": ("TOOL_RISK_BLOCKED",),
     "platform.stage_precondition": (),
-    "skill.prompt_structure": (),
-    "skill.require_duration": (),
-    "skill.require_subtitle": (),
-    "skill.require_camera_language": (),
-    "skill.require_audio_layer": (),
-    "skill.cjk_min_ratio": (),
-    "skill.shot_min_chars": (),
-    "skill.element_min_chars": (),
-    "skill.flow.spec_gate": ("SPEC_GATE",),
-    "skill.flow.storyboard_pending": ("STORYBOARD_PENDING",),
-    "skill.gen_asset_binding": ("GEN_ASSET_BINDING_BLOCKED",),
-    "skill.script_required": ("SCRIPT_REMIND_CARD", "SCRIPT_MODEL_NOTE",
-                              "SCRIPT_UPLOAD_ACK"),
 }
 
 # rule_id 别名归一表（旧写法 → 注册表正式条目，单向只读映射），

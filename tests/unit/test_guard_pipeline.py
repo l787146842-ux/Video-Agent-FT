@@ -17,7 +17,7 @@ GOOD_SHOT = (
 def test_verdict_short_prompt_rejected():
     v = prompt_write_verdict("敷衍短句", "shot", {}, gate_enabled=True)
     assert not v.ok
-    assert v.rule_id == "skill.prompt_structure"
+    assert v.rule_id == "platform.prompt_write"
     assert "拦截" in v.message
 
 
@@ -26,7 +26,7 @@ def test_verdict_user_override_allows_with_warning():
         "敷衍短句", "shot", {}, gate_enabled=True, user_override=True,
     )
     assert v.ok
-    assert v.layer == "skill"
+    assert v.layer == "platform"
     assert v.message  # 硬伤已降为警告文案（仍随结果展示）
 
 
@@ -70,26 +70,3 @@ def test_dual_track_same_verdict_for_good_prompt(tmp_path):
         injected_skill="任意 Skill",
     )
     assert err is None
-
-
-def test_fc_flow_gate_s1_warning_only(tmp_path, monkeypatch):
-    """814G5/0818：_flow_gate 恒 None 不硬拦（用户指令优先）；
-    越阶顺序控制已归编排器（旧门禁链退役）。"""
-    import src.video_agent.web.skill_docs as sd
-    from src.video_agent.skill_runtime import registry
-
-    skill_dir = tmp_path / "skills"
-    skill_dir.mkdir()
-    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", skill_dir)
-    registry.reset_registry()
-    sd.save_skill_doc(
-        "有规格闸",
-        '# A\n```json skill_manifest\n' '{"flow": {"spec_gate": true}}\n' "```\n正文",
-    )
-    try:
-        runner = FCToolRunner(tool_manager=None)
-        runner._raw_state = staticmethod(lambda: {})
-        assert runner._flow_gate("storyboard_create_group", "有规格闸") is None
-        assert not runner.gate_warnings  # 用户侧无 ⚠
-    finally:
-        registry.reset_registry()

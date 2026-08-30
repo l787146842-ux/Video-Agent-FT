@@ -148,7 +148,6 @@ def evaluate_prompt_write(
     kind: str,
     state: Dict[str, Any],
     *,
-    gate_rules: Optional[Dict[str, Any]] = None,
     gate_override: Any = False,
     gate_enabled: bool = True,
     mode: Optional[str] = None,
@@ -156,10 +155,11 @@ def evaluate_prompt_write(
     """提示词写入统一判定（决策 D + 结构条款组合；§2.0 唯一组合实现）。
 
     参数（两轨只注入，不各自组装判定）：
-    - gate_rules: Skill manifest 解析出的可配置规则（parse_gate_rules 结果）；
     - gate_override: 用户坚持作用域（False/"all"…）。
 
     返回 GateCheckOutcome；ok=False 时调用方必须拒绝写入并回喂 reject_message。
+    （C1a 裁决 2026-08-31：技能级闸层删除，结构校验为平台固定地板，
+    verdict 统一签发 platform.prompt_write。）
     """
     out = GateCheckOutcome()
     mode = mode or prompt_gates.gate_mode()
@@ -172,10 +172,10 @@ def evaluate_prompt_write(
 
     # 结构闸：写入即校验（拒收重写，自愈闭环）
     ok, hard, _soft = prompt_gates.validate_prompt_write(
-        str(prompt), kind, state, rules=gate_rules,
+        str(prompt), kind, state,
     )
     if ok:
-        out.verdicts.append(GateVerdict("skill.prompt_structure", "skill", True))
+        out.verdicts.append(GateVerdict("platform.prompt_write", "platform", True))
         return out
     if prompt_gates.override_covers(gate_override, prompt_gates.GATE_STRUCTURE):
         # 决策 D：用户坚持 → 放行，硬伤降为警告
@@ -186,18 +186,18 @@ def evaluate_prompt_write(
         )
         out.overridden = True
         out.verdicts.append(GateVerdict(
-            "skill.prompt_structure", "skill", True,
+            "platform.prompt_write", "platform", True,
             prompt_gates.format_gate_errors(hard),
         ))
         return out
     if mode != "strict":
-        out.verdicts.append(GateVerdict("skill.prompt_structure", "skill", True))
+        out.verdicts.append(GateVerdict("platform.prompt_write", "platform", True))
         return out
     out.ok = False
     out.hard_errors = list(hard)
     out.reject_message = prompt_gates.format_gate_errors(hard)
     out.verdicts.append(GateVerdict(
-        "skill.prompt_structure", "skill", False, out.reject_message,
+        "platform.prompt_write", "platform", False, out.reject_message,
     ))
     return out
 
@@ -255,55 +255,6 @@ def evaluate_gen_confirm(
     msg = "生成确认闸拦截：" + prompt_gates.GENERATION_CONFIRM_GATE_BLOCKED
     warns.append(msg)
     audit_verdicts([GateVerdict("platform.gen_confirm", "platform", False, msg)], action=action)
-    return msg, warns
-
-
-def evaluate_gen_asset_binding(
-    state: Dict[str, Any],
-    groups: List[Dict[str, Any]],
-    *,
-    active: bool,
-    override: Any = False,
-    action: str = "",
-) -> "tuple[Optional[str], List[str]]":
-    """生成前资产绑定检查统一判定（skill.gen_asset_binding 唯一实现）。
-
-    groups：本次视频生成目标分镜组（调用方筛好）；判定客观可查：
-    分镜 sceneRefs 引用的关键元素存在无概念图者即拦截
-    （prompt_gates.shot_references_missing_element_images 引用感知判定，
-    无 sceneRefs / 未引用关键元素的目标不误伤）。
-    返回 (硬拒原因, warnings)，与 gen_confirm 同语义：
-    - override 命中 → 不拒，附豁免警告；
-    - 未激活/空目标 → 不拒；
-    - 存在缺图引用 → 硬拒（先补图再生成为客观恢复路径，模型可自愈）。
-    判定经 tracer.record_gate 入审计。
-    """
-    warns: List[str] = []
-    if override in ("all", True):
-        w = "用户坚持跳过生成前资产绑定检查（仅警告），照常生成"
-        warns.append(w)
-        audit_verdicts([GateVerdict("skill.gen_asset_binding", "skill", True, w)],
-                       action=action, overridden=True)
-        return None, warns
-    if not active or not groups:
-        return None, warns
-    missing = [
-        str(g.get("title") or g.get("id") or "未命名分镜")
-        for g in groups
-        if isinstance(g, dict)
-        and prompt_gates.shot_references_missing_element_images(state, g)
-    ]
-    if not missing:
-        audit_verdicts([GateVerdict("skill.gen_asset_binding", "skill", True)],
-                       action=action)
-        return None, warns
-    msg = (
-        "资产绑定检查拦截（" + "、".join(missing[:5]) + "）："
-        + prompt_gates.GEN_ASSET_BINDING_BLOCKED
-    )
-    warns.append(msg)
-    audit_verdicts([GateVerdict("skill.gen_asset_binding", "skill", False, msg)],
-                   action=action)
     return msg, warns
 
 
@@ -372,7 +323,6 @@ def prompt_write_verdict(
     kind: str,
     state: Dict[str, Any],
     *,
-    gate_rules: Optional[Dict[str, Any]] = None,
     user_override: bool = False,
     gate_enabled: bool = True,
     mode: Optional[str] = None,
@@ -385,13 +335,12 @@ def prompt_write_verdict(
     """
     out = evaluate_prompt_write(
         prompt, kind, state,
-        gate_rules=gate_rules,
         gate_override="all" if user_override else False,
         gate_enabled=gate_enabled,
         mode=mode,
     )
     if not out.ok:
-        return GateVerdict("skill.prompt_structure", "skill", False, out.reject_message)
-    # 放行：返回结构闸 verdict（用户坚持时携带降级警告文案，层归属保持 skill）
+        return GateVerdict("platform.prompt_write", "platform", False, out.reject_message)
+    # 放行：返回结构闸 verdict（用户坚持时携带降级警告文案，层归属平台）
     warn = out.warnings[0] if out.warnings else ""
-    return GateVerdict("skill.prompt_structure", "skill", True, warn)
+    return GateVerdict("platform.prompt_write", "platform", True, warn)

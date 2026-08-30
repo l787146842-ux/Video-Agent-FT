@@ -35,19 +35,9 @@ def _gate_json(section: str, fallback: Any) -> Any:
         return fallback
 
 
-SPEC_GATE_ERROR = _gate_msg("SPEC_GATE", (
-    "流程警告：规格文档尚未写入。"
-    "本次操作已按用户要求照常执行，规格文档仍建议补写。"
-))
-
 # 结构搭建阶段内联提示词的容忍上限（字符）：
 # 当前策略下不再剥离内联提示词，详细内容随建卡一并写入
 STRUCTURE_INLINE_PROMPT_MAX = 40
-
-STORYBOARD_PENDING_GATE_ERROR = _gate_msg("STORYBOARD_PENDING", (
-    "流程警告：故事板结构尚未经用户确认。"
-    "本次提示词已按用户要求照常写入，请同时在回复中提示用户审阅左侧故事板。"
-))
 
 # 单一活跃暂停槽位防御断言告警文案（批 B 外置；运维侧可观测告警，
 # 非闸机规则条目，故不登记 GATE_MESSAGE_SECTIONS 覆盖矩阵）
@@ -268,14 +258,6 @@ GENERATION_CONFIRM_GATE_BLOCKED = _gate_msg("GENERATION_CONFIRM_BLOCKED", (
     "流程拦截：目标草稿的 Prompt Draft 尚未经用户审阅确认。请先展示草案并调用"
     "暂停工具请求用户审阅；仅当用户在本次消息中明确要求「直接生成/不用确认」"
     "时才可直接触发生成。"
-))
-
-# 生成前资产绑定检查：判定见 guard_pipeline.evaluate_gen_asset_binding。
-GEN_ASSET_BINDING_BLOCKED = _gate_msg("GEN_ASSET_BINDING_BLOCKED", (
-    "流程拦截：目标分镜 sceneRefs 引用的关键元素还没有任何概念图（生成或上传），"
-    "视频生成已被资产绑定检查拦下。请先为相关关键元素生成或上传概念图"
-    "（确保分镜已引用对应元素），再重新发起视频生成——"
-    "缺少场景参考图直接生成会导致背景跳画与道具变形。"
 ))
 
 # 高风险工具确认闸拒因（宪法 §2.7）：消费端 = guard_pipeline.evaluate_tool_risk，

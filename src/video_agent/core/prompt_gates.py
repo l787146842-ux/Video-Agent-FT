@@ -19,7 +19,6 @@
 - 模式：strict = 拒收重写（校验未通过拦下写入）、warn = 照常执行 + 返回警告
   （默认）、off = 完全关闭。
 """
-import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -44,100 +43,19 @@ from src.video_agent.core.gate_registry import (
     GateRuleMeta, GATE_RULES, RULE_ALIASES, normalize_rule_id,
 )
 
-# 镜头语言客观标记（提示词里出现任一即视为含摄像机层）
-_CAMERA_MARKERS = (
-    "镜头", "景别", "特写", "全景", "中景", "近景", "远景", "俯瞰", "仰角", "跟拍",
-    "推", "拉", "摇", "横移", "环绕", "手持", "shot", "camera", "close-up", "wide",
-    "medium", "pan", "orbit", "tracking", "push-in", "pull-back", "crane", "angle",
-)
-
-# 音频层客观标记（音效包装符 / 对话包装符 / 音乐描述 / no music 备注）
-_AUDIO_MARKERS = ("<", "{", "no music", "no背景音乐", "音效", "旁白")
-
-# 硬性下限（字符数）：低于即打回。取保守值只拦「明显敷衍」，
-# 不与 Skill 的质量要求（≥200 字）混同——质量由指令约束兜底，闸机只管结构。
+# 硬性下限（字符数）：低于即打回。取保守值只拦「明显敷衍」——
+# 平台固定地板，不可被 Skill 调整（C1a 裁决 2026-08-31：技能级闸层删除）。
 _SHOT_PROMPT_MIN_CHARS = 80
 _ELEMENT_PROMPT_MIN_CHARS = 50
 
-# 语言闸（Skill 最高优先级条款：中文输入环境下正文必须中文书写）：
+# 语言闸（中文输入环境下正文必须中文书写）：
 # 中文字符占非空白字符的最低比例。正文中文 + 英文专业术语/包装符的合规提示词
 # 中文占比通常在 40% 以上；整段英文（仅对白是中文）会低于该阈值。
+# 平台固定地板；英文锁定只经用户规格选择 / Skill language 声明轴（见
+# resolve_prompt_language），不再经 gates 键调整。
 _CJK_MIN_RATIO = 0.15
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _WS_RE = re.compile(r"\s")
-
-# 时长语义解析：数字 + 秒/s/sec/seconds（可带「时长/镜头总时长」前缀）
-_DURATION_RE = re.compile(
-    r"\d+(?:\.\d+)?\s*(?:秒|s|sec|seconds)", re.IGNORECASE
-)
-# 字幕负面约束同义词：任一命中即视为已声明「字幕后期添加」
-_SUBTITLE_NEGATIONS = (
-    "no subtitles",
-    "无字幕",
-    "不加字幕",
-    "后期加字幕",
-    "字幕后期添加",
-    "字幕后期",
-    "subtitles added later",
-    "subtitles later",
-)
-
-# Skill 可配置闸机规则：文档内可选声明块，优先级 skill_manifest > gate_rules；
-# 业务闸开关默认全关——引擎不预设任何 Skill 的提示词规范（
-# 需要这些结构检查的 Skill 在自己的 manifest gates 里声明开启
-_GATE_RULES_BLOCK_RE = re.compile(
-    r"```(?:json|js)?\s*gate_rules\s*\n(.*?)```", re.S | re.I
-)
-_DEFAULT_GATE_RULES: Dict[str, Any] = {
-    "shot_min_chars": _SHOT_PROMPT_MIN_CHARS,
-    "element_min_chars": _ELEMENT_PROMPT_MIN_CHARS,
-    "cjk_min_ratio": _CJK_MIN_RATIO,
-    "require_duration": False,
-    "require_subtitle": False,
-    "require_camera_language": False,
-    "require_audio_layer": False,
-    "subtitle_synonyms": list(_SUBTITLE_NEGATIONS),
-    "camera_markers": list(_CAMERA_MARKERS),
-    "audio_markers": list(_AUDIO_MARKERS),
-}
-
-
-def parse_gate_rules(content: str, manifest: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """从 Skill 解析闸机规则（旧 gate_rules 块兼容；manifest gates 由
-    调用方读 frontmatter 传入——正文不再承载声明）。
-
-    未声明 / 格式非法 / 类型不合法时回落默认规则；只接受白名单键，
-    防止用户文档意外破坏结构防护（长度/语言等基础阈值不可被关到负值）。
-    """
-    rules = dict(_DEFAULT_GATE_RULES)
-    m = _GATE_RULES_BLOCK_RE.search(content or "")
-    if m:
-        try:
-            data = json.loads(m.group(1))
-        except Exception:
-            data = None
-        if isinstance(data, dict):
-            for key, default in _DEFAULT_GATE_RULES.items():
-                val = data.get(key, default)
-                if isinstance(default, bool):
-                    if isinstance(val, (bool, int)):
-                        rules[key] = bool(val)
-                elif isinstance(default, int):
-                    if isinstance(val, (int, float)) and val > 0:
-                        rules[key] = int(val)
-                elif isinstance(default, float):
-                    # 允许 0：cjk_min_ratio=0 等效关闭语言闸（英文锁定 Skill）
-                    if isinstance(val, (int, float)) and 0 <= val <= 1:
-                        rules[key] = float(val)
-                elif isinstance(default, list):
-                    if isinstance(val, list) and all(isinstance(x, str) for x in val):
-                        rules[key] = [x for x in val if x]
-    # skill_manifest gates 覆盖（frontmatter 声明是唯一源，冲突键优先于旧块）
-    if manifest:
-        for key, val in (manifest.get("gates") or {}).items():
-            if key in _DEFAULT_GATE_RULES:
-                rules[key] = val
-    return rules
 
 # 对话包装符：{台词}（Seedance 口头对话格式）
 _DIALOGUE_RE = re.compile(r"\{[^{}\n]{2,}\}")
@@ -235,43 +153,6 @@ def has_spec_document(raw_state: Dict[str, Any]) -> bool:
     return False
 
 
-def shot_references_missing_element_images(
-    raw_state: Dict[str, Any],
-    group: Optional[Dict[str, Any]] = None,
-    scene_refs: Optional[List[Any]] = None,
-) -> bool:
-    """分镜 sceneRefs 引用了无图关键元素时返回 True（引用感知）。
-
-    group 优先取其 sceneRefs；新建分组场景可显式传 scene_refs。
-    无 sceneRefs / 未引用任何关键元素 → False（不误伤无关分镜）。
-    """
-    refs: List[Any] = []
-    if group is not None and isinstance(group, dict):
-        refs = group.get("sceneRefs") or []
-    if not refs and scene_refs is not None:
-        refs = scene_refs
-    if not refs:
-        return False
-    ke_groups = raw_state.get(CAT_KEY_ELEMENTS) or []
-    for ref in refs:
-        if not isinstance(ref, str):
-            continue
-        for ke in ke_groups:
-            if not isinstance(ke, dict):
-                continue
-            # sceneRefs 兼容关键元素 ID（ke-xxx）与标题两种写法
-            if str(ke.get("id") or "") != ref and str(ke.get("title") or "") != ref:
-                continue
-            drafts = ke.get("drafts") or []
-            if not any(
-                str(d.get("imgUrl") or "").strip()
-                for d in drafts if isinstance(d, dict)
-            ):
-                return True
-            break
-    return False
-
-
 def resolve_kind_by_draft_id(
     raw_state: Dict[str, Any],
     draft_id: str,
@@ -307,32 +188,6 @@ def resolve_kind_by_draft_id(
     return ""
 
 
-def autofill_shot_duration(
-    prompt: str,
-    kind: str,
-    group: Optional[Dict[str, Any]],
-    rules: Optional[Dict[str, Any]] = None,
-) -> str:
-    """分镜提示词时长自动补全。
-
-    提示词未写明镜头时长且所属分镜组的 duration 字段可用时，在末尾追加
-    「镜头总时长：X」——生视频模型只认提示词正文，客观补印比拒绝重写
-    更可靠；其余情况原样返回。
-    """
-    if kind != "shot" or not str(prompt or "").strip() or not group:
-        return prompt
-    gate = rules or _DEFAULT_GATE_RULES
-    if not gate.get("require_duration", True):
-        return prompt
-    text = str(prompt)
-    if _DURATION_RE.search(text.lower()):
-        return text
-    duration = str(group.get("duration") or "").strip()
-    if not duration:
-        return text
-    return text.rstrip() + f"\n镜头总时长：{duration}"
-
-
 _SPEC_LANG_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?输出语言(?:\*\*)?\s*[:：]\s*(.+)$")
 
@@ -352,16 +207,13 @@ def spec_output_language(raw_state: Optional[Dict[str, Any]]) -> str:
 
 def resolve_prompt_language(
     raw_state: Optional[Dict[str, Any]],
-    skill_rules: Optional[Dict[str, Any]] = None,
     skill_name: str = "",
 ) -> str:
     """ 语言单一事实源裁决：用户选择（规格输出语言）> Skill 声明
-    （v3 language.prompt=en 或 cjk_min_ratio<=0 = 英文锁定）> 平台默认（中文）。
+    （v3 language.prompt=en）> 平台默认（中文）。
     注入句与语言闸读同一结果，by construction 不可能再打架。
-
-    v3 放宽：frontmatter 声明 language.prompt=en 即按声明放宽，
-    读取路径经 registry API；未声明维持现状（skill 定位：显式传入 >
-    usedSkills 末位兜底，与「当前 Skill 归属」单一实现同源）。"""
+    （C1a 裁决 2026-08-31：gates 键 cjk_min_ratio 调整轴退役，
+    英文锁定只经本裁决的用户选择/声明两轴）。"""
     sel = spec_output_language(raw_state)
     if sel:
         has_cn = "中" in sel
@@ -380,12 +232,6 @@ def resolve_prompt_language(
             return "英文"
     except Exception:
         pass  # 声明读取失败回落现状判定（不误拦）
-    gate = skill_rules or {}
-    try:
-        if float(gate.get("cjk_min_ratio", _CJK_MIN_RATIO)) <= 0:
-            return "英文"
-    except (TypeError, ValueError):
-        pass
     return "中文"
 
 
@@ -393,15 +239,13 @@ def validate_prompt_write(
     prompt: str,
     kind: str,
     raw_state: Dict[str, Any] | None = None,
-    rules: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, List[str], List[str]]:
-    """校验一条待写入的生成提示词。
+    """校验一条待写入的生成提示词（平台固定地板：字数 + 语言闸）。
 
     Args:
         prompt: 待写入的提示词全文
         kind: 目标类别 keyElement | shot | audio（audio 不校验）
         raw_state: 当前工作台状态（音色参考软提醒用；None 时跳过软提醒）
-        rules: Skill 可配置规则（parse_gate_rules 产出；None 用默认规则）
 
     Returns:
         (ok, hard_errors, soft_warnings)
@@ -409,6 +253,8 @@ def validate_prompt_write(
         strict 下拒收本次写入并把 hard_errors 回喂模型修正重写；
         warn（默认）下照常写入并把 hard_errors 作为警告返回给用户。
         指令优先级声明见 shared/iron_rules_header.md（单一表述源）。
+        （C1a 裁决 2026-08-31：Skill 可调闸（require_* 与阈值抬高）退役，
+        本校验只守平台固定地板。）
     """
     text = (prompt or "").strip()
     hard: List[str] = []
@@ -416,12 +262,7 @@ def validate_prompt_write(
     if not text or kind not in ("shot", "keyElement"):
         return True, hard, soft
 
-    lower = text.lower()
-    gate = rules or _DEFAULT_GATE_RULES
-    shot_min_chars = int(gate.get("shot_min_chars", _SHOT_PROMPT_MIN_CHARS))
-    element_min_chars = int(gate.get("element_min_chars", _ELEMENT_PROMPT_MIN_CHARS))
-    cjk_min_ratio = float(gate.get("cjk_min_ratio", _CJK_MIN_RATIO))
-    # 当前 Skill 归属（与 resolve_prompt_language 同源的 usedSkills 末位兜底）：
+    # 当前 Skill 归属（与 resolve_prompt_language 同源的 usedSkills 末位兖底）：
     # 类别级语言豁免与音色声明轴都从声明读取，不硬编码探测
     _cur_skill = ""
     try:
@@ -430,12 +271,11 @@ def validate_prompt_write(
     except Exception:
         pass
     # 语言单一事实源接入用户选择（规格输出语言 > Skill 声明）；
-    # 英文/中英双语关闭语言闸，中文选择在 Skill 英文锁定时恢复平台地板
-    _lang = resolve_prompt_language(raw_state, gate)
+    # 英文/中英双语关闭语言闸，中文选择恢复平台地板
+    cjk_min_ratio = _CJK_MIN_RATIO
+    _lang = resolve_prompt_language(raw_state)
     if _lang in ("英文", "中英双语"):
         cjk_min_ratio = 0.0
-    elif cjk_min_ratio <= 0:
-        cjk_min_ratio = float(_CJK_MIN_RATIO)
     # 类别级语言闸豁免（任务#8 ①）：Skill 声明 language.prompt_en_categories
     # 含当前类别时，仅该类别放宽为英文；其余类别维持中文地板
     # （豁免只按声明类别生效，防泛化）
@@ -449,8 +289,7 @@ def validate_prompt_write(
         pass  # 声明读取失败回落现状判定（不误拦）
 
     # 语言闸（shot / keyElement 通用）：中文输入环境下正文应以中文书写，
-    # 仅专业技术术语可保留英文。阈值可由 manifest gates.cjk_min_ratio 调整
-    # （英文锁定的 Skill 声明极低阈值即等效关闭）
+    # 仅专业技术术语可保留英文（平台固定地板）
     total_chars = len(_WS_RE.sub("", text))
     cjk_chars = len(_CJK_RE.findall(text))
     if total_chars and cjk_chars / total_chars < cjk_min_ratio:
@@ -460,35 +299,11 @@ def validate_prompt_write(
         )
 
     if kind == "shot":
-        if len(text) < shot_min_chars:
+        if len(text) < _SHOT_PROMPT_MIN_CHARS:
             hard.append(
                 f"分镜视频提示词过短（{len(text)} 字），请补全画面主体/镜头语言/"
                 "声音层等必要描述后重新写入"
             )
-        if gate.get("require_duration", False) and not _DURATION_RE.search(lower):
-            hard.append(
-                "分镜视频提示词缺少镜头时长：须在提示词中写明本镜头总时长"
-                "（如「镜头总时长：15秒」「15s」「15 秒」，与分镜结构的时长字段一致），"
-                "生视频模型无法从其他渠道得知镜头时长"
-            )
-        if gate.get("require_subtitle", False):
-            subtitle_synonyms = gate.get("subtitle_synonyms") or _SUBTITLE_NEGATIONS
-            if not any(n in lower for n in subtitle_synonyms):
-                hard.append(
-                    "分镜视频提示词缺少字幕负面约束（字幕在后期添加，须显式声明），"
-                    "可用「no subtitles」「无字幕」「不加字幕」「后期加字幕」等任一写法"
-                )
-        if gate.get("require_audio_layer", False):
-            audio_markers = gate.get("audio_markers") or _AUDIO_MARKERS
-            if not any(m in text or m in lower for m in audio_markers):
-                hard.append(
-                    "分镜视频提示词缺少音频层：须含对话 {…} / 音效 <…> / 音乐 (…) 之一，"
-                    "或明确写「no music」"
-                )
-        if gate.get("require_camera_language", False):
-            camera_markers = gate.get("camera_markers") or _CAMERA_MARKERS
-            if not any(m in text or m in lower for m in camera_markers):
-                hard.append("分镜视频提示词缺少镜头语言：须写明景别/角度/运动（如 缓慢推入、环绕、cut to new angle）")
         # 软提醒：有对白且存在音色参考——音色在场优先跟随 Skill 声明轴
         # （requires_inputs.features 含 voice_reference，任务#8 ④）；
         # 未声明者回落状态探测（零预设，不回潮硬编码唯探测）
@@ -511,7 +326,7 @@ def validate_prompt_write(
                 "并在草稿 refAssets/timbre 中绑定对应音频，以保证跨镜头声音一致"
             )
     else:  # keyElement
-        if len(text) < element_min_chars:
+        if len(text) < _ELEMENT_PROMPT_MIN_CHARS:
             hard.append(
                 f"关键元素提示词过短（{len(text)} 字），请补全主体身份/特征细节/"
                 "氛围基调等必要描述后重新写入"
@@ -667,9 +482,7 @@ from src.video_agent.core.gates_cards import (
     _GATE_MSG_FILE,
     _gate_msg,
     _gate_json,
-    SPEC_GATE_ERROR,
     STRUCTURE_INLINE_PROMPT_MAX,
-    STORYBOARD_PENDING_GATE_ERROR,
     _STORYBOARD_STRUCTURE_PAUSED,
     STORYBOARD_STRUCTURE_PAUSED_MSG,
     STORYBOARD_STRUCTURE_OPTIONS,
@@ -702,7 +515,6 @@ from src.video_agent.core.gates_cards import (
     drafts_review_card,
     GENERATION_CONFIRM_GATE_ERROR,
     GENERATION_CONFIRM_GATE_BLOCKED,
-    GEN_ASSET_BINDING_BLOCKED,
     TOOL_RISK_BLOCKED_MSG,
     current_flow_step,
     system_continue_option,

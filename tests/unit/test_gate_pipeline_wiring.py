@@ -63,7 +63,7 @@ class TestUnifiedPipeline:
     def test_verdicts_structured(self):
         out = evaluate_prompt_write(_BAD_EN_SHOT, "shot", _empty_state())
         assert any(
-            isinstance(v, GateVerdict) and v.rule_id == "skill.prompt_structure" and not v.ok
+            isinstance(v, GateVerdict) and v.rule_id == "platform.prompt_write" and not v.ok
             for v in out.verdicts
         )
 
@@ -92,8 +92,6 @@ class TestUnifiedPipeline:
 class TestMessagesExternalized:
     def test_gate_constants_from_messages_md(self):
         pairs = [
-            (prompt_gates.SPEC_GATE_ERROR, "SPEC_GATE"),
-            (prompt_gates.STORYBOARD_PENDING_GATE_ERROR, "STORYBOARD_PENDING"),
             (prompt_gates.GENERATION_CONFIRM_GATE_ERROR, "GENERATION_CONFIRM"),
             (prompt_gates.GENERATION_CONFIRM_GATE_BLOCKED, "GENERATION_CONFIRM_BLOCKED"),
         ]
@@ -109,8 +107,9 @@ class TestMessagesExternalized:
         assert opts2 == prompt_gates.SHOT_STRUCTURE_OPTIONS
 
     def test_registry_covers_layers(self):
+        # C1a 裁决 2026-08-31：技能级闸层删除，注册表仅余平台层
         assert prompt_gates.GATE_RULES["platform.gen_confirm"].layer == "platform"
-        assert prompt_gates.GATE_RULES["skill.require_subtitle"].layer == "skill"
+        assert all(m.layer == "platform" for m in prompt_gates.GATE_RULES.values())
 
 
 class TestGateAudit:

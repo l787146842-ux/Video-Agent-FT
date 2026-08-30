@@ -8,33 +8,12 @@ from src.video_agent.core.live_metrics import get_live_context, record_live_cont
 from src.video_agent.core.action_executor import StateOperationExecutor
 
 
-# ---------- item 6：分镜提示词时长客观补全 ----------
-
-def test_autofill_shot_duration_appends_when_missing():
-    group = {"id": "shot-1", "duration": "20s"}
-    # 时长补印随 require_duration 开关（S1：默认关，声明开启才补）
-    out = prompt_gates.autofill_shot_duration(
-        "镜头画面描述，无字幕。", "shot", group,
-        rules={"require_duration": True},
-    )
-    assert out.startswith("镜头画面描述，无字幕。")
-    assert "镜头总时长：20s" in out
-
-
-def test_autofill_shot_duration_idempotent():
-    group = {"id": "shot-1", "duration": "20s"}
-    prompt = "镜头总时长：20秒。画面描述。"
-    assert prompt_gates.autofill_shot_duration(prompt, "shot", group) == prompt
-
-
-def test_autofill_shot_duration_noop_for_key_element():
-    group = {"id": "ke-1", "duration": "20s"}
-    assert prompt_gates.autofill_shot_duration("描述", "keyElement", group) == "描述"
+# ---------- item 6：分镜提示词时长客观补全（C1a 裁决 2026-08-31 退役：
+# require_duration 技能闸与 autofill 补印随技能级闸层删除） ----------
 
 
 def test_executor_shot_prompt_missing_duration_passes_gate(tmp_path):
-    """888 现场：12 条分镜提示词全因缺时长被拒 → 零进展熔断。
-    现在用分镜组 duration 客观补印后通过结构闸并写入。"""
+    """888 现场回归：C1a 裁决后时长不再校验——未写时长的合格长度提示词直接写入。"""
     from src.video_agent.state.manager import StateManager
 
     svc = StateManager(str(tmp_path / "ws"))
@@ -43,8 +22,6 @@ def test_executor_shot_prompt_missing_duration_passes_gate(tmp_path):
         "drafts": [{"id": "draft-1", "prompt": "", "mediaType": "video"}],
     }]
     ex = StateOperationExecutor(svc, gate_enabled=True)
-    ex.gate_rules = {"require_duration": True}  # 显式声明时长闸（S1：默认关）
-    # 提示词满足其余硬条款（长度/字幕/音频/镜头），唯独不写时长
     prompt = (
         "中景缓慢推入，失重的白色球形舱内，程心与AA从冬眠中醒来，"
         "窗外木星云带旋转，光影冷峻。无字幕（no subtitles）。"
@@ -56,8 +33,7 @@ def test_executor_shot_prompt_missing_duration_passes_gate(tmp_path):
     }])
     assert applied == 1
     written = svc.state_dict["shots"][0]["drafts"][0]["prompt"]
-    assert written.startswith(prompt)
-    assert "镜头总时长：20s" in written
+    assert written == prompt
 
 
 # ---------- item 6：add_draft 盲捡收敛 ----------
@@ -164,15 +140,6 @@ def test_resolve_scene_refs_matches_by_id_and_title():
     group = {"id": "shot-1", "sceneRefs": ["ke-1", "程心", "ke-404"]}
     refs = resolve_scene_refs(state, group)
     assert [r["url"] for r in refs] == ["http://x/j.png", "http://x/c.png"]
-
-
-def test_shot_gate_missing_element_images_by_id_ref():
-    """引用感知闸机：ID 形式的 sceneRefs 也能正确判定元素图缺失。"""
-    state = {"keyElements": [{"id": "ke-1", "title": "木星", "drafts": [{"imgUrl": ""}]}]}
-    group = {"id": "shot-1", "sceneRefs": ["ke-1"]}
-    assert prompt_gates.shot_references_missing_element_images(state, group=group) is True
-    state["keyElements"][0]["drafts"][0]["imgUrl"] = "http://x/a.png"
-    assert prompt_gates.shot_references_missing_element_images(state, group=group) is False
 
 
 # ---------- item 1：实时上下文用量 ----------

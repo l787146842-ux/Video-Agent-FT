@@ -29,7 +29,6 @@ from datetime import date
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 from src.video_agent.web.skill_docs import split_skill_sections, parse_pause_rules  # noqa: E402
-from src.video_agent.core.prompt_gates import parse_gate_rules  # noqa: E402
 from src.video_agent.skill_runtime import frontmatter  # noqa: E402
 from src.video_agent.skill_runtime.registry import (  # noqa: E402
     CAPABILITY_TOOL_STAGES,
@@ -471,15 +470,10 @@ def main() -> None:
         manifest, body, fm_err = frontmatter.split_frontmatter(content)
         sections = split_skill_sections(body)
         pause = parse_pause_rules(body)
-        gates = parse_gate_rules(body)
-        has_gate_block = bool(re.search(r"```(?:json|js)?\s*gate_rules\s*\n", body))
         lines.append("=" * 70)
         lines.append(f"SKILL: {slug}  ({f.stat().st_size} 字节)")
         lines.append(f"  章节(stage): {sorted(k for k, v in sections.items() if v.strip()) or '无'}")
         lines.append(f"  pause_rules: {pause}")
-        lines.append(f"  gate_rules 块存在: {has_gate_block}")
-        if has_gate_block:
-            lines.append(f"  gate_rules 解析结果: {gates}")
         # 关键条款探针：与系统硬编码闸机可能冲突的词
         probes = {
             "要求中文正文": "中文" in body and ("最高优先级" in body or "必须" in body),

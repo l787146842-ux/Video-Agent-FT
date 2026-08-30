@@ -44,10 +44,6 @@ def test_flow_gates_with_user_visible_copy_are_covered():
     （防固定文案绕过外置单一事实源回流代码）。"""
     must_have_copy = {
         "platform.gen_confirm",
-        "skill.flow.spec_gate",
-        "skill.flow.storyboard_pending",
-        "skill.gen_asset_binding",
-        "skill.script_required",
     }
     for rule_id in must_have_copy:
         assert GATE_MESSAGE_SECTIONS[rule_id], f"{rule_id} 缺外置文案分节登记"

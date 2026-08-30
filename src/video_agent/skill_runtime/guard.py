@@ -48,7 +48,6 @@ def validate_prompt_hard(
     prompt: str,
     kind: str,
     state: Dict[str, Any],
-    rules: Optional[Dict[str, Any]] = None,
     user_override: bool = False,
 ) -> Tuple[bool, List[str], List[str]]:
     """提示词硬性条款校验（决策 D：质量优先）。
@@ -60,7 +59,6 @@ def validate_prompt_hard(
     """提示词硬性条款校验（决策 D：质量优先），委托统一闸机管线（宪法 §2.0）。"""
     verdict = prompt_write_verdict(
         prompt, kind, state,
-        gate_rules=rules,
         user_override=user_override,
         gate_enabled=True,
     )

@@ -56,7 +56,7 @@ def test_flova_composition_skips_freeform_skills():
 
 def test_frontmatter_lint_warns_on_schema_issue():
     """任务#5：frontmatter 声明问题编辑期预警（只告警不阻断）。"""
-    content = "---\ngates:\n  unknown_gate: true\n---\n<planner>\n1. 分析剧本\n</planner>"
+    content = "---\nversion: \"\"\n---\n<planner>\n1. 分析剧本\n</planner>"
     result = sd.lint_skill_content(content, slug="test-skill")
     assert any("frontmatter 声明问题" in w for w in result["warnings"])
 

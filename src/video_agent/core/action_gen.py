@@ -141,12 +141,6 @@ def apply_generate_video(ex: "StateOperationExecutor", action: Dict) -> bool:
     if not pairs:
         return False
 
-    # 生成前资产绑定检查：sceneRefs 引用的关键元素
-    # 无概念图时整批拦截，先补图再生成
-    pairs = ex._gen_asset_binding_gate(pairs)
-    if not pairs:
-        return False
-
     submitted = 0
     for group, draft in pairs:
         prompt = (draft.get("prompt") or "").strip()
