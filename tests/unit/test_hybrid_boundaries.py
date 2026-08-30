@@ -313,7 +313,7 @@ def test_stage_restrictions_no_spec():
     assert "storyboard_create_group" in excluded
     assert "read_draft" in excluded
     # image_generate 单张应急轨任意阶段可见（空项目恰是应急出图场景），
-    # 不入裁剪集；批量轨由阶段前置硬闸按 mode 拦截（见 test_stage_precondition_gate）
+    # 不入裁剪集；批量轨由 gen_confirm/tool_risk 闸按 mode 兜底拦截
     assert "image_generate" not in excluded and "generate_video" in excluded
     assert "document_write" not in excluded
     assert "规格" in note

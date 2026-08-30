@@ -419,7 +419,7 @@ def drafts_confirmed(raw_state: Dict[str, Any], drafts: List[Dict[str, Any]]) ->
 
 # 故事板结构工具集（无规格文档阶段不下发；三个拆解
 # 执行器与提示词编写执行器同入名单——越阶入口正是它们，
-# 可见性软层与阶段前置硬闸 platform.stage_precondition 双层一致）
+# 可见性软层；C1b 裁决 2026-08-31 阶段前置硬闸退役）
 STORYBOARD_STAGE_TOOLS = frozenset({
     "storyboard_create_group", "storyboard_patch_draft", "storyboard_add_draft",
     "storyboard_delete_group", "storyboard_confirm_draft", "storyboard_media_to_chat",
@@ -428,9 +428,8 @@ STORYBOARD_STAGE_TOOLS = frozenset({
     "write_media_prompt",
 })
 # 草稿生成工具集（故事板结构就绪前不下发）。image_generate 不入裁剪集：
-# 其单张应急轨（mode='single'）任意阶段可见（应急出图覆盖空项目场景，
-# 等价旧独立单张工具），批量轨由阶段前置硬闸（platform.stage_precondition）
-# 在执行时按 mode 拦截兜底。
+# 其单张应急轨（mode='single'）任意阶段可见（应急出图覆盖空项目场景）；
+# 批量轨由 gen_confirm/tool_risk 闸在执行时按 mode 兜底拦截。
 GENERATION_STAGE_TOOLS = frozenset({"generate_video"})
 
 

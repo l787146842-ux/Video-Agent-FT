@@ -149,11 +149,6 @@ class FCToolRunner:
     def _prompt_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
         return fc_gates.prompt_gate(self._gate_ctx(injected_skill), name, args)
 
-    def _stage_precondition_gate(
-        self, name: str, injected_skill: str, args: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
-        return fc_gates.stage_precondition_gate(self._gate_ctx(injected_skill), name, args)
-
     def _strip_structure_prompt(self, name: str, args: Dict[str, Any], injected_skill: str) -> bool:
         return fc_gates.strip_structure_prompt(self._gate_ctx(injected_skill), name, args)
 
@@ -366,8 +361,9 @@ class FCToolRunner:
             else:
                 # 结构纯净闸：内联详细提示词剥离（闸机链之前，回喂时附说明）
                 fc_gates.strip_structure_prompt(ctx, name, args)
-                # 闸机链（fc_gates.run_gate_chain）：轮内暂停纪律 → 阶段前置（平台不变量）
-                # → 规格前置 → 工具风险 → 生成确认 → 建组结构完整性 → 提示词结构 → 生图配额
+                # 闸机链（fc_gates.run_gate_chain）：轮内暂停纪律 → 工具风险 →
+                # 生成确认 → 建组结构完整性 → 提示词结构 → 生图配额
+                # （C1b 裁决 2026-08-31：阶段前置闸退役）
                 chain = fc_gates.run_gate_chain(
                     ctx, name, args, paused_this_batch=paused_this_batch)
                 gate_error = chain.error
@@ -701,9 +697,10 @@ class FCToolRunner:
 
 # ---------- 承重壳清单（测试 patch 目标与旧 import 路径不变） ----------
 # 闸机裁决段承重壳（实现体 core/fc_gates.py）：
-#   FCToolRunner._prompt_gate / _stage_precondition_gate /
+#   FCToolRunner._prompt_gate /
 #   _structure_integrity_gate / _gen_confirm_gate / _tool_risk_gate /
 #   _strip_structure_prompt / _resolve_current_refs
-# （C1a 裁决 2026-08-31：_flow_gate 随技能级闸层删除退役）
+# （C1a 裁决 2026-08-31：_flow_gate 随技能级闸层删除退役；
+#   C1b 裁决 2026-08-31：_stage_precondition_gate 随阶段前置闸退役）
 # 批末对账段（实现体 core/fc_reconcile.py）：execute() 尾部 reconcile_batch 调用
 # 回喂家族承重壳（实现体 core/fc_feedback.py）：本文件顶部 re-export 清单

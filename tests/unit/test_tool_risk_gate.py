@@ -485,10 +485,6 @@ class TestExecPreferenceToolRisk:
         from src.video_agent.tools.video.generate_video import GenerateVideoTool
         ToolManager.register(GenerateVideoTool())
         set_global_setting("execution_preference", "auto_decide")
-        # 桩掉阶段前置探针（前置阶段已满足），聚焦本闸偏好分流语义；
-        # Skill 暂停点纪律不在此闸，不受本桩影响（红线）
-        monkeypatch.setattr(
-            stage_probes, "evaluate_stage_precondition", lambda *a, **k: None)
         tracer = AgentTracer.get_instance()
         runner, res = _run(monkeypatch, "generate_video", {"target": "all_shots"},
                            injected_skill="未注册的在场 Skill")

@@ -390,9 +390,9 @@ class Planner:
 
         # Workflow Runtime：runtime 为「账本 + 裁判数据层」——轮始只做
         # run 同步（RunStarted 幂等）与客观数据预取；本轮做什么永远由模型
-        # 接到用户消息后发起工具调用，runtime 无自主行动能力；越阶由
-        # stage_precondition 闸在工具执行路径首位否决（防越阶靠刹车，
-        # 不没收方向盘）。
+        # 接到用户消息后发起工具调用，runtime 无自主行动能力。
+        # （C1b 裁决 2026-08-31：stage_precondition 越阶硬闸退役，
+        # 流程顺序改由模型读 planner 散文自主执行。）
         if settings.pipeline_orchestrator_enabled and context.skill_name:
             # 轮始 run 同步（RunStarted 幂等）+ 输入类 decision 消费
             # （waiting_user→ready，DecisionResolved 入事件账本）。
@@ -412,8 +412,8 @@ class Planner:
                 logger.debug("[WorkflowRuntime] 轮始 run 同步跳过: {}", _e)
 
         # 轮始闸预检只装配兜底卡（原料闸/规格闸，层 9 由代码执行不依赖
-        # 模型自觉）；其余交接模型循环，越阶由 stage_precondition 闸
-        # 在工具执行路径否决。
+        # 模型自觉）；其余交接模型循环。
+        # （C1b 裁决 2026-08-31：越阶硬闸退役，顺序由模型自主。）
         if settings.pipeline_orchestrator_enabled and context.skill_name:
             # 闸预检只认用户原话——user_message 可能是多模态拼装
             # （附件预览含剧本对白问号，不得参与豁免/回执意图判定）

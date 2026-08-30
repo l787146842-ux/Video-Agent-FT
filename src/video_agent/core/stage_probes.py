@@ -288,7 +288,8 @@ def _stage_dependencies(skill: str) -> Dict[str, List[str]]:
     return out
 
 
-# ---------- 阶段前置闸（控制流统一：平台不变量） ----------
+# ---------- 阶段依赖图（规格闸/阶段完成探针共用；
+# C1b 裁决 2026-08-31 阶段前置硬闸退役后仅余探针用途） ----------
 #
 # 业界依据（Claude Code hooks：「Hooks guarantee behavior; prompts suggest」，
 # 且 Anthropic RFC#45427 教训：旁路钩子可被绕过，强制必须内嵌执行路径）：
@@ -330,40 +331,6 @@ def _effective_stage_deps(skill: str, table: List[StageSpec]) -> Dict[str, List[
             deps[spec.key] = [prev]
         prev = spec.key
     return deps
-
-
-def evaluate_stage_precondition(
-    tool_name: str, state: Dict[str, Any], skill: str,
-    args: Optional[Dict[str, Any]] = None,
-) -> Optional[str]:
-    """阶段前置闸判定（platform.stage_precondition，GATE_RULES 登记）。
-
-    返回拒收文案（结构化拒因，回喂模型）；None = 放行。
-    事实源全复用既有单一源：阶段表/依赖图/客观探针（frontmatter 声明，
-    未声明前置回落线性链，与 3A 调度同构且更保守）。无 Skill 激活不启用。
-    """
-    if not skill:
-        return None
-    # image_generate 单张应急轨（mode='single'）任意阶段放行（等价旧独立
-    # 单张工具，应急出图覆盖空项目场景）；批量轨（默认）照常按阶段判定。
-    if (tool_name == "image_generate" and args is not None
-            and str(args.get("mode") or "batch").strip().lower() == "single"):
-        return None
-    table = stage_table(skill)
-    if not table:
-        return None
-    stage = tool_stage_of(tool_name, table)
-    if not stage:
-        return None
-    deps = _effective_stage_deps(skill, table).get(stage, [])
-    missing = [d for d in deps if not stage_done(d, state, skill)]
-    if not missing:
-        return None
-    names = "、".join(f"「{_STAGE_TITLES.get(d, d)}」" for d in missing)
-    return (
-        f"阶段前置闸拦截：{names} 尚未完成，当前不得调用 {tool_name}。"
-        "请先完成前置阶段（流程顺序由 Skill 声明机械强制，非建议）。"
-    )
 
 
 def _spec_stage_pending(state: Dict[str, Any], skill: str) -> bool:

@@ -3,8 +3,9 @@
 
 三段结构：闸机裁决（本模块）→ 执行（fc_tool_runner）→ 批末对账（fc_reconcile）。
 
-承载 FC 轨闸机链全链：轮内暂停纪律 → 阶段前置 → 规格前置（flow）→
-工具风险（§2.7）→ 生成确认 → 建组结构完整性 → 提示词结构。
+承载 FC 轨闸机链全链：轮内暂停纪律 → 工具风险（§2.7）→
+生成确认 → 建组结构完整性 → 提示词结构。
+（C1b 裁决 2026-08-31：阶段前置闸退役；规格前置 flow_gate 随 C1a 退役。）
 判定实现唯一归属 guard_pipeline（宪法 §2.0 单一组合实现）；
 本模块只做 FC 轨参数组装与链式组合，不各自写判定。
 web 层引用（生成日志面板）经 GateContext.record_gen_log 注入，
@@ -20,7 +21,6 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline, stage_probes, prompt_gates
-from src.video_agent.core.live_metrics import record_degradation
 from src.video_agent.skill_runtime.registry import resolve_entry
 from src.video_agent.state import storyboard_ops as ops
 # MCP 命名空间判定：外部工具同管线过 risk 闸，不旁路
@@ -144,48 +144,6 @@ def pause_window_error(name: str, paused_this_batch: bool) -> Optional[str]:
             "暂停窗口内仅允许读类工具（read_*）。"
         )
     return None
-
-
-def stage_precondition_gate(
-    ctx: GateContext, name: str, args: Optional[Dict[str, Any]] = None,
-) -> Optional[str]:
-    """阶段前置闸（platform.stage_precondition）：
-    工具归属阶段的前置阶段未完成 → 拒收（机械强制，不依赖控制流入口）。
-    仅 strict 模式启用；用户坚持（gate_override）可一次性豁免并留痕。
-    args 传入时支持 mode 级豁免（image_generate 单张应急轨任意阶段放行）。"""
-    if not ctx.injected_skill or prompt_gates.gate_mode() != "strict":
-        return None
-    try:
-        err = stage_probes.evaluate_stage_precondition(
-            name, ctx.state(), ctx.injected_skill, args)
-    except Exception as exc:
-        # 判定异常不再无声放行——探针失明时
-        # fail-closed 拦截 + 降级遥测留痕；err 落入下方共享的 override/
-        # 审计逻辑，用户仍可经「本次放行」（gate_override）一次性豁免。
-        record_degradation("fc_gates.stage_precondition_probe")
-        logger.warning(
-            "[Gate] stage_precondition 探针异常，fail-closed 拦截 {}: {}",
-            name, exc)
-        err = (
-            f"阶段前置校验暂时不可用（系统探针异常），已拦截 {name} 调用；"
-            "确认流程无误后可点「本次放行」继续。")
-    if err is None:
-        return None
-    if ctx.gate_override in (True, "all"):
-        ctx.warnings.append(f"用户坚持放行：{err}")
-        guard_pipeline.audit_verdicts(
-            [guard_pipeline.GateVerdict(
-                "platform.stage_precondition", "platform", True,
-                message=f"用户坚持豁免：{err}")],
-            skill_name=ctx.injected_skill, action=name, overridden=True,
-        )
-        return None
-    guard_pipeline.audit_verdicts(
-        [guard_pipeline.GateVerdict(
-            "platform.stage_precondition", "platform", False, message=err)],
-        skill_name=ctx.injected_skill, action=name,
-    )
-    return err
 
 
 def tool_risk_gate(
@@ -401,13 +359,11 @@ def run_gate_chain(
     ctx: GateContext, name: str, args: Dict[str, Any],
     *, paused_this_batch: bool,
 ) -> GateChainResult:
-    """闸机链组合（顺序敏感，勿调换）：轮内暂停纪律 → 阶段前置（平台不变量）
-    → 规格前置 → 工具风险 → 生成确认 → 建组结构完整性 → 提示词结构
-    → 生图配额。任一闸拒收即短路，后续闸不再判。"""
+    """闸机链组合（顺序敏感，勿调换）：轮内暂停纪律 → 工具风险 →
+    生成确认 → 建组结构完整性 → 提示词结构 → 生图配额。
+    任一闸拒收即短路，后续闸不再判。（C1b 裁决 2026-08-31：阶段前置闸退役。）"""
     res = GateChainResult()
     err = pause_window_error(name, paused_this_batch)
-    if err is None:
-        err = stage_precondition_gate(ctx, name, args)
     if err is None:
         err = tool_risk_gate(ctx, name, args)
     if err is None:

@@ -54,12 +54,6 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
                      "（high 默认/未注册默认，数据驱动）的工具须经用户显式同意"
                      "方可执行；image_generate 批量轨由 gen_confirm 闸专属覆盖",
                      "宪法 §2.7 风险分级设立；test_tool_risk_gate 钉死"),
-        GateRuleMeta("platform.stage_precondition", LAYER_PLATFORM,
-                     "阶段前置闸（控制流统一）：工具归属阶段的前置阶段"
-                     "未完成时拒收调用（frontmatter 声明依赖图为唯一事实源）；机械强制，"
-                     "manifest 无权关闭，仅用户坚持可一次性豁免放行并留痕",
-                     "audit-0819e 越阶案例（GOVERNANCE §13.4 症状归位表）；"
-                     "test_stage_precondition_gate 阶段 1 钉死"),
     )
 }
 
@@ -74,7 +68,6 @@ GATE_MESSAGE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     "platform.element_min_chars": (),
     "platform.gen_confirm": ("GENERATION_CONFIRM", "GENERATION_CONFIRM_BLOCKED"),
     "platform.tool_risk": ("TOOL_RISK_BLOCKED",),
-    "platform.stage_precondition": (),
 }
 
 # rule_id 别名归一表（旧写法 → 注册表正式条目，单向只读映射），
