@@ -269,9 +269,10 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
     坏声明不能带病上线，修好 data/skills/<slug>/SKILL.md
     头部 frontmatter 才能注册；单个坏 Skill 拒注册不截断 sync_all 批次。
     消费端 fail-closed 清洗仍保留（兜注册后 frontmatter 被改坏的活读场景）。
-    版本锁（批6）：resources 声明的 sha256 与实际资源文件不符（或声明文件
-    不在场）= 素材被篡改，拒注册；无清单/未声明 hash 的包不受影响。
-
+    版本锁（批6 → C1b 裁决 2026-08-31 执法退役）：resources 声明的
+    sha256 记账保留（declared_resources 描述符透传），注册期硬拒删除；
+    resource_lock_errors 仅作诊断/记账口径保留。
+    
     问题分级：只有错误级问题拒注册；WARN 级（开放注册
     降级/废除键过渡告警）只输出告警日志，不阻断注册。
     name/description 为注册期必填（Agent Skills 开放标准：渐进披露
@@ -291,9 +292,8 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
             errors.append(
                 f"frontmatter 缺必填键 {key}（Agent Skills 开放标准："
                 "name/description 为渐进披露第一层目录摘要的权威声明）")
-    # 版本锁（批6）：声明的 sha256 与实际资源不符 = 素材被篡改，硬拒注册；
-    # 与 manifest_schema 分工：形状校验 WARN 宽松，hash 核验在此硬拒。
-    errors.extend(resource_lock_errors(entry))
+    # C1b 裁决 2026-08-31：版本锁执法退役——sha256 不符不再硬拒注册，
+    # 记账面保留（declared_resources 透传描述符；resource_lock_errors 仅诊断）。
     if errors:
         # 拒注册同时摘除陈旧条目（refresh/重注册路径：frontmatter 改坏后
         # 旧注册态不得继续可用）

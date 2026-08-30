@@ -11,7 +11,7 @@
    孤儿资源命中（诊断性质，不阻断退出码）。
 批6 追加：
 ⑤ resolve_skill_resource 放行 assets/（媒体+文档素材描述符通道）；
-⑥ 版本锁：已声明 sha256 不符/悬空 → 注册期硬拒；匹配照常；无声明包不受影响；
+⑥ 版本锁：C1b 裁决 2026-08-31 执法退役——sha256 不符/悬空不再拒注册（记账保留）；
 ⑦ get_skill_asset 只读返回描述符（二进制不进上下文）；
 ⑧ scan 探针 assets 孤儿/悬空。
 （原单文件形态对照用例随批3 单一包形态收敛退役。）
@@ -341,11 +341,11 @@ def test_version_lock_hash_match_registers(lock_env):
 
 
 def test_version_lock_hash_mismatch_rejects_registration(lock_env):
-    """素材被篡改（声明 sha256 与实际不符）→ 拒注册。"""
+    """C1b 裁决 2026-08-31：sha256 不符不再拒注册（执法退役），
+    记账口径 resource_lock_errors 仍报诊断。"""
     lock_env("b6lock-bad", resources_yaml=(
         "resources:\n  assets/ref.png:\n    sha256: \"" + "0" * 64 + "\"\n"))
-    assert registry.register_skill("b6lock-bad") is None
-    assert registry.get_entry("b6lock-bad") is None
+    assert registry.register_skill("b6lock-bad") is not None
     errs = registry.resource_lock_errors(
         registry.SkillEntry(slug="b6lock-bad", name="b6lock-bad",
                             content="", sections={}))
@@ -353,10 +353,10 @@ def test_version_lock_hash_mismatch_rejects_registration(lock_env):
 
 
 def test_version_lock_dangling_declared_rejects_registration(lock_env):
-    """声明了锁但文件不在场（悬空）→ 锁无法核验，拒注册。"""
+    """C1b 裁决 2026-08-31：悬空声明不再拒注册（执法退役）。"""
     lock_env("b6lock-missing", resources_yaml=(
         "resources:\n  assets/ghost.png:\n    sha256: \"" + "0" * 64 + "\"\n"))
-    assert registry.register_skill("b6lock-missing") is None
+    assert registry.register_skill("b6lock-missing") is not None
 
 
 def test_no_resources_declaration_backward_compat(lock_env):
