@@ -290,11 +290,12 @@ class TestToolRiskGate:
                    for g in recent), "豁免必须留痕（platform.tool_risk verdict）"
 
     def test_flow_directive_consent_allows(self, monkeypatch):
+        """C1a 裁决 2026-08-31：一条龙不再构成同意（Context≠Consent）→ 仍硬拒。"""
         state = {"interaction": {"auto_continue": True}}
         runner, res = _run(monkeypatch, "document_write",
                            {"name": "大纲.md", "content": "x"}, state=state)
-        assert res[0] == 1, "一条龙指令 = 本批显式同意（留痕）"
-        assert any("显式同意" in w for w in runner.gate_warnings)
+        assert res[0] == 0, "一条龙指令不再构成同意，高危仍硬拒"
+        assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
 
     def test_block_verdict_audited(self, monkeypatch):
         tracer = AgentTracer.get_instance()
@@ -353,13 +354,13 @@ class TestGenerateVideoConfirmGate:
                    for g in recent), "豁免必须留痕（platform.tool_risk verdict）"
 
     def test_generate_video_flow_directive_consent_allows(self, monkeypatch):
+        """C1a 裁决 2026-08-31：一条龙不再构成同意（Context≠Consent）→ 仍硬拒。"""
         from src.video_agent.tools.video.generate_video import GenerateVideoTool
         ToolManager.register(GenerateVideoTool())
         state = {"interaction": {"auto_continue": True}}
         runner, res = _run(monkeypatch, "generate_video", {"target": "all_shots"},
                            state=state)
-        assert res[0] == 1, "一条龙指令 = 本批显式同意（留痕）"
-        assert any("显式同意" in w for w in runner.gate_warnings)
+        assert res[0] == 0, "一条龙指令不再构成同意，生成仍硬拒"
 
 
 class TestImageGenerateSingleRiskGate:

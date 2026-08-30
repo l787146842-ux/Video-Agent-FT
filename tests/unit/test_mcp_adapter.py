@@ -278,14 +278,14 @@ class TestRiskGateWiring:
                    for g in recent), "拦截必须经 audit_verdicts 入审计"
 
     def test_flow_directive_consent_allows(self, monkeypatch):
+        """C1a 裁决 2026-08-31：一条龙不再构成同意（Context≠Consent）→ 仍硬拒。"""
         _register(monkeypatch)
         _enable([HIGH_TOOL])
         state = StateManager.get_instance().state_dict
         state.setdefault("interaction", {})["auto_continue"] = True
         try:
             runner, res = _run_fc(monkeypatch, HIGH_TOOL, {"text": "hi"})
-            assert res.applied == 1, "一条龙指令 = 本批显式同意（留痕）"
-            assert any("显式同意" in w for w in runner.gate_warnings)
+            assert res.applied == 0, "一条龙指令不再构成同意，高危仍硬拒"
         finally:
             state["interaction"].pop("auto_continue", None)
 

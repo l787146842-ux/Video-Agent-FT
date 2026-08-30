@@ -253,12 +253,10 @@ async def run_window(
     on_event: Any,
     batch_cp: Optional[dict],
     batch_tools: List[str],
-) -> int:
+) -> None:
     """窗口调度（接线面）：闸机链逐调用按序裁决 → 全部放行才并行执行 →
     结果按原序回填 pre；任一拒收即断并行（其后调用回主循环串行裁决），
-    任一失败/异常回退串行消费剩余；GenerationCancelled 显式穿透。
-    返回窗口内累计的提示词结构闸拦截计数（主循环节拍器口径不变）。"""
-    prompt_blocked = 0
+    任一失败/异常回退串行消费剩余；GenerationCancelled 显式穿透。"""
     passed: List[Tuple[int, str, Dict[str, Any]]] = []
     for i in indices:
         call = tool_calls[i]
@@ -272,17 +270,15 @@ async def run_window(
             pre[i] = PreExecuted(_idem_cached, None, 0.0)
             continue
         # 结构纯净闸：内联详细提示词剥离（闸机链之前，与主循环同序）
-        if fc_gates.strip_structure_prompt(ctx, name, args):
-            ledger.prompt_stripped = True
+        fc_gates.strip_structure_prompt(ctx, name, args)
         # 闸机链按序裁决（实现不动；逐调用短路语义与串行路径一致）
         chain = fc_gates.run_gate_chain(ctx, name, args, paused_this_batch=paused_this_batch)
-        prompt_blocked += chain.prompt_gate_blocked
         if chain.error is not None:
             # 拒收即断并行：已放行调用按序串行执行，拒收调用记拒因回填，
             # 其后调用不入窗口，由主循环串行逐调用裁决
             await _serial_drain(runner, passed, pre)
             pre[i] = PreExecuted(ToolResult(success=False, error=chain.error), chain.error, 0.0)
-            return prompt_blocked
+            return
         passed.append((i, name, args))
 
     # 全部放行 → 窗口内并行执行，按序消费回填：任一失败/异常即置串行标志，
@@ -320,7 +316,7 @@ async def run_window(
                 _quiet_cancel(t)
             raise
         pre[i] = PreExecuted(result, None, (time.monotonic() - t0) * 1000)
-    return prompt_blocked
+    return
 
 
 async def _serial_drain(

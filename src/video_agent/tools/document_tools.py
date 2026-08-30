@@ -196,14 +196,13 @@ class DocumentWriteTool(BaseTool):
                                "要调整请在文档面板修改或重发选择；"
                                "继续流程请 read_project_doc 读已定稿规格并推进下一阶段。"),
                     )
-                # 一条龙：用户指令作为规格同意，模型按 Skill 填写写入（留痕）
-                if not prompt_gates.flow_auto_continue(svc.state_dict):
-                    # 规格尚未交互时文案不得说「已生成」（模型/用户都未交互过）
-                    return ToolResult(
-                        success=False,
-                        error=("规格文档尚未生成：系统将按用户在向导中的选择统一拼装，"
-                               "模型不得手写；请暂停等待规格交互完成后再继续。"),
-                    )
+                # C1a 裁决 2026-08-31：一条龙作为规格同意的 Context≠Consent
+                # 机制删除——规格尚未交互时文案不得说「已生成」
+                return ToolResult(
+                    success=False,
+                    error=("规格文档尚未生成：系统将按用户在向导中的选择统一拼装，"
+                           "模型不得手写；请暂停等待规格交互完成后再继续。"),
+                )
 
         async with svc.lock:
             docs = svc.state_dict.setdefault("documents", [])
@@ -816,8 +815,9 @@ class FlowDirectiveTool(BaseTool):
     detail_tier = "output"  # 内部路由指令，仅输出留痕
     description = (
         "流程指令：仅当用户本条消息明确要求一条龙/自动推进时才以 auto_continue=true 发出，"
-        "豁免本条消息的流程暂停（规格收集/故事板审阅等卡片不再弹出，"
-        "生成确认以该指令为本批显式同意并留痕）；用户未明确要求时不得发出。"
+        "豁免本条消息的流程暂停（规格收集/故事板审阅等卡片不再弹出）；"
+        "用户未明确要求时不得发出。（C1a 裁决 2026-08-31：本指令不再构成生成/高危同意，"
+        "确认闸只认用户「本次放行」与执行偏好三档。）"
     )
 
     def get_input_schema(self) -> Type[BaseModel]:
@@ -825,8 +825,7 @@ class FlowDirectiveTool(BaseTool):
 
     async def aexecute(self, params: FlowDirectiveInput) -> ToolResult:
         """自主性档位（宪法 Rule2）：用户显式指令授予模型豁免非平台
-        硬暂停点；按消息生效、任务开始即清；授权经控制流 trace 留痕
-        （可追溯到授予它的用户消息，Context ≠ Consent）。"""
+        硬暂停点；按消息生效、任务开始即清；授权经控制流 trace 留痕。"""
         svc = StateManager.get_instance()
         if params.auto_continue:
             inter = svc.state_dict.setdefault("interaction", {})
@@ -836,8 +835,7 @@ class FlowDirectiveTool(BaseTool):
             try:
                 AgentTracer.get_instance().record_control_flow(
                     "autonomy_granted",
-                    "用户显式指令授予连续执行档位（本条消息生效，豁免非平台硬暂停点；"
-                    "生成确认以本指令为显式同意）",
+                    "用户显式指令授予连续执行档位（本条消息生效，豁免非平台硬暂停点）",
                     str((svc.state_dict.get("usedSkills") or [""])[0] or ""),
                 )
             except Exception as _e:

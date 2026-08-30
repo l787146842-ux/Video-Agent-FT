@@ -537,7 +537,8 @@ async def test_flow_directive_text_track_sets_flag(tmp_path):
 
 @pytest.mark.asyncio
 async def test_spec_write_allowed_under_auto_continue(tmp_path, monkeypatch):
-    """一条龙下模型可按 Skill 填写规格（用户指令=规格同意，留痕）。"""
+    """C1a 裁决 2026-08-31：一条龙不再构成规格同意（Context≠Consent）→
+    向导在场时模型手写规格仍被拒收。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.tools.document_tools import DocumentWriteTool
     svc = StateManager(str(tmp_path / "ws"))
@@ -547,7 +548,8 @@ async def test_spec_write_allowed_under_auto_continue(tmp_path, monkeypatch):
     tool = DocumentWriteTool()
     res = await tool.aexecute(tool.get_input_schema()(
         name="Final_Video_Spec.md", content="- 输出语言：中文\n"))
-    assert res.success, res.error
+    assert not res.success
+    assert "规格文档尚未生成" in (res.error or "")
 
 
 def test_pause_suppressions_wired_to_auto_continue():

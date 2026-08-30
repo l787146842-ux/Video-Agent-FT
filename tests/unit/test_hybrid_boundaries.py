@@ -737,7 +737,8 @@ class _GenFailToolManager:
 
 
 def test_false_claim_overridden_when_generation_failed(monkeypatch):
-    """同批生成失败但暂停文案声称已触发 → 覆盖为诚实文案与选项"""
+    """C1a 裁决 2026-08-31：生成防虚报覆盖退役——暂停文案不再被客观账本
+    改写；生成失败事实经 ToolResult 回喂通道可见。"""
     import asyncio
     runner = FCToolRunner(tool_manager=_GenFailToolManager())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
@@ -750,10 +751,11 @@ def test_false_claim_overridden_when_generation_failed(monkeypatch):
             "arguments": json.dumps({"message": "已为您触发所有关键元素的概念图生成，请查看出图进度。"})}},
     ])
     applied, confirmation, *_rest = asyncio.run(runner.execute(response))
-    opts = _rest[3]
-    assert "出图尚未执行" in confirmation and "闸机拦截" in confirmation
-    assert "已为您触发" not in confirmation
-    assert any("确认提示词草案" in o.get("label", "") for o in opts)
+    tool_results = _rest[4]
+    assert "出图尚未执行" not in confirmation
+    assert any(
+        t.get("name") == "image_generate" and t.get("ok") is False
+        for t in tool_results)
 
 
 def test_honest_pause_kept_when_generation_failed(monkeypatch):
@@ -770,9 +772,8 @@ def test_honest_pause_kept_when_generation_failed(monkeypatch):
             "arguments": json.dumps({"message": "提示词草案已写好，请审阅确认。"})}},
     ])
     applied, confirmation, *_rest, _warns, _overflow, _pause_id = asyncio.run(runner.execute(response))
-    # v2 批4：诚实暂停不被没收——闸警告与模型原文在确认/正文通道可见
+    # C1a 裁决后：诚实暂停不被没收，模型原文在确认/正文通道可见
     assert "提示词草案已写好，请审阅确认。" in (confirmation + _overflow)
-    assert "闸" in confirmation or "请过目以上成果" in confirmation
 
 
 # ---------- 新建草稿按规格偏好补印供应商（防前端默认回填污染） ----------

@@ -195,7 +195,7 @@ def tool_risk_gate(
     guard_pipeline.evaluate_tool_risk。生效条件数据驱动 = 审批分级生效档
     approval_tier == "confirm"（推导规则含 high→confirm、未注册→confirm，
     deny-by-default）；保留 risk==high 双保险（防未来 confirm+低风险误弹卡）。
-    确认回携 = flow_directive 一条龙同意 / 用户「本次放行」，
+    确认回携 = 用户「本次放行」，
     无同意硬拒（禁止静默放行），拦截/豁免 verdict 入审计。
     豁免：image_generate 批量轨被 gen_confirm 闸专属覆盖（不双闸）；
     mode='single' 无目标草稿、不在覆盖内，回本闸默认拦。
@@ -214,7 +214,6 @@ def tool_risk_gate(
     err, warns = guard_pipeline.evaluate_tool_risk(
         name,
         override=ctx.gate_override,
-        flow_consent=prompt_gates.flow_auto_continue(ctx.state()),
         # 执行偏好分流只放宽花钱生成声明轴（数据驱动，不硬编码工具名单）；
         # 未声明花钱（含未注册/非花钱高危）者兜底拦截语义零改动（批 B 红线）
         costly=ToolManager.is_costly_tool(name),
@@ -235,10 +234,6 @@ def gen_confirm_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optio
     仅覆盖 image_generate 批量轨；mode='single' 单张应急轨无目标草稿，
     不参与草稿确认校验（其花钱确认由 tool_risk 闸默认拦，高危默认拦）。"""
     if name != "image_generate" or str(args.get("mode") or "batch").strip().lower() == "single":
-        return None
-    # 一条龙：用户本条消息的显式指令作为本批生成同意（留痕），不弹确认闸
-    if prompt_gates.flow_auto_continue(ctx.state()):
-        logger.info("[FlowDirective] 一条龙指令作为本批生成同意（留痕）")
         return None
     state = ctx.state()
     target = str(args.get("target") or "all_keyElements").strip()
@@ -397,11 +392,9 @@ def prompt_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[s
 
 @dataclass
 class GateChainResult:
-    """闸机链组合结果：error 非 None = 本工具拒收（错误文案回喂模型）；
-    prompt_gate_blocked = 本次被提示词闸拦截的写入数（批末防虚报对账用）。"""
+    """闸机链组合结果：error 非 None = 本工具拒收（错误文案回喂模型）。"""
 
     error: Optional[str] = None
-    prompt_gate_blocked: int = 0
 
 
 def run_gate_chain(
@@ -424,7 +417,6 @@ def run_gate_chain(
         if err is None:
             pg_err = prompt_gate(ctx, name, args)
             if pg_err:
-                res.prompt_gate_blocked = 1
                 err = pg_err
     # 单张应急轨（mode='single'）每批最多一次（prose 下沉工具层）。
     # 需要多张时模型改用批量轨（mode='batch'，见 system_fc.md）

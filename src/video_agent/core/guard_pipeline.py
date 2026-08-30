@@ -262,7 +262,6 @@ def evaluate_tool_risk(
     name: str,
     *,
     override: Any = False,
-    flow_consent: bool = False,
     costly: bool = False,
     skill_active: bool = False,
 ) -> "tuple[Optional[str], List[str]]":
@@ -272,7 +271,6 @@ def evaluate_tool_risk(
     high→confirm、未注册→confirm，deny-by-default）；image_generate 批量轨
     由 gen_confirm 闸专属覆盖，不重复设闸（single 轨不在覆盖内，回本闸默认拦）。
     确认回携机制与 gen_confirm 同源（§2.4）：
-    - flow_directive 一条龙指令 = 本批显式同意（留痕）；
     - 用户「本次放行」（gate_overrides 单次消费）= 一次性同意；
     - 无同意 → 硬拒（Context ≠ Consent，禁止静默放行），
       拒因回喂模型，由其暂停向用户发起确认邀请。
@@ -280,16 +278,12 @@ def evaluate_tool_risk(
     costly=True 时 generate_directly 恒放行、auto_decide 且活跃 Skill 指导在场
     （skill_active）放行，均系统代发同意并留痕；未声明花钱（含未注册/
     非花钱高危）者不命中本分支，兜底拦截语义零改动。
+    （C1a 裁决 2026-08-31：flow_directive 一条龙作为同意的 Context≠Consent
+    执行机制删除——上下文/模型解读不再构成同意。）
     判定经 audit_verdicts 入审计（rule_id = platform.tool_risk）。
     返回 (硬拒原因, warnings)。
     """
     warns: List[str] = []
-    if flow_consent:
-        w = "一条龙指令作为本批高风险工具（" + name + "）的显式同意（留痕）"
-        warns.append(w)
-        audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
-                       action=name, overridden=True)
-        return None, warns
     if override in (True, "all") or prompt_gates.override_covers(override, "tool_risk"):
         w = f"用户坚持放行高风险工具确认闸（仅警告，单次生效留痕）：{name}"
         warns.append(w)

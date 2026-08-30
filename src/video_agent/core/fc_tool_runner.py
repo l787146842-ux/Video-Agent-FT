@@ -284,7 +284,6 @@ class FCToolRunner:
         # 结构纯净闸/故事板强制暂停用的批内标志
         structure_created = False
         structure_kinds: set = set()  # 本批搭建的结构类别（shot 优先决定暂停文案）
-        prompt_gate_blocked = 0
         tracer = AgentTracer.get_instance()
         for ci, call in enumerate(response.tool_calls):
             func = call.get("function", {}) if isinstance(call, dict) else {}
@@ -300,7 +299,7 @@ class FCToolRunner:
             # 批 7 只读并行窗口：命中窗口起点时整窗调度（闸机按序裁决 →
             # 全部放行后并行执行 → 结果按原序回填 _ro_pre）
             if ci in _ro_plan:
-                prompt_gate_blocked += await readonly_parallel.run_window(
+                await readonly_parallel.run_window(
                     self, ctx, ledger, response.tool_calls, _ro_plan[ci], _ro_pre,
                     paused_this_batch=paused_this_batch,
                     on_event=on_event, batch_cp=_batch_cp, batch_tools=_batch_tools)
@@ -366,14 +365,12 @@ class FCToolRunner:
                 result, gate_error = _idem_cached, None
             else:
                 # 结构纯净闸：内联详细提示词剥离（闸机链之前，回喂时附说明）
-                if fc_gates.strip_structure_prompt(ctx, name, args):
-                    ledger.prompt_stripped = True
+                fc_gates.strip_structure_prompt(ctx, name, args)
                 # 闸机链（fc_gates.run_gate_chain）：轮内暂停纪律 → 阶段前置（平台不变量）
                 # → 规格前置 → 工具风险 → 生成确认 → 建组结构完整性 → 提示词结构 → 生图配额
                 chain = fc_gates.run_gate_chain(
                     ctx, name, args, paused_this_batch=paused_this_batch)
                 gate_error = chain.error
-                prompt_gate_blocked += chain.prompt_gate_blocked
                 try:
                     if gate_error is not None:
                         result = ToolResult(success=False, error=gate_error)
@@ -589,9 +586,6 @@ class FCToolRunner:
                     break
             else:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
-                if name == "document_write":
-                    ledger.key_tool_failed.append(name)
-                    ledger.key_tool_errors[name] = str(result.error or "执行失败")[:200]
                 if name == "document_write" and prompt_gates.is_spec_doc_name(
                     str(args.get("name") or args.get("key") or "")
                 ):
@@ -654,7 +648,6 @@ class FCToolRunner:
         ledger.docs_written = docs_written
         ledger.structure_created = structure_created
         ledger.structure_kinds = structure_kinds
-        ledger.prompt_gate_blocked = prompt_gate_blocked
         ledger.confirmation = confirmation
         ledger.confirmation_options = confirmation_options
         ledger.tool_results = tool_results

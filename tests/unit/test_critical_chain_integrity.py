@@ -48,9 +48,8 @@ def test_message_text_skill_match():
 
 
 def test_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypatch):
-    """关键文档写入失败但模型带确认声称完成 → 覆盖为诚实文案（不允许假完成）。
-    新基线（任务#36 B5 后）：关键步骤防虚报收敛到 document_write（非规格文档），
-    文案为「关键步骤未全部完成：<阶段名> 执行失败…」。"""
+    """C1a 裁决 2026-08-31：关键步骤防虚报覆盖退役——模型暂停文案不再被
+    客观账本改写；工具失败事实经 ToolResult 回喂通道可见。"""
     import asyncio
 
     from src.video_agent.state.manager import StateManager
@@ -80,10 +79,12 @@ def test_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypatch):
     ])
     _applied, confirmation, *_rest = asyncio.run(
         runner.execute(response, injected_skill="AI-短剧一站式生成", gate_override="all"))
-    # 客观账本式文案：关键步骤失败 → 诚实文案，不再出现「已完成」假声称
-    assert "关键步骤未全部完成" in confirmation
-    assert "执行失败" in confirmation
-    assert "文档写入已完成，请审阅" not in confirmation
+    tool_results = _rest[4]
+    # 不再覆盖暂停文案；失败事实经 ToolResult 回喂可见
+    assert "关键步骤未全部完成" not in confirmation
+    assert any(
+        t.get("name") == "document_write" and t.get("ok") is False
+        for t in tool_results)
 
 
 # test_executor_force_main_chat_model 已随任务#36 B5 执行器一步退役删除：
