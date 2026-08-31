@@ -11,12 +11,11 @@ import { isSkillEnabled } from '@/stores/skill-prefs';
 import { t } from '@/lib/locale';
 import { SkillDetailModal } from './SkillDetailModal';
 import { SkillImportModal } from './SkillImportModal';
-import { SkillStyleLayers } from './SkillStyleLayers';
 import type { Skill } from '@/types';
 
 /**
  * Skill 选择器（替代 PillDropdown）：卡片列表 + 眼睛预览 + 加号/卡片点击
- * 激活并插入输入框（随消息发送后生效）；风格层多选区见 SkillStyleLayers。
+ * 激活并插入输入框（随消息发送后生效）。
  */
 export function SkillPicker() {
   const [open, setOpen] = createSignal(false);
@@ -71,9 +70,6 @@ export function SkillPicker() {
   /** 仅展示已启用的 Skill（启停开关见 Skill 工作台左栏，批7） */
   const visibleSkills = () => state.skills.filter((s) => isSkillEnabled((s.slug as string) || s.id.replace(/^doc:/, '')));
 
-  /** 任务 #11 组合激活：主流程候选（风格型另走风格层多选区；未声明 kind 按流程型） */
-  const pipelineSkills = () => visibleSkills().filter((s) => (s.kind || '') !== 'style');
-
   async function doDeleteSkill(skill: Skill) {
     const slug = (skill.slug as string) || skill.id.replace(/^doc:/, '');
     setConfirmingId(null);
@@ -124,7 +120,7 @@ export function SkillPicker() {
               <span class="skill-picker-desc">{t('rp.skill.noneOptionHint')}</span>
             </div>
           </div>
-          <For each={pipelineSkills()}>
+          <For each={visibleSkills()}>
             {(skill) => (
               <div
                 class={`skill-picker-card ${skill.id === agentSkillId() ? 'active' : ''}`}
@@ -209,8 +205,6 @@ export function SkillPicker() {
           <Show when={state.skills.length > 0 && visibleSkills().length === 0}>
             <div class="empty-state">暂无已加入的 Skill，请到顶栏「Skill 工作台」加入</div>
           </Show>
-          {/* 任务 #11：风格层多选区（1 pipeline 可选 + N style 层，拆分组件守行数红线） */}
-          <SkillStyleLayers onPreview={setPreviewSkill} />
           {/* 导入按钮 */}
           <div
             class="skill-picker-import"

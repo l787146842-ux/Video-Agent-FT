@@ -1,10 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ApiProvider, Skill } from '@/types';
 
-/** api/docs 桁：风格层/主流程激活走 API 的用例不发起真实请求 */
+/** api/docs 桁：主流程激活走 API 的用例不发起真实请求 */
 const apiMock = vi.hoisted(() => ({
   setActiveSkillApi: vi.fn(async () => ({})),
-  setActiveStyleLayersApi: vi.fn(async () => ({})),
 }));
 vi.mock('@/api/docs', () => apiMock);
 
@@ -24,12 +23,6 @@ const PROVIDERS: ApiProvider[] = [
 const DOC_SKILLS: Skill[] = [
   { id: 'doc:demo', name: '测试 Skill', description: '', system_prompt: '', source: 'doc', slug: 'demo' },
   { id: 'doc:other', name: '另一个 Skill', description: '', system_prompt: '', source: 'doc', slug: 'other' },
-];
-
-const STYLE_SKILLS: Skill[] = [
-  ...DOC_SKILLS,
-  { id: 'doc:style-a', name: '风格甲', description: '', system_prompt: '', source: 'doc', slug: 'style-a', kind: 'style' },
-  { id: 'doc:style-b', name: '风格乙', description: '', system_prompt: '', source: 'doc', slug: 'style-b', kind: 'style' },
 ];
 
 /** agent-prefs 在模块加载时读取 localStorage，需按用例重置模块缓存后动态导入；
@@ -132,54 +125,5 @@ describe('stores/agent-prefs（pill 持久化）', () => {
     const prefs = await loadPrefs({ studioAgentProvider: 'custom-api', studioAgentModel: 'chat-b' });
     prefs.setAgentProvider('volcengine');
     expect(prefs.agentModel()).toBe('vc-1');
-  });
-});
-
-describe('stores/agent-prefs（任务 #11 风格层组合激活）', () => {
-  it('skillSlugOf 从 slug/派生 id 取 slug', async () => {
-    const prefs = await loadPrefs({}, PROVIDERS, STYLE_SKILLS);
-    expect(prefs.skillSlugOf(STYLE_SKILLS[2])).toBe('style-a');
-    expect(prefs.skillSlugOf({ ...STYLE_SKILLS[2], slug: undefined } as unknown as Skill)).toBe('style-a');
-  });
-
-  it('toggleStyleLayer 勾选/取消都全量替换式下发清单', async () => {
-    const prefs = await loadPrefs({}, PROVIDERS, STYLE_SKILLS);
-    apiMock.setActiveStyleLayersApi.mockClear();
-    expect(await prefs.toggleStyleLayer(STYLE_SKILLS[2])).toBe(true);
-    expect(prefs.activeStyleSlugs()).toEqual(['style-a']);
-    expect(apiMock.setActiveStyleLayersApi).toHaveBeenCalledWith({ slugs: ['style-a'] });
-    expect(await prefs.toggleStyleLayer(STYLE_SKILLS[3])).toBe(true);
-    expect(prefs.activeStyleSlugs()).toEqual(['style-a', 'style-b']);
-    expect(apiMock.setActiveStyleLayersApi).toHaveBeenLastCalledWith({ slugs: ['style-a', 'style-b'] });
-    expect(await prefs.toggleStyleLayer(STYLE_SKILLS[2])).toBe(true);
-    expect(prefs.activeStyleSlugs()).toEqual(['style-b']);
-    expect(apiMock.setActiveStyleLayersApi).toHaveBeenLastCalledWith({ slugs: ['style-b'] });
-  });
-
-  it('toggleStyleLayer 后端失败时回滚本地清单', async () => {
-    const prefs = await loadPrefs({}, PROVIDERS, STYLE_SKILLS);
-    apiMock.setActiveStyleLayersApi.mockClear();
-    apiMock.setActiveStyleLayersApi.mockRejectedValueOnce(new Error('boom'));
-    expect(await prefs.toggleStyleLayer(STYLE_SKILLS[2])).toBe(false);
-    expect(prefs.activeStyleSlugs()).toEqual([]);
-  });
-
-  it('主流程激活后同 slug 风格层同步摈除（与后端互斥同口径）', async () => {
-    const prefs = await loadPrefs({}, PROVIDERS, STYLE_SKILLS);
-    apiMock.setActiveSkillApi.mockClear();
-    apiMock.setActiveStyleLayersApi.mockClear();
-    await prefs.toggleStyleLayer(STYLE_SKILLS[2]);
-    expect(prefs.activeStyleSlugs()).toEqual(['style-a']);
-    await prefs.activateSkill('doc:style-a', 'user');
-    expect(prefs.activeStyleSlugs()).toEqual([]);
-  });
-
-  it('快照下发的风格层清单进入项目态（同步口径）', async () => {
-    const prefs = await loadPrefs({}, PROVIDERS, STYLE_SKILLS);
-    const core = await import('@/stores/studio-core');
-    core.setState('activeStyleSkills', ['style-b']);
-    expect(prefs.activeStyleSlugs()).toEqual(['style-b']);
-    expect(prefs.isStyleLayerActive(STYLE_SKILLS[3])).toBe(true);
-    expect(prefs.isStyleLayerActive(STYLE_SKILLS[2])).toBe(false);
   });
 });

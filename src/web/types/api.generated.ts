@@ -10,10 +10,6 @@ export interface ActiveSkillRequest {
   source?: string;
 }
 
-export interface ActiveStyleLayersRequest {
-  slugs?: string[];
-}
-
 export interface AddGenerationLogResponse {
   ok?: boolean;
   log?: GenerationLogEntry;

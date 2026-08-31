@@ -162,9 +162,6 @@ export interface Skill {
   name: string;
   system_prompt?: string;
   description?: string;
-  /** kind 目录口径（任务 #11）：'pipeline' 流程型 / 'style' 风格型；
-   * 未声明 kind 的存量 Skill 为空串（零预设） */
-  kind?: string;
   /** 规划级执行器名单（后端 capability 注册表下发） */
   planning_executors?: string[];
   [key: string]: unknown;
@@ -474,9 +471,6 @@ export interface ServerStateSnapshot {
   project_name?: string;
   /** 当前项目已发送给 Agent 的 Skill slug 列表（文档面板只展示这些 Skill 文档） */
   usedSkills?: string[];
-  /** 叠加风格层清单（任务 #11：1 pipeline 可选 + N style 层）；
-   * 未登记过的存量项目无此键（前端回落空清单） */
-  styleSkills?: string[];
   /** 项目态活跃 Skill 绑定（批 C）：slug 空串 = 显式自由对话；
    * 未登记过绑定的存量项目无此键（前端回落 usedSkills 旧口径） */
   activeSkill?: { slug: string; source: 'user' | 'suggested' } | null;
