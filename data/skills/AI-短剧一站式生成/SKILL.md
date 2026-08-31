@@ -1,48 +1,7 @@
 ---
 name: AI-短剧一站式生成
 description: 一站式生成短剧，按顺序确认关键信息后推进流程，适合从创意到成片快速完成。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  script_required: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-pause:
-  stage_pause: true
-schema_version: 3
-kind: pipeline
-language:
-  prompt: en
-requires_inputs:
-- type: script
-  required: true
-pause_points:
-- id: shortdrama_storyboard_confirmed
-  trigger: storyboard_structure_ready
-- id: shortdrama_setting_images_review
-  trigger: batch_boundary
-  description: 所有 key_element 设定图生成完毕后暂停，等待用户确认视觉风格与剧本一致，确认后才进入视频生成。
-- id: shortdrama_first_generation_call
-  trigger: first_generation_call
-- id: shortdrama_shot_videos_review
-  trigger: batch_boundary
-  description: 每批分镜视频生成完毕后暂停，等待用户确认后再继续下一批或进入时间线组装。
-tools_required:
-- read_uploaded_doc
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- super_resolution
-- workflow_pause
-version: '1.0'
 ---
-
 <planner>
 **启动协议**
 

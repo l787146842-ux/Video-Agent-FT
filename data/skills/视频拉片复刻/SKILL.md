@@ -1,37 +1,7 @@
 ---
 name: 视频拉片复刻
 description: 拉片复刻用户上传的参考视频，提取关键参考帧并按同样的构图与镜头语言复刻生成。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-pause:
-  stage_pause: true
-schema_version: 3
-kind: pipeline
-pause_points:
-- id: replicate_analysis_done
-  trigger: storyboard_structure_ready
-- id: replicate_first_generation_call
-  trigger: first_generation_call
-requires_inputs:
-- type: video
-  required: true
-tools_required:
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-version: '1.0'
 ---
-
 <planner>
 **完整视频的阶段逻辑和依赖关系：**
 1. 详尽分析用户上传的参考视频。提取关键参考帧（标志性的构图、取景、时刻），并直接将其用作关键帧（key-frame）。

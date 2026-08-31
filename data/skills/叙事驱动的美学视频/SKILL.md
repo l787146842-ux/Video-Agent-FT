@@ -1,39 +1,7 @@
 ---
 name: 叙事驱动的美学视频
 description: 制作叙事驱动的美学视频，强调视觉风格与美学表达，按规格、故事板到生成的全流程推进。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-pause:
-  stage_pause: true
-schema_version: 3
-kind: style
-pause_points:
-- id: aesthetic_spec_finalized
-  trigger: spec_finalized
-- id: aesthetic_storyboard_ready
-  trigger: storyboard_structure_ready
-- id: aesthetic_first_generation_call
-  trigger: first_generation_call
-tools_required:
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-language:
-  prompt: auto
-  output: auto
-version: '1.0'
 ---
-
 <planner>
 **完整视频的阶段逻辑与依赖关系：**
 1. 起草 `制片规格.md`（标题、类型、长宽比、时长、视觉风格、语言；图像/视频生成渠道与分辨率遵循全局设置） → **document_write**。

@@ -1,46 +1,7 @@
 ---
 name: 未来科幻真人电影
 description: 以超写实真人未来科幻电影制片与美术指导方式执行创意梳理、资产提示词、资产结合式分镜与视频三步流程。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-gates:
-  require_duration: true
-  require_subtitle: true
-  require_camera_language: true
-  require_audio_layer: true
-pause:
-  stage_pause: true
-schema_version: 3
-kind: pipeline
-language:
-  prompt: zh
-  prompt_en_categories:
-  - keyElement
-pause_points:
-- id: scifi_spec_finalized
-  trigger: spec_finalized
-- id: scifi_storyboard_ready
-  trigger: storyboard_structure_ready
-- id: scifi_first_generation_call
-  trigger: first_generation_call
-tools_required:
-- read_uploaded_doc
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-version: '1.0'
 ---
-
 <planner>
 ## 工作定位
 以超写实真人未来科幻电影的制片与美术指导方式执行「创意梳理—资产提示词—资产结合式分镜与视频」三步流程。所有决策以用户确认的故事、人物、场景和参考资料为准；未被要求修改的模块保持不变。

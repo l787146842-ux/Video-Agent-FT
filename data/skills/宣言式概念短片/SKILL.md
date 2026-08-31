@@ -1,38 +1,7 @@
 ---
 name: 宣言式概念短片
 description: 制作宣言式概念短片，文本命名化、画面符号化，旁白英文锁定，片长由文案推导。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-pause:
-  stage_pause: true
-schema_version: 3
-kind: style
-pause_points:
-- id: strategy_and_copywriting_confirmation
-  trigger: free_text
-  prose: 一句话策略与 Manifesto 文案两处各给至少三条方案，用户确认后收敛成单轨；文案确认含时长估算与蒙太奇方案。
-- id: keyframes_confirmation
-  trigger: storyboard_structure_ready
-- id: final_cut_confirmation
-  trigger: first_generation_call
-tools_required:
-- read_uploaded_doc
-- document_write
-- workflow_pause
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-version: '1.0'
 ---
-
 <planner>
 两条硬规则：
 1. 文本命名化：每句文案是一个新定义或本体命名，可引用可复述。禁平铺直叙与修饰旁白。

@@ -1,40 +1,7 @@
 ---
 name: 音乐MV需上传音乐
 description: 基于已上传音乐制作音乐MV，先分析节奏结构、时间戳与歌词，再推进故事板与生成。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-pause:
-  stage_pause: true
-schema_version: 3
-kind: pipeline
-pause_points:
-- id: mv_spec_finalized
-  trigger: spec_finalized
-- id: mv_storyboard_ready
-  trigger: storyboard_structure_ready
-- id: mv_first_generation_call
-  trigger: first_generation_call
-requires_inputs:
-- type: music
-  required: true
-tools_required:
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-- ImageToVideoByAudio
-version: '1.0'
 ---
-
 <planner>
 **阶段逻辑与依赖关系：**
 1. 分析已上传的音乐，导出其节奏结构、精确时间（时间戳）和歌词（模型基于上传素材自行理解分析即可，无需工具调用）。

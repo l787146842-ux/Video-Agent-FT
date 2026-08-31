@@ -1,43 +1,7 @@
 ---
 name: 剧本生视频（需上传剧本）
 description: 面向已有剧本的工业化视频生成；未上传剧本时先引导上传或粘贴剧本正文。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  script_required: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-pause:
-  stage_pause: true
-schema_version: 3
-kind: pipeline
-requires_inputs:
-- type: script
-  required: true
-pause_points:
-- id: scriptvideo_spec_finalized
-  trigger: spec_finalized
-- id: scriptvideo_storyboard_ready
-  trigger: storyboard_structure_ready
-- id: scriptvideo_first_generation_call
-  trigger: first_generation_call
-tools_required:
-- read_uploaded_doc
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-language:
-  prompt: en
-version: '1.0'
 ---
-
 # 剧本生视频（需上传剧本）
 
 > 调用规则：本 Skill 面向「已有剧本」的短视频工业化生成；未上传剧本时先引导上传或粘贴剧本正文。

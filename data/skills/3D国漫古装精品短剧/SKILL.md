@@ -1,53 +1,7 @@
 ---
 name: 3D国漫古装精品短剧
 description: 制作3D国漫风格古装短剧，需上传剧本；按场景判断选择对应路径，推进规格、故事板到生成的全流程。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  script_required: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-gates:
-  require_duration: true
-  require_subtitle: true
-  require_camera_language: true
-  require_audio_layer: true
-pause:
-  stage_pause: true
-schema_version: 3
-kind: pipeline
-language:
-  prompt: en
-requires_inputs:
-- type: script
-  required: true
-pause_points:
-- id: guoman_storyboard_confirmed
-  trigger: storyboard_structure_ready
-- id: guoman_setting_images_mode_selection
-  trigger: batch_boundary
-  description: 所有 key_element 设定图确认后暂停，通过卡片向用户提供视频生成模式选择（一键生成/逐镜确认），由用户决定后续生成节奏。
-- id: guoman_first_generation_call
-  trigger: first_generation_call
-- id: guoman_first_shot_forced_review
-  trigger: batch_boundary
-  description: 第一个 shot 视频生成完毕后强制暂停（无论何种生成模式均不可跳过），请用户确认场景空间布局与人物站位，确认通过后再继续后续 shot。
-tools_required:
-- read_uploaded_doc
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- super_resolution
-- workflow_pause
-version: '1.0'
 ---
-
 <planner>
 **启动协议**
 用户触发本Skill时，首先判断用户属于以下哪种场景，并据此选择对应路径：

@@ -1,45 +1,7 @@
 ---
 name: 李安美学风格短片
 description: 按李安美学风格生成短片，先分析用户构思并从四种核心美学子风格中推荐最契合的一种再执行。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-gates:
-  require_camera_language: true
-  require_audio_layer: true
-pause:
-  stage_pause: true
-schema_version: 3
-kind: style
-pause_points:
-- id: lian_style_confirmation
-  trigger: free_text
-  prose: 向用户明示推荐的李安子风格及推荐理由后暂停，请用户明确确认是否满意；在得到用户对风格类型的明确确认前，后续设计、参数建立与资产生成保持等待。
-- id: lian_storyboard_ready
-  trigger: storyboard_structure_ready
-- id: lian_stepwise_generation_confirm
-  trigger: batch_boundary
-  description: 严格单步确认：每次新资产生成前（角色/场景图像、镜头视频、音频资产）暂停并展示生成计划与提示词，获得用户确认后再执行（批量边界暂停与生成确认闸客观兜底，未确认的生成会被拦截）。
-- id: lian_first_generation_call
-  trigger: first_generation_call
-tools_required:
-- read_uploaded_doc
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- super_resolution
-- workflow_pause
-version: '1.0'
 ---
-
 <planner>
 **全局视频参数建立与风格选择：**
 

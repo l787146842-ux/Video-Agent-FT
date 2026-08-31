@@ -1,55 +1,7 @@
 ---
 name: 古风甜宠短剧
 description: 制作古风甜宠短剧，按阶段顺序推进，每个里程碑结束后暂停并获得用户确认再推进下一阶段。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-gates:
-  require_duration: true
-  require_subtitle: true
-  require_camera_language: true
-  require_audio_layer: true
-pause:
-  stage_pause: true
-schema_version: 3
-kind: pipeline
-requires_inputs:
-- type: image
-  required: true
-  hint: 项目启动时上传的男主、女主形象参考图
-- type: script
-  required: false
-  hint: 可选；用户可自提剧本，也可由 AI 按古装甜宠爆款风格自动生成后请用户审核
-pause_points:
-- id: gupet_script_review
-  trigger: free_text
-  prose: 剧本（用户提供或 AI 自动生成）呈现后暂停，请用户审核确认，确认后才进入形象与背景设定阶段。
-- id: gupet_character_images_review
-  trigger: batch_boundary
-  description: 男主、女主角色形象参考图生成完毕后暂停，请用户明确确认是否满意、可以继续生成场景，或先调整人物形象。
-- id: gupet_storyboard_ready
-  trigger: storyboard_structure_ready
-- id: gupet_scene_images_review
-  trigger: batch_boundary
-  description: 所有场景参考图生成完毕后暂停，将场景图展示给用户邀请审核，确认满意后才进入视频制作。
-- id: gupet_first_generation_call
-  trigger: first_generation_call
-tools_required:
-- read_uploaded_doc
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-version: '1.0'
 ---
-
 <planner>
 **整体流程与里程碑节点**
 按以下阶段顺序推进，每个里程碑结束后必须暂停并获得用户确认，下一阶段统一在确认后推进。

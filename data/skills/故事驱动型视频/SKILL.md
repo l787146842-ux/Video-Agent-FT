@@ -1,36 +1,7 @@
 ---
 name: 故事驱动型视频
 description: 制作故事驱动型视频，先建立制片规格，再按故事板、提示词到生成的全流程推进。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-pause:
-  stage_pause: true
-schema_version: 3
-kind: pipeline
-pause_points:
-- id: story_spec_finalized
-  trigger: spec_finalized
-- id: story_storyboard_ready
-  trigger: storyboard_structure_ready
-- id: story_first_generation_call
-  trigger: first_generation_call
-tools_required:
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-version: '1.0'
 ---
-
 <planner>
 **完整视频的阶段逻辑与依赖关系：**
 1. 编写 制片规格.md（标题、类型、画幅、时长、视觉风格、语言；图像/视频生成渠道与分辨率遵循全局设置）→ **document_write**。

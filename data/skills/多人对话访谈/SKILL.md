@@ -1,45 +1,7 @@
 ---
 name: 多人对话访谈
 description: 制作多人对话访谈视频，含每位发言者的音色设计章节，主持人与嘉宾音色保持可辨识区分度。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-pause:
-  stage_pause: true
-custom_sections:
-  音色设计: skill_section_run
-schema_version: 3
-kind: pipeline
-pause_points:
-- id: interview_spec_finalized
-  trigger: spec_finalized
-- id: interview_storyboard_ready
-  trigger: storyboard_structure_ready
-- id: interview_first_generation_call
-  trigger: first_generation_call
-language:
-  prompt: auto
-  output: auto
-  prompt_en_categories:
-  - keyElement
-  - shot
-tools_required:
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-- ImageToVideoByAudio
-version: '1.0'
 ---
-
 <planner>
 **阶段逻辑与依赖关系：**
 1. 编写 制片规格.md（标题、类型、画幅、时长、视觉风格、语言；图像/视频生成渠道与分辨率遵循全局设置）→ **document_write**。

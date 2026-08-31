@@ -1,49 +1,7 @@
 ---
 name: 剧情短片音色参考
 description: 基于音色参考生成剧情短片，以参考音频约束人物音色；支持剧本输入或先立规格两条路径。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-pause:
-  stage_pause: true
-schema_version: 3
-kind: pipeline
-requires_inputs:
-- type: script
-  required: false
-  hint: 可选；未上传则由 planner 起草剧本并请用户确认
-- type: audio
-  required: false
-  hint: 可选；音色参考音频，供有台词角色绑定以保证跨镜头音色一致
-  features:
-  - voice_reference
-pause_points:
-- id: voiceref_script_draft_confirmation
-  trigger: free_text
-  prose: 剧本草稿输出后暂停，请用户明确确认（确认继续/要求修改），确认通过后才进入下一步。
-- id: voiceref_spec_finalized
-  trigger: spec_finalized
-- id: voiceref_storyboard_ready
-  trigger: storyboard_structure_ready
-- id: voiceref_first_generation_call
-  trigger: first_generation_call
-tools_required:
-- read_uploaded_doc
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-version: '1.0'
 ---
-
 <planner>
 **完整视频的阶段逻辑和依赖关系：**
 

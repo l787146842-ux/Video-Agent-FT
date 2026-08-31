@@ -1,37 +1,7 @@
 ---
 name: 人文纪录短片
 description: 制作人文纪录短片，先确认制片规格（题材地域、画幅、时长、视觉风格），再推进故事板与生成。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-gates:
-  require_camera_language: true
-pause:
-  stage_pause: true
-schema_version: 3
-kind: pipeline
-pause_points:
-- id: doc_storyboard_lock
-  trigger: storyboard_structure_ready
-- id: doc_first_frame_generation
-  trigger: first_generation_call
-tools_required:
-- read_uploaded_doc
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-version: '1.0'
 ---
-
 <planner>
 **全片流程与阶段依赖：**
 1. 和用户确认并建立 制片规格.md（片名、题材地域、画幅比例、目标时长、视觉风格、输出语言）→ document_write

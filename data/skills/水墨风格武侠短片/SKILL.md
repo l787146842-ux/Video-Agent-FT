@@ -1,45 +1,7 @@
 ---
 name: 水墨风格武侠短片
 description: 制作水墨风格武侠短片，先确立全局规格，锁定水墨武侠风格定位、画幅与语言参数。
-flow:
-  spec_wizard: true
-  spec_gate: true
-  stages:
-    spec:
-      done: document:Final_Video_Spec.md
-    assembly:
-      done: document:Final_Assembly_Plan.md
-gates:
-  require_subtitle: true
-  require_camera_language: true
-  require_audio_layer: true
-pause:
-  stage_pause: true
-schema_version: 3
-kind: style
-pause_points:
-- id: inkwushu_node_a_storyboard_lock
-  trigger: storyboard_structure_ready
-- id: inkwushu_pre_asset_generation_confirm
-  trigger: batch_boundary
-  description: 在每次新资产（元素图像、逐镜视频、音频）生成前暂停，向用户告知生成计划与提示词/参考关系，得到确认许可后再生成。
-- id: inkwushu_node_b_asset_binding_check
-  trigger: batch_boundary
-  description: 每批资产产出后向用户展示并进行绑定状态全局自检核对，展示完整的角色与场景绑定关系，得到确认后推进下一阶段。
-- id: inkwushu_first_generation_call
-  trigger: first_generation_call
-tools_required:
-- read_uploaded_doc
-- document_write
-- storyboard_create_group
-- storyboard_add_draft
-- storyboard_patch_draft
-- image_generate
-- generate_video
-- workflow_pause
-version: '1.0'
 ---
-
 <planner>
 **全流程阶段逻辑与协同编排：**
 
