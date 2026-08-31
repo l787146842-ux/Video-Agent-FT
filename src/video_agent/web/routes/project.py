@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 
 from src.video_agent.exceptions import StateConflictError, VideoAgentError
+from src.video_agent.state import board_merge
+from src.video_agent.state.board_merge import CAT_ASSETS
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 from src.video_agent.utils import gen_id
@@ -220,6 +222,65 @@ async def put_project_state(body: ProjectStateUpdate):
 
         await svc.save_async()
     return {"ok": True, "board_version": svc.board_version}
+
+
+class BoardMergeResponse(BaseModel):
+    """G1 三向合并响应：无冲突直接落盘（applied）；有冲突回冲突清单 +
+    默认保留用户版的合并结果，前端经冲突面板定夺后整板回提。"""
+    ok: bool = True
+    applied: bool = False
+    base_available: bool = False
+    board_version: Optional[int] = None
+    merged: Optional[Dict[str, Any]] = None
+    conflicts: List[Dict[str, Any]] = []
+
+
+@router.post("/project/state/merge", response_model=BoardMergeResponse)
+async def merge_project_state(body: ProjectStateUpdate):
+    """G1 并行局部修改：陈旧整板提交不再整板拒收，改按元素粒度三向合并。
+
+    base=客户端所见版号快照（内存历史缓冲）/ mine=本次提交 /
+    theirs=服务端当前；单方改动直接采纳，双方同改同一处进冲突清单。
+    基线不可得（重启后/超出缓冲）回落旧 409 语义由前端处理。
+    """
+    svc = StateManager.get_instance()
+    async with svc.lock:
+        # 过期写入防护：同整板 PUT 口径（跨项目陈旧写直接拒）
+        if body.project_id and body.project_id != svc.active_project_id:
+            raise StateConflictError(
+                f"项目已切换（期望 '{svc.active_project_id}'，收到 '{body.project_id}'），丢弃本次过期保存"
+            )
+        state = svc.state_dict
+        mine = {
+            CAT_KEY_ELEMENTS: body.keyElements if body.keyElements is not None else list(state.get(CAT_KEY_ELEMENTS) or []),
+            CAT_SHOTS: body.shots if body.shots is not None else list(state.get(CAT_SHOTS) or []),
+            CAT_AUDIO_ITEMS: body.audioItems if body.audioItems is not None else list(state.get(CAT_AUDIO_ITEMS) or []),
+            CAT_ASSETS: body.assets if body.assets is not None else list(state.get(CAT_ASSETS) or []),
+        }
+        base = board_merge.base_board(svc.active_project_id, body.base_version)
+        if base is None:
+            return BoardMergeResponse(
+                ok=False, applied=False, base_available=False,
+                board_version=svc.board_version)
+        theirs = {
+            CAT_KEY_ELEMENTS: list(state.get(CAT_KEY_ELEMENTS) or []),
+            CAT_SHOTS: list(state.get(CAT_SHOTS) or []),
+            CAT_AUDIO_ITEMS: list(state.get(CAT_AUDIO_ITEMS) or []),
+            CAT_ASSETS: list(state.get(CAT_ASSETS) or []),
+        }
+        merged, conflicts = board_merge.merge_board(base, mine, theirs)
+        if not conflicts:
+            state[CAT_KEY_ELEMENTS] = merged[CAT_KEY_ELEMENTS]
+            state[CAT_SHOTS] = merged[CAT_SHOTS]
+            state[CAT_AUDIO_ITEMS] = merged[CAT_AUDIO_ITEMS]
+            state[CAT_ASSETS] = merged[CAT_ASSETS]
+            await svc.save_async()
+            return BoardMergeResponse(
+                ok=True, applied=True, base_available=True,
+                board_version=svc.board_version, merged=merged)
+        return BoardMergeResponse(
+            ok=True, applied=False, base_available=True,
+            board_version=svc.board_version, merged=merged, conflicts=conflicts)
 
 
 # ---------- Undo/Redo ----------

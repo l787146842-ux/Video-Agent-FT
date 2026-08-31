@@ -23,6 +23,15 @@ export interface BatchImageGenRequest {
   aspect_ratio?: string;
 }
 
+export interface BoardMergeResponse {
+  ok?: boolean;
+  applied?: boolean;
+  base_available?: boolean;
+  board_version?: number | undefined;
+  merged?: Record<string, unknown> | undefined;
+  conflicts?: Record<string, unknown>[];
+}
+
 export interface Body_upload_files_api_ai_upload_post {
   files: string[];
 }

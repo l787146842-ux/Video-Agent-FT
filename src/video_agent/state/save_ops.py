@@ -14,6 +14,7 @@ from loguru import logger
 
 from src.video_agent.exceptions import StateError
 
+from . import board_merge
 from .repository import StateRepository
 
 if TYPE_CHECKING:  # 仅类型标注用，运行期不 import manager（防循环）
@@ -80,6 +81,8 @@ def save(svc: "StateManager") -> bool:
                 break
         svc._repo.write_index(index)
         svc._known_version = v
+        # G1 三向合并基线：本版号故事板快照进历史缓冲（内存，重启即弃）
+        board_merge.record_board(pid, v, svc._raw_state)
         # 状态变更时失效上下文缓存
         svc._context_cache.clear()
         logger.debug("[StateManager] Saved")
