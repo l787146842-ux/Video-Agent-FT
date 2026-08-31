@@ -764,6 +764,11 @@
             "title": "Pause Kind",
             "type": "string"
           },
+          "snapshot_id": {
+            "default": "",
+            "title": "Snapshot Id",
+            "type": "string"
+          },
           "stopped": {
             "default": false,
             "title": "Stopped",
@@ -990,6 +995,11 @@
               "pause_kind": {
                 "default": "",
                 "title": "Pause Kind",
+                "type": "string"
+              },
+              "snapshot_id": {
+                "default": "",
+                "title": "Snapshot Id",
                 "type": "string"
               },
               "stopped": {

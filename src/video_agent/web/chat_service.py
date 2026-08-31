@@ -504,6 +504,7 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
     # 局部别名：显式 kwarg 形态钉死同轮 turn_id 契约（指纹测试）
     turn_id = ctx.turn_id
     video_items = _video_card_items(ctx.final_payload)
+    snap_id = ""
     if ctx.use_studio_context and (
         ctx.final_text or ctx.final_payload.get("image_urls")
         or ctx.final_payload.get("confirmation") or video_items
@@ -543,7 +544,7 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
                 ctx.svc.add_chat_message("agent", "", video_items=video_items, turn_id=turn_id)
             # E1 消息级快照：轮末打快照挂最后一条 agent 消息（指针化：
             # 消息存 snapshotId，本体存 stateSnapshots；媒体只有 URL 指针）
-            ctx.svc.attach_snapshot_to_last_agent_message(label=f"轮次完成 {turn_id}")
+            snap_id = ctx.svc.attach_snapshot_to_last_agent_message(label=f"轮次完成 {turn_id}")
 
     # 产物账本同轮下发：向导机械落盘的规格文档并入 documents_written
     if ctx.wiz_card_live:
@@ -556,6 +557,8 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
         "state": ctx.svc.get_full_snapshot() if ctx.use_studio_context else None,
         "elapsed_ms": int((time.monotonic() - ctx.t0) * 1000),
         "turn_id": turn_id,
+        # E1：轮末快照指针同轮下发（live 消息挂回档动作，无需刷新）
+        "snapshot_id": snap_id,
         # workflow 投影（run 快照 + 本轮事件，重连 replay 同源）
         "workflow": workflow_runtime.project(ctx.svc.state_dict, ctx.turn_id),
     }

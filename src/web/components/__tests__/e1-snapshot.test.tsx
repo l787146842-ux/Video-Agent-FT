@@ -9,7 +9,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SnapshotHistoryBar } from '../left-panel/SnapshotHistoryBar';
 import { SnapshotMessageActions } from '../right-panel/SnapshotMessageActions';
 import { getSnapshots, restoreSnapshot, forkSnapshot } from '@/api/project';
-import type { ChatMessage } from '@/types';
+import { buildDoneMessage } from '@/stores/chat/done-message';
+import { emptyLedger } from '@/lib/turn-ledger';
+import type { ChatMessage, SseDonePayload } from '@/types';
 
 vi.mock('@/api/project', () => ({
   getSnapshots: vi.fn(),
@@ -105,5 +107,19 @@ describe('E1 消息级快照动作（二次确认把关）', () => {
       expect(forkSnapshot).toHaveBeenCalledWith('snap-7');
     });
     await waitFor(() => expect(reloadSpy).toHaveBeenCalled());
+  });
+});
+
+describe('E1 live 落账：done 同轮下发 snapshot_id', () => {
+  it('payload 带 snapshot_id：live 主气泡挂 snapshotId（当前会话即见回档动作）', () => {
+    const payload = { snapshot_id: 'snap-live', turn_id: 't1' } as SseDonePayload;
+    const m = buildDoneMessage(payload, 0, 'model-x', emptyLedger());
+    expect(m.snapshotId).toBe('snap-live');
+  });
+
+  it('payload 无 snapshot_id：不挂 snapshotId（停止/无快照轮不渲染回档动作）', () => {
+    const payload = { turn_id: 't2' } as SseDonePayload;
+    const m = buildDoneMessage(payload, 0, 'model-x', emptyLedger());
+    expect(m.snapshotId).toBeUndefined();
   });
 });

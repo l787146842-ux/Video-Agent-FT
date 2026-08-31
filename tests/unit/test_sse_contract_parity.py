@@ -57,7 +57,7 @@ _KEY_FIELDS = {
 # 钉 _KEY_FIELDS 够不到的嵌套载荷面（done.payload 全家桶 / replay 首帧）；
 # 后端子模型字段变更未重跑生成器时，与后端 model_fields 全等对拍即红。
 _SUBMODEL_KEY_FIELDS = {
-    "SseDonePayload": {"chat_inserts", "confirmation_options", "suggested_actions"},
+    "SseDonePayload": {"chat_inserts", "confirmation_options", "suggested_actions", "snapshot_id"},
     "SseDoneChatInsert": {"kind", "url", "name", "thumb"},
     "SseDoneConfirmationOption": {"label", "description", "group", "value"},
     "SseDoneSuggestedAction": {"kind", "label", "value"},
