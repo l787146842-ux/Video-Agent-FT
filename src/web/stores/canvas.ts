@@ -75,7 +75,9 @@ export const [canvasOverlayDragging, setCanvasOverlayDragging] = createSignal(fa
 
 // ---------- 选中态轮询（@ 菜单激活期间订阅 /api/canvas/selection） ----------
 
-const SELECTION_POLL_MS = 1500;
+// Q16 裁决 2026-09-01：按需轮询已是现状（仅 @ 面板激活期间启停、离线自停），
+// 频率由 1500ms 降至 500ms——激活窗口短暂，高频换选中态变化的即时响应。
+const SELECTION_POLL_MS = 500;
 const EMPTY_SELECTION: CanvasSelectionResult = { supported: false, nodes: [], canvas_online: false };
 
 export const [canvasSelection, setCanvasSelection] = createSignal<CanvasSelectionResult>(EMPTY_SELECTION);

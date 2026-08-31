@@ -23,7 +23,7 @@ export function useCanvasMention() {
   });
 
   // 组件卸载时强制停轮询：selectionTimer 为模块级全局，弹层激活中卸载时
-  // effect 不会重跑，不停会泄漏 1.5s 定时器与请求
+  // effect 不会重跑，不停会泄漏 500ms 定时器与请求
   onCleanup(() => stopCanvasSelectionPolling());
 
   /** 选中态中的图片节点 → @ 候选项（与全量节点图片同构，便于反向选中回链） */
