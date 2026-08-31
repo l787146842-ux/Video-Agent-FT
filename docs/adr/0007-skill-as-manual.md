@@ -28,7 +28,7 @@
 > 批4 随本 ADR 落地的正文机械中性化（`core/skill_sanitize.py` +
 > `prompts/gates/injection_patterns.md` 模式表）整体删除；本 ADR 四条红线不含
 > 中性化，红线语义由确认闸/动作单轨/platform 闸机械执行，§2.4 Context≠Consent
-> 条款原样保留（裁决依据见 `docs/Skill系统审核报告-20260829.md` §7 第 1/3 条）。
+> 条款原样保留（裁决文书已随 C2 文书卫生批删除，记录存 git 历史）。
 
 ## 总原则（每批自查）
 

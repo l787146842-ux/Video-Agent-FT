@@ -61,6 +61,7 @@ const SECTION_META: Record<string, { label: string; hint?: string }> = {
   generate_video: { label: '媒体生成', hint: '出图/出视频/出音频的参考与参数规范。' },
   audio_generate: { label: '媒体生成', hint: '出图/出视频/出音频的参考与参数规范。' },
   video_assembler: { label: '组装导出', hint: '最终剪辑与导出引导规范。' },
+  reply_to_user: { label: '用户交互', hint: '何时停下与用户确认、如何展示阶段性成果的交互规范。' },
 };
 
 /** 章节显示元数据（label + hint） */
