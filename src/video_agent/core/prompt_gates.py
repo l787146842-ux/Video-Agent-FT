@@ -39,8 +39,8 @@ from src.video_agent.utils.prompts import load_prompt_section
 # 无判定逻辑；承重壳 re-export 保持既有引用路径不变（宪法 §12 登记壳，coupling_registry
 # R13 登记；gate_registry 顶层无依赖，不触 prompt_gates→gates_inputs 导入顺序约束）。
 from src.video_agent.core.gate_registry import (
-    LAYER_PLATFORM, LAYER_SKILL, LAYER_SESSION,
-    GateRuleMeta, GATE_RULES, RULE_ALIASES, normalize_rule_id,
+    LAYER_PLATFORM,
+    GateRuleMeta, GATE_RULES, normalize_rule_id,
 )
 
 # 硬性下限（字符数）：低于即打回。取保守值只拦「明显敷衍」——

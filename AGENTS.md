@@ -56,7 +56,7 @@ npm run build                      # 前端构建（输出 static/dist/）
 npm run check                      # tsc + eslint
 python scripts/acceptance.py --quick   # 日常快验（门禁 + tsc）
 python scripts/acceptance.py           # 批末全量验收
-python scripts/run_eval_pipeline.py    # 闸机黄金语料评测
+python scripts/run_eval_pipeline.py    # Skill 管线可解析性评测（frontmatter/manifest 解析底线）
 ```
 
 ## 四、文档指针（规则的家）
@@ -73,7 +73,7 @@ python scripts/run_eval_pipeline.py    # 闸机黄金语料评测
 
 ## 五、机器门禁速查（清单唯一事实源 = scripts/acceptance.py GATES 表）
 
-契约（gen_api_types --check）/ 提示词预算 / 文件行数双棘轮 / 语义色收口 /
+契约（gen_api_types --check）/ 文件行数双棘轮 / 语义色收口 /
 方法内 import / 类别 Key / 退役符号防复活 / 层间导入方向 /
 引用完整性（文档指针+宪法锚点合并）/ 脚手架计数 / 前后端覆盖率棘轮。
 每条带退役条件声明；新增门禁必须先立项（GOVERNANCE §13.14(e)/(f)）。

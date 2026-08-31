@@ -5,7 +5,7 @@ prompt_gates 原位留承重壳 re-export 保持既有引用路径不变
 （宪法 §12 登记壳；登记见 coupling_registry R13）。
 
 承载：GateRuleMeta 定义 + GATE_RULES 注册表数据 + GATE_MESSAGE_SECTIONS
-文案覆盖矩阵 + RULE_ALIASES 别名表 + normalize_rule_id() 归一函数。
+文案覆盖矩阵 + normalize_rule_id() 归一函数。
 判定逻辑（各族校验/audit_verdicts 等）仍在 prompt_gates.py。
 """
 from dataclasses import dataclass
@@ -14,8 +14,6 @@ from typing import Dict, Tuple
 # ---------- 闸机规则注册表（Policy-as-Data，宪法 §2.3） ----------
 
 LAYER_PLATFORM = "platform"
-LAYER_SKILL = "skill"
-LAYER_SESSION = "session"
 
 
 @dataclass(frozen=True)
@@ -70,18 +68,11 @@ GATE_MESSAGE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     "platform.tool_risk": ("TOOL_RISK_BLOCKED",),
 }
 
-# rule_id 别名归一表（旧写法 → 注册表正式条目，单向只读映射），
-# 归一后历史口径可并入 skill.prompt_structure。
-RULE_ALIASES: Dict[str, str] = {
-    "storyboard_prompt_structure": "skill.prompt_structure",
-}
-
-
 def normalize_rule_id(rule_id: str) -> str:
-    """把历史 rule_id 单向归一到注册表正式条目（未命中别名表原样返回）。
+    """rule_id 归一入口（承重符号，coupling_registry R13 钉死）。
 
-    三个消费面统一入口：guard_pipeline 发 verdict、audit_gate_triggers
-    统计、audit_verdicts/override 留痕。历史 trace 原始值不改写，
-    归一只发生在读取/统计侧。
+    别名表已随 skill/session 层闸机退役清空，现为恒等返回；
+    三个消费面（guard_pipeline / audit_gate_triggers / override 留痕）
+    保留统一入口，历史新别名需求在此单点扩展。
     """
-    return RULE_ALIASES.get(str(rule_id or ""), str(rule_id or ""))
+    return str(rule_id or "")

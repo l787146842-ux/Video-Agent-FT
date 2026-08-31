@@ -32,7 +32,7 @@
 |---|----|------|---------|---------|---------|
 | 1 | 平台协议 | `prompts/planner/system_fc.md`（文本协议已退役） | 主模型每轮 | 动作格式/暂停通道/输出纪律/工具使用法 | 业务领域规则 |
 | 3 | Skill 文档 | `data/skills/<slug>/SKILL.md`（单一包形态，对齐 Agent Skills 开放标准，ADR-0007） | 三级渐进披露（开关→目录摘要常驻→正文预算化注入/资源按需） | 指令性制作手册：教 Agent 理解任务/拆步骤/调工具/选模型/出片，创作者自由书写 | 覆盖平台闸机、构成用户同意（§2.4）、要求执行平台外动作 |
-| 4 | 执行铁律文档 | 项目内「执行铁律.md」（`spec_rules` 模板） | Skill 激活时全文注入 | 项目级可编辑生产契约 | 平台协议、流程步骤 |
+| 4 | 执行铁律文档 | 项目内「执行铁律.md」（`spec_rules` 模板） | 存在即每轮全文注入（项目有铁律文档时） | 项目级可编辑生产契约 | 平台协议、流程步骤 |
 | 5 | 制片规格文档 | 项目内规格文档（制片规格.md 等） | 执行器显式注入/按需 read | 本项目参数事实（画幅/分辨率/渠道/时长） | 任何规则性表述 |
 | 6 | 执行器提示词 | 执行器提示词装配主路径（执行器族已随任务#36 B5 一步退役物理删除，原 _TASK/_BOUNDARY/自检词随模块退役） | 执行器独立调用 | 单一任务的输出格式与边界 | 跨阶段流程规则 |
 | 7 | 闸机 | `core/prompt_gates.py` + `core/guard_pipeline.py` | 工具裁剪/警告/回喂 | 客观状态校验与阶段门禁 | prose 说服（闸机只裁定，不说教） |
@@ -52,13 +52,12 @@
 |---------|-----------|-----------|
 | 平台对话协议 | 层 1 `prompts/planner/system_fc.md` | Skill、铁律、执行器 |
 | 项目级生产契约 | 层 4 铁律文档 | 平台协议硬编码、执行器常量 |
-| 阶段顺序与暂停点 | 平台闸机刹车（`platform.stage_precondition` 内嵌工具执行路径首位；账本/探针归 `core/workflow_runtime.py`，定义层承自 `stage_probes`/frontmatter 声明 `data/skills/<slug>.md` 头部 YAML 块的 flow/pause） | Skill 散文、平台协议、回喂话术、模型循环猜序 |
+| 阶段顺序与暂停点 | 平台闸机刹车（`platform.stage_precondition` 内嵌工具执行路径首位；账本/探针归 `core/workflow_runtime.py`，定义层承自 `stage_probes`/frontmatter 声明 `data/skills/<slug>/SKILL.md` 头部 YAML 块的 flow/pause） | Skill 散文、平台协议、回喂话术、模型循环猜序 |
 | 单一执行器的输出格式与边界 | 层 3 Skill 对应章节是唯一表述源；层 6 只承载任务目标与格式锚点 | 平台协议 |
 | 模型能力参数（分辨率/时长/渠道） | 层 5 制片规格（运行时动态注入）+ 全局设置 | Skill 硬编码数值、执行器写死数值 |
 | 可机械校验的约束 | 层 7/9 代码校验（拒收或修正） | 任何 prose 层重复表述 |
 | 通用提示词规范 | 层 3 Skill 的提示词章节 | 平台协议 |
-| Skill 的平台行为开关 | 文档头部 frontmatter 声明 `data/skills/<slug>.md`（声明唯一源，任务#5 合一；引擎默认最小闸） | Skill 正文散文、平台通用层硬编码 |
-| 规格向导/剧本闸启停 | frontmatter 声明（registry.spec_wizard_active / script_required_active 纯读 frontmatter）；frontmatter 显式逃生门 | 文本启发式扫描 |
+| Skill 的平台行为开关 | 文档头部 frontmatter 声明 `data/skills/<slug>/SKILL.md`（声明唯一源，任务#5 合一；引擎默认最小闸） | Skill 正文散文、平台通用层硬编码 |
 | 阶段内创作引导 | 层 3 Skill 散文（纯散文，只管阶段内怎么写） | 平台层排序条款、frontmatter |
 
 **冲突裁决顺序（模型可见优先级，措辞对齐唯一源 prompts/shared/iron_rules_header.md）**：用户最新指令 > 铁律文档 + 制片规格 > Skill/系统默认。代码校验层不参与裁决——它是客观事实，只对结果裁定并回报。
@@ -112,8 +111,6 @@
 | 项 | 预算 | 超限处理 |
 |----|------|---------|
 | `prompts/planner/system_fc.md` | ≤ 7KB（纯协议） | 继续压缩或拆分按需注入 |
-| 全链路“严禁/不得/禁止”总数 | ≤ 8 处 | 逐条审计，可机械校验者下沉；CI 门禁 `scripts/check_prompt_budget.py` |
-| 单执行器 system+user 提示词 | ≤ 25K 字符 | 缩减注入而非删任务词 |
 | 回喂话术单条 | ≤ 3 句 | 超出说明在回喂里写规则，迁回归属层 |
 | 同一规则的定义处数量 | 恒等于 1 | 立即清理分身 |
 
@@ -225,11 +222,15 @@
 **(f) 门禁冻结条款（任务 #12 批次2 设立，2026-08-26）**：闸机与验收门禁
 只减不增，冻结基线如下：
 
-| 口径 | 冻结基线（2026-08-26） | 唯一事实源 |
+| 口径 | 冻结基线 | 唯一事实源 |
 |---|---|---|
-| 运行时闸机规则 | 18 条（platform 6 / skill 12） | `core/gate_registry.py::GATE_RULES` |
-| 验收门禁脚本 | 14 项（2026-08-30 同批下调登记，见下方注记） | `scripts/acceptance.py` |
+| 运行时闸机规则 | 5 条（全 platform） | `core/gate_registry.py::GATE_RULES` |
+| 验收门禁脚本 | 13 项 | `scripts/acceptance.py` |
 
+> 2026-09-01 基线校准登记：运行时闸原基线 18 条（platform 6 / skill 12）经 C1a/C1b/C1c
+> 大退役后实测仅剩 5 条全 platform；验收门禁实测 13 项（此前 2026-08-30 登记的 14 项
+> 口径中 `prompt_budget` 闸已随 C1a 裁决 2026-08-31 退役删除）。本表数字以实测为准同批校准。
+>
 > 2026-08-30 基线下调登记：验收门禁脚本基线下调至 14 项——`skill_tool_names`
 > 闸退役（2026-08-29 用户裁决删工具名白名单门禁，见当时审核报告 §七 第 5 条；
 > 裁决文书已随 C2 文书卫生批删除，记录存 git 历史；Skill 系统修复批 A 同批执行）。

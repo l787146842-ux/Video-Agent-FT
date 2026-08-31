@@ -118,7 +118,7 @@ class PromptBuilder:
         text = "\n\n".join(seg for _, seg in parts)
         # 组装明细入 live 注册表（context-usage 调试端点可读各段字符数）；
         # 遥测段名映射由 PROMPT_SECTIONS 自动生成（消除硬编码映射）；
-        # prompt_sections.jsonl 字段格式锁死不变（原消费方 check_prompt_budget.py 已随 C1a 裁决退役）
+        # 遥测字段格式锁死不变（只内存注册；Q12 裁决 2026-09-01 停 jsonl 落盘，原消费方已退役）
         try:
             sec_lens: Dict[str, int] = {}
             for name, seg in parts:
@@ -260,7 +260,8 @@ class PromptBuilder:
 
     def build_skill_catalog(self, context: "PlannerContext") -> str:
         """构建 Skill 目录（渐进式披露的「目录」）：启用文档 Skill 的名称+摘要常驻，
-        选中 Skill 正文头部经预算注入，全文由模型判断相关性后调 read_skill 按需加载。
+        选中 Skill 的 <planner> 段全文与章节目录由 build_selected_skill_block 注入，
+        其余章节经 read_skill 按需加载。
         批5（对齐 Flova 卡片开关）：开关过滤（settings.skills_disabled 里的 slug 不进目录）
         + 条目预算（settings.skill_catalog_max_entries，超预算按项目 usedSkills 最近使用序
         截断，尾部附「另有 N 个已启用 Skill 未列出」指针行）。
@@ -387,7 +388,7 @@ class PromptBuilder:
 
     def build_skill_metadata_header(self, skill_name: str) -> str:
         """frontmatter 元数据头：version/source / kind / language，
-        随选中 Skill 轻量块注入（正文零注入后的运营状态面）。
+        随选中 Skill 注入块附加（运营状态面）。
     
         未声明任何元数据键（零 frontmatter）返回空串，行为零变化。
         （C1b 裁决 2026-08-31：requires_inputs 原料声明轴退役，
@@ -594,12 +595,12 @@ PROMPT_SECTIONS: Tuple[PromptSectionSpec, ...] = _validate_prompt_sections((
     PromptSectionSpec("selected_skill", 100, _sec_selected_skill),
 ))
 
-# 遥测字段别名（注册表段名 → prompt_sections.jsonl 字段）：None = 不入
-# jsonl（字段格式锁死；原消费方 check_prompt_budget.py 已随 C1a 裁决退役）；
+# 遥测字段别名（注册表段名 → 遥测字段）：None = 不入册（字段格式锁死；
+# Q12 裁决 2026-09-01 停 jsonl 落盘后只供内存注册表，原消费方已退役）；
 # state_json/selected_skill 的遥测值取原始长度（非段长），在组装处显式赋值
 _SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
     "protocol": "protocol",
-    # 会话摘要段不进 jsonl 分项（字段格式锁死，消费方零改动；
+    # 会话摘要段不进遥测分项（字段格式锁死，消费方零改动；
     # 其增长只体现在 total 口径）
     "session_summary": None,
     "catalog": "catalog",
@@ -615,7 +616,7 @@ _SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
 
 def _telemetry_section_keys() -> List[str]:
     """遥测字段清单：由段注册表自动生成（序 = 注册表 order），
-    别名表决定段名→jsonl 字段。"""
+    别名表决定段名→遥测字段。"""
     keys: List[str] = []
     for spec in PROMPT_SECTIONS:
         key = _SECTION_TELEMETRY_ALIAS.get(spec.name)

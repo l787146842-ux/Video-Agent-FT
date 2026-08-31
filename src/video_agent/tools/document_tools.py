@@ -294,8 +294,8 @@ class ReadSkillTool(BaseTool):
     risk = "low"  # §2.7：只读
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
-        "Skill 正文/章节/附属资源的按需续读工具。选中 Skill 的正文头部已按渐进披露"
-        "预算注入，其余按上下文中的续读指引传 start（字符偏移）续读；读指定章节传 section。"
+        "Skill 正文/章节/附属资源的按需续读工具。选中 Skill 已注入 <planner> 段全文"
+        "与章节目录，其余章节按需传 section 经本工具读取；按字符偏移读传 start。"
         "未选中的 Skill 执行前先调用本工具读取全文，勿凭 Skill 目录摘要自行推测流程。"
         "目录包 Skill 的附属参考资料（主文标注「按需加载」处）传 resource（如 references/…）单独读取。"
     )

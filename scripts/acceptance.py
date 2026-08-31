@@ -29,9 +29,6 @@ ROOT = Path(__file__).resolve().parent.parent
 GATES: List[Tuple[str, List[str]]] = [
     # 退役条件：前后端类型同源（不再依赖生成产物桥接）时方可裁决下账。
     ("contract", [sys.executable, "scripts/gen_api_types.py", "--check"]),
-    # 退役条件：模型可见禁令存量清零、预算降为 0 硬闸后，指令治理完全数据化时裁决下账。
-    # prompt_budget 闸已随 C1a 裁决 2026-08-31 退役删除（提示词预算门禁与快照测试
-    # 五组删除之组5；脚本 scripts/check_prompt_budget.py 同批删除）。
     # 退役条件：超红线文件全部拆分归零且行数红线内化为开发惯例时裁决下账。
     ("file_lines", [sys.executable, "scripts/check_file_lines.py"]),
     # 退役条件：前端超红线文件全部拆分归零且行数红线内化为开发惯例时裁决下账。
@@ -77,11 +74,6 @@ GATES: List[Tuple[str, List[str]]] = [
     # 用户裁决 2026-08-31 授权同批下调登记；后续批只许升）。
     # 退役条件：前端整体行覆盖率 >= 90% 且连续两季无回退争议时裁决下账（§13.14(c)）。
     ("fe_cov_ratchet", [sys.executable, "scripts/check_fe_cov_ratchet.py"]),
-    # executor_skill_drift 闸已随任务#36 B5 执行器一步退役删除（执行器族不复存在）。
-    # skill_tool_names 闸已退役（2026-08-29 用户裁决删工具名白名单，Skill 系统
-    # 修复批 A；裁决文书已随 C2 文书卫生批删除，记录存 git 历史）；
-    # scan_skills --gate 保留的内容卫生/语言声明探针现为纯诊断脚本，
-    # 无 acceptance/CI 门禁调用点，仅供手动运行（FAIL 口径不变）。
     # 任务 #9：CSS 体积棘轮（只减不增，度量 static/dist 全部 stylesheet 产物，
     # 基线 scripts/css_size_baseline.txt 首钉 153007 字节 = 149.42 kB，
     # 度量口径与 check_bundle_size.mjs 同框）。

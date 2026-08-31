@@ -20,10 +20,10 @@ from src.video_agent.core.tracer import AgentTracer
 
 def test_gate_verdict_to_dict_structure():
     """结构化序列化：rule_id 归一 + description 取自规则注册表"""
-    v = GateVerdict("skill.prompt_structure", "skill", False, "结构不达标")
+    v = GateVerdict("platform.prompt_write", "platform", False, "结构不达标")
     d = v.to_dict()
-    assert d["rule_id"] == "skill.prompt_structure"
-    assert d["layer"] == "skill"
+    assert d["rule_id"] == "platform.prompt_write"
+    assert d["layer"] == "platform"
     assert d["ok"] is False
     assert d["message"] == "结构不达标"
     # description 来自 GATE_RULES 元数据（非空说明规则已登记）

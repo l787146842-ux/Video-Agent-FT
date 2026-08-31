@@ -4,7 +4,14 @@
  *  1. flova 原生 <tag>…</tag> 章节（tag 白名单对齐 SECTION_TAG_STAGES）；
  *  2. Markdown 标题式（## 切分，无 ## 时降级 ###；更深层级留在节内正文）。
  * frontmatter（--- 块）原样保留不显示，仅源码模式可见可改。
+ * 裸键兼容域拆出 skill-bare-keys.ts / 新建模板拆出 skill-template.ts（250 行红线），
+ * 本文件原路径重导出保持调用方零改动。
  */
+
+import { extractBareKeys } from './skill-bare-keys';
+
+export { extractBareKeys };
+export { blankSkillTemplate } from './skill-template';
 
 export interface SkillSection {
   /** 唯一键：tag 名 / 标题文本 / __preamble__N（散落段） */
@@ -25,8 +32,8 @@ export interface SkillStructure {
   description: string;
   sections: SkillSection[];
   format: 'tag' | 'heading';
-  /** name 来源：heading `# ` 行 / 无（旧式 `skill_name:` 行声明已退役，
-   * 名称/描述单一权威 = 后端 frontmatter 元数据，见 frontmatterMeta） */
+  /** name 来源：heading `# ` 行 / 导入期裸键（`skill_name:`）兼容兜底；
+   * 名称/描述展示权威 = 后端 frontmatter 元数据（见 frontmatterMeta） */
   nameStyle: 'heading' | 'none';
   /** description 来源：`>` 引用块 / 无 */
   descStyle: 'quote' | 'none';
@@ -102,7 +109,20 @@ const TAG_RE = new RegExp(
 /** 解析 Skill 全文为结构化模型（正文口径：只认 `# ` 标题与 `>` 引用块；
  * 名称/描述的展示权威在 frontmatter 元数据，见 frontmatterMeta） */
 export function parseSkillStructure(content: string): SkillStructure {
-  const { frontmatter, body } = splitFrontmatter(content || '');
+  const { frontmatter, body: rawBody } = splitFrontmatter(content || '');
+  // 裸键兼容：无 --- 块时剥离头部连续裸键行（只读兼容，不写回）
+  let body = rawBody;
+  let bareName = '';
+  let bareDesc = '';
+  if (!frontmatter) {
+    const head = rawBody.split('\n');
+    const bk = extractBareKeys(head);
+    if (bk.consumed > 0) {
+      bareName = bk.name;
+      bareDesc = bk.description;
+      body = head.slice(bk.consumed).join('\n').replace(/^\n+/, '');
+    }
+  }
   const lines: string[] = body.split('\n');
 
   // 1) name：首个 `# ` 行；2) description：标题后首个连续 > 引用块
@@ -123,6 +143,9 @@ export function parseSkillStructure(content: string): SkillStructure {
     }
     if (quote.length) { description = stripDescPrefix(quote.join('\n').trim()); descEnd = j - 1; }
   }
+  // 裸键兜底：正文无 `# ` 标题 / `>` 引块时用导入期裸键声明补齐（只读兼容）
+  if (!name) name = bareName;
+  if (!description) description = bareDesc;
 
   const rest = lines.slice(descEnd + 1).join('\n');
   const sections: SkillSection[] = [];
@@ -196,10 +219,14 @@ export function serializeSkillStructure(s: SkillStructure): string {
 
 /** frontmatter 元数据只读解析（批 C）：名称/描述的单一权威 = 后端
  * skill_docs.py 的 frontmatter 解析，前端只在无网/编辑期做同口径读取。
- * 仅识别 `name:`/`description:` 键（与后端 _parse_doc 对齐），
- * 不写回——修改走源码模式的 frontmatter 原文。 */
+ * 仅识别 `name:`/`description:` 键（与后端 _parse_doc 对齐）；无 --- 块时
+ * 兜底裸键兼容（与后端 _extract_bare_keys 同口径）。不写回——修改走源码模式原文。 */
 export function frontmatterMeta(content: string): { name: string; description: string } {
   const { frontmatter } = splitFrontmatter(content || '');
+  if (!frontmatter) {
+    const bk = extractBareKeys((content || '').split('\n'));
+    return { name: bk.name, description: bk.description };
+  }
   let name = '';
   let description = '';
   for (const line of frontmatter.split('\n')) {
@@ -213,35 +240,4 @@ export function frontmatterMeta(content: string): { name: string; description: s
     }
   }
   return { name, description };
-}
-
-/** 新建 Skill 空白模板（三段式骨架）：头部含最小可注册 frontmatter
- *（注册侧必填即 name/description 非空，见 registry.py 注册校验）。
- * C1c 裁决 2026-08-31：书写约定提示随模板下发——frontmatter 仅
- * name/description 必填、其余键全部可选零警告；导入的外部 Skill
- * （如 Flova 裸键 skill_name:/skill_description: 无 --- 形态）同样可注册。 */
-export function blankSkillTemplate(): string {
-  return [
-    '---',
-    'name: 新 Skill',
-    'description: 一句话说明何时使用本 Skill',
-    '---',
-    '',
-    '<!-- 书写约定：frontmatter 仅 name/description 必填，其余键全部可选；',
-    '     流程纪律（何时暂停、何时确认）直接写进下方散文，平台不再读取机械声明键 -->',
-    '',
-    '# 新 Skill',
-    '',
-    '> 调用规则：一句话说明何时使用本 Skill',
-    '',
-    '## 流程规划',
-    '',
-    '1. 第一步做什么，调用哪个工具',
-    '2. 第二步做什么，何时暂停等待用户确认',
-    '',
-    '## 提示词写法',
-    '',
-    '- 提示词语言与内容规范',
-    '',
-  ].join('\n');
 }

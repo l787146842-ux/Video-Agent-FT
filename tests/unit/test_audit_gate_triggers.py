@@ -113,20 +113,21 @@ def test_stats_dirty_lines_skipped(tmp_path: pathlib.Path):
                                 "raw_ids": {"skill.cjk_min_ratio"}}}
 
 
-def test_stats_normalizes_alias_rule_ids(tmp_path: pathlib.Path):
-    """P5：历史别名 rule_id 统计侧归一到注册表正式条目，原始值留痕 raw_ids。
-
-    历史 trace 不改写：同一规则的新旧写法并入同一统计行，原始值并列可查。"""
+def test_stats_normalize_identity_after_alias_retirement(tmp_path: pathlib.Path):
+    """别名表已随 skill/session 层闸机退役清空：归一为恒等映射，
+    各历史写法独立统计，raw_ids 留痕语义不变。"""
     base = tmp_path / "agent_traces.jsonl"
     _write(base, [
-        [_gate("storyboard_prompt_structure", ok=False)],  # 旧写法（历史留痕）
-        [_gate("skill.prompt_structure", ok=False)],       # 正式 ID
+        [_gate("storyboard_prompt_structure", ok=False)],  # 历史写法（各自成行）
+        [_gate("platform.prompt_write", ok=False)],        # 现役正式 ID
     ])
     stats = runtime_gate_stats(base)
-    assert "storyboard_prompt_structure" not in stats
-    assert stats["skill.prompt_structure"] == {
-        "total": 2, "blocked": 2, "overridden": 0,
-        "raw_ids": {"storyboard_prompt_structure", "skill.prompt_structure"}}
+    assert stats["storyboard_prompt_structure"] == {
+        "total": 1, "blocked": 1, "overridden": 0,
+        "raw_ids": {"storyboard_prompt_structure"}}
+    assert stats["platform.prompt_write"] == {
+        "total": 1, "blocked": 1, "overridden": 0,
+        "raw_ids": {"platform.prompt_write"}}
 
 
 # ---------- 任务#3：遥测旁路落盘（写入侧） ----------
@@ -137,7 +138,7 @@ def test_telemetry_append_format(tmp_path, monkeypatch):
     monkeypatch.setattr(guard_pipeline, "GATE_TRIGGER_COUNTS", path)
     guard_pipeline.audit_verdicts(
         [GateVerdict("platform.gen_confirm", "platform", True),
-         GateVerdict("skill.prompt_structure", "skill", False, "硬伤")],
+         GateVerdict("platform.prompt_write", "platform", False, "硬伤")],
         skill_name="李安美学", action="storyboard_prompt_write",
         overridden=True,
     )
@@ -151,7 +152,7 @@ def test_telemetry_append_format(tmp_path, monkeypatch):
     assert rec["skill"] == "李安美学" and rec["layer"] == "platform"
     assert rec["action"] == "storyboard_prompt_write"
     assert rec["overridden"] is True
-    assert lines[1]["rule_id"] == "skill.prompt_structure"
+    assert lines[1]["rule_id"] == "platform.prompt_write"
     assert lines[1]["ok"] is False
 
 
@@ -187,18 +188,20 @@ def _count_line(rule_id: str, ok: bool = True, overridden: bool = False,
 
 
 def test_trigger_count_stats_aggregate(tmp_path):
-    """按归一 rule_id 统计 total/blocked/overridden；别名并入正式条目。"""
+    """按归一 rule_id 统计 total/blocked/overridden（别名表已退役，归一恒等）。"""
     base = tmp_path / "gate_trigger_counts.jsonl"
     base.write_text(
-        _count_line("skill.prompt_structure", ok=False)
-        + "\n" + _count_line("storyboard_prompt_structure", ok=False)
+        _count_line("platform.prompt_write", ok=False)
+        + "\n" + _count_line("platform.shot_min_chars", ok=False)
         + "\n" + _count_line("skill.flow.spec_gate", overridden=True)
         + "\nnot-json\n\n"           # 脏行/空行跳过
         + json.dumps({"ok": True})   # 缺 rule_id 行跳过
         + "\n", encoding="utf-8")
     stats = trigger_count_stats(base)
-    assert stats["skill.prompt_structure"] == {
-        "total": 2, "blocked": 2, "overridden": 0}
+    assert stats["platform.prompt_write"] == {
+        "total": 1, "blocked": 1, "overridden": 0}
+    assert stats["platform.shot_min_chars"] == {
+        "total": 1, "blocked": 1, "overridden": 0}
     assert stats["skill.flow.spec_gate"] == {
         "total": 1, "blocked": 0, "overridden": 1}
 

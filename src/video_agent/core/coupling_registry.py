@@ -42,12 +42,15 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R01_skill_section_tag",
-        "Skill 章节 tag 改名/拆分执行器",
-        "SECTION_TAG_STAGES 映射 + system 动作清单 + 存量 Skill 旧标签",
+        "Skill 章节 tag 改名/新增/删除/拆分执行器",
+        "SECTION_TAG_STAGES 映射 + system 动作清单 + 存量 Skill 旧标签 + 前端 src/web/lib/skill-structure.ts 的 SECTION_TAGS（17 个）必须双向同步；"
+        "tag 与后端阶段键不一致会导致前端技能视图/画布节点映射失效",
         _sym(
             "src.video_agent.web.skill_docs:SECTION_TAG_STAGES",
             "src.video_agent.web.skill_docs:split_skill_sections",
-        ) + (("prose", "system 动作清单与存量 Skill 旧标签兼容属内容审查，不可机械遍历"),),
+        )
+        + (("vtest", "src/web/lib/__tests__/skill-structure.test.ts"),)
+        + (("prose", "system 动作清单/存量 Skill 旧标签兼容及前端 SECTION_TAGS 标签内容审查，不可机械遍历"),),
     ),
     CouplingRow(
         "R02_iron_rules_template",

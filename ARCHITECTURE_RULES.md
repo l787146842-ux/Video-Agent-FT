@@ -45,7 +45,7 @@
 
 ### Rule 3: StateManager 唯一写入点
 - `state/manager.py::StateManager` 是状态的**唯一写入点**；复杂嵌套操作允许直接操作 `state_dict`，但完成后**必须 `save()`**
-- **禁止**在 routes / tools / adapters 中直接写 JSON 文件；**禁止**绕过单例自建状态实例
+- **禁止**在 routes / tools / adapters 中直接写 JSON 文件；**禁止**绕过单例自建状态实例（配置类文件除外：快照 / 运行时设置 / 供应商配置等不走状态管理的配置类文件，不在本禁令范围内）
 
 ### Rule 4: 外部调用必须走 Adapter
 - LLM/图/视频外部调用必须继承 `adapters/base_chat.py::BaseChatAdapter` 或 `adapters/base.py::Base{Image,Video}Adapter`
@@ -79,12 +79,11 @@
 - 工具级闸在**每一次工具调用**前后都执行；tripwire 触发立即中断并保留已完成调用记录，禁止把残品当成品。
 - 所有 verdict 结构化（`GateVerdict(rule_id, layer, ok, message)`），回喂模型与展示用户用同一源，杜绝两套说辞。
 
-### 2.1 三层策略模型
+### 2.1 策略层模型（闸机仅 platform 层）
 | 层 | 内容 | 可配置性 |
 |---|---|---|
-| 平台层 `platform.*` | 生成确认闸、阶段硬边界（写文档/建结构强制暂停）、首拆只允关键元素、防虚报覆盖、gate_heal 自愈、提示词结构硬条款（字数/语言/字段） | **硬编码，manifest 无权关闭**；仅可经用户一次性申诉逐条放行 |
-| Skill 层 `skill.*` | 时长/字幕/镜头语言/音频层标记、中文占比、最短字数、spec_gate 流程前置、故事板审阅窗口 | manifest 可关/可放宽/**可加严**；**流程闸默认只警告不拦人（4444 语义，用户第一）** |
-| 会话层 `session.override` | 用户「本次放行」一次性记录 | 仅用户手动产生，即时消费、留痕、不可持久化 |
+| 平台层 `platform.*` | 生成确认闸、阶段硬边界（写文档/建结构强制暂停）、字数地板（镜头/元素最短字数）、提示词书写闸（字数/语言/字段）、工具 risk 分级 | **硬编码，manifest 无权关闭**；仅可经用户一次性申诉逐条放行 |
+| ~~Skill 层 `skill.*` / 会话层 `session.override`~~ | 已随 2026-08-31 C1a/C1b/C1c 大退役整体删除：`GATE_RULES` 现仅 5 条全 platform | 不再存在；历史口径见 git 历史 |
 
 ### 2.2 manifest 只能加强或持平（强制不变量；Skill = 指令性制作手册，平台硬边界不可被覆盖，ADR-0007）
 - 外部 Skill 文档来自成熟平台，其配置**不可信**；系统必须坚守自身安全底线
@@ -93,7 +92,7 @@
 - 可配项仅限风格/流程类；「规格前置」经用户确认为可配置项，不锁死
 
 ### 2.3 规则注册表（Policy-as-Data）
-- `core/prompt_gates.py` 维护 `GATE_RULES` 注册表：稳定 `rule_id` + 层归属 + 中文描述
+- `core/gate_registry.py` 维护 `GATE_RULES` 注册表（唯一家；`prompt_gates.py` 仅为承重壳 re-export）：稳定 `rule_id` + 层归属 + 中文描述
 - 判定返回结构化 `GateVerdict(rule_id, layer, ok, message)` 列表；文案外置 `prompts/gates/messages.md`，杜绝自由文本
 - 回喂模型与展示用户用**同一 verdict 源**（防两套说辞）
 
@@ -234,7 +233,8 @@ src/video_agent/
 │   ├── fc_feedback.py      ← 工具结果回喂/压缩家族（C3 落点）
 │   ├── planner_output.py   ← 轮末产出组装域
 │   ├── round_end_policies.py ← 轮末策略状态机 + suggest_next_actions（层 9 唯一落点）
-│   ├── prompt_gates.py     ← 闸机规则注册表 + 结构/流程判定（§2；原尾部规格/剧本闸家族 re-export 已随 2026-08-31 裁决退役删除，D-08 清偿）
+│   ├── prompt_gates.py     ← 闸机承重壳，re-export `gate_registry.py`（注册表唯一家）；原尾部规格/剧本闸家族已随 2026-08-31 裁决退役删除（D-08 清偿）
+│   ├── gate_registry.py    ← 闸机规则注册表唯一家（GATE_RULES / normalize_rule_id，§2.3）
 │   ├── guard_pipeline.py   ← 闸机管线（2.0，动作判定唯一入口）
 │   ├── prompt_builder.py   ← 上下文组装；token_budget.py ← 窗口/截断
 │   ├── coupling_registry.py ← 13.7 耦合表机器可读化（test_coupling_registry 钉死）
@@ -282,7 +282,7 @@ tests/fixtures/             ← 技能夹具等快照（gate_corpus/skill_pause_
 - [ ] 没有在 Skill 文件里改系统层缺口；没有用 prose 教模型配合既有机制（G1/G3）
 
 > 以下事项已由 acceptance 门禁机械强制，不再人工勾选：文件行数红线/棘轮（check_file_lines）、
-> 提示词严禁预算（check_prompt_budget）、方法内 import 防新增（check_func_imports）、
+> 方法内 import 防新增（check_func_imports）、
 > 类别 Key 字面量（check_category_keys，CAT_* 单一事实源）、已删编排符号防复活（check_legacy_orchestration）、
 > 前后端契约（gen_api_types --check + api-contract 桥接）、
 > 四件套 pytest/vitest/tsc/eslint。

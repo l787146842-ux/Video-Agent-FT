@@ -117,9 +117,9 @@ class TestGateAudit:
         tracer = AgentTracer.get_instance()
         tracer.start_trace("hi")
         tracer.start_step()
-        tracer.record_gate("skill.prompt_structure", "skill", False, message="x" * 300)
+        tracer.record_gate("platform.prompt_write", "platform", False, message="x" * 300)
         recent = tracer.get_recent_gates(10)
-        assert recent and recent[0]["rule_id"] == "skill.prompt_structure"
+        assert recent and recent[0]["rule_id"] == "platform.prompt_write"
         assert len(recent[0]["message"]) <= 200, "message 应截断"
         tracer.end_step(1, actions_applied=0)
         rec = tracer.finish_trace()
@@ -129,7 +129,7 @@ class TestGateAudit:
         tracer = AgentTracer.get_instance()
         tracer.start_trace("hi")
         tracer.start_step()
-        audit_verdicts([GateVerdict("skill.prompt_structure", "skill", True)], skill_name="S")
+        audit_verdicts([GateVerdict("platform.prompt_write", "platform", True)], skill_name="S")
         assert tracer.get_recent_gates(5)[0]["skill_name"] == "S"
 
     def test_gates_endpoint(self):

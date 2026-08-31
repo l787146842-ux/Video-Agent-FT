@@ -66,8 +66,6 @@ from src.video_agent.adapters.cancel_token import (
     bind_cancel_token,
     unbind_cancel_token,
 )
-# spec_wizard_active 经模块属性访问
-# （测试 patch 目标=registry 命名空间，顶层 from-import 会冻结绑定导致 patch 失效）
 from src.video_agent.skill_runtime.progress import (
     bind_progress_emitter,
     unbind_progress_emitter,

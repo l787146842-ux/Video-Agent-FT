@@ -28,8 +28,6 @@ jobs:
         run: python -m pytest tests/ -n auto -q --tb=short --cov=src/video_agent/core --cov-report=xml
       - name: Coverage ratchet gate (任务 #11：core 覆盖率棘轮，只升不降)
         run: python scripts/check_cov_ratchet.py --require-xml
-      - name: Prompt budget gate (宪法 §13.6：模型可见严禁数量 + system.md 体量)
-        run: python scripts/check_prompt_budget.py
       - name: File lines gate (宪法 §5/F58：单文件 1200 行红线)
         run: python scripts/check_file_lines.py
       - name: Frontend file lines gate (P4-23：src/web 物理行数 250 红线 + 白名单棘轮)
@@ -47,7 +45,7 @@ jobs:
       - name: Reference integrity gate (文档指针漂移与宪法锚点合并为一条引用完整性闸)
         run: python scripts/check_doc_pointers.py
       # Executor skill drift gate 已随任务#36 B5 执行器一步退役删除（执行器族不复存在）
-      # Skill tool names gate 已随批 A 退役删除（2026-08-29 用户裁决删工具名白名单门禁，与 acceptance GATES 14 项对齐）
+      # Skill tool names gate 已随批 A 退役删除（2026-08-29 用户裁决删工具名白名单门禁，与 acceptance GATES 13 项对齐）
       - name: Semantic colors gate (影响面审查 FIX-3：styles/*.css 硬编码颜色棘轮，对齐 acceptance GATES)
         run: python scripts/check_semantic_colors.py
       - name: API contract check (OpenAPI + SSE sidecar -> TS types；任务 #4 双产物：api.generated.ts 与 sse.schema.json 同闸校验)

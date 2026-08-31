@@ -232,7 +232,7 @@ test.describe('闸机「本次放行」（814F7）', () => {
                             steps: [{
                                 step: 1, timing_ms: 10, actions_applied: 0, finish_reason: 'stop',
                                 gates: [{
-                                    ok: false, rule_id: 'storyboard_prompt_structure',
+                                    ok: false, rule_id: 'platform.prompt_write',
                                     layer: 'platform', message: '分镜提示词结构校验未通过',
                                 }],
                             }],

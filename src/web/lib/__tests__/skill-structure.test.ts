@@ -135,6 +135,34 @@ description: 需要演示时调用
   });
 });
 
+describe('裸键兼容（导入期只读，与后端 _extract_bare_keys 同口径）', () => {
+  const BARE_FIXTURE = `# 首行非裸键即不探测（与后端一致）
+skill_name: 不生效的裸键行（不在文档首行起）
+`;
+  it('头部连续裸键（含带引号值）：名称/描述正确解析，正文不含裸键行', () => {
+    const content = `skill_name: 裸键技能\nskill_description: "导入自外部平台"\n\n# 正文标题\n\n正文内容。\n`;
+    expect(frontmatterMeta(content)).toEqual({ name: '裸键技能', description: '导入自外部平台' });
+    const s = parseSkillStructure(content);
+    expect(s.name).toBe('正文标题'); // 正文 `# ` 标题优先，裸键仅作兜底
+    expect(s.sections.every((x) => !x.body.includes('skill_name:'))).toBe(true);
+    // 无 `#` 标题时裸键兜底补齐名称/描述（修复导入技能前端显示为空）
+    const noHead = parseSkillStructure(`skill_name: 裸键技能\nskill_description: 导入自外部平台\n\n正文。\n`);
+    expect(noHead.name).toBe('裸键技能');
+    expect(noHead.description).toBe('导入自外部平台');
+  });
+  it('首个非裸键行即停；单键/无裸键文档不受影响（首行 --- 的 YAML 仍走原路径）', () => {
+    // 首行非裸键 → 不探测（与后端一致）
+    expect(frontmatterMeta(BARE_FIXTURE)).toEqual({ name: '', description: '' });
+    // 仅 skill_name 单键 → description 空串不报错
+    const single = frontmatterMeta('skill_name: 单键技能\n\n正文。');
+    expect(single).toEqual({ name: '单键技能', description: '' });
+    // 首行 --- 的 YAML 技能仍走原路径（回归）
+    expect(frontmatterMeta(TAG_FIXTURE)).toEqual({ name: '', description: '' });
+    const s = parseSkillStructure(TAG_FIXTURE);
+    expect(s.name).toBe('剧本生视频（需上传剧本）');
+  });
+});
+
 describe('round-trip', () => {
   it('tag 式：parse(serialize(parse)) 深相等', () => {
     const once = parseSkillStructure(TAG_FIXTURE);
