@@ -38,25 +38,6 @@ def svc(tmp_path):
 
 # ---------- flow 开关 ----------
 
-def test_skill_flow_enabled_requires_declaration():
-    from src.video_agent.skill_runtime import frontmatter
-
-    sd.save_skill_doc(
-        "有声明",
-        "---\nname: 有声明\ndescription: 测试桩\n---\n# A\n正文")
-    frontmatter.write_manifest(
-        "有声明", {"name": "有声明", "description": "测试桩",
-                   "flow": {"spec_wizard": True, "spec_gate": True}})
-    sd.save_skill_doc("无声明", "# B\n> 调用规则：测试\n正文")
-    assert registry.skill_flow_enabled("有声明", "spec_wizard") is True
-    assert registry.skill_flow_enabled("有声明", "spec_gate") is True
-    assert registry.skill_flow_enabled("无声明", "spec_wizard") is False
-    assert registry.skill_flow_enabled("不存在", "spec_wizard") is False
-    assert registry.skill_flow_enabled("", "spec_wizard") is False
-
-
-# ---------- 端到端：C1a 裁决 gates 键退役（英文锁定只经 language 声明轴） ----------
-
 def test_gates_key_retired_language_floor_platform_only():
     """C1a 裁决 2026-08-31：gates.cjk_min_ratio 调整轴退役——
     英文正文无 language 声明时仍被平台语言闸打回。"""
@@ -167,33 +148,20 @@ _SKILL_FLOW_OFF = (
 
 
 def test_real_skills_manifest_snapshot(monkeypatch):
-    """真实 data/skills 快照：把目录切回真实路径重新同步注册表，断言各
-    Skill 的 manifest 声明与迁移预期一致；新增 Skill 必须在此登记预期。"""
+    """真实 data/skills 快照（2026-08-31 用户裁决 Flova 对齐后）：
+    存量包 frontmatter 只留 name/description/source，机械开关键清零。"""
     from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
 
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", REAL_DIR)
     registry.reset_registry()
     try:
         registry.sync_all(force=True)
-        for slug, expected_flow in _SKILL_FLOW_SNAPSHOT.items():
-            entry = registry.get_entry(slug)
-            assert entry is not None, f"Skill 未注册: {slug}"
-            assert entry.manifest is not None, f"Skill 缺 manifest: {slug}"
-            for key, want in expected_flow.items():
-                assert bool((entry.manifest.get("flow") or {}).get(key, False)) is want, \
-                    f"{slug} flow.{key} 预期 {want}"
         for slug in _SKILL_FLOW_OFF:
             entry = registry.get_entry(slug)
             assert entry is not None, f"Skill 未注册: {slug}"
-            flow = ((entry.manifest or {}).get("flow") or {})
-            # 0818 B4：spec_wizard 现值已冻结进 frontmatter（存量视频 Skill 全为 true）
-            assert flow.get("spec_wizard") is True, f"{slug} 冻结值应为 true"
-            # 存量视频 Skill 流程均含规格步骤：spec_gate 与迁移前行为等价
-            assert flow.get("spec_gate") is True, f"{slug} 应声明 spec_gate"
-        # 暂停声明迁入 manifest（旧 pause_rules 块已删）
-        for slug in ("剧情短片音色参考",):
-            pause = ((registry.get_entry(slug).manifest or {}).get("pause") or {})
-            assert pause.get("stage_pause") is True, f"{slug} 应声明 pause.stage_pause"
+            assert entry.manifest is not None, f"Skill 缺 manifest: {slug}"
+            extra = set(entry.manifest.keys()) - {"name", "description", "source"}
+            assert not extra, f"{slug} frontmatter 应只剩最小键，实际多出: {sorted(extra)}"
         # ke-prog 测试残留：允许无 manifest
     finally:
         registry.reset_registry()
@@ -209,24 +177,6 @@ _SCRIPT_REQUIRED_ON = (
 _SCRIPT_REQUIRED_OFF = ("宣言式概念短片", "音乐MV需上传音乐", "商品宣传短片",
                         "剧情短片音色参考")
 
-
-def test_script_required_snapshot(monkeypatch):
-    """814H9：script_required 客观检测影响面快照——需剧本 Skill 命中、其余零影响。"""
-    from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
-
-    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", REAL_DIR)
-    registry.reset_registry()
-    try:
-        registry.sync_all(force=True)
-        for slug in _SCRIPT_REQUIRED_ON:
-            assert registry.script_required_active(slug), f"{slug} 应检测为需剧本"
-        for slug in _SCRIPT_REQUIRED_OFF:
-            assert not registry.script_required_active(slug), f"{slug} 不应检测为需剧本"
-    finally:
-        registry.reset_registry()
-
-
-# ---------- C1c 裁决 2026-08-31：Flova 裸键兼容 ----------
 
 def test_bare_keys_parsed_as_minimal_declaration():
     """无 --- 包裹的头部连续 skill_name:/skill_description: 行 = 最小声明：

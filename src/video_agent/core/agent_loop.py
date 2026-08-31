@@ -544,7 +544,6 @@ async def run_agent_loop(
                 applied=0,
                 executable=[],
                 gate_rejections=list(getattr(executor, "gate_rejections", None) or []),
-                spec_wizard_pending=False,
                 result_text=result.text,
             )
             await run_round_end_policies(_re_ctx, emit, tracer=tracer)

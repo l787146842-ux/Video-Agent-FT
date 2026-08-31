@@ -42,15 +42,6 @@ def test_v3_defaults_and_valid_scalars(data):
     assert ms.validate_manifest_data(data) == []
 
 
-def test_reference_kind_retired_warns_open_registration():
-    """任务#8 ②：reference kind 下架——再声明输出 WARN 过渡告警
-    （开放注册不拒入，降级 pipeline），而非错误级。"""
-    issues = ms.validate_manifest_data({"kind": "reference"})
-    errors, warnings = ms.split_issue_warnings(issues)
-    assert errors == []
-    assert any("reference" in w and "登记表" in w for w in warnings)
-
-
 @pytest.mark.parametrize("data,keyword", [
     ({"schema_version": "3"}, "整数"),
     ({"schema_version": True}, "整数"),
@@ -62,19 +53,12 @@ def test_v3_rejects_illegal_schema_version_and_kind(data, keyword):
 
 
 @pytest.mark.parametrize("data", [
-    {"kind": "cinema"},   # 未知 kind（字符串）
-    {"kind": 1},          # 未知 kind（非字符串取值）
+    {"kind": "cinema"},   # 未知 kind（字符串）——2026-08-31 用户裁决 kind 轴退役，忽略不报错
+    {"kind": 1},
 ])
-def test_v3_unknown_kind_is_warn_not_error(data):
-    """任务#5 B-1：kind 开放注册——未知取值降级为默认（pipeline）注入
-    策略并输出 WARN，不产生错误级问题（不拒注册）。"""
-    issues = ms.validate_manifest_data(data)
-    errors, warnings = ms.split_issue_warnings(issues)
-    assert errors == []
-    assert warnings and any("降级" in w and "pipeline" in w for w in warnings)
-
-
-# ---------- ① v3 新键：requires_inputs（C1b 裁决 2026-08-31 退役） ----------
+def test_v3_kind_declaration_ignored(data):
+    """kind 声明轴退役：声明不再校验（忽略不报错）。"""
+    assert ms.validate_manifest_data(data) == []
 
 
 def test_v3_requires_inputs_declaration_ignored():
@@ -99,19 +83,6 @@ def test_v3_requires_inputs_declaration_ignored():
 ])
 def test_v3_language_valid(data):
     assert ms.validate_manifest_data(data) == []
-
-
-@pytest.mark.parametrize("data,keyword", [
-    ({"language": "zh"}, "对象"),
-    ({"language": {"prompt": "fr"}}, "zh/en/auto"),
-    ({"language": {"output": "中文"}}, "zh/en/auto"),
-])
-def test_v3_language_illegal(data, keyword):
-    issues = ms.validate_manifest_data(data)
-    assert issues and any(keyword in i for i in issues)
-
-
-# ---------- ① v3 新键：pause_points ----------
 
 
 @pytest.mark.parametrize("data", [
@@ -187,7 +158,6 @@ def test_v2_full_manifest_still_passes_unchanged():
 
 
 @pytest.mark.parametrize("data,keyword", [
-    ({"flow": {"spec_wizard": "yes"}}, "布尔值"),
     ({"pause": {"stage_pause": "yes"}}, "布尔值"),
 ])
 def test_v2_illegal_still_rejected(data, keyword):

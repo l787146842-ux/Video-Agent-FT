@@ -317,14 +317,9 @@ class WorkflowRuntime:
     def start_run(self, *, input_present: Optional[bool] = None) -> Dict[str, Any]:
         run = sync_run(self.state, self.skill); ledger = EventLedger(self.state)
         ledger.append("RunStarted", run_id=run["run_id"], idempotency_key=f"run:{run['run_id']}:started", payload={"workflow_id": run.get("workflow_id")})
-        # 原料闸：v2 script_required 单路（C1b 裁决 2026-08-31：
-        # v3 requires_inputs 声明轴退役）。
-        if input_present is False:
-            missing = True
-        elif input_present is None:
-            missing = registry.script_required_active(self.skill) and not prompt_gates.script_present(self.state)
-        else:
-            missing = False
+        # 原料闸机械判定已随用户裁决 2026-08-31 退役（Flova 对齐：
+        # 原料收集归 skill 散文 + 模型自觉）；仅保留调用方显式 input_present 覆盖。
+        missing = input_present is False
         if missing:
             # 原料闸挂首节点（默认定义首节点 = analyze_script，行为不变；
             # 声明式 workflow 挂其声明首节点）

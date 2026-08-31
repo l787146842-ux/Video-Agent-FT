@@ -82,8 +82,8 @@ class _TM:
 
 
 def test_boundary_pause_strips_model_continue_and_prepends_system(monkeypatch):
-    """v2 批4：阶段边界选项面 = 系统派生唯一入口——
-    模型「继续故事板拆分」与调整类选项均直接拒收（不做模糊清洗）。"""
+    """v2 批4 + 2026-08-31 用户裁决：阶段边界选项面 = 系统派生继续项前置 +
+    模型选项保留（向导拒收退役后不再清洗模型选项）。"""
     _register_flow_skill(monkeypatch)
     runner = FCToolRunner(tool_manager=_TM())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {
@@ -106,9 +106,9 @@ def test_boundary_pause_strips_model_continue_and_prepends_system(monkeypatch):
     res = asyncio.run(runner.execute(response, injected_skill="流程测试"))
     opts = res[5]
     assert opts[0].get("value") == opts[0].get("label") == "确认，进入「制作规格」"
-    assert not any("继续故事板拆分" in str(o.get("label")) for o in opts)
-    assert not any("需要调整分析" in str(o.get("label")) for o in opts), \
-        "边界模型选项直接拒收"
+    labels = [str(o.get("label")) for o in opts[1:]]
+    assert any("继续故事板拆分" in l for l in labels)
+    assert any("需要调整分析" in l for l in labels)
 
 
 def test_mid_stage_pause_not_decorated(monkeypatch):

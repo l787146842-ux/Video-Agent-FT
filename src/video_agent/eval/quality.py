@@ -161,30 +161,6 @@ def _check_confirm_unrelated_promotes() -> Tuple[bool, str]:
         StateManager.reset_instance()
 
 
-def _check_spec_gate_warns_and_allows_structure() -> Tuple[bool, str]:
-    StateManager.reset_instance()
-    svc = StateManager(_make_temp_state_dir())
-    try:
-        # 规格前置警告仅对声明 spec_gate 的 Skill 生效；
-        # eval 环境无真实 Skill 文档，作用域内模拟声明（退出即恢复）
-        from unittest.mock import patch
-
-        with patch(
-            "src.video_agent.skill_runtime.registry.skill_flow_enabled",
-            side_effect=lambda skill, key: key == "spec_gate",
-        ):
-            ex = StateOperationExecutor(svc, gate_enabled=True)
-            ex.skill_name = "eval-spec-gate"
-            applied = ex.execute([{
-                "action": "add_group", "group_type": "keyElement", "title": "E",
-            }])
-        return applied == 1 and bool(ex.gate_warnings), (
-            f"无规格文档时 add_group 应照常执行并警告，实际 applied={applied}"
-        )
-    finally:
-        StateManager.reset_instance()
-
-
 def _check_element_gate_referenced_only() -> Tuple[bool, str]:
     StateManager.reset_instance()
     svc = StateManager(_make_temp_state_dir())
@@ -243,7 +219,6 @@ _LOCAL_CHECKS = {
     "gate_duration_synonyms_accept": _check_gate_duration_synonyms_accept,
     "gate_subtitle_synonyms_accept": _check_gate_subtitle_synonyms_accept,
     "confirm_unrelated_promotes": _check_confirm_unrelated_promotes,
-    "spec_gate_warns_and_allows_structure": _check_spec_gate_warns_and_allows_structure,
     "element_gate_referenced_only": _check_element_gate_referenced_only,
     "retry_last_5xx_raises": _check_retry_last_5xx_raises,
     "ssrf_private_blocked": _check_ssrf_private_blocked,

@@ -199,13 +199,6 @@ DEFAULT_SKILL_SLUG = "script-to-video"
 DEFAULT_SKILL_DOC = """---
 name: 剧本生视频（需上传剧本）
 description: 用户上传剧本/故事文档以生成视频；关键阶段暂停供确认，生成均经用户明确指令执行。
-schema_version: 3
-version: "1.0"
-flow:
-  spec_wizard: true
-  spec_gate: true
-pause:
-  stage_pause: true
 ---
 
 # 剧本生视频（需上传剧本）

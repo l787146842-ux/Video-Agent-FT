@@ -22,10 +22,11 @@ SKILL = "AI-短剧一站式生成"
 def test_stage_table_canonical_order():
     table = po.stage_table(SKILL)
     keys = [s.key for s in table]
-    assert keys == ["analysis", "spec", "structure", "ke_media",
+    # 2026-08-31 用户裁决：spec 机械阶段退役（Flova 对齐，规格归散文驱动）
+    assert keys == ["analysis", "structure", "ke_media",
                     "shot_media", "audio_assets", "assembly"]
     assert table[0].deterministic is True
-    assert table[3].deterministic is False  # 创作型交接模型
+    assert table[2].deterministic is False  # 创作型交接模型
 
 
 def test_stage_table_manifest_override_retired(monkeypatch):
@@ -67,44 +68,13 @@ def _state_with(**kw):
 
 def test_current_stage_progression():
     assert po.current_stage(_state_with(), SKILL).key == "analysis"
-    assert po.current_stage(_state_with(analysis=True), SKILL).key == "spec"
-    assert po.current_stage(
-        _state_with(analysis=True, spec=True), SKILL).key == "structure"
-    st = _state_with(analysis=True, spec=True, structure=True)
+    assert po.current_stage(_state_with(analysis=True), SKILL).key == "structure"
+    st = _state_with(analysis=True, structure=True)
     assert po.current_stage(st, SKILL).key == "ke_media"
     assert po.current_stage(st, SKILL).deterministic is False
 
 
 # ---------- ③ 闸预检：只装配兜底卡，永不执行/抢先 ----------
-
-@pytest.mark.asyncio
-async def test_precheck_script_pending_no_execution(tmp_path, monkeypatch):
-    """剧本缺失 → 原料闸提醒卡（去驱动化：闸预检永不执行任何工具；
-    原 ScriptAnalyzeTool 探针已随任务#36 B5 执行器退役删除，代跑路径不复存在）"""
-    from src.video_agent.state.manager import StateManager
-
-    StateManager.reset_instance()
-    svc = StateManager(str(tmp_path / "ws"))
-    StateManager._instance = svc
-    outcome = await po.gate_precheck(svc, SKILL, "开始制作")
-    assert outcome is not None and outcome.kind == "script_pending"
-    StateManager.reset_instance()
-
-
-@pytest.mark.asyncio
-async def test_precheck_spec_pending_after_analysis(tmp_path):
-    from src.video_agent.state.manager import StateManager
-
-    StateManager.reset_instance()
-    svc = StateManager(str(tmp_path / "ws"))
-    StateManager._instance = svc
-    svc.state_dict["uploadedDocs"] = [
-        {"id": "d1", "name": "剧本.md", "content": "剧本正文：程心苏醒。"}]
-    svc.state_dict["analysis"] = {"summary": "程心苏醒与掩体失效。"}
-    outcome = await po.gate_precheck(svc, SKILL, "继续")
-    assert outcome is not None and outcome.kind == "spec_pending"
-    StateManager.reset_instance()
-
 
 @pytest.mark.asyncio
 async def test_precheck_handoff_at_creative_stage(tmp_path):

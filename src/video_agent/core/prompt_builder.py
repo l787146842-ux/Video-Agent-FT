@@ -44,11 +44,8 @@ _SYSTEM_PROMPT_WARN_CHARS = 60000
 # B1：Skill 正文 <planner> 段提取（默认注入唯一正文段）
 _PLANNER_TAG_RE = re.compile(r"<planner>\s*(.*?)\s*</planner>", re.S | re.I)
 
-# v3 元数据头展示标签（kind 目录口径 + 暂停 trigger 文案）
-_KIND_LABELS = {
-    "pipeline": "流程型（固定流水线）",
-    "style": "风格型（美学指导）",
-}
+# v3 元数据头展示标签（kind/language）已随用户裁决 2026-08-31 退役
+# （Flova 对齐：frontmatter 只留 name/description/source 等最小键）。
 # Skill 正文注入家族（全文直注/分级注入/组合注入/平台边界包壳/
 # kind 差异化声明）已随任务#12 批次B 整体退役；批4/ADR-0007 起选中 Skill
 # 正文改经渐进披露预算化注入；（B1 裁决 2026-08-31：预算式头部注入退役，
@@ -312,24 +309,6 @@ class PromptBuilder:
             header += "\n" + render_prompt_section(
                 "shared/skill_catalog.md", "SELECTED",
                 skill_name=context.skill_name)
-        # 组合激活（任务 #11）：风格层叠加时目录段同步告知（风格层正文不经预算注入，只在目录可见）
-        if self._get_raw_state is not None:
-            try:
-                raw = self._get_raw_state() or {}
-                style_names: List[str] = []
-                for s in skill_registry.style_skills_from_state(raw):
-                    entry = skill_registry.resolve_loadable_entry(s)
-                    if entry is not None:
-                        style_names.append(entry.name)
-                    elif skill_registry.resolve_entry(s) is None:
-                        style_names.append(s)  # 未注册：维持现状原样展示
-                    # 已停用：不进目录段（M2 停用=真停用）
-                if style_names:
-                    header += "\n" + render_prompt_section(
-                        "shared/skill_catalog.md", "STYLE_LAYERS",
-                        style_names="、".join(style_names))
-            except Exception:
-                pass
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
@@ -433,21 +412,6 @@ class PromptBuilder:
         ):
             lines.append("- " + render_prompt_section(
                 "shared/skill_source.md", "META_LINE", source=source.strip()))
-        try:
-            kind = skill_registry.skill_kind(skill_name)
-        except Exception:
-            kind = ""
-        if kind:
-            lines.append(f"- 类型：{_KIND_LABELS.get(kind, kind)}（目录展示口径）")
-        try:
-            lang = skill_registry.skill_language(skill_name)
-        except Exception:
-            lang = {}
-        if lang.get("prompt") == "en":
-            lines.append(
-                "- 语言要求：生成提示词正文须用英文书写（平台语言闸已按声明放宽）")
-        elif lang.get("prompt") == "zh":
-            lines.append("- 语言要求：生成提示词正文用中文书写（平台语言闸生效）")
         if not lines:
             return ""
         return (

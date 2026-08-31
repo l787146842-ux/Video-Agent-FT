@@ -14,35 +14,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 from src.video_agent.core import gates_cards
-from src.video_agent.core import prompt_gates
-from src.video_agent.core import workflow_runtime
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.models import (
     ASSEMBLY_PLAN_DOC_NAME, CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS,
 )
 
-# 粘性豁免（script_waived 模式泛化，批 B）：同类确认批过一次不再问。
-# 确认类别 → interaction 豁免旗标名；写入统一经 workflow_runtime.reduce_interaction
-# （interaction 旗标唯一写入点），gate_precheck 判定短路只读本表；
-# 与 ADR-0004 条款 3 自主性档位概念衔接（用户显式确认授予的豁免留痕）。
-CONFIRMATION_WAIVER_FLAGS: Dict[str, str] = {
-    "script": "script_waived",
-}
-
-
-def waive_confirmation_category(state_manager: Any, category: str) -> bool:
-    """按确认类别记账豁免（同类确认批过一次不再问）；未知类别返回 False。"""
-    flag = CONFIRMATION_WAIVER_FLAGS.get(category)
-    if not flag:
-        return False
-    workflow_runtime.reduce_interaction(state_manager, set_flags={flag: True})
-    return True
-
-
-def confirmation_category_waived(state: Dict[str, Any], category: str) -> bool:
-    """确认类别是否已豁免（只读；豁免旗标名归 CONFIRMATION_WAIVER_FLAGS）。"""
-    flag = CONFIRMATION_WAIVER_FLAGS.get(category)
-    return bool(flag and ((state or {}).get("interaction") or {}).get(flag))
+# 粘性豁免/原料闸/规格闸机械兜底卡已随用户裁决 2026-08-31 退役
+# （Flova 对齐：流程顺序与原料收集归 skill 散文 + 模型自觉，
+# 平台不再轮始发卡）。
 
 
 @dataclass(frozen=True)
@@ -56,7 +35,6 @@ class StageSpec:
 
 CANONICAL_STAGES: Tuple[StageSpec, ...] = (
     StageSpec("analysis", "剧本分析", ("script_analyze",)),
-    StageSpec("spec", "成片规格"),
     StageSpec("structure", "故事板拆解",
               ("storyboard_key_elements", "storyboard_shots", "storyboard_audio")),
     StageSpec("ke_media", "关键元素设定图", (), deterministic=False),
@@ -106,8 +84,6 @@ def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
     恒走各阶段平台客观探针。）"""
     if key == "analysis":
         return bool((state.get("analysis") or {}).get("summary"))
-    if key == "spec":
-        return prompt_gates.has_spec_document(state)
     ke = state.get(CAT_KEY_ELEMENTS) or []
     shots = state.get(CAT_SHOTS) or []
     audio = state.get(CAT_AUDIO_ITEMS) or []
@@ -176,16 +152,13 @@ def step_done_probe(
 def stage_table(skill: str) -> List[StageSpec]:
     """平台规范阶段表（skill 感知裁剪）。
 
-    未声明 spec_wizard 的 Skill 无规格阶段；
     无 video_assembler 执行器章节的 Skill 无组装阶段。
-    （C1b 裁决 2026-08-31：flow.stages dict 覆盖声明退役，
-    skip/executors 覆盖通道删除，恒用平台规范阶段表。）"""
+    （C1b 裁决 2026-08-31：flow.stages dict 覆盖声明退役；
+    2026-08-31 用户裁决：spec 机械阶段退役，规格归散文驱动。）"""
     entry = registry.resolve_entry(skill)
     tools = set(entry.available_tools) if entry else set()
     table: List[StageSpec] = []
     for spec in CANONICAL_STAGES:
-        if spec.key == "spec" and not registry.spec_wizard_active(skill):
-            continue
         if spec.key == "assembly" and "video_assembler" not in tools:
             continue
         table.append(StageSpec(spec.key, spec.title, spec.executors, spec.deterministic))
@@ -304,70 +277,15 @@ def _effective_stage_deps(skill: str, table: List[StageSpec]) -> Dict[str, List[
     return deps
 
 
-def _spec_stage_pending(state: Dict[str, Any], skill: str) -> bool:
-    """规格闸就绪探针。
-
-    就绪 = spec 自身未完成且前置阶段全部 stage_done；无 dependencies
-    声明时线性回落（spec 为第一个未完成阶段才就绪）。
-    探针只读客观事实、不发起行动。
-    """
-    table = stage_table(skill)
-    if not any(s.key == "spec" for s in table):
-        return False
-    if stage_done("spec", state, skill):
-        return False
-    deps = _stage_dependencies(skill)
-    if not deps:
-        # 线性回落：仅当 spec 是第一个未完成阶段（且为确定性阶段）
-        for spec in table:
-            if not stage_done(spec.key, state, skill):
-                return spec.key == "spec"
-        return False
-    return all(stage_done(d, state, skill) for d in deps.get("spec", []))
-
-
-@dataclass
-class OrchestratorOutcome:
-    kind: str  # script_pending / script_ack / spec_pending
-    message: str = ""
-    options: List[Dict[str, str]] = None
-    results: List[Any] = None
-
-
 async def gate_precheck(
     state_manager: Any, skill: str, user_message: Any = "",
-) -> Optional[OrchestratorOutcome]:
-    """闸预检（Rule2 v6：runtime 闸节点；编排器定义层 + 兜底卡装配）。
+) -> None:
+    """闸预检壳（2026-08-31 用户裁决退役原料闸/规格闸机械兜底卡）。
 
-    产出两类机械兜底卡，**永不执行阶段、永不抢先对话**：
-    - 原料闸：需剧本 Skill 剧本缺失且未豁免 → 提醒卡/上传回执；
-    - 规格闸：spec 阶段就绪且未完成 → spec_pending（向导收集卡）。
-    其余一律 None = 交接模型循环（模型持主动权，按注入的流程清单
-    调用执行器/ workflow_pause；顺序由 stage_precondition 闸否决越阶）。
+    恒返回 None = 交接模型循环；流程顺序与原料收集归 skill 散文 +
+    模型自觉（Flova 对齐）。保留委托壳：planner_triage/planner 委托
+    与 coupling_registry R27 钉死。
     """
-    state = state_manager.state_dict
-    msg = str(user_message or "")
-    table = stage_table(skill)
-    # 原料闸：analysis 在表且未完成时才判定（C1b 裁决 2026-08-31：
-    # v3 requires_inputs 声明轴退役，原料闸回落 v2 script_required 单路）
-    if any(s.key == "analysis" and not stage_done("analysis", state, skill) for s in table):
-        if (
-            registry.script_required_active(skill)
-            and not prompt_gates.script_present(state)
-            and not confirmation_category_waived(state, "script")
-        ):
-            if prompt_gates.script_waive_intent(msg):
-                waive_confirmation_category(state_manager, "script")
-                return None  # 豁免：交接模型循环
-            if prompt_gates.script_upload_ack_intent(msg):
-                return OrchestratorOutcome(
-                    "script_ack", message=prompt_gates.SCRIPT_UPLOAD_ACK)
-            card_msg, card_opts = prompt_gates.script_remind_card()
-            return OrchestratorOutcome(
-                "script_pending", message=card_msg, options=card_opts)
-    # 规格闸：spec 阶段就绪且未完成 → 向导收集卡（不执行、不抢先）
-    if _spec_stage_pending(state, skill):
-        return OrchestratorOutcome("spec_pending")
     return None
 
 

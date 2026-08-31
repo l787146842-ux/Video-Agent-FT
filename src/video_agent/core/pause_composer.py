@@ -54,24 +54,12 @@ def normalize_option_surface(
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """选项面单一归一（模型不撰写工作流选项，非法直接拒收）。
 
-    - 规格未定稿：规格交互唯一入口 = 系统向导（模型选项直接拒收）；
-    - 阶段边界：选项面 = 系统派生继续项 + 向导组（模型选项拒收）；
+    - 阶段边界：选项面 = 系统派生继续项 + 模型选项；
     - 其余：模型选项原样保留（普通确认语义）。
+    （2026-08-31 用户裁决：规格向导机械合并退役，模型选项不再拒收。）
     """
     opts = [o for o in (options or []) if isinstance(o, dict)]
-    spec_open = False
-    try:
-        if skill and _registry.spec_wizard_active(skill):
-            dims = prompt_gates.skill_spec_dimensions(skill)
-            if dims and not gates_spec.spec_doc_finalized(state):
-                spec_open = True
-                opts = []  # 模型选项直接拒收（向导为唯一入口）
-            _m, opts, _merged = gates_spec.merge_spec_param_wizard(
-                state, message, opts)
-    except Exception:
-        # 向导合并失败不阻断发卡（降级遥测可见，引导通道断裂不静默）
-        live_metrics.record_degradation("pause_composer.spec_wizard_merge")
     if boundary_hit and skill:
         sys_opt = gates_cards.system_continue_option(state, skill)
-        opts = ([sys_opt] if sys_opt else []) + (opts if spec_open else [])
+        opts = ([sys_opt] if sys_opt else []) + opts
     return message, opts

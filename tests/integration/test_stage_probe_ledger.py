@@ -33,60 +33,6 @@ def _ke_groups(state):
     state["keyElements"] = [{"id": "g1", "title": "角色", "drafts": []}]
 
 
-def test_artifact_nodes_probe_chain(svc):
-    """分析→规格→三结构节点：产物到位即在账，缺位即不在账（fail-closed）。"""
-    st = svc.state_dict
-    # 默认 demo 项目自带示例分组：清空后从零验证探针链
-    st["keyElements"] = []
-    st["shots"] = []
-    st["audioItems"] = []
-    run = wr.sync_run(st, "剧本生视频需上传剧本")
-    assert run["completed_nodes"] == []
-    assert run["current_node"] == "analyze_script"
-
-    st["analysis"] = {"summary": "一句话"}
-    run = wr.sync_run(st, "剧本生视频需上传剧本")
-    assert "analyze_script" in run["completed_nodes"]
-
-    _spec_doc(st)
-    _ke_groups(st)
-    st["shots"] = [{"id": "s1", "drafts": []}]
-    st["audioItems"] = [{"id": "a1", "drafts": []}]
-    run = wr.sync_run(st, "剧本生视频需上传剧本")
-    assert set(run["completed_nodes"]) == {
-        "analyze_script", "collect_spec", "write_spec",
-        "storyboard_key_elements", "storyboard_shots", "storyboard_audio"}
-    # 两个评审节点未落账决议：不得自动完成，current 停在首个未决评审位
-    assert "review_spec" not in run["completed_nodes"]
-    assert "review_key_elements" not in run["completed_nodes"]
-    assert run["current_node"] == "review_spec"
-
-
-def test_review_nodes_gated_by_decision_ledger(svc):
-    """评审节点：前置产物在场且账本有 DecisionResolved 才在账。"""
-    st = svc.state_dict
-    st["analysis"] = {"summary": "一句话"}
-    _spec_doc(st)
-    _ke_groups(st)
-    st["shots"] = [{"id": "s1", "drafts": []}]
-    st["audioItems"] = [{"id": "a1", "drafts": []}]
-    run = wr.sync_run(st, "剧本生视频需上传剧本")
-    rid = run["run_id"]
-    ledger = EventLedger(st)
-    ledger.append("DecisionResolved", run_id=rid, node_id="review_spec",
-                  idempotency_key=f"d:{rid}:review_spec",
-                  payload={"value": "继续"})
-    ledger.append("DecisionResolved", run_id=rid, node_id="review_key_elements",
-                  idempotency_key=f"d:{rid}:review_ke",
-                  payload={"value": "继续"})
-    run = wr.sync_run(st, "剧本生视频需上传剧本")
-    assert set(run["completed_nodes"]) >= {
-        "review_spec", "review_key_elements", "storyboard_shots",
-        "storyboard_audio"}
-    assert run["current_node"] == "storyboard_key_elements" or \
-        run["status"] in ("ready", "running")
-
-
 def test_self_report_has_no_ledger_authority(svc):
     """自报清偿：turn_commit 自报 storyboard_audio 完成而产物缺席，
     下一次 sync_run 重算即从账本剔除。"""
@@ -104,24 +50,3 @@ def test_self_report_has_no_ledger_authority(svc):
         "自报条目残留账本——探针重算未生效")
 
 
-def test_declaration_channel_covers_spec_stage(svc, tmp_path, monkeypatch):
-    """C1b 裁决 2026-08-31：stages.spec.done 声明通道退役——
-    声明忽略，平台默认探针恒生效（默认规格文档在场即完成）。"""
-    import src.video_agent.web.skill_docs as sd
-    from src.video_agent.skill_runtime import frontmatter, registry
-
-    monkeypatch.setattr(sd, "SKILL_DOCS_DIR", tmp_path / "skills")
-    registry.reset_registry()
-    try:
-        sd.save_skill_doc("声明覆盖Skill", "# A\n> 调用规则：测试\n<planner>x</planner>")
-        frontmatter.write_manifest("声明覆盖Skill", {
-            "name": "声明覆盖Skill", "description": "测试桩",
-            "flow": {"stages": {"spec": {"done": "document:定制规格.md"}}}})
-        registry.register_skill("声明覆盖Skill")
-
-        st = svc.state_dict
-        _spec_doc(st, name="Final_Video_Spec.md")          # 平台默认探针照常生效
-        run = wr.sync_run(st, "声明覆盖Skill")
-        assert {"collect_spec", "write_spec"} <= set(run["completed_nodes"])
-    finally:
-        registry.reset_registry()

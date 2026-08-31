@@ -90,7 +90,7 @@ def split_issue_warnings(issues: List[str]) -> Tuple[List[str], List[str]]:
 
 # 与 stage_probes.CANONICAL_STAGES 键序一致（漂移锁源见测试）
 CANONICAL_STAGE_KEYS = (
-    "analysis", "spec", "structure", "ke_media",
+    "analysis", "structure", "ke_media",
     "shot_media", "audio_assets", "assembly",
 )
 # （C1b 裁决 2026-08-31：WORKFLOW_STAGE_PROBE_KEYS/_WORKFLOW_STAGE_DECL_KEYS/
@@ -104,24 +104,8 @@ DEPRECATED_FLOW_KEYS = ("steps", "step_stages", "dependencies")
 # 本版本声明即 WARN 过渡告警（不拒注册）；下一版本存量清零后升 fail-hard。
 ZOMBIE_STEP_KEYS = ("stage_executors", "step_done_conditions", "step_short_titles")
 
-_FLOW_BOOL_KEYS = ("spec_wizard", "spec_gate", "script_required")
-_PAUSE_KEYS = ("stage_pause",)
-
 # ---------- v3 键白名单 ----------
 SCHEMA_VERSION = 3
-# kind 登记表：reference（低权重参考资料型）已随任务#8 裁决下架——
-# 存量 Skill 无数据承载，注入策略分支失去声明入口；再声明按未知 kind
-# 开放注册降级为 pipeline 并 WARN。
-_KIND_VALUES = ("pipeline", "style")
-_LANGUAGE_VALUES = ("zh", "en", "auto")
-# language.prompt_en_categories 合法取值：产物类别级语言闸豁免（任务#8 ①）
-_LANGUAGE_EN_CATEGORY_VALUES = ("keyElement", "shot", "audio")
-
-# 公开别名（消费端同源读取：registry 声明 API 同读此白名单，
-# 消费侧不再各自硬编码；校验语义仍归本模块 _check_*）
-KIND_VALUES = _KIND_VALUES
-LANGUAGE_VALUES = _LANGUAGE_VALUES
-LANGUAGE_EN_CATEGORY_VALUES = _LANGUAGE_EN_CATEGORY_VALUES
 
 
 def _check_exec_list(name: str, k: Any, v: Any, issues: List[str]) -> None:
@@ -169,53 +153,6 @@ def _check_schema_version(data: Dict[str, Any], issues: List[str]) -> None:
         issues.append("schema_version 必须是整数（当前 3；缺省视为 v2 兼容）")
     elif v not in (2, SCHEMA_VERSION):
         issues.append(f"schema_version 取值 {v} 不受支持（当前 3，缺省视为 v2 兼容）")
-
-
-def _check_kind(data: Dict[str, Any], issues: List[str]) -> None:
-    """kind：开放注册——已知 pipeline/style 走各自
-    注入策略；未知取值不拒注册，降级为默认（pipeline）注入策略并输出
-    WARN（注册期告警/遥测），为 writing/office 等新场景预留扩展位。
-    kind 只管注入策略这一个维度，闸机语义/UI 呈现不绑到 kind 上。"""
-    v = data.get("kind")
-    if v is None:
-        return
-    if v not in _KIND_VALUES:
-        issues.append(
-            WARN_PREFIX
-            + f"kind {v!r} 不在平台 kind 登记表（{'/'.join(_KIND_VALUES)}）；"
-            "按开放注册降级为默认（pipeline）注入策略")
-
-
-def _check_language(raw: Any, issues: List[str]) -> None:
-    """language：对象 {prompt, output, prompt_en_categories}。
-
-    prompt/output 取值 zh|en|auto；prompt_en_categories = 产物类别级
-    语言闸豁免清单（keyElement|shot|audio 子集，任务#8 ①：如场景单图
-    必须英文的 Skill 声明 keyElement 豁免，其余类别维持中文地板）。"""
-    if raw is None:
-        return
-    if not isinstance(raw, dict):
-        issues.append("language 必须是对象 {prompt, output, prompt_en_categories}")
-        return
-    for key in ("prompt", "output"):
-        v = raw.get(key)
-        if v is not None and v not in _LANGUAGE_VALUES:
-            issues.append(
-                f"language.{key} 必须是 {'/'.join(_LANGUAGE_VALUES)} 之一"
-                f"（实际 {v!r}）")
-    cats = raw.get("prompt_en_categories")
-    if cats is not None:
-        if not isinstance(cats, list) or not cats:
-            issues.append(
-                "language.prompt_en_categories 必须是非空数组"
-                f"（{'/'.join(_LANGUAGE_EN_CATEGORY_VALUES)} 子集）")
-        else:
-            for i, c in enumerate(cats):
-                if c not in _LANGUAGE_EN_CATEGORY_VALUES:
-                    issues.append(
-                        f"language.prompt_en_categories[{i}] 必须是 "
-                        f"{'/'.join(_LANGUAGE_EN_CATEGORY_VALUES)} 之一"
-                        f"（实际 {c!r}）")
 
 
 def _is_safe_relative_path(v: str) -> bool:
@@ -340,10 +277,6 @@ def validate_manifest_data(data: Any) -> List[str]:
                 f"请从 frontmatter 移除该声明")
     _check_zombie_step_keys(flow, issues)
     _check_stage_overrides(flow.get("stages"), issues)
-    for bk in _FLOW_BOOL_KEYS:
-        v = flow.get(bk)
-        if v is not None and not isinstance(v, bool):
-            issues.append(f"flow.{bk} 必须是布尔值")
     _check_version(data.get("version"), issues)
     _check_source(data.get("source"), issues)
     pause = data.get("pause")
@@ -356,8 +289,6 @@ def validate_manifest_data(data: Any) -> List[str]:
                 issues.append("pause.stage_pause 必须是布尔值")
     # v3 键：全部可选，未声明=零预设，非法 fail-closed
     _check_schema_version(data, issues)
-    _check_kind(data, issues)
-    _check_language(data.get("language"), issues)
     _check_scripts(data.get("scripts"), issues)
     _check_resources(data.get("resources"), issues)
     return issues

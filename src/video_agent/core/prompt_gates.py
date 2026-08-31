@@ -209,11 +209,10 @@ def resolve_prompt_language(
     raw_state: Optional[Dict[str, Any]],
     skill_name: str = "",
 ) -> str:
-    """ 语言单一事实源裁决：用户选择（规格输出语言）> Skill 声明
-    （v3 language.prompt=en）> 平台默认（中文）。
-    注入句与语言闸读同一结果，by construction 不可能再打架。
-    （C1a 裁决 2026-08-31：gates 键 cjk_min_ratio 调整轴退役，
-    英文锁定只经本裁决的用户选择/声明两轴）。"""
+    """语言单一事实源裁决：用户选择（规格输出语言）> 平台默认（中文）。
+
+    （2026-08-31 用户裁决：Skill language 声明轴退役，Flova 对齐——
+    语言归用户选择与散文，平台不读 frontmatter 语言开关。）"""
     sel = spec_output_language(raw_state)
     if sel:
         has_cn = "中" in sel
@@ -223,15 +222,6 @@ def resolve_prompt_language(
         if has_en and not has_cn:
             return "英文"
         return "中文"
-    try:
-        wanted = skill_name or registry.fallback_skill_from_state(
-            raw_state if isinstance(raw_state, dict) else None)
-        if wanted and str(
-            (registry.skill_language(wanted) or {}).get("prompt") or ""
-        ) == "en":
-            return "英文"
-    except Exception:
-        pass  # 声明读取失败回落现状判定（不误拦）
     return "中文"
 
 
@@ -262,31 +252,12 @@ def validate_prompt_write(
     if not text or kind not in ("shot", "keyElement"):
         return True, hard, soft
 
-    # 当前 Skill 归属（与 resolve_prompt_language 同源的 usedSkills 末位兖底）：
-    # 类别级语言豁免与音色声明轴都从声明读取，不硬编码探测
-    _cur_skill = ""
-    try:
-        _cur_skill = registry.fallback_skill_from_state(
-            raw_state if isinstance(raw_state, dict) else None)
-    except Exception:
-        pass
-    # 语言单一事实源接入用户选择（规格输出语言 > Skill 声明）；
+    # 语言单一事实源接入用户选择（规格输出语言）；
     # 英文/中英双语关闭语言闸，中文选择恢复平台地板
     cjk_min_ratio = _CJK_MIN_RATIO
     _lang = resolve_prompt_language(raw_state)
     if _lang in ("英文", "中英双语"):
         cjk_min_ratio = 0.0
-    # 类别级语言闸豁免（任务#8 ①）：Skill 声明 language.prompt_en_categories
-    # 含当前类别时，仅该类别放宽为英文；其余类别维持中文地板
-    # （豁免只按声明类别生效，防泛化）
-    try:
-        if (
-            _cur_skill
-            and kind in registry.skill_prompt_en_categories(_cur_skill)
-        ):
-            cjk_min_ratio = 0.0
-    except Exception:
-        pass  # 声明读取失败回落现状判定（不误拦）
 
     # 语言闸（shot / keyElement 通用）：中文输入环境下正文应以中文书写，
     # 仅专业技术术语可保留英文（平台固定地板）
@@ -433,24 +404,9 @@ def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
     - 生成工具裁剪不含 image_generate（其单张应急轨任意阶段可见）；
     - 其他阶段 → 不追加裁剪。
     裁剪只是第一层（软）：文本动作轨不受影响，由既有闸机做第二层兜底。
+    （2026-08-31 用户裁决：规格文档锁工具退役——规格归散文驱动，
+    不再以「无规格文档」为由裁剪故事板/生成工具。）
     """
-    if not has_spec_document(raw_state):
-        from src.video_agent.skill_runtime.registry import spec_wizard_active
-
-        if spec_wizard_active(_current_skill_of(raw_state)):
-            return (
-                STORYBOARD_STAGE_TOOLS | GENERATION_STAGE_TOOLS,
-                "【当前阶段工具边界】成片规格尚未定稿：故事板与视频生成工具暂未开放。"
-                "image_generate 仅可用单张应急出图（mode='single'），批量轨需待结构就位。"
-                "规格文档将由系统按向导选定自动拼装，请等待用户完成参数选定与规格审阅。",
-            )
-        return (
-            STORYBOARD_STAGE_TOOLS | GENERATION_STAGE_TOOLS,
-            "【当前阶段工具边界】成片规格尚未定稿：故事板与视频生成工具暂未开放。"
-            "image_generate 仅可用单张应急出图（mode='single'），批量轨需待结构就位。"
-            "请先用 document_write 写入 制片规格.md（暂停点以当前 Skill『何时暂停』为准），"
-            "规格就位后系统会自动开放后续工具。",
-        )
     has_groups = any(
         raw_state.get(cat)
         for cat in ALL_CATEGORIES

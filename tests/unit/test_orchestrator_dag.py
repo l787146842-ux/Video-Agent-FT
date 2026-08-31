@@ -67,11 +67,10 @@ def _set_done(monkeypatch, done_keys):
 
 
 def test_step_to_stage_mapping(dag_env):
-    """依赖图翻译：step 号 → 平台阶段（5 分镜表格图归入 ke_media，边被吸收）。"""
+    """依赖图翻译：step 号 → 平台阶段（5 分镜表格图归入 ke_media，边被吸收；
+    2026-08-31 用户裁决 spec 阶段退役后，映射到 spec 的声明被吸收）。"""
     deps = po._stage_dependencies(_SKILL)
-    assert deps.get("structure") == ["analysis", "spec"]
-    # 未声明阶段回落线性前置：spec 不得首轮即就绪
-    assert deps.get("spec") == ["analysis"]
+    assert deps.get("structure") == ["analysis"]
     assert deps.get("ke_media") == ["structure"]
     # 6 → [4,5]：5 归入 ke_media，故 shot_media 前置坍缩为 ke_media
     assert set(deps.get("shot_media", [])) == {"ke_media"}
@@ -80,40 +79,3 @@ def test_step_to_stage_mapping(dag_env):
     assert "shot_media" in deps.get("assembly", [])
 
 
-def test_dag_spec_pending_waits_for_analysis(dag_env, monkeypatch):
-    """钉死（依赖图通道）：spec 前置 analysis 未完成不就绪；完成后就绪。"""
-    _set_done(monkeypatch, set())
-    assert po._spec_stage_pending({}, _SKILL) is False
-    _set_done(monkeypatch, {"analysis"})
-    assert po._spec_stage_pending({}, _SKILL) is True
-    # spec 自身完成 → 不再就绪（全部完成同理）
-    _set_done(monkeypatch, {
-        "analysis", "spec", "structure", "ke_media", "shot_media",
-        "audio_assets", "assembly",
-    })
-    assert po._spec_stage_pending({}, _SKILL) is False
-
-
-def test_linear_fallback_spec_pending_without_dependencies(dag_env, monkeypatch):
-    """钉死：无 dependencies 声明 → 线性回落（spec 为第一个未完成阶段才就绪）。"""
-    monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
-        "flow": {"spec_wizard": True},
-    })
-    _set_done(monkeypatch, {"analysis"})
-    assert po._spec_stage_pending({}, _SKILL) is True
-    # analysis 未完成 → 第一个未完成阶段是 analysis，spec 不就绪
-    _set_done(monkeypatch, set())
-    assert po._spec_stage_pending({}, _SKILL) is False
-    # 首个未完成阶段已过 spec（创作型在前）→ 不就绪
-    _set_done(monkeypatch, {"analysis", "spec", "structure", "ke_media"})
-    assert po._spec_stage_pending({}, _SKILL) is False
-
-
-def test_spec_absent_from_table_not_pending(dag_env, monkeypatch):
-    """钉死：阶段表无 spec（未声明 spec_wizard）→ 永不就绪。"""
-    monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
-        "flow": {},
-    })
-    monkeypatch.setattr(registry, "spec_wizard_active", lambda name: False)
-    _set_done(monkeypatch, {"analysis"})
-    assert po._spec_stage_pending({}, _SKILL) is False

@@ -35,35 +35,6 @@ def test_baseline_records_pre_fix_planning_rounds():
 
 
 @pytest.mark.asyncio
-async def test_turn1_script_missing_remind_card_zero_llm(tmp_path):
-    """① 缺剧本 → 出槽提醒：零模型、正文非空、芯片在场、不占暂停槽。"""
-    from src.video_agent.core.planner import Planner, PlannerContext
-    from src.video_agent.state.manager import StateManager
-
-    StateManager.reset_instance()
-    svc = StateManager(str(tmp_path / "ws"))
-    StateManager._instance = svc
-    planner = Planner(state_manager=svc, llm_adapter=None, tool_manager=None)
-    result = await planner.handle_message(
-        "开始制作", PlannerContext(skill_name=SKILL))
-    assert result.steps == 1
-    assert result.text.strip(), "引导词归正文通道（禁空正文）"
-    # 批 B 出槽：提醒类不登记暂停槽，无确认卡/无 pause_id/无 active_pause
-    assert not result.confirmation, "提醒出槽：不再发行确认卡"
-    assert result.pause_id in (None, ""), "提醒出槽：不签发 pause_id"
-    inter = svc.state_dict.get("interaction") or {}
-    assert not inter.get("active_pause"), "提醒出槽：不占用暂停槽"
-    assert not inter.get("awaiting_confirmation"), "提醒出槽：不置等待确认旗"
-    # quick-actions 芯片：value=人类可读 label（点击=普通用户消息）
-    chips = result.suggested_actions or []
-    assert chips, "提醒卡选项转为 quick-actions 芯片"
-    for chip in chips:
-        assert chip.get("kind") == "next"
-        assert chip.get("label") and chip.get("value") == chip["label"]
-    StateManager.reset_instance()
-
-
-@pytest.mark.asyncio
 async def test_attachment_turn_handed_to_model(tmp_path, monkeypatch):
     """② 附件推进轮 → 交接模型循环（主体回归）：模型被调用。
     （原「script_analyze 未被系统代跑」探针已随任务#36 B5 执行器一步

@@ -78,22 +78,6 @@ class TestStageExecutorsDeclaration:
         for zk in ZOMBIE_STEP_KEYS:
             assert zk not in flow, f"僵尸键 {zk} 残留于 AI-短剧一站式生成"
 
-    def test_step_done_spec_condition_objective(self):
-        """0818 B4：spec 阶段完成度走客观探针（spec 文档存在=完成）。"""
-        from src.video_agent.core import stage_probes as po
-
-        with_spec = {"documents": [{"name": "Final_Video_Spec.md", "content": "画幅 16:9"}]}
-        assert po.stage_done("spec", with_spec) is True
-        assert po.stage_done("spec", {"documents": []}) is False
-
-
-# ---------- D3-G4：平台不再给暂停时机出主意——该措辞防复活已迁
-# check_legacy_orchestration 门禁（P2d 结构性测试减负） ----------
-
-
-# ---------- 落盘加固：Windows 锁文件竞态重试 ----------
-
-
 class TestAtomicWriteRetry:
     def test_replace_retries_on_permission_error(self, monkeypatch, tmp_path):
         """os.replace 首次 WinError 5 时退避重试，二次成功即落盘。"""

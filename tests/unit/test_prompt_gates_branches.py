@@ -92,17 +92,6 @@ def test_validate_write_fallback_skill_exception_degraded(monkeypatch):
     assert ok is True
 
 
-def test_validate_write_prompt_en_categories_exception_degraded(monkeypatch):
-    """类别级语言豁免声明读取抛异常：吞掉回落现状判定"""
-    monkeypatch.setattr(pg.registry, "fallback_skill_from_state", lambda *a, **k: "demo_skill")
-    monkeypatch.setattr(pg.registry, "skill_prompt_en_categories",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-    ok, hard, soft = pg.validate_prompt_write(_PROMPT_OK, "shot", {})
-    assert ok is True
-
-
-# ---------- ⑦ 结构/流程辅助函数 ----------
-
 def test_present_structure_kinds_full():
     state = {"keyElements": [{}], "shots": [{}], "audioItems": [{}]}
     assert pg.present_structure_kinds(state) == ["keyElement", "shot", "audio"]
@@ -122,11 +111,3 @@ def test_drafts_confirmed_empty_is_false():
     assert pg.drafts_confirmed({}, [{"tag": "已确认"}]) is True
 
 
-def test_stage_tool_restrictions_spec_wizard_active(monkeypatch):
-    """规格向导在场且规格未定稿：全量裁剪且文案指向等待用户选定"""
-    import src.video_agent.skill_runtime.registry as reg
-    monkeypatch.setattr(reg, "spec_wizard_active", lambda *a, **k: True)
-    excluded, note = pg.stage_tool_restrictions({"documents": []})
-    assert "storyboard_create_group" in excluded
-    assert "generate_video" in excluded
-    assert "规格" in note

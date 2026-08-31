@@ -165,11 +165,11 @@ def test_all_product_frontmatters_validate_clean():
 def test_stage_table_skill_aware_trimming():
     """阶段表 skill 感知：video_assembler 章节非空的 Skill 有组装阶段
     （空章节 = 无能力声明，商品宣传短片章节补齐后 assembly 生效）；
-    spec_wizard 冻结值决定规格阶段存在性。"""
+    2026-08-31 用户裁决：spec 机械阶段退役。"""
     from src.video_agent.core import stage_probes as po
 
     keys = [s.key for s in po.stage_table("商品宣传短片")]
     assert "assembly" in keys
-    assert "spec" in keys
+    assert "spec" not in keys
     keys2 = [s.key for s in po.stage_table("宣言式概念短片")]
     assert "assembly" in keys2

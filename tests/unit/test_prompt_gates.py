@@ -233,26 +233,6 @@ def test_has_spec_document_variants():
         {"documents": [{"name": "制片规格.md", "content": "  "}]}) is False
 
 
-def test_executor_spec_gate_warns_and_allows_add_group(svc, monkeypatch):
-    """814Gb：文本轨规格前置与 FC 轨对齐——executor 不再向用户追加 ⚠，
-    执行侧强制由编排器承担。"""
-    from src.video_agent.skill_runtime import registry
-
-    monkeypatch.setattr(
-        registry, "skill_flow_enabled", lambda skill, key: key == "spec_gate",
-    )
-    before = len(svc.state_dict.get("keyElements") or [])
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    ex.skill_name = "测试流程Skill"
-    applied = ex.execute([{
-        "action": "add_group", "group_type": "keyElement", "title": "Element_测试",
-    }])
-    assert applied == 1
-    assert len(svc.state_dict.get("keyElements") or []) == before + 1
-    # 用户侧静默：规格前置不再进 gate_warnings（不展示 ⚠）
-    assert not any("规格文档" in w for w in ex.gate_warnings)
-
-
 def test_executor_spec_gate_allows_after_spec_written(svc):
     svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
     ex = StateOperationExecutor(svc, gate_enabled=True)

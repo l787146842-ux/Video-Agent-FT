@@ -118,8 +118,3 @@ def test_round_end_kinds_only_live_pair():
     assert not hasattr(rep, "KIND_HARD_BREAK")
 
 
-@pytest.mark.parametrize("key", ["spec_wizard", "spec_gate", "script_required"])
-def test_manifest_flow_bool_keys_unchanged(key):
-    """manifest 校验键清单不因本次清删除漂移（裁剪键本就不在其中）。"""
-    from src.video_agent.skill_runtime import manifest_schema
-    assert key in manifest_schema._FLOW_BOOL_KEYS

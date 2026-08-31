@@ -38,7 +38,7 @@ _DECL_MANIFEST = {
             "3": "生成所有音频资产",
         },
         "dependencies": {"2": [1], "3": [2]},
-        "step_stages": {"1": "analysis", "2": "spec", "3": "audio_assets"},
+        "step_stages": {"1": "analysis", "2": "structure", "3": "audio_assets"},
     }
 }
 _ENTRY = SimpleNamespace(available_tools=["script_analyze"])
@@ -54,8 +54,8 @@ def decl_env(monkeypatch):
 def test_step_stages_declaration_is_authoritative(decl_env):
     """声明权威：step_stages 显式映射直接生效（无启发式回退路径）。"""
     deps = po._stage_dependencies("任意Skill")
-    assert deps.get("spec") == ["analysis"]
-    assert deps.get("audio_assets") == ["spec"]
+    assert deps.get("structure") == ["analysis"]
+    assert deps.get("audio_assets") == ["structure"]
 
 
 def test_step_stages_declared_absent_is_absorbed(monkeypatch):
@@ -137,8 +137,8 @@ def test_resources_undeclared_is_legal():
     ({"flow": {"dependencies": {"2": [1]}}}, "已废除"),
     # 僵尸键（stage_executors/step_done_conditions/step_short_titles）声明即
     # WARN 过渡告警（不拒注册）：钉死测试见 test_zombie_step_keys.py
-    # （C1b 裁决 2026-08-31：flow.stages 三个非法用例随机械通道退役删除）
-    ({"flow": {"spec_wizard": "yes"}}, "布尔值"),
+    # （C1b 裁决 2026-08-31：flow.stages 三个非法用例随机械通道退役删除；
+    #   2026-08-31 用户裁决：flow 布尔开关轴退役，声明忽略不校验）
     ({"pause": {"stage_pause": "yes"}}, "布尔值"),
     ({"version": ""}, "非空字符串"),
 ])
@@ -154,8 +154,8 @@ def test_schema_rejects_illegal_declarations(manifest, keyword):
 def done_cond_env(monkeypatch):
     monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
         "flow": {
-            "steps": {"1": "分析", "2": "规格"},
-            "step_done_conditions": {"2": "spec"},
+            "steps": {"1": "分析", "2": "故事板"},
+            "step_done_conditions": {"2": "analysis"},
         },
     })
     return monkeypatch
@@ -163,29 +163,17 @@ def done_cond_env(monkeypatch):
 
 def test_step_done_consumes_declaration(done_cond_env):
     """step_done_conditions {step: 阶段键} → 该阶段客观探针是唯一事实源。
-    （C1b 裁决 2026-08-31：stages.<key>.done 声明通道退役，恒走平台探针。）"""
-    with_spec = {"documents": [{"name": "Final_Video_Spec.md", "content": "x"}]}
-    assert po.step_done_declared("2", "X") == "spec"
-    assert po.step_done("2", with_spec, "X") is True
-    assert po.step_done("2", {"documents": []}, "X") is False
+    （C1b 裁决 2026-08-31：stages.<key>.done 声明通道退役，恒走平台探针；
+    2026-08-31 用户裁决：spec 机械阶段退役，用例改钉 analysis 阶段。）"""
+    with_analysis = {"analysis": {"summary": "s"}}
+    assert po.step_done_declared("2", "X") == "analysis"
+    assert po.step_done("2", with_analysis, "X") is True
+    assert po.step_done("2", {"analysis": {}}, "X") is False
     # 未声明步 fail-closed（不猜）；三态探针区分「无声明」与「声明了未完成」
     assert po.step_done_declared("1", "X") is None
-    assert po.step_done("1", with_spec, "X") is False
-    assert po.step_done_probe("1", with_spec, "X") is None
-    assert po.step_done_probe("2", {"documents": []}, "X") is False
-
-
-def test_stage_done_declaration_channel_retired(monkeypatch):
-    """C1b 裁决 2026-08-31：flow.stages.<key>.done 声明通道退役——
-    声明忽略，恒走平台客观探针。"""
-    monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
-        "flow": {"stages": {"spec": {"done": "document:定制规格.md"}}}})
-    # done 声明不再覆盖平台探针：定制文档不作数，平台规格文档在场才算数
-    assert po.stage_done("spec", {"documents": [{"name": "定制规格.md"}]}, "X") is False
-    assert po.stage_done(
-        "spec", {"documents": [{"name": "Final_Video_Spec.md", "content": "x"}]}, "X") is True
-    # 未声明阶段照常平台客观探针
-    assert po.stage_done("analysis", {"analysis": {"summary": "s"}}, "X") is True
+    assert po.step_done("1", with_analysis, "X") is False
+    assert po.step_done_probe("1", with_analysis, "X") is None
+    assert po.step_done_probe("2", {"analysis": {}}, "X") is False
 
 
 def test_current_flow_step_consumes_step_done_conditions(monkeypatch):
@@ -195,22 +183,20 @@ def test_current_flow_step_consumes_step_done_conditions(monkeypatch):
     monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
         "flow": {
             "steps": {"1": "分析", "2": "规格", "3": "故事板", "4": "设定图"},
-            "step_done_conditions": {"2": "spec", "4": "spec"},
+            "step_done_conditions": {"2": "analysis", "4": "analysis"},
         },
     })
     state = {
         "analysis": {"summary": "s"},
-        "documents": [{"name": "Final_Video_Spec.md", "content": "画幅 16:9"}],
     }
     # step1 硬规则 + step2 声明探针通过；step3 未声明且故事板未完成 → 断在 2
     assert gates_cards.current_flow_step(state, "任意Skill") == 2
     # step4 声明驱动：越过 v1「step4+ 不判定」边界
-    state2 = {"analysis": {"summary": "s"},
-              "documents": [{"name": "Final_Video_Spec.md", "content": "画幅 16:9"}]}
+    state2 = {"analysis": {"summary": "s"}}
     monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
         "flow": {
             "steps": {"1": "分析", "2": "规格", "3": "故事板", "4": "设定图"},
-            "step_done_conditions": {"2": "spec", "3": "spec", "4": "spec"},
+            "step_done_conditions": {"2": "analysis", "3": "analysis", "4": "analysis"},
         },
     })
     assert gates_cards.current_flow_step(state2, "任意Skill") == 4

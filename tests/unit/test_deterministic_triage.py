@@ -51,36 +51,6 @@ def test_pause_window_gate_present():
 # ---------- 闸预检语义：只装配兜底卡，永不执行/抢先 ----------
 
 @pytest.mark.asyncio
-async def test_precheck_script_pending_when_material_missing(svc):
-    """需剧本 Skill + 剧本缺失 → 原料闸提醒卡（兜底，非执行）"""
-    out = await po.gate_precheck(svc, _SKILL, "开始制作")
-    assert out is not None and out.kind == "script_pending"
-
-
-@pytest.mark.asyncio
-async def test_precheck_waive_intent_uses_raw_text(svc):
-    """豁免意图（只认显式话术）→ 交接模型循环并留痕 script_waived"""
-    out = await po.gate_precheck(svc, _SKILL, "waive_script")
-    assert out is None
-    assert (svc.state_dict.get("interaction") or {}).get("script_waived") is True
-
-
-@pytest.mark.asyncio
-async def test_precheck_upload_ack_card(svc):
-    out = await po.gate_precheck(svc, _SKILL, "upload_script")
-    assert out is not None and out.kind == "script_ack"
-
-
-@pytest.mark.asyncio
-async def test_precheck_spec_pending_after_analysis(svc):
-    """分析完成 + 规格未定 → 规格向导卡（不执行、不抢先）"""
-    svc.state_dict["uploadedDocs"] = [{"id": "d1", "name": "剧本.md", "content": "x"}]
-    svc.state_dict["analysis"] = {"summary": "一句话"}
-    out = await po.gate_precheck(svc, _SKILL, "继续")
-    assert out is not None and out.kind == "spec_pending"
-
-
-@pytest.mark.asyncio
 async def test_precheck_handoff_when_no_gate_fires(svc):
     """无兜底卡触发 → None = 交接模型循环（模型持主动权）"""
     svc.state_dict["interaction"] = {"script_waived": True}

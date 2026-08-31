@@ -94,35 +94,6 @@ def _style_body_probe(style_content: str) -> str:
         "")
 
 
-def test_combo_activation_keeps_style_body_out_of_system_prompt():
-    """组合激活（1 pipeline + N style 层，批4/ADR-0007）：主流程正文头部
-    预算注入；风格层正文零注入，只在目录段以名称可见。"""
-    primary_probe = "启动协议"  # 主流程正文锚点（短桩，预算内全文注入）
-    # 存在性前置钉死（与 BODY_PROBE 口径对齐：防探针失效假绿）
-    _, primary_content = sd.resolve_skill_content(PRIMARY_SKILL)
-    assert primary_probe in primary_content
-    raw = _base_state(
-        activeSkill={"slug": PRIMARY_SKILL, "source": "user"},
-        styleSkills=list(STYLE_SKILLS),
-    )
-    text = _pb(raw).build_system_prompt(_ctx(PRIMARY_SKILL))
-    # 主流程正文头部经预算注入（短正文预算内全文在场）
-    assert primary_probe in text
-    # 风格层正文仍零注入（取标签内正文片段做探针，并钉其确在源文件）
-    for style_name in STYLE_SKILLS:
-        _, style_content = sd.resolve_skill_content(style_name)
-        probe = _style_body_probe(style_content)
-        assert probe and probe in style_content, f"探针失效: {style_name}"
-        assert probe not in text, f"风格层正文泄漏: {style_name}"
-    # 风格层只在目录段可见（名称提示 + read_skill 按需指引）
-    assert "另有风格层叠加生效" in text
-    for style_name in STYLE_SKILLS:
-        assert style_name in text
-    assert "read_skill" in text
-
-
-# ---------- 轻量路径分支覆盖（新注入路径的异常/降级分支回填） ----------
-
 @pytest.fixture
 def tmp_skills(tmp_path, monkeypatch):
     d = tmp_path / "skills"
@@ -153,30 +124,6 @@ def test_selected_block_falls_back_to_raw_name_when_display_blank(
     assert "当前选中 Skill「回落桩」" in block
 
 
-def test_metadata_header_exception_branches_degrade_to_empty(tmp_skills):
-    """manifest/kind/语言/暂停点查询异常分支：各自降级不抛，无其余字段时头返空"""
-    
-    # M2 门户：选中项注入放行须可加载（已注册）→ 带 frontmatter 必填键可注册
-    sd.save_skill_doc(
-        "炸桩", "---\nname: 炸桩\ndescription: 测试桩\n---\n# 炸桩\n正文")
-    pb = _pb_raw({})
-
-    orig_m, orig_k = registry.skill_manifest_of, registry.skill_kind
-    orig_l = registry.skill_language
-    try:
-        registry.skill_manifest_of = lambda n: (_ for _ in ()).throw(RuntimeError())
-        registry.skill_kind = lambda n: (_ for _ in ()).throw(RuntimeError())
-        registry.skill_language = lambda n: (_ for _ in ()).throw(RuntimeError())
-        assert pb.build_skill_metadata_header("炸桩") == ""
-        # 异常分支不阻断轻量块（仅标题行在场）
-        block = pb.build_selected_skill_block("炸桩")
-        assert "当前选中 Skill「炸桩」" in block
-    finally:
-        registry.skill_manifest_of = orig_m
-        registry.skill_kind = orig_k
-        registry.skill_language = orig_l
-
-
 def test_metadata_header_missing_input_without_hint(tmp_skills):
     """C1b 裁决 2026-08-31：requires_inputs 原料声明轴退役——
     元数据头不再注入原料未就绪段（声明忽略，零警告）。"""
@@ -187,17 +134,6 @@ def test_metadata_header_missing_input_without_hint(tmp_skills):
     registry.register_skill("需乐桩")
     block = _pb_raw({}).build_skill_metadata_header("需乐桩")
     assert "原料未就绪" not in block
-
-
-def test_metadata_header_language_zh_line(tmp_skills):
-    """language.prompt=zh：语言闸生效告知行（运营状态面）"""
-    sd.save_skill_doc("中文桩", "# 中文桩\n正文")
-    frontmatter.write_manifest(
-        "中文桩", {"name": "中文桩", "description": "测试桩",
-                   "language": {"prompt": "zh"}})
-    registry.register_skill("中文桩")
-    block = _pb_raw({}).build_skill_metadata_header("中文桩")
-    assert "用中文书写（平台语言闸生效）" in block
 
 
 def test_metadata_header_no_raw_state_skips_input_probe(tmp_skills):

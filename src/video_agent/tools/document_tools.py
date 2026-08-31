@@ -172,7 +172,6 @@ class DocumentWriteTool(BaseTool):
         svc = StateManager.get_instance()
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         content = str(params.content or "")
-        is_spec = prompt_gates.is_spec_doc_name(params.name)
         # 铁律文档保护：铁律由系统维护 + 用户在文档面板手改，
         # 模型只读不得整篇重写（会盖掉用户编辑）
         if IRON_RULES_HEADING in str(params.name or ""):
@@ -181,28 +180,6 @@ class DocumentWriteTool(BaseTool):
                 error=("《执行铁律.md》由系统维护、用户在文档面板手动编辑，模型不得整篇重写"
                        "（会盖掉用户的修改）。如需调整流程开关，按用户指令由系统幂等合并对应声明行即可。"),
             )
-        # 规格向导拒收模型手写规格：规格由系统按向导选定拼装
-        if is_spec:
-            from src.video_agent.skill_runtime.registry import (
-                fallback_skill_from_state, spec_wizard_active,
-            )
-
-            # 当前归属经门户单一事实源收口（M2 停用=真停用）：停用项的 flow 声明不再生效
-            if spec_wizard_active(fallback_skill_from_state(svc.state_dict)):
-                if prompt_gates.has_spec_document(svc.state_dict):
-                    return ToolResult(
-                        success=False,
-                        error=("规格已按您的选择生成，无需重复写入；"
-                               "要调整请在文档面板修改或重发选择；"
-                               "继续流程请 read_project_doc 读已定稿规格并推进下一阶段。"),
-                    )
-                # C1a 裁决 2026-08-31：一条龙作为规格同意的 Context≠Consent
-                # 机制删除——规格尚未交互时文案不得说「已生成」
-                return ToolResult(
-                    success=False,
-                    error=("规格文档尚未生成：系统将按用户在向导中的选择统一拼装，"
-                           "模型不得手写；请暂停等待规格交互完成后再继续。"),
-                )
 
         async with svc.lock:
             docs = svc.state_dict.setdefault("documents", [])

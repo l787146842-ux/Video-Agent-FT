@@ -85,7 +85,6 @@ class RoundEndContext:
     applied: int = 0
     executable: List[Dict[str, Any]] = field(default_factory=list)
     gate_rejections: List[str] = field(default_factory=list)
-    spec_wizard_pending: bool = False
     # 输出态（策略写入，agent_loop 回读）
     gate_heal: bool = False
     hard_break: bool = False
@@ -207,48 +206,6 @@ def _doc_written_names(ctx: RoundEndContext) -> List[str]:
         if str(a.get("action") or a.get("tool") or "").lower()
         in ("write_document", "write_doc", "save_document", "document_write")
     ]
-
-
-def _cond_spec_doc_written_pause(ctx: RoundEndContext) -> bool:
-    names = _doc_written_names(ctx)
-    if not names or ctx.confirmation:
-        return False
-    try:
-        wizard = bool(skill_registry.spec_wizard_active(ctx.skill))
-    except Exception:
-        wizard = False
-    return wizard and any(prompt_gates.is_spec_doc_name(n) for n in names)
-
-
-async def _apply_spec_doc_written_pause(ctx: RoundEndContext, emit: Callable) -> None:
-    # 写完规格强制审阅，无视 continue
-    ctx.confirmation, ctx.confirmation_options = prompt_gates.spec_pause_card(ctx.executor.state)
-    workflow_runtime.apply_interaction(
-        ctx.executor.state, set_flags={"pending_pause_kind": "spec"})
-    logger.info("[FlowGate] 规格文档已写入，强制暂停审阅")
-
-
-def _cond_spec_review_pending(ctx: RoundEndContext) -> bool:
-    interaction = ctx.executor.state.setdefault("interaction", {})
-    return bool(interaction.get("spec_review_pending")) and not ctx.confirmation
-
-
-async def _apply_spec_review_pending(ctx: RoundEndContext, emit: Callable) -> None:
-    interaction = ctx.executor.state.setdefault("interaction", {})
-    interaction.pop("spec_review_pending", None)
-    ctx.confirmation, ctx.confirmation_options = prompt_gates.spec_pause_card(ctx.executor.state)
-    logger.info("[FlowGate] 系统拼装规格待审阅，注入审阅卡")
-
-
-def _cond_spec_wizard_takeover(ctx: RoundEndContext) -> bool:
-    return ctx.spec_wizard_pending and not ctx.confirmation
-
-
-async def _apply_spec_wizard_takeover(ctx: RoundEndContext, emit: Callable) -> None:
-    ctx.confirmation, ctx.confirmation_options = prompt_gates.spec_pause_card(ctx.executor.state)
-    workflow_runtime.apply_interaction(
-        ctx.executor.state, set_flags={"pending_pause_kind": "spec"})
-    logger.info("[FlowGate] 规格向导激活，模型手写规格已忽略，转系统规格向导暂停卡")
 
 
 def _structure_kinds(ctx: RoundEndContext) -> set:
@@ -403,12 +360,6 @@ ROUND_END_POLICIES: List[RoundEndPolicy] = [
                    _cond_partial_fail_warnings, _apply_partial_fail_warnings),
     RoundEndPolicy("gate_heal", KIND_POST_PROCESS, 30,
                    _cond_gate_heal, _apply_gate_heal),
-    RoundEndPolicy("spec_doc_written_pause", KIND_ARBITRABLE, 40,
-                   _cond_spec_doc_written_pause, _apply_spec_doc_written_pause),
-    RoundEndPolicy("spec_review_pending", KIND_ARBITRABLE, 50,
-                   _cond_spec_review_pending, _apply_spec_review_pending),
-    RoundEndPolicy("spec_wizard_takeover", KIND_ARBITRABLE, 60,
-                   _cond_spec_wizard_takeover, _apply_spec_wizard_takeover),
     RoundEndPolicy("structure_stage_review", KIND_ARBITRABLE, 80,
                    _cond_structure_stage_review, _apply_structure_stage_review),
     RoundEndPolicy("stage_done_fallback", KIND_ARBITRABLE, 110,

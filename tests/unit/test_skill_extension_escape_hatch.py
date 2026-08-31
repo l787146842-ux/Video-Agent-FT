@@ -116,15 +116,14 @@ def test_existing_fail_hard_paths_unchanged(manifest, keyword):
 
 
 def test_existing_warn_paths_unchanged():
-    """僵尸键 WARN 过渡告警与 kind 开放注册降级 WARN：只告警不拒注册。"""
+    """僵尸键 WARN 过渡告警只告警不拒注册；
+    kind 轴已随 2026-08-31 用户裁决退役——声明忽略不校验。"""
     zombie = ms.validate_manifest_data(
         {"flow": {"stage_executors": {"1": ["script_analyze"]}}})
     z_errors, z_warnings = ms.split_issue_warnings(zombie)
     assert z_errors == [] and z_warnings
 
-    kind = ms.validate_manifest_data({"kind": "writing"})
-    k_errors, k_warnings = ms.split_issue_warnings(kind)
-    assert k_errors == [] and any("writing" in w for w in k_warnings)
+    assert ms.validate_manifest_data({"kind": "writing"}) == []
 
 
 # ---------- ④ 注册链路：正常注册且注册期零告警 ----------

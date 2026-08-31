@@ -307,18 +307,6 @@ def test_fc_gen_gate_exec_preference_generate_directly(monkeypatch, set_global_s
 
 # ---------- 阶段探测工具裁剪 ----------
 
-def test_stage_restrictions_no_spec():
-    excluded, note = prompt_gates.stage_tool_restrictions(
-        {"documents": [], "keyElements": [], "shots": [], "audioItems": []})
-    assert "storyboard_create_group" in excluded
-    assert "read_draft" in excluded
-    # image_generate 单张应急轨任意阶段可见（空项目恰是应急出图场景），
-    # 不入裁剪集；批量轨由 gen_confirm/tool_risk 闸按 mode 兜底拦截
-    assert "image_generate" not in excluded and "generate_video" in excluded
-    assert "document_write" not in excluded
-    assert "规格" in note
-
-
 def test_stage_restrictions_spec_but_no_storyboard():
     excluded, note = prompt_gates.stage_tool_restrictions({
         "documents": [{"name": "制片规格.md", "content": "正文"}],
@@ -352,11 +340,16 @@ def test_planner_stage_pruning(svc, monkeypatch):
         ctx.skill_name = skill
         return ctx
 
-    # 无规格文档 + Skill 激活：故事板与生成工具都被裁剪，且携带解释文案
+    # 无规格文档 + Skill 激活（2026-08-31 用户裁决：规格锁工具退役）：
+    # 故事板工具不再裁剪；故事板为空时仅生成工具裁剪，且携带解释文案
     svc.state_dict["documents"] = []
+    svc.state_dict["keyElements"] = []
+    svc.state_dict["shots"] = []
+    svc.state_dict["audioItems"] = []
     ctx1 = make_ctx("剧本生视频（需上传剧本）")
     excluded = planner._compute_excluded_tools(ctx1)
-    assert "storyboard_create_group" in excluded and "generate_video" in excluded
+    assert "storyboard_create_group" not in excluded
+    assert "generate_video" in excluded
     assert "image_generate" not in excluded  # 单张应急轨任意阶段可见
     assert ctx1.stage_excluded_tools and "当前阶段工具边界" in ctx1.stage_note
     # 无 Skill：不追加阶段裁剪，也不签发解释
@@ -451,29 +444,6 @@ def test_pending_immediate_rejects_short_prompt_in_same_batch(svc):
 class _StubToolManager:
     async def invoke_tool(self, name, args):
         return ToolResult(success=True, data={})
-
-
-def test_fc_spec_doc_written_injects_system_pause(monkeypatch):
-    """写入规格文档且模型未自发暂停：系统注入规格审阅暂停卡（5555 事故兜底）。
-    6666 二轮：硬参数由全局设置提供，规格审阅卡不再升级为候选项向导。"""
-    import asyncio
-    from src.video_agent.skill_runtime import registry
-
-    monkeypatch.setattr(registry, "skill_flow_enabled", lambda skill, key: True)
-    monkeypatch.setattr(registry, "spec_wizard_active", lambda skill: True)
-    runner = FCToolRunner(tool_manager=_StubToolManager())
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    response = ChatResponse(content="", tool_calls=[
-        {"id": "c1", "type": "function", "function": {
-            "name": "document_write",
-            "arguments": json.dumps({"name": "制片规格.md", "content": "标题：测试"})}},
-    ])
-    applied, confirmation, *_rest, tool_results, docs_written, _warnings, _overflow, _pause_id = asyncio.run(
-        # §2.7 预期收紧：document_write 属 high，gate_override="all" 模拟用户一次性同意
-        runner.execute(response, injected_skill="任意 Skill", gate_override="all"))
-    assert applied == 1
-    assert docs_written == ["制片规格.md"]
-    assert confirmation == prompt_gates.SPEC_DOC_PAUSED_MSG
 
 
 def test_fc_spec_doc_written_keeps_model_pause(monkeypatch):

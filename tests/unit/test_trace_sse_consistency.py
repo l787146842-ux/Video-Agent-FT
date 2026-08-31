@@ -535,23 +535,6 @@ async def test_flow_directive_text_track_sets_flag(tmp_path):
     assert prompt_gates.flow_auto_continue(svc.state_dict)
 
 
-@pytest.mark.asyncio
-async def test_spec_write_allowed_under_auto_continue(tmp_path, monkeypatch):
-    """C1a 裁决 2026-08-31：一条龙不再构成规格同意（Context≠Consent）→
-    向导在场时模型手写规格仍被拒收。"""
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.tools.document_tools import DocumentWriteTool
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
-    svc.state_dict.setdefault("interaction", {})["auto_continue"] = True
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-    tool = DocumentWriteTool()
-    res = await tool.aexecute(tool.get_input_schema()(
-        name="Final_Video_Spec.md", content="- 输出语言：中文\n"))
-    assert not res.success
-    assert "规格文档尚未生成" in (res.error or "")
-
-
 def test_pause_suppressions_wired_to_auto_continue():
     """轮末暂停/引导卡均接入一条龙豁免（G4 同类路径；0818：spec_collect 随门禁链退役）。"""
     import inspect

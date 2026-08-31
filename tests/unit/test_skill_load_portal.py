@@ -180,31 +180,6 @@ async def test_read_skill_three_forms_reject_disabled(set_global_setting):
     assert victim.name in miss2.error
 
 
-def test_catalog_and_style_layer_exclude_disabled(set_global_setting):
-    """停用 → 不进目录段；风格层叠加里的停用项同样不进目录段。"""
-    entries = registry.loadable_entries()
-    victim, other = entries[0], entries[1]
-    raw = _base_state(styleSkills=[victim.slug, other.slug])
-    block_on = _pb(raw).build_skill_catalog(_ctx())
-    assert victim.name in block_on and other.name in block_on
-    assert "风格层叠加" in block_on  # 启用时风格层段在场
-
-    set_global_setting("skills_disabled", [victim.slug])
-    block_off = _pb(raw).build_skill_catalog(_ctx())
-    assert victim.name not in block_off      # 目录条目与风格层均剔除
-    assert other.name in block_off           # 启用项不受影响
-    assert "风格层叠加" in block_off          # 仍有启用风格层，段保留
-    assert other.name in block_off.split("风格层叠加", 1)[1]
-
-    # 风格层全停用 → 风格层段消失
-    set_global_setting("skills_disabled", [victim.slug, other.slug])
-    block_none = _pb(raw).build_skill_catalog(_ctx())
-    assert "风格层叠加" not in block_none
-
-
-# ---------- 动态切换与存量行为 ----------
-
-
 def test_hot_switch_blind_and_recover(set_global_setting):
     """活读热切换：停用即盲、清 skills_disabled 即恢复（不起新进程）。"""
     victim = registry.loadable_entries()[0]
@@ -330,20 +305,6 @@ def portal_pack(tmp_path, monkeypatch):
     sd.save_skill_doc("portal-pack", _PORTAL_DOC)
     yield
     registry.reset_registry()
-
-
-async def test_owner_portal_deactivates_spec_wizard(portal_pack, set_global_setting):
-    """归属直读收口（gates_spec._current_skill_of / DocumentWriteTool 同源）：
-    停用后当前归属为空，spec_wizard_active 随之失活；启用时声明生效。"""
-    from src.video_agent.core import gates_spec
-    from src.video_agent.skill_runtime.registry import spec_wizard_active
-
-    state = _base_state(usedSkills=["章节测试包"])
-    assert gates_spec._current_skill_of(state) == "章节测试包"
-    assert spec_wizard_active(gates_spec._current_skill_of(state))
-    set_global_setting("skills_disabled", ["portal-pack"])
-    assert gates_spec._current_skill_of(state) == ""
-    assert not spec_wizard_active(gates_spec._current_skill_of(state))
 
 
 def test_rejected_on_disk_variant_name_not_bound(tmp_path, monkeypatch):

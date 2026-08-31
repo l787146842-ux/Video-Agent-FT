@@ -47,19 +47,18 @@ def _run(ctx: RoundEndContext, policies=None, tracer=None) -> RoundEndContext:
 
 
 def test_r1_policy_table_shape():
-    """策略表 = 9 条（audit-0819-fakestop 新增 aborted_continuation_audit），
+    """策略表 = 6 条（2026-08-31 用户裁决：spec 三策略随向导退役删除），
     优先级唯一且仲裁顺序确定。"""
     table = rep.ROUND_END_POLICIES
-    assert len(table) == 9
+    assert len(table) == 6
     ids = [p.policy_id for p in sorted(table, key=lambda p: p.priority)]
     assert ids == [
         "partial_fail_warnings", "gate_heal",
-        "spec_doc_written_pause", "spec_review_pending", "spec_wizard_takeover",
         "structure_stage_review",
         "stage_done_fallback", "false_claim_audit", "aborted_continuation_audit",
     ]
     priorities = [p.priority for p in table]
-    assert len(set(priorities)) == 9, "优先级必须唯一（仲裁顺序确定性）"
+    assert len(set(priorities)) == 6, "优先级必须唯一（仲裁顺序确定性）"
 
 
 def test_r1_gate_heal_drops_confirmation_and_continues():
@@ -119,22 +118,6 @@ def test_r1_false_claim_audit_warns_but_keeps_pause():
     assert any("检测到虚报" in w for w in out.result_warnings)
     assert out.confirmation == "请审阅", "系统不没收模型暂停（4444 语义）"
     assert out.result_text == "已完成关键元素拆解，请验收"
-
-
-def test_r1_arbitration_order_lock():
-    """仲裁顺序锁定（D1 基线）：spec_review_pending 与 stage_done_fallback 同时命中
-    → 胜出者必须是优先级更高（数值更小）的 spec_review_pending（先到先得）。"""
-    ex = FakeExecutor()
-    ex.state.setdefault("interaction", {})["spec_review_pending"] = True
-    ctx = RoundEndContext(
-        step=1, executor=ex, content="", applied=1,
-        executable=[{"action": "storyboard_shots"}],
-    )
-    out = _run(ctx)
-    assert out.winner == "spec_review_pending"
-    assert "spec_review_pending" in out.candidates
-    # stage_done_fallback 的条件在 confirmation 已被占用后为假，不入候选
-    assert "stage_done_fallback" not in out.candidates
 
 
 def test_r1_card_decision_into_trace():

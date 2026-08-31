@@ -28,22 +28,6 @@ def svc(tmp_path):
 
 # ---------- 闸预检只认用户原话 ----------
 
-@pytest.mark.asyncio
-async def test_precheck_attachment_question_mark_not_counted(svc):
-    """1111 现场：剧本预览含「？」。原话为豁免话术时，附件问号不得干扰判定。"""
-    # 剧本缺失（不预置 uploadedDocs）；附件预览问号只存在于拼装消息，原话无问号
-    out = await po.gate_precheck(svc, _SKILL, "waive_script")
-    assert out is None
-    assert (svc.state_dict.get("interaction") or {}).get("script_waived") is True
-
-
-@pytest.mark.asyncio
-async def test_precheck_raw_question_still_reminds(svc):
-    """剧本缺失时，原话为提问（非豁免/回执话术）→ 原料闸提醒卡语义不 regress"""
-    out = await po.gate_precheck(svc, _SKILL, "为什么还没好？")
-    assert out is not None and out.kind == "script_pending"
-
-
 def test_handle_message_precheck_wired_to_raw_text():
     """钉死：handle_message 闸预检取 context.raw_user_text（多模态拼装不得参与）"""
     src = (ROOT / "src/video_agent/core/planner.py").read_text(encoding="utf-8")

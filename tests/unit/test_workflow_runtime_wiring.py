@@ -54,38 +54,6 @@ def env(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_turn_start_waiting_user_and_input_requested(env):
-    svc, adapter, planner = env
-    result = await planner.handle_message(
-        "为什么还没好？", PlannerContext(skill_name=SKILL))
-    assert adapter.calls == 0
-    run = svc.state_dict.get("workflow_run") or {}
-    assert run.get("run_id")
-    assert run.get("status") == "waiting_user"
-    types = [e.event_type for e in EventLedger(svc.state_dict).by_run(run["run_id"])]
-    assert "RunStarted" in types and "InputRequested" in types
-
-
-@pytest.mark.asyncio
-async def test_advance_signal_resolves_and_handoff_to_model(env):
-    svc, adapter, planner = env
-    await planner.handle_message("为什么还没好？", PlannerContext(skill_name=SKILL))
-    svc.state_dict["uploadedDocs"] = [
-        {"id": "d1", "name": "剧本.md", "content": "剧本正文：程心苏醒。"}]
-    result = await planner.handle_message(
-        "请查看我上传的素材",
-        PlannerContext(skill_name=SKILL, advance_signal="attachment"))
-    assert adapter.calls >= 1, "主体回归：附件轮交接模型（runtime 不自主行动）"
-    run = svc.state_dict.get("workflow_run") or {}
-    assert run.get("pending_decision") is None, "输入类 decision 已消费"
-    assert run.get("status") == "ready"
-    types = [e.event_type for e in EventLedger(svc.state_dict).by_run(run["run_id"])]
-    assert "DecisionResolved" in types
-    # 探针适配器未 FC：分析未被代跑，完成节点不含 analyze_script
-    assert "analyze_script" not in (run.get("completed_nodes") or [])
-
-
-@pytest.mark.asyncio
 async def test_write_spec_commit_opens_review_and_pause_resolves(env):
     """v2 批2：向导落盘同事务开 review decision（waiting_user）；
     审阅卡确认（consume_pause_response）解析后解除挂起。"""
