@@ -71,6 +71,8 @@ GATES: List[Tuple[str, List[str]]] = [
     # CI 已接线 --require-summary 硬门禁（FIX-3：frontend-check vitest 之后）；
     # 基线文件缺失即 FAIL 防永久空转。已知局限：GATES 先于 SUITES 执行，
     # 此处读的是上一轮 vitest 产物（详见 check_fe_cov_ratchet.py 头部注释）。
+    # 基线清偿式下调记录：70.38 → 70.01（风格层退役批删组件与测试致稀释，
+    # 用户裁决 2026-08-31 授权同批下调登记；后续批只许升）。
     # 退役条件：前端整体行覆盖率 >= 90% 且连续两季无回退争议时裁决下账（§13.14(c)）。
     ("fe_cov_ratchet", [sys.executable, "scripts/check_fe_cov_ratchet.py"]),
     # executor_skill_drift 闸已随任务#36 B5 执行器一步退役删除（执行器族不复存在）。
