@@ -39,7 +39,7 @@ from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.core.action_descriptions import aggregate_action_log
 from src.video_agent.core.ports import skill_docs_port
 # 轮末组装域切入 planner_output
-from src.video_agent.core.planner_output import assemble_response
+from src.video_agent.core.planner_output import append_costly_retry_action, assemble_response
 # 阶段表/探针/闸预检纯数据层（导入期同时落地
 # step_done_probe 注册钩子，不得删除）
 from src.video_agent.core import stage_probes
@@ -443,6 +443,8 @@ class Planner:
         # FC 轨闸机拦截/豁免文案收集器（每批 execute 返回的 warnings），
         # 循环结束后并入 loop_result.warnings，与文本轨拦截可见性对齐
         fc_warnings_collector: List[str] = []
+        # Q22：花钱生成失败登记跨批累积，轮始清空（runner 为实例级共享）
+        self._fc_runner.costly_failures.clear()
 
         # 装配本轮执行器（实现体 core/turn_executor.py）：单轮 llm_call
         # 携带停止检查点/FC 响应消费/回喂治理（惰性压缩/图片剥离/Skill 提醒）
@@ -479,6 +481,9 @@ class Planner:
             pending_injector=context.pending_injector,
             stop_scope=context.stop_scope,
         )
+
+        # Q22 裁决 2026-09-01：花钱生成失败不静默——轮末机械附一键重试选项卡（实现体 planner_output）
+        append_costly_retry_action(loop_result, self._fc_runner.costly_failures)
 
         # 轮末组装委托 planner_output：warnings 并入/总结强入/
         # 占位替换/收集器去重/原料提醒卡覆盖/响应构造。

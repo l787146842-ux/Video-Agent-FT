@@ -101,6 +101,10 @@ class FCToolRunner:
         self.gate_warnings: List[str] = []
         # 本轮同工具失败计数（结构化回喂升级用）
         self._tool_fail_counts: Dict[str, int] = {}
+        # 本轮花钱生成（costly）工具失败登记（Q22 裁决 2026-09-01：
+        # 轮末机械附重试选项卡，不依赖模型自觉上报）；跨批累积，
+        # planner 每轮 handle_message 起始清空
+        self.costly_failures: List[str] = []
         # 前端当前选中的草稿（对齐文本轨 "current" 语义）；execute 时按请求注入
         self._selected_draft_id = ""
         self._selected_type = ""
@@ -584,6 +588,10 @@ class FCToolRunner:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
                 # （规格静默拒收/接管已随用户裁决 2026-08-31 退役，D-08 清偿：
                 # 规格写入不再被向导拒收，失败即普通失败（红×））
+                # 止损计数可观测（Q22）：同工具累计失败次数随时间线条目可见，
+                # 亦随结构化回喂供模型止损决策（二次升级见 compose_failure_feedback）
+                self._tool_fail_counts[name] = self._tool_fail_counts.get(name, 0) + 1
+                _fail_n = self._tool_fail_counts[name]
                 if on_event is not None:
                     _finished_ev = {
                         "type": SSE_TOOL_FINISHED,
@@ -594,18 +602,29 @@ class FCToolRunner:
                     }
                     await on_event(_finished_ev)
                 tracer.record_action(
-                    name=name, summary=start_summary,
+                    name=name, summary=f"{start_summary}（累计失败 {_fail_n} 次）",
                     elapsed_ms=_tool_ms, ok=False,
                     stage=stage_label_for_tool(name),
                     result_summary=str(result.error or "执行失败")[:120],
                     args=args_preview,
                 )
+                # 花钱生成失败不静默（Q22）：用户可见警告（随 gate_warnings
+                # 并入轮末 warnings）+ 轮级登记（planner 轮末机械附重试选项卡）
+                _is_costly = getattr(self.tool_manager, "is_costly_tool", None)
+                if callable(_is_costly) and _is_costly(name):
+                    _cf_msg = (
+                        f"花钱生成失败：{start_summary} —— "
+                        f"{str(result.error or '执行失败')[:120]}。"
+                        "可点「重试」重新执行，或调整提示词/模型后再试"
+                    )
+                    if _cf_msg not in self.gate_warnings:
+                        self.gate_warnings.append(_cf_msg)
+                    self.costly_failures.append(name)
                 # 结构化失败回喂（客观报告+单句建议，二次升级）
-                self._tool_fail_counts[name] = self._tool_fail_counts.get(name, 0) + 1
                 tool_results.append({
                     "name": name, "ok": False,
                     "error": compose_failure_feedback(
-                        name, result.error, self._tool_fail_counts[name],
+                        name, result.error, _fail_n,
                         # T5 结构化错误轴：生产端已标注则透传分类码/可重试标志，
                         # 未标注回落文本分类（getattr 兼容测试 stub 返回非 ToolResult）
                         error_code=str(getattr(result, "error_code", "") or ""),

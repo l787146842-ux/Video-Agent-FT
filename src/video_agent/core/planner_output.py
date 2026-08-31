@@ -28,6 +28,31 @@ def _executed_tool_names(loop_result: AgentLoopResult) -> List[str]:
     return names
 
 
+def append_costly_retry_action(
+    loop_result: AgentLoopResult,
+    costly_failures: List[str],
+) -> bool:
+    """花钱生成失败不静默（Q22 裁决 2026-09-01）：轮末机械附一键重试选项卡。
+
+    原因警告已由 fc_tool_runner 随 gate_warnings 上抛（用户可见），
+    本函数只补确定性交互入口：重试 = 机械重发上一条用户消息。
+    暂停确认轮/已有重试建议不叠加（避免双入口干扰定夺）；
+    返回是否附加（供测试断言）。
+    """
+    if (
+        costly_failures
+        and not loop_result.confirmation
+        and not any(
+            str(a.get("kind") or "") == "retry"
+            for a in loop_result.suggested_actions
+        )
+    ):
+        loop_result.suggested_actions.append(
+            {"kind": "retry", "label": "重试", "value": ""})
+        return True
+    return False
+
+
 def assemble_response(
     loop_result: AgentLoopResult,
     *,
