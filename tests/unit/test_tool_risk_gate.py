@@ -1,7 +1,7 @@
 """宪法 §2.7 工具风险分级落地回归：
 
 - BaseTool.risk 声明位 + 注册期 deny-by-default 强制校验；
-- 23 个平台工具逐一声明且与审核定级表一致（任务#36 B5：8 个 Skill
+- 24 个平台工具逐一声明且与审核定级表一致（任务#36 B5：8 个 Skill
   执行器工具已随执行器一步退役物理删除，不再计入；双生图工具合并后
   generate_image 已并入 image_generate 的 mode='single'）；
 - 确认闸数据驱动（P0-1）：生效条件 = approval_tier=confirm（推导含
@@ -25,7 +25,7 @@ from src.video_agent.tools.manager import ToolManager
 # ---------- 审核定级表（用户拍板，照此核对） ----------
 
 EXPECTED_RISK = {
-    # low（9）：只读/可逆
+    # low（10）：只读/可逆
     "canvas_list": "low",
     "canvas_read_nodes": "low",
     "canvas_list_assets": "low",
@@ -34,6 +34,7 @@ EXPECTED_RISK = {
     "read_project_doc": "low",
     "storyboard_media_to_chat": "low",
     "read_draft": "low",
+    "read_state_group": "low",
     "view_storyboard_media": "low",
     # medium（6）：写状态但可撤销（Q2 裁决 2026-09-01：flow_directive 工具退役）
     "workflow_pause": "medium",
@@ -82,6 +83,7 @@ def _all_tool_classes():
         StoryboardMediaToChatTool,
         StoryboardPatchDraftTool,
         StoryboardReadDraftTool,
+        StoryboardReadStateGroupTool,
         ViewStoryboardMediaTool,
     )
     from src.video_agent.tools.video.generate_video import GenerateVideoTool
@@ -90,7 +92,7 @@ def _all_tool_classes():
         CanvasListTool, CanvasReadNodesTool, CanvasListAssetsTool,
         ReadUploadedDocTool, ReadSkillTool, ReadProjectDocTool,
         StoryboardMediaToChatTool, StoryboardReadDraftTool, ViewStoryboardMediaTool,
-        WorkflowPauseTool,
+        StoryboardReadStateGroupTool, WorkflowPauseTool,
         StoryboardCreateGroupTool, StoryboardPatchDraftTool, StoryboardAddDraftTool,
         StoryboardDeleteGroupTool, StoryboardConfirmDraftTool,
         ImageGenerateTool, GenerateVideoTool,
@@ -102,7 +104,7 @@ def _all_tool_classes():
 class TestDeclarationCoverage:
     def test_all_platform_tools_declare_expected_risk(self):
         classes = _all_tool_classes()
-        assert len(classes) == 22
+        assert len(classes) == 23
         declared = {}
         for cls in classes:
             assert cls.name in EXPECTED_RISK, f"定级表缺少 {cls.name}"

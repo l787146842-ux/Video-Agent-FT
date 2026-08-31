@@ -539,7 +539,7 @@ class FCToolRunner:
                 # 草稿卡片逐张刷新，不等整批完成才一次性弹出
                 if on_event is not None and name not in (
                     "read_skill", "read_draft", "read_uploaded_doc", "read_project_doc",
-                    "view_storyboard_media",
+                    "read_state_group", "view_storyboard_media",
                 ):
                     await on_event({"type": SSE_ACTIONS_APPLIED, "count": 1})
                 # 过程时间线：工具完成 + trace 记录

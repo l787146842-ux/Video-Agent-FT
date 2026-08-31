@@ -31,6 +31,7 @@ from loguru import logger
 from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.config import settings
 from src.video_agent.core import prompt_gates
+from src.video_agent.core import stage_probes
 from src.video_agent.core import workflow_runtime
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.chat_cards import _stamp_doc_written, _video_card_items
@@ -286,6 +287,26 @@ class _StreamCtx:
     stop_phase_seen: str = ""
 
 
+def _stage_aware_state_builder(svc: Any, asset_mode: str, skill: str):
+    """第 5 批（Q6）：状态注入阶段感知构建器。
+
+    Skill 激活时每步实时探测当前创作阶段传入 build_agent_context
+    （分阶段裁剪注入面）；无 Skill / 探测失败回落全量注入（保守不失约束）。
+    """
+
+    def _builder() -> str:
+        stage = ""
+        if skill:
+            try:
+                spec = stage_probes.current_stage(svc.state_dict, skill)
+                stage = spec.key if spec else ""
+            except Exception:
+                stage = ""
+        return svc.build_agent_context(asset_mode, stage=stage)
+
+    return _builder
+
+
 async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
     """三段之一（准备）：history/compaction 预热/PlannerContext 装配。
 
@@ -323,10 +344,6 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
                 )
             # 规格向导机械落盘投影管线已随用户裁决 2026-08-31 退役（D-08 清偿）
 
-    ctx.state_builder = (
-        (lambda: ctx.svc.build_agent_context(ctx.body.asset_mode)) if ctx.use_studio_context else None
-    )
-
     # --- 解析中间面板选中的生图 provider + 画面比例（注入 image_generate 工具用）---
     ctx.image_provider, ctx.image_aspect_ratio = _resolve_selected_draft_media_config(
         ctx.svc, ctx.body.selected_draft_id, ctx.body.selected_type
@@ -363,6 +380,11 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
     )
     resolved_skill = _resolve_skill_name_for_injection(
         ctx.body.skill_name or "", ctx.body.skill_slug or "", ctx.svc.state_dict, ctx.user_text,
+    )
+    # 状态惰性构建器：多步循环每轮刷新（阶段感知，resolved_skill 后装配）
+    ctx.state_builder = (
+        _stage_aware_state_builder(ctx.svc, ctx.body.asset_mode, resolved_skill)
+        if ctx.use_studio_context else None
     )
     prelude_notes = _build_prelude_notes(resolved_skill)
     return PlannerContext(
@@ -662,11 +684,6 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
                 )
             # （规格卡投影已随用户裁决 2026-08-31 退役，D-08 清偿）
 
-    # 状态惰性构建器：多步循环每轮刷新
-    state_builder = (
-        (lambda: svc.build_agent_context(body.asset_mode)) if use_studio_context else None
-    )
-
     # --- 解析中间面板选中的生图 provider + 画面比例 ---
     image_provider2, image_aspect_ratio2 = _resolve_selected_draft_media_config(
         svc, body.selected_draft_id, body.selected_type
@@ -675,6 +692,12 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
     resolved_skill = _resolve_skill_name_for_injection(
         body.skill_name or "", body.skill_slug or "", svc.state_dict, user_text,
     )
+    # 状态惰性构建器：多步循环每轮刷新（阶段感知，resolved_skill 后装配）
+    state_builder = (
+        _stage_aware_state_builder(svc, body.asset_mode, resolved_skill)
+        if use_studio_context else None
+    )
+
     prelude_notes = _build_prelude_notes(resolved_skill)
 
     # 用户裁决：单一候选 = 用户所选，联不通直接报错

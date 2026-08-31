@@ -29,7 +29,7 @@ FEEDBACK_COMPRESSED = load_prompt_section(_FEEDBACK_FILE, "FEEDBACK_COMPRESSED")
 
 # read_* 系列：读回的全文必须完整回喂进上下文（渐进式披露的「借阅归还」）；
 # 其他写入类工具只回报成功与否，避免重复携带大 JSON 膨胀上下文
-FEEDBACK_FULL_TOOLS = {"read_skill", "read_project_doc", "read_uploaded_doc", "read_draft"}
+FEEDBACK_FULL_TOOLS = {"read_skill", "read_project_doc", "read_uploaded_doc", "read_draft", "read_state_group"}
 # 按需调图工具：读回的图片以多模态 parts 回喂（模型真正「看到」画面）
 FEEDBACK_IMAGE_TOOL = "view_storyboard_media"
 # 单次回喂总量保险丝（read_* 各自已有 max_doc_chars 截断，这里防多文档叠加）

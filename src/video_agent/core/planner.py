@@ -60,6 +60,7 @@ _STUDIO_STATE_TOOLS = frozenset({
     "storyboard_delete_group", "storyboard_confirm_draft", "storyboard_media_to_chat",
     "view_storyboard_media",
     "read_draft", "document_write", "read_uploaded_doc", "read_project_doc",
+    "read_state_group",
 })
 
 # 画布工具集：画布离线/未启用时不下发（节省 schema token）

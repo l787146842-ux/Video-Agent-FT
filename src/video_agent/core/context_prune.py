@@ -28,7 +28,7 @@ PRUNE_MARKER_OVERHEAD = 60
 # - read_* 全文回喂（渐进式披露的「借阅归还」，大返回主源，且有 start 续读兜底）
 # - 生成类工具的大 detail 返回；写类工具一律不剪（归 digest 杠杆管）
 PRUNE_READ_TOOLS = frozenset({
-    "read_skill", "read_project_doc", "read_uploaded_doc", "read_draft",
+    "read_skill", "read_project_doc", "read_uploaded_doc", "read_draft", "read_state_group",
 })
 PRUNE_GENERATION_TOOLS = frozenset({
     "image_generate", "generate_video",

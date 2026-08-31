@@ -7,11 +7,26 @@ Agent 上下文构建域 — 从 StateManager 抽离。
 - build_frontend_view：前端 camelCase JSON 视图（Pydantic 校验后序列化）
 """
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from src.video_agent.config import settings
 
 from .models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ProjectState
+
+# 第 5 批上下文治理（Q6 裁决 2026-09-01）：分阶段注入策略表（policy-as-data）。
+# stage 键 → 该阶段全量注入的类别（焦点）；非焦点类别只注入组级摘要
+#（id/编号/标题/草稿计数 + 指针，全文经 read_state_group 按需读回）。
+# 空元组 = 三类全摘要（analysis 阶段分组尚未诞生）；
+# 不在表内的 stage / 空 stage = 不裁剪（保守全量，探测失败不失约束）。
+STAGE_STATE_FOCUS: Dict[str, Tuple[str, ...]] = {
+    "analysis": (),
+    "structure": (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS),
+    "ke_media": (CAT_KEY_ELEMENTS,),
+    "shot_media": (CAT_SHOTS,),
+    "audio_assets": (CAT_AUDIO_ITEMS,),
+    "assembly": (CAT_SHOTS,),
+}
+_ALL_GROUP_CATS = (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS)
 
 
 def _dumps(snapshot: Dict[str, Any]) -> str:
@@ -27,6 +42,7 @@ def build_agent_context(
     asset_mode: str = "bound",
     cache: Dict[str, str] | None = None,
     degraded: bool = False,
+    stage: str = "",
 ) -> str:
     """构建发送给 LLM 的 Studio 状态上下文。
 
@@ -36,25 +52,49 @@ def build_agent_context(
         cache: 可选缓存字典（状态变更时由 StateManager 清空）
         degraded: 降级模式（预算保险丝用）——草稿细节不注入，
                   只留组标题/编号/草稿计数，大幅压缩状态上下文体积
+        stage: 当前创作阶段键（分阶段注入裁剪用；空 = 不裁剪）
 
     Returns:
         JSON 字符串
     """
-    cache_key = f"{asset_mode}:degraded" if degraded else asset_mode
-    if cache is not None and cache_key in cache:
-        return cache[cache_key]
-
     if degraded:
+        cache_key = f"{asset_mode}:degraded"
+        if cache is not None and cache_key in cache:
+            return cache[cache_key]
         result = _dumps(_build_degraded_snapshot(raw_state))
         if cache is not None:
             cache[cache_key] = result
         return result
 
-    # 媒体 URL 截断：只保留前 200 字符（足够定位，避免 base64/长 URL 撑爆上下文）
+    # 缓存键不含 tier：档位对状态确定（状态变更即清缓存），同键读写保命中复用
+    cache_key = f"{asset_mode}:{stage or '-'}"
+    if cache is not None and cache_key in cache:
+        return cache[cache_key]
+
+    snapshot = _build_snapshot_dict(raw_state, asset_mode)
+    # 分阶段注入：非焦点类别降为组级摘要（可恢复句柄：id/编号保留）
+    if stage:
+        _apply_stage_profile(snapshot, raw_state, stage)
+    result = _dumps(snapshot)
+    # 状态指针化（Q6）：超字符预算自动降 B 档——组级正文截断+指针，
+    # 全文经 read_state_group 按需读回；预算 0 = 永远 A 档（回滚开关）
+    budget = int(settings.state_context_budget_chars)
+    if budget > 0 and len(result) > budget:
+        _compact_snapshot(snapshot)
+        result = _dumps(snapshot)
+    if cache is not None:
+        cache[cache_key] = result
+    return result
+
+def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str, Any]:
+    """A 档完整状态快照 dict（序列化/档位裁剪在外层做）。
+
+    媒体 URL 截断：只保留前 200 字符（足够定位，避免 base64/长 URL 撞爆上下文）。
+    渐进式披露：草稿 prompt 全文不注入，只给字数；模型需要时调 read_draft 按需读取。
+    """
     def _u(v: Any) -> str:
         return (str(v) if v else "")[:200]
 
-    # 渐进式披露：草稿 prompt 全文不注入，只给字数；模型需要时调 read_draft 按需读取
     def _pc(d: Dict[str, Any]) -> int:
         return len(d.get("prompt", "") or "")
 
@@ -62,7 +102,7 @@ def build_agent_context(
     if asset_mode != "all":
         assets = [a for a in assets if a.get("isBound")]
 
-    snapshot = {
+    return {
         CAT_KEY_ELEMENTS: [
             {
                 "id": g["id"],
@@ -177,10 +217,68 @@ def build_agent_context(
         # 拆解/提示词阶段主模型必须看到，否则会凭空概括
         "analysis": _build_analysis(raw_state),
     }
-    result = _dumps(snapshot)
-    if cache is not None:
-        cache[cache_key] = result
-    return result
+
+
+def _group_pointers(raw_state: Dict[str, Any], cat_key: str) -> list:
+    """组级摘要（可恢复句柄）：id/编号/标题/草稿计数，正文不外流；
+    全文经 read_state_group 按需读回。"""
+    return [
+        {
+            "id": g.get("id", ""),
+            "index": gi + 1,
+            "title": g.get("title", ""),
+            "draft_count": len(g.get("drafts", []) or []),
+        }
+        for gi, g in enumerate(raw_state.get(cat_key, []) or [])
+    ]
+
+
+def _apply_stage_profile(
+    snapshot: Dict[str, Any], raw_state: Dict[str, Any], stage: str,
+) -> bool:
+    """分阶段注入：非焦点类别降为组级摘要。返回是否发生裁剪。
+    不在策略表内的 stage 不裁剪（保守全量）。"""
+    focus = STAGE_STATE_FOCUS.get(stage)
+    if focus is None:
+        return False
+    trimmed = False
+    for cat in _ALL_GROUP_CATS:
+        if cat not in focus:
+            snapshot[cat] = _group_pointers(raw_state, cat)
+            trimmed = True
+    if trimmed:
+        snapshot["stageNote"] = (
+            f"当前阶段={stage}：非焦点类别仅注入组级摘要，"
+            "全文调 read_state_group 按需读回"
+        )
+    return trimmed
+
+
+def _compact_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    """B 档压缩（原地）：组级正文截断 + 资产 URL 收窄 + 指针 note。
+    句柄保留：id/编号/标题/字数不丢，全文经 read_state_group/read_draft 读回。"""
+    body_chars = max(0, int(settings.state_group_body_chars))
+
+    def _trunc(v: Any) -> str:
+        s = str(v or "")
+        return s if len(s) <= body_chars else s[:body_chars] + "…"
+
+    for cat in _ALL_GROUP_CATS:
+        for g in snapshot.get(cat) or []:
+            if not isinstance(g, dict):
+                continue
+            if "desc" in g:
+                g["desc"] = _trunc(g["desc"])
+            if "roughDesc" in g:
+                g["roughDesc"] = _trunc(g["roughDesc"])
+    for a in snapshot.get("assets") or []:
+        if isinstance(a, dict):
+            a["url"] = (str(a.get("url") or ""))[:80]
+    snapshot["note"] = (
+        "状态正文已截断（超注入预算）：分组全文调 read_state_group、"
+        "草稿提示词全文调 read_draft 按需读回"
+    )
+    return snapshot
 
 
 def _build_interaction(raw_state: Dict[str, Any]) -> Dict[str, Any]:

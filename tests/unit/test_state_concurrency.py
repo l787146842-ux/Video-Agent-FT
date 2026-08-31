@@ -168,9 +168,10 @@ class TestContextCacheInvalidation:
         """不同 asset_mode 应使用独立缓存"""
         ctx_bound = svc.build_agent_context("bound")
         ctx_all = svc.build_agent_context("all")
-        # 两者是不同的缓存键
-        assert "bound" in svc._context_cache
-        assert "all" in svc._context_cache
+        # 两者是不同的缓存键（第 5 批起键形如 <asset_mode>:<tier>:<stage>）
+        keys = set(svc._context_cache)
+        assert any(k.startswith("bound:") for k in keys)
+        assert any(k.startswith("all:") for k in keys)
 
 
 class TestDirtyFlag:

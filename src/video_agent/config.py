@@ -141,6 +141,15 @@ class Settings:
     # 工作台状态 JSON 紧凑序列化（模型读紧凑 JSON 无损，约省 20-30% token）；
     # 置 false 回退 indent=2 便于人工排查日志
     context_json_compact: bool = field(default_factory=lambda: _env_bool("CONTEXT_JSON_COMPACT", True))
+    # 第 5 批上下文治理（Q6 裁决 2026-09-01）：状态注入字符预算。
+    # 状态 JSON 组装后超该字符数自动降 B 档（组级正文截断+指针，
+    # 全文经 read_state_group 按需读回）；未超保持 A 档全量（小项目零行为变化）；
+    # 0 = 永远 A 档全量注入（一键回滚开关）
+    state_context_budget_chars: int = field(
+        default_factory=lambda: _env_int("STATE_CONTEXT_BUDGET_CHARS", 20000))
+    # B 档组级正文（desc/roughDesc）截断字符数
+    state_group_body_chars: int = field(
+        default_factory=lambda: _env_int("STATE_GROUP_BODY_CHARS", 120))
     # 提示词结构闸机（Skill 流程激活时生效）：
     # strict = 不合格直接拒绝写入，模型自行补齐重写（默认）；
     # warn = 照存但把警告带回给模型；off = 关闭

@@ -42,7 +42,7 @@ CONFIRM_PRIMITIVE_COVERED_TOOLS = frozenset({"image_generate"})
 # 轮内暂停纪律豁免集：workflow_pause 请求确认后，同批仅读类工具与暂停工具本身可行
 PAUSE_WINDOW_READONLY = frozenset({
     "read_draft", "read_skill", "read_project_doc", "read_uploaded_doc",
-    "workflow_pause",
+    "read_state_group", "workflow_pause",
 })
 
 # 分组类型边界：阶段 → 允许建组类别。与阶段前置闸分工：

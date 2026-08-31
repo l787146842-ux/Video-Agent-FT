@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Literal, Optional, Type
 from pydantic import BaseModel, Field
 from loguru import logger
 
+import json
+
 from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
 from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
@@ -77,6 +79,11 @@ class ViewStoryboardMediaInput(BaseModel):
     draft_ids: List[str] = Field(default_factory=list, description="要查看的草稿 ID 或「组号-卡序号」编号数组（与 target 二选一，优先）")
     target: str = Field("", description="批量目标: all | all_keyElements | all_shots | all_audio（与 draft_ids 二选一）")
     limit: int = Field(0, description="本次加载图片数量上限（0 = 系统默认上限）")
+
+
+class ReadStateGroupInput(BaseModel):
+    category: Literal["keyElement", "shot", "audio"] = Field(..., description="分组类别（闭集枚举）: keyElement | shot | audio")
+    group_id: str = Field("", description="分组 ID 或组号（如 '2'）或标题；留空返回该类别的分组目录（非全文）")
 
 
 # ---------- Tool 实现 ----------
@@ -335,6 +342,61 @@ class StoryboardReadDraftTool(BaseTool):
         return ToolResult(success=True, data={"drafts": matches})
 
 
+class StoryboardReadStateGroupTool(BaseTool):
+    name = "read_state_group"
+    risk = "low"  # §2.7：只读
+    detail_tier = "output"  # 读取类：仅输出留痕
+    description = (
+        "按需读回工作台状态中某个分组的全文（完整描述/粗描述/引用与草稿目录；"
+        "草稿提示词全文仍用 read_draft）。状态 JSON 以摘要或截断形态注入时"
+        "（带 read_state_group 指针提示），用本工具读回目标分组全文。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return ReadStateGroupInput
+
+    async def aexecute(self, params: ReadStateGroupInput) -> ToolResult:
+        svc = StateManager.get_instance()
+        cat_key = ops.category_for_group_type(params.category)
+        groups = svc.state_dict.get(cat_key, []) or []
+        wanted = (params.group_id or "").strip()
+        if not wanted:
+            listing = [
+                {"id": g.get("id", ""), "index": i + 1,
+                 "title": g.get("title", ""),
+                 "draft_count": len(g.get("drafts", []) or [])}
+                for i, g in enumerate(groups)
+            ]
+            return ToolResult(success=True, data={
+                "name": f"{params.category} 分组目录",
+                "content": json.dumps(listing, ensure_ascii=False),
+            })
+        target = None
+        for i, g in enumerate(groups):
+            if wanted in (str(g.get("id") or ""), str(i + 1)) \
+                    or str(g.get("title", "")).strip() == wanted:
+                target = g
+                break
+        if target is None:
+            available = "、".join(
+                f"{i + 1}:{g.get('title', '')}" for i, g in enumerate(groups[:10])
+            ) or "无"
+            return ToolResult(
+                success=False,
+                error=f"未找到分组「{wanted}」。已有分组：{available}",
+            )
+        # 深拷贝后剥离草稿提示词全文（渐进式披露：全文归 read_draft 通道）
+        full = json.loads(json.dumps(target, ensure_ascii=False))
+        for d in full.get("drafts", []) or []:
+            if isinstance(d, dict) and "prompt" in d:
+                d["prompt_chars"] = len(str(d.get("prompt") or ""))
+                del d["prompt"]
+        return ToolResult(success=True, data={
+            "name": f"{params.category} 分组「{target.get('title', '')}」全文",
+            "content": json.dumps(full, ensure_ascii=False),
+        })
+
+
 class ViewStoryboardMediaTool(BaseTool):
     name = "view_storyboard_media"
     risk = "low"  # §2.7：只读
@@ -438,5 +500,6 @@ def register_storyboard_tools():
     ToolManager.register(StoryboardConfirmDraftTool())
     ToolManager.register(StoryboardMediaToChatTool())
     ToolManager.register(StoryboardReadDraftTool())
+    ToolManager.register(StoryboardReadStateGroupTool())
     ToolManager.register(ViewStoryboardMediaTool())
-    logger.info("[Tools] 8 storyboard tools registered")
+    logger.info("[Tools] 9 storyboard tools registered")
