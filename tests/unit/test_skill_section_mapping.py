@@ -176,3 +176,40 @@ def test_parse_pause_rules_valid_invalid_missing():
     assert parse_pause_rules("```json pause_rules\n{\"stage_pause\": false}\n```") == {"stage_pause": False}
     assert parse_pause_rules("```json pause_rules\n{坏JSON}\n```") is None
     assert parse_pause_rules("无声明块") is None
+
+
+# ---------- 6. A1/M4 两级制分节（## 优先，无 ## 回落 ###） ----------
+
+def test_two_level_split_keeps_subheadings_inside_section():
+    """全文有 ## 时：###/#### 不再单独切分，归入前一 ## 节正文。"""
+    content = (
+        "## 分镜设计\n正文甲\n### 子标题\n正文乙\n#### 更细子标题\n正文丙\n"
+        "## 提示词写法\n正文丁\n"
+    )
+    got = split_skill_sections(content)
+    assert sorted(got.keys()) == ["prompt_draft", "storyboard_shot"]
+    assert "正文乙" in got["storyboard_shot"] and "正文丙" in got["storyboard_shot"]
+    assert "子标题" not in got.get("storyboard_shot", "").split("\n")[0]
+
+
+def test_two_level_split_falls_back_to_triple_hash():
+    """全文无 ## 时：回落 ### 切点（宽容兼容旧式纯 ### 文档）。"""
+    content = "### 分镜设计\n正文甲\n### 提示词写法\n正文乙\n"
+    got = split_skill_sections(content)
+    assert "storyboard_shot" in got and "prompt_draft" in got
+
+
+def test_list_skill_sections_matches_split_two_level():
+    """前后端等价性：list_skill_sections 与 split_skill_sections 同口径。"""
+    from src.video_agent.web.skill_docs import list_skill_sections
+
+    content = (
+        "## 分镜设计\n正文甲\n### 子标题\n正文乙\n"
+        "## 提示词写法\n正文丁\n"
+    )
+    titles = [s["title"] for s in list_skill_sections(content)]
+    assert titles == ["分镜设计", "提示词写法"]
+    # 区间拼接还原正文（与 split 同口径）
+    for sec in list_skill_sections(content):
+        assert sec["end"] >= sec["start"]
+

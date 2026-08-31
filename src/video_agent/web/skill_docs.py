@@ -130,8 +130,11 @@ def split_skill_sections(content: str) -> Dict[str, str]:
     if found_tag:
         return {k: "\n\n".join(v) for k, v in collected.items()}
 
-    # 2) Markdown 标题兜底
-    parts = re.split(r"(?m)^(#{1,4}[^\n]*)$", content)
+    # 2) Markdown 标题兜底（A1/M4 两级制：## 优先切点，全文无 ## 时回落 ###；
+    ### 及以下不再单独切分，与前端 skill-structure.ts 同构）
+    _cut_re = (r"(?m)^(#{2}(?!#)[^\n]*)$" if re.search(r"(?m)^##\s", content)
+               else r"(?m)^(#{2,3}(?!#)[^\n]*)$")
+    parts = re.split(_cut_re, content)
     stage_now = ""
     # 静默沿用告警——连续 ≥3 节未命中关键字而沿用上一阶段时，
     # 说明该 Skill 的标题体系可能整体未映射（章节会被静默归错阶段），
@@ -178,8 +181,11 @@ def list_skill_sections(content: str) -> List[Dict[str, Any]]:
                     "start": m.start(), "end": m.end()})
     if found_tag:
         return out
-    # Markdown 标题兜底：逐标题定位起点，end 回填到下一节起点
-    for m in re.finditer(r"(?m)^#{1,4}[^\n]*", content):
+    # Markdown 标题兜底：逐标题定位起点，end 回填到下一节起点（A1/M4 两级制：
+    # ## 优先、无 ## 回落 ###，与 split_skill_sections 同口径）
+    _head_re = (r"(?m)^#{2}(?!#)[^\n]*" if re.search(r"(?m)^##\s", content)
+                else r"(?m)^#{2,3}(?!#)[^\n]*")
+    for m in re.finditer(_head_re, content):
         heading = m.group(0).lstrip("#").strip()
         if not heading:
             continue
