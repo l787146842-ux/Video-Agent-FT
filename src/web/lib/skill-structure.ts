@@ -39,7 +39,6 @@ export const SECTION_TAGS = [
   'storyboard_key_elements', 'storyboard_shots', 'storyboard_audio',
   'write_media_prompt', 'write_the_prompt', 'media_generator', 'generation',
   'image_generate', 'generate_video', 'audio_generate', 'video_assembler',
-  'reply_to_user',
 ] as const;
 
 /** 章节显示名/提示映射（未命中时 label 回退 tag/标题原文） */
@@ -61,7 +60,6 @@ const SECTION_META: Record<string, { label: string; hint?: string }> = {
   generate_video: { label: '媒体生成', hint: '出图/出视频/出音频的参考与参数规范。' },
   audio_generate: { label: '媒体生成', hint: '出图/出视频/出音频的参考与参数规范。' },
   video_assembler: { label: '组装导出', hint: '最终剪辑与导出引导规范。' },
-  reply_to_user: { label: '用户交互', hint: '何时停下与用户确认、如何展示阶段性成果的交互规范。' },
 };
 
 /** 章节显示元数据（label + hint） */

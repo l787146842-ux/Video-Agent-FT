@@ -73,7 +73,6 @@ SECTION_TAG_STAGES: Dict[str, Union[str, Tuple[str, ...]]] = {
     "generate_video": "generation",
     "audio_generate": "generation",
     "video_assembler": "assembly",
-    "reply_to_user": "",
 }
 
 # 本地改写版 Skill（标题式）的标题关键字 → 阶段兜底映射（按顺序首个命中生效：
