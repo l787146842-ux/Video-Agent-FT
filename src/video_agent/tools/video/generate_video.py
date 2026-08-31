@@ -21,8 +21,7 @@ class GenerateVideoParams(BaseModel):
 
 class GenerateVideoTool(BaseTool):
     name = "generate_video"
-    risk = "high"  # §2.7：生成类（外部副作用/花钱）
-    approval_tier = "confirm"  # P2-5 首批显式声明：执行前确认卡（花钱/外部副作用）
+    risk = "high"  # §2.7：生成类（外部副作用/花钱）；确认档由 risk 单轴推导（F1）
     costly = True  # 批 B 花钱生成声明轴：执行偏好三档可放宽其确认闸（留痕）
     detail_tier = "expand"  # 产出类
     description = (

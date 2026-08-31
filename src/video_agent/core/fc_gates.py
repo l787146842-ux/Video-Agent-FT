@@ -25,8 +25,8 @@ from src.video_agent.skill_runtime.registry import resolve_entry
 from src.video_agent.state import storyboard_ops as ops
 # MCP 命名空间判定：外部工具同管线过 risk 闸，不旁路
 from src.video_agent.tools.mcp.policy import is_mcp_tool
-# 审批分级生效档（approval_tier）唯一推导源：显式声明优先，未声明者
-# high→confirm、其余 none，未注册一律 confirm（deny-by-default，§2.7）
+# 审批生效档唯一推导源（F1 双轴并单轴：由 risk 单轴推导——
+# high→confirm、其余 none，未注册一律 confirm（deny-by-default，§2.7））
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.state.models import (
     ALL_CATEGORIES_TUPLE,
@@ -37,7 +37,7 @@ from src.video_agent.state.models import (
 # §2.7 确认闸豁免集：被 gen_confirm 闸专属覆盖的工具（不双闸）。
 # 仅覆盖 image_generate 批量轨（有目标草稿可校验）；mode='single'
 # 无目标草稿、不在 gen_confirm 覆盖内，回本闸默认拦（高危默认拦）。
-# 生效范围不再用硬编码名单，改读 approval_tier（数据驱动，未注册→confirm）。
+# 生效范围不用硬编码名单，改读生效审批档（risk 单轴推导，未注册→confirm）。
 CONFIRM_PRIMITIVE_COVERED_TOOLS = frozenset({"image_generate"})
 # 轮内暂停纪律豁免集：workflow_pause 请求确认后，同批仅读类工具与暂停工具本身可行
 PAUSE_WINDOW_READONLY = frozenset({
@@ -150,9 +150,9 @@ def tool_risk_gate(
     ctx: GateContext, name: str, args: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     """高风险工具确认闸（platform.tool_risk，宪法 §2.7）：判定唯一实现 =
-    guard_pipeline.evaluate_tool_risk。生效条件数据驱动 = 审批分级生效档
-    approval_tier == "confirm"（推导规则含 high→confirm、未注册→confirm，
-    deny-by-default）；保留 risk==high 双保险（防未来 confirm+低风险误弹卡）。
+    guard_pipeline.evaluate_tool_risk。生效条件数据驱动 = 生效审批档 == "confirm"
+    （F1 双轴并单轴：risk 单轴推导，确认只挂高危；未注册→confirm，
+    deny-by-default）；保留 risk==high 双保险（防未来推导口径变更误弹卡）。
     确认回携 = 用户「本次放行」，
     无同意硬拒（禁止静默放行），拦截/豁免 verdict 入审计。
     豁免：image_generate 批量轨被 gen_confirm 闸专属覆盖（不双闸）；

@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel, ValidationError
 from loguru import logger
 from src.video_agent.adapters.cancel_token import GenerationCancelled
-from .base import APPROVAL_TIERS, BaseTool, DETAIL_TIERS, RISK_TIERS, ToolResult
+from .base import BaseTool, DETAIL_TIERS, RISK_TIERS, ToolResult
 
 
 def detect_unknown_fields(schema_class: Type[BaseModel], kwargs: Dict[str, Any]) -> List[str]:
@@ -50,20 +50,10 @@ class ToolManager:
                 f"Tool '{tool.name}' must declare risk in {RISK_TIERS} "
                 "per ARCHITECTURE_RULES §2.7 (deny-by-default)."
             )
-        # 审批分级正交轴（任务 P2-5）：允许不声明（生效档按 risk 推导），
-        # 但声明了非法取值同样拒收（注册校验强化，不静默放行）
-        approval = str(getattr(tool, "approval_tier", "") or "").strip().lower()
-        if approval and approval not in APPROVAL_TIERS:
-            logger.error(
-                f"拒绝注册工具 '{tool.name}'：approval_tier 取值非法（任务 P2-5，"
-                f"合法枚举 {APPROVAL_TIERS}）"
-            )
-            raise ValueError(
-                f"Tool '{tool.name}' declares invalid approval_tier {approval!r}; "
-                f"must be one of {APPROVAL_TIERS}."
-            )
+        # （F1 裁决 2026-08-31：approval_tier 独立声明轴退役——生效档由 risk 单轴推导，
+        # 注册期不再校验审批声明。）
         # 花钱生成声明轴（批 B）：允许不声明（默认非花钱，偏好不放宽），
-        # 但声明了非 bool 取值同样拒收（与 approval_tier 同款注册期校验）
+        # 但声明了非 bool 取值同样拒收（注册期校验，不静默放行）
         costly = getattr(tool, "costly", False)
         if not isinstance(costly, bool):
             logger.error(
@@ -99,21 +89,18 @@ class ToolManager:
 
     @classmethod
     def get_tool_approval_tier(cls, name: str) -> str:
-        """工具生效的审批分级（任务 P2-5 正交轴）：显式声明优先；
-        未声明者按 risk 推导——high 默认 confirm（deny-by-default 同口径），
-        其余默认 none；未注册工具按 high 口径一律 confirm。"""
+        """工具生效的审批档（F1 裁决 2026-08-31 双轴并单轴：由 risk 单轴推导，
+        确认只挂高危）：high → confirm；low/medium → none（自动过）；
+        未注册工具按最严口径 confirm（deny-by-default，未声明=最严）。"""
         tool = cls._tools.get(name)
         if tool is None:
             return "confirm"
-        tier = str(getattr(tool, "approval_tier", "") or "").strip().lower()
-        if tier in APPROVAL_TIERS:
-            return tier
         return "confirm" if cls.get_tool_risk(name) == "high" else "none"
 
     @classmethod
     def get_tool_approval_tiers(cls) -> Dict[str, str]:
-        """全部已注册工具的生效审批分级（sidecar 导出的单一事实源，任务 P2-5）：
-        显式声明与推导档统一收录，前端确认卡/审批交互按本表映射。"""
+        """全部已注册工具的生效审批档（sidecar 导出的单一事实源）：
+        risk 单轴推导档统一收录，前端确认卡/审批交互按本表映射。"""
         return {name: cls.get_tool_approval_tier(name) for name in cls._tools}
 
     @classmethod

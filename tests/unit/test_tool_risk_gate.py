@@ -145,7 +145,7 @@ class _OkRiskTool(_NoRiskTool):
 class _BadApprovalTool(_NoRiskTool):
     name = "_probe_bad_approval"
     risk = "low"
-    approval_tier = "sign-off"  # 非法取值：注册期拒收（任务 P2-5）
+    approval_tier = "sign-off"  # F1：声明轴退役——非法声明忽略不拒收
 
 
 class TestRegistrationEnforcement:
@@ -181,26 +181,33 @@ class TestRegistrationEnforcement:
         assert ToolManager.get_tool_risk("read_skill") == "low"
 
 
-# ---------- 审批分级正交轴（任务 P2-5） ----------
+# ---------- 审批生效档（F1 裁决 2026-08-31：双轴并单轴，risk 单轴推导） ----------
 
 class TestApprovalTier:
-    def test_generation_family_declares_confirm(self):
-        """生成族首批显式声明 approval_tier（与 risk 正交的第二轴）。"""
+    def test_generation_family_confirm_derived_from_risk(self):
+        """F1：确认档由 risk 单轴推导（确认只挂高危），不再显式声明。"""
         from src.video_agent.tools.document_tools import ImageGenerateTool
         from src.video_agent.tools.video.generate_video import GenerateVideoTool
         for cls in (GenerateVideoTool, ImageGenerateTool):
-            assert cls.approval_tier == "confirm", (
-                f"生成族 {cls.name} 应首批显式声明 approval_tier=confirm"
+            assert cls.risk == "high"
+            assert not getattr(cls, "approval_tier", ""), (
+                f"生成族 {cls.name} 不应再显式声明 approval_tier（F1 声明轴退役）"
             )
 
-    def test_register_rejects_invalid_approval_tier(self):
-        with pytest.raises(ValueError):
-            ToolManager.register(_BadApprovalTool())
-        assert "_probe_bad_approval" not in ToolManager._tools
+    def test_register_ignores_stale_approval_declaration(self):
+        """F1：approval_tier 声明轴退役——残留非法声明忽略不拒收，
+        生效档按 risk 推导（low → none）。"""
+        ToolManager.register(_BadApprovalTool())
+        try:
+            assert "_probe_bad_approval" in ToolManager._tools
+            assert ToolManager.get_tool_approval_tier("_probe_bad_approval") == "none"
+        finally:
+            ToolManager._tools.pop("_probe_bad_approval", None)
+            ToolManager._schema_cache = None
 
-    def test_effective_tier_declared_then_derived(self):
-        """生效档：显式声明优先；未声明按 risk 推导（high→confirm，其余 none）；
-        未注册工具按 high 口径一律 confirm（deny-by-default 同口径）。"""
+    def test_effective_tier_derived_from_risk_single_axis(self):
+        """生效档：risk 单轴纯推导（high→confirm，其余 none）；
+        未注册工具按最严口径一律 confirm（未声明=最严）。"""
         from src.video_agent.tools.document_tools import (
             DocumentWriteTool,
             ImageGenerateTool,

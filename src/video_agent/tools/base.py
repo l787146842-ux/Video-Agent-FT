@@ -6,11 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field
 # 风险分级合法枚举（宪法 §2.7 单一事实源；注册校验/闸机消费同引用）
 RISK_TIERS = ("low", "medium", "high")
 
-# 审批分级正交轴合法枚举（任务 P2-5；与 risk 正交：risk 答「多危险」，
-# approval_tier 答「执行前要人做什么」）：
-# none=无需审批直接执行；confirm=执行前确认卡（用户点确认才跑）；
-# review=执行后人工审批复核。未声明者按生效档推导（见 manager，
-# high risk 默认 confirm，deny-by-default 同口径）。
+# 审批行为单轴枚举（F1 裁决 2026-08-31 双轴并单轴：原 risk×approval_tier
+# 正交双轴合并——生效档由 risk 单轴推导，不再独立声明）：
+# none=自动过；confirm=执行前确认卡；review=执行后复核（保留词汇，
+# 当前推导不产出）。未注册工具按最严口径 confirm（deny-by-default）。
 APPROVAL_TIERS = ("none", "confirm", "review")
 
 # 前端时间线展示档合法枚举（展示档元数据驱动，前端不硬编码工具名）：
@@ -70,10 +69,9 @@ class BaseTool(ABC):
     # 必须由子类显式声明；未声明者在 ToolManager.register 被拒绝注册
     # （deny-by-default，不得静默放行）。
     risk: str = ""
-    # 审批分级正交轴（任务 P2-5）：取值见 APPROVAL_TIERS；空 = 未声明，
-    # 生效档由 ToolManager 推导（high risk 默认 confirm，其余默认 none）。
-    # 声明了非法取值会在 ToolManager.register 被拒绝（注册校验强化，§2.7）。
-    approval_tier: str = ""
+    # （F1 裁决 2026-08-31：approval_tier 独立声明轴退役——生效档由 risk
+    # 单轴推导（high→confirm 确认只挂高危，其余自动过），见
+    # ToolManager.get_tool_approval_tier。）
     # 前端时间线展示档：取值见 DETAIL_TIERS；空 = 未声明，
     # 前端默认 output（展示档非安全闸，不 deny-by-default，但声明优先）。
     detail_tier: str = ""

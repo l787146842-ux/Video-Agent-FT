@@ -58,7 +58,7 @@ from src.video_agent.core.fc_feedback import (
 
 # 闸机常量定义源 = core/fc_gates.py；顶层重新绑定（承重壳，旧路径兼容）
 # （原 _TOOL_RISK_CONFIRM_TOOLS 壳已随确认闸数据驱动化退役：
-# 硬编码名单删除，生效范围改读 approval_tier，见 fc_gates.tool_risk_gate）
+# 硬编码名单删除，生效范围改读生效审批档（risk 单轴推导），见 fc_gates.tool_risk_gate）
 _PAUSE_WINDOW_READONLY = fc_gates.PAUSE_WINDOW_READONLY  # noqa: 1
 _STAGE_ALLOWED_GROUP_KINDS = fc_gates.STAGE_ALLOWED_GROUP_KINDS  # noqa: 1
 

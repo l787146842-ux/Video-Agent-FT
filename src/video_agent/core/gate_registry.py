@@ -50,9 +50,9 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
                      "test_gen_confirm_gate 钉死；2026-08-21 门禁触发盘点"
                      "有真实拦截记录"),
         GateRuleMeta("platform.tool_risk", LAYER_PLATFORM,
-                     "工具风险分级闸（§2.7）：审批分级生效档 approval_tier=confirm"
-                     "（high 默认/未注册默认，数据驱动）的工具须经用户显式同意"
-                     "方可执行；image_generate 批量轨由 gen_confirm 闸专属覆盖",
+                     "工具风险分级闸（§2.7）：生效审批档为 confirm（F1 双轴并单轴："
+                     "risk 单轴推导，high 默认/未注册默认，确认只挂高危）的工具须经"
+                     "用户显式同意方可执行；image_generate 批量轨由 gen_confirm 闸专属覆盖",
                      "宪法 §2.7 风险分级设立；test_tool_risk_gate 钉死"),
     )
 }
