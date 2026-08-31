@@ -371,6 +371,21 @@ export interface SkillFormatRequest {
   content: string;
 }
 
+export interface SnapshotActionRequest {
+  snapshot_id: string;
+  name?: string;
+}
+
+export interface SnapshotItem {
+  id: string;
+  ts?: string;
+  label?: string;
+}
+
+export interface SnapshotListResponse {
+  snapshots?: SnapshotItem[];
+}
+
 export interface SnapshotRequest {
   up_to_index?: number | undefined;
   pinned?: boolean;

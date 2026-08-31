@@ -28,9 +28,20 @@ class UndoRedoMixin:
         self._redo_stack = []
         self._max_undo = max_undo
 
+    def _state_copy_for_stack(self) -> Dict[str, Any]:
+        """压栈用深拷贝：排除 E1 快照区（指针化防嵌套膨胀）"""
+        return copy.deepcopy(
+            {k: v for k, v in self._raw_state.items() if k != "stateSnapshots"})
+
+    def _apply_stack_state(self, state: Dict[str, Any]) -> None:
+        """写回栈状态：快照区不在栈内，保留当前快照区（回退不丢版本列表）"""
+        if "stateSnapshots" not in state and "stateSnapshots" in self._raw_state:
+            state["stateSnapshots"] = self._raw_state["stateSnapshots"]
+        self._raw_state = state
+
     def _push_undo(self) -> None:
         """在写入前保存当前状态到 undo 栈"""
-        self._undo_stack.append(copy.deepcopy(self._raw_state))
+        self._undo_stack.append(self._state_copy_for_stack())
         if len(self._undo_stack) > self._max_undo:
             self._undo_stack.pop(0)
         self._redo_stack.clear()
@@ -52,8 +63,8 @@ class UndoRedoMixin:
         """撤销上一步操作，返回是否成功"""
         if not self._undo_stack:
             return False
-        self._redo_stack.append(copy.deepcopy(self._raw_state))
-        self._raw_state = self._undo_stack.pop()
+        self._redo_stack.append(self._state_copy_for_stack())
+        self._apply_stack_state(self._undo_stack.pop())
         self._state_dirty = True
         self._context_cache.clear()
         self.save()
@@ -63,8 +74,8 @@ class UndoRedoMixin:
         """重做上一步撤销的操作，返回是否成功"""
         if not self._redo_stack:
             return False
-        self._undo_stack.append(copy.deepcopy(self._raw_state))
-        self._raw_state = self._redo_stack.pop()
+        self._undo_stack.append(self._state_copy_for_stack())
+        self._apply_stack_state(self._redo_stack.pop())
         self._state_dirty = True
         self._context_cache.clear()
         self.save()

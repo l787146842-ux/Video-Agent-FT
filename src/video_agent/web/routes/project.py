@@ -13,6 +13,7 @@ from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 from src.video_agent.utils import gen_id
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
+from src.video_agent.web.task_manager import get_task_manager
 
 router = APIRouter()
 
@@ -261,3 +262,76 @@ async def undo_checkpoint():
     svc = StateManager.get_instance()
     svc.push_undo()
     return {"ok": True, "can_undo": svc.can_undo, "can_redo": svc.can_redo}
+
+
+# ---------- E1 回档三件套（消息级快照指针化 + 版本列表 + 分叉） ----------
+
+class SnapshotItem(BaseModel):
+    id: str
+    ts: str = ""
+    label: str = ""
+
+
+class SnapshotListResponse(BaseModel):
+    snapshots: List[SnapshotItem] = []
+
+
+class SnapshotActionRequest(BaseModel):
+    snapshot_id: str
+    name: str = ""  # 仅 fork 用：新项目名称（缺省自动命名）
+
+
+# 生成任务终态白名单：非终态 = 在飞，回档禁行（E1 生成中禁回退）
+_TASK_DONE_STATUSES = (
+    "succeeded", "completed", "failed", "cancelled", "canceled",
+    "stopped", "error",
+)
+
+
+def _forbid_restore_while_generating() -> None:
+    """E1 生成中禁回退：存在非终态生成任务时 409 拒收。"""
+    tasks = get_task_manager().list_tasks(limit=200)
+    inflight = [
+        t for t in tasks
+        if str(t.get("status") or "").lower() not in _TASK_DONE_STATUSES
+    ]
+    if inflight:
+        raise VideoAgentError(
+            "生成任务进行中禁止回档，请等待生成完成或先停止任务",
+            status_code=409,
+            error_code="GENERATION_IN_PROGRESS",
+        )
+
+
+@router.get("/project/snapshots", response_model=SnapshotListResponse)
+async def list_snapshots_api():
+    """E1：故事板面板版本列表（快照指针清单，不含本体）。"""
+    return {"snapshots": StateManager.get_instance().list_snapshots()}
+
+
+@router.post("/project/restore")
+async def restore_snapshot_api(body: SnapshotActionRequest):
+    """E1：回档到快照时刻（二次确认由前端弹窗把关；
+    恢复前自动压 undo 栈，回档本身可 Redo 复核）。"""
+    svc = StateManager.get_instance()
+    _forbid_restore_while_generating()
+    snap = svc.get_snapshot(body.snapshot_id)
+    if snap is None:
+        raise VideoAgentError(
+            f"快照 {body.snapshot_id} 不存在", status_code=404,
+            error_code=LEGACY_NOT_FOUND)
+    svc.restore_snapshot(snap)
+    return {"ok": True, "state": svc.get_full_snapshot()}
+
+
+@router.post("/project/fork")
+async def fork_snapshot_api(body: SnapshotActionRequest):
+    """E1：从快照时刻新开项目（分叉；原项目不动）。"""
+    svc = StateManager.get_instance()
+    _forbid_restore_while_generating()
+    pid = svc.fork_from_snapshot(body.snapshot_id, body.name)
+    if pid is None:
+        raise VideoAgentError(
+            f"快照 {body.snapshot_id} 不存在", status_code=404,
+            error_code=LEGACY_NOT_FOUND)
+    return {"ok": True, "project_id": pid, "projects": svc.list_projects()}

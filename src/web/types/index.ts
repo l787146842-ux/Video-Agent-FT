@@ -247,6 +247,9 @@ export interface ChatMessage {
   pauseId?: string;
   /** 用户回应暂停的结构化标记（与对应暂停卡的 pauseId 匹配；对勾不再靠文本反推） */
   pauseAnsweredId?: string;
+  /** E1 消息级快照指针（后端轮末打快照挂最后一条 agent 消息；
+   *  有值即可挂「回到此刻/从此刻新开项目」动作） */
+  snapshotId?: string;
   pauseAnsweredValue?: string;
   /** 消息形态标记（system_action=系统动作行；其余为暂停卡语义种类，
    *  源自后端 pause_kind） */

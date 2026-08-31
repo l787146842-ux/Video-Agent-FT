@@ -1,4 +1,4 @@
-import { createSignal, Show } from 'solid-js';
+import { createSignal, Show, onMount } from 'solid-js';
 import { state, studioActions } from '@/stores/studio';
 import { agentState } from '@/stores/agent-state';
 import { sendUserMessage } from '@/lib/agent-actions';
@@ -32,6 +32,16 @@ export function ChatInput() {
   let fileInputRef: HTMLInputElement | undefined;
 
   const ed = useChatEditor();
+
+  // E1 回档三件套：回档后原 prompt 回填（sessionStorage 一次性消费；
+  // 由 ChatMessageItem 回档动作写入）
+  onMount(() => {
+    const refill = sessionStorage.getItem('e1-restore-refill');
+    if (refill) {
+      sessionStorage.removeItem('e1-restore-refill');
+      ed.backfillText(refill);
+    }
+  });
 
   // 排队自动出队（lib/chat/chat-queue-autosend）：Agent 空闲即按序发队首消息
   startQueuedAutosend();

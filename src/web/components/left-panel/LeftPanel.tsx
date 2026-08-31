@@ -3,6 +3,7 @@ import { FiFolder, FiGrid } from 'solid-icons/fi';
 import { state, studioActions } from '@/stores/studio';
 import { StoryboardView } from './StoryboardView';
 import { UncategorizedView } from './UncategorizedView';
+import { SnapshotHistoryBar } from './SnapshotHistoryBar';
 import type { LeftTab } from '@/types';
 
 const TABS: Array<{ key: LeftTab; label: string; icon: typeof FiGrid }> = [
@@ -42,6 +43,9 @@ export default function LeftPanel() {
           <StoryboardView />
         </Show>
       </div>
+
+      {/* E1 故事板版本列表（快照指针清单；回退经二次确认 + 后端生成中禁回退） */}
+      <SnapshotHistoryBar />
     </div>
   );
 }

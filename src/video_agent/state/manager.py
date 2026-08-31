@@ -20,6 +20,7 @@ import asyncio
 import copy
 import json
 import time
+import uuid
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from pathlib import Path
@@ -332,8 +333,11 @@ class StateManager(UndoRedoMixin):
         """整态深拷贝快照（批级检查点用；参考 _push_undo 的 deepcopy 先例）。
 
         与 get_full_snapshot 的前端视图快照不同：不做 json round-trip/
-        不附加 board_version/不裁剪对话消息，恢复时可原样写回。"""
-        return copy.deepcopy(self._raw_state)
+        不附加 board_version/不裁剪对话消息，恢复时可原样写回。
+        （E1 指针化：快照本体不含 stateSnapshots 快照区自身，
+        防嵌套膨胀；恢复时由 restore_snapshot 保留当前快照区。）"""
+        return copy.deepcopy(
+            {k: v for k, v in self._raw_state.items() if k != "stateSnapshots"})
 
     def restore_snapshot(self, snapshot: Dict[str, Any]) -> bool:
         """把整态恢复到快照时刻（批级条件回滚的唯一写面，Rule 3）。
@@ -343,11 +347,75 @@ class StateManager(UndoRedoMixin):
         禁止绕开本方法对 state_dict 做 clear()/update() 直接字典改法。
         """
         self._push_undo()
-        self._raw_state = copy.deepcopy(snapshot)
+        restored = copy.deepcopy(snapshot)
+        # E1：快照本体不含快照区；恢复后保留当前快照区（回档不丢版本列表）
+        if "stateSnapshots" not in restored and "stateSnapshots" in self._raw_state:
+            restored["stateSnapshots"] = self._raw_state["stateSnapshots"]
+        self._raw_state = restored
         self._state_dirty = True
         self._context_cache.clear()
         self._ensure_conversations()
         return self.save()
+
+    # ====== E1 消息级快照（指针化：消息存 snapshotId，本体存 stateSnapshots） ======
+
+    # 快照保留上限（超出淘汰最早；媒体本体不落快照——状态里只有 URL 指针）
+    _MAX_SNAPSHOTS = 50
+
+    def take_snapshot(self, label: str = "") -> str:
+        """打整态快照入快照区，返回 snapshot_id（回档三件套唯一快照源）。"""
+        snap_id = uuid.uuid4().hex[:12]
+        snaps = self._raw_state.setdefault("stateSnapshots", [])
+        snaps.append({
+            "id": snap_id,
+            "label": str(label or ""),
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "state": self.snapshot_state(),
+        })
+        if len(snaps) > self._MAX_SNAPSHOTS:
+            del snaps[: len(snaps) - self._MAX_SNAPSHOTS]
+        self._state_dirty = True
+        return snap_id
+
+    def list_snapshots(self) -> List[Dict[str, Any]]:
+        """快照版本列表（故事板面板版本列表用；不含快照本体）。"""
+        return [
+            {"id": s.get("id", ""), "ts": s.get("ts", ""),
+             "label": s.get("label", "")}
+            for s in (self._raw_state.get("stateSnapshots") or [])
+            if isinstance(s, dict)
+        ]
+
+    def get_snapshot(self, snapshot_id: str) -> Optional[Dict[str, Any]]:
+        """按 id 取快照本体；未命中返 None。"""
+        if not snapshot_id:
+            return None
+        for s in (self._raw_state.get("stateSnapshots") or []):
+            if isinstance(s, dict) and s.get("id") == snapshot_id:
+                return s.get("state")
+        return None
+
+    def attach_snapshot_to_last_agent_message(self, label: str = "") -> str:
+        """E1：打快照并挂到当前对话最后一条 agent 消息（消息级指针化）。
+
+        无 agent 消息时照常打快照（故事板版本列表仍可见）。"""
+        snap_id = self.take_snapshot(label)
+        msgs = self._raw_state.get("chatMessages") or []
+        for m in reversed(msgs):
+            if isinstance(m, dict) and m.get("sender") == "agent":
+                m["snapshotId"] = snap_id
+                break
+        self._state_dirty = True
+        return snap_id
+
+    def fork_from_snapshot(self, snapshot_id: str, name: str = "") -> Optional[str]:
+        """E1：从快照时刻新开项目（分叉）；快照不存在返 None。"""
+        snap = self.get_snapshot(snapshot_id)
+        if snap is None:
+            return None
+        pid = self.create_project(name.strip() or "分叉项目")
+        self.restore_snapshot(snap)
+        return pid
 
     # ====== 写入（Rule3: 唯一写入点） ======
 

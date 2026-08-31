@@ -5,7 +5,7 @@
 import { apiFetch, apiPost, apiPut } from './client';
 import type { ServerStateSnapshot, DocRecord } from '@/types';
 import type {
-  DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, OkResponse, ProjectListResponse, SwitchProjectRequest, UndoStatusResponse,
+  DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, OkResponse, ProjectListResponse, SnapshotActionRequest, SnapshotListResponse, SwitchProjectRequest, UndoStatusResponse,
 } from '@/types/api.generated';
 
 export interface OkWithStateResponse {
@@ -83,4 +83,23 @@ export function getUndoStatus() {
 /** 破坏性操作前压入撤销快照（保证删除草稿等"整体 PUT"路径可一次 undo 恢复） */
 export function checkpointUndo() {
   return apiPost<{ ok: boolean } & UndoStatusResponse>('/api/project/undo-checkpoint', {});
+}
+
+// ---------- E1 回档三件套（消息级快照指针化 + 版本列表 + 分叉） ----------
+
+/** 故事板版本列表（快照指针清单） */
+export function getSnapshots() {
+  return apiFetch<SnapshotListResponse>('/api/project/snapshots');
+}
+
+/** 回档到快照时刻（生成中 409 拒收；回档本身可 redo） */
+export function restoreSnapshot(snapshotId: string) {
+  const body: SnapshotActionRequest = { snapshot_id: snapshotId };
+  return apiPost<OkWithStateResponse>('/api/project/restore', body);
+}
+
+/** 从快照时刻新开项目（分叉；原项目不动） */
+export function forkSnapshot(snapshotId: string, name = '') {
+  const body: SnapshotActionRequest = { snapshot_id: snapshotId, name };
+  return apiPost<OkWithStateResponse & { projects?: ProjectListResponse }>('/api/project/fork', body);
 }

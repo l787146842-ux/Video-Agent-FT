@@ -541,6 +541,9 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
             # 视频卡同构持久化（独立消息条目，同轮 turnId 聚合）
             if video_items:
                 ctx.svc.add_chat_message("agent", "", video_items=video_items, turn_id=turn_id)
+            # E1 消息级快照：轮末打快照挂最后一条 agent 消息（指针化：
+            # 消息存 snapshotId，本体存 stateSnapshots；媒体只有 URL 指针）
+            ctx.svc.attach_snapshot_to_last_agent_message(label=f"轮次完成 {turn_id}")
 
     # 产物账本同轮下发：向导机械落盘的规格文档并入 documents_written
     if ctx.wiz_card_live:

@@ -3,6 +3,7 @@ import { useNavigate } from '@solidjs/router';
 import { chatState } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { saveMessageAsDoc } from '@/stores/docs';
+import { SnapshotMessageActions } from './SnapshotMessageActions';
 import { truncateResendAction } from '@/lib/chat/truncate-resend';
 import { branchAtMessage } from '@/lib/message-branch';
 import { copyText } from '@/lib/code-copy';
@@ -172,6 +173,11 @@ export function ChatMessageItem(props: {
         <Show when={props.affordance.suggestedTarget && (msg().suggestedActions || []).length > 0}>
           <SuggestedActionBar actions={msg().suggestedActions || []} />
         </Show>
+      </Show>
+
+      {/* E1 回档三件套：消息级快照动作（实现归 SnapshotMessageActions） */}
+      <Show when={!isUser() && msg().snapshotId}>
+        <SnapshotMessageActions message={msg()} domIndex={props.domIndex} />
       </Show>
 
       {/* 系统动作行（如「本次放行」）：不占用户气泡形态，回看不误认为用户打过这句话 */}
