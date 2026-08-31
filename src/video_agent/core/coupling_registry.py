@@ -199,14 +199,14 @@ COUPLING_ROWS: List[CouplingRow] = [
         "R16_manifest_whitelist_keys",
         "frontmatter 声明键（flow/pause/resources）变更",
         "任务#5：声明唯一源 = Skill 文档头部 YAML frontmatter（外置 JSON sidecar 退役）；消费点：agent_loop/fc_gates/planner 裁剪/"
-        "prompt_builder/registry pause 节；批6：resources 素材清单（形状校验 manifest_schema 首版 WARN，版本锁核验记账保留、执法退役）；"
+        "prompt_builder/registry pause 节；批6：resources 素材清单（形状校验 manifest_schema 首版 WARN；"
+        "版本锁已随 Q10 裁决 2026-09-01 连记账整体退役）；"
         "C1a 裁决 2026-08-31：gates 键全链路删除（parse_gate_rules 退役）",
         _sym(
             "src.video_agent.core.fc_gates:prompt_gate",
             "src.video_agent.core.planner:Planner._compute_excluded_tools",
             "src.video_agent.core.prompt_builder:PromptBuilder.build_system_prompt",
             "src.video_agent.skill_runtime.registry:parse_pause_rules",
-            "src.video_agent.skill_runtime.registry:resource_lock_errors",
         ) + (("testfile", "tests/unit/test_skill_manifest.py"),)
         + (("testfile", "tests/unit/test_skill_package_resources.py"),),
     ),

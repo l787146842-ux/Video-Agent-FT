@@ -98,6 +98,13 @@ FORBIDDEN_L2_INJECTION = re.compile(
     r"|skill_style_combo\.md"
 )
 
+# 第 2 批删除批（Q2/Q10 裁决 2026-09-01）退役符号防复活：
+# 版本锁核验/记账（resource_lock_errors，保留 .history 本地备份）；
+# 扫描面同 L2（不扫 tests：not hasattr 回归断言合法含字面量）。
+FORBIDDEN_B2_RETIREMENT = re.compile(
+    r"resource_lock_errors"
+)
+
 
 def _scan(pattern: re.Pattern, dirs, globs):
     for d in dirs:
@@ -118,6 +125,7 @@ def main() -> int:
     hits = list(_scan(FORBIDDEN, SCAN_DIRS, ["*.py"]))
     hits += list(_scan(FORBIDDEN_L2_INJECTION, SCAN_DIRS_L2, ["*.py"]))
     hits += list(_scan(FORBIDDEN_L2_INJECTION, ["prompts"], ["*.md"]))
+    hits += list(_scan(FORBIDDEN_B2_RETIREMENT, SCAN_DIRS_L2, ["*.py"]))
     if hits:
         for rel, n, line in hits[:20]:
             print(f"[check_legacy_orchestration]   {rel}:{n}: {line}")

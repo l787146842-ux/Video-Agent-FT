@@ -340,20 +340,17 @@ def test_version_lock_hash_match_registers(lock_env):
     assert declared["assets/ref.png"]["sha256"] == _LOCK_SHA
 
 
-def test_version_lock_hash_mismatch_rejects_registration(lock_env):
-    """C1b 裁决 2026-08-31：sha256 不符不再拒注册（执法退役），
-    记账口径 resource_lock_errors 仍报诊断。"""
+def test_version_lock_hash_mismatch_registers_anyway(lock_env):
+    """Q10 裁决 2026-09-01：版本锁连记账一起退役——
+    sha256 不符照常注册，核验/记账代码已删除。"""
     lock_env("b6lock-bad", resources_yaml=(
         "resources:\n  assets/ref.png:\n    sha256: \"" + "0" * 64 + "\"\n"))
     assert registry.register_skill("b6lock-bad") is not None
-    errs = registry.resource_lock_errors(
-        registry.SkillEntry(slug="b6lock-bad", name="b6lock-bad",
-                            content="", sections={}))
-    assert any("sha256 不符" in e for e in errs)
+    assert not hasattr(registry, "resource_lock_errors")
 
 
-def test_version_lock_dangling_declared_rejects_registration(lock_env):
-    """C1b 裁决 2026-08-31：悬空声明不再拒注册（执法退役）。"""
+def test_version_lock_dangling_declared_registers_anyway(lock_env):
+    """Q10 裁决 2026-09-01：悬空声明照常注册（版本锁整体退役）。"""
     lock_env("b6lock-missing", resources_yaml=(
         "resources:\n  assets/ghost.png:\n    sha256: \"" + "0" * 64 + "\"\n"))
     assert registry.register_skill("b6lock-missing") is not None

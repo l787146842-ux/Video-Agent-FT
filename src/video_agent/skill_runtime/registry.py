@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import hashlib
 import json
 import re
 
@@ -210,9 +209,9 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
     坏声明不能带病上线，修好 data/skills/<slug>/SKILL.md
     头部 frontmatter 才能注册；单个坏 Skill 拒注册不截断 sync_all 批次。
     消费端 fail-closed 清洗仍保留（兜注册后 frontmatter 被改坏的活读场景）。
-    版本锁（批6 → C1b 裁决 2026-08-31 执法退役）：resources 声明的
-    sha256 记账保留（declared_resources 描述符透传），注册期硬拒删除；
-    resource_lock_errors 仅作诊断/记账口径保留。
+    版本锁已整体退役（Q10 裁决 2026-09-01：连记账一起删——拒绝用户改自己
+    的技能不合理；sha256 核验/记账代码删除）；resources 声明仍透传描述符，
+    本地版本备份归 web/skill_docs 的 .history/ 机制（保留）。
     
     问题分级：只有错误级问题拒注册；WARN 级（开放注册
     降级/废除键过渡告警）只输出告警日志，不阻断注册。
@@ -233,8 +232,8 @@ def register_skill(slug: str) -> Optional[SkillEntry]:
             errors.append(
                 f"frontmatter 缺必填键 {key}（Agent Skills 开放标准："
                 "name/description 为渐进披露第一层目录摘要的权威声明）")
-    # C1b 裁决 2026-08-31：版本锁执法退役——sha256 不符不再硬拒注册，
-    # 记账面保留（declared_resources 透传描述符；resource_lock_errors 仅诊断）。
+    # 版本锁已整体退役（Q10 裁决 2026-09-01）：sha256 不符/悬空声明不拒注册，
+    # 核验记账代码同批删除；declared_resources 仅作描述符透传。
     if errors:
         # 拒注册同时摘除陈旧条目（refresh/重注册路径：frontmatter 改坏后
         # 旧注册态不得继续可用）
@@ -428,59 +427,6 @@ def tool_sections(skill_name: str, tool: str) -> str:
     if entry is None:
         return ""
     return entry.section_for(tool)
-
-
-def _sha256_of(path: Path) -> str:
-    """文件内容 sha256（分块，素材文件可能较大）。"""
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def resource_lock_errors(entry: SkillEntry) -> List[str]:
-    """资源清单版本锁核验（批6）：返回错误级问题清单（空 = 通过）。
-
-    版本锁语义：已声明的 sha256 与实际文件不符 = 素材被篡改；声明文件
-    不在场（悬空）= 锁无法核验；声明值非字符串 = 锁无法读——三者均拒注册。
-    「声明了锁」与「锁通过」是两件事：声明存在即进入核验，不得静默回落零预设；
-    未声明 sha256 的条目不锁；无 resources 声明的包整体不受影响（向后兼容）。
-    路径形状非法归 manifest_schema WARN，此处只对有效形状做存在性 + hash 核验。
-    """
-    root = entry.package_root
-    if root is None:
-        return []
-    errors: List[str] = []
-    for rel, meta in entry.declared_resources.items():
-        if "sha256" not in meta:
-            continue  # 未声明版本锁（零预设）
-        sha = meta["sha256"]
-        parts = [p for p in rel.replace("\\", "/").split("/") if p and p != "."]
-        if not parts or ".." in parts or ":" in rel or rel.lstrip().startswith("/"):
-            errors.append(
-                f"resources 声明路径 {rel!r} 非法（只允许包内相对路径，版本锁无法建立）")
-            continue
-        if not isinstance(sha, str) or not sha.strip():
-            errors.append(
-                f"resources[{rel}].sha256 声明非法（必须是 64 位十六进制字符串；"
-                "声明了锁却不可读 = 版本锁无法建立，拒注册）")
-            continue
-        target = root / "/".join(parts)
-        if not target.is_file() or target.is_symlink():
-            errors.append(
-                f"resources 声明资源 {rel!r} 不在场（悬空）或为符号链接，版本锁核验失败")
-            continue
-        try:
-            actual = _sha256_of(target)
-        except OSError as e:
-            errors.append(f"resources 声明资源 {rel!r} 读取失败，版本锁核验失败：{e}")
-            continue
-        if actual.lower() != sha.strip().lower():
-            errors.append(
-                f"resources 声明资源 {rel!r} sha256 不符（声明 {sha.strip()[:12]}…，"
-                f"实际 {actual[:12]}…）：素材已变动，版本锁破坏")
-    return errors
 
 
 def resolve_skill_resource(wanted: str, resource: str) -> Tuple[Optional[Path], str]:
