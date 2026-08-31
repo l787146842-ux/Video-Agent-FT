@@ -224,3 +224,39 @@ def test_script_required_snapshot(monkeypatch):
             assert not registry.script_required_active(slug), f"{slug} 不应检测为需剧本"
     finally:
         registry.reset_registry()
+
+
+# ---------- C1c 裁决 2026-08-31：Flova 裸键兼容 ----------
+
+def test_bare_keys_parsed_as_minimal_declaration():
+    """无 --- 包裹的头部连续 skill_name:/skill_description: 行 = 最小声明：
+    映射 name/description、剩成对引号、正文原样保留。"""
+    from src.video_agent.skill_runtime.frontmatter import split_frontmatter
+
+    content = (
+        'skill_name: "视频拉片复刻"\n'
+        'skill_description: "参考现有视频生成最终视频。"\n'
+        '<planner>\n流程散文\n</planner>\n'
+    )
+    manifest, body, err = split_frontmatter(content)
+    assert err == ""
+    assert manifest == {
+        "name": "视频拉片复刻", "description": "参考现有视频生成最终视频。"}
+    assert body.startswith("<planner>") and "流程散文" in body
+    # 无裸键的普通文档行为不变（零声明）
+    m2, body2, err2 = split_frontmatter("# 标题\n正文")
+    assert m2 is None and err2 == "" and body2.startswith("# 标题")
+    # --- 包裹的 frontmatter 优先级不变（不走裸键探测）
+    m3, _, err3 = split_frontmatter("---\nname: A\n---\n正文")
+    assert err3 == "" and m3 == {"name": "A"}
+
+
+def test_bare_keys_document_registers_end_to_end():
+    """端到端：Flova 裸键文档可注册（注册期 name/description 必填满足）。"""
+    sd.save_skill_doc(
+        "裸键包",
+        'skill_name: 裸键包\nskill_description: 导入兼容桩\n'
+        '<planner>\n1. 分析\n</planner>\n')
+    entry = registry.register_skill("裸键包")
+    assert entry is not None
+    assert entry.name == "裸键包"

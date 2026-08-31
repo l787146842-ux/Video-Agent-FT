@@ -10,6 +10,7 @@
 声明即 fail-hard（manifest_schema）。YAML 解析失败不静默吞掉，
 以 _parse_error 哨兵键透传给校验器（注册期拒注册）。
 """
+import re
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -21,6 +22,30 @@ from src.video_agent.skill_runtime.manifest_schema import validate_manifest_data
 
 # frontmatter 起止行（各自独占一行）
 _FENCE = "---"
+
+# C1c 裁决 2026-08-31：Flova 裸键兼容——无 `---` 包裹的文档头部
+# 连续 skill_name:/skill_description: 行识别为最小声明（映射 name/description）。
+_BARE_KEY_RE = re.compile(r"^(skill_name|skill_description)\s*:\s*(.+?)\s*$")
+
+
+def _extract_bare_keys(lines: List[str]) -> Tuple[Dict[str, Any], int]:
+    """提取文档头部连续的 Flova 裸键行 → (声明 dict, 消费行数)。
+
+    只认 skill_name/skill_description 两键（最小声明）；值剥成对引号；
+    首个非裸键行即停（其余正文原样保留）。无命中返 ({}, 0)。"""
+    manifest: Dict[str, Any] = {}
+    consumed = 0
+    for ln in lines:
+        m = _BARE_KEY_RE.match(ln.strip())
+        if not m:
+            break
+        key = "name" if m.group(1) == "skill_name" else "description"
+        val = m.group(2).strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ("\"", "'"):
+            val = val[1:-1]
+        manifest[key] = val
+        consumed += 1
+    return manifest, consumed
 
 # 声明写入钩子：frontmatter 变更时通知消费方失效缓存（如 workflow
 # 编译 per-turn 缓存）。注册方 = core.workflow_runtime（依赖方向不变：
@@ -66,7 +91,9 @@ def split_frontmatter(
 ) -> Tuple[Optional[Dict[str, Any]], str, str]:
     """拆分文档头部 frontmatter：返回 (声明 dict, 正文, 解析错误)。
 
-    - 无 frontmatter（首行非 `---`）→ (None, 原文, "")；
+    - 无 frontmatter（首行非 `---`）→ 探测 Flova 裸键最小声明（C1c 裁决）：
+      头部连续 skill_name:/skill_description: 行映射为 {name, description}；
+      均无命中 → (None, 原文, "")；
     - 收尾 `---` 缺失 / YAML 非法 / 根非对象 → 正文照常返回，错误串非空
       （调用方决定是否 fail-hard：注册期经 _parse_error 哨兵拒注册）；
     - 空块 = 零声明 → (None, 正文, "")。
@@ -76,6 +103,10 @@ def split_frontmatter(
     text = (content or "").lstrip("\ufeff")
     lines = text.split("\n")
     if not lines or lines[0].strip() != _FENCE:
+        manifest, consumed = _extract_bare_keys(lines)
+        if manifest:
+            body = "\n".join(lines[consumed:]).lstrip("\n")
+            return manifest, body, ""
         return None, text, ""
     close = None
     for i in range(1, len(lines)):
