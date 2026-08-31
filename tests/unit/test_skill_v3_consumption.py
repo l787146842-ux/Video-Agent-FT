@@ -12,7 +12,6 @@
 import pytest
 
 import src.video_agent.web.skill_docs as sd
-from src.video_agent.core import gates_inputs
 from src.video_agent.core import stage_probes as po
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.prompt_builder import PromptBuilder
@@ -63,94 +62,53 @@ def _save(name: str, content: str = "", manifest=None):
 
 def test_registry_v3_readers_zero_preset_and_clean():
     _save("零预设", "# A\n正文")
-    assert registry.skill_requires_inputs("零预设") == []
     assert registry.skill_kind("零预设") == ""
     assert registry.skill_language("零预设") == {}
-    assert registry.skill_requires_inputs("不存在") == []
+    # C1b 裁决 2026-08-31：skill_requires_inputs 声明读取 API 随原料声明轴退役删除
 
     _save("全声明", "# B\n正文", {
         "kind": "style",
         "requires_inputs": [
-            {"type": "script"},  # required 缺省 true
+            {"type": "script"},  # 退役键：声明忽略（零警告）
             {"type": "music", "required": False, "hint": "请先上传 BGM"},
         ],
         "language": {"prompt": "en"},
     })
-    reqs = registry.skill_requires_inputs("全声明")
-    assert [r["type"] for r in reqs] == ["script", "music"]
-    assert reqs[0]["required"] is True and reqs[1]["required"] is False
-    assert reqs[1]["hint"] == "请先上传 BGM"
     assert registry.skill_kind("全声明") == "style"
     assert registry.skill_language("全声明") == {"prompt": "en"}
 
 
 def test_registry_v3_fail_hard_rejects_invalid_manifest():
-    """C4 fail-hard（任务#22）：schema 违规拒注册，替代旧「只告警不阻断」。"""
+    """C4 fail-hard（任务#22）：schema 违规拒注册，替代旧「只告警不阻断」。
+    （C1b 裁决 2026-08-31：requires_inputs 退役键忽略不报错，
+    fail-hard 验证改用 language 非法值。）"""
     _save("坏声明", "# X\n正文", {
         "requires_inputs": [
-            {"type": "外星人"},  # 白名单外 → 校验失败
-            "bad",               # 非法项 → 校验失败
+            {"type": "外星人"},  # 退役键：忽略不影响注册
+            "bad",
         ],
         "language": {"prompt": "en", "output": "非法值"},
     })
     assert registry.get_entry("坏声明") is None
-    assert registry.skill_requires_inputs("坏声明") == []
     assert registry.skill_language("坏声明") == {}
+    # 退役键单独声明：忽略不拒注册（零警告）
+    _save("仅退役键", "# Z\n正文", {"requires_inputs": [{"type": "外星人"}]})
+    assert registry.get_entry("仅退役键") is not None
 
 
 def test_registry_v3_readers_fail_closed_on_live_edit():
     """消费端 fail-closed 清洗保留：合法注册后 frontmatter 被改坏，
-    活读时非法项丢弃（不二次报错）。"""
-    _save("活读清洗", "# Y\n正文", {"requires_inputs": [{"type": "script"}]})
+    活读时非法声明回落零预设（不二次报错）。"""
+    _save("活读清洗", "# Y\n正文", {"language": {"prompt": "en"}})
     assert registry.get_entry("活读清洗") is not None
     frontmatter.write_manifest("活读清洗", {
-        "requires_inputs": [{"type": "外星人"}, {"type": "music"}],
         "language": {"output": "非法值"},
     })
-    assert [r["type"] for r in registry.skill_requires_inputs("活读清洗")] == ["music"]
     assert registry.skill_language("活读清洗") == {}
 
 
-# ---------- 2) 原料闸：v3 优先 / v2 回落 / 两路不叠加 ----------
-
-@pytest.mark.asyncio
-async def test_gate_precheck_v3_script_missing_blocks(svc):
-    _save("v3需剧本", manifest={"requires_inputs": [{"type": "script"}]})
-    out = await po.gate_precheck(svc, "v3需剧本", "开始制作")
-    assert out is not None and out.kind == "script_pending"
-    # 豁免话术照常消费
-    out2 = await po.gate_precheck(svc, "v3需剧本", "waive_script")
-    assert out2 is None
-    assert (svc.state_dict.get("interaction") or {}).get("script_waived") is True
-
-
-@pytest.mark.asyncio
-async def test_gate_precheck_v3_nonscript_missing_generic_remind(svc):
-    _save("v3需音乐", manifest={
-        "requires_inputs": [{"type": "music", "hint": "本 Skill 需要先上传音乐文件"}]})
-    out = await po.gate_precheck(svc, "v3需音乐", "开始制作")
-    assert out is not None and out.kind == "script_pending"
-    assert "需要先上传音乐文件" in out.message
-    # 素材到达（assets 登记）→ 放行
-    svc.state_dict["assets"] = [{"name": "bgm.mp3", "type": "music", "url": "/workspace/assets/bgm.mp3"}]
-    out2 = await po.gate_precheck(svc, "v3需音乐", "继续")
-    assert out2 is None or out2.kind != "script_pending"
-
-
-@pytest.mark.asyncio
-async def test_gate_precheck_v3_overrides_v2_no_stack(svc):
-    """两路不叠加：声明了 v3 清单（仅音乐）后，即便 flow.script_required=true
-    且剧本缺失，也不再弹剧本提醒卡（v3 清单独占判定）。"""
-    _save("v3覆盖v2", manifest={
-        "flow": {"script_required": True},
-        "requires_inputs": [{"type": "music"}],
-    })
-    out = await po.gate_precheck(svc, "v3覆盖v2", "开始制作")
-    assert out is not None and out.kind == "script_pending"
-    assert "音乐" in out.message
-    card_msg, _ = prompt_gates.script_remind_card()
-    assert out.message != card_msg
-
+# ---------- 2) 原料闸：v2 script_required 单路（C1b 裁决 2026-08-31：
+# v3 requires_inputs 声明轴退役，三个 v3 用例随删） ----------
 
 @pytest.mark.asyncio
 async def test_gate_precheck_v2_fallback_unchanged(svc):
@@ -165,17 +123,18 @@ async def test_gate_precheck_v2_fallback_unchanged(svc):
     assert out_ack is not None and out_ack.kind == "script_ack"
 
 
-def test_start_run_v3_input_gate(tmp_path):
-    _save("v3开跑", manifest={"requires_inputs": [{"type": "script"}]})
+def test_start_run_v2_input_gate(tmp_path):
+    """原料闸开跑挂起（v2 script_required 单路；C1b 裁决 v3 声明轴退役）。"""
+    _save("v2开跑", manifest={"flow": {"script_required": True}})
     StateManager.reset_instance()
     svc1 = StateManager(str(tmp_path / "ws1"))
-    run = WorkflowRuntime(svc1, "v3开跑").start_run()
+    run = WorkflowRuntime(svc1, "v2开跑").start_run()
     assert run["status"] == "waiting_user" and run.get("pending_decision")
     StateManager.reset_instance()
     # 原料到达 → 不再等待（新实例避免复用旧 run 状态）
     svc2 = StateManager(str(tmp_path / "ws2"))
     svc2.state_dict["uploadedDocs"] = [{"name": "剧本.md", "content": "正文"}]
-    run2 = WorkflowRuntime(svc2, "v3开跑").start_run()
+    run2 = WorkflowRuntime(svc2, "v2开跑").start_run()
     assert run2.get("pending_decision") is None
     StateManager.reset_instance()
 
@@ -199,7 +158,9 @@ def test_metadata_header_full_v3_declaration():
     block = _pb({}).build_selected_skill_block("元数据全")
     assert "== Skill 元数据" in block
     assert "风格型" in block
-    assert "本 Skill 需要剧本素材，尚未检测到上传" in block
+    # C1b 裁决 2026-08-31：requires_inputs 原料声明轴退役，未就绪段不再注入
+    assert "本 Skill 需要剧本素材，尚未检测到上传" not in block
+    assert "原料未就绪" not in block
     assert "英文书写" in block
     # C1b 裁决 2026-08-31：pause_points 机械暂停退役，元数据头不再注入暂停清单
     assert "平台会在以下节点" not in block
@@ -207,16 +168,17 @@ def test_metadata_header_full_v3_declaration():
     # 块内顺序 = 标题行 → 元数据头 → 纪律 → 正文头部）
     assert block.index("== 当前选中 Skill") < block.index("== Skill 元数据")
     assert "UNIQUE_META_BODY_MARK" in block  # 短正文预算内全文注入（正文探针）
-    # 原料到达后缺失提示消失
+    # 原料声明不改变块内容（退役后与无声明同口径）
     block2 = _pb({"uploadedDocs": [{"name": "a.md", "content": "x"}]}).build_selected_skill_block("元数据全")
     assert "原料未就绪" not in block2
 
 
 def test_metadata_header_hint_override_and_empty_for_v2():
+    # C1b 裁决 2026-08-31：requires_inputs hint 段退役——声明忽略，元数据头零增量
     _save("提示覆盖", "# X\n正文", {
         "requires_inputs": [{"type": "doc", "hint": "需要分镜参考文档"}]})
     block = _pb({}).build_selected_skill_block("提示覆盖")
-    assert "需要分镜参考文档" in block
+    assert "需要分镜参考文档" not in block
 
     # v2 存量形态（无 v3 键、无暂停声明）：元数据头零增量
     _save("v2素", "# Y\n正文", {"flow": {"spec_wizard": True}})
@@ -274,25 +236,24 @@ def test_language_gate_category_exemption_by_declaration(svc):
         prompt_gates.LANG_EN_HARD_PREFIX in h for h in hard3)
 
 
-def test_voice_reference_soft_note_follows_declaration(svc):
-    """任务#8 ④：音色软提醒跟随 requires_inputs.features 声明轴；
-    未声明者回落状态探测（零预设）。"""
+def test_voice_reference_soft_note_state_detection_only(svc):
+    """C1b 裁决 2026-08-31：音色软提醒声明轴退役，只走状态探测（零预设）。
+    声明了 features 但状态无音频：不再触发；状态有音频：照常触发。"""
     _save("音色声明", "# V\n正文", {
         "requires_inputs": [{
             "type": "audio", "required": False,
             "features": ["voice_reference"]}]})
     shot_text = "角色面对镜头说：{我们出发吧}。" + "中文场景描述。" * 20
-    # 声明轴在场（项目状态无任何音频）：软提醒仍触发
     state = {"usedSkills": ["音色声明"]}
     ok, _hard, soft = prompt_gates.validate_prompt_write(
         shot_text, "shot", state)
-    assert ok and any("音色参考" in s for s in soft)
-    # 未声明且状态无音频：软提醒不触发（零预设回落）
-    _save("音色未声明", "# W\n正文")
-    state2 = {"usedSkills": ["音色未声明"]}
-    ok2, _h2, soft2 = prompt_gates.validate_prompt_write(
-        shot_text, "shot", state2)
-    assert ok2 and not any("音色参考" in s for s in soft2)
+    assert ok and not any("音色参考" in s for s in soft)
+    # 状态有音频（声明退役后仍照常触发）
+    state3 = {"usedSkills": ["音色声明"],
+              "assets": [{"type": "audio", "url": "/workspace/assets/v.wav"}]}
+    ok3, _h3, soft3 = prompt_gates.validate_prompt_write(
+        shot_text, "shot", state3)
+    assert ok3 and any("音色参考" in s for s in soft3)
 
 
 # ---------- 6) 未迁移 v2 manifest 全路径回归（行为零变化） ----------
@@ -309,14 +270,3 @@ def test_v2_manifest_gate_and_language_unchanged(svc):
         {"usedSkills": ["v2完整"]}) == "中文"
     _save("v2无声明", "# V3\n正文")
     assert prompt_gates.resolve_prompt_language({"usedSkills": ["v2无声明"]}) == "中文"
-
-
-def test_input_present_objective_detection():
-    assert gates_inputs.input_present({}, "script") is False
-    assert gates_inputs.input_present({"uploadedDocs": [{"name": "a"}]}, "script") is True
-    assert gates_inputs.input_present({"analysis": {"summary": "x"}}, "script") is True
-    assert gates_inputs.input_present(
-        {"assets": [{"type": "audio", "url": "/workspace/assets/bgm.wav"}]}, "music") is True
-    assert gates_inputs.input_present(
-        {"assets": [{"type": "file", "url": "/workspace/assets/a.mp4"}]}, "video") is True
-    assert gates_inputs.input_present({"assets": []}, "image") is False

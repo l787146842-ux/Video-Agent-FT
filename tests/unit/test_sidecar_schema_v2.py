@@ -143,7 +143,6 @@ def test_resources_undeclared_is_legal():
     ({"flow": {"spec_wizard": "yes"}}, "布尔值"),
     ({"pause": {"stage_pause": "yes"}}, "布尔值"),
     ({"version": ""}, "非空字符串"),
-    ({"tools_required": [""]}, "非空字符串"),
 ])
 def test_schema_rejects_illegal_declarations(manifest, keyword):
     issues = manifest_schema.validate_manifest_data(manifest)

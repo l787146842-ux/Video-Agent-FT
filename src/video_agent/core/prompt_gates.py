@@ -304,21 +304,12 @@ def validate_prompt_write(
                 f"分镜视频提示词过短（{len(text)} 字），请补全画面主体/镜头语言/"
                 "声音层等必要描述后重新写入"
             )
-        # 软提醒：有对白且存在音色参考——音色在场优先跟随 Skill 声明轴
-        # （requires_inputs.features 含 voice_reference，任务#8 ④）；
-        # 未声明者回落状态探测（零预设，不回潮硬编码唯探测）
-        _voice_declared = False
-        try:
-            _voice_declared = bool(
-                _cur_skill
-                and registry.skill_declares_feature(_cur_skill, "voice_reference")
-            )
-        except Exception:
-            pass
+        # 软提醒：有对白且存在音色参考（状态探测；C1b 裁决 2026-08-31：
+        # requires_inputs.features 声明轴退役，只走状态探测零预设）
         if (
             raw_state is not None
             and _DIALOGUE_RE.search(text)
-            and (_voice_declared or has_voice_reference(raw_state))
+            and has_voice_reference(raw_state)
             and "音色参考" not in text
         ):
             soft.append(

@@ -9,7 +9,6 @@
 import pytest
 
 import src.video_agent.web.skill_docs as sd
-from src.video_agent.core import gates_inputs
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core.planner import PlannerContext
 from src.video_agent.skill_runtime import frontmatter, registry
@@ -179,32 +178,15 @@ def test_metadata_header_exception_branches_degrade_to_empty(tmp_skills):
 
 
 def test_metadata_header_missing_input_without_hint(tmp_skills):
-    """原料未就绪且声明无 hint：回落类型标签兜底文案"""
+    """C1b 裁决 2026-08-31：requires_inputs 原料声明轴退役——
+    元数据头不再注入原料未就绪段（声明忽略，零警告）。"""
     sd.save_skill_doc("需乐桩", "# 需乐桩\n正文")
     frontmatter.write_manifest(
         "需乐桩", {"name": "需乐桩", "description": "测试桩",
                    "requires_inputs": [{"type": "music", "required": True}]})
     registry.register_skill("需乐桩")
     block = _pb_raw({}).build_skill_metadata_header("需乐桩")
-    assert "原料未就绪：本 Skill 需要音乐素材" in block
-    # 原料到达后缺失行消失（分支另一侧）
-    block2 = _pb_raw(
-        {"assets": [{"type": "music", "url": "a.mp3"}]}
-    ).build_skill_metadata_header("需乐桩")
-    assert "原料未就绪" not in block2
-
-
-def test_metadata_header_unknown_input_type_label_fallback(
-        tmp_skills, monkeypatch):
-    """白名单外原料类型：标签回落原始类型字符串（不误拦不崩）"""
-    sd.save_skill_doc("异型桩", "# 异型桩\n正文")
-    monkeypatch.setattr(
-        registry, "skill_requires_inputs",
-        lambda n: [{"type": "hologram", "required": True}])
-    # 闸口保守放行（白名单外视为已满足）；此处强制判缺以覆盖标签回落分支
-    monkeypatch.setattr(gates_inputs, "input_present", lambda s, t: False)
-    block = _pb_raw({}).build_skill_metadata_header("异型桩")
-    assert "本 Skill 需要hologram素材" in block
+    assert "原料未就绪" not in block
 
 
 def test_metadata_header_language_zh_line(tmp_skills):

@@ -17,12 +17,9 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 from loguru import logger
 
 from src.video_agent.config import settings
-# prompt_gates 保留顶层导入：gates_inputs 必须在其后导入（gates_script↔prompt_gates
-# 尾块 re-export 对首入方向敏感；原料判定家族）；段内条件判定已收归
-# planner 单一事实源，本文件不再直接消费它
+# prompt_gates 保留顶层导入（段内条件判定已收归 planner 单一事实源，
+# 本文件不再直接消费它）；gates_inputs 原料判定家族已随 C1b 裁决退役删除。
 from src.video_agent.core import prompt_gates  # noqa: F401
-# gates_inputs 必须在 prompt_gates 之后导入（见上方注释）
-from src.video_agent.core import gates_inputs
 from src.video_agent.core import live_metrics
 from src.video_agent.core.token_budget import estimate_tokens
 from src.video_agent.skill_runtime import guard as skill_guard
@@ -416,11 +413,12 @@ class PromptBuilder:
         return content[:cut].rstrip(), cut, True
     
     def build_skill_metadata_header(self, skill_name: str) -> str:
-        """frontmatter 元数据头：version/source / kind / requires_inputs 未满足项 /
-        language / 暂停点清单，随选中 Skill 轻量块注入（正文零注入后的运营状态面）。
+        """frontmatter 元数据头：version/source / kind / language，
+        随选中 Skill 轻量块注入（正文零注入后的运营状态面）。
     
-        未声明任何元数据键（零 frontmatter）返回空串，行为零变化；
-        原料未就绪探测需 raw state，缺省（None）时只省掉该段。
+        未声明任何元数据键（零 frontmatter）返回空串，行为零变化。
+        （C1b 裁决 2026-08-31：requires_inputs 原料声明轴退役，
+        未满足项段删除。）
         """
         lines: List[str] = []
         try:
@@ -447,20 +445,6 @@ class PromptBuilder:
             kind = ""
         if kind:
             lines.append(f"- 类型：{_KIND_LABELS.get(kind, kind)}（目录展示口径）")
-        missing: List[Dict[str, Any]] = []
-        if self._get_raw_state is not None:
-            try:
-                missing = gates_inputs.missing_required_inputs(
-                    self._get_raw_state(), skill_name)
-            except Exception:
-                missing = []
-        for m in missing:
-            label = gates_inputs.INPUT_TYPE_LABELS.get(
-                str(m.get("type") or ""), str(m.get("type") or ""))
-            hint = str(m.get("hint") or "").strip()
-            lines.append(
-                f"- 原料未就绪：{hint or ('本 Skill 需要' + label + '素材，尚未检测到上传')}"
-            )
         try:
             lang = skill_registry.skill_language(skill_name)
         except Exception:

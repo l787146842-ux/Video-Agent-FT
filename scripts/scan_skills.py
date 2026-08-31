@@ -5,9 +5,7 @@
 P3-15 新增：frontmatter 声明 vs 文档实际章节一致性探针
 （诊断先行，报告性质，不进 acceptance GATES）。
 任务 #5：声明源改文档头部 frontmatter（扫描前先剥离）；
---gate 追加 tools_required 存在性探针（任务#5 B-2）：声明工具不在
-平台工具注册表（tools/manager.py 注册清单）且不在待补齐豁免清单时
-输出 WARN 清单（先诊断，不升门禁失败/不阻断退出码）。
+tools_required 存在性探针已随 C1b 裁决 2026-08-31 退役删除（机械工作流层整体退役）。
 P1 整改（任务 #9）：--gate 追加内容卫生防回潮校验：frontmatter 剥离后
 正文再现 skill_name:/skill_description: 残留行或「最高/第一优先级」宣称
 （词序无关，直连形态双向拦截）即 FAIL。
@@ -42,18 +40,8 @@ REUSED_TOOL_NAMES = (
     "generate_video", "workflow_pause", "read_skill",
 )
 
-# tools_required 存在性探针的「待补齐豁免」清单（任务#5 B-2）：
-# 路线图工具尚未在平台注册为真实 FC 工具，Skill 声明它们是有意的
-# 前瞻声明，探针跳过不计 WARN；平台落地对应工具后应从本名单移除。
-# （整改批 2.1 清偿：script_analyze / write_media_prompt / audio_generate /
-# video_assembler 四项已随 Skill 正文清洗移除——文档不再声明、门禁不再
-# 豁免；storyboard_key_elements/shots/audio 等管线能力词汇由
-# PIPELINE_CAPABILITY_TOOLS 统一识别，属已退役工具的阶段能力标记。）
-PENDING_ROUTE_EXEMPT_TOOLS = frozenset({
-    "super_resolution",    # 视频超分（路线图前瞻能力，平台落地后移除）
-    # 音频驱动图生视频（路线图前瞻能力，平台落地后移除）
-    "ImageToVideoByAudio",
-})
+# （C1b 裁决 2026-08-31：tools_required 存在性探针退役，
+# PENDING_ROUTE_EXEMPT_TOOLS 待补齐豁免清单同批删除。）
 
 # ============================================================
 # P1 防回潮校验（任务 #9）：frontmatter 是唯一元数据源，正文不得
@@ -165,18 +153,6 @@ def language_claim_issues(body: str) -> list:
     return issues
 
 
-def platform_tool_names() -> frozenset:
-    """平台工具注册表真实清单（tools/manager.py 注册口径，任务#5 B-2）：
-    tools_required 存在性探针的权威基准——不含管线能力词汇豁免注入
-    （那是 Skill 文本白名单口径，不是工具存在性口径）。"""
-    from loguru import logger
-    logger.disable("src.video_agent")
-    from src.video_agent.tools import ToolManager  # noqa: 触发注册
-    from src.video_agent.tools.canvas_tools import register_canvas_tools
-    register_canvas_tools()
-    return frozenset(ToolManager._tools)
-
-
 def manifest_consistency_issues(slug: str, content: str, manifest) -> list:
     """frontmatter 声明 vs 文档实际章节一致性探针；返回不一致清单（空 = 一致）。
 
@@ -234,23 +210,6 @@ def _is_external_source(manifest) -> bool:
     未声明或声明 platform = 平台源（维持现有严口径）。"""
     src = (manifest or {}).get("source")
     return isinstance(src, str) and bool(src.strip()) and src.strip().lower() != "platform"
-
-
-def tools_required_warn_probe(slug: str, manifest, platform_names: frozenset) -> list:
-    """tools_required 存在性探针（任务#5 B-2）：声明工具不在平台工具
-    注册表（manager.py 注册清单）、不在管线能力词汇表（已退役工具的
-    阶段能力标记，有意保留）且不在待补齐豁免清单（路线图工具的有意
-    豁免）时计入 WARN 清单；先诊断不升门禁失败，不阻断退出码。"""
-    declared = (manifest or {}).get("tools_required")
-    if not isinstance(declared, list):
-        return []
-    return [
-        t for t in declared
-        if isinstance(t, str) and t.strip()
-        and t not in platform_names
-        and t not in PIPELINE_CAPABILITY_TOOLS
-        and t not in PENDING_ROUTE_EXEMPT_TOOLS
-    ]
 
 
 def frontmatter_meta_warn_probe(slug: str, manifest) -> list:
@@ -345,8 +304,6 @@ def run_gate() -> int:
     """--gate 模式（纯诊断脚本，手动运行；无 acceptance/CI 门禁调用点，
     2026-08-29 用户裁决退役工具名白名单后随批 A 降级）：
     P1 防回潮校验：正文元数据残留行 / 优先级宣称即诊断 FAIL（任务 #9）；
-    tools_required 存在性探针缺失输出 WARN 清单（任务#5 B-2：先诊断
-    不升门禁失败，不阻断退出码）；
     frontmatter name/description 存在性探针缺失输出 WARN 清单
     （P1-10 裁决 R1：级别 WARN 不升 FAIL，不触门禁冻结）；
     目录包资源探针输出 WARN 清单（P2-4：指针悬空/孤儿资源，批6 追加
@@ -357,12 +314,11 @@ def run_gate() -> int:
     探针按 source 分口径（批 3）：platform（存量，含未声明）维持上述
     严口径；外部源（imported|community 等非 platform 声明）的 2 条
     FAIL 探针（内容卫生/语言声明）降为 WARN，不阻断退出码。
-    2026-08-29 用户裁决：工具名白名单探针退役（Skill 系统修复批 A）。"""
+    2026-08-29 用户裁决：工具名白名单探针退役（Skill 系统修复批 A）。
+    （C1b 裁决 2026-08-31：tools_required 存在性探针同批退役。）"""
     d = pathlib.Path(__file__).parent.parent / "data" / "skills"
-    platform = platform_tool_names()
     hygiene_failed = []
     lang_failed = []
-    warned = []
     meta_warned = []
     pkg_warned = []
     ext_warned = []
@@ -391,11 +347,6 @@ def run_gate() -> int:
                 lang_failed.append(slug)
                 for it in lang_issues:
                     print(f"[skill_lang_claim] FAIL {f.name}: {it}")
-        missing = tools_required_warn_probe(slug, manifest, platform)
-        if missing:
-            warned.append(slug)
-            print(f"[skill_tools_required] WARN {slug}: 声明工具不在平台注册表"
-                  f"且不在待补齐豁免清单：{'、'.join(missing)}")
         meta_missing = frontmatter_meta_warn_probe(slug, manifest)
         if meta_missing:
             meta_warned.append(slug)
@@ -416,9 +367,6 @@ def run_gate() -> int:
         return 1
     print("[skill_content_hygiene] OK: 无元数据残留行与优先级宣称")
     print("[skill_lang_claim] OK: 正文无声明性语言规则")
-    if warned:
-        print(f"[skill_tools_required] WARN: {len(warned)} skill(s) 声明工具未入平台注册表"
-              f"（{'、'.join(warned)}；诊断性质，不阻断门禁）")
     if meta_warned:
         print(f"[skill_frontmatter_meta] WARN: {len(meta_warned)} skill(s) "
               f"frontmatter name/description 缺失（{'、'.join(meta_warned)}；"
@@ -451,7 +399,6 @@ def main() -> None:
                  "--gate 为门禁入口）")
     lines.append("")
     mismatched = []
-    platform = platform_tool_names()
     total = 0
     for slug, f in _iter_skill_docs(d):
         content = f.read_text(encoding="utf-8", errors="replace")
@@ -485,10 +432,6 @@ def main() -> None:
         if consistency:
             mismatched.append(slug)
         lines.append(f"  frontmatter 一致性: {'一致' if not consistency else consistency}")
-        # 任务 #5 B-2：tools_required 存在性探针（WARN 报告，诊断性质）
-        missing = tools_required_warn_probe(slug, manifest, platform)
-        if missing:
-            lines.append(f"  tools_required 未入平台注册表(WARN): {missing}")
         # P1-10（裁决 R1）：frontmatter name/description 存在性探针（WARN，诊断性质）
         meta_missing = frontmatter_meta_warn_probe(slug, manifest)
         if meta_missing:

@@ -31,7 +31,7 @@ stages 双形态——对象 = stages.<规范键>.{done,skip,executors} 覆盖�
 executor?,deterministic?}，compile_definition 据此派生节点拓扑；
 未声明回落 default_v2_workflow，零回归） /
 布尔开关（spec_wizard/spec_gate/script_required）；顶层 pause.stage_pause；
-顶层 version / tools_required / source /
+顶层 version / source /
 scripts（键声明静态校验，绝不自动执行）/ resources（目录包资源清单 +
 版本锁声明，批6：形状校验首版 WARN、下版升硬；记账面保留、执法退役，
 见 registry.register_skill）。
@@ -123,8 +123,6 @@ SCHEMA_VERSION = 3
 # 存量 Skill 无数据承载，注入策略分支失去声明入口；再声明按未知 kind
 # 开放注册降级为 pipeline 并 WARN。
 _KIND_VALUES = ("pipeline", "style")
-# 原料类型白名单：audio = 音色参考等音频原料（任务#8 ④ 音色声明轴）
-_REQUIRES_INPUT_TYPES = ("script", "music", "video", "image", "doc", "audio")
 _LANGUAGE_VALUES = ("zh", "en", "auto")
 # language.prompt_en_categories 合法取值：产物类别级语言闸豁免（任务#8 ①）
 _LANGUAGE_EN_CATEGORY_VALUES = ("keyElement", "shot", "audio")
@@ -132,7 +130,6 @@ _LANGUAGE_EN_CATEGORY_VALUES = ("keyElement", "shot", "audio")
 # 公开别名（消费端同源读取：registry 声明 API 同读此白名单，
 # 消费侧不再各自硬编码；校验语义仍归本模块 _check_*）
 KIND_VALUES = _KIND_VALUES
-REQUIRES_INPUT_TYPES = _REQUIRES_INPUT_TYPES
 LANGUAGE_VALUES = _LANGUAGE_VALUES
 LANGUAGE_EN_CATEGORY_VALUES = _LANGUAGE_EN_CATEGORY_VALUES
 
@@ -163,21 +160,6 @@ def _check_version(raw: Any, issues: List[str]) -> None:
         return
     if not isinstance(raw, str) or not raw.strip():
         issues.append("version 必须是非空字符串（如 \"1.0\"）")
-
-
-def _check_tools_required(raw: Any, issues: List[str]) -> None:
-    """tools_required：平台工具依赖声明（非空字符串数组；未声明合法）。
-
-    声明工具是否存在于平台工具注册表由 scripts/scan_skills.py --gate 核对，
-    缺失输出 PENDING 报告（复用「待平台补齐」机制）；schema 只管形状。"""
-    if raw is None:
-        return
-    if not isinstance(raw, list):
-        issues.append("tools_required 必须是数组（平台工具名）")
-        return
-    for i, t in enumerate(raw):
-        if not isinstance(t, str) or not t.strip():
-            issues.append(f"tools_required[{i}] 必须是非空字符串（工具名）")
 
 
 def _check_source(raw: Any, issues: List[str]) -> None:
@@ -212,41 +194,6 @@ def _check_kind(data: Dict[str, Any], issues: List[str]) -> None:
             WARN_PREFIX
             + f"kind {v!r} 不在平台 kind 登记表（{'/'.join(_KIND_VALUES)}）；"
             "按开放注册降级为默认（pipeline）注入策略")
-
-
-def _check_requires_inputs(raw: Any, issues: List[str]) -> None:
-    """requires_inputs：数组，每项 {type, required, hint, features}；
-    type 白名单 script|music|video|image|doc|audio，required 缺省 true；
-    features = 可选声明轴标记清单（非空字符串数组，如 voice_reference，
-    任务#8 ④：音色参考声明轴，供闸机软提醒跟随声明）。"""
-    if raw is None:
-        return
-    if not isinstance(raw, list):
-        issues.append("requires_inputs 必须是数组（每项 {type, required, hint}）")
-        return
-    for i, item in enumerate(raw):
-        if not isinstance(item, dict):
-            issues.append(f"requires_inputs[{i}] 必须是对象 {{type, required, hint}}")
-            continue
-        t = item.get("type")
-        if t not in _REQUIRES_INPUT_TYPES:
-            issues.append(
-                f"requires_inputs[{i}].type 必须是 "
-                f"{'/'.join(_REQUIRES_INPUT_TYPES)} 之一（实际 {t!r}）")
-        req = item.get("required")
-        if req is not None and not isinstance(req, bool):
-            issues.append(f"requires_inputs[{i}].required 必须是布尔值（缺省 true）")
-        hint = item.get("hint")
-        if hint is not None and (not isinstance(hint, str) or not hint.strip()):
-            issues.append(f"requires_inputs[{i}].hint 必须是非空字符串")
-        feats = item.get("features")
-        if feats is not None:
-            if not isinstance(feats, list) or not feats or not all(
-                isinstance(x, str) and x.strip() for x in feats
-            ):
-                issues.append(
-                    f"requires_inputs[{i}].features 必须是非空字符串数组"
-                    "（声明轴标记，如 voice_reference）")
 
 
 def _check_language(raw: Any, issues: List[str]) -> None:
@@ -503,7 +450,6 @@ def validate_manifest_data(data: Any) -> List[str]:
         if v is not None and not isinstance(v, bool):
             issues.append(f"flow.{bk} 必须是布尔值")
     _check_version(data.get("version"), issues)
-    _check_tools_required(data.get("tools_required"), issues)
     _check_source(data.get("source"), issues)
     pause = data.get("pause")
     if pause is not None:
@@ -516,7 +462,6 @@ def validate_manifest_data(data: Any) -> List[str]:
     # v3 键：全部可选，未声明=零预设，非法 fail-closed
     _check_schema_version(data, issues)
     _check_kind(data, issues)
-    _check_requires_inputs(data.get("requires_inputs"), issues)
     _check_language(data.get("language"), issues)
     _check_scripts(data.get("scripts"), issues)
     _check_resources(data.get("resources"), issues)

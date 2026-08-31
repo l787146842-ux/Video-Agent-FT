@@ -62,7 +62,7 @@ GATES: List[Tuple[str, List[str]]] = [
     ("scaffold_registry", [sys.executable, "scripts/check_scaffold_registry.py"]),
     # 任务 #11：core 覆盖率棘轮（只升不降，基线 scripts/cov_baseline.txt）；
     # 本地无 coverage.xml 时 SKIP，CI 以 --require-xml 硬门禁。
-    # 基线清偿式下调记录：88.57 → 87.76（C1a/C1b 裁决删除批退役测试致稀释，
+    # 基线清偿式下调记录：88.57 → 87.76 → 87.69（C1a/C1b 裁决删除批退役测试致稀释，
     # 用户裁决 2026-08-31 授权同批下调登记；后续批只许升）。
     # 退役条件：core 覆盖率 >= 90% 且连续两季无回退争议时裁决下账（§13.14(c)）。
     ("cov_ratchet", [sys.executable, "scripts/check_cov_ratchet.py"]),

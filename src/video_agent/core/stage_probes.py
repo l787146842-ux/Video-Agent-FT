@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 from src.video_agent.core import gates_cards
-from src.video_agent.core import gates_inputs
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import workflow_runtime
 from src.video_agent.skill_runtime import registry
@@ -377,37 +376,10 @@ async def gate_precheck(
     state = state_manager.state_dict
     msg = str(user_message or "")
     table = stage_table(skill)
-    # 原料闸：analysis 在表且未完成时才判定
+    # 原料闸：analysis 在表且未完成时才判定（C1b 裁决 2026-08-31：
+    # v3 requires_inputs 声明轴退役，原料闸回落 v2 script_required 单路）
     if any(s.key == "analysis" and not stage_done("analysis", state, skill) for s in table):
-        reqs = registry.skill_requires_inputs(skill)
-        if reqs:
-            # v3 原料闸：requires_inputs 声明优先，任一 required
-            # 项客观未满足即拦截；与 v2 script_required 两路不叠加（声明了
-            # v3 清单就不再重复走旧判定，未声明才回落下方旧分支）。
-            missing = gates_inputs.missing_required_inputs(state, skill)
-            if confirmation_category_waived(state, "script"):
-                missing = [m for m in missing if m["type"] != "script"]
-            waived_now = False
-            if any(m["type"] == "script" for m in missing):
-                if prompt_gates.script_waive_intent(msg):
-                    waive_confirmation_category(state_manager, "script")
-                    waived_now = True
-                    missing = [m for m in missing if m["type"] != "script"]
-                elif prompt_gates.script_upload_ack_intent(msg):
-                    return OrchestratorOutcome(
-                        "script_ack", message=prompt_gates.SCRIPT_UPLOAD_ACK)
-            if missing:
-                if all(m["type"] == "script" for m in missing):
-                    card_msg, card_opts = prompt_gates.script_remind_card()
-                else:
-                    # 非剧本类/混合缺失：通用提醒文案（无豁免选项）
-                    card_msg = gates_inputs.input_remind_message(missing)
-                    card_opts = []
-                return OrchestratorOutcome(
-                    "script_pending", message=card_msg, options=card_opts)
-            if waived_now:
-                return None  # 本轮豁免：交接模型循环（与 v2 豁免短路同语义）
-        elif (
+        if (
             registry.script_required_active(skill)
             and not prompt_gates.script_present(state)
             and not confirmation_category_waived(state, "script")

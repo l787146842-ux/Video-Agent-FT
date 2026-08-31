@@ -101,15 +101,6 @@ def test_validate_write_prompt_en_categories_exception_degraded(monkeypatch):
     assert ok is True
 
 
-def test_validate_write_declares_feature_exception_degraded(monkeypatch):
-    """音色声明轴读取抛异常：吞掉回落状态探测路径"""
-    monkeypatch.setattr(pg.registry, "fallback_skill_from_state", lambda *a, **k: "demo_skill")
-    monkeypatch.setattr(pg.registry, "skill_declares_feature",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-    ok, hard, soft = pg.validate_prompt_write(_PROMPT_OK, "shot", {})
-    assert ok is True
-
-
 # ---------- ⑦ 结构/流程辅助函数 ----------
 
 def test_present_structure_kinds_full():

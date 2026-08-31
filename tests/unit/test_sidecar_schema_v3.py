@@ -74,30 +74,18 @@ def test_v3_unknown_kind_is_warn_not_error(data):
     assert warnings and any("降级" in w and "pipeline" in w for w in warnings)
 
 
-# ---------- ① v3 新键：requires_inputs ----------
+# ---------- ① v3 新键：requires_inputs（C1b 裁决 2026-08-31 退役） ----------
 
 
-@pytest.mark.parametrize("data", [
-    {"requires_inputs": [{"type": "script"}]},  # required 缺省 true
-    {"requires_inputs": [
-        {"type": "music", "required": False, "hint": "请上传背景音乐文件"}]},
-    {"requires_inputs": []},
-])
-def test_v3_requires_inputs_valid(data):
-    assert ms.validate_manifest_data(data) == []
-
-
-@pytest.mark.parametrize("data,keyword", [
-    ({"requires_inputs": {"type": "script"}}, "数组"),
-    ({"requires_inputs": ["script"]}, "对象"),
-    ({"requires_inputs": [{"type": "subtitle"}]}, "必须是 script/music/video/image/doc"),
-    ({"requires_inputs": [{"required": True}]}, "必须是 script/music/video/image/doc"),
-    ({"requires_inputs": [{"type": "script", "required": "yes"}]}, "布尔值"),
-    ({"requires_inputs": [{"type": "script", "hint": ""}]}, "非空字符串"),
-])
-def test_v3_requires_inputs_illegal(data, keyword):
-    issues = ms.validate_manifest_data(data)
-    assert issues and any(keyword in i for i in issues)
+def test_v3_requires_inputs_declaration_ignored():
+    """C1b 裁决 2026-08-31：requires_inputs 原料声明轴退役——声明不再校验（忽略不报错）。"""
+    for data in (
+        {"requires_inputs": [{"type": "script"}]},
+        {"requires_inputs": {"type": "script"}},
+        {"requires_inputs": ["script"]},
+        {"requires_inputs": [{"type": "subtitle"}]},
+    ):
+        assert ms.validate_manifest_data(data) == []
 
 
 # ---------- ① v3 新键：language ----------

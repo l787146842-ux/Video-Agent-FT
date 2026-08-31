@@ -23,7 +23,6 @@ from src.video_agent.skill_runtime.manifest_schema import (
     KIND_VALUES,
     LANGUAGE_EN_CATEGORY_VALUES,
     LANGUAGE_VALUES,
-    REQUIRES_INPUT_TYPES,
     split_issue_warnings,
 )
 
@@ -592,59 +591,11 @@ def script_required_active(skill_name: str) -> bool:
     return bool(((manifest or {}).get("flow") or {}).get("script_required"))
 
 
-# ---------- v3 声明读取 API（requires_inputs/kind/language 消费） ----------
+# ---------- v3 声明读取 API（kind/language 消费） ----------
 # 与 spec_wizard_active/script_required_active 同模块属性访问模式（调用方经
-# registry.<fn> 引用，测试 patch 目标稳定）；未声明 = 零预设（空表/空串/空 dict），
-# 非法声明项 fail-closed 丢弃（注册期告警在 validate_manifest，消费侧不二次报错）。
-
-
-def skill_requires_inputs(skill_name: str) -> List[Dict[str, Any]]:
-    """manifest requires_inputs 声明（v3）：规范化后的原料需求清单。
-
-    每项 {type, required, hint, features}；required 缺省 true；白名单外
-    type/非法项丢弃；features = 声明轴标记清单（如 voice_reference，
-    任务#8 ④，缺省空表）。未声明返回空表（回落旧 script_required
-    判定，两路语义不叠加）。"""
-    manifest = skill_manifest_of(skill_name)
-    raw = (manifest or {}).get("requires_inputs")
-    if not isinstance(raw, list):
-        return []
-    out: List[Dict[str, Any]] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        t = item.get("type")
-        if not isinstance(t, str) or t not in REQUIRES_INPUT_TYPES:
-            continue
-        req = item.get("required")
-        hint = item.get("hint")
-        feats_raw = item.get("features")
-        if not isinstance(feats_raw, list):
-            feats_raw = []
-        feats = [
-            str(x).strip() for x in feats_raw
-            if isinstance(x, str) and x.strip()
-        ]
-        out.append({
-            "type": t,
-            "required": True if req is None else bool(req),
-            "hint": str(hint or "").strip(),
-            "features": feats,
-        })
-    return out
-
-
-def skill_declares_feature(skill_name: str, feature: str) -> bool:
-    """Skill 的 requires_inputs 是否声明某声明轴标记（features 维度）。
-
-    任务#8 ④：闸机软提醒跟随声明（如 voice_reference 音色参考轴），
-    未声明返回 False（零预设，消费端自行决定是否回落状态探测）。"""
-    if not skill_name or not feature:
-        return False
-    return any(
-        feature in (item.get("features") or [])
-        for item in skill_requires_inputs(skill_name)
-    )
+# registry.<fn> 引用，测试 patch 目标稳定）；未声明 = 零预设（空串/空 dict）。
+# （C1b 裁决 2026-08-31：requires_inputs 原料声明轴退役，skill_requires_inputs/
+# skill_declares_feature 同批删除；原料闸回落 v2 script_required 单路。）
 
 
 def skill_kind(skill_name: str) -> str:
