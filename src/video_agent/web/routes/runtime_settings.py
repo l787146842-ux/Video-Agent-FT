@@ -11,6 +11,7 @@
 - execution_preference：执行偏好三档（管花钱生成是否先弹确认卡；
   2026-08-30 用户裁决，Skill 系统修复批 B）；
 - max_shot_duration：Agent 自拆分镜的单镜最大时长（秒）。
+- max_steps：Agent 多步循环上限（Q3 裁决 2026-09-01：循环每步实时读取，热调即刻生效）。
 """
 import json
 from typing import Any, Dict, List, Optional
@@ -21,6 +22,7 @@ from pydantic import BaseModel
 
 from src.video_agent.config import (
     EXECUTION_PREFERENCE_VALUES,
+    MAX_STEPS_RANGE,
     normalize_exec_pref,
     settings,
 )
@@ -38,6 +40,9 @@ _STR_KEYS = (
     "default_image_resolution", "default_video_resolution",
 )
 _INT_KEYS = ("max_shot_duration",)
+# Agent 多步循环上限（Q3）：独立钳制区间（config.MAX_STEPS_RANGE 单一事实源），
+# agent_loop 每步实时读 settings.max_steps，热更新后运行中任务即刻生效
+_MAX_STEPS_KEYS = ("max_steps",)
 # Skill 启停开关（批5/对齐 Flova 卡片开关）：存被停用 Skill 的 slug 列表；
 # 目录过滤/ list_skills 同源消费（宪法 §六：可调参数归 config.settings，
 # 写入点归本既有热更新通道，不另开旁路存储）
@@ -63,6 +68,8 @@ class RuntimeSettingsUpdate(BaseModel):
     default_image_resolution: Optional[str] = None
     default_video_resolution: Optional[str] = None
     max_shot_duration: Optional[int] = None
+    # Agent 多步循环上限（Q3；非法/超界值钳制后生效）
+    max_steps: Optional[int] = None
     # 被停用的 Skill slug 列表（批5；空列表 = 全部启用）
     skills_disabled: Optional[List[str]] = None
     # 剧本正文注入上限（字符）
@@ -92,6 +99,7 @@ class RuntimeSettings(BaseModel):
     default_image_resolution: str
     default_video_resolution: str
     max_shot_duration: int
+    max_steps: int
     skills_disabled: List[str]
     script_inject_limit: int
     execution_preference: str
@@ -126,6 +134,7 @@ def _current_dict() -> Dict[str, Any]:
         "default_image_resolution": settings.default_image_resolution,
         "default_video_resolution": settings.default_video_resolution,
         "max_shot_duration": settings.max_shot_duration,
+        "max_steps": settings.max_steps,
         "skills_disabled": list(settings.skills_disabled or []),
         "script_inject_limit": settings.script_inject_limit,
         # 执行偏好恒下发（清洗后口径，脏值自动回落默认档）
@@ -152,6 +161,12 @@ async def put_runtime_settings(body: RuntimeSettingsUpdate):
         elif key in _INT_KEYS:
             try:
                 value = max(1, min(int(value), 60))
+            except (TypeError, ValueError):
+                continue
+        elif key in _MAX_STEPS_KEYS:
+            try:
+                lo, hi = MAX_STEPS_RANGE
+                value = max(lo, min(int(value), hi))
             except (TypeError, ValueError):
                 continue
         elif key in _CHAR_LIMIT_KEYS:
@@ -221,6 +236,13 @@ def load_runtime_settings() -> None:
             if key in data:
                 try:
                     object.__setattr__(settings, key, max(1, min(int(data[key]), 60)))
+                except (TypeError, ValueError) as _e:
+                    logger.debug("[runtime_settings] 忽略异常: {}", _e)
+        for key in _MAX_STEPS_KEYS:
+            if key in data:
+                try:
+                    lo, hi = MAX_STEPS_RANGE
+                    object.__setattr__(settings, key, max(lo, min(int(data[key]), hi)))
                 except (TypeError, ValueError) as _e:
                     logger.debug("[runtime_settings] 忽略异常: {}", _e)
         for key in _CHAR_LIMIT_KEYS:

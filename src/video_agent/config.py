@@ -37,6 +37,11 @@ def normalize_exec_pref(value) -> str:
     return v if v in EXECUTION_PREFERENCE_VALUES else EXECUTION_PREFERENCE_DEFAULT
 
 
+# Agent 多步上限钳制区间（Q3 裁决 2026-09-01：运行时可热调）：
+# 单一事实源——运行时设置热更新通道与 agent_loop 实时读取同引用。
+MAX_STEPS_RANGE = (1, 30)
+
+
 def _env_int(key: str, default: int) -> int:
     try:
         return int(os.getenv(key, str(default)))
@@ -69,7 +74,8 @@ class Settings:
     # 触发 loguru rotation rename 失败（WinError 32）
     log_file_enabled: bool = field(default_factory=lambda: _env_bool("LOG_FILE_ENABLED", True))
 
-    # Agent 多步循环
+    # Agent 多步循环（Q3：运行时热更新经 web/runtime_settings 通道，
+    # agent_loop 每步实时读取，不再 import 期冻结）
     max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 6))
     # 只读受限并行（批 7 · L3，默认开）：仅连续 risk=low 只读工具段在闸机链
     # 按序裁决全部放行后于窗口内并行执行，结果按原序回填；写类/中高危仍串行。

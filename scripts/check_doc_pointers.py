@@ -17,6 +17,11 @@
    路径 + 不变量符号存在性（锚点登记表 ANCHORS 在脚本内，人工审定的不变量
    登记表，非全文指针扫描）；锚点文件不可解析按漂移处理（不静默放行）。
    增删宪法承重条款时必须同批更新 ANCHORS（门禁冻结见 GOVERNANCE §13.14(f)）。
+6. 治理文档脚本/夹具指针防腐（Q27 裁决 2026-09-01）：治理文档提及的
+   scripts/check_*.py 与 tests/fixtures/* 必须存在（防 C1a 类删除后
+   表述源忘同步再发生）；退役留痕表述用删除线段（~~...~~）标注豁免。
+7. 闸机基线数字防腐（Q27）：GOVERNANCE §13.14(f) 冻结基线表的数字必须与
+core/gate_registry.GATE_RULES / scripts/acceptance.GATES 实际长度一致。
 
 退役条件（§13.14(c)，两源条件取并集）：指针/锚点漂移连续两季零检出、
 ADR 双边注记、文件地图、docs 活文档模块路径与修宪同批更新锚点内化为开发
@@ -42,7 +47,7 @@ PKG = ROOT / "src" / "video_agent"
 ANCHORS = [
     # Rule 1：Planner 唯一入口
     ("Rule1", "src/video_agent/core/planner.py", "Planner"),
-    # Rule 2：节点内有界模型循环唯一实现 + MAX_STEPS 读 settings
+    # Rule 2：节点内有界模型循环唯一实现 + 多步上限每步实时读 settings（Q3）
     ("Rule2", "src/video_agent/core/agent_loop.py", "run_agent_loop"),
     # Rule 2：Workflow Runtime 账本+裁判数据层（主体回归，ADR-0004）
     ("Rule2", "src/video_agent/core/workflow_runtime.py", "WorkflowRuntime"),
@@ -91,6 +96,21 @@ PATH_REF = re.compile(
 DOC_FULL_REF = re.compile(r"src/video_agent(?:/[A-Za-z0-9_]+)+\.py\b")
 # 删除线段（~~...~~）：已退役标注，剥除后不送检（防误伤历史表述）
 STRIKE = re.compile(r"~~.*?~~", re.S)
+
+# Q27 防腐（裁决 2026-09-01）：治理文档活清单（交接/历史档案类不受检）
+GOV_DOCS = (
+    "docs/GOVERNANCE.md",
+    "ARCHITECTURE_RULES.md",
+    "AGENTS.md",
+    "docs/脚手架折旧规程.md",
+    "docs/未清偿债务清单.md",
+)
+# 治理文档提及的闸机脚本/夹具指针（夹具要求带名，裸目录引用不受检）
+GOV_SCRIPT_REF = re.compile(
+    r"scripts/check_[A-Za-z0-9_]+\.py|tests/fixtures/[A-Za-z0-9_.][A-Za-z0-9_./]*")
+# §13.14(f) 冻结基线表行（只认表格行，历史注记散文不受检）
+BASELINE_RUNTIME_ROW = re.compile(r"\|\s*运行时闸机规则\s*\|\s*(\d+)\s*条")
+BASELINE_GATES_ROW = re.compile(r"\|\s*验收门禁脚本\s*\|\s*(\d+)\s*项")
 
 
 def check_adr_bilateral() -> list:
@@ -245,6 +265,60 @@ def check_anchors() -> list:
     return hits
 
 
+def check_gov_script_pointers() -> list:
+    """Q27：治理文档提及的闸机脚本/夹具必须存在（退役表述用删除线段豁免）。"""
+    hits = []
+    for rel in GOV_DOCS:
+        p = ROOT / rel
+        if not p.exists():
+            continue
+        for i, line in enumerate(p.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+            clean = STRIKE.sub("", line)
+            for m in GOV_SCRIPT_REF.finditer(clean):
+                ref = m.group(0).rstrip("/")
+                if not (ROOT / ref).exists():
+                    hits.append(
+                        f"{rel}:{i}: governance doc points to missing "
+                        f"script/fixture: {m.group(0)}")
+    return hits
+
+
+def check_gate_baseline_numbers() -> list:
+    """Q27：GOVERNANCE §13.14(f) 基线数字必须与注册表/门禁表实际长度一致。
+
+    删/增闸机同批改基线是登记义务；本断言防忘改（数字漂移即红）。
+    导入失败（注册表不可解析）按漂移处理，不静默放行；
+    GOVERNANCE 文件缺失时跳过（真实仓缺失已由 Ch13 锚点断言报漂移）。
+    """
+    gov = ROOT / "docs" / "GOVERNANCE.md"
+    if not gov.exists():
+        return []
+    text = gov.read_text(encoding="utf-8", errors="ignore")
+    rm = BASELINE_RUNTIME_ROW.search(text)
+    am = BASELINE_GATES_ROW.search(text)
+    if not rm or not am:
+        return ["GOVERNANCE §13.14(f) baseline table rows not found "
+                "(gate freeze baseline must stay registered)"]
+    hits = []
+    try:
+        sys.path.insert(0, str(ROOT))
+        from src.video_agent.core.gate_registry import GATE_RULES
+        import acceptance as _acc
+        actual_rules = len(GATE_RULES)
+        actual_gates = len(_acc.GATES)
+    except Exception as e:
+        return [f"gate baseline sources not importable (no silent pass): {e}"]
+    if int(rm.group(1)) != actual_rules:
+        hits.append(
+            f"GOVERNANCE §13.14(f) runtime-gate baseline {rm.group(1)} != "
+            f"gate_registry.GATE_RULES actual {actual_rules}")
+    if int(am.group(1)) != actual_gates:
+        hits.append(
+            f"GOVERNANCE §13.14(f) acceptance-gate baseline {am.group(1)} != "
+            f"acceptance.GATES actual {actual_gates}")
+    return hits
+
+
 def main() -> int:
     fails = []
     fails += [f"[adr-bilateral] {h}" for h in check_adr_bilateral()]
@@ -252,6 +326,8 @@ def main() -> int:
     fails += [f"[code-pointer] {h}" for h in check_code_pointers()]
     fails += [f"[docs-pointer] {h}" for h in check_docs_pointers()]
     fails += [f"[anchor] {h}" for h in check_anchors()]
+    fails += [f"[gov-script-pointer] {h}" for h in check_gov_script_pointers()]
+    fails += [f"[gate-baseline] {h}" for h in check_gate_baseline_numbers()]
     if fails:
         for h in fails[:30]:
             print(f"[ref_integrity]   {h}")
@@ -262,12 +338,16 @@ def main() -> int:
             "docs/*.md module pointers must exist; "
             "retired orchestration symbols must not reappear in prose; "
             "constitutional anchors (paths + invariant symbols) must be "
-            "updated in the same batch as the constitutional change."
+            "updated in the same batch as the constitutional change; "
+            "governance docs must not point to missing scripts/fixtures "
+            "(retired mentions use ~~strike~~); §13.14(f) baseline numbers "
+            "must match gate_registry/acceptance actual lengths."
         )
         return 1
     print(
         "[ref_integrity] PASS: ADR notes bilateral; arch file map valid; "
-        "code/docs pointers clean; "
+        "code/docs pointers clean; governance script/fixture pointers valid; "
+        "gate baseline numbers consistent; "
         f"{len(ANCHORS)} constitutional anchors intact"
     )
     return 0

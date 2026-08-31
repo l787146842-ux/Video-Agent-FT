@@ -49,6 +49,7 @@ const SETTINGS = {
   default_image_resolution: '2K',
   default_video_resolution: '720p',
   max_shot_duration: 5,
+  max_steps: 6,
   skills_disabled: [],
   script_inject_limit: 20000,
   execution_preference: 'confirm_before_gen',
@@ -56,6 +57,7 @@ const SETTINGS = {
 };
 
 const PREF_ARIA = '执行偏好（花钱生成是否先弹确认卡）';
+const STEPS_ARIA = 'Agent 多步循环最大步数';
 
 function prefSelect(container: HTMLElement): HTMLSelectElement {
   const el = container.querySelector<HTMLSelectElement>(`select[aria-label="${PREF_ARIA}"]`);
@@ -108,5 +110,30 @@ describe('GlobalSettingsView 执行偏好三档（批 B）', () => {
     // 失败后回滚并提示
     await waitFor(() => expect(sel.value).toBe('generate_directly'));
     expect(toastMock).toHaveBeenCalled();
+  });
+});
+
+describe('GlobalSettingsView 最大步数（Q3）', () => {
+  function stepsInput(container: HTMLElement): HTMLInputElement {
+    const el = container.querySelector<HTMLInputElement>(`input[aria-label="${STEPS_ARIA}"]`);
+    expect(el, '最大步数输入框应渲染').toBeTruthy();
+    return el!;
+  }
+
+  it('渲染最大步数输入框：当前值随设置下发', async () => {
+    const { container } = render(() => <GlobalSettingsView />);
+    const inp = stepsInput(container);
+    await waitFor(() => expect(inp.value).toBe('6'));
+  });
+
+  it('改动发 PUT max_steps（钳制 1-30）', async () => {
+    const { container } = render(() => <GlobalSettingsView />);
+    const inp = stepsInput(container);
+    await waitFor(() => expect(inp.value).toBe('6'));
+    fireEvent.change(inp, { target: { value: '12' } });
+    expect(agentMock.setRuntimeSettings).toHaveBeenCalledWith({ max_steps: 12 });
+    // 超界值钳制回 1-30 区间（与后端 MAX_STEPS_RANGE 同口径）
+    fireEvent.change(inp, { target: { value: '99' } });
+    expect(agentMock.setRuntimeSettings).toHaveBeenCalledWith({ max_steps: 30 });
   });
 });

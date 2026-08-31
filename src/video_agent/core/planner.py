@@ -5,7 +5,7 @@ Planner — 对话式 Agent 的唯一入口（Rule1）。
 - Planner 直接持有 LLM Adapter 引用（Rule6: 外部调用走 Adapter），不经过 Tool Manager
 - Tool Manager 只管理"业务 Tool"（故事板操作、生图、文档等）
 - 动作通道唯一 = FC 工具调用
-- 多步循环（MAX_STEPS），LLM 可请求 continue 推进后续轮次
+- 多步循环（上限每步实时读 settings，Q3），LLM 可请求 continue 推进后续轮次
 - 流式通过 AsyncGenerator 穿透（SSE）
 
 单轮 llm_call/FC 响应消费/回喂治理/上下文预算装配切出
@@ -28,7 +28,7 @@ from src.video_agent.tools.manager import ToolManager
 # MCP 两段式注入段 2：未启用 MCP 工具 schema 不进 FC payload
 from src.video_agent.tools.mcp import catalog as mcp_catalog
 from src.video_agent.utils.prompts import load_prompt, load_prompt_section, render_prompt
-from src.video_agent.core.agent_loop import MAX_STEPS, run_agent_loop
+from src.video_agent.core.agent_loop import current_max_steps, run_agent_loop
 from src.video_agent.core.fc_tool_runner import (
     FCExecuteResult,
     FCToolRunner,
@@ -471,7 +471,6 @@ class Planner:
             context_builder=context_builder,
             executor=executor,
             history=context.history,
-            max_steps=MAX_STEPS,
             stream_hook=stream_hook,
             on_event=on_event,
             prelude_notes=context.prelude_notes,
@@ -536,7 +535,7 @@ class Planner:
                 # 队列级 status 走 status_event key+params；payload 携带完整
                 # status 事件，chat_service 透传
                 step = event.get("step", 1)
-                max_steps = event.get("max_steps", MAX_STEPS)
+                max_steps = event.get("max_steps") or current_max_steps()
                 if step > 1:
                     sev = status_event(
                         "agent.roundStart",

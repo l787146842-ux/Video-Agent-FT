@@ -49,6 +49,13 @@ export default function GlobalSettingsView() {
     set({ max_shot_duration: n });
   }
 
+  /** Agent 多步循环上限（Q3）：与后端 MAX_STEPS_RANGE 对齐夹取 1-30；
+   * 改动即时热生效（运行中任务每步实时读，调高可继续推进） */
+  function setMaxSteps(v: string) {
+    const n = Math.max(1, Math.min(30, parseInt(v, 10) || 6));
+    set({ max_steps: n });
+  }
+
   return (
     <div class="global-settings-view">
       <div class="gs-panel">
@@ -133,6 +140,26 @@ export default function GlobalSettingsView() {
               </ParamGroup>
             </div>
             <p class="gs-hint">Agent 自己拆分镜时单个分镜时长不超过该值；新建分镜草稿默认按该时长填写。</p>
+          </section>
+
+          {/* Agent 循环上限（Q3：每步实时生效，可随时调整） */}
+          <section class="gs-section">
+            <h3>Agent 循环上限</h3>
+            <div class="gs-row">
+              <ParamGroup label="最大步数:">
+                <input
+                  class="custom-ratio-input"
+                  type="number"
+                  min="1"
+                  max="30"
+                  aria-label="Agent 多步循环最大步数"
+                  value={String(gs()!.max_steps)}
+                  onChange={(e) => setMaxSteps(e.currentTarget.value)}
+                />
+                <span class="param-unit">轮</span>
+              </ParamGroup>
+            </div>
+            <p class="gs-hint">Agent 单次任务最多推进的轮数；改动即时生效，运行中的任务调高后可继续推进，达上限会给出「继续完成」按钮。</p>
           </section>
 
           {/* 聊天框出图开关 */}

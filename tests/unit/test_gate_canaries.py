@@ -276,6 +276,40 @@ def test_canary_ref_integrity_anchor_intact_passes(tmp_path, monkeypatch):
     assert gate.main() == 0
 
 
+def test_canary_gov_script_pointer_missing_fails(tmp_path, monkeypatch):
+    """Q27 治理防腐：治理文档提及的闸机脚本已删 → 漂移命中。"""
+    gate, pkg = _doc_pointers_scaffold(tmp_path, monkeypatch)
+    (pkg / "a.py").write_text("# plain\nx = 1\n", encoding="utf-8")
+    (tmp_path / "docs" / "GOVERNANCE.md").write_text(
+        "| 1 | 闸机 | 实现参照 scripts/check_ghost_gate.py |\n",
+        encoding="utf-8")
+    assert gate.main() == 1
+
+
+def test_canary_gate_baseline_drift_fails(tmp_path, monkeypatch):
+    """Q27 基线数字防腐：§13.14(f) 数字与注册表实际长度不符 → 漂移命中。"""
+    gate, pkg = _doc_pointers_scaffold(tmp_path, monkeypatch)
+    (pkg / "a.py").write_text("# plain\nx = 1\n", encoding="utf-8")
+    (tmp_path / "docs" / "GOVERNANCE.md").write_text(
+        "| 运行时闸机规则 | 99 条（虚构漂移） | x |\n"
+        "| 验收门禁脚本 | 99 项 | x |\n",
+        encoding="utf-8")
+    assert gate.main() == 1
+
+
+def test_canary_gate_baseline_consistent_passes(tmp_path, monkeypatch):
+    """Q27 干净侧：基线数字与实测一致不反噬。"""
+    from src.video_agent.core.gate_registry import GATE_RULES
+    from scripts.acceptance import GATES
+    gate, pkg = _doc_pointers_scaffold(tmp_path, monkeypatch)
+    (pkg / "a.py").write_text("# plain\nx = 1\n", encoding="utf-8")
+    (tmp_path / "docs" / "GOVERNANCE.md").write_text(
+        f"| 运行时闸机规则 | {len(GATE_RULES)} 条（全 platform） | x |\n"
+        f"| 验收门禁脚本 | {len(GATES)} 项 | x |\n",
+        encoding="utf-8")
+    assert gate.main() == 0
+
+
 # ---------- 11) scaffold_registry（含元 canary：字面基线 ≠ 恒真） ----------
 
 def test_canary_scaffold_baseline_literal_matches_reality():

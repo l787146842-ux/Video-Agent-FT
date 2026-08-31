@@ -17,7 +17,7 @@ import time
 
 from loguru import logger
 
-from src.video_agent.config import settings
+from src.video_agent.config import MAX_STEPS_RANGE, settings
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
     SSE_STATUS,
@@ -74,7 +74,20 @@ from src.video_agent.skill_runtime.progress import (
 # 执行器已下沉 core：顶层导入替代旧 TYPE_CHECKING 下的 web 延迟引用
 from src.video_agent.core.action_executor import StateOperationExecutor
 
-MAX_STEPS = settings.max_steps
+
+def current_max_steps() -> int:
+    """多步上限实时读取口（Q3 裁决 2026-09-01：不再 import 期冻结）。
+
+    循环每步实时调用，前端全局设置页经 runtime_settings 通道热更新后
+    即刻生效（运行中任务调高上限可继续推进）；脏值/非法值钳制回落。
+    显式传入 max_steps 的调用方（测试/特殊编排）优先于本实时值。
+    """
+    lo, hi = MAX_STEPS_RANGE
+    try:
+        value = int(settings.max_steps)
+    except (TypeError, ValueError):
+        value = 6
+    return max(lo, min(value, hi))
 
 # llm_call(system_prompt, messages, stream_hook?) -> (content, finish_reason, fc_applied[, plan_ms])
 # fc_applied: FC 路径已执行的 tool 数量（可选，默认 0）
@@ -150,7 +163,7 @@ async def run_agent_loop(
     context_builder: ContextBuilder,
     executor: "StateOperationExecutor",
     history: List[Dict[str, Any]],
-    max_steps: int = MAX_STEPS,
+    max_steps: Optional[int] = None,
     on_event=None,
     stream_hook: Optional[Callable[[str], Awaitable[None]]] = None,
     prelude_notes: Optional[List[tuple]] = None,
@@ -163,6 +176,7 @@ async def run_agent_loop(
     user_text 可以是纯文本 str，也可以是多模态 content parts 列表（含 image_url）。
     stop_scope（端到端中断协议）：协作式停止标志作用域
     （SSE 直连="chat"；任务式传输=task_id），每步检查点读取，命中即干净收尾。
+    max_steps（Q3）：None = 每步实时读 settings（前端可热调）；显式值钉死口径（测试）。
     """
 
     async def emit(event: Dict[str, Any]) -> None:
@@ -176,6 +190,8 @@ async def run_agent_loop(
                 logger.debug("[agent_loop] 忽略异常: {}", _e)
 
     result = AgentLoopResult()
+    # Q3：显式传参钉死口径（测试/特殊编排）；None = 循环内每步实时读 settings
+    explicit_max_steps = max_steps
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
 
     # 协作式停止：循环开始无条件清除残留标志（上一任务被停止后
@@ -290,7 +306,15 @@ async def run_agent_loop(
                 )
                 raise
 
-        for step in range(1, max_steps + 1):
+        step = 0
+        while True:
+            # Q3：多步上限每步实时读 settings（前端全局设置页热更新即刻生效，
+            # 运行中任务调高上限可继续推进）；显式传参钉死口径优先。
+            max_steps = explicit_max_steps if explicit_max_steps is not None else current_max_steps()
+            step += 1
+            if step > max_steps:
+                # 防御性出口：正常路径在步内 break（达上限时已发警告与「继续完成」按钮）
+                break
             result.steps = step
             tracer.start_step()
             # 检查点 1（模型调用前）：上轮工具批已完成、本轮思考未开始，

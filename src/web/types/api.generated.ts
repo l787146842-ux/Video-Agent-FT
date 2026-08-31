@@ -314,6 +314,7 @@ export interface RuntimeSettings {
   default_image_resolution: string;
   default_video_resolution: string;
   max_shot_duration: number;
+  max_steps: number;
   skills_disabled: string[];
   script_inject_limit: number;
   execution_preference: string;
@@ -330,6 +331,7 @@ export interface RuntimeSettingsUpdate {
   default_image_resolution?: string | undefined;
   default_video_resolution?: string | undefined;
   max_shot_duration?: number | undefined;
+  max_steps?: number | undefined;
   skills_disabled?: string[] | undefined;
   script_inject_limit?: number | undefined;
   execution_preference?: string | undefined;
