@@ -3,8 +3,9 @@
 
 探针为报告性质（不进 acceptance GATES）；本测试钉死口径：
 ① 未声明/一致 → 空清单（不误报）；
-② custom_sections 落空 / 声明执行器无章节支撑 / schema 非法 → 命中；
-③ 存量 16 skill 实数据全绿（含试点 多人对话访谈 的音色设计声明）。
+② 声明执行器无章节支撑 / schema 非法 → 命中；
+③ 存量 16 skill 实数据全绿。
+（C1b 裁决 2026-08-31：custom_sections 探针随通道退役删除。）
 """
 import importlib.util
 from pathlib import Path
@@ -45,7 +46,6 @@ def test_probe_consistent_declaration_clean():
                 "2": ["video_assembler"],
             },
         },
-        "custom_sections": {"tone_design": "skill_section_run"},
     }
     # 僵尸键（stage_executors）声明仅产生 WARN 过渡告警，错误级为零；
     # 执行器章节支撑探针不误报（一致性语义不变）。
@@ -57,20 +57,7 @@ def test_probe_consistent_declaration_clean():
     assert any("stage_executors" in w for w in warnings)
 
 
-def test_probe_heading_style_section_no_false_positive():
-    """标题式文档：声明标识命中标题关键字解析链不误报。"""
-    content = "# 分镜设计\n镜头正文\n"
-    manifest = {"custom_sections": {"分镜设计": "skill_section_run"}}
-    assert scan_skills.manifest_consistency_issues("s", content, manifest) == []
-
-
 # ---------- ② 命中 ----------
-
-
-def test_probe_hits_unresolvable_custom_section():
-    manifest = {"custom_sections": {"不存在章节": "skill_section_run"}}
-    issues = scan_skills.manifest_consistency_issues("s", _DOC_FULL, manifest)
-    assert any("custom_sections 声明「不存在章节」" in i for i in issues)
 
 
 def test_probe_hits_executor_without_section_support():
@@ -89,13 +76,7 @@ def test_probe_hits_unknown_executor_and_reused_exempt():
     assert not any("document_write" in i or "read_skill" in i for i in issues)
 
 
-def test_probe_carries_schema_issues():
-    manifest = {"custom_sections": {"音色设计": "script_analyze"}}
-    issues = scan_skills.manifest_consistency_issues("s", _DOC_FULL, manifest)
-    assert any("custom_sections" in i for i in issues)
-
-
-# ---------- ③ 存量实数据全绿（含试点声明） ----------
+# ---------- ③ 存量实数据全绿 ----------
 
 
 def test_probe_real_skills_all_consistent():
@@ -113,18 +94,3 @@ def test_probe_real_skills_all_consistent():
         assert issues == [], f"Skill「{stem}」探针不一致: {issues}"
         total += 1
     assert total >= 16
-
-
-def test_probe_pilot_skill_custom_section_registered():
-    """试点 多人对话访谈：音色设计声明可解析 → skill_section_run 进注册清单。"""
-    from src.video_agent.skill_runtime import registry
-
-    registry.reset_registry()
-    try:
-        entry = registry.resolve_entry("多人对话访谈")
-        assert entry is not None
-        assert entry.custom_sections == {"音色设计": "skill_section_run"}
-        assert "skill_section_run" in entry.available_tools
-        assert "音色档案" in registry.tool_sections("多人对话访谈", "skill_section_run")
-    finally:
-        registry.reset_registry()

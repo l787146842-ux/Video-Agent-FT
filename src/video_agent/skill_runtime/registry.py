@@ -54,11 +54,6 @@ CAPABILITY_TOOL_STAGES: Dict[str, tuple] = {
     "video_assembler": ("assembly",),
 }
 
-# 自定义章节通道：frontmatter 顶层声明 custom_sections（章节标识→通道名），
-# 非管线类 Skill 不必套固定 7 章节模板也能声明自定义章节（
-# 仅作章节声明探针；不参与固定章节词汇表与漂移门禁口径）。
-CUSTOM_SECTION_EXECUTOR = "skill_section_run"
-
 # 大阶段展示标签（后端权威下发，随 trace 条目 stage 字段持久化；
 # 前端不再按工具名硬编码推断，工具改名不会导致卡片退化）
 STAGE_LABELS: Dict[str, str] = {
@@ -71,7 +66,6 @@ STAGE_LABELS: Dict[str, str] = {
     "video_assembler": "时间线组装",
     "image_generate": "生图",
     "generate_video": "视频生成",
-    "skill_section_run": "自定义章节执行",
 }
 
 
@@ -97,65 +91,16 @@ class SkillEntry:
         return frontmatter.load_manifest(self.slug)
 
     @property
-    def custom_sections(self) -> Dict[str, str]:
-        """frontmatter custom_sections 声明（活读）：章节标识 → 通用执行器名。
-
-        未声明 = 空 dict（回落现行为：只走固定章节词汇表）；
-        消费端 fail-closed：schema 未放行的形状（非对象/空键/白名单外
-        执行器）整体忽略，非法声明不产生通道（注册期 fail-hard 拒注册，
-        本清洗只兜注册后 frontmatter 被改坏的活读场景）。
-        """
-        raw = (self.manifest or {}).get("custom_sections")
-        if not isinstance(raw, dict):
-            return {}
-        return {
-            str(k): str(v) for k, v in raw.items()
-            if isinstance(k, str) and k.strip() and v == CUSTOM_SECTION_EXECUTOR
-        }
-
-    def custom_section_text(self, section: str) -> str:
-        """自定义章节标识 → 章节原文；未解析返回空串。
-
-        解析链与 skill_section_run 同源（stage 键 → 章节 tag 映射 →
-        标题关键字 → 任意 <tag> 直取），保证声明可用性预检与运行期
-        注入同口径，不出现「注册了却注入不到」的半死通道。
-        """
-        sec = (section or "").strip()
-        if not sec:
-            return ""
-        if sec in self.sections:
-            return self.sections[sec]
-        # 宪法铁律：skill_runtime 不 import web 层，经 skill_docs 端口访问
-        sd = ports.skill_docs_port()
-
-        low = sec.lower()
-        for mapper in (sd.SECTION_TAG_STAGES.get(low, ""), sd._stage_from_heading(sec)):
-            stages = mapper if isinstance(mapper, tuple) else (mapper,)
-            for s in stages:
-                if s and s in self.sections:
-                    return self.sections[s]
-        m = re.search(
-            rf"<{re.escape(low)}>(.*?)</{re.escape(low)}>",
-            self.content or "", re.S | re.I)
-        return m.group(1).strip() if m else ""
-
-    @property
     def available_tools(self) -> List[str]:
         """该 Skill 的管线能力声明清单（对应章节非空才成立）。
-
+    
         名单是阶段裁剪/音频闸/lint 的客观探针（非已注册工具）。
-        声明 custom_sections 且任一标识可解析出非空章节时，
-        追加自定义章节通道标记。
+        （C1b 裁决 2026-08-31：custom_sections/skill_section_run 通道退役。）
         """
         tools = [t for t in PIPELINE_CAPABILITY_TOOLS if self.section_for(t)]
-        if self.custom_sections and self.section_for(CUSTOM_SECTION_EXECUTOR):
-            tools.append(CUSTOM_SECTION_EXECUTOR)
         return tools
-
+    
     def section_for(self, tool: str) -> str:
-        if tool == CUSTOM_SECTION_EXECUTOR:
-            parts = [self.custom_section_text(k) for k in self.custom_sections]
-            return "\n\n".join(p for p in parts if p and p.strip()).strip()
         stages = CAPABILITY_TOOL_STAGES.get(tool) or ()
         parts = [self.sections.get(s, "") for s in stages]
         return "\n\n".join(p for p in parts if p and p.strip()).strip()

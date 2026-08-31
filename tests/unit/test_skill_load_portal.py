@@ -339,22 +339,7 @@ def portal_pack(tmp_path, monkeypatch):
     registry.reset_registry()
 
 
-async def test_skill_section_run_rejects_disabled(portal_pack, set_global_setting):
-    """skill_section_run 过门户：显式传参的停用项自定义章节正文不可读出，
-    拒载带「已停用」语义（非「无法定位」）；启用时正文可读（存量不变）。"""
-    from src.video_agent.tools.skill_tools import (
-        SkillSectionRunInput, SkillSectionRunTool,
-    )
-
-    tool = SkillSectionRunTool()
-    ok = await tool.aexecute(SkillSectionRunInput(section="tone_design", skill="章节测试包"))
-    assert ok.success and "音色档案正文探针" in ok.data["content"]
-    set_global_setting("skills_disabled", ["portal-pack"])
-    off = await tool.aexecute(SkillSectionRunInput(section="tone_design", skill="章节测试包"))
-    assert not off.success and "已停用" in off.error
-
-
-def test_owner_portal_deactivates_spec_wizard(portal_pack, set_global_setting):
+async def test_owner_portal_deactivates_spec_wizard(portal_pack, set_global_setting):
     """归属直读收口（gates_spec._current_skill_of / DocumentWriteTool 同源）：
     停用后当前归属为空，spec_wizard_active 随之失活；启用时声明生效。"""
     from src.video_agent.core import gates_spec

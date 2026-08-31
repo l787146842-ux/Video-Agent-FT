@@ -2,7 +2,7 @@
 """扫描 data/skills/<slug>/SKILL.md（单一包形态），输出每个 Skill 的结构摘要，
 用于诊断指令冲突。
 
-P3-15 新增：frontmatter 声明（含 custom_sections）vs 文档实际章节一致性探针
+P3-15 新增：frontmatter 声明 vs 文档实际章节一致性探针
 （诊断先行，报告性质，不进 acceptance GATES）。
 任务 #5：声明源改文档头部 frontmatter（扫描前先剥离）；
 --gate 追加 tools_required 存在性探针（任务#5 B-2）：声明工具不在
@@ -32,7 +32,6 @@ from src.video_agent.web.skill_docs import split_skill_sections, parse_pause_rul
 from src.video_agent.skill_runtime import frontmatter  # noqa: E402
 from src.video_agent.skill_runtime.registry import (  # noqa: E402
     CAPABILITY_TOOL_STAGES,
-    CUSTOM_SECTION_EXECUTOR,
     PIPELINE_CAPABILITY_TOOLS,
     SkillEntry,
 )
@@ -41,7 +40,6 @@ from src.video_agent.skill_runtime.registry import (  # noqa: E402
 REUSED_TOOL_NAMES = (
     "document_write", "read_uploaded_doc", "image_generate",
     "generate_video", "workflow_pause", "read_skill",
-    CUSTOM_SECTION_EXECUTOR,
 )
 
 # tools_required 存在性探针的「待补齐豁免」清单（任务#5 B-2）：
@@ -185,9 +183,9 @@ def manifest_consistency_issues(slug: str, content: str, manifest) -> list:
     未声明 manifest = 零声明回落合法（与 schema「未声明键合法」同构）。
     检测口径（报告性质，不做门禁）：
     ① schema 校验问题（与注册期 fail-closed 告警同源）；
-    ② custom_sections 声明标识在文档解析链（stage/tag/标题/任意 <tag>）落空；
     ③ flow 声明的执行器（stage_executors / stages.*.executors）无文档章节支撑
-       ——只查已知 Skill 执行器；复用工具与自定义通道豁免。
+       ——只查已知 Skill 执行器；复用工具豁免。
+    （C1b 裁决 2026-08-31：② custom_sections 探针随通道退役删除。）
     """
     issues = list(frontmatter.validate_manifest(manifest) or [])
     if not isinstance(manifest, dict):
@@ -195,14 +193,6 @@ def manifest_consistency_issues(slug: str, content: str, manifest) -> list:
     sections = split_skill_sections(content or "")
     entry = SkillEntry(
         slug=slug, name=slug, content=content or "", sections=sections)
-    # ② custom_sections 声明可用性（与 registry 注册预检同口径）
-    custom = manifest.get("custom_sections")
-    if isinstance(custom, dict):
-        for key in sorted(str(k) for k in custom):
-            if key.strip() and not entry.custom_section_text(key):
-                issues.append(
-                    f"custom_sections 声明「{key}」在文档无对应章节"
-                    f"（stage/tag/标题解析链全落空）")
     # ③ 声明执行器 × 文档章节支撑
     doc_tools = {
         t for t in PIPELINE_CAPABILITY_TOOLS
@@ -445,8 +435,7 @@ def run_gate() -> int:
 
 
 def _install_ports_once() -> None:
-    """报表入口独立运行时装配 core 端口（幂等）：custom_sections 探针
-    经 SkillEntry.custom_section_text 走 skill_docs 端口，脚本场景不在
+    """报表入口独立运行时装配 core 端口（幂等）；脚本场景不在
     web/app.py lifespan 与 tests/conftest.py 既有装配点覆盖内。"""
     from src.video_agent.web.port_wiring import install_core_ports
     install_core_ports()
@@ -487,7 +476,7 @@ def main() -> None:
         }
         hits = [k for k, v in probes.items() if v]
         lines.append(f"  探针命中: {hits or '无'}")
-        # P3-15：frontmatter 声明（含 custom_sections）vs 文档实际章节一致性
+        # P3-15：frontmatter 声明 vs 文档实际章节一致性
         if fm_err:
             consistency = [fm_err]
         else:

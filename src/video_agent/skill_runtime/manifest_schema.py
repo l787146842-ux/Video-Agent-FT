@@ -31,7 +31,6 @@ stages 双形态——对象 = stages.<规范键>.{done,skip,executors} 覆盖�
 executor?,deterministic?}，compile_definition 据此派生节点拓扑；
 未声明回落 default_v2_workflow，零回归） /
 布尔开关（spec_wizard/spec_gate/script_required）；顶层 pause.stage_pause；
-顶层 custom_sections（自定义章节→通用执行器通道）；
 顶层 version / tools_required / source /
 scripts（键声明静态校验，绝不自动执行）/ resources（目录包资源清单 +
 版本锁声明，批6：形状校验首版 WARN、下版升硬；记账面保留、执法退役，
@@ -118,11 +117,6 @@ _WORKFLOW_STAGE_DECL_KEYS = ("key", "title", "probe", "review", "executor", "det
 _DONE_PREFIX = "document:"
 _PAUSE_KEYS = ("stage_pause",)
 
-# custom_sections 声明的合法执行器白名单（自定义章节通道）：
-# 通道单一 = 无专属执行器的章节统一走通用章节执行器 skill_section_run；
-# 白名单即本常量，未来若增专属通用执行器，先在此登记再允许声明（fail-closed）。
-CUSTOM_SECTION_EXECUTORS = ("skill_section_run",)
-
 # ---------- v3 键白名单 ----------
 SCHEMA_VERSION = 3
 # kind 登记表：reference（低权重参考资料型）已随任务#8 裁决下架——
@@ -166,26 +160,6 @@ def _check_zombie_step_keys(flow: Dict[str, Any], issues: List[str]) -> None:
                 + f"flow.{zk} 是已废除 steps 通道的僵尸键（无消费者），"
                 "请从 frontmatter 移除（scripts/archive/migrate_zombie_step_keys.py）；"
                 "下一版本将升级为拒注册")
-
-
-def _check_custom_sections(raw: Any, issues: List[str]) -> None:
-    """custom_sections：章节标识 → 通用执行器名（顶层声明）。
-
-    未声明合法（回落现行为：固定章节词汇表）；已声明形状非法 fail-closed。
-    """
-    if raw is None:
-        return
-    if not isinstance(raw, dict):
-        issues.append("custom_sections 必须是对象（章节标识→执行器名）")
-        return
-    for k, v in raw.items():
-        if not isinstance(k, str) or not k.strip():
-            issues.append(f"custom_sections 章节标识 {k!r} 必须是非空字符串")
-            continue
-        if not isinstance(v, str) or v not in CUSTOM_SECTION_EXECUTORS:
-            issues.append(
-                f"custom_sections[{k}] 执行器必须是 "
-                f"{'/'.join(CUSTOM_SECTION_EXECUTORS)} 之一（实际 {v!r}）")
 
 
 def _check_version(raw: Any, issues: List[str]) -> None:
@@ -571,7 +545,6 @@ def validate_manifest_data(data: Any) -> List[str]:
         v = flow.get(bk)
         if v is not None and not isinstance(v, bool):
             issues.append(f"flow.{bk} 必须是布尔值")
-    _check_custom_sections(data.get("custom_sections"), issues)
     _check_version(data.get("version"), issues)
     _check_tools_required(data.get("tools_required"), issues)
     _check_source(data.get("source"), issues)
