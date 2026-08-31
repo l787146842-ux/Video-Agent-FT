@@ -31,6 +31,7 @@ from src.video_agent.core.fc_tool_runner import (
     strip_prior_feedback_images,
 )
 from src.video_agent.core.live_metrics import record_cache_usage, record_live_context
+from src.video_agent.core import round_compact
 from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS, status_event
 from src.video_agent.core.stop_signal import (
     STOP_PHASE_TOOL_EXECUTING,
@@ -44,6 +45,7 @@ from src.video_agent.core.token_budget import (
     truncate_messages,
 )
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.exceptions import GenerationError
 
 
 class TurnExecutor:
@@ -155,6 +157,30 @@ class TurnExecutor:
                 pass
         return full_messages
 
+    def _raise_if_context_overflow(
+        self, full_messages: List[Dict[str, Any]], max_tokens: int,
+    ) -> None:
+        """第 5 批（Q7）：超预算不裸放行——四级保险丝
+        （轮组压缩→轮组截断→状态降级→system 降级）用尽仍超预算时，
+        policy=error（默认）明确报错不发请求，替代旧版 warning 照发；
+        policy=warn 回拨旧行为（回滚开关）。"""
+        if str(settings.context_overflow_policy).strip().lower() != "error":
+            return
+        final = estimate_messages_tokens(full_messages)
+        if final <= max_tokens:
+            return
+        try:
+            (self._tracer or AgentTracer.get_instance()).record_context_event(
+                "overflow",
+                f"四级保险丝用尽仍超预算 {final}>{max_tokens} tokens，报错不发",
+            )
+        except Exception:
+            pass
+        raise GenerationError(
+            f"上下文经压缩/截断/降级后仍超模型窗口（{final} > {max_tokens} tokens）。"
+            "请清理草稿/规格文档、缩短上传素材，或换用更大窗口的模型后重试。"
+        )
+
     async def call_llm(self, system: str, messages: List[Dict[str, Any]]) -> ChatResponse:
         """
         LLM 调用（§2.2）：支持 function calling 的 adapter 传入 tool schemas；
@@ -174,8 +200,16 @@ class TurnExecutor:
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝，
         # 尾部状态消息的降级重建见 _degrade_state_tail
         max_tokens = int(self.context_window() * settings.token_budget_ratio)
+        # 第 5 批保险丝阶梯①（Q6/Q7）：截断前先对最旧轮组语义压缩
+        # （消灭有损截断主触发源；失败静默回落截断链，零干扰主链）
+        try:
+            await round_compact.compact_oldest_round(
+                full_messages, p.llm_adapter, max_tokens)
+        except Exception as e:
+            logger.debug(f"[TurnExecutor] 循环内压缩异常（忽略）: {e}")
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=p._system_degrader)
         full_messages = self._degrade_state_tail(full_messages, max_tokens, state_tail)
+        self._raise_if_context_overflow(full_messages, max_tokens)
         # 实时上下文度量：截断后的真实消息记入 live 注册表，
         # context-usage 接口推理中即可看到用量随轮次增长
         record_live_context(p.state_manager.active_project_id, full_messages)
@@ -215,8 +249,15 @@ class TurnExecutor:
             full_messages, int(settings.tool_result_digest_chars))
         # Token 预算截断：同 call_llm（含尾部状态消息降级重建）
         max_tokens = int(self.context_window() * settings.token_budget_ratio)
+        # 第 5 批保险丝阶梯①：同 call_llm（流式/非流式同口径）
+        try:
+            await round_compact.compact_oldest_round(
+                full_messages, p.llm_adapter, max_tokens)
+        except Exception as e:
+            logger.debug(f"[TurnExecutor] 循环内压缩异常（忽略）: {e}")
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=p._system_degrader)
         full_messages = self._degrade_state_tail(full_messages, max_tokens, state_tail)
+        self._raise_if_context_overflow(full_messages, max_tokens)
         # 实时上下文度量：同 call_llm，推理中用量可见
         record_live_context(p.state_manager.active_project_id, full_messages)
         # P2-6 可见指纹链：同 call_llm（流式/非流式两通道同口径）

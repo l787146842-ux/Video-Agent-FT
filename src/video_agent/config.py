@@ -150,6 +150,11 @@ class Settings:
     # B 档组级正文（desc/roughDesc）截断字符数
     state_group_body_chars: int = field(
         default_factory=lambda: _env_int("STATE_GROUP_BODY_CHARS", 120))
+    # 第 5 批（Q7 裁决 2026-09-01）：超预算不裸放行策略。
+    # error（默认）= 四级保险丝用尽仍超窗口时明确报错不发请求；
+    # warn = 回拨旧行为（警告后照发，回滚开关）
+    context_overflow_policy: str = field(
+        default_factory=lambda: os.getenv("CONTEXT_OVERFLOW_POLICY", "error"))
     # 提示词结构闸机（Skill 流程激活时生效）：
     # strict = 不合格直接拒绝写入，模型自行补齐重写（默认）；
     # warn = 照存但把警告带回给模型；off = 关闭
