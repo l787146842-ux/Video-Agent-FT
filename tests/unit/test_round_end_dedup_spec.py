@@ -7,9 +7,10 @@
 import pytest
 
 from src.video_agent.core import prompt_gates
+from src.video_agent.core.provider_config import stamp_draft_spec_preference
 from src.video_agent.state.provider_prefs import extract_production_params
 from src.video_agent.state.manager import StateManager
-from src.video_agent.core.action_executor import StateOperationExecutor
+from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
 
 
 # ---------- 问题1：总结去重 ----------
@@ -63,95 +64,61 @@ def test_extract_production_params_global_settings_sole_source(set_global_settin
     }
 
 
-# ---------- 问题3：草稿创建时按规格补印分辨率参数栏 ----------
+# ---------- 问题3：草稿创建/更新时按全局设置补印分辨率参数栏 ----------
+# Q2 裁决 2026-09-01：文本轨退役，补印唯一实现 = provider_config.
+# stamp_draft_spec_preference（FC 轨 storyboard_add_draft/patch_draft 同调）。
 
 @pytest.fixture
 def svc(tmp_path):
     return StateManager(str(tmp_path))
 
 
-@pytest.fixture
-def executor(svc):
-    return StateOperationExecutor(svc)
-
-
 def _write_spec(svc, content):
-    # 替换而非追加：demo 状态自带规格文档会按首个命中抢先
+    # 替换而非追加：demo 状态自带规格文档会按首个命中抢先（规格内容不再参与补印决策）
     svc.state_dict["documents"] = [
         {"id": "doc-spec", "name": "制片规格.md", "content": content}
     ]
 
 
-def test_add_draft_stamps_image_resolution_from_global_settings(svc, executor, set_global_setting):
+def test_add_draft_stamps_image_resolution_from_global_settings(svc, set_global_setting):
     set_global_setting("default_image_resolution", "4K")
     _write_spec(svc, _SPEC_CONFIRMED)  # 规格文档内容不再参与决策
-    executor.execute([{
-        "action": "add_group",
-        "group_type": "keyElement",
-        "title": "程心",
-        "draft": {"label": "概念图", "prompt": "角色概念图提示词……"},
-    }])
-    draft = svc.state_dict["keyElements"][-1]["drafts"][-1]
+    draft = {"label": "概念图", "prompt": "角色概念图提示词……"}
+    stamp_draft_spec_preference(svc.state_dict, draft, CAT_KEY_ELEMENTS)
     assert draft.get("imageResolution") == "4K"
 
 
-def test_add_shot_draft_stamps_video_resolution_from_global_settings(svc, executor, set_global_setting):
+def test_add_shot_draft_stamps_video_resolution_from_global_settings(svc, set_global_setting):
     set_global_setting("default_video_resolution", "720p")
     _write_spec(svc, _SPEC_CONFIRMED)
-    executor.execute([{
-        "action": "add_group",
-        "group_type": "shot",
-        "title": "镜头1",
-        "draft": {"label": "分镜视频", "prompt": "镜头提示词…… no subtitles no music"},
-    }])
-    draft = svc.state_dict["shots"][-1]["drafts"][-1]
+    draft = {"label": "分镜视频", "mediaType": "video",
+             "prompt": "镜头提示词…… no subtitles no music"}
+    stamp_draft_spec_preference(svc.state_dict, draft, CAT_SHOTS)
     assert draft.get("resolution") == "720p"
 
 
-def test_update_draft_stamps_resolution_from_global_settings(svc, executor, set_global_setting):
+def test_update_draft_stamps_resolution_from_global_settings(svc, set_global_setting):
+    """更新路径同口径：草稿无分辨率时补印全局默认（FC 轨 patch_draft 同调）。"""
     set_global_setting("default_image_resolution", "4K")
     _write_spec(svc, _SPEC_CONFIRMED)
-    executor.execute([{
-        "action": "add_group",
-        "group_type": "keyElement",
-        "title": "AA",
-    }])
-    group = svc.state_dict["keyElements"][-1]
-    executor.execute([{
-        "action": "add_draft",
-        "group_id": group["id"],
-        "draft": {"label": "概念图", "prompt": ""},
-    }])
-    draft = group["drafts"][-1]
-    assert draft.get("imageResolution") in ("", None, "4K")
-    executor.execute([{
-        "action": "update_draft",
-        "draft_id": draft["id"],
-        "patch": {"prompt": "补充的提示词正文……"},
-    }])
+    draft = {"label": "概念图", "prompt": ""}
+    assert not draft.get("imageResolution")
+    stamp_draft_spec_preference(svc.state_dict, draft, CAT_KEY_ELEMENTS)
     assert draft.get("imageResolution") == "4K"
 
 
-def test_draft_explicit_resolution_not_overridden(svc, executor):
+def test_draft_explicit_resolution_not_overridden(svc, set_global_setting):
+    set_global_setting("default_image_resolution", "4K")
     _write_spec(svc, _SPEC_CONFIRMED)
-    executor.execute([{
-        "action": "add_group",
-        "group_type": "keyElement",
-        "title": "白Ice",
-        "draft": {"label": "概念图", "prompt": "提示词……", "imageResolution": "4K"},
-    }])
-    draft = svc.state_dict["keyElements"][-1]["drafts"][-1]
-    assert draft.get("imageResolution") == "4K"
+    draft = {"label": "概念图", "prompt": "提示词……", "imageResolution": "1K"}
+    stamp_draft_spec_preference(svc.state_dict, draft, CAT_KEY_ELEMENTS)
+    assert draft.get("imageResolution") == "1K"  # 草稿自带不覆盖
 
 
-def test_no_spec_no_stamp(svc, executor):
+def test_no_spec_still_stamps_from_global_settings(svc, set_global_setting):
+    """6666 二轮口径：补印唯一来源为全局设置，无规格文档也照常补印。"""
+    set_global_setting("default_image_resolution", "4K")
     svc.state_dict["documents"] = []  # demo 状态自带规格文档，先清掉
-    executor.execute([{
-        "action": "add_group",
-        "group_type": "keyElement",
-        "title": "无规格元素",
-        "draft": {"label": "概念图", "prompt": "提示词……"},
-    }])
-    draft = svc.state_dict["keyElements"][-1]["drafts"][-1]
-    # 无规格时保持工厂默认值，不补印
-    assert draft.get("imageResolution") == "1K"
+    draft = {"label": "概念图", "prompt": "提示词……"}
+    stamp_draft_spec_preference(svc.state_dict, draft, CAT_KEY_ELEMENTS)
+    assert draft.get("imageResolution") == "4K"

@@ -265,7 +265,6 @@ class TestStrictToolInputConfig:
         "src.video_agent.tools.storyboard_tools:ReadDraftInput",
         "src.video_agent.tools.storyboard_tools:ViewStoryboardMediaInput",
         "src.video_agent.tools.document_tools:WorkflowPauseInput",
-        "src.video_agent.tools.document_tools:FlowDirectiveInput",
         "src.video_agent.tools.document_tools:ReadUploadedDocInput",
         "src.video_agent.tools.canvas_tools:CanvasReadNodesInput",
         "src.video_agent.tools.canvas_tools:CanvasListAssetsInput",

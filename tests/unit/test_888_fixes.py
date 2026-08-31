@@ -5,94 +5,26 @@ import pytest
 
 from src.video_agent.core import prompt_gates, spec_rules
 from src.video_agent.core.live_metrics import get_live_context, record_live_context
-from src.video_agent.core.action_executor import StateOperationExecutor
 
 
 # ---------- item 6：分镜提示词时长客观补全（C1a 裁决 2026-08-31 退役：
 # require_duration 技能闸与 autofill 补印随技能级闸层删除） ----------
 
-
-def test_executor_shot_prompt_missing_duration_passes_gate(tmp_path):
-    """888 现场回归：C1a 裁决后时长不再校验——未写时长的合格长度提示词直接写入。"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["shots"] = [{
-        "id": "shot-1", "title": "镜头1", "duration": "20s",
-        "drafts": [{"id": "draft-1", "prompt": "", "mediaType": "video"}],
-    }]
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    prompt = (
-        "中景缓慢推入，失重的白色球形舱内，程心与AA从冬眠中醒来，"
-        "窗外木星云带旋转，光影冷峻。无字幕（no subtitles）。"
-        "{对话：掩体没用了。} <轻微机械声> (低沉氛围音乐)"
-    )
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": prompt},
-    }])
-    assert applied == 1
-    written = svc.state_dict["shots"][0]["drafts"][0]["prompt"]
-    assert written == prompt
+# test_executor_shot_prompt_missing_duration_passes_gate 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨 update_draft 随执行器家族退役；时长不再校验的口径由 FC 轨提示词闸
+# （evaluate_prompt_write 唯一实现）相关用例钉死。
 
 
 # ---------- item 6：add_draft 盲捡收敛 ----------
-
-def test_add_draft_rejects_blind_pickup_with_many_groups(tmp_path):
-    """888 现场：回退第一个分组把 8 张卡全污染进程心组。
-    现在多分组且 label 无线索时拒绝执行，回喂模型纠正。"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = [
-        {"id": "ke-1", "title": "程心", "desc": "", "drafts": []},
-        {"id": "ke-2", "title": "罗辑", "desc": "", "drafts": []},
-    ]
-    svc.state_dict["shots"] = []
-    svc.state_dict["audioItems"] = []
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    applied = ex.execute([
-        {"action": "add_draft", "group_id": "current",
-         "draft": {"label": "???", "prompt": "无归属提示词", "mediaType": "image"}},
-    ])
-    assert applied == 0
-    assert all(not g["drafts"] for g in svc.state_dict["keyElements"])
-
-
-def test_add_draft_single_group_fallback_still_works(tmp_path):
-    """类别下仅一个分组时回落无歧义，保留原有兜底能力。"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = [
-        {"id": "ke-1", "title": "程心", "desc": "", "drafts": []},
-    ]
-    svc.state_dict["shots"] = []
-    svc.state_dict["audioItems"] = []
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    applied = ex.execute([
-        {"action": "add_draft", "group_id": "current",
-         "draft": {"label": "???", "prompt": "唯一分组提示词", "mediaType": "image"}},
-    ])
-    assert applied == 1
-    assert len(svc.state_dict["keyElements"][0]["drafts"]) == 1
+# test_add_draft_rejects_blind_pickup_with_many_groups /
+# test_add_draft_single_group_fallback_still_works 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨 add_draft 随执行器家族退役；FC 轨 storyboard_add_draft 的分组定位经
+# storyboard_ops.find_group（current/编号/标签匹配），多分组歧义时工具报错回喂。
 
 
 # ---------- item 8：分镜概述裁剪 ----------
-
-def test_shot_rough_desc_clamped(tmp_path):
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["shots"] = []
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    applied = ex.execute([{
-        "action": "add_group", "group_type": "shot", "title": "镜头1",
-        "roughDesc": "Shot1 细节" * 100, "duration": "20s",
-    }])
-    assert applied == 1
-    rough = svc.state_dict["shots"][0]["roughDesc"]
-    assert len(rough) <= 201 and rough.endswith("…")
+# test_shot_rough_desc_clamped 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨 add_group 的 roughDesc 钳制随执行器家族退役（FC 轨建组不经该口径）。
 
 
 # ---------- item 9：执行铁律优先级含制片规格 ----------
@@ -256,22 +188,9 @@ def test_feedback_template_no_contradiction():
 # 规格向导软参数收集链整体退役，规格交互归模型自主对话。
 
 
-def test_action_alias_normalization_groupid_payload(tmp_path):
-    """9999 现场：弱模型把 add_draft 写成 type/groupId/payload 驼峰 schema，
-    归一后必须命中分组写入，不再整批「拒绝盲建」。"""
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.core.action_executor import StateOperationExecutor
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = [{"id": "ke-1", "title": "程心", "drafts": []}]
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    applied = ex.execute([{
-        "type": "add_draft",
-        "groupId": "ke-1",
-        "payload": {"label": "概念图", "mediaType": "image", "prompt": "写实科幻角色图。"},
-    }])
-    assert applied == 1
-    assert svc.state_dict["keyElements"][0]["drafts"]
+# test_action_alias_normalization_groupid_payload 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨驼峰 schema 宽容归一（type/groupId/payload）随执行器家族退役；
+# FC 轨工具输入经 pydantic 严格校验（extra=forbid），错误结构化回喂模型纠正。
 
 
 # test_script_analyze_generates_soft_candidates 已随任务#36 B5 执行器一步退役删除：

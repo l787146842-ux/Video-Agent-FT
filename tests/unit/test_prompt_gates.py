@@ -4,7 +4,6 @@ import pytest
 from src.video_agent.core import prompt_gates
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.state.manager import StateManager
-from src.video_agent.core.action_executor import StateOperationExecutor
 
 GOOD_SHOT_PROMPT = (
     "镜头总时长：15秒。缓慢推入中景，程心怀抱文物奔向舱门，背景冥王星冰原崩裂成二维平面，"
@@ -134,87 +133,23 @@ def test_voice_reference_soft_warning():
     assert not prompt_gates.validate_prompt_write(prompt_ok, "shot", state)[2]
 
 
-# ---------- 文本轨拦截（update_draft / add_draft / add_group） ----------
+# ---------- 文本轨拦截用例已随 Q2 裁决 2026-09-01 整体退役删除 ----------
+# test_executor_rejects_bad_update_draft_by_default /
+# test_executor_user_override_writes_bad_prompt_with_warning /
+# test_executor_passes_good_update_draft / test_executor_gate_disabled_allows_everything /
+# test_executor_add_group_rejects_bad_inline_draft /
+# test_executor_spec_gate_allows_after_spec_written /
+# test_executor_spec_gate_inactive_without_skill /
+# test_executor_structure_strips_inline_prompt_on_first_batch /
+# test_executor_pending_window_does_not_block_prompt_write：
+# 文本轨动作分派（executor.execute）随执行器家族退役；拦截/坚持/放行/
+# 关闭四态与结构剥离、待确认窗口语义由下方 FC 轨同口径用例钉死（G4 同类路径）。
 
 @pytest.fixture
 def svc(tmp_path):
     StateManager.reset_instance()
     yield StateManager(str(tmp_path))
     StateManager.reset_instance()
-
-
-def _seed_shot(svc):
-    svc.state_dict["shots"] = [{
-        "id": "shot-test", "title": "Shot_测试", "duration": "10s",
-        "sceneRefs": ["Element_测试"],
-        "drafts": [{"id": "draft-1", "label": "分镜 1", "mediaType": "video", "prompt": ""}],
-    }]
-
-
-def test_executor_rejects_bad_update_draft_by_default(svc):
-    _seed_shot(svc)
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": "太短了"},
-    }])
-    # 决策 D（质量优先）：Skill 流程激活且未坚持 → 写入前拒绝
-    assert applied == 0
-    assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == ""
-    assert ex.gate_rejections
-
-
-def test_executor_user_override_writes_bad_prompt_with_warning(svc):
-    _seed_shot(svc)
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    ex.gate_override = True  # 用户坚持：照常写入 + 警告
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": "太短了"},
-    }])
-    assert applied == 1
-    assert svc.state_dict["shots"][0]["drafts"][0]["prompt"].startswith("太短了")
-    assert ex.gate_warnings and "警告" in ex.gate_warnings[0]
-
-
-def test_executor_passes_good_update_draft(svc):
-    _seed_shot(svc)
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": GOOD_SHOT_PROMPT},
-    }])
-    assert applied == 1
-    assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == GOOD_SHOT_PROMPT
-    # 时长参数同步：写提示词时把分镜结构时长（10s）补印到草稿时长参数
-    assert svc.state_dict["shots"][0]["drafts"][0]["duration"] == "10s"
-
-
-def test_executor_gate_disabled_allows_everything(svc):
-    _seed_shot(svc)
-    ex = StateOperationExecutor(svc)  # gate_enabled 默认 False
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": "太短了"},
-    }])
-    assert applied == 1
-
-
-def test_executor_add_group_rejects_bad_inline_draft(svc):
-    # 预置规格文档：否则会被规格前置闸机整体拦下（见下方专项用例）
-    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([{
-        "action": "add_group", "group_type": "shot", "title": "Shot_新",
-        "draft": {"label": "分镜", "prompt": "敷衍短句"},
-    }])
-    # 分组创建成功；结构阶段内联提示词被剥离，草稿卡保留为空（v3：只建骨架）
-    assert applied == 1
-    group = svc.state_dict["shots"][-1]
-    assert group["title"] == "Shot_新"
-    assert len(group["drafts"]) == 1
-    assert group["drafts"][0]["prompt"] == ""
-    assert ex.prompts_stripped == 1
 
 
 # ---------- 规格文档前置闸机（666 项目事故：跳过 制片规格.md 直建故事板） ----------
@@ -233,23 +168,6 @@ def test_has_spec_document_variants():
         {"documents": [{"name": "制片规格.md", "content": "  "}]}) is False
 
 
-def test_executor_spec_gate_allows_after_spec_written(svc):
-    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([{
-        "action": "add_group", "group_type": "keyElement", "title": "Element_测试",
-    }])
-    assert applied == 1
-
-
-def test_executor_spec_gate_inactive_without_skill(svc):
-    ex = StateOperationExecutor(svc)  # gate_enabled=False → 日常微调不受影响
-    applied = ex.execute([{
-        "action": "add_group", "group_type": "keyElement", "title": "Element_测试",
-    }])
-    assert applied == 1
-
-
 def test_fc_strips_structure_prompt_on_first_batch(monkeypatch):
     """FC 轨：首次搭建批次剥离内联详细提示词（P0-2）"""
     runner = FCToolRunner(tool_manager=None)
@@ -264,49 +182,6 @@ def test_fc_strips_structure_prompt_on_first_batch(monkeypatch):
     assert runner._strip_structure_prompt(
         "storyboard_create_group", {"draft": {"prompt": "x" * 100}}, injected_skill="任意 Skill",
     ) is True
-
-
-def test_executor_structure_strips_inline_prompt_on_first_batch(svc):
-    """文本轨：首次搭建批次 add_group 内联提示词被剥离，分组照常建立"""
-    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    svc.state_dict["keyElements"] = []
-    svc.state_dict["shots"] = []
-    svc.state_dict["audioItems"] = []
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([{
-        "action": "add_group", "group_type": "keyElement", "title": "Element_测试",
-        "draft": {"label": "概念图", "prompt": "y" * 120},
-    }])
-    assert applied == 1
-    group = svc.state_dict["keyElements"][-1]
-    assert group["title"] == "Element_测试"
-    assert group["drafts"][0]["prompt"] == ""  # 提示词由 write_media_prompt 阶段编写
-    assert ex.prompts_stripped == 1
-
-
-def test_executor_pending_window_does_not_block_prompt_write(svc):
-    """步骤3→步骤4 分界：即使处于待确认窗口，提示词也照常写入（执行优先）"""
-    from src.video_agent.web.chat_service import _consume_pending_confirmation
-    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    _seed_shot(svc)
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    # 同批：建结构 + 写提示词 → 两者都执行（步骤3与4可合并）
-    applied = ex.execute([
-        {"action": "add_group", "group_type": "keyElement", "title": "Element_新"},
-        {"action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-         "patch": {"prompt": GOOD_SHOT_PROMPT}},
-    ])
-    assert applied == 2
-    assert svc.state_dict["shots"][0]["drafts"][0]["prompt"] == GOOD_SHOT_PROMPT
-    # 即便手动置位待确认窗口，写入也照常放行
-    svc.state_dict.setdefault("interaction", {})["storyboard_pending"] = True
-    assert ex.execute([{
-        "action": "update_draft", "draft_id": "draft-1", "draft_type": "shot",
-        "patch": {"prompt": GOOD_SHOT_PROMPT},
-    }]) == 1
-    # 用户回应到达 → 解除待确认标记
-    _consume_pending_confirmation(svc, "确认")
-    assert svc.state_dict["interaction"].get("storyboard_pending") is False
 
 
 def test_fc_pending_window_rejects_bad_prompt(monkeypatch):

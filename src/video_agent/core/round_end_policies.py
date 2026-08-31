@@ -219,7 +219,6 @@ def _cond_structure_stage_review(ctx: RoundEndContext) -> bool:
         not ctx.confirmation
         and bool(_structure_kinds(ctx))
         and getattr(ctx.executor, "_storyboard_empty_before", False)
-        and not prompt_gates.flow_auto_continue(ctx.executor.state)
         and getattr(ctx.executor, "gate_enabled", False)
         and prompt_gates.gate_mode() == "strict"
         and prompt_gates.storyboard_stage_complete(
@@ -237,11 +236,9 @@ async def _apply_structure_stage_review(ctx: RoundEndContext, emit: Callable) ->
 
 
 def _cond_stage_done_fallback(ctx: RoundEndContext) -> bool:
-    # 平台兜底语义；一条龙豁免引导卡
-    # （C1b 裁决 2026-08-31：pause_points 声明驱动的机械暂停退役）
+    # 平台兜底语义（C1b 裁决 2026-08-31：pause_points 声明驱动的机械暂停退役；
+    # Q2 裁决 2026-09-01：一条龙豁免随 flow_directive 退役）
     if ctx.confirmation or ctx.gate_heal or ctx.applied <= 0:
-        return False
-    if prompt_gates.flow_auto_continue(ctx.executor.state):
         return False
     names = [str(a.get("action") or a.get("tool") or "").strip() for a in ctx.executable]
     return (

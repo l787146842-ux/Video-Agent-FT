@@ -103,7 +103,7 @@ describe('toolDetailTier 工具详情分级', () => {
     [
       'storyboard_delete_group', 'canvas_delete_node', 'storyboard_confirm_draft',
       'storyboard_media_to_chat', 'read_draft', 'read_project_doc',
-      'read_uploaded_doc', 'flow_directive', 'view_storyboard_media',
+      'read_uploaded_doc', 'view_storyboard_media',
       'canvas_list', 'canvas_read_nodes', 'canvas_list_assets', 'read_skill',
       'mcp_tool_catalog',
     ].forEach((n) => expect(toolDetailTier(n)).toBe('output'));
@@ -134,7 +134,7 @@ describe('toolApprovalTier 工具审批分级', () => {
       'read_skill', 'read_draft', 'read_uploaded_doc', 'read_project_doc',
       'view_storyboard_media', 'storyboard_media_to_chat', 'canvas_list',
       'canvas_read_nodes', 'canvas_list_assets', 'workflow_pause',
-      'flow_directive', 'mcp_tool_catalog',
+      'mcp_tool_catalog',
     ].forEach((n) => expect(toolApprovalTier(n)).toBe('none'));
   });
 

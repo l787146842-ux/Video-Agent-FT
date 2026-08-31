@@ -15,7 +15,6 @@ import pytest
 import src.video_agent.web.skill_docs as sd
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.skill_runtime import registry
-from src.video_agent.core.action_executor import StateOperationExecutor
 
 
 @pytest.fixture(autouse=True)
@@ -106,66 +105,10 @@ def test_selected_block_lightweight_keeps_discipline_pointer():
 # 语义由 tests/unit/test_prompt_builder_modes.py 钉死。
 
 
-def test_add_group_title_field_fallback(tmp_path):
-    """回归（6666 事故）：模型用 name/element_id 等非 title 字段时不得静默落默认标题。"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    applied = ex.execute([
-        {"action": "add_group", "group_type": "keyElement", "name": "罗辑", "desc": "角色描述"},
-        {"action": "add_group", "group_type": "keyElement", "element_id": "[Element_ChengXin]"},
-        {"action": "add_group", "group_type": "shot", "title": "镜头一",
-         "roughDesc": "场景：太空。旁白：二向箔漂浮。"},
-    ])
-    assert applied == 3
-    kes = svc.state_dict["keyElements"]
-    assert kes[-2]["title"] == "罗辑"
-    assert kes[-1]["title"] == "[Element_ChengXin]"
-    # 分镜只写 roughDesc 不写 desc 时自动同步，前端卡片不显示空白
-    shot = svc.state_dict["shots"][-1]
-    assert shot["desc"] == "场景：太空。旁白：二向箔漂浮。"
-
-
-def test_add_group_title_alias_element_name(tmp_path):
-    """8888 事故：标题兜底链扩展 element_name/group_title 等别名。"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    applied = ex.execute([
-        {"action": "add_group", "group_type": "keyElement", "element_name": "AA"},
-        {"action": "add_group", "group_type": "keyElement", "group_title": "预警中心"},
-    ])
-    assert applied == 2
-    titles = [g["title"] for g in svc.state_dict["keyElements"][-2:]]
-    assert titles == ["AA", "预警中心"]
-
-
-def test_add_draft_label_smart_matching(tmp_path):
-    """回归（proj-1786169643 事故）：add_draft 未携带有效 group_id 时，
-    按 label 名称匹配对应分组，不再盲捡第一个分组（曾导致 24 条提示词全进程心组）。"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = [
-        {"id": "ke-1", "title": "[Element_Cheng_Xin] 程心", "desc": "", "drafts": []},
-        {"id": "ke-2", "title": "[Element_Ai_AA] 艾AA", "desc": "", "drafts": []},
-        {"id": "ke-3", "title": "[Element_Dual_Vector_Foil] 二向箔", "desc": "", "drafts": []},
-    ]
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    applied = ex.execute([
-        {"action": "add_draft", "group_id": "current",
-         "draft": {"label": "艾AA - 角色概念图", "prompt": "艾AA的提示词", "mediaType": "image"}},
-        {"action": "add_draft", "group_id": "current",
-         "draft": {"label": "二向箔 - 道具概念图", "prompt": "二向箔的提示词", "mediaType": "image"}},
-    ])
-    assert applied == 2
-    kes = {g["title"]: g for g in svc.state_dict["keyElements"]}
-    # 各归其位：不再全堆进第一个分组（程心）
-    assert len(kes["[Element_Cheng_Xin] 程心"]["drafts"]) == 0
-    assert len(kes["[Element_Ai_AA] 艾AA"]["drafts"]) == 1
-    assert len(kes["[Element_Dual_Vector_Foil] 二向箔"]["drafts"]) == 1
+# test_add_group_title_field_fallback / test_add_group_title_alias_element_name /
+# test_add_draft_label_smart_matching 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨 add_group/add_draft 的字段别名兜底与 label 智能匹配随执行器家族退役；
+# FC 轨工具输入经 pydantic 严格校验，错误结构化回喂模型纠正（弱模型容错不再靠猜）。
 
 
 def test_selected_block_flow_body_budget_injection():
@@ -190,49 +133,14 @@ def test_selected_block_flow_body_budget_injection():
     assert "== 当前 Skill 的流程基线" not in block  # 执行器形态专属段已退役
 
 
-def test_add_group_badge_label_persisted_and_patchable(tmp_path):
-    """898 需求：关键元素类别徽标（人物/场景/道具）可随 add_group 写入，
-    且双击编辑（update_group patch badgeLabel）能持久化（曾在白名单外被静默丢弃）。"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    applied = ex.execute([
-        {"action": "add_group", "group_type": "keyElement",
-         "title": "程心", "desc": "前执剑人", "badgeLabel": "人物"},
-        {"action": "add_group", "group_type": "keyElement", "title": "二向箔"},
-    ])
-    assert applied == 2
-    kes = {g["title"]: g for g in svc.state_dict["keyElements"]}
-    assert kes["程心"].get("badgeLabel") == "人物"
-    assert "badgeLabel" not in kes["二向箔"]
-    # 双击徽标编辑（update_group）必须能改写并持久化
-    applied = ex.execute([
-        {"action": "update_group", "group_id": kes["二向箔"]["id"],
-         "group_type": "keyElement", "patch": {"badgeLabel": "道具"}},
-    ])
-    assert applied == 1
-    assert kes["二向箔"]["badgeLabel"] == "道具"
+# test_add_group_badge_label_persisted_and_patchable 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨 add_group/update_group 的 badgeLabel 口径随执行器家族退役；
+# 用户双击徽标编辑走 REST 故事板更新路径（不经执行器），行为不受影响。
 
 
-def test_add_draft_accepts_patch_field_fallback(tmp_path):
-    """898 事故回归：模型把建卡字段放进 patch/fields 而非 draft 时，
-    不得静默落成空默认草稿，提示词必须写入。"""
-    from src.video_agent.state.manager import StateManager
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["keyElements"] = [
-        {"id": "ke-1", "title": "罗辑", "desc": "", "drafts": []},
-    ]
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    applied = ex.execute([
-        {"action": "add_draft", "group_id": "ke-1",
-         "patch": {"label": "概念图", "prompt": "罗辑的概念图提示词", "mediaType": "image"}},
-    ])
-    assert applied == 1
-    draft = svc.state_dict["keyElements"][0]["drafts"][0]
-    assert draft["prompt"] == "罗辑的概念图提示词"
-    assert draft["label"] == "概念图"
+# test_add_draft_accepts_patch_field_fallback 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨 add_draft 的 patch/fields 宽容兜底随执行器家族退役；
+# FC 轨 storyboard_add_draft 输入经 pydantic 严格校验，错误回喂纠正。
 
 
 def test_feedback_carries_tool_detail():

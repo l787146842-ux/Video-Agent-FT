@@ -1,8 +1,9 @@
-"""B4 双轨收敛一期回归：生成确认闸双轨单一实现、语义逐字节一致。
+"""B4 双轨收敛一期回归：生成确认闸单一实现。
 
 事故溯源：三轮审核 B4（双轨镜像漂移——FC 全拒 vs 文本轨跳过未确认项）。
-收敛落点：core/guard_pipeline.evaluate_gen_confirm（唯一实现），
-两轨适配器只注入参数（Rule 2 双轨一致）。
+收敛落点：core/guard_pipeline.evaluate_gen_confirm（唯一实现）。
+Q2 裁决 2026-09-01：文本轨随执行器家族退役，动作通道唯一 = FC，
+原双轨逐字节对照用例改为单轨（FC 适配器 + 唯一实现）钉死。
 批 B：执行偏好三档前置分支也归该唯一实现（默认档行为与现状逐字节一致）。
 """
 import json
@@ -10,7 +11,6 @@ import json
 from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline
 from src.video_agent.core.fc_tool_runner import FCToolRunner
-from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.core.tracer import AgentTracer
 
 CONF = {"id": "d1", "prompt": "x", "tag": "已确认"}
@@ -23,14 +23,6 @@ def _fc_runner(state, override=False):
     r.gate_warnings = []
     r._raw_state = lambda: state
     return r
-
-
-def _text_executor(override=False):
-    e = object.__new__(StateOperationExecutor)
-    e.gate_enabled = True
-    e.gate_override = override
-    e.gate_warnings = []
-    return e
 
 
 def test_shared_block_on_any_unconfirmed():
@@ -56,36 +48,29 @@ def test_shared_inactive_or_empty_pass():
     assert err is None and warns == []
 
 
-def test_dual_track_semantics_identical(monkeypatch):
-    """同一输入下 FC 轨与文本轨判定/警告逐字节一致（宪法 Rule 2）。"""
+def test_fc_adapter_matches_shared_semantics(monkeypatch):
+    """FC 适配器与唯一实现同语义（Q2 后动作通道唯一 = FC，宪法 Rule 2）。"""
     monkeypatch.setattr("src.video_agent.core.prompt_gates.gate_mode", lambda: "strict")
 
-    # 拦截场景：存在未确认草稿 → FC 硬拒、文本轨返回空（调用方拒执行），警告一致
+    # 拦截场景：存在未确认草稿 → 硬拒 + 警告（唯一实现口径，见上方共用用例）
     state = {"keyElements": [{"drafts": [CONF, UNCONF]}]}
     fc = _fc_runner(state)
     fc_err = fc._gen_confirm_gate("image_generate", {"target": "all_keyElements"}, "some-skill")
-    tx = _text_executor()
-    tx_out = tx._gen_confirm_gate([(None, CONF), (None, UNCONF)])
     assert fc_err is not None
-    assert tx_out == []
-    assert fc.gate_warnings == tx.gate_warnings
     assert fc.gate_warnings and "生成确认闸拦截" in fc.gate_warnings[0]
 
-    # 放行场景：全部已确认 → 两轨均放行且无警告
+    # 放行场景：全部已确认 → 放行且无警告
     state2 = {"keyElements": [{"drafts": [CONF]}]}
     fc2 = _fc_runner(state2)
     assert fc2._gen_confirm_gate("image_generate", {"target": "all_keyElements"}, "s") is None
-    tx2 = _text_executor()
-    pairs = [(None, CONF)]
-    assert tx2._gen_confirm_gate(pairs) == pairs
-    assert fc2.gate_warnings == tx2.gate_warnings == []
+    assert fc2.gate_warnings == []
 
-    # 豁免场景：override → 两轨放行且豁免警告一致
+    # 豁免场景：override → 放行且豁免警告与唯一实现一致（同文案）
     fc3 = _fc_runner(state, override="all")
     assert fc3._gen_confirm_gate("image_generate", {"target": "all_keyElements"}, "s") is None
-    tx3 = _text_executor(override="all")
-    assert tx3._gen_confirm_gate([(None, UNCONF)]) == [(None, UNCONF)]
-    assert fc3.gate_warnings == tx3.gate_warnings
+    err_shared, warns_shared = guard_pipeline.evaluate_gen_confirm(
+        [CONF, UNCONF], active=True, override="all")
+    assert err_shared is None and fc3.gate_warnings == warns_shared
 
 
 # ---------- 批 B：执行偏好三档前置分支（唯一实现内，双轨自动同语义） ----------
@@ -171,8 +156,8 @@ class TestExecPreferenceGenConfirm:
         finally:
             object.__setattr__(settings, "execution_preference", "confirm_before_gen")
 
-    def test_dual_track_preference_semantics_identical(self, monkeypatch):
-        """generate_directly 下 FC 轨与文本轨放行警告逐字节一致（同源判定）。"""
+    def test_fc_preference_semantics_match_shared(self, monkeypatch):
+        """generate_directly 下 FC 适配器放行警告与唯一实现同源一致（Q2 后单轨）。"""
         monkeypatch.setattr("src.video_agent.core.prompt_gates.gate_mode", lambda: "strict")
         old = settings.execution_preference
         object.__setattr__(settings, "execution_preference", "generate_directly")
@@ -181,10 +166,9 @@ class TestExecPreferenceGenConfirm:
             fc = _fc_runner(state)
             assert fc._gen_confirm_gate(
                 "image_generate", {"target": "all_keyElements"}, "s") is None
-            tx = _text_executor()
-            pairs = [(None, UNCONF)]
-            assert tx._gen_confirm_gate(pairs) == pairs
-            assert fc.gate_warnings == tx.gate_warnings
+            err_shared, warns_shared = guard_pipeline.evaluate_gen_confirm(
+                [UNCONF], active=True, action="image_generate")
+            assert err_shared is None and fc.gate_warnings == warns_shared
             assert fc.gate_warnings and "直接生成" in fc.gate_warnings[0]
         finally:
             object.__setattr__(settings, "execution_preference", old)

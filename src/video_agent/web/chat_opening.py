@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
 from loguru import logger
 
-from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.config import settings
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.chat_retry_context import build_retry_resume_note

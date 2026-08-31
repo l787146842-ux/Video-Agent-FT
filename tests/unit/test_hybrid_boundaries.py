@@ -9,7 +9,6 @@ from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
-from src.video_agent.core.action_executor import StateOperationExecutor
 
 
 def _async_return(value):
@@ -71,21 +70,10 @@ def test_confirm_draft_patch_keeps_tag():
     assert draft["tag"] == "已确认"
 
 
-def test_presented_record_and_promote_on_user_reply(svc):
-    """写提示词记录 presented → 用户新消息到达 → 晋升已确认并清空记录"""
-    from src.video_agent.web.chat_service import _consume_pending_confirmation
-    _seed_ke_draft(svc, tag="Agent")
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([{
-        "action": "update_draft", "draft_id": "d-ke1", "draft_type": "keyElement",
-        "patch": {"prompt": "年轻女性程心身穿白色星环号轻型宇航服，面容清秀温婉，眼神中带着深沉的悲悯与疲惫，冷白正面主光，哑光金属质感，电影级新写实主义质感。"},
-    }])
-    assert applied == 1
-    assert svc.state_dict["interaction"]["drafts_presented"] == ["d-ke1"]
-    # 用户回应到达 → 晋升
-    _consume_pending_confirmation(svc, "确认")
-    assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "已确认"
-    assert svc.state_dict["interaction"]["drafts_presented"] == []
+# test_presented_record_and_promote_on_user_reply 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨写提示词记 presented（executor.execute update_draft）随执行器家族退役；
+# presented 记录改由 FC 轨 fc_tool_runner 写入（消费/晋升语义由下方
+# test_unrelated_message_consumes_pending_and_promotes 等用例钉死）。
 
 
 def test_rewritten_draft_not_promoted(svc):
@@ -153,74 +141,17 @@ def test_select_signal_promotes(svc):
     assert inter["drafts_presented"] == []
 
 
-def test_manual_confirm_draft_still_works(svc):
-    """手动确认落点（用户口头明确确认）照常可用"""
-    _seed_ke_draft(svc, tag="Agent")
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([{
-        "action": "confirm_draft", "draft_id": "d-ke1", "draft_type": "keyElement",
-    }])
-    assert applied == 1
-    assert svc.state_dict["keyElements"][0]["drafts"][0]["tag"] == "已确认"
+# test_manual_confirm_draft_still_works 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨 confirm_draft 动作随执行器家族退役；手动确认落点归 FC 轨
+# storyboard_confirm_draft 工具（工具注册与风险分级闸已钉死）。
 
 
-# ---------- 生成确认闸（文本轨） ----------
-
-def test_gen_gate_blocks_model_self_skip_text_track(svc, monkeypatch):
-    """4444：未确认草稿——本轮无跳过指令 → 拒收；用户本轮要求（gate_override）
-    → 照常生成+警告；确认后放行。"""
-    _seed_ke_draft(svc, tag="Agent")
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    submitted = []
-    monkeypatch.setattr(ex, "_submit_image_task", lambda *a, **k: submitted.append(a))
-    applied = ex.execute([{
-        "action": "generate_image", "target": "all_keyElements",
-    }])
-    assert applied == 0 and not submitted  # 模型自发跳确认被拒收
-    assert any("拦截" in w for w in ex.gate_warnings)
-    # 用户本轮明确要求跳过 → 放行+警告
-    ex2 = StateOperationExecutor(svc, gate_enabled=True)
-    ex2.gate_override = "all"
-    monkeypatch.setattr(ex2, "_submit_image_task", lambda *a, **k: submitted.append(a))
-    applied = ex2.execute([{
-        "action": "generate_image", "target": "all_keyElements",
-    }])
-    assert applied == 1 and len(submitted) == 1
-    assert any("确认" in w for w in ex2.gate_warnings)
-    # 确认后同样放行
-    svc.state_dict["keyElements"][0]["drafts"][0]["tag"] = "已确认"
-    ex3 = StateOperationExecutor(svc, gate_enabled=True)
-    monkeypatch.setattr(ex3, "_submit_image_task", lambda *a, **k: submitted.append(a))
-    applied = ex3.execute([{
-        "action": "generate_image", "target": "all_keyElements",
-    }])
-    assert applied == 1 and len(submitted) == 2
-
-
-def test_gen_gate_partial_confirmed_filters_unconfirmed(svc, monkeypatch):
-    """B4 双轨收敛：部分确认且无跳过指令 → 整批硬拒（与 FC 轨一致，
-    取代旧文本轨「跳过未确认项」镜像语义；4444：模型跳确认非用户意志）。"""
-    _seed_ke_draft(svc, tag="已确认")
-    svc.state_dict["keyElements"].append({
-        "id": "ke-2", "title": "Element_乙",
-        "drafts": [{"id": "d-ke2", "label": "图", "tag": "Agent",
-                    "prompt": "黑色玄武岩方碑耸立在冥王星地表，地球文明石刻，宏大苍凉。"}],
-    })
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    submitted = []
-    monkeypatch.setattr(ex, "_submit_image_task", lambda *a, **k: submitted.append(a))
-    applied = ex.execute([{"action": "generate_image", "target": "all_keyElements"}])
-    assert applied == 0 and not submitted  # 整批拒收，不再部分提交
-    assert ex.gate_warnings and "生成确认闸拦截" in ex.gate_warnings[0]
-
-
-def test_gen_gate_inactive_without_skill(svc, monkeypatch):
-    _seed_ke_draft(svc, tag="Agent")
-    ex = StateOperationExecutor(svc)  # gate_enabled=False
-    submitted = []
-    monkeypatch.setattr(ex, "_submit_image_task", lambda *a, **k: submitted.append(a))
-    applied = ex.execute([{"action": "generate_image", "target": "all_keyElements"}])
-    assert applied == 1 and len(submitted) == 1
+# ---------- 生成确认闸（文本轨）用例已随 Q2 裁决 2026-09-01 退役删除 ----------
+# test_gen_gate_blocks_model_self_skip_text_track /
+# test_gen_gate_partial_confirmed_filters_unconfirmed /
+# test_gen_gate_inactive_without_skill：文本轨生成动作（executor.execute
+# generate_image）随执行器家族退役；拦截/坚持/放行/部分确认整批硬拒语义由
+# 下方 FC 轨用例与 guard_pipeline.evaluate_gen_confirm 唯一实现直测钉死。
 
 
 # ---------- 生成确认闸（FC 轨） ----------
@@ -361,40 +292,9 @@ def test_planner_stage_pruning(svc, monkeypatch):
 
 # ---------- 首拆只允许关键元素（8888 事故：规格确认后一次性拆出分镜+音频） ----------
 
-def _clear_storyboard(svc):
-    svc.state_dict["keyElements"] = []
-    svc.state_dict["shots"] = []
-    svc.state_dict["audioItems"] = []
-
-
-def test_ke_first_gate_text_track(svc):
-    """0817 用户裁决：平台不再「首拆只允关键元素」警告——流程以 Skill 为准，
-    空板直接建 shot/audio 也照常创建且无首拆警告。"""
-    _clear_storyboard(svc)
-    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([
-        {"action": "add_group", "group_type": "shot", "title": "Shot_1"},
-        {"action": "add_group", "group_type": "audio", "title": "Audio_1"},
-        {"action": "add_group", "group_type": "keyElement", "title": "Element_A"},
-    ])
-    assert applied == 3  # 全部创建成功
-    assert len(svc.state_dict["shots"]) == 1
-    assert len(svc.state_dict["audioItems"]) == 1
-    assert [g["title"] for g in svc.state_dict["keyElements"]][-1] == "Element_A"
-    assert not any("首次" in w for w in ex.gate_warnings)
-
-
-def test_ke_first_gate_allows_shots_after_elements_exist(svc):
-    """关键元素已存在（非首次搭建）后，创建分镜/音频不再被拦"""
-    _clear_storyboard(svc)
-    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    _seed_ke_draft(svc)
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([
-        {"action": "add_group", "group_type": "shot", "title": "Shot_1"},
-    ])
-    assert applied == 1 and len(svc.state_dict["shots"]) == 1
+# test_ke_first_gate_text_track / test_ke_first_gate_allows_shots_after_elements_exist
+# 已随 Q2 裁决 2026-09-01 退役删除：文本轨 add_group 随执行器家族退役；
+# 首拆语义由下方 FC 轨同覆盖用例钉死（G4 同类路径）。
 
 
 def test_ke_first_gate_fc_track(monkeypatch):
@@ -421,22 +321,9 @@ def test_ke_first_gate_fc_track(monkeypatch):
 
 
 # ---------- pending 批内即时置位（8888 事故：同批建结构又写提示词） ----------
-
-def test_pending_immediate_rejects_short_prompt_in_same_batch(svc):
-    """同一批：建结构成功，但过短提示词被质量闸拒绝（决策 D）"""
-    _clear_storyboard(svc)
-    svc.state_dict["documents"] = [{"name": "制片规格.md", "content": "规格正文"}]
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    applied = ex.execute([
-        {"action": "add_group", "group_type": "keyElement", "title": "Element_A",
-         "draft": {"label": "概念图"}},
-        {"action": "update_draft", "draft_id": "current", "draft_type": "keyElement",
-         "patch": {"prompt": "白发老者站在冥王星冰原上，手持拐杖，伦勃朗式光影，宿命感与沧桑。"}},
-    ])
-    assert applied == 1
-    draft = svc.state_dict["keyElements"][-1]["drafts"][0]
-    assert not draft.get("prompt")
-    assert ex.gate_rejections
+# test_pending_immediate_rejects_short_prompt_in_same_batch 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨同批建结构+写提示词随执行器家族退役；批内即时拒绝语义由下方
+# test_fc_pending_window_rejects_bad_prompt（test_prompt_gates）等 FC 轨用例钉死。
 
 
 # ---------- FC 轨文档收集与规格暂停文案（8888 事故：无文档卡片无下一步指引） ----------
@@ -766,29 +653,9 @@ def test_fc_add_draft_stamps_spec_preference(svc, monkeypatch, set_global_settin
     assert d["providerId"] == "gemini-cli" and d["model"] == "auto"
 
 
-def test_text_track_add_draft_stamps_spec_preference(svc, monkeypatch, set_global_setting):
-    """文本轨 add_draft 同样补印（来源为全局设置）；草稿自带 providerId 时不覆盖"""
-    set_global_setting("default_image_provider_id", "gemini-cli")
-    set_global_setting("default_image_model", "auto")
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    svc.state_dict["documents"] = [
-        {"name": "制片规格.md", "content": _SPEC_PREF_DOC}]
-    svc.state_dict["keyElements"] = [{"id": "g1", "title": "G", "drafts": []}]
-    applied = ex.execute([
-        {"action": "add_draft", "draft_type": "keyElement", "group_id": "g1",
-         "draft": {"label": "概念图"}},
-    ])
-    assert applied == 1
-    d = svc.state_dict["keyElements"][0]["drafts"][-1]
-    assert d["providerId"] == "gemini-cli" and d["model"] == "auto"
-    # 自带 providerId 不被覆盖
-    applied2 = ex.execute([
-        {"action": "add_draft", "draft_type": "keyElement", "group_id": "g1",
-         "draft": {"label": "概念图2", "providerId": "custom-api"}},
-    ])
-    assert applied2 == 1
-    d2 = svc.state_dict["keyElements"][0]["drafts"][-1]
-    assert d2["providerId"] == "custom-api"
+# test_text_track_add_draft_stamps_spec_preference 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨 add_draft 随执行器家族退役；规格偏好补印语义由上方
+# test_fc_add_draft_stamps_spec_preference（FC 轨）钉死。
 
 
 # ---------- 确认晋升兜底（presented 记录缺失时按带提示词草稿晋升） ----------

@@ -1,8 +1,7 @@
-"""Skill 文档化 + write_document 文档工件"""
+"""Skill 文档化 + write_document 文档工件（Q2 后写入归 FC 工具 document_write）"""
 import pytest
 
 import src.video_agent.web.skill_docs as sd
-from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.state.manager import StateManager
 
 
@@ -104,31 +103,47 @@ def svc(tmp_path):
     return StateManager(str(tmp_path / "ws"))
 
 
-def test_write_document_upsert(svc):
-    ex = StateOperationExecutor(svc)
-    assert ex.execute([{"action": "write_document", "name": "Final_Video_Spec.md",
-                        "content": "# 规格\n时长: 60s"}]) == 1
+@pytest.mark.asyncio
+async def test_write_document_upsert(svc, monkeypatch):
+    """Q2 后文本轨退役：文档写入归 FC 工具 document_write（upsert 语义不回归）。"""
+    from src.video_agent.tools.document_tools import DocumentWriteTool, WriteDocumentInput
+
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+    tool = DocumentWriteTool()
+    r = await tool.aexecute(WriteDocumentInput(
+        name="Final_Video_Spec.md", content="# 规格\n时长: 60s"))
+    assert r.success
     docs = svc.state_dict["documents"]
-    assert len(docs) == 1 and docs[0]["name"] == "Final_Video_Spec.md"
-    assert ex.documents_written == ["Final_Video_Spec.md"]
+    specs = [d for d in docs if d["name"] == "Final_Video_Spec.md"]
+    assert len(specs) == 1  # 规格写入可能附带铁律文档，同名规格仅一条
+    assert specs[0]["content"] == "# 规格\n时长: 60s"
 
-    # 同名更新不新增条目
-    assert ex.execute([{"action": "write_document", "name": "Final_Video_Spec.md",
-                        "content": "# 规格 v2"}]) == 1
-    assert len(svc.state_dict["documents"]) == 1
-    assert svc.state_dict["documents"][0]["content"] == "# 规格 v2"
-    assert ex.documents_written == ["Final_Video_Spec.md"]  # 去重
+    # 同名更新不新增条目（覆盖）
+    r2 = await tool.aexecute(WriteDocumentInput(
+        name="Final_Video_Spec.md", content="# 规格 v2"))
+    assert r2.success and r2.data.get("action") == "updated"
+    specs2 = [d for d in svc.state_dict["documents"] if d["name"] == "Final_Video_Spec.md"]
+    assert len(specs2) == 1
+    assert specs2[0]["content"] == "# 规格 v2"
 
 
-def test_write_document_requires_name_and_content(svc):
-    ex = StateOperationExecutor(svc)
-    assert ex.execute([{"action": "write_document", "name": "", "content": "x"}]) == 0
-    assert ex.execute([{"action": "write_document", "name": "a.md", "content": "  "}]) == 0
+def test_write_document_schema_requires_fields():
+    """Q2 后口径：document_write 输入经 pydantic 严格 schema，
+    name/content 字段缺失即校验失败（弱口径空值宽容随文本轨退役）。"""
+    from pydantic import ValidationError
+    from src.video_agent.tools.document_tools import WriteDocumentInput
+
+    with pytest.raises(ValidationError):
+        WriteDocumentInput(content="x")  # 缺 name
+    with pytest.raises(ValidationError):
+        WriteDocumentInput(name="a.md")  # 缺 content
 
 
 def test_documents_in_agent_context(svc):
-    ex = StateOperationExecutor(svc)
-    ex.execute([{"action": "write_document", "name": "Spec.md", "content": "硬核写实科幻，60 秒"}])
+    """文档写入后随 Agent 上下文可见（写入动作归 document_write，
+    此处直置状态验上下文组装口径）。"""
+    svc.state_dict["documents"] = [
+        {"id": "doc-1", "name": "Spec.md", "content": "硬核写实科幻，60 秒"}]
     ctx = svc.build_agent_context("bound")
     assert "Spec.md" in ctx
     assert "硬核写实科幻" in ctx

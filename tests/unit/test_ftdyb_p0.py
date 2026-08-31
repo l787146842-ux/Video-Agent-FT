@@ -1,8 +1,11 @@
-"""FTDYB 追赶 P0：分镜新字段、删除 action、workflow_pause 门控"""
+"""FTDYB 追赶 P0：分镜新字段、删除语义、workflow_pause 门控
+（Q2 裁决 2026-09-01：建组走 FC 工具，删除/分组 patch 走领域层 ops）"""
+import asyncio
+
 import pytest
 
-from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.core.agent_loop import run_agent_loop
+from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 
 
@@ -13,21 +16,27 @@ def svc(tmp_path):
 
 @pytest.fixture
 def executor(svc):
+    from src.video_agent.core.action_executor import StateOperationExecutor
     return StateOperationExecutor(svc)
 
 
-def test_add_shot_with_ftdyb_fields(svc, executor):
-    applied = executor.execute([{
-        "action": "add_group",
-        "group_type": "shot",
-        "title": "Shot_太空艇与宇航员坍缩",
-        "shotType": "长镜头",
-        "sceneRefs": ["Element_监视太空艇", "Element_二维空间平面"],
-        "duration": "10s",
-        "roughDesc": "起初(0-4s)：中景…然后切至(4-7s)：特写…最后切至(7-10s)：远景…",
-        "draft": {"label": "分镜卡片", "prompt": "p"},
-    }])
-    assert applied == 1
+@pytest.mark.asyncio
+async def test_add_shot_with_ftdyb_fields(svc, monkeypatch):
+    from src.video_agent.tools.storyboard_tools import (
+        CreateGroupInput, StoryboardCreateGroupTool,
+    )
+
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+    r = await StoryboardCreateGroupTool().aexecute(CreateGroupInput(
+        group_type="shot",
+        title="Shot_太空艇与宇航员坍缩",
+        shot_type="长镜头",
+        scene_refs=["Element_监视太空艇", "Element_二维空间平面"],
+        duration="10s",
+        rough_desc="起初(0-4s)：中景…然后切至(4-7s)：特写…最后切至(7-10s)：远景…",
+        draft={"label": "分镜卡片", "prompt": "p"},
+    ))
+    assert r.success
     shot = svc.state_dict["shots"][-1]
     assert shot["shotType"] == "长镜头"
     assert shot["sceneRefs"] == ["Element_监视太空艇", "Element_二维空间平面"]
@@ -35,38 +44,34 @@ def test_add_shot_with_ftdyb_fields(svc, executor):
     assert shot["duration"] == "10s"
 
 
-def test_update_group_shot_fields(svc, executor):
-    shot_id = svc.state_dict["shots"][0]["id"]
-    applied = executor.execute([{
-        "action": "update_group",
-        "group_type": "shot",
-        "group_id": shot_id,
-        "patch": {"shotType": "特写", "sceneRefs": ["Element_A"]},
-    }])
-    assert applied == 1
+def test_update_group_shot_fields(svc):
+    shot = svc.state_dict["shots"][0]
+    changed, _dropped = ops.patch_group(
+        shot, {"shotType": "特写", "sceneRefs": ["Element_A"]})
+    assert changed
     assert svc.state_dict["shots"][0]["shotType"] == "特写"
     assert svc.state_dict["shots"][0]["sceneRefs"] == ["Element_A"]
 
 
-def test_delete_draft(svc, executor):
+def test_delete_draft(svc):
     group = svc.state_dict["keyElements"][0]
     target = group["drafts"][0]["id"]
     before = len(group["drafts"])
-    assert executor.execute([{"action": "delete_draft", "draft_type": "keyElement", "draft_id": target}]) == 1
+    assert ops.delete_draft(svc.state_dict, target, "keyElement") is True
     assert len(group["drafts"]) == before - 1
     assert all(d["id"] != target for d in group["drafts"])
 
 
-def test_delete_group(svc, executor):
+def test_delete_group(svc):
     gid = svc.state_dict["shots"][0]["id"]
     before = len(svc.state_dict["shots"])
-    assert executor.execute([{"action": "delete_group", "group_type": "shot", "group_id": gid}]) == 1
+    assert ops.delete_group(svc.state_dict, gid, "shot") is True
     assert len(svc.state_dict["shots"]) == before - 1
 
 
-def test_delete_missing_returns_zero(executor):
-    assert executor.execute([{"action": "delete_draft", "draft_id": "no-such"}]) == 0
-    assert executor.execute([{"action": "delete_group", "group_id": "no-such"}]) == 0
+def test_delete_missing_returns_false(svc):
+    assert ops.delete_draft(svc.state_dict, "no-such") is False
+    assert ops.delete_group(svc.state_dict, "no-such") is False
 
 
 async def test_workflow_pause_pauses_loop(svc, executor):

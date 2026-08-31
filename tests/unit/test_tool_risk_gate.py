@@ -35,9 +35,8 @@ EXPECTED_RISK = {
     "storyboard_media_to_chat": "low",
     "read_draft": "low",
     "view_storyboard_media": "low",
-    # medium（7）：写状态但可撤销
+    # medium（6）：写状态但可撤销（Q2 裁决 2026-09-01：flow_directive 工具退役）
     "workflow_pause": "medium",
-    "flow_directive": "medium",
     "storyboard_create_group": "medium",
     "storyboard_patch_draft": "medium",
     "storyboard_add_draft": "medium",
@@ -69,7 +68,6 @@ def _all_tool_classes():
     )
     from src.video_agent.tools.document_tools import (
         DocumentWriteTool,
-        FlowDirectiveTool,
         ImageGenerateTool,
         ReadProjectDocTool,
         ReadSkillTool,
@@ -92,7 +90,7 @@ def _all_tool_classes():
         CanvasListTool, CanvasReadNodesTool, CanvasListAssetsTool,
         ReadUploadedDocTool, ReadSkillTool, ReadProjectDocTool,
         StoryboardMediaToChatTool, StoryboardReadDraftTool, ViewStoryboardMediaTool,
-        WorkflowPauseTool, FlowDirectiveTool,
+        WorkflowPauseTool,
         StoryboardCreateGroupTool, StoryboardPatchDraftTool, StoryboardAddDraftTool,
         StoryboardDeleteGroupTool, StoryboardConfirmDraftTool,
         ImageGenerateTool, GenerateVideoTool,
@@ -104,7 +102,7 @@ def _all_tool_classes():
 class TestDeclarationCoverage:
     def test_all_platform_tools_declare_expected_risk(self):
         classes = _all_tool_classes()
-        assert len(classes) == 23
+        assert len(classes) == 22
         declared = {}
         for cls in classes:
             assert cls.name in EXPECTED_RISK, f"定级表缺少 {cls.name}"

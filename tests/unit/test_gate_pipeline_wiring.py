@@ -74,19 +74,17 @@ class TestUnifiedPipeline:
         v_ok = prompt_write_verdict(_OK_SHOT, "shot", _empty_state())
         assert v_ok.ok is True
 
-    def test_dual_track_same_source(self):
-        """双轨同源：FC 轨与文本轨的判定函数是同一个（防再次各自组装）。
+    def test_fc_track_delegates_to_unified_pipeline(self):
+        """动作通道唯一 = FC：FC 轨判定委托统一闸机管线（防再次各自组装；
+        Q2 裁决 2026-09-01 文本轨退役，原双轨同源断言收敛为单轨）。
         任务#23 三段拆分后 FC 轨判定实现体 = core/fc_gates.prompt_gate
         （FCToolRunner._prompt_gate 为承重壳，委托本函数）。"""
         import inspect
 
         from src.video_agent.core import fc_gates
-        from src.video_agent.core import action_executor
 
         fc_src = inspect.getsource(fc_gates.prompt_gate)
-        te_src = inspect.getsource(action_executor.StateOperationExecutor._gate_check)
         assert "guard_pipeline.evaluate_prompt_write" in fc_src
-        assert "guard_pipeline.evaluate_prompt_write" in te_src
 
 
 class TestMessagesExternalized:

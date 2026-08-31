@@ -101,10 +101,6 @@ async def _stream_worker_impl(body: ChatRequest, svc: StateManager, emit, pendin
     except Exception as _e:
         logger.debug("[chat_service] 忽略异常: {}", _e)
 
-    # 一条龙指令仅本条消息生效——任务开始清除上一任务残留标记
-    if prompt_gates.clear_flow_directive(svc.state_dict):
-        svc.save_debounced()
-
     t0 = time.monotonic()
     executor = StateOperationExecutor(
         svc,
@@ -611,9 +607,6 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
         ensure_iron_rules_doc(svc.state_dict)
     except Exception as _e:
         logger.debug("[chat_service] 忽略异常: {}", _e)
-    # 一条龙指令仅本条消息生效（与非流式路径对齐）
-    if prompt_gates.clear_flow_directive(svc.state_dict):
-        svc.save_debounced()
     executor = StateOperationExecutor(
         svc,
         selected_draft_id=body.selected_draft_id,

@@ -238,7 +238,8 @@ src/video_agent/
 │   ├── guard_pipeline.py   ← 闸机管线（2.0，动作判定唯一入口）
 │   ├── prompt_builder.py   ← 上下文组装；token_budget.py ← 窗口/截断
 │   ├── coupling_registry.py ← 13.7 耦合表机器可读化（test_coupling_registry 钉死）
-│   ├── action_executor.py  ← 动作执行器（D-01 下沉）；生成动作域 action_gen.py；web 依赖经 ports.py 倒置
+│   ├── action_executor.py  ← 状态视图载体（Q2 裁决 2026-09-01：文本轨动作分派与
+│                        三域模块退役删除，动作通道唯一 = FC 工具；防复活见 check_legacy_orchestration）
 │   └── tracer.py           ← 审计链路
 ├── skill_runtime/
 │   ├── registry.py / guard.py / progress.py

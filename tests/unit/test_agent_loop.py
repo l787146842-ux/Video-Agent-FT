@@ -247,10 +247,10 @@ async def test_future_tense_pause_no_warning_empty_board(svc, executor):
 
 async def test_legit_pause_not_blocked(svc, executor):
     """真实拆解后的暂停不被虚报闸误伤：故事板非空时照常递给用户。"""
-    executor.execute([
-        {"action": "add_group", "group_type": "keyElement",
-         "title": "Element_A", "desc": "角色"},
-    ])
+    # Q2 后文本轨动作退役：故事板结构直接经状态写入布置（与 FC 工具落点同构）
+    svc.state_dict["keyElements"] = [{
+        "id": "ke-a", "title": "Element_A", "desc": "角色", "drafts": [],
+    }]
     llm, calls = make_fc_llm([
         ("已完成关键元素拆解并录入故事板", "stop", 1,
          0.0, {"confirmation": "请审阅", "confirmation_options": []}),

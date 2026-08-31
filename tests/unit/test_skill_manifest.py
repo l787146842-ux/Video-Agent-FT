@@ -81,22 +81,9 @@ async def test_spec_pause_gate_silent_without_manifest(svc):
 
 # ---------- 端到端：规格前置警告只对声明 spec_gate 的 Skill 生效 ----------
 
-def test_spec_gate_warning_requires_declaration(svc):
-    """814Gb/0818：规格前置不再在执行器层硬拦（_spec_gate_ok 退役），
-    顺序控制归编排器；无论是否声明 spec_gate 均照常建组。"""
-    sd.save_skill_doc(
-        "有规格闸",
-        "# A\n```json skill_manifest\n" '{"flow": {"spec_gate": true}}\n' "```\n正文",
-    )
-    sd.save_skill_doc("无规格闸", "# B\n> 调用规则：测试\n正文")
-    svc.state_dict["documents"] = []
-
-    ex = StateOperationExecutor(svc, gate_enabled=True)
-    ex.skill_name = "有规格闸"
-    assert not hasattr(ex, "_spec_gate_ok")
-    assert ex.execute([{
-        "action": "add_group", "group_type": "keyElement", "title": "Element_闸",
-    }]) == 1
+# test_spec_gate_warning_requires_declaration 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨执行器层规格前置判定（含 _spec_gate_ok 退役断言）随执行器家族整体退役；
+# 顺序控制归 Skill 流程与阶段裁剪，机械闸仅存 platform 层（GATE_RULES 5 条）。
 
 
 # ---------- 暂停声明：机械暂停已随 C1b 裁决 2026-08-31 退役（lint 仅诊断） ----------

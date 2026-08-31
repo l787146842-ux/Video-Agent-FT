@@ -62,7 +62,6 @@ def _reconcile_stage_review_card(
         not ledger.confirmation
         and ledger.skill_strict
         and ledger.storyboard_empty_before
-        and not prompt_gates.flow_auto_continue(state_provider())
         and prompt_gates.storyboard_stage_complete(state_provider(), ledger.injected_skill)
     ):
         ledger.confirmation, ledger.confirmation_options = prompt_gates.structure_paused_confirmation(

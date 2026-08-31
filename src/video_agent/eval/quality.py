@@ -17,7 +17,7 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
-from src.video_agent.core.action_executor import StateOperationExecutor
+from src.video_agent.core import guard_pipeline
 from src.video_agent.web.chat_service import _consume_pending_confirmation
 from src.video_agent.web.generation import call_chat_completion
 from src.video_agent.web.url_safety import validate_external_url
@@ -178,17 +178,14 @@ def _check_element_gate_referenced_only() -> Tuple[bool, str]:
                 "drafts": [{"id": "s2", "mediaType": "video", "prompt": ""}],
             },
         ]
-        ex = StateOperationExecutor(svc, gate_enabled=True)
-        first = ex.execute([{
-            "action": "update_draft", "draft_id": "s1", "draft_type": "shot",
-            "patch": {"prompt": _good_shot_base() + " no subtitles 镜头总时长：15秒"},
-        }])
-        second = ex.execute([{
-            "action": "update_draft", "draft_id": "s2", "draft_type": "shot",
-            "patch": {"prompt": _good_shot_base() + " no subtitles 镜头总时长：15秒"},
-        }])
-        return first == 1 and second == 1 and bool(ex.gate_warnings), (
-            f"引用与独立分镜都应照常写入并警告，first={first}, second={second}"
+        # Q2 裁决 2026-09-01：文本轨执行器退役，评测直调平台闸机唯一判定口。
+        prompt = _good_shot_base() + " no subtitles 镜头总时长：15秒"
+        first = guard_pipeline.evaluate_prompt_write(prompt, "shot", svc.state_dict)
+        second = guard_pipeline.evaluate_prompt_write(prompt, "shot", svc.state_dict)
+        ok = first.ok and second.ok and bool(first.warnings or second.warnings)
+        return ok, (
+            f"引用与独立分镜都应照常放行并带客观警告，"
+            f"first.ok={first.ok}, second.ok={second.ok}"
         )
     finally:
         StateManager.reset_instance()

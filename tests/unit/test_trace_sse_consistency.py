@@ -140,20 +140,9 @@ def test_normalize_group_title_strips_prefixes():
     assert ops.normalize_group_title("元素场景_01") == "元素场景_01"
 
 
-def test_add_group_title_normalized_on_write(tmp_path):
-    """文本轨建组入口：标题落盘前归一。"""
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.core.action_executor import StateOperationExecutor
-    svc = StateManager(str(tmp_path / "ws"))
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    applied = ex.execute([{
-        "action": "add_group", "group_type": "keyElement",
-        "title": "key_element_audio_瓦西里", "desc": "音色低沉",
-    }])
-    assert applied == 1
-    titles = [g.get("title") for g in svc.state_dict.get("keyElements", [])]
-    assert "瓦西里" in titles
-    assert "key_element_audio_瓦西里" not in titles
+# test_add_group_title_normalized_on_write 已随 Q2 裁决 2026-09-01 退役删除：
+# 文本轨建组入口（executor.execute add_group）随执行器家族整体退役，
+# 归一语义由下方 FC 轨同覆盖用例钉死（G4 同类路径）。
 
 
 def test_fc_create_group_title_normalized(tmp_path, monkeypatch):
@@ -171,22 +160,9 @@ def test_fc_create_group_title_normalized(tmp_path, monkeypatch):
     assert "太阳系外缘启示号控制舱" in titles
 
 
-def test_patch_group_title_normalized_on_model_path(tmp_path):
-    """复查补漏：模型经 patch_group 改名也归一（用户 REST 路径不受影响）。"""
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.core.action_executor import StateOperationExecutor
-    svc = StateManager(str(tmp_path / "ws"))
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    ex.execute([{
-        "action": "add_group", "group_type": "keyElement",
-        "title": "瓦西里", "desc": "x",
-    }])
-    gid = svc.state_dict["keyElements"][0]["id"]
-    ex.execute([{
-        "action": "patch_group", "group_id": gid, "group_type": "keyElement",
-        "patch": {"title": "key_element_audio_瓦西里"},
-    }])
-    assert svc.state_dict["keyElements"][0]["title"] == "瓦西里"
+# test_patch_group_title_normalized_on_model_path 已随 Q2 裁决 2026-09-01 退役删除：
+# patch_group 为文本轨动作，随执行器家族整体退役；模型路径分组改名经
+# FC 工具链（建组入口归一已由上方 FC 轨用例钉死），用户 REST 路径不受影响。
 
 
 # ---------- 0817 B18：注入瘦身（铁律4/5删除+全局设置阶段门控+channels死机制清除） ----------
@@ -417,46 +393,11 @@ def test_pause_note_objective_spec_state(tmp_path):
     assert "先写入规格文档" not in note2
 
 
-# ---------- 0817 B11：flow_directive 一条龙（模型解读+平台机械执行+按消息生效） ----------
-
-@pytest.mark.asyncio
-async def test_flow_directive_tool_sets_flag_and_clears(tmp_path, monkeypatch):
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.core import prompt_gates
-    from src.video_agent.tools.document_tools import FlowDirectiveTool
-    svc = StateManager(str(tmp_path / "ws"))
-    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
-    tool = FlowDirectiveTool()
-    res = await tool.aexecute(tool.get_input_schema()(auto_continue=True))
-    assert res.success and prompt_gates.flow_auto_continue(svc.state_dict)
-    # 批5：授权经控制流 trace 留痕（可追溯，Context ≠ Consent）
-    from src.video_agent.core.tracer import AgentTracer
-    events = AgentTracer.get_instance().control_flow_events()
-    assert any(e.get("event") == "autonomy_granted" for e in events), \
-        "自主性档位授予必须进控制流 trace"
-    # 任务开始清除（按消息生效语义）
-    assert prompt_gates.clear_flow_directive(svc.state_dict) is True
-    assert not prompt_gates.flow_auto_continue(svc.state_dict)
-    assert prompt_gates.clear_flow_directive(svc.state_dict) is False
-
-
-@pytest.mark.asyncio
-async def test_flow_directive_text_track_sets_flag(tmp_path):
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.core import prompt_gates
-    from src.video_agent.core.action_executor import StateOperationExecutor
-    svc = StateManager(str(tmp_path / "ws"))
-    ex = StateOperationExecutor(svc, gate_enabled=False)
-    assert ex.execute([{"action": "flow_directive", "auto_continue": True}]) == 1
-    assert prompt_gates.flow_auto_continue(svc.state_dict)
-
-
-def test_pause_suppressions_wired_to_auto_continue():
-    """轮末暂停/引导卡均接入一条龙豁免（G4 同类路径；0818：spec_collect 随门禁链退役）。"""
-    import inspect
-    from src.video_agent.core import round_end_policies as rep
-    for fn in (rep._cond_structure_stage_review, rep._cond_stage_done_fallback):
-        assert "flow_auto_continue" in inspect.getsource(fn)
+# ---------- 0817 B11：flow_directive 一条龙已随 Q2 裁决 2026-09-01 整体退役 ----------
+# test_flow_directive_tool_sets_flag_and_clears / test_flow_directive_text_track_sets_flag /
+# test_pause_suppressions_wired_to_auto_continue 同批删除：一条龙指令链（工具/
+# 文本轨登记/auto_continue 豁免）随执行器家族退役；暂停豁免仅认用户显式回应。
+# 防复活钉死见 check_legacy_orchestration FORBIDDEN_B2_RETIREMENT。
 
 
 # ---------- 0817 B9：机器覆盖验收（Skill 声明驱动） ----------

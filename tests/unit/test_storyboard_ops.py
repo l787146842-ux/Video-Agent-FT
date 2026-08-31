@@ -1,4 +1,5 @@
-"""storyboard_ops 领域层：双轨等价性回归测试（FC Tool vs 文本 executor 同一实现）"""
+"""storyboard_ops 领域层：FC 工具与唯一实现同口径回归（Q2 裁决 2026-09-01：
+文本轨随执行器家族退役，动作通道唯一 = FC）"""
 import pytest
 
 from src.video_agent.state.manager import StateManager
@@ -9,7 +10,6 @@ from src.video_agent.tools.storyboard_tools import (
     StoryboardConfirmDraftTool,
     ConfirmDraftInput,
 )
-from src.video_agent.core.action_executor import StateOperationExecutor
 
 
 @pytest.fixture
@@ -42,8 +42,8 @@ async def test_fc_patch_covers_image_resolution_and_gen_type(svc):
 
 
 @pytest.mark.asyncio
-async def test_fc_and_text_track_patch_equivalence(svc):
-    """同一合法 patch 经 FC 轨与文本轨执行后，draft 状态必须逐字段一致"""
+async def test_fc_patch_matches_ops_single_implementation(svc):
+    """同一合法 patch：FC 工具落点与领域层唯一实现（ops.patch_draft）逐字段一致。"""
     _, draft = _first_draft(svc)
     patch = {"label": "等价测试", "tag": "已确认", "aspectRatio": "9:16"}
 
@@ -52,18 +52,19 @@ async def test_fc_and_text_track_patch_equivalence(svc):
     assert r1.success
     fc_snapshot = dict(draft)
 
-    # 还原后走文本轨（标签已确认 → 重写同值不作废，两轨同口径）
-    executor = StateOperationExecutor(svc)
-    executor.execute([{"action": "update_draft", "draft_id": draft["id"], "patch": patch}])
-    text_snapshot = dict(draft)
-
-    assert fc_snapshot == text_snapshot
+    # 另一草稿经唯一实现直写，同口径逐字段一致（标签已确认 → 重写同值不作废）
+    peer = dict(draft)
+    peer["label"], peer["tag"], peer["aspectRatio"] = "旧", "Agent", "16:9"
+    ops.patch_draft(peer, dict(patch))
+    assert fc_snapshot["label"] == peer["label"]
+    assert fc_snapshot["tag"] == peer["tag"]
+    assert fc_snapshot["aspectRatio"] == peer["aspectRatio"]
 
 
 @pytest.mark.asyncio
-async def test_unknown_field_fc_rejects_text_track_tolerates(svc):
-    """批 4a 口径：白名单外字段——FC 轨原子拒收（报错不写入），
-    文本轨容忍丢弃留痕（保模型动作链不断），两轨都不写入该字段"""
+async def test_unknown_field_fc_atomic_reject(svc):
+    """批 4a 口径：白名单外字段——FC 轨原子拒收（报错不写入；
+    Q2 裁决后文本轨容忍分支随执行器家族退役）。"""
     _, draft = _first_draft(svc)
     patch = {"label": "应拒收", "unknownField": "x"}
 
@@ -73,11 +74,6 @@ async def test_unknown_field_fc_rejects_text_track_tolerates(svc):
     assert r1.error_code == "validation" and r1.retryable is False
     assert "unknownField" in str(r1.error)
     assert draft.get("label") != "应拒收"  # 原子拒收：合法字段也不部分写入
-
-    executor = StateOperationExecutor(svc)
-    executor.execute([{"action": "update_draft", "draft_id": draft["id"], "patch": patch}])
-    assert draft.get("label") == "应拒收"  # 文本轨容忍：白名单内字段照常写入
-    assert "unknownField" not in draft  # 白名单外字段两轨都不写入
 
 
 @pytest.mark.asyncio
@@ -99,15 +95,9 @@ async def test_fc_confirm_uses_unified_patch(svc):
     assert draft["tag"] == "已确认"
 
 
-@pytest.mark.asyncio
-async def test_execute_locked_applies_under_lock(svc):
-    """execute_locked：持锁执行，结果与同步 execute 一致"""
-    executor = StateOperationExecutor(svc)
-    applied = await executor.execute_locked([{
-        "action": "add_group", "group_type": "keyElement", "title": "持锁分组",
-    }])
-    assert applied == 1
-    assert svc.state_dict["keyElements"][-1]["title"] == "持锁分组"
+# test_execute_locked_applies_under_lock 已随 Q2 裁决 2026-09-01 退役删除：
+# execute_locked/文本轨动作分派随执行器家族退役；并发契约归 svc.lock（FC 工具
+# 与路由层持锁口径另有钉死）。
 
 
 def test_ops_find_draft_selected_fallback(svc):

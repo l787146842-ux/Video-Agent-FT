@@ -362,7 +362,8 @@ class Planner:
         # 会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
         self._chat_thinking_level = context.thinking_level or ""
 
-        # 构建 executor（文本解析路径用）：优先注入的工厂，缺省 core 层实现
+        # 构建状态视图载体（Q2：文本轨动作分派已退役，动作通道唯一 = FC；
+        # 载体供 agent_loop/轮末策略读 state 与动作描述）：优先注入的工厂，缺省 core 层实现
         factory = self.executor_factory
         if factory is None:
             factory = StateOperationExecutor

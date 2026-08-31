@@ -12,7 +12,6 @@ from src.video_agent.config import settings
 from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 from src.video_agent.core import ports, prompt_gates
-from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import registry
 from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
@@ -33,7 +32,7 @@ from src.video_agent.utils.prompts import render_prompt_section
 # ---------- Input Schemas ----------
 
 # 写类 Input 继承 StrictToolInput（extra="forbid"，批 4b）；
-# 只读/交互控制面（workflow_pause/flow_directive）保持 BaseModel 原样。
+# 只读/交互控制面（workflow_pause）保持 BaseModel 原样。
 
 class WriteDocumentInput(StrictToolInput):
     name: str = Field(..., description="文档名称（如 Final_Video_Spec.md）")
@@ -109,15 +108,6 @@ class WorkflowPauseInput(BaseModel):
     )
 
 
-class FlowDirectiveInput(BaseModel):
-    auto_continue: bool = Field(
-        False,
-        description="仅当用户本条消息明确要求一条龙/自动推进（如「一条龙」"
-        "「一口气做完」「中途别问我」）时为 true，豁免本条消息的流程暂停；"
-        "用户未明确要求时不得发出",
-    )
-
-
 # ---------- Tool 实现 ----------
 
 def _norm_name(s: str) -> str:
@@ -172,6 +162,8 @@ class DocumentWriteTool(BaseTool):
         svc = StateManager.get_instance()
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         content = str(params.content or "")
+        # 规格文档判定唯一口径（prompt_gates.is_spec_doc_name）：规格写入后同批补铁律
+        is_spec = prompt_gates.is_spec_doc_name(str(params.name or ""))
         # 铁律文档保护：铁律由系统维护 + 用户在文档面板手改，
         # 模型只读不得整篇重写（会盖掉用户编辑）
         if IRON_RULES_HEADING in str(params.name or ""):
@@ -785,40 +777,6 @@ class ImageGenerateTool(BaseTool):
         })
 
 
-class FlowDirectiveTool(BaseTool):
-    name = "flow_directive"
-    risk = "medium"  # §2.7 裁决：写交互状态、按消息生效即清，从严定 medium
-    detail_tier = "output"  # 内部路由指令，仅输出留痕
-    description = (
-        "流程指令：仅当用户本条消息明确要求一条龙/自动推进时才以 auto_continue=true 发出，"
-        "豁免本条消息的流程暂停（规格收集/故事板审阅等卡片不再弹出）；"
-        "用户未明确要求时不得发出。（C1a 裁决 2026-08-31：本指令不再构成生成/高危同意，"
-        "确认闸只认用户「本次放行」与执行偏好三档。）"
-    )
-
-    def get_input_schema(self) -> Type[BaseModel]:
-        return FlowDirectiveInput
-
-    async def aexecute(self, params: FlowDirectiveInput) -> ToolResult:
-        """自主性档位（宪法 Rule2）：用户显式指令授予模型豁免非平台
-        硬暂停点；按消息生效、任务开始即清；授权经控制流 trace 留痕。"""
-        svc = StateManager.get_instance()
-        if params.auto_continue:
-            inter = svc.state_dict.setdefault("interaction", {})
-            inter["auto_continue"] = True
-            svc.save_debounced()
-            logger.info("[FlowDirective] 一条龙指令登记（本条消息生效）")
-            try:
-                AgentTracer.get_instance().record_control_flow(
-                    "autonomy_granted",
-                    "用户显式指令授予连续执行档位（本条消息生效，豁免非平台硬暂停点）",
-                    str((svc.state_dict.get("usedSkills") or [""])[0] or ""),
-                )
-            except Exception as _e:
-                logger.debug("[FlowDirective] 控制流留痕跳过: {}", _e)
-        return ToolResult(success=True, data={"auto_continue": bool(params.auto_continue)})
-
-
 class WorkflowPauseTool(BaseTool):
     name = "workflow_pause"
     risk = "medium"  # §2.7：写交互暂停态，用户回应即可撤销
@@ -849,5 +807,4 @@ def register_document_tools():
     ToolManager.register(ReadProjectDocTool())
     ToolManager.register(ImageGenerateTool())
     ToolManager.register(WorkflowPauseTool())
-    ToolManager.register(FlowDirectiveTool())
-    logger.info("[Tools] 9 document/skill/generation/workflow/flow tools registered")
+    logger.info("[Tools] 8 document/skill/generation/workflow tools registered")

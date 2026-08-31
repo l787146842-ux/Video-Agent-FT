@@ -147,7 +147,8 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.core.fc_tool_runner:format_tool_results",
             # 三段拆分承重壳：闸机方法壳（实现体 fc_gates）
             "src.video_agent.core.fc_tool_runner:FCToolRunner._prompt_gate",
-            "src.video_agent.core.action_executor:StateOperationExecutor._apply_generate_image",
+            # （Q2 裁决 2026-09-01：action_executor 动作域三壳（生成/草稿分组/
+            # 文档媒体）随文本轨执行器家族整体退役删除，动作通道唯一 = FC）
             # （批次E：web 层 provider_config 薄壳已清偿删除，
             # 消费方全部直连 core/provider_config.py）
             # state/manager.py 拆分承重壳：对话域（实现体
@@ -165,15 +166,6 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.core.prompt_gates:GATE_RULES",
             "src.video_agent.core.prompt_gates:GateRuleMeta",
             "src.video_agent.core.prompt_gates:normalize_rule_id",
-            # action_executor.py 动作域拆分承重壳：草稿/分组域
-            # （实现体 action_drafts）/文档媒体域（实现体 action_media）；
-            # 执行器门面（分派+闸机判定）长期承重，实例方法壳保 patch 目标不变
-            "src.video_agent.core.action_executor:StateOperationExecutor._apply_draft_patch",
-            "src.video_agent.core.action_executor:StateOperationExecutor._apply_add_draft",
-            "src.video_agent.core.action_executor:StateOperationExecutor._apply_add_group",
-            "src.video_agent.core.action_executor:StateOperationExecutor._apply_write_document",
-            "src.video_agent.core.action_executor:StateOperationExecutor._apply_clear_media",
-            "src.video_agent.core.action_executor:StateOperationExecutor._apply_insert_chat_media",
             # chat_service.py 错误翻译域拆分承重壳：流式错误
             # 出口 + 人话翻译（实现体 web/chat_errors.py）；tests 经
             # chat_service.* 导入钉死，迁移需全量改引用

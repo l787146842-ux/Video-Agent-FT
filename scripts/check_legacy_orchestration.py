@@ -99,10 +99,17 @@ FORBIDDEN_L2_INJECTION = re.compile(
 )
 
 # 第 2 批删除批（Q2/Q10 裁决 2026-09-01）退役符号防复活：
-# 版本锁核验/记账（resource_lock_errors，保留 .history 本地备份）；
-# 扫描面同 L2（不扫 tests：not hasattr 回归断言合法含字面量）。
+# ① 版本锁核验/记账（resource_lock_errors，保留 .history 本地备份）；
+# ② 文本轨动作分派家族：action_drafts/action_gen/action_media 三域模块
+# （导入路径形式扫描，不命中退役留痕注释）+ apply_flow_directive/
+# clear_flow_directive/flow_auto_continue/FlowDirectiveTool（一条龙指令链）；
+# 动作通道唯一 = FC 工具直连 storyboard_ops。
+# 扫描面同 L2（不扫 tests：not hasattr/回归断言合法含字面量）。
 FORBIDDEN_B2_RETIREMENT = re.compile(
     r"resource_lock_errors"
+    r"|core\.action_drafts|core\.action_gen\b|core\.action_media"
+    r"|import action_drafts|import action_gen\b|import action_media"
+    r"|apply_flow_directive|clear_flow_directive|flow_auto_continue|FlowDirectiveTool"
 )
 
 
