@@ -107,49 +107,9 @@ def structure_paused_confirmation(kinds) -> Tuple[str, List[Dict[str, str]]]:
         return SHOT_STRUCTURE_PAUSED_MSG, list(SHOT_STRUCTURE_OPTIONS)
     return STORYBOARD_STRUCTURE_PAUSED_MSG, list(STORYBOARD_STRUCTURE_OPTIONS)
 
-# 规格文档写入后的引导选项（下一步客观具体，不再「按流程继续」黑盒）
-SPEC_DOC_OPTIONS = _gate_json("SPEC_DOC_OPTIONS", [
-    {
-        "label": "确认成片规格，按流程继续",
-        "description": "规格内容无误，按当前 Skill 流程推进下一阶段",
-    },
-    {"label": "调整成片规格", "description": "告诉我需要修改的规格条目"},
-])
-
-
-def spec_review_options(state: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
-    """规格审阅卡的下一步选项（中性化：平台不点名下一步，
-    一律「按当前 Skill 流程推进」；流程排序意见归 Skill）。"""
-    return list(SPEC_DOC_OPTIONS)
-
-# script_analyze 后的规格收集暂停卡（规格交互本身就是暂停点，
-# 解析完成后直接进入规格收集向导）。
-# 收集完成后规格文档由系统机械拼装，模型不再手写。
-SPEC_COLLECT_PAUSED_MSG = (
-    "剧本读完了。一句话故事总结：{summary}\n"
-    "接下来我为这部片子拼装一份制片规格，请逐项选定以下维度"
-    "（点选或自定义输入；不选的由我按剧本拟定后给您过目）。"
-    "选完发给我，自动拼装规格并请您审阅。"
-)
-
-SPEC_COLLECT_KIND = "collect"
-
-# 未声明总结展示的 Skill 用无总结版（流程归位，平台不全局化）
-SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY = (
-    "剧本读完了。\n"
-    "接下来我为这部片子拼装一份制片规格，请逐项选定以下维度"
-    "（点选或自定义输入；不选的由我按剧本拟定后给您过目）。"
-    "选完发给我，自动拼装规格并请您审阅。"
-)
-
-# 规格文档拼装/写入后的系统级暂停文案：
-# 模型同批未自发 workflow_pause 时，由执行层注入此文案；
-# 下一步不写死具体阶段（启用条件按规格流程客观特征自动检测；后续阶段以各自流程为准）；
-# 模型自填项必须逐条过目
-SPEC_DOC_PAUSED_MSG = (
-    "制片规格已按您的选定拼装完成，请审阅规格条目；未选维度由模型根据剧本拟定自填，请逐条过目，"
-    "如需调整直接告诉我。确认后按当前 Skill 流程推进下一阶段。"
-)
+# 规格文档相关卡片/文案族（SPEC_DOC_OPTIONS/spec_review_options/
+# SPEC_COLLECT_*/SPEC_DOC_PAUSED_MSG）已随用户裁决 2026-08-31 退役删除（D-08 清偿）：
+# 规格交互归 Skill 散文 + 模型自主暂停。
 
 # ---------- 一句话总结展示去重（正文出现两遍总结） ----------
 # 模型自己展示总结时常改写引号/标点（“启示” vs "启示"），裸子串判重失效，
@@ -180,52 +140,8 @@ def summary_already_visible(visible: str, summary: str) -> bool:
     return bool(head) and head in nv
 
 
-# ---------- 规格制作参数待确认兜底（三项参数标着「待确认」就放行） ----------
-# Skill 要求图片分辨率/视频分辨率/分镜最大时长必须在规格交互中给候选项由
-# 用户选定；笨模型会写「待确认」占位就暂停。系统兜底：检测未确认项 →
-# 暂停卡升级为候选项向导，用户回应时机械落盘（chat_service 消费）。
-from src.video_agent.state.provider_prefs import SPEC_PARAM_UNCONFIRMED_MARKERS  # noqa: 2
-
-_SPEC_PARAM_LINES: Tuple[Tuple[str, re.Pattern], ...] = (
-    ("图片分辨率", re.compile(r"(?im)^\s*(?:[-*]\s*)?(?:图片|图像|出图)分辨率\s*[:：].*$")),
-    ("视频分辨率", re.compile(r"(?im)^\s*(?:[-*]\s*)?(?:视频|出视频)分辨率\s*[:：].*$")),
-    ("分镜最大时长", re.compile(r"(?im)^\s*(?:[-*]\s*)?(?:分镜|单镜头|镜头)?最大时长\s*[:：].*$")),
-)
-
-# 用户回应里的选择解析（向导回传格式为逐行「键：值」，也兼容自由表述）
-_SPEC_IMG_SEL_RE = re.compile(r"(?im)(?:图片|图像|出图)分辨率\s*[:：]\s*([124])\s*K|(?<![0-9A-Za-z])([124])K(?![A-Za-z])")
-_SPEC_VID_SEL_RE = re.compile(r"(?im)(?:视频|出视频)分辨率\s*[:：]\s*(480|720|1080)\s*p|(?<![0-9])(480|720|1080)p", re.IGNORECASE)
-_SPEC_DUR_SEL_RE = re.compile(r"(?im)(?:分镜|单镜头)?最大时长\s*[:：]\s*(\d{1,2})\s*秒?(?:/镜头)?|(\d{1,2})\s*秒(?:/镜头)?")
-_SPEC_CONFIRM_INTENT_RE = re.compile(r"确认|没问题|无误|可以|同意|继续|开始|OK|ok|好的")
-
-
-def parse_hard_selections(user_text: str) -> Dict[str, str]:
-    """解析用户回应里的三项硬参数选择，键用规格文档行键（方案乙存档用）。"""
-    out: Dict[str, str] = {}
-    text = str(user_text or "")
-    m = _SPEC_IMG_SEL_RE.search(text)
-    if m and any(m.groups()):
-        out["图片分辨率"] = f"{next(g for g in m.groups() if g)}K"
-    m = _SPEC_VID_SEL_RE.search(text)
-    if m and any(m.groups()):
-        out["视频分辨率"] = f"{next(g for g in m.groups() if g).lower()}p"
-    m = _SPEC_DUR_SEL_RE.search(text)
-    if m and any(m.groups()):
-        out["分镜最大时长"] = f"{next(g for g in m.groups() if g)} 秒"
-    return out
-
-
-# ---------- 软制作参数（维度来自 Skill，平台不预设） ----------
-# 向导的软维度 = Skill 规格编写步骤客观声明的维度（如「AI-短剧」画幅比例/
-# 目标时长/影像风格基调/输出语言）；候选由内层模型按剧本逐维出题，落
-# interaction.spec_soft_candidates；用户不选则放行、模型自填（不拦人）。
-_SPEC_WRITE_ENUM_RE = re.compile(r"[（(]([^（）()]+)[）)]")
-_SPEC_WRITE_VERB_RE = re.compile(r"写入|编写|初始化|拟定")
-# 规格维度优先解析「建议条目：…」整段（去掉括号注解后按 /、，、；切分）
-_SPEC_SUGGESTED_RE = re.compile(r"建议条目\s*[:：]\s*([^）)；。\n]+)")
-
-
-# ---------- 规格文档系统拼装（模型不手写规格） ----------
+# ---------- 规格制作参数硬选择解析（parse_hard_selections/_SPEC_*_SEL_RE 等）----------
+# 已随用户裁决 2026-08-31 退役删除（D-08 清偿）：规格参数收集归模型自主对话。
 
 
 # 提示词草案写入后 Skill 要求暂停审阅，模型该停没停时

@@ -11,13 +11,13 @@
 
 
 def test_fallback_retired_and_spec_write_record_trace_action():
-    """规格机械写落转录（源码锁源）；fallback 切换转录随裁决退役（2026-08-20）"""
+    """fallback 切换转录随裁决退役（2026-08-20）；规格机械写落转录随用户裁决 2026-08-31 退役（D-08 清偿）"""
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]
     cs = (root / "src/video_agent/web/chat_service.py").read_text(encoding="utf-8")
     assert '"model_fallback"' not in cs, "裁决：聊天链路不自动换模型，发射端已删"
     cc = (root / "src/video_agent/web/chat_consume.py").read_text(encoding="utf-8")
-    assert '"write_document"' in cc and "写入文档" in cc
+    assert '"write_document"' not in cc, "规格机械写落转录已随 D-08 清偿退役"
 
 
 def test_prose_obligation_lint_warns_without_pause_declaration():

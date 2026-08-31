@@ -54,50 +54,11 @@ def env(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_write_spec_commit_opens_review_and_pause_resolves(env):
-    """v2 批2：向导落盘同事务开 review decision（waiting_user）；
-    审阅卡确认（consume_pause_response）解析后解除挂起。"""
+async def test_write_spec_wizard_chain_retired(env):
+    """v2 批2 向导落盘/审阅链已随用户裁决 2026-08-31 退役（D-08 清偿）：
+    _consume_spec_wizard 已删除，规格交互归模型自主对话。"""
     from src.video_agent.web import chat_consume
-    svc, _adapter, _planner = env
-    svc.state_dict["usedSkills"] = [SKILL]
-    svc.state_dict["interaction"] = {"spec_soft_candidates": {
-        "画幅比例": ["16:9 横屏"]}}
-    note, name = chat_consume._consume_spec_wizard(svc, "画幅比例：16:9 横屏")
-    assert name == "Final_Video_Spec.md"
-    run = svc.state_dict.get("workflow_run") or {}
-    assert run.get("status") == "waiting_user"
-    token = str((run.get("pending_decision") or {}).get("token") or "")
-    assert token.startswith("review:")
-    # 审阅卡确认 → resolve
-    pid = "pause-x"
-    svc.state_dict.setdefault("interaction", {})["active_pause"] = {
-        "pause_id": pid, "message": "请审阅", "options": []}
-    out = chat_consume.consume_pause_response(
-        svc, {"pause_id": pid, "value": "确认，进入下一阶段"})
-    assert out is not None
-    run = svc.state_dict.get("workflow_run") or {}
-    assert run.get("pending_decision") is None
-
-
-def test_workflow_projection_carries_turn_events(env):
-    """v2 批3：project() 只读派生 run 快照 + 本轮事件序列（done/replay 同源）。"""
-    from src.video_agent.core import workflow_runtime
-    from src.video_agent.web import chat_consume
-    svc, _adapter, _planner = env
-    svc.state_dict["usedSkills"] = [SKILL]
-    svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
-    _note, name = chat_consume._consume_spec_wizard(svc, "画幅比例：16:9 横屏")
-    proj = workflow_runtime.project(svc.state_dict)
-    assert proj["run_id"] and proj["current_node"] == "review_spec"
-    assert proj["pending_decision"] is True
-    # 任务 #3：布尔旗标之外透传决策完整结构（schema→表单数据驱动）；
-    # 旗标语义不变，payload 只增不改（既有布尔契约不破）
-    pd = proj.get("pending_decision_payload") or {}
-    assert str(pd.get("token") or "").startswith("review:")
-    assert pd["node_id"] == "review_spec"
-    assert pd["message"] and isinstance(pd["schema"], dict) and pd["options"] == []
-    # turn_events 按 turn_id 过滤：不存在的 turn 为空列
-    assert workflow_runtime.project(svc.state_dict, "nope").get("turn_events") == []
+    assert not hasattr(chat_consume, "_consume_spec_wizard")
 
 
 def test_workflow_projection_no_decision_no_payload(env):

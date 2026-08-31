@@ -203,17 +203,17 @@ async def test_opening_returns_resume_note_separately(monkeypatch):
     """resume_failed 且有现场：续跑块随第四元单独返回，用户文本不被
     prepend（多模态构建层 content_parts 分支不用 text 参数，须走 leading_note）"""
     monkeypatch.setattr(co, "build_retry_resume_note", lambda svc: "【续跑前置块】")
-    llm_text, signal, wiz_doc, resume_note = await co._prepare_chat_opening(
+    llm_text, signal, resume_note = await co._prepare_chat_opening(
         FakeSvc(), _body(resume_failed=True), "原指令", use_studio_context=False)
     assert llm_text == "原指令"          # 用户原消息不被篡改（持久化气泡同源）
     assert resume_note == "【续跑前置块】"
-    assert signal == "" and wiz_doc == ""
+    assert signal == ""
 
 
 async def test_opening_silent_fallback_when_note_empty(monkeypatch):
     """resume_failed 但无现场（空串）：续跑块为空，调用方回落机械重发"""
     monkeypatch.setattr(co, "build_retry_resume_note", lambda svc: "")
-    llm_text, _, _, resume_note = await co._prepare_chat_opening(
+    llm_text, _, resume_note = await co._prepare_chat_opening(
         FakeSvc(), _body(resume_failed=True), "原指令", use_studio_context=False)
     assert llm_text == "原指令" and resume_note == ""
 
@@ -224,7 +224,7 @@ async def test_opening_no_injection_without_flag(monkeypatch):
         co, "build_retry_resume_note",
         lambda svc: pytest.fail("无标记不应触发续跑组装"))
     for body in (_body(resume_failed=False), _body(resume_failed=None)):
-        llm_text, _, _, resume_note = await co._prepare_chat_opening(
+        llm_text, _, resume_note = await co._prepare_chat_opening(
             FakeSvc(), body, "原指令", use_studio_context=False)
         assert llm_text == "原指令" and resume_note == ""
 

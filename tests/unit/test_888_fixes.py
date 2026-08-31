@@ -250,68 +250,10 @@ def test_feedback_template_no_contradiction():
 
 
 # ---------- B8 豪华版：软参数模型出题 + 点选 + 机械回写 ----------
-
-def test_collect_wizard_renders_skill_dim_candidates(monkeypatch):
-    """4444 + 6666 二轮：收集向导软维度来自 Skill 客观提取；候选由模型出题；
-    候选不足的维度仍渲染占位卡；硬参数（渠道/分辨率/分镜最大时长）不再出现。"""
-    monkeypatch.setattr(
-        prompt_gates, "skill_spec_dimensions",
-        lambda skill: ["视觉风格", "画幅"],
-    )
-    state = {
-        "usedSkills": ["测试Skill"],
-        "interaction": {"spec_soft_candidates": {
-            "视觉风格": ["硬核写实科幻", "赛博朋克", "水墨风"],
-            "画幅": ["16:9 横屏"],  # 只有 1 个候选 → 不渲染
-        }},
-    }
-    _msg, opts = prompt_gates.spec_collect_card(state)
-    style_labels = [o["label"] for o in opts if o["group"] == "视觉风格"]
-    assert "视觉风格：硬核写实科幻" in style_labels
-    assert "视觉风格：赛博朋克" in style_labels
-    # 候选不足的维度仍渲染（占位卡 + 自定义输入），不允许悄悄隐藏
-    assert any(o["group"] == "画幅" for o in opts)
-    # 平台不预设维度：未声明的维度（旧六维）不出现
-    assert not any(o["group"] == "叙事驱动" for o in opts)
-    # 硬参数与渠道维度不再出现（6666 二轮：由顶部「全局设置」唯一提供）
-    assert not any(o["group"] in ("图片分辨率", "视频分辨率", "分镜最大时长") for o in opts)
-    assert not any("渠道" in str(o.get("group") or "") for o in opts)
-
-
-def test_parse_dim_selections_and_assemble_spec_doc(monkeypatch):
-    """4444 方案乙 + 6666 二轮：选择解析 + 系统拼装键值清单；
-    规格文档只含 Skill 软维度，不写渠道/分辨率/分镜最大时长。"""
-    monkeypatch.setattr(
-        prompt_gates, "skill_spec_dimensions",
-        lambda skill: ["画幅比例", "目标时长", "影像风格基调", "输出语言"],
-    )
-    sels = prompt_gates.parse_dim_selections(
-        "画幅比例：16:9\n输出语言：中文原声", ["画幅比例", "目标时长", "输出语言"])
-    assert sels == {"画幅比例": "16:9", "输出语言": "中文原声"}
-    sels.update({"图片分辨率": "2K", "分镜最大时长": "15 秒", "图像生成": "Antigravity CLI auto"})
-    doc = prompt_gates.assemble_spec_doc(
-        "测试Skill", sels,
-        model_filled={"目标时长": "约 90 秒", "影像风格基调": "暗调高对比"},
-    )
-    assert "- 画幅比例：16:9" in doc
-    assert "- 目标时长：约 90 秒" in doc      # 未选维度用模型填值
-    assert "- 影像风格基调：暗调高对比" in doc
-    assert "- 输出语言：中文原声" in doc
-    # 硬参数不再写入规格文档（全局设置唯一提供）
-    assert "- 图片分辨率：2K" not in doc
-    assert "- 分镜最大时长：15 秒" not in doc
-    assert "- 图像生成：Antigravity CLI auto" not in doc
-    assert "剧本分析" not in doc and "##" not in doc  # 纯键值清单，无杂项
-
-
-def test_soft_not_added_on_confirm_intent():
-    """不选就放行：纯确认意图不追加软参数行（模型自填）。"""
-    content = "- 图片分辨率：2K\n"
-    new_content, applied = prompt_gates.apply_spec_param_selections(
-        content, "确认成片规格，按流程继续", allow_confirm_intent=True,
-    )
-    assert "视觉风格" not in new_content
-    assert not any("视觉风格" in a for a in applied)
+# test_collect_wizard_renders_skill_dim_candidates /
+# test_parse_dim_selections_and_assemble_spec_doc /
+# test_soft_not_added_on_confirm_intent 已随用户裁决 2026-08-31 退役删除（D-08 清偿）：
+# 规格向导软参数收集链整体退役，规格交互归模型自主对话。
 
 
 def test_action_alias_normalization_groupid_payload(tmp_path):

@@ -461,14 +461,9 @@ def _consume_pending_confirmation(
                 + (f" pause_id={_active_pid}" if _active_pid else ""))
         except Exception as _e:
             logger.debug("[ConfirmFlow] 控制流留痕跳过: {}", _e)
-    pause_kind = interaction.get("pending_pause_kind")
-    if pause_kind == "collect":
-        # 规格收集暂停的回应：视为已进入收集环节（后续由 _consume_spec_wizard 拼装）
-        workflow_runtime.reduce_interaction(
-            svc, set_flags={"spec_collected": True}, pop_flags=("pending_pause_kind",))
-    else:
-        # 暂停语义标记（summary/spec/collect）随回应消费清除，避免残留影响后续轮次
-        workflow_runtime.reduce_interaction(svc, pop_flags=("pending_pause_kind",))
+    # 暂停语义标记（summary/spec 等）随回应消费清除，避免残留影响后续轮次
+    # （规格收集向导已随用户裁决 2026-08-31 退役，collect 标记无发行/消费方）
+    workflow_runtime.reduce_interaction(svc, pop_flags=("pending_pause_kind",))
     # 故事板待确认窗口（步骤3→步骤4 分界）：不依赖 awaiting_confirmation，
     # 用户任何新消息到达即视为已审阅故事板，解除提示词写入封锁
     if interaction.get("storyboard_pending"):
@@ -544,123 +539,9 @@ def _consume_pending_confirmation(
     )
 
 
-def _consume_spec_wizard(svc, user_text: str) -> Tuple[str, str]:
-    """规格向导消费：用户回应是规格收集暂停的候选项时，
-    经 write_spec 节点提交机械落盘为规格文档（系统拼装，模型不手写），
-    返回 (附加系统提示, 落盘文档名)；文档名供调用方在用户消息后投影文档卡。
-
-    仅当：项目尚无规格文档 + 用户回应含可解析的制作参数/渠道选择或明确确认意图。
-    调用方需持有 svc.lock。
-    """
-    import re
-
-    from src.video_agent.utils import gen_id
-
-    state = svc.state_dict
-    if prompt_gates.has_spec_document(state):
-        return "", ""
-    text = str(user_text or "").strip()
-    if not text:
-        return "", ""
-    used = state.get("usedSkills") or []
-    skill_name = str(used[-1] or "") if used else ""
-    # Skill 软维度（向导逐行回传格式「键：值」；出图/出视频渠道、图片分辨率、
-    # 视频分辨率、分镜最大时长由顶部「全局设置」唯一提供，规格文档不再承载）
-    dims = prompt_gates.skill_spec_dimensions(skill_name)
-    selections = prompt_gates.parse_dim_selections(text, dims)
-    # 用户可能整页点过占位卡（「维度：（待定）」）后发送：也算回应了向导，
-    # 不能因此不落盘（否则 document_write 被拒 → 再次接管 → 死循环）
-    responded = bool(selections) or any(
-        re.search(re.escape(dim) + r"\s*[:：]", text) for dim in dims
-    )
-    if not responded:
-        return "", ""
-    # 未选维度用模型出题的候选首项兜底；无候选时以「（待定）」占位，
-    # 保证规格文档维度与 Skill 声明完全一致（模型不能增删维度）
-    model_filled: Dict[str, str] = {}
-    cands = ((state.get("interaction") or {}).get("spec_soft_candidates") or {})
-    for dim in dims:
-        vals = cands.get(dim) or []
-        if dim not in selections:
-            model_filled[dim] = str(vals[0]) if vals else prompt_gates._PLACEHOLDER_DIM_VALUE
-    content = prompt_gates.assemble_spec_doc(
-        skill_name, selections, model_filled=model_filled,
-    )
-    if not content.strip():
-        return "", ""
-    name = "Final_Video_Spec.md"
-    workflow_runtime.apply_interaction(state, set_flags={"spec_collected": True})
-    # review decision token 需 run_id：无 run 时先轻量同步（幂等）
-    _run_id = str((state.get("workflow_run") or {}).get("run_id") or "")
-    if not _run_id and skill_name:
-        _run_id = str(workflow_runtime.sync_run(state, skill_name).get("run_id") or "")
-    _review_req = None
-    if _run_id:
-        _review_req = {
-            "token": f"review:{_run_id}",
-            "prompt": "请审阅规格文档，确认后进入下一阶段",
-            "options": [], "node_id": "review_spec"}
-    # write_spec 节点提交——文档 artifact 与阶段推进进 reducer
-    # 单事务（ArtifactCommitted + StageSucceeded(write_spec) +
-    # current_node→review_spec）；卡片投影由调用方按提交结果于用户消息后落库（顺序同轮聚合）。
-    try:
-        workflow_runtime.commit_turn(
-            state, workflow_runtime.TurnResult(
-                turn_id=f"write_spec:{gen_id('wf')}",
-                node_id="write_spec",
-                artifacts=[{"name": name, "kind": "document", "content": content}],
-                timeline_events=[{"event_type": "StageStarted",
-                                  "payload": {"node_id": "write_spec"}}],
-                decision_request=_review_req,
-                next_transition={"completed_node": "write_spec",
-                                 "next_node": "review_spec",
-                                 "status": "waiting_user"}),
-            skill=skill_name, persist=False)
-    except Exception as e:
-        logger.warning("[SpecWizard] write_spec 节点提交失败（本轮不落盘）: {}", e)
-        return "", ""
-    # 轮前机械动作落转录（start_trace 收养进当轮时间线）
-    try:
-        AgentTracer.get_instance().record_pre_turn(
-            "write_document", f"写入文档 {name}", ok=True)
-    except Exception:
-        pass
-    svc.save()
-    logger.info("[SpecWizard] 用户选择已机械落盘为规格文档 Final_Video_Spec.md（write_spec 节点提交）")
-    # 回执不 prose 指定子步骤与暂停点（流程/暂停归 Skill 阶段边界）
-    return (
-        "\n\n（系统：已按你的选择拼装并写入 Final_Video_Spec.md 规格文档，不必再手写规格。"
-        "接下来按当前 Skill 流程执行下一阶段；暂停点以 Skill『何时暂停』为准。）",
-        name,
-    )
-
-
-def _finalize_spec_params(svc, user_text: str) -> str:
-    """规格暂停回应定稿：summary 暂停的「确认」不得定稿规格；
-    spec 暂停的「确认」按展示值定稿；显式选择（分辨率/时长）任意情况下生效。"""
-    from src.video_agent.core import prompt_gates
-
-    inter = svc.state_dict.get("interaction") or {}
-    if inter.get("pending_pause_kind") == "summary":
-        return ""
-    spec = None
-    for d in svc.state_dict.get("documents") or []:
-        if prompt_gates.is_spec_doc_name(str(d.get("name") or "")):
-            spec = d
-            break
-    if spec is None:
-        return ""
-    allow_confirm = inter.get("pending_pause_kind") == "spec"
-    new_content, applied = prompt_gates.apply_spec_param_selections(
-        str(spec.get("content") or ""),
-        str(user_text or ""),
-        allow_confirm_intent=allow_confirm,
-    )
-    if not applied:
-        return ""
-    spec["content"] = new_content
-    svc.save()
-    return "（系统：已按你的选择/确认定稿规格参数：" + "、".join(applied[:6]) + "）"
+# 规格向导消费/定稿管线（_consume_spec_wizard/_finalize_spec_params）已随
+# 用户裁决 2026-08-31（Flova 对齐全退役批 + D-08 清偿）删除：
+# 规格收集归 Skill 散文 + 模型自主对话，平台不再机械拼装规格文档。
 
 
 def _compact_card_enumeration(text: str) -> str:

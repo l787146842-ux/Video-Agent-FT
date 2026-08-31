@@ -5,35 +5,17 @@
 AskUserQuestion 范式）；本模块只做通道分离与选项面归一，不发行卡片：
 - 模型 workflow_pause 只提交「需要审批」事实，卡问句系统组装，
   模型原文进正文通道（通道分离是契约不是压缩）；
-- 选项面：阶段边界 = 系统派生唯一入口（模型选项直接拒收，不做模糊清洗）；
-  规格未定稿 = 系统向导唯一入口；
-- kind（remind/collect/stage_done/confirm）供前端按语义渲染标题。
+- 选项面：阶段边界 = 系统派生继续项 + 模型选项；
+- kind（stage_done/confirm）供前端按语义渲染标题。
+（remind/collect 卡已随原料闸/规格向导退役删除，用户裁决 2026-08-31。）
 """
 from typing import Any, Dict, List, Tuple
 
 from src.video_agent.core import gates_cards
-from src.video_agent.core import gates_spec
-from src.video_agent.core import live_metrics
-from src.video_agent.core import prompt_gates
-# 模块属性调用（测试 patch 目标=registry 命名空间，
-# 顶层 from-import 会冻结绑定导致 patch 失效）
-from src.video_agent.skill_runtime import registry as _registry
 
 # 暂停卡语义种类（前端标题渲染唯一依据，消灭「待补原料=阶段完成」误标）
-PAUSE_KIND_REMIND = "remind"        # 待补原料/前置缺失提醒
-PAUSE_KIND_COLLECT = "collect"      # 规格收集向导
 PAUSE_KIND_STAGE_DONE = "stage_done"  # 阶段完成审阅
 PAUSE_KIND_CONFIRM = "confirm"      # 常规模型暂停
-
-
-def compose_remind_card(message: str, options: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """提醒类卡（原料闸等）：kind=remind，前端不得渲染为「阶段完成」。"""
-    return {"message": message, "options": list(options or []), "kind": PAUSE_KIND_REMIND}
-
-
-def compose_collect_card(message: str, options: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """规格收集向导卡：kind=collect；引导词归正文通道由调用方装配。"""
-    return {"message": message, "options": list(options or []), "kind": PAUSE_KIND_COLLECT}
 
 
 def split_pause_channels(model_message: str, stage_label: str = "") -> Tuple[str, str]:

@@ -56,7 +56,6 @@ def test_false_claim_overridden_when_critical_tools_fail(tmp_path, monkeypatch):
 
     tmp_svc = StateManager(str(tmp_path / "ws"))
     monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: tmp_svc))
-    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
     raw = {"documents": [], "usedSkills": ["AI-短剧一站式生成"], "interaction": {}}
 
     class _TM:

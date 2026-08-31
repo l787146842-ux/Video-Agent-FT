@@ -138,51 +138,13 @@ def test_takeover_skipped_when_spec_finalized(monkeypatch):
     assert raw_state["interaction"].get("pending_pause_kind") != "spec"
 
 
-def test_review_options_concrete_next_step():
-    """0817 B22：审阅卡选项中性化——平台不点名下一步，一律按 Skill 流程推进。"""
-    from src.video_agent.core import prompt_gates
-
-    opts = prompt_gates.spec_review_options({})
-    assert "开始拆解" not in opts[0]["label"]
-    assert "按流程继续" in opts[0]["label"] or "Skill 流程" in opts[0]["label"]
-    opts = prompt_gates.spec_review_options({"keyElements": [{"id": "k"}]})
-    assert "开始拆解" not in opts[0]["label"]
-    opts = prompt_gates.spec_review_options({"keyElements": [{"id": "k"}], "shots": [{"id": "s"}]})
-    assert opts[0]["label"] == "确认成片规格，按流程继续"
-
-
-def test_collect_card_neutral_no_summary_injection():
-    """0818 架构板正批：收集卡不再平台侧内嵌总结（总结展示归
-    编排器暂停卡 include_summary_in_pause 声明）；无开发腔。"""
-    from src.video_agent.core import prompt_gates
-
-    state = {"analysis": {"summary": "人类在太阳系边缘拦截到神秘薄片"}}
-    msg, _opts = prompt_gates.spec_collect_card(state)
-    assert "神秘薄片" not in msg
-    assert "见上" not in msg
-    assert "Skill 声明" not in msg
-    assert "全局设置" not in msg
-
+# test_review_options_concrete_next_step / test_collect_card_neutral_no_summary_injection /
+# test_output_language_dim_description 已随用户裁决 2026-08-31 退役删除（D-08 清偿）：
+# 规格审阅/收集向导卡链整体退役。
 
 # test_duration_candidates_dedup_by_value（executors._dedupe_duration_candidates）
 # 已随任务#36 B5 执行器一步退役删除：时长候选去重是执行器规格收集
 # 内部逻辑，规格收集改由模型按 skill_discipline 用 workflow_pause 分组向导完成。
-
-
-def test_output_language_dim_description(monkeypatch):
-    """B6/814G4：维度选项卡片文字不重复维度名（display），说明逐项差异化白话。"""
-    from src.video_agent.core import prompt_gates
-
-    monkeypatch.setattr(
-        prompt_gates, "skill_spec_dimensions", lambda skill: ["输出语言"],
-    )
-    state = {"interaction": {"spec_soft_candidates": {"输出语言": ["中文普通话", "中英双语"]}}}
-    _msg, opts = prompt_gates.build_spec_param_options("", state)
-    assert opts
-    assert all(o["display"] in ("中文普通话", "中英双语") for o in opts)
-    assert all("若选此项，成片将按「" in o["description"] for o in opts)
-    # label 保留「键：值」回传格式（chat_service 机械解析）
-    assert all(o["label"].startswith("输出语言：") for o in opts)
 
 
 def test_badge_normalize_from_desc_anchors():

@@ -31,16 +31,11 @@ def test_summary_not_visible_when_absent():
     assert not prompt_gates.summary_already_visible("完全无关的正文", _SUMMARY_STRAIGHT)
 
 
-# ---------- 问题2：规格制作参数待确认兜底 ----------
-
-_SPEC_UNCONFIRMED = (
-    "- 视频标题：三体·薄膜\n"
-    "- 画幅：16:9\n"
-    "- 视频生成：火山引擎 doubao-seedance-2-0-260128\n"
-    "- 图片分辨率：2K（待确认）\n"
-    "- 视频分辨率：1080p（待确认）\n"
-    "- 分镜最大时长：8 秒/镜头（待确认）\n"
-)
+# ---------- 问题2：规格制作参数待确认兑底 ----------
+# spec_unconfirmed_params/build_spec_param_options/spec_pause_card/
+# apply_spec_param_selections 相关测试已随用户裁决 2026-08-31 退役删除（D-08 清偿）：
+# 规格向导参数收集链整体退役；硬参数唯一来源仍为全局设置（见下方存活用例）。
+# （_SPEC_CONFIRMED 常量保留：问题3 补印用例仍用作规格文档夹具。）
 
 _SPEC_CONFIRMED = (
     "- 图片分辨率：2K\n"
@@ -55,87 +50,17 @@ _SPEC_CONFIRMED = (
 )
 
 
-def test_unconfirmed_params_detected():
-    assert set(prompt_gates.spec_unconfirmed_params(_SPEC_UNCONFIRMED)) == {
-        "图片分辨率", "视频分辨率", "分镜最大时长",
-    }
-    assert prompt_gates.spec_unconfirmed_params(_SPEC_CONFIRMED) == []
-
-
-def test_unconfirmed_params_missing_lines():
-    assert set(prompt_gates.spec_unconfirmed_params("- 画幅：16:9")) == {
-        "图片分辨率", "视频分辨率", "分镜最大时长",
-    }
-
-
 def test_extract_production_params_global_settings_sole_source(set_global_setting):
     """6666 二轮：制作参数唯一来源为顶部全局设置，规格文档行不再参与决策。"""
     set_global_setting("default_image_resolution", "4K")
     set_global_setting("default_video_resolution", "480p")
     set_global_setting("max_shot_duration", 5)
-    params = extract_production_params(_SPEC_UNCONFIRMED)
+    params = extract_production_params(_SPEC_CONFIRMED)
     assert params == {
         "image_resolution": "4K",
         "video_resolution": "480p",
         "shot_max_duration": 5,
     }
-
-
-def test_build_spec_param_options_no_hard_params_without_skill(monkeypatch):
-    """6666 二轮：无 Skill 软维度时向导为空，硬参数组不再兜底出现。"""
-    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
-    msg, opts = prompt_gates.build_spec_param_options(_SPEC_UNCONFIRMED)
-    assert msg == "" and opts == []
-
-
-def test_build_spec_param_options_empty_when_confirmed(monkeypatch):
-    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
-    assert prompt_gates.build_spec_param_options(_SPEC_CONFIRMED) == ("", [])
-
-
-def test_spec_pause_card_uses_review_card_when_no_skill_dims(monkeypatch):
-    """6666 二轮：规格文档硬参数行不再触发候选项向导（全局设置唯一来源）；
-    8888 二轮：审阅选项客观具体。"""
-    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
-    state = {"documents": [{"name": "制片规格.md", "content": _SPEC_UNCONFIRMED}]}
-    msg, opts = prompt_gates.spec_pause_card(state)
-    assert msg == prompt_gates.SPEC_DOC_PAUSED_MSG
-    assert [o["label"] for o in opts] == [o["label"] for o in prompt_gates.spec_review_options(state)]
-
-
-def test_apply_spec_param_selections_wizard_reply(monkeypatch):
-    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
-    reply = "图片分辨率：2K（推荐）\n视频分辨率：720p（推荐）\n分镜最大时长：12 秒（推荐）"
-    new_content, applied = prompt_gates.apply_spec_param_selections(_SPEC_UNCONFIRMED, reply)
-    assert len(applied) == 3
-    assert "- 图片分辨率：2K" in new_content
-    assert "- 视频分辨率：720p" in new_content
-    assert "- 分镜最大时长：12 秒" in new_content
-    assert "待确认" not in new_content
-    # 制作参数唯一来源为全局设置（extract 不再解析规格文档行）
-    from src.video_agent.config import settings
-
-    params = extract_production_params(new_content)
-    assert params["shot_max_duration"] == settings.max_shot_duration
-
-
-def test_apply_spec_param_selections_confirm_intent_keeps_displayed_values():
-    new_content, applied = prompt_gates.apply_spec_param_selections(
-        _SPEC_UNCONFIRMED, "确认成片规格，开始拆分关键元素"
-    )
-    assert len(applied) == 3
-    assert "- 图片分辨率：2K" in new_content
-    assert "- 视频分辨率：1080p" in new_content
-    assert "- 分镜最大时长：8 秒" in new_content.replace("/镜头", "")
-    assert "待确认" not in new_content
-
-
-def test_apply_spec_param_selections_adjust_leaves_untouched():
-    new_content, applied = prompt_gates.apply_spec_param_selections(
-        _SPEC_UNCONFIRMED, "视觉风格改成赛博朋克"
-    )
-    assert applied == []
-    assert new_content == _SPEC_UNCONFIRMED
 
 
 # ---------- 问题3：草稿创建时按规格补印分辨率参数栏 ----------

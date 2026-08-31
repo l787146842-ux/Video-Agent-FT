@@ -234,8 +234,7 @@ src/video_agent/
 │   ├── fc_feedback.py      ← 工具结果回喂/压缩家族（C3 落点）
 │   ├── planner_output.py   ← 轮末产出组装域
 │   ├── round_end_policies.py ← 轮末策略状态机 + suggest_next_actions（层 9 唯一落点）
-│   ├── prompt_gates.py     ← 闸机规则注册表 + 结构/流程判定（§2）
-│   ├── gates_spec.py / gates_script.py ← 规格/剧本闸家族（prompt_gates 尾部 re-export）
+│   ├── prompt_gates.py     ← 闸机规则注册表 + 结构/流程判定（§2；原尾部规格/剧本闸家族 re-export 已随 2026-08-31 裁决退役删除，D-08 清偿）
 │   ├── guard_pipeline.py   ← 闸机管线（2.0，动作判定唯一入口）
 │   ├── prompt_builder.py   ← 上下文组装；token_budget.py ← 窗口/截断
 │   ├── coupling_registry.py ← 13.7 耦合表机器可读化（test_coupling_registry 钉死）

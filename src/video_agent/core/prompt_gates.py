@@ -132,9 +132,9 @@ def text_mentions_spec_doc(text: str) -> bool:
     return any(h in n for h in _SPEC_NAME_HINTS)
 
 
-# ---------- 剧本原料闸----------
-# 剧本闸家族实现体在 core/gates_script.py；
-# 本文件尾部 re-export 保持既有引用路径不变（登记壳，见尾块注释）。
+# ---------- 剧本原料闸 ----------
+# 剧本闸家族（gates_script.py）已随用户裁决 2026-08-31 退役（D-08 清偿）：
+# 原料收集归 Skill 散文 + 模型自主提醒，平台不再机械发卡。
 
 
 def has_spec_document(raw_state: Dict[str, Any]) -> bool:
@@ -438,24 +438,9 @@ from src.video_agent.core.gates_cards import (
     _STRUCTURE_KIND_ALIAS,
     normalize_structure_kind,
     structure_paused_confirmation,
-    SPEC_DOC_OPTIONS,
-    spec_review_options,
-    SPEC_COLLECT_PAUSED_MSG,
-    SPEC_COLLECT_PAUSED_MSG_NO_SUMMARY,
-    SPEC_COLLECT_KIND,
-    SPEC_DOC_PAUSED_MSG,
     _SUMMARY_QUOTE_CHARS,
     _norm_summary_text,
     summary_already_visible,
-    _SPEC_PARAM_LINES,
-    _SPEC_IMG_SEL_RE,
-    _SPEC_VID_SEL_RE,
-    _SPEC_DUR_SEL_RE,
-    _SPEC_CONFIRM_INTENT_RE,
-    parse_hard_selections,
-    _SPEC_WRITE_ENUM_RE,
-    _SPEC_WRITE_VERB_RE,
-    _SPEC_SUGGESTED_RE,
     DRAFTS_REVIEW_MSG,
     DRAFTS_REVIEW_OPTIONS,
     drafts_review_card,
@@ -468,44 +453,6 @@ from src.video_agent.core.gates_cards import (
     flow_continue_note,
 )
 
-# 规格向导家族实现体在 gates_spec.py，此处 re-export 保持既有引用不变
-from src.video_agent.core.gates_spec import (
-    _CHANNEL_GROUP_IMAGE,
-    _CHANNEL_GROUP_VIDEO,
-    _DIM_DESCRIPTION_OVERRIDES,
-    _HARD_PARAM_DIM_HINTS,
-    _PLACEHOLDER_DIM_VALUE,
-    _channel_groups,
-    _clean_dim_token,
-    _consume_spec_collected,
-    _current_skill_of,
-    _dedupe,
-    _is_hard_param_dim,
-    _spec_dim_unresolved,
-    _spec_doc_content,
-    apply_spec_param_selections,
-    assemble_spec_doc,
-    build_spec_param_options,
-    merge_spec_param_wizard,
-    parse_dim_selections,
-    skill_spec_dimensions,
-    spec_collect_card,
-    spec_doc_finalized,
-    spec_pause_card,
-    spec_unconfirmed_params,
-    state_has_spec_doc,
-)
-
-# 剧本原料闸家族实现体在 gates_script.py，此处 re-export 保持既有引用不变
-# （宪法 §12 登记壳；壳到期制登记：长期保留·架构承重，消费方含 planner/registry
-# 经 prompt_gates.* 属性访问，迁移需全量改引用并同步 test patch 目标）
-from src.video_agent.core.gates_script import (
-    SCRIPT_MODEL_NOTE,
-    SCRIPT_UPLOAD_ACK,
-    script_present,
-    script_remind_card,
-    script_short_circuit_eligible,
-    script_upload_ack_intent,
-    script_waive_intent,
-    text_mentions_script,
-)
+# 规格向导家族（gates_spec.py）与剧本原料闸家族（gates_script.py）的尾部
+# re-export 壳已随用户裁决 2026-08-31 退役删除（D-08 清偿：两实现体模块
+# 同批删除，消费面已先行清零）。

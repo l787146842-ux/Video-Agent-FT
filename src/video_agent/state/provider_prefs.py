@@ -10,9 +10,8 @@ from typing import Any, Dict, Optional, Tuple
 from src.video_agent.config import settings
 from src.video_agent.core.provider_config import spec_media_preference
 
-# 规格文档中「未确认占位」标记（三项参数标着「待确认」就放行）。
-# prompt_gates.spec_unconfirmed_params / apply_spec_selections 与解析正则同源消费。
-SPEC_PARAM_UNCONFIRMED_MARKERS: Tuple[str, ...] = ("待确认", "待定", "未确认", "TBD")
+# 规格「未确认占位」标记常量（SPEC_PARAM_UNCONFIRMED_MARKERS）已随用户裁决
+# 2026-08-31 退役删除（D-08 清偿：规格向导消费面全部退役）。
 
 
 def resolve_spec_media_preference(

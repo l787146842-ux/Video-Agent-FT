@@ -36,8 +36,6 @@ __all__ = ["build_multimodal_content"]
 
 from src.video_agent.web.chat_consume import (
     _consume_pending_confirmation,
-    _consume_spec_wizard,
-    _finalize_spec_params,
     advance_turn_seq,
     reconcile_stale_active_pause,
 )
@@ -270,20 +268,16 @@ def _record_active_skill(svc, body: ChatRequest) -> None:
 async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_studio_context: bool):
     """开场公共编排（流式/非流式双路径单一实现，消除双份复制）。
 
-    暂停闭环（消费上轮暂停态）+ 规格定稿/向导消费 + 附件降级注入，
-    返回 (拼好的 LLM 用户消息文本, 轮始客观推进信号, 向导落盘文档名,
-    重试续跑前置块)。续跑块单独返回而非 prepend 进文本：
+    暂停闭环（消费上轮暂停态）+ 附件降级注入，
+    返回 (拼好的 LLM 用户消息文本, 轮始客观推进信号, 重试续跑前置块)。
+    续跑块单独返回而非 prepend 进文本：
     多模态构建层 content_parts 分支不使用 text 参数，
     须经 build_multimodal_content(leading_note=…) 才两条支路都不丢；
     信号供输入类 decision 消费与闸预检分诊（runtime 不据此自主行动）；
-    仅流程推进轮（暂停消费/向导回应/继续选项点选/带附件）产生。
-    落盘文档名供调用方于用户消息后投影文档卡（提交结果同源）。
+    仅流程推进轮（暂停消费/继续选项点选/带附件）产生。
     调用方需保证同一请求只调一次。
     """
     pending_confirm_note = ""
-    spec_finalize_note = ""
-    spec_wizard_note = ""
-    wiz_doc = ""
     pause_value = str((getattr(body, "pause_response", None) or {}).get("value") or "")
     if use_studio_context:
         async with svc.lock:
@@ -300,13 +294,11 @@ async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_stud
             pending_confirm_note = _consume_pending_confirmation(
                 svc, user_text, pause_value=str(_pr.get("value") or ""),
                 pause_response=_pr)
-            spec_finalize_note = _finalize_spec_params(svc, user_text)
-            spec_wizard_note, wiz_doc = _consume_spec_wizard(svc, user_text)
     # 聊天通道均为 FC，附件统一走清单+read_uploaded_doc 渐进式披露
     attachment_note = (
         attachment_context(body.attachments) if body.attachments else ""
     )
-    llm_user_text = user_text + pending_confirm_note + spec_finalize_note + spec_wizard_note
+    llm_user_text = user_text + pending_confirm_note
     if attachment_note:
         llm_user_text = f"{llm_user_text}\n\n{attachment_note}"
     # 重试带上下文续跑（任务#6）：前端重试动作携 resume_failed 标记，
@@ -320,15 +312,13 @@ async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_stud
     # 轮始客观推进信号（零语料：只认消费结果/附件/继续选项行格式）
     if pending_confirm_note:
         advance_signal = "pause"
-    elif spec_wizard_note:
-        advance_signal = "wizard"
     elif prompt_gates.is_flow_continue_value(pause_value):
         advance_signal = "continue"
     elif body.attachments:
         advance_signal = "attachment"
     else:
         advance_signal = ""
-    return llm_user_text, advance_signal, wiz_doc, resume_note
+    return llm_user_text, advance_signal, resume_note
 
 
 def _store_gate_overrides(svc, overrides) -> None:

@@ -582,38 +582,22 @@ class FCToolRunner:
                     break
             else:
                 logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")
-                if name == "document_write" and prompt_gates.is_spec_doc_name(
-                    str(args.get("name") or args.get("key") or "")
-                ):
-                    ledger.spec_write_rejected = True
-                # 规格拒收静默——用户侧用中性系统提示（无失败红叉/⚠），
-                # 拒收原因仍经 tool_results 回喂模型（模型知道未落盘）
-                spec_silent_summary = ""
-                if (
-                    name == "document_write"
-                    and prompt_gates.is_spec_doc_name(str(args.get("name") or args.get("key") or ""))
-                ):
-                    spec_silent_summary = (
-                        "规格写入由系统向导接管（模型手写未落盘）"
-                        if not prompt_gates.spec_doc_finalized(self._raw_state())
-                        else "规格已定稿，冗余写入被拒收（未落盘）"
-                    )
+                # （规格静默拒收/接管已随用户裁决 2026-08-31 退役，D-08 清偿：
+                # 规格写入不再被向导拒收，失败即普通失败（红×））
                 if on_event is not None:
                     _finished_ev = {
                         "type": SSE_TOOL_FINISHED,
                         "id": tool_event_id,
-                        "ok": bool(spec_silent_summary),
+                        "ok": False,
                         "elapsed_ms": round(_tool_ms, 1),
-                        "result_summary": spec_silent_summary or str(result.error or "执行失败")[:120],
+                        "result_summary": str(result.error or "执行失败")[:120],
                     }
                     await on_event(_finished_ev)
-                # trace 与 SSE 同一口径（规格静默拒收=中性 True，普通失败=红× False），
-                # 防刷新后失败被重建为绿√；result_summary 与 SSE 同口径
                 tracer.record_action(
-                    name=name, summary=spec_silent_summary or start_summary,
-                    elapsed_ms=_tool_ms, ok=bool(spec_silent_summary),
+                    name=name, summary=start_summary,
+                    elapsed_ms=_tool_ms, ok=False,
                     stage=stage_label_for_tool(name),
-                    result_summary=spec_silent_summary or str(result.error or "执行失败")[:120],
+                    result_summary=str(result.error or "执行失败")[:120],
                     args=args_preview,
                 )
                 # 结构化失败回喂（客观报告+单句建议，二次升级）

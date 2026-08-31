@@ -136,9 +136,8 @@ COUPLING_ROWS: List[CouplingRow] = [
         "拆分模块新增顶层符号",
         "re-export 壳清单 + 测试 patch 目标改为调用方命名空间",
         _sym(
-            # prompt_gates 尾部承重壳（gates_spec + gates_script）
-            "src.video_agent.core.prompt_gates:spec_pause_card",
-            "src.video_agent.core.prompt_gates:script_present",
+            # （prompt_gates 尾部承重壳 gates_spec/gates_script 家族已随用户裁决
+            # 2026-08-31 退役删除，D-08 清偿：两实现体模块同批删除）
             # chat_service 尾部承重壳
             "src.video_agent.web.chat_service:_acquire_request_slot",
             # 承重壳
@@ -146,7 +145,6 @@ COUPLING_ROWS: List[CouplingRow] = [
             # 三段拆分承重壳：闸机方法壳（实现体 fc_gates）
             "src.video_agent.core.fc_tool_runner:FCToolRunner._prompt_gate",
             "src.video_agent.core.action_executor:StateOperationExecutor._apply_generate_image",
-            "src.video_agent.core.prompt_gates:parse_hard_selections",
             # （批次E：web 层 provider_config 薄壳已清偿删除，
             # 消费方全部直连 core/provider_config.py）
             # state/manager.py 拆分承重壳：对话域（实现体
@@ -188,11 +186,11 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R15_s5_split_modules",
-        "拆分模块变更（gates_script/gates_cards）",
+        "拆分模块变更（gates_cards）",
         "prompt_gates 尾部 re-export；消费方旧命名空间不变"
-        "（exec_split/exec_media_writer/exec_media_gen 已随任务#36 B5 退役删除）",
-        (("file", "src/video_agent/core/gates_script.py"),)
-        + (("file", "src/video_agent/core/gates_cards.py"),),
+        "（exec_split/exec_media_writer/exec_media_gen 已随任务#36 B5 退役；"
+        "gates_script 已随用户裁决 2026-08-31 退役删除，D-08 清偿）",
+        (("file", "src/video_agent/core/gates_cards.py"),),
     ),
     CouplingRow(
         "R16_manifest_whitelist_keys",

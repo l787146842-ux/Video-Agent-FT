@@ -142,30 +142,5 @@ def test_is_flow_continue_value_line_wise():
     assert not gates_cards.is_flow_continue_value("确认后进入「制作规格」阶段")
 
 
-def test_spec_wizard_merges_from_soft_candidates_without_spec_doc(monkeypatch):
-    """无规格文档但软候选在场（阶段 1 边界）→ 向导合并生效，
-    模型自造同 group 选项被标准「键：值」替换。"""
-    monkeypatch.setattr(
-        prompt_gates, "skill_spec_dimensions", lambda skill: ["画幅"])
-    state = {
-        "documents": [],
-        "usedSkills": ["流程测试"],
-        "interaction": {"spec_soft_candidates": {
-            "画幅": ["16:9 横屏", "9:16 竖屏"]}},
-    }
-    _msg, opts, merged = prompt_gates.merge_spec_param_wizard(
-        state, "请确认分析结果",
-        [{"label": "16:9", "description": "", "group": "画幅"}])
-    assert merged
-    assert any(o.get("group") == "画幅" and "：" in o.get("label", "")
-               for o in opts)
-    assert not any(o.get("label") == "16:9" for o in opts)
-
-
-def test_spec_wizard_still_absent_without_candidates():
-    """无规格文档且无软候选（分析未跑）→ 不合并（行为不变）。"""
-    state = {"documents": [], "interaction": {}}
-    _msg, opts, merged = prompt_gates.merge_spec_param_wizard(
-        state, "请确认", [{"label": "x"}])
-    assert not merged
-    assert opts == [{"label": "x"}]
+# （规格向导合并测试（merge_spec_param_wizard）已随用户裁决 2026-08-31 退役删除，
+# D-08 清偿：向导机械合并整体退役。）

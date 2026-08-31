@@ -68,34 +68,15 @@ async def _run_spec_write(svc, skill_name: str):
 
 
 async def test_spec_pause_gate_silent_without_manifest(svc):
-    """S1 核心回归：未声明 spec_wizard 的 Skill 写完规格文档，系统不再
-    注入测试 Skill 专属的规格审阅卡/向导（引擎不预设流程）。"""
+    """S1 核心回归：未声明流程开关的 Skill 写完规格文档，系统不再注入规格审阅卡/向导；
+    规格硬边界已随用户裁决 2026-08-31 退役（D-08 清偿），模型暂停由自主决定。"""
     sd.save_skill_doc("外来流程", "# 外来\n> 调用规则：测试\n正文")
     result = await _run_spec_write(svc, "外来流程")
-    assert result.confirmation != prompt_gates.SPEC_DOC_PAUSED_MSG
     assert "尚待您选定" not in (result.confirmation or "")
 
 
-async def test_spec_pause_gate_fires_with_manifest(svc, monkeypatch):
-    """4444 方案乙：声明 spec_wizard 的 Skill，模型手写规格被拒收
-    （规格由系统拼装）；审阅卡走 spec_review_pending 路径（见 test_99）。"""
-    from src.video_agent.skill_runtime import frontmatter
-
-    sd.save_skill_doc("向导流程", "# 向导\n正文")
-    frontmatter.write_manifest("向导流程", {
-        "name": "向导流程", "description": "测试桩",
-        "gates": {"require_duration": True, "require_subtitle": True,
-                  "require_camera_language": True, "require_audio_layer": True},
-        "flow": {"spec_wizard": True},
-        "pause": {"stage_pause": True},
-    })
-    monkeypatch.setattr(prompt_gates, "_channel_groups", lambda: [])
-    svc.state_dict["usedSkills"] = ["向导流程"]
-    result = await _run_spec_write(svc, "向导流程")
-    assert not any(
-        prompt_gates.is_spec_doc_name(str(d.get("name") or ""))
-        for d in svc.state_dict.get("documents", [])
-    )
+# test_spec_pause_gate_fires_with_manifest 已随用户裁决 2026-08-31 退役删除（D-08 清偿）：
+# spec_wizard 声明与规格手写拒收机制整体退役，模型手写规格正常落盘。
 
 
 # ---------- 端到端：规格前置警告只对声明 spec_gate 的 Skill 生效 ----------

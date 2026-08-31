@@ -54,18 +54,8 @@ def test_trace_ok_matches_sse_on_normal_failure(monkeypatch):
     assert rec[0]["ok"] is False, "trace 与 SSE 口径必须一致：失败记 False"
 
 
-def test_trace_ok_neutral_on_spec_silent_reject(monkeypatch):
-    """规格手写被向导拒收（814G3 静默）：用户侧中性（无红×），
-    trace 与 SSE 同口径记 ok=True。"""
-    events, actions = _run_with_trace(
-        monkeypatch, "document_write",
-        {"name": "Final_Video_Spec.md", "content": "x"},
-        {"documents": []})
-    sse = [e for e in events if e.get("type") == "tool_finished"]
-    assert len(sse) == 1 and sse[0]["ok"] is True
-    rec = [a for a in actions if a["name"] == "document_write"]
-    assert len(rec) == 1
-    assert rec[0]["ok"] is True, "规格静默拒收对用户中性，trace 不得红×"
+# test_trace_ok_neutral_on_spec_silent_reject 已随用户裁决 2026-08-31 退役删除（D-08 清偿）：
+# 规格静默拒收链整体退役，规格写入失败即普通失败（红×）。
 
 
 # ---------- 0817 B2：语言单一事实源接入用户「输出语言」选择 ----------
@@ -312,52 +302,9 @@ def test_executor_warnings_surface_to_user(monkeypatch):
 
 
 # ---------- 0817 B14：规格文档卡不得落在用户选择消息之前 ----------
-
-def test_wizard_doc_card_deferred_until_after_user_msg(tmp_path):
-    """v2 批2：向导消费经 write_spec 节点提交（文档进 reducer 单事务），
-    消费本身不落卡片；调用方于用户消息后投影文档卡（顺序正确同轮聚合）。"""
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.chat_consume import _consume_spec_wizard
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
-    svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
-    note, name = _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
-    assert note and name == "Final_Video_Spec.md"
-    msgs = svc.get_chat_messages()
-    assert not any(m.get("docCard") for m in msgs), "向导消费不得立刻落卡片"
-    assert not (svc.state_dict.get("interaction") or {}).get(
-        "spec_doc_card" + "_pending"), "挂起补卡旁路退役"
-    # 文档由提交写入（reducer 单事务）
-    assert any(d.get("name") == "Final_Video_Spec.md"
-               for d in svc.state_dict.get("documents") or [])
-    # 模拟真实落库次序：用户消息先落，卡片随后投影
-    svc.add_chat_message("user", "画幅比例：16:9 横屏\n输出语言：中文")
-    svc.add_chat_message("agent", "", doc_card=name, turn_id="turn-x")
-    msgs = svc.get_chat_messages()
-    assert [m.get("sender") for m in msgs[-2:]] == ["user", "agent"]
-    assert msgs[-1].get("docCard") == "Final_Video_Spec.md"
-    assert msgs[-1].get("turnId") == "turn-x"
-
-
-@pytest.mark.asyncio
-async def test_wizard_write_spec_node_commit_events(tmp_path):
-    """v2 批2：向导落盘 = write_spec 节点提交——ArtifactCommitted +
-    StageSucceeded(write_spec) + current_node→review_spec 同事务入账。"""
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.core.workflow_events import EventLedger
-    from src.video_agent.web.chat_consume import _consume_spec_wizard
-
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
-    svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
-    note, name = _consume_spec_wizard(svc, "画幅比例：16:9 横屏")
-    assert name == "Final_Video_Spec.md"
-    run = svc.state_dict.get("workflow_run") or {}
-    assert run.get("current_node") == "review_spec"
-    assert "write_spec" in (run.get("completed_nodes") or [])
-    types = [e.event_type for e in EventLedger(svc.state_dict).by_run(run["run_id"])]
-    assert "ArtifactCommitted" in types and "StageSucceeded" in types
+# test_wizard_doc_card_deferred_until_after_user_msg 与
+# test_wizard_write_spec_node_commit_events 已随用户裁决 2026-08-31 退役删除（D-08 清偿）：
+# _consume_spec_wizard 向导机械落盘链整体退役。
 
 
 # ---------- 0817 B23/B24：思考档不硬编码降档 + 剧本注入上限合一 ----------
@@ -379,12 +326,11 @@ def test_script_inject_limit_in_runtime_whitelist():
 # ---------- 0817 B22：流程意见清除（平台只兜底，不包办排序） ----------
 
 def test_platform_no_next_step_opinions():
-    """平台卡片/建议不再点名下一步：V1/V2/V8/V9/V10 清除钉死。"""
+    """平台卡片/建议不再点名下一步：V2/V8/V9/V10 清除钉死
+    （V1 规格审阅卡选项断言随 spec_review_options 退役删除，D-08 清偿）。"""
     from pathlib import Path
-    from src.video_agent.core import gates_cards, round_end_policies as rep
+    from src.video_agent.core import round_end_policies as rep
 
-    opts = gates_cards.spec_review_options({})
-    assert all("开始拆解" not in o["label"] for o in opts)
     out = rep.suggest_next_actions({"keyElements": [{"id": "k", "drafts": []}]})
     assert out and "拆分镜" not in out[0]["label"]
     sd = Path("prompts/planner/skill_discipline.md").read_text(encoding="utf-8")
@@ -406,22 +352,7 @@ def test_storyboard_progress_note_objective():
 
 
 # ---------- 0817 B21：向导拼装合成记账入 actionLog ----------
-
-def test_wizard_assembly_recorded_in_artifact_ledger(tmp_path):
-    """向导机械拼装不进工具通道 → 产物账本一等条目（Rule2 v6
-    ArtifactCommitted）：workflow_run.artifacts 含规格文档名，
-    done 载荷经 documents_written 同轮下发（合成 actionLog 退役）。"""
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.core import workflow_runtime
-    from src.video_agent.web.chat_consume import (
-        _consume_spec_wizard,
-    )
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
-    svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
-    _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
-    run = svc.state_dict.get("workflow_run") or {}
-    assert "Final_Video_Spec.md" in (run.get("artifacts") or [])
+# test_wizard_assembly_recorded_in_artifact_ledger 已随用户裁决 2026-08-31 退役删除（D-08 清偿）。
 
 
 # ---------- 0817 B20：总结展示归 Skill 声明驱动（流程归位清查） ----------
@@ -441,13 +372,9 @@ class _LR:
 
 
 def test_summary_display_no_platform_injection(tmp_path, monkeypatch):
-    """0818 架构板正批：平台不再强注入总结（收集卡中性、轮末只补客观
-    完成记账）；总结展示归编排器暂停卡声明。"""
-    from src.video_agent.core import gates_spec, planner_output
-
-    st = {"usedSkills": ["no-sum"], "analysis": {"summary": "人类 intercept 薄片"}}
-    msg, _ = gates_spec.spec_collect_card(st)
-    assert "一句话故事总结" not in msg
+    """0818 架构板正批：平台不再强注入总结（轮末只补客观完成记账）；
+    总结展示归编排器暂停卡声明。（收集卡断言随 gates_spec 退役删除，D-08 清偿）"""
+    from src.video_agent.core import planner_output
 
     class _Ex:
         chat_inserts = []
@@ -464,19 +391,8 @@ def test_summary_display_no_platform_injection(tmp_path, monkeypatch):
 
 
 # ---------- 0817 B13：轮间提示去 prose 越权（客观状态机械生成） ----------
-
-def test_wizard_note_no_forced_ke_pause(tmp_path):
-    """向导回执不得钉死「拆关键元素并暂停」：流程与暂停点归 Skill 阶段边界。"""
-    from src.video_agent.state.manager import StateManager
-    from src.video_agent.web.chat_consume import _consume_spec_wizard
-    svc = StateManager(str(tmp_path / "ws"))
-    svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
-    svc.state_dict["interaction"] = {"spec_soft_candidates": {}}
-    note, _name = _consume_spec_wizard(svc, "画幅比例：16:9 横屏\n输出语言：中文")
-    assert note, "规格选择应被向导消费落盘"
-    assert "开始拆分关键元素" not in note, "不得 prose 指定具体子步骤"
-    assert "暂停等用户确认拆分方案" not in note, "不得 prose 钉死暂停点"
-    assert "暂停点以" in note, "暂停归属必须指向 Skill 阶段边界"
+# test_wizard_note_no_forced_ke_pause 已随用户裁决 2026-08-31 退役删除（D-08 清偿）：
+# 向导回执链整体退役。
 
 
 def test_pause_note_objective_spec_state(tmp_path):

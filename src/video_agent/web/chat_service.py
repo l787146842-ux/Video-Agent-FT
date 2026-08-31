@@ -122,10 +122,10 @@ async def _stream_worker_impl(body: ChatRequest, svc: StateManager, emit, pendin
         user_text = "请查看我上传的素材"
 
     use_studio_context = body.context_mode != "none"
-    # 开场公共编排：暂停闭环 + 规格定稿/向导 + 附件降级注入
+    # 开场公共编排：暂停闭环 + 附件降级注入
     # + 轮始客观推进信号（decision 消费/闸预检分诊用）
     # + 重试续跑前置块（任务#6，经 leading_note 传多模态构建层）
-    llm_user_text, advance_signal, _wiz_doc, _resume_note = await _prepare_chat_opening(
+    llm_user_text, advance_signal, _resume_note = await _prepare_chat_opening(
         svc, body, user_text, use_studio_context)
 
     # 会话层一次性豁免：随消息登记，Planner 本次消费
@@ -151,7 +151,7 @@ async def _stream_worker_impl(body: ChatRequest, svc: StateManager, emit, pendin
     _require_chat_provider(body)
 
     # ---------- 真实供应商 ----------
-    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal, wiz_doc=_wiz_doc, stop_scope=stop_scope)
+    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal, stop_scope=stop_scope)
 
 
 def start_agent_task(body: ChatRequest) -> Dict[str, Any]:
@@ -271,12 +271,10 @@ class _StreamCtx:
     t0: float
     pending_injector: Any = None
     advance_signal: str = ""
-    wiz_doc: str = ""
     stop_scope: str = "chat"
     # --- 准备段中间结果 ---
     history: List[Dict[str, Any]] = field(default_factory=list)
     turn_id: str = ""
-    wiz_card_live: str = ""
     state_builder: Any = None
     image_provider: str = ""
     image_aspect_ratio: str = ""
@@ -306,7 +304,6 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
     # 前端据此把产出聚合进同次容器（消除消息流碎片化）；随 done payload
     # 下发，流式端与历史重载端同构
     ctx.turn_id = uuid.uuid4().hex[:12]
-    ctx.wiz_card_live = ""
 
     # 短锁：绑定附件 + 附件文档存档 + 记录用户消息（仅一次）；
     # 状态 JSON 改为惰性构建器：多步循环每个轮次重新构建，模型每轮看到最新状态
@@ -328,14 +325,7 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
                     pause_answered=pause_answered,
                     kind=getattr(ctx.body, "system_action", "") or "",
                 )
-            # 规格卡自 write_spec 提交结果投影（用户消息之后）+ 即显事件
-            if ctx.wiz_doc:
-                # 局部别名：显式 kwarg 形态钉死同轮 turn_id 契约（指纹测试）
-                turn_id = ctx.turn_id
-                ctx.svc.add_chat_message("agent", "", doc_card=ctx.wiz_doc, turn_id=turn_id)
-                ctx.wiz_card_live = ctx.wiz_doc
-                await ctx.emit({"type": SSE_DOC_WRITTEN, "name": ctx.wiz_doc,
-                            "turn_id": turn_id})
+            # 规格向导机械落盘投影管线已随用户裁决 2026-08-31 退役（D-08 清偿）
 
     ctx.state_builder = (
         (lambda: ctx.svc.build_agent_context(ctx.body.asset_mode)) if ctx.use_studio_context else None
@@ -546,12 +536,7 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
             # 消息存 snapshotId，本体存 stateSnapshots；媒体只有 URL 指针）
             snap_id = ctx.svc.attach_snapshot_to_last_agent_message(label=f"轮次完成 {turn_id}")
 
-    # 产物账本同轮下发：向导机械落盘的规格文档并入 documents_written
-    if ctx.wiz_card_live:
-        _docs = list(ctx.final_payload.get("documents_written") or [])
-        if ctx.wiz_card_live not in _docs:
-            _docs.append(ctx.wiz_card_live)
-        ctx.final_payload["documents_written"] = _docs
+    # 产物账本同轮下发（向导机械落盘投影已随裁决退役，不再并入 documents_written）
     done_payload: Dict[str, Any] = {
         **ctx.final_payload,
         "state": ctx.svc.get_full_snapshot() if ctx.use_studio_context else None,
@@ -565,7 +550,7 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
     await ctx.emit({"type": SSE_DONE, "payload": done_payload})
 
 
-async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", wiz_doc: str = "", stop_scope: str = "chat") -> None:
+async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", stop_scope: str = "chat") -> None:
     """真实供应商的流式处理（单一候选：选什么用什么，联不通直接报错）。
 
     生图/生视频 fallback 属独立机制（generation.py）。
@@ -580,7 +565,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         llm_user_text=llm_user_text, llm_user_content=llm_user_content,
         use_studio_context=use_studio_context, emit=emit, t0=t0,
         pending_injector=pending_injector, advance_signal=advance_signal,
-        wiz_doc=wiz_doc, stop_scope=stop_scope,
+        stop_scope=stop_scope,
     )
     planner_ctx = await _stream_prepare(ctx)
     if planner_ctx is None:
@@ -636,8 +621,8 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
     )
 
     use_studio_context = body.context_mode != "none"
-    # 开场公共编排：同流式路径（暂停闭环 + 规格定稿/向导 + 附件降级 + 推进信号 + 续跑块）
-    llm_user_text, advance_signal, _wiz_doc_ns, _resume_note_ns = await _prepare_chat_opening(
+    # 开场公共编排：同流式路径（暂停闭环 + 附件降级 + 推进信号 + 续跑块）
+    llm_user_text, advance_signal, _resume_note_ns = await _prepare_chat_opening(
         svc, body, user_text, use_studio_context)
 
     # 会话层一次性豁免：同流式路径
@@ -666,7 +651,6 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
         videos=body.videos or [], leading_note=_resume_note_ns,
     )
 
-    _wiz_card_ns = ""
     async with svc.lock:
         if use_studio_context:
             bind_attachments(svc, body.attachments)
@@ -683,10 +667,7 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
                     pause_answered=ns_pause_answered,
                     kind=getattr(body, "system_action", "") or "",
                 )
-            # 规格卡自提交结果投影（用户消息之后，非流式轨同步）
-            if _wiz_doc_ns:
-                svc.add_chat_message("agent", "", doc_card=_wiz_doc_ns)
-            _wiz_card_ns = _wiz_doc_ns
+            # （规格卡投影已随用户裁决 2026-08-31 退役，D-08 清偿）
 
     # 状态惰性构建器：多步循环每轮刷新
     state_builder = (
@@ -796,7 +777,7 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
         "text": result.text, "applied_actions": result.applied_actions, "steps": result.steps,
         "warnings": result.warnings, "confirmation": result.confirmation,
         "pause_id": result.pause_id,
-        "documents_written": result.documents_written + ([_wiz_card_ns] if _wiz_card_ns else []),
+        "documents_written": result.documents_written,
         "image_urls": result.image_urls,
         "state": svc.get_full_snapshot() if use_studio_context else None,
         "turn_id": ns_turn_id,
@@ -833,8 +814,6 @@ from src.video_agent.web.chat_consume import (
     _HISTORY_COMPACT_KEEP,
     _compact_card_enumeration,
     _consume_pending_confirmation,
-    _consume_spec_wizard,
-    _finalize_spec_params,
     _maybe_compact_history,
     consume_pause_response,
 )
