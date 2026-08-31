@@ -58,20 +58,19 @@ def _pb(raw_state):
     )
 
 
-def test_selected_block_budget_head_for_real_skill():
-    """批4/ADR-0007：真实存量 Skill 选中后正文头部经预算注入（头部锚点：
-    planner 启动协议），预算外尾部零注入并附 read_skill 续读指引；
-    执行器清单形态与全文硬直注形态措辞保持退役。"""
+def test_selected_block_planner_only_for_real_skill():
+    """B1 裁决：真实存量 Skill 选中后默认只注入 <planner> 段全文 + 章节目录，
+    其余章节正文经 read_skill 按需取读；执行器清单形态与全文硬直注形态措辞保持退役。"""
     from src.video_agent.skill_runtime import registry
 
     registry.reset_registry()  # 隔离：确保按真实 data/skills 目录重新注册
     state = {"keyElements": [], "shots": [], "audioItems": []}
     pb = _pb(state)
     block = pb.build_selected_skill_block("AI-短剧一站式生成")
-    # 选中提示 + 续读指引在场（该存量 Skill 超预算，走截断路径）
+    # 选中提示 + 取读指引在场（按需加载口径）
     assert "当前选中 Skill" in block and "read_skill" in block
-    assert "正文头部到此为止" in block
-    # 头部探针（正文前部）经预算注入；尾部探针（预算外、全文唯一）零注入
+    assert "正文头部到此为止" not in block  # 预算续读指引退役
+    # planner 段探针在场；其余章节正文探针零注入（只进目录）
     assert "启动协议" in block
     assert "**导出基准**" not in block
     # 历史注入形态措辞保持退役（压制性包壳同批退役）

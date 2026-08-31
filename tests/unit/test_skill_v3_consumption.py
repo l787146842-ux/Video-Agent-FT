@@ -164,10 +164,10 @@ def test_metadata_header_full_v3_declaration():
     assert "英文书写" in block
     # C1b 裁决 2026-08-31：pause_points 机械暂停退役，元数据头不再注入暂停清单
     assert "平台会在以下节点" not in block
-    # 位置：元数据头跟在选中标题行之后（批4/ADR-0007：正文头部随预算注入，
-    # 块内顺序 = 标题行 → 元数据头 → 纪律 → 正文头部）
+    # 位置：元数据头跟在选中标题行之后（B1：正文零注入，
+    # 块内顺序 = 标题行 → 元数据头 → 纪律 → 章节目录）
     assert block.index("== 当前选中 Skill") < block.index("== Skill 元数据")
-    assert "UNIQUE_META_BODY_MARK" in block  # 短正文预算内全文注入（正文探针）
+    assert "UNIQUE_META_BODY_MARK" not in block  # B1：非 planner 正文零注入
     # 原料声明不改变块内容（退役后与无声明同口径）
     block2 = _pb({"uploadedDocs": [{"name": "a.md", "content": "x"}]}).build_selected_skill_block("元数据全")
     assert "原料未就绪" not in block2

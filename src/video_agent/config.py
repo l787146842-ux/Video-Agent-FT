@@ -150,10 +150,8 @@ class Settings:
     max_doc_chars: int = field(default_factory=lambda: _env_int("MAX_DOC_CHARS", 30000))
     max_attachments: int = field(default_factory=lambda: _env_int("MAX_ATTACHMENTS", 5))
 
-    # 选中 Skill 正文预算化注入（批4/ADR-0007 渐进披露）：选中 Skill 正文头部
-    # 按该 token 预算注入（按章节边界切齐），其余经 read_skill(section/start)
-    # 按需续读；存量超大 Skill（如 88KB）自动走续读路径，不击穿上下文预算。
-    skill_inject_max_tokens: int = field(default_factory=lambda: _env_int("SKILL_INJECT_MAX_TOKENS", 5000))
+    # （B1 裁决 2026-08-31：skill_inject_max_tokens 预算式正文头部注入退役删除——
+    # 默认注入收窄为 <planner> 段全文 + 章节目录，其余经 read_skill 按需取读。）
     # Skill 开关与目录规模化（批5/对齐 Flova 卡片开关）：
     # skills_disabled = 被停用 Skill 的 slug 列表（默认空 = 全启用，存量不受影响；
     # 写入点归 web/routes/runtime_settings 既有热更新通道）；

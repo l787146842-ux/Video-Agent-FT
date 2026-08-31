@@ -78,14 +78,14 @@ def test_prompt_draft_section_merges_write_media_prompt_and_write_the_prompt():
 
 def test_selected_block_lightweight_keeps_discipline_pointer():
     """回归（7777 事故）：防虚报语义随《Skill 流程纪律》全文到达模型——
-    纪律全文经评审修复批（用户裁决）挂回选中 Skill 块；批4/ADR-0007：
-    Skill 正文头部经预算注入（短桩预算内全文），纪律单家仍是 skill_discipline.md。"""
+    纪律全文经评审修复批（用户裁决）挂回选中 Skill 块；B1：
+    Skill 正文只注入 <planner> 段，纪律单家仍是 skill_discipline.md。"""
     from src.video_agent.utils.prompts import load_prompt
 
     _write(
         "demo-fc",
         "# 演示防虚报\n> 调用规则：测试\n"
-        "<storyboard_key_elements>\nUNIQUE_BODY_MARK_FX\n</storyboard_key_elements>\n",
+        "<planner>\nUNIQUE_BODY_MARK_FX\n</planner>\n",
     )
     pb = PromptBuilder(
         lambda: sd,
@@ -93,7 +93,7 @@ def test_selected_block_lightweight_keeps_discipline_pointer():
         lambda: {"keyElements": [], "shots": [], "audioItems": []},
     )
     block = pb.build_selected_skill_block("演示防虚报")
-    # 防虚报条款（纪律第 9 条）随选中块挂回在场；正文头部同经预算注入在场（批4）
+    # 防虚报条款（纪律第 9 条）随选中块挂回在场；planner 段探针经按需注入在场（B1）
     assert "必须真的调用" in block and "才可声称完成" in block
     assert "UNIQUE_BODY_MARK_FX" in block
     # 防虚报条款外置单家仍在场（宪法 Rule 6 单一事实源）

@@ -11,6 +11,7 @@ system 段，经 build_state_tail_message 以 history 尾部消息（user 通道
 
 planner.py 保留 _build_system_prompt 等同名委托，既有调用/测试路径不变。
 """
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
@@ -40,6 +41,9 @@ if TYPE_CHECKING:
 # 提醒清理草稿（token 治理的组装层可观测性）
 _SYSTEM_PROMPT_WARN_CHARS = 60000
 
+# B1：Skill 正文 <planner> 段提取（默认注入唯一正文段）
+_PLANNER_TAG_RE = re.compile(r"<planner>\s*(.*?)\s*</planner>", re.S | re.I)
+
 # v3 元数据头展示标签（kind 目录口径 + 暂停 trigger 文案）
 _KIND_LABELS = {
     "pipeline": "流程型（固定流水线）",
@@ -47,8 +51,9 @@ _KIND_LABELS = {
 }
 # Skill 正文注入家族（全文直注/分级注入/组合注入/平台边界包壳/
 # kind 差异化声明）已随任务#12 批次B 整体退役；批4/ADR-0007 起选中 Skill
-# 正文改经渐进披露预算化注入（头部按章节边界切齐，其余经 read_skill
-# 续读），压制性包壳同期退役（官方干净注入，外部仅来源标记）。
+# 正文改经渐进披露预算化注入；（B1 裁决 2026-08-31：预算式头部注入退役，
+# 默认注入收窄为 <planner> 段全文 + 章节目录，其余经 read_skill 按需取读）；
+# 压制性包壳同期退役（官方干净注入，外部仅来源标记）。
 # reference kind 低权重注入分支已随任务#8 ② 下架清偿（KIND_VALUES 不再含
 # reference，声明入口关闭、降级 pipeline；死分支已删）。
 # （C1b 裁决 2026-08-31：pause_points 机械暂停退役——元数据头不再注入
@@ -328,13 +333,13 @@ class PromptBuilder:
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 预算注入块（批4/ADR-0007：指令性注入合法化）。
+        """选中 Skill 按需加载注入块（B1 裁决 2026-08-31；批4/ADR-0007 指令性注入合法化）。
 
-        渐进披露：正文头部按 settings.skill_inject_max_tokens 预算注入（按章节边界切齐、
-        不切半句），超出部分附 read_skill(section/start) 续读指引；短 Skill 全文一次注入；
-        存量超大 Skill（88KB 量级）自动走续读。块内组成：选中提示行 + 元数据头 +
-        《Skill 流程纪律》全文 + 正文头部（+续读指引）。
-        压制性包壳已退役：官方干净注入，仅外部来源附来源标记（不加约束性措辞）。
+        默认注入收窄：<planner> 流程段全文 + 章节目录；其余章节正文经
+        read_skill(name, section="章节名") 按需取读（纪律提醒见《Skill 流程纪律》
+        第 11 条）。预算式正文头部注入已退役（零判断方案不回退）。
+        块内组成：选中提示行 + 元数据头 + 《Skill 流程纪律》全文 +
+        <planner> 段全文 + 章节目录。
         段序不变（段注册表 order 100 最末，保前缀缓存约束）。
         解析失败/内容为空返回空串（降级为仅目录）。
         """
@@ -348,11 +353,8 @@ class PromptBuilder:
         if not content:
             return ""
         name = display or skill_name
-        head, cut, truncated = self._budget_head(content, sd)
-        hint = render_prompt_section(
-            "shared/skill_selected.md",
-            "HEAD_TRUNCATED" if truncated else "HEAD_FULL", name=name)
-        parts: List[str] = [hint]
+        parts: List[str] = [render_prompt_section(
+            "shared/skill_selected.md", "SELECTED_NOTE", name=name)]
         header = self.build_skill_metadata_header(skill_name)
         if header:
             parts.append(header)
@@ -363,55 +365,47 @@ class PromptBuilder:
             discipline = ""
         if discipline.strip():
             parts.append(discipline.strip())
-        parts.append(head)
-        if truncated:
+        planner_text = self._planner_section_text(content, sd)
+        if planner_text:
+            parts.append(f"<planner>\n{planner_text}\n</planner>")
+        toc = self._toc_lines(content, sd)
+        if toc:
             parts.append(render_prompt_section(
-                "shared/skill_selected.md", "CONTINUE_NOTE",
-                name=name, total=len(content), injected=cut, start=cut))
+                "shared/skill_selected.md", "TOC_NOTE", name=name) + "\n" + "\n".join(toc))
         return "\n\n".join(parts)
 
-    def _budget_head(self, content: str, sd: Any) -> Tuple[str, int, bool]:
-        """正文头部预算切分：返回 (头部文本, 切分字符偏移, 是否截断)。
+    def _planner_section_text(self, content: str, sd: Any) -> str:
+        """<planner> 流程段全文（B1 默认注入唯一正文段）。
 
-        按章节边界切齐（不切半句）：按 token 预算整段圈入（头部前导与段间
-        间隙作为自然段随段圈入）；预算内圈不下任何整段（首段即超）时
-        回落逐行累加切分。未超预算全文返回（截断标志为假）。"""
-        budget = settings.skill_inject_max_tokens
-        if estimate_tokens(content) <= budget:
-            return content, len(content), False
+        tag 形态优先；标题式回落「流程规划」章节切片；均无命中返空串。"""
+        m = _PLANNER_TAG_RE.search(content)
+        if m:
+            return m.group(1).strip()
         try:
             toc = sd.list_skill_sections(content) or []
         except Exception:
             toc = []
-        chunks: List[Tuple[int, int]] = []
-        pos = 0
         for s in toc:
-            st, en = int(s.get("start") or 0), int(s.get("end") or 0)
-            if st > pos:
-                chunks.append((pos, st))
-            if en > st:
-                chunks.append((st, en))
-                pos = en
-        if pos < len(content):
-            chunks.append((pos, len(content)))
-        cut = 0
-        acc = 0
-        for st, en in chunks:
-            seg_tokens = estimate_tokens(content[st:en])
-            if acc + seg_tokens > budget:
-                break
-            cut = en
-            acc += seg_tokens
-        if cut <= 0:
-            # 首段即超预算（或无章节结构）：逐行累加切分（行边界兼保不切半句）
-            for line in content.splitlines(keepends=True):
-                line_tokens = estimate_tokens(line)
-                if acc + line_tokens > budget and cut > 0:
-                    break
-                cut += len(line)
-                acc += line_tokens
-        return content[:cut].rstrip(), cut, True
-    
+            title = str(s.get("title") or "")
+            if title in ("流程规划", "planner"):
+                return content[int(s.get("start") or 0):int(s.get("end") or 0)].strip()
+        return ""
+
+    def _toc_lines(self, content: str, sd: Any) -> List[str]:
+        """章节目录行（- 章节名 (字数)）；解析失败返空表。"""
+        try:
+            toc = sd.list_skill_sections(content) or []
+        except Exception:
+            return []
+        lines: List[str] = []
+        for s in toc:
+            title = str(s.get("title") or "").strip()
+            if not title:
+                continue
+            seg_len = max(0, int(s.get("end") or 0) - int(s.get("start") or 0))
+            lines.append(f"- {title}（{seg_len} 字）")
+        return lines
+
     def build_skill_metadata_header(self, skill_name: str) -> str:
         """frontmatter 元数据头：version/source / kind / language，
         随选中 Skill 轻量块注入（正文零注入后的运营状态面）。

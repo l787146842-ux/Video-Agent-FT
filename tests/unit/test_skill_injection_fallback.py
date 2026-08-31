@@ -1,7 +1,6 @@
 """选中 Skill 注入行为测试。
 
-任务#12 批次B：选中 Skill 全文硬注入退役；批4/ADR-0007：选中段改为渐进披露
-预算化注入（正文头部按预算注入 + 续读指引 + 元数据头，压制性包壳退役）；
+任务#12 批次B：选中 Skill 全文硬注入退役；B1 裁决 2026-08-31：选中段改按需加载注入（<planner> 段全文 + 章节目录，其余经 read_skill 取读）；
 流程规范由模型执行前调 read_skill 续读/读取（read_skill 门禁短路已随批次A 解除）。
 
 4-4 双轨退役（ADR-0001）：原 TestNonFcChannelFallback（非 FC 通道附件
@@ -30,15 +29,15 @@ def doc_skill(tmp_path, monkeypatch):
     skill_docs_mod.save_skill_doc(
         "demo-flow",
         "---\nname: 测试流程 Skill\ndescription: 测试桩\n---\n"
-        f"# 测试流程 Skill\n> 调用规则：测试用\n{SKILL_MARKER} 完整流程正文",
+        f"# 测试流程 Skill\n> 调用规则：测试用\n<planner>\n{SKILL_MARKER} 完整流程正文\n</planner>",
     )
     yield skill_dir
     registry.reset_registry()
 
 
 class TestSelectedSkillLightweightHint:
-    """用户选中的 Skill 以渐进披露预算注入进 system prompt（批4/ADR-0007：
-    正文头部按预算注入，超出部分经 read_skill 续读）"""
+    """用户选中的 Skill 按需加载注入进 system prompt（B1：<planner> 段全文 +
+    章节目录，其余章节经 read_skill 取读）"""
 
     def test_selected_skill_lightweight_hint_only(self, doc_skill):
         planner = Planner()
@@ -47,8 +46,8 @@ class TestSelectedSkillLightweightHint:
         assert "当前选中 Skill" in prompt
         # read_skill 按需加载指引在场（目录段渐进披露口径）
         assert "read_skill" in prompt
-        # 批4/ADR-0007：短正文预算内全文注入（正文片段在场）
-        assert SKILL_MARKER in prompt, "选中 Skill 正文头部应经预算注入"
+        # B1：<planner> 段全文注入（正文片段在场）
+        assert SKILL_MARKER in prompt, "选中 Skill 的 planner 段应注入"
         # 历史全文直注形态措辞已退役；「全文」字面仅允许来自《Skill 流程纪律》
         # 挂回块（用户内容，第 10 条"定稿全文写入"）与目录口径白名单短语，
         # 不得出现直注形态陈述（如"全文直注"）。
@@ -58,7 +57,7 @@ class TestSelectedSkillLightweightHint:
         planner = Planner()
         ctx = PlannerContext(use_studio_context=False, skill_name="测试流程Skill.md")
         prompt = planner._build_system_prompt(ctx)
-        # 模糊名解析后仍产出选中段，短正文预算内全文注入（批4/ADR-0007）
+        # 模糊名解析后仍产出选中段，<planner> 段全文注入（B1）
         assert "当前选中 Skill" in prompt
         assert SKILL_MARKER in prompt
 

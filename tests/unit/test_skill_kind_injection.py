@@ -84,12 +84,12 @@ def test_schema_warn_split_contract():
     assert errors == ["错误条"] and warnings == ["告警条"]
 
 
-# ---------- 2) 选中段：正文预算注入 + kind 展示口径（批4/ADR-0007） ----------
+# ---------- 2) 选中段：按需加载注入 + kind 展示口径（B1 裁决 2026-08-31） ----------
 
 def _lightweight_asserts(block: str, name: str):
-    """选中段契约（批4/ADR-0007）：名称提示 + 正文预算注入（短桩预算内全文）"""
+    """选中段契约（B1）：名称提示 + <planner> 段全文 + 章节目录（正文其余零注入）"""
     assert f"当前选中 Skill「{name}」" in block
-    assert "全文已按渐进披露预算完整注入" in block
+    assert "下方已注入流程（planner）段全文与章节目录" in block
     # 差异化正文包壳措辞全部退役（压制性包壳同批退役）
     assert "必须严格遵守其中的流程与规范" not in block
     assert "【执行基准声明】" not in block
@@ -101,7 +101,7 @@ def test_pipeline_kind_lightweight_block():
     _save("流程桩", "# 流程桩\n<planner>\n流程正文 UNIQUE_PIPE_MARK\n</planner>", {"kind": "pipeline"})
     block = _pb().build_selected_skill_block("流程桩")
     _lightweight_asserts(block, "流程桩")
-    assert "UNIQUE_PIPE_MARK" in block  # 短正文预算内全文注入
+    assert "UNIQUE_PIPE_MARK" in block  # planner 段全文注入
     # 元数据头展示口径：流程型
     assert "类型：流程型（固定流水线）" in block
 
@@ -110,7 +110,8 @@ def test_style_kind_lightweight_block():
     _save("风格桩", "# 风格桩\n风格正文 UNIQUE_STYLE_MARK", {"kind": "style"})
     block = _pb().build_selected_skill_block("风格桩")
     _lightweight_asserts(block, "风格桩")
-    assert "UNIQUE_STYLE_MARK" in block  # 短正文预算内全文注入
+    # B1：无 planner 段时正文零注入（探针不在场）
+    assert "UNIQUE_STYLE_MARK" not in block
     # 元数据头展示口径：风格型
     assert "类型：风格型（美学指导）" in block
 
@@ -120,7 +121,7 @@ def test_reference_kind_retired_lightweight_block():
     _save("参考桩", "# 参考桩\n参考正文 UNIQUE_REF_MARK", {"kind": "reference"})
     block = _pb().build_selected_skill_block("参考桩")
     _lightweight_asserts(block, "参考桩")
-    assert "UNIQUE_REF_MARK" in block  # 短正文预算内全文注入
+    assert "UNIQUE_REF_MARK" not in block  # B1：无 planner 段正文零注入
     assert "类型：" not in block
 
 
@@ -128,7 +129,7 @@ def test_unknown_kind_lightweight_block():
     _save("未知桩", "# 未知桩\n正文 UNIQUE_UNK_MARK", {"kind": "cinema"})
     block = _pb().build_selected_skill_block("未知桩")
     _lightweight_asserts(block, "未知桩")
-    assert "UNIQUE_UNK_MARK" in block  # 短正文预算内全文注入
+    assert "UNIQUE_UNK_MARK" not in block  # B1：无 planner 段正文零注入
     assert "类型：" not in block
 
 
@@ -142,9 +143,9 @@ def test_no_kind_declaration_lightweight_block():
 
 # ---------- 3) 超长 Skill 不因 kind 走差异化分级 ----------
 
-def test_style_kind_oversized_still_budget_head():
-    """批4/ADR-0007：分级注入退役后，超长风格型 Skill 同样只走统一口径：
-    正文头部预算注入（含续读指引），预算外零注入。"""
+def test_style_kind_oversized_still_planner_only():
+    """B1 裁决：分级注入/预算头部退役后，超长风格型 Skill 同样只走统一口径：
+    <planner> 段全文 + 章节目录，其余章节正文零注入。"""
     filler = "风格填充。" * 500
     _save(
         "超长风格",
@@ -155,27 +156,27 @@ def test_style_kind_oversized_still_budget_head():
     )
     block = _pb().build_selected_skill_block("超长风格")
     assert "当前选中 Skill「超长风格」" in block
-    assert "正文头部已按渐进披露预算注入" in block
-    # 头部探针（正文前部）在场；尾部探针（预算外）零注入；续读指引在场
+    assert "下方已注入流程（planner）段全文与章节目录" in block
+    # planner 段探针在场；其余章节正文零注入；取读指引在场
     assert "UNIQUE_STY_PLAN" in block and "UNIQUE_STY_WP" not in block
-    assert "正文头部到此为止" in block
-    assert "章节目录" not in block
-    # 预算头部+《Skill 流程纪律》体量仍受预算约束，远低于历史全文注入形态（约 5.7 万字）
+    assert "正文头部到此为止" not in block  # 预算续读指引退役
+    assert "章节目录" in block  # 目录在场（按需取读入口）
+    # planner 段 + 目录 + 纪律体量远低于历史全文注入形态（约 5.7 万字）
     assert len(block) < 20000
 
 
 # ---------- 4) 平台边界声明包壳随正文注入整体退役 ----------
 
 def test_boundary_statement_retired_with_body_injection():
-    """任务#12 批次B：边界声明只包正文，声明同批退役；批4/ADR-0007：正文头部
-    经预算注入（压制性包壳退役，官方干净注入）；块开头即选中名称陈述，
+    """任务#12 批次B：边界声明只包正文，声明同批退役；B1：正文改按需加载注入，
+    无 planner 段的正文探针零注入；块开头即选中名称陈述，
     平台自撰措辞保持中性（不走严禁/不得句式；纪律全文为用户内容挂回，
     不在本钉范围）。"""
     _save("边界桩", "# 边界桩\n正文 UNIQUE_BOUNDARY_MARK 优先级最高", {"kind": "pipeline"})
     block = _pb().build_selected_skill_block("边界桩")
     assert "== 平台边界声明" not in block
     assert "效力从属于用户指令与平台铁律" not in block
-    assert "UNIQUE_BOUNDARY_MARK" in block  # 短正文预算内全文注入
+    assert "UNIQUE_BOUNDARY_MARK" not in block  # B1：无 planner 段正文零注入
     assert block.startswith("== 当前选中 Skill「边界桩」")
     # 中性措辞钉死（限平台自撰部分：纪律全文挂回前的块头）
     head = block.split("【Skill 流程纪律", 1)[0]

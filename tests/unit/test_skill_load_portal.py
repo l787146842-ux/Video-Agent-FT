@@ -236,43 +236,36 @@ async def test_stock_behavior_all_enabled_list_skills():
         assert s["name"] and "description" in s
 
 
-# ---------- 注入链路预算切分回落分支（覆盖率缺口定向补测，棘轮不倒退） ----------
+# ---------- 注入链路按需加载边缘分支（B1：planner 段/目录探测降级定向补测） ----------
 
 
-def test_budget_head_line_level_fallback_when_first_chunk_exceeds(set_global_setting):
-    """预算切分回落分支：无章节结构且首段即超预算时逐行累加切分（不切半句），
-    截断标志为真且切点落行边界（选中 Skill 注入链路的边缘分支定向覆盖）。"""
-    set_global_setting("skill_inject_max_tokens", 8)
+def test_planner_section_tag_priority_and_heading_fallback():
+    """planner 段提取：tag 形态优先；标题式回落「流程规划」切片；均无命中返空串。"""
 
     class _StubDocs:
         def list_skill_sections(self, content):
             return []
 
-    content = "第一行内容甲乙丙丁\n第二行内容戊己庚辛\n第三行内容壬癸子丑\n" * 5
-    head, cut, truncated = _pb(_base_state())._budget_head(content, _StubDocs())
-    assert truncated is True
-    assert 0 < cut < len(content)
-    assert head == content[:cut].rstrip()
-    assert content[cut - 1] == "\n"  # 行边界切齐，不切半句
-    # 至少圈入一行（首行即超预算也不空切）
-    assert head.startswith("第一行内容甲乙丙丁")
-    # 后续行未被圈入（超预算即停）
-    assert "第三行内容壬癸子丑" not in head
+    pb = _pb(_base_state())
+    assert pb._planner_section_text(
+        "<planner>\n流程总纲\n</planner>\n<other>\n他段\n</other>", _StubDocs()) == "流程总纲"
+    assert pb._planner_section_text("无章节正文", _StubDocs()) == ""
+
+    class _HeadDocs:
+        def list_skill_sections(self, content):
+            return [{"title": "流程规划", "start": 0, "end": len(content)}]
+
+    assert "正文内容" in pb._planner_section_text("## 流程规划\n正文内容", _HeadDocs())
 
 
-def test_budget_head_section_probe_failure_falls_back(set_global_setting):
-    """章节探测失败不阻断：回落空目录仍完成预算切分（注入链路降级边缘分支）。"""
-    set_global_setting("skill_inject_max_tokens", 8)
+def test_toc_lines_probe_failure_falls_back():
+    """章节目录探测失败不阻断：回落空目录（注入链路降级边缘分支）。"""
 
     class _BadDocs:
         def list_skill_sections(self, content):
             raise RuntimeError("章节探测失败")
 
-    content = "第一行内容甲乙丙丁\n第二行内容戊己庚辛\n" * 5
-    head, cut, truncated = _pb(_base_state())._budget_head(content, _BadDocs())
-    assert truncated is True
-    assert 0 < cut < len(content)
-    assert head == content[:cut].rstrip()
+    assert _pb(_base_state())._toc_lines("正文", _BadDocs()) == []
 
 
 # ---------- 三维评审修复批（2026-08-30）：对话栏/章节执行器/归属门户/归一化分界 ----------

@@ -64,7 +64,7 @@ def _seed_combo_skills():
     # H1 与 slug 同口径（真实 Skill 同此），保证 entry.name 与清单 slug 一致
     _save("风格甲", "# 风格甲\n风格正文 MARK_STYLE_A", {"kind": "style"})
     _save("风格乙", "# 风格乙\n风格正文 MARK_STYLE_B", {"kind": "style"})
-    _save("流程甲", "# 流程甲\n流程正文 MARK_PIPELINE_A", {"kind": "pipeline"})
+    _save("流程甲", "# 流程甲\n<planner>\n流程正文 MARK_PIPELINE_A\n</planner>", {"kind": "pipeline"})
 
 
 # ---------- 1) style_skills_from_state 清洗 ----------
@@ -232,8 +232,8 @@ def _ctx(skill_name: str):
 
 
 def test_system_prompt_combo_body_zero_injection():
-    """批4/ADR-0007：1 pipeline + N style 层组合激活后，主流程正文头部经预算注入，
-    风格层正文零注入（只在目录段以名称可见）。"""
+    """B1 裁决：1 pipeline + N style 层组合激活后，主流程只注入 <planner> 段
+    全文，风格层正文零注入（只在目录段以名称可见）。"""
     _seed_combo_skills()
     raw = {
         "keyElements": [], "shots": [], "audioItems": [],
@@ -241,7 +241,7 @@ def test_system_prompt_combo_body_zero_injection():
         "styleSkills": ["风格甲"],
     }
     text = _pb(raw).build_system_prompt(_ctx("流程甲"))
-    # 主流程正文头部预算注入（短正文预算内全文在场）；风格层正文零注入
+    # 主流程 planner 段注入；风格层正文零注入（非 planner 正文同口径零注入）
     assert "MARK_PIPELINE_A" in text
     assert "MARK_STYLE_A" not in text
     # 目录段：主流程选中提示 + 风格层名称都在，配 read_skill 指引

@@ -387,7 +387,7 @@ def test_system_prompt_contains_catalog_not_full_text(tmp_path, monkeypatch, svc
     skill_docs_mod.save_skill_doc(
         "demo-skill",
         "---\nname: 演示技能\ndescription: 测试桩\n---\n"
-        "# 演示技能\n> 调用规则：演示用\n大段流程正文经预算注入 system prompt……",
+        "# 演示技能\n> 调用规则：演示用\n<planner>\n流程段正文探针\n</planner>\n非 planner 正文不进 system prompt……",
     )
     skill_docs_mod.save_skill_doc(
         "other-skill",
@@ -400,9 +400,10 @@ def test_system_prompt_contains_catalog_not_full_text(tmp_path, monkeypatch, svc
         prompt = planner._build_system_prompt(ctx)
         assert "Skill 目录" in prompt and "演示技能" in prompt
         assert "read_skill" in prompt
-        # 选中项提示在场，短正文预算内全文注入（批4/ADR-0007）
+        # 选中项提示在场，只注入 <planner> 段全文（B1 按需加载）
         assert "当前选中 Skill" in prompt
-        assert "大段流程正文经预算注入 system prompt" in prompt
+        assert "流程段正文探针" in prompt
+        assert "非 planner 正文不进 system prompt" not in prompt
         # 未选中的 Skill 仍只有目录，全文不注入
         assert "未选技能的正文不应进 system prompt" not in prompt
     finally:

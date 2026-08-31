@@ -59,23 +59,23 @@ def test_probe_phrase_exists_in_source_skill():
     assert content.find(TAIL_PROBE) > 9000 and content.count(TAIL_PROBE) == 1
 
 
-def test_system_prompt_long_skill_head_budget_injection():
-    """选中真实超长 Skill（批4/ADR-0007）：正文头部按预算注入，
-    预算外尾部零注入，附 read_skill 续读指引。"""
+def test_system_prompt_long_skill_planner_only_injection():
+    """选中真实超长 Skill（B1 裁决 2026-08-31）：默认只注入 <planner> 段全文
+    + 章节目录，其余章节正文经 read_skill 按需取读。"""
     text = _pb(_base_state()).build_system_prompt(_ctx(LONG_SKILL_NAME))
-    # 头部探针经预算注入在场；尾部探针零注入（全文按需，不击穿预算）
+    # planner 段探针在场；非 planner 章节探针零注入（只进目录）
     assert BODY_PROBE in text
     assert TAIL_PROBE not in text
     # 目录行在场（L1 元数据：名称 + 摘要）
     assert "Skill 目录" in text and LONG_SKILL_NAME in text
-    # 选中提示 + 续读指引在场（渐进披露口径）
+    # 选中提示 + 取读指引在场（按需加载口径）
     assert f"当前选中 Skill「{LONG_SKILL_NAME}」" in text
-    assert "read_skill" in text and "正文头部到此为止" in text
+    assert "read_skill" in text and "正文头部到此为止" not in text
     # 历史注入形态措辞全部退役（压制性包壳同批退役）
     assert "【执行基准声明】" not in text
     assert "== 平台边界声明" not in text
     assert "以后者为准" not in text
-    assert "章节目录" not in text
+    assert "章节目录" in text  # B1：章节目录在场（按需取读入口）
 
 
 def _style_body_probe(style_content: str) -> str:
