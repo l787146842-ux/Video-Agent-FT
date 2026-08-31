@@ -5,7 +5,7 @@
 import { apiFetch, apiPost, apiPut } from './client';
 import type { ServerStateSnapshot, DocRecord } from '@/types';
 import type {
-  DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, OkResponse, ProjectListResponse, SnapshotActionRequest, SnapshotListResponse, SwitchProjectRequest, UndoStatusResponse,
+  BoardMergeResponse, DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, OkResponse, ProjectListResponse, SnapshotActionRequest, SnapshotListResponse, SwitchProjectRequest, UndoStatusResponse,
 } from '@/types/api.generated';
 
 export interface OkWithStateResponse {
@@ -83,6 +83,20 @@ export function getUndoStatus() {
 /** 破坏性操作前压入撤销快照（保证删除草稿等"整体 PUT"路径可一次 undo 恢复） */
 export function checkpointUndo() {
   return apiPost<{ ok: boolean } & UndoStatusResponse>('/api/project/undo-checkpoint', {});
+}
+
+// ---------- G1 并行局部修改（三向合并 + 冲突面板） ----------
+
+/** 陈旧整板提交改走三向合并：单方改动自动采纳，双方同改回冲突清单交面板定夺 */
+export function mergeProjectState(
+  patch: Partial<
+    Pick<
+      ServerStateSnapshot,
+      'project_id' | 'keyElements' | 'shots' | 'audioItems' | 'assets'
+    >
+  > & { base_version?: number },
+) {
+  return apiPost<BoardMergeResponse>('/api/project/state/merge', patch);
 }
 
 // ---------- E1 回档三件套（消息级快照指针化 + 版本列表 + 分叉） ----------

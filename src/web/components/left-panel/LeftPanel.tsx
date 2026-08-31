@@ -4,6 +4,7 @@ import { state, studioActions } from '@/stores/studio';
 import { StoryboardView } from './StoryboardView';
 import { UncategorizedView } from './UncategorizedView';
 import { SnapshotHistoryBar } from './SnapshotHistoryBar';
+import { BoardConflictPanel } from './BoardConflictPanel';
 import type { LeftTab } from '@/types';
 
 const TABS: Array<{ key: LeftTab; label: string; icon: typeof FiGrid }> = [
@@ -46,6 +47,9 @@ export default function LeftPanel() {
 
       {/* E1 故事板版本列表（快照指针清单；回退经二次确认 + 后端生成中禁回退） */}
       <SnapshotHistoryBar />
+
+      {/* G1 故事板冲突面板（与 Agent 写入同改一处时逐项定夺；固定遮罩全屏层） */}
+      <BoardConflictPanel />
     </div>
   );
 }

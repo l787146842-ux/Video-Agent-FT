@@ -4,10 +4,14 @@ import { produce } from 'solid-js/store';
 import type {
   DraftType, Draft, SubTab, AnyGroup, ServerStateSnapshot,
 } from '@/types';
-import { putProjectState, getProjectState } from '@/api/project';
+import { putProjectState, getProjectState, mergeProjectState } from '@/api/project';
 import { ApiError, buildAuthHeaders } from '@/api/client';
 import { showToast } from '@/stores/toast';
 import { debounce, uid } from '@/lib/utils';
+import {
+  conflictsState, openConflicts, closeConflicts, applyChoices,
+  setResolving,
+} from './conflicts';
 import {
   state, setState,
   fieldForType, fieldForSubTab, groupsForType,
@@ -77,6 +81,35 @@ function boardContentJson(): string {
  *  后者必被 409 拒引发整板重同步闪烁；串行后每次 PUT 都读到最新版本 */
 let saveChain: Promise<void> = Promise.resolve();
 
+/** G1 版本冲突回落：陈旧整板提交改走三向合并（对标 Flova 并行局部修改）。
+ * 单方改动自动采纳落盘；双方同改 → 开冲突面板交用户定夺；
+ * 基线不可得返 false，调用方回落旧「丢弃重做」语义。 */
+async function tryMergeOnConflict(): Promise<boolean> {
+  try {
+    const resp = await mergeProjectState(boardSavePayload());
+    if (resp.applied) {
+      boardDirty = false;
+      setState('boardVersion', typeof resp.board_version === 'number'
+        ? resp.board_version : state.boardVersion + 1);
+      setState('boardSaveStatus', 'saved');
+      try {
+        const snap = await getProjectState();
+        storyboardActions.syncFromServer(snap);
+        lastSyncedContentJson = boardContentJson();
+      } catch { /* 同步失败保留本地态，下次编辑再试 */ }
+      showToast('已和 Agent 的最新改动自动合并保存', 'success');
+      return true;
+    }
+    if (resp.base_available && (resp.conflicts || []).length > 0) {
+      openConflicts(resp); // 冲突面板定夺，本轮保存未落盘待提交
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 async function doBoardSave(): Promise<void> {
   // 内容未变（查看/双击阅读等空操作）：跳过 PUT，不与 Agent 写入竞态
   const contentJson = boardContentJson();
@@ -99,9 +132,11 @@ async function doBoardSave(): Promise<void> {
   } catch (e) {
     setState('boardSaveStatus', 'error');
     if (e instanceof ApiError && e.status === 409) {
-      // 版本冲突：在途期间后端已写入 → 丢弃本次陈旧保存，重新同步最新状态；
+      // 版本冲突：在途期间后端已写入 → 先尝试三向合并（G1）；
+      // 合并不可行才回落旧语义（丢弃陈旧保存 + 重同步）；
       // 项目切换 409 依旧静默丢弃（旧项目的编辑不应写进新项目）
       if (/版本冲突/.test(e.message)) {
+        if (await tryMergeOnConflict()) return;
         // 888 ：提示不得轻描淡写，必须明确告知编辑未保存需重做
         showToast('你刚才的编辑没有保存成功（期间 Agent 已更新故事板），页面已同步最新状态，请在最新状态上重做刚才的编辑', 'error');
         try {

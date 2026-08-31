@@ -21,3 +21,4 @@
 @import "./pinned-rail.css";
 /* E1 回档三件套（消息级快照动作 + 版本历史列表） */
 @import "./e1-snapshot.css";
+@import "./g1-conflicts.css";
