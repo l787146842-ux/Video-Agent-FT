@@ -99,27 +99,11 @@ def _has_document_named(state: Dict[str, Any], name: str) -> bool:
     )
 
 
-def _stage_done_decl(skill: str, key: str) -> str:
-    """frontmatter 阶段完成条件声明（flow.stages.<阶段键>.done，可选，任意阶段同构）：
-    当前支持 "document:<文档名>"；未声明返空串（回落平台客观探针）。"""
-    if not skill:
-        return ""
-    manifest = registry.skill_manifest_of(skill) or {}
-    stages = ((manifest.get("flow") or {}).get("stages") or {})
-    # 数组形态 = workflow 结构声明，不属阶段覆盖通道
-    if not isinstance(stages, dict):
-        return ""
-    return str((stages.get(key) or {}).get("done") or "").strip()
-
-
 def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
     """阶段完成度客观探针（只认状态事实，认不出=未完成；fail-closed）。
 
-    frontmatter 声明探针通道（任意阶段同构）：flow.stages.<key>.done 声明
-    优先（document:<文档名>），未声明回落各阶段平台客观探针。"""
-    decl = _stage_done_decl(skill, key)
-    if decl.startswith("document:"):
-        return _has_document_named(state, decl[len("document:"):].strip())
+    （C1b 裁决 2026-08-31：frontmatter done 声明通道退役，
+    恒走各阶段平台客观探针。）"""
     if key == "analysis":
         return bool((state.get("analysis") or {}).get("summary"))
     if key == "spec":
@@ -130,8 +114,7 @@ def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
     if key == "structure":
         return bool(ke) and bool(shots) and bool(audio)
     # 节点级结构探针：workflow_contract 单节点
-    # 完成判定用。运行时内部键——frontmatter 声明白名单仍锁
-    # CANONICAL_STAGE_KEYS，这三键不可经 stages.<key>.done 声明覆盖。
+    # 完成判定用（运行时内部键）。
     if key == "key_elements":
         return bool(ke)
     if key == "shots_groups":
@@ -191,32 +174,21 @@ def step_done_probe(
 
 
 def stage_table(skill: str) -> List[StageSpec]:
-    """平台规范阶段表 + frontmatter 覆盖（skip 裁剪 / 同批执行器替换）。
+    """平台规范阶段表（skill 感知裁剪）。
 
-    skill 感知裁剪：未声明 spec_wizard 的 Skill 无规格阶段；
-    无 video_assembler 执行器章节的 Skill 无组装阶段（除非 frontmatter 显式覆盖）。"""
-    manifest = registry.skill_manifest_of(skill) or {}
-    overrides = ((manifest.get("flow") or {}).get("stages") or {})
-    # 数组形态 = workflow 结构声明（compile_definition 消费），
-    # 阶段裁剪通道只消费 dict 覆盖声明，数组视为零覆盖
-    if not isinstance(overrides, dict):
-        overrides = {}
+    未声明 spec_wizard 的 Skill 无规格阶段；
+    无 video_assembler 执行器章节的 Skill 无组装阶段。
+    （C1b 裁决 2026-08-31：flow.stages dict 覆盖声明退役，
+    skip/executors 覆盖通道删除，恒用平台规范阶段表。）"""
     entry = registry.resolve_entry(skill)
     tools = set(entry.available_tools) if entry else set()
     table: List[StageSpec] = []
     for spec in CANONICAL_STAGES:
-        ov = overrides.get(spec.key) or {}
-        if ov.get("skip"):
+        if spec.key == "spec" and not registry.spec_wizard_active(skill):
             continue
-        if spec.key == "spec" and not (
-            registry.spec_wizard_active(skill) or ov.get("executors")
-        ):
+        if spec.key == "assembly" and "video_assembler" not in tools:
             continue
-        if spec.key == "assembly" and "video_assembler" not in tools \
-                and not ov.get("executors"):
-            continue
-        executors = tuple(ov.get("executors") or spec.executors)
-        table.append(StageSpec(spec.key, spec.title, executors, spec.deterministic))
+        table.append(StageSpec(spec.key, spec.title, spec.executors, spec.deterministic))
     return table
 
 

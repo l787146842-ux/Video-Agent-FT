@@ -55,59 +55,14 @@ def canonical_slug(name: str) -> str:
     return registry._norm_name(name).replace("-", "").replace("_", "")
 
 
-def _workflow_stages_decl(manifest: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """frontmatter flow.stages 数组形态（workflow 结构声明）。
-
-    未声明/非数组返空表 → 回落 default_v2_workflow（零回归红线）；
-    dict 形态 = 阶段覆盖声明（stage_probes.stage_table 消费），不属本通道。
-    形状合法性归 validate_manifest（注册期 fail-hard），本函数只容错读。"""
-    stages = ((manifest or {}).get("flow") or {}).get("stages")
-    if not isinstance(stages, list):
-        return []
-    return [
-        s for s in stages
-        if isinstance(s, dict) and str(s.get("key") or "").strip()
-    ]
-
-
-def _definition_from_stages(slug: str, stages: List[Dict[str, Any]]) -> WorkflowDefinition:
-    """声明式 workflow 编译：flow.stages 数组 → 节点拓扑（线性前置链）。
-
-    review 节点执行器固定 workflow_pause（暂停语义）；probe 节点完成度
-    挂客观探针（schema 白名单钉死）。节点字段形状与默认定义同构
-    （from_sidecar 单一校验入口）。"""
-    nodes_raw: List[Dict[str, Any]] = []
-    prev: Optional[str] = None
-    for st in stages:
-        key = str(st.get("key") or "").strip()
-        review = bool(st.get("review"))
-        executor = "workflow_pause" if review else str(st.get("executor") or key).strip()
-        nodes_raw.append({
-            "node_id": key, "executor": executor,
-            "deterministic": True if review else bool(st.get("deterministic")),
-            "prerequisites": [prev] if prev else [],
-            "done_predicate": {"type": "state", "node": key},
-            "artifact_schema": {},
-            "decision_schema": {"type": "approval"} if review else {},
-            "approval_policy": {"required": review},
-            "retry_policy": {"max_attempts": 1},
-            "next_transition": {}})
-        prev = key
-    return WorkflowDefinition.from_sidecar(
-        {"workflow": {"workflow_id": f"skill:{slug}", "revision": "1",
-                      "nodes": nodes_raw}},
-        workflow_id=f"skill:{slug}", skill_id=slug)
-
-
 def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
     """Skill 激活编译 WorkflowDefinition（canonical slug + revision + hash）。
 
     源 = frontmatter 声明（validate_manifest 注册期门禁）+ 阶段表；编译失败
     （未注册 Skill）返回 None（runtime 不启用，回落模型循环旧路径）。
-    数据驱动：frontmatter flow.stages 数组声明优先派生节点
-    拓扑与标题（标题随声明自带）；未声明回落 default_v2_workflow
-    （默认 workflow 自带标题 DEFAULT_V2_NODE_TITLES）——未声明 skill
-    编译结果逐字段不变（零回归红线，快照对拍钉死）。
+    统一定义 = default_v2_workflow（默认 workflow 自带标题
+    DEFAULT_V2_NODE_TITLES）。（C1b 裁决 2026-08-31：flow.stages 声明式
+    编译退役——声明忽略，机械工作流层整体退役。）
     per-turn 缓存（轮始 clear_compile_cache；同轮多次调用共享）。"""
     cache_key = canonical_slug(skill) or str(skill or "")
     if cache_key in _COMPILE_CACHE:
@@ -132,15 +87,9 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
             skill, ";".join(issues))
         _COMPILE_CACHE[cache_key] = None
         return None
-    # 数据驱动：声明式 stages 优先，未声明回落默认定义
-    stages_decl = _workflow_stages_decl(manifest)
-    if stages_decl:
-        definition = _definition_from_stages(str(entry.slug or skill), stages_decl)
-        titles = {str(st["key"]).strip(): str(st.get("title") or "").strip()
-                  for st in stages_decl}
-    else:
-        definition = default_v2_workflow(str(entry.slug or skill))
-        titles = DEFAULT_V2_NODE_TITLES
+    # C1b 裁决 2026-08-31：flow.stages 声明式编译退役，统一定义回落默认链。
+    definition = default_v2_workflow(str(entry.slug or skill))
+    titles = DEFAULT_V2_NODE_TITLES
     nodes = [{**node.to_dict(), "key": node.node_id,
               "title": titles.get(node.node_id, node.node_id),
               "executors": [] if node.executor == "workflow_pause" else [node.executor]}
@@ -166,11 +115,8 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
 # - 两个评审节点的「已评审」客观证据 = 账本 DecisionResolved 事件
 #   （resolve_decision 提交），前置产物在场但未落账决议时不予完成
 #   （fail-closed：不因文档存在而跳过评审暂停）。
-# 声明式 workflow（flow.stages 数组）的节点→探针映射随声明自带
-# （probe 白名单钉死归 manifest_schema）：无探针声明在 schema 门禁
-# 即 ERROR 级拒入（fail-closed 选型：与「非法声明拒入」同口径，
-# 不采用「无探针暂停」放行——那会产出永远无法客观完成的死节点）；
-# 运行时 _declared_node_done 再兼一层探针缺失 = 未完成双保险。
+# （C1b 裁决 2026-08-31：声明式 workflow（flow.stages 数组）节点→探针映射
+# 随机械工作流层整体退役删除。）
 _NODE_PROBE_KEYS = {
     "analyze_script": "analysis",
     "collect_spec": "spec",
@@ -184,40 +130,9 @@ _NODE_STRUCTURE_KEYS = {
 _REVIEW_NODES = ("review_spec", "review_key_elements")
 
 
-def _declared_node_done(decls: List[Dict[str, Any]], node_id: str,
-                        run: Dict[str, Any], state: Dict[str, Any],
-                        skill: str) -> bool:
-    """声明式 stage 完成度判定（默认定义语义的同构镜像，fail-closed）：
-    probe 节点 = 客观探针在场；review 节点 = 前置探针在场 + 账本
-    DecisionResolved（前置探针取声明链上最近一个 probe 节点，与默认
-    定义 review_spec→spec / review_key_elements→key_elements 同构）。
-    声明外未知节点 → False。"""
-    idx = next((i for i, st in enumerate(decls)
-                if str(st.get("key") or "").strip() == node_id), -1)
-    if idx < 0:
-        return False
-    decl = decls[idx]
-    if decl.get("review"):
-        prereq = next(
-            (str(decls[j].get("probe") or "")
-             for j in range(idx - 1, -1, -1)
-             if str(decls[j].get("probe") or "")), "")
-        if not prereq or not po.stage_done(prereq, state, skill):
-            return False
-        rid = str(run.get("run_id") or "")
-        return any(e.node_id == node_id and e.event_type == "DecisionResolved"
-                   for e in EventLedger(state).by_run(rid))
-    probe = str(decl.get("probe") or "")
-    return po.stage_done(probe, state, skill) if probe else False
-
-
 def _node_objectively_done(node_id: str, run: Dict[str, Any],
                            state: Dict[str, Any], skill: str) -> bool:
-    """workflow_contract 单节点完成度客观判定（默认 8/8 节点全覆盖；
-    声明式 workflow 节点走 _declared_node_done 同源口径）。"""
-    decls = _workflow_stages_decl(registry.skill_manifest_of(skill))
-    if decls:
-        return _declared_node_done(decls, node_id, run, state, skill)
+    """workflow_contract 单节点完成度客观判定（默认 8/8 节点全覆盖）。"""
     if node_id in _NODE_PROBE_KEYS:
         return po.stage_done(_NODE_PROBE_KEYS[node_id], state, skill)
     if node_id in _NODE_STRUCTURE_KEYS:

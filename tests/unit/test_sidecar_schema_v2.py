@@ -137,9 +137,7 @@ def test_resources_undeclared_is_legal():
     ({"flow": {"dependencies": {"2": [1]}}}, "已废除"),
     # 僵尸键（stage_executors/step_done_conditions/step_short_titles）声明即
     # WARN 过渡告警（不拒注册）：钉死测试见 test_zombie_step_keys.py
-    ({"flow": {"stages": {"spec": {"done": "X.md"}}}}, "document:"),
-    ({"flow": {"stages": {"wonderland": {"skip": True}}}}, "不是规范阶段键"),
-    ({"flow": {"stages": {"spec": {"skip": "yes"}}}}, "布尔值"),
+    # （C1b 裁决 2026-08-31：flow.stages 三个非法用例随机械通道退役删除）
     ({"flow": {"spec_wizard": "yes"}}, "布尔值"),
     ({"pause": {"stage_pause": "yes"}}, "布尔值"),
     ({"version": ""}, "非空字符串"),
@@ -158,15 +156,15 @@ def done_cond_env(monkeypatch):
         "flow": {
             "steps": {"1": "分析", "2": "规格"},
             "step_done_conditions": {"2": "spec"},
-            "stages": {"spec": {"done": "document:定制规格.md"}},
         },
     })
     return monkeypatch
 
 
 def test_step_done_consumes_declaration(done_cond_env):
-    """step_done_conditions {step: 阶段键} → 该阶段客观探针是唯一事实源。"""
-    with_spec = {"documents": [{"name": "定制规格.md"}]}
+    """step_done_conditions {step: 阶段键} → 该阶段客观探针是唯一事实源。
+    （C1b 裁决 2026-08-31：stages.<key>.done 声明通道退役，恒走平台探针。）"""
+    with_spec = {"documents": [{"name": "Final_Video_Spec.md", "content": "x"}]}
     assert po.step_done_declared("2", "X") == "spec"
     assert po.step_done("2", with_spec, "X") is True
     assert po.step_done("2", {"documents": []}, "X") is False
@@ -177,12 +175,16 @@ def test_step_done_consumes_declaration(done_cond_env):
     assert po.step_done_probe("2", {"documents": []}, "X") is False
 
 
-def test_stage_done_declaration_channel_any_stage(done_cond_env):
-    """声明探针通道任意阶段同构：flow.stages.spec.done 覆盖平台探针。"""
-    assert po.stage_done("spec", {"documents": [{"name": "定制规格.md"}]}, "X") is True
-    # 平台默认规格探针（Final_Video_Spec.md）在声明覆盖下不作数
-    assert po.stage_done("spec", {"documents": [{"name": "Final_Video_Spec.md"}]}, "X") is False
-    # 未声明阶段回落平台客观探针
+def test_stage_done_declaration_channel_retired(monkeypatch):
+    """C1b 裁决 2026-08-31：flow.stages.<key>.done 声明通道退役——
+    声明忽略，恒走平台客观探针。"""
+    monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
+        "flow": {"stages": {"spec": {"done": "document:定制规格.md"}}}})
+    # done 声明不再覆盖平台探针：定制文档不作数，平台规格文档在场才算数
+    assert po.stage_done("spec", {"documents": [{"name": "定制规格.md"}]}, "X") is False
+    assert po.stage_done(
+        "spec", {"documents": [{"name": "Final_Video_Spec.md", "content": "x"}]}, "X") is True
+    # 未声明阶段照常平台客观探针
     assert po.stage_done("analysis", {"analysis": {"summary": "s"}}, "X") is True
 
 

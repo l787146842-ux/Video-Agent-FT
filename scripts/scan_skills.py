@@ -180,9 +180,7 @@ def manifest_consistency_issues(slug: str, content: str, manifest) -> list:
     for v in (flow.get("stage_executors") or {}).values():
         if isinstance(v, list):
             declared += [t for t in v if isinstance(t, str)]
-    for ov in (flow.get("stages") or {}).values():
-        if isinstance(ov, dict) and isinstance(ov.get("executors"), list):
-            declared += [t for t in ov["executors"] if isinstance(t, str)]
+    # （C1b 裁决 2026-08-31：flow.stages.*.executors 覆盖声明退役，消费删除）
     for t in sorted(set(declared)):
         if t in REUSED_TOOL_NAMES:
             continue

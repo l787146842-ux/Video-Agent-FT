@@ -93,14 +93,8 @@ CANONICAL_STAGE_KEYS = (
     "analysis", "spec", "structure", "ke_media",
     "shot_media", "audio_assets", "assembly",
 )
-
-# workflow 结构声明（flow.stages 数组形态）可用的客观探针键白名单：
-# 规范阶段键 + 节点级结构探针键（key_elements/shots_groups/audio_groups，
-# 与 workflow_runtime _NODE_STRUCTURE_KEYS 同集；此三键在覆盖声明 dict
-# 形态里仍不可经 stages.<key>.done 覆盖，此处仅作探针挂接白名单）。
-WORKFLOW_STAGE_PROBE_KEYS = CANONICAL_STAGE_KEYS + (
-    "key_elements", "shots_groups", "audio_groups",
-)
+# （C1b 裁决 2026-08-31：WORKFLOW_STAGE_PROBE_KEYS/_WORKFLOW_STAGE_DECL_KEYS/
+# _STAGE_OVERRIDE_KEYS/_DONE_PREFIX 随 flow.stages 机械通道退役删除。）
 
 # 已废除的流程抄本通道（声明即 fail-hard：正文 planner 是唯一流程源）
 DEPRECATED_FLOW_KEYS = ("steps", "step_stages", "dependencies")
@@ -111,10 +105,6 @@ DEPRECATED_FLOW_KEYS = ("steps", "step_stages", "dependencies")
 ZOMBIE_STEP_KEYS = ("stage_executors", "step_done_conditions", "step_short_titles")
 
 _FLOW_BOOL_KEYS = ("spec_wizard", "spec_gate", "script_required")
-_STAGE_OVERRIDE_KEYS = ("done", "skip", "executors")
-# workflow 结构声明每项的合法键（白名单外键 fail-closed 报出）
-_WORKFLOW_STAGE_DECL_KEYS = ("key", "title", "probe", "review", "executor", "deterministic")
-_DONE_PREFIX = "document:"
 _PAUSE_KEYS = ("stage_pause",)
 
 # ---------- v3 键白名单 ----------
@@ -311,107 +301,12 @@ def _check_resources(raw: Any, issues: List[str]) -> None:
             issues.append(WARN_PREFIX + f"resources[{k}].mime 必须是非空字符串")
 
 
-def _check_workflow_stages(stages: Any, issues: List[str]) -> None:
-    """flow.stages 数组形态 = workflow 结构声明。
-
-    每项 {key, title} 必填 + probe/review 二选一挂客观探针或评审暂停；
-    无法映射探针的自定义 stage 按 fail-closed 原则 **ERROR 级拒入**
-    （与「已声明键形状非法 fail-hard」门禁口径一致：无探针节点永远
-    无法客观完成，放行只会产出死 workflow，不如注册期就钉死）。
-    前置依赖固定线性链（声明次序），不开放依赖图声明
-    （flow.dependencies 通道已废除，口径不回潮）。
-    """
-    if not stages:
-        issues.append("flow.stages 数组声明不能为空（未声明请整键移除）")
-        return
-    seen = set()
-    for i, item in enumerate(stages):
-        if not isinstance(item, dict):
-            issues.append(f"flow.stages[{i}] 必须是对象 {{key, title, probe|review, ...}}")
-            continue
-        for uk in item:
-            if uk not in _WORKFLOW_STAGE_DECL_KEYS:
-                issues.append(
-                    f"flow.stages[{i}].{uk} 不是合法声明键"
-                    f"（白名单：{'/'.join(_WORKFLOW_STAGE_DECL_KEYS)}）")
-        key = item.get("key")
-        if not isinstance(key, str) or not key.strip():
-            issues.append(f"flow.stages[{i}].key 必须是非空字符串（节点标识）")
-            continue
-        if key.strip() in seen:
-            issues.append(f"flow.stages[{i}].key {key!r} 重复（节点标识必须唯一）")
-            continue
-        seen.add(key.strip())
-        title = item.get("title")
-        if not isinstance(title, str) or not title.strip():
-            issues.append(f"flow.stages[{i}].title 必须是非空字符串（节点标题）")
-        probe, review = item.get("probe"), item.get("review")
-        if review is not None and not isinstance(review, bool):
-            issues.append(f"flow.stages[{i}].review 必须是布尔值")
-            continue
-        if review:
-            if probe is not None:
-                issues.append(
-                    f"flow.stages[{i}] probe 与 review 互斥（评审暂停节点"
-                    "完成度 = 前置探针 + 账本决议事件，不另挂探针）")
-            if i == 0:
-                issues.append(
-                    f"flow.stages[{i}] 评审暂停节点不能作为首节点"
-                    "（评审完成度需前置探针作证据）")
-            if item.get("executor") is not None:
-                issues.append(
-                    f"flow.stages[{i}] 评审暂停节点执行器固定 workflow_pause，"
-                    "不得声明 executor")
-            continue
-        if probe is None:
-            issues.append(
-                f"flow.stages[{i}] 必须声明 probe（客观探针键）或 review: true"
-                "（fail-closed：无探针节点永远无法客观完成）")
-        elif not isinstance(probe, str) or probe not in WORKFLOW_STAGE_PROBE_KEYS:
-            issues.append(
-                f"flow.stages[{i}].probe 必须是登记探针键"
-                f"（{'/'.join(WORKFLOW_STAGE_PROBE_KEYS)}，实际 {probe!r}）")
-        execs = item.get("executor")
-        if execs is not None and (not isinstance(execs, str) or not execs.strip()):
-            issues.append(f"flow.stages[{i}].executor 必须是非空字符串（执行器名）")
-        det = item.get("deterministic")
-        if det is not None and not isinstance(det, bool):
-            issues.append(f"flow.stages[{i}].deterministic 必须是布尔值")
-
-
 def _check_stage_overrides(stages: Any, issues: List[str]) -> None:
-    if stages is None:
-        return
-    if isinstance(stages, list):
-        _check_workflow_stages(stages, issues)
-        return
-    if not isinstance(stages, dict):
-        issues.append(
-            "flow.stages 必须是对象（规范阶段键→覆盖声明）"
-            "或数组（workflow 结构声明，每项 {key, title, probe|review, ...}）")
-        return
-    for key, ov in stages.items():
-        if key not in CANONICAL_STAGE_KEYS:
-            issues.append(
-                f"flow.stages.{key} 不是规范阶段键"
-                f"（{'/'.join(CANONICAL_STAGE_KEYS)}）")
-            continue
-        if not isinstance(ov, dict):
-            issues.append(f"flow.stages.{key} 必须是对象")
-            continue
-        done = ov.get("done")
-        if done is not None and (
-            not isinstance(done, str)
-            or not done.startswith(_DONE_PREFIX)
-            or not done[len(_DONE_PREFIX):].strip()
-        ):
-            issues.append(f"flow.stages.{key}.done 必须是 'document:<文档名>'")
-        skip = ov.get("skip")
-        if skip is not None and not isinstance(skip, bool):
-            issues.append(f"flow.stages.{key}.skip 必须是布尔值")
-        execs = ov.get("executors")
-        if execs is not None:
-            _check_exec_list(f"stages.{key}", "executors", execs, issues)
+    """flow.stages 声明（数组 workflow 结构 / dict 阶段覆盖）。
+
+    （C1b 裁决 2026-08-31：机械工作流层整体退役——flow.stages 编译与
+    阶段覆盖通道删除，声明忽略不校验（零警告），恒用平台默认定义。）"""
+    return
 
 
 def validate_manifest_data(data: Any) -> List[str]:

@@ -28,17 +28,23 @@ def test_stage_table_canonical_order():
     assert table[3].deterministic is False  # 创作型交接模型
 
 
-def test_stage_table_manifest_override_skip_and_executors(monkeypatch):
+def test_stage_table_manifest_override_retired(monkeypatch):
+    """C1b 裁决 2026-08-31：flow.stages dict 覆盖声明退役——
+    skip/executors 声明忽略，阶段表恒为平台规范表。"""
     monkeypatch.setattr(registry, "skill_manifest_of", lambda name: {
-        "flow": {"stages": {
-            "assembly": {"skip": True},
-            "structure": {"executors": ["storyboard_key_elements"]},
-        }}})
+        "flow": {
+            "spec_wizard": True,
+            "stages": {
+                "assembly": {"skip": True},
+                "structure": {"executors": ["storyboard_key_elements"]},
+            }}})
     table = po.stage_table(SKILL)
     keys = [s.key for s in table]
-    assert "assembly" not in keys
+    assert "assembly" in keys
     structure = next(s for s in table if s.key == "structure")
-    assert structure.executors == ("storyboard_key_elements",)
+    # 覆盖忽略：执行器恒为平台默认三元组（非声明的单执行器）
+    assert structure.executors == (
+        "storyboard_key_elements", "storyboard_shots", "storyboard_audio")
 
 
 # ---------- ② 客观探针推进 ----------

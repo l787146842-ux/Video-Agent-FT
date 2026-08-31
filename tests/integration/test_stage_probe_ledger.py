@@ -7,8 +7,8 @@
    文档在场也不跳过评审暂停）；
 ③ turn_commit 的自报 completed_node 不再具有账本效力（sync_run 全量重算
    即被清偿）；
-④ frontmatter stages.<key>.done 声明通道对 spec 节点生效（document: 覆盖
-   平台探针）。
+④ （C1b 裁决 2026-08-31：frontmatter stages.<key>.done 声明通道随机械
+   工作流层整体退役——声明忽略，恒走平台探针。）
 """
 import pytest
 
@@ -105,7 +105,8 @@ def test_self_report_has_no_ledger_authority(svc):
 
 
 def test_declaration_channel_covers_spec_stage(svc, tmp_path, monkeypatch):
-    """声明通道：stages.spec.done=document:<定制名> 覆盖平台默认探针。"""
+    """C1b 裁决 2026-08-31：stages.spec.done 声明通道退役——
+    声明忽略，平台默认探针恒生效（默认规格文档在场即完成）。"""
     import src.video_agent.web.skill_docs as sd
     from src.video_agent.skill_runtime import frontmatter, registry
 
@@ -119,11 +120,7 @@ def test_declaration_channel_covers_spec_stage(svc, tmp_path, monkeypatch):
         registry.register_skill("声明覆盖Skill")
 
         st = svc.state_dict
-        _spec_doc(st, name="Final_Video_Spec.md")          # 默认名不作数
-        run = wr.sync_run(st, "声明覆盖Skill")
-        assert "collect_spec" not in run["completed_nodes"]
-        assert "write_spec" not in run["completed_nodes"]
-        _spec_doc(st, name="定制规格.md")                   # 声明名命中
+        _spec_doc(st, name="Final_Video_Spec.md")          # 平台默认探针照常生效
         run = wr.sync_run(st, "声明覆盖Skill")
         assert {"collect_spec", "write_spec"} <= set(run["completed_nodes"])
     finally:
