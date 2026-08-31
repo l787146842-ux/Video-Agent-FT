@@ -250,12 +250,12 @@ class StoryboardMediaToChatTool(BaseTool):
         state = svc.state_dict
         pairs: List[tuple] = []
         if params.draft_ids:
+            # D1 收拢：草稿查找经 StateManager.find_draft 唯一入口（三层循环抄写消灭）
             for did in params.draft_ids:
-                for cat_key in ALL_CATEGORIES_TUPLE:
-                    for group in state.get(cat_key, []):
-                        for draft in group.get("drafts", []):
-                            if draft.get("id") == did:
-                                pairs.append((group, draft))
+                found = svc.find_draft(did)
+                if found is not None:
+                    _cat, group, draft = found
+                    pairs.append((group, draft))
         else:
             target = (params.target or "").lower()
             cat_keys = {

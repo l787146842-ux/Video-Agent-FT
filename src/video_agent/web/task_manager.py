@@ -406,21 +406,22 @@ def writeback_if_complete(task_id: str) -> None:
     if not url:
         return
 
+    # D1 收拢：异步生成回写事务边界 = 本函数（查找→字段更新→落盘单点完成，
+    # E1 生成中禁回退以此为锚点）；查找经 StateManager.find_draft 唯一入口。
     svc = StateManager.get_instance()
-    for category in svc.get_groups().values():
-        for group in category:
-            for draft in group.get("drafts", []):
-                if draft.get("id") == draft_id:
-                    draft[field] = url
-                    # 同步生成媒体类型，保证预览区与参数栏跟随最新结果（如视频替换原图片）
-                    media_type = "video" if field == "videoUrl" else "image"
-                    draft["mediaType"] = media_type
-                    draft["genType"] = media_type
-                    # 一张卡片只存一个媒体：清空其他类型的 URL
-                    for other_field in ("imgUrl", "videoUrl", "audioUrl"):
-                        if other_field != field:
-                            draft[other_field] = ""
-                    draft["tag"] = "已生成"
-                    svc.save()
-                    logger.info(f"[Generate] Writeback: draft {draft_id} → {field}={url[:60]}")
-                    return
+    found = svc.find_draft(draft_id)
+    if found is None:
+        return
+    _cat, _group, draft = found
+    draft[field] = url
+    # 同步生成媒体类型，保证预览区与参数栏跟随最新结果（如视频替换原图片）
+    media_type = "video" if field == "videoUrl" else "image"
+    draft["mediaType"] = media_type
+    draft["genType"] = media_type
+    # 一张卡片只存一个媒体：清空其他类型的 URL
+    for other_field in ("imgUrl", "videoUrl", "audioUrl"):
+        if other_field != field:
+            draft[other_field] = ""
+    draft["tag"] = "已生成"
+    svc.save()
+    logger.info(f"[Generate] Writeback: draft {draft_id} → {field}={url[:60]}")

@@ -23,7 +23,7 @@ import time
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -529,6 +529,36 @@ class StateManager(UndoRedoMixin):
             CAT_SHOTS: self._raw_state.get(CAT_SHOTS, []),
             CAT_AUDIO_ITEMS: self._raw_state.get(CAT_AUDIO_ITEMS, []),
         }
+
+    def find_group(self, group_id: str) -> Optional[Tuple[str, Dict]]:
+        """分组查找唯一入口（D1 收拢：消灭调用方三层循环抄写）。
+
+        返回 (类别 key, group dict)；未命中返 None。"""
+        if not group_id:
+            return None
+        for cat_key, groups in self.get_groups().items():
+            for group in groups:
+                if isinstance(group, dict) and group.get("id") == group_id:
+                    return cat_key, group
+        return None
+
+    def find_draft(self, draft_id: str) -> Optional[Tuple[str, Dict, Dict]]:
+        """草稿查找唯一入口（D1 收拢：消灭调用方三层循环抄写）。
+
+        返回 (类别 key, 所属 group, draft dict)；未命中返 None。
+        命中后修改经返回引用生效（状态单一事实源 = _raw_state）；
+        落盘由调用方走 save/save_async（异步生成回写事务边界见
+        task_manager.writeback_if_complete）。"""
+        if not draft_id:
+            return None
+        for cat_key, groups in self.get_groups().items():
+            for group in groups:
+                if not isinstance(group, dict):
+                    continue
+                for draft in group.get("drafts", []) or []:
+                    if isinstance(draft, dict) and draft.get("id") == draft_id:
+                        return cat_key, group, draft
+        return None
 
     def get_assets(self) -> List[Dict]:
         return self._raw_state.get("assets", [])

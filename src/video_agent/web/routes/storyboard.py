@@ -115,19 +115,18 @@ async def reorder_groups(body: ReorderRequest):
 async def update_draft(draft_id: str, body: DraftPatch):
     """更新指定草稿的字段（用户直接编辑，不经 Planner）"""
     svc = StateManager.get_instance()
-    groups = svc.get_groups()
     patch = body.model_dump(exclude_none=True)
 
-    for category in groups.values():
-        for group in category:
-            for draft in group.get("drafts", []):
-                if draft["id"] == draft_id:
-                    draft.update(patch)
-                    await svc.save_async()
-                    return {"ok": True}
-    raise VideoAgentError(
-        f"Draft {draft_id} not found", status_code=404, error_code=LEGACY_NOT_FOUND
-    )
+    # D1 收拢：草稿查找经 StateManager.find_draft 唯一入口（三层循环抄写消灭）
+    found = svc.find_draft(draft_id)
+    if found is None:
+        raise VideoAgentError(
+            f"Draft {draft_id} not found", status_code=404, error_code=LEGACY_NOT_FOUND
+        )
+    _cat, _group, draft = found
+    draft.update(patch)
+    await svc.save_async()
+    return {"ok": True}
 
 
 @router.patch("/storyboard/groups/{group_id}")
@@ -135,15 +134,15 @@ async def update_draft(draft_id: str, body: DraftPatch):
 async def update_group(group_id: str, body: GroupPatch):
     """更新指定分组的字段（用户直接编辑，不经 Planner，<10ms）"""
     svc = StateManager.get_instance()
-    groups = svc.get_groups()
     patch = body.model_dump(exclude_none=True)
 
-    for category in groups.values():
-        for group in category:
-            if group["id"] == group_id:
-                group.update(patch)
-                await svc.save_async()
-                return {"ok": True}
-    raise VideoAgentError(
-        f"Group {group_id} not found", status_code=404, error_code=LEGACY_NOT_FOUND
-    )
+    # D1 收拢：分组查找经 StateManager.find_group 唯一入口（三层循环抄写消灭）
+    found = svc.find_group(group_id)
+    if found is None:
+        raise VideoAgentError(
+            f"Group {group_id} not found", status_code=404, error_code=LEGACY_NOT_FOUND
+        )
+    _cat, group = found
+    group.update(patch)
+    await svc.save_async()
+    return {"ok": True}
