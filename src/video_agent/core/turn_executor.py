@@ -31,6 +31,7 @@ from src.video_agent.core.fc_tool_runner import (
     strip_prior_feedback_images,
 )
 from src.video_agent.core.live_metrics import record_cache_usage, record_live_context
+from src.video_agent.core.live_metrics import record_budget_breakdown
 from src.video_agent.core import round_compact
 from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS, status_event
 from src.video_agent.core.stop_signal import (
@@ -42,6 +43,7 @@ from src.video_agent.core.stop_signal import (
 from src.video_agent.core.token_budget import (
     context_window_for_model,
     estimate_messages_tokens,
+    estimate_tokens,
     truncate_messages,
 )
 from src.video_agent.core.tracer import AgentTracer
@@ -157,6 +159,29 @@ class TurnExecutor:
                 pass
         return full_messages
 
+    def _record_budget_breakdown(
+        self, system: str, history_msgs: List[Dict[str, Any]], state_tail: str,
+        tools_schema: Any, full_messages: List[Dict[str, Any]], max_tokens: int,
+    ) -> None:
+        """第 5 批（Q6）：每轮 token 分配账记入 live 注册表
+        （context-usage 端点暴露，状态注入占比纳入监控）。只记不阻。"""
+        try:
+            record_budget_breakdown(
+                getattr(getattr(self.planner, "state_manager", None),
+                        "active_project_id", "") or "",
+                {
+                    "system": estimate_tokens(system or ""),
+                    "history": estimate_messages_tokens(history_msgs),
+                    "state": estimate_tokens(state_tail or ""),
+                    "tools": estimate_tokens(
+                        json.dumps(tools_schema, ensure_ascii=False)) if tools_schema else 0,
+                    "total": estimate_messages_tokens(full_messages),
+                    "budget": max_tokens,
+                },
+            )
+        except Exception as _e:
+            logger.debug(f"[TurnExecutor] 预算分配账记录忽略: {_e}")
+
     def _raise_if_context_overflow(
         self, full_messages: List[Dict[str, Any]], max_tokens: int,
     ) -> None:
@@ -221,20 +246,24 @@ class TurnExecutor:
             # 无 adapter 时返回空响应
             return ChatResponse(content="", finish_reason="stop")
 
-        if p.llm_adapter.supports_function_calling:
+        tools_schema = (
+            p.tool_manager.get_all_tool_schemas(exclude=p._excluded_tools)
+            if p.llm_adapter.supports_function_calling else None
+        )
+        self._record_budget_breakdown(
+            system, messages, state_tail, tools_schema, full_messages, max_tokens)
+        if tools_schema is not None:
             # 模式 A：标准 function calling（工具集按上下文裁剪）
-            tools_schema = p.tool_manager.get_all_tool_schemas(exclude=p._excluded_tools)
             return await p.llm_adapter.chat(
                 full_messages, tools=tools_schema, timeout=settings.llm_timeout,
                 thinking_level=getattr(p, "_chat_thinking_level", "") or "",
             )
-        else:
-            # 模式 B：纯文本对话（adapter 不支持 function calling 的保底通道；
-            # 不携带工具调用，文本轨不产生动作——动作通道唯一 = 工具调用）
-            return await p.llm_adapter.chat(
-                full_messages, timeout=settings.llm_timeout,
-                thinking_level=getattr(p, "_chat_thinking_level", "") or "",
-            )
+        # 模式 B：纯文本对话（adapter 不支持 function calling 的保底通道；
+        # 不携带工具调用，文本轨不产生动作——动作通道唯一 = 工具调用）
+        return await p.llm_adapter.chat(
+            full_messages, timeout=settings.llm_timeout,
+            thinking_level=getattr(p, "_chat_thinking_level", "") or "",
+        )
 
     async def call_llm_stream(self, system: str, messages: List[Dict[str, Any]]) -> AsyncGenerator[StreamChunk, None]:
         """流式 LLM 调用"""
@@ -269,6 +298,8 @@ class TurnExecutor:
         tools_schema = None
         if p.llm_adapter.supports_function_calling:
             tools_schema = p.tool_manager.get_all_tool_schemas(exclude=p._excluded_tools)
+        self._record_budget_breakdown(
+            system, messages, state_tail, tools_schema, full_messages, max_tokens)
 
         async for chunk in p.llm_adapter.chat_stream(
             full_messages, tools=tools_schema, timeout=settings.llm_stream_timeout,

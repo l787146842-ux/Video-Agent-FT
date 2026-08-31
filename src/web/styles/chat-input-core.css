@@ -53,6 +53,21 @@
   .context-usage-tip { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: var(--z-tip); padding: 6px 12px; background: var(--color-surface-popover); border: 1px solid var(--border-color); color: var(--text-main); font-size: var(--font-sm); white-space: nowrap; border-radius: 8px; box-shadow: 0 6px 20px color-mix(in srgb, var(--color-black) 45%, transparent); opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity var(--dur-fast), transform var(--dur-fast); }
   html.light .context-usage-tip { background: var(--bg-secondary); color: var(--text-main); }
   .context-usage-wrap:hover .context-usage-tip { opacity: 1; transform: translateY(0); }
+  
+    /* 第 5 批：上下文容量悬停面板（对标业界容量卡：标题+总量/上限+进度条+分项圆点行+缓存命中率） */
+    .context-usage-tip.ctx-panel { min-width: 236px; white-space: normal; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .ctx-loading { color: var(--text-muted); font-size: var(--font-xs); }
+    .ctx-head { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--font-sm); color: var(--text-main); }
+    .ctx-head-val { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: var(--font-xs); }
+    .ctx-bar { height: 4px; border-radius: 2px; background: var(--border-color); opacity: 0.9; overflow: hidden; margin-bottom: 2px; }
+    .ctx-bar-fg { height: 100%; border-radius: 2px; background: var(--accent-blue); transition: width 0.3s; }
+    .ctx-row { display: flex; align-items: center; gap: 6px; font-size: var(--font-xs); color: var(--text-muted); }
+    .ctx-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-blue); flex-shrink: 0; }
+    .ctx-dot.muted { background: var(--text-muted); opacity: 0.6; }
+    .ctx-row-label { flex: 1; }
+    .ctx-row-pct { font-variant-numeric: tabular-nums; color: var(--text-main); }
+    .ctx-foot { display: flex; justify-content: space-between; border-top: 1px solid var(--border-color); margin-top: 2px; padding-top: 6px; font-size: var(--font-xs); color: var(--text-muted); }
+    .ctx-foot span:last-child { color: var(--text-main); font-variant-numeric: tabular-nums; }
 
   /* 附件 */
   .pending-attachments { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 4px; }

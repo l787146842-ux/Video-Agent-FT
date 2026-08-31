@@ -4,7 +4,7 @@ import {
 import {
   agentProvider, setAgentProvider, agentModel,
 } from '@/stores/agent-prefs';
-import { createSignal, createEffect, onMount, onCleanup, Show } from 'solid-js';
+import { createSignal, createEffect, onMount, onCleanup, Show, For } from 'solid-js';
 import { apiProvidersFor } from '@/lib/providers';
 import { getContextUsage, type ContextUsage } from '@/api/agent';
 import { chatState } from '@/stores/chat';
@@ -76,6 +76,32 @@ export function ChatInputToolbar(props: {
     const r = ratio();
     return r >= 0.85 ? 'hot' : r >= 0.6 ? 'warn' : 'ok';
   };
+  // 第 5 批：悬停面板数据（参考 Flova 式上下文容量卡）
+  const bd = () => usage()?.breakdown ?? null;
+  const winTokens = () => usage()?.window_tokens || bd()?.budget || 0;
+  const totalTokens = () => bd()?.total ?? usage()?.est_tokens ?? 0;
+  const pctOfWindow = () => {
+    const w = winTokens();
+    return w ? Math.min(100, (totalTokens() / w) * 100) : 0;
+  };
+  const fmtWan = (n: number) => `${(n / 10000).toFixed(1)}万`;
+  const cacheHitLabel = () =>
+    `${(((usage()?.cache_hit_rate) ?? 0) * 100).toFixed(1)}%`;
+  const panelRows = () => {
+    const b = bd();
+    if (!b) return [];
+    const total = b.total || 1;
+    const mk = (label: string, val: number, muted = false) => ({
+      label, pct: (Math.max(0, val) / total) * 100, muted,
+    });
+    return [
+      mk(t('rp.ctx.msgs'), b.history),
+      mk(t('rp.ctx.system'), b.system - b.skill),
+      mk(t('rp.ctx.state'), b.state),
+      mk(t('rp.ctx.skill'), b.skill),
+      mk(t('rp.ctx.other'), b.tools, true),
+    ];
+  };
 
   return (
     <div class="chat-input-toolbar">
@@ -136,8 +162,32 @@ export function ChatInputToolbar(props: {
             </svg>
             <span class="context-usage-value">{usageLabel()}</span>
           </button>
-          <div class="context-usage-tip" role="tooltip">
-            {usage() ? t('rp.toolbar.contextTip', { usage: (usage()!.est_tokens / 1024).toFixed(1) }) : t('rp.toolbar.contextLoading')}
+          <div class="context-usage-tip ctx-panel" role="tooltip">
+            <Show when={usage()} fallback={<div class="ctx-loading">{t('rp.toolbar.contextLoading')}</div>}>
+              <div class="ctx-head">
+                <span>{t('rp.ctx.title')}</span>
+                <span class="ctx-head-val">
+                  {fmtWan(totalTokens())}/{winTokens() ? fmtWan(winTokens()) : '—'}
+                  {' '}({pctOfWindow().toFixed(1)}%)
+                </span>
+              </div>
+              <div class="ctx-bar">
+                <div class="ctx-bar-fg" style={{ width: `${pctOfWindow().toFixed(1)}%` }} />
+              </div>
+              <For each={panelRows()}>
+                {(r) => (
+                  <div class="ctx-row">
+                    <span class={`ctx-dot${r.muted ? ' muted' : ''}`} />
+                    <span class="ctx-row-label">{r.label}</span>
+                    <span class="ctx-row-pct">{r.pct.toFixed(1)}%</span>
+                  </div>
+                )}
+              </For>
+              <div class="ctx-foot">
+                <span>{t('rp.ctx.cacheHit')}</span>
+                <span>{cacheHitLabel()}</span>
+              </div>
+            </Show>
           </div>
         </div>
         {/* 推理中：停止键与发送键分离——发送继续可用（消息进排队引导区） */}

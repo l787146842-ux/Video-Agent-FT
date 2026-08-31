@@ -54,6 +54,30 @@ def get_live_context(project_id: str) -> Optional[Dict[str, Any]]:
     return rec
 
 
+# 第 5 批（Q6 裁决 2026-09-01）：每轮 token 分配账
+# （system/history/state/tools/total/budget，状态注入占比纳入监控）。
+# 只内存不落盘，180s 有效期同 live 口径；context-usage 端点暴露。
+_BUDGET: Dict[str, Dict[str, Any]] = {}
+
+
+def record_budget_breakdown(project_id: str, breakdown: Dict[str, Any]) -> None:
+    """记录一次 LLM 调用的上下文分配账（token 口径）。异常静默。"""
+    if not project_id:
+        return
+    try:
+        _BUDGET[project_id] = {**breakdown, "ts": time.time()}
+    except Exception as _e:
+        logger.debug("[live_metrics] 忽略异常: {}", _e)
+
+
+def get_budget_breakdown(project_id: str) -> Optional[Dict[str, Any]]:
+    """取最近一次分配账；过期或不存在返回 None。"""
+    rec = _BUDGET.get(project_id or "")
+    if not rec or time.time() - rec["ts"] > _VALID_SECS:
+        return None
+    return rec
+
+
 # 核心探测点「预期外降级」遥测——接线断裂从静默 False 变为可观测计数
 # （模式：md 幸存但代码无人读，探测点异常降级 False 无人察觉）。
 # point → {"count": int, "first_ts": float, "last_ts": float}

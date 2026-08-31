@@ -32,6 +32,17 @@ export async function getSkills(): Promise<Skill[]> {
   return Array.isArray(data.skills) ? data.skills : [];
 }
 
+/** 第 5 批：每轮 token 分配账（推理中 live 值；null = 未推理/过期） */
+export interface ContextBreakdown {
+  system: number;
+  history: number;
+  state: number;
+  tools: number;
+  skill: number;
+  total: number;
+  budget: number;
+}
+
 /** 上下文用量估算（发送按钮旁小圆圈悬停展示「已用多少K上下文」） */
 export interface ContextUsage {
   chars: number;
@@ -40,6 +51,9 @@ export interface ContextUsage {
   history_chars: number;
   /** 当前模型上下文窗口（0 = 未传模型，前端回退纯数字展示） */
   window_tokens: number;
+  /** P2-1 KV-cache 前缀缓存命中率（滚动窗口汇聚） */
+  cache_hit_rate?: number;
+  breakdown?: ContextBreakdown | null;
 }
 
 export function getContextUsage(model?: string): Promise<ContextUsage> {

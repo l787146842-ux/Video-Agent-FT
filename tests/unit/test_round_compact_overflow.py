@@ -216,6 +216,12 @@ async def test_overflow_policy_warn_legacy_passthrough(svc):
         resp = await executor.call_llm("sys", huge)
         assert resp.content == "你好"
         assert adapter.calls == 1
+        # 第 5 批预算可见：分配账记入 live 注册表（context-usage 端点同源）
+        from src.video_agent.core import live_metrics
+        bd = live_metrics.get_budget_breakdown(
+            StateManager.get_instance().active_project_id)
+        assert bd is not None and bd["total"] > 0 and bd["budget"] == 80
+        assert bd["history"] > 0 and "system" in bd and "tools" in bd
     finally:
         object.__setattr__(settings, "context_window_size", 128000)
         object.__setattr__(settings, "context_overflow_policy", "error")

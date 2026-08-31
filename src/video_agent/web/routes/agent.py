@@ -27,7 +27,13 @@ from src.video_agent.web.error_payload import (
     classify_exception,
 )
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.core.live_metrics import get_cache_stats, get_degradations, get_live_context
+from src.video_agent.core.live_metrics import (
+    get_budget_breakdown,
+    get_cache_stats,
+    get_degradations,
+    get_live_context,
+    get_sections,
+)
 from src.video_agent.core.token_budget import context_window_for_model, estimate_tokens
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
@@ -321,6 +327,18 @@ async def get_context_usage(model: str = ""):
     est_tokens = int(live["est_tokens"]) if live else state_tokens + history_tokens
     # P2-1 KV-cache 遥测：最近 LLM 调用的前缀缓存命中汇聚（无样本时全 0）
     cache_stats = get_cache_stats(svc.active_project_id)
+    # 第 5 批（Q6）：每轮 token 分配账（180s 有效期内取 live 值，否则 null）；
+    # skill 份额按 system 段字符占比拆分（sections 遥测同批同源）
+    breakdown = get_budget_breakdown(svc.active_project_id)
+    if breakdown:
+        sections = get_sections(svc.active_project_id)
+        sec_total = int(sections.get("total") or 0)
+        skill_chars = int(sections.get("skill") or 0)
+        sys_t = int(breakdown.get("system") or 0)
+        breakdown = {
+            **breakdown,
+            "skill": int(sys_t * skill_chars / sec_total) if sec_total else 0,
+        }
     return {
         "chars": chars,
         "est_tokens": est_tokens,
@@ -331,4 +349,5 @@ async def get_context_usage(model: str = ""):
         "cache_sample_count": cache_stats["samples"],
         "cache_prompt_tokens": cache_stats["prompt_tokens"],
         "cache_cached_tokens": cache_stats["cached_tokens"],
+        "breakdown": breakdown,
     }

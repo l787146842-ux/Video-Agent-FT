@@ -126,6 +126,16 @@ def test_stage_unknown_no_trim(svc):
         object.__setattr__(settings, "state_context_budget_chars", 20000)
 
 
+def test_no_timestamp_in_model_view(svc):
+    """前缀纪律：documents 的 updated_at 不进模型可见面（P2-1 钉死）。"""
+    svc.state_dict["documents"] = [{
+        "name": "Spec.md", "content": "硬核科幻", "updated_at": "2026-09-01T00:00:00Z",
+    }]
+    parsed = json.loads(build_agent_context(svc.state_dict, "bound"))
+    assert "updated_at" not in json.dumps(parsed["documents"], ensure_ascii=False)
+    assert parsed["documents"][0]["name"] == "Spec.md"
+
+
 def test_build_deterministic(svc):
     """同状态两次构建字节一致（前缀纪律：无时间戳进模型可见面）。"""
     _seed_big_state(svc)
