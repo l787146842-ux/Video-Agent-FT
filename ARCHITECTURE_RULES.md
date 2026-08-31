@@ -254,7 +254,7 @@ src/video_agent/
 ├── adapters/  tools/  config.py  exceptions.py  utils/
 src/web/                    ← SolidJS SPA 唯一前端（§3）
 prompts/                    ← 指令治理外置资产（Rule6）
-tests/fixtures/             ← 技能夹具 + skill_pause_golden 等快照
+tests/fixtures/             ← 技能夹具等快照（gate_corpus/skill_pause_golden 已随 C1a/C1b 裁决退役删除）
 ```
 
 ---

@@ -128,18 +128,13 @@ _REQUIRES_INPUT_TYPES = ("script", "music", "video", "image", "doc", "audio")
 _LANGUAGE_VALUES = ("zh", "en", "auto")
 # language.prompt_en_categories 合法取值：产物类别级语言闸豁免（任务#8 ①）
 _LANGUAGE_EN_CATEGORY_VALUES = ("keyElement", "shot", "audio")
-_PAUSE_TRIGGER_VALUES = (
-    "spec_finalized", "storyboard_structure_ready",
-    "first_generation_call", "batch_boundary", "free_text",
-)
 
-# 公开别名（消费端同源读取：registry 声明 API / guard 暂停点
-# 清洗同读此白名单，消费侧不再各自硬编码；校验语义仍归本模块 _check_*）
+# 公开别名（消费端同源读取：registry 声明 API 同读此白名单，
+# 消费侧不再各自硬编码；校验语义仍归本模块 _check_*）
 KIND_VALUES = _KIND_VALUES
 REQUIRES_INPUT_TYPES = _REQUIRES_INPUT_TYPES
 LANGUAGE_VALUES = _LANGUAGE_VALUES
 LANGUAGE_EN_CATEGORY_VALUES = _LANGUAGE_EN_CATEGORY_VALUES
-PAUSE_TRIGGER_VALUES = _PAUSE_TRIGGER_VALUES
 
 
 def _check_exec_list(name: str, k: Any, v: Any, issues: List[str]) -> None:
@@ -284,44 +279,6 @@ def _check_language(raw: Any, issues: List[str]) -> None:
                         f"language.prompt_en_categories[{i}] 必须是 "
                         f"{'/'.join(_LANGUAGE_EN_CATEGORY_VALUES)} 之一"
                         f"（实际 {c!r}）")
-
-
-def _check_pause_points(raw: Any, issues: List[str]) -> None:
-    """pause_points：数组，每项 {id, trigger, ...}；trigger 白名单制。
-
-    batch_boundary 需附 description、free_text 需附 prose，
-    缺失则该项注册期忽略并告警（fail-closed 口径）。
-    """
-    if raw is None:
-        return
-    if not isinstance(raw, list):
-        issues.append("pause_points 必须是数组（每项 {id, trigger, ...}）")
-        return
-    for i, item in enumerate(raw):
-        if not isinstance(item, dict):
-            issues.append(f"pause_points[{i}] 必须是对象 {{id, trigger, ...}}")
-            continue
-        pid = item.get("id")
-        if not isinstance(pid, str) or not pid.strip():
-            issues.append(f"pause_points[{i}].id 必须是非空字符串")
-        trigger = item.get("trigger")
-        if trigger not in _PAUSE_TRIGGER_VALUES:
-            issues.append(
-                f"pause_points[{i}].trigger 必须是 "
-                f"{'/'.join(_PAUSE_TRIGGER_VALUES)} 之一（实际 {trigger!r}）")
-            continue
-        if trigger == "batch_boundary":
-            desc = item.get("description")
-            if not isinstance(desc, str) or not desc.strip():
-                issues.append(
-                    f"pause_points[{i}] trigger=batch_boundary 需附 description"
-                    "（缺失则该项忽略）")
-        elif trigger == "free_text":
-            prose = item.get("prose")
-            if not isinstance(prose, str) or not prose.strip():
-                issues.append(
-                    f"pause_points[{i}] trigger=free_text 需附 prose"
-                    "（缺失则该项忽略）")
 
 
 def _is_safe_relative_path(v: str) -> bool:
@@ -561,7 +518,6 @@ def validate_manifest_data(data: Any) -> List[str]:
     _check_kind(data, issues)
     _check_requires_inputs(data.get("requires_inputs"), issues)
     _check_language(data.get("language"), issues)
-    _check_pause_points(data.get("pause_points"), issues)
     _check_scripts(data.get("scripts"), issues)
     _check_resources(data.get("resources"), issues)
     return issues

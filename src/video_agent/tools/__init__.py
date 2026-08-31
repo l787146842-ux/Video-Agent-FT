@@ -10,8 +10,8 @@ ToolManager.register(GenerateVideoTool())
 # studio-actions 映射的标准 Tool
 register_storyboard_tools()
 register_document_tools()
-# （C1b 裁决 2026-08-31：skill_section_run/custom_sections 通道退役，
-# register_skill_tools 随 tools/skill_tools.py 删除）
+# （C1b 裁决 2026-08-31：skill_section_run/custom_sections 自定义章节通道退役，
+# 其专属注册入口 register_skill_tools 同批删除）
 
 # MCP 外部工具接入层：deny-first，无配置 = 零工具；
 # 注册期任何异常诚实降级，不阻断平台工具链

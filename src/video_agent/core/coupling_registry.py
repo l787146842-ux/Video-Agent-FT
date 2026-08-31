@@ -75,11 +75,11 @@ COUPLING_ROWS: List[CouplingRow] = [
     ),
     CouplingRow(
         "R05_new_pause_point",
-        "新增暂停点",
-        "Skill「何时暂停」+ 层 9 兜底注入（Skill 管引导，兜底管强制）",
+        "新增暂停点（C1b 裁决 2026-08-31 退役）",
+        "pause_points 机械暂停退役：暂停由模型读 planner 散文自主经 workflow_pause 执行；"
+        "parse_pause_rules 仅存诊断口径（skill_docs lint/scan_skills 报告）",
         _sym(
             "src.video_agent.skill_runtime.registry:parse_pause_rules",
-            "src.video_agent.skill_runtime.guard:skill_requires_stage_pause",
         ) + (("testfile", "tests/unit/test_skill_manifest.py"),),
     ),
     CouplingRow(

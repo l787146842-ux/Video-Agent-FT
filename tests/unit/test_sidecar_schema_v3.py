@@ -141,21 +141,15 @@ def test_v3_pause_points_valid(data):
     assert ms.validate_manifest_data(data) == []
 
 
-@pytest.mark.parametrize("data,keyword", [
-    ({"pause_points": {"id": "x"}}, "数组"),
-    ({"pause_points": ["x"]}, "对象"),
-    ({"pause_points": [{"trigger": "spec_finalized"}]}, "非空字符串"),
-    ({"pause_points": [{"id": "x", "trigger": "user_confirmed"}]},
-     "spec_finalized/storyboard_structure_ready"),
-    ({"pause_points": [{"id": "x", "trigger": "batch_boundary"}]}, "description"),
-    ({"pause_points": [{"id": "x", "trigger": "batch_boundary", "description": ""}]},
-     "description"),
-    ({"pause_points": [{"id": "x", "trigger": "free_text"}]}, "prose"),
-    ({"pause_points": [{"id": "x", "trigger": "free_text", "prose": ""}]}, "prose"),
+@pytest.mark.parametrize("data", [
+    ({"pause_points": {"id": "x"}}),
+    ({"pause_points": ["x"]}),
+    ({"pause_points": [{"trigger": "spec_finalized"}]}),
+    ({"pause_points": [{"id": "x", "trigger": "user_confirmed"}]}),
 ])
-def test_v3_pause_points_illegal(data, keyword):
-    issues = ms.validate_manifest_data(data)
-    assert issues and any(keyword in i for i in issues)
+def test_v3_pause_points_declaration_ignored(data):
+    """C1b 裁决 2026-08-31：pause_points 机械暂停退役——声明不再校验（忽略不报错）。"""
+    assert ms.validate_manifest_data(data) == []
 
 
 # ---------- ① v3 新键：scripts（键声明静态校验；平台绝不自动执行，P2-4） ----------

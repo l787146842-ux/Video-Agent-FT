@@ -156,20 +156,18 @@ def test_selected_block_falls_back_to_raw_name_when_display_blank(
 
 def test_metadata_header_exception_branches_degrade_to_empty(tmp_skills):
     """manifest/kind/语言/暂停点查询异常分支：各自降级不抛，无其余字段时头返空"""
-    from src.video_agent.skill_runtime import guard as skill_guard
-
+    
     # M2 门户：选中项注入放行须可加载（已注册）→ 带 frontmatter 必填键可注册
     sd.save_skill_doc(
         "炸桩", "---\nname: 炸桩\ndescription: 测试桩\n---\n# 炸桩\n正文")
     pb = _pb_raw({})
 
     orig_m, orig_k = registry.skill_manifest_of, registry.skill_kind
-    orig_l, orig_p = registry.skill_language, skill_guard.skill_pause_points
+    orig_l = registry.skill_language
     try:
         registry.skill_manifest_of = lambda n: (_ for _ in ()).throw(RuntimeError())
         registry.skill_kind = lambda n: (_ for _ in ()).throw(RuntimeError())
         registry.skill_language = lambda n: (_ for _ in ()).throw(RuntimeError())
-        skill_guard.skill_pause_points = lambda n: (_ for _ in ()).throw(RuntimeError())
         assert pb.build_skill_metadata_header("炸桩") == ""
         # 异常分支不阻断轻量块（仅标题行在场）
         block = pb.build_selected_skill_block("炸桩")
@@ -178,7 +176,6 @@ def test_metadata_header_exception_branches_degrade_to_empty(tmp_skills):
         registry.skill_manifest_of = orig_m
         registry.skill_kind = orig_k
         registry.skill_language = orig_l
-        skill_guard.skill_pause_points = orig_p
 
 
 def test_metadata_header_missing_input_without_hint(tmp_skills):

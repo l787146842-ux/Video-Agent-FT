@@ -137,28 +137,7 @@ def test_spec_gate_warning_requires_declaration(svc):
     }]) == 1
 
 
-# ---------- 暂停声明：manifest pause 是唯一源（guard + lint） ----------
-
-def test_stage_pause_recognizes_manifest():
-    from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
-    from src.video_agent.skill_runtime import frontmatter
-
-    # 无关键词、仅 frontmatter 声明 → 生效
-    sd.save_skill_doc(
-        "仅清单暂停",
-        "---\nname: 仅清单暂停\ndescription: 测试桩\n---\n# A\n正文")
-    frontmatter.write_manifest(
-        "仅清单暂停", {"name": "仅清单暂停", "description": "测试桩",
-                      "pause": {"stage_pause": True}})
-    assert skill_requires_stage_pause("仅清单暂停") is True
-    # frontmatter 显式 false 覆盖『何时暂停』关键词（声明优先）
-    sd.save_skill_doc(
-        "清单关闭",
-        "---\nname: 清单关闭\ndescription: 测试桩\n---\n# B\n何时暂停：每阶段后。")
-    frontmatter.write_manifest(
-        "清单关闭", {"name": "清单关闭", "description": "测试桩",
-                    "pause": {"stage_pause": False}})
-    assert skill_requires_stage_pause("清单关闭") is False
+# ---------- 暂停声明：机械暂停已随 C1b 裁决 2026-08-31 退役（lint 仅诊断） ----------
 
 
 def test_lint_pause_warning_keyword_driven():

@@ -5,13 +5,12 @@
 - 标题式「故事板设计」一对多 + 关键元素/分镜/音频层精确子标题映射
 - 未知 tag/标题不报错不注册
 - lint_skill_content 警告项（空章节/三拆部分缺失/坏 gate_rules/无暂停声明）
-- parse_pause_rules 解析与 skill_requires_stage_pause 判定优先级
+- parse_pause_rules 解析（诊断口径保留；机械暂停判定已随 C1b 裁决退役）
 """
 import pytest
 
 import src.video_agent.web.skill_docs as sd
 from src.video_agent.skill_runtime import registry
-from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
 from src.video_agent.web.skill_docs import (
     lint_skill_content,
     parse_pause_rules,
@@ -177,23 +176,3 @@ def test_parse_pause_rules_valid_invalid_missing():
     assert parse_pause_rules("```json pause_rules\n{\"stage_pause\": false}\n```") == {"stage_pause": False}
     assert parse_pause_rules("```json pause_rules\n{坏JSON}\n```") is None
     assert parse_pause_rules("无声明块") is None
-
-
-def test_pause_rules_overrides_keyword_detection():
-    """显式声明 false 时，即使正文含「何时暂停」关键词也不暂停（声明优先）"""
-    sd.save_skill_doc(
-        "pause-demo",
-        "---\nname: pause-demo\ndescription: 测试桩\n---\n"
-        "# 暂停演示\n\n```json pause_rules\n{\"stage_pause\": false}\n```\n\n"
-        "**何时暂停**：每阶段后暂停\n<planner>\n流程\n</planner>\n",
-    )
-    assert skill_requires_stage_pause("暂停演示") is False
-
-
-def test_pause_keyword_fallback_without_declaration():
-    sd.save_skill_doc(
-        "pause-demo2",
-        "---\nname: 关键词兜底\ndescription: 测试桩\n---\n"
-        "# 关键词兜底\n<planner>\n**何时暂停**：每阶段后\n</planner>\n",
-    )
-    assert skill_requires_stage_pause("关键词兜底") is True

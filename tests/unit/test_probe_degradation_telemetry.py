@@ -58,9 +58,9 @@ def test_r5_core_probe_points_instrumented():
     root = Path(__file__).resolve().parents[2]
     rep_src = (root / "src/video_agent/core/round_end_policies.py").read_text(encoding="utf-8")
     # audit-0819b：agent_loop._wizard_active 探针随文本块路径退役删除；
-    # round_end 探针继续承重
+    # round_end 探针继续承重（C1b 裁决 2026-08-31：stage_pause_declared
+    # 埋点随 pause_points 声明驱动暂停退役删除）
     assert "record_degradation(f\"round_end.{policy.policy_id}\")" in rep_src
-    assert 'record_degradation("round_end.stage_pause_declared")' in rep_src
     # 调试端点暴露（routes/agent.py）
     routes_src = (root / "src/video_agent/web/routes/agent.py").read_text(encoding="utf-8")
     assert "/agent/degradations" in routes_src and "get_degradations()" in routes_src

@@ -4,9 +4,9 @@
 钉死：
 1) registry 声明读取 API（零预设 + fail-closed 清洗）；
 2) 原料闸：requires_inputs 优先、script_required 回落，两路不叠加；
-3) prompt_builder 元数据头：未满足提示/语言说明/暂停点清单注入位置；
+3) prompt_builder 元数据头：未满足提示/语言说明注入位置；
 4) 语言闸：language.prompt=en 按声明放宽（读取经 registry API，可 patch）；
-5) skill_pause_points 四级优先级各一例 + bool 兼容语义；
+5) （C1b 裁决 2026-08-31 退役：pause_points 机械暂停测试随删）；
 6) 未迁移 v2 manifest 全路径行为零变化（回归）。
 """
 import pytest
@@ -18,10 +18,6 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.core.prompt_builder import PromptBuilder
 from src.video_agent.core.workflow_runtime import WorkflowRuntime
 from src.video_agent.skill_runtime import frontmatter, registry
-from src.video_agent.skill_runtime.guard import (
-    skill_pause_points,
-    skill_requires_stage_pause,
-)
 from src.video_agent.state.manager import StateManager
 
 _LONG_EN_PROMPT = (
@@ -205,8 +201,8 @@ def test_metadata_header_full_v3_declaration():
     assert "风格型" in block
     assert "本 Skill 需要剧本素材，尚未检测到上传" in block
     assert "英文书写" in block
-    assert "平台会在以下节点兜底保证暂停" in block
-    assert "规格定稿后" in block and "每批生成后" in block
+    # C1b 裁决 2026-08-31：pause_points 机械暂停退役，元数据头不再注入暂停清单
+    assert "平台会在以下节点" not in block
     # 位置：元数据头跟在选中标题行之后（批4/ADR-0007：正文头部随预算注入，
     # 块内顺序 = 标题行 → 元数据头 → 纪律 → 正文头部）
     assert block.index("== 当前选中 Skill") < block.index("== Skill 元数据")
@@ -299,84 +295,7 @@ def test_voice_reference_soft_note_follows_declaration(svc):
     assert ok2 and not any("音色参考" in s for s in soft2)
 
 
-# ---------- 5) 通用暂停点：四级优先级 + bool 兼容 ----------
-
-_ANCHORS = ("storyboard_structure_ready", "first_generation_call")
-
-
-def _triggers(points):
-    return tuple(p["trigger"] for p in points)
-
-
-def test_pause_points_priority_1_manifest_declaration():
-    _save("一级", "# 1\n何时暂停：每阶段后。", {
-        "pause": {"stage_pause": False},  # 被 pause_points 压制（一级优先）
-        "pause_points": [
-            {"id": "spec_finalized", "trigger": "spec_finalized"},
-            {"id": "ft", "trigger": "free_text", "prose": "每三镜确认一次"},
-        ],
-    })
-    points = skill_pause_points("一级")
-    assert _triggers(points) == ("spec_finalized", "free_text")
-    assert points[1]["prose"] == "每三镜确认一次"
-    assert skill_requires_stage_pause("一级") is True
-    # 显式空清单接管：即便正文含关键词也视为不要求暂停
-    _save("一级空", "# 1e\n何时暂停：每阶段后。", {"pause_points": []})
-    assert skill_pause_points("一级空") == []
-    assert skill_requires_stage_pause("一级空") is False
-
-
-def test_pause_points_fail_hard_and_live_clean():
-    """C4 fail-hard：非法 pause_points 声明拒注册；注册后改坏的
-    活读场景仍 fail-closed 丢弃非法项（trigger 白名单外/缺附件）。"""
-    _save("坏暂停", "# X\n正文", {
-        "pause_points": [{"id": "x", "trigger": "user_confirmed"}]})
-    assert registry.get_entry("坏暂停") is None
-    assert skill_pause_points("坏暂停") == []
-
-    _save("活读暂停", "# Y\n正文", {
-        "pause_points": [{"id": "ok", "trigger": "spec_finalized"}]})
-    frontmatter.write_manifest("活读暂停", {"pause_points": [
-        {"id": "ok", "trigger": "spec_finalized"},
-        {"id": "bad", "trigger": "不在白名单"},
-        {"id": "bb", "trigger": "batch_boundary"},  # 缺 description 丢弃
-    ]})
-    assert _triggers(skill_pause_points("活读暂停")) == ("spec_finalized",)
-
-
-def test_pause_points_priority_2_stage_pause_mechanical():
-    _save("二级", "# 2\n正文", {"pause": {"stage_pause": True}})
-    assert _triggers(skill_pause_points("二级")) == _ANCHORS
-    assert skill_requires_stage_pause("二级") is True
-    _save("二级关", "# 2f\n何时暂停：每阶段后。", {"pause": {"stage_pause": False}})
-    assert skill_pause_points("二级关") == []
-    assert skill_requires_stage_pause("二级关") is False
-
-
-def test_pause_points_priority_3_pause_rules_block():
-    _save("三级", "# 3\n```json pause_rules\n{\"stage_pause\": true}\n```\n正文")
-    assert _triggers(skill_pause_points("三级")) == _ANCHORS
-    assert skill_requires_stage_pause("三级") is True
-
-
-def test_pause_points_priority_4_keyword_fallback():
-    _save("四级", "# 4\n本流程在强制暂停点处停下等确认。")
-    assert _triggers(skill_pause_points("四级")) == _ANCHORS
-    assert skill_requires_stage_pause("四级") is True
-    _save("无暂停", "# 5\n普通正文")
-    assert skill_pause_points("无暂停") == []
-    assert skill_requires_stage_pause("无暂停") is False
-
-
 # ---------- 6) 未迁移 v2 manifest 全路径回归（行为零变化） ----------
-
-def test_v2_manifest_pause_semantics_unchanged():
-    """v2 pause.stage_pause 声明：bool 判定与黄金语义一致，
-    清单形态只是机械转两锚点（迁移脚本同口径）。"""
-    _save("v2暂停", "# V\n正文", {"pause": {"stage_pause": True}})
-    assert skill_requires_stage_pause("v2暂停") is True
-    assert _triggers(skill_pause_points("v2暂停")) == _ANCHORS
-
 
 def test_v2_manifest_gate_and_language_unchanged(svc):
     """C1a 裁决 2026-08-31：gates 键退役——v2 manifest 的 gates.cjk_min_ratio

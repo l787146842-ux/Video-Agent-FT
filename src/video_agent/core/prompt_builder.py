@@ -54,13 +54,8 @@ _KIND_LABELS = {
 # 续读），压制性包壳同期退役（官方干净注入，外部仅来源标记）。
 # reference kind 低权重注入分支已随任务#8 ② 下架清偿（KIND_VALUES 不再含
 # reference，声明入口关闭、降级 pipeline；死分支已删）。
-
-
-_PAUSE_TRIGGER_LABELS = {
-    "spec_finalized": "规格定稿后",
-    "storyboard_structure_ready": "故事板结构就绪（分组/草稿搭建完成）后",
-    "first_generation_call": "首次调用生成类工具前",
-}
+# （C1b 裁决 2026-08-31：pause_points 机械暂停退役——元数据头不再注入
+# 暂停点清单，暂停由模型读 planner 散文自主经 workflow_pause 执行。）
 
 
 class PromptBuilder:
@@ -475,21 +470,6 @@ class PromptBuilder:
                 "- 语言要求：生成提示词正文须用英文书写（平台语言闸已按声明放宽）")
         elif lang.get("prompt") == "zh":
             lines.append("- 语言要求：生成提示词正文用中文书写（平台语言闸生效）")
-        try:
-            points = skill_guard.skill_pause_points(skill_name)
-        except Exception:
-            points = []
-        if points:
-            lines.append("- 平台会在以下节点兜底保证暂停（到达时先停下等您确认）：")
-            for p in points:
-                trigger = str(p.get("trigger") or "")
-                if trigger == "batch_boundary":
-                    desc = str(p.get("description") or "").strip()
-                elif trigger == "free_text":
-                    desc = str(p.get("prose") or "").strip()
-                else:
-                    desc = _PAUSE_TRIGGER_LABELS.get(trigger, trigger)
-                lines.append(f"  · {desc}")
         if not lines:
             return ""
         return (

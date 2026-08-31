@@ -21,7 +21,6 @@ from src.video_agent.core import live_metrics, prompt_gates
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime import registry as skill_registry
-from src.video_agent.skill_runtime.guard import skill_requires_stage_pause
 from src.video_agent.state.models import ALL_CATEGORIES_TUPLE, CAT_KEY_ELEMENTS, CAT_SHOTS
 
 if TYPE_CHECKING:
@@ -281,22 +280,15 @@ async def _apply_structure_stage_review(ctx: RoundEndContext, emit: Callable) ->
 
 
 def _cond_stage_done_fallback(ctx: RoundEndContext) -> bool:
-    # 声明驱动 + 平台兜底双语义；一条龙豁免引导卡
+    # 平台兜底语义；一条龙豁免引导卡
+    # （C1b 裁决 2026-08-31：pause_points 声明驱动的机械暂停退役）
     if ctx.confirmation or ctx.gate_heal or ctx.applied <= 0:
         return False
     if prompt_gates.flow_auto_continue(ctx.executor.state):
         return False
-    stage_pause_declared = False
-    if ctx.skill:
-        try:
-            stage_pause_declared = skill_requires_stage_pause(ctx.skill)
-        except Exception:
-            live_metrics.record_degradation("round_end.stage_pause_declared")
-            stage_pause_declared = False
     names = [str(a.get("action") or a.get("tool") or "").strip() for a in ctx.executable]
     return (
-        stage_pause_declared
-        or any(n in ("storyboard_key_elements", "storyboard_shots", "storyboard_audio") for n in names)
+        any(n in ("storyboard_key_elements", "storyboard_shots", "storyboard_audio") for n in names)
     ) and any(n in _EXECUTOR_ACTIONS for n in names)
 
 
