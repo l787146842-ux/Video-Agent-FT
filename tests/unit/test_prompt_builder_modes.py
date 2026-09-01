@@ -121,3 +121,22 @@ def test_system_prompt_over_threshold_warns(skills_dir, monkeypatch):
     text = _pb().build_system_prompt(PlannerContext(use_studio_context=False, skill_name=""))
     assert text
 
+
+def test_system_prompt_telemetry_exception_not_blocking(skills_dir, monkeypatch):
+    """遥测分项入账异常不阻断组装：record_sections 抛错静默忽略、正文照常返回"""
+    import src.video_agent.core.prompt_builder as pb_mod
+    from src.video_agent.core.planner import PlannerContext
+
+    sd.save_skill_doc(
+        "探针桩",
+        "---\nname: 探针桩\ndescription: 测试桩\n---\n"
+        "# 探针桩\n<script_analyze>\n占位\n</script_analyze>\n",
+    )
+
+    def boom(*_a, **_k):
+        raise RuntimeError("metrics unavailable")
+
+    monkeypatch.setattr(pb_mod.live_metrics, "record_sections", boom)
+    text = _pb().build_system_prompt(PlannerContext(use_studio_context=False, skill_name=""))
+    assert text
+
