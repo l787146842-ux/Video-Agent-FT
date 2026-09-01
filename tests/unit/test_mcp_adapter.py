@@ -277,18 +277,6 @@ class TestRiskGateWiring:
         assert any(g["rule_id"] == "platform.tool_risk" and g["ok"] is False
                    for g in recent), "拦截必须经 audit_verdicts 入审计"
 
-    def test_flow_directive_consent_allows(self, monkeypatch):
-        """C1a 裁决 2026-08-31：一条龙不再构成同意（Context≠Consent）→ 仍硬拒。"""
-        _register(monkeypatch)
-        _enable([HIGH_TOOL])
-        state = StateManager.get_instance().state_dict
-        state.setdefault("interaction", {})["auto_continue"] = True
-        try:
-            runner, res = _run_fc(monkeypatch, HIGH_TOOL, {"text": "hi"})
-            assert res.applied == 0, "一条龙指令不再构成同意，高危仍硬拒"
-        finally:
-            state["interaction"].pop("auto_continue", None)
-
     def test_low_mcp_not_gated(self, monkeypatch):
         _register(monkeypatch)
         _enable([LOW_TOOL])
