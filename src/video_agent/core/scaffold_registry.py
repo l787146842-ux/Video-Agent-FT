@@ -5,7 +5,7 @@
 
 本注册表把补丁从「隐形债务」变为「登记资产」：
 - classification=scaffold：对模型能力缺口的补偿，可折旧，入拆除仪式
-  （docs/脚手架折旧规程.md）；必须有可证伪的 assumption 与 retest_policy；
+  （见 AGENTS.md §七）；必须有可证伪的 assumption 与 retest_policy；
 - classification=invariant：工程/物理约束，长期承重，季度审计但不入拆除仪式。
 
 棘轮（scripts/check_scaffold_registry.py + test_scaffold_registry.py 钉死）：

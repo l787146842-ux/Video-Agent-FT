@@ -102,7 +102,6 @@ GOV_DOCS = (
     "docs/GOVERNANCE.md",
     "ARCHITECTURE_RULES.md",
     "AGENTS.md",
-    "docs/脚手架折旧规程.md",
     "docs/未清偿债务清单.md",
 )
 # 治理文档提及的闸机脚本/夹具指针（夹具要求带名，裸目录引用不受检）

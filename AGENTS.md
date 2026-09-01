@@ -65,7 +65,7 @@ python scripts/run_eval_pipeline.py    # Skill 管线可解析性评测（frontm
 |---|---|
 | `ARCHITECTURE_RULES.md` | 架构宪法（Rule 1-7 / 闸机宪法 §2 / 前端 §3 / 流程治理 §5 / 文件地图 §十一 / 违规清单 §十二） |
 | `docs/GOVERNANCE.md` | 指令治理层（与宪法同权）：P1-P3 原则、13.5 决策树、G1-G4 方案四关、§13.14 治理刹车（门禁冻结 (f)） |
-| `docs/脚手架折旧规程.md` | 脚手架拆除仪式 + 棘轮门禁折旧 + scripts/archive 到期策略 |
+| 脚手架折旧规程 | 已归档删除，见 git tag `scaffold-deprecation-archive-20260901`；活规则摘要见下 §七 |
 | `docs/前端体验规范.md` | 飞天品牌/确认卡片/@面板等视觉交互强制约束 |
 | `docs/adr/` | 架构决策记录 0001-0007 已归档删除，见 git tag `adr-archive-20260901` |
 | 历史审计文书 | 已归档删除，见 git tag `audit-history-archive-20260826` |
@@ -92,3 +92,11 @@ python scripts/run_eval_pipeline.py    # Skill 管线可解析性评测（frontm
 - 不做社区 + 排序/搜索前端（2026-08-29 用户裁决暂无必要；出现真实用户生态与内容规模再重新登记）。
 - 不做 Skill 正文中性化：不检查/不消音 skill 正文任何句式；装外部 skill 视同装软件，安全靠动作单轨/确认闸/platform 闸不可关机械兜底（2026-08-29 用户裁决，防翻案）。
 - 长期项不排期、不立项：展望方向未经触发条件成立与用户裁决不得动工，历史登记见上述 git tag。
+
+## 七、脚手架折旧（活规则摘要；原卷见 git tag `scaffold-deprecation-archive-20260901`）
+
+- 对象为 `core/scaffold_registry.py` 登记的 scaffold 条目；退役条件成熟、模型切换后或季度审计时逐件拆测（禁止批量），走拆除仪式：关闭（优先代码移除 + 备份分支）→ 复测（evidence 回归用例 + `acceptance.py --with-eval`）→ 裁决留痕。
+- 到期必裁决，三选一不得悬置：不劣化 → 下账（删代码、注册表删条目、下调基线）；劣化或证据不足 → 保留并钉死下次复测时点附理由（「证据不足」「暂缓」不是合法裁决）。
+- 棘轮：scaffold 计数只降不升（`scripts/check_scaffold_registry.py` 强制）；上调基线 = 新增脚手架，须经 GOVERNANCE §13.5 决策树书面裁决。
+- 闸机折旧：连续 4 个审计周期零触发的门禁降级软警告并下账（盘点用 `scripts/audit_gate_triggers.py`，机器点名不代替裁决）；安全类闸机豁免（零触发是常态）；新增门禁必须声明退役条件。
+- `scripts/archive` 归档件到期策略唯一家为 `scripts/archive/README.md`（满两季度即删）。

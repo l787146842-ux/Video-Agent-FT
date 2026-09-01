@@ -47,9 +47,9 @@ from src.video_agent.core.prompt_gates import (  # noqa: E402
 )
 from src.video_agent.core.scaffold_registry import scaffold_entries  # noqa: E402
 
-# ---------- 超期识别口径（折旧规程第五节 + GOVERNANCE §13.14(b)） ----------
+# ---------- 超期识别口径（AGENTS §七闸机折旧 + GOVERNANCE §13.14(b)） ----------
 
-# 折旧规程 §5.4 豁免登记（Policy-as-Data）：安全类闸机不参与折旧，
+# 安全类闸机折旧豁免登记（Policy-as-Data）：安全类闸机不参与折旧，
 # 零触发是常态而非折旧信号。运行时闸 = 平台硬边界族（生成确认/
 # 工具风险/阶段前置）；CI 棘轮 = 反向依赖方向/退役符号防复活/
 # 类型契约。登记口径从严：拿不准的不豁免（宁可多审不可误拆）。
@@ -64,7 +64,7 @@ SAFE_CI_GATES = frozenset({
     "gen_api_types.py",
 })
 
-# 审计周期口径（折旧规程第二节：季度脚手架审计）：半年 = 两季窗口，
+# 审计周期口径（季度脚手架审计）：半年 = 两季窗口，
 # 观测跨度不足半年即「数据不足」——防短窗口（如遥测刚启用数天）
 # 把「尚无记录」误判为「连续零触发」而虚构超期。
 MIN_OBSERVATION_DAYS = 182
@@ -232,7 +232,7 @@ def zero_trigger_candidates(cstats: dict, registry: dict = None,
                             safe: frozenset = SAFE_RUNTIME_RULES) -> list:
     """注册表内零触发且非安全类的降级候选（返回排序后 rule_id 列表）。
 
-    口径（折旧规程 §5.3/5.4）：注册表有条目、遥测账本无判定记录，
+    口径（AGENTS §七闸机折旧）：注册表有条目、遥测账本无判定记录，
     且不在安全豁免清单。安全类（平台硬边界/画布边界/密钥边界）零触发是
     常态而非折旧信号，永不进候选。本函数只算集合差，不判断观测窗是否足够——
     窗口不足时由调用方改输出「数据不足、暂不列入」，不得据此降级。"""
@@ -338,10 +338,10 @@ def main() -> int:
     print("| 门禁脚本 | 折旧豁免 |")
     print("|---|---|")
     for name in ci_gate_inventory():
-        exempt = "安全类（折旧规程 §5.4 豁免）" if name in SAFE_CI_GATES else ""
+        exempt = "安全类（折旧豁免）" if name in SAFE_CI_GATES else ""
         print(f"| scripts/{name} | {exempt} |")
     print()
-    print("## 四、超期未裁决点名（折旧规程 §5 + GOVERNANCE §13.14(b)，"
+    print("## 四、超期未裁决点名（AGENTS §七 + GOVERNANCE §13.14(b)，"
           "机器点名不代替裁决；裁决留痕仍在既有台账）")
     print()
     # (a) 遥测观测窗 + 零触发降级候选（安全类豁免）
@@ -372,13 +372,13 @@ def main() -> int:
         print("- 待裁决条目：无超期（登记台账为空属正常态，存量已随"
               "既有退役/合并裁决清偿）")
     # (c) 脚手架条目季度审计义务（拆除仪式人工执行，本表只点名）
-    print("- 脚手架条目（季度审计义务，拆除仪式见折旧规程第三节）：")
+    print("- 脚手架条目（季度审计义务，拆除仪式见 AGENTS §七）：")
     for e in scaffold_entries():
         print(f"  - {e.sid}（{e.component}）：复审政策 = {e.retest_policy}")
     print()
-    print("> 折旧规则见 docs/脚手架折旧规程.md 第五节：连续 N 轮零触发的门禁"
+    print("> 折旧规则见 AGENTS §七：连续 N 轮零触发的门禁"
           "降级为软警告（保留不删）并下账 scaffold_registry；安全类闸机"
-          "（§5.4）不参与折旧。")
+          "不参与折旧。")
     return 0
 
 
