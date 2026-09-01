@@ -9,6 +9,7 @@ import { apiProvidersFor } from '@/lib/providers';
 import { getContextUsage, type ContextUsage } from '@/api/agent';
 import { chatState } from '@/stores/chat';
 import { t } from '@/lib/locale';
+import { formatTokens } from '@/lib/utils';
 import { PillDropdown } from './PillDropdown';
 import { ModelThinkingPill } from './ModelThinkingPill';
 import { SkillPicker } from './SkillPicker';
@@ -64,7 +65,7 @@ export function ChatInputToolbar(props: {
   const usageLabel = () => {
     const u = usage();
     if (!u) return '…';
-    return `${(u.est_tokens / 1024).toFixed(1)}K`;
+    return formatTokens(u.est_tokens);
   };
   /** 圆环填充比 = 已用 / 窗口；未传模型时回退 0（纯数字展示） */
   const ratio = () => {
@@ -84,7 +85,6 @@ export function ChatInputToolbar(props: {
     const w = winTokens();
     return w ? Math.min(100, (totalTokens() / w) * 100) : 0;
   };
-  const fmtWan = (n: number) => `${(n / 10000).toFixed(1)}万`;
   const cacheHitLabel = () =>
     `${(((usage()?.cache_hit_rate) ?? 0) * 100).toFixed(1)}%`;
   const panelRows = () => {
@@ -167,7 +167,7 @@ export function ChatInputToolbar(props: {
               <div class="ctx-head">
                 <span>{t('rp.ctx.title')}</span>
                 <span class="ctx-head-val">
-                  {fmtWan(totalTokens())}/{winTokens() ? fmtWan(winTokens()) : '—'}
+                  {formatTokens(totalTokens())}/{winTokens() ? formatTokens(winTokens()) : '—'}
                   {' '}({pctOfWindow().toFixed(1)}%)
                 </span>
               </div>

@@ -95,3 +95,15 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/** 格式化 token 数为业界 K/M 记法：<1000 原数；<1M 显示 K；≥1M 显示 M。
+ * 一位小数，整数去掉多余的 .0（如 128000 → 128K、1500000 → 1.5M） */
+export function formatTokens(n: number): string {
+  const v = Math.max(0, Math.round(n));
+  if (v < 1000) return String(v);
+  const [div, unit] = v < 1_000_000
+    ? ([1000, 'K'] as const)
+    : ([1_000_000, 'M'] as const);
+  const s = (v / div).toFixed(1);
+  return `${s.endsWith('.0') ? s.slice(0, -2) : s}${unit}`;
+}
