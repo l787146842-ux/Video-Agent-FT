@@ -15,6 +15,8 @@ from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
 from src.video_agent.state import storyboard_ops as ops
+from src.video_agent.state import conversation_ops
+from src.video_agent.core import ports
 from src.video_agent.core.prompt_refs import media_of_draft
 from src.video_agent.core.provider_config import stamp_draft_spec_preference
 from src.video_agent.storage.media_urls import resolve_injectable_url
@@ -206,7 +208,15 @@ class StoryboardDeleteGroupTool(BaseTool):
         svc = StateManager.get_instance()
 
         async with svc.lock:
-            if ops.delete_group(svc.state_dict, params.group_id, params.group_type):
+            removed_draft_ids = ops.delete_group(svc.state_dict, params.group_id, params.group_type)
+            if removed_draft_ids:
+                # 对象删除级联（二期子对话批 1）：先掐绑定在途微调任务再硬删
+                # 对应隐藏线程，防 target_chat_messages 静默回落污染主对话；
+                # 删除与级联同帧，撤销快照栈含 conversations 可原子恢复。
+                # 掐停实现走 core/ports 端口（tools 层禁 import web，D-01 先例）。
+                conversation_ops.cleanup_scoped_threads_for_removed(
+                    svc, removed_draft_ids, save=False,
+                    stop_tasks=lambda ids: ports.task_stop_port().stop_bound_tasks(ids))
                 svc.save()
                 return ToolResult(success=True, data={"deleted": params.group_id})
         return ToolResult(success=False, error=f"Group '{params.group_id}' not found")

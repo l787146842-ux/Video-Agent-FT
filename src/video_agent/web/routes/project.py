@@ -9,12 +9,13 @@ from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 
 from src.video_agent.exceptions import StateConflictError, VideoAgentError
-from src.video_agent.state import board_merge
+from src.video_agent.state import board_merge, conversation_ops
 from src.video_agent.state.board_merge import CAT_ASSETS
 from src.video_agent.state.manager import StateManager
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 from src.video_agent.utils import gen_id
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
+from src.video_agent.web.agent_task_manager import stop_tasks_bound_to_conversations
 from src.video_agent.web.task_manager import get_task_manager
 
 router = APIRouter()
@@ -209,6 +210,23 @@ async def put_project_state(body: ProjectStateUpdate):
             )
         state = svc.state_dict
 
+        # 对象删除级联（二期子对话批 1）：落盘前对提交列表做新旧草稿 id diff，
+        # 硬删命中的 scope 隐藏线程（先掐绑定在途任务）；线程随撤销快照原子恢复。
+        _old_ids, _new_ids = set(), set()
+        for _cat, _incoming in (
+            (CAT_KEY_ELEMENTS, body.keyElements),
+            (CAT_SHOTS, body.shots),
+            (CAT_AUDIO_ITEMS, body.audioItems),
+        ):
+            if _incoming is None:
+                continue
+            _old_ids |= conversation_ops.board_draft_ids(state.get(_cat) or [])
+            _new_ids |= conversation_ops.board_draft_ids(_incoming)
+        if _old_ids - _new_ids:
+            conversation_ops.cleanup_scoped_threads_for_removed(
+                svc, _old_ids - _new_ids, save=False,
+                stop_tasks=stop_tasks_bound_to_conversations)
+
         if body.keyElements is not None:
             state[CAT_KEY_ELEMENTS] = body.keyElements
         if body.shots is not None:
@@ -270,6 +288,15 @@ async def merge_project_state(body: ProjectStateUpdate):
         }
         merged, conflicts = board_merge.merge_board(base, mine, theirs)
         if not conflicts:
+            # 对象删除级联（同整板 PUT 口径）：落盘分支新旧草稿 id diff 清线程
+            _old_ids, _new_ids = set(), set()
+            for _cat in (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS):
+                _old_ids |= conversation_ops.board_draft_ids(state.get(_cat) or [])
+                _new_ids |= conversation_ops.board_draft_ids(merged.get(_cat) or [])
+            if _old_ids - _new_ids:
+                conversation_ops.cleanup_scoped_threads_for_removed(
+                    svc, _old_ids - _new_ids, save=False,
+                    stop_tasks=stop_tasks_bound_to_conversations)
             state[CAT_KEY_ELEMENTS] = merged[CAT_KEY_ELEMENTS]
             state[CAT_SHOTS] = merged[CAT_SHOTS]
             state[CAT_AUDIO_ITEMS] = merged[CAT_AUDIO_ITEMS]

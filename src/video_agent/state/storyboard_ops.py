@@ -262,31 +262,37 @@ def sync_shot_duration(group: Dict[str, Any], draft: Dict[str, Any], patch: Opti
     return True
 
 
-def delete_draft(state: Dict[str, Any], draft_id: str, draft_type: str = "") -> bool:
-    """按真实 ID 删除 draft（调用方负责把 "current" 解析为具体 ID）。"""
+def delete_draft(state: Dict[str, Any], draft_id: str, draft_type: str = "") -> List[str]:
+    """按真实 ID 删除 draft（调用方负责把 "current" 解析为具体 ID）。
+    返回被删草稿 id 列表（空 = 未命中），供调用方做 scope 线程删除级联。"""
     if not draft_id:
-        return False
+        return []
     for cat_key in categories_for_type(draft_type):
         for group in state.get(cat_key, []):
             drafts = group.get("drafts", [])
             for i, d in enumerate(drafts):
                 if d.get("id") == draft_id:
                     drafts.pop(i)
-                    return True
-    return False
+                    return [draft_id]
+    return []
 
 
-def delete_group(state: Dict[str, Any], group_id: str, group_type: str = "") -> bool:
-    """按真实 ID 删除 group（含其全部草稿）。"""
+def delete_group(state: Dict[str, Any], group_id: str, group_type: str = "") -> List[str]:
+    """按真实 ID 删除 group（含其全部草稿）。先展开该分组全部草稿 id 再删，
+    返回被删草稿 id 列表（空 = 未命中），供调用方做 scope 线程删除级联。"""
     if not group_id:
-        return False
+        return []
     for cat_key in categories_for_type(group_type):
         groups = state.get(cat_key, [])
         for i, g in enumerate(groups):
             if g.get("id") == group_id:
+                removed = [
+                    str(d.get("id")) for d in (g.get("drafts") or [])
+                    if isinstance(d, dict) and str(d.get("id") or "")
+                ]
                 groups.pop(i)
-                return True
-    return False
+                return removed
+    return []
 
 
 def new_group_id(cat_key: str) -> str:

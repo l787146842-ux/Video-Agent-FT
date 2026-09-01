@@ -57,6 +57,30 @@ describe('openThread 幂等装载', () => {
     expect(adjustScopes['d1']).toBeUndefined();
   });
 
+  it('dropThread 对象删除级联：键删除后登记与浮窗同步消失（可重建）', async () => {
+    vi.mocked(getOrCreateAdjustThread).mockResolvedValue({
+      conversation_id: 'convT', messages: [{ sender: 'user', text: '历史' }],
+    });
+    await adjustScopeActions.openThread(target);
+    expect(adjustScopes['d1'].open).toBe(true);
+    expect(threadConvIdOf('d1')).toBe('convT');
+
+    adjustScopeActions.dropThread('d1');
+    // 键删除：注册表/寻址全部失效（浮窗渲染依赖 open 键，随之关闭）
+    expect(adjustScopes['d1']).toBeUndefined();
+    expect(threadConvIdOf('d1')).toBe('');
+    expect(isScopedConvId('convT')).toBe(false);
+
+    // 撤销恢复后重开：幂等接口重建登记（后端线程随快照回来）
+    expect(await adjustScopeActions.openThread(target)).toBe(true);
+    expect(adjustScopes['d1'].convId).toBe('convT');
+  });
+
+  it('dropThread 未登记键为无害空操作', () => {
+    expect(() => adjustScopeActions.dropThread('ghost')).not.toThrow();
+    expect(adjustScopes['ghost']).toBeUndefined();
+  });
+
   it('契约字段缺失（无 conversation_id）同样视为不可用', async () => {
     vi.mocked(getOrCreateAdjustThread).mockResolvedValue({ conversation_id: '', messages: [] });
     expect(await adjustScopeActions.openThread(target)).toBe(false);

@@ -80,6 +80,17 @@ export const adjustScopeActions = {
     if (adjustScopes[scopeKey]) setAdjustScopes(scopeKey, 'open', false);
   },
 
+  /** 对象删除级联（二期子对话批 1）：元素被删后移除本注册表对应键；
+   *  浮窗渲染依赖 open 键，键删除后若正开着随之关闭（后端线程已同帧硬删）。
+   *  撤销恢复时线程随快照回来，重新打开入口会幂等重建登记。 */
+  dropThread(scopeKey: string) {
+    if (!adjustScopes[scopeKey]) return;
+    inflight.delete(scopeKey);
+    setAdjustScopes(produce((s) => {
+      delete s[scopeKey];
+    }));
+  },
+
   /** 登记运行中任务（sendAdjust 建任务成功 / resume 忙态恢复时） */
   registerTask(scopeKey: string, taskId: string) {
     if (!adjustScopes[scopeKey]) return;

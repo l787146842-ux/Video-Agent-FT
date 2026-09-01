@@ -30,6 +30,8 @@ monkeypatch 在测试期照常生效。
                     split_skill_sections 等（web/skill_docs.py）
 - assets          ：iter_items（本地素材库扫描；
                     web/routes/assets_library.py）
+- task_stop       ：stop_bound_tasks（对象删除级联前掐停绑定在途任务；
+                    web/agent_task_manager.py）
 """
 from typing import Any, Dict, Optional
 
@@ -48,6 +50,7 @@ def install_ports(
     task_log: Optional[Any] = None,
     skill_docs: Optional[Any] = None,
     assets: Optional[Any] = None,
+    task_stop: Optional[Any] = None,
 ) -> None:
     """装配端口（幂等；只覆盖本次传入的非 None 端口）。"""
     if generation is not None:
@@ -60,6 +63,8 @@ def install_ports(
         _PORTS["skill_docs"] = skill_docs
     if assets is not None:
         _PORTS["assets"] = assets
+    if task_stop is not None:
+        _PORTS["task_stop"] = task_stop
 
 
 def clear_ports() -> None:
@@ -102,3 +107,8 @@ def skill_docs_port() -> Any:
 def assets_port() -> Any:
     """本地素材库端口（iter_items 扫描；实现 = web/routes/assets_library.py）"""
     return _port("assets")
+
+
+def task_stop_port() -> Any:
+    """在途任务掐停端口（stop_bound_tasks；实现 = web/agent_task_manager.py）"""
+    return _port("task_stop")

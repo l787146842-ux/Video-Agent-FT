@@ -142,6 +142,58 @@ def scoped_threads_payload(svc: "StateManager") -> Dict[str, Any]:
     }
 
 
+def board_draft_ids(groups: List[Dict[str, Any]]) -> set:
+    """分组列表内草稿 id 集合（对象删除级联的新旧 id diff 口径）。"""
+    ids = set()
+    for g in groups or []:
+        if not isinstance(g, dict):
+            continue
+        for d in g.get("drafts") or []:
+            if isinstance(d, dict) and str(d.get("id") or ""):
+                ids.add(str(d["id"]))
+    return ids
+
+
+def cleanup_scoped_threads_for_removed(
+    svc: "StateManager", removed_draft_ids, save: bool = True,
+    stop_tasks: Optional[Any] = None,
+) -> List[str]:
+    """对象删除级联：硬删 scope.draft_id 命中的隐藏线程（二期子对话批 1）。
+
+    三写面同帧挂载（Agent FC 删除 / 整板 PUT / 三向合并）：删除与级联同帧，
+    撤销快照栈含 conversations 全态，元素与线程历史随 Ctrl+Z 原子恢复。
+    stop_tasks 由调用方注入在途任务掐停实现（web 层，先掐再删，防
+    target_chat_messages 静默回落把在途写入污染主对话）；state 层不反向
+    import web（依赖方向合宪，实现见 agent_task_manager.stop_tasks_bound_to_conversations）。
+    save=False 供写面自带落盘的路径使用（避免重复写盘）。返回被删线程对话 id 列表。"""
+    ids = {str(i) for i in (removed_draft_ids or set()) if str(i or "")}
+    if not ids:
+        return []
+    ensure_conversations(svc)
+    convs = svc._raw_state.get("conversations") or []
+    hit_ids = sorted({
+        str(c.get("id") or "") for c in convs
+        if isinstance(c, dict) and isinstance(c.get("scope"), dict)
+        and str((c.get("scope") or {}).get("draft_id") or "") in ids
+        and str(c.get("id") or "")
+    })
+    if not hit_ids:
+        return []
+    # 在途任务先掐（调用方注入）：元素已不存在，任务失去目标；不掐则后续写入回落活跃对话
+    if stop_tasks is not None:
+        try:
+            stop_tasks(hit_ids)
+        except Exception:
+            pass  # 任务台账不可用时尽力而为，不阻断线程删除级联
+    svc._raw_state["conversations"] = [
+        c for c in convs
+        if not (isinstance(c, dict) and str(c.get("id") or "") in hit_ids)
+    ]
+    if save:
+        svc.save()
+    return hit_ids
+
+
 def target_chat_messages(svc: "StateManager", conversation_id: str = "") -> List[Dict[str, Any]]:
     """聊天写入目标消息列表单点（批 6-1 多会话并行）：
     显式 conversation_id 优先 → 实例绑定会话（svc.bound_conversation_id）

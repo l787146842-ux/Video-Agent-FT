@@ -16,6 +16,7 @@ from loguru import logger
 
 from src.video_agent.utils import gen_id
 from src.video_agent.utils.paths import DATA_DIR
+from src.video_agent.core.stop_signal import request_stop
 from src.video_agent.web.error_payload import classify_exception
 from src.video_agent.web.task_store import TaskStore
 
@@ -475,3 +476,20 @@ def get_agent_task_manager() -> AgentTaskManager:
     if _instance is None:
         _instance = AgentTaskManager()
     return _instance
+
+
+def stop_tasks_bound_to_conversations(conversation_ids) -> List[str]:
+    """对象删除级联的在途任务掐停（二期子对话批 1）：对绑定指定对话的
+    运行中任务逐个走既有停止通道（request_stop + stop，同停止端点口径），
+    返回被停任务 id。供写面在硬删线程前注入调用（防删除后写入静默回落活跃对话）。"""
+    ids = {str(c or "") for c in (conversation_ids or []) if str(c or "")}
+    if not ids:
+        return []
+    tm = get_agent_task_manager()
+    stopped = []
+    for rec in tm.list_running():
+        if rec.get("conversation_id") in ids:
+            request_stop(rec["task_id"])
+            tm.stop(rec["task_id"])
+            stopped.append(rec["task_id"])
+    return stopped

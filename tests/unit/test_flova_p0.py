@@ -57,7 +57,7 @@ def test_delete_draft(svc):
     group = svc.state_dict["keyElements"][0]
     target = group["drafts"][0]["id"]
     before = len(group["drafts"])
-    assert ops.delete_draft(svc.state_dict, target, "keyElement") is True
+    assert ops.delete_draft(svc.state_dict, target, "keyElement") == [target]
     assert len(group["drafts"]) == before - 1
     assert all(d["id"] != target for d in group["drafts"])
 
@@ -65,13 +65,13 @@ def test_delete_draft(svc):
 def test_delete_group(svc):
     gid = svc.state_dict["shots"][0]["id"]
     before = len(svc.state_dict["shots"])
-    assert ops.delete_group(svc.state_dict, gid, "shot") is True
+    assert ops.delete_group(svc.state_dict, gid, "shot")  # 返回被删草稿 id 列表
     assert len(svc.state_dict["shots"]) == before - 1
 
 
 def test_delete_missing_returns_false(svc):
-    assert ops.delete_draft(svc.state_dict, "no-such") is False
-    assert ops.delete_group(svc.state_dict, "no-such") is False
+    assert ops.delete_draft(svc.state_dict, "no-such") == []
+    assert ops.delete_group(svc.state_dict, "no-such") == []
 
 
 async def test_workflow_pause_pauses_loop(svc, executor):

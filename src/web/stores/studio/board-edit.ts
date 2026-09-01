@@ -11,6 +11,7 @@ import {
 import { uiActions } from './ui';
 import { persistBoard } from './board-persist';
 import { addLocalAddedId, removeLocalAddedId } from './board-sync';
+import { adjustScopeActions } from '../adjust-scopes';
 
 /** subTab → 草稿类型 */
 export function draftTypeForSubTab(subTab: SubTab): DraftType {
@@ -76,6 +77,9 @@ export const boardEditActions = {
     // ：删除的实体移出本地新增保护集，避免后续快照合并时被复活
     removeLocalAddedId(groupId);
     for (const d of target.drafts || []) removeLocalAddedId(d.id);
+    // 对象删除级联（二期子对话批 1）：微调线程注册表对应键移除，
+    // 浮窗若正开着该线程随之关闭（后端线程随整板 PUT 同帧硬删）
+    for (const d of target.drafts || []) adjustScopeActions.dropThread(d.id);
     setState(field, (prev: AnyGroup[]) => prev.filter((g) => g.id !== groupId));
     // 若当前选中草稿在被删分组内，自动改选第一个
     if ((target.drafts || []).some((d) => d.id === state.selectedDraftId)) {
@@ -132,6 +136,7 @@ export const boardEditActions = {
     if (!group) return;
     const remaining = (group?.drafts || []).filter((d) => d.id !== draftId);
     removeLocalAddedId(draftId); // D2：删除的草稿移出保护集，防快照合并复活
+    adjustScopeActions.dropThread(draftId); // 对象删除级联：微调线程注册表键移除
     setState(field, (prev: AnyGroup[]) =>
       prev.map((g) => (g.id === groupId ? { ...g, drafts: remaining } : g)),
     );
