@@ -230,3 +230,56 @@ def test_active_adjust_scope_switch(svc):
         assert cs._active_adjust_scope(body) is None
     finally:
         object.__setattr__(settings, "adjust_subdialog_enabled", True)
+
+
+# ---------- 7. 任务 #19：跨实例重载（历史不回载根因钉死） ----------
+
+def test_thread_endpoint_reloads_task_instance_flush(client, svc, tmp_path):
+    """问题①跨实例重载：任务专属实例写线程并终态冲刷后，全局实例的
+    thread/messages 端点必须 reload_if_stale 返回持久化历史（不重载则返回
+    陈旧空历史 = 重开浮窗丢历史根因）；主对话零污染。"""
+    b1 = client.post("/api/conversations/thread", json={"scope": _SCOPE_A}).json()
+    svc.save()  # 线程实体先落盘，任务实例才读得到（模拟起任务前已存在）
+    task_svc = StateManager(str(tmp_path / "ws"))
+    assert task_svc.active_project_id == svc.active_project_id
+    task_svc.bound_conversation_id = b1["conversation_id"]
+    task_svc.add_chat_message("user", "任务问")
+    task_svc.add_chat_message("agent", "任务答")
+    task_svc.bound_conversation_id = ""
+    task_svc.flush_save()  # 模拟 _run_agent_task finally 的终态冲刷
+    # thread 端点：同线程 + 持久化历史装载回来（重开入口不丢历史）
+    body = client.post("/api/conversations/thread", json={"scope": _SCOPE_A}).json()
+    assert body["conversation_id"] == b1["conversation_id"]
+    assert [m["text"] for m in body["messages"]] == ["任务问", "任务答"]
+    # messages 单一来源端点同口径重载（浮窗装载走此接口）
+    msgs = client.get(f"/api/conversations/{b1['conversation_id']}/messages").json()
+    assert [m["text"] for m in msgs["messages"]] == ["任务问", "任务答"]
+    # 主对话零污染（绑定写入定向生效）
+    assert svc.get_chat_messages() == []
+
+
+# ---------- 8. 任务 #19：出图参数继承（问题③） ----------
+
+def test_resolve_selected_draft_media_config_matches_target_draft(svc):
+    """问题③：scope 任务携带 selected_draft_id/selected_type 时，解析出的
+    provider/aspectRatio 必须与目标草稿配置一致（注入 image_generate 工具）。"""
+    import src.video_agent.web.chat_service as cs
+    svc.state_dict["keyElements"] = [{
+        "id": "grp-1",
+        "drafts": [
+            {"id": "d-decoy", "imageProviderId": "prov-X", "aspectRatio": "1:1"},
+            {"id": "draft-1", "imageProviderId": "prov-A", "aspectRatio": "16:9"},
+        ],
+    }]
+    provider, aspect = cs._resolve_selected_draft_media_config(svc, "draft-1", "keyElement")
+    assert (provider, aspect) == ("prov-A", "16:9")
+    # 旧字段名 providerId 回落（草稿未携 imageProviderId 时）
+    svc.state_dict["keyElements"][0]["drafts"][1] = {
+        "id": "draft-1", "providerId": "prov-B", "aspectRatio": "9:16"}
+    provider, aspect = cs._resolve_selected_draft_media_config(svc, "draft-1", "keyElement")
+    assert (provider, aspect) == ("prov-B", "9:16")
+    # 目标草稿缺失 / 空选择 → 回落默认供应商，不抛错不串草稿
+    provider, aspect = cs._resolve_selected_draft_media_config(svc, "d-ghost", "keyElement")
+    assert provider == settings.default_image_provider_id and aspect == ""
+    provider, aspect = cs._resolve_selected_draft_media_config(svc, "", "keyElement")
+    assert provider == settings.default_image_provider_id and aspect == ""

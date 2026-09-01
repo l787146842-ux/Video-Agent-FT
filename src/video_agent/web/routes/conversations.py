@@ -56,6 +56,10 @@ async def get_conversation_messages(conversation_id: str):
     SSE replay 快照承载（均为活跃对话消息）。
     """
     svc = StateManager.get_instance()
+    async with svc.lock:
+        # 任务实例（后台 Agent 任务专属 StateManager）写过更新时从磁盘重载，
+        # 防全局实例内存陈旧返回空历史（微调线程消息由任务实例落盘）
+        svc.reload_if_stale()
     msgs = svc.get_conversation_messages(conversation_id)
     if msgs is None:
         raise VideoAgentError("对话不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
@@ -71,6 +75,9 @@ async def get_or_create_thread(body: ThreadRequest):
     svc = StateManager.get_instance()
     scope = dict(body.scope or {})
     async with svc.lock:
+        # 磁盘账本新于内存时重载：微调线程消息由后台任务专属实例落盘，
+        # 不重载会返回陈旧空历史（重开浮窗丢历史根因，任务 #19）
+        svc.reload_if_stale()
         conv = svc.find_scoped_conversation(scope)
         if conv is None:
             label = str(scope.get("label") or "")

@@ -252,6 +252,12 @@ async def _run_agent_task(body: ChatRequest, project_id: str, task_id: str,
         logger.info(f"[AgentTask] {task_id} worker 退出")
         # 任务结束：清空未注入的排队项（前端 done 后会自动重发为普通请求，防双注入）
         tm.clear_pending_guidance(task_id)
+        # 防抖落盘冲刷：线程/对话消息必须在任务终态前落盘（前端收到 done 后
+        # 可能立即重开浮窗装历史，300ms 防抖窗口未刷会读到空历史，任务 #19）
+        try:
+            svc.flush_save()
+        except Exception as _fe:
+            logger.warning(f"[AgentTask] {task_id} 终态冲刷失败: {_fe}")
         StateManager.release_task_bound(token)
 
 

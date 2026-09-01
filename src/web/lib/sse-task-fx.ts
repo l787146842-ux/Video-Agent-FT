@@ -15,6 +15,7 @@ import { showToast } from '@/stores/toast';
 import { refreshHistoryStatus } from '@/stores/history';
 import { applyFallbackModel } from '@/stores/agent-prefs';
 import { requestInsertMedia } from '@/lib/chat/chat-input-bridge';
+import { getConversationMessages } from '@/api/conversations';
 import { adjustScopeActions, threadConvIdOf } from '@/stores/adjust-scopes';
 import type { ScopeToolEntry } from '@/stores/adjust-scopes';
 import type { SseEventFx, SseChatFx } from '@/lib/sse-events';
@@ -153,7 +154,16 @@ export function makeScopeTaskFx(
       });
     },
     clearStreaming: () => markTerminal(),
-    loadMessages: (msgs) => adjustScopeActions.loadThreadMessages(scopeKey, msgs),
+    // replay 终态快照的 chatMessages 属任务实例的活跃对话（主对话），
+    // 不是线程历史——不得直接装入线程视图；改按线程 id 走消息
+    // 单一来源 API 装载（后端终态已冲刷落盘，任务 #19）
+    loadMessages: () => {
+      const cid = convIdOf();
+      if (!cid) return;
+      void getConversationMessages(cid)
+        .then((r) => adjustScopeActions.loadThreadMessages(scopeKey, r.messages))
+        .catch(() => { /* 装载失败不阻断终态收尾；下次重开入口会再装 */ });
+    },
     applyDecisionForm: () => {}, // 决策表单浮窗二期（方案风险表已登记）
     finishStream: (payload) => {
       adjustScopeActions.appendEvent(scopeKey, { kind: 'done', payload });

@@ -12,6 +12,8 @@ import type { Draft, DraftType } from '@/types';
  * 发送通道（批 S3 微调真子对话）：提交走 openThread + sendAdjust——幂等取/建
  * 隐藏线程并直起 scope 任务（事件进浮窗不进主聊天区）；线程接口失败
  * （4xx/契约字段缺失，含旧后端无接口）回落旧 sendUserMessage 拼文本路径。
+ * 重入即重开（任务 #19）：聚焦输入框/空文本点微调按钮即 openThread 重开浮窗
+ * 并装载历史（不提交也开）；关闭浮窗后再点入口能找回刚才的对话。
  */
 export function GroupAdjustBox(props: {
   drafts: Draft[];
@@ -54,18 +56,34 @@ export function GroupAdjustBox(props: {
     );
   }
 
-  /** 对指定草稿卡发送微调意见（定位到卡而非「当前草稿」，组内多卡时不会改错卡）：
-   *  先幂等取/建线程并弹浮窗，再向线程提交 scope 任务；提交后自动弹浮窗（=open） */
-  async function sendAdjustFor(draftId: string, code: string) {
-    const text = (adjustTexts()[draftId] || '').trim();
-    if (!text) return;
-    const target: AdjustScopeTarget = {
+  /** 当前生效卡的微调目标定位（提交/重入共用同一形态，幂等键一致） */
+  function scopeTarget(draftId: string, code: string): AdjustScopeTarget {
+    return {
       kind: 'adjust',
       cat: props.type,
       group_id: props.groupId,
       draft_id: draftId,
       label: `${props.groupTitle()} 第 ${code} 卡`,
     };
+  }
+
+  /** 重入打开浮窗（不提交）：幂等取/建线程并装载历史；失败静默不打扰输入 */
+  function reopenThread() {
+    const d = activeDraft();
+    if (!d) return;
+    void adjustScopeActions.openThread(scopeTarget(d.id, activeCode()));
+  }
+
+  /** 对指定草稿卡发送微调意见（定位到卡而非「当前草稿」，组内多卡时不会改错卡）：
+   *  先幂等取/建线程并弹浮窗，再向线程提交 scope 任务；提交后自动弹浮窗（=open）。
+   *  空文本 = 重开浮窗装载历史（任务 #19：不提交也开），不发送空消息。 */
+  async function sendAdjustFor(draftId: string, code: string) {
+    const text = (adjustTexts()[draftId] || '').trim();
+    if (!text) {
+      await adjustScopeActions.openThread(scopeTarget(draftId, code));
+      return;
+    }
+    const target = scopeTarget(draftId, code);
     // 探测/回落：线程接口失败（4xx/契约字段缺失）→ 回落旧拼文本路径
     const opened = await adjustScopeActions.openThread(target);
     if (!opened) {
@@ -90,6 +108,7 @@ export function GroupAdjustBox(props: {
           class="card-adjust-input"
           placeholder={`对第 ${activeCode()} 卡提出修改意见…`}
           value={adjustTexts()[activeDraft()?.id || ''] || ''}
+          onFocus={() => reopenThread()}
           onInput={(e) => {
             const id = activeDraft()?.id || '';
             setAdjustTexts((prev) => ({ ...prev, [id]: e.currentTarget.value }));

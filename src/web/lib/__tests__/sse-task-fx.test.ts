@@ -13,8 +13,15 @@ vi.mock('@/stores/toast', () => ({ showToast: vi.fn() }));
 vi.mock('@/stores/history', () => ({ refreshHistoryStatus: vi.fn(async () => {}) }));
 vi.mock('@/lib/chat/chat-input-bridge', () => ({ requestInsertMedia: vi.fn() }));
 vi.mock('@/stores/studio', () => ({ studioActions: { syncFromServer: vi.fn() } }));
+vi.mock('@/api/conversations', () => ({
+  getOrCreateAdjustThread: vi.fn(),
+  getConversationMessages: vi.fn(),
+}));
+vi.mock('@/hooks/use-sse', () => ({ streamAgentChat: vi.fn(async () => {}) }));
 
-import { makeRoutedTaskFx } from '../sse-task-fx';
+import { makeRoutedTaskFx, makeScopeTaskFx } from '../sse-task-fx';
+import { getOrCreateAdjustThread, getConversationMessages } from '@/api/conversations';
+import { adjustScopes, adjustScopeActions, type AdjustScopeTarget } from '@/stores/adjust-scopes';
 import { convState, setConvState } from '@/stores/conversations';
 import type { ServerStateSnapshot } from '@/types';
 
@@ -60,5 +67,39 @@ describe('syncSnapshot 不回写对话标签栏', () => {
     fx.syncSnapshot({ conversations: [] } as unknown as ServerStateSnapshot);
     expect(convState.list).toHaveLength(2);
     expect(convState.activeId).toBe('c2');
+  });
+});
+
+describe('scope fx：replay 终态装载走线程 API（任务 #19）', () => {
+  const target: AdjustScopeTarget = {
+    kind: 'adjust', cat: 'keyElement', group_id: 'g1', draft_id: 'd1', label: '目标卡',
+  };
+
+  beforeEach(() => {
+    adjustScopeActions.reset();
+    vi.mocked(getOrCreateAdjustThread).mockReset();
+    vi.mocked(getConversationMessages).mockReset();
+  });
+
+  it('loadMessages 忽略快照载荷，按线程 id 走消息单一来源 API 装载', async () => {
+    vi.mocked(getOrCreateAdjustThread).mockResolvedValue({ conversation_id: 'convT', messages: [] });
+    await adjustScopeActions.openThread(target);
+    vi.mocked(getConversationMessages).mockResolvedValue({
+      conversation_id: 'convT', messages: [{ sender: 'agent', text: '线程历史' }],
+    });
+    const fx = makeScopeTaskFx('d1', 'tX', { setStreaming: vi.fn(), setError: vi.fn() });
+    // replay 终态快照的 chatMessages 属主对话：不得直接进线程视图（传参被忽略）
+    fx.chat.loadMessages([{ sender: 'agent', text: '主对话消息' }]);
+    await vi.waitFor(() => {
+      expect(adjustScopes['d1'].messages.some((m) => m.text === '线程历史')).toBe(true);
+    });
+    expect(getConversationMessages).toHaveBeenCalledWith('convT');
+    expect(adjustScopes['d1'].messages.some((m) => m.text === '主对话消息')).toBe(false);
+  });
+
+  it('线程 convId 未登记时 loadMessages 静默不发请求（不阻断终态收尾）', () => {
+    const fx = makeScopeTaskFx('d-ghost', 'tX', { setStreaming: vi.fn(), setError: vi.fn() });
+    fx.chat.loadMessages([]);
+    expect(getConversationMessages).not.toHaveBeenCalled();
   });
 });
