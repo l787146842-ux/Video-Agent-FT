@@ -60,7 +60,7 @@ def test_row_enforcement_alive(row):
             script = ROOT / "scripts" / ref
             assert script.exists(), f"{row.row_id}: 门禁脚本缺失 {ref}"
             assert ref in ACCEPTANCE_SRC, (
-                f"{row.row_id}: 门禁 {ref} 未注册进 acceptance.py（13.7 同构条款）"
+                f"{row.row_id}: 门禁 {ref} 未注册进 acceptance.py（耦合纪律同构条款）"
             )
         elif kind == "symbol":
             _resolve_symbol(ref)
@@ -80,7 +80,7 @@ def test_prose_only_rows_are_minority():
 
 
 def test_registry_covers_constitution_row_count():
-    # 宪法 13.7 原表全量登记；行数变化必须同批更新本断言
+    # 耦合表原表全量登记；行数变化必须同批更新本断言
     # （0818 架构板正批：R19 流程门禁行随门禁链退役删除；
     # 整改计划批 7：R27 planner 拆分委托行登记；
     # 2026-08-20 v6：Workflow Runtime 控制流行登记；

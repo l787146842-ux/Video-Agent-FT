@@ -8,7 +8,7 @@
 - AST 扫描 Import / ImportFrom 节点，字符串拼接等动态导入不在本门禁
   拦截面（动态导入本身受 check_legacy_orchestration 等其他治理约束）。
 
-退役条件（GOVERNANCE §13.14(c)）：core/tools 对 web 的反向依赖连续两季
+退役条件：core/tools 对 web 的反向依赖连续两季
 零检出、端口与公开 API 模式内化为开发惯例时裁决下账。
 """
 import ast

@@ -18,8 +18,7 @@
    零触发降档」成为可计算判定。脏行跳过，只读不写。
 3. CI 棘轮门禁（scripts/check_*.py）：不在遥测旁路覆盖范围，仍输出清单表
    （触发情况由 CI 运行记录佐证，不再要求人工补录进本表）。
-4. 超期未裁决点名（治理瘦身第二批，任务#4）：把「到期必裁决」（GOVERNANCE
-   §13.14(b)）从季度人工仪式变为机器点名——输出（a）遥测观测窗与零触发
+4. 超期未裁决点名（治理瘦身第二批，任务#4）：把「到期必裁决」（AGENTS §七）从季度人工仪式变为机器点名——输出（a）遥测观测窗与零触发
    降级候选（安全类豁免）、（b）已登记待裁决条目超期复核、（c）脚手架
    条目季度审计义务清单。不写任何台账（裁决留痕仍在既有台账），只读幂等；
    识别口径缺历史数据时如实标注「数据不足、暂不列入」，不虚构超期。
@@ -47,7 +46,7 @@ from src.video_agent.core.prompt_gates import (  # noqa: E402
 )
 from src.video_agent.core.scaffold_registry import scaffold_entries  # noqa: E402
 
-# ---------- 超期识别口径（AGENTS §七闸机折旧 + GOVERNANCE §13.14(b)） ----------
+# ---------- 超期识别口径（AGENTS §七闸机折旧与到期必裁决） ----------
 
 # 安全类闸机折旧豁免登记（Policy-as-Data）：安全类闸机不参与折旧，
 # 零触发是常态而非折旧信号。运行时闸 = 平台硬边界族（生成确认/
@@ -341,7 +340,7 @@ def main() -> int:
         exempt = "安全类（折旧豁免）" if name in SAFE_CI_GATES else ""
         print(f"| scripts/{name} | {exempt} |")
     print()
-    print("## 四、超期未裁决点名（AGENTS §七 + GOVERNANCE §13.14(b)，"
+    print("## 四、超期未裁决点名（AGENTS §七，"
           "机器点名不代替裁决；裁决留痕仍在既有台账）")
     print()
     # (a) 遥测观测窗 + 零触发降级候选（安全类豁免）

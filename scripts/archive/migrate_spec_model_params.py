@@ -8,7 +8,7 @@
    把「图像生成/视频生成/图片分辨率/视频分辨率/分镜最大时长」硬参数行
    替换为「见全局设置」引用行（幂等；--apply 落盘，默认 dry-run）；
 2. 扫描 data/skills/*.md 的写死模型参数（厂商/模型/分辨率/时长模式），
-   仅报告不修改（13.12 G1：不改 Skill 文件业务内容；运行时已忽略）。
+   仅报告不修改（不改 Skill 文件业务内容；运行时已忽略）。
 
 用法：
     python scripts/migrate_spec_model_params.py          # dry-run 报告

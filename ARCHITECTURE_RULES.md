@@ -1,19 +1,12 @@
-# 架构宪法 — AI 协作开发强制约束（v8 · 2026-08-29）
+# 架构宪法 — AI 协作开发强制约束（v9 · 2026-09-01）
 
 > **本文档是所有 AI 工具（Cursor / Codex / Claude / Gemini / Qoder / CodeBuddy 等）在本项目中工作的最高优先级约束。**
 > 任何代码生成、修改、重构都必须遵守以下规则。违反即视为错误实现。
-> 本版为宪法 v8：Skill 定位按 2026-08-29 用户显式裁决（ADR-0007，原卷见 git tag adr-archive-20260901）重定位为
-> **指令性制作手册**（对齐业界：Flova / Claude Code / Agent Skills 开放标准，
-> G1 只读属性废除，总原则 = 系统与 Skill 冲突修系统不改 Skill 迁就）；
+> 现行定版要点：Skill = **指令性制作手册**（G1 只读属性废除，系统与 Skill 冲突修系统不改 Skill 迁就）；
+> 控制流 = 模型永远唯一行动主体 + Workflow Runtime 账本/裁判数据层；指令治理层（原第十三章/GOVERNANCE）
+> 已退役并入，治理条款摘要见 `AGENTS.md`（原卷见 git tag `governance-archive-20260901`，更早版本史见 git 提交史）。
 > 四条红线不变：§2.4 Context≠Consent、platform 闸机 manifest 无权关闭、
 > §2.7 确认闸、动作单轨 FC + guard_pipeline 唯一判定（scripts 键只静态校验）。
-> 上版为宪法 v7：Rule 2 控制流范式按 2026-08-21 用户审定裁决（ADR-0004）主体回归为
-> **模型永远唯一行动主体 + Workflow Runtime 账本/裁判数据层**（ADR-0003 机械直跑退役；
-> 业界共识：确定性 = 把关模型发起的动作，不是系统代替模型发起动作）；
-> 指令治理层方法论（原第十三章）整体迁出为
-> [docs/GOVERNANCE.md](docs/GOVERNANCE.md)（与总纲同权，编号 13.x 不变）。
-> 历史版本说明：旧版宪法曾随 2026-08-13 恢复事件归档，归档快照后随恢复使命完成
-> 而清退（事故台账 L-0821）；具体历史版本以 git 提交史与备份分支为准。
 >
 > **治理总纲：按业界最高标准执行，禁止走捷径。** 具体含义：
 > 1. **策略即数据（Policy-as-Data）**：所有闸机/安全规则以注册表数据表达，带稳定 `rule_id`、层级归属、外置文案；禁止散落硬编码。
@@ -22,7 +15,7 @@
 > 4. **deny-overrides 分层合并**：平台硬边界永远优先，Skill 配置只能加强或持平，不能削弱。
 > 5. **小批交付、即时提交**：每批独立 commit、独立验收；禁止攒大批未提交改动（本仓库已因此丢过整批工作，见 §5）。
 > 6. **验收 = 一键脚本 + 用户目测**：`python scripts/acceptance.py` 全 PASS（测试套件 + 门禁清单以脚本内 `SUITES`/`GATES` 表为准，不写死数量，**只认进程退出码**——Windows 终端乱码曾把契约门禁失败伪装成通过；`--with-eval` 补评测管线）；UI 变更必须构建后由**用户目测反馈**确认（不派浏览器子代理截图代目测，可做轻量定点代码级验证），缺一项不算完成。
-> 7. **指令治理层（docs/GOVERNANCE.md，原第十三章）与本总纲同权**：任何规则只有一个家（P1）、约束下沉代码层（P2）、状态即数据（P3）；修改前必须按 GOVERNANCE.md §13.5 决策树定位归属层，禁止在事故现场就近补条款。
+> 7. **指令治理层（原第十三章/GOVERNANCE，已退役并入）**：任何规则只有一个家（P1）、约束下沉代码层（P2）、状态即数据（P3）；修改前必须按 `AGENTS.md` 治理条款摘要的决策树定位归属层，禁止在事故现场就近补条款。
 
 ---
 
@@ -39,7 +32,7 @@
 - **确认单轨化**：暂停确认唯一经 `workflow_pause` FC 工具产生，经 llm_call 第 5 元组结构化上抛；`agent_loop` 纯文本轮仅收尾（轮末策略照常承重）
 - **无执行器子代理**：管线阶段由通用主路径直走平台工具（`prompt_builder` 只注入 L1 目录与轻量状态提示，Skill 正文经 read_skill 按需读取，任务#12）；防虚报收敛到 `fc_tool_runner` 关键步骤探针；退役符号登记 `check_legacy_orchestration` 防复活，禁止恢复
 - **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
-- **控制流主体回归（ADR-0004）**：模型永远唯一行动主体——每轮做什么由模型接到用户消息后发起工具调用（带附件首条消息也由模型接手，系统不静默自动分析）；`core/workflow_runtime.py` 降级为**账本 + 裁判数据层**（Skill 激活编译 `WorkflowDefinition`，canonical slug + revision + content hash，源 = sidecar 声明，`validate_sidecar` 注册期门禁；持久化 `WorkflowRun`，**仅 runtime reducer 可改**，StateManager 仍唯一写入点 Rule3；完成度只认客观探针），不发起任何行动；ADR-0003 机械直跑/审批直跑退役（驱动符号登记 `check_legacy_orchestration` 防复活）。顺序保障 = 刹车不是方向盘：阶段表/依赖图/`platform.stage_precondition` 闸内嵌工具执行路径首位，模型越阶即拒收回喂。「不暂停连跑」= 自主性档位（用户指令/开关授予模型豁免非平台硬暂停点；平台硬闸任何档位必停，Context ≠ Consent，授权留痕）。**原子轮提交**：一轮只提交一个 `TurnResult`（turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项（暂停卡唯一发行主体 = 模型 `workflow_pause`，单一活跃暂停槽位互斥，重复暂停拒收留痕；层 9 兜底引导卡（round_end_policies 的状态派生建议）≠ 暂停卡；暂停卡唯一发行主体仍为模型 workflow_pause，引导卡仅承载客观状态选项）；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
+- **控制流主体回归（ADR-0004）**：模型永远唯一行动主体——每轮做什么由模型接到用户消息后发起工具调用（带附件首条消息也由模型接手，系统不静默自动分析）；`core/workflow_runtime.py` 降级为**账本 + 裁判数据层**（Skill 激活编译 `WorkflowDefinition`，canonical slug + revision + content hash，源 = sidecar 声明，`validate_sidecar` 注册期门禁；持久化 `WorkflowRun`，**仅 runtime reducer 可改**，StateManager 仍唯一写入点 Rule3；完成度只认客观探针），不发起任何行动；ADR-0003 机械直跑/审批直跑退役（驱动符号登记 `check_legacy_orchestration` 防复活）。「不暂停连跑」= 自主性档位（用户指令/开关授予模型豁免非平台硬暂停点；平台硬闸任何档位必停，Context ≠ Consent，授权留痕）。**原子轮提交**：一轮只提交一个 `TurnResult`（turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项（暂停卡唯一发行主体 = 模型 `workflow_pause`，单一活跃暂停槽位互斥，重复暂停拒收留痕；层 9 兜底引导卡（round_end_policies 的状态派生建议）≠ 暂停卡；暂停卡唯一发行主体仍为模型 workflow_pause，引导卡仅承载客观状态选项）；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
 - **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
 - **层级例外（已清偿）**：动作执行器下沉 `core/action_executor.py`，对 web 生成管线/供应商配置的依赖倒置为 `core/ports.py` 端口、web 装配点注入（`web/port_wiring.py`）；core→web 任何 import（含延迟/TYPE_CHECKING）一律禁止
 
@@ -84,7 +77,6 @@
 | 层 | 内容 | 可配置性 |
 |---|---|---|
 | 平台层 `platform.*` | 生成确认闸、阶段硬边界（写文档/建结构强制暂停）、字数地板（镜头/元素最短字数）、提示词书写闸（字数/语言/字段）、工具 risk 分级 | **硬编码，manifest 无权关闭**；仅可经用户一次性申诉逐条放行 |
-| ~~Skill 层 `skill.*` / 会话层 `session.override`~~ | 已随 2026-08-31 C1a/C1b/C1c 大退役整体删除：`GATE_RULES` 现仅 5 条全 platform | 不再存在；历史口径见 git 历史 |
 
 ### 2.2 manifest 只能加强或持平（强制不变量；Skill = 指令性制作手册，平台硬边界不可被覆盖，ADR-0007）
 - 外部 Skill 文档来自成熟平台，其配置**不可信**；系统必须坚守自身安全底线
@@ -96,6 +88,12 @@
 - `core/gate_registry.py` 维护 `GATE_RULES` 注册表（唯一家；`prompt_gates.py` 仅为承重壳 re-export）：稳定 `rule_id` + 层归属 + 中文描述
 - 判定返回结构化 `GateVerdict(rule_id, layer, ok, message)` 列表；文案外置 `prompts/gates/messages.md`，杜绝自由文本
 - 回喂模型与展示用户用**同一 verdict 源**（防两套说辞）
+- **闸机与验收门禁只减不增（冻结基线）**；两数字由 ref_integrity 闸机械钉死，与 `GATE_RULES`/`GATES` 实际长度不一致即红，删/增闸机同批改本表是登记义务：
+
+| 口径 | 冻结基线 | 唯一事实源 |
+|---|---|---|
+| 运行时闸机规则 | 5 条（全 platform） | `core/gate_registry.py::GATE_RULES` |
+| 验收门禁脚本 | 13 项 | `scripts/acceptance.py` |
 
 ### 2.4 拦截可见 + 一次性申诉放行
 - 拦截必须用户侧可见（警示 chips 带规则描述 + 来源标注「平台」/「Skill『xxx』」）
@@ -107,7 +105,6 @@
 - 闸机触发/放行、工具调用、截断/回滚全部入 trace（执行器输出校验/黑匣子档案已随任务#36 B5 执行器退役删除）
 
 ### 2.6 校准闭环（评测驱动）
-- ~~`tests/fixtures/gate_corpus/` 黄金语料~~（C1a 裁决 2026-08-31 退役删除；闸机校准改由平台固定地板回归测试承载）
 - **闸机校准经验**：连续相同原因拦截必须升级改写指引（合并相同 verdict、附「第 N 次被拦」差异化提示），防模型陷入「拦截-重写-再拦截」空转；拦截事件入生成日志面板可见
 
 ### 2.7 工具风险分级（Tool Risk Tiers）
@@ -203,7 +200,7 @@
 - **先读懂再动手**，不得"重写一遍"；修改范围最小化；不为"觉得更好"重构无关代码
 - 删除前全局搜索确认无引用；DEPRECATED 保留别名导入不立即删；删除后跑测试
 - 禁止提交 `print()` / `# TODO: remove` / `# HACK`；调试用 `logger.debug()`；临时 mock 不得覆盖正式实现
-- **事故注释约定**：新注释只写结论（这里为什么这么做），不写事故过程；未清偿项登记于仓内清单（`docs/未清偿债务清单.md`，见 GOVERNANCE §13.8/§13.10），代码里引用事故编号即可
+- **事故注释约定**：新注释只写结论（这里为什么这么做），不写事故过程；未清偿项登记于仓内清单（`docs/未清偿债务清单.md`），代码里引用事故编号即可
 
 ---
 
@@ -238,7 +235,7 @@ src/video_agent/
 │   ├── gate_registry.py    ← 闸机规则注册表唯一家（GATE_RULES / normalize_rule_id，§2.3）
 │   ├── guard_pipeline.py   ← 闸机管线（2.0，动作判定唯一入口）
 │   ├── prompt_builder.py   ← 上下文组装；token_budget.py ← 窗口/截断
-│   ├── coupling_registry.py ← 13.7 耦合表机器可读化（test_coupling_registry 钉死）
+│   ├── coupling_registry.py ← 耦合表机器可读化（test_coupling_registry 钉死）
 │   ├── action_executor.py  ← 状态视图载体（Q2 裁决 2026-09-01：文本轨动作分派与
 │                        三域模块退役删除，动作通道唯一 = FC 工具；防复活见 check_legacy_orchestration）
 │   └── tracer.py           ← 审计链路
@@ -266,11 +263,11 @@ tests/fixtures/             ← 技能夹具等快照（gate_corpus/skill_pause_
 
 - [ ] 没有修改画布项目的任何文件（Rule 7）
 - [ ] 没有绕过 Planner / StateManager / Adapter / Tool 体系（Rule 1-5）
-- [ ] 没有硬编码 prompt >3 行；文案治理迁移同批更新锁旧文案的断言测试（Rule 6；快照测试已随 C1a 裁决退役）
+- [ ] 没有硬编码 prompt >3 行；文案治理迁移同批更新锁旧文案的断言测试（Rule 6）
 - [ ] 没有 manifest 削弱平台硬边界；触碰项有负面用例（§2.2）
 - [ ] 工具已声明 risk 分级；high 级工具带平台闸机与确认（§2.7）
-- [ ] Skill 改动符合单一形态 `<slug>/SKILL.md` 与三级加载；官方 Skill 干净注入无包壳，仅外部导入带来源标记（§2.8；关键步骤防虚报探针已随 C1a 裁决退役）
-- [ ] 闸机改动带平台固定地板回归；连续拦截有升级指引（§2.6；黄金语料校准已随 C1a 裁决退役）
+- [ ] Skill 改动符合单一形态 `<slug>/SKILL.md` 与三级加载；官方 Skill 干净注入无包壳，仅外部导入带来源标记（§2.8）
+- [ ] 闸机改动带平台固定地板回归；连续拦截有升级指引（§2.6）
 - [ ] UI 改动符合 §3 与 `docs/前端体验规范.md`，且构建后经用户目测反馈确认
 - [ ] 没有 box-shadow/发光出现在确认卡片；品牌仍为「飞天」
 - [ ] 没有裸 restore/checkout -- .；本批已 commit；未跟踪文件已核对（§5）
@@ -279,8 +276,8 @@ tests/fixtures/             ← 技能夹具等快照（gate_corpus/skill_pause_
 - [ ] 耦合行变更已同批更新 coupling_registry.py（十、3 条）
 - [ ] runtime 无自主行动（不机械执行执行器、不机械发卡）；暂停卡唯一发行主体 = 模型 workflow_pause，单一活跃暂停槽位互斥（Rule2 主体回归）
 - [ ] 一轮一 TurnResult 提交（turn_id 归组），无空文本 docCard 消息、无合成 actionLog（Rule2）
-- [ ] 控制流范式表述唯一归宪法 Rule2，GOVERNANCE 仅指针（P1）
-- [ ] 修改前已按第十三章 13.5 决策树定位归属层；没有在事故现场就近补条款（P1/P2）
+- [ ] 控制流范式表述唯一归宪法 Rule2（P1）
+- [ ] 修改前已按 `AGENTS.md` 治理条款摘要的决策树定位归属层；没有在事故现场就近补条款（P1/P2）
 - [ ] 没有在 Skill 文件里改系统层缺口；没有用 prose 教模型配合既有机制（G1/G3）
 
 > 以下事项已由 acceptance 门禁机械强制，不再人工勾选：文件行数红线/棘轮（check_file_lines）、
@@ -290,11 +287,10 @@ tests/fixtures/             ← 技能夹具等快照（gate_corpus/skill_pause_
 > 四件套 pytest/vitest/tsc/eslint。
 
 ---
-## 十三、指令治理层（迁出指针）
+## 十三、指令治理层（治理条款收纳章）
 
-> 第十三章（13.1-13.12：三大宪法原则/指令层清单/归属表/症状归位/决策树/
-> 体量预算/耦合点/事故台账指针/模型分层/业界基准 C1-C6/AI 助手方案纪律 G1-G4）
-> 整体迁出为 [docs/GOVERNANCE.md](docs/GOVERNANCE.md)（整改计划批 11，宪法 v5）。
-> **该文档与宪法总纲同权**；全文代码指针中的 13.x 编号对应该文档章节。
-> 核心不变量速览：任何规则只有一个家（P1）、约束下沉代码层（P2）、
-> 状态即数据（P3）；修复先走 13.5 决策树；方案先过 G1-G4 四关。
+> 原第十三章（13.1-13.14）曾迁出为 docs/GOVERNANCE.md，已随批 7 治理瘦身退役删除，
+> 原卷见 git tag `governance-archive-20260901`。
+> 机器必需的冻结基线表已收入本宪法 §2.3（ref_integrity 闸机械钉死）；
+> 其余活条款的最小必需集（P1-P3/决策树/G1-G4/体量预算/退役条件声明等）
+> 精简并入 `AGENTS.md` §八「治理条款摘要」；纯考古/对标内容随归档弃置。

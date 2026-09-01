@@ -101,7 +101,7 @@ workspace/                运行时状态与资产（gitignore）
 | 文档 | 内容 |
 |---|---|
 | [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) | 架构铁律（AI 协作强制约束） |
-| [docs/GOVERNANCE.md](docs/GOVERNANCE.md) | 指令治理层方法论（原宪法第十三章，与总纲同权） |
+| 指令治理层（GOVERNANCE） | 已归档删除，见 git tag `governance-archive-20260901`；活条款摘要见 [AGENTS.md](AGENTS.md) §八 |
 | [docs/配置说明.md](docs/配置说明.md) | 各配置文件的权威关系与加载优先级 |
 | [docs/前端体验规范.md](docs/前端体验规范.md) | 品牌/视觉/交互细节强制规范 |
 | [docs/对画布的需求清单.md](docs/对画布的需求清单.md) | 需要画布侧实现的能力与集成边界声明 |

@@ -221,6 +221,8 @@ def test_canary_layer_imports_clean_passes(tmp_path, monkeypatch):
 
 # ---------- 11) ref_integrity（doc_pointers + arch_anchors 合并） ----------
 def _doc_pointers_scaffold(tmp_path, monkeypatch):
+    from src.video_agent.core.gate_registry import GATE_RULES
+    from scripts.acceptance import GATES
     import scripts.check_doc_pointers as gate
     pkg = tmp_path / "src" / "video_agent"
     pkg.mkdir(parents=True)
@@ -228,8 +230,13 @@ def _doc_pointers_scaffold(tmp_path, monkeypatch):
     # 防真实 ANCHORS 在 tmp ROOT 下恒失败（防静默掉闸的双向可失败性不变）。
     (pkg / "anchor.py").write_text("AnchorSym = 1\n", encoding="utf-8")
     (tmp_path / "docs" / "adr").mkdir(parents=True)
+    # tmp 宪法须含 §2.3 冻结基线表两行（基线防腐改扫宪法后为必检项；
+    # 行数字取实测长度保持干净侧不反噬，虚构漂移由专项 canary 覆写）
     (tmp_path / "ARCHITECTURE_RULES.md").write_text(
-        "## 文件地图\n```\n```\n", encoding="utf-8")
+        "## 文件地图\n```\n```\n"
+        f"| 运行时闸机规则 | {len(GATE_RULES)} 条（全 platform） | x |\n"
+        f"| 验收门禁脚本 | {len(GATES)} 项 | x |\n",
+        encoding="utf-8")
     monkeypatch.setattr(gate, "ROOT", tmp_path)
     monkeypatch.setattr(gate, "ADR_DIR", tmp_path / "docs" / "adr")
     monkeypatch.setattr(gate, "ARCH_RULES", tmp_path / "ARCHITECTURE_RULES.md")
@@ -280,17 +287,19 @@ def test_canary_gov_script_pointer_missing_fails(tmp_path, monkeypatch):
     """Q27 治理防腐：治理文档提及的闸机脚本已删 → 漂移命中。"""
     gate, pkg = _doc_pointers_scaffold(tmp_path, monkeypatch)
     (pkg / "a.py").write_text("# plain\nx = 1\n", encoding="utf-8")
-    (tmp_path / "docs" / "GOVERNANCE.md").write_text(
+    (tmp_path / "AGENTS.md").write_text(
         "| 1 | 闸机 | 实现参照 scripts/check_ghost_gate.py |\n",
         encoding="utf-8")
     assert gate.main() == 1
 
 
 def test_canary_gate_baseline_drift_fails(tmp_path, monkeypatch):
-    """Q27 基线数字防腐：§13.14(f) 数字与注册表实际长度不符 → 漂移命中。"""
+    """Q27 基线数字防腐：宪法 §2.3 数字与注册表实际长度不符 → 漂移命中。"""
     gate, pkg = _doc_pointers_scaffold(tmp_path, monkeypatch)
     (pkg / "a.py").write_text("# plain\nx = 1\n", encoding="utf-8")
-    (tmp_path / "docs" / "GOVERNANCE.md").write_text(
+    arch = tmp_path / "ARCHITECTURE_RULES.md"
+    arch.write_text(
+        "## 文件地图\n```\n```\n"
         "| 运行时闸机规则 | 99 条（虚构漂移） | x |\n"
         "| 验收门禁脚本 | 99 项 | x |\n",
         encoding="utf-8")
@@ -298,15 +307,9 @@ def test_canary_gate_baseline_drift_fails(tmp_path, monkeypatch):
 
 
 def test_canary_gate_baseline_consistent_passes(tmp_path, monkeypatch):
-    """Q27 干净侧：基线数字与实测一致不反噬。"""
-    from src.video_agent.core.gate_registry import GATE_RULES
-    from scripts.acceptance import GATES
+    """Q27 干净侧：基线数字与实测一致不反噬（基线行已在 scaffold 内）。"""
     gate, pkg = _doc_pointers_scaffold(tmp_path, monkeypatch)
     (pkg / "a.py").write_text("# plain\nx = 1\n", encoding="utf-8")
-    (tmp_path / "docs" / "GOVERNANCE.md").write_text(
-        f"| 运行时闸机规则 | {len(GATE_RULES)} 条（全 platform） | x |\n"
-        f"| 验收门禁脚本 | {len(GATES)} 项 | x |\n",
-        encoding="utf-8")
     assert gate.main() == 0
 
 

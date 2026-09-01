@@ -7,7 +7,7 @@
 - 仲裁可观测：命中候选与胜出者经 tracer.record_card_decision 入 trace，
   /api/agent/traces 可见（对话区暂不渲染，决策点）。
 
-归属层：层 9 系统兜底卡唯一代码落点（宪法 13.3）。FC 轨的 flow_gate_pause
+归属层：层 9 系统兜底卡唯一代码落点（AGENTS §八治理条款摘要）。FC 轨的 flow_gate_pause
 仍由 agent_loop 在工具执行后早返处理，共用本表 policy_id。
 agent_loop 保留 re-export 壳（测试 patch/导入路径不变）。
 """

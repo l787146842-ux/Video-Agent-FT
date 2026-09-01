@@ -50,7 +50,7 @@ def test_s7_skill_discipline_no_output_form_clause():
     # 原第 8 条产出形态已迁走（不得残留实质条款；留迁移指引注释可以）
     assert "摄像机→主体→空间→音频" not in sd
     assert "中文叙事式多节拍" not in sd
-    # 标题客观化：不再自称「最高优先级」（与 13.3 裁决链冲突的措辞）
+    # 标题客观化：不再自称「最高优先级」（与冲突裁决链冲突的措辞）
     assert "最高优先级" not in sd
     # 流程纪律其余条款保留（快照锁语义：暂停/分批/自检/规格收集/元素图闸；
     # audit-0819d：暂停正名钉 workflow_pause，request_confirmation 别名已删）

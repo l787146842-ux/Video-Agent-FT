@@ -5,7 +5,7 @@
 Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复；
 共识：确定性 = 把关模型发起的动作，不是系统代替模型发起动作）：
 模型永远是唯一行动主体，运行时做持久状态、产物账本、投影与裁判数据，
-不发起任何行动；越阶由 stage_precondition 闸在工具执行路径首位否决。
+不发起任何行动（stage_precondition 越阶硬闸已随 C1b 裁决 2026-08-31 退役）。
 
 职责边界：
 - Skill 激活编译 ``WorkflowDefinition``（canonical slug + revision + content hash，

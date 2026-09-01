@@ -239,7 +239,7 @@ class Planner:
         return self._skill_docs
 
     # 阶段完成引导兜底（agent_loop 层 9）：执行器跑完但模型未暂停时，
-    # 系统客观补下一步引导卡；本文件不承载流程 prose（归属见第十三章 13.3）
+    # 系统客观补下一步引导卡；本文件不承载流程 prose（归属见 AGENTS §八治理条款摘要）
 
     def _compute_excluded_tools(self, context: PlannerContext) -> frozenset:
         """按上下文计算本轮不下发的工具集（token 治理：schema 全量常驻是每轮固定开销）。

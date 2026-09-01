@@ -135,7 +135,7 @@ def test_real_skills_manifest_snapshot(monkeypatch):
         registry.reset_registry()
 
 
-# 814H9 影响面快照（13.7 登记）：客观检测只命中流程含「上传/分析剧本」的 Skill
+# 814H9 影响面快照（耦合行登记）：客观检测只命中流程含「上传/分析剧本」的 Skill
 # （豪华技能为测试桩，R2 已迁 tests/fixtures/skills，不再占生产快照名额）
 _SCRIPT_REQUIRED_ON = (
     "3D国漫古装精品短剧", "AI-短剧一站式生成", "剧本生视频需上传剧本",

@@ -9,8 +9,8 @@
 - classification=invariant：工程/物理约束，长期承重，季度审计但不入拆除仪式。
 
 棘轮（scripts/check_scaffold_registry.py + test_scaffold_registry.py 钉死）：
-scaffold 计数只降不升，基线 = SCAFFOLD_COUNT_BASELINE；新增脚手架必须经宪法
-13.5 决策树（含 eval 证明缺口存在）并上调基线的书面裁决。
+scaffold 计数只降不升，基线 = SCAFFOLD_COUNT_BASELINE；新增脚手架必须经 AGENTS
+§八治理条款摘要决策树（含 eval 证明缺口存在）并上调基线的书面裁决。
 """
 from dataclasses import dataclass
 

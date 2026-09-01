@@ -24,8 +24,8 @@ from typing import List, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# 组件清单：(名称, 命令行) —— 新增/修改门禁脚本必须同步本表（宪法 §13.7 登记）；
-# 每条存量门禁附退役条件一行（§13.14(c) 登记义务，格式对齐 cov_ratchet）
+# 组件清单：(名称, 命令行) —— 新增/修改门禁脚本必须同步本表；
+# 每条存量门禁附退役条件一行（退役条件声明义务，格式对齐 cov_ratchet）
 GATES: List[Tuple[str, List[str]]] = [
     # 退役条件：前后端类型同源（不再依赖生成产物桥接）时方可裁决下账。
     ("contract", [sys.executable, "scripts/gen_api_types.py", "--check"]),
@@ -35,7 +35,7 @@ GATES: List[Tuple[str, List[str]]] = [
     ("file_lines_frontend", [sys.executable, "scripts/check_file_lines.py", "--frontend"]),
         # 任务 #4：语义色收口闸——styles/ 硬编码色值棘轮只减不增（白名单见脚本内）；
         # 退役条件：白名单清偿归零后降级为零白名单硬门禁，样式体系迁离 tokens.css
-        # 时方可裁决整体退役（详见脚本头部注释，§13.14(c)）。
+        # 时方可裁决整体退役（详见脚本头部注释）。
         ("semantic_colors", [sys.executable, "scripts/check_semantic_colors.py"]),
     # 退役条件：合法存量清单自然缩减至空并删除基线文件后裁决下账（宪法 §六 禁令内化；
     # 存量均为合法 lazy import 已裁决长期保留，本闸为纯防新增断言，基线只减不增）。
@@ -65,7 +65,7 @@ GATES: List[Tuple[str, List[str]]] = [
     # 用户裁决 2026-08-31 授权同批下调登记；后续批只许升）；
     # 87.95 → 87.89（第 5-3 批末实测即 87.89，前批靠陈旧产物绿灯带过；
     # 用户裁决 2026-09-01 批 6-1 同批回填登记；后续批只许升）。
-    # 退役条件：core 覆盖率 >= 90% 且连续两季无回退争议时裁决下账（§13.14(c)）。
+    # 退役条件：core 覆盖率 >= 90% 且连续两季无回退争议时裁决下账。
     ("cov_ratchet", [sys.executable, "scripts/check_cov_ratchet.py"]),
     # 任务 #13 F-6：前端整体覆盖率棘轮（只升不降，基线 scripts/fe_cov_baseline.txt
     # 首钉 63.00，读 vitest json-summary）；本地无 coverage-summary.json 时 SKIP，
@@ -77,7 +77,7 @@ GATES: List[Tuple[str, List[str]]] = [
     # 100.00 → 70.60（半自动上调被窄口径产物误抬至 100，回填全量实测值；
     # 用户裁决 2026-09-01 批 6-1 同批回填登记）；70.60 → 70.59（批 6-2 新增并行
     # 代码稀释 0.01，同批登记；后续批只许升）。
-    # 退役条件：前端整体行覆盖率 >= 90% 且连续两季无回退争议时裁决下账（§13.14(c)）。
+    # 退役条件：前端整体行覆盖率 >= 90% 且连续两季无回退争议时裁决下账。
     ("fe_cov_ratchet", [sys.executable, "scripts/check_fe_cov_ratchet.py"]),
     # 任务 #9：CSS 体积棘轮（只减不增，度量 static/dist 全部 stylesheet 产物，
     # 基线 scripts/css_size_baseline.txt 首钉 153007 字节 = 149.42 kB，

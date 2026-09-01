@@ -108,9 +108,8 @@ def test_f2_prompt_dual_source_merge():
 
     header = load_prompt("shared/iron_rules_header.md")
     assert _NEW_PRIORITY in header, "优先级链措辞与唯一源（iron_rules_header）不一致"
-    governance = (ROOT / "docs" / "GOVERNANCE.md").read_text(encoding="utf-8")
-    assert "用户最新指令 > 铁律文档 + 制片规格 > Skill/系统默认" in governance, \
-        "GOVERNANCE 裁决链措辞未对齐唯一源"
+    assert "用户最新指令 > 本文档 + 制片规格 > Skill/系统默认" in header, \
+        "裁决链措辞未对齐唯一源"
 
 
 def test_b3_agent_loop_templates_wired():

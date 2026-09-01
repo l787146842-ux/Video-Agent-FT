@@ -1,6 +1,6 @@
-"""耦合注册表（宪法 13.7 耦合表机器可读化）。
+"""耦合注册表（耦合表机器可读化）。
 
-13.7「改 A 必须同步检查 B」的耦合行全部转为数据（policy-as-data 同源），
+「改 A 必须同步检查 B」的耦合行全部转为数据（policy-as-data 同源），
 每行声明强制方式：
 
 - file   ：关键文件必须存在（路径相对仓库根）
@@ -11,7 +11,7 @@
 - prose  ：确不可机械化，必须给理由（降级声明，非遗漏）
 
 遍历测试：tests/unit/test_coupling_registry.py（注册表每行强制项真实存在；
-prose 行必须有理由）。宪法 13.7 正文由该注册表 + 遍历测试承接。
+prose 行必须有理由）。耦合纪律正文由该注册表 + 遍历测试承接。
 """
 from dataclasses import dataclass, field
 from typing import List, Tuple

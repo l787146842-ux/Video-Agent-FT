@@ -8,7 +8,7 @@
 
 用法：python scripts/check_scaffold_registry.py（退出码 0 = PASS）。
 
-退役条件（宪法 §13.14(c)）：脚手架类全部退役、注册计数归零时裁决下账，
+退役条件：脚手架类全部退役、注册计数归零时裁决下账，
 本门禁连同注册表一并清退。
 """
 import importlib

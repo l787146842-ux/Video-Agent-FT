@@ -1,7 +1,7 @@
 """渐进式披露条款归位层 10（整改计划批 4；Rule 6 迁移快照锁语义）。
 
 四条 read_* 用法条款从 prompts/shared/important_rules.md 归位到对应工具的
-description（宪法 13.3：工具用法归层 10）；平台协议只留一句总纲。
+description（工具用法归 Tool description 层）；平台协议只留一句总纲。
 本测试锁迁移后语义：总纲在场、逐工具分身不在场、工具描述承载完整用法。
 """
 from pathlib import Path

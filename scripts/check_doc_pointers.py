@@ -16,14 +16,14 @@
 5. 宪法锚点（原 check_arch_anchors 职责）：ARCHITECTURE_RULES 承重条款的
    路径 + 不变量符号存在性（锚点登记表 ANCHORS 在脚本内，人工审定的不变量
    登记表，非全文指针扫描）；锚点文件不可解析按漂移处理（不静默放行）。
-   增删宪法承重条款时必须同批更新 ANCHORS（门禁冻结见 GOVERNANCE §13.14(f)）。
+   增删宪法承重条款时必须同批更新 ANCHORS（闸机冻结基线见宪法 §2.3）。
 6. 治理文档脚本/夹具指针防腐（Q27 裁决 2026-09-01）：治理文档提及的
    scripts/check_*.py 与 tests/fixtures/* 必须存在（防 C1a 类删除后
    表述源忘同步再发生）；退役留痕表述用删除线段（~~...~~）标注豁免。
-7. 闸机基线数字防腐（Q27）：GOVERNANCE §13.14(f) 冻结基线表的数字必须与
+7. 闸机基线数字防腐（Q27）：宪法 §2.3 闸机冻结基线表的数字必须与
 core/gate_registry.GATE_RULES / scripts/acceptance.GATES 实际长度一致。
 
-退役条件（§13.14(c)，两源条件取并集）：指针/锚点漂移连续两季零检出、
+退役条件（AGENTS §八退役条件声明，两源条件取并集）：指针/锚点漂移连续两季零检出、
 ADR 双边注记、文件地图、docs 活文档模块路径与修宪同批更新锚点内化为开发
 惯例时裁决下账；或宪法条款全面数据化（锚点并入机器可读登记表且 ANCHORS
 清单清空）时裁决锚点部分下账。
@@ -76,8 +76,6 @@ ANCHORS = [
     # §3：前端唯一入口（SolidJS SPA）与 web 装配
     ("S3", "src/web/app.tsx", None),
     ("S3", "src/video_agent/web/app.py", None),
-    # 指令治理层（原第十三章迁出，与总纲同权）
-    ("Ch13", "docs/GOVERNANCE.md", None),
 ]
 
 # 注记行：头部清单行（- 开头）含「取代注记/被取代注记」
@@ -99,7 +97,6 @@ STRIKE = re.compile(r"~~.*?~~", re.S)
 
 # Q27 防腐（裁决 2026-09-01）：治理文档活清单（交接/历史档案类不受检）
 GOV_DOCS = (
-    "docs/GOVERNANCE.md",
     "ARCHITECTURE_RULES.md",
     "AGENTS.md",
     "docs/未清偿债务清单.md",
@@ -107,7 +104,7 @@ GOV_DOCS = (
 # 治理文档提及的闸机脚本/夹具指针（夹具要求带名，裸目录引用不受检）
 GOV_SCRIPT_REF = re.compile(
     r"scripts/check_[A-Za-z0-9_]+\.py|tests/fixtures/[A-Za-z0-9_.][A-Za-z0-9_./]*")
-# §13.14(f) 冻结基线表行（只认表格行，历史注记散文不受检）
+# 宪法 §2.3 冻结基线表行（只认表格行，历史注记散文不受检）
 BASELINE_RUNTIME_ROW = re.compile(r"\|\s*运行时闸机规则\s*\|\s*(\d+)\s*条")
 BASELINE_GATES_ROW = re.compile(r"\|\s*验收门禁脚本\s*\|\s*(\d+)\s*项")
 
@@ -283,20 +280,16 @@ def check_gov_script_pointers() -> list:
 
 
 def check_gate_baseline_numbers() -> list:
-    """Q27：GOVERNANCE §13.14(f) 基线数字必须与注册表/门禁表实际长度一致。
+    """Q27：宪法 §2.3 闸机冻结基线表数字必须与注册表/门禁表实际长度一致。
 
     删/增闸机同批改基线是登记义务；本断言防忘改（数字漂移即红）。
-    导入失败（注册表不可解析）按漂移处理，不静默放行；
-    GOVERNANCE 文件缺失时跳过（真实仓缺失已由 Ch13 锚点断言报漂移）。
+    导入失败（注册表不可解析）按漂移处理，不静默放行。
     """
-    gov = ROOT / "docs" / "GOVERNANCE.md"
-    if not gov.exists():
-        return []
-    text = gov.read_text(encoding="utf-8", errors="ignore")
+    text = ARCH_RULES.read_text(encoding="utf-8", errors="ignore")
     rm = BASELINE_RUNTIME_ROW.search(text)
     am = BASELINE_GATES_ROW.search(text)
     if not rm or not am:
-        return ["GOVERNANCE §13.14(f) baseline table rows not found "
+        return ["ARCHITECTURE_RULES §2.3 baseline table rows not found "
                 "(gate freeze baseline must stay registered)"]
     hits = []
     try:
@@ -309,11 +302,11 @@ def check_gate_baseline_numbers() -> list:
         return [f"gate baseline sources not importable (no silent pass): {e}"]
     if int(rm.group(1)) != actual_rules:
         hits.append(
-            f"GOVERNANCE §13.14(f) runtime-gate baseline {rm.group(1)} != "
+            f"ARCHITECTURE_RULES §2.3 runtime-gate baseline {rm.group(1)} != "
             f"gate_registry.GATE_RULES actual {actual_rules}")
     if int(am.group(1)) != actual_gates:
         hits.append(
-            f"GOVERNANCE §13.14(f) acceptance-gate baseline {am.group(1)} != "
+            f"ARCHITECTURE_RULES §2.3 acceptance-gate baseline {am.group(1)} != "
             f"acceptance.GATES actual {actual_gates}")
     return hits
 
@@ -339,7 +332,7 @@ def main() -> int:
             "constitutional anchors (paths + invariant symbols) must be "
             "updated in the same batch as the constitutional change; "
             "governance docs must not point to missing scripts/fixtures "
-            "(retired mentions use ~~strike~~); §13.14(f) baseline numbers "
+            "(retired mentions use ~~strike~~); §2.3 gate freeze baseline numbers "
             "must match gate_registry/acceptance actual lengths."
         )
         return 1
