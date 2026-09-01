@@ -4,7 +4,8 @@
  * E-2 消息单一来源：convState 不持有消息副本，消息唯一存于 chat store；
  * 切换/新建/关闭/分支后活跃对话变化时，经 GET /conversations/{id}/messages
  * 单独装载目标对话历史；刷新/重连路径由状态快照顶层 chatMessages 承载。
- * Agent 流式回复写入后端活跃对话，SSE done 快照带回最新对话元信息由 syncFromServer 刷新。
+ * 标签栏元信息的唯一事实源 = conversations REST 接口 + 启动/切项目快照；
+ * SSE 任务快照不得回写对话列表（任务专属实例的清单冻结于起任务时刻）。
  */
 import { createStore, produce } from 'solid-js/store';
 import type { Conversation, ServerStateSnapshot } from '@/types';
@@ -70,8 +71,9 @@ export const convActions = {
     }));
   },
 
-  /** SSE done 快照同步：刷新对话元信息与活跃态（快照对话不含消息副本，
-   * 消息唯一来源 = chat store，此处不重载 chat） */
+  /** 整态快照同步对话元信息（仅启动/切项目等权威快照路径；
+   * SSE 任务快照禁用——见文件头注释）；快照对话不含消息副本，
+   * 消息唯一来源 = chat store，此处不重载 chat */
   syncFromServer(snapshot: ServerStateSnapshot) {
     const convs = snapshot.conversations;
     if (!Array.isArray(convs) || convs.length === 0) return;

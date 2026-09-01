@@ -26,7 +26,7 @@ export interface SseEventFx {
   setStreaming(v: boolean): void;
   setAgentBusy(v: boolean): void;
   setErrorText(msg: string | null): void;
-  /** 故事板 + 会话快照整板同步（studio/conv 双 store 同写） */
+  /** 故事板整板快照同步（对话列表不得经任务快照回写，见 lib/sse-task-fx） */
   syncSnapshot(snapshot: ServerStateSnapshot): void;
   markBoardApplied(): void;
   applyFallbackModel(provider: string | undefined, model: string | undefined): void;

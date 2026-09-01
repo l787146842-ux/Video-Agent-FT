@@ -3,11 +3,13 @@
  * 每个后台任务一份 fx——事件时刻按「任务对话 == 当前活跃对话」分流：
  * live → 实时渲染进聊天区；shadow（后台对话）→ 不碰聊天区/流式态，
  * 只维护忙态角标、终态置未读；故事板共享面恒同步（项目状态共享，
- * 只有对话视图隔离；对话元信息仅活跃任务快照路径同步，防串）。
+ * 只有对话视图隔离）。对话元信息不走任务快照同步：任务专属状态实例的
+ * 对话列表冻结于起任务时刻，覆盖会把新建的对话从标签栏抹掉；
+ * 标签栏唯一事实源 = conversations REST 接口 + 启动/切项目快照。
  */
 import { chatActions } from '@/stores/chat';
 import { agentActions } from '@/stores/agent-state';
-import { convState, convActions } from '@/stores/conversations';
+import { convState } from '@/stores/conversations';
 import { studioActions } from '@/stores/studio';
 import { showToast } from '@/stores/toast';
 import { refreshHistoryStatus } from '@/stores/history';
@@ -73,8 +75,9 @@ export function makeRoutedTaskFx(
       else agentActions.clearConvBusy(convId);
     },
     syncSnapshot: (s) => {
+      // 只同步故事板；对话列表不得用任务快照覆盖（任务专属实例的对话清单
+      // 是起任务时的分叉，缺其后新建/删除的对话，覆盖会缩标签栏）
       studioActions.syncFromServer(s);
-      if (isLiveConv(convId)) convActions.syncFromServer(s);
     },
     markBoardApplied: () => studioActions.markBoardApplied(),
     applyFallbackModel: (provider, model) => {
