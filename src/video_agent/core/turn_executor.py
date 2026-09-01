@@ -185,26 +185,38 @@ class TurnExecutor:
     def _raise_if_context_overflow(
         self, full_messages: List[Dict[str, Any]], max_tokens: int,
     ) -> None:
-        """第 5 批（Q7）：超预算不裸放行——四级保险丝
-        （轮组压缩→轮组截断→状态降级→system 降级）用尽仍超预算时，
-        policy=error（默认）明确报错不发请求，替代旧版 warning 照发；
-        policy=warn 回拨旧行为（回滚开关）。"""
-        if str(settings.context_overflow_policy).strip().lower() != "error":
-            return
+        """第 5 批（Q7）/ 用户裁决 2026-09-01：保留四级保险丝（轮组压缩→
+        轮组截断→状态降级→system 降级），拆除「超预算拦发」末级——
+        默认（policy=warn）四级用尽仍超预算时记 warning 后照发，
+        上游报上下文超长错误经 AdapterError 通道原样透传；
+        policy=error 回拨开关（明确报错不发请求）。"""
         final = estimate_messages_tokens(full_messages)
         if final <= max_tokens:
             return
+        policy = str(settings.context_overflow_policy).strip().lower()
+        if policy == "error":
+            try:
+                (self._tracer or AgentTracer.get_instance()).record_context_event(
+                    "overflow",
+                    f"四级保险丝用尽仍超预算 {final}>{max_tokens} tokens，报错不发",
+                )
+            except Exception:
+                pass
+            raise GenerationError(
+                f"上下文经压缩/截断/降级后仍超模型窗口（{final} > {max_tokens} tokens）。"
+                "请清理草稿/规格文档、缩短上传素材，或换用更大窗口的模型后重试。"
+            )
+        # 默认：不拦发——记 warning + trace 后照发，上游报错原样透传
+        logger.warning(
+            f"[TurnExecutor] 四级保险丝用尽仍超预算 {final}>{max_tokens} tokens，"
+            "照发（policy=warn，上游超长报错原样透传）")
         try:
             (self._tracer or AgentTracer.get_instance()).record_context_event(
                 "overflow",
-                f"四级保险丝用尽仍超预算 {final}>{max_tokens} tokens，报错不发",
+                f"四级保险丝用尽仍超预算 {final}>{max_tokens} tokens，警告后照发",
             )
         except Exception:
             pass
-        raise GenerationError(
-            f"上下文经压缩/截断/降级后仍超模型窗口（{final} > {max_tokens} tokens）。"
-            "请清理草稿/规格文档、缩短上传素材，或换用更大窗口的模型后重试。"
-        )
 
     async def call_llm(self, system: str, messages: List[Dict[str, Any]]) -> ChatResponse:
         """

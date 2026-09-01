@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""第 5 批（Q6/Q7 裁决 2026-09-01）：循环内语义压缩 + 超预算不裸放行。
+"""第 5 批（Q6/Q7）/ 用户裁决 2026-09-01：循环内语义压缩 + 超预算不拦发。
 
 钉死语义：
 - 预算逼近（>=0.8×预算）时最旧轮组整组摘要替换（FC 配对原子、用户原话不孤立压）；
 - 摘要按轮组指纹缓存（同内容不重复烧调用）；失败静默回落截断链；
 - 短对话（未达触发比例）零变化；
-- 四级保险丝用尽仍超预算：policy=error 抛 GenerationError 不发请求；
-  policy=warn 回拨旧行为（警告后照发）。
+- 四级保险丝用尽仍超预算：默认（policy=warn）警告后照发；
+  policy=error 回拨开关（抛 GenerationError 不发请求）。
 """
 import pytest
 
@@ -151,7 +151,7 @@ async def test_compact_edge_branches():
     assert len(empty) == 9
 
 
-# ---------- 超预算不裸放行 ----------
+# ---------- 超预算不拦发（默认）/ policy=error 回拨拦发 ----------
 
 @pytest.fixture
 def svc(tmp_path):
@@ -171,11 +171,12 @@ def _executor_with(adapter):
 
 @pytest.mark.asyncio
 async def test_overflow_policy_error_raises(svc):
-    """policy=error：保险丝用尽仍超预算 → GenerationError，不发请求。"""
+    """policy=error（回拨开关）：保险丝用尽仍超预算 → GenerationError，不发请求。"""
     adapter = SummaryAdapter(summary="你好")
     executor = _executor_with(adapter)
     huge = [{"role": "user", "content": "巨" * 400} for _ in range(5)]
     object.__setattr__(settings, "context_window_size", 100)
+    object.__setattr__(settings, "context_overflow_policy", "error")
     try:
         with pytest.raises(GenerationError) as ei:
             await executor.call_llm("sys", huge)
@@ -183,16 +184,16 @@ async def test_overflow_policy_error_raises(svc):
         assert adapter.calls == 0  # 主调用未发出（摘要尝试不计入：组不满足条件）
     finally:
         object.__setattr__(settings, "context_window_size", 128000)
+        object.__setattr__(settings, "context_overflow_policy", "warn")
 
 
 @pytest.mark.asyncio
 async def test_stream_channel_same_ladder(svc):
-    """流式通道同口径：压缩阶梯 + warn 放行（覆盖 call_llm_stream 分支）。"""
+    """流式通道同口径：压缩阶梯 + 默认（warn）放行（覆盖 call_llm_stream 分支）。"""
     adapter = SummaryAdapter(summary="你好")
     executor = _executor_with(adapter)
     huge = [{"role": "user", "content": "巨" * 400} for _ in range(5)]
     object.__setattr__(settings, "context_window_size", 100)
-    object.__setattr__(settings, "context_overflow_policy", "warn")
     try:
         chunks = []
         async for chunk in executor.call_llm_stream("sys", huge):
@@ -201,17 +202,16 @@ async def test_stream_channel_same_ladder(svc):
         assert adapter.calls == 1
     finally:
         object.__setattr__(settings, "context_window_size", 128000)
-        object.__setattr__(settings, "context_overflow_policy", "error")
+        object.__setattr__(settings, "context_overflow_policy", "warn")
 
 
 @pytest.mark.asyncio
-async def test_overflow_policy_warn_legacy_passthrough(svc):
-    """policy=warn：回拨旧行为——警告后照发（主调用发出）。"""
+async def test_overflow_default_warn_passthrough(svc):
+    """默认（policy=warn）：四级用尽仍超预算 → 警告后照发（主调用发出）。"""
     adapter = SummaryAdapter(summary="你好")
     executor = _executor_with(adapter)
     huge = [{"role": "user", "content": "巨" * 400} for _ in range(5)]
     object.__setattr__(settings, "context_window_size", 100)
-    object.__setattr__(settings, "context_overflow_policy", "warn")
     try:
         resp = await executor.call_llm("sys", huge)
         assert resp.content == "你好"
@@ -224,4 +224,4 @@ async def test_overflow_policy_warn_legacy_passthrough(svc):
         assert bd["history"] > 0 and "system" in bd and "tools" in bd
     finally:
         object.__setattr__(settings, "context_window_size", 128000)
-        object.__setattr__(settings, "context_overflow_policy", "error")
+        object.__setattr__(settings, "context_overflow_policy", "warn")

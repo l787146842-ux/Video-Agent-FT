@@ -65,7 +65,7 @@ const zhCN = {
   'rp.toolbar.contextUsage': '上下文用量',
   'rp.toolbar.contextTip': '{usage}K 上下文已使用',
   'rp.toolbar.contextLoading': '统计中…',
-  'rp.ctx.title': '上下文容量',
+  'rp.ctx.title': '上下文使用量',
   'rp.ctx.msgs': '消息',
   'rp.ctx.system': '系统提示词',
   'rp.ctx.state': '状态',
