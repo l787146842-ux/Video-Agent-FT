@@ -24,6 +24,7 @@
 """
 import argparse
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -54,17 +55,25 @@ def read_current(summary_path: Path, require: bool) -> float | None:
     try:
         data = json.loads(raw.decode("utf-8"))
         pct = data["total"]["lines"]["pct"]
-        value = float(pct)
     except UnicodeDecodeError:
         cause = "非 UTF-8 文本"
     except json.JSONDecodeError:
         cause = "JSON 解析失败"
     except (KeyError, TypeError):
         cause = "必需字段 total.lines.pct 缺失"
-    except ValueError:
-        cause = "total.lines.pct 非有效数值"
     else:
-        return round(value, 2)
+        # 有限性检查：json.loads/float 均接受裸 Infinity/NaN，null 则转换报
+        # TypeError；三者一并归入「非有效数值」判红，防 inf 污染基线或
+        # NaN 比较恒假误判 PASS。
+        try:
+            value = float(pct)
+        except (TypeError, ValueError):
+            cause = "total.lines.pct 非有效数值（null 等不可接受）"
+        else:
+            if not math.isfinite(value):
+                cause = "total.lines.pct 非有效数值（Infinity/NaN 不可接受）"
+            else:
+                return round(value, 2)
     print(f"[check_fe_cov_ratchet] FAIL - 覆盖率摘要文件损坏或缺失（{cause}）: "
           f"{summary_path}；请重跑前端覆盖率: npx vitest run 重新生成产物后重试")
     raise SystemExit(1)

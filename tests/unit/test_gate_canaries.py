@@ -416,6 +416,32 @@ def test_canary_fe_cov_ratchet_corrupted_summary_fails(tmp_path, monkeypatch,
         assert "请重跑前端覆盖率" in out, "诊断须指引重跑前端覆盖率"
 
 
+def test_canary_fe_cov_ratchet_nonfinite_pct_fails(tmp_path, monkeypatch,
+                                                   capsys):
+    """回归（任务 #5）：json.loads/float 均接受裸 Infinity/NaN，
+    inf 会污染基线、NaN 比较恒假误判 PASS，null 则须归入非有效数值；
+    三种产物一律判红并报「非有效数值」诊断，基线不得被污染。"""
+    import scripts.check_fe_cov_ratchet as gate
+    base = tmp_path / "fe_cov_baseline.txt"
+    base.write_text("63.00\n", encoding="utf-8")
+    monkeypatch.setattr(gate, "BASELINE_FILE", base)
+    for content in ('{"total": {"lines": {"pct": Infinity}}}',
+                    '{"total": {"lines": {"pct": NaN}}}',
+                    '{"total": {"lines": {"pct": null}}}'):
+        summary = tmp_path / "coverage-summary.json"
+        summary.write_text(content, encoding="utf-8")
+        monkeypatch.setattr(sys, "argv",
+                            ["check_fe_cov_ratchet.py", "--summary",
+                             str(summary)])
+        with pytest.raises(SystemExit):
+            gate.main()
+        out = capsys.readouterr().out
+        assert "非有效数值" in out, "Infinity/NaN/null 须报非有效数值"
+        assert "请重跑前端覆盖率" in out, "诊断须指引重跑前端覆盖率"
+        assert base.read_text(encoding="utf-8").strip() == "63.00", \
+            "非有限值不得污染基线文件"
+
+
 # ---------- scan_skills --gate 诊断扫描（内容卫生/语言声明探针双向钉死） ----------
 # 原第 14 道门禁 skill_tool_names 已随批 A 退役（2026-08-29 用户裁决删工具名
 # 白名单，审核报告 §7 第 5 条）；保留的内容卫生/语言声明探针降级为纯诊断脚本，
