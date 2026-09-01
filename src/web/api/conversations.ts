@@ -48,6 +48,21 @@ export function deleteConversation(id: string): Promise<ConversationsPayload> {
   return apiDelete<ConversationsPayload>(`/api/conversations/${encodeURIComponent(id)}`);
 }
 
+/** 幂等取/建隐藏线程响应（微调真子对话；后端 ThreadRequest 同源契约） */
+export interface AdjustThreadResponse {
+  conversation_id: string;
+  messages: ChatMessage[];
+  /** 线程 scope 回显（kind/cat/group_id/draft_id/label） */
+  scope?: Record<string, string>;
+}
+
+/** 幂等取/建微调隐藏线程（批 S1 契约）：按 scope 的 kind+cat+group_id+
+ *  draft_id 取已有线程，无则建；历史装载同「按会话拉消息」单一来源口径。
+ *  旧后端无此接口时抛 404，调用方据此回落旧发送路径。 */
+export function getOrCreateAdjustThread(scope: Record<string, string>): Promise<AdjustThreadResponse> {
+  return apiPost<AdjustThreadResponse>('/api/conversations/thread', { scope });
+}
+
 /** B11：把当前活跃对话打为不可变快照。
  * upToIndex（可选，分叉点）：仅截取至该索引（含）；越界后端 400
  * （SNAPSHOT_INDEX_OUT_OF_RANGE）。不传 = 全量快照（旧行为）。

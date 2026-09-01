@@ -18,6 +18,7 @@ import {
 } from '@/api/conversations';
 import { chatActions } from './chat';
 import { showToast } from './toast';
+import { isScopedConvId } from './adjust-scopes';
 
 export interface ConversationsState {
   list: Conversation[];
@@ -29,6 +30,12 @@ const [convState, setConvState] = createStore<ConversationsState>({
   activeId: '',
 });
 
+/** 主标签栏双保险：带 scope 的隐藏线程对话不得进主清单（后端 meta 已单点过滤，
+ *  前端再按微调登记表拦一道，防快照/旁路路径泄漏；单测钉死三处一致） */
+function stripScopedThreads(convs: Conversation[]): Conversation[] {
+  return convs.filter((c) => !isScopedConvId(c.id));
+}
+
 /** 后端 payload → store；loadActiveMessages 且活跃对话变化时经
  * 「按会话拉消息」接口装载目标对话历史（消息单一来源，E-2） */
 async function applyPayload(
@@ -37,7 +44,7 @@ async function applyPayload(
 ): Promise<void> {
   const prevActive = convState.activeId;
   setConvState(produce((s) => {
-    s.list = payload.conversations || [];
+    s.list = stripScopedThreads(payload.conversations || []);
     s.activeId = payload.active_conversation_id || '';
   }));
   if (!loadActiveMessages) return;
@@ -66,7 +73,7 @@ export const convActions = {
       return;
     }
     setConvState(produce((s) => {
-      s.list = convs;
+      s.list = stripScopedThreads(convs);
       s.activeId = snapshot?.activeConversationId || convs[0].id;
     }));
   },
@@ -78,7 +85,7 @@ export const convActions = {
     const convs = snapshot.conversations;
     if (!Array.isArray(convs) || convs.length === 0) return;
     setConvState(produce((s) => {
-      s.list = convs;
+      s.list = stripScopedThreads(convs);
       s.activeId = snapshot.activeConversationId || s.activeId;
     }));
   },

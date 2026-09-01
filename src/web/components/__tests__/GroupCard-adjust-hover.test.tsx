@@ -6,7 +6,8 @@
  * ② 悬停满 300ms 浮现（299ms 仍不弹、300ms 弹出，双夹逼锁死阈值）；
  * ③ 300ms 内移出分组 → 挂表取消，永不浮现（扫过列表不反复弹出）;
  * ④ 悬停标题/描述等非卡片区域不挂表、不弹出（仅悬停草稿卡触发）；
- * ⑤ 展开后输入意见点「微调」能发出（浮现不是摆设）。
+ * ⑤ 展开后输入意见点「微调」走真子对话入口（openThread+sendAdjust 入参：
+ *    目标卡/线程/文本），线程接口失败时回落旧 sendUserMessage 拼文本路径。
  *
  * 本文件断言对象是 GroupCard 挂表时序与 GroupAdjustBox 显隐，与条款无关的
  * 重组件（DraftCard/描述编辑器/发送通道）以桩替代，控制测试面。
@@ -20,9 +21,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('@/components/left-panel/DraftCard', () => ({ DraftCard: () => null }));
 vi.mock('@/components/left-panel/group-card/GroupDescEditor', () => ({ GroupDescEditor: () => null }));
 vi.mock('@/lib/agent-actions', () => ({ sendUserMessage: vi.fn() }));
+vi.mock('@/stores/adjust-scopes', () => ({
+  adjustScopeActions: { openThread: vi.fn(), sendAdjust: vi.fn() },
+}));
 
 import { GroupCard } from '../left-panel/GroupCard';
 import { sendUserMessage } from '@/lib/agent-actions';
+import { adjustScopeActions } from '@/stores/adjust-scopes';
 import type { KeyElementGroup } from '@/types';
 
 const noop = () => {};
@@ -56,6 +61,8 @@ describe('故事板微调框悬停 300ms 浮现（台账 #9）', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.mocked(sendUserMessage).mockClear();
+    vi.mocked(adjustScopeActions.openThread).mockReset();
+    vi.mocked(adjustScopeActions.sendAdjust).mockReset();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -103,18 +110,43 @@ describe('故事板微调框悬停 300ms 浮现（台账 #9）', () => {
     expect(box.classList.contains('open')).toBe(false);
   });
 
-  it('浮现后输入意见并点「微调」：意见携带卡编号发出', () => {
+  it('浮现后输入意见并点「微调」：走真子对话入口（目标卡定位 + 文本）', async () => {
+    vi.mocked(adjustScopeActions.openThread).mockResolvedValue(true);
+    vi.mocked(adjustScopeActions.sendAdjust).mockReturnValue(true);
     const { container } = setup();
     const wrap = container.querySelector('.draft-card-wrap') as HTMLElement;
     fireEvent.mouseEnter(wrap);
-    vi.advanceTimersByTime(300);
+    await vi.advanceTimersByTimeAsync(300);
 
     const input = container.querySelector('.card-adjust-input') as HTMLInputElement;
     fireEvent.input(input, { target: { value: '改亮一点' } });
     fireEvent.click(container.querySelector('.card-adjust-btn') as HTMLElement);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 新入口：先幂等取/建线程（目标卡定位），再向线程提交文本；不再走主对话拼文本
+    expect(adjustScopeActions.openThread).toHaveBeenCalledTimes(1);
+    const target = vi.mocked(adjustScopeActions.openThread).mock.calls[0][0];
+    expect(target).toMatchObject({ kind: 'adjust', cat: 'keyElement', group_id: 'g1', draft_id: 'd1' });
+    expect(target.label).toContain('1-1');
+    expect(adjustScopeActions.sendAdjust).toHaveBeenCalledWith(target, '改亮一点');
+    expect(vi.mocked(sendUserMessage)).not.toHaveBeenCalled();
+  });
+
+  it('线程接口失败：回落旧 sendUserMessage 拼文本路径（意见携带卡编号发出）', async () => {
+    vi.mocked(adjustScopeActions.openThread).mockResolvedValue(false);
+    const { container } = setup();
+    const wrap = container.querySelector('.draft-card-wrap') as HTMLElement;
+    fireEvent.mouseEnter(wrap);
+    await vi.advanceTimersByTimeAsync(300);
+
+    const input = container.querySelector('.card-adjust-input') as HTMLInputElement;
+    fireEvent.input(input, { target: { value: '改亮一点' } });
+    fireEvent.click(container.querySelector('.card-adjust-btn') as HTMLElement);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(vi.mocked(sendUserMessage)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(sendUserMessage).mock.calls[0][0]).toContain('第 1-1 卡');
     expect(vi.mocked(sendUserMessage).mock.calls[0][0]).toContain('改亮一点');
+    expect(adjustScopeActions.sendAdjust).not.toHaveBeenCalled();
   });
 });

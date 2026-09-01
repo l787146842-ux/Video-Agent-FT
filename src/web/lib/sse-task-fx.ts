@@ -15,6 +15,8 @@ import { showToast } from '@/stores/toast';
 import { refreshHistoryStatus } from '@/stores/history';
 import { applyFallbackModel } from '@/stores/agent-prefs';
 import { requestInsertMedia } from '@/lib/chat/chat-input-bridge';
+import { adjustScopeActions, threadConvIdOf } from '@/stores/adjust-scopes';
+import type { ScopeToolEntry } from '@/stores/adjust-scopes';
 import type { SseEventFx, SseChatFx } from '@/lib/sse-events';
 import { t } from '@/lib/locale';
 
@@ -85,6 +87,102 @@ export function makeRoutedTaskFx(
     },
     toast: (msg, level) => showToast(msg, level),
     insertMedia: (media) => { if (isLiveConv(convId)) requestInsertMedia(media); },
+    refreshHistory: () => { void refreshHistoryStatus(); },
+    now: () => Date.now(),
+  };
+}
+
+/** replay 工具条目 → 线程视图工具条目（字段同构，只取浮窗所需面） */
+function replayTools(
+  tools: Array<Partial<ScopeToolEntry> & Record<string, unknown>> | undefined,
+): ScopeToolEntry[] {
+  return (tools || []).map((tool) => ({
+    id: String(tool.id || ''),
+    name: String(tool.name || ''),
+    summary: String(tool.summary || ''),
+    status: tool.status === 'done' || tool.status === 'failed' ? tool.status : 'running',
+    startedAtMs: Number(tool.started_at_ms ?? tool.startedAtMs ?? 0) || Date.now(),
+    elapsedMs: Number(tool.elapsed_ms ?? tool.elapsedMs ?? 0) || undefined,
+    resultSummary: String(tool.result_summary ?? tool.resultSummary ?? '') || undefined,
+  }));
+}
+
+/**
+ * scope 任务专用事件分流面（微调真子对话，批 S3）：与 makeRoutedTaskFx
+ * 同构但结构性不进聊天区——不经过 isLiveConv/chatActions Proxy，
+ * delta/status/tool 系事件/终态/图卡全部写入 adjust-scopes store（浮窗渲染）。
+ * 故事板共享面恒同步照旧；忙态/未读角标按线程对话 id 登记。
+ */
+export function makeScopeTaskFx(
+  scopeKey: string,
+  taskId: string,
+  signals: { setStreaming(v: boolean): void; setError(m: string | null): void },
+): SseEventFx {
+  void signals; // scope 不动全局流式/错误信号（属主聊天区）
+  const convIdOf = () => threadConvIdOf(scopeKey);
+  /** 终态提示：未读角标按线程 id 复用 markUnread 口径（浮窗/左栏消费） */
+  const markTerminal = () => { const cid = convIdOf(); if (cid) agentActions.markUnread(cid); };
+  const chat: SseChatFx = {
+    startStream: () => {},
+    streamError: (payload) => {
+      adjustScopeActions.appendEvent(scopeKey, { kind: 'error', message: payload.message });
+      markTerminal();
+    },
+    setStatus: (text) => adjustScopeActions.appendEvent(scopeKey, { kind: 'status', text }),
+    setRoundProgress: (step, max) => adjustScopeActions.appendEvent(scopeKey, { kind: 'round', step, max }),
+    appendDelta: (text) => adjustScopeActions.appendEvent(scopeKey, { kind: 'delta', text }),
+    appendReasoning: (text) => adjustScopeActions.appendEvent(scopeKey, { kind: 'reasoning', text }),
+    toolStarted: (id, name, summary) => {
+      adjustScopeActions.appendEvent(scopeKey, { kind: 'tool_started', id, name, summary });
+    },
+    toolFinished: (id, ok, elapsedMs, resultSummary) => {
+      adjustScopeActions.appendEvent(scopeKey, {
+        kind: 'tool_finished', id, ok, elapsedMs, resultSummary,
+      });
+    },
+    docWritten: () => {}, // 文档卡归文档区（refreshHistory 已在终态刷新）
+    addMessage: (message) => adjustScopeActions.appendEvent(scopeKey, { kind: 'message', message }),
+    removeQueuedMessage: () => {}, // 线程无排队区（多轮续聊直提）
+    restoreStreamingState: (p) => {
+      adjustScopeActions.appendEvent(scopeKey, {
+        kind: 'replay',
+        snapshot: {
+          text: p.text, reasoning: p.reasoning, statusText: p.statusText,
+          tools: replayTools(p.tools as Array<Partial<ScopeToolEntry> & Record<string, unknown>> | undefined),
+        },
+      });
+    },
+    clearStreaming: () => markTerminal(),
+    loadMessages: (msgs) => adjustScopeActions.loadThreadMessages(scopeKey, msgs),
+    applyDecisionForm: () => {}, // 决策表单浮窗二期（方案风险表已登记）
+    finishStream: (payload) => {
+      adjustScopeActions.appendEvent(scopeKey, { kind: 'done', payload });
+      markTerminal();
+    },
+    cancelStream: () => {
+      adjustScopeActions.appendEvent(scopeKey, { kind: 'stopped' });
+      markTerminal();
+    },
+  };
+  return {
+    chat,
+    setStreaming: () => {},
+    setErrorText: () => {},
+    setAgentBusy: (v) => {
+      const cid = convIdOf();
+      if (!cid) return;
+      if (v) agentActions.setConvBusy(cid, taskId);
+      else agentActions.clearConvBusy(cid);
+    },
+    syncSnapshot: (s) => {
+      // 故事板共享面恒同步（结果写回故事板复用 actions_applied/syncSnapshot 回流）；
+      // 对话列表不得经任务快照回写（同 makeRoutedTaskFx 口径）
+      studioActions.syncFromServer(s);
+    },
+    markBoardApplied: () => studioActions.markBoardApplied(),
+    applyFallbackModel: () => {}, // 降级不动主聊天区选择器（线程任务不感知）
+    toast: (msg, level) => showToast(msg, level),
+    insertMedia: () => {}, // 媒体不进主输入框；图卡经 done 载荷 chat_inserts 落线程
     refreshHistory: () => { void refreshHistoryStatus(); },
     now: () => Date.now(),
   };

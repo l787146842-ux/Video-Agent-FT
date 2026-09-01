@@ -48,6 +48,10 @@ const zhCN = {
   'rp.parallel.bgDone': '另一个对话的 Agent 任务已完成',
   'rp.parallel.bgFailed': '另一个对话的 Agent 任务出错',
   'rp.parallel.bgStopped': '另一个对话的 Agent 任务已停止',
+  // ---------- 微调真子对话（批 S3）：隐藏线程/浮窗提示 ----------
+  'rp.adjust.duplicate': '该卡的微调任务正在运行中，请等待完成后再提交',
+  'rp.adjust.failed': '微调提交失败',
+  'rp.adjust.stopped': '微调任务已停止',
 
   // ---------- 输入区 ----------
   'rp.input.aria': '给 Agent 发送指令',

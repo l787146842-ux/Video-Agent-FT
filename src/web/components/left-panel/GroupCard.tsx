@@ -207,6 +207,8 @@ export function GroupCard(props: {
       {/* 组级微调输入行：子组件承载（悬停态/生效卡判定共享本组件信号） */}
       <GroupAdjustBox
         drafts={props.group.drafts || []}
+        type={props.type}
+        groupId={props.group.id}
         index={() => props.index}
         groupTitle={() => props.group.title}
         adjustLabel={meta().adjustLabel}
