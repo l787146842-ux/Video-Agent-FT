@@ -422,6 +422,11 @@ export interface ThreadRequest {
   scope?: Record<string, string>;
 }
 
+export interface ThreadUnrefRequest {
+  conversation_id: string;
+  ref_id: string;
+}
+
 export interface TimelinePushRequest {
   shot_group_id?: string;
   canvas_id?: string;

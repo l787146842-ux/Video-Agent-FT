@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@/api/conversations', () => ({ getOrCreateAdjustThread: vi.fn() }));
+vi.mock('@/api/conversations', () => ({ getOrCreateAdjustThread: vi.fn(), unrefThreadMaterial: vi.fn() }));
 vi.mock('@/hooks/use-sse', () => ({ streamAgentChat: vi.fn(async () => {}) }));
 vi.mock('@/stores/agent-prefs', () => ({ agentProvider: () => 'provA', agentModel: () => 'model-A' }));
 vi.mock('@/stores/toast', () => ({ showToast: vi.fn() }));

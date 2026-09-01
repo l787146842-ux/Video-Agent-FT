@@ -70,6 +70,8 @@ async def get_config():
         "video_models": DEFAULT_VIDEO_MODELS,
         "canvas_url": settings.infinite_canvas_url,
         "model_fallback_enabled": bool(settings.model_fallback_enabled),
+        # 附件数量上限（二期子对话批 3：浮窗上传入口提示用，唯一事实源 config）
+        "max_attachments": int(settings.max_attachments),
     }
     # 嵌入引导参数（画布站点 / canvas-agent 地址 / token，仅本机回环使用）：
     # 前端据此拼 iframe src {站点}/#agentUrl=...&agentToken=...

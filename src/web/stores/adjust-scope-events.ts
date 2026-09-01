@@ -39,6 +39,10 @@ export interface ScopeStreamingView {
 
 export type ScopeThreadStatus = 'idle' | 'starting' | 'running' | 'error';
 
+/** 线程参考素材引用（二期子对话批 3）：绑线程对话体 scopeRefs，不进全局
+ *  assets/uploadedDocs；物理文件存共享素材目录（移除只解引用，逻辑清物理不清） */
+export interface ScopeRef { id: string; name: string; kind: string; url: string }
+
 export interface ScopeThread {
   scope: AdjustScopeTarget;
   convId: string;
@@ -50,6 +54,10 @@ export interface ScopeThread {
   status: ScopeThreadStatus;
   errorText: string;
   streaming: ScopeStreamingView;
+  /** 待发引用暂存（上传后未发送；sendAdjust 携带后并入 scopeRefs） */
+  pendingRefs: ScopeRef[];
+  /** 已绑线程引用（后端回带重建；随重生成持续注入） */
+  scopeRefs: ScopeRef[];
 }
 
 /** scope 事件（事件路由写入的唯一形态；与 SSE 事件一一对应） */

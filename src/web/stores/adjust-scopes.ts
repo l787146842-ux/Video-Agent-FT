@@ -9,7 +9,7 @@
  */
 import { createStore, produce } from 'solid-js/store';
 import type { AgentChatRequest, ChatMessage } from '@/types';
-import { getOrCreateAdjustThread } from '@/api/conversations';
+import { getOrCreateAdjustThread, unrefThreadMaterial } from '@/api/conversations';
 import { ApiError } from '@/api/client';
 import { agentActions } from './agent-state';
 import { agentProvider, agentModel } from './agent-prefs';
@@ -20,11 +20,11 @@ import { CHAT_HISTORY_WINDOW, uid } from '@/lib/utils';
 import { t } from '@/lib/locale';
 import {
   applyScopeEvent, emptyStreaming,
-  type AdjustScopeTarget, type ScopeEvent, type ScopeThread,
+  type AdjustScopeTarget, type ScopeEvent, type ScopeRef, type ScopeThread,
 } from './adjust-scope-events';
 
 export type {
-  AdjustScopeTarget, ScopeEvent, ScopeThread,
+  AdjustScopeTarget, ScopeEvent, ScopeRef, ScopeThread,
   ScopeToolEntry, ScopeStreamingView, ScopeThreadStatus,
 } from './adjust-scope-events';
 
@@ -53,6 +53,9 @@ async function loadThread(target: AdjustScopeTarget): Promise<boolean> {
         status: keep ? keep.status : 'idle',
         errorText: '',
         streaming: prev?.streaming.active ? prev.streaming : emptyStreaming(),
+        // 本线程参考素材（批 3）：后端回带重建清单；待发暂存随重开保留
+        pendingRefs: prev?.pendingRefs || [],
+        scopeRefs: (data.scope_refs || []).map((r) => ({ id: r.id || '', name: r.name || '', kind: r.kind || '', url: r.url || '' })),
       };
     }));
     return true;
@@ -121,12 +124,18 @@ export const adjustScopeActions = {
       showToast(t('rp.send.noProvider'), 'warning');
       return false;
     }
+    // 待发引用随本条消息携带（批 3）：后端绑线程不登记全局；本地乐观并入已绑清单（后端按 url 去重）
+    const pending = [...(th.pendingRefs || [])];
     // 用户气泡先落线程视图（乐观；失败时错误事件也落线程，主对话零痕迹）
     setAdjustScopes(produce((s) => {
       s[key].messages.push({ sender: 'user', text: trimmed });
       s[key].status = 'starting';
       s[key].errorText = '';
       s[key].open = true; // 提交后自动弹浮窗（=open）
+      if (pending.length) {
+        s[key].scopeRefs.push(...pending);
+        s[key].pendingRefs = [];
+      }
     }));
     const request: AgentChatRequest = {
       message: trimmed,
@@ -140,6 +149,8 @@ export const adjustScopeActions = {
       messages: adjustScopes[key].messages.slice(-CHAT_HISTORY_WINDOW).map((m) => (
         { role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }
       )),
+      // 参考素材引用（批 3）：后端据此绑线程，不进全局 assets/uploadedDocs
+      attachments: pending.length ? pending.map((r) => ({ id: r.id, name: r.name, kind: r.kind, url: r.url })) : undefined,
       selected_draft_id: target.draft_id,
       selected_type: target.cat,
       context_mode: 'studio',
@@ -155,6 +166,39 @@ export const adjustScopeActions = {
       adjustScopeActions.appendEvent(key, { kind: 'error', message: msg });
     });
     return true;
+  },
+
+  /** 待发引用暂存（批 3）：上传成功后入队，达上限拒收并提示 */
+  addPendingRef(scopeKey: string, ref: ScopeRef, maxCount: number): boolean {
+    const th = adjustScopes[scopeKey];
+    if (!th) return false;
+    const total = (th.pendingRefs || []).length + (th.scopeRefs || []).length;
+    if (total >= maxCount) {
+      showToast(t('rp.adjust.refsFull'), 'warning');
+      return false;
+    }
+    setAdjustScopes(produce((s) => { s[scopeKey].pendingRefs.push(ref); }));
+    return true;
+  },
+
+  /** 移除待发引用（批 3：未发送，仅删暂存，无后端调用） */
+  removePendingRef(scopeKey: string, refId: string) {
+    if (!adjustScopes[scopeKey]) return;
+    setAdjustScopes(produce((s) => {
+      s[scopeKey].pendingRefs = s[scopeKey].pendingRefs.filter((r) => r.id !== refId);
+    }));
+  },
+
+  /** 移除已绑引用（批 3）：本地乐观剔除 + 调后端解绑（只删引用不删物理文件） */
+  removeScopeRef(scopeKey: string, refId: string) {
+    const th = adjustScopes[scopeKey];
+    if (!th?.convId) return;
+    setAdjustScopes(produce((s) => {
+      s[scopeKey].scopeRefs = s[scopeKey].scopeRefs.filter((r) => r.id !== refId);
+    }));
+    void unrefThreadMaterial(th.convId, refId).catch(() => {
+      showToast(t('rp.adjust.refRemoveFailed'), 'error');
+    });
   },
 
   /** scope fx 事件写入：推进线程视图数据（浮窗渲染的唯一数据面） */

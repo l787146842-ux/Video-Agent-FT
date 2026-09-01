@@ -8,7 +8,7 @@
  * ④ delta 不进 chatState（scope fx 结构性分流的组件侧断言）；
  * ⑤ 运行中显示停止按钮（按 taskId 走既有停止通道）；打开浮窗惰性订阅。
  */
-import { render, fireEvent } from '@solidjs/testing-library';
+import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/api/conversations', () => ({ getOrCreateAdjustThread: vi.fn() }));
@@ -69,8 +69,10 @@ describe('浮窗开合', () => {
     const { container } = render(() => <AdjustDialog />);
     expect(container.querySelector('.adjust-dialog')).toBeTruthy();
     expect(container.querySelector('.adjust-dialog-title')?.textContent).toBe('微调 | 月球 第 1-1 卡');
+    // 底部区惰性装载：输入行异步到位（占位文案引导说明素材用途）
+    await waitFor(() => expect(container.querySelector('.adjust-dialog-input')).toBeTruthy());
     expect(container.querySelector('.adjust-dialog-input')?.getAttribute('placeholder'))
-      .toBe('输入消息继续对话');
+      .toBe('输入调整要求，可附参考素材并说明用途（风格/内容/结构参考）');
   });
 
   it('关闭仅隐藏：浮窗收起但线程登记与历史存活（可再开）', async () => {
@@ -160,6 +162,7 @@ describe('输入续聊与停止', () => {
     const { container } = render(() => <AdjustDialog />);
 
     expect(subscribeScopeThread).toHaveBeenCalledWith('d1');
+    await waitFor(() => expect(container.querySelector('.adjust-dialog-stop')).toBeTruthy());
     expect(container.querySelector('.adjust-dialog-send')).toBeNull();
     await fireEvent.click(container.querySelector('.adjust-dialog-stop') as HTMLElement);
     expect(stopAgentTask).toHaveBeenCalledWith('tX');
@@ -170,6 +173,7 @@ describe('输入续聊与停止', () => {
     await adjustScopeActions.openThread(target);
     const { container } = render(() => <AdjustDialog />);
 
+    await waitFor(() => expect(container.querySelector('.adjust-dialog-input')).toBeTruthy());
     const input = container.querySelector('.adjust-dialog-input') as HTMLInputElement;
     expect(container.querySelector('.adjust-dialog-send')).toBeTruthy();
     await fireEvent.input(input, { target: { value: '再暗一点' } });

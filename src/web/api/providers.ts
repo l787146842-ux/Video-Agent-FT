@@ -23,6 +23,8 @@ export interface AppConfig {
   video_models: string[];
   canvas_url: string;
   infinite_canvas_embed?: InfiniteCanvasEmbedConfig;
+  /** 附件数量上限（二期子对话批 3：浮窗上传入口提示用，同源后端 settings） */
+  max_attachments?: number;
 }
 
 /** 全部供应商配置（脱敏）+ 画布在线状态 */

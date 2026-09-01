@@ -54,10 +54,18 @@ const zhCN = {
   'rp.adjust.stopped': '微调任务已停止',
   // ---------- 微调浮动子对话浮窗（批 S4） ----------
   'rp.adjust.title': '微调',
-  'rp.adjust.inputPlaceholder': '输入消息继续对话',
+  'rp.adjust.inputPlaceholder': '输入调整要求，可附参考素材并说明用途（风格/内容/结构参考）',
   'rp.adjust.send': '发送',
   'rp.adjust.stop': '停止微调任务',
   'rp.adjust.close': '关闭浮窗（对话保留，可随时再开）',
+  // ---------- 微调子对话参考素材（二期子对话批 3） ----------
+  'rp.adjust.attach': '上传参考素材（图片/视频/音频）',
+  'rp.adjust.refsTitle': '本线程参考素材',
+  'rp.adjust.refRemove': '移除该引用（不删物理文件）',
+  'rp.adjust.refsFull': '参考素材数量已达上限',
+  'rp.adjust.refRemoveFailed': '移除素材引用失败',
+  'rp.adjust.docRejected': '微调子对话仅支持图片/视频/音频素材，暂不支持文档',
+  'rp.adjust.uploadFailed': '素材上传失败',
 
   // ---------- 输入区 ----------
   'rp.input.aria': '给 Agent 发送指令',

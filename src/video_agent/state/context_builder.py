@@ -326,10 +326,24 @@ def _apply_scope_profile(
         if k in snapshot:
             snapshot.pop(k)
             trimmed = True
+    # 本线程参考素材注入（二期子对话批 3）：素材绑在对话体（不进全局面），
+    # 随重生成持续生效；线程不存在/无引用时空列表。铁律不松动：仅本线程素材可见。
+    thread_refs = []
+    for c in raw_state.get("conversations") or []:
+        c_scope = c.get("scope") if isinstance(c, dict) else None
+        if isinstance(c_scope, dict) and draft_id and str(c_scope.get("draft_id") or "") == draft_id:
+            thread_refs = [
+                {"name": str(r.get("name") or ""), "kind": str(r.get("kind") or ""),
+                 "url": str(r.get("url") or "")[:200]}
+                for r in (c.get("scopeRefs") or []) if isinstance(r, dict)
+            ]
+            break
+    snapshot["scopeRefs"] = thread_refs
     if trimmed:
         snapshot["scopeNote"] = (
             "微调作用域：仅目标分组/目标卡注入了全量细节（含提示词全文）；"
-            "其余分组、剧本、规格文档、上传素材等一律未注入，"
+            + ("本线程参考素材（scopeRefs）已注入；" if thread_refs else "")
+            + "其余分组、剧本、规格文档、上传素材等一律未注入，"
             "不得读取或修改非目标内容"
         )
     return trimmed

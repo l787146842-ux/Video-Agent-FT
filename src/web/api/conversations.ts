@@ -8,6 +8,7 @@ import { apiFetch, apiPost, apiDelete } from './client';
 import type { ChatMessage } from '@/types';
 import type {
   BranchRequest, ConversationsMetaResponse, CreateConversationRequest, SnapshotRequest,
+  ThreadUnrefRequest,
 } from '@/types/api.generated';
 
 /** 对话列表/增删切响应（后端 ConversationsMetaResponse 生成物为唯一来源；
@@ -54,6 +55,8 @@ export interface AdjustThreadResponse {
   messages: ChatMessage[];
   /** 线程 scope 回显（kind/cat/group_id/draft_id/label） */
   scope?: Record<string, string>;
+  /** 本线程参考素材引用（二期子对话批 3：浮窗清单重建数据源） */
+  scope_refs?: Record<string, string>[];
 }
 
 /** 幂等取/建微调隐藏线程（批 S1 契约）：按 scope 的 kind+cat+group_id+
@@ -61,6 +64,13 @@ export interface AdjustThreadResponse {
  *  旧后端无此接口时抛 404，调用方据此回落旧发送路径。 */
 export function getOrCreateAdjustThread(scope: Record<string, string>): Promise<AdjustThreadResponse> {
   return apiPost<AdjustThreadResponse>('/api/conversations/thread', { scope });
+}
+
+/** 移除线程参考素材引用（二期子对话批 3）：只从线程 scopeRefs 删引用，
+ *  物理文件不删；引用/线程不存在抛 404（调用方据此刷新清单） */
+export function unrefThreadMaterial(conversationId: string, refId: string): Promise<{ ok: boolean }> {
+  const body: ThreadUnrefRequest = { conversation_id: conversationId, ref_id: refId };
+  return apiPost<{ ok: boolean }>('/api/conversations/thread/unref', body);
 }
 
 /** B11：把当前活跃对话打为不可变快照。

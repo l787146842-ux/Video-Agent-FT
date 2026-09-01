@@ -8,11 +8,12 @@
  * 浮窗打开且有运行中任务 → subscribeScopeThread 惰性订阅（防连接耗尽）。
  * 数据面只消费 adjustScopes（scope fx 结构性分流，delta 不进 chatState）。
  */
-import { createSignal, createEffect, createMemo, For, Show, type JSX } from 'solid-js';
-import { FiSend, FiSquare, FiX } from 'solid-icons/fi';
+import {
+  createSignal, createEffect, createMemo, lazy, For, Show, Suspense, type JSX,
+} from 'solid-js';
+import { FiX } from 'solid-icons/fi';
 import { adjustScopes, adjustScopeActions } from '@/stores/adjust-scopes';
 import { subscribeScopeThread } from '@/hooks/use-sse';
-import { stopAgentTask } from '@/api/sse';
 import { t } from '@/lib/locale';
 import type { TimelineItem } from '@/lib/timeline';
 import type { ChatMessage } from '@/types';
@@ -20,6 +21,9 @@ import { MarkdownBubble } from '@/components/right-panel/MarkdownBubble';
 import { ImageResultCard } from '@/components/right-panel/ImageResultCard';
 import { VideoResultCard } from '@/components/right-panel/VideoResultCard';
 import { AgentTimeline } from '@/components/right-panel/AgentTimeline';
+
+// 底部区（素材清单 + 附件入口 + 输入行）惰性装载：浮窗打开才加载，首包不预付（入口体积预算）
+const AdjustInputBar = lazy(() => import('./AdjustInputBar'));
 
 /** 消息行：用户气泡 / agent markdown 气泡 + 图卡/视频卡（渲染件复用主聊天） */
 function MessageRow(props: { message: ChatMessage }) {
@@ -50,7 +54,6 @@ export function AdjustDialog() {
     return key;
   });
   const thread = () => (activeKey() ? adjustScopes[activeKey()] : undefined);
-  const running = () => !!thread()?.taskId;
 
   // ===== 拖拽定位（同 DocsPanel：null=默认位，拖动后记左上角坐标） =====
   const [pos, setPos] = createSignal<{ x: number; y: number } | null>(null);
@@ -117,18 +120,6 @@ export function AdjustDialog() {
   }));
 
   const [text, setText] = createSignal('');
-  /** 续聊提交（走 sendAdjust：拒重复守卫/用户气泡落线程/定向线程任务） */
-  function doSend() {
-    const th = thread();
-    const v = text().trim();
-    if (!th || !v) return;
-    if (adjustScopeActions.sendAdjust(th.scope, v)) setText('');
-  }
-  /** 停止：复用既有 task 停止通道（按 taskId）；终态事件经 scope fx 落线程 */
-  function doStop() {
-    const tid = thread()?.taskId || '';
-    if (tid) void stopAgentTask(tid);
-  }
 
   return (
     <Show when={thread()} keyed>
@@ -171,28 +162,11 @@ export function AdjustDialog() {
               </Show>
             </div>
 
-            {/* 底部输入行：Enter 续聊；运行中换停止按钮（按 taskId 停止） */}
+            {/* 底部：参考素材清单 + 输入行（附件/粘贴/发送）——惰性块，浮窗打开才装载 */}
             <div class="adjust-dialog-footer">
-              <input
-                type="text"
-                class="adjust-dialog-input"
-                placeholder={t('rp.adjust.inputPlaceholder')}
-                value={text()}
-                onInput={(e) => setText(e.currentTarget.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') doSend(); }}
-              />
-              <Show
-                when={running()}
-                fallback={
-                  <button type="button" class="adjust-dialog-send" title={t('rp.adjust.send')} onClick={doSend}>
-                    <FiSend size={13} />
-                  </button>
-                }
-              >
-                <button type="button" class="adjust-dialog-stop" title={t('rp.adjust.stop')} onClick={doStop}>
-                  <FiSquare size={13} />
-                </button>
-              </Show>
+              <Suspense fallback={null}>
+                <AdjustInputBar scopeKey={activeKey} thread={thread} text={text} setText={setText} />
+              </Suspense>
             </div>
           </div>
         </div>

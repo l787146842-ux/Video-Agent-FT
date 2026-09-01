@@ -229,6 +229,7 @@ class FCToolRunner:
         on_status=None, on_event=None, injected_skill: str = "",
         selected_draft_id: str = "", selected_type: str = "",
         gate_override: Any = False,
+        scope_auto_pause: bool = False,
     ) -> FCExecuteResult:
         """执行 Function Calling 返回的 tool_calls。
 
@@ -464,7 +465,15 @@ class FCToolRunner:
                                     svc_now, set_flags={"storyboard_pending": True}, flush=True)
                         except Exception as _e:
                             logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
-                if name == "workflow_pause":
+                if name == "workflow_pause" and scope_auto_pause:
+                    # 子对话不发确认卡（用户裁决，二期子对话批 3）：scope 任务命中
+                    # workflow_pause 直接放行——不登记暂停三态、不组卡、不置问即停；
+                    # 回喂改写为「已自动确认」（见 tool_results 追加处），模型继续执行。
+                    # 主对话问即停语义不变（旗标缺省关）。
+                    tracer.record_control_flow(
+                        "pause_auto_passed",
+                        "scope 子对话内 workflow_pause 自动放行（不发起确认，直接执行）")
+                elif name == "workflow_pause":
                     paused_this_batch = True
                     # workflow_pause 只提交审批事实——卡问句系统
                     # 组装，模型原文一律进正文通道（无阈值补丁）
@@ -575,6 +584,14 @@ class FCToolRunner:
                     last_stage_label = _stage_lbl
                     self._turn_stage_label = _stage_lbl
                 tool_results.append({"name": name, "ok": True, "data": result.data})
+                # 子对话暂停放行（批 3）：回喂替换「已暂停」为「已自动确认」，
+                # 防模型停在等待用户回应的语义上（子对话不发起确认）
+                if name == "workflow_pause" and scope_auto_pause:
+                    tool_results[-1]["data"] = {
+                        "auto_passed": True,
+                        "note": "当前在微调子对话内：系统已自动确认并放行你的暂停请求"
+                        "（子对话内不发起用户确认），请直接继续执行完成本次调整。",
+                    }
                 # --- 收集 image_generate（single 模式）产出的图片 URL ---
                 data = result.data
                 if data and "image_urls" in data:

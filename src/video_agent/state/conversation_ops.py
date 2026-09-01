@@ -10,6 +10,7 @@
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from src.video_agent.config import settings
 from src.video_agent.utils import gen_id
 
 from . import chat_tail_ops
@@ -192,6 +193,72 @@ def cleanup_scoped_threads_for_removed(
     if save:
         svc.save()
     return hit_ids
+
+
+def bind_thread_scope_refs(
+    svc: "StateManager", conversation_id: str, attachments: List[Dict[str, str]],
+) -> List[Dict[str, str]]:
+    """子对话参考素材绑线程（二期子对话批 3）：把 scope 请求携带的引用追加到
+    conversations[i][\"scopeRefs\"]（对话级绑定；不进全局 assets/uploadedDocs，
+    主对话零污染）。素材随重生成持续生效；线程级联删除时引用随对话体消失；
+    撤销/快照栈含 conversations，引用同口径原子恢复。按 url 去重，数量上限读
+    settings.max_attachments（与主链路同口径）。须在 svc.lock 临界区内调用。
+    返回本次新增的引用条目（线程不存在时不登记任何引用，返回空）。"""
+    conv_id = str(conversation_id or "")
+    added: List[Dict[str, str]] = []
+    if not conv_id or not attachments:
+        return added
+    ensure_conversations(svc)
+    conv = next(
+        (c for c in svc._raw_state.get("conversations") or []
+         if isinstance(c, dict) and str(c.get("id") or "") == conv_id), None)
+    if conv is None:
+        return added
+    refs = conv.setdefault("scopeRefs", [])
+    seen = {str(r.get("url") or "") for r in refs if isinstance(r, dict)}
+    for att in list(attachments or [])[:int(settings.max_attachments)]:
+        url = str((att or {}).get("url") or "")
+        if not url or url in seen:
+            continue
+        entry = {
+            "id": att.get("id") or gen_id("sref"),
+            "name": att.get("name") or url,
+            "kind": att.get("kind") or "file",
+            "url": url,
+        }
+        refs.append(entry)
+        seen.add(url)
+        added.append(entry)
+    if added:
+        # 状态面变化：清上下文缓存，同请求后续轮次的 scopeRefs 注入即时刷新
+        svc._context_cache.clear()
+        svc.save()
+    return added
+
+
+def remove_thread_scope_ref(svc: "StateManager", conversation_id: str, ref_id: str) -> bool:
+    """从线程 scopeRefs 移除一条引用（二期子对话批 3 浮窗清单移除通道）：
+    只解逻辑绑定，物理文件不删（与主对话素材删除同口径，系统无素材 GC）。
+    命中移除返回 True；线程/引用不存在返回 False。"""
+    conv_id = str(conversation_id or "")
+    rid = str(ref_id or "")
+    if not conv_id or not rid:
+        return False
+    ensure_conversations(svc)
+    conv = next(
+        (c for c in svc._raw_state.get("conversations") or []
+         if isinstance(c, dict) and str(c.get("id") or "") == conv_id), None)
+    if conv is None:
+        return False
+    refs = conv.get("scopeRefs") or []
+    kept = [r for r in refs
+            if not (isinstance(r, dict) and str(r.get("id") or "") == rid)]
+    if len(kept) == len(refs):
+        return False
+    conv["scopeRefs"] = kept
+    svc._context_cache.clear()
+    svc.save()
+    return True
 
 
 def target_chat_messages(svc: "StateManager", conversation_id: str = "") -> List[Dict[str, Any]]:

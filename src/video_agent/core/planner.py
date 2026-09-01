@@ -358,6 +358,10 @@ class Planner:
 
         # 轮始清理 workflow 编译缓存（sidecar 声明轮间可编辑，缓存仅限本轮）
         workflow_runtime.clear_compile_cache()
+        # 子对话不发确认卡（二期子对话批 3）：scope 任务命中 workflow_pause 直接
+        # 放行（FCToolRunner 据此旗标不登记暂停/不组卡）；主对话问即停语义不变。
+        # Planner 实例每请求新建（chat_service 装配），旗标不跨请求泄漏。
+        self._scope_auto_pause = bool(context.adjust_scope)
 
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
         self._excluded_tools = self._compute_excluded_tools(context)
@@ -721,6 +725,8 @@ class Planner:
             on_status=on_status, on_event=on_event, injected_skill=injected_skill,
             selected_draft_id=selected_draft_id, selected_type=selected_type,
             gate_override=gate_override,
+            # scope 子对话暂停放行旗标（handle_message 轮始按 adjust_scope 置位）
+            scope_auto_pause=bool(getattr(self, "_scope_auto_pause", False)),
         )
 
 

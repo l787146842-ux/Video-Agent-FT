@@ -30,6 +30,7 @@ from loguru import logger
 
 from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.config import settings
+from src.video_agent.state import conversation_ops
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import stage_probes
 from src.video_agent.core import workflow_runtime
@@ -359,8 +360,15 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
     # 状态 JSON 改为惰性构建器：多步循环每个轮次重新构建，模型每轮看到最新状态
     async with ctx.svc.lock:
         if ctx.use_studio_context:
-            bind_attachments(ctx.svc, ctx.body.attachments)
-            store_uploaded_docs(ctx.svc, ctx.body.attachments)
+            if ctx.adjust_scope:
+                # 子对话素材绑线程（二期子对话批 3）：跳过全局登记，引用追加到
+                # 线程对话的 scopeRefs（不进 assets/uploadedDocs，主对话零污染）
+                conversation_ops.bind_thread_scope_refs(
+                    ctx.svc, str(getattr(ctx.body, "conversation_id", "") or ""),
+                    ctx.body.attachments or [])
+            else:
+                bind_attachments(ctx.svc, ctx.body.attachments)
+                store_uploaded_docs(ctx.svc, ctx.body.attachments)
             # 暂停回应结构化消费：点选回应与 active_pause 匹配即落标记（展示层）
             pause_answered = consume_pause_response(
                 ctx.svc, getattr(ctx.body, "pause_response", None) or None)

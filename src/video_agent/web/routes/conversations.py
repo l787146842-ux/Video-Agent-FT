@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from typing import Dict, List
 
 from src.video_agent.exceptions import VideoAgentError
+from src.video_agent.state import conversation_ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.web.agent_task_manager import get_agent_task_manager
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
@@ -28,6 +29,13 @@ class ThreadRequest(BaseModel):
     """幂等取/建隐藏线程（微调真子对话）：scope 形如
     {kind, cat, group_id, draft_id, label}；同目标重复提交返回同一线程。"""
     scope: Dict[str, str] = {}
+
+
+class ThreadUnrefRequest(BaseModel):
+    """移除线程参考素材引用（二期子对话批 3 浮窗清单移除通道）：
+    只解逻辑绑定（从 scopeRefs 删引用），物理文件不删。"""
+    conversation_id: str
+    ref_id: str
 
 
 class ConversationMeta(BaseModel):
@@ -87,7 +95,24 @@ async def get_or_create_thread(body: ThreadRequest):
         "conversation_id": conv["id"],
         "messages": svc.get_conversation_messages(conv["id"]) or [],
         "scope": conv.get("scope") or {},
+        # 本线程参考素材（批 3）：浮窗「本线程参考素材：N 个」清单数据源，
+        # 素材随重生成持续生效，重开浮窗清单可重建（不依赖前端内存）
+        "scope_refs": conv.get("scopeRefs") or [],
     }
+
+
+@router.post("/conversations/thread/unref")
+async def unref_thread_material(body: ThreadUnrefRequest):
+    """移除线程参考素材引用（二期子对话批 3）：移除 = 从线程对话的 scopeRefs
+    删引用（下次生成不再注入），物理文件不删（与主对话素材删除同口径）。
+    线程/引用不存在返 404（幂等友好：前端据此刷新清单）。"""
+    svc = StateManager.get_instance()
+    async with svc.lock:
+        ok = conversation_ops.remove_thread_scope_ref(
+            svc, body.conversation_id, body.ref_id)
+    if not ok:
+        raise VideoAgentError("线程或素材引用不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
+    return {"ok": True}
 
 
 @router.post("/conversations", response_model=ConversationsMetaResponse)
