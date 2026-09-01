@@ -110,6 +110,35 @@ describe('故事板微调框悬停 300ms 浮现（台账 #9）', () => {
     expect(box.classList.contains('open')).toBe(false);
   });
 
+  it('展开后下移途经间隙离开卡片行：150ms 宽限内不收缩，进入微调框取消宽限（任务 #17）', () => {
+    const { container } = setup();
+    const wrap = container.querySelector('.draft-card-wrap') as HTMLElement;
+    const row = container.querySelector('.draft-cards-row') as HTMLElement;
+    const groupEl = container.querySelector('.sb-group') as HTMLElement;
+    const box = container.querySelector('.card-adjust-box') as HTMLElement;
+
+    fireEvent.mouseEnter(wrap);
+    vi.advanceTimersByTime(300);
+    expect(box.classList.contains('open')).toBe(true);
+
+    // 下移途经 margin 间隙：relatedTarget 落在分组容器而非框内 → 不得即刻收缩
+    fireEvent.mouseLeave(row, { relatedTarget: groupEl });
+    vi.advanceTimersByTime(149);
+    expect(box.classList.contains('open')).toBe(true);
+
+    // 进入微调框 → 取消宽限，保持展开（可点击输入）
+    fireEvent.mouseEnter(box);
+    vi.advanceTimersByTime(1000);
+    expect(box.classList.contains('open')).toBe(true);
+
+    // 未聚焦且移出分组 → 宽限到期后仍收缩消失
+    fireEvent.mouseLeave(groupEl);
+    vi.advanceTimersByTime(149);
+    expect(box.classList.contains('open')).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(box.classList.contains('open')).toBe(false);
+  });
+
   it('浮现后输入意见并点「微调」：走真子对话入口（目标卡定位 + 文本）', async () => {
     vi.mocked(adjustScopeActions.openThread).mockResolvedValue(true);
     vi.mocked(adjustScopeActions.sendAdjust).mockReturnValue(true);

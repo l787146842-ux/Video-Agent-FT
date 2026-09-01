@@ -45,7 +45,19 @@ export function GroupCard(props: {
     if (cardsHover() || hoverTimer !== undefined) return;
     hoverTimer = setTimeout(() => { hoverTimer = undefined; setCardsHover(true); }, 300);
   }
-  onCleanup(clearHoverTimer);
+
+  /* 收缩宽限（150ms）：从卡片行下移进入微调框途经 margin/动画间隙时，
+     relatedTarget 可能落在分组容器而非框内，即刻收缩会让框失去悬停面、
+     鼠标再也进不去；改挂宽限表，框/卡片 mouseenter（setCardsHover(true)）取消 */
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  function clearCloseTimer() {
+    if (closeTimer !== undefined) { clearTimeout(closeTimer); closeTimer = undefined; }
+  }
+  function scheduleHoverClose() {
+    if (!cardsHover() || closeTimer !== undefined) return;
+    closeTimer = setTimeout(() => { closeTimer = undefined; setCardsHover(false); }, 150);
+  }
+  onCleanup(() => { clearHoverTimer(); clearCloseTimer(); });
 
   /** 分组拖拽门控：仅当按下点在空白区域（非文字/按钮/卡片等）才允许拖动整个分组，
    * 其他区域（尤其文字）保留鼠标选中复制能力 */
@@ -125,7 +137,7 @@ export function GroupCard(props: {
       data-group-id={props.group.id}
       draggable={dragEnabled()}
       onMouseDown={(e) => setDragEnabled(isBlankDragArea(e.target))}
-      onMouseLeave={() => { clearHoverTimer(); setCardsHover(false); }}
+      onMouseLeave={() => { clearHoverTimer(); scheduleHoverClose(); }}
       onContextMenu={(e) => props.onContextMenu(e)}
       onDragStart={(e) => { e.dataTransfer!.setData('text/plain', props.group.id); e.dataTransfer!.effectAllowed = 'move'; props.onDragStart(e); }}
       onDragOver={(e) => props.onDragOver(e)}
@@ -155,11 +167,12 @@ export function GroupCard(props: {
       <div
         class="draft-cards-row"
         onMouseLeave={(e) => {
-          // 移向下方微调输入行时不清除（保持展开），移出卡片区域才收起
+          // 移向下方微调输入行时不清除（保持展开），移出卡片区域才收起；
+          // 其余方向走 150ms 宽限（框 mouseenter 取消），覆盖途经间隙的路径
           const rt = e.relatedTarget as HTMLElement | null;
           if (rt && adjustBoxRef && adjustBoxRef.contains(rt)) return;
           clearHoverTimer();
-          setCardsHover(false);
+          scheduleHoverClose();
         }}
       >
         <button
@@ -174,7 +187,7 @@ export function GroupCard(props: {
           {(draft, di) => (
             <div
               class="draft-card-wrap"
-              onMouseEnter={() => { setHoverDraftId(draft.id); armHoverTimer(); }}
+              onMouseEnter={() => { setHoverDraftId(draft.id); clearCloseTimer(); armHoverTimer(); }}
             >
               <DraftCard
                 draft={draft}
@@ -214,7 +227,7 @@ export function GroupCard(props: {
         adjustLabel={meta().adjustLabel}
         hoverDraftId={hoverDraftId}
         cardsHover={cardsHover}
-        setCardsHover={setCardsHover}
+        setCardsHover={(v) => { if (v) clearCloseTimer(); setCardsHover(v); }}
         registerRef={(el) => { adjustBoxRef = el; }}
       />
     </div>
