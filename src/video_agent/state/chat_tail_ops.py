@@ -15,6 +15,8 @@ from loguru import logger
 
 from src.video_agent.exceptions import StateConflictError
 
+from . import conversation_ops
+
 # 截断重答内部标记（后端自用，不属公共请求契约）：/chat/truncate-resend
 # 已把（编辑后的）用户消息落盘在历史尾部，路由置位后发送管线各落盘点
 # 据此守卫不重复持久化，防用户气泡翻倍。asyncio.create_task 创建 worker
@@ -79,9 +81,11 @@ def _resync_from_disk(svc) -> None:
     svc._ensure_conversations()
 
 
-def truncate_chat_tail(svc, keep_index: int, new_text: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def truncate_chat_tail(svc, keep_index: int, new_text: Optional[str] = None,
+                       conversation_id: str = "") -> Optional[Dict[str, Any]]:
     """截断对话尾部（截断重答用）：真正丢弃 keep_index 之后的全部消息
     并立即落盘（版本账本闸与 save 主通路一致）。
+    conversation_id 显式定向目标对话（批 6-1）；缺省走绑定/活跃对话单点。
 
     new_text 非 None → 替换 keep_index 处消息正文（turnId 等既有元数据
     原样保留）；该消息若含富文本 parts 则清空（编辑框只编辑纯文本，
@@ -91,8 +95,7 @@ def truncate_chat_tail(svc, keep_index: int, new_text: Optional[str] = None) -> 
     """
     if not isinstance(keep_index, int):
         return None
-    svc._ensure_conversations()
-    msgs = svc._raw_state["chatMessages"]
+    msgs = conversation_ops.target_chat_messages(svc, conversation_id)
     if keep_index < 0 or keep_index >= len(msgs):
         return None
     if keep_index + 1 < len(msgs):
@@ -112,15 +115,16 @@ def truncate_chat_tail(svc, keep_index: int, new_text: Optional[str] = None) -> 
     return entry
 
 
-def restore_chat_tail(svc, keep_index: int, tail_entries: List[Dict[str, Any]]) -> None:
+def restore_chat_tail(svc, keep_index: int, tail_entries: List[Dict[str, Any]],
+                      conversation_id: str = "") -> None:
     """截断重答回滚：把截断前取的尾部快照（自 keep_index 起）原样恢复并立即落盘。
+    conversation_id 与对应截断同口径定向（批 6-1）。
 
     用于截断已生效而起任务失败的极小窗口：破坏性截断不得遗留半成品状态。
     临界区内无其他写者，版本闸拒绝理论不可达；真发生时只留告警不再抛
     （回滚失败不得遮盖原始 500）。
     """
-    svc._ensure_conversations()
-    msgs = svc._raw_state["chatMessages"]
+    msgs = conversation_ops.target_chat_messages(svc, conversation_id)
     msgs[keep_index:] = tail_entries
     svc._state_dirty = True
     svc._context_cache.clear()

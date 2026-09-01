@@ -63,6 +63,11 @@ class ChatRequest(BaseModel):
     message: str
     # 请求幂等键：前端每次发送生成唯一 id，同 id 处理中时拒绝重复提交
     request_id: str = ""
+    # 会话定向（批 6-1 多会话并行）：任务绑定指定对话/项目；空 = 回落
+    # 后端全局活跃对话/活跃项目（现行语义），旧前端/旧测试零破坏。
+    # 修复跨窗口串线：提交不再依赖全局单例的活跃指针。
+    conversation_id: str = ""
+    project_id: str = ""
     provider: str = ""
     model: str = ""
     ms_model: str = ""

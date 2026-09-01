@@ -14,6 +14,7 @@ from typing import List
 
 from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.state.manager import StateManager
+from src.video_agent.web.agent_task_manager import get_agent_task_manager
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
 
 router = APIRouter()
@@ -77,7 +78,7 @@ async def activate_conversation(conversation_id: str):
 
 @router.delete("/conversations/{conversation_id}", response_model=ConversationsMetaResponse)
 async def delete_conversation(conversation_id: str):
-    """删除对话（仅剩一个时拒绝）"""
+    """删除对话（仅剩一个时拒绝；批 6-1：有绑定任务运行中时拒绝）"""
     svc = StateManager.get_instance()
     convs = svc.conversations_meta_payload()["conversations"]
     exists = any(c["id"] == conversation_id for c in convs)
@@ -86,6 +87,19 @@ async def delete_conversation(conversation_id: str):
     if len(convs) <= 1:
         raise VideoAgentError(
             "仅剩一个对话，不能关闭", status_code=400, error_code=LEGACY_VALIDATION_ERROR
+        )
+    # 删忙对话保护（批 6-1）：绑定任务运行中拒删（任务恢复后消息写入无主对话）；
+    # 无绑定记录的旧任务（空会话字段）视为绑定活跃对话，同口径保守只拦活跃对话
+    running = get_agent_task_manager().list_running(svc.active_project_id or "")
+    active_id = str(svc._raw_state.get("activeConversationId") or "")
+    bound = any(
+        (str(t.get("conversation_id") or "") or active_id) == conversation_id
+        for t in running
+    )
+    if bound:
+        raise VideoAgentError(
+            "该对话有 Agent 任务运行中，不能关闭", status_code=400,
+            error_code=LEGACY_VALIDATION_ERROR
         )
     async with svc.lock:
         payload = svc.delete_conversation(conversation_id)

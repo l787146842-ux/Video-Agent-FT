@@ -45,7 +45,8 @@
 
 ### Rule 3: StateManager 唯一写入点
 - `state/manager.py::StateManager` 是状态的**唯一写入点**；复杂嵌套操作允许直接操作 `state_dict`，但完成后**必须 `save()`**
-- **禁止**在 routes / tools / adapters 中直接写 JSON 文件；**禁止**绕过单例自建状态实例（配置类文件除外：快照 / 运行时设置 / 供应商配置等不走状态管理的配置类文件，不在本禁令范围内）
+- **禁止**在 routes / tools / adapters 中直接写 JSON 文件；**禁止**绕过单例自建状态实例（配置类文件除外：快照 / 运行时设置 / 供应商配置等不走状态管理的配置类文件，不在本禁令范围内；后台 Agent 任务的任务级实例经 `create_task_bound` 受控创建，不属绕过）
+- **并发契约（Q25，批 6-1）**：单用户多会话并行——同项目多对话可同时运行 Agent 任务、共享项目状态；任务经任务级状态实例绑定提交时的对话（`bound_conversation_id`，聊天写入定向单点 `conversation_ops.target_chat_messages`）；两个会话同时修改同一状态属用户自担责任，后写生效，系统不做自动合并
 
 ### Rule 4: 外部调用必须走 Adapter
 - LLM/图/视频外部调用必须继承 `adapters/base_chat.py::BaseChatAdapter` 或 `adapters/base.py::Base{Image,Video}Adapter`

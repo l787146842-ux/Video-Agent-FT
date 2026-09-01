@@ -190,6 +190,11 @@ class StateManager(UndoRedoMixin):
         # 说明别的实例写过更新数据，本实例的保存必须放弃，防旧盖新）
         self._known_version: Optional[int] = None
 
+        # 任务级会话绑定（批 6-1 多会话并行）：非空时本实例的聊天写入/
+        # 快照挂载定向到该对话而非活跃对话；实例内存态、不落盘，
+        # 两任务实例各绑各的互不改对方视图（空 = 现行活跃对话语义）
+        self.bound_conversation_id: str = ""
+
         # 多项目管理器（委托）
         self._project_mgr = ProjectManager(
             repo=self._repo,
@@ -398,9 +403,10 @@ class StateManager(UndoRedoMixin):
     def attach_snapshot_to_last_agent_message(self, label: str = "") -> str:
         """E1：打快照并挂到当前对话最后一条 agent 消息（消息级指针化）。
 
-        无 agent 消息时照常打快照（故事板版本列表仍可见）。"""
+        无 agent 消息时照常打快照（故事板版本列表仍可见）。
+        批 6-1：绑定会话优先（经 conversation_ops.target_chat_messages 单点）。"""
         snap_id = self.take_snapshot(label)
-        msgs = self._raw_state.get("chatMessages") or []
+        msgs = conversation_ops.target_chat_messages(self)
         for m in reversed(msgs):
             if isinstance(m, dict) and m.get("sender") == "agent":
                 m["snapshotId"] = snap_id
@@ -714,10 +720,12 @@ class StateManager(UndoRedoMixin):
             pause_answered, kind, video_items, suggested_actions,
         )
 
-    def truncate_chat_tail(self, keep_index: int, new_text: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def truncate_chat_tail(self, keep_index: int, new_text: Optional[str] = None,
+                           conversation_id: str = "") -> Optional[Dict[str, Any]]:
         """截断对话尾部（截断重答用）：契约与实现见 chat_tail_ops.truncate_chat_tail
         （破坏性写入；落盘被版本闸拒绝时抛 StateConflictError）。"""
-        return chat_tail_ops.truncate_chat_tail(self, keep_index, new_text)
+        return chat_tail_ops.truncate_chat_tail(self, keep_index, new_text,
+                                                conversation_id=conversation_id)
 
     def build_agent_context(self, asset_mode: str = "bound", stage: str = "") -> str:
         """构建发送给 LLM 的 Studio 状态上下文（带缓存，状态未变时复用）。

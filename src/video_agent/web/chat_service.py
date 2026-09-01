@@ -154,28 +154,35 @@ async def _stream_worker_impl(body: ChatRequest, svc: StateManager, emit, pendin
 def start_agent_task(body: ChatRequest) -> Dict[str, Any]:
     """任务式传输：提交即返回 task_id，worker 后台运行。
 
-    刷新/切项目只断订阅不杀任务；worker 绑定提交时所属项目（任务级 StateManager），
-    不会把旧项目状态写进新项目。
+    刷新/切项目只断订阅不杀任务；worker 绑定提交时所属项目与对话（任务级
+    StateManager），不会把旧项目状态写进新项目/别的对话（批 6-1：定向优先，
+    空参回落全局活跃项目/活跃对话，修复跨窗口串线）。
     """
     from src.video_agent.utils import gen_id
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
 
     submission_svc = StateManager.get_instance()
-    project_id = submission_svc.active_project_id or ""
+    project_id = (getattr(body, "project_id", "") or "").strip() \
+        or submission_svc.active_project_id or ""
+    conversation_id = (getattr(body, "conversation_id", "") or "").strip() \
+        or str(submission_svc.conversations_meta_payload().get("active_conversation_id") or "")
     workspace_dir = str(submission_svc._workspace_dir)
     task_id = gen_id("agt")
     tm = get_agent_task_manager()
     record = tm.create(
         project_id,
-        lambda: _run_agent_task(body, project_id, task_id, workspace_dir),
+        lambda: _run_agent_task(body, project_id, task_id, workspace_dir, conversation_id),
         task_id=task_id,
         model=getattr(body, "model", "") or "",
+        conversation_id=conversation_id,
     )
     return {"task_id": record["task_id"], "project_id": project_id}
 
 
-async def _run_agent_task(body: ChatRequest, project_id: str, task_id: str, workspace_dir: str) -> None:
-    """后台任务 worker：绑定任务专属 StateManager，事件经 task_manager.emit 下发。"""
+async def _run_agent_task(body: ChatRequest, project_id: str, task_id: str,
+                          workspace_dir: str, conversation_id: str = "") -> None:
+    """后台任务 worker：绑定任务专属 StateManager（+对话绑定，批 6-1），
+    事件经 task_manager.emit 下发。"""
     from src.video_agent.web.agent_task_manager import get_agent_task_manager
 
     tm = get_agent_task_manager()
@@ -193,6 +200,9 @@ async def _run_agent_task(body: ChatRequest, project_id: str, task_id: str, work
             **classify_exception(e, message=_detail).sse_fields(),
         })
         return
+    # 对话绑定：本任务全部聊天写入定向到提交时的对话（不落盘、不改活跃指针）；
+    # 绑定会话不存在时写入单点静默回落活跃对话（不阻断任务）
+    svc.bound_conversation_id = conversation_id
     try:
         async def emit(event: Dict[str, Any]) -> None:
             tm.emit(task_id, event)

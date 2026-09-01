@@ -66,13 +66,16 @@ class AgentTaskManager:
         worker_factory: Callable[[], Awaitable[None]],
         task_id: str = "",
         model: str = "",
+        conversation_id: str = "",
     ) -> Dict[str, Any]:
-        """创建后台任务并启动 worker，返回任务记录。"""
+        """创建后台任务并启动 worker，返回任务记录。
+        conversation_id（批 6-1）：任务绑定的对话，随记录下发供前端路由事件流。"""
         self._purge_stale()
         task_id = task_id or gen_id("agt")
         record: Dict[str, Any] = {
             "task_id": task_id,
             "project_id": project_id,
+            "conversation_id": conversation_id,
             "model": model,
             "status": "running",
             "created_at": time.time(),
@@ -372,6 +375,7 @@ class AgentTaskManager:
             out.append({
                 "task_id": record["task_id"],
                 "project_id": record["project_id"],
+                "conversation_id": record.get("conversation_id", ""),
                 "status": record["status"],
                 "created_at": record["created_at"],
                 "status_text": record["status_text"],

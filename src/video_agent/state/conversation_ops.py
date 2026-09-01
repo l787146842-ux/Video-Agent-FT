@@ -82,6 +82,21 @@ def conversations_meta_payload(svc: "StateManager") -> Dict[str, Any]:
     return payload
 
 
+def target_chat_messages(svc: "StateManager", conversation_id: str = "") -> List[Dict[str, Any]]:
+    """聊天写入目标消息列表单点（批 6-1 多会话并行）：
+    显式 conversation_id 优先 → 实例绑定会话（svc.bound_conversation_id）
+    → 回落活跃对话（chatMessages 不变式）。返回对话 messages 的同一引用，
+    绑定会话不存在时静默回落（任务恢复/对话被删不得阻断写入）。"""
+    ensure_conversations(svc)
+    conv_id = str(conversation_id or getattr(svc, "bound_conversation_id", "") or "")
+    if conv_id:
+        convs = svc._raw_state.get("conversations") or []
+        target = next((c for c in convs if isinstance(c, dict) and c.get("id") == conv_id), None)
+        if target is not None:
+            return target.setdefault("messages", [])
+    return svc._raw_state["chatMessages"]
+
+
 def get_conversation_messages(svc: "StateManager", conversation_id: str) -> Optional[List[Dict[str, Any]]]:
     """按会话 ID 取消息（消息单一来源装载接口）；会话不存在返回 None。"""
     convs = ensure_conversations(svc)
@@ -242,9 +257,9 @@ def add_chat_message(
     suggested_actions: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，
-    防止状态文件无上限增长。各附加字段语义见 StateManager.add_chat_message。"""
-    ensure_conversations(svc)
-    msgs = svc._raw_state["chatMessages"]
+    防止状态文件无上限增长。写入目标：绑定会话优先、无绑定回落活跃对话
+    （批 6-1，定向单点见 target_chat_messages）。各附加字段语义见 StateManager.add_chat_message。"""
+    msgs = target_chat_messages(svc)
     entry = build_chat_entry(
         sender, text, model_name, image_urls, meta, confirm,
         applied_actions, action_log, doc_card, trace, doc_blocks,

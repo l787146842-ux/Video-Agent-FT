@@ -502,8 +502,9 @@ async def test_concurrent_double_click_creates_single_task(svc, monkeypatch):
         def __init__(self):
             self.created = []
 
-        def create(self, project_id, factory, task_id="", model=""):
-            rec = {"task_id": task_id, "project_id": project_id, "status": "running"}
+        def create(self, project_id, factory, task_id="", model="", conversation_id=""):
+            rec = {"task_id": task_id, "project_id": project_id, "status": "running",
+                   "conversation_id": conversation_id}
             self.created.append(rec)
             return rec
 

@@ -61,6 +61,8 @@ export interface CanvasSelectNodesRequest {
 export interface ChatRequest {
   message: string;
   request_id?: string;
+  conversation_id?: string;
+  project_id?: string;
   provider?: string;
   model?: string;
   ms_model?: string;
@@ -425,6 +427,7 @@ export interface TruncateResendRequest {
   provider?: string | undefined;
   model?: string | undefined;
   thinking_level?: string | undefined;
+  conversation_id?: string;
 }
 
 export interface UndoStatusResponse {

@@ -6,7 +6,8 @@
 （保留 turnId 等元数据）→ 复用 start_agent_task 以正常发送的
 同一通路起 agent 任务（任务式传输，响应体与 /agent/tasks 一致）。
 
-- agent 忙碌时 409（与前端 busyGuard 同语义：当前项目有后台 agent 任务在跑）；
+- agent 忙碌时 409（批 6-1 起为对话级：目标对话有绑定后台任务在跑才拒；
+  别的对话的任务在跑不阻断，多会话并行）；
 - 无用户消息可重答时 400；错误响应走 ErrorPayload 结构化契约。
 
 时序不变式（全部在同一把 svc.lock 临界区内完成）：
@@ -23,7 +24,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from src.video_agent.exceptions import StateConflictError
-from src.video_agent.state import chat_tail_ops
+from src.video_agent.state import chat_tail_ops, conversation_ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.web import agent_task_manager
 from src.video_agent.web import chat_service
@@ -46,6 +47,8 @@ class TruncateResendRequest(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
     thinking_level: Optional[str] = None
+    # 目标对话定向（批 6-1 多会话并行）；空 = 全局活跃对话（现行语义）
+    conversation_id: str = ""
 
 
 def _error(status: int, legacy_code: str, message: str) -> JSONResponse:
@@ -56,9 +59,15 @@ def _error(status: int, legacy_code: str, message: str) -> JSONResponse:
     )
 
 
-def _agent_busy(svc: StateManager) -> bool:
-    """忙碌判定（与前端 busyGuard 同语义）：当前项目仍有后台 agent 任务运行中。"""
-    return bool(agent_task_manager.get_agent_task_manager().list_running(svc.active_project_id or ""))
+def _conversation_busy(svc: StateManager, conversation_id: str) -> bool:
+    """忙碌判定（批 6-1 改对话级）：仅目标对话有绑定任务运行中才算忙；
+    别的对话的任务在跑不阻断本对话截断重答（多会话并行）。
+    无绑定记录的旧任务（空会话字段）视为绑定活跃对话，同口径保守。"""
+    running = agent_task_manager.get_agent_task_manager().list_running(svc.active_project_id or "")
+    return any(
+        (str(t.get("conversation_id") or "") or conversation_id) == conversation_id
+        for t in running
+    )
 
 
 def _resolve_chat_target() -> Tuple[str, str]:
@@ -133,11 +142,18 @@ async def truncate_resend(body: TruncateResendRequest):
     """
     svc = StateManager.get_instance()
     async with svc.lock:
+        # 目标对话定向（批 6-1）：显式传入优先，缺省回落全局活跃对话；
+        # 传入不存在的对话 → 400（不得静默落到别的对话做破坏性截断）
+        target_conv = (body.conversation_id or "").strip() \
+            or str(svc._raw_state.get("activeConversationId") or "")
+        if (body.conversation_id or "").strip() and svc.get_conversation_messages(target_conv) is None:
+            return _error(400, "LEGACY_VALIDATION_ERROR", "目标对话不存在")
         # 忙碌判定在锁内（防 TOCTOU）：判定 → 截断 → 任务注册同临界区原子完成，
-        # 并发双击时第二个请求进来任务已登记，必判 busy
-        if _agent_busy(svc):
+        # 并发双击时第二个请求进来任务已登记，必判 busy（仅目标对话口径，
+        # 别的对话任务在跑不阻断——批 6-1 多会话并行）
+        if _conversation_busy(svc, target_conv):
             return _error(409, "AGENT_BUSY", "Agent 正在回复，请稍后再试")
-        msgs = svc.get_chat_messages()
+        msgs = conversation_ops.target_chat_messages(svc, target_conv)
         idx = next(
             (i for i in range(len(msgs) - 1, -1, -1)
              if msgs[i].get("sender") == "user"
@@ -165,7 +181,7 @@ async def truncate_resend(body: TruncateResendRequest):
         tail_snapshot = copy.deepcopy(msgs[idx:])
         await chat_tail_ops.flush_pending_saves(svc)
         try:
-            entry = svc.truncate_chat_tail(idx, replace_with)
+            entry = svc.truncate_chat_tail(idx, replace_with, conversation_id=target_conv)
         except StateConflictError:
             return _error(409, "STATE_CONFLICT", "状态冲突：磁盘已有更新写入，请刷新后重试")
         if entry is None:  # 防御：校验后消息列表被动变化（理论不可达）
@@ -178,6 +194,8 @@ async def truncate_resend(body: TruncateResendRequest):
             ms_model=model if provider == "modelscope" else "",
             messages=history,
             thinking_level=(body.thinking_level or "").strip(),
+            conversation_id=target_conv,
+            project_id=svc.active_project_id or "",
         )
         # 内部标记（非公共契约）：用户消息已落盘在历史尾部，
         # 发送管线各落盘点据此守卫不重复持久化
@@ -187,7 +205,7 @@ async def truncate_resend(body: TruncateResendRequest):
         except Exception as e:
             # 不可预检的失败（极小窗口）：先回滚截断尾部快照，
             # 再结构化 500，不遗留孤儿任务也不遗留半成品对话
-            chat_tail_ops.restore_chat_tail(svc, idx, tail_snapshot)
+            chat_tail_ops.restore_chat_tail(svc, idx, tail_snapshot, conversation_id=target_conv)
             return _error(500, "INTERNAL_ERROR", f"起任务失败: {e}")
         finally:
             chat_tail_ops.user_message_persisted.reset(token)
