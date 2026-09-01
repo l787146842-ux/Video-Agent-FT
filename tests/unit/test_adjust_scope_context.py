@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """批 S2 微调真子对话：作用域上下文裁剪（context_builder scope 档）。
 
-钉死契约：
-1. scope 存在时：目标分组（group_id / draft_id 定位）注入全量草稿细节
-   （含提示词全文），同类别非目标分组与其他类别一律组级指针；
+钉死契约（对齐 Flova：子对话只应看到对应元素，任务 #19 收窄）：
+1. scope 存在时：仅目标分组（group_id / draft_id 定位）注入全量草稿细节
+   （含提示词全文）；同类别其余分组与其他类别整体不注入（连指针清单也不给）；
+   documents（规格/剧本）/uploadedDocs/assets/analysis/interaction 一律不可见；
 2. 无 scope 时行为零变化（渐进披露：仅 prompt_chars，无 prompt 全文）；
 3. 缓存键扩 scope：同 scope 命中复用、不同 scope 不互串、未命中回落重建。
 """
@@ -44,6 +45,9 @@ def svc(tmp_path):
     ]
     raw[CAT_AUDIO_ITEMS] = []
     raw["documents"] = [{"name": "规格", "content": "正文不进注入面" * 40}]
+    raw["uploadedDocs"] = [{"id": "up-1", "name": "剧本.txt", "kind": "script", "char_count": 99}]
+    raw["assets"] = [{"id": "a-1", "name": "参考图", "type": "image", "isBound": True, "url": "http://x/a.png"}]
+    raw["analysis"] = {"summary": "剧本分析摘要不应可见", "key_points": ["k1"]}
     instance.save()
     StateManager._instance = instance
     yield instance
@@ -55,43 +59,47 @@ def _parse(svc, scope):
         svc.state_dict, asset_mode="bound", cache=None, scope=scope))
 
 
-# ---------- 1. 目标组全量 / 其余指针 ----------
+# ---------- 1. 目标组全量 / 其余整体不注入 ----------
 
-def test_scope_target_full_others_pointers(svc):
+def test_scope_target_full_rest_invisible(svc):
     snap = _parse(svc, _SCOPE)
     shots = snap[CAT_SHOTS]
-    target = next(g for g in shots if g.get("id") == "grp-target")
-    other = next(g for g in shots if g.get("id") == "grp-other")
+    # 目标类别只剩目标组（非目标组连指针也不给）
+    assert [g.get("id") for g in shots] == ["grp-target"]
+    target = shots[0]
     # 目标组：草稿细节全量（含提示词全文，渐进披露豁免）
     prompts = [d.get("prompt", "") for d in target["drafts"]]
     assert prompts == ["目标提示词全文A", "同组次卡提示词B"]
     assert target["title"] == "目标组" and target["index"] == 1
-    # 同类别非目标组：仅组级指针
-    assert "drafts" not in other and other.get("draft_count") == 1
-    assert "别组提示词不外流" not in json.dumps(snap, ensure_ascii=False)
-    # 其他类别一律指针
-    ke = snap[CAT_KEY_ELEMENTS][0]
-    assert "drafts" not in ke and ke.get("draft_count") == 1
-    assert "主角提示词不外流" not in json.dumps(snap, ensure_ascii=False)
+    # 其他类别整体不注入（空列表，连指针清单也不给）
+    assert snap[CAT_KEY_ELEMENTS] == []
+    assert snap[CAT_AUDIO_ITEMS] == []
+    # documents（规格/剧本）/uploadedDocs/assets/analysis/interaction 不可见
+    for key in ("documents", "uploadedDocs", "assets", "analysis", "interaction"):
+        assert key not in snap
+    # 非目标内容全文不外流（双保险：序列化面扫描）
+    dumped = json.dumps(snap, ensure_ascii=False)
+    assert "别组提示词不外流" not in dumped
+    assert "主角提示词不外流" not in dumped
+    assert "剧本分析摘要" not in dumped
+    assert "剧本.txt" not in dumped
     # 裁剪解释在场（不嵌目标编号亦成立：字段存在性断言）
     assert snap.get("scopeNote")
-    # documents 保持既有清单形态（名称/字数/前 200 字预览，全文不注入）
-    doc = snap["documents"][0]
-    assert "content" not in doc and doc["char_count"] == len("正文不进注入面" * 40)
-    assert len(doc.get("preview", "")) <= 200
 
 
 def test_scope_locates_target_by_draft_id(svc):
     snap = _parse(svc, dict(_SCOPE, group_id="", draft_id="draft-9"))
-    other = next(g for g in snap[CAT_SHOTS] if g.get("id") == "grp-other")
-    target = next(g for g in snap[CAT_SHOTS] if g.get("id") == "grp-target")
-    assert [d.get("prompt", "") for d in other["drafts"]] == ["别组提示词不外流"]
-    assert "drafts" not in target  # 反成指针
+    # draft_id 定位：目标切成 grp-other，全量注入；原 group_id 目标反不可见
+    assert [g.get("id") for g in snap[CAT_SHOTS]] == ["grp-other"]
+    assert [d.get("prompt", "") for d in snap[CAT_SHOTS][0]["drafts"]] == ["别组提示词不外流"]
+    assert "目标提示词全文A" not in json.dumps(snap, ensure_ascii=False)
 
 
-def test_scope_missing_target_falls_back_to_pointers(svc):
+def test_scope_missing_target_falls_back_to_empty(svc):
+    """目标缺失（组已删除）回落空注入，不阻断任务；非目标面仍不可见。"""
     snap = _parse(svc, dict(_SCOPE, group_id="grp-ghost", draft_id="draft-ghost"))
-    assert all("drafts" not in g for g in snap[CAT_SHOTS])
+    assert snap[CAT_SHOTS] == []
+    assert "documents" not in snap
     assert snap.get("scopeNote")
 
 

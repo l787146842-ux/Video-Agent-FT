@@ -499,7 +499,11 @@ def _sec_session_summary(pb: "PromptBuilder", context: "PlannerContext") -> str:
 
 
 def _sec_catalog(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """Skill 目录（渐进式披露：名称+摘要常驻，全文按需 read_skill）。"""
+    """Skill 目录（渐进式披露：名称+摘要常驻，全文按需 read_skill）。
+    scope 任务（微调真子对话）不注入：子对话只看对应目标元素，
+    目录清单属非目标面（对齐 Flova，连指针清单也不给）。"""
+    if getattr(context, "adjust_scope", None):
+        return ""
     return pb.build_skill_catalog(context)
 
 

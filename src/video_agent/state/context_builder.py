@@ -55,8 +55,9 @@ def build_agent_context(
                   只留组标题/编号/草稿计数，大幅压缩状态上下文体积
         stage: 当前创作阶段键（分阶段注入裁剪用；空 = 不裁剪）
         scope: 微调作用域（微调真子对话，policy-as-data 同 STAGE_STATE_FOCUS）：
-               目标分组注入全量草稿细节（含提示词全文），其余分组/
-               类别一律组级指针；空 = 不裁剪（旧行为零变化）
+               仅目标分组/目标卡注入全量草稿细节（含提示词全文），其余分组/
+               类别/文档/素材清单一律不注入（对齐 Flova：子对话只看对应元素）；
+               空 = 不裁剪（旧行为零变化）
 
     Returns:
         JSON 字符串
@@ -290,11 +291,11 @@ def _full_scope_group(raw_group: Dict[str, Any], gi: int) -> Dict[str, Any]:
 def _apply_scope_profile(
     snapshot: Dict[str, Any], raw_state: Dict[str, Any], scope: Dict[str, Any],
 ) -> bool:
-    """微调作用域裁剪（微调真子对话，对齐 Flova）：目标分组（按
-    scope.group_id / draft_id 定位）注入全量草稿细节，其余分组/类别一律
-    组级指针（防越界改非目标组，全文可调 read_state_group 按需读回）；
-    documents/assets/uploadedDocs 保持既有清单形态（正文本就不注入）。
-    目标缺失（组已删除）回落该类别全指针，不阻断任务。"""
+    """微调作用域裁剪（微调真子对话，对齐 Flova：子对话只应看到对应元素）：
+    仅目标分组（按 scope.group_id / draft_id 定位）注入全量草稿细节；
+    同类别其余分组与其他类别整体不注入（连指针清单也不给，防越界读改）；
+    documents（规格/剧本）/uploadedDocs/assets/剧本分析/交互状态同样不注入。
+    目标缺失（组已删除）回落该类别空注入，不阻断任务。"""
     cat = str(scope.get("cat") or "")
     group_id = str(scope.get("group_id") or "")
     draft_id = str(scope.get("draft_id") or "")
@@ -311,24 +312,25 @@ def _apply_scope_profile(
                     is_target = any(
                         isinstance(d, dict) and d.get("id") == draft_id
                         for d in (g.get("drafts") or []))
-                out.append(
-                    _full_scope_group(g, gi) if is_target
-                    else {
-                        "id": g.get("id", ""),
-                        "index": gi + 1,
-                        "title": g.get("title", ""),
-                        "draft_count": len(g.get("drafts", []) or []),
-                    })
+                if is_target:
+                    out.append(_full_scope_group(g, gi))
             snapshot[c] = out
             trimmed = True
         else:
-            snapshot[c] = _group_pointers(raw_state, c)
+            snapshot[c] = []
+            trimmed = True
+    # 非目标面整体移除（连指针清单也不给）：规格/剧本清单、上传附件、
+    # 绑定素材、剧本分析摘要、主对话交互状态均不属于子对话视野；
+    # 铁律段不受影响（宪法级，走 system prompt 段，体量小）
+    for k in ("documents", "uploadedDocs", "assets", "analysis", "interaction"):
+        if k in snapshot:
+            snapshot.pop(k)
             trimmed = True
     if trimmed:
         snapshot["scopeNote"] = (
-            "微调作用域：仅目标分组注入了全量草稿细节（含提示词全文）；"
-            "其余分组仅组级指针，非目标内容全文调 read_state_group 按需读回，"
-            "且不得修改非目标分组"
+            "微调作用域：仅目标分组/目标卡注入了全量细节（含提示词全文）；"
+            "其余分组、剧本、规格文档、上传素材等一律未注入，"
+            "不得读取或修改非目标内容"
         )
     return trimmed
 
