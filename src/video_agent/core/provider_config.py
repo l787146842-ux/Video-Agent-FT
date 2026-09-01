@@ -202,6 +202,66 @@ def spec_media_preference(raw_state: Dict[str, Any], kind: str = "image") -> Tup
     return str(settings.default_image_provider_id or ""), str(settings.default_image_model or "")
 
 
+# selected_type（前端 DraftType）→ 状态快照列表键。按卡类型解析（任务 #20）：
+# 分区内本身混有出图/出视频/出音频三种卡，禁止「分区 → 媒体类型」映射。
+_SELECTED_TYPE_TO_CAT = {
+    "keyElement": CAT_KEY_ELEMENTS, "shot": CAT_SHOTS, "audio": CAT_AUDIO_ITEMS,
+}
+
+
+def find_selected_draft(
+    raw_state: Dict[str, Any], selected_draft_id: str, selected_type: str,
+) -> Optional[Dict[str, Any]]:
+    """按 selected_draft_id/selected_type 定位目标草稿卡；未命中/空选择返 None。"""
+    if not str(selected_draft_id or "").strip():
+        return None
+    cat = _SELECTED_TYPE_TO_CAT.get(selected_type, selected_type)
+    for group in (raw_state.get(cat) or []):
+        if not isinstance(group, dict):
+            continue
+        for draft in (group.get("drafts") or []):
+            if isinstance(draft, dict) and draft.get("id") == selected_draft_id:
+                return draft
+    return None
+
+
+def resolve_selected_draft_media_config(
+    raw_state: Dict[str, Any], selected_draft_id: str, selected_type: str,
+    kind: str = "image",
+) -> Tuple[str, str]:
+    """按卡类型解析目标草稿卡自身的媒体渠道配置 (provider, second)。
+
+    用户裁决口径（任务 #20）：任何媒体生成的参数继承目标草稿卡自身的配置，
+    与分区无关。second 语义：image→画面比例；video/audio→模型。
+    优先级 = 用户显式指定 > 草稿卡自身 > 全局默认渠道（gen_channel_rules）；
+    卡无 provider 时回落全局默认渠道，无全局默认返回空（绝不臆造）；
+    旧共享字段 providerId/model 保留作旧数据回退。
+    """
+    if kind == "video":
+        pid_field, model_field = "videoProviderId", "videoModel"
+    elif kind == "audio":
+        pid_field, model_field = "audioProviderId", "audioModel"
+    else:
+        pid_field, model_field = "imageProviderId", "imageModel"
+    draft = find_selected_draft(raw_state, selected_draft_id, selected_type)
+    if draft is None:
+        if kind == "video":
+            return str(settings.default_video_provider_id or ""), str(settings.default_video_model or "")
+        if kind == "audio":
+            return "", ""
+        return str(settings.default_image_provider_id or ""), ""
+    provider = str(draft.get(pid_field) or draft.get("providerId") or "").strip()
+    if kind == "image":
+        # 画面比例与 provider 独立返回（卡未配 provider 时比例仍生效）
+        return provider or str(settings.default_image_provider_id or ""), str(draft.get("aspectRatio") or "")
+    model = str(draft.get(model_field) or draft.get("model") or "").strip()
+    if not provider:
+        if kind == "video":
+            return str(settings.default_video_provider_id or ""), str(settings.default_video_model or "")
+        return "", ""
+    return provider, model
+
+
 async def first_available_image_provider_async() -> Tuple[str, str]:
     """异步版：第一个可用的生图供应商 (id, model)。"""
     return first_available_image_provider()

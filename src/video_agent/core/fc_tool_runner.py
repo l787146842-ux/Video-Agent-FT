@@ -352,6 +352,19 @@ class FCToolRunner:
                         logger.info("[Planner] Injected image_generate provider from global settings: %s/%s",
                                     spec_pid, spec_model)
 
+            # --- generate_video 同轨注入（任务 #20，与 image_generate 同模式）：
+            # 优先级 = 模型显式指定 > 目标草稿卡自身的视频配置 > 全局默认渠道；
+            # 按卡类型解析（分区内混有三类卡，禁止「分区 → 媒体类型」映射）---
+            elif name == "generate_video":
+                if not str(args.get("adapter_provider") or "").strip():
+                    _vp, _vm = ports.provider_config_port().resolve_selected_draft_media_config(
+                        self._raw_state(), self._selected_draft_id, self._selected_type,
+                        kind="video")
+                    if _vp:
+                        args["adapter_provider"] = _vp
+                        logger.info("[Planner] Injected generate_video provider from selected draft: %s/%s",
+                                    _vp, _vm)
+
             # 幂等键轮内去重（T4）：同键命中直接用首次结果，跳过闸机链与实际执行；
             # 空键直通过不去重，判定语义唯一归 core/idempotency_ledger.py
             _idem_key = str(args.get("idempotency_key") or "").strip()

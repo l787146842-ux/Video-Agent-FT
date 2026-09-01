@@ -283,3 +283,120 @@ def test_resolve_selected_draft_media_config_matches_target_draft(svc):
     assert provider == settings.default_image_provider_id and aspect == ""
     provider, aspect = cs._resolve_selected_draft_media_config(svc, "", "keyElement")
     assert provider == settings.default_image_provider_id and aspect == ""
+
+
+# ---------- 9. 任务 #20：出视频/出音频参数继承（按卡解析，与分区无关） ----------
+
+def _three_media_state():
+    """同一分区内混有三类媒体配置的夹具：每张卡带自己那类的配置。"""
+    return {"keyElements": [{
+        "id": "grp-mix",
+        "drafts": [
+            # 干扰卡：同分区另一张卡，不得串入目标卡的解析结果
+            {"id": "d-decoy", "imageProviderId": "prov-X", "aspectRatio": "1:1",
+             "videoProviderId": "prov-Xv", "videoModel": "xv-m",
+             "audioProviderId": "prov-Xa", "audioModel": "xa-m"},
+            # 目标卡：三类媒体配置并存（出图/出视频/出音频各自独立字段）
+            {"id": "draft-1",
+             "imageProviderId": "prov-A", "aspectRatio": "16:9",
+             "videoProviderId": "prov-V", "videoModel": "vid-m1",
+             "audioProviderId": "prov-U", "audioModel": "aud-m1"},
+        ],
+    }]}
+
+
+def test_resolve_video_audio_media_config_matches_target_draft():
+    """任务 #20：出视频/出音频继承目标卡自身配置（与分区无关，不串干扰卡）；
+    旧共享字段 providerId/model 回落；卡无配置回落全局默认（音频无默认渠道→空）。"""
+    from src.video_agent.core import provider_config as pc
+    state = _three_media_state()
+    # 三类各自命中同一目标卡的对应类型字段（出图口径既有行为同批回归）
+    assert pc.resolve_selected_draft_media_config(
+        state, "draft-1", "keyElement", kind="video") == ("prov-V", "vid-m1")
+    assert pc.resolve_selected_draft_media_config(
+        state, "draft-1", "keyElement", kind="audio") == ("prov-U", "aud-m1")
+    assert pc.resolve_selected_draft_media_config(
+        state, "draft-1", "keyElement", kind="image") == ("prov-A", "16:9")
+    # 旧字段名回落（卡未携分类字段时按共享 providerId/model）
+    state["keyElements"][0]["drafts"][1] = {
+        "id": "draft-1", "providerId": "prov-legacy", "model": "legacy-m"}
+    assert pc.resolve_selected_draft_media_config(
+        state, "draft-1", "keyElement", kind="video") == ("prov-legacy", "legacy-m")
+    assert pc.resolve_selected_draft_media_config(
+        state, "draft-1", "keyElement", kind="audio") == ("prov-legacy", "legacy-m")
+    # 目标卡缺失 / 空选择：视频回落全局默认渠道，音频无默认渠道返空（不臆造）
+    object.__setattr__(settings, "default_video_provider_id", "prov-glob")
+    object.__setattr__(settings, "default_video_model", "glob-m")
+    try:
+        assert pc.resolve_selected_draft_media_config(
+            state, "d-ghost", "keyElement", kind="video") == ("prov-glob", "glob-m")
+        assert pc.resolve_selected_draft_media_config(
+            state, "", "keyElement", kind="video") == ("prov-glob", "glob-m")
+        assert pc.resolve_selected_draft_media_config(
+            state, "d-ghost", "keyElement", kind="audio") == ("", "")
+    finally:
+        object.__setattr__(settings, "default_video_provider_id", "")
+        object.__setattr__(settings, "default_video_model", "")
+
+
+def test_generate_video_injects_selected_draft_provider(svc, monkeypatch):
+    """任务 #20 工具面：generate_video 未携渠道时注入目标卡的视频配置；
+    模型显式指定不被覆写；卡无配置回落全局默认渠道。"""
+    import asyncio
+    import json
+
+    from src.video_agent.adapters.base_chat import ChatResponse
+    from src.video_agent.core.fc_tool_runner import FCToolRunner
+    from src.video_agent.core.tracer import AgentTracer
+    from src.video_agent.tools.base import ToolResult
+
+    captured = {}
+
+    class _RecTM:
+        async def invoke_tool(self, name, args):
+            captured[name] = dict(args)
+            return ToolResult(success=True, data={"task_id": "t", "video_url": "http://x"})
+
+        def is_costly_tool(self, name):
+            return False
+
+    state = {"shots": [{"id": "grp-1", "drafts": [
+        {"id": "d-decoy", "videoProviderId": "prov-decoy"},
+        {"id": "draft-1", "videoProviderId": "prov-V", "videoModel": "vid-m1"},
+    ]}]}
+
+    def _run(tool_calls, draft_id="draft-1", draft_type="shot"):
+        runner = FCToolRunner(tool_manager=_RecTM())
+        monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
+        tracer = AgentTracer.get_instance()
+        tracer.start_trace("t20-test")
+        tracer.start_step()
+        response = ChatResponse(content="", tool_calls=tool_calls)
+        # gate_override=True 模拟用户已确认（高危生成确认闸放行），
+        # 本用例只验证注入面参数口径，不重复钉闸机语义（闸机另有专项测试）
+        asyncio.run(runner.execute(
+            response, selected_draft_id=draft_id, selected_type=draft_type,
+            gate_override=True))
+
+    def _video_call(extra):
+        args = {"image_url": "http://img", "prompt": "动起来"}
+        args.update(extra)
+        return [{"id": "c0", "type": "function",
+                 "function": {"name": "generate_video", "arguments": json.dumps(args)}}]
+
+    # 卡有配置 → 工具拿到的渠道 == 目标卡自身配置（不串干扰卡）
+    _run(_video_call({}))
+    assert captured["generate_video"]["adapter_provider"] == "prov-V"
+    # 模型显式指定 → 不被覆写（用户显式指定优先级最高）
+    captured.clear()
+    _run(_video_call({"adapter_provider": "prov-user"}))
+    assert captured["generate_video"]["adapter_provider"] == "prov-user"
+    # 卡无配置 → 回落全局默认渠道（与图片同模式）
+    state["shots"][0]["drafts"][1] = {"id": "draft-1"}
+    object.__setattr__(settings, "default_video_provider_id", "prov-glob")
+    try:
+        captured.clear()
+        _run(_video_call({}))
+        assert captured["generate_video"]["adapter_provider"] == "prov-glob"
+    finally:
+        object.__setattr__(settings, "default_video_provider_id", "")

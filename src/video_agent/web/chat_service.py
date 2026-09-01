@@ -41,14 +41,12 @@ from src.video_agent.web.adjust_scope import (
 )
 from src.video_agent.web.chat_cards import _stamp_doc_written, _video_card_items
 from src.video_agent.web.generation import resolve_openai_endpoint
-from src.video_agent.web.multimodal_builder import (
-    build_multimodal_content,
-    _TYPE_TO_CATEGORY,
-)
+from src.video_agent.web.multimodal_builder import build_multimodal_content
 from src.video_agent.core.provider_config import (
     get_provider_config,
     load_merged_providers,
     load_merged_providers_async,
+    resolve_selected_draft_media_config,
 )
 from src.video_agent.web.error_payload import classify_exception, classify_legacy_code
 from src.video_agent.state.manager import StateManager
@@ -265,22 +263,11 @@ def _resolve_selected_draft_media_config(svc, selected_draft_id: str, selected_t
     """从选中草稿解析生图配置 (providerId, aspectRatio)。
 
     中间预览面板选中的草稿决定了 agent 生图时用哪个供应商和画面比例。
+    解析口径统一归 provider_config.resolve_selected_draft_media_config
+    （出图/出视频/出音频三类同模式按卡解析，任务 #20）。
     """
-    provider_id = ""
-    aspect_ratio = ""
-    if not selected_draft_id:
-        return settings.default_image_provider_id, aspect_ratio
-    category = _TYPE_TO_CATEGORY.get(selected_type, selected_type)
-    raw_state = svc.get_full_snapshot()
-    for group in (raw_state.get(category) or []):
-        if not isinstance(group, dict):
-            continue
-        for draft in (group.get("drafts") or []):
-            if isinstance(draft, dict) and draft.get("id") == selected_draft_id:
-                provider_id = draft.get("imageProviderId", "") or draft.get("providerId", "") or ""
-                aspect_ratio = draft.get("aspectRatio", "") or ""
-                return provider_id or settings.default_image_provider_id, aspect_ratio
-    return settings.default_image_provider_id, aspect_ratio
+    return resolve_selected_draft_media_config(
+        svc.get_full_snapshot(), selected_draft_id, selected_type, kind="image")
 
 
 @dataclass
