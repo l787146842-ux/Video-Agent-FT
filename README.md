@@ -18,7 +18,7 @@
 |---|---|
 | 后端 | Python 3.11+ / FastAPI / Pydantic v2 / httpx / loguru |
 | 前端（现行） | SolidJS + TypeScript + Vite + 手写语义 CSS（tokens.css，九轮 B5 起 Tailwind 已摘除）；设置页已 SPA 化（`src/web/`） |
-| Agent 核心 | Planner 唯一入口 + 多步工具循环（动作通道单轨 = function calling，ADR-0001/0004 裁决文本轨退役） |
+| Agent 核心 | Planner 唯一入口 + 多步工具循环（动作通道单轨 = function calling，文本轨已退役） |
 | 测试 | pytest（单元 + 集成）/ vitest / Playwright（e2e 冒烟） |
 
 ## 启动方式

@@ -67,7 +67,7 @@ python scripts/run_eval_pipeline.py    # Skill 管线可解析性评测（frontm
 | `docs/GOVERNANCE.md` | 指令治理层（与宪法同权）：P1-P3 原则、13.5 决策树、G1-G4 方案四关、§13.14 治理刹车（门禁冻结 (f)） |
 | `docs/脚手架折旧规程.md` | 脚手架拆除仪式 + 棘轮门禁折旧 + scripts/archive 到期策略 |
 | `docs/前端体验规范.md` | 飞天品牌/确认卡片/@面板等视觉交互强制约束 |
-| `docs/adr/` | 架构决策记录（取代关系须双边注记） |
+| `docs/adr/` | 架构决策记录 0001-0007 已归档删除，见 git tag `adr-archive-20260901` |
 | 历史审计文书 | 已归档删除，见 git tag `audit-history-archive-20260826` |
 | `docs/长期路线图-2026-08-22.md` | 长期项登记（不排期、不立项） |
 

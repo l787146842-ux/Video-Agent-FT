@@ -2,7 +2,7 @@
 
 > **本文档是所有 AI 工具（Cursor / Codex / Claude / Gemini / Qoder / CodeBuddy 等）在本项目中工作的最高优先级约束。**
 > 任何代码生成、修改、重构都必须遵守以下规则。违反即视为错误实现。
-> 本版为宪法 v8：Skill 定位按 2026-08-29 用户显式裁决（ADR-0007）重定位为
+> 本版为宪法 v8：Skill 定位按 2026-08-29 用户显式裁决（ADR-0007，原卷见 git tag adr-archive-20260901）重定位为
 > **指令性制作手册**（对齐业界：Flova / Claude Code / Agent Skills 开放标准，
 > G1 只读属性废除，总原则 = 系统与 Skill 冲突修系统不改 Skill 迁就）；
 > 四条红线不变：§2.4 Context≠Consent、platform 闸机 manifest 无权关闭、
@@ -279,7 +279,7 @@ tests/fixtures/             ← 技能夹具等快照（gate_corpus/skill_pause_
 - [ ] 耦合行变更已同批更新 coupling_registry.py（十、3 条）
 - [ ] runtime 无自主行动（不机械执行执行器、不机械发卡）；暂停卡唯一发行主体 = 模型 workflow_pause，单一活跃暂停槽位互斥（Rule2 主体回归）
 - [ ] 一轮一 TurnResult 提交（turn_id 归组），无空文本 docCard 消息、无合成 actionLog（Rule2）
-- [ ] 控制流范式表述唯一归宪法 Rule2，ADR/GOVERNANCE 仅指针（P1）
+- [ ] 控制流范式表述唯一归宪法 Rule2，GOVERNANCE 仅指针（P1）
 - [ ] 修改前已按第十三章 13.5 决策树定位归属层；没有在事故现场就近补条款（P1/P2）
 - [ ] 没有在 Skill 文件里改系统层缺口；没有用 prose 教模型配合既有机制（G1/G3）
 
