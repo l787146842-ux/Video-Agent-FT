@@ -19,7 +19,7 @@ import { ensureGlobalSettings } from '@/stores/global-settings';
 import { state, studioActions } from '@/stores/studio';
 import { chatActions } from '@/stores/chat';
 import { registerQueueStorageKey } from '@/lib/chat/queue-storage';
-import { resumeAgentTasks } from '@/hooks/use-sse';
+import { resumeAgentTasks, focusConversation } from '@/hooks/use-sse';
 import { convActions, convState } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
 import {
@@ -37,9 +37,8 @@ import {
  * 布局壳 — Router root 组件
  * Header（品牌/导航/主题/项目切换）+ 当前路由页面 + 全局 Toast。
  *
- * 导航栏收放箭头拆为两个版本：
- * - 嵌在 Header 内部（默认）：header 显示时，"骑"在 header 底部边缘下方居中
- * - 独立 fixed 版本（LayoutShell 渲染）：header 收起后仍可见可点击，用于再次展开
+ * 导航栏收放箭头拆为两个版本：嵌在 Header 内部（默认）/ 独立 fixed 版
+ *（header 收起后仍可见可点击，用于再次展开）。
  *   —— 收放箭头是导航栏的附属控件，所以"隐藏导航栏"等于"把箭头提到屏幕顶部"。
  */
 export function LayoutShell(props: ParentProps) {
@@ -96,8 +95,7 @@ export function LayoutShell(props: ParentProps) {
     // 全局生成事件总线：agent/批量生成驱动卡片转圈 + 生成日志联动
     initGenerationEvents();
 
-    // 画布 iframe 卸载时清引用（在线状态经后端 API 探测，
-    // 见 stores/canvas.probeCanvasOnline；跨源 postMessage 通道已移除）
+    // 画布 iframe 卸载时清引用（在线状态经后端 API 探测，跨源 postMessage 通道已移除）
     onCleanup(() => setCanvasIframe(undefined));
 
     // 全局生成设置（顶栏入口/参数栏自动填充共用）预热加载
@@ -114,8 +112,7 @@ export function LayoutShell(props: ParentProps) {
     if (snapshot) {
       studioActions.loadFullState(snapshot);
       chatActions.loadMessages(snapshot.chatMessages || []);
-      // 多对话标签栏：从快照装载（后端已保证 chatMessages = 活跃对话）
-      convActions.loadFromSnapshot(snapshot);
+      convActions.loadFromSnapshot(snapshot); // 多对话标签栏从快照装载
     } else {
       convActions.loadFromSnapshot(null);
     }
@@ -137,13 +134,9 @@ export function LayoutShell(props: ParentProps) {
     setLoading(false);
   });
 
-  /** 重载后探测后台 Agent：running 时置忙态轮询，结束后重拉快照同步消息/故事板 */
   async function reattachRunningAgent() {
-    // 刷新后按项目重连后台任务事件流（replay 恢复进度），不依赖轮询
-    // /agent/running；任务已完成时 resumeAgentTasks 内部静默返回。
     const pid = state.projectId || '';
     if (!pid) return;
-    // 失败不阻塞启动（降级行为不变），仅加可观测信号（lib/boot-fallback）
     try { await resumeAgentTasks(pid); } catch (err) { warnBootTaskResume(err); }
   }
 
@@ -154,11 +147,22 @@ export function LayoutShell(props: ParentProps) {
     void resumeAgentTasks(pid);
   });
 
-  // 画布 iframe 初始化：等待 loading 结束后 DOM 就绪，设置引导 src（后端配置下发）
+  // 批 6-2 多会话并行：切换活跃对话时聚焦其任务事件流（重订阅拿 replay 恢复）；首装载/项目切换后的首次赋值只记录不触发。
+  let prevConvId: string | undefined;
+  createEffect(() => {
+    const cid = convState.activeId;
+    if (!cid || prevConvId === undefined || prevConvId === cid) {
+      prevConvId = cid || undefined;
+      return;
+    }
+    prevConvId = cid;
+    focusConversation(cid);
+  });
+
+  // 画布 iframe 初始化：等 loading 结束后 DOM 就绪再设引导 src（Show 渲染后等一帧确保 ref 就绪）
   let iframeInitialized = false;
   createEffect(() => {
     if (loading() || iframeInitialized) return;
-    // Show 渲染后 iframe 才在 DOM 中，等待一帧确保 ref 就绪
     requestAnimationFrame(() => {
       if (iframeInitialized || !canvasIframeRef) return;
       iframeInitialized = true;
@@ -180,8 +184,7 @@ export function LayoutShell(props: ParentProps) {
         />
       </Show>
 
-      {/* 导航栏已收起时，单独渲染一个 fixed 箭头到视口顶部中央（用于再次展开）
-         仅覆盖层模式显示；影视工作台模式从不显示箭头 */}
+      {/* 导航栏收起时单独渲染 fixed 箭头到视口顶部中央（仅覆盖层模式；用于再次展开） */}
       <Show when={overlayMode() && headerHidden()}>
         <button
           type="button"

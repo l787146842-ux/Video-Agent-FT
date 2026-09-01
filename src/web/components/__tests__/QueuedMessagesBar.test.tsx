@@ -69,7 +69,7 @@ describe('QueuedMessagesBar 在侧边聊天中打开', () => {
     expect(submitMessage).toHaveBeenCalledWith('queued', expect.objectContaining({ input: parts }));
   });
 
-  it('Agent 忙碌时拦截新建对话：toast 警示且消息保留在排队', async () => {
+  it('Agent 忙碌时新建对话已解锁（批 6-2 多会话并行）：照常新建并发出，不拦截', async () => {
     agentActions.setAgentBusy(true);
     chatActions.enqueueMessage(queued('q-busy', '忙碌中排队'));
     const { container } = render(() => <QueuedMessagesBar onEdit={vi.fn()} />);
@@ -78,11 +78,9 @@ describe('QueuedMessagesBar 在侧边聊天中打开', () => {
       .find((b) => b.textContent?.includes('在侧边聊天中打开'));
     await fireEvent.click(openBtn as HTMLElement);
     await new Promise((r) => setTimeout(r, 0));
-    expect(showToast).toHaveBeenCalledWith(expect.any(String), 'warning');
-    expect(convActions.create).not.toHaveBeenCalled();
-    expect(submitMessage).not.toHaveBeenCalled();
-    // 消息未丢：chip 仍在
-    expect(container.querySelector('.queued-chip-text')?.textContent).toBe('忙碌中排队');
+    expect(showToast).not.toHaveBeenCalledWith(expect.any(String), 'warning');
+    expect(convActions.create).toHaveBeenCalled();
+    expect(submitMessage).toHaveBeenCalledWith('queued', expect.objectContaining({ input: '忙碌中排队' }));
   });
 
   it('新建对话失败时放回队列（消息不丢）', async () => {

@@ -12,7 +12,8 @@
  * 四路径都以 intent 调用本入口，行为差异只体现在 intent 分支。
  */
 import { state, studioActions } from '@/stores/studio';
-import { agentState } from '@/stores/agent-state';
+import { agentActions } from '@/stores/agent-state';
+import { convState } from '@/stores/conversations';
 import { chatState, chatActions, type QueuedMessage } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { streamAgentChat, sendGuidanceToTask } from '@/hooks/use-sse';
@@ -132,8 +133,9 @@ export async function submitMessage(intent: SubmitIntent, payload: SubmitPayload
   // 文档/Skill 引用块：发送后才真正附加，消息里以可点击的块状展示（不再拼纯文本前缀）
   const docBlocks = docAttachments.map((a) => a.name);
 
-  // Agent 推理中：不阻断用户，消息进入排队引导区，当前任务完成后自动发送
-  if (agentState.agentBusy) {
+  // 当前对话 Agent 推理中：不阻断用户，消息进入排队引导区，当前任务完成后自动发送；
+  // 批 6-2 按对话口径：别的对话任务在跑不入队，直接受理（多会话并行）
+  if (agentActions.isConvBusy(convState.activeId)) {
     // 暂停回应不入队：pause_response 只对当前活动暂停有意义，
     // 排队重发会在任务结束后把同一回答再发一遍（连点双发断点）；直接拒收提示
     if (payload.pauseResponse) {
@@ -202,6 +204,10 @@ export async function submitMessage(intent: SubmitIntent, payload: SubmitPayload
     message,
     // 幂等键：后端同 id 处理中时拒绝重复提交（防断连重发/双标签页重复落盘）
     request_id: uid('req'),
+    // 会话定向（批 6-2 多会话并行）：任务绑定当前对话/项目，
+    // 跨窗口/多任务并行不串线（后端空参回落全局活跃指针，旧行为兼容）
+    conversation_id: convState.activeId || '',
+    project_id: state.projectId || '',
     provider,
     model,
     ms_model: provider === 'modelscope' ? model : '',

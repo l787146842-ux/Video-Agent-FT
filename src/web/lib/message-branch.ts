@@ -5,10 +5,11 @@
  * 打截断快照（仅含该消息及之前内容）→ 派生分支对话 → applyPayload
  * 切换活跃对话。原对话不动；分叉点之后的消息不进新对话。
  *
- * 忙碌守卫：分支会切换活跃对话，流式中禁止（UI 层点击时兜底提示）。
+ * 忙碌守卫：分支会切换活跃对话，当前对话流式中禁止（批 6-2 按对话口径；
+ * 别的对话任务在跑不阻断）。
  */
-import { agentState } from '@/stores/agent-state';
-import { convActions } from '@/stores/conversations';
+import { agentActions } from '@/stores/agent-state';
+import { convState, convActions } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
 import { createSnapshot, branchSnapshot } from '@/api/conversations';
 import { t } from '@/lib/locale';
@@ -18,7 +19,7 @@ import { t } from '@/lib/locale';
  * 返回 true = 分支创建成功（已切换到新对话）。
  */
 export async function branchAtMessage(upToIndex: number): Promise<boolean> {
-  if (agentState.agentBusy) {
+  if (agentActions.isConvBusy(convState.activeId)) {
     showToast(t('rp.conv.busyGuard'), 'warning');
     return false;
   }

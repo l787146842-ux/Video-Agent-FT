@@ -19,16 +19,19 @@ export interface TruncateResendResponse {
 }
 
 /** 截断重答：text 缺省 = 重新生成（按原文重答）；非空 = 编辑后重答。
- *  provider/model/thinking_level 取自 UI 当前选中态（与主输入框同口径） */
+ *  provider/model/thinking_level 取自 UI 当前选中态（与主输入框同口径）；
+ *  conversationId 定向目标对话（批 6-2，缺省 = 后端全局活跃对话） */
 export function truncateResend(
   text?: string | null,
   target?: { provider?: string; model?: string; thinking_level?: string },
+  conversationId?: string,
 ): Promise<TruncateResendResponse> {
   const body: TruncateResendRequest = {
     ...(text != null ? { text } : {}),
     ...(target?.provider ? { provider: target.provider } : {}),
     ...(target?.model ? { model: target.model } : {}),
     ...(target?.thinking_level ? { thinking_level: target.thinking_level } : {}),
+    ...(conversationId ? { conversation_id: conversationId } : {}),
   };
   return apiPost<TruncateResendResponse>('/api/chat/truncate-resend', body);
 }

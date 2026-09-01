@@ -13,6 +13,10 @@
   .conv-tab:hover { color: var(--text-main); background: color-mix(in srgb, var(--color-white) 4%, transparent); }
   .conv-tab.active { color: var(--text-main); border-bottom-color: var(--accent-blue); }
   .conv-tab-title { overflow: hidden; text-overflow: ellipsis; }
+  /* 批 6-2 多会话并行角标：运行中（翡绿脉冲，同状态点语义色）/ 后台完成未读（蓝） */
+  .conv-tab-badge { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .conv-tab-badge.running { background-color: var(--accent-emerald); animation: status-pulse 1.2s infinite; }
+  .conv-tab-badge.unread { background-color: var(--accent-blue); }
   .conv-tab-close { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; border: none; background: none; color: var(--text-dim); cursor: pointer; flex-shrink: 0; transition: all 0.12s; }
   .conv-tab-close:hover { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger-strong) 15%, transparent); }
   .conv-tabs-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; padding: 0 2px 4px; flex-shrink: 0; }

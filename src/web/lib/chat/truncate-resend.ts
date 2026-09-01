@@ -16,16 +16,19 @@ import { ApiError } from '@/api/client';
 import { attachStartedTask } from '@/hooks/use-sse';
 import { chatActions } from '@/stores/chat';
 import { agentProvider, agentModel, agentThinkingLevel } from '@/stores/agent-prefs';
-import { agentState } from '@/stores/agent-state';
+import { agentActions } from '@/stores/agent-state';
+import { convState } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
 import { t } from '@/lib/locale';
 
 /**
  * 截断重答：text 非空 = 编辑后重答；缺省 = 重新生成（按原文重答）。
  * 返回 true = 已受理（本地已截断、新任务订阅已建立）。
+ * 批 6-2：忙判定按当前对话口径，请求携带对话定向（后端同口径兜底）。
  */
 export async function truncateResendAction(text?: string): Promise<boolean> {
-  if (agentState.agentBusy) {
+  const convId = convState.activeId || '';
+  if (agentActions.isConvBusy(convId)) {
     showToast(t('rp.conv.busyGuard'), 'warning');
     return false;
   }
@@ -34,10 +37,10 @@ export async function truncateResendAction(text?: string): Promise<boolean> {
       provider: agentProvider(),
       model: agentModel(),
       thinking_level: agentThinkingLevel(),
-    });
+    }, convId);
     // 后端成功后本地才截断（409/400 拒绝时消息列表保持原样）
     chatActions.truncateTailForResend(text);
-    await attachStartedTask(started);
+    await attachStartedTask(started, convId);
     return true;
   } catch (e) {
     const message = e instanceof ApiError ? e.payload.message : ((e as Error).message || '');

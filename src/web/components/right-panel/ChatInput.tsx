@@ -1,6 +1,7 @@
 import { createSignal, Show, onMount } from 'solid-js';
 import { state, studioActions } from '@/stores/studio';
-import { agentState } from '@/stores/agent-state';
+import { agentActions } from '@/stores/agent-state';
+import { convState } from '@/stores/conversations';
 import { sendUserMessage } from '@/lib/agent-actions';
 import { stopAgentStream } from '@/hooks/use-sse';
 import { uploadAndInsert, handleUrlDrop } from '@/lib/chat/chat-input-media';
@@ -73,7 +74,8 @@ export function ChatInput() {
     void openDocsPanel(sk?.id?.startsWith('doc:') ? sk.id.slice(4) : undefined);
   }
 
-  const busy = () => agentState.agentBusy;
+  /** 当前对话忙态（批 6-2 按对话口径；别的对话任务在跑不锁本对话输入） */
+  const busy = () => agentActions.isConvBusy(convState.activeId);
 
   return (
     <div class="chat-input-area">

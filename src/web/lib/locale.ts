@@ -41,7 +41,13 @@ const zhCN = {
   'agent.actionsApplied': '已应用 {count} 个操作',
   'rp.conv.close': '关闭对话',
   'rp.conv.create': '新建对话',
-  'rp.conv.busyGuard': 'Agent 正在回复，请稍后再操作对话窗口',
+  'rp.conv.busyGuard': '该对话有 Agent 任务正在运行，请稍后再操作',
+  'rp.conv.running': '该对话有 Agent 任务运行中',
+  'rp.conv.unread': '该对话的 Agent 任务已完成，点击查看',
+  // ---------- 多会话并行（批 6-2）：后台对话任务终态提示 ----------
+  'rp.parallel.bgDone': '另一个对话的 Agent 任务已完成',
+  'rp.parallel.bgFailed': '另一个对话的 Agent 任务出错',
+  'rp.parallel.bgStopped': '另一个对话的 Agent 任务已停止',
 
   // ---------- 输入区 ----------
   'rp.input.aria': '给 Agent 发送指令',
@@ -209,7 +215,6 @@ const zhCN = {
   'rp.queue.openSide': '在侧边聊天中打开',
   'rp.queue.closeQueue': '关闭排队',
   'rp.queue.closeQueueTitle': '清空全部排队消息',
-  'rp.queue.openSideBusy': 'Agent 忙碌中，无法新建对话，消息已保留在排队',
   'rp.queue.guideSpinner': '已登记，当前操作完成后即注入',
   'rp.queue.enqueued': '已加入排队，Agent 完成当前任务后自动发送（可点「引导」优先注入）',
   'rp.queue.pauseRejected': '暂停回应未能发出（重复点击或任务忙），请在当前暂停卡上重新选择',

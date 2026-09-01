@@ -19,6 +19,7 @@ vi.mock('@/api/conversations', () => ({
 const applyMock = vi.fn();
 vi.mock('@/stores/conversations', () => ({
   convActions: { applyPayload: (p: unknown) => applyMock(p) },
+  convState: { activeId: '' },
 }));
 
 const toastMock = vi.fn();

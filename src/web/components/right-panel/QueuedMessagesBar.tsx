@@ -4,7 +4,6 @@ import {
 } from 'solid-icons/fi';
 import { chatState, chatActions } from '@/stores/chat';
 import type { QueuedMessage } from '@/stores/chat';
-import { agentState } from '@/stores/agent-state';
 import { showToast } from '@/stores/toast';
 import { submitMessage } from '@/lib/submit-message';
 import { convActions } from '@/stores/conversations';
@@ -43,13 +42,10 @@ export function QueuedMessagesBar(props: {
     void submitMessage('guidance', { input: item.text, queuedEntry: item });
   }
 
-  /** 在侧边聊天中打开：新建对话窗口并把这条消息发过去（Agent 忙碌时禁止新建对话） */
+  /** 在侧边聊天中打开：新建对话窗口并把这条消息发过去（批 6-2：忙碌时新建已解锁，
+   * 新对话与忙对话并行互不干扰） */
   async function openInSideChat(item: QueuedMessage) {
     setMenuId('');
-    if (agentState.agentBusy) {
-      showToast(t('rp.queue.openSideBusy'), 'warning');
-      return;
-    }
     chatActions.removeQueuedMessage(item.id);
     const ok = await convActions.create();
     if (!ok) {

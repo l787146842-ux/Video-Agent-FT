@@ -6,14 +6,16 @@
  * 纯响应式副作用，调用方在组件作用域内调用一次即可。
  */
 import { createEffect } from 'solid-js';
-import { agentState } from '@/stores/agent-state';
+import { agentActions } from '@/stores/agent-state';
+import { convState } from '@/stores/conversations';
 import { chatState, chatActions } from '@/stores/chat';
 import { submitMessage } from '@/lib/submit-message';
 import { agentProvider, agentModel } from '@/stores/agent-prefs';
 
 export function startQueuedAutosend() {
   createEffect(() => {
-    if (agentState.agentBusy) return;
+    // 批 6-2 按对话口径：仅当前对话忙时不出队（别的对话任务在跑不阻塞）
+    if (agentActions.isConvBusy(convState.activeId)) return;
     if (!agentProvider() || !agentModel()) return;
     const q = chatState.queuedMessages;
     if (!q.length) return;

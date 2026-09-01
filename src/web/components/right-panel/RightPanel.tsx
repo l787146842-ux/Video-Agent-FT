@@ -3,7 +3,7 @@ import { FiPlus, FiSearch, FiX } from 'solid-icons/fi';
 import { ChatFeed } from './ChatFeed';
 import { ChatInput } from './ChatInput';
 import { ChatSearchBar } from './ChatSearchBar';
-import { agentState } from '@/stores/agent-state';
+import { agentState, agentActions } from '@/stores/agent-state';
 import { convState, convActions } from '@/stores/conversations';
 import { showToast } from '@/stores/toast';
 import { useSplitter } from '@/hooks/use-splitter';
@@ -14,6 +14,8 @@ import { t } from '@/lib/locale';
  * 顶部单栏（多对话标签 + 新建 + 状态点）
  * → 消息流 → 拖拽把手（上下拖动调输入框高度，100-400px）→ 一体化输入区
  * 多对话规则：≥2 个对话时任意关闭；仅剩 1 个时不可关闭（不渲染关闭钮）。
+ * 批 6-2 多会话并行：任务绑定对话后，忙碌时新建/切换对话不再拦截，
+ * 仅拦截关闭「正忙的对话」（后端同口径 400 兜底）。
  */
 export default function RightPanel() {
   /** 消息搜索/轮次跳转条展开态（会话标签栏下方） */
@@ -26,27 +28,12 @@ export default function RightPanel() {
     storageKey: 'splitChatInput',
   });
 
-  /** Agent 回复中禁止新建/切换/关闭对话（后端写入活跃对话，避免串话） */
-  function busyGuard(): boolean {
-    if (agentState.agentBusy) {
-      showToast(t('rp.conv.busyGuard'), 'warning');
-      return true;
-    }
-    return false;
-  }
-
-  function handleCreate() {
-    if (busyGuard()) return;
-    void convActions.create();
-  }
-
-  function handleActivate(id: string) {
-    if (busyGuard()) return;
-    void convActions.activate(id);
-  }
-
+  /** 删忙对话守卫（批 6-2）：仅拦截关闭正忙的对话；新建/切换已解锁 */
   function handleClose(id: string) {
-    if (busyGuard()) return;
+    if (agentActions.isConvBusy(id)) {
+      showToast(t('rp.conv.busyGuard'), 'warning');
+      return;
+    }
     void convActions.close(id);
   }
 
@@ -61,8 +48,15 @@ export default function RightPanel() {
               aria-selected={conv.id === convState.activeId}
               class={`conv-tab ${conv.id === convState.activeId ? 'active' : ''}`}
               title={conv.title}
-              onClick={() => handleActivate(conv.id)}
+              onClick={() => void convActions.activate(conv.id)}
             >
+              {/* 批 6-2 角标：运行中（任务绑定该对话）/ 后台完成未读 */}
+              <Show when={agentActions.isConvBusy(conv.id)}>
+                <span class="conv-tab-badge running" title={t('rp.conv.running')} />
+              </Show>
+              <Show when={!agentActions.isConvBusy(conv.id) && agentState.unread[conv.id]}>
+                <span class="conv-tab-badge unread" title={t('rp.conv.unread')} />
+              </Show>
               <span class="conv-tab-title">{conv.title}</span>
               <Show when={convState.list.length > 1}>
                 <button
@@ -87,7 +81,7 @@ export default function RightPanel() {
           >
             <FiSearch size={13} />
           </button>
-          <button type="button" class="conv-tabs-add" title={t('rp.conv.create')} onClick={handleCreate}>
+          <button type="button" class="conv-tabs-add" title={t('rp.conv.create')} onClick={() => void convActions.create()}>
             <FiPlus size={13} />
           </button>
           <span

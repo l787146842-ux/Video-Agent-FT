@@ -1,9 +1,8 @@
 /**
- * SSE 连接状态机（自 hooks/use-sse.ts 抽出的纯逻辑层）：归属判定/指数
- * 退避重连调度/终态清理顺序/轮间注入判定均为纯函数；连接生命周期经
- * createSseConnection 工厂组装，所有 I/O（HTTP/定时）与响应式副作用由 deps 注入。
- * 订阅模型：POST 取 task_id → 订阅事件流（先 replay 快照再增量）；
- * 刷新/切项目只断订阅，后台任务继续；切回时 resume 重连；停止才取消。
+ * SSE 连接状态机（纯逻辑层）：归属判定/指数退避重连/终态清理顺序均为纯函数；
+ * 连接生命周期经 createSseConnection 工厂组装，I/O 与副作用由 deps 注入。
+ * 订阅模型：POST 取 task_id → 订阅事件流（先 replay 再增量）；刷新/切项目只断订阅，
+ * 后台任务继续；切回时 resume 重连；停止才取消。
  */
 import type { SseEvent, AgentChatRequest } from '@/types';
 import type { AgentTaskInfo } from '@/api/sse';
@@ -11,8 +10,7 @@ import { ApiError } from '@/api/client';
 import { makeErrorPayload, kindFromHttpStatus, type ErrorPayload } from '@/lib/error-payload';
 import { t } from '@/lib/locale';
 import { parseSseStream, routeSseEvent, type SseEventCtx, type SseEventFx } from '@/lib/sse-events';
-/** SSE 自动重连：网络抖动不得落错误气泡/清忙态；指数退避重订阅（服务端先 replay
- * 快照再增量，restoreStreamingState 整体替换累积文本，天然幂等）；重试耗尽才落错误 */
+/** SSE 自动重连：网络抖动不落错误气泡/不清忙态；指数退避重订阅（replay 幂等）；重试耗尽才落错误 */
 export const MAX_RECONNECT_ATTEMPTS = 3;
 export const RECONNECT_BASE_DELAY_MS = 500;
 /** 事件订阅 HTTP 失败：携带 status 供重连策略判定（4xx 任务面错误不重连） */
@@ -22,8 +20,7 @@ export class SseHttpError extends Error {
     this.name = 'SseHttpError';
   }
 }
-/** 订阅失败判定：true = 网络/传输层瞬断值得重连（后台任务仍在跑）；
- * false = 用户取消或任务面错误（4xx：任务不存在/已结束被清理），重连无意义 */
+/** 订阅失败判定：true = 网络/传输层瞬断值得重连；false = 用户取消或任务面 4xx 错误 */
 export function isRetriableSubscribeError(err: unknown): boolean {
   if ((err as Error).name === 'AbortError') return false;
   if (err instanceof SseHttpError) {
@@ -37,8 +34,7 @@ export function reconnectDelayMs(attempt: number, base: number = RECONNECT_BASE_
   return base * 2 ** (attempt - 1);
 }
 export interface TaskRef { taskId: string; projectId: string; recovering: boolean }
-/** 归属判定：连接是否仍属于该任务（false = 停止/切换/断开已改归属，
- * 不得再处理该任务的失败与清理） */
+/** 归属判定：连接是否仍属于该任务（归属已改则不再处理其失败与清理） */
 export function ownsTask(current: { taskId: string } | null | undefined, taskId: string): boolean {
   return current?.taskId === taskId;
 }
@@ -46,9 +42,8 @@ export function ownsTask(current: { taskId: string } | null | undefined, taskId:
 export function shouldQueueGuidance(task: TaskRef | null, text: string): boolean {
   return task !== null && text.trim().length > 0;
 }
-/** 终态清理顺序（历史坑，测试钉死调用顺序）：先复位忙态、置空归属，再关订阅。
- * 顺序搞反时 abort 使帧解析 reject（AbortError），catch 归属判定仍有效会把
- * 主动断开误判为失败 → 落假错误气泡（「BodyStreamBuffer was aborted」+ 继续建议） */
+/** 终态清理顺序（历史坑，测试钉死）：先复位忙态、置空归属，再关订阅；
+ * 顺序反了会把主动断开的 AbortError 误判为失败落假错误气泡 */
 export function finalizeTerminal(eff: {
   resetBusy(): void;
   clearOwnership(): void;
@@ -143,7 +138,7 @@ export function createSseConnection(deps: SseConnectionDeps) {
         if (!ownsTask(currentTask, taskId)) return; // 等待期间归属变化
       }
     }
-    // 仅当仍订阅本任务时清理（终态/disconnect 已在关订阅前置空归属，AbortError 由归属判定跳过）
+    // 仅仍订阅本任务时清理（终态/disconnect 已先置空归属，AbortError 由归属判定跳过）
     if (ownsTask(currentTask, taskId)) {
       fx.setStreaming(false);
       fx.setAgentBusy(false);
@@ -164,7 +159,7 @@ export function createSseConnection(deps: SseConnectionDeps) {
       projectTasks.set(started.project_id || projectId, started.task_id);
       await connectToTask(started.task_id, started.project_id || projectId, false);
     } catch (err) {
-      // 建任务失败——ApiError 携带后端结构化负载；非 ApiError（fetch 网络层）归 network
+      // 建任务失败：ApiError 携带后端结构化负载；非 ApiError（fetch 网络层）归 network
       const payload: ErrorPayload = err instanceof ApiError ? err.payload
         : makeErrorPayload((err as Error).message || '未知错误', 'network', 'err.network.connection');
       fx.setErrorText(payload.message);
@@ -172,8 +167,7 @@ export function createSseConnection(deps: SseConnectionDeps) {
       fx.setAgentBusy(false);
     }
   }
-  /** 接管外部已启动的 agent 任务（截断重答专用：后端已建任务，响应体含实际模型）：
-   * 进忙态 + startStream(model) 补流式徽标后走同一订阅/重连/收尾路径 */
+  /** 接管外部已启动的任务（截断重答专用）：进忙态 + startStream 后走同一订阅/收尾路径 */
   async function attachStartedTask(started: { task_id: string; project_id: string; model?: string }): Promise<void> {
     if (deps.isStreaming()) return;
     const projectId = started.project_id || deps.currentProjectId();
@@ -193,14 +187,12 @@ export function createSseConnection(deps: SseConnectionDeps) {
     fx.setStreaming(false);
     fx.setAgentBusy(false);
   }
-  /** 排队消息登记到运行中任务（轮间注入）；任务不存在/已结束静默回落
-   * 前端「任务结束后自动出队重发」路径，不丢失用户消息 */
+  /** 排队消息登记到运行中任务（轮间注入）；任务已结束静默回落自动出队重发 */
   function sendGuidance(id: string, text: string): void {
     if (!shouldQueueGuidance(currentTask, text)) return;
     void transport.postGuidance(currentTask!.taskId, id, text).catch(() => { /* 回落自动出队 */ });
   }
-  /** 真正停止后台任务（停止按钮）。等 /stop 响应拿在途外部生成任务登记
-   *（inflight）后一并交 cancelStream 措辞；短超时不阻塞 UI（任务可能已结束） */
+  /** 真正停止后台任务（停止按钮）；短超时竞速不阻塞 UI，inflight 交措辞 */
   async function stop(): Promise<void> {
     const task = currentTask;
     let inflight: InflightEntry[] | undefined;
@@ -231,8 +223,7 @@ export function createSseConnection(deps: SseConnectionDeps) {
         tasks = await transport.listTasks(projectId);
       } catch { /* 后端未就绪时静默 */ }
       if (!tasks.length) return;
-      // await 之后再判一次：窗口内另一触发可能已建立订阅
-      if (deps.isStreaming()) return;
+      if (deps.isStreaming()) return; // await 之后再判一次：窗口内另一触发可能已建订阅
       const task = tasks[0]; // 最新任务
       projectTasks.set(projectId, task.task_id);
       fx.chat.restoreStreamingState({
@@ -243,8 +234,17 @@ export function createSseConnection(deps: SseConnectionDeps) {
       resumeInFlight = false;
     }
   }
+  /** 恢复指定任务订阅（批 6-2）：对已知 task_id 重订阅（replay 幂等）；已在订阅时直接返回，force=true 强制重订阅（切回该对话重建累积状态）。 */
+  async function recoverTask(taskId: string, projectId: string, force = false): Promise<void> {
+    if (!force && ownsTask(currentTask, taskId)) return;
+    if (ownsTask(currentTask, taskId)) currentTask = null; // 强重订：先置空归属再弃旧订阅
+    closeSubscription(); // 弃掉旧归属订阅（归属先置空，AbortError 被归属判定吞掉）
+    currentTask = null;
+    projectTasks.set(projectId, taskId);
+    await connectToTask(taskId, projectId, true);
+  }
   return {
-    streamAgentChat, attachStartedTask, disconnect, stop, resume, sendGuidance,
+    streamAgentChat, attachStartedTask, disconnect, stop, resume, recoverTask, sendGuidance,
     getParseErrorCount: () => sseParseErrors,
   };
 }

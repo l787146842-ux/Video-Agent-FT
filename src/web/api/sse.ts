@@ -15,6 +15,9 @@ import { apiFetch, apiPost, buildAuthHeaders } from './client';
 export interface AgentTaskInfo {
   task_id: string;
   project_id: string;
+  /** 任务绑定的对话（批 6-2 多会话并行：事件流路由/忙态角标用）；
+   *  旧任务记录可能缺省（回落活跃对话口径） */
+  conversation_id?: string;
   status: string;
   created_at: number;
   status_text?: string;
