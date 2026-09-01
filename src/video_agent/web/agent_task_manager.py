@@ -380,6 +380,8 @@ class AgentTaskManager:
                 "status": record["status"],
                 "created_at": record["created_at"],
                 "status_text": record["status_text"],
+                # scope 标记透传（批 S2 并发闸统计口径，非 scope 任务缺省空）
+                "adjust_scope": record.get("adjust_scope", {}),
             })
         return sorted(out, key=lambda t: t["created_at"], reverse=True)
 

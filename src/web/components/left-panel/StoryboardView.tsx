@@ -4,6 +4,7 @@ import {
   state, studioActions, categoryForSubTab,
 } from '@/stores/studio';
 import { reorderGroups } from '@/api/storyboard';
+import { checkpointHistory } from '@/stores/history';
 import { showContextMenu } from '@/components/shared/ContextMenu';
 import { confirmDialog } from '@/components/shared/ConfirmDialog';
 import { BatchGenBar } from './BatchGenBar';
@@ -68,7 +69,11 @@ export function StoryboardView() {
       confirmText: '删除',
       danger: true,
     });
-    if (ok) studioActions.removeGroupLocal(state.subTab, group.id);
+    if (ok) {
+      // 先压撤销检查点再删（同 DraftCard.handleDelete 口径，兑现弹窗文案的 Ctrl+Z 承诺）
+      await checkpointHistory();
+      studioActions.removeGroupLocal(state.subTab, group.id);
+    }
   }
 
   /** 分组卡片右键：基于该分组位置插入 / 删除 */
