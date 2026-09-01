@@ -535,6 +535,18 @@ def _sec_selected_draft(pb: "PromptBuilder", context: "PlannerContext") -> str:
         draft_type=context.selected_type or "未知")
 
 
+def _sec_adjust_discipline(pb: "PromptBuilder", context: "PlannerContext") -> str:
+    """微调任务纪律段（微调真子对话，批 S2）：仅 scope 任务注入。
+    文案外置 prompts/planner/adjust_discipline.md（宪法 Rule 6），
+    内容恒定不嵌目标编号（保前缀缓存；目标信息由状态裁剪面携带）。"""
+    if not getattr(context, "adjust_scope", None):
+        return ""
+    try:
+        return (load_prompt("planner/adjust_discipline.md") or "").strip()
+    except Exception:
+        return ""  # 文案读取失败不阻断对话（纪律降级遥测可见）
+
+
 def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
     """全局生成设置（前端「全局设置」页用户配置，热生效）：
     分镜时长上限 + 默认生成渠道，Agent 拆镜/生成必须遵守；
@@ -592,6 +604,8 @@ PROMPT_SECTIONS: Tuple[PromptSectionSpec, ...] = _validate_prompt_sections((
     # 以 history 尾部消息（user 通道）每步注入，system 成跨步稳定前缀。
     # selected_draft 每请求才可能变（UI 点击），跨步稳定，留在 system。
     PromptSectionSpec("selected_draft", 75, _sec_selected_draft),
+    # 微调任务纪律段（批 S2）：仅 scope 任务注入，内容恒定（跨步稳定前缀）
+    PromptSectionSpec("adjust_discipline", 80, _sec_adjust_discipline),
     PromptSectionSpec("selected_skill", 100, _sec_selected_skill),
 ))
 
@@ -609,6 +623,8 @@ _SECTION_TELEMETRY_ALIAS: Dict[str, Optional[str]] = {
     "selected_draft": None,
     "global_settings": None,
     "selected_skill": None,
+    # 微调纪律段只计 total（字段格式锁死，不新增遥测分项）
+    "adjust_discipline": None,
 }
 # 批次E：渠道机制退役后的恒 0 兼容字段 channels 已清偿
 # （原唯一消费方 check_prompt_budget.py 已随 C1a 裁决退役）。

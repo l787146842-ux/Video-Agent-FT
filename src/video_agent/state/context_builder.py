@@ -7,7 +7,7 @@ Agent 上下文构建域 — 从 StateManager 抽离。
 - build_frontend_view：前端 camelCase JSON 视图（Pydantic 校验后序列化）
 """
 import json
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from src.video_agent.config import settings
 
@@ -43,6 +43,7 @@ def build_agent_context(
     cache: Dict[str, str] | None = None,
     degraded: bool = False,
     stage: str = "",
+    scope: Optional[Dict[str, Any]] = None,
 ) -> str:
     """构建发送给 LLM 的 Studio 状态上下文。
 
@@ -53,6 +54,9 @@ def build_agent_context(
         degraded: 降级模式（预算保险丝用）——草稿细节不注入，
                   只留组标题/编号/草稿计数，大幅压缩状态上下文体积
         stage: 当前创作阶段键（分阶段注入裁剪用；空 = 不裁剪）
+        scope: 微调作用域（微调真子对话，policy-as-data 同 STAGE_STATE_FOCUS）：
+               目标分组注入全量草稿细节（含提示词全文），其余分组/
+               类别一律组级指针；空 = 不裁剪（旧行为零变化）
 
     Returns:
         JSON 字符串
@@ -66,14 +70,19 @@ def build_agent_context(
             cache[cache_key] = result
         return result
 
-    # 缓存键不含 tier：档位对状态确定（状态变更即清缓存），同键读写保命中复用
-    cache_key = f"{asset_mode}:{stage or '-'}"
+    # 缓存键不含 tier：档位对状态确定（状态变更即清缓存），同键读写保命中复用；
+    # scope 经确定性序列化进键（同 scope 保命中，不同目标不互串）
+    scope_key = _scope_cache_key(scope)
+    cache_key = f"{asset_mode}:{stage or '-'}:{scope_key}"
     if cache is not None and cache_key in cache:
         return cache[cache_key]
 
     snapshot = _build_snapshot_dict(raw_state, asset_mode)
-    # 分阶段注入：非焦点类别降为组级摘要（可恢复句柄：id/编号保留）
-    if stage:
+    # 微调作用域裁剪（优先于阶段裁剪：scope 任务不携 Skill，两者不同时生效）
+    if scope_key != "-":
+        _apply_scope_profile(snapshot, raw_state, scope or {})
+    elif stage:
+        # 分阶段注入：非焦点类别降为组级摘要（可恢复句柄：id/编号保留）
         _apply_stage_profile(snapshot, raw_state, stage)
     result = _dumps(snapshot)
     # 状态指针化（Q6）：超字符预算自动降 B 档——组级正文截断+指针，
@@ -231,6 +240,97 @@ def _group_pointers(raw_state: Dict[str, Any], cat_key: str) -> list:
         }
         for gi, g in enumerate(raw_state.get(cat_key, []) or [])
     ]
+
+
+def _scope_cache_key(scope: Optional[Dict[str, Any]]) -> str:
+    """scope 确定性序列化（缓存键用）：无/空/非法形态返回 '-'（不裁剪）。"""
+    if not isinstance(scope, dict) or not scope:
+        return "-"
+    return json.dumps(scope, sort_keys=True, ensure_ascii=False)
+
+
+def _full_scope_group(raw_group: Dict[str, Any], gi: int) -> Dict[str, Any]:
+    """微调目标分组全量注入（渐进披露豁免）：草稿提示词全文在场，
+    模型无需再经 read_draft 往返；媒体 URL 仍截断防撞爆上下文。"""
+    def _u(v: Any) -> str:
+        return (str(v) if v else "")[:200]
+
+    drafts = []
+    for di, d in enumerate(raw_group.get("drafts", []) or []):
+        if not isinstance(d, dict):
+            continue
+        entry: Dict[str, Any] = {
+            k: d.get(k, "") for k in (
+                "label", "tag", "mediaType", "model", "mode", "aspectRatio")
+            if d.get(k, "") != ""
+        }
+        entry.update({
+            "id": d.get("id", ""),
+            "index": f"{gi + 1}-{di + 1}",
+            "prompt": str(d.get("prompt", "") or ""),
+            "imgUrl": _u(d.get("imgUrl", "")),
+            "videoUrl": _u(d.get("videoUrl", "")),
+            "audioUrl": _u(d.get("audioUrl", "")),
+        })
+        drafts.append(entry)
+    group: Dict[str, Any] = {
+        k: raw_group.get(k, "") for k in (
+            "title", "desc", "duration", "shotType", "roughDesc", "timeRange")
+        if raw_group.get(k, "") != ""
+    }
+    group.update({
+        "id": raw_group.get("id", ""),
+        "index": gi + 1,
+        "sceneRefs": raw_group.get("sceneRefs", []) or [],
+        "drafts": drafts,
+    })
+    return group
+
+
+def _apply_scope_profile(
+    snapshot: Dict[str, Any], raw_state: Dict[str, Any], scope: Dict[str, Any],
+) -> bool:
+    """微调作用域裁剪（微调真子对话，对齐 Flova）：目标分组（按
+    scope.group_id / draft_id 定位）注入全量草稿细节，其余分组/类别一律
+    组级指针（防越界改非目标组，全文可调 read_state_group 按需读回）；
+    documents/assets/uploadedDocs 保持既有清单形态（正文本就不注入）。
+    目标缺失（组已删除）回落该类别全指针，不阻断任务。"""
+    cat = str(scope.get("cat") or "")
+    group_id = str(scope.get("group_id") or "")
+    draft_id = str(scope.get("draft_id") or "")
+    trimmed = False
+    for c in _ALL_GROUP_CATS:
+        groups = raw_state.get(c, []) or []
+        if c == cat:
+            out = []
+            for gi, g in enumerate(groups):
+                if not isinstance(g, dict):
+                    continue
+                is_target = bool(group_id) and g.get("id") == group_id
+                if not is_target and draft_id:
+                    is_target = any(
+                        isinstance(d, dict) and d.get("id") == draft_id
+                        for d in (g.get("drafts") or []))
+                out.append(
+                    _full_scope_group(g, gi) if is_target
+                    else {
+                        "id": g.get("id", ""),
+                        "index": gi + 1,
+                        "title": g.get("title", ""),
+                        "draft_count": len(g.get("drafts", []) or []),
+                    })
+            snapshot[c] = out
+            trimmed = True
+        else:
+            snapshot[c] = _group_pointers(raw_state, c)
+            trimmed = True
+    if trimmed:
+        snapshot["scopeNote"] = (
+            "微调作用域：仅目标分组注入了全量草稿细节（含提示词全文）；"
+            "其余分组仅组级指针，非目标内容全文调 read_state_group 按需读回，"
+            "且不得修改非目标分组"
+        )
+    return trimmed
 
 
 def _apply_stage_profile(

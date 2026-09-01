@@ -34,6 +34,11 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.core import stage_probes
 from src.video_agent.core import workflow_runtime
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
+from src.video_agent.web.adjust_scope import (
+    _active_adjust_scope,
+    _scope_history_from_thread,
+    _scope_task_limit_exceeded,
+)
 from src.video_agent.web.chat_cards import _stamp_doc_written, _video_card_items
 from src.video_agent.web.generation import resolve_openai_endpoint
 from src.video_agent.web.multimodal_builder import (
@@ -86,24 +91,6 @@ def _require_chat_provider(body: ChatRequest) -> None:
         raise VideoAgentError(
             "尚未配置聊天供应商，请先到「设置」中配置聊天供应商",
             status_code=400, error_code="PROVIDER_NOT_CONFIGURED")
-
-
-def _active_adjust_scope(body: ChatRequest) -> Optional[Dict[str, Any]]:
-    """本请求生效的 adjust_scope（微调真子对话）：总开关关闭/未携带/
-    非法形态一律回落 None（旧行为，一键回滚不失约束）。"""
-    if not settings.adjust_subdialog_enabled:
-        return None
-    scope = getattr(body, "adjust_scope", None)
-    return dict(scope) if isinstance(scope, dict) and scope else None
-
-
-def _scope_task_limit_exceeded(project_id: str) -> bool:
-    """scope 任务并发上限判定（防线程膨胀）：按运行中任务记录的
-    adjust_scope 标记统计，达 settings.adjust_task_concurrency 即超限。"""
-    from src.video_agent.web.agent_task_manager import get_agent_task_manager
-    running = get_agent_task_manager().list_running(project_id)
-    count = sum(1 for t in running if t.get("adjust_scope"))
-    return count >= int(settings.adjust_task_concurrency)
 
 
 async def _stream_worker_impl(body: ChatRequest, svc: StateManager, emit, pending_injector=None, stop_scope: str = "chat") -> None:
@@ -166,7 +153,7 @@ async def _stream_worker_impl(body: ChatRequest, svc: StateManager, emit, pendin
     _require_chat_provider(body)
 
     # ---------- 真实供应商 ----------
-    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal, stop_scope=stop_scope)
+    await _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=pending_injector, advance_signal=advance_signal, stop_scope=stop_scope, adjust_scope=_active_adjust_scope(body))
 
 
 def start_agent_task(body: ChatRequest) -> Dict[str, Any]:
@@ -182,6 +169,14 @@ def start_agent_task(body: ChatRequest) -> Dict[str, Any]:
     submission_svc = StateManager.get_instance()
     project_id = (getattr(body, "project_id", "") or "").strip() \
         or submission_svc.active_project_id or ""
+    # 微调真子对话（批 S2）：scope 请求走并发上限闸（结构化提示，非新闸机）；
+    # 开关关闭/未携带时 scope=None 回落旧行为（旧前端零破坏）
+    scope = _active_adjust_scope(body)
+    if scope is not None and _scope_task_limit_exceeded(project_id):
+        raise VideoAgentError(
+            f"微调任务已达并发上限（{int(settings.adjust_task_concurrency)} 个），"
+            "请等待已有微调完成后再提交",
+            status_code=429, error_code="ADJUST_SCOPE_BUSY")
     conversation_id = (getattr(body, "conversation_id", "") or "").strip() \
         or str(submission_svc.conversations_meta_payload().get("active_conversation_id") or "")
     workspace_dir = str(submission_svc._workspace_dir)
@@ -194,6 +189,9 @@ def start_agent_task(body: ChatRequest) -> Dict[str, Any]:
         model=getattr(body, "model", "") or "",
         conversation_id=conversation_id,
     )
+    # scope 标记随记录（并发统计/前端事件分流同口径；非 scope 任务不携）
+    if scope is not None:
+        record["adjust_scope"] = scope
     return {"task_id": record["task_id"], "project_id": project_id}
 
 
@@ -297,6 +295,9 @@ class _StreamCtx:
     pending_injector: Any = None
     advance_signal: str = ""
     stop_scope: str = "chat"
+    # 微调作用域（批 S2）：非空 ⇔ 本请求归属隐藏线程子对话（服务端装历史/
+    # scope 状态构建器/不携 Skill）
+    adjust_scope: Dict[str, Any] = field(default_factory=dict)
     # --- 准备段中间结果 ---
     history: List[Dict[str, Any]] = field(default_factory=list)
     turn_id: str = ""
@@ -315,22 +316,27 @@ class _StreamCtx:
     stop_phase_seen: str = ""
 
 
-def _stage_aware_state_builder(svc: Any, asset_mode: str, skill: str):
+def _stage_aware_state_builder(
+    svc: Any, asset_mode: str, skill: str,
+    scope: Optional[Dict[str, Any]] = None,
+):
     """第 5 批（Q6）：状态注入阶段感知构建器。
 
     Skill 激活时每步实时探测当前创作阶段传入 build_agent_context
     （分阶段裁剪注入面）；无 Skill / 探测失败回落全量注入（保守不失约束）。
+    scope（批 S2 微调真子对话）：非空时透传 scope 裁剪档（目标组全量/
+    其余指针），阶段探测让位（scope 任务不携 Skill，两者不同时生效）。
     """
 
     def _builder() -> str:
         stage = ""
-        if skill:
+        if scope is None and skill:
             try:
                 spec = stage_probes.current_stage(svc.state_dict, skill)
                 stage = spec.key if spec else ""
             except Exception:
                 stage = ""
-        return svc.build_agent_context(asset_mode, stage=stage)
+        return svc.build_agent_context(asset_mode, stage=stage, scope=scope)
 
     return _builder
 
@@ -340,10 +346,16 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
 
     adapter 创建失败经既有出口发错并返回 None（调用方终止流）。
     """
-    ctx.history = truncate_history([
-        {"role": m.get("role", "user"), "content": m.get("content", "")}
-        for m in window_recent_turns(ctx.body.messages)
-    ])
+    # history 装载：scope 请求改服务端从线程装载（单一事实源，不再信前端
+    # body.messages 窗口）；普通请求照旧用前端窗口（旧行为零变化）
+    if ctx.adjust_scope:
+        ctx.history = truncate_history(
+            _scope_history_from_thread(ctx.svc, str(getattr(ctx.body, "conversation_id", "") or "")))
+    else:
+        ctx.history = truncate_history([
+            {"role": m.get("role", "user"), "content": m.get("content", "")}
+            for m in window_recent_turns(ctx.body.messages)
+        ])
 
     # 轮次唯一标识——本轮持久化的正文/文档卡/图片卡共用同一 turnId，
     # 前端据此把产出聚合进同次容器（消除消息流碎片化）；随 done payload
@@ -406,12 +418,16 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
         executor_factory=StateOperationExecutor,
         chat_provider=ctx.cand_provider, chat_model=ctx.cand_model,
     )
-    resolved_skill = _resolve_skill_name_for_injection(
-        ctx.body.skill_name or "", ctx.body.skill_slug or "", ctx.svc.state_dict, ctx.user_text,
+    resolved_skill = (
+        "" if ctx.adjust_scope else _resolve_skill_name_for_injection(
+            ctx.body.skill_name or "", ctx.body.skill_slug or "", ctx.svc.state_dict, ctx.user_text,
+        )
     )
-    # 状态惰性构建器：多步循环每轮刷新（阶段感知，resolved_skill 后装配）
+    # 状态惰性构建器：多步循环每轮刷新（阶段感知，resolved_skill 后装配；
+    # scope 请求换 scope 裁剪构建器，目标组全量/其余指针）
     ctx.state_builder = (
-        _stage_aware_state_builder(ctx.svc, ctx.body.asset_mode, resolved_skill)
+        _stage_aware_state_builder(
+            ctx.svc, ctx.body.asset_mode, resolved_skill, scope=ctx.adjust_scope or None)
         if ctx.use_studio_context else None
     )
     prelude_notes = _build_prelude_notes(resolved_skill)
@@ -440,6 +456,8 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
         advance_signal=ctx.advance_signal,
         # 协作式停止标志作用域：SSE 直连="chat"，任务式传输=task_id
         stop_scope=ctx.stop_scope,
+        # 微调作用域透传（非空 ⇔ 纪律提示段注入；内容恒定保前缀缓存）
+        adjust_scope=dict(ctx.adjust_scope or {}),
     )
 
 
@@ -596,12 +614,13 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
     await ctx.emit({"type": SSE_DONE, "payload": done_payload})
 
 
-async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", stop_scope: str = "chat") -> None:
+async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_content, use_studio_context, emit, t0, pending_injector=None, advance_signal: str = "", stop_scope: str = "chat", adjust_scope: Optional[Dict[str, Any]] = None) -> None:
     """真实供应商的流式处理（单一候选：选什么用什么，联不通直接报错）。
 
     生图/生视频 fallback 属独立机制（generation.py）。
     pending_injector：轮间引导注入器，经 PlannerContext 传入循环。
     stop_scope：协作式停止标志作用域，透传 PlannerContext → agent_loop 检查点。
+    adjust_scope：微调作用域（批 S2），非空时服务端装历史 + scope 状态构建器。
 
     P1-4：函数体拆为 _stream_prepare/_stream_dispatch/_stream_finalize 三段，
     参数经 _StreamCtx 收敛；签名、事件语义与错误出口零变更。
@@ -611,7 +630,7 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
         llm_user_text=llm_user_text, llm_user_content=llm_user_content,
         use_studio_context=use_studio_context, emit=emit, t0=t0,
         pending_injector=pending_injector, advance_signal=advance_signal,
-        stop_scope=stop_scope,
+        stop_scope=stop_scope, adjust_scope=dict(adjust_scope or {}),
     )
     planner_ctx = await _stream_prepare(ctx)
     if planner_ctx is None:

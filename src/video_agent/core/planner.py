@@ -134,6 +134,10 @@ class PlannerContext:
     # stage_note 非空 ⇔ 阶段裁剪生效（成对出现，消灭「静默裁剪」反模式）
     stage_excluded_tools: frozenset = frozenset()
     stage_note: str = ""
+    # 微调作用域（微调真子对话）：非空 ⇔ 本请求归属隐藏线程子对话，
+    # 纪律提示段（prompts/planner/adjust_discipline.md）据此注入；
+    # 内容恒定不嵌目标编号（保前缀缓存），目标信息由状态裁剪面携带。
+    adjust_scope: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

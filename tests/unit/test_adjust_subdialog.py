@@ -177,6 +177,44 @@ def test_scope_concurrency_limit_configurable(svc, monkeypatch):
         object.__setattr__(settings, "adjust_task_concurrency", 4)
 
 
+# ---------- 6. 批 S2：scope 任务全链路写入与 history 服务端装载 ----------
+
+def test_scope_task_full_chain_main_chat_stays_empty(svc):
+    """scope 任务全链路（任务绑定写入模拟 _run_agent_task 路径）跑完后：
+    消息全部落线程，主对话 get_chat_messages() 为空。"""
+    conv = conversation_ops.create_scoped_conversation(svc, _SCOPE_A)
+    # worker 绑定线程（_run_agent_task: svc.bound_conversation_id = conversation_id）
+    svc.bound_conversation_id = conv["id"]
+    svc.add_chat_message("user", "把这一卡改成夜景")
+    svc.add_chat_message("agent", "已按夜景调整目标分组提示词")
+    svc.bound_conversation_id = ""
+    # 主对话零污染（写入定向到线程）
+    assert svc.get_chat_messages() == []
+    # 线程内历史完整，且主清单仍不见线程（隐藏载体）
+    assert [m["text"] for m in svc.get_conversation_messages(conv["id"])] \
+        == ["把这一卡改成夜景", "已按夜景调整目标分组提示词"]
+    assert conv["id"] not in [c["id"] for c in svc.conversations_meta_payload()["conversations"]]
+
+
+def test_scope_history_server_side_loading(svc):
+    """history 服务端装载（_scope_history_from_thread）：线程落盘消息转
+    role/content，sender==user → user，其余 → assistant，空白条目剔除。"""
+    import src.video_agent.web.chat_service as cs
+    conv = conversation_ops.create_scoped_conversation(svc, _SCOPE_A)
+    svc.bound_conversation_id = conv["id"]
+    svc.add_chat_message("user", "第一轮问")
+    svc.add_chat_message("agent", "第一轮答")
+    svc.add_chat_message("user", "   ")  # 空白条目不进 history
+    svc.bound_conversation_id = ""
+    history = cs._scope_history_from_thread(svc, conv["id"])
+    assert history == [
+        {"role": "user", "content": "第一轮问"},
+        {"role": "assistant", "content": "第一轮答"},
+    ]
+    # 空线程/不存在线程返回空窗口（不抛错，回落重建语义）
+    assert cs._scope_history_from_thread(svc, "conv-ghost") == []
+
+
 def test_active_adjust_scope_switch(svc):
     import src.video_agent.web.chat_service as cs
     from src.video_agent.web.routes.agent import ChatRequest
