@@ -50,11 +50,12 @@ from src.video_agent.core.scaffold_registry import scaffold_entries  # noqa: E40
 
 # 安全类闸机折旧豁免登记（Policy-as-Data）：安全类闸机不参与折旧，
 # 零触发是常态而非折旧信号。运行时闸 = 平台硬边界族（生成确认/
-# 工具风险/阶段前置）；CI 棘轮 = 反向依赖方向/退役符号防复活/
+# 工具风险）；CI 棘轮 = 反向依赖方向/退役符号防复活/
 # 类型契约。登记口径从严：拿不准的不豁免（宁可多审不可误拆）。
 SAFE_RUNTIME_RULES = frozenset({
     "platform.gen_confirm",
     "platform.tool_risk",
+    # 历史豁免登记：该闸已随 C1b 裁决 2026-08-31 退役，条目保留供历史 trace 归一
     "platform.stage_precondition",
 })
 SAFE_CI_GATES = frozenset({
@@ -290,7 +291,7 @@ def main() -> int:
     unregistered = sorted(active_ids - registry_ids)
     zero_sample = sorted(registry_ids - active_ids)
     if unregistered:
-        print(f"- ⚠ 实际活跃但未登记进注册表：{', '.join(unregistered)}")
+        print(f"- [!] 实际活跃但未登记进注册表：{', '.join(unregistered)}")
     else:
         print("- 实际活跃规则全部在注册表内（对账通过）")
     print(f"- 零样本清单（注册表 {len(registry_ids)} 条，活跃 "

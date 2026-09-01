@@ -4,7 +4,7 @@
 对照 tests/fixtures/workflow_1111_baseline.json（修复前基线）断言：
 ① 轮1 缺剧本 → 正文提醒 + quick-actions 芯片（层 9 兜底，由代码执行不依赖模型自觉；批 B 出槽：不占暂停槽）；
 ② 轮3 带附件推进 → 交接模型循环（主体回归：模型永远唯一行动主体，
-   runtime 不自主执行执行器；越阶靠 stage_precondition 闸刹车）；
+   runtime 不自主执行执行器；stage_precondition 越阶硬闸已随 C1b 裁决 2026-08-31 退役）；
 ③ 自由提问（无推进信号）→ 交接模型循环（不错抓）；
 ④ 向导发送 → 机械落盘进产物账本 + 文档卡补落同轮可见；
 ⑤ read_skill canonical 身份归一（去连字符误差不报错）。
