@@ -1,0 +1,24 @@
+/* ===== 微调浮动子对话浮窗（批 S4）：非模态可拖拽浮窗，模式同 .docs-panel ===== */
+@layer components {
+  .adjust-dialog { position: fixed; inset: 0; z-index: var(--z-docs); display: flex; align-items: flex-end; justify-content: flex-start; pointer-events: none; }
+  .adjust-dialog-inner { pointer-events: auto; width: min(400px, 92vw); height: min(520px, 80vh); margin: 0 0 24px 24px; display: flex; flex-direction: column; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; box-shadow: 0 16px 48px color-mix(in srgb, var(--color-black) 55%, transparent); }
+  .adjust-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 40px; box-sizing: border-box; padding: 0 10px 0 14px; border-bottom: 1px solid var(--border-color); cursor: grab; user-select: none; flex-shrink: 0; }
+  .adjust-dialog-header:active { cursor: grabbing; }
+  .adjust-dialog-title { font-size: var(--font-sm); font-weight: 600; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .adjust-dialog-close { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; transition: all var(--dur-fast); }
+  .adjust-dialog-close:hover { color: var(--text-main); background: color-mix(in srgb, var(--color-white) 8%, transparent); }
+  .adjust-dialog-body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .adjust-msg.user { display: flex; justify-content: flex-end; }
+  .adjust-msg.agent { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .adjust-bubble-user { max-width: 82%; padding: 7px 11px; border-radius: 12px 12px 3px 12px; background: color-mix(in srgb, var(--color-info-strong) 22%, transparent); color: var(--text-main); font-size: var(--font-sm); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+  .adjust-msg.agent .chat-markdown { font-size: var(--font-sm); }
+  .adjust-status { font-size: var(--font-xs); color: var(--text-muted); }
+  .adjust-dialog-footer { display: flex; align-items: center; gap: 8px; padding: 10px; border-top: 1px solid var(--border-color); flex-shrink: 0; }
+  .adjust-dialog-input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary); color: var(--text-main); font-size: var(--font-sm); outline: none; }
+  .adjust-dialog-input:focus { border-color: var(--border-highlight); }
+  .adjust-dialog-send, .adjust-dialog-stop { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex-shrink: 0; border: none; border-radius: 8px; cursor: pointer; transition: all var(--dur-fast); }
+  .adjust-dialog-send { background: var(--accent-blue); color: var(--color-white); }
+  .adjust-dialog-send:hover { opacity: 0.85; }
+  .adjust-dialog-stop { background: color-mix(in srgb, var(--color-danger-strong) 16%, transparent); color: var(--color-danger); border: 1px solid color-mix(in srgb, var(--color-danger-strong) 40%, transparent); }
+  .adjust-dialog-stop:hover { background: color-mix(in srgb, var(--color-danger-strong) 28%, transparent); }
+}

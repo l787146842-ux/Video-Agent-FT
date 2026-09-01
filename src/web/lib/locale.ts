@@ -52,6 +52,12 @@ const zhCN = {
   'rp.adjust.duplicate': '该卡的微调任务正在运行中，请等待完成后再提交',
   'rp.adjust.failed': '微调提交失败',
   'rp.adjust.stopped': '微调任务已停止',
+  // ---------- 微调浮动子对话浮窗（批 S4） ----------
+  'rp.adjust.title': '微调',
+  'rp.adjust.inputPlaceholder': '输入消息继续对话',
+  'rp.adjust.send': '发送',
+  'rp.adjust.stop': '停止微调任务',
+  'rp.adjust.close': '关闭浮窗（对话保留，可随时再开）',
 
   // ---------- 输入区 ----------
   'rp.input.aria': '给 Agent 发送指令',

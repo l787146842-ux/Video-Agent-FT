@@ -9,6 +9,7 @@ import { ContextMenuHost } from '@/components/shared/ContextMenu';
 import { ConfirmDialogHost } from '@/components/shared/ConfirmDialog';
 import { SplashScreen } from '@/components/shared/SplashScreen';
 import { DocsPanel } from '@/components/docs/DocsPanel';
+import { AdjustDialog } from '@/components/left-panel/AdjustDialog';
 import { AssetLibraryModal } from '@/components/right-panel/AssetLibraryModal';
 import { GenerationLogPanel } from './GenerationLogPanel';
 import { initGenerationEvents, restoreActiveGenerations } from '@/lib/generation-events';
@@ -222,6 +223,7 @@ export function LayoutShell(props: ParentProps) {
       <ContextMenuHost />
       <ConfirmDialogHost />
       <DocsPanel />
+      <AdjustDialog />
       <GenerationLogPanel />
 
       {/* 全局"画布素材库"模态框（左栏 AssetCard 和 ChatInput 工具栏共用） */}
