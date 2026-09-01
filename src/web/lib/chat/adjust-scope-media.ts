@@ -34,13 +34,14 @@ export async function uploadScopeRefs(files: File[]): Promise<ScopeRef[]> {
   }
 }
 
-/** 输入框粘贴图片 → 引用条目（仅直接图片项；复用剪贴板 File 口径） */
+/** 输入框粘贴文件 → 引用条目（评审修补批：类型闸与文件选择器统一）。
+ *  收集所有 getAsFile() 非空项交 uploadScopeRefs 走同一类型闸（非媒体
+ *  弹拒绝提示不静默丢）；仅确有文件项时 preventDefault。 */
 export async function pasteScopeRefs(e: ClipboardEvent): Promise<ScopeRef[]> {
   const items = e.clipboardData?.items;
   if (!items) return [];
   const files: File[] = [];
   for (let i = 0; i < items.length; i++) {
-    if (!items[i].type.startsWith('image/')) continue;
     const f = items[i].getAsFile();
     if (f) files.push(f);
   }

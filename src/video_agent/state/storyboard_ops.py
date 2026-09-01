@@ -277,11 +277,15 @@ def delete_draft(state: Dict[str, Any], draft_id: str, draft_type: str = "") -> 
     return []
 
 
-def delete_group(state: Dict[str, Any], group_id: str, group_type: str = "") -> List[str]:
+def delete_group(
+    state: Dict[str, Any], group_id: str, group_type: str = "",
+) -> Tuple[List[str], bool]:
     """按真实 ID 删除 group（含其全部草稿）。先展开该分组全部草稿 id 再删，
-    返回被删草稿 id 列表（空 = 未命中），供调用方做 scope 线程删除级联。"""
+    返回（被删草稿 id 列表，是否命中），供调用方做 scope 线程删除级联。
+    命中位与草稿列表分离（评审修补批）：空分组命中时草稿列表为空，
+    调用方凭命中位落盘报成功，不得误报 not found。"""
     if not group_id:
-        return []
+        return [], False
     for cat_key in categories_for_type(group_type):
         groups = state.get(cat_key, [])
         for i, g in enumerate(groups):
@@ -291,8 +295,8 @@ def delete_group(state: Dict[str, Any], group_id: str, group_type: str = "") -> 
                     if isinstance(d, dict) and str(d.get("id") or "")
                 ]
                 groups.pop(i)
-                return removed
-    return []
+                return removed, True
+    return [], False
 
 
 def new_group_id(cat_key: str) -> str:

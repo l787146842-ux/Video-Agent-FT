@@ -1,11 +1,9 @@
 /**
- * 微调真子对话线程注册表（批 S3；方案「微调真子对话对齐 Flova」）。
- *
- * 每张被微调的草稿卡对应一个后端隐藏线程对话（POST /api/conversations/thread
- * 幂等取/建）。本 store 持有线程视图数据（历史消息 + 当前轮流式累积）与运行
- * 登记；事件写入唯一通道 = appendEvent（scope 专用 fx 见 lib/sse-task-fx，
- * 结构性不进聊天区）。浮窗组件（批 S4）消费 open 标志与 messages。
- * 视图模型与事件归约拆在 stores/adjust-scope-events.ts（行数红线）。
+ * 微调真子对话线程注册表（批 S3）：每张被微调的草稿卡对应一个后端隐藏线程
+ * 对话（POST /api/conversations/thread 幂等取/建）。本 store 持有线程视图数据
+ * （历史消息 + 当前轮流式累积）与运行登记；事件写入唯一通道 = appendEvent
+ * （scope 专用 fx 见 lib/sse-task-fx，结构性不进聊天区）；浮窗（批 S4）消费
+ * open 标志与 messages。视图模型与事件归约拆在 stores/adjust-scope-events.ts。
  */
 import { createStore, produce } from 'solid-js/store';
 import type { AgentChatRequest, ChatMessage } from '@/types';
@@ -83,9 +81,8 @@ export const adjustScopeActions = {
     if (adjustScopes[scopeKey]) setAdjustScopes(scopeKey, 'open', false);
   },
 
-  /** 对象删除级联（二期子对话批 1）：元素被删后移除本注册表对应键；
-   *  浮窗渲染依赖 open 键，键删除后若正开着随之关闭（后端线程已同帧硬删）。
-   *  撤销恢复时线程随快照回来，重新打开入口会幂等重建登记。 */
+  /** 对象删除级联（二期子对话批 1）：移除注册表对应键，浮窗随关（后端线程已同帧硬删）；
+   *  撤销恢复后重开入口幂等重建登记。 */
   dropThread(scopeKey: string) {
     if (!adjustScopes[scopeKey]) return;
     inflight.delete(scopeKey);
@@ -118,24 +115,19 @@ export const adjustScopeActions = {
       showToast(t('rp.adjust.duplicate'), 'warning');
       return false;
     }
-    const provider = agentProvider();
-    const model = agentModel();
+    const provider = agentProvider(); const model = agentModel();
     if (!provider || !model) {
       showToast(t('rp.send.noProvider'), 'warning');
       return false;
     }
     // 待发引用随本条消息携带（批 3）：后端绑线程不登记全局；本地乐观并入已绑清单（后端按 url 去重）
     const pending = [...(th.pendingRefs || [])];
-    // 用户气泡先落线程视图（乐观；失败时错误事件也落线程，主对话零痕迹）
     setAdjustScopes(produce((s) => {
       s[key].messages.push({ sender: 'user', text: trimmed });
       s[key].status = 'starting';
       s[key].errorText = '';
       s[key].open = true; // 提交后自动弹浮窗（=open）
-      if (pending.length) {
-        s[key].scopeRefs.push(...pending);
-        s[key].pendingRefs = [];
-      }
+      if (pending.length) { s[key].scopeRefs.push(...pending); s[key].pendingRefs = []; }
     }));
     const request: AgentChatRequest = {
       message: trimmed,
@@ -146,9 +138,7 @@ export const adjustScopeActions = {
       model,
       ms_model: provider === 'modelscope' ? model : '',
       // 线程历史窗口（后端 scope 请求改服务端装载，此处仅作兼容兜底）
-      messages: adjustScopes[key].messages.slice(-CHAT_HISTORY_WINDOW).map((m) => (
-        { role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }
-      )),
+      messages: adjustScopes[key].messages.slice(-CHAT_HISTORY_WINDOW).map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text })),
       // 参考素材引用（批 3）：后端据此绑线程，不进全局 assets/uploadedDocs
       attachments: pending.length ? pending.map((r) => ({ id: r.id, name: r.name, kind: r.kind, url: r.url })) : undefined,
       selected_draft_id: target.draft_id,
@@ -160,6 +150,15 @@ export const adjustScopeActions = {
       scope: true,
       onTaskStarted: (taskId) => adjustScopeActions.registerTask(key, taskId),
     }).catch((err: unknown) => {
+      // 失败回滚（评审修补批）：本批乐观并入的引用退回待发（防“假已绑”后静默丢失）
+      if (pending.length) {
+        setAdjustScopes(produce((s) => {
+          if (!s[key]) return;
+          const ids = new Set(pending.map((p) => p.id));
+          s[key].scopeRefs = s[key].scopeRefs.filter((r) => !ids.has(r.id));
+          s[key].pendingRefs = [...pending, ...(s[key].pendingRefs || [])];
+        }));
+      }
       const msg = err instanceof ApiError
         ? err.payload.message
         : ((err as Error).message || t('rp.adjust.failed'));
@@ -168,10 +167,13 @@ export const adjustScopeActions = {
     return true;
   },
 
-  /** 待发引用暂存（批 3）：上传成功后入队，达上限拒收并提示 */
+  /** 待发引用暂存（批 3）：上传成功后入队，达上限拒收并提示；
+   *  同 url 去重（评审修补批）：后端按 url 去重先入者保留其 id，
+   *  前端不去重会产生幽灵条目，删除时误报“移除失败”。 */
   addPendingRef(scopeKey: string, ref: ScopeRef, maxCount: number): boolean {
     const th = adjustScopes[scopeKey];
     if (!th) return false;
+    if ([...(th.pendingRefs || []), ...(th.scopeRefs || [])].some((r) => r.url === ref.url)) return false;
     const total = (th.pendingRefs || []).length + (th.scopeRefs || []).length;
     if (total >= maxCount) {
       showToast(t('rp.adjust.refsFull'), 'warning');
@@ -217,7 +219,7 @@ export const adjustScopeActions = {
   },
 
   /** 测试复位/硬重置（同 agentActions.resetBusy 口径）；
-   * 注：Solid setStore 对象参数是递归合并，须逐键删才能清空 */
+   *  Solid setStore 对象参数是递归合并，须逐键删才能清空 */
   reset() {
     setAdjustScopes(produce((s) => {
       for (const k of Object.keys(s)) delete s[k];

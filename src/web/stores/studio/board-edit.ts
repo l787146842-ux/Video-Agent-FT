@@ -129,14 +129,16 @@ export const boardEditActions = {
     persistBoard();
   },
 
-  /** 删除草稿（右键菜单） */
-  removeDraftLocal(type: DraftType, groupId: string, draftId: string) {
+  /** 删除草稿（右键菜单）；keepThread：非破坏移动（移入素材池，可还原）
+   *  不级联线程注册表（评审修补批：前端线程键保留、浮窗不关） */
+  removeDraftLocal(type: DraftType, groupId: string, draftId: string, keepThread = false) {
     const field = fieldForType(type);
     const group = groupsForType(type).find((g) => g.id === groupId);
     if (!group) return;
     const remaining = (group?.drafts || []).filter((d) => d.id !== draftId);
     removeLocalAddedId(draftId); // D2：删除的草稿移出保护集，防快照合并复活
-    adjustScopeActions.dropThread(draftId); // 对象删除级联：微调线程注册表键移除
+    // 对象删除级联：微调线程注册表键移除（可还原移动除外；服务端 diff 同口径豁免）
+    if (!keepThread) adjustScopeActions.dropThread(draftId);
     setState(field, (prev: AnyGroup[]) =>
       prev.map((g) => (g.id === groupId ? { ...g, drafts: remaining } : g)),
     );

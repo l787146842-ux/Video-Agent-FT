@@ -208,15 +208,19 @@ class StoryboardDeleteGroupTool(BaseTool):
         svc = StateManager.get_instance()
 
         async with svc.lock:
-            removed_draft_ids = ops.delete_group(svc.state_dict, params.group_id, params.group_type)
-            if removed_draft_ids:
+            removed_draft_ids, hit = ops.delete_group(
+                svc.state_dict, params.group_id, params.group_type)
+            if hit:
                 # 对象删除级联（二期子对话批 1）：先掐绑定在途微调任务再硬删
                 # 对应隐藏线程，防 target_chat_messages 静默回落污染主对话；
                 # 删除与级联同帧，撤销快照栈含 conversations 可原子恢复。
                 # 掐停实现走 core/ports 端口（tools 层禁 import web，D-01 先例）。
-                conversation_ops.cleanup_scoped_threads_for_removed(
-                    svc, removed_draft_ids, save=False,
-                    stop_tasks=lambda ids: ports.task_stop_port().stop_bound_tasks(ids))
+                # 命中位与草稿列表分离（评审修补批）：空分组命中无草稿可级联，
+                # 仍须落盘报成功，不得误报 not found 造成内存/磁盘漂移。
+                if removed_draft_ids:
+                    conversation_ops.cleanup_scoped_threads_for_removed(
+                        svc, removed_draft_ids, save=False,
+                        stop_tasks=lambda ids: ports.task_stop_port().stop_bound_tasks(ids))
                 svc.save()
                 return ToolResult(success=True, data={"deleted": params.group_id})
         return ToolResult(success=False, error=f"Group '{params.group_id}' not found")

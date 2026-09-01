@@ -4,8 +4,10 @@
 钉死契约：
 1. cleanup_scoped_threads_for_removed 只硬删 scope.draft_id 命中的隐藏线程，
    主对话与未命中线程不动；
-2. 分组删除先展开全部草稿 id 再级联（delete_group 返回被删草稿 id 列表）；
+2. 分组删除先展开全部草稿 id 再级联（delete_group 返回（被删草稿 id 列表，命中位），
+   评审修补批：命中位与草稿列表分离，空分组命中不误报 not found）；
 3. 整板 PUT 写面：新旧草稿 id diff 触发级联（前端删元素主路径）；
+   素材池来源草稿计入存活集（可还原移动豁免，评审修补批）；
 4. 撤销原子恢复：删除 + 级联同帧，Ctrl+Z 后元素、线程与历史消息一起回来；
 5. 在途任务先掐：级联前对绑定被删线程的运行中任务走既有停止通道
    （request_stop + tm.stop，经调用方注入），防 target_chat_messages
@@ -93,12 +95,50 @@ def test_delete_group_expands_drafts_and_cascades(svc):
     conversation_ops.create_scoped_conversation(svc, _scope("draft-1"))
     conversation_ops.create_scoped_conversation(svc, _scope("draft-2"))
 
-    removed_draft_ids = ops.delete_group(svc.state_dict, "grp-1", "shot")
+    removed_draft_ids, hit = ops.delete_group(svc.state_dict, "grp-1", "shot")
+    assert hit is True
     assert sorted(removed_draft_ids) == ["draft-1", "draft-2"]
     removed = conversation_ops.cleanup_scoped_threads_for_removed(svc, removed_draft_ids)
 
     assert len(removed) == 2
     assert _thread_ids(svc) == []
+
+
+def test_delete_group_empty_hit_distinguished_from_miss(svc):
+    """空分组命中 ≠ 未命中（评审修补批：命中位与草稿列表分离的 ops 层钉死）"""
+    svc.state_dict["shots"] = [{"id": "grp-empty", "title": "G", "drafts": []}]
+    removed, hit = ops.delete_group(svc.state_dict, "grp-empty", "shot")
+    assert removed == [] and hit is True
+    assert svc.state_dict["shots"] == []
+    assert ops.delete_group(svc.state_dict, "no-such", "shot") == ([], False)
+
+
+@pytest.mark.asyncio
+async def test_fc_delete_empty_group_saves_and_reports_success(svc, monkeypatch):
+    """【严重】空分组 FC 删除回归（评审修补批）：空分组命中无草稿可级联，
+    工具仍须落盘报成功，不得误报 not found 造成内存/磁盘漂移。"""
+    from src.video_agent.tools.storyboard_tools import (
+        DeleteGroupInput, StoryboardDeleteGroupTool)
+
+    monkeypatch.setattr(StateManager, "get_instance", classmethod(lambda cls: svc))
+    svc.state_dict["shots"] = [{"id": "grp-empty", "title": "G", "drafts": []}]
+    svc.save()
+    saved = []
+    orig_save = svc.save
+    monkeypatch.setattr(svc, "save", lambda: (saved.append(1), orig_save())[1])
+
+    res = await StoryboardDeleteGroupTool().aexecute(
+        DeleteGroupInput(group_id="grp-empty", group_type="shot"))
+
+    assert res.success is True                       # 空分组命中报成功（不误报 not found）
+    assert res.data == {"deleted": "grp-empty"}
+    assert saved == [1]                              # 落盘必须发生（内存/磁盘不漂移）
+    assert svc.state_dict["shots"] == []
+
+    miss = await StoryboardDeleteGroupTool().aexecute(
+        DeleteGroupInput(group_id="no-such", group_type="shot"))
+    assert miss.success is False and "not found" in str(miss.error)
+    assert saved == [1]                              # 未命中不落盘
 
 
 # ---------- 3. 整板 PUT 写面 diff 级联 ----------
@@ -119,6 +159,46 @@ def test_put_state_diff_cascades_removed_drafts(svc, client):
     assert _thread_ids(svc) != []  # draft-2 线程仍在
     payload = conversation_ops.scoped_threads_payload(svc)
     assert [t["scope"]["draft_id"] for t in payload["threads"]] == ["draft-2"]
+
+
+def test_put_state_keeps_thread_for_asset_pool_source_draft(svc, client):
+    """评审修补批第 2 项：「移入未归类素材池」是可还原的非破坏移动，
+    服务端整板 PUT diff 把素材池来源草稿计入存活集，不得误级联硬删线程；
+    还原回板（草稿重新上板、素材池清空）后历史仍在。"""
+    svc.state_dict["shots"] = [{
+        "id": "grp-1", "title": "G1",
+        "drafts": [{"id": "draft-1", "label": "a"}],
+    }]
+    thread = conversation_ops.create_scoped_conversation(svc, _scope("draft-1"))
+    thread.setdefault("messages", []).append({"role": "user", "text": "改亮一点"})
+    svc.save()
+
+    # 移入素材池：草稿下板，但 assets 携带 sourceDraft 来源快照
+    resp = client.put("/api/project/state", json={
+        "shots": [{"id": "grp-1", "title": "G1", "drafts": []}],
+        "assets": [{"id": "a1", "name": "a", "type": "image", "url": "/x.png",
+                     "sourceDraft": {"id": "draft-1"}}],
+    })
+    assert resp.status_code == 200 and resp.json()["ok"] is True
+    assert _thread_ids(svc) == [thread["id"]]  # 线程仍在（可还原移动豁免）
+    assert svc.get_conversation_messages(thread["id"]) == [{"role": "user", "text": "改亮一点"}]
+
+    # 还原回板：草稿重新上板、素材池清空，线程与历史继续存活
+    resp = client.put("/api/project/state", json={
+        "shots": [{"id": "grp-1", "title": "G1",
+                    "drafts": [{"id": "draft-1", "label": "a"}]}],
+        "assets": [],
+    })
+    assert resp.status_code == 200
+    assert _thread_ids(svc) == [thread["id"]]
+    assert svc.get_conversation_messages(thread["id"]) == [{"role": "user", "text": "改亮一点"}]
+
+    # 对照：素材池也清空后的真删除照旧级联（豁免只开给可还原移动）
+    resp = client.put("/api/project/state", json={
+        "shots": [{"id": "grp-1", "title": "G1", "drafts": []}], "assets": [],
+    })
+    assert resp.status_code == 200
+    assert _thread_ids(svc) == []
 
 
 def test_put_state_without_lists_does_not_cascade(svc, client):

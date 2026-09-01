@@ -155,6 +155,20 @@ def board_draft_ids(groups: List[Dict[str, Any]]) -> set:
     return ids
 
 
+def asset_pool_draft_ids(assets: List[Dict[str, Any]]) -> set:
+    """未归类素材池内来源草稿 id 集合（评审修补批）：「移入素材池」是
+    可还原的非破坏移动，其来源草稿（sourceDraft）仍属存活实体，
+    删除级联的新旧 id diff 须计入 _new_ids，不得误删其微调线程。"""
+    ids = set()
+    for a in assets or []:
+        if not isinstance(a, dict):
+            continue
+        src = a.get("sourceDraft")
+        if isinstance(src, dict) and str(src.get("id") or ""):
+            ids.add(str(src["id"]))
+    return ids
+
+
 def cleanup_scoped_threads_for_removed(
     svc: "StateManager", removed_draft_ids, save: bool = True,
     stop_tasks: Optional[Any] = None,
@@ -216,7 +230,10 @@ def bind_thread_scope_refs(
         return added
     refs = conv.setdefault("scopeRefs", [])
     seen = {str(r.get("url") or "") for r in refs if isinstance(r, dict)}
-    for att in list(attachments or [])[:int(settings.max_attachments)]:
+    # 总量口径截断（评审修补批）：上限限的是线程引用总量而非单批，
+    # 防直连 API 逐批发送绕过前端总量守卫无限膨胀（上下文全量注入）。
+    room = max(0, int(settings.max_attachments) - len(refs))
+    for att in list(attachments or [])[:room]:
         url = str((att or {}).get("url") or "")
         if not url or url in seen:
             continue
@@ -239,7 +256,8 @@ def bind_thread_scope_refs(
 def remove_thread_scope_ref(svc: "StateManager", conversation_id: str, ref_id: str) -> bool:
     """从线程 scopeRefs 移除一条引用（二期子对话批 3 浮窗清单移除通道）：
     只解逻辑绑定，物理文件不删（与主对话素材删除同口径，系统无素材 GC）。
-    命中移除返回 True；线程/引用不存在返回 False。"""
+    命中移除返回 True；线程不存在返回 False；线程存在但引用本就不存在
+    幂等成功返回 True（评审修补批：前端同 url 去重后幽灵 id 解绑不得误报失败）。"""
     conv_id = str(conversation_id or "")
     rid = str(ref_id or "")
     if not conv_id or not rid:
@@ -254,7 +272,7 @@ def remove_thread_scope_ref(svc: "StateManager", conversation_id: str, ref_id: s
     kept = [r for r in refs
             if not (isinstance(r, dict) and str(r.get("id") or "") == rid)]
     if len(kept) == len(refs):
-        return False
+        return True  # 线程存在但引用本就不存在：幂等成功（无状态变化不落盘）
     conv["scopeRefs"] = kept
     svc._context_cache.clear()
     svc.save()

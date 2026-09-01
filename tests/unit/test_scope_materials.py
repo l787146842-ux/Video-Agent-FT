@@ -6,7 +6,8 @@
    conversations[i].scopeRefs，不进全局 assets/uploadedDocs（主对话零污染）；
    主对话上传行为不变（bind_attachments 照旧登记 assets）；
 2. scopeRefs 生命周期与线程对齐：随撤销/快照原子恢复、随级联删除消失；
-   unref 端点只解引用不删物理文件（引用不存在返 404）；
+   unref 端点只解引用不删物理文件（引用不存在幂等成功、线程不存在返 404，
+   评审修补批）；总量上限按存量口径截断（直连 API 逐批累积不得超上限）；
 3. 上下文铁律不松动：_apply_scope_profile 注入本线程 scopeRefs 与
    「本线程参考素材已注入」措辞，跨线程不互串；
 4. 子对话不发确认卡：scope_auto_pause=True 时 workflow_pause 直接放行
@@ -100,6 +101,27 @@ def test_bind_scope_refs_dedupes_url_and_caps_count(svc):
     assert len(_thread_scope_refs(svc, thread2["id"])) == int(settings.max_attachments)
 
 
+def test_bind_scope_refs_total_cap_across_batches(svc):
+    """总量口径截断（评审修补批）：直连 API 逐批累积，存量 + 本批不得超
+    max_attachments，只追加剩余 room 条（旧按单批截断会逐批撑爆上限）。"""
+    from src.video_agent.config import settings
+    cap = int(settings.max_attachments)
+    thread = conversation_ops.create_scoped_conversation(svc, _scope("draft-1"))
+
+    first = [_att(f"/workspace/assets/a{i}.png") for i in range(cap - 1)]
+    conversation_ops.bind_thread_scope_refs(svc, thread["id"], first)
+    assert len(_thread_scope_refs(svc, thread["id"])) == cap - 1
+
+    # 第二批 3 条：只剩 1 个 room，仅追加首条（先入者保留）
+    second = [_att(f"/workspace/assets/b{i}.png") for i in range(3)]
+    conversation_ops.bind_thread_scope_refs(svc, thread["id"], second)
+    urls = [r["url"] for r in _thread_scope_refs(svc, thread["id"])]
+    assert len(urls) == cap
+    assert "/workspace/assets/b0.png" in urls
+    assert "/workspace/assets/b1.png" not in urls
+    assert "/workspace/assets/b2.png" not in urls
+
+
 def test_bind_scope_refs_unknown_thread_no_side_effect(svc):
     assert conversation_ops.bind_thread_scope_refs(
         svc, "conv-ghost", [_att("/workspace/assets/a.png")]) == []
@@ -121,7 +143,9 @@ def test_remove_thread_scope_ref_unbinds_only(svc):
     assert conversation_ops.remove_thread_scope_ref(svc, thread["id"], ref_id) is True
     assert _thread_scope_refs(svc, thread["id"]) == []
     # 物理不清：文件仍留在共享素材目录口径（系统无素材 GC，此处钉引用层语义）
-    assert conversation_ops.remove_thread_scope_ref(svc, thread["id"], ref_id) is False
+    # 重复移除幂等成功（评审修补批：线程存在但引用本就不存在，无状态变化；
+    # 前端双发/乱序不误报失败误导 toast）；幽灵线程仍返 False→404
+    assert conversation_ops.remove_thread_scope_ref(svc, thread["id"], ref_id) is True
     assert conversation_ops.remove_thread_scope_ref(svc, "conv-ghost", ref_id) is False
 
 
@@ -203,10 +227,10 @@ def test_thread_endpoint_returns_scope_refs_and_unref_works(svc, client):
         "conversation_id": thread["id"], "ref_id": ref_id})
     assert ok.status_code == 200 and ok.json()["ok"] is True
     assert _thread_scope_refs(svc, thread["id"]) == []
-    # 重复移除 / 幽灵线程 → 404（幂等友好）
+    # 重复移除幂等成功（评审修补批：防前端双发误报失败）；幽灵线程仍 404
     again = client.post("/api/conversations/thread/unref", json={
         "conversation_id": thread["id"], "ref_id": ref_id})
-    assert again.status_code == 404
+    assert again.status_code == 200 and again.json()["ok"] is True
     ghost = client.post("/api/conversations/thread/unref", json={
         "conversation_id": "conv-ghost", "ref_id": ref_id})
     assert ghost.status_code == 404

@@ -7,6 +7,7 @@ import type { AnyGroup, ServerStateSnapshot } from '@/types';
 import {
   state, setState, findDraftRecord, selectFirstDraft,
 } from '../studio-core';
+import { adjustScopes, adjustScopeActions } from '../adjust-scopes';
 
 /** 项目会话纪元：每次项目切换/新建/删除自增。
  * 跨项目残留的异步回调（如旧项目 Agent 流的 SSE done）凭此被丢弃，
@@ -75,6 +76,21 @@ function snapshotBaselineJson(snapshot: ServerStateSnapshot): string {
   });
 }
 
+/** 微调线程注册表对账（评审修补批）：Agent FC/他窗删除经快照同步到达本窗时，
+ *  前端无独立删除入口可挂级联，改在同步收口处对账——凡注册表键对应草稿已不在
+ *  三板草稿集合也不在素材池来源（可还原移动豁免）即 dropThread；
+ *  幂等重建语义不变（撤销恢复后重开入口照常）。 */
+function reconcileScopeThreads() {
+  const keys = Object.keys(adjustScopes);
+  if (!keys.length) return;
+  const alive = new Set<string>();
+  for (const g of [...state.keyElements, ...state.shots, ...state.audioItems] as AnyGroup[]) {
+    for (const d of g.drafts || []) alive.add(d.id);
+  }
+  for (const a of state.assets) if (a.sourceDraft?.id) alive.add(a.sourceDraft.id);
+  for (const key of keys) if (!alive.has(key)) adjustScopeActions.dropThread(key);
+}
+
 /** 从后端状态快照同步（SSE done 事件 / 初始加载） */
 function syncFromServer(snapshot: ServerStateSnapshot) {
   // 保护生成中的草稿：agent done 快照可能早于生成结果写回，
@@ -138,6 +154,7 @@ function syncFromServer(snapshot: ServerStateSnapshot) {
   if (!findDraftRecord(state.selectedDraftId, state.selectedType)) {
     selectFirstDraft();
   }
+  reconcileScopeThreads();
   // 服务器快照即权威：内容基线跟进，后续空保存将被脏检查跳过。
   // 注意基线记"服务器持有的内容"（快照原文），而非合并本地未落盘新增后
   // 的 state——否则本地新增会被脏检查误判为已同步而永不上传
@@ -166,6 +183,7 @@ function resetForProject(snapshot: ServerStateSnapshot) {
     s.subTab = 'keyElements';
   }));
   selectFirstDraft();
+  reconcileScopeThreads();
   lastSyncedContentJson = snapshotBaselineJson(snapshot);
 }
 

@@ -2,7 +2,8 @@
  * 微调子对话浮窗素材摄取单测（二期子对话批 3）：
  * ① 文档类型入口即拒（不打上传接口，一期只开图片/视频/音频）；
  * ② 媒体上传 → 引用条目映射（非媒体回包双保险过滤）；
- * ③ 粘贴图片走同口径摄取。
+ * ③ 粘贴图片走同口径摄取；
+ * ④ 粘贴非媒体文件也收集交统一类型闸（评审修补批：拒收有提示不静默丢）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -78,6 +79,18 @@ describe('pasteScopeRefs 粘贴摄取', () => {
     const refs = await pasteScopeRefs(ev);
     expect(wasPrevented()).toBe(true);
     expect(refs.map((r) => r.url)).toEqual(['/workspace/assets/clip.png']);
+  });
+
+  it('粘贴非媒体文件也收集交统一类型闸（拒收提示，不静默丢）', async () => {
+    const pdf = new File(['x'], 'spec.pdf', { type: 'application/pdf' });
+    const { ev, wasPrevented } = clipEvent([
+      { type: 'application/pdf', getAsFile: () => pdf },
+    ]);
+    const refs = await pasteScopeRefs(ev);
+    expect(wasPrevented()).toBe(true); // 有文件项即接管粘贴（防文本态落入输入框）
+    expect(refs).toEqual([]);
+    expect(uploadFiles).not.toHaveBeenCalled(); // 类型闸在上传前，不打接口
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('不支持文档'), 'warning');
   });
 
   it('无图片粘贴项：不阻止默认行为，返回空', async () => {

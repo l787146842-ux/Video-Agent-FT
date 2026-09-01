@@ -65,13 +65,14 @@ def test_delete_draft(svc):
 def test_delete_group(svc):
     gid = svc.state_dict["shots"][0]["id"]
     before = len(svc.state_dict["shots"])
-    assert ops.delete_group(svc.state_dict, gid, "shot")  # 返回被删草稿 id 列表
+    removed, hit = ops.delete_group(svc.state_dict, gid, "shot")  # 命中位与草稿列表分离（评审修补批）
+    assert hit is True and isinstance(removed, list)
     assert len(svc.state_dict["shots"]) == before - 1
 
 
 def test_delete_missing_returns_false(svc):
     assert ops.delete_draft(svc.state_dict, "no-such") == []
-    assert ops.delete_group(svc.state_dict, "no-such") == []
+    assert ops.delete_group(svc.state_dict, "no-such") == ([], False)
 
 
 async def test_workflow_pause_pauses_loop(svc, executor):

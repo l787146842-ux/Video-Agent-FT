@@ -222,6 +222,13 @@ async def put_project_state(body: ProjectStateUpdate):
                 continue
             _old_ids |= conversation_ops.board_draft_ids(state.get(_cat) or [])
             _new_ids |= conversation_ops.board_draft_ids(_incoming)
+        # 素材池来源草稿计入存活集（评审修补批）：「移入未归类素材池」是
+        # 可还原的非破坏移动，其来源草稿线程不得被误当删除级联硬删；
+        # assets 未提交（None）时沿用服务端现状口径。
+        if body.assets is not None:
+            _new_ids |= conversation_ops.asset_pool_draft_ids(body.assets)
+        else:
+            _new_ids |= conversation_ops.asset_pool_draft_ids(state.get(CAT_ASSETS) or [])
         if _old_ids - _new_ids:
             conversation_ops.cleanup_scoped_threads_for_removed(
                 svc, _old_ids - _new_ids, save=False,
@@ -288,11 +295,13 @@ async def merge_project_state(body: ProjectStateUpdate):
         }
         merged, conflicts = board_merge.merge_board(base, mine, theirs)
         if not conflicts:
-            # 对象删除级联（同整板 PUT 口径）：落盘分支新旧草稿 id diff 清线程
+            # 对象删除级联（同整板 PUT 口径）：落盘分支新旧草稿 id diff 清线程；
+            # 素材池来源草稿计入存活集（评审修补批，同整板 PUT）
             _old_ids, _new_ids = set(), set()
             for _cat in (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS):
                 _old_ids |= conversation_ops.board_draft_ids(state.get(_cat) or [])
                 _new_ids |= conversation_ops.board_draft_ids(merged.get(_cat) or [])
+            _new_ids |= conversation_ops.asset_pool_draft_ids(merged.get(CAT_ASSETS) or [])
             if _old_ids - _new_ids:
                 conversation_ops.cleanup_scoped_threads_for_removed(
                     svc, _old_ids - _new_ids, save=False,

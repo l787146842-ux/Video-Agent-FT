@@ -24,12 +24,14 @@ export const assetActions = {
     persistBoard();
   },
 
-  /** 移除草稿到未归类素材（记录来源分组与草稿快照，供右键还原） */
+  /** 移除草稿到未归类素材（记录来源分组与草稿快照，供右键还原）。
+   *  非破坏移动（可还原）：不级联微调线程（评审修补批：前端线程键保留、
+   *  浮窗不关；服务端整板 PUT diff 把素材池来源草稿计入存活集同口径豁免）。 */
   moveDraftToAssets(type: DraftType, groupId: string, draftId: string) {
     const group = groupsForType(type).find((g) => g.id === groupId);
     const draft = group?.drafts?.find((d) => d.id === draftId);
     if (!group || !draft) return;
-    storyboardActions.removeDraftLocal(type, groupId, draftId);
+    storyboardActions.removeDraftLocal(type, groupId, draftId, true);
     setState('assets', (prev) => [
       {
         id: uid('ast'),
