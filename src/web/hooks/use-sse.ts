@@ -170,7 +170,8 @@ async function resume(projectId: string): Promise<void> {
 }
 
 /** 切换活跃对话（批 6-2）：未读角标清除 → 清当前视图流式态 →
- *  目标对话有运行中任务时重订阅拿 replay 恢复累积状态 */
+ *  目标对话有运行中任务时换新连接重订阅（replay 恢复累积状态；
+ *  旧连接丢弃只断订阅不杀后台任务） */
 function focusConversation(conversationId: string): void {
   if (!conversationId) return;
   agentActions.clearUnread(conversationId);
@@ -178,12 +179,15 @@ function focusConversation(conversationId: string): void {
   setStreaming(false);
   for (const h of conns.values()) {
     if (h.convId !== conversationId) continue;
-    agentActions.setConvBusy(conversationId, h.taskId);
+    const { taskId, projectId } = h;
+    h.conn.disconnect();
+    conns.delete(taskId);
+    agentActions.setConvBusy(conversationId, taskId);
     chatActions.restoreStreamingState({
       reasoning: '', text: '', statusText: t('rp.streaming.restoring'), tools: [],
     });
-    // 强制重订阅：即使已在订阅也重拿 replay，把累积状态重建进聊天区（后台转前台）
-    void h.conn.recoverTask(h.taskId, h.projectId, true);
+    const fresh = spawnConnection(taskId, projectId, conversationId);
+    void fresh.conn.recoverTask(taskId, projectId);
     break;
   }
 }
