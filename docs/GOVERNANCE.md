@@ -84,7 +84,7 @@
 
 ```
 问题出现
-  ├─ Q0 现有机制或下一代模型是否已覆盖？先跑 eval（gate_corpus / acceptance --with-eval）
+  ├─ Q0 现有机制或下一代模型是否已覆盖？先跑 eval（acceptance --with-eval）
   │     证明不覆盖，才允许新增组件（audit-0819 设立；Anthropic/OpenAI eval-driven）；
   │     新增脚手架组件必须入账 core/scaffold_registry.py，禁止裸补丁
   ├─ Q1 这是什么规则失效？按 13.4/13.3 定位它的唯一定义层
