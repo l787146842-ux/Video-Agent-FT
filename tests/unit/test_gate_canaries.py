@@ -394,6 +394,28 @@ def test_canary_fe_cov_ratchet_improved_passes(tmp_path, monkeypatch):
     assert gate.main() == 0
 
 
+def test_canary_fe_cov_ratchet_corrupted_summary_fails(tmp_path, monkeypatch,
+                                                       capsys):
+    """回归：损坏的 coverage-summary.json 曾让本闸误红无诊断；
+    现要求损坏/缺字段一律判红并给出「重跑前端覆盖率」诊断。"""
+    import scripts.check_fe_cov_ratchet as gate
+    base = tmp_path / "fe_cov_baseline.txt"
+    base.write_text("63.00\n", encoding="utf-8")
+    monkeypatch.setattr(gate, "BASELINE_FILE", base)
+    for content in ("{ not json", '{"total": {}}',
+                    json.dumps({"total": {"lines": {"pct": "abc"}}})):
+        summary = tmp_path / "coverage-summary.json"
+        summary.write_text(content, encoding="utf-8")
+        monkeypatch.setattr(sys, "argv",
+                            ["check_fe_cov_ratchet.py", "--summary",
+                             str(summary)])
+        with pytest.raises(SystemExit):
+            gate.main()
+        out = capsys.readouterr().out
+        assert "覆盖率摘要文件损坏或缺失" in out, "损坏产物须报明确诊断"
+        assert "请重跑前端覆盖率" in out, "诊断须指引重跑前端覆盖率"
+
+
 # ---------- scan_skills --gate 诊断扫描（内容卫生/语言声明探针双向钉死） ----------
 # 原第 14 道门禁 skill_tool_names 已随批 A 退役（2026-08-29 用户裁决删工具名
 # 白名单，审核报告 §7 第 5 条）；保留的内容卫生/语言声明探针降级为纯诊断脚本，

@@ -39,17 +39,35 @@ def read_current(summary_path: Path, require: bool) -> float | None:
             print(f"[check_fe_cov_ratchet] SKIP - {summary_path} 不存在"
                   "（本地无覆盖率产物，跳过；CI 以 --require-summary 硬门禁）")
             return None
-        print(f"[check_fe_cov_ratchet] FAIL - {summary_path} 不存在；"
-              "请先运行: npx vitest run（vitest.config.ts 已常开 v8 coverage "
-              "与 json-summary 报告器）")
+        print(f"[check_fe_cov_ratchet] FAIL - 覆盖率摘要文件缺失: {summary_path}；"
+              "请重跑前端覆盖率: npx vitest run（vitest.config.ts 已常开 v8 "
+              "coverage 与 json-summary 报告器）")
+        raise SystemExit(1)
+    # 完整性校验：产物损坏（编码/JSON/字段/数值任一环节）一律判红并给出
+    # 具体成因，不因解析异常误红或静默通过。
+    try:
+        raw = summary_path.read_bytes()
+    except OSError as exc:
+        print(f"[check_fe_cov_ratchet] FAIL - 覆盖率摘要文件损坏或不可读"
+              f"（读取失败: {exc}）: {summary_path}；请重跑前端覆盖率: npx vitest run")
         raise SystemExit(1)
     try:
-        data = json.loads(summary_path.read_text(encoding="utf-8"))
+        data = json.loads(raw.decode("utf-8"))
         pct = data["total"]["lines"]["pct"]
-    except (json.JSONDecodeError, KeyError, TypeError):
-        print(f"[check_fe_cov_ratchet] FAIL - {summary_path} 缺少 total.lines.pct 字段")
-        raise SystemExit(1)
-    return round(float(pct), 2)
+        value = float(pct)
+    except UnicodeDecodeError:
+        cause = "非 UTF-8 文本"
+    except json.JSONDecodeError:
+        cause = "JSON 解析失败"
+    except (KeyError, TypeError):
+        cause = "必需字段 total.lines.pct 缺失"
+    except ValueError:
+        cause = "total.lines.pct 非有效数值"
+    else:
+        return round(value, 2)
+    print(f"[check_fe_cov_ratchet] FAIL - 覆盖率摘要文件损坏或缺失（{cause}）: "
+          f"{summary_path}；请重跑前端覆盖率: npx vitest run 重新生成产物后重试")
+    raise SystemExit(1)
 
 
 def read_baseline() -> float | None:
