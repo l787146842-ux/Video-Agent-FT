@@ -150,6 +150,14 @@ class Settings:
     # B 档组级正文（desc/roughDesc）截断字符数
     state_group_body_chars: int = field(
         default_factory=lambda: _env_int("STATE_GROUP_BODY_CHARS", 120))
+    # 微调真子对话（对齐 Flova）：总开关。关闭时后端忽略请求携带的
+    # adjust_scope，回落旧行为（一键回滚）
+    adjust_subdialog_enabled: bool = field(
+        default_factory=lambda: _env_bool("ADJUST_SUBDIALOG_ENABLED", True))
+    # 项目级微调（scope）任务并发上限：运行中 scope 任务达上限时
+    # 新提交返回结构化提示（防线程膨胀）
+    adjust_task_concurrency: int = field(
+        default_factory=lambda: _env_int("ADJUST_TASK_CONCURRENCY", 4))
     # 第 5 批（Q7）/ 用户裁决 2026-09-01：上下文不设上限，超预算不拦发。
     # warn（默认）= 四级保险丝用尽仍超窗口时记 warning 后照发，
     # 上游报上下文超长经 AdapterError 通道原样透传；

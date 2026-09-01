@@ -657,6 +657,21 @@ class StateManager(UndoRedoMixin):
         """新建对话并设为活跃（实现见 conversation_ops.create_conversation）。"""
         return conversation_ops.create_conversation(self, title)
 
+    def create_scoped_conversation(
+        self, scope: Dict[str, Any], title: str = "",
+    ) -> Dict[str, Any]:
+        """新建隐藏线程对话（不设活跃、不重绑 chatMessages；
+        实现见 conversation_ops.create_scoped_conversation）。"""
+        return conversation_ops.create_scoped_conversation(self, scope, title)
+
+    def find_scoped_conversation(self, scope: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """按 scope 查已有隐藏线程对话；无则 None（实现见 conversation_ops）。"""
+        return conversation_ops.find_scoped_conversation(self, scope)
+
+    def scoped_threads_payload(self) -> Dict[str, Any]:
+        """隐藏线程清单（实现见 conversation_ops.scoped_threads_payload）。"""
+        return conversation_ops.scoped_threads_payload(self)
+
     def switch_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
         """切换活跃对话；不存在返回 None（实现见 conversation_ops.switch_conversation）。"""
         return conversation_ops.switch_conversation(self, conversation_id)

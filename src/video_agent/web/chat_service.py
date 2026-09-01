@@ -88,6 +88,24 @@ def _require_chat_provider(body: ChatRequest) -> None:
             status_code=400, error_code="PROVIDER_NOT_CONFIGURED")
 
 
+def _active_adjust_scope(body: ChatRequest) -> Optional[Dict[str, Any]]:
+    """本请求生效的 adjust_scope（微调真子对话）：总开关关闭/未携带/
+    非法形态一律回落 None（旧行为，一键回滚不失约束）。"""
+    if not settings.adjust_subdialog_enabled:
+        return None
+    scope = getattr(body, "adjust_scope", None)
+    return dict(scope) if isinstance(scope, dict) and scope else None
+
+
+def _scope_task_limit_exceeded(project_id: str) -> bool:
+    """scope 任务并发上限判定（防线程膨胀）：按运行中任务记录的
+    adjust_scope 标记统计，达 settings.adjust_task_concurrency 即超限。"""
+    from src.video_agent.web.agent_task_manager import get_agent_task_manager
+    running = get_agent_task_manager().list_running(project_id)
+    count = sum(1 for t in running if t.get("adjust_scope"))
+    return count >= int(settings.adjust_task_concurrency)
+
+
 async def _stream_worker_impl(body: ChatRequest, svc: StateManager, emit, pending_injector=None, stop_scope: str = "chat") -> None:
     """流式处理公共实现（真实供应商）；任务式后台任务 worker 的核心主体。
 

@@ -40,6 +40,7 @@ const EXEMPT: Record<string, string> = {
   DraftCreate: '草稿创建走手写保留通道（stores/studio 手写强类型）',
   DraftPatch: '同上',
   GroupPatch: '同上',
+  ThreadRequest: '微调真子对话线程接口消费方在批 S3 接入（adjust-scopes store openThread）',
 };
 
 /** api/ 内与生成物同名、刻意保留的手写 interface（豁免清单登记项） */

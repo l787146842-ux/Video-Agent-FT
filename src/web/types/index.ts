@@ -27,7 +27,8 @@
  * - 前端无消费路径的生成物（后端端点专用/前端走通用端点）：ModelFallbackPatch
  *   （前端开关走通用 runtime PUT）、TimelinePushRequest（时间线回画布走 Agent
  *   工具路径）、Body_upload_files_api_ai_upload_post（multipart 上传）、
- *   DraftCreate/DraftPatch/GroupPatch（草稿操作走整板保存通道）、ProjectStateResponse（空 schema）。
+ *   DraftCreate/DraftPatch/GroupPatch（草稿操作走整板保存通道）、ProjectStateResponse（空 schema）、
+ *   ThreadRequest（微调真子对话线程接口，前端消费方批 S3 接入）。
  */
 import type {
   ChatRequest,

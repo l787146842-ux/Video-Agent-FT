@@ -10,7 +10,7 @@
 """
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List
+from typing import Dict, List
 
 from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.state.manager import StateManager
@@ -22,6 +22,12 @@ router = APIRouter()
 
 class CreateConversationRequest(BaseModel):
     title: str = ""
+
+
+class ThreadRequest(BaseModel):
+    """幂等取/建隐藏线程（微调真子对话）：scope 形如
+    {kind, cat, group_id, draft_id, label}；同目标重复提交返回同一线程。"""
+    scope: Dict[str, str] = {}
 
 
 class ConversationMeta(BaseModel):
@@ -54,6 +60,27 @@ async def get_conversation_messages(conversation_id: str):
     if msgs is None:
         raise VideoAgentError("对话不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
     return {"conversation_id": conversation_id, "messages": msgs}
+
+
+@router.post("/conversations/thread")
+async def get_or_create_thread(body: ThreadRequest):
+    """幂等取/建隐藏线程（微调真子对话）：按 scope 的 kind+cat+group_id+
+    draft_id 查已有线程，有则直接返回；无则新建（不设活跃、不重绑
+    chatMessages）。历史装载复用 get_conversation_messages 单一来源；
+    再点微调入口/刷新页面后据此重开同一线程且保留全部历史。"""
+    svc = StateManager.get_instance()
+    scope = dict(body.scope or {})
+    async with svc.lock:
+        conv = svc.find_scoped_conversation(scope)
+        if conv is None:
+            label = str(scope.get("label") or "")
+            conv = svc.create_scoped_conversation(
+                scope, title=f"微调 | {label}" if label else "")
+    return {
+        "conversation_id": conv["id"],
+        "messages": svc.get_conversation_messages(conv["id"]) or [],
+        "scope": conv.get("scope") or {},
+    }
 
 
 @router.post("/conversations", response_model=ConversationsMetaResponse)

@@ -73,13 +73,73 @@ def conversations_meta_payload(svc: "StateManager") -> Dict[str, Any]:
 
     消息单一来源：前端 convState 不再持有消息副本，
     消息装载一律走 get_conversation_messages（GET /conversations/{id}/messages）。
+    单点过滤（微调真子对话）：带 scope 的隐藏线程对话不出主清单，
+    仅供 scoped_threads_payload 另面暴露（前端标签栏不再见微调线程）。
     """
-    payload = conversations_payload(svc)
-    payload["conversations"] = [
-        {k: v for k, v in c.items() if k != "messages" and not str(k).startswith("_")}
-        for c in payload["conversations"]
-    ]
-    return payload
+    ensure_conversations(svc)
+    convs = svc._raw_state.get("conversations") or []
+    return {
+        "conversations": [
+            {k: v for k, v in conv.items() if k != "messages" and not str(k).startswith("_")}
+            for conv in convs
+            if not conv.get("scope")
+        ],
+        "active_conversation_id": svc._raw_state.get("activeConversationId", ""),
+    }
+
+
+def find_scoped_conversation(
+    svc: "StateManager", scope: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """按 scope 的 kind+cat+group_id+draft_id 查已有隐藏线程对话；无则 None。
+    幂等取/建线程的查找单点（POST /api/conversations/thread）。"""
+    ensure_conversations(svc)
+    keys = ("kind", "cat", "group_id", "draft_id")
+    for c in svc._raw_state.get("conversations") or []:
+        if not isinstance(c, dict) or not isinstance(c.get("scope"), dict):
+            continue
+        if all(str((c["scope"] or {}).get(k) or "") == str(scope.get(k) or "") for k in keys):
+            return c
+    return None
+
+
+def create_scoped_conversation(
+    svc: "StateManager", scope: Dict[str, Any], title: str = "",
+) -> Dict[str, Any]:
+    """新建隐藏线程对话（微调真子对话的线程载体）。
+
+    与 create_conversation 的两点本质区别：不设活跃对话、不重绑
+    chatMessages（主对话写入目标不变，线程靠任务实例绑定定向）；
+    对话元信息携带 scope（kind/cat/group_id/draft_id/label 等），
+    供 conversations_meta_payload 单点过滤与前端角标/浮窗重开识别。"""
+    convs = ensure_conversations(svc)
+    cid = gen_id("conv")
+    conv = {
+        "id": cid,
+        "title": (title.strip() or "微调线程"),
+        "messages": [],
+        "scope": dict(scope or {}),
+    }
+    convs.append(conv)
+    svc.save()
+    return conv
+
+
+def scoped_threads_payload(svc: "StateManager") -> Dict[str, Any]:
+    """隐藏线程清单（供前端角标/浮窗重开）：仅元信息 + scope，
+    消息装载仍走 get_conversation_messages（消息单一来源）。"""
+    ensure_conversations(svc)
+    return {
+        "threads": [
+            {
+                "conversation_id": c.get("id", ""),
+                "title": c.get("title", ""),
+                "scope": dict(c.get("scope") or {}),
+            }
+            for c in svc._raw_state.get("conversations") or []
+            if isinstance(c, dict) and isinstance(c.get("scope"), dict)
+        ],
+    }
 
 
 def target_chat_messages(svc: "StateManager", conversation_id: str = "") -> List[Dict[str, Any]]:

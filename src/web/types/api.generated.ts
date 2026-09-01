@@ -85,6 +85,7 @@ export interface ChatRequest {
   pause_response?: Record<string, string>;
   system_action?: string;
   resume_failed?: boolean;
+  adjust_scope?: Record<string, unknown> | undefined;
 }
 
 export interface ChatResponse {
@@ -415,6 +416,10 @@ export interface TestConnectionResponse {
   chat_models?: string[];
   video_models?: string[];
   image_request_mode?: string;
+}
+
+export interface ThreadRequest {
+  scope?: Record<string, string>;
 }
 
 export interface TimelinePushRequest {
