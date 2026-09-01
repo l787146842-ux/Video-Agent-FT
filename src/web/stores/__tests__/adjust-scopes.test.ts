@@ -155,6 +155,21 @@ describe('appendEvent 推进线程视图', () => {
     expect(last.imageCard?.image_urls).toEqual(['/workspace/assets/a.png']);
   });
 
+  it('同轮 done 同源双达只落一次气泡（turn_id 幂等守卫，任务 #19）', () => {
+    adjustScopeActions.registerTask('d1', 'tX');
+    const payload = {
+      text: '微调完成', elapsed_ms: 100, steps: 1, applied_actions: 1, turn_id: 'turn-9',
+    };
+    adjustScopeActions.appendEvent('d1', { kind: 'done', payload });
+    // replay done 与增量 done 同源双达：同 turn_id 的终态帧重复派发
+    adjustScopeActions.appendEvent('d1', { kind: 'done', payload });
+    const agentDones = adjustScopes['d1'].messages.filter(
+      (m) => m.sender === 'agent' && m.turnId === 'turn-9',
+    );
+    expect(agentDones).toHaveLength(1);
+    expect(adjustScopes['d1'].status).toBe('idle');
+  });
+
   it('error 终态：错误落线程消息并置 error 状态', () => {
     adjustScopeActions.appendEvent('d1', { kind: 'error', message: '出错了' });
     const th = adjustScopes['d1'];

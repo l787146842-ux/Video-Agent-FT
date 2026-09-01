@@ -80,6 +80,8 @@ export function buildScopeDoneMessage(payload: SseDonePayload): ChatMessage {
     sender: 'agent',
     text: (payload.text || '').trim() || t('rp.msg.emptyReply'),
     meta: buildDoneMeta(payload),
+    // turn_id 随消息入库：done 幂等守卫判重键（同主聊天 finishStream 口径）
+    turnId: payload.turn_id || undefined,
     appliedActions: payload.applied_actions || 0,
     actionLog: (payload.action_log || []).length ? payload.action_log : undefined,
     warnings: (payload.warnings || []).length ? payload.warnings : undefined,
@@ -125,12 +127,20 @@ export function applyScopeEvent(th: ScopeThread, ev: ScopeEvent): void {
       st.statusText = ev.snapshot.statusText || '';
       st.tools = ev.snapshot.tools || [];
       break;
-    case 'done':
-      th.messages.push(buildScopeDoneMessage(ev.payload));
+    case 'done': {
+      // turn_id 幂等守卫：终态帧可能同源双达（replay done 与增量 done，
+      // 同主聊天 finishStream 口径），同 turnId 的 done 气泡（唯一携 meta）
+      // 已落账则不重复追加（任务 #19 截图「同段重复两条」根因）
+      const doneTurnId = ev.payload.turn_id || undefined;
+      const dup = doneTurnId !== undefined && th.messages.some(
+        (m) => m.sender === 'agent' && m.turnId === doneTurnId && m.meta !== undefined,
+      );
+      if (!dup) th.messages.push(buildScopeDoneMessage(ev.payload));
       th.streaming = emptyStreaming();
       th.status = 'idle';
       th.taskId = '';
       break;
+    }
     case 'error':
       th.messages.push({ sender: 'agent', text: ev.message });
       th.streaming = emptyStreaming();
