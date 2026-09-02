@@ -69,15 +69,15 @@ def test_ensure_iron_rules_doc_creates_three_clause_doc(tmp_path):
 # ---------- 暂停语义归位（6666 四轮）：Skill 唯一暂停源 ----------
 
 def test_skill_reminder_has_no_pause_pressure():
-    """平台不再两侧施压：反暂停/正暂停 prose 均删，层 9 确定性兜底保留。"""
+    """平台不再两侧施压：反暂停/正暂停 prose 均删。
+    （S10 stage_done_fallback 已随用户裁决 2026-09-02 退役删除，
+    兜底注释断言不再适用）"""
     import inspect
     from src.video_agent.core import planner as planner_mod
 
     src = inspect.getsource(planner_mod)
     for phrase in ("仅作参考", "不要为此强制暂停", "反复请求确认", "【阶段确认】当前 Skill 要求"):
         assert phrase not in src
-    # 漏暂停的客观兜底（确定性，非 prose 催促）保留
-    assert "阶段完成引导兜底" in src
 
 
 def test_system_fc_no_anti_pause_sentence():

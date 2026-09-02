@@ -62,18 +62,6 @@ SCAFFOLDS = (
         "每次主模型切换",
         "scaffold"),
     ScaffoldEntry(
-        "S09", "src.video_agent.core.planner:_SKILL_REMINDER",
-        "模型读了 Skill 全文后仍会忘记暂停点",
-        "回归测试钉死",
-        "编排器机械暂停全覆盖后",
-        "scaffold"),
-    ScaffoldEntry(
-        "S10", "src.video_agent.core.round_end_policies:_cond_stage_done_fallback",
-        "执行器跑完但模型不自发暂停，需层 9 补发引导卡",
-        "层 9 回归",
-        "编排器接管暂停点后",
-        "scaffold"),
-    ScaffoldEntry(
         "S13", "src.video_agent.core.round_end_policies:_cond_aborted_continuation_audit",
         "模型会说「马上继续」却以 stop 收尾（audit-0819 假停取证）",
         "audit-0819-fakestop 回归",
@@ -145,7 +133,7 @@ SCAFFOLDS = (
 # 字面常量而非对 SCAFFOLDS 动态求和（动态求和是恒真基线，
 # 棘轮名存实亡）。只降不升；上调须书面裁决
 # 并同批修改本常量。
-SCAFFOLD_COUNT_BASELINE = 8
+SCAFFOLD_COUNT_BASELINE = 6
 
 
 def scaffold_entries() -> tuple:

@@ -30,12 +30,6 @@ if TYPE_CHECKING:
 KIND_ARBITRABLE = "arbitrable"
 KIND_POST_PROCESS = "post_process"
 
-# 执行器动作白名单（阶段完成兜底卡触发条件）
-_EXECUTOR_ACTIONS = (
-    "script_analyze", "storyboard_key_elements", "storyboard_shots",
-    "storyboard_audio", "write_media_prompt", "audio_generate", "video_assembler",
-)
-
 # ---------- 虚报检测（唯一消费点 = false_claim_audit） ----------
 
 _STRUCTURE_CLAIM_RE = re.compile(
@@ -235,26 +229,6 @@ async def _apply_structure_stage_review(ctx: RoundEndContext, emit: Callable) ->
     )
 
 
-def _cond_stage_done_fallback(ctx: RoundEndContext) -> bool:
-    # 平台兜底语义（C1b 裁决 2026-08-31：pause_points 声明驱动的机械暂停退役；
-    # Q2 裁决 2026-09-01：一条龙豁免随 flow_directive 退役）
-    if ctx.confirmation or ctx.gate_heal or ctx.applied <= 0:
-        return False
-    names = [str(a.get("action") or a.get("tool") or "").strip() for a in ctx.executable]
-    return (
-        any(n in ("storyboard_key_elements", "storyboard_shots", "storyboard_audio") for n in names)
-    ) and any(n in _EXECUTOR_ACTIONS for n in names)
-
-
-async def _apply_stage_done_fallback(ctx: RoundEndContext, emit: Callable) -> None:
-    ctx.confirmation = "阶段执行完成，请审阅左侧故事板结果"
-    ctx.confirmation_options = [
-        {"label": "继续下一步", "description": "确认当前阶段产出，推进到下一阶段"},
-        {"label": "我要调整", "description": "告诉我需要增删改的内容"},
-    ]
-    logger.info("[FlowGate] 阶段执行完成且模型未暂停，注入下一步引导卡")
-
-
 def _cond_false_claim_audit(ctx: RoundEndContext) -> bool:
     # 虚报检测与正文拼接收纳在同一块内；正文即模型可见文本，无需清洗
     return bool((ctx.content or "").strip())
@@ -359,8 +333,6 @@ ROUND_END_POLICIES: List[RoundEndPolicy] = [
                    _cond_gate_heal, _apply_gate_heal),
     RoundEndPolicy("structure_stage_review", KIND_ARBITRABLE, 80,
                    _cond_structure_stage_review, _apply_structure_stage_review),
-    RoundEndPolicy("stage_done_fallback", KIND_ARBITRABLE, 110,
-                   _cond_stage_done_fallback, _apply_stage_done_fallback),
     RoundEndPolicy("false_claim_audit", KIND_POST_PROCESS, 120,
                    _cond_false_claim_audit, _apply_false_claim_audit),
     RoundEndPolicy("aborted_continuation_audit", KIND_POST_PROCESS, 130,

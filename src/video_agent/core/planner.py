@@ -27,7 +27,7 @@ from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
 # MCP 两段式注入段 2：未启用 MCP 工具 schema 不进 FC payload
 from src.video_agent.tools.mcp import catalog as mcp_catalog
-from src.video_agent.utils.prompts import load_prompt, load_prompt_section, render_prompt
+from src.video_agent.utils.prompts import load_prompt, render_prompt
 from src.video_agent.core.agent_loop import current_max_steps, run_agent_loop
 from src.video_agent.core.fc_tool_runner import (
     FCExecuteResult,
@@ -80,11 +80,6 @@ async def drain_background_tasks() -> None:
             await t
         except Exception:
             pass
-
-# 选中 Skill 时的流程提醒（外置：prompts/planner/feedback.md 单一事实源）
-_SKILL_REMINDER = load_prompt_section("planner/feedback.md", "SKILL_REMINDER") or (
-    "【提醒】当前有选中 Skill：遵守其阶段划分与暂停点，到达确认点时用 "
-    "workflow_pause 真正停下，不要一口气做完全部阶段。")
 
 
 @dataclass
@@ -237,9 +232,6 @@ class Planner:
         if self._skill_docs is None:
             self._skill_docs = skill_docs_port()
         return self._skill_docs
-
-    # 阶段完成引导兜底（agent_loop 层 9）：执行器跑完但模型未暂停时，
-    # 系统客观补下一步引导卡；本文件不承载流程 prose（归属见 AGENTS §八治理条款摘要）
 
     def _compute_excluded_tools(self, context: PlannerContext) -> frozenset:
         """按上下文计算本轮不下发的工具集（token 治理：schema 全量常驻是每轮固定开销）。
@@ -456,7 +448,7 @@ class Planner:
         self._fc_runner.costly_failures.clear()
 
         # 装配本轮执行器（实现体 core/turn_executor.py）：单轮 llm_call
-        # 携带停止检查点/FC 响应消费/回喂治理（惰性压缩/图片剥离/Skill 提醒）
+        # 携带停止检查点/FC 响应消费/回喂治理（惰性压缩/图片剥离）
         self._turn_executor.bind_turn(
             context=context,
             gate_override_scope=gate_override_scope,
@@ -469,7 +461,6 @@ class Planner:
                 "fc_warnings": fc_warnings_collector,
             },
             on_event=on_event,
-            skill_reminder=_SKILL_REMINDER,
         )
 
         # 构建 context_builder

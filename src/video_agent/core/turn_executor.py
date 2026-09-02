@@ -5,7 +5,7 @@ TurnExecutor — 单轮 LLM 调用 + FC 响应消费 + 回喂治理。
 - 单轮执行 llm_call：流式/非流式主模型调用、协作式停止检查点、
   FC tool_calls 响应处理（经入口层 _handle_fc_response 委托执行）
 - 回喂治理（会话压缩触发点）：read_* 全文回喂入库前的惰性压缩、
-  旧轮图片剥离（vision token 治理）、Skill 流程提醒追加
+  旧轮图片剥离（vision token 治理）
 - 上下文预算装配：tool-result 消化 → token 预算截断 → 降级保险丝
   （context_window 按模型名查表，缺省回落全局配置）
 
@@ -68,7 +68,6 @@ class TurnExecutor:
         self._gate_override_scope: Any = False
         self._collectors: Dict[str, List[Any]] = self._default_collectors()
         self._on_event: Optional[Any] = None
-        self._skill_reminder: str = ""
         self._tracer: Optional[AgentTracer] = None
 
     @staticmethod
@@ -91,7 +90,6 @@ class TurnExecutor:
         gate_override_scope: Any,
         collectors: Dict[str, List[Any]],
         on_event: Optional[Any],
-        skill_reminder: str,
     ) -> None:
         """装配本轮状态（handle_message 每轮调用一次；收集器跨多步共享，
         轮末由 assemble_response 统一合并）。"""
@@ -99,7 +97,6 @@ class TurnExecutor:
         self._gate_override_scope = gate_override_scope
         self._collectors = collectors
         self._on_event = on_event
-        self._skill_reminder = skill_reminder
         self._tracer = AgentTracer.get_instance()
 
     # ---------- 上下文预算 ----------
@@ -439,12 +436,6 @@ class TurnExecutor:
         if tool_results:
             feedback = format_tool_results(tool_results)
             if feedback:
-                if context.skill_name:
-                    reminder = "\n" + self._skill_reminder
-                    if isinstance(feedback, list):
-                        feedback = feedback + [{"type": "text", "text": reminder}]
-                    else:
-                        feedback += reminder
                 # token 治理：新轮次回喂入库前，把更早轮次的 read_* 全文
                 # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
                 # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，

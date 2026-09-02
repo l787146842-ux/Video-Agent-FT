@@ -7,7 +7,7 @@
 import pytest
 
 from src.video_agent.core import prompt_builder as pb_module
-from src.video_agent.core.planner import PlannerContext, _SKILL_REMINDER
+from src.video_agent.core.planner import PlannerContext
 from src.video_agent.core.fc_tool_runner import (
     FEEDBACK_COMPRESSED,
     FEEDBACK_MARKER,
@@ -63,9 +63,6 @@ class TestPromptLoader:
         assert "此前轮次工具读回的文档全文已从上下文移除" in load_prompt_section(
             "planner/feedback.md", "FEEDBACK_COMPRESSED"
         )
-        assert "阶段划分与暂停点" in load_prompt_section(
-            "planner/feedback.md", "SKILL_REMINDER"
-        )
 
     def test_load_prompt_section_missing_returns_empty(self):
         assert load_prompt_section("planner/feedback.md", "NO_SUCH_KEY") == ""
@@ -100,8 +97,7 @@ class TestFeedbackTemplates:
             "planner/feedback.md", "FEEDBACK_COMPRESSED"
         )
 
-    def test_skill_reminder_from_external_file(self):
-        assert _SKILL_REMINDER == load_prompt_section("planner/feedback.md", "SKILL_REMINDER")
+    # test_skill_reminder_from_external_file 已随 S09 退役删除（用户裁决 2026-09-02）
 
     def test_compress_threshold_follows_model_window(self):
         """窗口感知压缩：阈值随传入窗口变化（814R1 恢复批次6 X1 语义）"""

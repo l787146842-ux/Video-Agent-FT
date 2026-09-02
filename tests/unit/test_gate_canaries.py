@@ -316,10 +316,10 @@ def test_canary_gate_baseline_consistent_passes(tmp_path, monkeypatch):
 # ---------- 11) scaffold_registry（含元 canary：字面基线 ≠ 恒真） ----------
 
 def test_canary_scaffold_baseline_literal_matches_reality():
-    """批次 1.1 裁决钉死：基线是字面常量 8 且与实测计数一致
+    """批次 1.1 裁决钉死：基线是字面常量 6 且与实测计数一致
     （动态自算 = 恒真基线，见 check_file_lines FRONTEND_OVER_BASELINE 同构事故）。"""
     from src.video_agent.core import scaffold_registry as sreg
-    assert sreg.SCAFFOLD_COUNT_BASELINE == 8
+    assert sreg.SCAFFOLD_COUNT_BASELINE == 6
     assert isinstance(sreg.SCAFFOLD_COUNT_BASELINE, int)
     assert len(sreg.scaffold_entries()) == sreg.SCAFFOLD_COUNT_BASELINE
 

@@ -1,8 +1,9 @@
 """四轮 R1 回归：轮末策略状态机（F47 清偿）。
 
 覆盖：
-1. 策略表完整性——12 条策略、优先级唯一且为现行顺序（10→120，D1 零行为变更基线）；
-2. 逐策略最小用例（gate_heal/规格收集豁免/结构自检/阶段兜底/虚报审计/流程门禁暂停）；
+1. 策略表完整性——5 条策略、优先级唯一且为现行顺序（stage_done_fallback
+   随 S10 退役删除，用户裁决 2026-09-02）；
+2. 逐策略最小用例（gate_heal/结构审阅/虚报审计）；
 3. 仲裁顺序锁定——多策略同时命中时胜出者 = 重构前书写顺序（先到先得）；
 4. 仲裁可观测（#4）——候选与胜出者经 tracer.record_card_decision 入 step。
 """
@@ -47,18 +48,18 @@ def _run(ctx: RoundEndContext, policies=None, tracer=None) -> RoundEndContext:
 
 
 def test_r1_policy_table_shape():
-    """策略表 = 6 条（2026-08-31 用户裁决：spec 三策略随向导退役删除），
+    """策略表 = 5 条（2026-09-02 用户裁决：stage_done_fallback 随 S10 退役删除），
     优先级唯一且仲裁顺序确定。"""
     table = rep.ROUND_END_POLICIES
-    assert len(table) == 6
+    assert len(table) == 5
     ids = [p.policy_id for p in sorted(table, key=lambda p: p.priority)]
     assert ids == [
         "partial_fail_warnings", "gate_heal",
         "structure_stage_review",
-        "stage_done_fallback", "false_claim_audit", "aborted_continuation_audit",
+        "false_claim_audit", "aborted_continuation_audit",
     ]
     priorities = [p.priority for p in table]
-    assert len(set(priorities)) == 6, "优先级必须唯一（仲裁顺序确定性）"
+    assert len(set(priorities)) == 5, "优先级必须唯一（仲裁顺序确定性）"
 
 
 def test_r1_gate_heal_drops_confirmation_and_continues():
@@ -87,24 +88,9 @@ def test_r1_partial_fail_warning_order():
     assert any("被流程闸机拦截" in w and "原因" in w for w in out.result_warnings)
 
 
-def test_r1_stage_done_fallback_requires_executor_action():
-    """阶段兜底卡（5555）：执行器动作 + 未暂停才补卡；gate_heal 时不补。"""
-    ex = FakeExecutor()
-    ctx = RoundEndContext(
-        step=1, executor=ex, content="", applied=1,
-        executable=[{"action": "storyboard_shots"}],
-    )
-    out = _run(ctx)
-    assert out.confirmation == "阶段执行完成，请审阅左侧故事板结果"
-    assert len(out.confirmation_options) == 2
-    # gate_heal 时兜底卡不触发
-    ctx2 = RoundEndContext(
-        step=1, executor=ex, content="", applied=1,
-        executable=[{"action": "storyboard_shots"}],
-        total_exec=2, gate_rejections=["拒收"],
-    )
-    out2 = _run(ctx2)
-    assert out2.confirmation == ""
+# test_r1_stage_done_fallback_requires_executor_action 已随 S10 退役删除
+# （用户裁决 2026-09-02：退役条件指向已废编排器、永远到不了期，属违规悬置，
+# 直接删除；阶段边界暂停归模型 workflow_pause 与 structure_stage_review）。
 
 
 def test_r1_false_claim_audit_warns_but_keeps_pause():
@@ -121,23 +107,28 @@ def test_r1_false_claim_audit_warns_but_keeps_pause():
 
 
 def test_r1_card_decision_into_trace():
-    """#4 仲裁可观测：候选+胜出者经 tracer 入当前 step 的 card_decisions。"""
+    """#4 仲裁可观测：候选+胜出者经 tracer 入当前 step 的 card_decisions。
+
+    （S10 退役后唯一 arbitrable 策略 = structure_stage_review，改用其验证仲裁入 trace）"""
     AgentTracer.reset()
     tracer = AgentTracer.get_instance()
     tracer.start_trace("R1 测试")
     tracer.start_step()
     ex = FakeExecutor()
-    ctx = RoundEndContext(
-        step=1, executor=ex, content="", applied=1,
-        executable=[{"action": "storyboard_shots"}],
-    )
-    _run(ctx, tracer=tracer)
+    ex.gate_enabled = True
+    ex.structure_kinds_created = {"keyElement"}
+    ex._storyboard_empty_before = True
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(prompt_gates, "gate_mode", lambda: "strict")
+        mp.setattr(prompt_gates, "storyboard_stage_complete", lambda *a, **k: True)
+        ctx = RoundEndContext(step=1, executor=ex, content="", applied=1)
+        _run(ctx, tracer=tracer)
     tracer.end_step(1, actions_applied=1, finish_reason="confirmation")
     record = tracer.finish_trace(total_actions=1)
     cards = record["steps"][0]["card_decisions"]
     assert len(cards) == 1
-    assert cards[0]["winner"] == "stage_done_fallback"
-    assert "stage_done_fallback" in cards[0]["candidates"]
+    assert cards[0]["winner"] == "structure_stage_review"
+    assert "structure_stage_review" in cards[0]["candidates"]
     AgentTracer.reset()
 
 
