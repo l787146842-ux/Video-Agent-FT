@@ -89,23 +89,16 @@ def current_max_steps() -> int:
         value = 6
     return max(lo, min(value, hi))
 
-# llm_call(system_prompt, messages, stream_hook?) -> (content, finish_reason, fc_applied[, plan_ms])
-# fc_applied: FC 路径已执行的 tool 数量（可选，默认 0）
-# plan_ms: 纯模型规划耗时（可选；缺省 0，兼容旧 3 元组实现/测试桩）
-# extra: 可选 dict：{confirmation, confirmation_options}——
+# llm_call(system_prompt, messages, stream_hook?) -> 5 元组
+# (content, finish_reason, fc_applied, plan_ms, extra)
+# fc_applied: FC 路径已执行的 tool 数量
+# plan_ms: 纯模型规划耗时
+# extra: dict：{confirmation, confirmation_options}——
 # 本轮 FC 批经 workflow_pause 产生的结构化暂停确认（不经文本块）
 # stream_hook: 可选流式增量回调，每段文本 await stream_hook(text)
-LlmCall = Callable[..., Awaitable[Tuple[str, str, int, float]]]
+LlmCall = Callable[..., Awaitable[Tuple[str, str, int, float, Dict[str, Any]]]]
 # context_builder -> 最新的 system prompt（协议 + 实时状态）
 ContextBuilder = Callable[[], str]
-
-
-def _unpack_llm(ret: Tuple) -> Tuple[str, str, int, float, Dict[str, Any]]:
-    """解包 llm_call 返回值：5 元组 (content, finish, fc_applied, plan_ms, extra)；
-    旧 3/4 元组实现缺省补齐（plan_ms=0，extra={}；测试桩兼容）。"""
-    plan = float(ret[3]) if len(ret) > 3 else 0.0
-    extra = ret[4] if len(ret) > 4 and isinstance(ret[4], dict) else {}
-    return str(ret[0]), str(ret[1]), int(ret[2]), plan, extra
 
 
 def _bad_output_nudge(attempt: int) -> str:
@@ -277,7 +270,9 @@ async def run_agent_loop(
             # 带 extra_messages（坏输出重试 nudge）才拼副本，nudge 不持久化
             _msgs = messages if not extra_messages else messages + list(extra_messages)
             try:
-                return _unpack_llm(await llm_call(system_prompt, _msgs, _hook_use)), None
+                content, finish, fc_applied, plan_ms, extra = await llm_call(
+                    system_prompt, _msgs, _hook_use)
+                return (content, finish, fc_applied, plan_ms, extra), None
             except AgentStoppedError as _stop_err:
                 return None, await _finalize_stop(_stop_err)
             except asyncio.CancelledError:

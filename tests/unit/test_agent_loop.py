@@ -26,22 +26,29 @@ def executor(svc):
     return StateOperationExecutor(svc)
 
 
+def _p5(reply):
+    """测试数据便捷写法：3/4 元组补齐为 5 元组契约 (plan_ms=0.0 / extra={})。"""
+    if len(reply) == 5:
+        return reply
+    return reply + (0.0, {}) if len(reply) == 3 else reply + ({},)
+
+
 def make_plain_llm(replies):
-    """纯文本回复桩（3 元组）：每轮都是收尾轮（无工具调用）"""
+    """纯文本回复桩：每轮都是收尾轮（无工具调用）"""
     calls = {"n": 0, "systems": []}
 
     async def llm_call(system_prompt, messages, stream_hook=None):
         calls["systems"].append(system_prompt)
         reply = replies[min(calls["n"], len(replies) - 1)]
         calls["n"] += 1
-        return reply[0], reply[1], 0
+        return reply[0], reply[1], 0, 0.0, {}
 
     return llm_call, calls
 
 
 def make_fc_llm(replies):
-    """FC 轮桩：元素可为 3/4/5 元组
-    (content, finish, fc_applied[, plan_ms[, extra]])；
+    """FC 轮桩：元素为 5 元组 (content, finish, fc_applied, plan_ms, extra)，
+    允许 3/4 元组便捷写法（经 _p5 补齐）；
     extra = {"confirmation": str, "confirmation_options": list}（audit-0819b）。
     """
     calls = {"n": 0, "systems": []}
@@ -50,7 +57,7 @@ def make_fc_llm(replies):
         calls["systems"].append(system_prompt)
         reply = replies[min(calls["n"], len(replies) - 1)]
         calls["n"] += 1
-        return reply
+        return _p5(reply)
 
     return llm_call, calls
 

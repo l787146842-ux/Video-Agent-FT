@@ -59,8 +59,8 @@ async def test_loop_live_rereads_max_steps_each_iteration(executor):
             # 于第 1 步内热调，第 2 步起每步实时读到的即为新上限 4
             object.__setattr__(agent_loop.settings, "max_steps", 4)
         if calls["n"] < 4:
-            return ("处理中", "tool_calls", 1)
-        return ("全部完成", "stop", 0)
+            return ("处理中", "tool_calls", 1, 0.0, {})
+        return ("全部完成", "stop", 0, 0.0, {})
 
     try:
         result = await run_agent_loop(
@@ -80,7 +80,7 @@ async def test_loop_hits_live_cap_with_continue_action(executor):
     object.__setattr__(agent_loop.settings, "max_steps", 2)
 
     async def llm_call(system_prompt, messages, stream_hook=None):
-        return ("处理中", "tool_calls", 1)  # 永不收敛，逼到上限
+        return ("处理中", "tool_calls", 1, 0.0, {})  # 永不收敛，逼到上限
 
     try:
         result = await run_agent_loop(
@@ -103,7 +103,7 @@ async def test_explicit_max_steps_pins_cap_against_hot_update(executor):
 
     async def llm_call(system_prompt, messages, stream_hook=None):
         object.__setattr__(agent_loop.settings, "max_steps", 20)
-        return ("处理中", "tool_calls", 1)
+        return ("处理中", "tool_calls", 1, 0.0, {})
 
     try:
         result = await run_agent_loop(

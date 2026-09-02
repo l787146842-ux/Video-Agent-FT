@@ -272,8 +272,8 @@ class TestGuidanceRoundInjection:
             seen["msgs"].append([str(m.get("content")) for m in messages])
             calls["n"] += 1
             if calls["n"] == 1:
-                return ("处理中", "tool_calls", 1)
-            return ("完成", "stop", 0)
+                return ("处理中", "tool_calls", 1, 0.0, {})
+            return ("完成", "stop", 0, 0.0, {})
 
         events: list = []
 
@@ -306,7 +306,7 @@ class TestGuidanceRoundInjection:
         reply = ('完成', "stop")
 
         async def llm(system_prompt, messages, stream_hook=None):
-            return reply[0], reply[1], 0
+            return reply[0], reply[1], 0, 0.0, {}
 
         result = await run_agent_loop(
             "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],

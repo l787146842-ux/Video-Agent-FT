@@ -102,7 +102,7 @@ async def test_prelude_notes_recorded_in_trace(tmp_path):
     ex = StateOperationExecutor(svc, gate_enabled=False)
 
     async def llm(system_prompt, messages, stream_hook=None):
-        return ("完成", "stop", 0)
+        return ("完成", "stop", 0, 0.0, {})
 
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],

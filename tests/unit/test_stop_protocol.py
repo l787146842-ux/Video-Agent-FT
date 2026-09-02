@@ -56,7 +56,7 @@ async def test_checkpoint_after_llm_clean_exit(executor):
         calls["n"] += 1
         # 模拟停止端点在模型调用进行中置标志（并发停止）
         request_stop(scope)
-        return ("再见", "stop", 0)
+        return ("再见", "stop", 0, 0.0, {})
 
     events = []
 
@@ -87,7 +87,7 @@ async def test_checkpoint_before_model_call_clean_exit(executor):
     async def llm_call(system_prompt, messages, stream_hook=None):
         calls["n"] += 1
         # 第 1 轮：FC 工具轮续跑；不在此置标志（否则检查点 2 先命中）
-        return ("处理中", "tool_calls", 1)
+        return ("处理中", "tool_calls", 1, 0.0, {})
 
     events = []
 
@@ -204,7 +204,7 @@ async def test_quick_reconnect_new_stop_survives_old_finalize(executor):
 
     async def llm_call(system_prompt, messages, stream_hook=None):
         request_stop(scope)
-        return ("再见", "stop", 0)
+        return ("再见", "stop", 0, 0.0, {})
 
     events = []
 

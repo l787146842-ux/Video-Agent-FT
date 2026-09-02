@@ -76,7 +76,7 @@ async def test_bad_output_still_nudged_separately(executor):
 
     async def llm_call(system_prompt, messages, stream_hook=None):
         calls["n"] += 1
-        return "", "stop", 0
+        return "", "stop", 0, 0.0, {}
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx",

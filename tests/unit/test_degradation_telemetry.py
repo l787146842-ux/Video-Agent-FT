@@ -87,7 +87,7 @@ async def test_event_emit_degradation_visible(svc_env):
     executor = StateOperationExecutor(svc)
 
     async def llm_call(system_prompt, messages, stream_hook=None):
-        return "好的", "stop", 0
+        return "好的", "stop", 0, 0.0, {}
 
     async def raising_event(ev):
         raise RuntimeError("frontend gone")

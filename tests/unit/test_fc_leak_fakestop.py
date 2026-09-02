@@ -68,7 +68,7 @@ async def test_fc_text_visible_as_is(executor):
     body = "已为你完成本轮操作，故事板已更新。"
 
     async def llm_call(system_prompt, messages, stream_hook=None):
-        return body, "stop", 1, 0.0
+        return body, "stop", 1, 0.0, {}
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx",

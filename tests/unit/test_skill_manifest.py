@@ -60,7 +60,7 @@ async def _run_spec_write(svc, skill_name: str):
              "stop")
 
     async def llm(system_prompt, messages, stream_hook=None):
-        return reply[0], reply[1], 0
+        return reply[0], reply[1], 0, 0.0, {}
 
     return await run_agent_loop(
         "写规格", llm_call=llm, context_builder=lambda: "ctx", executor=ex, history=[],

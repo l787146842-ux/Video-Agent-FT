@@ -23,6 +23,13 @@ from src.video_agent.adapters.cancel_token import GenerationCancelled
 from src.video_agent.state.manager import StateManager
 
 
+def _p5(reply):
+    """测试数据便捷写法：3/4 元组补齐为 5 元组契约 (plan_ms=0.0 / extra={})。"""
+    if len(reply) == 5:
+        return reply
+    return reply + (0.0, {}) if len(reply) == 3 else reply + ({},)
+
+
 @pytest.fixture
 def svc(tmp_path):
     return StateManager(str(tmp_path))
@@ -71,7 +78,7 @@ async def test_guidance_injected_between_steps(executor):
     injected = {"n": 0}
 
     async def llm_call(system_prompt, messages, stream_hook=None):
-        return next(replies)
+        return _p5(next(replies))
 
     def pending_injector():
         injected["n"] += 1
@@ -99,7 +106,7 @@ async def test_guidance_injector_exception_degrades_safely(executor):
     ])
 
     async def llm_call(system_prompt, messages, stream_hook=None):
-        return next(replies)
+        return _p5(next(replies))
 
     def pending_injector():
         raise RuntimeError("注入器故障")
@@ -124,7 +131,7 @@ async def test_guidance_blank_text_skipped(executor):
     ])
 
     async def llm_call(system_prompt, messages, stream_hook=None):
-        return next(replies)
+        return _p5(next(replies))
 
     def pending_injector():
         return [{"id": "g2", "text": "   "}, {"id": "g3", "text": ""}]
@@ -168,7 +175,7 @@ async def test_stop_before_bad_output_retry(executor):
     async def llm_call(system_prompt, messages, stream_hook=None):
         # 首调即置停止标志：返回空输出后，重试前检查点命中
         request_stop(scope)
-        return ("", "", 0)
+        return ("", "", 0, 0.0, {})
 
     events, on_event = _events_collecter()
     result = await run_agent_loop(
@@ -189,7 +196,7 @@ async def test_stop_during_bad_output_retry_llm(executor):
     async def llm_call(system_prompt, messages, stream_hook=None):
         calls["n"] += 1
         if calls["n"] == 1:
-            return ("", "", 0)            # 首调空输出 → 触发坏输出重试
+            return ("", "", 0, 0.0, {})            # 首调空输出 → 触发坏输出重试
         raise AgentStoppedError("thinking", 1)
 
     events, on_event = _events_collecter()
@@ -232,7 +239,7 @@ async def test_empty_text_falls_back_to_confirmation(executor):
     ])
 
     async def llm_call(system_prompt, messages, stream_hook=None):
-        return next(llm_replies)
+        return _p5(next(llm_replies))
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
@@ -245,7 +252,7 @@ async def test_empty_text_falls_back_to_confirmation(executor):
 async def test_empty_text_falls_back_to_applied_actions(executor):
     """有操作但无正文且无暂停：明确告知操作数量，不伪装成空响应"""
     async def llm_call(system_prompt, messages, stream_hook=None):
-        return ("", "tool_calls", 2)
+        return ("", "tool_calls", 2, 0.0, {})
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
@@ -265,7 +272,7 @@ async def test_length_finish_appends_truncation_warning(executor):
     ])
 
     async def llm_call(system_prompt, messages, stream_hook=None):
-        return next(replies)
+        return _p5(next(replies))
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,

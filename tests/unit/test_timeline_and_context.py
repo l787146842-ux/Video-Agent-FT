@@ -96,7 +96,7 @@ def make_llm(replies):
     async def llm_call(system_prompt, messages, stream_hook=None):
         reply = replies[min(calls["n"], len(replies) - 1)]
         calls["n"] += 1
-        return reply[0], reply[1], 0
+        return reply[0], reply[1], 0, 0.0, {}
 
     return llm_call
 

@@ -74,7 +74,7 @@ async def test_loop_retry_budget_driven_by_dispatch_table(executor, monkeypatch)
 
     async def llm_call(system_prompt, messages, stream_hook=None):
         calls["n"] += 1
-        return "", "stop", 0
+        return "", "stop", 0, 0.0, {}
 
     patched = dict(rp.RECOVERY_POLICIES)
     patched[rp.FAILURE_BAD_OUTPUT] = rp.RecoveryPolicy(
@@ -98,7 +98,7 @@ async def test_loop_default_budget_nudges_twice(executor):
 
     async def llm_call(system_prompt, messages, stream_hook=None):
         calls["n"] += 1
-        return "", "stop", 0
+        return "", "stop", 0, 0.0, {}
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx",
