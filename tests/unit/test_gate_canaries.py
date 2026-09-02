@@ -357,6 +357,8 @@ def test_canary_cov_ratchet_regression_fails(tmp_path, monkeypatch):
 
 
 def test_canary_cov_ratchet_improved_passes(tmp_path, monkeypatch):
+    """显式上调纪律（2026-09-02 裁决③）：实测高于基线只 PASS，
+    不传 --update-baseline 绝对不改写基线文件（防验收流程静默上调）。"""
     import scripts.check_cov_ratchet as gate
     xml = tmp_path / "coverage.xml"
     _write_cov_xml(xml, 0.50)
@@ -366,6 +368,24 @@ def test_canary_cov_ratchet_improved_passes(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv",
                         ["check_cov_ratchet.py", "--cov-xml", str(xml)])
     assert gate.main() == 0
+    assert base.read_text(encoding="utf-8").strip() == "40.00", \
+        "高于基线不得静默改写基线文件（上调须显式 --update-baseline）"
+
+
+def test_canary_cov_ratchet_update_baseline_flag_writes(tmp_path, monkeypatch):
+    """双向钉死：显式传 --update-baseline 后基线文件被改写为实测新值。"""
+    import scripts.check_cov_ratchet as gate
+    xml = tmp_path / "coverage.xml"
+    _write_cov_xml(xml, 0.50)
+    base = tmp_path / "cov_baseline.txt"
+    base.write_text("40.00\n", encoding="utf-8")
+    monkeypatch.setattr(gate, "BASELINE_FILE", base)
+    monkeypatch.setattr(sys, "argv",
+                        ["check_cov_ratchet.py", "--cov-xml", str(xml),
+                         "--update-baseline"])
+    assert gate.main() == 0
+    assert base.read_text(encoding="utf-8").strip() == "50.00", \
+        "显式 --update-baseline 须把基线登记为实测值"
 
 
 def _write_fe_summary(path: Path, pct: float):
@@ -386,6 +406,8 @@ def test_canary_fe_cov_ratchet_regression_fails(tmp_path, monkeypatch):
 
 
 def test_canary_fe_cov_ratchet_improved_passes(tmp_path, monkeypatch):
+    """显式上调纪律（2026-09-02 裁决③，与后端同构）：实测高于基线只 PASS，
+    不传 --update-baseline 绝对不改写基线文件。"""
     import scripts.check_fe_cov_ratchet as gate
     summary = tmp_path / "coverage-summary.json"
     _write_fe_summary(summary, 50.0)
@@ -395,6 +417,24 @@ def test_canary_fe_cov_ratchet_improved_passes(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv",
                         ["check_fe_cov_ratchet.py", "--summary", str(summary)])
     assert gate.main() == 0
+    assert base.read_text(encoding="utf-8").strip() == "40.00", \
+        "高于基线不得静默改写基线文件（上调须显式 --update-baseline）"
+
+
+def test_canary_fe_cov_ratchet_update_baseline_flag_writes(tmp_path, monkeypatch):
+    """双向钉死：显式传 --update-baseline 后基线文件被改写为实测新值。"""
+    import scripts.check_fe_cov_ratchet as gate
+    summary = tmp_path / "coverage-summary.json"
+    _write_fe_summary(summary, 50.0)
+    base = tmp_path / "fe_cov_baseline.txt"
+    base.write_text("40.00\n", encoding="utf-8")
+    monkeypatch.setattr(gate, "BASELINE_FILE", base)
+    monkeypatch.setattr(sys, "argv",
+                        ["check_fe_cov_ratchet.py", "--summary", str(summary),
+                         "--update-baseline"])
+    assert gate.main() == 0
+    assert base.read_text(encoding="utf-8").strip() == "50.00", \
+        "显式 --update-baseline 须把基线登记为实测值"
 
 
 def test_canary_fe_cov_ratchet_corrupted_summary_fails(tmp_path, monkeypatch,

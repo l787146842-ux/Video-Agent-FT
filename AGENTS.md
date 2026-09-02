@@ -45,7 +45,10 @@
 纪律：
 - 只认进程退出码（Windows GBK 乱码曾把失败伪装成通过）；
 - 钩子逃生门：`SKIP_PRECOMMIT=1`（CI 仍全量）/ `FULL_HOOK=1`（强制全量）；
-- 批与批之间不攒改动；每批末全量一次，平时 quick。
+- 批与批之间不攒改动；每批末全量一次，平时 quick；
+- 批末若 cov / fe_cov 棘轮输出「高于基线」NOTE，说明覆盖率有提升，须同批显式运行
+  `python scripts/check_cov_ratchet.py --update-baseline`（前端同理
+  `scripts/check_fe_cov_ratchet.py`）登记新下限；基线上调是显式批末动作、不再自动。
 
 ## 三、常用命令
 

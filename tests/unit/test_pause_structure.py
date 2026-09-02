@@ -137,6 +137,25 @@ class TestConsumePauseResponse:
         assert consume_pause_response(svc, None) is None
         assert consume_pause_response(svc, {}) is None
 
+    def test_superseded_old_card_is_not_consumed(self, svc):
+        """旧卡作废（失去活跃暂停槽位登记）后不再作为待确认项被消费：
+        对已被取代的旧 pause_id 的回应返回 None，新卡登记不被清除、
+        不产生 pauseAnswered 标记（宪法 Rule2 作废限定语的现状钉死）。"""
+        inter = svc.state_dict.setdefault("interaction", {})
+        inter["active_pause"] = {"pause_id": "new456", "message": "新卡", "options": []}
+
+        marker = consume_pause_response(
+            svc, {"pause_id": "old123", "value": "确认推进", "label": "确认"})
+
+        assert marker is None, "被取代旧卡的回应不得被消费（返回 None）"
+        active = (svc.state_dict.get("interaction") or {}).get("active_pause") or {}
+        assert active.get("pause_id") == "new456", "旧卡回应不得清除新卡的槽位登记"
+        assert "last_pause_decision" not in (svc.state_dict.get("interaction") or {}), \
+            "旧卡回应不产生消费侧三态标记"
+        # marker 为 None → 调用方不回携 pause_answered，消息不落 pauseAnswered 字段
+        svc.add_chat_message("user", "确认推进", pause_answered=marker)
+        assert "pauseAnsweredId" not in svc.get_chat_messages()[-1]
+
 
 class TestPauseSlotMutex:
     """单一活跃暂停槽位防御断言（问即停）：已有未消费暂停时
@@ -168,12 +187,12 @@ class TestPauseSlotMutex:
                 "arguments": '{"message": "再暂停一次"}'}}])
         result = await runner.execute(resp)
         applied, confirmation = result[0], result[1]
-        assert applied == 1, "防御断言只告警留痕，不再拒收（解除死锁）"
-        assert confirmation, "重复暂停照常上抛 confirmation（新卡覆盖旧卡）"
+        assert applied == 1, "防御断言只作废留痕，重复暂停不拒收"
+        assert confirmation, "重复暂停照常上抛 confirmation（旧卡作废 + 发新卡）"
         new_pid = result.pause_id
         assert new_pid and new_pid != "existing1"
         active = (svc.state_dict.get("interaction") or {}).get("active_pause") or {}
-        assert active.get("pause_id") == new_pid, "新卡登记覆盖旧卡"
+        assert active.get("pause_id") == new_pid, "旧卡作废失槽位登记，新卡接管活跃暂停槽位"
         assert active.get("message") == confirmation
 
     @pytest.mark.asyncio
@@ -255,7 +274,7 @@ class TestPauseSlotMutex:
         assert new_pid and new_pid != "old123"
         inter_after = svc.state_dict.get("interaction") or {}
         active = inter_after.get("active_pause") or {}
-        assert active.get("pause_id") == new_pid, "active_pause 以新卡覆写（旧卡无残留）"
+        assert active.get("pause_id") == new_pid, "active_pause 以新卡为准（旧卡作废、无残留登记）"
         assert active.get("message") == result.confirmation
         assert inter_after.get("awaiting_confirmation") is True
         assert inter_after.get("confirmation_message") == result.confirmation, \

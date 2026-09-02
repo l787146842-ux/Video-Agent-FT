@@ -142,9 +142,10 @@ def main() -> int:
         return 1
     if current > baseline:
         # 显式上调纪律：不传 --update-baseline 绝不写基线文件，仅提示
-        print(f"[check_fe_cov_ratchet] NOTE - 覆盖率 {current:.2f}% 高于基线 {baseline:.2f}%，"
-              "基线未改动；如需上调请显式运行: "
-              "python scripts/check_fe_cov_ratchet.py --update-baseline")
+        #（NOTE 纯 ASCII：Windows GBK 终端乱码纪律）
+        print(f"[check_fe_cov_ratchet] NOTE - current {current:.2f}% > baseline "
+              f"{baseline:.2f}%, baseline untouched; run "
+              "scripts/check_fe_cov_ratchet.py --update-baseline to raise")
     print(f"[check_fe_cov_ratchet] PASS - 前端覆盖率 {current:.2f}% >= baseline {baseline:.2f}%")
     return 0
 
