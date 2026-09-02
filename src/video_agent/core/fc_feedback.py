@@ -4,8 +4,7 @@
 view_storyboard_media 多模态回喂）与旧轮回喂的惰性压缩/图片剥离（token 治理）
 + 已投影工具结果的消化（tool-result 消化杠杆）+ FC 工具中文简述。
 
-fc_tool_runner.py 对本模块全部符号保留 re-export（壳清单登记于该文件尾部注释），
-既有调用/测试的 import 路径不变。
+fc_tool_runner.py 与本模块消费方一律直连本模块（re-export 壳已随批次 E3 收敛删除）。
 """
 import re
 from typing import Any, Dict, List, Union

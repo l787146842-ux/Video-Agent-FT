@@ -13,7 +13,7 @@ import pytest
 
 import src.video_agent.web.skill_docs as skill_docs_mod
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
-from src.video_agent.core.fc_tool_runner import format_tool_results
+from src.video_agent.core.fc_feedback import format_tool_results
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager

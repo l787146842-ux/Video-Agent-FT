@@ -145,7 +145,7 @@ def test_selected_block_flow_body_budget_injection():
 
 def test_feedback_carries_tool_detail():
     """3333 事故回归：script_analyze 的一句话总结随回喂传给模型，不再只报「执行成功」。"""
-    from src.video_agent.core.fc_tool_runner import format_tool_results
+    from src.video_agent.core.fc_feedback import format_tool_results
 
     feedback = format_tool_results([{
         "name": "script_analyze", "ok": True,

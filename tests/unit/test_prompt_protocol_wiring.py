@@ -8,7 +8,7 @@ import pytest
 
 from src.video_agent.core import prompt_builder as pb_module
 from src.video_agent.core.planner import PlannerContext
-from src.video_agent.core.fc_tool_runner import (
+from src.video_agent.core.fc_feedback import (
     FEEDBACK_COMPRESSED,
     FEEDBACK_MARKER,
     should_compress_feedback,

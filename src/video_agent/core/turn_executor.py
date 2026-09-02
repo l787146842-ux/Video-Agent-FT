@@ -23,7 +23,7 @@ from loguru import logger
 
 from src.video_agent.adapters.base_chat import ChatResponse, StreamChunk
 from src.video_agent.config import settings
-from src.video_agent.core.fc_tool_runner import (
+from src.video_agent.core.fc_feedback import (
     compress_prior_feedback,
     digest_projected_tool_results,
     format_tool_results,

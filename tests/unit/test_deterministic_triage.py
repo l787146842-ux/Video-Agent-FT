@@ -42,10 +42,9 @@ def test_preemption_symbols_deleted():
 
 def test_pause_window_gate_present():
     """轮内暂停纪律闸在场（问即停后保留为防御性守卫）"""
-    from src.video_agent.core import fc_tool_runner
-    src = inspect.getsource(fc_tool_runner)
-    assert "_PAUSE_WINDOW_READONLY" in src
-    assert "paused_this_batch" in src
+    from src.video_agent.core import fc_gates, fc_tool_runner
+    assert "workflow_pause" in fc_gates.PAUSE_WINDOW_READONLY  # 定义源
+    assert "paused_this_batch" in inspect.getsource(fc_tool_runner)  # 执行段接线
 
 
 # ---------- 闸预检语义：只装配兜底卡，永不执行/抢先 ----------

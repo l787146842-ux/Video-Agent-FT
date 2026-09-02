@@ -7,8 +7,8 @@
 
 execute() 返回 FCExecuteResult（结构化命名元组）：调用方按字段名取用，
 位置解包仍兼容（历史调用/测试不破坏），新增字段不再是隐性破坏。
-闸机方法对 fc_gates 保留同名承重壳（壳清单见文件尾部注释），
-既有调用/测试 patch 路径不变。
+闸机裁决实现体 = core/fc_gates.py（本文件只组装 GateContext 并调 run_gate_chain），
+回喂家族实现体 = core/fc_feedback.py；两者均由消费方直连，本文件不再设 re-export 壳。
 """
 import json
 import time
@@ -37,30 +37,10 @@ from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 
-# 回喂家族定义源 = core/fc_feedback.py；本文件顶层重新绑定全部符号，
-# 既有 import 路径与测试 patch 目标不变（承重壳）。
 from src.video_agent.core.fc_feedback import (
-    FEEDBACK_COMPRESSED,  # noqa: 1
-    FEEDBACK_FULL_TOOLS,  # noqa: 1
-    FEEDBACK_IMAGE_TOOL,  # noqa: 1
-    FEEDBACK_MARKER,  # noqa: 1
-    FEEDBACK_MAX_TOTAL_CHARS,  # noqa: 1
-    classify_tool_failure,  # noqa: 1
     compose_failure_feedback,
-    compress_prior_feedback,  # noqa: 1
     describe_fc_tool,
-    digest_projected_tool_results,  # noqa: 1
-    format_tool_results,  # noqa: 1
-    render_read_result,  # noqa: 1
-    should_compress_feedback,  # noqa: 1
-    strip_prior_feedback_images,  # noqa: 1
 )
-
-# 闸机常量定义源 = core/fc_gates.py；顶层重新绑定（承重壳，旧路径兼容）
-# （原 _TOOL_RISK_CONFIRM_TOOLS 壳已随确认闸数据驱动化退役：
-# 硬编码名单删除，生效范围改读生效审批档（risk 单轴推导），见 fc_gates.tool_risk_gate）
-_PAUSE_WINDOW_READONLY = fc_gates.PAUSE_WINDOW_READONLY  # noqa: 1
-_STAGE_ALLOWED_GROUP_KINDS = fc_gates.STAGE_ALLOWED_GROUP_KINDS  # noqa: 1
 
 
 class FCExecuteResult(NamedTuple):
@@ -728,12 +708,7 @@ class FCToolRunner:
         )
 
 
-# ---------- 承重壳清单（测试 patch 目标与旧 import 路径不变） ----------
-# 闸机裁决段承重壳（实现体 core/fc_gates.py）：
-#   FCToolRunner._prompt_gate /
-#   _structure_integrity_gate / _gen_confirm_gate / _tool_risk_gate /
-#   _strip_structure_prompt / _resolve_current_refs
-# （C1a 裁决 2026-08-31：_flow_gate 随技能级闸层删除退役；
-#   C1b 裁决 2026-08-31：_stage_precondition_gate 随阶段前置闸退役）
-# 批末对账段（实现体 core/fc_reconcile.py）：execute() 尾部 reconcile_batch 调用
-# 回喂家族承重壳（实现体 core/fc_feedback.py）：本文件顶部 re-export 清单
+# ---------- 三段结构落点（无 re-export 壳，消费方一律直连实现体） ----------
+# 闸机裁决段实现体 = core/fc_gates.py（run_gate_chain；判定唯一归 guard_pipeline）
+# 批末对账段实现体 = core/fc_reconcile.py（execute() 尾部 reconcile_batch 调用）
+# 回喂家族实现体 = core/fc_feedback.py
