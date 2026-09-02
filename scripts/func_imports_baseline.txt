@@ -22,9 +22,6 @@ src/video_agent/core/prompt_gates.py:614:src.video_agent.skill_runtime.registry
 src/video_agent/core/prompt_gates.py:681:src.video_agent.skill_runtime.registry
 src/video_agent/core/provider_config.py:326:src.video_agent.state.provider_prefs
 src/video_agent/core/spec_rules.py:90:src.video_agent.core.prompt_gates
-src/video_agent/eval/quality.py:111:tempfile
-src/video_agent/eval/quality.py:112:pathlib
-src/video_agent/eval/quality.py:170:unittest.mock
 src/video_agent/skill_runtime/progress.py:63:src.video_agent.core.tracer
 src/video_agent/skill_runtime/registry.py:253:pathlib
 src/video_agent/state/manager.py:209:src.video_agent.config

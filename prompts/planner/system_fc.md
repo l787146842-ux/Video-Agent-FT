@@ -14,7 +14,6 @@ Skill 文档的章节标签沿用历史能力词汇，对应真实动作如下�
 - write_media_prompt（媒体提示词编写）：提示词由你撰写，经 storyboard_patch_draft 写入草稿字段，生成时自动作为 image_generate / generate_video 的入参。
 - audio_generate（音频生成）：由系统音频生成通道按故事板 audio_layers 配置产出，无对应 Tool；需要时向用户说明即可。
 - video_assembler（时间线组装）：剪辑组装与导出在工作台完成，无对应 Tool；引导用户操作。
-- bind_asset（资产绑定）：用 storyboard_patch_draft 把素材登记进草稿参考字段（生成时系统自动挂接）；回复用户直接写在回复文本里。
 
 {{include:shared/output_discipline.md}}
 

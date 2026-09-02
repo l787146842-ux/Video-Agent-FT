@@ -25,9 +25,9 @@ from src.video_agent.skill_runtime.manifest_schema import (
 # 管线能力词汇表：「章节声明 → 阶段能力」标记，仅供
 # stage_probes 阶段裁剪、prompt_gates 音频闸、skill_docs/scan_skills
 # Skill lint 作客观探针；平台不注册同名工具。
-# Skill 正文散文已全部清洗为真实工具名；模型可见的能力词→真实动作
-# 对照表唯一表述源 = prompts/planner/system_fc.md「Skill 文档能力词对照」
-# 段——本表增删词汇时须同批同步该段。
+# Skill 正文散文已全部清洗为真实工具名；本表为能力词唯一事实源，
+# prompts/planner/system_fc.md「Skill 文档能力词对照」段须同批同步
+#（漂移由 tests/unit/test_capability_word_alignment.py 拦截）。
 PIPELINE_CAPABILITY_TOOLS = (
     "script_analyze",
     "storyboard_key_elements",

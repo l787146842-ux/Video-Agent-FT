@@ -105,6 +105,10 @@ SUITES: List[Tuple[str, List[str]]] = [
 EVAL: List[Tuple[str, List[str]]] = [
     ("eval_pipeline", [sys.executable, "scripts/run_eval_pipeline.py"]),
 ]
+# 正文卫生 WARN（--with-eval 档运行，打印告警不影响退出码、不进 GATES 表）
+EVAL_WARN: List[Tuple[str, List[str]]] = [
+    ("skill_hygiene_warn", [sys.executable, "scripts/scan_skills.py", "--gate"]),
+]
 # 任务 P2-7：playwright e2e 精简集可选档（--with-e2e 显式传入才追加）。
 # 非 GATES 条目、非默认验收组成部分：不碰 --quick/全量既有行为，
 # 不引入新门禁（闸门只减不增）；只跑最稳的刷新重建/流式聊天两条 spec。
@@ -131,10 +135,12 @@ def run_step(name: str, cmd: List[str], env: dict) -> Tuple[bool, float]:
 def main() -> int:
     args = set(sys.argv[1:])
     steps = GATES + ([] if "--quick" in args else SUITES)
+    warn_steps: List[Tuple[str, List[str]]] = []
     if "--quick" in args:
         steps += [("tsc", ["npx", "tsc", "--noEmit"])]
     if "--with-eval" in args:
         steps += EVAL
+        warn_steps += EVAL_WARN
     if "--with-e2e" in args:
         steps += E2E
 
@@ -147,6 +153,21 @@ def main() -> int:
         results.append((name, ok, dur))
         # 逐项即时回显（ASCII，防乱码误读）
         print(f"[acceptance] {'PASS' if ok else 'FAIL'}: {name} ({dur:.1f}s)")
+
+    # WARN 步骤：运行并打印输出，不影响退出码
+    for name, cmd in warn_steps:
+        try:
+            proc = subprocess.run(
+                cmd, cwd=str(ROOT), env=env,
+                capture_output=True, text=True, shell=(os.name == "nt"),
+            )
+            if proc.stdout.strip():
+                print(f"[acceptance:warn] {name}:\n{proc.stdout.rstrip()}")
+            if proc.returncode != 0:
+                print(f"[acceptance:warn] {name}: exit={proc.returncode}"
+                      f" (WARN only, not blocking)")
+        except Exception as e:
+            print(f"[acceptance:warn] {name}: exception {e} (WARN only)")
 
     print("")
     print("[acceptance] ===== SUMMARY =====")

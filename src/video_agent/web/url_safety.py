@@ -1,6 +1,6 @@
 """URL 安全校验（SSRF 防护）——单一事实源。
 
-供 eval/quality.py 与外部图片代理等场景使用；与 routes/providers.py 的
+供外部图片代理等场景使用；与 routes/providers.py 的
 内网黑名单语义保持一致：私网地址拒绝，本机回环/本地反代显式放行。
 
 加固要点：
