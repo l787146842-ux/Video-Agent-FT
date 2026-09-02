@@ -8,8 +8,9 @@
   覆盖率**只许升不许降**——当前值低于基线即 CI 失败；
 - 基线文件：scripts/fe_cov_baseline.txt（单行百分比数值，首钉 63.00）；
   基线文件缺失即 FAIL（防门禁永久空转，与后端 CI 模式同构），不做自动记录；
-- 回写纪律（半自动上调）：PASS 且实测值高于基线时自动覆写基线为实测值（进步即时存档）；
-  禁止手工下调基线文件（棘轮只升不降）；
+- 回写纪律（显式上调，2026-09-02 裁决，与后端 check_cov_ratchet.py 同构）：
+  仅显式传 --update-baseline 才覆写基线；日常门禁 PASS 且实测高于基线时
+  只提示、不写文件（防验收流程静默上调）；禁止手工下调基线文件（棘轮只升不降）；
 - 与七文件阈值闸的关系：vitest.config.ts thresholds 的 80% 行覆盖闸针对对话
   核心模块逐文件硬门禁，本棘轮管整体面，两者并存互不替代。
 - CI 接线（影响面审查 FIX-3 落地）：ci.yml frontend-check 已在 vitest 之后
@@ -140,9 +141,10 @@ def main() -> int:
               "补测试回升或显式裁决后 --update-baseline")
         return 1
     if current > baseline:
-        # 半自动上调：PASS 且实测高于基线 → 覆写基线存档进步（防静默回退）
-        write_baseline(current)
-        print(f"[check_fe_cov_ratchet] BASELINE RAISED - {baseline:.2f}% -> {current:.2f}% (semi-auto)")
+        # 显式上调纪律：不传 --update-baseline 绝不写基线文件，仅提示
+        print(f"[check_fe_cov_ratchet] NOTE - 覆盖率 {current:.2f}% 高于基线 {baseline:.2f}%，"
+              "基线未改动；如需上调请显式运行: "
+              "python scripts/check_fe_cov_ratchet.py --update-baseline")
     print(f"[check_fe_cov_ratchet] PASS - 前端覆盖率 {current:.2f}% >= baseline {baseline:.2f}%")
     return 0
 

@@ -6,7 +6,8 @@
   覆盖率**只许升不许降**——当前值低于基线即 CI 失败；
 - 基线文件：scripts/cov_baseline.txt（单行百分比数值）；首次运行且基线
   文件不存在时自动记录当前值为基线（需随提交入仓）；
-- 回写纪律（半自动上调）：PASS 且实测值高于基线时自动覆写基线为实测值（进步即时存档）；
+- 回写纪律（显式上调，2026-09-02 裁决）：仅显式传 --update-baseline 才覆写基线；
+  日常门禁 PASS 且实测高于基线时只提示、不写文件（防验收流程静默上调）；
   禁止手工下调基线文件（棘轮只升不降）。
 
 退役条件：当 core 覆盖率升至 90% 以上且连续两个季度
@@ -109,9 +110,10 @@ def main() -> int:
               "补测试回升或显式裁决后 --update-baseline")
         return 1
     if current > baseline:
-        # 半自动上调：PASS 且实测高于基线 → 覆写基线存档进步（防静默回退）
-        write_baseline(current)
-        print(f"[check_cov_ratchet] BASELINE RAISED - {baseline:.2f}% -> {current:.2f}% (semi-auto)")
+        # 显式上调纪律：不传 --update-baseline 绝不写基线文件，仅提示
+        print(f"[check_cov_ratchet] NOTE - 覆盖率 {current:.2f}% 高于基线 {baseline:.2f}%，"
+              "基线未改动；如需上调请显式运行: "
+              "python scripts/check_cov_ratchet.py --update-baseline")
     print(f"[check_cov_ratchet] PASS - core 覆盖率 {current:.2f}% >= baseline {baseline:.2f}%")
     return 0
 
