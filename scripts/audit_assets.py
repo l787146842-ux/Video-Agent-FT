@@ -18,11 +18,6 @@
 - 引用来源分类仅按文档所在路径划分：projects 目录或 projects.state 行记
   「项目状态」；snapshots 目录记「快照」；任务表文档记「任务表」。
 
-退役条件（治理要求）：
-- 本脚本为观察项（报表命令），不挂 acceptance 硬门禁，避免孤儿误报阻塞；
-- 当资产 TTL/引用计数自动清理机制上线，且孤儿清理有独立决策与执行通道后，
-  本脚本并入该机制或退役；连续两个版本周期无人使用亦可直接退役。
-
 用法：
     python scripts/audit_assets.py            # 以仓库根为工作区根
     python scripts/audit_assets.py --root DIR # 指定工作区根（测试/演练用）

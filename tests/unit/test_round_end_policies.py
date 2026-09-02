@@ -89,8 +89,8 @@ def test_r1_partial_fail_warning_order():
 
 
 # test_r1_stage_done_fallback_requires_executor_action 已随 S10 退役删除
-# （用户裁决 2026-09-02：退役条件指向已废编排器、永远到不了期，属违规悬置，
-# 直接删除；阶段边界暂停归模型 workflow_pause 与 structure_stage_review）。
+# （用户裁决 2026-09-02：该登记的清偿条件指向已废编排器、永远到不了期，
+# 属违规悬置，直接删除；阶段边界暂停归模型 workflow_pause 与 structure_stage_review）。
 
 
 def test_r1_false_claim_audit_warns_but_keeps_pause():

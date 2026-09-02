@@ -24,46 +24,35 @@ from typing import List, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# 组件清单：(名称, 命令行) —— 新增/修改门禁脚本必须同步本表；
-# 每条存量门禁附退役条件一行（退役条件声明义务，格式对齐 cov_ratchet）
+# 组件清单：(名称, 命令行) —— 新增/修改门禁脚本必须同步本表。
 GATES: List[Tuple[str, List[str]]] = [
-    # 退役条件：前后端类型同源（不再依赖生成产物桥接）时方可裁决下账。
     ("contract", [sys.executable, "scripts/gen_api_types.py", "--check"]),
-        # 任务 #4：语义色收口闸——styles/ 硬编码色值棘轮只减不增（白名单见脚本内）；
-        # 退役条件：白名单清偿归零后降级为零白名单硬门禁，样式体系迁离 tokens.css
-        # 时方可裁决整体退役（详见脚本头部注释）。
+        # 任务 #4：语义色收口闸——styles/ 硬编码值只减不增（白名单见脚本内）
         ("semantic_colors", [sys.executable, "scripts/check_semantic_colors.py"]),
-    # 退役条件：合法存量清单自然缩减至空并删除基线文件后裁决下账（宪法 §六 禁令内化；
-    # 存量均为合法 lazy import 已裁决长期保留，本闸为纯防新增断言，基线只减不增）。
+    # 合法存量清单自然缩减，本闸为纯防新增断言（存量均为合法 lazy import）。
     ("func_imports", [sys.executable, "scripts/check_func_imports.py"]),
-    # 退役条件：类别 Key 硬编码字面量清零、CAT_* 单一事实源全域收敛时裁决下账。
+    # 类别 Key 防硬编码：CAT_* 常量为单一事实源。
     ("category_keys", [sys.executable, "scripts/check_category_keys.py"]),
-    # 退役条件：退役编排符号在长期演进中证实无复活风险（登记清单可整体清退）时裁决下账。
+    # 退役编排符号防复活。
     ("legacy_orchestration", [sys.executable, "scripts/check_legacy_orchestration.py"]),
-    # 批 3.3：层间导入方向闸——core/tools 禁止 import src.video_agent.web.*；
+    # 层间导入方向闸——core/tools 禁止 import src.video_agent.web.*；
     # web 能力经 core/ports 端口（D-01）或 storage/core 公开 API（下沉先例）消费。
-    # 退役条件：反向依赖连续两季零检出、端口与公开 API 模式内化为开发惯例时裁决下账。
     ("layer_imports", [sys.executable, "scripts/check_layer_imports.py"]),
-    # 治理瘦身第一批：doc_pointers 与 arch_anchors 合并为引用完整性闸，
-    # 脚本本体保留 check_doc_pointers.py（ADR 双边注记 / 宪法文件地图 /
-    # 代码与 docs 模块指针 / 退役符号防复述 / 宪法锚点路径+不变量符号）。
-    # 退役条件：指针/锚点漂移连续两季零检出、双边注记与修宪同批更新锚点内化为
-    # 惯例时裁决下账；或宪法条款全面数据化（锚点并入机器可读登记表且
-    # ANCHORS 清单清空）时裁决锚点部分下账。
+    # 治理瘦身第一批：doc_pointers 与 arch_anchors 合并为引用完整性闸
+    # （ADR 双边注记 / 宪法文件地图 / 代码与 docs 模块指针 / 退役符号防复述 /
+    # 宪法锚点路径+不变量符号）。
     ("ref_integrity", [sys.executable, "scripts/check_doc_pointers.py"]),
     # 2026-09-02「治理闸机减负」裁决：core 覆盖率由逐批棘轮改为固定容差地板
     # （脚本内写死 COVERAGE_FLOOR，低于地板才 FAIL；不再读基线文件/不再要求每批
     # --update-baseline 上调）；本地无 coverage.xml 时 SKIP，CI 以 --require-xml 硬门禁。
-    # 退役条件：core 覆盖率长期稳定在地板之上且不再需要兜底信号时裁决下账。
     ("cov_ratchet", [sys.executable, "scripts/check_cov_ratchet.py"]),
     # 2026-09-02「治理闸机减负」裁决：前端整体覆盖率由逐批棘轮改为固定容差地板
     # （脚本内写死 COVERAGE_FLOOR，读 vitest json-summary）；本地无 coverage-summary.json
     # 时 SKIP，CI 已接线 --require-summary 硬门禁（frontend-check vitest 之后）。
     # 已知局限：GATES 先于 SUITES 执行，此处读的是上一轮 vitest 产物
     # （详见 check_fe_cov_ratchet.py 头部注释）。
-    # 退役条件：前端整体行覆盖率长期稳定在地板之上且不再需要兜底信号时裁决下账。
     ("fe_cov_ratchet", [sys.executable, "scripts/check_fe_cov_ratchet.py"]),
-    # 任务 #9：CSS 体积棘轮（只减不增，度量 static/dist 全部 stylesheet 产物，
+    # 任务 #9：CSS 体积闸（度量 static/dist 全部 stylesheet 产物，
     # 基线 scripts/css_size_baseline.txt 首钉 153007 字节 = 149.42 kB，
     # 度量口径与 check_bundle_size.mjs 同框）。
     # 基线上调记录：152752 → 157356（第 5-3 批容量卡样式 +15 行未同批更新基线；
@@ -73,8 +62,6 @@ GATES: List[Tuple[str, List[str]]] = [
     # 同批回填登记；后续批只许减）。
     # 160470 → 161853（二期子对话批 3 浮窗参考素材清单/附件入口/输入行
     # adjust-dialog.css +12 行，同批回填登记；后续批只许减）。
-    # 退役条件：实测体积降至 100 kB 以下且连续两季无回弹时裁决下账；
-    # 或样式体系迁离单文件汇总（按路由懒加载分包）致本口径失效时一并裁决。
     ("css_size", ["node", "scripts/check_css_size.mjs"]),
 ]
 SUITES: List[Tuple[str, List[str]]] = [

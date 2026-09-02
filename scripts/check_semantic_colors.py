@@ -28,11 +28,6 @@
 inherit 继承档等无法等值 token 化的特殊值，清偿至仅剩这些值后封顶。
 另：tsx 组件内联硬编码（style 对象/SVG 属性）已同步等值清偿，
 不在本门禁扫描范围（门禁只守 styles/*.css）。
-
-退役条件：
-色值 WHITELIST 全部清偿归零后，本闸降级为「styles/ 下任何新增硬编码即 FAIL」
-的零白名单硬门禁继续值守；仅当样式体系整体迁移至 CSS-in-JS 或主题引擎、
-tokens.css 不再是唯一样式值源时，方可裁决整体退役。
 """
 import re
 import sys

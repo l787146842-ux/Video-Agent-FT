@@ -10,10 +10,6 @@
  * 基线：首钉 153007 字节（2026-08-28 实测 149.42 kB），存
  * scripts/css_size_baseline.txt（与 cov_baseline 同风格）；只许减不许增，
  * 实测超过基线即失败。减重后须同批下调基线文件数值。
- *
- * 退役条件（单一归家另见 acceptance.py GATES 表）：
- * 产物 CSS 实测体积降至 100 kB 以下且连续两季无回弹时裁决下账；
- * 或样式体系迁离单文件汇总（按路由懒加载分包）致本口径失效时一并裁决。
  */
 import { readFileSync, statSync } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';

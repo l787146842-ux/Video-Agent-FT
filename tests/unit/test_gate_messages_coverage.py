@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """任务 #12 批次2：闸机文案覆盖矩阵钉死（prompts/gates/messages.md 覆盖全部 rule_id）。
 
-宪法 §2.3（Policy-as-Data + 文案外置 + 闸机冻结基线）的机械守门：
+宪法 §2.3（Policy-as-Data + 文案外置）的机械守门：
 1. 覆盖矩阵键集与 GATE_RULES 注册表一致（每条 rule_id 都必须登记文案口径，
    空元组 = 该闸拒因为运行时客观数据组装，无固定文案分节——也必须显式登记）；
 2. 非空登记分节必须真实存在于 prompts/gates/messages.md（防指针漂移）；

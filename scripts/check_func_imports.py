@@ -8,7 +8,6 @@
 - 白名单随文件删除/顶层化自然缩减，--refresh 只剔除已消失条目（不收编新增；
   基线缺失/为空时拒绝刷新，防产出空白名单）。
 
-退役条件见 acceptance.py GATES 表本闸条目（单一事实源，不在此复述）。
 用法：
     python scripts/check_func_imports.py            # 门禁检查（CI 用）
     python scripts/check_func_imports.py --refresh  # 清偿后剔除已消失的存量条目（只减）

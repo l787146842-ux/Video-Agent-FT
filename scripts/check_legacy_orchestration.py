@@ -26,7 +26,8 @@
   skill_full_text_injected / build_style_combo / build_generic_skill_block /
   _build_tiered_skill_block / GENERIC_FULL_INJECT_LIMIT / STYLE_COMBO_SOFT_LIMIT /
   skill_style_combo.md —— 全文直注/分级注入/组合注入全部废止，正文一律经
-  read_skill 按需读取；退役条件：渐进式披露被用户裁决废止时方可复活。
+  read_skill 按需读取；废止依据为渐进式披露已废止（闸机变更用户书面裁决已取得），
+  该裁决被推翻时相应符号即从本清单移除。
 spec_pause_card/spec_collect_card（规格向导，不变基线）不在清单内。
 输出纯 ASCII（验收乱码误读教训）。用法：python scripts/check_legacy_orchestration.py
 """
@@ -92,7 +93,7 @@ FORBIDDEN = re.compile(
 
 # 任务#12 批次B：L2 注入路径拆除（渐进式披露）——全文直注/分级注入/组合注入
 # 全部废止，系统只注入 L1 目录与轻量状态提示，正文经 read_skill 按需读取；
-# 退役条件：渐进式披露被用户裁决废止时方可复活（闸机变更用户书面裁决已取得）。
+# 废止依据：渐进式披露已废止（闸机变更用户书面裁决已取得）。
 FORBIDDEN_L2_INJECTION = re.compile(
     r"skill_full_text_injected|build_style_combo|build_generic_skill_block"
     r"|_build_tiered_skill_block|GENERIC_FULL_INJECT_LIMIT|STYLE_COMBO_SOFT_LIMIT"

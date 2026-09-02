@@ -9,8 +9,6 @@
   核心模块硬门禁，本地板管整体面兜底，两者并存互不替代；
 - 已知限制（acceptance 内顺序）：acceptance.py 的 GATES 先于 SUITES 执行，
   故 acceptance 场景下本闸读取的是「上一轮」vitest 产物；CI 侧不存在此局限。
-
-退役条件：前端整体行覆盖率长期稳定在地板之上且不再需要兜底信号时裁决下账。
 """
 import argparse
 import json
