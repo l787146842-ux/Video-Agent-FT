@@ -78,7 +78,7 @@ def normalize_rule_id(rule_id: str) -> str:
     """rule_id 归一入口（承重符号，coupling_registry R13 钉死）。
 
     别名表已随 skill/session 层闸机退役清空，现为恒等返回；
-    三个消费面（guard_pipeline / audit_gate_triggers / override 留痕）
-    保留统一入口，历史新别名需求在此单点扩展。
+    消费面（guard_pipeline / override 留痕）保留统一入口，
+    历史新别名需求在此单点扩展。
     """
     return str(rule_id or "")

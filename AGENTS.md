@@ -97,7 +97,6 @@ python scripts/run_eval_pipeline.py    # Skill 管线可解析性评测（frontm
 
 - 对象为 `core/scaffold_registry.py` 登记的 scaffold 条目；退役条件成熟、模型切换后或季度审计时逐件拆测（禁止批量），走拆除仪式：关闭（优先代码移除 + 备份分支）→ 复测（evidence 回归用例 + `acceptance.py --with-eval`）→ 裁决留痕。
 - 到期必裁决，三选一不得悬置：不劣化 → 下账（删代码、注册表删条目）；劣化或证据不足 → 保留并钉死下次复测时点附理由（「证据不足」「暂缓」不是合法裁决）。
-- 闸机折旧：连续 4 个审计周期零触发的门禁降级软警告并下账（盘点用 `scripts/audit_gate_triggers.py`，机器点名不代替裁决）；安全类闸机豁免（零触发是常态）；新增门禁必须声明退役条件；降级后劣化回归再现按原基线恢复棘轮。
 - `scripts/archive` 归档件到期策略唯一家为 `scripts/archive/README.md`（满两季度即删）。
 
 ## 八、治理条款摘要（原宪法第十三章/GOVERNANCE；原卷见 git tag `governance-archive-20260901`）
