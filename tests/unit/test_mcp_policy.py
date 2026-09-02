@@ -3,6 +3,7 @@
 - deny-first：无配置 = 零工具；deny_servers 整批 / deny_tools 单个，
   命中的工具连注册都不进（fail-closed）；
 - risk 解析：tool_risk > risk_default > high；未声明/非法一律 high；
+  花钱/不可逆底线：costly 工具地板恒 high（server 配置只能上抬不能下降）；
 - 配置加载 fail-closed：非法条目跳过不截断整批；
 - 启用集（白名单）读写只认 mcp__ 命名空间。
 """
@@ -80,6 +81,55 @@ class TestNamingAndRisk:
         cfg = {"risk_default": "danger", "tool_risk": {"t": "medium-plus"}}
         assert mcp_policy.resolve_tool_risk(cfg, "t") == "high"
         assert mcp_policy.resolve_tool_risk(cfg, "other") == "high"
+
+
+# ---------- 花钱/不可逆底线（用户裁决 2026-09-02） ----------
+
+class TestCostlyFloor:
+    """costly 声明的外部工具 risk 地板恒为 high（→ 生效审批档 confirm）；
+    server 级 risk_default/tool_risk 只能向上抬，不得向下把 costly 工具
+    静默降为无确认。非 costly 兄弟工具不受底线影响（不误抬）。"""
+
+    def test_costly_floored_over_low_server_default(self):
+        cfg = {"risk_default": "low", "tool_costly": {"pay_api": True}}
+        # costly 工具即便 server 默认 low，也被地板抬到 high
+        assert mcp_policy.resolve_tool_risk(cfg, "pay_api") == "high"
+        # 非 costly 兄弟工具照 server 默认 low 放行（底线只堵 costly 静默降级）
+        assert mcp_policy.resolve_tool_risk(cfg, "free_api") == "low"
+
+    def test_costly_per_tool_low_cannot_downgrade(self):
+        cfg = {"tool_risk": {"pay_api": "low"}, "tool_costly": {"pay_api": True}}
+        # 单工具显式 low 也不得把 costly 工具降为无确认
+        assert mcp_policy.resolve_tool_risk(cfg, "pay_api") == "high"
+
+    def test_costly_floor_only_raises_never_lowers_high(self):
+        cfg = {"tool_risk": {"pay_api": "high"}, "tool_costly": {"pay_api": True}}
+        assert mcp_policy.resolve_tool_risk(cfg, "pay_api") == "high"
+
+    def test_resolve_tool_costly_declaration(self):
+        cfg = {"tool_costly": {"pay_api": True, "free_api": False}}
+        assert mcp_policy.resolve_tool_costly(cfg, "pay_api") is True
+        assert mcp_policy.resolve_tool_costly(cfg, "free_api") is False
+        # 未声明/非 dict 一律 False（不误抬）
+        assert mcp_policy.resolve_tool_costly(cfg, "unknown") is False
+        assert mcp_policy.resolve_tool_costly({}, "pay_api") is False
+
+    def test_costly_adapter_registered_high_and_costly(self, monkeypatch):
+        """注册期端到端：costly 声明的工具注册后 risk=high、审批档=confirm
+        且 is_costly_tool=True；server risk_default:low 不得静默降为无确认。"""
+        _patch_config(monkeypatch, {"subtitle": {
+            "transport": "stdio", "command": "x",
+            "risk_default": "low",
+            "tool_costly": {"generate_subtitle": True},
+        }})
+        assert register_mcp_tools(client_factory=_factory) == 2
+        name = "mcp__subtitle__generate_subtitle"
+        assert ToolManager.get_tool_risk(name) == "high"
+        assert ToolManager.get_tool_approval_tier(name) == "confirm"
+        assert ToolManager.is_costly_tool(name) is True
+        # 非 costly 兄弟工具照 server 默认 low（不误抬）
+        assert ToolManager.get_tool_risk("mcp__subtitle__list_styles") == "low"
+        assert ToolManager.is_costly_tool("mcp__subtitle__list_styles") is False
 
 
 # ---------- deny 规则 ----------

@@ -11,6 +11,9 @@
       "tool_risk": {
         "generate_subtitle": "high",
         "list_styles": "low"
+      },
+      "tool_costly": {
+        "generate_subtitle": true
       }
     },
     "remote_demo": {

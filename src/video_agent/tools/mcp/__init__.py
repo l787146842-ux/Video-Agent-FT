@@ -109,6 +109,7 @@ def _register_server(
             server_name, tool_name,
             description=str(t.get("description") or ""),
             risk=risk,
+            costly=mcp_policy.resolve_tool_costly(scfg, tool_name),
             remote_schema=t.get("inputSchema") or {},
             client=client,
         )

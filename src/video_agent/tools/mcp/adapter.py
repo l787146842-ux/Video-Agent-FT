@@ -53,6 +53,7 @@ class McpToolAdapter(BaseTool):
         *,
         description: str = "",
         risk: str,
+        costly: bool = False,
         remote_schema: Optional[Dict[str, Any]] = None,
         client: BaseMcpClient,
     ) -> None:
@@ -61,6 +62,9 @@ class McpToolAdapter(BaseTool):
         self.name = mcp_policy.qualified_name(server, remote_tool)
         self.description = str(description or "").strip()[:DESCRIPTION_MAX_CHARS]
         self.risk = risk
+        # 花钱/不可逆声明（用户裁决 2026-09-02）：经 policy.resolve_tool_costly
+        # 解析；costly 工具 risk 地板恒为 high，此处承载运行时 costly 轴一致性。
+        self.costly = bool(costly)
         self.remote_schema = remote_schema if isinstance(remote_schema, dict) else {}
         self._client = client
 

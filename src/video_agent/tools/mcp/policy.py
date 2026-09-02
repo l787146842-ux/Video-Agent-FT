@@ -1,13 +1,23 @@
-"""MCP 接入层：deny 规则、risk 解析与启用集（白名单）读写。
+"""MCP 接入层：deny 规则、risk 解析与启用集读写。
 
-deny-first（宪法 §2.7 同口径，外部工具统一风控铁律）：
+政策单一源（用户裁决 2026-09-02；P1 唯一表述处，勿在别处复述）：
+工具侧外部能力 = 黑名单模型（控制面 = deny 名单 deny_servers/deny_tools
++ server 级 risk_default + 审计遥测）+ 装载者审核责任——模型可自助启用
+外部 MCP 工具、不逐次征求用户同意，「装坏了怪装载者没审核」是有意政策；
+Skill 侧 = 白名单门户（须显式装载）。二者差异为有意设计，不是缺陷。
+
+deny-first（宪法 §2.7 同口径，外部工具统一风控）：
 - deny_servers（整批 deny）→ deny_tools（单个 deny）→ deny 命中的工具
   连注册都不进（fail-closed）；
 - 未声明 risk 一律 high（执行前须用户显式确认）；
+- 花钱/不可逆底线：costly 声明的外部工具 risk 地板恒为 high，server 级
+  risk_default/tool_risk 只能向上抬、不得向下把 costly 工具静默降为无确认
+  （见 resolve_tool_risk / resolve_tool_costly）；
 - 未启用的 MCP 工具默认不可用：schema 不进 FC payload，直调也被拒。
 
-启用集（interaction.mcp_enabled）= 会话级白名单：mcp_tool_catalog
-enable 写入后，次回合 planner 才把这些工具的完整 schema 注入 FC tools。
+启用集（interaction.mcp_enabled）= 会话级已启用集（模型自助写入的注入
+可见性面，非用户审批门户）：mcp_tool_catalog enable 写入后，次回合
+planner 才把这些工具的完整 schema 注入 FC tools。
 本模块保持轻依赖（纯判定 + 状态读写），供 fc_gates 闸机接线直接引用。
 """
 import re
@@ -25,6 +35,10 @@ MCP_TOOL_PREFIX = "mcp__"
 CATALOG_TOOL_NAME = "mcp_tool_catalog"
 # 未声明 risk 的兜底等级（deny-by-default：外部工具不可信）
 DEFAULT_RISK = "high"
+# 花钱/不可逆底线（用户裁决 2026-09-02）：costly 声明的外部工具 risk 地板
+# 恒为 high（→ 生效审批档 confirm）；server 级 risk_default/tool_risk 只能
+# 向上抬，不得向下把 costly 工具静默降为无确认。
+COSTLY_RISK_FLOOR = "high"
 # 名称净化：FC 工具名只保留 [a-z0-9_]（server/tool 名注册期 sanitize）
 _NAME_SAFE_RE = re.compile(r"[^a-z0-9_]+")
 
@@ -56,19 +70,38 @@ def parse_server_key(entry: str) -> Optional[str]:
     return parts[1] if len(parts) >= 3 and parts[1] else None
 
 
+def resolve_tool_costly(server_cfg: Dict[str, Any], tool_name: str) -> bool:
+    """外部工具花钱/不可逆声明（server_cfg.tool_costly 单工具映射，与
+    tool_risk 同款结构）。仅显式真值算数；未声明/非法一律 False（不误抬
+    也不放宽）。声明为 costly 者其 risk 地板恒为 high（见 resolve_tool_risk），
+    server 配置只能上抬、不得向下取消确认。"""
+    cfg = server_cfg if isinstance(server_cfg, dict) else {}
+    per_tool = cfg.get("tool_costly")
+    if isinstance(per_tool, dict):
+        return bool(per_tool.get(tool_name))
+    return False
+
+
 def resolve_tool_risk(server_cfg: Dict[str, Any], tool_name: str) -> str:
     """risk 解析（fail-closed）：tool_risk 单工具声明 > risk_default 服务器
-    默认 > high。非法取值一律按 high 对待（外部工具不可信，禁止静默放行）。"""
+    默认 > high。非法取值一律按 high 对待（外部工具不可信，禁止静默放行）。
+    花钱/不可逆底线（用户裁决 2026-09-02）：costly 工具 risk 地板恒为
+    high——server 级 risk_default/tool_risk 只能向上抬，不得向下把 costly
+    工具静默降为无确认（控制面仍是 deny 名单 + server 配置 + 遥测）。"""
     cfg = server_cfg if isinstance(server_cfg, dict) else {}
+    declared = ""
     per_tool = cfg.get("tool_risk")
     if isinstance(per_tool, dict):
         declared = str(per_tool.get(tool_name) or "").strip().lower()
-        if declared:
-            return declared if declared in RISK_TIERS else DEFAULT_RISK
-    declared = str(cfg.get("risk_default") or "").strip().lower()
+    if not declared:
+        declared = str(cfg.get("risk_default") or "").strip().lower()
+    risk = DEFAULT_RISK
     if declared:
-        return declared if declared in RISK_TIERS else DEFAULT_RISK
-    return DEFAULT_RISK
+        risk = declared if declared in RISK_TIERS else DEFAULT_RISK
+    # 花钱/不可逆底线：costly 工具地板 high（只升不降，堵 server 静默降级）
+    if resolve_tool_costly(cfg, tool_name):
+        risk = COSTLY_RISK_FLOOR
+    return risk
 
 
 def is_server_denied(policy: Dict[str, Any], server_name: str) -> bool:
