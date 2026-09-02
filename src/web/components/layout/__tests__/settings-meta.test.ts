@@ -17,17 +17,36 @@ import { showToast } from '@/stores/toast';
 import { useModelFetch } from '../use-model-fetch';
 import type { EditableProvider } from '../settings-meta';
 
+/**
+ * 后端 CLI 路由清单（与 src/video_agent/web/routes/cli_status.py 对齐）。
+ * 断言前端 CLI_ENTRIES 的 statusPath/helpPath 确实存在于后端已注册路由中，
+ * 消除仅断言路径形状正则的假信心问题。
+ */
+const BACKEND_CLI_ROUTES: Array<{ path: string; method: 'GET' | 'POST' }> = [
+  { path: '/api/gemini-cli/status', method: 'GET' },
+  { path: '/api/gemini-cli/help', method: 'GET' },
+  { path: '/api/codex/status', method: 'GET' },
+  { path: '/api/codex/help', method: 'GET' },
+  { path: '/api/jimeng/status', method: 'GET' },
+  { path: '/api/jimeng/help', method: 'GET' },
+  { path: '/api/jimeng/credit', method: 'GET' },
+  { path: '/api/jimeng/login/start', method: 'POST' },
+  { path: '/api/jimeng/login/status', method: 'GET' },
+  { path: '/api/jimeng/logout', method: 'POST' },
+];
+
 describe('settings-meta 常量一致性', () => {
   it('CLI 协议都在协议选项表内（下拉与 CLI 集合不得漂移）', () => {
     const values = new Set(PROTOCOL_OPTIONS.map((o) => o.value));
     for (const p of CLI_PROTOCOLS) expect(values.has(p)).toBe(true);
   });
 
-  it('CLI 条目与元数据键一一对应（状态端点路径齐备）', () => {
+  it('CLI 条目与元数据键一一对应（状态/帮助端点路径存在于后端路由清单）', () => {
+    const routeSet = new Set(BACKEND_CLI_ROUTES.map((r) => `${r.method} ${r.path}`));
     for (const e of CLI_ENTRIES) {
       expect(CLI_META[e.protocol]).toBeDefined();
-      expect(e.statusPath).toMatch(/^\/api\/.+\/status$/);
-      expect(e.helpPath).toMatch(/^\/api\/.+\/help$/);
+      expect(routeSet.has(`GET ${e.statusPath}`)).toBe(true);
+      expect(routeSet.has(`GET ${e.helpPath}`)).toBe(true);
     }
   });
 

@@ -8,6 +8,10 @@ import { apiFetch, apiPost } from '@/api/client';
 import { showToast } from '@/stores/toast';
 import { CLI_ENTRIES, type CliStatusMap } from './settings-meta';
 import type { CliModalData } from './settings/CliModal';
+import type {
+  CliStatusResponse, CliHelpResponse, JimengCreditResponse,
+  JimengLoginStartResponse, JimengLoginStatusResponse, JimengLogoutResponse,
+} from '@/types/api.generated';
 
 export function useCliOps() {
   const [cliStatus, setCliStatus] = createSignal<CliStatusMap>({});
@@ -15,12 +19,14 @@ export function useCliOps() {
   const [cliModal, setCliModal] = createSignal<CliModalData | null>(null);
   let loginTimer: ReturnType<typeof setInterval> | undefined;
 
-  /** 页面加载时并发探测各 CLI 安装状态 */
+  /** 页面加载时并发探测各 CLI 安装状态
+   *（jimeng/status 实返 JimengStatusResponse，为 CliStatusResponse 字段超集，
+   * 此处只消费 installed/message 交集，统一按 CliStatusResponse 标注） */
   async function loadCliStatuses() {
     const statuses: CliStatusMap = {};
     await Promise.all(CLI_ENTRIES.map(async (c) => {
       try {
-        const s = await apiFetch<{ installed?: boolean; message?: string }>(c.statusPath);
+        const s = await apiFetch<CliStatusResponse>(c.statusPath);
         statuses[c.key] = { installed: !!s.installed, message: s.message || '' };
       } catch {
         statuses[c.key] = { installed: false, message: '检测失败' };
@@ -31,7 +37,7 @@ export function useCliOps() {
 
   async function refreshCliStatus(key: string, statusPath: string): Promise<boolean> {
     try {
-      const s = await apiFetch<{ installed?: boolean; message?: string }>(statusPath);
+      const s = await apiFetch<CliStatusResponse>(statusPath);
       setCliStatus((prev) => ({ ...prev, [key]: { installed: !!s.installed, message: s.message || '' } }));
       return !!s.installed;
     } catch {
@@ -41,7 +47,7 @@ export function useCliOps() {
 
   async function cliHelp(title: string, helpPath: string) {
     try {
-      const r = await apiPost<{ ok?: boolean; output?: string }>(helpPath, { command: '' });
+      const r = await apiFetch<CliHelpResponse>(helpPath);
       setCliModal({ title: `${title} · 帮助`, text: r.output || '(无输出)' });
     } catch (e) {
       showToast(`帮助获取失败：${(e as Error).message}`, 'error');
@@ -50,7 +56,7 @@ export function useCliOps() {
 
   async function jimengCredit() {
     try {
-      const r = await apiFetch<{ ok: boolean; text?: string; message?: string }>('/api/jimeng/credit');
+      const r = await apiFetch<JimengCreditResponse>('/api/jimeng/credit');
       if (r.ok) setCliModal({ title: '即梦账户积分', text: r.text || '(无输出)' });
       else showToast(r.message || '查询失败', 'error');
     } catch (e) {
@@ -60,7 +66,7 @@ export function useCliOps() {
 
   async function jimengLogout() {
     try {
-      const r = await apiPost<{ ok: boolean; message: string }>('/api/jimeng/logout', {});
+      const r = await apiPost<JimengLogoutResponse>('/api/jimeng/logout', {});
       showToast(r.message, r.ok ? 'success' : 'error');
       await refreshCliStatus('jimeng', '/api/jimeng/status');
     } catch (e) {
@@ -70,7 +76,7 @@ export function useCliOps() {
 
   async function jimengLogin() {
     try {
-      const r = await apiPost<{ ok: boolean; message: string }>('/api/jimeng/login/start', {});
+      const r = await apiPost<JimengLoginStartResponse>('/api/jimeng/login/start', {});
       if (!r.ok) {
         showToast(r.message, 'error');
         return;
@@ -79,7 +85,7 @@ export function useCliOps() {
       if (loginTimer) clearInterval(loginTimer);
       loginTimer = setInterval(async () => {
         try {
-          const s = await apiFetch<{ running: boolean; text: string; qr_url?: string }>('/api/jimeng/login/status');
+          const s = await apiFetch<JimengLoginStatusResponse>('/api/jimeng/login/status');
           setCliModal({
             title: '即梦扫码登录',
             text: s.text || '等待输出…（按终端提示扫码）',

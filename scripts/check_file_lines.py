@@ -46,7 +46,6 @@ FRONTEND_WHITELIST = {
     # stores/chat.ts 已拆分为 chat/ 域组合出口（25 行：任务 #12 批次2 清偿：条目删除）
     "src/web/lib/locale.ts": "i18n 字典集中管理（词条自然增长）",
     "src/web/lib/rich-input.ts": "富文本编辑器 DOM 操作集中（拆分另行立项）",
-    "src/web/stores/studio/storyboard.ts": "故事板域集中本地编辑/同步/持久化属合理",
     "src/web/types/api.generated.ts": "gen_api_types.py 生成物，随后端 schema 自然增长",
     "src/web/types/index.ts": "前后端契约类型集中单文件便于对照",
 }
@@ -56,7 +55,8 @@ FRONTEND_WHITELIST = {
 # 13 件，与白名单 13 条一致。只降不升；上调须书面裁决并同批修改本常量；
 # 任务 #18 use-sse.ts 连接状态机抽至 lib/sse-connection + sse-events：7→6；
 # 任务 #12 批次2 stores/chat.ts 拆分为 chat/ 域组合出口（存量条目陈旧销账）：6→5
-FRONTEND_OVER_BASELINE = 5
+# 任务 #14 storyboard.ts 三分拆分清偿（board-sync/board-edit/board-persist）：5→4
+FRONTEND_OVER_BASELINE = 4
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"

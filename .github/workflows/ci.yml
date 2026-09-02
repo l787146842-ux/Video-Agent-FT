@@ -113,6 +113,8 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+      - name: CSS size ratchet gate
+        run: node scripts/check_css_size.mjs
       - name: Verify build output
         run: |
           test -f static/dist/index.html || (echo "Build output missing!" && exit 1)

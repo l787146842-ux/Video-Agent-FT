@@ -4,7 +4,7 @@
 段落顺序：稳定内容在前，选中 Skill 块放在最末尾（近生成端，遵循度最高）。
 批4/ADR-0007（Skill 是指令性制作手册）：选中 Skill 正文经渐进披露预算化注入（头部按章节边界切齐，
 其余经 read_skill 续读）；官方 Skill 干净注入，仅外部来源附来源标记。压制性包壳已退役（业界不给
-skill 内容贴符咒，安全靠机械装置：动作单轨/确认闸/platform 闸不可关）。
+skill 内容贴符咒，安全靠机械装置：动作单轨/确认闸/platform 安全底线不可关，宪法 §2.1）。
 逐轮变化的状态上下文（状态 JSON/工具边界说明/故事板客观进度）不占
 system 段，经 build_state_tail_message 以 history 尾部消息（user 通道）
 每步注入——system 段（含 Skill 块）成为跨步稳定前缀（供应商 KV-cache 友好）。

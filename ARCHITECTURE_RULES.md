@@ -76,7 +76,7 @@
 ### 2.1 策略层模型（闸机仅 platform 层）
 | 层 | 内容 | 可配置性 |
 |---|---|---|
-| 平台层 `platform.*` | 生成确认闸、阶段硬边界（写文档/建结构强制暂停）、字数地板（镜头/元素最短字数）、提示词书写闸（字数/语言/字段）、工具 risk 分级 | **硬编码，manifest 无权关闭**；仅可经用户一次性申诉逐条放行 |
+| 平台层 `platform.*` | 生成确认闸、阶段硬边界（写文档/建结构强制暂停）、字数地板（镜头/元素最短字数）、提示词书写闸（字数/语言/字段）、工具 risk 分级 | **manifest 无权关闭**；安全底线（tool_risk、gen_confirm / costly 确认）任何模式均强制生效；质量闸（prompt_write、structure）严格度可经 `prompt_gate_mode`（strict/warn/off）调节，属质量档位而非安全开关；仅可经用户一次性申诉逐条放行 |
 
 ### 2.2 manifest 只能加强或持平（强制不变量；Skill = 指令性制作手册，平台硬边界不可被覆盖，ADR-0007）
 - 外部 Skill 文档来自成熟平台，其配置**不可信**；系统必须坚守自身安全底线
@@ -285,12 +285,3 @@ tests/fixtures/             ← 技能夹具等快照（gate_corpus/skill_pause_
 > 类别 Key 字面量（check_category_keys，CAT_* 单一事实源）、已删编排符号防复活（check_legacy_orchestration）、
 > 前后端契约（gen_api_types --check + api-contract 桥接）、
 > 四件套 pytest/vitest/tsc/eslint。
-
----
-## 十三、指令治理层（治理条款收纳章）
-
-> 原第十三章（13.1-13.14）曾迁出为 docs/GOVERNANCE.md，已随批 7 治理瘦身退役删除，
-> 原卷见 git tag `governance-archive-20260901`。
-> 机器必需的冻结基线表已收入本宪法 §2.3（ref_integrity 闸机械钉死）；
-> 其余活条款的最小必需集（P1-P3/决策树/G1-G4/体量预算/退役条件声明等）
-> 精简并入 `AGENTS.md` §八「治理条款摘要」；纯考古/对标内容随归档弃置。

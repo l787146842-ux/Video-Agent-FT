@@ -15,11 +15,65 @@ from pathlib import Path
 
 from fastapi import APIRouter
 from loguru import logger
+from pydantic import BaseModel
 
 from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.web.error_payload import LEGACY_VALIDATION_ERROR
 
 router = APIRouter()
+
+
+# ---------- 响应模型（契约 phase1） ----------
+
+class CliStatusResponse(BaseModel):
+    """通用 CLI 安装状态响应（gemini-cli / codex）"""
+    installed: bool
+    version: str
+    path: str
+    message: str
+
+
+class JimengStatusResponse(BaseModel):
+    """即梦 CLI 状态响应（含登录态）"""
+    installed: bool
+    logged_in: bool
+    version: str
+    path: str
+    raw: str = ""
+    message: str
+
+
+class CliHelpResponse(BaseModel):
+    """通用 CLI 帮助输出响应"""
+    output: str
+    ok: bool
+
+
+class JimengCreditResponse(BaseModel):
+    """即梦账户积分查询响应"""
+    ok: bool
+    text: str = ""
+    message: str
+
+
+class JimengLoginStartResponse(BaseModel):
+    """即梦扫码登录启动响应"""
+    ok: bool
+    message: str
+    running: bool = False
+
+
+class JimengLoginStatusResponse(BaseModel):
+    """即梦登录输出轮询响应"""
+    running: bool
+    text: str
+    qr_url: str
+
+
+class JimengLogoutResponse(BaseModel):
+    """即梦登出响应"""
+    ok: bool
+    message: str
 
 # help 端点的 command 参数只允许简单的子命令名，防止把任意参数透传给本机 CLI
 _SAFE_SUBCOMMAND_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{0,30}$")
@@ -82,7 +136,7 @@ def _run_version(exe_path: str, args: list[str] | None = None) -> str:
 
 
 # ---------- Gemini CLI (agy) ----------
-@router.get("/gemini-cli/status")
+@router.get("/gemini-cli/status", response_model=CliStatusResponse)
 async def gemini_cli_status():
     """检测 Antigravity CLI (agy) 是否已安装"""
     exe = _find_exe("agy", r"Microsoft\WinGet\Packages\Google.AntigravityCLI_*\agy.exe")
@@ -98,7 +152,7 @@ async def gemini_cli_status():
     }
 
 
-@router.get("/gemini-cli/help")
+@router.get("/gemini-cli/help", response_model=CliHelpResponse)
 async def gemini_cli_help(command: str = ""):
     """获取 gemini CLI 帮助输出"""
     exe = _find_exe("agy", r"Microsoft\WinGet\Packages\Google.AntigravityCLI_*\agy.exe")
@@ -113,7 +167,7 @@ async def gemini_cli_help(command: str = ""):
 
 
 # ---------- Codex CLI ----------
-@router.get("/codex/status")
+@router.get("/codex/status", response_model=CliStatusResponse)
 async def codex_cli_status():
     """检测 OpenAI Codex CLI 是否已安装"""
     exe = _find_exe("codex", r"Microsoft\WinGet\Packages\OpenAI.Codex_*\codex.exe")
@@ -132,7 +186,7 @@ async def codex_cli_status():
     }
 
 
-@router.get("/codex/help")
+@router.get("/codex/help", response_model=CliHelpResponse)
 async def codex_cli_help(command: str = ""):
     """获取 codex CLI 帮助输出"""
     exe = _find_exe("codex") or _find_exe("codex.cmd")
@@ -147,7 +201,7 @@ async def codex_cli_help(command: str = ""):
 
 
 # ---------- 即梦 CLI (dreamina) ----------
-@router.get("/jimeng/status")
+@router.get("/jimeng/status", response_model=JimengStatusResponse)
 async def jimeng_cli_status():
     """检测即梦 CLI (dreamina) 是否已安装及登录状态"""
     exe = _find_exe("dreamina") or _find_exe("dreamina.cmd")
@@ -170,6 +224,20 @@ async def jimeng_cli_status():
     }
 
 
+@router.get("/jimeng/help", response_model=CliHelpResponse)
+async def jimeng_cli_help(command: str = ""):
+    """获取即梦 CLI (dreamina) 帮助输出"""
+    exe = _jimeng_exe()
+    if not exe:
+        return {"output": "dreamina 未安装", "ok": False}
+
+    args = _help_args(command)
+    output, rc = await asyncio.to_thread(_run_capture, [exe] + args, 15)
+    if rc < 0 and not output:
+        return {"output": "命令执行失败或超时", "ok": False}
+    return {"output": output or "(无输出)", "ok": True}
+
+
 # ---------- 即梦登录会话（扫码登录输出捕获，画布同路径端点） ----------
 _JIMENG_LOGIN_SESSION: dict = {"proc": None, "lines": [], "started_at": 0.0}
 
@@ -189,7 +257,7 @@ def _jimeng_login_reader(proc: subprocess.Popen) -> None:
         logger.debug(f"[CLI] jimeng login 读取失败: {e}")
 
 
-@router.post("/jimeng/login/start")
+@router.post("/jimeng/login/start", response_model=JimengLoginStartResponse)
 async def jimeng_login_start():
     """启动 dreamina login 并捕获输出（前端弹窗展示扫码/链接）"""
     exe = _jimeng_exe()
@@ -211,7 +279,7 @@ async def jimeng_login_start():
     return {"ok": True, "message": "已启动 dreamina login，按输出提示扫码", "running": True}
 
 
-@router.get("/jimeng/login/status")
+@router.get("/jimeng/login/status", response_model=JimengLoginStatusResponse)
 async def jimeng_login_status():
     """返回登录输出文本与运行状态（前端轮询展示二维码/URL）"""
     proc = _JIMENG_LOGIN_SESSION.get("proc")
@@ -224,7 +292,7 @@ async def jimeng_login_status():
     return {"running": running, "text": text, "qr_url": qr_url}
 
 
-@router.post("/jimeng/logout")
+@router.post("/jimeng/logout", response_model=JimengLogoutResponse)
 async def jimeng_logout():
     """登出 dreamina（画布同路径）"""
     exe = _jimeng_exe()
@@ -234,7 +302,7 @@ async def jimeng_logout():
     return {"ok": rc == 0, "message": raw or ("已登出" if rc == 0 else "登出失败")}
 
 
-@router.get("/jimeng/credit")
+@router.get("/jimeng/credit", response_model=JimengCreditResponse)
 async def jimeng_credit():
     """查询即梦账户积分（dreamina user_credit，画布同路径）"""
     exe = _jimeng_exe()
