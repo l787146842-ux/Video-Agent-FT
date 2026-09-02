@@ -277,8 +277,9 @@ tests/fixtures/             ← 技能夹具等快照
 - [ ] 修改前已按 `AGENTS.md` 治理条款摘要的决策树定位归属层；没有在事故现场就近补条款（P1/P2）
 - [ ] 没有在 Skill 文件里改系统层缺口；没有用 prose 教模型配合既有机制（G1/G3）
 
-> 以下事项已由 acceptance 门禁机械强制，不再人工勾选：文件行数红线/棘轮（check_file_lines）、
+> 以下事项已由 acceptance 门禁机械强制，不再人工勾选：
 > 方法内 import 防新增（check_func_imports）、
 > 类别 Key 字面量（check_category_keys，CAT_* 单一事实源）、已删编排符号防复活（check_legacy_orchestration）、
 > 前后端契约（gen_api_types --check + api-contract 桥接）、
 > 四件套 pytest/vitest/tsc/eslint。
+>（文件行数红线 check_file_lines 已随 2026-09-02「治理闸机减负」降为信息工具，不再入 GATES 硬闸；前端 max-lines 维持 eslint warn。）
