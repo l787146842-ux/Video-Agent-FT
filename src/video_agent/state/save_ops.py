@@ -112,7 +112,6 @@ def reload_if_stale(svc: "StateManager") -> bool:
         return False
     svc._raw_state = loaded
     svc._known_version = disk_v
-    svc._state_dirty = True
     svc._context_cache.clear()
     svc._clear_undo_redo()
     svc._ensure_conversations()

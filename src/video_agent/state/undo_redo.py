@@ -13,7 +13,6 @@ class UndoRedoMixin:
 
     依赖宿主类提供：
     - self._raw_state: Dict[str, Any]
-    - self._state_dirty: bool
     - self._context_cache: Dict[str, str]
     - self.save() -> None
     """
@@ -65,7 +64,6 @@ class UndoRedoMixin:
             return False
         self._redo_stack.append(self._state_copy_for_stack())
         self._apply_stack_state(self._undo_stack.pop())
-        self._state_dirty = True
         self._context_cache.clear()
         self.save()
         return True
@@ -76,7 +74,6 @@ class UndoRedoMixin:
             return False
         self._undo_stack.append(self._state_copy_for_stack())
         self._apply_stack_state(self._redo_stack.pop())
-        self._state_dirty = True
         self._context_cache.clear()
         self.save()
         return True

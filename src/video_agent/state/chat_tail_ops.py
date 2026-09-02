@@ -75,7 +75,6 @@ def _resync_from_disk(svc) -> None:
         return
     svc._raw_state = loaded
     svc._known_version = svc._disk_board_version(pid)
-    svc._state_dirty = True
     svc._context_cache.clear()
     svc._clear_undo_redo()
     svc._ensure_conversations()
@@ -104,7 +103,6 @@ def truncate_chat_tail(svc, keep_index: int, new_text: Optional[str] = None,
     if new_text is not None:
         entry["text"] = new_text
         entry.pop("parts", None)
-    svc._state_dirty = True
     svc._context_cache.clear()
     if not svc.save():
         _resync_from_disk(svc)
@@ -126,7 +124,6 @@ def restore_chat_tail(svc, keep_index: int, tail_entries: List[Dict[str, Any]],
     """
     msgs = conversation_ops.target_chat_messages(svc, conversation_id)
     msgs[keep_index:] = tail_entries
-    svc._state_dirty = True
     svc._context_cache.clear()
     if not svc.save():
         logger.warning(
