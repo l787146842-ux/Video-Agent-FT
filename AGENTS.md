@@ -18,7 +18,7 @@
    （tool_risk/gen_confirm/prompt_write）+ 架构闸（layer_imports/contract/
    legacy_orchestration）+ category_keys 防硬编码为核心，保留不动；仪式化门禁
    （脚手架计数棘轮 / 覆盖率镜像基线 / 行数硬闸 / 幽灵闸）已随 2026-09-02
-   「治理闸机减负」裁决退役；闸机增减由用户裁决（脚手架见 `core/scaffold_registry.py`）。
+   「治理闸机减负」裁决退役；闸机增减由用户裁决。
 5. **小批交付、即时提交**：每批独立 commit、独立验收；禁止攒大批
    未提交改动（宪法 §5 血泪条款：开工先备份、禁止裸 restore/checkout）。
 6. **状态写入归 StateManager**；路径归 `utils/paths`；可调参数归
@@ -94,10 +94,10 @@ python scripts/run_eval_pipeline.py    # Skill 管线可解析性评测（frontm
 - 不做 Skill 正文中性化：不检查/不消音 skill 正文任何句式；装外部 skill 视同装软件，安全靠动作单轨/确认闸/platform 安全底线（tool_risk + costly 确认）不可关机械兖底（质量闸严格度另见宪法 §2.1）（2026-08-29 用户裁决，防翻案）。
 - 长期项不排期、不立项：展望方向未经触发条件成立与用户裁决不得动工，历史登记见上述 git tag。
 
-## 七、脚手架退役（活规则摘要；原卷见 git tag `scaffold-deprecation-archive-20260901`）
+## 七、脚手架台账（已根除）
 
-- scaffold 条目登记于 `core/scaffold_registry.py`（数据保留供人读审查）；计数棘轮 `SCAFFOLD_COUNT_BASELINE` 已随 2026-09-02「治理闸机减负」裁决退役，不再逐件机械兜底。
-- 退役由用户裁决逐件下账（删代码 + 注册表删条目），不再走「连续 N 周期零触发自动降级 / audit_gate_triggers」仪式。
+- 2026-09-03「元治理台账根除」裁决：`core/scaffold_registry.py` 与其钉死测试一并删除；
+  脚手架登记 / 折旧 / 退役仪式整体作废，组件取舍回到普通工程判断与回归测试。
 - `scripts/archive` 归档件到期策略唯一家为 `scripts/archive/README.md`（满两季度即删）。
 
 ## 八、治理条款摘要（原宪法第十三章/GOVERNANCE；原卷见 git tag `governance-archive-20260901`）

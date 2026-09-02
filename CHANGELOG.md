@@ -42,6 +42,7 @@
 - **保留边界**：6 核心闸（`tool_risk` / `gen_confirm` / `prompt_write` 运行时安全闸 + `layer_imports` / `contract` / `legacy_orchestration` 架构闸）+ `category_keys` + `ref_integrity` 死指针检查保留——业界均有等价物（权限系统 / approval / 三级风险 / linter 架构约束），且实测有真实拦截。
 - **批次落地**（每批 `acceptance.py --quick` 退出码 0 后独立 commit）：
   - **F1** 耦合台账根除：删 `core/coupling_registry.py` + `tests/unit/test_coupling_registry.py`；宪法 §2 P2 / §十 / §十一 文件地图 / §十二 违规清单四条引用同批删；AGENTS §一.4 同步；代码注释 6 处去指针（stage_probes / planner_triage / gate_registry / chat_service / state/manager / test_shell_payoff）；`docs/未清偿债务清单.md` §三 改为独立人读审查备注。
+  - **F2** 脚手架台账根除：删 `core/scaffold_registry.py` + `tests/unit/test_scaffold_registry.py`；AGENTS §一.4 / §七 条款改写（§七 由「脚手架退役仪式」改为「已根除」留痕 + 归档件到期策略）；原台账 15 条登记符号的可导入冒烟检查不再单列——逐一核验已由各自回归测试覆盖（skill 回退/闸机升温/假停审计/降级遥测/暂停结构/上下文经济等），无覆盖回退。
 - **连带影响**：耦合表 26 行的强制项随之消失，其中 R18 / R22 / R26 / R28 等机械约束本已由各自门禁与回归测试独立覆盖（`test_gen_confirm_gate` / acceptance GATES / `gen_api_types` / `check_layer_imports`），无覆盖回退；`ref_integrity` 闸所检的宪法锚点与文件地图在同批同步更新，未留死指针。
 
 ### 2026-09-02 · 用户审定「治理闸机减负」裁决（做减法，批次 B0-B5+D）
