@@ -1,8 +1,8 @@
 """错误翻译域。
 
 上游错误人话翻译（friendly/raw 分层）+ 流式失败统一出口（持久化错误消息 +
-发 error 事件）。chat_service 原位留承重壳 re-export 保持既有
-引用与测试 patch 目标不变（宪法 §12 登记壳，coupling_registry R13 登记）。
+发 error 事件）。消费方（chat_service 内部调用 _emit_stream_error、tests）直连本模块；
+原 chat_service 尾部 re-export 承重壳已随批次E收敛删除（2026-09-02）。
 """
 import re
 from typing import Tuple

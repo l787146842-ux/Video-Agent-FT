@@ -98,7 +98,7 @@ async def test_chat_stream_raises_on_envelope(monkeypatch):
 # ---------- 人话翻译：排队拒收优先于鉴权分支 ----------
 
 def test_friendly_queue_branch_before_auth():
-    from src.video_agent.web.chat_service import _friendly_stream_error
+    from src.video_agent.web.chat_errors import _friendly_stream_error
 
     friendly, raw = _friendly_stream_error(
         AdapterError(f"LLM 中继拒收通知单（HTTP 403）: {ENVELOPE[:120]}",

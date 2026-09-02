@@ -6,7 +6,7 @@ ErrorPayload 契约单测（任务 #19：错误语义结构化，替代前端正
 - code 命名空间（err.<kind>.<slug>）
 - sse_fields / http_body 形态（SSE 事件与 HTTP 响应共用结构，兼容字段不破坏）
 - legacy error_code 桥接
-- chat_service._emit_stream_error 错误出口携带 code/kind
+- chat_errors._emit_stream_error 错误出口携带 code/kind
 - agent_task_manager replay 同源下发 error_payload
 
 前端镜像：src/web/lib/error-payload.ts + src/web/lib/__tests__/error-payload.test.ts
@@ -148,10 +148,10 @@ class TestPayloadShape:
 
 
 class TestChatServiceErrorExit:
-    """chat_service._emit_stream_error：SSE error 事件携带结构化 code/kind"""
+    """chat_errors._emit_stream_error：SSE error 事件携带结构化 code/kind"""
 
     def test_emit_stream_error_carries_code_kind(self):
-        from src.video_agent.web.chat_service import _emit_stream_error
+        from src.video_agent.web.chat_errors import _emit_stream_error
 
         events = []
 
@@ -172,7 +172,7 @@ class TestChatServiceErrorExit:
         assert ev["message"] == ev["detail"]
 
     def test_emit_stream_error_quota_marker(self):
-        from src.video_agent.web.chat_service import _emit_stream_error
+        from src.video_agent.web.chat_errors import _emit_stream_error
 
         events = []
 

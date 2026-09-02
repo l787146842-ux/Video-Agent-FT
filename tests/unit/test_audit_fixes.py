@@ -20,7 +20,7 @@ from src.video_agent.core.fc_tool_runner import (
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.token_budget import truncate_messages
 from src.video_agent.state.manager import StateManager
-from src.video_agent.web.chat_service import _acquire_request_slot, _release_request_slot
+from src.video_agent.web.chat_opening import _acquire_request_slot, _release_request_slot
 from src.video_agent.web.routes.agent import ChatResponse
 
 

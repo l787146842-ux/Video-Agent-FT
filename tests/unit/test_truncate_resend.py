@@ -356,7 +356,7 @@ def test_add_chat_message_suggested_actions_sanitized(svc):
 
 async def test_stream_error_persists_retry_suggestion(svc, monkeypatch):
     """streamError 收敛路径：错误消息随「继续刚才的任务」（kind=retry）落盘。"""
-    import src.video_agent.web.chat_service as cs
+    import src.video_agent.web.chat_errors as chat_errors
     from src.video_agent.exceptions import GenerationError
 
     svc.add_chat_message("user", "用户消息")
@@ -365,7 +365,7 @@ async def test_stream_error_persists_retry_suggestion(svc, monkeypatch):
     async def emit(ev):
         events.append(ev)
 
-    await cs._emit_stream_error(
+    await chat_errors._emit_stream_error(
         svc, SimpleNamespace(model="model-x"), GenerationError("boom"), emit, True,
     )
     err_msg = svc.get_chat_messages()[-1]
@@ -379,13 +379,13 @@ async def test_stream_error_persists_retry_suggestion(svc, monkeypatch):
 
 async def test_stream_error_without_user_message_no_suggestion(svc):
     """与前端挂载条件同语义：无用户消息时不给继续建议。"""
-    import src.video_agent.web.chat_service as cs
+    import src.video_agent.web.chat_errors as chat_errors
     from src.video_agent.exceptions import GenerationError
 
     async def emit(ev):
         pass
 
-    await cs._emit_stream_error(
+    await chat_errors._emit_stream_error(
         svc, SimpleNamespace(model=""), GenerationError("boom"), emit, True,
     )
     assert "suggestedActions" not in svc.get_chat_messages()[-1]

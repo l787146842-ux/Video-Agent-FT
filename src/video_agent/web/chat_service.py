@@ -10,9 +10,9 @@ Agent Chat Service — 聊天业务编排。
 - 多模态内容构建 → multimodal_builder.py
 routes/agent.py 仅保留路由定义和请求/响应模型。
 
-错误翻译域位于 web/chat_errors.py；
-本文件尾部留承重壳 re-export（coupling_registry R13 登记），
-既有引用与测试 patch 目标不变，错误语义零变更。
+错误翻译域位于 web/chat_errors.py；chat_service 仅内部调用 _emit_stream_error
+（消费方直连实现体，原尾部 _friendly_stream_error re-export 壳已随批次E收敛，
+coupling_registry R13 对应条目同批删除；错误语义零变更）。
 """
 from __future__ import annotations
 
@@ -641,8 +641,9 @@ async def _real_stream(svc, executor, body, user_text, llm_user_text, llm_user_c
     await _stream_finalize(ctx)
 
 
-# 错误翻译域实现体在 chat_errors.py：_emit_stream_error /
-# _friendly_stream_error 经尾部 re-export 保持既有引用不变
+# 错误翻译域实现体在 chat_errors.py：chat_service 仅内部调用 _emit_stream_error
+#（_stream_prepare/_stream_dispatch 失败出口）；_friendly_stream_error 纯 re-export
+# 壳已随批次E收敛删除，消费方直连 chat_errors.py
 
 
 async def non_stream_worker(body: ChatRequest) -> Dict[str, Any]:
@@ -881,11 +882,8 @@ from src.video_agent.web.chat_consume import (
     _maybe_compact_history,
     consume_pause_response,
 )
-# 错误翻译域承重壳（实现体 chat_errors.py）：消费方为
-# _real_stream 内部调用与 tests（test_error_payload/test_relay_error_envelope/
-# test_truncate_resend 经 chat_service.* 导入），迁移需全量改引用；
-# 公开错误出口门面，测试钉死 chat_service 命名空间，长期承重
+# 错误翻译域（实现体 chat_errors.py）：chat_service 内部调用 _emit_stream_error
+#（失败出口，非 re-export 壳）；外部消费方（tests）直连 chat_errors.py。
 from src.video_agent.web.chat_errors import (
     _emit_stream_error,
-    _friendly_stream_error,
 )

@@ -141,8 +141,8 @@ COUPLING_ROWS: List[CouplingRow] = [
         _sym(
             # （prompt_gates 尾部承重壳 gates_spec/gates_script 家族已随用户裁决
             # 2026-08-31 退役删除，D-08 清偿：两实现体模块同批删除）
-            # chat_service 尾部承重壳
-            "src.video_agent.web.chat_service:_acquire_request_slot",
+            # （批次E：chat_service _acquire_request_slot re-export 壳已收敛，
+            # 消费方 test_audit_fixes 直连 chat_opening；chat_service 内部仍用）
             # 承重壳
             "src.video_agent.core.fc_tool_runner:format_tool_results",
             # 三段拆分承重壳：闸机方法壳（实现体 fc_gates）
@@ -163,11 +163,9 @@ COUPLING_ROWS: List[CouplingRow] = [
             # GateRuleMeta/normalize_rule_id）已收敛，消费方 guard_pipeline/
             # planner_gate_session/routes/agent/scaffold_registry(I06) 全部直连
             # core/gate_registry.py）
-            # chat_service.py 错误翻译域拆分承重壳：流式错误
-            # 出口 + 人话翻译（实现体 web/chat_errors.py）；tests 经
-            # chat_service.* 导入钉死，迁移需全量改引用
-            "src.video_agent.web.chat_service:_emit_stream_error",
-            "src.video_agent.web.chat_service:_friendly_stream_error",
+            # （批次E：chat_service 错误翻译域壳 _emit_stream_error/_friendly_stream_error
+            # 已收敛，消费方 test_error_payload/test_relay_error_envelope/test_truncate_resend
+            # 直连 web/chat_errors.py；chat_service 内部仍调用 _emit_stream_error）
         ),
     ),
     CouplingRow(
