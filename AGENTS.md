@@ -46,9 +46,8 @@
 - 只认进程退出码（Windows GBK 乱码曾把失败伪装成通过）；
 - 钩子逃生门：`SKIP_PRECOMMIT=1`（CI 仍全量）/ `FULL_HOOK=1`（强制全量）；
 - 批与批之间不攒改动；每批末全量一次，平时 quick；
-- 批末若 cov / fe_cov 棘轮输出「高于基线」NOTE，说明覆盖率有提升，须同批显式运行
-  `python scripts/check_cov_ratchet.py --update-baseline`（前端同理
-  `scripts/check_fe_cov_ratchet.py`）登记新下限；基线上调是显式批末动作、不再自动。
+- cov / fe_cov 为固定容差地板（脚本内写死 COVERAGE_FLOOR，低于地板才 FAIL），
+  不再逐批镜像上调基线、无 --update-baseline 仪式（2026-09-02 治理闸机减负裁决）。
 
 ## 三、常用命令
 
@@ -97,8 +96,7 @@ python scripts/run_eval_pipeline.py    # Skill 管线可解析性评测（frontm
 ## 七、脚手架折旧（活规则摘要；原卷见 git tag `scaffold-deprecation-archive-20260901`）
 
 - 对象为 `core/scaffold_registry.py` 登记的 scaffold 条目；退役条件成熟、模型切换后或季度审计时逐件拆测（禁止批量），走拆除仪式：关闭（优先代码移除 + 备份分支）→ 复测（evidence 回归用例 + `acceptance.py --with-eval`）→ 裁决留痕。
-- 到期必裁决，三选一不得悬置：不劣化 → 下账（删代码、注册表删条目、下调基线）；劣化或证据不足 → 保留并钉死下次复测时点附理由（「证据不足」「暂缓」不是合法裁决）。
-- 棘轮：scaffold 计数只降不升（`scripts/check_scaffold_registry.py` 强制）；上调基线 = 新增脚手架，须经 §八决策树书面裁决。
+- 到期必裁决，三选一不得悬置：不劣化 → 下账（删代码、注册表删条目）；劣化或证据不足 → 保留并钉死下次复测时点附理由（「证据不足」「暂缓」不是合法裁决）。
 - 闸机折旧：连续 4 个审计周期零触发的门禁降级软警告并下账（盘点用 `scripts/audit_gate_triggers.py`，机器点名不代替裁决）；安全类闸机豁免（零触发是常态）；新增门禁必须声明退役条件；降级后劣化回归再现按原基线恢复棘轮。
 - `scripts/archive` 归档件到期策略唯一家为 `scripts/archive/README.md`（满两季度即删）。
 

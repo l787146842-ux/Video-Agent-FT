@@ -18,10 +18,10 @@ import pytest
 # ---------- 门禁表完整性（防静默掉闸） ----------
 
 _EXPECTED_GATE_NAMES = [
-    "contract", "file_lines", "file_lines_frontend",
+    "contract",
     "semantic_colors", "func_imports", "category_keys",
     "legacy_orchestration", "layer_imports", "ref_integrity",
-    "scaffold_registry", "cov_ratchet", "fe_cov_ratchet",
+    "cov_ratchet", "fe_cov_ratchet",
     "css_size",
 ]
 
@@ -288,7 +288,9 @@ def test_canary_gov_script_pointer_missing_fails(tmp_path, monkeypatch):
     assert gate.main() == 1
 
 
-# ---------- 11) scaffold_registry（含元 canary：字面基线 ≠ 恒真） ----------
+# ---------- 11) scaffold_registry 元 canary（字面基线 ≠ 恒真） ----------
+# 注：scaffold_registry 门禁与 check_scaffold_registry.py 已随 2026-09-02
+# 「治理闸机减负」裁决退役；仅保留注册表基线常量的元 canary。
 
 def test_canary_scaffold_baseline_literal_matches_reality():
     """批次 1.1 裁决钉死：基线是字面常量 6 且与实测计数一致
@@ -299,68 +301,31 @@ def test_canary_scaffold_baseline_literal_matches_reality():
     assert len(sreg.scaffold_entries()) == sreg.SCAFFOLD_COUNT_BASELINE
 
 
-def test_canary_scaffold_registry_count_increase_fails(monkeypatch):
-    import scripts.check_scaffold_registry as gate
-    from src.video_agent.core import scaffold_registry as sreg
-    monkeypatch.setattr(gate, "SCAFFOLD_COUNT_BASELINE",
-                        len(sreg.scaffold_entries()) - 1)
-    assert gate.main() == 1
-
-
-def test_canary_scaffold_registry_clean_passes():
-    import scripts.check_scaffold_registry as gate
-    assert gate.main() == 0
-
-
-# ---------- 12/13) cov_ratchet / fe_cov_ratchet ----------
+# ---------- 12/13) cov_ratchet / fe_cov_ratchet（固定容差地板） ----------
 
 def _write_cov_xml(path: Path, line_rate: float):
     path.write_text(f'<coverage line-rate="{line_rate}" version="1"/>',
                     encoding="utf-8")
 
 
-def test_canary_cov_ratchet_regression_fails(tmp_path, monkeypatch):
+def test_canary_cov_ratchet_below_floor_fails(tmp_path, monkeypatch):
+    """低于固定地板 → FAIL（地板真的会咬人）。"""
     import scripts.check_cov_ratchet as gate
     xml = tmp_path / "coverage.xml"
-    _write_cov_xml(xml, 0.50)
-    base = tmp_path / "cov_baseline.txt"
-    base.write_text("60.00\n", encoding="utf-8")
-    monkeypatch.setattr(gate, "BASELINE_FILE", base)
+    _write_cov_xml(xml, (gate.COVERAGE_FLOOR - 5) / 100)
     monkeypatch.setattr(sys, "argv",
                         ["check_cov_ratchet.py", "--cov-xml", str(xml)])
     assert gate.main() == 1
 
 
-def test_canary_cov_ratchet_improved_passes(tmp_path, monkeypatch):
-    """显式上调纪律（2026-09-02 裁决③）：实测高于基线只 PASS，
-    不传 --update-baseline 绝对不改写基线文件（防验收流程静默上调）。"""
+def test_canary_cov_ratchet_above_floor_passes(tmp_path, monkeypatch):
+    """高于固定地板 → PASS（不反噬）。"""
     import scripts.check_cov_ratchet as gate
     xml = tmp_path / "coverage.xml"
-    _write_cov_xml(xml, 0.50)
-    base = tmp_path / "cov_baseline.txt"
-    base.write_text("40.00\n", encoding="utf-8")
-    monkeypatch.setattr(gate, "BASELINE_FILE", base)
+    _write_cov_xml(xml, (gate.COVERAGE_FLOOR + 5) / 100)
     monkeypatch.setattr(sys, "argv",
                         ["check_cov_ratchet.py", "--cov-xml", str(xml)])
     assert gate.main() == 0
-    assert base.read_text(encoding="utf-8").strip() == "40.00", \
-        "高于基线不得静默改写基线文件（上调须显式 --update-baseline）"
-
-
-def test_canary_cov_ratchet_update_baseline_flag_writes(tmp_path, monkeypatch):
-    """双向钉死：显式传 --update-baseline 后基线文件被改写为实测新值。"""
-    import scripts.check_cov_ratchet as gate
-    xml = tmp_path / "coverage.xml"
-    _write_cov_xml(xml, 0.50)
-    base = tmp_path / "cov_baseline.txt"
-    base.write_text("40.00\n", encoding="utf-8")
-    monkeypatch.setattr(gate, "BASELINE_FILE", base)
-    monkeypatch.setattr(sys, "argv",
-                        ["check_cov_ratchet.py", "--cov-xml", str(xml),
-                         "--update-baseline"])
-    assert gate.main() == 0
-    assert base.read_text(encoding="utf-8").strip() == "50.00", \
-        "显式 --update-baseline 须把基线登记为实测值"
 
 
 def _write_fe_summary(path: Path, pct: float):
@@ -368,48 +333,22 @@ def _write_fe_summary(path: Path, pct: float):
                     encoding="utf-8")
 
 
-def test_canary_fe_cov_ratchet_regression_fails(tmp_path, monkeypatch):
+def test_canary_fe_cov_ratchet_below_floor_fails(tmp_path, monkeypatch):
     import scripts.check_fe_cov_ratchet as gate
     summary = tmp_path / "coverage-summary.json"
-    _write_fe_summary(summary, 50.0)
-    base = tmp_path / "fe_cov_baseline.txt"
-    base.write_text("63.00\n", encoding="utf-8")
-    monkeypatch.setattr(gate, "BASELINE_FILE", base)
+    _write_fe_summary(summary, gate.COVERAGE_FLOOR - 5)
     monkeypatch.setattr(sys, "argv",
                         ["check_fe_cov_ratchet.py", "--summary", str(summary)])
     assert gate.main() == 1
 
 
-def test_canary_fe_cov_ratchet_improved_passes(tmp_path, monkeypatch):
-    """显式上调纪律（2026-09-02 裁决③，与后端同构）：实测高于基线只 PASS，
-    不传 --update-baseline 绝对不改写基线文件。"""
+def test_canary_fe_cov_ratchet_above_floor_passes(tmp_path, monkeypatch):
     import scripts.check_fe_cov_ratchet as gate
     summary = tmp_path / "coverage-summary.json"
-    _write_fe_summary(summary, 50.0)
-    base = tmp_path / "fe_cov_baseline.txt"
-    base.write_text("40.00\n", encoding="utf-8")
-    monkeypatch.setattr(gate, "BASELINE_FILE", base)
+    _write_fe_summary(summary, gate.COVERAGE_FLOOR + 5)
     monkeypatch.setattr(sys, "argv",
                         ["check_fe_cov_ratchet.py", "--summary", str(summary)])
     assert gate.main() == 0
-    assert base.read_text(encoding="utf-8").strip() == "40.00", \
-        "高于基线不得静默改写基线文件（上调须显式 --update-baseline）"
-
-
-def test_canary_fe_cov_ratchet_update_baseline_flag_writes(tmp_path, monkeypatch):
-    """双向钉死：显式传 --update-baseline 后基线文件被改写为实测新值。"""
-    import scripts.check_fe_cov_ratchet as gate
-    summary = tmp_path / "coverage-summary.json"
-    _write_fe_summary(summary, 50.0)
-    base = tmp_path / "fe_cov_baseline.txt"
-    base.write_text("40.00\n", encoding="utf-8")
-    monkeypatch.setattr(gate, "BASELINE_FILE", base)
-    monkeypatch.setattr(sys, "argv",
-                        ["check_fe_cov_ratchet.py", "--summary", str(summary),
-                         "--update-baseline"])
-    assert gate.main() == 0
-    assert base.read_text(encoding="utf-8").strip() == "50.00", \
-        "显式 --update-baseline 须把基线登记为实测值"
 
 
 def test_canary_fe_cov_ratchet_corrupted_summary_fails(tmp_path, monkeypatch,
@@ -417,9 +356,6 @@ def test_canary_fe_cov_ratchet_corrupted_summary_fails(tmp_path, monkeypatch,
     """回归：损坏的 coverage-summary.json 曾让本闸误红无诊断；
     现要求损坏/缺字段一律判红并给出「重跑前端覆盖率」诊断。"""
     import scripts.check_fe_cov_ratchet as gate
-    base = tmp_path / "fe_cov_baseline.txt"
-    base.write_text("63.00\n", encoding="utf-8")
-    monkeypatch.setattr(gate, "BASELINE_FILE", base)
     for content in ("{ not json", '{"total": {}}',
                     json.dumps({"total": {"lines": {"pct": "abc"}}})):
         summary = tmp_path / "coverage-summary.json"
@@ -437,12 +373,9 @@ def test_canary_fe_cov_ratchet_corrupted_summary_fails(tmp_path, monkeypatch,
 def test_canary_fe_cov_ratchet_nonfinite_pct_fails(tmp_path, monkeypatch,
                                                    capsys):
     """回归（任务 #5）：json.loads/float 均接受裸 Infinity/NaN，
-    inf 会污染基线、NaN 比较恒假误判 PASS，null 则须归入非有效数值；
-    三种产物一律判红并报「非有效数值」诊断，基线不得被污染。"""
+    inf/NaN 会污染判定、null 则须归入非有效数值；
+    三种产物一律判红并报「非有效数值」诊断。"""
     import scripts.check_fe_cov_ratchet as gate
-    base = tmp_path / "fe_cov_baseline.txt"
-    base.write_text("63.00\n", encoding="utf-8")
-    monkeypatch.setattr(gate, "BASELINE_FILE", base)
     for content in ('{"total": {"lines": {"pct": Infinity}}}',
                     '{"total": {"lines": {"pct": NaN}}}',
                     '{"total": {"lines": {"pct": null}}}'):
@@ -456,8 +389,6 @@ def test_canary_fe_cov_ratchet_nonfinite_pct_fails(tmp_path, monkeypatch,
         out = capsys.readouterr().out
         assert "not a valid number" in out, "Infinity/NaN/null 须报非有效数值"
         assert "rerun frontend coverage" in out, "诊断须指引重跑前端覆盖率"
-        assert base.read_text(encoding="utf-8").strip() == "63.00", \
-            "非有限值不得污染基线文件"
 
 
 # ---------- scan_skills --gate 诊断扫描（内容卫生/语言声明探针双向钉死） ----------

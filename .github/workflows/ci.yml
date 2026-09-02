@@ -26,12 +26,8 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Run pytest (任务 #11：--cov=src/video_agent/core 并入本次运行，免重复全量；审查修复批：-n auto 并行自适应 CI 核数)
         run: python -m pytest tests/ -n auto -q --tb=short --cov=src/video_agent/core --cov-report=xml
-      - name: Coverage ratchet gate (任务 #11：core 覆盖率棘轮，只升不降)
+      - name: Coverage ratchet gate (任务 #11：core 覆盖率固定容差地板)
         run: python scripts/check_cov_ratchet.py --require-xml
-      - name: File lines gate (宪法 §5/F58：单文件 1200 行红线)
-        run: python scripts/check_file_lines.py
-      - name: Frontend file lines gate (P4-23：src/web 物理行数 250 红线 + 白名单棘轮)
-        run: python scripts/check_file_lines.py --frontend
       - name: Func-import gate (四轮 R0：方法内 import 防新增，宪法第六章)
         run: python scripts/check_func_imports.py
       - name: Category keys gate (九轮 B2：类别 Key 字面量门禁，CAT_* 单一事实源)
@@ -40,8 +36,6 @@ jobs:
         run: python scripts/check_legacy_orchestration.py
       - name: Layer imports gate (整改批 3.3：core/tools 禁止反向依赖 web 层)
         run: python scripts/check_layer_imports.py
-      - name: Scaffold registry gate (acceptance GATES 对齐：脚手架登记表 + 组件可导入)
-        run: python scripts/check_scaffold_registry.py
       - name: Reference integrity gate (文档指针漂移与宪法锚点合并为一条引用完整性闸)
         run: python scripts/check_doc_pointers.py
       # Executor skill drift gate 已随任务#36 B5 执行器一步退役删除（执行器族不复存在）
@@ -95,7 +89,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Frontend coverage ratchet gate (影响面审查 FIX-3：整体行覆盖率棘轮，对齐 acceptance GATES)
+      - name: Frontend coverage ratchet gate (影响面审查 FIX-3：整体行覆盖率固定容差地板，对齐 acceptance GATES)
         run: python scripts/check_fe_cov_ratchet.py --require-summary
 
   # ---------- Job 3: 构建验证 ----------

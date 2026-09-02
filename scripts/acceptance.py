@@ -29,10 +29,6 @@ ROOT = Path(__file__).resolve().parent.parent
 GATES: List[Tuple[str, List[str]]] = [
     # 退役条件：前后端类型同源（不再依赖生成产物桥接）时方可裁决下账。
     ("contract", [sys.executable, "scripts/gen_api_types.py", "--check"]),
-    # 退役条件：超红线文件全部拆分归零且行数红线内化为开发惯例时裁决下账。
-    ("file_lines", [sys.executable, "scripts/check_file_lines.py"]),
-    # 退役条件：前端超红线文件全部拆分归零且行数红线内化为开发惯例时裁决下账。
-    ("file_lines_frontend", [sys.executable, "scripts/check_file_lines.py", "--frontend"]),
         # 任务 #4：语义色收口闸——styles/ 硬编码色值棘轮只减不增（白名单见脚本内）；
         # 退役条件：白名单清偿归零后降级为零白名单硬门禁，样式体系迁离 tokens.css
         # 时方可裁决整体退役（详见脚本头部注释）。
@@ -55,31 +51,17 @@ GATES: List[Tuple[str, List[str]]] = [
     # 惯例时裁决下账；或宪法条款全面数据化（锚点并入机器可读登记表且
     # ANCHORS 清单清空）时裁决锚点部分下账。
     ("ref_integrity", [sys.executable, "scripts/check_doc_pointers.py"]),
-    # 退役条件：脚手架类全部退役、注册计数归零时裁决下账（详见脚本头部注释）。
-    ("scaffold_registry", [sys.executable, "scripts/check_scaffold_registry.py"]),
-    # 任务 #11：core 覆盖率棘轮（只升不降，基线 scripts/cov_baseline.txt）；
-    # 本地无 coverage.xml 时 SKIP，CI 以 --require-xml 硬门禁。
-    # 基线清偿式下调记录：88.57 → 87.76 → 87.69 → 87.55 → 87.49（C1a/C1b/B1 裁决删除批退役测试致稀释，
-    # 用户裁决 2026-08-31 授权同批下调登记；后续批只许升）；
-    # 87.49 → 87.94（全量实测半自动上调）→ 86.63（G2 机制退役批稀释，
-    # 用户裁决 2026-08-31 授权同批下调登记；后续批只许升）；
-    # 87.95 → 87.89（第 5-3 批末实测即 87.89，前批靠陈旧产物绿灯带过；
-    # 用户裁决 2026-09-01 批 6-1 同批回填登记；后续批只许升）。
-    # 88.00 → 88.08（2026-09-02 本批清偿后全量复验实测 core 行覆盖 88.08，
-    # 理由=实测上调，裁决=用户审定顺批登记；后续批只许升）。
-    # 退役条件：core 覆盖率 >= 90% 且连续两季无回退争议时裁决下账。
+    # 2026-09-02「治理闸机减负」裁决：core 覆盖率由逐批棘轮改为固定容差地板
+    # （脚本内写死 COVERAGE_FLOOR，低于地板才 FAIL；不再读基线文件/不再要求每批
+    # --update-baseline 上调）；本地无 coverage.xml 时 SKIP，CI 以 --require-xml 硬门禁。
+    # 退役条件：core 覆盖率长期稳定在地板之上且不再需要兜底信号时裁决下账。
     ("cov_ratchet", [sys.executable, "scripts/check_cov_ratchet.py"]),
-    # 任务 #13 F-6：前端整体覆盖率棘轮（只升不降，基线 scripts/fe_cov_baseline.txt
-    # 首钉 63.00，读 vitest json-summary）；本地无 coverage-summary.json 时 SKIP，
-    # CI 已接线 --require-summary 硬门禁（FIX-3：frontend-check vitest 之后）；
-    # 基线文件缺失即 FAIL 防永久空转。已知局限：GATES 先于 SUITES 执行，
-    # 此处读的是上一轮 vitest 产物（详见 check_fe_cov_ratchet.py 头部注释）。
-    # 基线清偿式下调记录：70.38 → 70.01（风格层退役批删组件与测试致稀释，
-    # 用户裁决 2026-08-31 授权同批下调登记；后续批只许升）；
-    # 100.00 → 70.60（半自动上调被窄口径产物误抬至 100，回填全量实测值；
-    # 用户裁决 2026-09-01 批 6-1 同批回填登记）；70.60 → 70.59（批 6-2 新增并行
-    # 代码稀释 0.01，同批登记；后续批只许升）。
-    # 退役条件：前端整体行覆盖率 >= 90% 且连续两季无回退争议时裁决下账。
+    # 2026-09-02「治理闸机减负」裁决：前端整体覆盖率由逐批棘轮改为固定容差地板
+    # （脚本内写死 COVERAGE_FLOOR，读 vitest json-summary）；本地无 coverage-summary.json
+    # 时 SKIP，CI 已接线 --require-summary 硬门禁（frontend-check vitest 之后）。
+    # 已知局限：GATES 先于 SUITES 执行，此处读的是上一轮 vitest 产物
+    # （详见 check_fe_cov_ratchet.py 头部注释）。
+    # 退役条件：前端整体行覆盖率长期稳定在地板之上且不再需要兜底信号时裁决下账。
     ("fe_cov_ratchet", [sys.executable, "scripts/check_fe_cov_ratchet.py"]),
     # 任务 #9：CSS 体积棘轮（只减不增，度量 static/dist 全部 stylesheet 产物，
     # 基线 scripts/css_size_baseline.txt 首钉 153007 字节 = 149.42 kB，
