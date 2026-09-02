@@ -9,6 +9,7 @@ import json
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from src.video_agent.core.gate_registry import PAUSE_MESSAGE_SECTIONS
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS
 from src.video_agent.utils.prompts import load_prompt_section
 
@@ -40,13 +41,14 @@ def _gate_json(section: str, fallback: Any) -> Any:
 STRUCTURE_INLINE_PROMPT_MAX = 40
 
 # 单一活跃暂停槽位防御断言告警文案（批 B 外置；运维侧可观测告警，
-# 非闸机规则条目，故不登记 GATE_MESSAGE_SECTIONS 覆盖矩阵）
-PAUSE_SLOT_ASSERTION_NOTE = _gate_msg("PAUSE_SLOT_ASSERTION", (
+# 非闸机规则条目，登记于 gate_registry.PAUSE_MESSAGE_SECTIONS 暂停/告警文案矩阵）
+PAUSE_SLOT_ASSERTION_NOTE = _gate_msg(PAUSE_MESSAGE_SECTIONS["pause_slot_assertion"], (
     "单一活跃暂停槽位冲突：已有未消费的暂停卡时再次发行 workflow_pause，"
     "新卡覆盖旧卡解除死锁；防御断言只告警留痕，不作拒因回喂。"
 ))
 
-_STORYBOARD_STRUCTURE_PAUSED = _gate_json("STORYBOARD_STRUCTURE_PAUSED", {
+_STORYBOARD_STRUCTURE_PAUSED = _gate_json(
+    PAUSE_MESSAGE_SECTIONS["storyboard_structure_paused"], {
     "message": (
         "关键元素拆分已建立，请审阅左侧故事板的元素拆分结果（数量/命名/描述）；"
         "确认无误后按当前 Skill 流程推进下一阶段。"
@@ -67,7 +69,8 @@ STORYBOARD_STRUCTURE_OPTIONS = list(_STORYBOARD_STRUCTURE_PAUSED.get("options") 
 # 结构阶段只建骨架、不写详细提示词，确认卡片必须引导用户审阅拆分方案，
 # 而不是声称提示词已写好或直接引导生成（拆完分镜即引导「确认草案，开始生成视频」）；
 # 下一步文案不写死具体阶段（不同 Skill 的下一步不同，以各自流程为准）
-_SHOT_STRUCTURE_PAUSED = _gate_json("SHOT_STRUCTURE_PAUSED", {
+_SHOT_STRUCTURE_PAUSED = _gate_json(
+    PAUSE_MESSAGE_SECTIONS["shot_structure_paused"], {
     "message": (
         "分镜拆解已完成，请在左侧故事板审阅分镜拆分方案（镜头数量/时间轴/镜头语言）；"
         "确认无误后按当前 Skill 流程推进下一阶段。"

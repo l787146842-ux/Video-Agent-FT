@@ -5,7 +5,8 @@ prompt_gates 原位留承重壳 re-export 保持既有引用路径不变
 （宪法 §12 登记壳；登记见 coupling_registry R13）。
 
 承载：GateRuleMeta 定义 + GATE_RULES 注册表数据 + GATE_MESSAGE_SECTIONS
-文案覆盖矩阵 + normalize_rule_id() 归一函数。
+闸机文案覆盖矩阵 + PAUSE_MESSAGE_SECTIONS 暂停/告警文案覆盖矩阵
++ normalize_rule_id() 归一函数。
 判定逻辑（各族校验/audit_verdicts 等）仍在 prompt_gates.py。
 """
 from dataclasses import dataclass
@@ -66,6 +67,19 @@ GATE_MESSAGE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     "platform.element_min_chars": (),
     "platform.gen_confirm": ("GENERATION_CONFIRM", "GENERATION_CONFIRM_BLOCKED"),
     "platform.tool_risk": ("TOOL_RISK_BLOCKED",),
+}
+
+# 暂停/告警文案分节登记（非闸机规则条目，不入 GATE_RULES/GATE_MESSAGE_SECTIONS）：
+# 结构暂停卡与暂停槽防御断言告警，同以 prompts/gates/messages.md 为单一事实源，
+# 由 gates_cards.py 经 _gate_json/_gate_msg 按本表逻辑键加载（消费方引用本表，
+# 分节键不再散落于消费点字面量）。逻辑键 → messages.md 分节 KEY。
+# 覆盖完整性由 tests/unit/test_gate_messages_coverage.py 钉死：与
+# GATE_MESSAGE_SECTIONS 合并后覆盖 messages.md 全部 ## KEY 分节（消除孤儿），
+# 且每个逻辑键必须被 gates_cards.py 引用（登记即有消费者）。
+PAUSE_MESSAGE_SECTIONS: Dict[str, str] = {
+    "storyboard_structure_paused": "STORYBOARD_STRUCTURE_PAUSED",
+    "shot_structure_paused": "SHOT_STRUCTURE_PAUSED",
+    "pause_slot_assertion": "PAUSE_SLOT_ASSERTION",
 }
 
 def normalize_rule_id(rule_id: str) -> str:
