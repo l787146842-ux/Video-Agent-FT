@@ -11,8 +11,8 @@ StateManager — Rule3: 唯一状态写入点。支持多项目。
 
 实现拆分：对话域/落盘闸/快照组装实现体分别切出至
 conversation_ops / save_ops / context_builder；本文件保留 StateManager 类本体
-与承重壳委托（壳清单登记于 coupling_registry R13），公开 API 零变化。
-方法壳为 StateManager 公开 API 门面，长期承重；
+与门面委托方法，公开 API 零变化。
+门面方法为 StateManager 公开 API，长期承重（Rule3 唯一写入点）；
 测试 monkeypatch 目标应为壳方法（调用方经实例方法查找）。
 """
 import asyncio

@@ -11,8 +11,8 @@ Agent Chat Service — 聊天业务编排。
 routes/agent.py 仅保留路由定义和请求/响应模型。
 
 错误翻译域位于 web/chat_errors.py；chat_service 仅内部调用 _emit_stream_error
-（消费方直连实现体，原尾部 _friendly_stream_error re-export 壳已随批次E收敛，
-coupling_registry R13 对应条目同批删除；错误语义零变更）。
+（消费方直连实现体，原尾部 _friendly_stream_error re-export 壳已随批次 E 收敛；
+错误语义零变更）。
 """
 from __future__ import annotations
 

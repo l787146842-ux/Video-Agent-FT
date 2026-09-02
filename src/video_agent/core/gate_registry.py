@@ -75,7 +75,7 @@ PAUSE_MESSAGE_SECTIONS: Dict[str, str] = {
 }
 
 def normalize_rule_id(rule_id: str) -> str:
-    """rule_id 归一入口（承重符号，coupling_registry R13 钉死）。
+    """rule_id 归一入口（承重符号）。
 
     别名表已随 skill/session 层闸机退役清空，现为恒等返回；
     消费面（guard_pipeline / override 留痕）保留统一入口，

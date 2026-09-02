@@ -13,7 +13,7 @@
 >
 > **治理总纲：按业界最高标准执行，禁止走捷径。** 具体含义：
 > 1. **策略即数据（Policy-as-Data）**：所有闸机/安全规则以注册表数据表达，带稳定 `rule_id`、层级归属、外置文案；禁止散落硬编码。
-> 2. **单一事实源（Single Source of Truth）**：状态写入归 StateManager、循环归 agent_loop、入口归 Planner、提示词归 `prompts/`、前端类型归 `gen_api_types` 生成物、耦合行归 `core/coupling_registry.py`。
+> 2. **单一事实源（Single Source of Truth）**：状态写入归 StateManager、循环归 agent_loop、入口归 Planner、提示词归 `prompts/`、前端类型归 `gen_api_types` 生成物。
 > 3. **评测驱动（Evaluation-Driven）**：平台固定地板行为由客观回归测试钉死；提示词快照测试不作为强制项。
 > 4. **deny-overrides 分层合并**：平台硬边界永远优先，Skill 配置只能加强或持平，不能削弱。
 > 5. **小批交付、即时提交**：每批独立 commit、独立验收；禁止攒大批未提交改动（血泪条款见 §5）。
@@ -205,7 +205,6 @@
 
 - 新增 Tool→单测；新增路由→集成测试（TestClient）；新增 Adapter→mock 测试；改核心（Planner/StateManager/agent_loop/闸机）→回归测试
 - 闸机改动→平台固定地板回归测试；提示词迁移→外置单一事实源断言；动作通道改动→FC 单轨一致性测试；新增 SSE 事件→sse_protocol 注册表登记
-- 耦合行变更→同批更新 `core/coupling_registry.py`（遍历测试钉死，漏改即红）
 
 ```bash
 python scripts/acceptance.py             # 一键验收：测试套件+门禁（清单以脚本 GATES/SUITES 表为准），只认 exit code
@@ -232,7 +231,6 @@ src/video_agent/
 │   ├── gate_registry.py    ← 闸机规则注册表唯一家（GATE_RULES / normalize_rule_id，§2.3）
 │   ├── guard_pipeline.py   ← 闸机管线（2.0，动作判定唯一入口）
 │   ├── prompt_builder.py   ← 上下文组装；token_budget.py ← 窗口/截断
-│   ├── coupling_registry.py ← 耦合表机器可读化（test_coupling_registry 钉死）
 │   ├── action_executor.py  ← 状态视图载体（动作通道唯一 = FC 工具，文本轨动作分派
 │                        已退役；防复活见 check_legacy_orchestration）
 │   └── tracer.py           ← 审计链路
@@ -270,7 +268,6 @@ tests/fixtures/             ← 技能夹具等快照
 - [ ] 没有裸 restore/checkout -- .；本批已 commit；未跟踪文件已核对（§5）
 - [ ] 拆分模块新增顶层符号已同步登记 re-export 壳清单，测试 patch 目标为调用方命名空间
 - [ ] 测试不得写生产 data/skills（conftest session 级镜像目录保障）
-- [ ] 耦合行变更已同批更新 coupling_registry.py（十、3 条）
 - [ ] runtime 无自主行动（不机械执行执行器、不机械发卡）；暂停卡唯一发行主体 = 模型 workflow_pause，单一活跃暂停槽位（重复暂停 = 旧卡作废留痕 + 发新卡 + 继续等确认，不拒收；作废 = 失活跃槽位登记、不再作为待确认项被消费，展示层作废标记未实现见 `docs/未清偿债务清单.md`）（Rule2）
 - [ ] 一轮一 TurnResult 提交（turn_id 归组），无空文本 docCard 消息、无合成 actionLog（Rule2）
 - [ ] 控制流范式表述唯一归宪法 Rule2（P1）

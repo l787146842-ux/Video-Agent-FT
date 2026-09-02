@@ -2,8 +2,8 @@
 
 模型永远唯一行动主体。2026-08-31 用户裁决：原料闸/规格闸机械兜底卡
 退役（Flova 对齐：流程顺序与原料收集归 skill 散文 + 模型自觉），
-本模块恒交接模型循环；保留委托壳（planner 委托与 coupling_registry
-R27 钉死）。进出结果全记 tracer.record_control_flow + [ControlFlow] 日志。
+本模块恒交接模型循环；保留委托壳（planner 委托）。
+进出结果全记 tracer.record_control_flow + [ControlFlow] 日志。
 """
 from typing import Any, Callable, Optional
 

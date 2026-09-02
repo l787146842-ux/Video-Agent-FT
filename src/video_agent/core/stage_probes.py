@@ -283,8 +283,7 @@ async def gate_precheck(
     """闸预检壳（2026-08-31 用户裁决退役原料闸/规格闸机械兜底卡）。
 
     恒返回 None = 交接模型循环；流程顺序与原料收集归 skill 散文 +
-    模型自觉（Flova 对齐）。保留委托壳：planner_triage/planner 委托
-    与 coupling_registry R27 钉死。
+    模型自觉（Flova 对齐）。保留委托壳：planner_triage/planner 委托。
     """
     return None
 

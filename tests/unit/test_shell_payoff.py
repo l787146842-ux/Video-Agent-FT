@@ -49,7 +49,7 @@ def test_s4_planner_suggested_retry_present():
 
 def test_s4_registered_shells_kept():
     # skill_runtime/executors/__init__.py 承重壳保护已随任务#36 B5 执行器
-    # 一步退役删除（模块物理删除，见 coupling_registry R13 留痕）
+    # 一步退役删除（模块物理删除）
     assert not (SRC / "skill_runtime/executors/__init__.py").exists()
     # gates_spec/gates_script 尾部承重壳已随用户裁决 2026-08-31 退役删除（D-08 清偿）
     assert not (SRC / "core/gates_spec.py").exists()

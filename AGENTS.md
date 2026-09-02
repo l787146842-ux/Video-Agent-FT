@@ -18,8 +18,7 @@
    （tool_risk/gen_confirm/prompt_write）+ 架构闸（layer_imports/contract/
    legacy_orchestration）+ category_keys 防硬编码为核心，保留不动；仪式化门禁
    （脚手架计数棘轮 / 覆盖率镜像基线 / 行数硬闸 / 幽灵闸）已随 2026-09-02
-   「治理闸机减负」裁决退役；闸机增减由用户裁决（脚手架见 `core/scaffold_registry.py`，
-   耦合行见 `core/coupling_registry.py`，同批更新漏改即红）。
+   「治理闸机减负」裁决退役；闸机增减由用户裁决（脚手架见 `core/scaffold_registry.py`）。
 5. **小批交付、即时提交**：每批独立 commit、独立验收；禁止攒大批
    未提交改动（宪法 §5 血泪条款：开工先备份、禁止裸 restore/checkout）。
 6. **状态写入归 StateManager**；路径归 `utils/paths`；可调参数归
