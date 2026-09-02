@@ -38,12 +38,6 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
                      "提示词写入统一判定入口（结构闸组合签发点：字数地板+语言闸，固定不可调）",
                      "validate_prompt_write 钉死回归（test_prompt_gates）；"
                      "C1a 裁决收归平台层（原 skill.prompt_structure 退役）"),
-        GateRuleMeta("platform.shot_min_chars", LAYER_PLATFORM,
-                     "分镜提示词最短字数地板（防敷衍，固定不可调）",
-                     "test_prompt_gates 结构闸校准钉死"),
-        GateRuleMeta("platform.element_min_chars", LAYER_PLATFORM,
-                     "关键元素提示词最短字数地板（防敷衍，固定不可调）",
-                     "test_prompt_gates 结构闸校准钉死"),
         GateRuleMeta("platform.gen_confirm", LAYER_PLATFORM,
                      "生成确认闸：未经用户确认的 Prompt Draft 不触发生成",
                      "test_gen_confirm_gate 钉死；2026-08-21 门禁触发盘点"
@@ -63,8 +57,6 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
 # 键集与 GATE_RULES 一致，且非空分节必须存在于 messages.md。
 GATE_MESSAGE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     "platform.prompt_write": (),
-    "platform.shot_min_chars": (),
-    "platform.element_min_chars": (),
     "platform.gen_confirm": ("GENERATION_CONFIRM", "GENERATION_CONFIRM_BLOCKED"),
     "platform.tool_risk": ("TOOL_RISK_BLOCKED",),
 }
