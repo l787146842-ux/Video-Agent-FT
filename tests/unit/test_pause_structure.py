@@ -140,8 +140,8 @@ class TestConsumePauseResponse:
 
 class TestPauseSlotMutex:
     """单一活跃暂停槽位防御断言（问即停）：已有未消费暂停时
-    重复 workflow_pause 照常发行（新卡覆盖旧卡解除死锁），只告警 +
-    trace 留痕，不再以拒因回喂模型；发行确认后暂停三态事务写入。"""
+    重复 workflow_pause = 旧卡作废 + trace 留痕（pause_slot_collision）
+    + 发行新卡 + 继续等待人工确认，不拒收；发行确认后暂停三态事务写入。"""
 
     @pytest.fixture(autouse=True)
     def _ensure_platform_tools(self):

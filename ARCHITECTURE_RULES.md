@@ -35,7 +35,7 @@
 - **确认单轨化**：暂停确认唯一经 `workflow_pause` FC 工具产生，经 llm_call 第 5 元组结构化上抛；`agent_loop` 纯文本轮仅收尾（轮末策略照常承重）
 - **无执行器子代理**：管线阶段由通用主路径直走平台工具（`prompt_builder` 只注入 L1 目录与轻量状态提示，Skill 正文经 read_skill 按需读取）；防虚报收敛到 `fc_tool_runner` 关键步骤探针；退役符号登记 `check_legacy_orchestration` 防复活，禁止恢复
 - **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
-- **控制流主体回归**（决策史见 git tag `adr-archive-20260901`）：模型永远唯一行动主体——每轮做什么由模型接到用户消息后发起工具调用（带附件首条消息也由模型接手，系统不静默自动分析）；`core/workflow_runtime.py` 降级为**账本 + 裁判数据层**（Skill 激活编译 `WorkflowDefinition`，canonical slug + revision + content hash，源 = Skill 文档头部 frontmatter 声明，`frontmatter.validate_manifest` 注册期门禁；持久化 `WorkflowRun`，**仅 runtime reducer 可改**，StateManager 仍唯一写入点 Rule3；完成度只认客观探针），不发起任何行动；机械直跑/审批直跑一律禁止（驱动符号登记 `check_legacy_orchestration` 防复活）。「不暂停连跑」= 自主性档位（用户指令/开关授予模型豁免非平台硬暂停点；平台硬闸任何档位必停，Context ≠ Consent，授权留痕）。**原子轮提交**：一轮只提交一个 `TurnResult`（turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项（暂停卡唯一发行主体 = 模型 `workflow_pause`，单一活跃暂停槽位互斥，重复暂停拒收留痕；轮末兜底引导卡（round_end_policies 的状态派生建议）≠ 暂停卡；暂停卡唯一发行主体仍为模型 workflow_pause，引导卡仅承载客观状态选项）；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
+- **控制流主体回归**（决策史见 git tag `adr-archive-20260901`）：模型永远唯一行动主体——每轮做什么由模型接到用户消息后发起工具调用（带附件首条消息也由模型接手，系统不静默自动分析）；`core/workflow_runtime.py` 降级为**账本 + 裁判数据层**（Skill 激活编译 `WorkflowDefinition`，canonical slug + revision + content hash，源 = Skill 文档头部 frontmatter 声明，`frontmatter.validate_manifest` 注册期门禁；持久化 `WorkflowRun`，**仅 runtime reducer 可改**，StateManager 仍唯一写入点 Rule3；完成度只认客观探针），不发起任何行动；机械直跑/审批直跑一律禁止（驱动符号登记 `check_legacy_orchestration` 防复活）。「不暂停连跑」= 自主性档位（用户指令/开关授予模型豁免非平台硬暂停点；平台硬闸任何档位必停，Context ≠ Consent，授权留痕）。**原子轮提交**：一轮只提交一个 `TurnResult`（turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项（暂停卡唯一发行主体 = 模型 `workflow_pause`，单一活跃暂停槽位；重复暂停 = 旧卡作废 + trace 留痕（pause_slot_collision）+ 发行新卡 + 继续等待人工确认，不拒收；轮末兜底引导卡（round_end_policies 的状态派生建议）≠ 暂停卡；暂停卡唯一发行主体仍为模型 workflow_pause，引导卡仅承载客观状态选项）；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
 - **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
 - **层级例外**：动作执行器下沉 `core/action_executor.py`，对 web 生成管线/供应商配置的依赖倒置为 `core/ports.py` 端口、web 装配点注入（`web/port_wiring.py`）；core→web 任何 import（含延迟/TYPE_CHECKING）一律禁止
 
@@ -277,7 +277,7 @@ tests/fixtures/             ← 技能夹具等快照
 - [ ] 拆分模块新增顶层符号已同步登记 re-export 壳清单，测试 patch 目标为调用方命名空间
 - [ ] 测试不得写生产 data/skills（conftest session 级镜像目录保障）
 - [ ] 耦合行变更已同批更新 coupling_registry.py（十、3 条）
-- [ ] runtime 无自主行动（不机械执行执行器、不机械发卡）；暂停卡唯一发行主体 = 模型 workflow_pause，单一活跃暂停槽位互斥（Rule2 主体回归）
+- [ ] runtime 无自主行动（不机械执行执行器、不机械发卡）；暂停卡唯一发行主体 = 模型 workflow_pause，单一活跃暂停槽位（重复暂停 = 旧卡作废留痕 + 发新卡 + 继续等确认，不拒收）（Rule2）
 - [ ] 一轮一 TurnResult 提交（turn_id 归组），无空文本 docCard 消息、无合成 actionLog（Rule2）
 - [ ] 控制流范式表述唯一归宪法 Rule2（P1）
 - [ ] 修改前已按 `AGENTS.md` 治理条款摘要的决策树定位归属层；没有在事故现场就近补条款（P1/P2）

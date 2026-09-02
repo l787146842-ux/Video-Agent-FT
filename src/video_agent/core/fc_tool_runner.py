@@ -424,8 +424,8 @@ class FCToolRunner:
             if gate_error is None:
                 self._idempotency.record(_idem_key, result)
             # 单一活跃暂停槽位：降级为防御性断言——已有未消费
-            # 暂停时重复 workflow_pause 只告警 + trace 留痕，照常发行（新卡覆盖
-            # 旧卡解除死锁），不再以拒因回喂模型（旧「执行后拒收」形态退役）
+            # 暂停时重复 workflow_pause 只告警 + trace 留痕（pause_slot_collision），
+            # 旧卡作废 + 发行新卡 + 继续等待人工确认，不拒收（旧「执行后拒收」形态退役）
             if name == "workflow_pause" and result.success:
                 try:
                     _svc_pause = StateManager.get_instance()

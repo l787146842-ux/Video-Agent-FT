@@ -44,7 +44,7 @@ STRUCTURE_INLINE_PROMPT_MAX = 40
 # 非闸机规则条目，登记于 gate_registry.PAUSE_MESSAGE_SECTIONS 暂停/告警文案矩阵）
 PAUSE_SLOT_ASSERTION_NOTE = _gate_msg(PAUSE_MESSAGE_SECTIONS["pause_slot_assertion"], (
     "单一活跃暂停槽位冲突：已有未消费的暂停卡时再次发行 workflow_pause，"
-    "新卡覆盖旧卡解除死锁；防御断言只告警留痕，不作拒因回喂。"
+    "旧卡作废 + trace 留痕（pause_slot_collision）+ 发行新卡 + 继续等待人工确认，不拒收。"
 ))
 
 _STORYBOARD_STRUCTURE_PAUSED = _gate_json(
