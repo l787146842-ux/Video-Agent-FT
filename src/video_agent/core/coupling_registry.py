@@ -174,12 +174,6 @@ COUPLING_ROWS: List[CouplingRow] = [
         ),
     ),
     CouplingRow(
-        "R14_shell_expiry",
-        "新增 re-export 壳",
-        "注释登记清偿属性（长期承重/预计清偿轮次），逾期立案",
-        (("prose", "到期制是审查纪律（登记完备性），不可机械判定语义"),),
-    ),
-    CouplingRow(
         "R15_s5_split_modules",
         "拆分模块变更（gates_cards）",
         "prompt_gates 尾部 re-export；消费方旧命名空间不变"
@@ -224,12 +218,6 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.skill_runtime.registry:parse_pause_rules",
             "src.video_agent.web.skill_docs:parse_pause_rules",
         ),
-    ),
-    CouplingRow(
-        "R21_button_base_reset",
-        "按钮基线变更",
-        "tokens.css @layer base 的 button 重置为根因唯一落点",
-        (("prose", "视觉基线属 UI 审查（目测批）；CSS 无机械链路"),),
     ),
     CouplingRow(
         "R22_acceptance_components",

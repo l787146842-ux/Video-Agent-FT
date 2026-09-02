@@ -1,9 +1,11 @@
 """脚手架注册表钉死测试（正向设计改造 2-1）。
 
-钉死三件事：
+钉死两件事：
 1. sid 集合不漂移（新增/删除脚手架必须显式改本测试，禁止静默变动）；
-2. 每条 component 符号可导入（登记即承重，防僵尸条目）；
-3. 棘轮：scaffold 计数 <= 基线（只降不升）。
+2. 每条 component 符号可导入（登记即承重，防僵尸条目）。
+
+注：scaffold 计数棘轮（原 SCAFFOLD_COUNT_BASELINE）已随 2026-09-02
+「治理闸机减负」裁决退役，本测试不再钉计数上限。
 """
 import importlib
 
@@ -40,7 +42,3 @@ def test_scaffold_entries_require_deprecation_fields():
         assert e.assumption.strip(), f"{e.sid} 缺可证伪假设"
         assert e.retest_policy.strip(), f"{e.sid} 缺复测策略"
         assert e.evidence.strip(), f"{e.sid} 缺承重证据"
-
-
-def test_ratchet_count_only_down():
-    assert len(reg.scaffold_entries()) <= reg.SCAFFOLD_COUNT_BASELINE

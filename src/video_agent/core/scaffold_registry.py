@@ -8,9 +8,9 @@
   （见 AGENTS.md §七）；必须有可证伪的 assumption 与 retest_policy；
 - classification=invariant：工程/物理约束，长期承重，季度审计但不入拆除仪式。
 
-棘轮（scripts/check_scaffold_registry.py + test_scaffold_registry.py 钉死）：
-scaffold 计数只降不升，基线 = SCAFFOLD_COUNT_BASELINE；新增脚手架必须经 AGENTS
-§八治理条款摘要决策树（含 eval 证明缺口存在）并上调基线的书面裁决。
+注：scaffold 计数棘轮（原 SCAFFOLD_COUNT_BASELINE + check_scaffold_registry.py 门禁）
+已随 2026-09-02「治理闸机减负」裁决退役；本注册表保留为纯登记数据（信息资产），
+拆除仍走 AGENTS §七 拆除仪式，但不再由机械计数棘轮强制。
 """
 from dataclasses import dataclass
 
@@ -128,12 +128,6 @@ SCAFFOLDS = (
         "下沉计划阶段验收",
         "invariant"),
 )
-
-# 棘轮基线（每拆除一件随降，禁止上调）：scaffold 类计数只降不升。
-# 字面常量而非对 SCAFFOLDS 动态求和（动态求和是恒真基线，
-# 棘轮名存实亡）。只降不升；上调须书面裁决
-# 并同批修改本常量。
-SCAFFOLD_COUNT_BASELINE = 6
 
 
 def scaffold_entries() -> tuple:

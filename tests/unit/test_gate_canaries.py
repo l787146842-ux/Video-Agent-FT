@@ -288,19 +288,6 @@ def test_canary_gov_script_pointer_missing_fails(tmp_path, monkeypatch):
     assert gate.main() == 1
 
 
-# ---------- 11) scaffold_registry 元 canary（字面基线 ≠ 恒真） ----------
-# 注：scaffold_registry 门禁与 check_scaffold_registry.py 已随 2026-09-02
-# 「治理闸机减负」裁决退役；仅保留注册表基线常量的元 canary。
-
-def test_canary_scaffold_baseline_literal_matches_reality():
-    """批次 1.1 裁决钉死：基线是字面常量 6 且与实测计数一致
-    （动态自算 = 恒真基线，见 check_file_lines FRONTEND_OVER_BASELINE 同构事故）。"""
-    from src.video_agent.core import scaffold_registry as sreg
-    assert sreg.SCAFFOLD_COUNT_BASELINE == 6
-    assert isinstance(sreg.SCAFFOLD_COUNT_BASELINE, int)
-    assert len(sreg.scaffold_entries()) == sreg.SCAFFOLD_COUNT_BASELINE
-
-
 # ---------- 12/13) cov_ratchet / fe_cov_ratchet（固定容差地板） ----------
 
 def _write_cov_xml(path: Path, line_rate: float):
