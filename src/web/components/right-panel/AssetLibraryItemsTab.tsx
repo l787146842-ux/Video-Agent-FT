@@ -7,7 +7,7 @@
 import { Show } from 'solid-js';
 import { FiImage, FiGrid, FiHardDrive, FiLoader, FiAlertCircle } from 'solid-icons/fi';
 import type { Resource } from 'solid-js';
-import type { AssetPickerItem, AssetPickerResponse } from '@/api/providers';
+import type { AssetGridItem, AssetPickerResponse } from '@/api/providers';
 import { t } from '@/lib/locale';
 import { AssetLibraryGrid } from './AssetLibraryGrid';
 
@@ -30,7 +30,7 @@ export function AssetLibraryItemsTab(props: {
   tab: () => Tab;
   onReconnect: () => void;
   selectedIds: () => Set<string>;
-  toggleItem: (item: AssetPickerItem) => void;
+  toggleItem: (item: AssetGridItem) => void;
 }) {
   return (
     <>
@@ -51,7 +51,7 @@ export function AssetLibraryItemsTab(props: {
       <Show when={!props.items.loading && props.items() && props.items()!.canvas_online === false}>
         <div class="asset-modal-status">
           <FiAlertCircle size={22} />
-          <p>{t('rp.asset.offlineLimited', { error: props.items()!.error || t('rp.asset.connectionFailed') })}</p>
+          <p>{t('rp.asset.offlineLimited', { error: t('rp.asset.connectionFailed') })}</p>
           <p class="asset-modal-status-hint">{t('rp.asset.checkOriginPre')}<code>{location.origin.replace(/\d+$/, '3000')}</code>{t('rp.asset.checkOriginPost')}</p>
           <button type="button" class="btn-secondary" onClick={() => props.onReconnect()}>{t('rp.asset.reconnect')}</button>
         </div>

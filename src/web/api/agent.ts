@@ -4,7 +4,10 @@
  */
 import { apiPost, apiFetch, apiPut } from './client';
 import type { AgentChatRequest, Skill } from '@/types';
-import type { RuntimeSettings, RuntimeSettingsUpdate } from '@/types/api.generated';
+import type {
+  RuntimeSettings, RuntimeSettingsUpdate,
+  ContextBreakdownModel, ContextUsageResponse, AgentMetricsResponse,
+} from '@/types/api.generated';
 
 /** 运行时设置读形态：以后端 RuntimeSettings 生成物为唯一来源（豁免清单已清偿） */
 export type { RuntimeSettings };
@@ -32,29 +35,11 @@ export async function getSkills(): Promise<Skill[]> {
   return Array.isArray(data.skills) ? data.skills : [];
 }
 
-/** 第 5 批：每轮 token 分配账（推理中 live 值；null = 未推理/过期） */
-export interface ContextBreakdown {
-  system: number;
-  history: number;
-  state: number;
-  tools: number;
-  skill: number;
-  total: number;
-  budget: number;
-}
+/** 每轮 token 分配账（context-usage 嵌套段）：以后端生成物为唯一来源（契约 phase1） */
+export type ContextBreakdown = ContextBreakdownModel;
 
-/** 上下文用量估算（发送按钮旁小圆圈悬停展示「已用多少K上下文」） */
-export interface ContextUsage {
-  chars: number;
-  est_tokens: number;
-  state_chars: number;
-  history_chars: number;
-  /** 当前模型上下文窗口（0 = 未传模型，前端回退纯数字展示） */
-  window_tokens: number;
-  /** P2-1 KV-cache 前缀缓存命中率（滚动窗口汇聚） */
-  cache_hit_rate?: number;
-  breakdown?: ContextBreakdown | null;
-}
+/** 上下文用量估算（发送按钮旁小圆圈悬停展示「已用多少K上下文」）：生成物别名 */
+export type ContextUsage = ContextUsageResponse;
 
 export function getContextUsage(model?: string): Promise<ContextUsage> {
   const qs = model ? `?model=${encodeURIComponent(model)}` : '';
@@ -69,20 +54,9 @@ export function setRuntimeSettings(body: RuntimeSettingsUpdate): Promise<Runtime
   return apiPut<RuntimeSettings>('/api/settings/runtime', body);
 }
 
-/** ：成本看板聚合指标 */
-export interface AgentMetrics {
-  traces_count: number;
-  avg_turn_ms: number;
-  /** ：平均耗时口径（llm_rounds=仅含模型调用轮；all=旧数据回落全量） */
-  avg_turn_scope?: string;
-  total_steps: number;
-  total_actions: number;
-  gate_total: number;
-  gate_intercepts: number;
-  gate_intercept_rate: number;
-  fallback_count: number;
-  recent_fallbacks: Array<{ ts: number; provider: string; model: string }>;
-}
+/** 成本看板聚合指标：以后端生成物为唯一来源（契约 phase1；
+ * avg_turn_scope 口径 llm_rounds=仅含模型调用轮，all=旧数据回落全量） */
+export type AgentMetrics = AgentMetricsResponse;
 
 export function getAgentMetrics(): Promise<AgentMetrics> {
   return apiFetch<AgentMetrics>('/api/agent/metrics');

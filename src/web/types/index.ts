@@ -12,13 +12,18 @@
  * - ServerStateSnapshot / ChatMessage / Draft 等视图态：前端渲染形态，非 API 模型；
  * - 手写响应类型比生成物更精确的站点（生成物对 Dict 响应只能给出
  *   Record<string, unknown>）：ProvidersResponse/OkWithStateResponse
- *   （api/providers.ts、api/project.ts）、ChatResponse、画布读取结果族
- *   CanvasDropImageResult/CanvasNodeImagesResult/AllCanvasImagesResult（api/canvas.ts）、
+ *   （api/providers.ts、api/project.ts）、ChatResponse、
+ *   画布选中节点族 CanvasSelectionNode/CanvasSelectionResult（api/canvas.ts，
+ *   后端 /canvas/selection 未建模：节点 metadata 为外部画布动态数据，
+ *   严格建模需 Dict[str, Any] 粗型，契约 phase1 裁决保留手写）、
  *   整板保存 payload（stores/studio/storyboard.ts，后端 ProjectStateUpdate 五列表
  *   已收窄为 Record<string, unknown>[] 但元素仍宽于手写 Draft/Group/Asset）
  *   ——保留手写强类型：整板保存条目随 D-06 专项清偿后删（docs/未清偿债务清单.md）；
- *   ProvidersResponse/OkWithStateResponse/ChatResponse/画布族后端建模代价过大，
+ *   ProvidersResponse/OkWithStateResponse/ChatResponse 后端建模代价过大，
  *   任务 #10 裁决保留（2026-08-28），后端全量建模后再迁。
+ *   （画布读取结果族 CanvasDropImageResult/CanvasNodeImagesResult/
+ *   AllCanvasImagesResult 及 context-usage/metrics/cli 状态族/config/asset-picker
+ *   手抄镜像已随契约 phase1 清偿：后端补 response_model，前端改生成物别名）
  * - 生成物消费基座站点（生成物为类型来源，手写只做收窄/精化，  登记）：
  *   GenerateImageRequest/GenerateVideoRequest（交集精化，api/generate.ts）、
  *   BatchImageRequest（Required 收窄必填）、CanvasDropImagePayload（交集精化，api/canvas.ts）、

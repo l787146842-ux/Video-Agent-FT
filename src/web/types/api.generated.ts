@@ -15,6 +15,67 @@ export interface AddGenerationLogResponse {
   log?: GenerationLogEntry;
 }
 
+export interface AgentMetricsResponse {
+  traces_count: number;
+  avg_turn_ms: number;
+  avg_turn_scope: string;
+  total_steps: number;
+  total_actions: number;
+  gate_total: number;
+  gate_intercepts: number;
+  gate_intercept_rate: number;
+  fallback_count: number;
+  recent_fallbacks: RecentFallbackItem[];
+  unlogged_llm_calls: number;
+}
+
+export interface AllCanvasImageItem {
+  id: string;
+  name: string;
+  url: string;
+  thumb: string;
+  canvas_title: string;
+  canvas_kind: string;
+}
+
+export interface AllCanvasImagesResponse {
+  items: AllCanvasImageItem[];
+  canvas_online: boolean;
+  canvas_title?: string;
+  canvas_kind?: string;
+}
+
+export interface AppConfigResponse {
+  chat_models: string[];
+  image_models: string[];
+  video_models: string[];
+  canvas_url: string;
+  model_fallback_enabled: boolean;
+  max_attachments: number;
+  infinite_canvas_embed?: InfiniteCanvasEmbedConfig | undefined;
+}
+
+export interface AssetPickerItemModel {
+  id: string;
+  file: string;
+  name: string;
+  url: string;
+  thumb: string;
+  kind: string;
+  size: number;
+  mtime: string;
+  created_at: number;
+  folder: string;
+  category: string;
+  tags: string[];
+  source: string;
+}
+
+export interface AssetPickerResponseModel {
+  items: AssetPickerItemModel[];
+  canvas_online: boolean;
+}
+
 export interface BatchImageGenRequest {
   target?: string;
   provider_id?: string;
@@ -53,9 +114,47 @@ export interface CanvasDropImageRequest {
   view?: ViewSize | undefined;
 }
 
+export interface CanvasDropImageResponse {
+  node_id: string;
+  canvas_id: string;
+  canvas_title: string;
+  image_url: string;
+}
+
+export interface CanvasListItem {
+  id: string;
+  title: string;
+  kind: string;
+  updated_at: number;
+}
+
+export interface CanvasListResponse {
+  canvases: CanvasListItem[];
+  canvas_online: boolean;
+}
+
+export interface CanvasNodeImageItem {
+  id: string;
+  name: string;
+  url: string;
+  thumb: string;
+  category: string;
+}
+
+export interface CanvasNodeImagesResponse {
+  items: CanvasNodeImageItem[];
+  canvas_online: boolean;
+  canvas_title?: string;
+}
+
 export interface CanvasSelectNodesRequest {
   /** 要设为选中的画布节点 id 列表 */
   node_ids: string[];
+}
+
+export interface CanvasSelectNodesResponse {
+  supported: boolean;
+  selected: number;
 }
 
 export interface ChatRequest {
@@ -102,6 +201,41 @@ export interface ChatResponse {
   state?: Record<string, unknown> | undefined;
   stopped?: boolean;
   stop_phase?: string;
+}
+
+export interface CliHelpResponse {
+  output: string;
+  ok: boolean;
+}
+
+export interface CliStatusResponse {
+  installed: boolean;
+  version: string;
+  path: string;
+  message: string;
+}
+
+export interface ContextBreakdownModel {
+  system: number;
+  history: number;
+  state: number;
+  tools: number;
+  skill: number;
+  total: number;
+  budget: number;
+}
+
+export interface ContextUsageResponse {
+  chars: number;
+  est_tokens: number;
+  state_chars: number;
+  history_chars: number;
+  window_tokens: number;
+  cache_hit_rate: number;
+  cache_sample_count: number;
+  cache_prompt_tokens: number;
+  cache_cached_tokens: number;
+  breakdown?: ContextBreakdownModel | undefined;
 }
 
 export interface ConversationMeta {
@@ -239,6 +373,44 @@ export interface ImageGenRequest {
   draft_type?: string;
 }
 
+export interface InfiniteCanvasEmbedConfig {
+  canvas_url: string;
+  agent_url: string;
+  agent_token: string;
+}
+
+export interface JimengCreditResponse {
+  ok: boolean;
+  text?: string;
+  message: string;
+}
+
+export interface JimengLoginStartResponse {
+  ok: boolean;
+  message: string;
+  running?: boolean;
+}
+
+export interface JimengLoginStatusResponse {
+  running: boolean;
+  text: string;
+  qr_url: string;
+}
+
+export interface JimengLogoutResponse {
+  ok: boolean;
+  message: string;
+}
+
+export interface JimengStatusResponse {
+  installed: boolean;
+  logged_in: boolean;
+  version: string;
+  path: string;
+  raw?: string;
+  message: string;
+}
+
 export interface ModelFallbackPatch {
   enabled: boolean;
 }
@@ -300,6 +472,12 @@ export interface ProviderProbeRequest {
 export interface ProvidersResponse {
   providers?: Record<string, unknown>[];
   canvas_online?: boolean;
+}
+
+export interface RecentFallbackItem {
+  ts: number;
+  provider: string;
+  model: string;
 }
 
 export interface ReorderRequest {

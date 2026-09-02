@@ -72,8 +72,9 @@ beforeEach(() => {
     async (patch: Record<string, unknown>) => ({ ...SETTINGS, ...patch }),
   );
   agentMock.getAgentMetrics.mockResolvedValue({
-    traces_count: 0, avg_turn_ms: 0, total_steps: 0, total_actions: 0,
+    traces_count: 0, avg_turn_ms: 0, avg_turn_scope: 'llm_rounds', total_steps: 0, total_actions: 0,
     gate_total: 0, gate_intercepts: 0, gate_intercept_rate: 0, fallback_count: 0,
+    recent_fallbacks: [], unlogged_llm_calls: 0,
   });
 });
 

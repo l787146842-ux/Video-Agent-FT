@@ -28,7 +28,7 @@ import {
 } from '@/stores/history';
 import { uid } from '@/lib/utils';
 import { bootFail, warnBootTaskResume } from '@/lib/boot-fallback';
-import type { AssetPickerItem } from '@/api/providers';
+import type { AssetGridItem } from '@/api/providers';
 import {
   setCanvasIframe, setCanvasError, canvasOverlayDragging,
   setCanvasEmbed, canvasIframeSrc,
@@ -230,7 +230,7 @@ export function LayoutShell(props: ParentProps) {
       <AssetLibraryModal
         open={state.assetLibraryOpen}
         onClose={() => studioActions.closeAssetLibrary()}
-        onPick={(items: AssetPickerItem[]) => {
+        onPick={(items: AssetGridItem[]) => {
           // 批量作为图片附件加入 pendingAttachments
           items.forEach((item) => {
             studioActions.addPendingAttachment({

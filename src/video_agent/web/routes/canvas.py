@@ -55,6 +55,70 @@ class CanvasDropImageRequest(BaseModel):
     view: Optional[ViewSize] = Field(None, description="画布 iframe 可视尺寸")
 
 
+# ---------- 响应模型（契约 phase1） ----------
+
+class CanvasDropImageResponse(BaseModel):
+    """拖放图片入画布响应"""
+    node_id: str
+    canvas_id: str
+    canvas_title: str
+    image_url: str
+
+
+class CanvasNodeImageItem(BaseModel):
+    """画布节点图片条目（@ 菜单用）"""
+    id: str
+    name: str
+    url: str
+    thumb: str
+    category: str
+
+
+class CanvasNodeImagesResponse(BaseModel):
+    """当前活跃画布节点图片响应"""
+    items: List[CanvasNodeImageItem]
+    canvas_online: bool
+    canvas_title: str = ""
+
+
+class AllCanvasImageItem(BaseModel):
+    """所有画布节点图片条目（含画布归属信息）"""
+    id: str
+    name: str
+    url: str
+    thumb: str
+    canvas_title: str
+    canvas_kind: str
+
+
+class AllCanvasImagesResponse(BaseModel):
+    """指定画布节点图片响应"""
+    items: List[AllCanvasImageItem]
+    canvas_online: bool
+    canvas_title: str = ""
+    canvas_kind: str = ""
+
+
+class CanvasListItem(BaseModel):
+    """画布列表条目"""
+    id: str
+    title: str
+    kind: str
+    updated_at: int
+
+
+class CanvasListResponse(BaseModel):
+    """画布列表响应"""
+    canvases: List[CanvasListItem]
+    canvas_online: bool
+
+
+class CanvasSelectNodesResponse(BaseModel):
+    """反向联动选中节点响应"""
+    supported: bool
+    selected: int
+
+
 def _local_asset_path(url: str) -> Optional[Path]:
     """把 /workspace/assets/xxx 形式的 URL 映射到本地素材文件（防目录穿越）。"""
     path = urlparse(url).path if "://" in url else url
@@ -115,7 +179,7 @@ def _parse_updated_at(value: Any) -> int:
     return 0
 
 
-@router.get("/canvas/node-images")
+@router.get("/canvas/node-images", response_model=CanvasNodeImagesResponse)
 async def list_canvas_node_images():
     """返回当前活跃智能画布中所有节点内的图片（供 @ 菜单使用）。
 
@@ -161,7 +225,7 @@ async def list_canvas_node_images():
     return {"items": items, "canvas_online": True, "canvas_title": canvas.get("title", "")}
 
 
-@router.get("/canvas/list")
+@router.get("/canvas/list", response_model=CanvasListResponse)
 async def list_canvases_for_picker():
     """返回所有未删除画布列表（供前端手动画布选择器使用）。"""
     adapter = get_canvas_adapter()
@@ -190,7 +254,7 @@ async def list_canvases_for_picker():
     return {"canvases": result, "canvas_online": True}
 
 
-@router.get("/canvas/all-node-images")
+@router.get("/canvas/all-node-images", response_model=AllCanvasImagesResponse)
 async def list_all_canvas_node_images(canvas_id: str = ""):
     """返回指定画布（或当前活跃画布）中节点内的图片。
 
@@ -259,7 +323,7 @@ async def list_all_canvas_node_images(canvas_id: str = ""):
     return {"items": items, "canvas_online": True, "canvas_title": cv_title, "canvas_kind": cv_kind}
 
 
-@router.post("/canvas/drop-image")
+@router.post("/canvas/drop-image", response_model=CanvasDropImageResponse)
 async def drop_image_to_canvas(body: CanvasDropImageRequest, request: Request):
     """把一张图片写入指定画布（或当前活跃画布），创建图片节点。
 
@@ -335,7 +399,7 @@ class CanvasSelectNodesRequest(BaseModel):
     node_ids: List[str] = Field(..., description="要设为选中的画布节点 id 列表")
 
 
-@router.post("/canvas/select-nodes")
+@router.post("/canvas/select-nodes", response_model=CanvasSelectNodesResponse)
 async def select_canvas_nodes(body: CanvasSelectNodesRequest):
     """反向联动：把指定节点设为画布当前选中（经适配器 canvas_select_nodes op）。"""
     adapter = get_canvas_adapter()

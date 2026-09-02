@@ -123,6 +123,53 @@ class ChatRequest(BaseModel):
     # contextvar（state.chat_tail_ops.user_message_persisted）传递
 
 
+class ContextBreakdownModel(BaseModel):
+    """每轮 token 分配账（context-usage 嵌套段）"""
+    system: int
+    history: int
+    state: int
+    tools: int
+    skill: int
+    total: int
+    budget: int
+
+
+class ContextUsageResponse(BaseModel):
+    """上下文用量估算响应（发送按钮旁小圆圈悬停展示）"""
+    chars: int
+    est_tokens: int
+    state_chars: int
+    history_chars: int
+    window_tokens: int
+    cache_hit_rate: float
+    cache_sample_count: int
+    cache_prompt_tokens: int
+    cache_cached_tokens: int
+    breakdown: Optional[ContextBreakdownModel] = None
+
+
+class RecentFallbackItem(BaseModel):
+    """模型降级事件条目"""
+    ts: float
+    provider: str
+    model: str
+
+
+class AgentMetricsResponse(BaseModel):
+    """成本看板聚合指标响应"""
+    traces_count: int
+    avg_turn_ms: float
+    avg_turn_scope: str
+    total_steps: int
+    total_actions: int
+    gate_total: int
+    gate_intercepts: int
+    gate_intercept_rate: float
+    fallback_count: int
+    recent_fallbacks: List[RecentFallbackItem]
+    unlogged_llm_calls: int
+
+
 class ChatResponse(BaseModel):
     text: str
     applied_actions: int = 0
@@ -171,7 +218,7 @@ async def get_agent_traces(limit: int = 50):
     return {"traces": tracer.get_recent_traces(min(limit, 50))}
 
 
-@router.get("/agent/metrics")
+@router.get("/agent/metrics", response_model=AgentMetricsResponse)
 async def get_agent_metrics():
     """成本看板聚合——轨迹数/平均耗时/轮次/操作数/闸机拦截率/降级频率。"""
     return AgentTracer.get_instance().metrics()
@@ -306,7 +353,7 @@ async def register_task_guidance(task_id: str, item: GuidanceItem):
     return {"ok": ok}
 
 
-@router.get("/agent/context-usage")
+@router.get("/agent/context-usage", response_model=ContextUsageResponse)
 async def get_context_usage(model: str = ""):
     """估算当前会话将发送给 LLM 的上下文用量（Studio 状态上下文 + 聊天记录）。
 

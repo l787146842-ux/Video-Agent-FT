@@ -7,7 +7,7 @@ import { Show, For, createSignal } from 'solid-js';
 import { FiGrid, FiLoader, FiAlertCircle, FiChevronDown } from 'solid-icons/fi';
 import type { Resource } from 'solid-js';
 import type { CanvasListItem, CanvasListResult, AllCanvasImagesResult } from '@/api/canvas';
-import type { AssetPickerItem } from '@/api/providers';
+import type { AssetGridItem } from '@/api/providers';
 import { t } from '@/lib/locale';
 import { AssetLibraryGrid } from './AssetLibraryGrid';
 
@@ -19,7 +19,7 @@ export function AssetLibraryCanvasTab(props: {
   selectCanvas: (id: string) => void;
   onReconnect: () => void;
   selectedIds: () => Set<string>;
-  toggleItem: (item: AssetPickerItem) => void;
+  toggleItem: (item: AssetGridItem) => void;
 }) {
   /** 画布空间选择器下拉开关（纯本 tab 视图态） */
   const [canvasDropdownOpen, setCanvasDropdownOpen] = createSignal(false);

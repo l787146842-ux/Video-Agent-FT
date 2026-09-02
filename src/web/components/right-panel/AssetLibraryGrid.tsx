@@ -4,14 +4,14 @@
  */
 import { For, Show } from 'solid-js';
 import { FiImage } from 'solid-icons/fi';
-import type { AssetPickerItem } from '@/api/providers';
+import type { AssetGridItem } from '@/api/providers';
 import { safeUrl } from '@/lib/utils';
 import { t } from '@/lib/locale';
 
 export function AssetLibraryGrid(props: {
-  items: AssetPickerItem[];
+  items: AssetGridItem[];
   selectedIds: () => Set<string>;
-  toggleItem: (item: AssetPickerItem) => void;
+  toggleItem: (item: AssetGridItem) => void;
 }) {
   return (
     <div class="asset-grid">

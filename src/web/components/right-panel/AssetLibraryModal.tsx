@@ -1,7 +1,7 @@
 import { Show, For, createSignal, createResource, createMemo, createEffect } from 'solid-js';
 import { FiX, FiExternalLink } from 'solid-icons/fi';
 import { useNavigate } from '@solidjs/router';
-import { fetchAssetPicker, type AssetPickerItem } from '@/api/providers';
+import { fetchAssetPicker, type AssetPickerItem, type AssetGridItem } from '@/api/providers';
 import { fetchCanvasList, fetchAllCanvasNodeImages } from '@/api/canvas';
 import { t } from '@/lib/locale';
 import { useFocusTrap } from '@/lib/focus-trap';
@@ -26,8 +26,8 @@ type Tab = 'image' | 'canvas' | 'local';
 export function AssetLibraryModal(props: {
   open: boolean;
   onClose: () => void;
-  /** 批量回调：用户点击"添加到对话框"时触发，已勾选的素材数组 */
-  onPick?: (items: AssetPickerItem[]) => void;
+  /** 批量回调：用户点击"添加到对话框"时触发，已勾选的素材数组（网格消费面最小视图态） */
+  onPick?: (items: AssetGridItem[]) => void;
 }) {
   const navigate = useNavigate();
   const [tab, setTab] = createSignal<Tab>('image');
@@ -68,8 +68,9 @@ export function AssetLibraryModal(props: {
     async (cid) => fetchAllCanvasNodeImages(cid),
   );
 
-  /** 当前 tab 的素材列表（画布 tab 取选中画布的图片，其余取 asset-picker 接口） */
-  const currentItems = createMemo<AssetPickerItem[]>(() =>
+  /** 当前 tab 的素材列表（画布 tab 取选中画布的图片，其余取 asset-picker 接口；
+   * 两数据源归一为网格消费面 AssetGridItem） */
+  const currentItems = createMemo<AssetGridItem[]>(() =>
     tab() === 'canvas' ? (canvasImages()?.items || []) : (items()?.items || [])
   );
 
@@ -80,7 +81,7 @@ export function AssetLibraryModal(props: {
     return list.filter((it) => sel.has(it.id));
   });
 
-  function toggleItem(item: AssetPickerItem) {
+  function toggleItem(item: AssetGridItem) {
     setSelectedIds((prev) => {
       const next = new Set<string>(prev);
       if (next.has(item.id)) {

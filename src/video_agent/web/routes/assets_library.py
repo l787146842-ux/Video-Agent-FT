@@ -27,12 +27,39 @@ from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from loguru import logger
 from PIL import Image, ImageOps
+from pydantic import BaseModel
 
 from src.video_agent.exceptions import VideoAgentError
 from src.video_agent.utils.paths import ASSET_LIBRARY_FILE, ASSET_THUMBS_DIR, ASSETS_DIR
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND
 
 router = APIRouter()
+
+
+# ---------- 响应模型（契约 phase1） ----------
+
+class AssetPickerItemModel(BaseModel):
+    """统一素材选择器条目（字段全量对齐 _build_item 真实返回，
+    避免 response_model 剪掉 tags/kind/folder 等已入契约的字段）"""
+    id: str
+    file: str
+    name: str
+    url: str
+    thumb: str
+    kind: str
+    size: int
+    mtime: str
+    created_at: float
+    folder: str
+    category: str
+    tags: List[str]
+    source: str
+
+
+class AssetPickerResponseModel(BaseModel):
+    """统一素材选择器响应"""
+    items: List[AssetPickerItemModel]
+    canvas_online: bool
 
 # 素材类型白名单（doc/pdf 等不是素材库素材）
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -284,7 +311,7 @@ async def get_canvas_assets():
     return {"library": _build_library(), "canvas_online": True}
 
 
-@router.get("/asset-picker")
+@router.get("/asset-picker", response_model=AssetPickerResponseModel)
 async def asset_picker(
     type: str = Query("image", description="image|canvas|local"),
     category: str = Query("", description="按分类过滤"),

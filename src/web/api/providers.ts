@@ -4,28 +4,21 @@
  */
 import { apiFetch } from './client';
 import type { ApiProvider } from '@/types';
+import type {
+  InfiniteCanvasEmbedConfig, AppConfigResponse,
+  AssetPickerItemModel, AssetPickerResponseModel,
+} from '@/types/api.generated';
 
 export interface ProvidersResponse {
   providers: ApiProvider[];
   canvas_online: boolean;
 }
 
-/** 后端下发的画布嵌入引导参数（画布站点 / canvas-agent / token，仅本机回环） */
-export interface InfiniteCanvasEmbedConfig {
-  canvas_url: string;
-  agent_url: string;
-  agent_token: string;
-}
+/** 画布嵌入引导参数（画布站点 / canvas-agent / token）：生成物 re-export（契约 phase1） */
+export type { InfiniteCanvasEmbedConfig };
 
-export interface AppConfig {
-  chat_models: string[];
-  image_models: string[];
-  video_models: string[];
-  canvas_url: string;
-  infinite_canvas_embed?: InfiniteCanvasEmbedConfig;
-  /** 附件数量上限（二期子对话批 3：浮窗上传入口提示用，同源后端 settings） */
-  max_attachments?: number;
-}
+/** 全局配置读形态：以后端 AppConfigResponse 生成物为唯一来源（契约 phase1） */
+export type AppConfig = AppConfigResponse;
 
 /** 全部供应商配置（脱敏）+ 画布在线状态 */
 export function getProviders() {
@@ -37,21 +30,19 @@ export function getAppConfig() {
   return apiFetch<AppConfig>('/api/config');
 }
 
-/** 统一素材选择器代理端点（对齐旧版 asset-modal 的 3 个 tab） */
-export interface AssetPickerItem {
+/** 统一素材选择器（对齐旧版 asset-modal 的 3 个 tab）：生成物别名（契约 phase1；
+ * 原手抄 error? 字段后端从不返回，随替换删除，消费处同步改固定文案） */
+export type AssetPickerItem = AssetPickerItemModel;
+export type AssetPickerResponse = AssetPickerResponseModel;
+
+/** 素材网格卡片消费的最小视图态（id/name/url/thumb）：
+ * AssetPickerItemModel 与画布 tab 的 AllCanvasImageItem 的公共子集，
+ * 网格/选中/onPick 仅依赖这些字段（视图态收窄，非 API 边界类型） */
+export interface AssetGridItem {
   id: string;
   name: string;
   url: string;
   thumb?: string;
-  category?: string;
-  size?: number;
-  mtime?: string;
-  source?: string;
-}
-export interface AssetPickerResponse {
-  items: AssetPickerItem[];
-  canvas_online: boolean;
-  error?: string;
 }
 export function fetchAssetPicker(type: 'image' | 'canvas' | 'local') {
   return apiFetch<AssetPickerResponse>(`/api/asset-picker?type=${type}`);

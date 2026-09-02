@@ -4,6 +4,10 @@
 import { apiPost, apiFetch } from './client';
 import type {
   CanvasDropImageRequest, CanvasSelectNodesRequest, DropPoint, ViewSize,
+  CanvasDropImageResponse, CanvasNodeImageItem,
+  CanvasNodeImagesResponse, AllCanvasImageItem,
+  AllCanvasImagesResponse, CanvasListItem,
+  CanvasListResponse, CanvasSelectNodesResponse,
 } from '@/types/api.generated';
 
 /** 生成物 drop/view 为 unknown 粗型，精化为坐标/尺寸强类型（豁免清单登记） */
@@ -12,26 +16,11 @@ export type CanvasDropImagePayload = CanvasDropImageRequest & {
   view?: ViewSize;
 };
 
-export interface CanvasDropImageResult {
-  node_id: string;
-  canvas_id: string;
-  canvas_title: string;
-  image_url: string;
-}
-
-export interface CanvasNodeImageItem {
-  id: string;
-  name: string;
-  url: string;
-  thumb: string;
-  category: string;
-}
-
-export interface CanvasNodeImagesResult {
-  items: CanvasNodeImageItem[];
-  canvas_online: boolean;
-  canvas_title?: string;
-}
+/** 以下响应类型以后端生成物为唯一来源（契约 phase1，手抄定义已删） */
+export type CanvasDropImageResult = CanvasDropImageResponse;
+export type CanvasNodeImagesResult = CanvasNodeImagesResponse;
+/* 同名条目型直接 re-export 生成物 */
+export type { CanvasNodeImageItem, AllCanvasImageItem, CanvasListItem };
 
 /** 把一张图片写入指定画布（或当前活跃画布），根据画布类型创建对应节点 */
 export function dropImageToCanvas(payload: CanvasDropImagePayload): Promise<CanvasDropImageResult> {
@@ -43,22 +32,8 @@ export function fetchCanvasNodeImages(): Promise<CanvasNodeImagesResult> {
   return apiFetch<CanvasNodeImagesResult>('/api/canvas/node-images');
 }
 
-/** 所有画布节点图片项（含画布归属信息） */
-export interface AllCanvasImageItem {
-  id: string;
-  name: string;
-  url: string;
-  thumb: string;
-  canvas_title: string;
-  canvas_kind: string;
-}
-
-export interface AllCanvasImagesResult {
-  items: AllCanvasImageItem[];
-  canvas_online: boolean;
-  canvas_title?: string;
-  canvas_kind?: string;
-}
+/** 所有画布节点图片（含画布归属信息）：生成物别名 */
+export type AllCanvasImagesResult = AllCanvasImagesResponse;
 
 /** 获取指定画布（或当前活跃画布）中节点内的图片（预览框右键导入用） */
 export function fetchAllCanvasNodeImages(canvasId?: string): Promise<AllCanvasImagesResult> {
@@ -66,25 +41,17 @@ export function fetchAllCanvasNodeImages(canvasId?: string): Promise<AllCanvasIm
   return apiFetch<AllCanvasImagesResult>(`/api/canvas/all-node-images${q}`);
 }
 
-/** 画布列表项 */
-export interface CanvasListItem {
-  id: string;
-  title: string;
-  kind: string;
-  updated_at: number;
-}
-
-export interface CanvasListResult {
-  canvases: CanvasListItem[];
-  canvas_online: boolean;
-}
+/** 画布列表：生成物别名 */
+export type CanvasListResult = CanvasListResponse;
 
 /** 获取所有未删除画布列表（供手动画布选择器使用） */
 export function fetchCanvasList(): Promise<CanvasListResult> {
   return apiFetch<CanvasListResult>('/api/canvas/list');
 }
 
-/** 画布选中节点（对端 compactNode 形状：id/type/title/metadata 等） */
+/** 画布选中节点（对端 compactNode 形状）：后端 /canvas/selection 未建模
+ *（节点 metadata 为外部画布动态数据，严格建模需 Dict[str, Any] 粗型），
+ * 保留手写镜像，豁免清单见 types/index.ts 头注 */
 export interface CanvasSelectionNode {
   id: string;
   type?: string;
@@ -103,11 +70,8 @@ export function fetchCanvasSelection(): Promise<CanvasSelectionResult> {
   return apiFetch<CanvasSelectionResult>('/api/canvas/selection');
 }
 
-export interface CanvasSelectNodesResult {
-  supported: boolean;
-  selected: number;
-  reason?: string;
-}
+/** 反向联动响应：生成物别名（原手抄 reason? 字段无消费方，随替换删除） */
+export type CanvasSelectNodesResult = CanvasSelectNodesResponse;
 
 /** 反向联动：把指定节点设为画布当前选中 */
 export function selectCanvasNodes(nodeIds: string[]): Promise<CanvasSelectNodesResult> {

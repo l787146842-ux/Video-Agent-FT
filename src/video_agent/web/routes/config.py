@@ -8,6 +8,7 @@ import json
 from fastapi import APIRouter
 from loguru import logger
 from pydantic import BaseModel
+from typing import List, Optional
 
 from src.video_agent.adapters.infinite_canvas_backend import resolve_canvas_agent_token
 from src.video_agent.config import settings
@@ -16,6 +17,26 @@ from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import DATA_DIR
 
 router = APIRouter()
+
+
+# ---------- 响应模型（契约 phase1） ----------
+
+class InfiniteCanvasEmbedConfig(BaseModel):
+    """画布嵌入引导参数（仅本机回环）"""
+    canvas_url: str
+    agent_url: str
+    agent_token: str
+
+
+class AppConfigResponse(BaseModel):
+    """全局配置响应（前端 loadCanvasApiConfig 数据源）"""
+    chat_models: List[str]
+    image_models: List[str]
+    video_models: List[str]
+    canvas_url: str
+    model_fallback_enabled: bool
+    max_attachments: int
+    infinite_canvas_embed: Optional[InfiniteCanvasEmbedConfig] = None
 
 # 默认模型列表（后续可从 AdapterFactory / .env 动态读取）
 DEFAULT_CHAT_MODELS = ["gpt-5.5", "gpt-4o-mini", "gemini-3.1-flash-image-preview-2k"]
@@ -61,7 +82,7 @@ def _bound_to_loopback() -> bool:
     return (settings.host or "").strip().lower() in ("127.0.0.1", "localhost", "::1")
 
 
-@router.get("/config")
+@router.get("/config", response_model=AppConfigResponse)
 async def get_config():
     """前端 loadCanvasApiConfig() 调用"""
     resp = {

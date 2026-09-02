@@ -178,7 +178,7 @@ class TestNodeImagesRoutes:
         fake.is_online = AsyncMock(return_value=False)
         resp = client.get("/api/canvas/node-images")
         assert resp.status_code == 200
-        assert resp.json() == {"items": [], "canvas_online": False}
+        assert resp.json() == {"items": [], "canvas_online": False, "canvas_title": ""}
 
     def test_all_node_images_by_canvas_id(self, client, fake):
         fake.get_canvas = AsyncMock(return_value={

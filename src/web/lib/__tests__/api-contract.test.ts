@@ -41,6 +41,7 @@ const EXEMPT: Record<string, string> = {
   DraftPatch: '同上',
   GroupPatch: '同上',
   ThreadRequest: '微调真子对话线程接口消费方在批 S3 接入（adjust-scopes store openThread）',
+  RecentFallbackItem: 'AgentMetricsResponse.recent_fallbacks 元素类型，无独立命名消费方（契约 phase1）',
 };
 
 /** api/ 内与生成物同名、刻意保留的手写 interface（豁免清单登记项） */
