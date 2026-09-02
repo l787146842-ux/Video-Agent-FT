@@ -91,12 +91,6 @@
 - `core/gate_registry.py` 维护 `GATE_RULES` 注册表（唯一家；`prompt_gates.py` 仅为承重壳 re-export）：稳定 `rule_id` + 层归属 + 中文描述
 - 判定返回结构化 `GateVerdict(rule_id, layer, ok, message)` 列表；文案外置 `prompts/gates/messages.md`，杜绝自由文本
 - 回喂模型与展示用户用**同一 verdict 源**（防两套说辞）
-- **闸机与验收门禁只减不增（冻结基线）**；两数字由 ref_integrity 闸机械钉死，与 `GATE_RULES`/`GATES` 实际长度不一致即红，删/增闸机同批改本表是登记义务：
-
-| 口径 | 冻结基线 | 唯一事实源 |
-|---|---|---|
-| 运行时闸机规则 | 5 条（全 platform） | `core/gate_registry.py::GATE_RULES` |
-| 验收门禁脚本 | 13 项 | `scripts/acceptance.py` |
 
 ### 2.4 拦截可见 + 一次性申诉放行
 - 拦截必须用户侧可见（警示 chips 带规则描述 + 来源标注「平台」/「Skill『xxx』」）

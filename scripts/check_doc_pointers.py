@@ -21,8 +21,6 @@
 6. 治理文档脚本/夹具指针防腐（Q27 裁决 2026-09-01）：治理文档提及的
    scripts/check_*.py 与 tests/fixtures/* 必须存在（防 C1a 类删除后
    表述源忘同步再发生）；退役留痕表述用删除线段（~~...~~）标注豁免。
-7. 闸机基线数字防腐（Q27）：宪法 §2.3 闸机冻结基线表的数字必须与
-core/gate_registry.GATE_RULES / scripts/acceptance.GATES 实际长度一致。
 
 退役条件（AGENTS §八退役条件声明，两源条件取并集）：指针/锚点漂移连续两季零检出、
 ADR 双边注记、文件地图、docs 活文档模块路径与修宪同批更新锚点内化为开发
@@ -74,6 +72,8 @@ ANCHORS = [
     # §2.0/§2.3：闸机管线唯一入口 + Policy-as-Data 注册表
     ("S2.0", "src/video_agent/core/guard_pipeline.py", None),
     ("S2.3", "src/video_agent/core/gate_registry.py", "GATE_RULES"),
+    # 注：闸机/门禁基线数字镜像锁已随 2026-09-02「治理闸机减负」裁决解除
+    # （原 check_gate_baseline_numbers 与宪法 §2.3 冻结基线数字表同批退役）。
     # §3：前端唯一入口（SolidJS SPA）与 web 装配
     ("S3", "src/web/app.tsx", None),
     ("S3", "src/video_agent/web/app.py", None),
@@ -105,9 +105,6 @@ GOV_DOCS = (
 # 治理文档提及的闸机脚本/夹具指针（夹具要求带名，裸目录引用不受检）
 GOV_SCRIPT_REF = re.compile(
     r"scripts/check_[A-Za-z0-9_]+\.py|tests/fixtures/[A-Za-z0-9_.][A-Za-z0-9_./]*")
-# 宪法 §2.3 冻结基线表行（只认表格行，历史注记散文不受检）
-BASELINE_RUNTIME_ROW = re.compile(r"\|\s*运行时闸机规则\s*\|\s*(\d+)\s*条")
-BASELINE_GATES_ROW = re.compile(r"\|\s*验收门禁脚本\s*\|\s*(\d+)\s*项")
 
 
 def check_adr_bilateral() -> list:
@@ -280,38 +277,6 @@ def check_gov_script_pointers() -> list:
     return hits
 
 
-def check_gate_baseline_numbers() -> list:
-    """Q27：宪法 §2.3 闸机冻结基线表数字必须与注册表/门禁表实际长度一致。
-
-    删/增闸机同批改基线是登记义务；本断言防忘改（数字漂移即红）。
-    导入失败（注册表不可解析）按漂移处理，不静默放行。
-    """
-    text = ARCH_RULES.read_text(encoding="utf-8", errors="ignore")
-    rm = BASELINE_RUNTIME_ROW.search(text)
-    am = BASELINE_GATES_ROW.search(text)
-    if not rm or not am:
-        return ["ARCHITECTURE_RULES §2.3 baseline table rows not found "
-                "(gate freeze baseline must stay registered)"]
-    hits = []
-    try:
-        sys.path.insert(0, str(ROOT))
-        from src.video_agent.core.gate_registry import GATE_RULES
-        import acceptance as _acc
-        actual_rules = len(GATE_RULES)
-        actual_gates = len(_acc.GATES)
-    except Exception as e:
-        return [f"gate baseline sources not importable (no silent pass): {e}"]
-    if int(rm.group(1)) != actual_rules:
-        hits.append(
-            f"ARCHITECTURE_RULES §2.3 runtime-gate baseline {rm.group(1)} != "
-            f"gate_registry.GATE_RULES actual {actual_rules}")
-    if int(am.group(1)) != actual_gates:
-        hits.append(
-            f"ARCHITECTURE_RULES §2.3 acceptance-gate baseline {am.group(1)} != "
-            f"acceptance.GATES actual {actual_gates}")
-    return hits
-
-
 def main() -> int:
     fails = []
     fails += [f"[adr-bilateral] {h}" for h in check_adr_bilateral()]
@@ -320,7 +285,6 @@ def main() -> int:
     fails += [f"[docs-pointer] {h}" for h in check_docs_pointers()]
     fails += [f"[anchor] {h}" for h in check_anchors()]
     fails += [f"[gov-script-pointer] {h}" for h in check_gov_script_pointers()]
-    fails += [f"[gate-baseline] {h}" for h in check_gate_baseline_numbers()]
     if fails:
         for h in fails[:30]:
             print(f"[ref_integrity]   {h}")
@@ -333,14 +297,12 @@ def main() -> int:
             "constitutional anchors (paths + invariant symbols) must be "
             "updated in the same batch as the constitutional change; "
             "governance docs must not point to missing scripts/fixtures "
-            "(retired mentions use ~~strike~~); §2.3 gate freeze baseline numbers "
-            "must match gate_registry/acceptance actual lengths."
+            "(retired mentions use ~~strike~~)."
         )
         return 1
     print(
         "[ref_integrity] PASS: ADR notes bilateral; arch file map valid; "
         "code/docs pointers clean; governance script/fixture pointers valid; "
-        "gate baseline numbers consistent; "
         f"{len(ANCHORS)} constitutional anchors intact"
     )
     return 0

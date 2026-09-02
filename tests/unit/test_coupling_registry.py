@@ -77,16 +77,3 @@ def test_prose_only_rows_are_minority():
     assert len(prose_only) <= len(COUPLING_ROWS) // 3, (
         f"纯 prose 行过多（{prose_only}）——耦合表退化回散文，违反 T20 初衷"
     )
-
-
-def test_registry_covers_constitution_row_count():
-    # 耦合表原表全量登记；行数变化必须同批更新本断言
-    # （0818 架构板正批：R19 流程门禁行随门禁链退役删除；
-    # 整改计划批 7：R27 planner 拆分委托行登记；
-    # 2026-08-20 v6：Workflow Runtime 控制流行登记；
-    # 2026-08-26：R23 governance_refs 门禁行随门禁退役删除；
-    # 2026-08-28：R12_fc_confirm_loop 行退役删除——
-    # studio-actions 拼回正文回绕解析形态已整体退役；
-    # 2026-08-30 Skill 系统修复批 A：R29 注入模式表→中性化耦合行退役删除（
-    # 2026-08-29 用户裁决撤除中性化层）
-    assert len(COUPLING_ROWS) == 26
