@@ -27,17 +27,17 @@ DEFAULT_COV_XML = ROOT / "coverage.xml"
 def read_current(xml_path: Path, require: bool) -> float | None:
     if not xml_path.exists():
         if not require:
-            print(f"[check_cov_ratchet] SKIP - {xml_path} 不存在（本地无覆盖率产物，"
-                  "跳过；CI 以 --require-xml 硬门禁）")
+            print(f"[check_cov_ratchet] SKIP - {xml_path} not found "
+                  "(no local coverage artifact, skipped; CI uses --require-xml hard gate)")
             return None
-        print(f"[check_cov_ratchet] FAIL - {xml_path} 不存在；"
-              "请先运行: python -m pytest tests/ -q "
+        print(f"[check_cov_ratchet] FAIL - {xml_path} not found; "
+              "run first: python -m pytest tests/ -q "
               "--cov=src/video_agent/core --cov-report=xml")
         raise SystemExit(1)
     root = ET.parse(xml_path).getroot()
     rate = root.get("line-rate")
     if rate is None:
-        print("[check_cov_ratchet] FAIL - coverage.xml 缺少 line-rate 属性")
+        print("[check_cov_ratchet] FAIL - coverage.xml missing line-rate attribute")
         raise SystemExit(1)
     return round(float(rate) * 100, 2)
 
@@ -49,7 +49,7 @@ def read_baseline() -> float | None:
     try:
         return float(text.splitlines()[0].strip())
     except (ValueError, IndexError):
-        print(f"[check_cov_ratchet] FAIL - 基线文件损坏: {BASELINE_FILE}")
+        print(f"[check_cov_ratchet] FAIL - baseline file corrupted: {BASELINE_FILE}")
         raise SystemExit(1)
 
 
@@ -61,13 +61,13 @@ def write_baseline(value: float) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="core 覆盖率棘轮（只升不降）")
+    parser = argparse.ArgumentParser(description="core coverage ratchet (only-up)")
     parser.add_argument("--cov-xml", default=str(DEFAULT_COV_XML),
-                        help="coverage.xml 路径（默认仓库根目录）")
+                        help="coverage.xml path (default repo root)")
     parser.add_argument("--update-baseline", action="store_true",
-                        help="显式回写基线为当前值（仅限覆盖率提升后）")
+                        help="explicitly write baseline to current value (only after coverage improves)")
     parser.add_argument("--require-xml", action="store_true",
-                        help="coverage.xml 缺失即 FAIL（CI 用；本地默认缺失 SKIP）")
+                        help="FAIL if coverage.xml missing (CI use; locally SKIP by default when missing)")
     args = parser.parse_args()
 
     current = read_current(Path(args.cov_xml), args.require_xml)
@@ -75,10 +75,10 @@ def main() -> int:
         if args.update_baseline:
             # P2 修复：回写意图下 coverage.xml 缺失不得静默放行，
             # 否则操作者会误以为基线已上调（实际未回写）。
-            print("[check_cov_ratchet] FAIL - --update-baseline 需要覆盖率实测值，"
-                  "但 coverage.xml 缺失，基线未回写；"
-                  "请先运行: python -m pytest tests/ -q "
-                  "--cov=src/video_agent/core --cov-report=xml 再重试")
+            print("[check_cov_ratchet] FAIL - --update-baseline needs a measured coverage value, "
+                  "but coverage.xml is missing, baseline not written; "
+                  "run first: python -m pytest tests/ -q "
+                  "--cov=src/video_agent/core --cov-report=xml then retry")
             return 1
         return 0
     baseline = read_baseline()
@@ -87,27 +87,27 @@ def main() -> int:
         if args.require_xml:
             # CI 模式下基线缺失不得静默自动记录，否则全新 checkout 每次
             # 都走「记录→exit 0」分支，覆盖率硬门禁永久空转。
-            print("[check_cov_ratchet] FAIL - CI 模式基线缺失：scripts/cov_baseline.txt "
-                  "未入仓，覆盖率门禁将空转；请把基线文件随本批提交入仓")
+            print("[check_cov_ratchet] FAIL - CI mode baseline missing: scripts/cov_baseline.txt "
+                  "not committed, coverage gate would idle; commit the baseline file with this batch")
             return 1
         write_baseline(current)
-        print(f"[check_cov_ratchet] BASELINE RECORDED - core 覆盖率基线首次记录 "
-              f"{current:.2f}%（{BASELINE_FILE.relative_to(ROOT)}，请随提交入仓）")
+        print(f"[check_cov_ratchet] BASELINE RECORDED - core coverage baseline first recorded "
+              f"{current:.2f}% ({BASELINE_FILE.relative_to(ROOT)}, commit it with the batch)")
         return 0
 
     if args.update_baseline:
         if current < baseline:
-            print(f"[check_cov_ratchet] FAIL - 拒绝回写：当前 {current:.2f}% "
-                  f"低于基线 {baseline:.2f}%（棘轮只升不降）")
+            print(f"[check_cov_ratchet] FAIL - refuse writeback: current {current:.2f}% "
+                  f"below baseline {baseline:.2f}% (ratchet only-up)")
             return 1
         write_baseline(current)
-        print(f"[check_cov_ratchet] BASELINE UPDATED - {baseline:.2f}% → {current:.2f}%")
+        print(f"[check_cov_ratchet] BASELINE UPDATED - {baseline:.2f}% -> {current:.2f}%")
         return 0
 
     if current < baseline:
-        print(f"[check_cov_ratchet] FAIL - core 覆盖率回退 "
-              f"({current:.2f}% < baseline {baseline:.2f}%, ratchet only-up)；"
-              "补测试回升或显式裁决后 --update-baseline")
+        print(f"[check_cov_ratchet] FAIL - core coverage regression "
+              f"({current:.2f}% < baseline {baseline:.2f}%, ratchet only-up); "
+              "add tests to recover or --update-baseline after explicit ruling")
         return 1
     if current > baseline:
         # 显式上调纪律：不传 --update-baseline 绝不写基线文件，仅提示
@@ -115,7 +115,7 @@ def main() -> int:
         print(f"[check_cov_ratchet] NOTE - current {current:.2f}% > baseline "
               f"{baseline:.2f}%, baseline untouched; run "
               "scripts/check_cov_ratchet.py --update-baseline to raise")
-    print(f"[check_cov_ratchet] PASS - core 覆盖率 {current:.2f}% >= baseline {baseline:.2f}%")
+    print(f"[check_cov_ratchet] PASS - core coverage {current:.2f}% >= baseline {baseline:.2f}%")
     return 0
 
 

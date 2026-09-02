@@ -455,8 +455,8 @@ def test_canary_fe_cov_ratchet_corrupted_summary_fails(tmp_path, monkeypatch,
         with pytest.raises(SystemExit):
             gate.main()
         out = capsys.readouterr().out
-        assert "覆盖率摘要文件损坏或缺失" in out, "损坏产物须报明确诊断"
-        assert "请重跑前端覆盖率" in out, "诊断须指引重跑前端覆盖率"
+        assert "coverage summary file corrupted or missing" in out, "损坏产物须报明确诊断"
+        assert "rerun frontend coverage" in out, "诊断须指引重跑前端覆盖率"
 
 
 def test_canary_fe_cov_ratchet_nonfinite_pct_fails(tmp_path, monkeypatch,
@@ -479,8 +479,8 @@ def test_canary_fe_cov_ratchet_nonfinite_pct_fails(tmp_path, monkeypatch,
         with pytest.raises(SystemExit):
             gate.main()
         out = capsys.readouterr().out
-        assert "非有效数值" in out, "Infinity/NaN/null 须报非有效数值"
-        assert "请重跑前端覆盖率" in out, "诊断须指引重跑前端覆盖率"
+        assert "not a valid number" in out, "Infinity/NaN/null 须报非有效数值"
+        assert "rerun frontend coverage" in out, "诊断须指引重跑前端覆盖率"
         assert base.read_text(encoding="utf-8").strip() == "63.00", \
             "非有限值不得污染基线文件"
 

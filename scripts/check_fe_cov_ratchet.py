@@ -38,30 +38,30 @@ DEFAULT_SUMMARY = ROOT / "coverage" / "coverage-summary.json"
 def read_current(summary_path: Path, require: bool) -> float | None:
     if not summary_path.exists():
         if not require:
-            print(f"[check_fe_cov_ratchet] SKIP - {summary_path} 不存在"
-                  "（本地无覆盖率产物，跳过；CI 以 --require-summary 硬门禁）")
+            print(f"[check_fe_cov_ratchet] SKIP - {summary_path} not found "
+                  "(no local coverage artifact, skipped; CI uses --require-summary hard gate)")
             return None
-        print(f"[check_fe_cov_ratchet] FAIL - 覆盖率摘要文件缺失: {summary_path}；"
-              "请重跑前端覆盖率: npx vitest run（vitest.config.ts 已常开 v8 "
-              "coverage 与 json-summary 报告器）")
+        print(f"[check_fe_cov_ratchet] FAIL - coverage summary file missing: {summary_path}; "
+              "rerun frontend coverage: npx vitest run (vitest.config.ts already enables v8 "
+              "coverage and json-summary reporter)")
         raise SystemExit(1)
     # 完整性校验：产物损坏（编码/JSON/字段/数值任一环节）一律判红并给出
     # 具体成因，不因解析异常误红或静默通过。
     try:
         raw = summary_path.read_bytes()
     except OSError as exc:
-        print(f"[check_fe_cov_ratchet] FAIL - 覆盖率摘要文件损坏或不可读"
-              f"（读取失败: {exc}）: {summary_path}；请重跑前端覆盖率: npx vitest run")
+        print(f"[check_fe_cov_ratchet] FAIL - coverage summary file corrupted or unreadable "
+              f"(read error: {exc}): {summary_path}; rerun frontend coverage: npx vitest run")
         raise SystemExit(1)
     try:
         data = json.loads(raw.decode("utf-8"))
         pct = data["total"]["lines"]["pct"]
     except UnicodeDecodeError:
-        cause = "非 UTF-8 文本"
+        cause = "non-UTF-8 text"
     except json.JSONDecodeError:
-        cause = "JSON 解析失败"
+        cause = "JSON parse failed"
     except (KeyError, TypeError):
-        cause = "必需字段 total.lines.pct 缺失"
+        cause = "required field total.lines.pct missing"
     else:
         # 有限性检查：json.loads/float 均接受裸 Infinity/NaN，null 则转换报
         # TypeError；三者一并归入「非有效数值」判红，防 inf 污染基线或
@@ -69,14 +69,14 @@ def read_current(summary_path: Path, require: bool) -> float | None:
         try:
             value = float(pct)
         except (TypeError, ValueError):
-            cause = "total.lines.pct 非有效数值（null 等不可接受）"
+            cause = "total.lines.pct not a valid number (null unacceptable)"
         else:
             if not math.isfinite(value):
-                cause = "total.lines.pct 非有效数值（Infinity/NaN 不可接受）"
+                cause = "total.lines.pct not a valid number (Infinity/NaN unacceptable)"
             else:
                 return round(value, 2)
-    print(f"[check_fe_cov_ratchet] FAIL - 覆盖率摘要文件损坏或缺失（{cause}）: "
-          f"{summary_path}；请重跑前端覆盖率: npx vitest run 重新生成产物后重试")
+    print(f"[check_fe_cov_ratchet] FAIL - coverage summary file corrupted or missing ({cause}): "
+          f"{summary_path}; rerun frontend coverage: npx vitest run to regenerate artifact then retry")
     raise SystemExit(1)
 
 
@@ -87,7 +87,7 @@ def read_baseline() -> float | None:
     try:
         return float(text.splitlines()[0].strip())
     except (ValueError, IndexError):
-        print(f"[check_fe_cov_ratchet] FAIL - 基线文件损坏: {BASELINE_FILE}")
+        print(f"[check_fe_cov_ratchet] FAIL - baseline file corrupted: {BASELINE_FILE}")
         raise SystemExit(1)
 
 
@@ -99,13 +99,13 @@ def write_baseline(value: float) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="前端整体覆盖率棘轮（只升不降）")
+    parser = argparse.ArgumentParser(description="frontend overall coverage ratchet (only-up)")
     parser.add_argument("--summary", default=str(DEFAULT_SUMMARY),
-                        help="coverage-summary.json 路径（默认 coverage/ 目录）")
+                        help="coverage-summary.json path (default coverage/ dir)")
     parser.add_argument("--update-baseline", action="store_true",
-                        help="显式回写基线为当前值（仅限覆盖率提升后）")
+                        help="explicitly write baseline to current value (only after coverage improves)")
     parser.add_argument("--require-summary", action="store_true",
-                        help="coverage-summary.json 缺失即 FAIL（CI 用；本地默认缺失 SKIP）")
+                        help="FAIL if coverage-summary.json missing (CI use; locally SKIP by default when missing)")
     args = parser.parse_args()
 
     current = read_current(Path(args.summary), args.require_summary)
@@ -113,32 +113,32 @@ def main() -> int:
         if args.update_baseline:
             # 与后端同构：回写意图下产物缺失不得静默放行，
             # 否则操作者会误以为基线已上调（实际未回写）。
-            print("[check_fe_cov_ratchet] FAIL - --update-baseline 需要覆盖率实测值，"
-                  "但 coverage-summary.json 缺失，基线未回写；"
-                  "请先运行: npx vitest run 再重试")
+            print("[check_fe_cov_ratchet] FAIL - --update-baseline needs a measured coverage value, "
+                  "but coverage-summary.json is missing, baseline not written; "
+                  "run first: npx vitest run then retry")
             return 1
         return 0
     baseline = read_baseline()
 
     if baseline is None:
         # 基线文件缺失即 FAIL（防永久空转）：首钉基线随批次入仓，不做自动记录。
-        print("[check_fe_cov_ratchet] FAIL - 基线缺失：scripts/fe_cov_baseline.txt "
-              "未入仓，覆盖率门禁将空转；请把基线文件随提交入仓（首钉 63.00）")
+        print("[check_fe_cov_ratchet] FAIL - baseline missing: scripts/fe_cov_baseline.txt "
+              "not committed, coverage gate would idle; commit the baseline file (first pinned 63.00)")
         return 1
 
     if args.update_baseline:
         if current < baseline:
-            print(f"[check_fe_cov_ratchet] FAIL - 拒绝回写：当前 {current:.2f}% "
-                  f"低于基线 {baseline:.2f}%（棘轮只升不降）")
+            print(f"[check_fe_cov_ratchet] FAIL - refuse writeback: current {current:.2f}% "
+                  f"below baseline {baseline:.2f}% (ratchet only-up)")
             return 1
         write_baseline(current)
-        print(f"[check_fe_cov_ratchet] BASELINE UPDATED - {baseline:.2f}% → {current:.2f}%")
+        print(f"[check_fe_cov_ratchet] BASELINE UPDATED - {baseline:.2f}% -> {current:.2f}%")
         return 0
 
     if current < baseline:
-        print(f"[check_fe_cov_ratchet] FAIL - 前端覆盖率回退 "
-              f"({current:.2f}% < baseline {baseline:.2f}%, ratchet only-up)；"
-              "补测试回升或显式裁决后 --update-baseline")
+        print(f"[check_fe_cov_ratchet] FAIL - frontend coverage regression "
+              f"({current:.2f}% < baseline {baseline:.2f}%, ratchet only-up); "
+              "add tests to recover or --update-baseline after explicit ruling")
         return 1
     if current > baseline:
         # 显式上调纪律：不传 --update-baseline 绝不写基线文件，仅提示
@@ -146,7 +146,7 @@ def main() -> int:
         print(f"[check_fe_cov_ratchet] NOTE - current {current:.2f}% > baseline "
               f"{baseline:.2f}%, baseline untouched; run "
               "scripts/check_fe_cov_ratchet.py --update-baseline to raise")
-    print(f"[check_fe_cov_ratchet] PASS - 前端覆盖率 {current:.2f}% >= baseline {baseline:.2f}%")
+    print(f"[check_fe_cov_ratchet] PASS - frontend coverage {current:.2f}% >= baseline {baseline:.2f}%")
     return 0
 
 
