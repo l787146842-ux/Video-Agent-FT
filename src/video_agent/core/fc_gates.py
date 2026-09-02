@@ -23,7 +23,8 @@ from src.video_agent.config import settings
 from src.video_agent.core import guard_pipeline, stage_probes, prompt_gates
 from src.video_agent.skill_runtime.registry import resolve_entry
 from src.video_agent.state import storyboard_ops as ops
-# MCP 命名空间判定：外部工具同管线过 risk 闸，不旁路
+# MCP 命名空间判定：外部工具同管线过 risk 闸（生效风险档由 server 配置解析，
+# 控制面 = deny 名单 + server risk_default + 遥测，政策单一源见 tools/mcp/policy.py）
 from src.video_agent.tools.mcp.policy import is_mcp_tool
 # 审批生效档唯一推导源（F1 双轴并单轴：由 risk 单轴推导——
 # high→confirm、其余 none，未注册一律 confirm（deny-by-default，§2.7））
@@ -37,6 +38,9 @@ from src.video_agent.state.models import (
 # §2.7 确认闸豁免集：被 gen_confirm 闸专属覆盖的工具（不双闸）。
 # 仅覆盖 image_generate 批量轨（有目标草稿可校验）；mode='single'
 # 无目标草稿、不在 gen_confirm 覆盖内，回本闸默认拦（高危默认拦）。
+# 豁免为「有条件」：仅当覆盖它的 gen_confirm 闸当前确实会生效（active）时
+# 才豁免——否则不豁免、继续走本闸正常 risk 判定（high→confirm），
+# 杜绝「豁免无条件、覆盖有条件」的不对称导致的模型自主花钱零确认空档。
 # 生效范围不用硬编码名单，改读生效审批档（risk 单轴推导，未注册→confirm）。
 CONFIRM_PRIMITIVE_COVERED_TOOLS = frozenset({"image_generate"})
 # 轮内暂停纪律豁免集：workflow_pause 请求确认后，同批仅读类工具与暂停工具本身可行
@@ -155,15 +159,31 @@ def tool_risk_gate(
     deny-by-default）；保留 risk==high 双保险（防未来推导口径变更误弹卡）。
     确认回携 = 用户「本次放行」，
     无同意硬拒（禁止静默放行），拦截/豁免 verdict 入审计。
-    豁免：image_generate 批量轨被 gen_confirm 闸专属覆盖（不双闸）；
+    豁免（有条件）：image_generate 批量轨仅当覆盖它的 gen_confirm 闸确实会
+    生效（active = injected_skill 非空 且 gate_mode()==strict）时才豁免（不双闸）；
+    覆盖闸未激活时不豁免，回本闸正常 risk 判定（high→confirm），
+    杜绝「豁免无条件、覆盖有条件」不对称导致的零确认空档。
     mode='single' 无目标草稿、不在覆盖内，回本闸默认拦。
     执行偏好三档（批 B）：花钱生成工具（costly 声明轴）可经偏好前置分支
     放行（判定归 evaluate_tool_risk，本闸只注入参数）。
-    MCP 外部工具（mcp__* 命名空间）不得旁路 risk 闸（外部副作用不可信）。"""
+    MCP 外部工具（mcp__* 命名空间）同管线过本闸，其生效风险档由 server
+    配置（tool_risk/risk_default）解析而来；控制面 = deny 名单 + server 级
+    risk_default + 审计遥测（用户裁决：模型可自助启用、不逐次同意），本闸
+    不对未解析为 high 者强制入闸（server 配 risk_default:low 即整批放行属
+    有意政策，非旁路缺陷）。花钱/不可逆底线（costly 工具地板 high，server
+    配置只能上抬不能下降）见 policy.resolve_tool_risk。"""
     if name in CONFIRM_PRIMITIVE_COVERED_TOOLS:
         mode = str((args or {}).get("mode") or "batch").strip().lower()
         if mode != "single":
-            return None
+            # 有条件豁免：与 gen_confirm_gate 的 active 判定同源同口径
+            #（injected_skill 非空 且 gate_mode()==strict）。仅当覆盖闸会
+            # 真正生效时才让位；否则不豁免，继续走下方正常 risk 判定。
+            gen_confirm_active = (
+                bool(ctx.injected_skill)
+                and prompt_gates.gate_mode() == "strict"
+            )
+            if gen_confirm_active:
+                return None
     if ToolManager.get_tool_approval_tier(name) != "confirm" \
             and not is_mcp_tool(name):
         return None

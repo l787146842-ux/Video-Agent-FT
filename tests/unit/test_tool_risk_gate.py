@@ -379,13 +379,34 @@ class TestImageGenerateSingleRiskGate:
         assert any(g["rule_id"] == "platform.tool_risk" and g["overridden"]
                    for g in recent)
 
-    def test_batch_not_gated_by_tool_risk(self):
-        """批量轨豁免：被 gen_confirm 闸专属覆盖，本闸不双拦。"""
+    def test_batch_exempt_only_when_gen_confirm_active(self, monkeypatch):
+        """批量轨豁免为「有条件」：仅当覆盖它的 gen_confirm 闸 active
+        （injected_skill 非空 且 gate_mode=strict）时才让位；覆盖闸未激活时
+        不豁免，回本闸正常 risk 判定拦截（高危默认拦，杜绝零确认）。"""
         from src.video_agent.core import fc_gates
-        ctx = fc_gates.GateContext(state=lambda: {})
-        assert fc_gates.tool_risk_gate(ctx, "image_generate", {"mode": "batch"}) is None
-        assert fc_gates.tool_risk_gate(ctx, "image_generate", {}) is None  # 缺省=batch
-        assert fc_gates.tool_risk_gate(ctx, "image_generate") is None
+        from src.video_agent.tools.document_tools import ImageGenerateTool
+        ToolManager.register(ImageGenerateTool())
+        # gen_confirm active（skill 在场 + strict）：豁免，交给 gen_confirm 覆盖
+        monkeypatch.setattr(
+            "src.video_agent.core.prompt_gates.gate_mode", lambda: "strict")
+        ctx_active = fc_gates.GateContext(
+            state=lambda: {}, injected_skill="在场 Skill")
+        assert fc_gates.tool_risk_gate(
+            ctx_active, "image_generate", {"mode": "batch"}) is None
+        assert fc_gates.tool_risk_gate(ctx_active, "image_generate", {}) is None  # 缺省=batch
+        assert fc_gates.tool_risk_gate(ctx_active, "image_generate") is None
+        # gen_confirm 未激活（无 injected_skill）：不豁免 → 本闸拦截
+        ctx_no_skill = fc_gates.GateContext(state=lambda: {})
+        for m in ({"mode": "batch"}, {}, None):
+            err = fc_gates.tool_risk_gate(ctx_no_skill, "image_generate", m)
+            assert err and "高风险工具确认闸拦截" in err
+        # gen_confirm 未激活（gate_mode != strict）：不豁免 → 本闸拦截
+        monkeypatch.setattr(
+            "src.video_agent.core.prompt_gates.gate_mode", lambda: "off")
+        ctx_off = fc_gates.GateContext(
+            state=lambda: {}, injected_skill="在场 Skill")
+        err = fc_gates.tool_risk_gate(ctx_off, "image_generate", {"mode": "batch"})
+        assert err and "高风险工具确认闸拦截" in err
 
     def test_single_predicate_arms_for_registered_and_unregistered(self):
         """未注册工具同口径 deny-by-default：tier=confirm + risk=high 双命中。"""
@@ -524,3 +545,40 @@ class TestExecPreferenceToolRisk:
         ctx2 = fc_gates.GateContext(state=lambda: {})
         assert fc_gates.tool_risk_gate(
             ctx2, "generate_video", {"target": "all_shots"})
+
+
+# ---------- P0 组合不变量：花钱/高危工具无零确认路径 ----------
+
+class TestCostlyToolNoZeroConfirmPath:
+    """组合级不变量（P0 修复回归）：花钱/高危工具在任何
+    覆盖集 × injected_skill（空/非空）× gate_mode（strict/off/warn）
+    × mode（single/batch）组合下，tool_risk 与 gen_confirm 两道闸
+    至少有一道生效（不存在两道闸都关的零确认路径）。
+    背景：image_generate 批量轨曾「豁免无条件、覆盖有条件」，
+    模型自主调用且 injected_skill 为空时两道闸都关→花钱零确认。"""
+
+    @pytest.mark.parametrize("name", ["image_generate", "generate_video"])
+    @pytest.mark.parametrize("injected_skill", ["", "在场 Skill"])
+    @pytest.mark.parametrize("gate_mode", ["strict", "off", "warn"])
+    @pytest.mark.parametrize("mode", ["single", "batch"])
+    def test_at_least_one_gate_fires(self, monkeypatch, name, injected_skill,
+                                     gate_mode, mode):
+        from src.video_agent.core import fc_gates
+        from src.video_agent.tools.document_tools import ImageGenerateTool
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(ImageGenerateTool())
+        ToolManager.register(GenerateVideoTool())
+        monkeypatch.setattr(
+            "src.video_agent.core.prompt_gates.gate_mode", lambda: gate_mode)
+        # 未确认草稿（tag != 已确认）：gen_confirm active 时会拦，确保覆盖闸真生效
+        state = {"keyElements": [{"drafts": [
+            {"id": "d1", "prompt": "深空中的二向箔，冷白荧光。", "tag": "Agent"},
+        ]}]}
+        ctx = fc_gates.GateContext(
+            state=lambda: state, injected_skill=injected_skill)
+        args = {"mode": mode, "target": "all_keyElements"}
+        risk_err = fc_gates.tool_risk_gate(ctx, name, args)
+        gen_err = fc_gates.gen_confirm_gate(ctx, name, args)
+        assert risk_err is not None or gen_err is not None, (
+            f"零确认路径：{name} mode={mode} skill={injected_skill!r} "
+            f"gate_mode={gate_mode} 两道闸都放行（花钱无确认）")

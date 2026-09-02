@@ -143,7 +143,10 @@ async def poll_image_task(task_id: str):
 
 @router.post("/generate/batch-image")
 async def batch_generate_image(body: BatchImageGenRequest):
-    """批量提交图片生成（前端“批量生成”按钮 + Agent action 共用）"""
+    """批量提交图片生成（仅服务前端“批量生成”按钮：人发起=已同意，不设闸）。
+
+    Agent/模型发起的批量出图不走本路由，而是走 image_generate 工具
+    （fc_tool_runner 闸机链 → generation_submit.submit_image_task）并经确认闸。"""
     svc = StateManager.get_instance()
     state = svc.state_dict
 

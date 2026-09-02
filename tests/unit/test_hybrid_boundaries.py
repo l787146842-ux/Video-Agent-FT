@@ -416,7 +416,8 @@ def test_fc_injects_provider_into_image_generate(monkeypatch):
             "name": "image_generate",
             "arguments": json.dumps({"target": "all_keyElements"})}},
     ])
-    asyncio.run(runner.execute(response, image_provider="custom-api"))
+    asyncio.run(runner.execute(response, image_provider="custom-api",
+                               gate_override="all"))
     name, args = tm.captured[0]
     assert name == "image_generate" and args.get("provider_id") == "custom-api"
 
@@ -541,14 +542,16 @@ def test_fc_injection_prefers_spec_over_selected_draft(monkeypatch, set_global_s
             "name": "image_generate",
             "arguments": json.dumps({"target": "all_keyElements"})}},
     ])
-    asyncio.run(runner.execute(response, image_provider="custom-api"))
+    asyncio.run(runner.execute(response, image_provider="custom-api",
+                               gate_override="all"))
     _name, args = tm.captured[0]
     assert args.get("provider_id") == "custom-api"
 
     # 未带草稿供应商：回落全局设置（唯一硬参数事实源）
     tm2 = _CaptureToolManager()
     runner2 = FCToolRunner(tool_manager=tm2)
-    asyncio.run(runner2.execute(response, image_provider=""))
+    asyncio.run(runner2.execute(response, image_provider="",
+                                gate_override="all"))
     _name2, args2 = tm2.captured[0]
     assert args2.get("provider_id") == "gemini-cli" and args2.get("model") == "auto"
 
