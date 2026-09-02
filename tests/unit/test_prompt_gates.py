@@ -1,8 +1,7 @@
 """提示词结构闸机：校验规则 + FC/文本双轨拦截"""
 import pytest
 
-from src.video_agent.core import prompt_gates
-from src.video_agent.core.fc_tool_runner import FCToolRunner
+from src.video_agent.core import fc_gates, prompt_gates
 from src.video_agent.state.manager import StateManager
 
 GOOD_SHOT_PROMPT = (
@@ -168,87 +167,73 @@ def test_has_spec_document_variants():
         {"documents": [{"name": "制片规格.md", "content": "  "}]}) is False
 
 
+def _pctx(state=None, injected_skill="任意 Skill", override=False):
+    return fc_gates.GateContext(
+        state=lambda: state if state is not None else {},
+        injected_skill=injected_skill, gate_override=override)
+
+
 def test_fc_strips_structure_prompt_on_first_batch(monkeypatch):
     """FC 轨：首次搭建批次剥离内联详细提示词（P0-2）"""
-    runner = FCToolRunner(tool_manager=None)
     args = {"group_type": "keyElement", "title": "Element_测试",
             "draft": {"label": "概念图", "prompt": "x" * 100}}
-    assert runner._strip_structure_prompt(
-        "storyboard_create_group", args, injected_skill="任意 Skill") is True
+    assert fc_gates.strip_structure_prompt(
+        _pctx(), "storyboard_create_group", args) is True
     assert args["draft"]["prompt"] == ""
-    assert runner._strip_structure_prompt(
-        "storyboard_create_group", {"draft": {"prompt": "x" * 100}}, injected_skill="",
-    ) is False
-    assert runner._strip_structure_prompt(
-        "storyboard_create_group", {"draft": {"prompt": "x" * 100}}, injected_skill="任意 Skill",
-    ) is True
+    assert fc_gates.strip_structure_prompt(
+        _pctx(injected_skill=""),
+        "storyboard_create_group", {"draft": {"prompt": "x" * 100}}) is False
+    assert fc_gates.strip_structure_prompt(
+        _pctx(), "storyboard_create_group",
+        {"draft": {"prompt": "x" * 100}}) is True
 
 
 def test_fc_pending_window_rejects_bad_prompt(monkeypatch):
-    runner = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
-        lambda: {"interaction": {"storyboard_pending": True}}))
-    err = runner._prompt_gate(
-        "storyboard_patch_draft",
+    pending = {"interaction": {"storyboard_pending": True}}
+    err = fc_gates.prompt_gate(
+        _pctx(pending), "storyboard_patch_draft",
         {"draft_id": "1-1", "draft_type": "keyElement", "patch": {"prompt": "x" * 80}},
-        injected_skill="任意 Skill",
     )
     assert err is not None  # 决策 D：硬性条款未通过 → 拒绝
     # 用户坚持 → 放行并警告
-    runner2 = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(
-        lambda: {"interaction": {"storyboard_pending": True}}))
-    runner2.gate_override = True
-    err2 = runner2._prompt_gate(
-        "storyboard_patch_draft",
+    ctx2 = _pctx(pending, override=True)
+    err2 = fc_gates.prompt_gate(
+        ctx2, "storyboard_patch_draft",
         {"draft_id": "1-1", "draft_type": "keyElement", "patch": {"prompt": "x" * 80}},
-        injected_skill="任意 Skill",
     )
     assert err2 is None
-    assert runner2.gate_warnings
+    assert ctx2.warnings
 
 
 # ---------- FC 轨拦截 ----------
 
 def test_fc_gate_rejects_bad_prompt(monkeypatch):
-    runner = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    err = runner._prompt_gate(
-        "storyboard_patch_draft",
+    err = fc_gates.prompt_gate(
+        _pctx(injected_skill="剧本生视频（需上传剧本）"), "storyboard_patch_draft",
         {"draft_id": "1-1", "draft_type": "shot", "patch": {"prompt": "敷衍短句"}},
-        injected_skill="剧本生视频（需上传剧本）",
     )
     assert err is not None and "过短" in err
 
 
 def test_fc_gate_passes_without_skill(monkeypatch):
-    runner = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    assert runner._prompt_gate(
-        "storyboard_patch_draft",
+    assert fc_gates.prompt_gate(
+        _pctx(injected_skill=""), "storyboard_patch_draft",
         {"draft_id": "1-1", "draft_type": "shot", "patch": {"prompt": "敷衍短句"}},
-        injected_skill="",
     ) is None
 
 
 def test_fc_gate_passes_good_prompt(monkeypatch):
-    runner = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
-    assert runner._prompt_gate(
-        "storyboard_patch_draft",
+    assert fc_gates.prompt_gate(
+        _pctx(), "storyboard_patch_draft",
         {"draft_id": "1-1", "draft_type": "shot", "patch": {"prompt": GOOD_SHOT_PROMPT}},
-        injected_skill="任意 Skill",
     ) is None
 
 
 def test_fc_gate_off_mode(monkeypatch):
-    runner = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
     monkeypatch.setattr(prompt_gates, "gate_mode", lambda: "off")
-    assert runner._prompt_gate(
-        "storyboard_patch_draft",
+    assert fc_gates.prompt_gate(
+        _pctx(), "storyboard_patch_draft",
         {"draft_id": "1-1", "draft_type": "shot", "patch": {"prompt": "敷衍短句"}},
-        injected_skill="任意 Skill",
     ) is None
 
 

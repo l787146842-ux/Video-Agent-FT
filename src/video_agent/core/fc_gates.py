@@ -10,9 +10,6 @@
 本模块只做 FC 轨参数组装与链式组合，不各自写判定。
 web 层引用（生成日志面板）经 GateContext.record_gen_log 注入，
 保住分层（core 不顶层依赖 web）。
-
-FCToolRunner 对本模块每个闸函数保留同名承重壳方法（壳清单登记于
-fc_tool_runner.py 尾部注释），既有调用/测试 patch 路径不变。
 """
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple

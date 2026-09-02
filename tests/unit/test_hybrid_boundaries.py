@@ -4,7 +4,7 @@ import json
 import pytest
 
 from src.video_agent.adapters.base_chat import ChatResponse
-from src.video_agent.core import prompt_gates
+from src.video_agent.core import fc_gates, prompt_gates
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
@@ -156,41 +156,44 @@ def test_select_signal_promotes(svc):
 
 # ---------- 生成确认闸（FC 轨） ----------
 
+def _gen_ctx(state, injected_skill="任意 Skill", override=False):
+    return fc_gates.GateContext(
+        state=lambda: state, injected_skill=injected_skill,
+        gate_override=override)
+
+
 def test_fc_gen_gate_blocks_without_user_insist(monkeypatch):
     """4444：FC 轨未确认草稿——本轮无跳过指令 → 返回拒收错误；
     用户本轮要求（gate_override）→ 放行+警告；确认后放行。"""
-    runner = FCToolRunner(tool_manager=None)
     state = {"keyElements": [{
         "id": "ke-1", "title": "E", "drafts": [
             {"id": "d1", "tag": "Agent", "prompt": "深空背景中的二向箔，冷白荧光，极简硬科幻美学。"},
         ]}]}
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
-    err = runner._gen_confirm_gate(
-        "image_generate", {"target": "all_keyElements"}, injected_skill="任意 Skill")
+    ctx = _gen_ctx(state)
+    err = fc_gates.gen_confirm_gate(
+        ctx, "image_generate", {"target": "all_keyElements"})
     assert err and "拦截" in err  # 模型自发跳确认被拒收
     # 用户本轮明确要求 → 放行+警告
-    runner2 = FCToolRunner(tool_manager=None)
-    runner2.gate_override = "all"
-    monkeypatch.setattr(runner2, "_raw_state", staticmethod(lambda: state))
-    assert runner2._gen_confirm_gate(
-        "image_generate", {"target": "all_keyElements"}, injected_skill="任意 Skill") is None
-    assert runner2.gate_warnings and "确认" in runner2.gate_warnings[0]
+    ctx2 = _gen_ctx(state, override="all")
+    assert fc_gates.gen_confirm_gate(
+        ctx2, "image_generate", {"target": "all_keyElements"}) is None
+    assert ctx2.warnings and "确认" in ctx2.warnings[0]
     # 全部确认后同样放行
     state["keyElements"][0]["drafts"][0]["tag"] = "已确认"
-    assert runner._gen_confirm_gate(
-        "image_generate", {"target": "all_keyElements"}, injected_skill="任意 Skill") is None
+    assert fc_gates.gen_confirm_gate(
+        ctx, "image_generate", {"target": "all_keyElements"}) is None
     # 无 Skill 不拦
     state["keyElements"][0]["drafts"][0]["tag"] = "Agent"
-    assert runner._gen_confirm_gate(
-        "image_generate", {"target": "all_keyElements"}, injected_skill="") is None
+    ctx3 = _gen_ctx(state, injected_skill="")
+    assert fc_gates.gen_confirm_gate(
+        ctx3, "image_generate", {"target": "all_keyElements"}) is None
 
 
 def test_fc_gen_gate_no_targets_passes(monkeypatch):
     """无目标草稿时放行（交给工具自身报错，不误伤）"""
-    runner = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {"keyElements": []}))
-    assert runner._gen_confirm_gate(
-        "image_generate", {"target": "all_keyElements"}, injected_skill="任意") is None
+    ctx = _gen_ctx({"keyElements": []})
+    assert fc_gates.gen_confirm_gate(
+        ctx, "image_generate", {"target": "all_keyElements"}) is None
 
 
 def test_fc_gen_gate_exec_preference_auto_decide(monkeypatch, set_global_setting):
@@ -200,18 +203,16 @@ def test_fc_gen_gate_exec_preference_auto_decide(monkeypatch, set_global_setting
         "id": "ke-1", "title": "E", "drafts": [
             {"id": "d1", "tag": "Agent", "prompt": "深空背景中的二向箔，冷白荧光。"},
         ]}]}
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
     set_global_setting("execution_preference", "auto_decide")
-    runner = FCToolRunner(tool_manager=None)
-    assert runner._gen_confirm_gate(
-        "image_generate", {"target": "all_keyElements"},
-        injected_skill="任意 Skill") is None
-    assert runner.gate_warnings and "自动决定" in runner.gate_warnings[0]
+    ctx = _gen_ctx(state)
+    assert fc_gates.gen_confirm_gate(
+        ctx, "image_generate", {"target": "all_keyElements"}) is None
+    assert ctx.warnings and "自动决定" in ctx.warnings[0]
     # 无活跃 Skill → 闸不激活，不拒无警告（现状语义）
-    runner2 = FCToolRunner(tool_manager=None)
-    assert runner2._gen_confirm_gate(
-        "image_generate", {"target": "all_keyElements"}, injected_skill="") is None
-    assert runner2.gate_warnings == []
+    ctx2 = _gen_ctx(state, injected_skill="")
+    assert fc_gates.gen_confirm_gate(
+        ctx2, "image_generate", {"target": "all_keyElements"}) is None
+    assert ctx2.warnings == []
 
 
 def test_fc_gen_gate_exec_preference_generate_directly(monkeypatch, set_global_setting):
@@ -221,18 +222,16 @@ def test_fc_gen_gate_exec_preference_generate_directly(monkeypatch, set_global_s
         "id": "ke-1", "title": "E", "drafts": [
             {"id": "d1", "tag": "Agent", "prompt": "深空背景中的二向箔，冷白荧光。"},
         ]}]}
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: state))
     set_global_setting("execution_preference", "generate_directly")
-    runner = FCToolRunner(tool_manager=None)
-    assert runner._gen_confirm_gate(
-        "image_generate", {"target": "all_keyElements"},
-        injected_skill="任意 Skill") is None
-    assert runner.gate_warnings and "直接生成" in runner.gate_warnings[0]
+    ctx = _gen_ctx(state)
+    assert fc_gates.gen_confirm_gate(
+        ctx, "image_generate", {"target": "all_keyElements"}) is None
+    assert ctx.warnings and "直接生成" in ctx.warnings[0]
     # 回落默认档 → 同场景恢复拦截（免确认仅由偏好控制，不侵入兜底逻辑）
     set_global_setting("execution_preference", "confirm_before_gen")
-    runner3 = FCToolRunner(tool_manager=None)
-    err = runner3._gen_confirm_gate(
-        "image_generate", {"target": "all_keyElements"}, injected_skill="任意 Skill")
+    ctx3 = _gen_ctx(state)
+    err = fc_gates.gen_confirm_gate(
+        ctx3, "image_generate", {"target": "all_keyElements"})
     assert err and "拦截" in err
 
 

@@ -93,7 +93,7 @@ class FCToolRunner:
         # 幂等键轮内账本（T4）：同键重复提交去重，生命周期随轮、不持久化
         self._idempotency = IdempotencyLedger()
 
-    # ---------- 闸机裁决段承重壳（实现体 = core/fc_gates.py） ----------
+    # ---------- 闸机上下文组装（判定实现体 = core/fc_gates.py） ----------
 
     @staticmethod
     def _raw_state() -> Dict[str, Any]:
@@ -126,27 +126,6 @@ class FCToolRunner:
             ports.task_log_port().record_gate_gen_log(prompt, hard)
         except Exception:  # 记录失败不影响主链路
             pass
-
-    def _resolve_current_refs(self, name: str, args: Dict[str, Any]) -> None:
-        fc_gates.resolve_current_refs(self._gate_ctx(), name, args)
-
-    def _prompt_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
-        return fc_gates.prompt_gate(self._gate_ctx(injected_skill), name, args)
-
-    def _strip_structure_prompt(self, name: str, args: Dict[str, Any], injected_skill: str) -> bool:
-        return fc_gates.strip_structure_prompt(self._gate_ctx(injected_skill), name, args)
-
-    def _structure_integrity_gate(
-        self, name: str, args: Dict[str, Any], injected_skill: str,
-    ) -> Optional[str]:
-        return fc_gates.structure_integrity_gate(
-            self._gate_ctx(injected_skill), name, args)
-
-    def _gen_confirm_gate(self, name: str, args: Dict[str, Any], injected_skill: str) -> Optional[str]:
-        return fc_gates.gen_confirm_gate(self._gate_ctx(injected_skill), name, args)
-
-    def _tool_risk_gate(self, name: str, args: Optional[Dict[str, Any]] = None) -> Optional[str]:
-        return fc_gates.tool_risk_gate(self._gate_ctx(), name, args)
 
     # ---------- 执行段 ----------
 

@@ -11,8 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.video_agent.core import prompt_gates
-from src.video_agent.core.fc_tool_runner import FCToolRunner
+from src.video_agent.core import fc_gates, prompt_gates
 
 STATE = {
     "keyElements": [
@@ -31,16 +30,19 @@ def strict(monkeypatch):
 
 @pytest.fixture
 def runner(monkeypatch):
-    r = FCToolRunner(tool_manager=None)
-    monkeypatch.setattr(FCToolRunner, "_raw_state",
-                        staticmethod(lambda: STATE))
+    """闸机上下文工厂：runner(injected_skill) → fc_gates.GateContext。"""
     # 边界判定按当前阶段：默认放行所有类别（structure 阶段语义）
     monkeypatch.setattr(
         "src.video_agent.core.fc_gates."
         "stage_probes.current_stage",
         lambda state, skill: SimpleNamespace(key="structure", title="结构搭建"),
     )
-    return r
+
+    def _ctx(injected_skill="任意"):
+        return fc_gates.GateContext(state=lambda: STATE,
+                                    injected_skill=injected_skill)
+
+    return _ctx
 
 
 def _args(group_type="shot", title="程心走过走廊", scene_refs=None):
@@ -52,55 +54,53 @@ def _args(group_type="shot", title="程心走过走廊", scene_refs=None):
 
 
 def test_untitled_group_rejected(strict, runner):
-    err = runner._structure_integrity_gate(
-        "storyboard_create_group", _args(title="  "), injected_skill="任意")
+    err = fc_gates.structure_integrity_gate(
+        runner(), "storyboard_create_group", _args(title="  "))
     assert err is not None and "title" in err
 
 
 def test_untitled_passes_when_gate_off(monkeypatch, runner):
     monkeypatch.setattr(prompt_gates, "gate_mode", lambda: "off")
-    assert runner._structure_integrity_gate(
-        "storyboard_create_group", _args(title=""), injected_skill="任意") is None
+    assert fc_gates.structure_integrity_gate(
+        runner(), "storyboard_create_group", _args(title="")) is None
 
 
 def test_untitled_passes_without_skill(strict, runner):
-    assert runner._structure_integrity_gate(
-        "storyboard_create_group", _args(title=""), injected_skill="") is None
+    assert fc_gates.structure_integrity_gate(
+        runner(""), "storyboard_create_group", _args(title="")) is None
 
 
 # ---------- ② 分镜 sceneRefs 完整度 ----------
 
 
 def test_shot_empty_scene_refs_rejected(strict, runner):
-    err = runner._structure_integrity_gate(
-        "storyboard_create_group", _args(scene_refs=[]), injected_skill="任意")
+    err = fc_gates.structure_integrity_gate(
+        runner(), "storyboard_create_group", _args(scene_refs=[]))
     assert err is not None and "sceneRefs" in err
 
 
 def test_shot_missing_title_mentioned_ke_rejected(strict, runner):
     # 标题点名「程心」但只引用了「走廊」→ 漏引拒收
-    err = runner._structure_integrity_gate(
-        "storyboard_create_group",
-        _args(scene_refs=["走廊"]), injected_skill="任意")
+    err = fc_gates.structure_integrity_gate(
+        runner(), "storyboard_create_group", _args(scene_refs=["走廊"]))
     assert err is not None and "程心" in err
 
 
 def test_shot_refs_by_id_or_title_pass(strict, runner):
     # 兼容关键元素 id 与标题两种写法（与 shot_refs_missing_element 同口径）
-    assert runner._structure_integrity_gate(
-        "storyboard_create_group",
-        _args(scene_refs=["ke-1", "走廊"]), injected_skill="任意") is None
-    assert runner._structure_integrity_gate(
-        "storyboard_create_group",
-        _args(scene_refs=["程心", "走廊"]), injected_skill="任意") is None
+    assert fc_gates.structure_integrity_gate(
+        runner(), "storyboard_create_group",
+        _args(scene_refs=["ke-1", "走廊"])) is None
+    assert fc_gates.structure_integrity_gate(
+        runner(), "storyboard_create_group",
+        _args(scene_refs=["程心", "走廊"])) is None
 
 
 def test_shot_not_mentioned_ke_not_required(strict, runner):
     # 标题未点名的关键元素不强制引用（不误伤无关分镜）
-    assert runner._structure_integrity_gate(
-        "storyboard_create_group",
-        _args(title="空镜远景", scene_refs=["走廊"]),
-        injected_skill="任意") is None
+    assert fc_gates.structure_integrity_gate(
+        runner(), "storyboard_create_group",
+        _args(title="空镜远景", scene_refs=["走廊"])) is None
 
 
 # ---------- ③ 分组类型边界（当前阶段推导） ----------
@@ -112,27 +112,25 @@ def test_stage_boundary_rejects_offstage_kind(strict, runner, monkeypatch):
         "stage_probes.current_stage",
         lambda state, skill: SimpleNamespace(key="ke_media", title="元素图生成"),
     )
-    err = runner._structure_integrity_gate(
-        "storyboard_create_group", _args(group_type="shot"),
-        injected_skill="任意")
+    err = fc_gates.structure_integrity_gate(
+        runner(), "storyboard_create_group", _args(group_type="shot"))
     assert err is not None and "越界" in err
     # 元素图阶段补建关键元素放行
-    assert runner._structure_integrity_gate(
-        "storyboard_create_group",
-        _args(group_type="keyElement", title="补漏元素"),
-        injected_skill="任意") is None
+    assert fc_gates.structure_integrity_gate(
+        runner(), "storyboard_create_group",
+        _args(group_type="keyElement", title="补漏元素")) is None
 
 
 def test_structure_stage_allows_all_kinds(strict, runner):
     for kind, title in (("keyElement", "程心"), ("audio", "旁白轨")):
-        assert runner._structure_integrity_gate(
-            "storyboard_create_group",
-            _args(group_type=kind, title=title), injected_skill="任意") is None
+        assert fc_gates.structure_integrity_gate(
+            runner(), "storyboard_create_group",
+            _args(group_type=kind, title=title)) is None
 
 
 # ---------- 边界：非建组工具不受本闸管辖 ----------
 
 
 def test_non_create_group_tools_pass(strict, runner):
-    assert runner._structure_integrity_gate(
-        "storyboard_patch_draft", _args(title=""), injected_skill="任意") is None
+    assert fc_gates.structure_integrity_gate(
+        runner(), "storyboard_patch_draft", _args(title="")) is None

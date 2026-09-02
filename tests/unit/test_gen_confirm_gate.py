@@ -9,20 +9,17 @@ Q2 裁决 2026-09-01：文本轨随执行器家族退役，动作通道唯一 = 
 import json
 
 from src.video_agent.config import settings
-from src.video_agent.core import guard_pipeline
-from src.video_agent.core.fc_tool_runner import FCToolRunner
+from src.video_agent.core import fc_gates, guard_pipeline
 from src.video_agent.core.tracer import AgentTracer
 
 CONF = {"id": "d1", "prompt": "x", "tag": "已确认"}
 UNCONF = {"id": "d2", "prompt": "y", "tag": "Agent"}
 
 
-def _fc_runner(state, override=False):
-    r = object.__new__(FCToolRunner)
-    r.gate_override = override
-    r.gate_warnings = []
-    r._raw_state = lambda: state
-    return r
+def _fc_ctx(state, override=False, injected_skill="some-skill"):
+    return fc_gates.GateContext(
+        state=lambda: state, gate_override=override,
+        injected_skill=injected_skill)
 
 
 def test_shared_block_on_any_unconfirmed():
@@ -54,23 +51,24 @@ def test_fc_adapter_matches_shared_semantics(monkeypatch):
 
     # 拦截场景：存在未确认草稿 → 硬拒 + 警告（唯一实现口径，见上方共用用例）
     state = {"keyElements": [{"drafts": [CONF, UNCONF]}]}
-    fc = _fc_runner(state)
-    fc_err = fc._gen_confirm_gate("image_generate", {"target": "all_keyElements"}, "some-skill")
+    ctx = _fc_ctx(state)
+    fc_err = fc_gates.gen_confirm_gate(ctx, "image_generate", {"target": "all_keyElements"})
     assert fc_err is not None
-    assert fc.gate_warnings and "生成确认闸拦截" in fc.gate_warnings[0]
+    assert ctx.warnings and "生成确认闸拦截" in ctx.warnings[0]
 
     # 放行场景：全部已确认 → 放行且无警告
-    state2 = {"keyElements": [{"drafts": [CONF]}]}
-    fc2 = _fc_runner(state2)
-    assert fc2._gen_confirm_gate("image_generate", {"target": "all_keyElements"}, "s") is None
-    assert fc2.gate_warnings == []
+    ctx2 = _fc_ctx({"keyElements": [{"drafts": [CONF]}]})
+    assert fc_gates.gen_confirm_gate(
+        ctx2, "image_generate", {"target": "all_keyElements"}) is None
+    assert ctx2.warnings == []
 
     # 豁免场景：override → 放行且豁免警告与唯一实现一致（同文案）
-    fc3 = _fc_runner(state, override="all")
-    assert fc3._gen_confirm_gate("image_generate", {"target": "all_keyElements"}, "s") is None
+    ctx3 = _fc_ctx(state, override="all")
+    assert fc_gates.gen_confirm_gate(
+        ctx3, "image_generate", {"target": "all_keyElements"}) is None
     err_shared, warns_shared = guard_pipeline.evaluate_gen_confirm(
         [CONF, UNCONF], active=True, override="all")
-    assert err_shared is None and fc3.gate_warnings == warns_shared
+    assert err_shared is None and ctx3.warnings == warns_shared
 
 
 # ---------- 批 B：执行偏好三档前置分支（唯一实现内，双轨自动同语义） ----------
@@ -163,12 +161,12 @@ class TestExecPreferenceGenConfirm:
         object.__setattr__(settings, "execution_preference", "generate_directly")
         try:
             state = {"keyElements": [{"drafts": [UNCONF]}]}
-            fc = _fc_runner(state)
-            assert fc._gen_confirm_gate(
-                "image_generate", {"target": "all_keyElements"}, "s") is None
+            ctx = _fc_ctx(state)
+            assert fc_gates.gen_confirm_gate(
+                ctx, "image_generate", {"target": "all_keyElements"}) is None
             err_shared, warns_shared = guard_pipeline.evaluate_gen_confirm(
                 [UNCONF], active=True, action="image_generate")
-            assert err_shared is None and fc.gate_warnings == warns_shared
-            assert fc.gate_warnings and "直接生成" in fc.gate_warnings[0]
+            assert err_shared is None and ctx.warnings == warns_shared
+            assert ctx.warnings and "直接生成" in ctx.warnings[0]
         finally:
             object.__setattr__(settings, "execution_preference", old)

@@ -78,7 +78,7 @@ class TestUnifiedPipeline:
         """动作通道唯一 = FC：FC 轨判定委托统一闸机管线（防再次各自组装；
         Q2 裁决 2026-09-01 文本轨退役，原双轨同源断言收敛为单轨）。
         任务#23 三段拆分后 FC 轨判定实现体 = core/fc_gates.prompt_gate
-        （FCToolRunner._prompt_gate 为承重壳，委托本函数）。"""
+        （FC 轨经 fc_gates.prompt_gate 调用本函数）。"""
         import inspect
 
         from src.video_agent.core import fc_gates

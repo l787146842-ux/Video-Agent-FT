@@ -46,6 +46,13 @@
   - **F3** 「退役条件」声明义务废除：`scripts/acceptance.py` GATES 表 10 条门禁与 `check_semantic_colors` / `check_layer_imports` / `check_func_imports` / `check_cov_ratchet` / `check_fe_cov_ratchet` / `check_css_size.mjs` / `audit_assets` / `check_doc_pointers` / `check_legacy_orchestration` 九个脚本头部的退役条件段落整体删除；顺带清两处失效指针（`check_doc_pointers.py` 与 `test_gate_messages_coverage.py` 仍指向宪法 §2.3 已删的「闸机冻结基线」）；`docs/交接-20260902…md` 两条「新增门禁须事故依据+退役条件」口径同步改为「事故依据 + 书面裁决」。全库「退役条件」零残留。
 - **连带影响**：耦合表 26 行的强制项随之消失，其中 R18 / R22 / R26 / R28 等机械约束本已由各自门禁与回归测试独立覆盖（`test_gen_confirm_gate` / acceptance GATES / `gen_api_types` / `check_layer_imports`），无覆盖回退；`ref_integrity` 闸所检的宪法锚点与文件地图在同批同步更新，未留死指针。
 
+### 2026-09-03 · 用户审定「委托壳与历史兼容层根除」裁决（批次 E3/H）
+- **背景**：用户裁定「堆积的历史兼容层、委托壳、元治理台账」一次性解决；E3 指向上一批 deferred 的 `fc_tool_runner` 整族收敛（两个 R13 符号是登记哨兵，物理拆双层须整族收敛）。
+- **批次落地**：
+  - **E3a** 回喂 re-export 壳收敛：`fc_tool_runner.py` 顶部 14 符号 re-export 块 + `_PAUSE_WINDOW_READONLY` / `_STAGE_ALLOWED_GROUP_KINDS` 两个闸机常量别名删除；消费方（`core/turn_executor.py` + 6 个测试文件）全部直连实现体 `core/fc_feedback.py`。
+  - **E3b** 闸机方法壳整族收敛：`FCToolRunner` 的 6 个闸机方法壳（`_resolve_current_refs` / `_prompt_gate` / `_strip_structure_prompt` / `_structure_integrity_gate` / `_gen_confirm_gate` / `_tool_risk_gate`）删除——`execute()` 早已直调 `fc_gates.run_gate_chain`，6 壳在生产代码零调用、仅测试引用；5 个测试文件（约 30 处调用点）改直连 `fc_gates` 各闸函数 + `GateContext`。非-manager 承重壳自此清零；`state/manager.py` 门面保留（Rule3 唯一写入点属架构决策，非委托壳）。
+- **连带影响**：`readonly_parallel` / `batch_checkpoint` 经 `runner._dispatch_tool` / `runner._idempotency` / `runner.tool_manager` 消费，不涉被删壳；`planner` 消费 `execute()` / `reset_turn_tracking` / `costly_failures`，接口零变化；闸机判定路径（guard_pipeline 唯一实现）未动，仅消除测试侧的旧命名空间。
+
 ### 2026-09-02 · 用户审定「治理闸机减负」裁决（做减法，批次 B0-B5+D）
 - **背景**：治理闸机/门禁长期棘轮化叠加，累积大量镜像数字锁、幽灵闸（登记但从不签发 verdict）、纯仪式门禁（覆盖率镜像基线逐批上调、脚手架计数棘轮、行数硬闸）与折旧休眠机器，维护成本高于拦截收益。用户审定做减法，授权修改宪法 / AGENTS / 门禁 / 注册表。
 - **裁决**：解除镜像数字锁、删幽灵闸机、覆盖率改固定容差地板、删脚手架棘轮 / 折旧机器 / 行数硬闸、清相关 prose；**保留 6 核心闸**——`tool_risk` / `gen_confirm` / `prompt_write`（运行时 3 安全闸，有实测拦截）+ `layer_imports` / `contract` / `legacy_orchestration`（架构 3 闸），另保留 `category_keys`（防硬编码）与 `ref_integrity` 的死指针检查（仅删其基线数字对拍）。
