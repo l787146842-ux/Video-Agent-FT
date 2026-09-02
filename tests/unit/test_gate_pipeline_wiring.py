@@ -6,7 +6,7 @@
 """
 import pytest
 
-from src.video_agent.core import guard_pipeline, prompt_gates
+from src.video_agent.core import gate_registry, guard_pipeline, prompt_gates
 from src.video_agent.core.guard_pipeline import (
     GateVerdict,
     audit_verdicts,
@@ -106,8 +106,8 @@ class TestMessagesExternalized:
 
     def test_registry_covers_layers(self):
         # C1a 裁决 2026-08-31：技能级闸层删除，注册表仅余平台层
-        assert prompt_gates.GATE_RULES["platform.gen_confirm"].layer == "platform"
-        assert all(m.layer == "platform" for m in prompt_gates.GATE_RULES.values())
+        assert gate_registry.GATE_RULES["platform.gen_confirm"].layer == "platform"
+        assert all(m.layer == "platform" for m in gate_registry.GATE_RULES.values())
 
 
 class TestGateAudit:

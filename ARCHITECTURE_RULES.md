@@ -88,7 +88,7 @@
 - 可配项仅限风格/流程类；「规格前置」经用户确认为可配置项，不锁死
 
 ### 2.3 规则注册表（Policy-as-Data）
-- `core/gate_registry.py` 维护 `GATE_RULES` 注册表（唯一家；`prompt_gates.py` 仅为承重壳 re-export）：稳定 `rule_id` + 层归属 + 中文描述
+- `core/gate_registry.py` 维护 `GATE_RULES` 注册表（唯一家；消费方直连本模块，原 `prompt_gates.py` re-export 壳已收敛）：稳定 `rule_id` + 层归属 + 中文描述
 - 判定返回结构化 `GateVerdict(rule_id, layer, ok, message)` 列表；文案外置 `prompts/gates/messages.md`，杜绝自由文本
 - 回喂模型与展示用户用**同一 verdict 源**（防两套说辞）
 
@@ -228,7 +228,7 @@ src/video_agent/
 │   ├── fc_feedback.py      ← 工具结果回喂/压缩家族
 │   ├── planner_output.py   ← 轮末产出组装域
 │   ├── round_end_policies.py ← 轮末策略状态机 + suggest_next_actions（轮末兜底引导卡唯一落点）
-│   ├── prompt_gates.py     ← 闸机承重壳，re-export `gate_registry.py`（注册表唯一家）
+│   ├── prompt_gates.py     ← 提示词写入校验（validate_prompt_write 等）+ gates_cards 文案族 re-export 壳
 │   ├── gate_registry.py    ← 闸机规则注册表唯一家（GATE_RULES / normalize_rule_id，§2.3）
 │   ├── guard_pipeline.py   ← 闸机管线（2.0，动作判定唯一入口）
 │   ├── prompt_builder.py   ← 上下文组装；token_budget.py ← 窗口/截断

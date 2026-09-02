@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from src.video_agent.config import normalize_exec_pref, settings
-from src.video_agent.core import prompt_gates
+from src.video_agent.core import gate_registry, prompt_gates
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.utils.paths import DATA_DIR
 
@@ -50,12 +50,12 @@ class GateVerdict:
     def __post_init__(self) -> None:
         # 签发即归一：历史别名 rule_id 经此统一为注册表正式条目，
         # 下游 to_dict/audit_verdicts/trace 留痕全部同口径
-        self.rule_id = prompt_gates.normalize_rule_id(self.rule_id)
+        self.rule_id = gate_registry.normalize_rule_id(self.rule_id)
 
     def to_dict(self) -> Dict[str, Any]:
         # rule_id 已归一；再经 normalize 一次仅为防御直改字段的外围写入
-        rid = prompt_gates.normalize_rule_id(self.rule_id)
-        meta = prompt_gates.GATE_RULES.get(rid)
+        rid = gate_registry.normalize_rule_id(self.rule_id)
+        meta = gate_registry.GATE_RULES.get(rid)
         return {
             "rule_id": rid,
             "layer": self.layer,
@@ -101,7 +101,7 @@ def _append_trigger_counts(
                 rec = {
                     "ts": now,
                     "epoch": time.time(),
-                    "rule_id": prompt_gates.normalize_rule_id(v.rule_id),
+                    "rule_id": gate_registry.normalize_rule_id(v.rule_id),
                     "ok": bool(v.ok),
                     "skill": str(skill_name or ""),
                     "layer": v.layer,
@@ -130,7 +130,7 @@ def audit_verdicts(
         tracer = AgentTracer.get_instance()
         for v in verdicts:
             tracer.record_gate(
-                rule_id=prompt_gates.normalize_rule_id(v.rule_id),
+                rule_id=gate_registry.normalize_rule_id(v.rule_id),
                 layer=v.layer,
                 ok=v.ok,
                 skill_name=skill_name,

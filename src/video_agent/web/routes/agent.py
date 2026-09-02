@@ -230,13 +230,13 @@ async def get_agent_gates(limit: int = 50):
 
     与 /agent/traces 并列的调试端点：闸机策略分层的审计入口，
     平台层规则（platform.*）不可被 Skill manifest 配置（地板模型强制不变量）。"""
-    from src.video_agent.core import prompt_gates
+    from src.video_agent.core import gate_registry
     tracer = AgentTracer.get_instance()
     return {
         "recent": tracer.get_recent_gates(min(limit, 50)),
         "rules": [
             {"rule_id": meta.rule_id, "layer": meta.layer, "description": meta.description}
-            for meta in prompt_gates.GATE_RULES.values()
+            for meta in gate_registry.GATE_RULES.values()
         ],
     }
 

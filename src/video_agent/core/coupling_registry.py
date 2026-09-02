@@ -159,13 +159,10 @@ COUPLING_ROWS: List[CouplingRow] = [
             "src.video_agent.state.manager:StateManager.save",
             "src.video_agent.state.manager:StateManager.board_version",
             "src.video_agent.state.manager:StateManager.get_full_snapshot",
-            # gate_registry 切出承重壳：注册表数据 + 别名表 +
-            # 归一函数（实现体 core/gate_registry.py，纯数据无判定）；
-            # guard_pipeline/planner_gate_session/routes/agent/scripts 经
-            # prompt_gates.* 引用，迁移需全量改引用
-            "src.video_agent.core.prompt_gates:GATE_RULES",
-            "src.video_agent.core.prompt_gates:GateRuleMeta",
-            "src.video_agent.core.prompt_gates:normalize_rule_id",
+            # （批次E：prompt_gates 尾部 gate_registry re-export 壳（GATE_RULES/
+            # GateRuleMeta/normalize_rule_id）已收敛，消费方 guard_pipeline/
+            # planner_gate_session/routes/agent/scaffold_registry(I06) 全部直连
+            # core/gate_registry.py）
             # chat_service.py 错误翻译域拆分承重壳：流式错误
             # 出口 + 人话翻译（实现体 web/chat_errors.py）；tests 经
             # chat_service.* 导入钉死，迁移需全量改引用

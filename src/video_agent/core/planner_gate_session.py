@@ -9,7 +9,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.video_agent.core import live_metrics, prompt_gates
+from src.video_agent.core import gate_registry, live_metrics, prompt_gates
 from src.video_agent.core.tracer import AgentTracer
 
 
@@ -33,7 +33,7 @@ def consume_gate_overrides(state_manager: Any, user_message: Any) -> Any:
             logger.info(f"[GateOverride] 消费 {len(taken)} 条一次性豁免，作用域={gate_override_scope}")
             AgentTracer.get_instance().record_gate(
                 # override 留痕经统一归一出口（正式 ID 归一为恒等，语义不变）
-                prompt_gates.normalize_rule_id("platform.gate_override"), "session", True,
+                gate_registry.normalize_rule_id("platform.gate_override"), "session", True,
                 overridden=True, message=f"一次性放行生效，作用域={gate_override_scope}",
                 scope=str(gate_override_scope),
             )

@@ -99,7 +99,7 @@ SCAFFOLDS = (
         "季度审计",
         "invariant"),
     ScaffoldEntry(
-        "I06", "src.video_agent.core.prompt_gates:GATE_RULES",
+        "I06", "src.video_agent.core.gate_registry:GATE_RULES",
         "安全策略即数据，属宪法不变量",
         "test_prompt_gates/test_gate_messages_coverage 回归（gate_corpus 黄金语料校准已随 C1a 裁决 2026-08-31 退役）",
         "季度审计",

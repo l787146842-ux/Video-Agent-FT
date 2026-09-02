@@ -16,7 +16,7 @@ import pytest
 from pydantic import BaseModel
 
 from src.video_agent.adapters.base_chat import ChatResponse
-from src.video_agent.core import guard_pipeline, prompt_gates
+from src.video_agent.core import gate_registry, guard_pipeline
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.tools.base import BaseTool, ToolResult
@@ -323,7 +323,7 @@ class TestToolRiskGate:
     def test_evaluate_tool_risk_no_silent_pass(self):
         err, warns = guard_pipeline.evaluate_tool_risk("document_write")
         assert err and warns, "无同意必须硬拒，禁止静默放行"
-        assert prompt_gates.GATE_RULES["platform.tool_risk"].layer == "platform"
+        assert gate_registry.GATE_RULES["platform.tool_risk"].layer == "platform"
 
 
 class TestGenerateVideoConfirmGate:

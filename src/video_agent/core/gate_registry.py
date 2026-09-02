@@ -1,8 +1,8 @@
 """闸机规则注册表数据层。
 
 纯数据与归一化函数，无任何判定逻辑；顶层不依赖 core 其他模块（无环）。
-prompt_gates 原位留承重壳 re-export 保持既有引用路径不变
-（宪法 §12 登记壳；登记见 coupling_registry R13）。
+消费方（guard_pipeline / planner_gate_session / routes/agent 等）直连本模块，
+原 prompt_gates re-export 承重壳已随批次E收敛删除（2026-09-02）。
 
 承载：GateRuleMeta 定义 + GATE_RULES 注册表数据 + GATE_MESSAGE_SECTIONS
 闸机文案覆盖矩阵 + PAUSE_MESSAGE_SECTIONS 暂停/告警文案覆盖矩阵
