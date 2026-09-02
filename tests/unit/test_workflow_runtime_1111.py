@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""1111 黄金轮次契约（宪法 Rule2 主体回归 / ADR-0004，用户审定裁决钉死）。
+"""1111 黄金轮次契约（宪法 Rule2 主体回归，用户审定裁决钉死；决策史见 git tag adr-archive-20260901）。
 
 对照 tests/fixtures/workflow_1111_baseline.json（修复前基线）断言：
 ① 轮1 缺剧本 → 正文提醒 + quick-actions 芯片（层 9 兜底，由代码执行不依赖模型自觉；批 B 出槽：不占暂停槽）；

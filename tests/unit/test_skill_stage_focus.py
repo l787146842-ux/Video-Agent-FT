@@ -1,4 +1,5 @@
-"""Skill 章节解析与选中 Skill 段（本文件覆盖章节解析与正文预算注入回归，批4/ADR-0007；
+"""Skill 章节解析与选中 Skill 段（本文件覆盖章节解析与正文预算注入回归，指令性制作手册口径，
+决策史见 git tag adr-archive-20260901；
 遥测/预算观察项钉测试见 test_prompt_single_injection_p317.py）。
 章节解析（split_skill_sections）随任务#12 裁决保留：供阶段裁剪闸、
 音频闸、lint、scan_skills 等探针消费，也供预算切分按章节边界切齐。"""
@@ -48,7 +49,7 @@ def test_split_sections_empty():
     assert skill_docs.split_skill_sections("") == {}
 
 
-# ---------- 选中 Skill 段（批4/ADR-0007：正文预算化注入） ----------
+# ---------- 选中 Skill 段（指令性制作手册口径：正文预算化注入） ----------
 
 def _pb(raw_state):
     return PromptBuilder(

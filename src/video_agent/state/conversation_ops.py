@@ -413,7 +413,7 @@ def build_chat_entry(
     if pause_answered:
         entry["pauseAnsweredId"] = str(pause_answered.get("pause_id") or "")
         entry["pauseAnsweredValue"] = str(pause_answered.get("value") or "")
-        # 三态消费决策（ADR-0006）：accept/decline 随标记落盘，
+        # 三态消费决策（问即停，决策史见 git tag adr-archive-20260901）：accept/decline 随标记落盘，
         # 前端「当时所选」对勾与拒绝态同源可重建（缺省不产生空字段）
         if pause_answered.get("decision"):
             entry["pauseAnsweredDecision"] = str(pause_answered.get("decision"))

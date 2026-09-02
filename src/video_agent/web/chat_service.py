@@ -542,7 +542,7 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
     # --- 停止路径：stopped 终态事件已由检查点先行下发，
     # 此处只落停止痕迹消息供刷新后恢复，不再发 done（stopped 即终态）；
     # 取消穿透防御路径（仅 stopped 事件无 done）同归此分支。
-    # pause 相位豁免（问即停，ADR-0006）：暂停发行复用 stopped 标记结束本轮，
+    # pause 相位豁免（问即停，决策史见 git tag adr-archive-20260901）：暂停发行复用 stopped 标记结束本轮，
     # 但非用户停止——照常走成功路径发 done（暂停卡随 done payload 下发）
     _finalize_stop_phase = str(
         ctx.final_payload.get("stop_phase") or ctx.stop_phase_seen or "")

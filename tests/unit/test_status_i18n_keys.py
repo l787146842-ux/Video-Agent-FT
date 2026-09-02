@@ -15,7 +15,7 @@ QUEUE_STATUS_KEYS = (
     "agent.roundStart",
     "agent.planning",
     "agent.actionsApplied",
-    # audit-0819b：agent.executing 随 executing_actions 事件退役删除（ADR-0001）
+    # audit-0819b：agent.executing 随 executing_actions 事件退役删除（协议单轨，决策史见 git tag adr-archive-20260901）
 )
 
 

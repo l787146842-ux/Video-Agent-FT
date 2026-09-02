@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """任务#12 批次B 防回归测试（普通测试，不新增门禁）；
-批4/ADR-0007 口径刷新：选中 Skill 正文改经渐进披露预算化注入——
+指令性制作手册口径刷新（决策史见 git tag adr-archive-20260901）：选中 Skill 正文改经渐进披露预算化注入——
 1) 真实超 2 万字 Skill：正文头部按预算注入（头部探针在场），
    预算外尾部探针零注入，附 read_skill 续读指引；
 2) 组合激活（1 pipeline + N style 层）：主流程正文头部预算注入，
@@ -17,7 +17,7 @@ from src.video_agent.skill_runtime import frontmatter, registry
 # 同时钉该短语确实存在于 data/skills 源文件（防探针失效静默通过）
 LONG_SKILL_NAME = "3D国漫古装精品短剧"
 # 头部探针（正文前部，预算头部内）+ 尾部探针（全文唯一且远离头部，
-# 预算外）：一正一反钉预算切分边界（批4/ADR-0007）
+# 预算外）：一正一反钉预算切分边界（指令性制作手册口径）
 BODY_PROBE = "影像风格固定为3D古风，无需用户确认。"
 TAIL_PROBE = "**导出基准**"
 

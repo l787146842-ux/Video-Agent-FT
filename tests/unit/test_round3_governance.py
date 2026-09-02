@@ -15,7 +15,7 @@ def test_n1_channel_rule_single_source_fc_protocol():
 
 def test_n1_channel_rule_single_source_fc_protocol():
     """FC 协议经 include 引用共源段（P1：禁止复述，只允许引用）；
-    4-4 后 text_actions.md 已删，文本协议同源性断言退役（ADR-0001）。"""
+    4-4 后 text_actions.md 已删，文本协议同源性断言退役（协议单轨，决策史见 git tag adr-archive-20260901）。"""
     text = load_prompt("planner/system_fc.md", use_cache=False)
     assert "生成渠道来源规则" in text
     assert "必须把指定的 provider_id 和 model 传入本操作" not in text

@@ -1,7 +1,7 @@
 """Planner 单元测试：基础降级行为（audit-0819b 单轨化后收缩）。
 
 原多步 continue/文本确认/文本动作执行/5555 引导卡用例均钉文本块通道，
-已随双轨退役删除（ADR-0001）；循环级语义覆盖迁 test_agent_loop.py
+已随双轨退役删除（协议单轨，决策史见 git tag adr-archive-20260901）；循环级语义覆盖迁 test_agent_loop.py
 （FC 桁），确认合成块回归钉死见 test_fc_leak_fakestop.py。
 """
 import pytest
@@ -53,7 +53,7 @@ def context():
 
 
 class TestPlannerMultiStep:
-    """基础收尾语义（多步 continue 文本通道已退役，ADR-0001）"""
+    """基础收尾语义（多步 continue 文本通道已退役）"""
 
     async def test_single_step_no_continue(self, svc, context):
         """无工具调用的纯文本回复 → 单步收尾"""
@@ -82,7 +82,7 @@ class TestPlannerNoAdapter:
 
 class TestNoStageNoGuideCard:
     """日常对话（无阶段执行器）不补引导卡（5555 引导卡的文本轨场景
-    已随双轨退役删除，ADR-0001；保留「不误伤日常对话」断言）"""
+    已随双轨退役删除；保留「不误伤日常对话」断言）"""
 
     async def test_no_stage_no_guide_card(self, svc, context):
         adapter = FakeChatAdapter(["好的，已收到。"])

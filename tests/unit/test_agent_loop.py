@@ -1,4 +1,4 @@
-"""run_agent_loop：FC 单轨循环语义（audit-0819b 单轨化，ADR-0001）。
+"""run_agent_loop：FC 单轨循环语义（audit-0819b 协议单轨化，决策史见 git tag adr-archive-20260901）。
 
 钉死：多步链（finish=tool_calls 继续）、max_steps 上限、每轮上下文重建、
 纯文本收尾轮、结构化暂停确认（llm_call 第 5 元组 extra）、虚报审计与
@@ -143,7 +143,7 @@ async def test_fc_stop_without_text_continues(svc, executor):
 
 async def test_structured_confirmation_stops_loop(svc, executor):
     """FC 批经 workflow_pause 产生的确认经第 5 元组上抛：循环停止、
-    文案与选项原样带回，且不再经任何文本块（ADR-0001 单轨）。"""
+    文案与选项原样带回，且不再经任何文本块（协议单轨）。"""
     opts = [
         {"label": "继续下一步", "description": "推进下一阶段"},
         {"label": "我要调整", "description": "告诉我要改什么"},

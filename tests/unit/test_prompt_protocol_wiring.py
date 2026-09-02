@@ -70,7 +70,7 @@ class TestPromptLoader:
 
 class TestSingleProtocol:
     def test_protocol_is_slim_fc_only(self):
-        """协议单轨（P2e/ADR-0001）：唯一协议 = system_fc.md 瘦身协议，
+        """协议单轨（P2e；决策史见 git tag adr-archive-20260901）：唯一协议 = system_fc.md 瘦身协议，
         不含 studio-actions 动作清单。"""
         builder = _make_builder()
         ctx = PlannerContext(use_studio_context=True)
@@ -80,7 +80,7 @@ class TestSingleProtocol:
         assert "可用 action:" not in text, "FC 协议不应携带文本轨动作定义段"
 
     def test_text_actions_never_injected_after_44(self):
-        """4-4 双轨退役（ADR-0001）：text_actions.md 已删除，
+        """4-4 双轨退役（协议单轨）：text_actions.md 已删除，
         协议不再注入文本动作定义。"""
         builder = _make_builder()
         ctx = PlannerContext(use_studio_context=True)

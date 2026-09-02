@@ -3,8 +3,8 @@
 用 AI-短剧一站式生成 风格的声明依赖图（6 等 4、5 完成；5 无独立平台
 阶段被吸收）钉死：依赖图翻译、step→stage 映射、规格闸就绪探针。
 （拓扑就绪集/同批并行/交接判定的调度函数钉死用例已随任务#27
-文本轨残留退役删除：被测调度函数退役（ADR-0004 后 runtime 永不执行
-阶段），存活消费语义迁入 _spec_stage_pending 探针并由下方同构用例钉死。）
+文本轨残留退役删除：被测调度函数退役（主体回归后 runtime 永不执行
+阶段；决策史见 git tag adr-archive-20260901），存活消费语义迁入 _spec_stage_pending 探针并由下方同构用例钉死。）
 """
 from types import SimpleNamespace
 

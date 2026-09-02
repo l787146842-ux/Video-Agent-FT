@@ -38,7 +38,7 @@ async def merge_fc_response(
     """
     if response.tool_calls:
         # 前 10 字段位置解包兼容（测试桩可返纯 10 元组）；第 11 尾部字段
-        # pause_id（问即停，ADR-0006）按长取值，缺失回落空串
+        # pause_id（问即停，决策史见 git tag adr-archive-20260901）按长取值，缺失回落空串
         _fc_res = tuple(await execute_fn(
             response, image_provider=image_provider, image_aspect_ratio=image_aspect_ratio,
             on_status=on_status, on_event=on_event, injected_skill=injected_skill,

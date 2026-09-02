@@ -32,7 +32,7 @@ def _sym(*pairs: str) -> Tuple[Tuple[str, str], ...]:
 COUPLING_ROWS: List[CouplingRow] = [
     CouplingRow(
         "R_workflow_runtime_subject_return",
-        "Workflow Runtime 控制流范式变更（宪法 Rule2 主体回归 / ADR-0004）",
+        "Workflow Runtime 控制流范式变更（宪法 Rule2 主体回归；决策史见 git tag adr-archive-20260901）",
         "账本+裁判数据层 sync_run/compile_definition + 选项面归一 + reducer 单一写入 + 黄金轮次契约",
         _sym(
             "src.video_agent.core.workflow_runtime:sync_run",

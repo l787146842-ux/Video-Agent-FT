@@ -93,7 +93,7 @@ async def test_prelude_notes_recorded_in_first_step(svc, executor):
 
 async def test_structured_confirmation_options_passthrough(svc, executor):
     """回归（9999 事故改造，audit-0819b）：暂停选项经结构化通道原样带出；
-    原「包装 JSON 确认解析」随文本块通道退役（ADR-0001）。"""
+    原「包装 JSON 确认解析」随文本块通道退役（协议单轨，决策史见 git tag adr-archive-20260901）。"""
     svc.state_dict["keyElements"] = []
     svc.state_dict["shots"] = []
     svc.state_dict["audioItems"] = []

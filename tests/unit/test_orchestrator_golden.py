@@ -5,8 +5,8 @@
 ① 阶段表 = 平台规范表 + frontmatter 声明覆盖（skip/同批执行器）；
 ② current_stage 按客观探针推进（analysis→spec→structure→创作型交接）；
 ③ 闸预检只装配兜底卡（原料闸/规格闸），永不执行阶段、永不抢先对话；
-④ 首轮有素材 + 推进信号 → 交接模型循环（宪法 Rule2 主体回归，ADR-0004：
-   runtime 不自主代跑执行器，模型永远唯一行动主体）；
+④ 首轮有素材 + 推进信号 → 交接模型循环（宪法 Rule2 主体回归：
+   runtime 不自主代跑执行器，模型永远唯一行动主体；决策史见 git tag adr-archive-20260901）；
 ⑤ 提问/自由消息（无推进信号）→ 模型循环。
 """
 import pytest
@@ -99,7 +99,7 @@ async def test_precheck_handoff_at_creative_stage(tmp_path):
 
 @pytest.mark.asyncio
 async def test_planner_first_turn_handed_to_model(tmp_path, monkeypatch):
-    """主体回归（ADR-0004）：首轮有素材 + 推进信号也交接模型
+    """主体回归：首轮有素材 + 推进信号也交接模型
     （模型永远唯一行动主体；原 ScriptAnalyzeTool 代跑探针已随任务#36 B5
     执行器一步退役删除，系统代跑路径不复存在）。"""
     from src.video_agent.core.planner import Planner, PlannerContext

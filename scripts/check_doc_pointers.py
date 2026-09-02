@@ -4,7 +4,8 @@
 五类检查：
 1. ADR 取代关系双边注记：任一 ADR 头部「取代注记/被取代注记」行引用
    ADR-X，则 ADR-X 头部必须有注记行反向引用本 ADR（单边声明即 FAIL，
-   防 ADR-0004 取代 ADR-0003 而 0003 无被取代注记一类漂移）。
+   防「甲 ADR 取代乙 ADR 而乙无被取代注记」一类漂移；ADR 原卷已归档，
+   决策史见 git tag adr-archive-20260901）。
 2. ARCHITECTURE_RULES.md §十一 文件地图所列 src/video_agent 路径存在性
    （防 web/sse.py 一类死指针）。
 3. src/video_agent 注释与 docstring 中引用的模块路径（形如 core/xxx.py、
@@ -49,7 +50,7 @@ ANCHORS = [
     ("Rule1", "src/video_agent/core/planner.py", "Planner"),
     # Rule 2：节点内有界模型循环唯一实现 + 多步上限每步实时读 settings（Q3）
     ("Rule2", "src/video_agent/core/agent_loop.py", "run_agent_loop"),
-    # Rule 2：Workflow Runtime 账本+裁判数据层（主体回归，ADR-0004）
+    # Rule 2：Workflow Runtime 账本+裁判数据层（控制流主体回归）
     ("Rule2", "src/video_agent/core/workflow_runtime.py", "WorkflowRuntime"),
     # Rule 2：动作语义唯一实现（故事板领域逻辑）
     ("Rule2", "src/video_agent/state/storyboard_ops.py", None),

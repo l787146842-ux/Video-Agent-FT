@@ -69,8 +69,8 @@ class FCExecuteResult(NamedTuple):
     warnings：本批闸机拦截/豁免的用户可见文案，由 planner 并入
     loop_result.warnings —— FC 轨与文本轨拦截可见性对齐（§2.0/§2.4）；
     pause_overflow：三通道分离 B，模型 pause message 超长的原文（进正文通道）；
-    pause_id：问即停（ADR-0006）发行点签发的暂停卡标识（未发行暂停为空串，
-    尾部新增字段，位置解包兼容契约不变）。
+    pause_id：问即停发行点签发的暂停卡标识（未发行暂停为空串，
+    尾部新增字段，位置解包兼容契约不变；决策史见 git tag adr-archive-20260901）。
     """
 
     applied: int
@@ -251,8 +251,8 @@ class FCToolRunner:
             skill_strict=bool(injected_skill) and prompt_gates.gate_mode() == "strict",
             storyboard_empty_before=prompt_gates.storyboard_is_empty(self._raw_state()),
         )
-        # 轮内暂停纪律：workflow_pause 请求确认后同批不再续执行（问即停，
-        # ADR-0006：发行成功即结束本批，悬挂调用不执行也不回喂拒因）
+        # 轮内暂停纪律：workflow_pause 请求确认后同批不再续执行（问即停：
+        # 发行成功即结束本批，悬挂调用不执行也不回喂拒因）
         paused_this_batch = False
         applied = 0
         confirmation = ""
@@ -423,7 +423,7 @@ class FCToolRunner:
             # 空键与闸机拒收不记账（拒收无副作用，待模型改参/用户确认后重新裁决）
             if gate_error is None:
                 self._idempotency.record(_idem_key, result)
-            # 单一活跃暂停槽位（ADR-0004/0006）：降级为防御性断言——已有未消费
+            # 单一活跃暂停槽位：降级为防御性断言——已有未消费
             # 暂停时重复 workflow_pause 只告警 + trace 留痕，照常发行（新卡覆盖
             # 旧卡解除死锁），不再以拒因回喂模型（旧「执行后拒收」形态退役）
             if name == "workflow_pause" and result.success:
@@ -532,7 +532,7 @@ class FCToolRunner:
                     confirmation, confirmation_options = pause_composer.normalize_option_surface(
                         self._raw_state(), injected_skill, confirmation,
                         confirmation_options, boundary_hit=_boundary_hit)
-                    # 问即停（ADR-0006）：记下事务写入兜底文案（模型原文），
+                    # 问即停：记下事务写入兜底文案（模型原文），
                     # 置批末终止标记——本批后续调用不执行也不回喂拒因，
                     # 悬挂调用留在 history 末尾，待暂停三态回应后统一消费
                     _pause_fallback_message = (
@@ -610,7 +610,7 @@ class FCToolRunner:
                         _tws = str(_tw or "").strip()
                         if _tws and _tws not in self.gate_warnings:
                             self.gate_warnings.append(_tws)
-                # 问即停（ADR-0006）：暂停发行成功 = 立即结束本批（同批后续
+                # 问即停：暂停发行成功 = 立即结束本批（同批后续
                 # tool_calls 不执行、不产生拒因回喂；发卡点正常收尾）
                 if _pause_break:
                     break
@@ -681,7 +681,7 @@ class FCToolRunner:
         ledger.confirmation_options = confirmation_options
         ledger.tool_results = tool_results
         fc_reconcile.reconcile_batch(ledger, self._raw_state)
-        # 问即停事务性写入（ADR-0006）：仅在发行确认后把暂停三态
+        # 问即停事务性写入：仅在发行确认后把暂停三态
         # awaiting_confirmation/confirmation_message/active_pause 经
         # reduce_interaction 一次原子写入（flush=True）；工具本体不写状态，
         # 防「状态已写但卡片未达用户」的半提交态。文案以批末对账后的

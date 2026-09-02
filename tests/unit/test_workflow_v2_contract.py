@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Workflow Runtime v2 契约不变量（重构计划批0：schema + reducer 不变量测试）。
 
-钉死（ADR-0003 v2，Codex 重构计划§一/§二/§三）：
+钉死（Workflow Runtime v2 契约，Codex 重构计划§一/§二/§三；决策史见 git tag adr-archive-20260901）：
 ① WorkflowDefinition：字段缺失/重复 node_id/悬空依赖/循环依赖 → 注册期拒绝；
 ② EventLedger：run 内 sequence 单调、幂等键重放返回同事件、载荷冲突报
    EventIdempotencyConflict；

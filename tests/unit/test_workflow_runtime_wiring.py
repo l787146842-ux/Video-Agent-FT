@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """v2 批1 接线回归：WorkflowRuntime 入主链（轮始 run 同步 + decision 消费）。
 
-钉死（主体回归 ADR-0004 后语义）：
+钉死（主体回归后语义，决策史见 git tag adr-archive-20260901）：
 ① 轮始 start_run 幂等创建 run；缺原料 → waiting_user + InputRequested（层 9 提醒卡）；
 ② 推进信号消费输入类 decision → DecisionResolved + ready；
 ③ 附件轮交接模型循环（模型唯一行动主体，runtime 不自主提交节点）。

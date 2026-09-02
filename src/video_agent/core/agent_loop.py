@@ -144,11 +144,11 @@ class AgentLoopResult:
     # 协作式停止标记（端到端中断协议）：
     # stopped=True 表示本循环经检查点命中用户停止信号干净退出；
     # stop_phase=thinking/tool_executing/streaming（前端气泡措辞依据）；
-    # 问即停（ADR-0006）复用同一通道：暂停发行成功置
+    # 问即停复用同一通道（决策史见 git tag adr-archive-20260901）：暂停发行成功置
     # stopped=True/stop_phase="pause"（web 层对 pause 相位豁免照常发 done）
     stopped: bool = False
     stop_phase: str = ""
-    # 问即停（ADR-0006）：发行点签发的暂停卡标识（随 done payload 下发）
+    # 问即停：发行点签发的暂停卡标识（随 done payload 下发）
     pause_id: str = ""
 
 
@@ -494,7 +494,7 @@ async def run_agent_loop(
                     result.confirmation = fc_confirmation
                     result.confirmation_options = fc_confirmation_options
                     result.pause_id = fc_pause_id
-                    # 问即停（ADR-0006）：暂停发行成功 = 本轮结束、控制流冻结；
+                    # 问即停：暂停发行成功 = 本轮结束、控制流冻结；
                     # 复用协作式停止通道标记（stop_phase="pause"，非用户停止；
                     # web 层对 pause 相位豁免，照常走成功路径发 done）
                     result.stopped = True

@@ -11,8 +11,9 @@
 - dag.py 正则通道（parse_steps 等）/ parse_skill_manifest 文档通道
 - 五轮 S4 兼容壳：planner 委托方法组 / _split_actions、save_state 别名（P2d 结构性测试减负承接）
 - 已迁 prose 防复述：暂停邀请确认（暂停纪律单家）/ 同批发出（暂停时机建议归 Skill）
-- 文本协议残留：planner/system.md 字面量（P2e 单轨收敛，协议唯一 = system_fc.md，ADR-0001）
-- 主体回归（ADR-0004）：runtime 机械直跑/审批直跑驱动符号（模型永远唯一行动主体）
+- 文本协议残留：planner/system.md 字面量（P2e 单轨收敛，协议唯一 = system_fc.md；
+  决策史见 git tag adr-archive-20260901）
+- 主体回归：runtime 机械直跑/审批直跑驱动符号（模型永远唯一行动主体）
 - 任务#36 B5 执行器一步退役：executors/exec_* 执行器族模块导入
 - 任务#27 文本轨残留退役：web.action_parser 文本块解析通道 /
   parse_actions_from_reply / StudioActionExecutor 旧名（已按实际职责更名
@@ -48,7 +49,7 @@ FORBIDDEN = re.compile(
     r"|pending_action_log|Agent 正在规划本步动作"
     r"|PAUSE_MSG_MAX|compress_pause_message|FLOW_STEP_SHORT_TITLES|_DIM_ALIAS"
     r"|flush_pending_doc_card|emit_pending_doc_card|spec_doc_card_pending"
-    # 主体回归（ADR-0004，审核整改批4）：runtime 机械直跑/审批直跑退役，
+    # 主体回归：runtime 机械直跑/审批直跑退役，
     # 模型永远唯一行动主体；直跑驱动符号防复活
     r"|drive_turn|direct_run_nodes|_run_direct_stage|_run_approval_pause|compose_stage_pause"
     # 五轮 S4 兼容壳清偿防复活（P2d 结构性测试减负：test_shell_payoff/test_stage_batch_execution/
@@ -57,7 +58,7 @@ FORBIDDEN = re.compile(
     r"|def _build_skill_catalog|def _last_user_text|_FEEDBACK_MARKER|_FEEDBACK_FULL_TOOLS"
     r"|_split_actions = split_actions|save_state = save"
     r"|暂停邀请确认|同批发出"
-    # P2e 单轨收敛（ADR-0001）：文本协议 system.md 已退役删除，
+    # P2e 单轨收敛：文本协议 system.md 已退役删除，
     # 字面量防复活（协议唯一 = planner/system_fc.md；不命中 system_fc.md）
     r"|planner/system\.md"
     # 任务#36 B5 执行器一步退役：执行器族符号防复活（用 import/模块路径
@@ -68,11 +69,11 @@ FORBIDDEN = re.compile(
     r"|skill_runtime\.blackbox|skill_runtime import executors"
     r"|import exec_common|import exec_spec|import exec_split|import exec_tools"
     r"|import exec_media_gen|import exec_media_writer"
-    # 任务#27 文本轨残留退役：文本块动作解析通道防复活（动作通道唯一 = FC，
-    # ADR-0001；action_parser 用导入路径形式扫描，不命中退役留痕注释）；
+    # 任务#27 文本轨残留退役：文本块动作解析通道防复活（动作通道唯一 = FC；
+    # action_parser 用导入路径形式扫描，不命中退役留痕注释）；
     # StudioActionExecutor 旧名防复活（已更名 StateOperationExecutor）；
     # stage_probes（任务#14 正名前旧名编排器模块）拓扑就绪集调度函数防复活
-    # （存活消费语义已迁 _spec_stage_pending 探针，ADR-0004 后 runtime 永不执行
+    # （存活消费语义已迁 _spec_stage_pending 探针，主体回归后 runtime 永不执行
     # 阶段）；旧模块名字面量同批入清单（\b 不命中配置字段
     # pipeline_orchestrator_enabled，该字段为环境变量契约不改名）
     r"|StudioActionExecutor|def parse_actions_from_reply|parse_actions_from_reply\("

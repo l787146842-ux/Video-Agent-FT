@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Workflow Runtime 不变量（主体回归后，ADR-0004）。
+"""Workflow Runtime 不变量（主体回归后；决策史见 git tag adr-archive-20260901）。
 
 钉死：
 ① 直跑机制退役守卫：runtime 无自主行动符号（防复活，
@@ -37,7 +37,7 @@ def _state_with_run(current_node: str = "analyze_script") -> dict:
 # ---------- ① 直跑机制退役守卫（主体回归） ----------
 
 def test_direct_run_mechanism_retired():
-    """ADR-0004：runtime 无自主行动能力——直跑驱动符号零残留。"""
+    """主体回归：runtime 无自主行动能力——直跑驱动符号零残留。"""
     import src.video_agent.core.planner as planner_mod
     for name in _RETIRED_WR:
         assert not hasattr(wr, name), f"workflow_runtime 残留 {name}"

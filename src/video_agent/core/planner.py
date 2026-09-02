@@ -306,7 +306,7 @@ class Planner:
         if not response.confirmation:
             return
         if response.pause_id:
-            # 问即停（ADR-0006）：发行点（FCToolRunner）已以同一 pause_id 原子
+            # 问即停（决策史见 git tag adr-archive-20260901）：发行点（FCToolRunner）已以同一 pause_id 原子
             # 登记暂停三态，汇流点不重复签发（幂等；轮末策略卡无预置
             # pause_id 时仍走下方签发路径）
             return
@@ -507,7 +507,7 @@ class Planner:
         # 只把循环的 stopped/stop_phase 随响应下发（web 层据此落痕迹）
         response.stopped = bool(loop_result.stopped)
         response.stop_phase = str(loop_result.stop_phase or "")
-        # 问即停（ADR-0006）：发行点签发的 pause_id 透传，供 _issue_pause 幂等
+        # 问即停：发行点签发的 pause_id 透传，供 _issue_pause 幂等
         response.pause_id = str(getattr(loop_result, "pause_id", "") or "")
 
         # 暂停卡结构化签发（汇流点一）：FC workflow_pause 与轮末策略卡均在此汇流

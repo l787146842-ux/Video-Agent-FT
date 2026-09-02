@@ -458,7 +458,7 @@ class TurnExecutor:
                 "confirmation_options": _confirm_holder.get("options") or [],
                 # 三通道分离 B：超长 pause message 原文随正文下发
                 "pause_overflow": _confirm_holder.get("overflow") or "",
-                # 问即停（ADR-0006）：发行点签发的 pause_id 随 5 元组上抛，
+                # 问即停（决策史见 git tag adr-archive-20260901）：发行点签发的 pause_id 随 5 元组上抛，
                 # 供 agent_loop 带回前端与 _issue_pause 幂等登记
                 "pause_id": _confirm_holder.get("pause_id") or "",
             })

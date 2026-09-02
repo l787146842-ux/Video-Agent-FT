@@ -2,7 +2,7 @@
 
 承载：协议/Skill 目录/选中草稿/选中 Skill 预算注入块的组装。
 段落顺序：稳定内容在前，选中 Skill 块放在最末尾（近生成端，遵循度最高）。
-批4/ADR-0007（Skill 是指令性制作手册）：选中 Skill 正文经渐进披露预算化注入（头部按章节边界切齐，
+Skill 是指令性制作手册（决策史见 git tag adr-archive-20260901）：选中 Skill 正文经渐进披露预算化注入（头部按章节边界切齐，
 其余经 read_skill 续读）；官方 Skill 干净注入，仅外部来源附来源标记。压制性包壳已退役（业界不给
 skill 内容贴符咒，安全靠机械装置：动作单轨/确认闸/platform 安全底线不可关，宪法 §2.1）。
 逐轮变化的状态上下文（状态 JSON/工具边界说明/故事板客观进度）不占
@@ -47,7 +47,7 @@ _PLANNER_TAG_RE = re.compile(r"<planner>\s*(.*?)\s*</planner>", re.S | re.I)
 # v3 元数据头展示标签（kind/language）已随用户裁决 2026-08-31 退役
 # （Flova 对齐：frontmatter 只留 name/description/source 等最小键）。
 # Skill 正文注入家族（全文直注/分级注入/组合注入/平台边界包壳/
-# kind 差异化声明）已随任务#12 批次B 整体退役；批4/ADR-0007 起选中 Skill
+# kind 差异化声明）已整体退役；自此选中 Skill
 # 正文改经渐进披露预算化注入；（B1 裁决 2026-08-31：预算式头部注入退役，
 # 默认注入收窄为 <planner> 段全文 + 章节目录，其余经 read_skill 按需取读）；
 # 压制性包壳同期退役（官方干净注入，外部仅来源标记）。
@@ -313,7 +313,7 @@ class PromptBuilder:
         return header
 
     def build_selected_skill_block(self, skill_name: str) -> str:
-        """选中 Skill 按需加载注入块（B1 裁决 2026-08-31；批4/ADR-0007 指令性注入合法化）。
+        """选中 Skill 按需加载注入块（指令性注入合法化后的现行口径）。
 
         默认注入收窄：<planner> 流程段全文 + 章节目录；其余章节正文经
         read_skill(name, section="章节名") 按需取读（纪律提醒见《Skill 流程纪律》
@@ -403,7 +403,7 @@ class PromptBuilder:
         if isinstance(version, str) and version.strip():
             lines.append(f"- 版本：{version.strip()}")
         source = manifest.get("source")
-        # 批4/ADR-0007：压制性包壳退役——仅外部/社区来源附中性来源标记
+        # 指令性制作手册口径：压制性包壳退役——仅外部/社区来源附中性来源标记
         # （供用户知情，无约束性措辞）；平台来源（platform/未声明）干净注入。
         # 口径同源 scripts/scan_skills.py._is_external_source。
         if (

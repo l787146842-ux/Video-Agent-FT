@@ -302,8 +302,8 @@ async def _maybe_compact_history(
 
 
 def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
-    """消费暂停回应结构化回携（对标 AskUserQuestion 范式，三态消费，
-    ADR-0006）。
+    """消费暂停回应结构化回携（对标 AskUserQuestion 范式，三态消费；
+    决策史见 git tag adr-archive-20260901）。
 
     用户点选暂停卡选项时请求携带 {"pause_id", "value", "label"[, "decision"]}；
     与 interaction.active_pause 登记匹配即清除登记并返回持久化标记
@@ -418,7 +418,7 @@ def _consume_pending_confirmation(
 ) -> str:
     """消费「等待确认」暂停态：用户的新消息即是对先前轮次暂停的回应。
 
-    三态消费（问即停，ADR-0006）：accept = 点选选项（结构化回携）；
+    三态消费（问即停）：accept = 点选选项（结构化回携）；
     decline = 卡片拒绝/取消选项；cancel-supersede = 自由打字新指令取代
     悬挂暂停（用户消息文本即回应）。三种回应全部经 reduce_interaction 落盘
     last_pause_decision 并进控制流 trace；supersede 同步清除 active_pause。

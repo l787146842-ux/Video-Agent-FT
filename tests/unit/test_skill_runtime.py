@@ -112,7 +112,7 @@ def test_selected_block_lightweight_keeps_discipline_pointer():
 
 
 def test_selected_block_flow_body_budget_injection():
-    """批4/ADR-0007：<planner> 流程正文经渐进披露预算注入（短桩预算内全文）；
+    """指令性制作手册口径（决策史见 git tag adr-archive-20260901）：<planner> 流程正文经渐进披露预算注入（短桩预算内全文）；
     执行器「流程基线」专属段与全文硬注入形态仍保持退役。"""
     _write(
         "flow-skill",

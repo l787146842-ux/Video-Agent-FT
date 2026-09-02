@@ -376,7 +376,7 @@ async def test_read_draft_tool(svc):
 
 
 def test_system_prompt_contains_catalog_not_full_text(tmp_path, monkeypatch, svc):
-    """新契约（批4/ADR-0007）：未选中 Skill 只进目录；选中 Skill 正文头部经渐进披露
+    """新契约（指令性制作手册口径，决策史见 git tag adr-archive-20260901）：未选中 Skill 只进目录；选中 Skill 正文头部经渐进披露
     预算注入（短正文预算内全文在场），预算外其余部分经 read_skill 续读"""
     skill_dir = tmp_path / "skills"
     skill_dir.mkdir()

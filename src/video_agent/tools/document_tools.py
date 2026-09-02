@@ -267,7 +267,7 @@ def _slice_content(content: str, start: int) -> tuple:
 
 
 def _skill_source_note(skill_name: str) -> str:
-    """外部来源标记（批4/ADR-0007）：仅外部/社区来源附中性来源短句，
+    """外部来源标记（Skill 是指令性制作手册，决策史见 git tag adr-archive-20260901）：仅外部/社区来源附中性来源短句，
     文案同源外置 shared/skill_source.md（不内联）；平台来源干净返回。"""
     try:
         source = (registry.skill_manifest_of(skill_name) or {}).get("source")
@@ -333,7 +333,7 @@ class ReadSkillTool(BaseTool):
                 "shared/skill_load_reject.md", "NOT_FOUND",
                 name=wanted, available="、".join(available) or "无")
                 or f"未找到 Skill「{wanted}」")
-        # 批4/ADR-0007：read_skill 直接输出正文，不加任何前置包壳，
+        # read_skill 直接输出正文，不加任何前置包壳，
         # 仅外部来源附来源标记短句（同源外置）
         source_note = _skill_source_note(matched)
         # 目录包资源按需加载（P2-4）：resource 与正文/章节互斥，
@@ -787,7 +787,7 @@ class WorkflowPauseTool(BaseTool):
         return WorkflowPauseInput
 
     async def aexecute(self, params: WorkflowPauseInput) -> ToolResult:
-        """只提交审批事实，不写暂停状态（问即停事务写入，ADR-0006）：
+        """只提交审批事实，不写暂停状态（问即停事务写入）：
         awaiting_confirmation/confirmation_message/active_pause 由发行点
         （core/fc_tool_runner.py）在发行确认后经 reduce_interaction 一次
         原子写入，防「工具已写状态但卡片未达用户」的半提交态。"""

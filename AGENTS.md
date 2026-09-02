@@ -23,7 +23,7 @@
 6. **状态写入归 StateManager**；路径归 `utils/paths`；可调参数归
    `config.settings`；类别 Key 归 `state/models.py` CAT_* 常量
    （宪法 §六，禁止硬编码替代）。
-7. **Skill 是指令性制作手册（ADR-0007，2026-08-29 用户裁决）**：Skill 改动须过本文件 §八 G1「Skill 改动裁决关」（只读属性已废除）——
+7. **Skill 是指令性制作手册（2026-08-29 用户裁决，决策史见 git tag `adr-archive-20260901`）**：Skill 改动须过本文件 §八 G1「Skill 改动裁决关」（只读属性已废除）——
    禁止以降低 Skill 要求的方式迁就系统缺陷，优先修平台层；例外须用户显式裁决。
 8. **UI 变更必须用户目测**：测试全绿 ≠ UI 正确；构建后经用户目测反馈
    确认才算交付（宪法 §3，不派浏览器子代理截图代目测）。
@@ -63,11 +63,12 @@ python scripts/run_eval_pipeline.py    # Skill 管线可解析性评测（frontm
 
 | 文档 | 职责 |
 |---|---|
-| `ARCHITECTURE_RULES.md` | 架构宪法（Rule 1-7 / 闸机宪法 §2 / 前端 §3 / 流程治理 §5 / 文件地图 §十一 / 违规清单 §十二） |
+| `ARCHITECTURE_RULES.md` | 架构宪法（Rule 1-7 / 闸机宪法 §2 / 前端 §3 / 流程治理 §5 / 文件地图 §十一 / 违规清单 §十二）；只写现行规则 |
+| `CHANGELOG.md` | 裁决 / 批次 / 事故历史留痕的**唯一家**（ADR 编号对照、从宪法正文迁出的批次注记、任务 / 内部编号对照、git tag 归档索引） |
 | 指令治理层（GOVERNANCE） | 已归档删除，见 git tag `governance-archive-20260901`；活条款摘要见下 §八 |
 | 脚手架折旧规程 | 已归档删除，见 git tag `scaffold-deprecation-archive-20260901`；活规则摘要见下 §七 |
 | `docs/前端体验规范.md` | 飞天品牌/确认卡片/@面板等视觉交互强制约束 |
-| `docs/adr/` | 架构决策记录 0001-0007 已归档删除，见 git tag `adr-archive-20260901` |
+| `docs/adr/` | 架构决策记录 0001-0007 已归档删除，见 git tag `adr-archive-20260901`；编号→结论对照见 `CHANGELOG.md` §一 |
 | 历史审计文书 | 已归档删除，见 git tag `audit-history-archive-20260826` |
 | 长期路线图 | 已归档删除，见 git tag `roadmap-archive-20260901`；冻结/暂缓裁决见下节自足表述 |
 

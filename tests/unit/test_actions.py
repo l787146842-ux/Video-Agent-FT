@@ -14,7 +14,7 @@ def svc(tmp_path):
 # test_parse_actions_block / test_parse_dict_with_actions_key /
 # test_truncated_json_yields_no_actions 已随任务#27 文本轨残留退役删除：
 # 被测对象（web/action_parser.py 文本块容错解析）整文件退役，
-# 动作通道唯一 = FC 工具调用（ADR-0001）。
+# 动作通道唯一 = FC 工具调用（协议单轨，决策史见 git tag adr-archive-20260901）。
 # test_unknown_action_not_counted 已随 Q2 裁决 2026-09-01 退役删除：
 # 文本轨未知动作计数随分派器退役；FC 轨未注册工具由 ToolManager
 # deny-by-default 拒执行（注册闸另有钉死）。

@@ -3,7 +3,7 @@
 正向设计（模型主动权 + 平台否决权）：
 - 分诊/自动执行/步间收权三件删除（防复活锁源）；
 - 轮始闸预检只装配原料闸/规格闸兜底卡，其余交接模型循环；
-- 轮内暂停纪律：workflow_pause 发行后同批后续调用不执行（问即停，ADR-0006）；
+- 轮内暂停纪律：workflow_pause 发行后同批后续调用不执行（问即停，决策史见 git tag adr-archive-20260901）；
 - 顺序由 stage_precondition 越阶闸否决（该闸已随 C1b 裁决 2026-08-31 退役，不在本文件重复钉）。
 """
 import inspect
@@ -41,7 +41,7 @@ def test_preemption_symbols_deleted():
 
 
 def test_pause_window_gate_present():
-    """轮内暂停纪律闸在场（问即停后保留为防御性守卫，ADR-0006）"""
+    """轮内暂停纪律闸在场（问即停后保留为防御性守卫）"""
     from src.video_agent.core import fc_tool_runner
     src = inspect.getsource(fc_tool_runner)
     assert "_PAUSE_WINDOW_READONLY" in src
@@ -66,7 +66,7 @@ async def test_precheck_handoff_when_no_gate_fires(svc):
 
 @pytest.mark.asyncio
 async def test_pause_window_skips_same_batch_continuation(svc):
-    """问即停（ADR-0006）：workflow_pause 发行后同批后续调用不执行，
+    """问即停：workflow_pause 发行后同批后续调用不执行，
     也不产生拒因回喂（旧「拒收」形态退役；悬挂调用留在 history 末尾）"""
     import json as _json
 

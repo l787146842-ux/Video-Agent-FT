@@ -3,7 +3,7 @@
 任务#12 批次B：选中 Skill 全文硬注入退役；B1 裁决 2026-08-31：选中段改按需加载注入（<planner> 段全文 + 章节目录，其余经 read_skill 取读）；
 流程规范由模型执行前调 read_skill 续读/读取（read_skill 门禁短路已随批次A 解除）。
 
-4-4 双轨退役（ADR-0001）：原 TestNonFcChannelFallback（非 FC 通道附件
+4-4 双轨退役（协议单轨，决策史见 git tag adr-archive-20260901）：原 TestNonFcChannelFallback（非 FC 通道附件
 全文直注）已随通道删除移除，替换为 CLI 聊天拦截断言（见文末）。
 
 注：代码内置 Skill（编剧/分镜师/制片）已按用户要求彻底移除，

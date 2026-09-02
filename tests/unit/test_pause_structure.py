@@ -117,7 +117,7 @@ class TestConsumePauseResponse:
         marker = consume_pause_response(
             svc, {"pause_id": "abc123", "value": "确认推进", "label": "确认"})
 
-        # 三态消费（ADR-0006）：点选缺省 accept，随标记落盘可重建
+        # 三态消费（问即停，决策史见 git tag adr-archive-20260901）：点选缺省 accept，随标记落盘可重建
         assert marker == {"pause_id": "abc123", "value": "确认推进",
                           "label": "确认", "decision": "accept"}
         assert "active_pause" not in (svc.state_dict.get("interaction") or {})
@@ -139,7 +139,7 @@ class TestConsumePauseResponse:
 
 
 class TestPauseSlotMutex:
-    """单一活跃暂停槽位防御断言（问即停，ADR-0006）：已有未消费暂停时
+    """单一活跃暂停槽位防御断言（问即停）：已有未消费暂停时
     重复 workflow_pause 照常发行（新卡覆盖旧卡解除死锁），只告警 +
     trace 留痕，不再以拒因回喂模型；发行确认后暂停三态事务写入。"""
 
@@ -189,7 +189,7 @@ class TestPauseSlotMutex:
                 "arguments": '{"message": "请确认是否继续"}'}}])
         result = await runner.execute(resp)
         assert result[0] == 1, "槽位空闲时暂停正常受理"
-        # 事务性写入（ADR-0006）：三态在发行确认后一次原子落盘，
+        # 事务性写入（问即停）：三态在发行确认后一次原子落盘，
         # 工具体不写状态；卡片文案与登记同源同口径
         inter = svc.state_dict.get("interaction") or {}
         assert result.pause_id, "发行点必须签发 pause_id"

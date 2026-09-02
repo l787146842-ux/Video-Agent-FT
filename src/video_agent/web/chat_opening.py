@@ -287,7 +287,7 @@ async def _prepare_chat_opening(svc, body: ChatRequest, user_text: str, use_stud
             reconcile_stale_active_pause(
                 svc, pause_response=getattr(body, "pause_response", None))
             # 三通道分离 C：点选回携 value 传入，命中系统继续选项时机械生成下一步指令；
-            # 三态消费（ADR-0006）：用户原文与结构化回携同传，供
+            # 三态消费（问即停，决策史见 git tag adr-archive-20260901）：用户原文与结构化回携同传，供
             # accept/decline/cancel-supersede 分类与 trace 留痕
             _pr = getattr(body, "pause_response", None) or {}
             pending_confirm_note = _consume_pending_confirmation(

@@ -1,6 +1,6 @@
 """audit-0819 系列钉死回归：
 
-- audit-0819-leak 演化（audit-0819b 单轨化，ADR-0001）：暂停确认不再合成
+- audit-0819-leak 演化（audit-0819b 协议单轨化；决策史见 git tag adr-archive-20260901）：暂停确认不再合成
   studio-actions 文本块（防泄漏的根治：通道消失则无可泄漏），改经
   结构化第 5 元组上抛；原 strip 清洗断言随通道退役；
 - audit-0819-fakestop：模型以延续承诺措辞收尾却零操作/无暂停时，
@@ -33,7 +33,7 @@ async def _noop_emit(event):
 # ---------- audit-0819b：确认不再合成文本块（防泄漏根治） ----------
 
 async def test_planner_does_not_synthesize_action_blocks(svc, executor, monkeypatch):
-    """钉死（ADR-0001）：_handle_fc_response 不得再合成 studio-actions 块；
+    """钉死（协议单轨）：_handle_fc_response 不得再合成 studio-actions 块；
     确认经 confirmation_collector 结构化上抛，正文原样返回。"""
     from src.video_agent.adapters.base_chat import ChatResponse
     from src.video_agent.core.planner import Planner
