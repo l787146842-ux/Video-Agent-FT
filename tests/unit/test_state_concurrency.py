@@ -172,22 +172,3 @@ class TestContextCacheInvalidation:
         keys = set(svc._context_cache)
         assert any(k.startswith("bound:") for k in keys)
         assert any(k.startswith("all:") for k in keys)
-
-
-class TestDirtyFlag:
-    """脏标记缓存机制测试"""
-
-    async def test_state_property_caches_pydantic(self, svc):
-        """state 属性应缓存 Pydantic 模型（脏标记为 False 时复用）"""
-        s1 = svc.state
-        s2 = svc.state
-        assert s1 is s2  # 缓存命中，同一对象
-
-    async def test_state_dirty_after_update(self, svc):
-        """update 后脏标记应为 True，下次访问重建"""
-        s1 = svc.state
-        svc.update("status", "working")
-        assert svc._state_dirty is True
-        s2 = svc.state
-        # 重建后应为新对象
-        assert s2 is not s1

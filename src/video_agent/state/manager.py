@@ -6,8 +6,7 @@ StateManager — Rule3: 唯一状态写入点。支持多项目。
 - 内部视图（Pydantic，后端使用）+ 外部视图（camelCase JSON，前端使用）
 - 点号路径 update 统一写入入口
 
-向后兼容：
-- CLI 路径（agent.py）通过 .state 属性获取 Pydantic 模型
+视图：
 - Web 路径通过 .state_dict 获取 raw dict，供 Tool/Route 直接操作
 
 实现拆分：对话域/落盘闸/快照组装实现体分别切出至
@@ -31,8 +30,7 @@ from loguru import logger
 from src.video_agent.utils.paths import WORKSPACE_DIR, DATA_DIR
 from src.video_agent.exceptions import StateError
 
-from .models import ProjectState, CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
-from .models_pipeline import TaskStatus, AssetState, AssetStatus
+from .models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 from .repository import StateRepository
 from .repository_sqlite import SqliteStateRepository
 from .project_manager import ProjectManager
@@ -111,9 +109,8 @@ class StateManager(UndoRedoMixin):
 
     设计 §1.3：多项目管理内置于 StateManager，不另设 service 层。
 
-    双视图：
+    视图：
     - state_dict → raw dict（Web Tool/Route 直接操作）
-    - state → Pydantic ProjectState（CLI 路径，属性访问）
 
     多项目：
     - list_projects / create_project / switch_project / delete_project
@@ -172,10 +169,6 @@ class StateManager(UndoRedoMixin):
         self._raw_state: Dict[str, Any] = {}
         self._active_project_id: str = ""
 
-        # Pydantic 视图缓存（脏标记优化，避免每次访问都 model_validate）
-        self._cached_state: Optional[ProjectState] = None
-        self._state_dirty: bool = True
-
         # Agent 上下文缓存（状态未变时复用，避免重复构建 JSON）
         self._context_cache: Dict[str, str] = {}
 
@@ -221,7 +214,6 @@ class StateManager(UndoRedoMixin):
         self._raw_state = state
         self._active_project_id = project_id
         self._known_version = self._disk_board_version(project_id)
-        self._state_dirty = True
         self._context_cache.clear()
         # 切换项目时清空 undo/redo 栈
         self._clear_undo_redo()
@@ -281,31 +273,7 @@ class StateManager(UndoRedoMixin):
         self._repo.save_compat(self._raw_state)
         logger.info("[StateManager] Initialized with default demo project")
 
-    # ====== 双视图访问 ======
-
-    @property
-    def state(self) -> Optional[ProjectState]:
-        """Pydantic 视图（CLI 路径向后兼容）。带脏标记缓存。"""
-        if not self._raw_state:
-            return None
-        if not self._state_dirty and self._cached_state is not None:
-            return self._cached_state
-        try:
-            self._cached_state = ProjectState.model_validate(self._raw_state)
-        except Exception:
-            minimal = {"project_id": self._raw_state.get("project_id", "unknown")}
-            ps = ProjectState.model_validate(minimal)
-            for k, v in self._raw_state.items():
-                if not hasattr(ps, k):
-                    try:
-                        setattr(ps, k, v)
-                    except (ValueError, TypeError):
-                        # extra="ignore" 模型拒绝未知字段（pydantic 抛 ValueError）：
-                        # 静默跳过，降级视图仅用于 CLI 兼容，不影响 raw dict 主路径
-                        continue
-            self._cached_state = ps
-        self._state_dirty = False
-        return self._cached_state
+    # ====== 视图访问 ======
 
     @property
     def state_dict(self) -> Dict[str, Any]:
@@ -315,13 +283,6 @@ class StateManager(UndoRedoMixin):
     @property
     def active_project_id(self) -> str:
         return self._active_project_id
-
-    def get(self) -> ProjectState:
-        """返回 Pydantic ProjectState（CLI 向后兼容）。"""
-        s = self.state
-        if s is None:
-            raise ValueError("State is not initialized.")
-        return s
 
     def to_frontend_dict(self) -> Dict[str, Any]:
         """返回前端使用的 camelCase JSON 视图（实现见 context_builder.build_frontend_view）。"""
@@ -357,7 +318,6 @@ class StateManager(UndoRedoMixin):
         if "stateSnapshots" not in restored and "stateSnapshots" in self._raw_state:
             restored["stateSnapshots"] = self._raw_state["stateSnapshots"]
         self._raw_state = restored
-        self._state_dirty = True
         self._context_cache.clear()
         self._ensure_conversations()
         return self.save()
@@ -379,7 +339,6 @@ class StateManager(UndoRedoMixin):
         })
         if len(snaps) > self._MAX_SNAPSHOTS:
             del snaps[: len(snaps) - self._MAX_SNAPSHOTS]
-        self._state_dirty = True
         return snap_id
 
     def list_snapshots(self) -> List[Dict[str, Any]]:
@@ -411,7 +370,6 @@ class StateManager(UndoRedoMixin):
             if isinstance(m, dict) and m.get("sender") == "agent":
                 m["snapshotId"] = snap_id
                 break
-        self._state_dirty = True
         return snap_id
 
     def fork_from_snapshot(self, snapshot_id: str, name: str = "") -> Optional[str]:
@@ -435,7 +393,6 @@ class StateManager(UndoRedoMixin):
         """
         self._push_undo()
         _set_path_dict(self._raw_state, path, value)
-        self._state_dirty = True
         self.save_debounced()
 
     def record_used_skill(self, slug: str) -> None:
@@ -482,7 +439,6 @@ class StateManager(UndoRedoMixin):
             "text": detail,
             "ts": datetime.now(timezone.utc).isoformat(),
         })
-        self._state_dirty = True
         self._context_cache.clear()
 
     def clear_flow_events(self, prefix: str = "") -> None:
@@ -497,7 +453,6 @@ class StateManager(UndoRedoMixin):
         kept = [e for e in events if not str(e.get("kind") or "").startswith(prefix)]
         if len(kept) != len(events):
             self._raw_state["flowEvents"] = kept
-            self._state_dirty = True
             self._context_cache.clear()
 
     def save(self) -> bool:
@@ -532,27 +487,6 @@ class StateManager(UndoRedoMixin):
     def flush_save(self) -> None:
         """立即冲刷防抖落盘的挂起变更（实现见 save_ops.flush_save）。"""
         save_ops.flush_save(self)
-
-    def initialize_project(self, project_id: str, user_goal: str, project_name: str = "New Project") -> ProjectState:
-        """初始化一个空项目（CLI 路径向后兼容）。"""
-        # 多对话结构：既有聊天记录迁入首个对话
-        self._raw_state = {
-            "project_id": project_id,
-            "project_name": project_name,
-            "status": "idle",
-            "user_goal": user_goal,
-            CAT_KEY_ELEMENTS: [],
-            CAT_SHOTS: [],
-            CAT_AUDIO_ITEMS: [],
-            "assets": [],
-            "documents": [],
-            "chatMessages": [],
-        }
-        self._active_project_id = project_id
-        self._known_version = self._disk_board_version(project_id)
-        self._ensure_conversations()
-        self.save()
-        return self.get()
 
     # ====== 多项目管理（委托给 ProjectManager） ======
 
@@ -755,57 +689,5 @@ class StateManager(UndoRedoMixin):
     def build_agent_context_degraded(self, asset_mode: str = "bound") -> str:
         """降级状态上下文（system 超预算保险丝）：只留组标题/编号/草稿计数"""
         return _build_context(self._raw_state, asset_mode, self._context_cache, degraded=True)
-
-    # ====== CLI 路径向后兼容 ======
-
-    def update_task_status(self, task_id: str, status: TaskStatus, output_asset_id: Optional[str] = None, error: Optional[str] = None):
-        """CLI 路径：更新任务状态"""
-        ps = self.state
-        if not ps:
-            return
-        for task in ps.tasks:
-            if task.task_id == task_id:
-                task.status = status
-                if status == TaskStatus.completed:
-                    task.completed_at = datetime.now(timezone.utc)
-                if output_asset_id:
-                    task.output.asset_id = output_asset_id
-                if error:
-                    task.error = error
-                # 回写到 raw dict
-                self._raw_state["tasks"] = [t.model_dump(by_alias=True, mode="json") for t in ps.tasks]
-                self.save()
-                return
-        logger.warning(f"Task {task_id} not found.")
-
-    def add_asset(self, asset: AssetState):
-        """CLI 路径：添加管线资产"""
-        ps = self.state
-        if not ps:
-            return
-        for i, a in enumerate(ps.pipeline_assets):
-            if a.asset_id == asset.asset_id:
-                ps.pipeline_assets[i] = asset
-                self._raw_state["pipeline_assets"] = [a.model_dump(by_alias=True, mode="json") for a in ps.pipeline_assets]
-                self.save()
-                return
-        ps.pipeline_assets.append(asset)
-        self._raw_state["pipeline_assets"] = [a.model_dump(by_alias=True, mode="json") for a in ps.pipeline_assets]
-        self.save()
-
-    def update_asset_status(self, asset_id: str, status: AssetStatus, file_path: Optional[str] = None):
-        """CLI 路径：更新管线资产状态"""
-        ps = self.state
-        if not ps:
-            return
-        for asset in ps.pipeline_assets:
-            if asset.asset_id == asset_id:
-                asset.status = status
-                if file_path:
-                    asset.file_path = file_path
-                self._raw_state["pipeline_assets"] = [a.model_dump(by_alias=True, mode="json") for a in ps.pipeline_assets]
-                self.save()
-                return
-        logger.warning(f"Asset {asset_id} not found.")
 
 
