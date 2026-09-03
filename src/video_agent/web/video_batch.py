@@ -4,7 +4,8 @@
   进度事件走既有生成任务 SSE，前端生成日志面板可见）；
 - 步骤级断点：每镜落盘 status/error，resume 只重试 failed/pending 镜，已成功镜跳过；
 - 任务级断点：批次表持久化 data/video_batch_tasks.json，服务重启后 running → interrupted，
-  一键 resume 续跑；
+  一键 resume 续跑；重启/取消瞬间卡在 running 的镜同样降级 interrupted
+  （_normalize_orphan_running），保证 resume 可重试、批次不永久差一镜；
 - 服务重启安全：worker 绑定项目快照提交时收集的镜清单（不依赖内存状态）。
 """
 import asyncio
@@ -98,16 +99,22 @@ class VideoBatchManager:
         return self.get(batch_id)
 
     def resume(self, batch_id: str) -> Dict[str, Any]:
-        """断点续跑：failed/pending 镜重置为 pending，running → running。"""
+        """断点续跑：failed/pending/interrupted 镜重置为 pending，已成功镜跳过。"""
         record = self._batches.get(batch_id)
         if not record:
             raise KeyError(f"批次 {batch_id} 不存在")
         if record.get("status") == "running":
             return self.get(batch_id)
+        self._normalize_orphan_running(record)
         for s in record[CAT_SHOTS]:
             if s.get("status") in ("failed", "pending", "interrupted"):
                 s["status"] = "pending"
                 s["error"] = ""
+        # 计数器按当前镜态重算（本轮口径）：成功镜计入 done，重试镜归零——
+        # 否则历史失败累计会让「续跑全成功」的批次终态误标 partial
+        record["done"] = sum(
+            1 for s in record[CAT_SHOTS] if s.get("status") == "succeeded")
+        record["failed"] = 0
         record["status"] = "running"
         record["updated_at"] = time.time()
         self._persist()
@@ -122,6 +129,7 @@ class VideoBatchManager:
         if record.get("status") == "running":
             record["status"] = "cancelled"
             record["updated_at"] = time.time()
+            self._normalize_orphan_running(record)
             self._persist()
         return True
 
@@ -202,6 +210,7 @@ class VideoBatchManager:
                 await asyncio.sleep(0.5)  # 逐镜间隔，防供应商并发限流
         except asyncio.CancelledError:
             record["status"] = "interrupted"
+            self._normalize_orphan_running(record)
             self._touch(record)
             raise
         finally:
@@ -223,6 +232,16 @@ class VideoBatchManager:
     def _touch(self, record: Dict[str, Any]) -> None:
         record["updated_at"] = time.time()
         self._persist()
+
+    @staticmethod
+    def _normalize_orphan_running(record: Dict[str, Any]) -> None:
+        """批次不在 running 态时，卡在 running 的镜必是重启/取消遗留（无 worker 接管），
+        统一降级 interrupted。否则 resume 只认 failed/pending/interrupted，
+        这些镜会永久卡死、批次永远差一镜（审计 D-23「内容不恢复」根因）。"""
+        for s in record.get(CAT_SHOTS) or []:
+            if isinstance(s, dict) and s.get("status") == "running":
+                s["status"] = "interrupted"
+                s["error"] = "服务重启/取消中断，续跑可重试"
 
     # ---------- 持久化 ----------
 
@@ -249,6 +268,10 @@ class VideoBatchManager:
                 continue
             if r.get("status") == "running":
                 r["status"] = "interrupted"  # 服务重启：无 worker，续跑入口 resume
+            if r.get("status") != "running":
+                # 重启瞬间正在提交的镜卡在 running：降级 interrupted，
+                # 否则 resume 不会重试它，批次永远差一镜
+                self._normalize_orphan_running(r)
             r.setdefault("done", 0)
             r.setdefault("failed", 0)
             self._batches[r["batch_id"]] = r

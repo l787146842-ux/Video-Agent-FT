@@ -227,7 +227,7 @@ export function JobsPanel() {
                     {(shot) => (
                       <div class="jobs-shot-row" classList={{ 'jobs-shot-row--failed': shot.status === 'failed' }}>
                         <span class={`jobs-badge ${statusClass(shot.status)}`}>
-                          {shot.status === 'succeeded' ? '成功' : shot.status === 'failed' ? '失败' : shot.status === 'running' ? '生成中' : '待处理'}
+                          {shot.status === 'succeeded' ? '成功' : shot.status === 'failed' ? '失败' : shot.status === 'running' ? '生成中' : shot.status === 'interrupted' ? '已中断' : '待处理'}
                         </span>
                         <span class="jobs-shot-title">{shot.title || shot.draft_id}</span>
                         <Show when={shot.error}>
