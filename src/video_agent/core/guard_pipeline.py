@@ -8,21 +8,14 @@
 本模块是「提示词写入」判定的唯一组合实现；调用方只注入参数，不各自写判定。
 verdict 结构化（GateVerdict），回喂模型与展示用户用同一源；
 每条判定经 tracer.record_gate 入审计（/api/agent/gates 可见）。
-遥测旁路：audit_verdicts 同步轻量 append 一行到
-GATE_TRIGGER_COUNTS（data/gate_trigger_counts.jsonl），
-使「连续 N 轮零触发降档」可计算（scripts/audit_gate_triggers.py 汇总）；
-旁路只记不改判定，任何异常吞掉不影响主链路。
+（原 GATE_TRIGGER_COUNTS jsonl 遥测旁路随 2026-09-03 折旧机器根除批删除：
+其唯一读者 audit_gate_triggers.py 已先随 B3 退役，写者属无消费者纯开销。）
 
 语义基线（用户第一）：
 - 流程闸（故事板待确认窗口）只警告不拦人；
 - 结构闸（字数/语言/时长/字幕/音频/镜头语言）strict 模式拒收重写；
 - 用户坚持（gate_override 作用域覆盖）时硬伤降为警告放行。
 """
-import json
-import threading
-import time
-from datetime import datetime, timezone
-
 from loguru import logger
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -30,12 +23,6 @@ from typing import Any, Dict, List, Optional
 from src.video_agent.config import normalize_exec_pref, settings
 from src.video_agent.core import gate_registry, prompt_gates
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.utils.paths import DATA_DIR
-
-# 遥测旁路落盘路径（与 agent_traces.jsonl 同层同口径，被 data/* 忽略不入库）
-GATE_TRIGGER_COUNTS = DATA_DIR / "gate_trigger_counts.jsonl"
-# 遥测 append 并发保护：单进程部署下锁即足；多进程部署需另议文件锁
-_TRIGGER_COUNTS_LOCK = threading.Lock()
 
 
 @dataclass
@@ -81,38 +68,6 @@ class GateCheckOutcome:
     overridden: bool = False              # 用户坚持放行过任一闸
 
 
-def _append_trigger_counts(
-    verdicts: List[GateVerdict],
-    skill_name: str = "",
-    action: str = "",
-    overridden: bool = False,
-) -> None:
-    """遥测旁路：每条判定 append 一行 JSON 到 GATE_TRIGGER_COUNTS。
-
-    轻量只增不改判定；任何异常吞掉仅 logger.debug，绝不影响主链路。
-    字段：ts（ISO UTC）/ rule_id（归一）/ ok（True=放行 False=拦截）/
-    skill（在场才有值）/ layer / action / overridden。
-    """
-    try:
-        GATE_TRIGGER_COUNTS.parent.mkdir(parents=True, exist_ok=True)
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        with _TRIGGER_COUNTS_LOCK, open(GATE_TRIGGER_COUNTS, "a", encoding="utf-8") as f:
-            for v in verdicts:
-                rec = {
-                    "ts": now,
-                    "epoch": time.time(),
-                    "rule_id": gate_registry.normalize_rule_id(v.rule_id),
-                    "ok": bool(v.ok),
-                    "skill": str(skill_name or ""),
-                    "layer": v.layer,
-                    "action": str(action or ""),
-                    "overridden": bool(overridden),
-                }
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    except Exception as _e:
-        logger.debug("[guard_pipeline] 遥测落盘忽略异常: {}", _e)
-
-
 def audit_verdicts(
     verdicts: List[GateVerdict],
     skill_name: str = "",
@@ -120,12 +75,7 @@ def audit_verdicts(
     draft_id: str = "",
     overridden: bool = False,
 ) -> None:
-    """把 verdict 列表写入审计（tracer.record_gate）；失败不阻断主链路。
-
-    同步走遥测旁路 _append_trigger_counts 落盘触发计数：
-    与 tracer 各自独立 try/except，一侧失败不影响另一侧。
-    """
-    _append_trigger_counts(verdicts, skill_name, action, overridden)
+    """把 verdict 列表写入审计（tracer.record_gate）；失败不阻断主链路。"""
     try:
         tracer = AgentTracer.get_instance()
         for v in verdicts:

@@ -6,8 +6,6 @@ Q2 裁决 2026-09-01：文本轨随执行器家族退役，动作通道唯一 = 
 原双轨逐字节对照用例改为单轨（FC 适配器 + 唯一实现）钉死。
 批 B：执行偏好三档前置分支也归该唯一实现（默认档行为与现状逐字节一致）。
 """
-import json
-
 from src.video_agent.config import settings
 from src.video_agent.core import fc_gates, guard_pipeline
 from src.video_agent.core.tracer import AgentTracer
@@ -77,20 +75,8 @@ def _recent_gates():
     return AgentTracer.get_instance().get_recent_gates(20)
 
 
-def _trigger_lines():
-    # conftest 夹具已把遥测落盘点隔离到临时目录（读模块属性即当前值）
-    try:
-        return [
-            json.loads(ln)
-            for ln in guard_pipeline.GATE_TRIGGER_COUNTS.read_text(encoding="utf-8").splitlines()
-            if ln.strip()
-        ]
-    except FileNotFoundError:
-        return []
-
-
 class TestExecPreferenceGenConfirm:
-    """默认档 = 现状；非默认档放行必须代发同意并留痕（tracer + 遥测账本双源）。"""
+    """默认档 = 现状；非默认档放行必须代发同意并留痕（tracer 审计）。"""
 
     def test_default_pref_config_value_is_confirm_before_gen(self):
         assert settings.execution_preference == "confirm_before_gen"
@@ -110,9 +96,6 @@ class TestExecPreferenceGenConfirm:
             assert any(g["rule_id"] == "platform.gen_confirm"
                        and g["ok"] and g["overridden"] for g in _recent_gates()), \
                 "偏好放行必须经 platform.gen_confirm verdict 留痕"
-            assert any(r["rule_id"] == "platform.gen_confirm" and r["ok"]
-                       and r["overridden"] for r in _trigger_lines()), \
-                "偏好放行必须入遥测账本（gate_trigger_counts）"
         finally:
             object.__setattr__(settings, "execution_preference", old)
             AgentTracer.reset()

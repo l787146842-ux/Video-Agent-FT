@@ -69,8 +69,8 @@ def assemble_response(
 ) -> Any:
     """轮末组装 PlannerResponse（planner.handle_message 尾段唯一落点）。
 
-    FC 轨闸机警告并入 warnings；executor 与收集器
-    的 chat_inserts/documents 按 URL/名称去重保序；文档卡片已即时可见，
+    FC 轨闸机警告并入 warnings；收集器的 chat_inserts/documents
+    按 URL/名称去重保序；文档卡片已即时可见，
     正文不重复补「本轮已写入文档」交代（防同屏双显）。
     """
     # FC 轨闸机文案并入结果 warnings（文本轨由 agent_loop 直接写入），
@@ -109,31 +109,31 @@ def assemble_response(
     if aggregate_action_log is not None and loop_result.applied_actions and (
         not loop_result.text.strip() or "模型未输出总结文字" in loop_result.text
     ):
-        merged_log = aggregate_action_log((action_log_collector or []) + executor.action_log)
+        merged_log = aggregate_action_log(action_log_collector or [])
         if merged_log:
             loop_result.text = (
                 f"已执行 {loop_result.applied_actions} 个操作：" + "；".join(merged_log[:12])
             )
 
-    # chat_inserts：FC 路径收集 + executor 收集，按 URL 去重
+    # chat_inserts：FC 路径收集，按 URL 去重
     merged_inserts: List[Dict[str, Any]] = []
     seen_urls = set()
-    for it in ((chat_inserts_collector or []) + executor.chat_inserts):
+    for it in (chat_inserts_collector or []):
         u = it.get("url")
         if u and u not in seen_urls:
             seen_urls.add(u)
             merged_inserts.append(it)
-    # 文档卡片：文本轨 executor.documents_written + FC 轨 docs_written_collector，去重保序
+    # 文档卡片：FC 轨 docs_written_collector，去重保序
     merged_docs: List[str] = []
     seen_docs = set()
-    for dn in (executor.documents_written + (docs_written_collector or [])):
+    for dn in (docs_written_collector or []):
         if dn and dn not in seen_docs:
             seen_docs.add(dn)
             merged_docs.append(dn)
 
     # 阶段完成卡片粗粒度展示：连续同类操作合并（如「新建关键元素分组 ×3」），
     # 不逐张卡片罗列；随消息持久化与 done payload 一并下发
-    full_log = (action_log_collector or []) + executor.action_log
+    full_log = action_log_collector or []
     merged_action_log = aggregate_action_log(full_log) if aggregate_action_log is not None else full_log
     return response_factory(
         text=loop_result.text,

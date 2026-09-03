@@ -22,9 +22,10 @@ export default [
       // 文件行数（架构铁律 10.1：单文件 ≤ 250 行）。
       // 任务 #11 消 Goodhart 化降级：error → warn。理由：硬红线诱发“为凑行数而拆”
       // 的形式主义拆分（4 个顶格文件为证：SkillPicker/LayoutShell/sse-events/
-      // sse-connection），行数达标但关注点未收敛。硬闸不废：治理台账的物理红线
-      // 由 scripts/check_file_lines.py --frontend（含 FRONTEND_WHITELIST 登记）把守，
-      // acceptance 门禁照旧拦截超限新增；eslint 侧仅作软提醒（--quiet 不报）。
+      // sse-connection），行数达标但关注点未收敛。
+      // 2026-09-02「治理闸机减负」裁决：check_file_lines 已降为信息工具、
+      // 不再挂 acceptance 门禁（无硬闸兜底）；本规则维持 warn 软提醒，
+      // 超限处置走人工审查立项（D-02 挂账口径）。
       'max-lines': ['warn', { max: 250, skipBlankLines: true, skipComments: true }],
 
       // 类型安全

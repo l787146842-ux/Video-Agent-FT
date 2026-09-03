@@ -1,14 +1,12 @@
-"""文件行数门禁（R4c/F58 落地；八轮 B1 升级双水位；P4-23 新增 --frontend 档）。
+"""文件行数体检工具（R4c/F58 落地；八轮 B1 升级双水位；P4-23 新增 --frontend 档）。
 
-- 红线：src/ 下任何 .py 不得超过 1200 行，超限即 CI 失败；
-  确需例外时在 WHITELIST 登记（附理由，只减不增）。
-- 体检线（八轮 B1 新增）：≥800 行的文件输出 WARN 体检单（不影响退出码），
-  让临界文件在离红线还有 30% 时就进入视野，而不是撞线才立项。
-- 棘轮（八轮 B1 新增）：>900 行的文件数量只降不升，基线值写死在
-  OVER_900_BASELINE，清偿拆分后随降，禁止上调。
-- 前端档（P4-23 新增，--frontend）：src/web 下 .ts/.tsx/.css 物理行数红线 250
-  （对齐架构铁律 10.1 与 eslint max-lines；物理口径严于 eslint 跳空行/注释口径），
-  存量超限在 FRONTEND_WHITELIST 登记，只减不增且超限文件数棘轮只降不升。
+2026-09-02「治理闸机减负」裁决：本脚本已从 acceptance 门禁退役，现为
+**信息工具**（手动运行出体检单）；行数治理口径：
+- 红线参考：src/ 下 .py 超 1200 行 → 报告（立项拆分的触发信号）；
+- 体检线：≥800 行输出 WARN 体检单（临界文件提前进入视野）；
+- 前端档（--frontend）：src/web 下 .ts/.tsx/.css 超 250 行 → 报告
+  （对齐 eslint max-lines 物理口径；存量超限在 FRONTEND_WHITELIST 登记）。
+超限处置走 D-02 债务挂账与人工审查立项，不再有 CI 硬闸兜底。
 
 历史背景：executors.py 曾膨胀至 2222 行、prompt_gates.py 1404 行、
 chat_service.py 1203 行，R4a/R4b/R4c 批次拆分清偿。
@@ -18,14 +16,9 @@ from pathlib import Path
 
 MAX_LINES = 1200
 WARN_LINES = 800
-# 棘轮基线（八轮 B1 设立；每清偿一件随降，禁止上调）；
-# B1 磁盘实测四件：planner 998 / prompt_gates 1036 / action_executor 1093 /
-# generation 968（后两者此前台账 T24 未登记，棘轮首查即暴露——登记即事实）；
-# 九轮 B3b prompt_gates 拆分清偿（gates_cards 切出）：4→3；
-# 任务#23 fc_tool_runner 三段拆分清偿（fc_gates/fc_reconcile 切出）：3→2；
-# D-02 第一件 planner 拆分清偿（turn_executor 切出）：2→1
-# 任务 22 P7-1 state/manager.py 拆分清偿（conversation_ops/save_ops 切出，
-# 快照组装并入 context_builder，905→653 行）：1→0（棘轮清零）
+# 后端 >900 行文件数参考基线（信息工具口径，历次拆分清偿至 0：
+# B1 实测四件 → prompt_gates/fc_tool_runner/planner/state/manager
+# 依次拆分清偿，决策史见 CHANGELOG）
 OVER_900_BASELINE = 0
 
 # 白名单：文件相对路径 -> 理由（只减不增；拆分清偿后移除条目）
@@ -49,13 +42,10 @@ FRONTEND_WHITELIST = {
     "src/web/types/api.generated.ts": "gen_api_types.py 生成物，随后端 schema 自然增长",
     "src/web/types/index.ts": "前后端契约类型集中单文件便于对照",
 }
-# 超限文件数棘轮基线（P4-23 设立；清偿一件随降一件，禁止上调）。
+# 前端超限文件数参考基线（信息工具口径：只作报告对照，无 CI 棘轮强制；
+# 2026-08-24 磁盘实测超限 13 件起账，历次拆分清偿：13→…→4）。
 # 字面常量而非 len(FRONTEND_WHITELIST) 动态自算（整改批 1.1：动态自算
-# 是恒真基线，与 scaffold 恒真问题同构）；2026-08-24 磁盘实测超限
-# 13 件，与白名单 13 条一致。只降不升；上调须书面裁决并同批修改本常量；
-# 任务 #18 use-sse.ts 连接状态机抽至 lib/sse-connection + sse-events：7→6；
-# 任务 #12 批次2 stores/chat.ts 拆分为 chat/ 域组合出口（存量条目陈旧销账）：6→5
-# 任务 #14 storyboard.ts 三分拆分清偿（board-sync/board-edit/board-persist）：5→4
+# 是恒真基线，与 scaffold 恒真问题同构）。
 FRONTEND_OVER_BASELINE = 4
 
 ROOT = Path(__file__).resolve().parent.parent

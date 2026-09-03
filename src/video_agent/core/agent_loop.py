@@ -210,10 +210,10 @@ async def run_agent_loop(
         else:
             _hook_use = None
 
-        skill = str(getattr(executor, "skill_name", "") or "")
-        if not skill:
-            # 请求未携带 Skill 时回退项目 usedSkills 末位（单一实现）
-            skill = fallback_skill_from_state(getattr(executor, "state", None) or {})
+        # Skill 解析唯一口径：项目 usedSkills 末位（单一实现）。
+        #（原 executor.skill_name 恒空字段已随 2026-09-03 兼容层根除批删除：
+        #  生产路径从未写入，恒走本兜底。）
+        skill = fallback_skill_from_state(getattr(executor, "state", None) or {})
 
         # 链路追踪：记录本次对话执行过程
         tracer = AgentTracer.get_instance()
@@ -548,7 +548,10 @@ async def run_agent_loop(
             # （虚报/假停兜底等机械闸机同一策略表）。
             # 闸机拦截分级（恢复分派表 gate_rejection 分支，action=
             # structured_report）：gate_rejections 随上下文入轮末策略表，
-            # 由 gate_heal 发改写指引卡完成结构化上报，循环层不机械重试
+            # 由 gate_heal 发改写指引卡完成结构化上报，循环层不机械重试。
+            #（FC 轨拦截回喂经 tool_results 结构化通道；原 executor.gate_rejections
+            #  恒空字段已随 2026-09-03 兼容层根除批删除，本处恒为空表，
+            #  gate_heal 是否应接真实数据属批 C 会签项。）
             _re_ctx = RoundEndContext(
                 step=step,
                 executor=executor,
@@ -560,7 +563,7 @@ async def run_agent_loop(
                 total_exec=0,
                 applied=0,
                 executable=[],
-                gate_rejections=list(getattr(executor, "gate_rejections", None) or []),
+                gate_rejections=[],
                 result_text=result.text,
             )
             await run_round_end_policies(_re_ctx, emit, tracer=tracer)

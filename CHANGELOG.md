@@ -33,6 +33,14 @@
 以下条目原内嵌于 `ARCHITECTURE_RULES.md` 规则正文（地质层）。每条保留原编号、裁决日期与结论；
 规则的**现行语义**仍在宪法正文，本处只留历史细节。
 
+### 2026-09-03 · 会话中断承诺清偿批（R1-R3，接续 Qoder 会话中断点对账后）
+- **背景**：用户要求自 Qoder 会话导出起全面对账。对账发现三类「已承诺未兑现」的中断残留：①上批承诺「guard_pipeline 死指针 + GATE_TRIGGER_COUNTS 遥测写者随后一次性修掉」未兑现；②三维审查（Daniel）交付的 4 Major/5 Minor 修复项全部未处理；③「退役条件」之外还散落个别元治理表述。
+- **批次落地**：
+  - **R1** 根除 GATE_TRIGGER_COUNTS 遥测写者：`guard_pipeline.py` 删 `_append_trigger_counts` + 常量 + 锁 + 4 个 import；其唯一读者 `audit_gate_triggers.py` 已先随 B3 退役，写者属无消费者纯开销（业界无人做此类折旧遥测）。连带删 conftest 隔离夹具、test_gen_confirm_gate 遥测断言（tracer 审计断言保留，留痕语义不降级）。
+  - **R2** 根除 action_executor 五恒空字段（`action_log`/`documents_written`/`chat_inserts`/`gate_rejections`/`skill_name`）：生产路径零写入、FC 轨 collector 才是实际来源；`planner_output` 4 处合并口、`agent_loop` 2 处读取（skill 解析唯一口径收敛为 usedSkills 兜底）同批删。gate_heal「恒不触发是否有意设计」待批 C 会签项保持登记。
+  - **R3** 三维审查遗留项清偿：`eslint.config.js` 假安全表述（宣称有门禁把守，实已降信息工具）；`check_file_lines.py` 假安全表述（信息工具口径下仍写「CI 失败」）+ 两处棘轮基线注释改为参考基线；`gate_registry.py` docstring 自相矛盾（「无判定逻辑」vs「判定在 prompt_gates」）；交接文档 5 处过期数字（13 门禁→10、cov_baseline 指针→固定地板、88.08→地板口径）。
+- **连带影响**：tracer.record_gate 审计链路（/api/agent/gates）零变化；`assemble_response` 的 `executor` 参数保留（`executor.state` 仍是活依赖）；Daniel 建议的「覆盖率地板收紧 87/70」属新增门禁强度变更，按闸机增减用户裁决原则**未采纳**（留用户定夺）。
+
 ### 2026-09-03 · 用户审定「元治理台账根除」裁决（批次 F）
 - **背景**：比对业界 8 家主流 agent（Claude Code / Codex / OpenHands / Flova 等）后确认，「闸机棘轮 / 冻结基线 / 脚手架折旧 / 耦合台账 / 退役条件」一类元治理机制**全部没有人做**；2026-09-02「治理闸机减负」只砍了仪式层、保留了台账本体，用户据此裁定**连台账本体一起根除**，不留尾巴。
 - **裁决**：

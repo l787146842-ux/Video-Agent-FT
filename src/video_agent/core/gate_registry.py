@@ -7,7 +7,8 @@
 承载：GateRuleMeta 定义 + GATE_RULES 注册表数据 + GATE_MESSAGE_SECTIONS
 闸机文案覆盖矩阵 + PAUSE_MESSAGE_SECTIONS 暂停/告警文案覆盖矩阵
 + normalize_rule_id() 归一函数。
-判定逻辑（各族校验/audit_verdicts 等）仍在 prompt_gates.py。
+（判定逻辑在 prompt_gates.py / guard_pipeline.py，文案外置
+prompts/gates/messages.md——按职责分置，本模块无判定逻辑。）
 """
 from dataclasses import dataclass
 from typing import Dict, Tuple
@@ -21,7 +22,7 @@ LAYER_PLATFORM = "platform"
 class GateRuleMeta:
     """闸机规则元信息（注册表条目）：稳定 rule_id + 层归属 + 中文描述
     + origin 入册溯源（触发入册的案例/用例简述；找不到依据的写
-    「历史存量-待裁决」。任务 #12 批次2 门禁溯源补录，2026-08-26 冻结基线）。"""
+    「历史存量-待裁决」，任务 #12 批次2 门禁溯源补录 2026-08-26）。"""
     rule_id: str
     layer: str
     description: str

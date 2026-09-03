@@ -4,12 +4,13 @@
 action_media 三域实现体 + flow_directive 一条龙）已整体退役删除：
 动作通道唯一 = FC 工具，状态变更经 FC 工具直连 state/storyboard_ops
 （宪法 Rule2/Rule3）。本类仅保留编排层消费的状态视图与动作描述：
-- agent_loop / round_end_policies：state 视图、_describe_action；
-- planner_output：action_log/documents_written/chat_inserts 合并口
-  （FC 轨各 collector 为实际来源，文本轨口径恒空）。
+- agent_loop / round_end_policies：state 视图、_describe_action。
+（原 action_log/documents_written/chat_inserts/gate_rejections/skill_name
+五个恒空字段已随 2026-09-03 兼容层根除批删除：生产路径零写入，
+FC 轨各 collector 才是实际来源。）
 退役符号防复活见 scripts/check_legacy_orchestration（FORBIDDEN_B2）。
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from src.video_agent.core.action_descriptions import describe_action
 from src.video_agent.state import storyboard_ops as ops
@@ -34,18 +35,6 @@ class StateOperationExecutor:
         self.gate_enabled = gate_enabled
         # 决策 D：用户坚持（user_override）时硬伤降为警告照常放行
         self.gate_override: bool = False
-        # 当前激活的 Skill 名称（Planner 注入；平台行为按 Skill 声明驱动）
-        self.skill_name: str = ""
-        # 已执行操作的中文描述清单（文本轨口径恒空；FC 轨经
-        # action_log_collector 进 planner_output 合并）
-        self.action_log: List[str] = []
-        # 本会话写入的文档名（同上：FC 轨经 docs_written_collector）
-        self.documents_written: List[str] = []
-        # 待插入前端对话输入框的媒体（同上：FC 轨经 chat_inserts_collector）
-        self.chat_inserts: List[Dict[str, str]] = []
-        # 批次闸机拦截原因（文本轨口径恒空；FC 轨拦截回喂经
-        # fc_tool_runner/gate_rejections 独立通道）
-        self.gate_rejections: List[str] = []
 
     @property
     def state(self) -> Dict[str, Any]:

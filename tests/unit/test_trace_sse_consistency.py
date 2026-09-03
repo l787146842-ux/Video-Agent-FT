@@ -353,9 +353,7 @@ def test_summary_display_no_platform_injection(tmp_path, monkeypatch):
     from src.video_agent.core import planner_output
 
     class _Ex:
-        chat_inserts = []
-        documents_written = []
-        action_log = []
+        pass
 
     resp = planner_output.assemble_response(
         _LR(text="解析完成。", confirmation="请确认规格"),

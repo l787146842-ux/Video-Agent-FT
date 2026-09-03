@@ -46,7 +46,8 @@ def test_fallback_skill_executors_resolvable():
 
 @pytest.mark.asyncio
 async def test_agent_loop_falls_back_to_used_skills(tmp_path, monkeypatch):
-    """executor.skill_name 为空时，agent_loop 用 usedSkills 末位解析当前 Skill
+    """agent_loop 用 usedSkills 末位解析当前 Skill（唯一口径；
+    原 executor.skill_name 恒空字段已随 2026-09-03 兼容层根除批删除）
     （7777；audit-0819b：探针改钉 fallback_skill_from_state 调用，
     原 _wizard_active 探针随文本块路径退役）。"""
     from src.video_agent.core import agent_loop as al_mod
@@ -57,7 +58,6 @@ async def test_agent_loop_falls_back_to_used_skills(tmp_path, monkeypatch):
     svc = StateManager(str(tmp_path / "ws"))
     svc.state_dict["usedSkills"] = ["AI-短剧一站式生成"]
     ex = StateOperationExecutor(svc, gate_enabled=True)
-    ex.skill_name = ""
 
     seen = {}
     orig_fallback = al_mod.fallback_skill_from_state
