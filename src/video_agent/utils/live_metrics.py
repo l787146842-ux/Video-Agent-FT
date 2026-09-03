@@ -7,10 +7,13 @@ context-usage 接口优先取新鲜 live 值，静态估算作兜底——推理
 """
 from loguru import logger
 from collections import deque
+import json
 import time
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
+from src.video_agent.config import settings
 from src.video_agent.core.token_budget import estimate_messages_tokens
+from src.video_agent.utils.paths import CACHE_METRICS_FILE
 
 # project_id → {"est_tokens": int, "ts": float}
 _LIVE: Dict[str, Dict[str, Any]] = {}
@@ -54,8 +57,7 @@ def get_live_context(project_id: str) -> Optional[Dict[str, Any]]:
     return rec
 
 
-# 第 5 批（Q6 裁决 2026-09-01）：每轮 token 分配账
-# （system/history/state/tools/total/budget，状态注入占比纳入监控）。
+# 每轮 token 分配账（system/history/state/tools/total/budget，状态注入占比纳入监控）。
 # 只内存不落盘，180s 有效期同 live 口径；context-usage 端点暴露。
 _BUDGET: Dict[str, Dict[str, Any]] = {}
 
@@ -116,9 +118,9 @@ def reset_degradations() -> None:
     _DEGRADATIONS.clear()
 
 
-# ---------- P2-1 KV-cache 命中率滚动指标 ----------
+# ---------- KV-cache 命中率滚动指标 ----------
 # turn_executor 每次 LLM 调用后把供应商返回的 (prompt, cached) token 记入
-# 滚动窗口，汇聚为前缀缓存命中率；context-usage 端点暴露，段序手术（P2-2/P2-3）
+# 滚动窗口，汇聚为前缀缓存命中率；context-usage 端点暴露，段序手术
 # 的收益量化依据。只内存不落盘（运行期健康信号，同降级计数口径）。
 _CACHE_WINDOW = 50  # 滚动上限：防遥测自身膨胀，新样本挤掉最旧
 # project_id → deque[(prompt_tokens, cached_tokens)]
@@ -142,8 +144,55 @@ def record_cache_usage(
             return
         dq = _CACHE_SAMPLES.setdefault(project_id, deque(maxlen=_CACHE_WINDOW))
         dq.append((prompt_tokens, cached_tokens))
+        _persist_cache_sample(project_id, prompt_tokens, cached_tokens)
     except Exception as _e:
         logger.debug("[live_metrics] 缓存遥测忽略异常: {}", _e)
+
+
+def _roll_cache_metrics_if_needed(incoming_bytes: int) -> None:
+    """超字节上限滚动：当前 cache_metrics.jsonl 转存 .1（覆盖旧 .1）后重开空文件。
+
+    上限走 settings.cache_metrics_max_bytes（默认 2MB）；≤ 0 视为不限（不滚动）。
+    只在追加前检查（单点），保持总量有界（≤ 约 2×上限）；异常静默。
+    """
+    max_bytes = int(getattr(settings, "cache_metrics_max_bytes", 0) or 0)
+    if max_bytes <= 0 or not CACHE_METRICS_FILE.exists():
+        return
+    try:
+        if CACHE_METRICS_FILE.stat().st_size + incoming_bytes <= max_bytes:
+            return
+        backup = CACHE_METRICS_FILE.parent / (CACHE_METRICS_FILE.name + ".1")
+        if backup.exists():
+            backup.unlink()
+        CACHE_METRICS_FILE.rename(backup)
+    except Exception as _e:
+        logger.debug("[live_metrics] 缓存遥测滚动忽略异常: {}", _e)
+
+
+def _persist_cache_sample(project_id: str, prompt_tokens: int, cached_tokens: int) -> None:
+    """追加一条缓存命中样本到 cache_metrics.jsonl（路径归 utils/paths）。
+
+    守卫（均为策略开关，非并发控制）：cache_metrics_enabled（总开关）且
+    log_file_enabled（「本进程写磁盘遥测」开关：测试/验收进程置 false）。
+    两者只决定是否落盘，并不防止多进程同时写同一文件（本模块不做并发
+    控制；生产为单服务进程写入）。超 cache_metrics_max_bytes 字节上限时滚动
+    （转存 .1 后重开），防只增不轮转无界膨胀；异常静默，遥测不阻断主流程。
+    """
+    if not (settings.cache_metrics_enabled and settings.log_file_enabled):
+        return
+    try:
+        CACHE_METRICS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps({
+            "ts": time.time(),
+            "project_id": project_id,
+            "prompt_tokens": prompt_tokens,
+            "cached_tokens": cached_tokens,
+        }, ensure_ascii=False)
+        _roll_cache_metrics_if_needed(len(line.encode("utf-8")) + 1)
+        with CACHE_METRICS_FILE.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except Exception as _e:
+        logger.debug("[live_metrics] 缓存遥测落盘忽略异常: {}", _e)
 
 
 def get_cache_stats(project_id: str) -> Dict[str, Any]:

@@ -26,3 +26,7 @@ ENV_FILE = API_DIR / ".env"
 ASSET_LIBRARY_FILE = DATA_DIR / "asset_library.json"
 # 缩略图懒生成缓存目录（下划线前缀：素材扫描与列表接口一律跳过）
 ASSET_THUMBS_DIR = ASSETS_DIR / "_thumbs"
+
+# 缓存命中遥测落盘（utils/live_metrics.record_cache_usage 追加写；JSONL，
+# 供离线分析前缀缓存命中率）
+CACHE_METRICS_FILE = DATA_DIR / "cache_metrics.jsonl"

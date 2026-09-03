@@ -195,8 +195,7 @@ def _consume_pending_confirmation(
                     if draft.get("id") in presented_set and tag in ("", "Agent", "草稿", "推荐"):
                         draft["tag"] = "已确认"
                         promoted += 1
-        interaction["drafts_presented"] = []
-        svc.save()
+        workflow_runtime.reduce_drafts_presented(svc, clear=True, flush=True)
         if promoted:
             logger.info(f"[ConfirmFlow] 用户回应到达：{promoted} 个已展示的 Prompt Draft 晋升为「已确认」")
     # 晋升兜底：处于暂停态但 presented 记录缺失（记录链路异常或

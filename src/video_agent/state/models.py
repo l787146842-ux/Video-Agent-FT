@@ -42,13 +42,19 @@ class ProjectStatus(str, Enum):
 # =======================
 # Studio 前端对齐模型
 # =======================
+# 整板保存往返安全网（D-06）：以下元素模型统一 extra="allow"，让前端携带的
+# 未声明字段（如 Draft 的 imageProviderId/videoModel/customRatioWidth、Asset 的
+# sourceDraft、分组的 badgeLabel 等视图态字段）在 PUT /project/state 校验后
+# 原样透传，而非被静默丢弃。落盘回转走 model_dump(by_alias, mode=json,
+# exclude_unset=True)：只回传前端实际提交的键，既不丢额外字段、也不注入模型
+# 默认值污染落盘形态（契约显式 + 往返零静默丢字段的唯一家见 routes/project.py）。
 
 class DraftRecord(BaseModel):
     """对应前端的 draft 概念 — 故事板草稿卡片
     
     JSON 输出使用 camelCase/前端字段名；Python 内部使用 snake_case。
     """
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     draft_id: str = Field(alias="id")
     label: str = "草稿"
@@ -73,7 +79,7 @@ class DraftRecord(BaseModel):
 
 class KeyElementGroup(BaseModel):
     """关键元素分组（group_type=keyElement）"""
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     group_id: str = Field(alias="id")
     title: str = ""
@@ -83,7 +89,7 @@ class KeyElementGroup(BaseModel):
 
 class ShotGroup(BaseModel):
     """分镜分组（group_type=shot）— 含原 Shot 专业字段"""
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     group_id: str = Field(alias="id")
     title: str = ""
@@ -103,7 +109,7 @@ class ShotGroup(BaseModel):
 
 class AudioGroup(BaseModel):
     """音频分组（group_type=audio）"""
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     group_id: str = Field(alias="id")
     title: str = ""
@@ -145,7 +151,7 @@ class StoryGroup(BaseModel):
 
 class FrontendAsset(BaseModel):
     """前端资产列表中的素材（与 AssetState 职责不同，用于 UI 绑定）"""
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     asset_id: str = Field(alias="id")
     name: str = ""
@@ -156,7 +162,7 @@ class FrontendAsset(BaseModel):
 
 class ChatMessage(BaseModel):
     """Agent 聊天记录"""
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     role: str = Field(alias="sender")  # "user" | "agent"
     content: str = Field(alias="text")

@@ -1,9 +1,7 @@
 src/video_agent/adapters/factory.py:48:openai_compat
-src/video_agent/adapters/factory.py:82:src.video_agent.core.provider_config
 src/video_agent/adapters/factory.py:87:openai_compat
 src/video_agent/adapters/factory.py:88:agy_cli
 src/video_agent/adapters/factory.py:89:video_compat
-src/video_agent/adapters/openai_compat.py:270:src.video_agent.core.live_metrics
 src/video_agent/adapters/openai_compat.py:457:src.video_agent.utils.stream_notify
 src/video_agent/adapters/video_compat.py:392:base64
 src/video_agent/adapters/video_compat.py:393:pathlib
@@ -14,7 +12,6 @@ src/video_agent/core/gates_cards.py:338:src.video_agent.skill_runtime.registry
 src/video_agent/core/gates_cards.py:369:src.video_agent.core
 src/video_agent/core/gates_cards.py:400:src.video_agent.skill_runtime.registry
 src/video_agent/core/model_policy.py:29:src.video_agent.config
-src/video_agent/core/planner.py:259:src.video_agent.adapters.canvas_adapter
 src/video_agent/core/prompt_builder.py:259:src.video_agent.core.spec_rules
 src/video_agent/core/prompt_gates.py:318:src.video_agent.state
 src/video_agent/core/prompt_gates.py:614:src.video_agent.skill_runtime.registry

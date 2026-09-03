@@ -65,6 +65,10 @@ class Settings:
     # 服务
     port: int = field(default_factory=lambda: _env_int("PORT", 8080))
     host: str = field(default_factory=lambda: os.getenv("HOST", "127.0.0.1"))
+    # 优雅关停宽限（秒）：uvicorn timeout_graceful_shutdown。关停时先向在途 SSE
+    # 投递终态帧，再等待任务收尾；默认 10s——够投递终态帧 + 冲刷防抖落盘，
+    # 又不至于让无在途任务的正常关停白等（原 30s 偏长，交互式重启体感卡顿）
+    shutdown_grace_seconds: int = field(default_factory=lambda: _env_int("SHUTDOWN_GRACE_SECONDS", 10))
 
     # 安全
     environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))
@@ -77,11 +81,6 @@ class Settings:
     # Agent 多步循环（Q3：运行时热更新经 web/runtime_settings 通道，
     # agent_loop 每步实时读取，不再 import 期冻结）
     max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 6))
-    # 只读受限并行（批 7 · L3，默认开）：仅连续 risk=low 只读工具段在闸机链
-    # 按序裁决全部放行后于窗口内并行执行，结果按原序回填；写类/中高危仍串行。
-    # 默认开启，env 可关回串行（READONLY_PARALLEL_ENABLED=0）。
-    readonly_parallel_enabled: bool = field(
-        default_factory=lambda: _env_bool("READONLY_PARALLEL_ENABLED", True))
 
     # LLM 超时（秒）
     llm_timeout: int = field(default_factory=lambda: _env_int("LLM_TIMEOUT", 120))
@@ -287,6 +286,16 @@ class Settings:
     trace_rotation_keep: int = field(default_factory=lambda: _env_int("TRACE_ROTATION_KEEP", 2))
     # trace 总容量上限（主文件+.N 合计，超则从最旧丢弃）
     trace_total_max_bytes: int = field(default_factory=lambda: _env_int("TRACE_TOTAL_MAX_BYTES", 20_000_000))
+    # trace 分级留存（utils/trace_retention.py 经 getattr 防御读取，缺省即下列默认）：
+    # hot 窗口内保留全量字段；hot~warm 压缩为摘要（reasoning 截断到 reasoning_max）；
+    # 超 warm 窗口丢弃。默认 24h / 7d / 120 字符（与 trace_retention 默认一致）
+    trace_hot_window_s: int = field(default_factory=lambda: _env_int("TRACE_HOT_WINDOW_S", 86400))
+    trace_warm_window_s: int = field(default_factory=lambda: _env_int("TRACE_WARM_WINDOW_S", 604800))
+    trace_warm_reasoning_max: int = field(default_factory=lambda: _env_int("TRACE_WARM_REASONING_MAX", 120))
+    # trace 分级留存总开关（默认关）：轮转产物 .jsonl.N 的 hot/warm/cold 压缩
+    # 与 log_file_enabled 同守卫——测试/验收子进程置 false 时不改写磁盘 trace，
+    # 避免多进程争用；生产按需开启（首次压缩前原文件另存 .pre-compact 备份）
+    trace_retention_enabled: bool = field(default_factory=lambda: _env_bool("TRACE_RETENTION_ENABLED", False))
 
     # 上传限制
     max_upload_size_mb: int = field(default_factory=lambda: _env_int("MAX_UPLOAD_SIZE_MB", 50))
@@ -342,6 +351,121 @@ class Settings:
     mcp_enabled: bool = field(default_factory=lambda: _env_bool("MCP_ENABLED", True))
     mcp_max_active_tools: int = field(default_factory=lambda: _env_int("MCP_MAX_ACTIVE_TOOLS", 8))
     mcp_result_max_chars: int = field(default_factory=lambda: _env_int("MCP_RESULT_MAX_CHARS", 4000))
+
+    # 缓存命中遥测落盘开关：record_cache_usage 除内存滚动窗口外，追加写
+    # cache_metrics.jsonl（路径归 utils/paths）供离线分析前缀缓存命中率。
+    # 与 log_file_enabled 同守卫（测试/验收进程置 false，防多进程争用同一文件）
+    cache_metrics_enabled: bool = field(default_factory=lambda: _env_bool("CACHE_METRICS_ENABLED", True))
+    # cache_metrics.jsonl 字节上限（超限截断重开，防只增不轮转无界膨胀）：
+    # 默认 2MB——命中率是滚动窗口口径，历史样本离线分析够用即可，不必长留
+    cache_metrics_max_bytes: int = field(default_factory=lambda: _env_int("CACHE_METRICS_MAX_BYTES", 2_000_000))
+
+
+# ====== 嵌套分组视图（宪法 §四：Settings 只读；此处分组仅为读取便利，
+# 不改扁平字段本体——旧扁平属性名（settings.port 等）与 env 键名保持不变，
+# 运行时热更新（object.__setattr__ 改扁平字段）经委托视图即时可见）======
+
+# 组名 → 该组包含的扁平字段名（组名与任一扁平字段名无碰撞）。
+# 单一事实源仍是上方 dataclass 字段；本表只做「聚合读取视图」编排。
+SETTINGS_GROUPS: dict = {
+    "server": ("port", "host", "shutdown_grace_seconds"),
+    "security": ("environment", "api_key", "log_file_enabled", "trust_proxy",
+                 "rate_limit_per_minute", "rate_limit_generate_per_minute"),
+    "agent": ("max_steps", "adjust_subdialog_enabled", "adjust_task_concurrency",
+              "execution_preference", "pipeline_orchestrator_enabled", "script_inject_limit"),
+    "llm": ("llm_timeout", "llm_stream_timeout", "adapter_retry_max",
+            "adapter_retry_base_delay", "llm_max_tokens", "llm_temperature",
+            "llm_output_limit", "llm_json_timeout", "llm_thinking_level",
+            "aux_thinking_level", "cli_auto_chat_model", "model_fallback_enabled",
+            "model_fallback_max_candidates", "executor_fast_model",
+            "executor_thinking_level", "model_policy"),
+    "context": ("context_window_size", "token_budget_ratio", "image_token_estimate",
+                "feedback_compress_ratio", "tool_result_digest_chars",
+                "tool_result_prune_chars", "tool_result_prune_head",
+                "tool_result_prune_tail", "history_compact_threshold",
+                "context_json_compact", "state_context_budget_chars",
+                "state_group_body_chars", "context_overflow_policy", "prompt_gate_mode",
+                "llm_image_max_edge", "max_doc_chars", "max_attachments",
+                "max_llm_images", "trace_reasoning_max_chars"),
+    "media": ("image_gen_timeout", "image_ref_limit", "image_gen_concurrency",
+              "video_gen_concurrency", "audio_gen_concurrency", "video_ref_limit_image",
+              "video_ref_limit_video", "video_ref_limit_audio", "video_ref_limit_total",
+              "max_chat_inserts", "default_image_provider_id", "default_image_model",
+              "default_video_provider_id", "default_video_model", "chat_image_enabled",
+              "default_image_resolution", "default_video_resolution", "max_shot_duration"),
+    "skills": ("skills_disabled", "skill_catalog_max_entries"),
+    "tasks": ("task_ttl_seconds", "task_max", "snapshot_max_per_project",
+              "trace_file_max_bytes", "trace_rotation_keep", "trace_total_max_bytes",
+              "trace_hot_window_s", "trace_warm_window_s", "trace_warm_reasoning_max",
+              "trace_retention_enabled"),
+    "storage": ("max_upload_size_mb", "storage_backend", "state_backend"),
+    "canvas": ("canvas_timeout", "canvas_enabled", "canvas_health_cache_seconds",
+               "canvas_agent_url", "canvas_agent_token", "infinite_canvas_url",
+               "canvas_agent_state_cache_seconds", "canvas_shell_offset_x",
+               "canvas_shell_offset_y", "canvas_read_prompt_max_chars",
+               "canvas_asset_page_size"),
+    "mcp": ("mcp_enabled", "mcp_max_active_tools", "mcp_result_max_chars"),
+    "metrics": ("cache_metrics_enabled", "cache_metrics_max_bytes"),
+}
+
+
+class _SettingsGroup:
+    """嵌套子组只读视图：属性访问实时委托到底层扁平字段。
+
+    委托而非快照——运行时热更新（runtime_settings 通道 object.__setattr__
+    改扁平字段）后，经子组视图读取立即反映最新值，与直接读扁平属性一致。
+    """
+
+    __slots__ = ("_settings", "_names", "_group")
+
+    def __init__(self, settings_obj: "Settings", names, group: str = "") -> None:
+        self._settings = settings_obj
+        self._names = tuple(names)
+        self._group = group
+
+    def __getattr__(self, name: str):
+        # 仅在常规查找失败时触发；_settings/_names/_group 为 slot，正常命中不进此处。
+        # 防无限递归：slot 未初始化（pickle/copy 绕过 __init__ 等）时，
+        # 读 self._names 会再次落入 __getattr__ → 死循环；改用
+        # object.__getattribute__ 直取 slot，未初始化则立即 raise AttributeError(name)。
+        try:
+            names = object.__getattribute__(self, "_names")
+            settings_obj = object.__getattribute__(self, "_settings")
+            group = object.__getattribute__(self, "_group")
+        except AttributeError:
+            raise AttributeError(name)
+        if name in names:
+            return getattr(settings_obj, name)
+        raise AttributeError(
+            f"设置组 {group!r} 无字段 {name!r}（可用键: {', '.join(names)}）"
+        )
+
+    def __repr__(self) -> str:
+        try:
+            group = object.__getattribute__(self, "_group")
+            names = object.__getattribute__(self, "_names")
+        except AttributeError:
+            return "<_SettingsGroup (uninitialized)>"
+        return f"<_SettingsGroup {group!r}: {', '.join(names)}>"
+
+    def __dir__(self):
+        return list(self._names)
+
+    def as_dict(self) -> dict:
+        """本组全部字段的实时值快照（调试/序列化用）。"""
+        return {n: getattr(self._settings, n) for n in self._names}
+
+
+def _make_group_property(names, group: str = ""):
+    """构造绑定到指定字段名集合的只读分组 property。"""
+    def _getter(self):
+        return _SettingsGroup(self, names, group)
+    return property(_getter)
+
+
+# 程序化挂载分组视图（组名均非 dataclass 字段名，不干扰 fields()/__init__）
+for _group_name, _group_fields in SETTINGS_GROUPS.items():
+    setattr(Settings, _group_name, _make_group_property(_group_fields, _group_name))
 
 
 # 全局单例（启动时加载一次）

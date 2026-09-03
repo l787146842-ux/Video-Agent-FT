@@ -34,14 +34,8 @@ class GateVerdict:
     ok: bool
     message: str = ""
 
-    def __post_init__(self) -> None:
-        # 签发即归一：历史别名 rule_id 经此统一为注册表正式条目，
-        # 下游 to_dict/audit_verdicts/trace 留痕全部同口径
-        self.rule_id = gate_registry.normalize_rule_id(self.rule_id)
-
     def to_dict(self) -> Dict[str, Any]:
-        # rule_id 已归一；再经 normalize 一次仅为防御直改字段的外围写入
-        rid = gate_registry.normalize_rule_id(self.rule_id)
+        rid = self.rule_id
         meta = gate_registry.GATE_RULES.get(rid)
         return {
             "rule_id": rid,
@@ -80,7 +74,7 @@ def audit_verdicts(
         tracer = AgentTracer.get_instance()
         for v in verdicts:
             tracer.record_gate(
-                rule_id=gate_registry.normalize_rule_id(v.rule_id),
+                rule_id=v.rule_id,
                 layer=v.layer,
                 ok=v.ok,
                 skill_name=skill_name,

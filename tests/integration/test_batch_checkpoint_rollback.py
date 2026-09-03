@@ -17,7 +17,7 @@ import json
 import pytest
 
 from src.video_agent.adapters.base_chat import ChatResponse
-from src.video_agent.adapters.cancel_token import GenerationCancelled
+from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult

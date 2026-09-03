@@ -22,6 +22,7 @@ from loguru import logger
 
 from src.video_agent.config import settings
 from src.video_agent.utils.paths import DATA_DIR
+from src.video_agent.utils.trace_retention import compact_traces, get_retention_config
 
 # reasoning 文本持久化长度（仅展示用，防 trace 膨胀；保留尾部，头部省略）
 _REASONING_HEAD_NOTE = "…（前文思考已截断）"
@@ -638,8 +639,40 @@ class AgentTracer:
                 oldest = self._persist_path.with_suffix(f".jsonl.{n}")
                 if oldest.exists():
                     oldest.unlink()
+            # 分级留存（评审返修 Critical-2）：压缩目标 = 轮转产物 .jsonl.N，而非
+            # 已被 rename 消失的主文件。原实现在 self._persist_path.rename(first) 后
+            # 对 self._persist_path 调 compact_traces → 文件已不存在，立即 return 全零，
+            # 三级留存 100% 空转。改为循环 n in 1..keep、存在才压；主文件的老化记录
+            # 另由 lifespan startup 单点补压（compact_persisted）。
+            # trace_retention_enabled（默认关）与 log_file_enabled 同守卫：测试/验收
+            # 子进程不改写磁盘 trace，避免多进程争用。
+            if bool(getattr(settings, "trace_retention_enabled", False)) \
+                    and bool(getattr(settings, "log_file_enabled", True)):
+                retention_cfg = get_retention_config(settings)
+                for n in range(1, keep + 1):
+                    rotated = self._persist_path.with_suffix(f".jsonl.{n}")
+                    if rotated.exists():
+                        compact_traces(rotated, **retention_cfg)
         except Exception as e:
             logger.warning(f"[Tracer] trace 轮转失败（不影响主流程）: {e}")
+
+    def compact_persisted(self) -> None:
+        """lifespan startup 单点：对主 trace 文件补一次分级压缩。
+
+        轮转只压 .jsonl.N（主文件在 rename 后已不存在），主文件里长期不轮转的
+        老化记录由本方法在启动时收敛一次。受 trace_retention_enabled（默认关）
+        与 log_file_enabled 同守卫；失败仅 log，绝不干扰启动。
+        """
+        try:
+            if not (bool(getattr(settings, "trace_retention_enabled", False))
+                    and bool(getattr(settings, "log_file_enabled", True))):
+                return
+            if not self._persist_path.exists():
+                return
+            retention_cfg = get_retention_config(settings)
+            compact_traces(self._persist_path, **retention_cfg)
+        except Exception as e:
+            logger.warning(f"[Tracer] trace 主文件启动压缩失败（不影响主流程）: {e}")
 
     def get_recent_traces(self, limit: int = 50) -> List[Dict[str, Any]]:
         """获取最近 N 条追踪记录（内存 + 文件，按 trace_id 去重，新→旧）。"""

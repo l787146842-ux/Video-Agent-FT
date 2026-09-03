@@ -144,7 +144,7 @@ def test_takeover_skipped_when_spec_finalized(monkeypatch):
 
 # test_duration_candidates_dedup_by_value（executors._dedupe_duration_candidates）
 # 已随任务#36 B5 执行器一步退役删除：时长候选去重是执行器规格收集
-# 内部逻辑，规格收集改由模型按 skill_discipline 用 workflow_pause 分组向导完成。
+# 内部逻辑，规格收集改由模型按 skill_runtime 用 workflow_pause 分组向导完成。
 
 
 def test_badge_normalize_from_desc_anchors():

@@ -12,7 +12,8 @@ Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复；
   源 = frontmatter 声明，``validate_manifest`` 注册期门禁）；
 - 持久化 ``WorkflowRun``（current_node/completed_nodes/pending_gate/artifacts），
   **仅本模块 reducer 可改**（StateManager 仍唯一写入点，Rule3）；
-  interaction 暂停旗标同经 ``reduce_interaction`` 单一写入；
+  interaction 全域经 reducer 族（reduce_interaction / reduce_session_summary /
+  reduce_gate_overrides / reduce_drafts_presented）单一写入；
 - 完成度只认客观探针（stage_done，fail-closed）；
 - 「不暂停连跑」语义归自主性档位。
 """
@@ -185,10 +186,36 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
         for node in definition["nodes"]:
             if node["node_id"] not in run["completed_nodes"] and all(
                     x in run["completed_nodes"] for x in node.get("prerequisites") or []):
-                run["current_node"] = node["node_id"]; break
-    if run.get("pending_decision"): run["status"] = "waiting_user"
+                run["current_node"] = node["node_id"]
+                break
+    if run.get("pending_decision"):
+        run["status"] = "waiting_user"
     run["updated_at"] = now
     return run
+
+
+def current_node_title(state: Dict[str, Any], skill: str) -> Optional[str]:
+    """只读投影：当前 run 的 current_node 标题（标题事实源 =
+    compile_definition 节点 title，即 DEFAULT_V2_NODE_TITLES）。
+
+    无 Skill 编译定义 / 无 active run / 无 current_node / 定义变更早退
+    一律返回 None（调用方回落）；不写 run 块（sync_run 仍是 reducer 单一写入点）。"""
+    definition = compile_definition(skill)
+    if not definition:
+        return None
+    run = (state or {}).get("workflow_run") or {}
+    if not run.get("run_id") or run.get("failure_state"):
+        return None
+    if run.get("definition_hash") and run.get("definition_hash") != definition["definition_hash"]:
+        # sync_run 同语义：定义变更的旧 run 早退，不作节点判定依据
+        return None
+    current = str(run.get("current_node") or "")
+    if not current:
+        return None
+    for node in definition["nodes"]:
+        if node["node_id"] == current:
+            return str(node.get("title") or current)
+    return None
 
 
 def apply_interaction(
@@ -199,7 +226,7 @@ def apply_interaction(
     """interaction 旗标写入原语（不落盘）：reducer 族唯一写入原语。
 
     不经 StateManager 的持态调用点（轮末策略/执行器批内等）用本原语，
-    落盘由调用方或 reduce_interaction 承担；散落直写禁止（Rule2 v6）。"""
+    落盘由调用方或 reduce_* 族承担；interaction 全域经 reducer 族写入。"""
     inter = state.setdefault("interaction", {})
     for key, val in (set_flags or {}).items():
         inter[key] = val
@@ -214,9 +241,11 @@ def reduce_interaction(
     pop_flags: tuple = (),
     flush: bool = False,
 ) -> Dict[str, Any]:
-    """interaction 暂停旗标唯一写入点（reducer 语义）。
+    """interaction 暂停旗标域写入点（reducer 语义）。
 
-    散落直写禁止；flush=True 时即时落盘（暂停闭环等承重路径）。
+    职责：active_pause / storyboard_pending / last_pause_decision 等暂停流控旗标。
+    session_summary / gate_overrides / drafts_presented 各有专属 reducer。
+    flush=True 时即时落盘（暂停闭环等承重路径）。
     控制流可观测：写入经 [ControlFlow] 日志留痕。"""
     inter = apply_interaction(svc.state_dict, set_flags, pop_flags)
     if flush:
@@ -227,6 +256,95 @@ def reduce_interaction(
         logger.info(
             "[ControlFlow] reduce_interaction set={} pop={}",
             sorted((set_flags or {}).keys()), sorted(pop_flags),
+        )
+    return inter
+
+
+def reduce_session_summary(
+    svc: Any,
+    fp: Optional[str] = None,
+    text: Optional[str] = None,
+    active: Optional[bool] = None,
+    flush: bool = False,
+) -> Dict[str, Any]:
+    """interaction.session_summary 唯一写入点（compaction 摘要缓存 + 注入标记）。
+
+    fp/text 非 None 时整体替换缓存字典（摘要重建）；active 非 None 时合并
+    注入形态标记（无既有缓存且 active=False 时不新建键）。
+    flush=True 即时落盘；控制流可观测：写入经 [ControlFlow] 日志留痕。"""
+    inter = svc.state_dict.setdefault("interaction", {})
+    changed = False
+    if fp is not None or text is not None:
+        inter["session_summary"] = {"fp": fp or "", "text": text or ""}
+        changed = True
+    if active is not None:
+        cached = inter.get("session_summary")
+        if not isinstance(cached, dict):
+            if active:
+                inter["session_summary"] = {"active": True}
+                changed = True
+        elif bool(cached.get("active")) != bool(active):
+            cached["active"] = bool(active)
+            changed = True
+    if changed:
+        if flush:
+            svc.save()
+        else:
+            svc.save_debounced()
+        logger.info(
+            "[ControlFlow] reduce_session_summary fp={} text_len={} active={}",
+            fp is not None, len(text) if text else 0, active,
+        )
+    return inter
+
+
+def reduce_gate_overrides(
+    svc: Any,
+    rule_ids: List[str],
+    flush: bool = False,
+) -> Dict[str, Any]:
+    """interaction.gate_overrides 唯一写入点（会话层一次性豁免登记/消费清除）。
+
+    rule_ids 整体覆盖写入（消费即清除传 []）。
+    flush=True 即时落盘（消费/登记闭环承重路径）。
+    控制流可观测：写入经 [ControlFlow] 日志留痕。"""
+    inter = apply_interaction(svc.state_dict, set_flags={"gate_overrides": list(rule_ids)})
+    if flush:
+        svc.save()
+    else:
+        svc.save_debounced()
+    logger.info("[ControlFlow] reduce_gate_overrides count={}", len(rule_ids))
+    return inter
+
+
+def reduce_drafts_presented(
+    svc: Any,
+    draft_id: Optional[str] = None,
+    clear: bool = False,
+    flush: bool = False,
+) -> Dict[str, Any]:
+    """interaction.drafts_presented 唯一写入点（展示草稿登记/消费清除）。
+
+    draft_id 非 None 时幂等追加；clear=True 时整体清空。
+    flush=True 即时落盘；控制流可观测：写入经 [ControlFlow] 日志留痕。"""
+    inter = svc.state_dict.setdefault("interaction", {})
+    changed = False
+    if clear:
+        inter["drafts_presented"] = []
+        changed = True
+    elif draft_id:
+        presented = inter.setdefault("drafts_presented", [])
+        if draft_id not in presented:
+            presented.append(draft_id)
+            changed = True
+    if changed:
+        if flush:
+            svc.save()
+        else:
+            svc.save_debounced()
+        logger.info(
+            "[ControlFlow] reduce_drafts_presented draft_id={} clear={}",
+            draft_id, clear,
         )
     return inter
 
@@ -310,13 +428,24 @@ def record_artifact(state: Dict[str, Any], skill: str, name: str) -> None:
         payload={"name": name})
 
 class WorkflowRuntime:
+    """workflow 运行时门面：状态投影 + 事件账本 + 轮次提交。"""
+
     def __init__(self, state_manager: Any, skill: str = ""):
         self.state_manager, self.skill = state_manager, str(skill or "")
+
     @property
-    def state(self) -> Dict[str, Any]: return self.state_manager.state_dict if hasattr(self.state_manager, "state_dict") else self.state_manager
+    def state(self) -> Dict[str, Any]:
+        if hasattr(self.state_manager, "state_dict"):
+            return self.state_manager.state_dict
+        return self.state_manager
+
     def start_run(self, *, input_present: Optional[bool] = None) -> Dict[str, Any]:
-        run = sync_run(self.state, self.skill); ledger = EventLedger(self.state)
-        ledger.append("RunStarted", run_id=run["run_id"], idempotency_key=f"run:{run['run_id']}:started", payload={"workflow_id": run.get("workflow_id")})
+        run = sync_run(self.state, self.skill)
+        ledger = EventLedger(self.state)
+        ledger.append(
+            "RunStarted", run_id=run["run_id"],
+            idempotency_key=f"run:{run['run_id']}:started",
+            payload={"workflow_id": run.get("workflow_id")})
         # 原料闸机械判定已随用户裁决 2026-08-31 退役（Flova 对齐：
         # 原料收集归 skill 散文 + 模型自觉）；仅保留调用方显式 input_present 覆盖。
         missing = input_present is False
@@ -326,26 +455,60 @@ class WorkflowRuntime:
             _def = compile_definition(self.skill)
             _input_node = (_def["nodes"][0]["node_id"]
                            if _def and _def.get("nodes") else "analyze_script")
-            run["status"] = "waiting_user"; run["pending_decision"] = {"token": f"input:{run['run_id']}", "node_id": _input_node, "schema": {"type": "input", "required": True}}
-            ledger.append("InputRequested", run_id=run["run_id"], node_id=_input_node, idempotency_key=f"run:{run['run_id']}:input", payload={"status": "waiting_user"})
-        run["event_sequence"] = max((x.sequence for x in ledger.by_run(run["run_id"])), default=0)
-        if hasattr(self.state_manager, "save"): self.state_manager.save()
-        return copy.deepcopy(run)
-    def commit_turn(self, result: Any, **kwargs: Any) -> TurnCommit: return commit_turn(self.state_manager, result, skill=self.skill, **kwargs)
-    def resolve_decision(self, token: str, value: Any, *, turn_id: str = "") -> TurnCommit:
-        run = sync_run(self.state, self.skill); pending = run.get("pending_decision") or {}
-        if pending.get("token") != token: raise WorkflowCommitError("stale decision token")
-        allowed = pending.get("options") or []
-        if allowed and str(value) not in {str(x.get("value") if isinstance(x, dict) else x) for x in allowed}: raise WorkflowCommitError("invalid decision value")
-        run["pending_decision"] = None
-        return commit_turn(self.state_manager, TurnResult(turn_id=turn_id or f"decision:{token}:{value}", node_id=str(pending.get("node_id") or run.get("current_node") or ""), timeline_events=[{"event_type": "DecisionResolved", "payload": {"token": token, "value": value}}]), skill=self.skill, expected_version=int(run.get("run_version") or 0))
-    def recover_run(self) -> Dict[str, Any]:
-        run = sync_run(self.state, self.skill); events = EventLedger(self.state).by_run(run.get("run_id") or "")
-        run["event_sequence"] = max((x.sequence for x in events), default=0)
-        if run.get("pending_decision"): run["status"] = "waiting_user"
+            run["status"] = "waiting_user"
+            run["pending_decision"] = {
+                "token": f"input:{run['run_id']}", "node_id": _input_node,
+                "schema": {"type": "input", "required": True}}
+            ledger.append(
+                "InputRequested", run_id=run["run_id"], node_id=_input_node,
+                idempotency_key=f"run:{run['run_id']}:input",
+                payload={"status": "waiting_user"})
+        run["event_sequence"] = max(
+            (x.sequence for x in ledger.by_run(run["run_id"])), default=0)
+        if hasattr(self.state_manager, "save"):
+            self.state_manager.save()
         return copy.deepcopy(run)
 
-__all__ = ["WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn", "compile_definition", "sync_run", "record_artifact", "apply_interaction", "reduce_interaction"]
+    def commit_turn(self, result: Any, **kwargs: Any) -> TurnCommit:
+        return commit_turn(self.state_manager, result, skill=self.skill, **kwargs)
+
+    def resolve_decision(self, token: str, value: Any, *, turn_id: str = "") -> TurnCommit:
+        run = sync_run(self.state, self.skill)
+        pending = run.get("pending_decision") or {}
+        if pending.get("token") != token:
+            raise WorkflowCommitError("stale decision token")
+        allowed = pending.get("options") or []
+        if allowed and str(value) not in {
+            str(x.get("value") if isinstance(x, dict) else x) for x in allowed
+        }:
+            raise WorkflowCommitError("invalid decision value")
+        run["pending_decision"] = None
+        return commit_turn(
+            self.state_manager,
+            TurnResult(
+                turn_id=turn_id or f"decision:{token}:{value}",
+                node_id=str(pending.get("node_id") or run.get("current_node") or ""),
+                timeline_events=[{
+                    "event_type": "DecisionResolved",
+                    "payload": {"token": token, "value": value}}]),
+            skill=self.skill,
+            expected_version=int(run.get("run_version") or 0))
+
+    def recover_run(self) -> Dict[str, Any]:
+        run = sync_run(self.state, self.skill)
+        events = EventLedger(self.state).by_run(run.get("run_id") or "")
+        run["event_sequence"] = max((x.sequence for x in events), default=0)
+        if run.get("pending_decision"):
+            run["status"] = "waiting_user"
+        return copy.deepcopy(run)
+
+
+__all__ = [
+    "WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn",
+    "compile_definition", "sync_run", "current_node_title", "record_artifact",
+    "apply_interaction", "reduce_interaction", "reduce_session_summary",
+    "reduce_gate_overrides", "reduce_drafts_presented",
+]
 
 # frontmatter 声明写入即失效编译缓存（声明变更不被缓存遮蔽）
 frontmatter.register_write_hook(clear_compile_cache)

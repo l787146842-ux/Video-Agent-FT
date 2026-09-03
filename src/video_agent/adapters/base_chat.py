@@ -12,11 +12,18 @@ from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import httpx
-from pydantic import BaseModel
 
 from src.video_agent.adapters.errors import build_status_error
 from src.video_agent.adapters.retry import with_retry
 from src.video_agent.config import settings
+# 依赖倒置：Chat 数据契约（ChatResponse/StreamChunk）下沉 core/chat_port.py，
+# core 与 adapters 都依赖共享数据类而非互相依赖；本模块 re-export 保持
+# `adapters.base_chat.ChatResponse` 等旧导入路径不变。BaseChatAdapter（Rule 4
+# 宪法锚点）仍定义于本模块，其接口结构化满足 core.chat_port.ChatAdapterPort。
+from src.video_agent.core.chat_port import (  # noqa: F401  (re-export)
+    ChatResponse,
+    StreamChunk,
+)
 from src.video_agent.utils import gen_id
 
 
@@ -99,38 +106,13 @@ def extract_prompt_cache_usage(usage: Any) -> Tuple[int, int]:
     return max(0, prompt), max(0, min(cached, prompt) if prompt > 0 else cached)
 
 
-class ChatResponse(BaseModel):
-    """LLM 调用结果"""
-    content: str = ""
-    finish_reason: str = ""
-    tool_calls: List[Dict[str, Any]] = []
-    raw: Optional[Dict[str, Any]] = None
-    # 本轮消耗 token（usage.total_tokens；透明度兑现：轮次账单数据源，
-    # 端点未返回 usage 时保持 0，消费方按「有则展示」降级）
-    token_usage: int = 0
-    # P2-1 KV-cache 遥测：本轮 prompt token 与供应商前缀缓存命中 token
-    #（提取口径见 extract_prompt_cache_usage；端点未返回时保 0）
-    prompt_tokens: int = 0
-    cached_tokens: int = 0
-
-
-class StreamChunk(BaseModel):
-    """流式增量块"""
-    type: str = "text_delta"  # text_delta | reasoning_delta | tool_call | done
-    text: str = ""
-    tool_name: str = ""
-    tool_args: Dict[str, Any] = {}
-    finish_reason: str = ""  # 仅在 type="done" 时携带（stop / length / tool_calls）
-    # 仅在 type="done" 时机会性携带（中继在流内下发 usage 才有值，不强求）
-    usage_tokens: int = 0
-    # 仅在 type="done" 时机会性携带：本轮 prompt token 与前缀缓存命中 token
-    #（P2-1 KV-cache 遥测，流内未下发 usage 时保 0）
-    prompt_tokens: int = 0
-    cached_tokens: int = 0
-
-
 class BaseChatAdapter(ABC):
-    """LLM Chat 适配器抽象基类"""
+    """LLM Chat 适配器抽象基类（Rule 4：外部调用必须继承本类）。
+
+    数据契约 ChatResponse/StreamChunk 下沉 core/chat_port.py（依赖倒置）；
+    本 ABC 的接口结构化满足 core.chat_port.ChatAdapterPort，core 侧经该端口
+    引用 chat 能力而不 import adapters。
+    """
 
     @abstractmethod
     async def chat(

@@ -1,16 +1,17 @@
-from typing import Type
+from typing import Any, Dict, Type
 from pydantic import BaseModel, Field
 
 from loguru import logger
 
 from src.video_agent.config import settings
+from src.video_agent.core import ports
 from src.video_agent.core.generation_fallback import (
     gen_fallback_candidates,
     is_retryable_gen_error,
 )
 from src.video_agent.core.provider_config import get_provider_config
-from src.video_agent.tools.base import BaseTool, ToolResult
-from src.video_agent.adapters.cancel_token import GenerationCancelled
+from src.video_agent.tools.base import BaseTool, ProviderInjectionContext, ToolResult
+from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 
 class GenerateVideoParams(BaseModel):
@@ -24,6 +25,7 @@ class GenerateVideoTool(BaseTool):
     risk = "high"  # §2.7：生成类（外部副作用/花钱）；确认档由 risk 单轴推导（F1）
     costly = True  # 批 B 花钱生成声明轴：执行偏好三档可放宽其确认闸（留痕）
     detail_tier = "expand"  # 产出类
+    provider_kind = "video"  # I-3 裁决 2026-09-03：provider 注入声明轴
     description = (
         "根据传入的首帧图片和提示词，生成高清视频并返回结果。"
         "危险/花钱操作，仅当用户明确要求生成视频时才可调用，执行前会弹确认卡。"
@@ -31,6 +33,19 @@ class GenerateVideoTool(BaseTool):
 
     def get_input_schema(self) -> Type[BaseModel]:
         return GenerateVideoParams
+
+    def apply_provider_defaults(self, args: Dict[str, Any], ctx: ProviderInjectionContext) -> None:
+        """I-3：generate_video provider 注入下沉到工具自身（调度器不感知）。
+
+        优先级 = 模型显式指定 > 目标草稿卡自身的视频配置 > 全局默认渠道；
+        按卡类型解析（分区内混有三类卡，禁止「分区 → 媒体类型」映射）。经
+        provider_config 端口访问声明（依赖倒置，保 monkeypatch 可见）。"""
+        if not str(args.get("adapter_provider") or "").strip():
+            _vp, _vm = ports.provider_config_port().resolve_selected_draft_media_config(
+                ctx.state, ctx.selected_draft_id, ctx.selected_type, kind="video")
+            if _vp:
+                args["adapter_provider"] = _vp
+                logger.info("[generate_video] provider 注入（选中草稿卡）: {}/{}", _vp, _vm)
 
     async def aexecute(self, params: GenerateVideoParams) -> ToolResult:
         if not (params.adapter_provider or "").strip():

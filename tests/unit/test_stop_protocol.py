@@ -17,7 +17,7 @@ import asyncio
 import pytest
 
 from src.video_agent.core.agent_loop import run_agent_loop
-from src.video_agent.core.stop_signal import (
+from src.video_agent.utils.stop_signal import (
     AgentStoppedError,
     clear_stop,
     current_stop_id,

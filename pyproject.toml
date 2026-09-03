@@ -1,0 +1,11 @@
+# Python 格式工具链配置（R-9=a 裁决：仅补工具链，不接入门禁/CI/pre-commit）。
+# pytest 配置仍以 pytest.ini 为准，本文件不覆盖其行为。
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.black]
+line-length = 120

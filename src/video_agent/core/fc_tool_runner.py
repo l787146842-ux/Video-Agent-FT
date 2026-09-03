@@ -17,12 +17,12 @@ from typing import Any, Dict, List, NamedTuple, Optional
 
 from loguru import logger
 
-from src.video_agent.adapters.base_chat import ChatResponse
-from src.video_agent.adapters.cancel_token import GenerationCancelled
+from src.video_agent.core.chat_port import ChatResponse
+from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.core import fc_gates, fc_reconcile, prompt_gates
 from src.video_agent.core import batch_checkpoint
 from src.video_agent.core import ports
-from src.video_agent.core import readonly_parallel
+from src.video_agent.core import provider_injection
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
 from src.video_agent.core import tool_args_preview
@@ -35,7 +35,7 @@ from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.skill_runtime.registry import stage_label_for_tool
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
-from src.video_agent.tools.base import ToolResult
+from src.video_agent.tools.base import ProviderInjectionContext, ToolResult
 
 from src.video_agent.core.fc_feedback import (
     compose_failure_feedback,
@@ -139,7 +139,7 @@ class FCToolRunner:
         return risk if risk in ("low", "medium", "high") else "high"
 
     async def _dispatch_tool(self, name: str, args: Dict[str, Any]) -> ToolResult:
-        """闸机放行后的单调用派发（串行主循环与批 7 只读并行窗口共用同一派发面）：
+        """闸机放行后的单调用派发（串行执行唯一路径）：
         含 read_skill 在内全部常规分发真执行（任务#12：短路已废）。"""
         return await self.tool_manager.invoke_tool(name, args)
 
@@ -165,11 +165,7 @@ class FCToolRunner:
             if not draft_id:
                 return
             svc = StateManager.get_instance()
-            interaction = svc.state_dict.setdefault("interaction", {})
-            presented = interaction.setdefault("drafts_presented", [])
-            if draft_id not in presented:
-                presented.append(draft_id)
-                svc.save()
+            workflow_runtime.reduce_drafts_presented(svc, draft_id=draft_id, flush=True)
         except Exception as e:  # 记录失败不影响主链路
             logger.debug(f"[FlowGate] drafts_presented 记录失败: {e}")
 
@@ -237,9 +233,6 @@ class FCToolRunner:
         _batch_cp = batch_checkpoint.take_checkpoint() if batch_checkpoint.batch_has_risky_tool(
             response, self.tool_manager) else None
         _batch_tools = batch_checkpoint.batch_tool_names(response)
-        # 只读受限并行（批 7，默认关）：识别连续 low 只读段；开关关/无窗口时返回空计划，
-        # 执行路径与现状完全等价；段识别与窗口调度一律归 core/readonly_parallel.py
-        _ro_plan, _ro_pre = readonly_parallel.plan_batch(response.tool_calls, self.tool_manager)
         # 结构纯净闸/故事板强制暂停用的批内标志
         structure_created = False
         structure_kinds: set = set()  # 本批搭建的结构类别（shot 优先决定暂停文案）
@@ -254,14 +247,6 @@ class FCToolRunner:
                 args = {}
             # current/空引用 → 真实 id（闸机与工具调用前，防命中错误卡片/绕过闸机）
             fc_gates.resolve_current_refs(ctx, name, args)
-
-            # 批 7 只读并行窗口：命中窗口起点时整窗调度（闸机按序裁决 →
-            # 全部放行后并行执行 → 结果按原序回填 _ro_pre）
-            if ci in _ro_plan:
-                await readonly_parallel.run_window(
-                    self, ctx, ledger, response.tool_calls, _ro_plan[ci], _ro_pre,
-                    paused_this_batch=paused_this_batch,
-                    on_event=on_event, batch_cp=_batch_cp, batch_tools=_batch_tools)
 
             # 过程时间线：工具开始（前端渲染运行态条目）
             tool_event_id = str(call.get("id") or f"fc-{ci}") if isinstance(call, dict) else f"fc-{ci}"
@@ -279,61 +264,22 @@ class FCToolRunner:
                 })
             _tool_t0 = time.monotonic()
 
-            # --- image_generate（统一生图工具）同轨注入：按 mode 分流，
-            # 优先级 = 草稿自身（中间面板直接选择）> 全局设置 > 平台默认；
-            # single 模式补 adapter_provider/aspect_ratio，batch 模式补
-            # provider_id/model；防传空导致「供应商 '' 未配置」---
-            if name == "image_generate":
-                _img_single = str(args.get("mode") or "batch").strip().lower() == "single"
-                if _img_single:
-                    if "adapter_provider" not in args or args.get("adapter_provider") in ("", None):
-                        _sp, _sm = ports.provider_config_port().spec_media_preference(self._raw_state())
-                        if image_provider:
-                            args["adapter_provider"] = image_provider
-                            logger.info("[Planner] Injected image_generate(single) provider from draft: %s",
-                                        image_provider)
-                        elif _sp:
-                            args["adapter_provider"] = _sp
-                            logger.info("[Planner] Injected image_generate(single) provider from global settings: %s", _sp)
-                    if image_aspect_ratio and not args.get("aspect_ratio"):
-                        args["aspect_ratio"] = image_aspect_ratio
-                        logger.info("[Planner] Injected image_generate(single) aspect ratio from draft: %s",
-                                    image_aspect_ratio)
-                elif not str(args.get("provider_id") or "").strip():
-                    spec_pid, spec_model = ports.provider_config_port().spec_media_preference(self._raw_state())
-                    if image_provider:
-                        args["provider_id"] = image_provider
-                        logger.info("[Planner] Injected image_generate provider from draft: %s",
-                                    image_provider)
-                    elif spec_pid:
-                        args["provider_id"] = spec_pid
-                        if spec_model and not str(args.get("model") or "").strip():
-                            args["model"] = spec_model
-                        logger.info("[Planner] Injected image_generate provider from global settings: %s/%s",
-                                    spec_pid, spec_model)
-
-            # --- generate_video 同轨注入（任务 #20，与 image_generate 同模式）：
-            # 优先级 = 模型显式指定 > 目标草稿卡自身的视频配置 > 全局默认渠道；
-            # 按卡类型解析（分区内混有三类卡，禁止「分区 → 媒体类型」映射）---
-            elif name == "generate_video":
-                if not str(args.get("adapter_provider") or "").strip():
-                    _vp, _vm = ports.provider_config_port().resolve_selected_draft_media_config(
-                        self._raw_state(), self._selected_draft_id, self._selected_type,
-                        kind="video")
-                    if _vp:
-                        args["adapter_provider"] = _vp
-                        logger.info("[Planner] Injected generate_video provider from selected draft: %s/%s",
-                                    _vp, _vm)
+            # Provider 注入（I-3 声明驱动）：查工具 provider_kind 声明 → 走统一注入器
+            # （core/provider_injection）；single/batch 等工具内部形态由工具自身消化，
+            # 调度器不认具体工具名（消除 image_generate/generate_video 的 if/elif 特例）。
+            provider_injection.inject(name, args, ProviderInjectionContext(
+                state=self._raw_state(),
+                image_provider=image_provider,
+                image_aspect_ratio=image_aspect_ratio,
+                selected_draft_id=self._selected_draft_id,
+                selected_type=self._selected_type,
+            ))
 
             # 幂等键轮内去重（T4）：同键命中直接用首次结果，跳过闸机链与实际执行；
             # 空键直通过不去重，判定语义唯一归 core/idempotency_ledger.py
             _idem_key = str(args.get("idempotency_key") or "").strip()
             _idem_cached = self._idempotency.check(_idem_key)
-            _ro_hit = _ro_pre.pop(ci, None)
-            if _ro_hit is not None:
-                # 批 7 并行窗口预执行结果按原序回填（闸机裁决已在窗口内按序完成）
-                result, gate_error = _ro_hit.result, _ro_hit.gate_error
-            elif _idem_cached is not None:
+            if _idem_cached is not None:
                 result, gate_error = _idem_cached, None
             else:
                 # 结构纯净闸：内联详细提示词剥离（闸机链之前，回喂时附说明）
@@ -353,7 +299,7 @@ class FCToolRunner:
                     # 取消穿透：先记本工具账本/trace（取消态）再上抛，
                     # 任何中断都有痕迹（不静默吞，不吞为失败结果）
                     _cancel_desc = describe_fc_tool(name, args)
-                    if name in ("image_generate", "generate_video"):
+                    if provider_injection.is_provider_tool(name):
                         ledger.gen_failed_err = "生成任务已被取消"
                     if on_event is not None:
                         await on_event({
@@ -377,7 +323,7 @@ class FCToolRunner:
                             tool_manager=self.tool_manager):
                         self._idempotency.reset()
                     raise
-            _tool_ms = _ro_hit.elapsed_ms if _ro_hit is not None else (time.monotonic() - _tool_t0) * 1000
+            _tool_ms = (time.monotonic() - _tool_t0) * 1000
             # 幂等键记账（T4）：非空键的执行结果（含失败）入轮内账本；
             # 空键与闸机拒收不记账（拒收无副作用，待模型改参/用户确认后重新裁决）
             if gate_error is None:
@@ -401,7 +347,7 @@ class FCToolRunner:
                 except Exception as _e:
                     logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
             # 生成类工具成败记录（批末对账用客观账本）
-            if name in ("image_generate", "generate_video"):
+            if provider_injection.is_provider_tool(name):
                 if result.success:
                     ledger.gen_succeeded = True
                 elif not ledger.gen_failed_err:
@@ -551,7 +497,7 @@ class FCToolRunner:
                         "note": "当前在微调子对话内：系统已自动确认并放行你的暂停请求"
                         "（子对话内不发起用户确认），请直接继续执行完成本次调整。",
                     }
-                # --- 收集 image_generate（single 模式）产出的图片 URL ---
+                # --- 收集生图工具产出的图片 URL ---
                 data = result.data
                 if data and "image_urls" in data:
                     urls = data["image_urls"]

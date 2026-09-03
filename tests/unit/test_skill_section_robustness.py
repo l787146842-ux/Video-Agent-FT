@@ -37,7 +37,7 @@ def test_s6_skill_sections_golden_pinned():
 def test_s6_heading_fallback_warns_on_silent_inherit():
     """连续 ≥3 节未命中关键字而沿用上一阶段 → 记降级遥测（静默沿用不再无声）。
     （A1/M4 两级制：切点只认 ##，用例同步从 # 级改为 ## 级。）"""
-    from src.video_agent.core import live_metrics
+    from src.video_agent.utils import live_metrics
 
     content = (
         "## 分镜设计\n正文甲\n"

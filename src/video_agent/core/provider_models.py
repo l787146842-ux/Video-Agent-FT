@@ -1,7 +1,7 @@
 """
 供应商配置 Pydantic 校验模型。
 
-在 load_api_providers() 加载 JSON 后进行结构化校验：
+在 utils/provider_config_loader.load_api_providers() 加载 JSON 后进行结构化校验：
 - 校验失败记 warning 日志但不阻断（向后兼容）
 - 按 protocol 字段区分不同供应商类型的必填项（discriminated union）
 """
@@ -69,7 +69,7 @@ class CliProvider(ProviderBase):
 
 
 # 允许的协议类型（runninghub：ComfyUI 云工作流平台，走 OpenAI 风格请求，
-# 与 detect_protocol() 的检测结果保持一致）
+# 与 utils/provider_config_loader.detect_protocol() 的检测结果保持一致）
 VALID_PROTOCOLS = {"openai", "gemini-cli", "codex", "jimeng", "volcengine", "apimart", "gemini", "runninghub"}
 
 # CLI 协议集合

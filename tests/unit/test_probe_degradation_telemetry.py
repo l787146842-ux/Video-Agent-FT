@@ -1,7 +1,7 @@
 """四轮 R5 回归（#11）：核心探测点意外降级遥测——接线断裂从静默 False 变为可观测计数。"""
 import pytest
 
-from src.video_agent.core import live_metrics
+from src.video_agent.utils import live_metrics
 from src.video_agent.core.round_end_policies import RoundEndContext, RoundEndPolicy, run_round_end_policies
 import asyncio
 

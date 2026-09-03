@@ -42,6 +42,15 @@ from src.video_agent.web.routes.runtime_settings import router as runtime_settin
 from src.video_agent.web.routes.video_batch import router as video_batch_router
 from src.video_agent.web.routes.snapshots import router as snapshots_router
 from src.video_agent.web.routes.chat import router as chat_router
+from src.video_agent.web.agent_task_manager import (
+    broadcast_shutdown,
+    mark_shutting_down,
+    reset_shutting_down,
+)
+# core.tracer 已是 app.py 的传递性模块级依赖（经 routes.agent 导入），
+# 且 tracer 不反向 import web（无环边）——故模块级导入安全，
+# 不走函数级懒加载（避免 func_imports 闸误判新增环边）。
+from src.video_agent.core.tracer import AgentTracer
 
 # 日志配置
 logger.remove()
@@ -77,6 +86,9 @@ async def lifespan(_app: FastAPI):
     from src.video_agent.web.port_wiring import install_core_ports
     from src.video_agent.state.manager import StateManager
     from src.video_agent.config import settings
+    # 复位关停标志（评审返修）：模块级 _SHUTTING_DOWN 无复位出口时，同进程重启/
+    # TestClient 复用会残留上次关停态→SSE 假关停；startup 无条件复位保证可重入
+    reset_shutting_down()
     install_core_ports()  # core 端口装配（生成管线/供应商配置/日志/Skill 文档）
     register_adapters()
     load_runtime_settings()  # 运行时设置（fallback 开关等）持久化覆盖，热生效
@@ -102,6 +114,12 @@ async def lifespan(_app: FastAPI):
             await get_canvas_adapter().check_version_drift()
 
         asyncio.create_task(_check_canvas_version())
+    # trace 主文件分级留存启动单点补压（评审返修 Critical-2）：轮转只压 .jsonl.N，
+    # 主文件老化记录在启动时收敛一次；受 trace_retention_enabled（默认关）守卫，失败不阻启动
+    try:
+        AgentTracer.get_instance().compact_persisted()
+    except Exception as e:
+        logger.warning(f"[Startup] trace 主文件启动压缩失败（不影响主流程）: {e}")
     logger.info("[Startup] Adapters + Skills + Skill docs ready, state service loaded")
     # 安全提醒：生产环境未配置 API_KEY 时所有 /api/ 请求将被拒绝
     if settings.environment != "development" and not settings.api_key:
@@ -110,7 +128,18 @@ async def lifespan(_app: FastAPI):
             "请设置 API_KEY 或切换为 development 模式。"
         )
     yield
-    # ---------- 关闭清理：冲刷防抖落盘 + 释放 Adapter HTTP 连接池 ----------
+    # ---------- 关闭清理：关停终态帧 backstop + 冲刷防抖落盘 + 释放 Adapter 连接池 ----------
+    # 关停起点置标志（评审返修）：使 CLI/TestClient 两种启动方式一致——uvicorn main()
+    # 经包装 handle_exit 先于 grace window 置位；TestClient/其他启动不走 handle_exit，
+    # 故在 lifespan.shutdown 起点补置，保证在途 SSE gen 轮询到 is_shutting_down 下发终态帧
+    mark_shutting_down()
+    # 关停 SSE 终态帧 backstop：主投递路径是 SSE gen 轮询 is_shutting_down
+    #（grace window 内完成）；lifespan.shutdown 在 grace 之后运行，多数连接已断，
+    # 此处仅对仍存活的在途订阅者兼底补投终态帧（不强制创建单例）
+    try:
+        broadcast_shutdown()
+    except Exception as _e:
+        logger.debug("[app] 关停终态帧 backstop 忽略异常: {}", _e)
     # 防抖落盘可能有挂起变更，关闭前必须冲刷，避免丢失最后轮次写入
     StateManager.get_instance().flush_save()
     from src.video_agent.adapters.factory import AdapterFactory
@@ -342,10 +371,26 @@ def main():
     logger.info(f"Static dir:   {STATIC_DIR}")
     logger.info(f"Workspace:    {WORKSPACE_DIR}")
     WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
-    # timeout_graceful_shutdown：关停时浏览器 SSE/keep-alive 连接不会主动关闭，
-    # 不设超时进程会永远卡在 "Waiting for connections to close" 无法重启；
-    # 3 秒后强制断开剩余连接退出。
-    uvicorn.run(app, host=settings.host, port=settings.port, timeout_graceful_shutdown=3)
+    # timeout_graceful_shutdown 走 config（默认 30s，原硬编码 3s 过短，长生成轮次
+    # 会被截断）。关停信号到达时先置全局关停标志——在途 SSE gen 在 grace window
+    # 内轮询到标志即下发终态帧收尾（handle_exit 先于 grace window 触发；
+    # lifespan.shutdown 在 grace 之后仅作 backstop）。
+    config = uvicorn.Config(
+        app,
+        host=settings.host,
+        port=settings.port,
+        timeout_graceful_shutdown=settings.shutdown_grace_seconds,
+    )
+    server = uvicorn.Server(config)
+    _uvicorn_handle_exit = server.handle_exit
+
+    def _handle_exit(sig, frame):
+        # 先标记关停（触发在途 SSE 终态帧投递），再走 uvicorn 原关停时序
+        mark_shutting_down()
+        _uvicorn_handle_exit(sig, frame)
+
+    server.handle_exit = _handle_exit
+    server.run()
 
 
 if __name__ == "__main__":

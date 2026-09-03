@@ -16,7 +16,7 @@ from loguru import logger
 
 from src.video_agent.utils import gen_id
 from src.video_agent.utils.paths import DATA_DIR
-from src.video_agent.core.stop_signal import request_stop
+from src.video_agent.utils.stop_signal import request_stop
 from src.video_agent.web.error_payload import classify_exception
 from src.video_agent.web.task_store import TaskStore
 
@@ -29,6 +29,51 @@ _TERMINAL_EVENT_TYPES = ("done", "error", "stopped", "task_status")
 # （事务性，见 task_store）；旧 JSON 文件仅作首启一次性导入兜底，
 # 导入后保留只读一个版本周期
 _STORE_KEY = "agent_tasks"
+
+# ====== 服务优雅关停（项 4：关停 SSE 终态帧）======
+# uvicorn 关停时序：信号到达 → handle_exit 置 should_exit → connection.shutdown()
+#（keep-alive 置 false，SSE gen 仍在 grace window 内运行）→ 等待
+# timeout_graceful_shutdown → lifespan.shutdown（最后）。故终态帧主投递路径
+# = SSE gen 轮询 is_shutting_down()（grace window 内可靠到达）；handle_exit 包装
+# 先于 grace window 置标志；lifespan.shutdown 的 broadcast_shutdown 仅作 backstop。
+_SHUTTING_DOWN = False
+
+
+def mark_shutting_down() -> None:
+    """置服务关停标志（关停信号处理器调用，先于 grace window；
+    lifespan.shutdown 起点亦调用，使 CLI/TestClient 两种启动方式一致）。"""
+    global _SHUTTING_DOWN
+    _SHUTTING_DOWN = True
+
+
+def reset_shutting_down() -> None:
+    """复位关停标志（lifespan startup 调用）。
+
+    _SHUTTING_DOWN 是模块级全局，无复位出口时一次关停置位会永久残留：
+    同进程内重启/TestClient 复用进程时，后续 SSE 一律立即收终态帧（假关停）。
+    另 mark_shutting_down 原只在 main() 包装的 handle_exit 置位（CLI/TestClient
+    启动不触发）；startup 复位 + shutdown 起点置位使两种启动方式状态一致、可重入。
+    """
+    global _SHUTTING_DOWN
+    _SHUTTING_DOWN = False
+
+
+def is_shutting_down() -> bool:
+    """在途 SSE gen 每轮轮询：关停中即下发终态帧并收尾。"""
+    return _SHUTTING_DOWN
+
+
+def shutdown_terminal_frame() -> Dict[str, Any]:
+    """关停终态帧（结构化 error，前端落错误气泡而非静默断流）。
+
+    kind/code 供前端错误映射表识别；type=error 使 SSE gen 与自然终止分支一致 break。
+    """
+    return {
+        "type": "error",
+        "kind": "server_shutdown",
+        "code": "SERVER_SHUTDOWN",
+        "message": "服务正在关停，本轮已中断，重启后可刷新恢复",
+    }
 
 
 class AgentTaskManager:
@@ -366,6 +411,19 @@ class AgentTaskManager:
             if not k.startswith("_")
         }
 
+    def broadcast_shutdown(self) -> None:
+        """关停 backstop：向所有在途任务的订阅者补投终态帧。
+
+        主投递路径是 SSE gen 轮询 is_shutting_down()（grace window 内完成）；
+        本方法由 lifespan.shutdown 在 grace 之后调用，多数连接已断，
+        仅对仍存活的订阅者兼底补投一帧。
+        """
+        frame = shutdown_terminal_frame()
+        for record in list(self._tasks.values()):
+            if record.get("status") != "running":
+                continue
+            self._notify(record, frame)
+
     def list_running(self, project_id: str = "") -> List[Dict[str, Any]]:
         out = []
         for record in self._tasks.values():
@@ -478,6 +536,17 @@ def get_agent_task_manager() -> AgentTaskManager:
     if _instance is None:
         _instance = AgentTaskManager()
     return _instance
+
+
+def broadcast_shutdown() -> None:
+    """关停 backstop（模块级）：单例已存在时向在途订阅者补投终态帧。
+
+    不强制创建单例——关停期若无在途任务（单例未实例化）则无需
+    为补投一帧而创建 TaskStore/sqlite（测试/空跑进程尤其如此）。
+    """
+    if _instance is None:
+        return
+    _instance.broadcast_shutdown()
 
 
 def stop_tasks_bound_to_conversations(conversation_ids) -> List[str]:

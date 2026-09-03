@@ -66,7 +66,7 @@ def test_disabled_when_zero():
 
 def test_non_projected_lines_never_digested():
     """硬约束：read_* 全文行、失败行、非白名单工具行一律不消化"""
-    read_line = f"- read_project_doc 执行成功，以下是读回的全文（后续任务必须遵守）：\n{'y' * 500}"
+    read_line = f"- read_project_doc 执行成功，全文如下：\n{'y' * 500}"
     fail_line = f"- storyboard_patch_draft：执行失败 —— {'e' * 300}"
     other_line = f"- script_analyze：执行成功，{'z' * 300}"
     msgs = [

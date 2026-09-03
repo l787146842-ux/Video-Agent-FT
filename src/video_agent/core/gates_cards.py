@@ -148,17 +148,26 @@ def summary_already_visible(visible: str, summary: str) -> bool:
 
 
 # 提示词草案写入后 Skill 要求暂停审阅，模型该停没停时
-# 层 9 兜底注入（与规格审阅卡同构；「Skill 暂停点 + 层 9 兜底缺一不可」）
-DRAFTS_REVIEW_MSG = (
-    "提示词草案已写入，请在左侧故事板审阅草案内容；"
-    "确认后我将按全局设置中的生成渠道触发生成。"
-)
-DRAFTS_REVIEW_OPTIONS = [
-    # 中性化：平台不点名下一步（生成/生图排序归 Skill）
-    {"label": "确认提示词草案，按当前 Skill 流程推进",
-     "description": "将目标草稿标记为已确认，按当前 Skill 流程推进"},
-    {"label": "先调整提示词", "description": "告诉我需要修改的草稿与修改意见"},
-]
+# 层 9 兜底注入（与结构暂停卡同构同口径：message+options 外置
+# messages.md::DRAFTS_REVIEW_PAUSED，登记 PAUSE_MESSAGE_SECTIONS）
+_DRAFTS_REVIEW_PAUSED = _gate_json(
+    PAUSE_MESSAGE_SECTIONS["drafts_review_paused"], {
+    "message": (
+        "提示词草案已写入，请在左侧故事板审阅草案内容；"
+        "确认后我将按全局设置中的生成渠道触发生成。"
+    ),
+    "options": [
+        # 中性化：平台不点名下一步（生成/生图排序归 Skill）
+        {
+            "label": "确认提示词草案，按当前 Skill 流程推进",
+            "description": "将目标草稿标记为已确认，按当前 Skill 流程推进",
+        },
+        {"label": "先调整提示词", "description": "告诉我需要修改的草稿与修改意见"},
+    ],
+})
+DRAFTS_REVIEW_MSG = str(_DRAFTS_REVIEW_PAUSED.get("message", ""))
+
+DRAFTS_REVIEW_OPTIONS = list(_DRAFTS_REVIEW_PAUSED.get("options") or [])
 
 
 def drafts_review_card() -> Tuple[str, List[Dict[str, str]]]:

@@ -64,7 +64,7 @@ from src.video_agent.core.sse_events import (
     SSE_STOPPED,
     status_event,
 )
-from src.video_agent.core.stop_signal import is_stop_requested
+from src.video_agent.utils.stop_signal import is_stop_requested
 from src.video_agent.core.token_budget import window_recent_turns
 from src.video_agent.web.stop_manager import (
     persist_stop_trace,
@@ -73,7 +73,7 @@ from src.video_agent.web.stop_manager import (
 )
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.base_chat import BaseChatAdapter
-from src.video_agent.adapters.cancel_token import GenerationCancelled
+from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.adapters.factory import AdapterFactory
 from src.video_agent.tools.manager import ToolManager
 from src.video_agent.core.tracer import AgentTracer
@@ -495,7 +495,9 @@ async def _stream_dispatch(ctx: _StreamCtx, planner_ctx: PlannerContext) -> bool
                         "type": SSE_ACTIONS_APPLIED,
                         "payload": {
                             "count": (event.payload or {}).get("count", 0),
-                            "state": svc.get_full_snapshot(),
+                            # 逐步可见：精简投影（9 板键 + chatMessages + board_version）
+                            # 替代全量快照，前端 syncFromServer 免刷新应用本批操作
+                            "state": svc.get_board_projection(),
                         },
                     })
             elif event.type == SSE_DOC_WRITTEN:
@@ -604,7 +606,9 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
     # 产物账本同轮下发（向导机械落盘投影已随裁决退役，不再并入 documents_written）
     done_payload: Dict[str, Any] = {
         **ctx.final_payload,
-        "state": ctx.svc.get_full_snapshot() if ctx.use_studio_context else None,
+        # 精简投影（9 板键 + chatMessages + board_version）替代全量快照：
+        # 前端 syncFromServer/replay 恢复免刷新消费；elapsed_ms/trace 等仍在载荷根
+        "state": ctx.svc.get_board_projection() if ctx.use_studio_context else None,
         "elapsed_ms": int((time.monotonic() - ctx.t0) * 1000),
         "turn_id": turn_id,
         # E1：轮末快照指针同轮下发（live 消息挂回档动作，无需刷新）

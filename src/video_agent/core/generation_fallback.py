@@ -6,7 +6,7 @@ web/generation_dispatch 保留薄 re-export 壳（web 消费方零改动）。
 """
 from typing import List
 
-from src.video_agent.adapters.cancel_token import GenerationCancelled
+from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.config import settings
 from src.video_agent.core.provider_config import (
     exclude_retired_mock_providers,

@@ -29,7 +29,7 @@ from src.video_agent.core.sse_events import (
 )
 # 协作式停止（端到端中断协议）：检查点只读标志注册表，
 # 停止信号不经闸机/工具执行器传递
-from src.video_agent.core.stop_signal import (
+from src.video_agent.utils.stop_signal import (
     STOP_PHASE_STREAMING,
     STOP_PHASE_THINKING,
     STOP_PHASE_TOOL_EXECUTING,
@@ -48,7 +48,8 @@ from src.video_agent.core.round_end_policies import (
     run_round_end_policies,
     suggest_next_actions,
 )
-from src.video_agent.core import live_metrics, prompt_gates
+from src.video_agent.utils import live_metrics
+from src.video_agent.core import prompt_gates
 from src.video_agent.exceptions import AdapterError
 # 失败恢复分级：循环骨架不再硬编码恢复语义，重试预算与处置动作
 # 全部来自恢复策略分派表（policy-as-data，与闸机哲学一致）
@@ -60,7 +61,7 @@ from src.video_agent.core.recovery_policy import (
 )
 # 取消令牌贯穿：循环开始绑定 context-scoped 令牌（scope=stop_scope），
 # FC 工具批 → adapters 长任务经 contextvars 免传参观察同一令牌
-from src.video_agent.adapters.cancel_token import (
+from src.video_agent.utils.cancel_token import (
     CancellationToken,
     GenerationCancelled,
     bind_cancel_token,
@@ -106,16 +107,17 @@ def _bad_output_nudge(attempt: int) -> str:
     明确要求本步直接产出工具调用或可见回复（只临时附加，不入历史）。
     文案外置 prompts/planner/feedback.md::BAD_OUTPUT_NUDGE（指令收敛，Rule6）。
     失败恢复分级后身份收窄：仅为恢复策略分派表 bad_output 分支
-    （action=nudge_retry）的实现体；工具失败/闸机拦截/供应商错误
-    各有其分级出口，不再经 nudge（见 core/recovery_policy.py）。"""
+    （action=nudge_retry）的实现体；工具失败经 fc_feedback 回喂降级、
+    供应商错误走 escalate 分级出口（见 core/recovery_policy.py），
+    FC 轨闸机拦截由 fc_gates.reject_message 回喂闭环（不经本 nudge，
+    循环层拦截分派已退役，退役记录见 recovery_policy.py）。"""
     tpl = load_prompt_section("planner/feedback.md", "BAD_OUTPUT_NUDGE")
     if tpl:
         return tpl.replace("{{attempt}}", str(attempt))
-    return (
-        f"（系统）上一步（第 {attempt} 次）未产出任何可见回复或工具调用。"
-        "请直接发出本应执行的工具调用，或给出面向用户的回复；"
-        "避免只输出思考过程。"
-    )
+    # M-2：外置分节缺失时不内联正式文案（双源漂移根因），
+    # 仅 logger.warning + 最小功能性占位
+    logger.warning("[agent_loop] prompts/planner/feedback.md::BAD_OUTPUT_NUDGE 分节缺失，使用最小占位")
+    return f"（系统）第 {attempt} 次重试：请产出工具调用或可见回复。"
 
 
 @dataclass
@@ -398,7 +400,8 @@ async def run_agent_loop(
             # （不再静默落为「没有返回可见回复」）。
             # 其余失败类型各有分级出口：供应商错误由上方 AdapterError 分流
             # 承接（escalate），工具失败经 fc_feedback 回喂降级（feedback_degrade），
-            # 闸机拦截结构化上报不重试（structured_report，见 recovery_policy）。
+            # FC 轨闸机拦截由 fc_gates.reject_message 结构化回喂闭环
+            # （不经循环层分派，退役记录见 recovery_policy.py）。
             # 暂停确认轮现有真实 fc_applied（含 workflow_pause 自身），
             # 且正文有确认文案兜底，双条件均使其不入本重试（守卫语义保持正确）。
             _bad_pol = recovery_for(FAILURE_BAD_OUTPUT)
@@ -513,7 +516,8 @@ async def run_agent_loop(
                 if finish_reason in ("stop", "end_turn") and visible:
                     # 状态驱动下一步建议：收尾且无既有建议时按客观状态下发
                     if not result.suggested_actions:
-                        result.suggested_actions.extend(suggest_next_actions(executor.state))
+                        result.suggested_actions.extend(
+                            suggest_next_actions(executor.state, skill))
                     tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
                                     token_usage=step_tokens, cached_tokens=step_cached)
                     break
@@ -529,29 +533,35 @@ async def run_agent_loop(
                                 token_usage=step_tokens, cached_tokens=step_cached)
                 # 回喂：让下一步 LLM 知道工具已执行（文案外置 feedback.md::STEP_FEEDBACK，
                 # 指令收敛 Rule6）
-                messages.append({"role": "assistant", "content": content or f"（已执行 {fc_applied} 个工具调用）"})
+                # 工具轮 assistant 占位：FC 轮 content 为空是 function-calling 常态，
+                # 占位文案外置 feedback.md::STEP_ASSISTANT_PLACEHOLDER（客观陈述，
+                # 与紧随其后的 STEP_FEEDBACK 不自相矛盾）；分节缺失退化为空串
+                # （不内联兜底文案，消除双源漂移，M-2 同口径）
+                _asst_placeholder = load_prompt_section(
+                    "planner/feedback.md", "STEP_ASSISTANT_PLACEHOLDER")
+                if not _asst_placeholder:
+                    logger.warning(
+                        "[agent_loop] prompts/planner/feedback.md::STEP_ASSISTANT_PLACEHOLDER "
+                        "分节缺失，占位退化为空串")
+                messages.append({"role": "assistant", "content": content or _asst_placeholder})
                 _step_fb = load_prompt_section("planner/feedback.md", "STEP_FEEDBACK")
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        _step_fb.replace("{{step}}", str(step)).replace("{{count}}", str(fc_applied))
-                        if _step_fb else (
-                            f"（系统）第 {step} 轮的 {fc_applied} 个 Tool 已执行完毕，工作台状态已随本轮消息刷新（见对话末尾最新的工作台状态 JSON）。"
-                            "请继续完成任务；全部完成后直接回复文本即可。"
-                        )
-                    ),
-                })
+                if _step_fb:
+                    _step_content = _step_fb.replace("{{step}}", str(step)).replace("{{count}}", str(fc_applied))
+                else:
+                    logger.warning("[agent_loop] prompts/planner/feedback.md::STEP_FEEDBACK 分节缺失，使用最小占位")
+                    _step_content = f"（系统）第 {step} 轮工具已执行，请继续。"
+                messages.append({"role": "user", "content": _step_content})
                 continue
 
             # 纯文本轮：模型本轮未发出工具调用，即本轮为面向用户的回复，
             # 循环进入收尾。正文拼接收纳由轮末策略 false_claim_audit 单一执行
             # （虚报/假停兜底等机械闸机同一策略表）。
-            # 闸机拦截分级（恢复分派表 gate_rejection 分支，action=
-            # structured_report）：gate_rejections 随上下文入轮末策略表，
-            # 由 gate_heal 发改写指引卡完成结构化上报，循环层不机械重试。
-            #（FC 轨拦截回喂经 tool_results 结构化通道；原 executor.gate_rejections
-            #  恒空字段已随 2026-09-03 兼容层根除批删除，本处恒为空表，
-            #  gate_heal 是否应接真实数据属批 C 会签项。）
+            # I-1 收敛（2026-09-03）：工具成败回喂归 FC 轨逐步闭环
+            # （fc_feedback.compose_failure_feedback），轮末失败汇总策略
+            # 同批退役（生产唯一构造点即此处，FC 批轮在上方分支
+            # 已 continue/break，永不到轮末；退役记录见 round_end_policies.py）。
+            # 闸机拦截恢复已由 FC 轨 fc_gates reject_message 回喂闭环，
+            # 循环层不再承载拦截列表通道（恢复分派表闸机分支同批退役）。
             _re_ctx = RoundEndContext(
                 step=step,
                 executor=executor,
@@ -560,10 +570,10 @@ async def run_agent_loop(
                 confirmation="",
                 confirmation_options=[],
                 wants_continue=False,
-                total_exec=0,
-                applied=0,
-                executable=[],
-                gate_rejections=[],
+                # 可达性修复（2026-09-03）：纯文本收尾轮的 fc_applied 恒 0
+                # （FC 批轮在上方分支已 continue/break），填真实累计工具数，
+                # 假停判定「本回合确曾做过操作」才可达（不再写死死值）
+                applied=result.applied_actions,
                 result_text=result.text,
             )
             await run_round_end_policies(_re_ctx, emit, tracer=tracer)
@@ -585,7 +595,8 @@ async def run_agent_loop(
                 break
             # 正常收尾：状态驱动下一步建议
             if not result.suggested_actions:
-                result.suggested_actions.extend(suggest_next_actions(executor.state))
+                result.suggested_actions.extend(
+                    suggest_next_actions(executor.state, skill))
             tracer.end_step(step, actions_applied=0, finish_reason=finish_reason or "stop",
                             token_usage=step_tokens, cached_tokens=step_cached)
             break
@@ -647,11 +658,13 @@ async def run_agent_loop(
         else:
             # 用户腔兜底（空响应不是用户的错，给出明确下一步）；
             # 文案外置 feedback.md::EMPTY_RESPONSE_FALLBACK（指令收敛，Rule6）
-            result.text = load_prompt_section(
-                "planner/feedback.md", "EMPTY_RESPONSE_FALLBACK") or (
-                "这一步没有生成可见回复（上游可能瞬时抖动）——请直接说「重试」，我再来一次；"
-                "若连续出现可尝试切换模型。"
-            )
+            # M-2：外置分节缺失时不内联正式文案，仅 warning + 最小占位
+            _fallback_text = load_prompt_section(
+                "planner/feedback.md", "EMPTY_RESPONSE_FALLBACK")
+            if not _fallback_text:
+                logger.warning("[agent_loop] prompts/planner/feedback.md::EMPTY_RESPONSE_FALLBACK 分节缺失，使用最小占位")
+                _fallback_text = "（本步无输出）"
+            result.text = _fallback_text
             # 一键重试按钮替代手打「重试」（机械重发上一条用户消息）
             result.suggested_actions.append({"kind": "retry", "label": "重试", "value": ""})
     result.trace = tracer.finish_trace(total_actions=result.applied_actions)

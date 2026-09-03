@@ -417,7 +417,7 @@ async def push_timeline_to_canvas(body: TimelinePushRequest):
     """把指定分镜组（或全部分镜）的时间线批量推送到画布。
 
     只走画布既有公开接口（Rule 7）：批量建 smart-image 节点（x 递增 400 / y 递增 300，
-    与 prompts/shared/canvas_tools.md 画布操作规则同口径，经 system_fc.md {{include}} 注入）。
+    与 prompts/planner/protocol.md 画布操作能力段同口径）。
     画布离线/未启用时诚实报错（不降级假装成功）。"""
     from src.video_agent.state.manager import StateManager
     from src.video_agent.tools.canvas_tools import CanvasBatchUpdateTool

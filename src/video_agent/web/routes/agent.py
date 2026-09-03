@@ -18,7 +18,11 @@ from pydantic import BaseModel
 from loguru import logger
 
 from src.video_agent.web.chat_service import non_stream_worker
-from src.video_agent.core.stop_signal import request_stop
+from src.video_agent.utils.stop_signal import request_stop
+from src.video_agent.web.agent_task_manager import (
+    is_shutting_down,
+    shutdown_terminal_frame,
+)
 from src.video_agent.web.task_manager import snapshot_inflight_generations
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.web.error_payload import (
@@ -27,7 +31,7 @@ from src.video_agent.web.error_payload import (
     classify_exception,
 )
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.core.live_metrics import (
+from src.video_agent.utils.live_metrics import (
     get_budget_breakdown,
     get_cache_stats,
     get_degradations,
@@ -298,6 +302,13 @@ async def agent_task_events(task_id: str, request: Request):
                     )
                     break
                 if await request.is_disconnected():
+                    break
+                if is_shutting_down():
+                    # 服务优雅关停：grace window 内下发结构化终态帧后收尾
+                    #（前端落错误气泡而非静默断流；type=error 与下方终止分支一致）
+                    yield (
+                        "data: " + json.dumps(shutdown_terminal_frame(), ensure_ascii=False) + "\n\n"
+                    )
                     break
                 try:
                     ev = await asyncio.wait_for(q.get(), timeout=1.0)

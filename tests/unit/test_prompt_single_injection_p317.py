@@ -11,7 +11,7 @@
 
 def test_record_sections_memory_registry():
     """record_sections 只写内存注册表（不落盘）；get_sections 返回副本。"""
-    from src.video_agent.core import live_metrics
+    from src.video_agent.utils import live_metrics
 
     live_metrics.record_sections("proj", {"total": 12345, "skill": 10})
     assert live_metrics.get_sections("proj")["total"] == 12345

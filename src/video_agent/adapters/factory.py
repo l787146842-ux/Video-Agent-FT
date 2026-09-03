@@ -4,10 +4,18 @@ from typing import Any, Dict, Optional, Type
 from loguru import logger
 from .base import BaseVideoAdapter, BaseImageAdapter
 from .base_chat import BaseChatAdapter
-from .cancel_token import (
+from src.video_agent.utils.cancel_token import (
     GenerationCancelled,
     current_cancel_token,
     interruptible_sleep,
+)
+from src.video_agent.utils.provider_config_loader import (
+    get_api_key,
+    load_merged_providers,
+)
+from src.video_agent.core.provider_config import (
+    CLI_PROTOCOLS,
+    exclude_retired_mock_providers,
 )
 
 
@@ -81,14 +89,6 @@ class AdapterFactory:
     @classmethod
     def register_from_config(cls):
         """根据合并后的 provider 配置动态注册所有适配器（启动时调用）"""
-        # 延迟 import 保防环：core.provider_config 顶层依赖 adapters.canvas_adapter，
-        # 顶层化会形成 adapters 包 ↔ core.provider_config 部分初始化环
-        from src.video_agent.core.provider_config import (
-            CLI_PROTOCOLS,
-            exclude_retired_mock_providers,
-            get_api_key,
-            load_merged_providers,
-        )
         from .openai_compat import OpenAICompatChatAdapter, OpenAICompatImageAdapter
         from .agy_cli import AgyCliImageAdapter
         from .video_compat import OpenAICompatVideoAdapter

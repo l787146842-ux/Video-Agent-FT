@@ -21,7 +21,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from loguru import logger
 
-from src.video_agent.adapters.base_chat import ChatResponse, StreamChunk
+from src.video_agent.core.chat_port import ChatResponse, StreamChunk
 from src.video_agent.config import settings
 from src.video_agent.core.fc_feedback import (
     compress_prior_feedback,
@@ -30,11 +30,11 @@ from src.video_agent.core.fc_feedback import (
     should_compress_feedback,
     strip_prior_feedback_images,
 )
-from src.video_agent.core.live_metrics import record_cache_usage, record_live_context
-from src.video_agent.core.live_metrics import record_budget_breakdown
+from src.video_agent.utils.live_metrics import record_cache_usage, record_live_context
+from src.video_agent.utils.live_metrics import record_budget_breakdown
 from src.video_agent.core import round_compact
 from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS, status_event
-from src.video_agent.core.stop_signal import (
+from src.video_agent.utils.stop_signal import (
     STOP_PHASE_TOOL_EXECUTING,
     AgentStoppedError,
     current_stop_id,
@@ -47,6 +47,7 @@ from src.video_agent.core.token_budget import (
     truncate_messages,
 )
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.core.agent_loop import current_max_steps
 from src.video_agent.exceptions import GenerationError
 
 
@@ -69,6 +70,8 @@ class TurnExecutor:
         self._collectors: Dict[str, List[Any]] = self._default_collectors()
         self._on_event: Optional[Any] = None
         self._tracer: Optional[AgentTracer] = None
+        # turn_budget 客观步数计数器（每次 llm_call 自增，经 context.step_info 注入状态尾部）
+        self._step_count: int = 0
 
     @staticmethod
     def _default_collectors() -> Dict[str, List[Any]]:
@@ -98,6 +101,7 @@ class TurnExecutor:
         self._collectors = collectors
         self._on_event = on_event
         self._tracer = AgentTracer.get_instance()
+        self._step_count = 0
 
     # ---------- 上下文预算 ----------
 
@@ -340,6 +344,10 @@ class TurnExecutor:
         tracer = self._tracer or AgentTracer.get_instance()
         tracer.record_llm_call()
         context = self._context
+        # turn_budget 客观步数：每步自增，经 context.step_info 注入状态尾部（P3 纯数据）
+        self._step_count += 1
+        if context is not None:
+            context.step_info = (self._step_count, current_max_steps())
         # 确认信号结构化直通——本轮 FC 批的暂停确认由
         # _handle_fc_response 写入本 holder，随 5 元组上抛 agent_loop，
         # 不再合成 studio-actions 文本块回绕解析（对齐 AskUserQuestion 范式）

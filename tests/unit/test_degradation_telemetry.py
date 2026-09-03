@@ -6,7 +6,7 @@
 """
 import pytest
 
-from src.video_agent.core import live_metrics
+from src.video_agent.utils import live_metrics
 from src.video_agent.core.planner import Planner, PlannerResponse
 
 

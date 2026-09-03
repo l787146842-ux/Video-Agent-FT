@@ -7,8 +7,8 @@
 - 产物完整性校验保留：损坏/缺字段/非有限数值一律判红并给明确诊断（不误红不静默放行）；
 - 与七文件阈值闸的关系：vitest.config.ts thresholds 的逐文件行覆盖闸针对对话
   核心模块硬门禁，本地板管整体面兜底，两者并存互不替代；
-- 已知限制（acceptance 内顺序）：acceptance.py 的 GATES 先于 SUITES 执行，
-  故 acceptance 场景下本闸读取的是「上一轮」vitest 产物；CI 侧不存在此局限。
+- acceptance 时序（I-4 修复，2026-09-03）：本闸已从 GATES 阶段移入 RATCHETS 阶段，
+  在 SUITES（vitest）之后执行，读取本轮新鲜产物；--quick 模式跳过本闸。
 """
 import argparse
 import json

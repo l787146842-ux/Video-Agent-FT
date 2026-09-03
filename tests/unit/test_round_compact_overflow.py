@@ -217,7 +217,7 @@ async def test_overflow_default_warn_passthrough(svc):
         assert resp.content == "你好"
         assert adapter.calls == 1
         # 第 5 批预算可见：分配账记入 live 注册表（context-usage 端点同源）
-        from src.video_agent.core import live_metrics
+        from src.video_agent.utils import live_metrics
         bd = live_metrics.get_budget_breakdown(
             StateManager.get_instance().active_project_id)
         assert bd is not None and bd["total"] > 0 and bd["budget"] == 80

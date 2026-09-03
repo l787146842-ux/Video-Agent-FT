@@ -4,7 +4,7 @@
 """
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 
@@ -12,8 +12,12 @@ from src.video_agent.exceptions import StateConflictError, VideoAgentError
 from src.video_agent.state import board_merge, conversation_ops
 from src.video_agent.state.board_merge import CAT_ASSETS
 from src.video_agent.state.manager import StateManager
-from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
+from src.video_agent.state.models import (
+    CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS,
+    KeyElementGroup, ShotGroup, AudioGroup, FrontendAsset, ChatMessage,
+)
 from src.video_agent.utils import gen_id
+from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.web.error_payload import LEGACY_NOT_FOUND, LEGACY_VALIDATION_ERROR
 from src.video_agent.web.agent_task_manager import stop_tasks_bound_to_conversations
 from src.video_agent.web.task_manager import get_task_manager
@@ -63,14 +67,44 @@ class ProjectStateUpdate(BaseModel):
     # （如防抖 PUT 在途期间用户切换了项目），必须拒绝，否则旧项目数据会污染新项目
     project_id: Optional[str] = None
     base_version: Optional[int] = None
-    # 五列表收窄为参数化 Dict 形态：落盘链路为裸 json.dumps（元素须保持 dict），
-    # 且前端元素字段远多于 models.py 对应模型（无 extra=allow 会静默丢字段），
-    # 故不模型化元素；全量建模见 docs/未清偿债务清单.md D-06
+    # 五列表以宽松 Dict 收料 + 路由层逐元素软校验（评审返修）：
+    # 整板强类型化（List[KeyElementGroup] 等）会让单个退化元素（老落盘数据缺
+    # id/text 等必填字段）拖垮整次保存 → 整板 422、前端全量保存直接失败。改为
+    # List[Dict] 收料，落盘前经 _coerce_elements 逐元素 model_validate：合法元素
+    # 照常回转（by_alias + exclude_unset，往返零丢字段、不注入默认值），非法元素
+    # 丢弃并记 record_degradation("project_state.element_rejected") 计数（可观测非静默）。
     keyElements: Optional[List[Dict[str, Any]]] = None
     shots: Optional[List[Dict[str, Any]]] = None
     audioItems: Optional[List[Dict[str, Any]]] = None
     assets: Optional[List[Dict[str, Any]]] = None
     chatMessages: Optional[List[Dict[str, Any]]] = None
+
+
+def _coerce_elements(
+    items: Optional[List[Dict[str, Any]]],
+    model_cls: type,
+) -> Optional[List[Dict[str, Any]]]:
+    """逐元素软校验 + 回转落盘 dict（整板 PUT 不因单个退化元素整板 422）。
+
+    - 逐元素 model_cls.model_validate：合法元素照常回转，非法元素（缺 id/text 等
+      必填字段的老落盘数据）丢弃 + record_degradation 计数（可观测，不静默）；
+    - by_alias=True：输出前端 camelCase 键（与提交形态一致）；
+    - mode="json"：产出 JSON 兼容纯量，供下游裸 json.dumps 落盘链路直接消费；
+    - exclude_unset=True：只回传实际提交字段（保留 extra="allow" 透传的未建模
+      额外字段，又不注入模型默认值污染落盘形态/回传快照）。
+    None 原样返回（未提交的列表不参与落盘，保持部分保存语义）。
+    """
+    if items is None:
+        return None
+    out: List[Dict[str, Any]] = []
+    for el in items:
+        try:
+            m = model_cls.model_validate(el)
+        except Exception:
+            record_degradation("project_state.element_rejected")
+            continue
+        out.append(m.model_dump(by_alias=True, mode="json", exclude_unset=True))
+    return out
 
 
 class NewProjectRequest(BaseModel):
@@ -92,12 +126,89 @@ async def list_projects():
     return svc.list_projects()
 
 
+def _state_etag(snapshot: Dict[str, Any]) -> str:
+    """状态 ETag：project_id + board_version 双因子派生的弱校验子（W/）。
+
+    单靠 board_version 非单射——每项目独立账本、新建/分叉项目都从 0 起算，
+    跨项目相同 bv 会让浏览器 304 命中另一项目的缓存体（串台）。加 project_id
+    前缀使 (project_id, bv) → ETag 单射；弱校验子语义不变（仅实质状态变更失效，
+    投影/序列化差异不触发）。
+    """
+    pid = str(snapshot.get("project_id", "") or "")
+    bv = snapshot.get("board_version", 0)
+    return f'W/"{pid}-{bv}"'
+
+
+def _opaque_tag(etag: str) -> str:
+    """剥弱校验子前缀 W/ 取 opaque-tag（RFC9110 弱比较只比 opaque-tag）。"""
+    e = (etag or "").strip()
+    if e[:2].lower() == "w/":
+        e = e[2:].strip()
+    return e
+
+
+def _parse_if_none_match(value: str) -> List[str]:
+    """解析 If-None-Match 头为候选 token 列表（RFC9110）。
+
+    逗号分隔多候选，但引号内的逗号不作分隔（opaque-tag 可含逗号）；
+    保留原始 token（含可能的 W/ 前缀与引号），交由弱比较处理。
+    """
+    out: List[str] = []
+    buf: List[str] = []
+    in_quotes = False
+    for ch in value:
+        if ch == '"':
+            in_quotes = not in_quotes
+            buf.append(ch)
+        elif ch == "," and not in_quotes:
+            out.append("".join(buf).strip())
+            buf = []
+        else:
+            buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        out.append(tail)
+    return [c for c in out if c]
+
+
+def _etag_matches(if_none_match: str, etag: str) -> bool:
+    """If-None-Match 命中判定（RFC9110 弱比较）：
+    - `*`（含候选列表内的 `*`）匹配任意现有表示；
+    - 逐个候选剥 W/ 前缀比 opaque-tag（弱校验子语义：允许非实质差异）。
+    """
+    inm = (if_none_match or "").strip()
+    if not inm:
+        return False
+    target = _opaque_tag(etag)
+    for cand in _parse_if_none_match(inm):
+        if cand == "*":
+            return True
+        if _opaque_tag(cand) == target:
+            return True
+    return False
+
+
 @router.get("/project/state", response_model=ProjectStateResponse)
 @router.get("/state", response_model=ProjectStateResponse)              # 设计方案路径别名
-async def get_project_state():
-    """前端初始化加载 / Agent 刷新状态"""
+async def get_project_state(request: Request, response: Response):
+    """前端初始化加载 / Agent 刷新状态。
+
+    支持 ETag/If-None-Match 条件请求：状态未变（board_version 不变）回 304
+    免传全量快照，降低轮询/重复拉取开销。
+    """
     svc = StateManager.get_instance()
-    return svc.get_full_snapshot()
+    snapshot = svc.get_full_snapshot()
+    etag = _state_etag(snapshot)
+    response.headers["ETag"] = etag
+    # 私有缓存 + no-cache：状态含项目内容不得被共享缓存（代理/CDN）留存；
+    # no-cache 强制每次带 ETag 回源校验（未变才 304），杜绝跨项目/跨用户回吐缓存体
+    response.headers["Cache-Control"] = "private, no-cache"
+    if _etag_matches(request.headers.get("if-none-match", ""), etag):
+        # 304 无体：直接返回 Response 绕过 response_model 序列化（同带缓存头）
+        return Response(status_code=304, headers={
+            "ETag": etag, "Cache-Control": "private, no-cache",
+        })
+    return snapshot
 
 
 @router.post("/project/new", response_model=OkWithStateResponse)
@@ -210,13 +321,21 @@ async def put_project_state(body: ProjectStateUpdate):
             )
         state = svc.state_dict
 
+        # 元素逐元素软校验→dict 回转（入口单点）：下游级联 diff / board_merge / 落盘
+        # 均消费纯 dict，与建模前形态一致（exclude_unset 保证与提交同形）。
+        key_elements = _coerce_elements(body.keyElements, KeyElementGroup)
+        shots = _coerce_elements(body.shots, ShotGroup)
+        audio_items = _coerce_elements(body.audioItems, AudioGroup)
+        assets = _coerce_elements(body.assets, FrontendAsset)
+        chat_messages = _coerce_elements(body.chatMessages, ChatMessage)
+
         # 对象删除级联（二期子对话批 1）：落盘前对提交列表做新旧草稿 id diff，
         # 硬删命中的 scope 隐藏线程（先掐绑定在途任务）；线程随撤销快照原子恢复。
         _old_ids, _new_ids = set(), set()
         for _cat, _incoming in (
-            (CAT_KEY_ELEMENTS, body.keyElements),
-            (CAT_SHOTS, body.shots),
-            (CAT_AUDIO_ITEMS, body.audioItems),
+            (CAT_KEY_ELEMENTS, key_elements),
+            (CAT_SHOTS, shots),
+            (CAT_AUDIO_ITEMS, audio_items),
         ):
             if _incoming is None:
                 continue
@@ -225,8 +344,8 @@ async def put_project_state(body: ProjectStateUpdate):
         # 素材池来源草稿计入存活集（评审修补批）：「移入未归类素材池」是
         # 可还原的非破坏移动，其来源草稿线程不得被误当删除级联硬删；
         # assets 未提交（None）时沿用服务端现状口径。
-        if body.assets is not None:
-            _new_ids |= conversation_ops.asset_pool_draft_ids(body.assets)
+        if assets is not None:
+            _new_ids |= conversation_ops.asset_pool_draft_ids(assets)
         else:
             _new_ids |= conversation_ops.asset_pool_draft_ids(state.get(CAT_ASSETS) or [])
         if _old_ids - _new_ids:
@@ -234,16 +353,16 @@ async def put_project_state(body: ProjectStateUpdate):
                 svc, _old_ids - _new_ids, save=False,
                 stop_tasks=stop_tasks_bound_to_conversations)
 
-        if body.keyElements is not None:
-            state[CAT_KEY_ELEMENTS] = body.keyElements
-        if body.shots is not None:
-            state[CAT_SHOTS] = body.shots
-        if body.audioItems is not None:
-            state[CAT_AUDIO_ITEMS] = body.audioItems
-        if body.assets is not None:
-            state["assets"] = body.assets
-        if body.chatMessages is not None:
-            state["chatMessages"] = body.chatMessages
+        if key_elements is not None:
+            state[CAT_KEY_ELEMENTS] = key_elements
+        if shots is not None:
+            state[CAT_SHOTS] = shots
+        if audio_items is not None:
+            state[CAT_AUDIO_ITEMS] = audio_items
+        if assets is not None:
+            state["assets"] = assets
+        if chat_messages is not None:
+            state["chatMessages"] = chat_messages
 
         await svc.save_async()
     return {"ok": True, "board_version": svc.board_version}
@@ -276,11 +395,17 @@ async def merge_project_state(body: ProjectStateUpdate):
                 f"项目已切换（期望 '{svc.active_project_id}'，收到 '{body.project_id}'），丢弃本次过期保存"
             )
         state = svc.state_dict
+        # 元素逐元素软校验→dict 回转（同整板 PUT 口径）：board_merge 按纯 dict 粒度三向合并；
+        # 空列表提交（清板）与 None（未提交）语义不同，故用 is not None 判别、不以真值回落。
+        key_elements = _coerce_elements(body.keyElements, KeyElementGroup)
+        shots = _coerce_elements(body.shots, ShotGroup)
+        audio_items = _coerce_elements(body.audioItems, AudioGroup)
+        assets = _coerce_elements(body.assets, FrontendAsset)
         mine = {
-            CAT_KEY_ELEMENTS: body.keyElements if body.keyElements is not None else list(state.get(CAT_KEY_ELEMENTS) or []),
-            CAT_SHOTS: body.shots if body.shots is not None else list(state.get(CAT_SHOTS) or []),
-            CAT_AUDIO_ITEMS: body.audioItems if body.audioItems is not None else list(state.get(CAT_AUDIO_ITEMS) or []),
-            CAT_ASSETS: body.assets if body.assets is not None else list(state.get(CAT_ASSETS) or []),
+            CAT_KEY_ELEMENTS: key_elements if key_elements is not None else list(state.get(CAT_KEY_ELEMENTS) or []),
+            CAT_SHOTS: shots if shots is not None else list(state.get(CAT_SHOTS) or []),
+            CAT_AUDIO_ITEMS: audio_items if audio_items is not None else list(state.get(CAT_AUDIO_ITEMS) or []),
+            CAT_ASSETS: assets if assets is not None else list(state.get(CAT_ASSETS) or []),
         }
         base = board_merge.base_board(svc.active_project_id, body.base_version)
         if base is None:

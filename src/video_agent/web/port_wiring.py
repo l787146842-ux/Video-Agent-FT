@@ -6,6 +6,7 @@ core 层不得 import web 层；本模块是唯一的「web → core 端口」�
 provider_config 端口实现位于 core/provider_config.py
 （批次E：web 层同名薄壳已清偿删除），仍由本装配点统一注入。
 """
+from src.video_agent.adapters import canvas_adapter
 from src.video_agent.core import ports, provider_config
 from src.video_agent.web import agent_task_manager, generation, skill_docs
 from src.video_agent.web.routes import assets_library
@@ -42,6 +43,15 @@ class _TaskStopPort:
         return agent_task_manager.stop_tasks_bound_to_conversations(conversation_ids)
 
 
+class _CanvasPort:
+    """画布健康探测缓存端口（planner 工具裁剪经此读取，依赖倒置：
+    core 不再 import adapters.canvas_adapter；只读缓存不触发网络，
+    实现委托 adapters.canvas_adapter.canvas_online_cached）。"""
+
+    def online_cached(self):
+        return canvas_adapter.canvas_online_cached()
+
+
 def install_core_ports() -> None:
     """把 web 层实现注入 core 端口注册表（幂等）。"""
     ports.install_ports(
@@ -51,4 +61,5 @@ def install_core_ports() -> None:
         task_log=_TaskLogPort(),
         assets=_AssetsPort(),
         task_stop=_TaskStopPort(),
+        canvas=_CanvasPort(),
     )

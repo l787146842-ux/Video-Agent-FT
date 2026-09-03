@@ -1,4 +1,8 @@
-"""上下文作用域取消令牌（端到端中断协议 · adapters 长任务段）。
+"""上下文作用域取消令牌（端到端中断协议 · 跨切面基础设施）。
+
+归属：本模块是 core / tools / adapters / web 共用的跨切面原语，下沉
+utils/（与 stop_signal / provider_config_loader 同层），使各层单向依赖
+utils 而非互相依赖（ARCHITECTURE_RULES §六：跨切面原语下沉 utils/）。
 
 审核结论（取消令牌贯穿 adapters）：长工具调用（视频生成轮询可达
 数十分钟）此前只能靠 task_manager 的 inflight 登记「事后告知」，
@@ -27,7 +31,7 @@ import time
 from contextvars import ContextVar, Token
 from typing import Optional
 
-from src.video_agent.core.stop_signal import is_stop_requested
+from src.video_agent.utils.stop_signal import is_stop_requested
 from src.video_agent.exceptions import GenerationError
 
 # 中断等待的切片粒度（秒）：睡够一片检查一次令牌，取消响应延迟有界

@@ -1,7 +1,7 @@
 """
 供应商调用分发（generation.py 三段之一）。
 
-职责：端点解析 + Chat Completions 调用 + 生图供应商路由 + 降级链判定。
+职责：端点解析 + 生图供应商路由 + 降级链判定。
 实际 HTTP 调用逻辑在 adapters/（openai_compat / agy_cli / canvas_adapter），
 本模块只负责：
 1. 根据 provider_config 解析端点参数（配置源职责仍在 provider_config）
@@ -22,10 +22,7 @@ from src.video_agent.core.provider_config import (
     get_provider_config_async,
     resolve_provider_ref_async,
 )
-from src.video_agent.adapters.openai_compat import (
-    OpenAICompatChatAdapter,
-    OpenAICompatImageAdapter,
-)
+from src.video_agent.adapters.openai_compat import OpenAICompatImageAdapter
 from src.video_agent.adapters.agy_cli import AgyCliImageAdapter
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
 
@@ -120,104 +117,6 @@ def resolve_openai_endpoint(provider_id: str, model: str) -> Tuple[str, str, str
             f"供应商 '{provider_id}' 缺少 Base URL（CLI 协议需要先配置 custom-api 反代）"
         )
     return base_url, api_key, effective_model
-
-
-# ---------- Chat Completions（委托 OpenAICompatChatAdapter） ----------
-
-async def call_chat_completion(
-    provider_id: str,
-    model: str,
-    messages: List[Dict[str, Any]],
-    *,
-    max_tokens: int = 8192,
-    temperature: float = 0.7,
-    timeout: int = 120,
-    thinking_level: Optional[str] = None,
-    response_format: Optional[Dict[str, Any]] = None,
-) -> Tuple[str, str]:
-    """
-    OpenAI 兼容 chat 调用。返回 (content, finish_reason)。
-    内部委托给 OpenAICompatChatAdapter.chat。
-    thinking_level：本次调用思考档位覆盖（None=沿用全局配置）。
-    response_format：结构化输出声明（如 {"type":"json_object"}），
-    端点不支持时适配器兼容探针自动剥离降级。
-    失败抛 GenerationError。
-    """
-    base_url, api_key, effective_model = await resolve_openai_endpoint_async(provider_id, model)
-    adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=effective_model)
-
-    logger.info(f"[Generation] chat: provider={provider_id}, model={effective_model}")
-    try:
-        response = await adapter.chat(
-            messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout,
-            thinking_level=thinking_level, response_format=response_format,
-        )
-    except AdapterError as e:
-        raise GenerationError(str(e)) from e
-    finally:
-        # 临时实例不复用：必须关闭底层 httpx 连接池，否则每次调用泄漏一个 client
-        await adapter.close()
-
-    if not response.content:
-        raise GenerationError("LLM 返回了空内容")
-    return response.content, response.finish_reason
-
-
-async def call_chat_completion_stream(
-    provider_id: str,
-    model: str,
-    messages: List[Dict[str, Any]],
-    *,
-    max_tokens: int = 8192,
-    temperature: float = 0.7,
-    timeout: int = 180,
-    on_delta=None,
-    reasoning_sink: List[str] | None = None,
-    thinking_level: Optional[str] = None,
-    response_format: Optional[Dict[str, Any]] = None,
-) -> Tuple[str, str]:
-    """
-    流式 chat 调用。每收到一段增量文本就 await on_delta(text)。
-    内部委托给 OpenAICompatChatAdapter.chat_stream。
-    thinking_level：本次调用思考档位覆盖（None=沿用全局配置）。
-    response_format：结构化输出声明（如 {"type":"json_object"}），
-    端点不支持时适配器兼容探针自动剥离降级。
-    返回 (完整内容, finish_reason)。失败抛 GenerationError。
-    reasoning_sink（可选）：传入 list 则累积推理模型的思考增量（黑匣子取证用），
-    不进上下文。
-    """
-    base_url, api_key, effective_model = await resolve_openai_endpoint_async(provider_id, model)
-    adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=effective_model)
-
-    logger.info(f"[Generation] chat(stream): provider={provider_id}, model={effective_model}")
-    content_parts: List[str] = []
-    finish_reason = ""
-
-    try:
-        async for chunk in adapter.chat_stream(
-            messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout,
-            thinking_level=thinking_level, response_format=response_format,
-        ):
-            if chunk.type == "text_delta" and chunk.text:
-                content_parts.append(chunk.text)
-                if on_delta:
-                    await on_delta(chunk.text)
-            elif chunk.type == "reasoning_delta" and chunk.text and reasoning_sink is not None:
-                reasoning_sink.append(chunk.text)
-            elif chunk.type == "done":
-                # 透传真实 finish_reason（length=撞输出上限被截断），
-                # 不再一律当 stop：截断检测靠它
-                finish_reason = getattr(chunk, "finish_reason", "") or "stop"
-    except AdapterError as e:
-        raise GenerationError(str(e)) from e
-    finally:
-        # 临时实例不复用：关闭底层 httpx 连接池，避免每次流式调用泄漏
-        await adapter.close()
-
-    content = "".join(content_parts)
-    if not content:
-        raise GenerationError("LLM 流式返回了空内容")
-    return content, finish_reason
 
 
 # ---------- 图片生成（智能路由：画布优先 + 本地兜底） ----------

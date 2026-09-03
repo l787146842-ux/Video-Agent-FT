@@ -38,6 +38,7 @@ from .errors import (
 )
 from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
+from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.utils.paths import ASSETS_DIR
 from src.video_agent.utils import gen_id
 from src.video_agent.storage import get_storage
@@ -267,12 +268,8 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         for k in to_strip:
             payload.pop(k, None)
             self._unsupported_fields.add(k)
-        try:
-            from src.video_agent.core.live_metrics import record_degradation
-            for k in to_strip:
-                record_degradation(f"adapter.{k}_unsupported")
-        except Exception:
-            pass
+        for k in to_strip:
+            record_degradation(f"adapter.{k}_unsupported")
         logger.warning(f"[OpenAICompat] 端点 400 拒收可选字段 {to_strip}，剥离后重试一次")
         return True
 

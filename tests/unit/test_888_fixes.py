@@ -4,7 +4,7 @@
 import pytest
 
 from src.video_agent.core import prompt_gates, spec_rules
-from src.video_agent.core.live_metrics import get_live_context, record_live_context
+from src.video_agent.utils.live_metrics import get_live_context, record_live_context
 
 
 # ---------- item 6：分镜提示词时长客观补全（C1a 裁决 2026-08-31 退役：
@@ -81,7 +81,7 @@ def test_live_metrics_record_and_expiry(monkeypatch):
     rec = get_live_context("proj-x")
     assert rec and rec["est_tokens"] > 0
     # 过期回落
-    import src.video_agent.core.live_metrics as lm
+    import src.video_agent.utils.live_metrics as lm
     monkeypatch.setitem(lm._LIVE, "proj-x", {"est_tokens": 5, "ts": rec["ts"] - 999})
     assert get_live_context("proj-x") is None
     assert get_live_context("") is None
@@ -195,5 +195,5 @@ def test_feedback_template_no_contradiction():
 
 # test_script_analyze_generates_soft_candidates 已随任务#36 B5 执行器一步退役删除：
 # 被测对象（executors.ScriptAnalyzeTool + exec_spec.run_collect_spec_node 候选落盘）
-# 不复存在。平台不再机械出题，规格收集改由模型按 skill_discipline 用 workflow_pause
+# 不复存在。平台不再机械出题，规格收集改由模型按 skill_runtime 用 workflow_pause
 # 分组向导完成。

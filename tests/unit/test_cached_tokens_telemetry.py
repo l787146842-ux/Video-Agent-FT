@@ -16,7 +16,7 @@ from src.video_agent.adapters.base_chat import (
     extract_prompt_cache_usage,
 )
 from src.video_agent.adapters.openai_compat import OpenAICompatChatAdapter
-from src.video_agent.core import live_metrics
+from src.video_agent.utils import live_metrics
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.state.manager import StateManager

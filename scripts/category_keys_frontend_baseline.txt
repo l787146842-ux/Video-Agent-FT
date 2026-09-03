@@ -1,0 +1,33 @@
+# 前端类别 Key 字面量收缩型基线（只减不增；与 func_imports_baseline.txt 同机制）。
+# 键粒度 = rel:literal:count（忽略行号，容忍行漂移；count = 该文件该字面量允许出现次数上限）。
+# 次数维度防「基线搭车」：同文件新增同类硬编码使出现数超 count 即门禁失败；未登记键上限视为 0。
+# 合法存量两类：① TS 类型联合位置（无法引用运行时 CAT_* 常量）；② subTab UI 页签标识
+# （'keyElements'|'shots'|'audio'，与类别 Key 同名但语义不同，见 src/web/lib/state-keys.ts 注释）。
+# 永久合法出口 src/web/lib/state-keys.ts 不入基线（在脚本 WHITELIST_FE）。测试夹具（__tests__）
+# 不在扫描面（与后端仅扫 src/video_agent 产品代码、tests/ 在扫描面外一致）。
+# 清偿（产品代码改用 CAT_* 常量）后跑 `python scripts/check_category_keys.py --refresh` 剔除已消失条目、下调计数（只减不增）。
+src/web/api/project.ts:audioItems:2
+src/web/api/project.ts:keyElements:2
+src/web/api/project.ts:shots:2
+src/web/components/left-panel/AssetCard.tsx:audioItems:2
+src/web/components/left-panel/AssetCard.tsx:keyElements:2
+src/web/components/left-panel/AssetCard.tsx:shots:2
+src/web/components/left-panel/StoryboardView.tsx:keyElements:3
+src/web/components/left-panel/StoryboardView.tsx:shots:5
+src/web/components/left-panel/UncategorizedView.tsx:audioItems:2
+src/web/components/left-panel/UncategorizedView.tsx:keyElements:2
+src/web/components/left-panel/UncategorizedView.tsx:shots:2
+src/web/components/right-panel/StudioAssetPickerModal.tsx:audioItems:2
+src/web/components/right-panel/StudioAssetPickerModal.tsx:keyElements:2
+src/web/components/right-panel/StudioAssetPickerModal.tsx:shots:2
+src/web/lib/storyboard-progress.ts:audioItems:2
+src/web/lib/storyboard-progress.ts:keyElements:2
+src/web/lib/storyboard-progress.ts:shots:2
+src/web/stores/studio-core.ts:audioItems:2
+src/web/stores/studio-core.ts:keyElements:4
+src/web/stores/studio-core.ts:shots:4
+src/web/stores/studio/board-edit.ts:shots:1
+src/web/stores/studio/board-sync.ts:keyElements:1
+src/web/stores/studio/ui.ts:keyElements:1
+src/web/types/index.ts:keyElements:1
+src/web/types/index.ts:shots:1

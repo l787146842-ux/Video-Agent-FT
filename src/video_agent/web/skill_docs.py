@@ -30,7 +30,7 @@ from src.video_agent.utils.fileio import atomic_write_text
 from src.video_agent.utils.paths import SKILL_DOCS_DIR
 from src.video_agent.config import settings
 # 标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
-from src.video_agent.core import live_metrics
+from src.video_agent.utils import live_metrics
 from src.video_agent.skill_runtime import registry as _skill_registry
 # pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
 from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: 1

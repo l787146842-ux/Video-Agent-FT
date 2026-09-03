@@ -15,8 +15,7 @@ from fastapi import APIRouter, Request
 from loguru import logger
 from pydantic import BaseModel
 
-from src.video_agent.core.provider_config import (
-    CLI_PROTOCOLS,
+from src.video_agent.utils.provider_config_loader import (
     classify_models,
     clear_env_key,
     detect_protocol,
@@ -29,6 +28,7 @@ from src.video_agent.core.provider_config import (
     save_api_providers,
     update_env_key,
 )
+from src.video_agent.core.provider_config import CLI_PROTOCOLS
 from src.video_agent.adapters.canvas_adapter import get_canvas_adapter
 from src.video_agent.adapters.probe_adapter import (
     ProbeHTTPError,

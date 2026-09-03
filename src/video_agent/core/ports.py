@@ -32,6 +32,8 @@ monkeypatch 在测试期照常生效。
                     web/routes/assets_library.py）
 - task_stop       ：stop_bound_tasks（对象删除级联前掐停绑定在途任务；
                     web/agent_task_manager.py）
+- canvas          ：online_cached（画布健康探测缓存，planner 工具裁剪用；
+                    web/port_wiring → adapters.canvas_adapter.canvas_online_cached）
 """
 from typing import Any, Dict, Optional
 
@@ -51,6 +53,7 @@ def install_ports(
     skill_docs: Optional[Any] = None,
     assets: Optional[Any] = None,
     task_stop: Optional[Any] = None,
+    canvas: Optional[Any] = None,
 ) -> None:
     """装配端口（幂等；只覆盖本次传入的非 None 端口）。"""
     if generation is not None:
@@ -65,6 +68,8 @@ def install_ports(
         _PORTS["assets"] = assets
     if task_stop is not None:
         _PORTS["task_stop"] = task_stop
+    if canvas is not None:
+        _PORTS["canvas"] = canvas
 
 
 def clear_ports() -> None:
@@ -112,3 +117,18 @@ def assets_port() -> Any:
 def task_stop_port() -> Any:
     """在途任务掐停端口（stop_bound_tasks；实现 = web/agent_task_manager.py）"""
     return _port("task_stop")
+
+
+def canvas_online_cached() -> Optional[bool]:
+    """画布健康探测缓存端口（不触发网络请求；planner 工具裁剪用）。
+
+    依赖倒置：core 不再 import adapters.canvas_adapter，改经本端口读取。
+    返回 None = 端口未装配或从未探测（调用方保持现状、不裁剪工具，
+    与下沉前 `canvas_online_cached() is False 才裁剪` 语义一致）；
+    True/False = 最近一次探测结果。实现经 web/port_wiring.install_core_ports
+    注入（→ adapters.canvas_adapter.canvas_online_cached）。
+    """
+    port = _PORTS.get("canvas")
+    if port is None:
+        return None
+    return port.online_cached()

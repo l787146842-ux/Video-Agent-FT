@@ -96,10 +96,37 @@ def test_fakestop_suggests_continue():
     ctx = RoundEndContext(
         step=1, executor=_StubExec(), skill="AI-短剧一站式生成",
         content="明白，马上继续！正在调用剧本分析执行器：",
-        applied=0, total_exec=0,
+        applied=0,
     )
     _run_policies(ctx)
     assert any(a.get("kind") == "continue" for a in ctx.suggested_actions)
+
+
+def test_fakestop_label_uses_skill_node_title():
+    """任务 12：可判定 Skill 流程节点时，假停「继续」按钮 label 取节点标题。"""
+    from src.video_agent.core import workflow_runtime as wr
+
+    wr.clear_compile_cache()
+    try:
+        definition = wr.compile_definition("AI-短剧一站式生成")
+        assert definition is not None, "测试前提：Skill 可编译"
+        stub = _StubExec()
+        stub.state = {"workflow_run": {
+            "run_id": "run_fs", "current_node": "storyboard_shots",
+            "definition_hash": definition["definition_hash"],
+            "completed_nodes": [], "run_version": 0, "event_sequence": 0,
+        }}
+        ctx = RoundEndContext(
+            step=1, executor=stub, skill="AI-短剧一站式生成",
+            content="马上继续推进分镜工作。",
+            applied=0,
+        )
+        _run_policies(ctx)
+        cont = [a for a in ctx.suggested_actions if a.get("kind") == "continue"]
+        assert cont and cont[0]["label"] == "分镜设计"
+        assert cont[0]["value"] == "继续"
+    finally:
+        wr.clear_compile_cache()
 
 
 def test_fakestop_skips_without_skill():
@@ -107,7 +134,7 @@ def test_fakestop_skips_without_skill():
     ctx = RoundEndContext(
         step=1, executor=_StubExec(), skill="",
         content="好的，接下来我可以帮你做这些事。",
-        applied=0, total_exec=0,
+        applied=0,
     )
     _run_policies(ctx)
     assert not ctx.suggested_actions
@@ -118,7 +145,7 @@ def test_fakestop_skips_when_actions_applied():
     ctx = RoundEndContext(
         step=1, executor=_StubExec(), skill="S",
         content="马上继续！正在写入。",
-        applied=2, total_exec=2,
+        applied=2,
     )
     _run_policies(ctx)
     assert not ctx.suggested_actions
@@ -129,7 +156,66 @@ def test_fakestop_skips_when_paused():
     ctx = RoundEndContext(
         step=1, executor=_StubExec(), skill="S",
         content="马上继续，但先确认一下。",
-        applied=0, total_exec=0, confirmation="请确认",
+        applied=0, confirmation="请确认",
     )
     _run_policies(ctx)
     assert not ctx.suggested_actions
+
+
+# ---------- agent_loop 级集成回归（I-1 退役后可达性审计） ----------
+# 钉死：轮末工具失败汇总策略退役后，其余策略所需字段在生产唯一
+# 构造点（agent_loop 纯文本收尾分支）确被正确填充、可达策略确能触发（非写死死值）。
+
+
+async def test_agent_loop_pure_text_round_reaches_fakestop(executor, monkeypatch):
+    """真实纯文本收尾轮：skill/content/executor 在生产构造点正确填充，
+    假停兜底 aborted_continuation_audit 端到端可达并触发（applied=0 因本轮
+    确无工具执行，填 result.applied_actions 真实累计值）。"""
+    import src.video_agent.core.agent_loop as al
+
+    monkeypatch.setattr(
+        al, "fallback_skill_from_state", lambda _state: "AI-短剧一站式生成")
+
+    body = "明白，马上继续！正在推进后续步骤。"
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        # 纯文本轮：fc_applied=0、无 confirmation → 落入轮末策略求值分支
+        return body, "stop", 0, 0.0, {}
+
+    result = await run_agent_loop(
+        "继续", llm_call=llm_call, context_builder=lambda: "ctx",
+        executor=executor, history=[],
+    )
+    # 正文经 false_claim_audit 拼接收纳（result_text 路径可达）
+    assert result.text == body
+    # 假停兜底端到端触发：延续承诺措辞 + skill 激活 + 零操作
+    assert any(a.get("kind") == "continue" for a in result.suggested_actions), \
+        "纯文本轮末假停兜底未触发（策略所需字段未在生产构造点正确填充/不可达）"
+
+
+async def test_agent_loop_applied_reflects_real_cumulative_count(executor, monkeypatch):
+    """applied 填 result.applied_actions 真实累计值（非写死 0）：第 1 轮 FC
+    执行 2 个工具、第 2 轮纯文本收尾带延续承诺措辞——因本回合确曾操作
+    （applied=2），假停兜底正确**不**触发（若写死 0 会误触发）。"""
+    import src.video_agent.core.agent_loop as al
+
+    monkeypatch.setattr(
+        al, "fallback_skill_from_state", lambda _state: "AI-短剧一站式生成")
+
+    calls = {"n": 0}
+
+    async def llm_call(system_prompt, messages, stream_hook=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # FC 工具轮：执行 2 个工具、无正文（工具轮常态）
+            return "", "tool_calls", 2, 0.0, {}
+        # 纯文本收尾轮：延续承诺措辞（若 applied 写死 0 则会误触发假停）
+        return "好的，马上继续推进。", "stop", 0, 0.0, {}
+
+    result = await run_agent_loop(
+        "继续", llm_call=llm_call, context_builder=lambda: "ctx",
+        executor=executor, history=[], max_steps=4,
+    )
+    assert result.applied_actions == 2
+    assert not any(a.get("kind") == "continue" for a in result.suggested_actions), \
+        "本回合已执行工具（applied=2），假停兜底不应触发（写死 0 会误触发）"

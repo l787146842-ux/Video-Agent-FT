@@ -1,6 +1,6 @@
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, NamedTuple, Optional, Type
 from pydantic import BaseModel, ConfigDict, Field
 
 # 风险分级合法枚举（宪法 §2.7 单一事实源；注册校验/闸机消费同引用）
@@ -17,6 +17,13 @@ APPROVAL_TIERS = ("none", "confirm", "review")
 # 未声明者前端默认归 output（新工具至少留输出痕迹）；非工具内部条目
 # （如 model_reasoning）不经本属性，由 sidecar 独立名单登记 none。
 DETAIL_TIERS = ("expand", "output")
+
+# Provider 注入声明轴合法枚举（I-3 裁决 2026-09-03：provider 注入从「认工具名
+# 写死分支」抽象为注册期属性，与 risk/costly/detail_tier 同轴）：
+# image=生图类（补 adapter_provider/provider_id 等）；video=生视频类。
+# 空 = 无需 provider 注入。调度器只查本声明 → 走统一注入器
+# （core/provider_injection），不认具体工具名（消除 if/elif 特例）。
+PROVIDER_KINDS = ("image", "video")
 
 
 class StrictToolInput(BaseModel):
@@ -61,6 +68,20 @@ class ToolResult(BaseModel):
     error_code: str = ""
     retryable: bool = False
 
+class ProviderInjectionContext(NamedTuple):
+    """调度器传入工具 apply_provider_defaults 的 provider 注入请求上下文（I-3）。
+
+    承载请求态（中间面板选中的草稿供应商/画幅、前端选中卡）与只读状态快照，
+    工具据此补齐自身 provider 入参。不含任何工具名分派信息——分派唯一依据是
+    工具声明的 provider_kind，形态分流（single/batch）由工具自身消化。
+    """
+    state: Dict[str, Any]
+    image_provider: str = ""
+    image_aspect_ratio: str = ""
+    selected_draft_id: str = ""
+    selected_type: str = ""
+
+
 class BaseTool(ABC):
     name: str = ""
     description: str = ""
@@ -79,6 +100,11 @@ class BaseTool(ABC):
     # 执行偏好三档只对声明花钱的工具放宽确认闸；未声明者默认非花钱，
     # 偏好不放宽（不硬编码工具名单，数据驱动）；声明非 bool 值注册期拒收。
     costly: bool = False
+    # Provider 注入声明轴（I-3 裁决 2026-09-03）：取值见 PROVIDER_KINDS；
+    # 空 = 无需注入。声明非空者须覆盖 apply_provider_defaults 补齐 provider 入参；
+    # 声明非法取值注册期拒收（ToolManager.register）。调度器据本声明走统一注入器
+    # （core/provider_injection），不再认具体工具名。
+    provider_kind: str = ""
 
     @abstractmethod
     def get_input_schema(self) -> Type[BaseModel]:
@@ -95,3 +121,12 @@ class BaseTool(ABC):
         异步执行版本。如果未覆盖，则回退到线程池/事件循环里运行 execute()
         """
         return await asyncio.to_thread(self.execute, params)
+
+    def apply_provider_defaults(self, args: Dict[str, Any], ctx: ProviderInjectionContext) -> None:
+        """按需补齐 provider 入参（原地修改 args），默认 no-op（I-3 声明驱动注入）。
+
+        声明 provider_kind 的生成类工具覆盖本方法：single/batch 等工具内部形态
+        在此消化（下沉到工具自身），调度器不感知；注入优先级/回退链由工具自定义。
+        未声明者调度器不调用（provider_kind 空即 no-op）。
+        """
+        return None

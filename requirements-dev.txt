@@ -17,8 +17,10 @@ pytest-timeout>=2.3.1
 # 并行执行（2026-08-26 提速裁决：pytest.ini addopts -n 8 --dist loadfile）
 pytest-xdist>=3.5
 
-# 代码质量（未来 CI 可用）
-# ruff==0.12.1
+# 代码质量工具链（R-9=a：仅补工具链，配置见 pyproject.toml，不接入门禁/CI/pre-commit）
+ruff==0.12.1
+black>=24.0
+# mypy 暂无 pyproject.toml 配置承接，保持未启用
 # mypy==1.16.0
 
 # 可选：token 精确估算（OpenAI 系）；未安装时自动回退内置启发式估算

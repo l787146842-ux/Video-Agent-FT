@@ -10,7 +10,7 @@ from typing import Any, Callable, Optional
 from loguru import logger
 
 from src.video_agent.core import stage_probes as _po
-from src.video_agent.core import live_metrics
+from src.video_agent.utils import live_metrics
 from src.video_agent.core.tracer import AgentTracer
 
 

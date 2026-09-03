@@ -35,7 +35,7 @@ from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils.paths import ASSETS_DIR
 from .base import BaseVideoAdapter, VideoGenerationResponse
-from .cancel_token import GenerationCancelled, current_cancel_token, interruptible_sleep
+from src.video_agent.utils.cancel_token import GenerationCancelled, current_cancel_token, interruptible_sleep
 
 
 # MMG 满血2.0 类中转站（video_request_mode="openai"）的合法时长（官方文档限定）

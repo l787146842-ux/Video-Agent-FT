@@ -14,12 +14,12 @@ import pytest
 from src.video_agent.core import agent_loop
 from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.core.agent_loop import _bad_output_nudge, run_agent_loop
-from src.video_agent.core.stop_signal import (
+from src.video_agent.utils.stop_signal import (
     AgentStoppedError,
     is_stop_requested,
     request_stop,
 )
-from src.video_agent.adapters.cancel_token import GenerationCancelled
+from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.state.manager import StateManager
 
 

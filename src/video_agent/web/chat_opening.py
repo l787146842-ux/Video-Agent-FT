@@ -24,6 +24,7 @@ from src.video_agent.core.provider_config import (
 )
 from src.video_agent.state.manager import StateManager
 from src.video_agent.core import prompt_gates
+from src.video_agent.core import workflow_runtime
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.exceptions import AdapterError, GenerationError, VideoAgentError
 from src.video_agent.adapters.base_chat import BaseChatAdapter
@@ -327,7 +328,5 @@ def _store_gate_overrides(svc, overrides) -> None:
     cleaned = [r for r in (overrides or []) if isinstance(r, str) and r.strip()]
     if not cleaned:
         return
-    interaction = svc.state_dict.setdefault("interaction", {})
-    interaction["gate_overrides"] = cleaned
-    svc.save()
+    workflow_runtime.reduce_gate_overrides(svc, rule_ids=cleaned, flush=True)
     logger.info(f"[GateOverride] 已登记 {len(cleaned)} 条一次性闸机豁免: {cleaned}")

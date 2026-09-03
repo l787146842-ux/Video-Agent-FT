@@ -1,11 +1,14 @@
-"""失败恢复策略分派表语义钉死（任务 #10 失败恢复分级）。
+"""失败恢复策略分派表语义钉死（任务 #10 失败恢复分级；2026-09-03 I-1 收敛后 3 类）。
 
 钉死：
-1. 分派表覆盖四类失败且处置动作/重试预算符合分级结论
-   （bad_output=nudge_retry×2；tool/gate/adapter 一律不循环重试）；
+1. 分派表覆盖三类失败且处置动作/重试预算符合分级结论
+   （bad_output=nudge_retry×2；tool/adapter 一律不循环重试）；
 2. 未登记失败类型显式 KeyError（禁止静默兜底）；
-3. 分类器优先级：供应商错误 > 闸机拦截 > 空/畸形输出；
+3. 分类器优先级：供应商错误 > 空/畸形输出；
 4. agent_loop 的重试预算数据驱动：改分派表即改循环行为。
+
+退役记录（2026-09-03 Q2 裁决）：闸机拦截分派键已退役（FC 轨由
+fc_gates reject_message 闭环，循环层无真实输入源）。
 """
 import pytest
 
@@ -16,11 +19,10 @@ from src.video_agent.exceptions import AdapterError
 from src.video_agent.state.manager import StateManager
 
 
-def test_table_covers_four_failure_kinds():
+def test_table_covers_three_failure_kinds():
     assert set(rp.RECOVERY_POLICIES) == {
         rp.FAILURE_BAD_OUTPUT,
         rp.FAILURE_TOOL,
-        rp.FAILURE_GATE,
         rp.FAILURE_ADAPTER,
     }
 
@@ -29,11 +31,10 @@ def test_actions_and_retry_budgets():
     bad = rp.recovery_for(rp.FAILURE_BAD_OUTPUT)
     assert bad.action == rp.ACTION_NUDGE_RETRY
     assert bad.max_retries == 2
-    # 其余三类一律不循环重试（分级出口各自承接）
-    for kind in (rp.FAILURE_TOOL, rp.FAILURE_GATE, rp.FAILURE_ADAPTER):
+    # 其余两类一律不循环重试（分级出口各自承接）
+    for kind in (rp.FAILURE_TOOL, rp.FAILURE_ADAPTER):
         assert rp.recovery_for(kind).max_retries == 0
     assert rp.recovery_for(rp.FAILURE_TOOL).action == rp.ACTION_FEEDBACK_DEGRADE
-    assert rp.recovery_for(rp.FAILURE_GATE).action == rp.ACTION_STRUCTURED_REPORT
     assert rp.recovery_for(rp.FAILURE_ADAPTER).action == rp.ACTION_ESCALATE
 
 
@@ -53,13 +54,12 @@ def test_classify_priority():
     # 供应商错误最高优先（即便同时空输出）
     assert rp.classify_step_failure(
         adapter_error=err, content="", fc_applied=0) == rp.FAILURE_ADAPTER
-    # 闸机拦截次之
-    assert rp.classify_step_failure(
-        gate_rejections=["gate:x"], content="有正文") == rp.FAILURE_GATE
     # 空/畸形输出：无正文且无工具执行
     assert rp.classify_step_failure(content="   ", fc_applied=0) == rp.FAILURE_BAD_OUTPUT
     # 带工具执行的失败信号归工具失败（回喂通道承接）
     assert rp.classify_step_failure(content="", fc_applied=2) == rp.FAILURE_TOOL
+    # 有正文时归工具失败（非空输出）
+    assert rp.classify_step_failure(content="有正文", fc_applied=0) == rp.FAILURE_TOOL
 
 
 @pytest.fixture

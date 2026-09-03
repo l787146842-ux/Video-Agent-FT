@@ -1,8 +1,8 @@
 """供应商调用管线 re-export 承重壳。
 
 实现按职责切分为三段（对外符号不变）：
-- `web/generation_dispatch.py`：端点解析 / Chat Completions / 生图供应商
-  路由 / 同模型跨厂商降级判定；
+- `web/generation_dispatch.py`：端点解析 / 生图供应商路由 / 同模型跨厂商
+  降级判定；
 - `web/generation_channel.py`：BoundedChannel 有界并发三件套
   （信号量 + 429 退避 + 连败熔断）与 image/video/audio 三通道；
 - `web/generation_submit.py`：生图/生视频统一提交管线、任务等待与
@@ -21,8 +21,6 @@ from src.video_agent.web.generation_dispatch import (  # noqa: F401
     _IMAGE_1K_SIZES,
     _RESOLUTION_MULTIPLIERS,
     _try_canvas_image_generation,
-    call_chat_completion,
-    call_chat_completion_stream,
     generate_image_via_provider,
     image_size_for,
     resolve_openai_endpoint,

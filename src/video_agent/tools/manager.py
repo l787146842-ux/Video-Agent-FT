@@ -1,8 +1,8 @@
 from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel, ValidationError
 from loguru import logger
-from src.video_agent.adapters.cancel_token import GenerationCancelled
-from .base import BaseTool, DETAIL_TIERS, RISK_TIERS, ToolResult
+from src.video_agent.utils.cancel_token import GenerationCancelled
+from .base import BaseTool, DETAIL_TIERS, PROVIDER_KINDS, RISK_TIERS, ToolResult
 
 
 def detect_unknown_fields(schema_class: Type[BaseModel], kwargs: Dict[str, Any]) -> List[str]:
@@ -62,6 +62,18 @@ class ToolManager:
             )
             raise ValueError(
                 f"Tool '{tool.name}' declares invalid costly {costly!r}; must be bool."
+            )
+        # Provider 注入声明轴（I-3 裁决 2026-09-03）：允许不声明（默认无需注入），
+        # 但声明了非法取值（不在 PROVIDER_KINDS）同样拒收（注册期校验，不静默放行）
+        provider_kind = str(getattr(tool, "provider_kind", "") or "").strip()
+        if provider_kind and provider_kind not in PROVIDER_KINDS:
+            logger.error(
+                f"拒绝注册工具 '{tool.name}'：provider_kind 取值非法（仅支持 {PROVIDER_KINDS} 或空，"
+                "I-3 provider 注入声明轴）"
+            )
+            raise ValueError(
+                f"Tool '{tool.name}' declares invalid provider_kind {provider_kind!r}; "
+                f"must be one of {PROVIDER_KINDS} or empty."
             )
         cls._tools[tool.name] = tool
         cls._schema_cache = None  # 注册新工具时失效缓存

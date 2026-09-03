@@ -38,6 +38,7 @@ from .context_builder import (
     build_agent_context as _build_context,
     build_frontend_view as _build_frontend_view,
     build_full_snapshot as _build_full_snapshot,
+    build_board_projection as _build_board_projection,
 )
 from .undo_redo import UndoRedoMixin
 from . import chat_tail_ops, conversation_ops, save_ops
@@ -292,6 +293,12 @@ class StateManager(UndoRedoMixin):
         """返回完整状态快照（供前端刷新/SSE done payload）：
         契约与实现见 context_builder.build_full_snapshot（深拷贝，调用方可任意使用）。"""
         return _build_full_snapshot(self._raw_state, self.board_version)
+
+    def get_board_projection(self) -> Dict[str, Any]:
+        """SSE done/actions_applied 的精简状态投影（替代全量快照）：
+        契约与实现见 context_builder.build_board_projection（9 板键 +
+        chatMessages + board_version；深拷贝，调用方可任意使用）。"""
+        return _build_board_projection(self._raw_state, self.board_version)
 
     # ====== 批级检查点（批 6：条件回滚的快照/恢复公开 API） ======
 

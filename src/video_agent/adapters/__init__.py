@@ -5,7 +5,7 @@
     ImageGenerationResponse
 )
 from .base_chat import BaseChatAdapter, ChatResponse, StreamChunk
-from .cancel_token import (
+from src.video_agent.utils.cancel_token import (
     CancellationToken,
     GenerationCancelled,
     bind_cancel_token,

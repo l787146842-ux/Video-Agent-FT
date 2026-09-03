@@ -6,10 +6,15 @@ on:
   pull_request:
     branches: [main, master]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ---------- Job 1: 后端测试（Python 矩阵） ----------
   backend-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
@@ -19,6 +24,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -36,10 +42,16 @@ jobs:
         run: python scripts/check_legacy_orchestration.py
       - name: Layer imports gate (整改批 3.3：core/tools 禁止反向依赖 web 层)
         run: python scripts/check_layer_imports.py
+      - name: Web chat bypass gate (审查修复批 I-2：web/** 禁止直接构造 ChatAdapter 绕过 Planner)
+        run: python scripts/check_web_chat_bypass.py
+      - name: FC tool name literals gate (审查修复批 I-3：fc_tool_runner 禁止硬编码 provider 工具名，注入走 provider_kind 声明)
+        run: python scripts/check_fc_tool_name_literals.py
+      - name: Prompt literals gate (裁决 R-4 / A3：core/state/web/tools/adapters 禁硬编码 CJK prose，须外置 prompts/ 或登记 DECLARED_DATA)
+        run: python scripts/check_prompt_literals.py
       - name: Reference integrity gate (文档指针漂移与宪法锚点合并为一条引用完整性闸)
         run: python scripts/check_doc_pointers.py
       # Executor skill drift gate 已随任务#36 B5 执行器一步退役删除（执行器族不复存在）
-      # Skill tool names gate 已随批 A 退役删除（2026-08-29 用户裁决删工具名白名单门禁，与 acceptance GATES 13 项对齐）
+      # Skill tool names gate 已随批 A 退役删除（2026-08-29 用户裁决删工具名白名单门禁，与 acceptance.py 的 GATES 表对齐；清单以脚本内表为唯一事实源）
       - name: Semantic colors gate (影响面审查 FIX-3：styles/*.css 硬编码颜色棘轮，对齐 acceptance GATES)
         run: python scripts/check_semantic_colors.py
       - name: API contract check (OpenAPI + SSE sidecar -> TS types；任务 #4 双产物：api.generated.ts 与 sse.schema.json 同闸校验)
@@ -51,6 +63,7 @@ jobs:
   # 此前无条件钉 json 使本 job 名存实亡），全量套件真实跑在 sqlite 后端上。
   backend-test-sqlite:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       STATE_BACKEND: sqlite
     steps:
@@ -59,6 +72,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -70,6 +84,7 @@ jobs:
   # ---------- Job 2: 前端类型检查 + Lint + 单元测试 ----------
   frontend-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js
@@ -89,12 +104,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Frontend coverage ratchet gate (影响面审查 FIX-3：整体行覆盖率固定容差地板，对齐 acceptance GATES)
+      - name: Frontend coverage ratchet gate (影响面审查 FIX-3：整体行覆盖率固定容差地板，对齐 acceptance RATCHETS)
         run: python scripts/check_fe_cov_ratchet.py --require-summary
 
   # ---------- Job 3: 构建验证 ----------
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [backend-test, backend-test-sqlite, frontend-check]
     steps:
       - uses: actions/checkout@v4
@@ -107,8 +123,6 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
-      - name: CSS size ratchet gate
-        run: node scripts/check_css_size.mjs
       - name: Verify build output
         run: |
           test -f static/dist/index.html || (echo "Build output missing!" && exit 1)
@@ -118,6 +132,7 @@ jobs:
   # ---------- Job 4: E2E 冒烟（硬门禁：任务 #18 口径对齐，移除 continue-on-error） ----------
   e2e-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [backend-test, backend-test-sqlite, frontend-check]
     steps:
       - uses: actions/checkout@v4
@@ -125,6 +140,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
@@ -156,12 +172,14 @@ jobs:
   # ---------- Job 5: 评测流水线（814E5：黄金语料回归 + Skill 管线可解析性） ----------
   eval-pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

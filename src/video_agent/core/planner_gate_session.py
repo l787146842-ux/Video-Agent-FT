@@ -9,7 +9,9 @@ from typing import Any
 
 from loguru import logger
 
-from src.video_agent.core import gate_registry, live_metrics, prompt_gates
+from src.video_agent.utils import live_metrics
+from src.video_agent.core import prompt_gates
+from src.video_agent.core import workflow_runtime
 from src.video_agent.core.tracer import AgentTracer
 
 
@@ -25,15 +27,13 @@ def consume_gate_overrides(state_manager: Any, user_message: Any) -> Any:
         interaction = state_manager.state_dict.get("interaction") or {}
         taken = [r for r in (interaction.get("gate_overrides") or []) if r]
         if taken:
-            interaction["gate_overrides"] = []
-            state_manager.save()
+            workflow_runtime.reduce_gate_overrides(state_manager, rule_ids=[], flush=True)
             if any(str(r) == prompt_gates.GATE_OVERRIDE_SCOPE_ALL
                    or str(r).startswith("platform.") for r in taken):
                 gate_override_scope = prompt_gates.GATE_OVERRIDE_SCOPE_ALL
             logger.info(f"[GateOverride] 消费 {len(taken)} 条一次性豁免，作用域={gate_override_scope}")
             AgentTracer.get_instance().record_gate(
-                # override 留痕经统一归一出口（正式 ID 归一为恒等，语义不变）
-                gate_registry.normalize_rule_id("platform.gate_override"), "session", True,
+                "platform.gate_override", "session", True,
                 overridden=True, message=f"一次性放行生效，作用域={gate_override_scope}",
                 scope=str(gate_override_scope),
             )

@@ -126,7 +126,7 @@ def _degradation_watchdog(request):
     核心探测点的「预期外降级」遥测（record_degradation）一旦在单测运行期间
     触发即测试失败——承重接线断裂不再静默存活（对齐评测驱动公理，宪法 §2.6）。
     有意触发降级的故障注入测试用 @pytest.mark.allow_degradation 豁免。"""
-    from src.video_agent.core import live_metrics
+    from src.video_agent.utils import live_metrics
 
     live_metrics.reset_degradations()
     yield

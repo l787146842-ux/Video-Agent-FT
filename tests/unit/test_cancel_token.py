@@ -12,10 +12,10 @@ import time
 
 import pytest
 
-from src.video_agent.adapters import cancel_token as ct
+from src.video_agent.utils import cancel_token as ct
 from src.video_agent.adapters.base import VideoGenerationResponse
 from src.video_agent.adapters.factory import wait_until_complete
-from src.video_agent.core.stop_signal import clear_stop, request_stop
+from src.video_agent.utils.stop_signal import clear_stop, request_stop
 
 
 def test_token_explicit_cancel():

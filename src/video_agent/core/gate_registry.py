@@ -5,8 +5,7 @@
 原 prompt_gates re-export 承重壳已随批次E收敛删除（2026-09-02）。
 
 承载：GateRuleMeta 定义 + GATE_RULES 注册表数据 + GATE_MESSAGE_SECTIONS
-闸机文案覆盖矩阵 + PAUSE_MESSAGE_SECTIONS 暂停/告警文案覆盖矩阵
-+ normalize_rule_id() 归一函数。
+闸机文案覆盖矩阵 + PAUSE_MESSAGE_SECTIONS 暂停/告警文案覆盖矩阵。
 （判定逻辑在 prompt_gates.py / guard_pipeline.py，文案外置
 prompts/gates/messages.md——按职责分置，本模块无判定逻辑。）
 """
@@ -57,9 +56,12 @@ GATE_RULES: Dict[str, GateRuleMeta] = {
 # 覆盖完整性由 tests/unit/test_gate_messages_coverage.py 钉死：
 # 键集与 GATE_RULES 一致，且非空分节必须存在于 messages.md。
 GATE_MESSAGE_SECTIONS: Dict[str, Tuple[str, ...]] = {
-    "platform.prompt_write": (),
+    # 连续相同拦截的升级拒因属 prompt_write 闸裁决宣告（消费点 fc_gates.prompt_gate）
+    "platform.prompt_write": ("PROMPT_REPEAT_ESCALATION",),
     "platform.gen_confirm": ("GENERATION_CONFIRM", "GENERATION_CONFIRM_BLOCKED"),
-    "platform.tool_risk": ("TOOL_RISK_BLOCKED",),
+    # 单张应急轨每轮配额拒因归 tool_risk 闸（花钱确认同源轴，
+    # 消费点 fc_gates.run_gate_chain 生图配额分支）
+    "platform.tool_risk": ("TOOL_RISK_BLOCKED", "SINGLE_IMAGE_QUOTA_BLOCKED"),
 }
 
 # 暂停/告警文案分节登记（非闸机规则条目，不入 GATE_RULES/GATE_MESSAGE_SECTIONS）：
@@ -72,14 +74,6 @@ GATE_MESSAGE_SECTIONS: Dict[str, Tuple[str, ...]] = {
 PAUSE_MESSAGE_SECTIONS: Dict[str, str] = {
     "storyboard_structure_paused": "STORYBOARD_STRUCTURE_PAUSED",
     "shot_structure_paused": "SHOT_STRUCTURE_PAUSED",
+    "drafts_review_paused": "DRAFTS_REVIEW_PAUSED",
     "pause_slot_assertion": "PAUSE_SLOT_ASSERTION",
 }
-
-def normalize_rule_id(rule_id: str) -> str:
-    """rule_id 归一入口（承重符号）。
-
-    别名表已随 skill/session 层闸机退役清空，现为恒等返回；
-    消费面（guard_pipeline / override 留痕）保留统一入口，
-    历史新别名需求在此单点扩展。
-    """
-    return str(rule_id or "")

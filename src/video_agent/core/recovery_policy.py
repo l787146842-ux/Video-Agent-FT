@@ -13,30 +13,36 @@
   错误经 fc_feedback.compose_failure_feedback 回喂模型自处置
   （transient 由模型自主换参重试、permanent 由模型降级或上报用户），
   循环层不做机械重试——机械重试同一失败工具调用只会放大成本；
-- gate_rejection（闸机拦截）→ structured_report：
-  结构化上报不重试（安全不变量 I04/I06 不进入重试面）；
-  轮末策略 gate_heal（S07）负责发改写指引卡，属上报的实现体；
 - adapter_error（供应商侧错误）→ escalate：
   transient 重试已在适配层（adapters.retry）耗尽，到达循环侧的
   要么是 permanent（鉴权/参数/拒答），都不具循环内重试价值，
   原样上抛由统一错误路径承接。
 
+退役记录（2026-09-03 用户裁决 Q2）：
+- 闸机拦截分派键→结构化上报：已退役。
+  依据：文本轨退役后循环层拦截列表恒空（原 executor 上的零写入点字段
+  已随兼容层根除批删除）；FC 轨闸机拦截已由 fc_gates
+  reject_message 结构化回喂闭环（工具执行段内即完成上报+修正指引），
+  不再需要循环层额外分派。轮末自愈策略同批退役。
+  防复活见 scripts/check_legacy_orchestration.py FORBIDDEN。
+
 新增失败类型 = 表中加一行 + 实现体登记；禁止在循环骨架内私设恢复分支。
 """
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 # ---------- 失败类型键 ----------
 FAILURE_BAD_OUTPUT = "bad_output"
 FAILURE_TOOL = "tool_failure"
-FAILURE_GATE = "gate_rejection"
 FAILURE_ADAPTER = "adapter_error"
+# 闸机拦截分派键已退役（2026-09-03 Q2 裁决）：FC 轨闸机拦截由 fc_gates
+# reject_message 闭环，循环层无真实输入源。防复活见 check_legacy_orchestration。
 
 # ---------- 处置动作键 ----------
 ACTION_NUDGE_RETRY = "nudge_retry"              # 附格式纠正提示重试（nudge）
 ACTION_FEEDBACK_DEGRADE = "feedback_degrade"    # 回喂模型自处置（降级/上报）
-ACTION_STRUCTURED_REPORT = "structured_report"  # 结构化上报，不重试
 ACTION_ESCALATE = "escalate"                    # 原样上抛，统一错误路径承接
+# 结构化上报动作键已随闸机拦截分派键同批退役（2026-09-03）
 
 
 @dataclass(frozen=True)
@@ -72,15 +78,6 @@ RECOVERY_POLICIES: Dict[str, RecoveryPolicy] = {
             "permanent 由模型降级或上报用户；循环层机械重试无信息增益"
         ),
     ),
-    FAILURE_GATE: RecoveryPolicy(
-        kind=FAILURE_GATE,
-        action=ACTION_STRUCTURED_REPORT,
-        max_retries=0,
-        rationale=(
-            "闸机拦截是安全不变量（I04/I06）的机械判定，不具重试价值；"
-            "轮末策略 gate_heal 发改写指引卡完成结构化上报"
-        ),
-    ),
     FAILURE_ADAPTER: RecoveryPolicy(
         kind=FAILURE_ADAPTER,
         action=ACTION_ESCALATE,
@@ -103,17 +100,17 @@ def classify_step_failure(
     content: str = "",
     fc_applied: int = 0,
     adapter_error: Optional[BaseException] = None,
-    gate_rejections: Any = (),
 ) -> str:
     """循环级失败分类器：把一步执行的观测信号归一到失败类型键。
 
-    优先级（高→低）：供应商错误 > 闸机拦截 > 空/畸形输出；
+    优先级（高→低）：供应商错误 > 空/畸形输出；
     其余带工具执行的失败信号归工具失败（回喂通道承接）。
+
+    2026-09-03 退役：闸机拦截参数已删除（该分支退役，
+    FC 轨闸机拦截由 fc_gates reject_message 闭环，循环层无真实输入源）。
     """
     if adapter_error is not None:
         return FAILURE_ADAPTER
-    if gate_rejections:
-        return FAILURE_GATE
     if not str(content or "").strip() and int(fc_applied or 0) == 0:
         return FAILURE_BAD_OUTPUT
     return FAILURE_TOOL
@@ -122,11 +119,9 @@ def classify_step_failure(
 __all__ = [
     "FAILURE_BAD_OUTPUT",
     "FAILURE_TOOL",
-    "FAILURE_GATE",
     "FAILURE_ADAPTER",
     "ACTION_NUDGE_RETRY",
     "ACTION_FEEDBACK_DEGRADE",
-    "ACTION_STRUCTURED_REPORT",
     "ACTION_ESCALATE",
     "RecoveryPolicy",
     "RECOVERY_POLICIES",
