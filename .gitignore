@@ -35,6 +35,7 @@ Thumbs.db
 .vscode/
 .codebuddy/
 .qoder/
+.claude/
 
 # 会话临时 diff 产物（批次补丁中间物，不入仓）
 *.diff

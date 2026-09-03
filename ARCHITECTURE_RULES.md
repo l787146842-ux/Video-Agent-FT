@@ -2,14 +2,14 @@
 
 > **本文档是所有 AI 工具（Cursor / Codex / Claude / Gemini / Qoder / CodeBuddy 等）在本项目中工作的最高优先级约束。**
 > 任何代码生成、修改、重构都必须遵守以下规则。违反即视为错误实现。
-> 现行定版要点：Skill = **指令性制作手册**（改动裁决关 G1 见 `AGENTS.md` §八）；
+> 现行定版要点：Skill = **指令性制作手册**（改动裁决关 G1 见 `docs/GOVERNANCE.md` §四）；
 > 控制流 = 模型永远唯一行动主体 + Workflow Runtime 账本/裁判数据层；指令治理层（原第十三章/GOVERNANCE）
-> 已退役并入，治理条款摘要见 `AGENTS.md`（原卷见 git tag `governance-archive-20260901`）。
+> 已退役并入，治理条款唯一家见 `docs/GOVERNANCE.md`（原卷见 git tag `governance-archive-20260901`）。
 > 四条红线不变：§2.4 Context≠Consent、platform 闸机 manifest 无权关闭、
 > §2.7 确认闸、动作单轨 FC + guard_pipeline 唯一判定（scripts 键只静态校验）。
 >
 > **本文只写现行规则**：批次号 / 裁决编号 / 事故注记 / 已退役机制的历史留痕唯一家 = `CHANGELOG.md`，
-> 正文与文件地图不内嵌考古编号（需要出处时查该文件，整卷原文查其 §四 git tag）。
+> 正文与文件地图不内嵌考古编号（需要出处时查该文件，较早留痕已分卷至 `docs/history/`、逐卷索引见其 §五，整卷原文查其 §四 git tag）。
 >
 > **治理总纲：按业界最高标准执行，禁止走捷径。** 具体含义：
 > 1. **策略即数据（Policy-as-Data）**：所有闸机/安全规则以注册表数据表达，带稳定 `rule_id`、层级归属、外置文案；禁止散落硬编码。
@@ -17,8 +17,8 @@
 > 3. **评测驱动（Evaluation-Driven）**：平台固定地板行为由客观回归测试钉死；提示词快照测试不作为强制项。
 > 4. **deny-overrides 分层合并**：平台硬边界永远优先，Skill 配置只能加强或持平，不能削弱。
 > 5. **小批交付、即时提交**：每批独立 commit、独立验收；禁止攒大批未提交改动（血泪条款见 §5）。
-> 6. **验收 = 一键脚本 + 用户目测**：`python scripts/acceptance.py` 全 PASS（测试套件 + 门禁清单以脚本内 `SUITES`/`GATES` 表为准，不写死数量，**只认进程退出码**，人眼读终端输出不算验收；`--with-eval` 补评测管线）；UI 变更必须构建后由**用户目测反馈**确认（不派浏览器子代理截图代目测，可做轻量定点代码级验证），缺一项不算完成。
-> 7. **指令治理层（原第十三章/GOVERNANCE，已退役并入）**：任何规则只有一个家（P1）、约束下沉代码层（P2）、状态即数据（P3）；修改前必须按 `AGENTS.md` 治理条款摘要的决策树定位归属层，禁止在事故现场就近补条款。
+> 6. **验收 = 一键脚本 + 用户目测**：`python scripts/acceptance.py` 全 PASS（三阶段清单以脚本内 `GATES`/`SUITES`/`RATCHETS` 表为准，不写死数量，**只认进程退出码**，人眼读终端输出不算验收；`--with-eval` 补评测管线）；UI 变更必须构建后由**用户目测反馈**确认（不派浏览器子代理截图代目测，可做轻量定点代码级验证），缺一项不算完成。
+> 7. **指令治理**：治理条款（三原则 P1/P2/P3、修复决策树、捷径禁令、方案四关 G1-G4）唯一家 = `docs/GOVERNANCE.md`；修改前必须按其修复决策树定位归属层，禁止在事故现场就近补条款。
 
 ---
 
@@ -35,7 +35,7 @@
 - **确认单轨化**：暂停确认唯一经 `workflow_pause` FC 工具产生，经 llm_call 第 5 元组结构化上抛；`agent_loop` 纯文本轮仅收尾（轮末策略照常承重）
 - **无执行器子代理**：管线阶段由通用主路径直走平台工具（`prompt_builder` 只注入 L1 目录与轻量状态提示，Skill 正文经 read_skill 按需读取）；防虚报收敛到 `fc_tool_runner` 关键步骤探针；退役符号登记 `check_legacy_orchestration` 防复活，禁止恢复
 - **闸机单轨一致**：所有动作判定统一经 `core/guard_pipeline.py`（见 §2.0），禁止旁路
-- **控制流主体回归**（决策史见 git tag `adr-archive-20260901`）：模型永远唯一行动主体——每轮做什么由模型接到用户消息后发起工具调用（带附件首条消息也由模型接手，系统不静默自动分析）；`core/workflow_runtime.py` 降级为**账本 + 裁判数据层**（Skill 激活编译 `WorkflowDefinition`，canonical slug + revision + content hash，源 = Skill 文档头部 frontmatter 声明，`frontmatter.validate_manifest` 注册期门禁；持久化 `WorkflowRun`，**仅 runtime reducer 可改**，StateManager 仍唯一写入点 Rule3；完成度只认客观探针），不发起任何行动；机械直跑/审批直跑一律禁止（驱动符号登记 `check_legacy_orchestration` 防复活）。「不暂停连跑」= 自主性档位（用户指令/开关授予模型豁免非平台硬暂停点；平台硬闸任何档位必停，Context ≠ Consent，授权留痕）。**原子轮提交**：一轮只提交一个 `TurnResult`（turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项（暂停卡唯一发行主体 = 模型 `workflow_pause`，单一活跃暂停槽位；重复暂停 = 旧卡作废 + trace 留痕（pause_slot_collision）+ 发行新卡 + 继续等待人工确认，不拒收（作废 = 失去活跃暂停槽位登记、不再作为待确认项被消费；展示层作废标记未实现，见 `docs/未清偿债务清单.md`）；轮末兜底引导卡（round_end_policies 的状态派生建议）≠ 暂停卡；暂停卡唯一发行主体仍为模型 workflow_pause，引导卡仅承载客观状态选项）；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
+- **控制流主体回归**（决策史见 git tag `adr-archive-20260901`）：模型永远唯一行动主体——每轮做什么由模型接到用户消息后发起工具调用（带附件首条消息也由模型接手，系统不静默自动分析）；`core/workflow_runtime.py` 降级为**账本 + 裁判数据层**（Skill 激活编译 `WorkflowDefinition`，canonical slug + revision + content hash，源 = Skill 文档头部 frontmatter 声明，`frontmatter.validate_manifest` 注册期门禁；持久化 `WorkflowRun`，**仅 runtime reducer 可改**，StateManager 仍唯一写入点 Rule3；完成度只认客观探针），不发起任何行动；机械直跑/审批直跑一律禁止（驱动符号登记 `check_legacy_orchestration` 防复活）。「不暂停连跑」= 自主性档位（用户指令/开关授予模型豁免非平台硬暂停点；平台硬闸任何档位必停，Context ≠ Consent，授权留痕）。**原子轮提交**：一轮只提交一个 `TurnResult`（turn_id 归组）；正文只承载成果；暂停卡只承载一句问句 + 系统派生选项（暂停卡唯一发行主体 = 模型 `workflow_pause`，单一活跃暂停槽位；重复暂停 = 旧卡作废 + trace 留痕（pause_slot_collision）+ 发行新卡 + 继续等待人工确认，不拒收（作废 = 失去活跃暂停槽位登记、不再作为待确认项被消费；展示层作废标记已实现（旧卡挂作废态 + 点击失效反馈））；轮末兜底引导卡（round_end_policies 的状态派生建议）≠ 暂停卡；暂停卡唯一发行主体仍为模型 workflow_pause，引导卡仅承载客观状态选项）；文档卡源自同轮 artifact；**正常完成禁空正文**；`ArtifactCommitted` 先于 `StageSucceeded`；SSE/历史/时间线/卡片四投影同源派生，瞬态通道不得作为唯一可见性；一切机械动作进转录一等条目。控制流决策全记 `tracer.record_control_flow` + `[ControlFlow]` 日志，永不无据可查
 - **动作语义唯一实现**：故事板增删改查领域逻辑统一在 `state/storyboard_ops.py`，执行路径必须委托，禁止各自重写查找/字段白名单/类别映射
 - **层级例外**：动作执行器下沉 `core/action_executor.py`，对 web 生成管线/供应商配置的依赖倒置为 `core/ports.py` 端口、web 装配点注入（`web/port_wiring.py`）；core→web 任何 import（含延迟/TYPE_CHECKING）一律禁止
 
@@ -57,8 +57,8 @@
 - 所有 system prompt / 闸机文案 / 回喂模板存放在 `prompts/`（`planner/`、`gates/`、`shared/` 分区），经 `utils/prompts.py::load_prompt()` / `load_prompt_section()` 加载
 - **禁止**在代码中硬编码超过 3 行的 prompt 字符串；代码只留组装逻辑
 - **快照防漂移**：提示词外置/迁移语义由外置单一事实源 + 回归测试保障；提示词快照测试不作为强制项
-- **协议单轨**：平台协议唯一 = `prompts/planner/system_fc.md`（文本动作协议已退役删除、禁止复活，决策史见 git tag `adr-archive-20260901`）；共有段落抽到 `prompts/shared/` 经 `{{include}}` 引用拼装，不复制
-- 纪律条款外置为独立 md（如 `planner/skill_discipline.md`），不得内联代码
+- **协议单轨**：平台协议唯一 = `prompts/planner/protocol.md`（文本动作协议已退役删除、禁止复活，决策史见 git tag `adr-archive-20260901`）；协议正文**单文件内联**，prompts/ 无 `{{include}}` 拼装机制；`prompts/shared/` 存条件注入模板，由 `load_prompt_section()` 按注入条件成段加载，**禁止**把条件模板复制进协议正文
+- 纪律条款外置为独立 md（如 `planner/skill_runtime.md`、`planner/adjust.md`），不得内联代码
 
 ### Rule 7: 画布边界 — 任何时候都禁止修改（fork/改源码均禁止）
 - 画布（infinite-canvas）是**独立迭代项目**，代码不在本仓库，**任何时候禁止修改或 fork 其任何文件**
@@ -126,7 +126,7 @@
 - UI 变更必须构建后经**用户目测反馈**确认交付（禁止浏览器子代理截图代目测——动作慢、截不到目标图且浪费算力；可做轻量、定点、快速的代码级验证）；「测试全绿」不等于「UI 正确」
 - **品牌、视觉与交互细节规范（飞天品牌、确认卡片样式、@面板、分组卡片等）**见 `docs/前端体验规范.md`，同样为强制约束，由前端工程按批次执行
 
-### 3.4 前端工程
+### 3.2 前端工程
 - 唯一前端为 `src/web` SolidJS SPA，构建产物 `static/dist`；启动脚本自动补构建；**禁止**复活旧 studio 页面
 - 前端类型以 `scripts/gen_api_types.py` 生成物为契约，`--check` 纳入每批验收；**前端 API 边界类型以 `api.generated.ts` 为唯一来源**（豁免/精化清单登记于 `types/index.ts` 文件头；生成物豁免 eslint max-lines）；消费覆盖防回退由 `api-contract.test.ts` 桥接测试机械断言
 
@@ -141,7 +141,7 @@
 
 ## 五、进程与版本治理宪法（血泪条款）
 
-> 以下条款为强制铁律，源自一次真实的整批工作丢失事故（事故经过见 `CHANGELOG.md`）：
+> 以下条款为强制铁律，源自一次真实的整批工作丢失事故（事故经过见 `docs/history/2026-08.md` 的 2026-08-12 条）：
 
 1. **开工先备份**：任何修复/整改会话开工前，先建备份分支并立即 commit 现状；每完成一批立即 commit，**禁止攒大批未提交改动**
 2. **救火先留现场**：回滚前先把现场 commit 到 archive 分支；**禁止裸 `git restore .` / `git checkout -- .`**（reflog 不留痕的销毁式操作）
@@ -169,6 +169,25 @@
 ### Import / 类定义
 - import 放文件顶部（标准库→第三方→项目内部）；禁止方法内 import；禁止循环导入（routes⊄tools⊄adapters）
 - 禁止同名类覆盖；禁止文件末尾追加 Mock 覆盖正式实现；修改必须原地修改
+
+### 层间依赖方向（core 不得依赖 adapters）
+- **禁止 core → adapters**。core 需要「外部调用结果的数据形状」或「一个适配器长什么样」时，**契约由 core 拥有**：`core/chat_port.py` 定义 `ChatResponse` / `StreamChunk` 纯数据类与结构化端口 `ChatAdapterPort`（Protocol）；adapters 侧反向依赖该模块并 re-export（旧导入路径保持不变），抽象基类 `BaseChatAdapter` 仍定义在 `adapters/base_chat.py`（Rule 4 锚点）并结构化满足该端口
+- **跨切面原语下沉 `utils/`**：被 core / tools / adapters / web 多层共用且不专属任一层的原语（取消令牌 `cancel_token`、停止标志 `stop_signal`、供应商配置加载 `provider_config_loader`、实时度量 `live_metrics`、trace 留存 `trace_retention`）一律放 `utils/`，使各层单向依赖 utils 而非互相依赖；**禁止**为此类原语在 core↔adapters 之间开洞
+- 门禁 = `scripts/check_layer_imports.py`（core→adapters 违规基线已收缩为空集，新增即 FAIL；函数级 import 存量白名单见 `scripts/check_func_imports.py`）
+
+### 状态写面分类
+
+| 写面类型 | 持有者 / 持久化路径 | 规则 |
+|----------|---------------------|------|
+| 项目创作状态 | `state/manager.py` StateManager → `workspace/state.sqlite3` 项目表 | Rule 3 唯一写入点；任何创作数据变更必须经 StateManager |
+| 运行时元数据（批次） | `web/video_batch.py` → `data/video_batch_tasks.json` | 允许独立持久化；**禁止反向写项目状态**（读 StateManager 快照合法） |
+| 运行时元数据（任务） | `web/agent_task_manager.py` → TaskStore / `workspace/state.sqlite3` kv 表 | 允许独立持久化；**禁止反向写项目状态**（经 contextvar 绑定项目 StateManager 仅读取） |
+| 配置写面（供应商 / 运行时设置 / .env） | `core/provider_config.py`（`data/api_providers.json` + `API/.env` 原子写）、`web/routes/runtime_settings.py` 与 `web/routes/config.py`（`data/runtime_settings.json`） | 属 Rule 3「配置类文件除外」豁免、不走 StateManager；热切换/落盘机制单家见 §四；**禁止写入项目创作状态**（StateManager 域） |
+
+> 判定准则：凡「运行时调度/队列/进度」类元数据与「供应商/运行时设置/.env」类配置，
+> 允许在 StateManager 之外独立持久化，但必须单向依赖——只读项目状态、禁止向项目状态写入。
+> 配置写面的热切换/落盘机制单家见 §四与 Rule 3「配置类文件除外」，本表只登记写面归属、不复述机制。
+> 新增状态写面或配置写面须在此表登记。
 
 ---
 
@@ -207,8 +226,8 @@
 - 闸机改动→平台固定地板回归测试；提示词迁移→外置单一事实源断言；动作通道改动→FC 单轨一致性测试；新增 SSE 事件→sse_protocol 注册表登记
 
 ```bash
-python scripts/acceptance.py             # 一键验收：测试套件+门禁（清单以脚本 GATES/SUITES 表为准），只认 exit code
-python scripts/acceptance.py --quick     # 快验：门禁 + tsc
+python scripts/acceptance.py             # 一键验收：三阶段 GATES→SUITES→RATCHETS（清单以脚本内同名表为准），只认 exit code
+python scripts/acceptance.py --quick     # 快验：GATES + tsc（无 SUITES/RATCHETS）
 python scripts/acceptance.py --with-eval # 终验：追加评测管线
 ```
 
@@ -225,10 +244,12 @@ src/video_agent/
 │   ├── pause_composer.py   ← 暂停卡通道/选项面处理（Rule2 主体回归：发行主体 = 模型 workflow_pause）
 │   ├── fc_tool_runner.py   ← FC 轨执行臂；回喂家族在 fc_feedback.py
 │   ├── fc_feedback.py      ← 工具结果回喂/压缩家族
+│   ├── provider_injection.py ← provider 注入唯一分派面（按工具 provider_kind 声明统一注入，被 fc_tool_runner 顶层导入）
+│   ├── chat_port.py        ← core 拥有的 LLM 数据契约 ChatResponse/StreamChunk + 结构化端口 ChatAdapterPort（依赖倒置，§六）
 │   ├── planner_output.py   ← 轮末产出组装域
 │   ├── round_end_policies.py ← 轮末策略状态机 + suggest_next_actions（轮末兜底引导卡唯一落点）
 │   ├── prompt_gates.py     ← 提示词写入校验（validate_prompt_write 等）+ gates_cards 文案族 re-export 壳
-│   ├── gate_registry.py    ← 闸机规则注册表唯一家（GATE_RULES / normalize_rule_id，§2.3）
+│   ├── gate_registry.py    ← 闸机规则注册表唯一家（GATE_RULES，§2.3）
 │   ├── guard_pipeline.py   ← 闸机管线（2.0，动作判定唯一入口）
 │   ├── prompt_builder.py   ← 上下文组装；token_budget.py ← 窗口/截断
 │   ├── action_executor.py  ← 状态视图载体（动作通道唯一 = FC 工具，文本轨动作分派
@@ -244,7 +265,8 @@ src/video_agent/
 │   ├── port_wiring.py ← core 端口装配点（web 侧 re-export 壳已清退）
 │   ├── task_manager.py / skill_docs.py / routes/
 ├── state/  manager.py（唯一写入点）/ models.py / storyboard_ops.py / context_builder.py
-├── adapters/  tools/  config.py  exceptions.py  utils/
+├── adapters/  tools/  config.py  exceptions.py
+├── utils/                  ← 跨切面原语下沉层（§六）：cancel_token.py / stop_signal.py / provider_config_loader.py / live_metrics.py / trace_retention.py / prompts.py / paths.py
 src/web/                    ← SolidJS SPA 唯一前端（§3）
 prompts/                    ← 指令治理外置资产（Rule6）
 tests/fixtures/             ← 技能夹具等快照
@@ -268,10 +290,10 @@ tests/fixtures/             ← 技能夹具等快照
 - [ ] 没有裸 restore/checkout -- .；本批已 commit；未跟踪文件已核对（§5）
 - [ ] 拆分模块新增顶层符号已同步登记 re-export 壳清单，测试 patch 目标为调用方命名空间
 - [ ] 测试不得写生产 data/skills（conftest session 级镜像目录保障）
-- [ ] runtime 无自主行动（不机械执行执行器、不机械发卡）；暂停卡唯一发行主体 = 模型 workflow_pause，单一活跃暂停槽位（重复暂停 = 旧卡作废留痕 + 发新卡 + 继续等确认，不拒收；作废 = 失活跃槽位登记、不再作为待确认项被消费，展示层作废标记未实现见 `docs/未清偿债务清单.md`）（Rule2）
+- [ ] 暂停槽行为符合 Rule 2
 - [ ] 一轮一 TurnResult 提交（turn_id 归组），无空文本 docCard 消息、无合成 actionLog（Rule2）
 - [ ] 控制流范式表述唯一归宪法 Rule2（P1）
-- [ ] 修改前已按 `AGENTS.md` 治理条款摘要的决策树定位归属层；没有在事故现场就近补条款（P1/P2）
+- [ ] 修改前已按 `docs/GOVERNANCE.md` 修复决策树定位归属层；没有在事故现场就近补条款（P1/P2）
 - [ ] 没有在 Skill 文件里改系统层缺口；没有用 prose 教模型配合既有机制（G1/G3）
 
 > 以下事项已由 acceptance 门禁机械强制，不再人工勾选：

@@ -82,7 +82,7 @@ src/video_agent/          后端（FastAPI 应用）
 ├── state/                StateManager 唯一状态写入点（Rule 3）+ Pydantic 模型
 ├── adapters/             外部调用统一层（Rule 4），含 canvas_adapter
 ├── tools/                业务 Tool 体系（Rule 5）
-├── skill_runtime/        Skill 执行器运行时（章节→执行器，agent-as-tool）
+├── skill_runtime/        Skill 注册表与文档头部 frontmatter 声明解析（执行器族已退役，见宪法 Rule 2）
 └── config.py             集中配置（环境变量驱动）
 
 src/web/                  前端（SolidJS SPA）
@@ -101,14 +101,16 @@ workspace/                运行时状态与资产（gitignore）
 | 文档 | 内容 |
 |---|---|
 | [ARCHITECTURE_RULES.md](ARCHITECTURE_RULES.md) | 架构铁律（AI 协作强制约束） |
-| 指令治理层（GOVERNANCE） | 已归档删除，见 git tag `governance-archive-20260901`；活条款摘要见 [AGENTS.md](AGENTS.md) §八 |
+| [docs/GOVERNANCE.md](docs/GOVERNANCE.md) | 指令治理条款唯一家（P1/P2/P3、修复决策树、方案四关 G1-G4）；原 GOVERNANCE 卷已归档删除，见 git tag `governance-archive-20260901` |
+| [docs/冻结与暂缓清单.md](docs/冻结与暂缓清单.md) | 用户已裁决的冻结 / 暂缓项（防翻案登记） |
+| [docs/未清偿债务清单.md](docs/未清偿债务清单.md) | 未清偿债务与事故残留项（清偿一条、清单删一条） |
 | [docs/配置说明.md](docs/配置说明.md) | 各配置文件的权威关系与加载优先级 |
 | [docs/前端体验规范.md](docs/前端体验规范.md) | 品牌/视觉/交互细节强制规范 |
 | [docs/对画布的需求清单.md](docs/对画布的需求清单.md) | 需要画布侧实现的能力与集成边界声明 |
 
 ## 环境与安全
 
-- 复制 `.env.example` 为根目录 `.env` 配置运行参数（端口、画布地址、记忆后端等），
+- 复制 `.env.example` 为根目录 `.env` 配置运行参数（端口、画布地址、安全开关等），
   各配置项的完整说明见 [docs/配置说明.md](docs/配置说明.md)。
 - API Key 统一存放于 `API/.env`（已 gitignore，勿提交）。
 - `ENVIRONMENT=production` 时所有 `/api/` 请求需携带 `X-API-Key` 头。
