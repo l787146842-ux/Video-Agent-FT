@@ -298,7 +298,7 @@ def test_planner_stage_pruning(svc, monkeypatch):
 
 def test_ke_first_gate_fc_track(monkeypatch):
     """0817 用户裁决：FC 轨建 shot 无首拆警告。
-    任务#36 护栏移植后：分镜 sceneRefs 完整度由 _structure_integrity_gate
+    任务#36 护栏移植后：分镜 sceneRefs 完整度由 fc_gates.structure_integrity_gate
     机械校验（承接原 exec_common），故建分镜须带客观引用。"""
     import asyncio
     runner = FCToolRunner(tool_manager=_StubToolManager())

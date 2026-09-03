@@ -405,7 +405,7 @@ def test_pause_note_objective_spec_state(tmp_path):
 # test_coverage_missing_audio_and_speakers / test_coverage_no_audio_check_when_skill_silent
 # 已随任务#36 B5 执行器一步退役删除：被测对象（exec_split._script_speakers /
 # skill_declares_audio / _coverage_missing_key_elements）不复存在；拆解覆盖完整
-# 改由模型按铁律第 2 条自查 + fc_tool_runner _structure_integrity_gate 客观校验承接。
+# 改由模型按铁律第 2 条自查 + fc_gates.structure_integrity_gate 客观校验承接。
 
 
 # ---------- 0817 B4：执行器 JSON 畸形 → 带拒因纠正重试（C2） ----------

@@ -9,7 +9,7 @@
 执行器一步退役删除：被测对象（executors._executor_thinking/_rollback_split_groups/
 _run_storyboard_split/_split_kinds_for_section/_apply_actions/_spec_override_clauses
 与 StoryboardShotsTool）不复存在；分组类型阶段边界与 sceneRefs 完整度改由
-fc_tool_runner _structure_integrity_gate 承接。）
+fc_gates.structure_integrity_gate 承接。）
 """
 from src.video_agent.adapters.openai_compat import OpenAICompatChatAdapter
 from src.video_agent.config import settings
@@ -118,7 +118,7 @@ def test_thinking_override_wins_over_global():
 # test_ai_skill_split_sections_scope_kinds / test_separate_sections_keep_single_kind_boundary /
 # test_apply_actions_multi_kind_accepts_and_single_rejects 已随任务#36 B5 执行器一步退役删除：
 # 被测对象（executors._split_kinds_for_section / _apply_actions）不复存在；
-# 分组类型阶段边界校验改由 fc_tool_runner _structure_integrity_gate 承接钉死。
+# 分组类型阶段边界校验改由 fc_gates.structure_integrity_gate 承接钉死。
 
 
 # ---------- 五项制片规格覆盖注入 ----------
