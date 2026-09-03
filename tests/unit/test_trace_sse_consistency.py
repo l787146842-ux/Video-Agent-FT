@@ -309,7 +309,7 @@ def test_platform_no_next_step_opinions():
 
     out = rep.suggest_next_actions({"keyElements": [{"id": "k", "drafts": []}]})
     assert out and "拆分镜" not in out[0]["label"]
-    sd = Path("prompts/planner/skill_discipline.md").read_text(encoding="utf-8")
+    sd = Path("prompts/planner/skill_runtime.md").read_text(encoding="utf-8")
     assert "首次拆分故事板只创建 keyElement" not in sd
     assert "继续编写元素生图提示词草案" not in sd
 

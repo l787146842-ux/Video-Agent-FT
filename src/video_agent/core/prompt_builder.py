@@ -11,6 +11,7 @@ system 段，经 build_state_tail_message 以 history 尾部消息（user 通道
 
 planner.py 保留 _build_system_prompt 等同名委托，既有调用/测试路径不变。
 """
+import json
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
@@ -21,7 +22,7 @@ from src.video_agent.config import settings
 # prompt_gates 保留顶层导入（段内条件判定已收归 planner 单一事实源，
 # 本文件不再直接消费它）；gates_inputs 原料判定家族已随 C1b 裁决退役删除。
 from src.video_agent.core import prompt_gates  # noqa: F401
-from src.video_agent.core import live_metrics
+from src.video_agent.utils import live_metrics
 from src.video_agent.core.token_budget import estimate_tokens
 from src.video_agent.skill_runtime import guard as skill_guard
 # v3 声明读取经模块属性访问（测试 patch registry.<fn> 即生效）
@@ -40,6 +41,15 @@ if TYPE_CHECKING:
 # 遥测：system prompt 组装总长预警阈值（字符）——超过即 warning，
 # 提醒清理草稿（token 治理的组装层可观测性）
 _SYSTEM_PROMPT_WARN_CHARS = 60000
+
+# 状态降级引导语外置（P3 状态即数据）：状态 JSON 只留 degraded/compacted
+# 客观标志位，引导语按标志位从 shared/degradation.md 加载，随状态尾部
+# 消息独立成段注入（不进 system 段，保 KV-cache 前缀）
+_DEGRADATION_FILE = "shared/degradation.md"
+_DEGRADATION_FLAG_SECTIONS = (
+    ("degraded", "STATE_DEGRADED"),
+    ("compacted", "STATE_COMPACTED"),
+)
 
 # B1：Skill 正文 <planner> 段提取（默认注入唯一正文段）
 _PLANNER_TAG_RE = re.compile(r"<planner>\s*(.*?)\s*</planner>", re.S | re.I)
@@ -89,8 +99,7 @@ class PromptBuilder:
         context 携带的裁剪解释（单一事实源），本处不再自行判定；
         独立使用（不经 planner）时 note 缺省为空即回退为不注入。
 
-        协议段唯一 = planner/system_fc.md（Tool 优先瘦身协议，共有段经
-        {{include}} 从 shared/ 拼装）。
+        协议段唯一 = planner/protocol.md（Tool 优先瘦身协议，共有段已内联）。
         """
         # 预计算共享原始数据：遥测/超限预警需要原始长度（非包壳后段长）。
         # state 已移出 system 段（经 history 尾部消息注入），此处仅为
@@ -156,7 +165,8 @@ class PromptBuilder:
         状态 JSON/工具边界说明/故事板客观进度不占 system 段：每步以尾部
         消息注入，让 LLM 在每个轮次都看到先前轮次执行后的最新状态（近生成
         端，遵循度最高）；system 段（含 Skill 块）由此成为跨步稳定前缀。
-        内部次序与原 system 段相对顺序一致（状态 JSON → 边界说明 → 故事板进度）。
+        内部次序：状态 JSON → 降级引导段（按 degraded/compacted 标志位）→
+        边界说明 → 故事板进度。
         返回空串 = 本轮不注入。
 
         state_builder_override：预算保险丝降级重建时替换状态构建器（只留
@@ -172,6 +182,10 @@ class PromptBuilder:
         parts: List[str] = []
         if state_json:
             parts.append("当前工作台状态 JSON 如下（每轮自动刷新）：\n\n" + state_json)
+            # 降级/压缩引导段：按状态 JSON 客观标志位独立成段紧随其后
+            deg_note = self._build_degradation_note(state_json)
+            if deg_note:
+                parts.append(deg_note)
         # 同源裁剪解释：条件判定单一事实源归 planner._compute_excluded_tools，
         # 裁剪生效时经 context.stage_note 携带；未生效缺省为空即不注入。
         # 随状态同通道迁移：静默裁剪消除语义不变，只是不再击穿 system 前缀。
@@ -181,7 +195,38 @@ class PromptBuilder:
             note = self.build_storyboard_progress_note()
             if note:
                 parts.append(note)
+        # turn_budget 客观步数（P3 状态即数据：纯客观数据行，无说教）；
+        # 仅在已有状态尾部内容时附加，空状态不制造尾部消息（保「零增量」契约）
+        step_info = getattr(context, "step_info", None)
+        if parts and step_info and isinstance(step_info, (tuple, list)) and len(step_info) == 2:
+            parts.append(f"步数：{step_info[0]}/{step_info[1]}")
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _build_degradation_note(state_json: str) -> str:
+        """状态降级引导段（P3 载体改造）：解析状态 JSON 的 degraded/compacted
+        客观标志位，命中时从 shared/degradation.md 加载对应分节作独立引导段。
+
+        引导语不嵌状态数据体（原 note 字段已废除）；分节缺失时仅
+        logger.warning、不注入（标志位仍在数据体，不内联逐字兜底，M-2 同口径）。
+        非 JSON/解析失败（测试桩等）静默跳过。
+        """
+        try:
+            parsed = json.loads(state_json)
+        except Exception:
+            return ""
+        if not isinstance(parsed, dict):
+            return ""
+        for flag, section in _DEGRADATION_FLAG_SECTIONS:
+            if not parsed.get(flag):
+                continue
+            text = load_prompt_section(_DEGRADATION_FILE, section)
+            if not text:
+                logger.warning(
+                    f"[prompt_builder] prompts/{_DEGRADATION_FILE}::{section} "
+                    "分节缺失，降级引导段不注入")
+            return text
+        return ""
 
     def build_storyboard_progress_note(self) -> str:
         """故事板客观进度描述（纯数据）——只报三类有无，
@@ -219,7 +264,12 @@ class PromptBuilder:
     def build_global_settings_note(self) -> str:
         """全局生成设置注入块：分镜最大时长 + 默认出图/出视频渠道 + 聊天出图开关。
         文案外置 prompts/shared/global_settings.md，
-        代码只留动态行组装。"""
+        代码只留动态行组装。
+
+        注入条件（记于此而非 in-file 注释头：本文件经 render_prompt 整文件加载，
+        行内 `#` 注释会进装配、破坏等价，故按 storyboard_progress 同款例外处理）：
+        由 stage_allows_global_settings() 阶段门控——规格规划阶段（无任何分组）
+        时长/渠道/分辨率均无消费方故不注入，故事板阶段起注入；且需 use_studio_context。"""
         image_line = ""
         if settings.default_image_provider_id:
             model = f" / 模型 {settings.default_image_model}" if settings.default_image_model else ""
@@ -244,6 +294,11 @@ class PromptBuilder:
         """当前项目「执行铁律.md」全文注入块（项目级契约唯一表述源）。
 
         无铁律文档（未开工的新项目）或读取失败时返回空串，不阻断对话。
+
+        注入条件（记于此而非 in-file 注释头：头部文案 iron_rules_header.md 经
+        load_prompt 整文件加载后 .strip() 拼接，行内 `#` 注释会进装配、破坏等价，
+        故按 storyboard_progress 同款例外处理）：项目存在《执行铁律》文档时作系统
+        提示头部注入（每轮对话开始由系统 ensure，存在即注入，不与 Skill 激活绑定）。
         """
         try:
             from src.video_agent.core.spec_rules import find_iron_rules_doc
@@ -268,7 +323,7 @@ class PromptBuilder:
         M3 批2（2026-08-30 裁决：注册表=加载唯一门户）：数据源从磁盘 list_skill_docs 切为
         registry.loadable_entries（发现→注册→加载；被拒注册包不进目录），description 取
         frontmatter manifest（与注册同权威源）；recency 排序/预算截断/降级遥测语义不变。
-        文案外置 prompts/shared/skill_catalog.md；代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
+        文案外置 prompts/shared/skill_inject.md；代码内置 Skill（编剧/分镜师/制片）已彻底移除，不进目录。"""
         entries: List[Any] = []
         try:
             entries = list(skill_registry.loadable_entries())
@@ -297,18 +352,18 @@ class PromptBuilder:
             lines.append(f"- {name}：{desc}")
         if not lines:
             return ""
-        # 渐进式披露单源收敛：总纲唯一源 = shared/important_rules.md
-        # （随协议段常驻），目录段文案外置 shared/skill_catalog.md 分节
+        # 渐进式披露单源收敛：总纲唯一源 = protocol.md《重要规则》段
+        # （随协议段常驻），目录段文案外置 shared/skill_inject.md 分节
         header = (
-            load_prompt_section("shared/skill_catalog.md", "HEADER")
+            load_prompt_section("shared/skill_inject.md", "HEADER")
             + "\n" + "\n".join(lines)
         )
         if omitted:
             header += "\n" + render_prompt_section(
-                "shared/skill_catalog.md", "OMITTED", count=omitted)
+                "shared/skill_inject.md", "OMITTED", count=omitted)
         if context.skill_name:
             header += "\n" + render_prompt_section(
-                "shared/skill_catalog.md", "SELECTED",
+                "shared/skill_inject.md", "SELECTED",
                 skill_name=context.skill_name)
         return header
 
@@ -334,16 +389,16 @@ class PromptBuilder:
             return ""
         name = display or skill_name
         parts: List[str] = [render_prompt_section(
-            "shared/skill_selected.md", "SELECTED_NOTE", name=name)]
+            "shared/skill_inject.md", "SELECTED_NOTE", name=name)]
         header = self.build_skill_metadata_header(skill_name)
         if header:
             parts.append(header)
         # 《Skill 流程纪律》全文随选中 Skill 注入（原注入点已退役，此处为唯一注入面）
         try:
-            discipline = load_prompt("planner/skill_discipline.md")
+            discipline = load_prompt_section("planner/skill_runtime.md", "DISCIPLINE")
         except Exception:
             discipline = ""
-        if discipline.strip():
+        if discipline and discipline.strip():
             parts.append(discipline.strip())
         planner_text = self._planner_section_text(content, sd)
         if planner_text:
@@ -351,7 +406,7 @@ class PromptBuilder:
         toc = self._toc_lines(content, sd)
         if toc:
             parts.append(render_prompt_section(
-                "shared/skill_selected.md", "TOC_NOTE", name=name) + "\n" + "\n".join(toc))
+                "shared/skill_inject.md", "TOC_NOTE", name=name) + "\n" + "\n".join(toc))
         return "\n\n".join(parts)
 
     def _planner_section_text(self, content: str, sd: Any) -> str:
@@ -405,14 +460,13 @@ class PromptBuilder:
         source = manifest.get("source")
         # 指令性制作手册口径：压制性包壳退役——仅外部/社区来源附中性来源标记
         # （供用户知情，无约束性措辞）；平台来源（platform/未声明）干净注入。
-        # 口径同源 scripts/scan_skills.py._is_external_source。
         if (
             isinstance(source, str)
             and source.strip()
             and source.strip().lower() != "platform"
         ):
             lines.append("- " + render_prompt_section(
-                "shared/skill_source.md", "META_LINE", source=source.strip()))
+                "shared/skill_inject.md", "META_LINE", source=source.strip()))
         if not lines:
             return ""
         return (
@@ -468,12 +522,13 @@ class PromptSectionSpec:
 
 
 def _sec_protocol(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """协议段（稳定前缀第一段）：从 prompts/ 目录加载（Rule4），
-    max_steps 模板化注入（消协议模板与 config 双写漂移）。"""
+    """协议段（稳定前缀第一段）：整文件加载 prompts/planner/protocol.md（Rule 6）。
+    步数预算不再模板化写死进协议（原 max_steps 死参数已删）；
+    客观步数改经状态尾部消息注入（turn_budget，见 build_state_tail_message）。"""
     if not context.use_studio_context:
         return ""
     # 协议单轨：动作通道唯一 = FC 工具。
-    return render_prompt("planner/system_fc.md", max_steps=settings.max_steps) or ""
+    return load_prompt("planner/protocol.md") or ""
 
 
 def _sec_session_summary(pb: "PromptBuilder", context: "PlannerContext") -> str:
@@ -541,12 +596,12 @@ def _sec_selected_draft(pb: "PromptBuilder", context: "PlannerContext") -> str:
 
 def _sec_adjust_discipline(pb: "PromptBuilder", context: "PlannerContext") -> str:
     """微调任务纪律段（微调真子对话，批 S2）：仅 scope 任务注入。
-    文案外置 prompts/planner/adjust_discipline.md（宪法 Rule 6），
+    文案外置 prompts/planner/adjust.md（宪法 Rule 6），
     内容恒定不嵌目标编号（保前缀缓存；目标信息由状态裁剪面携带）。"""
     if not getattr(context, "adjust_scope", None):
         return ""
     try:
-        return (load_prompt("planner/adjust_discipline.md") or "").strip()
+        return (load_prompt("planner/adjust.md") or "").strip()
     except Exception:
         return ""  # 文案读取失败不阻断对话（纪律降级遥测可见）
 
@@ -557,8 +612,8 @@ def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
     阶段门控——规格规划阶段无消费方，不注入（context rot 治理）。"""
     if not context.use_studio_context:
         return ""
-    # 会话级压缩 session_compact 是创作设定的唯一软性保护，
-    # 见 planner/session_compact.md；
+    # 会话级压缩 compaction 是创作设定的唯一软性保护，
+    # 见 planner/compaction.md；
     # 生成渠道清单注入机制已整体清除——渠道唯一事实源为
     # 顶部「全局设置」（provider_config/provider_prefs），规格文档不再承载渠道
     if not pb.stage_allows_global_settings():

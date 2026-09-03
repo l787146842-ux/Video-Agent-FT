@@ -98,7 +98,7 @@ def test_template_has_handoff_sections():
     """模板补「未决事项清单 + 最近关键产物名」两节（对齐 handoff 交接）"""
     from src.video_agent.utils.prompts import load_prompt_section
 
-    tpl = load_prompt_section("planner/session_compact.md", "TEMPLATE")
+    tpl = load_prompt_section("planner/compaction.md", "TEMPLATE")
     assert tpl, "TEMPLATE 分节必须可加载"
     assert "未决事项清单" in tpl
     assert "最近关键产物名" in tpl
@@ -111,7 +111,7 @@ def test_template_must_keep_semantics_snapshot():
     角色/场景/音色设定要点行）与四段式交接结构，改动需同批更新本快照。"""
     from src.video_agent.utils.prompts import load_prompt_section
 
-    tpl = load_prompt_section("planner/session_compact.md", "TEMPLATE")
+    tpl = load_prompt_section("planner/compaction.md", "TEMPLATE")
     # handoff 四段式结构
     assert "目标与现状" in tpl
     assert "已定约束" in tpl

@@ -19,8 +19,8 @@ from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple, U
 
 from loguru import logger
 
-from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
-from src.video_agent.adapters.cancel_token import GenerationCancelled
+from src.video_agent.core.chat_port import ChatAdapterPort, ChatResponse
+from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.config import settings
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
@@ -37,7 +37,7 @@ from src.video_agent.core.prompt_builder import PromptBuilder
 # 动作执行器与操作描述已下沉 core；顶层导入替代旧 web 延迟导入
 from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.core.action_descriptions import aggregate_action_log
-from src.video_agent.core.ports import skill_docs_port
+from src.video_agent.core.ports import canvas_online_cached, skill_docs_port
 # 轮末组装域切入 planner_output
 from src.video_agent.core.planner_output import append_costly_retry_action, assemble_response
 # 阶段表/探针/闸预检纯数据层（导入期同时落地
@@ -47,7 +47,7 @@ from src.video_agent.core import prompt_gates
 from src.video_agent.core import fc_response, planner_gate_session, planner_triage
 # 单轮执行协作臂：单轮执行 + FC 响应消费 + 回喂治理 + 上下文预算装配
 from src.video_agent.core.turn_executor import TurnExecutor
-from src.video_agent.core.live_metrics import record_degradation
+from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # Workflow Runtime：账本 + 裁判数据层
@@ -130,9 +130,13 @@ class PlannerContext:
     stage_excluded_tools: frozenset = frozenset()
     stage_note: str = ""
     # 微调作用域（微调真子对话）：非空 ⇔ 本请求归属隐藏线程子对话，
-    # 纪律提示段（prompts/planner/adjust_discipline.md）据此注入；
+    # 纪律提示段（prompts/planner/adjust.md）据此注入；
     # 内容恒定不嵌目标编号（保前缀缓存），目标信息由状态裁剪面携带。
     adjust_scope: Dict[str, Any] = field(default_factory=dict)
+    # turn_budget 客观步数（P3 状态即数据）：(current_step, max_steps)
+    # 由 turn_executor 每步更新，经状态尾部消息注入给模型；
+    # None = 不注入（首轮/非循环路径）。
+    step_info: Optional[tuple] = None
 
 
 @dataclass
@@ -189,7 +193,7 @@ class Planner:
         self,
         state_manager: Optional[StateManager] = None,
         tool_manager: Optional[type] = None,   # ToolManager 是类级别注册，传类引用
-        llm_adapter: Optional[BaseChatAdapter] = None,
+        llm_adapter: Optional[ChatAdapterPort] = None,
         executor_factory: Optional[Callable[..., Any]] = None,
         skill_docs: Optional[Any] = None,
         chat_provider: str = "",
@@ -250,7 +254,7 @@ class Planner:
             excluded |= _CANVAS_TOOLS
         else:
             # 已探测过且离线才裁剪；从未探测（None）保持现状
-            from src.video_agent.adapters.canvas_adapter import canvas_online_cached
+            # 依赖倒置：经 core.ports.canvas_online_cached 端口读取（core 不 import adapters）
             if canvas_online_cached() is False:
                 excluded |= _CANVAS_TOOLS
         # 混合形态第一层：阶段探测驱动的工具裁剪（仅 Skill 激活 + strict），
@@ -644,7 +648,7 @@ class Planner:
 
     def _build_system_prompt(self, context: PlannerContext) -> str:
         """构建 system prompt（委托 PromptBuilder；段落顺序为前缀缓存优化）。
-        协议单轨：统一注入 system_fc.md。"""
+        协议单轨：统一注入 protocol.md。"""
         return self._prompt_builder.build_system_prompt(context)
 
     # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------

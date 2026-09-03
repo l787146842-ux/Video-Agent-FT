@@ -3,7 +3,9 @@
 
 钉死语义：
 - A 档（默认/小状态）：全量注入，零行为变化；
-- B 档（超 state_context_budget_chars）：组级正文截断 + 指针 note，句柄保留；
+- B 档（超 state_context_budget_chars）：组级正文截断 + compacted 客观标志位，句柄保留
+ （P3 载体改造：截断引导语不再嵌状态 JSON 的 note 字段，改由 prompt_builder
+  状态尾部按标志位从 shared/degradation.md::STATE_COMPACTED 独立成段注入）；
 - 预算 0 = 永远 A 档（回滚开关）；
 - 分阶段注入：非焦点类别降为组级摘要（stageNote 指针），未知/空阶段不裁剪；
 - 同状态两次构建字节一致（前缀纪律）；
@@ -62,13 +64,15 @@ def test_a_tier_small_state_full(svc):
 
 
 def test_b_tier_over_budget_truncates_with_pointer(svc):
-    """超预算 = B 档：正文截断 + 指针 note，句柄（id/编号/标题）保留。"""
+    """超预算 = B 档：正文截断 + compacted 客观标志位，句柄（id/编号/标题）保留。"""
     _seed_big_state(svc)
     parsed = json.loads(build_agent_context(svc.state_dict, "bound"))
     shot = parsed[CAT_SHOTS][0]
     assert shot["roughDesc"].endswith("…")
     assert len(shot["roughDesc"]) <= settings.state_group_body_chars + 1
-    assert parsed["note"].count("read_state_group") >= 1
+    # P3 状态即数据：数据体只留客观标志位，引导 prose 不嵌 note 字段
+    assert parsed["compacted"] is True
+    assert "note" not in parsed
     # 句柄保留
     assert shot["id"] == "sh0" and shot["index"] == 1 and shot["title"] == "分镜0"
     # 体积确实小于 A 档
@@ -79,7 +83,7 @@ def test_b_tier_over_budget_truncates_with_pointer(svc):
     object.__setattr__(settings, "state_context_budget_chars", 0)
     try:
         a_parsed = json.loads(build_agent_context(svc.state_dict, "bound"))
-        assert "note" not in a_parsed
+        assert "compacted" not in a_parsed
         assert len(json.dumps(a_parsed, ensure_ascii=False)) > full_len
     finally:
         object.__setattr__(settings, "state_context_budget_chars", 20000)
@@ -91,7 +95,7 @@ def test_budget_zero_always_a(svc):
     object.__setattr__(settings, "state_context_budget_chars", 0)
     try:
         parsed = json.loads(build_agent_context(svc.state_dict, "bound"))
-        assert "note" not in parsed
+        assert "compacted" not in parsed
         assert not parsed[CAT_SHOTS][0]["roughDesc"].endswith("…")
     finally:
         object.__setattr__(settings, "state_context_budget_chars", 20000)

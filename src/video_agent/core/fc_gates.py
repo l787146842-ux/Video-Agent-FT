@@ -31,6 +31,12 @@ from src.video_agent.state.models import (
     CAT_KEY_ELEMENTS,
     CAT_SHOTS,
 )
+from src.video_agent.utils.prompts import load_prompt_section, render_prompt_section
+
+# 闸机裁决宣告文案外置 prompts/gates/messages.md（单一事实源，
+# 分节登记 gate_registry.GATE_MESSAGE_SECTIONS）；代码不内联逐字兜底，
+# 分节缺失时仅 logger.warning + 最小功能性占位（M-2 同口径）。
+_GATE_MSG_FILE = "gates/messages.md"
 
 # §2.7 确认闸豁免集：被 gen_confirm 闸专属覆盖的工具（不双闸）。
 # 仅覆盖 image_generate 批量轨（有目标草稿可校验）；mode='single'
@@ -358,10 +364,14 @@ def prompt_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optional[s
     ctx.gate_repeat[sig] = n
     text = outcome.reject_message
     if n > 1:
-        text += (
-            f"\n[连续第 {n} 次因相同原因被拦截] 上一次重写未修正上述问题，"
-            "请逐条对照原因彻底改写（不是换措辞：中文占比/字数/镜头语言标记必须实质达标），禁止再次提交相似文本。"
-        )
+        escalation = render_prompt_section(
+            _GATE_MSG_FILE, "PROMPT_REPEAT_ESCALATION", n=n)
+        if not escalation:
+            logger.warning(
+                f"[fc_gates] prompts/{_GATE_MSG_FILE}::PROMPT_REPEAT_ESCALATION "
+                "分节缺失，使用最小占位")
+            escalation = f"[连续第 {n} 次因相同原因被拦截]"
+        text += "\n" + escalation
     return text
 
 
@@ -392,16 +402,18 @@ def run_gate_chain(
             if pg_err:
                 err = pg_err
     # 单张应急轨（mode='single'）每批最多一次（prose 下沉工具层）。
-    # 需要多张时模型改用批量轨（mode='batch'，见 system_fc.md）
+    # 需要多张时模型改用批量轨（mode='batch'，见 protocol.md）
     if (
         err is None and name == "image_generate"
         and str(args.get("mode") or "batch").strip().lower() == "single"
     ):
         ctx.gen_image_calls += 1
         if ctx.gen_image_calls > 1:
-            err = (
-                "image_generate（mode='single'）每轮只调用一次；"
-                "需要多张图片时改用批量模式（mode='batch'，明确 target 范围）。"
-            )
+            err = load_prompt_section(_GATE_MSG_FILE, "SINGLE_IMAGE_QUOTA_BLOCKED")
+            if not err:
+                logger.warning(
+                    f"[fc_gates] prompts/{_GATE_MSG_FILE}::SINGLE_IMAGE_QUOTA_BLOCKED "
+                    "分节缺失，使用最小占位")
+                err = "image_generate（mode='single'）每轮只调用一次。"
     res.error = err
     return res

@@ -35,3 +35,18 @@
 
 ## PAUSE_SLOT_ASSERTION
 单一活跃暂停槽位冲突告警：已有未消费的暂停卡时再次发行 workflow_pause，旧卡作废 + trace 留痕（pause_slot_collision）+ 发行新卡 + 继续等待人工确认，不拒收。防御断言只告警留痕，不作拒因回喂；暂停三态以新卡为准事务写入，绝不未经确认自动继续。
+
+## PROMPT_REPEAT_ESCALATION
+[连续第 {{n}} 次因相同原因被拦截] 上一次重写未修正上述问题，请逐条对照原因彻底改写（不是换措辞：中文占比/字数/镜头语言标记必须实质达标），禁止再次提交相似文本。
+
+## SINGLE_IMAGE_QUOTA_BLOCKED
+image_generate（mode='single'）每轮只调用一次；需要多张图片时改用批量模式（mode='batch'，明确 target 范围）。
+
+## DRAFTS_REVIEW_PAUSED
+{
+  "message": "提示词草案已写入，请在左侧故事板审阅草案内容；确认后我将按全局设置中的生成渠道触发生成。",
+  "options": [
+    {"label": "确认提示词草案，按当前 Skill 流程推进", "description": "将目标草稿标记为已确认，按当前 Skill 流程推进"},
+    {"label": "先调整提示词", "description": "告诉我需要修改的草稿与修改意见"}
+  ]
+}

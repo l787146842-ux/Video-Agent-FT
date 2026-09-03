@@ -12,7 +12,9 @@ from typing import Any, Dict, List, Tuple
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core import live_metrics, model_policy
+from src.video_agent.utils import live_metrics
+from src.video_agent.core import model_policy
+from src.video_agent.core import workflow_runtime
 from src.video_agent.core.token_budget import (
     context_window_for_model,
     estimate_messages_tokens,
@@ -58,17 +60,7 @@ def _set_summary_active(svc, active: bool) -> None:
     try:
         if svc is None:
             return
-        interaction = svc.state_dict.setdefault("interaction", {})
-        cached = interaction.get("session_summary")
-        if not isinstance(cached, dict):
-            if not active:
-                return
-            cached = {}
-            interaction["session_summary"] = cached
-        if bool(cached.get("active")) == bool(active):
-            return
-        cached["active"] = bool(active)
-        svc.save_debounced()
+        workflow_runtime.reduce_session_summary(svc, active=active)
     except Exception as _e:
         logger.debug("[ChatService] summary active 标记设置失败（忽略）: {}", _e)
 
@@ -246,7 +238,7 @@ async def _maybe_compact_history(
         summary = str(cached["text"])
     else:
         dialog = _sample_older_dialog(older)
-        tpl = load_prompt_section("planner/session_compact.md", "TEMPLATE")
+        tpl = load_prompt_section("planner/compaction.md", "TEMPLATE")
         prompt = tpl.replace("{{dialog}}", dialog) if tpl else (
             "请把以下对话压缩为不超过 300 字的摘要，保留决策与约束：\n" + dialog)
         try:
@@ -268,8 +260,7 @@ async def _maybe_compact_history(
         if not summary:
             _set_summary_active(svc, False)
             return history
-        interaction["session_summary"] = {"fp": fp, "text": summary[:1000]}
-        svc.save_debounced()
+        workflow_runtime.reduce_session_summary(svc, fp=fp, text=summary[:1000])
         logger.info(
             f"[ChatService] 会话 compaction（{'token' if over_tokens else '条数'}触发）："
             f"{len(history)} 条 history 压缩为摘要+{keep} 条（采样较早 {len(older)} 条）")

@@ -194,3 +194,32 @@ def test_degrade_state_tail_noop_without_degraded_builder(svc):
     ]
     out = executor._degrade_state_tail(msgs, max_tokens=1, state_tail=tail)
     assert out[-1]["content"] == tail
+
+
+# ---------- P3 载体改造：降级引导段按客观标志位独立成段注入 ----------
+
+def test_degradation_note_injected_by_flag(svc):
+    """状态 JSON 只留 degraded/compacted 客观标志位（note 字段已废除），
+    引导语从 shared/degradation.md 同源加载、随状态尾部独立成段真注入
+    （杠杀孤儿分节）；无标志位零增量，system 段不参与（保 KV-cache 前缀）。"""
+    from src.video_agent.utils.prompts import load_prompt_section
+
+    planner, _ = _executor(svc)
+    deg_sec = load_prompt_section("shared/degradation.md", "STATE_DEGRADED")
+    ctx = PlannerContext(use_studio_context=True, state_json='{"degraded": true}')
+    tail = planner._prompt_builder.build_state_tail_message(ctx)
+    assert deg_sec and deg_sec in tail
+    assert tail.index('{"degraded": true}') < tail.index(deg_sec), "引导段应紧随状态数据体"
+
+    comp_sec = load_prompt_section("shared/degradation.md", "STATE_COMPACTED")
+    ctx2 = PlannerContext(use_studio_context=True, state_json='{"compacted": true}')
+    tail2 = planner._prompt_builder.build_state_tail_message(ctx2)
+    assert comp_sec and comp_sec in tail2
+
+    # 无标志位：零增量（不注入任何降级引导段）
+    ctx3 = PlannerContext(use_studio_context=True, state_json='{"plain": true}')
+    tail3 = planner._prompt_builder.build_state_tail_message(ctx3)
+    assert deg_sec not in tail3 and comp_sec not in tail3
+
+    # system 段保持不变（引导段只走尾部消息通道）
+    assert deg_sec not in planner._build_system_prompt(ctx)

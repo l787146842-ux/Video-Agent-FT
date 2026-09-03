@@ -371,7 +371,7 @@ def _apply_stage_profile(
 
 
 def _compact_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
-    """B 档压缩（原地）：组级正文截断 + 资产 URL 收窄 + 指针 note。
+    """B 档压缩（原地）：组级正文截断 + 资产 URL 收窄 + compacted 客观标志位。
     句柄保留：id/编号/标题/字数不丢，全文经 read_state_group/read_draft 读回。"""
     body_chars = max(0, int(settings.state_group_body_chars))
 
@@ -390,10 +390,9 @@ def _compact_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     for a in snapshot.get("assets") or []:
         if isinstance(a, dict):
             a["url"] = (str(a.get("url") or ""))[:80]
-    snapshot["note"] = (
-        "状态正文已截断（超注入预算）：分组全文调 read_state_group、"
-        "草稿提示词全文调 read_draft 按需读回"
-    )
+    # P3 状态即数据：数据体只留客观标志位；截断引导语外置
+    # shared/degradation.md::STATE_COMPACTED，由 prompt_builder 状态尾部独立成段注入
+    snapshot["compacted"] = True
     return snapshot
 
 
@@ -446,6 +445,35 @@ def build_full_snapshot(raw_state: Dict[str, Any], board_version: int) -> Dict[s
     return snap
 
 
+# done/actions_applied SSE 帧的精简投影键集（类别键走 CAT_* 常量，
+# 禁裸字面量——check_category_keys 门禁）。前端消费者（只读调研核实）：
+#   - studio.syncFromServer：9 板键 + board_version（免刷新应用画布/项目态）
+#   - 任务式传输 replay 恢复：chatMessages（loadMessages 重建历史气泡）
+# 不含 conversations（活跃消息由 chatMessages 携带；切会话走按会话拉消息接口）
+_BOARD_PROJECTION_KEYS = (
+    "project_id", "project_name",
+    CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS,
+    "assets", "documents", "usedSkills", "activeSkill", "chatMessages",
+)
+
+
+def build_board_projection(raw_state: Dict[str, Any], board_version: int) -> Dict[str, Any]:
+    """SSE done/actions_applied 的精简状态投影（替代全量 get_full_snapshot）。
+
+    只投影前端免刷新消费者实际读取的键（9 板键 + chatMessages）外加乐观
+    并发版本号 board_version；相比全量快照剔除 conversations/messages、analysis、
+    interaction、uploadedDocs 等不被 done 帧消费的重量级键，降低序列化与传输
+    开销。返回深拷贝（json round-trip），调用方可任意使用不回写污染内部状态。
+    """
+    proj = json.loads(json.dumps(
+        {k: raw_state[k] for k in _BOARD_PROJECTION_KEYS if k in raw_state},
+        ensure_ascii=False,
+    ))
+    # 乐观锁版本号随投影下发（不写入状态 JSON 本体，避免污染 undo/快照）
+    proj["board_version"] = board_version
+    return proj
+
+
 def build_frontend_view(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     """前端使用的 camelCase JSON 视图（Pydantic 校验后序列化；
     校验失败降级为 raw dict 直出）。"""
@@ -458,7 +486,8 @@ def build_frontend_view(raw_state: Dict[str, Any]) -> Dict[str, Any]:
 
 def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     """降级快照：只保留组标题/编号/草稿计数（预算保险丝的第二道防线）。
-    模型看到后可调 read_draft / read_project_doc 按需取细节。"""
+    P3 状态即数据：数据体只留 degraded 客观标志位；降级引导语外置
+    shared/degradation.md::STATE_DEGRADED，由 prompt_builder 状态尾部独立成段注入。"""
 
     def _groups(cat_key: str) -> list:
         return [
@@ -473,7 +502,6 @@ def _build_degraded_snapshot(raw_state: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "degraded": True,
-        "note": "状态已降级：草稿细节未注入，请用 read_draft/read_project_doc 按需读取",
         CAT_KEY_ELEMENTS: _groups(CAT_KEY_ELEMENTS),
         CAT_SHOTS: _groups(CAT_SHOTS),
         CAT_AUDIO_ITEMS: _groups(CAT_AUDIO_ITEMS),

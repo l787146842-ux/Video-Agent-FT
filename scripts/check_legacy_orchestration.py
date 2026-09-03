@@ -11,7 +11,7 @@
 - dag.py 正则通道（parse_steps 等）/ parse_skill_manifest 文档通道
 - 五轮 S4 兼容壳：planner 委托方法组 / _split_actions、save_state 别名（P2d 结构性测试减负承接）
 - 已迁 prose 防复述：暂停邀请确认（暂停纪律单家）/ 同批发出（暂停时机建议归 Skill）
-- 文本协议残留：planner/system.md 字面量（P2e 单轨收敛，协议唯一 = system_fc.md；
+- 文本协议残留：planner/system.md 字面量（P2e 单轨收敛，协议唯一 = protocol.md；
   决策史见 git tag adr-archive-20260901）
 - 主体回归：runtime 机械直跑/审批直跑驱动符号（模型永远唯一行动主体）
 - 任务#36 B5 执行器一步退役：executors/exec_* 执行器族模块导入
@@ -60,7 +60,7 @@ FORBIDDEN = re.compile(
     r"|_split_actions = split_actions|save_state = save"
     r"|暂停邀请确认|同批发出"
     # P2e 单轨收敛：文本协议 system.md 已退役删除，
-    # 字面量防复活（协议唯一 = planner/system_fc.md；不命中 system_fc.md）
+    # 字面量防复活（协议唯一 = planner/protocol.md；不命中 protocol.md）
     r"|planner/system\.md"
     # 任务#36 B5 执行器一步退役：执行器族符号防复活（用 import/模块路径
     # 形式扫描，不命中退役留痕注释；管线阶段改由通用主路径直走平台工具）
@@ -89,6 +89,40 @@ FORBIDDEN = re.compile(
     r"|XIONG_BU_TO_INFINITE_CANVAS_NODE_TYPE|XIONG_BU_NODE_TYPE_TO_CANONICAL"
     r"|CANONICAL_TO_XIONG_BU_NODE_TYPE"
     r"|/api/online-image\b"
+    # 2026-09-03 I-1 死规则收敛（用户裁决 Q2）：轮末策略 gate_heal 退役
+    # （文本轨退役后 gate_rejections 恒空、total_exec 恒 0，生产路径永不可达；
+    # FC 轨闸机拦截已由 fc_gates reject_message 回喂闭环）；
+    # recovery_policy FAILURE_GATE/ACTION_STRUCTURED_REPORT 同批退役
+    # （循环层无真实输入源）；structure_stage_review 死副本退役
+    # （活实现唯一 = fc_reconcile._reconcile_stage_review_card）
+    r"|_cond_gate_heal|_apply_gate_heal|\bgate_heal\b"
+    r"|FAILURE_GATE|ACTION_STRUCTURED_REPORT"
+    r"|_cond_structure_stage_review|_apply_structure_stage_review"
+    r"|_structure_kinds_created|_storyboard_empty_before"
+    # 2026-09-03 I-2 旁路面拆除（用户裁决 Q1 批准关卡改动）：web/generation_dispatch
+    # 的 call_chat_completion / call_chat_completion_stream 直接构造
+    # OpenAICompatChatAdapter 调 LLM，绕过 Planner/闸机/StateManager（违 Rule 1
+    # Planner 唯一入口），已删除；符号字面防复活（plain substring 同时命中
+    # _stream 版）。正当工具性 LLM 调用（如 history_compact 会话压缩摘要，
+    # 非智能体决策入口）不在本清单。
+    r"|call_chat_completion"
+    # 2026-09-03 M-4 只读并行提速退役（用户裁决路 B 做减法）：
+    # core/readonly_parallel.py 以「risk=low」误判「能否安全并行」（low
+    # 只读工具可能有隐藏副作用，如 canvas_read_nodes 触发 invalidate_state_cache
+    # 递增 _state_cache_generation），并行存竞态敞口；模块与 config 开关
+    # readonly_parallel_enabled（env READONLY_PARALLEL_ENABLED）已删，批内工具
+    # 一律串行执行（串行成为唯一路径）；段识别/窗口调度/回填符号字面防复活。
+    r"|readonly_parallel|READONLY_PARALLEL_ENABLED"
+    r"|\bplan_batch\b|\brun_window\b|\bfind_readonly_windows\b|\bPreExecuted\b"
+    # 2026-09-03 I-1 轮末工具失败汇总策略退役（用户裁决 Q2，同闸机自愈口径）：
+    # 生产唯一构造点（agent_loop 纯文本收尾分支）ledger 恒 None、FC 批轮
+    # 永不到轮末，恒不可达（换汤不换药：上批改消费 ledger 仍不可达）；
+    # 工具部分失败已由 FC 轨 fc_feedback.compose_failure_feedback 逐步回喂承接，
+    # 退役不改变可观测行为（substring 形态同时命中策略 id 与 _cond_/_apply_ 实现体）。
+    r"|partial_fail_warnings"
+    # 2026-09-03 M-1 已删的 normalize_rule_id 补防复活锁（与同批 gate_heal/
+    # readonly_parallel/call_chat_completion「删除即加 FORBIDDEN」范式一致）。
+    r"|normalize_rule_id"
 )
 
 # 任务#12 批次B：L2 注入路径拆除（渐进式披露）——全文直注/分级注入/组合注入

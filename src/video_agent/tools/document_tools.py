@@ -9,12 +9,17 @@ from pydantic import BaseModel, Field
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.adapters.cancel_token import GenerationCancelled
+from src.video_agent.utils.cancel_token import GenerationCancelled
 from src.video_agent.adapters.factory import AdapterFactory, wait_until_complete
 from src.video_agent.core import ports, prompt_gates
 from src.video_agent.core.spec_rules import IRON_RULES_HEADING, ensure_iron_rules_doc
 from src.video_agent.skill_runtime import registry
-from src.video_agent.tools.base import BaseTool, StrictToolInput, ToolResult
+from src.video_agent.tools.base import (
+    BaseTool,
+    ProviderInjectionContext,
+    StrictToolInput,
+    ToolResult,
+)
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
 from src.video_agent.state.manager import StateManager
 from src.video_agent.exceptions import GenerationError
@@ -268,7 +273,7 @@ def _slice_content(content: str, start: int) -> tuple:
 
 def _skill_source_note(skill_name: str) -> str:
     """外部来源标记（Skill 是指令性制作手册，决策史见 git tag adr-archive-20260901）：仅外部/社区来源附中性来源短句，
-    文案同源外置 shared/skill_source.md（不内联）；平台来源干净返回。"""
+    文案同源外置 shared/skill_inject.md（不内联）；平台来源干净返回。"""
     try:
         source = (registry.skill_manifest_of(skill_name) or {}).get("source")
     except Exception:
@@ -278,7 +283,7 @@ def _skill_source_note(skill_name: str) -> str:
     if source.strip().lower() == "platform":
         return ""
     return render_prompt_section(
-        "shared/skill_source.md", "READ_NOTE", source=source.strip())
+        "shared/skill_inject.md", "READ_NOTE", source=source.strip())
 
 
 class ReadSkillTool(BaseTool):
@@ -310,13 +315,13 @@ class ReadSkillTool(BaseTool):
             if entry is not None and str(entry.content or "").strip():
                 matched, content = entry.name, entry.content
         if not content:
-            # 拒载文案外置 shared/skill_load_reject.md（M3 批2）：三类语义区分——
+            # 拒载文案外置 planner/skill_runtime.md（M3 批2）：三类语义区分——
             # 已停用（仅真停用才报，在册启用项不误报）/ 未注册被拒 / 未找到；
             # 外置文案空串时内置短句兜底，不降级空 error（文案兜底）
             _reg = registry.resolve_entry(wanted)
             if _reg is not None and _reg.slug in registry.disabled_slugs():
                 return ToolResult(success=False, error=render_prompt_section(
-                    "shared/skill_load_reject.md", "DISABLED", name=wanted)
+                    "planner/skill_runtime.md", "DISABLED", name=wanted)
                     or f"Skill「{wanted}」已停用，不可读取（停用=真停用）")
             # 磁盘存在同名包但未注册/被拒注册（坏 frontmatter 等）：发现→注册→
             # 加载，未过注册不得加载；工作台 /api/skills/docs 仍可见供修复
@@ -326,11 +331,11 @@ class ReadSkillTool(BaseTool):
                 disk_docs = []
             if _fuzzy_pick(disk_docs, wanted, ["name", "slug"]) is not None:
                 return ToolResult(success=False, error=render_prompt_section(
-                    "shared/skill_load_reject.md", "UNREGISTERED", name=wanted)
+                    "planner/skill_runtime.md", "UNREGISTERED", name=wanted)
                     or f"Skill「{wanted}」未通过注册，不可加载（请到 Skill 工作台修复）")
             available = [e.name for e in registry.loadable_entries()]
             return ToolResult(success=False, error=render_prompt_section(
-                "shared/skill_load_reject.md", "NOT_FOUND",
+                "planner/skill_runtime.md", "NOT_FOUND",
                 name=wanted, available="、".join(available) or "无")
                 or f"未找到 Skill「{wanted}」")
         # read_skill 直接输出正文，不加任何前置包壳，
@@ -554,6 +559,7 @@ class ImageGenerateTool(BaseTool):
     risk = "high"  # §2.7：生成类（外部副作用/花钱），经生成确认闸覆盖；确认档由 risk 单轴推导（F1）
     costly = True  # 批 B 花钱生成声明轴：执行偏好三档可放宽其确认闸（留痕）
     detail_tier = "expand"  # 产出类
+    provider_kind = "image"  # I-3 裁决 2026-09-03：provider 注入声明轴（single/batch 形态在 apply_provider_defaults 内消化）
     description = (
         "生图统一工具（危险操作）。mode='batch'（默认）：工作台批量出图，面向故事板草稿，"
         "仅当用户明确要求'生成/出图/执行'时才可调用，执行前会弹确认卡，"
@@ -563,6 +569,37 @@ class ImageGenerateTool(BaseTool):
 
     def get_input_schema(self) -> Type[BaseModel]:
         return GenerateImageInput
+
+    def apply_provider_defaults(self, args: Dict[str, Any], ctx: ProviderInjectionContext) -> None:
+        """I-3：single/batch 双分支 provider 注入下沉到工具自身（调度器不感知形态）。
+
+        优先级 = 草稿自身（中间面板直接选择，ctx.image_provider）> 全局设置
+        （spec_media_preference）；single 补 adapter_provider/aspect_ratio，batch 补
+        provider_id/model，防传空导致「供应商 '' 未配置」。经 provider_config 端口
+        访问声明（依赖倒置，与 _execute_batch 同口径，保 monkeypatch 可见）。"""
+        single = str(args.get("mode") or "batch").strip().lower() == "single"
+        if single:
+            if not str(args.get("adapter_provider") or "").strip():
+                _sp, _sm = ports.provider_config_port().spec_media_preference(ctx.state)
+                if ctx.image_provider:
+                    args["adapter_provider"] = ctx.image_provider
+                    logger.info("[image_generate] single provider 注入（草稿选择）: {}", ctx.image_provider)
+                elif _sp:
+                    args["adapter_provider"] = _sp
+                    logger.info("[image_generate] single provider 注入（全局设置）: {}", _sp)
+            if ctx.image_aspect_ratio and not args.get("aspect_ratio"):
+                args["aspect_ratio"] = ctx.image_aspect_ratio
+                logger.info("[image_generate] single 画幅注入（草稿选择）: {}", ctx.image_aspect_ratio)
+        elif not str(args.get("provider_id") or "").strip():
+            spec_pid, spec_model = ports.provider_config_port().spec_media_preference(ctx.state)
+            if ctx.image_provider:
+                args["provider_id"] = ctx.image_provider
+                logger.info("[image_generate] batch provider 注入（草稿选择）: {}", ctx.image_provider)
+            elif spec_pid:
+                args["provider_id"] = spec_pid
+                if spec_model and not str(args.get("model") or "").strip():
+                    args["model"] = spec_model
+                logger.info("[image_generate] batch provider 注入（全局设置）: {}/{}", spec_pid, spec_model)
 
     async def aexecute(self, params: GenerateImageInput) -> ToolResult:
         mode = str(params.mode or "batch").strip().lower()

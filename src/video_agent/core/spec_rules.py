@@ -40,7 +40,7 @@ _NO_BLOCK_RE = re.compile(r"；\s*系统不得拦截用户要求的操作，\s*�
 # 唯一表述——存量项目铁律里的默认第 4/5 条升级迁移时剥离（保留用户自加的第 6+ 条）
 _IRON_CLAUSE_45_RE = re.compile(
     r"(?m)^[ \t]*4\.[ \t]*提示词质量：[\s\S]*?^[ \t]*5\.[ \t]*产出形态：[\s\S]*?(?=^[ \t]*\d+\.[ \t]|\Z)")
-# 模型可见表述归 prompts/shared/output_discipline.md，
+# 模型可见表述归 prompts/planner/protocol.md 回复输出纪律，
 # 铁律第 3 条收敛为「回复纪律见平台协议」指针；存量文档同口径升级
 _IRON_CLAUSE_3_RE = re.compile(
     r"(?m)^[ \t]*3\.[ \t]*回复精简[：:]?[\s\S]*?(?=^[ \t]*\d+\.[ \t]|\Z)")

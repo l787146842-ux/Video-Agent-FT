@@ -4,8 +4,8 @@ Prompt 加载器 — 从 prompts/ 目录读取 Markdown 模板（Rule4: Prompt �
 用法：
     from src.video_agent.utils.prompts import load_prompt, render_prompt
 
-    system = load_prompt("planner/system_fc.md")
-    rendered = render_prompt("planner/system_fc.md", max_steps=12)
+    system = load_prompt("planner/protocol.md")
+    rendered = render_prompt("shared/global_settings.md", max_shot_duration=5)
 """
 import re
 from pathlib import Path
@@ -23,19 +23,19 @@ def load_prompt(relative_path: str, use_cache: bool = True, lang: str = "") -> s
     """加载 prompts/ 下的 Markdown 文件原文。
 
     Args:
-        relative_path: 相对于 prompts/ 的路径，如 "planner/system_fc.md"
+        relative_path: 相对于 prompts/ 的路径，如 "planner/protocol.md"
         use_cache: 是否使用内存缓存（默认 True）
         lang: 语言后缀（如 "en"），优先加载 {name}_{lang}.md，不存在时 fallback 到 {name}.md
 
     Returns:
         文件文本内容；文件不存在时返回空字符串并记录警告。
     """
-    # 如果指定了 lang，尝试加载本地化版本（如 "planner/system_fc" → "planner/system_fc_en.md"；
+    # 如果指定了 lang，尝试加载本地化版本（如 "planner/protocol" → "planner/protocol_en.md"；
     # 该机制为能力保留，当前无调用方——新增本地化时启用）
     if lang:
-        stem = relative_path.rsplit(".", 1)[0]  # "planner/system_fc"
+        stem = relative_path.rsplit(".", 1)[0]  # "planner/protocol"
         ext = relative_path.rsplit(".", 1)[1] if "." in relative_path else "md"
-        localized_path = f"{stem}_{lang}.{ext}"  # "planner/system_fc_en.md"
+        localized_path = f"{stem}_{lang}.{ext}"  # "planner/protocol_en.md"
         localized_fpath = PROMPTS_DIR / localized_path
         if localized_fpath.exists():
             return _load_file(localized_path, use_cache)

@@ -31,10 +31,13 @@ class TestPipelineDetailVisibility:
 
 class TestLanguageContract:
     def test_language_template_exists_with_rule(self):
-        lang = (ROOT / "prompts" / "shared" / "language.md").read_text(encoding="utf-8")
+        # 语言规则单家已随提示词重组内联进 protocol.md（shared/language.md 退役）
+        lang = (ROOT / "prompts" / "planner" / "protocol.md").read_text(encoding="utf-8")
         assert "跟随用户" in lang or "用户最新一条消息的语言" in lang
 
-    def test_planner_templates_include_language(self):
-        # P2e 单轨收敛：协议模板唯一 = system_fc.md（文本协议 system.md 已退役）
-        text = (ROOT / "prompts" / "planner" / "system_fc.md").read_text(encoding="utf-8")
-        assert "shared/language.md" in text, "system_fc.md 未 include 语言规则（P3 单一事实源）"
+    def test_planner_protocol_carries_language(self):
+        # P2e 单轨收敛 + 提示词重组：协议唯一 = protocol.md；语言规则由
+        # 原 shared/language.md 的 {{include}} 展开内联进 protocol.md（单一事实源）。
+        text = (ROOT / "prompts" / "planner" / "protocol.md").read_text(encoding="utf-8")
+        assert "== 语言规则 ==" in text, "protocol.md 未承载语言规则段（P3 单一事实源）"
+        assert "跟随用户最新一条消息的语言" in text

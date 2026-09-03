@@ -2,7 +2,7 @@
 """循环内语义压缩（第 5 批，Q6/Q7 裁决 2026-09-01）。
 
 truncate_messages 的轮组截断是有损删除；本模块在截断**之前**对最旧轮组
-做摘要替换（复用 planner/session_compact.md 模板，与入口层会话 compaction
+做摘要替换（复用 planner/compaction.md 模板，与入口层会话 compaction
 同模板同哲学）：丢正文留摘要+句柄，消灭有损截断的主触发源。
 
 触发与边界：
@@ -34,10 +34,15 @@ _MAX_DIALOG_CHARS = 8000
 _CACHE_MAX = 64
 _COMPACT_CACHE: Dict[str, str] = {}
 
-_SUMMARY_PREFIX = (
-    "（系统）早期轮次已压缩为摘要（原文不再占用上下文；关键句柄保留，"
-    "如需全文调对应 read_* 工具读回）："
-)
+# 摘要替换消息的前缀文案：外置 shared/degradation.md::ROUND_SUMMARY_PREFIX
+#（单一事实源）；模块加载期读取一次保前缀字节稳定，分节缺失时仅
+# logger.warning + 最小功能性占位（M-2 同口径，不内联逐字兜底）
+_SUMMARY_PREFIX = load_prompt_section("shared/degradation.md", "ROUND_SUMMARY_PREFIX")
+if not _SUMMARY_PREFIX:
+    logger.warning(
+        "[round_compact] prompts/shared/degradation.md::ROUND_SUMMARY_PREFIX "
+        "分节缺失，使用最小占位")
+    _SUMMARY_PREFIX = "（系统）早期轮次已压缩为摘要："
 
 
 def _record_event(kind: str, detail: str) -> None:
@@ -110,7 +115,7 @@ async def compact_oldest_round(
     fp = hashlib.md5(dialog.encode("utf-8")).hexdigest()
     summary = _COMPACT_CACHE.get(fp)
     if not summary:
-        tpl = load_prompt_section("planner/session_compact.md", "TEMPLATE")
+        tpl = load_prompt_section("planner/compaction.md", "TEMPLATE")
         prompt = tpl.replace("{{dialog}}", dialog) if tpl else (
             "请把以下对话压缩为不超过 300 字的摘要，保留决策与约束：\n" + dialog)
         try:

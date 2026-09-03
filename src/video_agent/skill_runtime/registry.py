@@ -26,7 +26,7 @@ from src.video_agent.skill_runtime.manifest_schema import (
 # stage_probes 阶段裁剪、prompt_gates 音频闸、skill_docs/scan_skills
 # Skill lint 作客观探针；平台不注册同名工具。
 # Skill 正文散文已全部清洗为真实工具名；本表为能力词唯一事实源，
-# prompts/planner/system_fc.md「Skill 文档能力词对照」段须同批同步
+# prompts/planner/protocol.md「Skill 文档能力词对照」段须同批同步
 #（漂移由 tests/unit/test_capability_word_alignment.py 拦截）。
 PIPELINE_CAPABILITY_TOOLS = (
     "script_analyze",

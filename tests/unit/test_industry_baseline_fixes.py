@@ -80,12 +80,12 @@ def test_skill_reminder_has_no_pause_pressure():
         assert phrase not in src
 
 
-def test_system_fc_no_anti_pause_sentence():
+def test_protocol_no_anti_pause_sentence():
     """协议模板反暂停句已删；暂停通道协议（怎么暂停）保留。
-    P2e 单轨收敛：断言对象从已退役的 system.md 迁到唯一协议 system_fc.md。"""
+    P2e 单轨收敛：断言对象从已退役的 system.md 迁到唯一协议 protocol.md。"""
     from src.video_agent.utils.paths import PROJECT_ROOT
 
-    txt = (PROJECT_ROOT / "prompts" / "planner" / "system_fc.md").read_text(encoding="utf-8")
+    txt = (PROJECT_ROOT / "prompts" / "planner" / "protocol.md").read_text(encoding="utf-8")
     assert "不要在每个阶段完成后都暂停" not in txt
     assert "用户已给出明确指令时不要使用" not in txt
     # 新基线（P2e 后）：暂停通道协议在 FC 协议中表述为

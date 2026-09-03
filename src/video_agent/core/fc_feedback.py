@@ -9,22 +9,42 @@ fc_tool_runner.py 与本模块消费方一律直连本模块（re-export 壳已�
 import re
 from typing import Any, Dict, List, Union
 
+from loguru import logger
+
 from src.video_agent.config import settings
 from src.video_agent.core.context_prune import prune_tool_feedback
 from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.utils.prompts import load_prompt_section
 
-# 回喂模板外置：prompts/planner/feedback.md 为单一事实源，代码留内置兜底
+# 回喂模板外置：prompts/planner/feedback.md 为单一事实源（M-2 同口径：
+# 代码不内联逐字兜底——那是双源漂移根因；分节缺失时仅 warning + 最小占位）
 _FEEDBACK_FILE = "planner/feedback.md"
 
+
+def _load_feedback_section(key: str, minimal: str) -> str:
+    """外置分节为唯一文案源：分节在场即原样返回（与
+    load_prompt_section 相等，供同源断言）；缺失时不内联逐字正式文案
+    （双源漂移根因），仅 logger.warning + 最小功能性占位。"""
+    text = load_prompt_section(_FEEDBACK_FILE, key)
+    if text:
+        return text
+    logger.warning(f"[fc_feedback] prompts/{_FEEDBACK_FILE}::{key} 分节缺失，使用最小占位")
+    return minimal
+
+
 # 回喂消息的识别前缀（与 format_tool_results 首行保持一致）
-FEEDBACK_MARKER = load_prompt_section(_FEEDBACK_FILE, "FEEDBACK_MARKER") or (
-    "（系统）本轮调用的工具已执行完毕，结果如下：")
+FEEDBACK_MARKER = _load_feedback_section("FEEDBACK_MARKER", "（系统）本轮工具执行结果：")
 # 旧轮回喂被压缩后的占位文案
-FEEDBACK_COMPRESSED = load_prompt_section(_FEEDBACK_FILE, "FEEDBACK_COMPRESSED") or (
-    "（系统）此前轮次工具读回的文档全文已从上下文移除以节约空间；"
-    "其中的流程与约束仍须遵守，如确需复核原文请重新调用对应 read_* 工具。"
-)
+FEEDBACK_COMPRESSED = _load_feedback_section(
+    "FEEDBACK_COMPRESSED", "（系统）旧轮工具回喂已压缩。")
+# 旧轮图片剥离后的占位说明（feedback.md::FEEDBACK_IMAGES_STRIPPED，
+# 与 FEEDBACK_COMPRESSED 对称：只陈述客观事实 + 可执行恢复路径）
+FEEDBACK_IMAGES_STRIPPED = _load_feedback_section(
+    "FEEDBACK_IMAGES_STRIPPED", "（系统）此前轮次加载的故事板图片已从上下文移除。")
+# read_* 全文超单次回喂总量上限时的客观数据行后缀
+#（feedback.md::READ_RESULT_BODY_OMITTED；只陈述事实，不嵌引导说教）
+READ_RESULT_BODY_OMITTED = _load_feedback_section(
+    "READ_RESULT_BODY_OMITTED", "执行成功（全文未附）")
 
 # read_* 系列：读回的全文必须完整回喂进上下文（渐进式披露的「借阅归还」）；
 # 其他写入类工具只回报成功与否，避免重复携带大 JSON 膨胀上下文
@@ -42,10 +62,21 @@ PROJECTED_STATE_TOOLS = frozenset({
     "storyboard_delete_group", "storyboard_confirm_draft", "document_write",
 })
 # 消化后的指针文案：保留工具名+成败摘要，指向状态 JSON 事实源
-DIGEST_POINTER = (
-    "{name}：执行成功（结果已写入工作台并投影进状态 JSON，"
-    "冗长详情回喂已省略；最新状态以工作台状态 JSON 为准）"
-)
+#（外置 feedback.md::DIGEST_POINTER；{name} 为 str.format 占位，非 {{var}} 模板）
+DIGEST_POINTER = _load_feedback_section(
+    "DIGEST_POINTER", "{name}：执行成功（详情已省略，最新状态以工作台状态 JSON 为准）")
+# 失败结构化回喂的建议语族（外置 feedback.md::FAILURE_HINT_*，
+# 分支判定在本模块 compose_failure_feedback，文案单一事实源在分节）
+FAILURE_HINT_REPEAT = _load_feedback_section(
+    "FAILURE_HINT_REPEAT", "该工具已连续失败 2 次，不得再次重试；可向用户说明原因。")
+FAILURE_HINT_VALIDATION = _load_feedback_section(
+    "FAILURE_HINT_VALIDATION", "入参/定位问题：修正入参后再试，不得用原参重试。")
+FAILURE_HINT_RETRYABLE = _load_feedback_section(
+    "FAILURE_HINT_RETRYABLE", "生产端标注该失败可重试：可重试一次。")
+FAILURE_HINT_NON_RETRYABLE = _load_feedback_section(
+    "FAILURE_HINT_NON_RETRYABLE", "该失败不宜原参盲重试：可向用户说明困难。")
+FAILURE_HINT_DEFAULT = _load_feedback_section(
+    "FAILURE_HINT_DEFAULT", "可调整参数后重试一次，或先向用户说明困难。")
 # 可消化行识别：回喂正文行「- 工具名：执行成功…」（与 format_tool_results 一致）
 _DIGEST_LINE_RE = re.compile(r"^- ([A-Za-z_][A-Za-z0-9_]*)：执行成功")
 
@@ -152,11 +183,7 @@ def strip_prior_feedback_images(messages: List[Dict[str, Any]]) -> None:
         if not any(isinstance(p, dict) and p.get("type") == "image_url" for p in content):
             continue
         kept = [p for p in content if not (isinstance(p, dict) and p.get("type") == "image_url")]
-        kept.append({
-            "type": "text",
-            "text": "（系统）此前轮次加载的故事板图片已从上下文移除以节约空间；"
-                     "如后续仍需看到它们，重新调用 view_storyboard_media 加载。",
-        })
+        kept.append({"type": "text", "text": FEEDBACK_IMAGES_STRIPPED})
         m["content"] = kept
 
 
@@ -226,13 +253,12 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
         # （start= 续读兜底）；只剪回喂副本，工具原始返回/state/产物文件不动
         body = prune_tool_feedback(name, body)
         if total + len(body) > FEEDBACK_MAX_TOTAL_CHARS:
-            lines.append(f"- {name}：执行成功（全文因总量超限未附，请勿重复读取，按已有信息继续）")
+            # P3 状态即数据：只陈述客观事实（全文未附及原因），不嵌引导说教
+            lines.append(f"- {name}：{READ_RESULT_BODY_OMITTED}")
             continue
         total += len(body)
-        lines.append(
-            f"- {name} 执行成功，以下是读回的全文（后续任务必须遵守其中流程与约束，"
-            f"不要重复调用同一工具）：\n{body}"
-        )
+        # P3 状态即数据 + 语气转化：数据体只留客观结果，READ_RESULT_NOTE 引导语已退役
+        lines.append(f"- {name} 执行成功，全文如下：\n{body}")
     if len(lines) <= 1:
         return ""
     text = "\n".join(lines)
@@ -241,14 +267,6 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
     return (
         [{"type": "text", "text": text}]
         + image_parts
-        + [{
-            "type": "text",
-            "text": (
-                "（系统）以上图片仅供当前正在处理的草稿使用；写完对应提示词后，"
-                "处理下一条草稿时请重新调用 view_storyboard_media 加载需要的图片，"
-                "不要凭记忆描述已不在上下文中的画面。"
-            ),
-        }]
     )
 
 
@@ -278,15 +296,15 @@ def compose_failure_feedback(
     kind = str(error_code or "") or classify_tool_failure(error_text)
     raw = str(error_text or "未知错误")[:120]
     if fail_count >= 2:
-        hint = "不得再次重试该工具，向用户说明原因并给出替代选择"
+        hint = FAILURE_HINT_REPEAT
     elif kind == "validation":
-        hint = "入参/定位问题：按错误信息修正入参后再试，不得用原参重试"
+        hint = FAILURE_HINT_VALIDATION
     elif retryable:
-        hint = "生产端标注该失败可重试：可用原参或调整参数重试一次"
+        hint = FAILURE_HINT_RETRYABLE
     elif kind in ("canvas", "other"):
-        hint = "该失败不宜原参盲重试，先向用户说明困难或换替代方案"
+        hint = FAILURE_HINT_NON_RETRYABLE
     else:
-        hint = "可调整参数后重试一次，或先向用户说明困难"
+        hint = FAILURE_HINT_DEFAULT
     return f"[{kind}] {raw} 建议：{hint}"
 
 

@@ -2,6 +2,7 @@
 
 > 消费方 = web/chat_retry_context.py（经 load_prompt_section 读取）；
 > 注入形态 = 重试请求的用户消息前置块（用户原消息原样保留在其后）。
+> 注入条件 = 上一轮相同指令执行中途中断、需带归档现场续跑时（重试请求）。
 
 ## RESUME_NOTE
 

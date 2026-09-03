@@ -72,16 +72,16 @@ class TestPromptLangLoading:
         """无 lang 参数时正常加载默认文件"""
         from src.video_agent.utils.prompts import load_prompt, clear_cache
         clear_cache()
-        content = load_prompt("planner/system_fc.md")
+        content = load_prompt("planner/protocol.md")
         assert len(content) > 0
 
     def test_load_prompt_with_nonexistent_lang_falls_back(self):
         """lang 对应的文件不存在时 fallback 到默认文件"""
         from src.video_agent.utils.prompts import load_prompt, clear_cache
         clear_cache()
-        # system_fc_xx.md 不存在，应 fallback 到 system_fc.md
-        content = load_prompt("planner/system_fc.md", lang="xx")
-        default_content = load_prompt("planner/system_fc.md")
+        # protocol_xx.md 不存在，应 fallback 到 protocol.md
+        content = load_prompt("planner/protocol.md", lang="xx")
+        default_content = load_prompt("planner/protocol.md")
         assert content == default_content
 
     def test_load_prompt_missing_file_returns_empty(self):

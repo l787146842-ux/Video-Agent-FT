@@ -1,8 +1,8 @@
 """814R1 钉死回归：提示词加载器（include/分节）+ 协议单轨接线 + 回喂模板外置。
 
-事故背景：8/12 回退丢失批次5「双协议瘦身/文案外置」接线——system_fc.md 与
-{{include}} 无人加载、feedback.md 分节无人读取、text_actions.md 永注入不了。
-本测试钉死恢复后的行为，防再次断线；P2e 后协议收敛为单一 system_fc.md。
+事故背景：8/12 回退丢失批次5「双协议瘦身/文案外置」接线——protocol.md 与
+分节无人读取、feedback.md 分节无人读取。
+本测试钉死恢复后的行为，防再次断线；P2e 后协议收敛为单一 protocol.md。
 """
 import pytest
 
@@ -11,6 +11,7 @@ from src.video_agent.core.planner import PlannerContext
 from src.video_agent.core.fc_feedback import (
     FEEDBACK_COMPRESSED,
     FEEDBACK_MARKER,
+    format_tool_results,
     should_compress_feedback,
 )
 from src.video_agent.utils import prompts as prompts_mod
@@ -38,15 +39,15 @@ def _make_builder():
 
 
 class TestPromptLoader:
-    def test_include_expands_shared_files(self):
-        """system_fc.md 的 {{include:shared/*}} 必须被展开为正文"""
-        text = load_prompt("planner/system_fc.md")
+    def test_protocol_loads_without_include_directives(self):
+        """protocol.md 已内联共有段，不再含 {{include:}} 指令"""
+        text = load_prompt("planner/protocol.md")
         assert "{{include:" not in text, "include 指令未被展开"
-        # shared/output_discipline.md 的标题应在展开结果里
+        # 内联段的关键标题应在结果里
         assert "回复输出纪律" in text
-        assert "画布操作能力" in text  # shared/canvas_tools.md
-        assert "故事板媒体调用" in text  # shared/media_rules.md
-        assert "重要规则" in text  # shared/important_rules.md
+        assert "画布操作能力" in text
+        assert "故事板媒体调用" in text
+        assert "重要规则" in text
 
     def test_include_depth_limit_no_cycle_crash(self, tmp_path, monkeypatch):
         """include 递归深度受限，自引用不得死循环"""
@@ -70,7 +71,7 @@ class TestPromptLoader:
 
 class TestSingleProtocol:
     def test_protocol_is_slim_fc_only(self):
-        """协议单轨（P2e；决策史见 git tag adr-archive-20260901）：唯一协议 = system_fc.md 瘦身协议，
+        """协议单轨（P2e）：唯一协议 = protocol.md 瘦身协议，
         不含 studio-actions 动作清单。"""
         builder = _make_builder()
         ctx = PlannerContext(use_studio_context=True)
@@ -96,6 +97,26 @@ class TestFeedbackTemplates:
         assert FEEDBACK_COMPRESSED == load_prompt_section(
             "planner/feedback.md", "FEEDBACK_COMPRESSED"
         )
+
+    def test_read_result_note_retired(self):
+        """语气转化：READ_RESULT_NOTE 已退役，回喂不再注入引导说教。"""
+        msg = format_tool_results([
+            {"name": "read_skill", "ok": True, "data": {"name": "S", "content": "BODY"}},
+        ])
+        assert isinstance(msg, str)
+        assert "- read_skill 执行成功，全文如下：" in msg, "数据体应为纯客观结果行"
+        assert "后续任务必须遵守" not in msg, "语气转化：引导说教已退役"
+    
+    def test_image_result_note_retired(self):
+        """语气转化：IMAGE_RESULT_NOTE 已退役，多模态回喂不再尾部注入引导说教。"""
+        parts = format_tool_results([{
+            "name": "view_storyboard_media", "ok": True,
+            "data": {"images": [{"label": "L", "draft_id": "d",
+                                 "data_uri": "data:image/png;base64,AA"}], "notes": []},
+        }])
+        assert isinstance(parts, list)
+        assert not any("仅供当前" in str(p.get("text", "")) for p in parts), \
+            "语气转化：IMAGE_RESULT_NOTE 已退役"
 
     # test_skill_reminder_from_external_file 已随 S09 退役删除（用户裁决 2026-09-02）
 

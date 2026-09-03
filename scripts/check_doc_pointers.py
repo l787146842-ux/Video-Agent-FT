@@ -61,7 +61,7 @@ ANCHORS = [
     ("Rule5", "src/video_agent/tools/base.py", "BaseTool"),
     # Rule 6：提示词外置单一事实源 + 闸机文案外置
     ("Rule6", "src/video_agent/utils/prompts.py", "load_prompt"),
-    ("Rule6", "prompts/planner/system_fc.md", None),
+    ("Rule6", "prompts/planner/protocol.md", None),
     ("Rule6", "prompts/gates/messages.md", None),
     # Rule 7：画布边界（交互唯一封装）
     ("Rule7", "src/video_agent/adapters/canvas_adapter.py", None),
@@ -96,7 +96,9 @@ STRIKE = re.compile(r"~~.*?~~", re.S)
 GOV_DOCS = (
     "ARCHITECTURE_RULES.md",
     "AGENTS.md",
+    "docs/GOVERNANCE.md",
     "docs/未清偿债务清单.md",
+    "docs/冻结与暂缓清单.md",
 )
 # 治理文档提及的闸机脚本/夹具指针（夹具要求带名，裸目录引用不受检）
 GOV_SCRIPT_REF = re.compile(

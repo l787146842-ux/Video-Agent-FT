@@ -78,8 +78,8 @@ def test_prompt_draft_section_merges_write_media_prompt_and_write_the_prompt():
 def test_selected_block_lightweight_keeps_discipline_pointer():
     """回归（7777 事故）：防虚报语义随《Skill 流程纪律》全文到达模型——
     纪律全文经评审修复批（用户裁决）挂回选中 Skill 块；B1：
-    Skill 正文只注入 <planner> 段，纪律单家仍是 skill_discipline.md。"""
-    from src.video_agent.utils.prompts import load_prompt
+    Skill 正文只注入 <planner> 段，纪律单家仍是 skill_runtime.md。"""
+    from src.video_agent.utils.prompts import load_prompt_section
 
     _write(
         "demo-fc",
@@ -96,7 +96,7 @@ def test_selected_block_lightweight_keeps_discipline_pointer():
     assert "必须真的调用" in block and "才可声称完成" in block
     assert "UNIQUE_BODY_MARK_FX" in block
     # 防虚报条款外置单家仍在场（宪法 Rule 6 单一事实源）
-    discipline = load_prompt("planner/skill_discipline.md")
+    discipline = load_prompt_section("planner/skill_runtime.md", "DISCIPLINE")
     assert "必须真的调用" in discipline and "才可声称完成" in discipline
 
 
