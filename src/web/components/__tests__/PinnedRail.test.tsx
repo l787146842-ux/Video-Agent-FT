@@ -3,10 +3,10 @@
  *
  * 钉死：① 元数据列表渲染（图标+文件名）；② 仅激活项挂载媒体 src，
  * 非激活项无 img/video（内存纪律）；③ 点击列表项切换激活；
- * ④ 文档项走 markdown 渲染器（正文现读 studio documents）；
+ * ④ 文档项走 markdown 渲染器（懒加载动态 import，正文现读 studio documents）；
  * ⑤ 取消钉住按钮移除条目。
  */
-import { render, fireEvent } from '@solidjs/testing-library';
+import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PinnedRail } from '../layout/PinnedRail';
 import {
@@ -57,12 +57,15 @@ describe('PinnedRail 钉住侧栏', () => {
     expect(container.querySelector('.pinned-preview-video')).toBeNull();
   });
 
-  it('文档项复用 markdown 渲染器（正文现读 studio documents）', () => {
+  it('文档项复用 markdown 渲染器（渲染器懒加载，异步出内容）', async () => {
     pinArtifact({ kind: 'doc', name: '剧本.md' });
     const { container } = render(() => <PinnedRail />);
-    const doc = container.querySelector('.pinned-doc');
-    expect(doc).toBeTruthy();
-    expect(doc?.innerHTML).toContain('第一场');
+    // markdown-it 经动态 import 加载（移出首屏关键路径），等资源解析后再断言
+    await waitFor(() => {
+      const doc = container.querySelector('.pinned-doc');
+      expect(doc).toBeTruthy();
+      expect(doc?.innerHTML).toContain('第一场');
+    });
   });
 
   it('文档不存在时给降级提示', () => {

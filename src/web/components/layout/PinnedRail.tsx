@@ -1,4 +1,4 @@
-import { For, Show } from 'solid-js';
+import { For, Show, createResource } from 'solid-js';
 import {
   FiBookmark, FiFileText, FiImage, FiVideo, FiX, FiTrash2,
 } from 'solid-icons/fi';
@@ -7,9 +7,17 @@ import {
   PINNED_MAX, type PinnedArtifact,
 } from '@/stores/pinned';
 import { state } from '@/stores/studio';
-import { renderMarkdown } from '@/lib/markdown';
 import { handleCodeBlockClick } from '@/lib/code-copy';
 import { safeUrl } from '@/lib/utils';
+
+// markdown-it 体积大（压缩后约 100 kB），此前经本组件静态引用被打进首屏 entry，
+// 触发首屏体积闸（scripts/check_bundle_size.mjs，400 kB 上限）。文档预览属低频
+// 路径：仅在真正渲染钉住文档时动态加载渲染器（与 DocsPanel 的 lazy 模式同口径），
+// markdown-it 随之移出首屏关键路径。
+async function renderMarkdownLazy(src: string): Promise<string> {
+  const m = await import('@/lib/markdown');
+  return m.renderMarkdown(src);
+}
 
 /**
  * 钉住侧栏（F3）：跨轮对照钉住的产物预览分栏。
@@ -41,10 +49,12 @@ function KindIcon(props: { kind: PinnedArtifact['kind'] }) {
   );
 }
 
-/** 激活项的文档预览：markdown 渲染；文档已被删除时给降级提示 */
+/** 激活项的文档预览：markdown 渲染（渲染器懒加载）；文档已被删除时给降级提示 */
 function PinnedDocPreview(props: { name: string }) {
   const content = () =>
     (state.documents || []).find((d) => d.name === props.name)?.content || '';
+  const [html] = createResource(content, (src) =>
+    src ? renderMarkdownLazy(src) : Promise.resolve(''));
   return (
     <Show
       when={content()}
@@ -53,7 +63,7 @@ function PinnedDocPreview(props: { name: string }) {
       {/* chat-markdown 类复用对话区 markdown 排版 token（tokens.css @layer base） */}
       <div
         class="pinned-doc chat-markdown"
-        innerHTML={renderMarkdown(content())}
+        innerHTML={html() ?? ''}
         onClick={handleCodeBlockClick}
       />
     </Show>

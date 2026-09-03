@@ -9,7 +9,6 @@ import { ContextMenuHost } from '@/components/shared/ContextMenu';
 import { ConfirmDialogHost } from '@/components/shared/ConfirmDialog';
 import { SplashScreen } from '@/components/shared/SplashScreen';
 import { docsPanelOpen } from '@/stores/docs';
-import { AdjustDialog } from '@/components/left-panel/AdjustDialog';
 import { AssetLibraryModal } from '@/components/right-panel/AssetLibraryModal';
 import { GenerationLogPanel } from './GenerationLogPanel';
 import { JobsPanel } from './JobsPanel';
@@ -40,6 +39,12 @@ import {
 // 动态 import，将 DocsPanel + markdown + SkillStructuredView 整体移出首屏关键路径。
 const DocsPanel = lazy(() =>
   import('@/components/docs/DocsPanel').then((m) => ({ default: m.DocsPanel })));
+
+// 微调对话框是低频浮窗，但其子组件 MarkdownBubble 静态引用 markdown-it（~110 kB），
+// 会把渲染器拖回首屏关键路径（首屏体积闸 check_bundle_size 因此超限）。与 DocsPanel
+// 同口径：动态 import + Suspense，整体移出首屏。
+const AdjustDialog = lazy(() =>
+  import('@/components/left-panel/AdjustDialog').then((m) => ({ default: m.AdjustDialog })));
 
 /**
  * 布局壳 — Router root 组件
@@ -234,7 +239,9 @@ export function LayoutShell(props: ParentProps) {
           <DocsPanel />
         </Suspense>
       </Show>
-      <AdjustDialog />
+      <Suspense>
+        <AdjustDialog />
+      </Suspense>
       <GenerationLogPanel />
       <JobsPanel />
 
