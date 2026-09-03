@@ -51,7 +51,10 @@
 - **批次落地**：
   - **E3a** 回喂 re-export 壳收敛：`fc_tool_runner.py` 顶部 14 符号 re-export 块 + `_PAUSE_WINDOW_READONLY` / `_STAGE_ALLOWED_GROUP_KINDS` 两个闸机常量别名删除；消费方（`core/turn_executor.py` + 6 个测试文件）全部直连实现体 `core/fc_feedback.py`。
   - **E3b** 闸机方法壳整族收敛：`FCToolRunner` 的 6 个闸机方法壳（`_resolve_current_refs` / `_prompt_gate` / `_strip_structure_prompt` / `_structure_integrity_gate` / `_gen_confirm_gate` / `_tool_risk_gate`）删除——`execute()` 早已直调 `fc_gates.run_gate_chain`，6 壳在生产代码零调用、仅测试引用；5 个测试文件（约 30 处调用点）改直连 `fc_gates` 各闸函数 + `GateContext`。非-manager 承重壳自此清零；`state/manager.py` 门面保留（Rule3 唯一写入点属架构决策，非委托壳）。
-- **连带影响**：`readonly_parallel` / `batch_checkpoint` 经 `runner._dispatch_tool` / `runner._idempotency` / `runner.tool_manager` 消费，不涉被删壳；`planner` 消费 `execute()` / `reset_turn_tracking` / `costly_failures`，接口零变化；闸机判定路径（guard_pipeline 唯一实现）未动，仅消除测试侧的旧命名空间。
+  - **H** 历史兼容层清偿：`agent_loop._unpack_llm`（旧 3/4 元组容忍）删除，改为 5 元组契约就地解包；`LlmCall` 别名自 4 元组声明修正为 5 元组（与全部生产实现一致）；约 30 处测试桩跨 14 个文件归一为 5 元组，透传桩在测试边界以 `_p5` 助手承担便捷写法（不再由生产壳兜底）。
+  - **I1** `chat_consume.py` 按关注点拆分：会话压缩簇（13 符号：`_maybe_compact_history` + 采样/指纹/探针助手 + `_compact_card_enumeration` + `_summary_thinking_level`）切出至 `web/history_compact.py`；`chat_consume.py` 只留暂停态消费域（调用图零交的实证依据）。顺带删除退役规格向导管线遗留的 10 个顶层死 import；两处叶子模块 lazy import 上提 + 一处冗余函数内 `import re` 删除，`func_imports` 基线 101 → 93 只降不升。
+  - **I2** `storyboard.ts` 内联**实测后判定不做**：该 19 行壳并非纯 re-export——`storyboardActions` 合并面若移入 `board-edit.ts`，实测（模块体打点）`board-edit` 先于 `board-sync` 执行完、合并点取到 `undefined`：既有依赖链 board-edit → board-sync → adjust-scopes → use-sse → chat/agent-state（多处引用 studio 组合出口）存在初始化序敏感的环，壳模块恰是环外稳定叶子。维持原判（与上批「前端 -core 破环层不动」同口径）：此属**依赖倒置承重层**而非堆积壳，强行内联 = 制造新 bug。
+- **连带影响**：`readonly_parallel` / `batch_checkpoint` 经 `runner._dispatch_tool` / `runner._idempotency` / `runner.tool_manager` 消费，不涉被删壳；`planner` 消费 `execute()` / `reset_turn_tracking` / `costly_failures`，接口零变化；闸机判定路径（guard_pipeline 唯一实现）未动，仅消除测试侧的旧命名空间。`AgentTimeline` 经核查无 re-export shim（6 个消费方全部直连实现文件），无事可做。
 
 ### 2026-09-02 · 用户审定「治理闸机减负」裁决（做减法，批次 B0-B5+D）
 - **背景**：治理闸机/门禁长期棘轮化叠加，累积大量镜像数字锁、幽灵闸（登记但从不签发 verdict）、纯仪式门禁（覆盖率镜像基线逐批上调、脚手架计数棘轮、行数硬闸）与折旧休眠机器，维护成本高于拦截收益。用户审定做减法，授权修改宪法 / AGENTS / 门禁 / 注册表。
