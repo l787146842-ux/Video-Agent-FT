@@ -1,4 +1,5 @@
 import { createStore } from 'solid-js/store';
+import { CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS } from '@/lib/state-keys';
 import type {
   DraftType, Draft, LeftTab, SubTab, AnyGroup,
   KeyElementGroup, ShotGroup, AudioGroup,
@@ -96,11 +97,11 @@ const [state, setState] = createStore<StudioState>(defaultState);
 // ===== 字段映射 =====
 
 export function fieldForType(type: DraftType): 'keyElements' | 'shots' | 'audioItems' {
-  return type === 'shot' ? 'shots' : type === 'audio' ? 'audioItems' : 'keyElements';
+  return type === 'shot' ? CAT_SHOTS : type === 'audio' ? CAT_AUDIO_ITEMS : CAT_KEY_ELEMENTS;
 }
 
 export function fieldForSubTab(subTab: SubTab): 'keyElements' | 'shots' | 'audioItems' {
-  return subTab === 'shots' ? 'shots' : subTab === 'audio' ? 'audioItems' : 'keyElements';
+  return subTab === 'shots' ? CAT_SHOTS : subTab === 'audio' ? CAT_AUDIO_ITEMS : CAT_KEY_ELEMENTS;
 }
 
 // ===== 查询工具 =====

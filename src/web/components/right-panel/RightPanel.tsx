@@ -40,7 +40,7 @@ export default function RightPanel() {
   return (
     <div class="panel-column">
       {/* 顶部单栏：多对话标签选择 + 新建对话 + 状态点（已去掉 Agent 标题行） */}
-      <div class="conv-tabs">
+      <div class="conv-tabs" role="tablist" aria-label="对话标签">
         <For each={convState.list}>
           {(conv) => (
             <div

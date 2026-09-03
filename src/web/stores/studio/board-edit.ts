@@ -2,6 +2,7 @@
  * 分组/草稿的本地编辑 actions（编辑后调持久化域 persistBoard 防抖落盘）。
  * 状态树不动；原签名经 storyboard.ts 重导出，调用方零改动。 */
 import type { DraftType, Draft, SubTab, AnyGroup } from '@/types';
+import { CAT_SHOTS } from '@/lib/state-keys';
 import { showToast } from '@/stores/toast';
 import { uid } from '@/lib/utils';
 import {
@@ -151,7 +152,7 @@ export const boardEditActions = {
   /** 分镜场景引用增删（C4）：本地更新后走防抖整板保存（与其他本地编辑同路径）。
    * 删除某元素后：出视频不再自动挂该元素概念图，卡片场景 chips 同步消失 */
   setSceneRefsLocal(groupId: string, refs: string[]) {
-    setState('shots', (prev: AnyGroup[]) =>
+    setState(CAT_SHOTS, (prev: AnyGroup[]) =>
       prev.map((g) => (g.id === groupId ? { ...g, sceneRefs: refs } : g)),
     );
     persistBoard();

@@ -1,0 +1,341 @@
+/* ===== Job 面板（批量生成任务管理，风格对齐生成日志面板） ===== */
+
+/* 遮罩 + 面板 */
+.jobs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-fullscreen);
+  background: color-mix(in srgb, var(--color-black) 45%, transparent);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8vh;
+}
+.jobs-panel {
+  width: min(720px, 92vw);
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 48px color-mix(in srgb, var(--color-black) 35%, transparent);
+  overflow: hidden;
+}
+
+/* 头部 */
+.jobs-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+.jobs-title {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+.jobs-header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.jobs-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.jobs-back-btn:hover {
+  color: var(--text-main);
+  background: var(--bg-hover);
+}
+.jobs-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.jobs-refresh-btn:hover {
+  color: var(--text-main);
+  background: var(--bg-hover);
+}
+.jobs-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.jobs-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.jobs-close:hover {
+  color: var(--text-main);
+  background: var(--bg-hover);
+}
+
+/* 过滤器 */
+.jobs-filters {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+.jobs-filter {
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.jobs-filter:hover {
+  color: var(--text-main);
+  border-color: var(--border-highlight);
+}
+.jobs-filter.active {
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+}
+
+/* 列表 */
+.jobs-list {
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.jobs-empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: var(--font-md);
+}
+
+/* 批次行 */
+.jobs-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.15s ease;
+}
+.jobs-item--clickable {
+  cursor: pointer;
+}
+.jobs-item--clickable:hover {
+  border-color: var(--border-highlight);
+}
+.jobs-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.jobs-row1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.jobs-row2 {
+  font-size: var(--font-xs);
+  color: var(--text-dim);
+}
+.jobs-progress {
+  font-size: var(--font-sm);
+  color: var(--text-main);
+  font-weight: 500;
+}
+.jobs-failed-count {
+  font-size: var(--font-xs);
+  color: var(--color-danger);
+}
+.jobs-time {
+  margin-left: auto;
+  font-size: var(--font-xs);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+/* 状态徽标 */
+.jobs-badge {
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.jobs-badge--ok {
+  color: var(--accent-emerald);
+  background: color-mix(in srgb, var(--accent-emerald) 14%, transparent);
+}
+.jobs-badge--failed {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger-strong) 16%, transparent);
+}
+.jobs-badge--running {
+  color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+}
+.jobs-badge--muted {
+  color: var(--text-dim);
+  background: var(--bg-tertiary);
+}
+
+/* 操作按钮（行内） */
+.jobs-item-actions {
+  display: flex;
+  gap: 4px;
+}
+.jobs-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.jobs-action-btn--resume {
+  color: var(--accent-emerald);
+}
+.jobs-action-btn--resume:hover {
+  background: color-mix(in srgb, var(--accent-emerald) 12%, transparent);
+  border-color: var(--accent-emerald);
+}
+.jobs-action-btn--cancel {
+  color: var(--color-danger);
+}
+.jobs-action-btn--cancel:hover {
+  background: color-mix(in srgb, var(--color-danger-strong) 12%, transparent);
+  border-color: var(--color-danger);
+}
+
+/* 详情视图 */
+.jobs-detail {
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.jobs-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.jobs-detail-actions {
+  display: flex;
+  gap: 8px;
+}
+.jobs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.jobs-btn--resume {
+  color: var(--accent-emerald);
+  border-color: var(--accent-emerald);
+  background: color-mix(in srgb, var(--accent-emerald) 8%, transparent);
+}
+.jobs-btn--resume:hover {
+  background: color-mix(in srgb, var(--accent-emerald) 18%, transparent);
+}
+.jobs-btn--cancel {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger-strong) 8%, transparent);
+}
+.jobs-btn--cancel:hover {
+  background: color-mix(in srgb, var(--color-danger-strong) 18%, transparent);
+}
+
+/* 逐镜清单 */
+.jobs-shots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.jobs-shot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: var(--font-sm);
+}
+.jobs-shot-row--failed {
+  background: color-mix(in srgb, var(--color-danger-strong) 7%, var(--bg-tertiary));
+}
+.jobs-shot-title {
+  color: var(--text-main);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jobs-shot-error {
+  font-size: var(--font-xs);
+  color: var(--color-danger);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 旋转动画（刷新中） */
+@keyframes jobs-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin-anim {
+  animation: jobs-spin 0.8s linear infinite;
+}

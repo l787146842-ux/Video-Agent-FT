@@ -8,15 +8,25 @@ import { render, waitFor } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SnapshotHistoryBar } from '../left-panel/SnapshotHistoryBar';
 import { SnapshotMessageActions } from '../right-panel/SnapshotMessageActions';
-import { getSnapshots, restoreSnapshot, forkSnapshot } from '@/api/project';
+import { getSnapshots, restoreSnapshot, forkSnapshot, getProjectState } from '@/api/project';
+import { confirmDialog } from '@/components/shared/ConfirmDialog';
+import { applyProjectSnapshot } from '@/lib/project-apply';
 import { buildDoneMessage } from '@/stores/chat/done-message';
 import { emptyLedger } from '@/lib/turn-ledger';
-import type { ChatMessage, SseDonePayload } from '@/types';
+import type { ChatMessage, SseDonePayload, ServerStateSnapshot } from '@/types';
 
 vi.mock('@/api/project', () => ({
   getSnapshots: vi.fn(),
   restoreSnapshot: vi.fn(),
   forkSnapshot: vi.fn(),
+  getProjectState: vi.fn(),
+}));
+// E1 免刷新收编：确认走全局确认卡、整板重置下沉 lib/project-apply、SSE 断/续在 use-sse
+vi.mock('@/components/shared/ConfirmDialog', () => ({ confirmDialog: vi.fn() }));
+vi.mock('@/lib/project-apply', () => ({ applyProjectSnapshot: vi.fn() }));
+vi.mock('@/hooks/use-sse', () => ({
+  disconnectAgentStream: vi.fn(),
+  resumeAgentTasks: vi.fn(),
 }));
 
 const msg = (snapshotId = 'snap-1'): ChatMessage => ({
@@ -62,51 +72,41 @@ describe('E1 版本历史列表', () => {
   });
 });
 
-describe('E1 消息级快照动作（二次确认把关）', () => {
-  const confirmSpy = vi.spyOn(window, 'confirm');
-  const reloadSpy = vi.fn();
-
+describe('E1 消息级快照动作（确认卡把关 + 免刷新整板重置）', () => {
   beforeEach(() => {
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: { ...window.location, reload: reloadSpy },
-    });
-    vi.mocked(restoreSnapshot).mockResolvedValue({ ok: true });
-    vi.mocked(forkSnapshot).mockResolvedValue({ ok: true, project_id: 'p1' });
+    vi.mocked(restoreSnapshot).mockResolvedValue({ ok: true, state: { project_id: 'p1' } as ServerStateSnapshot });
+    vi.mocked(forkSnapshot).mockResolvedValue({ ok: true, project_id: 'p2' });
+    vi.mocked(getProjectState).mockResolvedValue({ project_id: 'p2' } as ServerStateSnapshot);
   });
-  afterEach(() => {
-    vi.clearAllMocks();
-    confirmSpy.mockReset();
-  });
+  afterEach(() => vi.clearAllMocks());
 
-  it('取消确认：不发起回档/分叉', () => {
-    confirmSpy.mockReturnValue(false);
+  it('取消确认：不发起回档/分叉、不重置整板', async () => {
+    vi.mocked(confirmDialog).mockResolvedValue(false);
     const { container } = render(() => <SnapshotMessageActions message={msg()} />);
     const [restoreBtn] = container.querySelectorAll('button');
     restoreBtn.click();
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalled());
     expect(restoreSnapshot).not.toHaveBeenCalled();
+    expect(applyProjectSnapshot).not.toHaveBeenCalled();
   });
 
-  it('确认回档：调用 restoreSnapshot 并重载', async () => {
-    confirmSpy.mockReturnValue(true);
+  it('确认回档：调用 restoreSnapshot 并整板重置（免刷新，不再 reload）', async () => {
+    vi.mocked(confirmDialog).mockResolvedValue(true);
     const { container } = render(() => <SnapshotMessageActions message={msg('snap-9')} />);
     const buttons = container.querySelectorAll('button');
     buttons[0].click();
-    await waitFor(() => {
-      expect(restoreSnapshot).toHaveBeenCalledWith('snap-9');
-    });
-    await waitFor(() => expect(reloadSpy).toHaveBeenCalled());
+    await waitFor(() => expect(restoreSnapshot).toHaveBeenCalledWith('snap-9'));
+    await waitFor(() => expect(applyProjectSnapshot).toHaveBeenCalled());
   });
 
-  it('确认分叉：调用 forkSnapshot 并重载', async () => {
-    confirmSpy.mockReturnValue(true);
+  it('确认分叉：调用 forkSnapshot 后补拉整板并重置（免刷新）', async () => {
+    vi.mocked(confirmDialog).mockResolvedValue(true);
     const { container } = render(() => <SnapshotMessageActions message={msg('snap-7')} />);
     const buttons = container.querySelectorAll('button');
     buttons[1].click();
-    await waitFor(() => {
-      expect(forkSnapshot).toHaveBeenCalledWith('snap-7');
-    });
-    await waitFor(() => expect(reloadSpy).toHaveBeenCalled());
+    await waitFor(() => expect(forkSnapshot).toHaveBeenCalledWith('snap-7'));
+    await waitFor(() => expect(getProjectState).toHaveBeenCalled());
+    await waitFor(() => expect(applyProjectSnapshot).toHaveBeenCalled());
   });
 });
 

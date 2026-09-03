@@ -1,8 +1,8 @@
 /** Studio store · 故事板持久化域（Q14 裁决 2026-09-01 方案 A：自 storyboard.ts 三分）。
  * 整板保存链（防抖/串行/内容级脏检查/版本冲突三向合并回落）+ 页面卸载冲刷。
  * 状态树不动；原签名经 storyboard.ts 重导出，调用方零改动。 */
-import { putProjectState, getProjectState, mergeProjectState } from '@/api/project';
-import { ApiError, buildAuthHeaders } from '@/api/client';
+import { putProjectState, getProjectState, mergeProjectState, flushProjectStateKeepalive } from '@/api/project';
+import { ApiError } from '@/api/client';
 import { showToast } from '@/stores/toast';
 import { debounce } from '@/lib/utils';
 import { openConflicts } from './conflicts';
@@ -133,29 +133,12 @@ if (typeof window !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && boardDirty) void persistBoardInner.flush();
   });
-  // 页面卸载（/关闭）：keepalive 尽力送达；超 keepalive 配额时退化为普通 fetch 兜底。
-  // 鉴权头走 buildAuthHeaders 唯一出口：生产模式中间件对 /api/ 强制校验，
-  // 裸 fetch 会被 401 截断导致卸载冲刷无效（任务#12 批次2 追加修复）。
+  // 页面卸载（/关闭）：keepalive 尽力送达；超 keepalive 配额时退化为普通请求兜底。
+  // 冲刷走 api 层 flushProjectStateKeepalive（鉴权头 + keepalive + 兜底语义均收口在彼，
+  // 铁律 10.1：stores 不得裸 fetch——曾因裸 fetch 被 401 截断导致卸载冲刷无效）。
   window.addEventListener('pagehide', () => {
     if (!boardDirty || !state.projectId) return;
     persistBoardInner.cancel();
-    const payload = JSON.stringify(boardSavePayload());
-    const headers = { 'Content-Type': 'application/json', ...buildAuthHeaders() };
-    try {
-      void fetch('/api/project/state', {
-        method: 'PUT',
-        keepalive: true,
-        headers,
-        body: payload,
-      });
-    } catch {
-      try {
-        void fetch('/api/project/state', {
-          method: 'PUT',
-          headers,
-          body: payload,
-        });
-      } catch { /* 静默：卸载期最后防线，不阻塞页面退出 */ }
-    }
+    flushProjectStateKeepalive(boardSavePayload());
   });
 }

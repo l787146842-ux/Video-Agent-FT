@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show, type JSX } from 'solid-js';
+import { createSignal, createEffect, Show, Suspense, lazy, type JSX } from 'solid-js';
 import {
   FiEdit2, FiSave, FiTrash2, FiX,
 } from 'solid-icons/fi';
@@ -9,8 +9,13 @@ import {
   draftContent, setDraftContent, saveSkillDocFromPanel,
 } from '@/stores/docs';
 import { renderMarkdown } from '@/lib/markdown';
-import { SkillStructuredView } from '@/components/skills/SkillStructuredView';
+import { confirmDialog } from '@/components/shared/ConfirmDialog';
 import { DocsSidebar } from './DocsSidebar';
+
+// 前端批次1：SkillStructuredView（~127 kB）低频，仅在打开 Skill 文档时才需要，
+// 降级为交互触发的动态 import，移出首屏关键路径（不再被 modulepreload）。
+const SkillStructuredView = lazy(() =>
+  import('@/components/skills/SkillStructuredView').then((m) => ({ default: m.SkillStructuredView })));
 
 /**
  * 文档面板（可拖拽浮窗）
@@ -117,7 +122,7 @@ export function DocsPanel() {
                             type="button"
                             class="docs-delete-btn"
                             title="删除文档"
-                            onClick={() => { if (confirm('确定删除此文档？')) void deleteDoc(current()!.key); }}
+                            onClick={async () => { if (await confirmDialog({ title: '删除文档', message: '确定删除此文档？删除后不可恢复。', confirmText: '删除', danger: true })) void deleteDoc(current()!.key); }}
                           >
                             <FiTrash2 size={11} />
                           </button>
@@ -186,10 +191,12 @@ export function DocsPanel() {
                 }
               >
                 {/* Skill 文档：结构化视图（易读/Markdown + 行内编辑 + 另存为副本） */}
-                <SkillStructuredView
-                  raw={currentContent()}
-                  onSave={(raw) => saveSkillDocFromPanel(current()!.key, raw)}
-                />
+                <Suspense>
+                  <SkillStructuredView
+                    raw={currentContent()}
+                    onSave={(raw) => saveSkillDocFromPanel(current()!.key, raw)}
+                  />
+                </Suspense>
               </Show>
             </Show>
           </div>

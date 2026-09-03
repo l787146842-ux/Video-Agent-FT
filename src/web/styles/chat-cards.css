@@ -4,28 +4,25 @@
   .confirm-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
   .chat-msg > .confirm-actions { margin-top: 8px; }
 
-  /* 确认卡片的候选选项（单选卡片，点击即把选项作为回复发送） */
+  /* 确认卡片的候选选项（单选卡片，点击即把选项作为回复发送）；
+     底色/边框色由下方「确认卡片配色」亮橙族统一接管，此处只留布局与边框宽/型 */
   .confirm-options { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-  .confirm-option-card { display: flex; align-items: flex-start; gap: 9px; text-align: left; padding: 9px 12px; border-radius: 8px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); transition: border-color 0.12s ease, background 0.12s ease; }
-  .confirm-option-card:hover { border-color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 8%, transparent); }
-  .confirm-option-radio { flex-shrink: 0; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--text-muted); }
+  .confirm-option-card { display: flex; align-items: flex-start; gap: 9px; text-align: left; padding: 9px 12px; border-radius: 8px; cursor: pointer; border: 1px solid; transition: border-color 0.12s ease, background 0.12s ease; }
+  .confirm-option-radio { flex-shrink: 0; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 1.5px solid; }
   .confirm-option-card:hover .confirm-option-radio { border-color: var(--accent-blue); box-shadow: inset 0 0 0 3.5px var(--accent-blue); }
   .confirm-option-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .confirm-option-label { font-size: var(--font-md); font-weight: 600; color: var(--text-main); line-height: 1.4; }
-  .confirm-option-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
-  .confirm-btn { padding: 4px 12px; border-radius: 4px; font-size: var(--font-sm); cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-main); }
-  .confirm-btn.primary { background: var(--accent-blue); color: var(--color-white); border-color: var(--accent-blue); }
+  .confirm-option-label { font-size: var(--font-md); font-weight: 600; line-height: 1.4; }
+  .confirm-option-desc { font-size: 11.5px; line-height: 1.5; }
+  .confirm-btn { padding: 4px 12px; border-radius: 4px; font-size: var(--font-sm); cursor: pointer; border: 1px solid var(--border-color); }
   .confirm-btn.secondary { background: var(--bg-tertiary); color: var(--text-muted); }
   .confirm-btn.secondary:hover { color: var(--text-main); }
-  .confirm-btn.secondary.active { color: var(--color-info); border-color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }
   .confirm-btn:hover { filter: brightness(1.15); }
   .confirm-btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
 
-  /* 分页选择向导（多维度一次性收集：逐页选择，末页发送） */
-  .confirm-wizard { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: color-mix(in srgb, var(--color-white) 2%, transparent); }
+  /* 分页选择向导（多维度一次性收集：逐页选择，末页发送）；
+     边框/圆角/底色由下方「确认卡片配色」亮橙族统一接管，此处只留布局档 */
+  .confirm-wizard { margin-top: 8px; padding: 10px 12px; }
   .confirm-wizard-question { font-size: var(--font-md); font-weight: 600; color: var(--text-main); margin-bottom: 8px; }
-  .confirm-option-card.selected { border-color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }
-  .confirm-option-card.selected .confirm-option-radio { border-color: var(--accent-blue); box-shadow: inset 0 0 0 3.5px var(--accent-blue); }
   .confirm-wizard-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
   .confirm-wizard-actions { display: flex; align-items: center; gap: 6px; }
   .confirm-wizard-hint { font-size: var(--font-xs); color: var(--text-dim); }
@@ -83,6 +80,15 @@
   .stage-card-summary { margin: 6px 0; font-size: var(--font-sm); line-height: 1.6; color: var(--text-main); }
   .stage-card-ops { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
   .stage-card-ops li { font-size: var(--font-xs); color: var(--text-muted); line-height: 1.5; }
+
+  /* D-09：作废暂停卡（被新卡取代的 expired 旧卡）——去翡翠绿改中性灰、标题删除线，
+     与有效态（active/answered 翡翠绿）明确区隔，一眼可辨「已失效、仅供回看」。
+     全部走语义色 token + color-mix 现调透明档，零硬编码色值（semantic_colors 门禁口径） */
+  .stage-card-void { border-color: var(--border-color); background: color-mix(in srgb, var(--color-white) 3%, transparent); }
+  .stage-card-void .stage-card-header:hover { background: color-mix(in srgb, var(--color-white) 6%, transparent); }
+  .stage-card-void .stage-check, .stage-card-void .stage-card-title { color: var(--text-dim); }
+  .stage-card-void .stage-card-title { text-decoration: line-through; }
+  .stage-card-void .stage-card-body { border-top-color: var(--border-color); }
 
   /* 批次B：账本翻转淡入——settled 相位新挂载卡片 opacity 0→1 120ms，
      相位翻转不闪跳；纯 opacity 动画不涉色值。reduced-motion 下禁用 */

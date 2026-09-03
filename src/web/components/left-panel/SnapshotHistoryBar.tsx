@@ -1,7 +1,13 @@
-import { createSignal, For, onMount } from 'solid-js';
+import { createSignal, createMemo, createEffect, For } from 'solid-js';
 import { FiClock } from 'solid-icons/fi';
 import { getSnapshots, restoreSnapshot } from '@/api/project';
+import { ApiError } from '@/api/client';
+import { confirmDialog } from '@/components/shared/ConfirmDialog';
+import { applyProjectSnapshot } from '@/lib/project-apply';
+import { disconnectAgentStream, resumeAgentTasks } from '@/hooks/use-sse';
 import { showToast } from '@/stores/toast';
+import { chatState } from '@/stores/chat';
+import { state } from '@/stores/studio';
 import type { SnapshotItem } from '@/types/api.generated';
 
 interface SnapshotEntry { id: string; ts: string; label: string }
@@ -35,16 +41,32 @@ export function SnapshotHistoryBar() {
       /* 版本列表为辅助面：拉取失败静默，不打断主流程 */
     }
   };
-  onMount(() => void refresh());
+  // 快照指针随 done 帧 live 落账到消息（snapshotId）：计数变化 or 项目切换即失效刷新
+  // （替代旧的仅 onMount 一次性拉取——生成中新增的版本能实时进列表）
+  const snapshotCount = createMemo(() => chatState.messages.filter((m) => m.snapshotId).length);
+  createEffect(() => {
+    snapshotCount();
+    state.projectId;
+    void refresh();
+  });
 
   const doRestore = async (entry: SnapshotEntry) => {
-    if (!window.confirm(`回退到「${formatTs(entry.ts)} ${entry.label || '快照'}」？之后的改动将被覆盖（可经撤销/重做复核）。`)) return;
+    const ok = await confirmDialog({
+      title: `回退到「${formatTs(entry.ts)} ${entry.label || '快照'}」？`,
+      message: '之后的改动将被覆盖（可经撤销/重做复核）。',
+      confirmText: '回退',
+      danger: true,
+    });
+    if (!ok) return;
     try {
-      await restoreSnapshot(entry.id);
+      const res = await restoreSnapshot(entry.id);
+      // 免刷新：断开旧订阅 → 整板重置 → 重订阅（回档同项目，projectId effect 不触发）
+      disconnectAgentStream();
+      applyProjectSnapshot(res.state);
+      await resumeAgentTasks(state.projectId);
       showToast('已回退到所选版本', 'success');
-      location.reload();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : '回退失败（生成中禁止回退）', 'warning');
+      showToast(e instanceof ApiError ? e.payload.message : '回退失败（生成中禁止回退）', 'warning');
     }
   };
 

@@ -4,14 +4,20 @@ import type { ChatMessage, SseDonePayload } from '@/types';
 import { t } from '@/lib/locale';
 import { settleLedger, type TurnLedger } from '@/lib/turn-ledger';
 
-/** done 气泡 meta 行（耗时/token/轮次/落盘数；文案全走 locale 字典） */
+/** done 气泡 meta 行（耗时/token/tokens⁄sec/轮次/落盘数；文案全走 locale 字典） */
 export function buildDoneMeta(payload: SseDonePayload): string {
-  const elapsed = ((payload.elapsed_ms || 0) / 1000).toFixed(1);
+  const elapsedMs = payload.elapsed_ms || 0;
+  const elapsed = (elapsedMs / 1000).toFixed(1);
   const metaParts = [t('rp.msg.metaTime', { s: elapsed })];
   // 轮次 token 账单（后端 usage 有值才展示；缺失保 0 不显示）
   const totalTokens = (payload.trace?.steps || [])
     .reduce((sum, st) => sum + (st.token_usage || 0), 0);
   if (totalTokens > 0) metaParts.push(t('rp.msg.metaTokens', { n: totalTokens }));
+  // tokens/sec：整程计时口径（总 token ÷ 总耗时），消费既有 SSE elapsed_ms + trace.token_usage
+  if (totalTokens > 0 && elapsedMs > 0) {
+    const tps = Math.round(totalTokens / (elapsedMs / 1000));
+    if (tps > 0) metaParts.push(t('rp.msg.metaTokensPerSec', { n: tps }));
+  }
   if (payload.steps > 1) metaParts.push(t('rp.msg.metaRounds', { n: payload.steps }));
   if (payload.applied_actions > 0) metaParts.push(t('rp.msg.metaUpdated', { n: payload.applied_actions }));
   return metaParts.join(' · ');

@@ -60,6 +60,9 @@ export function waitForTaskViaSSE(taskId: string, timeoutSec: number): Promise<T
 
     (async () => {
       try {
+        // SSE 传输：定向订阅任务事件流需 ReadableStream 读流，结构性无法走 api/
+        // 的 JSON helper；鉴权头经 buildAuthHeaders 注入——铁律 10.1 的合法传输例外。
+        // eslint-disable-next-line no-restricted-syntax
         const res = await fetch(
           `/api/generate/events/${encodeURIComponent(taskId)}`,
           { headers: buildAuthHeaders(), signal: controller.signal },

@@ -67,9 +67,13 @@ export default [
     },
   },
 
-  // 架构铁律 10.1：API 调用集中在 api/，组件不直接写 fetch()
+  // 架构铁律 10.1：API 调用集中在 api/，其余层不得直接写 fetch()。
+  // 前端批次1 反向枚举：files 覆盖 src/web/** 全部（含 stores/hooks/router 等旧盲区），
+  // 仅豁免 api/**（fetch 唯一实现处）。SSE/流式传输封装（reconnecting-sse/generate-polling）
+  // 结构性无法走 JSON helper，在各自 fetch 处就地 eslint-disable 并注明理由。
   {
-    files: ['src/web/components/**/*.tsx', 'src/web/lib/**/*.ts'],
+    files: ['src/web/**/*.{ts,tsx}'],
+    ignores: ['src/web/api/**'],
     rules: {
       'no-restricted-syntax': ['warn', {
         selector: "CallExpression[callee.name='fetch']",

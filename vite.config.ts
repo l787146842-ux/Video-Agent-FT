@@ -57,10 +57,11 @@ export default defineConfig({
     // outDir 相对 root 解析；用绝对路径避免歧义
     outDir: resolve(__dirname, 'static/dist'),
     emptyOutDir: true,
-    // 体积预算（任务 #6）：入口 chunk 硬闸在 scripts/check_bundle_size.mjs
-    //（build 脚本串联，超限即失败，上限 55 kB = 实测 50.05 kB 上浮 ~10%）；
+    // 体积预算（任务 #6 / 前端批次1 口径升级）：首屏关键路径硬闸在
+    // scripts/check_bundle_size.mjs（build 脚本串联，超限即失败）——口径为
+    // entry module script + 全部 modulepreload + CSS link 的原始字节之和（上限 400 kB）；
     // 此处仅对齐 vite 自带告警线：最大非入口 chunk（SkillStructuredView
-    // 141.15 kB）上浮 ~10% → 155 kB，超限只告警不阻断
+    // ~127 kB，已降级为按需动态 import）上浮 → 155 kB，超限只告警不阻断
     chunkSizeWarningLimit: 155,
     rollupOptions: {
       // 入口：src/web/index.html（root 下的 index.html）
@@ -68,7 +69,13 @@ export default defineConfig({
       output: {
         // 带 hash 文件名，配合长期缓存
         entryFileNames: 'studio-[hash].js',
-        chunkFileNames: '[name]-[hash].js',
+        // 消除 studio-* 双同名：无显式名的共享 chunk 会回落到 'studio'，与入口
+        // entryFileNames 'studio-[hash].js' 撞名（曾产出两个 studio-*.js）；此类共享
+        // chunk 改名 chunk-[hash].js，其余保留可读名（AgentTimeline/SettingsView 等）。
+        chunkFileNames: (chunkInfo) => {
+          const name = chunkInfo.name && chunkInfo.name !== 'studio' ? chunkInfo.name : 'chunk';
+          return `${name}-[hash].js`;
+        },
         assetFileNames: '[name]-[hash].[ext]',
       },
     },

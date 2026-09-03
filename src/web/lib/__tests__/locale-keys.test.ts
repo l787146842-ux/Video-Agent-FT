@@ -21,7 +21,6 @@ const BACKEND_STATUS_KEYS = [
   'agent.badRetry',
   'agent.flowGatePause',
   'agent.opsDone',
-  'agent.gateHeal',
   'agent.modelFallback',
   'agent.planning',
   'agent.actionsApplied',

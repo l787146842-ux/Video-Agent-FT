@@ -7,14 +7,12 @@ import { createSignal } from 'solid-js';
 import {
   getProjects, switchProject, deleteProject, createProject,
 } from '@/api/project';
-import { studioActions, persistBoard } from '@/stores/studio';
-import { chatActions } from '@/stores/chat';
-import { convActions } from '@/stores/conversations';
+import { persistBoard } from '@/stores/studio';
 import { stopAgentStream } from '@/hooks/use-sse';
 import { showToast } from '@/stores/toast';
 import { confirmDialog } from '@/components/shared/ConfirmDialog';
-import { refreshHistoryStatus } from '@/stores/history';
-import type { Project, ServerStateSnapshot } from '@/types';
+import { applyProjectSnapshot } from '@/lib/project-apply';
+import type { Project } from '@/types';
 
 export function useProjectActions(close: () => void) {
   const [projects, setProjects] = createSignal<Project[]>([]);
@@ -34,17 +32,6 @@ export function useProjectActions(close: () => void) {
     } finally {
       setLoading(false);
     }
-  }
-
-  /** 项目变更后整体重置前端状态 */
-  function applySnapshot(snapshot?: ServerStateSnapshot | null) {
-    if (!snapshot) return;
-    studioActions.resetForProject(snapshot);
-    chatActions.loadMessages(snapshot.chatMessages || []);
-    // 项目切换后多对话标签栏随之重置
-    convActions.loadFromSnapshot(snapshot);
-    // 切换项目会清空后端 undo/redo 栈，同步指示位
-    void refreshHistoryStatus();
   }
 
   /** 变更项目前的统一前置动作：
@@ -67,7 +54,7 @@ export function useProjectActions(close: () => void) {
       await beforeProjectMutation();
       const data = await switchProject(id);
       if (!data.ok) throw new Error(data.message || '切换失败');
-      applySnapshot(data.state);
+      applyProjectSnapshot(data.state);
       close();
       showToast(`已切换到项目：${data.state?.project_name || id}`, 'success');
     } catch (e) {
@@ -87,7 +74,7 @@ export function useProjectActions(close: () => void) {
       await beforeProjectMutation();
       const data = await deleteProject(id);
       if (!data.ok) throw new Error(data.message || '删除失败');
-      applySnapshot(data.state);
+      applyProjectSnapshot(data.state);
       await load();
       showToast(`已删除项目：${name}`, 'success');
     } catch (e) {
@@ -102,7 +89,7 @@ export function useProjectActions(close: () => void) {
       await beforeProjectMutation();
       const data = await createProject(name);
       if (!data.ok) throw new Error(data.message || '新建项目失败');
-      applySnapshot(data.state);
+      applyProjectSnapshot(data.state);
       setCreating(false);
       setNewName('');
       close();

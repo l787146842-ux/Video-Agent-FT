@@ -4,8 +4,8 @@
  * （画布同款：点击验证后直接在卡片底部展示，不用 toast）。
  */
 import { createSignal } from 'solid-js';
-import { apiPost } from '@/api/client';
-import type { ProviderProbeRequest, TestConnectionResponse } from '@/types/api.generated';
+import { testProviderConnection, probeProviderAsync } from '@/api/providers';
+import type { ProviderProbeRequest } from '@/types/api.generated';
 import { imageModeLabel, type EditableProvider } from './settings-meta';
 
 export function useProviderVerify(
@@ -30,10 +30,7 @@ export function useProviderVerify(
     const p = current();
     if (!p) return;
     try {
-      const r = await apiPost<TestConnectionResponse>(
-        '/api/providers/test-connection',
-        probeBody(),
-      );
+      const r = await testProviderConnection(probeBody());
       if (r.ok) {
         setVerifyResult({
           ok: true,
@@ -51,10 +48,7 @@ export function useProviderVerify(
     const p = current();
     if (!p) return;
     try {
-      const r = await apiPost<{ ok: boolean | null; protocol: string; message: string }>(
-        '/api/providers/probe-async',
-        probeBody(),
-      );
+      const r = await probeProviderAsync(probeBody());
       setVerifyResult({ ok: r.ok !== false, text: r.message || `协议识别：${r.protocol}` });
       if (r.ok && r.protocol && r.protocol !== p.protocol) patch('protocol', r.protocol);
     } catch (e) {

@@ -90,6 +90,9 @@ export function createReconnectingSSE(
     controller = new AbortController();
     const { signal } = controller;
     try {
+      // SSE 传输层：结构性无法走 api/ 的 JSON helper（需 ReadableStream 读流），
+      // 鉴权头经 buildAuthHeaders 唯一出口注入——铁律 10.1 的合法传输例外。
+      // eslint-disable-next-line no-restricted-syntax
       const res = await fetch(url, { headers: buildAuthHeaders(), signal });
       if (!res.ok || !res.body) throw new Error(`SSE 连接失败 (HTTP ${res.status})`);
       // 退避重置收紧：流内收到至少一个数据帧才重置（连接成功后立即被关流不重置）

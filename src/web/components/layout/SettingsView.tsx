@@ -13,11 +13,9 @@
 import { createSignal, Show, onMount } from 'solid-js';
 import { A } from '@solidjs/router';
 import { FiArrowLeft } from 'solid-icons/fi';
-import { getProviders } from '@/api/providers';
-import { apiPut } from '@/api/client';
+import { getProviders, putProviders } from '@/api/providers';
 import { showToast } from '@/stores/toast';
 import { studioActions } from '@/stores/studio';
-import type { ApiProvider } from '@/types';
 import {
   CLI_PROTOCOLS, newProvider,
   type EditableProvider, type ModelKind, type SettingsApi,
@@ -104,7 +102,7 @@ export default function SettingsView() {
       return i === sel() && overrides ? { ...base, ...overrides } : base;
     });
     try {
-      const saved = await apiPut<{ providers: ApiProvider[] }>('/api/providers', { providers: list });
+      const saved = await putProviders(list);
       const keepSel = sel();
       setProviders(saved.providers.map((p) => ({ ...p, api_key: '' })));
       setSel(Math.max(0, Math.min(keepSel, saved.providers.length - 1)));

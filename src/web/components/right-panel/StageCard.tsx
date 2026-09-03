@@ -3,6 +3,7 @@ import {
   FiCheckCircle, FiChevronDown, FiChevronRight,
 } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
+import { showToast } from '@/stores/toast';
 import { stageLabelFromMessage } from './AgentTimeline';
 import { decisionFormFields } from './DecisionFormCard';
 import type { ChatMessage } from '@/types';
@@ -23,6 +24,14 @@ export function StageCard(props: {
   const [open, setOpen] = createSignal(true);
   const msg = () => props.msg();
   const confirmText = () => msg().confirm || '';
+  /** D-09 作废态：被新暂停卡取代的旧卡（confirmState=expired）——去翡翠绿改中性灰、
+   *  标题删除线，点击给明确失效反馈（不再静默降级为普通文本），仍可展开作历史回看 */
+  const isVoid = () => props.state === 'expired';
+  /** 作废卡点击：先给失效反馈（Toast），再照常切换展开/折叠供回看 */
+  const onHeaderClick = () => {
+    if (isVoid()) showToast(t('rp.msg.expiredCardClick'), 'info');
+    setOpen(!open());
+  };
   /** 确认文案与模型正文判重：正文已包含同样句子时卡片只留执行清单；
    * 批次C 判重调位：active 暂停卡带选项时，题面已由问卷卡三段式①
    * （confirm-wizard-question）独立成行接管，阶段卡让位防双显；
@@ -52,11 +61,11 @@ export function StageCard(props: {
   };
 
   return (
-    <div class={`stage-card ${open() ? 'expanded' : ''} ${props.class || ''}`}>
+    <div class={`stage-card ${open() ? 'expanded' : ''} ${isVoid() ? 'stage-card-void' : ''} ${props.class || ''}`}>
       <button
         type="button"
         class="stage-card-header"
-        onClick={() => setOpen(!open())}
+        onClick={onHeaderClick}
         aria-expanded={open()}
       >
         <FiCheckCircle size={15} class="stage-check" />

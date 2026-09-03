@@ -33,7 +33,6 @@ const zhCN = {
   'agent.badRetry': '第 {step} 轮输出异常，重试中…',
   'agent.flowGatePause': '越阶操作被流程门禁拦截，已强制暂停',
   'agent.opsDone': '已完成：{ops}',
-  'agent.gateHeal': '系统闸机拦截了本轮 {count} 个流程操作，正在要求模型按流程修正…',
   'agent.modelFallback': '模型 {from} 繁忙/异常，已切换 {to} 重试…',
   // planner 队列级 status 文案（原硬编码中文，收编入字典）
   'agent.roundStart': '第 {step} 轮推理中…（执行上轮操作后继续规划）',
@@ -182,6 +181,8 @@ const zhCN = {
   'rp.msg.appliedOps': '已执行 {count} 个操作',
   'rp.msg.confirmAnswered': '已回应',
   'rp.msg.confirmExpired': '已过期',
+  // D-09：作废暂停卡（被新卡取代）点击反馈——不再静默降级为普通文本
+  'rp.msg.expiredCardClick': '该暂停卡已被新卡取代，已失效，此处仅供历史回看',
   'rp.msg.stopped': '已停止',
   // 停止阶段措辞（不变式：任何中断都有痕迹、都有出口）；
   // 与后端 chat_service._STOP_PHASE_TEXT 同一口径
@@ -240,6 +241,7 @@ const zhCN = {
   'rp.task.done': '后台 Agent 任务已完成',
   'rp.suggested.valueRejected': '建议动作文本异常（非人类可读），已拦截发送',
   'rp.msg.metaTokens': '{n} tokens',
+  'rp.msg.metaTokensPerSec': '{n} tok/s',
   'rp.msg.regenerate': '重新生成（截断之后的回复，按最后问题重答）',
   'rp.send.noProvider': '请先选择 Agent API 和对应模型',
   'rp.skill.manifestHint': '高级声明（skill_manifest，系统自动维护，无需编辑）',

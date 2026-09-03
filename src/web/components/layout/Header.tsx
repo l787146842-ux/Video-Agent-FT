@@ -1,7 +1,7 @@
 import { A, useLocation } from '@solidjs/router';
 import { Show } from 'solid-js';
 import {
-  FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiFeather, FiList, FiMoon, FiSettings, FiSun,
+  FiChevronUp, FiCornerUpLeft, FiCornerUpRight, FiFeather, FiFilm, FiList, FiMoon, FiSettings, FiSun,
 } from 'solid-icons/fi';
 import { useTheme } from '@/hooks/use-theme';
 import { ProjectSwitcher } from './ProjectSwitcher';
@@ -9,6 +9,7 @@ import {
   historyState, performRedo, performUndo,
 } from '@/stores/history';
 import { toggleGenLog, genLogUnread } from '@/stores/generation-log';
+import { toggleJobs } from '@/stores/jobs';
 
 /**
  * 顶栏「全局设置」入口（替代旧自动切换按钮）：
@@ -104,6 +105,16 @@ export function Header(props: {
           <Show when={genLogUnread() > 0}>
             <span class="genlog-unread">{genLogUnread() > 99 ? '99+' : genLogUnread()}</span>
           </Show>
+        </button>
+        {/* Job 面板入口：批量视频生成任务管理（列表/详情/续跑/取消） */}
+        <button
+          type="button"
+          class="theme-toggle-btn"
+          title="批量任务"
+          aria-label="批量任务"
+          onClick={() => toggleJobs()}
+        >
+          <FiFilm size={16} />
         </button>
         <button
           type="button"

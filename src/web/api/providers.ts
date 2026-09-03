@@ -2,11 +2,12 @@
  * 供应商/模型配置 API
  * 严格对齐后端 routes/providers.py + routes/config.py 契约
  */
-import { apiFetch } from './client';
+import { apiFetch, apiPost, apiPut } from './client';
 import type { ApiProvider } from '@/types';
 import type {
   InfiniteCanvasEmbedConfig, AppConfigResponse,
   AssetPickerItemModel, AssetPickerResponseModel,
+  ProviderProbeRequest, TestConnectionResponse, FetchModelsResponse,
 } from '@/types/api.generated';
 
 export interface ProvidersResponse {
@@ -23,6 +24,34 @@ export type AppConfig = AppConfigResponse;
 /** 全部供应商配置（脱敏）+ 画布在线状态 */
 export function getProviders() {
   return apiFetch<ProvidersResponse>('/api/providers');
+}
+
+/** PUT /api/providers：保存全部供应商配置（SettingsView.saveAll 归位，铁律 10.1）。
+ * 返回后端落盘后的脱敏清单（api_key 已清空）。 */
+export function putProviders(providers: unknown[]) {
+  return apiPut<{ providers: ApiProvider[] }>('/api/providers', { providers });
+}
+
+/** probe-async 响应（后端 routes/providers.py 契约）：协议识别结果 */
+export interface ProbeAsyncResponse {
+  ok: boolean | null;
+  protocol: string;
+  message: string;
+}
+
+/** POST /api/providers/fetch-models：拉取上游模型清单（use-model-fetch 归位） */
+export function fetchProviderModels(body: ProviderProbeRequest) {
+  return apiPost<FetchModelsResponse>('/api/providers/fetch-models', body);
+}
+
+/** POST /api/providers/test-connection：验证地址（use-provider-verify 归位） */
+export function testProviderConnection(body: ProviderProbeRequest) {
+  return apiPost<TestConnectionResponse>('/api/providers/test-connection', body);
+}
+
+/** POST /api/providers/probe-async：验证协议（use-provider-verify 归位） */
+export function probeProviderAsync(body: ProviderProbeRequest) {
+  return apiPost<ProbeAsyncResponse>('/api/providers/probe-async', body);
 }
 
 /** 全局配置：默认模型列表 + 画布 URL（loadCanvasApiConfig 数据源） */

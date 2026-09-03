@@ -125,3 +125,29 @@ describe('台账 #9（CSS 形态）：微调框缓缓浮现，禁止瞬时弹出
     expect(open).toMatch(/opacity:\s*1/);
   });
 });
+
+describe('D-09：作废暂停卡（expired 旧卡）去翡翠绿改中性灰 + 标题删除线', () => {
+  const cardsCss = readSrc('styles/chat-cards.css');
+  const voidCard = ruleBlock(cardsCss, /^[ \t]*\.stage-card-void[ \t]*\{/m);
+  const voidTitle = ruleBlock(cardsCss, /^[ \t]*\.stage-card-void \.stage-card-title[ \t]*\{/m);
+  // 去翡翠绿：对勾图标与标题共用一条降饱和分组规则（--text-dim）
+  const voidDim = ruleBlock(cardsCss, /^[ \t]*\.stage-card-void \.stage-check,/m);
+
+  it('.stage-card-void 根规则存在且边框改中性 --border-color（不再翡翠绿）', () => {
+    expect(voidCard).not.toBe('');
+    expect(voidCard).toMatch(/border-color:\s*var\(--border-color\)/);
+    // 作废态不得沿用阶段卡翡翠绿族 token
+    expect(voidCard).not.toMatch(/--color-stage/);
+  });
+
+  it('.stage-card-void 标题打删除线（作废/失效的通用视觉记号）', () => {
+    expect(voidTitle).not.toBe('');
+    expect(voidTitle).toMatch(/text-decoration:\s*line-through/);
+  });
+
+  it('作废态对勾图标/标题降饱和为 --text-dim（去翡翠绿、走语义色 token）', () => {
+    expect(voidDim).not.toBe('');
+    expect(voidDim).toMatch(/color:\s*var\(--text-dim\)/);
+    expect(voidDim).not.toMatch(/--color-stage/);
+  });
+});

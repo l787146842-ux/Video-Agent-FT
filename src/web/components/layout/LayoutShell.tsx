@@ -1,5 +1,5 @@
 import {
-  createSignal, createEffect, onMount, onCleanup, Show, type ParentProps,
+  createSignal, createEffect, onMount, onCleanup, Show, Suspense, lazy, type ParentProps,
 } from 'solid-js';
 import { useLocation } from '@solidjs/router';
 import { FiChevronDown } from 'solid-icons/fi';
@@ -8,10 +8,11 @@ import { ToastHost } from '@/components/shared/Toast';
 import { ContextMenuHost } from '@/components/shared/ContextMenu';
 import { ConfirmDialogHost } from '@/components/shared/ConfirmDialog';
 import { SplashScreen } from '@/components/shared/SplashScreen';
-import { DocsPanel } from '@/components/docs/DocsPanel';
+import { docsPanelOpen } from '@/stores/docs';
 import { AdjustDialog } from '@/components/left-panel/AdjustDialog';
 import { AssetLibraryModal } from '@/components/right-panel/AssetLibraryModal';
 import { GenerationLogPanel } from './GenerationLogPanel';
+import { JobsPanel } from './JobsPanel';
 import { initGenerationEvents, restoreActiveGenerations } from '@/lib/generation-events';
 import { getProjectState } from '@/api/project';
 import { getAppConfig, getProviders } from '@/api/providers';
@@ -33,6 +34,12 @@ import {
   setCanvasIframe, setCanvasError, canvasOverlayDragging,
   setCanvasEmbed, canvasIframeSrc,
 } from '@/stores/canvas';
+
+// 前端批次1：文档面板是默认关闭的低频浮窗，其依赖的 markdown 渲染器（markdown-it，
+// ~110 kB）此前经此静态入首屏关键路径被 modulepreload。改为 docsPanelOpen 触发的
+// 动态 import，将 DocsPanel + markdown + SkillStructuredView 整体移出首屏关键路径。
+const DocsPanel = lazy(() =>
+  import('@/components/docs/DocsPanel').then((m) => ({ default: m.DocsPanel })));
 
 /**
  * 布局壳 — Router root 组件
@@ -222,9 +229,14 @@ export function LayoutShell(props: ParentProps) {
       <ToastHost />
       <ContextMenuHost />
       <ConfirmDialogHost />
-      <DocsPanel />
+      <Show when={docsPanelOpen()}>
+        <Suspense>
+          <DocsPanel />
+        </Suspense>
+      </Show>
       <AdjustDialog />
       <GenerationLogPanel />
+      <JobsPanel />
 
       {/* 全局"画布素材库"模态框（左栏 AssetCard 和 ChatInput 工具栏共用） */}
       <AssetLibraryModal

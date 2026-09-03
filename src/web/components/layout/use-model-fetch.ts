@@ -3,7 +3,7 @@
  * 承载 fetched/savedCats 状态与「拉取/应用」动作；弹窗 UI 在 settings/FetchModelsModal。
  */
 import { createSignal } from 'solid-js';
-import { apiPost } from '@/api/client';
+import { fetchProviderModels } from '@/api/providers';
 import type { ProviderProbeRequest } from '@/types/api.generated';
 import { showToast } from '@/stores/toast';
 import type { EditableProvider, FetchedModels } from './settings-meta';
@@ -27,10 +27,7 @@ export function useModelFetch(
       const body: ProviderProbeRequest = {
         base_url: p.base_url, api_key: keyInput() || '', provider_id: p.id, protocol: p.protocol,
       };
-      const data = await apiPost<FetchedModels>(
-        '/api/providers/fetch-models',
-        body,
-      );
+      const data = await fetchProviderModels(body);
       if (data.error || !(data.all || []).length) {
         showToast(`拉取模型失败：${data.error || '上游未返回模型'}`, 'error');
         return;

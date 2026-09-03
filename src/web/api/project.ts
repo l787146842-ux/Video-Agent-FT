@@ -2,7 +2,7 @@
  * 项目管理 API
  * 严格对齐后端 routes/project.py 契约
  */
-import { apiFetch, apiPost, apiPut } from './client';
+import { apiFetch, apiPost, apiPut, buildAuthHeaders } from './client';
 import type { ServerStateSnapshot, DocRecord } from '@/types';
 import type {
   BoardMergeResponse, DeleteProjectRequest, DocumentDelete, DocumentSave, NewProjectRequest, OkResponse, ProjectListResponse, SnapshotActionRequest, SnapshotListResponse, SwitchProjectRequest, UndoStatusResponse,
@@ -66,6 +66,22 @@ export function putProjectState(
   >,
 ) {
   return apiPut<OkResponse>('/api/project/state', patch);
+}
+
+/** 页面卸载（pagehide）冲刷：keepalive 尽力送达整板，超 keepalive 配额时
+ * 退化为普通请求兜底。鉴权头走 buildAuthHeaders 唯一出口——生产模式中间件对
+ * /api/ 强制校验，裸 fetch 会被 401 截断导致卸载冲刷无效（铁律 10.1：fetch 收口 api 层）。
+ * 卸载期同步触发，不等待响应；失败静默（不阻塞页面退出）。 */
+export function flushProjectStateKeepalive(patch: unknown): void {
+  const body = JSON.stringify(patch);
+  const headers = { 'Content-Type': 'application/json', ...buildAuthHeaders() };
+  try {
+    void fetch('/api/project/state', { method: 'PUT', keepalive: true, headers, body });
+  } catch {
+    try {
+      void fetch('/api/project/state', { method: 'PUT', headers, body });
+    } catch { /* 静默：卸载期最后防线 */ }
+  }
 }
 
 export function undoAction() {

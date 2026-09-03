@@ -24,3 +24,5 @@
 @import "./g1-conflicts.css";
 /* 微调浮动子对话浮窗（批 S4） */
 @import "./adjust-dialog.css";
+/* Job 面板（批量生成任务管理） */
+@import "./jobs-panel.css";
