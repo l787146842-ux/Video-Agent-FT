@@ -7,7 +7,7 @@
 3. 真实用户/助手对话照常采样；采样预算口径不变；
 4. 过滤只作用于采样视角：指纹仍对全量计算（失效语义不变）。
 """
-from src.video_agent.web import chat_consume as cc
+from src.video_agent.web import history_compact as cc
 
 
 def test_system_refeed_messages_filtered():

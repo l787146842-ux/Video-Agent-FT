@@ -13,7 +13,6 @@ src/video_agent/core/__init__.py:21:agent
 src/video_agent/core/gates_cards.py:338:src.video_agent.skill_runtime.registry
 src/video_agent/core/gates_cards.py:369:src.video_agent.core
 src/video_agent/core/gates_cards.py:400:src.video_agent.skill_runtime.registry
-src/video_agent/core/gates_spec.py:71:src.video_agent.skill_runtime.registry
 src/video_agent/core/model_policy.py:29:src.video_agent.config
 src/video_agent/core/planner.py:259:src.video_agent.adapters.canvas_adapter
 src/video_agent/core/prompt_builder.py:259:src.video_agent.core.spec_rules
@@ -31,7 +30,6 @@ src/video_agent/storage/__init__.py:34:loguru
 src/video_agent/storage/media_urls.py:41:io
 src/video_agent/storage/media_urls.py:43:PIL
 src/video_agent/tools/canvas_tools.py:341:src.video_agent.tools.manager
-src/video_agent/tools/document_tools.py:155:src.video_agent.skill_runtime.registry
 src/video_agent/tools/document_tools.py:382:src.video_agent.config
 src/video_agent/tools/document_tools.py:383:src.video_agent.state
 src/video_agent/tools/document_tools.py:557:src.video_agent.tools.manager
@@ -48,12 +46,6 @@ src/video_agent/web/app.py:78:src.video_agent.config
 src/video_agent/web/app.py:89:src.video_agent.web.skill_docs
 src/video_agent/web/app.py:96:src.video_agent.tools.canvas_tools
 src/video_agent/web/attachments.py:46:pdfplumber
-src/video_agent/web/chat_consume.py:247:re
-src/video_agent/web/chat_consume.py:249:src.video_agent.utils
-src/video_agent/web/chat_consume.py:334:src.video_agent.core
-src/video_agent/web/chat_consume.py:362:re
-src/video_agent/web/chat_consume.py:381:src.video_agent.core
-src/video_agent/web/chat_consume.py:80:src.video_agent.utils.prompts
 src/video_agent/web/chat_opening.py:129:src.video_agent.web
 src/video_agent/web/chat_opening.py:136:src.video_agent.skill_runtime.registry
 src/video_agent/web/chat_opening.py:167:src.video_agent.core

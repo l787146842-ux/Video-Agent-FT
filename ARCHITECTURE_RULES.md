@@ -240,7 +240,7 @@ src/video_agent/
 │   （执行器族已整体退役，防复活见 check_legacy_orchestration；
 │     MCP 外部工具接入层为预留扩展点）
 ├── web/
-│   ├── app.py / chat_service.py(+chat_opening/chat_consume) / sse_protocol.py
+│   ├── app.py / chat_service.py(+chat_opening/chat_consume/history_compact) / sse_protocol.py
 │   ├── port_wiring.py ← core 端口装配点（web 侧 re-export 壳已清退）
 │   ├── task_manager.py / skill_docs.py / routes/
 ├── state/  manager.py（唯一写入点）/ models.py / storyboard_ops.py / context_builder.py

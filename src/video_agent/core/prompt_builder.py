@@ -481,7 +481,7 @@ def _sec_session_summary(pb: "PromptBuilder", context: "PlannerContext") -> str:
     不再击穿稳定前缀；状态上下文已移出 system 段，不再参与段序锚定）。
     压缩摘要置于 system 段而非伪装成 history 首条 user 消息；
     是否注入按 interaction.session_summary.active 每轮判定（由
-    chat_consume._maybe_compact_history 每请求签发：压缩生效置 True，
+    history_compact._maybe_compact_history 每请求签发：压缩生效置 True，
     未触发/失败回落同步清除），文本取 session_summary 缓存
     （内容指纹失效机制不变）。摘要自指措辞与新注入位置自洽：
     以第三人称交接陈述呈现，工作台状态 JSON 仍是最新事实源。"""

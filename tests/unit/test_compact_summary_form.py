@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.video_agent.core import prompt_builder as pb_mod
-from src.video_agent.web import chat_consume
+from src.video_agent.web import history_compact as chat_consume
 
 
 # ---------- 批 1：注入形态 ----------

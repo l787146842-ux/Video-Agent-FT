@@ -875,12 +875,15 @@ from src.video_agent.web.chat_opening import (
     truncate_history,
 )
 from src.video_agent.web.chat_consume import (
+    _consume_pending_confirmation,
+    consume_pause_response,
+)
+# 会话 compaction 域（实现体 history_compact.py，2026-09-03 按关注点切分）
+from src.video_agent.web.history_compact import (
     _summary_thinking_level,
     _HISTORY_COMPACT_KEEP,
     _compact_card_enumeration,
-    _consume_pending_confirmation,
     _maybe_compact_history,
-    consume_pause_response,
 )
 # 错误翻译域（实现体 chat_errors.py）：chat_service 内部调用 _emit_stream_error
 #（失败出口，非 re-export 壳）；外部消费方（tests）直连 chat_errors.py。

@@ -5,7 +5,7 @@
 import inspect
 
 from src.video_agent.core.planner import Planner
-from src.video_agent.web import chat_consume, chat_service
+from src.video_agent.web import history_compact, chat_service
 
 
 class TestChatServiceFixes:
@@ -63,7 +63,7 @@ class TestMaybeCompactHistory:
         from src.video_agent.state.manager import StateManager
 
         monkeypatch.setattr(
-            chat_consume, "settings",
+            history_compact, "settings",
             SimpleNamespace(history_compact_threshold=6, llm_timeout=10),
         )
         svc = StateManager(str(tmp_path))
@@ -86,13 +86,13 @@ class TestMaybeCompactHistory:
         from types import SimpleNamespace
 
         from src.video_agent.state.manager import StateManager
-        from src.video_agent.web.chat_consume import (
+        from src.video_agent.web.history_compact import (
             _HISTORY_COMPACT_KEEP,
             _history_fingerprint,
         )
 
         monkeypatch.setattr(
-            chat_consume, "settings",
+            history_compact, "settings",
             SimpleNamespace(history_compact_threshold=2, llm_timeout=10),
         )
         svc = StateManager(str(tmp_path))
@@ -116,13 +116,13 @@ class TestMaybeCompactHistory:
         from types import SimpleNamespace
 
         from src.video_agent.state.manager import StateManager
-        from src.video_agent.web.chat_consume import (
+        from src.video_agent.web.history_compact import (
             _HISTORY_COMPACT_KEEP,
             _history_fingerprint,
         )
 
         monkeypatch.setattr(
-            chat_consume, "settings",
+            history_compact, "settings",
             SimpleNamespace(history_compact_threshold=2, llm_timeout=10),
         )
         svc = StateManager(str(tmp_path))

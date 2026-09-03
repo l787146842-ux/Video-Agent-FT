@@ -50,7 +50,7 @@ def test_issue_pause_registration_degradation_visible():
 
 async def test_session_compact_failure_degradation_visible(monkeypatch):
     from src.video_agent.config import settings
-    from src.video_agent.web import chat_consume
+    from src.video_agent.web import history_compact as chat_consume
 
     original_threshold = settings.history_compact_threshold
     object.__setattr__(settings, "history_compact_threshold", 2)

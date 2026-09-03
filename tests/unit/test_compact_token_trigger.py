@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.video_agent.web import chat_consume
+from src.video_agent.web import history_compact as chat_consume
 
 
 class _FakeAdapter:
