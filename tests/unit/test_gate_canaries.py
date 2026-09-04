@@ -23,6 +23,8 @@ _EXPECTED_GATE_NAMES = [
     "semantic_colors", "func_imports", "category_keys",
     "legacy_orchestration", "web_chat_bypass", "fc_tool_name_literals",
     "layer_imports", "ref_integrity", "prompt_literals",
+    # 批 4 · 漂移 lint（V3-3 收窄口径）：Skill 章节锚点存在性
+    "skill_anchor_lint",
 ]
 
 # I-4 修复：覆盖率关卡从 GATES 移到 RATCHETS（后置断言，读 SUITES 本轮新鲜产物）

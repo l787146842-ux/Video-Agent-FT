@@ -61,6 +61,9 @@ GATES: List[Tuple[str, List[str]]] = [
     # adapters 五目录 AST 扫描 CJK 且长度≥8 的硬编码 prose（进模型上下文/
     # 用户可见气泡），非 DECLARED_DATA 登记即拒收（约束下沉 P2，提示词外置 Rule 6）。
     ("prompt_literals", [sys.executable, "scripts/check_prompt_literals.py"]),
+    # 批 4 · 漂移 lint（V3-3 收窄口径）：Skill 章节锚点存在性——
+    # 只查 planner 必备 / 锚点合法 / 开闭配对；暂停行与依赖行不查（必误报）。
+    ("skill_anchor_lint", [sys.executable, "scripts/check_skill_anchor_lint.py"]),
 ]
 # ===== Phase 2: SUITES — 测试四件套（生成覆盖率产物供 RATCHETS 消费） =====
 SUITES: List[Tuple[str, List[str]]] = [
