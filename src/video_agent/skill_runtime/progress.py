@@ -87,6 +87,42 @@ async def emit_timeline_note(
         logger.debug("[progress] 忽略异常: {}", _e)
 
 
+async def emit_event_card(
+    card: str, detail: str = "", *,
+    emitter: Optional[ProgressEmitter] = None, pre_turn: bool = False,
+) -> None:
+    """具名事件卡（Skill 流程跑通修复批 2 · 插播报）：产物落账即广播的里程碑条目。
+
+    双通道：持久化 trace（pre_turn=True 走轮前缓冲由 start_trace 收养——
+    轮始发卡场景 tracer 尚未开轨；否则随父工具条目挂子步骤）+ 实时时间线
+    事件（emitter 缺省取绑定通道；轮始场景由调用方显式传入 on_event）。
+    name 恒为 event_card：前端时间线按里程碑样式渲染，与工具行区分。
+    """
+    if not card:
+        return
+    summary = f"{card}：{detail}" if detail else card
+    try:
+        from src.video_agent.core.tracer import AgentTracer
+        if pre_turn:
+            AgentTracer.get_instance().record_pre_turn("event_card", summary=summary)
+        else:
+            AgentTracer.get_instance().record_subaction("event_card", summary=summary)
+    except Exception as _e:
+        logger.debug("[progress] 忽略异常: {}", _e)
+    em = emitter if emitter is not None else _progress_var.get()
+    if em is None:
+        return
+    try:
+        nid = f"card-{uuid.uuid4().hex[:8]}"
+        await em({"type": SSE_TOOL_STARTED, "id": nid, "name": "event_card", "summary": summary})
+        await em({
+            "type": SSE_TOOL_FINISHED, "id": nid, "ok": True,
+            "elapsed_ms": 0.0, "result_summary": summary,
+        })
+    except Exception as _e:
+        logger.debug("[progress] 忽略异常: {}", _e)
+
+
 async def emit_state_refresh(count: int = 1) -> None:
     """状态快照即时下发（首拆即显）：执行器批次落盘后立即通知前端
     刷新故事板，不等整个工具调用结束。chat_service 收到 actions_applied

@@ -23,6 +23,9 @@
   .tl-item-icon.ok { color: var(--color-success); }
   .tl-item-icon.failed { color: var(--color-danger-strong); }
   .tl-item-icon.spin { color: var(--accent-blue); animation: tlSpin 1s linear infinite; }
+  /* 事件卡（批 2 插播报）：产物落账里程碑行，与工具行区分 */
+  .tl-item-card { color: var(--text-main); font-weight: 600; }
+  .tl-item-card .tl-item-icon.card { color: var(--accent-blue); }
   /* .tl-item-summary 单行截断已归组至 chat-input-picker.css（任务#9 CSS 棘轮） */
   .tl-item-failed .tl-item-summary { color: var(--color-danger-strong); }
   .tl-item-elapsed { color: var(--text-dim); flex-shrink: 0; }

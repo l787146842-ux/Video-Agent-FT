@@ -448,6 +448,24 @@ class StateManager(UndoRedoMixin):
         })
         self._context_cache.clear()
 
+    def consume_flow_events(self, kind: str) -> List[Dict[str, Any]]:
+        """取走指定 kind 的流程事件（轮始消费型一次性事实，如媒体同步播报）。
+
+        返回被取走的条目（调用方据此播报）；取走后清上下文缓存，
+        模型下一轮不再看到——播报与上下文注入一次性，防逐轮重复。
+        """
+        events = self._raw_state.get("flowEvents")
+        if not isinstance(events, list):
+            return []
+        taken = [e for e in events if isinstance(e, dict) and e.get("kind") == kind]
+        if not taken:
+            return []
+        self._raw_state["flowEvents"] = [
+            e for e in events if not (isinstance(e, dict) and e.get("kind") == kind)
+        ]
+        self._context_cache.clear()
+        return taken
+
     def clear_flow_events(self, prefix: str = "") -> None:
         """按 kind 前缀清除流程事件（全部完成/未截断时消解历史记录）。"""
         events = self._raw_state.get("flowEvents")

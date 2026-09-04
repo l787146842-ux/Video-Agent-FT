@@ -32,6 +32,7 @@ from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED, SSE_DOC_WRITTEN, SSE_TOOL_FINISHED, SSE_TOOL_STARTED,
 )
 from src.video_agent.core.tracer import AgentTracer
+from src.video_agent.skill_runtime.progress import emit_event_card
 from src.video_agent.skill_runtime.registry import stage_label_for_tool
 from src.video_agent.state import storyboard_ops as ops
 from src.video_agent.state.manager import StateManager
@@ -168,6 +169,49 @@ class FCToolRunner:
             workflow_runtime.reduce_drafts_presented(svc, draft_id=draft_id, flush=True)
         except Exception as e:  # 记录失败不影响主链路
             logger.debug(f"[FlowGate] drafts_presented 记录失败: {e}")
+
+    # 批 2 · 插播报：读类工具（「先查再说」动作）→ 信息搜索完成卡；
+    # 与 ACTIONS_APPLIED 的读类排除名单同源（同一组工具不推状态快照）
+    _READ_CARD_TOOLS = (
+        "read_skill", "read_draft", "read_uploaded_doc", "read_project_doc",
+        "read_state_group", "view_storyboard_media",
+    )
+
+    def _product_event_card(
+        self, name: str, args: Dict[str, Any], image_urls: List[str],
+    ) -> Optional[tuple]:
+        """工具成功 → 具名事件卡映射（批 2 插播报；逐卡唯一触发点）。
+
+        返回 (卡名, 明细, 是否进模型上下文) 或 None（无卡工具）。
+        触发时刻对照《Skill流程跑通修复计划书》§四 批 2 表：
+        - 规格已完成：document_write 成功且文档名命中规格（建立或更新都发）；
+        - 故事板已更新：storyboard_create_group/add_draft/patch_draft 任一成功；
+        - 素材已完成：image_generate 本批返回（批级，随调用次数逐批发）；
+        - 时间线已更新：generate_video 成功；
+        - 信息搜索完成：读类工具动作完成（只进时间线，不进模型上下文）。
+        Skill 已加载卡沿用开场既有 emit 点（chat_opening notes）；素材变更
+        已同步卡在轮始播报（planner，消费 REST 落库时记的 media_synced）。
+        """
+        if name in ("document_write", "write_document"):
+            doc_name = str(args.get("name") or args.get("key") or "").strip()
+            if doc_name and prompt_gates.is_spec_doc_name(doc_name):
+                return ("规格已完成", doc_name, True)
+            return None
+        if name == "storyboard_create_group":
+            return ("故事板已更新", str(args.get("title") or "").strip(), True)
+        if name == "storyboard_add_draft":
+            draft = args.get("draft") if isinstance(args.get("draft"), dict) else {}
+            return ("故事板已更新", str(draft.get("label") or "").strip(), True)
+        if name == "storyboard_patch_draft":
+            return ("故事板已更新", str(args.get("draft_id") or "").strip(), True)
+        if name == "image_generate":
+            n = len(image_urls)
+            return ("素材已完成", f"{n} 张图片" if n else "", True)
+        if name == "generate_video":
+            return ("时间线已更新", "", True)
+        if name in self._READ_CARD_TOOLS:
+            return ("信息搜索完成", "", False)
+        return None
 
     def reset_turn_tracking(self) -> None:
         """轮始重置跨批跟踪（三通道分离 C）：阶段边界判定只认本轮执行。
@@ -515,6 +559,17 @@ class FCToolRunner:
                         _tws = str(_tw or "").strip()
                         if _tws and _tws not in self.gate_warnings:
                             self.gate_warnings.append(_tws)
+                # --- 批 2 · 插播报：产物落账即广播具名事件卡（触发时刻写死，
+                # 逐卡唯一落点 = 本映射；读类卡只进时间线不进模型上下文防逐轮膨胀）
+                _card = self._product_event_card(name, args, image_urls)
+                if _card is not None:
+                    _card_name, _card_detail, _card_to_ctx = _card
+                    await emit_event_card(_card_name, _card_detail, emitter=on_event)
+                    if _card_to_ctx:
+                        StateManager.get_instance().record_flow_event(
+                            "event_card",
+                            f"{_card_name}：{_card_detail}" if _card_detail else _card_name,
+                        )
                 # 问即停：暂停发行成功 = 立即结束本批（同批后续
                 # tool_calls 不执行、不产生拒因回喂；发卡点正常收尾）
                 if _pause_break:

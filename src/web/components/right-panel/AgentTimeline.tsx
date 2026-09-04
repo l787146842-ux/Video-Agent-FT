@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import {
-  FiCheckCircle, FiChevronDown, FiLoader, FiXCircle, FiZap,
+  FiCheckCircle, FiChevronDown, FiFlag, FiLoader, FiXCircle, FiZap,
 } from 'solid-icons/fi';
 import { t } from '@/lib/locale';
 import { consolidateTimeline, formatElapsed, type TimelineItem } from '@/lib/timeline';
@@ -17,8 +17,10 @@ export type { TimelineItem };
 function TimelineRow(props: { item: TimelineItem; now: () => number }) {
   const [open, setOpen] = createSignal(false);
   const item = () => props.item;
+  // 事件卡（批 2 插播报）：产物落账里程碑，旗标图标 + 卡片配色与工具行区分
+  const isCard = () => item().name === 'event_card';
   return (
-    <li class={`tl-item tl-item-${item().status}`}>
+    <li class={`tl-item tl-item-${item().status}${isCard() ? ' tl-item-card' : ''}`}>
       <Show
         when={item().status !== 'running'}
         fallback={<FiLoader size={13} class="tl-item-icon spin" />}
@@ -27,7 +29,12 @@ function TimelineRow(props: { item: TimelineItem; now: () => number }) {
           when={item().status === 'done'}
           fallback={<FiXCircle size={13} class="tl-item-icon failed" />}
         >
-          <FiCheckCircle size={13} class="tl-item-icon ok" />
+          <Show
+            when={!isCard()}
+            fallback={<FiFlag size={13} class="tl-item-icon card" />}
+          >
+            <FiCheckCircle size={13} class="tl-item-icon ok" />
+          </Show>
         </Show>
       </Show>
       {/* 带明细的合并条目：summary 可点击展开逐轮明细 */}

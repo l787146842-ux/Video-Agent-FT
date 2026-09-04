@@ -407,7 +407,7 @@ def _build_interaction(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         # 流程事件账本（截断/部分完成等；只带最近 3 条，防膨胀）
         "flowEvents": [
             {"kind": e.get("kind", ""), "detail": str(e.get("detail") or "")[:200]}
-            for e in (raw_state.get("flowEvents") or [])[-3:]
+            for e in (raw_state.get("flowEvents") or [])[-6:]
         ],
     }
 

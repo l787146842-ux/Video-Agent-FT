@@ -306,6 +306,34 @@ async def delete_project_document(body: DocumentDelete):
     return {"ok": True, "documents": svc.state_dict["documents"]}
 
 
+def _media_fingerprint(state) -> List[str]:
+    """批 2 · 插播报：项目媒体状态指纹（草稿媒体 URL + 素材绑定）。
+
+    整板落库前后对比，变化即记 media_synced 流事件（「素材变更已同步」卡
+    的唯一触发依据；纯标题/排序改动不算媒体变更，不播报）。
+    """
+    items: List[str] = []
+    for cat in (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS):
+        for g in (state.get(cat) or []):
+            if not isinstance(g, dict):
+                continue
+            for d in (g.get("drafts") or []):
+                if not isinstance(d, dict):
+                    continue
+                urls = (str(d.get("imgUrl") or ""), str(d.get("videoUrl") or ""),
+                        str(d.get("audioUrl") or ""))
+                if not any(urls):
+                    continue  # 无媒体的空卡不构成媒体状态
+                items.append("|".join((cat, str(d.get("id") or ""), *urls)))
+    for a in (state.get(CAT_ASSETS) or []):
+        if isinstance(a, dict) and (a.get("url") or a.get("isBound")):
+            items.append("|".join((
+                "asset", str(a.get("id") or ""), str(a.get("url") or ""),
+                str(a.get("isBound") or ""),
+            )))
+    return sorted(items)
+
+
 @router.put("/project/state", response_model=OkResponse)
 async def put_project_state(body: ProjectStateUpdate):
     """前端整体保存状态"""
@@ -320,6 +348,7 @@ async def put_project_state(body: ProjectStateUpdate):
                 f"项目已切换（期望 '{svc.active_project_id}'，收到 '{body.project_id}'），丢弃本次过期保存"
             )
         state = svc.state_dict
+        _media_before = _media_fingerprint(state)
 
         # 元素逐元素软校验→dict 回转（入口单点）：下游级联 diff / board_merge / 落盘
         # 均消费纯 dict，与建模前形态一致（exclude_unset 保证与提交同形）。
@@ -364,6 +393,11 @@ async def put_project_state(body: ProjectStateUpdate):
         if chat_messages is not None:
             state["chatMessages"] = chat_messages
 
+        # 批 2 · 插播报：媒体状态真实变化才记一次性同步事件（下一轮对话
+        # 轮始播报「素材变更已同步」；纯标题/排序保存不播报）
+        if _media_fingerprint(state) != _media_before:
+            svc.record_flow_event("media_synced", "项目素材媒体已更新")
+
         await svc.save_async()
     return {"ok": True, "board_version": svc.board_version}
 
@@ -395,6 +429,7 @@ async def merge_project_state(body: ProjectStateUpdate):
                 f"项目已切换（期望 '{svc.active_project_id}'，收到 '{body.project_id}'），丢弃本次过期保存"
             )
         state = svc.state_dict
+        _media_before = _media_fingerprint(state)
         # 元素逐元素软校验→dict 回转（同整板 PUT 口径）：board_merge 按纯 dict 粒度三向合并；
         # 空列表提交（清板）与 None（未提交）语义不同，故用 is not None 判别、不以真值回落。
         key_elements = _coerce_elements(body.keyElements, KeyElementGroup)
@@ -435,6 +470,9 @@ async def merge_project_state(body: ProjectStateUpdate):
             state[CAT_SHOTS] = merged[CAT_SHOTS]
             state[CAT_AUDIO_ITEMS] = merged[CAT_AUDIO_ITEMS]
             state[CAT_ASSETS] = merged[CAT_ASSETS]
+            # 批 2 · 插播报：同整板 PUT 口径（媒体真实变化才记一次性同步事件）
+            if _media_fingerprint(state) != _media_before:
+                svc.record_flow_event("media_synced", "项目素材媒体已更新")
             await svc.save_async()
             return BoardMergeResponse(
                 ok=True, applied=True, base_available=True,

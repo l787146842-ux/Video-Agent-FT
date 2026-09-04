@@ -49,6 +49,7 @@ from src.video_agent.core import fc_response, planner_gate_session, planner_tria
 from src.video_agent.core.turn_executor import TurnExecutor
 from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.core.sse_events import status_event
+from src.video_agent.skill_runtime.progress import emit_event_card
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # Workflow Runtime：账本 + 裁判数据层
 from src.video_agent.core import workflow_runtime
@@ -366,6 +367,21 @@ class Planner:
         self._fc_runner.reset_turn_tracking()
         # 会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
         self._chat_thinking_level = context.thinking_level or ""
+
+        # 批 2 · 插播报：轮间隙发生媒体变更（用户手动改/删/绑定素材或生成回填，
+        # 落库时经 media 指纹 diff 记 media_synced 流事件）→ 轮始一次性播报
+        # 「素材变更已同步」（Flova 姿势：检测手动编辑后按最新状态重做）
+        if on_event is not None:
+            try:
+                taken = self.state_manager.consume_flow_events("media_synced")
+                if taken:
+                    await emit_event_card(
+                        "素材变更已同步",
+                        "检测到项目素材被更新，将按最新状态继续",
+                        emitter=on_event, pre_turn=True,
+                    )
+            except Exception as _e:
+                logger.debug("[planner] 忽略异常: {}", _e)
 
         # 构建状态视图载体（Q2：文本轨动作分派已退役，动作通道唯一 = FC；
         # 载体供 agent_loop/轮末策略读 state 与动作描述）：优先注入的工厂，缺省 core 层实现
