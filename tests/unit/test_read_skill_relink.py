@@ -31,7 +31,7 @@ def _make_ctx(skill):
     return ctx
 
 
-@pytest.mark.parametrize("skill", ["任意Skill", "剧本生视频需上传剧本"])
+@pytest.mark.parametrize("skill", ["任意Skill", "AI-短剧一站式生成"])
 def test_planner_never_excludes_read_skill(svc, monkeypatch, skill):
     """read_skill 恒可见：全文直注不再是剔除理由，任意激活态都不关入口。"""
     monkeypatch.setattr(

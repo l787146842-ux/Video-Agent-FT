@@ -34,9 +34,9 @@ def _all_docs():
 
 
 def test_default_all_enabled_no_pointer_line(set_global_setting):
-    """开关默认全启用（存量 16 skill 全在目录），无截断指针行。"""
+    """开关默认全启用（存量 15 skill 全在目录），无截断指针行。"""
     docs = _all_docs()
-    assert len(docs) >= 16
+    assert len(docs) >= 15
     block = _pb(_base_state()).build_skill_catalog(_ctx(""))
     for d in docs:
         assert (d.get("name") or d.get("slug")) in block

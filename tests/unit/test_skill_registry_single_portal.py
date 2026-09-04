@@ -11,6 +11,7 @@
 ⑤ 注册表空（全部失败）降级：目录空段跳过、read_skill 优雅报错、对话不阻断；
 ⑥ /api/skills 不返回被拒包；/api/skills/docs 仍磁盘全量（工作台供修复）；
 ⑦ 16 包字节级目录快照：空停用+全注册时与改造前磁盘口径基线逐字节相等。
+（2026-09-05 用户删除「剧本生视频需上传剧本」，存量 15 包，基线同步重采。）
 """
 import json
 import pathlib
@@ -206,22 +207,22 @@ def test_api_skills_excludes_rejected_but_docs_keeps_full(portal_env):
     assert {"good-pack", "bad-pack"} <= doc_slugs  # 工作台仍可见坏包供修复
 
 
-# ---------- ⑦ 16 包字节级目录快照 ----------
+# ---------- ⑦ 存量包字节级目录快照 ----------
 
 
-def test_sixteen_pack_catalog_byte_snapshot(tmp_path, monkeypatch):
-    """空停用 + 全注册：build_skill_catalog 输出与改造前磁盘口径基线逐字节相等
-    （基线固化 tests/fixtures/skill_catalog_golden.json，2026-08-30 探针验证）。
-    数据面临时回挂真实 data/skills（16 包），避开测试镜像夹具桩。"""
+def test_stock_pack_catalog_byte_snapshot(tmp_path, monkeypatch):
+    """空停用 + 全注册：build_skill_catalog 输出与磁盘口径基线逐字节相等
+    （基线固化 tests/fixtures/skill_catalog_golden.json；2026-09-05 存量 15 包重采）。
+    数据面临时回挂真实 data/skills，避开测试镜像夹具桩。"""
     from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
 
     monkeypatch.setattr(sd, "SKILL_DOCS_DIR", REAL_DIR)
     registry.reset_registry()
     registry.sync_all(force=True)
     try:
-        assert len(registry.loadable_entries()) == 16, "存量 16 包须全注册（M1 口径）"
+        assert len(registry.loadable_entries()) == 15, "存量 15 包须全注册（M1 口径）"
         golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
         actual = _pb(_base_state()).build_skill_catalog(_ctx())
-        assert actual == golden["catalog"], "16 包目录段发生字节级漂移"
+        assert actual == golden["catalog"], "存量包目录段发生字节级漂移"
     finally:
         registry.reset_registry()

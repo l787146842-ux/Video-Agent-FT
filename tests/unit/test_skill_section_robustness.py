@@ -21,7 +21,7 @@ def _skill_doc_path(stem: str) -> Path:
 
 def test_s6_skill_sections_golden_pinned():
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
-    assert len(golden) >= 16, "快照覆盖的存量 Skill 数量不得缩水"
+    assert len(golden) >= 15, "快照覆盖的存量 Skill 数量不得缩水"
     for stem, expected in golden.items():
         doc = _skill_doc_path(stem)
         assert doc.exists(), f"存量 Skill 缺失: {stem}"

@@ -41,11 +41,11 @@ def test_self_report_has_no_ledger_authority(svc):
     _spec_doc(st)
     _ke_groups(st)
     st["shots"] = [{"id": "s1", "drafts": []}]
-    run = wr.sync_run(st, "剧本生视频需上传剧本")
+    run = wr.sync_run(st, "AI-短剧一站式生成")
     rid = run["run_id"]
     # 模拟历史自报路径：直接往 completed_nodes 塞无证据条目
     run.setdefault("completed_nodes", []).append("storyboard_audio")
-    run = wr.sync_run(st, "剧本生视频需上传剧本")
+    run = wr.sync_run(st, "AI-短剧一站式生成")
     assert "storyboard_audio" not in run["completed_nodes"], (
         "自报条目残留账本——探针重算未生效")
 

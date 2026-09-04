@@ -4,7 +4,7 @@
 探针为报告性质（不进 acceptance GATES）；本测试钉死口径：
 ① 未声明/一致 → 空清单（不误报）；
 ② 声明执行器无章节支撑 / schema 非法 → 命中；
-③ 存量 16 skill 实数据全绿。
+③ 存量 15 skill 实数据全绿。
 （C1b 裁决 2026-08-31：custom_sections 探针随通道退役删除。）
 """
 import importlib.util
@@ -93,4 +93,4 @@ def test_probe_real_skills_all_consistent():
         issues = scan_skills.manifest_consistency_issues(stem, content, manifest)
         assert issues == [], f"Skill「{stem}」探针不一致: {issues}"
         total += 1
-    assert total >= 16
+    assert total >= 15

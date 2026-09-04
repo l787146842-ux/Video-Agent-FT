@@ -86,19 +86,18 @@ async def test_spec_pause_gate_silent_without_manifest(svc):
 # 顺序控制归 Skill 流程与阶段裁剪，机械闸仅存 platform 层（GATE_RULES 5 条）。
 
 
-# ---------- 暂停声明：机械暂停已随 C1b 裁决 2026-08-31 退役（lint 仅诊断） ----------
+# ---------- 文档内 manifest 块不再消费（声明唯一源 = 文档头部 frontmatter） ----------
+# （暂停声明 lint 已随 pause 声明化石链整链删除：frontmatter pause / 正文
+#   pause_rules 声明均无运行时消费者，提示只会诱导作者补一个空声明。）
 
 
-def test_lint_pause_warning_keyword_driven():
-    """任务#5：编辑期暂停提示看正文关键词与 frontmatter 声明；
-    文档内 manifest 块不再消费并显式告知。"""
+def test_lint_skill_manifest_block_not_consumed():
+    """任务#5：文档内 manifest 块不再消费并显式告知。"""
     content = (
         "# A\n```json skill_manifest\n" '{"pause": {"stage_pause": true}}\n' "```\n正文"
     )
     result = sd.lint_skill_content(content)
     assert any("不再消费" in w for w in result["warnings"])
-    ok = sd.lint_skill_content("# A\n**何时暂停**：每阶段后\n正文")
-    assert not any("暂停声明" in w for w in ok["warnings"])
 
 
 # ---------- 存量 Skill 快照（防未来单 Skill 再带偏） ----------
@@ -138,7 +137,7 @@ def test_real_skills_manifest_snapshot(monkeypatch):
 # 814H9 影响面快照（耦合行登记）：客观检测只命中流程含「上传/分析剧本」的 Skill
 # （豪华技能为测试桩，R2 已迁 tests/fixtures/skills，不再占生产快照名额）
 _SCRIPT_REQUIRED_ON = (
-    "3D国漫古装精品短剧", "AI-短剧一站式生成", "剧本生视频需上传剧本",
+    "3D国漫古装精品短剧", "AI-短剧一站式生成",
 )
 # 剧情短片音色参考：任务#6 用户裁决剧本可选（script_required=false，
 # planner 可代写），自 ON 清单移入 OFF

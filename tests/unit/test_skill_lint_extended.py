@@ -97,7 +97,7 @@ def test_inventory_skills_lint_health_report():
         (p, p / "SKILL.md") for p in SKILLS_DIR.iterdir()
         if p.is_dir() and not p.name.startswith(".")
         and (p / "SKILL.md").exists())
-    assert len(packages) >= 16, f"存量 Skill 数量异常：{len(packages)}"
+    assert len(packages) >= 15, f"存量 Skill 数量异常：{len(packages)}"
     total_warnings = 0
     for pkg, f in packages:
         content = f.read_text(encoding="utf-8")
