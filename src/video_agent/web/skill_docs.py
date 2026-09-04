@@ -32,8 +32,6 @@ from src.video_agent.config import settings
 # 标题式解析静默沿用的降级遥测（顶层化，宪法第六章禁方法内 import）
 from src.video_agent.utils import live_metrics
 from src.video_agent.skill_runtime import registry as _skill_registry
-# pause_rules 解析定义下沉 skill_runtime.registry，本处顶层 re-export 保留兼容导入路径
-from src.video_agent.skill_runtime.registry import parse_pause_rules, _PAUSE_RULES_BLOCK_RE  # noqa: 1
 # frontmatter 声明解析/体检（frontmatter 顶层不依赖本模块，无环）
 from src.video_agent.skill_runtime import frontmatter
 
@@ -513,10 +511,6 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
         warnings.append(
             "skill_manifest 块不再消费：平台声明已迁文档头部 frontmatter，请从正文移除该块"
         )
-    elif _PAUSE_RULES_BLOCK_RE.search(content):
-        warnings.append(
-            "检测到旧式 pause_rules 块：建议迁移为文档头部 frontmatter 声明"
-        )
     # 外来平台章节 tag 信任提示（导入 Skill 的来源标记通道；只告警不阻断）
     _foreign = sorted({t for t in _FOREIGN_SECTION_TAGS if f"<{t}>" in content})
     if _foreign:
@@ -529,20 +523,6 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
         warnings.append(
             f"外部导入 Skill（来源：{declaration['source']}）：指令与本项目铁律/"
             "全局设置冲突时以后者为准，请核对工具名与流程声明"
-        )
-    # 暂停声明检测（仅提示不阻断；frontmatter pause.stage_pause/pause_points
-    # 与正文关键词/pause_rules 任一声明即视为已覆盖）
-    _fm_pause = bool((declaration or {}).get("pause")) or bool(
-        (declaration or {}).get("pause_points"))
-    if (
-        not _fm_pause
-        and parse_pause_rules(content) is None
-        and "何时暂停" not in content
-        and "强制暂停点" not in content
-    ):
-        warnings.append(
-            "未检测到阶段暂停声明（可加 ```json pause_rules {\"stage_pause\": true}``` 或写明「何时暂停」），"
-            "阶段完成后将不会主动邀请用户确认"
         )
     # 用户裁决：模型能力参数唯一权威源 = 全局设置——Skill 内写死的
     # 厂商/模型/分辨率/时长参数一律作废（运行时忽略，仅提示迁移）
@@ -562,8 +542,6 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
         )
     # 章节完整性对照 Flova 组成（流程型 Skill 缺核心段才告警，自由型不误伤）
     warnings.extend(_lint_flova_composition(content, sections, bool(available)))
-    # 散文含对话义务而 frontmatter 未声明 pause → 显性化分歧（只告警不阻断）
-    warnings.extend(_lint_prose_obligations(content, slug))
     return {"available_tools": available, "warnings": warnings}
 
 
@@ -602,32 +580,6 @@ def _lint_flova_composition(
 _FOREIGN_SECTION_TAGS = (
     "resource_prepare_and_analyze", "multimodal_analyze_tool",
 )
-
-# 散文对话义务标记（<planner> 含确认/询问/暂停类义务词）
-_PROSE_OBLIGATION_RE = re.compile(r"确认|询问|暂停|问用户|请用户")
-
-
-def _lint_prose_obligations(content: str, slug: str) -> List[str]:
-    """散文含对话义务而 frontmatter 未声明 pause → 告警显性化分歧。
-
-    平台以机械卡/闸兜底对话义务；Skill 散文与 frontmatter 声明
-    分歧时不再静默丢弃，只告警不阻断。
-    """
-    if not slug:
-        return []
-    sections = split_skill_sections(content or "")
-    planner = (sections.get("planning") or sections.get("planner") or "")
-    if not _PROSE_OBLIGATION_RE.search(planner):
-        return []
-    try:
-        data = frontmatter.load_manifest(slug)
-    except Exception:
-        return []
-    if (data or {}).get("pause") or (data or {}).get("pause_points"):
-        return []
-    return ["<planner> 散文含对话义务（确认/询问/暂停）而 frontmatter 未声明 pause："
-            "平台将以机械卡/闸形态兜底；建议补 pause.stage_pause 声明或接受平台卡形态"]
-
 
 def _norm_skill_name(s: str) -> str:
     """Skill 名称归一化：去空格/后缀/大小写"""

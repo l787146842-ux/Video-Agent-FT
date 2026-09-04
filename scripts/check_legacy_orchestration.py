@@ -28,6 +28,9 @@
   skill_style_combo.md —— 全文直注/分级注入/组合注入全部废止，正文一律经
   read_skill 按需读取；废止依据为渐进式披露已废止（闸机变更用户书面裁决已取得），
   该裁决被推翻时相应符号即从本清单移除。
+- pause 声明化石链（2026-09-05 整链删除）：parse_pause_rules /
+  _PAUSE_RULES_BLOCK_RE / _lint_prose_obligations —— frontmatter pause 声明与
+  正文 pause_rules 块均无运行时消费者，旧机械卡/闸兜底从未存在
 spec_pause_card/spec_collect_card（规格向导，不变基线）不在清单内。
 输出纯 ASCII（验收乱码误读教训）。用法：python scripts/check_legacy_orchestration.py
 """
@@ -123,6 +126,10 @@ FORBIDDEN = re.compile(
     # 2026-09-03 M-1 已删的 normalize_rule_id 补防复活锁（与同批 gate_heal/
     # readonly_parallel/call_chat_completion「删除即加 FORBIDDEN」范式一致）。
     r"|normalize_rule_id"
+    # pause 声明化石链整链退役（2026-09-05）：frontmatter pause / 正文
+    # pause_rules 声明均无运行时消费者，旧机械卡/闸兜底从未存在；相关 lint
+    # 与解析器自产自销（照它补声明只会让提示闭嘴），故整链删除并锁防复活。
+    r"|parse_pause_rules|_PAUSE_RULES_BLOCK_RE|_lint_prose_obligations"
 )
 
 # 任务#12 批次B：L2 注入路径拆除（渐进式披露）——全文直注/分级注入/组合注入

@@ -4,8 +4,7 @@
 - 旧 tag <storyboard_designer> 一对多映射到三个拆解 stage
 - 标题式「故事板设计」一对多 + 关键元素/分镜/音频层精确子标题映射
 - 未知 tag/标题不报错不注册
-- lint_skill_content 警告项（空章节/三拆部分缺失/坏 gate_rules/无暂停声明）
-- parse_pause_rules 解析（诊断口径保留；机械暂停判定已随 C1b 裁决退役）
+- lint_skill_content 警告项（空章节/三拆部分缺失/坏 gate_rules）
 """
 import pytest
 
@@ -13,7 +12,6 @@ import src.video_agent.web.skill_docs as sd
 from src.video_agent.skill_runtime import registry
 from src.video_agent.web.skill_docs import (
     lint_skill_content,
-    parse_pause_rules,
     split_skill_sections,
 )
 
@@ -151,11 +149,6 @@ def test_lint_partial_split_warns_missing_executors():
     )
 
 
-def test_lint_no_pause_declaration_warns():
-    lint = lint_skill_content("<planner>\n流程（无任何暂停表述）\n</planner>")
-    assert any("暂停" in w for w in lint["warnings"])
-
-
 def test_lint_full_flova_skill_has_no_structural_warnings():
     content = (
         "<planner>\n流程\n**何时暂停**：每阶段后\n</planner>\n"
@@ -169,16 +162,7 @@ def test_lint_full_flova_skill_has_no_structural_warnings():
     assert lint["warnings"] == []
 
 
-# ---------- 5. pause_rules 解析与暂停判定优先级 ----------
-
-def test_parse_pause_rules_valid_invalid_missing():
-    assert parse_pause_rules("```json pause_rules\n{\"stage_pause\": true}\n```") == {"stage_pause": True}
-    assert parse_pause_rules("```json pause_rules\n{\"stage_pause\": false}\n```") == {"stage_pause": False}
-    assert parse_pause_rules("```json pause_rules\n{坏JSON}\n```") is None
-    assert parse_pause_rules("无声明块") is None
-
-
-# ---------- 6. A1/M4 两级制分节（## 优先，无 ## 回落 ###） ----------
+# ---------- 5. A1/M4 两级制分节（## 优先，无 ## 回落 ###） ----------
 
 def test_two_level_split_keeps_subheadings_inside_section():
     """全文有 ## 时：###/#### 不再单独切分，归入前一 ## 节正文。"""

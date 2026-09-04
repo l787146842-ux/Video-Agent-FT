@@ -2,7 +2,7 @@
 """Skill 客观结构/资源诊断脚本：扫描 data/skills/<slug>/SKILL.md（单一包形态）。
 
 两个入口：
-- 报表入口（默认）：输出每个 Skill 的结构摘要（章节/pause_rules/frontmatter
+- 报表入口（默认）：输出每个 Skill 的结构摘要（章节/frontmatter
   一致性/资源探针），报告性质。
 - --gate 入口：仅客观结构问题决定 FAIL 退出码（frontmatter 解析失败 /
   schema 一致性 / 声明执行器无文档章节支撑）；name/description 存在性与
@@ -21,7 +21,7 @@ from datetime import date
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
-from src.video_agent.web.skill_docs import split_skill_sections, parse_pause_rules  # noqa: E402
+from src.video_agent.web.skill_docs import split_skill_sections  # noqa: E402
 from src.video_agent.skill_runtime import frontmatter  # noqa: E402
 from src.video_agent.skill_runtime.registry import (  # noqa: E402
     CAPABILITY_TOOL_STAGES,
@@ -249,11 +249,9 @@ def main() -> None:
         # frontmatter 剥离：正文供章节/工具扫描，声明供一致性探针
         manifest, body, fm_err = frontmatter.split_frontmatter(content)
         sections = split_skill_sections(body)
-        pause = parse_pause_rules(body)
         lines.append("=" * 70)
         lines.append(f"SKILL: {slug}  ({f.stat().st_size} 字节)")
         lines.append(f"  章节(stage): {sorted(k for k, v in sections.items() if v.strip()) or '无'}")
-        lines.append(f"  pause_rules: {pause}")
         # frontmatter 声明 vs 文档实际章节一致性（客观结构诊断）
         if fm_err:
             consistency = [fm_err]

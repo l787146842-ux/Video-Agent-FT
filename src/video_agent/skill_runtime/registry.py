@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import json
 import re
 
 from loguru import logger
@@ -552,30 +551,3 @@ def match_skill_name_from_text(text: str) -> str:
     return matched
 
 
-# ---------- pause 声明解析下沉 ----------
-# guard 需顶层消费，为避免 skill_runtime→web 反向依赖下沉本包；
-# web/skill_docs 保留 re-export（兼容既有导入路径）。
-_PAUSE_RULES_BLOCK_RE = re.compile(
-    r"```(?:json|js)?\s*pause_rules\s*\n(.*?)```", re.S | re.I
-)
-
-
-def parse_pause_rules(content: str) -> Optional[Dict[str, Any]]:
-    """解析可选的 pause_rules 声明块；未声明/格式非法返回 None。
-
-    白名单键类型校验：stage_pause(bool)。显式声明优先于
-    「何时暂停/强制暂停点」关键词检测（换表述不再静默失效）。
-    """
-    m = _PAUSE_RULES_BLOCK_RE.search(content or "")
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(1))
-    except Exception:
-        return None
-    if not isinstance(data, dict):
-        return None
-    out: Dict[str, Any] = {}
-    if isinstance(data.get("stage_pause"), (bool, int)):
-        out["stage_pause"] = bool(data["stage_pause"])
-    return out

@@ -55,7 +55,7 @@ export function ExecutionPreferenceSection(props: {
       </div>
       <p class="gs-hint">{PREF_HINTS[current()]}</p>
       <p class="gs-hint">
-        任何档位下：未注册工具、文档写入与画布操作等高危动作照常拦截，Skill 声明的暂停点不可被跳过。
+        任何档位下：未注册工具、文档写入与画布操作等高危动作照常拦截，生成类动作按所选档位处理。
       </p>
     </section>
   );

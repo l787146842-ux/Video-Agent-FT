@@ -99,6 +99,13 @@ describe('GlobalSettingsView 执行偏好三档（批 B）', () => {
     await waitFor(() => expect(sel.value).toBe('generate_directly'));
   });
 
+  it('档位说明只声明真实存在的机制（不承诺 Skill 暂停点不可跳过）', async () => {
+    const { container } = render(() => <GlobalSettingsView />);
+    await waitFor(() => expect(prefSelect(container)).toBeTruthy());
+    // 失真文案清偿：frontmatter pause 声明无运行时消费者，界面不得再承诺它
+    expect(container.textContent ?? '').not.toContain('暂停点不可被跳过');
+  });
+
   it('保存失败回滚到原档并 toast 报错', async () => {
     agentMock.setRuntimeSettings.mockRejectedValueOnce(new Error('boom'));
     const { container } = render(() => <GlobalSettingsView />);

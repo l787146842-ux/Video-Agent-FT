@@ -19,16 +19,6 @@ def test_fallback_retired_and_spec_write_record_trace_action():
     cc = (root / "src/video_agent/web/chat_consume.py").read_text(encoding="utf-8")
     assert '"write_document"' not in cc, "规格机械写落转录已随 D-08 清偿退役"
 
-
-def test_prose_obligation_lint_warns_without_pause_declaration():
-    """散文含对话义务而 frontmatter 无 pause 声明 → lint 告警（只告警不阻断）"""
-    from src.video_agent.web import skill_docs as sd
-
-    # 2026-08-31 用户裁决 Flova 对齐：存量包 frontmatter 不再声明 pause，
-    # 散文含对话义务即告警（只告警不阻断）；无义务散文不告警
-    ok_content = "<planner>\n先分析素材再搭建故事板。\n</planner>\n"
-    assert sd._lint_prose_obligations(ok_content, "AI-短剧一站式生成") == []
-    warn = sd._lint_prose_obligations(
-        "<planner>\n每阶段完成后必须暂停，等待用户确认再继续。\n</planner>\n",
-        "AI-短剧一站式生成")
-    assert warn and "pause" in warn[0]
+# test_prose_obligation_lint_warns_without_pause_declaration 已随 pause 声明
+# 化石链整链删除（2026-09-05）：frontmatter pause 声明无运行时消费者，
+# lint 建议作者补声明只会让提示闭嘴，运行时什么都不会发生。
