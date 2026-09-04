@@ -21,12 +21,16 @@ from src.video_agent.state.models import (
 )
 from src.video_agent.utils import gen_id
 
-# draft patch 允许写入的字段全集（双轨统一，含 imageResolution / genType）
+# draft patch 允许写入的字段全集（双轨统一，含 imageResolution / genType / desc）
 ALLOWED_DRAFT_FIELDS = (
     "label", "tag", "mediaType", "genType", "imgUrl", "videoUrl", "audioUrl", "prompt", "mode",
     "model", "providerId", "resolution", "duration", "aspectRatio", "imageResolution",
-    "size", "timbre", "refAssets",
+    "size", "timbre", "refAssets", "desc",
 )
+
+# 新建草稿（storyboard_add_draft / storyboard_create_group 附带）允许的字段：
+# = patch 白名单 + id（新建时可显式指定 ID；patch 通道改 id 无意义仍拒收）
+ALLOWED_NEW_DRAFT_FIELDS = ALLOWED_DRAFT_FIELDS + ("id",)
 
 # group patch 允许写入的字段全集
 ALLOWED_GROUP_FIELDS = (

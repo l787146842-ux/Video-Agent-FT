@@ -42,8 +42,10 @@ def _render_script_analyze(state: Dict[str, Any]) -> str:
 
 
 # 渲染器注册表：工具名 → (state) -> markdown 块（空串 = 无成果可渲染）
+# 键 = 分析写入工具名（script_analysis_report，A1 批）；能力词 script_analyze
+# 是章节标签非工具名，不作键（防幻影工具名回潮，test_skill_assistant_route）
 TOOL_DELIVERABLE_RENDERERS: Dict[str, Callable[[Dict[str, Any]], str]] = {
-    "script_analyze": _render_script_analyze,
+    "script_analysis_report": _render_script_analyze,
 }
 
 

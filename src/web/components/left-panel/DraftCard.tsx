@@ -158,6 +158,7 @@ export function DraftCard(props: {
         tabIndex={0}
         class={`draft-card ${selected() ? 'active' : ''} ${generating() ? 'animate-pulse' : ''} ${props.dragOver ? 'drag-over' : ''}`}
         style={bgStyle()}
+        title={(props.draft.desc ?? '').trim() || undefined}
         onClick={() => studioActions.selectDraft(props.draft.id, props.type)}
         onKeyDown={(e) => e.key === 'Enter' && studioActions.selectDraft(props.draft.id, props.type)}
         onContextMenu={onContextMenu}
@@ -186,7 +187,7 @@ export function DraftCard(props: {
             </div>
           </div>
         </Show>
-        {/* 文字标识（状态标签 + 名称）仅在空卡片时显示；有媒体后隐藏 */}
+        {/* 文字标识（状态标签 + 名称 + 描述）仅在空卡片时显示；有媒体后隐藏 */}
         <Show when={!hasMedia()}>
           <Show when={props.draft.tag}>
             <span
@@ -203,6 +204,9 @@ export function DraftCard(props: {
           <span class="draft-card-label">
             {props.draft.label}
           </span>
+          <Show when={(props.draft.desc ?? '').trim()}>
+            <span class="draft-card-desc">{props.draft.desc}</span>
+          </Show>
         </Show>
       </div>
       {/* 小标编号：组号-卡序号（拖动排序后自动重排，Agent 可按此定位） */}

@@ -261,6 +261,9 @@ DRAFT_DEFAULT_FIELDS: Dict[str, Any] = {
     "videoUrl": "",
     "audioUrl": "",
     "prompt": "",
+    # 卡片描述（批 1 · A2）：按分组类型承载描述文本——角色（年龄/外貌/服装）、
+    # 场景（空间/材质/光源/氛围）等；内容语义归 Skill 散文，平台只提供格子
+    "desc": "",
     "providerId": "",
     "model": "",
     "mode": "",

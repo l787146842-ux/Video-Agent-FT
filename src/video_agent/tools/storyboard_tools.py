@@ -103,6 +103,19 @@ class StoryboardCreateGroupTool(BaseTool):
         svc = StateManager.get_instance()
         cat_key = ops.category_for_group_type(params.group_type)
 
+        # 批 1 · A2「错误可见」：附带草稿白名单外字段原子拒收（不建组不写卡，
+        # 与 storyboard_patch_draft 同一先例；desc 承载卡片描述，不再静默丢弃）
+        if params.draft and isinstance(params.draft, dict):
+            dropped = ops.dropped_patch_fields(params.draft, ops.ALLOWED_NEW_DRAFT_FIELDS)
+            if dropped:
+                return ToolResult(
+                    success=False,
+                    error=(f"Validation Error: draft 含白名单外字段（已拒收，未创建分组）: "
+                           f"{', '.join(dropped)}。合法字段: {', '.join(ops.ALLOWED_NEW_DRAFT_FIELDS)}。"
+                           "卡片描述统一放 desc 字段（角色：年龄/外貌/服装；场景：空间/材质/光源/氛围）。"),
+                    error_code="validation", retryable=False,
+                )
+
         new_id = ops.new_group_id(cat_key)
         # 标题确定性归一（与文本轨同一 ops 实现）
         _raw_title = str(params.title or "")
@@ -178,6 +191,18 @@ class StoryboardAddDraftTool(BaseTool):
 
     async def aexecute(self, params: AddDraftInput) -> ToolResult:
         svc = StateManager.get_instance()
+
+        # 批 1 · A2「错误可见」：白名单外字段原子拒收（不写入任何字段，
+        # 与 storyboard_patch_draft 同一先例；desc 承载卡片描述，不再静默丢弃）
+        dropped = ops.dropped_patch_fields(params.draft or {}, ops.ALLOWED_NEW_DRAFT_FIELDS)
+        if dropped:
+            return ToolResult(
+                success=False,
+                error=(f"Validation Error: draft 含白名单外字段（已拒收，未写入草稿）: "
+                       f"{', '.join(dropped)}。合法字段: {', '.join(ops.ALLOWED_NEW_DRAFT_FIELDS)}。"
+                       "卡片描述统一放 desc 字段（角色：年龄/外貌/服装；场景：空间/材质/光源/氛围）。"),
+                error_code="validation", retryable=False,
+            )
 
         async with svc.lock:
             target_group = ops.find_group(svc.state_dict, params.group_id, params.group_type)

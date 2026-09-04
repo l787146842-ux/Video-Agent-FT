@@ -72,6 +72,8 @@ export type SubTab = 'keyElements' | 'shots' | 'audio';
 export interface Draft {
   id: string;
   label: string;
+  /** 卡片描述（批 1 · A2）：角色（年龄/外貌/服装）、场景（空间/材质/光源/氛围）等 */
+  desc?: string;
   tag?: string;
   mediaType: MediaType;
   /** 当前选中的生成类型；缺省回退 mediaType（切换生成标签不清空已有预览媒体） */

@@ -111,6 +111,7 @@ def _collect_tool_tiers() -> tuple[Dict[str, str], Dict[str, str]]:
     标准注册入口（与 app 启动期 plugins.py 口径一致）采集，完成后原样恢复。
     """
     import src.video_agent.tools  # noqa: F401 基础工具注册（import 副作用，仅保模块就绪）
+    from src.video_agent.tools.analysis_tools import register_analysis_tools
     from src.video_agent.tools.canvas_tools import register_canvas_tools
     from src.video_agent.tools.document_tools import register_document_tools
     from src.video_agent.tools.manager import ToolManager
@@ -124,6 +125,7 @@ def _collect_tool_tiers() -> tuple[Dict[str, str], Dict[str, str]]:
         ToolManager.register(GenerateVideoTool())
         register_storyboard_tools()
         register_document_tools()
+        register_analysis_tools()
         register_canvas_tools()
         ToolManager.register(McpToolCatalogTool())  # 运行时按需注册，契约面须覆盖
         return ToolManager.get_tool_detail_tiers(), ToolManager.get_tool_approval_tiers()

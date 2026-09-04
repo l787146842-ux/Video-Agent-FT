@@ -158,7 +158,11 @@ class DocumentWriteTool(BaseTool):
     name = "document_write"
     risk = "high"  # §2.7：文档写入属 high，需平台闸机 + 用户确认
     detail_tier = "expand"  # 产出类：展开看输入参数+执行结果
-    description = "写入/更新项目文档工件（如制作规格、脚本大纲）。已存在同名文档则覆盖。"
+    description = (
+        "写入/更新项目文档工件（如制片规格、脚本大纲）。已存在同名文档则整篇覆盖"
+        "（规格是活的：改分辨率/时长/声音方向等先更新规格再继续，系统自动留更新痕迹）。"
+        "规格文档定位：写提示词、拆关键元素、拆分镜时按需自取的输入参照。"
+    )
 
     def get_input_schema(self) -> Type[BaseModel]:
         return WriteDocumentInput
@@ -185,10 +189,15 @@ class DocumentWriteTool(BaseTool):
                 if d.get("name") == params.name:
                     d["content"] = content
                     d["updated_at"] = now
+                    # 批 1 · A4：可更新留痕——覆盖式更新也留下修订次数
+                    d["revisions"] = int(d.get("revisions") or 0) + 1
                     if is_spec:
                         ensure_iron_rules_doc(svc.state_dict)
                     svc.save()
-                    return ToolResult(success=True, data={"name": params.name, "action": "updated"})
+                    return ToolResult(success=True, data={
+                        "name": params.name, "action": "updated",
+                        "revisions": int(d.get("revisions") or 0),
+                    })
 
             docs.append({
                 "id": gen_id("doc"),
@@ -196,11 +205,12 @@ class DocumentWriteTool(BaseTool):
                 "content": content,
                 "created_at": now,
                 "updated_at": now,
+                "revisions": 0,
             })
             if is_spec:
                 ensure_iron_rules_doc(svc.state_dict)
             svc.save()
-        return ToolResult(success=True, data={"name": params.name, "action": "created"})
+        return ToolResult(success=True, data={"name": params.name, "action": "created", "revisions": 0})
 
 
 class ReadUploadedDocTool(BaseTool):

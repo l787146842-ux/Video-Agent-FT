@@ -60,6 +60,8 @@ STAGE_LABELS: Dict[str, str] = {
     "video_assembler": "时间线组装",
     "image_generate": "生图",
     "generate_video": "视频生成",
+    # 分析写入工具（A1 批）：能力词 script_analyze 的真身落点
+    "script_analysis_report": "剧本分析",
 }
 
 

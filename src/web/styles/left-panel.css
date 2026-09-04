@@ -58,6 +58,8 @@
     25%, 65% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-info-strong) 75%, transparent), 0 0 18px color-mix(in srgb, var(--color-info-strong) 90%, transparent); }
   }
   .draft-card-label { font-size: var(--font-2xs); background: color-mix(in srgb, var(--color-black) 70%, transparent); backdrop-filter: blur(4px); color: var(--color-white); padding: 2px 4px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 卡片描述（批 1 · A2）：空卡片时在名称下方两行截断展示，悬停整卡 title 兜底 */
+  .draft-card-desc { font-size: var(--font-3xs); line-height: 1.35; background: color-mix(in srgb, var(--color-black) 55%, transparent); color: color-mix(in srgb, var(--color-white) 88%, transparent); padding: 2px 4px; border-radius: 3px; width: calc(100% - 8px); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; pointer-events: none; }
   .draft-card-tag { position: absolute; top: 4px; right: 4px; font-size: var(--font-3xs); padding: 1px 4px; border-radius: 3px; background: color-mix(in srgb, var(--color-info-strong) 80%, transparent); color: var(--color-white); }
     /* 草稿卡片媒体类型可视化：视频首帧缩略图 / 音频标识 */
     .draft-card-thumb-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }

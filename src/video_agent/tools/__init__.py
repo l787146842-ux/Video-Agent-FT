@@ -3,6 +3,7 @@ from .manager import ToolManager
 from .video.generate_video import GenerateVideoTool
 from .storyboard_tools import register_storyboard_tools
 from .document_tools import register_document_tools
+from .analysis_tools import register_analysis_tools
 
 # 原有 Tool（CLI/旧 Workflow 用）
 ToolManager.register(GenerateVideoTool())
@@ -10,6 +11,7 @@ ToolManager.register(GenerateVideoTool())
 # studio-actions 映射的标准 Tool
 register_storyboard_tools()
 register_document_tools()
+register_analysis_tools()
 # （C1b 裁决 2026-08-31：skill_section_run/custom_sections 自定义章节通道退役，
 # 其专属注册入口 register_skill_tools 同批删除）
 

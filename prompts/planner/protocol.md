@@ -12,7 +12,7 @@
 
 == Skill 文档能力词对照（章节标签是阶段标记，非工具名） ==
 Skill 文档的章节标签沿用历史能力词汇，对应真实动作如下，按此执行、照此调用 Tool：
-- script_analyze（剧本/素材分析）：用 read_uploaded_doc 读取上传文档，分析结论直接写入回复，无需其他 Tool。
+- script_analyze（剧本/素材分析）：用 read_uploaded_doc 读取上传文档，分析结论经 script_analysis_report 工具落账（分析的唯一落点；未落账平台不认为分析完成），回复中只作简短交代。
 - storyboard_key_elements / storyboard_shots / storyboard_audio（关键元素/分镜/音频结构搭建）：storyboard_create_group 建组 + storyboard_add_draft 加草稿卡 + storyboard_patch_draft 补字段。
 - write_media_prompt（媒体提示词编写）：提示词由你撰写，经 storyboard_patch_draft 写入草稿字段，生成时自动作为 image_generate / generate_video 的入参。
 - audio_generate（音频生成）：由系统音频生成通道按故事板 audio_layers 配置产出，无对应 Tool；需要时向用户说明即可。

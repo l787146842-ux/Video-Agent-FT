@@ -25,7 +25,7 @@ _STATE = {
 
 def test_render_script_analyze_markdown():
     """analysis → 正文 markdown：标题/总结/要点（冒号拆粗体标题）。"""
-    out = render_stage_deliverables(_STATE, ["script_analyze"])
+    out = render_stage_deliverables(_STATE, ["script_analysis_report"])
     assert "## 剧本分析《三体简短版.md》" in out
     assert "**一句话总结**：太阳系确认遭遇疑似二向箔的白色薄片打击。" in out
     assert "- **核心人物**：程心、AA、曹彬。" in out
@@ -35,7 +35,7 @@ def test_render_script_analyze_markdown():
 def test_render_no_hit_returns_empty():
     """未注册工具/无分析存档 → 空串（行为不侵入）。"""
     assert render_stage_deliverables(_STATE, ["storyboard_shots"]) == ""
-    assert render_stage_deliverables({}, ["script_analyze"]) == ""
+    assert render_stage_deliverables({}, ["script_analysis_report"]) == ""
 
 
 def _executor_with_state(state):
@@ -45,12 +45,12 @@ def _executor_with_state(state):
 
 def _loop_with_trace(text="剧本分析完成，请审阅。"):
     lr = AgentLoopResult(text=text, confirmation="请确认")
-    lr.trace = {"steps": [{"actions": [{"name": "script_analyze", "ok": True}]}]}
+    lr.trace = {"steps": [{"actions": [{"name": "script_analysis_report", "ok": True}]}]}
     return lr
 
 
 def test_assemble_appends_deliverable_to_body():
-    """本轮 script_analyze 成功 → 成果块进正文（成果通道归系统）。"""
+    """本轮分析写入工具成功 → 成果块进正文（成果通道归系统）。"""
     resp = assemble_response(
         _loop_with_trace(), executor=_executor_with_state(_STATE),
         response_factory=lambda **kw: kw,
