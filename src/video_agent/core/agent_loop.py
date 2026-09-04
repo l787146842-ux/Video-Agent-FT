@@ -46,7 +46,6 @@ from src.video_agent.core.round_end_policies import (
     RoundEndContext,
     _claims_structure_done,  # 防虚报检测实现体（批次E：re-export 壳已清偿，测试直连实现体）
     run_round_end_policies,
-    suggest_next_actions,
 )
 from src.video_agent.utils import live_metrics
 from src.video_agent.core import prompt_gates
@@ -514,10 +513,6 @@ async def run_agent_loop(
                 # 6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
                 # 不再固定追加 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）
                 if finish_reason in ("stop", "end_turn") and visible:
-                    # 状态驱动下一步建议：收尾且无既有建议时按客观状态下发
-                    if not result.suggested_actions:
-                        result.suggested_actions.extend(
-                            suggest_next_actions(executor.state, skill))
                     tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
                                     token_usage=step_tokens, cached_tokens=step_cached)
                     break
@@ -593,10 +588,8 @@ async def run_agent_loop(
                     token_usage=step_tokens, cached_tokens=step_cached,
                 )
                 break
-            # 正常收尾：状态驱动下一步建议
-            if not result.suggested_actions:
-                result.suggested_actions.extend(
-                    suggest_next_actions(executor.state, skill))
+            # 正常收尾（批 3 · B4：状态驱动的"下一步建议"已退役，
+            # "下一步"由模型聊天自述；建议动作只剩失败重试/假停继续）
             tracer.end_step(step, actions_applied=0, finish_reason=finish_reason or "stop",
                             token_usage=step_tokens, cached_tokens=step_cached)
             break

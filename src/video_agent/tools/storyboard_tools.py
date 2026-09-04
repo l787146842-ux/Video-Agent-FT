@@ -103,16 +103,28 @@ class StoryboardCreateGroupTool(BaseTool):
         svc = StateManager.get_instance()
         cat_key = ops.category_for_group_type(params.group_type)
 
-        # 批 1 · A2「错误可见」：附带草稿白名单外字段原子拒收（不建组不写卡，
-        # 与 storyboard_patch_draft 同一先例；desc 承载卡片描述，不再静默丢弃）
+        # 批 1 · A2 + 批 3 · B5：附带草稿白名单外字段原子拒收（不建组不写卡，
+        # 与 storyboard_patch_draft 同一先例）；报错三要素 = 原因 + 状态保留声明
+        # + 缺什么才能继续。desc 承载卡片描述，不再静默丢弃。
         if params.draft and isinstance(params.draft, dict):
             dropped = ops.dropped_patch_fields(params.draft, ops.ALLOWED_NEW_DRAFT_FIELDS)
             if dropped:
                 return ToolResult(
                     success=False,
-                    error=(f"Validation Error: draft 含白名单外字段（已拒收，未创建分组）: "
-                           f"{', '.join(dropped)}。合法字段: {', '.join(ops.ALLOWED_NEW_DRAFT_FIELDS)}。"
+                    error=(f"Validation Error: draft 含白名单外字段: {', '.join(dropped)}。"
+                           "本次调用已拒收、未创建分组，现有故事板与全部草稿保持原样。"
+                           f"请只用合法字段（{', '.join(ops.ALLOWED_NEW_DRAFT_FIELDS)}）重新提交；"
                            "卡片描述统一放 desc 字段（角色：年龄/外貌/服装；场景：空间/材质/光源/氛围）。"),
+                    error_code="validation", retryable=False,
+                )
+            # 批 3 · B6 原子性：显式草稿 id 查重（写入前拦截，防重复卡假成功）
+            _explicit_id = str(params.draft.get("id") or "").strip()
+            if _explicit_id and ops.draft_id_exists(svc.state_dict, _explicit_id):
+                return ToolResult(
+                    success=False,
+                    error=(f"Validation Error: 显式草稿 id '{_explicit_id}' 已存在（ID 重复）。"
+                           "本次调用已拒收、未创建分组，现有故事板与全部草稿保持原样。"
+                           "请省略 id 由系统分配，或改用 storyboard_patch_draft 修改已有卡片。"),
                     error_code="validation", retryable=False,
                 )
 
@@ -152,13 +164,15 @@ class StoryboardPatchDraftTool(BaseTool):
         svc = StateManager.get_instance()
 
         # T2 第一步「错误可见」：白名单外字段原子拒收（不写入任何字段，
-        # 避免部分写入后报错）；差集只引用 ALLOWED_DRAFT_FIELDS，不复制名单（P1）
+        # 避免部分写入后报错）；批 3 · B5 报错三要素 = 原因 + 状态保留
+        # 声明 + 缺什么才能继续。差集只引用 ALLOWED_DRAFT_FIELDS，不复制名单（P1）
         dropped = ops.dropped_patch_fields(params.patch, ops.ALLOWED_DRAFT_FIELDS)
         if dropped:
             return ToolResult(
                 success=False,
-                error=(f"Validation Error: patch 含白名单外字段（已拒收，未写入草稿）: "
-                       f"{', '.join(dropped)}。合法字段: {', '.join(ops.ALLOWED_DRAFT_FIELDS)}"),
+                error=(f"Validation Error: patch 含白名单外字段: {', '.join(dropped)}。"
+                       "本次调用已拒收、未写入草稿，现有故事板与该卡片保持原样。"
+                       f"请只用合法字段（{', '.join(ops.ALLOWED_DRAFT_FIELDS)}）重新提交。"),
                 error_code="validation", retryable=False,
             )
 
@@ -177,7 +191,11 @@ class StoryboardPatchDraftTool(BaseTool):
                     stamp_draft_spec_preference(svc.state_dict, draft, cat)
                     svc.save()
                     return ToolResult(success=True, data={"draft_id": draft.get("id", params.draft_id)})
-        return ToolResult(success=False, error=f"Draft '{params.draft_id}' not found")
+        return ToolResult(
+            success=False,
+            error=(f"Draft '{params.draft_id}' not found（未做任何改动，"
+                   "现有故事板保持原样）。请先用 read_draft 核对草稿编号"
+                   "（组号-卡序号或草稿 ID）后重试。"))
 
 
 class StoryboardAddDraftTool(BaseTool):
@@ -192,22 +210,37 @@ class StoryboardAddDraftTool(BaseTool):
     async def aexecute(self, params: AddDraftInput) -> ToolResult:
         svc = StateManager.get_instance()
 
-        # 批 1 · A2「错误可见」：白名单外字段原子拒收（不写入任何字段，
-        # 与 storyboard_patch_draft 同一先例；desc 承载卡片描述，不再静默丢弃）
+        # 批 1 · A2 + 批 3 · B5：白名单外字段原子拒收；报错三要素 =
+        # 原因 + 状态保留声明 + 缺什么才能继续。
         dropped = ops.dropped_patch_fields(params.draft or {}, ops.ALLOWED_NEW_DRAFT_FIELDS)
         if dropped:
             return ToolResult(
                 success=False,
-                error=(f"Validation Error: draft 含白名单外字段（已拒收，未写入草稿）: "
-                       f"{', '.join(dropped)}。合法字段: {', '.join(ops.ALLOWED_NEW_DRAFT_FIELDS)}。"
+                error=(f"Validation Error: draft 含白名单外字段: {', '.join(dropped)}。"
+                       "本次调用已拒收、未写入任何字段，现有故事板与全部草稿保持原样。"
+                       f"请只用合法字段（{', '.join(ops.ALLOWED_NEW_DRAFT_FIELDS)}）重新提交；"
                        "卡片描述统一放 desc 字段（角色：年龄/外貌/服装；场景：空间/材质/光源/氛围）。"),
+                error_code="validation", retryable=False,
+            )
+        # 批 3 · B6 原子性：显式草稿 id 查重（写入前拦截，防重复卡假成功）
+        _explicit_id = str((params.draft or {}).get("id") or "").strip()
+        if _explicit_id and ops.draft_id_exists(svc.state_dict, _explicit_id):
+            return ToolResult(
+                success=False,
+                error=(f"Validation Error: 显式草稿 id '{_explicit_id}' 已存在（ID 重复）。"
+                       "本次调用已拒收、未写入任何字段，现有故事板与全部草稿保持原样。"
+                       "请省略 id 由系统分配，或改用 storyboard_patch_draft 修改已有卡片。"),
                 error_code="validation", retryable=False,
             )
 
         async with svc.lock:
             target_group = ops.find_group(svc.state_dict, params.group_id, params.group_type)
             if not target_group:
-                return ToolResult(success=False, error=f"Group '{params.group_id}' not found")
+                return ToolResult(
+                    success=False,
+                    error=(f"Group '{params.group_id}' not found（未做任何改动，"
+                           "现有故事板保持原样）。请先用 read_state_group 核对分组 ID "
+                           "与 group_type 后重试。"))
 
             draft = ops.append_draft(target_group, params.draft)
             # 时长参数同步：分镜草稿的时长参数与分镜结构对齐（客观兜底）
@@ -248,7 +281,11 @@ class StoryboardDeleteGroupTool(BaseTool):
                         stop_tasks=lambda ids: ports.task_stop_port().stop_bound_tasks(ids))
                 svc.save()
                 return ToolResult(success=True, data={"deleted": params.group_id})
-        return ToolResult(success=False, error=f"Group '{params.group_id}' not found")
+        return ToolResult(
+            success=False,
+            error=(f"Group '{params.group_id}' not found（未删除任何分组，"
+                   "现有故事板保持原样）。请先用 read_state_group 核对分组 ID "
+                   "与 group_type 后重试。"))
 
 
 class StoryboardConfirmDraftTool(BaseTool):
@@ -270,7 +307,10 @@ class StoryboardConfirmDraftTool(BaseTool):
                 ops.patch_draft(draft, {"tag": "已确认"})
                 svc.save()
                 return ToolResult(success=True, data={"draft_id": draft.get("id", params.draft_id), "tag": "已确认"})
-        return ToolResult(success=False, error=f"Draft '{params.draft_id}' not found")
+        return ToolResult(
+            success=False,
+            error=(f"Draft '{params.draft_id}' not found（未做任何改动，"
+                   "现有故事板保持原样）。请先用 read_draft 核对草稿编号后重试。"))
 
 
 class StoryboardMediaToChatTool(BaseTool):

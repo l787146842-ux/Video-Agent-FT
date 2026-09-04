@@ -416,12 +416,13 @@ class Planner:
         # （C1b 裁决 2026-08-31：stage_precondition 越阶硬闸退役，
         # 流程顺序改由模型读 planner 散文自主执行。）
         if settings.pipeline_orchestrator_enabled and context.skill_name:
-            # 轮始 run 同步（RunStarted 幂等）+ 输入类 decision 消费
+            # 轮始轻量确保（批 3 · B3：run 已存在即直接返回，不空跑全量探针；
+            # 重算唯一触发点 = 写动作落账）+ 输入类 decision 消费
             # （waiting_user→ready，DecisionResolved 入事件账本）。
             try:
                 _rt = workflow_runtime.WorkflowRuntime(
                     self.state_manager, context.skill_name)
-                _run0 = _rt.start_run()
+                _run0 = _rt.ensure_run()
                 if str(context.advance_signal or "").strip():
                     _pend = _run0.get("pending_decision") or {}
                     if ((_pend.get("schema") or {}).get("type")) == "input":

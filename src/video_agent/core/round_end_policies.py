@@ -35,8 +35,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 from loguru import logger
 
 from src.video_agent.utils import live_metrics
-from src.video_agent.core import prompt_gates, workflow_runtime
-from src.video_agent.state.models import ALL_CATEGORIES_TUPLE, CAT_KEY_ELEMENTS, CAT_SHOTS
+from src.video_agent.core import prompt_gates
 
 if TYPE_CHECKING:
     from src.video_agent.core.tracer import AgentTracer
@@ -429,93 +428,17 @@ def _cond_aborted_continuation_audit(ctx: RoundEndContext) -> bool:
 
 
 async def _apply_aborted_continuation_audit(ctx: RoundEndContext, emit: Callable) -> None:
-    # 可判定 Skill 流程节点时 label 取节点标题；否则回落通用「继续」
-    label = _current_node_title(getattr(ctx.executor, "state", None), ctx.skill) or "继续"
-    ctx.suggested_actions.append({"kind": "continue", "label": label, "value": "继续"})
+    # 批 3 · B4 拆伪按钮：label 固定「继续」——不再取平台统一 8 节点图算
+    # 节点标题（异构 skill 恒失真，3333 同款误导源；"下一步"归模型聊天自述）。
+    # 本策略只保留假停兜底语义（模型承诺继续却零操作 → 机械给继续按钮）。
+    ctx.suggested_actions.append({"kind": "continue", "label": "继续", "value": "继续"})
     logger.info("[RoundEnd] audit-0819-fakestop: 延续承诺措辞且零操作，机械追加继续按钮")
 
 
-# ---------- 状态驱动的下一步建议（确定性交互收归系统，层 9） ----------
-
-# 判定表语义：客观状态特征 → 唯一一条下一步建议（kind=next，点击机械发送 value）。
-# 只读状态不写状态；生成类建议的点击本身构成「针对当前动作的显式用户指令」，
-# 仍须过 platform.gen_confirm 闸（建议不绕过任何闸机）。
-# label 事实源：可判定 Skill 流程节点时取节点标题（workflow_runtime
-# 只读投影），否则回落通用文案（客观状态分支保持既有行为）。
-_SUGGEST_CONFIRMED_TAG = "已确认"
-
-
-def _current_node_title(state: Any, skill_name: str) -> str:
-    """当前 Skill 流程节点标题（不可判定/异常时返回空串）。"""
-    if not skill_name or not isinstance(state, dict):
-        return ""
-    try:
-        return workflow_runtime.current_node_title(state, skill_name) or ""
-    except Exception:
-        return ""
-
-
-def _skill_aware_suggestion(
-    title: str, fallback: Dict[str, str],
-) -> Dict[str, str]:
-    """节点标题可判定时 label 取标题、value 指向该节点；否则用回落文案。"""
-    if title:
-        return {"kind": "next", "label": title,
-                "value": f"请按当前 Skill 流程继续「{title}」节点"}
-    return dict(fallback)
-
-
-def _iter_storyboard_drafts(state: Dict[str, Any]) -> List[Dict[str, Any]]:
-    drafts: List[Dict[str, Any]] = []
-    for cat_key in ALL_CATEGORIES_TUPLE:
-        for group in state.get(cat_key, []) or []:
-            if not isinstance(group, dict):
-                continue
-            for d in group.get("drafts", []) or []:
-                if isinstance(d, dict):
-                    drafts.append(d)
-    return drafts
-
-
-def suggest_next_actions(
-    state: Dict[str, Any], skill_name: str = "",
-) -> List[Dict[str, str]]:
-    """按工作台客观状态返回下一步建议（空列表 = 不建议）。
-
-    触发条件只看客观状态（未确认/停摆）；可判定当前 Skill 流程节点时
-    label 取节点标题、value 指向该节点，否则回落通用文案。
-    """
-    try:
-        drafts = _iter_storyboard_drafts(state or {})
-    except Exception:
-        return []
-    title = _current_node_title(state, skill_name)
-    # 中途停摆引导（闭环）——关键元素已拆但分镜未拆 → 中性继续引导
-    if (state or {}).get(CAT_KEY_ELEMENTS) and not (state or {}).get(CAT_SHOTS):
-        return [_skill_aware_suggestion(title, {
-            "kind": "next", "label": "继续故事板设计",
-            "value": "请按当前 Skill 流程继续故事板设计阶段"})]
-    if not drafts:
-        return []
-    confirmed = [d for d in drafts if str(d.get("tag") or "") == _SUGGEST_CONFIRMED_TAG]
-    if len(confirmed) < len(drafts):
-        return [_skill_aware_suggestion(title, {
-            "kind": "next", "label": "确认故事板草稿",
-            "value": "请审阅并确认当前故事板草稿"})]
-    has_prompt = [d for d in confirmed if str(d.get("prompt") or "").strip()]
-    if len(has_prompt) < len(confirmed):
-        return [_skill_aware_suggestion(title, {
-            "kind": "next", "label": "补写提示词",
-            "value": "请为已确认的草稿补写提示词"})]
-    generated = [
-        d for d in confirmed
-        if d.get("imgUrl") or d.get("videoUrl") or d.get("audioUrl")
-    ]
-    if len(generated) < len(confirmed):
-        return [_skill_aware_suggestion(title, {
-            "kind": "next", "label": "补生成媒体",
-            "value": "请为已确认的草稿生成图片或视频"})]
-    return []
+# （批 3 · B4 拆伪按钮：状态驱动的"下一步建议"函数族整体退役——平台统一
+# 8 节点图量异构 skill 必失真；UI 只保留"已有什么"展示（事件卡时间线/
+# 画布/素材面板），"下一步"由模型聊天自述。防复活符号字面归
+# scripts/check_legacy_orchestration.py FORBIDDEN，本文件不再出现。）
 
 
 # 策略表（优先级升序执行；登记期自检见 _validate_policy_table：
@@ -527,7 +450,7 @@ ROUND_END_POLICIES: List[RoundEndPolicy] = [
     RoundEndPolicy("aborted_continuation_audit", KIND_POST_PROCESS, 130,
                    _cond_aborted_continuation_audit, _apply_aborted_continuation_audit,
                    requires=("skill", "applied", "confirmation", "wants_continue",
-                             "suggested_actions", "content", "executor")),
+                             "suggested_actions", "content")),
 ]
 
 # 登记期依赖自检（模块加载即执行；引用不存在字段的死策略在 import 期报错）

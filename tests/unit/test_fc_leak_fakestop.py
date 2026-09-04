@@ -102,8 +102,10 @@ def test_fakestop_suggests_continue():
     assert any(a.get("kind") == "continue" for a in ctx.suggested_actions)
 
 
-def test_fakestop_label_uses_skill_node_title():
-    """任务 12：可判定 Skill 流程节点时，假停「继续」按钮 label 取节点标题。"""
+def test_fakestop_label_generic_after_b4():
+    """批 3 · B4 拆伪按钮：假停「继续」按钮 label 固定「继续」——
+    不再取平台统一 8 节点图算节点标题（异构 skill 恒失真，3333 同款误导源）；
+    "下一步"归模型聊天自述。"""
     from src.video_agent.core import workflow_runtime as wr
 
     wr.clear_compile_cache()
@@ -123,7 +125,7 @@ def test_fakestop_label_uses_skill_node_title():
         )
         _run_policies(ctx)
         cont = [a for a in ctx.suggested_actions if a.get("kind") == "continue"]
-        assert cont and cont[0]["label"] == "分镜设计"
+        assert cont and cont[0]["label"] == "继续"
         assert cont[0]["value"] == "继续"
     finally:
         wr.clear_compile_cache()

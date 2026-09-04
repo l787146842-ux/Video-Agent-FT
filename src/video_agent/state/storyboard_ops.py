@@ -316,6 +316,25 @@ def append_draft(group: Dict[str, Any], draft_data: Dict[str, Any]) -> Dict[str,
     return draft
 
 
+def draft_id_exists(
+    state: Dict[str, Any], draft_id: str,
+    categories: Optional[Tuple[str, ...]] = None,
+) -> bool:
+    """批 3 · B6：显式 draft id 是否已存在（写入前查重，防重复卡假成功）。
+
+    categories 缺省查全部故事板类别——「镜头 ID 重复」即拒（flova 转录
+    标尺：失败时现有故事板零改动）。只读，不写任何状态。"""
+    wanted = str(draft_id or "").strip()
+    if not wanted:
+        return False
+    for cat_key in (categories or ALL_CATEGORIES):
+        for group in state.get(cat_key, []) or []:
+            for d in (group.get("drafts") or []):
+                if isinstance(d, dict) and str(d.get("id") or "") == wanted:
+                    return True
+    return False
+
+
 def clear_draft_media(draft: Dict[str, Any]) -> bool:
     """清空卡片内的媒体内容（图片/视频/音频地址），保留提示词与参数。"""
     changed = False

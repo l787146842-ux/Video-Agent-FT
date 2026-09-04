@@ -300,18 +300,10 @@ def test_script_inject_limit_in_runtime_whitelist():
 
 
 # ---------- 0817 B22：流程意见清除（平台只兜底，不包办排序） ----------
-
-def test_platform_no_next_step_opinions():
-    """平台卡片/建议不再点名下一步：V2/V8/V9/V10 清除钉死
-    （V1 规格审阅卡选项断言随 spec_review_options 退役删除，D-08 清偿）。"""
-    from pathlib import Path
-    from src.video_agent.core import round_end_policies as rep
-
-    out = rep.suggest_next_actions({"keyElements": [{"id": "k", "drafts": []}]})
-    assert out and "拆分镜" not in out[0]["label"]
-    sd = Path("prompts/planner/skill_runtime.md").read_text(encoding="utf-8")
-    assert "首次拆分故事板只创建 keyElement" not in sd
-    assert "继续编写元素生图提示词草案" not in sd
+# test_platform_no_next_step_opinions 已随批 3 · B4 拆伪按钮升级退役（2026-09-05）：
+# 状态驱动"下一步建议"族整体删除（不再"建议不点名下一步"，而是根本不算下一步），
+# 防复活由 scripts/check_legacy_orchestration.py FORBIDDEN 承接（行为面回归见
+# tests/unit/test_suggest_next.py）。
 
 
 def test_storyboard_progress_note_objective():

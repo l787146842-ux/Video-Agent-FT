@@ -305,7 +305,10 @@ def compose_failure_feedback(
         hint = FAILURE_HINT_NON_RETRYABLE
     else:
         hint = FAILURE_HINT_DEFAULT
-    return f"[{kind}] {raw} 建议：{hint}"
+    # 批 3 · B5「失败会喊」三要素之②：状态保留声明——工具失败一律
+    # 不落半成品（写入类先全量校验后统一写入，B6），既有工作台状态
+    # 与失败前一致，模型不得假设失败污染了状态。
+    return f"[{kind}] {raw}（既有工作台状态未被本次失败改动）。建议：{hint}"
 
 
 def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:

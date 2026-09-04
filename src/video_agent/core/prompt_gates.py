@@ -390,11 +390,13 @@ def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
         for cat in ALL_CATEGORIES
     )
     if not has_groups:
+        # 批 3 · B1 消干扰：只描述客观边界（哪些工具暂未开放、为何、何时开放），
+        # 不再携带指令式引导（"请先搭建…"与 Skill 散文抢话筒，3333 同款误导源）
         return (
             GENERATION_STAGE_TOOLS,
-            "【当前阶段工具边界】故事板结构尚未建立：视频生成工具暂未开放。"
-            "image_generate 仅可用单张应急出图（mode='single'），批量轨需待结构就位。"
-            "请先搭建关键元素/分镜/音频分组，结构就位后系统会自动开放生成工具。",
+            "【当前阶段工具边界·客观状态】故事板结构（关键元素/分镜/音频分组）尚未建立："
+            "视频生成批量工具暂未开放，image_generate 仅开放单张应急出图（mode='single'）；"
+            "结构建立后批量轨自动开放。",
         )
     return frozenset(), ""
 

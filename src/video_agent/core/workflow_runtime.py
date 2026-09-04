@@ -194,30 +194,6 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
     return run
 
 
-def current_node_title(state: Dict[str, Any], skill: str) -> Optional[str]:
-    """只读投影：当前 run 的 current_node 标题（标题事实源 =
-    compile_definition 节点 title，即 DEFAULT_V2_NODE_TITLES）。
-
-    无 Skill 编译定义 / 无 active run / 无 current_node / 定义变更早退
-    一律返回 None（调用方回落）；不写 run 块（sync_run 仍是 reducer 单一写入点）。"""
-    definition = compile_definition(skill)
-    if not definition:
-        return None
-    run = (state or {}).get("workflow_run") or {}
-    if not run.get("run_id") or run.get("failure_state"):
-        return None
-    if run.get("definition_hash") and run.get("definition_hash") != definition["definition_hash"]:
-        # sync_run 同语义：定义变更的旧 run 早退，不作节点判定依据
-        return None
-    current = str(run.get("current_node") or "")
-    if not current:
-        return None
-    for node in definition["nodes"]:
-        if node["node_id"] == current:
-            return str(node.get("title") or current)
-    return None
-
-
 def apply_interaction(
     state: Dict[str, Any],
     set_flags: Optional[Dict[str, Any]] = None,
@@ -439,6 +415,19 @@ class WorkflowRuntime:
             return self.state_manager.state_dict
         return self.state_manager
 
+    def ensure_run(self) -> Dict[str, Any]:
+        """轮始轻量确保（批 3 · B3，V5-1）：run 已存在且定义未变更时直接返回，
+        不做全量探针重算——账本重算的唯一触发点收敛到写动作落账
+        （commit_turn / resolve_decision / recover_run）；轮始不再空跑。
+        run 缺失 / 失败态 / 定义变更时回落 start_run 全量同步。"""
+        run = self.state.get("workflow_run") or {}
+        if run.get("run_id") and not run.get("failure_state"):
+            definition = compile_definition(self.skill)
+            if definition and (not run.get("definition_hash")
+                               or run.get("definition_hash") == definition["definition_hash"]):
+                return run
+        return self.start_run()
+
     def start_run(self, *, input_present: Optional[bool] = None) -> Dict[str, Any]:
         run = sync_run(self.state, self.skill)
         ledger = EventLedger(self.state)
@@ -470,7 +459,15 @@ class WorkflowRuntime:
         return copy.deepcopy(run)
 
     def commit_turn(self, result: Any, **kwargs: Any) -> TurnCommit:
-        return commit_turn(self.state_manager, result, skill=self.skill, **kwargs)
+        commit = commit_turn(self.state_manager, result, skill=self.skill, **kwargs)
+        # 批 3 · B3（V5-1）：写动作落账即全量重算——账本重算唯一常规触发点。
+        # 产物（current_node/completed_nodes）只服务审计与判官层回放对照，
+        # 不接 UI、不进提示词；用落账后的账本重建返回快照（口径一致）。
+        run = sync_run(self.state, self.skill)
+        return TurnCommit(
+            commit.turn_id, copy.deepcopy(run), commit.result, commit.events,
+            commit.idempotent, commit.persisted, commit.event_sequence,
+        )
 
     def resolve_decision(self, token: str, value: Any, *, turn_id: str = "") -> TurnCommit:
         run = sync_run(self.state, self.skill)
@@ -505,7 +502,7 @@ class WorkflowRuntime:
 
 __all__ = [
     "WorkflowRuntime", "TurnResult", "TurnCommit", "commit_turn",
-    "compile_definition", "sync_run", "current_node_title", "record_artifact",
+    "compile_definition", "sync_run", "record_artifact",
     "apply_interaction", "reduce_interaction", "reduce_session_summary",
     "reduce_gate_overrides", "reduce_drafts_presented",
 ]

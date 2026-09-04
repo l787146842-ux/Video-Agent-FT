@@ -130,6 +130,11 @@ FORBIDDEN = re.compile(
     # pause_rules 声明均无运行时消费者，旧机械卡/闸兜底从未存在；相关 lint
     # 与解析器自产自销（照它补声明只会让提示闭嘴），故整链删除并锁防复活。
     r"|parse_pause_rules|_PAUSE_RULES_BLOCK_RE|_lint_prose_obligations"
+    # 批 3 · B4 拆伪按钮（V3-1/V5-1）："下一步建议"平台计算退役——
+    # 平台统一 8 节点图量异构 skill 必失真，"下一步"归模型聊天自述；
+    # current_node_title 只读投影随消费链整体退场（B3 收窄后账本产物
+    # 只服务审计与判官层，无 UI 消费者）。
+    r"|suggest_next_actions|current_node_title|_skill_aware_suggestion"
 )
 
 # 任务#12 批次B：L2 注入路径拆除（渐进式披露）——全文直注/分级注入/组合注入
