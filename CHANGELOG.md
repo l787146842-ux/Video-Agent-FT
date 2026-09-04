@@ -36,6 +36,18 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-05 · Skill 流程跑通修复批 0-4（计划书 v5 全量执行；15 包裁决）
+- **立项与对齐标尺**：`docs/Skill流程跑通修复计划书-v5.md`（Flova 一手转录 + 全局设置页截图对齐）。做法 = skill 一行不改，把平台补成能接住 Flova skill 的样子。
+- **前置裁决（2026-09-05 用户）**：①存量 skill 删「剧本生视频需上传剧本」→ 存量 **15 包**（字节级目录/章节快照同步重采，`test_global_settings_authority.py` 随被测对象删除）；②草稿卡审阅形态维持现状（不新增「素材生成前确认提示词」开关）；③设置页文案采纳候选 a（先把假话说成真话）。
+- **批 0（bug 清偿）**：设置页失真文案改真话（`ExecutionPreferenceSection` 不再承诺「Skill 声明的暂停点不可被跳过」——该机制从未存在）；**pause 声明化石链整链删除**（`parse_pause_rules` / `_PAUSE_RULES_BLOCK_RE` / `_lint_prose_obligations` + 相关 lint 与测试），退役符号入 `check_legacy_orchestration` FORBIDDEN 防复活。
+- **批 1 造格子**：A1 新工具 `script_analysis_report`（分析结论唯一落点；命名与能力词 `script_analyze` 刻意区分防幻影词回潮，`prompts/planner/protocol.md` 同批改写「分析结论直接写入回复」旧口径）——既有消费方零改动生效（stage_done 探针 / 阶段成果渲染器 / context_builder 注入）；A2 草稿 `desc` 字段落盘 + 白名单外原子拒收（`ALLOWED_NEW_DRAFT_FIELDS`），前端 DraftCard 空卡展示 desc；A4 规格文档可更新留痕（`revisions` 计数）。
+- **批 2 插播报**：具名事件卡（`core/event_cards.py` 唯一映射表；`progress.emit_event_card` 双通道 = trace 子步骤 + 时间线帧）——规格已完成（建立/更新都发）/ 故事板已更新 / 素材已完成 / 时间线已更新 / 信息搜索完成（只进时间线不进上下文）；写产物卡进模型上下文（flowEvents 环扩至 6 条）；「素材变更已同步」卡 = 整板落库媒体指纹 diff 记 `media_synced` → 轮始一次性播报（`StateManager.consume_flow_events`）。Skill 已加载卡沿用开场既有 emit 点。
+- **批 3 会喊疼/消干扰/拆伪按钮**：B1 工具边界提示去指令化（删「请先搭建…」，留客观描述）；B4 `suggest_next_actions` 族 + `current_node_title` 整体退役（平台不再算"下一步"，防复活入 FORBIDDEN；假停继续按钮 label 固定「继续」）；B3 账本重算收敛到写动作落账（`WorkflowRuntime.ensure_run` 轮始轻量、`commit_turn` 落账后重算）；B5 失败回喂加全局状态保留声明（`compose_failure_feedback`）+ storyboard 写类工具报错三要素（原因/保留声明/补救指引）；B6 显式草稿 id 查重写入前拦截（`ops.draft_id_exists`，flova「镜头 ID 重复」标尺）。
+- **批 4 冒烟重放（两层）**：机器门禁 `tests/unit/test_skill_smoke_harness.py`——scripted 假模型 × 15 份 skill × 标准产物序列（含 workflow_pause → 用户回复 → 续作），逐份断言 §五 平台事实（无假成功/会喊疼/事件卡/无干扰/不死锁/失败原子性）；漂移 lint `scripts/check_skill_anchor_lint.py` 入 GATES + ci.yml（V3-3 收窄口径：只查 planner 必备/锚点合法/开闭配对）；判官观察层脚手架 `scripts/judge_replay.py`（对照包打包，不进门禁、不设阈值；真模型跑 + 人工打分留待用户按 V5-2 节奏执行）。
+- **缓办登记**：A3 槽位-令牌-解析 → `docs/未清偿债务清单.md` D-17（机器门禁全绿后评估立项）。
+- **验收**：`python scripts/acceptance.py` 退出码 0（11 GATES 含新 skill_anchor_lint + pytest 2061 + vitest + tsc + eslint + RATCHETS）；机器线束 15/15 绿。
+- **待用户目测**：A2 草稿卡 desc 展示、批 2 事件卡里程碑行样式（宪法 §3.1）。
+
 ### 2026-09-04 · 收尾后用户裁决批（断点续跑立项 + 三项登记）
 - **背景**：对两次会话（全面深度审核 + 裁决落地）做执行完整性核查后，报告 3 条「悬空项」——审计提出但既未执行也未登记也未裁决的发现，交用户逐条拍板。
 - **裁决**：
