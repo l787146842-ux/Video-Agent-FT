@@ -44,6 +44,15 @@ export function ChatFeed() {
     setAutoScroll(isNearBottom(feedRef));
   }
 
+  /** 批 7 · 滚轮/触摸直控：scroll 事件在钉底期被 pinning 豁免吞掉，
+   *  用户"向上翻被强制拉回底部"即由此而来；wheel/touchstart 是用户
+   *  主动输入，不被程序化滚动触发——命中即按当前位置重判跟随开关
+   *  （向上滚离底=停跟随，滚回底部=恢复），根治拉扯。 */
+  function onUserScrollInput() {
+    if (!feedRef) return;
+    setAutoScroll(isNearBottom(feedRef));
+  }
+
   /** 钉底一帧；之后逐帧检测布局兑现——高度仍在增长则继续钉底 */
   function pinToBottom() {
     if (!feedRef) return;
@@ -54,7 +63,9 @@ export function ChatFeed() {
       followupLeft -= 1;
       rafId = requestAnimationFrame(() => {
         rafId = undefined;
-        if (feedRef && feedRef.scrollHeight !== lastPinnedHeight) pinToBottom();
+        // 批 7：续期前复查跟随开关——用户已在流式期间向上翻则立即收手，
+        // 不再逐帧把视口拽回底部（与 onUserScrollInput 配对根治跳动）
+        if (feedRef && autoScroll() && feedRef.scrollHeight !== lastPinnedHeight) pinToBottom();
         else pinning = false;
       });
     } else {
@@ -148,6 +159,8 @@ export function ChatFeed() {
       /* 推理中消息流标忙碌态，读屏器可据此延迟播报增量 */
       aria-busy={chatState.isStreaming}
       onScroll={onScroll}
+      onWheel={onUserScrollInput}
+      onTouchStart={onUserScrollInput}
     >
       {/* 窗口化：头部折叠区入口（展开补偿 scrollTop，视口不跳位） */}
       <Show when={start() > 0}>

@@ -38,7 +38,10 @@ export function pickDimension(title: string, opts: ConfirmOptionItem[]): PickDim
   if (/供应商|厂商/.test(titleText)) return 'provider';
   if (/模型/.test(titleText)) return 'model';
   if (!opts.length) return '';
-  // 兜底：选项与已配置供应商/模型名客观匹配
+  // 兜底：选项与已配置供应商/模型名客观匹配。
+  // 批 7 加严（8888 反馈）：仅当命中数过半且至少 2 项（单选项组极易被
+  // 短厂商 id 双向 includes 误吞），且对应类别下真实配置了可选厂商——
+  // 否则渲染出"只有题面没有选项"的空下拉（维度组一律回落选项卡）。
   const provNames = (state.apiProviders || [])
     .flatMap((p) => [p.id, p.name].filter(Boolean).map((s) => String(s).toLowerCase()));
   const modelNames = [
@@ -49,9 +52,11 @@ export function pickDimension(title: string, opts: ConfirmOptionItem[]): PickDim
   const labels = opts.map((o) => (o.label || '').toLowerCase());
   const provHits = labels.filter((l) => provNames.some((n) => l.includes(n) || n.includes(l))).length;
   const modelHits = labels.filter((l) => modelNames.some((n) => n && l.includes(n))).length;
-  const half = Math.ceil(labels.length / 2);
-  if (provHits >= half && provHits >= modelHits) return 'provider';
-  if (modelHits >= half) return 'model';
+  const half = Math.max(2, Math.ceil(labels.length / 2));
+  const hasConfigured = (dim: PickDim) =>
+    apiProvidersFor(kindForDim(dim, title)).length > 0;
+  if (provHits >= half && provHits >= modelHits && hasConfigured('provider')) return 'provider';
+  if (modelHits >= half && hasConfigured('model')) return 'model';
   return '';
 }
 
