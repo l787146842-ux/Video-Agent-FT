@@ -355,6 +355,24 @@ def drafts_confirmed(raw_state: Dict[str, Any], drafts: List[Dict[str, Any]]) ->
     return all(str(d.get("tag") or "").strip() == "已确认" for d in drafts)
 
 
+def generation_consented(raw_state: Dict[str, Any]) -> bool:
+    """批 9 · 同意账本：暂停卡 accept 登记的工作轮号与当前轮一致 → 生成已确认。
+
+    登记点 = chat_consume.consume_pause_response（decision=accept 时写入
+    interaction.generation_consented_turn = turn_seq）；轮次推进后登记值
+    自然失配失效（无需显式清理）。语义 = protocol.md「暂停卡确认后的生成
+    视为明确指令」的机制兑现：用户接受卡片 → 该工作轮内 provider 生成
+    调用视为已确认。decline 不登记，fail-closed 保持。
+    """
+    interaction = raw_state.get("interaction") or {}
+    try:
+        return int(interaction.get("generation_consented_turn") or 0) == \
+            int(raw_state.get("turn_seq") or 0) and \
+            int(interaction.get("generation_consented_turn") or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 # ---------- 阶段探测驱动的工具裁剪（混合形态第一层：工具可见性边界） ----------
 
 # 故事板结构工具集（无规格文档阶段不下发；三个拆解

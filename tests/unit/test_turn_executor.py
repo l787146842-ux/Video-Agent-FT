@@ -52,3 +52,46 @@ async def test_llm_call_without_bind_turn_is_self_contained(svc):
     assert fc_applied == 0
     assert isinstance(plan_ms, float)
     assert "token_usage" in extra
+
+
+class FakeToolCallAdapter(BaseChatAdapter):
+    """发起工具调用的假 adapter（工具不存在 → 执行失败 → 全拒收轮形态）"""
+
+    @property
+    def supports_function_calling(self) -> bool:
+        return True
+
+    async def chat(self, messages, **kwargs) -> ChatResponse:
+        return ChatResponse(
+            content="现在生成形象图",
+            finish_reason="tool_calls",
+            tool_calls=[{
+                "id": "call_1", "type": "function",
+                "function": {"name": "no_such_tool", "arguments": "{}"},
+            }],
+        )
+
+    async def chat_stream(self, messages, **kwargs):
+        from src.video_agent.adapters.base_chat import StreamChunk
+        yield StreamChunk(type="text_delta", text="现在生成形象图")
+
+
+async def test_all_rejected_round_surfaces_had_fc_calls_and_feedback(svc):
+    """批 9 · 回合终止盲区修复的回喂侧钉死：全拒收轮（发起过调用、
+    fc_applied=0）必须 ① extra.had_fc_calls=True 上抛（agent_loop 据此
+    不按纯文本轮终止）；② 拒因回喂追加进 messages（下一轮模型可见）。"""
+    planner = Planner(llm_adapter=FakeToolCallAdapter())
+    executor = planner._turn_executor
+    executor._context = PlannerContext()
+
+    messages = [{"role": "user", "content": "可以"}]
+    content, finish, fc_applied, plan_ms, extra = await executor.llm_call(
+        "system", messages,
+    )
+    assert extra.get("had_fc_calls") is True
+    assert fc_applied == 0
+    # 拒因/失败回喂必须已入库（下一轮模型能看到，而不是回合带着假话终止）
+    feedback_msgs = [m for m in messages if m.get("role") == "user" and m is not messages[0]]
+    assert feedback_msgs, "全拒收轮的回喂必须追加进 messages"
+    assert any("no_such_tool" in str(m.get("content")) or "失败" in str(m.get("content"))
+               for m in feedback_msgs)

@@ -88,3 +88,34 @@ def test_audit_verdicts_overridden_flag_passthrough(monkeypatch):
         action="gen", overridden=True,
     )
     assert recorded and recorded[0]["overridden"] is True
+
+
+# ---------- 批 9：tool_risk 暂停卡同意账本（V6 计划） ----------
+
+class TestToolRiskPauseConsent:
+    """consented 命中仅放宽花钱生成工具（costly 轴）：非花钱高危兜底拦截
+    语义零改动（批 B 红线）；放行经 platform.tool_risk verdict 留痕。"""
+
+    def test_consented_passes_costly_tool(self):
+        AgentTracer.reset()
+        try:
+            err, warns = guard_pipeline.evaluate_tool_risk(
+                "image_generate", costly=True, consented=True)
+            assert err is None and warns and "consent=pause_accept" in warns[0]
+            assert any(g["rule_id"] == "platform.tool_risk"
+                       and g["ok"] and g["overridden"] for g in
+                       AgentTracer.get_instance().get_recent_gates(20)), \
+                "同意账本放行必须经 platform.tool_risk verdict 留痕"
+        finally:
+            AgentTracer.reset()
+
+    def test_consented_does_not_open_non_costly_high_risk(self):
+        """未声明花钱的高危工具不命中同意分支（兜底拦截零改动）。"""
+        err, _ = guard_pipeline.evaluate_tool_risk(
+            "some_dangerous_op", costly=False, consented=True)
+        assert err and "高风险工具确认闸拦截" in err
+
+    def test_no_consent_keeps_fail_closed(self):
+        err, _ = guard_pipeline.evaluate_tool_risk(
+            "image_generate", costly=True, consented=False)
+        assert err and "高风险工具确认闸拦截" in err

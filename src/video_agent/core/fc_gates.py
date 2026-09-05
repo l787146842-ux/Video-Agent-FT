@@ -200,6 +200,8 @@ def tool_risk_gate(
         costly=ToolManager.is_costly_tool(name),
         skill_active=bool(ctx.injected_skill)
         and prompt_gates.gate_mode() == "strict",
+        # 批 9 同意账本：暂停卡 accept 登记的当前工作轮内生成同意（V6 计划）
+        consented=prompt_gates.generation_consented(ctx.state()),
     )
     for w in warns:
         if w not in ctx.warnings:
@@ -242,6 +244,8 @@ def gen_confirm_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optio
         active=bool(ctx.injected_skill) and prompt_gates.gate_mode() == "strict",
         override=ctx.gate_override,
         action=name,
+        # 批 9 同意账本：暂停卡 accept 登记的当前工作轮内生成同意（V6 计划）
+        consented=prompt_gates.generation_consented(state),
     )
     for w in warns:
         if w not in ctx.warnings:

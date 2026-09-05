@@ -146,6 +146,65 @@ async def test_fc_stop_without_text_continues(svc, executor):
     assert result.applied_actions == 1
 
 
+# ---------- 批 9：全拒收轮回喂继续（回合终止盲区修复，9999 死锁根因） ----------
+
+async def test_all_rejected_round_feeds_back_and_continues(svc, executor):
+    """全拒收轮（fc_applied=0 但发起过调用）不得按纯文本轮终止：
+    拒因回喂已在 messages，循环必须再走一轮让模型看到"先 workflow_pause"指引。"""
+    llm, calls = make_fc_llm([
+        ("现在生成形象图", "tool_calls", 0, 0.0, {"had_fc_calls": True}),
+        ("收到拦截指引，先暂停请求确认", "tool_calls", 0, 0.0,
+         {"had_fc_calls": True, "confirmation": "请确认生成", "pause_id": "p1"}),
+    ])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 2, "全拒收轮后循环必须继续（不得终止回合）"
+    assert result.confirmation == "请确认生成"
+    assert result.pause_id == "p1"
+
+
+async def test_all_rejected_stop_with_text_still_continues(svc, executor):
+    """全拒收轮 + stop + 可见文本：'自称完成'不可信（9999 实证），
+    提前终止规则让位——仍续轮消费拒因回喂。"""
+    llm, calls = make_fc_llm([
+        ("好的！关键元素已创建。现在生成形象图。", "stop", 0, 0.0, {"had_fc_calls": True}),
+        ("已按指引请求确认", "stop", 0),
+    ])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 2
+    assert result.steps == 2
+    assert "已按指引请求确认" in result.text
+
+
+async def test_all_rejected_rounds_still_capped_by_max_steps(svc, executor):
+    """全拒收轮续轮仍受 max_steps 封顶（无死循环风险）。"""
+    llm, calls = make_fc_llm([
+        ("继续撞闸", "tool_calls", 0, 0.0, {"had_fc_calls": True}),
+    ])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+        max_steps=2,
+    )
+    assert calls["n"] == 2
+    assert result.steps == 2
+    assert any("上限" in w for w in result.warnings)
+
+
+async def test_pure_text_round_still_terminal_after_fix(svc, executor):
+    """未发起任何工具调用的纯文本轮照常收尾（修复不改变正常收尾语义）。"""
+    llm, calls = make_fc_llm([("普通回复", "stop", 0), ("不该到达", "stop", 0)])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 1
+    assert result.steps == 1
+    assert "普通回复" in result.text
+    assert result.applied_actions == 0
+
+
 # ---------- audit-0819b：结构化暂停确认（5 元组 extra 直通） ----------
 
 async def test_structured_confirmation_stops_loop(svc, executor):

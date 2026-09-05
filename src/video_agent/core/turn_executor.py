@@ -460,6 +460,10 @@ class TurnExecutor:
         _extra["token_usage"] = int(getattr(response, "token_usage", 0) or 0)
         # P2-1 KV-cache 遥测：缓存命中同随 5 元组上抛（agent_loop 入账 trace step）
         _extra["cached_tokens"] = int(getattr(response, "cached_tokens", 0) or 0)
+        # 批 9 · 回合终止盲区修复：上抛"本轮模型是否发起过工具调用"。
+        # 全拒收轮（发起过但 fc_applied=0）不能落进纯文本轮收尾——
+        # 拒因回喂已在 messages 里，循环必须再走一轮让模型看到指引。
+        _extra["had_fc_calls"] = bool(getattr(response, "tool_calls", None))
         if _confirm_holder.get("message") or _confirm_holder.get("pause_id"):
             _extra.update({
                 "confirmation": _confirm_holder.get("message") or "",

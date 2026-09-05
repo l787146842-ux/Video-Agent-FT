@@ -463,9 +463,15 @@ async def run_agent_loop(
             fc_confirmation = str((fc_extra or {}).get("confirmation") or "")
             fc_confirmation_options = list((fc_extra or {}).get("confirmation_options") or [])
             fc_pause_id = str((fc_extra or {}).get("pause_id") or "")
+            # 批 9 · 回合终止盲区修复：模型本轮是否发起过工具调用
+            #（全拒收轮 fc_applied=0 但调用发生过，不能按纯文本轮收尾）
+            had_fc_calls = bool((fc_extra or {}).get("had_fc_calls"))
 
-            # FC 路径：tool_calls 已在 llm_call 内部执行；正文原样可见（无需清洗）
-            if fc_applied > 0 or fc_confirmation or fc_pause_id:
+            # FC 路径：tool_calls 已在 llm_call 内部执行；正文原样可见（无需清洗）。
+            # 批 9：发起过调用的轮（含全被闸拒收）一律走 FC 回喂继续——
+            # 拒因（含"先 workflow_pause 请求确认"指引）已在 messages 里，
+            # 终止回合会让指引永远到不了模型（9999 死锁根因）。
+            if fc_applied > 0 or fc_confirmation or fc_pause_id or had_fc_calls:
                 result.applied_actions += fc_applied
                 if fc_applied:
                     await emit({"type": SSE_ACTIONS_APPLIED, "step": step, "count": fc_applied})
@@ -511,8 +517,12 @@ async def run_agent_loop(
                     )
                     break
                 # 6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
-                # 不再固定追加 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）
-                if finish_reason in ("stop", "end_turn") and visible:
+                # 不再固定追加 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）。
+                # 批 9：全拒收轮例外——"自称完成"不可信（9999 实证：模型口播
+                # "现在生成…"而调用全被闸拦下），拒因回喂必须被下一轮消费，
+                # 让模型按指引自纠（发暂停卡/改参），max_steps 仍封顶。
+                _all_rejected = had_fc_calls and fc_applied == 0
+                if finish_reason in ("stop", "end_turn") and visible and not _all_rejected:
                     tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
                                     token_usage=step_tokens, cached_tokens=step_cached)
                     break

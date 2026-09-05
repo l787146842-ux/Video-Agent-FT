@@ -184,8 +184,8 @@ GENERATION_CONFIRM_GATE_ERROR = _gate_msg("GENERATION_CONFIRM", (
 # 「只警告不拦人」保护的是用户意志；模型违反 Skill 暂停语义不属用户意志。
 GENERATION_CONFIRM_GATE_BLOCKED = _gate_msg("GENERATION_CONFIRM_BLOCKED", (
     "流程拦截：目标草稿的 Prompt Draft 尚未经用户审阅确认。请先展示草案并调用"
-    "暂停工具请求用户审阅；仅当用户在本次消息中明确要求「直接生成/不用确认」"
-    "时才可直接触发生成。"
+    "暂停工具请求用户审阅；用户接受暂停卡后重提生成即视为已确认，不会重复拦截。"
+    "也可在工作台把目标草稿标「已确认」后再生成。"
 ))
 
 # 高风险工具确认闸拒因（宪法 §2.7）：消费端 = guard_pipeline.evaluate_tool_risk，
@@ -194,7 +194,8 @@ GENERATION_CONFIRM_GATE_BLOCKED = _gate_msg("GENERATION_CONFIRM_BLOCKED", (
 TOOL_RISK_BLOCKED_MSG = _gate_msg("TOOL_RISK_BLOCKED", (
     "高风险工具确认闸拦截：'{{name}}' 为 high 级操作（宪法 §2.7），"
     "未经用户显式同意不得执行。请先用 workflow_pause 向用户说明本次将执行的"
-    "操作并请求确认；用户同意后（点「本次放行」或本条消息明确指示）再重新发起。"
+    "操作并请求确认；用户接受暂停卡后重提即视为已确认（本轮内不再拦截）。"
+    "也可在工作台确认相关草稿，或由用户点「本次放行」。"
 ))
 
 # ---------- 下一步机械派生（frontmatter 声明唯一源） ----------

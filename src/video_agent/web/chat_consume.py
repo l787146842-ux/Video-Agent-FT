@@ -38,8 +38,15 @@ def consume_pause_response(svc, pause_response) -> Optional[Dict[str, str]]:
         if str((pause_response or {}).get("decision") or "").strip() == "decline"
         else "accept"
     )
+    # 批 9 · 同意账本（V6 计划）：暂停卡接受 = 用户对该卡交代工作的确认，
+    # 登记当前工作轮号；闸机（tool_risk / gen_confirm）在本轮内放行 provider
+    # 生成调用，轮次推进后登记值自然失配失效（无需显式清理）。decline 不登记。
+    # 时序依据：轮始 advance_turn_seq 先于本函数执行，此处 turn_seq 即本轮号。
+    set_flags: dict = {"last_pause_decision": decision}
+    if decision == "accept":
+        set_flags["generation_consented_turn"] = int(svc.state_dict.get("turn_seq") or 0)
     workflow_runtime.reduce_interaction(
-        svc, set_flags={"last_pause_decision": decision},
+        svc, set_flags=set_flags,
         pop_flags=("active_pause",), flush=True)
     # review decision 解析（审阅卡确认即解除 review_spec 挂起）
     try:

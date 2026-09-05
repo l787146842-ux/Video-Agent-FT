@@ -157,21 +157,37 @@ def evaluate_gen_confirm(
     active: bool,
     override: Any = False,
     action: str = "",
+    consented: bool = False,
 ) -> "tuple[Optional[str], List[str]]":
     """生成确认闸统一判定（platform.gen_confirm 唯一实现）。
 
     drafts：目标草稿（已含提示词者由调用方筛好）；active：Skill 激活且 strict；
-    override：用户坚持作用域。返回 (硬拒原因, warnings)，双轨语义逐字节一致：
+    override：用户坚持作用域；consented：暂停卡 accept 登记的同意账本命中
+    （批 9，V6 计划——protocol「暂停卡确认后的生成视为明确指令」的机制兑现）。
+    返回 (硬拒原因, warnings)，双轨语义逐字节一致：
+    - override 命中 → 不拒，附豁免警告；
+    - consented 命中 → 不拒，附 consent=pause_accept 警告（留痕）；
     - 执行偏好前置分支（2026-08-30 裁决）：generate_directly 恒放行，
       auto_decide 且活跃 Skill 指导在场放行（系统代发同意，均留痕）；
       默认档 confirm_before_gen 不命中，行为与现状逐字节一致；
-    - override 命中 → 不拒，附豁免警告；
     - 未激活/空目标 → 不拒（空目标交工具自身报「未找到」）；
     - 全部已确认 → 不拒；
     - 存在未确认 → 硬拒（模型跳确认非用户意志），拒因用 BLOCKED 文案。
     判定经 tracer.record_gate 入审计（前端 chips 同源）。
     """
     warns: List[str] = []
+    if override in ("all", True):
+        w = "用户坚持跳过生成确认闸（仅警告），照常生成"
+        warns.append(w)
+        audit_verdicts([GateVerdict("platform.gen_confirm", "platform", True, w)],
+                       action=action, overridden=True)
+        return None, warns
+    if consented:
+        w = "暂停卡获用户接受：本轮生成视为已确认（consent=pause_accept），放行"
+        warns.append(w)
+        audit_verdicts([GateVerdict("platform.gen_confirm", "platform", True, w)],
+                       action=action, overridden=True)
+        return None, warns
     pref = _exec_pref()
     if pref == "generate_directly":
         w = "执行偏好「直接生成」：免确认直接生成（系统代发同意，留痕）"
@@ -181,12 +197,6 @@ def evaluate_gen_confirm(
         return None, warns
     if pref == "auto_decide" and active:
         w = "执行偏好「自动决定」：活跃 Skill 指导在场，本次生成免逐次确认（系统代发同意，留痕）"
-        warns.append(w)
-        audit_verdicts([GateVerdict("platform.gen_confirm", "platform", True, w)],
-                       action=action, overridden=True)
-        return None, warns
-    if override in ("all", True):
-        w = "用户坚持跳过生成确认闸（仅警告），照常生成"
         warns.append(w)
         audit_verdicts([GateVerdict("platform.gen_confirm", "platform", True, w)],
                        action=action, overridden=True)
@@ -208,6 +218,7 @@ def evaluate_tool_risk(
     override: Any = False,
     costly: bool = False,
     skill_active: bool = False,
+    consented: bool = False,
 ) -> "tuple[Optional[str], List[str]]":
     """工具风险分级确认闸（宪法 §2.7：high 必须平台闸机 + 用户确认）。
 
@@ -216,6 +227,8 @@ def evaluate_tool_risk(
     由 gen_confirm 闸专属覆盖，不重复设闸（single 轨不在覆盖内，回本闸默认拦）。
     确认回携机制与 gen_confirm 同源（§2.4）：
     - 用户「本次放行」（gate_overrides 单次消费）= 一次性同意；
+    - 暂停卡 accept（批 9 同意账本，consented 命中）= 工作轮内生成同意，
+      protocol「暂停卡确认后的生成视为明确指令」的机制兑现；
     - 无同意 → 硬拒（Context ≠ Consent，禁止静默放行），
       拒因回喂模型，由其暂停向用户发起确认邀请。
     执行偏好前置分支（2026-08-30 裁决，仅对花钱生成工具放宽）：
@@ -235,6 +248,13 @@ def evaluate_tool_risk(
                        action=name, overridden=True)
         return None, warns
     if costly:
+        if consented:
+            w = (f"暂停卡获用户接受：{name} 本轮生成视为已确认"
+                 "（consent=pause_accept），放行")
+            warns.append(w)
+            audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
+                           action=name, overridden=True)
+            return None, warns
         pref = _exec_pref()
         if pref == "generate_directly":
             w = f"执行偏好「直接生成」：花钱工具 {name} 免确认直接执行（系统代发同意，留痕）"

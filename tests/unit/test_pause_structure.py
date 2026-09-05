@@ -157,6 +157,44 @@ class TestConsumePauseResponse:
         assert "pauseAnsweredId" not in svc.get_chat_messages()[-1]
 
 
+class TestPauseConsentLedger:
+    """批 9 · 同意账本（V6 计划）：暂停卡 accept 登记当前工作轮号，
+    闸机（tool_risk / gen_confirm）在该轮内放行 provider 生成调用；
+    decline / 不匹配回应不登记（fail-closed 保持）。"""
+
+    def test_accept_registers_consent_turn(self, svc):
+        svc.state_dict["turn_seq"] = 7
+        inter = svc.state_dict.setdefault("interaction", {})
+        inter["active_pause"] = {"pause_id": "abc123", "message": "m", "options": []}
+
+        marker = consume_pause_response(
+            svc, {"pause_id": "abc123", "value": "确认生成", "label": "确认"})
+
+        assert marker and marker["decision"] == "accept"
+        inter = svc.state_dict.get("interaction") or {}
+        assert inter.get("generation_consented_turn") == 7
+
+    def test_decline_does_not_register_consent(self, svc):
+        svc.state_dict["turn_seq"] = 7
+        inter = svc.state_dict.setdefault("interaction", {})
+        inter["active_pause"] = {"pause_id": "abc123", "message": "m", "options": []}
+
+        marker = consume_pause_response(
+            svc, {"pause_id": "abc123", "value": "取消",
+                  "label": "取消", "decision": "decline"})
+
+        assert marker and marker["decision"] == "decline"
+        assert "generation_consented_turn" not in (svc.state_dict.get("interaction") or {})
+
+    def test_mismatch_response_does_not_register_consent(self, svc):
+        svc.state_dict["turn_seq"] = 7
+        inter = svc.state_dict.setdefault("interaction", {})
+        inter["active_pause"] = {"pause_id": "abc123", "message": "m", "options": []}
+
+        assert consume_pause_response(svc, {"pause_id": "old1", "value": "确认"}) is None
+        assert "generation_consented_turn" not in (svc.state_dict.get("interaction") or {})
+
+
 class TestPauseSlotMutex:
     """单一活跃暂停槽位防御断言（问即停）：已有未消费暂停时
     重复 workflow_pause = 旧卡作废 + trace 留痕（pause_slot_collision）

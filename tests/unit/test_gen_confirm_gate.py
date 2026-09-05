@@ -153,3 +153,64 @@ class TestExecPreferenceGenConfirm:
             assert ctx.warnings and "直接生成" in ctx.warnings[0]
         finally:
             object.__setattr__(settings, "execution_preference", old)
+
+
+# ---------- 批 9：暂停卡同意账本（V6 计划） ----------
+
+class TestPauseConsentGenConfirm:
+    """consented 命中 = 暂停卡 accept 登记的当前工作轮内生成同意：
+    未确认草稿也放行（protocol「暂停卡确认后的生成视为明确指令」兑现），
+    audit verdict 留痕 consent=pause_accept。"""
+
+    def test_consented_passes_unconfirmed_drafts(self):
+        AgentTracer.reset()
+        try:
+            err, warns = guard_pipeline.evaluate_gen_confirm(
+                [UNCONF], active=True, consented=True)
+            assert err is None and warns and "consent=pause_accept" in warns[0]
+            assert any(g["rule_id"] == "platform.gen_confirm"
+                       and g["ok"] and g["overridden"] for g in _recent_gates()), \
+                "同意账本放行必须经 platform.gen_confirm verdict 留痕"
+        finally:
+            AgentTracer.reset()
+
+    def test_no_consent_keeps_fail_closed(self):
+        """decline / 未登记（consented=False）→ 默认档仍硬拒（Context ≠ Consent）。"""
+        err, _ = guard_pipeline.evaluate_gen_confirm([UNCONF], active=True, consented=False)
+        assert err and "生成确认闸拦截" in err
+
+    def test_fc_gate_consented_via_state(self, monkeypatch):
+        """FC 闸从 state 读同意账本：登记轮号 == 当前轮号 → 放行未确认草稿。"""
+        monkeypatch.setattr("src.video_agent.core.prompt_gates.gate_mode", lambda: "strict")
+        state = {
+            "turn_seq": 7,
+            "interaction": {"generation_consented_turn": 7},
+            "keyElements": [{"drafts": [UNCONF]}],
+        }
+        ctx = _fc_ctx(state)
+        assert fc_gates.gen_confirm_gate(
+            ctx, "image_generate", {"target": "all_keyElements"}) is None
+        assert ctx.warnings and "consent=pause_accept" in ctx.warnings[0]
+
+    def test_fc_gate_stale_consent_still_blocks(self, monkeypatch):
+        """轮次已推进（登记轮号 ≠ 当前轮号）→ 同意失效，未确认仍拦。"""
+        monkeypatch.setattr("src.video_agent.core.prompt_gates.gate_mode", lambda: "strict")
+        state = {
+            "turn_seq": 8,
+            "interaction": {"generation_consented_turn": 7},
+            "keyElements": [{"drafts": [UNCONF]}],
+        }
+        ctx = _fc_ctx(state)
+        assert fc_gates.gen_confirm_gate(
+            ctx, "image_generate", {"target": "all_keyElements"}) is not None
+
+    def test_zero_turn_consent_never_matches(self):
+        """turn_seq 未初始化（0）时登记值 0 不得误判为同意（>0 守卫）。"""
+        from src.video_agent.core.prompt_gates import generation_consented
+        assert generation_consented(
+            {"turn_seq": 0, "interaction": {"generation_consented_turn": 0}}) is False
+        assert generation_consented(
+            {"turn_seq": 5, "interaction": {"generation_consented_turn": 5}}) is True
+        assert generation_consented(
+            {"turn_seq": 6, "interaction": {"generation_consented_turn": 5}}) is False
+        assert generation_consented({"turn_seq": 6}) is False
