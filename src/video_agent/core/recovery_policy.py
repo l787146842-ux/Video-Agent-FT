@@ -35,6 +35,8 @@ from typing import Dict, Optional
 FAILURE_BAD_OUTPUT = "bad_output"
 FAILURE_TOOL = "tool_failure"
 FAILURE_ADAPTER = "adapter_error"
+# 批 12 · 1000 事故正向修复：产出类调用被拒/失败的混合轮「续轮回喂」预算键
+FAILURE_PRODUCTIVE_REJECT = "productive_reject"
 # 闸机拦截分派键已退役（2026-09-03 Q2 裁决）：FC 轨闸机拦截由 fc_gates
 # reject_message 闭环，循环层无真实输入源。防复活见 check_legacy_orchestration。
 
@@ -85,6 +87,18 @@ RECOVERY_POLICIES: Dict[str, RecoveryPolicy] = {
         rationale=(
             "供应商 transient 重试已在适配层耗尽（adapters.retry，不变量 I03），"
             "到达循环侧即 permanent——nudge 不覆盖供应商错误，原样上抛"
+        ),
+    ),
+    FAILURE_PRODUCTIVE_REJECT: RecoveryPolicy(
+        kind=FAILURE_PRODUCTIVE_REJECT,
+        action=ACTION_FEEDBACK_DEGRADE,
+        max_retries=2,
+        rationale=(
+            "批 12 · 1000 正向修复：产出类工具调用被拒/失败的混合轮不按纯文本轮"
+            "提前终止（拒因必须被下一轮消费，模型自纠——发暂停卡/改参；1000 实证："
+            "read_skill 成功 + 写规格被拒的混合轮口播假完成收尾）。max_retries = "
+            "同轮产出类续轮预算，防「被拒-口播-续轮」打转烧满 max_steps；"
+            "超限走轮末收尾 + 警告 + 继续按钮。全拒收轮续轮（批 9）不走本预算"
         ),
     ),
 }

@@ -205,6 +205,88 @@ async def test_pure_text_round_still_terminal_after_fix(svc, executor):
     assert result.applied_actions == 0
 
 
+# ---------- 批 12：产出类被拒的混合轮续轮（1000 正向修复） ----------
+
+async def test_mixed_round_productive_reject_continues(svc, executor):
+    """混合轮（部分调用成功 + 产出类被拒）+ stop + 可见文本 → 不提前终止：
+    部分成功不代表产出落账（1000 实证：read_skill 成功 + 写规格被拒，
+    模型口播"已写入制片规格"假完成收尾），拒因必须被下一轮消费。"""
+    llm, calls = make_fc_llm([
+        ("已读取规范，现在写入规格。", "stop", 1, 0.0,
+         {"had_fc_calls": True, "rejected_productive_tools": ["document_write"]}),
+        ("收到拦截指引，先暂停请求确认。", "stop", 0),
+    ])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 2, "产出类被拒的混合轮不得按纯文本轮提前终止"
+    assert result.steps == 2
+
+
+async def test_mixed_round_readonly_reject_still_terminal(svc, executor):
+    """负样本：本轮无产出类被拒（extra 无该键）→ 照旧提前终止。"""
+    llm, calls = make_fc_llm([
+        ("参考规范已说明，无需进一步操作。", "stop", 1, 0.0,
+         {"had_fc_calls": True}),
+    ])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 1 and result.steps == 1
+
+
+async def test_productive_reject_budget_exhausts(svc, executor):
+    """续轮预算（recovery_policy productive_reject.max_retries=2）耗尽 →
+    收尾并附产物缺失警告，不烧满 max_steps（防打转）。"""
+    replies = [
+        (f"口播完成 {i}", "stop", 1, 0.0,
+         {"had_fc_calls": True, "rejected_productive_tools": ["document_write"]})
+        for i in range(5)
+    ]
+    llm, calls = make_fc_llm(replies)
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+        max_steps=5,
+    )
+    assert calls["n"] == 3, "首轮 + 预算内续轮 2 次 = 第 3 轮收尾"
+    assert result.steps == 3
+    assert any("未能执行" in w for w in result.warnings), \
+        f"预算耗尽收尾必须附产物缺失警告: {result.warnings}"
+
+
+# ---------- 批 12：对账扩展（宣称完成 ↔ 产物账本，1000 假话口播兜底） ----------
+
+async def test_false_claim_spec_audit_warns_when_spec_missing(svc, executor):
+    """纯文本轮口播「规格已写入」而规格文档缺失 → 虚报警告（此前仅确认轮
+    有结构对账）。"""
+    llm, _ = make_plain_llm([("已锁定规格参数，制片规格已写入。", "stop")])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert any("虚报" in w and "制片规格" in w for w in result.warnings), \
+        f"规格宣称应对账警告: {result.warnings}"
+
+
+async def test_false_claim_spec_audit_passes_when_spec_exists(svc, executor):
+    """规格文档确实存在 → 不误报（4444 误报校准基调）。"""
+    svc.state_dict["documents"] = [
+        {"name": "制片规格.md", "content": "# 制片规格\n时长：3分钟"}]
+    llm, _ = make_plain_llm([("制片规格已写入。", "stop")])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert not any("虚报" in w for w in result.warnings)
+
+
+async def test_false_claim_future_tense_exempt(svc, executor):
+    """将来时措辞（接下来写入）不算宣称（未来时豁免保持）。"""
+    llm, _ = make_plain_llm([("规格已定，接下来写入制片规格文档。", "stop")])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert not any("虚报" in w for w in result.warnings)
+
+
 # ---------- audit-0819b：结构化暂停确认（5 元组 extra 直通） ----------
 
 async def test_structured_confirmation_stops_loop(svc, executor):
@@ -289,7 +371,9 @@ async def test_false_claim_warns_but_keeps_pause(svc, executor):
     assert result.confirmation == "请审阅关键元素"        # 暂停原样递给用户
     assert len(svc.state_dict["keyElements"]) == 0    # 客观事实：确实没拆
     # 虚报审计在 FC 确认轮同样承重（单轨化不豁免）：附警告不拦人
-    assert any("故事板实际仍为空" in w for w in result.warnings)
+    #（批 12 对账扩展：文案泛化为产物族口径——结构搭建是产物之一）
+    assert any("虚报" in w and "结构搭建" in w and "产物实际缺失" in w
+               for w in result.warnings)
 
 
 async def test_future_tense_pause_no_warning_empty_board(svc, executor):

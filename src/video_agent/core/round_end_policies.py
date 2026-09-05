@@ -44,13 +44,30 @@ if TYPE_CHECKING:
 KIND_ARBITRABLE = "arbitrable"
 KIND_POST_PROCESS = "post_process"
 
-# ---------- 虚报检测（唯一消费点 = false_claim_audit） ----------
+# ---------- 虚报检测（唯一消费点 = false_claim_audit / agent_loop 确认轮审计） ----------
 
 _STRUCTURE_CLAIM_RE = re.compile(
     r"(?:已完成|完成|已创建|已拆解|已写入)\s*(?:关键元素)?(?:拆解|拆分|分组|故事板)"
     r"|(?:关键元素)?(?:拆解|拆分)完成|已创建\s*\d+\s*个分组并写入故事板",
 )
+# 批 12 · 1000 正向修复：规格完成宣称句式（完成式；「现在写入/接下来写入」
+# 类将来时交给 fakestop 延续承诺检测，完成态宣称才进对账）
+_SPEC_CLAIM_RE = re.compile(
+    r"已(?:经)?\s*写入[^。；\n]{0,16}(?:制片|制作)?规格"
+    r"|(?:制片|制作)?规格(?:文档)?已(?:经)?(?:写入|确立|建立|完成|锁定)"
+    r"|已锁定\s*(?:制片|制作)?规格参数",
+)
 _FUTURE_MARKER_RE = re.compile(r"确认后|接下来|之后|即将|下一步|先确认|先将")
+
+# 产物对账映射（批 12）：宣称句式 → 产物空判定谓词 → 展示名。
+# 「宣称完成 + 账本为空 → 警告」的通用机制（1000 实证：口播「已锁定规格
+# 参数…写入制片规格文档」而规格从未落盘——拒因承诺落空后模型假完成收尾，
+# 此前仅结构类有对账）。谓词只读 state，不拦人（警告层）。
+_PRODUCT_AUDIT: List[Tuple[re.Pattern, Any, str]] = [
+    (_STRUCTURE_CLAIM_RE, prompt_gates.storyboard_is_empty, "结构搭建"),
+    (_SPEC_CLAIM_RE,
+     lambda st: not prompt_gates.has_spec_document(st), "制片规格"),
+]
 
 # fakestop：延续承诺措辞——正文声称要继续/正在做，却以 stop 收尾且零操作。
 # 只覆盖任务流常见承诺句式，配合 applied==0 + skill 激活条件使用，防普通对话误触发。
@@ -73,6 +90,26 @@ def _claims_structure_done(*texts: str) -> bool:
         if _STRUCTURE_CLAIM_RE.search(text):
             return True
     return False
+
+
+def claims_unbacked_products(*texts: str, state: Dict[str, Any]) -> List[str]:
+    """批 12 对账扩展：返回「正文宣称已完成、但产物账本为空」的产物名列表。
+
+    - 逐文本段独立判定 + 未来/预告措辞豁免（4444 误报校准基调不变）；
+    - 产物族由 _PRODUCT_AUDIT 声明（结构搭建 / 制片规格，声明即对账）；
+    - 只判定不处置：消费方（false_claim_audit / agent_loop 确认轮）附警告。
+    """
+    unbacked: List[str] = []
+    for t in texts:
+        text = str(t or "")
+        if _FUTURE_MARKER_RE.search(text):
+            continue
+        for claim_re, empty_pred, label in _PRODUCT_AUDIT:
+            if label in unbacked:
+                continue
+            if claim_re.search(text) and empty_pred(state or {}):
+                unbacked.append(label)
+    return unbacked
 
 
 @dataclass
@@ -399,15 +436,16 @@ def _cond_false_claim_audit(ctx: RoundEndContext) -> bool:
 async def _apply_false_claim_audit(ctx: RoundEndContext, emit: Callable) -> None:
     visible = (ctx.content or "").strip()
     if visible:
-        # 虚报警告：声称完成结构搭建但故事板实际为空 → 只警告不拦人
-        if (
-            ctx.confirmation
-            and _claims_structure_done(visible)
-            and prompt_gates.storyboard_is_empty(ctx.executor.state)
-        ):
+        # 对账扩展（批 12 · 1000 正向修复）：宣称完成任一产物（结构/规格…）
+        # 而产物账本为空 → 警告（不拦人）。纯文本轮同样承重——1000 实录：
+        # 混合轮被拦后续轮纯文本口播「已写入制片规格」收尾，此前仅确认轮
+        # 有结构对账。逐段未来时豁免防误报（4444 校准基调）。
+        unbacked = claims_unbacked_products(
+            visible, state=(ctx.executor.state if ctx.executor else {}))
+        if unbacked:
             ctx.result_warnings.append(
-                "检测到虚报：正文声称已完成结构搭建，但故事板实际仍为空；"
-                "已按用户确认语义保留当前暂停（系统不没收模型暂停）。"
+                "检测到虚报：正文声称已完成" + "、".join(unbacked)
+                + "，但项目状态中对应产物实际缺失；请以工作台实际产物为准。"
             )
         ctx.result_text = (
             f"{ctx.result_text}\n\n{visible}".strip() if ctx.result_text else visible
@@ -446,7 +484,7 @@ async def _apply_aborted_continuation_audit(ctx: RoundEndContext, emit: Callable
 ROUND_END_POLICIES: List[RoundEndPolicy] = [
     RoundEndPolicy("false_claim_audit", KIND_POST_PROCESS, 120,
                    _cond_false_claim_audit, _apply_false_claim_audit,
-                   requires=("content", "executor", "confirmation")),
+                   requires=("content", "executor")),
     RoundEndPolicy("aborted_continuation_audit", KIND_POST_PROCESS, 130,
                    _cond_aborted_continuation_audit, _apply_aborted_continuation_audit,
                    requires=("skill", "applied", "confirmation", "wants_continue",

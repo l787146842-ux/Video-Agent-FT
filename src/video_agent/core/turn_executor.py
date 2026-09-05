@@ -464,6 +464,27 @@ class TurnExecutor:
         # 全拒收轮（发起过但 fc_applied=0）不能落进纯文本轮收尾——
         # 拒因回喂已在 messages 里，循环必须再走一轮让模型看到指引。
         _extra["had_fc_calls"] = bool(getattr(response, "tool_calls", None))
+        # 批 12 · 1000 正向修复：本轮失败/被拒的「产出类」工具清单（按工具
+        # 声明推导：detail_tier=expand 产出类 或 risk≥medium 结构写入，
+        # workflow_pause 属关键交互非产物，排除；未注册工具 deny-by-default
+        # 保守计入）。产出没落账而正文自称完成同样不可信——agent_loop 据此
+        # 不按纯文本轮提前终止，让拒因被下一轮消费（自纠：发暂停卡/改参）。
+        _rejected_productive: List[str] = []
+        for _tr in tool_results or []:
+            _n = str(( _tr or {}).get("name") or "")
+            if not _n or _tr.get("ok") or _n == "workflow_pause":
+                continue
+            try:
+                _tool = self.planner.tool_manager.get_tool(_n)
+                _tier = str(getattr(_tool, "detail_tier", "") or "")
+                _risk = str(getattr(_tool, "risk", "") or "")
+            except Exception:
+                _tier, _risk = "", "high"
+            if _tier == "expand" or _risk in ("medium", "high"):
+                if _n not in _rejected_productive:
+                    _rejected_productive.append(_n)
+        if _rejected_productive:
+            _extra["rejected_productive_tools"] = _rejected_productive
         if _confirm_holder.get("message") or _confirm_holder.get("pause_id"):
             _extra.update({
                 "confirmation": _confirm_holder.get("message") or "",

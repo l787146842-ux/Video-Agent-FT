@@ -44,7 +44,7 @@ from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # 轮末闸机分支收敛为声明式策略表（层 9 唯一落点）
 from src.video_agent.core.round_end_policies import (
     RoundEndContext,
-    _claims_structure_done,  # 防虚报检测实现体（批次E：re-export 壳已清偿，测试直连实现体）
+    claims_unbacked_products,  # 批 12 对账扩展：产物族宣称 ↔ 账本对账
     run_round_end_policies,
 )
 from src.video_agent.utils import live_metrics
@@ -55,6 +55,7 @@ from src.video_agent.exceptions import AdapterError
 from src.video_agent.core.recovery_policy import (
     FAILURE_ADAPTER,
     FAILURE_BAD_OUTPUT,
+    FAILURE_PRODUCTIVE_REJECT,
     classify_step_failure,
     recovery_for,
 )
@@ -303,6 +304,9 @@ async def run_agent_loop(
                 raise
 
         step = 0
+        # 批 12：产出类被拒/失败的混合轮续轮已用预算（recovery_policy
+        # productive_reject.max_retries；防「被拒-口播-续轮」打转烧满 max_steps）
+        productive_reject_rounds = 0
         while True:
             # Q3：多步上限每步实时读 settings（前端全局设置页热更新即刻生效，
             # 运行中任务调高上限可继续推进）；显式传参钉死口径优先。
@@ -483,14 +487,16 @@ async def run_agent_loop(
                     f"confirm={bool(fc_confirmation)} finish={finish_reason or '-'}"
                 )
                 if fc_confirmation or fc_pause_id:
-                    # 虚报审计：FC 确认轮同样承重——声称拆完但故事板
-                    # 为空 → 只附警告不拦人（系统不没收模型暂停）
-                    if (
-                        _claims_structure_done(visible, fc_confirmation)
-                        and prompt_gates.storyboard_is_empty(executor.state)
-                    ):
+                    # 虚报审计：FC 确认轮同样承重——声称完成但产物为空 →
+                    # 只附警告不拦人（系统不没收模型暂停）。
+                    # 批 12 对账扩展：产物族由 _PRODUCT_AUDIT 声明（结构/规格），
+                    # 1000 实证「口播已写入制片规格而规格未落盘」同样要抓。
+                    _unbacked = claims_unbacked_products(
+                        visible, fc_confirmation, state=executor.state)
+                    if _unbacked:
                         result.warnings.append(
-                            "检测到虚报：正文声称已完成结构搭建，但故事板实际仍为空；"
+                            "检测到虚报：正文声称已完成" + "、".join(_unbacked)
+                            + "，但项目状态中对应产物实际缺失；"
                             "已按用户确认语义保留当前暂停（系统不没收模型暂停）。"
                         )
                     # 暂停等待用户确认：终止循环，把确认请求（含候选选项）带回给前端
@@ -521,8 +527,32 @@ async def run_agent_loop(
                 # 批 9：全拒收轮例外——"自称完成"不可信（9999 实证：模型口播
                 # "现在生成…"而调用全被闸拦下），拒因回喂必须被下一轮消费，
                 # 让模型按指引自纠（发暂停卡/改参），max_steps 仍封顶。
+                # 批 12 · 1000 正向修复：例外扩为「产出类调用被拒/失败的混合轮」
+                # ——部分调用成功不代表产出落账（1000 实证：read_skill 成功 +
+                # 写规格被拒，模型口播"已写入制片规格"假完成收尾）；续轮预算 =
+                # recovery_policy productive_reject.max_retries（防打转），
+                # 预算内续轮计数递增，超限走轮末收尾 + 警告 + 继续按钮。
                 _all_rejected = had_fc_calls and fc_applied == 0
-                if finish_reason in ("stop", "end_turn") and visible and not _all_rejected:
+                _rejected_productive = bool(
+                    (fc_extra or {}).get("rejected_productive_tools"))
+                _productive_budget = recovery_for(
+                    FAILURE_PRODUCTIVE_REJECT).max_retries
+                _keep_alive = _all_rejected or (
+                    _rejected_productive
+                    and productive_reject_rounds < _productive_budget
+                )
+                if _rejected_productive and not _all_rejected:
+                    productive_reject_rounds += 1
+                if finish_reason in ("stop", "end_turn") and visible and not _keep_alive:
+                    if _rejected_productive:
+                        # 批 12：续轮预算耗尽仍自称完成——明确告知用户哪些
+                        # 产出没落账（正文完成说法不可信，以工作台实际为准）
+                        result.warnings.append(
+                            "部分产出类操作未能执行（被拦截或失败）："
+                            + "、".join(
+                                (fc_extra or {}).get("rejected_productive_tools") or [])
+                            + "；相关产物未落账，正文中的完成说法请以工作台实际产物为准。"
+                        )
                     tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
                                     token_usage=step_tokens, cached_tokens=step_cached)
                     break

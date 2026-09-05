@@ -19,11 +19,12 @@ from src.video_agent.exceptions import AdapterError
 from src.video_agent.state.manager import StateManager
 
 
-def test_table_covers_three_failure_kinds():
+def test_table_covers_failure_kinds():
     assert set(rp.RECOVERY_POLICIES) == {
         rp.FAILURE_BAD_OUTPUT,
         rp.FAILURE_TOOL,
         rp.FAILURE_ADAPTER,
+        rp.FAILURE_PRODUCTIVE_REJECT,  # 批 12：产出类被拒混合轮续轮预算（1000 清偿）
     }
 
 
@@ -36,6 +37,10 @@ def test_actions_and_retry_budgets():
         assert rp.recovery_for(kind).max_retries == 0
     assert rp.recovery_for(rp.FAILURE_TOOL).action == rp.ACTION_FEEDBACK_DEGRADE
     assert rp.recovery_for(rp.FAILURE_ADAPTER).action == rp.ACTION_ESCALATE
+    # 批 12：产出类被拒混合轮 = 回喂自处置 + 有界续轮预算（防打转烧满 max_steps）
+    prod = rp.recovery_for(rp.FAILURE_PRODUCTIVE_REJECT)
+    assert prod.action == rp.ACTION_FEEDBACK_DEGRADE
+    assert prod.max_retries == 2
 
 
 def test_every_entry_has_rationale():

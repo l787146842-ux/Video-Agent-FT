@@ -462,10 +462,18 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
         from src.video_agent.tools import register_document_tools
         register_document_tools()
 
-        # --- 消息 1：模型发规格确认暂停卡（skill planner 暂停点）---
+        # --- 消息 1：混合轮（read_skill 成功 + 写规格被拒）→ 批 12 回喂
+        #     放宽续轮 → 模型消费拒因发规格确认暂停卡。修复前：部分拒收轮
+        #     按纯文本轮提前终止，模型口播"已写入制片规格"假完成收尾
+        #    （1000 事故实录），规格永不落盘、流程卡死在阶段 1。---
         svc.state_dict["turn_seq"] = 1
         script1 = [
-            ("请确认成片规格，我将据此写入制片规格文档。", [
+            ("我先读取本 Skill 的拆解规范，然后写入制片规格。", [
+                ("read_skill", {"name": "未来科幻真人电影"}),
+                ("document_write", {"name": "制片规格.md",
+                                    "content": "# 制片规格（草稿）"}),
+            ]),
+            ("规格参数需要您确认，我先暂停。", [
                 ("workflow_pause", {"message": "请确认规格：硬核深空探索 / 3分钟 / 5段式？",
                                     "options": [
                                         {"label": "确认规格",
@@ -480,8 +488,12 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
         ctx1 = PlannerContext(use_studio_context=False,
                               skill_name="未来科幻真人电影")
         result1 = asyncio.run(planner.handle_message("开始", ctx1))
+        # 未同意的规格写入必须被拦（同意账本未登记，spec_write 不放行）
+        assert any("高风险工具确认闸拦截" in w for w in (result1.warnings or [])), \
+            f"[1000] 未同意的规格写入未被拦: {result1.warnings}"
+        # 关键断言：部分拒收轮不提前终止 → 下一轮消费拒因 → 发行暂停卡
         assert result1.confirmation and result1.pause_id, \
-            f"[1000] 规格确认暂停卡未发行: {result1.text!r}"
+            f"[1000] 混合轮被拦后未续轮发行暂停卡（回喂放宽未生效）: {result1.text!r}"
 
         # --- 用户接受暂停卡（web 层轮始递增 + 结构化消费，同 9999 冒烟）---
         svc.state_dict["turn_seq"] = 2
