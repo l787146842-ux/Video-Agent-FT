@@ -520,9 +520,8 @@ class FCToolRunner:
                 # --- 批 2 · 插播报：产物落账即广播具名事件卡（触发时刻写死，
                 # 逐卡唯一落点 = event_cards 映射表；读类卡只进时间线不进模型
                 # 上下文防逐轮膨胀）
-                _card = event_cards.product_event_card(name, args, len(image_urls))
-                if _card is not None:
-                    _card_name, _card_detail, _card_to_ctx = _card
+                _cards = event_cards.product_event_card(name, args, len(image_urls))
+                for _card_name, _card_detail, _card_to_ctx in _cards:
                     await emit_event_card(_card_name, _card_detail, emitter=on_event)
                     if _card_to_ctx:
                         StateManager.get_instance().record_flow_event(

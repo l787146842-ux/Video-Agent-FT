@@ -3,7 +3,7 @@
 
 每个 Tool 对应一个前端故事板操作，内部通过 StudioStateService 修改状态。
 """
-from typing import Any, Dict, List, Literal, Optional, Type
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, Field
 from loguru import logger
@@ -34,8 +34,8 @@ class CreateGroupInput(StrictToolInput):
     duration: str = Field("", description="时长（shot 类型用）")
     rough_desc: str = Field("", description="粗略描述（shot 类型用）")
     shot_type: str = Field("", description="镜头语言（shot 类型用）")
-    scene_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组")
-    draft: Optional[Dict[str, Any]] = Field(None, description="附带草稿（可选）")
+    scene_refs: List[str] = Field(default_factory=list, description="引用的关键元素标题数组；留空时系统自动从分组描述里的 [元素名] 令牌解析")
+    draft: Optional[Union[Dict[str, Any], str]] = Field(None, description="附带草稿（可选；传 JSON 对象，字符串会自动解析一次）")
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
@@ -49,7 +49,7 @@ class PatchDraftInput(StrictToolInput):
 class AddDraftInput(StrictToolInput):
     group_id: str = Field("current", description="目标分组 ID 或 'current'")
     group_type: str = Field("", description="分组类型")
-    draft: Dict[str, Any] = Field(..., description="新草稿数据")
+    draft: Union[Dict[str, Any], str] = Field(..., description="新草稿数据（JSON 对象；字符串会自动解析一次）")
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
 
 
@@ -94,7 +94,13 @@ class StoryboardCreateGroupTool(BaseTool):
     name = "storyboard_create_group"
     risk = "medium"  # §2.7：写内部状态（可删除撤销）
     detail_tier = "expand"  # 产出类：建组展开可见输入
-    description = "创建新的故事板分组（关键元素/分镜/音频），可附带草稿"
+    description = (
+        "创建新的故事板分组（关键元素/分镜/音频），可附带草稿。"
+        "建组规范（Flova 形态）：关键元素——每个元素单独一组，组名=元素名，"
+        "元素设定全文写在分组描述 desc 上；分镜——每个镜头单独一组，组名=镜头名，"
+        "完整镜头描述写在 desc/roughDesc 上，引用到的元素用 [元素名] 令牌写在描述里"
+        "（系统会自动解析为引用并挂参考），也可用 scene_refs 显式指定。"
+    )
 
     def get_input_schema(self) -> Type[BaseModel]:
         return CreateGroupInput
@@ -103,11 +109,20 @@ class StoryboardCreateGroupTool(BaseTool):
         svc = StateManager.get_instance()
         cat_key = ops.category_for_group_type(params.group_type)
 
+        # 批 6 · A3：draft 宽容解析——模型高频把 draft 传成 JSON 字符串，
+        # 收到字符串自动 json.loads 拆包一次；拆不了按三要素原子拒收。
+        draft_payload, coerce_err = ops.coerce_draft_payload(params.draft)
+        if coerce_err:
+            return ToolResult(
+                success=False, error=coerce_err,
+                error_code="validation", retryable=False,
+            )
+
         # 批 1 · A2 + 批 3 · B5：附带草稿白名单外字段原子拒收（不建组不写卡，
         # 与 storyboard_patch_draft 同一先例）；报错三要素 = 原因 + 状态保留声明
         # + 缺什么才能继续。desc 承载卡片描述，不再静默丢弃。
-        if params.draft and isinstance(params.draft, dict):
-            dropped = ops.dropped_patch_fields(params.draft, ops.ALLOWED_NEW_DRAFT_FIELDS)
+        if draft_payload:
+            dropped = ops.dropped_patch_fields(draft_payload, ops.ALLOWED_NEW_DRAFT_FIELDS)
             if dropped:
                 return ToolResult(
                     success=False,
@@ -118,7 +133,7 @@ class StoryboardCreateGroupTool(BaseTool):
                     error_code="validation", retryable=False,
                 )
             # 批 3 · B6 原子性：显式草稿 id 查重（写入前拦截，防重复卡假成功）
-            _explicit_id = str(params.draft.get("id") or "").strip()
+            _explicit_id = str(draft_payload.get("id") or "").strip()
             if _explicit_id and ops.draft_id_exists(svc.state_dict, _explicit_id):
                 return ToolResult(
                     success=False,
@@ -138,14 +153,20 @@ class StoryboardCreateGroupTool(BaseTool):
             new_group["roughDesc"] = params.rough_desc or params.desc
             new_group["duration"] = params.duration or "5s"
             new_group["shotType"] = params.shot_type
-            new_group["sceneRefs"] = params.scene_refs
+            # 批 6 · A3：分镜描述里的 [元素名] 令牌自动解析为元素引用
+            # （显式传 scene_refs 则以显式为准；匹配不到的令牌丢弃不拒收）
+            if params.scene_refs:
+                new_group["sceneRefs"] = params.scene_refs
+            else:
+                tokens = ops.parse_element_tokens(f"{params.desc or ''}\n{params.rough_desc or ''}")
+                new_group["sceneRefs"] = ops.match_element_titles(svc.state_dict, tokens)
 
         async with svc.lock:
             svc.state_dict.setdefault(cat_key, []).append(new_group)
 
             # 附带草稿
-            if params.draft and isinstance(params.draft, dict):
-                ops.append_draft(new_group, params.draft)
+            if draft_payload:
+                ops.append_draft(new_group, draft_payload)
 
             svc.save()
         return ToolResult(success=True, data={"group_id": new_id})
@@ -210,9 +231,17 @@ class StoryboardAddDraftTool(BaseTool):
     async def aexecute(self, params: AddDraftInput) -> ToolResult:
         svc = StateManager.get_instance()
 
+        # 批 6 · A3：draft 宽容解析（字符串自动 json.loads 拆包一次）
+        draft_payload, coerce_err = ops.coerce_draft_payload(params.draft)
+        if coerce_err:
+            return ToolResult(
+                success=False, error=coerce_err,
+                error_code="validation", retryable=False,
+            )
+
         # 批 1 · A2 + 批 3 · B5：白名单外字段原子拒收；报错三要素 =
         # 原因 + 状态保留声明 + 缺什么才能继续。
-        dropped = ops.dropped_patch_fields(params.draft or {}, ops.ALLOWED_NEW_DRAFT_FIELDS)
+        dropped = ops.dropped_patch_fields(draft_payload or {}, ops.ALLOWED_NEW_DRAFT_FIELDS)
         if dropped:
             return ToolResult(
                 success=False,
@@ -223,7 +252,7 @@ class StoryboardAddDraftTool(BaseTool):
                 error_code="validation", retryable=False,
             )
         # 批 3 · B6 原子性：显式草稿 id 查重（写入前拦截，防重复卡假成功）
-        _explicit_id = str((params.draft or {}).get("id") or "").strip()
+        _explicit_id = str((draft_payload or {}).get("id") or "").strip()
         if _explicit_id and ops.draft_id_exists(svc.state_dict, _explicit_id):
             return ToolResult(
                 success=False,
@@ -242,7 +271,7 @@ class StoryboardAddDraftTool(BaseTool):
                            "现有故事板保持原样）。请先用 read_state_group 核对分组 ID "
                            "与 group_type 后重试。"))
 
-            draft = ops.append_draft(target_group, params.draft)
+            draft = ops.append_draft(target_group, draft_payload)
             # 时长参数同步：分镜草稿的时长参数与分镜结构对齐（客观兜底）
             ops.sync_shot_duration(target_group, draft)
             # 全局设置补印（唯一权威源）：草稿未自带供应商时按全局设置填充，

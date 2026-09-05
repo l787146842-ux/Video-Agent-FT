@@ -74,22 +74,34 @@ def _card_events(events):
 # ---------- ① 触发时刻逐卡唯一 ----------
 
 
-@pytest.mark.parametrize("tool,args,expect_card", [
-    ("document_write", {"name": "Final_Video_Spec.md", "content": "# 规格"}, "规格已完成"),
-    ("storyboard_create_group", {"group_type": "keyElement", "title": "角色"}, "故事板已更新"),
-    ("storyboard_add_draft", {"draft": {"label": "程心"}}, "故事板已更新"),
-    ("storyboard_patch_draft", {"draft_id": "d1", "patch": {"prompt": "p"}}, "故事板已更新"),
-    ("generate_video", {"draft_id": "d1"}, "时间线已更新"),
-    ("read_skill", {"name": "AI-短剧一站式生成"}, "信息搜索完成"),
-    ("read_project_doc", {"name": "Final_Video_Spec.md"}, "信息搜索完成"),
+@pytest.mark.parametrize("tool,args,expect_card,expect_count", [
+    ("document_write", {"name": "Final_Video_Spec.md", "content": "# 规格"}, "规格已完成", 1),
+    # 批 6 · A3：keyElement 建组 = 资产已注册 + 故事板已更新（一动作多卡）
+    ("storyboard_create_group", {"group_type": "keyElement", "title": "角色"}, "资产已注册", 2),
+    ("storyboard_create_group", {"group_type": "shot", "title": "镜头一"}, "故事板已更新", 1),
+    ("storyboard_add_draft", {"draft": {"label": "程心"}}, "故事板已更新", 1),
+    ("storyboard_patch_draft", {"draft_id": "d1", "patch": {"prompt": "p"}}, "故事板已更新", 1),
+    ("generate_video", {"draft_id": "d1"}, "时间线已更新", 1),
+    ("read_skill", {"name": "AI-短剧一站式生成"}, "信息搜索完成", 1),
+    ("read_project_doc", {"name": "Final_Video_Spec.md"}, "信息搜索完成", 1),
 ])
-def test_card_fires_on_trigger_tools(monkeypatch, tool, args, expect_card):
+def test_card_fires_on_trigger_tools(monkeypatch, tool, args, expect_card, expect_count):
     events, svc, actions = _run_tool(monkeypatch, tool, args)
     cards = _card_events(events)
-    assert len(cards) == 1, f"{tool} 应发一张 {expect_card} 卡"
-    assert cards[0]["summary"].startswith(expect_card)
+    assert len(cards) == expect_count, f"{tool} 应发 {expect_count} 张卡（{expect_card}）"
+    assert any(c["summary"].startswith(expect_card) for c in cards), \
+        f"应含 {expect_card} 卡，实际: {[c['summary'] for c in cards]}"
     # trace 有对应条目（刷新后仍在）
     assert any(a.get("name") == "event_card" for a in actions)
+
+
+def test_key_element_group_fires_asset_registered_then_board_updated(monkeypatch):
+    """批 6 · A3（M8 兑现）：keyElement 建组先发「资产已注册」再发「故事板已更新」。"""
+    events, _svc, _actions = _run_tool(
+        monkeypatch, "storyboard_create_group",
+        {"group_type": "keyElement", "title": "程心"})
+    summaries = [c["summary"] for c in _card_events(events)]
+    assert summaries == ["资产已注册：程心", "故事板已更新：程心"], summaries
 
 
 def test_spec_card_fires_on_update_too(monkeypatch):

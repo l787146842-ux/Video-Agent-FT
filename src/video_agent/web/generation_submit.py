@@ -264,7 +264,9 @@ def collect_shot_video_refs(
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     """自动收集分镜视频生成的参考素材：
     1. sceneRefs 引用的关键元素概念图（多参考图，role=reference）；
-    2. 草稿 refAssets / audioUrl 中的音色参考音频（role=reference_audio）。
+    2. 草稿 refAssets / audioUrl 中的音色参考音频（role=reference_audio）；
+    3. 批 6 · A3：sceneRefs 引用元素的 audioUrl（元素自带音色锚点，
+       flova「按引用自动挂声音锚点」形态）同轴自动挂为 reference_audio。
 
     返回 (image_refs, audio_refs)，均已去重；限额取 settings（C3：Seedance 2.5 口径）。
     """
@@ -274,7 +276,10 @@ def collect_shot_video_refs(
 
     audio_refs: List[Dict[str, str]] = []
     seen_audio: set = set()
-    for url in list(draft.get("refAssets") or []) + [draft.get("audioUrl") or ""]:
+    scene_audio = ops.resolve_scene_audio_refs(state_dict, group)
+    for url in ([r["url"] for r in scene_audio]
+                + list(draft.get("refAssets") or [])
+                + [draft.get("audioUrl") or ""]):
         url = str(url or "").strip()
         if not url or url in seen_audio or not is_audio_url(url):
             continue

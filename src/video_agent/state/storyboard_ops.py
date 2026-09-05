@@ -9,6 +9,7 @@ FC Tool（tools/storyboard_tools.py）与动作执行器（core/action_executor.
 职责边界：本模块不加锁（调用方持 svc.lock）、不持久化（调用方 save/save_debounced）、
 不做 undo 快照（调用方 push_undo）。所有函数直接就地修改传入的 state_dict 结构。
 """
+import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -397,6 +398,100 @@ def resolve_scene_refs(
                     break
             break
     return refs[:limit]
+
+
+def resolve_scene_audio_refs(
+    state: Dict[str, Any], group: Optional[Dict[str, Any]],
+) -> List[Dict[str, str]]:
+    """批 6 · A3：按分镜组 sceneRefs 收集关键元素卡的 audioUrl（音色锚点）。
+
+    与 resolve_scene_refs 同构（imgUrl→reference 的姊妹轴）：分镜引用了
+    带音色参考的元素时，视频生成自动把该音色挂为 reference_audio，
+    对齐 Flova「按引用自动挂声音锚点」。只读，不改状态。"""
+    refs: List[Dict[str, str]] = []
+    if not group:
+        return refs
+    for ref_title in group.get("sceneRefs") or []:
+        if not isinstance(ref_title, str):
+            continue
+        for ke_group in state.get(CAT_KEY_ELEMENTS, []):
+            if str(ke_group.get("id") or "") != ref_title and str(ke_group.get("title") or "") != ref_title:
+                continue
+            for d in ke_group.get("drafts", []):
+                audio = str(d.get("audioUrl") or "")
+                if audio:
+                    refs.append({"url": audio, "role": "reference_audio"})
+                    break
+            break
+    return refs
+
+
+def parse_element_tokens(text: str) -> List[str]:
+    """批 6 · A3：提取文本中的 [元素名] 令牌（Flova 形态），去重保序。
+
+    令牌是写在分镜描述里的人可读引用层；匹配不到元素的令牌由调用方
+    丢弃（不拒收，不锁死）。"""
+    tokens: List[str] = []
+    for raw in re.findall(r"\[([^\[\]]{1,60})\]", str(text or "")):
+        token = raw.strip()
+        if token and token not in tokens:
+            tokens.append(token)
+    return tokens
+
+
+def match_element_titles(state: Dict[str, Any], tokens: List[str]) -> List[str]:
+    """把 [元素名] 令牌匹配到既有关键元素组标题（精确→双向包含）。
+
+    匹配不到的令牌静默丢弃（不拒收不锁死——令牌是引导不是闸）。"""
+    titles = [
+        str(g.get("title") or "").strip()
+        for g in (state.get(CAT_KEY_ELEMENTS) or []) if isinstance(g, dict)
+    ]
+    titles = [t for t in titles if t]
+    out: List[str] = []
+    for token in tokens or []:
+        token = str(token or "").strip()
+        if not token:
+            continue
+        hit = next((t for t in titles if t == token), None)
+        if hit is None:
+            hit = next((t for t in titles if token in t or t in token), None)
+        if hit and hit not in out:
+            out.append(hit)
+    return out
+
+
+def coerce_draft_payload(data: Any) -> Tuple[Optional[Dict[str, Any]], str]:
+    """批 6 · A3：draft 入参宽容解析。
+
+    8888 实证模型高频把 draft 传成 JSON 字符串（该交对象交了字符串），
+    pydantic 直接拒收导致连败放弃。收到 str 时 json.loads 宽容拆包一次；
+    拆不了返回 (None, 三要素报错) 由调用方原子拒收。"""
+    if isinstance(data, dict):
+        return data, ""
+    if isinstance(data, str):
+        text = data.strip()
+        if not text:
+            return None, ""
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return None, (
+                "Validation Error: draft 传入了字符串，且内容不是合法 JSON。"
+                "本次调用已拒收、未写入任何字段，现有故事板与全部草稿保持原样。"
+                "请把 draft 作为 JSON 对象（而非字符串）重新提交。")
+        if isinstance(parsed, dict):
+            return parsed, ""
+        return None, (
+            "Validation Error: draft 反序列化后不是 JSON 对象。"
+            "本次调用已拒收、未写入任何字段，现有故事板与全部草稿保持原样。"
+            "请把 draft 作为 JSON 对象（而非字符串或数组）重新提交。")
+    if data is None:
+        return None, ""
+    return None, (
+        "Validation Error: draft 必须是 JSON 对象。"
+        "本次调用已拒收、未写入任何字段，现有故事板与全部草稿保持原样。"
+        "请把 draft 作为 JSON 对象重新提交。")
 
 
 def selected_draft_media_config(

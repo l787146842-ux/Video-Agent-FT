@@ -203,6 +203,67 @@ class TestFailureShoutAndAtomicityBatch3:
         assert result.success is False
         assert "未做任何改动" in result.error and "read_state_group" in result.error
 
+    async def test_draft_json_string_coerced(self, svc):
+        """批 6 · A3 宽容解析：draft 传 JSON 字符串自动拆包（8888 高频误用）。"""
+        import json as _json
+        gid = await self._new_group(svc)
+        result = await ToolManager.invoke_tool("storyboard_add_draft", {
+            "group_id": gid, "group_type": "keyElement",
+            "draft": _json.dumps({"label": "程心", "desc": "黑色短发"}, ensure_ascii=False),
+        })
+        assert result.success is True, result.error
+        group = next(g for g in svc.state_dict["keyElements"] if g["id"] == gid)
+        assert group["drafts"][0]["desc"] == "黑色短发"
+
+    async def test_draft_bad_string_rejected_atomically(self, svc):
+        """draft 字符串拆不了包 → 三要素报错、状态零污染（不再是 pydantic 裸错）。"""
+        gid = await self._new_group(svc)
+        before = self._board_hash(svc)
+        result = await ToolManager.invoke_tool("storyboard_add_draft", {
+            "group_id": gid, "group_type": "keyElement",
+            "draft": "这不是JSON",
+        })
+        assert result.success is False
+        assert result.error_code == "validation"
+        assert "JSON 对象" in result.error and "保持原样" in result.error
+        assert self._board_hash(svc) == before
+
+    async def test_shot_desc_tokens_fill_scene_refs(self, svc):
+        """批 6 · A3 令牌解析：分镜描述里的 [元素名] 自动同步 sceneRefs。"""
+        await ToolManager.invoke_tool("storyboard_create_group", {
+            "group_type": "keyElement", "title": "太空艇"})
+        shot = await ToolManager.invoke_tool("storyboard_create_group", {
+            "group_type": "shot", "title": "追击戏",
+            "desc": "太空艇穿越陨石带，背景出现 [太空艇] 与指挥舱",
+        })
+        assert shot.success is True, shot.error
+        group = next(g for g in svc.state_dict["shots"] if g["id"] == shot.data["group_id"])
+        assert "太空艇" in (group.get("sceneRefs") or []), \
+            f"令牌未解析进 sceneRefs: {group.get('sceneRefs')}"
+
+    async def test_shot_explicit_scene_refs_win_over_tokens(self, svc):
+        """显式传 scene_refs 以显式为准（令牌只在缺省时解析）。"""
+        await ToolManager.invoke_tool("storyboard_create_group", {
+            "group_type": "keyElement", "title": "太空艇"})
+        shot = await ToolManager.invoke_tool("storyboard_create_group", {
+            "group_type": "shot", "title": "追击",
+            "desc": "出现 [太空艇]",
+            "scene_refs": ["显式引用"],
+        })
+        assert shot.success is True, shot.error
+        group = next(g for g in svc.state_dict["shots"] if g["id"] == shot.data["group_id"])
+        assert group.get("sceneRefs") == ["显式引用"]
+
+    async def test_unknown_token_dropped_not_rejected(self, svc):
+        """匹配不到元素的令牌静默丢弃（令牌是引导不是闸，不锁死）。"""
+        shot = await ToolManager.invoke_tool("storyboard_create_group", {
+            "group_type": "shot", "title": "空镜",
+            "desc": "雨夜街道 [不存在的元素]",
+        })
+        assert shot.success is True, shot.error
+        group = next(g for g in svc.state_dict["shots"] if g["id"] == shot.data["group_id"])
+        assert group.get("sceneRefs") == []
+
     async def test_failure_feedback_declares_state_preserved(self):
         """B5 ② 全局状态保留声明进入失败回喂（模型不得假设失败污染状态）。"""
         from src.video_agent.core.fc_feedback import compose_failure_feedback
@@ -213,7 +274,7 @@ class TestFailureShoutAndAtomicityBatch3:
         assert "建议" in out
 
 
-
+class TestMediaToChatTargetValidation:
     """storyboard_media_to_chat 的 target 结构化校验（对齐同族 view_storyboard_media）：
     draft_ids/target 均未命中合法取值 → error_code=validation 结构化报错（附合法取值），
     不再误报成「没有找到带媒体的目标草稿」（如传 current 等不支持值）。"""

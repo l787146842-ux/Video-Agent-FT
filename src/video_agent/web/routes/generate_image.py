@@ -221,7 +221,9 @@ async def batch_generate_image(body: BatchImageGenRequest):
             t0 = time.monotonic()
             task = _tm.tasks.get(tid)
             try:
-                url = await generate_image_via_provider(pid, m, p, size=s, aspect_ratio=ar, resolution=res)
+                url = await generate_image_via_provider(
+                    pid, m, p, size=s, aspect_ratio=ar, resolution=res,
+                    reference_images=[r["url"] for r in refs])
                 if task:
                     task["status"] = "succeeded"
                     task["result"] = {"images": [url]}
