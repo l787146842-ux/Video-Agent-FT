@@ -11,18 +11,9 @@ markdown，模型只负责短交代与提问——对齐 Claude Code/Codex/Flova
 from typing import Any, Callable, Dict, List
 
 
-def _split_point_head(point: str) -> tuple:
-    """要点行拆「标题：内容」（全角/半角冒号均认）；标题过长视为无标题。"""
-    for sep in ("：", ":"):
-        if sep in point:
-            head, _, rest = point.partition(sep)
-            if head and rest and len(head) <= 12:
-                return head.strip(), rest.strip()
-    return "", point
-
-
 def _render_script_analyze(state: Dict[str, Any]) -> str:
-    """剧本分析成果 → 正文 markdown（《doc》+ 一句话总结 + 要点清单）。"""
+    """剧本分析成果 → 正文 markdown（批 5 自由文本口径：《doc》+ 一句话
+    总结 + 报告全文原样；不再拆要点粗体化）。"""
     analysis = state.get("analysis") or {}
     summary = str(analysis.get("summary") or "").strip()
     if not summary:
@@ -32,12 +23,9 @@ def _render_script_analyze(state: Dict[str, Any]) -> str:
         f"## 剧本分析《{doc_name}》" if doc_name else "## 剧本分析",
         f"**一句话总结**：{summary}",
     ]
-    for point in (analysis.get("key_points") or []):
-        p = str(point or "").strip()
-        if not p:
-            continue
-        head, rest = _split_point_head(p)
-        lines.append(f"- **{head}**：{rest}" if head else f"- {p}")
+    report = str(analysis.get("report") or "").strip()
+    if report:
+        lines.append(report)
     return "\n".join(lines)
 
 

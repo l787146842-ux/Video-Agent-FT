@@ -80,6 +80,8 @@ def _has_document_named(state: Dict[str, Any], name: str) -> bool:
 def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
     """阶段完成度客观探针（只认状态事实，认不出=未完成；fail-closed）。
 
+    批 5「动作即事实」口径：analysis 判据 = 分析写入动作已落账
+    （summary 是工具落账的最小锚点），平台不解析报告内容评流程。
     （C1b 裁决 2026-08-31：frontmatter done 声明通道退役，
     恒走各阶段平台客观探针。）"""
     if key == "analysis":

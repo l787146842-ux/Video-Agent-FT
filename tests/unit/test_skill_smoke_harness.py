@@ -160,12 +160,14 @@ def _run_skill_smoke(slug: str) -> None:
         ("我先分析剧本并写好制片规格。", [
             *([("script_analysis_report", {
                 "doc_name": "三体简短版.md",
-                "script_class": "A",
                 "summary": f"[{slug}] 太空打击危机，主角程心。",
-                "key_points": ["核心人物：程心。"],
-                "characters": [{"name": "程心", "scenes": "太空电梯", "appearance": "黑色短发"}],
-                "scenes": [{"name": "太空电梯", "features": "碳纳米管", "shot_range": "1-3"}],
-                "props": ["二向箔"], "acts": [{"act": "开篇", "shots_estimate": "3"}],
+                "report_markdown": (
+                    f"[{slug}] 剧本分类：A 类（成熟分镜剧本）\n"
+                    "- 角色清单：程心（太空电梯，黑色短发）\n"
+                    "- 场景清单：太空电梯（碳纳米管井道，镜头 1-3）\n"
+                    "- 关键道具：二向箔\n"
+                    "- 幕次结构：开篇（约 3 镜）"
+                ),
             })] if needs_analysis else []),
             ("document_write", {"name": "制片规格.md", "content":
                 f"# 制片规格（{slug}）\n- 画幅：16:9\n- 时长：30s\n- 风格：写实"}),
@@ -214,7 +216,7 @@ def _run_skill_smoke(slug: str) -> None:
     if needs_analysis:
         analysis = svc.state_dict.get("analysis") or {}
         assert analysis.get("summary"), f"[{slug}] script_analysis_report 报成功但 state.analysis 空"
-        assert analysis.get("characters"), f"[{slug}] 角色清单未落盘"
+        assert "程心" in (analysis.get("report") or ""), f"[{slug}] 分析报告全文未落盘"
     else:
         assert not (svc.state_dict.get("analysis") or {}), \
             f"[{slug}] 无分析章节却产生了分析产物（M6 违背：平台不应强求）"

@@ -37,13 +37,14 @@ def _env():
 def _analysis_payload(**overrides) -> dict:
     payload = {
         "doc_name": "三体简短版.md",
-        "script_class": "A",
         "summary": "太阳系确认遭遇疑似二向箔的白色薄片打击。",
-        "key_points": ["核心人物：程心、AA、曹彬。", "无标题单条要点"],
-        "characters": [{"name": "程心", "scenes": "太空电梯", "appearance": "东方女性"}],
-        "scenes": [{"name": "太空电梯", "features": "碳纳米管", "shot_range": "1-3"}],
-        "props": ["二向箔"],
-        "acts": [{"act": "开篇", "shots_estimate": "3"}],
+        "report_markdown": (
+            "**剧本分类**：A 类（成熟分镜剧本）\n\n"
+            "**角色清单**\n- 程心：出场于太空电梯；外貌——东方女性，黑色短发\n\n"
+            "**场景清单**\n- 太空电梯：碳纳米管井道，镜头 1-3\n\n"
+            "**关键道具**：二向箔\n\n"
+            "**幕次结构**：开篇（约 3 镜）"
+        ),
     }
     payload.update(overrides)
     return payload
@@ -59,9 +60,8 @@ async def test_analysis_writes_state_and_flips_probe():
     assert result.success is True, result.error
     state = StateManager.get_instance().state_dict
     assert state["analysis"]["summary"] == "太阳系确认遭遇疑似二向箔的白色薄片打击。"
-    assert state["analysis"]["script_class"] == "A"
-    assert state["analysis"]["characters"][0]["name"] == "程心"
-    assert state["analysis"]["props"] == ["二向箔"]
+    assert "程心" in state["analysis"]["report"]
+    assert "二向箔" in state["analysis"]["report"]
     assert stage_done("analysis", state) is True
 
 
@@ -91,8 +91,7 @@ async def test_analysis_rerender_uses_latest_state():
     """重复提交以最后一次为准（分析是可整体重写的活结论）。"""
     await ToolManager.invoke_tool("script_analysis_report", _analysis_payload())
     await ToolManager.invoke_tool(
-        "script_analysis_report", _analysis_payload(summary="改定声音方向：全程无旁白。",
-                                            script_class="C"))
+        "script_analysis_report", _analysis_payload(summary="改定声音方向：全程无旁白。"))
     state = StateManager.get_instance().state_dict
     assert state["analysis"]["summary"] == "改定声音方向：全程无旁白。"
 
@@ -101,13 +100,14 @@ async def test_analysis_rerender_uses_latest_state():
 
 
 async def test_stage_deliverables_renders_analysis():
-    """成果渲染器按写入工具名键控命中，正文自动渲染总结与要点。"""
+    """成果渲染器按写入工具名键控命中，正文自动渲染总结与报告全文。"""
     await ToolManager.invoke_tool("script_analysis_report", _analysis_payload())
     state = StateManager.get_instance().state_dict
     block = render_stage_deliverables(state, ["script_analysis_report"])
     assert "## 剧本分析《三体简短版.md》" in block
     assert "**一句话总结**：太阳系确认遭遇疑似二向箔的白色薄片打击。" in block
-    assert "- **核心人物**：程心、AA、曹彬。" in block
+    assert "**剧本分类**：A 类（成熟分镜剧本）" in block
+    assert "- 程心：出场于太空电梯" in block
 
 
 async def test_analysis_enters_context_snapshot():

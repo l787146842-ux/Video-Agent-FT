@@ -413,7 +413,11 @@ def _build_interaction(raw_state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _build_analysis(raw_state: Dict[str, Any]) -> Dict[str, Any]:
-    """剧本分析摘要（script_analyze 产出）紧凑注入。"""
+    """剧本分析摘要（script_analysis_report 产出）紧凑注入。
+
+    批 5 自由文本口径：summary 是动作落账的最小锚点，report 是
+    模型按 skill 散文自由撰写的分析全文（不再有结构化字段），按
+    注入预算截断。"""
     analysis = raw_state.get("analysis")
     if not isinstance(analysis, dict):
         return {}
@@ -421,9 +425,9 @@ def _build_analysis(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     summary = str(analysis.get("summary") or "").strip()
     if summary:
         out["summary"] = summary[:500]
-    kp = [str(k) for k in (analysis.get("key_points") or []) if str(k or "").strip()]
-    if kp:
-        out["key_points"] = kp[:6]
+    report = str(analysis.get("report") or "").strip()
+    if report:
+        out["report"] = report[:2500]
     return out
 
 

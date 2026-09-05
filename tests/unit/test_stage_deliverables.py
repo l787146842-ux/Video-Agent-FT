@@ -14,22 +14,23 @@ _STATE = {
     "analysis": {
         "doc_name": "三体简短版.md",
         "summary": "太阳系确认遭遇疑似二向箔的白色薄片打击。",
-        "key_points": [
-            "核心人物：程心、AA、曹彬。",
-            "核心场景：木星轨道「星环」号球形舱。",
-            "无标题单条要点",
-        ],
+        "report": (
+            "**剧本分类**：A 类（成熟分镜剧本）\n\n"
+            "**核心人物**：程心、AA、曹彬。\n"
+            "无标题单条要点"
+        ),
     }
 }
 
 
 def test_render_script_analyze_markdown():
-    """analysis → 正文 markdown：标题/总结/要点（冒号拆粗体标题）。"""
+    """analysis → 正文 markdown：标题/总结/报告全文原样（批 5 自由文本口径）。"""
     out = render_stage_deliverables(_STATE, ["script_analysis_report"])
     assert "## 剧本分析《三体简短版.md》" in out
     assert "**一句话总结**：太阳系确认遭遇疑似二向箔的白色薄片打击。" in out
-    assert "- **核心人物**：程心、AA、曹彬。" in out
-    assert "- 无标题单条要点" in out
+    assert "**剧本分类**：A 类（成熟分镜剧本）" in out
+    assert "**核心人物**：程心、AA、曹彬。" in out
+    assert "无标题单条要点" in out
 
 
 def test_render_no_hit_returns_empty():
