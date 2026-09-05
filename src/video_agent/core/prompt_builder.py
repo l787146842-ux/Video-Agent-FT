@@ -191,6 +191,11 @@ class PromptBuilder:
         # 随状态同通道迁移：静默裁剪消除语义不变，只是不再击穿 system 前缀。
         if context.stage_note:
             parts.append(context.stage_note)
+        # 批 10 · 执行偏好注入（Flova 同款）：轮始按档位签发
+        # （planner._load_execution_pref_note），每步随尾部消息可见；
+        # 行为层引导，闸机（tool_risk/gen_confirm + 同意账本）兜底硬保证。
+        if getattr(context, "execution_pref_note", ""):
+            parts.append(context.execution_pref_note)
         if context.skill_name:
             note = self.build_storyboard_progress_note()
             if note:

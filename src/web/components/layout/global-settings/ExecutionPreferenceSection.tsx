@@ -11,7 +11,8 @@ import {
 } from '@/types/api.generated';
 import type { RuntimeSettings } from '@/api/agent';
 
-/** 三档中文文案（前端体验规范 §三：界面文案中文唯一） */
+/** 三档中文文案（前端体验规范 §三：界面文案中文唯一；批 10 口径对齐
+ *  V6 计划——确认=提示词审阅，闸机兜底 + 暂停卡同意账本见批次 9） */
 const PREF_LABELS: Record<string, string> = {
   auto_decide: '自动决定',
   confirm_before_gen: '生成前确认（默认）',
@@ -21,7 +22,7 @@ const PREF_HINTS: Record<string, string> = {
   auto_decide:
     '有活跃 Skill 指导时，常规生成图片/视频免逐次确认（系统代发同意并留痕）；无 Skill 指导时仍按现状弹确认卡。',
   confirm_before_gen:
-    '每次花钱生成（生成图片/生成视频）前都先弹确认卡，确认后才执行（与现状一致）。',
+    '每次生成图片/视频前，模型会先发暂停卡请你确认提示词草案（或在故事板把草稿标「已确认」）；确认后重提不再重复拦截。',
   generate_directly:
     '生成图片/视频不再弹确认卡，直接执行（留痕）。注意：该档位花钱操作无逐次确认，请谨慎使用。',
 };

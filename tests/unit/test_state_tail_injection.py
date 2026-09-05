@@ -182,6 +182,90 @@ def test_degrade_state_tail_noop_within_budget(svc):
     assert out[-1]["content"] == tail
 
 
+# ---------- 批 10：执行偏好注入 + 工具边界注释每步刷新（V6 计划） ----------
+
+class TestExecutionPrefNoteInjection:
+    """偏好进 Agent 上下文（Flova 同款）：轮始按档位签发，经尾部消息每步可见。"""
+
+    def test_note_lands_in_tail_message(self, svc):
+        planner, executor = _executor(svc)
+        executor._context = PlannerContext(
+            use_studio_context=True, state_json='{"ke": 1}',
+            execution_pref_note="当前执行偏好：生成前确认",
+        )
+        tail = planner._prompt_builder.build_state_tail_message(executor._context)
+        assert "当前执行偏好：生成前确认" in tail
+
+    def test_loads_note_per_tier(self, svc, monkeypatch):
+        from src.video_agent.config import settings
+        planner = Planner(state_manager=svc, llm_adapter=None)
+        cases = {
+            "confirm_before_gen": "生成前确认",
+            "auto_decide": "自动决定",
+            "generate_directly": "直接生成",
+        }
+        for tier, marker in cases.items():
+            old = settings.execution_preference
+            object.__setattr__(settings, "execution_preference", tier)
+            try:
+                note = planner._load_execution_pref_note()
+                assert note and marker in note, f"{tier} 档应命中对应分节"
+            finally:
+                object.__setattr__(settings, "execution_preference", old)
+
+    def test_dirty_pref_falls_back_to_default_section(self, svc, monkeypatch):
+        from src.video_agent.config import settings
+        planner = Planner(state_manager=svc, llm_adapter=None)
+        old = settings.execution_preference
+        object.__setattr__(settings, "execution_preference", "yolo")
+        try:
+            note = planner._load_execution_pref_note()
+            assert note and "生成前确认" in note, "脏值回落默认档分节"
+        finally:
+            object.__setattr__(settings, "execution_preference", old)
+
+
+class TestStageNoteRefreshedPerStep:
+    """工具边界注释每步刷新（9999：旧注释滞留误导 mode 选型）——
+    同轮内故事板建立后，下一步重算即失配清空，不再注入旧边界。"""
+
+    def test_note_flips_after_groups_created(self, svc):
+        planner = Planner(state_manager=svc, llm_adapter=None)
+        ctx = PlannerContext(use_studio_context=True, skill_name="某 Skill")
+        # demo 态自带 shots 组：三类全清才是「故事板为空」客观态
+        for cat in ("keyElements", "shots", "audioItems"):
+            svc.state_dict[cat] = []
+
+        # 轮始（故事板为空）：注释非空
+        planner._build_system_prompt(ctx)
+        assert ctx.stage_note, "空故事板应携带边界注释"
+
+        # 同轮内建组后：下一步重算 → 注释清空（批量轨开放）
+        svc.state_dict["keyElements"] = [{"id": "g1", "title": "主角", "drafts": []}]
+        planner._build_system_prompt(ctx)
+        assert ctx.stage_note == "", "建组后旧边界注释必须刷新清空"
+
+        # 尾部消息随之不再携带旧注释
+        executor = planner._turn_executor
+        executor._context = ctx
+        tail = planner._prompt_builder.build_state_tail_message(ctx)
+        assert "仅开放单张应急出图" not in tail
+
+    def test_excluded_tools_refresh_in_sync(self, svc):
+        """_excluded_tools 与注释同源同条件刷新（工具可见面与解释成对）。"""
+        planner = Planner(state_manager=svc, llm_adapter=None)
+        ctx = PlannerContext(use_studio_context=True, skill_name="某 Skill")
+        for cat in ("keyElements", "shots", "audioItems"):
+            svc.state_dict[cat] = []
+        planner._build_system_prompt(ctx)
+        excluded_empty = planner._excluded_tools
+        svc.state_dict["keyElements"] = [{"id": "g1", "title": "主角", "drafts": []}]
+        planner._build_system_prompt(ctx)
+        excluded_ready = planner._excluded_tools
+        assert "generate_video" in excluded_empty
+        assert "generate_video" not in excluded_ready
+
+
 def test_degrade_state_tail_noop_without_degraded_builder(svc):
     """无降级构建器时维持原消息（保险丝缺省不阻断）"""
     planner, executor = _executor(svc)

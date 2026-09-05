@@ -21,13 +21,14 @@ from loguru import logger
 
 from src.video_agent.core.chat_port import ChatAdapterPort, ChatResponse
 from src.video_agent.utils.cancel_token import GenerationCancelled
-from src.video_agent.config import settings
+from src.video_agent.config import settings, normalize_exec_pref
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
 # MCP 两段式注入段 2：未启用 MCP 工具 schema 不进 FC payload
 from src.video_agent.tools.mcp import catalog as mcp_catalog
 from src.video_agent.utils.prompts import load_prompt, render_prompt
+from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.core.agent_loop import current_max_steps, run_agent_loop
 from src.video_agent.core.fc_tool_runner import (
     FCExecuteResult,
@@ -69,6 +70,10 @@ _CANVAS_TOOLS = frozenset({
     "canvas_list", "canvas_read_nodes", "canvas_add_node", "canvas_update_node",
     "canvas_delete_node", "canvas_list_assets", "canvas_batch_add_nodes",
 })
+
+# 批 10 · 执行偏好注入文案唯一源（分节键 = PREF_<档位大写>；
+# 消费端 _load_execution_pref_note，经状态尾部消息每步注入）
+_EXEC_PREF_NOTE_FILE = "planner/execution_preference.md"
 
 # 后台节点任务登记；drain 供测试/关停等待
 _BG_TASKS: set = set()
@@ -130,6 +135,10 @@ class PlannerContext:
     # stage_note 非空 ⇔ 阶段裁剪生效（成对出现，消灭「静默裁剪」反模式）
     stage_excluded_tools: frozenset = frozenset()
     stage_note: str = ""
+    # 批 10 · 执行偏好注入（Flova 同款：偏好进 Agent 上下文由模型行为执行，
+    # 闸机兜底硬保证见批 9 同意账本）：轮始按档位签发，经状态尾部消息
+    # 每步注入；文案唯一源 = prompts/planner/execution_preference.md
+    execution_pref_note: str = ""
     # 微调作用域（微调真子对话）：非空 ⇔ 本请求归属隐藏线程子对话，
     # 纪律提示段（prompts/planner/adjust.md）据此注入；
     # 内容恒定不嵌目标编号（保前缀缓存），目标信息由状态裁剪面携带。
@@ -363,6 +372,9 @@ class Planner:
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
         self._excluded_tools = self._compute_excluded_tools(context)
         self._system_degrader = self._make_system_degrader(context)
+        # 批 10 · 执行偏好注入：轮始按档位签发（文案唯一源外置，见
+        # prompts/planner/execution_preference.md；闸机兜底见批 9 同意账本）
+        context.execution_pref_note = self._load_execution_pref_note()
         # 三通道分离 C：轮始重置 FC runner 跨批跟踪（阶段边界只认本轮）
         self._fc_runner.reset_turn_tracking()
         # 会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
@@ -665,8 +677,25 @@ class Planner:
 
     def _build_system_prompt(self, context: PlannerContext) -> str:
         """构建 system prompt（委托 PromptBuilder；段落顺序为前缀缓存优化）。
-        协议单轨：统一注入 protocol.md。"""
+        协议单轨：统一注入 protocol.md。
+        批 10 · 工具边界注释每步刷新：system/尾部消息每步重建，但 stage_note
+        值曾在轮始冻结——同轮内故事板建立后旧注释滞留（9999：模型据旧注释
+        "仅开放单张应急出图"错选 mode=single）。此处在每步重建入口重算签发
+        （复位→重判，_excluded_tools 同步刷新，工具可见面与解释同源同条件）。
+        """
+        self._excluded_tools = self._compute_excluded_tools(context)
         return self._prompt_builder.build_system_prompt(context)
+
+    def _load_execution_pref_note(self) -> str:
+        """当前执行偏好 → 模型可见注入行（批 10）。
+
+        文案唯一源 = prompts/planner/execution_preference.md（外置分节，
+        与 gates/messages.md 同款加载机制）；档位枚举清洗归 config 单一
+        事实源（normalize_exec_pref），脏值回落默认档对应分节。
+        语义：偏好由模型行为执行（主动先审后生成），闸机兜底硬保证。"""
+        key = normalize_exec_pref(settings.execution_preference).upper()
+        return load_prompt_section(
+            _EXEC_PREF_NOTE_FILE, f"PREF_{key}") or ""
 
     # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------
     #
