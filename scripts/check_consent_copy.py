@@ -12,6 +12,8 @@
   gen_confirm 草稿目标允许 pause-accept，承诺成真；
 - other_high 拒因 TOOL_RISK_BLOCKED_OTHER 必须指引用户「本次放行」、
   不得含任何 pause-accept 承诺（章程 other_high=False，fail-closed）；
+  tool_risk 两分支拒因均不得指引「工作台确认相关草稿」——该同意路径
+  归 gen_confirm 闸消费（drafts_confirmed），evaluate_tool_risk 不认；
 - 协议（protocol.md）/ 执行偏好（execution_preference.md）/ 设置页 hint
   与上述口径同源；
 - C1a 已废的「文本解读式同意」措辞（「消息明确指示」）全文本禁绝。
@@ -37,11 +39,13 @@ COPY_FILES: Dict[str, str] = {
 # (文件键, 分节(None=全文), 必含子串, 必不含子串, 说明)
 CHECKS: List[Tuple[str, Optional[str], List[str], List[str], str]] = [
     ("messages_md", "TOOL_RISK_BLOCKED",
-     ["高风险工具确认闸拦截", "接受暂停卡后重提", "本次放行"], [],
-     "gen/spec refusal keeps pause-accept promise (charter allows)"),
+     ["高风险工具确认闸拦截", "接受暂停卡后重提", "本次放行"],
+     ["确认相关草稿"],
+     "gen/spec refusal keeps pause-accept promise only (draft-confirm is "
+     "gen_confirm's path, evaluate_tool_risk does not consume it)"),
     ("messages_md", "TOOL_RISK_BLOCKED_OTHER",
      ["高风险工具确认闸拦截", "本次放行"],
-     ["接受暂停卡后重提", "重提即视为已确认"],
+     ["接受暂停卡后重提", "重提即视为已确认", "确认相关草稿"],
      "other_high refusal must NOT promise pause-accept (charter denies)"),
     ("messages_md", "GENERATION_CONFIRM_BLOCKED",
      ["接受暂停卡后重提", "已确认"], [],

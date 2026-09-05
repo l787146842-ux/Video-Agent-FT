@@ -541,8 +541,6 @@ async def run_agent_loop(
                     _rejected_productive
                     and productive_reject_rounds < _productive_budget
                 )
-                if _rejected_productive and not _all_rejected:
-                    productive_reject_rounds += 1
                 if finish_reason in ("stop", "end_turn") and visible and not _keep_alive:
                     if _rejected_productive:
                         # 批 12：续轮预算耗尽仍自称完成——明确告知用户哪些
@@ -556,6 +554,12 @@ async def run_agent_loop(
                     tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
                                     token_usage=step_tokens, cached_tokens=step_cached)
                     break
+                if (finish_reason in ("stop", "end_turn") and visible
+                        and _keep_alive and _rejected_productive
+                        and not _all_rejected):
+                    # 例外续轮真正行使时才计预算（finish=tool_calls 的多步链轮
+                    # 本就续轮，不消费 productive_reject 预算）
+                    productive_reject_rounds += 1
                 if step == max_steps:
                     result.warnings.append(f"已达到多步上限（{max_steps} 轮），循环终止")
                     result.suggested_actions.append(

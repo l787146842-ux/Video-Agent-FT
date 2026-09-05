@@ -194,8 +194,8 @@ GENERATION_CONFIRM_GATE_BLOCKED = _gate_msg("GENERATION_CONFIRM_BLOCKED", (
 TOOL_RISK_BLOCKED_MSG = _gate_msg("TOOL_RISK_BLOCKED", (
     "高风险工具确认闸拦截：'{{name}}' 为 high 级操作（宪法 §2.7），"
     "未经用户显式同意不得执行。请先用 workflow_pause 向用户说明本次将执行的"
-    "操作并请求确认；用户接受暂停卡后重提即视为已确认（本轮内不再拦截）。"
-    "也可在工作台确认相关草稿，或由用户点「本次放行」。"
+    "操作并请求确认；用户接受暂停卡后重提即视为已确认（本轮内不再拦截），"
+    "也可由用户点「本次放行」。"
 ))
 
 # other_high 动作类拒因（批 12 告示牌同源）：暂停卡自动确认仅覆盖
