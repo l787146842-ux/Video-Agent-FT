@@ -151,6 +151,44 @@ def _exec_pref() -> str:
     return normalize_exec_pref(settings.execution_preference)
 
 
+# ---------- 同意章程（批 12 · 1000 事故正向修复：来源 × 动作类 = 同意范围唯一家） ----------
+#
+# 「什么算用户同意」的唯一判定声明（P1 单一事实源）：闸机拒因
+# （prompts/gates/messages.md）、协议（prompts/planner/protocol.md）、
+# 执行偏好说明与设置页文案的承诺必须 ⊆ 本表允许范围
+#（一致性门禁 = scripts/check_consent_copy.py，批 13）。
+# 动作类（声明轴，不硬编码工具名）：
+#   costly_generation = costly=True 的 provider 生成（image_generate / generate_video）
+#   spec_write        = document_write 写规格文档（is_spec_doc_name 命中）——
+#                       规格确认暂停卡的「兑现落账」，用户确认参数后写入即兑现
+#   other_high        = 其余 high（非规格文档写入、未注册工具等）
+# 范围说明：
+# - 「本次放行」（override）与 gen_confirm 闸的草稿确认（drafts_confirmed）是
+#   独立同意入口，不进本表；执行偏好三档为「系统代发同意」分支
+#  （仅放宽 costly 生成，批 B 裁决），亦不在本表。
+# - 2026-09-05 裁决修正：批 9 曾把暂停卡 accept 的同意收窄为仅 costly
+#  （CHANGELOG「非花钱高危不吃同意」），规格确认卡的兑现写入被误伤
+#  （1000 事故：用户 accept 规格卡后写规格仍被拦，模型按拒因文案承诺
+#   重提失败后口播假完成）。本表把 spec_write 纳入 pause_accept 同意范围；
+#   other_high 维持 fail-closed（不吃自动同意，只能 override）。
+CONSENT_CHARTER: Dict[str, Dict[str, bool]] = {
+    "pause_accept": {
+        "costly_generation": True,
+        "spec_write": True,
+        "other_high": False,
+    },
+}
+
+
+def _consent_action_class(*, costly: bool, spec_write: bool) -> str:
+    """动作类归类：costly 生成 > 规格写入 > 其余 high（与章程键一一对应）。"""
+    if costly:
+        return "costly_generation"
+    if spec_write:
+        return "spec_write"
+    return "other_high"
+
+
 def evaluate_gen_confirm(
     drafts: List[Dict[str, Any]],
     *,
@@ -217,6 +255,7 @@ def evaluate_tool_risk(
     *,
     override: Any = False,
     costly: bool = False,
+    spec_write: bool = False,
     skill_active: bool = False,
     consented: bool = False,
 ) -> "tuple[Optional[str], List[str]]":
@@ -227,16 +266,20 @@ def evaluate_tool_risk(
     由 gen_confirm 闸专属覆盖，不重复设闸（single 轨不在覆盖内，回本闸默认拦）。
     确认回携机制与 gen_confirm 同源（§2.4）：
     - 用户「本次放行」（gate_overrides 单次消费）= 一次性同意；
-    - 暂停卡 accept（批 9 同意账本，consented 命中）= 工作轮内生成同意，
-      protocol「暂停卡确认后的生成视为明确指令」的机制兑现；
+    - 暂停卡 accept（批 9 同意账本，consented 命中）= 工作轮内同意，
+      范围由 CONSENT_CHARTER 声明：costly 生成 ∪ 规格文档写入（批 12 裁决
+      修正，1000 事故清偿），其余 high 不吃同意（fail-closed）；
     - 无同意 → 硬拒（Context ≠ Consent，禁止静默放行），
       拒因回喂模型，由其暂停向用户发起确认邀请。
     执行偏好前置分支（2026-08-30 裁决，仅对花钱生成工具放宽）：
     costly=True 时 generate_directly 恒放行、auto_decide 且活跃 Skill 指导在场
-    （skill_active）放行，均系统代发同意并留痕；未声明花钱（含未注册/
-    非花钱高危）者不命中本分支，兜底拦截语义零改动。
+    （skill_active）放行，均系统代发同意并留痕；非 costly 者不命中本分支，
+    兜底拦截语义零改动。
     （C1a 裁决 2026-08-31：flow_directive 一条龙作为同意的 Context≠Consent
     执行机制删除——上下文/模型解读不再构成同意。）
+    spec_write 由闸机侧（fc_gates.tool_risk_gate）判定注入：name ∈
+    {document_write, write_document} 且文档名命中 is_spec_doc_name
+    （口径与 fc_tool_runner doc_name 一致）。
     判定经 audit_verdicts 入审计（rule_id = platform.tool_risk）。
     返回 (硬拒原因, warnings)。
     """
@@ -247,14 +290,17 @@ def evaluate_tool_risk(
         audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
                        action=name, overridden=True)
         return None, warns
+    # 同意章程查表：暂停卡 accept 只放行章程允许的动作类（批 12）
+    action_class = _consent_action_class(costly=costly, spec_write=spec_write)
+    if consented and CONSENT_CHARTER["pause_accept"].get(action_class, False):
+        noun = "生成" if action_class == "costly_generation" else "写入"
+        w = (f"暂停卡获用户接受：{name} 本轮{noun}视为已确认"
+             "（consent=pause_accept），放行")
+        warns.append(w)
+        audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
+                       action=name, overridden=True)
+        return None, warns
     if costly:
-        if consented:
-            w = (f"暂停卡获用户接受：{name} 本轮生成视为已确认"
-                 "（consent=pause_accept），放行")
-            warns.append(w)
-            audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
-                           action=name, overridden=True)
-            return None, warns
         pref = _exec_pref()
         if pref == "generate_directly":
             w = f"执行偏好「直接生成」：花钱工具 {name} 免确认直接执行（系统代发同意，留痕）"

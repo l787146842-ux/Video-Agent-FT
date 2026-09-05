@@ -277,6 +277,25 @@ class TestToolRiskGate:
         tool_results = res[6]
         assert tool_results and tool_results[0]["ok"] is False
 
+    def test_spec_write_allowed_with_pause_consent(self, monkeypatch):
+        """批 12 章程（闸级端到端）：暂停卡 accept（账本登记轮号匹配）后
+        重提 document_write 写规格文档 → 放行（规格确认卡兑现，1000 清偿）。"""
+        state = {"turn_seq": 2, "interaction": {"generation_consented_turn": 2}}
+        runner, res = _run(monkeypatch, "document_write",
+                           {"name": "制片规格.md", "content": "# 制片规格"},
+                           state=state)
+        assert res[0] == 1, "规格写入在同意账本命中时应放行（章程 spec_write）"
+        assert any("consent=pause_accept" in w for w in runner.gate_warnings)
+
+    def test_spec_write_ledger_stale_still_blocked(self, monkeypatch):
+        """规格写入但账本轮号失配（同意过期）→ 仍拦（fail-closed 保持）。"""
+        state = {"turn_seq": 3, "interaction": {"generation_consented_turn": 2}}
+        runner, res = _run(monkeypatch, "document_write",
+                           {"name": "制片规格.md", "content": "# 制片规格"},
+                           state=state)
+        assert res[0] == 0, "账本轮号失配的规格写入不得放行"
+        assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
+
     def test_canvas_write_blocked_without_consent(self, monkeypatch):
         for name in ("canvas_add_node", "canvas_update_node",
                      "canvas_delete_node", "canvas_batch_add_nodes"):

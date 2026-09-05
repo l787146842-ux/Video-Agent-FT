@@ -93,8 +93,9 @@ def test_audit_verdicts_overridden_flag_passthrough(monkeypatch):
 # ---------- 批 9：tool_risk 暂停卡同意账本（V6 计划） ----------
 
 class TestToolRiskPauseConsent:
-    """consented 命中仅放宽花钱生成工具（costly 轴）：非花钱高危兜底拦截
-    语义零改动（批 B 红线）；放行经 platform.tool_risk verdict 留痕。"""
+    """consented 命中范围由 CONSENT_CHARTER 声明（批 12 章程）：costly 生成
+    ∪ 规格文档写入；其余 high 兜底拦截语义零改动（批 B 红线）；
+    放行经 platform.tool_risk verdict 留痕。"""
 
     def test_consented_passes_costly_tool(self):
         AgentTracer.reset()
@@ -110,9 +111,30 @@ class TestToolRiskPauseConsent:
             AgentTracer.reset()
 
     def test_consented_does_not_open_non_costly_high_risk(self):
-        """未声明花钱的高危工具不命中同意分支（兜底拦截零改动）。"""
+        """章程 other_high：未声明花钱且非规格写入的高危不吃同意（fail-closed）。"""
         err, _ = guard_pipeline.evaluate_tool_risk(
             "some_dangerous_op", costly=False, consented=True)
+        assert err and "高风险工具确认闸拦截" in err
+
+    def test_consented_passes_spec_write(self):
+        """批 12 章程：暂停卡 accept 的同意覆盖规格文档写入（1000 清偿）——
+        规格确认卡 accept 后重提 document_write 放行，verdict 留痕不变。"""
+        AgentTracer.reset()
+        try:
+            err, warns = guard_pipeline.evaluate_tool_risk(
+                "document_write", costly=False, spec_write=True, consented=True)
+            assert err is None and warns and "consent=pause_accept" in warns[0]
+            assert any(g["rule_id"] == "platform.tool_risk"
+                       and g["ok"] and g["overridden"] for g in
+                       AgentTracer.get_instance().get_recent_gates(20)), \
+                "规格写入同意放行必须经 platform.tool_risk verdict 留痕"
+        finally:
+            AgentTracer.reset()
+
+    def test_spec_write_without_consent_still_blocked(self):
+        """批 12 章程负样本：规格写入没有同意账本命中仍拦（非无条件放行）。"""
+        err, _ = guard_pipeline.evaluate_tool_risk(
+            "document_write", costly=False, spec_write=True, consented=False)
         assert err and "高风险工具确认闸拦截" in err
 
     def test_no_consent_keeps_fail_closed(self):

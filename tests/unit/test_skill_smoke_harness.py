@@ -433,4 +433,106 @@ def test_9999_consent_flow_smoke(tmp_path):
         object.__setattr__(settings, "execution_preference", old_pref)
         StateManager.reset_instance()
         ToolManager.reset()
+
+
+def test_1000_spec_write_consent_flow_smoke(tmp_path):
+    """1000 事故场景端到端重放（批 12 同意章程：规格确认卡兑现落账）：
+
+    模型发规格确认暂停卡 → 用户接受（账本登记）→ 重提 document_write 写
+    「制片规格.md」→ 放行（CONSENT_CHARTER.spec_write，consent=pause_accept
+    留痕）→ 规格落盘 + 「规格已完成」事件卡。修复前：写规格被 tool_risk 闸
+    硬拦（同意账本只认 costly），模型按拒因文案承诺重提失败后口播假完成，
+    skill 阶段 1 零产物。负样本：同轮写非规格文档（other_high）仍拦。"""
+    from src.video_agent.config import settings
+    from src.video_agent.core.tracer import AgentTracer
+    from src.video_agent.web.chat_consume import consume_pause_response
+
+    StateManager.reset_instance()
+    svc = StateManager(str(tmp_path))
+    StateManager._instance = svc
+    old_pref = settings.execution_preference
+    object.__setattr__(settings, "execution_preference", "confirm_before_gen")
+    try:
+        for cat in ("keyElements", "shots", "audioItems", "assets"):
+            svc.state_dict[cat] = []
+        svc.state_dict["flowEvents"] = []
+        registry.reset_registry()
+        registry.sync_all(force=True)
+        ToolManager.reset()
+        from src.video_agent.tools import register_document_tools
+        register_document_tools()
+
+        # --- 消息 1：模型发规格确认暂停卡（skill planner 暂停点）---
+        svc.state_dict["turn_seq"] = 1
+        script1 = [
+            ("请确认成片规格，我将据此写入制片规格文档。", [
+                ("workflow_pause", {"message": "请确认规格：硬核深空探索 / 3分钟 / 5段式？",
+                                    "options": [
+                                        {"label": "确认规格",
+                                         "description": "按此参数写入制片规格"},
+                                        {"label": "调整",
+                                         "description": "告诉我要改什么"}]}),
+            ]),
+        ]
+        planner = Planner(state_manager=svc,
+                          llm_adapter=ScriptedAdapter(script1),
+                          tool_manager=ToolManager)
+        ctx1 = PlannerContext(use_studio_context=False,
+                              skill_name="未来科幻真人电影")
+        result1 = asyncio.run(planner.handle_message("开始", ctx1))
+        assert result1.confirmation and result1.pause_id, \
+            f"[1000] 规格确认暂停卡未发行: {result1.text!r}"
+
+        # --- 用户接受暂停卡（web 层轮始递增 + 结构化消费，同 9999 冒烟）---
+        svc.state_dict["turn_seq"] = 2
+        marker = consume_pause_response(
+            svc, {"pause_id": result1.pause_id, "value": "确认规格",
+                  "label": "确认规格"})
+        assert marker and marker["decision"] == "accept"
+        assert (svc.state_dict.get("interaction") or {})\
+            .get("generation_consented_turn") == 2, "同意账本未登记"
+
+        # --- 消息 2：接受后重提写规格 → 放行（批 12 章程 spec_write）---
+        spec_content = "# 制片规格\n风格：硬核深空探索\n时长：3分钟\n结构：5段式\n"
+        script2 = [
+            ("收到确认，现在写入制片规格文档。", [
+                ("document_write", {"name": "制片规格.md",
+                                    "content": spec_content}),
+            ]),
+            ("制片规格已确立。", []),
+        ]
+        planner.llm_adapter = ScriptedAdapter(script2)
+        AgentTracer.reset()
+        ctx2 = PlannerContext(use_studio_context=False,
+                              skill_name="未来科幻真人电影")
+        result2 = asyncio.run(planner.handle_message("硬核深空探索 / 3分钟 / 5段式", ctx2))
+        assert result2.applied_actions >= 1, \
+            f"[1000] 接受规格卡后写规格仍被拦（章程 spec_write 未生效）: {result2.warnings}"
+        assert not any("高风险工具确认闸拦截" in w for w in (result2.warnings or []))
+        # 规格落盘（skill 阶段 1 产物兑现）
+        docs = {d.get("name"): d for d in svc.state_dict.get("documents") or []}
+        assert "制片规格.md" in docs and (docs["制片规格.md"].get("content") or "").strip(), \
+            "[1000] 规格文档未落盘"
+        # 兑现事件卡（「规格已完成」，与 Flova 同款进度播报）
+        assert _card_details(svc, "规格已完成"), "[1000] 规格落盘但事件卡缺失"
+        consent_verdicts = [g for g in AgentTracer.get_instance().get_recent_gates(80)
+                            if g.get("rule_id") == "platform.tool_risk"
+                            and g.get("ok") and "consent=pause_accept" in (g.get("message") or "")]
+        assert consent_verdicts, "[1000] 规格写入放行未留痕 consent=pause_accept"
+
+        # --- 消息 3：同轮语境下写非规格文档（other_high）→ 仍拦（fail-closed）---
+        script3 = [
+            ("补充写一份大纲。", [
+                ("document_write", {"name": "大纲.md", "content": "大纲草稿"}),
+            ]),
+        ]
+        planner.llm_adapter = ScriptedAdapter(script3)
+        result3 = asyncio.run(planner.handle_message("顺便写个大纲", ctx2))
+        assert result3.applied_actions == 0, \
+            "[1000] 非规格文档写入不应吃暂停卡同意（other_high fail-closed）"
+        assert any("高风险工具确认闸拦截" in w for w in (result3.warnings or []))
+    finally:
+        object.__setattr__(settings, "execution_preference", old_pref)
+        StateManager.reset_instance()
+        ToolManager.reset()
         registry.reset_registry()

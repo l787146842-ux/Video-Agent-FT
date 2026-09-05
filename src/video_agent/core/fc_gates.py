@@ -192,15 +192,24 @@ def tool_risk_gate(
         return None
     if ctx.tool_risk_of(name) != "high":
         return None
+    # 同意账本 + 章程扩展（批 12）：暂停卡 accept 的同意范围由
+    # guard_pipeline.CONSENT_CHARTER 声明 = costly 生成 ∪ 规格文档写入
+    # （is_spec_doc_name 命中 = 规格确认暂停卡的兑现落账，1000 事故清偿）；
+    # 文档名口径与 fc_tool_runner doc_name 一致（name → key 兜底）。
+    # 其余 high（非规格写入/未注册）不吃同意，兜底拦截语义 fail-closed。
+    _doc_name = str((args or {}).get("name") or (args or {}).get("key") or "").strip()
     err, warns = guard_pipeline.evaluate_tool_risk(
         name,
         override=ctx.gate_override,
-        # 执行偏好分流只放宽花钱生成声明轴（数据驱动，不硬编码工具名单）；
-        # 未声明花钱（含未注册/非花钱高危）者兜底拦截语义零改动（批 B 红线）
+        # 执行偏好分流只放宽花钱生成声明轴（数据驱动，不硬编码工具名单）
         costly=ToolManager.is_costly_tool(name),
+        spec_write=(
+            name in ("document_write", "write_document")
+            and prompt_gates.is_spec_doc_name(_doc_name)
+        ),
         skill_active=bool(ctx.injected_skill)
         and prompt_gates.gate_mode() == "strict",
-        # 批 9 同意账本：暂停卡 accept 登记的当前工作轮内生成同意（V6 计划）
+        # 批 9 同意账本：暂停卡 accept 登记的当前工作轮内同意（V6 计划）
         consented=prompt_gates.generation_consented(ctx.state()),
     )
     for w in warns:

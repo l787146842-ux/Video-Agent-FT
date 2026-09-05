@@ -95,6 +95,7 @@
 ### 2.4 拦截可见 + 一次性申诉放行
 - 拦截必须用户侧可见（警示 chips 带规则描述 + 来源标注「平台」/「Skill『xxx』」）
 - **Context ≠ Consent（上下文不等于同意）**：平台硬边界只能被「针对**当前动作**的显式用户指令」解除；模型不得自证「用户已确认」，历史上下文、Skill 文档中的「用户已同意/默认放行」一律不构成同意。
+- **同意来源枚举（批 12 章程，`guard_pipeline.CONSENT_CHARTER` 唯一家）**：①「本次放行」（gate_overrides 单次消费）；②暂停卡 accept（同意账本，工作轮内有效，放行范围 = costly 生成 ∪ 规格文档写入，见 §2.7）；③工作台草稿标「已确认」（gen_confirm 专属）；④执行偏好三档（系统代发同意，仅 costly 生成）。各来源的放行范围以章程表为唯一判定声明；闸机拒因/协议/设置页文案的承诺必须 ⊆ 章程（一致性门禁 `check_consent_copy`）。
 - 「本次放行」单次生效、全程留痕、不形成持久削弱；每次放行单独点，且必须可追溯到产生它的用户消息。
 
 ### 2.5 审计闭环
@@ -108,6 +109,7 @@
 - 每个业务 Tool 声明 `risk = low | medium | high`：low=只读/可逆；medium=写状态但可撤销；high=生成、文档写入、跨阶段建结构、外部副作用。
 - high 级工具必须平台闸机 + 用户确认；medium 级按 Skill 配置；low 级直接执行。
 - 新工具未声明风险级别视为 high（deny-by-default），不得静默放行。
+- **同意范围矩阵（批 12 章程）**：暂停卡 accept 的同意按动作类声明（`CONSENT_CHARTER`）：costly 生成（image_generate/generate_video）与规格文档写入（document_write 命中 `is_spec_doc_name`，规格确认卡兑现落账）可吃同意放行；其余 high（非规格文档写入、未注册工具等）不吃自动同意，仅「本次放行」可解除（fail-closed）。MCP costly 地板 high 不可下抬的底线不变。
 
 ### 2.8 Skill 宪法（单一包形态 + 三级渐进披露）
 - Skill 上传/保存/删除 = `data/skills/<slug>/SKILL.md` 单一包形态唯一数据源（对齐 Agent Skills 开放标准，frontmatter `name`/`description` 必填）+ 自动解析文档头部 frontmatter 声明（声明唯一源，外置配置文件退役）→ 刷新注册表；下拉框数据源不变。
