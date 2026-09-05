@@ -95,3 +95,28 @@ def test_pause_sections_have_code_consumer():
     unknown = referenced - set(PAUSE_MESSAGE_SECTIONS)
     assert not unknown, (
         f"gates_cards.py 引用了未登记的 PAUSE_MESSAGE_SECTIONS 逻辑键: {sorted(unknown)}")
+
+
+# ---------- 批 9/10 · 同意路径三处文案一致性 canary（V6 计划 §五-5） ----------
+
+def test_consent_path_copy_consistent_across_three_homes():
+    """同一确认路径在拒因（gates/messages.md）与协议（planner/protocol.md）
+    两处的描述必须同口径——都会提到「暂停卡接受后重提视为已确认」。
+    设置页文案（TSX）无法跨语言断言，靠人工目测（宪法 §3.1）。"""
+    messages = MESSAGES_MD.read_text(encoding="utf-8")
+    protocol = (ROOT / "prompts" / "planner" / "protocol.md").read_text(encoding="utf-8")
+    # 拒因两节必须写明「接受暂停卡后重提 = 已确认、不重复拦截」
+    for section_key in ("GENERATION_CONFIRM_BLOCKED", "TOOL_RISK_BLOCKED"):
+        body = _extract_section(messages, section_key)
+        assert "接受暂停卡后重提" in body, f"{section_key} 缺同意账本口径（重提放行）"
+    # 协议必须写明同一机制（暂停卡接受 → 本轮内重提不重复拦截）
+    assert "暂停卡获用户接受后，本轮内重提的生成视为已确认" in protocol, \
+        "protocol.md 生成确认句与闸机同意账本口径漂移"
+
+
+def _extract_section(text: str, key: str) -> str:
+    """提取 messages.md 指定 ## KEY 分节正文（文件内既有正则只抓键名）。"""
+    pattern = re.compile(rf"^## {key}\s*$\n(.*?)(?=^## |\Z)", re.M | re.S)
+    m = pattern.search(text)
+    assert m, f"messages.md 缺分节 {key}"
+    return m.group(1)

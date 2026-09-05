@@ -409,10 +409,14 @@ def test_9999_consent_flow_smoke(tmp_path):
                             and g.get("ok") and "consent=pause_accept" in (g.get("message") or "")]
         assert consent_verdicts, "[9999] 同意放行未留痕 consent=pause_accept"
 
-        # --- 消息 3：新一轮无同意 → 再拦（fail-closed 保持）---
+        # --- 消息 3：新一轮无同意 → 生成再拦（fail-closed 保持，端到端）---
         svc.state_dict["turn_seq"] = 3  # 轮始推进：上一轮同意自然过期
         script3 = [
-            ("再生成一张前先请求确认。", [
+            ("再生成一张形象图。", [
+                ("image_generate", {"mode": "single", "prompt": "女主形象图二",
+                                    "adapter_provider": "fake"}),
+            ]),
+            ("上一轮同意已过期，先暂停请求您的确认。", [
                 ("workflow_pause", {"message": "将再生成一张形象图，请确认。"}),
             ]),
         ]
@@ -420,8 +424,11 @@ def test_9999_consent_flow_smoke(tmp_path):
         ctx3 = PlannerContext(use_studio_context=False,
                               skill_name="古风甜宠短剧")
         result3 = asyncio.run(planner.handle_message("再生成一张", ctx3))
-        assert result3.confirmation and result3.pause_id, \
+        # 生成调用必须被拦（轮次推进后同意失效）且指引再次回喂、模型补发暂停卡
+        assert any("高风险工具确认闸拦截" in w for w in (result3.warnings or [])), \
             "[9999] 新一轮无同意的生成未被拦（fail-closed 破防）"
+        assert result3.confirmation and result3.pause_id, \
+            "[9999] 再拦后模型未发行暂停卡（自纠闭环断裂）"
     finally:
         object.__setattr__(settings, "execution_preference", old_pref)
         StateManager.reset_instance()
