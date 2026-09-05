@@ -36,6 +36,14 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-05 · Skill 流程跑通修复批 5-8（方案甲正向设计：A3 资产树转正）
+- **立项**：8888 项目实测翻车诊断（分析连败放弃/建组形态跑偏/规格零写入/暂停卡只有题目没选项）暴露批 0-4 的补丁式修复不够——用户拍板**方案甲正向设计**：一次把产物模型对齐 Flova 机制。依据 = 四份 Flova 一手转录 + 设置页/规格文档截图的机制推理（资产树+自由文本+动作即事实+skill 散文即流程+两层偏好）。
+- **批 5 · A1 自由文本**：`script_analysis_report` 废弃自创结构化字段表（characters/scenes/acts 正是 8888 连败根因），收窄为「一句话锚点 + 自由文本报告」——Flova 同构（全程无字段表）；`stage_done("analysis")` 语义改「动作落账即事实」（summary=最小锚点，不解析报告内容）；context_builder 注入面/stage_deliverables 渲染器同步。func_imports 白名单缺口以顶层化 ToolManager 导入根治（非 refresh 收编）。
+- **批 6 · A3 资产树落地**（D-17 转正清偿）：①建组规范引导进 `storyboard_create_group` description（一元素一组/组名=元素名/设定写 desc/分镜一镜一组+`[元素名]`令牌）——原语级引导非校验锁死；②draft 字符串宽容解析 `coerce_draft_payload`（8888 高频误用：draft 传 JSON 字符串）；③令牌解析器 `parse_element_tokens`+`match_element_titles`：分镜 desc 的 `[元素名]` 自动同步 sceneRefs（显式传以显式为准、匹配不到丢弃不拒收）；④音色锚点自动挂 `resolve_scene_audio_refs`（sceneRefs 元素 audioUrl → reference_audio，图轴的姊妹轴）；⑤「资产已注册」事件卡（M8 预留位兑现，keyElement 建组双卡）；⑥修复手动批量生图路由收集 refs 却漏传 `reference_images` 的一致性缺陷。调研确认：sceneRefs→resolve_scene_refs→submit_image/video 的挂载骨架批 1-4 已存在，本批补齐的是入口与音色轴。
+- **批 7 · 前端两 bug + 协议开场纪律**：①暂停卡"只有题目没选项"双因修复——模型把维度名当选项 label（工具 description 强引导：label 必须是具体可选值、维度名放 group、候选禁用"|"拼接）+ `pickDimension` 兜底误判空下拉加严（命中过半且 ≥2 项 + 对应类别真实配置了厂商，否则回落选项卡）；②对话流滚轮跳动——wheel/touchstart 直控跟随开关（scroll 事件在钉底期被 pinning 豁免吞掉是拉回根源）+ rAF 续期前复查 autoScroll；③`protocol.md` 补「开场盘点（Flova 同款）」元纪律（自述流程计划+盘点已有产物+条件式启动；流程顺序以 skill 散文为唯一依据，本协议不规定顺序不设拦截——回应用户"不锁顺序"立场）。
+- **批 8 · 验收与治理**：批末 `acceptance.py` 退出码 0（11 GATES + pytest 2068 + vitest 866 + tsc + eslint + RATCHETS）；线束 15 份全绿（A1 新参数形态）；D-17 销账。
+- **待用户目测**：暂停卡分页向导选项渲染、对话流滚动手感（宪法 §3.1）。
+
 ### 2026-09-05 · Skill 流程跑通修复批 0-4（计划书 v5 全量执行；15 包裁决）
 - **立项与对齐标尺**：`docs/Skill流程跑通修复计划书-v5.md`（Flova 一手转录 + 全局设置页截图对齐）。做法 = skill 一行不改，把平台补成能接住 Flova skill 的样子。
 - **前置裁决（2026-09-05 用户）**：①存量 skill 删「剧本生视频需上传剧本」→ 存量 **15 包**（字节级目录/章节快照同步重采，`test_global_settings_authority.py` 随被测对象删除）；②草稿卡审阅形态维持现状（不新增「素材生成前确认提示词」开关）；③设置页文案采纳候选 a（先把假话说成真话）。
