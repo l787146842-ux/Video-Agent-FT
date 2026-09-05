@@ -92,6 +92,10 @@ class TestMessagesExternalized:
         pairs = [
             (prompt_gates.GENERATION_CONFIRM_GATE_ERROR, "GENERATION_CONFIRM"),
             (prompt_gates.GENERATION_CONFIRM_GATE_BLOCKED, "GENERATION_CONFIRM_BLOCKED"),
+            # 批 12：tool_risk 两分支拒因补进等值断言（此前只锁 GEN_CONFIRM
+            # 两条——「外置改了兜底没改不会红」的一致性盲区收口）
+            (prompt_gates.TOOL_RISK_BLOCKED_MSG, "TOOL_RISK_BLOCKED"),
+            (prompt_gates.TOOL_RISK_BLOCKED_OTHER_MSG, "TOOL_RISK_BLOCKED_OTHER"),
         ]
         for const, section in pairs:
             assert const == load_prompt_section("gates/messages.md", section), section

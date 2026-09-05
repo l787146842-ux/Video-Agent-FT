@@ -445,6 +445,7 @@ from src.video_agent.core.gates_cards import (
     GENERATION_CONFIRM_GATE_ERROR,
     GENERATION_CONFIRM_GATE_BLOCKED,
     TOOL_RISK_BLOCKED_MSG,
+    TOOL_RISK_BLOCKED_OTHER_MSG,
     current_flow_step,
     system_continue_option,
     is_flow_continue_value,

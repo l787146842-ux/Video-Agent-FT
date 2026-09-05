@@ -48,6 +48,8 @@ jobs:
         run: python scripts/check_fc_tool_name_literals.py
       - name: Prompt literals gate (裁决 R-4 / A3：core/state/web/tools/adapters 禁硬编码 CJK prose，须外置 prompts/ 或登记 DECLARED_DATA)
         run: python scripts/check_prompt_literals.py
+      - name: Consent copy gate (批 12：同意口径告示牌一致性——五处承诺文案 ⊆ CONSENT_CHARTER，other_high 拒因禁含 pause-accept 承诺)
+        run: python scripts/check_consent_copy.py
       - name: Skill anchor lint (批 4 漂移 lint，V3-3 收窄口径：章节锚点存在性——planner 必备/锚点合法/开闭配对)
         run: python scripts/check_skill_anchor_lint.py
       - name: Reference integrity gate (文档指针漂移与宪法锚点合并为一条引用完整性闸)

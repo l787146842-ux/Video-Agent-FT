@@ -61,6 +61,12 @@ GATES: List[Tuple[str, List[str]]] = [
     # adapters 五目录 AST 扫描 CJK 且长度≥8 的硬编码 prose（进模型上下文/
     # 用户可见气泡），非 DECLARED_DATA 登记即拒收（约束下沉 P2，提示词外置 Rule 6）。
     ("prompt_literals", [sys.executable, "scripts/check_prompt_literals.py"]),
+    # 批 12 · 同意口径告示牌一致性闸（1000 事故正向修复）：五处承诺文案
+    # （messages.md 两节+新增节 / protocol.md / execution_preference.md /
+    # 设置页 hint）的承诺 ⊆ guard_pipeline.CONSENT_CHARTER 允许范围；
+    # other_high 拒因禁含 pause-accept 承诺（空头支票根因），C1a 已废
+    # 「文本解读式同意」措辞全文本禁绝。
+    ("consent_copy", [sys.executable, "scripts/check_consent_copy.py"]),
     # 批 4 · 漂移 lint（V3-3 收窄口径）：Skill 章节锚点存在性——
     # 只查 planner 必备 / 锚点合法 / 开闭配对；暂停行与依赖行不查（必误报）。
     ("skill_anchor_lint", [sys.executable, "scripts/check_skill_anchor_lint.py"]),

@@ -23,6 +23,8 @@ _EXPECTED_GATE_NAMES = [
     "semantic_colors", "func_imports", "category_keys",
     "legacy_orchestration", "web_chat_bypass", "fc_tool_name_literals",
     "layer_imports", "ref_integrity", "prompt_literals",
+    # 批 12 · 同意口径告示牌一致性（1000 事故正向修复）
+    "consent_copy",
     # 批 4 · 漂移 lint（V3-3 收窄口径）：Skill 章节锚点存在性
     "skill_anchor_lint",
 ]
@@ -777,6 +779,58 @@ def test_canary_prompt_literals_fail_closed_clean_surface_passes(tmp_path, monke
     """S5 PASS 侧不反噬：扫描面完好且无未登记 prose → 0。"""
     gate = _prompt_literals_scaffold(tmp_path, monkeypatch, "X = 1\n")
     assert gate.main() == 0
+
+
+# ---------- 11b-3) consent_copy（批 12：同意口径告示牌一致性闸） ----------
+
+def _consent_copy_scaffold(tmp_path, monkeypatch):
+    """把真实 5 处告示牌文件复制到 tmp_path 镜像仓库，ROOT 指过去。"""
+    import scripts.check_consent_copy as gate
+    for rel in gate.COPY_FILES.values():
+        src = Path(__file__).resolve().parents[2] / rel
+        dst = tmp_path / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    return gate
+
+
+def test_canary_consent_copy_clean_repo_passes(tmp_path, monkeypatch):
+    """PASS 侧：真实告示牌文案全部在章程内 → 0（不反噬）。"""
+    gate = _consent_copy_scaffold(tmp_path, monkeypatch)
+    assert gate.main() == 0
+
+
+def test_canary_consent_copy_pause_accept_promise_in_other_fails(tmp_path, monkeypatch):
+    """违规侧：other_high 拒因混入 pause-accept 承诺（1000 空头支票形态）→ 1。"""
+    gate = _consent_copy_scaffold(tmp_path, monkeypatch)
+    rel = gate.COPY_FILES["messages_md"]
+    p = tmp_path / rel
+    text = p.read_text(encoding="utf-8")
+    text = text.replace(
+        "请用户在工作台点「本次放行」后再重新提交。",
+        "用户接受暂停卡后重提即视为已确认（本轮内不再拦截）。")
+    p.write_text(text, encoding="utf-8")
+    assert gate.main() == 1
+
+
+def test_canary_consent_copy_missing_file_fail_closed(tmp_path, monkeypatch):
+    """fail-closed：任一告示牌文件缺失 → 1（不得静默跳过）。"""
+    gate = _consent_copy_scaffold(tmp_path, monkeypatch)
+    (tmp_path / gate.COPY_FILES["protocol_md"]).unlink()
+    assert gate.main() == 1
+
+
+def test_canary_consent_copy_missing_section_fails(tmp_path, monkeypatch):
+    """fail-closed：分节被删（外置源回退兜底盲区）→ 1。"""
+    gate = _consent_copy_scaffold(tmp_path, monkeypatch)
+    rel = gate.COPY_FILES["messages_md"]
+    p = tmp_path / rel
+    text = p.read_text(encoding="utf-8")
+    head, sep, _tail = text.partition("## TOOL_RISK_BLOCKED_OTHER")
+    assert sep, "scaffold 仓库应含 OTHER 分节"
+    p.write_text(head, encoding="utf-8")
+    assert gate.main() == 1
 
 
 # ---------- 11c) ci.yml ↔ acceptance.GATES 名集对账（任务26：自我声明与事实双向钉死） ----------

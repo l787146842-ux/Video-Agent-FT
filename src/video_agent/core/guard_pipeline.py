@@ -315,7 +315,13 @@ def evaluate_tool_risk(
             audit_verdicts([GateVerdict("platform.tool_risk", "platform", True, w)],
                            action=name, overridden=True)
             return None, warns
-    msg = prompt_gates.TOOL_RISK_BLOCKED_MSG.replace("{{name}}", name)
+    # 拒因按动作类分支（批 12 告示牌同源）：costly 生成/规格写入的拒因
+    # 可承诺「接受暂停卡后重提即放行」（章程允许，承诺成真）；other_high
+    # 的唯一同意路径是「本次放行」，拒因如实指引、不开空头支票。
+    if action_class == "other_high":
+        msg = prompt_gates.TOOL_RISK_BLOCKED_OTHER_MSG.replace("{{name}}", name)
+    else:
+        msg = prompt_gates.TOOL_RISK_BLOCKED_MSG.replace("{{name}}", name)
     warns.append(msg)
     audit_verdicts([GateVerdict("platform.tool_risk", "platform", False, msg)],
                    action=name)

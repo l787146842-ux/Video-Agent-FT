@@ -61,7 +61,8 @@ GATE_MESSAGE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     "platform.gen_confirm": ("GENERATION_CONFIRM", "GENERATION_CONFIRM_BLOCKED"),
     # 单张应急轨每轮配额拒因归 tool_risk 闸（花钱确认同源轴，
     # 消费点 fc_gates.run_gate_chain 生图配额分支）
-    "platform.tool_risk": ("TOOL_RISK_BLOCKED", "SINGLE_IMAGE_QUOTA_BLOCKED"),
+    "platform.tool_risk": ("TOOL_RISK_BLOCKED", "TOOL_RISK_BLOCKED_OTHER",
+                           "SINGLE_IMAGE_QUOTA_BLOCKED"),
 }
 
 # 暂停/告警文案分节登记（非闸机规则条目，不入 GATE_RULES/GATE_MESSAGE_SECTIONS）：
