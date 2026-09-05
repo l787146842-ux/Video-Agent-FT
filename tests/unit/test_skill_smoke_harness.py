@@ -287,3 +287,143 @@ def test_skill_smoke_platform_facts(slug, tmp_path):
         StateManager.reset_instance()
         ToolManager.reset()
         registry.reset_registry()
+
+
+# ---------- 批 11 · 9999 场景端到端冒烟（V6 计划 §五 机器断言 1-4） ----------
+
+def _patch_fake_image_factory() -> None:
+    """生成不打网络：patch 工具命名空间的 AdapterFactory（同线束先例）。"""
+    import src.video_agent.tools.document_tools as doc_tools
+    from src.video_agent.adapters.factory import AdapterFactory
+
+    class _PatchedFactory:
+        @staticmethod
+        def get_adapter(kind, provider):
+            assert provider == "fake", "生成须走线束假适配器"
+            return _FakeImageAdapter()
+
+    doc_tools.AdapterFactory = _PatchedFactory
+
+
+def test_9999_consent_flow_smoke(tmp_path):
+    """9999 死锁场景端到端重放（confirm_before_gen 默认档 + 无本次放行）：
+
+    模型建组后直接调 image_generate → tool_risk 闸拦（无同意）→
+    批 9 修复后回合不再终止、拒因指引被下一轮消费 → 模型发暂停卡 →
+    用户接受（同意账本登记）→ 重提放行（consent=pause_accept 留痕）→
+    新一轮无同意再拦（fail-closed 保持）。
+    修复前此处回合以模型过期口播终止（假话）+ 死锁。"""
+    from src.video_agent.config import settings
+    from src.video_agent.core.tracer import AgentTracer
+    from src.video_agent.web.chat_consume import consume_pause_response
+
+    StateManager.reset_instance()
+    svc = StateManager(str(tmp_path))
+    StateManager._instance = svc
+    old_pref = settings.execution_preference
+    object.__setattr__(settings, "execution_preference", "confirm_before_gen")
+    try:
+        for cat in ("keyElements", "shots", "audioItems", "assets"):
+            svc.state_dict[cat] = []
+        svc.state_dict["flowEvents"] = []
+        registry.reset_registry()
+        registry.sync_all(force=True)
+        ToolManager.reset()
+        from src.video_agent.tools import register_analysis_tools, register_document_tools
+        from src.video_agent.tools.storyboard_tools import register_storyboard_tools
+        register_storyboard_tools()
+        register_document_tools()
+        register_analysis_tools()
+        _patch_fake_image_factory()
+
+        # 默认档确认（防其他测试泄漏档位）
+        assert settings.execution_preference == "confirm_before_gen"
+        # 无 gate_overrides：拦截必须来自「缺同意」，修复不得依赖本次放行按钮
+        assert not (svc.state_dict.get("interaction") or {}).get("gate_overrides")
+
+        # --- 消息 1：建组后直接生成 → 闸拦 → 指引回喂 → 模型发暂停卡 ---
+        # 轮始模拟（web 层 chat_opening 职责）：轮序递增
+        svc.state_dict["turn_seq"] = 1
+        script = [
+            ("好的！关键元素已创建。现在生成男女主形象参考图。", [
+                ("storyboard_create_group", {"group_type": "keyElement",
+                                             "title": "女主·沈晚"}),
+                ("image_generate", {"mode": "single", "prompt": "女主形象图",
+                                    "adapter_provider": "fake"}),
+            ]),
+            ("收到拦截指引，先暂停请求您的确认。", [
+                ("workflow_pause", {"message": "我将生成女主形象参考图，请确认。",
+                                    "options": [
+                                        {"label": "确认生成",
+                                         "description": "按已写提示词生成"},
+                                        {"label": "先调整",
+                                         "description": "告诉我要改什么"}]}),
+            ]),
+        ]
+        planner = Planner(state_manager=svc,
+                          llm_adapter=ScriptedAdapter(script),
+                          tool_manager=ToolManager)
+        ctx = PlannerContext(use_studio_context=False,
+                             skill_name="古风甜宠短剧")
+        result1 = asyncio.run(planner.handle_message("可以", ctx))
+
+        # ① 全拒收轮不死锁：循环继续到第 2 轮并发行暂停卡（修复前回合
+        #    以第 1 轮口播终止、无暂停卡）
+        assert result1.confirmation and result1.pause_id, \
+            f"[9999] 全拒收轮后未发行暂停卡（死锁未修复）: {result1.text!r}"
+        # 闸拦截警告随消息可见（fc_warnings 并入）
+        assert any("高风险工具确认闸拦截" in w for w in (result1.warnings or [])), \
+            f"[9999] 闸拦截警告未随消息可见: {result1.warnings}"
+        # 全程未动用「本次放行」
+        assert not (svc.state_dict.get("interaction") or {}).get("gate_overrides"), \
+            "[9999] 冒烟不应依赖本次放行按钮"
+
+        # --- 用户接受暂停卡（模拟 web 层轮始递增 + 结构化消费）---
+        svc.state_dict["turn_seq"] = 2
+        marker = consume_pause_response(
+            svc, {"pause_id": result1.pause_id, "value": "确认生成",
+                  "label": "确认生成"})
+        assert marker and marker["decision"] == "accept"
+        assert (svc.state_dict.get("interaction") or {})\
+            .get("generation_consented_turn") == 2, "同意账本未登记"
+
+        # --- 消息 2：接受后重提 → 放行（consent=pause_accept 留痕）---
+        script2 = [
+            ("收到确认，现在生成形象图。", [
+                ("image_generate", {"mode": "single", "prompt": "女主形象图",
+                                    "adapter_provider": "fake"}),
+            ]),
+            ("形象图已生成完毕。", []),
+        ]
+        planner.llm_adapter = ScriptedAdapter(script2)
+        AgentTracer.reset()
+        ctx2 = PlannerContext(use_studio_context=False,
+                              skill_name="古风甜宠短剧")
+        result2 = asyncio.run(planner.handle_message("确认生成", ctx2))
+        assert result2.applied_actions >= 1, \
+            f"[9999] 接受后重提仍被拦（同意账本未生效）: {result2.warnings}"
+        assert not any("高风险工具确认闸拦截" in w for w in (result2.warnings or []))
+        assert _card_details(svc, "素材已完成"), "[9999] 生成成功但素材卡缺失"
+        consent_verdicts = [g for g in AgentTracer.get_instance().get_recent_gates(80)
+                            if g.get("rule_id") == "platform.tool_risk"
+                            and g.get("ok") and "consent=pause_accept" in (g.get("message") or "")]
+        assert consent_verdicts, "[9999] 同意放行未留痕 consent=pause_accept"
+
+        # --- 消息 3：新一轮无同意 → 再拦（fail-closed 保持）---
+        svc.state_dict["turn_seq"] = 3  # 轮始推进：上一轮同意自然过期
+        script3 = [
+            ("再生成一张前先请求确认。", [
+                ("workflow_pause", {"message": "将再生成一张形象图，请确认。"}),
+            ]),
+        ]
+        planner.llm_adapter = ScriptedAdapter(script3)
+        ctx3 = PlannerContext(use_studio_context=False,
+                              skill_name="古风甜宠短剧")
+        result3 = asyncio.run(planner.handle_message("再生成一张", ctx3))
+        assert result3.confirmation and result3.pause_id, \
+            "[9999] 新一轮无同意的生成未被拦（fail-closed 破防）"
+    finally:
+        object.__setattr__(settings, "execution_preference", old_pref)
+        StateManager.reset_instance()
+        ToolManager.reset()
+        registry.reset_registry()

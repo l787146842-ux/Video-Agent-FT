@@ -36,6 +36,13 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-05 · Skill 流程跑通修复批 9-11（生成确认闭环：9999 死锁根治，计划书 v6）
+- **立项**：9999 项目事故（古风甜宠 skill 阶段 2 死锁）trace 全量取证——模型建组+写提示词后两次 `image_generate` 被 tool_risk 闸拦截，**全拒收轮被当纯文本轮终止**，闸机指引（"先 workflow_pause"）没回喂给模型，回合以模型过期口播「现在生成男女主形象参考图」（假话）+「重试」结束；且 protocol.md 承诺"暂停卡确认后生成视为明确指令"，闸机根本不认=契约断点。对照 Flova 双轴偏好（官方更新日志 2026-08-10 + 四份转录）：确认对象是**产物**（提示词草案先审后生成），花钱是提醒不拦截。用户裁决：不搬 Flova 设置页控件；轴 1 执行模式偏好直接不要且不登记；同意作用域=暂停卡接受的工作轮内有效。
+- **批 9 · 同意账本 + 回合终止盲区**：①`consume_pause_response` accept 登记 `interaction.generation_consented_turn`(=turn_seq)，`tool_risk`/`gen_confirm` 两闸接同一意分支（工作轮内放行 provider 生成、audit 留痕 `consent=pause_accept`；decline/未登记/轮次推进 fail-closed 保持；非花钱高危不吃同意）；②全拒收轮不再按纯文本轮终止——`turn_executor` 上抛 `had_fc_calls`，agent_loop FC 分支纳入、全拒收跳过提前终止（max_steps 仍封顶，纯文本轮收尾语义不变）；③拒因文案升级（三条确认路径，删 C1a 已废"消息明确指示"暗示）。
+- **批 10 · 引导层对齐 Flova**：①执行偏好注入模型上下文——planner 轮始按档位签发 `execution_pref_note`（文案唯一源 `prompts/planner/execution_preference.md`，脏值回落默认档），经状态尾部消息每步可见，模型主动先审后生成（行为层，闸机兜底）；②工具边界注释每步刷新——`_build_system_prompt` 重跑 `_compute_excluded_tools`（原轮始冻结：同轮建组后旧注释"仅开放单张应急出图"滞留，9999 模型据其错选 mode=single），`_excluded_tools` 同步刷新；③设置页 confirm_before_gen 文案如实（先发暂停卡审提示词草案/草稿标已确认/点本次放行；确认后重提不再重复拦截——UI 文案待用户目测，宪法 §3.1）。
+- **批 11 · 验收与治理**：9999 场景端到端冒烟进机器线束（`test_9999_consent_flow_smoke`：建组→直接生成→闸拦→指引回喂→发暂停卡→用户接受→重提放行且留痕→新一轮无同意再拦 fail-closed）；机器线束 16 份全绿；批末 `acceptance.py` 退出码 0（11 GATES + pytest + vitest + tsc + eslint + RATCHETS）；9999 事故清偿登记。
+- **待用户目测**：设置页 confirm_before_gen 文案、暂停卡审阅交互（宪法 §3.1）。
+
 ### 2026-09-05 · Skill 流程跑通修复批 5-8（方案甲正向设计：A3 资产树转正）
 - **立项**：8888 项目实测翻车诊断（分析连败放弃/建组形态跑偏/规格零写入/暂停卡只有题目没选项）暴露批 0-4 的补丁式修复不够——用户拍板**方案甲正向设计**：一次把产物模型对齐 Flova 机制。依据 = 四份 Flova 一手转录 + 设置页/规格文档截图的机制推理（资产树+自由文本+动作即事实+skill 散文即流程+两层偏好）。
 - **批 5 · A1 自由文本**：`script_analysis_report` 废弃自创结构化字段表（characters/scenes/acts 正是 8888 连败根因），收窄为「一句话锚点 + 自由文本报告」——Flova 同构（全程无字段表）；`stage_done("analysis")` 语义改「动作落账即事实」（summary=最小锚点，不解析报告内容）；context_builder 注入面/stage_deliverables 渲染器同步。func_imports 白名单缺口以顶层化 ToolManager 导入根治（非 refresh 收编）。
