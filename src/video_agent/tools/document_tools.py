@@ -831,7 +831,10 @@ class WorkflowPauseTool(BaseTool):
     name = "workflow_pause"
     risk = "medium"  # §2.7：写交互暂停态，用户回应即可撤销
     detail_tier = "expand"  # 关键交互：暂停请求展开可见输入
-    description = "暂停工作流并请求用户确认。用于拆解完成后请用户过目再继续的场景。"
+    description = (
+        "暂停工作流并请求用户确认。在所用 Skill 声明的强制暂停点调用，"
+        "请用户审阅当前阶段成果后继续。"
+    )
 
     def get_input_schema(self) -> Type[BaseModel]:
         return WorkflowPauseInput

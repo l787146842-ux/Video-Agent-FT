@@ -38,9 +38,9 @@ class ScriptAnalyzeInput(StrictToolInput):
     report_markdown: str = Field(
         "",
         description=(
-            "分析报告全文（Markdown 自由文本）：按各自 Skill 的 script_analyze "
-            "章节要求撰写——剧本分类结论、角色/场景/道具清单、幕次结构等均可，"
-            "字段与格式不限，只求后续阶段能照此执行"
+            "分析报告全文（Markdown 自由文本）：按所用 Skill 的 script_analyze "
+            "章节要求撰写；Skill 未声明分析路径时格式自定。字段与格式不限，"
+            "只求后续阶段能照此执行"
         ),
     )
     idempotency_key: str = Field("", description="幂等键：重复提交去重用，可留空")
@@ -53,7 +53,7 @@ class ScriptAnalyzeTool(BaseTool):
     description = (
         "提交剧本/素材分析结论（分析结果的唯一落点）：先给一句话总结，"
         "再按所用 Skill 的 script_analyze 章节要求把完整分析写成 Markdown 报告"
-        "（分类结论、角色/场景/道具清单、幕次结构等，格式自由）。"
+        "（Skill 未声明分析路径时格式自定）。"
         "分析完成后必须调用本工具落账，否则平台不认为分析阶段已完成；"
         "重复调用以最后一次为准。"
     )

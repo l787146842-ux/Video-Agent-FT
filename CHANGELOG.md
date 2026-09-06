@@ -36,6 +36,11 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-06 · 工具描述去污染批（D-20 当日登记当日清偿）
+- **背景**：6666 项目复盘 + Flova 对比调查确认工具层内容模板污染 2 处（全量普查 27 个注册工具 description，仅此两处）：`script_analysis_report`（tools/analysis_tools.py）description 与 `report_markdown` help 内嵌通用报告结构示例（"分类结论、角色/场景/道具清单、幕次结构"），与各 Skill `<script_analyze>` 章节的分析路径冲突（实证：6666 项目据此产出通用剧本拆解，未走该 Skill 五问策略路径）；`workflow_pause`（tools/document_tools.py）description"用于拆解完成后…"把具体时刻写成通用示例——各 Skill 暂停点散布各异（15 个 Skill 六种写法实证）。
+- **改动**：前者两处文案改"按所用 Skill 的 script_analyze 章节要求撰写；Skill 未声明分析路径时格式自定"；后者改"在所用 Skill 声明的强制暂停点调用，请用户审阅当前阶段成果后继续"。长期评审纪律（2026-09-06 用户裁决，无机械闸）：工具 description 只写工具用法与机器契约，内容产出模板示例归各 Skill 章节（Flova 分层原则：工具层零内容模板）。
+- **验收**：受影响 10 个测试文件 96 passed + `acceptance.py --quick` 全绿（12 GATES + tsc）；债务清单 D-20 同批删除。
+
 ### 2026-09-05 · Skill 流程跑通修复批 12（1000 事故正向修复：同意章程 + 告示牌同源 + 兜底网）
 - **事故**：项目 1000（未来科幻真人电影 skill，proj-1788604999）——用户接受规格确认暂停卡后，模型重提 `document_write` 写「制片规格.md」仍被 tool_risk 闸硬拦：批 9 同意账本执行时收窄为仅 costly 工具消费（`guard_pipeline` `if costly:`，原收窄裁决「非花钱高危不吃同意」与本条修正），规格确认卡的兑现写入落在断点另一侧；拒因文案对它承诺「接受后重提即放行」=空头支票；部分拒收轮（read_skill 成功）不触发批 9 全拒收轮回喂，模型口播「已写入制片规格」假完成收尾——skill 阶段 1 零产物、workflow 卡死 analyze_script。与 9999 同根（同意语义碎片化 + 承诺与实现脱节），按用户裁决正向收拢而非打补丁（对标 Flova：确认对象是产物、落账即兑现、承诺与实现同源）。
 - **批 12a · 同意章程**：`guard_pipeline.CONSENT_CHARTER`（同意来源 × 动作类 = 放行范围唯一声明，宪法 §2.4 同意来源枚举 / §2.7 同意范围矩阵同步）；consented 消费从 `if costly:` 改为章程判定——costly 生成 ∪ 规格写入（`spec_write`，fc_gates 按 `is_spec_doc_name` 注入，文档名口径同 fc_tool_runner）可吃暂停卡同意；other_high 维持 fail-closed；四条同意路径登记端零改动（保留为入口）。测试：章程分支单测 + 闸级规格写入（放行/无同意拦/账本轮号失配拦）+ `test_1000_spec_write_consent_flow_smoke`（accept → 重提放行 → 规格落盘 → 「规格已完成」事件卡 → consent 留痕；非规格文档仍拦）。
