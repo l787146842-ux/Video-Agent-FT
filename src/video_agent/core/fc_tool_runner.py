@@ -388,7 +388,7 @@ class FCToolRunner:
                         args.get("message", ""), last_stage_label)
                     if pause_overflow:
                         logger.info(
-                            "[FlowGate] pause message 超长（{}字）已压缩，原文进正文通道",
+                            "[FlowGate] pause 卡问句=系统模板，模型原文（{}字）进正文通道",
                             len(pause_overflow),
                         )
                     # 候选选项（前端渲染为单选卡片，点击即发送选择；带 group 时分页向导）
