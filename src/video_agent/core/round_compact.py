@@ -126,6 +126,14 @@ async def compact_oldest_round(
                 ],
                 timeout=settings.llm_timeout,
             )
+            # fail-closed：摘要调用撞输出帽（finish_reason=length）→ 半截摘要
+            # 不入缓存不替换轮组，走既有失败回落（截断链兜底）
+            if getattr(resp, "finish_reason", "") == "length":
+                logger.warning(
+                    "[RoundCompact] 摘要调用在输出预算处被截断（finish_reason=length），"
+                    "半截摘要不入缓存，回落截断链"
+                )
+                return False
             summary = (getattr(resp, "content", "") or "").strip()
         except Exception as e:
             logger.warning(f"[RoundCompact] 循环内摘要失败，回落截断链: {e}")

@@ -113,8 +113,12 @@ class Settings:
     adapter_retry_base_delay: float = field(
         default_factory=lambda: float(os.getenv("ADAPTER_RETRY_BASE_DELAY", "1.0"))
     )
-    # LLM 生成参数（adapter 未显式传参时的回落值）
-    llm_max_tokens: int = field(default_factory=lambda: _env_int("LLM_MAX_TOKENS", 8192))
+    # LLM 生成参数（adapter 未显式传参时的回落值）。
+    # 默认对齐 dsh（DeepSeek 官方 harness）DEFAULT_MAX_TOKENS=256_000：
+    # max_tokens 是上限不是目标，不产生额外费用；推理模型思考 token 计入该
+    # 额度，小帽子会把思考耗尽返回空响应（4444 项目事故）。端点拒收大值时
+    # 由 adapter 400 钳制分支回落到模型安全帽（token_budget.output_limit_for_model）。
+    llm_max_tokens: int = field(default_factory=lambda: _env_int("LLM_MAX_TOKENS", 256_000))
     llm_temperature: float = field(default_factory=lambda: float(os.getenv("LLM_TEMPERATURE", "0.7")))
     # 单次输出 token 上限（执行器/工具 LLM 调用查表回落值）
     llm_output_limit: int = field(default_factory=lambda: _env_int("LLM_OUTPUT_LIMIT", 8192))

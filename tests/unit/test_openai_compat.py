@@ -412,3 +412,118 @@ class TestConnectionPool:
         await adapter.chat([{"role": "user", "content": "2"}])
         assert adapter._client is not None
         await adapter.close()
+
+
+# ---------- 400 大 max_tokens 钳制重试（五项修法批 1） ----------
+
+_CLAMP_400_BODY = '{"error":{"code":"1210","message":"max_tokens must be <= 131072"}}'
+
+
+def _clamp_gate_handler(request: httpx.Request) -> httpx.Response:
+    """按请求里的 max_tokens 分流：超 glm-4.6 保证值（131072）拒 400，放行 200。"""
+    body = json.loads(request.content)
+    if body.get("max_tokens", 0) > 131_072:
+        return httpx.Response(400, text=_CLAMP_400_BODY)
+    return httpx.Response(
+        200,
+        json={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]},
+    )
+
+
+class TestMaxTokensClamp:
+    @respx.mock
+    @pytest.mark.allow_degradation
+    async def test_chat_clamps_on_400_and_retries_once(self):
+        """400 点名拒收大 max_tokens → 钳到模型安全帽重试一次并按模型记忆"""
+        route = respx.post(f"{BASE_URL}/chat/completions").mock(
+            side_effect=_clamp_gate_handler
+        )
+        a = OpenAICompatChatAdapter(base_url=BASE_URL, api_key="k", model="glm-4.6")
+        result = await a.chat([{"role": "user", "content": "你好"}])  # 默认 256k → 400 → 钳 131072
+        assert result.content == "ok"
+        assert route.call_count == 2
+        assert a._max_tokens_caps == {"glm-4.6": 131_072}
+
+        # 记忆生效：后续请求下发前预钳，一次到位不再吃 400
+        await a.chat([{"role": "user", "content": "再来"}])
+        assert route.call_count == 3
+        sent = json.loads(route.calls.last.request.content)
+        assert sent["max_tokens"] == 131_072
+        # 显式小值不受钳制影响（只降不升）
+        await a.chat([{"role": "user", "content": "小值"}], max_tokens=1024)
+        sent = json.loads(route.calls.last.request.content)
+        assert sent["max_tokens"] == 1024
+        await a.close()
+
+    @respx.mock
+    @pytest.mark.allow_degradation
+    async def test_stream_clamps_on_400_and_retries(self):
+        """流式同口径：400 点名 max_tokens → 钳制重试产出正常流"""
+        route = respx.post(f"{BASE_URL}/chat/completions").mock(
+            side_effect=_clamp_gate_handler
+        )
+        a = OpenAICompatChatAdapter(base_url=BASE_URL, api_key="k", model="glm-4.6")
+        chunks = []
+        async for chunk in a.chat_stream([{"role": "user", "content": "你好"}]):
+            chunks.append(chunk)
+        assert any(c.type == "text_delta" and c.text == "ok" for c in chunks)
+        assert any(c.type == "done" for c in chunks)
+        assert route.call_count == 2
+        assert a._max_tokens_caps == {"glm-4.6": 131_072}
+        await a.close()
+
+    @respx.mock
+    async def test_chat_no_clamp_when_value_below_cap(self):
+        """max_tokens 未超模型安全帽 → 400 点名也不钳制，直接上抛（一次请求）"""
+        route = respx.post(f"{BASE_URL}/chat/completions").mock(
+            return_value=httpx.Response(400, text=_CLAMP_400_BODY)
+        )
+        a = OpenAICompatChatAdapter(base_url=BASE_URL, api_key="k", model="glm-4.6")
+        with pytest.raises(AdapterError, match="HTTP 400"):
+            await a.chat([{"role": "user", "content": "x"}], max_tokens=1024)
+        assert route.call_count == 1
+        assert a._max_tokens_caps == {}
+        await a.close()
+
+    @respx.mock
+    async def test_chat_no_clamp_when_body_not_naming_field(self):
+        """400 未点名 max_tokens → 不钳制不重试（防无关 400 被误吃一次纠正式重提）"""
+        route = respx.post(f"{BASE_URL}/chat/completions").mock(
+            return_value=httpx.Response(400, text='{"error":"invalid request"}')
+        )
+        a = OpenAICompatChatAdapter(base_url=BASE_URL, api_key="k", model="glm-4.6")
+        with pytest.raises(AdapterError, match="HTTP 400"):
+            await a.chat([{"role": "user", "content": "x"}])  # 256k > 帽，但报文未点名
+        assert route.call_count == 1
+        await a.close()
+
+    @respx.mock
+    @pytest.mark.allow_degradation
+    async def test_image_fallback_clamps_on_400(self, tmp_path, monkeypatch):
+        """生图 chat 回退同口径：400 点名 → 钳制重试一次并按模型记忆"""
+        import src.video_agent.adapters.openai_compat as mod
+        from src.video_agent.adapters.openai_compat import OpenAICompatImageAdapter
+
+        monkeypatch.setattr(mod, "ASSETS_DIR", tmp_path)
+        png_uri = (
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+            "AAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            if body.get("max_tokens", 0) > 131_072:
+                return httpx.Response(400, text=_CLAMP_400_BODY)
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": f"![]({png_uri})"},
+                                   "finish_reason": "stop"}]},
+            )
+
+        route = respx.post(f"{BASE_URL}/chat/completions").mock(side_effect=handler)
+        img = OpenAICompatImageAdapter(base_url=BASE_URL, api_key="k", model="glm-4.6")
+        result = await img._try_chat_fallback("画一只猫", "1:1", [])
+        assert result is not None and result.image_urls
+        assert route.call_count == 2
+        assert img._max_tokens_caps == {"glm-4.6": 131_072}
+        await img.close()

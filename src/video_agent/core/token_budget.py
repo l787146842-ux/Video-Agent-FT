@@ -80,26 +80,10 @@ def context_window_for_model(model: str, provider_id: str = "") -> int:
     return settings.context_window_size
 
 
-# 模型名关键字 → 单次输出上限（max_tokens 封顶值）。与上下文窗口是两回事：
-# 输出上限通常远小于窗口，且推理模型的思考 token 也计入该额度（/）。
-# 只收录保守的供应商文档保证值；未命中回落全局 LLM_OUTPUT_LIMIT。
-_MODEL_OUTPUT_LIMITS = {
-    "deepseek": 8_192,
-    "qwen": 8_192,
-    "gemini": 32_768,
-    "gpt-4o": 16_384,
-    "gpt-4.1": 32_768,
-    "claude": 8_192,
-}
-
-
-def output_limit_for_model(model: str) -> int:
-    """按模型名查单次输出 token 上限；未收录的模型回落 settings.llm_output_limit。"""
-    m = (model or "").lower()
-    for key, limit in _MODEL_OUTPUT_LIMITS.items():
-        if key in m:
-            return limit
-    return settings.llm_output_limit
+# 模型输出上限查表（子串 → 单次输出上限 max_tokens 封顶值）下沉
+# utils/model_limits（跨切面原语：adapters 400 钳制分支同用，宪法 §六；
+# adapters 禁依赖 core 具体实现）。此处 re-export 保持原导入路径稳定。
+from src.video_agent.utils.model_limits import output_limit_for_model  # noqa: F401
 
 
 def estimate_tokens(text: str) -> int:

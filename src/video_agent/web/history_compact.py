@@ -250,6 +250,16 @@ async def _maybe_compact_history(
                 timeout=settings.llm_timeout,
                 thinking_level=_summary_thinking_level(),
             )
+            # fail-closed：摘要调用撞输出帽（finish_reason=length）→ 半截摘要
+            # 不落 interaction.session_summary，走既有失败回落（保留原 history）
+            if getattr(resp, "finish_reason", "") == "length":
+                live_metrics.record_degradation("chat_consume.session_compact")
+                logger.warning(
+                    "[ChatService] 会话 compaction 摘要在输出预算处被截断"
+                    "（finish_reason=length），保留原 history"
+                )
+                _set_summary_active(svc, False)
+                return history
             summary = (resp.content or "").strip()
         except Exception as e:
             # 承重接线遥测：compaction 失败回落原 history 不再是纯静默

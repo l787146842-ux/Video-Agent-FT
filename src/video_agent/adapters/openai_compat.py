@@ -39,12 +39,41 @@ from .errors import (
 from src.video_agent.config import settings
 from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils.live_metrics import record_degradation
+from src.video_agent.utils.model_limits import output_limit_for_model
 from src.video_agent.utils.paths import ASSETS_DIR
 from src.video_agent.utils import gen_id
 from src.video_agent.storage import get_storage
 
 _DATA_URI_RE = re.compile(r"data:image/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)")
 _HTTP_IMAGE_RE = re.compile(r"https?://[^\s\)\"]+\.(?:png|jpg|jpeg|webp|gif)")
+
+
+def _preclamp_max_tokens(requested: int, caps: Dict[str, int], model: str) -> int:
+    """下发前按「400 钳制记忆」预钳 max_tokens（同 _unsupported_fields 探针
+    记忆惯例：探明拒收后不再重发大值）。只降不升，显式小值不受影响。"""
+    cap = caps.get(model)
+    if cap is not None and requested > cap:
+        return cap
+    return requested
+
+
+def _clamp_max_tokens_payload(payload: Dict[str, Any], body: str, model: str) -> Optional[int]:
+    """400 拒收大 max_tokens → 按模型安全帽钳制（改值不剥离，区别于
+    _strip_unsupported_on_400 的字段剥离）。仅当报文点名 max_tokens 且当前
+    下发值超过该模型输出上限（model_output_limits.json 查表）时触发。
+    返回钳制值（调用方据此重试一次并按模型记忆），无需钳制返回 None。"""
+    if "max_tokens" not in body or not isinstance(payload.get("max_tokens"), int):
+        return None
+    cap = output_limit_for_model(model)
+    if payload["max_tokens"] <= cap:
+        return None
+    payload["max_tokens"] = cap
+    record_degradation("adapter.max_tokens_clamped")
+    logger.warning(
+        f"[OpenAICompat] 端点 400 拒收大 max_tokens（model={model!r}），"
+        f"钳制到模型输出上限 {cap} 后重试一次"
+    )
+    return cap
 
 
 def extract_base64_image(text: str) -> str:
@@ -208,6 +237,9 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         # 端点 400 拒收 reasoning_effort/response_format 后记入本集合，
         # 后续请求不再下发该字段（与 降级同惯例）。
         self._unsupported_fields: set = set()
+        # max_tokens 钳制记忆（按模型）：400 点名拒收大 max_tokens 后记录
+        # 该模型安全帽，后续请求下发前预钳（_preclamp_max_tokens），不重走 400
+        self._max_tokens_caps: Dict[str, int] = {}
 
     def _get_client(self, timeout: int = 120) -> httpx.AsyncClient:
         """Lazy 创建/复用 httpx 客户端（连接池复用）"""
@@ -286,6 +318,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
     ) -> ChatResponse:
         if max_tokens is None:
             max_tokens = settings.llm_max_tokens
+        max_tokens = _preclamp_max_tokens(max_tokens, self._max_tokens_caps, self.model)
         if temperature is None:
             temperature = settings.llm_temperature
         if timeout is None:
@@ -332,26 +365,33 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
         except AdapterError as e:
             # 优雅降级：严格端点不认 reasoning_effort/
             # response_format 报 400 → 剥离字段重试一次（兼容探针；
-            # permanent 400 中唯一允许的一次纠正式重提，非盲目重试）
-            if getattr(e, "http_status", None) == 400 and self._strip_unsupported_on_400(
-                    payload, str(e)):
-                try:
-                    resp = await client.post(
-                        "/chat/completions", json=payload, headers=_req_headers,
-                    )
-                    if resp.status_code >= 400:
-                        raise build_status_error(
-                            resp.status_code, resp.text[:200], context="chat",
+            # permanent 400 中唯一允许的一次纠正式重提，非盲目重试）；
+            # 400 点名拒收大 max_tokens → 按模型安全帽钳制（改值不剥离）重试一次
+            if getattr(e, "http_status", None) == 400:
+                stripped = self._strip_unsupported_on_400(payload, str(e))
+                clamped_cap = _clamp_max_tokens_payload(payload, str(e), self.model)
+                if clamped_cap is not None:
+                    self._max_tokens_caps[self.model] = clamped_cap
+                if stripped or clamped_cap is not None:
+                    try:
+                        resp = await client.post(
+                            "/chat/completions", json=payload, headers=_req_headers,
                         )
-                    data = resp.json()
-                except json.JSONDecodeError as e2:
-                    raise AdapterError(
-                        f"LLM 返回非 JSON 响应（可能被误当流式）：{e2}",
-                        retryable=False,
-                        kind=KIND_UPSTREAM,
-                    ) from e2
-                except httpx.HTTPError as e2:
-                    raise build_exception_error(e2, context="chat") from e2
+                        if resp.status_code >= 400:
+                            raise build_status_error(
+                                resp.status_code, resp.text[:200], context="chat",
+                            )
+                        data = resp.json()
+                    except json.JSONDecodeError as e2:
+                        raise AdapterError(
+                            f"LLM 返回非 JSON 响应（可能被误当流式）：{e2}",
+                            retryable=False,
+                            kind=KIND_UPSTREAM,
+                        ) from e2
+                    except httpx.HTTPError as e2:
+                        raise build_exception_error(e2, context="chat") from e2
+                else:
+                    raise
             else:
                 raise
         except httpx.HTTPError as e:
@@ -404,6 +444,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
     ) -> AsyncGenerator[StreamChunk, None]:
         if max_tokens is None:
             max_tokens = settings.llm_max_tokens
+        max_tokens = _preclamp_max_tokens(max_tokens, self._max_tokens_caps, self.model)
         if temperature is None:
             temperature = settings.llm_temperature
         if timeout is None:
@@ -433,16 +474,18 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             except AdapterError as e:
                 # 优雅降级：严格端点不认 reasoning_effort/
                 # response_format 报 400 → 剥离字段重试（兼容探针；
-                # AdapterError 报文携原始 body 前 200 字，可供点名判定）
-                if (
-                    not yielded
-                    and (
-                        getattr(e, "http_status", None) == 400
-                        or str(e).startswith("LLM 返回 HTTP 400")
-                    )
-                    and self._strip_unsupported_on_400(payload, str(e))
+                # AdapterError 报文携原始 body 前 200 字，可供点名判定）；
+                # 400 点名拒收大 max_tokens → 按模型安全帽钳制（改值不剥离）重试一次
+                if not yielded and (
+                    getattr(e, "http_status", None) == 400
+                    or str(e).startswith("LLM 返回 HTTP 400")
                 ):
-                    continue
+                    stripped = self._strip_unsupported_on_400(payload, str(e))
+                    clamped_cap = _clamp_max_tokens_payload(payload, str(e), self.model)
+                    if clamped_cap is not None:
+                        self._max_tokens_caps[self.model] = clamped_cap
+                    if stripped or clamped_cap is not None:
+                        continue
                 # 结构化判定：优先用 retryable 标记，无标记旧异常回落
                 # 分类器结构化判定（替代脆弱的文案匹配）
                 flag = getattr(e, "retryable", None)
@@ -624,6 +667,8 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
         self.api_key = api_key
         self.model = model
         self._client: Optional[httpx.AsyncClient] = None
+        # max_tokens 钳制记忆（按模型，同 ChatAdapter 口径）
+        self._max_tokens_caps: Dict[str, int] = {}
 
     def _get_client(self, timeout: int = 120) -> httpx.AsyncClient:
         """Lazy 创建/复用 httpx 客户端"""
@@ -740,11 +785,19 @@ class OpenAICompatImageAdapter(BaseImageAdapter):
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": content}],
-            "max_tokens": settings.llm_max_tokens,
+            "max_tokens": _preclamp_max_tokens(
+                settings.llm_max_tokens, self._max_tokens_caps, self.model
+            ),
         }
         try:
             client = self._get_client(settings.image_gen_timeout)
             resp = await client.post("/chat/completions", json=payload)
+            # 400 点名拒收大 max_tokens → 钳制到模型安全帽重试一次（同 ChatAdapter）
+            if resp.status_code == 400:
+                clamped_cap = _clamp_max_tokens_payload(payload, resp.text, self.model)
+                if clamped_cap is not None:
+                    self._max_tokens_caps[self.model] = clamped_cap
+                    resp = await client.post("/chat/completions", json=payload)
             resp.raise_for_status()
             try:
                 data = resp.json()
