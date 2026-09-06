@@ -21,6 +21,7 @@ import { MarkdownBubble } from './MarkdownBubble';
 import { MessageHoverToolbar } from './MessageHoverToolbar';
 import { SuggestedActionBar } from './SuggestedActionBar';
 import { DecisionFormCard, decisionFormFields } from './DecisionFormCard';
+import { messageHeightKey, messageIntrinsicSize, trackMessageHeight } from '@/lib/message-heights';
 import type { MessageAffordance } from '@/lib/message-affordances';
 import type { ChatMessage } from '@/types';
 
@@ -115,8 +116,21 @@ export function ChatMessageItem(props: {
   onMount(() => document.addEventListener('keydown', onDocKeyDown));
   onCleanup(() => document.removeEventListener('keydown', onDocKeyDown));
 
+  // 消息根元素挂真实高度回填（content-visibility 占位校准，治滚动跳变）：
+  // 内联 contain-intrinsic-size = 缓存真实高度 → 内容估算 → CSS 120px 兜底
+  let itemRef!: HTMLDivElement;
+  onMount(() => onCleanup(trackMessageHeight(itemRef,
+    // eslint-disable-next-line solid/reactivity -- RO 回调在追踪域外取实时键（有意不订阅）
+    () => messageHeightKey(msg()),
+  )));
+
   return (
-    <div class={`chat-msg ${isUser() ? 'user' : 'agent'}`} data-msg-index={props.domIndex}>
+    <div
+      ref={itemRef}
+      class={`chat-msg ${isUser() ? 'user' : 'agent'}`}
+      style={`contain-intrinsic-size: ${messageIntrinsicSize(msg())}`}
+      data-msg-index={props.domIndex}
+    >
       {/* 文档完成卡片（keyed Show 避免 String()/非空断言；卡片与右键菜单归 DocCard） */}
       <Show when={msg().docCard} keyed>
         {(doc) => <DocCard doc={doc} />}

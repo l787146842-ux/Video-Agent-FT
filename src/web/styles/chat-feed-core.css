@@ -27,8 +27,12 @@
   .chat-msg { display: flex; flex-direction: column; max-width: 88%; gap: 4px; }
     /* 长会话性能：content-visibility 让浏览器跳过屏外消息的布局/绘制
        （零依赖虚拟化；auto 缓存首次渲染后的真实高度，滚动估算不跳动）；
-       不支持的环境自动回落普通渲染，无行为变更 */
-    .chat-msg, .turn-group { content-visibility: auto; contain-intrinsic-size: auto 120px; }
+       不支持的环境自动回落普通渲染，无行为变更。
+       占位高度不再裸猜 120px：ChatMessageItem 逐条内联覆写
+       contain-intrinsic-size（lib/message-heights 真实高度缓存/内容估算，
+       治高度兑现引发的滚动跳变），此处 120px 仅为无 JS 兜底。
+       轮次组不再单独虚拟化：组高度=组内消息占位之和，消除第二层占位误差。 */
+    .chat-msg { content-visibility: auto; contain-intrinsic-size: auto 120px; }
     /* 滚底修复：尾部两个条目恒渲染——auto 会跳过视口下方元素并以
        占位高度估算，钉底 scrollTop=scrollHeight 被估算值钳住永远到不了真实
        底部（新消息恰在尾部，正是钉底目标）；尾部恒渲染让 scrollHeight 反映
