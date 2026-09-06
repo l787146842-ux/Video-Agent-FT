@@ -377,6 +377,10 @@ class Planner:
         闸签发仅限确认档。"""
         if not (settings.pipeline_orchestrator_enabled and context.skill_name):
             return
+        if context.adjust_scope:
+            # 子对话不发确认卡（二期子对话批 3 同款纪律，与 FC 轨
+            # scope_auto_pause 对齐）：微调真子对话内阶段翻转不签发闸卡
+            return
         try:
             state = self.state_manager.state_dict or {}
             # 轮末账本同步（全档位）：completed_nodes 客观重算，账本恢复推进

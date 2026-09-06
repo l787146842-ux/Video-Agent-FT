@@ -36,6 +36,11 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-06 · 三批复查修正（用户要求逐项自查后）
+- **子对话守卫补漏**：轮末阶段闸 `_apply_stage_gate` 补 `adjust_scope` 守卫——微调真子对话内阶段翻转不签发闸卡（对齐「子对话不发确认卡」既有纪律与 FC 轨 `scope_auto_pause`；此前子对话翻转会在隐藏线程挂起 review 决议+发卡）。补端到端集成测试 `test_stage_gate_e2e.py`（完整 handle_message_stream 轮次发闸卡全链 + 子对话静默；守卫有效性经去守卫变红验证）。
+- **设置页注释同步**：ExecutionPreferenceSection 头注释仍列旧标签（自动决定/生成前确认/直接生成），同步为对齐后用语。
+- **验收**：全量单测 2132 passed + `acceptance.py --quick` 全绿。
+
 ### 2026-09-06 · 动作日志成果语批（Flova 对齐·呈现层轻量改造）
 - **范围**：仅后端单一文案源，前端零改动（live SSE 与 settled actionLog 同吃 describe_fc_tool / aggregate_action_log）。用户侧呈现对齐 Flova「动作完成卡只讲成果」；固定流程进度模板经用户裁决不做（Flova 亦无——流程级进度由模型按各 Skill 步骤词汇在正文汇报，平台只固定动作→完成卡一层）。
 - **成果语**：`fc_feedback.describe_fc_tool` 产出类动作改用户视角——script_analysis_report→「剧本分析已完成」、storyboard_create_group→「故事板已更新」、image_generate→「已发起生图（单张）」、generate_video→「已发起视频生成」、read_skill→「Skill「X」流程已加载」（保留「」结构兼容聚合正则）。
