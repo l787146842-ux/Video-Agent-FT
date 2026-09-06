@@ -93,12 +93,23 @@ def _action_group_key(desc: str) -> str:
     return key.strip("：: ") or desc.strip()
 
 
+# 低信息动作抑制（2026-09-06 Flova 对齐批）：机械续读/目录类动作不进聊天
+# 动作日志（trace 与审计账本照记，仅展示层折叠）——动作完成卡只讲成果，
+# 对齐 Flova「视频规格已完成」式呈现。键 = _action_group_key 剔名后的形态。
+_LOW_INFO_KEYS = frozenset({
+    "Skill流程已加载",        # read_skill
+    "执行工具list_skills",    # list_skills
+    "执行工具get_skill_asset",  # get_skill_asset
+})
+
+
 def aggregate_action_log(logs: List[str]) -> List[str]:
     """粗粒度聚合操作清单（「阶段完成」卡片展示用）。
 
     用户不需要逐条看到每张卡片：连续同类操作合并为一条，
     如 3 条「新建关键元素分组「X」」→「新建关键元素分组 ×3」。
     仅合并连续的同类项，保持时间顺序；不连续的同类操作分开展示。
+    低信息动作（机械续读/目录类）整类折叠不展示。
     """
     texts: List[str] = []
     counts: List[int] = []
@@ -108,6 +119,8 @@ def aggregate_action_log(logs: List[str]) -> List[str]:
         if not d:
             continue
         key = _action_group_key(d)
+        if key in _LOW_INFO_KEYS:
+            continue
         if keys and keys[-1] == key:
             counts[-1] += 1
         else:

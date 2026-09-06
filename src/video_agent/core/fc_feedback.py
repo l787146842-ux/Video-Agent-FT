@@ -312,13 +312,18 @@ def compose_failure_feedback(
 
 
 def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
-    """FC 工具的中文简述（与 studio-actions 描述风格对齐）"""
+    """FC 工具的中文简述（与 studio-actions 描述风格对齐）。
+    2026-09-06 Flova 对齐批：产出类动作改成果语（用户视角「做了什么」，
+    非工具视角「调了什么」）；机械续读类（read_skill 等）另在
+    aggregate_action_log 低信息抑制集内不进聊天动作日志。"""
     title = str(args.get("title") or "").strip()
     draft_id = str(args.get("draft_id") or "").strip()
     label = str(args.get("label") or "").strip()
     doc = str(args.get("key") or args.get("name") or "").strip()
+    if name == "script_analysis_report":
+        return "剧本分析已完成"
     if name == "storyboard_create_group":
-        return f"新建分组「{title or '未命名'}」"
+        return "故事板已更新"
     if name == "storyboard_patch_draft":
         return f"更新草稿「{label or draft_id or '当前草稿'}」"
     if name == "storyboard_add_draft":
@@ -339,15 +344,15 @@ def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
     if name == "read_uploaded_doc":
         return f"读取上传文档「{str(args.get('name') or args.get('doc_id') or '未知')}」"
     if name == "read_skill":
-        return f"加载 Skill「{str(args.get('name') or '未知')}」完整流程"
+        return f"Skill「{str(args.get('name') or '未知')}」流程已加载"
     if name == "read_project_doc":
         return f"读取规格文档「{str(args.get('name') or '未知')}」"
     if name == "image_generate":
         if str(args.get("mode") or "batch").strip().lower() == "single":
-            return "对话内单张生图"
-        return "发起生图"
+            return "已发起单张生图"
+        return "已发起生图"
     if name == "generate_video":
-        return "发起视频生成"
+        return "已发起视频生成"
     if name == "workflow_pause":
         return "请求阶段确认"
     return f"执行工具 {name}"

@@ -36,6 +36,12 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-06 · 动作日志成果语批（Flova 对齐·呈现层轻量改造）
+- **范围**：仅后端单一文案源，前端零改动（live SSE 与 settled actionLog 同吃 describe_fc_tool / aggregate_action_log）。用户侧呈现对齐 Flova「动作完成卡只讲成果」；固定流程进度模板经用户裁决不做（Flova 亦无——流程级进度由模型按各 Skill 步骤词汇在正文汇报，平台只固定动作→完成卡一层）。
+- **成果语**：`fc_feedback.describe_fc_tool` 产出类动作改用户视角——script_analysis_report→「剧本分析已完成」、storyboard_create_group→「故事板已更新」、image_generate→「已发起生图（单张）」、generate_video→「已发起视频生成」、read_skill→「Skill「X」流程已加载」（保留「」结构兼容聚合正则）。
+- **噪音折叠**：`action_descriptions.aggregate_action_log` 新增低信息抑制集（read_skill/list_skills/get_skill_asset 整类折叠不进聊天动作日志；trace 与审计账本照记）。
+- **验收**：新增 test_action_copy_outcome 6 用例 + 全量单测 2130 passed；UI 呈现变化构建后经用户目测确认（宪法 §3.1）。
+
 ### 2026-09-06 · 执行模式四档 + 轮末阶段闸批（Flova 对齐，闸机增减经用户裁决）
 - **背景**：6666 复盘确认平台只有「防多停」闸、无「防漏停」闸（阶段暂停全靠模型自觉，flash 档模型实测漏卡/走回头路）；Flova 实测（无确认节点自定义 Skill 照样在规格/故事板/素材三停）证明其执行模式档位在产品里程碑上是平台机械行为，档位 > Skill 散文。用户裁决按机械闸版落地、出厂默认档零行为变化；CLI 实验不必做（行为契约已足够）。
 - **执行模式四档**：`config.py` 新增 `EXECUTION_MODE_VALUES/DEFAULT/GATE_MODES` + `normalize_exec_mode`（与素材生成轴 `execution_preference` 正交）；`runtime_settings.py` 路由同款清洗/加载/拒收；`gen_api_types.py` 契约导出 EXECUTION_MODE_* 常量；设置页新增 `ExecutionModeSection.tsx`（执行偏好下拉标签同步对齐 Flova 用语，hint 承诺不动过 consent_copy 门禁）。测试：路由三件套 + 设置页 UI + 契约门禁。
