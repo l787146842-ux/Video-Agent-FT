@@ -802,12 +802,15 @@ class Planner:
 
         文案唯一源 = prompts/planner/execution_mode.md（外置分节）；
         档位枚举清洗归 config 单一事实源（normalize_exec_mode），脏值回落
-        默认档。ai_decide 默认档无分节 → 空串不注入（行为与现状一致）；
+        默认档。ai_decide 默认档不注入任何内容：文件无对应分节属设计约定，
+        直接跳过查找（避免把「故意不存在」当缺失打警告）；
         key_steps_confirm/pause_all 两档的平台机械拦停由轮末阶段闸承重，
         本注入只承担引导呈现语义。"""
-        key = normalize_exec_mode(settings.execution_mode).upper()
+        mode = normalize_exec_mode(settings.execution_mode)
+        if mode == "ai_decide":
+            return ""
         return load_prompt_section(
-            _EXEC_MODE_NOTE_FILE, f"MODE_{key}") or ""
+            _EXEC_MODE_NOTE_FILE, f"MODE_{mode.upper()}") or ""
 
     # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------
     #

@@ -258,22 +258,31 @@ class TestExecutionModeNoteInjection:
                 object.__setattr__(settings, "execution_mode", old)
 
     def test_default_mode_injects_nothing(self, svc, monkeypatch):
-        """ai_decide 默认档无分节 = 空串不注入（行为与现状一致）。"""
+        """ai_decide 默认档不注入任何内容，且跳过分节查找
+        （文件无对应分节属设计约定，不得当缺失打警告）。"""
         from src.video_agent.config import settings
+        import src.video_agent.core.planner as planner_mod
         planner = Planner(state_manager=svc, llm_adapter=None)
         old = settings.execution_mode
         object.__setattr__(settings, "execution_mode", "ai_decide")
         try:
+            def _fail(*_a, **_k):
+                raise AssertionError("ai_decide 档不应触发分节查找")
+            monkeypatch.setattr(planner_mod, "load_prompt_section", _fail)
             assert planner._load_execution_mode_note() == ""
         finally:
             object.__setattr__(settings, "execution_mode", old)
 
     def test_dirty_mode_falls_back_to_default_no_injection(self, svc, monkeypatch):
         from src.video_agent.config import settings
+        import src.video_agent.core.planner as planner_mod
         planner = Planner(state_manager=svc, llm_adapter=None)
         old = settings.execution_mode
         object.__setattr__(settings, "execution_mode", "yolo")
         try:
+            def _fail(*_a, **_k):
+                raise AssertionError("脏值回落默认档=不注入，不应触发分节查找")
+            monkeypatch.setattr(planner_mod, "load_prompt_section", _fail)
             assert planner._load_execution_mode_note() == "", "脏值回落默认档=不注入"
         finally:
             object.__setattr__(settings, "execution_mode", old)
