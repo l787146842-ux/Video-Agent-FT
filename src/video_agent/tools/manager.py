@@ -75,6 +75,18 @@ class ToolManager:
                 f"Tool '{tool.name}' declares invalid provider_kind {provider_kind!r}; "
                 f"must be one of {PROVIDER_KINDS} or empty."
             )
+        # 并行安全声明轴（五项修法批 3）：允许不声明（默认独占串行），
+        # 但声明了非 bool 取值同样拒收（注册期校验，不静默放行）
+        parallel_safe = getattr(tool, "parallel_safe", False)
+        if not isinstance(parallel_safe, bool):
+            logger.error(
+                f"拒绝注册工具 '{tool.name}'：parallel_safe 取值非法（仅支持 bool，"
+                "五项修法批 3 并行安全声明轴）"
+            )
+            raise ValueError(
+                f"Tool '{tool.name}' declares invalid parallel_safe {parallel_safe!r}; "
+                "must be bool."
+            )
         cls._tools[tool.name] = tool
         cls._schema_cache = None  # 注册新工具时失效缓存
         logger.debug(f"Registered tool: {tool.name} (risk={risk})")

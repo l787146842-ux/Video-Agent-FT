@@ -105,6 +105,11 @@ class BaseTool(ABC):
     # 声明非法取值注册期拒收（ToolManager.register）。调度器据本声明走统一注入器
     # （core/provider_injection），不再认具体工具名。
     provider_kind: str = ""
+    # 并行安全声明轴（五项修法批 3，deny-by-default）：True = 只读无副作用，
+    # 可与同批连续 parallel_safe 调用进有界并行池并发执行（池上限
+    # fc_tool_runner.PARALLEL_POOL_LIMIT）；默认 False = 独占串行（屏障）。
+    # 声明非 bool 值注册期拒收（ToolManager.register，照 costly 校验段同款）。
+    parallel_safe: bool = False
 
     @abstractmethod
     def get_input_schema(self) -> Type[BaseModel]:

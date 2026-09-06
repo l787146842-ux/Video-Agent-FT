@@ -302,6 +302,8 @@ def _skill_source_note(skill_name: str) -> str:
 class ReadSkillTool(BaseTool):
     name = "read_skill"
     risk = "low"  # §2.7：只读
+    # 五项修法批 3：模型惯于并行连发的只读工具，可进有界并行池
+    parallel_safe = True
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "Skill 正文/章节/附属资源的按需续读工具。选中 Skill 已注入 <planner> 段全文"
@@ -430,6 +432,8 @@ class ReadSkillTool(BaseTool):
 class ListSkillsTool(BaseTool):
     name = "list_skills"
     risk = "low"  # §2.7：只读无副作用（批5，对齐 Flova 卡片开关的名单探针）
+    # 五项修法批 3：模型惯于并行连发的只读工具，可进有界并行池
+    parallel_safe = True
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "列出当前全部启用的 Skill（名称+摘要，只读）。经开关停用的 Skill 不在此列；"

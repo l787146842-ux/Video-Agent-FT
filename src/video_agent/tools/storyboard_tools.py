@@ -420,6 +420,8 @@ class StoryboardMediaToChatTool(BaseTool):
 class StoryboardReadDraftTool(BaseTool):
     name = "read_draft"
     risk = "low"  # §2.7：只读
+    # 五项修法批 3：模型惯于并行连发的只读工具，可进有界并行池
+    parallel_safe = True
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "按需读取指定故事板草稿卡的提示词全文。上下文里草稿只有目录信息（编号/label/字数），"
