@@ -225,6 +225,60 @@ class TestExecutionPrefNoteInjection:
             object.__setattr__(settings, "execution_preference", old)
 
 
+# ---------- 2026-09-06：执行模式注入（Flova 对齐批） ----------
+
+class TestExecutionModeNoteInjection:
+    """执行模式四档注入：非默认档按分节签发、经尾部消息可见；
+    ai_decide 默认档 = 空串不注入（行为与现状一致）；脏值回落默认档。"""
+
+    def test_note_lands_in_tail_message(self, svc):
+        planner, executor = _executor(svc)
+        executor._context = PlannerContext(
+            use_studio_context=True, state_json='{"ke": 1}',
+            execution_mode_note="当前执行模式：关键步骤手动确认",
+        )
+        tail = planner._prompt_builder.build_state_tail_message(executor._context)
+        assert "当前执行模式：关键步骤手动确认" in tail
+
+    def test_loads_note_per_mode(self, svc, monkeypatch):
+        from src.video_agent.config import settings
+        planner = Planner(state_manager=svc, llm_adapter=None)
+        cases = {
+            "auto_full": "自动执行全流程",
+            "key_steps_confirm": "关键步骤手动确认",
+            "pause_all": "全部暂停确认",
+        }
+        for mode, marker in cases.items():
+            old = settings.execution_mode
+            object.__setattr__(settings, "execution_mode", mode)
+            try:
+                note = planner._load_execution_mode_note()
+                assert note and marker in note, f"{mode} 档应命中对应分节"
+            finally:
+                object.__setattr__(settings, "execution_mode", old)
+
+    def test_default_mode_injects_nothing(self, svc, monkeypatch):
+        """ai_decide 默认档无分节 = 空串不注入（行为与现状一致）。"""
+        from src.video_agent.config import settings
+        planner = Planner(state_manager=svc, llm_adapter=None)
+        old = settings.execution_mode
+        object.__setattr__(settings, "execution_mode", "ai_decide")
+        try:
+            assert planner._load_execution_mode_note() == ""
+        finally:
+            object.__setattr__(settings, "execution_mode", old)
+
+    def test_dirty_mode_falls_back_to_default_no_injection(self, svc, monkeypatch):
+        from src.video_agent.config import settings
+        planner = Planner(state_manager=svc, llm_adapter=None)
+        old = settings.execution_mode
+        object.__setattr__(settings, "execution_mode", "yolo")
+        try:
+            assert planner._load_execution_mode_note() == "", "脏值回落默认档=不注入"
+        finally:
+            object.__setattr__(settings, "execution_mode", old)
+
+
 class TestStageNoteRefreshedPerStep:
     """工具边界注释每步刷新（9999：旧注释滞留误导 mode 选型）——
     同轮内故事板建立后，下一步重算即失配清空，不再注入旧边界。"""

@@ -196,6 +196,12 @@ class PromptBuilder:
         # 行为层引导，闸机（tool_risk/gen_confirm + 同意账本）兜底硬保证。
         if getattr(context, "execution_pref_note", ""):
             parts.append(context.execution_pref_note)
+        # 执行模式注入（2026-09-06 Flova 对齐批）：轮始按档位签发
+        # （planner._load_execution_mode_note）；ai_decide 默认档 = 空串不注入；
+        # key_steps_confirm/pause_all 的停由轮末阶段闸机械保证，此处只承担
+        # 引导呈现语义（auto_full 压制自发暂停，不改变生成确认闸）。
+        if getattr(context, "execution_mode_note", ""):
+            parts.append(context.execution_mode_note)
         if context.skill_name:
             note = self.build_storyboard_progress_note()
             if note:

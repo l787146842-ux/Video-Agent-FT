@@ -10,6 +10,7 @@
 - skills_disabled：被停用的 Skill slug 列表（批5，对齐 Flova 卡片开关；空 = 全启用）；
 - execution_preference：执行偏好三档（管花钱生成是否先弹确认卡；
   2026-08-30 用户裁决，Skill 系统修复批 B）；
+- execution_mode：执行模式四档（管流程推进的暂停策略；2026-09-06 用户裁决，Flova 对齐批）；
 - max_shot_duration：Agent 自拆分镜的单镜最大时长（秒）。
 - max_steps：Agent 多步循环上限（Q3 裁决 2026-09-01：循环每步实时读取，热调即刻生效）。
 """
@@ -21,8 +22,10 @@ from loguru import logger
 from pydantic import BaseModel
 
 from src.video_agent.config import (
+    EXECUTION_MODE_VALUES,
     EXECUTION_PREFERENCE_VALUES,
     MAX_STEPS_RANGE,
+    normalize_exec_mode,
     normalize_exec_pref,
     settings,
 )
@@ -56,6 +59,8 @@ _THINKING_VALUES = ("", "low", "medium", "high")
 # 执行偏好三档（2026-08-30 用户裁决）：枚举白名单与清洗口归 config 单一事实源；
 # 非法值拒收（保持当前档），存量配置缺键/脏值回落默认档（行为与现状一致）
 _EXEC_PREF_KEYS = ("execution_preference",)
+# 执行模式四档（2026-09-06 用户裁决，Flova 对齐批）：同上口径
+_EXEC_MODE_KEYS = ("execution_mode",)
 
 
 class RuntimeSettingsUpdate(BaseModel):
@@ -76,6 +81,8 @@ class RuntimeSettingsUpdate(BaseModel):
     script_inject_limit: Optional[int] = None
     # 执行偏好三档（非法值拒收；缺省 = 不变更）
     execution_preference: Optional[str] = None
+    # 执行模式四档（非法值拒收；缺省 = 不变更）
+    execution_mode: Optional[str] = None
     # 模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型；
     # 推理档位可独立于供应商设置；旧「推理档位」卡两键已退役）
     model_policy: Optional[Dict[str, Any]] = None
@@ -103,6 +110,7 @@ class RuntimeSettings(BaseModel):
     skills_disabled: List[str]
     script_inject_limit: int
     execution_preference: str
+    execution_mode: str
     model_policy: Dict[str, PolicyRow]
 
 
@@ -139,6 +147,8 @@ def _current_dict() -> Dict[str, Any]:
         "script_inject_limit": settings.script_inject_limit,
         # 执行偏好恒下发（清洗后口径，脏值自动回落默认档）
         "execution_preference": normalize_exec_pref(settings.execution_preference),
+        # 执行模式恒下发（同上口径）
+        "execution_mode": normalize_exec_mode(settings.execution_mode),
         # 推理档位两键退役（归模型分层策略），GET 不再下发
         "model_policy": mp.current_policy(),
     }
@@ -183,6 +193,11 @@ async def put_runtime_settings(body: RuntimeSettingsUpdate):
         elif key in _EXEC_PREF_KEYS:
             v = str(value or "").strip().lower()
             if v not in EXECUTION_PREFERENCE_VALUES:
+                continue  # 非法值拒收（保持当前档）
+            value = v
+        elif key in _EXEC_MODE_KEYS:
+            v = str(value or "").strip().lower()
+            if v not in EXECUTION_MODE_VALUES:
                 continue  # 非法值拒收（保持当前档）
             value = v
         elif key == "model_policy":
@@ -231,6 +246,12 @@ def load_runtime_settings() -> None:
             if key in data:
                 v = str(data[key] or "").strip().lower()
                 if v in EXECUTION_PREFERENCE_VALUES:
+                    object.__setattr__(settings, key, v)
+        for key in _EXEC_MODE_KEYS:
+            # 合法值应用；非法/脏值自然回落 config 默认档（行为与现状一致）
+            if key in data:
+                v = str(data[key] or "").strip().lower()
+                if v in EXECUTION_MODE_VALUES:
                     object.__setattr__(settings, key, v)
         for key in _INT_KEYS:
             if key in data:

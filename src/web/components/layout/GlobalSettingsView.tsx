@@ -8,6 +8,7 @@ import type { RuntimeSettings } from '@/api/agent';
 import { ModelPolicySection } from './global-settings/ModelPolicySection';
 import { CostMetricsSection } from './global-settings/CostMetricsSection';
 import { ExecutionPreferenceSection } from './global-settings/ExecutionPreferenceSection';
+import { ExecutionModeSection } from './global-settings/ExecutionModeSection';
 
 /**
  * 全局模型选择设置页（路由 /global-settings，替代旧顶栏自动切换按钮）：
@@ -200,6 +201,9 @@ export default function GlobalSettingsView() {
 
           {/* 执行偏好三档（花钱生成是否先弹确认卡；批 B） */}
           <ExecutionPreferenceSection gs={gs} set={set} />
+
+          {/* 执行模式四档（流程推进的暂停策略；2026-09-06 Flova 对齐批） */}
+          <ExecutionModeSection gs={gs} set={set} />
 
           {/* 模型分层策略表（四角色自动路由；空 = 跟随主模型） */}
           <ModelPolicySection gs={gs} set={set} />

@@ -37,6 +37,28 @@ def normalize_exec_pref(value) -> str:
     return v if v in EXECUTION_PREFERENCE_VALUES else EXECUTION_PREFERENCE_DEFAULT
 
 
+# 执行模式四档白名单枚举（2026-09-06 用户裁决，Flova 对齐批）：
+# 单一事实源——路由层清洗/下发、core 引导注入与阶段闸分流、sidecar 契约导出同引用。
+# 与 execution_preference（素材生成档，管花钱生成的确认）正交：
+# ai_decide = 停不停由模型按 Skill 散文与当场情况判断（默认档，行为与现状一致，
+#             不注入任何引导）；
+# auto_full = 全流程直通，压制阶段暂停确认（信息缺口必答除外）；
+# key_steps_confirm = 关键里程碑（规格/故事板/关键元素/镜头视频/音频/成片）平台机械拦停，
+#             档位 > Skill 散文；
+# pause_all = 每个阶段完成后平台机械拦停。
+EXECUTION_MODE_VALUES = ("ai_decide", "auto_full", "key_steps_confirm", "pause_all")
+EXECUTION_MODE_DEFAULT = "ai_decide"
+# 机械闸激活档（仅这两档轮末阶段闸签发暂停卡）；单一事实源，core 阶段闸同引用。
+EXECUTION_MODE_GATE_MODES = ("key_steps_confirm", "pause_all")
+
+
+def normalize_exec_mode(value) -> str:
+    """执行模式白名单清洗（唯一规整口）：命中枚举原样返回，
+    其余（非法/空/脏值）回落默认档。"""
+    v = str(value or "").strip().lower()
+    return v if v in EXECUTION_MODE_VALUES else EXECUTION_MODE_DEFAULT
+
+
 # Agent 多步上限钳制区间（Q3 裁决 2026-09-01：运行时可热调）：
 # 单一事实源——运行时设置热更新通道与 agent_loop 实时读取同引用。
 MAX_STEPS_RANGE = (1, 30)
@@ -196,6 +218,16 @@ class Settings:
     # 枚举白名单清洗归路由层（web/routes/runtime_settings），
     # 写入点归既有热更新通道，未注册/非花钱高危工具的兜底拦截不受本档影响。
     execution_preference: str = "confirm_before_gen"
+
+    # 执行模式四档（2026-09-06 用户裁决，Flova 对齐批）：管流程推进的暂停策略——
+    # ai_decide = 停不停由模型按 Skill 散文与当场情况判断（默认档，行为与现状一致，
+    #             不注入引导）；
+    # auto_full = 全流程直通（注入抑制暂停引导，信息缺口必答除外）；
+    # key_steps_confirm = 关键里程碑平台机械拦停（档位 > Skill 散文）；
+    # pause_all = 每阶段完成后平台机械拦停。
+    # 与 execution_preference（素材生成档）正交；枚举白名单清洗归路由层，
+    # 机械闸激活档见 EXECUTION_MODE_GATE_MODES（core 阶段闸同引用）。
+    execution_mode: str = "ai_decide"
 
     # 多模态模型单次请求可注入的图片上限（多数 vision 模型限制 4~10 张，
     # 超限会直接报错；超出部分降级为文本清单，LLM 仍可知晓其存在）
@@ -372,7 +404,8 @@ SETTINGS_GROUPS: dict = {
     "security": ("environment", "api_key", "log_file_enabled", "trust_proxy",
                  "rate_limit_per_minute", "rate_limit_generate_per_minute"),
     "agent": ("max_steps", "adjust_subdialog_enabled", "adjust_task_concurrency",
-              "execution_preference", "pipeline_orchestrator_enabled", "script_inject_limit"),
+              "execution_preference", "execution_mode", "pipeline_orchestrator_enabled",
+              "script_inject_limit"),
     "llm": ("llm_timeout", "llm_stream_timeout", "adapter_retry_max",
             "adapter_retry_base_delay", "llm_max_tokens", "llm_temperature",
             "llm_output_limit", "llm_json_timeout", "llm_thinking_level",

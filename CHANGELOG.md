@@ -36,6 +36,14 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-06 · 执行模式四档 + 轮末阶段闸批（Flova 对齐，闸机增减经用户裁决）
+- **背景**：6666 复盘确认平台只有「防多停」闸、无「防漏停」闸（阶段暂停全靠模型自觉，flash 档模型实测漏卡/走回头路）；Flova 实测（无确认节点自定义 Skill 照样在规格/故事板/素材三停）证明其执行模式档位在产品里程碑上是平台机械行为，档位 > Skill 散文。用户裁决按机械闸版落地、出厂默认档零行为变化；CLI 实验不必做（行为契约已足够）。
+- **执行模式四档**：`config.py` 新增 `EXECUTION_MODE_VALUES/DEFAULT/GATE_MODES` + `normalize_exec_mode`（与素材生成轴 `execution_preference` 正交）；`runtime_settings.py` 路由同款清洗/加载/拒收；`gen_api_types.py` 契约导出 EXECUTION_MODE_* 常量；设置页新增 `ExecutionModeSection.tsx`（执行偏好下拉标签同步对齐 Flova 用语，hint 承诺不动过 consent_copy 门禁）。测试：路由三件套 + 设置页 UI + 契约门禁。
+- **引导注入**：`prompts/planner/execution_mode.md` 四分节（ai_decide 无分节 = 不注入）；planner `_load_execution_mode_note` 轮始签发、经状态尾部消息每步注入（auto_full 压制自发暂停；确认档只承担呈现引导，停由平台保证）。测试：test_state_tail_injection 逐档注入 + 脏值回落。
+- **机械闸（仅 key_steps_confirm/pause_all 激活）**：①D-18 清偿——stage_done 补 "spec" 分支（has_spec_document 同源）；②默认 workflow 扩为全流程 16 节点（媒体四阶段 ke_media/shot_media/audio_assets/assembly 入定义），审批节点扩为 6 个（规格/关键元素[生图前确认，3/4 合并口径]/故事板/镜头视频/音频/成片），workflow_runtime 审批前置映射表化；③planner 轮末 `_apply_stage_gate`：轮始 run 快照 vs 轮末 sync_run 重算判「阶段翻转」，确认档下新当前节点符合档位目标（key_steps_confirm=审批节点；pause_all=任意节点）→ 机械签发暂停卡（复用 `_issue_pause` 单一链 + review: 前缀 pending_decision，chat_consume.resolve_decision 消费）；档位 > Skill 散文（确认档下 Skill 声明直通照停）。④workflow_runtime.resolve_decision 补落账后 sync_run（模块级 commit_turn 无尾部重算，DecisionResolved 入账后评审节点才能完成——B3 语义延伸到决议路径）；sync_run 补 waiting_user→ready 恢复。ai_decide/auto_full 零闸卡；默认档行为与现状逐字节一致。
+- **治理登记**：执行模式与档位优先级条款入 `docs/GOVERNANCE.md` §五（唯一家）；不新增 GATES/RATCHETS。
+- **验收**：档位×节点矩阵测试 `test_stage_gate.py`（默认档/直通档零卡、确认档六里程碑逐一停、非审批节点不停、槽位占用不重发、批复闭环入账）+ workflow 契约/运行时/路由/注入全量回归。
+
 ### 2026-09-06 · 工具描述去污染批（D-20 当日登记当日清偿）
 - **背景**：6666 项目复盘 + Flova 对比调查确认工具层内容模板污染 2 处（全量普查 27 个注册工具 description，仅此两处）：`script_analysis_report`（tools/analysis_tools.py）description 与 `report_markdown` help 内嵌通用报告结构示例（"分类结论、角色/场景/道具清单、幕次结构"），与各 Skill `<script_analyze>` 章节的分析路径冲突（实证：6666 项目据此产出通用剧本拆解，未走该 Skill 五问策略路径）；`workflow_pause`（tools/document_tools.py）description"用于拆解完成后…"把具体时刻写成通用示例——各 Skill 暂停点散布各异（15 个 Skill 六种写法实证）。
 - **改动**：前者两处文案改"按所用 Skill 的 script_analyze 章节要求撰写；Skill 未声明分析路径时格式自定"；后者改"在所用 Skill 声明的强制暂停点调用，请用户审阅当前阶段成果后继续"。长期评审纪律（2026-09-06 用户裁决，无机械闸）：工具 description 只写工具用法与机器契约，内容产出模板示例归各 Skill 章节（Flova 分层原则：工具层零内容模板）。

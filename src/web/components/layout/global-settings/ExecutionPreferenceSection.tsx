@@ -12,11 +12,13 @@ import {
 import type { RuntimeSettings } from '@/api/agent';
 
 /** 三档中文文案（前端体验规范 §三：界面文案中文唯一；批 10 口径对齐
- *  V6 计划——确认=提示词审阅，闸机兜底 + 暂停卡同意账本见批次 9） */
+ *  V6 计划——确认=提示词审阅，闸机兜底 + 暂停卡同意账本见批次 9）。
+ *  2026-09-06：标签对齐 Flova 用语（由 AI 判断/手动确认所有提示词/无需确认
+ *  自动生成）；hint 承诺文案不动（consent_copy 门禁钉 confirm 档 hint）。 */
 const PREF_LABELS: Record<string, string> = {
-  auto_decide: '自动决定',
-  confirm_before_gen: '生成前确认（默认）',
-  generate_directly: '直接生成',
+  auto_decide: '由 AI 判断',
+  confirm_before_gen: '手动确认所有提示词（默认）',
+  generate_directly: '无需确认自动生成',
 };
 const PREF_HINTS: Record<string, string> = {
   auto_decide:

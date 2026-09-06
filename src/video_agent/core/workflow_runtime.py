@@ -111,9 +111,10 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
 # 由 stage_done 探针重算；turn_commit 的自报 completed_node 降级为非权威
 # 提示——下次 sync 即被本重算覆盖，不再具有账本效力。
 # - collect_spec 与 write_spec 同证同源：规格文档在场即证明收集已发生；
+# - 媒体四阶段（2026-09-06 Flova 对齐批入默认定义）挂同键阶段探针；
 # - storyboard 三个结构节点用节点级探针（key_elements/shots_groups/
 #   audio_groups，运行时内部键，不可声明覆盖）；
-# - 两个评审节点的「已评审」客观证据 = 账本 DecisionResolved 事件
+# - 审批节点（6 个）的「已评审」客观证据 = 账本 DecisionResolved 事件
 #   （resolve_decision 提交），前置产物在场但未落账决议时不予完成
 #   （fail-closed：不因文档存在而跳过评审暂停）。
 # （C1b 裁决 2026-08-31：声明式 workflow（flow.stages 数组）节点→探针映射
@@ -122,25 +123,39 @@ _NODE_PROBE_KEYS = {
     "analyze_script": "analysis",
     "collect_spec": "spec",
     "write_spec": "spec",
+    "ke_media": "ke_media",
+    "shot_media": "shot_media",
+    "audio_assets": "audio_assets",
+    "assembly": "assembly",
 }
 _NODE_STRUCTURE_KEYS = {
     "storyboard_key_elements": "key_elements",
     "storyboard_shots": "shots_groups",
     "storyboard_audio": "audio_groups",
 }
-_REVIEW_NODES = ("review_spec", "review_key_elements")
+# 审批节点 → 前置产物探针键（全齐备才可能进入「待评审」态；
+# review_storyboard 审的是分镜+音频层整张蓝图，前置取两设计节点）
+_REVIEW_NODE_PREREQ = {
+    "review_spec": ("spec",),
+    "review_key_elements": ("key_elements",),
+    "review_storyboard": ("shots_groups", "audio_groups"),
+    "review_shot_media": ("shot_media",),
+    "review_audio": ("audio_assets",),
+    "review_assembly": ("assembly",),
+}
+_REVIEW_NODES = tuple(_REVIEW_NODE_PREREQ)
 
 
 def _node_objectively_done(node_id: str, run: Dict[str, Any],
                            state: Dict[str, Any], skill: str) -> bool:
-    """workflow_contract 单节点完成度客观判定（默认 8/8 节点全覆盖）。"""
+    """workflow_contract 单节点完成度客观判定（默认 16 节点全覆盖）。"""
     if node_id in _NODE_PROBE_KEYS:
         return po.stage_done(_NODE_PROBE_KEYS[node_id], state, skill)
     if node_id in _NODE_STRUCTURE_KEYS:
         return po.stage_done(_NODE_STRUCTURE_KEYS[node_id], state, skill)
-    if node_id in _REVIEW_NODES:
-        prereq = "spec" if node_id == "review_spec" else "key_elements"
-        if not po.stage_done(prereq, state, skill):
+    if node_id in _REVIEW_NODE_PREREQ:
+        if not all(po.stage_done(k, state, skill)
+                   for k in _REVIEW_NODE_PREREQ[node_id]):
             return False
         rid = str(run.get("run_id") or "")
         return any(e.node_id == node_id and e.event_type == "DecisionResolved"
@@ -190,6 +205,9 @@ def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
                 break
     if run.get("pending_decision"):
         run["status"] = "waiting_user"
+    elif run.get("status") == "waiting_user":
+        # 挂起决议已消费（resolve_decision 置 None）→ 恢复就绪态
+        run["status"] = "ready"
     run["updated_at"] = now
     return run
 
@@ -480,7 +498,7 @@ class WorkflowRuntime:
         }:
             raise WorkflowCommitError("invalid decision value")
         run["pending_decision"] = None
-        return commit_turn(
+        commit = commit_turn(
             self.state_manager,
             TurnResult(
                 turn_id=turn_id or f"decision:{token}:{value}",
@@ -490,6 +508,14 @@ class WorkflowRuntime:
                     "payload": {"token": token, "value": value}}]),
             skill=self.skill,
             expected_version=int(run.get("run_version") or 0))
+        # 决议落账后全量重算（B3「写动作落账即全量重算」延伸到决议路径）：
+        # DecisionResolved 入账后审批节点完成度随 sync 收纳（模块级 commit_turn
+        # 不带尾部重算，缺这步会让评审节点永不完成）
+        run = sync_run(self.state, self.skill)
+        return TurnCommit(
+            commit.turn_id, copy.deepcopy(run), commit.result, commit.events,
+            commit.idempotent, commit.persisted, commit.event_sequence,
+        )
 
     def recover_run(self) -> Dict[str, Any]:
         run = sync_run(self.state, self.skill)

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
-from src.video_agent.core import gates_cards
+from src.video_agent.core import gates_cards, prompt_gates
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.models import (
     ASSEMBLY_PLAN_DOC_NAME, CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS,
@@ -86,6 +86,12 @@ def stage_done(key: str, state: Dict[str, Any], skill: str = "") -> bool:
     恒走各阶段平台客观探针。）"""
     if key == "analysis":
         return bool((state.get("analysis") or {}).get("summary"))
+    if key == "spec":
+        # D-18 清偿（2026-09-06）：workflow_runtime 节点映射把 collect_spec/
+        # write_spec 指向 "spec" 探针，spec 机械阶段退役后本键一直缺分支
+        # （恒 False，规格落盘也不收纳）。客观判据 = 规格文档在盘
+        # （单一判定口 prompt_gates.has_spec_document，与 gen/spec 闸同源）。
+        return prompt_gates.has_spec_document(state)
     ke = state.get(CAT_KEY_ELEMENTS) or []
     shots = state.get(CAT_SHOTS) or []
     audio = state.get(CAT_AUDIO_ITEMS) or []

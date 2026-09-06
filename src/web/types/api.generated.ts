@@ -499,6 +499,7 @@ export interface RuntimeSettings {
   skills_disabled: string[];
   script_inject_limit: number;
   execution_preference: string;
+  execution_mode: string;
   model_policy: Record<string, PolicyRow>;
 }
 
@@ -516,6 +517,7 @@ export interface RuntimeSettingsUpdate {
   skills_disabled?: string[] | undefined;
   script_inject_limit?: number | undefined;
   execution_preference?: string | undefined;
+  execution_mode?: string | undefined;
   model_policy?: Record<string, unknown> | undefined;
 }
 
@@ -957,3 +959,11 @@ export const EXECUTION_PREFERENCE_VALUES = ['auto_decide', 'confirm_before_gen',
 export type ExecutionPreference = (typeof EXECUTION_PREFERENCE_VALUES)[number];
 /** 默认档（= 现状行为：每次花钱生成前弹确认卡） */
 export const EXECUTION_PREFERENCE_DEFAULT = 'confirm_before_gen' as const;
+
+// ===== 执行模式四档（来源：config.py 白名单枚举，sidecar 导出）=====
+
+/** 执行模式四档枚举（流程推进的暂停策略） */
+export const EXECUTION_MODE_VALUES = ['ai_decide', 'auto_full', 'key_steps_confirm', 'pause_all'] as const;
+export type ExecutionMode = (typeof EXECUTION_MODE_VALUES)[number];
+/** 默认档（= 现状行为：停不停由模型按 Skill 散文与当场情况判断） */
+export const EXECUTION_MODE_DEFAULT = 'ai_decide' as const;

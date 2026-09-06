@@ -142,10 +142,13 @@ def build_sidecar() -> Dict[str, Any]:
     （web/error_payload：ErrorPayload 模型 + kind 封闭集 + legacy 桥接表）、
     工具时间线展示档（各工具 detail_tier 声明）、默认档/内部 none 名单、
     工具审批分级档（任务 P2-5：生效 approval_tier 表 + 默认档）、
-    执行偏好三档枚举（批 B：config 白名单 + 默认档）。
+    执行偏好三档枚举（批 B：config 白名单 + 默认档）、
+    执行模式四档枚举（2026-09-06 Flova 对齐批：config 白名单 + 默认档）。
     """
     # 延迟导入：确保项目根在 sys.path（以模块方式运行时自动满足）
     from src.video_agent.config import (
+        EXECUTION_MODE_DEFAULT,
+        EXECUTION_MODE_VALUES,
         EXECUTION_PREFERENCE_DEFAULT,
         EXECUTION_PREFERENCE_VALUES,
     )
@@ -184,6 +187,11 @@ def build_sidecar() -> Dict[str, Any]:
         "execution_preference": {
             "values": list(EXECUTION_PREFERENCE_VALUES),
             "default": EXECUTION_PREFERENCE_DEFAULT,
+        },
+        # 2026-09-06：执行模式四档白名单（事实源 = config.EXECUTION_MODE_VALUES）
+        "execution_mode": {
+            "values": list(EXECUTION_MODE_VALUES),
+            "default": EXECUTION_MODE_DEFAULT,
         },
     }
 
@@ -270,6 +278,18 @@ def _render_sse_section(sidecar: Dict[str, Any]) -> List[str]:
     chunks.append("export type ExecutionPreference = (typeof EXECUTION_PREFERENCE_VALUES)[number];")
     chunks.append("/** 默认档（= 现状行为：每次花钱生成前弹确认卡） */")
     chunks.append(f"export const EXECUTION_PREFERENCE_DEFAULT = '{ep['default']}' as const;")
+    chunks.append("")
+
+    # 2026-09-06：执行模式四档（流程推进的暂停策略；前端设置页四选与契约收窄同引用）
+    chunks.append("// ===== 执行模式四档（来源：config.py 白名单枚举，sidecar 导出）=====")
+    chunks.append("")
+    em = sidecar["execution_mode"]
+    chunks.append("/** 执行模式四档枚举（流程推进的暂停策略） */")
+    chunks.append("export const EXECUTION_MODE_VALUES = ["
+                  + ", ".join(f"'{v}'" for v in em["values"]) + "] as const;")
+    chunks.append("export type ExecutionMode = (typeof EXECUTION_MODE_VALUES)[number];")
+    chunks.append("/** 默认档（= 现状行为：停不停由模型按 Skill 散文与当场情况判断） */")
+    chunks.append(f"export const EXECUTION_MODE_DEFAULT = '{em['default']}' as const;")
     chunks.append("")
     return chunks
 

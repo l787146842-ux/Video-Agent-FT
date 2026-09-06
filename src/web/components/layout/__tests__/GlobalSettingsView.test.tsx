@@ -53,10 +53,12 @@ const SETTINGS = {
   skills_disabled: [],
   script_inject_limit: 20000,
   execution_preference: 'confirm_before_gen',
+  execution_mode: 'ai_decide',
   model_policy: {},
 };
 
 const PREF_ARIA = '执行偏好（花钱生成是否先弹确认卡）';
+const MODE_ARIA = '执行模式（流程推进的暂停策略）';
 const STEPS_ARIA = 'Agent 多步循环最大步数';
 
 function prefSelect(container: HTMLElement): HTMLSelectElement {
@@ -118,6 +120,34 @@ describe('GlobalSettingsView 执行偏好三档（批 B）', () => {
     // 失败后回滚并提示
     await waitFor(() => expect(sel.value).toBe('generate_directly'));
     expect(toastMock).toHaveBeenCalled();
+  });
+});
+
+describe('GlobalSettingsView 执行模式四档（2026-09-06 Flova 对齐批）', () => {
+  function modeSelect(container: HTMLElement): HTMLSelectElement {
+    const el = container.querySelector<HTMLSelectElement>(`select[aria-label="${MODE_ARIA}"]`);
+    expect(el, '执行模式选择器应渲染').toBeTruthy();
+    return el!;
+  }
+
+  it('渲染四档选择器：当前档随设置下发（默认档），选项恰为四档', async () => {
+    const { container } = render(() => <GlobalSettingsView />);
+    await waitFor(() => expect(modeSelect(container)).toBeTruthy());
+    const sel = modeSelect(container);
+    await waitFor(() => expect(sel.value).toBe('ai_decide'));
+    const values = Array.from(sel.querySelectorAll('option')).map((o) => o.value);
+    expect(values).toEqual(['ai_decide', 'auto_full', 'key_steps_confirm', 'pause_all']);
+  });
+
+  it('切档发 PUT execution_mode，本地即时反映（乐观更新）', async () => {
+    const { container } = render(() => <GlobalSettingsView />);
+    const sel = modeSelect(container);
+    await waitFor(() => expect(sel.value).toBe('ai_decide'));
+    fireEvent.change(sel, { target: { value: 'key_steps_confirm' } });
+    expect(agentMock.setRuntimeSettings).toHaveBeenCalledWith({
+      execution_mode: 'key_steps_confirm',
+    });
+    await waitFor(() => expect(sel.value).toBe('key_steps_confirm'));
   });
 });
 

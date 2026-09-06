@@ -21,7 +21,12 @@ from loguru import logger
 
 from src.video_agent.core.chat_port import ChatAdapterPort, ChatResponse
 from src.video_agent.utils.cancel_token import GenerationCancelled
-from src.video_agent.config import settings, normalize_exec_pref
+from src.video_agent.config import (
+    EXECUTION_MODE_GATE_MODES,
+    normalize_exec_mode,
+    normalize_exec_pref,
+    settings,
+)
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.base import ToolResult
 from src.video_agent.tools.manager import ToolManager
@@ -53,7 +58,8 @@ from src.video_agent.core.sse_events import status_event
 from src.video_agent.skill_runtime.progress import emit_event_card
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # Workflow Runtime：账本 + 裁判数据层
-from src.video_agent.core import workflow_runtime
+from src.video_agent.core import workflow_contract, workflow_runtime
+from src.video_agent.core.pause_composer import PAUSE_KIND_STAGE_DONE
 
 
 # 绑定工作台状态的工具集：use_studio_context=False 时不下发（节省 schema token）
@@ -74,6 +80,11 @@ _CANVAS_TOOLS = frozenset({
 # 批 10 · 执行偏好注入文案唯一源（分节键 = PREF_<档位大写>；
 # 消费端 _load_execution_pref_note，经状态尾部消息每步注入）
 _EXEC_PREF_NOTE_FILE = "planner/execution_preference.md"
+
+# 执行模式注入文案唯一源（2026-09-06 Flova 对齐批；分节键 = MODE_<档位大写>；
+# 消费端 _load_execution_mode_note；ai_decide 默认档无分节 = 不注入，行为与
+# 现状一致。key_steps_confirm/pause_all 两档另有轮末阶段闸机械拦停兜底）
+_EXEC_MODE_NOTE_FILE = "planner/execution_mode.md"
 
 # 后台节点任务登记；drain 供测试/关停等待
 _BG_TASKS: set = set()
@@ -139,6 +150,13 @@ class PlannerContext:
     # 闸机兜底硬保证见批 9 同意账本）：轮始按档位签发，经状态尾部消息
     # 每步注入；文案唯一源 = prompts/planner/execution_preference.md
     execution_pref_note: str = ""
+    # 执行模式注入（2026-09-06 Flova 对齐批）：轮始按档位签发，经状态尾部
+    # 消息每步注入；文案唯一源 = prompts/planner/execution_mode.md；
+    # ai_decide 默认档 = 空串不注入（行为与现状一致）。
+    execution_mode_note: str = ""
+    # 轮末阶段闸快照（2026-09-06 Flova 对齐批）：轮始 ensure_run 的 run 快照，
+    # 供轮末对比「本轮是否有阶段节点翻转完成」（机械闸触发判据，客观探针口径）
+    workflow_run0: Dict[str, Any] = field(default_factory=dict)
     # 微调作用域（微调真子对话）：非空 ⇔ 本请求归属隐藏线程子对话，
     # 纪律提示段（prompts/planner/adjust.md）据此注入；
     # 内容恒定不嵌目标编号（保前缀缓存），目标信息由状态裁剪面携带。
@@ -342,6 +360,75 @@ class Planner:
             record_degradation("planner._issue_pause")
             logger.warning("[PauseId] active_pause 登记失败（不影响暂停卡渲染）: {}", _e)
 
+    def _apply_stage_gate(self, response: "PlannerResponse", context: "PlannerContext") -> None:
+        """轮末阶段闸（2026-09-06 Flova 对齐批，宪法 §2.3 闸机）。
+
+        执行模式 ∈ EXECUTION_MODE_GATE_MODES（key_steps_confirm/pause_all）
+        且有活跃 Skill 时：本轮内有阶段节点翻转完成（轮始快照 vs 轮末
+        sync_run 重算，客观探针口径）且新当前节点符合档位目标
+        （key_steps_confirm=审批节点；pause_all=任意节点）→ 平台机械签发
+        暂停卡：confirmation/options + workflow_run.pending_decision
+        （token 前缀 review:，chat_consume.resolve_decision 消费落
+        DecisionResolved，审批节点完成入账）。签发复用 _issue_pause 单一链。
+        档位 > Skill 散文（2026-09-06 用户裁决）：确认档下 Skill 声明
+        「直通」不影响本闸——停由平台保证，模型只在停点呈现成果。
+        ai_decide（默认档）/auto_full 不启用机械闸：默认档行为与现状一致。
+        同步说明：sync_run 轮末重算对所有档位执行（审计账本恢复推进），
+        闸签发仅限确认档。"""
+        if not (settings.pipeline_orchestrator_enabled and context.skill_name):
+            return
+        try:
+            state = self.state_manager.state_dict or {}
+            # 轮末账本同步（全档位）：completed_nodes 客观重算，账本恢复推进
+            run_after = workflow_runtime.sync_run(state, context.skill_name)
+        except Exception as _e:
+            record_degradation("planner.stage_gate")
+            logger.warning("[StageGate] 轮末 run 同步跳过: {}", _e)
+            return
+        mode = normalize_exec_mode(settings.execution_mode)
+        if mode not in EXECUTION_MODE_GATE_MODES:
+            return
+        # 单一活跃暂停槽位：响应已带确认/暂停标识、槽位被占、有待决决议 → 不发行
+        if response.confirmation or response.pause_id:
+            return
+        interaction = state.get("interaction") or {}
+        if interaction.get("active_pause") or interaction.get("awaiting_confirmation"):
+            return
+        if run_after.get("pending_decision"):
+            return
+        node_before = str((getattr(context, "workflow_run0", None) or {}).get("current_node") or "")
+        completed_after = set(run_after.get("completed_nodes") or [])
+        if not node_before or node_before not in completed_after:
+            return  # 本轮无阶段翻转（纯对话/同阶段中间步），不停
+        node_id = str(run_after.get("current_node") or "")
+        if not node_id:
+            return
+        if mode == "key_steps_confirm":
+            definition = workflow_runtime.compile_definition(context.skill_name) or {}
+            approval_ids = {
+                str(n.get("node_id") or "") for n in (definition.get("nodes") or [])
+                if isinstance(n, dict) and ((n.get("approval_policy") or {}).get("required"))
+            }
+            if node_id not in approval_ids:
+                return
+        title = workflow_contract.DEFAULT_V2_NODE_TITLES.get(node_id) or node_id
+        response.confirmation = f"「{title}」已完成，请过目本阶段成果并选择下一步。"
+        response.confirmation_options = [
+            {"label": "确认，继续推进",
+             "description": "当前阶段成果确认通过，进入下一阶段"},
+            {"label": "提出调整",
+             "description": "对当前阶段成果提出修改意见后再继续"},
+        ]
+        response.pause_kind = PAUSE_KIND_STAGE_DONE
+        # 挂起决议（review: 前缀 = chat_consume 轮末解析约定）：用户批复经
+        # resolve_decision 落 DecisionResolved，审批节点完成入账
+        run_after["pending_decision"] = {
+            "token": f"review:{run_after.get('run_id')}:{node_id}",
+            "node_id": node_id,
+            "schema": {"type": "approval"},
+        }
+        run_after["status"] = "waiting_user"
+
     # ---------- 核心对话入口 ----------
 
     async def handle_message(
@@ -375,6 +462,9 @@ class Planner:
         # 批 10 · 执行偏好注入：轮始按档位签发（文案唯一源外置，见
         # prompts/planner/execution_preference.md；闸机兜底见批 9 同意账本）
         context.execution_pref_note = self._load_execution_pref_note()
+        # 执行模式注入（2026-09-06）：轮始按档位签发（ai_decide 默认档 = 空串
+        # 不注入；key_steps_confirm/pause_all 两档另有轮末阶段闸机械拦停兜底）
+        context.execution_mode_note = self._load_execution_mode_note()
         # 三通道分离 C：轮始重置 FC runner 跨批跟踪（阶段边界只认本轮）
         self._fc_runner.reset_turn_tracking()
         # 会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
@@ -435,6 +525,8 @@ class Planner:
                 _rt = workflow_runtime.WorkflowRuntime(
                     self.state_manager, context.skill_name)
                 _run0 = _rt.ensure_run()
+                # 轮末阶段闸快照（2026-09-06）：供轮末对比本轮阶段翻转
+                context.workflow_run0 = dict(_run0 or {})
                 if str(context.advance_signal or "").strip():
                     _pend = _run0.get("pending_decision") or {}
                     if ((_pend.get("schema") or {}).get("type")) == "input":
@@ -543,7 +635,11 @@ class Planner:
         # 问即停：发行点签发的 pause_id 透传，供 _issue_pause 幂等
         response.pause_id = str(getattr(loop_result, "pause_id", "") or "")
 
-        # 暂停卡结构化签发（汇流点一）：FC workflow_pause 与轮末策略卡均在此汇流
+        # 轮末阶段闸（2026-09-06 Flova 对齐批）：确认档下里程碑完成机械签发
+        # 暂停卡（档位 > Skill 散文），非确认档仅做账本轮末同步；
+        # 暂停卡结构化签发（汇流点一）：FC workflow_pause / 轮末策略卡 /
+        # 阶段闸卡在此汇流，经 _issue_pause 单一链登记
+        self._apply_stage_gate(response, context)
         self._issue_pause(response)
 
         return response
@@ -696,6 +792,18 @@ class Planner:
         key = normalize_exec_pref(settings.execution_preference).upper()
         return load_prompt_section(
             _EXEC_PREF_NOTE_FILE, f"PREF_{key}") or ""
+
+    def _load_execution_mode_note(self) -> str:
+        """当前执行模式 → 模型可见注入行（2026-09-06 Flova 对齐批）。
+
+        文案唯一源 = prompts/planner/execution_mode.md（外置分节）；
+        档位枚举清洗归 config 单一事实源（normalize_exec_mode），脏值回落
+        默认档。ai_decide 默认档无分节 → 空串不注入（行为与现状一致）；
+        key_steps_confirm/pause_all 两档的平台机械拦停由轮末阶段闸承重，
+        本注入只承担引导呈现语义。"""
+        key = normalize_exec_mode(settings.execution_mode).upper()
+        return load_prompt_section(
+            _EXEC_MODE_NOTE_FILE, f"MODE_{key}") or ""
 
     # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------
     #

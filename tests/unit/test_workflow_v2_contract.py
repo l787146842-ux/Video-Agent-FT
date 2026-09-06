@@ -73,7 +73,7 @@ def test_definition_hash_stable_and_revision_kept():
     d2 = WorkflowDefinition.from_sidecar(_sidecar([_node("a")]))
     assert d1.content_hash == d2.content_hash
     d3 = default_v2_workflow("skill-x")
-    assert d3.revision == "2" and len(d3.nodes) == 8
+    assert d3.revision == "2" and len(d3.nodes) == 16
 
 
 # ---------- ② EventLedger ----------

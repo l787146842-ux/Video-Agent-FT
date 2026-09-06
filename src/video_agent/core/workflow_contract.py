@@ -131,7 +131,21 @@ DEFAULT_V2_NODE_TITLES: Dict[str, str] = {
     "storyboard_key_elements": "关键元素拆解",
     "review_key_elements": "关键元素审核",
     "storyboard_shots": "分镜设计", "storyboard_audio": "音频层设计",
+    "review_storyboard": "故事板审核",
+    "ke_media": "关键元素设定图", "shot_media": "逐镜视频生成",
+    "review_shot_media": "镜头视频审核", "audio_assets": "音频资产",
+    "review_audio": "音频审核", "assembly": "剪辑组装",
+    "review_assembly": "成片审核",
 }
+
+# 审批节点（2026-09-06 Flova 对齐批：机械闸里程碑，6 个）。
+# 单一事实源——default_v2_workflow 的 approval_policy 声明与本表同源维护；
+# 消费端 = workflow_runtime._REVIEW_NODE_PREREQ（完成判定）与
+# planner 轮末阶段闸（key_steps_confirm 档拦停目标）。
+DEFAULT_V2_REVIEW_NODES: Tuple[str, ...] = (
+    "review_spec", "review_key_elements", "review_storyboard",
+    "review_shot_media", "review_audio", "review_assembly",
+)
 
 
 def default_v2_workflow(skill_id: str = "") -> WorkflowDefinition:
@@ -145,9 +159,14 @@ def default_v2_workflow(skill_id: str = "") -> WorkflowDefinition:
         return {"node_id": node_id, "executor": executor, "deterministic": deterministic,
                 "prerequisites": list(prerequisites), "done_predicate": {"type": "state", "node": node_id},
                 "artifact_schema": {}, "decision_schema": {"type": "approval"} if approval else {},
-                "approval_policy": {"required": approval}, "retry_policy": {"max_attempts": 1},
+                "approval_policy": {"required": approval} if approval else {},
+                "retry_policy": {"max_attempts": 1},
                 "next_transition": {}}
 
+    # 全流程 16 节点（2026-09-06 Flova 对齐批）：设计三节点后补故事板审核，
+    # 媒体四阶段（ke_media/shot_media/audio_assets/assembly）入默认定义，
+    # 逐阶段后挂审批节点（规格/关键元素/故事板/镜头视频/音频/成片）。
+    # 关键元素审核保持「生图前确认」位（3/4 合并口径：确认后再生图）。
     nodes = [node("analyze_script", "script_analyze", False),
              node("collect_spec", "collect_spec", True, ("analyze_script",)),
              node("write_spec", "document_write", True, ("collect_spec",)),
@@ -155,7 +174,15 @@ def default_v2_workflow(skill_id: str = "") -> WorkflowDefinition:
              node("storyboard_key_elements", "storyboard_key_elements", False, ("review_spec",)),
              node("review_key_elements", "workflow_pause", True, ("storyboard_key_elements",), True),
              node("storyboard_shots", "storyboard_shots", False, ("review_key_elements",)),
-             node("storyboard_audio", "storyboard_audio", False, ("storyboard_shots",))]
+             node("storyboard_audio", "storyboard_audio", False, ("storyboard_shots",)),
+             node("review_storyboard", "workflow_pause", True, ("storyboard_audio",), True),
+             node("ke_media", "image_generate", False, ("review_storyboard",)),
+             node("shot_media", "generate_video", False, ("ke_media",)),
+             node("review_shot_media", "workflow_pause", True, ("shot_media",), True),
+             node("audio_assets", "audio_generate", False, ("review_shot_media",)),
+             node("review_audio", "workflow_pause", True, ("audio_assets",), True),
+             node("assembly", "video_assembler", False, ("review_audio",)),
+             node("review_assembly", "workflow_pause", True, ("assembly",), True)]
     return WorkflowDefinition.from_sidecar(
         {"workflow": {"workflow_id": "video_storyboard_v2", "revision": "2", "nodes": nodes}},
         workflow_id="video_storyboard_v2", skill_id=skill_id)

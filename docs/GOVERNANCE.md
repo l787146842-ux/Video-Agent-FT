@@ -31,11 +31,12 @@
 - **G3**：禁止「写一句话让模型配合机制」式 prose 方案。
 - **G4**：事故修复覆盖同类全部调用路径（统一策略 + 钉死回归）。
 
-## 五、指令体量 / 门禁登记 / 错误信封
+## 五、指令体量 / 门禁登记 / 错误信封 / 执行模式
 
 - **指令体量**：planner 系统提示词（`prompts/planner/`）展开后保持精简、靠人工审核控制体量（原「≤7KB 机械预算闸」已随 2026-09-02「治理闸机减负」裁决退役，不再机械强制、亦不恢复机械闸）；回喂话术单条 ≤ 3 句；同一规则定义处恒等于 1。
 - **门禁登记**：新增门禁脚本在 `scripts/acceptance.py` GATES 或 RATCHETS 表同步登记；闸机增减由用户裁决（宪法 §2.3）。
 - **错误信封必须抛错**：适配器层识别上游拒收并抛错（不当稿子），错误展示走人话 + 原文折叠。
+- **执行模式与档位优先级**（2026-09-06 用户裁决，Flova 对齐批）：全局设置「执行模式」四档（`ai_decide` / `auto_full` / `key_steps_confirm` / `pause_all`，枚举单一事实源 = `config.EXECUTION_MODE_VALUES`）管流程推进的暂停策略，与「执行偏好」（素材生成轴，管花钱生成确认）正交。确认档（`key_steps_confirm` / `pause_all`，激活集 = `config.EXECUTION_MODE_GATE_MODES`）下，工作流审批节点（规格/关键元素/故事板/镜头视频/音频/成片，声明源 = `workflow_contract`）由平台在轮末**机械签发**暂停卡（客观探针判翻转，签发链 = planner 轮末阶段闸 → `_issue_pause` 单一链，批复经 `resolve_decision` 落 DecisionResolved）——**档位 > Skill 散文**：确认档下 Skill 正文声明「直通/不暂停」不影响机械拦停；`ai_decide`（默认档）与 `auto_full` 不启用机械闸，默认档行为与现状一致（停不停归模型读 Skill 散文自主判断）。工具 description 零内容模板（工具层只写用法与机器契约，内容格式归各 Skill 章节）。
 
 ## 六、治理限速
 
