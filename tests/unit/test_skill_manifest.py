@@ -38,15 +38,16 @@ def svc(tmp_path):
 
 # ---------- flow 开关 ----------
 
-def test_gates_key_retired_language_floor_platform_only():
-    """C1a 裁决 2026-08-31：gates.cjk_min_ratio 调整轴退役——
-    英文正文无 language 声明时仍被平台语言闸打回。"""
+def test_gates_key_and_language_floor_both_retired_english_passes():
+    """C1a 裁决 2026-08-31 的 gates.cjk_min_ratio 调整轴，连同平台语言
+    地板已随 2026-09-06 用户裁决整体退役：英文正文不再被闸机打回
+    （提示词语言归文档层：Skill 要求 / 规格显式声明经优先级链生效）。"""
     ok, hard, _ = prompt_gates.validate_prompt_write(
         "A monolithic black slab rises over the desert at dawn, extreme wide shot, "
         "slow push-in, hard rim light, no subtitles. This is a long English body "
         "prompt that clearly exceeds the minimum character budget for shots.",
         "shot")
-    assert not ok and any(prompt_gates.LANG_EN_HARD_PREFIX in h for h in hard)
+    assert ok and not any("英文" in h or "中文正文" in h for h in hard)
 
 
 # ---------- 端到端：规格暂停闸只对声明 spec_wizard 的 Skill 生效 ----------

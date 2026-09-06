@@ -3,13 +3,12 @@
 钉死此前未覆盖分支：
 ① has_voice_reference / has_spec_document 的脏数据容忍分支；
 ③ resolve_kind_by_draft_id 空 ID / 未命中 / shot / audio 分档；
-⑤ resolve_prompt_language 声明读取异常回落；
-⑥ validate_prompt_write 内三处 registry 声明读取异常降级分支；
 ⑦ present_structure_kinds / storyboard_stage_complete 异常回落 /
    drafts_confirmed 空列表 / stage_tool_restrictions 规格向导在场裁剪。
 （C1a 裁决 2026-08-31：② shot_references_missing_element_images 与
-④ autofill_shot_duration 随技能级闸层删除退役；⑤ 的 cjk_min_ratio
-调整轴退役，英文锁定只经 language 声明轴。）
+④ autofill_shot_duration 随技能级闸层删除退役；2026-09-06 用户裁决：
+语言闸私设推导整体退役，⑤ resolve_prompt_language 与 ⑥ 的 registry
+声明读取降级分支随之删除——提示词语言归文档层，不属闸机执法面。）
 """
 import pytest
 
@@ -66,30 +65,7 @@ def test_resolve_kind_shot_and_audio_prefixes():
     assert pg.resolve_kind_by_draft_id(_STATE_KINDS, "d-ke") == "keyElement"
 
 
-# ---------- ⑤ resolve_prompt_language ----------
-
-def test_resolve_language_registry_exception_falls_back_to_chinese(monkeypatch):
-    """registry 声明读取抛异常：回落平台默认中文（不误拦）"""
-    monkeypatch.setattr(pg.registry, "fallback_skill_from_state",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("registry 故障")))
-    assert pg.resolve_prompt_language({}, skill_name="") == "中文"
-
-
-# ---------- ⑥ validate_prompt_write registry 异常降级 ----------
-
-_PROMPT_OK = (
-    "清晨薄雾笼罩的旧街道上，主角背着帆布包缓步走向镜头，中景跟拍，"
-    "光线柔和偏冷，环境音轻微带有远处鸟鸣，画面写实风格，细节丰富，"
-    "整体氛围安静克制，色调低饱和，街道两侧的老建筑在雾中若隐若现"
-)
-
-
-def test_validate_write_fallback_skill_exception_degraded(monkeypatch):
-    """当前 Skill 归属探测抛异常：吞掉照常校验（不误拦）"""
-    monkeypatch.setattr(pg.registry, "fallback_skill_from_state",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-    ok, hard, soft = pg.validate_prompt_write(_PROMPT_OK, "shot", {})
-    assert ok is True
+# ---------- ⑥/⑤ 已随语言闸退役删除（2026-09-06 用户裁决，见模块 docstring） ----------
 
 
 def test_present_structure_kinds_full():

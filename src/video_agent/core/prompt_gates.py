@@ -23,10 +23,6 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.video_agent.config import settings
-from src.video_agent.core.spec_rules import find_spec_doc
-# v3 language 声明读取：registry 顶层不依赖 core，无环；
-# 经模块属性访问保住测试 patch 目标（monkeypatch registry.skill_language 即生效）
-from src.video_agent.skill_runtime import registry
 from src.video_agent.state.models import (
     ALL_CATEGORIES,
     CAT_AUDIO_ITEMS,
@@ -39,15 +35,6 @@ from src.video_agent.utils.prompts import load_prompt_section
 # 平台固定地板，不可被 Skill 调整（C1a 裁决 2026-08-31：技能级闸层删除）。
 _SHOT_PROMPT_MIN_CHARS = 80
 _ELEMENT_PROMPT_MIN_CHARS = 50
-
-# 语言闸（中文输入环境下正文必须中文书写）：
-# 中文字符占非空白字符的最低比例。正文中文 + 英文专业术语/包装符的合规提示词
-# 中文占比通常在 40% 以上；整段英文（仅对白是中文）会低于该阈值。
-# 平台固定地板；英文锁定只经用户规格选择 / Skill language 声明轴（见
-# resolve_prompt_language），不再经 gates 键调整。
-_CJK_MIN_RATIO = 0.15
-_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
-_WS_RE = re.compile(r"\s")
 
 # 对话包装符：{台词}（Seedance 口头对话格式）
 _DIALOGUE_RE = re.compile(r"\{[^{}\n]{2,}\}")
@@ -66,7 +53,7 @@ def gate_mode() -> str:
 
 # 闸机豁免作用域枚举：只认前端「本次放行」按钮携带的 scope
 #（豁免唯一权威入口 = GateWarnings 按钮随消息携带 gate_overrides）。
-GATE_STRUCTURE = "structure"            # 提示词结构闸（字数/语言/时长/字幕/音频/镜头语言）
+GATE_STRUCTURE = "structure"            # 提示词结构闸（字数/字段）
 GATE_FLOW_PAUSE = "flow_pause"          # 流程暂停兜底闸（总结/规格暂停卡）：仅 scope=all 豁免，
 # 「跳过概念图」等特定意图不涵盖（用户只是不想等图，不是不要交互分界）
 
@@ -180,49 +167,15 @@ def resolve_kind_by_draft_id(
     return ""
 
 
-_SPEC_LANG_LINE_RE = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?输出语言(?:\*\*)?\s*[:：]\s*(.+)$")
-
-# 语言闸硬拒稳定信号（前缀供调用方稳定判别）
-LANG_EN_HARD_PREFIX = "提示词正文几乎全是英文"
-
-def spec_output_language(raw_state: Optional[Dict[str, Any]]) -> str:
-    """规格文档里用户选定的「输出语言」维度值（未选/无规格返回空串）。"""
-    if not raw_state:
-        return ""
-    doc = find_spec_doc(raw_state)
-    if doc is None:
-        return ""
-    m = _SPEC_LANG_LINE_RE.search(str(doc.get("content") or ""))
-    return m.group(1).strip().strip("*").strip() if m else ""
-
-
-def resolve_prompt_language(
-    raw_state: Optional[Dict[str, Any]],
-    skill_name: str = "",
-) -> str:
-    """语言单一事实源裁决：用户选择（规格输出语言）> 平台默认（中文）。
-
-    （2026-08-31 用户裁决：Skill language 声明轴退役，Flova 对齐——
-    语言归用户选择与散文，平台不读 frontmatter 语言开关。）"""
-    sel = spec_output_language(raw_state)
-    if sel:
-        has_cn = "中" in sel
-        has_en = ("英" in sel) or ("双语" in sel)
-        if has_cn and has_en:
-            return "中英双语"
-        if has_en and not has_cn:
-            return "英文"
-        return "中文"
-    return "中文"
-
-
 def validate_prompt_write(
     prompt: str,
     kind: str,
     raw_state: Dict[str, Any] | None = None,
 ) -> Tuple[bool, List[str], List[str]]:
-    """校验一条待写入的生成提示词（平台固定地板：字数 + 语言闸）。
+    """校验一条待写入的生成提示词（平台固定地板：字数）。
+
+    提示词书写语言归文档层（Skill 要求 / 规格显式声明，经优先级链生效），
+    不属闸机执法面（2026-09-06 用户裁决，变更 2026-08-31 裁决）。
 
     Args:
         prompt: 待写入的提示词全文
@@ -243,23 +196,6 @@ def validate_prompt_write(
     soft: List[str] = []
     if not text or kind not in ("shot", "keyElement"):
         return True, hard, soft
-
-    # 语言单一事实源接入用户选择（规格输出语言）；
-    # 英文/中英双语关闭语言闸，中文选择恢复平台地板
-    cjk_min_ratio = _CJK_MIN_RATIO
-    _lang = resolve_prompt_language(raw_state)
-    if _lang in ("英文", "中英双语"):
-        cjk_min_ratio = 0.0
-
-    # 语言闸（shot / keyElement 通用）：中文输入环境下正文应以中文书写，
-    # 仅专业技术术语可保留英文（平台固定地板）
-    total_chars = len(_WS_RE.sub("", text))
-    cjk_chars = len(_CJK_RE.findall(text))
-    if total_chars and cjk_chars / total_chars < cjk_min_ratio:
-        hard.append(
-            f"{LANG_EN_HARD_PREFIX}：请改为中文正文（主体描述/动作表演/场景环境/"
-            "镜头语言叙述用中文，仅专业风格/光影/构图/渲染技术术语可保留英文原词）后重新写入"
-        )
 
     if kind == "shot":
         if len(text) < _SHOT_PROMPT_MIN_CHARS:

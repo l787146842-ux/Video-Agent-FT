@@ -36,6 +36,13 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-06 · 语言闸私设推导删除 + 执行模式默认档假警告修复（7777 复盘；变更 2026-08-31 裁决）
+- **背景**：7777 项目复盘 + Flova 对标实证两处缺陷。①语言闸从规格「输出语言」私设推导提示词语言地板（中文占比≥15% 硬拦），事前不出示、事后才拦截：模型按行业/Skill 语义（输出语言=成片内容语言）写英文提示词被 9 连拦直至烧尽 MAX_STEPS，铁律优先级链无从裁决——冲突另一方不是文档，是代码隐藏条款；②执行模式 ai_decide 默认档「无分节=不注入」为设计约定（execution_mode.md 文件头明示），但 planner 仍每轮查找不存在的分节并打缺失警告。
+- **用户裁决（变更 2026-08-31「语言归用户选择」裁决）**：提示词书写语言归文档层——默认按所选 Skill 要求执行；用户在《制片规格》显式声明「提示词语言」时以规格为准（用户/规格 > Skill），经优先级链生效；闸机不再执法语言、**不留兜底**；不改 Skill、不加注入、不加治理条款（模型更换用户自理）。
+- **改动**：`prompt_gates.py` 删 `_CJK_MIN_RATIO`/`_SPEC_LANG_LINE_RE`/`LANG_EN_HARD_PREFIX`/`spec_output_language`/`resolve_prompt_language` 与 validate_prompt_write 语言检查块，死 import（find_spec_doc/registry）与 GATE_STRUCTURE 注释「语言」项一并清理（字数地板/字段白名单/音色参考软提醒保留）；`prompts/planner/protocol.md` 语言规则改为文档层裁决表述；`prompts/gates/messages.md` 升级文案去「中文占比」；宪法 §2.1 提示词书写闸描述去「语言」；planner `_load_execution_mode_note` ai_decide 档提前返回不再查找（批 1 独立 commit 2864556）。
+- **测试**：旧语言闸语义用例删除/反转——test_prompt_gates 两个英文拒收用例与 8888 事故样本常量、test_trace_sse 0817 B2 六用例、test_prompt_gates_branches ⑤⑥ 节（registry patch 死支）、test_gate_pipeline_wiring 坏提示词夹具改过短文本（管线接线语义不变）、test_skill_manifest C1a 用例反转为防复活锁；新增防复活用例（英文正文+规格中文→不拦；字数地板照拦；ai_decide 档不触发分节查找）。
+- **验收**：全量 pytest 2217 passed；`acceptance.py` 三阶段全 PASS（GATES + SUITES + RATCHETS，退出码 0）；无 UI 变更。
+
 ### 2026-09-06 · 三批复查修正（用户要求逐项自查后）
 - **子对话守卫补漏**：轮末阶段闸 `_apply_stage_gate` 补 `adjust_scope` 守卫——微调真子对话内阶段翻转不签发闸卡（对齐「子对话不发确认卡」既有纪律与 FC 轨 `scope_auto_pause`；此前子对话翻转会在隐藏线程挂起 review 决议+发卡）。补端到端集成测试 `test_stage_gate_e2e.py`（完整 handle_message_stream 轮次发闸卡全链 + 子对话静默；守卫有效性经去守卫变红验证）。
 - **设置页注释同步**：ExecutionPreferenceSection 头注释仍列旧标签（自动决定/生成前确认/直接生成），同步为对齐后用语。

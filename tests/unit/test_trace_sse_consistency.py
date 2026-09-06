@@ -58,7 +58,10 @@ def test_trace_ok_matches_sse_on_normal_failure(monkeypatch):
 # 规格静默拒收链整体退役，规格写入失败即普通失败（红×）。
 
 
-# ---------- 0817 B2：语言单一事实源接入用户「输出语言」选择 ----------
+# ---------- 2026-09-06 用户裁决：语言闸私设推导退役（变更 2026-08-31 裁决） ----------
+# 提示词书写语言归文档层（Skill 要求 / 规格显式声明，经优先级链生效），
+# 闸机不再从规格「输出语言」推导语言地板；本节钉死退役事实防复活。
+# （原 0817 B2 六个语言闸语义用例随该裁决删除。）
 
 from src.video_agent.core import prompt_gates
 
@@ -74,55 +77,21 @@ def _spec_state(lang_line: str):
                            "content": f"# 最终成片规格\n- 画幅比例：16:9\n- {lang_line}\n"}]}
 
 
-def test_spec_english_selection_disables_language_gate():
-    """用户选英文 → 语言闸关闭，英文提示词放行。"""
+def test_language_gate_derivation_retired_english_prompt_passes():
+    """英文正文 + 规格选中文 → 不再有语言类拦截（7777 复盘裁决：
+    闸机不得从「输出语言」私设推导提示词语言地板）。"""
     ok, hard, _ = prompt_gates.validate_prompt_write(
-        _ENG, "keyElement", _spec_state("输出语言：英文"))
-    assert ok and not any("全是英文" in h for h in hard)
-
-
-def test_spec_chinese_selection_blocks_english_prompt():
-    """用户选中文 → 英文提示词仍被拦（与平台默认一致）。"""
-    _ok, hard, _ = prompt_gates.validate_prompt_write(
         _ENG, "keyElement", _spec_state("输出语言：中文"))
-    assert any("几乎全是英文" in h for h in hard)
+    assert ok and not any("英文" in h or "中文正文" in h for h in hard)
 
 
-def test_user_selection_overrides_skill_english_lock():
-    """优先级：用户选择 > Skill 声明。C1a 裁决后 gates 调整轴退役，
-    用户选中文时英文提示词仍被平台语言闸打回。"""
-    _ok, hard, _ = prompt_gates.validate_prompt_write(
-        _ENG, "keyElement", _spec_state("输出语言：中文"))
-    assert any("几乎全是英文" in h for h in hard)
-
-
-def test_bilingual_selection_disables_language_gate():
-    """用户选中英双语 → 语言闸不卡，中英皆可。"""
+def test_char_floor_still_enforced_regardless_of_language():
+    """字数地板保留：过短提示词仍被拦（闸机只守字数，不管语言）。"""
     ok, hard, _ = prompt_gates.validate_prompt_write(
-        _ENG, "keyElement", _spec_state("输出语言：中英双语"))
-    assert ok
+        "A close-up of the Water Droplet.", "keyElement",
+        _spec_state("输出语言：中文"))
+    assert not ok and any("过短" in h for h in hard)
 
-
-def test_no_spec_keeps_platform_default():
-    """无规格文档 → 维持平台默认（中文环境下英文被拦），不回归。"""
-    _ok, hard, _ = prompt_gates.validate_prompt_write(
-        _ENG, "keyElement", {"documents": []})
-    assert any("几乎全是英文" in h for h in hard)
-
-
-def test_injection_sentence_matches_spec_selection():
-    """C1：语言裁决与闸机读同一事实——注入句随用户选择变化。
-    （断言主体从已退役的 exec_common._prompt_language_rule 迁到通用路径
-    注入面：prompt_gates 语言闸裁决口径，同输入同结论。）"""
-    ok_en, hard_en, _ = prompt_gates.validate_prompt_write(
-        _ENG, "keyElement", _spec_state("输出语言：英文"))
-    assert ok_en and not any("全是英文" in h for h in hard_en)
-    _ok_cn, hard_cn, _ = prompt_gates.validate_prompt_write(
-        _ENG, "keyElement", _spec_state("输出语言：中文"))
-    assert any("几乎全是英文" in h for h in hard_cn)
-    ok_bi, hard_bi, _ = prompt_gates.validate_prompt_write(
-        _ENG, "keyElement", _spec_state("输出语言：中英双语"))
-    assert ok_bi and not any("全是英文" in h for h in hard_bi)
 
 
 # ---------- 0817 B3：分组标题确定性归一（剥英文标识/编号前缀） ----------

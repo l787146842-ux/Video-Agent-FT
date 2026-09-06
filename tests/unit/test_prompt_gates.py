@@ -92,28 +92,9 @@ def test_audio_kind_and_empty_prompt_skip():
     assert prompt_gates.validate_prompt_write("", "shot")[0] is True
 
 
-# 8888 项目真实事故样本：结构齐全但正文整段英文（违反 Skill 最高优先级中文条款）
-ENGLISH_SHOT_PROMPT = (
-    "Camera: Slow push-in from wide cabin view to medium close-up on Cheng Xin and AA. "
-    "Subject: Cheng Xin and AA float in zero gravity, turning anxiously towards a holographic screen. "
-    "Space: Spherical white spacecraft bridge with massive observation window showing Jupiter's storm bands. "
-    "Audio: AA says in Chinese: {为什么木星城还没躲进掩体？} <low ambient hum of life support> "
-    "no music, no subtitles."
-)
-
-
-def test_english_body_rejected_shot():
-    ok, hard, _ = prompt_gates.validate_prompt_write(ENGLISH_SHOT_PROMPT, "shot")
-    assert not ok
-    assert any("中文" in e for e in hard)
-
-
-def test_english_body_rejected_key_element():
-    ok, hard, _ = prompt_gates.validate_prompt_write(
-        "An elderly man with white beard, wearing a dark heavy classical coat, holding a cane, "
-        "calm expression, strong chiaroscuro contrast, destined aura.", "keyElement")
-    assert not ok
-    assert any("中文" in e for e in hard)
+# 8888 事故对应的「英文正文拒收」用例已随 2026-09-06 用户裁决退役：
+# 语言闸私设推导删除，提示词书写语言归文档层（Skill 要求 / 规格显式声明），
+# 整段英文提示词不再属闸机执法面（防复活用例见 test_trace_sse_consistency.py）。
 
 
 def test_chinese_body_with_english_terms_passes():
@@ -189,17 +170,19 @@ def test_fc_strips_structure_prompt_on_first_batch(monkeypatch):
 
 
 def test_fc_pending_window_rejects_bad_prompt(monkeypatch):
+    """过短提示词触发字数地板拒收（语言轴已退役，地板=字数）：
+    待确认窗口内拒收、用户坚持后放行并警告。"""
     pending = {"interaction": {"storyboard_pending": True}}
     err = fc_gates.prompt_gate(
         _pctx(pending), "storyboard_patch_draft",
-        {"draft_id": "1-1", "draft_type": "keyElement", "patch": {"prompt": "x" * 80}},
+        {"draft_id": "1-1", "draft_type": "keyElement", "patch": {"prompt": "x" * 10}},
     )
     assert err is not None  # 决策 D：硬性条款未通过 → 拒绝
     # 用户坚持 → 放行并警告
     ctx2 = _pctx(pending, override=True)
     err2 = fc_gates.prompt_gate(
         ctx2, "storyboard_patch_draft",
-        {"draft_id": "1-1", "draft_type": "keyElement", "patch": {"prompt": "x" * 80}},
+        {"draft_id": "1-1", "draft_type": "keyElement", "patch": {"prompt": "x" * 10}},
     )
     assert err2 is None
     assert ctx2.warnings

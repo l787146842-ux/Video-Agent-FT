@@ -21,12 +21,8 @@ _OK_SHOT = (
     "镜头总时长：12秒。缓慢推入中景，主角在冰原上奔跑，怀中紧抱文物，"
     "背景崩裂成平面，光影克制，色调深青，<音效轰鸣>，no music，no subtitles。"
 )
-# 整段英文（8888 事故形态：语言闸应拦）
-_BAD_EN_SHOT = (
-    "Camera: Slow push-in wide shot, subject runs across the ice plain holding "
-    "the relic, background collapsing into flat planes. Duration 12s. "
-    "<low rumbling sound effects>, no music, no subtitles."
-)
+# 过短分镜（字数地板应拦；语言轴已随 2026-09-06 裁决退役，地板=字数）
+_BAD_SHORT_SHOT = "Camera push-in, no details."
 
 
 @pytest.fixture(autouse=True)
@@ -47,21 +43,21 @@ class TestUnifiedPipeline:
         assert out.warnings == []
 
     def test_bad_prompt_rejected_with_message(self):
-        out = evaluate_prompt_write(_BAD_EN_SHOT, "shot", _empty_state())
+        out = evaluate_prompt_write(_BAD_SHORT_SHOT, "shot", _empty_state())
         assert out.ok is False
         assert out.reject_message
         assert out.hard_errors
 
     def test_user_override_downgrades_to_warning(self):
         out = evaluate_prompt_write(
-            _BAD_EN_SHOT, "shot", _empty_state(), gate_override="all",
+            _BAD_SHORT_SHOT, "shot", _empty_state(), gate_override="all",
         )
         assert out.ok is True
         assert out.overridden is True
         assert any("仅为警告" in w for w in out.warnings)
 
     def test_verdicts_structured(self):
-        out = evaluate_prompt_write(_BAD_EN_SHOT, "shot", _empty_state())
+        out = evaluate_prompt_write(_BAD_SHORT_SHOT, "shot", _empty_state())
         assert any(
             isinstance(v, GateVerdict) and v.rule_id == "platform.prompt_write" and not v.ok
             for v in out.verdicts
@@ -69,7 +65,7 @@ class TestUnifiedPipeline:
 
     def test_prompt_write_verdict_wrapper_consistent(self):
         """单 verdict 便捷出口与组合实现判定一致"""
-        v_bad = prompt_write_verdict(_BAD_EN_SHOT, "shot", _empty_state())
+        v_bad = prompt_write_verdict(_BAD_SHORT_SHOT, "shot", _empty_state())
         assert v_bad.ok is False
         v_ok = prompt_write_verdict(_OK_SHOT, "shot", _empty_state())
         assert v_ok.ok is True
