@@ -13,7 +13,7 @@ import pytest
 
 from src.video_agent.core import agent_loop
 from src.video_agent.core.action_executor import StateOperationExecutor
-from src.video_agent.core.agent_loop import _bad_output_nudge, run_agent_loop
+from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.utils.stop_signal import (
     AgentStoppedError,
     is_stop_requested,
@@ -49,22 +49,7 @@ def _events_collecter():
     return events, on_event
 
 
-# ---------- ⑦ _bad_output_nudge：外置文案缺失回落内置 ----------
-
-def test_bad_output_nudge_fallback_when_template_missing(monkeypatch):
-    """外置 feedback.md::BAD_OUTPUT_NUDGE 缺失 → 回落内置文案（不空转）"""
-    monkeypatch.setattr(agent_loop, "load_prompt_section", lambda *_a, **_k: "")
-    text = _bad_output_nudge(2)
-    assert "第 2 次" in text
-    assert "工具调用" in text or "回复" in text
-
-
-def test_bad_output_nudge_uses_external_template(monkeypatch):
-    """外置模板在位：以模板为准并替换 {{attempt}} 占位"""
-    monkeypatch.setattr(
-        agent_loop, "load_prompt_section", lambda *_a, **_k: "第 {{attempt}} 次请直出")
-    assert _bad_output_nudge(3) == "第 3 次请直出"
-
+# ---------- ⑦ _bad_output_nudge 已随批 2 退役（判空 = 正常收轮），用例删除 ----------
 
 # ---------- ① 步间引导注入（pending_injector） ----------
 
@@ -188,25 +173,8 @@ async def test_stop_before_bad_output_retry(executor):
     assert not is_stop_requested(scope)
 
 
-async def test_stop_during_bad_output_retry_llm(executor):
-    """坏输出重试的第二次 llm 调用抛 AgentStoppedError → 收敛收尾"""
-    scope = "stop-badretry-llm"
-    calls = {"n": 0}
-
-    async def llm_call(system_prompt, messages, stream_hook=None):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return ("", "", 0, 0.0, {})            # 首调空输出 → 触发坏输出重试
-        raise AgentStoppedError("thinking", 1)
-
-    events, on_event = _events_collecter()
-    result = await run_agent_loop(
-        "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=3, on_event=on_event, stop_scope=scope,
-    )
-    assert calls["n"] == 2
-    assert result.stopped is True
-    assert [e for e in events if e.get("type") == "stopped"]
+# test_stop_during_bad_output_retry_llm 已随批 2 退役删除
+# （坏输出 nudge 重试退役，判空 = 正常收轮；停止检查点语义由其余用例覆盖）
 
 
 # ---------- ④ GenerationCancelled 穿透收敛收尾 ----------

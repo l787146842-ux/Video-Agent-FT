@@ -41,15 +41,7 @@ class TestUploadedDocAutoResolve:
         assert "自动归位" in res.data["content"]
 
 
-# ---------- D2：坏输出引导续写 ----------
-
-
-class TestBadOutputNudge:
-    def test_nudge_requires_visible_output(self):
-        from src.video_agent.core.agent_loop import _bad_output_nudge
-
-        text = _bad_output_nudge(1)
-        assert "工具调用" in text and "思考" in text
+# ---------- D2：坏输出引导续写已随批 2 退役（判空 = 正常收轮），用例删除 ----------
 
 
 # ---------- D3：阶段同批声明翻译（P3 单一事实源） ----------

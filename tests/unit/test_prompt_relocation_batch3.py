@@ -26,14 +26,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_b3_feedback_sections_exist():
-    for section in ("BAD_OUTPUT_NUDGE", "STEP_FEEDBACK", "EMPTY_RESPONSE_FALLBACK",
+    # BAD_OUTPUT_NUDGE 已随批 2 退役删除（判空 = 正常收轮，nudge 重试退役）
+    for section in ("STEP_FEEDBACK", "EMPTY_RESPONSE_FALLBACK",
                     "STEP_ASSISTANT_PLACEHOLDER"):
         assert load_prompt_section("planner/feedback.md", section), \
             f"feedback.md 分节缺失: {section}"
-    # 模板变量可替换
-    nudge = load_prompt_section("planner/feedback.md", "BAD_OUTPUT_NUDGE")
-    assert "{{attempt}}" in nudge
-    assert "第 2 次" in nudge.replace("{{attempt}}", "2")
     # 工具轮 assistant 占位必须是客观陈述，不得是「本步无输出」式假陈述：
     # 该分支入口是「fc_applied>0 且无可见正文」（工具轮常态，本步实际执行了
     # 工具），假陈述会与紧随其后注入的 STEP_FEEDBACK（「第 N 轮的 X 个 Tool 已
@@ -124,7 +121,7 @@ def test_b3_agent_loop_templates_wired():
     """agent_loop 运行时文案走 feedback.md 分节（分节在场即接线有效；
     代码内置兜底允许保留但不得作为唯一来源）。"""
     src = (ROOT / "src/video_agent/core/agent_loop.py").read_text(encoding="utf-8")
-    for anchor in ("BAD_OUTPUT_NUDGE", "STEP_FEEDBACK", "EMPTY_RESPONSE_FALLBACK",
+    for anchor in ("STEP_FEEDBACK", "EMPTY_RESPONSE_FALLBACK",
                    "STEP_ASSISTANT_PLACEHOLDER"):
         assert anchor in src, f"agent_loop 未接线分节: {anchor}"
     # 工具轮 assistant 占位经外置分节读取（load_prompt_section），

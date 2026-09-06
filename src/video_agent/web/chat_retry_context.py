@@ -29,7 +29,8 @@ _ERROR_MAX_CHARS = 300
 # 内部过程条目非业务工具，不进现场清单
 _INTERNAL_ACTION_NAMES = ("model_reasoning", "bad_output_retry")
 # 视为「失败轮」的 step finish_reason 集合
-_FAILED_FINISH_REASONS = ("error", "bad_output")
+# output_truncated（五项修法批 2）：输出预算截断收轮，重试续跑同样受益于失败现场
+_FAILED_FINISH_REASONS = ("error", "bad_output", "output_truncated")
 
 
 def _trace_failed(trace: Dict[str, Any]) -> bool:

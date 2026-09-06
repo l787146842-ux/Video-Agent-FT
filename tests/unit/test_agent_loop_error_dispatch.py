@@ -3,7 +3,7 @@
 钉死：
 - 供应商 AdapterError（transient 重试耗尽 / permanent）只调一次 llm_call 即上抛，
   循环侧绝不 nudge（nudge 专属模型侧空/畸形输出）；
-- 空/畸形输出仍走 nudge 重试（permanent-ish 模型侧问题），与供应商错误路径分离。
+- 空/畸形输出已随批 2 改为收轮不重试（判空 = 正常收轮），与供应商错误路径仍分离。
 """
 import pytest
 
@@ -70,8 +70,8 @@ async def test_model_refusal_error_not_nudged(executor):
     assert calls["n"] == 1
 
 
-async def test_bad_output_still_nudged_separately(executor):
-    """模型侧空输出（非供应商错误）：nudge 路径保留，与错误分流互不干扰"""
+async def test_bad_output_ends_turn_separately(executor):
+    """模型侧空输出（非供应商错误）：批 2 收轮语义，与错误分流互不干扰"""
     calls = {"n": 0}
 
     async def llm_call(system_prompt, messages, stream_hook=None):
@@ -82,6 +82,6 @@ async def test_bad_output_still_nudged_separately(executor):
         "x", llm_call=llm_call, context_builder=lambda: "ctx",
         executor=executor, history=[],
     )
-    # 首调 + 2 次 nudge（permanent-ish 模型侧问题保留原策略）
-    assert calls["n"] == 3
-    assert "输出异常" in result.text
+    # 一次调用即收轮（nudge 重试已随批 2 退役）
+    assert calls["n"] == 1
+    assert "空响应" in result.text

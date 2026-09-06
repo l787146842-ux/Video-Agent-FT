@@ -321,34 +321,32 @@ async def test_fc_text_visible_as_is(svc, executor):
     assert result.text == "任务已完成，故事板已更新。"
 
 
-# ---------- 坏输出防护（S03 承重不变） ----------
+# ---------- 坏输出收轮（五项修法批 2：判空 = 正常收轮，nudge 重试退役） ----------
 
-async def test_bad_output_malformed_retried_then_ok(svc, executor):
-    """回归（5555 事故）：MALFORMED_FUNCTION_CALL 视为坏输出自动重试，重试成功则正常推进，
-    用户不再需要手动发「继续」。"""
+async def test_bad_output_malformed_ends_turn_with_retry_chip(svc, executor):
+    """批 2 收轮语义（原 5555「MALFORMED 自动重试」随「判空 = 正常收轮」裁决退役）：
+    空响应+畸形 finish 一次调用即收轮，附 retry 芯片由用户决定是否重发。"""
     bad = ("", "MALFORMED_FUNCTION_CALL")
-    good = ("已完成", "stop")
-    llm, calls = make_plain_llm([bad, good])
+    llm, calls = make_plain_llm([bad])
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
     )
-    assert calls["n"] == 2  # 首调失败 + 重试一次成功
-    assert "已完成" in result.text
+    assert calls["n"] == 1  # 判空收轮，绝不原样重试
+    assert "空响应" in result.text
+    assert result.suggested_actions and result.suggested_actions[-1]["kind"] == "retry"
 
 
-async def test_bad_output_exhausts_retries_with_clear_message(svc, executor):
-    """空响应+畸形连续发生：重试上限 2 次，最终文案写明故障性质与重试次数。"""
+async def test_bad_output_ends_turn_with_clear_message(svc, executor):
+    """空响应+畸形连续出现：首轮即收轮（重试预算已退役），文案写明故障性质。"""
     llm, calls = make_plain_llm([
         ("", ""),                                # 首调空响应
-        ("", "MALFORMED_FUNCTION_CALL"),          # 重试 1 畸形
-        ("", "MALFORMED_FUNCTION_CALL"),          # 重试 2 仍畸形 → 达到上限
+        ("", "MALFORMED_FUNCTION_CALL"),          # 不会被消费（无重试）
     ])
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
     )
-    assert calls["n"] == 3  # 首调 + 2 次重试，不多不少
+    assert calls["n"] == 1  # 一次调用即收轮
     assert "输出异常" in result.text
-    assert "重试 2 次" in result.text
 
 
 # ---------- 轮末策略（纯文本收尾轮执行：虚报审计 / 假停兜底） ----------

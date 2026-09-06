@@ -60,17 +60,32 @@ async def test_structured_confirmation_stops_loop_with_card(svc, executor):
 
 # ---------- 过程明细（Q8：重试/读入也进时间线） ----------
 
-async def test_bad_output_retry_recorded_in_trace(svc, executor):
-    llm, _ = make_llm([("", "stop"), ("恢复完成", "stop")])
+async def test_bad_output_ends_turn_without_retry(svc, executor):
+    """批 2 收轮语义（原 nudge 自动重做已退役）：空响应一次调用即收轮，
+    不再产生 bad_output_retry 动作条目。"""
+    llm, calls = make_llm([("", "stop"), ("恢复完成", "stop")])
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
     )
-    assert "恢复完成" in result.text
+    assert calls["n"] == 1, "判空收轮不重试"
+    assert "空响应" in result.text and "恢复完成" not in result.text
     summaries = [
         a.get("summary", "")
         for s in result.trace.get("steps", []) for a in s.get("actions", [])
     ]
-    assert any("自动重做" in s for s in summaries), summaries
+    assert not any("自动重做" in s for s in summaries), summaries
+
+
+async def test_truncation_ends_turn_with_notice(svc, executor):
+    """批 2 撞帽收轮：finish_reason=length 且正文空 → 截断文案 + 警告 + retry 芯片。"""
+    llm, calls = make_llm([("", "length")])
+    result = await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
+    )
+    assert calls["n"] == 1, "撞帽收轮不重试（dsh 同语义）"
+    assert "截断" in result.text
+    assert any("输出预算" in w for w in result.warnings)
+    assert result.suggested_actions and result.suggested_actions[-1]["kind"] == "retry"
 
 
 async def test_prelude_notes_recorded_in_first_step(svc, executor):

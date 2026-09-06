@@ -54,7 +54,6 @@ from src.video_agent.exceptions import AdapterError
 # 全部来自恢复策略分派表（policy-as-data，与闸机哲学一致）
 from src.video_agent.core.recovery_policy import (
     FAILURE_ADAPTER,
-    FAILURE_BAD_OUTPUT,
     FAILURE_PRODUCTIVE_REJECT,
     classify_step_failure,
     recovery_for,
@@ -102,22 +101,8 @@ LlmCall = Callable[..., Awaitable[Tuple[str, str, int, float, Dict[str, Any]]]]
 ContextBuilder = Callable[[], str]
 
 
-def _bad_output_nudge(attempt: int) -> str:
-    """空/畸形输出续写引导：重试时随 messages 附一句，
-    明确要求本步直接产出工具调用或可见回复（只临时附加，不入历史）。
-    文案外置 prompts/planner/feedback.md::BAD_OUTPUT_NUDGE（指令收敛，Rule6）。
-    失败恢复分级后身份收窄：仅为恢复策略分派表 bad_output 分支
-    （action=nudge_retry）的实现体；工具失败经 fc_feedback 回喂降级、
-    供应商错误走 escalate 分级出口（见 core/recovery_policy.py），
-    FC 轨闸机拦截由 fc_gates.reject_message 回喂闭环（不经本 nudge，
-    循环层拦截分派已退役，退役记录见 recovery_policy.py）。"""
-    tpl = load_prompt_section("planner/feedback.md", "BAD_OUTPUT_NUDGE")
-    if tpl:
-        return tpl.replace("{{attempt}}", str(attempt))
-    # M-2：外置分节缺失时不内联正式文案（双源漂移根因），
-    # 仅 logger.warning + 最小功能性占位
-    logger.warning("[agent_loop] prompts/planner/feedback.md::BAD_OUTPUT_NUDGE 分节缺失，使用最小占位")
-    return f"（系统）第 {attempt} 次重试：请产出工具调用或可见回复。"
+# _bad_output_nudge 已随批 2 物理删除（nudge 重试退役，判空 = 正常收轮）；
+# 退役记录见 core/recovery_policy.py 模块头。
 
 
 @dataclass
@@ -397,42 +382,6 @@ async def run_agent_loop(
             if _stop_err is not None:
                 return await _finalize_stop(_stop_err)
 
-            # 空/畸形响应防护（模型侧问题，非供应商 transient）：经恢复分派表
-            # bad_output 分支（action=nudge_retry）处置——重试上限取自分派表
-            # （数据驱动，不再硬编码）；达到上限后以明确故障文案收尾
-            # （不再静默落为「没有返回可见回复」）。
-            # 其余失败类型各有分级出口：供应商错误由上方 AdapterError 分流
-            # 承接（escalate），工具失败经 fc_feedback 回喂降级（feedback_degrade），
-            # FC 轨闸机拦截由 fc_gates.reject_message 结构化回喂闭环
-            # （不经循环层分派，退役记录见 recovery_policy.py）。
-            # 暂停确认轮现有真实 fc_applied（含 workflow_pause 自身），
-            # 且正文有确认文案兜底，双条件均使其不入本重试（守卫语义保持正确）。
-            _bad_pol = recovery_for(FAILURE_BAD_OUTPUT)
-            bad_retries = 0
-            while not str(content or "").strip() and fc_applied == 0 and bad_retries < _bad_pol.max_retries:
-                bad_retries += 1
-                logger.warning(f"[AgentLoop] 第 {step} 轮输出异常（空/畸形），重试 {bad_retries}/{_bad_pol.max_retries}")
-                await emit(status_event("agent.badRetry", f"第 {step} 轮输出异常，重试中…", {"step": step}))
-                tracer.record_action(
-                    name="bad_output_retry",
-                    summary=f"模型输出异常（空/畸形），自动重做（第 {bad_retries} 次）",
-                    elapsed_ms=0.0,
-                    ok=True,
-                )
-                # 检查点（重试模型调用前）：停止优先于坏输出重试
-                _stop_err = _stop_if_requested(STOP_PHASE_THINKING)
-                if _stop_err is not None:
-                    return await _finalize_stop(_stop_err)
-                _unpacked, _stopped_result = await _await_llm_with_stop_guard(
-                    STOP_PHASE_STREAMING,
-                    extra_messages=[{"role": "user", "content": _bad_output_nudge(bad_retries)}],
-                )
-                if _stopped_result is not None:
-                    return _stopped_result
-                content, finish_reason, fc_applied, plan_ms, fc_extra = _unpacked
-                plan_total += float(plan_ms or 0.0)
-                step_tokens = int((fc_extra or {}).get("token_usage") or 0)
-                step_cached = int((fc_extra or {}).get("cached_tokens") or 0)
             # 规划耗时只算纯模型规划：FC 工具执行时间由各工具条目独立展示，
             # 不再把工具耗时叠进规划行导致「规划很慢」的错觉
             await emit({
@@ -443,18 +392,38 @@ async def run_agent_loop(
                 "result_summary": f"Agent 规划完成（第 {step} 轮）",
             })
             _plan_rec["elapsed_ms"] = round(plan_total, 1)
-            # 坏输出收尾仅在「预算耗尽」时生效（bad_retries>0 保证确曾重试）；
-            # 若分派表预算为 0，空输出落入下方通用空响应兜底路径
-            if bad_retries > 0 and bad_retries == _bad_pol.max_retries and not str(content or "").strip() and fc_applied == 0:
-                result.text = (
-                    f"输出异常：模型连续返回空/畸形输出，已重试 {_bad_pol.max_retries} 次；"
-                    "请重试或检查模型配置。"
-                )
-                result.warnings.append(
-                    f"模型连续 {bad_retries + 1} 次输出异常（空/畸形），已终止本轮")
+            # 撞帽/判空收轮语义（五项修法批 2，用户裁决「判空 = 正常收轮」）：
+            # 空响应经恢复分派表按 finish_reason 分流两键
+            # （output_truncated=输出预算截断 / bad_output=真空响应），统一动作
+            # end_with_notice——收轮 + 用户可见提示 + retry 芯片，绝不原样重试
+            # （同输入重跑无信息增益必现同结局，4444 事故根因②③；dsh 同语义）。
+            # recovery_for 即分派表承接点：键未登记显式 KeyError（禁静默兜底）。
+            # 守卫语义：fc_applied>0 的工具轮、暂停确认轮（workflow_pause 自身
+            # 计入 fc_applied 且正文有确认文案）、发起过调用的全拒收轮
+            # （had_fc_calls，批 9：拒因回喂必须被下一轮消费）均不入本分支。
+            _had_fc_calls = bool((fc_extra or {}).get("had_fc_calls"))
+            if not str(content or "").strip() and fc_applied == 0 and not _had_fc_calls:
+                _kind = classify_step_failure(
+                    content=content, fc_applied=fc_applied, finish_reason=finish_reason)
+                recovery_for(_kind)
+                if finish_reason == "length":
+                    result.text = (
+                        "本轮生成在输出预算处被截断（思考与正文共用同一额度），"
+                        "未产出可见回复；请重试，若反复出现可降低本步任务规模。"
+                    )
+                    result.warnings.append(
+                        f"第 {step} 轮生成在输出预算处被截断（finish_reason=length），已收轮")
+                    _bad_finish = "output_truncated"
+                else:
+                    result.text = (
+                        "输出异常：模型返回空响应且无工具调用；请重试或检查模型配置。"
+                    )
+                    result.warnings.append(
+                        f"第 {step} 轮模型返回空响应（无正文无工具调用），已收轮")
+                    _bad_finish = "bad_output"
                 # 一键重试按钮（机械重发上一条用户消息，零模型猜测）
                 result.suggested_actions.append({"kind": "retry", "label": "重试", "value": ""})
-                tracer.end_step(step, actions_applied=0, finish_reason="bad_output",
+                tracer.end_step(step, actions_applied=0, finish_reason=_bad_finish,
                                 token_usage=step_tokens, cached_tokens=step_cached)
                 break
 
@@ -469,7 +438,7 @@ async def run_agent_loop(
             fc_pause_id = str((fc_extra or {}).get("pause_id") or "")
             # 批 9 · 回合终止盲区修复：模型本轮是否发起过工具调用
             #（全拒收轮 fc_applied=0 但调用发生过，不能按纯文本轮收尾）
-            had_fc_calls = bool((fc_extra or {}).get("had_fc_calls"))
+            had_fc_calls = _had_fc_calls
 
             # FC 路径：tool_calls 已在 llm_call 内部执行；正文原样可见（无需清洗）。
             # 批 9：发起过调用的轮（含全被闸拒收）一律走 FC 回喂继续——

@@ -34,9 +34,8 @@
 可调整参数后重试一次，或先向用户说明困难。
 
 <!-- SKILL_REMINDER 分节已随 S09 退役删除（用户裁决 2026-09-02，唯一消费点 planner._SKILL_REMINDER 同批删除） -->
-
-## BAD_OUTPUT_NUDGE
-（系统）上一步（第 {{attempt}} 次）未产出任何可见回复或工具调用。请直接发出本应执行的工具调用，或给出面向用户的回复；避免只输出思考过程。
+<!-- BAD_OUTPUT_NUDGE 分节已随五项修法批 2 退役删除（用户裁决 2026-09-07：判空 = 正常收轮，
+     nudge 重试退役，唯一消费点 agent_loop._bad_output_nudge 同批删除；退役记录见 core/recovery_policy.py） -->
 
 ## STEP_FEEDBACK
 （系统）第 {{step}} 轮的 {{count}} 个 Tool 已执行完毕，工作台状态已刷新（见对话末尾最新的工作台状态 JSON）。请继续完成任务；全部完成后直接回复文本即可。
