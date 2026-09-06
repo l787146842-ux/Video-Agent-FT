@@ -135,7 +135,7 @@ def assemble_response(
     # 不逐张卡片罗列；随消息持久化与 done payload 一并下发
     full_log = action_log_collector or []
     merged_action_log = aggregate_action_log(full_log) if aggregate_action_log is not None else full_log
-    return response_factory(
+    _factory_kwargs = dict(
         text=loop_result.text,
         applied_actions=loop_result.applied_actions,
         steps=loop_result.steps,
@@ -149,3 +149,8 @@ def assemble_response(
         trace=loop_result.trace,
         suggested_actions=loop_result.suggested_actions,
     )
+    # 推理模型思考内容（五项修法批 4）：非空才透传（测试 stub factory 兼容）
+    _reasoning = str(getattr(loop_result, "reasoning_content", "") or "")
+    if _reasoning:
+        _factory_kwargs["reasoning_content"] = _reasoning
+    return response_factory(**_factory_kwargs)

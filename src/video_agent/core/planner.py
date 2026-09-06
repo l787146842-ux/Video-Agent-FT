@@ -193,6 +193,9 @@ class PlannerResponse:
     pause_id: str = ""
     # 暂停卡语义种类（remind/collect/stage_done/confirm，前端标题渲染唯一依据）
     pause_kind: str = ""
+    # 推理模型思考内容（五项修法批 4，透传自 AgentLoopResult）：是否随 done
+    # payload 下发/持久化由 settings.llm_reasoning_passthrough 闸门控制
+    reasoning_content: str = ""
     # 协作式停止标记：随 done payload 下发，web 透传层据此
     # 落停止痕迹消息并不再发 done（stopped 终态事件已由 agent_loop 先行下发）
     stopped: bool = False
@@ -753,7 +756,7 @@ class Planner:
         # 空回复占位统一由前端渲染（「（空回复）」单一形态），
         # 后端流式 done 不再替换占位文案（非流式路径仍以 result.text 原样返回）
 
-        yield PlannerEvent(type="done", payload={
+        _done_payload = {
             "text": result.text,
             "applied_actions": result.applied_actions,
             "steps": result.steps,
@@ -771,7 +774,12 @@ class Planner:
             # 协作式停止标记：web 透传层据此落停止痕迹、不再发 done
             "stopped": bool(result.stopped),
             "stop_phase": result.stop_phase,
-        })
+        }
+        # 推理模型思考内容（五项修法批 4）：default-off——闸门开且非空才随
+        # done payload 下发（web 层据此持久化，供下轮历史回传）
+        if settings.llm_reasoning_passthrough and result.reasoning_content:
+            _done_payload["reasoning_content"] = result.reasoning_content
+        yield PlannerEvent(type="done", payload=_done_payload)
 
     # ---------- 内部方法 ----------
 

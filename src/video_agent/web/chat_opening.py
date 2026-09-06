@@ -113,7 +113,13 @@ def truncate_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     + tail
                     + "\n…（历史回复已截断，最新完整内容见工作台状态 JSON）"
                 )
-        out.append({"role": role, "content": content})
+        _msg: Dict[str, Any] = {"role": role, "content": content}
+        # 思考回传（五项修法批 4，default-off）：assistant 历史消息携带的
+        # reasoning_content 原样透传（GLM 交错思考要求完整未修改）
+        if (role == "assistant" and settings.llm_reasoning_passthrough
+                and str(m.get("reasoning_content") or "").strip()):
+            _msg["reasoning_content"] = str(m["reasoning_content"])
+        out.append(_msg)
     return out
 
 

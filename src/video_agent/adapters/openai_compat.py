@@ -221,6 +221,24 @@ def detect_relay_error_envelope(text: str) -> Optional[int]:
     return None
 
 
+def _gate_reasoning_passthrough(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """思考回传闸门（五项修法批 4，default-off）：关 = 剥离 assistant 历史
+    消息携带的 reasoning_content（浅拷贝替换，不改调用方历史本体），防残留
+    字段外泄到拒收该字段的端点；开 = 原样下发（GLM 4.5+ 交错思考/工具循环
+    官方要求把 assistant 思考内容回传以保持推理连续性）。"""
+    if settings.llm_reasoning_passthrough:
+        return messages
+    out = messages
+    mutated = False
+    for i, m in enumerate(messages):
+        if isinstance(m, dict) and m.get("role") == "assistant" and m.get("reasoning_content"):
+            if not mutated:
+                out = list(messages)
+                mutated = True
+            out[i] = {k: v for k, v in m.items() if k != "reasoning_content"}
+    return out
+
+
 class OpenAICompatChatAdapter(BaseChatAdapter):
     """OpenAI 兼容 Chat Adapter（支持流式 + function calling）
 
@@ -325,7 +343,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             timeout = settings.llm_timeout
         payload: Dict[str, Any] = {
             "model": self.model,
-            "messages": messages,
+            "messages": _gate_reasoning_passthrough(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
             # 非流式必须显式声明：中介对缺省 stream 按流式路由，
@@ -416,6 +434,9 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                 retryable=False, http_status=_env_status, kind=KIND_REFUSAL,
             )
         tool_calls = message.get("tool_calls", []) or []
+        # 推理模型思考内容捕获（非流式）：随 ChatResponse 上抛，
+        # 回传与否由 settings.llm_reasoning_passthrough 统一闸门控制
+        _reasoning = str(message.get("reasoning_content") or "")
         # 透明度兑现：usage.total_tokens 入响应（轮次账单数据源，缺失保 0）
         _usage = data.get("usage") or {}
         _total_tokens = int(_usage.get("total_tokens") or 0) if isinstance(_usage, dict) else 0
@@ -429,6 +450,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             token_usage=_total_tokens,
             prompt_tokens=_prompt_tokens,
             cached_tokens=_cached_tokens,
+            reasoning_content=_reasoning,
         )
 
     async def chat_stream(
@@ -451,7 +473,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             timeout = settings.llm_stream_timeout
         payload: Dict[str, Any] = {
             "model": self.model,
-            "messages": messages,
+            "messages": _gate_reasoning_passthrough(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,

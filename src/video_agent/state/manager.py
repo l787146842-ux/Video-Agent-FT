@@ -661,6 +661,7 @@ class StateManager(UndoRedoMixin):
         kind: str = "",
         video_items: Optional[List[Dict[str, Any]]] = None,
         suggested_actions: Optional[List[Dict[str, Any]]] = None,
+        reasoning_content: str = "",
     ):
         """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，防止状态文件无上限增长。
 
@@ -692,6 +693,7 @@ class StateManager(UndoRedoMixin):
             applied_actions, action_log, doc_card, trace, doc_blocks,
             skill_blocks, confirm_options, turn_id, error_detail, pause_id,
             pause_answered, kind, video_items, suggested_actions,
+            reasoning_content=reasoning_content,
         )
 
     def truncate_chat_tail(self, keep_index: int, new_text: Optional[str] = None,

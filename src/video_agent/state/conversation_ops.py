@@ -363,6 +363,7 @@ def build_chat_entry(
     kind: str = "",
     video_items: Optional[List[Dict[str, Any]]] = None,
     suggested_actions: Optional[List[Dict[str, Any]]] = None,
+    reasoning_content: str = "",
 ) -> Dict[str, Any]:
     """构建单条聊天记录条目（纯函数，不落盘）。
 
@@ -372,6 +373,10 @@ def build_chat_entry(
     entry: Dict[str, Any] = {"sender": sender, "text": text, "ts": int(time.time() * 1000)}
     if model_name:
         entry["modelName"] = model_name
+    # 推理模型思考内容（五项修法批 4，default-off 闸门在上游）：非空才落字段，
+    # 供下轮历史组装回传（truncate_history 透传）；前端按未知键忽略
+    if str(reasoning_content or "").strip():
+        entry["reasoning_content"] = str(reasoning_content)
     if image_urls:
         entry["imageCard"] = {"image_urls": list(image_urls)}
     if video_items:
@@ -452,6 +457,7 @@ def add_chat_message(
     kind: str = "",
     video_items: Optional[List[Dict[str, Any]]] = None,
     suggested_actions: Optional[List[Dict[str, Any]]] = None,
+    reasoning_content: str = "",
 ) -> None:
     """追加聊天记录并持久化（防抖合并落盘）。截断保留最近 200 条，
     防止状态文件无上限增长。写入目标：绑定会话优先、无绑定回落活跃对话
@@ -462,6 +468,7 @@ def add_chat_message(
         applied_actions, action_log, doc_card, trace, doc_blocks,
         skill_blocks, confirm_options, turn_id, error_detail, pause_id,
         pause_answered, kind, video_items, suggested_actions,
+        reasoning_content=reasoning_content,
     )
     msgs.append(entry)
     if len(msgs) > CHAT_HISTORY_LIMIT:

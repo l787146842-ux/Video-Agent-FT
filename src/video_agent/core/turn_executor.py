@@ -360,6 +360,8 @@ class TurnExecutor:
             content_parts: List[str] = []
             finish = ""
             stream_tool_calls: List[Dict[str, Any]] = []
+            # 推理模型思考内容累积（五项修法批 4）：思考回传的数据源之一
+            reasoning_parts: List[str] = []
             # 透明度兑现：流内 usage 机会性收集（中继未下发则 0）
             _stream_usage_tokens = 0
             # P2-1 KV-cache 遥测：流内 prompt/缓存命中 token 同机会性收集
@@ -377,6 +379,7 @@ class TurnExecutor:
                     await hook(chunk.text)
                 elif chunk.type == "reasoning_delta" and chunk.text:
                     # 深度思考：记入 trace（持久化展示）+ 实时推给前端，不进 LLM 上下文
+                    reasoning_parts.append(chunk.text)
                     tracer.record_reasoning(chunk.text)
                     if self._on_event is not None:
                         await self._on_event({"type": SSE_REASONING_DELTA, "text": chunk.text})
@@ -399,7 +402,8 @@ class TurnExecutor:
                                     tool_calls=stream_tool_calls,
                                     token_usage=_stream_usage_tokens,
                                     prompt_tokens=_stream_prompt_tokens,
-                                    cached_tokens=_stream_cached_tokens)
+                                    cached_tokens=_stream_cached_tokens,
+                                    reasoning_content="".join(reasoning_parts))
             plan_ms = (time.monotonic() - _t_plan) * 1000
         else:
             response = await self.call_llm(system_prompt, messages)
@@ -458,8 +462,12 @@ class TurnExecutor:
         _extra: Dict[str, Any] = {}
         # 透明度兑现：本轮 token 用量随 5 元组上抛（agent_loop 入账 trace）
         _extra["token_usage"] = int(getattr(response, "token_usage", 0) or 0)
-        # P2-1 KV-cache 遥测：缓存命中同随 5 元组上抛（agent_loop 入账 trace step）
+        # P2-1 KV-cache 遥测：缓存命中同随 5 元组上抛（agent_loop 入账 step trace）
         _extra["cached_tokens"] = int(getattr(response, "cached_tokens", 0) or 0)
+        # 推理模型思考内容（五项修法批 4）：流式累积 / 非流式捕获统一随
+        # 5 元组上抛；是否回传进后续请求由 settings.llm_reasoning_passthrough
+        # 统一闸门控制（agent_loop 附着点 + adapter 下发闸门）
+        _extra["reasoning_content"] = str(getattr(response, "reasoning_content", "") or "")
         # 批 9 · 回合终止盲区修复：上抛"本轮模型是否发起过工具调用"。
         # 全拒收轮（发起过但 fc_applied=0）不能落进纯文本轮收尾——
         # 拒因回喂已在 messages 里，循环必须再走一轮让模型看到指引。

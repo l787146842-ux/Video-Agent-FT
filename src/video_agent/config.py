@@ -132,6 +132,12 @@ class Settings:
     llm_thinking_level: str = field(default_factory=lambda: os.getenv("LLM_THINKING_LEVEL", ""))
     # 辅助摘要调用档位（记忆摘要/会话压缩； 全局设置页可调，默认=原生）
     aux_thinking_level: str = field(default_factory=lambda: os.getenv("AUX_THINKING_LEVEL", ""))
+    # 思考内容回传（五项修法批 4，default-off）：开 = assistant 历史消息
+    # 携带 reasoning_content 原样回传端点（GLM 4.5+ 交错思考/工具循环官方
+    # 要求回传以保持推理连续性；DeepSeek 同语义）。关（默认）= 不回传且
+    # 请求侧剥离该字段（防历史残留字段外泄拒收端点）。仅 OpenAI 兼容层生效。
+    llm_reasoning_passthrough: bool = field(
+        default_factory=lambda: _env_bool("LLM_REASONING_PASSTHROUGH", False))
     # trace 持久化的 reasoning 尾部保留字符数（头部截断，仅展示用）
     trace_reasoning_max_chars: int = field(default_factory=lambda: _env_int("TRACE_REASONING_MAX_CHARS", 2000))
     # CLI 协议（如 gemini-cli/Antigravity CLI）路由到 custom-api 反代时 auto 的回退模型：
@@ -413,7 +419,8 @@ SETTINGS_GROUPS: dict = {
     "llm": ("llm_timeout", "llm_stream_timeout", "adapter_retry_max",
             "adapter_retry_base_delay", "llm_max_tokens", "llm_temperature",
             "llm_output_limit", "llm_json_timeout", "llm_thinking_level",
-            "aux_thinking_level", "cli_auto_chat_model", "model_fallback_enabled",
+            "aux_thinking_level", "llm_reasoning_passthrough",
+            "cli_auto_chat_model", "model_fallback_enabled",
             "model_fallback_max_candidates", "executor_fast_model",
             "executor_thinking_level", "model_policy"),
     "context": ("context_window_size", "token_budget_ratio", "image_token_estimate",

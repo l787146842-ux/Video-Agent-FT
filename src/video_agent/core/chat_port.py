@@ -33,6 +33,9 @@ class ChatResponse(BaseModel):
     #（提取口径见 adapters.base_chat.extract_prompt_cache_usage；端点未返回时保 0）
     prompt_tokens: int = 0
     cached_tokens: int = 0
+    # 推理模型思考内容（非流式路径捕获；流式经 reasoning_delta 增量）。
+    # 是否回传进后续请求由 settings.llm_reasoning_passthrough 统一闸门控制
+    reasoning_content: str = ""
 
 
 class StreamChunk(BaseModel):

@@ -587,6 +587,8 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
                     kind=str(ctx.final_payload.get("pause_kind") or ""),
                     # quick-actions 芯片持久化（提醒类兜底卡出槽后不丢，刷新可重建）
                     suggested_actions=ctx.final_payload.get("suggested_actions") or None,
+                    # 推理模型思考内容（五项修法批 4）：payload 仅在回传闸门开时携带
+                    reasoning_content=str(ctx.final_payload.get("reasoning_content") or ""),
                 )
             # 文档完成卡片：独立条目持久化，刷新后可重建（同轮 turnId 聚合）
             for doc_name in (ctx.final_payload.get("documents_written") or []):

@@ -130,6 +130,10 @@ class AgentLoopResult:
     stop_phase: str = ""
     # 问即停：发行点签发的暂停卡标识（随 done payload 下发）
     pause_id: str = ""
+    # 推理模型思考内容（五项修法批 4）：本循环最后一轮的 reasoning（数据源
+    # = llm_call 第 5 元组 extra.reasoning_content）。回传/持久化由
+    # settings.llm_reasoning_passthrough 统一闸门控制，默认关不外流
+    reasoning_content: str = ""
 
 
 # 防虚报检测（_STRUCTURE_CLAIM_RE/_claims_structure_done）归
@@ -373,6 +377,8 @@ async def run_agent_loop(
             step_tokens = int((fc_extra or {}).get("token_usage") or 0)
             # P2-1 KV-cache 遥测：本轮前缀缓存命中 token 同步入账 step trace
             step_cached = int((fc_extra or {}).get("cached_tokens") or 0)
+            # 推理模型思考内容（五项修法批 4）：末轮胜出，随结果上抛
+            result.reasoning_content = str((fc_extra or {}).get("reasoning_content") or "")
             # 检查点 2（模型调用返回后）：FC 工具批已在 llm_call 内执行完毕，
             # 此时命中按刚经历的阶段标记（工具批/流式输出/思考）干净退出
             _stop_err = _stop_if_requested(
@@ -551,7 +557,11 @@ async def run_agent_loop(
                     logger.warning(
                         "[agent_loop] prompts/planner/feedback.md::STEP_ASSISTANT_PLACEHOLDER "
                         "分节缺失，占位退化为空串")
-                messages.append({"role": "assistant", "content": content or _asst_placeholder})
+                messages.append({"role": "assistant", "content": content or _asst_placeholder,
+                                 **({"reasoning_content": str((fc_extra or {}).get("reasoning_content") or "")}
+                                    if settings.llm_reasoning_passthrough
+                                    and str((fc_extra or {}).get("reasoning_content") or "").strip()
+                                    else {})})
                 _step_fb = load_prompt_section("planner/feedback.md", "STEP_FEEDBACK")
                 if _step_fb:
                     _step_content = _step_fb.replace("{{step}}", str(step)).replace("{{count}}", str(fc_applied))
