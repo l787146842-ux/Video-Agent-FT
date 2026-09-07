@@ -2,10 +2,14 @@
 
 覆盖：消化边界（超阈值才消化）、最近 2 轮回喂保留原文、开关关闭（=0）、
 只消化已投影进状态 JSON 的写类工具行（read_* 全文/失败行不碰）、幂等。
+B2：assistant tool_calls 大参数消化（report_markdown 等已落账全文）。
 """
+import json
+
 from src.video_agent.core.fc_feedback import (
     DIGEST_POINTER,
     FEEDBACK_MARKER,
+    digest_projected_tool_args,
     digest_projected_tool_results,
 )
 
@@ -103,3 +107,91 @@ def test_planner_wires_digest_before_truncate():
         src = inspect.getsource(fn)
         assert "digest_projected_tool_results" in src
         assert src.index("digest_projected_tool_results") < src.index("truncate_messages")
+
+
+# ---------- B2：assistant tool_calls 大参数消化 ----------
+
+
+def _asst(tool_name, args_str, call_id="call_1"):
+    return {"role": "assistant", "content": "",
+            "tool_calls": [{"id": call_id, "type": "function",
+                            "function": {"name": tool_name, "arguments": args_str}}]}
+
+
+LONG_REPORT = "# 分析报告 " + "细" * 400  # 远超默认阈值（不含换行，避开 JSON 转义干扰子串断言）
+
+
+def test_args_digest_replaces_long_report():
+    """超阈值的已投影工具大参数被替换为落账占位"""
+    msgs = [
+        _asst("script_analysis_report", json.dumps({
+            "doc_name": "三体.md", "summary": "一句话",
+            "report_markdown": LONG_REPORT}, ensure_ascii=False)),
+        _asst("document_write", json.dumps({"x": "短"})),
+        _asst("read_skill", json.dumps({"name": "s", "section": "c", "content": "正文"})),
+        _asst("document_write", json.dumps({"x": "短"})),  # 最近 2 条保留区
+        _asst("script_analysis_report", json.dumps({"summary": "最新"}, ensure_ascii=False)),
+    ]
+    n = digest_projected_tool_args(msgs, max_chars=200)
+    assert n == 1
+    sent_args = json.loads(msgs[0]["tool_calls"][0]["function"]["arguments"])
+    assert "report_markdown" in sent_args
+    assert LONG_REPORT not in sent_args["report_markdown"]
+    assert "已落账" in sent_args["report_markdown"]
+    # 短参数与同消息其他字段不动
+    assert sent_args["summary"] == "一句话"
+    assert sent_args["doc_name"] == "三体.md"
+
+
+def test_args_digest_recent_two_kept():
+    """最近 2 条含白名单调用的 assistant 消息保留原文"""
+    long_args = json.dumps({"summary": "s", "report_markdown": LONG_REPORT}, ensure_ascii=False)
+    msgs = [
+        _asst("script_analysis_report", long_args, "call_1"),  # 消化
+        _asst("script_analysis_report", long_args, "call_2"),  # 最近第 2 条
+        _asst("script_analysis_report", long_args, "call_3"),  # 最近第 1 条
+    ]
+    assert digest_projected_tool_args(msgs, max_chars=200) == 1
+    for i in (1, 2):
+        assert LONG_REPORT in msgs[i]["tool_calls"][0]["function"]["arguments"]
+    assert LONG_REPORT not in msgs[0]["tool_calls"][0]["function"]["arguments"]
+
+
+def test_args_digest_skips_non_projected_and_short():
+    """非白名单工具（read_skill 等）与未超阈值参数一律不动"""
+    msgs = [
+        _asst("read_skill", json.dumps({"name": "s", "section": "c",
+                                        "content": "长" * 500}, ensure_ascii=False)),
+        _asst("script_analysis_report", json.dumps({"summary": "短"})),
+        _asst("document_write", json.dumps({"x": "短"})),
+        _asst("document_write", json.dumps({"x": "短"})),
+        _asst("script_analysis_report", json.dumps({"summary": "最新"}, ensure_ascii=False)),
+    ]
+    assert digest_projected_tool_args(msgs, max_chars=200) == 0
+    assert "长" * 500 in msgs[0]["tool_calls"][0]["function"]["arguments"]
+
+
+def test_args_digest_disabled_when_zero_and_idempotent():
+    """max_chars=0 关闭；消化后占位短于阈值，二次调用不再命中"""
+    msgs = [
+        _asst("script_analysis_report", json.dumps({
+            "summary": "s", "report_markdown": LONG_REPORT}, ensure_ascii=False)),
+        _asst("document_write", json.dumps({"x": "短"})),
+        _asst("script_analysis_report", json.dumps({"summary": "最新"}, ensure_ascii=False)),
+    ]
+    assert digest_projected_tool_args(msgs, max_chars=0) == 0
+    assert LONG_REPORT in msgs[0]["tool_calls"][0]["function"]["arguments"]
+    assert digest_projected_tool_args(msgs, max_chars=200) == 1
+    assert digest_projected_tool_args(msgs, max_chars=200) == 0
+
+
+def test_args_digest_wired_both_channels():
+    """接线：流式/非流式两通道都在 truncate 前调用 tool_calls 参数消化"""
+    import inspect
+
+    from src.video_agent.core import turn_executor
+
+    for fn in (turn_executor.TurnExecutor.call_llm, turn_executor.TurnExecutor.call_llm_stream):
+        src = inspect.getsource(fn)
+        assert "digest_projected_tool_args" in src
+        assert src.index("digest_projected_tool_args") < src.index("truncate_messages")

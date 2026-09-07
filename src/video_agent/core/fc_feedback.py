@@ -6,6 +6,7 @@ view_storyboard_media 多模态回喂）与旧轮回喂的惰性压缩/图片剥
 
 fc_tool_runner.py 与本模块消费方一律直连本模块（re-export 壳已随批次 E3 收敛删除）。
 """
+import json
 import re
 from typing import Any, Dict, List, Union
 
@@ -58,15 +59,23 @@ FEEDBACK_MAX_TOTAL_CHARS = 100000
 
 # 结果已完整投影进工作台状态 JSON 的写类工具：只有它们的回喂行才可被消化。
 # 读回类（read_*）与调图（view_storyboard_media）的结果不在状态 JSON 里，
-# 消化即丢信息，硬排除在外；失败行同样不消化（错误信息模型需要）
+# 消化即丢信息，硬排除在外；失败行同样不消化（错误信息模型需要）。
+# script_analysis_report（B2）：报告全文已完整写入 state.analysis
+#（analysis_tools），回喂全文与状态 JSON 双份，纳管消化。
 PROJECTED_STATE_TOOLS = frozenset({
     "storyboard_create_group", "storyboard_patch_draft", "storyboard_add_draft",
     "storyboard_delete_group", "storyboard_confirm_draft", "document_write",
+    "script_analysis_report",
 })
 # 消化后的指针文案：保留工具名+成败摘要，指向状态 JSON 事实源
 #（外置 feedback.md::DIGEST_POINTER；{name} 为 str.format 占位，非 {{var}} 模板）
 DIGEST_POINTER = _load_feedback_section(
     "DIGEST_POINTER", "{name}：执行成功（详情已省略，最新状态以工作台状态 JSON 为准）")
+# B2：assistant tool_calls 大参数消化后的占位（与 DIGEST_POINTER 同语义，
+# 消化对象是 arguments JSON 里的字符串字段而非回喂行）
+ARG_DIGEST_PLACEHOLDER = _load_feedback_section(
+    "ARG_DIGEST_PLACEHOLDER",
+    "【已落账：本参数全文已写入工作台状态 JSON，此处省略；最新状态以工作台状态 JSON 为准】")
 # 失败结构化回喂的建议语族（外置 feedback.md::FAILURE_HINT_*，
 # 分支判定在本模块 compose_failure_feedback，文案单一事实源在分节）
 FAILURE_HINT_REPEAT = _load_feedback_section(
@@ -185,6 +194,70 @@ def digest_projected_tool_results(
                 out_lines.append(line)
         if changed:
             m["content"] = "\n".join(out_lines)
+    return digested
+
+
+def digest_projected_tool_args(
+    messages: List[Dict[str, Any]],
+    max_chars: int = 0,
+    keep_recent: int = 2,
+) -> int:
+    """B2：assistant tool_calls 大参数消化。
+
+    写类工具（PROJECTED_STATE_TOOLS）的大字符串参数（如
+    script_analysis_report 的 report_markdown 全文）已完整写入工作台状态
+    JSON——assistant 消息 tool_calls.arguments 里的全文与状态 JSON 双份，
+    超阈值时替换为 ARG_DIGEST_PLACEHOLDER 占位。
+
+    硬约束（与 digest_projected_tool_results 同口径）：
+    - 只消化白名单工具的 arguments（结果已完整投影进状态 JSON）；
+    - 最近 keep_recent 条含白名单调用的 assistant 消息保留原文；
+    - max_chars <= 0 整体关闭；
+    - 原地修改，返回被消化的参数字段数（幂等：占位后短于阈值不再命中）。
+    """
+    if max_chars <= 0:
+        return 0
+    # 收集含白名单调用的 assistant 消息索引（时间序）
+    asst_idx = []
+    for i, m in enumerate(messages):
+        if m.get("role") != "assistant":
+            continue
+        calls = m.get("tool_calls") or []
+        if any(
+            isinstance(c, dict)
+            and (c.get("function") or {}).get("name") in PROJECTED_STATE_TOOLS
+            for c in calls
+        ):
+            asst_idx.append(i)
+    eligible = asst_idx[:-keep_recent] if keep_recent > 0 else asst_idx
+    digested = 0
+    for i in eligible:
+        m = messages[i]
+        changed = False
+        for call in (m.get("tool_calls") or []):
+            if not isinstance(call, dict):
+                continue
+            func = call.get("function") or {}
+            if func.get("name") not in PROJECTED_STATE_TOOLS:
+                continue
+            raw = func.get("arguments")
+            if not isinstance(raw, str) or len(raw) <= max_chars:
+                continue
+            try:
+                args = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if not isinstance(args, dict):
+                continue
+            for key, val in list(args.items()):
+                if isinstance(val, str) and len(val) > max_chars:
+                    args[key] = ARG_DIGEST_PLACEHOLDER
+                    digested += 1
+                    changed = True
+            if changed:
+                func["arguments"] = json.dumps(args, ensure_ascii=False)
+        if changed:
+            m["tool_calls"] = m.get("tool_calls")
     return digested
 
 

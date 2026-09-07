@@ -207,9 +207,15 @@ def test_inherited_shared_state_severed_on_start_trace(tmp_path, monkeypatch):
     assert rec_child["trace_id"] != rec_parent["trace_id"]
 
 
-def test_rotation_keep_default_tightened_to_two():
-    """运行时残留策略（#16）：轮转保留份数默认收紧为 2 份。"""
-    assert tr_mod.settings.trace_rotation_keep == 2
+def test_rotation_keep_default_tightened_to_two(monkeypatch):
+    """运行时残留策略（#16）：轮转保留份数默认收紧为 2 份。
+    （本地 .env 的 TRACE_ROTATION_KEEP 会经 load_dotenv 污染 Settings，
+    测默认值须显式清除该环境变量后重建 settings）"""
+    monkeypatch.delenv("TRACE_ROTATION_KEEP", raising=False)
+    from src.video_agent.config import Settings
+
+    fresh = Settings()
+    assert fresh.trace_rotation_keep == 2
 
 
 def test_rotation_discards_beyond_two_keeps(tmp_path, monkeypatch):

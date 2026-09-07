@@ -27,6 +27,9 @@ read_skill 执行成功，全文如下（skill={name}，section={section}）：
 ## DIGEST_POINTER
 {name}：执行成功（结果已写入工作台并投影进状态 JSON，冗长详情回喂已省略；最新状态以工作台状态 JSON 为准）
 
+## ARG_DIGEST_PLACEHOLDER
+【已落账：本参数全文已写入工作台状态 JSON，此处省略；最新状态以工作台状态 JSON 为准】
+
 ## FAILURE_HINT_REPEAT
 该工具已连续失败 2 次，同参重试大概率仍失败，不得再次重试；可向用户说明原因并给出替代选择。
 

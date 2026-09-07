@@ -26,6 +26,7 @@ from src.video_agent.core.chat_port import ChatResponse, StreamChunk
 from src.video_agent.config import settings
 from src.video_agent.core.fc_feedback import (
     compress_prior_feedback,
+    digest_projected_tool_args,
     digest_projected_tool_results,
     format_tool_results,
     should_compress_feedback,
@@ -243,8 +244,11 @@ class TurnExecutor:
         if state_tail:
             full_messages.append({"role": "user", "content": state_tail})
         # tool-result 消化：已投影进状态 JSON 的写类工具结果超阈值行替换为
-        # 指针（最近 2 轮回喂保留原文；TOOL_RESULT_DIGEST_CHARS=0 一键关）
+        # 指针（最近 2 轮回喂保留原文；TOOL_RESULT_DIGEST_CHARS=0 一键关）；
+        # B2：assistant tool_calls 大参数（report_markdown 等已落账全文）同口径消化
         digest_projected_tool_results(
+            full_messages, int(settings.tool_result_digest_chars))
+        digest_projected_tool_args(
             full_messages, int(settings.tool_result_digest_chars))
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝，
         # 尾部状态消息的降级重建见 _degrade_state_tail
@@ -297,8 +301,11 @@ class TurnExecutor:
         state_tail = self._state_tail_message()
         if state_tail:
             full_messages.append({"role": "user", "content": state_tail})
-        # tool-result 消化：同 call_llm（已投影结果超阈值行换指针）
+        # tool-result 消化：同 call_llm（已投影结果超阈值行换指针）；
+        # B2：assistant tool_calls 大参数同口径消化
         digest_projected_tool_results(
+            full_messages, int(settings.tool_result_digest_chars))
+        digest_projected_tool_args(
             full_messages, int(settings.tool_result_digest_chars))
         # Token 预算截断：同 call_llm（含尾部状态消息降级重建）
         max_tokens = int(self.context_window() * settings.token_budget_ratio)
