@@ -221,13 +221,9 @@ def detect_relay_error_envelope(text: str) -> Optional[int]:
     return None
 
 
-def _gate_reasoning_passthrough(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """思考回传闸门（五项修法批 4，default-off）：关 = 剥离 assistant 历史
-    消息携带的 reasoning_content（浅拷贝替换，不改调用方历史本体），防残留
-    字段外泄到拒收该字段的端点；开 = 原样下发（GLM 4.5+ 交错思考/工具循环
-    官方要求把 assistant 思考内容回传以保持推理连续性）。"""
-    if settings.llm_reasoning_passthrough:
-        return messages
+def _strip_messages_reasoning(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """剥离 assistant 历史消息携带的 reasoning_content（浅拷贝替换，
+    不改调用方历史本体），供闸门关闭与 400 兜底共用。"""
     out = messages
     mutated = False
     for i, m in enumerate(messages):
@@ -237,6 +233,24 @@ def _gate_reasoning_passthrough(messages: List[Dict[str, Any]]) -> List[Dict[str
                 mutated = True
             out[i] = {k: v for k, v in m.items() if k != "reasoning_content"}
     return out
+
+
+# 400 兜底记忆键：assistant 消息内字段（与 payload 顶层字段键共集合存放）
+MSG_REASONING_KEY = "messages.reasoning_content"
+
+
+def _gate_reasoning_passthrough(
+    messages: List[Dict[str, Any]], force_strip: bool = False
+) -> List[Dict[str, Any]]:
+    """思考回传闸门（五项修法批 4，default-off）：关 = 剥离 assistant 历史
+    消息携带的 reasoning_content（浅拷贝替换，不改调用方历史本体），防残留
+    字段外泄到拒收该字段的端点；开 = 原样下发（GLM 4.5+ 交错思考/工具循环
+    官方要求把 assistant 思考内容回传以保持推理连续性）。
+    force_strip = 400 兜底记忆命中（该端点曾点名拒收 reasoning_content），
+    无论开关一律剥离（上下文与缓存优化计划批 A）。"""
+    if not force_strip and settings.llm_reasoning_passthrough:
+        return messages
+    return _strip_messages_reasoning(messages)
 
 
 class OpenAICompatChatAdapter(BaseChatAdapter):
@@ -309,7 +323,21 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
     def _strip_unsupported_on_400(self, payload: Dict[str, Any], body: str) -> bool:
         """兼容探针：400 拒收时按报文点名剥离可选字段（reasoning_effort/
         response_format），未点名则两者并剥；剥过即记忆（同实例不再试探）。
+        assistant 消息内 reasoning_content 被点名拒收时剥离历史消息该字段
+        并记忆（messages.reasoning_content，批 A 兜底：思考回传开着的端点
+        迁移到拒收型端点时不至于持续 400）。
         返回是否剥离了任何字段（True 时调用方应重试一次）。"""
+        # 消息内字段优先：报文点名 reasoning_content 时只剥消息字段，
+        # 不落入顶层字段并剥（避免误剥 reasoning_effort）
+        if "reasoning_content" in body and MSG_REASONING_KEY not in self._unsupported_fields:
+            payload["messages"] = _strip_messages_reasoning(payload.get("messages") or [])
+            self._unsupported_fields.add(MSG_REASONING_KEY)
+            record_degradation("adapter.messages_reasoning_content_unsupported")
+            logger.warning(
+                "[OpenAICompat] 端点 400 拒收 assistant 消息 reasoning_content，"
+                "剥离历史思考字段后重试一次（本实例后续请求不再携带）"
+            )
+            return True
         fields = [k for k in ("response_format", "reasoning_effort") if k in payload]
         if not fields:
             return False
@@ -343,7 +371,10 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             timeout = settings.llm_timeout
         payload: Dict[str, Any] = {
             "model": self.model,
-            "messages": _gate_reasoning_passthrough(messages),
+            "messages": _gate_reasoning_passthrough(
+                messages,
+                force_strip=MSG_REASONING_KEY in self._unsupported_fields,
+            ),
             "temperature": temperature,
             "max_tokens": max_tokens,
             # 非流式必须显式声明：中介对缺省 stream 按流式路由，
@@ -473,7 +504,10 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             timeout = settings.llm_stream_timeout
         payload: Dict[str, Any] = {
             "model": self.model,
-            "messages": _gate_reasoning_passthrough(messages),
+            "messages": _gate_reasoning_passthrough(
+                messages,
+                force_strip=MSG_REASONING_KEY in self._unsupported_fields,
+            ),
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,

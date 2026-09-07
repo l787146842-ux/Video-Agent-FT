@@ -115,6 +115,81 @@ async def test_gate_on_passes_reasoning_through(_gate_on):
     await a.close()
 
 
+# ---------- ①' 400 兜底（上下文与缓存优化计划批 A） ----------
+
+
+@respx.mock
+@pytest.mark.allow_degradation
+async def test_400_named_reasoning_strips_messages_and_retries(_gate_on):
+    """400 点名拒收 reasoning_content：剥离历史消息思考字段重试一次并记忆"""
+    route = respx.post(f"{BASE_URL}/chat/completions").mock(
+        side_effect=[
+            httpx.Response(400, json={"error": {
+                "message": "unknown field: reasoning_content",
+                "code": "UNKNOWN_FIELD"}}),
+            httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}),
+        ])
+    a = OpenAICompatChatAdapter(base_url=BASE_URL, api_key="k", model="glm-4.6")
+    resp = await a.chat([
+        {"role": "user", "content": "问"},
+        {"role": "assistant", "content": "占位", "reasoning_content": "思考"},
+    ])
+    assert resp.content == "ok"
+    assert len(route.calls) == 2, "400 后剥离重试一次"
+    sent2 = json.loads(route.calls.last.request.content)
+    assert "reasoning_content" not in sent2["messages"][1]
+    assert "messages.reasoning_content" in a._unsupported_fields
+    await a.close()
+
+
+@respx.mock
+@pytest.mark.allow_degradation
+async def test_400_memory_skips_reasoning_on_next_request(_gate_on):
+    """兜底记忆生效：同实例后续请求不再携带 reasoning_content（不再试探 400）"""
+    route = respx.post(f"{BASE_URL}/chat/completions").mock(
+        side_effect=[
+            httpx.Response(400, json={"error": {
+                "message": "reasoning_content not allowed",
+                "code": "UNKNOWN_FIELD"}}),
+            httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok1"}, "finish_reason": "stop"}]}),
+            httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok2"}, "finish_reason": "stop"}]}),
+        ])
+    a = OpenAICompatChatAdapter(base_url=BASE_URL, api_key="k", model="glm-4.6")
+    history = [
+        {"role": "user", "content": "问"},
+        {"role": "assistant", "content": "占位", "reasoning_content": "思考"},
+    ]
+    await a.chat([dict(m) for m in history])
+    await a.chat([dict(m) for m in history])
+    sent3 = json.loads(route.calls.last.request.content)
+    assert "reasoning_content" not in sent3["messages"][1]
+    assert len(route.calls) == 3, "记忆命中后第二个请求直接剥离，无第二次 400"
+    await a.close()
+
+
+@respx.mock
+@pytest.mark.allow_degradation
+async def test_400_named_reasoning_does_not_strip_top_level_fields(_gate_on):
+    """点名 reasoning_content 时只剥消息字段，不误剥顶层 response_format"""
+    route = respx.post(f"{BASE_URL}/chat/completions").mock(
+        side_effect=[
+            httpx.Response(400, json={"error": {
+                "message": "invalid reasoning_content",
+                "code": "UNKNOWN_FIELD"}}),
+            httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}),
+        ])
+    a = OpenAICompatChatAdapter(base_url=BASE_URL, api_key="k", model="glm-4.6")
+    rf = {"type": "json_object"}
+    await a.chat([{"role": "user", "content": "问"}], response_format=rf)
+    sent2 = json.loads(route.calls.last.request.content)
+    assert sent2.get("response_format") == rf, "顶层字段不得被误剥"
+    await a.close()
+
+
 # ---------- ② 工具轮占位附着（agent_loop，GLM 工具循环主场景） ----------
 
 
