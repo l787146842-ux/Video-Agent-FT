@@ -694,6 +694,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                         type="tool_call",
                         tool_name=slot["name"],
                         tool_args=args if isinstance(args, dict) else {},
+                        tool_call_id=slot["id"] or "",
                     )
                 # 流结束后 yield done chunk 携带 finish_reason（+ 机会性 usage）
                 yield StreamChunk(type="done", finish_reason=last_finish or "stop",

@@ -402,8 +402,10 @@ class TurnExecutor:
                     if self._on_event is not None:
                         await self._on_event({"type": SSE_REASONING_DELTA, "text": chunk.text})
                 elif chunk.type == "tool_call":
+                    # C1：优先用供应商真实 tool_call id（tool role 结果配对用；
+                    # 端点未下发时空串，回落合成 id 保持唯一性）
                     stream_tool_calls.append({
-                        "id": f"call_stream_{len(stream_tool_calls)}",
+                        "id": chunk.tool_call_id or f"call_stream_{len(stream_tool_calls)}",
                         "type": "function",
                         "function": {
                             "name": chunk.tool_name,

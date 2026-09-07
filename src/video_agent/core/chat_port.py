@@ -44,6 +44,9 @@ class StreamChunk(BaseModel):
     text: str = ""
     tool_name: str = ""
     tool_args: Dict[str, Any] = {}
+    # 供应商 tool_call id（上下文与缓存优化计划批 C1）：仅在 type="tool_call"
+    # 时携带（端点未下发时为空，消费方回落合成 id），供 tool role 结果配对
+    tool_call_id: str = ""
     finish_reason: str = ""  # 仅在 type="done" 时携带（stop / length / tool_calls）
     # 仅在 type="done" 时机会性携带（中继在流内下发 usage 才有值，不强求）
     usage_tokens: int = 0

@@ -41,6 +41,29 @@ class TestB1StreamDeclaration:
         await adapter.close()
 
     @respx.mock
+    async def test_stream_tool_call_carries_provider_id(self, adapter):
+        """C1：流式 tool_call chunk 携带供应商 tool_call id（tool role 配对用）"""
+        sse_body = (
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_prov_1",'
+            '"function":{"name":"read_skill","arguments":"{\\"name\\":\\"s\\"}"}}]}}]}\n\n'
+            'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n'
+            "data: [DONE]\n\n"
+        )
+        respx.post(f"{BASE_URL}/chat/completions").mock(
+            return_value=httpx.Response(
+                200, content=sse_body.encode("utf-8"),
+                headers={"content-type": "text/event-stream"},
+            )
+        )
+        chunks = []
+        async for chunk in adapter.chat_stream([{"role": "user", "content": "你好"}]):
+            chunks.append(chunk)
+        tc = next(c for c in chunks if c.type == "tool_call")
+        assert tc.tool_call_id == "call_prov_1"
+        assert tc.tool_name == "read_skill"
+        await adapter.close()
+
+    @respx.mock
     async def test_chat_non_json_body_raises_adapter_error(self, adapter):
         """0818-1111：200 但回 SSE 文本时抛 AdapterError，不漏裸 JSONDecodeError。"""
         respx.post(f"{BASE_URL}/chat/completions").mock(
