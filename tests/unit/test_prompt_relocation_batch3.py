@@ -27,17 +27,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_b3_feedback_sections_exist():
     # BAD_OUTPUT_NUDGE 已随批 2 退役删除（判空 = 正常收轮，nudge 重试退役）
-    for section in ("STEP_FEEDBACK", "EMPTY_RESPONSE_FALLBACK",
-                    "STEP_ASSISTANT_PLACEHOLDER"):
+    # STEP_ASSISTANT_PLACEHOLDER 已随上下文与缓存优化计划批 C2 退役删除
+    # （assistant 消息改带标准 tool_calls，content 为空合法，占位无消费点）
+    for section in ("STEP_FEEDBACK", "EMPTY_RESPONSE_FALLBACK"):
         assert load_prompt_section("planner/feedback.md", section), \
             f"feedback.md 分节缺失: {section}"
-    # 工具轮 assistant 占位必须是客观陈述，不得是「本步无输出」式假陈述：
-    # 该分支入口是「fc_applied>0 且无可见正文」（工具轮常态，本步实际执行了
-    # 工具），假陈述会与紧随其后注入的 STEP_FEEDBACK（「第 N 轮的 X 个 Tool 已
-    # 执行完毕」）自相矛盾。
-    placeholder = load_prompt_section("planner/feedback.md", "STEP_ASSISTANT_PLACEHOLDER")
-    assert "工具调用轮" in placeholder, "占位应客观陈述本轮为工具调用轮"
-    assert "无输出" not in placeholder, "工具轮占位不得是假陈述（本步执行了工具）"
+    assert not load_prompt_section("planner/feedback.md", "STEP_ASSISTANT_PLACEHOLDER"), \
+        "STEP_ASSISTANT_PLACEHOLDER 已随批 C2 退役，不应回潜"
 
 
 def test_b3_settings_templates_exist():
@@ -119,12 +115,11 @@ def test_f2_prompt_dual_source_merge():
 
 def test_b3_agent_loop_templates_wired():
     """agent_loop 运行时文案走 feedback.md 分节（分节在场即接线有效；
-    代码内置兜底允许保留但不得作为唯一来源）。"""
+    代码内置兜底允许保留但不得作为唯一来源）。
+    （C2：STEP_ASSISTANT_PLACEHOLDER 随占位退役删除——assistant 消息改带
+    标准 tool_calls；本测试同步改为退役防回潜断言）"""
     src = (ROOT / "src/video_agent/core/agent_loop.py").read_text(encoding="utf-8")
-    for anchor in ("STEP_FEEDBACK", "EMPTY_RESPONSE_FALLBACK",
-                   "STEP_ASSISTANT_PLACEHOLDER"):
+    for anchor in ("STEP_FEEDBACK", "EMPTY_RESPONSE_FALLBACK"):
         assert anchor in src, f"agent_loop 未接线分节: {anchor}"
-    # 工具轮 assistant 占位经外置分节读取（load_prompt_section），
-    # 不再内联写死假陈述文案（消除双源，M-2 同口径）
-    assert 'content or _asst_placeholder' in src, \
-        "工具轮 assistant 占位应经外置分节变量拼接，而非内联写死"
+    assert "STEP_ASSISTANT_PLACEHOLDER" not in src, \
+        "STEP_ASSISTANT_PLACEHOLDER 已随批 C2 退役，agent_loop 不应有残留消费点"

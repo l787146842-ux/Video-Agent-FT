@@ -168,6 +168,42 @@ class TestFormatToolResults:
         assert format_tool_results([]) == ""
 
 
+# ---------- C2：标准 tool role 回喂组装 ----------
+
+class TestFormatToolResultMessages:
+    """C2：工具结果切标准 tool role（id 配对），图片走 user 多模态"""
+
+    def test_tool_role_messages_with_call_id(self):
+        from src.video_agent.core.fc_feedback import format_tool_result_messages
+
+        trs = [
+            {"name": "read_uploaded_doc", "ok": True, "call_id": "call_a",
+             "data": {"name": "doc.md", "content": "DOC_TEXT"}},
+            {"name": "script_analysis_report", "ok": False, "call_id": "call_b",
+             "error": "校验失败"},
+        ]
+        msgs, image_msg = format_tool_result_messages(trs)
+        assert image_msg is None
+        assert [m["role"] for m in msgs] == ["tool", "tool"]
+        assert msgs[0]["tool_call_id"] == "call_a"
+        assert "DOC_TEXT" in msgs[0]["content"]
+        assert msgs[1]["tool_call_id"] == "call_b"
+        assert "校验失败" in msgs[1]["content"]
+
+    def test_image_tool_image_parts_go_to_user_msg(self):
+        from src.video_agent.core.fc_feedback import format_tool_result_messages
+
+        trs = [{"name": "view_storyboard_media", "ok": True, "call_id": "call_c",
+                "data": {"images": [{"label": "镜头1", "draft_id": "d1",
+                                     "data_uri": "data:image/png;base64,XXX"}]}}]
+        msgs, image_msg = format_tool_result_messages(trs)
+        assert image_msg is not None and image_msg["role"] == "user"
+        imgs = [p for p in image_msg["content"] if p.get("type") == "image_url"]
+        assert imgs and imgs[0]["image_url"]["url"].startswith("data:image/png")
+        assert msgs, "文本说明仍以 tool 消息回喂"
+        assert all(isinstance(m["content"], str) for m in msgs)
+
+
 class TestFuzzyPick:
     """清单模糊定位：模型名称略有出入也能命中"""
 

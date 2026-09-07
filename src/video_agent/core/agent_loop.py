@@ -545,23 +545,31 @@ async def run_agent_loop(
                 tracer.end_step(step, actions_applied=fc_applied,
                                 finish_reason=finish_reason or "fc_continue",
                                 token_usage=step_tokens, cached_tokens=step_cached)
-                # 回喂：让下一步 LLM 知道工具已执行（文案外置 feedback.md::STEP_FEEDBACK，
-                # 指令收敛 Rule6）
-                # 工具轮 assistant 占位：FC 轮 content 为空是 function-calling 常态，
-                # 占位文案外置 feedback.md::STEP_ASSISTANT_PLACEHOLDER（客观陈述，
-                # 与紧随其后的 STEP_FEEDBACK 不自相矛盾）；分节缺失退化为空串
-                # （不内联兜底文案，消除双源漂移，M-2 同口径）
-                _asst_placeholder = load_prompt_section(
-                    "planner/feedback.md", "STEP_ASSISTANT_PLACEHOLDER")
-                if not _asst_placeholder:
-                    logger.warning(
-                        "[agent_loop] prompts/planner/feedback.md::STEP_ASSISTANT_PLACEHOLDER "
-                        "分节缺失，占位退化为空串")
-                messages.append({"role": "assistant", "content": content or _asst_placeholder,
-                                 **({"reasoning_content": str((fc_extra or {}).get("reasoning_content") or "")}
-                                    if settings.llm_reasoning_passthrough
-                                    and str((fc_extra or {}).get("reasoning_content") or "").strip()
-                                    else {})})
+                # C2 标准工具消息顺序（对齐 Codex/DSH）：
+                # assistant(tool_calls) → tool 结果们 → [图片 user] → STEP_FEEDBACK
+                # assistant 消息携带本轮 tool_calls 原样（id 与 tool 消息配对；
+                # content 为空在 tool_calls 形态下合法，占位文案退役）；
+                # 问即停的悬挂调用（无 tool 结果）补「未执行」tool 消息，
+                # 满足 OpenAI 语义「每个 tool_call 必须有对应 tool 消息」。
+                _fc_calls = list((fc_extra or {}).get("_fc_tool_calls") or [])
+                _asst: Dict[str, Any] = {"role": "assistant",
+                                         "content": content or "",
+                                         "tool_calls": _fc_calls}
+                if settings.llm_reasoning_passthrough \
+                        and str((fc_extra or {}).get("reasoning_content") or "").strip():
+                    _asst["reasoning_content"] = str((fc_extra or {}).get("reasoning_content") or "")
+                messages.append(_asst)
+                _pending = list((fc_extra or {}).get("_pending_feedback_msgs") or [])
+                if _fc_calls:
+                    _answered = {str(m.get("tool_call_id") or "")
+                                 for m in _pending if m.get("role") == "tool"}
+                    for _tc in _fc_calls:
+                        _cid = str((_tc or {}).get("id") or "")
+                        if _cid and _cid not in _answered:
+                            _pending.append({
+                                "role": "tool", "tool_call_id": _cid,
+                                "content": "（本批问即停，该调用未执行；等待用户回应后按其裁决处理）"})
+                messages.extend(_pending)
                 _step_fb = load_prompt_section("planner/feedback.md", "STEP_FEEDBACK")
                 if _step_fb:
                     _step_content = _step_fb.replace("{{step}}", str(step)).replace("{{count}}", str(fc_applied))

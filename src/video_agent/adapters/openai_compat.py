@@ -237,6 +237,39 @@ def _strip_messages_reasoning(messages: List[Dict[str, Any]]) -> List[Dict[str, 
 
 # 400 兜底记忆键：assistant 消息内字段（与 payload 顶层字段键共集合存放）
 MSG_REASONING_KEY = "messages.reasoning_content"
+# C2 兜底记忆键：端点拒收标准 tool role 消息 → 整体降级 user 伪装
+MSG_TOOL_ROLE_KEY = "messages.tool_role"
+
+
+def _downgrade_tool_role_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """拒收型端点降级：assistant.tool_calls 消息转回 assistant 文本占位，
+    role:"tool" 结果消息转回 user 伪装（FEEDBACK_MARKER 前缀，与旧格式
+    兼容——fc_feedback 家族的文本解析对两种形态都成立）。浅拷贝替换，
+    不改调用方历史本体。"""
+    out = messages
+    mutated = False
+    for i, m in enumerate(messages):
+        if not isinstance(m, dict):
+            continue
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            if not mutated:
+                out = list(messages)
+                mutated = True
+            calls = m.get("tool_calls") or []
+            names = ", ".join(
+                str((c.get("function") or {}).get("name") or "?")
+                for c in calls if isinstance(c, dict))
+            new_msg = {k: v for k, v in m.items() if k != "tool_calls"}
+            new_msg["content"] = new_msg.get("content") or (
+                f"（本轮为工具调用轮：{names}，结果见紧随其后的系统消息）")
+            out[i] = new_msg
+        elif m.get("role") == "tool":
+            if not mutated:
+                out = list(messages)
+                mutated = True
+            out[i] = {"role": "user", "content": (
+                "（系统）本轮工具执行结果：\n- " + str(m.get("content", "")))}
+    return out
 
 
 def _gate_reasoning_passthrough(
@@ -251,6 +284,18 @@ def _gate_reasoning_passthrough(
     if not force_strip and settings.llm_reasoning_passthrough:
         return messages
     return _strip_messages_reasoning(messages)
+
+
+def _prepare_endpoint_messages(
+    messages: List[Dict[str, Any]], unsupported: set,
+) -> List[Dict[str, Any]]:
+    """请求侧消息变换统一入口：思考回传闸门 + 400 兜底记忆
+    （reasoning_content 剥离 / tool role 降级 user 伪装）。"""
+    msgs = _gate_reasoning_passthrough(
+        messages, force_strip=MSG_REASONING_KEY in unsupported)
+    if MSG_TOOL_ROLE_KEY in unsupported:
+        msgs = _downgrade_tool_role_messages(msgs)
+    return msgs
 
 
 class OpenAICompatChatAdapter(BaseChatAdapter):
@@ -338,6 +383,19 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                 "剥离历史思考字段后重试一次（本实例后续请求不再携带）"
             )
             return True
+        # C2 兜底：报文点名 tool 且请求确带 tool role/tool_calls 消息 →
+        # 整体降级 user 伪装重试（旧通道文本解析兼容，无害回退）
+        if ("tool" in body and MSG_TOOL_ROLE_KEY not in self._unsupported_fields
+                and any(isinstance(m, dict) and (m.get("role") == "tool" or m.get("tool_calls"))
+                        for m in (payload.get("messages") or []))):
+            payload["messages"] = _downgrade_tool_role_messages(payload.get("messages") or [])
+            self._unsupported_fields.add(MSG_TOOL_ROLE_KEY)
+            record_degradation("adapter.tool_role_unsupported")
+            logger.warning(
+                "[OpenAICompat] 端点 400 拒收 tool role 消息，降级 user 伪装后"
+                "重试一次（本实例后续请求沿用旧通道）"
+            )
+            return True
         fields = [k for k in ("response_format", "reasoning_effort") if k in payload]
         if not fields:
             return False
@@ -371,10 +429,8 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             timeout = settings.llm_timeout
         payload: Dict[str, Any] = {
             "model": self.model,
-            "messages": _gate_reasoning_passthrough(
-                messages,
-                force_strip=MSG_REASONING_KEY in self._unsupported_fields,
-            ),
+            "messages": _prepare_endpoint_messages(
+                messages, self._unsupported_fields),
             "temperature": temperature,
             "max_tokens": max_tokens,
             # 非流式必须显式声明：中介对缺省 stream 按流式路由，
@@ -504,10 +560,8 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
             timeout = settings.llm_stream_timeout
         payload: Dict[str, Any] = {
             "model": self.model,
-            "messages": _gate_reasoning_passthrough(
-                messages,
-                force_strip=MSG_REASONING_KEY in self._unsupported_fields,
-            ),
+            "messages": _prepare_endpoint_messages(
+                messages, self._unsupported_fields),
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,

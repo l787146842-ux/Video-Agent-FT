@@ -190,6 +190,43 @@ async def test_400_named_reasoning_does_not_strip_top_level_fields(_gate_on):
     await a.close()
 
 
+@respx.mock
+@pytest.mark.allow_degradation
+async def test_400_tool_role_downgrades_to_user_disguise(_gate_on):
+    """C2 兜底：端点 400 点名拒收 tool role → 降级 user 伪装重试并记忆，
+    后续请求沿用旧通道（assistant.tool_calls 也回退文本占位）"""
+    route = respx.post(f"{BASE_URL}/chat/completions").mock(
+        side_effect=[
+            httpx.Response(400, json={"error": {
+                "message": "role tool is not supported",
+                "code": "INVALID_ROLE"}}),
+            httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}),
+            httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok2"}, "finish_reason": "stop"}]}),
+        ])
+    a = OpenAICompatChatAdapter(base_url=BASE_URL, api_key="k", model="glm-4.6")
+    history = [
+        {"role": "user", "content": "问"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "call_x", "type": "function",
+             "function": {"name": "read_skill", "arguments": "{\"name\":\"s\"}"}}]},
+        {"role": "tool", "tool_call_id": "call_x", "content": "章节正文"},
+    ]
+    await a.chat([dict(m) for m in history])
+    sent2 = json.loads(route.calls.last.request.content)
+    roles2 = [m.get("role") for m in sent2["messages"]]
+    assert "tool" not in roles2, "400 后重试请求不含 tool role"
+    assert sent2["messages"][1].get("role") == "assistant"
+    assert "tool_calls" not in sent2["messages"][1], "assistant.tool_calls 一并回退文本占位"
+    assert "章节正文" in sent2["messages"][2]["content"], "tool 结果转 user 伪装保留内容"
+    # 记忆生效：第二次请求直接走旧通道
+    await a.chat([dict(m) for m in history])
+    sent3 = json.loads(route.calls.last.request.content)
+    assert all(m.get("role") != "tool" for m in sent3["messages"])
+    await a.close()
+
+
 # ---------- ② 工具轮占位附着（agent_loop，GLM 工具循环主场景） ----------
 
 

@@ -612,6 +612,7 @@ class FCToolRunner:
             # 结构化失败回喂（客观报告+单句建议，二次升级）
             st.tool_results.append({
                 "name": name, "ok": False,
+                "call_id": c.tool_event_id,
                 "error": compose_failure_feedback(
                     name, result.error, _fail_n,
                     # T5 结构化错误轴：生产端已标注则透传分类码/可重试标志，

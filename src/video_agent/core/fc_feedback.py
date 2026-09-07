@@ -172,10 +172,9 @@ def digest_projected_tool_results(
     fb_idx = []
     for i, m in enumerate(messages):
         content = m.get("content", "")
-        if m.get("role") != "user" or not isinstance(content, str):
+        if not _is_feedback_msg(m) or not isinstance(content, str):
             continue
-        if content.startswith(FEEDBACK_MARKER):
-            fb_idx.append(i)
+        fb_idx.append(i)
     # 最近 keep_recent 条回喂保留原文
     eligible = fb_idx[:-keep_recent] if keep_recent > 0 else fb_idx
     digested = 0
@@ -294,13 +293,69 @@ def render_read_result(name: str, data: Dict[str, Any]) -> str:
     return f"【{doc_name}】\n{content}"
 
 
+def _is_feedback_msg(m: Dict[str, Any]) -> bool:
+    """C2：识别「工具结果回喂」消息——tool role 消息（标准格式）或
+    旧 user 伪装消息（FEEDBACK_MARKER 前缀，纯文本保底通道与历史兼容）。"""
+    if m.get("role") == "tool":
+        return True
+    if m.get("role") != "user":
+        return False
+    content = m.get("content", "")
+    if isinstance(content, str):
+        return content.startswith(FEEDBACK_MARKER)
+    if isinstance(content, list):
+        first_text = next((p.get("text", "") for p in content
+                           if isinstance(p, dict) and p.get("type") == "text"), "")
+        return first_text.startswith(FEEDBACK_MARKER)
+    return False
+
+
+def format_tool_result_messages(
+    tool_results: List[Dict[str, Any]],
+    messages: List[Dict[str, Any]] = None,
+):
+    """C2：标准 tool role 回喂组装（对齐 Codex/DSH 的 call_id 配对格式）。
+
+    返回 (tool_messages, image_user_msg)：
+    - tool_messages：每个调用一条 {"role": "tool", "tool_call_id": ...,
+      "content": 行式结果文本}（content 复用 format_tool_results 的单条
+      渲染，B1 去重/digest/压缩家族按 role 识别继续生效）；
+    - image_user_msg：view_storyboard_media 的图片 parts 汇成一条 user
+      多模态消息（tool role 不承载图片，业界同口径），无图片为 None。
+    """
+    tool_msgs: List[Dict[str, Any]] = []
+    image_parts: List[Dict[str, Any]] = []
+    image_notes: List[str] = []
+    for tr in tool_results:
+        name = str(tr.get("name", ""))
+        rendered = format_tool_results([tr], messages=messages)
+        if isinstance(rendered, list):
+            # 图片工具：文本说明进 tool 消息，图片 parts 汇入 user 多模态
+            text_out = "\n".join(p.get("text", "") for p in rendered
+                                 if isinstance(p, dict) and p.get("type") == "text")
+            image_parts.extend(p for p in rendered
+                               if isinstance(p, dict) and p.get("type") == "image_url")
+            image_notes.append(text_out.splitlines()[-1] if text_out else name)
+        else:
+            text_out = str(rendered or "")
+        tool_msgs.append({
+            "role": "tool",
+            "tool_call_id": str(tr.get("call_id") or ""),
+            "content": text_out,
+        })
+    image_user_msg = None
+    if image_parts:
+        image_user_msg = {"role": "user", "content": (
+            [{"type": "text", "text": FEEDBACK_MARKER + "\n" + "\n".join(image_notes)}]
+            + image_parts)}
+    return tool_msgs, image_user_msg
+
+
 def _skill_section_seen(messages: List[Dict[str, Any]], name: str, section: str) -> bool:
     """B1：历史回喂中是否已出现过同 (skill, section) 的章节全文行。"""
     for m in messages or []:
         content = m.get("content", "")
-        if m.get("role") != "user" or not isinstance(content, str):
-            continue
-        if not content.startswith(FEEDBACK_MARKER):
+        if not _is_feedback_msg(m) or not isinstance(content, str):
             continue
         for line in content.splitlines():
             hit = _READ_SKILL_SEEN_RE.match(line)

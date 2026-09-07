@@ -52,8 +52,8 @@ read_skill 执行成功，全文如下（skill={name}，section={section}）：
 ## STEP_FEEDBACK
 （系统）第 {{step}} 轮的 {{count}} 个 Tool 已执行完毕，工作台状态已刷新（见对话末尾最新的工作台状态 JSON）。请继续完成任务；全部完成后直接回复文本即可。
 
-## STEP_ASSISTANT_PLACEHOLDER
-（本轮为工具调用轮，正文见工作台状态）
+<!-- STEP_ASSISTANT_PLACEHOLDER 已随上下文与缓存优化计划批 C2 退役删除：
+     assistant 消息改带标准 tool_calls（content 为空合法），占位文案无消费点 -->
 
 ## EMPTY_RESPONSE_FALLBACK
 这一步没有生成可见回复（上游可能瞬时抖动）——请直接说「重试」，我再来一次；若连续出现可尝试切换模型。

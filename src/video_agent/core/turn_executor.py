@@ -28,6 +28,7 @@ from src.video_agent.core.fc_feedback import (
     compress_prior_feedback,
     digest_projected_tool_args,
     digest_projected_tool_results,
+    format_tool_result_messages,
     format_tool_results,
     should_compress_feedback,
     strip_prior_feedback_images,
@@ -463,23 +464,29 @@ class TurnExecutor:
             gate_override=self._gate_override_scope,
             confirmation_collector=_confirm_holder,
         )
-        # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
-        # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
+        # C2 标准 tool role 回喂（渐进式披露的回路关键）：工具结果不再伪装
+        # user 消息，改为逐调用 {"role": "tool", "tool_call_id": ...} 消息，
+        # 与 assistant.tool_calls 的 id 一一配对（对齐 Codex/DSH 格式）。
+        # 组装后挂 _extra 由 agent_loop 轮末按标准顺序统一 append：
+        # assistant(tool_calls) → tool 结果们 → [图片 user 消息] → STEP_FEEDBACK
+        # （assistant(tool_calls) 必须先于 tool 消息，OpenAI 语义硬约束）。
+        _extra: Dict[str, Any] = {}
         if tool_results:
-            feedback = format_tool_results(tool_results, messages=messages)
-            if feedback:
-                # token 治理：新轮次回喂入库前，把更早轮次的 read_* 全文
-                # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
-                # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
-                # 短对话保留全文；选中 Skill 正文经 read_* 回喂，同样落入压缩面（轻量状态块在 system 不受影响）
-                if should_compress_feedback(messages, self.context_window()):
-                    compress_prior_feedback(messages)
+            # token 治理：新轮次回喂组装前，把更早轮次的 read_* 全文
+            # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
+            # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
+            # 短对话保留全文；选中 Skill 正文经 read_* 回喂，同样落入压缩面（轻量状态块在 system 不受影响）
+            if should_compress_feedback(messages, self.context_window()):
+                compress_prior_feedback(messages)
+            _tool_msgs, _image_msg = format_tool_result_messages(
+                tool_results, messages=messages)
+            _pending: List[Dict[str, Any]] = list(_tool_msgs)
+            if _image_msg is not None:
                 # 按需调图：新回喂带图片时，先剥离旧轮已加载的图片，
                 # 上下文始终只保留最新轮次的画面（vision token 治理）
-                if isinstance(feedback, list):
-                    strip_prior_feedback_images(messages)
-                messages.append({"role": "user", "content": feedback})
-        _extra: Dict[str, Any] = {}
+                strip_prior_feedback_images(messages)
+                _pending.append(_image_msg)
+            _extra["_pending_feedback_msgs"] = _pending
         # 透明度兑现：本轮 token 用量随 5 元组上抛（agent_loop 入账 trace）
         _extra["token_usage"] = int(getattr(response, "token_usage", 0) or 0)
         # P2-1 KV-cache 遥测：缓存命中同随 5 元组上抛（agent_loop 入账 step trace）
@@ -492,6 +499,11 @@ class TurnExecutor:
         # 全拒收轮（发起过但 fc_applied=0）不能落进纯文本轮收尾——
         # 拒因回喂已在 messages 里，循环必须再走一轮让模型看到指引。
         _extra["had_fc_calls"] = bool(getattr(response, "tool_calls", None))
+        # C2：本轮 tool_calls 原样上抛（agent_loop 轮末组 assistant.tool_calls
+        # 消息，与 _pending_feedback_msgs 的 tool 消息按 id 配对）
+        _extra["_fc_tool_calls"] = [
+            dict(tc) for tc in (getattr(response, "tool_calls", None) or [])
+            if isinstance(tc, dict)]
         # 批 12 · 1000 正向修复：本轮失败/被拒的「产出类」工具清单（按工具
         # 声明推导：detail_tier=expand 产出类 或 risk≥medium 结构写入，
         # workflow_pause 属关键交互非产物，排除；未注册工具 deny-by-default

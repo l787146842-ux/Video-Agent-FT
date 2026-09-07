@@ -79,7 +79,8 @@ class FakeToolCallAdapter(BaseChatAdapter):
 async def test_all_rejected_round_surfaces_had_fc_calls_and_feedback(svc):
     """批 9 · 回合终止盲区修复的回喂侧钉死：全拒收轮（发起过调用、
     fc_applied=0）必须 ① extra.had_fc_calls=True 上抛（agent_loop 据此
-    不按纯文本轮终止）；② 拒因回喂追加进 messages（下一轮模型可见）。"""
+    不按纯文本轮终止）；② 拒因回喂组装为 pending tool 消息上抛
+    （C2：agent_loop 轮末按 assistant(tool_calls) → tool 消息顺序 append）。"""
     planner = Planner(llm_adapter=FakeToolCallAdapter())
     executor = planner._turn_executor
     executor._context = PlannerContext()
@@ -90,8 +91,13 @@ async def test_all_rejected_round_surfaces_had_fc_calls_and_feedback(svc):
     )
     assert extra.get("had_fc_calls") is True
     assert fc_applied == 0
-    # 拒因/失败回喂必须已入库（下一轮模型能看到，而不是回合带着假话终止）
-    feedback_msgs = [m for m in messages if m.get("role") == "user" and m is not messages[0]]
-    assert feedback_msgs, "全拒收轮的回喂必须追加进 messages"
-    assert any("no_such_tool" in str(m.get("content")) or "失败" in str(m.get("content"))
-               for m in feedback_msgs)
+    # 拒因/失败回喂必须组装为 pending tool 消息（下一轮模型能看到）
+    pending = extra.get("_pending_feedback_msgs") or []
+    assert pending, "全拒收轮的回喂必须组装为 pending 消息"
+    assert any(m.get("role") == "tool" and (
+        "no_such_tool" in str(m.get("content")) or "失败" in str(m.get("content")))
+        for m in pending)
+    # C2：tool 消息携带 call_id 配对（与 _fc_tool_calls 对应）
+    assert any(str(m.get("tool_call_id")) for m in pending if m.get("role") == "tool")
+    fc_calls = extra.get("_fc_tool_calls") or []
+    assert fc_calls, "tool_calls 原样上抛供 agent_loop 组 assistant 消息"
