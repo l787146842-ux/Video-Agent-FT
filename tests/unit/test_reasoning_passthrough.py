@@ -35,14 +35,29 @@ def _gate_on():
     object.__setattr__(settings, "llm_reasoning_passthrough", old)
 
 
+@pytest.fixture
+def _gate_off():
+    """显式关闸：用例不得依赖本地 .env 的 LLM_REASONING_PASSTHROUGH 取值"""
+    old = settings.llm_reasoning_passthrough
+    object.__setattr__(settings, "llm_reasoning_passthrough", False)
+    yield
+    object.__setattr__(settings, "llm_reasoning_passthrough", old)
+
+
 def test_default_off():
-    """default-off：思考回传默认关闭（用户裁决：系统侧不把调参负担推给用户）"""
+    """default-off：环境变量缺省时思考回传默认关闭（用户裁决：系统侧不把调参负担推给用户）"""
+    import os
     from dataclasses import fields
 
     from src.video_agent.config import Settings
 
     f = {x.name: x for x in fields(Settings)}["llm_reasoning_passthrough"]
-    assert f.default_factory() is False
+    removed = os.environ.pop("LLM_REASONING_PASSTHROUGH", None)
+    try:
+        assert f.default_factory() is False
+    finally:
+        if removed is not None:
+            os.environ["LLM_REASONING_PASSTHROUGH"] = removed
 
 
 # ---------- ① 请求侧（openai_compat） ----------
@@ -64,8 +79,8 @@ async def test_chat_captures_reasoning_content():
 
 
 @respx.mock
-async def test_gate_off_strips_reasoning_from_payload():
-    """闸门关（默认）：assistant 历史消息携带的 reasoning_content 不进 payload，
+async def test_gate_off_strips_reasoning_from_payload(_gate_off):
+    """闸门关：assistant 历史消息携带的 reasoning_content 不进 payload，
     且调用方历史本体不被改写（浅拷贝替换）"""
     route = respx.post(f"{BASE_URL}/chat/completions").mock(
         return_value=httpx.Response(200, json={
@@ -136,8 +151,9 @@ async def test_tool_round_placeholder_carries_reasoning_when_on(executor, _gate_
     assert asst and asst[-1].get("reasoning_content") == "第一轮思考"
 
 
-async def test_tool_round_placeholder_strips_reasoning_when_off(executor):
-    """闸门关（默认）：工具轮占位不携带 reasoning_content（零外流）"""
+async def test_tool_round_placeholder_strips_reasoning_when_off(executor,
+                                                                _gate_off):
+    """闸门关：工具轮占位不携带 reasoning_content（零外流）"""
     calls = []
     result = await run_agent_loop(
         "x", llm_call=_loop_llm(calls), context_builder=lambda: "ctx",
@@ -165,7 +181,7 @@ def test_add_chat_message_stores_reasoning(tmp_path):
 # ---------- ③ 历史组装（truncate_history） ----------
 
 
-def test_truncate_history_passthrough_gated():
+def test_truncate_history_passthrough_gated(_gate_off):
     """truncate_history：闸门开时透传 assistant 思考内容；关时剥离"""
     from src.video_agent.web.chat_opening import truncate_history
 

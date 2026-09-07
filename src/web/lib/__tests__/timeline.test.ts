@@ -121,19 +121,17 @@ describe('toolDetailTier 工具详情分级', () => {
 
 /** 工具审批分级正交轴（任务 P2-5；后端 approval_tier 元数据驱动，纯函数钉死） */
 describe('toolApprovalTier 工具审批分级', () => {
-  it('confirm 档：生成族首批显式声明 + high 风险推导档（后端生效档生成）', () => {
-    [
-      'generate_video', 'image_generate',
-      'document_write', 'canvas_add_node', 'canvas_update_node',
-      'canvas_delete_node', 'canvas_batch_add_nodes',
-    ].forEach((n) => expect(toolApprovalTier(n)).toBe('confirm'));
+  it('confirm 档：生成族高风险推导档（后端生效档生成；写入类已降 medium 归 none）', () => {
+    ['generate_video', 'image_generate'].forEach((n) => expect(toolApprovalTier(n)).toBe('confirm'));
   });
 
-  it('none 档：只读/可撤销写状态类工具（后端推导档生成）', () => {
+  it('none 档：只读/可撤销写状态类工具（后端推导档生成；2026-09-07 Flova 对齐写入降 medium）', () => {
     [
       'read_skill', 'read_draft', 'read_uploaded_doc', 'read_project_doc',
       'view_storyboard_media', 'storyboard_media_to_chat', 'canvas_list',
       'canvas_read_nodes', 'canvas_list_assets', 'workflow_pause',
+      'document_write', 'canvas_add_node', 'canvas_update_node',
+      'canvas_delete_node', 'canvas_batch_add_nodes',
       'mcp_tool_catalog',
     ].forEach((n) => expect(toolApprovalTier(n)).toBe('none'));
   });
