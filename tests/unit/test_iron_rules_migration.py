@@ -52,11 +52,16 @@ def test_s7_skill_runtime_no_output_form_clause():
     assert "中文叙事式多节拍" not in sd
     # 标题客观化：不再自称「最高优先级」（与冲突裁决链冲突的措辞）
     assert "最高优先级" not in sd
-    # 流程纪律其余条款保留（快照锁语义：暂停/分批/自检/规格收集/元素图闸；
+    # 流程纪律其余条款保留（快照锁语义：暂停/分批/规格收集/小步推进；
     # audit-0819d：暂停正名钉 workflow_pause，request_confirmation 别名已删）
     for kept in ("阶段逐段执行", "workflow_pause", "分批次确认",
-                 "交付自检", "规格收集交互", "元素图像就绪闸门", "不超前承诺"):
+                 "规格收集交互", "不超前承诺", "小步推进"):
         assert kept in sd, f"流程纪律条款丢失: {kept}"
+    # 退役条款（2026-09-07 Flova 对齐批）：交付自检（归 Skill 自带清单）、
+    # 元素图像就绪闸门（用户指令优先级链覆盖，平台不设写作前置闸）——
+    # 不得残留实质条款
+    for retired in ("交付自检", "元素图像就绪闸门"):
+        assert retired not in sd, f"流程纪律退役条款残留: {retired}"
 
 
 def test_s7_protocol_no_quality_block():
