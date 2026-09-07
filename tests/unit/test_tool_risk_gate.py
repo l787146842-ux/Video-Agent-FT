@@ -36,22 +36,23 @@ EXPECTED_RISK = {
     "read_draft": "low",
     "read_state_group": "low",
     "view_storyboard_media": "low",
-    # medium（6）：写状态但可撤销（Q2 裁决 2026-09-01：flow_directive 工具退役）
+    # medium（11）：写状态但可撤销（Q2 裁决 2026-09-01：flow_directive 工具退役；
+    # 2026-09-07 Flova 对齐：文档/画布写入归 medium，写入不设逐次确认闸）
     "workflow_pause": "medium",
     "storyboard_create_group": "medium",
     "storyboard_patch_draft": "medium",
     "storyboard_add_draft": "medium",
     "storyboard_delete_group": "medium",
     "storyboard_confirm_draft": "medium",
-    # high（7）：生成/文档写入/外部副作用（双生图工具合并：
+    "canvas_add_node": "medium",
+    "canvas_update_node": "medium",
+    "canvas_delete_node": "medium",
+    "canvas_batch_add_nodes": "medium",
+    "document_write": "medium",
+    # high（2）：生成/外部副作用（双生图工具合并：
     # generate_image 已并入 image_generate 的 mode='single'）
     "image_generate": "high",
     "generate_video": "high",
-    "canvas_add_node": "high",
-    "canvas_update_node": "high",
-    "canvas_delete_node": "high",
-    "canvas_batch_add_nodes": "high",
-    "document_write": "high",
     # （原 8 个 skill 执行器工具的定级条目已随任务#36 B5 执行器一步
     # 退役删除；同名未注册工具经 deny-by-default 一律按 high 对待。）
 }
@@ -177,7 +178,7 @@ class TestRegistrationEnforcement:
         ToolManager.register(DocumentWriteTool())
         ToolManager.register(ReadSkillTool())
         assert ToolManager.get_tool_risk("__not_registered__") == "high"
-        assert ToolManager.get_tool_risk("document_write") == "high"
+        assert ToolManager.get_tool_risk("document_write") == "medium"
         assert ToolManager.get_tool_risk("read_skill") == "low"
 
 
@@ -217,7 +218,7 @@ class TestApprovalTier:
         ToolManager.register(DocumentWriteTool())
         ToolManager.register(ReadSkillTool())
         assert ToolManager.get_tool_approval_tier("image_generate") == "confirm"
-        assert ToolManager.get_tool_approval_tier("document_write") == "confirm"
+        assert ToolManager.get_tool_approval_tier("document_write") == "none"
         assert ToolManager.get_tool_approval_tier("read_skill") == "none"
         assert ToolManager.get_tool_approval_tier("__not_registered__") == "confirm"
 
@@ -268,47 +269,48 @@ def _reset_tracer():
 
 
 class TestToolRiskGate:
-    def test_document_write_blocked_without_consent(self, monkeypatch):
+    def test_document_write_executes_directly(self, monkeypatch):
+        """2026-09-07 Flova 对齐：document_write 降 medium，无确认闸直接执行。"""
+        from src.video_agent.tools.document_tools import (
+            DocumentWriteTool,
+            register_document_tools,
+        )
+        register_document_tools()
+        ToolManager.register(DocumentWriteTool())
         runner, res = _run(monkeypatch, "document_write",
                            {"name": "大纲.md", "content": "x"})
         applied, _confirm = res[0], res[1]
-        assert applied == 0, "未经用户确认的 high 级工具不得执行"
-        assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
-        tool_results = res[6]
-        assert tool_results and tool_results[0]["ok"] is False
+        assert applied == 1, "medium 级写入直接执行，不经确认闸"
+        assert not any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
 
-    def test_spec_write_allowed_with_pause_consent(self, monkeypatch):
-        """批 12 章程（闸级端到端）：暂停卡 accept（账本登记轮号匹配）后
-        重提 document_write 写规格文档 → 放行（规格确认卡兑现，1000 清偿）。"""
+    def test_spec_write_needs_no_consent(self, monkeypatch):
+        """规格写入已降 medium：无论同意账本是否命中都直接执行
+        （原批 12 spec_write 同意路径自然失效，章程表保留无害）。"""
         state = {"turn_seq": 2, "interaction": {"generation_consented_turn": 2}}
         runner, res = _run(monkeypatch, "document_write",
                            {"name": "制片规格.md", "content": "# 制片规格"},
                            state=state)
-        assert res[0] == 1, "规格写入在同意账本命中时应放行（章程 spec_write）"
-        assert any("consent=pause_accept" in w for w in runner.gate_warnings)
+        assert res[0] == 1, "规格写入（medium）直接执行"
+        assert not any("consent=pause_accept" in w for w in runner.gate_warnings)
 
-    def test_spec_write_ledger_stale_still_blocked(self, monkeypatch):
-        """规格写入但账本轮号失配（同意过期）→ 仍拦（fail-closed 保持）。"""
-        state = {"turn_seq": 3, "interaction": {"generation_consented_turn": 2}}
-        runner, res = _run(monkeypatch, "document_write",
-                           {"name": "制片规格.md", "content": "# 制片规格"},
-                           state=state)
-        assert res[0] == 0, "账本轮号失配的规格写入不得放行"
-        assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
-
-    def test_canvas_write_blocked_without_consent(self, monkeypatch):
+    def test_canvas_write_executes_directly(self, monkeypatch):
+        """2026-09-07 Flova 对齐：画布写四件套降 medium，直接执行。"""
+        from src.video_agent.tools.canvas_tools import register_canvas_tools
+        register_canvas_tools()
         for name in ("canvas_add_node", "canvas_update_node",
                      "canvas_delete_node", "canvas_batch_add_nodes"):
             runner, res = _run(monkeypatch, name, {"canvas_id": "cv-1"})
-            assert res[0] == 0, f"{name} 未经确认不得执行"
-            assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
+            assert res[0] == 1, f"{name}（medium）直接执行"
+            assert not any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
 
     def test_user_override_allows_with_trace(self, monkeypatch):
         tracer = AgentTracer.get_instance()
         tracer.start_trace("t")
         tracer.start_step()
-        runner, res = _run(monkeypatch, "document_write",
-                           {"name": "大纲.md", "content": "x"}, gate_override="all")
+        from src.video_agent.tools.video.generate_video import GenerateVideoTool
+        ToolManager.register(GenerateVideoTool())
+        runner, res = _run(monkeypatch, "generate_video",
+                           {"target": "all_shots"}, gate_override="all")
         assert res[0] == 1, "用户「本次放行」（scope=all）应放行"
         assert any("用户坚持放行高风险工具确认闸" in w for w in runner.gate_warnings)
         recent = tracer.get_recent_gates(10)
@@ -319,7 +321,7 @@ class TestToolRiskGate:
         tracer = AgentTracer.get_instance()
         tracer.start_trace("t")
         tracer.start_step()
-        _run(monkeypatch, "document_write", {"name": "大纲.md", "content": "x"})
+        _run(monkeypatch, "generate_video", {"target": "all_shots"})
         recent = tracer.get_recent_gates(10)
         assert any(g["rule_id"] == "platform.tool_risk" and g["ok"] is False
                    for g in recent), "拦截必须经 audit_verdicts 留痕"
@@ -490,17 +492,21 @@ class TestExecPreferenceToolRisk:
         assert any(g["rule_id"] == "platform.tool_risk" and g["overridden"]
                    for g in recent), "偏好放行必须留痕（platform.tool_risk）"
 
-    def test_generate_directly_non_costly_still_blocked(self, monkeypatch,
-                                                        set_global_setting):
-        """红线：非花钱高危（document_write / canvas_*）在 generate_directly 下仍拦。"""
+    def test_generate_directly_writes_execute(self, monkeypatch,
+                                              set_global_setting):
+        """2026-09-07 Flova 对齐：文档/画布写入已降 medium，任何偏好档直接执行
+        （偏好只影响花钱生成；未注册兜底拦截语义零改动，见下条红线）。"""
+        from src.video_agent.tools.canvas_tools import register_canvas_tools
+        from src.video_agent.tools.document_tools import register_document_tools
         set_global_setting("execution_preference", "generate_directly")
+        register_canvas_tools()
+        register_document_tools()
         runner, res = _run(monkeypatch, "document_write",
                            {"name": "大纲.md", "content": "x"})
-        assert res[0] == 0, "document_write 不受偏好放宽，必须拦"
-        assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
+        assert res[0] == 1, "document_write（medium）直接执行，与偏好无关"
         for name in ("canvas_add_node", "canvas_delete_node"):
             _r, r2 = _run(monkeypatch, name, {"canvas_id": "cv-1"})
-            assert r2[0] == 0, f"{name} 不受偏好放宽，必须拦"
+            assert r2[0] == 1, f"{name}（medium）直接执行"
 
     def test_generate_directly_unregistered_still_blocked(self, monkeypatch,
                                                           set_global_setting):
@@ -533,12 +539,12 @@ class TestExecPreferenceToolRisk:
         assert res[0] == 0, "auto_decide：无活跃 Skill 时仍拦（现状语义）"
         assert any("高风险工具确认闸拦截" in w for w in runner.gate_warnings)
 
-    def test_auto_decide_non_costly_still_blocked(self, monkeypatch,
-                                                  set_global_setting):
-        """红线：非花钱高危在 auto_decide + 活跃 Skill 下仍拦。"""
+    def test_auto_decide_unregistered_still_blocked(self, monkeypatch,
+                                                    set_global_setting):
+        """红线：未注册工具在 auto_decide + 活跃 Skill 下仍按 deny-by-default 拦
+        （偏好只放宽花钱生成，不放宽未注册；文档/画布写入已降 medium 直接执行）。"""
         set_global_setting("execution_preference", "auto_decide")
-        _runner, res = _run(monkeypatch, "document_write",
-                            {"name": "大纲.md", "content": "x"},
+        _runner, res = _run(monkeypatch, "__ghost_tool__", {},
                             injected_skill="未注册的在场 Skill")
         assert res[0] == 0
 

@@ -36,6 +36,13 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-07 · 小步提速批（Flova 对齐：写入降档 + 提示词小步化 + parallel_safe 补标 + 未注册口径改名）
+- **背景**：4444 项目慢的根因定案——执行时机非问题（Codex/dsh/Flova 三家均整轮后执行；dsh `agent.ts:378-476` 实证），慢在单轮输出体量（一轮 11 角色/28 分镜全套结构化 JSON 数万字 × 中转 ~40 字/秒）。Flova 转录实证其节奏 = 一小件事一轮 + 大批量按段落分批（3~5 个）+ 失败小步修 + 写入零机器拦截（唯一卡 = 花钱生成确认）。用户裁决：「其他没点名的都要做」（计划书 `docs/小步提速执行计划.md`）。
+- **改动**：① `document_write` + `canvas_add_node`/`canvas_update_node`/`canvas_delete_node`/`canvas_batch_add_nodes` risk high→medium（写状态但可撤销：文档带修订、画布有撤销），写入不再弹确认卡；宪法 §2.7 同步修订（high 定义移出「文档写入」），同意矩阵中「规格文档写入」转历史条款（CONSENT_CHARTER 表保留，降档后路径自然失效无害）；② planner 提示小步化（skill_runtime.md / protocol.md：结构化登记按段落一轮一批 3~5 个，引导不强制）；③ 8 个纯只读工具补标 `parallel_safe=True`；④ 未注册工具口径改名（confirm→other_high 拦截回喂，纯注释零行为）。行为变化（正面）：含写操作批次现可建批首 checkpoint，回滚保护覆盖面变大。
+- **保留不动**：生成类确认闸（image_generate/generate_video，V6 裁决）、执行模式阶段闸、规格确认暂停卡（产品依赖）、未注册拦截、暂停纪律、PARALLEL_POOL_LIMIT=4。
+- **测试**：test_tool_risk_gate.py 定级表与闸级用例同步改写（写入直执行断言、偏好无关断言、override/审计留痕改走 generate_video）；check_consent_copy 门禁回归（protocol.md / execution_preference.md 文案如实更新）。
+- **验收**：见各批 commit（每批 acceptance --quick 退出码 0；批 2/批 4 后全量）。
+
 ### 2026-09-07 · 五项修法批（4444 事故链治理：输出预算/盲重试/并行池/思考回传调研）
 - **背景**：4444 项目（Skill「AI-短剧一站式生成」，glm-5.3-flash）用户确认制片参数后，模型在「默认（原生）」思考档发起调用，思考内容耗尽 `llm_max_tokens=8192` 输出预算 → 返回空/畸形（finish_reason=length、正文空、无工具调用）→ `agent_loop` 判空分支同输入全价重试 2 次（每次约 3.5 分钟）→ 共约 10 分钟零产出，用户手动停止（原子轮废弃，状态零损失）。根因链：① 输出预算 8192 对思考型模型太小；② 判空分支不看 finish_reason，「预算截断」与「真空响应」同罪同罚；③ 重试 = 同输入原样重跑，必现同结局。业界调研（2026-09-06/07 联网+源码实证）：dsh（DeepSeek 官方 harness）默认单次输出 256_000、撞帽以该原因收轮绝不原样重试、循环无空响应重试分支、工具有界并行池（默认 10）；Claude Code 五条静默恢复路径均配熔断、无一步一调用强制；Codex 跨步保留 reasoning items。结论：无一家强制一步一调用、无一家让用户调输出预算。
 - **用户裁决**：五项修法全做；不留兜底闸机、不改 Skill 文件、不加注入声明、不加治理条款、无前端改动、无 gen_api_types 再生成；模型选择/推理等级由用户自理；判空（正文空+无工具调用）= 正常收轮，删同输入全价重跑。

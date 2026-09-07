@@ -921,14 +921,14 @@ export const TOOL_DETAIL_INTERNAL_NONE: readonly string[] = ['model_reasoning'] 
 
 /** 工具名 → 生效审批档（none=无需审批 / confirm=执行前确认卡 / review=人工审批复核） */
 export const TOOL_APPROVAL_TIERS: Record<string, 'none' | 'confirm' | 'review'> = {
-  canvas_add_node: 'confirm',
-  canvas_batch_add_nodes: 'confirm',
-  canvas_delete_node: 'confirm',
+  canvas_add_node: 'none',
+  canvas_batch_add_nodes: 'none',
+  canvas_delete_node: 'none',
   canvas_list: 'none',
   canvas_list_assets: 'none',
   canvas_read_nodes: 'none',
-  canvas_update_node: 'confirm',
-  document_write: 'confirm',
+  canvas_update_node: 'none',
+  document_write: 'none',
   generate_video: 'confirm',
   get_skill_asset: 'none',
   image_generate: 'confirm',

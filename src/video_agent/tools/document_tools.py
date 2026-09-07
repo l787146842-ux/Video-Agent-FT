@@ -159,7 +159,7 @@ def _fuzzy_pick(items: List[Dict[str, Any]], wanted: str, keys: List[str]) -> Op
 
 class DocumentWriteTool(BaseTool):
     name = "document_write"
-    risk = "high"  # §2.7：文档写入属 high，需平台闸机 + 用户确认
+    risk = "medium"  # §2.7（2026-09-07 Flova 对齐）：写状态但可撤销（文档带修订记录），写入不设逐次确认闸
     detail_tier = "expand"  # 产出类：展开看输入参数+执行结果
     description = (
         "写入/更新项目文档工件（如制片规格、脚本大纲）。已存在同名文档则整篇覆盖"

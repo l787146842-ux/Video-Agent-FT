@@ -436,13 +436,15 @@ def test_9999_consent_flow_smoke(tmp_path):
 
 
 def test_1000_spec_write_consent_flow_smoke(tmp_path):
-    """1000 事故场景端到端重放（批 12 同意章程：规格确认卡兑现落账）：
+    """1000 事故场景端到端重放（2026-09-07 Flova 对齐后语义迁移）：
 
-    模型发规格确认暂停卡 → 用户接受（账本登记）→ 重提 document_write 写
-    「制片规格.md」→ 放行（CONSENT_CHARTER.spec_write，consent=pause_accept
-    留痕）→ 规格落盘 + 「规格已完成」事件卡。修复前：写规格被 tool_risk 闸
-    硬拦（同意账本只认 costly），模型按拒因文案承诺重提失败后口播假完成，
-    skill 阶段 1 零产物。负样本：同轮写非规格文档（other_high）仍拦。"""
+    原场景（未同意的规格写入被 tool_risk 闸硬拦 → 批 12 同意章程兑现放行）
+    已随 document_write 降 medium 退役——写入不再入确认闸、直接执行。
+    本冒烟保留三条仍然成立的回归：
+    ① 规格写入经 planner 全链路落盘 + 「规格已完成」事件卡（1000 事故的
+    最终产物语义，对齐 Flova 进度播报）；
+    ② 混合轮（读 + 写 + 暂停卡）问即停发行与 accept 消费链路；
+    ③ 同意账本登记仍在（costly 生成确认仍在消费）。"""
     from src.video_agent.config import settings
     from src.video_agent.core.tracer import AgentTracer
     from src.video_agent.web.chat_consume import consume_pause_response
@@ -462,10 +464,7 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
         from src.video_agent.tools import register_document_tools
         register_document_tools()
 
-        # --- 消息 1：混合轮（read_skill 成功 + 写规格被拒）→ 批 12 回喂
-        #     放宽续轮 → 模型消费拒因发规格确认暂停卡。修复前：部分拒收轮
-        #     按纯文本轮提前终止，模型口播"已写入制片规格"假完成收尾
-        #    （1000 事故实录），规格永不落盘、流程卡死在阶段 1。---
+        # --- 消息 1：混合轮（read_skill 成功 + 写规格直执行 + 规格确认暂停卡）---
         svc.state_dict["turn_seq"] = 1
         script1 = [
             ("我先读取本 Skill 的拆解规范，然后写入制片规格。", [
@@ -488,12 +487,15 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
         ctx1 = PlannerContext(use_studio_context=False,
                               skill_name="未来科幻真人电影")
         result1 = asyncio.run(planner.handle_message("开始", ctx1))
-        # 未同意的规格写入必须被拦（同意账本未登记，spec_write 不放行）
-        assert any("高风险工具确认闸拦截" in w for w in (result1.warnings or [])), \
-            f"[1000] 未同意的规格写入未被拦: {result1.warnings}"
-        # 关键断言：部分拒收轮不提前终止 → 下一轮消费拒因 → 发行暂停卡
+        # 规格写入（medium）直执行：无确认闸拦截告警，草稿已落盘
+        assert not any("高风险工具确认闸拦截" in w
+                       for w in (result1.warnings or [])), \
+            f"[1000] 规格写入（medium）不应再被拦: {result1.warnings}"
+        docs = {d.get("name"): d for d in svc.state_dict.get("documents") or []}
+        assert "制片规格.md" in docs, "[1000] 规格草稿未落盘"
+        # 混合轮问即停：暂停卡正常发行
         assert result1.confirmation and result1.pause_id, \
-            f"[1000] 混合轮被拦后未续轮发行暂停卡（回喂放宽未生效）: {result1.text!r}"
+            f"[1000] 混合轮未发行暂停卡: {result1.text!r}"
 
         # --- 用户接受暂停卡（web 层轮始递增 + 结构化消费，同 9999 冒烟）---
         svc.state_dict["turn_seq"] = 2
@@ -504,7 +506,7 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
         assert (svc.state_dict.get("interaction") or {})\
             .get("generation_consented_turn") == 2, "同意账本未登记"
 
-        # --- 消息 2：接受后重提写规格 → 放行（批 12 章程 spec_write）---
+        # --- 消息 2：确认后写正式规格 → 落盘 + 兑现事件卡 ---
         spec_content = "# 制片规格\n风格：硬核深空探索\n时长：3分钟\n结构：5段式\n"
         script2 = [
             ("收到确认，现在写入制片规格文档。", [
@@ -519,7 +521,7 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
                               skill_name="未来科幻真人电影")
         result2 = asyncio.run(planner.handle_message("硬核深空探索 / 3分钟 / 5段式", ctx2))
         assert result2.applied_actions >= 1, \
-            f"[1000] 接受规格卡后写规格仍被拦（章程 spec_write 未生效）: {result2.warnings}"
+            f"[1000] 确认后写规格未执行: {result2.warnings}"
         assert not any("高风险工具确认闸拦截" in w for w in (result2.warnings or []))
         # 规格落盘（skill 阶段 1 产物兑现）
         docs = {d.get("name"): d for d in svc.state_dict.get("documents") or []}
@@ -527,22 +529,6 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
             "[1000] 规格文档未落盘"
         # 兑现事件卡（「规格已完成」，与 Flova 同款进度播报）
         assert _card_details(svc, "规格已完成"), "[1000] 规格落盘但事件卡缺失"
-        consent_verdicts = [g for g in AgentTracer.get_instance().get_recent_gates(80)
-                            if g.get("rule_id") == "platform.tool_risk"
-                            and g.get("ok") and "consent=pause_accept" in (g.get("message") or "")]
-        assert consent_verdicts, "[1000] 规格写入放行未留痕 consent=pause_accept"
-
-        # --- 消息 3：同轮语境下写非规格文档（other_high）→ 仍拦（fail-closed）---
-        script3 = [
-            ("补充写一份大纲。", [
-                ("document_write", {"name": "大纲.md", "content": "大纲草稿"}),
-            ]),
-        ]
-        planner.llm_adapter = ScriptedAdapter(script3)
-        result3 = asyncio.run(planner.handle_message("顺便写个大纲", ctx2))
-        assert result3.applied_actions == 0, \
-            "[1000] 非规格文档写入不应吃暂停卡同意（other_high fail-closed）"
-        assert any("高风险工具确认闸拦截" in w for w in (result3.warnings or []))
     finally:
         object.__setattr__(settings, "execution_preference", old_pref)
         StateManager.reset_instance()
