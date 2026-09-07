@@ -100,6 +100,7 @@ def _build_node_dict(node_id: str, node_type: str, title: str, x: int, y: int,
 class CanvasListTool(BaseTool):
     name = "canvas_list"
     risk = "low"  # §2.7：只读
+    parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = "列出所有画布（ID、标题、节点数）"
 
@@ -121,6 +122,7 @@ class CanvasListTool(BaseTool):
 class CanvasReadNodesTool(BaseTool):
     name = "canvas_read_nodes"
     risk = "low"  # §2.7：只读
+    parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = "读取指定画布的全部节点信息（ID、类型、标题、坐标、图片、提示词）"
 
@@ -240,6 +242,7 @@ class CanvasDeleteNodeTool(BaseTool):
 class CanvasListAssetsTool(BaseTool):
     name = "canvas_list_assets"
     risk = "low"  # §2.7：只读
+    parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = "列出本地素材库中的所有素材（图片/视频/音频）"
 

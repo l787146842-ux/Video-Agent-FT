@@ -219,6 +219,7 @@ class DocumentWriteTool(BaseTool):
 class ReadUploadedDocTool(BaseTool):
     name = "read_uploaded_doc"
     risk = "low"  # §2.7：只读
+    parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "按需读取用户上传的素材文档（故事/剧本等）全文。"
@@ -465,6 +466,7 @@ class ListSkillsTool(BaseTool):
 class GetSkillAssetTool(BaseTool):
     name = "get_skill_asset"
     risk = "low"  # §2.7：只读元数据（批6 素材描述符）
+    parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "取 Skill 目录包 assets/ 下素材资源的描述符（路径/名/大小/类型，只读）："
@@ -518,6 +520,7 @@ class GetSkillAssetTool(BaseTool):
 class ReadProjectDocTool(BaseTool):
     name = "read_project_doc"
     risk = "low"  # §2.7：只读
+    parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "按需读取项目规格文档（document_write 产出，如 Final_Video_Spec.md）全文。"

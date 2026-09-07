@@ -455,6 +455,7 @@ class StoryboardReadDraftTool(BaseTool):
 class StoryboardReadStateGroupTool(BaseTool):
     name = "read_state_group"
     risk = "low"  # §2.7：只读
+    parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "按需读回工作台状态中某个分组的全文（完整描述/粗描述/引用与草稿目录；"
@@ -510,6 +511,7 @@ class StoryboardReadStateGroupTool(BaseTool):
 class ViewStoryboardMediaTool(BaseTool):
     name = "view_storyboard_media"
     risk = "low"  # §2.7：只读
+    parallel_safe = True  # 小步提速批 3：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "按需把故事板草稿卡的图片加载进你的上下文（服务端转 base64 内联，你能直接看到画面）。"
