@@ -1,12 +1,12 @@
 """
-提示词 @引用解析 — 把提示词中的 @名称 映射为实际媒体素材。
+提示词引用解析 — 把提示词中的 @名称 / <<<image_名称>>> 映射为实际媒体素材。
 
 前端 PromptEditor 允许用户在提示词里输入 @ 引用参考素材/故事板媒体，
-序列化为 "@名称" 文本。生成（出图/出视频）时模型无法理解 "@名称"，
-本模块负责：
+序列化为 "@名称" 文本；Skill 模板（Flova 方言）则用 <<<image_名称>>>。
+生成（出图/出视频）时模型无法理解这些记号，本模块负责：
 1. 从故事板状态构建 名称 → (url, kind) 映射（关键元素分组标题 / 草稿 label / 文件名）；
-2. 扫描提示词中的 @名称，把被引用但不在参考列表里的素材自动纳入参考列表；
-3. 把 @名称 重写为带序号的位置标记（如 [参考图2：Element_月球]），
+2. 扫描提示词中的两类引用记号，把被引用但不在参考列表里的素材自动纳入参考列表；
+3. 把记号重写为带序号的位置标记（如 [参考图2：Element_月球]），
    让多模态模型精确知道第 N 张参考图对应提示词里的哪个元素。
 """
 import re
@@ -15,8 +15,11 @@ from typing import Any, Dict, List, Tuple
 
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 
-# @提及匹配：半角 @ 或全角 ＠ + 非空白/非@字符
-_MENTION_RE = re.compile(r"[@＠]([^\s@＠]+)")
+# 引用记号匹配（两式同义，2026-09-07 Flova 记号兼容裁决）：
+# 1) 半角 @ 或全角 ＠ + 非空白/非@字符（平台原生，前端 PromptEditor 序列化产物）；
+# 2) <<<image_名称>>>（Flova Skill 模板方言）——抄自 Flova 的 Skill 原样可用，
+#    命中与 @ 同轨处理，未命中同 @ 去记号留名称。
+_MENTION_RE = re.compile(r"<<<\s*image_([^<>]+?)\s*>>>|[@＠]([^\s@＠]+)")
 
 _KIND_LABEL = {"image": "参考图", "video": "参考视频", "audio": "参考音频"}
 
@@ -91,10 +94,10 @@ def resolve_prompt_mentions(
         return refs.index(url) if url in refs else -1
 
     def replace(m: re.Match) -> str:
-        name = m.group(1)
+        name = (m.group(1) or m.group(2) or "").strip()
         info = media_map.get(name)
         if not info:
-            return name  # 未命中：去掉 @，保留文字
+            return name  # 未命中：去掉记号，保留文字
         url = info["url"]
         idx = index_of(url)
         if idx < 0:
