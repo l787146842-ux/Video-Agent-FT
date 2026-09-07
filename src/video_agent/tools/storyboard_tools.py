@@ -345,6 +345,7 @@ class StoryboardConfirmDraftTool(BaseTool):
 class StoryboardMediaToChatTool(BaseTool):
     name = "storyboard_media_to_chat"
     risk = "low"  # §2.7：只读（不改故事板状态，仅填充输入框）
+    parallel_safe = True  # 小步提速批 3 补充（用户裁决）：只读，可进有界并行池
     detail_tier = "output"  # 读取类：仅输出留痕
     description = (
         "把故事板草稿卡片里的媒体（图片/视频/音频）自动添加到右侧 Agent 对话输入框，"
