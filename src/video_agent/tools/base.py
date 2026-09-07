@@ -9,7 +9,8 @@ RISK_TIERS = ("low", "medium", "high")
 # 审批行为单轴枚举（F1 裁决 2026-08-31 双轴并单轴：原 risk×approval_tier
 # 正交双轴合并——生效档由 risk 单轴推导，不再独立声明）：
 # none=自动过；confirm=执行前确认卡；review=执行后复核（保留词汇，
-# 当前推导不产出）。未注册工具按最严口径 confirm（deny-by-default）。
+# 当前推导不产出）。未注册工具按最严口径 confirm（deny-by-default）；
+# 其实际效果 = other_high 拦截回喂（无实现体，不存在可弹的用户确认卡）。
 APPROVAL_TIERS = ("none", "confirm", "review")
 
 # 前端时间线展示档合法枚举（展示档元数据驱动，前端不硬编码工具名）：

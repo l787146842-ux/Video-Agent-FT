@@ -115,7 +115,9 @@ class ToolManager:
     def get_tool_approval_tier(cls, name: str) -> str:
         """工具生效的审批档（F1 裁决 2026-08-31 双轴并单轴：由 risk 单轴推导，
         确认只挂高危）：high → confirm；low/medium → none（自动过）；
-        未注册工具按最严口径 confirm（deny-by-default，未声明=最严）。"""
+        未注册工具按最严口径 confirm（deny-by-default，未声明=最严）。
+        注意：未注册工具的 confirm 实际效果 = other_high 拦截回喂（模型收到
+        拒因自行纠正），不存在可弹的用户确认卡——无实现体，确认无意义。"""
         tool = cls._tools.get(name)
         if tool is None:
             return "confirm"

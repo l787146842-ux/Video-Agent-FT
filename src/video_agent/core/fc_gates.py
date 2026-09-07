@@ -159,6 +159,7 @@ def tool_risk_gate(
     """高风险工具确认闸（platform.tool_risk，宪法 §2.7）：判定唯一实现 =
     guard_pipeline.evaluate_tool_risk。生效条件数据驱动 = 生效审批档 == "confirm"
     （F1 双轴并单轴：risk 单轴推导，确认只挂高危；未注册→confirm，
+    实际效果=other_high 拦截回喂，无确认卡，
     deny-by-default）；保留 risk==high 双保险（防未来推导口径变更误弹卡）。
     确认回携 = 用户「本次放行」，
     无同意硬拒（禁止静默放行），拦截/豁免 verdict 入审计。

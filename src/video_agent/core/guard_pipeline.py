@@ -262,7 +262,8 @@ def evaluate_tool_risk(
     """工具风险分级确认闸（宪法 §2.7：high 必须平台闸机 + 用户确认）。
 
     适用范围 = 生效审批档为 confirm 的工具（F1 双轴并单轴：risk 单轴推导，
-    high→confirm、未注册→confirm，确认只挂高危，deny-by-default）；image_generate 批量轨
+    high→confirm、未注册→confirm（实际效果=other_high 拦截回喂，无确认卡），
+    确认只挂高危，deny-by-default）；image_generate 批量轨
     由 gen_confirm 闸专属覆盖，不重复设闸（single 轨不在覆盖内，回本闸默认拦）。
     确认回携机制与 gen_confirm 同源（§2.4）：
     - 用户「本次放行」（gate_overrides 单次消费）= 一次性同意；
