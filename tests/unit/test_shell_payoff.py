@@ -34,7 +34,7 @@ def test_s4_planner_direct_call_wired():
     # 此处只钉正向接线：真实消费直调新命名空间
     # （D-02 拆分：回喂消费点随单轮执行迁 core/turn_executor.py）
     turn_exec = (SRC / "core/turn_executor.py").read_text(encoding="utf-8")
-    assert "format_tool_results(tool_results)" in turn_exec
+    assert "format_tool_results(tool_results, messages=messages)" in turn_exec
 
 
 def test_s4_planner_suggested_retry_present():

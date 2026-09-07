@@ -99,12 +99,14 @@ class TestFeedbackTemplates:
         )
 
     def test_read_result_note_retired(self):
-        """语气转化：READ_RESULT_NOTE 已退役，回喂不再注入引导说教。"""
+        """语气转化：READ_RESULT_NOTE 已退役，回喂不再注入引导说教。
+        （B1 后 read_skill 无 section 走指针，改用 read_uploaded_doc 验证
+        read_* 全文回喂的数据体为纯客观结果行）"""
         msg = format_tool_results([
-            {"name": "read_skill", "ok": True, "data": {"name": "S", "content": "BODY"}},
+            {"name": "read_uploaded_doc", "ok": True, "data": {"name": "S", "content": "BODY"}},
         ])
         assert isinstance(msg, str)
-        assert "- read_skill 执行成功，全文如下：" in msg, "数据体应为纯客观结果行"
+        assert "- read_uploaded_doc 执行成功，全文如下：" in msg, "数据体应为纯客观结果行"
         assert "后续任务必须遵守" not in msg, "语气转化：引导说教已退役"
     
     def test_image_result_note_retired(self):

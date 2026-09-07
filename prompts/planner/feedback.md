@@ -15,6 +15,15 @@
 ## READ_RESULT_BODY_OMITTED
 执行成功（全文未附：超单次回喂总量上限）
 
+## READ_SKILL_INDEX_POINTER
+执行成功（Skill 流程段与章节目录已随选中 Skill 注入系统提示，无需重复回显；具体章节按名取读）
+
+## READ_SKILL_SECTION_HEADER
+read_skill 执行成功，全文如下（skill={name}，section={section}）：
+
+## READ_SKILL_SECTION_DUP_POINTER
+执行成功（章节「{section}」全文已于此前读取并在上文中，无需重复回显）
+
 ## DIGEST_POINTER
 {name}：执行成功（结果已写入工作台并投影进状态 JSON，冗长详情回喂已省略；最新状态以工作台状态 JSON 为准）
 

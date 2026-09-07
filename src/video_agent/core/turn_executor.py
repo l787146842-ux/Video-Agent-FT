@@ -457,7 +457,7 @@ class TurnExecutor:
         # 渐进式披露的回路关键：read_* 工具读回的全文必须回喂进 messages，
         # 否则模型「读了个寂寞」，Skill 流程/规格约束根本不进上下文
         if tool_results:
-            feedback = format_tool_results(tool_results)
+            feedback = format_tool_results(tool_results, messages=messages)
             if feedback:
                 # token 治理：新轮次回喂入库前，把更早轮次的 read_* 全文
                 # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。

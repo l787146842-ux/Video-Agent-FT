@@ -47,8 +47,10 @@ READ_RESULT_BODY_OMITTED = _load_feedback_section(
     "READ_RESULT_BODY_OMITTED", "执行成功（全文未附）")
 
 # read_* 系列：读回的全文必须完整回喂进上下文（渐进式披露的「借阅归还」）；
-# 其他写入类工具只回报成功与否，避免重复携带大 JSON 膨胀上下文
-FEEDBACK_FULL_TOOLS = {"read_skill", "read_project_doc", "read_uploaded_doc", "read_draft", "read_state_group"}
+# 其他写入类工具只回报成功与否，避免重复携带大 JSON 膨胀上下文。
+# read_skill 不在此列（B1 去重）：无 section = 流程段+目录（与 system 的
+# Skill 轻量块重复）走指针；有 section 首次全文、同会话同章节重复走指针。
+FEEDBACK_FULL_TOOLS = {"read_project_doc", "read_uploaded_doc", "read_draft", "read_state_group"}
 # 按需调图工具：读回的图片以多模态 parts 回喂（模型真正「看到」画面）
 FEEDBACK_IMAGE_TOOL = "view_storyboard_media"
 # 单次回喂总量保险丝（read_* 各自已有 max_doc_chars 截断，这里防多文档叠加）
@@ -79,6 +81,23 @@ FAILURE_HINT_DEFAULT = _load_feedback_section(
     "FAILURE_HINT_DEFAULT", "可调整参数后重试一次，或先向用户说明困难。")
 # 可消化行识别：回喂正文行「- 工具名：执行成功…」（与 format_tool_results 一致）
 _DIGEST_LINE_RE = re.compile(r"^- ([A-Za-z_][A-Za-z0-9_]*)：执行成功")
+
+# B1 read_skill 去重：
+# 章节全文行头（带结构化后缀供历史扫描识别同 skill+section 已回喂）
+_READ_SKILL_SECTION_HEADER = _load_feedback_section(
+    "READ_SKILL_SECTION_HEADER",
+    "read_skill 执行成功，全文如下（skill={name}，section={section}）：")
+# 无 section（流程段+目录）回喂指针：内容与 system 的 Skill 轻量块重复
+_READ_SKILL_INDEX_POINTER = _load_feedback_section(
+    "READ_SKILL_INDEX_POINTER",
+    "执行成功（Skill 流程段与章节目录已随选中 Skill 注入系统提示，无需重复回显；具体章节按名取读）")
+# 同会话同章节重复取读的回喂指针
+_READ_SKILL_SECTION_DUP_POINTER = _load_feedback_section(
+    "READ_SKILL_SECTION_DUP_POINTER",
+    "执行成功（章节「{section}」全文已于此前读取并在上文中，无需重复回显）")
+# 历史章节全文行识别：- read_skill 执行成功，全文如下（skill=X，section=Y）：
+_READ_SKILL_SEEN_RE = re.compile(
+    r"^- read_skill 执行成功，全文如下（skill=(?P<name>.+?)，section=(?P<section>.+?)）：")
 
 
 def should_compress_feedback(messages: List[Dict[str, Any]], context_window: int = 0) -> bool:
@@ -202,13 +221,36 @@ def render_read_result(name: str, data: Dict[str, Any]) -> str:
     return f"【{doc_name}】\n{content}"
 
 
-def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[Dict[str, Any]]]:
+def _skill_section_seen(messages: List[Dict[str, Any]], name: str, section: str) -> bool:
+    """B1：历史回喂中是否已出现过同 (skill, section) 的章节全文行。"""
+    for m in messages or []:
+        content = m.get("content", "")
+        if m.get("role") != "user" or not isinstance(content, str):
+            continue
+        if not content.startswith(FEEDBACK_MARKER):
+            continue
+        for line in content.splitlines():
+            hit = _READ_SKILL_SEEN_RE.match(line)
+            if hit and hit.group("name") == name and hit.group("section") == section:
+                return True
+    return False
+
+
+def format_tool_results(
+    tool_results: List[Dict[str, Any]],
+    messages: List[Dict[str, Any]] = None,
+) -> Union[str, List[Dict[str, Any]]]:
     """把本轮 FC 工具执行结果格式化为回喂消息。
 
     read_* 工具携带读回的全文（Skill 流程/规格/剧本/草稿提示词），
     必须让模型在后续轮次真正看到，否则按需加载形同虚设。
     view_storyboard_media 携带读回的图片（data URI）时，返回多模态
     content parts（文本 + image_url），让模型真正「看到」画面。
+
+    B1 read_skill 去重（messages 传入时启用）：
+    - 无 section（流程段+目录）→ 指针（与 system 的 Skill 轻量块重复）；
+    - 有 section → 首次全文（带 skill/section 结构化行头），同会话同章节
+      重复取读 → 指针（全文仍在历史中，重复回喂纯冗余）。
     """
     lines: List[str] = [FEEDBACK_MARKER]
     image_parts: List[Dict[str, Any]] = []
@@ -232,6 +274,29 @@ def format_tool_results(tool_results: List[Dict[str, Any]]) -> Union[str, List[D
             lines.append(f"- {name}：执行成功，已加载 {len(imgs)} 张图片（紧随本段文字之后，可直接看到画面）")
             for n in (data.get("notes") or []):
                 lines.append(f"  · {n}")
+            continue
+        if name == "read_skill":
+            # B1：流程段+目录与 system 重复走指针；章节首次全文、重复指针
+            data = tr.get("data") or {}
+            section = str(data.get("section") or "").strip()
+            skill_name = str(data.get("name") or "")
+            if not section:
+                lines.append(f"- {name}：{_READ_SKILL_INDEX_POINTER}")
+                for n in (data.get("notes") or []):
+                    lines.append(f"  · {n}")
+                continue
+            if messages is not None and _skill_section_seen(messages, skill_name, section):
+                lines.append(f"- {name}：{_READ_SKILL_SECTION_DUP_POINTER.format(section=section)}")
+                continue
+            body = render_read_result(name, data)
+            body = prune_tool_feedback(name, body)
+            header = _READ_SKILL_SECTION_HEADER.format(name=skill_name, section=section)
+            full_line = f"- {header}\n{body}"
+            if total + len(full_line) > FEEDBACK_MAX_TOTAL_CHARS:
+                lines.append(f"- {name}：{READ_RESULT_BODY_OMITTED}")
+                continue
+            total += len(full_line)
+            lines.append(full_line)
             continue
         if name not in FEEDBACK_FULL_TOOLS:
             # 执行器类工具（script_analyze 等）的 detail 必须随回喂传给模型

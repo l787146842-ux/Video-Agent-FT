@@ -13,7 +13,7 @@ import pytest
 
 import src.video_agent.web.skill_docs as skill_docs_mod
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
-from src.video_agent.core.fc_feedback import format_tool_results
+from src.video_agent.core.fc_feedback import FEEDBACK_MARKER, format_tool_results
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.skill_runtime import registry
 from src.video_agent.state.manager import StateManager
@@ -43,7 +43,8 @@ def svc(tmp_path, monkeypatch):
     skill_docs_mod.save_skill_doc(
         "demo-flow",
         "---\nname: 测试流程 Skill\ndescription: 测试桩\n---\n"
-        f"# 测试流程 Skill\n> 调用规则：测试用\n{SKILL_MARKER} 完整流程正文",
+        f"# 测试流程 Skill\n> 调用规则：测试用\n{SKILL_MARKER} 完整流程正文\n"
+        "## 章节一\nSECTION_BODY_TEXT",
     )
     yield instance
     registry.reset_registry()
@@ -53,8 +54,9 @@ def svc(tmp_path, monkeypatch):
 class FcReadSkillAdapter(BaseChatAdapter):
     """第一轮发起 read_skill 工具调用，第二轮检查上下文后收尾的假 FC 模型"""
 
-    def __init__(self, skill_name: str = "测试流程 Skill"):
+    def __init__(self, skill_name: str = "测试流程 Skill", section: str = ""):
         self._skill_name = skill_name
+        self._section = section
         self.calls = []
 
     @property
@@ -64,6 +66,9 @@ class FcReadSkillAdapter(BaseChatAdapter):
     async def chat(self, messages, **kwargs) -> ChatResponse:
         self.calls.append([dict(m) for m in messages])
         if len(self.calls) == 1:
+            args = {"name": self._skill_name}
+            if self._section:
+                args["section"] = self._section
             return ChatResponse(
                 content="",
                 finish_reason="tool_calls",
@@ -72,7 +77,7 @@ class FcReadSkillAdapter(BaseChatAdapter):
                     "type": "function",
                     "function": {
                         "name": "read_skill",
-                        "arguments": json.dumps({"name": self._skill_name}, ensure_ascii=False),
+                        "arguments": json.dumps(args, ensure_ascii=False),
                     },
                 }],
             )
@@ -88,38 +93,64 @@ class TestFcToolResultFeedback:
     """工具执行结果必须回喂进下一轮 LLM 上下文"""
 
     async def test_read_skill_content_enters_next_round_context(self, svc):
-        """read_skill 读回的 Skill 全文必须出现在第二轮调用的 messages 里"""
+        """read_skill 章节读回的全文必须出现在第二轮调用的 messages 里（B1：
+        无 section = 指针（内容在 system），有 section = 全文回喂）"""
         register_document_tools()
-        adapter = FcReadSkillAdapter()
+        adapter = FcReadSkillAdapter(section="章节一")
         planner = Planner(llm_adapter=adapter, tool_manager=ToolManager)
         result = await planner.handle_message("按制作流程拆解这个剧本", PlannerContext(use_studio_context=False))
 
         assert result.steps >= 2, "read_skill 后应有第二轮 LLM 调用"
         second_round = "\n".join(m.get("content", "") for m in adapter.calls[1] if isinstance(m.get("content"), str))
         assert "read_skill" in second_round
-        assert SKILL_MARKER in second_round, "Skill 全文未回喂进上下文，渐进式披露回路断裂"
+        assert "SECTION_BODY_TEXT" in second_round, "章节全文未回喂进上下文，渐进式披露回路断裂"
 
     async def test_fuzzy_skill_name_still_readable(self, svc):
         """名称略有出入（带后缀/空格差异）也应能读到 Skill"""
         register_document_tools()
-        adapter = FcReadSkillAdapter(skill_name="测试流程Skill.md")  # 故意不规范的名称
+        adapter = FcReadSkillAdapter(skill_name="测试流程Skill.md", section="章节一")  # 故意不规范的名称
         planner = Planner(llm_adapter=adapter, tool_manager=ToolManager)
         await planner.handle_message("开工", PlannerContext(use_studio_context=False))
 
         second_round = "\n".join(m.get("content", "") for m in adapter.calls[1] if isinstance(m.get("content"), str))
-        assert SKILL_MARKER in second_round, "模糊匹配失败导致 Skill 读不到"
+        assert "SECTION_BODY_TEXT" in second_round, "模糊匹配失败导致 Skill 读不到"
 
 
 class TestFormatToolResults:
     """回喂消息格式：read_* 携带全文，写入类只报成功，失败携带原因"""
 
-    def test_read_tool_full_text_and_write_tool_brief(self):
+    def test_read_skill_index_pointer(self):
+        """B1：无 section（流程段+目录）与 system 的 Skill 轻量块重复 → 指针"""
         msg = format_tool_results([
             {"name": "read_skill", "ok": True, "data": {"name": "测试流程 Skill", "content": "SKILL_FULL_TEXT"}},
+        ])
+        assert "SKILL_FULL_TEXT" not in msg, "流程段+目录与 system 重复，不再全文回喂"
+        assert "read_skill：执行成功" in msg
+
+    def test_read_skill_section_first_full_then_dup_pointer(self):
+        """B1：有 section 首次全文（带结构化行头）；同章节重复取读 → 指针"""
+        tr = {"name": "read_skill", "ok": True, "data": {
+            "name": "测试流程 Skill", "section": "script_analyze", "content": "SECTION_FULL_TEXT"}}
+        first = format_tool_results([dict(tr)])
+        assert "SECTION_FULL_TEXT" in first, "章节首次取读必须全文回喂"
+        assert "skill=测试流程 Skill，section=script_analyze" in first, "结构化行头供历史扫描"
+        history = [{"role": "user", "content": FEEDBACK_MARKER + "\n" + first}]
+        dup = format_tool_results([dict(tr)], messages=history)
+        assert "SECTION_FULL_TEXT" not in dup, "同章节重复取读走指针"
+        assert "script_analyze" in dup
+        # 不同章节仍全文
+        other = format_tool_results([{"name": "read_skill", "ok": True, "data": {
+            "name": "测试流程 Skill", "section": "storyboard", "content": "OTHER_SECTION_TEXT"}}],
+            messages=history)
+        assert "OTHER_SECTION_TEXT" in other, "不同章节首次取读照旧全文"
+
+    def test_read_tool_full_text_and_write_tool_brief(self):
+        msg = format_tool_results([
+            {"name": "read_project_doc", "ok": True, "data": {"name": "doc.md", "content": "DOC_FULL_TEXT"}},
             {"name": "storyboard_patch_draft", "ok": True, "data": {"draft_id": "x"}},
             {"name": "read_project_doc", "ok": False, "error": "未找到文档"},
         ])
-        assert "SKILL_FULL_TEXT" in msg, "read_skill 全文必须完整回喂"
+        assert "DOC_FULL_TEXT" in msg, "read_project_doc 全文必须完整回喂"
         assert "storyboard_patch_draft：执行成功" in msg, "写入类工具只报成功，不携带大 JSON"
         assert "read_project_doc：执行失败" in msg
 

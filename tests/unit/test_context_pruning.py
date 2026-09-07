@@ -154,8 +154,9 @@ class TestFeedbackPruneIntegration:
         monkeypatch.setattr(context_prune, "settings", replace(context_prune.settings))
         body = _long_body(15000)
         msg = format_tool_results([
-            {"name": "read_skill", "ok": True,
-             "data": {"name": "测试 Skill", "content": body}},
+            # B1 后 read_skill 无 section 走指针，剪枝路径用 read_uploaded_doc 验证
+            {"name": "read_uploaded_doc", "ok": True,
+             "data": {"name": "测试文档", "content": body}},
         ])
         assert isinstance(msg, str) and MARKER_KEY in msg
         # 头尾原文保留（start= 续读兜底的信任基础）；渲染头带「【名称】」前缀，
@@ -167,16 +168,17 @@ class TestFeedbackPruneIntegration:
         monkeypatch.setattr(context_prune, "settings", replace(context_prune.settings))
         body = _long_body(5000)  # 未超 6000 阈值
         msg = format_tool_results([
-            {"name": "read_skill", "ok": True,
-             "data": {"name": "测试 Skill", "content": body}},
+            # B1 后 read_skill 无 section 走指针，剪枝路径用 read_uploaded_doc 验证
+            {"name": "read_uploaded_doc", "ok": True,
+             "data": {"name": "测试文档", "content": body}},
         ])
         assert MARKER_KEY not in msg and body in msg
 
     def test_token_savings_significant(self, monkeypatch):
         """真实长样本：剪枝后进入 history 的 token 量显著下降"""
         body = _long_body(20000)
-        tr = {"name": "read_skill", "ok": True,
-              "data": {"name": "测试 Skill", "content": body}}
+        tr = {"name": "read_uploaded_doc", "ok": True,
+              "data": {"name": "测试文档", "content": body}}
         orig = context_prune.settings
         monkeypatch.setattr(
             context_prune, "settings",
@@ -194,8 +196,8 @@ class TestFeedbackPruneIntegration:
         """只剪回喂副本：tool_results 原始 data 不被修改"""
         monkeypatch.setattr(context_prune, "settings", replace(context_prune.settings))
         body = _long_body(15000)
-        tr = {"name": "read_skill", "ok": True,
-              "data": {"name": "测试 Skill", "content": body}}
+        tr = {"name": "read_uploaded_doc", "ok": True,
+              "data": {"name": "测试文档", "content": body}}
         format_tool_results([tr])
         assert tr["data"]["content"] == body
 
