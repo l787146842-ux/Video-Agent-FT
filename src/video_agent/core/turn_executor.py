@@ -15,6 +15,7 @@ _system_degrader/_chat_thinking_level 等）在 handle_message 重置后
 调用时读取。架构红线：本模块零 video_agent.web 导入；web 能力一律
 由 planner 入口层经 core/ports.py 端口装配后透传。
 """
+import hashlib
 import json
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
@@ -165,8 +166,15 @@ class TurnExecutor:
         tools_schema: Any, full_messages: List[Dict[str, Any]], max_tokens: int,
     ) -> None:
         """第 5 批（Q6）：每轮 token 分配账记入 live 注册表
-        （context-usage 端点暴露，状态注入占比纳入监控）。只记不阻。"""
+        （context-usage 端点暴露，状态注入占比纳入监控）。只记不阻。
+        批 D：同步记录工具清单数量与指纹（sha1 前 16 位）入 budget 与
+        trace——跨步 tools_fp 变化 = 工具集漂移 = KV 前缀击穿点观测。"""
         try:
+            tools_json = json.dumps(tools_schema, ensure_ascii=False) if tools_schema else ""
+            tools_fp = (
+                hashlib.sha1(tools_json.encode("utf-8")).hexdigest()[:16]
+                if tools_json else ""
+            )
             record_budget_breakdown(
                 getattr(getattr(self.planner, "state_manager", None),
                         "active_project_id", "") or "",
@@ -174,12 +182,15 @@ class TurnExecutor:
                     "system": estimate_tokens(system or ""),
                     "history": estimate_messages_tokens(history_msgs),
                     "state": estimate_tokens(state_tail or ""),
-                    "tools": estimate_tokens(
-                        json.dumps(tools_schema, ensure_ascii=False)) if tools_schema else 0,
+                    "tools": estimate_tokens(tools_json) if tools_json else 0,
+                    "tools_count": len(tools_schema) if tools_schema else 0,
+                    "tools_fp": tools_fp,
                     "total": estimate_messages_tokens(full_messages),
                     "budget": max_tokens,
                 },
             )
+            if tools_fp:
+                (self._tracer or AgentTracer.get_instance()).record_tools_fp(tools_fp)
         except Exception as _e:
             logger.debug(f"[TurnExecutor] 预算分配账记录忽略: {_e}")
 

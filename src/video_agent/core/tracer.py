@@ -86,6 +86,9 @@ class _TraceContextState:
     # （start_trace 新建态自然重置为 ""，链头无前驱）
     pending_prompt_fps: List[Dict[str, Any]] = field(default_factory=list)
     last_prompt_fp: str = ""
+    # tools 指纹（上下文与缓存优化计划批 D）：当前 step 的工具清单指纹
+    #（缓存击穿排查观测：跨步 tools_fp 变化 = 工具集漂移 = KV 前缀击穿点）
+    pending_tools_fp: str = ""
 
 
 # 每任务上下文独立持有追踪态；未显式绑定时 _ctx() 惰性建档
@@ -102,6 +105,8 @@ class StepTrace:
     token_usage: int = 0
     # P2-1 KV-cache 遥测：本轮供应商前缀缓存命中 token（0 = 未命中/端点未返回）
     cached_tokens: int = 0
+    # 本轮工具清单指纹（sha1 前 16 位，空 = 无 tools 下发；批 D 观测）
+    tools_fp: str = ""
     actions_applied: int = 0
     finish_reason: str = ""
     # 本轮执行的操作明细（工具/ studio-actions），供前端时间线逐条展示
@@ -153,6 +158,9 @@ class TraceRecord:
             # 同口径：缓存命中为 0 不写键（历史格式不变，体积不增）
             if s.cached_tokens:
                 sd["cached_tokens"] = s.cached_tokens
+            # 同口径：无指纹不写键（历史格式不变）
+            if s.tools_fp:
+                sd["tools_fp"] = s.tools_fp
             # 同口径：无指纹不写键（历史格式不变）
             if s.prompt_fingerprints:
                 sd["prompt_fingerprints"] = s.prompt_fingerprints
@@ -502,6 +510,19 @@ class AgentTracer:
             logger.debug(f"[Tracer] 指纹记录失败（忽略）: {e}")
             return False
 
+    def record_tools_fp(self, tools_fp: str) -> bool:
+        """批 D 观测：记录本轮工具清单指纹（缓存击穿排查：跨步 tools_fp
+        变化 = 工具集漂移 = KV 前缀击穿点）。纯观测，无在场 trace 时静默跳过。"""
+        try:
+            ctx = self._ctx()
+            if ctx.current is None:
+                return False
+            ctx.pending_tools_fp = tools_fp or ""
+            return True
+        except Exception as e:
+            logger.debug(f"[Tracer] tools 指纹记录失败（忽略）: {e}")
+            return False
+
     def metrics(self) -> Dict[str, Any]:
         """成本看板聚合（内存 + 文件 trace，按 trace_id 去重）。
 
@@ -562,6 +583,7 @@ class AgentTracer:
             timing_ms=timing_ms,
             token_usage=token_usage,
             cached_tokens=cached_tokens,
+            tools_fp=ctx.pending_tools_fp,
             actions_applied=actions_applied,
             finish_reason=finish_reason,
             actions=list(ctx.pending_actions),
@@ -577,6 +599,7 @@ class AgentTracer:
         ctx.pending_reasoning = []
         ctx.pending_context_events = []
         ctx.pending_prompt_fps = []
+        ctx.pending_tools_fp = ""
 
     def finish_trace(self, total_actions: int = 0) -> Dict[str, Any]:
         """完成追踪并存入历史，返回本次 trace 的 dict（供 done payload 下发前端展示）"""

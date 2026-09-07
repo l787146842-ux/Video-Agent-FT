@@ -233,3 +233,42 @@ def test_tracer_end_step_records_cached_tokens():
     tracer.end_step(2, actions_applied=0, finish_reason="stop", token_usage=10)
     sd2 = tracer._current.to_dict()["steps"][1]
     assert "cached_tokens" not in sd2
+
+
+# ---------- 批 D：tools 指纹观测 ----------
+
+
+def test_tracer_end_step_records_tools_fp():
+    """批 D：tools_fp 记录与空值不写键口径"""
+    tracer = AgentTracer()
+    tracer.start_trace("t")
+    tracer.start_step()
+    assert tracer.record_tools_fp("abc123def4567890") is True
+    tracer.end_step(1, actions_applied=0, finish_reason="tool_calls")
+    sd = tracer._current.to_dict()["steps"][0]
+    assert sd["tools_fp"] == "abc123def4567890"
+    # 空指纹不写键（历史格式不变，单条体积不增）
+    tracer.start_step()
+    tracer.end_step(2, actions_applied=0, finish_reason="stop")
+    sd2 = tracer._current.to_dict()["steps"][1]
+    assert "tools_fp" not in sd2
+
+
+def test_budget_breakdown_records_tools_count_and_fp(svc):
+    """批 D：budget breakdown 携带 tools_count/tools_fp，且同步入 trace"""
+    from src.video_agent.utils.live_metrics import get_budget_breakdown
+
+    planner = Planner(llm_adapter=FakeCacheAdapter())
+    executor = planner._turn_executor
+    executor._context = PlannerContext()
+    tools = [
+        {"type": "function", "function": {"name": "t1", "parameters": {}}},
+        {"type": "function", "function": {"name": "t2", "parameters": {}}},
+    ]
+    executor._record_budget_breakdown(
+        "sys", [{"role": "user", "content": "hi"}], "tail", tools,
+        [{"role": "user", "content": "hi"}], 1000)
+    bd = get_budget_breakdown(svc.active_project_id)
+    assert bd is not None
+    assert bd["tools_count"] == 2
+    assert isinstance(bd["tools_fp"], str) and len(bd["tools_fp"]) == 16
