@@ -36,10 +36,41 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 > **分卷重定向（任务17 / R-6）**：本节只保留 **2026-09-02 起**的近期活跃留痕；**2026-09-01 及更早**的条目已 verbatim 物理迁至 `docs/history/`（不改写历史正文），逐卷索引见 §五。
 > 泛化指针（「留痕见 CHANGELOG.md」一类）经本节 → §五 索引一跳可达；已知段级指针同批直连分卷文件（宪法 §五「事故经过」→ `docs/history/2026-08.md`）。
 
+### 2026-09-09 · 品牌字样清扫批 + 指令收拢与缓存稳定批（正向设计）
+- **复测补丁（同日，1111 复测五问题实证）**：①A4 暂停点探针误报——「节点翻转完成」≠「Skill 声明的暂停点」（规格写入完成后被谎报到点，模型被逼发卡、同批建组调用全冻结，即用户所见「故事板设计突然停了」）→ STEP_FEEDBACK_AT_PAUSE 与探针整体退役，回喂纯事实化（去掉「请继续完成任务」方向性），停/继续判定唯一归纪律第 2 条判定式；②故事板客观进度 ✓/✗ 有「已完整」歧义引发纠结 → 改计数（「关键元素：已建 N 组」，全空不注入）；③未注册工具拒因分流——模型拼错 storybook_create_group 被「高风险确认闸」话术误导成要走确认（deny 范围逐字节不变，仅被拦且未注册时话术换「工具不存在（疑似拼写错误）」，ToolManager.has_tool 分流）；④开场盘点问询收口强化——启动问询卡必须一次性覆盖 Skill 全部规格维度（不先问一部分、写入规格时再补卡）；⑤缓存复测：新代码已生效（tools_fp 五步稳定，轮内命中 74~81% vs 基线 20.9%），95% 未达，剩余大头 = 每步 tool 回喂增量（read_skill 全文重复读等），列入下轮调优。教训：早期早退分支放在判定链前改变了 deny 语义致 26 测试连锁失败，已改到判定命中后仅分流话术。
+- **背景**：1111 项目复盘三问题——①模型思考内容出现外部产品品牌字样（实测来源 = 运行时注入层：protocol「开场盘点（原品牌）同款」/skill_runtime「（原品牌）节奏」/execution_preference/工具 description「建组规范（原品牌）形态」，trace 原文引用实证）；②第一轮思考「纠结打架」（停/问/继续三类判定散布 5 处、防虚报 4 处、裁决留痕泄漏进运行时文本、Skill 内矛盾靠模型脑内调和）；③正文质量差（回复输出纪律全是抑制性条款、多步过渡语拼盘、机械占位文案入历史成 few-shot 污染）；④缓存基线 20.9%（三层击穿：前端 10 条窗口+truncate_history 位置相关截断；阶段工具裁剪每步重算+global_settings 条件段翻转；状态尾部每步重建）。
+- **外部调研**（正向设计依据，均一手开源）：Codex 官方 gpt_5_1_prompt.md（定义+边界+正反例、三段式输出契约）；Claude Code 系统提示词（6 层优先级+静态/动态缓存边界标记）；DeepSeek Harness（开源 MIT）官方架构笔记「每条事实有且只有一个所有者」与 PromptAssembly{sections, tools} 单一组装瀑布——与本批治则同构。
+- **用户裁决**：①外部品牌字样（Flova/flovaN/flvoa 变体）全仓清除——运行时 prompt 措辞自然化、注释/文档统一替换（品牌词→外部标杆、转录编号 flovaN→转录N）、标识符改名（_FLOVA_CORE_PARTS→_COMPOSITION_CORE_PARTS 等 8 处）、历史 trace 同步清除（judge_replay 会重放），新词规范=外部标杆/转录N；②Skill 包（data/skills）一行不改、Skill 装载期所有权校验不做（记长期规划，冻结清单 §16）；③工具全量常驻（裁剪退役，正确性归闸机+工具校验）；④缓存命中稳态 ≥95% 验收目标。
+- **改动（计划书 docs/指令收拢与缓存稳定执行计划.md，批 A-D 全落地）**：批 A 指令所有权收拢——skill_runtime 纪律 2 重写为唯一停机判定式（其余时刻一律不停）、纪律 10 删与判定式重叠句、纪律 1/protocol 删「机械越阶拦截已退役」「不设平台拦截」裁决留痕；protocol 开场盘点补「缺项合并为一次问询」；回复输出纪律重写为正向三段式契约（过渡语=正文声明+中间更新 1~2 句例句+收尾 recap+全文归属）；iron_rules_header 补【冲突与缺信息处置】（唯一表述源），spec_rules 默认模板删第 1 条同义复述；新增 STEP_FEEDBACK_AT_PAUSE——agent_loop 每步回喂经既有客观探针（workflow_runtime.node_objectively_done 只读壳，与轮末阶段闸同源）判暂停点换模板。批 B 工具常驻+组装单一化——prompt_gates.stage_tool_restrictions/STORYBOARD_STAGE_TOOLS/GENERATION_STAGE_TOOLS 退役；_compute_excluded_tools 删阶段裁剪分支且计算移至轮始一次（轮内冻结）；global_settings 段无条件注入；selected_draft 指针自 system order 75 移入状态尾部（P3 归位）；planner.tools_schema() 唯一取件点（turn_executor 两通道消费，dsh 组装单一化形态）。批 C 历史前缀稳定——主路径/非流式路径 history 改服务端线程装载（_main_history_from_thread，与 scope 子对话同源；body.messages 退役为兼容字段，前端窗口 slice 退役）；truncate_history 位置无关化（统一 2000 上限=头 1800+尾 200，删「最新/更早」双档位）；机械占位正文落 kind="mechanical"（text_source 全链路：AgentLoopResult→PlannerResponse→done payload→chat_service 持久化），线程装载时压成固定短句（文案外置 feedback.md::MECHANICAL_HISTORY_PLACEHOLDER，Rule 6）；会话级 LLM 摘要 compaction 退役（线程全量装载后阈值必命中且摘要逐请求漂移成新击穿源，context rot 归确定性截断链）。批 D 验收——新增 scripts/cache_hit_report.py（只读稳态命中率报告，剔除每项目首调与 <12K 预热，≥95% 人工判定不做 CI 机械闸）；测试面：截断位置无关性/线程装载/mechanical 压缩字节稳定三组新回归+受影响契约钉死测试同步（铁律模板两条款口径、暂停判定式、防虚报第 7 条指针、目录金线重采 16 包、frontmatter 测试接受裸键形态）。
+- **验证**：pytest tests/unit+integration 2272 passed / vitest 880 passed / acceptance --quick 全绿（GATES+tsc）。
+- **遗留注记**：data/skills 新增用户包「新-Skill」（裸键形态）曾致 2 测试失败，已随基线重采与断言修正闭环；存量项目《执行铁律.md》旧第 1 条属用户数据不动（语义被头部声明覆盖）；「新-Skill」类用户测试包后续增删需再重采目录金线。
+
+### 2026-09-08 · 模型编辑面板批（3333 复盘：思考开关/窗口三挡/digest 关停）
+- **背景**：3333 项目（proj-1788838336-1281297f，同 Skill 同剧本，deepseek-v4-flash-0731）对照 6666 实证四问题：① 无思考——直连 tokenrhythm 实测（同 key）：deepseek-v4-flash 为 hybrid 默认关思考，enable_thinking / reasoning_effort 任意一个可触发，平台请求体未带任何参数；② 快 17.5s vs GLM 189.7s（无思考输出 + 系统段缓存命中）；③ 流程离散（skill 启动协议与暂停点顺序的散文歧义，deepseek 字面执行先确认后分析，GLM 合并推进，转录六 第三种——均在容差内，用户裁决不加机械闸）；④ 缓存 37.5%（7 请求 cached 恒 6144=system+tools+Skill 固定段，历史段全断）+ 上下文变小（digest 把 read_uploaded_doc 全文等换指针，msgs 7→5）。另：上下文窗口子串表过时（deepseek/glm 家族键=128K，新模型实际 1M/1.05M），chat_models_meta 读取端存在但无写入端。
+- **用户裁决**：模型下拉框 hover「编辑」→ 侧边编辑面板三项配置（窗口三挡 200K 默认/400K/1M、思考模式开关默认开、推理档位四档默认/高/中/低——复用现有枚举不变）；缓存策略选「全部命中」（历史只追加），digest 默认关闭；子串表删家族漂移键；未配置模型回落 200K。
+- **改动**：
+  - 编辑面板（前端）：ModelThinkingPill 模型项 hover 出编辑铅笔 → 侧边展开编辑面板（窗口三挡/思考开关/推理档位，改动即时 PUT /providers 全量保存）；`chat_models_meta` 类型化（ChatModelMeta）+ lib/providers 读写 helper（saveChatModelMeta 更新 store + putProviders）；样式 pill-model-editor 侧边浮层。
+  - 思考注入（后端）：`chat_model_meta()` 共享读取函数下沉 provider_config_loader（adapters→utils 合法向）；OpenAICompatChatAdapter 加 provider_id，`_apply_thinking_level` 四级优先级——None=env 回落（814H7 保留）、显式档位=reasoning_effort（不变）、`""`（UI 默认档）=meta 注入（关=不发；开+档位=effort；开+无档=enable_thinking）> env 回落 > 兜底 enable_thinking=true；400 剥离名单加 enable_thinking。factory 两处构造传 provider_id。
+  - 窗口查表：token_budget.context_window_for_model 的 meta 内联逻辑改用共享 chat_model_meta（行为不变）；context_window_size 回落默认 128000→200000（对齐三挡默认）。
+  - digest 默认关：TOOL_RESULT_DIGEST_CHARS 默认 200→0（历史只追加保前缀缓存连续命中；round_compact 预算兜底保留）。
+  - 子串表收窄：model_context_windows.json 删 16 个家族漂移键（deepseek/qwen/glm/kimi/moonshot/doubao/ark/seed/mistral/llama/phi/command-r/yi 等），保留窗口稳定的官方条目（gpt/claude/gemini/o 系）；家族模型窗口唯一来源=chat_models_meta。
+- **测试**：test_thinking_meta_and_fallback_injection 新增（meta 开/关/带档/未配置兜底四分支，PROVIDERS_FILE monkeypatch）；test_thinking_override_wins_over_global 的 "" 档断言随新语义更新（env high → 回落 effort）；test_context_window_meta_takes_priority 新增（meta 窗口优先/无字段回落/无 provider_id 路径）。验收：pytest 2268 passed（2 失败为新-Skill 包既有遗留，与本批无关）；tsc/vitest 880/eslint/cov_ratchet 全过。
+- **待用户动作**：① 重启后在模型胶囊 hover 编辑面板为 deepseek-v4-flash-0731 配 1M 窗口（思考开关默认开即生效）；② UI 目测编辑面板交互（宪法 §3.1）；③ 新-Skill 包 frontmatter 非 --- 包裹导致 2 个 pytest 失败待处理（改标准 frontmatter 或移走包）。
+
+### 2026-09-08 · 对齐批（6666 复盘：成果全文双份/保守多轮/暂停细则多源治理）
+- **背景**：6666 项目（proj-1788838065，同 Skill 同剧本）第一轮 189.7s 三步取证：step2 139.9s（reasoning 全分析 + report_markdown 全文参数）；正文 = 模型浓缩交代 + `stage_deliverables` 全文渲染 → 上下文双份全文（0 缓存下每轮双价重算）；step3 为 workflow_pause 单独跑一轮（20s + 19.4k prompt 全价重算）。外部标杆 同 skill 同剧本对照（用户供 转录六 实测）：分析只给约 200 字浓缩交代、无全文报告展示、分析与暂停卡同轮——skill 的 script_analyze「输出」在 外部标杆 被理解为供后续阶段消费，不进正文；此前「外部标杆 也会输出全文」的判断被 转录六 推翻。联网对标：Claude Code / Codex / DeepSeek Harness 均同轮连续工具循环（一次响应多 tool_use 为 API 原生能力，harness 只管执行侧）；外部标杆 暂停时机为平台机械档位（设置页四档实证）。
+- **用户裁决**：四项平台侧优化全做（skill 一字不动）；速度 3-5 倍差距的大头归因中转吞吐与缓存透传（维持 4444/5555 复盘结论，另行走渠道侧）。
+- **改动**：
+  - 渲染通道迁移：`stage_deliverables` 正文渲染退役删除；报告全文改挂「剧本分析已完成」事件卡折叠——`event_cards` 新增 script_analysis_report 分支，`product_event_card` 返回扩 4 元组携 detail_md；`emit_event_card`/`record_subaction` 加 detail_md 参数，随 SSE（tool_started/finished 可选字段）与 trace 双通道持久化；to_ctx=False 全文不进模型上下文。`planner_output` 成果正文拼接移除（暂停轮客观事实兜底保留）。前端 detail_md 贯穿 sse-events → stream store → turn-ledger/timeline → TimelineDetail（折叠行=单行摘要、展开=全文，复用 resultSummaryView 折叠机制），SSE 契约帧加 detail_md 后重跑 gen_api_types。
+  - 暂停细则单一化：message ≤120字 / options 结构 / group 分页 / 回应三态从 protocol 第 5 行迁入《Skill 流程纪律》唯一家（第 2/5/6 条既有），protocol 收缩为「调用时机 + 冻结语义 + 指针」。
+  - 收尾批可合并：protocol 第 5 行与《Skill 流程纪律》第 4 条补「落账/写档类收尾工具可与同批 workflow_pause 连续提交（先收尾后暂停，不必为暂停单独再跑一轮）」——消除模型对「暂停即冻结」的保守解读，省 step3 型独立轮。
+  - 正文口径：protocol 第 15/27 条改「浓缩交代（类型判定/剧情主线/镜数预估/待确认项一段话），不复述报告全文；skill 明确要求正文完整展示时按 skill 执行（平台不拦截）」。
+- **测试**：test_skill_flow_batch1 渲染测试改事件卡断言（卡名/一句话明细/to_ctx=False/detail_md 全文）；test_stage_deliverables 随模块退役删除；use-sse-events 断言随签名同步。验收：quick（GATES+tsc）EXIT=0；全量 pytest 2266 passed（2 失败为用户导入「新-Skill」包 frontmatter 非 --- 包裹 + 存量快照 15→16 漂移，stash 归因与本批无关）；vitest/eslint/cov_ratchet 全过。
+
 ### 2026-09-08 · 上下文与缓存优化批（5555 复盘：思考纠结/写两遍/缓存 0 命中治理）
 - **背景**：5555 项目（proj-1788790634，AI-短剧一站式生成，glm-5.3-flash）149 秒完成剧本分析三步。trace 全量取证四病根：① step2 思考开头花大段澄清「工具结果是否重复注入」（read_skill 流程段+目录与 system 的 Skill 轻量块双份；script_analysis_report 落账全文与 state.analysis JSON 双份）；② 写两遍（思考里预演 5260 字分析后工具参数再写一遍）；③ 缓存 0 命中（step1→step2 prompt 11739→13908 全量重算）；④ 工具结果伪装 user 消息（git 考古：从首版循环顺手沿用，从未做过 role 裁决；2026-07-29 Qoder 快照里的标准 tool role 实现从未落地）。业界对标（Codex 工程文/DSH 源码/Anthropic 官方文档/Gemini/DeepSeek）：思考回传是全行业硬要求（Claude/Gemini/DeepSeek 不回传直接 400，GLM 最宽松）；Codex「旧提示=新提示精确前缀」+ tools 跨请求一致；DSH 一等 tool-call/tool-result 块 + snapshot 快照语义；Claude 工具结果用完即清。
 - **本地实测**（2026-09-08，tokenrhythm 中转）：reasoning_effort 三档对比 low 470字/2.9s vs 无档 981字/8.6s（low 真实生效，5.3-flash 无「low 映射 high」）；主对话档位来自前端请求体 thinking_level（runtime_settings 的 model_policy 是 executor/summary 角色策略）；`clear_thinking:false` 中转 400 拒收（保留式思考增益不可得，记录放弃）；GLM 通道缓存恒 0（同载荷重发 6871 tok 前缀仍 0）vs deepseek-v4-flash 同中转同玩法重发命中 4608/4616（99.8%）→ GLM 通道缓存问题属中转侧（上游多账号轮询嫌疑），实验数据交用户与中转方交涉。
-- **用户裁决**：A/D/B1/B2/C1/C2 六批全做，先出计划书（`docs/上下文与缓存优化执行计划.md`）再做；执行模式/执行偏好双轴（已对齐 Flova）、思考回传开关（必须开）、Skill 文件（不加规矩）、clear_thinking（中转拒收）四项不动。
+- **用户裁决**：A/D/B1/B2/C1/C2 六批全做，先出计划书（`docs/上下文与缓存优化执行计划.md`）再做；执行模式/执行偏好双轴（已对齐外部标杆）、思考回传开关（必须开）、Skill 文件（不加规矩）、clear_thinking（中转拒收）四项不动。
 - **改动**（六批独立 commit）：
   - 批 A（52abacb）：`openai_compat` 400 兜底扩展——报文点名拒收 assistant 消息 `reasoning_content` 时剥离历史思考字段重试一次并按实例记忆（`messages.reasoning_content` 键），后续请求组装侧预剥离（思考回传开着的端点迁移到拒收型端点不再持续 400）。
   - 批 D（2b03522）：tools 清单指纹观测——`_record_budget_breakdown` 增记 tools_count/tools_fp（sha1 前 16 位）入 budget 与 StepTrace（`tools_fp` 字段，空值不写键），跨步变化 = 工具集漂移 = KV 前缀击穿点可观测。
@@ -50,8 +81,8 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **测试**：test_reasoning_passthrough 扩 400 兜底四例（reasoning 剥离重试/记忆跳过/不误剥顶层/tool role 降级）；test_cached_tokens_telemetry 批 D 两例；test_fc_tool_feedback B1 去重三例 + C2 组装两例（read_skill 无 section 指针化/章节首末行为/图片走 user）；test_tool_result_digest B2 五例（长参数替换/最近 2 条保留/非白名单跳过/关闭与幂等/双通道接线）；test_adapter_stream_protocol C1 一例（流式 id）；test_prompt_relocation_batch3 同步退役断言；test_shell_payoff 承重接线断言随签名更新；test_tracer_concurrency 修本地 .env 污染默认值断言的环境依赖（delenv 后重建 Settings）。
 - **验收**：批批 `acceptance.py --quick` 退出码 0；B2 后与 C2 后各跑全量 `acceptance.py` 退出码 0；全程无 UI 变更。遗留：C2 后 5555 同场景真实项目冒烟待用户目测（模型应不再出现「历史是否重复」式澄清思考）。
 
-### 2026-09-07 · 小步提速批（Flova 对齐：写入降档 + 提示词小步化 + parallel_safe 补标 + 未注册口径改名）
-- **背景**：4444 项目慢的根因定案——执行时机非问题（Codex/dsh/Flova 三家均整轮后执行；dsh `agent.ts:378-476` 实证），慢在单轮输出体量（一轮 11 角色/28 分镜全套结构化 JSON 数万字 × 中转 ~40 字/秒）。Flova 转录实证其节奏 = 一小件事一轮 + 大批量按段落分批（3~5 个）+ 失败小步修 + 写入零机器拦截（唯一卡 = 花钱生成确认）。用户裁决：「其他没点名的都要做」（计划书 `docs/小步提速执行计划.md`）。
+### 2026-09-07 · 小步提速批（外部标杆对齐：写入降档 + 提示词小步化 + parallel_safe 补标 + 未注册口径改名）
+- **背景**：4444 项目慢的根因定案——执行时机非问题（Codex/dsh/外部标杆 三家均整轮后执行；dsh `agent.ts:378-476` 实证），慢在单轮输出体量（一轮 11 角色/28 分镜全套结构化 JSON 数万字 × 中转 ~40 字/秒）。外部标杆转录实证其节奏 = 一小件事一轮 + 大批量按段落分批（3~5 个）+ 失败小步修 + 写入零机器拦截（唯一卡 = 花钱生成确认）。用户裁决：「其他没点名的都要做」（计划书 `docs/小步提速执行计划.md`）。
 - **改动**：① `document_write` + `canvas_add_node`/`canvas_update_node`/`canvas_delete_node`/`canvas_batch_add_nodes` risk high→medium（写状态但可撤销：文档带修订、画布有撤销），写入不再弹确认卡；宪法 §2.7 同步修订（high 定义移出「文档写入」），同意矩阵中「规格文档写入」转历史条款（CONSENT_CHARTER 表保留，降档后路径自然失效无害）；② planner 提示小步化（skill_runtime.md / protocol.md：结构化登记按段落一轮一批 3~5 个，引导不强制）；③ 8 个纯只读工具补标 `parallel_safe=True`；④ 未注册工具口径改名（confirm→other_high 拦截回喂，纯注释零行为）。行为变化（正面）：含写操作批次现可建批首 checkpoint，回滚保护覆盖面变大。
 - **保留不动**：生成类确认闸（image_generate/generate_video，V6 裁决）、执行模式阶段闸、规格确认暂停卡（产品依赖）、未注册拦截、暂停纪律、PARALLEL_POOL_LIMIT=4。
 - **测试**：test_tool_risk_gate.py 定级表与闸级用例同步改写（写入直执行断言、偏好无关断言、override/审计留痕改走 generate_video）；check_consent_copy 门禁回归（protocol.md / execution_preference.md 文案如实更新）。
@@ -69,7 +100,7 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **验收**：批批 `acceptance.py --quick` 退出码 0；批 3 后与批 4 后各跑全量 `acceptance.py`（GATES+SUITES+RATCHETS）退出码 0；全程无 UI 变更（批 2 走既有 warnings/建议芯片通道）。
 
 ### 2026-09-06 · 语言闸私设推导删除 + 执行模式默认档假警告修复（7777 复盘；变更 2026-08-31 裁决）
-- **背景**：7777 项目复盘 + Flova 对标实证两处缺陷。①语言闸从规格「输出语言」私设推导提示词语言地板（中文占比≥15% 硬拦），事前不出示、事后才拦截：模型按行业/Skill 语义（输出语言=成片内容语言）写英文提示词被 9 连拦直至烧尽 MAX_STEPS，铁律优先级链无从裁决——冲突另一方不是文档，是代码隐藏条款；②执行模式 ai_decide 默认档「无分节=不注入」为设计约定（execution_mode.md 文件头明示），但 planner 仍每轮查找不存在的分节并打缺失警告。
+- **背景**：7777 项目复盘 + 外部标杆 对标实证两处缺陷。①语言闸从规格「输出语言」私设推导提示词语言地板（中文占比≥15% 硬拦），事前不出示、事后才拦截：模型按行业/Skill 语义（输出语言=成片内容语言）写英文提示词被 9 连拦直至烧尽 MAX_STEPS，铁律优先级链无从裁决——冲突另一方不是文档，是代码隐藏条款；②执行模式 ai_decide 默认档「无分节=不注入」为设计约定（execution_mode.md 文件头明示），但 planner 仍每轮查找不存在的分节并打缺失警告。
 - **用户裁决（变更 2026-08-31「语言归用户选择」裁决）**：提示词书写语言归文档层——默认按所选 Skill 要求执行；用户在《制片规格》显式声明「提示词语言」时以规格为准（用户/规格 > Skill），经优先级链生效；闸机不再执法语言、**不留兜底**；不改 Skill、不加注入、不加治理条款（模型更换用户自理）。
 - **改动**：`prompt_gates.py` 删 `_CJK_MIN_RATIO`/`_SPEC_LANG_LINE_RE`/`LANG_EN_HARD_PREFIX`/`spec_output_language`/`resolve_prompt_language` 与 validate_prompt_write 语言检查块，死 import（find_spec_doc/registry）与 GATE_STRUCTURE 注释「语言」项一并清理（字数地板/字段白名单/音色参考软提醒保留）；`prompts/planner/protocol.md` 语言规则改为文档层裁决表述；`prompts/gates/messages.md` 升级文案去「中文占比」；宪法 §2.1 提示词书写闸描述去「语言」；planner `_load_execution_mode_note` ai_decide 档提前返回不再查找（批 1 独立 commit 2864556）。
 - **测试**：旧语言闸语义用例删除/反转——test_prompt_gates 两个英文拒收用例与 8888 事故样本常量、test_trace_sse 0817 B2 六用例、test_prompt_gates_branches ⑤⑥ 节（registry patch 死支）、test_gate_pipeline_wiring 坏提示词夹具改过短文本（管线接线语义不变）、test_skill_manifest C1a 用例反转为防复活锁；新增防复活用例（英文正文+规格中文→不拦；字数地板照拦；ai_decide 档不触发分节查找）。
@@ -80,27 +111,27 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **设置页注释同步**：ExecutionPreferenceSection 头注释仍列旧标签（自动决定/生成前确认/直接生成），同步为对齐后用语。
 - **验收**：全量单测 2132 passed + `acceptance.py --quick` 全绿。
 
-### 2026-09-06 · 动作日志成果语批（Flova 对齐·呈现层轻量改造）
-- **范围**：仅后端单一文案源，前端零改动（live SSE 与 settled actionLog 同吃 describe_fc_tool / aggregate_action_log）。用户侧呈现对齐 Flova「动作完成卡只讲成果」；固定流程进度模板经用户裁决不做（Flova 亦无——流程级进度由模型按各 Skill 步骤词汇在正文汇报，平台只固定动作→完成卡一层）。
+### 2026-09-06 · 动作日志成果语批（外部标杆对齐·呈现层轻量改造）
+- **范围**：仅后端单一文案源，前端零改动（live SSE 与 settled actionLog 同吃 describe_fc_tool / aggregate_action_log）。用户侧呈现对齐外部标杆「动作完成卡只讲成果」；固定流程进度模板经用户裁决不做（外部标杆 亦无——流程级进度由模型按各 Skill 步骤词汇在正文汇报，平台只固定动作→完成卡一层）。
 - **成果语**：`fc_feedback.describe_fc_tool` 产出类动作改用户视角——script_analysis_report→「剧本分析已完成」、storyboard_create_group→「故事板已更新」、image_generate→「已发起生图（单张）」、generate_video→「已发起视频生成」、read_skill→「Skill「X」流程已加载」（保留「」结构兼容聚合正则）。
 - **噪音折叠**：`action_descriptions.aggregate_action_log` 新增低信息抑制集（read_skill/list_skills/get_skill_asset 整类折叠不进聊天动作日志；trace 与审计账本照记）。
 - **验收**：新增 test_action_copy_outcome 6 用例 + 全量单测 2130 passed；UI 呈现变化构建后经用户目测确认（宪法 §3.1）。
 
-### 2026-09-06 · 执行模式四档 + 轮末阶段闸批（Flova 对齐，闸机增减经用户裁决）
-- **背景**：6666 复盘确认平台只有「防多停」闸、无「防漏停」闸（阶段暂停全靠模型自觉，flash 档模型实测漏卡/走回头路）；Flova 实测（无确认节点自定义 Skill 照样在规格/故事板/素材三停）证明其执行模式档位在产品里程碑上是平台机械行为，档位 > Skill 散文。用户裁决按机械闸版落地、出厂默认档零行为变化；CLI 实验不必做（行为契约已足够）。
-- **执行模式四档**：`config.py` 新增 `EXECUTION_MODE_VALUES/DEFAULT/GATE_MODES` + `normalize_exec_mode`（与素材生成轴 `execution_preference` 正交）；`runtime_settings.py` 路由同款清洗/加载/拒收；`gen_api_types.py` 契约导出 EXECUTION_MODE_* 常量；设置页新增 `ExecutionModeSection.tsx`（执行偏好下拉标签同步对齐 Flova 用语，hint 承诺不动过 consent_copy 门禁）。测试：路由三件套 + 设置页 UI + 契约门禁。
+### 2026-09-06 · 执行模式四档 + 轮末阶段闸批（外部标杆对齐，闸机增减经用户裁决）
+- **背景**：6666 复盘确认平台只有「防多停」闸、无「防漏停」闸（阶段暂停全靠模型自觉，flash 档模型实测漏卡/走回头路）；外部标杆 实测（无确认节点自定义 Skill 照样在规格/故事板/素材三停）证明其执行模式档位在产品里程碑上是平台机械行为，档位 > Skill 散文。用户裁决按机械闸版落地、出厂默认档零行为变化；CLI 实验不必做（行为契约已足够）。
+- **执行模式四档**：`config.py` 新增 `EXECUTION_MODE_VALUES/DEFAULT/GATE_MODES` + `normalize_exec_mode`（与素材生成轴 `execution_preference` 正交）；`runtime_settings.py` 路由同款清洗/加载/拒收；`gen_api_types.py` 契约导出 EXECUTION_MODE_* 常量；设置页新增 `ExecutionModeSection.tsx`（执行偏好下拉标签同步对齐外部标杆 用语，hint 承诺不动过 consent_copy 门禁）。测试：路由三件套 + 设置页 UI + 契约门禁。
 - **引导注入**：`prompts/planner/execution_mode.md` 四分节（ai_decide 无分节 = 不注入）；planner `_load_execution_mode_note` 轮始签发、经状态尾部消息每步注入（auto_full 压制自发暂停；确认档只承担呈现引导，停由平台保证）。测试：test_state_tail_injection 逐档注入 + 脏值回落。
 - **机械闸（仅 key_steps_confirm/pause_all 激活）**：①D-18 清偿——stage_done 补 "spec" 分支（has_spec_document 同源）；②默认 workflow 扩为全流程 16 节点（媒体四阶段 ke_media/shot_media/audio_assets/assembly 入定义），审批节点扩为 6 个（规格/关键元素[生图前确认，3/4 合并口径]/故事板/镜头视频/音频/成片），workflow_runtime 审批前置映射表化；③planner 轮末 `_apply_stage_gate`：轮始 run 快照 vs 轮末 sync_run 重算判「阶段翻转」，确认档下新当前节点符合档位目标（key_steps_confirm=审批节点；pause_all=任意节点）→ 机械签发暂停卡（复用 `_issue_pause` 单一链 + review: 前缀 pending_decision，chat_consume.resolve_decision 消费）；档位 > Skill 散文（确认档下 Skill 声明直通照停）。④workflow_runtime.resolve_decision 补落账后 sync_run（模块级 commit_turn 无尾部重算，DecisionResolved 入账后评审节点才能完成——B3 语义延伸到决议路径）；sync_run 补 waiting_user→ready 恢复。ai_decide/auto_full 零闸卡；默认档行为与现状逐字节一致。
 - **治理登记**：执行模式与档位优先级条款入 `docs/GOVERNANCE.md` §五（唯一家）；不新增 GATES/RATCHETS。
 - **验收**：档位×节点矩阵测试 `test_stage_gate.py`（默认档/直通档零卡、确认档六里程碑逐一停、非审批节点不停、槽位占用不重发、批复闭环入账）+ workflow 契约/运行时/路由/注入全量回归。
 
 ### 2026-09-06 · 工具描述去污染批（D-20 当日登记当日清偿）
-- **背景**：6666 项目复盘 + Flova 对比调查确认工具层内容模板污染 2 处（全量普查 27 个注册工具 description，仅此两处）：`script_analysis_report`（tools/analysis_tools.py）description 与 `report_markdown` help 内嵌通用报告结构示例（"分类结论、角色/场景/道具清单、幕次结构"），与各 Skill `<script_analyze>` 章节的分析路径冲突（实证：6666 项目据此产出通用剧本拆解，未走该 Skill 五问策略路径）；`workflow_pause`（tools/document_tools.py）description"用于拆解完成后…"把具体时刻写成通用示例——各 Skill 暂停点散布各异（15 个 Skill 六种写法实证）。
-- **改动**：前者两处文案改"按所用 Skill 的 script_analyze 章节要求撰写；Skill 未声明分析路径时格式自定"；后者改"在所用 Skill 声明的强制暂停点调用，请用户审阅当前阶段成果后继续"。长期评审纪律（2026-09-06 用户裁决，无机械闸）：工具 description 只写工具用法与机器契约，内容产出模板示例归各 Skill 章节（Flova 分层原则：工具层零内容模板）。
+- **背景**：6666 项目复盘 + 外部标杆 对比调查确认工具层内容模板污染 2 处（全量普查 27 个注册工具 description，仅此两处）：`script_analysis_report`（tools/analysis_tools.py）description 与 `report_markdown` help 内嵌通用报告结构示例（"分类结论、角色/场景/道具清单、幕次结构"），与各 Skill `<script_analyze>` 章节的分析路径冲突（实证：6666 项目据此产出通用剧本拆解，未走该 Skill 五问策略路径）；`workflow_pause`（tools/document_tools.py）description"用于拆解完成后…"把具体时刻写成通用示例——各 Skill 暂停点散布各异（15 个 Skill 六种写法实证）。
+- **改动**：前者两处文案改"按所用 Skill 的 script_analyze 章节要求撰写；Skill 未声明分析路径时格式自定"；后者改"在所用 Skill 声明的强制暂停点调用，请用户审阅当前阶段成果后继续"。长期评审纪律（2026-09-06 用户裁决，无机械闸）：工具 description 只写工具用法与机器契约，内容产出模板示例归各 Skill 章节（外部标杆 分层原则：工具层零内容模板）。
 - **验收**：受影响 10 个测试文件 96 passed + `acceptance.py --quick` 全绿（12 GATES + tsc）；债务清单 D-20 同批删除。
 
 ### 2026-09-05 · Skill 流程跑通修复批 12（1000 事故正向修复：同意章程 + 告示牌同源 + 兜底网）
-- **事故**：项目 1000（未来科幻真人电影 skill，proj-1788604999）——用户接受规格确认暂停卡后，模型重提 `document_write` 写「制片规格.md」仍被 tool_risk 闸硬拦：批 9 同意账本执行时收窄为仅 costly 工具消费（`guard_pipeline` `if costly:`，原收窄裁决「非花钱高危不吃同意」与本条修正），规格确认卡的兑现写入落在断点另一侧；拒因文案对它承诺「接受后重提即放行」=空头支票；部分拒收轮（read_skill 成功）不触发批 9 全拒收轮回喂，模型口播「已写入制片规格」假完成收尾——skill 阶段 1 零产物、workflow 卡死 analyze_script。与 9999 同根（同意语义碎片化 + 承诺与实现脱节），按用户裁决正向收拢而非打补丁（对标 Flova：确认对象是产物、落账即兑现、承诺与实现同源）。
+- **事故**：项目 1000（未来科幻真人电影 skill，proj-1788604999）——用户接受规格确认暂停卡后，模型重提 `document_write` 写「制片规格.md」仍被 tool_risk 闸硬拦：批 9 同意账本执行时收窄为仅 costly 工具消费（`guard_pipeline` `if costly:`，原收窄裁决「非花钱高危不吃同意」与本条修正），规格确认卡的兑现写入落在断点另一侧；拒因文案对它承诺「接受后重提即放行」=空头支票；部分拒收轮（read_skill 成功）不触发批 9 全拒收轮回喂，模型口播「已写入制片规格」假完成收尾——skill 阶段 1 零产物、workflow 卡死 analyze_script。与 9999 同根（同意语义碎片化 + 承诺与实现脱节），按用户裁决正向收拢而非打补丁（对标外部产品：确认对象是产物、落账即兑现、承诺与实现同源）。
 - **批 12a · 同意章程**：`guard_pipeline.CONSENT_CHARTER`（同意来源 × 动作类 = 放行范围唯一声明，宪法 §2.4 同意来源枚举 / §2.7 同意范围矩阵同步）；consented 消费从 `if costly:` 改为章程判定——costly 生成 ∪ 规格写入（`spec_write`，fc_gates 按 `is_spec_doc_name` 注入，文档名口径同 fc_tool_runner）可吃暂停卡同意；other_high 维持 fail-closed；四条同意路径登记端零改动（保留为入口）。测试：章程分支单测 + 闸级规格写入（放行/无同意拦/账本轮号失配拦）+ `test_1000_spec_write_consent_flow_smoke`（accept → 重提放行 → 规格落盘 → 「规格已完成」事件卡 → consent 留痕；非规格文档仍拦）。
 - **批 12b · 告示牌同源**：拒因按动作类分支——新增 `TOOL_RISK_BLOCKED_OTHER`（other_high 如实指引「本次放行」，禁含 pause-accept 承诺，头部前缀不变 15 处断言保绿），gen/spec 类保留现承诺（12a 后成真）；protocol.md / execution_preference.md 补规格写入口径；**新门禁 `scripts/check_consent_copy.py`**：五处承诺文案（messages.md 三节 / protocol.md / execution_preference.md / 设置页 hint）承诺 ⊆ 章程、other_high 拒因禁含 pause-accept 承诺、C1a 已废「文本解读式同意」措辞全文本禁绝（GATES 表 + ci.yml + 双向 canary 登记，GATES 12 道）；wiring 等值断言补 tool_risk 两分支（「外置改了兜底没改」盲区收口）。
 - **批 12c · 兜底网**：①回喂放宽——产出类调用被拒/失败的混合轮不再按纯文本轮提前终止（`turn_executor` 上抛 `rejected_productive_tools`：detail_tier=expand 或 risk≥medium 声明推导，workflow_pause 排除，未注册保守计入）；②续轮预算 = recovery_policy 新键 `productive_reject`（max_retries=2，超限收尾 + 产物缺失警告，防「被拒-口播-续轮」打转）；③对账扩展——`round_end_policies.claims_unbacked_products` 产物族（结构搭建/制片规格）宣称 ↔ 账本对账，`false_claim_audit` 纯文本轮承重 + agent_loop 确认轮审计泛化（未来时豁免与 4444 校准基调不变）。测试：混合轮续轮/预算耗尽/无产出类负样本 + 规格宣称对账正负样本；1000 冒烟补回喂段（混合轮被拦 → 续轮发行暂停卡）。
@@ -109,27 +140,27 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **待用户目测**：无新 UI 变更（设置页 hint 本批未动）。
 
 ### 2026-09-05 · Skill 流程跑通修复批 9-11（生成确认闭环：9999 死锁根治，计划书 v6）
-- **立项**：9999 项目事故（古风甜宠 skill 阶段 2 死锁）trace 全量取证——模型建组+写提示词后两次 `image_generate` 被 tool_risk 闸拦截，**全拒收轮被当纯文本轮终止**，闸机指引（"先 workflow_pause"）没回喂给模型，回合以模型过期口播「现在生成男女主形象参考图」（假话）+「重试」结束；且 protocol.md 承诺"暂停卡确认后生成视为明确指令"，闸机根本不认=契约断点。对照 Flova 双轴偏好（官方更新日志 2026-08-10 + 四份转录）：确认对象是**产物**（提示词草案先审后生成），花钱是提醒不拦截。用户裁决：不搬 Flova 设置页控件；轴 1 执行模式偏好直接不要且不登记；同意作用域=暂停卡接受的工作轮内有效。
+- **立项**：9999 项目事故（古风甜宠 skill 阶段 2 死锁）trace 全量取证——模型建组+写提示词后两次 `image_generate` 被 tool_risk 闸拦截，**全拒收轮被当纯文本轮终止**，闸机指引（"先 workflow_pause"）没回喂给模型，回合以模型过期口播「现在生成男女主形象参考图」（假话）+「重试」结束；且 protocol.md 承诺"暂停卡确认后生成视为明确指令"，闸机根本不认=契约断点。对照 外部标杆 双轴偏好（官方更新日志 2026-08-10 + 四份转录）：确认对象是**产物**（提示词草案先审后生成），花钱是提醒不拦截。用户裁决：不搬 外部标杆 设置页控件；轴 1 执行模式偏好直接不要且不登记；同意作用域=暂停卡接受的工作轮内有效。
 - **批 9 · 同意账本 + 回合终止盲区**：①`consume_pause_response` accept 登记 `interaction.generation_consented_turn`(=turn_seq)，`tool_risk`/`gen_confirm` 两闸接同一意分支（工作轮内放行 provider 生成、audit 留痕 `consent=pause_accept`；decline/未登记/轮次推进 fail-closed 保持；非花钱高危不吃同意）；②全拒收轮不再按纯文本轮终止——`turn_executor` 上抛 `had_fc_calls`，agent_loop FC 分支纳入、全拒收跳过提前终止（max_steps 仍封顶，纯文本轮收尾语义不变）；③拒因文案升级（三条确认路径，删 C1a 已废"消息明确指示"暗示）。
-- **批 10 · 引导层对齐 Flova**：①执行偏好注入模型上下文——planner 轮始按档位签发 `execution_pref_note`（文案唯一源 `prompts/planner/execution_preference.md`，脏值回落默认档），经状态尾部消息每步可见，模型主动先审后生成（行为层，闸机兜底）；②工具边界注释每步刷新——`_build_system_prompt` 重跑 `_compute_excluded_tools`（原轮始冻结：同轮建组后旧注释"仅开放单张应急出图"滞留，9999 模型据其错选 mode=single），`_excluded_tools` 同步刷新；③设置页 confirm_before_gen 文案如实（先发暂停卡审提示词草案/草稿标已确认/点本次放行；确认后重提不再重复拦截——UI 文案待用户目测，宪法 §3.1）。
+- **批 10 · 引导层对齐外部标杆**：①执行偏好注入模型上下文——planner 轮始按档位签发 `execution_pref_note`（文案唯一源 `prompts/planner/execution_preference.md`，脏值回落默认档），经状态尾部消息每步可见，模型主动先审后生成（行为层，闸机兜底）；②工具边界注释每步刷新——`_build_system_prompt` 重跑 `_compute_excluded_tools`（原轮始冻结：同轮建组后旧注释"仅开放单张应急出图"滞留，9999 模型据其错选 mode=single），`_excluded_tools` 同步刷新；③设置页 confirm_before_gen 文案如实（先发暂停卡审提示词草案/草稿标已确认/点本次放行；确认后重提不再重复拦截——UI 文案待用户目测，宪法 §3.1）。
 - **批 11 · 验收与治理**：9999 场景端到端冒烟进机器线束（`test_9999_consent_flow_smoke`：建组→直接生成→闸拦→指引回喂→发暂停卡→用户接受→重提放行且留痕→新一轮无同意再拦 fail-closed）；机器线束 16 份全绿；批末 `acceptance.py` 退出码 0（11 GATES + pytest + vitest + tsc + eslint + RATCHETS）；9999 事故清偿登记。
 - **待用户目测**：设置页 confirm_before_gen 文案、暂停卡审阅交互（宪法 §3.1）。
 
 ### 2026-09-05 · Skill 流程跑通修复批 5-8（方案甲正向设计：A3 资产树转正）
-- **立项**：8888 项目实测翻车诊断（分析连败放弃/建组形态跑偏/规格零写入/暂停卡只有题目没选项）暴露批 0-4 的补丁式修复不够——用户拍板**方案甲正向设计**：一次把产物模型对齐 Flova 机制。依据 = 四份 Flova 一手转录 + 设置页/规格文档截图的机制推理（资产树+自由文本+动作即事实+skill 散文即流程+两层偏好）。
-- **批 5 · A1 自由文本**：`script_analysis_report` 废弃自创结构化字段表（characters/scenes/acts 正是 8888 连败根因），收窄为「一句话锚点 + 自由文本报告」——Flova 同构（全程无字段表）；`stage_done("analysis")` 语义改「动作落账即事实」（summary=最小锚点，不解析报告内容）；context_builder 注入面/stage_deliverables 渲染器同步。func_imports 白名单缺口以顶层化 ToolManager 导入根治（非 refresh 收编）。
+- **立项**：8888 项目实测翻车诊断（分析连败放弃/建组形态跑偏/规格零写入/暂停卡只有题目没选项）暴露批 0-4 的补丁式修复不够——用户拍板**方案甲正向设计**：一次把产物模型对齐外部标杆 机制。依据 = 四份 外部标杆 一手转录 + 设置页/规格文档截图的机制推理（资产树+自由文本+动作即事实+skill 散文即流程+两层偏好）。
+- **批 5 · A1 自由文本**：`script_analysis_report` 废弃自创结构化字段表（characters/scenes/acts 正是 8888 连败根因），收窄为「一句话锚点 + 自由文本报告」——外部标杆 同构（全程无字段表）；`stage_done("analysis")` 语义改「动作落账即事实」（summary=最小锚点，不解析报告内容）；context_builder 注入面/stage_deliverables 渲染器同步。func_imports 白名单缺口以顶层化 ToolManager 导入根治（非 refresh 收编）。
 - **批 6 · A3 资产树落地**（D-17 转正清偿）：①建组规范引导进 `storyboard_create_group` description（一元素一组/组名=元素名/设定写 desc/分镜一镜一组+`[元素名]`令牌）——原语级引导非校验锁死；②draft 字符串宽容解析 `coerce_draft_payload`（8888 高频误用：draft 传 JSON 字符串）；③令牌解析器 `parse_element_tokens`+`match_element_titles`：分镜 desc 的 `[元素名]` 自动同步 sceneRefs（显式传以显式为准、匹配不到丢弃不拒收）；④音色锚点自动挂 `resolve_scene_audio_refs`（sceneRefs 元素 audioUrl → reference_audio，图轴的姊妹轴）；⑤「资产已注册」事件卡（M8 预留位兑现，keyElement 建组双卡）；⑥修复手动批量生图路由收集 refs 却漏传 `reference_images` 的一致性缺陷。调研确认：sceneRefs→resolve_scene_refs→submit_image/video 的挂载骨架批 1-4 已存在，本批补齐的是入口与音色轴。
-- **批 7 · 前端两 bug + 协议开场纪律**：①暂停卡"只有题目没选项"双因修复——模型把维度名当选项 label（工具 description 强引导：label 必须是具体可选值、维度名放 group、候选禁用"|"拼接）+ `pickDimension` 兜底误判空下拉加严（命中过半且 ≥2 项 + 对应类别真实配置了厂商，否则回落选项卡）；②对话流滚轮跳动——wheel/touchstart 直控跟随开关（scroll 事件在钉底期被 pinning 豁免吞掉是拉回根源）+ rAF 续期前复查 autoScroll；③`protocol.md` 补「开场盘点（Flova 同款）」元纪律（自述流程计划+盘点已有产物+条件式启动；流程顺序以 skill 散文为唯一依据，本协议不规定顺序不设拦截——回应用户"不锁顺序"立场）。
+- **批 7 · 前端两 bug + 协议开场纪律**：①暂停卡"只有题目没选项"双因修复——模型把维度名当选项 label（工具 description 强引导：label 必须是具体可选值、维度名放 group、候选禁用"|"拼接）+ `pickDimension` 兜底误判空下拉加严（命中过半且 ≥2 项 + 对应类别真实配置了厂商，否则回落选项卡）；②对话流滚轮跳动——wheel/touchstart 直控跟随开关（scroll 事件在钉底期被 pinning 豁免吞掉是拉回根源）+ rAF 续期前复查 autoScroll；③`protocol.md` 补「开场盘点（外部标杆同款）」元纪律（自述流程计划+盘点已有产物+条件式启动；流程顺序以 skill 散文为唯一依据，本协议不规定顺序不设拦截——回应用户"不锁顺序"立场）。
 - **批 8 · 验收与治理**：批末 `acceptance.py` 退出码 0（11 GATES + pytest 2068 + vitest 866 + tsc + eslint + RATCHETS）；线束 15 份全绿（A1 新参数形态）；D-17 销账。
 - **待用户目测**：暂停卡分页向导选项渲染、对话流滚动手感（宪法 §3.1）。
 
 ### 2026-09-05 · Skill 流程跑通修复批 0-4（计划书 v5 全量执行；15 包裁决）
-- **立项与对齐标尺**：`docs/Skill流程跑通修复计划书-v5.md`（Flova 一手转录 + 全局设置页截图对齐）。做法 = skill 一行不改，把平台补成能接住 Flova skill 的样子。
+- **立项与对齐标尺**：`docs/Skill流程跑通修复计划书-v5.md`（外部标杆 一手转录 + 全局设置页截图对齐）。做法 = skill 一行不改，把平台补成能接住 外部标杆 skill 的样子。
 - **前置裁决（2026-09-05 用户）**：①存量 skill 删「剧本生视频需上传剧本」→ 存量 **15 包**（字节级目录/章节快照同步重采，`test_global_settings_authority.py` 随被测对象删除）；②草稿卡审阅形态维持现状（不新增「素材生成前确认提示词」开关）；③设置页文案采纳候选 a（先把假话说成真话）。
 - **批 0（bug 清偿）**：设置页失真文案改真话（`ExecutionPreferenceSection` 不再承诺「Skill 声明的暂停点不可被跳过」——该机制从未存在）；**pause 声明化石链整链删除**（`parse_pause_rules` / `_PAUSE_RULES_BLOCK_RE` / `_lint_prose_obligations` + 相关 lint 与测试），退役符号入 `check_legacy_orchestration` FORBIDDEN 防复活。
 - **批 1 造格子**：A1 新工具 `script_analysis_report`（分析结论唯一落点；命名与能力词 `script_analyze` 刻意区分防幻影词回潮，`prompts/planner/protocol.md` 同批改写「分析结论直接写入回复」旧口径）——既有消费方零改动生效（stage_done 探针 / 阶段成果渲染器 / context_builder 注入）；A2 草稿 `desc` 字段落盘 + 白名单外原子拒收（`ALLOWED_NEW_DRAFT_FIELDS`），前端 DraftCard 空卡展示 desc；A4 规格文档可更新留痕（`revisions` 计数）。
 - **批 2 插播报**：具名事件卡（`core/event_cards.py` 唯一映射表；`progress.emit_event_card` 双通道 = trace 子步骤 + 时间线帧）——规格已完成（建立/更新都发）/ 故事板已更新 / 素材已完成 / 时间线已更新 / 信息搜索完成（只进时间线不进上下文）；写产物卡进模型上下文（flowEvents 环扩至 6 条）；「素材变更已同步」卡 = 整板落库媒体指纹 diff 记 `media_synced` → 轮始一次性播报（`StateManager.consume_flow_events`）。Skill 已加载卡沿用开场既有 emit 点。
-- **批 3 会喊疼/消干扰/拆伪按钮**：B1 工具边界提示去指令化（删「请先搭建…」，留客观描述）；B4 `suggest_next_actions` 族 + `current_node_title` 整体退役（平台不再算"下一步"，防复活入 FORBIDDEN；假停继续按钮 label 固定「继续」）；B3 账本重算收敛到写动作落账（`WorkflowRuntime.ensure_run` 轮始轻量、`commit_turn` 落账后重算）；B5 失败回喂加全局状态保留声明（`compose_failure_feedback`）+ storyboard 写类工具报错三要素（原因/保留声明/补救指引）；B6 显式草稿 id 查重写入前拦截（`ops.draft_id_exists`，flova「镜头 ID 重复」标尺）。
+- **批 3 会喊疼/消干扰/拆伪按钮**：B1 工具边界提示去指令化（删「请先搭建…」，留客观描述）；B4 `suggest_next_actions` 族 + `current_node_title` 整体退役（平台不再算"下一步"，防复活入 FORBIDDEN；假停继续按钮 label 固定「继续」）；B3 账本重算收敛到写动作落账（`WorkflowRuntime.ensure_run` 轮始轻量、`commit_turn` 落账后重算）；B5 失败回喂加全局状态保留声明（`compose_failure_feedback`）+ storyboard 写类工具报错三要素（原因/保留声明/补救指引）；B6 显式草稿 id 查重写入前拦截（`ops.draft_id_exists`，外部标杆「镜头 ID 重复」标尺）。
 - **批 4 冒烟重放（两层）**：机器门禁 `tests/unit/test_skill_smoke_harness.py`——scripted 假模型 × 15 份 skill × 标准产物序列（含 workflow_pause → 用户回复 → 续作），逐份断言 §五 平台事实（无假成功/会喊疼/事件卡/无干扰/不死锁/失败原子性）；漂移 lint `scripts/check_skill_anchor_lint.py` 入 GATES + ci.yml（V3-3 收窄口径：只查 planner 必备/锚点合法/开闭配对）；判官观察层脚手架 `scripts/judge_replay.py`（对照包打包，不进门禁、不设阈值；真模型跑 + 人工打分留待用户按 V5-2 节奏执行）。
 - **缓办登记**：A3 槽位-令牌-解析 → `docs/未清偿债务清单.md` D-17（机器门禁全绿后评估立项）。
 - **验收**：`python scripts/acceptance.py` 退出码 0（11 GATES 含新 skill_anchor_lint + pytest 2061 + vitest + tsc + eslint + RATCHETS）；机器线束 15/15 绿。
@@ -261,7 +292,7 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **连带影响**：tracer.record_gate 审计链路（/api/agent/gates）零变化；`assemble_response` 的 `executor` 参数保留（`executor.state` 仍是活依赖）；Daniel 建议的「覆盖率地板收紧 87/70」属新增门禁强度变更，按闸机增减用户裁决原则**未采纳**（留用户定夺）。
 
 ### 2026-09-03 · 用户审定「元治理台账根除」裁决（批次 F）
-- **背景**：比对业界 8 家主流 agent（Claude Code / Codex / OpenHands / Flova 等）后确认，「闸机棘轮 / 冻结基线 / 脚手架折旧 / 耦合台账 / 退役条件」一类元治理机制**全部没有人做**；2026-09-02「治理闸机减负」只砍了仪式层、保留了台账本体，用户据此裁定**连台账本体一起根除**，不留尾巴。
+- **背景**：比对业界 8 家主流 agent（Claude Code / Codex / OpenHands / 外部标杆 等）后确认，「闸机棘轮 / 冻结基线 / 脚手架折旧 / 耦合台账 / 退役条件」一类元治理机制**全部没有人做**；2026-09-02「治理闸机减负」只砍了仪式层、保留了台账本体，用户据此裁定**连台账本体一起根除**，不留尾巴。
 - **裁决**：
   1. 耦合台账 `core/coupling_registry.py` + 遍历测试 `tests/unit/test_coupling_registry.py` **物理删除**；
   2. 脚手架台账 `core/scaffold_registry.py` + 其测试**物理删除**；
@@ -313,7 +344,7 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **裁决**：以表述对齐消除矛盾，代码行为不改（现状已正确）；宪法 / gate 文案 / fallback / 注释 / 测试 docstring 统一为「旧卡作废 + trace 留痕（pause_slot_collision）+ 发行新卡 + 继续等待人工确认，不拒收、绝不未经确认自动继续」。
 - **暂停队列暂缓**：按旧卡所属 run 存活性分流「入队 vs 作废」暂缓，须待「同步双发卡丢真问题」的真实事故证据再升级（G2）。
 
-### 2026-09-02 · 全面深度审核收尾批（对标 flova/DeepSeek/Codex/Claude；8 commit）
+### 2026-09-02 · 全面深度审核收尾批（对标外部产品/DeepSeek/Codex/Claude；8 commit）
 - **背景**：全面深度审核完成后 P0 等 8 批修复。原登记于交接文档 §1，该文档随 2026-09-03 R-7 裁决删除，批次留痕迁此唯一家（只搬移不改写事实）。
 
 | commit | 内容 | 验证 |

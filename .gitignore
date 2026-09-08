@@ -12,6 +12,7 @@ workspace/
 logs/
 data/*
 !data/skills/
+data/skills/.history/
 !data/mcp_servers.json.example
 !data/model_context_windows.json
 !data/model_output_limits.json
@@ -55,8 +56,7 @@ docs/archive/
 .pytest_tmp/
 .pytest_tmp_run*/
 
-# 大文件截图
-flova_studio_page.png
+# 大文件截图（根目录散落截图统一由下行兜底）
 # 根目录散落截图（调试/冒烟产物，统一放 test-results/ 或删除）
 /*.png
 

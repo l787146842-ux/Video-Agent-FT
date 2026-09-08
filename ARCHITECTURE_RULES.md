@@ -106,7 +106,7 @@
 - **闸机校准经验**：连续相同原因拦截必须升级改写指引（合并相同 verdict、附「第 N 次被拦」差异化提示），防模型陷入「拦截-重写-再拦截」空转；拦截事件入生成日志面板可见
 
 ### 2.7 工具风险分级（Tool Risk Tiers）
-- 每个业务 Tool 声明 `risk = low | medium | high`：low=只读/可逆；medium=写状态但可撤销；high=生成、跨阶段建结构、外部副作用。（2026-09-07 Flova 对齐裁决：文档/画布写入属「写状态但可撤销」归 medium，写入不设逐次确认闸——Flova 转录实证：规格/分镜/画布全程零机器拦截，唯一卡=花钱生成确认。）
+- 每个业务 Tool 声明 `risk = low | medium | high`：low=只读/可逆；medium=写状态但可撤销；high=生成、跨阶段建结构、外部副作用。（2026-09-07 外部标杆对齐裁决：文档/画布写入属「写状态但可撤销」归 medium，写入不设逐次确认闸——外部标杆转录实证：规格/分镜/画布全程零机器拦截，唯一卡=花钱生成确认。）
 - high 级工具必须平台闸机 + 用户确认；medium 级按 Skill 配置；low 级直接执行。
 - 新工具未声明风险级别视为 high（deny-by-default），不得静默放行。
 - **同意范围矩阵（批 12 章程）**：暂停卡 accept 的同意按动作类声明（`CONSENT_CHARTER`）：costly 生成（image_generate/generate_video）可吃同意放行；「规格文档写入」为历史条款——document_write 已降 medium（2026-09-07），该路径自然失效，章程表保留（写入类不再入闸，fail-closed 无害）。其余 high（未注册工具等）不吃自动同意，仅「本次放行」可解除（fail-closed）。MCP costly 地板 high 不可下抬的底线不变。
