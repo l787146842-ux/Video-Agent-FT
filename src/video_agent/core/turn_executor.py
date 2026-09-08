@@ -256,6 +256,13 @@ class TurnExecutor:
             full_messages, int(settings.tool_result_digest_chars))
         digest_projected_tool_args(
             full_messages, int(settings.tool_result_digest_chars))
+        # 工具结果修剪 pass（v4 批 E2，细案 §七）：压力命中（≥0.8×窗口）时
+        # 双面修剪——内存面就地改写（本轮后续请求立即收益）+ 日志面替换事件
+        # （下轮回放直接见修剪版，原文永留日志）；低于压力零动作（dsh 口径）
+        _sess_cid = str(getattr(self._context, "session_conversation_id", "") or "")
+        if _sess_cid:
+            session_log.prune_pass(
+                p.state_manager, _sess_cid, full_messages, self.context_window())
         # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝，
         # 尾部状态消息的降级重建见 _degrade_state_tail
         max_tokens = int(self.context_window() * settings.token_budget_ratio)
@@ -310,6 +317,11 @@ class TurnExecutor:
             full_messages, int(settings.tool_result_digest_chars))
         digest_projected_tool_args(
             full_messages, int(settings.tool_result_digest_chars))
+        # 工具结果修剪 pass：同 call_llm（流式/非流式同口径，v4 批 E2）
+        _sess_cid_s = str(getattr(self._context, "session_conversation_id", "") or "")
+        if _sess_cid_s:
+            session_log.prune_pass(
+                p.state_manager, _sess_cid_s, full_messages, self.context_window())
         # Token 预算截断：同 call_llm（含尾部状态消息降级重建）
         max_tokens = int(self.context_window() * settings.token_budget_ratio)
         # 第 5 批保险丝阶梯①：同 call_llm（流式/非流式同口径）

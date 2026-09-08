@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 
+from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.state import conversation_ops
 from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.utils.paths import WORKSPACE_DIR
@@ -375,3 +376,97 @@ def load_history(svc: Any, conversation_id: str = "") -> Optional[List[Dict[str,
         logger.warning(f"[SessionLog] 历史装载失败（回落 chatMessages）: {_e}")
         record_degradation("session_log.load_history")
         return None
+
+
+# ---------- 工具结果修剪器（批 E2，抄 dsh tool-result-pruner，参数原样） ----------
+
+# 参数原样（dsh compaction-tool-result-pruner 默认值；码点 = Unicode code point，
+# Python len(str) 即码点计数，天然不劈 surrogate 对）
+PRUNE_THRESHOLD_CHARS = 8192   # 超过即修剪（合并文本码点数）
+PRUNE_HEAD_CHARS = 4096        # 保留头部码点
+PRUNE_TAIL_CHARS = 1024        # 保留尾部码点
+PRUNE_MARKER = "\n\n[... tool result middle pruned ...]\n\n"
+# 压缩触发阈值（批 E3 compaction-basic，参数原样）：floor(context_window × 0.8)。
+# 修剪器同用此阈值判定压力（低于压力绝不裁，dsh 口径）。
+COMPACTION_THRESHOLD_RATIO = 0.8
+
+
+def prune_text(text: str) -> str:
+    """码点预算修剪：头 + 中省略标注 + 尾（head+marker+tail ≤ threshold，
+    一次收敛，无重复改写）。"""
+    head = text[:PRUNE_HEAD_CHARS]
+    tail = text[len(text) - PRUNE_TAIL_CHARS:] if PRUNE_TAIL_CHARS > 0 else ""
+    return head + PRUNE_MARKER + tail
+
+
+def prune_pass(
+    svc: Any, conversation_id: str, messages: List[Dict[str, Any]],
+    context_window: int,
+) -> List[Dict[str, Any]]:
+    """压力触发的工具结果双面修剪（细案 §七）：
+
+    - 触发：请求估算 ≥ floor(context_window × 0.8)；低于压力零动作（dsh 口径）；
+    - 内存面：当前请求消息列表内超预算 tool role 消息就地改写（本轮后续请求
+      立即收益；改写即幂等，后续 pass 自然空转）；
+    - 日志面：对 surface 上仍为全文的 tool/result 事件追加替换事件
+      （pruned_from 引用原文，原文永留日志），下轮全量回放直接见修剪版。
+    返回修剪记账（[{call_id, chars_before, chars_after}]，含内存面 + 日志面）。
+    异常静默降级（D4），不阻断主流程。
+    """
+    try:
+        if context_window <= 0 or not messages:
+            return []
+        total = estimate_messages_tokens(messages)
+        if total < int(context_window * COMPACTION_THRESHOLD_RATIO):
+            return []
+
+        entries: List[Dict[str, Any]] = []
+        # 内存面：就地改写（tool role 消息与历史派生/轮内回喂共享同一 dict）
+        for m in messages:
+            if m.get("role") != "tool":
+                continue
+            content = str(m.get("content") or "")
+            if len(content) <= PRUNE_THRESHOLD_CHARS:
+                continue
+            pruned = prune_text(content)
+            entries.append({
+                "call_id": str(m.get("tool_call_id") or ""),
+                "chars_before": len(content), "chars_after": len(pruned),
+            })
+            m["content"] = pruned
+
+        # 日志面：surface 原文事件中仍超阈值的追加替换事件
+        #（含本轮内存面刚改写的调用——其全文镜像已在落流时定格为原文）
+        events = load_events(svc, conversation_id)
+        shadowed = {int(e.get("pruned_from")) for e in events
+                    if e.get("type") == EV_TOOL_RESULT and e.get("pruned_from") is not None}
+        for ev in events:
+            if ev.get("type") != EV_TOOL_RESULT or ev.get("pruned_from") is not None:
+                continue
+            seq = int(ev.get("seq") or 0)
+            if seq in shadowed:
+                continue
+            content = str(ev.get("content") or "")
+            if len(content) <= PRUNE_THRESHOLD_CHARS:
+                continue
+            pruned = prune_text(content)
+            append_event(svc, conversation_id, EV_TOOL_RESULT,
+                         step=ev.get("step") or 0,
+                         call_id=str(ev.get("call_id") or ""),
+                         name=str(ev.get("name") or ""),
+                         content=pruned, ok=ev.get("ok"),
+                         pruned_from=seq,
+                         chars_before=len(content), chars_after=len(pruned))
+            entries.append({
+                "call_id": str(ev.get("call_id") or ""),
+                "chars_before": len(content), "chars_after": len(pruned),
+            })
+        if entries:
+            logger.info(
+                f"[SessionLog] 工具结果修剪 {len(entries)} 条"
+                f"（-{sum(e['chars_before'] - e['chars_after'] for e in entries)} 码点）")
+        return entries
+    except Exception as _e:
+        logger.warning(f"[SessionLog] 修剪 pass 失败（忽略）: {_e}")
+        record_degradation("session_log.prune")
+        return []

@@ -179,3 +179,54 @@ def test_corrupt_line_stops_at_last_complete_event(svc, tmp_path):
     # 后续 append 从最后完整事件续排，不重号
     ev = session_log.append_user_message(svc, "", "续写")
     assert ev["seq"] == 2
+
+
+# ---------- 批 E2：工具结果修剪器（dsh 参数原样） ----------
+
+
+def test_prune_text_codepoint_budgets():
+    text = "甲" * 9000
+    pruned = session_log.prune_text(text)
+    assert len(pruned) == session_log.PRUNE_HEAD_CHARS + len(session_log.PRUNE_MARKER) \
+        + session_log.PRUNE_TAIL_CHARS
+    assert pruned.startswith("甲" * 100) and pruned.endswith("甲" * 100)
+    assert "[... tool result middle pruned ...]" in pruned
+
+
+def test_prune_text_astral_codepoints_whole():
+    """emoji（Astral 码点）按码点整只保留，不劈半个。"""
+    text = "🎬" * 9000
+    pruned = session_log.prune_text(text)
+    assert pruned.count("🎬") == session_log.PRUNE_HEAD_CHARS + session_log.PRUNE_TAIL_CHARS
+
+
+def test_prune_pass_below_pressure_noop(svc):
+    msgs = [{"role": "tool", "tool_call_id": "c1", "content": "x" * 9000}]
+    entries = session_log.prune_pass(svc, "", msgs, 1_000_000)  # 巨窗 → 无压力
+    assert entries == []
+    assert msgs[0]["content"] == "x" * 9000  # 原文不动（低于压力绝不裁）
+
+
+def test_prune_pass_at_pressure_rewrites_memory_and_log(svc):
+    big = "y" * 9000
+    # 日志面：全文已随 E1 镜像定格为原文事件
+    session_log.append_tool_result(svc, "", 1, "c1", "read_skill", big, ok=True)
+    msgs = [
+        {"role": "user", "content": "z" * 600},  # 压力估算用（小窗口必命中）
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "read_skill", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": big},  # 内存面（历史派生同文）
+    ]
+    entries = session_log.prune_pass(svc, "", msgs, 200)
+    assert len(entries) == 2  # 内存面 1 + 日志面 1
+    assert entries[0]["chars_before"] == 9000
+    assert len(msgs[2]["content"]) <= session_log.PRUNE_THRESHOLD_CHARS
+    # 日志面：替换事件引用原文（原文永留日志）
+    events = session_log.load_events(svc, "")
+    assert len(events) == 2 and events[1]["pruned_from"] == 1
+    # 派生面：下轮回放直接见修剪版（日志只有 tool/result 事件 → 派生单条）
+    derived = session_log.derive_messages(events)
+    assert derived[0]["content"] == events[1]["content"]
+    # 幂等：二次 pass 不再追加替换事件
+    session_log.prune_pass(svc, "", msgs, 200)
+    assert len(session_log.load_events(svc, "")) == 2
