@@ -138,7 +138,7 @@ DEFAULT_V2_NODE_TITLES: Dict[str, str] = {
     "review_assembly": "成片审核",
 }
 
-# 审批节点（2026-09-06 Flova 对齐批：机械闸里程碑，6 个）。
+# 审批节点（2026-09-06 对齐批：机械闸里程碑，6 个）。
 # 单一事实源——default_v2_workflow 的 approval_policy 声明与本表同源维护；
 # 消费端 = workflow_runtime._REVIEW_NODE_PREREQ（完成判定）与
 # planner 轮末阶段闸（key_steps_confirm 档拦停目标）。
@@ -163,7 +163,7 @@ def default_v2_workflow(skill_id: str = "") -> WorkflowDefinition:
                 "retry_policy": {"max_attempts": 1},
                 "next_transition": {}}
 
-    # 全流程 16 节点（2026-09-06 Flova 对齐批）：设计三节点后补故事板审核，
+    # 全流程 16 节点（2026-09-06 对齐批）：设计三节点后补故事板审核，
     # 媒体四阶段（ke_media/shot_media/audio_assets/assembly）入默认定义，
     # 逐阶段后挂审批节点（规格/关键元素/故事板/镜头视频/音频/成片）。
     # 关键元素审核保持「生图前确认」位（3/4 合并口径：确认后再生图）。

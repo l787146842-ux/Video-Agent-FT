@@ -276,7 +276,11 @@ def test_spec_rules_standalone_doc(svc):
     names = [d["name"] for d in svc.state_dict["documents"]]
     assert "执行铁律.md" in names
     iron = spec_rules.find_iron_rules_doc(svc.state_dict)
-    assert "3. 回复纪律见平台协议" in iron["content"]
+    # 批 A3（指令收拢批）：默认模板收敛为「契约条款 + 头部指针」——
+    # 冲突与缺信息处置、回复纪律唯一表述源 = 《执行铁律》头部声明
+    assert "拆解覆盖完整" in iron["content"]
+    assert "见平台注入的《执行铁律》头部声明" in iron["content"]
+    assert "执行优先" not in iron["content"]  # 与头部同义复述已删
     spec = svc.state_dict["documents"][names.index("制片规格.md")]
     assert "执行铁律" not in spec["content"]
     # 幂等：不再重复创建

@@ -436,13 +436,13 @@ def test_9999_consent_flow_smoke(tmp_path):
 
 
 def test_1000_spec_write_consent_flow_smoke(tmp_path):
-    """1000 事故场景端到端重放（2026-09-07 Flova 对齐后语义迁移）：
+    """1000 事故场景端到端重放（2026-09-07 外部标杆对齐后语义迁移）：
 
     原场景（未同意的规格写入被 tool_risk 闸硬拦 → 批 12 同意章程兑现放行）
     已随 document_write 降 medium 退役——写入不再入确认闸、直接执行。
     本冒烟保留三条仍然成立的回归：
     ① 规格写入经 planner 全链路落盘 + 「规格已完成」事件卡（1000 事故的
-    最终产物语义，对齐 Flova 进度播报）；
+    最终产物语义，对齐外部标杆 进度播报）；
     ② 混合轮（读 + 写 + 暂停卡）问即停发行与 accept 消费链路；
     ③ 同意账本登记仍在（costly 生成确认仍在消费）。"""
     from src.video_agent.config import settings
@@ -527,7 +527,7 @@ def test_1000_spec_write_consent_flow_smoke(tmp_path):
         docs = {d.get("name"): d for d in svc.state_dict.get("documents") or []}
         assert "制片规格.md" in docs and (docs["制片规格.md"].get("content") or "").strip(), \
             "[1000] 规格文档未落盘"
-        # 兑现事件卡（「规格已完成」，与 Flova 同款进度播报）
+        # 兑现事件卡（「规格已完成」，与 外部标杆同款进度播报）
         assert _card_details(svc, "规格已完成"), "[1000] 规格落盘但事件卡缺失"
     finally:
         object.__setattr__(settings, "execution_preference", old_pref)

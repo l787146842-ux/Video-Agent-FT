@@ -41,6 +41,7 @@ from src.video_agent.exceptions import AdapterError
 from src.video_agent.utils.live_metrics import record_degradation
 from src.video_agent.utils.model_limits import output_limit_for_model
 from src.video_agent.utils.paths import ASSETS_DIR
+from src.video_agent.utils.provider_config_loader import chat_model_meta
 from src.video_agent.utils import gen_id
 from src.video_agent.storage import get_storage
 
@@ -305,10 +306,11 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
     使用完毕后调用 await adapter.close 释放资源。
     """
 
-    def __init__(self, base_url: str, api_key: str = "", model: str = ""):
+    def __init__(self, base_url: str, api_key: str = "", model: str = "", provider_id: str = ""):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self.provider_id = provider_id
         self._client: Optional[httpx.AsyncClient] = None
         # 字段兼容探针记忆（同实例只探一次）：
         # 端点 400 拒收 reasoning_effort/response_format 后记入本集合，
@@ -347,16 +349,44 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
     def _apply_thinking_level(self, payload: Dict[str, Any], level: Optional[str] = None) -> None:
         """按配置透传 thinking/reasoning 档位。
 
-        level 参数（本次调用档位）优先于全局配置：执行器机械调用注入
-        low/medium/high 覆盖全局；None/空 = 沿用全局 llm_thinking_level；
-        非法值不下发。缺省（空配置）不下发任何字段，保持端点默认行为；
-        配置 low/medium/high 时按 OpenAI 兼容 reasoning_effort 透传，
-        用于缩短推理模型的思考静默期。不支持的端点静默忽略或报 400（此时应置空配置）。
-        """
-        effective = level if level is not None else settings.llm_thinking_level
-        level = str(effective or "").strip().lower()
-        if level in ("low", "medium", "high"):
-            payload["reasoning_effort"] = level
+        注入优先级（模型编辑面板批 2026-09-08）：
+        1. level=None（调用方未指定）→ env 全局 llm_thinking_level 回落（814H7 原语义）；
+        2. 会话显式档位 low/medium/high → reasoning_effort 透传（executor/summary
+           角色策略或主对话显式选择）；非法值不下发；
+        3. level=""（UI「默认（原生）」档）→ 模型 meta（chat_models_meta 面板配置）
+           注入：thinking_enabled=False 不发；配了 thinking_level 发 reasoning_effort；
+           仅开开关发 enable_thinking=true；
+        4. meta 未配置该模型 → env 全局回落；均无 → 兜底 enable_thinking=true
+           （hybrid 模型如 deepseek 默认关思考，不主动开则永远无思考——
+           tokenrhythm 实测 2026-09-08）。
+        不支持的端点 400 时走 _strip_unsupported_on_400 剥离重试（探针记忆）。"""
+        if level is None:
+            lv = str(settings.llm_thinking_level or "").strip().lower()
+            if lv in ("low", "medium", "high"):
+                payload["reasoning_effort"] = lv
+            return
+        lv = str(level).strip().lower()
+        if lv in ("low", "medium", "high"):
+            payload["reasoning_effort"] = lv
+            return
+        if lv:
+            return  # 非法档位不下发
+        # level == ""（UI「默认（原生）」档）→ 模型 meta 思考配置
+        meta = chat_model_meta(self.provider_id, self.model)
+        if meta is not None:
+            if meta.get("thinking_enabled") is False:
+                return  # 面板显式关思考
+            tl = str(meta.get("thinking_level") or "").strip().lower()
+            if tl in ("low", "medium", "high"):
+                payload["reasoning_effort"] = tl
+            else:
+                payload["enable_thinking"] = True
+            return
+        env_level = str(settings.llm_thinking_level or "").strip().lower()
+        if env_level in ("low", "medium", "high"):
+            payload["reasoning_effort"] = env_level
+            return
+        payload["enable_thinking"] = True
 
     def _apply_response_format(self, payload: Dict[str, Any],
                                 response_format: Optional[Dict[str, Any]]) -> None:
@@ -396,7 +426,7 @@ class OpenAICompatChatAdapter(BaseChatAdapter):
                 "重试一次（本实例后续请求沿用旧通道）"
             )
             return True
-        fields = [k for k in ("response_format", "reasoning_effort") if k in payload]
+        fields = [k for k in ("response_format", "reasoning_effort", "enable_thinking") if k in payload]
         if not fields:
             return False
         named = [k for k in fields if k in body]

@@ -9,23 +9,6 @@ response_factory 以 callable 注入（同 agent_loop 的 llm_call 惯例），
 from typing import Any, Callable, Dict, List, Optional
 
 from src.video_agent.core.agent_loop import AgentLoopResult
-from src.video_agent.core.gates_cards import summary_already_visible
-from src.video_agent.core.stage_deliverables import render_stage_deliverables
-
-
-def _executed_tool_names(loop_result: AgentLoopResult) -> List[str]:
-    """本轮 trace 中成功执行的工具名（保序，供成果渲染器判定）。
-
-    trace 在 agent_loop 返回前已 finish_trace，steps[].actions[] 可用；
-    无 trace（测试桩等）返回空列表。
-    """
-    names: List[str] = []
-    trace = getattr(loop_result, "trace", None) or {}
-    for step in (trace.get("steps") or []):
-        for act in (step.get("actions") or []):
-            if act.get("ok") and str(act.get("name") or "").strip():
-                names.append(str(act["name"]))
-    return names
 
 
 def append_costly_retry_action(
@@ -82,21 +65,14 @@ def assemble_response(
                 loop_result.warnings.append(w)
                 seen.add(w)
 
-    # 成果正文通道：本轮成功执行的阶段工具成果由层 9
-    # 确定性渲染进正文（模型只短交代，成果展示不再依赖模型自觉）；
-    # 判重内置——模型 prose 已含总结时不重复追加。
-    _state = getattr(executor, "state", None) or {}
-    _deliverable = render_stage_deliverables(_state, _executed_tool_names(loop_result))
-    if _deliverable:
-        _t = str(loop_result.text or "")
-        _summary = str((_state.get("analysis") or {}).get("summary") or "")
-        if not summary_already_visible(_t, _summary):
-            loop_result.text = (
-                f"{_t.rstrip()}\n\n{_deliverable}".strip() if _t.strip() else _deliverable
-            )
-    elif loop_result.confirmation and analysis_summary:
-        # 无成果块命中时的历史语义兜底：暂停轮补一行客观事实（判重内置），
-        # 防模型 prose 停留在执行前承诺导致后续轮次误判未执行而重跑执行器。
+    # 成果正文通道（对齐批 2026-09-08 裁决）：阶段成果全文不再由层 9
+    # 渲染进正文——分析报告全文挂「剧本分析已完成」事件卡折叠（前端取
+    # detail_md），正文归模型浓缩交代（外部标杆同款），消除 tool 参数 +
+    # 正文渲染的双份全文驻留上下文。skill 明确要求正文完整展示时由模型
+    # 按 skill 散文执行（平台不拦截）。
+    if loop_result.confirmation and str(analysis_summary or "").strip():
+        # 历史语义兜底：暂停轮正文停留在执行前承诺时补一行客观事实
+        # （判重内置），防后续轮次误判未执行而重跑执行器。
         _t = str(loop_result.text or "")
         if _t.strip() and "剧本分析已完成" not in _t:
             loop_result.text = _t.rstrip() + "\n\n（剧本分析已完成并存档工作台）"
@@ -114,6 +90,9 @@ def assemble_response(
             loop_result.text = (
                 f"已执行 {loop_result.applied_actions} 个操作：" + "；".join(merged_log[:12])
             )
+            # 批 C3：标记机械来源——落 kind="mechanical"，线程装载历史时
+            # 压成固定短句（机械流水账进历史会成 few-shot 污染，教坏正文范式）
+            loop_result.text_source = "mechanical"
 
     # chat_inserts：FC 路径收集，按 URL 去重
     merged_inserts: List[Dict[str, Any]] = []
@@ -137,6 +116,7 @@ def assemble_response(
     merged_action_log = aggregate_action_log(full_log) if aggregate_action_log is not None else full_log
     _factory_kwargs = dict(
         text=loop_result.text,
+        text_source=getattr(loop_result, "text_source", ""),
         applied_actions=loop_result.applied_actions,
         steps=loop_result.steps,
         warnings=loop_result.warnings,

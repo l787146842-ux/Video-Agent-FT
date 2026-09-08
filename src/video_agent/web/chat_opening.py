@@ -62,57 +62,38 @@ def _release_request_slot(request_id: str) -> None:
         _INFLIGHT_REQUESTS.discard(request_id)
 
 
-_HISTORY_ASSISTANT_MAX_CHARS = 600          # 非最新 assistant 回复的总上限（头+尾合计）
+_HISTORY_ASSISTANT_MAX_CHARS = 2000          # assistant 回复统一上限（头+尾合计）
 
 
-# 历史消息截断（token 浪费治理）：assistant 回复的有价值内容（草稿 prompt/规格文档）
-# 已在工作台状态 JSON 里，旧回复全文重复注入毫无意义；user 消息是用户指令，保持全文。
-_HISTORY_ASSISTANT_RECENT_MAX_CHARS = 2000  # 最新一条 assistant 回复的上限（紧邻决策与下一步计划最相关，保真度优先）
+_HISTORY_HEAD_CHARS = 1800                   # 超长回复保留头部（开头常是结论/总结）
 
 
-_HISTORY_HEAD_CHARS = 300                   # 旧回复保留头部（开头常是结论/总结）
-
-
-_HISTORY_TAIL_CHARS = 300                   # 旧回复保留尾部（结尾常是下一步建议/待办决策）
+_HISTORY_TAIL_CHARS = 200                    # 超长回复保留尾部（结尾常是下一步建议/待办决策）
 
 
 def truncate_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """组装发给 LLM 的历史：assistant 超长消息截断，user 消息全文保留。
 
-    截断策略（质量优化版）：
-    - 最新一条 assistant 回复：保留前 2000 字（先前轮次的决策/下一步与当前追问最相关）；
-    - 更早的 assistant 回复：保留头 300 + 尾 300（旧版只留头部，
-      会丢掉结尾的下一步建议与待确认事项）；
-    - 截断处附说明，让模型知道完整内容可从工作台状态 JSON 获取。
-    """
-    last_assistant_idx = -1
-    for i, m in enumerate(messages):
-        if m.get("role", "user") == "assistant":
-            last_assistant_idx = i
-
+    批 C2 位置无关化（指令收拢与缓存稳定批）：截断只依赖消息自身属性
+    （长度），与「是否最新」无关——同一条消息跨轮渲染字节相等，前缀缓存
+    跨轮稳定。原「最新一条 2000 / 更早 300+300」双档位会随轮次推进改写
+    同一条消息的字节（2000 → 300+300），每轮击穿消息区前缀，是缓存命中
+    20.9% 的第一层根因。assistant 有价值内容（草稿 prompt/规格文档）已在
+    工作台状态 JSON，截断无损语义。"""
     out: List[Dict[str, Any]] = []
-    for i, m in enumerate(messages):
+    for m in messages:
         role = m.get("role", "user")
         content = m.get("content", "")
         if not isinstance(content, str):
             out.append({"role": role, "content": content})
             continue
-        if role == "assistant":
-            if i == last_assistant_idx:
-                if len(content) > _HISTORY_ASSISTANT_RECENT_MAX_CHARS:
-                    content = (
-                        content[:_HISTORY_ASSISTANT_RECENT_MAX_CHARS]
-                        + "\n…（最新回复超长已截断，完整内容见工作台状态 JSON 与项目文档）"
-                    )
-            elif len(content) > _HISTORY_ASSISTANT_MAX_CHARS:
-                head = content[:_HISTORY_HEAD_CHARS]
-                tail = content[-_HISTORY_TAIL_CHARS:]
-                content = (
-                    head
-                    + "\n…（历史回复中部已省略，只保留首尾）…\n"
-                    + tail
-                    + "\n…（历史回复已截断，最新完整内容见工作台状态 JSON）"
-                )
+        if role == "assistant" and len(content) > _HISTORY_ASSISTANT_MAX_CHARS:
+            content = (
+                content[:_HISTORY_HEAD_CHARS]
+                + "\n…（历史回复中部已省略，只保留首尾）…\n"
+                + content[-_HISTORY_TAIL_CHARS:]
+                + "\n…（历史回复已截断，完整内容见工作台状态 JSON 与项目文档）"
+            )
         _msg: Dict[str, Any] = {"role": role, "content": content}
         # 思考回传（五项修法批 4，default-off）：assistant 历史消息携带的
         # reasoning_content 原样透传（GLM 交错思考要求完整未修改）

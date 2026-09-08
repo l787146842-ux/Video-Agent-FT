@@ -323,7 +323,7 @@ def draft_id_exists(
 ) -> bool:
     """批 3 · B6：显式 draft id 是否已存在（写入前查重，防重复卡假成功）。
 
-    categories 缺省查全部故事板类别——「镜头 ID 重复」即拒（flova 转录
+    categories 缺省查全部故事板类别——「镜头 ID 重复」即拒（外部实测转录
     标尺：失败时现有故事板零改动）。只读，不写任何状态。"""
     wanted = str(draft_id or "").strip()
     if not wanted:
@@ -407,7 +407,7 @@ def resolve_scene_audio_refs(
 
     与 resolve_scene_refs 同构（imgUrl→reference 的姊妹轴）：分镜引用了
     带音色参考的元素时，视频生成自动把该音色挂为 reference_audio，
-    对齐 Flova「按引用自动挂声音锚点」。只读，不改状态。"""
+    对齐外部标杆「按引用自动挂声音锚点」。只读，不改状态。"""
     refs: List[Dict[str, str]] = []
     if not group:
         return refs
@@ -427,7 +427,7 @@ def resolve_scene_audio_refs(
 
 
 def parse_element_tokens(text: str) -> List[str]:
-    """批 6 · A3：提取文本中的 [元素名] 令牌（Flova 形态），去重保序。
+    """批 6 · A3：提取文本中的 [元素名] 令牌（外部标杆 形态），去重保序。
 
     令牌是写在分镜描述里的人可读引用层；匹配不到元素的令牌由调用方
     丢弃（不拒收，不锁死）。"""

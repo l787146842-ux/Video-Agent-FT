@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""动作日志成果语测试（2026-09-06 Flova 对齐批）：
+"""动作日志成果语测试（2026-09-06 对齐批）：
 describe_fc_tool 产出类动作改成果语（用户视角），低信息机械续读类
 在 aggregate_action_log 折叠不进聊天动作日志（trace/审计照记）。"""
 from src.video_agent.core.action_descriptions import aggregate_action_log

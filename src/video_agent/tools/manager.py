@@ -98,6 +98,11 @@ class ToolManager:
         cls._schema_cache = None
 
     @classmethod
+    def has_tool(cls, name: str) -> bool:
+        """工具名是否已注册（未注册工具的拒因分流用，fail-closed 不变）。"""
+        return name in cls._tools
+
+    @classmethod
     def get_tool(cls, name: str) -> BaseTool:
         tool = cls._tools.get(name)
         if not tool:

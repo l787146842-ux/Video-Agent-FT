@@ -37,7 +37,7 @@ EXPECTED_RISK = {
     "read_state_group": "low",
     "view_storyboard_media": "low",
     # medium（11）：写状态但可撤销（Q2 裁决 2026-09-01：flow_directive 工具退役；
-    # 2026-09-07 Flova 对齐：文档/画布写入归 medium，写入不设逐次确认闸）
+    # 2026-09-07 外部标杆对齐：文档/画布写入归 medium，写入不设逐次确认闸）
     "workflow_pause": "medium",
     "storyboard_create_group": "medium",
     "storyboard_patch_draft": "medium",
@@ -270,7 +270,7 @@ def _reset_tracer():
 
 class TestToolRiskGate:
     def test_document_write_executes_directly(self, monkeypatch):
-        """2026-09-07 Flova 对齐：document_write 降 medium，无确认闸直接执行。"""
+        """2026-09-07 外部标杆对齐：document_write 降 medium，无确认闸直接执行。"""
         from src.video_agent.tools.document_tools import (
             DocumentWriteTool,
             register_document_tools,
@@ -294,7 +294,7 @@ class TestToolRiskGate:
         assert not any("consent=pause_accept" in w for w in runner.gate_warnings)
 
     def test_canvas_write_executes_directly(self, monkeypatch):
-        """2026-09-07 Flova 对齐：画布写四件套降 medium，直接执行。"""
+        """2026-09-07 外部标杆对齐：画布写四件套降 medium，直接执行。"""
         from src.video_agent.tools.canvas_tools import register_canvas_tools
         register_canvas_tools()
         for name in ("canvas_add_node", "canvas_update_node",
@@ -430,13 +430,16 @@ class TestImageGenerateSingleRiskGate:
         assert err and "高风险工具确认闸拦截" in err
 
     def test_single_predicate_arms_for_registered_and_unregistered(self):
-        """未注册工具同口径 deny-by-default：tier=confirm + risk=high 双命中。"""
+        """未注册工具 deny-by-default 不变（仍拒）；批补丁后拒因如实分流：
+        「工具不存在（疑似拼写错误）」而非「高风险确认闸」（2026-09-09 实证
+        storybook_create_group 拼错被误导成要确认）。"""
         from src.video_agent.core import fc_gates
         ctx = fc_gates.GateContext(
             state=lambda: {}, tool_risk_of=lambda name: "high")
         err = fc_gates.tool_risk_gate(
             ctx, "__not_registered__", {})
-        assert err and "高风险工具确认闸拦截" in err
+        assert err and "不存在" in err and "拼写错误" in err
+        assert "高风险" not in err
 
 
 # ---------- 批 B 执行偏好：costly 声明轴 + 三档分流 ----------
@@ -494,7 +497,7 @@ class TestExecPreferenceToolRisk:
 
     def test_generate_directly_writes_execute(self, monkeypatch,
                                               set_global_setting):
-        """2026-09-07 Flova 对齐：文档/画布写入已降 medium，任何偏好档直接执行
+        """2026-09-07 外部标杆对齐：文档/画布写入已降 medium，任何偏好档直接执行
         （偏好只影响花钱生成；未注册兜底拦截语义零改动，见下条红线）。"""
         from src.video_agent.tools.canvas_tools import register_canvas_tools
         from src.video_agent.tools.document_tools import register_document_tools

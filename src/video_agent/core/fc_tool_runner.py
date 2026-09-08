@@ -562,8 +562,9 @@ class FCToolRunner:
             # 逐卡唯一落点 = event_cards 映射表；读类卡只进时间线不进模型
             # 上下文防逐轮膨胀）
             _cards = event_cards.product_event_card(name, args, len(st.image_urls))
-            for _card_name, _card_detail, _card_to_ctx in _cards:
-                await emit_event_card(_card_name, _card_detail, emitter=on_event)
+            for _card_name, _card_detail, _card_to_ctx, _card_md in _cards:
+                await emit_event_card(
+                    _card_name, _card_detail, detail_md=_card_md, emitter=on_event)
                 if _card_to_ctx:
                     StateManager.get_instance().record_flow_event(
                         "event_card",

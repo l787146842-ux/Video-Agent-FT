@@ -116,7 +116,7 @@ _SKILL_FLOW_OFF = (
 
 
 def test_real_skills_manifest_snapshot(monkeypatch):
-    """真实 data/skills 快照（2026-08-31 用户裁决 Flova 对齐后）：
+    """真实 data/skills 快照（2026-08-31 用户裁决 外部标杆对齐后）：
     存量包 frontmatter 只留 name/description/source，机械开关键清零。"""
     from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
 
@@ -170,7 +170,7 @@ def test_bare_keys_parsed_as_minimal_declaration():
 
 
 def test_bare_keys_document_registers_end_to_end():
-    """端到端：Flova 裸键文档可注册（注册期 name/description 必填满足）。"""
+    """端到端：裸键文档可注册（注册期 name/description 必填满足）。"""
     sd.save_skill_doc(
         "裸键包",
         'skill_name: 裸键包\nskill_description: 导入兼容桩\n'

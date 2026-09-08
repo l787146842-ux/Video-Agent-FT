@@ -108,6 +108,8 @@ class SseToolStartedEvent(_SseFrame):
     name: str
     summary: str
     args: Optional[Dict[str, Any]] = None
+    # 事件卡折叠区全文（对齐批：分析报告全文挂卡，仅 event_card 携带）
+    detail_md: Optional[str] = None
 
 
 class SseToolFinishedEvent(_SseFrame):
@@ -116,6 +118,8 @@ class SseToolFinishedEvent(_SseFrame):
     ok: bool
     elapsed_ms: float
     result_summary: str = ""
+    # 事件卡折叠区全文（仅 event_card 携带）
+    detail_md: Optional[str] = None
     planning: Optional[bool] = None
 
 

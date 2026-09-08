@@ -275,10 +275,7 @@ class TurnExecutor:
             # 无 adapter 时返回空响应
             return ChatResponse(content="", finish_reason="stop")
 
-        tools_schema = (
-            p.tool_manager.get_all_tool_schemas(exclude=p._excluded_tools)
-            if p.llm_adapter.supports_function_calling else None
-        )
+        tools_schema = p.tools_schema()
         self._record_budget_breakdown(
             system, messages, state_tail, tools_schema, full_messages, max_tokens)
         if tools_schema is not None:
@@ -327,9 +324,7 @@ class TurnExecutor:
         if p.llm_adapter is None:
             return
 
-        tools_schema = None
-        if p.llm_adapter.supports_function_calling:
-            tools_schema = p.tool_manager.get_all_tool_schemas(exclude=p._excluded_tools)
+        tools_schema = p.tools_schema()
         self._record_budget_breakdown(
             system, messages, state_tail, tools_schema, full_messages, max_tokens)
 

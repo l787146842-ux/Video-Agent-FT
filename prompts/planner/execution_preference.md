@@ -2,14 +2,14 @@
 
 > 消费端 = planner（轮始按 settings.execution_preference 档位选取分节签发
 > context.execution_pref_note，经状态尾部消息每步注入）。
-> 语义对齐 Flova「素材生成」轴：偏好由模型行为执行（主动先审后生成），
+> 语义对齐外部标杆「素材生成」轴：偏好由模型行为执行（主动先审后生成），
 > 闸机（tool_risk / gen_confirm）兜底硬保证——确认路径口径与
 > prompts/gates/messages.md 的 GENERATION_CONFIRM_BLOCKED / TOOL_RISK_BLOCKED
 >（gen/spec 分支）/ TOOL_RISK_BLOCKED_OTHER（other_high 分支，唯一路径 =
 > 本次放行）一致；一致性由 check_consent_copy 门禁机械校验。
 
 ## PREF_CONFIRM_BEFORE_GEN
-当前执行偏好：生成前确认——首次生成图片/视频前，先用 workflow_pause 向用户呈现提示词草案并请求确认；用户接受后重提的生成本轮内视为已确认，不会重复拦截。制片规格等文档与故事板/画布写入已按 2026-09-07 Flova 对齐裁决降为 medium，直接执行、不设确认闸。也可在工作台把目标草稿标「已确认」。
+当前执行偏好：生成前确认——首次生成图片/视频前，先用 workflow_pause 向用户呈现提示词草案并请求确认；用户接受后重提的生成本轮内视为已确认，不会重复拦截。制片规格等文档与故事板/画布写入已按 2026-09-07 裁决降为 medium，直接执行、不设确认闸。也可在工作台把目标草稿标「已确认」。
 
 ## PREF_AUTO_DECIDE
 当前执行偏好：自动决定——活跃 Skill 指导下的常规生成免逐次确认（系统代发同意并留痕）；暂停点按所选 Skill 散文执行。

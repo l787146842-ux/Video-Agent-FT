@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """批 S2 微调真子对话：作用域上下文裁剪（context_builder scope 档）。
 
-钉死契约（对齐 Flova：子对话只应看到对应元素，任务 #19 收窄）：
+钉死契约（对齐外部标杆：子对话只应看到对应元素，任务 #19 收窄）：
 1. scope 存在时：仅目标分组（group_id / draft_id 定位）注入全量草稿细节
    （含提示词全文）；同类别其余分组与其他类别整体不注入（连指针清单也不给）；
    documents（规格/剧本）/uploadedDocs/assets/analysis/interaction 一律不可见；

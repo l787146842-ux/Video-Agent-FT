@@ -170,7 +170,7 @@ RESOURCE_MEDIA_SUFFIXES = {
     ".webm": "video",
 }
 
-# 素材资源子目录约定（批6：对齐 Flova 素材捆绑）：目录包 assets/ 放图/文档/
+# 素材资源子目录约定（批6：对齐外部标杆 素材捆绑）：目录包 assets/ 放图/文档/
 # 视频/音频素材，按引用消费（描述符通道，二进制不进文本/上下文）；
 # references/ 保留给文本参考（resource_manifest 口径不变）。
 ASSET_DIR_NAME = "assets"

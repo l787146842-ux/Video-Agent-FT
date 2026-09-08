@@ -140,7 +140,7 @@ class SkillDocSave(BaseModel):
 @router.put("/skills/docs/{slug}")
 async def put_skill_doc(slug: str, body: SkillDocSave):
     """保存 Skill 文档（新建或覆盖）；lint 结果随响应下发（只告警不阻断，
-    前端 toast 回显——体量/Flova 组成/frontmatter 声明体检等编辑期可见）"""
+    前端 toast 回显——体量/外部标杆 组成/frontmatter 声明体检等编辑期可见）"""
     try:
         doc = save_skill_doc(slug, body.content)
     except ValueError as e:

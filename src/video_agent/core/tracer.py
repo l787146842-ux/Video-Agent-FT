@@ -339,18 +339,23 @@ class AgentTracer:
         summary: str = "",
         elapsed_ms: float = 0.0,
         ok: bool = True,
+        detail_md: str = "",
     ) -> None:
         """执行器子步骤：缓冲到 pending_subs，随下一个父 record_action
-        挂到父条目之后；step 结束仍无父条目时由 end_step 兜底落盘。"""
+        挂到父条目之后；step 结束仍无父条目时由 end_step 兜底落盘。
+        detail_md = 折叠区全文（事件卡携报告全文等），随 trace 持久化。"""
         ctx = self._ctx()
         if ctx.current is None:
             return
-        ctx.pending_subs.append({
+        sub: Dict[str, Any] = {
             "name": name,
             "summary": summary,
             "elapsed_ms": round(elapsed_ms, 1),
             "ok": ok,
-        })
+        }
+        if detail_md:
+            sub["detail_md"] = detail_md
+        ctx.pending_subs.append(sub)
 
     def record_pre_turn(
         self, name: str, summary: str = "", elapsed_ms: float = 0.0, ok: bool = True,

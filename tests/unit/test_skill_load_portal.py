@@ -276,14 +276,19 @@ def test_disabled_skill_not_in_api_skills_hot_switch(set_global_setting):
 
 def test_api_skills_system_prompt_keeps_frontmatter():
     """system_prompt 下发含 frontmatter 的磁盘全文：对话栏详情弹窗以它为源，
-    编辑保存整文件覆盖不抹声明头（防拒注册连锁失明）；注册派生只影响哪些包出现。"""
+    编辑保存整文件覆盖不抹声明头（防拒注册连锁失明）；注册派生只影响哪些包出现。
+    （批 C1c 裸键兼容形态同为合法声明头：skill_name:/skill_description:）"""
     skills = _api_client().get("/api/plugins/ftdyb-agent/config").json()["skills"]
     assert skills
     for s in skills:
-        assert s["system_prompt"].lstrip("\ufeff").startswith("---"), \
-            f"{s['slug']} 的 system_prompt 缺 frontmatter 声明头"
-        head = s["system_prompt"].split("---")[1]
-        assert "name:" in head and "description:" in head
+        sp = s["system_prompt"].lstrip("\ufeff")
+        if sp.startswith("---"):
+            head = sp.split("---")[1]
+            assert "name:" in head and "description:" in head
+        else:
+            head = sp[:200]
+            assert "skill_name:" in head and "skill_description:" in head, \
+                f"{s['slug']} 的 system_prompt 缺 frontmatter/裸键声明头"
 
 
 _PORTAL_DOC = (

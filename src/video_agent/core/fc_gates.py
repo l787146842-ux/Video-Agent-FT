@@ -218,6 +218,15 @@ def tool_risk_gate(
             ctx.warnings.append(w)
     if err:
         logger.info(f"[ToolRiskGate] 拦截 {name}：high 级操作未经用户确认")
+        # 拒因如实分流（指令收拢批补丁，2026-09-09 实证：模型拼错
+        # storybook_create_group 被话术误导成「要走确认/放行」）：拦截
+        # 行为与 deny 范围逐字节不变，仅当被拦工具未注册时把话术换成
+        # 「工具不存在」——指引模型核对拼写，而非走确认通道。
+        if not is_mcp_tool(name) and not ToolManager.has_tool(name):
+            err = (
+                f"工具 '{name}' 不存在（疑似拼写错误）。"
+                "请核对系统提示中的可用工具清单，用正确工具名重试。"
+            )
     return err
 
 

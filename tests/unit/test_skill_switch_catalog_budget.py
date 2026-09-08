@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""批5（对齐 Flova 卡片开关）防回归测试：
+"""批5（对齐外部标杆 卡片开关）防回归测试：
 1) 开关过滤：settings.skills_disabled 里的 slug 不进目录段；默认空 = 全启用；
 2) 条目预算：超 skill_catalog_max_entries 按最近使用序（项目 usedSkills）
    截断，尾部附「另有 N 个已启用 Skill 未列出」指针行；

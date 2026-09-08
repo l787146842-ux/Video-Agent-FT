@@ -20,7 +20,7 @@ from src.video_agent.state.models import (
 )
 
 # 粘性豁免/原料闸/规格闸机械兜底卡已随用户裁决 2026-08-31 退役
-# （Flova 对齐：流程顺序与原料收集归 skill 散文 + 模型自觉，
+# （外部标杆对齐：流程顺序与原料收集归 skill 散文 + 模型自觉，
 # 平台不再轮始发卡）。
 
 
@@ -291,7 +291,7 @@ async def gate_precheck(
     """闸预检壳（2026-08-31 用户裁决退役原料闸/规格闸机械兜底卡）。
 
     恒返回 None = 交接模型循环；流程顺序与原料收集归 skill 散文 +
-    模型自觉（Flova 对齐）。保留委托壳：planner_triage/planner 委托。
+    模型自觉（外部标杆对齐）。保留委托壳：planner_triage/planner 委托。
     """
     return None
 

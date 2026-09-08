@@ -6,7 +6,8 @@
 工作流永远卡在第一步。本工具补上写入点，既有消费方零改动生效：
 
 - ``stage_probes.stage_done("analysis")`` 客观探针；
-- ``stage_deliverables`` 阶段成果渲染器（正文自动渲染总结与报告）；
+- ``event_cards`` 剧本分析已完成事件卡（detail_md 携报告全文挂卡折叠，
+  对齐批 2026-09-08 前为 stage_deliverables 正文渲染，已随裁决退役）；
 - ``gates_cards`` 分析探针判据；
 - ``context_builder._build_analysis`` 状态裁剪注入。
 
@@ -14,7 +15,7 @@
 ``script_analyze``（Skill 章节标签，阶段标记非工具名）刻意区分——
 防幻影能力词回潮进助手白名单（test_skill_assistant_route 钉死）。
 
-形态口径（批 5，对齐 Flova 机制）：Flova 全程没有结构化字段表——
+形态口径（批 5，对齐外部标杆 机制）：外部标杆 全程没有结构化字段表——
 分析/规格都是自由文本，平台从不解析产物内容判流程进度。故入参只留
 一个必填的一句话锚点 + 自由文本报告，模型按各自 Skill 的
 ``script_analyze`` 章节要求想写什么写什么；完成判据 = 本工具调用

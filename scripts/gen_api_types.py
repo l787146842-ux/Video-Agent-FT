@@ -143,7 +143,7 @@ def build_sidecar() -> Dict[str, Any]:
     工具时间线展示档（各工具 detail_tier 声明）、默认档/内部 none 名单、
     工具审批分级档（任务 P2-5：生效 approval_tier 表 + 默认档）、
     执行偏好三档枚举（批 B：config 白名单 + 默认档）、
-    执行模式四档枚举（2026-09-06 Flova 对齐批：config 白名单 + 默认档）。
+    执行模式四档枚举（2026-09-06 对齐批：config 白名单 + 默认档）。
     """
     # 延迟导入：确保项目根在 sys.path（以模块方式运行时自动满足）
     from src.video_agent.config import (

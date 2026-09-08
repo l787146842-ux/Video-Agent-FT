@@ -159,7 +159,7 @@ def _fuzzy_pick(items: List[Dict[str, Any]], wanted: str, keys: List[str]) -> Op
 
 class DocumentWriteTool(BaseTool):
     name = "document_write"
-    risk = "medium"  # §2.7（2026-09-07 Flova 对齐）：写状态但可撤销（文档带修订记录），写入不设逐次确认闸
+    risk = "medium"  # §2.7（2026-09-07 外部标杆对齐）：写状态但可撤销（文档带修订记录），写入不设逐次确认闸
     detail_tier = "expand"  # 产出类：展开看输入参数+执行结果
     description = (
         "写入/更新项目文档工件（如制片规格、脚本大纲）。已存在同名文档则整篇覆盖"
@@ -432,7 +432,7 @@ class ReadSkillTool(BaseTool):
 
 class ListSkillsTool(BaseTool):
     name = "list_skills"
-    risk = "low"  # §2.7：只读无副作用（批5，对齐 Flova 卡片开关的名单探针）
+    risk = "low"  # §2.7：只读无副作用（批5，对齐外部标杆 卡片开关的名单探针）
     # 五项修法批 3：模型惯于并行连发的只读工具，可进有界并行池
     parallel_safe = True
     detail_tier = "output"  # 读取类：仅输出留痕

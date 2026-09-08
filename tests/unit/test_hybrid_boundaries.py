@@ -235,58 +235,31 @@ def test_fc_gen_gate_exec_preference_generate_directly(monkeypatch, set_global_s
     assert err and "拦截" in err
 
 
-# ---------- 阶段探测工具裁剪 ----------
+# ---------- 工具全量常驻（批 B2，2026-09-09 用户裁决） ----------
+# stage_tool_restrictions / GENERATION_STAGE_TOOLS 已退役：阶段裁剪曾是
+# 前缀缓存击穿点（tools 变 → 前缀断），generate_video 改全量常驻，
+# 正确性由第二层兜底（工具自身校验 + gen_confirm/tool_risk 闸）。
 
-def test_stage_restrictions_spec_but_no_storyboard():
-    excluded, note = prompt_gates.stage_tool_restrictions({
-        "documents": [{"name": "制片规格.md", "content": "正文"}],
-        "keyElements": [], "shots": [], "audioItems": [],
-    })
-    assert excluded == prompt_gates.GENERATION_STAGE_TOOLS
-    assert "storyboard_create_group" not in excluded
-    assert "结构" in note
-
-
-def test_stage_restrictions_storyboard_ready():
-    excluded, note = prompt_gates.stage_tool_restrictions({
-        "documents": [{"name": "制片规格.md", "content": "正文"}],
-        "keyElements": [{"id": "ke-1", "drafts": []}], "shots": [], "audioItems": [],
-    })
-    assert excluded == frozenset() and note == ""
-
-
-def test_planner_stage_pruning(svc, monkeypatch):
-    """planner._compute_excluded_tools：Skill 激活 + strict 时按阶段裁剪，
-    且裁剪⇔解释同源签发（任务#15 P2：阶段裁剪的声明门控已废，
-    条件单一事实源归 planner；成对断言详见 test_prompt_assembly_snapshot）"""
+def test_generate_video_always_resident(svc, monkeypatch):
+    """generate_video 全量常驻：故事板为空时也不裁剪（skill 激活 + strict 同口径）。"""
     from src.video_agent.core.planner import Planner, PlannerContext
 
     planner = Planner.__new__(Planner)  # 绕过重量级构造，只测裁剪逻辑
     planner.state_manager = svc
-
-    def make_ctx(skill):
-        ctx = PlannerContext()
-        ctx.use_studio_context = True
-        ctx.skill_name = skill
-        return ctx
-
-    # 无规格文档 + Skill 激活（2026-08-31 用户裁决：规格锁工具退役）：
-    # 故事板工具不再裁剪；故事板为空时仅生成工具裁剪，且携带解释文案
+    ctx = PlannerContext()
+    ctx.use_studio_context = True
+    ctx.skill_name = "剧本生视频（需上传剧本）"
+    # 故事板为空（原「仅生成工具裁剪」场景）
     svc.state_dict["documents"] = []
     svc.state_dict["keyElements"] = []
     svc.state_dict["shots"] = []
     svc.state_dict["audioItems"] = []
-    ctx1 = make_ctx("剧本生视频（需上传剧本）")
-    excluded = planner._compute_excluded_tools(ctx1)
+    excluded = planner._compute_excluded_tools(ctx)
+    assert "generate_video" not in excluded
     assert "storyboard_create_group" not in excluded
-    assert "generate_video" in excluded
-    assert "image_generate" not in excluded  # 单张应急轨任意阶段可见
-    assert ctx1.stage_excluded_tools and "当前阶段工具边界" in ctx1.stage_note
-    # 无 Skill：不追加阶段裁剪，也不签发解释
-    ctx2 = make_ctx("")
-    excluded2 = planner._compute_excluded_tools(ctx2)
-    assert "storyboard_create_group" not in excluded2
-    assert ctx2.stage_excluded_tools == frozenset() and ctx2.stage_note == ""
+    assert "image_generate" not in excluded
+    # 阶段边界注释与裁剪解释已退役
+    assert not getattr(ctx, "stage_note", "")
 
 
 # ---------- 首拆只允许关键元素（8888 事故：规格确认后一次性拆出分镜+音频） ----------

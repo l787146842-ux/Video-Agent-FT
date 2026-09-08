@@ -149,7 +149,7 @@ def test_lint_partial_split_warns_missing_executors():
     )
 
 
-def test_lint_full_flova_skill_has_no_structural_warnings():
+def test_lint_full_外部标杆_skill_has_no_structural_warnings():
     content = (
         "<planner>\n流程\n**何时暂停**：每阶段后\n</planner>\n"
         "<storyboard_designer>\n故事板\n</storyboard_designer>\n"

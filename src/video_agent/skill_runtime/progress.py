@@ -88,7 +88,7 @@ async def emit_timeline_note(
 
 
 async def emit_event_card(
-    card: str, detail: str = "", *,
+    card: str, detail: str = "", *, detail_md: str = "",
     emitter: Optional[ProgressEmitter] = None, pre_turn: bool = False,
 ) -> None:
     """具名事件卡（Skill 流程跑通修复批 2 · 插播报）：产物落账即广播的里程碑条目。
@@ -97,6 +97,7 @@ async def emit_event_card(
     轮始发卡场景 tracer 尚未开轨；否则随父工具条目挂子步骤）+ 实时时间线
     事件（emitter 缺省取绑定通道；轮始场景由调用方显式传入 on_event）。
     name 恒为 event_card：前端时间线按里程碑样式渲染，与工具行区分。
+    detail_md = 折叠区全文（对齐批：分析报告全文挂卡，不进模型上下文）。
     """
     if not card:
         return
@@ -106,7 +107,8 @@ async def emit_event_card(
         if pre_turn:
             AgentTracer.get_instance().record_pre_turn("event_card", summary=summary)
         else:
-            AgentTracer.get_instance().record_subaction("event_card", summary=summary)
+            AgentTracer.get_instance().record_subaction(
+                "event_card", summary=summary, detail_md=detail_md)
     except Exception as _e:
         logger.debug("[progress] 忽略异常: {}", _e)
     em = emitter if emitter is not None else _progress_var.get()
@@ -114,11 +116,19 @@ async def emit_event_card(
         return
     try:
         nid = f"card-{uuid.uuid4().hex[:8]}"
-        await em({"type": SSE_TOOL_STARTED, "id": nid, "name": "event_card", "summary": summary})
-        await em({
+        started: Dict[str, Any] = {
+            "type": SSE_TOOL_STARTED, "id": nid, "name": "event_card", "summary": summary,
+        }
+        if detail_md:
+            started["detail_md"] = detail_md
+        await em(started)
+        finished: Dict[str, Any] = {
             "type": SSE_TOOL_FINISHED, "id": nid, "ok": True,
             "elapsed_ms": 0.0, "result_summary": summary,
-        })
+        }
+        if detail_md:
+            finished["detail_md"] = detail_md
+        await em(finished)
     except Exception as _e:
         logger.debug("[progress] 忽略异常: {}", _e)
 

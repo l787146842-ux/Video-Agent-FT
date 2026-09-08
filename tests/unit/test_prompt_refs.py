@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""提示词引用解析（prompt_refs）单测：@ 原生记号 + <<<image_名称>>> Flova 方言同义。"""
+"""提示词引用解析（prompt_refs）单测：@ 原生记号 + <<<image_名称>>> 外部标杆方言同义。"""
 from src.video_agent.core.prompt_refs import resolve_prompt_mentions
 
 MEDIA_MAP = {
@@ -16,7 +16,7 @@ def test_at_mention_hit_appends_and_rewrites():
     assert refs == ["http://m/1.png"]
 
 
-def test_flova_notation_hit_same_track_as_at():
+def test_bracket_notation_hit_same_track_as_at():
     """<<<image_名称>>> 命中：与 @ 同轨——自动纳入参考列表 + 位置标记重写。"""
     prompt = "[场景]: <<<image_星环号球形舱>>> — 冷白灯带。"
     resolved, refs = resolve_prompt_mentions(prompt, [], MEDIA_MAP)
@@ -24,7 +24,7 @@ def test_flova_notation_hit_same_track_as_at():
     assert refs == ["http://m/2.png"]
 
 
-def test_flova_notation_unmatched_strips_mark_keeps_text():
+def test_bracket_notation_unmatched_strips_mark_keeps_text():
     """<<<image_未登记>>> 未命中：去记号保留名称文字（与 @ 未命中同口径）。"""
     prompt = "引用 <<<image_不存在的人>>> 试探。"
     resolved, refs = resolve_prompt_mentions(prompt, [], MEDIA_MAP)
@@ -42,7 +42,7 @@ def test_mixed_notations_share_ref_list():
     assert "[参考图2：星环号球形舱]" in resolved
 
 
-def test_base_refs_kept_and_flova_hit_reuses_index():
+def test_base_refs_kept_and_bracket_hit_reuses_index():
     base = ["http://m/1.png"]
     prompt = "<<<image_程心>>> 回眸。"
     resolved, refs = resolve_prompt_mentions(prompt, base, MEDIA_MAP)

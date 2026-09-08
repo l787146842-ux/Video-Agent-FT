@@ -55,7 +55,7 @@ _DEGRADATION_FLAG_SECTIONS = (
 _PLANNER_TAG_RE = re.compile(r"<planner>\s*(.*?)\s*</planner>", re.S | re.I)
 
 # v3 元数据头展示标签（kind/language）已随用户裁决 2026-08-31 退役
-# （Flova 对齐：frontmatter 只留 name/description/source 等最小键）。
+# （外部标杆对齐：frontmatter 只留 name/description/source 等最小键）。
 # Skill 正文注入家族（全文直注/分级注入/组合注入/平台边界包壳/
 # kind 差异化声明）已整体退役；自此选中 Skill
 # 正文改经渐进披露预算化注入；（B1 裁决 2026-08-31：预算式头部注入退役，
@@ -95,9 +95,8 @@ class PromptBuilder:
         状态上下文（状态 JSON/工具边界说明/故事板进度）已移出 system 段，
         见 build_state_tail_message（history 尾部消息注入，不在此登记）。
 
-        同源裁剪解释：stage_note 段只消费 planner 经
-        context 携带的裁剪解释（单一事实源），本处不再自行判定；
-        独立使用（不经 planner）时 note 缺省为空即回退为不注入。
+        同源裁剪解释（stage_note）已随批 B 工具全量常驻退役（2026-09-09）：
+        阶段边界注释不再存在；选中草稿指针亦移入尾部（批 B3）。
 
         协议段唯一 = planner/protocol.md（Tool 优先瘦身协议，共有段已内联）。
         """
@@ -186,17 +185,14 @@ class PromptBuilder:
             deg_note = self._build_degradation_note(state_json)
             if deg_note:
                 parts.append(deg_note)
-        # 同源裁剪解释：条件判定单一事实源归 planner._compute_excluded_tools，
-        # 裁剪生效时经 context.stage_note 携带；未生效缺省为空即不注入。
-        # 随状态同通道迁移：静默裁剪消除语义不变，只是不再击穿 system 前缀。
-        if context.stage_note:
-            parts.append(context.stage_note)
-        # 批 10 · 执行偏好注入（Flova 同款）：轮始按档位签发
+        # 同源裁剪解释（stage_note）已随批 B 工具全量常驻退役（2026-09-09）：
+        # 阶段边界注释不再存在，正确性由闸机 + 工具自身校验兜底。
+        # 批 10 · 执行偏好注入（外部标杆同款）：轮始按档位签发
         # （planner._load_execution_pref_note），每步随尾部消息可见；
         # 行为层引导，闸机（tool_risk/gen_confirm + 同意账本）兜底硬保证。
         if getattr(context, "execution_pref_note", ""):
             parts.append(context.execution_pref_note)
-        # 执行模式注入（2026-09-06 Flova 对齐批）：轮始按档位签发
+        # 执行模式注入（2026-09-06 对齐批）：轮始按档位签发
         # （planner._load_execution_mode_note）；ai_decide 默认档 = 空串不注入；
         # key_steps_confirm/pause_all 的停由轮末阶段闸机械保证，此处只承担
         # 引导呈现语义（auto_full 压制自发暂停，不改变生成确认闸）。
@@ -206,6 +202,14 @@ class PromptBuilder:
             note = self.build_storyboard_progress_note()
             if note:
                 parts.append(note)
+        # 选中草稿指针（批 B3 自 system order 75 移入尾部）：UI 选中态属
+        # 每请求可变事实（P3 状态归位）；移入尾部后 system 静态核心跨请求
+        # 字节稳定（UI 点击不再击穿 selected_skill 段前缀）
+        if context.selected_draft_id:
+            parts.append(render_prompt_section(
+                "shared/selected_draft.md", "POINTER",
+                draft_id=context.selected_draft_id,
+                draft_type=context.selected_type or "未知"))
         # turn_budget 客观步数（P3 状态即数据：纯客观数据行，无说教）；
         # 仅在已有状态尾部内容时附加，空状态不制造尾部消息（保「零增量」契约）
         step_info = getattr(context, "step_info", None)
@@ -240,8 +244,9 @@ class PromptBuilder:
         return ""
 
     def build_storyboard_progress_note(self) -> str:
-        """故事板客观进度描述（纯数据）——只报三类有无，
-        暂停点以当前 Skill 流程基线为准（正文经 read_skill 按需读取），
+        """故事板客观进度描述（纯数据）——只报三类已建组数（批补丁：
+        ✓/✗ 会被模型解读成「已完整」引发纠结，计数是零判定的纯事实），
+        暂停点以当前 Skill 流程基线（『何时暂停』/关键暂停点）为准，
         平台不给排序意见；
         顺带同批暂停建议（建议非强制，省往返）。
         文案外置 prompts/shared/storyboard_progress.md。"""
@@ -251,20 +256,20 @@ class PromptBuilder:
             raw = self._get_raw_state()
         except Exception:
             return ""
-        ke = bool(raw.get(CAT_KEY_ELEMENTS))
-        sh = bool(raw.get(CAT_SHOTS))
-        au = bool(raw.get(CAT_AUDIO_ITEMS))
-        if not (ke or sh or au):
+        # 三类全空不注入（尾部消息「零增量」契约；空数组状态 JSON 已自明）
+        if not (raw.get(CAT_KEY_ELEMENTS) or raw.get(CAT_SHOTS)
+                or raw.get(CAT_AUDIO_ITEMS)):
             return ""
-        mark = lambda b: "✓" if b else "✗"
         return render_prompt(
             "shared/storyboard_progress.md",
-            ke_mark=mark(ke), sh_mark=mark(sh), au_mark=mark(au))
+            ke_count=len(raw.get(CAT_KEY_ELEMENTS) or []),
+            sh_count=len(raw.get(CAT_SHOTS) or []),
+            au_count=len(raw.get(CAT_AUDIO_ITEMS) or []))
 
     def stage_allows_global_settings(self) -> bool:
-        """全局设置注入的阶段门控——规格规划阶段（无任何分组）
-        时长上限/渠道/分辨率都没有消费方，不注入；故事板阶段起才注入。
-        无法探测阶段时保守注入（不失约束）。"""
+        """（已退役保留壳）全局设置阶段门控——批 B3 改无条件注入后无消费方；
+        detect_stage 仍被阶段感知状态构建等使用，本壳仅防外部引用断裂。
+        壳到期制登记：短期保留，确认无引用后可删。"""
         if self._get_raw_state is None:
             return True
         try:
@@ -328,7 +333,7 @@ class PromptBuilder:
         """构建 Skill 目录（渐进式披露的「目录」）：启用文档 Skill 的名称+摘要常驻，
         选中 Skill 的 <planner> 段全文与章节目录由 build_selected_skill_block 注入，
         其余章节经 read_skill 按需加载。
-        批5（对齐 Flova 卡片开关）：开关过滤（settings.skills_disabled 里的 slug 不进目录）
+        批5（对齐外部标杆 卡片开关）：开关过滤（settings.skills_disabled 里的 slug 不进目录）
         + 条目预算（settings.skill_catalog_max_entries，超预算按项目 usedSkills 最近使用序
         截断，尾部附「另有 N 个已启用 Skill 未列出」指针行）。
         M3 批2（2026-08-30 裁决：注册表=加载唯一门户）：数据源从磁盘 list_skill_docs 切为
@@ -567,7 +572,7 @@ def _sec_session_summary(pb: "PromptBuilder", context: "PlannerContext") -> str:
 def _sec_catalog(pb: "PromptBuilder", context: "PlannerContext") -> str:
     """Skill 目录（渐进式披露：名称+摘要常驻，全文按需 read_skill）。
     scope 任务（微调真子对话）不注入：子对话只看对应目标元素，
-    目录清单属非目标面（对齐 Flova，连指针清单也不给）。"""
+    目录清单属非目标面（对齐外部标杆，连指针清单也不给）。"""
     if getattr(context, "adjust_scope", None):
         return ""
     return pb.build_skill_catalog(context)
@@ -592,17 +597,8 @@ def _sec_iron_rules(pb: "PromptBuilder", context: "PlannerContext") -> str:
     return pb.build_iron_rules_block()
 
 
-def _sec_selected_draft(pb: "PromptBuilder", context: "PlannerContext") -> str:
-    """前端当前选中的草稿指针（类型标注）：位于会话摘要段之后、选中 Skill 段
-    之前（P2-2 段序手术：UI 点击切换不再击穿前缀稳定段；状态上下文已移出
-    system 段，不再参与段序锚定）。"""
-    if not (context.use_studio_context and context.selected_draft_id):
-        return ""
-    # 批4/P0-3b：硬编码文案外置 prompts/shared/selected_draft.md
-    return render_prompt_section(
-        "shared/selected_draft.md", "POINTER",
-        draft_id=context.selected_draft_id,
-        draft_type=context.selected_type or "未知")
+# _sec_selected_draft 已随批 B3 移出 system 段（选中草稿指针改经
+# build_state_tail_message 注入，P3 状态归位）——builder 与注册表项同批退役。
 
 
 def _sec_adjust_discipline(pb: "PromptBuilder", context: "PlannerContext") -> str:
@@ -619,16 +615,16 @@ def _sec_adjust_discipline(pb: "PromptBuilder", context: "PlannerContext") -> st
 
 def _sec_global_settings(pb: "PromptBuilder", context: "PlannerContext") -> str:
     """全局生成设置（前端「全局设置」页用户配置，热生效）：
-    分镜时长上限 + 默认生成渠道，Agent 拆镜/生成必须遵守；
-    阶段门控——规格规划阶段无消费方，不注入（context rot 治理）。"""
+    分镜时长上限 + 默认生成渠道，Agent 拆镜/生成必须遵守。
+    批 B3 改无条件注入：阶段门控（planning 不注入）会在首组建组后于
+    system 中段凭空出现整段，击穿前缀缓存——本段内容极小且极少变化，
+    常驻的字节稳定性收益大于 context rot 代价。"""
     if not context.use_studio_context:
         return ""
     # 会话级压缩 compaction 是创作设定的唯一软性保护，
     # 见 planner/compaction.md；
     # 生成渠道清单注入机制已整体清除——渠道唯一事实源为
     # 顶部「全局设置」（provider_config/provider_prefs），规格文档不再承载渠道
-    if not pb.stage_allows_global_settings():
-        return ""
     return pb.build_global_settings_note()
 
 
@@ -667,13 +663,11 @@ PROMPT_SECTIONS: Tuple[PromptSectionSpec, ...] = _validate_prompt_sections((
     # P2-2 段序手术：摘要段后移至全局设置之后——
     # compaction 激活不再击穿协议/目录等稳定前缀（KV-cache 友好）
     PromptSectionSpec("session_summary", 65, _sec_session_summary),
-    # P2-2 段序手术：选中草稿指针后移——
-    # UI 点击切换草稿不再击穿 global_settings 及以前的稳定前缀。
+    # P2-2 段序手术 + 批 B3：选中草稿指针已移出 system（经状态尾部消息注入），
+    # order 75 槽位退役——system 静态核心跨请求字节稳定。
     # 状态上下文（原 order 70/80/90 的 state_json/stage_note/
     # storyboard_progress）已移出 system 段：经 build_state_tail_message
     # 以 history 尾部消息（user 通道）每步注入，system 成跨步稳定前缀。
-    # selected_draft 每请求才可能变（UI 点击），跨步稳定，留在 system。
-    PromptSectionSpec("selected_draft", 75, _sec_selected_draft),
     # 微调任务纪律段（批 S2）：仅 scope 任务注入，内容恒定（跨步稳定前缀）
     PromptSectionSpec("adjust_discipline", 80, _sec_adjust_discipline),
     PromptSectionSpec("selected_skill", 100, _sec_selected_skill),

@@ -164,7 +164,7 @@ class CanvasReadNodesTool(BaseTool):
 
 class CanvasAddNodeTool(BaseTool):
     name = "canvas_add_node"
-    risk = "medium"  # §2.7（2026-09-07 Flova 对齐）：写状态但可撤销（画布节点可删除/撤销）
+    risk = "medium"  # §2.7（2026-09-07 外部标杆对齐）：写状态但可撤销（画布节点可删除/撤销）
     detail_tier = "expand"  # 产出类
     description = "在画布中新增一个节点（支持 smart-image/smart-prompt/text/image 类型）"
 
@@ -187,7 +187,7 @@ class CanvasAddNodeTool(BaseTool):
 
 class CanvasUpdateNodeTool(BaseTool):
     name = "canvas_update_node"
-    risk = "medium"  # §2.7（2026-09-07 Flova 对齐）：写状态但可撤销（画布节点可删除/撤销）
+    risk = "medium"  # §2.7（2026-09-07 外部标杆对齐）：写状态但可撤销（画布节点可删除/撤销）
     detail_tier = "expand"  # 产出类
     description = "修改画布中指定节点的属性（标题/坐标/提示词/图片/文本内容）"
 
@@ -219,7 +219,7 @@ class CanvasUpdateNodeTool(BaseTool):
 
 class CanvasDeleteNodeTool(BaseTool):
     name = "canvas_delete_node"
-    risk = "medium"  # §2.7（2026-09-07 Flova 对齐）：写状态但可撤销（节点可重建；撤销栈覆盖）
+    risk = "medium"  # §2.7（2026-09-07 外部标杆对齐）：写状态但可撤销（节点可重建；撤销栈覆盖）
     detail_tier = "output"  # 删除类：仅输出留痕
     description = "删除画布中指定的节点"
 
@@ -284,7 +284,7 @@ class CanvasBatchUpdateInput(StrictToolInput):
 
 class CanvasBatchUpdateTool(BaseTool):
     name = "canvas_batch_add_nodes"
-    risk = "medium"  # §2.7（2026-09-07 Flova 对齐）：写状态但可撤销（画布节点可删除/撤销）
+    risk = "medium"  # §2.7（2026-09-07 外部标杆对齐）：写状态但可撤销（画布节点可删除/撤销）
     detail_tier = "expand"  # 产出类
     description = "批量添加多个节点到画布（一次 HTTP 完成，避免多次读写）"
 

@@ -40,24 +40,27 @@ def isolate(tmp_path, monkeypatch):
 
 # ---------- 铁律三条款 ----------
 
-def test_iron_rules_default_body_three_clauses():
+def test_iron_rules_default_body_two_clauses():
+    """批 A3（指令收拢批）：模板收敛为「契约条款 + 头部指针」——
+    第 1 条「执行优先」与头部同义复述已删，唯一表述源 = iron_rules_header.md。"""
     body = spec_rules._IRON_RULES_DOC_BODY
-    assert "1. 执行优先" in body
-    assert "2. 拆解覆盖完整（系统机器验收）" in body
-    assert "3. 回复纪律见平台协议" in body
+    assert "1. 拆解覆盖完整（系统机器验收）" in body
+    assert "见平台注入的《执行铁律》头部声明" in body
+    assert "执行优先" not in body
+    assert "回复纪律见平台协议" not in body
     # 旧条款已删（功能由闸门/系统行为兜底）
     assert "流程覆盖" not in body
     assert "分镜提示词必须包含" not in body
     assert "本文档可在左侧" not in body
 
 
-def test_ensure_iron_rules_doc_creates_three_clause_doc(tmp_path):
+def test_ensure_iron_rules_doc_creates_two_clause_doc(tmp_path):
     svc = StateManager(str(tmp_path / "ws"))
     changed = spec_rules.ensure_iron_rules_doc(svc.state_dict)
     assert changed
     doc = spec_rules.find_iron_rules_doc(svc.state_dict)
     assert doc is not None
-    assert "3. 回复纪律见平台协议" in doc["content"]
+    assert "见平台注入的《执行铁律》头部声明" in doc["content"]
     assert "流程覆盖" not in doc["content"]
 
 
@@ -102,9 +105,10 @@ def test_pause_label_protocol_scoped_to_confirmation():
     assert "不得携带下一阶段启动措辞" not in desc
 
 
-def test_iron_rules_clause2_single_sentence():
-    """铁律第 2 条只留标题句，粒度裁量归模型 + Skill。"""
+def test_iron_rules_clause1_single_sentence():
+    """批 A3：铁律第 1 条 = 契约条款，粒度裁量归模型 + Skill，
+    冲突与缺信息处置归头部唯一表述源。"""
     body = spec_rules._IRON_RULES_DOC_BODY
-    assert "2. 拆解覆盖完整（系统机器验收）。\n" in body
+    assert "1. 拆解覆盖完整（系统机器验收）。\n" in body
     assert "严禁把多位配角" not in body
     assert "宁缺毋滥" not in body

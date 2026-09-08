@@ -111,7 +111,7 @@ def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
 # 由 stage_done 探针重算；turn_commit 的自报 completed_node 降级为非权威
 # 提示——下次 sync 即被本重算覆盖，不再具有账本效力。
 # - collect_spec 与 write_spec 同证同源：规格文档在场即证明收集已发生；
-# - 媒体四阶段（2026-09-06 Flova 对齐批入默认定义）挂同键阶段探针；
+# - 媒体四阶段（2026-09-06 对齐批入默认定义）挂同键阶段探针；
 # - storyboard 三个结构节点用节点级探针（key_elements/shots_groups/
 #   audio_groups，运行时内部键，不可声明覆盖）；
 # - 审批节点（6 个）的「已评审」客观证据 = 账本 DecisionResolved 事件
@@ -453,7 +453,7 @@ class WorkflowRuntime:
             "RunStarted", run_id=run["run_id"],
             idempotency_key=f"run:{run['run_id']}:started",
             payload={"workflow_id": run.get("workflow_id")})
-        # 原料闸机械判定已随用户裁决 2026-08-31 退役（Flova 对齐：
+        # 原料闸机械判定已随用户裁决 2026-08-31 退役（外部标杆对齐：
         # 原料收集归 skill 散文 + 模型自觉）；仅保留调用方显式 input_present 覆盖。
         missing = input_present is False
         if missing:

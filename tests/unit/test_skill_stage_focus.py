@@ -9,8 +9,8 @@ from src.video_agent.web import skill_docs
 
 # ---------- 章节解析 ----------
 
-def test_split_sections_flova_tag_format():
-    """flova 原生 <tag> 章节按工具名映射到制作阶段"""
+def test_split_sections_tag_format():
+    """外部导出原生 <tag> 章节按工具名映射到制作阶段"""
     content = (
         "skill_name: demo\n"
         "<planner>\n阶段逻辑与依赖关系\n</planner>\n"

@@ -506,7 +506,7 @@ def compose_failure_feedback(
 
 def describe_fc_tool(name: str, args: Dict[str, Any]) -> str:
     """FC 工具的中文简述（与 studio-actions 描述风格对齐）。
-    2026-09-06 Flova 对齐批：产出类动作改成果语（用户视角「做了什么」，
+    2026-09-06 对齐批：产出类动作改成果语（用户视角「做了什么」，
     非工具视角「调了什么」）；机械续读类（read_skill 等）另在
     aggregate_action_log 低信息抑制集内不进聊天动作日志。"""
     title = str(args.get("title") or "").strip()

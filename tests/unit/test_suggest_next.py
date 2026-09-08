@@ -7,7 +7,7 @@
 
 - 平台不再发 kind="next" 建议；建议动作只剩失败重试（retry）与
   假停兜底继续（continue，label 固定「继续」不取节点标题）；
-- "下一步"由模型聊天自述（Flova 转录原样）；
+- "下一步"由模型聊天自述（外部标杆转录原样）；
 - 防复活在 scripts/check_legacy_orchestration.py FORBIDDEN 机械承接
   （退役符号字面不落本文件，测试内运行时拼接断言）。
 """

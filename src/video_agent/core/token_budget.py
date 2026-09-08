@@ -16,9 +16,9 @@ from typing import Any, Callable, Dict, List, Optional, Set
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core.ports import provider_config_port
 from src.video_agent.core.tracer import AgentTracer
 from src.video_agent.utils.paths import DATA_DIR
+from src.video_agent.utils.provider_config_loader import chat_model_meta
 
 # tiktoken 为可选依赖：装了走精确估算，没装回退启发式（功能不中断）
 try:
@@ -59,15 +59,11 @@ def context_window_for_model(model: str, provider_id: str = "") -> int:
     不因表过期而失真）。"""
     m = (model or "").lower()
     if provider_id:
-        try:
-            cfg = provider_config_port().get_provider_config(provider_id) or {}
-            for entry in (cfg.get("chat_models_meta") or []):
-                if isinstance(entry, dict) and str(entry.get("model") or "").lower() == m:
-                    win = int(entry.get("context_window") or 0)
-                    if win > 0:
-                        return win
-        except Exception:
-            pass  # 元数据不可用：回落查表（已日志化的降级路径）
+        meta = chat_model_meta(provider_id, model)
+        if meta is not None:
+            win = int(meta.get("context_window") or 0)
+            if win > 0:
+                return win
     for key, window in _load_context_windows().items():
         if key in m:
             return window

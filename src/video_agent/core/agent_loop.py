@@ -108,6 +108,10 @@ ContextBuilder = Callable[[], str]
 @dataclass
 class AgentLoopResult:
     text: str = ""
+    # 正文来源（批 C3）：mechanical = 轮末机械占位替换产出（无模型总结时
+    # 的操作清单）；随 done payload 下发并落 kind 标记，线程装载历史时
+    # 压成固定短句——机械流水账进历史会成 few-shot 污染，教坏正文范式
+    text_source: str = ""
     applied_actions: int = 0
     steps: int = 0
     warnings: List[str] = field(default_factory=list)
@@ -570,12 +574,15 @@ async def run_agent_loop(
                                 "role": "tool", "tool_call_id": _cid,
                                 "content": "（本批问即停，该调用未执行；等待用户回应后按其裁决处理）"})
                 messages.extend(_pending)
+                # 回喂纯事实（P3；指令收拢批补丁）：STEP_FEEDBACK_AT_PAUSE
+                # 已退役——「节点翻转」≠「Skill 暂停点」，探针误报曾逼停模型；
+                # 停/继续判定唯一归《Skill 流程纪律》第 2 条判定式
                 _step_fb = load_prompt_section("planner/feedback.md", "STEP_FEEDBACK")
                 if _step_fb:
                     _step_content = _step_fb.replace("{{step}}", str(step)).replace("{{count}}", str(fc_applied))
                 else:
                     logger.warning("[agent_loop] prompts/planner/feedback.md::STEP_FEEDBACK 分节缺失，使用最小占位")
-                    _step_content = f"（系统）第 {step} 轮工具已执行，请继续。"
+                    _step_content = f"（系统）第 {step} 轮工具已执行完毕。"
                 messages.append({"role": "user", "content": _step_content})
                 continue
 

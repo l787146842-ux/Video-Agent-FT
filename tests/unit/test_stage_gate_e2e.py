@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""轮末阶段闸端到端测试（2026-09-06 Flova 对齐批·自查补）：
+"""轮末阶段闸端到端测试（2026-09-06 对齐批·自查补）：
 完整 handle_message_stream 轮次内，确认档下阶段翻转 → done payload
 携带机械闸暂停卡（confirmation/pause_kind/pause_id + review: 挂起决议）；
 微调子对话（adjust_scope）内同场景不签发（子对话不发确认卡纪律）。"""

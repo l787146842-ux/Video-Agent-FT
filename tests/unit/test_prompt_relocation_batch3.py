@@ -59,9 +59,11 @@ def test_b3_prompt_builder_no_inline_instructions():
 
 def test_b3_pause_discipline_single_home():
     """暂停纪律唯一家 = skill_runtime.md（P1）；frontmatter 流程清单附注的
-    复述防复活由 check_legacy_orchestration 门禁承接（P2d）。"""
+    复述防复活由 check_legacy_orchestration 门禁承接（P2d）。
+    （批 A1 改写为唯一停机判定式，钉死新表述。）"""
     sd = load_prompt_section("planner/skill_runtime.md", "DISCIPLINE")
-    assert "workflow_pause 工具调用真正停下" in sd, "暂停纪律单家条款丢失"
+    assert "何时停（唯一判定）" in sd, "停机判定式单家条款丢失"
+    assert "workflow_pause 真停并结束本轮" in sd, "暂停纪律单家条款丢失"
 
 
 def test_f1_guide_card_boundary_reference():
@@ -90,21 +92,23 @@ def test_finalization_to_document_clause():
 
 def test_f2_prompt_dual_source_merge():
     """F-2 双源合并快照锁（重组后单家 = protocol.md / skill_runtime.md）：
-    ① 防虚报表述源唯一 = skill_runtime《Skill 流程纪律》第 9 条（含状态对账细节），
-       protocol 只留一句引用式短述；
-    ② 回复精简模型可见表述归 protocol 回复输出纪律条目 1，铁律模板只留指针；
+    ① 防虚报表述源唯一 = skill_runtime《Skill 流程纪律》第 7 条（含状态对账细节），
+       protocol 只留一句引用式短述（批 A2 修正指针：原「第 9 条」为陈旧序号）；
+    ② 回复精简模型可见表述归 protocol 回复输出纪律条目 1，铁律模板只留头部指针
+       （批 A3：模板第 1 条与头部同义复述已删）；
     ③ 优先级链三处措辞以 iron_rules_header 为唯一源对齐。"""
     from src.video_agent.core.spec_rules import _IRON_RULES_DOC_BODY, _NEW_PRIORITY
 
     ir = load_prompt("planner/protocol.md")
-    assert "《Skill 流程纪律》第 9 条" in ir, "防虚报引用式短述丢失"
+    assert "《Skill 流程纪律》第 7 条" in ir, "防虚报引用式短述丢失"
     assert "动作通道唯一 = 工具调用，只在正文写不产生任何效果" not in ir, "防虚报双源回潮"
     sd = load_prompt_section("planner/skill_runtime.md", "DISCIPLINE")
-    assert "状态对账" in sd, "防虚报表述源（第 9 条）丢失"
+    assert "状态对账" in sd, "防虚报表述源（第 7 条）丢失"
 
     od = load_prompt("planner/protocol.md")
     assert "已写入" in od and "一句话摘要" in od, "回复纪律表述源丢失"
-    assert "回复纪律见平台协议" in _IRON_RULES_DOC_BODY
+    assert "见平台注入的《执行铁律》头部声明" in _IRON_RULES_DOC_BODY
+    assert "回复纪律见平台协议" not in _IRON_RULES_DOC_BODY
     assert "逐卡罗列" not in _IRON_RULES_DOC_BODY, "铁律模板复述回复纪律回潮"
 
     header = load_prompt("shared/iron_rules_header.md")

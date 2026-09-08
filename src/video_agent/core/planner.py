@@ -81,7 +81,7 @@ _CANVAS_TOOLS = frozenset({
 # 消费端 _load_execution_pref_note，经状态尾部消息每步注入）
 _EXEC_PREF_NOTE_FILE = "planner/execution_preference.md"
 
-# 执行模式注入文案唯一源（2026-09-06 Flova 对齐批；分节键 = MODE_<档位大写>；
+# 执行模式注入文案唯一源（2026-09-06 对齐批；分节键 = MODE_<档位大写>；
 # 消费端 _load_execution_mode_note；ai_decide 默认档无分节 = 不注入，行为与
 # 现状一致。key_steps_confirm/pause_all 两档另有轮末阶段闸机械拦停兜底）
 _EXEC_MODE_NOTE_FILE = "planner/execution_mode.md"
@@ -141,20 +141,18 @@ class PlannerContext:
     # 协作式停止标志作用域（端到端中断协议）：
     # SSE 直连="chat"；任务式传输=task_id（web 层按传输路径装配）
     stop_scope: str = "chat"
-    # 同源裁剪解释：阶段探测驱动的工具裁剪结果与解释文案由
-    # _compute_excluded_tools 单一事实源签发，prompt_builder 只消费不自判：
-    # stage_note 非空 ⇔ 阶段裁剪生效（成对出现，消灭「静默裁剪」反模式）
-    stage_excluded_tools: frozenset = frozenset()
-    stage_note: str = ""
-    # 批 10 · 执行偏好注入（Flova 同款：偏好进 Agent 上下文由模型行为执行，
+    # 同源裁剪解释（stage_excluded_tools/stage_note）已随批 B 工具全量常驻
+    # 退役（2026-09-09 用户裁决）：阶段裁剪与边界注释不再存在，正确性由
+    # 闸机 + 工具自身校验兜底。
+    # 批 10 · 执行偏好注入（外部标杆同款：偏好进 Agent 上下文由模型行为执行，
     # 闸机兜底硬保证见批 9 同意账本）：轮始按档位签发，经状态尾部消息
     # 每步注入；文案唯一源 = prompts/planner/execution_preference.md
     execution_pref_note: str = ""
-    # 执行模式注入（2026-09-06 Flova 对齐批）：轮始按档位签发，经状态尾部
+    # 执行模式注入（2026-09-06 对齐批）：轮始按档位签发，经状态尾部
     # 消息每步注入；文案唯一源 = prompts/planner/execution_mode.md；
     # ai_decide 默认档 = 空串不注入（行为与现状一致）。
     execution_mode_note: str = ""
-    # 轮末阶段闸快照（2026-09-06 Flova 对齐批）：轮始 ensure_run 的 run 快照，
+    # 轮末阶段闸快照（2026-09-06 对齐批）：轮始 ensure_run 的 run 快照，
     # 供轮末对比「本轮是否有阶段节点翻转完成」（机械闸触发判据，客观探针口径）
     workflow_run0: Dict[str, Any] = field(default_factory=dict)
     # 微调作用域（微调真子对话）：非空 ⇔ 本请求归属隐藏线程子对话，
@@ -193,6 +191,9 @@ class PlannerResponse:
     pause_id: str = ""
     # 暂停卡语义种类（remind/collect/stage_done/confirm，前端标题渲染唯一依据）
     pause_kind: str = ""
+    # 正文来源（批 C3）：mechanical = 轮末机械占位替换产出；随 done payload
+    # 下发，web 层落 kind="mechanical"，线程装载历史时压成固定短句
+    text_source: str = ""
     # 推理模型思考内容（五项修法批 4，透传自 AgentLoopResult）：是否随 done
     # payload 下发/持久化由 settings.llm_reasoning_passthrough 闸门控制
     reasoning_content: str = ""
@@ -269,16 +270,15 @@ class Planner:
         return self._skill_docs
 
     def _compute_excluded_tools(self, context: PlannerContext) -> frozenset:
-        """按上下文计算本轮不下发的工具集（token 治理：schema 全量常驻是每轮固定开销）。
+        """按上下文计算本轮不下发的工具集（轮始一次，轮内冻结——批 B1）。
 
-        同源裁剪解释：阶段裁剪的 (excluded, note) 在此一并签发到
-        context（stage_excluded_tools/stage_note），prompt_builder 据此注入解释段，
-        裁剪与解释同源同条件，不再各自判定。
+        批 B（工具全量常驻，2026-09-09 用户裁决）：阶段裁剪退役——故事板
+        结构就绪前的 generate_video 不再从可见面裁掉，改由第二层兜底
+        （工具自身校验 + gen_confirm/tool_risk 闸 + 失败回喂带保留声明）；
+        裁剪每步重算曾是前缀缓存击穿点，全量常驻后 tools 跨步字节稳定。
+        仅保留轮界级裁剪源（canvas 探针 / MCP 白名单 / 非 studio 上下文）。
         """
         excluded = set()
-        # 先复位再签发：防 context 对象跨轮复用时残留旧值
-        context.stage_excluded_tools = frozenset()
-        context.stage_note = ""
         if not context.use_studio_context:
             excluded |= _STUDIO_STATE_TOOLS
         if not settings.canvas_enabled:
@@ -288,21 +288,6 @@ class Planner:
             # 依赖倒置：经 core.ports.canvas_online_cached 端口读取（core 不 import adapters）
             if canvas_online_cached() is False:
                 excluded |= _CANVAS_TOOLS
-        # 混合形态第一层：阶段探测驱动的工具裁剪（仅 Skill 激活 + strict），
-        # 用工具可见性隔离阶段；第二层由既有闸机兜底
-        if context.skill_name and context.use_studio_context \
-                and prompt_gates.gate_mode() == "strict":
-            try:
-                stage_excluded, stage_note = prompt_gates.stage_tool_restrictions(
-                    self.state_manager.state_dict
-                )
-                excluded |= set(stage_excluded)
-                # 裁剪非空才携带解释（两者成对，prompt_builder 见 note 即注入）
-                if stage_excluded:
-                    context.stage_excluded_tools = frozenset(stage_excluded)
-                    context.stage_note = stage_note
-            except Exception:
-                pass  # 裁剪失败不阻断对话，闸机层仍生效
         # read_skill 全程可见（任务#12 渐进式披露：L2 正文经 read_skill 按需读取，
         # 选中 Skill 全文直注时也不关重读入口）
         # MCP 两段式注入：白名单（interaction.mcp_enabled）外
@@ -364,7 +349,7 @@ class Planner:
             logger.warning("[PauseId] active_pause 登记失败（不影响暂停卡渲染）: {}", _e)
 
     def _apply_stage_gate(self, response: "PlannerResponse", context: "PlannerContext") -> None:
-        """轮末阶段闸（2026-09-06 Flova 对齐批，宪法 §2.3 闸机）。
+        """轮末阶段闸（2026-09-06 对齐批，宪法 §2.3 闸机）。
 
         执行模式 ∈ EXECUTION_MODE_GATE_MODES（key_steps_confirm/pause_all）
         且有活跃 Skill 时：本轮内有阶段节点翻转完成（轮始快照 vs 轮末
@@ -479,7 +464,7 @@ class Planner:
 
         # 批 2 · 插播报：轮间隙发生媒体变更（用户手动改/删/绑定素材或生成回填，
         # 落库时经 media 指纹 diff 记 media_synced 流事件）→ 轮始一次性播报
-        # 「素材变更已同步」（Flova 姿势：检测手动编辑后按最新状态重做）
+        # 「素材变更已同步」（外部标杆 姿势：检测手动编辑后按最新状态重做）
         if on_event is not None:
             try:
                 taken = self.state_manager.consume_flow_events("media_synced")
@@ -642,7 +627,7 @@ class Planner:
         # 问即停：发行点签发的 pause_id 透传，供 _issue_pause 幂等
         response.pause_id = str(getattr(loop_result, "pause_id", "") or "")
 
-        # 轮末阶段闸（2026-09-06 Flova 对齐批）：确认档下里程碑完成机械签发
+        # 轮末阶段闸（2026-09-06 对齐批）：确认档下里程碑完成机械签发
         # 暂停卡（档位 > Skill 散文），非确认档仅做账本轮末同步；
         # 暂停卡结构化签发（汇流点一）：FC workflow_pause / 轮末策略卡 /
         # 阶段闸卡在此汇流，经 _issue_pause 单一链登记
@@ -771,6 +756,9 @@ class Planner:
             "trace": result.trace,
             "suggested_actions": result.suggested_actions,
             "pause_kind": result.pause_kind,
+            # 正文来源（批 C3）：web 层据此落 kind="mechanical"，
+            # 线程装载历史时机械占位压成固定短句
+            "text_source": result.text_source,
             # 协作式停止标记：web 透传层据此落停止痕迹、不再发 done
             "stopped": bool(result.stopped),
             "stop_phase": result.stop_phase,
@@ -786,13 +774,21 @@ class Planner:
     def _build_system_prompt(self, context: PlannerContext) -> str:
         """构建 system prompt（委托 PromptBuilder；段落顺序为前缀缓存优化）。
         协议单轨：统一注入 protocol.md。
-        批 10 · 工具边界注释每步刷新：system/尾部消息每步重建，但 stage_note
-        值曾在轮始冻结——同轮内故事板建立后旧注释滞留（9999：模型据旧注释
-        "仅开放单张应急出图"错选 mode=single）。此处在每步重建入口重算签发
-        （复位→重判，_excluded_tools 同步刷新，工具可见面与解释同源同条件）。
+        工具集轮始冻结（指令收拢批 B1）：_excluded_tools 在轮始
+        （handle_message 入口）一次性计算，轮内不变——tools schema 参与
+        请求前缀，每步重算会在阶段翻转时击穿缓存（原「每步刷新」是 9999
+        旧注释滞留的补丁；批 B 工具全量常驻后，正确性由闸机 + 工具自身
+        校验兜底，可见性裁剪仅余 canvas/MCP 等轮界级变更）。
         """
-        self._excluded_tools = self._compute_excluded_tools(context)
         return self._prompt_builder.build_system_prompt(context)
+
+    def tools_schema(self) -> Optional[list]:
+        """请求工具清单唯一取件点（批 B4 组装单一化，dsh PromptAssembly 形态）：
+        分节 system（context_builder）与 tools schema 同源于 planner 单一拦截点，
+        turn_executor 只消费，不再各自访问 tool_manager/_excluded_tools 内部件。"""
+        if self.llm_adapter is None or not self.llm_adapter.supports_function_calling:
+            return None
+        return self.tool_manager.get_all_tool_schemas(exclude=self._excluded_tools)
 
     def _load_execution_pref_note(self) -> str:
         """当前执行偏好 → 模型可见注入行（批 10）。
@@ -806,7 +802,7 @@ class Planner:
             _EXEC_PREF_NOTE_FILE, f"PREF_{key}") or ""
 
     def _load_execution_mode_note(self) -> str:
-        """当前执行模式 → 模型可见注入行（2026-09-06 Flova 对齐批）。
+        """当前执行模式 → 模型可见注入行（2026-09-06 对齐批）。
 
         文案唯一源 = prompts/planner/execution_mode.md（外置分节）；
         档位枚举清洗归 config 单一事实源（normalize_exec_mode），脏值回落

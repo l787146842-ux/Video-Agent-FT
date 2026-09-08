@@ -50,7 +50,16 @@ read_skill 执行成功，全文如下（skill={name}，section={section}）：
      nudge 重试退役，唯一消费点 agent_loop._bad_output_nudge 同批删除；退役记录见 core/recovery_policy.py） -->
 
 ## STEP_FEEDBACK
-（系统）第 {{step}} 轮的 {{count}} 个 Tool 已执行完毕，工作台状态已刷新（见对话末尾最新的工作台状态 JSON）。请继续完成任务；全部完成后直接回复文本即可。
+（系统）第 {{step}} 轮的 {{count}} 个 Tool 已执行完毕，工作台状态已刷新（见对话末尾最新的工作台状态 JSON）。
+
+<!-- STEP_FEEDBACK_AT_PAUSE 已随指令收拢批补丁退役（2026-09-09 实证）：
+     「节点翻转完成」≠「Skill 声明的暂停点」，探针误报逼停模型
+     （规格写入完成后被谎报到点，同批建组调用全冻结）；停的判定
+     唯一归《Skill 流程纪律》第 2 条判定式，回喂退回纯事实（P3，
+     不携带任何方向性催促）。 -->
+
+## MECHANICAL_HISTORY_PLACEHOLDER
+（上轮为系统机械动作清单，已并入时间线；明细见状态 JSON 与事件卡）
 
 <!-- STEP_ASSISTANT_PLACEHOLDER 已随上下文与缓存优化计划批 C2 退役删除：
      assistant 消息改带标准 tool_calls（content 为空合法），占位文案无消费点 -->

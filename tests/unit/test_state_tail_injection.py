@@ -185,7 +185,7 @@ def test_degrade_state_tail_noop_within_budget(svc):
 # ---------- 批 10：执行偏好注入 + 工具边界注释每步刷新（V6 计划） ----------
 
 class TestExecutionPrefNoteInjection:
-    """偏好进 Agent 上下文（Flova 同款）：轮始按档位签发，经尾部消息每步可见。"""
+    """偏好进 Agent 上下文（外部标杆同款）：轮始按档位签发，经尾部消息每步可见。"""
 
     def test_note_lands_in_tail_message(self, svc):
         planner, executor = _executor(svc)
@@ -225,7 +225,7 @@ class TestExecutionPrefNoteInjection:
             object.__setattr__(settings, "execution_preference", old)
 
 
-# ---------- 2026-09-06：执行模式注入（Flova 对齐批） ----------
+# ---------- 2026-09-06：执行模式注入（对齐批） ----------
 
 class TestExecutionModeNoteInjection:
     """执行模式四档注入：非默认档按分节签发、经尾部消息可见；
@@ -289,44 +289,43 @@ class TestExecutionModeNoteInjection:
 
 
 class TestStageNoteRefreshedPerStep:
-    """工具边界注释每步刷新（9999：旧注释滞留误导 mode 选型）——
-    同轮内故事板建立后，下一步重算即失配清空，不再注入旧边界。"""
+    """阶段边界注释（stage_note）已随批 B2 工具全量常驻退役——
+    本类保留为「注释不再注入 + 工具集轮始冻结」的回归口径。"""
 
-    def test_note_flips_after_groups_created(self, svc):
+    def test_no_boundary_note_after_resident_tools(self, svc):
+        """批 B2 工具全量常驻：阶段边界注释退役，任何阶段都不再注入。"""
         planner = Planner(state_manager=svc, llm_adapter=None)
         ctx = PlannerContext(use_studio_context=True, skill_name="某 Skill")
         # demo 态自带 shots 组：三类全清才是「故事板为空」客观态
         for cat in ("keyElements", "shots", "audioItems"):
             svc.state_dict[cat] = []
 
-        # 轮始（故事板为空）：注释非空
+        # 故事板为空：无边界注释（阶段裁剪已退役）
         planner._build_system_prompt(ctx)
-        assert ctx.stage_note, "空故事板应携带边界注释"
+        assert not getattr(ctx, "stage_note", "")
 
-        # 同轮内建组后：下一步重算 → 注释清空（批量轨开放）
+        # 建组后同样无注释；尾部消息不含旧边界文案
         svc.state_dict["keyElements"] = [{"id": "g1", "title": "主角", "drafts": []}]
         planner._build_system_prompt(ctx)
-        assert ctx.stage_note == "", "建组后旧边界注释必须刷新清空"
-
-        # 尾部消息随之不再携带旧注释
         executor = planner._turn_executor
         executor._context = ctx
         tail = planner._prompt_builder.build_state_tail_message(ctx)
         assert "仅开放单张应急出图" not in tail
 
-    def test_excluded_tools_refresh_in_sync(self, svc):
-        """_excluded_tools 与注释同源同条件刷新（工具可见面与解释成对）。"""
+    def test_excluded_tools_round_start_frozen(self, svc):
+        """批 B1 轮始冻结：_excluded_tools 不随轮内状态翻转（tools 跨步稳定）。"""
         planner = Planner(state_manager=svc, llm_adapter=None)
         ctx = PlannerContext(use_studio_context=True, skill_name="某 Skill")
         for cat in ("keyElements", "shots", "audioItems"):
             svc.state_dict[cat] = []
-        planner._build_system_prompt(ctx)
+        # 模拟轮始计算（handle_message 入口）
+        planner._excluded_tools = planner._compute_excluded_tools(ctx)
         excluded_empty = planner._excluded_tools
+        assert "generate_video" not in excluded_empty  # 全量常驻
+        # 轮内建组后再构建 system prompt：_excluded_tools 不被改写
         svc.state_dict["keyElements"] = [{"id": "g1", "title": "主角", "drafts": []}]
         planner._build_system_prompt(ctx)
-        excluded_ready = planner._excluded_tools
-        assert "generate_video" in excluded_empty
-        assert "generate_video" not in excluded_ready
+        assert planner._excluded_tools == excluded_empty
 
 
 def test_degrade_state_tail_noop_without_degraded_builder(svc):

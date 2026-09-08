@@ -37,7 +37,7 @@ def normalize_exec_pref(value) -> str:
     return v if v in EXECUTION_PREFERENCE_VALUES else EXECUTION_PREFERENCE_DEFAULT
 
 
-# 执行模式四档白名单枚举（2026-09-06 用户裁决，Flova 对齐批）：
+# 执行模式四档白名单枚举（2026-09-06 用户裁决，对齐批）：
 # 单一事实源——路由层清洗/下发、core 引导注入与阶段闸分流、sidecar 契约导出同引用。
 # 与 execution_preference（素材生成档，管花钱生成的确认）正交：
 # ai_decide = 停不停由模型按 Skill 散文与当场情况判断（默认档，行为与现状一致，
@@ -146,17 +146,20 @@ class Settings:
     cli_auto_chat_model: str = field(default_factory=lambda: os.getenv("CLI_AUTO_CHAT_MODEL", "gemini-3.1-flash-image"))
 
     # Token 预算管理
-    context_window_size: int = field(default_factory=lambda: _env_int("CONTEXT_WINDOW_SIZE", 128000))
+    # 未配置窗口的模型回落值（用户三挡裁决 2026-09-08：200K 默认挡）；
+    # 已配置模型走 chat_models_meta / model_context_windows.json 精确查表
+    context_window_size: int = field(default_factory=lambda: _env_int("CONTEXT_WINDOW_SIZE", 200000))
     token_budget_ratio: float = field(default_factory=lambda: float(os.getenv("TOKEN_BUDGET_RATIO", "0.8")))
     # 单张图片的 vision token 固定估算；取常见高分辨率档保守值
     image_token_estimate: int = field(default_factory=lambda: _env_int("IMAGE_TOKEN_ESTIMATE", 1200))
     # 旧轮 read_* 回喂全文的惰性压缩阈值：消息总量达到预算的该比例才压缩，
     # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）
     feedback_compress_ratio: float = field(default_factory=lambda: float(os.getenv("FEEDBACK_COMPRESS_RATIO", "0.35")))
-    # tool-result 消化（默认开）：历史中已投影进状态 JSON 的写类工具结果回喂行
-    # 超过该字符数即替换为「摘要 + 状态已在工作台 JSON」指针；只消化已投影结果，
-    # 最近 2 轮回喂保留原文；=0 一键关闭（对标 Anthropic tool-result 消化杠杆）
-    tool_result_digest_chars: int = field(default_factory=lambda: _env_int("TOOL_RESULT_DIGEST_CHARS", 200))
+    # tool-result 消化（用户裁决 2026-09-08 默认关）：窗口放大后历史只追加
+    # 保前缀缓存连续命中（缓存命中价 1/30 全价，省消化那点 token 不值当）；
+    # 逼近预算时由 round_compact 兜底压缩。仍可 env 设阈值开启（最近 2 轮
+    # 回喂保留原文；=0 关闭）
+    tool_result_digest_chars: int = field(default_factory=lambda: _env_int("TOOL_RESULT_DIGEST_CHARS", 0))
     # 工具结果回喂剪枝（默认开）：白名单工具（read_*/生成类）的回喂副本
     # 超过该字符数即保留头尾、中段替换为 PRUNE 标记行（start= 续读兜底）；
     # 只剪回喂进 history 的副本，工具原始返回/state/产物文件不动；
@@ -181,7 +184,7 @@ class Settings:
     # B 档组级正文（desc/roughDesc）截断字符数
     state_group_body_chars: int = field(
         default_factory=lambda: _env_int("STATE_GROUP_BODY_CHARS", 120))
-    # 微调真子对话（对齐 Flova）：总开关。关闭时后端忽略请求携带的
+    # 微调真子对话（对齐外部标杆）：总开关。关闭时后端忽略请求携带的
     # adjust_scope，回落旧行为（一键回滚）
     adjust_subdialog_enabled: bool = field(
         default_factory=lambda: _env_bool("ADJUST_SUBDIALOG_ENABLED", True))
@@ -212,7 +215,7 @@ class Settings:
 
     # （B1 裁决 2026-08-31：skill_inject_max_tokens 预算式正文头部注入退役删除——
     # 默认注入收窄为 <planner> 段全文 + 章节目录，其余经 read_skill 按需取读。）
-    # Skill 开关与目录规模化（批5/对齐 Flova 卡片开关）：
+    # Skill 开关与目录规模化（批5/对齐外部标杆 卡片开关）：
     # skills_disabled = 被停用 Skill 的 slug 列表（默认空 = 全启用，存量不受影响；
     # 写入点归 web/routes/runtime_settings 既有热更新通道）；
     # skill_catalog_max_entries = 目录段条目预算，超预算按最近使用序截断、
@@ -229,7 +232,7 @@ class Settings:
     # 写入点归既有热更新通道，未注册/非花钱高危工具的兜底拦截不受本档影响。
     execution_preference: str = "confirm_before_gen"
 
-    # 执行模式四档（2026-09-06 用户裁决，Flova 对齐批）：管流程推进的暂停策略——
+    # 执行模式四档（2026-09-06 用户裁决，对齐批）：管流程推进的暂停策略——
     # ai_decide = 停不停由模型按 Skill 散文与当场情况判断（默认档，行为与现状一致，
     #             不注入引导）；
     # auto_full = 全流程直通（注入抑制暂停引导，信息缺口必答除外）；

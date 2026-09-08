@@ -4,7 +4,8 @@
 ① has_voice_reference / has_spec_document 的脏数据容忍分支；
 ③ resolve_kind_by_draft_id 空 ID / 未命中 / shot / audio 分档；
 ⑦ present_structure_kinds / storyboard_stage_complete 异常回落 /
-   drafts_confirmed 空列表 / stage_tool_restrictions 规格向导在场裁剪。
+   drafts_confirmed 空列表（stage_tool_restrictions 规格向导在场裁剪
+   已随批 B2 工具全量常驻退役，2026-09-09）。
 （C1a 裁决 2026-08-31：② shot_references_missing_element_images 与
 ④ autofill_shot_duration 随技能级闸层删除退役；2026-09-06 用户裁决：
 语言闸私设推导整体退役，⑤ resolve_prompt_language 与 ⑥ 的 registry

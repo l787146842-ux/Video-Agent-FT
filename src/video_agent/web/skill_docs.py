@@ -42,7 +42,7 @@ _HISTORY_DIR_NAME = ".history"
 _HISTORY_MAX = 10
 
 # ---------- Skill 章节分阶段解析（分段聚焦注入用） ----------
-# 外来 Skill（如 flova 导出）原生就是「每个工具一节」的结构（<planner>/<write_the_prompt>…），
+# 外来 Skill（如 外部标杆 导出）原生就是「每个工具一节」的结构（<planner>/<write_the_prompt>…），
 # 它们的运行时把各节分别注入对应阶段的子工具；本系统把全文一次性注入单一编排模型，
 # 只能靠「识别当前阶段 → 重复强调对应章节」来逼近同等遵循度。
 # 值支持一对多：旧 tag（如 storyboard_designer）三拆重构后同时映射到全部拆分 stage，
@@ -100,7 +100,7 @@ def split_skill_sections(content: str) -> Dict[str, str]:
     """把 Skill 全文拆成 阶段 → 章节文本（同阶段多节合并）。
 
     支持两种格式：
-    1. flova 原生 <tag>…</tag> 章节（tag 按 SECTION_TAG_STAGES 映射到阶段）；
+    1. 外部导出原生 <tag>…</tag> 章节（tag 按 SECTION_TAG_STAGES 映射到阶段）；
     2. 本地改写的 Markdown 标题式（按 _HEADING_STAGE_HINTS 关键字兜底，
        未映射标题下的正文沿用上一个已识别阶段）。
     未识别章节不返回（全文本就整体注入，本函数只服务于分阶段聚焦再强调）。
@@ -117,7 +117,7 @@ def split_skill_sections(content: str) -> Dict[str, str]:
             if s:
                 collected.setdefault(s, []).append(body)
 
-    # 1) <tag> 章节（flova 原生格式）
+    # 1) <tag> 章节（外部导出原生格式）
     tag_alt = "|".join(re.escape(t) for t in SECTION_TAG_STAGES)
     tag_re = re.compile(rf"<(?P<tag>{tag_alt})>(?P<body>.*?)</(?P=tag)>", re.S | re.I)
     found_tag = False
@@ -163,7 +163,7 @@ def list_skill_sections(content: str) -> List[Dict[str, Any]]:
     （content[start:end] 即该章节文本）。
 
     与 split_skill_sections 同口径双格式：
-    1. flova 原生 <tag>…</tag> 章节：title = tag 名，区间覆盖整个标签块；
+    1. 外部导出原生 <tag>…</tag> 章节：title = tag 名，区间覆盖整个标签块；
     2. Markdown 标题式：title = 标题文本（去 # 前缀），区间从标题行到下一标题前。
     read_skill（section/start）续读的章节目录与探针/序列化消费共用。
     """
@@ -533,20 +533,20 @@ def lint_skill_content(content: str, slug: str = "") -> Dict[str, Any]:
             + " 等）：已作废——出图/出视频渠道、分辨率、时长以「全局设置」为唯一权威源，"
             "运行时不会采用本文档中的这些参数"
         )
-    # 对标 Flova 固定组成：体量预算预警（legacy 全文注入截断阈值前 20%）
+    # 对标外部产品 固定组成：体量预算预警（legacy 全文注入截断阈值前 20%）
     _budget_warn = int(settings.max_doc_chars * 0.8)
     if len(content) > _budget_warn:
         warnings.append(
             f"文档体量 {len(content)} 字符超过建议预算 {_budget_warn}（全文注入截断阈值 "
             f"{settings.max_doc_chars} 的 80%）：超长将按阶段截断，建议精简或拆分章节"
         )
-    # 章节完整性对照 Flova 组成（流程型 Skill 缺核心段才告警，自由型不误伤）
-    warnings.extend(_lint_flova_composition(content, sections, bool(available)))
+    # 章节完整性对照 外部标杆 组成（流程型 Skill 缺核心段才告警，自由型不误伤）
+    warnings.extend(_lint_composition(content, sections, bool(available)))
     return {"available_tools": available, "warnings": warnings}
 
 
-# Flova 组成核心段（自由型 Skill 无流程章节时不检查）：阶段键 + 正文关键词兜底
-_FLOVA_CORE_PARTS: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
+# 外部标杆 组成核心段（自由型 Skill 无流程章节时不检查）：阶段键 + 正文关键词兜底
+_COMPOSITION_CORE_PARTS: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
     ("故事板设计", ("storyboard_ke", "storyboard_shot", "storyboard_audio"),
      ("故事板", "分镜", "关键元素")),
     ("媒体生成", ("generation",), ("生成", "参考图", "设定图")),
@@ -554,15 +554,15 @@ _FLOVA_CORE_PARTS: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
 )
 
 
-def _lint_flova_composition(
+def _lint_composition(
     content: str, sections: Dict[str, str], has_executors: bool,
 ) -> List[str]:
-    """流程型 Skill 的核心组成缺失提示（对标 Flova：只写会改变流程的规则，
+    """流程型 Skill 的核心组成缺失提示（对标外部产品：只写会改变流程的规则，
     但流程/故事板/生成/提示词四段是工作流骨架）；非流程型不告警。"""
     if not has_executors and "planning" not in sections:
         return []
     missing: List[str] = []
-    for part, stage_keys, keywords in _FLOVA_CORE_PARTS:
+    for part, stage_keys, keywords in _COMPOSITION_CORE_PARTS:
         if any((sections.get(k) or "").strip() for k in stage_keys):
             continue
         if any(kw in content for kw in keywords):

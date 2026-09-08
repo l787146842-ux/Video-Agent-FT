@@ -5,13 +5,14 @@ A1 —— 剧本分析有地方交卷：全仓多处读 state.analysis.summary�
 （3333 事故根因之一）。本文件钉死：
 - script_analysis_report 工具把分析结论写入 state.analysis（StateManager 唯一写入点）；
 - 既有消费方零改动生效：stage_done("analysis") 客观探针、
-  stage_deliverables 正文渲染器、context_builder 状态裁剪注入；
+  event_cards 分析事件卡（detail_md 携全文挂卡折叠，对齐批 2026-09-08）、
+  context_builder 状态裁剪注入；
 - summary 缺失 = 明确报错（不许假成功）；未知入参字段原子拒收。
 A4 —— 规格文档可被更新且留下痕迹（document_write 覆盖式更新计修订数）。
 """
 import pytest
 
-from src.video_agent.core.stage_deliverables import render_stage_deliverables
+from src.video_agent.core.event_cards import product_event_card
 from src.video_agent.core.stage_probes import stage_done
 from src.video_agent.state.context_builder import _build_snapshot_dict
 from src.video_agent.state.manager import StateManager
@@ -99,15 +100,21 @@ async def test_analysis_rerender_uses_latest_state():
 # ---------- A1：既有消费方零改动生效 ----------
 
 
-async def test_stage_deliverables_renders_analysis():
-    """成果渲染器按写入工具名键控命中，正文自动渲染总结与报告全文。"""
-    await ToolManager.invoke_tool("script_analysis_report", _analysis_payload())
-    state = StateManager.get_instance().state_dict
-    block = render_stage_deliverables(state, ["script_analysis_report"])
-    assert "## 剧本分析《三体简短版.md》" in block
-    assert "**一句话总结**：太阳系确认遭遇疑似二向箔的白色薄片打击。" in block
-    assert "**剧本分类**：A 类（成熟分镜剧本）" in block
-    assert "- 程心：出场于太空电梯" in block
+async def test_analysis_event_card_carries_full_report():
+    """分析落账 → 事件卡（对齐批 2026-09-08）：卡名/一句话明细命中，
+    detail_md 携报告全文（前端折叠展示），to_ctx=False（全文不进模型上下文）。"""
+    payload = _analysis_payload()
+    await ToolManager.invoke_tool("script_analysis_report", payload)
+    cards = product_event_card("script_analysis_report", payload, 0)
+    assert len(cards) == 1
+    name, detail, to_ctx, detail_md = cards[0]
+    assert name == "剧本分析已完成"
+    assert detail == "太阳系确认遭遇疑似二向箔的白色薄片打击。"
+    assert to_ctx is False
+    assert "## 剧本分析《三体简短版.md》" in detail_md
+    assert "**一句话总结**：太阳系确认遭遇疑似二向箔的白色薄片打击。" in detail_md
+    assert "**剧本分类**：A 类（成熟分镜剧本）" in detail_md
+    assert "- 程心：出场于太空电梯" in detail_md
 
 
 async def test_analysis_enters_context_snapshot():

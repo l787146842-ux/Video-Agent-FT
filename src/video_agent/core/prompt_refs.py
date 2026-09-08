@@ -2,7 +2,7 @@
 提示词引用解析 — 把提示词中的 @名称 / <<<image_名称>>> 映射为实际媒体素材。
 
 前端 PromptEditor 允许用户在提示词里输入 @ 引用参考素材/故事板媒体，
-序列化为 "@名称" 文本；Skill 模板（Flova 方言）则用 <<<image_名称>>>。
+序列化为 "@名称" 文本；Skill 模板（外部标杆方言）则用 <<<image_名称>>>。
 生成（出图/出视频）时模型无法理解这些记号，本模块负责：
 1. 从故事板状态构建 名称 → (url, kind) 映射（关键元素分组标题 / 草稿 label / 文件名）；
 2. 扫描提示词中的两类引用记号，把被引用但不在参考列表里的素材自动纳入参考列表；
@@ -15,9 +15,9 @@ from typing import Any, Dict, List, Tuple
 
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS
 
-# 引用记号匹配（两式同义，2026-09-07 Flova 记号兼容裁决）：
+# 引用记号匹配（两式同义，2026-09-07 外部标杆 记号兼容裁决）：
 # 1) 半角 @ 或全角 ＠ + 非空白/非@字符（平台原生，前端 PromptEditor 序列化产物）；
-# 2) <<<image_名称>>>（Flova Skill 模板方言）——抄自 Flova 的 Skill 原样可用，
+# 2) <<<image_名称>>>（外部标杆 Skill 模板方言）——抄自 外部标杆 的 Skill 原样可用，
 #    命中与 @ 同轨处理，未命中同 @ 去记号留名称。
 _MENTION_RE = re.compile(r"<<<\s*image_([^<>]+?)\s*>>>|[@＠]([^\s@＠]+)")
 

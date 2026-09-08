@@ -129,7 +129,7 @@ class TestDraftDescFieldBatch1:
 class TestFailureShoutAndAtomicityBatch3:
     """批 3 · B5/B6：失败会喊（三要素）+ 失败原子性（哈希比对零污染）。
 
-    标尺 = flova 转录：「镜头 ID 重复」失败两次，每次都明示
+    标尺 = 外部实测转录：「镜头 ID 重复」失败两次，每次都明示
     「现有故事板没有被改动」；报错须含 ①原因 ②已保留什么 ③缺什么才能继续。
     """
 
@@ -171,7 +171,7 @@ class TestFailureShoutAndAtomicityBatch3:
         assert self._board_hash(svc) == before, "失败零污染（哈希比对）"
 
     async def test_duplicate_explicit_id_rejected_atomically(self, svc):
-        """重复 ID（flova 标尺）：写入前拦截、报错含保留声明、状态零污染。"""
+        """重复 ID（外部标杆 标尺）：写入前拦截、报错含保留声明、状态零污染。"""
         gid = await self._new_group(svc)
         first = await ToolManager.invoke_tool("storyboard_add_draft", {
             "group_id": gid, "group_type": "keyElement",

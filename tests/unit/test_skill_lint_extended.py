@@ -1,8 +1,8 @@
-"""Skill lint 扩展（整改计划批 5，对标 Flova 固定组成）。
+"""Skill lint 扩展（整改计划批 5，对标外部产品 固定组成）。
 
 三类新检查（只告警不阻断，F4 语义）：
 ① 体量预算（全文注入截断阈值 80% 预警）；
-② 章节完整性对照 Flova 组成（流程型 Skill 缺核心段才告警）；
+② 章节完整性对照 外部标杆 组成（流程型 Skill 缺核心段才告警）；
 ③ frontmatter 声明体检（解析/schema 编辑期预警，任务#5 后口径）。
 另含保存路由接线断言（814R 型断线防复发：lint 必须有消费方）。
 （原「有流程章节但未声明 steps」提示已随任务#5 流程抄本通道废除退役：
@@ -28,7 +28,7 @@ def test_bulk_budget_silent_under_budget():
     assert not any("建议预算" in w for w in result["warnings"])
 
 
-def test_flova_composition_warns_missing_core_parts():
+def test_composition_warns_missing_core_parts():
     """流程型 Skill（有 planner）缺故事板/生成/提示词段 → 单条组成告警"""
     content = "<planner>\n步骤 1：分析剧本\n步骤 2：写规格\n</planner>"
     result = sd.lint_skill_content(content)
@@ -37,7 +37,7 @@ def test_flova_composition_warns_missing_core_parts():
     assert "故事板设计" in comp[0] and "媒体生成" in comp[0]
 
 
-def test_flova_composition_silent_when_complete():
+def test_composition_silent_when_complete():
     content = (
         "<planner>\n流程：故事板拆解→生成→提示词写法\n</planner>\n"
         "<storyboard_designer>\n分镜与关键元素设计\n</storyboard_designer>\n"
@@ -48,7 +48,7 @@ def test_flova_composition_silent_when_complete():
     assert not any("标准组成" in w for w in result["warnings"])
 
 
-def test_flova_composition_skips_freeform_skills():
+def test_composition_skips_freeform_skills():
     """无执行器章节且无 planning 段的自由型 Skill 不误伤"""
     result = sd.lint_skill_content("# 音色参考\n一些音色偏好描述，无流程章节。")
     assert not any("标准组成" in w for w in result["warnings"])

@@ -7,10 +7,10 @@
   关：联不通直接按上游报错。
 - default_* 系列：全局出图/出视频渠道与分辨率默认值，新建草稿补印与 Agent 生成回退链共用；
 - chat_image_enabled：聊天框出图开关（关 = Agent 在对话中不主动触发生图）；
-- skills_disabled：被停用的 Skill slug 列表（批5，对齐 Flova 卡片开关；空 = 全启用）；
+- skills_disabled：被停用的 Skill slug 列表（批5，对齐外部标杆 卡片开关；空 = 全启用）；
 - execution_preference：执行偏好三档（管花钱生成是否先弹确认卡；
   2026-08-30 用户裁决，Skill 系统修复批 B）；
-- execution_mode：执行模式四档（管流程推进的暂停策略；2026-09-06 用户裁决，Flova 对齐批）；
+- execution_mode：执行模式四档（管流程推进的暂停策略；2026-09-06 用户裁决，对齐批）；
 - max_shot_duration：Agent 自拆分镜的单镜最大时长（秒）。
 - max_steps：Agent 多步循环上限（Q3 裁决 2026-09-01：循环每步实时读取，热调即刻生效）。
 """
@@ -46,7 +46,7 @@ _INT_KEYS = ("max_shot_duration",)
 # Agent 多步循环上限（Q3）：独立钳制区间（config.MAX_STEPS_RANGE 单一事实源），
 # agent_loop 每步实时读 settings.max_steps，热更新后运行中任务即刻生效
 _MAX_STEPS_KEYS = ("max_steps",)
-# Skill 启停开关（批5/对齐 Flova 卡片开关）：存被停用 Skill 的 slug 列表；
+# Skill 启停开关（批5/对齐外部标杆 卡片开关）：存被停用 Skill 的 slug 列表；
 # 目录过滤/ list_skills 同源消费（宪法 §六：可调参数归 config.settings，
 # 写入点归本既有热更新通道，不另开旁路存储）
 _LIST_KEYS = ("skills_disabled",)
@@ -59,7 +59,7 @@ _THINKING_VALUES = ("", "low", "medium", "high")
 # 执行偏好三档（2026-08-30 用户裁决）：枚举白名单与清洗口归 config 单一事实源；
 # 非法值拒收（保持当前档），存量配置缺键/脏值回落默认档（行为与现状一致）
 _EXEC_PREF_KEYS = ("execution_preference",)
-# 执行模式四档（2026-09-06 用户裁决，Flova 对齐批）：同上口径
+# 执行模式四档（2026-09-06 用户裁决，对齐批）：同上口径
 _EXEC_MODE_KEYS = ("execution_mode",)
 
 

@@ -21,8 +21,11 @@ def test_s7_iron_rules_template_carries_migrated_clauses():
     assert "提示词质量" not in body
     assert "产出形态" not in body
     assert "摄像机→主体→空间→音频" not in body
-    # 契约条款保留（F-2：第 3 条收敛为平台协议指针，表述归 protocol.md 回复输出纪律）
-    assert "执行优先" in body and "拆解覆盖完整" in body and "回复纪律见平台协议" in body
+    # 契约条款保留；批 A3（指令收拢批）：第 1 条「执行优先」与头部同义
+    # 复述已删，冲突与缺信息处置唯一表述源 = iron_rules_header.md
+    assert "拆解覆盖完整" in body
+    assert "见平台注入的《执行铁律》头部声明" in body
+    assert "执行优先" not in body
     assert "回复精简" not in body
     # C6 基线对齐：粒度裁量归模型+Skill，铁律刻意不承载粒度细则
     assert "宁缺毋滥" not in body
@@ -57,7 +60,7 @@ def test_s7_skill_runtime_no_output_form_clause():
     for kept in ("阶段逐段执行", "workflow_pause", "分批次确认",
                  "规格收集交互", "不超前承诺", "小步推进"):
         assert kept in sd, f"流程纪律条款丢失: {kept}"
-    # 退役条款（2026-09-07 Flova 对齐批）：交付自检（归 Skill 自带清单）、
+    # 退役条款（2026-09-07 对齐批）：交付自检（归 Skill 自带清单）、
     # 元素图像就绪闸门（用户指令优先级链覆盖，平台不设写作前置闸）——
     # 不得残留实质条款
     for retired in ("交付自检", "元素图像就绪闸门"):

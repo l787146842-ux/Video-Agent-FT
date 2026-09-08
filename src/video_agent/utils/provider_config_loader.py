@@ -103,6 +103,21 @@ async def get_provider_config_async(provider_id: str) -> Optional[Dict[str, Any]
     return None
 
 
+def chat_model_meta(provider_id: str, model: str) -> Optional[Dict[str, Any]]:
+    """按 provider_id + model 精确匹配 chat_models_meta 条目（模型编辑面板配置）。
+
+    条目字段：context_window（窗口三挡）/ thinking_enabled / thinking_level。
+    未配置或无匹配返回 None（调用方走各自回落路径）。"""
+    if not provider_id or not model:
+        return None
+    cfg = get_provider_config(provider_id) or {}
+    m = (model or "").lower()
+    for entry in (cfg.get("chat_models_meta") or []):
+        if isinstance(entry, dict) and str(entry.get("model") or "").lower() == m:
+            return entry
+    return None
+
+
 # ---------- API Key 管理 ----------
 
 def provider_key_env(provider_id: str) -> str:

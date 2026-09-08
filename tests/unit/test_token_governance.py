@@ -61,6 +61,30 @@ def test_context_window_for_model():
     assert context_window_for_model("") == settings.context_window_size
 
 
+def test_context_window_meta_takes_priority(tmp_path, monkeypatch):
+    """模型编辑面板批（2026-09-08）：chat_models_meta 窗口优先于子串表/回落；
+    未配置窗口字段的 meta 条目回落子串表，未收录模型回落 200K 默认挡。"""
+    from src.video_agent.utils import provider_config_loader as pcl
+
+    cfg_path = tmp_path / "api_providers.json"
+    cfg_path.write_text(json.dumps([{
+        "id": "prov-a", "name": "t", "protocol": "openai",
+        "base_url": "https://x/v1",
+        "chat_models": ["deepseek-v4-flash-0731", "m-no-win"],
+        "chat_models_meta": [
+            {"model": "deepseek-v4-flash-0731", "context_window": 1_000_000},
+            {"model": "m-no-win"},
+        ],
+    }]), encoding="utf-8")
+    monkeypatch.setattr(pcl, "PROVIDERS_FILE", cfg_path)
+    # meta 精确命中 → 1M（子串表已无 deepseek 家族键，元数据是唯一来源）
+    assert context_window_for_model("deepseek-v4-flash-0731", "prov-a") == 1_000_000
+    # meta 条目无 context_window 字段 → 未收录回落 settings 默认挡（200K）
+    assert context_window_for_model("m-no-win", "prov-a") == settings.context_window_size
+    # 无 provider_id → 子串表/回落路径
+    assert context_window_for_model("unknown-model-x") == settings.context_window_size
+
+
 def test_compact_json_roundtrip():
     raw = {CAT_KEY_ELEMENTS: [{"id": "g1", "title": "组", "desc": "", "drafts": []}],
            "assets": [], "documents": [], "uploadedDocs": []}

@@ -66,6 +66,7 @@ from src.video_agent.core.sse_events import (
 )
 from src.video_agent.utils.stop_signal import is_stop_requested
 from src.video_agent.core.token_budget import window_recent_turns
+from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.web.stop_manager import (
     persist_stop_trace,
     snapshot_inflight_generations,
@@ -299,7 +300,7 @@ class _StreamCtx:
     image_provider: str = ""
     image_aspect_ratio: str = ""
     candidates: List[tuple] = field(default_factory=list)
-    compact_task: Any = None
+    # 会话级 compaction 预热任务已随批 C1 退役（线程装载 + 确定性截断链取代）
     planner: Any = None
     cand_provider: str = ""
     cand_model: str = ""
@@ -335,21 +336,68 @@ def _stage_aware_state_builder(
     return _builder
 
 
+# 批 C3：mechanical 历史替换短句（文案唯一源 = prompts/planner/feedback.md，
+# Rule 6 CJK 文案外置；分节缺失时 warning 且不压缩，口径同降级引导段）
+_MECHANICAL_HISTORY_SECTION = ("planner/feedback.md", "MECHANICAL_HISTORY_PLACEHOLDER")
+
+
+def _main_history_from_thread(svc, conversation_id: str) -> List[Dict[str, Any]]:
+    """主对话 history 服务端装载（批 C1，消息单一事实源=线程 chatMessages）：
+    与 scope 子对话同源机制（adjust_scope._scope_history_from_thread）。
+    前端 body.messages 窗口退役为兼容字段不再消费——窗口每轮滑动会改写
+    history 首条字节，是前缀缓存第一层击穿根因（缓存基线 20.9%）。
+    - 指定 conversation_id 优先取该会话；取不到回落活跃会话（老数据兜底）；
+    - 媒体卡/文档卡等无正文条目跳过（已由状态 JSON 与事件卡承载）；
+    - mechanical 消息压成固定短句（批 C3：机械流水账不进模型上下文，
+      防 few-shot 污染教坏正文范式；动作明细由状态 JSON/事件卡承载）。"""
+    _mech_line = load_prompt_section(*_MECHANICAL_HISTORY_SECTION)
+    msgs = None
+    cid = str(conversation_id or "")
+    if cid:
+        msgs = svc.get_conversation_messages(cid)
+    if msgs is None:
+        msgs = svc.get_chat_messages() or []
+    out: List[Dict[str, Any]] = []
+    for m in msgs:
+        text = str(m.get("text") or "").strip()
+        if not text:
+            continue
+        if m.get("kind") == "mechanical" and _mech_line:
+            text = _mech_line
+        entry: Dict[str, Any] = {
+            "role": "user" if m.get("sender") == "user" else "assistant",
+            "content": text,
+        }
+        # 思考回传（五项修法批 4）：字段透传，闸门由 truncate_history 统一执行
+        if str(m.get("reasoning_content") or "").strip():
+            entry["reasoning_content"] = str(m["reasoning_content"])
+        out.append(entry)
+    if not _mech_line:
+        logger.warning("[ChatService] prompts/planner/feedback.md::"
+                       "MECHANICAL_HISTORY_PLACEHOLDER 分节缺失，mechanical 消息不压缩")
+    return out
+
+
 async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
     """三段之一（准备）：history/compaction 预热/PlannerContext 装配。
 
     adapter 创建失败经既有出口发错并返回 None（调用方终止流）。
     """
-    # history 装载：scope 请求改服务端从线程装载（单一事实源，不再信前端
-    # body.messages 窗口）；普通请求照旧用前端窗口（旧行为零变化）
+    # history 装载（批 C1：主路径与 scope 路径同源——服务端线程单一事实源；
+    # body.messages 窗口退役为兼容字段，线程为空时回落旧窗口兜底）
     if ctx.adjust_scope:
         ctx.history = truncate_history(
             _scope_history_from_thread(ctx.svc, str(getattr(ctx.body, "conversation_id", "") or "")))
     else:
-        ctx.history = truncate_history([
-            {"role": m.get("role", "user"), "content": m.get("content", "")}
-            for m in window_recent_turns(ctx.body.messages)
-        ])
+        _thread_hist = _main_history_from_thread(
+            ctx.svc, getattr(ctx.body, "conversation_id", ""))
+        if _thread_hist:
+            ctx.history = truncate_history(_thread_hist)
+        else:
+            ctx.history = truncate_history([
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+                for m in window_recent_turns(ctx.body.messages)
+            ])
 
     # 轮次唯一标识——本轮持久化的正文/文档卡/图片卡共用同一 turnId，
     # 前端据此把产出聚合进同次容器（消除消息流碎片化）；随 done payload
@@ -393,11 +441,11 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
     # 用户裁决：模型选择权归用户——
     # 选什么用什么，联不通直接报错，不自动换厂商 fallback
     ctx.candidates = [(ctx.body.provider, ctx.body.model)]
-    # 会话级 compaction：预热后台——便宜模型摘要的
-    # adapter 创建/端点解析并行，首 token 不被摘要往返阻塞；
-    # 命中缓存时任务即刻完成，语义与同步等待完全一致
-    summary_adapter = _resolve_summary_adapter(ctx.body, ctx.candidates)
-    ctx.compact_task = asyncio.create_task(_maybe_compact_history(ctx.history, ctx.svc, summary_adapter))
+    # 会话级 LLM 摘要 compaction 已随批 C1 退役（指令收拢与缓存稳定批）：
+    # history 改线程全量装载后阈值必然命中 → 每请求都做 LLM 摘要且摘要文本
+    # 逐请求漂移，成为新的前缀击穿源；context rot 职责由确定性截断链
+    # （truncate_history 位置无关截断 + round_compact/truncate_messages 预算
+    # 保险丝）承担。history_compact 模块保留（scope 域与函数级测试仍引用）。
 
     # 单一候选：首候选即终选（原循环所有路径均在首轮 return，行为等价）
     ctx.cand_provider, ctx.cand_model = ctx.candidates[0]
@@ -405,14 +453,8 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
         llm_adapter = _create_chat_adapter(ctx.cand_provider, ctx.cand_model)
     except GenerationError as e:
         logger.warning(f"[ChatService] 所选供应商 {ctx.cand_provider}/{ctx.cand_model} 端点解析失败: {e}")
-        if ctx.compact_task is not None and not ctx.compact_task.done():
-            ctx.compact_task.cancel()
         await _emit_stream_error(ctx.svc, ctx.body, e, ctx.emit, ctx.use_studio_context)
         return None
-    # 进入候选前取回压缩结果（预热失败/超时由 _maybe_compact_history 内部回落原 history）
-    if ctx.compact_task is not None:
-        ctx.history = await ctx.compact_task
-        ctx.compact_task = None
 
     ctx.planner = Planner(
         state_manager=ctx.svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
@@ -583,8 +625,12 @@ async def _stream_finalize(ctx: _StreamCtx) -> None:
                     confirm_options=ctx.final_payload.get("confirmation_options") or None,
                     turn_id=turn_id,
                     pause_id=str(ctx.final_payload.get("pause_id") or ""),
-                    # 暂停卡语义种类持久化（前端历史重载按 kind 渲染标题）
-                    kind=str(ctx.final_payload.get("pause_kind") or ""),
+                    # 暂停卡语义种类持久化（前端历史重载按 kind 渲染标题）；
+                    # 批 C3：机械占位正文落 kind="mechanical"（线程装载历史时
+                    # 压成固定短句，机械流水账不进模型上下文防 few-shot 污染）
+                    kind=str(ctx.final_payload.get("pause_kind") or (
+                        "mechanical"
+                        if ctx.final_payload.get("text_source") == "mechanical" else "")),
                     # quick-actions 芯片持久化（提醒类兜底卡出槽后不丢，刷新可重建）
                     suggested_actions=ctx.final_payload.get("suggested_actions") or None,
                     # 推理模型思考内容（五项修法批 4）：payload 仅在回传闸门开时携带
@@ -708,9 +754,15 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
     _require_chat_provider(body)
 
     # 真实供应商
-    history = truncate_history([
-        {"role": m.get("role", "user"), "content": m.get("content", "")} for m in window_recent_turns(body.messages)
-    ])
+    # 批 C1：非流式路径同流式轨——history 服务端线程装载（单一事实源），
+    # body.messages 窗口退役为兼容字段，线程为空回落旧窗口兜底
+    _ns_thread_hist = _main_history_from_thread(svc, getattr(body, "conversation_id", ""))
+    if _ns_thread_hist:
+        history = truncate_history(_ns_thread_hist)
+    else:
+        history = truncate_history([
+            {"role": m.get("role", "user"), "content": m.get("content", "")} for m in window_recent_turns(body.messages)
+        ])
 
     # 多模态内容构建（有 content_parts 时按排版顺序交错；
     # 传入选中草稿信息用于素材超限时的优先级注入；
@@ -757,10 +809,8 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
 
     # 用户裁决：单一候选 = 用户所选，联不通直接报错
     candidates = [(body.provider, body.model)]
-    # 会话级 compaction：同流式路径——预热后台；PlannerContext
-    # 在取回压缩结果之后构建，history 必须是压缩后列表，与流式轨同构
-    summary_adapter = _resolve_summary_adapter(body, candidates)
-    _compact_task = asyncio.create_task(_maybe_compact_history(history, svc, summary_adapter))
+    # 会话级 LLM 摘要 compaction 已随批 C1 退役（同流式路径口径：
+    # 线程装载 + 确定性截断链取代，LLM 摘要逐请求漂移会击穿前缀缓存）
     result = None
     used_model = body.model
     last_err: Optional[Exception] = None
@@ -769,12 +819,7 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
             llm_adapter = _create_chat_adapter(cand_provider, cand_model)
         except GenerationError as e:
             logger.warning(f"[ChatService] 所选供应商 {cand_provider}/{cand_model} 端点解析失败: {e}")
-            if _compact_task is not None and not _compact_task.done():
-                _compact_task.cancel()
             raise
-        if _compact_task is not None:
-            history = await _compact_task
-            _compact_task = None
         planner_ctx = PlannerContext(
             history=history, selected_draft_id=body.selected_draft_id, selected_type=body.selected_type,
             state_builder=state_builder,
@@ -864,7 +909,6 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
 # 开场编排域/消费压缩域实现体在 chat_opening.py / chat_consume.py，re-export 保持既有引用不变
 from src.video_agent.web.chat_opening import (
     _HISTORY_ASSISTANT_MAX_CHARS,
-    _HISTORY_ASSISTANT_RECENT_MAX_CHARS,
     _HISTORY_HEAD_CHARS,
     _HISTORY_TAIL_CHARS,
     _INFLIGHT_REQUESTS,

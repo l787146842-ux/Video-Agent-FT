@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""执行模式四档路由测试（2026-09-06 Flova 对齐批）：/api/settings/runtime 的
+"""执行模式四档路由测试（2026-09-06 对齐批）：/api/settings/runtime 的
 execution_mode 字段——GET 恒下发、PUT 白名单清洗（非法值拒收）、
 启动加载（合法应用/脏值回落/缺键不变）。照抄 execution_preference 三件套。
 """

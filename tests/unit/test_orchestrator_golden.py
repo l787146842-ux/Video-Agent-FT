@@ -22,7 +22,7 @@ SKILL = "AI-短剧一站式生成"
 def test_stage_table_canonical_order():
     table = po.stage_table(SKILL)
     keys = [s.key for s in table]
-    # 2026-08-31 用户裁决：spec 机械阶段退役（Flova 对齐，规格归散文驱动）
+    # 2026-08-31 用户裁决：spec 机械阶段退役（外部标杆对齐，规格归散文驱动）
     assert keys == ["analysis", "structure", "ke_media",
                     "shot_media", "audio_assets", "assembly"]
     assert table[0].deterministic is True

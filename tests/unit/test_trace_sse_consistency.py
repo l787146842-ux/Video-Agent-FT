@@ -137,11 +137,14 @@ def test_fc_create_group_title_normalized(tmp_path, monkeypatch):
 # ---------- 0817 B18：注入瘦身（铁律4/5删除+全局设置阶段门控+channels死机制清除） ----------
 
 def test_iron_rules_template_drops_clauses_4_5():
-    """铁律只留契约条款：提示词质量/产出形态归 Skill 章节唯一表述（用户裁决）。"""
+    """铁律只留契约条款：提示词质量/产出形态归 Skill 章节唯一表述（用户裁决）。
+    批 A3（指令收拢批）：第 1 条「执行优先」与头部同义复述已删，
+    冲突与缺信息处置唯一表述源 = iron_rules_header.md。"""
     from src.video_agent.core.spec_rules import _IRON_RULES_DOC_BODY
     assert "提示词质量" not in _IRON_RULES_DOC_BODY
     assert "产出形态" not in _IRON_RULES_DOC_BODY
-    for kept in ("执行优先", "拆解覆盖完整", "回复纪律见平台协议"):
+    assert "执行优先" not in _IRON_RULES_DOC_BODY
+    for kept in ("拆解覆盖完整", "头部声明"):
         assert kept in _IRON_RULES_DOC_BODY, f"契约条款丢失: {kept}"
 
 
@@ -276,12 +279,15 @@ def test_script_inject_limit_in_runtime_whitelist():
 
 
 def test_storyboard_progress_note_objective():
-    """客观进度描述：只报三类有无 + 暂停点指向 Skill，不含排序意见。"""
+    """客观进度描述：只报三类已建组数（批补丁：✓/✗ 有「已完整」歧义，
+    计数是零判定纯事实）+ 暂停点指向 Skill，不含排序意见。"""
     from src.video_agent.core.prompt_builder import PromptBuilder
     pb = PromptBuilder(lambda: None, lambda: "p", get_raw_state=lambda: {
         "keyElements": [{"id": "k"}], "shots": [], "audioItems": []})
     note = pb.build_storyboard_progress_note()
-    assert "关键元素：✓" in note and "分镜：✗" in note and "音频：✗" in note
+    assert "关键元素：已建 1 组" in note and "分镜：已建 0 组" in note \
+        and "音频：已建 0 组" in note
+    assert "✓" not in note and "✗" not in note
     assert "Skill 流程基线" in note
     pb0 = PromptBuilder(lambda: None, lambda: "p", get_raw_state=lambda: {
         "keyElements": [], "shots": [], "audioItems": []})

@@ -118,7 +118,7 @@ class ChatRequest(BaseModel):
     # 后端据此把上轮失败现场归档（trace/错误消息）渲染为前置块注入，
     # 带上下文续跑而非从零重来；取不到现场静默回落机械重发，重试本身不受影响。
     resume_failed: bool = False
-    # 微调作用域（微调真子对话，对齐 Flova）：携带时本请求归属隐藏线程子对话——
+    # 微调作用域（微调真子对话，对齐外部标杆）：携带时本请求归属隐藏线程子对话——
     # 形如 {kind:"adjust", cat, group_id, draft_id, label}；conversation_id 即线程 id，
     # history 由服务端从线程装载（单一事实源），任务写入定向线程不落主对话。
     # 空 = 普通任务（旧前端零破坏）；总开关关闭时后端忽略回落旧行为。

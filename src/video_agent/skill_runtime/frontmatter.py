@@ -23,13 +23,13 @@ from src.video_agent.skill_runtime.manifest_schema import validate_manifest_data
 # frontmatter 起止行（各自独占一行）
 _FENCE = "---"
 
-# C1c 裁决 2026-08-31：Flova 裸键兼容——无 `---` 包裹的文档头部
+# C1c 裁决 2026-08-31：裸键兼容——无 `---` 包裹的文档头部
 # 连续 skill_name:/skill_description: 行识别为最小声明（映射 name/description）。
 _BARE_KEY_RE = re.compile(r"^(skill_name|skill_description)\s*:\s*(.+?)\s*$")
 
 
 def _extract_bare_keys(lines: List[str]) -> Tuple[Dict[str, Any], int]:
-    """提取文档头部连续的 Flova 裸键行 → (声明 dict, 消费行数)。
+    """提取文档头部连续的 裸键行 → (声明 dict, 消费行数)。
 
     只认 skill_name/skill_description 两键（最小声明）；值剥成对引号；
     首个非裸键行即停（其余正文原样保留）。无命中返 ({}, 0)。"""
@@ -91,7 +91,7 @@ def split_frontmatter(
 ) -> Tuple[Optional[Dict[str, Any]], str, str]:
     """拆分文档头部 frontmatter：返回 (声明 dict, 正文, 解析错误)。
 
-    - 无 frontmatter（首行非 `---`）→ 探测 Flova 裸键最小声明（C1c 裁决）：
+    - 无 frontmatter（首行非 `---`）→ 探测 裸键最小声明（C1c 裁决）：
       头部连续 skill_name:/skill_description: 行映射为 {name, description}；
       均无命中 → (None, 原文, "")；
     - 收尾 `---` 缺失 / YAML 非法 / 根非对象 → 正文照常返回，错误串非空

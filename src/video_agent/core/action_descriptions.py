@@ -93,9 +93,9 @@ def _action_group_key(desc: str) -> str:
     return key.strip("：: ") or desc.strip()
 
 
-# 低信息动作抑制（2026-09-06 Flova 对齐批）：机械续读/目录类动作不进聊天
+# 低信息动作抑制（2026-09-06 对齐批）：机械续读/目录类动作不进聊天
 # 动作日志（trace 与审计账本照记，仅展示层折叠）——动作完成卡只讲成果，
-# 对齐 Flova「视频规格已完成」式呈现。键 = _action_group_key 剔名后的形态。
+# 对齐外部标杆「视频规格已完成」式呈现。键 = _action_group_key 剔名后的形态。
 _LOW_INFO_KEYS = frozenset({
     "Skill流程已加载",        # read_skill
     "执行工具list_skills",    # list_skills

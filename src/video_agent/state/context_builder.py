@@ -56,7 +56,7 @@ def build_agent_context(
         stage: 当前创作阶段键（分阶段注入裁剪用；空 = 不裁剪）
         scope: 微调作用域（微调真子对话，policy-as-data 同 STAGE_STATE_FOCUS）：
                仅目标分组/目标卡注入全量草稿细节（含提示词全文），其余分组/
-               类别/文档/素材清单一律不注入（对齐 Flova：子对话只看对应元素）；
+               类别/文档/素材清单一律不注入（对齐外部标杆：子对话只看对应元素）；
                空 = 不裁剪（旧行为零变化）
 
     Returns:
@@ -291,7 +291,7 @@ def _full_scope_group(raw_group: Dict[str, Any], gi: int) -> Dict[str, Any]:
 def _apply_scope_profile(
     snapshot: Dict[str, Any], raw_state: Dict[str, Any], scope: Dict[str, Any],
 ) -> bool:
-    """微调作用域裁剪（微调真子对话，对齐 Flova：子对话只应看到对应元素）：
+    """微调作用域裁剪（微调真子对话，对齐外部标杆：子对话只应看到对应元素）：
     仅目标分组（按 scope.group_id / draft_id 定位）注入全量草稿细节；
     同类别其余分组与其他类别整体不注入（连指针清单也不给，防越界读改）；
     documents（规格/剧本）/uploadedDocs/assets/剧本分析/交互状态同样不注入。

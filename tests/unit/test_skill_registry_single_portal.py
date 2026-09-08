@@ -212,7 +212,8 @@ def test_api_skills_excludes_rejected_but_docs_keeps_full(portal_env):
 
 def test_stock_pack_catalog_byte_snapshot(tmp_path, monkeypatch):
     """空停用 + 全注册：build_skill_catalog 输出与磁盘口径基线逐字节相等
-    （基线固化 tests/fixtures/skill_catalog_golden.json；2026-09-05 存量 15 包重采）。
+    （基线固化 tests/fixtures/skill_catalog_golden.json；2026-09-05 存量 15 包
+    重采；2026-09-09 随用户新增「新-Skill」包重采为 16 包）。
     数据面临时回挂真实 data/skills，避开测试镜像夹具桩。"""
     from src.video_agent.utils.paths import SKILL_DOCS_DIR as REAL_DIR
 
@@ -220,7 +221,7 @@ def test_stock_pack_catalog_byte_snapshot(tmp_path, monkeypatch):
     registry.reset_registry()
     registry.sync_all(force=True)
     try:
-        assert len(registry.loadable_entries()) == 15, "存量 15 包须全注册（M1 口径）"
+        assert len(registry.loadable_entries()) == 16, "存量 16 包须全注册（M1 口径）"
         golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
         actual = _pb(_base_state()).build_skill_catalog(_ctx())
         assert actual == golden["catalog"], "存量包目录段发生字节级漂移"

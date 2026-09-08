@@ -58,7 +58,8 @@ class AdapterFactory:
         if existing is not None:
             return existing
         from .openai_compat import OpenAICompatChatAdapter
-        adapter = OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=model)
+        adapter = OpenAICompatChatAdapter(
+            base_url=base_url, api_key=api_key, model=model, provider_id=provider)
         cls.register("chat", key, adapter)
         return adapter
 
@@ -108,7 +109,9 @@ class AdapterFactory:
                 default_model = chat_models[0] if chat_models else ""
                 AdapterFactory.register(
                     "chat", pid,
-                    OpenAICompatChatAdapter(base_url=base_url, api_key=api_key, model=default_model),
+                    OpenAICompatChatAdapter(
+                        base_url=base_url, api_key=api_key, model=default_model,
+                        provider_id=pid),
                 )
 
             # Image 适配器

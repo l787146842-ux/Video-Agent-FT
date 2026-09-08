@@ -30,41 +30,53 @@ def svc(tmp_path):
     StateManager.reset_instance()
 
 
-# ---------- truncate_history：assistant 截断 / user 全文 ----------
+# ---------- truncate_history：assistant 截断 / user 全文（批 C2 位置无关化） ----------
 
 class TestTruncateHistory:
-    def test_old_assistant_head_tail_kept(self):
-        """非最新 assistant 回复：保留头 300 + 尾 300（旧版只留头部，
-        会丢掉结尾的下一步建议）"""
-        head = "开头结论" * 100          # 400 字
-        middle = "中部冗余" * 200        # 800 字
-        tail = "结尾下一步建议" * 50     # 350 字
-        old_reply = head + middle + tail
+    def test_long_assistant_head_tail_kept(self):
+        """超长 assistant 回复：保留头 1800 + 尾 200（与位置无关，
+        旧版「最新 2000 / 更早 300+300」双档位已退役——它会跨轮改写
+        同一条消息字节，每轮击穿消息区前缀）"""
+        head = "开头结论" * 500          # 2000 字（> 1800，头部窗口完整落在 head 内）
+        middle = "中部冗余" * 300        # 1200 字（被省略）
+        tail = "结尾下一步建议" * 50     # 350 字（尾部 200 保留）
+        long_reply = head + middle + tail
+        assert len(long_reply) > 2000
         msgs = [
-            {"role": "assistant", "content": old_reply},
+            {"role": "assistant", "content": long_reply},
             {"role": "user", "content": "继续"},
             {"role": "assistant", "content": "最新回复"},
         ]
         out = truncate_history(msgs)
         c = out[0]["content"]
-        assert c.startswith(head[:300])
-        assert tail[-300:] in c
+        assert c.startswith(head[:1800])
+        assert tail[-200:] in c
         assert "中部已省略" in c
         assert middle[:100] not in c
-        # 最新回复不受影响
-        assert out[2]["content"] == "最新回复"
 
-    def test_recent_assistant_full_up_to_2000(self):
-        """最新 assistant 回复保真度优先：2000 字内不截断"""
+    def test_position_independent_same_bytes(self):
+        """批 C2 核心回归：同一条消息无论处于最新位还是历史位，
+        渲染字节完全相等（前缀缓存跨轮稳定）"""
+        text = "超长回复内容" * 500  # 3000 字 > 2000
+        alone = truncate_history([{"role": "assistant", "content": text}])
+        with_followup = truncate_history([
+            {"role": "assistant", "content": text},
+            {"role": "user", "content": "继续"},
+            {"role": "assistant", "content": "新回复"},
+        ])
+        assert alone[0]["content"] == with_followup[0]["content"]
+
+    def test_assistant_full_up_to_2000(self):
+        """2000 字内的 assistant 回复不截断"""
         text = "复述的提示词全文" * 200  # 1600 字 < 2000
         out = truncate_history([{"role": "assistant", "content": text}])
         assert out[0]["content"] == text
 
-    def test_recent_assistant_truncated_at_2000(self):
-        """最新 assistant 回复超 2000 字仍要截断（兼顺 token 治理）"""
+    def test_assistant_truncated_at_2000(self):
+        """assistant 回复超 2000 字按统一上限截断（兼顺 token 治理）"""
         text = "超长最新回复" * 500  # 3000 字 > 2000
         out = truncate_history([{"role": "assistant", "content": text}])
-        assert out[0]["content"].startswith(text[:2000])
+        assert out[0]["content"].startswith(text[:1800])
         assert "已截断" in out[0]["content"]
         assert len(out[0]["content"]) < len(text)
 
@@ -81,6 +93,48 @@ class TestTruncateHistory:
         parts = [{"type": "text", "text": "多模态"}]
         out = truncate_history([{"role": "user", "content": parts}])
         assert out[0]["content"] is parts
+
+
+# ---------- 批 C1/C3：history 服务端线程装载 + mechanical 压缩 ----------
+
+def test_main_history_from_thread_loads_and_squashes_mechanical(svc):
+    """批 C1/C3：线程消息转 role/content；mechanical 压成固定短句；
+    无正文条目（媒体/文档卡）跳过。（svc 为 demo 态可能预置对话，
+    断言只看本测试追加的尾部三条）"""
+    from src.video_agent.web.chat_service import _main_history_from_thread
+    from src.video_agent.utils.prompts import load_prompt_section
+    _mech = load_prompt_section("planner/feedback.md", "MECHANICAL_HISTORY_PLACEHOLDER")
+    assert _mech, "feedback.md::MECHANICAL_HISTORY_PLACEHOLDER 分节缺失"
+    svc.add_chat_message("user", "你好")
+    svc.add_chat_message("agent", "已写入 1 组 2 卡：主角设定")
+    svc.add_chat_message("agent", "已执行 3 个操作：建组；加草稿；写提示词",
+                         kind="mechanical")
+    svc.add_chat_message("agent", "", image_urls=["http://x/a.png"])
+    out = _main_history_from_thread(svc, "")
+    assert [m["role"] for m in out[-3:]] == ["user", "assistant", "assistant"]
+    assert out[-3]["content"] == "你好"
+    assert out[-2]["content"] == "已写入 1 组 2 卡：主角设定"
+    assert out[-1]["content"] == _mech
+    assert "已执行 3 个操作" not in out[-1]["content"]
+
+
+def test_main_history_squash_is_byte_stable_across_turns(svc):
+    """批 C3 核心回归：mechanical 消息在下一轮装载（线程多出新消息）时
+    替换短句字节不变（前缀缓存稳定）。"""
+    from src.video_agent.web.chat_service import _main_history_from_thread
+    svc.add_chat_message("agent", "已执行 2 个操作：建组；加草稿", kind="mechanical")
+    first = _main_history_from_thread(svc, "")
+    svc.add_chat_message("user", "继续")  # 下一轮线程增长
+    second = _main_history_from_thread(svc, "")
+    assert first[0]["content"] == second[0]["content"]
+
+
+def test_main_history_unknown_conversation_falls_back_active(svc):
+    """批 C1：指定会话取不到时回落活跃会话（老数据/旧前端兜底）。"""
+    from src.video_agent.web.chat_service import _main_history_from_thread
+    svc.add_chat_message("user", "活跃会话消息")
+    out = _main_history_from_thread(svc, "conv-not-exist")
+    assert any(m["content"] == "活跃会话消息" for m in out)
 
 
 # ---------- agent_loop：文本路径 tool_started/tool_finished 事件 ----------

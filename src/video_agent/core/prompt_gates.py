@@ -309,50 +309,13 @@ def generation_consented(raw_state: Dict[str, Any]) -> bool:
         return False
 
 
-# ---------- 阶段探测驱动的工具裁剪（混合形态第一层：工具可见性边界） ----------
-
-# 故事板结构工具集（无规格文档阶段不下发；三个拆解
-# 执行器与提示词编写执行器同入名单——越阶入口正是它们，
-# 可见性软层；C1b 裁决 2026-08-31 阶段前置硬闸退役）
-STORYBOARD_STAGE_TOOLS = frozenset({
-    "storyboard_create_group", "storyboard_patch_draft", "storyboard_add_draft",
-    "storyboard_delete_group", "storyboard_confirm_draft", "storyboard_media_to_chat",
-    "read_draft",
-    "storyboard_key_elements", "storyboard_shots", "storyboard_audio",
-    "write_media_prompt",
-})
-# 草稿生成工具集（故事板结构就绪前不下发）。image_generate 不入裁剪集：
-# 其单张应急轨（mode='single'）任意阶段可见（应急出图覆盖空项目场景）；
-# 批量轨由 gen_confirm/tool_risk 闸在执行时按 mode 兜底拦截。
-GENERATION_STAGE_TOOLS = frozenset({"generate_video"})
-
-
-def stage_tool_restrictions(raw_state: Dict[str, Any]) -> tuple:
-    """按制作阶段的客观状态计算本轮应裁剪的工具集与说明文案。
-
-    返回 (excluded: frozenset, note: str)。检测信号全部客观可查：
-    - 无规格文档 → 故事板结构工具 + 生成工具都不下发（先写规格）；
-    - 有规格但故事板为空 → 生成工具不下发（先建结构）；
-    - 生成工具裁剪不含 image_generate（其单张应急轨任意阶段可见）；
-    - 其他阶段 → 不追加裁剪。
-    裁剪只是第一层（软）：文本动作轨不受影响，由既有闸机做第二层兜底。
-    （2026-08-31 用户裁决：规格文档锁工具退役——规格归散文驱动，
-    不再以「无规格文档」为由裁剪故事板/生成工具。）
-    """
-    has_groups = any(
-        raw_state.get(cat)
-        for cat in ALL_CATEGORIES
-    )
-    if not has_groups:
-        # 批 3 · B1 消干扰：只描述客观边界（哪些工具暂未开放、为何、何时开放），
-        # 不再携带指令式引导（"请先搭建…"与 Skill 散文抢话筒，3333 同款误导源）
-        return (
-            GENERATION_STAGE_TOOLS,
-            "【当前阶段工具边界·客观状态】故事板结构（关键元素/分镜/音频分组）尚未建立："
-            "视频生成批量工具暂未开放，image_generate 仅开放单张应急出图（mode='single'）；"
-            "结构建立后批量轨自动开放。",
-        )
-    return frozenset(), ""
+# ---------- 阶段探测驱动的工具裁剪（已退役） ----------
+# stage_tool_restrictions / STORYBOARD_STAGE_TOOLS / GENERATION_STAGE_TOOLS
+# 已随指令收拢批 B2 退役（2026-09-09 用户裁决：工具全量常驻）——
+# 故事板结构就绪前的 generate_video 不再从可见面裁掉，改由第二层兜底
+# （工具自身校验 + gen_confirm/tool_risk 闸 + 失败回喂带保留声明）；
+# 裁剪每步重算曾是前缀缓存击穿点（tools 变 → 前缀断），退役后 tools
+# 跨步字节稳定。回归断言见 test_hybrid_boundaries（常驻 + 闸机兜底口径）。
 
 
 # 闸机文案/卡片族实现体迁 gates_cards.py，re-export 保持既有引用路径
