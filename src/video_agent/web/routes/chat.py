@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from src.video_agent.exceptions import StateConflictError
+from src.video_agent.core import session_log
 from src.video_agent.state import chat_tail_ops, conversation_ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.web import agent_task_manager
@@ -187,6 +188,11 @@ async def truncate_resend(body: TruncateResendRequest):
         if entry is None:  # 防御：校验后消息列表被动变化（理论不可达）
             return _error(400, "NO_USER_MESSAGE", "对话中没有可重答的用户消息")
         user_text = str(entry.get("text") or "")
+        # 会话事件流同点回退（v4 批 E1，细案 D6）：截断重答 = log/rewind 标记
+        # 忽略被重答轮事件 + 编辑后正文以新 user/message 落流（标记非改写，
+        # 已提交事件保持原样；落流失败静默，不阻断重答）
+        if session_log.rewind_last_turn(svc, target_conv):
+            session_log.append_user_message(svc, target_conv, user_text)
         req = agent_routes.ChatRequest(
             message=user_text,
             provider=provider,

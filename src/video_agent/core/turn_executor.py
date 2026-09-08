@@ -40,6 +40,7 @@ from src.video_agent.utils.live_metrics import (
 )
 from src.video_agent.utils.live_metrics import record_budget_breakdown
 from src.video_agent.core import round_compact
+from src.video_agent.core import session_log
 from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS, status_event
 from src.video_agent.utils.stop_signal import (
     STOP_PHASE_TOOL_EXECUTING,
@@ -440,6 +441,26 @@ class TurnExecutor:
             getattr(response, "cached_tokens", 0),
             breakdown=get_budget_breakdown(_proj_id),
         )
+        # 会话事件流镜像（v4 主刀批 E1，细案 §五）：每步 assistant 响应落流
+        # （含 tool_calls/reasoning/usage）；reasoning 附着与 agent_loop 同闸门
+        # （settings.llm_reasoning_passthrough）；绑定缺失（测试/非 studio）不落流
+        _sess_cid = str(getattr(self._context, "session_conversation_id", "") or "")
+        if _sess_cid:
+            session_log.append_assistant_message(
+                self.planner.state_manager, _sess_cid, step=self._step_count,
+                content=str(getattr(response, "content", "") or ""),
+                tool_calls=[
+                    dict(tc) for tc in (getattr(response, "tool_calls", None) or [])
+                    if isinstance(tc, dict)],
+                reasoning_content=(
+                    str(getattr(response, "reasoning_content", "") or "")
+                    if settings.llm_reasoning_passthrough else ""),
+                usage={
+                    "prompt_tokens": int(getattr(response, "prompt_tokens", 0) or 0),
+                    "cached_tokens": int(getattr(response, "cached_tokens", 0) or 0),
+                    "completion_tokens": int(getattr(response, "token_usage", 0) or 0),
+                },
+            )
 
         # 检查点（工具批执行前）：模型已返回 tool_calls 但尚未执行，
         # 命中停止标志即抛 AgentStoppedError（agent_loop 捕获后干净收尾）；

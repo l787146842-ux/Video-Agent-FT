@@ -61,6 +61,9 @@ read_skill 执行成功，全文如下（skill={name}，section={section}）：
 ## MECHANICAL_HISTORY_PLACEHOLDER
 （上轮为系统机械动作清单，已并入时间线；明细见状态 JSON 与事件卡）
 
+## TOOL_RESULT_SUSPENDED
+（该调用未执行完成，会话在此中断）
+
 <!-- STEP_ASSISTANT_PLACEHOLDER 已随上下文与缓存优化计划批 C2 退役删除：
      assistant 消息改带标准 tool_calls（content 为空合法），占位文案无消费点 -->
 

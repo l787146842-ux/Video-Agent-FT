@@ -32,6 +32,7 @@ from src.video_agent.core.action_executor import StateOperationExecutor
 from src.video_agent.config import settings
 from src.video_agent.state import conversation_ops
 from src.video_agent.core import prompt_gates
+from src.video_agent.core import session_log
 from src.video_agent.core import stage_probes
 from src.video_agent.core import workflow_runtime
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
@@ -384,13 +385,22 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
     adapter 创建失败经既有出口发错并返回 None（调用方终止流）。
     """
     # history 装载（批 C1：主路径与 scope 路径同源——服务端线程单一事实源；
-    # body.messages 窗口退役为兼容字段，线程为空时回落旧窗口兜底）
+    # body.messages 窗口退役为兼容字段，线程为空时回落旧窗口兜底。
+    # v4 主刀批 E1：LLM 历史唯一事实源切换为会话事件流（全量回放推导），
+    # 事件流缺失先做 chatMessages 名义消息迁移；日志通道异常回落本函数既有
+    # 线程装载（细案 D4）；非 studio 上下文不落流也不切装载（行为与现状一致））
+    _sess_cid = str(getattr(ctx.body, "conversation_id", "") or "")
+    _log_hist = (
+        session_log.load_history(ctx.svc, _sess_cid) if ctx.use_studio_context else None)
     if ctx.adjust_scope:
         ctx.history = truncate_history(
-            _scope_history_from_thread(ctx.svc, str(getattr(ctx.body, "conversation_id", "") or "")))
+            _log_hist if _log_hist is not None
+            else _scope_history_from_thread(ctx.svc, _sess_cid))
     else:
-        _thread_hist = _main_history_from_thread(
-            ctx.svc, getattr(ctx.body, "conversation_id", ""))
+        if _log_hist is not None:
+            _thread_hist = _log_hist or _main_history_from_thread(ctx.svc, _sess_cid)
+        else:
+            _thread_hist = _main_history_from_thread(ctx.svc, _sess_cid)
         if _thread_hist:
             ctx.history = truncate_history(_thread_hist)
         else:
@@ -431,6 +441,10 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
                     pause_answered=pause_answered,
                     kind=getattr(ctx.body, "system_action", "") or "",
                 )
+                # 会话事件流同点落流（v4 批 E1）：与 chatMessages 用户消息
+                # 同文同会话归属；截断重答（已落盘）不重复落流
+                if ctx.use_studio_context:
+                    session_log.append_user_message(ctx.svc, _sess_cid, ctx.user_text)
             # 规格向导机械落盘投影管线已随用户裁决 2026-08-31 退役（D-08 清偿）
 
     # --- 解析中间面板选中的生图 provider + 画面比例（注入 image_generate 工具用）---
@@ -501,6 +515,9 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
         stop_scope=ctx.stop_scope,
         # 微调作用域透传（非空 ⇔ 纪律提示段注入；内容恒定保前缀缓存）
         adjust_scope=dict(ctx.adjust_scope or {}),
+        # 会话事件流归属（v4 批 E1）：studio 上下文才落流（与 chatMessages
+        # 写路径同守卫）；agent_loop/turn_executor 镜像点据此判定
+        session_conversation_id=(_sess_cid if ctx.use_studio_context else ""),
     )
 
 
@@ -755,8 +772,15 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
 
     # 真实供应商
     # 批 C1：非流式路径同流式轨——history 服务端线程装载（单一事实源），
-    # body.messages 窗口退役为兼容字段，线程为空回落旧窗口兜底
-    _ns_thread_hist = _main_history_from_thread(svc, getattr(body, "conversation_id", ""))
+    # body.messages 窗口退役为兼容字段，线程为空回落旧窗口兜底。
+    # v4 批 E1：studio 上下文优先事件流装载（同流式轨，细案 D4 回落同口径）
+    _ns_cid = str(getattr(body, "conversation_id", "") or "")
+    _ns_log_hist = (
+        session_log.load_history(svc, _ns_cid) if use_studio_context else None)
+    if _ns_log_hist is not None:
+        _ns_thread_hist = _ns_log_hist or _main_history_from_thread(svc, _ns_cid)
+    else:
+        _ns_thread_hist = _main_history_from_thread(svc, _ns_cid)
     if _ns_thread_hist:
         history = truncate_history(_ns_thread_hist)
     else:
@@ -789,6 +813,8 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
                     pause_answered=ns_pause_answered,
                     kind=getattr(body, "system_action", "") or "",
                 )
+                # 会话事件流同点落流（v4 批 E1，同流式轨口径）
+                session_log.append_user_message(svc, _ns_cid, user_text)
             # （规格卡投影已随用户裁决 2026-08-31 退役，D-08 清偿）
 
     # --- 解析中间面板选中的生图 provider + 画面比例 ---
@@ -838,6 +864,8 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
             advance_signal=advance_signal,
             # 非流式无停止端点，独立 scope 防被 SSE 路径停止标志误杀
             stop_scope="nonstream",
+            # 会话事件流归属（v4 批 E1，同流式轨口径）
+            session_conversation_id=(_ns_cid if use_studio_context else ""),
         )
         planner = Planner(
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,

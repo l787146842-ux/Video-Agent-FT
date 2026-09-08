@@ -132,7 +132,7 @@ stream_prepare（收到用户消息）
 | **E2** | 修剪器（§七）+ 遥测记账 | 8192/4096/1024 码点单测（中英文/emoji 边界）；低于压力不裁 |
 | **E3** | 阈值压缩（§八）+ `round_compact`、`compress_prior_feedback` 退役 + `truncate_history` 实测后裁决 | 触发/保留尾/平衡边界单测；§九全量验收（含 cache_hit_report 实测） |
 
-改动面预估：新增 `core/session_log.py`（骨架+装载）、`core/session_compact.py`（修剪器+压缩）；改 `chat_service.py`（装载切换+镜像）、`agent_loop.py`（镜像）、`turn_executor.py`（退役调用点）、`config.py`（参数）、`token_budget.py`（不动或微调）；测试新增 3 组。
+改动面预估：新增「会话事件流模块」（E1 落位，事件流骨架+装载）与「会话压缩模块」（E3 落位，修剪器+压缩）；改 `chat_service.py`（装载切换+镜像）、`agent_loop.py`（镜像）、`turn_executor.py`（退役调用点）、`config.py`（参数）、`token_budget.py`（不动或微调）；测试新增 3 组。
 
 ## 十一、风险与边界
 

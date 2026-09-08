@@ -163,6 +163,10 @@ class PlannerContext:
     # 由 turn_executor 每步更新，经状态尾部消息注入给模型；
     # None = 不注入（首轮/非循环路径）。
     step_info: Optional[tuple] = None
+    # 会话事件流归属（v4 主刀批 E1）：本请求的 conversation_id（可空=活跃会话，
+    # 落流时按 target_chat_messages 同序解析）；空 + 非 studio 上下文 = 不落流。
+    # LLM 历史唯一事实源 = 事件流（docs/会话层append-only化细案.md D3/D5）。
+    session_conversation_id: str = ""
 
 
 @dataclass
@@ -597,6 +601,8 @@ class Planner:
             user_id=context.user_id,
             pending_injector=context.pending_injector,
             stop_scope=context.stop_scope,
+            # 会话事件流归属（v4 批 E1）：agent_loop FC 镜像点落流用
+            session_conversation_id=str(getattr(context, "session_conversation_id", "") or ""),
         )
 
         # Q22 裁决 2026-09-01：花钱生成失败不静默——轮末机械附一键重试选项卡（实现体 planner_output）

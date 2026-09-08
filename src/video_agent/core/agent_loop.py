@@ -49,6 +49,8 @@ from src.video_agent.core.round_end_policies import (
 )
 from src.video_agent.utils import live_metrics
 from src.video_agent.core import prompt_gates
+from src.video_agent.core import session_log
+from src.video_agent.state.manager import StateManager
 from src.video_agent.exceptions import AdapterError
 # 失败恢复分级：循环骨架不再硬编码恢复语义，重试预算与处置动作
 # 全部来自恢复策略分派表（policy-as-data，与闸机哲学一致）
@@ -158,6 +160,7 @@ async def run_agent_loop(
     pending_injector: Optional[Callable[[], List[Dict[str, Any]]]] = None,
     user_id: str = "",
     stop_scope: str = "chat",
+    session_conversation_id: str = "",
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
@@ -176,6 +179,40 @@ async def run_agent_loop(
                 # 断线经 /api/agent/degradations 可见
                 live_metrics.record_degradation("agent_loop.event_emit")
                 logger.debug("[agent_loop] 忽略异常: {}", _e)
+
+    # 问即停悬挂调用的占位回喂（本批冻结未执行；continue 路径内存回喂与
+    # 事件流镜像共用同一文案，单一事实源）
+    def _pause_suspended_note() -> str:
+        return "（本批问即停，该调用未执行；等待用户回应后按其裁决处理）"
+
+    def _mirror_fc_feedback(pending: List[Dict[str, Any]], fc_calls: List[Dict[str, Any]],
+                            step_no: int, applied: int) -> None:
+        """会话事件流镜像（v4 主刀批 E1，细案 §五）：FC 步 tool 结果回喂逐条
+        落流 + 步回喂事实落流。覆盖本分支全部出口（continue/问即停/提前终止/
+        max_steps）——这些轮的结果今天随内存列表蒸发，是「状态断层」直接来源，
+        落流后下轮全量回放可见（append-only 结构红利）。落流失败静默（D4）。"""
+        if not session_conversation_id:
+            return
+        name_by_call = {
+            str((tc or {}).get("id") or ""): str(((tc or {}).get("function") or {}).get("name") or "")
+            for tc in (fc_calls or [])}
+        answered = {str(m.get("tool_call_id") or "")
+                    for m in (pending or []) if m.get("role") == "tool"}
+        entries = [m for m in (pending or []) if m.get("role") == "tool"]
+        for tc in (fc_calls or []):
+            cid = str((tc or {}).get("id") or "")
+            if cid and cid not in answered:
+                entries.append({"tool_call_id": cid, "content": _pause_suspended_note()})
+        svc_log = StateManager.get_instance()
+        for m in entries:
+            session_log.append_tool_result(
+                svc_log, session_conversation_id, step=step_no,
+                call_id=str(m.get("tool_call_id") or ""),
+                name=name_by_call.get(str(m.get("tool_call_id") or ""), ""),
+                content=str(m.get("content") or ""))
+        # 步回喂事实落流（log-only，细案 D2：文本装载时按模板派生）
+        session_log.append_step_feedback(
+            svc_log, session_conversation_id, step=step_no, tool_count=applied)
 
     result = AgentLoopResult()
     # Q3：显式传参钉死口径（测试/特殊编排）；None = 循环内每步实时读 settings
@@ -465,6 +502,13 @@ async def run_agent_loop(
                     f"[AgentLoop] step={step} fc_applied={fc_applied} "
                     f"confirm={bool(fc_confirmation)} finish={finish_reason or '-'}"
                 )
+                # 会话事件流镜像（v4 批 E1）：本分支所有出口统一落流——
+                # 问即停/提前终止/max_steps 出口的工具结果今天随内存列表
+                # 蒸发（C2 回喂组装在其后，break 先行），落流后下轮回放可见
+                _mirror_fc_feedback(
+                    list((fc_extra or {}).get("_pending_feedback_msgs") or []),
+                    list((fc_extra or {}).get("_fc_tool_calls") or []),
+                    step, fc_applied)
                 if fc_confirmation or fc_pause_id:
                     # 虚报审计：FC 确认轮同样承重——声称完成但产物为空 →
                     # 只附警告不拦人（系统不没收模型暂停）。
@@ -572,18 +616,15 @@ async def run_agent_loop(
                         if _cid and _cid not in _answered:
                             _pending.append({
                                 "role": "tool", "tool_call_id": _cid,
-                                "content": "（本批问即停，该调用未执行；等待用户回应后按其裁决处理）"})
+                                "content": _pause_suspended_note()})
                 messages.extend(_pending)
                 # 回喂纯事实（P3；指令收拢批补丁）：STEP_FEEDBACK_AT_PAUSE
                 # 已退役——「节点翻转」≠「Skill 暂停点」，探针误报曾逼停模型；
-                # 停/继续判定唯一归《Skill 流程纪律》第 2 条判定式
-                _step_fb = load_prompt_section("planner/feedback.md", "STEP_FEEDBACK")
-                if _step_fb:
-                    _step_content = _step_fb.replace("{{step}}", str(step)).replace("{{count}}", str(fc_applied))
-                else:
-                    logger.warning("[agent_loop] prompts/planner/feedback.md::STEP_FEEDBACK 分节缺失，使用最小占位")
-                    _step_content = f"（系统）第 {step} 轮工具已执行完毕。"
-                messages.append({"role": "user", "content": _step_content})
+                # 停/继续判定唯一归《Skill 流程纪律》第 2 条判定式。
+                # （事件流镜像已在本分支出口统一完成，见 _mirror_fc_feedback；
+                #   步回喂文本派生与其同源 = session_log.render_step_feedback）
+                messages.append({"role": "user",
+                                 "content": session_log.render_step_feedback(step, fc_applied)})
                 continue
 
             # 纯文本轮：模型本轮未发出工具调用，即本轮为面向用户的回复，
