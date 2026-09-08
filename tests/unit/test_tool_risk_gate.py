@@ -430,16 +430,16 @@ class TestImageGenerateSingleRiskGate:
         assert err and "高风险工具确认闸拦截" in err
 
     def test_single_predicate_arms_for_registered_and_unregistered(self):
-        """未注册工具 deny-by-default 不变（仍拒）；批补丁后拒因如实分流：
-        「工具不存在（疑似拼写错误）」而非「高风险确认闸」（2026-09-09 实证
-        storybook_create_group 拼错被误导成要确认）。"""
+        """未注册工具 deny-by-default 不变（仍拒）；拒因纯事实：
+        「工具不存在」而非「高风险确认闸」，无拼写推断（v4 话术纯事实化）。"""
         from src.video_agent.core import fc_gates
         ctx = fc_gates.GateContext(
             state=lambda: {}, tool_risk_of=lambda name: "high")
         err = fc_gates.tool_risk_gate(
             ctx, "__not_registered__", {})
-        assert err and "不存在" in err and "拼写错误" in err
+        assert err and "不存在" in err and "核对可用工具清单" in err
         assert "高风险" not in err
+        assert "拼写" not in err
 
 
 # ---------- 批 B 执行偏好：costly 声明轴 + 三档分流 ----------

@@ -21,7 +21,7 @@
 Skill「{{name}}」已停用，不可读取（停用=真停用）
 
 ## UNREGISTERED
-Skill「{{name}}」在磁盘存在但未通过注册（frontmatter 缺 name/description 声明或内容损坏），不可加载；请到 Skill 工作台查看并修复该 Skill 包；也可能尚未同步注册：重启服务或在工作台保存一次即可完成注册
+Skill「{{name}}」在磁盘存在但未通过注册（frontmatter 缺 name/description 声明、内容损坏或尚未同步注册），不可加载。处理：到 Skill 工作台查看并修复该 Skill 包；或重启服务/在工作台保存一次完成同步注册。
 
 ## NOT_FOUND
 未找到 Skill「{{name}}」。可用 Skill：{{available}}
