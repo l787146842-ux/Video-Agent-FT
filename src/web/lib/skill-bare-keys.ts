@@ -1,5 +1,5 @@
 /**
- * Flova 裸键兼容域（C1c 裁决，导入期只读）：与后端
+ * 裸键兼容域（C1c 裁决，导入期只读）：与后端
  * skill_runtime/frontmatter.py::_extract_bare_keys 同口径。
  * 裸键为导入期只读兼容格式（YAML 是唯一落盘格式），不写回落盘。
  */

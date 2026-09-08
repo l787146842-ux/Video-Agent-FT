@@ -1,5 +1,5 @@
 /**
- * SkillStudioList 启停开关（批7/对齐 Flova 卡片开关）：
+ * SkillStudioList 启停开关（批7/对齐外部标杆 卡片开关）：
  * 左栏每卡渲染开关（role=switch）；初始启停由
  * runtime_settings.skills_disabled 决定、停用卡置灰；
  * 点击开关发 PUT skills_disabled（加入=停用），即时反映并置灰。

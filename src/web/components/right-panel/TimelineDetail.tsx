@@ -26,7 +26,9 @@ export function TimelineDetail(props: { item: TimelineItem }) {
   );
   const entries = () => argsPreviewEntries(props.item.args);
   const result = () => props.item.result_summary || '';
-  const showResult = () => !!result() && result() !== props.item.summary;
+  // 事件卡折叠区全文（对齐批：分析报告全文挂卡，detail_md 优先于单行摘要）
+  const fullText = () => props.item.detail_md || result();
+  const showResult = () => !!fullText() && fullText() !== props.item.summary;
   const hasDetail = () => entries().length > 0 || showResult();
 
   /** 审批档交互徽标（confirm=需确认 / review=需审批；none 档不渲染）；
@@ -42,13 +44,14 @@ export function TimelineDetail(props: { item: TimelineItem }) {
       <Show
         when={tier() === 'expand' && hasDetail()}
         fallback={
-          /* 中间/不展开档：仅输出留痕（与既有单行摘要形态一致） */
+          /* 中间/不展开档：仅输出留痕（与既有单行摘要形态一致）；
+           * detail_md 存在（事件卡携全文）时折叠行=单行摘要、展开看全文 */
           <Show when={showResult()}>
             <Show
-              when={resultSummaryView(result()).expandable}
+              when={resultSummaryView(result()).expandable || !!props.item.detail_md}
               fallback={
-                <span class="tl-item-result" title={result()}>
-                  ↳ {result()}
+                <span class="tl-item-result" title={fullText()}>
+                  ↳ {fullText()}
                   {approvalBadge()}
                 </span>
               }
@@ -58,7 +61,7 @@ export function TimelineDetail(props: { item: TimelineItem }) {
                 class={`tl-item-result tl-item-result-toggle${resultOpen() ? ' expanded' : ''}`}
                 onClick={() => setResultOpen(!resultOpen())}
               >
-                ↳ {resultOpen() ? result() : resultSummaryView(result()).collapsed}
+                ↳ {resultOpen() ? fullText() : resultSummaryView(result()).collapsed || result()}
                 <FiChevronDown size={11} class={`tl-item-toggle-arrow${resultOpen() ? ' expanded' : ''}`} />
                 {approvalBadge()}
               </button>
@@ -96,7 +99,7 @@ export function TimelineDetail(props: { item: TimelineItem }) {
               <Show when={showResult()}>
                 <div class="tl-detail-section">
                   <span class="tl-detail-label">执行结果</span>
-                  <span class="tl-detail-result">{result()}</span>
+                  <span class="tl-detail-result">{fullText()}</span>
                 </div>
               </Show>
             </div>

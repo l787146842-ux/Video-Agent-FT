@@ -679,6 +679,7 @@ export interface SseToolStartedEvent {
   name: string;
   summary: string;
   args?: Record<string, unknown> | undefined;
+  detail_md?: string | undefined;
 }
 
 export interface SseToolFinishedEvent {
@@ -687,6 +688,7 @@ export interface SseToolFinishedEvent {
   ok: boolean;
   elapsed_ms: number;
   result_summary?: string;
+  detail_md?: string | undefined;
   planning?: boolean | undefined;
 }
 

@@ -23,7 +23,7 @@ function kindText(c: BoardConflict): string {
 }
 
 /**
- * G1 故事板冲突面板（对标 Flova 冲突面板）：用户编辑与 Agent 写入
+ * G1 故事板冲突面板（对标外部产品 冲突面板）：用户编辑与 Agent 写入
  * 同改一处时弹出，逐项定夺「保留我的 / 采用 Agent」，或整批一键定夺。
  */
 export function BoardConflictPanel() {

@@ -201,9 +201,9 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
     }
     case 'delta': fx.chat.appendDelta(ev.text || ''); break;
     case 'reasoning_delta': fx.chat.appendReasoning(ev.text || ''); break;
-    case 'tool_started': fx.chat.toolStarted(ev.id, ev.name, ev.summary, ev.args); break;
+    case 'tool_started': fx.chat.toolStarted(ev.id, ev.name, ev.summary, ev.args, ev.detail_md ?? undefined); break;
     case 'tool_finished':
-      fx.chat.toolFinished(ev.id, ev.ok, ev.elapsed_ms || 0, ev.result_summary, ev.planning);
+      fx.chat.toolFinished(ev.id, ev.ok, ev.elapsed_ms || 0, ev.result_summary, ev.planning, ev.detail_md ?? undefined);
       break;
     case 'doc_written': // 携带后端打戳的 turn_id，即显卡与 done 主消息严格同组
       if (ev.name) fx.chat.docWritten(ev.name, ev.turn_id);

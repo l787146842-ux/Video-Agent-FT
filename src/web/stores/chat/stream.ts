@@ -46,7 +46,7 @@ export const streamActions = {
 
   /** 过程时间线：工具/操作开始（运行态条目进账本；args 为后端裁剪脱敏后的输入预览）。
    * 按 id upsert：存量同 id 条目就地更新（replay 与增量 tool_started 同源双达不双登） */
-  toolStarted(id: string, name: string, summary: string, args?: Record<string, unknown>) {
+  toolStarted(id: string, name: string, summary: string, args?: Record<string, unknown>, detailMd?: string) {
     setChatState(produce((s) => {
       const existing = s.turnLedger.items.find((item) => item.id === id);
       if (existing) {
@@ -55,10 +55,13 @@ export const streamActions = {
         existing.status = 'running';
         existing.started_at_ms = Date.now();
         existing.args = args;
+        if (detailMd) existing.detail_md = detailMd;
       } else {
-        s.turnLedger.items.push({
+        const entry: TimelineToolEntry = {
           id, name, summary, status: 'running', started_at_ms: Date.now(), args,
-        });
+        };
+        if (detailMd) entry.detail_md = detailMd;
+        s.turnLedger.items.push(entry);
       }
       // 状态文案走 i18n 键，不硬编码中文
       s.turnLedger.statusText = t('rp.streaming.executing', {
@@ -69,7 +72,7 @@ export const streamActions = {
   },
 
   /** 过程时间线：工具/操作完成（对勾/失败态；planning=规划级执行器标记） */
-  toolFinished(id: string, ok: boolean, elapsedMs: number, resultSummary?: string, planning?: boolean) {
+  toolFinished(id: string, ok: boolean, elapsedMs: number, resultSummary?: string, planning?: boolean, detailMd?: string) {
     setChatState(produce((s) => {
       // 参数名避开 i18n 惯用名 t，防止遮蔽外层 t 函数
       const entry = s.turnLedger.items.find((item) => item.id === id);
@@ -78,6 +81,7 @@ export const streamActions = {
         entry.elapsed_ms = elapsedMs;
         if (planning) entry.planning = true;
         entry.result_summary = resultSummary;
+        if (detailMd) entry.detail_md = detailMd;
       }
     }));
   },

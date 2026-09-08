@@ -152,6 +152,17 @@ export interface Asset {
 }
 
 // ===== API 供应商 =====
+/** 模型编辑面板配置（chat_models_meta 条目，按模型名精确匹配） */
+export interface ChatModelMeta {
+  model: string;
+  /** 上下文窗口（token 数；三挡 200K/400K/1M，未配置回落平台默认挡） */
+  context_window?: number;
+  /** 思考模式开关（默认开；关闭后平台不发任何思考参数） */
+  thinking_enabled?: boolean;
+  /** 推理档位（''=原生 / low / medium / high；开关开且未选档 → enable_thinking） */
+  thinking_level?: string;
+}
+
 export interface ApiProvider {
   id: string;
   name: string;
@@ -161,6 +172,8 @@ export interface ApiProvider {
   chat_models?: string[];
   image_models?: string[];
   video_models?: string[];
+  /** 模型级配置（编辑面板写入；后端查窗口与思考参数用） */
+  chat_models_meta?: ChatModelMeta[];
   [key: string]: unknown;
 }
 
@@ -265,7 +278,7 @@ export interface ChatMessage {
 }
 
 /** Agent 执行轨迹（后端 tracer.py 产出） */
-export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** 大阶段标签（后端权威下发） */ stage?: string; /** 工具执行结果一句话摘要（与 SSE tool_finished 同口径） */ result_summary?: string; /** 规划级执行器标记（capability 注册表下发） */ planning?: boolean; /** 工具输入参数预览（后端裁剪脱敏，详情卡展开区用） */ args?: Record<string, unknown>; }
+export interface TraceAction { name: string; summary: string; elapsed_ms: number; ok: boolean; /** 大阶段标签（后端权威下发） */ stage?: string; /** 工具执行结果一句话摘要（与 SSE tool_finished 同口径） */ result_summary?: string; /** 事件卡折叠区全文（后端 emit_event_card 下发，仅 event_card 携带） */ detail_md?: string; /** 规划级执行器标记（capability 注册表下发） */ planning?: boolean; /** 工具输入参数预览（后端裁剪脱敏，详情卡展开区用） */ args?: Record<string, unknown>; }
 /** 闸机判定明细（后端 tracer.record_gate 产出，前端按结构渲染来源标注 chips） */
 export interface GateRecord {
   rule_id: string;

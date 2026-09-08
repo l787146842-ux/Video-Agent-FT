@@ -123,6 +123,18 @@
             ],
             "default": null,
             "title": "Args"
+          },
+          "detail_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail Md"
           }
         },
         "required": [
@@ -160,6 +172,18 @@
             "default": "",
             "title": "Result Summary",
             "type": "string"
+          },
+          "detail_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail Md"
           },
           "planning": {
             "anyOf": [

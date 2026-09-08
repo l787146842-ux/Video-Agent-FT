@@ -26,7 +26,7 @@
 .skst-item-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .skst-item-name { font-size: var(--font-md); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .skst-item-desc { font-size: var(--font-xs); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* 启停开关（批7/对齐 Flova 卡片开关）：写 runtime_settings.skills_disabled */
+/* 启停开关（批7/对齐外部标杆 卡片开关）：写 runtime_settings.skills_disabled */
 .skst-switch {
   display: flex; align-items: center; padding: 2px;
   width: 30px; height: 18px; border-radius: 9px;

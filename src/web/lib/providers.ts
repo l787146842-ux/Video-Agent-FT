@@ -3,7 +3,8 @@
  * 仅依赖 studio store，供面板组件与批量生成使用。
  */
 import { state } from '@/stores/studio';
-import type { ApiProvider } from '@/types';
+import { putProviders } from '@/api/providers';
+import type { ApiProvider, ChatModelMeta } from '@/types';
 
 export type ProviderKind = 'image' | 'video' | 'chat';
 
@@ -46,4 +47,31 @@ export function preferredProviderIdForKind(
 /** 供应商首个可用模型 */
 export function defaultModelFor(providerId: string, kind: ProviderKind): string {
   return providerModels(providerId, kind)[0] || '';
+}
+
+/** 模型编辑面板：读单模型配置（无配置返回 undefined = 走平台默认） */
+export function chatModelMeta(
+  providerId: string, model: string,
+): ChatModelMeta | undefined {
+  const p = state.apiProviders.find((x) => x.id === providerId);
+  return p?.chat_models_meta?.find((m) => m.model === model);
+}
+
+/** 模型编辑面板：写单模型配置（更新 store + 全量 PUT 保存；后端透传未知字段） */
+export async function saveChatModelMeta(
+  providerId: string, model: string, patch: Partial<ChatModelMeta>,
+): Promise<void> {
+  const p = state.apiProviders.find((x) => x.id === providerId);
+  if (!p) return;
+  const list = [...(p.chat_models_meta || [])];
+  const idx = list.findIndex((m) => m.model === model);
+  const merged: ChatModelMeta = { ...(idx >= 0 ? list[idx] : { model }), ...patch, model };
+  if (idx >= 0) list[idx] = merged;
+  else list.push(merged);
+  p.chat_models_meta = list;
+  try {
+    await putProviders(state.apiProviders);
+  } catch (err) {
+    console.error('[providers] chat_models_meta 保存失败', err);
+  }
 }

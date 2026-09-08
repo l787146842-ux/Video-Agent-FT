@@ -14,13 +14,13 @@
 import { state, studioActions } from '@/stores/studio';
 import { agentActions } from '@/stores/agent-state';
 import { convState } from '@/stores/conversations';
-import { chatState, chatActions, type QueuedMessage } from '@/stores/chat';
+import { chatActions, type QueuedMessage } from '@/stores/chat';
 import { showToast } from '@/stores/toast';
 import { streamAgentChat, sendGuidanceToTask } from '@/hooks/use-sse';
 import {
   agentProvider, agentModel, agentSkill, agentAssetMode, agentThinkingLevel,
 } from '@/stores/agent-prefs';
-import { CHAT_HISTORY_WINDOW, uid } from '@/lib/utils';
+import { uid } from '@/lib/utils';
 import { partsToPlainText } from '@/lib/rich-input';
 import { t } from '@/lib/locale';
 import type { AgentChatRequest, AnyGroup, MediaType, RichContentPart } from '@/types';
@@ -176,11 +176,9 @@ export async function submitMessage(intent: SubmitIntent, payload: SubmitPayload
     })),
   ];
 
-  // 历史（发送前的最近 N 条）
-  const history = chatState.messages.slice(-CHAT_HISTORY_WINDOW).map((m) => ({
-    role: m.sender === 'agent' || m.sender === 'assistant' ? 'assistant' : 'user',
-    content: m.text,
-  }));
+  // 历史（批 C1 退役）：后端改从服务端线程装载 history（消息单一事实源），
+  // 前端不再发送 body.messages 窗口——窗口滑动每轮改写 history 首条字节，
+  // 是前缀缓存第一层击穿根因（展示源本就是服务端 chatMessages 快照）
 
   // Skill 写入文档：仅当消息中携带了 Skill 引用块（名称在消息里）时才登记。
   let skillSlug = '';
@@ -211,7 +209,9 @@ export async function submitMessage(intent: SubmitIntent, payload: SubmitPayload
     provider,
     model,
     ms_model: provider === 'modelscope' ? model : '',
-    messages: history,
+    // 批 C1：body.messages 退役（后端服务端线程装载 history），
+    // 字段保留空数组兼容旧后端类型契约
+    messages: [],
     images: selectedAssetUrls('image'),
     videos: selectedAssetUrls('video'),
     selected_draft_id: state.selectedDraftId || '',

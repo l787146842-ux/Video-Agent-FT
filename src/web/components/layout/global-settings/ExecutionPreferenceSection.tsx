@@ -1,7 +1,7 @@
 /**
  * 执行偏好三档（2026-08-30 用户裁决，Skill 系统修复批 B）——自 GlobalSettingsView 切出。
  * 管花钱生成动作（生成图片/生成视频）要不要先弹确认卡。
- * 2026-09-06：下拉标签对齐 Flova 用语（由 AI 判断/手动确认所有提示词/
+ * 2026-09-06：下拉标签对齐外部标杆 用语（由 AI 判断/手动确认所有提示词/
  * 无需确认自动生成），hint 承诺文案不动（consent_copy 门禁钉 confirm 档）。
  * 枚举白名单与默认档以 sidecar 契约导出为唯一来源（不硬编码档位）。
  */
@@ -14,7 +14,7 @@ import type { RuntimeSettings } from '@/api/agent';
 
 /** 三档中文文案（前端体验规范 §三：界面文案中文唯一；批 10 口径对齐
  *  V6 计划——确认=提示词审阅，闸机兜底 + 暂停卡同意账本见批次 9）。
- *  2026-09-06：标签对齐 Flova 用语（由 AI 判断/手动确认所有提示词/无需确认
+ *  2026-09-06：标签对齐外部标杆 用语（由 AI 判断/手动确认所有提示词/无需确认
  *  自动生成）；hint 承诺文案不动（consent_copy 门禁钉 confirm 档 hint）。 */
 const PREF_LABELS: Record<string, string> = {
   auto_decide: '由 AI 判断',

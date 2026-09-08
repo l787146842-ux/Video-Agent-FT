@@ -125,7 +125,7 @@ describe('toolApprovalTier 工具审批分级', () => {
     ['generate_video', 'image_generate'].forEach((n) => expect(toolApprovalTier(n)).toBe('confirm'));
   });
 
-  it('none 档：只读/可撤销写状态类工具（后端推导档生成；2026-09-07 Flova 对齐写入降 medium）', () => {
+  it('none 档：只读/可撤销写状态类工具（后端推导档生成；2026-09-07 外部标杆对齐写入降 medium）', () => {
     [
       'read_skill', 'read_draft', 'read_uploaded_doc', 'read_project_doc',
       'view_storyboard_media', 'storyboard_media_to_chat', 'canvas_list',

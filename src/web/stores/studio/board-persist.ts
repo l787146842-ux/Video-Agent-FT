@@ -35,7 +35,7 @@ function boardContentJson(): string {
  *  后者必被 409 拒引发整板重同步闪烁；串行后每次 PUT 都读到最新版本 */
 let saveChain: Promise<void> = Promise.resolve();
 
-/** G1 版本冲突回落：陈旧整板提交改走三向合并（对标 Flova 并行局部修改）。
+/** G1 版本冲突回落：陈旧整板提交改走三向合并（对标外部产品 并行局部修改）。
  * 单方改动自动采纳落盘；双方同改 → 开冲突面板交用户定夺；
  * 基线不可得返 false，调用方回落旧「丢弃重做」语义。 */
 async function tryMergeOnConflict(): Promise<boolean> {

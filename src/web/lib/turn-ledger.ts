@@ -35,6 +35,8 @@ export interface LedgerItem {
   started_at_ms?: number;
   /** 执行结果一句话摘要（live=tool_finished、settled=trace result_summary） */
   result_summary?: string;
+  /** 事件卡折叠区全文（后端 emit_event_card 下发，仅 event_card 携带） */
+  detail_md?: string;
   /** 规划级执行器标记（不产真实媒体，前端挂「规划」徽标） */
   planning?: boolean;
   /** 工具输入参数预览（后端裁剪脱敏，详情卡展开区用） */
@@ -94,6 +96,7 @@ export function ledgerFromLive(input: LiveLedgerInput = {}): TurnLedger {
     elapsed_ms: tl.elapsed_ms ?? undefined,
     started_at_ms: tl.started_at_ms ?? now,
     result_summary: tl.result_summary || undefined,
+    detail_md: tl.detail_md || undefined,
     planning: tl.planning ?? undefined,
     args: tl.args,
   }));
@@ -138,6 +141,7 @@ export function ledgerFromSettled(input: SettledLedgerInput): TurnLedger {
         status: a.ok ? 'done' : 'failed',
         elapsed_ms: a.elapsed_ms,
         result_summary: a.result_summary || undefined,
+        detail_md: a.detail_md || undefined,
         planning: a.planning || undefined,
         args: a.args,
       });

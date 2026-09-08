@@ -7,7 +7,7 @@
  *（注册侧必填即 name/description 非空，见 registry.py 注册校验）。
  * C1c 裁决 2026-08-31：书写约定提示随模板下发——frontmatter 仅
  * name/description 必填、其余键全部可选零警告；导入的外部 Skill
- *（如 Flova 裸键 skill_name:/skill_description: 无 --- 形态）同样可注册。 */
+ *（如 裸键 skill_name:/skill_description: 无 --- 形态）同样可注册。 */
 export function blankSkillTemplate(): string {
   return [
     '---',

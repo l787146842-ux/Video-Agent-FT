@@ -7,7 +7,7 @@ import { isSkillEnabled, toggleSkillEnabled } from '@/stores/skill-prefs';
 
 /**
  * Skill 工作台左栏：全部 Skill 列表。
- * 每项：启停开关（批7/对齐 Flova 卡片开关，写 runtime_settings.skills_disabled）
+ * 每项：启停开关（批7/对齐外部标杆 卡片开关，写 runtime_settings.skills_disabled）
  * + 删除（内联二次确认）；点击卡片选中进中间预览；顶部「新建」空白草稿。
  */
 export function SkillStudioList(props: { onCollapse: () => void }) {

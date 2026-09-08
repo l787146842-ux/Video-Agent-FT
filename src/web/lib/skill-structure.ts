@@ -1,7 +1,7 @@
 /**
  * Skill 结构化模型：Markdown ↔ 结构化（name/description/sections）无损往返。
  * 与后端 skill_docs.py 同口径双格式：
- *  1. flova 原生 <tag>…</tag> 章节（tag 白名单对齐 SECTION_TAG_STAGES）；
+ *  1. 外部导出原生 <tag>…</tag> 章节（tag 白名单对齐 SECTION_TAG_STAGES）；
  *  2. Markdown 标题式（## 切分，无 ## 时降级 ###；更深层级留在节内正文）。
  * frontmatter（--- 块）原样保留不显示，仅源码模式可见可改。
  * 裸键兼容域拆出 skill-bare-keys.ts / 新建模板拆出 skill-template.ts（250 行红线），

@@ -1,5 +1,5 @@
 /**
- * Skill 启停开关（批7/对齐 Flova 卡片开关）：
+ * Skill 启停开关（批7/对齐外部标杆 卡片开关）：
  * 数据源 = 后端 runtime_settings.skills_disabled（批5 通道；存被停用 slug，
  * 加入=停用 / 移除=启用；空 = 全启用）。Skill 工作台左栏开关写入；
  * SkillPicker / 风格层据此过滤展示。

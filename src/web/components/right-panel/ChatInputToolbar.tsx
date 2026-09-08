@@ -77,7 +77,7 @@ export function ChatInputToolbar(props: {
     const r = ratio();
     return r >= 0.85 ? 'hot' : r >= 0.6 ? 'warn' : 'ok';
   };
-  // 第 5 批：悬停面板数据（参考 Flova 式上下文容量卡）
+  // 第 5 批：悬停面板数据（参考 外部标杆 式上下文容量卡）
   const bd = () => usage()?.breakdown ?? null;
   const winTokens = () => usage()?.window_tokens || bd()?.budget || 0;
   const totalTokens = () => bd()?.total ?? usage()?.est_tokens ?? 0;

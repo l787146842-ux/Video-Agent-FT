@@ -123,7 +123,7 @@ describe('GlobalSettingsView 执行偏好三档（批 B）', () => {
   });
 });
 
-describe('GlobalSettingsView 执行模式四档（2026-09-06 Flova 对齐批）', () => {
+describe('GlobalSettingsView 执行模式四档（2026-09-06 对齐批）', () => {
   function modeSelect(container: HTMLElement): HTMLSelectElement {
     const el = container.querySelector<HTMLSelectElement>(`select[aria-label="${MODE_ARIA}"]`);
     expect(el, '执行模式选择器应渲染').toBeTruthy();

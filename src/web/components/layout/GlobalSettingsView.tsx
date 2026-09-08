@@ -202,7 +202,7 @@ export default function GlobalSettingsView() {
           {/* 执行偏好三档（花钱生成是否先弹确认卡；批 B） */}
           <ExecutionPreferenceSection gs={gs} set={set} />
 
-          {/* 执行模式四档（流程推进的暂停策略；2026-09-06 Flova 对齐批） */}
+          {/* 执行模式四档（流程推进的暂停策略；2026-09-06 对齐批） */}
           <ExecutionModeSection gs={gs} set={set} />
 
           {/* 模型分层策略表（四角色自动路由；空 = 跟随主模型） */}

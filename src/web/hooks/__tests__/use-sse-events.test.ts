@@ -67,8 +67,8 @@ describe('增量事件路由与异常帧', () => {
     expect(spies.setStatus).toHaveBeenCalledWith('正在处理…');
     expect(spies.appendReasoning).toHaveBeenCalledWith('思考片段');
     // 任务 #2：tool_started 的 args（后端裁剪脱敏预览）透传到 store
-    expect(spies.toolStarted).toHaveBeenCalledWith('tl1', 'gen_image', '生成海报', { prompt: '赛博海报' });
-    expect(spies.toolFinished).toHaveBeenCalledWith('tl1', true, 900, '出图完成', undefined);
+    expect(spies.toolStarted).toHaveBeenCalledWith('tl1', 'gen_image', '生成海报', { prompt: '赛博海报' }, undefined);
+    expect(spies.toolFinished).toHaveBeenCalledWith('tl1', true, 900, '出图完成', undefined, undefined);
     expect(spies.docWritten).toHaveBeenCalledWith('剧本.md', 'turn-1');
     // guidance_injected：用户气泡上屏 + 排队条目出队
     expect(spies.addMessage).toHaveBeenCalledWith({ sender: 'user', text: '换个风格' });

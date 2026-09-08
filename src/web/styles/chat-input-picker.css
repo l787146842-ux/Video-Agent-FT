@@ -21,6 +21,36 @@
   .pill-chevron { flex-shrink: 0; opacity: 0.5; }
   html.light .pill-dropdown { box-shadow: 0 8px 24px color-mix(in srgb, var(--color-black) 12%, transparent); }
 
+  /* ===== 模型编辑面板（hover 编辑 → 侧边展开；用户裁决 2026-09-08） ===== */
+  .pill-option-row { display: flex; align-items: center; cursor: pointer; border-radius: 6px; font-size: var(--font-sm); }
+  .pill-option-row:hover { background: color-mix(in srgb, var(--color-info-strong) 10%, transparent); }
+  .pill-option-row.selected { background: color-mix(in srgb, var(--color-info-strong) 12%, transparent); }
+  .pill-option-row .pill-option-text { flex: 1; min-width: 0; padding: 7px 0 7px 10px; }
+  .pill-option-row.selected .pill-option-text { color: var(--color-info); }
+  /* 选中对勾跟随行内（原 ::after 挂在 .pill-option 上，行结构改为 row+编辑钮） */
+  .pill-option-row.selected .pill-option-text::after { content: '\2713'; font-size: var(--font-sm); font-weight: 700; color: var(--color-info); margin-left: 8px; }
+  /* 悬停才露编辑铅笔（触屏常显） */
+  .pill-edit-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-right: 4px; border: none; border-radius: 5px; background: transparent; color: var(--text-dim); cursor: pointer; opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s; flex-shrink: 0; }
+  .pill-option-row:hover .pill-edit-btn, .pill-edit-btn:focus-visible { opacity: 1; }
+  .pill-edit-btn:hover { background: color-mix(in srgb, var(--color-info-strong) 16%, transparent); color: var(--color-info); }
+  .pill-edit-btn.active { opacity: 1; color: var(--color-info); }
+  /* 编辑面板：主下拉旁边独立浮层（主下拉留原位，编辑面板右移展开） */
+  .pill-model-editor { left: 244px; width: 190px; max-width: 210px; max-height: 340px; }
+  .pill-model-editor-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px 2px; }
+  .pill-model-editor-title { font-size: var(--font-sm); font-weight: 700; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill-model-editor-close { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: none; border-radius: 5px; background: transparent; color: var(--text-dim); cursor: pointer; flex-shrink: 0; }
+  .pill-model-editor-close:hover { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 12%, transparent); }
+  .pill-editor-label { padding: 7px 10px 3px; font-size: var(--font-2xs); font-weight: 700; color: var(--text-dim); letter-spacing: 0.04em; }
+  /* 思考模式行：label + 右侧 toggle 开关（对齐参考样式） */
+  .pill-editor-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 10px 2px; }
+  .pill-editor-label.inline { padding: 0; }
+  .pill-toggle { position: relative; width: 30px; height: 17px; border: none; border-radius: 999px; background: color-mix(in srgb, var(--color-black) 45%, transparent); cursor: pointer; transition: background 0.15s; flex-shrink: 0; padding: 0; }
+  .pill-toggle.on { background: var(--color-success); }
+  .pill-toggle-knob { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--color-white); transition: transform 0.15s; box-shadow: 0 1px 3px color-mix(in srgb, var(--color-black) 30%, transparent); }
+  .pill-toggle.on .pill-toggle-knob { transform: translateX(13px); }
+  /* 推理档位：无标题直接列在思考开关下；思考关闭时整组置灰不可点 */
+  .pill-editor-levels.disabled { opacity: 0.45; pointer-events: none; }
+
   /* ===== Skill 选择器列表面板 ===== */
   .skill-picker { position: fixed; z-index: var(--z-picker-panel); width: 300px; max-width: calc(100vw - 24px); max-height: 360px; overflow-y: auto; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 6px; box-shadow: 0 12px 32px color-mix(in srgb, var(--color-black) 55%, transparent); }
   .skill-picker-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.12s; }
