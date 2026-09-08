@@ -58,7 +58,8 @@ def get_live_context(project_id: str) -> Optional[Dict[str, Any]]:
 
 
 # 每轮 token 分配账（system/history/state/tools/total/budget，状态注入占比纳入监控）。
-# 只内存不落盘，180s 有效期同 live 口径；context-usage 端点暴露。
+# 只内存不落盘；context-usage 端点暴露（v4-3 起取最近一次调用、不限时效——
+# 修复面板「构成为 null」不可查；ts 随记录携带供消费方判新旧）。
 _BUDGET: Dict[str, Dict[str, Any]] = {}
 
 
@@ -73,9 +74,9 @@ def record_budget_breakdown(project_id: str, breakdown: Dict[str, Any]) -> None:
 
 
 def get_budget_breakdown(project_id: str) -> Optional[Dict[str, Any]]:
-    """取最近一次分配账；过期或不存在返回 None。"""
+    """取最近一次分配账（不限时效）；不存在返回 None。"""
     rec = _BUDGET.get(project_id or "")
-    if not rec or time.time() - rec["ts"] > _VALID_SECS:
+    if not rec:
         return None
     return rec
 
@@ -122,16 +123,20 @@ def reset_degradations() -> None:
 # turn_executor 每次 LLM 调用后把供应商返回的 (prompt, cached) token 记入
 # 滚动窗口，汇聚为前缀缓存命中率；context-usage 端点暴露，段序手术
 # 的收益量化依据。只内存不落盘（运行期健康信号，同降级计数口径）。
-_CACHE_WINDOW = 50  # 滚动上限：防遥测自身膨胀，新样本挤掉最旧
+_CACHE_WINDOW = 20  # 滚动上限 = 展示口径「近 20 样本」（v4-3：全量均值会混入
+                    # 旧代码 0 命中样本拉低读数；完整历史归 cache_metrics.jsonl）
 # project_id → deque[(prompt_tokens, cached_tokens)]
 _CACHE_SAMPLES: Dict[str, Deque[Tuple[int, int]]] = {}
 
 
 def record_cache_usage(
     project_id: str, prompt_tokens: int, cached_tokens: int,
+    breakdown: Optional[Dict[str, Any]] = None,
 ) -> None:
     """记录一次 LLM 调用的 prompt/缓存命中 token（滚动窗口）。
 
+    breakdown（v4-3）：随样本快照的上下文分配账（70K 构成可离线核查），
+    仅进 jsonl 落盘，不参与内存命中率汇聚。
     端点未返回 usage（prompt_tokens=0）不入样：命中率汇聚不被无数据调用稀释；
     异常静默，遥测不阻断主流程。
     """
@@ -144,7 +149,8 @@ def record_cache_usage(
             return
         dq = _CACHE_SAMPLES.setdefault(project_id, deque(maxlen=_CACHE_WINDOW))
         dq.append((prompt_tokens, cached_tokens))
-        _persist_cache_sample(project_id, prompt_tokens, cached_tokens)
+        _persist_cache_sample(project_id, prompt_tokens, cached_tokens,
+                              breakdown=breakdown)
     except Exception as _e:
         logger.debug("[live_metrics] 缓存遥测忽略异常: {}", _e)
 
@@ -169,9 +175,13 @@ def _roll_cache_metrics_if_needed(incoming_bytes: int) -> None:
         logger.debug("[live_metrics] 缓存遥测滚动忽略异常: {}", _e)
 
 
-def _persist_cache_sample(project_id: str, prompt_tokens: int, cached_tokens: int) -> None:
+def _persist_cache_sample(
+    project_id: str, prompt_tokens: int, cached_tokens: int,
+    breakdown: Optional[Dict[str, Any]] = None,
+) -> None:
     """追加一条缓存命中样本到 cache_metrics.jsonl（路径归 utils/paths）。
 
+    breakdown 非 None 时随行内嵌（v4-3：70K 构成随样本落盘，离线可查）。
     守卫（均为策略开关，非并发控制）：cache_metrics_enabled（总开关）且
     log_file_enabled（「本进程写磁盘遥测」开关：测试/验收进程置 false）。
     两者只决定是否落盘，并不防止多进程同时写同一文件（本模块不做并发
@@ -182,12 +192,15 @@ def _persist_cache_sample(project_id: str, prompt_tokens: int, cached_tokens: in
         return
     try:
         CACHE_METRICS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        line = json.dumps({
+        record: Dict[str, Any] = {
             "ts": time.time(),
             "project_id": project_id,
             "prompt_tokens": prompt_tokens,
             "cached_tokens": cached_tokens,
-        }, ensure_ascii=False)
+        }
+        if breakdown:
+            record["breakdown"] = breakdown
+        line = json.dumps(record, ensure_ascii=False)
         _roll_cache_metrics_if_needed(len(line.encode("utf-8")) + 1)
         with CACHE_METRICS_FILE.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")

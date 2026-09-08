@@ -33,7 +33,11 @@ from src.video_agent.core.fc_feedback import (
     should_compress_feedback,
     strip_prior_feedback_images,
 )
-from src.video_agent.utils.live_metrics import record_cache_usage, record_live_context
+from src.video_agent.utils.live_metrics import (
+    get_budget_breakdown,
+    record_cache_usage,
+    record_live_context,
+)
 from src.video_agent.utils.live_metrics import record_budget_breakdown
 from src.video_agent.core import round_compact
 from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS, status_event
@@ -426,11 +430,15 @@ class TurnExecutor:
             plan_ms = (time.monotonic() - _t_plan) * 1000
 
         # P2-1 KV-cache 遥测：本轮命中样本入滚动窗口（汇聚命中率由
-        # live_metrics 承担，context-usage 端点暴露）；无 usage 时静默不入样
+        # live_metrics 承担，context-usage 端点暴露）；无 usage 时静默不入样。
+        # v4-3：随样本快照 breakdown 分配账（70K 构成随 cache_metrics 落盘）
+        _proj_id = getattr(getattr(self.planner, "state_manager", None),
+                           "active_project_id", "") or ""
         record_cache_usage(
-            getattr(getattr(self.planner, "state_manager", None), "active_project_id", "") or "",
+            _proj_id,
             getattr(response, "prompt_tokens", 0),
             getattr(response, "cached_tokens", 0),
+            breakdown=get_budget_breakdown(_proj_id),
         )
 
         # 检查点（工具批执行前）：模型已返回 tool_calls 但尚未执行，

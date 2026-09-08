@@ -168,6 +168,41 @@ def test_cache_stats_skips_no_usage_and_empty_project():
     live_metrics.reset_cache_stats()
 
 
+def test_cache_window_rolls_at_20():
+    """v4-3：窗口=20（展示口径「近 20 样本滚动」），新样本挤掉最旧。"""
+    live_metrics.reset_cache_stats()
+    for i in range(21):
+        live_metrics.record_cache_usage("proj-w", 1000, i)
+    stats = live_metrics.get_cache_stats("proj-w")
+    assert stats["samples"] == 20
+    assert stats["cached_tokens"] == sum(range(1, 21))
+    live_metrics.reset_cache_stats()
+
+
+def test_persist_cache_sample_includes_breakdown(tmp_path, monkeypatch):
+    """v4-3：breakdown 随 cache_metrics.jsonl 样本内嵌落盘（70K 构成可离线核查）。"""
+    import json as _json
+
+    from src.video_agent.config import settings as _s
+
+    target = tmp_path / "cache_metrics.jsonl"
+    monkeypatch.setattr(live_metrics, "CACHE_METRICS_FILE", target)
+    # frozen dataclass：显式 object.__setattr__ 开关，finally 复位
+    object.__setattr__(_s, "cache_metrics_enabled", True)
+    object.__setattr__(_s, "log_file_enabled", True)
+    try:
+        live_metrics.record_cache_usage(
+            "proj-bd", 1000, 600,
+            breakdown={"system": 12000, "history": 8000, "total": 70000})
+    finally:
+        object.__setattr__(_s, "cache_metrics_enabled", False)
+        object.__setattr__(_s, "log_file_enabled", False)
+    lines = target.read_text(encoding="utf-8").strip().splitlines()
+    rec = _json.loads(lines[-1])
+    assert rec["prompt_tokens"] == 1000 and rec["cached_tokens"] == 600
+    assert rec["breakdown"]["total"] == 70000
+
+
 # ---------- TurnExecutor：5 元组上抛 + 样本入窗 ----------
 
 
@@ -272,3 +307,15 @@ def test_budget_breakdown_records_tools_count_and_fp(svc):
     assert bd is not None
     assert bd["tools_count"] == 2
     assert isinstance(bd["tools_fp"], str) and len(bd["tools_fp"]) == 16
+
+
+def test_budget_breakdown_not_time_limited():
+    """v4-3：breakdown 取最近一次调用、不限时效（修复面板为 null 不可查）。"""
+    import time as _time
+
+    live_metrics.record_budget_breakdown("proj-old", {"total": 7})
+    live_metrics._BUDGET["proj-old"]["ts"] = _time.time() - 100000
+    try:
+        assert live_metrics.get_budget_breakdown("proj-old")["total"] == 7
+    finally:
+        live_metrics._BUDGET.pop("proj-old", None)

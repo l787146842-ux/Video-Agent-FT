@@ -395,8 +395,9 @@ async def get_context_usage(model: str = ""):
     est_tokens = int(live["est_tokens"]) if live else state_tokens + history_tokens
     # P2-1 KV-cache 遥测：最近 LLM 调用的前缀缓存命中汇聚（无样本时全 0）
     cache_stats = get_cache_stats(svc.active_project_id)
-    # 第 5 批（Q6）：每轮 token 分配账（180s 有效期内取 live 值，否则 null）；
-    # skill 份额按 system 段字符占比拆分（sections 遥测同批同源）
+    # 第 5 批（Q6）：每轮 token 分配账（v4-3 起取最近一次调用、不限时效，
+    # 修复面板 breakdown 为 null 不可查）；skill 份额按 system 段字符占比
+    # 拆分（sections 遥测同批同源）
     breakdown = get_budget_breakdown(svc.active_project_id)
     if breakdown:
         sections = get_sections(svc.active_project_id)
