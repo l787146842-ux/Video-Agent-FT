@@ -142,6 +142,21 @@ def strip_structure_prompt(ctx: GateContext, name: str, args: Dict[str, Any]) ->
     return True
 
 
+def unknown_tool_error(name: str, has_tool: Optional[Callable[[str], bool]] = None) -> Optional[str]:
+    """未注册工具结构化拒因（v4-2 解析层归位，话术唯一事实源）：
+    MCP 命名空间或按谓词判定已注册返回 None；未注册名返回纯事实 +
+    机械指引，禁原因推断（v4 话术原则）。解析层（fc_tool_runner
+    ._prepare_call）传 runner 实际装配的工具管理器判存，在闸机链之前
+    先行拒收；tool_risk_gate 尾部同名分支不传谓词（默认全局注册表）
+    保留为最后防线（fail-closed 不变）。"""
+    if is_mcp_tool(name):
+        return None
+    _has = has_tool or ToolManager.has_tool
+    if _has(name):
+        return None
+    return f"工具 '{name}' 不存在。请核对可用工具清单后重试。"
+
+
 def pause_window_error(name: str, paused_this_batch: bool) -> Optional[str]:
     """轮内暂停纪律闸：workflow_pause 后同批续执行拒收（暂停点必须真停，
     读只读工具与暂停工具本身豁免）——轮内暂停纪律否决权（执行路径内嵌）。"""
@@ -224,11 +239,7 @@ def tool_risk_gate(
         # 「工具不存在」——纯事实 + 机械指引，不走确认通道。
         # （v4-2：解析层已在闸机链之前先行拒收未注册名，本分支
         # 保留为最后防线，fail-closed 不变。）
-        if not is_mcp_tool(name) and not ToolManager.has_tool(name):
-            err = (
-                f"工具 '{name}' 不存在。"
-                "请核对可用工具清单后重试。"
-            )
+        err = unknown_tool_error(name) or err
     return err
 
 

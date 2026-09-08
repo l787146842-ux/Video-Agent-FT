@@ -214,6 +214,20 @@ class FCToolRunner:
             return False
         return getattr(tool, "parallel_safe", False) is True
 
+    def _has_tool(self, name: str) -> bool:
+        """runner 实际装配的工具管理器判存（v4-2 解析层未注册拒收用）：
+        管理器未提供 get_tool 成员查询（如最小执行桩）= 无法应答，
+        返回 True 交闸机兜底（fail-closed 不前移）；get_tool 对缺失
+        抛错 = 确定性不存在，返回 False 供解析层拒收。"""
+        getter = getattr(self.tool_manager, "get_tool", None)
+        if not callable(getter):
+            return True
+        try:
+            getter(name)
+            return True
+        except Exception:
+            return False
+
     async def _dispatch_tool(self, name: str, args: Dict[str, Any]) -> ToolResult:
         """闸机放行后的单调用派发（并行桶内亦经本路径）：
         含 read_skill 在内全部常规分发真执行（任务#12：短路已废）。"""
@@ -294,6 +308,17 @@ class FCToolRunner:
                 "summary": start_summary,
                 "args": args_preview,
             })
+
+        # 未注册名解析层归位（v4-2）：闸机链之前直接结构化拒收，
+        # 不经风险闸/注入/幂等；话术唯一源 = fc_gates.unknown_tool_error
+        # （按 runner 实际装配的管理器判存，测试桩同形）。
+        # 闸机层未注册兜底保留为最后防线（fail-closed 不变）。
+        _unknown = fc_gates.unknown_tool_error(name, has_tool=self._has_tool)
+        if _unknown is not None:
+            logger.info(f"[ToolRunner] 未注册工具拒收（解析层）: {name}")
+            c.gate_error = _unknown
+            c.result = ToolResult(success=False, error=_unknown)
+            return c
 
         # Provider 注入（I-3 声明驱动）：查工具 provider_kind 声明 → 走统一注入器
         # （core/provider_injection）；single/batch 等工具内部形态由工具自身消化，

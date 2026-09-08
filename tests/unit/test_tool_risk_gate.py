@@ -441,6 +441,38 @@ class TestImageGenerateSingleRiskGate:
         assert "高风险" not in err
         assert "拼写" not in err
 
+    def test_unknown_tool_rejected_at_parse_layer(self, monkeypatch):
+        """v4-2 解析层归位：未注册名在闸机链之前直接结构化拒收，
+        不经风险闸（run_gate_chain 不可达）、不派发执行；拒因纯事实。"""
+        import asyncio
+
+        from src.video_agent.core import fc_gates
+
+        def _boom(*_a, **_k):
+            raise AssertionError("未注册工具不应到达闸机链")
+
+        monkeypatch.setattr(fc_gates, "run_gate_chain", _boom)
+
+        class _TM:
+            def get_tool(self, _name):
+                raise KeyError("not found")  # 确定性应答：查无此工具
+
+            async def invoke_tool(self, _name, _args):
+                raise AssertionError("未注册工具不应派发执行")
+
+        runner = FCToolRunner(tool_manager=_TM())
+        monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {}))
+        response = ChatResponse(content="", tool_calls=[
+            {"id": "c1", "type": "function", "function": {
+                "name": "__not_registered__", "arguments": "{}"}},
+        ])
+        result = asyncio.run(runner.execute(response))
+        assert result.applied == 0
+        assert any(
+            t.get("name") == "__not_registered__" and t.get("ok") is False
+            and "不存在" in str(t.get("error") or "")
+            for t in result.tool_results)
+
 
 # ---------- 批 B 执行偏好：costly 声明轴 + 三档分流 ----------
 
