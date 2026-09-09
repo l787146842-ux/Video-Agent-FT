@@ -47,11 +47,9 @@ _GATE_MSG_FILE = "gates/messages.md"
 # 生效范围不用硬编码名单，改读生效审批档（risk 单轴推导，未注册→confirm）。
 CONFIRM_PRIMITIVE_COVERED_TOOLS = frozenset({"image_generate"})
 # 轮内暂停纪律豁免集：workflow_pause 请求确认后，同批仅读类工具与暂停工具本身可行
-# （计划清单细案批 1：plan_write 入集——「标完成→再暂停请示」是最高频收尾动作，
-# 拆两批纯浪费全价轮；对齐既有裁决「收尾工具可与 workflow_pause 同批」）
 PAUSE_WINDOW_READONLY = frozenset({
     "read_draft", "read_skill", "read_project_doc", "read_uploaded_doc",
-    "read_state_group", "workflow_pause", "plan_write",
+    "read_state_group", "workflow_pause",
 })
 
 # 分组类型边界：阶段 → 允许建组类别。与阶段前置闸分工：

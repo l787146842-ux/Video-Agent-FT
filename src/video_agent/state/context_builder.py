@@ -226,28 +226,7 @@ def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str
         # 剧本分析摘要（script_analyze 产出）：一句话总结 + 关键要点，
         # 拆解/提示词阶段主模型必须看到，否则会凭空概括
         "analysis": _build_analysis(raw_state),
-        # 计划清单（plan_write 产出，细案 §四）：紧凑全量（上限 24×40 字
-        # ≈1K 字符，不进 STAGE_STATE_FOCUS 裁剪表）；空清单不注入省字节。
-        # 轮首状态事件专属注入面——步间零注入（模型回看自己历史里的
-        # tool_call 参数即得进度，前缀 append-extension 性质保持）
-        "plan": _build_plan(raw_state),
     }
-
-
-def _build_plan(raw_state: Dict[str, Any]) -> Any:
-    """计划清单紧凑注入（细案 §四）：无清单 = {}（不注入，省字节）；
-    有清单只带 content/status 两键（updated_turn 等账房字段不进模型面）。"""
-    plan = raw_state.get("plan")
-    if not isinstance(plan, dict):
-        return {}
-    items = plan.get("items")
-    if not isinstance(items, list) or not items:
-        return {}
-    return [
-        {"content": str(it.get("content") or "")[:40],
-         "status": str(it.get("status") or "")}
-        for it in items if isinstance(it, dict)
-    ]
 
 
 def _group_pointers(raw_state: Dict[str, Any], cat_key: str) -> list:
@@ -479,8 +458,6 @@ _BOARD_PROJECTION_KEYS = (
     "project_id", "project_name",
     CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS,
     "assets", "documents", "usedSkills", "activeSkill", "chatMessages",
-    # 计划清单细案批 2 前端面板数据源（board-sync 逐键应用）
-    "plan",
 )
 
 
