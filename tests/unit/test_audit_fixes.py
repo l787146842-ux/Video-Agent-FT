@@ -5,18 +5,11 @@
 - P0-2 非流式 ChatResponse 补齐 image_urls/chat_inserts/action_log 字段
 - P0-3 PlannerContext 不再有 extra_system 空转字段
 - P1-4/P2-3 状态上下文出 system：history 尾部消息注入，system 字节跨步稳定
-- P1-5 旧轮 read_* 全文回喂压缩
 - P1-6 truncate_messages 增量减法语义不变
 - P2-9 快照深拷贝防回写 + 请求幂等槽位
 """
 import pytest
 
-from src.video_agent.core.fc_feedback import (
-    FEEDBACK_COMPRESSED,
-    FEEDBACK_MARKER,
-    compress_prior_feedback,
-    should_compress_feedback,
-)
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.token_budget import truncate_messages
 from src.video_agent.state.manager import StateManager
@@ -108,34 +101,8 @@ def test_planner_context_has_no_extra_system():
     assert "state_builder" in fields
 
 
-# ---------- P1-5：旧轮回喂压缩 ----------
-
-class TestFeedbackCompression:
-    MARKER = FEEDBACK_MARKER
-
-    def test_prior_feedback_compressed(self):
-        """多条回喂：除最近 keep_recent 条外压缩（批 3.4 近因保护，
-        默认 keep_recent=2 → 三条中最早一条被压缩）。"""
-        messages = [
-            {"role": "user", "content": "用户原始消息"},
-            {"role": "user", "content": self.MARKER + "\n- read_skill：……最早轮三万字全文……"},
-            {"role": "assistant", "content": "好的"},
-            {"role": "user", "content": self.MARKER + "\n- read_uploaded_doc：中间全文。"},
-            {"role": "assistant", "content": "继续"},
-            {"role": "user", "content": self.MARKER + "\n- read_project_doc：最新全文。"},
-        ]
-        compress_prior_feedback(messages)
-        assert messages[0]["content"] == "用户原始消息"
-        assert messages[1]["content"] == FEEDBACK_COMPRESSED
-        assert "三万字全文" not in str(messages[1]["content"])
-        # 最近两条回喂受近因保护，全文保留
-        assert "中间全文" in str(messages[3]["content"])
-        assert "最新全文" in str(messages[5]["content"])
-
-    def test_non_feedback_messages_untouched(self):
-        messages = [{"role": "user", "content": "（系统）第 1 轮的 2 个 Tool 已执行完毕"}]
-        compress_prior_feedback(messages)
-        assert messages[0]["content"].startswith("（系统）第 1 轮")
+# ---------- P1-5：旧轮回喂压缩（compress_prior_feedback 已随 v4 批 E3 退役：
+# 会话事件流 + 修剪器/阈值压缩覆盖其职责，退役记录见 CHANGELOG 2026-09-09 批 E3） ----------
 
 
 # ---------- P1-6：token 截断语义不变 ----------

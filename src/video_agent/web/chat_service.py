@@ -442,9 +442,15 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
                     kind=getattr(ctx.body, "system_action", "") or "",
                 )
                 # 会话事件流同点落流（v4 批 E1）：与 chatMessages 用户消息
-                # 同文同会话归属；截断重答（已落盘）不重复落流
+                # 同文同会话归属；turn/start 开启新轮（v4 批 E3）；
+                # 二期 G4：多模态轮落 content parts 原文（回放=请求逐字节）；
+                # 截断重答（已落盘）不重复落流
                 if ctx.use_studio_context:
-                    session_log.append_user_message(ctx.svc, _sess_cid, ctx.user_text)
+                    session_log.append_turn_start(ctx.svc, _sess_cid)
+                    _g4_content = (ctx.llm_user_content
+                                   if isinstance(ctx.llm_user_content, list)
+                                   else ctx.user_text)
+                    session_log.append_user_message(ctx.svc, _sess_cid, _g4_content)
             # 规格向导机械落盘投影管线已随用户裁决 2026-08-31 退役（D-08 清偿）
 
     # --- 解析中间面板选中的生图 provider + 画面比例（注入 image_generate 工具用）---
@@ -458,8 +464,8 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
     # 会话级 LLM 摘要 compaction 已随批 C1 退役（指令收拢与缓存稳定批）：
     # history 改线程全量装载后阈值必然命中 → 每请求都做 LLM 摘要且摘要文本
     # 逐请求漂移，成为新的前缀击穿源；context rot 职责由确定性截断链
-    # （truncate_history 位置无关截断 + round_compact/truncate_messages 预算
-    # 保险丝）承担。history_compact 模块保留（scope 域与函数级测试仍引用）。
+    # （truncate_history 位置无关截断 + 会话层阈值压缩/truncate_messages
+    # 预算保险丝）承担。history_compact 模块保留（scope 域与函数级测试仍引用）。
 
     # 单一候选：首候选即终选（原循环所有路径均在首轮 return，行为等价）
     ctx.cand_provider, ctx.cand_model = ctx.candidates[0]
@@ -813,8 +819,13 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
                     pause_answered=ns_pause_answered,
                     kind=getattr(body, "system_action", "") or "",
                 )
-                # 会话事件流同点落流（v4 批 E1，同流式轨口径）
-                session_log.append_user_message(svc, _ns_cid, user_text)
+                # 会话事件流同点落流（v4 批 E1，同流式轨口径；turn/start E3；
+                # 二期 G4 多模态轮落 parts 原文）
+                session_log.append_turn_start(svc, _ns_cid)
+                _ns_g4_content = (llm_user_content
+                                  if isinstance(llm_user_content, list)
+                                  else user_text)
+                session_log.append_user_message(svc, _ns_cid, _ns_g4_content)
             # （规格卡投影已随用户裁决 2026-08-31 退役，D-08 清偿）
 
     # --- 解析中间面板选中的生图 provider + 画面比例 ---

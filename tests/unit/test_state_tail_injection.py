@@ -1,18 +1,24 @@
 # -*- coding: utf-8 -*-
-"""P2-3（提示词大换序 A 案）：状态上下文出 system —— history 尾部消息（user 通道）注入。
+"""状态注入（二期 G3 事件化前身后世）：
 
-钉死两类核心断言：
-1. 「state 内容仍被模型可见」：状态 JSON 经 history 最后一条消息注入，
-   adapter 实际收到的消息末尾可见完整状态（移的是位置/通道，不是删内容）；
-2. 「system 字节在 state 变化时保持稳定」：状态变化只改尾部消息，
-   system 本体（含 Skill 块）逐字节不变——供应商前缀缓存命中前提。
+钉死核心断言（新语义）：
+1. 「state 内容仍被模型可见」：轮首状态事件（build_state_tail_message
+   全家）经 planner._build_and_log_state_event 构建 + 落 source=state 事件，
+   run_agent_loop 组装时追加在 user 消息之后（与日志 seq 同序）；
+2. 「system 字节在 state 变化时保持稳定」：状态变化只改状态事件正文，
+   system 本体逐字节不变——供应商前缀缓存命中前提。
 
-另钉：预算保险丝迁移（截断后仍超预算 → 尾部状态消息降级重建）；
-非工作台上下文/空状态不注入（零增量）。
+（二期 G3 退役：每步尾部消息装配 _state_tail_message / _degrade_state_tail
+ ——状态注入改轮首事件一次落流，轮内步间零注入，模型按需调
+ read_state_group；退役记录见 CHANGELOG 2026-09-09 二期批 G3。）
+
+另钉：非工作台上下文/空状态不注入（零增量）；偏好/模式 note 随状态
+事件正文注入；降级引导段按客观标志位独立成段。
 """
 import pytest
 
 from src.video_agent.adapters.base_chat import BaseChatAdapter, ChatResponse
+from src.video_agent.core.agent_loop import run_agent_loop
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.state.manager import StateManager
 
@@ -45,69 +51,135 @@ def svc(tmp_path):
 
 
 def _executor(svc, adapter=None):
-    planner = Planner(llm_adapter=adapter or _EchoAdapter())
+    planner = Planner(state_manager=svc, llm_adapter=adapter or _EchoAdapter())
     return planner, planner._turn_executor
 
 
-# ---------- 断言类一：state 内容仍被模型可见 ----------
+# ---------- 断言类一：state 内容仍被模型可见（G3 事件化） ----------
 
-async def test_state_visible_to_model_via_tail_message(svc):
-    """状态 JSON 作为 history 最后一条消息到达模型（近生成端）"""
-    planner, executor = _executor(svc)
-    executor._context = PlannerContext(
-        use_studio_context=True, state_json='{"ke": "主角"}')
-    adapter = planner.llm_adapter
-    await executor.llm_call("SYSTEM-PREFIX", [{"role": "user", "content": "你好"}])
-    msgs = adapter.seen[0]
-    assert msgs[0]["role"] == "system" and msgs[0]["content"] == "SYSTEM-PREFIX"
-    assert msgs[-1]["role"] == "user"
-    assert "当前工作台状态 JSON 如下" in msgs[-1]["content"]
-    assert '{"ke": "主角"}' in msgs[-1]["content"]
+async def test_state_visible_to_model_via_state_event(svc):
+    """状态事件构建 + 落流（planner 轮始单一落点）：正文含状态 JSON
+    全家，日志落 source=state 事件（dsh inject 同位）。"""
+    planner, _ = _executor(svc)
+    ctx = PlannerContext(
+        use_studio_context=True, state_builder=lambda: '{"ke": "主角"}',
+        session_conversation_id="conv-g3")
+    content = planner._build_and_log_state_event(ctx)
+    assert "当前工作台状态 JSON 如下" in content
+    assert '{"ke": "主角"}' in content
+    # 落流：source=state 的 user/message 事件
+    from src.video_agent.core import session_log
+    events = session_log.load_events(svc, "conv-g3")
+    state_events = [e for e in events if e.get("type") == "user/message"
+                    and e.get("source") == session_log.SOURCE_STATE]
+    assert len(state_events) == 1 and state_events[0]["content"] == content
+    session_log._SEQ_CACHE.clear()
 
 
-async def test_state_refreshed_between_steps(svc):
-    """多步循环按轮刷新：状态变化后下一次调用尾部消息即最新状态"""
-    planner, executor = _executor(svc)
+async def test_state_event_appended_after_user_in_messages(svc):
+    """run_agent_loop 组装：状态事件正文追加在 user 消息之后（与日志
+    seq 同序 user → state → steps；回放=请求逐字节，缓存结构性保证）。"""
+    from src.video_agent.core.action_executor import StateOperationExecutor
+    seen = []
+
+    async def llm(system_prompt, messages, stream_hook=None):
+        seen.append(list(messages))
+        return ("好的，收到。", "stop", 0, 0.0, {})
+
+    result = await run_agent_loop(
+        "开工", llm_call=llm, context_builder=lambda: "ctx",
+        executor=StateOperationExecutor(svc), history=[],
+        state_event_content="当前工作台状态 JSON 如下\n\n{\"ke\": 1}")
+    assert result.steps == 1
+    msgs = seen[0]
+    assert [m["role"] for m in msgs] == ["user", "user"]
+    assert msgs[0]["content"] == "开工"
+    assert "当前工作台状态 JSON" in msgs[1]["content"]
+
+
+async def test_no_state_event_content_zero_injection(svc):
+    """状态事件为空串：messages 只有 user 消息（零注入零增量）。"""
+    from src.video_agent.core.action_executor import StateOperationExecutor
+    seen = []
+
+    async def llm(system_prompt, messages, stream_hook=None):
+        seen.append(list(messages))
+        return ("好", "stop", 0, 0.0, {})
+
+    await run_agent_loop(
+        "x", llm_call=llm, context_builder=lambda: "ctx",
+        executor=StateOperationExecutor(svc), history=[],
+        state_event_content="")
+    assert seen[0] == [{"role": "user", "content": "x"}]
+
+
+async def test_state_refreshed_per_turn(svc):
+    """按轮刷新：每轮轮首构建一次状态事件（原每步刷新语义随每步装配退役），
+    状态变化反映在下一轮的状态事件正文。"""
+    planner, _ = _executor(svc)
     box = {"state": '{"version": 1}'}
-    executor._context = PlannerContext(
-        use_studio_context=True, state_builder=lambda: box["state"])
-    adapter = planner.llm_adapter
-    msgs1 = [{"role": "user", "content": "开工"}]
-    msgs2 = [{"role": "user", "content": "继续"}]
-    await executor.llm_call("S", msgs1)
+    ctx = PlannerContext(use_studio_context=True, state_builder=lambda: box["state"])
+    first = planner._build_and_log_state_event(ctx)
     box["state"] = '{"version": 2}'
-    await executor.llm_call("S", msgs2)
-    first, second = adapter.seen
-    assert '"version": 1' in first[-1]["content"]
-    assert '"version": 2' in second[-1]["content"]
-    # 入参 messages 不被注入污染（状态消息只存在于当次请求，不入持久化历史）
-    assert msgs1 == [{"role": "user", "content": "开工"}]
-    assert msgs2 == [{"role": "user", "content": "继续"}]
+    ctx2 = PlannerContext(use_studio_context=True, state_builder=lambda: box["state"])
+    second = planner._build_and_log_state_event(ctx2)
+    assert '"version": 1' in first and '"version": 2' in second
+    assert first != second
+
+
+def test_no_state_event_without_studio_context(svc):
+    """非工作台上下文：构建返回空串（零注入）；llm_call 不再装配尾部消息"""
+    planner, _ = _executor(svc)
+    ctx = PlannerContext(use_studio_context=False, state_json='{"a":1}')
+    assert planner._build_and_log_state_event(ctx) == ""
+
+
+async def test_no_tail_message_when_state_empty(svc):
+    """空状态：构建返回空串（不制造注入）"""
+    planner, _ = _executor(svc)
+    ctx = PlannerContext(use_studio_context=True, state_json="")
+    # state_builder 为 None → 构建跳过（空状态零注入）
+    assert planner._build_and_log_state_event(ctx) == ""
+
+
+def test_state_event_fails_open_without_builder(svc):
+    """构建器缺失/异常：返回空串不抛（本轮零注入，回落语义）"""
+    planner, _ = _executor(svc)
+    ctx = PlannerContext(use_studio_context=True)  # state_builder=None
+    assert planner._build_and_log_state_event(ctx) == ""
+    def _boom():
+        raise RuntimeError("状态构建故障")
+    ctx2 = PlannerContext(use_studio_context=True, state_builder=_boom)
+    assert planner._build_and_log_state_event(ctx2) == ""
 
 
 # ---------- 断言类二：system 字节在 state 变化时保持稳定 ----------
 
 async def test_system_bytes_stable_when_state_changes(svc):
-    """状态只改尾部消息：system 本体逐字节稳定（含协议/目录等稳定前缀），
-    且状态不再出现在 system 段"""
+    """状态变化只改状态事件正文：system 本体逐字节稳定，llm_call 路径
+    零注入（状态已随 messages 进来，executor 不再装配尾部消息）"""
     planner, executor = _executor(svc)
-    box = {"state": '{"version": 1}'}
     executor._context = PlannerContext(
-        use_studio_context=True, state_builder=lambda: box["state"])
+        use_studio_context=True, state_builder=lambda: '{"version": 1}')
     adapter = planner.llm_adapter
-    await executor.llm_call("SYSTEM-BODY", [{"role": "user", "content": "a"}])
-    box["state"] = '{"version": 2, "extra": "x"}'
-    await executor.llm_call("SYSTEM-BODY", [{"role": "user", "content": "b"}])
+    await executor.llm_call("SYSTEM-BODY", [
+        {"role": "user", "content": "a"},
+        {"role": "user", "content": "当前工作台状态 JSON 如下\n\n{\"version\": 1}"}])
+    executor._context.state_builder = lambda: '{"version": 2, "extra": "x"}'
+    await executor.llm_call("SYSTEM-BODY", [
+        {"role": "user", "content": "a"},
+        {"role": "user", "content": "当前工作台状态 JSON 如下\n\n{\"version\": 2}"}])
     first, second = adapter.seen
     assert first[0]["content"] == second[0]["content"] == "SYSTEM-BODY"
-    assert "version" not in first[0]["content"]
-    # 尾部消息承载差异（前缀稳定、变化收敛在生成端附近）
+    # 状态差异由消息区承载（system 前缀稳定）
     assert first[-1]["content"] != second[-1]["content"]
+    # executor 不再追加任何尾部消息（G3：装配退役）
+    assert len(first) == 3 and len(second) == 3
 
 
 def test_system_prompt_stable_across_state_rebuilds(svc):
     """prompt_builder 层：状态变化两次构建 system 逐字节一致；
-    状态经尾部消息可见（两类断言的组装层镜像）"""
+    状态经状态事件正文可见（两类断言的组装层镜像）"""
     planner, _ = _executor(svc)
     box = {"state": '{"a": 1}'}
     ctx = PlannerContext(use_studio_context=True, state_builder=lambda: box["state"])
@@ -125,67 +197,23 @@ async def test_no_tail_message_without_studio_context(svc):
     executor._context = PlannerContext(use_studio_context=False, state_json='{"a":1}')
     adapter = planner.llm_adapter
     await executor.llm_call("S", [{"role": "user", "content": "你好"}])
-    assert len(adapter.seen[0]) == 2  # 仅 system + user，未注入尾部消息
+    assert len(adapter.seen[0]) == 2  # 仅 system + user，零注入
 
 
-async def test_no_tail_message_when_state_empty(svc):
-    planner, executor = _executor(svc)
-    executor._context = PlannerContext(use_studio_context=True, state_json="")
-    adapter = planner.llm_adapter
-    await executor.llm_call("S", [{"role": "user", "content": "你好"}])
-    assert len(adapter.seen[0]) == 2
+# （test_no_tail_message_when_context_missing / test_degrade_state_tail_*
+#   已随二期 G3 退役删除：_state_tail_message / _degrade_state_tail 整体
+#   退役，状态注入改轮首事件一次落流，预算保险由 truncate_messages 兜底）
 
 
-def test_no_tail_message_when_context_missing(svc):
-    """直驱自洽：未装配 context 时尾部消息组装返回空串（不抛异常）；
-    llm_call 本体仍要求调用方提供 context（既有直驱契约不变）"""
-    _, executor = _executor(svc)
-    assert executor._context is None
-    assert executor._state_tail_message() == ""
-
-
-# ---------- 预算保险丝迁移：尾部状态消息降级重建 ----------
-
-def test_degrade_state_tail_when_over_budget(svc):
-    """截断后仍超预算 → 尾部状态消息用降级状态（只留组标题/计数）重建"""
-    planner, executor = _executor(svc)
-    executor._context = PlannerContext(
-        use_studio_context=True,
-        state_json='{"full": "大状态"}',
-        degraded_state_builder=lambda: '{"degraded": true}',
-    )
-    tail = planner._prompt_builder.build_state_tail_message(executor._context)
-    msgs = [
-        {"role": "system", "content": "S"},
-        {"role": "user", "content": "你好"},
-        {"role": "user", "content": tail},
-    ]
-    out = executor._degrade_state_tail(msgs, max_tokens=1, state_tail=tail)
-    assert '{"degraded": true}' in out[-1]["content"]
-    assert '{"full": "大状态"}' not in out[-1]["content"]
-
-
-def test_degrade_state_tail_noop_within_budget(svc):
-    """未超预算不重建（正常路径零开销语义）"""
-    planner, executor = _executor(svc)
-    executor._context = PlannerContext(
-        use_studio_context=True,
-        state_json='{"full": "大状态"}',
-        degraded_state_builder=lambda: '{"degraded": true}',
-    )
-    tail = planner._prompt_builder.build_state_tail_message(executor._context)
-    msgs = [
-        {"role": "system", "content": "S"},
-        {"role": "user", "content": tail},
-    ]
-    out = executor._degrade_state_tail(msgs, max_tokens=10_000_000, state_tail=tail)
-    assert out[-1]["content"] == tail
+# （test_degrade_state_tail_noop_within_budget / test_degrade_state_tail_noop_without_degraded_builder
+#   已随二期 G3 退役删除：_degrade_state_tail 整体退役）
 
 
 # ---------- 批 10：执行偏好注入 + 工具边界注释每步刷新（V6 计划） ----------
 
 class TestExecutionPrefNoteInjection:
-    """偏好进 Agent 上下文（外部标杆同款）：轮始按档位签发，经尾部消息每步可见。"""
+    """偏好进 Agent 上下文（外部标杆同款）：轮始按档位签发，随轮首状态
+    事件正文注入（G3：经 build_state_tail_message 全家）。"""
 
     def test_note_lands_in_tail_message(self, svc):
         planner, executor = _executor(svc)
@@ -326,20 +354,6 @@ class TestStageNoteRefreshedPerStep:
         svc.state_dict["keyElements"] = [{"id": "g1", "title": "主角", "drafts": []}]
         planner._build_system_prompt(ctx)
         assert planner._excluded_tools == excluded_empty
-
-
-def test_degrade_state_tail_noop_without_degraded_builder(svc):
-    """无降级构建器时维持原消息（保险丝缺省不阻断）"""
-    planner, executor = _executor(svc)
-    executor._context = PlannerContext(
-        use_studio_context=True, state_json='{"full": "大状态"}')
-    tail = planner._prompt_builder.build_state_tail_message(executor._context)
-    msgs = [
-        {"role": "system", "content": "S"},
-        {"role": "user", "content": tail},
-    ]
-    out = executor._degrade_state_tail(msgs, max_tokens=1, state_tail=tail)
-    assert out[-1]["content"] == tail
 
 
 # ---------- P3 载体改造：降级引导段按客观标志位独立成段注入 ----------

@@ -8,12 +8,7 @@ import pytest
 
 from src.video_agent.core import prompt_builder as pb_module
 from src.video_agent.core.planner import PlannerContext
-from src.video_agent.core.fc_feedback import (
-    FEEDBACK_COMPRESSED,
-    FEEDBACK_MARKER,
-    format_tool_results,
-    should_compress_feedback,
-)
+from src.video_agent.core.fc_feedback import FEEDBACK_MARKER, format_tool_results
 from src.video_agent.utils import prompts as prompts_mod
 from src.video_agent.utils.prompts import load_prompt, load_prompt_section
 
@@ -61,8 +56,8 @@ class TestPromptLoader:
         assert load_prompt_section("planner/feedback.md", "FEEDBACK_MARKER") == (
             "（系统）本轮调用的工具已执行完毕，结果如下："
         )
-        assert "此前轮次工具读回的文档全文已从上下文移除" in load_prompt_section(
-            "planner/feedback.md", "FEEDBACK_COMPRESSED"
+        assert "已从上下文移除" in load_prompt_section(
+            "planner/feedback.md", "FEEDBACK_IMAGES_STRIPPED"
         )
 
     def test_load_prompt_section_missing_returns_empty(self):
@@ -94,9 +89,12 @@ class TestFeedbackTemplates:
     def test_feedback_marker_from_external_file(self):
         """回喂模板与 feedback.md 分节同源（外置生效，非兜底漂移）"""
         assert FEEDBACK_MARKER == load_prompt_section("planner/feedback.md", "FEEDBACK_MARKER")
-        assert FEEDBACK_COMPRESSED == load_prompt_section(
-            "planner/feedback.md", "FEEDBACK_COMPRESSED"
-        )
+        assert load_prompt_section(
+            "planner/feedback.md", "COMPACTION_PREAMBLE"
+        ), "压缩检查点前导分节应在场（v4 批 E3）"
+        assert load_prompt_section(
+            "planner/feedback.md", "COMPACTION_INSTRUCTION"
+        ), "压缩指令分节应在场（v4 批 E3）"
 
     def test_read_result_note_retired(self):
         """语气转化：READ_RESULT_NOTE 已退役，回喂不再注入引导说教。
@@ -121,17 +119,5 @@ class TestFeedbackTemplates:
             "语气转化：IMAGE_RESULT_NOTE 已退役"
 
     # test_skill_reminder_from_external_file 已随 S09 退役删除（用户裁决 2026-09-02）
-
-    def test_compress_threshold_follows_model_window(self):
-        """窗口感知压缩：阈值随传入窗口变化（814R1 恢复批次6 X1 语义）"""
-        from src.video_agent.config import settings
-
-        ratio = settings.feedback_compress_ratio
-        if ratio >= 1.0 or ratio <= 0.0:
-            pytest.skip("默认比例不在 (0,1) 区间，无法构造边界")
-        small_window = 1000
-        big_window = 10_000_000
-        # tiktoken 可用时估算更小，取足够长的内容确保越过小窗口阈值
-        msgs = [{"role": "user", "content": "x" * 60000}]
-        assert should_compress_feedback(msgs, small_window) is True
-        assert should_compress_feedback(msgs, big_window) is False
+    # test_compress_threshold_follows_model_window 已随 v4 批 E3 退役删除
+    #（should_compress_feedback 退役：会话事件流 + 修剪器/阈值压缩覆盖其职责）

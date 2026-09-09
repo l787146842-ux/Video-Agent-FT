@@ -190,8 +190,9 @@ async def truncate_resend(body: TruncateResendRequest):
         user_text = str(entry.get("text") or "")
         # 会话事件流同点回退（v4 批 E1，细案 D6）：截断重答 = log/rewind 标记
         # 忽略被重答轮事件 + 编辑后正文以新 user/message 落流（标记非改写，
-        # 已提交事件保持原样；落流失败静默，不阻断重答）
+        # 已提交事件保持原样；落流失败静默，不阻断重答）；turn/start 开启新轮
         if session_log.rewind_last_turn(svc, target_conv):
+            session_log.append_turn_start(svc, target_conv)
             session_log.append_user_message(svc, target_conv, user_text)
         req = agent_routes.ChatRequest(
             message=user_text,

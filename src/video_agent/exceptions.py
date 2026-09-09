@@ -66,6 +66,18 @@ class AdapterError(VideoAgentError):
         self.kind = kind
 
 
+# 上下文窗口超长的 kind 取值（常量归 exceptions：core 侧会话层压缩的
+# 溢出恢复判定依赖它，而分类动作发生在 adapters/errors.py，
+# 依赖方向 adapters → core 不可反向）
+KIND_CONTEXT_OVERFLOW = "context_overflow"
+
+
+def is_context_overflow_error(exc: BaseException) -> bool:
+    """异常是否为供应商确认的上下文超长（dsh CONTEXT_WINDOW_EXCEEDED 分类；
+    会话层压缩溢出恢复（session_log.compact_pass force）的唯一触发判定）。"""
+    return isinstance(exc, AdapterError) and exc.kind == KIND_CONTEXT_OVERFLOW
+
+
 class GenerationError(VideoAgentError):
     """生成管线失败（配置缺失、供应商无返回等）"""
     status_code = 502

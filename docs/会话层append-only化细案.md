@@ -1,6 +1,6 @@
-# 主刀细案：会话层 append-only 化（v4 方案 §主刀，送审稿）
+# 主刀细案：会话层 append-only 化（v4 方案 §主刀）
 
-> 状态：**送审待批，未动工**。批准后按 §十 分批执行。
+> 状态：**已获批并全量落地（2026-09-09，批 E1/E2/E3）**。实现 = `core/session_log.py`；批次留痕见 `CHANGELOG.md` 2026-09-09「会话层 append-only 化批」；§九 全量验收（命中率实测/增长曲线/断轮恢复）待实跑，`truncate_history` 退役裁决随验收。
 > 主抄源 = dsh（github.com/deepseek-ai/deepseek-harness，MIT，master）；本细案所有「原样」参数均对照其 `compaction-basic` / `compaction-tool-result-pruner` / `session` 三包文档逐字核对。
 
 ## 一、问题与目标（为何动结构）

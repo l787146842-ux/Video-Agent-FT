@@ -2,16 +2,11 @@
 
 覆盖：
 - ① read_uploaded_doc / read_project_doc 分段续读（超长文档不再丢尾部）
-- ③ 旧轮 read_* 回喂惰性压缩（短对话保全文，逼近预算才压缩）
+（③ 旧轮回喂惰性压缩已随 v4 批 E3 退役：会话事件流 + 修剪器/阈值压缩
+  覆盖其职责，退役记录见 CHANGELOG 2026-09-09 批 E3）
 """
 import pytest
 
-from src.video_agent.core.fc_feedback import (
-    FEEDBACK_COMPRESSED,
-    FEEDBACK_MARKER,
-    compress_prior_feedback,
-    should_compress_feedback,
-)
 from src.video_agent.core.planner import Planner
 from src.video_agent.state.manager import StateManager
 from src.video_agent.tools.document_tools import (
@@ -78,26 +73,3 @@ class TestChunkedReadProjectDoc:
         assert r1.success and "start=30000" in r1.data["content"]
         r2 = await tool.aexecute(ReadProjectDocInput(name="Final_Video_Spec.md", start=30000))
         assert r2.success and "D" * 100 in r2.data["content"]
-
-
-# ---------- ③ 惰性压缩决策 ----------
-
-class TestLazyFeedbackCompression:
-    def test_small_conversation_keeps_full_text(self):
-        """短对话远未达预算：不压缩，保质量"""
-        msgs = [{"role": "user", "content": "短消息"}]
-        assert should_compress_feedback(msgs) is False
-
-    def test_huge_conversation_triggers_compression(self):
-        """逼近 token 预算（默认预算 128000*0.8 的 50% ≈ 51200 token）：触发压缩"""
-        msgs = [{"role": "user", "content": "x" * 600000}]  # tiktoken≈75000/启发式≈150000 token，双估算器都超阈
-        assert should_compress_feedback(msgs) is True
-
-    def test_compression_still_works_when_triggered(self):
-        """触发压缩后旧轮全文确实被替换为占位（近因保护下用 keep_recent=0
-        表达「全部视为旧轮」的极端压力口径）。"""
-        msgs = [
-            {"role": "user", "content": FEEDBACK_MARKER + "\n- read_skill：三万字全文"},
-        ]
-        compress_prior_feedback(msgs, keep_recent=0)
-        assert msgs[0]["content"] == FEEDBACK_COMPRESSED

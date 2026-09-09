@@ -1,8 +1,10 @@
 """FC 工具结果回喂家族。
 
 承载：工具结果回喂消息的格式化（read_* 全文「借阅归还」、执行器 detail 随喂、
-view_storyboard_media 多模态回喂）与旧轮回喂的惰性压缩/图片剥离（token 治理）
+view_storyboard_media 多模态回喂）与旧轮图片剥离（vision token 治理）
 + 已投影工具结果的消化（tool-result 消化杠杆）+ FC 工具中文简述。
+（旧轮回喂惰性压缩 should/compress_prior_feedback 已随 v4 批 E3 退役：
+会话事件流 + 修剪器/阈值压缩覆盖其职责。）
 
 fc_tool_runner.py 与本模块消费方一律直连本模块（re-export 壳已随批次 E3 收敛删除）。
 """
@@ -12,9 +14,7 @@ from typing import Any, Dict, List, Union
 
 from loguru import logger
 
-from src.video_agent.config import settings
 from src.video_agent.core.context_prune import prune_tool_feedback
-from src.video_agent.core.token_budget import estimate_messages_tokens
 from src.video_agent.utils.prompts import load_prompt_section
 
 # 回喂模板外置：prompts/planner/feedback.md 为单一事实源（M-2 同口径：
@@ -35,11 +35,8 @@ def _load_feedback_section(key: str, minimal: str) -> str:
 
 # 回喂消息的识别前缀（与 format_tool_results 首行保持一致）
 FEEDBACK_MARKER = _load_feedback_section("FEEDBACK_MARKER", "（系统）本轮工具执行结果：")
-# 旧轮回喂被压缩后的占位文案
-FEEDBACK_COMPRESSED = _load_feedback_section(
-    "FEEDBACK_COMPRESSED", "（系统）旧轮工具回喂已压缩。")
-# 旧轮图片剥离后的占位说明（feedback.md::FEEDBACK_IMAGES_STRIPPED，
-# 与 FEEDBACK_COMPRESSED 对称：只陈述客观事实 + 可执行恢复路径）
+# 旧轮图片剥离后的占位说明（feedback.md::FEEDBACK_IMAGES_STRIPPED：
+# 只陈述客观事实 + 可执行恢复路径）
 FEEDBACK_IMAGES_STRIPPED = _load_feedback_section(
     "FEEDBACK_IMAGES_STRIPPED", "（系统）此前轮次加载的故事板图片已从上下文移除。")
 # read_* 全文超单次回喂总量上限时的客观数据行后缀
@@ -107,49 +104,6 @@ _READ_SKILL_SECTION_DUP_POINTER = _load_feedback_section(
 # 历史章节全文行识别：- read_skill 执行成功，全文如下（skill=X，section=Y）：
 _READ_SKILL_SEEN_RE = re.compile(
     r"^- read_skill 执行成功，全文如下（skill=(?P<name>.+?)，section=(?P<section>.+?)）：")
-
-
-def should_compress_feedback(messages: List[Dict[str, Any]], context_window: int = 0) -> bool:
-    """惰性压缩决策：消息估算总量达到 token 预算的 feedback_compress_ratio
-    才压缩旧轮全文回喂；未达到则保留全文保质量（短对话零损失）。
-
-    预算按当前模型窗口计算（传 context_window），
-    未传/传 0 回落全局 settings.context_window_size（兼容旧调用）。"""
-    ratio = min(max(settings.feedback_compress_ratio, 0.0), 1.0)
-    if ratio >= 1.0:
-        return False
-    window = context_window if context_window and context_window > 0 else settings.context_window_size
-    budget = int(window * settings.token_budget_ratio)
-    threshold = int(budget * ratio)
-    return estimate_messages_tokens(messages) >= threshold
-
-
-def compress_prior_feedback(
-    messages: List[Dict[str, Any]], keep_recent: int = 2,
-) -> None:
-    """把 messages 里已有的工具结果回喂消息压缩为占位文案（原地修改）。
-
-    时机：新一次回喂 append 之前调用，因此现存的所有回喂消息都属「旧轮」。
-    read_* 全文只保留最近 keep_recent 条（近因保护：与
-    digest_projected_tool_results 的 keep_recent 语义对齐），更早的以一句话
-    占位——约束效力靠提示词延续，全文本身已写入草稿/文档，需要时模型
-    可重新 read。
-    多模态回喂（含图片 parts 的 list content）同样压成纯文本占位，
-    旧轮图片不再占用 vision token。
-    """
-    fb_idx = [
-        i for i, m in enumerate(messages)
-        if m.get("role") == "user" and (
-            (isinstance(m.get("content"), str)
-             and str(m["content"]).startswith(FEEDBACK_MARKER))
-            or (isinstance(m.get("content"), list)
-                and next((p.get("text", "") for p in m["content"]
-                          if isinstance(p, dict) and p.get("type") == "text"),
-                         "").startswith(FEEDBACK_MARKER)))
-    ]
-    eligible = fb_idx[:-keep_recent] if keep_recent > 0 else fb_idx
-    for i in eligible:
-        messages[i]["content"] = FEEDBACK_COMPRESSED
 
 
 def digest_projected_tool_results(

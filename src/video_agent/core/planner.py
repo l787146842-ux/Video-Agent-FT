@@ -51,6 +51,7 @@ from src.video_agent.core.planner_output import append_costly_retry_action, asse
 from src.video_agent.core import stage_probes
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import fc_response, planner_gate_session, planner_triage
+from src.video_agent.core import session_log
 # 单轮执行协作臂：单轮执行 + FC 响应消费 + 回喂治理 + 上下文预算装配
 from src.video_agent.core.turn_executor import TurnExecutor
 from src.video_agent.utils.live_metrics import record_degradation
@@ -159,14 +160,17 @@ class PlannerContext:
     # 纪律提示段（prompts/planner/adjust.md）据此注入；
     # 内容恒定不嵌目标编号（保前缀缓存），目标信息由状态裁剪面携带。
     adjust_scope: Dict[str, Any] = field(default_factory=dict)
-    # turn_budget 客观步数（P3 状态即数据）：(current_step, max_steps)
-    # 由 turn_executor 每步更新，经状态尾部消息注入给模型；
-    # None = 不注入（首轮/非循环路径）。
-    step_info: Optional[tuple] = None
+    # （step_info 已随二期 G3 退役删除：状态尾部步数行每步必变是强制
+    # 前缀失效源；轮次信息由 STEP_FEEDBACK「第 N 轮」承载）
     # 会话事件流归属（v4 主刀批 E1）：本请求的 conversation_id（可空=活跃会话，
     # 落流时按 target_chat_messages 同序解析）；空 + 非 studio 上下文 = 不落流。
     # LLM 历史唯一事实源 = 事件流（docs/会话层append-only化细案.md D3/D5）。
     session_conversation_id: str = ""
+    # 轮首状态事件正文（二期 G3，dsh inject 同位）：handle_message 轮始构建
+    # （build_state_tail_message 全家）并落 source=state 事件后存此；
+    # run_agent_loop 组装 messages 时追加在 user 消息之后（与日志 seq 同序，
+    # 回放=请求逐字节）。空串 = 本轮无状态注入（非 studio / 构建失败回落）。
+    state_event_content: str = ""
 
 
 @dataclass
@@ -461,6 +465,11 @@ class Planner:
         # 执行模式注入（2026-09-06）：轮始按档位签发（ai_decide 默认档 = 空串
         # 不注入；key_steps_confirm/pause_all 两档另有轮末阶段闸机械拦停兜底）
         context.execution_mode_note = self._load_execution_mode_note()
+        # 状态注入事件化（二期 G3，dsh inject 同位）：轮首构建状态正文
+        # （状态 JSON + 降级引导 + 偏好/模式 note + 进度 + 草稿指针）落
+        # source=state 事件，轮内步间零注入（尾部消息每步重建退役）；
+        # 需要全量时模型调 read_state_group 按需读（外部标杆转录同形态）
+        context.state_event_content = self._build_and_log_state_event(context)
         # 三通道分离 C：轮始重置 FC runner 跨批跟踪（阶段边界只认本轮）
         self._fc_runner.reset_turn_tracking()
         # 会话级推理档位（""=原生；主模型调用透传，端点不认则静默忽略）
@@ -603,6 +612,9 @@ class Planner:
             stop_scope=context.stop_scope,
             # 会话事件流归属（v4 批 E1）：agent_loop FC 镜像点落流用
             session_conversation_id=str(getattr(context, "session_conversation_id", "") or ""),
+            # 轮首状态事件正文（二期 G3）：组装时追加在 user 消息后
+            # （与日志 seq 同序，回放=请求逐字节）
+            state_event_content=str(getattr(context, "state_event_content", "") or ""),
         )
 
         # Q22 裁决 2026-09-01：花钱生成失败不静默——轮末机械附一键重试选项卡（实现体 planner_output）
@@ -821,6 +833,35 @@ class Planner:
             return ""
         return load_prompt_section(
             _EXEC_MODE_NOTE_FILE, f"MODE_{mode.upper()}") or ""
+
+    def _build_and_log_state_event(self, context: "PlannerContext") -> str:
+        """轮首状态事件构建 + 落流（二期 G3，单一落点；流式/非流式/scope
+        三路径同口径——handle_message 统一入口）。
+
+        - 构建 = build_state_tail_message 全家（状态 JSON + 降级引导 +
+          偏好/模式 note + 故事板进度 + 草稿指针；步数行已退役）；
+        - 落流 = source=state 的 user/message 事件（dsh inject 同位）；
+          构建失败/非 studio 返回空串（本轮零状态注入，回落语义）；
+        - 轮内步间零注入：原每步尾部消息装配（turn_executor）退役；
+          预算保险由 truncate_messages 兜底（状态事件 = 普通轮组锚消息，
+          随老轮组被压缩收编，不膨胀）。"""
+        if not context.use_studio_context:
+            return ""
+        pb = getattr(self, "_prompt_builder", None)
+        if pb is None or context.state_builder is None:
+            return ""
+        try:
+            content = pb.build_state_tail_message(context)
+        except Exception as _e:
+            logger.warning(f"[Planner] 状态事件构建失败（本轮零注入）: {_e}")
+            return ""
+        if not content:
+            return ""
+        if context.session_conversation_id:
+            session_log.append_user_message(
+                self.state_manager, context.session_conversation_id,
+                content, source=session_log.SOURCE_STATE)
+        return content
 
     # ---------- 闸预检（层 9 兜底卡，实现体 = planner_triage.run_gate_precheck） ----------
     #

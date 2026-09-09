@@ -25,12 +25,10 @@ from loguru import logger
 from src.video_agent.core.chat_port import ChatResponse, StreamChunk
 from src.video_agent.config import settings
 from src.video_agent.core.fc_feedback import (
-    compress_prior_feedback,
     digest_projected_tool_args,
     digest_projected_tool_results,
     format_tool_result_messages,
     format_tool_results,
-    should_compress_feedback,
     strip_prior_feedback_images,
 )
 from src.video_agent.utils.live_metrics import (
@@ -39,7 +37,6 @@ from src.video_agent.utils.live_metrics import (
     record_live_context,
 )
 from src.video_agent.utils.live_metrics import record_budget_breakdown
-from src.video_agent.core import round_compact
 from src.video_agent.core import session_log
 from src.video_agent.core.sse_events import SSE_REASONING_DELTA, SSE_STATUS, status_event
 from src.video_agent.utils.stop_signal import (
@@ -55,8 +52,11 @@ from src.video_agent.core.token_budget import (
     truncate_messages,
 )
 from src.video_agent.core.tracer import AgentTracer
-from src.video_agent.core.agent_loop import current_max_steps
-from src.video_agent.exceptions import GenerationError
+from src.video_agent.exceptions import (
+    AdapterError,
+    GenerationError,
+    is_context_overflow_error,
+)
 
 
 class TurnExecutor:
@@ -78,7 +78,7 @@ class TurnExecutor:
         self._collectors: Dict[str, List[Any]] = self._default_collectors()
         self._on_event: Optional[Any] = None
         self._tracer: Optional[AgentTracer] = None
-        # turn_budget 客观步数计数器（每次 llm_call 自增，经 context.step_info 注入状态尾部）
+        # 步计数器（事件编号/llm_call 统计用；状态尾部步数行已随二期 G3 退役）
         self._step_count: int = 0
 
     @staticmethod
@@ -119,54 +119,10 @@ class TurnExecutor:
         model = getattr(p.llm_adapter, "model", "") if p.llm_adapter else ""
         return context_window_for_model(model, provider_id=getattr(p, "chat_provider", "") or "")
 
-    def _state_tail_message(self) -> str:
-        """状态上下文 history 尾部消息（user 通道；单一事实源 = prompt_builder）。
-
-        状态 JSON/工具边界说明/故事板进度已移出 system 段，改在每次调用时
-        作为 history 最后一条消息注入：system（含 Skill 块）成为跨步稳定前缀
-        （供应商 KV-cache 友好）；消息只存在于当次请求，不入持久化历史，
-        也不进会话压缩采样面。context 缺失（直驱/独立）时不组装 → 零增量。"""
-        ctx = self._context
-        pb = getattr(self.planner, "_prompt_builder", None)
-        if ctx is None or pb is None:
-            return ""
-        try:
-            return pb.build_state_tail_message(ctx)
-        except Exception:
-            return ""
-
-    def _degrade_state_tail(
-        self,
-        full_messages: List[Dict[str, Any]],
-        max_tokens: int,
-        state_tail: str,
-    ) -> List[Dict[str, Any]]:
-        """预算保险丝：截断后仍超预算时用降级状态（只留组标题/计数）
-        重建尾部状态消息。状态上下文移出 system 段后，降级重建点同步迁移：
-        原 system_degrader 只负责 system 本体。只记录不阻断主链。"""
-        if not state_tail or not full_messages:
-            return full_messages
-        if estimate_messages_tokens(full_messages) <= max_tokens:
-            return full_messages
-        ctx = self._context
-        deg_builder = getattr(ctx, "degraded_state_builder", None) if ctx is not None else None
-        pb = getattr(self.planner, "_prompt_builder", None)
-        if deg_builder is None or pb is None:
-            return full_messages
-        try:
-            degraded = pb.build_state_tail_message(ctx, state_builder_override=deg_builder)
-        except Exception:
-            return full_messages
-        if degraded and degraded != state_tail and full_messages[-1].get("content") == state_tail:
-            full_messages[-1] = {"role": "user", "content": degraded}
-            logger.warning(
-                f"[TurnExecutor] 状态尾部消息超预算，已降级重建（预算 {max_tokens} tokens）")
-            try:
-                (self._tracer or AgentTracer.get_instance()).record_context_event(
-                    "degrade", f"history 尾部状态消息降级重建（预算 {max_tokens} tokens）")
-            except Exception:
-                pass
-        return full_messages
+    # （二期 G3 退役：_state_tail_message / _degrade_state_tail——每步尾部
+    # 状态消息装配整体退役，状态注入改轮首 source=state 事件一次落流，
+    # 落点 = planner._build_and_log_state_event；轮内步间零注入，
+    # 预算保险由 truncate_messages 兜底（状态事件随老轮组被压缩收编））
 
     def _record_budget_breakdown(
         self, system: str, history_msgs: List[Dict[str, Any]], state_tail: str,
@@ -237,18 +193,43 @@ class TurnExecutor:
         except Exception:
             pass
 
+    async def _chat_with_overflow_recovery(
+        self, p: Any, system: str,
+        full_messages: List[Dict[str, Any]],
+        tools_schema: Optional[List[Dict[str, Any]]],
+        mirror: Optional[List[Dict[str, Any]]] = None,
+    ) -> ChatResponse:
+        """非流式主对话调用 + 溢出恢复（v4 批 E3，dsh maxOverflowRetries=1）：
+        供应商确认上下文超长 → compact_pass(force=True) 一次最大平衡缩减 →
+        重试一次；再失败或无会话绑定原样上抛（恢复是优化不是前置条件）。
+        mirror（二期 C）：同步 splice agent_loop 的 messages 列表。"""
+        thinking = getattr(p, "_chat_thinking_level", "") or ""
+        try:
+            return await p.llm_adapter.chat(
+                full_messages, tools=tools_schema, timeout=settings.llm_timeout,
+                thinking_level=thinking)
+        except AdapterError as _ovf:
+            _cid = str(getattr(self._context, "session_conversation_id", "") or "")
+            if not _cid or not is_context_overflow_error(_ovf):
+                raise
+            logger.warning("[TurnExecutor] 请求上下文超长，溢出恢复压缩后重试一次")
+            await session_log.compact_pass(
+                p.state_manager, _cid, full_messages, p.llm_adapter,
+                self.context_window(), system=system, tools_schema=tools_schema,
+                force=True, mirror=mirror)
+            return await p.llm_adapter.chat(
+                full_messages, tools=tools_schema, timeout=settings.llm_timeout,
+                thinking_level=thinking)
+
     async def call_llm(self, system: str, messages: List[Dict[str, Any]]) -> ChatResponse:
         """
         LLM 调用（§2.2）：支持 function calling 的 adapter 传入 tool schemas；
         不支持的供应商走纯文本调用。
+        （二期 G3：每步状态尾部装配退役——轮首状态事件已随 messages 进来，
+        本方法只做消化/修剪/压缩/截断预算链）
         """
         p = self.planner
         full_messages = [{"role": "system", "content": system}] + messages
-        # 状态上下文出 system：每次调用以 history 尾部消息（user 通道）注入，
-        # system（含 Skill 块）成跨步稳定前缀；不入持久化历史/压缩采样面
-        state_tail = self._state_tail_message()
-        if state_tail:
-            full_messages.append({"role": "user", "content": state_tail})
         # tool-result 消化：已投影进状态 JSON 的写类工具结果超阈值行替换为
         # 指针（最近 2 轮回喂保留原文；TOOL_RESULT_DIGEST_CHARS=0 一键关）；
         # B2：assistant tool_calls 大参数（report_markdown 等已落账全文）同口径消化
@@ -260,21 +241,20 @@ class TurnExecutor:
         # 双面修剪——内存面就地改写（本轮后续请求立即收益）+ 日志面替换事件
         # （下轮回放直接见修剪版，原文永留日志）；低于压力零动作（dsh 口径）
         _sess_cid = str(getattr(self._context, "session_conversation_id", "") or "")
+        # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝
+        max_tokens = int(self.context_window() * settings.token_budget_ratio)
+        tools_schema = p.tools_schema()
+        # 会话层阈值压缩（v4 批 E3，细案 §八；round_compact 退役后唯一
+        # 循环内压缩）：修剪后仍 ≥0.8×窗口 → 最旧平衡轮组换检查点摘要，
+        # 事务先落日志再动内存；无会话绑定（测试/非 studio）不压
         if _sess_cid:
             session_log.prune_pass(
                 p.state_manager, _sess_cid, full_messages, self.context_window())
-        # Token 预算截断：窗口按模型查表；system 自身超预算时走降级保险丝，
-        # 尾部状态消息的降级重建见 _degrade_state_tail
-        max_tokens = int(self.context_window() * settings.token_budget_ratio)
-        # 第 5 批保险丝阶梯①（Q6/Q7）：截断前先对最旧轮组语义压缩
-        # （消灭有损截断主触发源；失败静默回落截断链，零干扰主链）
-        try:
-            await round_compact.compact_oldest_round(
-                full_messages, p.llm_adapter, max_tokens)
-        except Exception as e:
-            logger.debug(f"[TurnExecutor] 循环内压缩异常（忽略）: {e}")
+            await session_log.compact_pass(
+                p.state_manager, _sess_cid, full_messages, p.llm_adapter,
+                self.context_window(), system=system, tools_schema=tools_schema,
+                mirror=messages)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=p._system_degrader)
-        full_messages = self._degrade_state_tail(full_messages, max_tokens, state_tail)
         self._raise_if_context_overflow(full_messages, max_tokens)
         # 实时上下文度量：截断后的真实消息记入 live 注册表，
         # context-usage 接口推理中即可看到用量随轮次增长
@@ -287,30 +267,21 @@ class TurnExecutor:
             # 无 adapter 时返回空响应
             return ChatResponse(content="", finish_reason="stop")
 
-        tools_schema = p.tools_schema()
         self._record_budget_breakdown(
-            system, messages, state_tail, tools_schema, full_messages, max_tokens)
+            system, messages, "", tools_schema, full_messages, max_tokens)
         if tools_schema is not None:
             # 模式 A：标准 function calling（工具集按上下文裁剪）
-            return await p.llm_adapter.chat(
-                full_messages, tools=tools_schema, timeout=settings.llm_timeout,
-                thinking_level=getattr(p, "_chat_thinking_level", "") or "",
-            )
+            return await self._chat_with_overflow_recovery(
+                p, system, full_messages, tools_schema, mirror=messages)
         # 模式 B：纯文本对话（adapter 不支持 function calling 的保底通道；
         # 不携带工具调用，文本轨不产生动作——动作通道唯一 = 工具调用）
-        return await p.llm_adapter.chat(
-            full_messages, timeout=settings.llm_timeout,
-            thinking_level=getattr(p, "_chat_thinking_level", "") or "",
-        )
+        return await self._chat_with_overflow_recovery(
+            p, system, full_messages, None, mirror=messages)
 
     async def call_llm_stream(self, system: str, messages: List[Dict[str, Any]]) -> AsyncGenerator[StreamChunk, None]:
-        """流式 LLM 调用"""
+        """流式 LLM 调用（二期 G3：状态尾部装配退役，同 call_llm）"""
         p = self.planner
         full_messages = [{"role": "system", "content": system}] + messages
-        # 状态上下文出 system：同 call_llm（流式/非流式两通道同口径）
-        state_tail = self._state_tail_message()
-        if state_tail:
-            full_messages.append({"role": "user", "content": state_tail})
         # tool-result 消化：同 call_llm（已投影结果超阈值行换指针）；
         # B2：assistant tool_calls 大参数同口径消化
         digest_projected_tool_results(
@@ -319,19 +290,18 @@ class TurnExecutor:
             full_messages, int(settings.tool_result_digest_chars))
         # 工具结果修剪 pass：同 call_llm（流式/非流式同口径，v4 批 E2）
         _sess_cid_s = str(getattr(self._context, "session_conversation_id", "") or "")
+        # Token 预算截断：同 call_llm
+        max_tokens = int(self.context_window() * settings.token_budget_ratio)
+        tools_schema = p.tools_schema()
+        # 会话层阈值压缩：同 call_llm（流式/非流式同口径，v4 批 E3）
         if _sess_cid_s:
             session_log.prune_pass(
                 p.state_manager, _sess_cid_s, full_messages, self.context_window())
-        # Token 预算截断：同 call_llm（含尾部状态消息降级重建）
-        max_tokens = int(self.context_window() * settings.token_budget_ratio)
-        # 第 5 批保险丝阶梯①：同 call_llm（流式/非流式同口径）
-        try:
-            await round_compact.compact_oldest_round(
-                full_messages, p.llm_adapter, max_tokens)
-        except Exception as e:
-            logger.debug(f"[TurnExecutor] 循环内压缩异常（忽略）: {e}")
+            await session_log.compact_pass(
+                p.state_manager, _sess_cid_s, full_messages, p.llm_adapter,
+                self.context_window(), system=system, tools_schema=tools_schema,
+                mirror=messages)
         full_messages = truncate_messages(full_messages, max_tokens, system_degrader=p._system_degrader)
-        full_messages = self._degrade_state_tail(full_messages, max_tokens, state_tail)
         self._raise_if_context_overflow(full_messages, max_tokens)
         # 实时上下文度量：同 call_llm，推理中用量可见
         record_live_context(p.state_manager.active_project_id, full_messages)
@@ -341,15 +311,34 @@ class TurnExecutor:
         if p.llm_adapter is None:
             return
 
-        tools_schema = p.tools_schema()
         self._record_budget_breakdown(
-            system, messages, state_tail, tools_schema, full_messages, max_tokens)
+            system, messages, "", tools_schema, full_messages, max_tokens)
 
-        async for chunk in p.llm_adapter.chat_stream(
-            full_messages, tools=tools_schema, timeout=settings.llm_stream_timeout,
-            thinking_level=getattr(p, "_chat_thinking_level", "") or "",
-        ):
-            yield chunk
+        produced = False
+        try:
+            async for chunk in p.llm_adapter.chat_stream(
+                full_messages, tools=tools_schema, timeout=settings.llm_stream_timeout,
+                thinking_level=getattr(p, "_chat_thinking_level", "") or "",
+            ):
+                produced = True
+                yield chunk
+        except AdapterError as _ovf:
+            # 溢出恢复（v4 批 E3，dsh maxOverflowRetries=1）：供应商确认
+            # 上下文超长且未产出任何内容 → force 压缩一次后重试；
+            # 已产出内容或非溢出错误原样上抛（流中段重试会重复正文）
+            _ovf_cid = str(getattr(self._context, "session_conversation_id", "") or "")
+            if produced or not _ovf_cid or not is_context_overflow_error(_ovf):
+                raise
+            logger.warning("[TurnExecutor] 流式请求上下文超长，溢出恢复压缩后重试一次")
+            await session_log.compact_pass(
+                p.state_manager, _ovf_cid, full_messages, p.llm_adapter,
+                self.context_window(), system=system, tools_schema=tools_schema,
+                force=True, mirror=messages)
+            async for chunk in p.llm_adapter.chat_stream(
+                full_messages, tools=tools_schema, timeout=settings.llm_stream_timeout,
+                thinking_level=getattr(p, "_chat_thinking_level", "") or "",
+            ):
+                yield chunk
 
     # ---------- 状态事件发射 ----------
 
@@ -375,10 +364,9 @@ class TurnExecutor:
         tracer = self._tracer or AgentTracer.get_instance()
         tracer.record_llm_call()
         context = self._context
-        # turn_budget 客观步数：每步自增，经 context.step_info 注入状态尾部（P3 纯数据）
+        # 步计数（事件编号用；状态尾部步数行注入已随二期 G3 退役——
+        # 步数计数器每步必变是强制前缀失效源，且 STEP_FEEDBACK 已带轮次）
         self._step_count += 1
-        if context is not None:
-            context.step_info = (self._step_count, current_max_steps())
         # 确认信号结构化直通——本轮 FC 批的暂停确认由
         # _handle_fc_response 写入本 holder，随 5 元组上抛 agent_loop，
         # 不再合成 studio-actions 文本块回绕解析（对齐 AskUserQuestion 范式）
@@ -508,12 +496,8 @@ class TurnExecutor:
         # （assistant(tool_calls) 必须先于 tool 消息，OpenAI 语义硬约束）。
         _extra: Dict[str, Any] = {}
         if tool_results:
-            # token 治理：新轮次回喂组装前，把更早轮次的 read_* 全文
-            # 回喂压缩为一句话占位，避免多份全文在 messages 里叠加计费。
-            # 惰性压缩（质量优化）：仅当消息总量逼近 token 预算时才压，
-            # 短对话保留全文；选中 Skill 正文经 read_* 回喂，同样落入压缩面（轻量状态块在 system 不受影响）
-            if should_compress_feedback(messages, self.context_window()):
-                compress_prior_feedback(messages)
+            # （read_* 全文回喂的旧轮压缩 compress_prior_feedback 已随 v4 批 E3
+            # 退役：事件流全量回放 + 修剪器/阈值压缩覆盖其职责，细案 §二收编表）
             _tool_msgs, _image_msg = format_tool_result_messages(
                 tool_results, messages=messages)
             _pending: List[Dict[str, Any]] = list(_tool_msgs)

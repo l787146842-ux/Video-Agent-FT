@@ -152,13 +152,10 @@ class Settings:
     token_budget_ratio: float = field(default_factory=lambda: float(os.getenv("TOKEN_BUDGET_RATIO", "0.8")))
     # 单张图片的 vision token 固定估算；取常见高分辨率档保守值
     image_token_estimate: int = field(default_factory=lambda: _env_int("IMAGE_TOKEN_ESTIMATE", 1200))
-    # 旧轮 read_* 回喂全文的惰性压缩阈值：消息总量达到预算的该比例才压缩，
-    # 短对话保留全文保质量，长对话才省 token（0 = 始终压缩，1 = 永不压缩）
-    feedback_compress_ratio: float = field(default_factory=lambda: float(os.getenv("FEEDBACK_COMPRESS_RATIO", "0.35")))
     # tool-result 消化（用户裁决 2026-09-08 默认关）：窗口放大后历史只追加
     # 保前缀缓存连续命中（缓存命中价 1/30 全价，省消化那点 token 不值当）；
-    # 逼近预算时由 round_compact 兜底压缩。仍可 env 设阈值开启（最近 2 轮
-    # 回喂保留原文；=0 关闭）
+    # 逼近预算时由会话层阈值压缩兜底（v4 批 E3，session_log.compact_pass）。
+    # 仍可 env 设阈值开启（最近 2 轮回喂保留原文；=0 关闭）
     tool_result_digest_chars: int = field(default_factory=lambda: _env_int("TOOL_RESULT_DIGEST_CHARS", 0))
     # 工具结果回喂剪枝（默认开）：白名单工具（read_*/生成类）的回喂副本
     # 超过该字符数即保留头尾、中段替换为 PRUNE 标记行（start= 续读兜底）；
@@ -427,7 +424,7 @@ SETTINGS_GROUPS: dict = {
             "model_fallback_max_candidates", "executor_fast_model",
             "executor_thinking_level", "model_policy"),
     "context": ("context_window_size", "token_budget_ratio", "image_token_estimate",
-                "feedback_compress_ratio", "tool_result_digest_chars",
+                "tool_result_digest_chars",
                 "tool_result_prune_chars", "tool_result_prune_head",
                 "tool_result_prune_tail", "history_compact_threshold",
                 "context_json_compact", "state_context_budget_chars",

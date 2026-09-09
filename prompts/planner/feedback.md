@@ -6,9 +6,6 @@
 ## FEEDBACK_MARKER
 （系统）本轮调用的工具已执行完毕，结果如下：
 
-## FEEDBACK_COMPRESSED
-（系统）此前轮次工具读回的文档全文已从上下文移除以节约空间；其中的流程与约束仍须遵守，如确需复核原文请重新调用对应 read_* 工具。
-
 ## FEEDBACK_IMAGES_STRIPPED
 （系统）此前轮次加载的故事板图片已从上下文移除以节约空间；如后续仍需看到它们，可重新调用 view_storyboard_media 加载。
 
@@ -50,7 +47,7 @@ read_skill 执行成功，全文如下（skill={name}，section={section}）：
      nudge 重试退役，唯一消费点 agent_loop._bad_output_nudge 同批删除；退役记录见 core/recovery_policy.py） -->
 
 ## STEP_FEEDBACK
-（系统）第 {{step}} 轮的 {{count}} 个 Tool 已执行完毕，工作台状态已刷新（见对话末尾最新的工作台状态 JSON）。
+（系统）第 {{step}} 轮的 {{count}} 个 Tool 已执行完毕（如需最新工作台全量状态，可调用 read_state_group 按组读取）。
 
 <!-- STEP_FEEDBACK_AT_PAUSE 已随指令收拢批补丁退役（2026-09-09 实证）：
      「节点翻转完成」≠「Skill 声明的暂停点」，探针误报逼停模型
@@ -63,6 +60,12 @@ read_skill 执行成功，全文如下（skill={name}，section={section}）：
 
 ## TOOL_RESULT_SUSPENDED
 （该调用未执行完成，会话在此中断）
+
+## COMPACTION_INSTRUCTION
+请将以上对话浓缩为一份结构化摘要，供后续对话作为已确立背景继续任务：保留任务目标与用户要求、已完成步骤及关键产物（含名称/id）、重要约束与偏好、当前进度与下一步。不要新增对话、不要提问。若以上对话中已包含 <compacted-summary> 摘要块，它是此前轮次的检查点：不要逐字照抄，保留仍属实的事实、丢弃已过时内容，将新旧信息合并为单一摘要。
+
+## COMPACTION_PREAMBLE
+（系统检查点：更早的对话区间已浓缩为下方摘要；把它当作既定背景直接继续任务，无需复述或确认。）
 
 <!-- STEP_ASSISTANT_PLACEHOLDER 已随上下文与缓存优化计划批 C2 退役删除：
      assistant 消息改带标准 tool_calls（content 为空合法），占位文案无消费点 -->

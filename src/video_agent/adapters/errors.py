@@ -23,7 +23,7 @@ from typing import Tuple
 
 import httpx
 
-from src.video_agent.exceptions import AdapterError
+from src.video_agent.exceptions import AdapterError, KIND_CONTEXT_OVERFLOW
 
 # ---------- 类别（category） ----------
 TRANSIENT = "transient"  # 瞬时故障：指数退避重试
@@ -38,6 +38,8 @@ KIND_REFUSAL = "refusal"    # 模型明确拒答 / 中继拒收通知单
 KIND_TIMEOUT = "timeout"    # 请求超时
 KIND_NETWORK = "network"    # 连接错误 / 流中断
 KIND_UNKNOWN = "unknown"    # 未归类（按 permanent 处置）
+# 上下文窗口超长：常量唯一源 exceptions.KIND_CONTEXT_OVERFLOW（dsh
+# CONTEXT_WINDOW_EXCEEDED 同口径；本文件仅做分类，判定在 core 侧）
 
 # kind → 前端错误码（error_code，国际化锚点）
 _KIND_ERROR_CODES = {
@@ -48,7 +50,23 @@ _KIND_ERROR_CODES = {
     KIND_REFUSAL: "ADAPTER_REFUSAL_ERROR",
     KIND_TIMEOUT: "ADAPTER_TIMEOUT_ERROR",
     KIND_NETWORK: "ADAPTER_NETWORK_ERROR",
+    KIND_CONTEXT_OVERFLOW: "ADAPTER_CONTEXT_OVERFLOW",
 }
+
+# 上下文超长的上游文案特征（小写子串匹配；命中即分类 context_overflow，
+# 供会话层压缩溢出恢复识别——文案表保守，宁漏勿误）
+_CONTEXT_OVERFLOW_MARKERS = (
+    "context_length_exceeded",     # OpenAI 系
+    "maximum context length",      # OpenAI 系
+    "context window is too large",
+    "prompt is too long",          # Anthropic 系
+    "input is too long",
+    "too many tokens",
+    "上下文长度",                  # 中文中继
+    "超过上下文",
+    "上下文超长",
+    "上下文溢出",
+)
 
 # 瞬时故障对应的 httpx 异常类型（流中断=RemoteProtocolError）
 _TRANSIENT_HTTPX_EXCEPTIONS = (
@@ -111,8 +129,12 @@ def build_status_error(
     """HTTP 错误状态 → 结构化 AdapterError（kind/retryable/http_status 齐备）。
 
     message 保持「LLM 返回 HTTP {code}」前缀（流式路径兼容探针按前缀识别 400）。
+    4xx 且响应体命中上下文超长文案 → kind=context_overflow（溢出恢复触发器）。
     """
     category, kind = classify_status(status_code)
+    if kind == KIND_PARAM and body and any(
+            marker in str(body).lower() for marker in _CONTEXT_OVERFLOW_MARKERS):
+        kind = KIND_CONTEXT_OVERFLOW
     prefix = f"[{context}] " if context else ""
     suffix = f"（{detail}）" if detail else ""
     snippet = (body or "").strip()[:200]

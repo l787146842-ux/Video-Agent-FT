@@ -157,9 +157,8 @@ def _sample_older_dialog(older: List[Dict[str, Any]],
 
 # 系统回喂型消息签名（compaction 采样过滤单一事实源）：
 # 「（系统）」前缀条目均为系统回喂进 LLM 上下文的运行时模板
-# （prompts/planner/feedback.md：FEEDBACK_MARKER/FEEDBACK_COMPRESSED/
-# STEP_FEEDBACK，含暂停回应提示与规格向导回执），
-# 非真实用户/助手对话，不进采样
+# （prompts/planner/feedback.md：FEEDBACK_MARKER/STEP_FEEDBACK 等，
+# 含暂停回应提示与规格向导回执），非真实用户/助手对话，不进采样
 _SYSTEM_REFEED_PREFIXES = ("（系统）", "（系统提示：", "（系统：")
 
 # 步间注入的用户引导包装（agent_loop pending_injector）：

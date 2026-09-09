@@ -4,7 +4,6 @@ import pytest
 import src.video_agent.web.multimodal_builder as mb
 from src.video_agent.core.fc_feedback import (
     FEEDBACK_MARKER,
-    compress_prior_feedback,
     format_tool_results,
     strip_prior_feedback_images,
 )
@@ -141,14 +140,5 @@ def test_strip_prior_feedback_images():
     assert any("已从上下文移除" in p.get("text", "") for p in content)
 
 
-def test_compress_prior_feedback_handles_list_content():
-    """旧轮压缩同样覆盖多模态回喂（list content）——批 3.4 近因保护下
-    用 keep_recent=0 表达「该条已属旧轮」的压力口径。"""
-    msgs = [
-        {"role": "user", "content": [
-            {"type": "text", "text": FEEDBACK_MARKER + "全文。"},
-            {"type": "image_url", "image_url": {"url": "data:image/png;base64,X"}},
-        ]},
-    ]
-    compress_prior_feedback(msgs, keep_recent=0)
-    assert isinstance(msgs[0]["content"], str)
+# test_compress_prior_feedback_handles_list_content 已随 v4 批 E3 退役删除
+#（compress_prior_feedback 退役：会话事件流 + 修剪器/阈值压缩覆盖其职责）

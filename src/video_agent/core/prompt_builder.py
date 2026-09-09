@@ -159,18 +159,14 @@ class PromptBuilder:
         context: "PlannerContext",
         state_builder_override: Optional[Callable[[], str]] = None,
     ) -> str:
-        """状态上下文 history 尾部消息（user 通道，作为 history 最后一条注入）。
+        """状态注入正文构建（单一事实源；二期 G3：每步尾部消息 → 轮首
+        source=state 事件一次落流，planner._build_and_log_state_event 消费）。
 
-        状态 JSON/工具边界说明/故事板客观进度不占 system 段：每步以尾部
-        消息注入，让 LLM 在每个轮次都看到先前轮次执行后的最新状态（近生成
-        端，遵循度最高）；system 段（含 Skill 块）由此成为跨步稳定前缀。
         内部次序：状态 JSON → 降级引导段（按 degraded/compacted 标志位）→
-        边界说明 → 故事板进度。
-        返回空串 = 本轮不注入。
+        执行偏好/模式 note → 故事板进度 → 选中草稿指针。
+        返回空串 = 本轮不注入（非 studio 上下文）。
 
-        state_builder_override：预算保险丝降级重建时替换状态构建器（只留
-        组标题/计数的降级状态），语义同 context.degraded_state_builder。
-        """
+        state_builder_override：测试/特殊编排替换状态构建器。"""
         if not context.use_studio_context:
             return ""
         builder = state_builder_override or context.state_builder
@@ -210,11 +206,8 @@ class PromptBuilder:
                 "shared/selected_draft.md", "POINTER",
                 draft_id=context.selected_draft_id,
                 draft_type=context.selected_type or "未知"))
-        # turn_budget 客观步数（P3 状态即数据：纯客观数据行，无说教）；
-        # 仅在已有状态尾部内容时附加，空状态不制造尾部消息（保「零增量」契约）
-        step_info = getattr(context, "step_info", None)
-        if parts and step_info and isinstance(step_info, (tuple, list)) and len(step_info) == 2:
-            parts.append(f"步数：{step_info[0]}/{step_info[1]}")
+        # （步数行已随二期 G3 退役删除：每步必变 = 强制每步前缀失效的
+        # 元凶之一；STEP_FEEDBACK 已带「第 N 轮」，信息不丢）
         return "\n\n".join(parts)
 
     @staticmethod

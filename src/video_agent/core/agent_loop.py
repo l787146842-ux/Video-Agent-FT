@@ -161,6 +161,7 @@ async def run_agent_loop(
     user_id: str = "",
     stop_scope: str = "chat",
     session_conversation_id: str = "",
+    state_event_content: str = "",
 ) -> AgentLoopResult:
     """on_event（可选）：async callable，接收 {"type": "step_started"/"actions_applied", ...}
     stream_hook（可选）：流式文本增量回调，每收到一段 LLM 文本就 await stream_hook(text)。
@@ -168,7 +169,9 @@ async def run_agent_loop(
     stop_scope（端到端中断协议）：协作式停止标志作用域
     （SSE 直连="chat"；任务式传输=task_id），每步检查点读取，命中即干净收尾。
     max_steps（Q3）：None = 每步实时读 settings（前端可热调）；显式值钉死口径（测试）。
-    """
+    state_event_content（二期 G3）：轮首状态事件正文（planner 轮始已落流），
+    组装时追加在 user 消息之后——与日志 seq 同序（user → state → steps），
+    回放 = 请求逐字节（缓存结构性保证）。"""
 
     async def emit(event: Dict[str, Any]) -> None:
         if on_event:
@@ -188,9 +191,10 @@ async def run_agent_loop(
     def _mirror_fc_feedback(pending: List[Dict[str, Any]], fc_calls: List[Dict[str, Any]],
                             step_no: int, applied: int) -> None:
         """会话事件流镜像（v4 主刀批 E1，细案 §五）：FC 步 tool 结果回喂逐条
-        落流 + 步回喂事实落流。覆盖本分支全部出口（continue/问即停/提前终止/
-        max_steps）——这些轮的结果今天随内存列表蒸发，是「状态断层」直接来源，
-        落流后下轮全量回放可见（append-only 结构红利）。落流失败静默（D4）。"""
+        落流 + 媒体回喂图片消息落流（二期 G4）+ 步回喂事实落流。覆盖本分支
+        全部出口（continue/问即停/提前终止/max_steps）——这些轮的结果今天随
+        内存列表蒸发，是「状态断层」直接来源，落流后下轮全量回放可见
+        （append-only 结构红利）。落流失败静默（D4）。"""
         if not session_conversation_id:
             return
         name_by_call = {
@@ -204,6 +208,13 @@ async def run_agent_loop(
             if cid and cid not in answered:
                 entries.append({"tool_call_id": cid, "content": _pause_suspended_note()})
         svc_log = StateManager.get_instance()
+        # 媒体回喂镜像（二期 G4）：图片 user 多模态消息落 source=media 事件
+        # （rewind 定位只认 source=user，不受干扰；装载层剥离保最新画面）
+        for m in (pending or []):
+            if m.get("role") == "user" and isinstance(m.get("content"), list):
+                session_log.append_user_message(
+                    svc_log, session_conversation_id, list(m["content"]),
+                    source=session_log.SOURCE_MEDIA)
         for m in entries:
             session_log.append_tool_result(
                 svc_log, session_conversation_id, step=step_no,
@@ -218,6 +229,10 @@ async def run_agent_loop(
     # Q3：显式传参钉死口径（测试/特殊编排）；None = 循环内每步实时读 settings
     explicit_max_steps = max_steps
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
+    # 轮首状态事件（二期 G3）：追加在 user 后，与日志 seq 同序
+    # （planner._build_and_log_state_event 已落 source=state 事件）
+    if state_event_content:
+        messages.append({"role": "user", "content": state_event_content})
 
     # 协作式停止：循环开始无条件清除残留标志（上一任务被停止后
     # 未及清理时，不得误杀新任务；带代际的收尾清理见 _finalize_stop）；
@@ -716,6 +731,11 @@ async def run_agent_loop(
         # 统一解绑（幂等）：任何出口都经此收尾，不再有分散解绑点
         unbind_progress_emitter(_progress_token)
         unbind_cancel_token(_cancel_bind)
+        # 轮末事件流闭合（v4 批 E3）：任何轮出口（正常/停止/取消/异常上抛）
+        # 都落 turn/end；非 studio（无会话绑定）与落流失败静默（D4）
+        if session_conversation_id:
+            session_log.append_turn_end(
+                StateManager.get_instance(), session_conversation_id)
     if not result.text:
         if result.confirmation:
             # 暂停轮无正文兜底：用暂停说明作为可见回复，
