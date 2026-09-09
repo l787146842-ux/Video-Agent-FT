@@ -131,13 +131,21 @@ class TurnExecutor:
         """第 5 批（Q6）：每轮 token 分配账记入 live 注册表
         （context-usage 端点暴露，状态注入占比纳入监控）。只记不阻。
         批 D：同步记录工具清单数量与指纹（sha1 前 16 位）入 budget 与
-        trace——跨步 tools_fp 变化 = 工具集漂移 = KV 前缀击穿点观测。"""
+        trace——跨步 tools_fp 变化 = 工具集漂移 = KV 前缀击穿点观测。
+        计划清单细案批 0（击穿归因）：随 breakdown 补四项请求构造快照——
+        msgs_fp/msgs_n（最终可见消息全量指纹+条数：条数按预期增长而指纹变
+        = 前缀被改写）、thinking（本步实际下发档位）、reasoning_chars
+        （历史中思考字段总字数）。只进 cache_metrics.jsonl 观测面，
+        不进模型请求、零缓存影响；随 record_cache_usage 的 breakdown
+        同行落盘，与命中率样本逐条对齐。"""
         try:
             tools_json = json.dumps(tools_schema, ensure_ascii=False) if tools_schema else ""
             tools_fp = (
                 hashlib.sha1(tools_json.encode("utf-8")).hexdigest()[:16]
                 if tools_json else ""
             )
+            _msgs_json = json.dumps(full_messages, ensure_ascii=False, sort_keys=True,
+                                    default=str)
             record_budget_breakdown(
                 getattr(getattr(self.planner, "state_manager", None),
                         "active_project_id", "") or "",
@@ -150,6 +158,15 @@ class TurnExecutor:
                     "tools_fp": tools_fp,
                     "total": estimate_messages_tokens(full_messages),
                     "budget": max_tokens,
+                    # 批 0 击穿归因四项（见 docstring）
+                    "msgs_fp": hashlib.sha1(
+                        _msgs_json.encode("utf-8")).hexdigest()[:16],
+                    "msgs_n": len(full_messages),
+                    "thinking": str(getattr(self.planner,
+                                            "_chat_thinking_level", "") or ""),
+                    "reasoning_chars": sum(
+                        len(str(m.get("reasoning_content") or ""))
+                        for m in full_messages if isinstance(m, dict)),
                 },
             )
             if tools_fp:

@@ -85,8 +85,16 @@ def main() -> int:
         if args.tail:
             for r in rs[-args.tail:]:
                 rate1 = 100.0 * r["cached_tokens"] / r["prompt_tokens"]
+                # 批 0 击穿归因：同行展示请求构造快照（无 breakdown 的旧样本留空）
+                bd = r.get("breakdown") or {}
+                extra = ""
+                if bd.get("msgs_fp"):
+                    extra = (f"  msgs_fp={bd['msgs_fp']} n={bd.get('msgs_n')}"
+                             f" think={bd.get('thinking') or '-'}"
+                             f" rc={bd.get('reasoning_chars')}")
                 print(f"    ts={r.get('ts', 0):.0f}  prompt={r['prompt_tokens']:>6}  "
-                      f"cached={r['cached_tokens']:>6}  ({rate1:5.1f}%)")
+                      f"cached={r['cached_tokens']:>6}  ({rate1:5.1f}%)"
+                      f"  tools_fp={bd.get('tools_fp') or '-'}{extra}")
         if flag == "MISS":
             misses = [(r["prompt_tokens"], r["cached_tokens"]) for r in steady
                       if r["cached_tokens"] == 0]
