@@ -22,23 +22,6 @@
   .add-group-btn { width: 100%; padding: 10px; margin-top: 6px; border: 1px dashed var(--border-color); border-radius: var(--radius-md); background: transparent; color: var(--text-dim); font-size: var(--font-md); cursor: pointer; transition: all 0.15s; }
   .add-group-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background: color-mix(in srgb, var(--color-info-strong) 6%, transparent); }
 
-  /* ===== 计划清单面板（计划清单细案批 2；只读进度视图） ===== */
-  .plan-view { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
-  .plan-progress { display: flex; align-items: center; gap: 8px; }
-  .plan-progress-bar { flex: 1; height: 6px; border-radius: var(--radius-sm); background-color: var(--bg-tertiary); overflow: hidden; }
-  .plan-progress-fill { height: 100%; background-color: var(--accent-blue); border-radius: var(--radius-sm); transition: width 0.3s ease; }
-  .plan-progress-text { font-size: var(--font-sm); color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
-  .plan-list { display: flex; flex-direction: column; gap: 2px; }
-  .plan-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: var(--radius-sm); font-size: var(--font-md); color: var(--text-main); }
-  .plan-item-content { flex: 1; user-select: text; -webkit-user-select: text; cursor: text; word-break: break-word; }
-  .plan-item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; border: 1px solid var(--border-color); background: transparent; }
-  /* 三态：进行中=实心蓝 + 行底高亮；已完成=灰 + 删除线；待办=空心 */
-  .plan-item--in_progress { background-color: color-mix(in srgb, var(--color-info-strong) 8%, transparent); }
-  .plan-item--in_progress .plan-item-dot { background-color: var(--accent-blue); border-color: var(--accent-blue); }
-  .plan-item--completed .plan-item-content { color: var(--text-dim); text-decoration: line-through; }
-  .plan-item--completed .plan-item-dot { background-color: var(--text-dim); border-color: var(--text-dim); }
-  .plan-item-tag { font-size: var(--font-sm); color: var(--accent-blue); flex-shrink: 0; }
-
   /* 文字可复制：分组卡片内容 + 提示词 + 对话框 + 聊天富文本输入框
      （全局 user-select:none 见 tokens.css；输入区不豁免会阻断光标选词复制） */
   .sb-title, .sb-desc, .draft-card, .prompt-textarea, .rich-chat-input, .chat-msg { user-select: text; -webkit-user-select: text; cursor: text; }

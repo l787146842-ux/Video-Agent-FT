@@ -65,7 +65,7 @@ import type { TurnLedger } from '@/lib/turn-ledger';
 // ===== 基础枚举 =====
 export type DraftType = 'keyElement' | 'shot' | 'audio';
 export type MediaType = 'image' | 'video' | 'audio';
-export type LeftTab = 'storyboard' | 'uncategorized' | 'plan';
+export type LeftTab = 'storyboard' | 'uncategorized';
 export type SubTab = 'keyElements' | 'shots' | 'audio';
 
 // ===== 草稿 / 分组 =====
@@ -499,21 +499,6 @@ export interface ServerStateSnapshot {
   conversations?: Conversation[];
   /** 活跃对话 ID */
   activeConversationId?: string;
-  /** 计划清单（plan_write 产出，计划清单细案批 2）：后端原样投影
-   * state["plan"] = {items, updated_turn}；键在场即同步（含清空） */
-  plan?: PlanRecord | null;
-}
-
-/** 计划清单条目（后端 state["plan"]["items"] 元素；前端只读展示） */
-export interface PlanItem {
-  content: string;
-  status: 'pending' | 'in_progress' | 'completed';
-}
-
-/** 计划清单落盘形态（与后端 plan_tools 写入形状一致） */
-export interface PlanRecord {
-  items?: PlanItem[];
-  updated_turn?: number;
 }
 
 // ===== 查询辅助 =====
