@@ -1,8 +1,9 @@
 import { Show } from 'solid-js';
-import { FiFolder, FiGrid } from 'solid-icons/fi';
+import { FiFolder, FiGrid, FiList } from 'solid-icons/fi';
 import { state, studioActions } from '@/stores/studio';
 import { StoryboardView } from './StoryboardView';
 import { UncategorizedView } from './UncategorizedView';
+import PlanView from './PlanView';
 import { SnapshotHistoryBar } from './SnapshotHistoryBar';
 import { BoardConflictPanel } from './BoardConflictPanel';
 import type { LeftTab } from '@/types';
@@ -10,6 +11,7 @@ import type { LeftTab } from '@/types';
 const TABS: Array<{ key: LeftTab; label: string; icon: typeof FiGrid }> = [
   { key: 'storyboard', label: '故事板', icon: FiGrid },
   { key: 'uncategorized', label: '未归类素材', icon: FiFolder },
+  { key: 'plan', label: '计划', icon: FiList },
 ];
 
 /**
@@ -38,9 +40,10 @@ export default function LeftPanel() {
         </span>
       </div>
 
-      {/* 内容区 */}
+      {/* 内容区（计划面板只读：写通道唯一 = 模型 plan_write 工具） */}
       <div class="left-content">
-        <Show when={state.leftTab === 'storyboard'} fallback={<UncategorizedView />}>
+        <Show when={state.leftTab === 'storyboard'}
+          fallback={state.leftTab === 'plan' ? <PlanView /> : <UncategorizedView />}>
           <StoryboardView />
         </Show>
       </div>

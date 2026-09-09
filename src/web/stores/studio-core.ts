@@ -4,7 +4,7 @@ import type {
   DraftType, Draft, LeftTab, SubTab, AnyGroup,
   KeyElementGroup, ShotGroup, AudioGroup,
   Asset, ApiProvider, Skill, PendingAttachment,
-  DocRecord, ActiveGeneration,
+  DocRecord, ActiveGeneration, PlanRecord,
   DraftRecord, GroupRecord,
 } from '@/types';
 
@@ -56,6 +56,9 @@ export interface StudioState {
   boardSaveStatus: 'saving' | 'saved' | 'error';
   /** 故事板乐观锁版本（D2）：来自后端快照 board_version，整板保存回携防陈旧覆盖 */
   boardVersion: number;
+  /** 计划清单（plan_write 产出，计划清单细案批 2）：后端投影原样存储，
+   * 前端只读展示（写通道唯一 = 模型工具调用，用户侧无编辑入口） */
+  plan: PlanRecord | null;
 }
 
 const defaultState: StudioState = {
@@ -90,6 +93,7 @@ const defaultState: StudioState = {
   selectTick: 0,
   boardSaveStatus: 'saved',
   boardVersion: 0,
+  plan: null,
 };
 
 const [state, setState] = createStore<StudioState>(defaultState);

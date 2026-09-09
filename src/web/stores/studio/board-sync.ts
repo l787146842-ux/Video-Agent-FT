@@ -149,6 +149,8 @@ function syncFromServer(snapshot: ServerStateSnapshot) {
     if (snapshot.project_name) s.projectName = snapshot.project_name;
     if (snapshot.project_id) s.projectId = snapshot.project_id;
     if (typeof snapshot.board_version === 'number') s.boardVersion = snapshot.board_version;
+    // 计划清单（批 2）：键在场即同步（含 null 清空）；存量快照无此键保留本地态
+    if ('plan' in snapshot) s.plan = snapshot.plan || null;
   }));
   // 若当前选中草稿已不存在，自动选中第一个
   if (!findDraftRecord(state.selectedDraftId, state.selectedType)) {
@@ -181,6 +183,7 @@ function resetForProject(snapshot: ServerStateSnapshot) {
     s.selectedDraftId = '';
     s.selectedType = 'keyElement';
     s.subTab = 'keyElements';
+    s.plan = snapshot.plan || null;
   }));
   selectFirstDraft();
   reconcileScopeThreads();
