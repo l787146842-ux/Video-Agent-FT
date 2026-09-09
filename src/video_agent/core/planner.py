@@ -70,6 +70,8 @@ _STUDIO_STATE_TOOLS = frozenset({
     "view_storyboard_media",
     "read_draft", "document_write", "read_uploaded_doc", "read_project_doc",
     "read_state_group",
+    # 计划清单细案批 1：进度账落项目状态，非 studio 上下文无状态可落不下发
+    "plan_write",
 })
 
 # 画布工具集：画布离线/未启用时不下发（节省 schema token）

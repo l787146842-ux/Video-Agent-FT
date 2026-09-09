@@ -1,4 +1,4 @@
-﻿"""从 FastAPI OpenAPI schema + SSE sidecar 契约生成前端 TS 类型（前后端契约一致性）。
+"""从 FastAPI OpenAPI schema + SSE sidecar 契约生成前端 TS 类型（前后端契约一致性）。
 
 用法：
     python scripts/gen_api_types.py          # 生成 sidecar + src/web/types/api.generated.ts
@@ -116,6 +116,7 @@ def _collect_tool_tiers() -> tuple[Dict[str, str], Dict[str, str]]:
     from src.video_agent.tools.document_tools import register_document_tools
     from src.video_agent.tools.manager import ToolManager
     from src.video_agent.tools.mcp.catalog import McpToolCatalogTool
+    from src.video_agent.tools.plan_tools import register_plan_tools
     from src.video_agent.tools.storyboard_tools import register_storyboard_tools
     from src.video_agent.tools.video.generate_video import GenerateVideoTool
 
@@ -126,6 +127,7 @@ def _collect_tool_tiers() -> tuple[Dict[str, str], Dict[str, str]]:
         register_storyboard_tools()
         register_document_tools()
         register_analysis_tools()
+        register_plan_tools()
         register_canvas_tools()
         ToolManager.register(McpToolCatalogTool())  # 运行时按需注册，契约面须覆盖
         return ToolManager.get_tool_detail_tiers(), ToolManager.get_tool_approval_tiers()
