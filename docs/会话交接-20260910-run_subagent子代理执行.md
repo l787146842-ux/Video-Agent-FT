@@ -2,7 +2,8 @@
 
 > 用途：在新窗口执行《run_subagent 正宗子代理实施计划书》。本文自包含，不必回读历史对话。
 > 计划书原文：`C:\Users\ASUS\AppData\Roaming\Qoder\SharedClientCache\cache\plans\run_subagent_子代理计划书_task-ddd.md`
-> 状态（更新 2026-09-10 晚）：**B1–B4 后端 + B3-前端 + 完成盖章批 G + 稳定委派批 D 全部已执行并推送 origin/main**（c352ebd / a957c76 / 90ffadc / ca47629 / 52295f3 / 8ee1994 / b30ba1b；批末 `acceptance --with-eval` 20 步全绿，全量 tests/ 2333 通过）。
+> 状态（更新 2026-09-10 晚）：**B1–B4 后端 + B3-前端 + 完成盖章批 G + 稳定委派批 D + G-补 全部已执行**（已推 origin/main：c352ebd / a957c76 / 90ffadc / ca47629 / 52295f3 / 8ee1994 / b30ba1b；批末 `acceptance --with-eval` 20 步全绿，全量 tests/ 2333 通过）。
+> **本地待推送（网络不通：github:443 连不上，非代码问题）**：`a1ce434`（G-补：只读记录展示「本轮宣告完成」+ 子级盖章出口）、`1562ba2`（B3-前端真机自查：左栏三 Tab 超宽改横向滚动）——下个窗口 `git push` 即可。
 > **本计划书四批已收工；剩唯一待办 = 真机复跑验证**（重启后端→同一 Skill+同一剧本跑到「拆结构 / 写提示词」阶段，核对：右栏出现 `run_subagent` 条目与真摘要、左栏「子任务」出卡、零工具纯口头“已完成”不再能静默结束本轮）。
 >
 > **B3 后端地基已就绪（下轮 UI 直接用）**：
