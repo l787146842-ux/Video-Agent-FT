@@ -572,4 +572,15 @@ class TurnExecutor:
                 # 供 agent_loop 带回前端与 _issue_pause 幂等登记
                 "pause_id": _confirm_holder.get("pause_id") or "",
             })
+        # 完成盖章（dsh A2）：从结构化工具结果里取章（认数据不认工具名，与
+        # image_urls/chat_inserts 同一消费口径）→ 随 5 元组上抛，agent_loop 据此
+        # 收轮（盖章即本轮结束，不等下一次纯文本收尾）并落 turn/stamp 审计事件。
+        for _tr in (tool_results or []):
+            _td = _tr.get("data") if isinstance(_tr, dict) else None
+            if isinstance(_td, dict) and _td.get("stamped"):
+                _extra["completion_stamp"] = str(_td.get("ledger") or "")
+                # 模型口头交付文本（章的 summary）：本步无正文时用它作可见正文，
+                # 避免落到「已执行 N 个操作」兜底（纯盖章轮会误报）
+                _extra["completion_summary"] = str(_td.get("summary") or "")
+                break
         return content, finish, fc_applied, plan_ms, _extra

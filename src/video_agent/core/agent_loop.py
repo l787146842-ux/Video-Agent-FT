@@ -57,6 +57,7 @@ from src.video_agent.exceptions import AdapterError
 from src.video_agent.core.recovery_policy import (
     FAILURE_ADAPTER,
     FAILURE_PRODUCTIVE_REJECT,
+    FAILURE_UNSTAMPED_STOP,
     classify_step_failure,
     recovery_for,
 )
@@ -352,6 +353,10 @@ async def run_agent_loop(
         # 批 12：产出类被拒/失败的混合轮续轮已用预算（recovery_policy
         # productive_reject.max_retries；防「被拒-口播-续轮」打转烧满 max_steps）
         productive_reject_rounds = 0
+        # 完成盖章（dsh A2）：本轮是否已登记完成章（task_complete）+ 零动作
+        # 未盖章纯口头收尾已用的续跑预算（unstamped_stop.max_retries，同构防打转）
+        completion_stamped = False
+        unstamped_rounds = 0
         while True:
             # Q3：多步上限每步实时读 settings（前端全局设置页热更新即刻生效，
             # 运行中任务调高上限可继续推进）；显式传参钉死口径优先。
@@ -560,6 +565,27 @@ async def run_agent_loop(
                         token_usage=step_tokens, cached_tokens=step_cached,
                     )
                     break
+                # 完成盖章（dsh A2）：task_complete 发行即本轮结束（不再等下一次
+                # 纯文本收尾）；客观账本回执已随工具结果回喂在上下文里，本处
+                # 只落审计事件（turn/stamp，log-only）并收轮。
+                _stamp = str((fc_extra or {}).get("completion_stamp") or "")
+                if _stamp:
+                    completion_stamped = True
+                    if session_conversation_id:
+                        session_log.append_turn_stamp(
+                            StateManager.get_instance(), session_conversation_id,
+                            receipt=_stamp, step=step)
+                    if not (result.text or "").strip():
+                        # 盖章轮模型未另附正文：用它自己的 summary 作可见正文，
+                        # 不落「已执行 N 个操作」兜底（纯口头交付轮会误报）
+                        result.text = str(
+                            (fc_extra or {}).get("completion_summary") or "").strip()
+                    logger.info(
+                        f"[AgentLoop] step={step} 完成盖章（task_complete），已收轮")
+                    tracer.end_step(step, actions_applied=fc_applied,
+                                    finish_reason="stamped",
+                                    token_usage=step_tokens, cached_tokens=step_cached)
+                    break
                 # 6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
                 # 不再固定追加 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）。
                 # 批 9：全拒收轮例外——"自称完成"不可信（9999 实证：模型口播
@@ -664,11 +690,39 @@ async def run_agent_loop(
                 # 假停判定「本回合确曾做过操作」才可达（不再写死死值）
                 applied=result.applied_actions,
                 result_text=result.text,
+                # 完成盖章（dsh A2）：本轮是否已登记完成章 + 续跑预算余量
+                # （计数器由循环持有，轮末闸机只读判定）
+                stamped=completion_stamped,
+                stamp_budget_left=(
+                    unstamped_rounds < recovery_for(
+                        FAILURE_UNSTAMPED_STOP).max_retries),
             )
             await run_round_end_policies(_re_ctx, emit, tracer=tracer)
+            result.text = _re_ctx.result_text
+            if _re_ctx.continue_turn and _re_ctx.stamp_nudge:
+                # 未盖章不放行（dsh A2 round-driver 同语义）：零工具、零变更、
+                # 未盖章的纯口头收尾不受理——正文与事实回喂入上下文后续跑一步，
+                # 让模型选一种合法出口（调工具 / 暂停 / 盖章）；预算耗尽即不再
+                # 触发（闸机条件含 stamp_budget_left），退化为普通收尾 + 事实警告。
+                # 本轮不结束 → 轮末其他策略已追加的警告/建议按钮不入 result
+                # （防给用户看一叠中间状态警告）。
+                unstamped_rounds += 1
+                messages.append({"role": "assistant", "content": content or ""})
+                messages.append({"role": "user", "content": _re_ctx.stamp_nudge})
+                if session_conversation_id:
+                    # 回喂同为 user/message 事件（source=state）：回放字节 = 请求字节
+                    session_log.append_user_message(
+                        StateManager.get_instance(), session_conversation_id,
+                        _re_ctx.stamp_nudge, source=session_log.SOURCE_STATE)
+                logger.info(
+                    f"[AgentLoop] step={step} 零动作未盖章收尾不受理，续跑（已用预算 "
+                    f"{unstamped_rounds}）")
+                tracer.end_step(step, actions_applied=0,
+                                finish_reason="unstamped_continue",
+                                token_usage=step_tokens, cached_tokens=step_cached)
+                continue
             if _re_ctx.result_warnings:
                 result.warnings.extend(_re_ctx.result_warnings)
-            result.text = _re_ctx.result_text
             # fakestop：轮末策略机械追加的建议动作（仅当无既有建议时生效）
             if _re_ctx.suggested_actions and not result.suggested_actions:
                 result.suggested_actions.extend(_re_ctx.suggested_actions)

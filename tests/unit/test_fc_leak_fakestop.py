@@ -188,8 +188,11 @@ async def test_agent_loop_pure_text_round_reaches_fakestop(executor, monkeypatch
         "继续", llm_call=llm_call, context_builder=lambda: "ctx",
         executor=executor, history=[],
     )
-    # 正文经 false_claim_audit 拼接收纳（result_text 路径可达）
-    assert result.text == body
+    # 正文经 false_claim_audit 拼接收纳（result_text 路径可达）。
+    # 完成盖章批（dsh A2）后本体会多烧一步：第一次零工具纯口头收尾被
+    # completion_stamp_gate 驳回续跑（预算 1），第二次才走轮末收尾。
+    assert result.text.endswith(body)
+    assert result.text.count(body) == 2, "未盖章收尾不受理→续跑一次→收尾（两步正文累计）"
     # 假停兜底端到端触发：延续承诺措辞 + skill 激活 + 零操作
     assert any(a.get("kind") == "continue" for a in result.suggested_actions), \
         "纯文本轮末假停兜底未触发（策略所需字段未在生产构造点正确填充/不可达）"

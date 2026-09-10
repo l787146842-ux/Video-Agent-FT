@@ -18,6 +18,7 @@ from src.video_agent.skill_runtime import registry
 from src.video_agent.state.models import (
     ASSEMBLY_PLAN_DOC_NAME, CAT_AUDIO_ITEMS, CAT_KEY_ELEMENTS, CAT_SHOTS,
 )
+from src.video_agent.utils.prompts import render_prompt_section
 
 # 粘性豁免/原料闸/规格闸机械兜底卡已随用户裁决 2026-08-31 退役
 # （外部标杆对齐：流程顺序与原料收集归 skill 散文 + 模型自觉，
@@ -179,6 +180,70 @@ def current_stage(state: Dict[str, Any], skill: str) -> Optional[StageSpec]:
         if not stage_done(spec.key, state, skill):
             return spec
     return None
+
+
+# ---------- 完成盖章（task_complete）客观账本快照 ----------
+
+def outstanding_stages(state: Dict[str, Any], skill: str) -> List[StageSpec]:
+    """客观未完成阶段列表（探针 fail-closed）。
+
+    未激活 Skill 时返回空表 = 不适用阶段判定（普通对话不被此机制约束）。"""
+    if not skill:
+        return []
+    return [s for s in stage_table(skill) if not stage_done(s.key, state, skill)]
+
+
+def _cat_counts(groups: Any) -> Tuple[int, int]:
+    """(组数, 草稿卡数)（非法形状保守计 0）。"""
+    items = [g for g in (groups or []) if isinstance(g, dict)]
+    drafts = sum(
+        len([d for d in (g.get("drafts") or []) if isinstance(d, dict)])
+        for g in items
+    )
+    return len(items), drafts
+
+
+def stamp_receipt(state: Dict[str, Any], skill: str = "") -> str:
+    """盖章回执（纯事实，dsh A2：完成要盖章 + 按证据汇报）。
+
+    不判真假、不设卡点：章永远盖得下去；本回执的作用是把客观账本
+    在收尾前摊到模型与用户面前（模型看到即可自纠，用户看到即可对账）。
+    文案唯一源 = prompts/planner/feedback.md :: STAMP_RECEIPT。"""
+    pending = outstanding_stages(state, skill)
+    stages = ("、".join(
+        f"{s.title}={'未完成' if s in pending else '完成'}"
+        for s in stage_table(skill)
+    )) if skill else "（未激活 Skill：不做阶段判定，只列产物计数）"
+    ke_g, ke_d = _cat_counts(state.get(CAT_KEY_ELEMENTS))
+    sh_g, sh_d = _cat_counts(state.get(CAT_SHOTS))
+    au_g, au_d = _cat_counts(state.get(CAT_AUDIO_ITEMS))
+    ledger = (
+        f"关键元素 {ke_g} 组 {ke_d} 卡；分镜 {sh_g} 组 {sh_d} 卡；"
+        f"音频 {au_g} 组 {au_d} 卡；"
+        f"规格文档={'在盘' if prompt_gates.has_spec_document(state) else '缺失'}；"
+        f"剧本分析={'已落账' if (state.get('analysis') or {}).get('summary') else '未落账'}"
+    )
+    return render_prompt_section(
+        "planner/feedback.md", "STAMP_RECEIPT",
+        stages=stages, ledger=ledger,
+        pending="、".join(s.title for s in pending) or "无",
+        pending_note=(
+            render_prompt_section(
+                "planner/feedback.md", "STAMP_PENDING_NOTE",
+                pending="、".join(s.title for s in pending))
+            if pending else ""),
+    ).strip()
+
+
+def unstamped_stop_nudge(state: Dict[str, Any], skill: str = "") -> str:
+    """零动作未盖章收尾轮的续跑回喂（纯事实 + 合法出口清单，
+    不携带方向性催促——同 STEP_FEEDBACK_AT_PAUSE 退役裁决口径）。"""
+    pending = outstanding_stages(state, skill)
+    return render_prompt_section(
+        "planner/feedback.md", "UNSTAMPED_STOP_NUDGE",
+        progress=("未完成阶段：" + "、".join(s.title for s in pending)
+                  if pending else "各阶段均已客观完成"),
+    ).strip()
 
 
 # ---------- 3A：frontmatter dependencies 消费（DAG 调度） ----------

@@ -912,6 +912,7 @@ export const TOOL_DETAIL_TIERS: Record<string, 'expand' | 'output'> = {
   storyboard_delete_group: 'output',
   storyboard_media_to_chat: 'output',
   storyboard_patch_draft: 'expand',
+  task_complete: 'output',
   view_storyboard_media: 'output',
   workflow_pause: 'expand',
 };
@@ -950,6 +951,7 @@ export const TOOL_APPROVAL_TIERS: Record<string, 'none' | 'confirm' | 'review'> 
   storyboard_delete_group: 'none',
   storyboard_media_to_chat: 'none',
   storyboard_patch_draft: 'none',
+  task_complete: 'none',
   view_storyboard_media: 'none',
   workflow_pause: 'none',
 };

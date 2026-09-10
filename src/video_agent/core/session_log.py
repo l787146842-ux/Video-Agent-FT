@@ -44,6 +44,9 @@ EV_IMPORTED = "log/imported"
 # log-only 事件（批 E3 引入：轮边界 + 压缩事务括号）
 EV_TURN_START = "turn/start"
 EV_TURN_END = "turn/end"
+# 完成盖章（dsh A2）：模型经 task_complete 显式宣告本轮交付时落一条，
+# 使「谁在何时声称完成」成为可审计事实（与客观账本同点入流，事后对账用）
+EV_TURN_STAMP = "turn/stamp"
 EV_COMPACTION_START = "compaction/start"
 EV_COMPACTION_SUMMARY = "compaction/summary"
 EV_COMPACTION_END = "compaction/end"
@@ -601,6 +604,23 @@ def append_turn_end(svc: Any, conversation_id: str, reason: str = "done") -> Non
             if e.get("type") == EV_TURN_START:
                 turn = max(turn, int(e.get("turn") or 0))
         append_event(svc, conversation_id, EV_TURN_END, turn=turn, reason=str(reason or "done"))
+    except Exception:
+        return
+
+
+def append_turn_stamp(
+    svc: Any, conversation_id: str, receipt: str = "", step: int = 0,
+) -> None:
+    """完成盖章审计事件（agent_loop 收到 task_complete 回执时落）：
+    只留痕迹不改行为（log-only，不参与消息面 fold）。落流失败静默（D4）。"""
+    turn = 0
+    try:
+        events = load_events(svc, conversation_id)
+        for e in events:
+            if e.get("type") == EV_TURN_START:
+                turn = max(turn, int(e.get("turn") or 0))
+        append_event(svc, conversation_id, EV_TURN_STAMP, turn=turn, step=step,
+                     receipt=str(receipt or "")[:2000])
     except Exception:
         return
 

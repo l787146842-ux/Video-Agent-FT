@@ -47,14 +47,20 @@ def _run(ctx: RoundEndContext, policies=None, tracer=None) -> RoundEndContext:
 
 
 def test_r1_policy_table_shape():
-    """策略表 = 2 条（2026-09-03 I-1：闸机自愈+结构审阅死副本退役；
-    轮末工具失败汇总策略同批退役），优先级唯一且仲裁顺序确定。"""
+    """策略表 = 4 条，优先级唯一且仲裁顺序确定。
+
+    （2026-09-03 I-1：闸机自愈+结构审阅死副本退役；轮末工具失败汇总策略同批
+    退役；2026-09-10 完成盖章批（dsh A2）新增 completion_stamp_gate /
+    unstamped_stop_notice 两条。）"""
     table = rep.ROUND_END_POLICIES
-    assert len(table) == 2
+    assert len(table) == 4
     ids = [p.policy_id for p in sorted(table, key=lambda p: p.priority)]
-    assert ids == ["false_claim_audit", "aborted_continuation_audit"]
+    assert ids == [
+        "completion_stamp_gate", "unstamped_stop_notice",
+        "false_claim_audit", "aborted_continuation_audit",
+    ]
     priorities = [p.priority for p in table]
-    assert len(set(priorities)) == 2, "优先级必须唯一（仲裁顺序确定性）"
+    assert len(set(priorities)) == 4, "优先级必须唯一（仲裁顺序确定性）"
 
 
 def test_r1_no_ledger_field_after_retirement():

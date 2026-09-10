@@ -889,6 +889,38 @@ class RunSubagentTool(BaseTool):
         )
 
 
+class TaskCompleteInput(BaseModel):
+    summary: str = Field(
+        ...,
+        description="本轮做了什么的一句话交代（面向用户，只讲已落账的事实，"
+        "不得包含未实际执行的产出）。",
+    )
+
+
+class TaskCompleteTool(BaseTool):
+    name = "task_complete"
+    risk = "low"  # 不写工作台业务状态，只登记「本轮向用户交付」这一事实
+    detail_tier = "output"  # 控制流轻量盖章：仅输出留痕，不列输入展开（也非产出类，不计入产出对账）
+    # 无 provider_kind / costly=False / parallel_safe=False（盖章即冻结本轮）。
+    description = (
+        "登记本轮完成章：宣告本轮向用户交付、结束本轮。只提交一句话 summary，"
+        "不执行任何工作；回执会列出工作台的客观账本（阶段完成度与产物计数），"
+        "请据此核实后向用户交代——与实际落账不符的部分不得写进 summary。"
+        "未到 Skill 暂停点且本阶段仍有待办时，应继续调用工具推进，而不是盖章收尾。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return TaskCompleteInput
+
+    async def aexecute(self, params: TaskCompleteInput) -> ToolResult:
+        """只提交盖章事实：客观账本回执与本轮冻结由发行点
+        （core/fc_tool_runner._commit_call）统写入回喂数据，工具本体不碰状态。"""
+        return ToolResult(
+            success=True,
+            data={"stamped": True, "summary": str(params.summary or "").strip()},
+        )
+
+
 # ---------- 注册 ----------
 
 def register_document_tools():
@@ -903,4 +935,5 @@ def register_document_tools():
     ToolManager.register(ImageGenerateTool())
     ToolManager.register(WorkflowPauseTool())
     ToolManager.register(RunSubagentTool())
-    logger.info("[Tools] 9 document/skill/generation/workflow tools registered")
+    ToolManager.register(TaskCompleteTool())
+    logger.info("[Tools] 10 document/skill/generation/workflow tools registered")

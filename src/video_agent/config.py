@@ -110,6 +110,12 @@ class Settings:
     subagent_enabled: bool = field(default_factory=lambda: _env_bool("SUBAGENT_ENABLED", True))
     subagent_max_steps: int = field(default_factory=lambda: _env_int("SUBAGENT_MAX_STEPS", 6))
 
+    # 完成盖章 task_complete（dsh A2 口径：结束本轮必须显式盖章，未盖章的纯口头
+    # 收尾不受理）：总开关（关 = 不下发 task_complete 工具且不启用轮末盖章闸，
+    # 一键回滚）；零动作未盖章收尾轮的续跑预算（防打转，不进前端设置页）。
+    completion_stamp_enabled: bool = field(
+        default_factory=lambda: _env_bool("COMPLETION_STAMP_ENABLED", True))
+
     # LLM 超时（秒）
     llm_timeout: int = field(default_factory=lambda: _env_int("LLM_TIMEOUT", 120))
     llm_stream_timeout: int = field(default_factory=lambda: _env_int("LLM_STREAM_TIMEOUT", 180))

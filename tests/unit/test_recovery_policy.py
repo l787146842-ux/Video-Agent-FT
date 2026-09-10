@@ -30,6 +30,7 @@ def test_table_covers_failure_kinds():
         rp.FAILURE_TOOL,
         rp.FAILURE_ADAPTER,
         rp.FAILURE_PRODUCTIVE_REJECT,  # 批 12：产出类被拒混合轮续轮预算（1000 清偿）
+        rp.FAILURE_UNSTAMPED_STOP,  # 完成盖章批（dsh A2）：零动作未盖章收尾续跑预算
     }
 
 

@@ -320,6 +320,10 @@ class Planner:
             return frozenset(n for n in all_names if n not in whitelist)
         if not context.use_studio_context:
             excluded |= _STUDIO_STATE_TOOLS
+        # 完成盖章总开关（一键回滚）：关 = 不下发 task_complete（轮末闸机
+        # 在 round_end_policies 内读同一开关，两处同进同退）
+        if not settings.completion_stamp_enabled:
+            excluded |= {"task_complete"}
         if not settings.canvas_enabled:
             excluded |= _CANVAS_TOOLS
         else:
