@@ -480,6 +480,7 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
         state_manager=ctx.svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
         executor_factory=StateOperationExecutor,
         chat_provider=ctx.cand_provider, chat_model=ctx.cand_model,
+        chat_adapter_factory=_create_chat_adapter,
     )
     resolved_skill = (
         "" if ctx.adjust_scope else _resolve_skill_name_for_injection(
@@ -882,6 +883,7 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
             state_manager=svc, llm_adapter=llm_adapter, tool_manager=ToolManager,
             executor_factory=StateOperationExecutor,
             chat_provider=cand_provider, chat_model=cand_model,
+            chat_adapter_factory=_create_chat_adapter,
         )
         applied_seen = False
 

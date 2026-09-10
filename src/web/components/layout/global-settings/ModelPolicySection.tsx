@@ -1,7 +1,7 @@
 /**
  * 模型分层策略表（四角色自动路由；空 = 跟随主模型）——自 GlobalSettingsView 切出。
- * 「推理档位」卡退役——执行器/摘要档位归入本表「推理」列
- * （通用搭配默认：摘要/执行器机械 = 低，防思考吃预算）。
+ * 「推理档位」卡退役——子代理/摘要档位归入本表「推理」列
+ * （通用搭配默认：摘要 = 低；子代理缺省跟随主模型，防思考吃预算）。
  */
 import { For } from 'solid-js';
 import { apiProvidersFor, providerModels } from '@/lib/providers';
@@ -9,12 +9,12 @@ import { ParamGroup, ParamSelect } from '@/components/middle-panel/params/ParamB
 import type { RuntimeSettings } from '@/api/agent';
 import type { PolicyRow } from '@/types/api.generated';
 
-/** ：模型分层策略表四角色（编排/生成/摘要/执行器） */
+/** ：模型分层策略表四角色（编排/生成/摘要/子代理） */
 const MODEL_POLICY_ROLES = [
   { key: 'orchestration', label: '编排规划' },
   { key: 'generation_strong', label: '生成' },
   { key: 'summary', label: '摘要' },
-  { key: 'executor', label: '执行器机械' },
+  { key: 'subagent', label: '子代理' },
 ] as const;
 
 /**  推理档位四档：默认=模型原生 */
@@ -80,10 +80,10 @@ export function ModelPolicySection(props: {
         </For>
       </div>
       <p class="gs-hint">
-        编排规划 = 主对话/规划轮；生成 = 执行器长文生成与纠正重试；摘要 = 记忆摘要与会话压缩；
-        执行器机械 = 拆解/提示词批量誊写（快模型先试，零进展自动升级）。
+        编排规划 = 主对话/规划轮；生成 = 长文生成与纠正重试；摘要 = 记忆摘要与会话压缩；
+        子代理 = run_subagent 委派出的隔离子级（缺省跟随主模型，配了就接管子级模型）。
         「跟随主模型」= 不覆盖（沿用对话栏所选模型与既有回落链）；
-        推理档通用搭配默认：摘要/执行器机械 = 低（照章办事不需深推理，防思考吃光输出预算），编排/生成 = 原生；改动即时生效。
+        推理档通用搭配默认：摘要 = 低（照章办事不需深推理，防思考吃光输出预算），子代理/编排/生成 = 原生；改动即时生效。
       </p>
     </section>
   );

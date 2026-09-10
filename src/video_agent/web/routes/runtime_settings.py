@@ -83,7 +83,7 @@ class RuntimeSettingsUpdate(BaseModel):
     execution_preference: Optional[str] = None
     # 执行模式四档（非法值拒收；缺省 = 不变更）
     execution_mode: Optional[str] = None
-    # 模型分层策略表（编排/生成/摘要/执行器四角色；空 = 跟随主模型；
+    # 模型分层策略表（编排/生成/摘要/子代理四角色；空 = 跟随主模型；
     # 推理档位可独立于供应商设置；旧「推理档位」卡两键已退役）
     model_policy: Optional[Dict[str, Any]] = None
 
@@ -273,7 +273,7 @@ def load_runtime_settings() -> None:
                 except (TypeError, ValueError) as _e:
                     logger.debug("[runtime_settings] 忽略异常: {}", _e)
         # 「推理档位」卡退役——存量值（文件旧键 / env 覆写）
-        # 一次性迁入 model_policy 的 executor/summary 行；两旧键从文件清除。
+        # 一次性迁入 model_policy 的 subagent/summary 行；两旧键从文件清除。
         from src.video_agent.core import model_policy as mp
 
         pol = mp.normalize_policy(
@@ -281,7 +281,7 @@ def load_runtime_settings() -> None:
             else (getattr(settings, "model_policy", None) or {}))
         migrated = False
         for role, legacy_key, env_val in (
-            ("executor", "executor_thinking_level", settings.executor_thinking_level),
+            ("subagent", "executor_thinking_level", settings.executor_thinking_level),
             ("summary", "aux_thinking_level", settings.aux_thinking_level),
         ):
             legacy = str(data.get(legacy_key) or "").strip().lower()

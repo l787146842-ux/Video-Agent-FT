@@ -149,3 +149,69 @@ async def test_launch_subagent_depth_guard_no_recursion(svc, monkeypatch):
     out = await parent._launch_subagent("x", PlannerContext(subagent_depth=1))
     assert "深度上限" in out
     assert called["hit"] is False
+
+
+# ---------- B2：子级模型档（resolve_role("subagent")）----------
+
+async def test_launch_subagent_follows_parent_when_unset(svc, monkeypatch):
+    # 未配 subagent 行（默认）→ 子级完全继承父 adapter/思考（跟随主模型）
+    captured = {}
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, **kw):
+        captured["adapter"] = self.llm_adapter
+        captured["provider"] = self.chat_provider
+        captured["model"] = self.chat_model
+        captured["thinking"] = context.thinking_level
+        return _FakeResp()
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    from src.video_agent.config import settings
+    old = getattr(settings, "model_policy", {}) or {}
+    object.__setattr__(settings, "model_policy", {})
+    try:
+        parent = Planner(state_manager=svc, llm_adapter="PARENT",
+                         chat_provider="prov_main", chat_model="model_main",
+                         chat_adapter_factory=lambda p, m: "SHOULD_NOT_BE_USED")
+        await parent._launch_subagent("x", PlannerContext(
+            subagent_depth=0, thinking_level="high"))
+        assert captured["adapter"] == "PARENT"       # 跟随父
+        assert captured["provider"] == "prov_main"
+        assert captured["model"] == "model_main"
+        assert captured["thinking"] == "high"         # 继承父思考（无预置降档）
+    finally:
+        object.__setattr__(settings, "model_policy", old)
+
+
+async def test_launch_subagent_honors_subagent_role_override(svc, monkeypatch):
+    # 显式配 subagent provider + 注入工厂 → 子级接管为快模型，思考按配置降档
+    captured = {}
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, **kw):
+        captured["adapter"] = self.llm_adapter
+        captured["provider"] = self.chat_provider
+        captured["model"] = self.chat_model
+        captured["thinking"] = context.thinking_level
+        return _FakeResp()
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    from src.video_agent.config import settings
+    old = getattr(settings, "model_policy", {}) or {}
+    object.__setattr__(settings, "model_policy", {
+        "subagent": {"provider": "p_fast", "model": "m_fast", "thinking_level": "low"}})
+    try:
+        parent = Planner(state_manager=svc, llm_adapter="PARENT",
+                         chat_provider="prov_main", chat_model="model_main",
+                         chat_adapter_factory=lambda p, m: f"CHILD::{p}:{m}")
+        await parent._launch_subagent("x", PlannerContext(subagent_depth=0))
+        assert captured["adapter"] == "CHILD::p_fast:m_fast"
+        assert captured["provider"] == "p_fast"
+        assert captured["model"] == "m_fast"
+        assert captured["thinking"] == "low"           # 显式降档生效
+    finally:
+        object.__setattr__(settings, "model_policy", old)

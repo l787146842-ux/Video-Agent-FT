@@ -35,6 +35,8 @@ from src.video_agent.tools.mcp import catalog as mcp_catalog
 from src.video_agent.utils.prompts import load_prompt, render_prompt
 from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.core.agent_loop import current_max_steps, run_agent_loop
+# 子代理可选模档：读模型分层策略表（core→core 无环；空/未配 = 跟随主模型）
+from src.video_agent.core import model_policy
 from src.video_agent.core.fc_tool_runner import (
     FCExecuteResult,
     FCToolRunner,
@@ -248,11 +250,15 @@ class Planner:
         skill_docs: Optional[Any] = None,
         chat_provider: str = "",
         chat_model: str = "",
+        chat_adapter_factory: Optional[Callable[[str, str], Any]] = None,
     ):
         # state_manager 缺省回落单例（Rule3）；core 层不绕过它直接碰状态
         self.state_manager = state_manager or StateManager.get_instance()
         self.tool_manager = tool_manager or ToolManager
         self.llm_adapter = llm_adapter
+        # chat_adapter_factory: 按 (provider, model) 造 chat adapter 的工厂（web 层
+        # 装配点注入，消除 core→adapters/web 依赖；None = 子代理无法换模→跟随父档）。
+        self._chat_adapter_factory = chat_adapter_factory
         # executor_factory: 文本解析路径的执行器工厂（web 层装配时显式注入，
         # 消除 core→web 顶层依赖；None 时延迟导入兼容测试/CLI 调用方）
         self.executor_factory = executor_factory
@@ -355,6 +361,26 @@ class Planner:
             child_cid = str((conv or {}).get("id") or "")
         except Exception as _e:  # 子会话创建失败不阻断委派（降级为不落流）
             logger.warning("[Subagent] 子会话创建失败，回落不落流: {}", _e)
+        # 子级模型档：缺省完全继承父级（跟随主模型）；仅当 model_policy 的
+        # `subagent` 行显式配了 provider（且装配点注入了工厂）才接管；解析
+        # 失败静默回落父档（子级仍跑完，功能不断）。思考档同理：仅显式配则覆盖。
+        child_adapter = self.llm_adapter
+        child_provider = self.chat_provider
+        child_model = self.chat_model
+        child_thinking = getattr(parent_ctx, "thinking_level", "") or ""
+        try:
+            role = model_policy.resolve_role("subagent")
+            if role and role.get("provider") and self._chat_adapter_factory is not None:
+                p = str(role["provider"])
+                m = str(role.get("model") or self.chat_model)
+                built = self._chat_adapter_factory(p, m)
+                if built is not None:
+                    child_adapter, child_provider, child_model = built, p, m
+            sub_think = model_policy.thinking_for("subagent")
+            if sub_think:
+                child_thinking = sub_think
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("[Subagent] 子代理模档解析失败，回落父档: {}", _e)
         child_ctx = PlannerContext(
             history=[],
             session_conversation_id=child_cid,
@@ -362,7 +388,7 @@ class Planner:
             skill_name="",
             raw_user_text=task,
             user_id=getattr(parent_ctx, "user_id", "") or "",
-            thinking_level=getattr(parent_ctx, "thinking_level", "") or "",
+            thinking_level=child_thinking,
             stop_scope=getattr(parent_ctx, "stop_scope", "chat") or "chat",
             subagent_depth=child_depth,
             subagent_no_confirm=True,
@@ -371,11 +397,12 @@ class Planner:
         child = Planner(
             state_manager=self.state_manager,
             tool_manager=self.tool_manager,
-            llm_adapter=self.llm_adapter,
+            llm_adapter=child_adapter,
             executor_factory=self.executor_factory,
             skill_docs=self._skill_docs,
-            chat_provider=self.chat_provider,
-            chat_model=self.chat_model,
+            chat_provider=child_provider,
+            chat_model=child_model,
+            chat_adapter_factory=self._chat_adapter_factory,
         )
         resp = await child.handle_message(
             subagent_mod.build_subagent_task(task), child_ctx,
