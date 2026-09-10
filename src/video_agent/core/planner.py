@@ -61,6 +61,9 @@ from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # Workflow Runtime：账本 + 裁判数据层
 from src.video_agent.core import workflow_contract, workflow_runtime
 from src.video_agent.core.pause_composer import PAUSE_KIND_STAGE_DONE
+# 正宗子代理：契约常量/纯辅助（subagent 仅依赖 utils.prompts，无环）+ 子会话创建
+from src.video_agent.core import subagent as subagent_mod
+from src.video_agent.state import conversation_ops
 
 
 # 绑定工作台状态的工具集：use_studio_context=False 时不下发（节省 schema token）
@@ -160,6 +163,13 @@ class PlannerContext:
     # 纪律提示段（prompts/planner/adjust.md）据此注入；
     # 内容恒定不嵌目标编号（保前缀缓存），目标信息由状态裁剪面携带。
     adjust_scope: Dict[str, Any] = field(default_factory=dict)
+    # 正宗子代理（run_subagent）上下文标记：
+    # subagent_depth = 委派深度（顶级 0，子级 = 父+1，恢复态不得归零）；
+    # subagent_no_confirm = 子级不向用户发确认（复用 _scope_auto_pause 通道）；
+    # subagent_whitelist = 子级可见工具白名单（非空 ⇒ 工具面裁剪为仅此集合）。
+    subagent_depth: int = 0
+    subagent_no_confirm: bool = False
+    subagent_whitelist: Optional[frozenset] = None
     # （step_info 已随二期 G3 退役删除：状态尾部步数行每步必变是强制
     # 前缀失效源；轮次信息由 STEP_FEEDBACK「第 N 轮」承载）
     # 会话事件流归属（v4 主刀批 E1）：本请求的 conversation_id（可空=活跃会话，
@@ -287,6 +297,21 @@ class Planner:
         仅保留轮界级裁剪源（canvas 探针 / MCP 白名单 / 非 studio 上下文）。
         """
         excluded = set()
+        # 子代理白名单模式（非空 ⇒ 只下发白名单）：run_subagent 天然不在白名单内
+        # ⇒ 子级看不到也无法调用（结构防递归）。覆盖 studio/canvas/MCP 常规裁剪。
+        whitelist = getattr(context, "subagent_whitelist", None)
+        if whitelist:
+            try:
+                all_schemas = self.tool_manager.get_all_tool_schemas() or []
+            except Exception:
+                all_schemas = []
+            all_names = set()
+            for s in all_schemas:
+                fn = (s or {}).get("function") or {}
+                n = fn.get("name")
+                if n:
+                    all_names.add(n)
+            return frozenset(n for n in all_names if n not in whitelist)
         if not context.use_studio_context:
             excluded |= _STUDIO_STATE_TOOLS
         if not settings.canvas_enabled:
@@ -305,6 +330,57 @@ class Planner:
         except Exception:
             pass  # 裁剪失败不阻断对话；未启用工具直调仍被 adapter 拒执行
         return frozenset(excluded)
+
+    async def _launch_subagent(self, task: str, parent_ctx: "PlannerContext") -> str:
+        """正宗子代理（one-shot）：模型经 FC `run_subagent` 发起 → 在隔离上下文里
+        复用同一 `run_agent_loop`（经子 Planner）连续跑完 → 只回摘要。
+
+        非机械执行器：发起方=模型、走同一 `guard_pipeline`、无 `exec_*`。子 Planner
+        自带独立 FCToolRunner/TurnExecutor 实例（避免与父共享 runner 的轮内状态），
+        仅共享 StateManager（父此刻挂起等待，无并发写冲突）。"""
+        try:
+            child_depth = subagent_mod.resolve_child_depth(
+                getattr(parent_ctx, "subagent_depth", 0))
+        except subagent_mod.SubagentDepthError:
+            return "（已达子代理深度上限，无法再委派，请在当前层完成。）"
+        # 子会话：独立隐藏线程（携血缘）；创建失败回落不落流（子级仍在内存跑完）。
+        child_cid = ""
+        try:
+            parent_cid = str(getattr(parent_ctx, "session_conversation_id", "") or "")
+            conv = conversation_ops.create_scoped_conversation(
+                self.state_manager,
+                {"kind": "subagent", "parent_conversation": parent_cid,
+                 "label": (task or "")[:24]},
+                title="子代理")
+            child_cid = str((conv or {}).get("id") or "")
+        except Exception as _e:  # 子会话创建失败不阻断委派（降级为不落流）
+            logger.warning("[Subagent] 子会话创建失败，回落不落流: {}", _e)
+        child_ctx = PlannerContext(
+            history=[],
+            session_conversation_id=child_cid,
+            use_studio_context=True,
+            skill_name="",
+            raw_user_text=task,
+            user_id=getattr(parent_ctx, "user_id", "") or "",
+            thinking_level=getattr(parent_ctx, "thinking_level", "") or "",
+            stop_scope=getattr(parent_ctx, "stop_scope", "chat") or "chat",
+            subagent_depth=child_depth,
+            subagent_no_confirm=True,
+            subagent_whitelist=subagent_mod.SUBAGENT_TOOL_WHITELIST,
+        )
+        child = Planner(
+            state_manager=self.state_manager,
+            tool_manager=self.tool_manager,
+            llm_adapter=self.llm_adapter,
+            executor_factory=self.executor_factory,
+            skill_docs=self._skill_docs,
+            chat_provider=self.chat_provider,
+            chat_model=self.chat_model,
+        )
+        resp = await child.handle_message(
+            subagent_mod.build_subagent_task(task), child_ctx,
+            max_steps=int(getattr(settings, "subagent_max_steps", 6) or 6))
+        return str(getattr(resp, "text", "") or "").strip() or "（子代理未产出摘要）"
 
     def _make_system_degrader(self, context: PlannerContext) -> Optional[Callable[[str], str]]:
         """system 超预算保险丝：用降级状态 JSON（只留组标题/计数）重建 system prompt。
@@ -437,6 +513,7 @@ class Planner:
         context: PlannerContext,
         stream_hook=None,
         on_event=None,
+        max_steps: Optional[int] = None,
     ) -> PlannerResponse:
         """
         对话处理（多步循环）—— 流式/非流式统一入口。
@@ -454,7 +531,15 @@ class Planner:
         # 子对话不发确认卡（二期子对话批 3）：scope 任务命中 workflow_pause 直接
         # 放行（FCToolRunner 据此旗标不登记暂停/不组卡）；主对话问即停语义不变。
         # Planner 实例每请求新建（chat_service 装配），旗标不跨请求泄漏。
-        self._scope_auto_pause = bool(context.adjust_scope)
+        self._scope_auto_pause = bool(
+            context.adjust_scope or getattr(context, "subagent_no_confirm", False))
+        # 正宗子代理：仅顶级轮（depth 0）且开关开时注入启动器（捕获本轮 context）；
+        # 子级（depth≥1）置 None ⇒ 子级无法再委派（防递归）。随请求实例隔离，不跨请求泄漏。
+        if settings.subagent_enabled and not getattr(context, "subagent_depth", 0):
+            self._fc_runner.subagent_launcher = (
+                lambda task: self._launch_subagent(task, context))
+        else:
+            self._fc_runner.subagent_launcher = None
 
         # 按上下文裁剪本轮下发的工具集 + 装配 system 超预算降级器（token 治理）
         self._excluded_tools = self._compute_excluded_tools(context)
@@ -600,6 +685,7 @@ class Planner:
         # 委托给统一循环（越阶/越暂停由闸机在工具调用点否决）
         loop_result = await run_agent_loop(
             user_message,
+            max_steps=max_steps,
             llm_call=self._turn_executor.llm_call,
             context_builder=context_builder,
             executor=executor,

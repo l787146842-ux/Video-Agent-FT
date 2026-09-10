@@ -159,6 +159,10 @@ class FCToolRunner:
         self._gate_repeat: Dict[str, int] = {}
         # 幂等键轮内账本（T4）：同键重复提交去重，生命周期随轮、不持久化
         self._idempotency = IdempotencyLedger()
+        # 正宗子代理启动器（run_subagent 控制流伪工具的执行体）：由 planner 轮始
+        # 注入捕获本轮 context 的回调（依赖注入，本文件绝不 import planner/agent_loop，
+        # 不成环）；None = 未装配/子级内（防递归），命中即明确不可用。
+        self.subagent_launcher = None
 
     # ---------- 闸机上下文组装（判定实现体 = core/fc_gates.py） ----------
 
@@ -230,7 +234,22 @@ class FCToolRunner:
 
     async def _dispatch_tool(self, name: str, args: Dict[str, Any]) -> ToolResult:
         """闸机放行后的单调用派发（并行桶内亦经本路径）：
-        含 read_skill 在内全部常规分发真执行（任务#12：短路已废）。"""
+        含 read_skill 在内全部常规分发真执行（任务#12：短路已废）。
+
+        run_subagent 属控制流伪工具（同 workflow_pause 在派发/提交段被 core 拦截）：
+        经 planner 注入的 `subagent_launcher` 在隔离上下文跑完子循环、只回摘要，
+        不走 `invoke_tool`（模型经 FC 发起、走同一闸机链，非机械执行器）。"""
+        if name == "run_subagent":
+            launcher = getattr(self, "subagent_launcher", None)
+            if launcher is None:
+                return ToolResult(
+                    success=False,
+                    error="子代理当前不可用（未装配或已达深度上限）。",
+                    error_code="validation",
+                )
+            summary = await launcher(str((args or {}).get("task") or ""))
+            text = str(summary or "").strip() or "（子代理未产出摘要）"
+            return ToolResult(success=True, data={"summary": text, "result": text})
         return await self.tool_manager.invoke_tool(name, args)
 
     def _record_presented(self, name: str, args: Dict[str, Any]) -> None:

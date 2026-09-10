@@ -854,6 +854,41 @@ class WorkflowPauseTool(BaseTool):
         return ToolResult(success=True, data={"paused": True, "message": params.message})
 
 
+class RunSubagentInput(BaseModel):
+    task: str = Field(
+        ...,
+        description="交给子代理的完整任务说明：目标、涉及范围、验收标准。"
+        "子代理在独立上下文里连续执行到完成，只回一段摘要。",
+    )
+
+
+class RunSubagentTool(BaseTool):
+    name = "run_subagent"
+    risk = "medium"  # 写工作台状态但可撤销（子级经故事板/文档工具落账）
+    detail_tier = "expand"  # 关键控制流：展开可见委派任务与回摘要
+    # 无 provider_kind / costly=False / parallel_safe=False（独占串行，屏障）。
+    description = (
+        "把一段自包含、可独立完成的批量工作委派给子代理：它在自己的上下文里连续执行到完成，"
+        "不占用本对话上下文，只回一段摘要（不含中间步骤）。**用于**：按已确认规格把剧本"
+        "拆解成关键元素与分镜、并逐条撰写提示词这类一次产出很多内容的批量工作。**给它"
+        "一个完整、独立的任务说明**——子代理看不到本对话。**不要用于**：需要逐条与用户确认"
+        "的分步推进，或花钱生成（生图/生视频）。"
+    )
+
+    def get_input_schema(self) -> Type[BaseModel]:
+        return RunSubagentInput
+
+    async def aexecute(self, params: RunSubagentInput) -> ToolResult:
+        """正常不经此：run_subagent 由 core/fc_tool_runner._dispatch_tool 在派发前
+        经注入的 subagent_launcher 拦截执行（同 workflow_pause 属控制流伪工具）。
+        直达本方法说明运行时未装配子代理能力，明确失败不静默。"""
+        return ToolResult(
+            success=False,
+            error="run_subagent 由运行时执行；当前子代理能力未装配，不可用。",
+            error_code="validation",
+        )
+
+
 # ---------- 注册 ----------
 
 def register_document_tools():
@@ -867,4 +902,5 @@ def register_document_tools():
     ToolManager.register(ReadProjectDocTool())
     ToolManager.register(ImageGenerateTool())
     ToolManager.register(WorkflowPauseTool())
-    logger.info("[Tools] 8 document/skill/generation/workflow tools registered")
+    ToolManager.register(RunSubagentTool())
+    logger.info("[Tools] 9 document/skill/generation/workflow tools registered")

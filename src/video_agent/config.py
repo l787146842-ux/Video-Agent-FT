@@ -104,6 +104,12 @@ class Settings:
     # agent_loop 每步实时读取，不再 import 期冻结）
     max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 6))
 
+    # 正宗子代理 run_subagent（模型经 FC 发起、复用 run_agent_loop 的一次性子级，
+    # 非机械执行器）：总开关（关=不下发 run_subagent 工具，一键回滚）；子级循环
+    # 步数上限（env/config 默认，**不进前端设置页**，显式覆盖 run_agent_loop 实时值）。
+    subagent_enabled: bool = field(default_factory=lambda: _env_bool("SUBAGENT_ENABLED", True))
+    subagent_max_steps: int = field(default_factory=lambda: _env_int("SUBAGENT_MAX_STEPS", 6))
+
     # LLM 超时（秒）
     llm_timeout: int = field(default_factory=lambda: _env_int("LLM_TIMEOUT", 120))
     llm_stream_timeout: int = field(default_factory=lambda: _env_int("LLM_STREAM_TIMEOUT", 180))
