@@ -2,14 +2,15 @@
 
 > 用途：在新窗口执行《run_subagent 正宗子代理实施计划书》。本文自包含，不必回读历史对话。
 > 计划书原文：`C:\Users\ASUS\AppData\Roaming\Qoder\SharedClientCache\cache\plans\run_subagent_子代理计划书_task-ddd.md`
-> 状态：**B1–B4 后端已全部执行完成并推送 origin/main**（commit c352ebd / a957c76 / 90ffadc / ca47629；批末 `acceptance --with-eval` 19 步全绿）。**仅剩 B3-前端（左栏子任务卡 + 只读记录 UI）未做**：因需构建后用户目测确认（宪法 §3.1），本轮按用户裁决只完成了 B3 的后端地基。下轮接 B3-前端。
+> 状态（更新 2026-09-10 晚）：**B1–B4 后端 + B3-前端 + 完成盖章批 G + 稳定委派批 D 全部已执行并推送 origin/main**（c352ebd / a957c76 / 90ffadc / ca47629 / 52295f3 / 8ee1994 / b30ba1b；批末 `acceptance --with-eval` 20 步全绿，全量 tests/ 2333 通过）。
+> **本计划书四批已收工；剩唯一待办 = 真机复跑验证**（重启后端→同一 Skill+同一剧本跑到「拆结构 / 写提示词」阶段，核对：右栏出现 `run_subagent` 条目与真摘要、左栏「子任务」出卡、零工具纯口头“已完成”不再能静默结束本轮）。
 >
 > **B3 后端地基已就绪（下轮 UI 直接用）**：
 > - `GET /api/conversations/subagents` → 子任务卡列表（conversation_id/title/label/parent + status(running/completed)/steps）；
 > - `GET /api/conversations/subagents/{cid}/record` → 事件流派生的只读执行记录（sender/text/reasoning_content/actionLog）；
 > - 子级任务已作为 `user/message` 事件落入隐藏线程（`_launch_subagent`），记录自描述。
 >
-> **B3-前端待做**：① 主 SSE 转发轻量“子任务状态”事件（当前 `thread_status` 靠事件流 turn/end 判定，子级内联同步跑完，刷新/重开可见 completed；实时 running 态需从 `_launch_subagent` 把子级 `on_event` 接到父 SSE——`subagent_launcher`/`handle_message` 那侧注入 emitter）；② `LeftPanel.tsx` 加第 3 个 Tab + 新组件 `SubagentRail.tsx`（读 `/conversations/subagents`）；③ 点卡片 → 只读 `ChatFeed`（隐 `ChatInput`，按 conversation_id 调 `/record` 装载）。UI 构建后需用户目测。
+> **B3-前端已完成**（commit 52295f3）：左栏第 3 Tab「子任务」+ `SubagentRail.tsx`（卡片清单态 ⇄ 只读记录态，Tab 打开期 4s 轮询）。当时未做主 SSE 转发：子级在父本轮内联同步跑完，父阻塞期无独立帧可推，实时态由轮询承接（如需真正时的 running 推送，再做 `_launch_subagent` 把子级 `on_event` 接父 SSE 的子任务状态事件）。
 >
 > **已定约束（不变）**：保持 `ai_decide`、思考照常展示、不碰 SKILL.md、不复活机械执行器、子代理缺省跟随主模型（`model_policy` 的 `subagent` 行已成活：配了才接管）、步数不进前端。
 
