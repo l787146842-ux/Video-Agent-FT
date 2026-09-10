@@ -5,7 +5,7 @@
  * 前端据此刷新标签栏；目标对话消息经 getConversationMessages 单独装载。
  */
 import { apiFetch, apiPost, apiDelete } from './client';
-import type { ChatMessage } from '@/types';
+import type { ChatMessage, SubagentThread, SubagentRecordMessage } from '@/types';
 import type {
   BranchRequest, ConversationsMetaResponse, CreateConversationRequest, SnapshotRequest,
   ThreadUnrefRequest,
@@ -30,6 +30,28 @@ export function getConversations(): Promise<ConversationsPayload> {
 export function getConversationMessages(id: string): Promise<ConversationMessagesResponse> {
   return apiFetch<ConversationMessagesResponse>(
     `/api/conversations/${encodeURIComponent(id)}/messages`,
+  );
+}
+
+/** 子代理隐藏线程清单响应（B3 左栏子任务卡数据源） */
+export interface SubagentThreadsResponse {
+  subagents: SubagentThread[];
+}
+
+/** 列出当前项目的子代理隐藏线程（元信息 + 事件流运行态/步数） */
+export function getSubagentThreads(): Promise<SubagentThreadsResponse> {
+  return apiFetch<SubagentThreadsResponse>('/api/conversations/subagents');
+}
+
+/** 子代理只读执行记录（事件流派生，单一事实源；非子代理线程后端 404） */
+export interface SubagentRecordResponse {
+  conversation_id: string;
+  messages: SubagentRecordMessage[];
+}
+
+export function getSubagentRecord(id: string): Promise<SubagentRecordResponse> {
+  return apiFetch<SubagentRecordResponse>(
+    `/api/conversations/subagents/${encodeURIComponent(id)}/record`,
   );
 }
 

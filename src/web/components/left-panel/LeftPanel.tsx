@@ -1,8 +1,9 @@
-import { Show } from 'solid-js';
-import { FiFolder, FiGrid } from 'solid-icons/fi';
+import { Switch, Match } from 'solid-js';
+import { FiFolder, FiGrid, FiCpu } from 'solid-icons/fi';
 import { state, studioActions } from '@/stores/studio';
 import { StoryboardView } from './StoryboardView';
 import { UncategorizedView } from './UncategorizedView';
+import { SubagentRail } from './SubagentRail';
 import { SnapshotHistoryBar } from './SnapshotHistoryBar';
 import { BoardConflictPanel } from './BoardConflictPanel';
 import type { LeftTab } from '@/types';
@@ -10,10 +11,11 @@ import type { LeftTab } from '@/types';
 const TABS: Array<{ key: LeftTab; label: string; icon: typeof FiGrid }> = [
   { key: 'storyboard', label: '故事板', icon: FiGrid },
   { key: 'uncategorized', label: '未归类素材', icon: FiFolder },
+  { key: 'subagents', label: '子任务', icon: FiCpu },
 ];
 
 /**
- * 左侧面板容器：LeftTab 切换（故事板 / 未归类素材）
+ * 左侧面板容器：LeftTab 切换（故事板 / 未归类素材 / 子任务）
  */
 export default function LeftPanel() {
   return (
@@ -40,9 +42,17 @@ export default function LeftPanel() {
 
       {/* 内容区 */}
       <div class="left-content">
-        <Show when={state.leftTab === 'storyboard'} fallback={<UncategorizedView />}>
-          <StoryboardView />
-        </Show>
+        <Switch>
+          <Match when={state.leftTab === 'storyboard'}>
+            <StoryboardView />
+          </Match>
+          <Match when={state.leftTab === 'subagents'}>
+            <SubagentRail />
+          </Match>
+          <Match when={state.leftTab === 'uncategorized'}>
+            <UncategorizedView />
+          </Match>
+        </Switch>
       </div>
 
       {/* E1 故事板版本列表（快照指针清单；回退经二次确认 + 后端生成中禁回退） */}

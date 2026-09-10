@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   startAgentTask, fetchAgentTaskEvents, listAgentTasks, stopAgentTask, postAgentTaskGuidance,
 } from '../sse';
+import { getSubagentThreads, getSubagentRecord } from '../conversations';
 import {
   canvasLlm, getSkills, getContextUsage, getRuntimeSettings, setRuntimeSettings,
   getAgentMetrics,
@@ -125,5 +126,21 @@ describe('agent.ts 关键端点拼装', () => {
     fetchMock.mockResolvedValue(res({ traces_count: 0 }));
     await getAgentMetrics();
     expect(fetchMock.mock.calls[0][0]).toBe('/api/agent/metrics');
+  });
+});
+
+describe('B3 子代理只读端点拼装', () => {
+  it('getSubagentThreads：GET /api/conversations/subagents', async () => {
+    fetchMock.mockResolvedValue(res({ subagents: [{ conversation_id: 'c1' }] }));
+    const r = await getSubagentThreads();
+    expect(r.subagents[0].conversation_id).toBe('c1');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/conversations/subagents');
+  });
+
+  it('getSubagentRecord：id 编码进路径', async () => {
+    fetchMock.mockResolvedValue(res({ conversation_id: 'c/1', messages: [] }));
+    const r = await getSubagentRecord('c/1');
+    expect(r.messages).toEqual([]);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/conversations/subagents/c%2F1/record');
   });
 });

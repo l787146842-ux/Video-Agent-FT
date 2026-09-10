@@ -65,7 +65,7 @@ import type { TurnLedger } from '@/lib/turn-ledger';
 // ===== 基础枚举 =====
 export type DraftType = 'keyElement' | 'shot' | 'audio';
 export type MediaType = 'image' | 'video' | 'audio';
-export type LeftTab = 'storyboard' | 'uncategorized';
+export type LeftTab = 'storyboard' | 'uncategorized' | 'subagents';
 export type SubTab = 'keyElements' | 'shots' | 'audio';
 
 // ===== 草稿 / 分组 =====
@@ -477,6 +477,29 @@ export type SseEvent =
  * 消息唯一存于 chat store；装载走 GET /conversations/{id}/messages 或快照 chatMessages）。
  * 以后端 ConversationMeta 生成物为唯一来源（标签栏形态 = 后端元信息同形） */
 export type Conversation = ConversationMeta;
+
+/** 子代理隐藏线程（B3 左栏子任务卡）：后端 GET /conversations/subagents 返回。 */
+export interface SubagentThread {
+  conversation_id: string;
+  title: string;
+  /** 任务摘要（scope.label，截断后的委派文本） */
+  label: string;
+  parent_conversation: string;
+  /** running=事件流未闭合；completed=已落 turn/end；unknown=读不到事件流 */
+  status: 'running' | 'completed' | 'unknown' | string;
+  /** 子级 assistant 响应步数 */
+  steps: number;
+}
+
+/** 子代理只读执行记录条目：后端 GET /conversations/subagents/{id}/record 返回
+ *（事件流派生，形状对齐 chatMessages entry 的子集）。 */
+export interface SubagentRecordMessage {
+  sender: 'user' | 'assistant';
+  text?: string;
+  ts?: number;
+  reasoning_content?: string;
+  actionLog?: string[];
+}
 
 export interface ServerStateSnapshot {
   /** 快照所属项目 ID（持久化请求回传，后端据此丢弃跨项目的过期写入） */
