@@ -163,22 +163,38 @@ export function SubagentRail() {
                   <Show
                     when={m.sender === 'user'}
                     fallback={
-                      <div class="chat-msg agent">
-                        <Show when={m.reasoning_content}>
-                          <details class="subagent-reasoning">
-                            <summary>思考</summary>
-                            <div class="subagent-reasoning-body">{m.reasoning_content}</div>
-                          </details>
-                        </Show>
-                        <Show when={m.text}>
-                          <MarkdownBubble text={m.text || ''} />
-                        </Show>
-                        <Show when={m.actionLog && m.actionLog.length}>
-                          <div class="subagent-tool-line">
-                            执行：{(m.actionLog || []).join('、')}
+                      <Show
+                        when={m.sender === 'system'}
+                        fallback={
+                          <div class="chat-msg agent">
+                            <Show when={m.reasoning_content}>
+                              <details class="subagent-reasoning">
+                                <summary>思考</summary>
+                                <div class="subagent-reasoning-body">{m.reasoning_content}</div>
+                              </details>
+                            </Show>
+                            <Show when={m.text}>
+                              <MarkdownBubble text={m.text || ''} />
+                            </Show>
+                            <Show when={m.actionLog && m.actionLog.length}>
+                              <div class="subagent-tool-line">
+                                执行：{(m.actionLog || []).join('、')}
+                              </div>
+                            </Show>
                           </div>
-                        </Show>
-                      </div>
+                        }
+                      >
+                        {/* 完成章（dsh A2）：谁在何时宣告完成 + 当时客观账本 */}
+                        <div class="subagent-stamp" data-testid="subagent-stamp">
+                          <div class="subagent-stamp-head">
+                            <span>本轮宣告完成</span>
+                            <Show when={m.ts}>
+                              <span class="msg-meta">{formatHHMM(m.ts)}</span>
+                            </Show>
+                          </div>
+                          <div class="subagent-stamp-body">{m.text}</div>
+                        </div>
+                      </Show>
                     }
                   >
                     <div class="chat-msg user">

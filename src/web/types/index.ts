@@ -494,11 +494,13 @@ export interface SubagentThread {
 /** 子代理只读执行记录条目：后端 GET /conversations/subagents/{id}/record 返回
  *（事件流派生，形状对齐 chatMessages entry 的子集）。 */
 export interface SubagentRecordMessage {
-  sender: 'user' | 'assistant';
+  /** system = 完成章条目（本轮宣告完成 + 当时客观账本） */
+  sender: 'user' | 'assistant' | 'system';
   text?: string;
   ts?: number;
   reasoning_content?: string;
   actionLog?: string[];
+  stamp?: boolean;
 }
 
 export interface ServerStateSnapshot {

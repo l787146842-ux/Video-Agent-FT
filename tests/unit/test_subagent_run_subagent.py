@@ -255,15 +255,18 @@ def test_project_readable_record_and_status(svc):
     session_log.append_tool_result(svc, cid, 1, "c1", "storyboard_create_group", "ok", ok=True)
     session_log.append_step_feedback(svc, cid, 1, 1)                    # 噪声
     session_log.append_assistant_message(svc, cid, 2, "完成：3 个关键元素")
+    session_log.append_turn_stamp(svc, cid, receipt="已登记本轮完成章。分镜 0 组 0 卡", step=2)
 
     rec = session_log.project_readable_record(svc, cid)
     senders = [e["sender"] for e in rec]
-    assert senders == ["user", "assistant", "assistant"]   # state/feedback/tool 不入
+    # state/feedback/tool 不入；完成章（turn/stamp）以 system 条目入（G1：只读记录可看见「本轮宣告完成」）
+    assert senders == ["user", "assistant", "assistant", "system"]
     assert rec[0]["text"] == "拆解为分镜"
     assert rec[1]["text"] == "先建组"
     assert rec[1]["reasoning_content"] == "想想"
     assert rec[1]["actionLog"] == ["storyboard_create_group"]
     assert rec[2]["text"] == "完成：3 个关键元素"
+    assert rec[3]["stamp"] is True and "完成章" in rec[3]["text"]
 
     assert session_log.thread_status(svc, cid)["status"] == "running"  # 无 turn/end
     session_log.append_turn_end(svc, cid)
@@ -326,7 +329,7 @@ def test_kinds_registry_invariants_hold_for_every_kind():
     for kind in SUBAGENT_KINDS.values():
         wl = kind.whitelist
         assert "run_subagent" not in wl, kind.name
-        assert "task_complete" not in wl, kind.name
+        assert "task_complete" in wl, kind.name  # 子级也有合法盖章出口
         assert "image_generate" not in wl and "generate_video" not in wl, kind.name
         assert "workflow_pause" not in wl, kind.name  # 子级不发起确认
         assert wl, kind.name

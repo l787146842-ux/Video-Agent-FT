@@ -647,8 +647,9 @@ def project_readable_record(svc: Any, conversation_id: str = "") -> List[Dict[st
     sender/text/ts/reasoning_content/actionLog）。
 
     只取面向人的表面：真人任务（source=user）+ assistant 正文/思考 + 工具活动
-    名单；跳过 state/feedback/media/checkpoint/turn/compaction 等模型向噪声（
-    与 derive_messages 的 LLM 口径不同，本函数专供 UI 只读回放）。只读、不改事件流。"""
+    名单 + 完成章（turn/stamp，「本轮宣告完成」及其客观账本）；跳过 state/feedback/
+    media/checkpoint/turn-start-end/compaction 等模型向噪声（与 derive_messages 的
+    LLM 口径不同，本函数专供 UI 只读回放）。只读、不改事件流。"""
     try:
         events = load_events(svc, conversation_id)
     except Exception:
@@ -657,7 +658,12 @@ def project_readable_record(svc: Any, conversation_id: str = "") -> List[Dict[st
     for ev in events:
         ev_type = str(ev.get("type") or "")
         ts_ms = int(float(ev.get("time") or 0) * 1000)
-        if ev_type == EV_USER and _ev_source(ev) == SOURCE_USER:
+        if ev_type == EV_TURN_STAMP:
+            # 完成章（dsh A2）：谁在何时宣告完成 + 当时客观账本，只读回放可见
+            receipt = str(ev.get("receipt") or "").strip()
+            out.append({"sender": "system", "text": receipt or "本轮已登记完成章。",
+                        "ts": ts_ms, "stamp": True})
+        elif ev_type == EV_USER and _ev_source(ev) == SOURCE_USER:
             content = ev.get("content")
             text = content if isinstance(content, str) else ""
             if text.strip():
@@ -678,7 +684,7 @@ def project_readable_record(svc: Any, conversation_id: str = "") -> List[Dict[st
                 entry["actionLog"] = names
             if text.strip() or rc or names:
                 out.append(entry)
-        # tool/result / step/feedback / turn/* / compaction/* / log/imported：只读记录不入
+        # tool/result / step/feedback / turn/start|end / compaction/* / log/imported：不入只读记录
     return out
 
 

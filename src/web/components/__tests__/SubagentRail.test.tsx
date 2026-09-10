@@ -75,6 +75,27 @@ describe('SubagentRail', () => {
     expect(await findByTestId('subagent-card')).toBeTruthy();
   });
 
+  it('完成章条目以 system 形态呈现（本轮宣告完成）', async () => {
+    apiMock.getSubagentThreads.mockResolvedValue({
+      subagents: [
+        { conversation_id: 'c9', title: '子代理', label: '拆结构', parent_conversation: '', status: 'completed', steps: 2 },
+      ],
+    });
+    apiMock.getSubagentRecord.mockResolvedValue({
+      conversation_id: 'c9',
+      messages: [
+        { sender: 'user', text: '拆解任务' },
+        { sender: 'system', text: '已登记本轮完成章。分镜 0 组 0 卡', stamp: true, ts: 1 },
+      ],
+    });
+    const { findByTestId } = render(() => <SubagentRail />);
+    fireEvent.click(await findByTestId('subagent-card'));
+    // 记录异步装载：用 findBy 等条到才判存在（getBy 不等会假失败）
+    const stamp = await findByTestId('subagent-stamp');
+    expect(stamp.textContent).toContain('本轮宣告完成');
+    expect(stamp.textContent).toContain('分镜 0 组 0 卡');
+  });
+
   it('清单加载失败显示错误文案', async () => {
     apiMock.getSubagentThreads.mockRejectedValue(new Error('net'));
     const { findByText } = render(() => <SubagentRail />);

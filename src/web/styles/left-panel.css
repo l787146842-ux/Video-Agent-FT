@@ -169,4 +169,8 @@
   .subagent-reasoning summary { cursor: pointer; color: var(--text-dim); }
   .subagent-reasoning-body { margin-top: 4px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
   .subagent-tool-line { font-size: var(--font-2xs); color: var(--text-dim); }
+  /* 完成章条目（dsh A2）：本轮宣告完成 + 当时客观账本快照 */
+  .subagent-stamp { display: flex; flex-direction: column; gap: 4px; border: 1px dashed color-mix(in srgb, var(--color-info-strong) 45%, transparent); border-radius: var(--radius-sm); padding: 6px 8px; background: color-mix(in srgb, var(--color-info-strong) 6%, transparent); }
+  .subagent-stamp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--font-2xs); color: var(--accent-blue); }
+  .subagent-stamp-body { font-size: var(--font-2xs); color: var(--text-dim); white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
 }
