@@ -605,6 +605,63 @@ def append_turn_end(svc: Any, conversation_id: str, reason: str = "done") -> Non
         return
 
 
+# ---------- 子代理只读记录（B3 后端地基，事件流单一事实源） ----------
+
+
+def thread_status(svc: Any, conversation_id: str = "") -> Dict[str, Any]:
+    """隐藏线程运行态概览（供子任务卡）：turn/end 存在 = completed（子级
+    在父本轮内联跑完，落流后即终结）；否则 running。steps = assistant 响应数。
+    读不到事件流静默回落 unknown。"""
+    try:
+        events = load_events(svc, conversation_id)
+    except Exception:
+        return {"status": "unknown", "steps": 0, "events": 0}
+    done = any(str(e.get("type") or "") == EV_TURN_END for e in events)
+    steps = sum(1 for e in events if str(e.get("type") or "") == EV_ASSISTANT)
+    return {"status": "completed" if done else "running", "steps": steps,
+            "events": len(events)}
+
+
+def project_readable_record(svc: Any, conversation_id: str = "") -> List[Dict[str, Any]]:
+    """子代理隐藏线程事件流 → 只读执行记录条目（形状兼容 chatMessages entry：
+    sender/text/ts/reasoning_content/actionLog）。
+
+    只取面向人的表面：真人任务（source=user）+ assistant 正文/思考 + 工具活动
+    名单；跳过 state/feedback/media/checkpoint/turn/compaction 等模型向噪声（
+    与 derive_messages 的 LLM 口径不同，本函数专供 UI 只读回放）。只读、不改事件流。"""
+    try:
+        events = load_events(svc, conversation_id)
+    except Exception:
+        return []
+    out: List[Dict[str, Any]] = []
+    for ev in events:
+        ev_type = str(ev.get("type") or "")
+        ts_ms = int(float(ev.get("time") or 0) * 1000)
+        if ev_type == EV_USER and _ev_source(ev) == SOURCE_USER:
+            content = ev.get("content")
+            text = content if isinstance(content, str) else ""
+            if text.strip():
+                out.append({"sender": "user", "text": text, "ts": ts_ms})
+        elif ev_type == EV_ASSISTANT:
+            entry: Dict[str, Any] = {"sender": "assistant", "ts": ts_ms}
+            text = str(ev.get("content") or "")
+            rc = str(ev.get("reasoning_content") or "").strip()
+            calls = ev.get("tool_calls") or []
+            names = [str(((tc or {}).get("function") or {}).get("name") or "")
+                     for tc in calls]
+            names = [n for n in names if n]
+            if text.strip():
+                entry["text"] = text
+            if rc:
+                entry["reasoning_content"] = rc
+            if names:
+                entry["actionLog"] = names
+            if text.strip() or rc or names:
+                out.append(entry)
+        # tool/result / step/feedback / turn/* / compaction/* / log/imported：只读记录不入
+    return out
+
+
 # ---------- 会话层阈值压缩（批 E3，抄 dsh compaction-basic，参数原样） ----------
 
 # 参数原样（dsh compaction-basic 默认值）

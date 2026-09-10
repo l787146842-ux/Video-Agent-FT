@@ -361,6 +361,11 @@ class Planner:
             child_cid = str((conv or {}).get("id") or "")
         except Exception as _e:  # 子会话创建失败不阻断委派（降级为不落流）
             logger.warning("[Subagent] 子会话创建失败，回落不落流: {}", _e)
+        # 子级任务落为 user/message 事件（只读记录首行）：子级在 core 内联跑、
+        # 不经 web/chat_service，默认无 SOURCE_USER 事件，此处补齐使隐藏线程事件流自描述。
+        if child_cid:
+            session_log.append_user_message(
+                self.state_manager, child_cid, task, source=session_log.SOURCE_USER)
         # 子级模型档：缺省完全继承父级（跟随主模型）；仅当 model_policy 的
         # `subagent` 行显式配了 provider（且装配点注入了工厂）才接管；解析
         # 失败静默回落父档（子级仍跑完，功能不断）。思考档同理：仅显式配则覆盖。

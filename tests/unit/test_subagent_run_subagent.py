@@ -13,6 +13,7 @@ import pytest
 # 触发工具注册（导任一新工具子模块即拉起全局注册引导）
 import src.video_agent.tools.document_tools  # noqa: F401
 from src.video_agent.core import planner as pmod
+from src.video_agent.core import session_log
 from src.video_agent.core.planner import Planner, PlannerContext
 from src.video_agent.core.fc_tool_runner import FCToolRunner
 from src.video_agent.core.subagent import (
@@ -215,3 +216,70 @@ async def test_launch_subagent_honors_subagent_role_override(svc, monkeypatch):
         assert captured["thinking"] == "low"           # 显式降档生效
     finally:
         object.__setattr__(settings, "model_policy", old)
+
+
+# ---------- B3 后端地基：子线程清单 / 只读记录 / 任务落流 ----------
+
+def test_subagent_threads_listing_and_scope(svc):
+    sub = svc.create_scoped_conversation(
+        {"kind": "subagent", "parent_conversation": "conv-main", "label": "拆解任务"},
+        title="子代理")
+    svc.create_scoped_conversation(  # 微调线程（非子代理）不入子代理清单
+        {"kind": "adjust", "cat": "ke", "group_id": "g", "draft_id": "d"},
+        title="微调线程")
+    threads = svc.subagent_threads()
+    assert [t["conversation_id"] for t in threads] == [sub["id"]]
+    assert threads[0]["label"] == "拆解任务"
+    assert threads[0]["parent_conversation"] == "conv-main"
+    assert svc.get_conversation_scope(sub["id"]).get("kind") == "subagent"
+    assert svc.get_conversation_scope("nope") == {}
+
+
+def test_project_readable_record_and_status(svc):
+    cid = "conv-sub-rec"
+    session_log.append_user_message(svc, cid, "拆解为分镜")            # 真人任务
+    session_log.append_user_message(svc, cid, "【状态】", source=session_log.SOURCE_STATE)  # 噪声
+    session_log.append_assistant_message(
+        svc, cid, 1, "先建组", reasoning_content="想想",
+        tool_calls=[{"id": "c1", "function": {"name": "storyboard_create_group"}}])
+    session_log.append_tool_result(svc, cid, 1, "c1", "storyboard_create_group", "ok", ok=True)
+    session_log.append_step_feedback(svc, cid, 1, 1)                    # 噪声
+    session_log.append_assistant_message(svc, cid, 2, "完成：3 个关键元素")
+
+    rec = session_log.project_readable_record(svc, cid)
+    senders = [e["sender"] for e in rec]
+    assert senders == ["user", "assistant", "assistant"]   # state/feedback/tool 不入
+    assert rec[0]["text"] == "拆解为分镜"
+    assert rec[1]["text"] == "先建组"
+    assert rec[1]["reasoning_content"] == "想想"
+    assert rec[1]["actionLog"] == ["storyboard_create_group"]
+    assert rec[2]["text"] == "完成：3 个关键元素"
+
+    assert session_log.thread_status(svc, cid)["status"] == "running"  # 无 turn/end
+    session_log.append_turn_end(svc, cid)
+    st = session_log.thread_status(svc, cid)
+    assert st["status"] == "completed" and st["steps"] == 2
+
+
+async def test_launch_subagent_lands_task_event(svc, monkeypatch):
+    # 子级在 core 内联跑不经 web → _launch_subagent 必须自己把任务落为 user/message，
+    # 否则只读记录缺首行（B3 数据源前提）。
+    seen = {}
+
+    class _FakeResp:
+        text = "done"
+
+    async def _fake_handle(self, user_message, context, **kw):
+        seen["cid"] = str(getattr(context, "session_conversation_id", "") or "")
+        return _FakeResp()
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+    await parent._launch_subagent("拆解《三体》为分镜", PlannerContext(subagent_depth=0))
+    assert seen["cid"]  # 子会话已创建
+    evs = session_log.load_events(svc, seen["cid"])
+    task_events = [e for e in evs
+                   if e.get("type") == "user/message" and e.get("source") == "user"
+                   and "《三体》" in str(e.get("content") or "")]
+    assert task_events, "子级任务应作为 user/message 事件落入隐藏线程"
+    assert seen["cid"] in [t["conversation_id"] for t in svc.subagent_threads()]

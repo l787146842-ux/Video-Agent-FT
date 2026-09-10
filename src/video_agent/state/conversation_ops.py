@@ -143,6 +143,34 @@ def scoped_threads_payload(svc: "StateManager") -> Dict[str, Any]:
     }
 
 
+def get_conversation_scope(svc: "StateManager", conversation_id: str) -> Dict[str, Any]:
+    """按会话 ID 取其 scope 字典（隐藏线程判定用）；非线程/不存在返回空。"""
+    for c in ensure_conversations(svc):
+        if isinstance(c, dict) and c.get("id") == conversation_id:
+            return dict(c.get("scope") or {})
+    return {}
+
+
+def subagent_threads(svc: "StateManager") -> List[Dict[str, Any]]:
+    """子代理隐藏线程清单（B3 左栏子任务卡数据源，state 层不读事件流）：
+    筛 scope.kind == 'subagent'，返回元信息（运行态/步骤数由 web 层经 session_log 补）。"""
+    ensure_conversations(svc)
+    out: List[Dict[str, Any]] = []
+    for c in svc._raw_state.get("conversations") or []:
+        if not isinstance(c, dict):
+            continue
+        scope = c.get("scope") or {}
+        if str(scope.get("kind") or "") != "subagent":
+            continue
+        out.append({
+            "conversation_id": str(c.get("id") or ""),
+            "title": str(c.get("title") or ""),
+            "label": str(scope.get("label") or ""),
+            "parent_conversation": str(scope.get("parent_conversation") or ""),
+        })
+    return out
+
+
 def board_draft_ids(groups: List[Dict[str, Any]]) -> set:
     """分组列表内草稿 id 集合（对象删除级联的新旧 id diff 口径）。"""
     ids = set()

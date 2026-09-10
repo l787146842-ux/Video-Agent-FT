@@ -51,6 +51,15 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **验证**：`test_model_policy`（含 `test_migrate_legacy_roles` + 子代理缺省跟随断言）+ `test_subagent_run_subagent`（新增两例：缺省继承 / 显式接管）全绿；tsc PASS；GlobalSettingsView vitest 8 pass；三静态门 PASS；`gen_api_types` 无 diff（model_policy 为 `Record<string,PolicyRow>` 角色无关）。
 - **范围**：B1+B2 已完成；B3（左栏子任务卡+只读记录）/B4（账本合流回归）待后续批。
 
+### 2026-09-10 · 正宗子代理 run_subagent 批 B3-后端地基（子任务线程清单 + 事件流只读记录；UI 待下轮目测）
+- **背景**：B3 拆为后端地基（本轮，非 UI 可测）+ 前端 UI（下轮，需用户目测）。摸底发现：子代理在 core 内联跑、不经 web/chat_service，故其过程只进 append-only 事件流（落隐藏子会话 jsonl），而 `GET /conversations/{id}/messages` 读的是 chatMessages 列表（子线程为空）。用户选定：**只读记录从事件流派生（单一事实源）**，不双写 chatMessages。
+- **补齐子级任务落流**：`planner._launch_subagent` 创建子会话后显式 `session_log.append_user_message(child_cid, task, source=user)`——使隐藏线程事件流自描述（否则只读记录缺首行任务）。
+- **事件流→只读投影（core/session_log，纯函数可测）**：`project_readable_record`（取真人任务 + assistant 正文/思考 + 工具活动名单，跳过 state/feedback/media/checkpoint/turn/compaction 噪声；形状兼容 chatMessages entry）；`thread_status`（turn/end 存在=completed 否则 running，附 steps）。
+- **线程清单（state 层无 core 依赖）**：`conversation_ops.subagent_threads`（筛 scope.kind=='subagent'）+ `get_conversation_scope`；`StateManager` 同名委托。事件读取（session_log）不滞进 state 层（避 state↔core 环）。
+- **只读 API（web/routes/conversations.py）**：`GET /conversations/subagents`（元信息 + 经 session_log 补运行态/步数）；`GET /conversations/subagents/{cid}/record`（事件投影，非 subagent 线程 404 不暴露任意会话）。
+- **未做（下一轮 B3-前端）**：主 SSE 转发轻量子任务状态事件（running 实时态）、`SubagentRail.tsx` + `LeftPanel` 第 3 Tab + 只读 `ChatFeed`（需构建后用户目测）。
+- **验证**：新增 4 例（清单/scope、只读投影+状态、子级任务落流）；全量 `tests/` 2308 通过；`acceptance --quick`（GATES+tsc）绿；gen 无 diff（新路由返 plain dict）。
+
 ### 2026-09-09 · 会话层 append-only 二期批（状态注入事件化 + A-E 缺陷修复，G1-G4 全落地）
 - **背景**：一期（E1-E3）审查发现六项问题：B（rewind × 压缩检查点交互静默丢全史，正确性）、C（压缩轮每步重复烧摘要调用，成本/延迟）、A（状态尾每步全量重发 + 步数计数器 → 命中率天花板 75-85%，与 1111 实测 74-81% 吻合，**剩余缺口全在此**）、D（检查点永不合并逐次堆积）、E（图片/多模态消息不入流 → 回放字节不等 + vision token 膨胀）；F（未知工具解析层归位）经复核一期已落地（审查误报）。方案 = `docs/会话层append-only二期细案.md`（v2 送审稿，用户批准「A-F 都要做」；A 的初版「快照落账本」补丁方案被用户否决，重写为「注入即事件」正向设计——dsh session 源码实证：一切注入皆 `user/message` 事件（带 source 区分真人/inject/续跑），系统提示词也是 surface 0 号节点，**不存在「每请求重建的注入」**，快照补丁的病根 = 保留了每请求重建结构再往日志塞第二份拷贝）。
 - **G1（source 字段 + B + C）**：user/message 事件加 `source` 标签（user/state/checkpoint/media；`_ev_source` 单一判定源，老事件无 source 按 replaces_seqs 推断向后兼容）。B 修复二件套：rewind 定位按 source 跳过检查点/状态/媒体事件；`_fold_surface` 改两遍 fold（第一遍收集每条 rewind 的丢弃区间 `(to_seq, 标记seq]`——标记后新历史保留，嵌套自然叠加；第二遍命中区间即跳过——检查点被 rewind 丢弃时连同 shadowed 一起从未进 fold，原事件自然恢复）。C 修复二件套：`compact_pass` 加 `mirror` 参数同步 splice agent_loop 的 messages（下步重组自然含检查点，与日志 fold 对齐）；摘要指纹缓存回归（`_span_fingerprint` md5 → `_COMPACT_CACHE` 上限 64，同 span 零模型调用）；检查点事件带 source=checkpoint。turn_executor 四个调用点（两通道 + 溢出恢复）传 mirror。

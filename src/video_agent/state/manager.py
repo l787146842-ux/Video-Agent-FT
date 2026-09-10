@@ -631,6 +631,15 @@ class StateManager(UndoRedoMixin):
         """隐藏线程清单（实现见 conversation_ops.scoped_threads_payload）。"""
         return conversation_ops.scoped_threads_payload(self)
 
+    def subagent_threads(self) -> List[Dict[str, Any]]:
+        """子代理隐藏线程元信息清单（B3 数据源，state 层不读事件流；
+        实现见 conversation_ops.subagent_threads）。"""
+        return conversation_ops.subagent_threads(self)
+
+    def get_conversation_scope(self, conversation_id: str) -> Dict[str, Any]:
+        """取会话 scope 字典（隐藏线程判定）；实现见 conversation_ops。"""
+        return conversation_ops.get_conversation_scope(self, conversation_id)
+
     def switch_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
         """切换活跃对话；不存在返回 None（实现见 conversation_ops.switch_conversation）。"""
         return conversation_ops.switch_conversation(self, conversation_id)

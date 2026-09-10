@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from typing import Dict, List
 
 from src.video_agent.exceptions import VideoAgentError
+from src.video_agent.core import session_log
 from src.video_agent.state import conversation_ops
 from src.video_agent.state.manager import StateManager
 from src.video_agent.web.agent_task_manager import get_agent_task_manager
@@ -72,6 +73,37 @@ async def get_conversation_messages(conversation_id: str):
     if msgs is None:
         raise VideoAgentError("对话不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
     return {"conversation_id": conversation_id, "messages": msgs}
+
+
+@router.get("/conversations/subagents")
+async def list_subagent_threads():
+    """子代理隐藏线程清单（B3 左栏子任务卡）：state 层元信息（id/标题/label/
+    父会话）+ 事件流派生的运行态与步数。与主清单解耦（带 scope 的线程
+    本就不出 conversations_meta_payload）。"""
+    svc = StateManager.get_instance()
+    async with svc.lock:
+        svc.reload_if_stale()
+        threads = svc.subagent_threads()
+    for t in threads:
+        st = session_log.thread_status(svc, str(t.get("conversation_id") or ""))
+        t["status"] = st["status"]
+        t["steps"] = st["steps"]
+    return {"subagents": threads}
+
+
+@router.get("/conversations/subagents/{conversation_id}/record")
+async def get_subagent_record(conversation_id: str):
+    """子代理只读执行记录：从其隐藏线程事件流派生（单一事实源，无消息副本）。
+    非子代理线程（scope.kind≠subagent）一律 404，不暴露任意会话事件流。"""
+    svc = StateManager.get_instance()
+    async with svc.lock:
+        svc.reload_if_stale()
+        scope = svc.get_conversation_scope(conversation_id)
+    if str(scope.get("kind") or "") != "subagent":
+        raise VideoAgentError(
+            "子代理线程不存在", status_code=404, error_code=LEGACY_NOT_FOUND)
+    messages = session_log.project_readable_record(svc, conversation_id)
+    return {"conversation_id": conversation_id, "messages": messages}
 
 
 @router.post("/conversations/thread")
