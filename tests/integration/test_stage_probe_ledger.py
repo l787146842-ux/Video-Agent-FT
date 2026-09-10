@@ -50,3 +50,23 @@ def test_self_report_has_no_ledger_authority(svc):
         "自报条目残留账本——探针重算未生效")
 
 
+def test_external_writer_is_accounted_objectively(svc):
+    """B4 账本合流：子代理是经共享 StateManager 的「外部写者」（它的真实写
+    工具改的就是主线程 sync_run 所读的同一 state_dict）。账本完成度只认客观
+    探针、与写入者无关 ⇒ 子级产物天然认账，**无需任何子代理专用接线**；
+    同时不虚报（无证据不入账）。"""
+    st = svc.state_dict
+    st["analysis"] = {"summary": "x"}
+    _spec_doc(st)
+    st["keyElements"] = []  # 消 demo 种子，确定性（未在场→未完成）
+    # 先跑：keyElements 未在场 → 设计节点未完成（不虚报）
+    run = wr.sync_run(st, "AI-短剧一站式生成")
+    done_before = list(run.get("completed_nodes") or [])
+    assert "storyboard_key_elements" not in done_before
+    # 模拟子代理经共享 StateManager 落一个关键元素组（与 storyboard_create_group 同形）
+    _ke_groups(st)
+    run = wr.sync_run(st, "AI-短剧一站式生成")  # 同一 state 重算
+    assert "storyboard_key_elements" in run["completed_nodes"], (
+        "外部写者（子代理）的产物应被客观探针认账")
+
+

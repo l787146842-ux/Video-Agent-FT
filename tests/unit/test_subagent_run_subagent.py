@@ -283,3 +283,23 @@ async def test_launch_subagent_lands_task_event(svc, monkeypatch):
                    and "《三体》" in str(e.get("content") or "")]
     assert task_events, "子级任务应作为 user/message 事件落入隐藏线程"
     assert seen["cid"] in [t["conversation_id"] for t in svc.subagent_threads()]
+
+
+# ---------- B4 账本合流：子级写共享 StateManager → 主线程天然认账 ----------
+
+async def test_launch_subagent_shares_parent_state_manager(svc, monkeypatch):
+    # 子级与父共享同一 StateManager 实例（父此刻挂起等待，无并发写冲突）：
+    # 子级真实写工具改的就是主线程 sync_run/commit_turn 所读的同一 state_dict。
+    seen = {}
+
+    class _FakeResp:
+        text = "ok"
+
+    async def _fake_handle(self, user_message, context, **kw):
+        seen["sm"] = self.state_manager
+        return _FakeResp()
+
+    monkeypatch.setattr(pmod.Planner, "handle_message", _fake_handle)
+    parent = Planner(state_manager=svc, llm_adapter=None)
+    await parent._launch_subagent("x", PlannerContext(subagent_depth=0))
+    assert seen["sm"] is svc, "子级必须复用父 StateManager（否则子写入不入主账本）"

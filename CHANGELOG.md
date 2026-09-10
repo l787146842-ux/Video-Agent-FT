@@ -60,6 +60,11 @@ adr-bilateral 检查项的现行状态以 `scripts/check_doc_pointers.py` 为准
 - **未做（下一轮 B3-前端）**：主 SSE 转发轻量子任务状态事件（running 实时态）、`SubagentRail.tsx` + `LeftPanel` 第 3 Tab + 只读 `ChatFeed`（需构建后用户目测）。
 - **验证**：新增 4 例（清单/scope、只读投影+状态、子级任务落流）；全量 `tests/` 2308 通过；`acceptance --quick`（GATES+tsc）绿；gen 无 diff（新路由返 plain dict）。
 
+### 2026-09-10 · 正宗子代理 run_subagent 批 B4（账本合流回归断言；结论：无需子代理专用接线）
+- **结论（核源）**：`workflow_runtime.commit_turn` 落账后走 `sync_run(state, skill)` **全量重算**，`completed_nodes` 只认客观 stage_done 探针与账本 DecisionResolved 事件（「账本无自报」）；而子代理与父**共享同一 StateManager**，其真实写工具改的就是 `sync_run` 所读的同一 `state_dict`。⇒ 子级产物天然入账、不虚报，**无需任何新接线，亦无时序缺口**（子级在父本轮内同步跑完，`commit_turn` 在其后）。本批只加回归钉死该不变式。
+- **新增断言**：`test_launch_subagent_shares_parent_state_manager`（子 Planner 复用父 StateManager 对象）+ `test_external_writer_is_accounted_objectively`（外部写者落 keyElements → sync_run 认账；未在场→不虚报）。
+- **范围**：B1–B4 后端全部完成。仅剩 B3-前端（SSE 实时状态事件 + SubagentRail + 只读 ChatFeed，需构建后用户目测）。
+
 ### 2026-09-09 · 会话层 append-only 二期批（状态注入事件化 + A-E 缺陷修复，G1-G4 全落地）
 - **背景**：一期（E1-E3）审查发现六项问题：B（rewind × 压缩检查点交互静默丢全史，正确性）、C（压缩轮每步重复烧摘要调用，成本/延迟）、A（状态尾每步全量重发 + 步数计数器 → 命中率天花板 75-85%，与 1111 实测 74-81% 吻合，**剩余缺口全在此**）、D（检查点永不合并逐次堆积）、E（图片/多模态消息不入流 → 回放字节不等 + vision token 膨胀）；F（未知工具解析层归位）经复核一期已落地（审查误报）。方案 = `docs/会话层append-only二期细案.md`（v2 送审稿，用户批准「A-F 都要做」；A 的初版「快照落账本」补丁方案被用户否决，重写为「注入即事件」正向设计——dsh session 源码实证：一切注入皆 `user/message` 事件（带 source 区分真人/inject/续跑），系统提示词也是 surface 0 号节点，**不存在「每请求重建的注入」**，快照补丁的病根 = 保留了每请求重建结构再往日志塞第二份拷贝）。
 - **G1（source 字段 + B + C）**：user/message 事件加 `source` 标签（user/state/checkpoint/media；`_ev_source` 单一判定源，老事件无 source 按 replaces_seqs 推断向后兼容）。B 修复二件套：rewind 定位按 source 跳过检查点/状态/媒体事件；`_fold_surface` 改两遍 fold（第一遍收集每条 rewind 的丢弃区间 `(to_seq, 标记seq]`——标记后新历史保留，嵌套自然叠加；第二遍命中区间即跳过——检查点被 rewind 丢弃时连同 shadowed 一起从未进 fold，原事件自然恢复）。C 修复二件套：`compact_pass` 加 `mirror` 参数同步 splice agent_loop 的 messages（下步重组自然含检查点，与日志 fold 对齐）；摘要指纹缓存回归（`_span_fingerprint` md5 → `_COMPACT_CACHE` 上限 64，同 span 零模型调用）；检查点事件带 source=checkpoint。turn_executor 四个调用点（两通道 + 溢出恢复）传 mirror。
