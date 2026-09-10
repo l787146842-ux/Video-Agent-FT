@@ -1,7 +1,9 @@
 /* ===== 左面板（故事板 / 未归类素材） ===== */
 @layer components {
   /* ---------- 左面板 ---------- */
-  .left-tabs { display: flex; border-bottom: 1px solid var(--border-color); background-color: var(--bg-secondary); padding: 8px 12px 0 12px; gap: 8px; }
+  /* 三个标签（故事板/未归类素材/子任务）在窄左栏下会撞宽：改为横向滚动，
+     不得被父容器 overflow:hidden 裁掉标签文字（B3 新增第三个 Tab 后实测 381>305） */
+  .left-tabs { display: flex; border-bottom: 1px solid var(--border-color); background-color: var(--bg-secondary); padding: 8px 12px 0 12px; gap: 8px; overflow-x: auto; scrollbar-width: thin; }
   /* 页签文字不得竖排堆叠/折行（宽度被挤压时防换行堆叠） */
   .left-tab-btn { padding: 8px 16px; font-size: var(--font-md); font-weight: 600; color: var(--text-muted); border: none; background: none; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
   .left-tab-btn:hover { color: var(--text-main); }
