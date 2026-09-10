@@ -341,10 +341,13 @@ class Planner:
             pass  # 裁剪失败不阻断对话；未启用工具直调仍被 adapter 拒执行
         return frozenset(excluded)
 
-    async def _launch_subagent(self, task: str, parent_ctx: "PlannerContext") -> str:
+    async def _launch_subagent(
+        self, task: str, parent_ctx: "PlannerContext", kind: str = "",
+    ) -> str:
         """正宗子代理（one-shot）：模型经 FC `run_subagent` 发起 → 在隔离上下文里
         复用同一 `run_agent_loop`（经子 Planner）连续跑完 → 只回摘要。
 
+        `kind` = 具名类型（qoder 花名册形态）：决定子级工具白名单与职责块。
         非机械执行器：发起方=模型、走同一 `guard_pipeline`、无 `exec_*`。子 Planner
         自带独立 FCToolRunner/TurnExecutor 实例（避免与父共享 runner 的轮内状态），
         仅共享 StateManager（父此刻挂起等待，无并发写冲突）。"""
@@ -355,11 +358,13 @@ class Planner:
             return "（已达子代理深度上限，无法再委派，请在当前层完成。）"
         # 子会话：独立隐藏线程（携血缘）；创建失败回落不落流（子级仍在内存跑完）。
         child_cid = ""
+        resolved_kind = subagent_mod.resolve_subagent_kind(kind)
         try:
             parent_cid = str(getattr(parent_ctx, "session_conversation_id", "") or "")
             conv = conversation_ops.create_scoped_conversation(
                 self.state_manager,
                 {"kind": "subagent", "parent_conversation": parent_cid,
+                 "subagent_kind": resolved_kind.name,
                  "label": (task or "")[:24]},
                 title="子代理")
             child_cid = str((conv or {}).get("id") or "")
@@ -401,7 +406,7 @@ class Planner:
             stop_scope=getattr(parent_ctx, "stop_scope", "chat") or "chat",
             subagent_depth=child_depth,
             subagent_no_confirm=True,
-            subagent_whitelist=subagent_mod.SUBAGENT_TOOL_WHITELIST,
+            subagent_whitelist=resolved_kind.whitelist,
         )
         child = Planner(
             state_manager=self.state_manager,
@@ -414,7 +419,7 @@ class Planner:
             chat_adapter_factory=self._chat_adapter_factory,
         )
         resp = await child.handle_message(
-            subagent_mod.build_subagent_task(task), child_ctx,
+            subagent_mod.build_subagent_task(task, resolved_kind.name), child_ctx,
             max_steps=int(getattr(settings, "subagent_max_steps", 6) or 6))
         return str(getattr(resp, "text", "") or "").strip() or "（子代理未产出摘要）"
 
@@ -573,7 +578,7 @@ class Planner:
         # 子级（depth≥1）置 None ⇒ 子级无法再委派（防递归）。随请求实例隔离，不跨请求泄漏。
         if settings.subagent_enabled and not getattr(context, "subagent_depth", 0):
             self._fc_runner.subagent_launcher = (
-                lambda task: self._launch_subagent(task, context))
+                lambda task, kind="": self._launch_subagent(task, context, kind))
         else:
             self._fc_runner.subagent_launcher = None
 

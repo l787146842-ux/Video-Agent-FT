@@ -21,6 +21,7 @@ from src.video_agent.tools.base import (
     ToolResult,
 )
 from src.video_agent.state.models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ALL_CATEGORIES_TUPLE
+from src.video_agent.utils.prompts import load_prompt_section
 from src.video_agent.state.manager import StateManager
 from src.video_agent.exceptions import GenerationError
 from src.video_agent.core.provider_config import (
@@ -857,8 +858,15 @@ class WorkflowPauseTool(BaseTool):
 class RunSubagentInput(BaseModel):
     task: str = Field(
         ...,
-        description="交给子代理的完整任务说明：目标、涉及范围、验收标准。"
-        "子代理在独立上下文里连续执行到完成，只回一段摘要。",
+        description="交给子代理的完整任务说明：目标、涉及范围（哪些章节/哪批卡）、"
+        "验收标准。子代理看不到本对话，也不会看到已确认的规格与 Skill 章节——"
+        "需它遵守的规范要点写进本说明（并告知 Skill 名，它可自行 read_skill 取读）。",
+    )
+    task_kind: str = Field(
+        default="general",
+        description="子代理类型（决定它被授予的工具面与职责规范）：storyboard_split=拆"
+        "关键元素/分镜建组；media_prompt_write=为已建好的卡逐条写媒体提示词；"
+        "general=兜底（读 + 结构写入 + 写档）。未指定或认不得时按 general。",
     )
 
 
@@ -867,12 +875,15 @@ class RunSubagentTool(BaseTool):
     risk = "medium"  # 写工作台状态但可撤销（子级经故事板/文档工具落账）
     detail_tier = "expand"  # 关键控制流：展开可见委派任务与回摘要
     # 无 provider_kind / costly=False / parallel_safe=False（独占串行，屏障）。
+    # 类型清单（花名册）唯一源 = prompts/planner/subagent.md :: KIND_ROSTER
+    # （与 core/subagent.SUBAGENT_KINDS 同名单，漂移由单测钉死）。
     description = (
         "把一段自包含、可独立完成的批量工作委派给子代理：它在自己的上下文里连续执行到完成，"
         "不占用本对话上下文，只回一段摘要（不含中间步骤）。**用于**：按已确认规格把剧本"
         "拆解成关键元素与分镜、并逐条撰写提示词这类一次产出很多内容的批量工作。**给它"
         "一个完整、独立的任务说明**——子代理看不到本对话。**不要用于**：需要逐条与用户确认"
-        "的分步推进，或花钱生成（生图/生视频）。"
+        "的分步推进，或花钱生成（生图/生视频）。\n" + load_prompt_section(
+            "planner/subagent.md", "KIND_ROSTER")
     )
 
     def get_input_schema(self) -> Type[BaseModel]:

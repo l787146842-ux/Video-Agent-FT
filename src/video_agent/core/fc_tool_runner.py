@@ -253,9 +253,15 @@ class FCToolRunner:
                     error="子代理当前不可用（未装配或已达深度上限）。",
                     error_code="validation",
                 )
-            summary = await launcher(str((args or {}).get("task") or ""))
+            summary = await launcher(
+                str((args or {}).get("task") or ""),
+                str((args or {}).get("task_kind") or ""))
             text = str(summary or "").strip() or "（子代理未产出摘要）"
-            return ToolResult(success=True, data={"summary": text, "result": text})
+            # `detail` 是工具结果回喂给模型的既有专用通道（fc_feedback）：
+            # 子代理的全部产出就是这段摘要，不带 detail 则父只看到
+            # 「执行成功」一句话，委派信息全丢（委派本身失去意义）。
+            return ToolResult(success=True, data={
+                "summary": text, "result": text, "detail": text})
         return await self.tool_manager.invoke_tool(name, args)
 
     def _record_presented(self, name: str, args: Dict[str, Any]) -> None:
