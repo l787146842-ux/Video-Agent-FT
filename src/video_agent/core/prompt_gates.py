@@ -31,10 +31,7 @@ from src.video_agent.state.models import (
 )
 from src.video_agent.utils.prompts import load_prompt_section
 
-# 硬性下限（字符数）：低于即打回。取保守值只拦「明显敷衍」——
-# 平台固定地板，不可被 Skill 调整（C1a 裁决 2026-08-31：技能级闸层删除）。
-_SHOT_PROMPT_MIN_CHARS = 80
-_ELEMENT_PROMPT_MIN_CHARS = 50
+
 
 # 对话包装符：{台词}（Seedance 口头对话格式）
 _DIALOGUE_RE = re.compile(r"\{[^{}\n]{2,}\}")
@@ -172,7 +169,11 @@ def validate_prompt_write(
     kind: str,
     raw_state: Dict[str, Any] | None = None,
 ) -> Tuple[bool, List[str], List[str]]:
-    """校验一条待写入的生成提示词（平台固定地板：字数）。
+    """校验一条待写入的生成提示词。
+
+    2026-09-10 阶段规则去代码化批（计划 B5）：**字数地板已退役**——
+    平台不再以字数/结构硬拒提示词（只保留软提醒，见下 shot 软提醒），
+    提示词质量与写法归 Skill 散文 + 模型自觉。
 
     提示词书写语言归文档层（Skill 要求 / 规格显式声明，经优先级链生效），
     不属闸机执法面（2026-09-06 用户裁决，变更 2026-08-31 裁决）。
@@ -198,11 +199,6 @@ def validate_prompt_write(
         return True, hard, soft
 
     if kind == "shot":
-        if len(text) < _SHOT_PROMPT_MIN_CHARS:
-            hard.append(
-                f"分镜视频提示词过短（{len(text)} 字），请补全画面主体/镜头语言/"
-                "声音层等必要描述后重新写入"
-            )
         # 软提醒：有对白且存在音色参考（状态探测；C1b 裁决 2026-08-31：
         # requires_inputs.features 声明轴退役，只走状态探测零预设）
         if (
@@ -215,12 +211,7 @@ def validate_prompt_write(
                 "该镜头含对白且项目已有音色参考音频，建议在提示词中写明哪个角色使用哪个音色参考，"
                 "并在草稿 refAssets/timbre 中绑定对应音频，以保证跨镜头声音一致"
             )
-    else:  # keyElement
-        if len(text) < _ELEMENT_PROMPT_MIN_CHARS:
-            hard.append(
-                f"关键元素提示词过短（{len(text)} 字），请补全主体身份/特征细节/"
-                "氛围基调等必要描述后重新写入"
-            )
+
 
     ok = not hard
     return ok, hard, soft
@@ -346,7 +337,6 @@ from src.video_agent.core.gates_cards import (
     TOOL_RISK_BLOCKED_MSG,
     TOOL_RISK_BLOCKED_OTHER_MSG,
     current_flow_step,
-    system_continue_option,
     is_flow_continue_value,
     flow_continue_note,
 )

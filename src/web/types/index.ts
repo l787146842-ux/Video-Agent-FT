@@ -65,7 +65,9 @@ import type { TurnLedger } from '@/lib/turn-ledger';
 // ===== 基础枚举 =====
 export type DraftType = 'keyElement' | 'shot' | 'audio';
 export type MediaType = 'image' | 'video' | 'audio';
-export type LeftTab = 'storyboard' | 'uncategorized' | 'subagents';
+export type LeftTab = 'storyboard' | 'uncategorized';
+/** 中间面板视图：preview=预览框（默认）；subagents=子任务面板（顶栏入口切换） */
+export type MiddleView = 'preview' | 'subagents';
 export type SubTab = 'keyElements' | 'shots' | 'audio';
 
 // ===== 草稿 / 分组 =====
@@ -478,7 +480,7 @@ export type SseEvent =
  * 以后端 ConversationMeta 生成物为唯一来源（标签栏形态 = 后端元信息同形） */
 export type Conversation = ConversationMeta;
 
-/** 子代理隐藏线程（B3 左栏子任务卡）：后端 GET /conversations/subagents 返回。 */
+/** 子代理隐藏线程（B3 子任务面板）：后端 GET /conversations/subagents 返回。 */
 export interface SubagentThread {
   conversation_id: string;
   title: string;
@@ -494,13 +496,12 @@ export interface SubagentThread {
 /** 子代理只读执行记录条目：后端 GET /conversations/subagents/{id}/record 返回
  *（事件流派生，形状对齐 chatMessages entry 的子集）。 */
 export interface SubagentRecordMessage {
-  /** system = 完成章条目（本轮宣告完成 + 当时客观账本） */
-  sender: 'user' | 'assistant' | 'system';
+  /** user = 委派任务；assistant = 子代理正文/思考/工具活动 */
+  sender: 'user' | 'assistant';
   text?: string;
   ts?: number;
   reasoning_content?: string;
   actionLog?: string[];
-  stamp?: boolean;
 }
 
 export interface ServerStateSnapshot {

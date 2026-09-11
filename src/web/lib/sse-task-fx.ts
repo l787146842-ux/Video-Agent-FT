@@ -37,7 +37,6 @@ function makeShadowChat(convId: string): SseChatFx {
     startStream: noop,
     streamError: () => notify(t('rp.parallel.bgFailed')),
     setStatus: noop,
-    setRoundProgress: noop,
     appendDelta: noop,
     appendReasoning: noop,
     toolStarted: noop,
@@ -130,7 +129,6 @@ export function makeScopeTaskFx(
       markTerminal();
     },
     setStatus: (text) => adjustScopeActions.appendEvent(scopeKey, { kind: 'status', text }),
-    setRoundProgress: (step, max) => adjustScopeActions.appendEvent(scopeKey, { kind: 'round', step, max }),
     appendDelta: (text) => adjustScopeActions.appendEvent(scopeKey, { kind: 'delta', text }),
     appendReasoning: (text) => adjustScopeActions.appendEvent(scopeKey, { kind: 'reasoning', text }),
     toolStarted: (id, name, summary) => {

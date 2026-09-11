@@ -20,9 +20,13 @@
 - adapter_error（供应商侧错误）→ escalate：
   transient 重试已在适配层（adapters.retry）耗尽，到达循环侧的
   要么是 permanent（鉴权/参数/拒答），都不具循环内重试价值，
-  原样上抛由统一错误路径承接；
-- productive_reject（产出类调用被拒/失败的混合轮）→ feedback_degrade
-  + 有界续轮预算（批 12 · 1000 事故正向修复，防打转烧满 max_steps）。
+  原样上抛由统一错误路径承接。
+
+退役记录（2026-09-10 阶段规则去代码化批，用户裁决）：
+- productive_reject（产出类被拒混合轮的续轮预算）与 unstamped_stop
+  （零动作未盖章收尾的续跑预算）两键整链退役：步数上限与「续跑预算」
+  机制一并删除，流程推进归模型自觉（对标 flova：代码只做安全保护 +
+  数据一致性，不做流程判完成）。classify_step_failure 不再产出这两键。
 
 退役记录（2026-09-03 用户裁决 Q2）：
 - 闸机拦截分派键→结构化上报：已退役。
@@ -48,10 +52,8 @@ FAILURE_BAD_OUTPUT = "bad_output"
 FAILURE_OUTPUT_TRUNCATED = "output_truncated"
 FAILURE_TOOL = "tool_failure"
 FAILURE_ADAPTER = "adapter_error"
-# 批 12 · 1000 事故正向修复：产出类调用被拒/失败的混合轮「续轮回喂」预算键
-FAILURE_PRODUCTIVE_REJECT = "productive_reject"
-# 完成盖章批（dsh A2）：零工具、零变更、未盖章的纯口头收尾轮「续跑预算」键
-FAILURE_UNSTAMPED_STOP = "unstamped_stop"
+# productive_reject / unstamped_stop 两键已随阶段规则去代码化批退役
+# （2026-09-10）：续轮预算机制删除，循环层无消费点。
 # 闸机拦截分派键已退役（2026-09-03 Q2 裁决）：FC 轨闸机拦截由 fc_gates
 # reject_message 闭环，循环层无真实输入源。防复活见 check_legacy_orchestration。
 
@@ -115,30 +117,6 @@ RECOVERY_POLICIES: Dict[str, RecoveryPolicy] = {
         rationale=(
             "供应商 transient 重试已在适配层耗尽（adapters.retry，不变量 I03），"
             "到达循环侧即 permanent——nudge 不覆盖供应商错误，原样上抛"
-        ),
-    ),
-    FAILURE_PRODUCTIVE_REJECT: RecoveryPolicy(
-        kind=FAILURE_PRODUCTIVE_REJECT,
-        action=ACTION_FEEDBACK_DEGRADE,
-        max_retries=2,
-        rationale=(
-            "批 12 · 1000 正向修复：产出类工具调用被拒/失败的混合轮不按纯文本轮"
-            "提前终止（拒因必须被下一轮消费，模型自纠——发暂停卡/改参；1000 实证："
-            "read_skill 成功 + 写规格被拒的混合轮口播假完成收尾）。max_retries = "
-            "同轮产出类续轮预算，防「被拒-口播-续轮」打转烧满 max_steps；"
-            "超限走轮末收尾 + 警告 + 继续按钮。全拒收轮续轮（批 9）不走本预算"
-        ),
-    ),
-    FAILURE_UNSTAMPED_STOP: RecoveryPolicy(
-        kind=FAILURE_UNSTAMPED_STOP,
-        action=ACTION_FEEDBACK_DEGRADE,
-        max_retries=1,
-        rationale=(
-            "完成盖章批（dsh A2 同语义）：本轮零工具调用、工作台零变更、又未"
-            "登记完成章时，纯口头收尾不受理——回喂客观事实后由模型自纠（调工具 / "
-            "暂停 / 盖章）。max_retries=1：同轮只续一次，不撞「回喂-口头承诺-再回喂」"
-            "打转（4444 教训：无信息增益的重跑必现同结局）；超限走普通收尾 + "
-            "事实性警告（未完成阶段入账 warnings，不拦人不 trap 用户）"
         ),
     ),
 }

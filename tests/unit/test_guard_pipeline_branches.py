@@ -52,11 +52,11 @@ def test_mode_warn_non_strict_passes_failed_structure():
     assert v.ok is True
 
 
-def test_mode_strict_rejects_failed_structure():
-    """mode=strict（对照）：结构未过硬拒，回喂拒因"""
+def test_mode_strict_passes_without_char_floor():
+    """mode=strict（对照）：字数地板退役后结构项无硬伤 → 不拒、无拒因文案。"""
     v = prompt_write_verdict("敷衍短句", "shot", {}, gate_enabled=True, mode="strict")
-    assert v.ok is False
-    assert v.message
+    assert v.ok is True
+    assert not v.message
 
 
 # ---------- ③ audit_verdicts 遥测降级 ----------

@@ -10,12 +10,11 @@ import type { ToastLevel } from '@/stores/toast';
 import { sseErrorPayload, normalizeKind } from '@/lib/error-payload';
 import { resolveErrorMessage } from '@/lib/i18n';
 import { t, tDynamic } from '@/lib/locale';
-import { parseRoundParams } from '@/lib/storyboard-progress';
 import { uid } from '@/lib/utils';
 
 /** 事件路由所需的 chat store 写面（结构类型，hooks 层直接注入 chatActions） */
 export type SseChatFx = Pick<typeof chatActions,
-  | 'startStream' | 'streamError' | 'setStatus' | 'setRoundProgress' | 'appendDelta'
+  | 'startStream' | 'streamError' | 'setStatus' | 'appendDelta'
   | 'appendReasoning' | 'toolStarted' | 'toolFinished' | 'docWritten' | 'addMessage'
   | 'removeQueuedMessage' | 'restoreStreamingState' | 'clearStreaming' | 'loadMessages'
   | 'applyDecisionForm' | 'finishStream' | 'cancelStream'>;
@@ -191,10 +190,7 @@ export function routeSseEvent(ev: SseEvent, ctx: SseEventCtx): void {
       break;
     }
     case 'status': {
-      // 后端下发 key 为运行时字符串，走 tDynamic（动态键回退链）；
-      // 轮次进度参数同步进 store，供阶段进度条结构化消费
-      const round = parseRoundParams(ev.key, ev.params);
-      if (round) fx.chat.setRoundProgress(round.step, round.max);
+      // 后端下发 key 为运行时字符串，走 tDynamic（动态键回退链）
       const keyed = ev.key ? tDynamic(ev.key, ev.params) : '';
       fx.chat.setStatus(keyed && keyed !== ev.key ? keyed : (ev.text || ''));
       break;

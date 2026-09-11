@@ -4,7 +4,7 @@ import { getSubagentThreads, getSubagentRecord } from '@/api/conversations';
 import type { SubagentThread, SubagentRecordMessage } from '@/types';
 import { MarkdownBubble } from '../right-panel/MarkdownBubble';
 
-/** 左栏「子任务」Tab 打开期间的轮询间隔：子级在父本轮内联同步跑完，
+/** 子任务视图打开期间的轮询间隔：子级在父本轮内联同步跑完，
  *  父阻塞期间无独立 SSE 帧可推，故靠轻量轮询把 running→completed 过渡显形。 */
 const POLL_MS = 4000;
 
@@ -21,12 +21,46 @@ function formatHHMM(ts?: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/** 条目内容等价判定（轮询增量更新用；不比较对象引用） */
+export function sameRecordMsg(a: SubagentRecordMessage, b: SubagentRecordMessage): boolean {
+  return a.sender === b.sender
+    && a.text === b.text
+    && a.ts === b.ts
+    && a.reasoning_content === b.reasoning_content
+    && (a.actionLog || []).join('\u0001') === (b.actionLog || []).join('\u0001');
+}
+
+function sameThread(a: SubagentThread, b: SubagentThread): boolean {
+  return a.conversation_id === b.conversation_id
+    && a.status === b.status
+    && a.steps === b.steps
+    && a.label === b.label
+    && a.title === b.title;
+}
+
 /**
- * 子代理只读面板（B3 前端）：左栏第 3 个 Tab 的内容区。
+ * 抓取结果与上一轮逐项对齐（引用稳定化）：
+ * 同位置内容未变的条目复用旧对象引用，Solid `<For>` 按引用比对 ⇒ 不重建
+ * 该条 DOM ⇒ 滚动位置不跳；整轮完全一致时直接返回旧数组（同一引用 =
+ * signal 不触发重渲染）。轮询只做增量更新，不做尾部整体重建。
+ */
+export function stabilizeItems<T>(prev: T[], next: T[], same: (a: T, b: T) => boolean): T[] {
+  if (prev.length === next.length && prev.every((p, i) => same(p, next[i]))) {
+    return prev;
+  }
+  return next.map((n, i) => {
+    const p = prev[i];
+    return p && same(p, n) ? p : n;
+  });
+}
+
+/**
+ * 子代理只读面板（B3 前端）：中间面板「子任务」视图内容区
+ *（顶栏「子任务」入口切 middleView；点左栏任意处切回预览框）。
  * - 列表态：卡片（任务摘要 + 运行态 + 步数），点击进记录态；
  * - 记录态：从后端事件流派生的只读执行记录（用户任务 / 助手正文+思考 / 工具活动），
  *   无输入框（只读回看，对齐 Qoder：点卡片进子代理执行记录）。
- * 组件仅在 Tab 激活时挂载（LeftPanel 条件渲染），onMount 起轮询、卸载清理。
+ * 组件仅在子任务视图挂载（MiddlePanel 条件渲染），onMount 起轮询、卸载清理。
  */
 export function SubagentRail() {
   const [threads, setThreads] = createSignal<SubagentThread[]>([]);
@@ -40,7 +74,8 @@ export function SubagentRail() {
     setLoadingList(true);
     try {
       const resp = await getSubagentThreads();
-      setThreads(resp.subagents || []);
+      // 增量更新：内容一致的条目复用旧引用，避免整列表重建（父阻塞期轮询高频）
+      setThreads((prev) => stabilizeItems(prev, resp.subagents || [], sameThread));
       setErr('');
     } catch {
       setErr('子任务列表加载失败');
@@ -54,7 +89,8 @@ export function SubagentRail() {
       const resp = await getSubagentRecord(thread.conversation_id);
       // 仅当仍是同一选中线程才落数据（防快速切换串台）
       if (selected()?.conversation_id === thread.conversation_id) {
-        setRecord(resp.messages || []);
+        // 增量更新：同位置未变条目复用旧引用 ⇒ 不重建 DOM ⇒ 滚动位置不跳
+        setRecord((prev) => stabilizeItems(prev, resp.messages || [], sameRecordMsg));
         setErr('');
       }
     } catch {
@@ -163,38 +199,22 @@ export function SubagentRail() {
                   <Show
                     when={m.sender === 'user'}
                     fallback={
-                      <Show
-                        when={m.sender === 'system'}
-                        fallback={
-                          <div class="chat-msg agent">
-                            <Show when={m.reasoning_content}>
-                              <details class="subagent-reasoning">
-                                <summary>思考</summary>
-                                <div class="subagent-reasoning-body">{m.reasoning_content}</div>
-                              </details>
-                            </Show>
-                            <Show when={m.text}>
-                              <MarkdownBubble text={m.text || ''} />
-                            </Show>
-                            <Show when={m.actionLog && m.actionLog.length}>
-                              <div class="subagent-tool-line">
-                                执行：{(m.actionLog || []).join('、')}
-                              </div>
-                            </Show>
+                      <div class="chat-msg agent">
+                        <Show when={m.reasoning_content}>
+                          <details class="subagent-reasoning">
+                            <summary>思考</summary>
+                            <div class="subagent-reasoning-body">{m.reasoning_content}</div>
+                          </details>
+                        </Show>
+                        <Show when={m.text}>
+                          <MarkdownBubble text={m.text || ''} />
+                        </Show>
+                        <Show when={m.actionLog && m.actionLog.length}>
+                          <div class="subagent-tool-line">
+                            执行：{(m.actionLog || []).join('、')}
                           </div>
-                        }
-                      >
-                        {/* 完成章（dsh A2）：谁在何时宣告完成 + 当时客观账本 */}
-                        <div class="subagent-stamp" data-testid="subagent-stamp">
-                          <div class="subagent-stamp-head">
-                            <span>本轮宣告完成</span>
-                            <Show when={m.ts}>
-                              <span class="msg-meta">{formatHHMM(m.ts)}</span>
-                            </Show>
-                          </div>
-                          <div class="subagent-stamp-body">{m.text}</div>
-                        </div>
-                      </Show>
+                        </Show>
+                      </div>
                     }
                   >
                     <div class="chat-msg user">

@@ -36,7 +36,7 @@ from loguru import logger
 
 from src.video_agent.utils import live_metrics
 from src.video_agent.config import settings
-from src.video_agent.core import prompt_gates, stage_probes
+from src.video_agent.core import prompt_gates
 from src.video_agent.utils.prompts import render_prompt_section
 
 if TYPE_CHECKING:
@@ -139,10 +139,6 @@ class RoundEndContext:
     confirmation_options: List[Dict[str, Any]] = field(default_factory=list)
     wants_continue: bool = False
     applied: int = 0
-    # 完成盖章（dsh A2）输入态：本轮是否已登记完成章（task_complete）+
-    # 零动作未盖章收尾续跑预算是否有余量（由 agent_loop 据 recovery_policy 填入）
-    stamped: bool = False
-    stamp_budget_left: bool = False
     # 输出态（策略写入，agent_loop 回读）
     hard_break: bool = False
     hard_break_finish: str = ""
@@ -150,9 +146,7 @@ class RoundEndContext:
     result_text: str = ""
     # fakestop：轮末策略机械追加的建议动作（agent_loop 回读并入 result）
     suggested_actions: List[Dict[str, str]] = field(default_factory=list)
-    # 完成盖章：不受理本次纯口头收尾（agent_loop 据此回喂续跑）+ 事实回喂文本
     continue_turn: bool = False
-    stamp_nudge: str = ""
     # 仲裁记录（候选 + 胜出者）
     candidates: List[str] = field(default_factory=list)
     winner: str = ""
@@ -186,7 +180,7 @@ class RoundEndPolicy:
 _OUTPUT_FIELDS = frozenset({
     "hard_break", "hard_break_finish", "result_warnings", "result_text",
     "suggested_actions", "candidates", "winner",
-    "continue_turn", "stamp_nudge",
+    "continue_turn",
 })
 
 
@@ -489,81 +483,11 @@ async def _apply_aborted_continuation_audit(ctx: RoundEndContext, emit: Callable
 # scripts/check_legacy_orchestration.py FORBIDDEN，本文件不再出现。）
 
 
-# ---------- 完成盖章（dsh A2：完成必须显式盖章，未盖章不放行） ----------
-
-def _outstanding_titles(ctx: RoundEndContext) -> List[str]:
-    """客观未完成阶段标题（无 Skill / 全部完成 = 空表；探针 fail-closed）。
-
-    走命名函数而非在 condition 里直接写 `ctx.` 以外表达式：AST 自检只认
-    condition/apply 体内对 ctx 的一等字段读取。"""
-    state = ctx.executor.state if ctx.executor else {}
-    return [s.title for s in stage_probes.outstanding_stages(state, ctx.skill)]
-
-
-def _cond_completion_stamp_gate(ctx: RoundEndContext) -> bool:
-    # 未盖章不放行（dsh round-driver 同语义）：本轮零工具调用、未发暂停、未登记
-    # 完成章，而客观阶段仍有未完成项 → 纯口头收尾不受理。模型一旦盖章/暂停/调过
-    # 工具均不命中；未激活 Skill 的普通对话不被本闸约束（outstanding_stages 空表）。
-    return (
-        settings.completion_stamp_enabled
-        and bool(ctx.skill)
-        and ctx.applied == 0
-        and not ctx.stamped
-        and not ctx.confirmation
-        and ctx.stamp_budget_left
-        and bool(_outstanding_titles(ctx))
-    )
-
-
-async def _apply_completion_stamp_gate(ctx: RoundEndContext, emit: Callable) -> None:
-    state = ctx.executor.state if ctx.executor else {}
-    ctx.stamp_nudge = stage_probes.unstamped_stop_nudge(state, ctx.skill)
-    if not ctx.stamp_nudge:
-        # 分节缺失 = 无法回喂，不强行续跑（fail-safe：宁可退化为普通收尾，
-        # 不造无据循环）；但不得静默——入退化遥测供门禁/看板看到
-        live_metrics.record_degradation("round_end.completion_stamp_gate")
-        logger.warning("[RoundEnd] UNSTAMPED_STOP_NUDGE 分节缺失，本次未盖章收尾不续跑")
-        return
-    ctx.continue_turn = True
-    logger.info("[RoundEnd] completion_stamp_gate: 零动作未盖章收尾不受理，回喂事实后续跑")
-
-
-def _cond_unstamped_stop_notice(ctx: RoundEndContext) -> bool:
-    # 续跑预算已耗尽仍未盖章：不再拦人（不 trap 用户），但把「客观未完成」
-    # 作为事实写进用户可见警告（接住 2222 那类「只说话不干活就收尾」）
-    return (
-        settings.completion_stamp_enabled
-        and bool(ctx.skill)
-        and ctx.applied == 0
-        and not ctx.stamped
-        and not ctx.confirmation
-        and not ctx.stamp_budget_left
-        and bool((ctx.content or "").strip())
-    )
-
-
-async def _apply_unstamped_stop_notice(ctx: RoundEndContext, emit: Callable) -> None:
-    pending = "、".join(_outstanding_titles(ctx))
-    if not pending:
-        return
-    _warn = render_prompt_section(
-        "planner/feedback.md", "UNSTAMPED_STOP_WARNING", pending=pending).strip()
-    if _warn and _warn not in ctx.result_warnings:
-        ctx.result_warnings.append(_warn)
-        logger.info(f"[RoundEnd] unstamped_stop_notice: 未盖章收尾入账事实警告（{pending}）")
-
-
+# ---------- 策略表 ----------
 # 策略表（优先级升序执行；登记期自检见 _validate_policy_table：
 # requires 与实际 ctx 访问 AST 扫描一致 + 禁 getattr 带默认值）
 ROUND_END_POLICIES: List[RoundEndPolicy] = [
-    RoundEndPolicy("completion_stamp_gate", KIND_POST_PROCESS, 110,
-                   _cond_completion_stamp_gate, _apply_completion_stamp_gate,
-                   requires=("skill", "applied", "stamped", "confirmation",
-                             "stamp_budget_left", "executor")),
-    RoundEndPolicy("unstamped_stop_notice", KIND_POST_PROCESS, 115,
-                   _cond_unstamped_stop_notice, _apply_unstamped_stop_notice,
-                   requires=("skill", "applied", "stamped", "confirmation",
-                             "stamp_budget_left", "content", "result_warnings")),
+
     RoundEndPolicy("false_claim_audit", KIND_POST_PROCESS, 120,
                    _cond_false_claim_audit, _apply_false_claim_audit,
                    requires=("content", "executor")),

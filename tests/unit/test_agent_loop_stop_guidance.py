@@ -217,17 +217,23 @@ async def test_empty_text_falls_back_to_confirmation(executor):
     assert result.text == "请确认是否继续"
 
 
-async def test_empty_text_falls_back_to_applied_actions(executor):
-    """有操作但无正文且无暂停：明确告知操作数量，不伪装成空响应"""
+async def test_tool_round_then_empty_stop_emits_bad_output_notice(executor):
+    """工具轮（applied=2）后模型空响应收尾：给明确异常提示，不伪装成空内容；
+    累计操作数跨轮保留（步数上限退役后循环由模型输出驱动收尾，不再靠封顶中断）。"""
+    replies = iter([
+        ("", "tool_calls", 2),
+        ("", "stop", 0),
+    ])
+
     async def llm_call(system_prompt, messages, stream_hook=None):
-        return ("", "tool_calls", 2, 0.0, {})
+        return _p5(next(replies))
 
     result = await run_agent_loop(
         "x", llm_call=llm_call, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=1,
+        history=[],
     )
     assert result.applied_actions == 2
-    assert "2 个操作" in result.text
+    assert "空响应" in result.text
 
 
 # ---------- ⑥ finish=length 截断告警 ----------

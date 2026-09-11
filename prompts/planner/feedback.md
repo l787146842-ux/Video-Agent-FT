@@ -58,21 +58,6 @@ read_skill 执行成功，全文如下（skill={name}，section={section}）：
 ## MECHANICAL_HISTORY_PLACEHOLDER
 （上轮为系统机械动作清单，已并入时间线；明细见状态 JSON 与事件卡）
 
-## STAMP_RECEIPT
-（系统）已登记本轮完成章。客观账本（以工作台为准，与本回合工具结果对账）：
-- 阶段：{{stages}}
-- 产物：{{ledger}}
-{{pending_note}}
-
-## STAMP_PENDING_NOTE
-- 仍未完成的阶段：{{pending}}
-
-## UNSTAMPED_STOP_NUDGE
-（系统）本轮零工具调用，工作台状态未发生任何变更，也未登记完成章。当前客观进度：{{progress}}。结束本轮的合法出口只有三个：① 调用工具执行；② 调用 workflow_pause 请求用户确认；③ 调用 task_complete 登记完成章（回执会列出实际落账产物）。
-
-## UNSTAMPED_STOP_WARNING
-本轮未调用任何工具、也未登记完成章就收尾；工作台仍有未完成阶段：{{pending}}。正文中的完成说法请以工作台实际产物为准。
-
 ## TOOL_RESULT_SUSPENDED
 （该调用未执行完成，会话在此中断）
 

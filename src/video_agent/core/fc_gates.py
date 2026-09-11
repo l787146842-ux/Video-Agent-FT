@@ -12,12 +12,12 @@ web 层引用（生成日志面板）经 GateContext.record_gen_log 注入，
 保住分层（core 不顶层依赖 web）。
 """
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 
 from src.video_agent.config import settings
-from src.video_agent.core import guard_pipeline, stage_probes, prompt_gates
+from src.video_agent.core import guard_pipeline, prompt_gates
 from src.video_agent.skill_runtime.registry import resolve_entry
 from src.video_agent.state import storyboard_ops as ops
 # MCP 命名空间判定：外部工具同管线过 risk 闸（生效风险档由 server 配置解析，
@@ -31,7 +31,7 @@ from src.video_agent.state.models import (
     CAT_KEY_ELEMENTS,
     CAT_SHOTS,
 )
-from src.video_agent.utils.prompts import load_prompt_section, render_prompt_section
+from src.video_agent.utils.prompts import render_prompt_section
 
 # 闸机裁决宣告文案外置 prompts/gates/messages.md（单一事实源，
 # 分节登记 gate_registry.GATE_MESSAGE_SECTIONS）；代码不内联逐字兜底，
@@ -52,14 +52,6 @@ PAUSE_WINDOW_READONLY = frozenset({
     "read_state_group", "workflow_pause",
 })
 
-# 分组类型边界：阶段 → 允许建组类别。与阶段前置闸分工：
-# 前置闸管「阶段没到不许来」，本闸管「来了只许干本阶段的事」。
-STAGE_ALLOWED_GROUP_KINDS: Dict[str, Tuple[str, ...]] = {
-    "structure": ("keyElement", "shot", "audio"),  # 结构阶段三类皆可建
-    "ke_media": ("keyElement",),  # 元素图阶段只许补建关键元素
-    "shot_media": ("shot",),      # 分镜视频阶段只许补建分镜
-    "audio_assets": ("audio",),   # 音频阶段只许补建音频分组
-}
 
 
 @dataclass
@@ -77,8 +69,6 @@ class GateContext:
     selected_type: str = ""
     warnings: List[str] = field(default_factory=list)
     gate_repeat: Dict[str, int] = field(default_factory=dict)
-    # 对话内单图工具每批调用次数（prose 禁令下沉工具层）
-    gen_image_calls: int = 0
     state: Callable[[], Dict[str, Any]] = lambda: {}
     tool_risk_of: Callable[[str], str] = lambda name: "high"
     record_gen_log: Callable[[str, List[str]], None] = (
@@ -290,10 +280,9 @@ def gen_confirm_gate(ctx: GateContext, name: str, args: Dict[str, Any]) -> Optio
 def structure_integrity_gate(
     ctx: GateContext, name: str, args: Dict[str, Any],
 ) -> Optional[str]:
-    """建组结构完整性闸（三条机械校验的通用工具级下沉，逐条同语义）：
+    """建组结构完整性闸（两条机械校验的通用工具级下沉，逐条同语义）：
     ① 无标题 add_group 拒收（防整批分组全落默认标题）；
-    ② 分镜 sceneRefs 完整度（非空且覆盖标题提及的关键元素）；
-    ③ 分组类型边界（only_group_type 按当前阶段推导）。
+    ② 分镜 sceneRefs 完整度（非空且覆盖标题提及的关键元素）。
     仅 strict 模式启用；返回非 None = 硬拒绝（错误文案回喂模型重写）。"""
     if name != "storyboard_create_group":
         return None
@@ -308,21 +297,6 @@ def structure_integrity_gate(
             "storyboard_create_group 被拒收：未携带非空 title。"
             "分组标题是后续去重/引用的唯一锚点，请携带明确标题后重试。"
         )
-    # ③ 分组类型边界：当前阶段只允许对应类别（越界 = 阶段串线）
-    try:
-        cur = stage_probes.current_stage(
-            ctx.state(), ctx.injected_skill)
-    except Exception:
-        cur = None
-    if cur is not None:
-        allowed = STAGE_ALLOWED_GROUP_KINDS.get(cur.key)
-        if allowed is not None and kind and kind not in allowed:
-            wanted = "、".join(allowed)
-            return (
-                f"storyboard_create_group 被拒收：当前处于「{cur.title}」阶段，"
-                f"只允许建 {wanted} 类分组，本次请求的 {kind} 属越界分组，"
-                "请先完成当前阶段再执行对应阶段的建组。"
-            )
     # ② 分镜 sceneRefs 完整度：非空且覆盖标题提及的关键元素
     # （标题点名的角色漏引 = 跨镜一致性断链；refs 兼容 id/标题两种写法，
     # 与 prompt_gates.shot_refs_missing_element 同口径）
@@ -423,8 +397,8 @@ def run_gate_chain(
     *, paused_this_batch: bool,
 ) -> GateChainResult:
     """闸机链组合（顺序敏感，勿调换）：轮内暂停纪律 → 工具风险 →
-    生成确认 → 建组结构完整性 → 提示词结构 → 生图配额。
-    任一闸拒收即短路，后续闸不再判。（C1b 裁决 2026-08-31：阶段前置闸退役。）"""
+    生成确认 → 建组结构完整性 → 提示词结构。
+    任一闸拒收即短路，后续闸不再判。"""
     res = GateChainResult()
     err = pause_window_error(name, paused_this_batch)
     if err is None:
@@ -437,19 +411,5 @@ def run_gate_chain(
             pg_err = prompt_gate(ctx, name, args)
             if pg_err:
                 err = pg_err
-    # 单张应急轨（mode='single'）每批最多一次（prose 下沉工具层）。
-    # 需要多张时模型改用批量轨（mode='batch'，见 protocol.md）
-    if (
-        err is None and name == "image_generate"
-        and str(args.get("mode") or "batch").strip().lower() == "single"
-    ):
-        ctx.gen_image_calls += 1
-        if ctx.gen_image_calls > 1:
-            err = load_prompt_section(_GATE_MSG_FILE, "SINGLE_IMAGE_QUOTA_BLOCKED")
-            if not err:
-                logger.warning(
-                    f"[fc_gates] prompts/{_GATE_MSG_FILE}::SINGLE_IMAGE_QUOTA_BLOCKED "
-                    "分节缺失，使用最小占位")
-                err = "image_generate（mode='single'）每轮只调用一次。"
     res.error = err
     return res

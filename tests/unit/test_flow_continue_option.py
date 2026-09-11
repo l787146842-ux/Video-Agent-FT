@@ -47,22 +47,6 @@ def test_current_flow_step_objective_derivation(monkeypatch):
     assert gates_cards.current_flow_step(state1, "未声明Skill") == 0
 
 
-def test_system_continue_option_labels(monkeypatch):
-    """阶段 1 边界 → 「确认，进入『制作规格』」；阶段 2 边界 → 关键元素拆解。"""
-    _register_flow_skill(monkeypatch)
-    opt = gates_cards.system_continue_option(
-        {"analysis": {"summary": "x"}, "documents": []}, "流程测试")
-    assert opt["label"] == "确认，进入「制作规格」"
-    assert opt["value"] == opt["label"]  # 值人类可读（前端向导会拼进用户消息）
-    opt2 = gates_cards.system_continue_option(
-        {"analysis": {"summary": "x"}, "documents": [
-            {"name": "Final_Video_Spec.md", "content": "画幅：16:9"}]},
-        "流程测试")
-    assert opt2["label"] == "确认，进入「关键元素拆解」"
-    # 无 flow 声明 → None（零声明=零预设）
-    assert gates_cards.system_continue_option({}, "未声明Skill") is None
-
-
 def test_flow_continue_note_for_next_turn(monkeypatch):
     """用户点选 flow_continue 后回喂模型的机械指令含阶段号与短标题。"""
     _register_flow_skill(monkeypatch)
@@ -81,9 +65,9 @@ class _TM:
         return type("_StubTool", (), {"risk": "low"})
 
 
-def test_boundary_pause_strips_model_continue_and_prepends_system(monkeypatch):
-    """v2 批4 + 2026-08-31 用户裁决：阶段边界选项面 = 系统派生继续项前置 +
-    模型选项保留（向导拒收退役后不再清洗模型选项）。"""
+def test_boundary_pause_keeps_model_options_only(monkeypatch):
+    """2026-09-10 阶段规则去代码化批：阶段边界系统派生「继续」项退役——
+    平台不再判阶段完成，无边界可派生；选项面 = 模型选项原样保留。"""
     _register_flow_skill(monkeypatch)
     runner = FCToolRunner(tool_manager=_TM())
     monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(lambda: {
@@ -105,9 +89,11 @@ def test_boundary_pause_strips_model_continue_and_prepends_system(monkeypatch):
     ])
     res = asyncio.run(runner.execute(response, injected_skill="流程测试"))
     opts = res[5]
-    assert opts[0].get("value") == opts[0].get("label") == "确认，进入「制作规格」"
-    labels = [str(o.get("label")) for o in opts[1:]]
-    assert any("继续故事板拆分" in l for l in labels)
+    labels = [str(o.get("label")) for o in opts]
+    # 系统派生「继续」项不再出现
+    assert not any(l.startswith("确认，进入「") for l in labels)
+    # 模型选项原样保留（顺序不变）
+    assert labels[0].startswith("分析结果没问题")
     assert any("需要调整分析" in l for l in labels)
 
 

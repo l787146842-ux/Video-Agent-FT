@@ -1,9 +1,8 @@
 import { Switch, Match } from 'solid-js';
-import { FiFolder, FiGrid, FiCpu } from 'solid-icons/fi';
+import { FiFolder, FiGrid } from 'solid-icons/fi';
 import { state, studioActions } from '@/stores/studio';
 import { StoryboardView } from './StoryboardView';
 import { UncategorizedView } from './UncategorizedView';
-import { SubagentRail } from './SubagentRail';
 import { SnapshotHistoryBar } from './SnapshotHistoryBar';
 import { BoardConflictPanel } from './BoardConflictPanel';
 import type { LeftTab } from '@/types';
@@ -11,15 +10,19 @@ import type { LeftTab } from '@/types';
 const TABS: Array<{ key: LeftTab; label: string; icon: typeof FiGrid }> = [
   { key: 'storyboard', label: '故事板', icon: FiGrid },
   { key: 'uncategorized', label: '未归类素材', icon: FiFolder },
-  { key: 'subagents', label: '子任务', icon: FiCpu },
 ];
 
 /**
- * 左侧面板容器：LeftTab 切换（故事板 / 未归类素材 / 子任务）
+ * 左侧面板容器：LeftTab 切换（故事板 / 未归类素材）。
+ * 子任务面板已迁至中间面板（顶栏入口切换 middleView），
+ * 本面板任意点击 = 中间面板切回预览框。
  */
 export default function LeftPanel() {
   return (
-    <div class="panel-column">
+    <div
+      class="panel-column"
+      onClick={() => studioActions.setMiddleView('preview')}
+    >
       {/* 顶部 Tab（旧版 left-tabs：左对齐 + 蓝色下划线激活） */}
       <div class="left-tabs">
         {TABS.map((tab) => (
@@ -45,9 +48,6 @@ export default function LeftPanel() {
         <Switch>
           <Match when={state.leftTab === 'storyboard'}>
             <StoryboardView />
-          </Match>
-          <Match when={state.leftTab === 'subagents'}>
-            <SubagentRail />
           </Match>
           <Match when={state.leftTab === 'uncategorized'}>
             <UncategorizedView />

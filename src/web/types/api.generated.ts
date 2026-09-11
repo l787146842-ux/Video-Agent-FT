@@ -495,7 +495,7 @@ export interface RuntimeSettings {
   default_image_resolution: string;
   default_video_resolution: string;
   max_shot_duration: number;
-  max_steps: number;
+  llm_max_tokens: number;
   skills_disabled: string[];
   script_inject_limit: number;
   execution_preference: string;
@@ -513,7 +513,7 @@ export interface RuntimeSettingsUpdate {
   default_image_resolution?: string | undefined;
   default_video_resolution?: string | undefined;
   max_shot_duration?: number | undefined;
-  max_steps?: number | undefined;
+  llm_max_tokens?: number | undefined;
   skills_disabled?: string[] | undefined;
   script_inject_limit?: number | undefined;
   execution_preference?: string | undefined;
@@ -912,7 +912,6 @@ export const TOOL_DETAIL_TIERS: Record<string, 'expand' | 'output'> = {
   storyboard_delete_group: 'output',
   storyboard_media_to_chat: 'output',
   storyboard_patch_draft: 'expand',
-  task_complete: 'output',
   view_storyboard_media: 'output',
   workflow_pause: 'expand',
 };
@@ -951,7 +950,6 @@ export const TOOL_APPROVAL_TIERS: Record<string, 'none' | 'confirm' | 'review'> 
   storyboard_delete_group: 'none',
   storyboard_media_to_chat: 'none',
   storyboard_patch_draft: 'none',
-  task_complete: 'none',
   view_storyboard_media: 'none',
   workflow_pause: 'none',
 };

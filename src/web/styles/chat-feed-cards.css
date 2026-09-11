@@ -30,12 +30,8 @@
 }
 .gate-override-btn:hover { background: color-mix(in srgb, var(--color-warning-strong) 20%, transparent); }
 
-/* ===== 长任务阶段进度条（流式中：推理轮次 + 故事板客观进度） ===== */
+/* ===== 长任务阶段进度条（流式中：故事板客观进度） ===== */
 .stage-progress { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; margin-bottom: 6px; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); }
-.stage-progress-round { display: flex; align-items: center; gap: 8px; }
-.stage-progress-round-label { font-size: var(--font-xs); color: var(--text-muted); white-space: nowrap; }
-.stage-progress-track { flex: 1; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--color-white) 8%, transparent); overflow: hidden; }
-.stage-progress-fill { height: 100%; border-radius: 2px; background: var(--accent-emerald); transition: width 0.4s ease; }
 .stage-progress-boards { display: flex; flex-wrap: wrap; gap: 6px; }
 .stage-progress-board { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-muted); }
 .stage-progress-board.done { border-color: color-mix(in srgb, var(--color-success) 50%, transparent); color: var(--accent-emerald); }

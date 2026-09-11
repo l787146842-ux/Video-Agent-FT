@@ -11,20 +11,20 @@ GOOD_SHOT = (
 )
 
 
-def test_verdict_short_prompt_rejected():
+def test_verdict_short_prompt_passes():
+    """字数地板退役（2026-09-10 计划 B5）：短提示词不再被拒。"""
     v = prompt_write_verdict("敷衍短句", "shot", {}, gate_enabled=True)
-    assert not v.ok
+    assert v.ok
     assert v.rule_id == "platform.prompt_write"
-    assert "拦截" in v.message
 
 
-def test_verdict_user_override_allows_with_warning():
+def test_verdict_user_override_keeps_ok():
+    """字数地板退役后无硬伤：override 与常规同结论（层归属不变）。"""
     v = prompt_write_verdict(
         "敷衍短句", "shot", {}, gate_enabled=True, user_override=True,
     )
     assert v.ok
     assert v.layer == "platform"
-    assert v.message  # 硬伤已降为警告文案（仍随结果展示）
 
 
 def test_verdict_audio_and_empty_skip():
@@ -41,10 +41,10 @@ def test_fc_track_same_verdict_for_bad_prompt():
         ctx, "storyboard_patch_draft",
         {"draft_id": "1-1", "draft_type": "shot", "patch": {"prompt": "敷衍短句"}},
     )
-    assert err is not None
-    # 同源判定：唯一实现同输入同结论（拦截）
+    assert err is None
+    # 同源判定：唯一实现同输入同结论（字数地板退役后两侧均放行）
     out = evaluate_prompt_write("敷衍短句", "shot", state, gate_enabled=True)
-    assert out.ok is False
+    assert out.ok is True
 
 
 def test_fc_track_same_verdict_for_good_prompt():

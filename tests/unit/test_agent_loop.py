@@ -1,8 +1,8 @@
 """run_agent_loop：FC 单轨循环语义（audit-0819b 协议单轨化，决策史见 git tag adr-archive-20260901）。
 
-钉死：多步链（finish=tool_calls 继续）、max_steps 上限、每轮上下文重建、
-纯文本收尾轮、结构化暂停确认（llm_call 第 5 元组 extra）、虚报审计与
-假停兜底（轮末策略在纯文本轮执行）、坏输出重试。
+钉死：多步链（finish=tool_calls 继续，不设步数上限——循环持续到模型收尾）、
+每轮上下文重建、纯文本收尾轮、结构化暂停确认（llm_call 第 5 元组 extra）、
+虚报审计与假停兜底（轮末策略在纯文本轮执行）、坏输出重试。
 
 文本块解析路径（continue/确认/动作经 studio-actions 文本）已随双轨退役
 删除，对应旧用例同批退役；暂停确认现唯一经 workflow_pause FC 工具产生
@@ -64,21 +64,22 @@ def make_fc_llm(replies):
 
 # ---------- 多步链（FC 语义：finish=tool_calls / 无可见正文 → 续轮） ----------
 
-async def test_fc_tool_chain_continues_and_caps(svc, executor):
-    """finish=tool_calls 链路未完 → 续轮；达到 max_steps 上限 → 终止并告警"""
+async def test_fc_tool_chain_continues_until_model_stops(svc, executor):
+    """finish=tool_calls 链路未完 → 持续续轮（不设步数上限）；
+    模型 finish=stop 且产出可见正文 → 收尾（步数由模型自决，非平台封顶）。"""
     llm, calls = make_fc_llm([
         ("处理中", "tool_calls", 1),
         ("继续", "tool_calls", 1),
         ("还在做", "tool_calls", 1),
-        ("不会到达", "stop", 1),
+        ("全部完成", "stop", 1),
     ])
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor,
-        history=[], max_steps=3,
+        history=[],
     )
-    assert result.steps == 3
-    assert calls["n"] == 3
-    assert any("上限" in w for w in result.warnings)
+    assert result.steps == 4
+    assert calls["n"] == 4
+    assert "全部完成" in result.text
 
 
 async def test_context_refreshed_each_round(svc, executor):
@@ -164,33 +165,32 @@ async def test_all_rejected_round_feeds_back_and_continues(svc, executor):
     assert result.pause_id == "p1"
 
 
-async def test_all_rejected_stop_with_text_still_continues(svc, executor):
-    """全拒收轮 + stop + 可见文本：'自称完成'不可信（9999 实证），
-    提前终止规则让位——仍续轮消费拒因回喂。"""
+async def test_all_rejected_stop_with_text_terminates(svc, executor):
+    """全拒收轮 + stop + 可见文本：不再强制续轮——拒因已在 messages 回喂，
+    是否继续由模型自决（全拒收轮续跑豁免随步数上限/续跑预算退役，2026-09-10）。"""
     llm, calls = make_fc_llm([
         ("好的！关键元素已创建。现在生成形象图。", "stop", 0, 0.0, {"had_fc_calls": True}),
-        ("已按指引请求确认", "stop", 0),
+        ("不该到达", "stop", 0),
     ])
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
     )
-    assert calls["n"] == 2
-    assert result.steps == 2
-    assert "已按指引请求确认" in result.text
+    assert calls["n"] == 1 and result.steps == 1
+    assert "现在生成形象图" in result.text
 
 
-async def test_all_rejected_rounds_still_capped_by_max_steps(svc, executor):
-    """全拒收轮续轮仍受 max_steps 封顶（无死循环风险）。"""
+async def test_all_rejected_rounds_continue_until_model_stops(svc, executor):
+    """全拒收轮续轮不再受步数封顶（max_steps 已退役）：模型凭回喂自决收尾。"""
     llm, calls = make_fc_llm([
         ("继续撞闸", "tool_calls", 0, 0.0, {"had_fc_calls": True}),
+        ("收到指引，改为暂停请求确认。", "stop", 0),
     ])
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
-        max_steps=2,
     )
     assert calls["n"] == 2
     assert result.steps == 2
-    assert any("上限" in w for w in result.warnings)
+    assert "收到指引" in result.text
 
 
 async def test_pure_text_round_still_terminal_after_fix(svc, executor):
@@ -205,22 +205,20 @@ async def test_pure_text_round_still_terminal_after_fix(svc, executor):
     assert result.applied_actions == 0
 
 
-# ---------- 批 12：产出类被拒的混合轮续轮（1000 正向修复） ----------
+# ---------- 混合轮提前终止语义（续轮预算已随阶段规则去代码化批退役） ----------
 
-async def test_mixed_round_productive_reject_continues(svc, executor):
-    """混合轮（部分调用成功 + 产出类被拒）+ stop + 可见文本 → 不提前终止：
-    部分成功不代表产出落账（1000 实证：read_skill 成功 + 写规格被拒，
-    模型口播"已写入制片规格"假完成收尾），拒因必须被下一轮消费。"""
+async def test_mixed_round_stop_with_text_terminates(svc, executor):
+    """产出类被拒的续轮预算已退役（2026-09-10）：finish=stop + 可见正文
+    即按既有提前终止语义收尾，拒因已在 messages 回喂，模型凭其自决。"""
     llm, calls = make_fc_llm([
-        ("已读取规范，现在写入规格。", "stop", 1, 0.0,
-         {"had_fc_calls": True, "rejected_productive_tools": ["document_write"]}),
-        ("收到拦截指引，先暂停请求确认。", "stop", 0),
+        ("已读取规范，现在写入规格。", "stop", 1, 0.0, {"had_fc_calls": True}),
+        ("不该到达", "stop", 0),
     ])
     result = await run_agent_loop(
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
     )
-    assert calls["n"] == 2, "产出类被拒的混合轮不得按纯文本轮提前终止"
-    assert result.steps == 2
+    assert calls["n"] == 1 and result.steps == 1
+    assert "已读取规范" in result.text
 
 
 async def test_mixed_round_readonly_reject_still_terminal(svc, executor):
@@ -233,25 +231,6 @@ async def test_mixed_round_readonly_reject_still_terminal(svc, executor):
         "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
     )
     assert calls["n"] == 1 and result.steps == 1
-
-
-async def test_productive_reject_budget_exhausts(svc, executor):
-    """续轮预算（recovery_policy productive_reject.max_retries=2）耗尽 →
-    收尾并附产物缺失警告，不烧满 max_steps（防打转）。"""
-    replies = [
-        (f"口播完成 {i}", "stop", 1, 0.0,
-         {"had_fc_calls": True, "rejected_productive_tools": ["document_write"]})
-        for i in range(5)
-    ]
-    llm, calls = make_fc_llm(replies)
-    result = await run_agent_loop(
-        "x", llm_call=llm, context_builder=lambda: "ctx", executor=executor, history=[],
-        max_steps=5,
-    )
-    assert calls["n"] == 3, "首轮 + 预算内续轮 2 次 = 第 3 轮收尾"
-    assert result.steps == 3
-    assert any("未能执行" in w for w in result.warnings), \
-        f"预算耗尽收尾必须附产物缺失警告: {result.warnings}"
 
 
 # ---------- 批 12：对账扩展（宣称完成 ↔ 产物账本，1000 假话口播兜底） ----------

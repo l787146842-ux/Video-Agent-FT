@@ -28,8 +28,9 @@ dependencies 空声明闸住 = 死路径）——声明即输出 WARN 级过渡�
 step_done_conditions / step_short_titles，声明即 WARN） /
 stages 双形态——对象 = stages.<规范键>.{done,skip,executors} 覆盖声明；
 数组 = workflow 结构声明（每项 {key,title,probe|review,
-executor?,deterministic?}，compile_definition 据此派生节点拓扑；
-未声明回落 default_v2_workflow，零回归） /
+executor?,deterministic?}；**不再驱动节点拓扑**——2026-09-10 阶段规则
+去代码化批删除 16 节点 DAG 契约后 `compile_definition` 恒 None，
+该形态只做形状校验、不产生任何运行时效果） /
 布尔开关（spec_wizard/spec_gate/script_required）；顶层 pause.stage_pause；
 顶层 version / source /
 scripts（键声明静态校验，绝不自动执行）/ resources（目录包资源清单 +

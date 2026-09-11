@@ -8,19 +8,21 @@ Codex loop+approval / Temporal 持久化执行与 LangGraph 检查点恢复；
 不发起任何行动（stage_precondition 越阶硬闸已随 C1b 裁决 2026-08-31 退役）。
 
 职责边界：
-- Skill 激活编译 ``WorkflowDefinition``（canonical slug + revision + content hash，
-  源 = frontmatter 声明，``validate_manifest`` 注册期门禁）；
+- Skill 激活不再编译 ``WorkflowDefinition``（16 节点 DAG 契约已随 2026-09-10
+  阶段规则去代码化批退役，``compile_definition`` 恒 None）；账本按平铺节点
+  清单（``_FLAT_NODES``）跑客观探针；
 - 持久化 ``WorkflowRun``（current_node/completed_nodes/pending_gate/artifacts），
   **仅本模块 reducer 可改**（StateManager 仍唯一写入点，Rule3）；
   interaction 全域经 reducer 族（reduce_interaction / reduce_session_summary /
   reduce_gate_overrides / reduce_drafts_presented）单一写入；
-- 完成度只认客观探针（stage_done，fail-closed）；
+- 完成度只认客观探针（stage_done，fail-closed）；账本产物只服务审计与
+  机械停闸（_apply_stage_gate）判据，不接 UI、不判「流程完成」；
 - 「不暂停连跑」语义归自主性档位。
 """
 import copy
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -31,8 +33,7 @@ from src.video_agent.skill_runtime import registry
 from src.video_agent.skill_runtime import frontmatter
 from src.video_agent.skill_runtime.manifest_schema import split_issue_warnings
 from src.video_agent.core.workflow_contract import (
-    WorkflowDefinition, WorkflowDefinitionError, default_v2_workflow,
-    DEFAULT_V2_NODE_TITLES,
+    DEFAULT_V2_REVIEW_NODES,
 )
 from src.video_agent.core.workflow_events import EventLedger
 from src.video_agent.core.turn_commit import (
@@ -57,68 +58,23 @@ def canonical_slug(name: str) -> str:
 
 
 def compile_definition(skill: str) -> Optional[Dict[str, Any]]:
-    """Skill 激活编译 WorkflowDefinition（canonical slug + revision + hash）。
-
-    源 = frontmatter 声明（validate_manifest 注册期门禁）+ 阶段表；编译失败
-    （未注册 Skill）返回 None（runtime 不启用，回落模型循环旧路径）。
-    统一定义 = default_v2_workflow（默认 workflow 自带标题
-    DEFAULT_V2_NODE_TITLES）。（C1b 裁决 2026-08-31：flow.stages 声明式
-    编译退役——声明忽略，机械工作流层整体退役。）
-    per-turn 缓存（轮始 clear_compile_cache；同轮多次调用共享）。"""
-    cache_key = canonical_slug(skill) or str(skill or "")
-    if cache_key in _COMPILE_CACHE:
-        hit = _COMPILE_CACHE[cache_key]
-        return copy.deepcopy(hit) if hit is not None else None
-    entry = registry.resolve_entry(skill)
-    if entry is None:
-        _COMPILE_CACHE[cache_key] = None
-        return None
-    # v2 收尾：frontmatter 体检门禁——非法声明拒入 workflow（计划§1/§6：
-    # 无效声明不能“只告警后继续”驱动运行时；散文通道仍可工作）
-    # 问题分级：只按错误级拒入；WARN 级（开放注册降级/
-    # 废除键过渡告警）记录日志后放行，与注册门禁同口径。
-    manifest = frontmatter.load_manifest(str(entry.slug or skill))
-    _issues = frontmatter.validate_manifest(manifest)
-    issues, _warns = split_issue_warnings(_issues)
-    for _w in _warns:
-        logger.warning("[WorkflowRuntime] frontmatter 告警（{}）: {}", skill, _w)
-    if issues:
-        logger.warning(
-            "[WorkflowRuntime] frontmatter 非法，workflow 拒入（{}）: {}",
-            skill, ";".join(issues))
-        _COMPILE_CACHE[cache_key] = None
-        return None
-    # C1b 裁决 2026-08-31：flow.stages 声明式编译退役，统一定义回落默认链。
-    definition = default_v2_workflow(str(entry.slug or skill))
-    titles = DEFAULT_V2_NODE_TITLES
-    nodes = [{**node.to_dict(), "key": node.node_id,
-              "title": titles.get(node.node_id, node.node_id),
-              "executors": [] if node.executor == "workflow_pause" else [node.executor]}
-             for node in definition.nodes]
-    result = {
-        "slug": str(entry.slug or ""),
-        "name": str(entry.name or skill),
-        "workflow_id": definition.workflow_id,
-        "revision": definition.revision,
-        "definition_hash": definition.content_hash,
-        "nodes": nodes,
-    }
-    _COMPILE_CACHE[cache_key] = copy.deepcopy(result)
-    return result
+    """DAG 编译函数已随 16 节点 workflow 契约退役，恒返回 None。
+    流程调度靠 Skill 散文+模型自觉+6 步清单机械停（2026-09-10 阶段规则
+    去代码化批）：平台不再编译节点拓扑/前置关系，账本按平铺节点清单
+    （见 ``_FLAT_NODES``）跑客观探针，不判「流程完成」。"""
+    return None
 
 
-# 节点 → 客观探针键映射（账本无自报）：completed_nodes 全量
-# 由 stage_done 探针重算；turn_commit 的自报 completed_node 降级为非权威
-# 提示——下次 sync 即被本重算覆盖，不再具有账本效力。
+# 节点 → 客观探针键映射（账本无自报）：completed_nodes 全量由 stage_done
+# 探针重算；turn_commit 的自报 completed_node 降级为非权威提示——下次
+# sync 即被本重算覆盖，不再具有账本效力。
 # - collect_spec 与 write_spec 同证同源：规格文档在场即证明收集已发生；
-# - 媒体四阶段（2026-09-06 对齐批入默认定义）挂同键阶段探针；
+# - 媒体阶段挂同键阶段探针；
 # - storyboard 三个结构节点用节点级探针（key_elements/shots_groups/
 #   audio_groups，运行时内部键，不可声明覆盖）；
 # - 审批节点（6 个）的「已评审」客观证据 = 账本 DecisionResolved 事件
 #   （resolve_decision 提交），前置产物在场但未落账决议时不予完成
 #   （fail-closed：不因文档存在而跳过评审暂停）。
-# （C1b 裁决 2026-08-31：声明式 workflow（flow.stages 数组）节点→探针映射
-# 随机械工作流层整体退役删除。）
 _NODE_PROBE_KEYS = {
     "analyze_script": "analysis",
     "collect_spec": "spec",
@@ -145,6 +101,30 @@ _REVIEW_NODE_PREREQ = {
 }
 _REVIEW_NODES = tuple(_REVIEW_NODE_PREREQ)
 
+# 平铺节点清单（无 DAG）：16 节点 workflow 契约退役后不再编译节点拓扑，
+# 本清单只提供**确定性的进度扫描顺序**（节点 id 词表与 6 步评审清单
+# ``workflow_contract.DEFAULT_V2_REVIEW_NODES`` 断言对齐）。扫描顺序把
+# 每个产出节点紧随其审批节点，使 current_node 在产物齐备时即指向待评审
+# 里程碑（机械停闸 _apply_stage_gate 的「本轮翻转」判据来源）。
+_FLAT_NODES: Tuple[str, ...] = (
+    "analyze_script",
+    "collect_spec",
+    "write_spec",
+    "review_spec",
+    "storyboard_key_elements",
+    "storyboard_shots",
+    "storyboard_audio",
+    "review_key_elements",
+    "review_storyboard",
+    "ke_media",
+    "shot_media",
+    "review_shot_media",
+    "audio_assets",
+    "review_audio",
+    "assembly",
+    "review_assembly",
+)
+
 
 def _node_objectively_done(node_id: str, run: Dict[str, Any],
                            state: Dict[str, Any], skill: str) -> bool:
@@ -164,45 +144,47 @@ def _node_objectively_done(node_id: str, run: Dict[str, Any],
 
 
 def sync_run(state: Dict[str, Any], skill: str) -> Dict[str, Any]:
-    """同步 WorkflowRun：定义变更重初始化；完成度按客观探针全量重算。
+    """同步 WorkflowRun（无 DAG 模式）：完成度按客观探针全量重算。
 
-    current_node = 阶段表首个未完成步；completed_nodes 只认 stage_done
-    探针与账本 DecisionResolved 事件（fail-closed），自报条目无账本效力。
+    2026-09-10 阶段规则去代码化批：16 节点 workflow 契约退役，
+    ``compile_definition`` 恒 None ⇒ 平台不再编译节点拓扑/前置关系；
+    账本改按平铺节点清单（``_FLAT_NODES``）逐个跑客观探针重算
+    completed_nodes（账本无自报），current_node = 清单中首个未完成节点，
+    供机械停闸（``_apply_stage_gate``）判「本轮是否发生里程碑翻转」。
+    全部完成时 current_node 置空 ⇒ 闸不触发。
+    不置 failure_state（「无 DAG」是常态不是失败）。
     run 块为 reducer 单一写入点。"""
-    definition = compile_definition(skill)
     run = state.setdefault("workflow_run", {})
-    if definition is None:
-        run.setdefault("failure_state", {"code": "INVALID_SKILL", "skill": skill})
-        return run
     now = datetime.now(timezone.utc).isoformat()
-    first_node = definition["nodes"][0]["node_id"]
-    if not run:
-        run.update({"run_id": f"run_{uuid.uuid4().hex}", "workflow_id": definition["workflow_id"],
-                    "definition_revision": definition["revision"], "definition_hash": definition["definition_hash"],
-                    "slug": definition["slug"], "name": definition["name"], "revision": definition["revision"],
-                    "status": "ready", "current_node": first_node, "completed_nodes": [],
-                    "pending_decision": None, "artifacts": [], "run_version": 0,
-                    "event_sequence": 0, "failure_state": None,
-                    "created_at": now, "updated_at": now})
-    elif run.get("definition_hash") and run.get("definition_hash") != definition["definition_hash"]:
-        # 定义变更时保留旧 run 的早退语义不变
-        return run
-    for key, value in (("workflow_id", definition["workflow_id"]), ("definition_revision", definition["revision"]),
-                       ("definition_hash", definition["definition_hash"]), ("status", "ready"),
-                       ("completed_nodes", []), ("pending_decision", None), ("artifacts", []),
-                       ("run_version", 0), ("event_sequence", 0),
-                       ("failure_state", None), ("created_at", now)):
+    if not run.get("run_id"):
+        run.update({
+            "run_id": f"run_{uuid.uuid4().hex}", "workflow_id": "",
+            "definition_revision": "", "definition_hash": "",
+            "slug": canonical_slug(skill), "name": str(skill or ""),
+            "revision": "", "status": "ready", "current_node": "",
+            "completed_nodes": [], "pending_decision": None, "artifacts": [],
+            "run_version": 0, "event_sequence": 0, "failure_state": None,
+            "created_at": now, "updated_at": now,
+        })
+    # 在途旧 run 一次性补齐字段（禁止 clear 式回滚：artifacts 等既有值不动）
+    for key, value in (
+        ("workflow_id", ""), ("definition_revision", ""), ("definition_hash", ""),
+        ("slug", canonical_slug(skill)), ("name", str(skill or "")), ("revision", ""),
+        ("status", "ready"), ("current_node", ""), ("completed_nodes", []),
+        ("pending_decision", None), ("artifacts", []), ("run_version", 0),
+        ("event_sequence", 0), ("failure_state", None), ("created_at", now),
+    ):
         run.setdefault(key, copy.deepcopy(value))
-    # 账本无自报：8/8 节点全量探针重算，覆盖任何历史自报条目
+    # 账本无自报：平铺清单全量探针重算，覆盖任何历史自报条目
     run["completed_nodes"] = [
-        n["node_id"] for n in definition["nodes"]
-        if _node_objectively_done(n["node_id"], run, state, skill)]
-    if not run.get("current_node") or run.get("current_node") in run["completed_nodes"]:
-        for node in definition["nodes"]:
-            if node["node_id"] not in run["completed_nodes"] and all(
-                    x in run["completed_nodes"] for x in node.get("prerequisites") or []):
-                run["current_node"] = node["node_id"]
-                break
+        node_id for node_id in _FLAT_NODES
+        if _node_objectively_done(node_id, run, state, skill)]
+    run["current_node"] = ""
+    for node_id in _FLAT_NODES:
+        if node_id not in run["completed_nodes"]:
+            run["current_node"] = node_id
+            break
+    run["failure_state"] = None
     if run.get("pending_decision"):
         run["status"] = "waiting_user"
     elif run.get("status") == "waiting_user":
@@ -434,16 +416,14 @@ class WorkflowRuntime:
         return self.state_manager
 
     def ensure_run(self) -> Dict[str, Any]:
-        """轮始轻量确保（批 3 · B3，V5-1）：run 已存在且定义未变更时直接返回，
-        不做全量探针重算——账本重算的唯一触发点收敛到写动作落账
-        （commit_turn / resolve_decision / recover_run）；轮始不再空跑。
-        run 缺失 / 失败态 / 定义变更时回落 start_run 全量同步。"""
+        """轮始轻量确保（批 3 · B3）：run 已存在且未失败时直接返回，不做
+        全量探针重算——账本重算的唯一触发点收敛到写动作落账
+        （commit_turn / resolve_decision）与轮末阶段闸 sync_run。
+        （2026-09-10 阶段规则去代码化批：DAG 不再编译，run 存在即视为有效，
+        不再按 definition_hash 比对；「无 DAG」不置 failure_state。）"""
         run = self.state.get("workflow_run") or {}
         if run.get("run_id") and not run.get("failure_state"):
-            definition = compile_definition(self.skill)
-            if definition and (not run.get("definition_hash")
-                               or run.get("definition_hash") == definition["definition_hash"]):
-                return run
+            return run
         return self.start_run()
 
     def start_run(self, *, input_present: Optional[bool] = None) -> Dict[str, Any]:

@@ -18,10 +18,11 @@ def test_shot_prompt_complete_passes():
     assert ok and not hard
 
 
-def test_shot_prompt_too_short():
+def test_shot_prompt_no_char_floor():
+    """字数地板已退役（2026-09-10 阶段规则去代码化批，计划 B5）：
+    过短提示词不再硬拒——平台不判提示词质量，只保留软提醒。"""
     ok, hard, _ = prompt_gates.validate_prompt_write("推入，no subtitles，<音效>", "shot")
-    assert not ok
-    assert any("过短" in e for e in hard)
+    assert ok and not hard
 
 
 def test_shot_prompt_missing_duration():
@@ -78,9 +79,10 @@ def test_shot_prompt_subtitle_synonyms_pass():
         assert ok and not hard, f"应通过: {negation}"
 
 
-def test_key_element_prompt_min_len():
+def test_key_element_prompt_no_char_floor():
+    """字数地板退役（2026-09-10）：过短与合格提示词一律放行（无硬错误）。"""
     ok, hard, _ = prompt_gates.validate_prompt_write("老者", "keyElement")
-    assert not ok and any("过短" in e for e in hard)
+    assert ok and not hard
     ok2, hard2, _ = prompt_gates.validate_prompt_write(
         "白发老者罗辑，地球文明最后的守墓人，身穿深色厚重古典大衣，手持拐杖，"
         "神情平静从容，冷峻光影下的宿命感。", "keyElement")
@@ -169,33 +171,32 @@ def test_fc_strips_structure_prompt_on_first_batch(monkeypatch):
         {"draft": {"prompt": "x" * 100}}) is True
 
 
-def test_fc_pending_window_rejects_bad_prompt(monkeypatch):
-    """过短提示词触发字数地板拒收（语言轴已退役，地板=字数）：
-    待确认窗口内拒收、用户坚持后放行并警告。"""
+def test_fc_pending_window_passes_bad_prompt(monkeypatch):
+    """字数地板退役（2026-09-10 阶段规则去代码化批，计划 B5）：待确认窗口内
+    过短提示词不再被拒收（拒收与否只由闸机结构项决定，本项已无硬错误）。"""
     pending = {"interaction": {"storyboard_pending": True}}
     err = fc_gates.prompt_gate(
         _pctx(pending), "storyboard_patch_draft",
         {"draft_id": "1-1", "draft_type": "keyElement", "patch": {"prompt": "x" * 10}},
     )
-    assert err is not None  # 决策 D：硬性条款未通过 → 拒绝
-    # 用户坚持 → 放行并警告
+    assert err is None
     ctx2 = _pctx(pending, override=True)
     err2 = fc_gates.prompt_gate(
         ctx2, "storyboard_patch_draft",
         {"draft_id": "1-1", "draft_type": "keyElement", "patch": {"prompt": "x" * 10}},
     )
     assert err2 is None
-    assert ctx2.warnings
 
 
 # ---------- FC 轨拦截 ----------
 
-def test_fc_gate_rejects_bad_prompt(monkeypatch):
+def test_fc_gate_passes_bad_prompt(monkeypatch):
+    """字数地板退役（2026-09-10）：短提示词不再被 FC 闸拒收。"""
     err = fc_gates.prompt_gate(
         _pctx(injected_skill="剧本生视频（需上传剧本）"), "storyboard_patch_draft",
         {"draft_id": "1-1", "draft_type": "shot", "patch": {"prompt": "敷衍短句"}},
     )
-    assert err is not None and "过短" in err
+    assert err is None
 
 
 def test_fc_gate_passes_without_skill(monkeypatch):

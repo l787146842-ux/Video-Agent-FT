@@ -59,9 +59,9 @@ def normalize_exec_mode(value) -> str:
     return v if v in EXECUTION_MODE_VALUES else EXECUTION_MODE_DEFAULT
 
 
-# Agent 多步上限钳制区间（Q3 裁决 2026-09-01：运行时可热调）：
-# 单一事实源——运行时设置热更新通道与 agent_loop 实时读取同引用。
-MAX_STEPS_RANGE = (1, 30)
+
+# 输出 token 上限默认值（对齐 dsh DEFAULT_MAX_TOKENS=256_000）
+LLM_MAX_TOKENS_ENV = "LLM_MAX_TOKENS"
 
 
 def _env_int(key: str, default: int) -> int:
@@ -100,21 +100,10 @@ class Settings:
     # 触发 loguru rotation rename 失败（WinError 32）
     log_file_enabled: bool = field(default_factory=lambda: _env_bool("LOG_FILE_ENABLED", True))
 
-    # Agent 多步循环（Q3：运行时热更新经 web/runtime_settings 通道，
-    # agent_loop 每步实时读取，不再 import 期冻结）
-    max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 6))
-
-    # 正宗子代理 run_subagent（模型经 FC 发起、复用 run_agent_loop 的一次性子级，
-    # 非机械执行器）：总开关（关=不下发 run_subagent 工具，一键回滚）；子级循环
-    # 步数上限（env/config 默认，**不进前端设置页**，显式覆盖 run_agent_loop 实时值）。
+    # 子代理 run_subagent 总开关（关=不下发 run_subagent 工具，一键回滚）
     subagent_enabled: bool = field(default_factory=lambda: _env_bool("SUBAGENT_ENABLED", True))
-    subagent_max_steps: int = field(default_factory=lambda: _env_int("SUBAGENT_MAX_STEPS", 6))
 
-    # 完成盖章 task_complete（dsh A2 口径：结束本轮必须显式盖章，未盖章的纯口头
-    # 收尾不受理）：总开关（关 = 不下发 task_complete 工具且不启用轮末盖章闸，
-    # 一键回滚）；零动作未盖章收尾轮的续跑预算（防打转，不进前端设置页）。
-    completion_stamp_enabled: bool = field(
-        default_factory=lambda: _env_bool("COMPLETION_STAMP_ENABLED", True))
+
 
     # LLM 超时（秒）
     llm_timeout: int = field(default_factory=lambda: _env_int("LLM_TIMEOUT", 120))
@@ -425,7 +414,7 @@ SETTINGS_GROUPS: dict = {
     "server": ("port", "host", "shutdown_grace_seconds"),
     "security": ("environment", "api_key", "log_file_enabled", "trust_proxy",
                  "rate_limit_per_minute", "rate_limit_generate_per_minute"),
-    "agent": ("max_steps", "adjust_subdialog_enabled", "adjust_task_concurrency",
+    "agent": ("adjust_subdialog_enabled", "adjust_task_concurrency",
               "execution_preference", "execution_mode", "pipeline_orchestrator_enabled",
               "script_inject_limit"),
     "llm": ("llm_timeout", "llm_stream_timeout", "adapter_retry_max",

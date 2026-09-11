@@ -33,8 +33,6 @@ export interface ScopeStreamingView {
   reasoning: string;
   statusText: string;
   tools: ScopeToolEntry[];
-  roundStep: number;
-  roundMax: number;
 }
 
 export type ScopeThreadStatus = 'idle' | 'starting' | 'running' | 'error';
@@ -65,7 +63,6 @@ export type ScopeEvent =
   | { kind: 'delta'; text: string }
   | { kind: 'reasoning'; text: string }
   | { kind: 'status'; text: string }
-  | { kind: 'round'; step: number; max: number }
   | { kind: 'tool_started'; id: string; name: string; summary: string }
   | { kind: 'tool_finished'; id: string; ok: boolean; elapsedMs: number; resultSummary?: string }
   | { kind: 'message'; message: ChatMessage }
@@ -75,7 +72,7 @@ export type ScopeEvent =
   | { kind: 'stopped' };
 
 export const emptyStreaming = (): ScopeStreamingView => (
-  { active: false, text: '', reasoning: '', statusText: '', tools: [], roundStep: 0, roundMax: 0 }
+  { active: false, text: '', reasoning: '', statusText: '', tools: [] }
 );
 
 /** done 终态气泡（复用主聊天 meta 构造；图卡/视频卡自 chat_inserts 派生） */
@@ -105,7 +102,6 @@ export function applyScopeEvent(th: ScopeThread, ev: ScopeEvent): void {
     case 'delta': st.active = true; st.text += ev.text; break;
     case 'reasoning': st.active = true; st.reasoning += ev.text; break;
     case 'status': st.active = true; st.statusText = ev.text; break;
-    case 'round': st.roundStep = ev.step; st.roundMax = ev.max; break;
     case 'tool_started': {
       st.active = true;
       const hit = st.tools.find((x) => x.id === ev.id);

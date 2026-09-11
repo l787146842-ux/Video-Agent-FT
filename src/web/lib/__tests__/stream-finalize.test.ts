@@ -35,8 +35,6 @@ function streamingState(extra?: Partial<ChatState>): ChatState {
     },
     queuedMessages: [{ id: 'q1', text: '排队', displayText: '排队', parts: [] }],
     renderedDocCards: ['规格.md'],
-    roundStep: 2,
-    roundMax: 5,
     ...extra,
   };
 }
@@ -54,8 +52,6 @@ describe('resetStreamFields（done/错误/停止/重连收尾四处同语义）'
     expect(s.turnLedger.statusText).toBe('');
     expect(s.turnLedger.reasoningStartMs).toBe(0);
     expect(s.turnLedger.reasoningEndMs).toBe(0);
-    expect(s.roundStep).toBe(0);
-    expect(s.roundMax).toBe(0);
   });
 
   it('不触碰消息列表/输入框/排队/文档去重表（收尾重置面钉死，防误扩面）', () => {

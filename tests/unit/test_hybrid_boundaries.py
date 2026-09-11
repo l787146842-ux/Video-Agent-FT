@@ -679,8 +679,9 @@ def _fc_state_with_two_ke_groups():
     }
 
 
-def test_fc_patch_current_rejects_bad_prompt(monkeypatch):
-    """strict 下 patch \"current\" 经过提示词校验，不合格被拒绝（决策 D）"""
+def test_fc_patch_current_applies_after_char_floor_retired(monkeypatch):
+    """strict 下 patch \"current\" 经提示词校验；字数地板退役（2026-09-10
+    阶段规则去代码化批，计划 B5）后短提示词不再被拒 → 工具照常执行。"""
     import asyncio
     tm = _CaptureToolManager()
     runner = FCToolRunner(tool_manager=tm)
@@ -690,21 +691,11 @@ def test_fc_patch_current_rejects_bad_prompt(monkeypatch):
             "name": "storyboard_patch_draft",
             "arguments": json.dumps({"draft_id": "current", "patch": {"prompt": "x"}})}},
     ])
-    applied, confirmation, *_rest, tool_results, _docs, _warnings, _overflow, _pause_id = asyncio.run(
+    applied, *_rest = asyncio.run(
         runner.execute(response, injected_skill="任意 Skill",
                        selected_draft_id="d2", selected_type="keyElement"))
-    assert applied == 0
-    assert not tm.captured  # 工具未执行
-    assert tool_results and tool_results[0]["ok"] is False
-    # 用户坚持 → 照常执行并警告
-    runner2 = FCToolRunner(tool_manager=_CaptureToolManager())
-    monkeypatch.setattr(FCToolRunner, "_raw_state", staticmethod(_fc_state_with_two_ke_groups))
-    applied2, *_rest2 = asyncio.run(
-        runner2.execute(response, injected_skill="任意 Skill",
-                        selected_draft_id="d2", selected_type="keyElement",
-                        gate_override=True))
-    assert applied2 == 1
-    assert runner2.gate_warnings and "警告" in runner2.gate_warnings[0]
+    assert applied == 1
+    assert tm.captured  # 工具已执行（无字数地板拦截）
 
 
 def test_fc_patch_current_resolves_selected_draft(monkeypatch):

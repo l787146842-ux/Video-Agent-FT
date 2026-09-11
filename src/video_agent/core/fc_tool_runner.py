@@ -32,7 +32,6 @@ from src.video_agent.core import fc_gates, fc_reconcile, prompt_gates
 from src.video_agent.core import batch_checkpoint
 from src.video_agent.core import ports
 from src.video_agent.core import provider_injection
-from src.video_agent.core import stage_probes
 from src.video_agent.core import workflow_runtime
 from src.video_agent.core import pause_composer
 from src.video_agent.core import tool_args_preview
@@ -119,11 +118,7 @@ class _BatchState:
     pause_overflow: str = ""
     pause_fallback_message: str = ""
     pause_break: bool = False
-    # 完成盖章（dsh A2）：本轮已盖章 + 盖章即冻结本批 + 回执/summary 随数据上抛
-    stamped_this_batch: bool = False
-    stamp_break: bool = False
-    stamp_receipt: str = ""
-    stamp_summary: str = ""
+
     batch_tool_names: set = field(default_factory=set)
     last_stage_label: str = ""
     structure_created: bool = False
@@ -523,19 +518,12 @@ class FCToolRunner:
                         _svc_m.save_debounced()
                 except Exception as _e:
                     logger.debug("[fc_tool_runner] 忽略异常: {}", _e)
-                # 选项面单一归一（Rule2 v6，pause_composer 唯一实现）：
-                # 模型自造规格类选项替换为标准向导；阶段边界剔除模型
-                # 继续类选项并前置系统派生项；调整类选项保留。
-                _boundary_hit = (
-                    "script_analyze" in st.batch_tool_names
-                    or (st.doc_written and prompt_gates.has_spec_document(
-                        self._raw_state()))
-                    or (st.structure_created and prompt_gates.storyboard_stage_complete(
-                        self._raw_state(), st.ctx.injected_skill))
-                )
+                # 选项面归一（Rule2 v6，pause_composer 唯一实现）：
+                # 模型选项原样保留（阶段边界系统派生「继续」项已随阶段规则
+                # 去代码化批退役——平台不再判阶段完成，无边界可派生）。
                 st.confirmation, st.confirmation_options = pause_composer.normalize_option_surface(
                     self._raw_state(), st.ctx.injected_skill, st.confirmation,
-                    st.confirmation_options, boundary_hit=_boundary_hit)
+                    st.confirmation_options)
                 # 问即停：记下事务写入兜底文案（模型原文），
                 # 置批末终止标记——本批后续调用不执行也不回喂拒因，
                 # 悬挂调用留在 history 末尾，待暂停三态回应后统一消费
@@ -587,23 +575,8 @@ class FCToolRunner:
             if _stage_lbl:
                 st.last_stage_label = _stage_lbl
                 self._turn_stage_label = _stage_lbl
-            st.tool_results.append({"name": name, "ok": True, "data": result.data})
-            # 完成盖章（dsh A2：完成必须显式盖章）：回喂数据换为客观账本快照
-            # （纯事实，不判真假——章永远盖得下去），并冻结本批（同暂停即冻结
-            # 语义：排在其后的调用不执行）；agent_loop 据此收轮（finish=stamped）。
-            if name == "task_complete":
-                st.stamp_receipt = stage_probes.stamp_receipt(
-                    self._raw_state(), st.ctx.injected_skill)
-                st.stamp_summary = str((result.data or {}).get("summary") or "")
-                st.stamped_this_batch = True
-                st.stamp_break = True
-                st.tool_results[-1]["data"] = {
-                    "stamped": True,
-                    "summary": st.stamp_summary,
-                    "ledger": st.stamp_receipt,
-                }
-                tracer.record_control_flow(
-                    "task_complete_stamped", st.stamp_receipt[:200])
+            st.tool_results.append({"name": name, "ok": True, "data": result.data,
+                             "call_id": c.tool_event_id})
             # 子对话暂停放行（批 3）：回喂替换「已暂停」为「已自动确认」，
             # 防模型停在等待用户回应的语义上（子对话不发起确认）
             if name == "workflow_pause" and st.scope_auto_pause:
@@ -644,8 +617,7 @@ class FCToolRunner:
                     )
             # 问即停：暂停发行成功 = 立即结束本批（同批后续
             # tool_calls 不执行、不产生拒因回喂；发卡点正常收尾）
-            # 盖章同理：task_complete 发行即冻结本批（两种控制流出口互斥）
-            if st.pause_break or st.stamp_break:
+            if st.pause_break:
                 return "break"
         else:
             logger.warning(f"[Planner] Tool '{name}' failed: {result.error}")

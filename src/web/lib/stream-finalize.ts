@@ -19,8 +19,6 @@ export function resetStreamFields(s: ChatState) {
   s.streamingModel = '';
   // 本轮账本整体复位（reasoning/items/状态文案/思考计时一次清零）
   s.turnLedger = emptyLedger();
-  s.roundStep = 0;
-  s.roundMax = 0;
 }
 
 /** 「继续刚才的任务」本地派生（停止/报错气泡共用单一实现）；

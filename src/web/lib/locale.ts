@@ -29,7 +29,7 @@ const zhCN = {
   'rp.streaming.executing': '正在执行第 {n} 项操作：{summary}',
 
   // ---------- 后端 SSE status 事件固定文案（键与后端 status_event key 一致） ----------
-  'agent.roundThinking': '第 {prev} 轮操作已完成，继续思考中（第 {step}/{max} 轮）…',
+  'agent.roundThinking': '第 {prev} 轮操作已完成，继续思考中（第 {step} 轮）…',
   'agent.badRetry': '第 {step} 轮输出异常，重试中…',
   'agent.flowGatePause': '越阶操作被流程门禁拦截，已强制暂停',
   'agent.opsDone': '已完成：{ops}',
@@ -306,9 +306,8 @@ const zhCN = {
   'health.backendDown': '后端服务失联，正在自动重试…（进行中的任务不受影响）',
   'health.aria': '连接状态提醒',
 
-  // ---------- 长任务阶段进度条（客观进度 + 推理轮次） ----------
+  // ---------- 长任务阶段进度条（故事板客观进度） ----------
   'rp.progress.title': '任务进度',
-  'rp.progress.round': '第 {step}/{max} 轮',
   'rp.progress.ke': '关键元素',
   'rp.progress.shots': '分镜',
   'rp.progress.audio': '音频',

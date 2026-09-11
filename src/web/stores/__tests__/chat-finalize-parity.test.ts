@@ -21,8 +21,6 @@ function expectStreamReset(s: ChatState) {
   expect(s.turnLedger.items).toEqual([]);
   expect(s.turnLedger.statusText).toBe('');
   expect(s.turnLedger.reasoningStartMs).toBe(0);
-  expect(s.roundStep).toBe(0);
-  expect(s.roundMax).toBe(0);
 }
 
 /** 模拟流式进行中的中途状态（思考 + 工具 + 正文增量） */
@@ -31,7 +29,6 @@ function midStream() {
   chatActions.appendReasoning('思考中');
   chatActions.toolStarted('t1', 'gen', '生图');
   chatActions.appendDelta('正文片段');
-  chatActions.setRoundProgress(2, 5);
 }
 
 describe('四处收尾复用点后置态一致', () => {

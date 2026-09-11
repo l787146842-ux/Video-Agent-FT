@@ -10,6 +10,7 @@ import {
 } from '@/stores/history';
 import { toggleGenLog, genLogUnread } from '@/stores/generation-log';
 import { toggleJobs } from '@/stores/jobs';
+import { state, studioActions } from '@/stores/studio';
 
 /**
  * 顶栏「全局设置」入口（替代旧自动切换按钮）：
@@ -46,11 +47,18 @@ export function Header(props: {
   const { theme, toggle } = useTheme();
   const location = useLocation();
 
-  /** 导航项样式：/ 精确匹配，其余前缀匹配 */
+  /** 导航项样式：/ 精确匹配，其余前缀匹配。
+   * 「子任务」频道激活时影视工作台不高亮（导航组激活互斥，视觉只亮一处） */
   function navClass(path: string, exact = false): string {
     const active = exact
-      ? location.pathname === path
+      ? location.pathname === path && state.middleView !== 'subagents'
       : location.pathname.startsWith(path);
+    return active ? 'mode-btn active' : 'mode-btn';
+  }
+
+  /** 「子任务」入口高亮：在工作台页且中间面板已切为子任务面板 */
+  function subagentsClass(): string {
+    const active = location.pathname === '/' && state.middleView === 'subagents';
     return active ? 'mode-btn active' : 'mode-btn';
   }
 
@@ -75,11 +83,28 @@ export function Header(props: {
         <span class="brand-name brand-art">飞天</span>
       </div>
 
-      {/* 模式导航（URL 路由，支持前进/后退/深链接）。三个按钮样式统一，无下拉。 */}
+      {/* 模式导航（URL 路由，支持前进/后退/深链接）。四个按钮样式统一，无下拉。 */}
       <nav class="studio-nav-links">
-        <A href="/" class={navClass('/', true)}>影视工作台</A>
+        {/* 影视工作台：回工作台 + 中间面板切回预览（与「子任务」入口对偶） */}
+        <A
+          href="/"
+          class={navClass('/', true)}
+          onClick={() => studioActions.setMiddleView('preview')}
+        >
+          影视工作台
+        </A>
         <A href="/canvas" class={navClass('/canvas')}>画布</A>
         <A href="/settings" class={navClass('/settings')}>API 配置</A>
+        {/* 子任务入口：切中间面板为子任务面板（回预览 = 点左栏任意处）；
+            不在工作台时点击先回工作台 */}
+        <A
+          href="/"
+          class={subagentsClass()}
+          title="子任务面板"
+          onClick={() => studioActions.setMiddleView('subagents')}
+        >
+          子任务
+        </A>
       </nav>
 
       {/* 右侧操作区 */}

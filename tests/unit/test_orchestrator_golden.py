@@ -67,11 +67,15 @@ def _state_with(**kw):
 
 
 def test_current_stage_progression():
+    """阶段推进口径（2026-09-10 阶段规则去代码化批后）：analysis 仍按客观探针
+    推进；「结构完成」判据已退役（stage_done("structure") 恒 False，平台不判
+    结构完成、模型自决）⇒ current_stage 不再越过 structure。"""
     assert po.current_stage(_state_with(), SKILL).key == "analysis"
     assert po.current_stage(_state_with(analysis=True), SKILL).key == "structure"
     st = _state_with(analysis=True, structure=True)
-    assert po.current_stage(st, SKILL).key == "ke_media"
-    assert po.current_stage(st, SKILL).deterministic is False
+    assert po.current_stage(st, SKILL).key == "structure"
+    # ke_media 等后续阶段不再可达（structure 恒未完成）；原 deterministic=False
+    # 断言随该推进口径退役删除
 
 
 # ---------- ③ 闸预检：只装配兜底卡，永不执行/抢先 ----------

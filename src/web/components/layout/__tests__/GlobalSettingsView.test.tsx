@@ -49,7 +49,7 @@ const SETTINGS = {
   default_image_resolution: '2K',
   default_video_resolution: '720p',
   max_shot_duration: 5,
-  max_steps: 6,
+  llm_max_tokens: 256000,
   skills_disabled: [],
   script_inject_limit: 20000,
   execution_preference: 'confirm_before_gen',
@@ -59,7 +59,7 @@ const SETTINGS = {
 
 const PREF_ARIA = '执行偏好（花钱生成是否先弹确认卡）';
 const MODE_ARIA = '执行模式（流程推进的暂停策略）';
-const STEPS_ARIA = 'Agent 多步循环最大步数';
+const TOKENS_ARIA = '每次 LLM 回复的最大输出 token 数';
 
 function prefSelect(container: HTMLElement): HTMLSelectElement {
   const el = container.querySelector<HTMLSelectElement>(`select[aria-label="${PREF_ARIA}"]`);
@@ -151,27 +151,27 @@ describe('GlobalSettingsView 执行模式四档（2026-09-06 对齐批）', () =
   });
 });
 
-describe('GlobalSettingsView 最大步数（Q3）', () => {
-  function stepsInput(container: HTMLElement): HTMLInputElement {
-    const el = container.querySelector<HTMLInputElement>(`input[aria-label="${STEPS_ARIA}"]`);
-    expect(el, '最大步数输入框应渲染').toBeTruthy();
+describe('GlobalSettingsView 输出 Token 上限（替换原最大步数）', () => {
+  function tokensInput(container: HTMLElement): HTMLInputElement {
+    const el = container.querySelector<HTMLInputElement>(`input[aria-label="${TOKENS_ARIA}"]`);
+    expect(el, '输出 token 上限输入框应渲染').toBeTruthy();
     return el!;
   }
 
-  it('渲染最大步数输入框：当前值随设置下发', async () => {
+  it('渲染输出 token 输入框：当前值随设置下发', async () => {
     const { container } = render(() => <GlobalSettingsView />);
-    const inp = stepsInput(container);
-    await waitFor(() => expect(inp.value).toBe('6'));
+    const inp = tokensInput(container);
+    await waitFor(() => expect(inp.value).toBe('256000'));
   });
 
-  it('改动发 PUT max_steps（钳制 1-30）', async () => {
+  it('改动发 PUT llm_max_tokens（钳制 1024-1048576）', async () => {
     const { container } = render(() => <GlobalSettingsView />);
-    const inp = stepsInput(container);
-    await waitFor(() => expect(inp.value).toBe('6'));
-    fireEvent.change(inp, { target: { value: '12' } });
-    expect(agentMock.setRuntimeSettings).toHaveBeenCalledWith({ max_steps: 12 });
-    // 超界值钳制回 1-30 区间（与后端 MAX_STEPS_RANGE 同口径）
-    fireEvent.change(inp, { target: { value: '99' } });
-    expect(agentMock.setRuntimeSettings).toHaveBeenCalledWith({ max_steps: 30 });
+    const inp = tokensInput(container);
+    await waitFor(() => expect(inp.value).toBe('256000'));
+    fireEvent.change(inp, { target: { value: '128000' } });
+    expect(agentMock.setRuntimeSettings).toHaveBeenCalledWith({ llm_max_tokens: 128000 });
+    // 超界值钳制回 1024-1048576 区间（与后端钳制区间同口径）
+    fireEvent.change(inp, { target: { value: '99999999' } });
+    expect(agentMock.setRuntimeSettings).toHaveBeenCalledWith({ llm_max_tokens: 1048576 });
   });
 });

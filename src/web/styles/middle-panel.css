@@ -1,4 +1,4 @@
-/* ===== 中间面板（预览 / Prompt 编辑器 / 参数栏） ===== */
+/* ===== 中间面板（预览 / Prompt 编辑器 / 参数栏 / 子任务） ===== */
 @layer components {
   /* ---------- 中间面板 ---------- */
   .preview-top { flex: 1; min-height: 150px; background-color: var(--color-surface-preview); display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; overflow: hidden; padding: 16px; transition: box-shadow 0.2s; }
@@ -120,4 +120,40 @@
     .param-unit { font-size: var(--font-xs); color: var(--text-muted); margin-left: -4px; flex-shrink: 0; }
   .param-actions { display: flex; gap: 8px; align-items: center; }
   .param-actions .btn-primary, .param-actions .btn-secondary { padding: 5px 15px; font-size: var(--font-md); gap: 5px; }
+}
+
+/* ===== B3 子代理：中间面板子任务视图（列表 → 点卡片看只读执行记录） ===== */
+@layer components {
+  /* 子任务视图容器：占满整个中间面板（顶栏「子任务」入口切换，点左栏任意处退出） */
+  .subagent-center { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px; background-color: var(--bg-secondary); }
+  /* 宽栏下内容收束居中，防卡片超宽拉伸；窄栏自适应 */
+  .subagent-center .subagent-rail { width: 100%; max-width: 860px; margin: 0 auto; }
+  .subagent-rail { display: flex; flex-direction: column; gap: 8px; }
+  .subagent-list { display: flex; flex-direction: column; gap: 8px; }
+  .subagent-card { display: flex; flex-direction: column; gap: 6px; text-align: left; border: 1px solid var(--border-color); background: var(--bg-card); border-radius: var(--radius-md); padding: 10px; cursor: pointer; transition: border-color 0.15s; }
+  .subagent-card:hover { border-color: color-mix(in srgb, var(--color-info-strong) 40%, transparent); }
+  .subagent-card-head { display: flex; justify-content: space-between; align-items: center; }
+  .subagent-card-label { font-size: var(--font-sm); color: var(--text-main); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .subagent-steps { font-size: var(--font-2xs); color: var(--text-dim); }
+  /* 状态药丸：running=翡绿脉冲点（复用 status-pulse）；completed=成功绿；unknown=灰 */
+  .subagent-status { display: inline-flex; align-items: center; gap: 5px; font-size: var(--font-2xs); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-muted); }
+  .subagent-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; }
+  .subagent-status.running { color: var(--accent-blue); border-color: color-mix(in srgb, var(--color-info-strong) 40%, transparent); }
+  .subagent-status.running .subagent-status-dot { background: var(--accent-emerald); animation: status-pulse 1.2s infinite; }
+  .subagent-status.completed { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 45%, transparent); }
+  .subagent-status.completed .subagent-status-dot { background: var(--color-success); }
+  .subagent-empty { font-size: var(--font-sm); color: var(--text-dim); padding: 12px; line-height: 1.5; }
+  /* 记录态：只读回看（无输入框），复用右栏 .chat-msg / .chat-bubble 气泡语言 */
+  .subagent-record { display: flex; flex-direction: column; }
+  .subagent-record-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); margin-bottom: 8px; }
+  .subagent-back { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-muted); border-radius: var(--radius-sm); padding: 4px 8px; cursor: pointer; font-size: var(--font-sm); }
+  .subagent-back:hover { color: var(--accent-blue); border-color: var(--accent-blue); }
+  .subagent-record-title { font-size: var(--font-sm); color: var(--text-main); font-weight: 600; margin-bottom: 8px; overflow-wrap: anywhere; }
+  .subagent-record-list { display: flex; flex-direction: column; gap: 12px; }
+  .subagent-record-list .chat-msg { max-width: 100%; }
+  .subagent-reasoning { font-size: var(--font-xs); color: var(--text-muted); border: 1px dashed var(--border-color); border-radius: var(--radius-sm); padding: 4px 8px; }
+  .subagent-reasoning summary { cursor: pointer; color: var(--text-dim); }
+  .subagent-reasoning-body { margin-top: 4px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+  .subagent-tool-line { font-size: var(--font-2xs); color: var(--text-dim); }
+  /* 完成章条目（dsh A2）：本轮宣告完成 + 当时客观账本快照 */
 }

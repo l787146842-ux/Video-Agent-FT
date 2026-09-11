@@ -85,12 +85,13 @@ def test_language_gate_derivation_retired_english_prompt_passes():
     assert ok and not any("英文" in h or "中文正文" in h for h in hard)
 
 
-def test_char_floor_still_enforced_regardless_of_language():
-    """字数地板保留：过短提示词仍被拦（闸机只守字数，不管语言）。"""
+def test_no_char_floor_regardless_of_language():
+    """字数地板已退役（2026-09-10 阶段规则去代码化批，计划 B5）：
+    过短提示词不再被拦；语言轴本就不属闸机执法面。"""
     ok, hard, _ = prompt_gates.validate_prompt_write(
         "A close-up of the Water Droplet.", "keyElement",
         _spec_state("输出语言：中文"))
-    assert not ok and any("过短" in h for h in hard)
+    assert ok and not hard
 
 
 

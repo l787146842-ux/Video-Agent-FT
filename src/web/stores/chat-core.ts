@@ -33,9 +33,6 @@ export interface ChatState {
   queuedMessages: QueuedMessage[];
   /** 本轮流已渲染过文档卡片的名称（doc_written 即显与 done 全量清单去重用） */
   renderedDocCards: string[];
-  /** 推理轮次进度（status 事件 {step,max} 结构化捕获；0 = 未收到） */
-  roundStep: number;
-  roundMax: number;
   /** 当前轮 turn_id（流式中由 doc_written 打戳建立；终态收尾后保留，
    *  供错误/停止终态帧的幂等守卫判重；startStream/loadMessages 清零） */
   currentTurnId?: string;
@@ -50,8 +47,6 @@ const defaultChatState: ChatState = {
   turnLedger: emptyLedger(),
   queuedMessages: [],
   renderedDocCards: [],
-  roundStep: 0,
-  roundMax: 0,
   currentTurnId: undefined,
 };
 

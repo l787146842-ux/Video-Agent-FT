@@ -299,33 +299,6 @@ def _flow_step_title(steps: Dict[int, str], n: int,
     return long_title[:12] if long_title else ""
 
 
-def system_continue_option(
-    state: Dict[str, Any], skill_name: str,
-) -> Optional[Dict[str, str]]:
-    """阶段边界系统派生「继续」选项；无 flow 声明/无后继步返回 None。
-
-    value 与 label 同值（人类可读）：前端向导多组拼装发送时把 value 拼进
-    用户消息，裸 token（如 flow_continue）会泄进用户气泡——值必须可读，
-    后端机械识别走 is_flow_continue_value 行格式判定。
-    """
-    steps = _flow_steps_of(skill_name)
-    if not steps:
-        return None
-    next_no = current_flow_step(state, skill_name) + 1
-    if next_no not in steps:
-        return None
-    title = _flow_step_title(steps, next_no, _flow_short_of(skill_name))
-    if not title:
-        return None
-    label = f"确认，进入「{title}」"
-    return {
-        "label": label,
-        "description": f"确认当前阶段产出，下一步执行「{title}」",
-        "value": label,
-        "group": "下一步",
-    }
-
-
 # 系统派生继续选项的行格式（单一事实源：派生与识别同式，防两套说辞）
 _FLOW_CONTINUE_LINE_RE = re.compile(r"^确认，进入「[^」]+」$")
 

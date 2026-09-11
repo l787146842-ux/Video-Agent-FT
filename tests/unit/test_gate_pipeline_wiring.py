@@ -42,31 +42,33 @@ class TestUnifiedPipeline:
         assert out.ok is True
         assert out.warnings == []
 
-    def test_bad_prompt_rejected_with_message(self):
+    def test_bad_prompt_passes_without_char_floor(self):
+        """字数地板退役（2026-09-10 计划 B5）：短提示词不再产生硬拒与拒因文案。"""
         out = evaluate_prompt_write(_BAD_SHORT_SHOT, "shot", _empty_state())
-        assert out.ok is False
-        assert out.reject_message
-        assert out.hard_errors
+        assert out.ok is True
+        assert not out.reject_message
+        assert not out.hard_errors
 
-    def test_user_override_downgrades_to_warning(self):
+    def test_user_override_keeps_ok_without_floor(self):
+        """字数地板退役后无硬伤可降级：override 下结果与常规一致（仍 ok）。"""
         out = evaluate_prompt_write(
             _BAD_SHORT_SHOT, "shot", _empty_state(), gate_override="all",
         )
         assert out.ok is True
-        assert out.overridden is True
-        assert any("仅为警告" in w for w in out.warnings)
+        assert not out.hard_errors
 
     def test_verdicts_structured(self):
+        """verdict 结构仍逐条登记（字数地板退役后 prompt_write 恒 ok）。"""
         out = evaluate_prompt_write(_BAD_SHORT_SHOT, "shot", _empty_state())
         assert any(
-            isinstance(v, GateVerdict) and v.rule_id == "platform.prompt_write" and not v.ok
+            isinstance(v, GateVerdict) and v.rule_id == "platform.prompt_write" and v.ok
             for v in out.verdicts
         )
 
     def test_prompt_write_verdict_wrapper_consistent(self):
-        """单 verdict 便捷出口与组合实现判定一致"""
+        """单 verdict 便捷出口与组合实现判定一致（字数地板退役后两侧恒 ok）"""
         v_bad = prompt_write_verdict(_BAD_SHORT_SHOT, "shot", _empty_state())
-        assert v_bad.ok is False
+        assert v_bad.ok is True
         v_ok = prompt_write_verdict(_OK_SHOT, "shot", _empty_state())
         assert v_ok.ok is True
 

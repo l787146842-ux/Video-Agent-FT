@@ -3,7 +3,7 @@
 钉死：
 1. 分派表覆盖四类失败且处置动作/重试预算符合分级结论
    （bad_output / output_truncated = end_with_notice 收轮不重试；
-   tool/adapter 一律不循环重试；productive_reject 有界续轮）；
+   tool/adapter 一律不循环重试）；
 2. 未登记失败类型显式 KeyError（禁止静默兜底）；
 3. 分类器优先级：供应商错误 > 空响应（按 finish_reason 分流截断/真空）；
 4. agent_loop 消费分派表：空响应一次调用即收轮，绝不原样重试
@@ -13,6 +13,8 @@
 fc_gates reject_message 闭环，循环层无真实输入源）。
 退役记录（2026-09-07 批 2）：bad_output 的 nudge_retry 处置退役
 （判空 = 正常收轮），output_truncated 新增。
+退役记录（2026-09-10 阶段规则去代码化批）：productive_reject / unstamped_stop
+两键随「续轮预算」机制整体退役（对标 flova：代码不判流程完成）。
 """
 import pytest
 
@@ -29,8 +31,6 @@ def test_table_covers_failure_kinds():
         rp.FAILURE_OUTPUT_TRUNCATED,  # 批 2：输出预算截断（finish_reason=length）
         rp.FAILURE_TOOL,
         rp.FAILURE_ADAPTER,
-        rp.FAILURE_PRODUCTIVE_REJECT,  # 批 12：产出类被拒混合轮续轮预算（1000 清偿）
-        rp.FAILURE_UNSTAMPED_STOP,  # 完成盖章批（dsh A2）：零动作未盖章收尾续跑预算
     }
 
 
@@ -47,10 +47,6 @@ def test_actions_and_retry_budgets():
         assert rp.recovery_for(kind).max_retries == 0
     assert rp.recovery_for(rp.FAILURE_TOOL).action == rp.ACTION_FEEDBACK_DEGRADE
     assert rp.recovery_for(rp.FAILURE_ADAPTER).action == rp.ACTION_ESCALATE
-    # 批 12：产出类被拒混合轮 = 回喂自处置 + 有界续轮预算（防打转烧满 max_steps）
-    prod = rp.recovery_for(rp.FAILURE_PRODUCTIVE_REJECT)
-    assert prod.action == rp.ACTION_FEEDBACK_DEGRADE
-    assert prod.max_retries == 2
 
 
 def test_nudge_retry_action_retired():

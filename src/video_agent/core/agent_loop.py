@@ -3,8 +3,8 @@ Agent 多步执行循环（Rule2: 唯一实现）。
 
 位于 core 层（编排骨架属核心层，不放 web/）。
 
-有界循环（最多 max_steps 步）：FC 工具步（tool_calls 在 llm_call 内执行，
-finish 非 stop 或无可见正文时继续下一步）与纯文本收尾步（
+无界循环（不设步数上限，靠输出 token 截断 + 模型自决）：FC 工具步（tool_calls
+在 llm_call 内执行，finish 非 stop 或无可见正文时继续下一步）与纯文本收尾步（
 暂停确认经 llm_call 第 5 元组结构化上抛，不经文本块）。
 
 llm_call / context_builder 以 callable 注入，便于单元测试。
@@ -17,7 +17,7 @@ import time
 
 from loguru import logger
 
-from src.video_agent.config import MAX_STEPS_RANGE, settings
+from src.video_agent.config import settings
 from src.video_agent.core.sse_events import (
     SSE_ACTIONS_APPLIED,
     SSE_STATUS,
@@ -56,8 +56,6 @@ from src.video_agent.exceptions import AdapterError
 # 全部来自恢复策略分派表（policy-as-data，与闸机哲学一致）
 from src.video_agent.core.recovery_policy import (
     FAILURE_ADAPTER,
-    FAILURE_PRODUCTIVE_REJECT,
-    FAILURE_UNSTAMPED_STOP,
     classify_step_failure,
     recovery_for,
 )
@@ -78,19 +76,7 @@ from src.video_agent.skill_runtime.progress import (
 from src.video_agent.core.action_executor import StateOperationExecutor
 
 
-def current_max_steps() -> int:
-    """多步上限实时读取口（Q3 裁决 2026-09-01：不再 import 期冻结）。
 
-    循环每步实时调用，前端全局设置页经 runtime_settings 通道热更新后
-    即刻生效（运行中任务调高上限可继续推进）；脏值/非法值钳制回落。
-    显式传入 max_steps 的调用方（测试/特殊编排）优先于本实时值。
-    """
-    lo, hi = MAX_STEPS_RANGE
-    try:
-        value = int(settings.max_steps)
-    except (TypeError, ValueError):
-        value = 6
-    return max(lo, min(value, hi))
 
 # llm_call(system_prompt, messages, stream_hook?) -> 5 元组
 # (content, finish_reason, fc_applied, plan_ms, extra)
@@ -169,7 +155,7 @@ async def run_agent_loop(
     user_text 可以是纯文本 str，也可以是多模态 content parts 列表（含 image_url）。
     stop_scope（端到端中断协议）：协作式停止标志作用域
     （SSE 直连="chat"；任务式传输=task_id），每步检查点读取，命中即干净收尾。
-    max_steps（Q3）：None = 每步实时读 settings（前端可热调）；显式值钉死口径（测试）。
+    max_steps（Q3 已退役）：不再设步数上限，靠输出 token 截断 + 模型自决。
     state_event_content（二期 G3）：轮首状态事件正文（planner 轮始已落流），
     组装时追加在 user 消息之后——与日志 seq 同序（user → state → steps），
     回放 = 请求逐字节（缓存结构性保证）。"""
@@ -227,8 +213,6 @@ async def run_agent_loop(
             svc_log, session_conversation_id, step=step_no, tool_count=applied)
 
     result = AgentLoopResult()
-    # Q3：显式传参钉死口径（测试/特殊编排）；None = 循环内每步实时读 settings
-    explicit_max_steps = max_steps
     messages: List[Dict[str, Any]] = list(history) + [{"role": "user", "content": user_text}]
     # 轮首状态事件（二期 G3）：追加在 user 后，与日志 seq 同序
     # （planner._build_and_log_state_event 已落 source=state 事件）
@@ -350,21 +334,11 @@ async def run_agent_loop(
                 raise
 
         step = 0
-        # 批 12：产出类被拒/失败的混合轮续轮已用预算（recovery_policy
-        # productive_reject.max_retries；防「被拒-口播-续轮」打转烧满 max_steps）
-        productive_reject_rounds = 0
-        # 完成盖章（dsh A2）：本轮是否已登记完成章（task_complete）+ 零动作
-        # 未盖章纯口头收尾已用的续跑预算（unstamped_stop.max_retries，同构防打转）
-        completion_stamped = False
-        unstamped_rounds = 0
+
+
         while True:
-            # Q3：多步上限每步实时读 settings（前端全局设置页热更新即刻生效，
-            # 运行中任务调高上限可继续推进）；显式传参钉死口径优先。
-            max_steps = explicit_max_steps if explicit_max_steps is not None else current_max_steps()
+            # 不设步数上限，靠输出 token 截断+模型自决
             step += 1
-            if step > max_steps:
-                # 防御性出口：正常路径在步内 break（达上限时已发警告与「继续完成」按钮）
-                break
             result.steps = step
             tracer.start_step()
             # 检查点 1（模型调用前）：上轮工具批已完成、本轮思考未开始，
@@ -380,14 +354,14 @@ async def run_agent_loop(
                     lambda name, summary, ms, ok: tracer.record_action(name, summary, ms, ok),
                     emit,
                 )
-            await emit({"type": SSE_STEP_STARTED, "step": step, "max_steps": max_steps})
+            await emit({"type": SSE_STEP_STARTED, "step": step})
             if step > 1:
                 # 多步循环"静默期"提示：上一步工具执行完到本步首 token 之间可能耗时数十秒，
                 # 前端状态栏需明确告知正在进行第几轮思考（status 事件全链路已透传）
                 await emit(status_event(
                     "agent.roundThinking",
-                    f"第 {step - 1} 轮操作已完成，继续思考中（第 {step}/{max_steps} 轮）…",
-                    {"prev": step - 1, "step": step, "max": max_steps},
+                    f"第 {step - 1} 轮操作已完成，继续思考中（第 {step} 轮）…",
+                    {"prev": step - 1, "step": step},
                 ))
             # 步间注入：任务执行期间收到的用户引导消息在上一步操作完成、
             # 本步 LLM 调用之前送达；首步尚无操作可打断，一律不注入
@@ -565,70 +539,13 @@ async def run_agent_loop(
                         token_usage=step_tokens, cached_tokens=step_cached,
                     )
                     break
-                # 完成盖章（dsh A2）：task_complete 发行即本轮结束（不再等下一次
-                # 纯文本收尾）；客观账本回执已随工具结果回喂在上下文里，本处
-                # 只落审计事件（turn/stamp，log-only）并收轮。
-                _stamp = str((fc_extra or {}).get("completion_stamp") or "")
-                if _stamp:
-                    completion_stamped = True
-                    if session_conversation_id:
-                        session_log.append_turn_stamp(
-                            StateManager.get_instance(), session_conversation_id,
-                            receipt=_stamp, step=step)
-                    if not (result.text or "").strip():
-                        # 盖章轮模型未另附正文：用它自己的 summary 作可见正文，
-                        # 不落「已执行 N 个操作」兜底（纯口头交付轮会误报）
-                        result.text = str(
-                            (fc_extra or {}).get("completion_summary") or "").strip()
-                    logger.info(
-                        f"[AgentLoop] step={step} 完成盖章（task_complete），已收轮")
-                    tracer.end_step(step, actions_applied=fc_applied,
-                                    finish_reason="stamped",
-                                    token_usage=step_tokens, cached_tokens=step_cached)
-                    break
-                # 6 提前终止：模型明确 stop 且已产出可见文本 → 任务已完成，
+                # 6 提前终止：模型明确 stop 且已产出可见文本 → 收尾，
                 # 不再固定追加 LLM 总结调用（finish=tool_calls 或无文本时保留多步链）。
-                # 批 9：全拒收轮例外——"自称完成"不可信（9999 实证：模型口播
-                # "现在生成…"而调用全被闸拦下），拒因回喂必须被下一轮消费，
-                # 让模型按指引自纠（发暂停卡/改参），max_steps 仍封顶。
-                # 批 12 · 1000 正向修复：例外扩为「产出类调用被拒/失败的混合轮」
-                # ——部分调用成功不代表产出落账（1000 实证：read_skill 成功 +
-                # 写规格被拒，模型口播"已写入制片规格"假完成收尾）；续轮预算 =
-                # recovery_policy productive_reject.max_retries（防打转），
-                # 预算内续轮计数递增，超限走轮末收尾 + 警告 + 继续按钮。
-                _all_rejected = had_fc_calls and fc_applied == 0
-                _rejected_productive = bool(
-                    (fc_extra or {}).get("rejected_productive_tools"))
-                _productive_budget = recovery_for(
-                    FAILURE_PRODUCTIVE_REJECT).max_retries
-                _keep_alive = _all_rejected or (
-                    _rejected_productive
-                    and productive_reject_rounds < _productive_budget
-                )
-                if finish_reason in ("stop", "end_turn") and visible and not _keep_alive:
-                    if _rejected_productive:
-                        # 批 12：续轮预算耗尽仍自称完成——明确告知用户哪些
-                        # 产出没落账（正文完成说法不可信，以工作台实际为准）
-                        result.warnings.append(
-                            "部分产出类操作未能执行（被拦截或失败）："
-                            + "、".join(
-                                (fc_extra or {}).get("rejected_productive_tools") or [])
-                            + "；相关产物未落账，正文中的完成说法请以工作台实际产物为准。"
-                        )
+                # 2026-09-10 阶段规则去代码化批：全拒收轮 / 产出类被拒混合轮的
+                # 「拒因必须被下一轮消费」豁免与续跑预算整体退役——步数不限、
+                # 不留续跑预算；工具拒因已在 messages 回喂，模型凭其自决收尾。
+                if finish_reason in ("stop", "end_turn") and visible:
                     tracer.end_step(step, actions_applied=fc_applied, finish_reason="fc_done",
-                                    token_usage=step_tokens, cached_tokens=step_cached)
-                    break
-                if (finish_reason in ("stop", "end_turn") and visible
-                        and _keep_alive and _rejected_productive
-                        and not _all_rejected):
-                    # 例外续轮真正行使时才计预算（finish=tool_calls 的多步链轮
-                    # 本就续轮，不消费 productive_reject 预算）
-                    productive_reject_rounds += 1
-                if step == max_steps:
-                    result.warnings.append(f"已达到多步上限（{max_steps} 轮），循环终止")
-                    result.suggested_actions.append(
-                        {"kind": "continue", "label": "继续完成", "value": "继续完成"})
-                    tracer.end_step(step, actions_applied=fc_applied, finish_reason="max_steps",
                                     token_usage=step_tokens, cached_tokens=step_cached)
                     break
                 tracer.end_step(step, actions_applied=fc_applied,
@@ -690,37 +607,10 @@ async def run_agent_loop(
                 # 假停判定「本回合确曾做过操作」才可达（不再写死死值）
                 applied=result.applied_actions,
                 result_text=result.text,
-                # 完成盖章（dsh A2）：本轮是否已登记完成章 + 续跑预算余量
-                # （计数器由循环持有，轮末闸机只读判定）
-                stamped=completion_stamped,
-                stamp_budget_left=(
-                    unstamped_rounds < recovery_for(
-                        FAILURE_UNSTAMPED_STOP).max_retries),
+
             )
             await run_round_end_policies(_re_ctx, emit, tracer=tracer)
             result.text = _re_ctx.result_text
-            if _re_ctx.continue_turn and _re_ctx.stamp_nudge:
-                # 未盖章不放行（dsh A2 round-driver 同语义）：零工具、零变更、
-                # 未盖章的纯口头收尾不受理——正文与事实回喂入上下文后续跑一步，
-                # 让模型选一种合法出口（调工具 / 暂停 / 盖章）；预算耗尽即不再
-                # 触发（闸机条件含 stamp_budget_left），退化为普通收尾 + 事实警告。
-                # 本轮不结束 → 轮末其他策略已追加的警告/建议按钮不入 result
-                # （防给用户看一叠中间状态警告）。
-                unstamped_rounds += 1
-                messages.append({"role": "assistant", "content": content or ""})
-                messages.append({"role": "user", "content": _re_ctx.stamp_nudge})
-                if session_conversation_id:
-                    # 回喂同为 user/message 事件（source=state）：回放字节 = 请求字节
-                    session_log.append_user_message(
-                        StateManager.get_instance(), session_conversation_id,
-                        _re_ctx.stamp_nudge, source=session_log.SOURCE_STATE)
-                logger.info(
-                    f"[AgentLoop] step={step} 零动作未盖章收尾不受理，续跑（已用预算 "
-                    f"{unstamped_rounds}）")
-                tracer.end_step(step, actions_applied=0,
-                                finish_reason="unstamped_continue",
-                                token_usage=step_tokens, cached_tokens=step_cached)
-                continue
             if _re_ctx.result_warnings:
                 result.warnings.extend(_re_ctx.result_warnings)
             # fakestop：轮末策略机械追加的建议动作（仅当无既有建议时生效）

@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Workflow Runtime v2 契约不变量（重构计划批0：schema + reducer 不变量测试）。
 
-钉死（Workflow Runtime v2 契约，Codex 重构计划§一/§二/§三；决策史见 git tag adr-archive-20260901）：
-① WorkflowDefinition：字段缺失/重复 node_id/悬空依赖/循环依赖 → 注册期拒绝；
+钉死（Workflow Runtime v2 契约；决策史见 git tag adr-archive-20260901）：
+① 已退役（2026-09-10 阶段规则去代码化批）：WorkflowDefinition / 16 节点 DAG
+   契约整链删除，compile_definition 恒 None —— 节点 schema 校验用例同批退役；
 ② EventLedger：run 内 sequence 单调、幂等键重放返回同事件、载荷冲突报
    EventIdempotencyConflict；
 ③ commit_turn：同 turn_id 重放幂等（不重复写文档/事件）、run_version 并发
@@ -15,11 +16,6 @@
 """
 import pytest
 
-from src.video_agent.core.workflow_contract import (
-    WorkflowDefinition,
-    WorkflowDefinitionError,
-    default_v2_workflow,
-)
 from src.video_agent.core.workflow_events import (
     EventIdempotencyConflict,
     EventLedger,
@@ -32,48 +28,18 @@ from src.video_agent.core.turn_commit import (
 from src.video_agent.core.workflow_runtime import WorkflowRuntime
 
 
-def _node(nid, deps=(), **kw):
-    base = {"node_id": nid, "executor": "x", "deterministic": True,
-            "prerequisites": list(deps), "done_predicate": {"type": "state"},
-            "artifact_schema": {}, "decision_schema": {},
-            "approval_policy": {}, "retry_policy": {}, "next_transition": {}}
-    base.update(kw)
-    return base
+# ---------- ① DAG 契约退役钉死（防复活） ----------
 
+def test_definition_dag_contract_retired():
+    """2026-09-10 阶段规则去代码化批：16 节点 DAG 契约整链退役——
+    WorkflowDefinition 类族不再存在，compile_definition 恒 None
+    （平台不判流程完成；账本按平铺节点清单跑客观探针）。"""
+    from src.video_agent.core import workflow_contract, workflow_runtime
 
-def _sidecar(nodes):
-    return {"workflow": {"workflow_id": "wf", "revision": "1", "nodes": nodes}}
-
-
-# ---------- ① WorkflowDefinition ----------
-
-def test_definition_requires_all_node_fields():
-    with pytest.raises(WorkflowDefinitionError):
-        WorkflowDefinition.from_sidecar(_sidecar([{"node_id": "a"}]))
-
-
-def test_definition_rejects_duplicate_node_id():
-    with pytest.raises(WorkflowDefinitionError):
-        WorkflowDefinition.from_sidecar(_sidecar([_node("a"), _node("a")]))
-
-
-def test_definition_rejects_unknown_prerequisite():
-    with pytest.raises(WorkflowDefinitionError):
-        WorkflowDefinition.from_sidecar(_sidecar([_node("a", ("ghost",))]))
-
-
-def test_definition_rejects_cycle():
-    with pytest.raises(WorkflowDefinitionError):
-        WorkflowDefinition.from_sidecar(
-            _sidecar([_node("a", ("b",)), _node("b", ("a",))]))
-
-
-def test_definition_hash_stable_and_revision_kept():
-    d1 = WorkflowDefinition.from_sidecar(_sidecar([_node("a")]))
-    d2 = WorkflowDefinition.from_sidecar(_sidecar([_node("a")]))
-    assert d1.content_hash == d2.content_hash
-    d3 = default_v2_workflow("skill-x")
-    assert d3.revision == "2" and len(d3.nodes) == 16
+    for name in ("WorkflowDefinition", "WorkflowNode", "default_v2_workflow",
+                 "WorkflowDefinitionError"):
+        assert not hasattr(workflow_contract, name), f"workflow_contract 残留 {name}"
+    assert workflow_runtime.compile_definition("任意 Skill") is None
 
 
 # ---------- ② EventLedger ----------
@@ -258,7 +224,11 @@ def test_alias_collision_rejected_at_registration(tmp_path, monkeypatch):
 
 
 def test_invalid_manifest_rejected_from_workflow(tmp_path, monkeypatch):
-    """计划§1/§6：无效 frontmatter 声明不得驱动 workflow（compile_definition 返回 None）。"""
+    """计划§1/§6：无效 frontmatter 声明不得进入运行时。
+
+    （2026-09-10 阶段规则去代码化批：DAG 编译退役、compile_definition 恒 None，
+    「驱动 workflow」这一入口已不复存在 ⇒ 本用例改钉**注册期门禁**这一唯一
+    入口：零声明合法放行、白名单外闸键/已废除流程抄本键一律拒收。）"""
     from src.video_agent.core import workflow_runtime
     from src.video_agent.skill_runtime import frontmatter, registry
     from src.video_agent.web import skill_docs as sd
@@ -275,14 +245,18 @@ def test_invalid_manifest_rejected_from_workflow(tmp_path, monkeypatch):
     try:
         registry.sync_all(force=True)
         workflow_runtime.clear_compile_cache()
-        # 零声明合法，workflow 可编译（默认定义）
-        assert workflow_runtime.compile_definition(slug) is not None
-        # 注入非法声明（白名单外闸键 + 已废除流程抄本键）→ workflow 拒入
-        frontmatter.write_manifest(slug, {
+        # 零声明合法：注册期门禁放行 + Skill 已注册可用
+        assert frontmatter.validate_manifest(
+            {"name": slug, "description": "测试桩"}) == []
+        assert registry.resolve_entry(slug) is not None
+        # DAG 编译退役：任何 Skill 都不再驱动 workflow（恒 None）
+        assert workflow_runtime.compile_definition(slug) is None
+        # 注入非法声明（白名单外闸键 + 已废除流程抄本键）→ 注册期门禁拒绝
+        issues = frontmatter.validate_manifest({
             "name": slug, "description": "测试桩",
             "gates": {"unknown_gate": True},
             "flow": {"steps": {"1": "a"}}})
-        assert workflow_runtime.compile_definition(slug) is None
+        assert issues, "非法声明必须被注册期门禁拒绝"
     finally:
         registry.reset_registry()
 

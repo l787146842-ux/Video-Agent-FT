@@ -146,41 +146,18 @@ async def test_delegation_runs_child_in_isolated_context_and_returns_summary(svc
                for e in events if e.get("type") == "assistant/message")
 
 
-async def test_unstamped_zero_action_stop_is_rejected_then_warns(svc):
-    """零工具纯口头"已完成"不受理：续跑一次，仍未行动则以事实警告收尾。"""
+async def test_zero_action_stop_ends_in_one_round(svc):
+    """零工具纯口头收尾不再被驳回续跑（完成盖章 + 未盖章续跑预算退役，
+    2026-09-10）：平台不判完成、不续跑，模型自决收尾即收尾。"""
     adapter = _ScriptedAdapter([
-        {"text": "已完成关键元素与分镜拆解，请查看故事板。"},   # 谎报轮（被驳回）
-        {"text": "抱歉，我需要重新提交建组调用。"},             # 依旧零工具 → 收尾
+        {"text": "已完成关键元素与分镜拆解，请查看故事板。"},
+        {"text": "不该到达"},
     ])
     planner = Planner(state_manager=svc, llm_adapter=adapter, tool_manager=ToolManager)
     result = await planner.handle_message(
         "继续", PlannerContext(skill_name=SKILL, use_studio_context=True))
 
-    assert len(adapter.calls) == 2, "未盖章零动作收尾必须被驳回续跑一次"
-    assert any("未完成阶段" in w for w in result.warnings), \
-        "预算耗尽后须留客观未完成阶段的事实警告"
-    # 一次也没建成：工作台仍为空（警告内容与事实一致，不虚报）
+    assert len(adapter.calls) == 1, "零动作纯文本轮一轮收尾（无未盖章续跑预算）"
+    assert "请查看故事板" in (result.text or "")
+    # 一次也没建成：工作台仍为空（平台只做事实对账，不拦人）
     assert not (svc.state_dict.get("keyElements") or [])
-
-
-async def test_stamp_ends_turn_without_extra_step(svc):
-    """盖章轮一步即收：不再多烧一次模型调用。"""
-    adapter = _ScriptedAdapter([
-        {"tool": "task_complete", "content": "本轮只答疑，未动工作台。",
-         "args": {"summary": "本轮只答疑，未动工作台。"}},
-    ])
-    planner = Planner(state_manager=svc, llm_adapter=adapter, tool_manager=ToolManager)
-    cid = str((conversation_ops.ensure_conversations(svc)[0] or {}).get("id") or "")
-    assert cid, "测试前提：会话存在（落流需绑 conversation_id）"
-    result = await planner.handle_message(
-        "分镜和镜头有什么区别？",
-        PlannerContext(skill_name=SKILL, use_studio_context=True,
-                       session_conversation_id=cid))
-
-    assert len(adapter.calls) == 1, "盖章即收轮，不需再一次调用才停"
-    assert result.applied_actions == 1
-    assert "答疑" in (result.text or "")
-    # 审计痕迹：turn/stamp 事件与本轮同源入流（不判真假，只留事实）
-    events = session_log.load_events(svc, cid)
-    assert any(e.get("type") == session_log.EV_TURN_STAMP for e in events)
-    assert any(e.get("type") == session_log.EV_TURN_END for e in events)

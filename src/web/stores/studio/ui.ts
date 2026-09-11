@@ -1,7 +1,7 @@
 /** Studio store · UI 域（从 studio.ts 拆出）：选中态/页签/弹窗/附件/生成态/配置 */
 import { produce } from 'solid-js/store';
 import type {
-  DraftType, LeftTab, SubTab, ApiProvider, Skill, PendingAttachment,
+  DraftType, LeftTab, MiddleView, SubTab, ApiProvider, Skill, PendingAttachment,
 } from '@/types';
 import { showToast } from '@/stores/toast';
 import { state, setState, findDraftRecord, subTabForType } from '../studio-core';
@@ -17,6 +17,11 @@ export const uiActions = {
 
   setLeftTab(tab: LeftTab) {
     setState('leftTab', tab);
+  },
+
+  /** 中间面板视图切换：顶栏「子任务」→ subagents；点左栏任意处 → preview */
+  setMiddleView(view: MiddleView) {
+    setState('middleView', view);
   },
 
   setSubTab(tab: SubTab) {

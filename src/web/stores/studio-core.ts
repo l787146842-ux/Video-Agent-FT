@@ -1,7 +1,7 @@
 import { createStore } from 'solid-js/store';
 import { CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS } from '@/lib/state-keys';
 import type {
-  DraftType, Draft, LeftTab, SubTab, AnyGroup,
+  DraftType, Draft, LeftTab, MiddleView, SubTab, AnyGroup,
   KeyElementGroup, ShotGroup, AudioGroup,
   Asset, ApiProvider, Skill, PendingAttachment,
   DocRecord, ActiveGeneration,
@@ -11,6 +11,8 @@ import type {
 // ===== State 接口 =====
 export interface StudioState {
   leftTab: LeftTab;
+  /** 中间面板视图（顶栏「子任务」按钮切 subagents；点左栏任意处回 preview） */
+  middleView: MiddleView;
   subTab: SubTab;
   showAllAssets: boolean;
   selectedDraftId: string;
@@ -60,6 +62,7 @@ export interface StudioState {
 
 const defaultState: StudioState = {
   leftTab: 'storyboard',
+  middleView: 'preview',
   subTab: 'keyElements',
   showAllAssets: false,
   selectedDraftId: '',

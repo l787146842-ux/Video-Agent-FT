@@ -201,14 +201,11 @@ describe('appendEvent 推进线程视图', () => {
     expect(th.messages[th.messages.length - 1].text).toBe('出错了');
   });
 
-  it('reasoning/round/message/replay 推进；stopped 落停止气泡并翻空闲', () => {
+  it('reasoning/message/replay 推进；stopped 落停止气泡并翻空闲', () => {
     adjustScopeActions.registerTask('d1', 'tX');
     adjustScopeActions.appendEvent('d1', { kind: 'reasoning', text: '思考中' });
-    adjustScopeActions.appendEvent('d1', { kind: 'round', step: 1, max: 3 });
     adjustScopeActions.appendEvent('d1', { kind: 'message', message: { sender: 'agent', text: '插入消息' } });
     expect(adjustScopes['d1'].streaming.reasoning).toBe('思考中');
-    expect(adjustScopes['d1'].streaming.roundStep).toBe(1);
-    expect(adjustScopes['d1'].streaming.roundMax).toBe(3);
     expect(adjustScopes['d1'].messages.some((m) => m.text === '插入消息')).toBe(true);
     // replay 快照覆盖式装载（重连/惰性订阅恢复口径）
     adjustScopeActions.appendEvent('d1', {

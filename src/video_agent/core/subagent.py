@@ -32,15 +32,10 @@ SUBAGENT_MAX_DEPTH = 1
 # 缺省类型（兼容旧只传 task 的调用与存量会话）
 SUBAGENT_KIND_GENERAL = "general"
 
-# 子级也授予完成盖章工具（dsh A2：结束本轮的三个合法出口之一）：
-# 不给则子级无合法盖章出口（只能调工具或暂停，而暂停在子级被自动放行），
-# 且只读记录里永远看不到「本轮宣告完成」。仍**不给** workflow_pause（不发起确认）。
-SUBAGENT_STAMP_TOOL = "task_complete"
-
 
 def _whitelist(*names: str) -> FrozenSet[str]:
-    """构造类型白名单：显式声明的工具 + 盖章出口（单一拼接点，不逐类复述）。"""
-    return frozenset(set(names) | {SUBAGENT_STAMP_TOOL})
+    """构造类型白名单（显式声明的工具；单一事实源）。"""
+    return frozenset(names)
 
 
 @dataclass(frozen=True)

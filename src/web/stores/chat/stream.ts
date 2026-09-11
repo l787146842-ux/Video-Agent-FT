@@ -17,18 +17,8 @@ export const streamActions = {
       // 新轮账本：状态文案走 i18n 键，不硬编码中文
       s.turnLedger = emptyLedger(t('rp.streaming.connecting'));
       s.renderedDocCards = [];
-      s.roundStep = 0;
-      s.roundMax = 0;
       // 新轮开始：轮次上下文清零（由本轮 doc_written/done 重新建立）
       s.currentTurnId = undefined;
-    }));
-  },
-
-  /** 推理轮次进度更新（status 事件结构化参数；阶段进度条唯一数据源） */
-  setRoundProgress(step: number, max: number) {
-    setChatState(produce((s) => {
-      s.roundStep = step;
-      s.roundMax = max;
     }));
   },
 

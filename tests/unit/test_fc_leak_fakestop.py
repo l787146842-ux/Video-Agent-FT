@@ -106,29 +106,20 @@ def test_fakestop_label_generic_after_b4():
     """批 3 · B4 拆伪按钮：假停「继续」按钮 label 固定「继续」——
     不再取平台统一 8 节点图算节点标题（异构 skill 恒失真，3333 同款误导源）；
     "下一步"归模型聊天自述。"""
-    from src.video_agent.core import workflow_runtime as wr
-
-    wr.clear_compile_cache()
-    try:
-        definition = wr.compile_definition("AI-短剧一站式生成")
-        assert definition is not None, "测试前提：Skill 可编译"
-        stub = _StubExec()
-        stub.state = {"workflow_run": {
-            "run_id": "run_fs", "current_node": "storyboard_shots",
-            "definition_hash": definition["definition_hash"],
-            "completed_nodes": [], "run_version": 0, "event_sequence": 0,
-        }}
-        ctx = RoundEndContext(
-            step=1, executor=stub, skill="AI-短剧一站式生成",
-            content="马上继续推进分镜工作。",
-            applied=0,
-        )
-        _run_policies(ctx)
-        cont = [a for a in ctx.suggested_actions if a.get("kind") == "continue"]
-        assert cont and cont[0]["label"] == "继续"
-        assert cont[0]["value"] == "继续"
-    finally:
-        wr.clear_compile_cache()
+    stub = _StubExec()
+    stub.state = {"workflow_run": {
+        "run_id": "run_fs", "current_node": "storyboard_shots",
+        "completed_nodes": [], "run_version": 0, "event_sequence": 0,
+    }}
+    ctx = RoundEndContext(
+        step=1, executor=stub, skill="AI-短剧一站式生成",
+        content="马上继续推进分镜工作。",
+        applied=0,
+    )
+    _run_policies(ctx)
+    cont = [a for a in ctx.suggested_actions if a.get("kind") == "continue"]
+    assert cont and cont[0]["label"] == "继续"
+    assert cont[0]["value"] == "继续"
 
 
 def test_fakestop_skips_without_skill():
@@ -189,10 +180,10 @@ async def test_agent_loop_pure_text_round_reaches_fakestop(executor, monkeypatch
         executor=executor, history=[],
     )
     # 正文经 false_claim_audit 拼接收纳（result_text 路径可达）。
-    # 完成盖章批（dsh A2）后本体会多烧一步：第一次零工具纯口头收尾被
-    # completion_stamp_gate 驳回续跑（预算 1），第二次才走轮末收尾。
+    # 完成盖章与「未盖章续跑预算」已随阶段规则去代码化批退役（2026-09-10）：
+    # 零工具纯口头收尾不再被驳回续跑，一轮即收尾。
     assert result.text.endswith(body)
-    assert result.text.count(body) == 2, "未盖章收尾不受理→续跑一次→收尾（两步正文累计）"
+    assert result.text.count(body) == 1, "未盖章续跑预算退役→纯文本轮一轮收尾"
     # 假停兜底端到端触发：延续承诺措辞 + skill 激活 + 零操作
     assert any(a.get("kind") == "continue" for a in result.suggested_actions), \
         "纯文本轮末假停兜底未触发（策略所需字段未在生产构造点正确填充/不可达）"

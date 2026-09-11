@@ -86,7 +86,7 @@ class SseStatusEvent(_SseFrame):
     text: str = ""
     key: str = ""
     # 插值参数仅标量（前端 i18n 字典插值契约；Dict[str, Any] 会使
-    # 生成类型退化为 Record<string, unknown>，消费侧 parseRoundParams 无法收窄）
+    # 生成类型退化为 Record<string, unknown>，消费侧无法收窄取用）
     params: Dict[str, Union[str, int, float]] = Field(default_factory=dict)
 
 

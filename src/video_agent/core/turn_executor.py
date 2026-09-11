@@ -541,27 +541,6 @@ class TurnExecutor:
         _extra["_fc_tool_calls"] = [
             dict(tc) for tc in (getattr(response, "tool_calls", None) or [])
             if isinstance(tc, dict)]
-        # 批 12 · 1000 正向修复：本轮失败/被拒的「产出类」工具清单（按工具
-        # 声明推导：detail_tier=expand 产出类 或 risk≥medium 结构写入，
-        # workflow_pause 属关键交互非产物，排除；未注册工具 deny-by-default
-        # 保守计入）。产出没落账而正文自称完成同样不可信——agent_loop 据此
-        # 不按纯文本轮提前终止，让拒因被下一轮消费（自纠：发暂停卡/改参）。
-        _rejected_productive: List[str] = []
-        for _tr in tool_results or []:
-            _n = str(( _tr or {}).get("name") or "")
-            if not _n or _tr.get("ok") or _n == "workflow_pause":
-                continue
-            try:
-                _tool = self.planner.tool_manager.get_tool(_n)
-                _tier = str(getattr(_tool, "detail_tier", "") or "")
-                _risk = str(getattr(_tool, "risk", "") or "")
-            except Exception:
-                _tier, _risk = "", "high"
-            if _tier == "expand" or _risk in ("medium", "high"):
-                if _n not in _rejected_productive:
-                    _rejected_productive.append(_n)
-        if _rejected_productive:
-            _extra["rejected_productive_tools"] = _rejected_productive
         if _confirm_holder.get("message") or _confirm_holder.get("pause_id"):
             _extra.update({
                 "confirmation": _confirm_holder.get("message") or "",
@@ -572,15 +551,4 @@ class TurnExecutor:
                 # 供 agent_loop 带回前端与 _issue_pause 幂等登记
                 "pause_id": _confirm_holder.get("pause_id") or "",
             })
-        # 完成盖章（dsh A2）：从结构化工具结果里取章（认数据不认工具名，与
-        # image_urls/chat_inserts 同一消费口径）→ 随 5 元组上抛，agent_loop 据此
-        # 收轮（盖章即本轮结束，不等下一次纯文本收尾）并落 turn/stamp 审计事件。
-        for _tr in (tool_results or []):
-            _td = _tr.get("data") if isinstance(_tr, dict) else None
-            if isinstance(_td, dict) and _td.get("stamped"):
-                _extra["completion_stamp"] = str(_td.get("ledger") or "")
-                # 模型口头交付文本（章的 summary）：本步无正文时用它作可见正文，
-                # 避免落到「已执行 N 个操作」兜底（纯盖章轮会误报）
-                _extra["completion_summary"] = str(_td.get("summary") or "")
-                break
         return content, finish, fc_applied, plan_ms, _extra

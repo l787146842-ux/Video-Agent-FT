@@ -34,7 +34,7 @@ from src.video_agent.tools.manager import ToolManager
 from src.video_agent.tools.mcp import catalog as mcp_catalog
 from src.video_agent.utils.prompts import load_prompt, render_prompt
 from src.video_agent.utils.prompts import load_prompt_section
-from src.video_agent.core.agent_loop import current_max_steps, run_agent_loop
+from src.video_agent.core.agent_loop import run_agent_loop
 # 子代理可选模档：读模型分层策略表（core→core 无环；空/未配 = 跟随主模型）
 from src.video_agent.core import model_policy
 from src.video_agent.core.fc_tool_runner import (
@@ -320,10 +320,6 @@ class Planner:
             return frozenset(n for n in all_names if n not in whitelist)
         if not context.use_studio_context:
             excluded |= _STUDIO_STATE_TOOLS
-        # 完成盖章总开关（一键回滚）：关 = 不下发 task_complete（轮末闸机
-        # 在 round_end_policies 内读同一开关，两处同进同退）
-        if not settings.completion_stamp_enabled:
-            excluded |= {"task_complete"}
         if not settings.canvas_enabled:
             excluded |= _CANVAS_TOOLS
         else:
@@ -419,8 +415,7 @@ class Planner:
             chat_adapter_factory=self._chat_adapter_factory,
         )
         resp = await child.handle_message(
-            subagent_mod.build_subagent_task(task, resolved_kind.name), child_ctx,
-            max_steps=int(getattr(settings, "subagent_max_steps", 6) or 6))
+            subagent_mod.build_subagent_task(task, resolved_kind.name), child_ctx)
         return str(getattr(resp, "text", "") or "").strip() or "（子代理未产出摘要）"
 
     def _make_system_degrader(self, context: PlannerContext) -> Optional[Callable[[str], str]]:
@@ -521,14 +516,9 @@ class Planner:
         if not node_id:
             return
         if mode == "key_steps_confirm":
-            definition = workflow_runtime.compile_definition(context.skill_name) or {}
-            approval_ids = {
-                str(n.get("node_id") or "") for n in (definition.get("nodes") or [])
-                if isinstance(n, dict) and ((n.get("approval_policy") or {}).get("required"))
-            }
-            if node_id not in approval_ids:
+            if node_id not in workflow_contract.DEFAULT_V2_REVIEW_NODES:
                 return
-        title = workflow_contract.DEFAULT_V2_NODE_TITLES.get(node_id) or node_id
+        title = workflow_contract.NODE_TITLES.get(node_id, node_id)
         response.confirmation = f"「{title}」已完成，请过目本阶段成果并选择下一步。"
         response.confirmation_options = [
             {"label": "确认，继续推进",
@@ -807,12 +797,11 @@ class Planner:
                 # 队列级 status 走 status_event key+params；payload 携带完整
                 # status 事件，chat_service 透传
                 step = event.get("step", 1)
-                max_steps = event.get("max_steps") or current_max_steps()
                 if step > 1:
                     sev = status_event(
                         "agent.roundStart",
                         f"第 {step} 轮推理中…（执行上轮操作后继续规划）",
-                        {"step": step, "max": max_steps},
+                        {"step": step},
                     )
                 else:
                     sev = status_event(
