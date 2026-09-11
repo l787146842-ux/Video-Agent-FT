@@ -15,6 +15,7 @@
 """
 from dataclasses import dataclass
 from typing import FrozenSet, Mapping
+import hashlib
 
 from src.video_agent.utils.prompts import load_prompt_section
 
@@ -121,10 +122,12 @@ def subagent_delegation_context() -> str:
 
 
 def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL) -> str:
-    """子级任务文本 = 类型职责块 + 固定权限范围声明 + 本次委派任务。
+    """子级任务文本 = 类型职责块 + 固定权限范围声明 + 待建清单 + 本次委派任务。
 
-    职责块前置使子级一开始就知道“我是哪类子代理、验收标准是什么”，
-    不需回到主对话上下文去推（子级看不到主对话）。"""
+    职责块前置使子级一开始就知道"我是哪类子代理、验收标准是什么"，
+    不需回到主对话上下文去推（子级看不到主对话）。
+    待建清单含幂等锚（task_id hash），重复委派同一任务时子级可跳过已做项。
+    """
     clean = str(task or "").strip()
     resolved = resolve_subagent_kind(kind)
     kind_block = subagent_kind_block(resolved.name)
@@ -134,4 +137,7 @@ def build_subagent_task(task: str, kind: str = SUBAGENT_KIND_GENERAL) -> str:
         header += f"【子代理类型：{resolved.name}】\n{kind_block}\n\n"
     if ctx:
         header += f"{ctx}\n\n"
+    # 幂等锚：任务内容 hash 作为唯一标识，同 ID 工作已做完则跳过
+    task_id = hashlib.sha256(clean.encode("utf-8")).hexdigest()[:16]
+    header += f"===== 待建清单（task_id: {task_id}）=====\n按验收标准一次性完成以下所有工作项。幂等锚：同一 task_id 的工作项如果已存在于工作台，直接跳过。\n\n"
     return f"{header}===== 本次委派任务 =====\n{clean}"

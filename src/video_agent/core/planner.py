@@ -418,8 +418,23 @@ class Planner:
             chat_model=child_model,
             chat_adapter_factory=self._chat_adapter_factory,
         )
-        resp = await child.handle_message(
-            subagent_mod.build_subagent_task(task, resolved_kind.name), child_ctx)
+        # 构建子级任务文本（含待建清单 + 幂等锚）
+        base_task = subagent_mod.build_subagent_task(task, resolved_kind.name)
+        # 平台注入 Skill 章节内容到子代理（省 read_skill 往返）
+        parent_skill = str(getattr(parent_ctx, "skill_name", "") or "").strip()
+        if parent_skill and self._skill_docs is not None:
+            try:
+                getter = getattr(self._skill_docs, "get_skill_doc", None)
+                if getter:
+                    doc = getter(parent_skill)
+                    if doc and doc.get("content"):
+                        sk = doc["content"]
+                        if len(sk) > 8000:
+                            sk = sk[:8000] + "\n...（章节内容截断，超预算，子代理可按需调 read_skill 读全文）"
+                        base_task += f"\n\n===== 注入 Skill 章节（{parent_skill}）=====\n{sk}"
+            except Exception as _e:
+                logger.warning("[Subagent] Skill 章节注入失败（跳过）: {}", _e)
+        resp = await child.handle_message(base_task, child_ctx)
         return str(getattr(resp, "text", "") or "").strip() or "（子代理未产出摘要）"
 
     def _make_system_degrader(self, context: PlannerContext) -> Optional[Callable[[str], str]]:

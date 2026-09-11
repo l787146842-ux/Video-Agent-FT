@@ -81,7 +81,7 @@
 ### B2 · 模型档 + 死配置改名（不动前端新增控件）
 - 子代理默认跟随主模型：`resolve_role("subagent")` 空即回落主模型。
 - `model_policy` 死角色 `executor`→`subagent`、标签"执行器机械"→"子代理"（仅 `summary` 行现存活消费者）：改 `core/model_policy.py`（ROLES/DEFAULT/文档串）、`web/routes/runtime_settings.py`（老 `executor` 条目读入时迁 `subagent`）、`ModelPolicySection.tsx`（标签+提示）、重跑 `scripts/gen_api_types.py`、`test_model_policy`。
-- 步数：子循环显式传 `max_steps = settings.subagent_max_steps`（新增 **env/config** 默认 `SUBAGENT_MAX_STEPS`，`MAX_STEPS_RANGE` 钳制；**不进设置页**）。
+- 步数：子代理不设步数上限（`subagent_max_steps` / `MAX_STEPS_RANGE` 已随批 A 退役，跑飞兜底=输出 token 截断）。
 
 ### B3 · 左栏流式 + 只读记录（前端）
 - 子级 `on_event` → 主 SSE 转发轻量"子任务状态"事件；子会话落流。
