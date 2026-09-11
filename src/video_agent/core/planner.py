@@ -62,6 +62,7 @@ from src.video_agent.skill_runtime.progress import emit_event_card
 from src.video_agent.skill_runtime.registry import fallback_skill_from_state
 # Workflow Runtime：账本 + 裁判数据层
 from src.video_agent.core import workflow_contract, workflow_runtime
+from src.video_agent.core import state_delta as state_delta_mod
 from src.video_agent.core.pause_composer import PAUSE_KIND_STAGE_DONE
 # 正宗子代理：契约常量/纯辅助（subagent 仅依赖 utils.prompts，无环）+ 子会话创建
 from src.video_agent.core import subagent as subagent_mod
@@ -183,6 +184,9 @@ class PlannerContext:
     # run_agent_loop 组装 messages 时追加在 user 消息之后（与日志 seq 同序，
     # 回放=请求逐字节）。空串 = 本轮无状态注入（非 studio / 构建失败回落）。
     state_event_content: str = ""
+    # B 方案增量对账（state_delta_enabled）：上一轮的状态 digest/哈希
+    _state_digest: Optional[Dict[str, Dict[str, str]]] = None
+    _state_hash: str = ""
 
 
 @dataclass
@@ -951,21 +955,47 @@ class Planner:
             _EXEC_MODE_NOTE_FILE, f"MODE_{mode.upper()}") or ""
 
     def _build_and_log_state_event(self, context: "PlannerContext") -> str:
-        """轮首状态事件构建 + 落流（二期 G3，单一落点；流式/非流式/scope
-        三路径同口径——handle_message 统一入口）。
+        """轮首状态事件构建 + 落流（二期 G3 + B 方案增量对账）。
 
-        - 构建 = build_state_tail_message 全家（状态 JSON + 降级引导 +
-          偏好/模式 note + 故事板进度 + 草稿指针；步数行已退役）；
-        - 落流 = source=state 的 user/message 事件（dsh inject 同位）；
-          构建失败/非 studio 返回空串（本轮零状态注入，回落语义）；
-        - 轮内步间零注入：原每步尾部消息装配（turn_executor）退役；
-          预算保险由 truncate_messages 兜底（状态事件 = 普通轮组锚消息，
-          随老轮组被压缩收编，不膨胀）。"""
+        B 方案（state_delta_enabled）：首轮全量基线，后续轮只推变化的组
+        （digest 未变绝不重复注入）；全量回滚开关 = settings.state_delta_enabled。
+        """
         if not context.use_studio_context:
             return ""
         pb = getattr(self, "_prompt_builder", None)
         if pb is None or context.state_builder is None:
             return ""
+
+        if settings.state_delta_enabled:
+            raw_state = self.state_manager.state_dict
+            new_digests, new_hash, delta = state_delta_mod.compare_state(
+                context._state_digest, context._state_hash, raw_state)
+
+            if not state_delta_mod.has_any_change(delta):
+                # 状态无变化，跳过本轮注入
+                return ""
+
+            if delta.get("_fresh"):
+                # 首轮/恢复后首轮：全量基线
+                try:
+                    content = pb.build_state_tail_message(context)
+                except Exception as _e:
+                    logger.warning(f"[Planner] 状态基线构建失败（本轮零注入）: {_e}")
+                    return ""
+            else:
+                # 增量消息：仅变化组
+                content = state_delta_mod.build_delta_message(delta)
+
+            if content:
+                context._state_digest = new_digests
+                context._state_hash = new_hash
+                if context.session_conversation_id:
+                    session_log.append_user_message(
+                        self.state_manager, context.session_conversation_id,
+                        content, source=session_log.SOURCE_STATE)
+            return content
+
+        # 旧行为（state_delta_enabled=False）：每轮全量
         try:
             content = pb.build_state_tail_message(context)
         except Exception as _e:

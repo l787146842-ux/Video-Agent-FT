@@ -33,7 +33,6 @@ from src.video_agent.config import settings
 from src.video_agent.state import conversation_ops
 from src.video_agent.core import prompt_gates
 from src.video_agent.core import session_log
-from src.video_agent.core import stage_probes
 from src.video_agent.core import workflow_runtime
 from src.video_agent.web.attachments import bind_attachments, attachment_context, store_uploaded_docs
 from src.video_agent.web.adjust_scope import (
@@ -313,26 +312,13 @@ class _StreamCtx:
 
 
 def _stage_aware_state_builder(
-    svc: Any, asset_mode: str, skill: str,
+    svc: Any, asset_mode: str,
     scope: Optional[Dict[str, Any]] = None,
 ):
-    """第 5 批（Q6）：状态注入阶段感知构建器。
-
-    Skill 激活时每步实时探测当前创作阶段传入 build_agent_context
-    （分阶段裁剪注入面）；无 Skill / 探测失败回落全量注入（保守不失约束）。
-    scope（批 S2 微调真子对话）：非空时透传 scope 裁剪档（目标组全量/
-    其余指针），阶段探测让位（scope 任务不携 Skill，两者不同时生效）。
-    """
+    """状态上下文构建器（阶段裁剪已退役，对齐 dsh 不裁剪）。"""
 
     def _builder() -> str:
-        stage = ""
-        if scope is None and skill:
-            try:
-                spec = stage_probes.current_stage(svc.state_dict, skill)
-                stage = spec.key if spec else ""
-            except Exception:
-                stage = ""
-        return svc.build_agent_context(asset_mode, stage=stage, scope=scope)
+        return svc.build_agent_context(asset_mode, scope=scope)
 
     return _builder
 
@@ -487,11 +473,11 @@ async def _stream_prepare(ctx: _StreamCtx) -> Optional[PlannerContext]:
             ctx.body.skill_name or "", ctx.body.skill_slug or "", ctx.svc.state_dict, ctx.user_text,
         )
     )
-    # 状态惰性构建器：多步循环每轮刷新（阶段感知，resolved_skill 后装配；
+    # 状态惰性构建器：多步循环每轮刷新
     # scope 请求换 scope 裁剪构建器，目标组全量/其余指针）
     ctx.state_builder = (
         _stage_aware_state_builder(
-            ctx.svc, ctx.body.asset_mode, resolved_skill, scope=ctx.adjust_scope or None)
+            ctx.svc, ctx.body.asset_mode, scope=ctx.adjust_scope or None)
         if ctx.use_studio_context else None
     )
     prelude_notes = _build_prelude_notes(resolved_skill)
@@ -837,9 +823,9 @@ async def _non_stream_inner(body: ChatRequest, user_text: str) -> Dict[str, Any]
     resolved_skill = _resolve_skill_name_for_injection(
         body.skill_name or "", body.skill_slug or "", svc.state_dict, user_text,
     )
-    # 状态惰性构建器：多步循环每轮刷新（阶段感知，resolved_skill 后装配）
+    # 状态惰性构建器：多步循环每轮刷新
     state_builder = (
-        _stage_aware_state_builder(svc, body.asset_mode, resolved_skill)
+        _stage_aware_state_builder(svc, body.asset_mode)
         if use_studio_context else None
     )
 

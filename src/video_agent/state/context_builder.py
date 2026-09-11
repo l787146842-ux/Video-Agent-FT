@@ -7,25 +7,14 @@ Agent 上下文构建域 — 从 StateManager 抽离。
 - build_frontend_view：前端 camelCase JSON 视图（Pydantic 校验后序列化）
 """
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from src.video_agent.config import settings
 
 from .models import CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS, ProjectState
 
-# 第 5 批上下文治理（Q6 裁决 2026-09-01）：分阶段注入策略表（policy-as-data）。
-# stage 键 → 该阶段全量注入的类别（焦点）；非焦点类别只注入组级摘要
-#（id/编号/标题/草稿计数 + 指针，全文经 read_state_group 按需读回）。
-# 空元组 = 三类全摘要（analysis 阶段分组尚未诞生）；
-# 不在表内的 stage / 空 stage = 不裁剪（保守全量，探测失败不失约束）。
-STAGE_STATE_FOCUS: Dict[str, Tuple[str, ...]] = {
-    "analysis": (),
-    "structure": (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS),
-    "ke_media": (CAT_KEY_ELEMENTS,),
-    "shot_media": (CAT_SHOTS,),
-    "audio_assets": (CAT_AUDIO_ITEMS,),
-    "assembly": (CAT_SHOTS,),
-}
+# 第 5 批上下文治理（Q6 裁决 2026-09-01）：分阶段注入策略表（policy-as-data）
+# 随 B 方案退役：对齐 dsh，不再按阶段做语义裁剪。
 _ALL_GROUP_CATS = (CAT_KEY_ELEMENTS, CAT_SHOTS, CAT_AUDIO_ITEMS)
 
 
@@ -42,7 +31,6 @@ def build_agent_context(
     asset_mode: str = "bound",
     cache: Dict[str, str] | None = None,
     degraded: bool = False,
-    stage: str = "",
     scope: Optional[Dict[str, Any]] = None,
 ) -> str:
     """构建发送给 LLM 的 Studio 状态上下文。
@@ -53,8 +41,7 @@ def build_agent_context(
         cache: 可选缓存字典（状态变更时由 StateManager 清空）
         degraded: 降级模式（预算保险丝用）——草稿细节不注入，
                   只留组标题/编号/草稿计数，大幅压缩状态上下文体积
-        stage: 当前创作阶段键（分阶段注入裁剪用；空 = 不裁剪）
-        scope: 微调作用域（微调真子对话，policy-as-data 同 STAGE_STATE_FOCUS）：
+        scope: 微调作用域（微调真子对话）：
                仅目标分组/目标卡注入全量草稿细节（含提示词全文），其余分组/
                类别/文档/素材清单一律不注入（对齐外部标杆：子对话只看对应元素）；
                空 = 不裁剪（旧行为零变化）
@@ -74,17 +61,13 @@ def build_agent_context(
     # 缓存键不含 tier：档位对状态确定（状态变更即清缓存），同键读写保命中复用；
     # scope 经确定性序列化进键（同 scope 保命中，不同目标不互串）
     scope_key = _scope_cache_key(scope)
-    cache_key = f"{asset_mode}:{stage or '-'}:{scope_key}"
+    cache_key = f"{asset_mode}:{scope_key}"
     if cache is not None and cache_key in cache:
         return cache[cache_key]
 
     snapshot = _build_snapshot_dict(raw_state, asset_mode)
-    # 微调作用域裁剪（优先于阶段裁剪：scope 任务不携 Skill，两者不同时生效）
     if scope_key != "-":
         _apply_scope_profile(snapshot, raw_state, scope or {})
-    elif stage:
-        # 分阶段注入：非焦点类别降为组级摘要（可恢复句柄：id/编号保留）
-        _apply_stage_profile(snapshot, raw_state, stage)
     result = _dumps(snapshot)
     # 状态指针化（Q6）：超字符预算自动降 B 档——组级正文截断+指针，
     # 全文经 read_state_group 按需读回；预算 0 = 永远 A 档（回滚开关）
@@ -229,20 +212,6 @@ def _build_snapshot_dict(raw_state: Dict[str, Any], asset_mode: str) -> Dict[str
     }
 
 
-def _group_pointers(raw_state: Dict[str, Any], cat_key: str) -> list:
-    """组级摘要（可恢复句柄）：id/编号/标题/草稿计数，正文不外流；
-    全文经 read_state_group 按需读回。"""
-    return [
-        {
-            "id": g.get("id", ""),
-            "index": gi + 1,
-            "title": g.get("title", ""),
-            "draft_count": len(g.get("drafts", []) or []),
-        }
-        for gi, g in enumerate(raw_state.get(cat_key, []) or [])
-    ]
-
-
 def _scope_cache_key(scope: Optional[Dict[str, Any]]) -> str:
     """scope 确定性序列化（缓存键用）：无/空/非法形态返回 '-'（不裁剪）。"""
     if not isinstance(scope, dict) or not scope:
@@ -345,27 +314,6 @@ def _apply_scope_profile(
             + ("本线程参考素材（scopeRefs）已注入；" if thread_refs else "")
             + "其余分组、剧本、规格文档、上传素材等一律未注入，"
             "不得读取或修改非目标内容"
-        )
-    return trimmed
-
-
-def _apply_stage_profile(
-    snapshot: Dict[str, Any], raw_state: Dict[str, Any], stage: str,
-) -> bool:
-    """分阶段注入：非焦点类别降为组级摘要。返回是否发生裁剪。
-    不在策略表内的 stage 不裁剪（保守全量）。"""
-    focus = STAGE_STATE_FOCUS.get(stage)
-    if focus is None:
-        return False
-    trimmed = False
-    for cat in _ALL_GROUP_CATS:
-        if cat not in focus:
-            snapshot[cat] = _group_pointers(raw_state, cat)
-            trimmed = True
-    if trimmed:
-        snapshot["stageNote"] = (
-            f"当前阶段={stage}：非焦点类别仅注入组级摘要，"
-            "全文调 read_state_group 按需读回"
         )
     return trimmed
 

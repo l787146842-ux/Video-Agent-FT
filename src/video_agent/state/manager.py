@@ -713,14 +713,13 @@ class StateManager(UndoRedoMixin):
                                                 conversation_id=conversation_id)
 
     def build_agent_context(
-        self, asset_mode: str = "bound", stage: str = "",
+        self, asset_mode: str = "bound",
         scope: Optional[Dict[str, Any]] = None,
     ) -> str:
         """构建发送给 LLM 的 Studio 状态上下文（带缓存，状态未变时复用）。
-        stage：当前创作阶段键（分阶段注入裁剪；空 = 不裁剪）。
         scope：微调作用域（目标组全量/其余指针；空 = 不裁剪）。"""
         return _build_context(self._raw_state, asset_mode, self._context_cache,
-                              stage=stage, scope=scope)
+                              scope=scope)
 
     def build_agent_context_degraded(self, asset_mode: str = "bound") -> str:
         """降级状态上下文（system 超预算保险丝）：只留组标题/编号/草稿计数"""

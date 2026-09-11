@@ -60,7 +60,6 @@ def test_a_tier_small_state_full(svc):
     parsed = json.loads(build_agent_context(svc.state_dict, "bound"))
     assert parsed[CAT_KEY_ELEMENTS][0]["desc"] == "赛博朋克侦探，黑色风衣"
     assert "note" not in parsed
-    assert "stageNote" not in parsed
 
 
 def test_b_tier_over_budget_truncates_with_pointer(svc):
@@ -101,35 +100,6 @@ def test_budget_zero_always_a(svc):
         object.__setattr__(settings, "state_context_budget_chars", 20000)
 
 
-def test_stage_profile_trims_non_focus(svc):
-    """ke_media 阶段：shots/audio 降组级摘要，keyElements 全量（预算关隔离 B 档）。"""
-    _seed_big_state(svc)
-    object.__setattr__(settings, "state_context_budget_chars", 0)
-    try:
-        parsed = json.loads(build_agent_context(svc.state_dict, "bound", stage="ke_media"))
-        shot = parsed[CAT_SHOTS][0]
-        assert "drafts" not in shot and "roughDesc" not in shot
-        assert shot["draft_count"] == 1 and shot["title"] == "分镜0"
-        assert "stageNote" in parsed
-        # 焦点类别全量
-        assert parsed[CAT_KEY_ELEMENTS][0]["desc"] == "角" * 1500
-    finally:
-        object.__setattr__(settings, "state_context_budget_chars", 20000)
-
-
-def test_stage_unknown_no_trim(svc):
-    """未知/空阶段不裁剪（保守全量）。"""
-    _seed_big_state(svc)
-    object.__setattr__(settings, "state_context_budget_chars", 0)
-    try:
-        for stage in ("", "no_such_stage"):
-            parsed = json.loads(build_agent_context(svc.state_dict, "bound", stage=stage))
-            assert "stageNote" not in parsed
-            assert "drafts" in parsed[CAT_SHOTS][0]
-    finally:
-        object.__setattr__(settings, "state_context_budget_chars", 20000)
-
-
 def test_no_timestamp_in_model_view(svc):
     """前缀纪律：documents 的 updated_at 不进模型可见面（P2-1 钉死）。"""
     svc.state_dict["documents"] = [{
@@ -143,8 +113,8 @@ def test_no_timestamp_in_model_view(svc):
 def test_build_deterministic(svc):
     """同状态两次构建字节一致（前缀纪律：无时间戳进模型可见面）。"""
     _seed_big_state(svc)
-    a = build_agent_context(svc.state_dict, "bound", stage="shot_media")
-    b = build_agent_context(svc.state_dict, "bound", stage="shot_media")
+    a = build_agent_context(svc.state_dict, "bound")
+    b = build_agent_context(svc.state_dict, "bound")
     assert a == b
 
 

@@ -179,6 +179,9 @@ class Settings:
     # 0 = 永远 A 档全量注入（一键回滚开关）
     state_context_budget_chars: int = field(
         default_factory=lambda: _env_int("STATE_CONTEXT_BUDGET_CHARS", 20000))
+    # B 方案增量对账开关：开 = 每轮只推变化的组首轮全量基线；关 = 每轮全量
+    state_delta_enabled: bool = field(
+        default_factory=lambda: _env_bool("STATE_DELTA_ENABLED", True))
     # B 档组级正文（desc/roughDesc）截断字符数
     state_group_body_chars: int = field(
         default_factory=lambda: _env_int("STATE_GROUP_BODY_CHARS", 120))
@@ -429,7 +432,7 @@ SETTINGS_GROUPS: dict = {
                 "tool_result_prune_chars", "tool_result_prune_head",
                 "tool_result_prune_tail", "history_compact_threshold",
                 "context_json_compact", "state_context_budget_chars",
-                "state_group_body_chars", "context_overflow_policy", "prompt_gate_mode",
+                "state_group_body_chars", "state_delta_enabled", "context_overflow_policy", "prompt_gate_mode",
                 "llm_image_max_edge", "max_doc_chars", "max_attachments",
                 "max_llm_images", "trace_reasoning_max_chars"),
     "media": ("image_gen_timeout", "image_ref_limit", "image_gen_concurrency",
